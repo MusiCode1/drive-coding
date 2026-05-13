@@ -27,9 +27,9 @@ voice-acp/
 
 **Runtime:** Bun (backend), ללא framework (frontend — HTML/JS בלבד)
 
-**משתני סביבה נדרשים** (ב-`backend/.env`):
-- `GEMINI_API_KEY` — למקס STT
-- `ELEVENLABS_API_KEY` — לTTS
+**משתני סביבה נדרשים** (מוגדרים דרך 1CLI, לא קובץ `.env`):
+- `GEMINI_API_KEY` — ל-STT
+- `ELEVENLABS_API_KEY` — ל-TTS
 - `ELEVENLABS_VOICE_ID` — מזהה הקול הרצוי
 
 **אין pip, אין npm בpATH ישיר** — להשתמש ב-Bun בלבד לbackend.

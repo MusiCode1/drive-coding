@@ -217,10 +217,15 @@ const response = await connection.prompt({
 ```ts
 import { GoogleGenerativeAI } from "@google/genai";
 
-const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+// OneCLI מחליף את ה-x-goog-api-key header במפתח האמיתי בדרך לgenerativelanguage.googleapis.com
+// הSDK מאותחל עם placeholder — אין צורך במשתנה סביבה
+const genai = new GoogleGenerativeAI("placeholder");
 
 export async function transcribeAudio(audioBase64: string): Promise<string> {
-  const model = genai.getGenerativeModel({ model: "gemini-2.0-flash" });
+  // להשתמש תמיד ב-alias של הגרסה האחרונה — לא לנעול גרסה ספציפית
+  // gemini-flash-latest = Flash, gemini-flash-lite-latest = Flash Lite (מהיר יותר, זול יותר)
+  // לSTT מספיק Flash Lite
+  const model = genai.getGenerativeModel({ model: "gemini-flash-lite-latest" });
   
   const result = await model.generateContent([
     {
@@ -242,15 +247,15 @@ export async function transcribeAudio(audioBase64: string): Promise<string> {
 
 ```ts
 export async function textToSpeech(text: string): Promise<string> {
-  const voiceId = process.env.ELEVENLABS_VOICE_ID!;
-  const apiKey = process.env.ELEVENLABS_API_KEY!;
-  
+  const voiceId = process.env.ELEVENLABS_VOICE_ID!;  // היחיד שנשאר כenv var
+
+  // OneCLI מזריק xi-api-key header אוטומטית לapi.elevenlabs.io
   const response = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
     {
       method: "POST",
       headers: {
-        "xi-api-key": apiKey,
+        "xi-api-key": "placeholder",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -353,19 +358,20 @@ thinking.pause();
 
 ---
 
-## 10. משתני סביבה (backend/.env)
+## 10. משתני סביבה
 
-```env
-GEMINI_API_KEY=...
-ELEVENLABS_API_KEY=...
-ELEVENLABS_VOICE_ID=...     # למשל: 21m00Tcm4TlvDq8ikWAM (Rachel)
-PORT=3000                   # ברירת מחדל
-```
+המפתחות מוגדרים כ-environment variables דרך 1CLI — אין קובץ `.env`.
 
-מפתח ElevenLabs נמצא ב-Bitwarden תחת `elevenlabs.io`:
-```bash
-BW_SESSION="..." bw get notes elevenlabs.io
-```
+| משתנה | שימוש |
+|-------|-------|
+| `ELEVENLABS_VOICE_ID` | מזהה הקול (למשל `21m00Tcm4TlvDq8ikWAM`) |
+| `PORT` | פורט הbackend (ברירת מחדל: 3000) |
+
+**מפתחות API** — מנוהלים דרך OneCLI:
+- `GEMINI_API_KEY` (`generativelanguage.googleapis.com`, header: `x-goog-api-key`) — להוסיף ב-OneCLI
+- `ELEVENLABS_API_KEY` (`api.elevenlabs.io`, header: `xi-api-key`) — להוסיף ב-OneCLI
+
+הקוד מאתחל SDKs עם `"placeholder"` — OneCLI מחליף את ה-header במפתח האמיתי בדרך.
 
 ---
 
