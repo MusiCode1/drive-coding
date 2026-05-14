@@ -7,6 +7,7 @@
 > **מבנה:** כל התנהגות = פסקה אחת עם ID, תיאור, מקור בקוד, וסיבה (אם נובעת מבאג שתוקן). אין כאן ספצים — רק התנהגויות.
 >
 > **קטגוריות:**
+> - `[SYSPROMPT]` — system prompt למודל
 > - `[STT]` — תמלול
 > - `[ACP]` — תקשורת עם opencode acp
 > - `[PROMPT]` — לוגיקת זרימת prompt + chunks
@@ -17,13 +18,56 @@
 > - `[HTTP]` — endpoints REST של ה-backend
 > - `[MARKDOWN]` — רינדור Markdown + sanitization
 > - `[STATIC]` — הגשת קבצים סטטיים + path traversal protection
+> - `[URL]` — URL params של ה-frontend
 > - `[UI-MIC]` — כפתור מיקרופון ו-state machine
 > - `[UI-AUDIO]` — ניגון אודיו (live + replay)
 > - `[UI-BUBBLES]` — בועות שיחה ורינדור
 > - `[UI-SCROLL]` — גלילה
 > - `[UI-HIST]` — היסטוריה
 > - `[UI-CAR]` — מצב רכב
-> - `[CONFIG]` — דף הגדרות
+> - `[UI-HEADER]` — header של index.html (meta, settings link)
+> - `[UI-RECORD]` — הקלטת אודיו עם MediaRecorder
+> - `[CONFIG]` — דף הגדרות (config.html)
+> - `[CONFIG-PICKER]` — folder picker modal ב-config
+
+---
+
+## SYSPROMPT — מה ה-system prompt אומר למודל
+
+### SYSPROMPT-1: תוכן `VOICE_SYSTEM_PROMPT` קבוע
+`backend/src/system-prompt.ts`. ראה PROMPT-3/PROMPT-4 לאיך הוא מוזרק.
+
+### SYSPROMPT-2: כותרת מסגרת
+`"[הוראות מערכת — לא מהמשתמש]"`. מודיע למודל שזה לא קלט משתמש אמיתי. מקור: `system-prompt.ts:8`.
+
+### SYSPROMPT-3: מסגרת תקשורת — קולי בלבד
+מצהיר: "אתה עוזר קוד שמתקשר עם המשתמש בקול בלבד, דרך מערכת TTS." מקור: `system-prompt.ts:10`.
+
+### SYSPROMPT-4: 8 חוקי תגובה
+- תשובות בעברית, משפטים קצרים.
+- "תחשוב על איך התשובה נשמעת, לא איך היא נראית".
+- "המשתמש שומע אותך, לא קורא. אין לו מסך".
+- בלי טבלאות / בלוקי קוד / רשימות bullets / markdown.
+- בלי emojis.
+- שאלות קוד → לתאר במילים, לא לצטט.
+- פלט ארוך → סיכום במשפט.
+- אסור לחזור על השאלה לפני התשובה.
+מקור: `system-prompt.ts:12-20`.
+
+### SYSPROMPT-5: 4 חוקי כלים (tool narration)
+- לכל tool יש title שמוקרא **לפני** הביצוע.
+- הכותרת **בעברית** ("קורא את README", לא "Reading README").
+- לתאר את הפעולה גם במילים אם רלוונטי.
+- אסור לכפיל את הכותרת בתשובה.
+מקור: `system-prompt.ts:22-26`.
+
+### SYSPROMPT-6: 2 חוקי תשובות קצרות
+- תשובה במילה אחת — חייבת להיות ב-text, לא רק ב-thinking. (סיבה: באג ידוע שמודל חושב את התשובה ב-thoughts ולא יוצר message כשהוא רואה "תענה במילה אחת").
+- thinking לא מוקרא; text כן.
+מקור: `system-prompt.ts:28-30`.
+
+### SYSPROMPT-7: מפריד `---` + label `שאלת המשתמש:`
+מודיע למודל איפה ה-system prompt מסתיים והשאלה האמיתית מתחילה. מקור: `system-prompt.ts:32-34`.
 
 ---
 
@@ -421,6 +465,61 @@ Bun מטפל אוטומטית ב-Content-Type, length, וכו'. מקור: `serve
 
 ---
 
+## URL — URL params של frontend (index.html)
+
+### URL-1: 5 params נקראים מ-`location.search`
+`cwd`, `session`, `model`, `voice`, `car`. נקראים בעת DOMContentLoaded. מקור: `index.html:540-545`.
+
+### URL-2: `car=1` או `car=true` (case-sensitive)
+שני ערכים יוצרים true. אחרים → false. מקור: `index.html:545`.
+
+### URL-3: `cwd` חסר → redirect ל-`/config.html`
+`location.replace("/config.html")`. ה-frontend לא ינסה אפילו להתחבר. מקור: `index.html:601-603`.
+
+### URL-4: `voiceParam` עובר ל-WebSocket init וגם ל-`/api/tts` POST
+- `init` מועבר עם `voice: voiceParam`. מקור: `index.html:1463`.
+- `fetchAudio` של bubble היסטורית מעביר `voiceId: voiceParam` ב-POST. מקור: `index.html:748`.
+
+### URL-5: `sessionId` global מתחיל מ-`sessionIdParam` (אם יש)
+משתנה אחרי `ready` event ל-sessionId מה-server. מקור: `index.html:608, 1492`.
+
+---
+
+## UI-HEADER — Header של index.html
+
+### UI-HEADER-1: כותרת + meta + link להגדרות
+`h1=voice-acp` + `#meta` (cwd · sessionId) + `<a href="/config.html">⚙</a>`. מקור: `index.html:514-520`.
+
+### UI-HEADER-2: meta init = "מתחבר…", אז cwd + sessionId
+`shortCwd(cwd)` (".../parent/dir") + ` · ` + `shortId(sessionId)` (12 חרס + …). מקור: `index.html:1486-1492`.
+
+### UI-HEADER-3: meta על close → "החיבור נסגר", btn.disabled=true
+מקור: `index.html:1474-1477`.
+
+### UI-HEADER-4: meta על error → "שגיאת חיבור"
+מקור: `index.html:1480`.
+
+---
+
+## UI-RECORD — הקלטת אודיו (MediaRecorder)
+
+### UI-RECORD-1: getUserMedia מבקש מיקרופון
+`navigator.mediaDevices.getUserMedia({ audio: true })`. כשלון → showError. מקור: `index.html:1607-1610`.
+
+### UI-RECORD-2: mimeType fallback chain
+`"audio/webm;codecs=opus"` → `"audio/webm"` → `""`. בדיקה דרך `MediaRecorder.isTypeSupported`. מקור: `index.html:1613-1615`.
+
+### UI-RECORD-3: dataavailable + stop handlers
+`dataavailable` אוסף chunks ל-`audioChunks`. `stop` עוצר את כל ה-tracks של ה-stream ואז קורא ל-`sendAudio`. מקור: `index.html:1622-1629`.
+
+### UI-RECORD-4: sendAudio שולח base64 + mimeType
+Blob → arrayBuffer → base64 (chunks של 0x8000 כדי לעמוד ב-call stack limit) → `{ type: "audio", data, mimeType }`. מקור: `index.html:1646-1669`.
+
+### UI-RECORD-5: stopRecording מציג "שולח…"
+לפני שה-blob נשלח בפועל. מקור: `index.html:1642`.
+
+---
+
 ## UI-MIC — כפתור מיקרופון ו-state machine
 
 ### UI-MIC-1: 4 מצבים — idle/recording/speaking/paused
@@ -656,22 +755,74 @@ fallback ל-showError "הדפדפן לא תומך". מקור: `index.html:1771-1
 
 ---
 
-## CONFIG — דף הגדרות
+## CONFIG — דף הגדרות (config.html)
 
-### CONFIG-1: localStorage שומר cwd, sessionId, model, voice, car
-נטענים בעת פתיחת config.html. נשמרים על click "שמור". מקור: walkthrough 08:45 / config.html.
+### CONFIG-1: localStorage key = `voice-acp:config`
+JSON אובייקט: `{cwd, model, session, voice, car}`. מקור: `config.html:315`.
 
-### CONFIG-2: cwd ריק → redirect ל-config.html
-מקור: `index.html:574-577`.
+### CONFIG-2: בעת load — נקרא cwd + car מ-localStorage
+רק שני שדות אלה משוחזרים מיד. model/session/voice יושבים בlocalStorage אבל לא ניתן לבחור עד שטוענים אפשרויות (כי תלויים ב-cwd). מקור: `config.html:361-363`.
 
-### CONFIG-3: Folder picker עם breadcrumb
-דרך `/api/ls?path=...`. מקור: walkthrough 08:45.
+### CONFIG-3: שדה cwd יכול להיכתב ידנית
+input dir=ltr, monospace. מקור: `config.html:79-82, 253`.
 
-### CONFIG-4: voices sorted — default → he-supporters → premade
-מ-`/api/voices`. מקור: walkthrough 08:45.
+### CONFIG-4: start button disabled עד שיש cwd
+`updateStartButton`: `startBtn.disabled = !cwdInput.value.trim()`. listener על input. מקור: `config.html:365-369`.
 
-### CONFIG-5: כפתור "טען אפשרויות" → /api/info?cwd
-מחזיר {models, sessions}. מקור: walkthrough 08:45.
+### CONFIG-5: "טען אפשרויות" → `/api/info` → populate models + sessions
+לחיצה. אם cwd חסר → "צריך להזין cwd קודם". במהלך הטעינה: `loadStatus = "טוען (יכול לקחת כמה שניות)…"`. בסיום: count לכל list. **אם stored.model/session קיים ב-options → בחירה אוטומטית**. מקור: `config.html:372-433`.
+
+### CONFIG-6: format date hebrew
+`d.toLocaleString("he-IL", { day, month, hour, minute })`. שימוש: session list labels. מקור: `config.html:435-447`.
+
+### CONFIG-7: `loadVoices()` נקרא אוטומטית בעת load
+לא חוכה ל-cwd. מקור: `config.html:615`.
+
+### CONFIG-8: voice labels — emoji + category marker
+`🇮🇱` לסומכי עברית, `[lang]` לאחרים עם שפה מוצהרת, ריק אחרת. `✓` ל-professional, `•` ל-cloned/generated, ריק ל-premade. מקור: `config.html:587-602`.
+
+### CONFIG-9: voice "default" option תמיד ראשון
+`— ברירת מחדל (xxx…) —` אם יש defaultVoiceId, אחרת רק `— ברירת מחדל —`. מקור: `config.html:577-585`.
+
+### CONFIG-10: start button — בונה URL ו-redirect ל-/
+`location.href = "/?" + URLSearchParams`. רק params לא ריקים נכנסים. שומר ב-localStorage לפני. מקור: `config.html:618-629`.
+
+### CONFIG-11: reset button — confirm + מחיקת localStorage
+`confirm("לאפס את כל ההגדרות?")` — אם false → לא עושה כלום. אחרת מנקה הכל. מקור: `config.html:632-646`.
+
+---
+
+## CONFIG-PICKER — folder picker modal
+
+### CONFIG-PICKER-1: modal hidden by default, `display:none` כש-hidden
+מקור: `config.html:142`.
+
+### CONFIG-PICKER-2: browse button → openPicker(start)
+start = cwd input || stored.cwd || "". מקור: `config.html:453-459`.
+
+### CONFIG-PICKER-3: openPicker עם target ריק → /home (fallback)
+אם אין initialPath → `pickerHome || "/home"` (לפני שה-home נטען מהshould). מקור: `config.html:477-484`.
+
+### CONFIG-PICKER-4: navigateTo — fetch /api/ls + render
+loading state, breadcrumb, entries. בכשל — error message + auto-fallback ל-pickerHome אם idx זה לא pickerHome. מקור: `config.html:487-513`.
+
+### CONFIG-PICKER-5: breadcrumb clickable
+`/` (root → home) + each part. מקור: `config.html:515-537`.
+
+### CONFIG-PICKER-6: parent ".." link רק אם info.parent ≠ null
+לפי security ב-`/api/ls` — אם הוא מחוץ ל-allowed roots, parent=null ולא יוצג. מקור: `config.html:541-547`.
+
+### CONFIG-PICKER-7: empty folder → "תיקייה ריקה"
+ב-`renderPickerEntries`. מקור: `config.html:548-555`.
+
+### CONFIG-PICKER-8: select button → קובע cwd ב-input, סוגר modal
+מקור: `config.html:463-469`.
+
+### CONFIG-PICKER-9: click מחוץ ל-modal → סוגר
+`if (e.target === pickerModal) hidden = true`. מקור: `config.html:470-472`.
+
+### CONFIG-PICKER-10: x-close button → סוגר modal
+מקור: `config.html:460-462`.
 
 ---
 
@@ -751,4 +902,18 @@ hidden ב-idle ללא היסטוריה. מופיעים כשיש playbackHistory 
 ### היסטוריית עדכוני הקובץ הזה
 
 - **18:25** — יצירה ראשונית עם 14 קטגוריות, ~130 התנהגויות.
-- **19:50** — תיקון פערים אחרי בדיקה (sub-agent ses_1d835201). נוספו 3 קטגוריות שלמות (HTTP, MARKDOWN, STATIC) ופערים בקטגוריות קיימות (STT-5b/5c, ACP-12/16/17, PROMPT-9 דריסה, PROMPT-17 done after error, TTS-9, GEMINI-3 ללא AbortController, REC-5 audioSize, REC-8 dirEnsured, WS-1b text path). סה"כ ~170 התנהגויות.
+- **19:50** — תיקון פערים אחרי בדיקה (sub-agent ses_1d835201). נוספו 3 קטגוריות שלמות (HTTP, MARKDOWN, STATIC) ופערים בקטגוריות קיימות. סה"כ ~170 התנהגויות.
+- **20:20** — סקירה מעמיקה שנייה. נוספו 6 קטגוריות חדשות: SYSPROMPT (תוכן ה-system prompt בפירוט), URL (5 params של frontend), UI-HEADER (header של index), UI-RECORD (MediaRecorder flow), CONFIG-PICKER (folder picker — 10 התנהגויות נפרדות). הרחבת CONFIG הקיימת מ-5 לפריט 11. סה"כ ~210 התנהגויות.
+
+### אזורים שנבדקו בסקירה השנייה ולא הניבו פערים חדשים
+
+- `backend/scripts/test-e2e.ts` ו-`test-e2e-audio.ts` — סקריפטים לבדיקה ידנית של ה-stack המלא, לא קוד פרודקשן. לא נצרך בדיקות.
+- `backend/tsconfig.json` — קונפיג בלבד.
+- `test-workspace/hello.js` — fixture לבדיקה ידנית.
+
+### אזורים שלא נבדקים
+
+- ספריות חיצוניות (marked, @agentclientprotocol/sdk, @google/genai).
+- Bun internals (Bun.serve, Bun.file, Bun.write).
+- Web APIs (MediaRecorder, MediaSource, WebSocket, Audio).
+- Browser-specific behavior (RTL rendering, dir=auto).
