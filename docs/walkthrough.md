@@ -4,6 +4,31 @@
 
 ---
 
+## 2026-05-14 12:20
+
+### משימה F — נראציה של tool calls (executor)
+
+**מטרה:** במקום להקריא את הכותרת הגולמית של ה-tool ("Read README.md", "Edit hello.js"), Gemini מנסח משפט קצר טבעי בעברית עם הקשר.
+
+**`backend/src/server.ts`:**
+
+- `import { narrateToolCall, translateThought } from "./gemini-helper.ts"` (השני כבר היה ב-E).
+- `ConnState`:
+  - `lastUserText: string | null` — הטקסט האחרון של המשתמש (transcript או text ישיר).
+  - `recentMessages: string[]` — FIFO של עד 3 הסגמנטים האחרונים של המודל.
+  - שניהם מאותחלים ב-`open`.
+- `handleUserInput`: שמירת `state.lastUserText = text` בהתחלה. ככה גם נתיב audio (דרך `handleAudio` → `handleUserInput(transcript)`) וגם נתיב text ישיר מעדכנים נכון.
+- `flushMessage`: אחרי `state.lastAgentMessage = t`, הוספה ל-`state.recentMessages` (push + shift אם > 3).
+- `onToolCall(create)`: במקום `queueTts(rawTitle, "tool_title")` ישירות, נכנסים ל-`ttsQueue.then(async () => narrateToolCall + streamTts("tool_title"))`. ה-`kind: "tool_title"` נשמר ב-WebSocket — ה-frontend לא צריך לדעת שזה נראציה במקום title.
+
+**Snapshot של הקונטקסט ברגע ה-create:** המשתנים `userMessage` ו-`recentSnapshot` נשמרים בזמן ה-create, לפני שה-ttsQueue מגיע לעיבוד. אם פעולות נוספות מעדכנות את `state.recentMessages` בינתיים, הנראציה עדיין משקפת את המצב כש-ה-tool נקרא. זה חשוב כי הנראציה רצה async (1.5s timeout).
+
+**אין שינוי ב-frontend.** ה-WebSocket events נשמרו זהים (אותו `audio_start kind: "tool_title"`, אותו צ'יים מקדים). הגישה הזו שמורה בכוונה — מינימום משטח שינוי, נקלט ב-frontend הקיים.
+
+**בדיקה:** `bunx tsc --noEmit` עבר. הנראציה בפועל מאומתת empirically ב-shell דרך OneCLI (משימה C). יעבוד אוטומטית כש-server רץ דרך OneCLI.
+
+---
+
 ## 2026-05-14 12:05
 
 ### משימה E — תרגום thoughts לעברית + הקראה (executor)

@@ -16,7 +16,7 @@ import { cachedTextToSpeechBase64, streamCachedTextToSpeech } from "./tts.ts";
 import { createAcpBridge, type AcpBridge } from "./acp-bridge.ts";
 import { VOICE_SYSTEM_PROMPT } from "./system-prompt.ts";
 import { renderMarkdown } from "./markdown.ts";
-import { translateThought } from "./gemini-helper.ts";
+import { narrateToolCall, translateThought } from "./gemini-helper.ts";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const FRONTEND_DIR = resolve(import.meta.dir, "../../frontend");
@@ -104,6 +104,16 @@ interface ConnState {
    * עוזר ל-Gemini לפענח מילים דו-משמעיות לפי מה שנאמר קודם.
    */
   lastAgentMessage: string | null;
+  /**
+   * הטקסט האחרון שהמשתמש שלח (transcript או text ישיר). משמש כקונטקסט
+   * ל-narrateToolCall — "המשתמש ביקש X, ועכשיו אני עושה Y".
+   */
+  lastUserText: string | null;
+  /**
+   * עד 3 הסגמנטים האחרונים של הודעות המודל (כל flushMessage). סדר
+   * כרונולוגי. משמש כקונטקסט ל-narrateToolCall.
+   */
+  recentMessages: string[];
 }
 
 const states = new WeakMap<WebSocket, ConnState>();
@@ -152,6 +162,8 @@ const server = Bun.serve({
         firstPromptSent: false,
         voiceId: null,
         lastAgentMessage: null,
+        lastUserText: null,
+        recentMessages: [],
       });
       console.log("[ws] חיבור חדש");
     },
@@ -350,6 +362,7 @@ async function handleUserInput(
     sendError(ws, "אין session");
     return;
   }
+  state.lastUserText = text;
   state.busy = true;
 
   try {
@@ -408,6 +421,9 @@ async function handleUserInput(
       // שמירת הקטע האחרון כקונטקסט ל-STT של ההודעה הבאה.
       // ה-flush האחרון מספיק — הוא הקטע שזכור למשתמש כשהוא מגיב.
       state.lastAgentMessage = t;
+      // הוספה ל-recentMessages (FIFO, max 3) — קונטקסט ל-narrateToolCall.
+      state.recentMessages.push(t);
+      if (state.recentMessages.length > 3) state.recentMessages.shift();
       // רנדור markdown — נשלח לפני TTS כדי שהממשק יציג מיד את הגרסה היפה
       try {
         const html = renderMarkdown(t);
@@ -474,13 +490,36 @@ async function handleUserInput(
           toolKind: event.toolKind,
           status: event.status,
         });
-        // tool create — לסגור גם message וגם thought שהיו פתוחים, ואז TTS לכותרת
+        // tool create — לסגור גם message וגם thought שהיו פתוחים, ואז
+        // נראציה דרך Gemini במקום הכותרת הגולמית.
         if (event.event === "create") {
           flushMessage();
           flushThought();
-          if (event.title?.trim()) {
-            console.log(`[ws] TTS tool title: ${event.title}`);
-            queueTts(event.title.trim(), "tool_title");
+          const rawTitle = event.title?.trim();
+          if (rawTitle) {
+            console.log(`[ws] narrate tool (raw: ${rawTitle})`);
+            // לוקחים snapshot של ההקשר ברגע ה-create — כדי שאם פעולות
+            // נוספות מעדכנות recentMessages במקביל, הנראציה תייצג נכון
+            // את המצב כש-ה-tool נקרא.
+            const userMessage = state.lastUserText ?? "";
+            const recentSnapshot = state.recentMessages.slice(-3);
+            const toolForNarrate = {
+              toolCallId: event.toolCallId,
+              kind: event.toolKind,
+              title: rawTitle,
+            };
+            ttsQueue = ttsQueue.then(async () => {
+              let narrate = rawTitle;
+              try {
+                narrate = await narrateToolCall(
+                  { userMessage, recentMessages: recentSnapshot },
+                  toolForNarrate,
+                );
+              } catch (e) {
+                console.error(`[ws] narrate נכשל: ${(e as Error).message}`);
+              }
+              await streamTts(narrate, "tool_title");
+            });
           }
         }
       },

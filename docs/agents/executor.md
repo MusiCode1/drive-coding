@@ -86,9 +86,14 @@
 
 - **סטטוס:** פעיל
 - **Worktree:** `/home/user/projects/voice-acp` (master — אין worktree נפרד, עובדים על אותו repo)
-- **עובד על:** משימה F — נראציה של tool calls (`backend/src/server.ts`)
+- **עובד על:** משימה G — mic button state machine (`frontend/index.html`)
 
 ## לוג
+
+### [2026-05-14 12:20] ✅ סיימתי משימה F
+backend: `lastUserText` + `recentMessages` ב-ConnState (FIFO 3). `handleUserInput` שומר user text. `flushMessage` מוסיף ל-recentMessages. `onToolCall(create)` עובר דרך `narrateToolCall` בתוך ttsQueue. snapshot של context ב-create. שמירת `kind: "tool_title"` ב-WebSocket — אין שינוי ב-frontend.
+
+עובר ל-G — UI: mic button state machine.
 
 ### [2026-05-14 12:05] ✅ סיימתי משימה E
 backend: `thoughtBuffer` + `flushThought()` שמתרגם דרך Gemini + מקריא דרך ElevenLabs (ttsQueue). 3 נקודות עדכון של buffers: כש-thought הסתיים (חדש message), כש-message הסתיים (חדש thought), במעבר tool_call, ובסוף ה-prompt.
