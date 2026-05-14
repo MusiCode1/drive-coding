@@ -7,9 +7,9 @@
 
 ## מצב נוכחי (2026-05-14)
 
-**v1 + v2 הושלמו וקומטו.** ה-stack פעיל E2E כולל כל שכבת ההנגשה האודיו (gemini-helper לתרגום ונראציה, חיתוך משפטים, mic state machine, גלילה חכמה, dir=auto). ראה `docs/walkthrough.md` ו"משימות שבוצעו" למטה.
+**v1 + v2 + v3 הושלמו וקומטו.** ה-stack פעיל E2E. ראה `docs/walkthrough.md` ו"משימות שבוצעו" למטה.
 
-**v3 = איטרציית baseline לנסיעה.** Avi עשה בדיקה empirical ב-13:30 וזיהה באגים ושיפורים דחופים שמפריעים לשימוש בסיסי. הסקופ של האיטרציה הזאת: תיקוני באגים + שיפורים שיהפכו את החוויה לטובה מספיק לשימוש בדרכים. סדר עדיפויות לפי דחיפות לחוויית המשתמש.
+**v4 = תיקון נקודתי.** באיטרציית v3, משימה D הוסיפה חיתוך לפי משפט ל-message אבל לא ל-thought. בבדיקה empirical של Avi ב-16:30 התגלה שהתרגום של thoughts קורה רק בסוף ה-thought block ולא פר-משפט — חוויית UX לא טובה. משימה P מתקנת את זה בהיקף ממוקד.
 
 עיקרון מנחה כללי נשאר: Gemini (Flash Lite לעזרים, Flash הרגיל ל-STT) כשכבת הנגשה — בכל מקום שטקסט מהמערכת לא נשמע טבעי. גנרי, זול, מהיר.
 
@@ -42,420 +42,64 @@ gemini-helper.ts
 
 ## משימות לביצוע
 
-> איטרציית v3 — תיקוני באגים ושיפורים דחופים שזוהו בבדיקה empirical של Avi ב-13:30.
-> כל המשימות עצמאיות זו מזו טכנית; הסדר J→O הוא לפי דחיפות לחוויית המשתמש.
+> איטרציית v4 (תיקון נקודתי) — משימה P שזוהתה בבדיקה empirical של Avi ב-16:30 אחרי שהמבצע סיים את v3.
 > בכל משימה: **commit יחיד**, הודעה בעברית, פורמט `(scope): כותרת\n\n- שינוי 1\n- שינוי 2`.
 
 ---
 
-### J. תיקון `translateThought` — החזרת `null` בכישלון
+### P. חיתוך לפי משפט גם ל-thoughts (אנלוגי ל-D)
 
-**מטרה:** כשתרגום של מחשבה נכשל (timeout או error או תוצאה ריקה), אסור שהטקסט האנגלי המקורי יישלח לקדמית כ"תרגום עברי" ויוקרא דרך TTS. במקום זה — לדלג. המשתמש יראה רק את המחשבה האנגלית המקורית, בלי שורה שנייה ובלי קול.
+**מטרה:** תרגום המחשבות לעברית והקראה דרך אילבן יקרו פר-משפט בזמן ש-thought מצטבר, לא בבת אחת בסוף. המשתמש יתחיל לשמוע את התרגום של המשפט הראשון תוך כדי שהמודל עוד חושב את ההמשך — בדיוק כמו שזה עובד למסר רגיל מאז משימה D.
 
-**הקשר:** כיום אם Gemini עובר את ה-timeout של 2500ms או נכשל, ה-fallback של `translateThought` הוא הטקסט המקורי באנגלית. הוא נשלח כ-`thought_translation` ל-frontend ומוקרא דרך אילבן בקול עברי — נשמע כאנגלית מסולפת ומבלבל את המשתמש. ראו דיווח באג ב-walkthrough של 2026-05-14 ~14:00.
+**הקשר:** ב-`server.ts`, ה-`onChunk` handler עבור `kind === "message"` עושה loop של `findSentenceBoundary` ועושה flush פר-משפט. אבל ה-handler עבור `kind === "thought"` רק עושה `thoughtBuffer += chunk` בלי חיתוך. תוצאה: `flushThought` נקרא רק כש-message מתחיל, כש-tool_call create, או בסוף תור. כל ה-thought block (יכול להיות אלפי תווים) מתורגם בקריאה אחת ל-Gemini ומוקרא ברצף, מה שיוצר השהיה ארוכה לפני שמשהו נשמע.
 
-**קבצים:**
-- `backend/src/gemini-helper.ts`
-- `backend/src/server.ts`
+ה-helper `findSentenceBoundary` כבר קיים ב-`server.ts` (נכתב במשימה D, כולל הגנה מקיצורים ומספרים עשרוניים, forced flush ב-200 תווים). הוא תומך גם באנגלית וגם בעברית. כל מה שצריך זה לחבר אותו לזרם ה-thought.
 
-**שינוי 1 — `gemini-helper.ts`:**
+**קובץ:** `backend/src/server.ts`
 
-חתימה חדשה:
+**שינוי ב-`onChunk` של ה-`prompt`, בענף `kind === "thought"` (סביב שורות 478-482):**
+
+החליפי את:
 ```ts
-export async function translateThought(text: string): Promise<string | null>
-```
-
-מימוש:
-```ts
-const call = (async () => {
-  try {
-    const response = await ai.models.generateContent({
-      model: DEFAULT_MODEL,
-      contents: createUserContent([TRANSLATE_PROMPT_PREFIX + key]),
-    });
-    const out = (response.text ?? "").trim();
-    return out || null;        // תוצאה ריקה → null
-  } catch (e) {
-    console.error(`[gemini-helper] translateThought נכשל: ${(e as Error).message}`);
-    return null;                 // exception → null
-  }
-})();
-
-const result = await withTimeout(call, TRANSLATE_TIMEOUT_MS, null);  // timeout → null
-if (result !== null) {
-  translationCache.set(key, result);  // cache רק תוצאה אמיתית
+} else if (kind === "thought") {
+  // thought באמצע — flush של ה-message הנוכחי (לחלוקת בועות ב-frontend).
+  if (messageBuffer.length > 0) flushMessage();
+  thoughtBuffer += chunk;
 }
-return result;
 ```
 
-**שינוי 2 — `server.ts`, בפונקציה `flushThought`:**
-
+ב:
 ```ts
-const flushThought = () => {
-  const t = thoughtBuffer.trim();
-  thoughtBuffer = "";
-  if (!t) return;
-  console.log(`[ws] thought segment (${t.length} chars) → תרגום + TTS`);
-  ttsQueue = ttsQueue.then(async () => {
-    const hebrew = await translateThought(t);
-    if (hebrew === null) {
-      console.log(`[ws] thought translation failed — skipping TTS for this segment`);
-      return;  // אין text_chunk, אין TTS
-    }
-    send(ws, {
-      type: "text_chunk",
-      text: hebrew,
-      kind: "thought_translation",
-    });
-    await streamTts(hebrew, "thought");
-  });
-};
+} else if (kind === "thought") {
+  // thought באמצע — flush של ה-message הנוכחי (לחלוקת בועות ב-frontend).
+  if (messageBuffer.length > 0) flushMessage();
+  thoughtBuffer += chunk;
+  // חיתוך לפי גבול משפט — מאפשר התחלת תרגום+TTS מהר ולא לחכות לסוף ה-thought.
+  // אותה לוגיקה כמו במשימה D עבור message.
+  let boundary = findSentenceBoundary(thoughtBuffer);
+  while (boundary !== -1) {
+    const head = thoughtBuffer.slice(0, boundary);
+    const rest = thoughtBuffer.slice(boundary);
+    thoughtBuffer = head;
+    flushThought();           // שולח head ל-תרגום + TTS, מאפס thoughtBuffer ל-""
+    thoughtBuffer = rest;
+    boundary = findSentenceBoundary(thoughtBuffer);
+  }
+}
 ```
 
-**שינוי 3 — CLI test block בסוף `gemini-helper.ts`:**
+**הערה:** הלולאה זהה במבנה ללוגיקת ה-message ב-onChunk (סביב שורות 466-475 בקוד הקיים). אפשר להעתיק את התבנית.
 
-```ts
-const result = await translateThought(arg);
-console.log(`(${Date.now() - start}ms): ${result === null ? "[null — נכשל]" : result}`);
-```
+**שיקולי עלות:** כל סגמנט = קריאה אחת ל-Gemini + stream אחד מאילבן. אם המחשבה ארוכה (נגיד 8 משפטים), זה יוצר 8 קריאות במקום אחת. עלות Gemini Flash Lite זניחה (~$0.01 ל-1M tokens), עלות אילבן זהה לעלות הנוכחית של אותו טקסט בסך הכל (אותם תווים עוברים, רק בקבצים נפרדים). לא צריך אופטימיזציה נוספת.
+
+**אינטראקציה עם L (קפיצה אוטומטית ממחשבות לתשובה):** כש-P מאומץ, ה-thoughts פעילים יותר ב-TTS — יש יותר סגמנטים בתור הניגון. ה-cut של L (חיתוך כש-message מתחיל) מקבל יותר ערך — הוא יחתוך לא רק את המחשבה הנוכחית אלא גם thoughts pending שלא הספיקו לנגן. הקוד של L כבר מטפל בזה דרך ניקוי `streamOrder`. אין שינוי נדרש ב-L.
 
 **בדיקה:**
 - `cd backend && bunx tsc --noEmit` — חובה.
-- סימולציית כישלון: לקצר זמנית `TRANSLATE_TIMEOUT_MS` ל-1ms בקובץ, הפעלת שיחה, לוודא שאין הקראה של אנגלית ושלא מופיעה שורה שנייה בבועת thought. להחזיר אחרי הבדיקה.
+- בדיקה empirical: לשאול שאלה שמייצרת thought ארוך (למשל "תכין תוכנית מפורטת לפיצ'ר חדש"). לבדוק שהתרגום והקראת המחשבה מתחילות תוך שניות, לא רק בסוף החשיבה.
+- בדיקת unit: אם findSentenceBoundary כבר עם unit tests מ-D, הם עדיין תקפים — לא נגעת בפונקציה עצמה.
 
-**Commit suggestion:** `(thoughts): translateThought מחזיר null בכישלון — דילוג על TTS ועל תצוגת תרגום`
-
----
-
-### K. החזרת CSS של `thought-translation` לזהות לאנגלית
-
-**מטרה:** תרגום עברי של מחשבה ייראה זהה לחלוטין למחשבה האנגלית המקורית. השפה היא המבחין היחיד — לא גודל, לא צבע, לא סגנון.
-
-**הקשר:** בתיקון hot-fix קודם (commit 9e36d25) הוגדר ה-Hebrew להיות גדול ובהיר ולא איטלי כדי "להבדיל". Avi הבהיר שזו לא הכוונה: אותו עיצוב לשתי השורות, השפה כבר מבדילה.
-
-**קובץ:** `frontend/index.html`
-
-**שינוי ב-CSS, בסעיף `.msg.agent.thought .bubble .thought-translation` (סביב שורה 228):**
-
-```css
-.msg.agent.thought .bubble .thought-translation {
-  display: block;
-  margin-top: 4px;
-  /* אין color, font-size, font-style — יורש מהבועה ההורית
-     כך שייראה זהה לטקסט האנגלי המקורי */
-}
-```
-
-הסרת `padding-top`, `border-top`, `color`, `font-size`, `font-style`. נשארים רק `display: block` (שורה חדשה) ו-`margin-top: 4px` (הפרדה דקה).
-
-**בדיקה:** restart, שאלה שמייצרת thought ארוך עם תרגום. שתי השורות בבועה ייראו זהות בסגנון — אותו אפור, אותו italic, אותו גודל. רק התוכן משתנה.
-
-**Commit suggestion:** `(ui): thought-translation בסגנון זהה למקור האנגלי`
-
----
-
-### L. קפיצה אוטומטית ממחשבות לתשובה
-
-**מטרה:** ברגע ש-`audio_start` של מסר מתחיל ב-frontend, להפסיק מיד את ניגון המחשבות (הנוכחי + כל ה-pending בתור). המשתמש מרגיש מיידית שהמודל "סיים לחשוב".
-
-**הקשר:** ה-ttsQueue ב-backend סדרתי, אז backend לא יכניס מסר לפני שה-thought הקודם נגמר ברמת שליחת ה-chunks. אבל ה-frontend מנגן אסינכרונית — `chunks` מצטברים ב-MediaSource buffer ו-`audio.play()` ממשיך הרבה אחרי שה-backend שלח `audio_end`. לכן יש חלון שבו ה-frontend מנגן thought בעוד המסר כבר מתחיל לזרום.
-
-החיתוך **אגרסיבי**: לקטוע באמצע ניגון, לא לחכות לסוף chunk נוכחי. (Avi אישר ברירת מחדל זו.)
-
-**קובץ:** `frontend/index.html`
-
-**שינוי 1 — הוספת method `stop()` ל-class `StreamingAudio`:**
-
-```js
-stop() {
-  try { this.audio.pause(); } catch {}
-  try { this.audio.src = ""; } catch {}
-  try {
-    if (this.mediaSource && this.mediaSource.readyState === "open") {
-      this.mediaSource.endOfStream();
-    }
-  } catch {}
-}
-```
-
-**שינוי 2 — לוגיקה חדשה בתחילת `handleAudioStart(streamId, kind)`:**
-
-```js
-function handleAudioStart(streamId, kind) {
-  // אם המסר מתחיל בזמן שמחשבה עוד בניגון או בתור — לקטוע ולנקות.
-  if (kind === "message") {
-    // הפסקת הסטרים הנוכחי אם הוא thought
-    if (currentStream?.kind === "thought") {
-      try { currentStream.stop(); } catch {}
-      currentStream = null;
-    }
-    // הסרת thoughts pending מ-streamOrder ו-activeStreams
-    const keep = [];
-    for (const id of streamOrder) {
-      const s = activeStreams.get(id);
-      if (s && s.kind === "thought") {
-        try { s.stop(); } catch {}
-        activeStreams.delete(id);
-      } else if (s) {
-        keep.push(id);
-      }
-    }
-    streamOrder.length = 0;
-    streamOrder.push(...keep);
-  }
-
-  // ... המשך הלוגיקה הקיימת של יצירת ה-stream החדש
-}
-```
-
-**שינוי 3 — וידוא שב-`handleAudioChunk`, chunks של thought שכבר נעצר מתעלמים:**
-
-הקוד הקיים אמור לעשות `activeStreams.get(streamId)` ולהתעלם אם `undefined`. לוודא שאין fallback שמשחזר. אם יש — להסיר.
-
-**זרימת UX מצופה:**
-1. המודל שולח chunks של thought.
-2. backend מתרגם, ה-frontend מתחיל לנגן את ה-thought audio.
-3. backend מסיים thought TTS, מתחיל message TTS, שולח `audio_start` (message).
-4. frontend מקבל `audio_start` (message) → קוטע את ה-thought הנוכחי + מנקה pending → מתחיל את המסר.
-5. המשתמש שומע: thought חלקי (קצוץ באמצע משפט) → מסר.
-
-**בדיקה:** restart. שאלה שמייצרת thought ארוך ואז תשובה. כש-thought מתורגם ומוקרא, ברגע שהאודיו של התשובה מתחיל — המחשבה נחתכת מיד. אם המחשבות כבויות (לא רלוונטי כעת, אך עתידית) — הקוד לא נשבר.
-
-**Commit suggestion:** `(audio): קפיצה אוטומטית ממחשבות למסר ברגע שהאודיו מתחיל`
-
----
-
-### M. תיקון באג הגלילה — מודל user intent
-
-**מטרה:** `auto-scroll` פעיל כל הזמן, אלא אם המשתמש עשה פעולת גלילה אקטיבית. ברגע שהמשתמש גלל למעלה — מכבים אוטו עד שיגלול ידנית לקצה התחתון או ילחץ על כפתור ↓.
-
-**הקשר:** הלוגיקה הנוכחית מבוססת על בדיקת המרחק מהקצה בכל `scroll` event. זה race-condition prone — תוכן חדש מתווסף, `scrollHeight` גדל, `scrollTop` נשאר, ה-`scroll` event מגיע באיחור עם מרחק גדל, המערכת חושבת שהמשתמש גלל למעלה ומכבה את האוטו בטעות. ראה תיאור מלא של ה-race ב-walkthrough של 2026-05-14 ~13:45.
-
-**קובץ:** `frontend/index.html`
-
-**להחליף את הלוגיקה הקיימת (סביב שורות 540-561 ו-916-923):**
-
-```js
-let autoScrollEnabled = true;
-// timestamp של אינטראקציית קלט אחרונה מהמשתמש. כל scroll event שמגיע
-// בתוך 500ms ממנו נחשב user-initiated (לא תוצאה של תוכן שנוסף).
-let userInteractionAt = 0;
-
-const markUserInteraction = () => { userInteractionAt = Date.now(); };
-const inputEvents = ["wheel", "touchstart", "touchmove", "mousedown", "keydown"];
-for (const evt of inputEvents) {
-  chatEl.addEventListener(evt, markUserInteraction, { passive: true });
-}
-
-chatEl.addEventListener("scroll", () => {
-  const distance = chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight;
-  const isUser = Date.now() - userInteractionAt < 500;
-
-  if (distance <= 10) {
-    // הגענו לקצה — אם היה כבוי, להדליק
-    if (!autoScrollEnabled) {
-      autoScrollEnabled = true;
-      jumpDownBtn.classList.remove("visible");
-    }
-  } else if (isUser && autoScrollEnabled) {
-    // המשתמש גלל אקטיבית למעלה — לכבות אוטו
-    autoScrollEnabled = false;
-    jumpDownBtn.classList.add("visible");
-  }
-});
-
-function scrollChatToBottom() {
-  if (!autoScrollEnabled) return;
-  chatEl.scrollTop = chatEl.scrollHeight;
-}
-
-jumpDownBtn.addEventListener("click", () => {
-  autoScrollEnabled = true;
-  chatEl.scrollTop = chatEl.scrollHeight;
-  jumpDownBtn.classList.remove("visible");
-});
-```
-
-**הסבר הלוגיקה:**
-- `userInteractionAt` הוא הליבה. כל input event מהמשתמש מעדכן אותו.
-- ה-scroll handler בודק: אם זה תוך 500ms מה-input — user. אחרת — תוצאה של תוכן שמתווסף.
-- כך, גלילה אוטומטית של תוכן חדש לעולם לא מכבה את האוטו.
-- רק user scroll אקטיבי מכבה.
-
-**להסיר:** את הקבוע `SCROLL_THRESHOLD_PX = 60` הישן ואת המשתנה `suppressScrollEvents` ושימושיו — כבר לא נחוצים.
-
-**עדינות:** scrollbar drag לא נתפס באירועי wheel/touch/keyboard, אבל `mousedown` על ה-scrollbar (אם המשתמש לוחץ עליו) ייתפס דרך listener ה-`mousedown`. גם אם לא מושלם, רוב המשתמשים גוללים בגלגלת או באצבע.
-
-**בדיקה:** restart. שיחה ארוכה תוך כדי streaming של תשובה — לבדוק שהגלילה האוטומטית עוקבת אחרי התחתית בלי להידבק. תוך כדי, לגלול עם הגלגלת/אצבע למעלה — האוטו צריך להפסיק. ללחוץ על ↓ — לחזור לתחתית, אוטו מופעל שוב.
-
-**Commit suggestion:** `(ui): גלילה חכמה מבוססת user intent — wheel/touch/keyboard/mousedown`
-
----
-
-### N. שמירת הקלטות לדיסק
-
-**מטרה:** בכל הקלטה של המשתמש, לשמור את האודיו לדיסק יחד עם metadata. ניתן יהיה לנגן מחדש, להריץ דרך פרומפטים שונים, ולהשוות.
-
-**הקשר:** Avi ביקש את זה לפיתוח. בעתיד אולי toggle בהגדרות. כרגע — משתנה סביבה. גם רעיון עתידי של "נגן סשן מחדש" יסתמך על הקלטות שמורות.
-
-**קבצים:**
-- `backend/src/server.ts` — שמירה ב-`handleAudio`. אם נוח, אפשר מודול עזר `backend/src/recordings.ts`.
-
-**משתנה סביבה:** `VOICE_ACP_SAVE_RECORDINGS` — ברירת מחדל מופעל. ערך `0` או `false` (case-insensitive) משבית.
-
-**נתיב:** `${XDG_CACHE_HOME ?? $HOME/.cache}/voice-acp/recordings/`. ליצור את התיקייה אם לא קיימת.
-
-**מבנה קבצים פר הקלטה:**
-- `<ISO-timestamp>_<short-id>.<ext>` — האודיו הגולמי. סיומת לפי `mimeType` (`webm`/`ogg`/`mp3`/`audio`).
-- `<ISO-timestamp>_<short-id>.json` — metadata sidecar.
-
-**Metadata sidecar:**
-```json
-{
-  "timestamp": "2026-05-14T13:45:22.123Z",
-  "sessionId": "abc123de-...",
-  "cwd": "/path/to/workspace",
-  "mimeType": "audio/webm",
-  "audioSize": 12345,
-  "transcript": "המשתמש אמר...",
-  "sttModel": "gemini-flash-latest"
-}
-```
-
-**מימוש מוצע ב-`handleAudio`:**
-
-```ts
-const SAVE_RECORDINGS = (() => {
-  const v = (process.env.VOICE_ACP_SAVE_RECORDINGS ?? "1").toLowerCase();
-  return v !== "0" && v !== "false";
-})();
-
-const RECORDINGS_DIR =
-  (process.env.XDG_CACHE_HOME ?? `${process.env.HOME}/.cache`) +
-  "/voice-acp/recordings";
-
-async function saveRecording(
-  base64: string,
-  mimeType: string,
-  sessionId: string | null,
-): Promise<{ audioPath: string; ts: string } | null> {
-  if (!SAVE_RECORDINGS) return null;
-  try {
-    // ensure dir
-    await Bun.write(RECORDINGS_DIR + "/.keep", "");
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    const sid = (sessionId ?? "no-sess").slice(0, 8);
-    const ext = mimeType.includes("webm") ? "webm"
-              : mimeType.includes("ogg") ? "ogg"
-              : (mimeType.includes("mp3") || mimeType.includes("mpeg")) ? "mp3"
-              : "audio";
-    const audioPath = `${RECORDINGS_DIR}/${ts}_${sid}.${ext}`;
-    await Bun.write(audioPath, Buffer.from(base64, "base64"));
-    return { audioPath, ts };
-  } catch (e) {
-    console.error(`[recordings] save failed: ${(e as Error).message}`);
-    return null;
-  }
-}
-
-async function saveRecordingMetadata(
-  info: { audioPath: string },
-  meta: Record<string, unknown>,
-): Promise<void> {
-  try {
-    const metaPath = info.audioPath.replace(/\.[^.]+$/, ".json");
-    await Bun.write(metaPath, JSON.stringify(meta, null, 2));
-  } catch (e) {
-    console.error(`[recordings] save metadata failed: ${(e as Error).message}`);
-  }
-}
-```
-
-ב-handleAudio (לפני וגם אחרי `transcribeAudio`):
-
-```ts
-const recInfo = await saveRecording(
-  msg.data,
-  msg.mimeType ?? "audio/webm",
-  state.sessionId ?? null,  // אם זמין
-);
-
-// ... transcribeAudio ...
-const transcript = await transcribeAudio(...);
-
-if (recInfo) {
-  await saveRecordingMetadata(recInfo, {
-    timestamp: new Date().toISOString(),
-    sessionId: state.sessionId ?? null,
-    cwd: state.cwd ?? null,
-    mimeType: msg.mimeType ?? "audio/webm",
-    audioSize: Buffer.from(msg.data, "base64").byteLength,
-    transcript,
-    sttModel: "gemini-flash-latest",
-  });
-}
-```
-
-**הערה:** אם `state.sessionId` ו-`state.cwd` עדיין לא חשופים ב-ConnState — להוסיף ב-handleInit שמירה שלהם ב-state.
-
-**בדיקה:**
-- `bunx tsc --noEmit`
-- שיחה דרך הממשק → לוודא ב-`~/.cache/voice-acp/recordings/` שני קבצים — `.webm` ו-`.json` תואמים.
-- `cat <name>.json` — לראות שכל השדות מלאים, transcript בעברית.
-- ביטול: `VOICE_ACP_SAVE_RECORDINGS=0 onecli run -- bun src/server.ts` — אין שמירה.
-
-**Commit suggestion:** `(server): שמירת הקלטות משתמש עם metadata sidecar`
-
----
-
-### O. שיפור פרומפט STT + מעבר ל-Flash
-
-**מטרה:** תמלול עברי טוב יותר — פיסוק טבעי, שבירת פסקאות בהפסקות ארוכות, מודל מהיר ומדויק יותר.
-
-**הקשר:** Avi דיווח שהתמלול הנוכחי לפעמים שגיאות כתיב, ומחזיר בלוק טקסט אחד בלי פיסוק או פסקאות. שינוי כפול — שדרוג מודל ושיפור פרומפט.
-
-**קובץ:** `backend/src/stt.ts`
-
-**שינוי 1 — `DEFAULT_MODEL`:**
-
-```ts
-const DEFAULT_MODEL = "gemini-flash-latest";  // היה: gemini-flash-lite-latest
-```
-
-**שינוי 2 — `TRANSCRIBE_PROMPT`:**
-
-החליפי את הפרומפט הנוכחי ב:
-
-```
-The user is speaking Hebrew in a software development context.
-Transcribe the audio exactly as spoken, with these requirements:
-
-- Add appropriate punctuation (commas, periods, question marks,
-  exclamation marks) at natural pauses and sentence boundaries.
-- Break into paragraphs (use \n\n) at major topic shifts or after
-  long pauses (over 1.5 seconds).
-- If a word is unclear, prefer a sensible technological interpretation
-  (e.g. "ריאקט" over "ראקת", "באג" over "בק").
-- Fix obvious disfluencies (repetitions, "אה אה", false starts) — but
-  preserve the user's intent and phrasing.
-- Do NOT add content the user did not say. No introductions, no
-  summaries, no commentary, no acknowledgments.
-- Preserve the original language (Hebrew or English).
-
-Output ONLY the transcription itself, as plain text with punctuation
-and paragraph breaks as instructed. If the audio is silent or
-unintelligible, return an empty string.
-```
-
-**בדיקה:**
-- `bunx tsc --noEmit`.
-- אם N הסתיים — להריץ CLI test על הקלטה שמורה:
-  `bun src/stt.ts ~/.cache/voice-acp/recordings/<latest>.webm`
-- לבדוק שהפלט כולל פיסוק (נקודות, פסיקים, שאלות) ושבירת פסקאות אם ההקלטה ארוכה עם הפסקות.
-- לבדוק שלא מתווסף תוכן שלא נאמר.
-- בדיקה empirical דרך הממשק: לדבר משפט ארוך עם הפסקות וזיהוי טכנולוגיה, ולוודא שהתמלול נראה הגיוני.
-
-**Commit suggestion:** `(stt): פרומפט עם פיסוק ופסקאות + מעבר מ-Flash Lite ל-Flash`
+**Commit suggestion:** `(thoughts): חיתוך thoughts לפי גבול משפט בנוסף למעבר kind`
 
 ---
 
@@ -554,31 +198,17 @@ Backend מלא: `server.ts`, `acp-bridge.ts`, `stt.ts`, `tts.ts`, `system-prompt
 
 ---
 
-## תלויות בין משימות (v3)
+## תלויות בין משימות (v4)
 
-```
-J (translate fix)  ──┐
-K (CSS revert)     ──┤
-L (auto-skip)      ──┼── עצמאיות זו מזו, אפשר בכל סדר
-M (scroll)         ──┤
-N (recordings)    ───┤
-O (STT improve)    ──┘
-```
+משימה יחידה — אין תלויות.
 
-**סדר ביצוע מומלץ:** J → K → L → M → N → O — לפי דחיפות לחוויית המשתמש. כל המשימות עצמאיות טכנית; ניתן גם במקביל אם מבצעים מרובים.
-
-**הערה ל-O:** אם N הסתיים, ניתן להריץ CLI test על הקלטות שמורות כחלק מאימות O.
+**הערה:** P מסתמכת על `findSentenceBoundary` שכבר נכתבה ב-D ועל `flushThought` שכבר נכתבה ב-E + J. כל הבסיס קיים, P היא רק חיבור של חיתוך-לפי-משפט לזרם ה-thought.
 
 ---
 
-## הערכת זמן (גס) — v3
+## הערכת זמן (גס) — v4
 
 | משימה | זמן |
 |--------|-----|
-| J | 10-15 דק' |
-| K | 5 דק' |
-| L | 25-30 דק' |
-| M | 20-25 דק' |
-| N | 30-40 דק' |
-| O | 10 דק' |
-| **סה"כ** | **~2 שעות** |
+| P | 10-15 דק' |
+| **סה"כ** | **~15 דק'** |
