@@ -502,10 +502,21 @@ async function handleUserInput(
     };
 
     console.log(`[ws] prompt (${isFirst ? "first" : "follow-up"}): ${text}`);
+    // מונים לסיכום בסוף ה-prompt (debug)
+    let cntMessage = 0;
+    let cntThought = 0;
+    let cntUser = 0;
+    let toolCreates: Array<{ id: string; kind?: string; title: string }> = [];
+    let toolUpdates = 0;
     await state.bridge.prompt(promptText, {
       onChunk: (chunk, kind) => {
         // user_message_chunk מגיע רק בהיסטוריה (loadSession), לא ב-prompt רגיל.
-        if (kind === "user_message") return;
+        if (kind === "user_message") {
+          cntUser += chunk.length;
+          return;
+        }
+        if (kind === "message") cntMessage += chunk.length;
+        else if (kind === "thought") cntThought += chunk.length;
         send(ws, { type: "text_chunk", text: chunk, kind });
         if (kind === "message") {
           // אם הגיע thought לפני — הוא נגמר. flush אותו ל-תרגום+TTS.
@@ -528,6 +539,21 @@ async function handleUserInput(
         }
       },
       onToolCall: (event) => {
+        if (event.event === "create") {
+          toolCreates.push({
+            id: event.toolCallId,
+            kind: event.toolKind,
+            title: event.title ?? "",
+          });
+          console.log(
+            `[ws] tool_call create: kind=${event.toolKind ?? "?"} title="${event.title ?? "(empty)"}" status=${event.status ?? "?"}`,
+          );
+        } else {
+          toolUpdates++;
+          console.log(
+            `[ws] tool_call update: id=${event.toolCallId.slice(0, 8)} status=${event.status ?? "?"}`,
+          );
+        }
         send(ws, {
           type: "tool_call",
           event: event.event,
@@ -574,6 +600,15 @@ async function handleUserInput(
     // סוף תור — flush של כל מה שנשאר ב-buffers
     flushMessage();
     flushThought();
+
+    console.log(
+      `[ws] סיכום prompt: message=${cntMessage}ch thought=${cntThought}ch user_msg=${cntUser}ch tools=${toolCreates.length}create+${toolUpdates}update`,
+    );
+    if (toolCreates.length > 0) {
+      console.log(
+        `[ws]   tools: ${toolCreates.map((t) => `${t.kind ?? "?"}/"${t.title}"`).join(", ")}`,
+      );
+    }
 
     if (totalMessageChars === 0) {
       console.log(`[ws] תשובה ריקה — מדלגים על TTS`);

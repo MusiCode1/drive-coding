@@ -27,10 +27,12 @@ voice-acp/
 
 **Runtime:** Bun (backend), ללא framework (frontend — HTML/JS בלבד)
 
-**משתני סביבה נדרשים** (מוגדרים דרך 1CLI, לא קובץ `.env`):
-- `GEMINI_API_KEY` — ל-STT
-- `ELEVENLABS_API_KEY` — ל-TTS
-- `ELEVENLABS_VOICE_ID` — מזהה הקול הרצוי
+**משתני סביבה נדרשים** (מוזרקים דרך OneCLI agent `voice-acp`):
+- `xi-api-key` ל-`api.elevenlabs.io` — ל-TTS (secret ID `264c2eb8-...`)
+- `x-goog-api-key` ל-`generativelanguage.googleapis.com` — ל-STT ו-Gemini helper (secret ID `df221fc3-...`)
+- `ELEVENLABS_VOICE_ID` — מזהה הקול הרצוי (env var רגיל)
+
+**Anthropic לא דרך OneCLI** — opencode acp child משתמש ב-OAuth של המנוי שלך דרך plugin. ה-agent `voice-acp` ב-OneCLI הוא **selective** ולא מזריק Anthropic auth.
 
 **אין pip, אין npm בpATH ישיר** — להשתמש ב-Bun בלבד לbackend.
 
@@ -40,13 +42,20 @@ voice-acp/
 # התקנת תלויות
 cd backend && bun install
 
-# הפעלת dev server (hot reload)
-cd backend && bun run dev
+# הפעלת dev server (חובה: --agent voice-acp + NO_PROXY ל-localhost)
+cd backend
+export NO_PROXY=localhost,127.0.0.1,::1
+export no_proxy=$NO_PROXY
+onecli run --agent voice-acp -- bun run dev
 
 # פתיחת ממשק (אחרי שהbackend רץ)
 open frontend/index.html
 # או: http://localhost:3000 (אם מוגש מהbackend)
 ```
+
+**למה NO_PROXY נדרש:** OneCLI מזריק `HTTPS_PROXY` ל-env בלי `NO_PROXY`. בלי הגדרה ידנית, כל קריאות fetch (כולל localhost ו-IPC פנימי של opencode acp) ינתבו דרך proxy ב-192.168.33.18, ייכשלו ב-"socket connection closed". זה bug של OneCLI שצריך לדווח עליו.
+
+**למה `--agent voice-acp` נדרש:** ה-default agent של OneCLI הוא `secretMode: all`, כלומר מזריק את **כל** ה-secrets — כולל Anthropic. ה-OAuth של opencode plugin ל-Anthropic ייעקוף, וכל קריאות ה-API יחויבו על חשבון OneCLI ולא על המנוי של המשתמש. ה-agent `voice-acp` הוא selective עם רק שני secrets (Gemini + ElevenLabs), אז Anthropic עוברת עם OAuth של opencode.
 
 ## חוקי עבודה
 
