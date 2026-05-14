@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "bun --hot src/server.ts",
     "start": "bun src/server.ts",
+    "test": "bun test",
     "test:tts": "bun src/tts.ts",
     "test:stt": "bun src/stt.ts",
     "test:acp": "bun src/acp-bridge.ts"

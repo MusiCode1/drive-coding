@@ -86,11 +86,22 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** פעיל — סיים יצירת behaviors.md, ממתין לאישור/הוספות מ-Avi
-- **Worktree:** `/home/user/projects/voice-acp` (master)
+- **סטטוס:** פעיל — שכבה 1 של v6 הושלמה (unit tests + extraction של פונקציות טהורות)
+- **Worktree:** `/home/user/projects/voice-acp-refactor` (branch `refactor`)
 - **עובד על:** —
 
 ## לוג
+
+### [2026-05-14 19:10] v6 שכבה 1 — Unit tests + extraction של helpers טהורים
+ב-worktree חדש `voice-acp-refactor`. גילוי מיידי: import של `findSentenceBoundary` מ-`server.ts` מפעיל `Bun.serve` ברמת module → התנגשות עם שרת חי + עוצר test runner. סימן ראשון שהריפקטור חייב להתחיל בהפרדת IO מלוגיקה.
+
+**Extraction:** `findSentenceBoundary` → `src/sentence-boundary.ts`. `extractProviderError` → `src/provider-error.ts`. שתיהן עם JSDoc מקיף. `server.ts` עכשיו רק עושה import. הוספת `"test": "bun test"` ל-package.json.
+
+**בדיקות:** 21 ל-`findSentenceBoundary` (boundaries, abbreviations, decimals, forced flush, multiple), 16 ל-`extractProviderError` (JSON pattern, ERROR pattern, edge cases). סה"כ 37/37 ירוקות. `bunx tsc --noEmit` נקי.
+
+שתי טעויות חישוב שלי בבדיקות נחשפו במהלך — לא באגים בקוד. דוגמה למה Vertical TDD חשוב.
+
+**הצעדים הבאים:** שכבה 2 — integration tests עם mocks. ממתין לאישור Avi לפני שממשיך, כי שכבה 2 דורשת החלטות עיצוב נוספות (איך mockים את bridge, איך mockים fetch ל-Gemini/ElevenLabs).
 
 ### [2026-05-14 18:25] יצירת `docs/behaviors.md` (תשתית ל-v6)
 חולץ קובץ אחד עם ~130 התנהגויות מ-(א) כל קבצי ה-backend, (ב) `frontend/index.html`, (ג) `walkthrough.md` המלא, (ד) `learnings.md`, (ה) git log. ארגון ב-14 קטגוריות (STT, ACP, PROMPT, TTS, GEMINI, REC, WS, UI-MIC, UI-AUDIO, UI-BUBBLES, UI-SCROLL, UI-HIST, UI-CAR, CONFIG). כל התנהגות עם reference לקוד או walkthrough.

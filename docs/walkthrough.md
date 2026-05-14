@@ -4,6 +4,48 @@
 
 ---
 
+## 2026-05-14 19:10 (worktree `voice-acp-refactor` / branch `refactor`)
+
+### v6 שכבה 1 — Unit tests + הוצאת helpers טהורים מ-server.ts
+
+**מיקום:** worktree נפרד `voice-acp-refactor` (branch `refactor`). ה-master ממשיך לרוץ אצל Avi ללא שינוי.
+
+**הבעיה הראשונה שהתגלתה:** ה-import של `findSentenceBoundary` מ-`server.ts` הפעיל את כל הקובץ — כולל `Bun.serve` ברמת ה-module — מה ש-(א) ניסה להאזין לפורט 3000 שכבר תפוס ע"י Avi, ו-(ב) עצר את ה-test runner. סימן ראשון של "כל הקוד בתוך closure אחד בלי הפרדה IO/לוגיקה".
+
+**הצעד הראשון של הריפקטור — extraction של פונקציות טהורות:**
+
+1. **`backend/src/sentence-boundary.ts` (חדש)** — מכיל את `findSentenceBoundary`. JSDoc מקיף באנגלית. ה-`server.ts` עכשיו רק עושה import.
+
+2. **`backend/src/provider-error.ts` (חדש)** — מכיל את `extractProviderError`. JSDoc מקיף עם תיאור שני ה-patterns (JSON `"message"`, opencode `ERROR error=`) והעדיפות ביניהם.
+
+3. **`backend/src/server.ts` — הסרת ההגדרות:** שתי הפונקציות הוסרו, רק imports נוספו.
+
+**הוספת `"test": "bun test"` ל-`backend/package.json`.**
+
+**בדיקות שנכתבו:**
+
+- **`tests/findSentenceBoundary.test.ts` — 21 בדיקות בחמש קבוצות:**
+  - sentence boundaries (English + Hebrew period, ?, !, colon, blank line, no boundary, no trailing space)
+  - abbreviation protection (Mr/Dr/Mrs/Ms/St/vs/etc/i.e/e.g, case-insensitive, with real boundary after)
+  - decimal number protection (3.14 with and without real sentence following)
+  - forced flush (long > 200, space-finding logic, exactly 200, < 200)
+  - multiple boundaries (returns last, mix of types)
+
+- **`tests/extractProviderError.test.ts` — 16 בדיקות בשלוש קבוצות:**
+  - pattern 1 (JSON `"message"` — credit/invalid/rate/unauthorized keywords, length filter, last-30 scan, returns most recent match)
+  - pattern 2 (opencode ERROR — error= field, stack= stripping, 200-char cap, pattern-1 priority, last-50 scan)
+  - edge cases (empty, only noise, all 7 keywords in turn)
+
+**שתי טעויות חישוב שלי בבדיקות נחשפו ותוקנו** (אינדקסים של `.` + space) — לא באגים בקוד, רק חישוב אנושי שגוי. דוגמה מצוינת למה TDD-Vertical חשוב.
+
+**אימות:**
+- `bun test` → **37 pass, 0 fail, 56 expect() calls, 21ms**
+- `bunx tsc --noEmit` → ריק (תקין)
+
+**הצעדים הבאים — שכבה 2:** integration tests עם mocks ל-`bridge` ול-`fetch`. שמונה תרחישים מ-behaviors.md (chunk יחיד, 3 משפטים, thought→message, tool_call, 0 chars + thoughts, 0 chars + provider error, previousResponse ל-STT, cancel).
+
+---
+
 ## 2026-05-14 18:50
 
 ### P — חיתוך thoughts לפי גבול משפט (backend, executor)

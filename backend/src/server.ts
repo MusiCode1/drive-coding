@@ -23,6 +23,8 @@ import {
   saveRecording,
   saveRecordingMetadata,
 } from "./recordings.ts";
+import { findSentenceBoundary } from "./sentence-boundary.ts";
+import { extractProviderError } from "./provider-error.ts";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const FRONTEND_DIR = resolve(import.meta.dir, "../../frontend");
@@ -36,29 +38,6 @@ const VERBOSE = (() => {
   const v = (process.env.VOICE_ACP_VERBOSE ?? "0").toLowerCase();
   return v === "1" || v === "true";
 })();
-
-/**
- * מחפש בשורות stderr של opencode patterns של provider errors שלא מועברים דרך
- * ACP. למשל, שגיאות 400/401/429 של Anthropic/Google שם opencode מחזיר
- * stopReason=end_turn ובולע את ה-message. מחזיר טקסט קצר ל-frontend.
- */
-function extractProviderError(stderrLines: string[]): string | null {
-  // מחפשים JSON של "responseBody" שכולל error.message — זה הפורמט של AI_APICallError.
-  for (let i = stderrLines.length - 1; i >= 0 && i >= stderrLines.length - 30; i--) {
-    const line = stderrLines[i];
-    const m = line.match(/"message":"([^"]{10,400})"/);
-    if (m && /credit|invalid|unauthor|forbid|rate|limit|key/i.test(m[1])) {
-      return m[1];
-    }
-  }
-  // לחפש שורת ERROR של opencode במצב error
-  for (let i = stderrLines.length - 1; i >= 0 && i >= stderrLines.length - 50; i--) {
-    const line = stderrLines[i];
-    const m = line.match(/ERROR.*?error=(.+?)(?:\s+stack=|$)/);
-    if (m) return m[1].slice(0, 200);
-  }
-  return null;
-}
 
 // ── סוגי הודעות WebSocket ─────────────────────────────────────────────────────
 
@@ -688,47 +667,6 @@ async function handleUserInput(
 }
 
 // ── עזרים ────────────────────────────────────────────────────────────────────
-
-/**
- * מוצא את גבול המשפט האחרון במחרוזת. מחזיר אינדקס *אחרי* הגבול,
- * או -1 אם אין גבול בטוח.
- *
- * גבולות מזוהים:
- * - סוף משפט: `.`/`!`/`?` ואחריהם רווח/שורה חדשה.
- * - נקודתיים + רווח.
- * - שורה ריקה (`\n\n`).
- *
- * הגנות:
- * - לא חותך אחרי קיצורים שכיחים (`Mr.`, `Dr.`, `i.e.`, `e.g.` וכו').
- * - לא חותך באמצע מספר עשרוני (`3.14`).
- *
- * forced flush: אם אין גבול אבל המחרוזת ארוכה מ-200 תווים, חותך ברווח
- * האחרון לפני 200 (פתרון לעברית שבה נקודות נדירות יותר).
- */
-export function findSentenceBoundary(s: string): number {
-  const patterns = [/[.!?][\s\n]/g, /:\s/g, /\n\n+/g];
-  let last = -1;
-  for (const re of patterns) {
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(s)) !== null) {
-      const end = m.index + m[0].length;
-      if (m[0][0] === ".") {
-        const before = s.slice(Math.max(0, m.index - 3), m.index);
-        if (/\b(Mr|Dr|Mrs|Ms|St|vs|etc|i\.e|e\.g)$/i.test(before)) continue;
-        // מספר עשרוני: 3.14 — דלג
-        if (/\d$/.test(before) && /^\d/.test(s.slice(end))) continue;
-      }
-      if (end > last) last = end;
-    }
-  }
-  // forced flush — מחרוזת ארוכה בלי גבול
-  if (last === -1 && s.length >= 200) {
-    const slice = s.slice(0, 200);
-    const lastSpace = slice.lastIndexOf(" ");
-    return lastSpace > 100 ? lastSpace + 1 : 200;
-  }
-  return last;
-}
 
 function send(ws: any, msg: ServerMessage): void {
   ws.send(JSON.stringify(msg));
