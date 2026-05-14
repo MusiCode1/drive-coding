@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-05-14 18:50
+
+### P — חיתוך thoughts לפי גבול משפט (backend, executor)
+
+**מה נעשה:** מימוש משימה P כפי שתוכננה ב-`docs/plan.md`. תרגום והקראת thoughts יקרו פר-משפט במקום בבת אחת בסוף ה-thought.
+
+**שינוי ב-`backend/src/server.ts`:** בתוך ה-`onChunk` של ה-prompt, בענף `kind === "thought"`, נוספה לולאת חיתוך זהה במבנה לזו של `message` (משימה D). הלולאה משתמשת ב-`findSentenceBoundary` הקיים (תומך עברית+אנגלית, הגנה מקיצורים ומספרים עשרוניים, forced flush ב-200) ומפעילה `flushThought` פר משפט. אין שינוי ב-`findSentenceBoundary`, `flushThought`, או ב-frontend.
+
+**אינטראקציה עם משימה L (חיתוך thoughts ב-message_start):** העלייה במספר הסגמנטים מגדילה גם את היעילות של L — חיתוך אגרסיבי יחסל יותר thoughts pending מהר. הקוד הקיים של L כבר מטפל בזה דרך ניקוי `streamOrder`.
+
+**בדיקה:** `bunx tsc --noEmit` עבר. בדיקה empirical: שאלה שמייצרת thought ארוך תייצר עכשיו רצף סגמנטי תרגום קצרים במקום אחד גדול.
+
+**עלות:** Gemini Flash Lite + ElevenLabs פר משפט. סה"כ טקסט זהה, רק חלוקה אחרת. עלות Gemini זניחה (~$0.01/M tokens); ElevenLabs מחויב לפי תווים, אותם תווים = אותה עלות.
+
+---
+
 ## 2026-05-14 18:40
 
 ### Q — כפתורי ⏮ / ⏭ לניווט בתור הניגון (frontend, executor)

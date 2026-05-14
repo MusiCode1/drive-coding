@@ -572,6 +572,17 @@ async function handleUserInput(
           // thought באמצע — flush של ה-message הנוכחי (לחלוקת בועות ב-frontend).
           if (messageBuffer.length > 0) flushMessage();
           thoughtBuffer += chunk;
+          // חיתוך לפי גבול משפט — אנלוגי ל-message: מאפשר התחלת תרגום+TTS
+          // של ה-thought מהר ולא לחכות לסוף ה-thought block.
+          let boundary = findSentenceBoundary(thoughtBuffer);
+          while (boundary !== -1) {
+            const head = thoughtBuffer.slice(0, boundary);
+            const rest = thoughtBuffer.slice(boundary);
+            thoughtBuffer = head;
+            flushThought(); // שולח head ל-תרגום+TTS, מאפס thoughtBuffer ל-""
+            thoughtBuffer = rest;
+            boundary = findSentenceBoundary(thoughtBuffer);
+          }
         }
       },
       onToolCall: (event) => {

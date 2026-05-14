@@ -197,6 +197,9 @@ const playbackHistory = []; // SubBubble[] (רק message, רק עם audioBase64)
 
 ## משימות שבוצעו
 
+### P — חיתוך thoughts לפי גבול משפט (2026-05-14 18:50)
+backend: ב-`server.ts`, הוספת לולאת `findSentenceBoundary` ב-`onChunk` ענף `kind === "thought"`, אנלוגית ל-message ממשימה D. כל גבול משפט מפעיל `flushThought` (תרגום + TTS). אין שינוי בפונקציות עצמן ולא ב-frontend. `bunx tsc --noEmit` עבר.
+
 ### Q — כפתורי ⏮ / ⏭ לניווט בתור הניגון (2026-05-14 18:40)
 frontend: שני `nav-btn` חדשים סביב mic. State `playbackHistory` (messages עם audioBase64). `updateMicButton` חושף nav לפי state/history/streamOrder. `handleNext` עוצר live ושומר חלקי או דולג ב-streamOrder. `handlePrev` עושה restart ב-replay, מעבר ל-history.last ב-live, או pop ב-idle. `flashBtn` ל-feedback ויזואלי. Keyboard: ArrowRight=prev, ArrowLeft=next (RTL-friendly). `node --check` עבר.
 

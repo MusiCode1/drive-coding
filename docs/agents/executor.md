@@ -84,11 +84,16 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** פעיל — סיים Q, מתחיל P
+- **סטטוס:** סיים — v4 + v5 הושלמו (משימות Q, P)
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** משימה P — `backend/src/server.ts`
+- **עובד על:** —
 
 ## לוג
+
+### [2026-05-14 18:50] ✅ סיימתי משימה P + סיום סשן
+backend: ב-`server.ts` הוספתי לולאת `findSentenceBoundary` בענף `kind === "thought"` של ה-onChunk, אנלוגית ל-message ממשימה D. כל חיתוך מפעיל `flushThought`. אין שינוי בפונקציות עצמן. `bunx tsc --noEmit` עבר.
+
+**סיום סשן.** v4 (P) ו-v5 (Q) הושלמו. שני commits נפרדים, כל אחד עם הודעה בעברית בפורמט מוסכם, walkthrough.md מעודכן. אין שאלות פתוחות. הצעדים הבאים: בדיקה empirical של Avi (hot-reload של bun יקלוט אוטומטית); הריפקטור (v6) הוא הצעד הבא לפי תוכנית ה-planner — יבוצע ב-worktree נפרד.
 
 ### [2026-05-14 18:40] ✅ סיימתי משימה Q
 frontend: שני כפתורי `nav-btn` (⏮/⏭) חדשים סביב mic. State `playbackHistory` ל-messages עם audioBase64. `handleNext`/`handlePrev` עם הלוגיקה המלאה מה-spec (3 ענפי state כל אחד). `flashBtn` ל-feedback ויזואלי. Keyboard: ArrowRight=prev, ArrowLeft=next (RTL-friendly, לא תופס בשדות input). `node --check` עבר.
