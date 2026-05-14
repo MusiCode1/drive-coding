@@ -84,11 +84,16 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** פעיל
-- **Worktree:** `/home/user/projects/voice-acp` (master — אין worktree נפרד, עובדים על אותו repo)
-- **עובד על:** משימה I — `dir="auto"` לבועות (`frontend/index.html`)
+- **סטטוס:** סיים — **v2 הושלם** (משימות A-I, 9 commits)
+- **Worktree:** `/home/user/projects/voice-acp` (master)
+- **עובד על:** —
 
 ## לוג
+
+### [2026-05-14 13:05] ✅ סיימתי משימה I + סיום v2
+frontend: `dir="auto"` ב-3 נקודות: SubBubble constructor, renderToolItem (innerHTML), setHtml (iterate children). `node --check` עבר.
+
+**סיום סשן.** בוצעו 9 משימות A-I לפי הסדר המומלץ, כל אחת קומיט נפרד עם הודעה בעברית. כל commit כולל עדכון walkthrough.md ו-plan.md (סטטוס). אין שאלות פתוחות. הצעדים הבאים: בדיקה empirical של הזרימה המלאה בריצה דרך OneCLI; פיצ'רים נוספים תחת `docs/future-features.md`.
 
 ### [2026-05-14 12:55] ✅ סיימתי משימה H
 frontend: גלילה חכמה. עטיפת `#chat` ב-`#chat-wrap` (position:relative), כפתור `#jump-down`. הוספת `SCROLL_THRESHOLD_PX`, `autoScrollEnabled`, `suppressScrollEvents`. listener על scroll, `scrollChatToBottom` עם early-exit. click handler לכפתור. `node --check` עבר.

@@ -4,6 +4,41 @@
 
 ---
 
+## 2026-05-14 13:05
+
+### משימה I — `dir="auto"` לבועות (executor)
+
+**מטרה:** טקסט עברי יוצג RTL, אנגלי LTR — בלי תיוג ידני, גם בהיסטוריה וגם ב-live, גם בתוך פסקאות markdown.
+
+**`frontend/index.html`:**
+
+3 נקודות מימוש (לפי הפלן):
+1. **SubBubble constructor:** אחרי יצירת `this.bubbleEl`, מוסיף `setAttribute("dir", "auto")`. כל בועה (user/thought/tools/message) יקבל direction אוטומטי.
+2. **renderToolItem:** ה-span השני (זה עם הטקסט) מקבל `dir="auto"` ישירות במחרוזת ה-`innerHTML`, נקי יותר מ-`querySelector` post-hoc.
+3. **setHtml:** אחרי `innerHTML = html` (markdown מ-server), iterate על `bubbleEl.children` — לכל element-child שאין לו `dir` attribute, מוסיף `dir="auto"`. ככה כל פסקה / כותרת / רשימה במכל markdown תיושר נכון.
+
+**הסיבה לhighbridge `dir="auto"`:** ה-`<html dir="rtl">` של הדף קובע ברירת מחדל RTL. אבל הודעות של המודל לעיתים מכילות אנגלית טהורה (שמות פונקציות, blocks). עם `dir="auto"`, הדפדפן בודק את התווים החזקים הראשונים: עברית → RTL, אנגלית → LTR. זה מאפשר שילוב טבעי של שתי השפות באותה שיחה.
+
+**בדיקות:** `node --check` עבר. אומת ויזואלית בריצה הבאה.
+
+### סיום v2
+
+זה היה האחרון מבין 9 המשימות (A-I) של plan v2. כל המשימות בוצעו, קומטו, ותועדו ב-walkthrough. סיכום מילולי של שכבת הנגישות:
+
+1. **system prompt** — המודל מודע שהוא מדבר ולא כותב.
+2. **STT** — פרומפט עברית טכנולוגית + context מההודעה הקודמת.
+3. **gemini-helper** — `translateThought` + `narrateToolCall` עם cache+timeout+fallback.
+4. **flushMessage** — חיתוך לפי משפט (גם בעברית).
+5. **thoughts** — תרגום לעברית + הקראה דרך ElevenLabs.
+6. **tool narration** — Gemini מנסח במקום title גולמי, עם context של הודעת המשתמש.
+7. **mic state machine** — pause/resume + stop, 4 מצבים.
+8. **smart scroll** — autoscroll מותנה + כפתור ↓.
+9. **dir auto** — תמיכה ב-RTL/LTR מעורב.
+
+הצעדים הבאים יהיו ב-`docs/future-features.md` (16 פיצ'רים שנדחו).
+
+---
+
 ## 2026-05-14 12:55
 
 ### משימה H — גלילה חכמה (executor)

@@ -657,11 +657,14 @@ jumpDownBtn.addEventListener("click", () => {
 
 ## משימות בעבודה (executor)
 
-— (אין כרגע)
+— (אין כרגע. **v2 הושלם** — ראה "משימות שבוצעו".)
 
 ---
 
 ## משימות שבוצעו
+
+### I — `dir="auto"` לבועות (2026-05-14 13:05)
+frontend: `SubBubble.bubbleEl.setAttribute("dir","auto")` בconstructor. `renderToolItem`: `<span dir="auto">` ישירות ב-innerHTML. `setHtml`: iterate על children ומוסיף dir=auto לכל מי שאין לו. `node --check` עבר. **v2 הסתיים.**
 
 ### H — גלילה חכמה (2026-05-14 12:55)
 frontend: עטיפת `#chat` ב-`#chat-wrap` (position:relative). כפתור `#jump-down` absolute. קבוע `SCROLL_THRESHOLD_PX=60`, state `autoScrollEnabled` + `suppressScrollEvents`. listener על scroll. `scrollChatToBottom` מוקדם-יציאה אם autoScroll כבוי. כפתור click מאפס למטה. `node --check` עבר.

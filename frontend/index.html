@@ -618,6 +618,10 @@
 
           this.bubbleEl = document.createElement("div");
           this.bubbleEl.className = "bubble";
+          // dir="auto" — הדפדפן ינחש את הכיוון של הטקסט (LTR/RTL) לפי
+          // התווים הראשונים. ככה עברית תוצג מימין לשמאל ואנגלית להיפך,
+          // גם אם הbubble הוא תוך בועת שיחה ב-dir="rtl".
+          this.bubbleEl.setAttribute("dir", "auto");
 
           if (kind === "tools") {
             this.bubbleEl.addEventListener("click", () => this.toggleExpanded());
@@ -751,6 +755,11 @@
         setHtml(html) {
           this.hasHtml = true;
           this.bubbleEl.innerHTML = html;
+          // כל פסקה / כותרת / רכיב — dir="auto" כדי שטקסט עברי באמצע
+          // הודעה אנגלית (או להיפך) ייושר לפי תוכנו.
+          for (const child of this.bubbleEl.children) {
+            if (!child.hasAttribute("dir")) child.setAttribute("dir", "auto");
+          }
           scrollChatToBottom();
         }
 
@@ -806,7 +815,7 @@
         renderToolItem(info, inSummary) {
           const item = document.createElement("div");
           item.className = "tool-item " + (info.status || "");
-          item.innerHTML = `<span class="status-dot"></span><span>${toolIcon(info.toolKind)} ${escapeHtml(info.title || info.toolKind || "tool")}</span>`;
+          item.innerHTML = `<span class="status-dot"></span><span dir="auto">${toolIcon(info.toolKind)} ${escapeHtml(info.title || info.toolKind || "tool")}</span>`;
           if (inSummary) item.style.padding = "0";
           return item;
         }
