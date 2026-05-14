@@ -14,6 +14,9 @@
 > - `[GEMINI]` — תרגום מחשבות + נראציה של כלים
 > - `[REC]` — שמירת הקלטות
 > - `[WS]` — פרוטוקול WebSocket
+> - `[HTTP]` — endpoints REST של ה-backend
+> - `[MARKDOWN]` — רינדור Markdown + sanitization
+> - `[STATIC]` — הגשת קבצים סטטיים + path traversal protection
 > - `[UI-MIC]` — כפתור מיקרופון ו-state machine
 > - `[UI-AUDIO]` — ניגון אודיו (live + replay)
 > - `[UI-BUBBLES]` — בועות שיחה ורינדור
@@ -40,6 +43,12 @@
 
 ### STT-5: API key placeholder
 GoogleGenAI מאותחל עם `"placeholder"`. OneCLI מזריק את ה-`x-goog-api-key` בדרך. מקור: `stt.ts:35`.
+
+### STT-5b: mimeType default = `audio/webm`
+אם `opts.mimeType` חסר → `"audio/webm"`. תואם MediaRecorder ברירת מחדל ב-Chrome. מקור: `stt.ts:60`.
+
+### STT-5c: prompt ניתן להחלפה
+`opts.prompt` עוקף את ה-TRANSCRIBE_PROMPT הקבוע. מקור: `stt.ts:61`.
 
 ### STT-6: שמירה על שפת המקור
 המודל לא מתרגם — אם המשתמש דיבר אנגלית, מוחזר תמלול אנגלי. מקור: STT-2 + `Preserve the original language`.
@@ -90,8 +99,8 @@ ndJsonStream דורש Web streams; Node spawn מחזיר Node streams. שימו�
 ### ACP-11: setModel הוא `unstable_setSessionModel`
 ה-bridge קורא ל-`(conn as any).unstable_setSessionModel`. ייתכן שלא נתמך — נזרק error מודפס. מקור: `acp-bridge.ts:335-343`.
 
-### ACP-12: dispose עם SIGTERM, נפילה ל-SIGKILL אחרי 2s
-מקור: `acp-bridge.ts:378-394`.
+### ACP-12: dispose — סדר: stdin.end → SIGTERM → SIGKILL אחרי 2s
+קודם `proc.stdin.end()` (signal soft-close ל-opencode), אז SIGTERM, אז SIGKILL כ-timeout fallback. מקור: `acp-bridge.ts:378-394`.
 
 ### ACP-13: stopReason ≠ end_turn → log warning בלבד
 לא נזרקת שגיאה. מקור: `acp-bridge.ts:360-362`.
@@ -101,6 +110,12 @@ ndJsonStream דורש Web streams; Node spawn מחזיר Node streams. שימו�
 
 ### ACP-15: extractSessionResult ל-availableModels + currentModelId
 מ-`res.models` חולצים `availableModels` (מערך {modelId, name, description}) ו-`currentModelId`. מקור: `acp-bridge.ts:267-279`.
+
+### ACP-16: listSessions — early return אם אין capability
+אם `agentCaps?.sessionCapabilities?.list` falsy → מחזיר `[]` **בלי** קריאת RPC. מונע שגיאה ב-opencode versions שלא תומכים. מקור: `acp-bridge.ts:323-324`.
+
+### ACP-17: newSession + loadSession שולחים `mcpServers: []` תמיד
+voice-acp לא משתמש ב-MCP servers נוספים — passthrough של opencode בלבד. מקור: `acp-bridge.ts:292-293, 310-311`.
 
 ---
 
@@ -131,10 +146,10 @@ ndJsonStream דורש Web streams; Node spawn מחזיר Node streams. שימו�
 `onChunk(kind="message")`: `messageBuffer += chunk`, ואז loop של `findSentenceBoundary` — אם נמצא גבול: חיתוך ל-head, flush, וכל פעם ה-rest ממשיך. מקור: `server.ts:557-570`.
 
 ### PROMPT-9: flushMessage עושה 3 פעולות בסדר
-1. trim + שמירה ב-`lastAgentMessage` + push ל-`recentMessages` (FIFO max 3).
+1. trim + **דריסה** של `lastAgentMessage` (לא הצברה — רק ה-flush האחרון נשמר) + push ל-`recentMessages` (FIFO max 3).
 2. `renderMarkdown` → `message_rendered` event.
 3. `queueTts(text, "message")`.
-מקור: `server.ts:490-510`.
+מקור: `server.ts:490-510`. הדריסה חשובה כי STT-3 מעביר את ה-`lastAgentMessage` הזה כ-context לתמלול הבא — צריך להיות הקטע ה**אחרון** שהמשתמש שמע, לא כל ההיסטוריה.
 
 ### PROMPT-10: thoughtBuffer + flushThought, async דרך ttsQueue
 `flushThought` נכנס ל-`ttsQueue.then()` שעושה translate→null check→text_chunk thought_translation→streamTts(kind="thought"). מקור: `server.ts:517-538`.
@@ -160,7 +175,7 @@ ndJsonStream דורש Web streams; Node spawn מחזיר Node streams. שימו�
 אחרי הסיווג, **כל** chunk עובר `send(ws, text_chunk, kind, chunk)`. גם אם הוא ייחתך בהמשך. מקור: `server.ts:556`.
 
 ### PROMPT-17: totalMessageChars=0 → חילוץ provider error
-אם 0 chars של message חזרו: בודקים `getRecentStderr()` עם `extractProviderError`. אם נמצא → `sendError("שגיאת provider: ...")`. אחרת אם היו thoughts/tools → "המודל ביצע פעולות אבל לא חזר עם תשובה מילולית". אחרת → "המודל לא ענה. נסי לנסח את השאלה אחרת". מקור: `server.ts:649-668`.
+אם 0 chars של message חזרו: בודקים `getRecentStderr()` עם `extractProviderError`. אם נמצא → `sendError("שגיאת provider: ...")`. אחרת אם היו thoughts/tools → "המודל ביצע פעולות אבל לא חזר עם תשובה מילולית". אחרת → "המודל לא ענה. נסי לנסח את השאלה אחרת". מקור: `server.ts:649-668`. **חשוב:** אחרי `sendError` עדיין נשלח `done` (PROMPT-18) — הקליינט מקבל זוג error+done.
 
 ### PROMPT-18: done לפני ש-ttsQueue מסיים
 ה-server לא ממתין ל-`ttsQueue`; שולח `done` מיד אחרי שה-ACP prompt חזר. ה-frontend מטפל ב-audio_chunks ממשיכים להגיע. מקור: `server.ts:671-673`.
@@ -199,6 +214,9 @@ ReadableStream, getReader, onChunk לכל value. מקור: `tts.ts:119-167`.
 ### TTS-8: שגיאת HTTP → throw עם status+body
 מקור: `tts.ts:59-64, 146-151`.
 
+### TTS-9: `ttsCacheStats()` exported — entries + bytes
+public API להצגת מצב cache. מקור: `tts.ts:105-109`.
+
 ---
 
 ## GEMINI-HELPER — תרגום מחשבות + נראציה של כלים
@@ -212,7 +230,7 @@ ReadableStream, getReader, onChunk לכל value. מקור: `tts.ts:119-167`.
 מקור: ראה `gemini-helper.ts:DEFAULT_MODEL` (וע"פ walkthrough).
 
 ### GEMINI-3: timeout 2500ms ל-translateThought
-withTimeout עם Promise.race. אם timeout → null (בעבר היה fallback לטקסט מקורי). מקור: walkthrough 14:40 (משימה J).
+withTimeout עם Promise.race. אם timeout → null (בעבר היה fallback לטקסט מקורי). מקור: walkthrough 14:40 (משימה J). **הערה:** ה-promise המקורי ממשיך לרוץ ברקע גם אחרי timeout — אין AbortController (POC).
 
 ### GEMINI-4: timeout 1500ms ל-narrateToolCall
 fallback ל-title הגולמי במקרה כשל. מקור: walkthrough 11:25 (משימה C).
@@ -249,7 +267,7 @@ ext מ-mimeType: webm/ogg/mp3/wav/m4a/flac/audio. מקור: walkthrough 15:20.
 `saveRecording` ב-`handleAudio` נקרא בלי await. ה-promise נאסף ל-`.then()` שמוסיף metadata אחרי שהתמלול חוזר — גם הוא בלי await. מקור: `server.ts:397, 409-420`.
 
 ### REC-5: metadata sidecar JSON
-שם תואם, מכיל: timestamp, sessionId, cwd, mimeType, audioSize, transcript, sttModel. מקור: walkthrough 15:20 + `server.ts:411-419`.
+שם תואם, מכיל: timestamp, sessionId, cwd, mimeType, audioSize, transcript, sttModel. מקור: walkthrough 15:20 + `server.ts:411-419`. **חשוב:** `audioSize` נמדד מ-`Buffer.from(base64).byteLength` — גודל ה-buffer לפני כתיבה, לא גודל הקובץ על דיסק.
 
 ### REC-6: שגיאות לא יוצרות שיבושים
 כל שגיאה מודפסת ל-stderr, לא נזרקת. מקור: walkthrough 15:20.
@@ -257,12 +275,18 @@ ext מ-mimeType: webm/ogg/mp3/wav/m4a/flac/audio. מקור: walkthrough 15:20.
 ### REC-7: לוג סטטוס בתחילת ריצה
 `recordings: ON (path)` או `OFF`. מקור: `server.ts:248-250`.
 
+### REC-8: `dirEnsured` flag — mkdir נקרא פעם אחת בחיי התהליך
+`recordings.ts:26-31`. `mkdir(recursive:true)` אידמפוטנטי, אבל ה-flag חוסך syscalls בריצה ארוכה. אין lock — race נדיר אך אפשרי, נסבל כי `recursive:true` לא זורק על קיום.
+
 ---
 
 ## WS — פרוטוקול WebSocket
 
 ### WS-1: 4 הודעות client → server
 `init`, `audio`, `text` (דיבוג, מדלג על STT), `cancel`. מקור: `server.ts:65-75`.
+
+### WS-1b: נתיב `text` לא שומר transcript ב-lastUserText בלבד
+`handleUserInput` מעדכן `lastUserText = text` בתחילתו (גם דרך text וגם דרך audio). **אבל** `lastAgentMessage` לא נכנס לתמונה ב-text path — אין שמירת הקלטה, אין transcript event ל-frontend. שונה מ-`audio` path. מקור: `server.ts:271-274, 430-439`.
 
 ### WS-2: הודעות server → client (פורמט קבוע)
 `ready`, `transcript`, `thinking`, `text_chunk` (עם kind: message/thought/thought_translation), `tool_call`, `audio_ready` (legacy לhistory), `audio_start`/`audio_chunk`/`audio_end` (streaming), `message_rendered`, `done`, `error`, `history_start`/`history_chunk`/`history_tool_call`/`history_done`. מקור: `server.ts:77-131`.
@@ -290,6 +314,110 @@ WeakMap לפי ws. כולל: bridge, busy, firstPromptSent, voiceId, lastAgentMe
 
 ### WS-10: ready עם availableModels + currentModelId
 נשלח אחרי init מוצלח. מקור: `server.ts:372-377`.
+
+---
+
+## HTTP — REST endpoints
+
+### HTTP-1: `GET /api/info?cwd=<path>` — מודלים + sessions זמינים
+spawns bridge **זמני** ל-cwd, יוצר session זמני (כדי לחלץ `availableModels`+`currentModelId`), קורא ל-`listSessions` (catch→[]), ואז `dispose`. עלות 3-5 שניות לקריאה (overhead של spawn opencode). מקור: `server.ts:747-775`.
+
+### HTTP-2: `/api/info` — חסר cwd → 400
+`{ error: "חסר פרמטר cwd" }`. מקור: `server.ts:749-751`.
+
+### HTTP-3: `/api/info` — exception → 500
+שגיאת bridge/session → `Response.json({ error: ... }, { status: 500 })`. ה-bridge תמיד נסגר ב-finally. מקור: `server.ts:767-774`.
+
+### HTTP-4: `GET /api/voices` — מיפוי + סימון תומכי עברית
+fetch ל-ElevenLabs `/v1/voices`. כל קול ממופה: voiceId, name, category, description, languages (מ-`verified_languages`), `supportsHebrew = languages.includes("he") || labels.language === "he"`. מקור: `server.ts:781-808`.
+
+### HTTP-5: `/api/voices` — אלגוריתם מיון מדויק
+לפי הסדר:
+1. voiceId === `ELEVENLABS_VOICE_ID` (ברירת מחדל) → ראשון.
+2. supportsHebrew=true לפני false.
+3. category לפי map: `premade=0, professional=1, cloned=2, generated=3` (אחרת 9).
+4. שם לפי `localeCompare`.
+מקור: `server.ts:811-822`.
+
+### HTTP-6: `/api/voices` — ElevenLabs לא תקין → 502
+לא 500. שגיאת upstream → bad gateway. מקור: `server.ts:789-794`.
+
+### HTTP-7: `POST /api/tts` — body validation
+JSON לא תקין → 400 `"JSON לא תקין"`. `text` ריק (אחרי trim) → 400 `"חסר text"`. מקור: `server.ts:843-853`.
+
+### HTTP-8: `/api/tts` — עובר דרך cache
+`cachedTextToSpeechBase64` — קריאה חוזרת לאותו text+voiceId → cache hit. מקור: `server.ts:855-857`.
+
+### HTTP-9: `/api/tts` — voiceId אופציונלי
+אם חסר → `cachedTextToSpeechBase64` משתמש ב-`process.env.ELEVENLABS_VOICE_ID`. מקור: `server.ts:855-857`.
+
+### HTTP-10: `GET /api/ls?path=&showHidden=` — חייב absolute
+חייב להתחיל ב-`/`. אחרת → 400 `"path חייב להיות absolute"`. מקור: `server.ts:878-883`.
+
+### HTTP-11: `/api/ls` — security: רק תחת $HOME או /tmp
+`isAllowed = path === root || path.startsWith(root + PATH_SEP)` עבור each of `[$HOME, "/tmp"]`. אחרת → 403. מקור: `server.ts:884-894`.
+
+### HTTP-12: `/api/ls` — `showHidden` מסנן dot-folders
+`showHidden=1` בלבד יחשוף `.foo` folders. אחרת `e.name.startsWith(".")` → filter out. מקור: `server.ts:899-902`.
+
+### HTTP-13: `/api/ls` — מחזיר רק תיקיות (לא קבצים)
+`e.isDirectory()` הוא תנאי קשיח. קבצים מסוננים. מקור: `server.ts:900`.
+
+### HTTP-14: `/api/ls` — מיון hebrew-aware
+`a.name.localeCompare(b.name, "he")`. מקור: `server.ts:905`.
+
+### HTTP-15: `/api/ls` — parent רק אם בטוח
+`parent = dirname(path)` או `null` אם path === `/`. אם ה-parent מחוץ ל-allowed roots → parent מוגדר null (לא חושף את ה-/ או /home). מקור: `server.ts:908-913`.
+
+### HTTP-16: `/api/ls` — תגובה: `{path, parent, home, entries}`
+מקור: `server.ts:916-921`.
+
+---
+
+## MARKDOWN — רינדור Markdown + sanitization
+
+### MARKDOWN-1: GFM + breaks
+`marked.setOptions({ gfm: true, breaks: true })` — שורות חדשות הופכות ל-`<br>`. מקור: `markdown.ts:10-13`.
+
+### MARKDOWN-2: טקסט ריק → string ריק
+`if (!text) return ""`. מקור: `markdown.ts:28`.
+
+### MARKDOWN-3: הסרת תגיות paired מסוכנות
+Regex `DANGEROUS_TAGS` (case-insensitive, multi-line): `script|style|iframe|object|embed|form|meta|link|base|noscript` במבנה paired (`<tag...>content</tag>`). מקור: `markdown.ts:17`.
+
+### MARKDOWN-4: הסרת תגיות self-closing מסוכנות
+Regex `DANGEROUS_TAGS_SELF`: אותן תגיות במבנה `<tag .../>` או `<tag ...>`. נשלח **אחרי** ה-paired. מקור: `markdown.ts:18`.
+
+### MARKDOWN-5: הסרת event attributes
+Regex `EVENT_ATTRS`: כל `on<word>="..."` או `'...'` או `value` ללא ציטוט. מקור: `markdown.ts:19`.
+
+### MARKDOWN-6: הסרת `href|src|action="javascript:..."`
+Regex `JS_HREFS`. שלוש attributes, ערך תחילי `javascript:`. מקור: `markdown.ts:20`.
+
+### MARKDOWN-7: סדר ה-replace קבוע
+paired → self-closing → event attrs → javascript hrefs. מקור: `markdown.ts:30-34`.
+
+### MARKDOWN-8: שימוש כפול — live + history
+ב-server, `renderMarkdown` נקרא גם ב-`flushMessage` (live) וגם ב-`flushHistoryMessage` (loadSession). מקור: `server.ts:503, 320`.
+
+---
+
+## STATIC — הגשת קבצים סטטיים
+
+### STATIC-1: path traversal — `..` או `\0` → 400
+`pathname.includes("..") || pathname.includes("\0")` → `"Bad request"`. מקור: `server.ts:932-934`.
+
+### STATIC-2: `/` → `/index.html`
+`relative = pathname === "/" ? "/index.html" : pathname`. מקור: `server.ts:936`.
+
+### STATIC-3: resolve + enforce startsWith(FRONTEND_DIR)
+`filePath = resolve(FRONTEND_DIR, "." + relative)`. אם התוצאה לא מתחילה ב-`FRONTEND_DIR` (escape ניסיון) → 403 `"Forbidden"`. מקור: `server.ts:937-942`.
+
+### STATIC-4: קובץ לא קיים → 404
+`if (!await file.exists())` → 404 `"Not found"`. מקור: `server.ts:944-947`.
+
+### STATIC-5: hit → `new Response(file)`
+Bun מטפל אוטומטית ב-Content-Type, length, וכו'. מקור: `server.ts:949`.
 
 ---
 
@@ -616,5 +744,11 @@ hidden ב-idle ללא היסטוריה. מופיעים כשיש playbackHistory 
 ### עדיפויות
 
 קודם **PROMPT-1..PROMPT-20** (לב המערכת) + **findSentenceBoundary** + **extractProviderError**.
-אחר כך **ACP-7..ACP-14** + **GEMINI-3..GEMINI-8**.
+אחר כך **ACP-7..ACP-17** + **GEMINI-3..GEMINI-8** + **MARKDOWN-1..8** (security) + **STATIC-1..5** (security).
+אחר כך **HTTP-1..16** (REST endpoints — דורש mock של fetch + bridge stub).
 אחרון: TTS cache, REC, frontend.
+
+### היסטוריית עדכוני הקובץ הזה
+
+- **18:25** — יצירה ראשונית עם 14 קטגוריות, ~130 התנהגויות.
+- **19:50** — תיקון פערים אחרי בדיקה (sub-agent ses_1d835201). נוספו 3 קטגוריות שלמות (HTTP, MARKDOWN, STATIC) ופערים בקטגוריות קיימות (STT-5b/5c, ACP-12/16/17, PROMPT-9 דריסה, PROMPT-17 done after error, TTS-9, GEMINI-3 ללא AbortController, REC-5 audioSize, REC-8 dirEnsured, WS-1b text path). סה"כ ~170 התנהגויות.
