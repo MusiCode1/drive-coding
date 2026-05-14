@@ -663,6 +663,9 @@ jumpDownBtn.addEventListener("click", () => {
 
 ## משימות שבוצעו
 
+### H — גלילה חכמה (2026-05-14 12:55)
+frontend: עטיפת `#chat` ב-`#chat-wrap` (position:relative). כפתור `#jump-down` absolute. קבוע `SCROLL_THRESHOLD_PX=60`, state `autoScrollEnabled` + `suppressScrollEvents`. listener על scroll. `scrollChatToBottom` מוקדם-יציאה אם autoScroll כבוי. כפתור click מאפס למטה. `node --check` עבר.
+
 ### G — mic button state machine + stop button (2026-05-14 12:40)
 frontend: 4 states (idle/recording/speaking/paused) דרך `data-state`. helpers: getMicButtonState, updateMicButton, pauseAllAudio, resumeAllAudio, stopAllAudio. StreamingAudio.resume(). שדה global `audioIsPaused`. click handler חדש עם switch על המצבים. stop-btn חדש (hidden until speaking/paused). CSS מעבר מ-class ל-attribute selectors. MutationObserver של car mode עבר ל-data-state. `node --check` עבר.
 

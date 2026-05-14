@@ -73,6 +73,12 @@
       }
 
       /* chat */
+      #chat-wrap {
+        flex: 1;
+        position: relative;
+        min-height: 0;
+        display: flex;
+      }
       #chat {
         flex: 1;
         overflow-y: auto;
@@ -89,6 +95,40 @@
         font-size: 13px;
         align-self: center;
         margin: auto;
+      }
+      /* jump-down button — מופיע כשהמשתמש גלל למעלה ויש תוכן חדש מתחת */
+      .jump-down {
+        position: absolute;
+        bottom: 14px;
+        inset-inline-end: 14px;
+        background: var(--bg-elev);
+        border: 1px solid var(--border);
+        color: var(--fg);
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        font-size: 18px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+        opacity: 0;
+        pointer-events: none;
+        transition:
+          opacity 200ms,
+          background 150ms,
+          border-color 150ms;
+        z-index: 5;
+      }
+      .jump-down.visible {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .jump-down:hover {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: white;
       }
 
       /* bubble */
@@ -460,7 +500,10 @@
       </div>
     </header>
 
-    <div id="chat" aria-live="polite"></div>
+    <div id="chat-wrap">
+      <div id="chat" aria-live="polite"></div>
+      <button id="jump-down" class="jump-down" aria-label="גלול למטה">↓</button>
+    </div>
 
     <footer>
       <div id="status">לחצי על הכפתור כדי לדבר</div>
@@ -487,6 +530,34 @@
       const statusEl = document.getElementById("status");
       const metaEl = document.getElementById("meta");
       const chatEl = document.getElementById("chat");
+      const jumpDownBtn = document.getElementById("jump-down");
+
+      // ── Smart scroll ───────────────────────────────────────────────────────
+      // auto-scroll מופעל רק כשהמשתמשת קרובה לתחתית. אם היא גללה למעלה
+      // לקרוא משהו, scrollChatToBottom לא ידרוס. כפתור ↓ מופיע כדי לחזור.
+      const SCROLL_THRESHOLD_PX = 60;
+      let autoScrollEnabled = true;
+      // flag שמדכא את ה-scroll listener בזמן שאנחנו מזיזים scrollTop פרוגרמטית
+      // (אחרת היינו "מגלים" שאנחנו רחוקים מהתחתית ומבטלים את autoScroll).
+      let suppressScrollEvents = false;
+
+      chatEl.addEventListener("scroll", () => {
+        if (suppressScrollEvents) return;
+        const distance =
+          chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight;
+        autoScrollEnabled = distance <= SCROLL_THRESHOLD_PX;
+        jumpDownBtn.classList.toggle("visible", !autoScrollEnabled);
+      });
+
+      jumpDownBtn.addEventListener("click", () => {
+        autoScrollEnabled = true;
+        suppressScrollEvents = true;
+        chatEl.scrollTop = chatEl.scrollHeight;
+        jumpDownBtn.classList.remove("visible");
+        requestAnimationFrame(() => {
+          suppressScrollEvents = false;
+        });
+      });
 
       function setStatus(text, cls) {
         statusEl.textContent = text;
@@ -825,7 +896,12 @@
       }
 
       function scrollChatToBottom() {
+        if (!autoScrollEnabled) return;
+        suppressScrollEvents = true;
         chatEl.scrollTop = chatEl.scrollHeight;
+        requestAnimationFrame(() => {
+          suppressScrollEvents = false;
+        });
       }
 
       function showError(msg) {

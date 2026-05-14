@@ -4,6 +4,33 @@
 
 ---
 
+## 2026-05-14 12:55
+
+### משימה H — גלילה חכמה (executor)
+
+**מטרה:** auto-scroll רק כשהמשתמשת קרובה לתחתית. אם היא גללה למעלה לקרוא משהו — לא לדרוס. כפתור ↓ מאפשר חזרה למטה.
+
+**`frontend/index.html`:**
+
+*HTML/CSS:*
+- עטיפת `#chat` ב-`#chat-wrap` (position:relative) כדי שהכפתור ↓ ימקם absolute ביחס לwrapper, לא ל-chat ש-overflow:auto (אחרת היה גולל עם התוכן).
+- כפתור `<button id="jump-down" class="jump-down">↓</button>`.
+- CSS `.jump-down`: position:absolute, bottom:14px, inset-inline-end:14px (RTL-aware), עיגול, צל, opacity:0 + pointer-events:none כברירת מחדל. `.visible` מפעיל. hover מצביע על accent.
+
+*JavaScript:*
+- קבוע `SCROLL_THRESHOLD_PX = 60` ושני state: `autoScrollEnabled = true` (default), `suppressScrollEvents = false` (flag להגנה מ-feedback loop).
+- listener על `chatEl.scroll`: אם לא מדוכא, מחשב מרחק מהתחתית. ≤60px ⇒ autoScrollEnabled=true, אחרת false. toggleVisibility על הכפתור.
+- `scrollChatToBottom()` (קיים, שימוש בו במספר מקומות): כעת מוקדם-יציאה אם `!autoScrollEnabled`. אחרת מציב suppressScrollEvents=true → scroll → רI requestAnimationFrame לאיפוס.
+- jumpDownBtn click: מאפס autoScrollEnabled=true, מגלל, ומסתיר את הכפתור.
+
+**הזרימה:** ברגע שהמשתמשת גלללה ידנית למעלה (>60px מהתחתית) → autoScrollEnabled=false → הכפתור מופיע. כל קריאה הבאה ל-scrollChatToBottom (מ-appendText, setHtml, setThoughtTranslation, SubBubble constructor) — לא תעשה כלום. המשתמשת לוחצת ↓ → autoScrollEnabled=true → גולל למטה → ה-listener רואה שאנחנו בתחתית ומחזיק את autoScrollEnabled.
+
+**הגנה מ-feedback loop:** ה-`scrollTop = scrollHeight` הפרוגרמטי משדר scroll event. ה-suppressScrollEvents flag מונע מה-listener לבדוק את המרחק (אחרת היה רואה מרחק 0, autoScrollEnabled=true, וזה היה OK — אבל יותר חזק עם flag).
+
+**בדיקות:** `node --check` עבר.
+
+---
+
 ## 2026-05-14 12:40
 
 ### משימה G — mic button state machine + stop button (executor)
