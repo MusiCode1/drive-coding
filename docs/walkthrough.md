@@ -4,6 +4,28 @@
 
 ---
 
+## 2026-05-14 15:05
+
+### משימה M — גלילה חכמה לפי user intent (executor)
+
+**הבאג:** הלוגיקה הקודמת מבוססת מרחק בלבד. תוכן חדש מתווסף → `scrollHeight` גדל → ה-`scroll` event מגיע באיחור עם distance גדל → המערכת חושבת שהמשתמשת גללה למעלה ומכבה אוטו בטעות (race condition שתועד ב-13:45).
+
+**הפתרון:** מודל user intent. אוטו פעיל כל הזמן, אלא אם המשתמשת באמת עשתה פעולת קלט.
+
+**`frontend/index.html`:**
+- הסרת `SCROLL_THRESHOLD_PX = 60` ו-`suppressScrollEvents` — לא נחוצים יותר.
+- שדה חדש `userInteractionAt: number` — timestamp של פעולת קלט אחרונה.
+- `markUserInteraction()` — listener על `wheel`, `touchstart`, `touchmove`, `mousedown`, `keydown` (כולם `passive: true`). מעדכן `userInteractionAt = Date.now()`.
+- `chatEl.scroll` handler חדש: בודק `isUser = Date.now() - userInteractionAt < 500`. אם distance ≤ 10 → מחזיר אוטו (מסתיר כפתור ↓). אחרת אם isUser → מכבה אוטו ומראה ↓. תוכן שמתווסף בלי קלט לא מכבה אוטו.
+- `scrollChatToBottom` פושט ל-`if (!autoScrollEnabled) return; chatEl.scrollTop = chatEl.scrollHeight`.
+- `jumpDownBtn click` פושט גם — אין צורך ב-suppressScrollEvents.
+
+**מה כן/לא נתפס:** wheel/touch/keyboard/mousedown → כן. scrollbar drag לא נתפס באירועי wheel/touch, אבל `mousedown` על ה-scrollbar כן — לכן מהדק עם הגלגלת והאצבע, וגם עם scrollbar drag ידני.
+
+`node --check` עבר. הסרת ~10 שורות קוד מיותר.
+
+---
+
 ## 2026-05-14 14:55
 
 ### משימה L — קפיצה אוטומטית ממחשבות לתשובה (executor)

@@ -461,11 +461,14 @@ unintelligible, return an empty string.
 
 ## משימות בעבודה (executor)
 
-- **M** — גלילה חכמה לפי user intent (התחיל 2026-05-14 14:55)
+- **N** — שמירת הקלטות לדיסק (התחיל 2026-05-14 15:05)
 
 ---
 
 ## משימות שבוצעו
+
+### M — גלילה חכמה לפי user intent (2026-05-14 15:05)
+frontend: הסרת `SCROLL_THRESHOLD_PX` + `suppressScrollEvents`. מודל חדש מבוסס `userInteractionAt` + listeners על wheel/touch/keyboard/mousedown. ה-scroll handler מכבה אוטו רק אם פעולת קלט קרתה תוך 500ms. תוכן שמתווסף לא יכבה. distance ≤ 10 מחזיר אוטו. `node --check` עבר.
 
 ### L — קפיצה אוטומטית ממחשבות לתשובה (2026-05-14 14:55)
 frontend: `StreamingAudio.stop()` חדש — pause + src="" + endOfStream. ב-`handleAudioStart` בלוק חדש כשמתחיל `kind="message"`: עוצר את ה-currentStream אם הוא thought, ומסיר thoughts פנדינג מ-streamOrder/activeStreams (משאיר tool_title וכו'). חיתוך אגרסיבי באמצע chunk. `node --check` עבר.

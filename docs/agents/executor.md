@@ -86,9 +86,14 @@
 
 - **סטטוס:** פעיל — v3 בעבודה
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** משימה M — `frontend/index.html` (smart scroll user intent)
+- **עובד על:** משימה N — `backend/src/server.ts` (recordings)
 
 ## לוג
+
+### [2026-05-14 15:05] ✅ סיימתי משימה M
+גלילה חכמה לפי user intent. הסרת SCROLL_THRESHOLD_PX + suppressScrollEvents. listeners על wheel/touch/keyboard/mousedown מסמנים userInteractionAt. ה-scroll handler מכבה אוטו רק אם isUser (תוך 500ms מקלט). `node --check` עבר.
+
+עובר ל-N — שמירת הקלטות.
 
 ### [2026-05-14 14:55] ✅ סיימתי משימה L
 `StreamingAudio.stop()` חדש (pause + src="" + endOfStream). `handleAudioStart` חותך thoughts פעילים ופנדינג כש-message מתחיל. `node --check` עבר.

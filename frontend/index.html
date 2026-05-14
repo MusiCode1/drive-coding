@@ -529,30 +529,41 @@
       const jumpDownBtn = document.getElementById("jump-down");
 
       // ── Smart scroll ───────────────────────────────────────────────────────
-      // auto-scroll מופעל רק כשהמשתמשת קרובה לתחתית. אם היא גללה למעלה
-      // לקרוא משהו, scrollChatToBottom לא ידרוס. כפתור ↓ מופיע כדי לחזור.
-      const SCROLL_THRESHOLD_PX = 60;
+      // מודל user intent: auto-scroll פעיל כל הזמן, אלא אם המשתמשת עשתה
+      // פעולת קלט אמיתית (wheel/touch/keyboard/mousedown) ואז ה-scroll
+      // event הגיע תוך 500ms. תוכן שמתווסף ומשנה את ה-scrollHeight בלי
+      // אינטראקציה — לא יכבה אוטו. תיקון ל-race condition שזוהה ב-13:45.
       let autoScrollEnabled = true;
-      // flag שמדכא את ה-scroll listener בזמן שאנחנו מזיזים scrollTop פרוגרמטית
-      // (אחרת היינו "מגלים" שאנחנו רחוקים מהתחתית ומבטלים את autoScroll).
-      let suppressScrollEvents = false;
+      let userInteractionAt = 0;
+      const markUserInteraction = () => {
+        userInteractionAt = Date.now();
+      };
+      for (const evt of ["wheel", "touchstart", "touchmove", "mousedown", "keydown"]) {
+        chatEl.addEventListener(evt, markUserInteraction, { passive: true });
+      }
 
       chatEl.addEventListener("scroll", () => {
-        if (suppressScrollEvents) return;
         const distance =
           chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight;
-        autoScrollEnabled = distance <= SCROLL_THRESHOLD_PX;
-        jumpDownBtn.classList.toggle("visible", !autoScrollEnabled);
+        const isUser = Date.now() - userInteractionAt < 500;
+
+        if (distance <= 10) {
+          // הגענו לקצה התחתון — להחזיר אוטו אם היה כבוי
+          if (!autoScrollEnabled) {
+            autoScrollEnabled = true;
+            jumpDownBtn.classList.remove("visible");
+          }
+        } else if (isUser && autoScrollEnabled) {
+          // המשתמשת גללה למעלה אקטיבית — לכבות אוטו ולהראות ↓
+          autoScrollEnabled = false;
+          jumpDownBtn.classList.add("visible");
+        }
       });
 
       jumpDownBtn.addEventListener("click", () => {
         autoScrollEnabled = true;
-        suppressScrollEvents = true;
         chatEl.scrollTop = chatEl.scrollHeight;
         jumpDownBtn.classList.remove("visible");
-        requestAnimationFrame(() => {
-          suppressScrollEvents = false;
-        });
       });
 
       function setStatus(text, cls) {
@@ -910,11 +921,7 @@
 
       function scrollChatToBottom() {
         if (!autoScrollEnabled) return;
-        suppressScrollEvents = true;
         chatEl.scrollTop = chatEl.scrollHeight;
-        requestAnimationFrame(() => {
-          suppressScrollEvents = false;
-        });
       }
 
       function showError(msg) {
