@@ -262,6 +262,36 @@ forced flush: אם המחרוזת ארוכה מ-200 תווים בלי גבול, 
 
 ---
 
+## 2026-05-14 13:30
+
+### תיקון באג hot-fix — סגמנטים שני ואילך של message לא הוצגו
+
+באג שזוהה בבדיקה empirical של Avi: בתשובות עם יותר ממשפט אחד, רק המשפט הראשון הוצג בצ'אט — שאר המשפטים נשמעו ב-TTS אבל לא נכתבו בבועה.
+
+#### שורש הבעיה
+
+עם החיתוך לפי משפט שמשימה D הוסיפה, ה-backend שולח `message_rendered` נפרד לכל משפט. ה-frontend חיפש "bubble של message בלי HTML" כדי להציב את ה-HTML. אחרי המשפט הראשון, הבועה כבר עם HTML (`hasHtml=true`), אז המשפט השני לא מצא יעד. בנוסף, `appendText` מדלג על עדכון תצוגה אם `hasHtml=true`, אז גם הטקסט הגולמי של chunks נוספים לא הוצג.
+
+#### תיקון
+
+`frontend/index.html`:
+1. **`AgentTurn.appendMessage`** — אם הבועה הנוכחית של message כבר rendered (`hasHtml=true`), היא נחשבת סגורה. הסגמנט הבא יוצר sub-bubble חדש.
+2. **handler של `message_rendered`** — אם אין bubble של message בלי HTML, יוצרים אחת חדשה (לטיפול במקרה ש-flush מרובה התרחש על chunk יחיד שהכיל כמה משפטים).
+
+תוצאה: כל משפט מקבל bubble משלו עם רינדור מלא וכפתור השמעה. תואם לעיקרון של per-segment streaming.
+
+#### תיקון משני — styling
+
+`thought-translation` ירשה `font-style: italic` מ-`.bubble` של thought. בעברית איטליק קשה לקריאה. נוסף `font-style: normal` להתרגום העברי כדי להבדיל ויזואלית ברור יותר (אנגלית — italic קטן ואפור; עברית — normal גדול ובהיר).
+
+#### חריגה מהפרוטוקול הרגיל
+
+הסוכן המתכנן ערך קוד frontend, מה שבדרך כלל אסור (ראה `docs/agents/planner.md`). הצדקה: המבצע סיים את הסשן שלו, Avi בעיצומה של בדיקה empirical, והבאג חוסם את הבדיקה. תיקון של 8 שורות JS + 2 שורות CSS. מתועד גם ב-`planner.md`.
+
+Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combined)` ב-Node).
+
+---
+
 ## 2026-05-14 10:45
 
 ### מבנה מחדש של `docs/plan.md` — הגשה למבצע

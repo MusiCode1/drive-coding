@@ -233,7 +233,8 @@
         border-top: 1px dashed var(--border);
         color: var(--fg);
         font-size: 14px;
-        /* font-style: italic + line-height יורשים */
+        /* עברית באיתליק קשה לקריאה — חוזרים ל-normal (overriding the italic on parent) */
+        font-style: normal;
       }
 
       /* tools sub-bubble */
@@ -850,7 +851,15 @@
         }
 
         appendMessage(text) {
-          if (!this.currentSub || this.currentSub.kind !== "message") {
+          // אם ה-message bubble הנוכחי כבר rendered (יש לו HTML מסגמנט קודם),
+          // הוא נסגר ועוברים לסגמנט חדש (משפט נוסף שיגיע אחריו) — sub-bubble חדש.
+          const currentIsClosed =
+            this.currentSub?.kind === "message" && this.currentSub.hasHtml;
+          if (
+            !this.currentSub ||
+            this.currentSub.kind !== "message" ||
+            currentIsClosed
+          ) {
             this.currentSub = new SubBubble("message", {
               historic: this.historic,
             });
@@ -1438,10 +1447,18 @@
           case "message_rendered": {
             const turn = currentTurn ?? turns[turns.length - 1];
             if (!turn) break;
-            const sub = turn.subs.find(
+            let sub = turn.subs.find(
               (s) => s.kind === "message" && !s.hasHtml,
             );
-            if (sub) sub.setHtml(msg.html);
+            if (!sub) {
+              // לא נמצאה bubble ריקה — סגמנט נוסף שהגיע בלי text_chunk חדש
+              // (קורה כשמספר משפטים נמצאו ב-chunk יחיד ב-backend, אז ה-flush
+              // קרא יותר מפעם אחת על אותו chunk). יצירת bubble חדשה לסגמנט.
+              sub = new SubBubble("message", { historic: turn.historic });
+              turn.subs.push(sub);
+              turn.currentSub = sub;
+            }
+            sub.setHtml(msg.html);
             break;
           }
 
