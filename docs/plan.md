@@ -461,11 +461,14 @@ unintelligible, return an empty string.
 
 ## משימות בעבודה (executor)
 
-- **L** — קפיצה אוטומטית ממחשבות לתשובה (התחיל 2026-05-14 14:45)
+- **M** — גלילה חכמה לפי user intent (התחיל 2026-05-14 14:55)
 
 ---
 
 ## משימות שבוצעו
+
+### L — קפיצה אוטומטית ממחשבות לתשובה (2026-05-14 14:55)
+frontend: `StreamingAudio.stop()` חדש — pause + src="" + endOfStream. ב-`handleAudioStart` בלוק חדש כשמתחיל `kind="message"`: עוצר את ה-currentStream אם הוא thought, ומסיר thoughts פנדינג מ-streamOrder/activeStreams (משאיר tool_title וכו'). חיתוך אגרסיבי באמצע chunk. `node --check` עבר.
 
 ### K — CSS revert ל-`thought-translation` (2026-05-14 14:45)
 frontend: הוסרו padding-top, border-top, color, font-size, font-style מ-`.thought-translation`. נשארו רק `display:block` + `margin-top:4px`. כל השאר יורש מהבועה ההורית. `node --check` עבר.

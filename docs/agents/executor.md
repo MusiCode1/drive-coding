@@ -86,9 +86,14 @@
 
 - **סטטוס:** פעיל — v3 בעבודה
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** משימה L — `frontend/index.html` (auto-skip thoughts)
+- **עובד על:** משימה M — `frontend/index.html` (smart scroll user intent)
 
 ## לוג
+
+### [2026-05-14 14:55] ✅ סיימתי משימה L
+`StreamingAudio.stop()` חדש (pause + src="" + endOfStream). `handleAudioStart` חותך thoughts פעילים ופנדינג כש-message מתחיל. `node --check` עבר.
+
+עובר ל-M.
 
 ### [2026-05-14 14:45] ✅ סיימתי משימה K
 CSS של `.thought-translation` הצטמצם ל-`display:block` + `margin-top:4px`. הוסרו padding-top/border-top/color/font-size/font-style. תרגום נראה זהה למקור. `node --check` עבר.

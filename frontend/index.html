@@ -1128,6 +1128,27 @@
           } catch {}
         }
 
+        /**
+         * עצירה אגרסיבית מוחלטת — באמצע ניגון, באמצע chunk.
+         * משמש כש-thought נקטע לטובת תחילת הקראת message (משימה L).
+         */
+        stop() {
+          try {
+            this.audio.pause();
+          } catch {}
+          try {
+            this.audio.src = "";
+          } catch {}
+          try {
+            if (
+              this.mediaSource &&
+              this.mediaSource.readyState === "open"
+            ) {
+              this.mediaSource.endOfStream();
+            }
+          } catch {}
+        }
+
         getBase64() {
           let total = 0;
           for (const c of this.chunks) total += c.length;
@@ -1163,6 +1184,31 @@
       let currentStream = null;
 
       function handleAudioStart(streamId, kind) {
+        // קפיצה אגרסיבית: ברגע שמתחיל message, חותכים thoughts פעילים
+        // ופנדינג. המשתמש מרגיש מיידית שהמודל "סיים לחשוב".
+        if (kind === "message") {
+          if (currentStream?.kind === "thought") {
+            try {
+              currentStream.stop();
+            } catch {}
+            currentStream = null;
+          }
+          const keep = [];
+          for (const id of streamOrder) {
+            const s = activeStreams.get(id);
+            if (s && s.kind === "thought") {
+              try {
+                s.stop();
+              } catch {}
+              activeStreams.delete(id);
+            } else if (s) {
+              keep.push(id);
+            }
+          }
+          streamOrder.length = 0;
+          streamOrder.push(...keep);
+        }
+
         let sub = null;
         if (kind === "message") {
           const turn = currentTurn ?? turns[turns.length - 1];

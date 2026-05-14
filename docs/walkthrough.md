@@ -4,6 +4,34 @@
 
 ---
 
+## 2026-05-14 14:55
+
+### משימה L — קפיצה אוטומטית ממחשבות לתשובה (executor)
+
+**הבעיה:** ה-`ttsQueue` ב-backend סדרתי, אבל ה-frontend מנגן אסינכרונית. ה-MediaSource צובר chunks ו-`audio.play()` ממשיך גם אחרי ש-backend שלח `audio_end`. תוצאה: thought מנוגן כשהמסר כבר זורם.
+
+**הפתרון:** אגרסיבי. ברגע שמתחיל `audio_start kind="message"` ב-frontend — לקטוע מיד thoughts פעילים ופנדינג, כולל באמצע chunk.
+
+**`frontend/index.html`:**
+
+*`StreamingAudio.stop()`* חדש — מקביל ל-`pause()`, אבל גם:
+- `this.audio.src = ""` (משחרר את ה-source הנוכחי, מבטל פעולות ניגון פנדינג).
+- `mediaSource.endOfStream()` אם open (לסיים את ה-MSE buffer).
+- כל בלוק עטוף ב-`try {} catch {}` — שגיאות לא יעצרו את ה-flow.
+
+*`handleAudioStart`* מקבל בלוק חדש בתחילתו, כש-`kind === "message"`:
+1. אם `currentStream?.kind === "thought"` → `stop()` + `currentStream = null`.
+2. iterate על `streamOrder`: כל stream של `thought` בתור → `stop()` + `activeStreams.delete`. שאר ה-streams (theoretically lower priority — בדרך כלל tool_title) נשמרים ב-`keep`.
+3. `streamOrder` נבנה מחדש מ-`keep`.
+
+המסר החדש עצמו ייווצר ויתחיל לנגן רגיל אחרי הבלוק הזה.
+
+**זרימת UX:** thought ארוך מתורגם ומוקרא → backend מסיים thought TTS, מתחיל message TTS → frontend מקבל `audio_start (message)` → קטיעת thought מיד באמצע משפט → התחלת המסר. המשתמש שומע: thought חלקי קצוץ → מסר.
+
+`node --check` עבר.
+
+---
+
 ## 2026-05-14 14:45
 
 ### משימה K — CSS revert ל-`thought-translation` (executor)
