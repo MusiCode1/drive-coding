@@ -663,6 +663,9 @@ jumpDownBtn.addEventListener("click", () => {
 
 ## משימות שבוצעו
 
+### A — חיזוק `system-prompt.ts` (2026-05-14 11:05)
+הוספת שתי שורות לסעיף "חוקי תגובה" של `VOICE_SYSTEM_PROMPT`: דגש שהתשובה תוקרא ולא תוצג, ושלמשתמש אין מסך. `bunx tsc --noEmit` עבר.
+
 ### תיקון באג `playQueue` residual (commit 77f32bb, 2026-05-14)
 ב-`frontend/index.html` שורות 1197/1205, ההתייחסות ל-`playQueue.length === 0` הוחלפה ב-`!currentlyPlaying && !currentStream && streamOrder.length === 0`. בוצע בסשן הקודם של הסוכן הקודם.
 

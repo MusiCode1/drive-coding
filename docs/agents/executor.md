@@ -84,11 +84,23 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** לא פעיל (קובץ stub)
-- **Worktree:** TBD
-- **עובד על:** —
+- **סטטוס:** פעיל
+- **Worktree:** `/home/user/projects/voice-acp` (master — אין worktree נפרד, עובדים על אותו repo)
+- **עובד על:** משימה B — `backend/src/stt.ts` + `backend/src/server.ts`
 
 ## לוג
+
+### [2026-05-14 11:05] ✅ סיימתי משימה A
+הוספתי שתי שורות ל-`VOICE_SYSTEM_PROMPT` ב-`backend/src/system-prompt.ts`: דגש שהתשובה תוקרא לא תוצג, והבהרה שלמשתמש אין מסך. `bunx tsc --noEmit` עבר. עדכנתי walkthrough + plan.
+
+עובר ל-B.
+
+### [2026-05-14 11:00] התחלתי סשן — מתחיל ממשימה A
+קראתי: `AGENTS.md`, `docs/agents/README.md`, `docs/agents/executor.md`, `docs/agents/planner.md`, `docs/plan.md`, `docs/spec.md`, `docs/walkthrough.md`. בדקתי `git log` ו-`git worktree list` — אנחנו על master, אין worktree נפרד (בהתאם להערה של המתכנן).
+
+תוכנית: לרוץ A→I לפי הסדר המומלץ. כל משימה = commit אחד. כל commit כולל עדכון walkthrough.
+
+מתחיל ממשימה A — חיזוק `system-prompt.ts` (5 דק', קל, להיכנס לקצב).
 
 ### [2026-05-14 09:00] קובץ נוצר
 זהו קובץ stub. כש-Avi יפעיל סשן חדש לביצוע, הסוכן יעדכן את "מצב נוכחי" ויתחיל לעבוד לפי התפקיד למעלה.
