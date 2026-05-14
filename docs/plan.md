@@ -7,9 +7,11 @@
 
 ## מצב נוכחי (2026-05-14)
 
-POC v1 הושלם וקומט. ה-stack פעיל E2E: WebSocket + ACP + Gemini STT + ElevenLabs TTS + streaming, פיצול sub-bubbles, היסטוריה, car mode. ראה `docs/walkthrough.md` 2026-05-14.
+**v1 + v2 הושלמו וקומטו.** ה-stack פעיל E2E כולל כל שכבת ההנגשה האודיו (gemini-helper לתרגום ונראציה, חיתוך משפטים, mic state machine, גלילה חכמה, dir=auto). ראה `docs/walkthrough.md` ו"משימות שבוצעו" למטה.
 
-**v2 = שכבת הנגשה אודיו.** עיקרון מנחה: בכל מקום שטקסט מהמערכת לא נשמע טבעי — Gemini Flash Lite מתרגם/מנסח במקום לוגיקה ייעודית. גנרי, זול, מהיר.
+**v3 = איטרציית baseline לנסיעה.** Avi עשה בדיקה empirical ב-13:30 וזיהה באגים ושיפורים דחופים שמפריעים לשימוש בסיסי. הסקופ של האיטרציה הזאת: תיקוני באגים + שיפורים שיהפכו את החוויה לטובה מספיק לשימוש בדרכים. סדר עדיפויות לפי דחיפות לחוויית המשתמש.
+
+עיקרון מנחה כללי נשאר: Gemini (Flash Lite לעזרים, Flash הרגיל ל-STT) כשכבת הנגשה — בכל מקום שטקסט מהמערכת לא נשמע טבעי. גנרי, זול, מהיר.
 
 ---
 
@@ -40,573 +42,233 @@ gemini-helper.ts
 
 ## משימות לביצוע
 
-> כל משימה אטומית — אפשר לקחת אחת ולעשות commit נפרד. סדר ביצוע מומלץ A→I. A/B/G/H/I עצמאיות (ניתן במקביל). C חייבת לפני E/F.
+> איטרציית v3 — תיקוני באגים ושיפורים דחופים שזוהו בבדיקה empirical של Avi ב-13:30.
+> כל המשימות עצמאיות זו מזו טכנית; הסדר J→O הוא לפי דחיפות לחוויית המשתמש.
 > בכל משימה: **commit יחיד**, הודעה בעברית, פורמט `(scope): כותרת\n\n- שינוי 1\n- שינוי 2`.
 
 ---
 
-### A. חיזוק `system-prompt.ts` (קל)
+### J. תיקון `translateThought` — החזרת `null` בכישלון
 
-**מטרה:** לחזק את ההוראה למודל לחשוב על הקראה ולא על תצוגה.
+**מטרה:** כשתרגום של מחשבה נכשל (timeout או error או תוצאה ריקה), אסור שהטקסט האנגלי המקורי יישלח לקדמית כ"תרגום עברי" ויוקרא דרך TTS. במקום זה — לדלג. המשתמש יראה רק את המחשבה האנגלית המקורית, בלי שורה שנייה ובלי קול.
 
-**קובץ:** `backend/src/system-prompt.ts`
-
-**שינוי:** להוסיף שתי שורות לסעיף "חוקי תגובה" של `VOICE_SYSTEM_PROMPT` (אחרי השורה "כל מה שאתה כותב בתור תשובה (לא thinking) יוקרא בקול..."):
-
-```
-- תחשוב על איך התשובה שלך נשמעת, לא איך היא נראית בקריאה על מסך.
-- המשתמש שומע אותך, לא קורא. אין לו מסך מולו.
-```
-
-**שים לב:** הקובץ כבר מכיל "אם פלט של כלי ארוך — סכם בקצרה" ו"בלי טבלאות / קוד / markdown" — לא לכפול.
-
-**בדיקה:** `cd backend && bunx tsc --noEmit`. שינוי טקסט בלבד, אמור לעבור מיד.
-
-**Commit suggestion:** `(prompts): חיזוק system prompt — דגש על הקראה ולא קריאה`
-
----
-
-### B. שדרוג STT prompt + העברת context
-
-**מטרה:** תמלול עברי טכנולוגי יותר מדויק. שימוש בהודעה הקודמת של המודל כ-disambiguation context.
+**הקשר:** כיום אם Gemini עובר את ה-timeout של 2500ms או נכשל, ה-fallback של `translateThought` הוא הטקסט המקורי באנגלית. הוא נשלח כ-`thought_translation` ל-frontend ומוקרא דרך אילבן בקול עברי — נשמע כאנגלית מסולפת ומבלבל את המשתמש. ראו דיווח באג ב-walkthrough של 2026-05-14 ~14:00.
 
 **קבצים:**
-- `backend/src/stt.ts` — שינוי פרומפט וחתימה
-- `backend/src/server.ts` — שמירת `lastAgentMessage` והעברתו
+- `backend/src/gemini-helper.ts`
+- `backend/src/server.ts`
 
-**B.1 — `stt.ts`:**
+**שינוי 1 — `gemini-helper.ts`:**
 
-החליפי את `TRANSCRIBE_PROMPT` הנוכחי בפרומפט חדש:
-
-```
-The user is speaking Hebrew in a software development context.
-Transcribe the audio exactly as spoken, with minor corrections:
-- If a word is unclear, prefer a sensible technological interpretation
-  (e.g. "ריאקט" over "ראקת", "באג" over "בק").
-- Fix obvious disfluencies (repetitions, "אה אה", false starts).
-- Preserve the original language (Hebrew or English).
-
-Output ONLY the transcription itself — no introductions, no quotes,
-no explanations, no formatting. If the audio is silent or unintelligible,
-return an empty string.
-```
-
-הוסיפי שדה אופציונלי ל-`SttOptions`:
+חתימה חדשה:
 ```ts
-/** הודעת המודל הקודמת — תיכלל כקונטקסט לתמלול מדויק יותר. */
-previousResponse?: string;
+export async function translateThought(text: string): Promise<string | null>
 ```
 
-אם `previousResponse` הועבר, להוסיף כ-text part *לפני* האודיו:
+מימוש:
 ```ts
-contents: createUserContent([
-  ...(opts.previousResponse ? [`Recent assistant message (for context only — do NOT transcribe this): "${opts.previousResponse}"`] : []),
-  createPartFromBase64(audioBase64, mimeType),
-  prompt,
-])
-```
-
-**B.2 — `server.ts`:**
-
-ב-`ConnState` (סביב שורה 86) הוסיפי שדה:
-```ts
-lastAgentMessage: string | null;
-```
-ואתחול ל-`null` ב-`open` handler.
-
-ב-`flushMessage` (בתוך `handleUserInput`, סביב שורה 383), אחרי `totalMessageChars += t.length`:
-```ts
-state.lastAgentMessage = t;
-```
-(שמירת ה-flush האחרון מספיקה; לא צריך לצבור.)
-
-ב-`handleAudio` (סביב שורה 315), בקריאה ל-`transcribeAudio`:
-```ts
-const transcript = await transcribeAudio(msg.data, {
-  mimeType: msg.mimeType ?? "audio/webm",
-  previousResponse: state.lastAgentMessage ?? undefined,
-});
-```
-
-**בדיקה:** `bunx tsc --noEmit` חובה. בדיקה ידנית: שיחה של 2-3 פניות עוקבות — לוודא שהקונטקסט עוזר על מילים דו-משמעיות.
-
-**Commit suggestion:** `(stt): פרומפט מהוקצע לעברית טכנולוגית + context מההודעה הקודמת`
-
----
-
-### C. יצירת `backend/src/gemini-helper.ts`
-
-**מטרה:** מודול עזר משותף — translateThought + narrateToolCall עם caching ו-timeouts.
-
-**קובץ חדש:** `backend/src/gemini-helper.ts`
-
-**שלד:**
-
-```ts
-import { GoogleGenAI, createUserContent } from "@google/genai";
-
-const DEFAULT_MODEL = "gemini-flash-lite-latest";
-const TRANSLATE_TIMEOUT_MS = 2500;
-const NARRATE_TIMEOUT_MS = 1500;
-
-const ai = new GoogleGenAI({ apiKey: "placeholder" });
-
-const translationCache = new Map<string, string>();
-const narrationCache = new Map<string, string>();  // key = toolCallId
-
-function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
-  ]);
-}
-```
-
-**C.1 — `translateThought(text: string): Promise<string>`:**
-
-- אם `translationCache.has(text)` → החזר מיד.
-- אחרת: קריאה ל-Gemini עם הפרומפט:
-  ```
-  Translate the following text into natural spoken Hebrew, suitable for
-  being read aloud through TTS. Output ONLY the Hebrew translation —
-  no commentary, no quotes, no English, no markdown.
-
-  Text:
-  <text>
-  ```
-- timeout: `TRANSLATE_TIMEOUT_MS`. ב-fail/timeout → החזר את הטקסט המקורי (fallback).
-- שמרי תוצאה מוצלחת ב-cache.
-
-**C.2 — `narrateToolCall(ctx, tool): Promise<string>`:**
-
-חתימה:
-```ts
-export interface NarrateContext {
-  userMessage: string;
-  recentMessages: string[];   // עד 3 אחרונות, סדר כרונולוגי
-}
-export interface ToolCallForNarrate {
-  toolCallId: string;
-  kind?: string;              // read/edit/execute/search/think/...
-  title: string;
-}
-```
-
-- אם `narrationCache.has(toolCallId)` → החזר מיד.
-- אחרת: פרומפט:
-  ```
-  You are narrating a coding assistant's actions out loud in Hebrew.
-  Given the user's request and recent context, describe in ONE short
-  conversational Hebrew sentence what the assistant is about to do —
-  and WHY in this context. Don't list parameters; explain the intent.
-  Don't repeat the user's words verbatim.
-
-  Examples:
-  - Tool: read README.md          → "אני בודק את ה-README כדי לראות מה הפרויקט"
-  - Tool: execute bash "ls"       → "אני מציץ מה יש בתיקייה"
-  - Tool: edit hello.js           → "מעדכן את הפונקציה שדיברנו עליה"
-  - Tool: execute "npm run build" → "מריץ build לראות שאין שגיאות"
-
-  User said: "<userMessage>"
-  Recent assistant context: <recentMessages.join(" · ") or "—" אם ריק>
-
-  Tool: <kind ?? "?"> — <title>
-
-  Output ONLY the Hebrew sentence (no quotes, no markdown).
-  ```
-- timeout: `NARRATE_TIMEOUT_MS`. ב-fail/timeout → החזר את ה-`title` הגולמי.
-- שמרי לפי `toolCallId`.
-
-**CLI test block (אופציונלי, לבדיקה עצמאית):**
-```ts
-if (import.meta.main) {
-  const arg = process.argv[2];
-  if (!arg) {
-    console.error("שימוש: bun src/gemini-helper.ts <english text>");
-    process.exit(1);
+const call = (async () => {
+  try {
+    const response = await ai.models.generateContent({
+      model: DEFAULT_MODEL,
+      contents: createUserContent([TRANSLATE_PROMPT_PREFIX + key]),
+    });
+    const out = (response.text ?? "").trim();
+    return out || null;        // תוצאה ריקה → null
+  } catch (e) {
+    console.error(`[gemini-helper] translateThought נכשל: ${(e as Error).message}`);
+    return null;                 // exception → null
   }
-  const start = Date.now();
-  const result = await translateThought(arg);
-  console.log(`(${Date.now() - start}ms): ${result}`);
+})();
+
+const result = await withTimeout(call, TRANSLATE_TIMEOUT_MS, null);  // timeout → null
+if (result !== null) {
+  translationCache.set(key, result);  // cache רק תוצאה אמיתית
 }
+return result;
 ```
 
-**בדיקה:** `bunx tsc --noEmit`. אחרי כתיבה, להפעיל את ה-CLI test:
-```bash
-cd backend && bun src/gemini-helper.ts "I should check the README first to understand the project."
-```
-פלט צפוי: משפט עברי טבעי.
+**שינוי 2 — `server.ts`, בפונקציה `flushThought`:**
 
-**Commit suggestion:** `(gemini-helper): מודול עזר לתרגום מחשבות ונראציה של tool calls`
-
----
-
-### D. חיתוך לפי משפט ב-`flushMessage`
-
-**מטרה:** קטעי TTS קצרים יותר → אודיו מתחיל מהר יותר, חוויית streaming טבעית.
-
-**קובץ:** `backend/src/server.ts` (בתוך `handleUserInput`)
-
-**מצב היום:** `flushMessage` מתבצע רק על מעבר kind (message → thought / tool_call) או סוף תור. תשובה ארוכה = קטע ארוך אחד.
-
-**שינוי:** לזהות גבול משפט בתוך `messageBuffer` בכל קבלת chunk, ולעשות flush אם מצאנו גבול.
-
-**מימוש:**
-
-הוסיפי פונקציית עזר:
-```ts
-function findSentenceBoundary(s: string): number {
-  // מחזיר אינדקס *אחרי* הגבול האחרון, או -1 אם אין.
-  // בודק (מסוף הbuffer חזרה) את הסימנים: .!? + רווח, : + רווח, \n\n.
-  // לא חותך אם הנקודה אחרי קיצור (Mr.) או באמצע מספר (3.14).
-  const patterns = [
-    /[.!?][\s\n]/g,
-    /:\s/g,
-    /\n\n+/g,
-  ];
-  let last = -1;
-  for (const re of patterns) {
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(s)) !== null) {
-      const end = m.index + m[0].length;
-      // בדיקת קיצורים — אם לפני הנקודה יש "Mr"/"Dr"/"vs" וכו' — דלג
-      if (m[0][0] === '.') {
-        const before = s.slice(Math.max(0, m.index - 3), m.index);
-        if (/\b(Mr|Dr|Mrs|Ms|St|vs|etc|i\.e|e\.g)$/i.test(before)) continue;
-        // מספר עשרוני: 3.14 — דלג
-        if (/\d$/.test(before) && /^\d/.test(s.slice(end))) continue;
-      }
-      if (end > last) last = end;
-    }
-  }
-  // forced flush — 200 תווים בלי גבול
-  if (last === -1 && s.length >= 200) {
-    // נסי לחתוך ברווח האחרון לפני 200
-    const slice = s.slice(0, 200);
-    const lastSpace = slice.lastIndexOf(" ");
-    return lastSpace > 100 ? lastSpace + 1 : 200;
-  }
-  return last;
-}
-```
-
-ב-`onChunk` כאשר `kind === "message"` (סביב שורה 404-411):
-```ts
-messageBuffer += chunk;
-let boundary: number;
-while ((boundary = findSentenceBoundary(messageBuffer)) !== -1) {
-  const head = messageBuffer.slice(0, boundary);
-  const rest = messageBuffer.slice(boundary);
-  messageBuffer = head;
-  flushMessage();           // שולח head ל-TTS + רינדור
-  messageBuffer = rest;     // השארית מצטברת ל-flush הבא
-}
-```
-
-**שיקול עברית:** בעברית נקודה נדירה יותר. ה-fallback של 200 תווים מטפל בזה.
-
-**בדיקה:** `bunx tsc --noEmit`. בדיקה ידנית: שאלה עם תשובה ארוכה — לראות שבועות מתחלקות לקטעים ולא לבועה ארוכה אחת.
-
-**Commit suggestion:** `(server): חיתוך flushMessage לפי גבול משפט בנוסף למעבר kind`
-
----
-
-### E. תרגום thoughts + הקראה
-
-**תלות:** דורש את C (`translateThought`).
-
-**מטרה:** הקראה של reasoning המודל בעברית, לא רק תצוגה של האנגלית.
-
-**E.1 — Backend (`server.ts`):**
-
-**שינויי `ServerMessage`:**
-- `audio_start.kind` יקבל ערך חדש: `"thought"`.
-- `text_chunk` יקבל kind חדש `"thought_translation"`.
-
-```ts
-| { type: "text_chunk"; text: string; kind: "message" | "thought" | "thought_translation" }
-// ...
-| { type: "audio_start"; streamId: string; kind: "message" | "tool_title" | "thought" }
-```
-
-**ConnState חדש:** `thoughtBuffer: string` (במקביל ל-`messageBuffer`).
-
-**ב-`onChunk` עבור `kind === "thought"`** (סביב שורה 407):
-- צבירה ב-`thoughtBuffer` (במקום רק לעשות flush של messageBuffer).
-- flush של thoughtBuffer ב-:
-  - מעבר ל-`message` או `tool_call` (create)
-  - או סוף תור
-
-**`flushThought()` חדש:**
 ```ts
 const flushThought = () => {
   const t = thoughtBuffer.trim();
   thoughtBuffer = "";
   if (!t) return;
-  // queue async: תרגום → text_chunk → TTS
+  console.log(`[ws] thought segment (${t.length} chars) → תרגום + TTS`);
   ttsQueue = ttsQueue.then(async () => {
     const hebrew = await translateThought(t);
-    send(ws, { type: "text_chunk", text: hebrew, kind: "thought_translation" });
-    const streamId = `s${Date.now().toString(36)}-${streamCounter++}`;
-    try {
-      send(ws, { type: "audio_start", streamId, kind: "thought" });
-      await streamCachedTextToSpeech(hebrew, { voiceId: state.voiceId ?? undefined },
-        (chunk) => send(ws, { type: "audio_chunk", streamId,
-          data: Buffer.from(chunk).toString("base64") }));
-      send(ws, { type: "audio_end", streamId });
-    } catch (e) {
-      console.error(`[ws] TTS thought נכשל: ${(e as Error).message}`);
-      send(ws, { type: "audio_end", streamId });
+    if (hebrew === null) {
+      console.log(`[ws] thought translation failed — skipping TTS for this segment`);
+      return;  // אין text_chunk, אין TTS
     }
+    send(ws, {
+      type: "text_chunk",
+      text: hebrew,
+      kind: "thought_translation",
+    });
+    await streamTts(hebrew, "thought");
   });
 };
 ```
 
-קרא ל-`flushThought()` בכל מקום שהיום `flushMessage()` נקרא במעבר kind, וגם בסוף תור.
+**שינוי 3 — CLI test block בסוף `gemini-helper.ts`:**
 
-**E.2 — Frontend (`index.html`):**
+```ts
+const result = await translateThought(arg);
+console.log(`(${Date.now() - start}ms): ${result === null ? "[null — נכשל]" : result}`);
+```
 
-**SubBubble — שיטה חדשה `setThoughtTranslation(hebrewText)`:**
-- יוצרת שורה שנייה בתוך הבועה, מתחת לטקסט האנגלי.
-- styling: גודל רגיל, italic, צבע ברור (בניגוד לאנגלית שהיא קטן+אפור).
-- מפריד עדין (border-top דקיק או margin).
+**בדיקה:**
+- `cd backend && bunx tsc --noEmit` — חובה.
+- סימולציית כישלון: לקצר זמנית `TRANSLATE_TIMEOUT_MS` ל-1ms בקובץ, הפעלת שיחה, לוודא שאין הקראה של אנגלית ושלא מופיעה שורה שנייה בבועת thought. להחזיר אחרי הבדיקה.
 
-**Handler חדש ל-`text_chunk` עם `kind === "thought_translation"`:**
-- מוצא את ה-thought bubble האחרון בתור הנוכחי.
-- קורא ל-`setThoughtTranslation(text)`.
-
-**Handler ל-`audio_start` עם `kind === "thought"`:**
-- מקשר את ה-stream לבועת ה-thought (לא לבועת message). אותו צ'יים, אותה תור ניגון.
-
-**בדיקה:** restart server, שאלה שמייצרת thought ארוך, לראות:
-- אנגלית מקור מוצגת בבועת thought (כמו היום).
-- תרגום עברי נוסף מתחתיה.
-- ההקראה היא של התרגום העברי.
-
-**Commit suggestion:** `(thoughts): תרגום thoughts לעברית + הקראה דרך gemini-helper`
+**Commit suggestion:** `(thoughts): translateThought מחזיר null בכישלון — דילוג על TTS ועל תצוגת תרגום`
 
 ---
 
-### F. נראציה של tool calls
+### K. החזרת CSS של `thought-translation` לזהות לאנגלית
 
-**תלות:** דורש את C (`narrateToolCall`).
+**מטרה:** תרגום עברי של מחשבה ייראה זהה לחלוטין למחשבה האנגלית המקורית. השפה היא המבחין היחיד — לא גודל, לא צבע, לא סגנון.
 
-**מטרה:** במקום להקריא את ה-title הגולמי של ה-tool ("Read README.md"), Gemini מנסח משפט קצר טבעי בעברית עם הקשר.
-
-**F.1 — context tracking ב-`server.ts`:**
-
-ב-`ConnState`:
-```ts
-lastUserText: string | null;
-recentMessages: string[];     // FIFO, max 3
-```
-איתחול ב-`open`.
-
-ב-`handleAudio`, אחרי קבלת transcript:
-```ts
-state.lastUserText = transcript;
-```
-
-ב-`flushMessage`, אחרי `totalMessageChars += t.length`:
-```ts
-state.recentMessages.push(t);
-if (state.recentMessages.length > 3) state.recentMessages.shift();
-```
-
-**F.2 — שינוי `onToolCall`** (סביב שורות 413-430):
-
-החליפי את:
-```ts
-if (event.event === "create") {
-  flushMessage();
-  if (event.title?.trim()) {
-    queueTts(event.title.trim(), "tool_title");
-  }
-}
-```
-
-ב:
-```ts
-if (event.event === "create") {
-  flushMessage();
-  flushThought();          // אם יש thought שמחכה — לסיים אותו קודם
-  if (event.title?.trim()) {
-    ttsQueue = ttsQueue.then(async () => {
-      let narrate = event.title!.trim();
-      try {
-        narrate = await narrateToolCall({
-          userMessage: state.lastUserText ?? "",
-          recentMessages: state.recentMessages.slice(-3),
-        }, {
-          toolCallId: event.toolCallId,
-          kind: event.toolKind,
-          title: event.title!,
-        });
-      } catch (e) {
-        console.error(`[ws] narrate נכשל: ${(e as Error).message}`);
-      }
-      const streamId = `s${Date.now().toString(36)}-${streamCounter++}`;
-      try {
-        send(ws, { type: "audio_start", streamId, kind: "tool_title" });
-        await streamCachedTextToSpeech(narrate, { voiceId: state.voiceId ?? undefined },
-          (chunk) => send(ws, { type: "audio_chunk", streamId,
-            data: Buffer.from(chunk).toString("base64") }));
-        send(ws, { type: "audio_end", streamId });
-      } catch {
-        send(ws, { type: "audio_end", streamId });
-      }
-    });
-  }
-}
-```
-
-**אל תוסיפי `kind: "tool_narration"` חדש** — שמרי `kind: "tool_title"` הקיים כדי לא לשבור את ה-frontend. הוא לא יודע מה ה-text — רק את הצ'יים.
-
-**F.3 — Frontend:** אין שינוי. אותו kind, אותו handler.
-
-**בדיקה:** restart server, שאלה שמייצרת מספר tool calls שונים, לראות שכל אחד מקבל נראציה הגיונית שונה. לבדוק שגם Bash commands מקבלים תיאור של תכלית ולא שם הפקודה.
-
-**Commit suggestion:** `(tools): נראציה של tool calls דרך Gemini במקום title גולמי`
-
----
-
-### G. UI: mic button state machine — pause/resume
-
-**מטרה:** במצב speaking, לחיצה על המיקרופון תעשה pause/resume של ההקראה במקום להתחיל הקלטה.
+**הקשר:** בתיקון hot-fix קודם (commit 9e36d25) הוגדר ה-Hebrew להיות גדול ובהיר ולא איטלי כדי "להבדיל". Avi הבהיר שזו לא הכוונה: אותו עיצוב לשתי השורות, השפה כבר מבדילה.
 
 **קובץ:** `frontend/index.html`
 
-**State machine חדש:**
-```
-idle      ──click──► recording
-recording ──click──► idle (sends audio)
-speaking  ──click──► paused
-paused    ──click──► speaking
-```
+**שינוי ב-CSS, בסעיף `.msg.agent.thought .bubble .thought-translation` (סביב שורה 228):**
 
-- `speaking` = `currentStream != null || currentlyPlaying != null` ולא paused.
-- `paused` = `audio.pause()` נקרא, ה-Audio/StreamingAudio object עוד קיים.
-
-**שינויים ב-`StreamingAudio`:**
-
-הוסיפי שתי methods:
-```js
-pause() { try { this.audio.pause(); } catch {} }
-resume() { try { this.audio.play(); } catch {} }
-```
-
-**State גלובלי חדש:** `let audioIsPaused = false;`
-
-**פונקציה חדשה:**
-```js
-function getMicButtonState() {
-  if (isRecording) return "recording";
-  if (currentlyPlaying || currentStream) {
-    return audioIsPaused ? "paused" : "speaking";
-  }
-  return "idle";
-}
-
-function updateMicButton() {
-  const s = getMicButtonState();
-  btn.dataset.state = s;
-  // עדכון אייקון + צבע ב-CSS לפי data-state
-  btn.textContent = ({ idle: "🎙", recording: "⏺", speaking: "⏸", paused: "▶" })[s];
+```css
+.msg.agent.thought .bubble .thought-translation {
+  display: block;
+  margin-top: 4px;
+  /* אין color, font-size, font-style — יורש מהבועה ההורית
+     כך שייראה זהה לטקסט האנגלי המקורי */
 }
 ```
 
-**עיצוב כפתור (CSS):**
-- `[data-state="idle"]` — כחול.
-- `[data-state="recording"]` — אדום, `animation: pulse 1s infinite`.
-- `[data-state="speaking"]` — אדום עדין, ללא פעימה.
-- `[data-state="paused"]` — כחול עם הילה (`box-shadow: 0 0 12px rgba(0,128,255,.5)`).
+הסרת `padding-top`, `border-top`, `color`, `font-size`, `font-style`. נשארים רק `display: block` (שורה חדשה) ו-`margin-top: 4px` (הפרדה דקה).
 
-**click handler חדש:**
-```js
-btn.addEventListener("click", () => {
-  const s = getMicButtonState();
-  if (s === "idle") startRecording();
-  else if (s === "recording") stopRecording();
-  else if (s === "speaking") {
-    audioIsPaused = true;
-    currentStream?.pause();
-    currentlyPlaying?.pause();
-    updateMicButton();
-  } else if (s === "paused") {
-    audioIsPaused = false;
-    currentStream?.resume();
-    currentlyPlaying?.play();
-    updateMicButton();
-  }
-});
-```
+**בדיקה:** restart, שאלה שמייצרת thought ארוך עם תרגום. שתי השורות בבועה ייראו זהות בסגנון — אותו אפור, אותו italic, אותו גודל. רק התוכן משתנה.
 
-**`updateMicButton()` נקראת:**
-- בכל שינוי ב-`isRecording`.
-- בכל שינוי ב-`currentStream` (start/end).
-- בכל שינוי ב-`currentlyPlaying` (start/end).
-- אחרי pause/resume.
-
-**כפתור Stop קטן:**
-- `<button id="stop-btn" class="stop-btn" aria-label="עצור">⏹</button>`.
-- מוצג רק כש-`getMicButtonState() ∈ {"speaking", "paused"}`.
-- לחיצה: עוצר את `currentStream`, `currentlyPlaying`, מנקה `streamOrder` ו-`activeStreams`, מאפס `audioIsPaused`, חוזר ל-idle.
-- replay-last נשאר במיקום הנוכחי שלו. לא משנים מיקום.
-
-**בדיקה:** restart. בדיקה ידנית: שאלה ארוכה → תוך כדי הקראה ללחוץ פעם → ההקראה נעצרת והכפתור הופך ל-▶. ללחוץ שוב → ממשיכה מהמקום. לחיצה על stop → הכל מתנקה.
-
-**Commit suggestion:** `(ui): mic button state machine — pause/resume להקראה + כפתור stop`
+**Commit suggestion:** `(ui): thought-translation בסגנון זהה למקור האנגלי`
 
 ---
 
-### H. UI: גלילה חכמה
+### L. קפיצה אוטומטית ממחשבות לתשובה
 
-**מטרה:** auto-scroll רק כשהמשתמש קרוב לתחתית. אם הוא גלל למעלה לקרוא משהו — לא לדרוס.
+**מטרה:** ברגע ש-`audio_start` של מסר מתחיל ב-frontend, להפסיק מיד את ניגון המחשבות (הנוכחי + כל ה-pending בתור). המשתמש מרגיש מיידית שהמודל "סיים לחשוב".
+
+**הקשר:** ה-ttsQueue ב-backend סדרתי, אז backend לא יכניס מסר לפני שה-thought הקודם נגמר ברמת שליחת ה-chunks. אבל ה-frontend מנגן אסינכרונית — `chunks` מצטברים ב-MediaSource buffer ו-`audio.play()` ממשיך הרבה אחרי שה-backend שלח `audio_end`. לכן יש חלון שבו ה-frontend מנגן thought בעוד המסר כבר מתחיל לזרום.
+
+החיתוך **אגרסיבי**: לקטוע באמצע ניגון, לא לחכות לסוף chunk נוכחי. (Avi אישר ברירת מחדל זו.)
 
 **קובץ:** `frontend/index.html`
 
-**משתנים גלובליים חדשים:**
+**שינוי 1 — הוספת method `stop()` ל-class `StreamingAudio`:**
+
 ```js
-const SCROLL_THRESHOLD_PX = 60;
+stop() {
+  try { this.audio.pause(); } catch {}
+  try { this.audio.src = ""; } catch {}
+  try {
+    if (this.mediaSource && this.mediaSource.readyState === "open") {
+      this.mediaSource.endOfStream();
+    }
+  } catch {}
+}
+```
+
+**שינוי 2 — לוגיקה חדשה בתחילת `handleAudioStart(streamId, kind)`:**
+
+```js
+function handleAudioStart(streamId, kind) {
+  // אם המסר מתחיל בזמן שמחשבה עוד בניגון או בתור — לקטוע ולנקות.
+  if (kind === "message") {
+    // הפסקת הסטרים הנוכחי אם הוא thought
+    if (currentStream?.kind === "thought") {
+      try { currentStream.stop(); } catch {}
+      currentStream = null;
+    }
+    // הסרת thoughts pending מ-streamOrder ו-activeStreams
+    const keep = [];
+    for (const id of streamOrder) {
+      const s = activeStreams.get(id);
+      if (s && s.kind === "thought") {
+        try { s.stop(); } catch {}
+        activeStreams.delete(id);
+      } else if (s) {
+        keep.push(id);
+      }
+    }
+    streamOrder.length = 0;
+    streamOrder.push(...keep);
+  }
+
+  // ... המשך הלוגיקה הקיימת של יצירת ה-stream החדש
+}
+```
+
+**שינוי 3 — וידוא שב-`handleAudioChunk`, chunks של thought שכבר נעצר מתעלמים:**
+
+הקוד הקיים אמור לעשות `activeStreams.get(streamId)` ולהתעלם אם `undefined`. לוודא שאין fallback שמשחזר. אם יש — להסיר.
+
+**זרימת UX מצופה:**
+1. המודל שולח chunks של thought.
+2. backend מתרגם, ה-frontend מתחיל לנגן את ה-thought audio.
+3. backend מסיים thought TTS, מתחיל message TTS, שולח `audio_start` (message).
+4. frontend מקבל `audio_start` (message) → קוטע את ה-thought הנוכחי + מנקה pending → מתחיל את המסר.
+5. המשתמש שומע: thought חלקי (קצוץ באמצע משפט) → מסר.
+
+**בדיקה:** restart. שאלה שמייצרת thought ארוך ואז תשובה. כש-thought מתורגם ומוקרא, ברגע שהאודיו של התשובה מתחיל — המחשבה נחתכת מיד. אם המחשבות כבויות (לא רלוונטי כעת, אך עתידית) — הקוד לא נשבר.
+
+**Commit suggestion:** `(audio): קפיצה אוטומטית ממחשבות למסר ברגע שהאודיו מתחיל`
+
+---
+
+### M. תיקון באג הגלילה — מודל user intent
+
+**מטרה:** `auto-scroll` פעיל כל הזמן, אלא אם המשתמש עשה פעולת גלילה אקטיבית. ברגע שהמשתמש גלל למעלה — מכבים אוטו עד שיגלול ידנית לקצה התחתון או ילחץ על כפתור ↓.
+
+**הקשר:** הלוגיקה הנוכחית מבוססת על בדיקת המרחק מהקצה בכל `scroll` event. זה race-condition prone — תוכן חדש מתווסף, `scrollHeight` גדל, `scrollTop` נשאר, ה-`scroll` event מגיע באיחור עם מרחק גדל, המערכת חושבת שהמשתמש גלל למעלה ומכבה את האוטו בטעות. ראה תיאור מלא של ה-race ב-walkthrough של 2026-05-14 ~13:45.
+
+**קובץ:** `frontend/index.html`
+
+**להחליף את הלוגיקה הקיימת (סביב שורות 540-561 ו-916-923):**
+
+```js
 let autoScrollEnabled = true;
-let suppressScrollEvents = false;
-```
+// timestamp של אינטראקציית קלט אחרונה מהמשתמש. כל scroll event שמגיע
+// בתוך 500ms ממנו נחשב user-initiated (לא תוצאה של תוכן שנוסף).
+let userInteractionAt = 0;
 
-**listener על `chatEl.scroll`:**
-```js
+const markUserInteraction = () => { userInteractionAt = Date.now(); };
+const inputEvents = ["wheel", "touchstart", "touchmove", "mousedown", "keydown"];
+for (const evt of inputEvents) {
+  chatEl.addEventListener(evt, markUserInteraction, { passive: true });
+}
+
 chatEl.addEventListener("scroll", () => {
-  if (suppressScrollEvents) return;
   const distance = chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight;
-  autoScrollEnabled = distance <= SCROLL_THRESHOLD_PX;
-  jumpDownBtn.classList.toggle("visible", !autoScrollEnabled);
-});
-```
+  const isUser = Date.now() - userInteractionAt < 500;
 
-**`scrollChatToBottom()` חדשה:**
-```js
+  if (distance <= 10) {
+    // הגענו לקצה — אם היה כבוי, להדליק
+    if (!autoScrollEnabled) {
+      autoScrollEnabled = true;
+      jumpDownBtn.classList.remove("visible");
+    }
+  } else if (isUser && autoScrollEnabled) {
+    // המשתמש גלל אקטיבית למעלה — לכבות אוטו
+    autoScrollEnabled = false;
+    jumpDownBtn.classList.add("visible");
+  }
+});
+
 function scrollChatToBottom() {
   if (!autoScrollEnabled) return;
-  suppressScrollEvents = true;
   chatEl.scrollTop = chatEl.scrollHeight;
-  requestAnimationFrame(() => { suppressScrollEvents = false; });
 }
-```
 
-**החליפי בקוד הקיים:** כל מקום שעושה `chatEl.scrollTop = chatEl.scrollHeight` → `scrollChatToBottom()`.
-
-**UI חדש — כפתור ↓:**
-```html
-<button id="jump-down" class="jump-down" aria-label="גלול למטה">↓</button>
-```
-CSS:
-- `position: absolute` בתוך ה-chat container.
-- `bottom: 12px; right: 12px;`
-- מעגלי, צל קטן, רקע חצי-שקוף.
-- `opacity: 0; pointer-events: none; transition: opacity 200ms;`
-- `.visible { opacity: 1; pointer-events: auto; }`
-
-**click handler:**
-```js
 jumpDownBtn.addEventListener("click", () => {
   autoScrollEnabled = true;
   chatEl.scrollTop = chatEl.scrollHeight;
@@ -614,44 +276,186 @@ jumpDownBtn.addEventListener("click", () => {
 });
 ```
 
-**בדיקה:** restart. שאלה ארוכה — תוך כדי הקראה לגלול למעלה — לראות שה-auto-scroll נעצר וה-↓ מופיע. ללחוץ ↓ — לחזור לתחתית, ה-auto חוזר.
+**הסבר הלוגיקה:**
+- `userInteractionAt` הוא הליבה. כל input event מהמשתמש מעדכן אותו.
+- ה-scroll handler בודק: אם זה תוך 500ms מה-input — user. אחרת — תוצאה של תוכן שמתווסף.
+- כך, גלילה אוטומטית של תוכן חדש לעולם לא מכבה את האוטו.
+- רק user scroll אקטיבי מכבה.
 
-**Commit suggestion:** `(ui): גלילה חכמה — auto-scroll מותנה בקרבה לתחתית + כפתור ↓`
+**להסיר:** את הקבוע `SCROLL_THRESHOLD_PX = 60` הישן ואת המשתנה `suppressScrollEvents` ושימושיו — כבר לא נחוצים.
+
+**עדינות:** scrollbar drag לא נתפס באירועי wheel/touch/keyboard, אבל `mousedown` על ה-scrollbar (אם המשתמש לוחץ עליו) ייתפס דרך listener ה-`mousedown`. גם אם לא מושלם, רוב המשתמשים גוללים בגלגלת או באצבע.
+
+**בדיקה:** restart. שיחה ארוכה תוך כדי streaming של תשובה — לבדוק שהגלילה האוטומטית עוקבת אחרי התחתית בלי להידבק. תוך כדי, לגלול עם הגלגלת/אצבע למעלה — האוטו צריך להפסיק. ללחוץ על ↓ — לחזור לתחתית, אוטו מופעל שוב.
+
+**Commit suggestion:** `(ui): גלילה חכמה מבוססת user intent — wheel/touch/keyboard/mousedown`
 
 ---
 
-### I. UI: `dir="auto"` לכל הבועות (קל)
+### N. שמירת הקלטות לדיסק
 
-**מטרה:** טקסט עברי יוצג RTL, אנגלי LTR — בלי תיוג ידני, גם בהיסטוריה וגם ב-live.
+**מטרה:** בכל הקלטה של המשתמש, לשמור את האודיו לדיסק יחד עם metadata. ניתן יהיה לנגן מחדש, להריץ דרך פרומפטים שונים, ולהשוות.
 
-**קובץ:** `frontend/index.html`
+**הקשר:** Avi ביקש את זה לפיתוח. בעתיד אולי toggle בהגדרות. כרגע — משתנה סביבה. גם רעיון עתידי של "נגן סשן מחדש" יסתמך על הקלטות שמורות.
 
-**שלוש נקודות מימוש:**
+**קבצים:**
+- `backend/src/server.ts` — שמירה ב-`handleAudio`. אם נוח, אפשר מודול עזר `backend/src/recordings.ts`.
 
-1. **ב-`SubBubble` constructor** (אחרי יצירת `this.bubbleEl`):
-   ```js
-   this.bubbleEl.setAttribute("dir", "auto");
-   ```
+**משתנה סביבה:** `VOICE_ACP_SAVE_RECORDINGS` — ברירת מחדל מופעל. ערך `0` או `false` (case-insensitive) משבית.
 
-2. **ב-`renderToolItem`** (או הפונקציה שמרנדרת פריט ברשימת tools):
-   ```js
-   item.querySelector("span:last-child")?.setAttribute("dir", "auto");
-   ```
+**נתיב:** `${XDG_CACHE_HOME ?? $HOME/.cache}/voice-acp/recordings/`. ליצור את התיקייה אם לא קיימת.
 
-3. **ב-`setHtml`** (כדי שגם markdown HTML יקבל):
-   ```js
-   setHtml(html) {
-     this.hasHtml = true;
-     this.bubbleEl.innerHTML = html;
-     for (const child of this.bubbleEl.children) {
-       if (!child.hasAttribute("dir")) child.setAttribute("dir", "auto");
-     }
-   }
-   ```
+**מבנה קבצים פר הקלטה:**
+- `<ISO-timestamp>_<short-id>.<ext>` — האודיו הגולמי. סיומת לפי `mimeType` (`webm`/`ogg`/`mp3`/`audio`).
+- `<ISO-timestamp>_<short-id>.json` — metadata sidecar.
 
-**בדיקה:** restart. שאלה שמייצרת תשובה מעורבת (עברית + שם פונקציה באנגלית + פסקאות מרובות) — לראות שכל פסקה ממוקמת נכון לפי תוכנה.
+**Metadata sidecar:**
+```json
+{
+  "timestamp": "2026-05-14T13:45:22.123Z",
+  "sessionId": "abc123de-...",
+  "cwd": "/path/to/workspace",
+  "mimeType": "audio/webm",
+  "audioSize": 12345,
+  "transcript": "המשתמש אמר...",
+  "sttModel": "gemini-flash-latest"
+}
+```
 
-**Commit suggestion:** `(ui): dir="auto" לבועות, פריטי tools, ו-markdown HTML`
+**מימוש מוצע ב-`handleAudio`:**
+
+```ts
+const SAVE_RECORDINGS = (() => {
+  const v = (process.env.VOICE_ACP_SAVE_RECORDINGS ?? "1").toLowerCase();
+  return v !== "0" && v !== "false";
+})();
+
+const RECORDINGS_DIR =
+  (process.env.XDG_CACHE_HOME ?? `${process.env.HOME}/.cache`) +
+  "/voice-acp/recordings";
+
+async function saveRecording(
+  base64: string,
+  mimeType: string,
+  sessionId: string | null,
+): Promise<{ audioPath: string; ts: string } | null> {
+  if (!SAVE_RECORDINGS) return null;
+  try {
+    // ensure dir
+    await Bun.write(RECORDINGS_DIR + "/.keep", "");
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const sid = (sessionId ?? "no-sess").slice(0, 8);
+    const ext = mimeType.includes("webm") ? "webm"
+              : mimeType.includes("ogg") ? "ogg"
+              : (mimeType.includes("mp3") || mimeType.includes("mpeg")) ? "mp3"
+              : "audio";
+    const audioPath = `${RECORDINGS_DIR}/${ts}_${sid}.${ext}`;
+    await Bun.write(audioPath, Buffer.from(base64, "base64"));
+    return { audioPath, ts };
+  } catch (e) {
+    console.error(`[recordings] save failed: ${(e as Error).message}`);
+    return null;
+  }
+}
+
+async function saveRecordingMetadata(
+  info: { audioPath: string },
+  meta: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const metaPath = info.audioPath.replace(/\.[^.]+$/, ".json");
+    await Bun.write(metaPath, JSON.stringify(meta, null, 2));
+  } catch (e) {
+    console.error(`[recordings] save metadata failed: ${(e as Error).message}`);
+  }
+}
+```
+
+ב-handleAudio (לפני וגם אחרי `transcribeAudio`):
+
+```ts
+const recInfo = await saveRecording(
+  msg.data,
+  msg.mimeType ?? "audio/webm",
+  state.sessionId ?? null,  // אם זמין
+);
+
+// ... transcribeAudio ...
+const transcript = await transcribeAudio(...);
+
+if (recInfo) {
+  await saveRecordingMetadata(recInfo, {
+    timestamp: new Date().toISOString(),
+    sessionId: state.sessionId ?? null,
+    cwd: state.cwd ?? null,
+    mimeType: msg.mimeType ?? "audio/webm",
+    audioSize: Buffer.from(msg.data, "base64").byteLength,
+    transcript,
+    sttModel: "gemini-flash-latest",
+  });
+}
+```
+
+**הערה:** אם `state.sessionId` ו-`state.cwd` עדיין לא חשופים ב-ConnState — להוסיף ב-handleInit שמירה שלהם ב-state.
+
+**בדיקה:**
+- `bunx tsc --noEmit`
+- שיחה דרך הממשק → לוודא ב-`~/.cache/voice-acp/recordings/` שני קבצים — `.webm` ו-`.json` תואמים.
+- `cat <name>.json` — לראות שכל השדות מלאים, transcript בעברית.
+- ביטול: `VOICE_ACP_SAVE_RECORDINGS=0 onecli run -- bun src/server.ts` — אין שמירה.
+
+**Commit suggestion:** `(server): שמירת הקלטות משתמש עם metadata sidecar`
+
+---
+
+### O. שיפור פרומפט STT + מעבר ל-Flash
+
+**מטרה:** תמלול עברי טוב יותר — פיסוק טבעי, שבירת פסקאות בהפסקות ארוכות, מודל מהיר ומדויק יותר.
+
+**הקשר:** Avi דיווח שהתמלול הנוכחי לפעמים שגיאות כתיב, ומחזיר בלוק טקסט אחד בלי פיסוק או פסקאות. שינוי כפול — שדרוג מודל ושיפור פרומפט.
+
+**קובץ:** `backend/src/stt.ts`
+
+**שינוי 1 — `DEFAULT_MODEL`:**
+
+```ts
+const DEFAULT_MODEL = "gemini-flash-latest";  // היה: gemini-flash-lite-latest
+```
+
+**שינוי 2 — `TRANSCRIBE_PROMPT`:**
+
+החליפי את הפרומפט הנוכחי ב:
+
+```
+The user is speaking Hebrew in a software development context.
+Transcribe the audio exactly as spoken, with these requirements:
+
+- Add appropriate punctuation (commas, periods, question marks,
+  exclamation marks) at natural pauses and sentence boundaries.
+- Break into paragraphs (use \n\n) at major topic shifts or after
+  long pauses (over 1.5 seconds).
+- If a word is unclear, prefer a sensible technological interpretation
+  (e.g. "ריאקט" over "ראקת", "באג" over "בק").
+- Fix obvious disfluencies (repetitions, "אה אה", false starts) — but
+  preserve the user's intent and phrasing.
+- Do NOT add content the user did not say. No introductions, no
+  summaries, no commentary, no acknowledgments.
+- Preserve the original language (Hebrew or English).
+
+Output ONLY the transcription itself, as plain text with punctuation
+and paragraph breaks as instructed. If the audio is silent or
+unintelligible, return an empty string.
+```
+
+**בדיקה:**
+- `bunx tsc --noEmit`.
+- אם N הסתיים — להריץ CLI test על הקלטה שמורה:
+  `bun src/stt.ts ~/.cache/voice-acp/recordings/<latest>.webm`
+- לבדוק שהפלט כולל פיסוק (נקודות, פסיקים, שאלות) ושבירת פסקאות אם ההקלטה ארוכה עם הפסקות.
+- לבדוק שלא מתווסף תוכן שלא נאמר.
+- בדיקה empirical דרך הממשק: לדבר משפט ארוך עם הפסקות וזיהוי טכנולוגיה, ולוודא שהתמלול נראה הגיוני.
+
+**Commit suggestion:** `(stt): פרומפט עם פיסוק ופסקאות + מעבר מ-Flash Lite ל-Flash`
 
 ---
 
@@ -732,37 +536,31 @@ Backend מלא: `server.ts`, `acp-bridge.ts`, `stt.ts`, `tts.ts`, `system-prompt
 
 ---
 
-## תלויות בין משימות
+## תלויות בין משימות (v3)
 
 ```
-A (prompt)     ──┐
-B (stt+ctx)    ──┤
-G (mic state)  ──┼── עצמאיות, אפשר בכל סדר
-H (scroll)     ──┤
-I (dir=auto)   ──┘
-
-C (helper) ──┬──► E (thought)
-             └──► F (narration)
-
-D (sentence cut) — עצמאית, אבל אפקט יפה ביותר אחרי E+F
+J (translate fix)  ──┐
+K (CSS revert)     ──┤
+L (auto-skip)      ──┼── עצמאיות זו מזו, אפשר בכל סדר
+M (scroll)         ──┤
+N (recordings)    ───┤
+O (STT improve)    ──┘
 ```
 
-**סדר ביצוע מומלץ:** A → B → C → D → E → F → G → H → I.
-**מקביליות:** A/B/G/H/I אפשר במקביל. C חייבת לפני E/F.
+**סדר ביצוע מומלץ:** J → K → L → M → N → O — לפי דחיפות לחוויית המשתמש. כל המשימות עצמאיות טכנית; ניתן גם במקביל אם מבצעים מרובים.
+
+**הערה ל-O:** אם N הסתיים, ניתן להריץ CLI test על הקלטות שמורות כחלק מאימות O.
 
 ---
 
-## הערכת זמן (גס)
+## הערכת זמן (גס) — v3
 
 | משימה | זמן |
 |--------|-----|
-| A | 5 דק' |
-| B | 15-20 דק' |
-| C | 30 דק' |
-| D | 25-30 דק' |
-| E | 35-40 דק' |
-| F | 25-30 דק' |
-| G | 30-35 דק' |
-| H | 20 דק' |
-| I | 10 דק' |
-| **סה"כ** | **~3.5 שעות** |
+| J | 10-15 דק' |
+| K | 5 דק' |
+| L | 25-30 דק' |
+| M | 20-25 דק' |
+| N | 30-40 דק' |
+| O | 10 דק' |
+| **סה"כ** | **~2 שעות** |
