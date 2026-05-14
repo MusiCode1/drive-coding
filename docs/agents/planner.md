@@ -86,11 +86,20 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** פעיל — סיים תכנון Q + תכנון v6, ממתין להחלטות נוספות מ-Avi
+- **סטטוס:** פעיל — סיים יצירת behaviors.md, ממתין לאישור/הוספות מ-Avi
 - **Worktree:** `/home/user/projects/voice-acp` (master)
 - **עובד על:** —
 
 ## לוג
+
+### [2026-05-14 18:25] יצירת `docs/behaviors.md` (תשתית ל-v6)
+חולץ קובץ אחד עם ~130 התנהגויות מ-(א) כל קבצי ה-backend, (ב) `frontend/index.html`, (ג) `walkthrough.md` המלא, (ד) `learnings.md`, (ה) git log. ארגון ב-14 קטגוריות (STT, ACP, PROMPT, TTS, GEMINI, REC, WS, UI-MIC, UI-AUDIO, UI-BUBBLES, UI-SCROLL, UI-HIST, UI-CAR, CONFIG). כל התנהגות עם reference לקוד או walkthrough.
+
+נוסף סעיף "הערות לבדיקות" בסוף — הצעת ארגון לסוויטה: unit tests (findSentenceBoundary, extractProviderError), mock-based integration tests (8 scenarios), state tests, E2E smoke. עדיפות: PROMPT קודם, אחר כך ACP+GEMINI, אחרון TTS+REC+frontend. בכל זאת — מומלץ לעבור על הרשימה לפני שמתחילים לכתוב tests, כי ייתכן ש-Avi יוסיף משהו או יעדיף סקופ שונה.
+
+גם תועדו 6 התנהגויות צפויות למשימה Q (Q-1..Q-6) — לתת למבצע מסגרת בדיקה גם לקוד שעוד לא נכתב.
+
+בקומיט.
 
 ### [2026-05-14 18:05] תכנון v5 — משימה Q (כפתורי קדימה/אחורה) + רישום v6 (ריפקטור)
 **Avi פתחה דיון מורחב** על שלוש בעיות שמודל קודם זיהה (TTS queue סדרתי, חיתוך משפט נאיבי, handler ענק). עברתי על הקוד והכרעתי:
