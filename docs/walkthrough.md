@@ -4,6 +4,40 @@
 
 ---
 
+## 2026-05-14 12:05
+
+### משימה E — תרגום thoughts לעברית + הקראה (executor)
+
+**מטרה:** המשתמש שומע את ה-reasoning של המודל בעברית, לא רק רואה את ה-מקור באנגלית. הקראה דרך ElevenLabs.
+
+**Backend (`server.ts`):**
+- `ServerMessage` מורחב: `text_chunk.kind` קיבל ערך חדש `"thought_translation"`. `audio_start.kind` קיבל ערך חדש `"thought"`.
+- `import { translateThought } from "./gemini-helper.ts"` (משימה C).
+- `handleUserInput`:
+  - `streamTts(text, kind)` הוצא ל-helper נפרד (פנימי ל-handle). `queueTts(text, kind)` עכשיו רק מוסיף לתור.
+  - `thoughtBuffer` חדש (במקביל ל-`messageBuffer`).
+  - `flushThought()` חדש: מצמצם trim של buffer, אם ריק חוזר. אחרת: `ttsQueue.then(async () => translate → text_chunk thought_translation → streamTts(hebrew, "thought"))`.
+  - `onChunk` עבור `kind === "message"`: אם יש `thoughtBuffer.length > 0` → `flushThought()` (thought הסתיים).
+  - `onChunk` עבור `kind === "thought"`: אם יש `messageBuffer.length > 0` → `flushMessage()`. ואז `thoughtBuffer += chunk`.
+  - `onToolCall(create)`: `flushMessage(); flushThought();` (סגירת שני ה-buffers).
+  - סוף תור: `flushMessage(); flushThought();`.
+
+**Frontend (`index.html`):**
+- CSS: `.msg.agent.thought .bubble .thought-translation` — `display:block`, `margin-top:6px`, `padding-top:6px`, `border-top: 1px dashed`, `color: var(--fg)` (בולט מהמקור), `font-size: 14px` (גדול יותר מ-12.5 של המקור). italic+line-height יורשים.
+- `SubBubble`:
+  - שדה חדש `hasTranslation: boolean` (default false). 
+  - `appendText` ב-thought: יוצר `_originalEl` (span) פעם אחת ושומר את הטקסט שם, במקום `bubbleEl.textContent` שהיה דורס childנים.
+  - `setThoughtTranslation(text)` חדש: יוצר `_translationEl` (div.thought-translation) ומוסיף ל-`bubbleEl`. שינוי `hasTranslation = true`.
+- `handleServerMessage` עבור `text_chunk` כש-`kind === "thought_translation"`: מוצא את ה-thought הראשון ב-currentTurn שעוד לא תורגם וקורא ל-`setThoughtTranslation`.
+- `handleAudioStart`: תמיכה ב-`kind === "thought"` — מקשר ל-thought sub האחרון שעוד לא קושר ל-stream.
+- `handleAudioEnd`: שמירת `audioBase64` ו-`setAudioState("ready")` רק ל-message subs (לא ל-thought — אין replay button).
+
+**הסדר מובטח:** ב-backend ה-`ttsQueue` שומר על FIFO לכל פעולה אסינכרונית (translate + TTS). כל flushThought כולה רצה כיחידה. אז סדר ה-`text_chunk thought_translation` ו-`audio_start kind=thought` המגיעים ל-frontend תואם בדיוק לסדר היצירה של thought sub-bubbles. מספיק `find(s => !s.hasTranslation)` ו-`find(s => !s._streamId)` בהתאמה.
+
+**בדיקות:** `bunx tsc --noEmit` עבר. `node --check` על ה-JS שחולץ מ-index.html עבר.
+
+---
+
 ## 2026-05-14 11:40
 
 ### משימה D — חיתוך flushMessage לפי גבול משפט (executor)

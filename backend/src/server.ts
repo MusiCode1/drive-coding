@@ -16,6 +16,7 @@ import { cachedTextToSpeechBase64, streamCachedTextToSpeech } from "./tts.ts";
 import { createAcpBridge, type AcpBridge } from "./acp-bridge.ts";
 import { VOICE_SYSTEM_PROMPT } from "./system-prompt.ts";
 import { renderMarkdown } from "./markdown.ts";
+import { translateThought } from "./gemini-helper.ts";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const FRONTEND_DIR = resolve(import.meta.dir, "../../frontend");
@@ -43,7 +44,11 @@ type ServerMessage =
     }
   | { type: "transcript"; text: string }
   | { type: "thinking" }
-  | { type: "text_chunk"; text: string; kind: "message" | "thought" }
+  | {
+      type: "text_chunk";
+      text: string;
+      kind: "message" | "thought" | "thought_translation";
+    }
   | {
       type: "tool_call";
       event: "create" | "update";
@@ -58,7 +63,11 @@ type ServerMessage =
       kind: "message" | "tool_title";
     }
   // streaming TTS — מחליף audio_ready ל-live messages
-  | { type: "audio_start"; streamId: string; kind: "message" | "tool_title" }
+  | {
+      type: "audio_start";
+      streamId: string;
+      kind: "message" | "tool_title" | "thought";
+    }
   | { type: "audio_chunk"; streamId: string; data: string } // base64 MP3 chunk
   | { type: "audio_end"; streamId: string }
   // נשלח כשסגמנט message הסתיים — html מרונדר ממרקדאון
@@ -361,28 +370,32 @@ async function handleUserInput(
     // streaming TTS: שולח audio_start → audio_chunk* → audio_end.
     // ה-frontend מנגן progressively (Media Source) או אוסף ומנגן בסוף (fallback).
     let streamCounter = 0;
+    const streamTts = async (
+      text: string,
+      kind: "message" | "tool_title" | "thought",
+    ): Promise<void> => {
+      const streamId = `s${Date.now().toString(36)}-${streamCounter++}`;
+      try {
+        send(ws, { type: "audio_start", streamId, kind });
+        await streamCachedTextToSpeech(
+          text,
+          { voiceId: state.voiceId ?? undefined },
+          (chunk) => {
+            send(ws, {
+              type: "audio_chunk",
+              streamId,
+              data: Buffer.from(chunk).toString("base64"),
+            });
+          },
+        );
+        send(ws, { type: "audio_end", streamId });
+      } catch (e) {
+        console.error(`[ws] TTS streaming נכשל (${kind}): ${(e as Error).message}`);
+        send(ws, { type: "audio_end", streamId });
+      }
+    };
     const queueTts = (text: string, kind: "message" | "tool_title") => {
-      ttsQueue = ttsQueue.then(async () => {
-        const streamId = `s${Date.now().toString(36)}-${streamCounter++}`;
-        try {
-          send(ws, { type: "audio_start", streamId, kind });
-          await streamCachedTextToSpeech(
-            text,
-            { voiceId: state.voiceId ?? undefined },
-            (chunk) => {
-              send(ws, {
-                type: "audio_chunk",
-                streamId,
-                data: Buffer.from(chunk).toString("base64"),
-              });
-            },
-          );
-          send(ws, { type: "audio_end", streamId });
-        } catch (e) {
-          console.error(`[ws] TTS streaming נכשל (${kind}): ${(e as Error).message}`);
-          send(ws, { type: "audio_end", streamId });
-        }
-      });
+      ttsQueue = ttsQueue.then(() => streamTts(text, kind));
     };
 
     // buffer מצטבר של chunks של "message" — מתפרק לקטעי TTS+render לפי גבולות.
@@ -406,6 +419,26 @@ async function handleUserInput(
       queueTts(t, "message");
     };
 
+    // thoughtBuffer מצטבר במקביל ל-messageBuffer.
+    // flushThought: מתרגם דרך Gemini → שולח text_chunk thought_translation
+    // → TTS עם kind "thought" (frontend מקשר ל-bubble המקורי של ה-thought).
+    let thoughtBuffer = "";
+    const flushThought = () => {
+      const t = thoughtBuffer.trim();
+      thoughtBuffer = "";
+      if (!t) return;
+      console.log(`[ws] thought segment (${t.length} chars) → תרגום + TTS`);
+      ttsQueue = ttsQueue.then(async () => {
+        const hebrew = await translateThought(t);
+        send(ws, {
+          type: "text_chunk",
+          text: hebrew,
+          kind: "thought_translation",
+        });
+        await streamTts(hebrew, "thought");
+      });
+    };
+
     console.log(`[ws] prompt (${isFirst ? "first" : "follow-up"}): ${text}`);
     await state.bridge.prompt(promptText, {
       onChunk: (chunk, kind) => {
@@ -413,6 +446,8 @@ async function handleUserInput(
         if (kind === "user_message") return;
         send(ws, { type: "text_chunk", text: chunk, kind });
         if (kind === "message") {
+          // אם הגיע thought לפני — הוא נגמר. flush אותו ל-תרגום+TTS.
+          if (thoughtBuffer.length > 0) flushThought();
           messageBuffer += chunk;
           // חיתוך לפי גבול משפט — מאפשר התחלת TTS מהר ולא לחכות לסוף ההודעה.
           let boundary = findSentenceBoundary(messageBuffer);
@@ -424,10 +459,10 @@ async function handleUserInput(
             messageBuffer = rest;
             boundary = findSentenceBoundary(messageBuffer);
           }
-        } else if (kind === "thought" && messageBuffer.length > 0) {
-          // thought באמצע — flush של ה-message הנוכחי כדי שיתאים לחלוקת
-          // הבועות ב-frontend (כל מעבר kind יוצר בועה חדשה).
-          flushMessage();
+        } else if (kind === "thought") {
+          // thought באמצע — flush של ה-message הנוכחי (לחלוקת בועות ב-frontend).
+          if (messageBuffer.length > 0) flushMessage();
+          thoughtBuffer += chunk;
         }
       },
       onToolCall: (event) => {
@@ -439,9 +474,10 @@ async function handleUserInput(
           toolKind: event.toolKind,
           status: event.status,
         });
-        // tool create — flush מה שצברנו של message לפני, ואז TTS לכותרת
+        // tool create — לסגור גם message וגם thought שהיו פתוחים, ואז TTS לכותרת
         if (event.event === "create") {
           flushMessage();
+          flushThought();
           if (event.title?.trim()) {
             console.log(`[ws] TTS tool title: ${event.title}`);
             queueTts(event.title.trim(), "tool_title");
@@ -450,8 +486,9 @@ async function handleUserInput(
       },
     });
 
-    // סוף תור — flush של כל מה שנשאר ב-buffer
+    // סוף תור — flush של כל מה שנשאר ב-buffers
     flushMessage();
+    flushThought();
 
     if (totalMessageChars === 0) {
       console.log(`[ws] תשובה ריקה — מדלגים על TTS`);

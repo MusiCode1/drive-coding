@@ -86,9 +86,16 @@
 
 - **סטטוס:** פעיל
 - **Worktree:** `/home/user/projects/voice-acp` (master — אין worktree נפרד, עובדים על אותו repo)
-- **עובד על:** משימה E — תרגום thoughts + הקראה (`server.ts` + `frontend/index.html`)
+- **עובד על:** משימה F — נראציה של tool calls (`backend/src/server.ts`)
 
 ## לוג
+
+### [2026-05-14 12:05] ✅ סיימתי משימה E
+backend: `thoughtBuffer` + `flushThought()` שמתרגם דרך Gemini + מקריא דרך ElevenLabs (ttsQueue). 3 נקודות עדכון של buffers: כש-thought הסתיים (חדש message), כש-message הסתיים (חדש thought), במעבר tool_call, ובסוף ה-prompt.
+frontend: שדה `hasTranslation`, `_originalEl` (span), `setThoughtTranslation()` (div מתחת ל-border). handler ל-text_chunk thought_translation שמוצא את ה-thought הראשון בלי תרגום. `handleAudioStart` תומך kind=thought (לסנכרון). `handleAudioEnd` שומר audioBase64 רק ל-message.
+הסדר נשמר דרך ttsQueue ב-backend (FIFO). אין dependency חיצוני נדרש לפני F. `bunx tsc --noEmit` + `node --check` עברו.
+
+עובר ל-F — נראציה של tool calls (תלוי ב-C: `narrateToolCall`).
 
 ### [2026-05-14 11:40] ✅ סיימתי משימה D
 ב-`server.ts`: הוספתי `findSentenceBoundary` (export) ועדכנתי את ה-`onChunk` של `message` ל-loop חיתוך-וזרימה. הגנות מקיצורים ומספרים עשרוניים. forced flush ב-200. אומת ב-unit test על 8 מקרים (כולל עברית, אנגלית, Mr./Dr., 3.14, נקודתיים+\\n, forced flush). `bunx tsc --noEmit` עבר.

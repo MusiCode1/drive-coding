@@ -185,6 +185,16 @@
         content: "💭 ";
         opacity: 0.6;
       }
+      /* שורת תרגום עברי בתוך bubble של thought — בולטת יותר מהמקור */
+      .msg.agent.thought .bubble .thought-translation {
+        display: block;
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px dashed var(--border);
+        color: var(--fg);
+        font-size: 14px;
+        /* font-style: italic + line-height יורשים */
+      }
 
       /* tools sub-bubble */
       .msg.agent.tools-bubble .bubble {
@@ -499,6 +509,7 @@
           this.expanded = false;
           this.hasHtml = false; // האם הוחל markdown HTML
           this._streamId = null; // streamId של ה-streaming audio שמשויך (אם בכלל)
+          this.hasTranslation = false; // רק ל-thought: האם התקבל תרגום עברי
           this.audioState =
             kind === "message"
               ? this.historic
@@ -627,13 +638,37 @@
           // אם כבר הוחל HTML, לא דורסים אותו (במצב streaming השרת שולח
           // message_rendered אחרי שכל ה-chunks הגיעו, אז זה לא קורה)
           if (this.hasHtml) return;
-          this.bubbleEl.textContent = this.text;
+          if (this.kind === "thought") {
+            // ל-thought יש שני אזורים: מקור (אנגלית) ותרגום (עברית).
+            // לא דורסים את התרגום עם textContent של ה-bubble. במקום זה
+            // משתמשים ב-span ייעודי שנשאר כ-child הראשון.
+            if (!this._originalEl) {
+              this._originalEl = document.createElement("span");
+              this.bubbleEl.insertBefore(this._originalEl, this.bubbleEl.firstChild);
+            }
+            this._originalEl.textContent = this.text;
+          } else {
+            this.bubbleEl.textContent = this.text;
+          }
           scrollChatToBottom();
         }
 
         setHtml(html) {
           this.hasHtml = true;
           this.bubbleEl.innerHTML = html;
+          scrollChatToBottom();
+        }
+
+        /** ל-thought בלבד — מציג שורה שנייה של תרגום עברי מתחת למקור. */
+        setThoughtTranslation(text) {
+          if (this.kind !== "thought") return;
+          if (!this._translationEl) {
+            this._translationEl = document.createElement("div");
+            this._translationEl.className = "thought-translation";
+            this.bubbleEl.appendChild(this._translationEl);
+          }
+          this._translationEl.textContent = text;
+          this.hasTranslation = true;
           scrollChatToBottom();
         }
 
@@ -939,6 +974,15 @@
             );
             if (sub) sub._streamId = streamId;
           }
+        } else if (kind === "thought") {
+          // קישור ל-thought bubble (לסנכרון בלבד, ל-thought אין replay).
+          const turn = currentTurn ?? turns[turns.length - 1];
+          if (turn) {
+            sub = turn.subs.find(
+              (s) => s.kind === "thought" && !s._streamId,
+            );
+            if (sub) sub._streamId = streamId;
+          }
         }
         const stream = new StreamingAudio(kind);
         stream.streamId = streamId;
@@ -987,8 +1031,8 @@
         const stream = activeStreams.get(streamId);
         if (!stream) return;
         stream.endStream();
-        // שמירת האודיו על ה-sub לreplay
-        if (stream.sub) {
+        // שמירת האודיו על ה-sub לreplay — רק ל-message (ל-thought אין replay btn).
+        if (stream.sub && stream.sub.kind === "message") {
           stream.sub.audioBase64 = stream.getBase64();
           stream.sub.setAudioState("ready");
           lastAudioSub = stream.sub;
@@ -1149,6 +1193,13 @@
             if (!currentTurn) break;
             if (msg.kind === "thought") {
               currentTurn.appendThought(msg.text);
+            } else if (msg.kind === "thought_translation") {
+              // מוצאים את ה-thought האחרון שעוד לא תורגם ומוסיפים שורה שנייה.
+              // הסדר נשמר כי גם תרגום וגם TTS עוברים דרך ה-ttsQueue ב-backend.
+              const target = currentTurn.subs.find(
+                (s) => s.kind === "thought" && !s.hasTranslation,
+              );
+              if (target) target.setThoughtTranslation(msg.text);
             } else {
               currentTurn.appendMessage(msg.text);
             }

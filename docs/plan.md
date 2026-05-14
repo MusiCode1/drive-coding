@@ -663,6 +663,9 @@ jumpDownBtn.addEventListener("click", () => {
 
 ## משימות שבוצעו
 
+### E — תרגום thoughts + הקראה (2026-05-14 12:05)
+backend: `text_chunk.kind: "thought_translation"`, `audio_start.kind: "thought"`, `thoughtBuffer`, `flushThought()` (translate→text_chunk→TTS דרך ttsQueue), קריאות מ-onChunk/onToolCall/end-of-turn. frontend: שדה `hasTranslation`, `_originalEl` כדי לא לדרוס children ב-appendText של thought, `setThoughtTranslation()`, handler ל-`text_chunk thought_translation`, `handleAudioStart` ל-`kind=thought`, `handleAudioEnd` שומר audioBase64 רק ל-message. הסדר נשמר דרך ttsQueue. `bunx tsc --noEmit` + `node --check` עברו.
+
 ### D — חיתוך `flushMessage` לפי גבול משפט (2026-05-14 11:40)
 ב-`server.ts`: `findSentenceBoundary` חדשה (export, יחידה ניתנת לבדיקה). הגנה מקיצורים (Mr./Dr./i.e./e.g.) ומספרים עשרוניים. forced flush ב-200 תווים לעברית. ה-`onChunk` של `message` עושה loop של חיתוך וזרימה. אומת ב-unit test על 8 מקרים. `bunx tsc --noEmit` עבר.
 
