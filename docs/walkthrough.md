@@ -4,6 +4,47 @@
 
 ---
 
+## 2026-05-14 12:40
+
+### משימה G — mic button state machine + stop button (executor)
+
+**מטרה:** במצב speaking, לחיצה על המיקרופון תעשה pause/resume של ההקראה במקום להתחיל הקלטה. בנוסף, כפתור stop מובהק לעצירה מוחלטת.
+
+**State machine חדש (4 מצבים):**
+- `idle` — מוכן להקלטה (כחול, 🎙).
+- `recording` — מקליט (אדום פועם, ⏺).
+- `speaking` — מקריא תשובה (אדום עדין, ⏸ — לחיצה תפסיק).
+- `paused` — הקראה בהמתנה (כחול עם הילה, ▶ — לחיצה תמשיך).
+
+מעברים: idle ↔ recording (התחל/סיים הקלטה), speaking ↔ paused (פסה/חידוש), stop-btn מ-speaking או paused → idle.
+
+**`frontend/index.html`:**
+
+*CSS:*
+- מעבר מ-`#btn.recording` ל-`#btn[data-state="..."]` עם 4 סלקטורים.
+- הוספת `#btn[data-state="speaking"]` (אדום ללא pulse) ו-`#btn[data-state="paused"]` (כחול עם hover-glow).
+- transition קצר לbackground+shadow למעבר חלק בין מצבים.
+- מיזוג `#replay-last,#stop-btn` ל-CSS משותף עם hover-state ייחודי לכל אחד.
+
+*HTML:* הוספת `<button id="stop-btn" hidden>⏹</button>` בתוך `.controls`. ה-`btn` קיבל `data-state="idle"` בHTML כברירת מחדל.
+
+*JavaScript:*
+- שדה גלובלי חדש: `let audioIsPaused = false;`
+- ICONS map: `{idle:"🎙", recording:"⏺", speaking:"⏸", paused:"▶"}`.
+- `getMicButtonState()` — לוגיקה: `isRecording` ⇒ recording, אחרת אם יש `currentlyPlaying||currentStream` ⇒ paused/speaking לפי `audioIsPaused`, אחרת idle.
+- `updateMicButton()` — מעדכן `dataset.state`, `textContent`, `aria-label`, ו-hidden של stop-btn.
+- 3 helpers: `pauseAllAudio()`, `resumeAllAudio()`, `stopAllAudio()`. ה-stop מאפס currentStream+currentlyPlaying+streamOrder+activeStreams+audioIsPaused וחוזר ל-idle.
+- `StreamingAudio.resume()` חדש — מקביל ל-pause הקיים.
+- click handler חדש על btn — switch לפי `getMicButtonState()`.
+- click handler חדש על stop-btn — `stopAllAudio()`.
+- keydown Space — מתעלם אם המצב speaking/paused (Space נשאר רק לidle↔recording).
+- קריאות `updateMicButton()` הוספו ב: `startRecording`, `stopRecording`, `startStream`, `playNextStream` (אחרי איפוס `audioIsPaused`), `playSubBubbleAudio` (start+ended+error), `onComplete` של stream.
+- MutationObserver עבור car mode עבר מ-`class` ל-`data-state`, גם הלוגיקה (`dataset.state !== "recording"`).
+
+**בדיקות:** `node --check` עבר. UX יבדק empirically בריצה דרך OneCLI — בייחוד `tool_title` chimes + pause/resume.
+
+---
+
 ## 2026-05-14 12:20
 
 ### משימה F — נראציה של tool calls (executor)

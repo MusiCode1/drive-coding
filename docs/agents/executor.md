@@ -86,9 +86,14 @@
 
 - **סטטוס:** פעיל
 - **Worktree:** `/home/user/projects/voice-acp` (master — אין worktree נפרד, עובדים על אותו repo)
-- **עובד על:** משימה G — mic button state machine (`frontend/index.html`)
+- **עובד על:** משימה H — גלילה חכמה (`frontend/index.html`)
 
 ## לוג
+
+### [2026-05-14 12:40] ✅ סיימתי משימה G
+mic button state machine מלא: 4 מצבים (idle/recording/speaking/paused) דרך `data-state`. CSS עם attribute selectors במקום class. כפתור stop חדש. helpers: getMicButtonState, updateMicButton, pauseAllAudio, resumeAllAudio, stopAllAudio. שדה `audioIsPaused`. click handler החליף לפי המצב. MutationObserver של car mode עבר ל-data-state. `node --check` עבר.
+
+עובר ל-H — גלילה חכמה (frontend).
 
 ### [2026-05-14 12:20] ✅ סיימתי משימה F
 backend: `lastUserText` + `recentMessages` ב-ConnState (FIFO 3). `handleUserInput` שומר user text. `flushMessage` מוסיף ל-recentMessages. `onToolCall(create)` עובר דרך `narrateToolCall` בתוך ttsQueue. snapshot של context ב-create. שמירת `kind: "tool_title"` ב-WebSocket — אין שינוי ב-frontend.

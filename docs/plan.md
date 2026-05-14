@@ -663,6 +663,9 @@ jumpDownBtn.addEventListener("click", () => {
 
 ## משימות שבוצעו
 
+### G — mic button state machine + stop button (2026-05-14 12:40)
+frontend: 4 states (idle/recording/speaking/paused) דרך `data-state`. helpers: getMicButtonState, updateMicButton, pauseAllAudio, resumeAllAudio, stopAllAudio. StreamingAudio.resume(). שדה global `audioIsPaused`. click handler חדש עם switch על המצבים. stop-btn חדש (hidden until speaking/paused). CSS מעבר מ-class ל-attribute selectors. MutationObserver של car mode עבר ל-data-state. `node --check` עבר.
+
 ### F — נראציה של tool calls (2026-05-14 12:20)
 backend: ConnState קיבל `lastUserText` + `recentMessages` (FIFO max 3). `handleUserInput` שומר את הטקסט. `flushMessage` מוסיף ל-recentMessages. `onToolCall(create)` עובר דרך ttsQueue → `narrateToolCall` + `streamTts(narrate, "tool_title")`. snapshot של context נלקח ב-create כדי שעדכונים async מאוחרים לא ישנו את הנראציה. אין שינוי ב-frontend (אותו `kind: "tool_title"`). `bunx tsc --noEmit` עבר.
 
