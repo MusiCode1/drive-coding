@@ -4,6 +4,52 @@
 
 ---
 
+## 2026-05-14 18:40
+
+### Q — כפתורי ⏮ / ⏭ לניווט בתור הניגון (frontend, executor)
+
+**מה נעשה:** מימוש מלא של משימה Q כפי שתוכננה ב-`docs/plan.md` ב-18:05.
+
+**שינויים ב-`frontend/index.html`:**
+- **HTML**: שני כפתורי `nav-btn` חדשים סביב כפתור המיקרופון — `#prev-btn` (⏮) ו-`#next-btn` (⏭), שניהם hidden כברירת מחדל.
+- **CSS**: בלוק `.nav-btn` — עיגול 40px בסגנון הכפתורים האחרים, hover בצבע accent.
+- **State חדש**: `playbackHistory` — מערך של `SubBubble`s שניגנו (רק `kind=message` עם `audioBase64`). מתעדכן ב-`handleAudioEnd` (סיום live של message), ב-`playSubBubbleAudio` (replay ידני דרך 🔊), וב-`handleNext` (אם live נקטע באמצע ויש base64 חלקי).
+- **`updateMicButton`**: לוגיקה לחשיפת prev/next — מופיעים אם state=speaking/paused או יש היסטוריה או streamOrder לא ריק.
+- **`handleNext`**: עוצר live current (שומר חלקי ל-history אם message) → playNextStream; או עוצר replay → playNextStream אם יש; אחרת flash.
+- **`handlePrev`**: ב-replay → restart מההתחלה (Audio חדש מ-history.last); ב-live → stopAllStreaming + replay של history.last; ב-idle → pop מ-history + playSubBubbleAudio (שיחזיר אותו ל-history דרך push). flash אם אין מה לעשות.
+- **`flashBtn`**: helper ל-fade ויזואלי קצר כשהלחיצה לא יכולה לעשות כלום.
+- **Keyboard**: `ArrowRight` = prev (RTL: "ימינה" = אחורה), `ArrowLeft` = next. רק כש-focus לא בinput.
+
+**בדיקה:** `node --check` על הסקריפט המוטמע — עבר. בדיקה empirical תהיה כש-Avi תפעיל. אין בעיית רגרסיה — כל הכפתורים הקיימים (replay/mic/stop) נשארו ללא שינוי.
+
+**הערה ארכיטקטונית:** במצב idle, מודל "pop+push" של ה-spec מאפשר לחיצה אחת לחזור לסגמנט הקודם, אבל לא רצף לחיצות (כל לחיצה מ-currentlyPlaying = restart). זה ה-MVP. אם יוצרי הצורך — נשדרג ל-cursor.
+
+---
+
+## 2026-05-14 18:25
+
+### יצירת `docs/behaviors.md` — תיעוד התנהגויות לקראת v6 (ריפקטור)
+
+**מטרה:** רשימה ממוקדת של כל ההתנהגויות הקיימות במערכת — מקור אמת לבדיקות שצריכות להיכתב לפני הריפקטור. אחרי שהבדיקות עוברות על הקוד הנוכחי, ניתן יהיה לעשות refactor בבטחון.
+
+**מקורות:** קריאה ישירה של `backend/src/{server,acp-bridge,stt,tts}.ts`, `frontend/index.html`, `walkthrough.md` (כל ההיסטוריה — POC v1 + v2 + v3 + v4 + hot-fixes), `learnings.md`, וכל פירוט באגים שתועד.
+
+**מבנה:** 14 קטגוריות (STT, ACP, PROMPT, TTS, GEMINI, REC, WS, UI-MIC, UI-AUDIO, UI-BUBBLES, UI-SCROLL, UI-HIST, UI-CAR, CONFIG) + הצעות לסוויטת בדיקות + Q-1..Q-6 לכפתורי הניווט שעדיין לא בוצעו.
+
+**סה"כ ~130 התנהגויות** עם מקור בקוד או ב-walkthrough. כל אחת בפסקה אחת.
+
+**הצעת ארגון לבדיקות** (סעיף בסוף):
+1. Unit tests טהורות — `findSentenceBoundary` (8 מקרים) + `extractProviderError`.
+2. Mock-based integration tests עם stub של bridge — 8 senarios (chunk יחיד, 3 משפטים, thought→message, tool_call create, 0 chars + thoughts, 0 chars + provider error, previousResponse ל-STT, cancel).
+3. State tests של ConnState (busy, firstPromptSent, recentMessages FIFO).
+4. E2E smoke tests דרך OneCLI (אופציונלי).
+
+עדיפות: PROMPT + findSentenceBoundary + extractProviderError קודם. אחר כך ACP + GEMINI. אחרון: TTS cache + REC + frontend.
+
+הצעדים הבאים — Avi תאשר/תוסיף לרשימה, וכשמתחילים את v6 ניתן לעבור ישר ל-`bun test`.
+
+---
+
 ## 2026-05-14 18:05
 
 ### תכנון v5 (משימה Q — ניווט בתור הניגון) + רישום כיוון v6 (ריפקטור)

@@ -485,6 +485,29 @@
         border-color: var(--recording);
         color: white;
       }
+      .nav-btn {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        color: var(--fg-dim);
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        font-size: 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.15s;
+        flex-shrink: 0;
+      }
+      .nav-btn[hidden] {
+        display: none;
+      }
+      .nav-btn:hover {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: white;
+      }
     </style>
   </head>
   <body>
@@ -505,7 +528,9 @@
       <div id="status">לחצי על הכפתור כדי לדבר</div>
       <div class="controls">
         <button id="replay-last" disabled title="השמע את ההודעה האחרונה">🔊</button>
+        <button id="prev-btn" class="nav-btn" hidden aria-label="סגמנט קודם" title="הקודם (←)">⏮</button>
         <button id="btn" disabled aria-label="הקלטה" data-state="idle">🎙</button>
+        <button id="next-btn" class="nav-btn" hidden aria-label="סגמנט הבא" title="הבא (→)">⏭</button>
         <button id="stop-btn" hidden aria-label="עצור הקראה" title="עצור הקראה">⏹</button>
       </div>
     </footer>
@@ -523,6 +548,8 @@
       const btn = document.getElementById("btn");
       const replayLastBtn = document.getElementById("replay-last");
       const stopBtn = document.getElementById("stop-btn");
+      const prevBtn = document.getElementById("prev-btn");
+      const nextBtn = document.getElementById("next-btn");
       const statusEl = document.getElementById("status");
       const metaEl = document.getElementById("meta");
       const chatEl = document.getElementById("chat");
@@ -984,6 +1011,23 @@
         );
         // כפתור stop מופיע רק במצבי הקראה
         stopBtn.hidden = !(s === "speaking" || s === "paused");
+        // כפתורי ניווט (⏮/⏭) — מופיעים כשיש מה לנווט: הקראה פעילה, יש
+        // היסטוריה, או יש פריטים פנדינג בתור.
+        const navVisible =
+          s === "speaking" ||
+          s === "paused" ||
+          playbackHistory.length > 0 ||
+          streamOrder.length > 0;
+        prevBtn.hidden = !navVisible;
+        nextBtn.hidden = !navVisible;
+      }
+
+      // flash ויזואלי קצר על כפתור — כשהלחיצה לא יכולה לעשות כלום.
+      function flashBtn(el) {
+        el.style.opacity = "0.3";
+        setTimeout(() => {
+          el.style.opacity = "";
+        }, 200);
       }
 
       function pauseAllAudio() {
@@ -1190,6 +1234,11 @@
       const streamOrder = []; // ordered FIFO of streamIds
       let currentStream = null;
 
+      // playbackHistory: רשימת ה-SubBubbles שכבר ניגנו (רק kind=message עם audioBase64).
+      // משמש לכפתורי ⏮ / ⏭ לניווט בתור הניגון. כל סגמנט נוסף כאן ב-onComplete
+      // של live message או בלחיצה ידנית 🔊 (דרך playSubBubbleAudio).
+      const playbackHistory = [];
+
       function handleAudioStart(streamId, kind) {
         // קפיצה אגרסיבית: ברגע שמתחיל message, חותכים thoughts פעילים
         // ופנדינג. המשתמש מרגיש מיידית שהמודל "סיים לחשוב".
@@ -1299,7 +1348,12 @@
           stream.sub.setAudioState("ready");
           lastAudioSub = stream.sub;
           replayLastBtn.disabled = false;
+          // הוספה ל-playbackHistory לתמיכה ב-⏮ / ⏭. רק אם לא קיים כבר.
+          if (!playbackHistory.includes(stream.sub)) {
+            playbackHistory.push(stream.sub);
+          }
         }
+        updateMicButton();
       }
 
       function stopAllStreaming() {
@@ -1322,6 +1376,10 @@
         const audio = new Audio("data:audio/mpeg;base64," + sub.audioBase64);
         currentlyPlaying = audio;
         audioIsPaused = false;
+        // השמעה ידנית נחשבת לאירוע ניגון לצורך ⏮ / ⏭.
+        if (!playbackHistory.includes(sub)) {
+          playbackHistory.push(sub);
+        }
         setStatus("מדבר…", "speaking");
         updateMicButton();
         audio.addEventListener("ended", () => {
@@ -1696,6 +1754,100 @@
         stopAllAudio();
       });
 
+      // ── ⏭ Next ─────────────────────────────────────────────────────────────
+      // דילוג קדימה בתור הניגון. מטפל בשני מצבים: live streaming או replay.
+      function handleNext() {
+        // 1) live מתנגן עכשיו — לעצור אותו ולעבור לבא ב-streamOrder.
+        if (currentStream) {
+          const cur = currentStream;
+          // שימור חצי-המנוגן כ-base64 אם מדובר ב-message — מאפשר חזרה אליו ב-⏮.
+          try {
+            if (cur.sub && cur.sub.kind === "message") {
+              const b64 = cur.getBase64();
+              if (b64 && b64.length > 0) {
+                cur.sub.audioBase64 = b64;
+                cur.sub.setAudioState("ready");
+                lastAudioSub = cur.sub;
+                replayLastBtn.disabled = false;
+                if (!playbackHistory.includes(cur.sub)) {
+                  playbackHistory.push(cur.sub);
+                }
+              }
+            }
+          } catch {}
+          try { cur.stop(); } catch {}
+          activeStreams.delete(cur.streamId);
+          const i = streamOrder.indexOf(cur.streamId);
+          if (i >= 0) streamOrder.splice(i, 1);
+          currentStream = null;
+          audioIsPaused = false;
+          playNextStream();
+          return;
+        }
+        // 2) replay מתנגן — לעצור אותו ולעבור ל-streamOrder אם יש.
+        if (currentlyPlaying) {
+          try { currentlyPlaying.pause(); } catch {}
+          currentlyPlaying = null;
+          audioIsPaused = false;
+          if (streamOrder.length > 0) {
+            playNextStream();
+          } else {
+            setStatus("מוכן. לחצי כדי לדבר.");
+            updateMicButton();
+          }
+          return;
+        }
+        // 3) שום דבר לא מתנגן — אם streamOrder יש משהו (מקרה קצה), הפעל.
+        if (streamOrder.length > 0) {
+          playNextStream();
+          return;
+        }
+        // אין מה לדלג אליו.
+        flashBtn(nextBtn);
+      }
+
+      // ── ⏮ Prev ─────────────────────────────────────────────────────────────
+      // חזרה לסגמנט קודם או restart של הנוכחי.
+      function handlePrev() {
+        // 1) replay מתנגן — restart מההתחלה (Audio חדש על אותו base64).
+        if (currentlyPlaying) {
+          const sub = playbackHistory[playbackHistory.length - 1];
+          if (sub && sub.audioBase64) {
+            playSubBubbleAudio(sub);
+            return;
+          }
+          try { currentlyPlaying.pause(); } catch {}
+          currentlyPlaying = null;
+          updateMicButton();
+          return;
+        }
+        // 2) live מתנגן — לקחת את האחרון מההיסטוריה ולהפעיל replay עליו.
+        if (currentStream) {
+          const sub = playbackHistory[playbackHistory.length - 1];
+          if (sub && sub.audioBase64) {
+            stopAllStreaming();
+            playSubBubbleAudio(sub);
+            return;
+          }
+          flashBtn(prevBtn);
+          return;
+        }
+        // 3) idle — pop את האחרון מההיסטוריה ולהפעיל. ה-playSubBubbleAudio
+        // יחזיר אותו לסוף ה-history (push). המודל הזה תומך ב"לחזור פעם
+        // אחת אחורה ולנגן שוב את הסגמנט הקודם" — המקרה השכיח של ⏮ מ-idle.
+        if (playbackHistory.length > 0) {
+          const sub = playbackHistory.pop();
+          if (sub && sub.audioBase64) {
+            playSubBubbleAudio(sub);
+            return;
+          }
+        }
+        flashBtn(prevBtn);
+      }
+
+      prevBtn.addEventListener("click", handlePrev);
+      nextBtn.addEventListener("click", handleNext);
+
       document.addEventListener("keydown", (e) => {
         if (e.code === "Space" && !e.repeat && !btn.disabled) {
           // לא תופס אם המיקוד בכפתור — כדי לא ליצור double-toggle
@@ -1706,6 +1858,20 @@
           e.preventDefault();
           if (isRecording) stopRecording();
           else startRecording();
+        }
+        // חצים ⏮ ⏭ — רק כשהמיקוד לא בשדה טקסט.
+        if (e.code === "ArrowLeft" || e.code === "ArrowRight") {
+          const t = document.activeElement;
+          if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) {
+            return;
+          }
+          if (prevBtn.hidden && nextBtn.hidden) return;
+          e.preventDefault();
+          // ב-RTL: ArrowRight = "אחורה" (prev), ArrowLeft = "קדימה" (next).
+          // ה-spec המבוסס על מילים מדבר על ⏮ ⏭ אבל אצל אבי הדפדפן RTL,
+          // ולכן חצים פיזיים עקביים עם הכיוון של ההיסטוריה החזותית.
+          if (e.code === "ArrowRight") handlePrev();
+          else handleNext();
         }
       });
 

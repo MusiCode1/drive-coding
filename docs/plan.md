@@ -191,11 +191,14 @@ const playbackHistory = []; // SubBubble[] (רק message, רק עם audioBase64)
 
 ## משימות בעבודה (executor)
 
-— (אין כרגע. **v3 הושלם** — ראה "משימות שבוצעו".)
+— (אין כרגע)
 
 ---
 
 ## משימות שבוצעו
+
+### Q — כפתורי ⏮ / ⏭ לניווט בתור הניגון (2026-05-14 18:40)
+frontend: שני `nav-btn` חדשים סביב mic. State `playbackHistory` (messages עם audioBase64). `updateMicButton` חושף nav לפי state/history/streamOrder. `handleNext` עוצר live ושומר חלקי או דולג ב-streamOrder. `handlePrev` עושה restart ב-replay, מעבר ל-history.last ב-live, או pop ב-idle. `flashBtn` ל-feedback ויזואלי. Keyboard: ArrowRight=prev, ArrowLeft=next (RTL-friendly). `node --check` עבר.
 
 ### O — שיפור פרומפט STT + מעבר ל-Flash (2026-05-14 15:30)
 backend: `stt.ts` — `DEFAULT_MODEL` עבר מ-`gemini-flash-lite-latest` ל-`gemini-flash-latest`. `TRANSCRIBE_PROMPT` הורחב עם הוראות פיסוק (פסיק/נקודה/?/!), שבירת פסקאות (`\\n\\n`) בשינויי נושא, "preserve intent" ב-disfluencies, "do NOT add content". `bunx tsc --noEmit` עבר. **v3 הושלם.**

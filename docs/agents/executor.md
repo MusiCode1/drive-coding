@@ -84,11 +84,23 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** סיים — **v3 הושלם** (משימות J-O, 6 commits)
+- **סטטוס:** פעיל — סיים Q, מתחיל P
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** —
+- **עובד על:** משימה P — `backend/src/server.ts`
 
 ## לוג
+
+### [2026-05-14 18:40] ✅ סיימתי משימה Q
+frontend: שני כפתורי `nav-btn` (⏮/⏭) חדשים סביב mic. State `playbackHistory` ל-messages עם audioBase64. `handleNext`/`handlePrev` עם הלוגיקה המלאה מה-spec (3 ענפי state כל אחד). `flashBtn` ל-feedback ויזואלי. Keyboard: ArrowRight=prev, ArrowLeft=next (RTL-friendly, לא תופס בשדות input). `node --check` עבר.
+
+עובר ל-P — חיתוך thoughts לפי משפט ב-`server.ts`.
+
+### [2026-05-14 18:30] התחלתי סשן חדש — מתחיל ממשימה Q
+קראתי: `AGENTS.md`, `docs/agents/README.md`, `executor.md`, `planner.md`, `plan.md`. בדקתי git log + worktree — אנחנו על master, working tree נקי. הקומיט האחרון: `9bd513c (planner): תכנון Q + רישום v6`.
+
+מצב: v4 (P) ו-v5 (Q) ממתינות. סדר מומלץ Q→P. שניהם עצמאיים. סה"כ מוערך ~60 דקות.
+
+מתחיל ממשימה Q — כפתורי ניווט בתור הניגון. frontend בלבד.
 
 ### [2026-05-14 15:30] ✅ סיימתי משימה O + סיום v3
 `stt.ts`: `DEFAULT_MODEL` עבר ל-`gemini-flash-latest` (לא Lite). `TRANSCRIBE_PROMPT` הורחב עם פיסוק, שבירת פסקאות, ו-"do NOT add content". `bunx tsc --noEmit` עבר.
