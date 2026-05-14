@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-05-14 14:45
+
+### משימה K — CSS revert ל-`thought-translation` (executor)
+
+**`frontend/index.html`:** ב-CSS של `.msg.agent.thought .bubble .thought-translation` הוסרו `padding-top`, `border-top`, `color`, `font-size`, `font-style`. נשארו רק `display: block` ו-`margin-top: 4px`. כל המאפיינים האחרים יורשים מהבועה ההורית — כך תרגום עברי נראה זהה למקור האנגלי. השפה היא המבחין היחיד.
+
+`node --check` עבר.
+
+---
+
 ## 2026-05-14 14:40
 
 ### משימה J — `translateThought` מחזיר null בכישלון (executor)

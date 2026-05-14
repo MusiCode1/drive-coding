@@ -86,9 +86,14 @@
 
 - **סטטוס:** פעיל — v3 בעבודה
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** משימה K — `frontend/index.html` (CSS revert)
+- **עובד על:** משימה L — `frontend/index.html` (auto-skip thoughts)
 
 ## לוג
+
+### [2026-05-14 14:45] ✅ סיימתי משימה K
+CSS של `.thought-translation` הצטמצם ל-`display:block` + `margin-top:4px`. הוסרו padding-top/border-top/color/font-size/font-style. תרגום נראה זהה למקור. `node --check` עבר.
+
+עובר ל-L.
 
 ### [2026-05-14 14:40] ✅ סיימתי משימה J
 `translateThought` חתימה חדשה `Promise<string | null>`, כל מסלולי כישלון מחזירים null. `flushThought` ב-server מדלג ב-null (אין text_chunk, אין TTS). CLI test דרך OneCLI ירץ happy path ב-930ms. `bunx tsc --noEmit` עבר.

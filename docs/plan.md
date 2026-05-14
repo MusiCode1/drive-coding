@@ -461,11 +461,14 @@ unintelligible, return an empty string.
 
 ## משימות בעבודה (executor)
 
-- **K** — CSS revert ל-`thought-translation` (התחיל 2026-05-14 14:40)
+- **L** — קפיצה אוטומטית ממחשבות לתשובה (התחיל 2026-05-14 14:45)
 
 ---
 
 ## משימות שבוצעו
+
+### K — CSS revert ל-`thought-translation` (2026-05-14 14:45)
+frontend: הוסרו padding-top, border-top, color, font-size, font-style מ-`.thought-translation`. נשארו רק `display:block` + `margin-top:4px`. כל השאר יורש מהבועה ההורית. `node --check` עבר.
 
 ### J — `translateThought` מחזיר null בכישלון (2026-05-14 14:40)
 backend: `gemini-helper.ts` — חתימה `Promise<string | null>`, כל כשלון מחזיר null (timeout/exception/empty). cache שומר רק non-null. `server.ts` — `flushThought` בודק null ומדלג על text_chunk + TTS. CLI test הראה happy-path עובד (930ms דרך OneCLI). `bunx tsc --noEmit` עבר.

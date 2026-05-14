@@ -225,16 +225,11 @@
         content: "💭 ";
         opacity: 0.6;
       }
-      /* שורת תרגום עברי בתוך bubble של thought — בולטת יותר מהמקור */
+      /* שורת תרגום עברי בתוך bubble של thought — זהה בסגנון למקור האנגלי.
+         השפה היא המבחין היחיד; אין הבדל בגודל/צבע/סגנון. */
       .msg.agent.thought .bubble .thought-translation {
         display: block;
-        margin-top: 6px;
-        padding-top: 6px;
-        border-top: 1px dashed var(--border);
-        color: var(--fg);
-        font-size: 14px;
-        /* עברית באיתליק קשה לקריאה — חוזרים ל-normal (overriding the italic on parent) */
-        font-style: normal;
+        margin-top: 4px;
       }
 
       /* tools sub-bubble */
