@@ -4,6 +4,46 @@
 
 ---
 
+## 2026-05-14 19:35 (worktree `voice-acp-refactor` / branch `refactor`)
+
+### v6 שכבה 2 — Integration tests של ה-ACP bridge דרך loopback streams
+
+**תגלית מ-Avi (תוך כדי השיחה):** ה-SDK של ACP מכיל בדיקות פנימיות שמשתמשות בתבנית "loopback" — שני `TransformStream`s in-memory, `ClientSideConnection` בצד אחד, `AgentSideConnection` בצד השני. שני הצדדים מדברים JSON-RPC אמיתי דרך streams אמיתיים, רק שאין תהליך חיצוני באמצע. ראה `node_modules/@agentclientprotocol/sdk/dist/acp.test.js`.
+
+זה אומר שאני יכול לבדוק את `acp-bridge.ts` שלי **באמת** — בלי spawn של opencode — אם רק אצליח להוציא את הלוגיקה הטהורה מ-IO.
+
+**ריפקטור צעד שני — פיצול `createAcpBridge`:**
+
+הפונקציה פוצלה לשתיים:
+
+1. **`buildBridgeFromStream(stream, cwd, getStderrLines, disposeIo)`** — IO-free. מקבלת stream מוכן + שני callbacks. בונה את ה-client handler, מבצעת initialize handshake, ומחזירה bridge object.
+
+2. **`createAcpBridge(opts)`** — entry-point ל-production. עושה spawn של opencode, מגדירה stderr ring buffer, ממירה Node→Web streams, ואז delegate ל-`buildBridgeFromStream`.
+
+חתימת ה-`AcpBridge` interface נשארה זהה — `server.ts` ממשיך לעבוד ללא שינוי. הריפקטור הזה הוא internal עם backwards-compatibility מלאה.
+
+**בדיקות שנוספו: `tests/acp-bridge.test.ts` — 18 בדיקות בחמש קבוצות:**
+
+- **handshake** (3): bridge נוצר עם sessionId=null, protocolVersion=1 כמספר, clientInfo נכון.
+- **sessions** (3): newSession מחזיר ו-updateateם state, cwd עובר נכון, availableModels + currentModelId נחלצים.
+- **prompt** (7): throw בלי session, agent_message_chunk → onChunk(message) + מצטבר, agent_thought_chunk → onChunk(thought) **לא מצטבר**, tool_call → onToolCall(create), tool_call_update → title חסר → empty, chunks מרובים מחוברים בסדר, accumulator מתאפס בין prompts.
+- **permissions** (4): YOLO — allow_always עדיף על allow_once שעדיף על הראשון. אין options → cancelled.
+- **diagnostics** (1): getRecentStderr מחזיר עותק חדש בכל קריאה.
+
+**שני helpers ב-test file:**
+- `setupLoopback(agent, cwd?)` — יוצר 2 TransformStreams, AgentSideConnection mock, ו-buildBridgeFromStream שלוף.
+- `makeMockAgent(overrides?)` — Agent minimal עם defaults לכל המתודות.
+
+**טכניקה לבדיקת notifications:** ה-mockAgent מתחיל minimal, ואז ב-test ספציפי אפשר להחליף את ה-`prompt` שלו בפונקציה שקוראת ל-`agentConn.sessionUpdate(...)` עם ה-notification הרצוי. זה מאפשר ליצור scenarios מורכבים (3 chunks, mix of types) בלי לבנות agent חדש לכל בדיקה.
+
+**אימות:**
+- `bun test` → **55 pass, 0 fail, 81 expect() calls, 138ms** (37 unit + 18 integration).
+- `bunx tsc --noEmit` → נקי.
+
+**הצעדים הבאים:** ההצעדים הבאים — או לעבור לשכבה 3 (server.ts: handlePrompt + flow מלא), או להוסיף בדיקות בשכבה 2 לגבי loadSession (עם היסטוריה משוחזרת) ול-listSessions ול-setModel. ממתין להוראת Avi.
+
+---
+
 ## 2026-05-14 19:10 (worktree `voice-acp-refactor` / branch `refactor`)
 
 ### v6 שכבה 1 — Unit tests + הוצאת helpers טהורים מ-server.ts

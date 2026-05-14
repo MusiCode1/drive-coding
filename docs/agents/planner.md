@@ -86,11 +86,22 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** פעיל — שכבה 1 של v6 הושלמה (unit tests + extraction של פונקציות טהורות)
+- **סטטוס:** פעיל — שכבה 2 של v6 הושלמה (integration tests של ACP bridge דרך loopback)
 - **Worktree:** `/home/user/projects/voice-acp-refactor` (branch `refactor`)
 - **עובד על:** —
 
 ## לוג
+
+### [2026-05-14 19:35] v6 שכבה 2 — ACP bridge integration tests דרך loopback streams
+Avi הציעה לחפש אם SDK של ACP חושף נקודות בדיקה. בדיוק כך — `acp.test.js` של ה-SDK מדגים תבנית loopback: שני TransformStreams + ClientSideConnection + AgentSideConnection mock. שני הצדדים מדברים JSON-RPC אמיתי, רק בלי תהליך.
+
+**ריפקטור:** פיצול `createAcpBridge` לשתי פונקציות. `buildBridgeFromStream` — IO-free, מקבלת stream + callbacks. `createAcpBridge` — entry-point production שעושה spawn ואז delegate. ה-AcpBridge interface נשאר זהה — server.ts ממשיך לעבוד.
+
+**18 בדיקות נוספו** בקובץ `tests/acp-bridge.test.ts`: handshake (3), sessions (3), prompt (7), permissions YOLO (4), diagnostics (1). כל ההתנהגויות הקריטיות מ-behaviors ACP-2, ACP-6, ACP-7, ACP-8, ACP-10, ACP-15 מכוסות.
+
+**סה"כ:** 55/55 בדיקות עוברות, tsc נקי. שכבה 1 (37 unit) + שכבה 2 (18 integration).
+
+**הצעדים הבאים:** או שכבה 3 (server.ts handlePrompt flow — דורש extraction נוסף של ה-prompt handler מהשרת ענק), או הרחבת שכבה 2 (loadSession עם history, listSessions, setModel). ממתין לאישור Avi.
 
 ### [2026-05-14 19:10] v6 שכבה 1 — Unit tests + extraction של helpers טהורים
 ב-worktree חדש `voice-acp-refactor`. גילוי מיידי: import של `findSentenceBoundary` מ-`server.ts` מפעיל `Bun.serve` ברמת module → התנגשות עם שרת חי + עוצר test runner. סימן ראשון שהריפקטור חייב להתחיל בהפרדת IO מלוגיקה.

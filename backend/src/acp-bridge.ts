@@ -123,53 +123,23 @@ export interface AcpBridge {
 }
 
 /**
- * יוצר Bridge ל-opencode acp.
- * spawns את התהליך, מבצע handshake, ומחזיר אובייקט עם מתודות.
+ * IO-free core of the bridge — receives a ready ndJsonStream and builds the
+ * full bridge logic (handlers, accumulators, methods) on top of it.
+ *
+ * The caller is responsible for:
+ *   - constructing the stream (from a process, in-memory pipes, etc.)
+ *   - providing `getStderrLines` (for the diagnostic ring buffer)
+ *   - providing `disposeIo` (called at the end of `bridge.dispose()`)
+ *
+ * Used by both production (`createAcpBridge`, with a spawned process) and
+ * tests (loopback with in-memory `TransformStream`s + a mock agent).
  */
-export async function createAcpBridge(
-  opts: AcpBridgeOptions,
+export async function buildBridgeFromStream(
+  stream: ReturnType<typeof ndJsonStream>,
+  cwd: string,
+  getStderrLines: () => string[],
+  disposeIo: () => Promise<void>,
 ): Promise<AcpBridge> {
-  const opencodeBin = opts.opencodeBin ?? "opencode";
-
-  // ה-cwd שאנחנו רוצים לעבוד עליו עובר ב-newSession; את התהליך עצמו מריצים מ-cwd
-  // הנוכחי (לא משנה כי הוא מקשיב לבקשות).
-  // stderr תמיד pipe — אנחנו רוצים לקרוא אותו (גם לבליעה וגם לתפיסת errors).
-  // אם printAgentLogs=true — נוסיף --print-logs ל-opencode ונעביר את ה-stderr
-  // ל-stderr שלנו תוך תפיסה במקביל.
-  const proc: ChildProcessByStdio<Writable, Readable, Readable> = spawn(
-    opencodeBin,
-    ["acp", ...(opts.printAgentLogs ? ["--print-logs"] : [])],
-    {
-      stdio: ["pipe", "pipe", "pipe"],
-    },
-  ) as any;
-
-  // Ring buffer של 100 השורות האחרונות של stderr — לדיאגנוסטיקה במצב error.
-  const STDERR_BUFFER_SIZE = 100;
-  const stderrBuffer: string[] = [];
-  let stderrLineFrag = "";
-  proc.stderr.on("data", (chunk: Buffer | string) => {
-    const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
-    if (opts.printAgentLogs) {
-      process.stderr.write(text);
-    }
-    stderrLineFrag += text;
-    const lines = stderrLineFrag.split("\n");
-    stderrLineFrag = lines.pop() ?? "";
-    for (const line of lines) {
-      stderrBuffer.push(line);
-      if (stderrBuffer.length > STDERR_BUFFER_SIZE) {
-        stderrBuffer.shift();
-      }
-    }
-  });
-
-  // המרת Node streams ל-Web streams (נדרש ע"י ndJsonStream)
-  const writableStdin = Writable.toWeb(proc.stdin) as WritableStream<Uint8Array>;
-  const readableStdout = Readable.toWeb(proc.stdout) as ReadableStream<Uint8Array>;
-
-  const stream = ndJsonStream(writableStdin, readableStdout);
-
   // state מצטבר לפי prompt; מתאפס בכל prompt חדש
   let currentChunkHandler: ChunkHandler | null = null;
   let currentToolCallHandler: ToolCallHandler | null = null;
@@ -284,12 +254,12 @@ export async function createAcpBridge(
     },
 
     getRecentStderr() {
-      return [...stderrBuffer];
+      return getStderrLines();
     },
 
     async newSession() {
       const res = await conn.newSession({
-        cwd: opts.cwd,
+        cwd,
         mcpServers: [],
       });
       sessionId = res.sessionId;
@@ -307,7 +277,7 @@ export async function createAcpBridge(
       try {
         const res: any = await conn.loadSession({
           sessionId: id,
-          cwd: opts.cwd,
+          cwd,
           mcpServers: [],
         } as any);
         sessionId = res?.sessionId ?? id;
@@ -376,6 +346,69 @@ export async function createAcpBridge(
     },
 
     async dispose() {
+      await disposeIo();
+    },
+  };
+
+  return bridge;
+}
+
+/**
+ * Production entry-point: spawns `opencode acp` and wires its stdio into
+ * `buildBridgeFromStream`.
+ *
+ * For tests, prefer `buildBridgeFromStream` directly with loopback streams
+ * and a mock `AgentSideConnection`.
+ */
+export async function createAcpBridge(
+  opts: AcpBridgeOptions,
+): Promise<AcpBridge> {
+  const opencodeBin = opts.opencodeBin ?? "opencode";
+
+  // ה-cwd שאנחנו רוצים לעבוד עליו עובר ב-newSession; את התהליך עצמו מריצים מ-cwd
+  // הנוכחי (לא משנה כי הוא מקשיב לבקשות).
+  // stderr תמיד pipe — אנחנו רוצים לקרוא אותו (גם לבליעה וגם לתפיסת errors).
+  // אם printAgentLogs=true — נוסיף --print-logs ל-opencode ונעביר את ה-stderr
+  // ל-stderr שלנו תוך תפיסה במקביל.
+  const proc: ChildProcessByStdio<Writable, Readable, Readable> = spawn(
+    opencodeBin,
+    ["acp", ...(opts.printAgentLogs ? ["--print-logs"] : [])],
+    {
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  ) as any;
+
+  // Ring buffer של 100 השורות האחרונות של stderr — לדיאגנוסטיקה במצב error.
+  const STDERR_BUFFER_SIZE = 100;
+  const stderrBuffer: string[] = [];
+  let stderrLineFrag = "";
+  proc.stderr.on("data", (chunk: Buffer | string) => {
+    const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    if (opts.printAgentLogs) {
+      process.stderr.write(text);
+    }
+    stderrLineFrag += text;
+    const lines = stderrLineFrag.split("\n");
+    stderrLineFrag = lines.pop() ?? "";
+    for (const line of lines) {
+      stderrBuffer.push(line);
+      if (stderrBuffer.length > STDERR_BUFFER_SIZE) {
+        stderrBuffer.shift();
+      }
+    }
+  });
+
+  // המרת Node streams ל-Web streams (נדרש ע"י ndJsonStream)
+  const writableStdin = Writable.toWeb(proc.stdin) as WritableStream<Uint8Array>;
+  const readableStdout = Readable.toWeb(proc.stdout) as ReadableStream<Uint8Array>;
+
+  const stream = ndJsonStream(writableStdin, readableStdout);
+
+  return buildBridgeFromStream(
+    stream,
+    opts.cwd,
+    () => [...stderrBuffer],
+    async () => {
       try {
         proc.stdin.end();
       } catch {}
@@ -392,9 +425,7 @@ export async function createAcpBridge(
         });
       });
     },
-  };
-
-  return bridge;
+  );
 }
 
 // CLI entrypoint — בדיקה עצמאית:
