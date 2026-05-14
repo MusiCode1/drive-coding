@@ -438,6 +438,8 @@ async function handleUserInput(
     // thoughtBuffer מצטבר במקביל ל-messageBuffer.
     // flushThought: מתרגם דרך Gemini → שולח text_chunk thought_translation
     // → TTS עם kind "thought" (frontend מקשר ל-bubble המקורי של ה-thought).
+    // אם התרגום נכשל (null) — דילוג מוחלט: אין text_chunk ואין TTS,
+    // המשתמש יראה רק את המקור האנגלי בלי קול.
     let thoughtBuffer = "";
     const flushThought = () => {
       const t = thoughtBuffer.trim();
@@ -446,6 +448,12 @@ async function handleUserInput(
       console.log(`[ws] thought segment (${t.length} chars) → תרגום + TTS`);
       ttsQueue = ttsQueue.then(async () => {
         const hebrew = await translateThought(t);
+        if (hebrew === null) {
+          console.log(
+            `[ws] thought translation failed — דילוג על TTS לסגמנט הזה`,
+          );
+          return;
+        }
         send(ws, {
           type: "text_chunk",
           text: hebrew,

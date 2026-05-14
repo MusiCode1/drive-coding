@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-05-14 14:40
+
+### משימה J — `translateThought` מחזיר null בכישלון (executor)
+
+**הבאג שתוקן:** כשתרגום מחשבה נכשל (timeout/error/ריק), ה-fallback היה הטקסט האנגלי המקורי. הוא נשלח כ-`thought_translation` ל-frontend ומוקרא בקול עברי של ElevenLabs — נשמע כאנגלית מסולפת, נורא מבלבל.
+
+**שינויים ב-`backend/src/gemini-helper.ts`:**
+- חתימה: `translateThought(text: string): Promise<string | null>` (במקום `Promise<string>`).
+- כל מסלולי הכישלון — timeout, exception, תוצאה ריקה — מחזירים `null` במקום fallback.
+- ה-cache שומר רק תוצאה לא-null (כמו קודם).
+- ה-JSDoc הובהר במפורש שעל הקורא לבדוק null ולדלג על TTS.
+- ה-CLI test entrypoint מציג `[null — נכשל]` במקרה כזה.
+
+**שינויים ב-`backend/src/server.ts`:**
+- ב-`flushThought`, אחרי `const hebrew = await translateThought(t);`: בדיקה `if (hebrew === null) { console.log("דילוג"); return; }`. אין שליחת `text_chunk thought_translation` ואין `streamTts`. המשתמש יראה רק את ה-thought האנגלי המקורי בבועה, בלי שורה שנייה ובלי קול.
+
+**אימות:** `bunx tsc --noEmit` עבר. CLI test דרך OneCLI עם happy-path: `"I should check this carefully."` → `"אני צריך לבדוק את זה היטב."` ב-930ms. ה-null path יאומת empirically בשיחה דרך הממשק (אי-אפשר לסמלץ כשלון בלי שינוי קוד זמני).
+
 ## 2026-05-14 13:05
 
 ### משימה I — `dir="auto"` לבועות (executor)

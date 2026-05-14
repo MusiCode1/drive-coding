@@ -53,36 +53,41 @@ Text:
  * מתרגם reasoning (בדרך-כלל אנגלית) לעברית מדוברת טבעית להקראה.
  *
  * - cache hit → החזר מיד.
- * - timeout 2500ms → fallback ל-text המקורי.
- * - כל שגיאה → fallback ל-text המקורי.
- * - תוצאה מוצלחת ולא ריקה → cache.
+ * - timeout 2500ms → `null`.
+ * - כל שגיאה → `null`.
+ * - תוצאה ריקה → `null`.
+ * - תוצאה מוצלחת → cache + החזר.
+ *
+ * הקוראים אחראים לבדוק `null` ולדלג על TTS/תצוגת תרגום במקרה הזה —
+ * הקראה של הטקסט האנגלי בקול עברי נשמעת מסולפת ומבלבלת.
  */
-export async function translateThought(text: string): Promise<string> {
+export async function translateThought(text: string): Promise<string | null> {
   const key = text.trim();
-  if (!key) return text;
+  if (!key) return null;
 
   const cached = translationCache.get(key);
   if (cached !== undefined) return cached;
 
-  const fallback = text;
-  const call = (async () => {
+  const call = (async (): Promise<string | null> => {
     try {
       const response = await ai.models.generateContent({
         model: DEFAULT_MODEL,
         contents: createUserContent([TRANSLATE_PROMPT_PREFIX + key]),
       });
       const out = (response.text ?? "").trim();
-      if (!out) return fallback;
-      return out;
+      return out || null;
     } catch (e) {
       console.error(`[gemini-helper] translateThought נכשל: ${(e as Error).message}`);
-      return fallback;
+      return null;
     }
   })();
 
-  const result = await withTimeout(call, TRANSLATE_TIMEOUT_MS, fallback);
-  // cache רק אם קיבלנו תרגום אמיתי (לא fallback ולא ריק)
-  if (result && result !== fallback) {
+  const result = await withTimeout<string | null>(
+    call,
+    TRANSLATE_TIMEOUT_MS,
+    null,
+  );
+  if (result !== null) {
     translationCache.set(key, result);
   }
   return result;
@@ -179,5 +184,8 @@ if (import.meta.main) {
   }
   const start = Date.now();
   const result = await translateThought(arg);
-  console.log(`(${Date.now() - start}ms): ${result}`);
+  const elapsed = Date.now() - start;
+  console.log(
+    `(${elapsed}ms): ${result === null ? "[null — נכשל]" : result}`,
+  );
 }

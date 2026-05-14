@@ -461,11 +461,14 @@ unintelligible, return an empty string.
 
 ## משימות בעבודה (executor)
 
-— (אין כרגע. **v2 הושלם** — ראה "משימות שבוצעו".)
+- **K** — CSS revert ל-`thought-translation` (התחיל 2026-05-14 14:40)
 
 ---
 
 ## משימות שבוצעו
+
+### J — `translateThought` מחזיר null בכישלון (2026-05-14 14:40)
+backend: `gemini-helper.ts` — חתימה `Promise<string | null>`, כל כשלון מחזיר null (timeout/exception/empty). cache שומר רק non-null. `server.ts` — `flushThought` בודק null ומדלג על text_chunk + TTS. CLI test הראה happy-path עובד (930ms דרך OneCLI). `bunx tsc --noEmit` עבר.
 
 ### I — `dir="auto"` לבועות (2026-05-14 13:05)
 frontend: `SubBubble.bubbleEl.setAttribute("dir","auto")` בconstructor. `renderToolItem`: `<span dir="auto">` ישירות ב-innerHTML. `setHtml`: iterate על children ומוסיף dir=auto לכל מי שאין לו. `node --check` עבר. **v2 הסתיים.**

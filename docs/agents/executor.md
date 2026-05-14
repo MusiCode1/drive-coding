@@ -84,11 +84,21 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** סיים — **v2 הושלם** (משימות A-I, 9 commits)
+- **סטטוס:** פעיל — v3 בעבודה
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** —
+- **עובד על:** משימה K — `frontend/index.html` (CSS revert)
 
 ## לוג
+
+### [2026-05-14 14:40] ✅ סיימתי משימה J
+`translateThought` חתימה חדשה `Promise<string | null>`, כל מסלולי כישלון מחזירים null. `flushThought` ב-server מדלג ב-null (אין text_chunk, אין TTS). CLI test דרך OneCLI ירץ happy path ב-930ms. `bunx tsc --noEmit` עבר.
+
+עובר ל-K — CSS revert.
+
+### [2026-05-14 14:35] התחלתי v3 — קראתי את 6 המשימות J-O
+ה-planner הגיש איטרציה חדשה אחרי בדיקה empirical של Avi: 6 משימות עצמאיות. סדר מומלץ J→O לפי דחיפות. גם ראיתי commit 9e36d25 שה-planner עשה לבד (hot-fix לבאג סגמנטים שני של message) — תיעוד מלא ב-planner.md, חריגה מודעת.
+
+מתחיל מ-J — תיקון `translateThought` להחזיר null בכישלון, ו-`flushThought` לדלג.
 
 ### [2026-05-14 13:05] ✅ סיימתי משימה I + סיום v2
 frontend: `dir="auto"` ב-3 נקודות: SubBubble constructor, renderToolItem (innerHTML), setHtml (iterate children). `node --check` עבר.
