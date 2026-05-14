@@ -9,7 +9,11 @@
 
 **v1 + v2 + v3 הושלמו וקומטו.** ה-stack פעיל E2E. ראה `docs/walkthrough.md` ו"משימות שבוצעו" למטה.
 
-**v4 = תיקון נקודתי.** באיטרציית v3, משימה D הוסיפה חיתוך לפי משפט ל-message אבל לא ל-thought. בבדיקה empirical של Avi ב-16:30 התגלה שהתרגום של thoughts קורה רק בסוף ה-thought block ולא פר-משפט — חוויית UX לא טובה. משימה P מתקנת את זה בהיקף ממוקד.
+**v4 (משימה P) ממתינה למבצע** — תיקון UX של חיתוך thoughts לפי משפט (ראה תיאור מטה).
+
+**v5 = ניווט בתור הניגון.** Avi הביעה צורך דחוף בכפתורי קדימה־אחורה בתור הניגון של ה-frontend, כדי שתוכל לדלג כש-ElevenLabs "משתגע" באמצע סגמנט (חוזר על עצמו, מדבר ג'יבריש). זה הבלוקר היחיד מבחינת UX לפני שמתחילים את הריפקטור הגדול.
+
+**v6 = ריפקטור עם בדיקות (מתוכנן, טרם מומש).** אחרי v5: חילוץ behaviors.md מהקוד והשיחות, כתיבת בדיקות אינטגרציה, ריפקטור של server.ts (handler ענק → ConnectionState class + פונקציות טהורות). יבוצע ב-worktree נפרד כדי לא לחסום את הריצה הנוכחית של Avi.
 
 עיקרון מנחה כללי נשאר: Gemini (Flash Lite לעזרים, Flash הרגיל ל-STT) כשכבת הנגשה — בכל מקום שטקסט מהמערכת לא נשמע טבעי. גנרי, זול, מהיר.
 
@@ -42,8 +46,90 @@ gemini-helper.ts
 
 ## משימות לביצוע
 
-> איטרציית v4 (תיקון נקודתי) — משימה P שזוהתה בבדיקה empirical של Avi ב-16:30 אחרי שהמבצע סיים את v3.
 > בכל משימה: **commit יחיד**, הודעה בעברית, פורמט `(scope): כותרת\n\n- שינוי 1\n- שינוי 2`.
+> **סדר ביצוע מומלץ:** Q ראשונה (דחיפות UX), אחר כך P (תיקון UX קיים).
+
+---
+
+### Q. כפתורי קדימה/אחורה בתור הניגון (frontend)
+
+**מטרה:** Avi צריכה דרך מהירה לדלג קדימה כש-ElevenLabs נכשל באמצע סגמנט (חוזר על עצמו, מדבר ג'יבריש למשך דקות). וגם לחזור לסגמנט קודם אם הוצגה הודעה שלא הספיקה לעבד. שני כפתורים חדשים בממשק: ⏮ (הקודם) ו-⏭ (הבא), שעובדים על תור הניגון של ה-frontend בלבד.
+
+**הקשר ארכיטקטוני:**
+
+ב-`frontend/index.html` יש שתי שכבות של ניגון אודיו, ושני סוגי בועות:
+1. **`StreamingAudio`** (live) — מנגן progressively MP3 chunks תוך כדי קבלה. מנוהל דרך `streamOrder[]` + `activeStreams` Map + `currentStream` (שורות 1188-1191). הכפתור ⏸/▶ הראשי של המיקרופון שולט בזה.
+2. **`Audio` רגיל (replay)** — נוצר ב-`playSubBubbleAudio` משדה `audioBase64` שנשמר על ה-SubBubble אחרי `audio_end` (שורה 1298). מנוהל דרך `currentlyPlaying`. כפתור 🔊 על כל בועה מפעיל את זה.
+
+יש ארבעה סוגי בועות (`SubBubble.kind`): `user`, `thought`, `tools`, `message`. רק `message` ו-`tool_title` ו-`thought` נשמעים. רק `message` שומר `audioBase64` (שורה 1296: "שמירת האודיו על ה-sub לreplay — רק ל-message"). מחשבות ו-tool titles לא נשמרים ל-replay אחרי שהם הסתיימו.
+
+**עקרון מנחה לעיצוב הקפיצה:**
+
+תור הניגון "האקטיבי" הוא מה ש-Avi רוצה לנווט בו. זה כולל:
+- **סגמנטים שעדיין לא ניגנו** ב-`streamOrder` (FIFO של live streams) — קדימה ייקפצו אליהם.
+- **סגמנטים שכבר ניגנו** והם בועות `message` עם `audioBase64` שמור — אחורה יחזיר אליהם.
+
+מחשבות ו-tool titles שכבר ניגנו — אבודים. אין `audioBase64`. אחורה ידלג עליהם.
+
+**State חדש לתחזק:**
+
+```js
+// playbackHistory: רשימת ה-bubbles שניגנו (כולם message). מתעדכן ב-onComplete של live
+// או בכל לחיצה על 🔊 / kbd. מהווה את "מה שעבר" — אחורה חוזר אליהם.
+const playbackHistory = []; // SubBubble[] (רק message, רק עם audioBase64)
+```
+
+**שינויים ב-frontend:**
+
+1. **HTML חדש** — שני כפתורים בצד שמאל וימין של כפתור המיקרופון בשורת הקלט הראשית. עיצוב דומה ל-stop-btn (עיגול קטן, רקע שקוף עד hover). מומלץ:
+   - `<button id="prev-btn" class="nav-btn" hidden aria-label="סגמנט קודם">⏮</button>`
+   - `<button id="next-btn" class="nav-btn" hidden aria-label="סגמנט הבא">⏭</button>`
+   - מיקום: בתוך אותו container של mic + stop. שני הכפתורים מוסתרים ב-idle, מופיעים ב-`speaking` או `paused` או כשיש הקלטות זמינות.
+
+2. **CSS חדש** — בלוק `.nav-btn` בסטייל של `#stop-btn` (עיגול ~36px, hover effect). יש להוסיף ליד CSS של `#stop-btn` בקובץ.
+
+3. **`updateMicButton()`** (סביב שורה 971) — להוסיף בסוף לוגיקה לחשיפת prev/next. הכלל:
+   - `prev-btn` מופיע אם `playbackHistory.length > 0` או יש סגמנט נוכחי שמתנגן (אז prev = restart הנוכחי).
+   - `next-btn` מופיע אם `streamOrder.length > 0` או `currentStream` קיים (יש מה לדלג ממנו).
+   - אם idle לחלוטין ואין היסטוריה — שניהם hidden.
+
+4. **`playbackHistory` push** — שתי נקודות:
+   - ב-`stream.onComplete` של live message (סביב שורות 1296-1303) — אחרי שמירת `audioBase64`, push `stream.sub` ל-`playbackHistory`.
+   - ב-`playSubBubbleAudio(sub)` (שורה 1315) — אם sub לא ב-history, push (כך שהפעלת replay ידני גם נכנסת להיסטוריה).
+   - **לא כפילויות**: לבדוק `if (!playbackHistory.includes(sub))` לפני push.
+
+5. **`handleNext()`** — פונקציה חדשה. הלוגיקה:
+   - אם יש `currentStream` (live מנגן עכשיו): לקרוא `currentStream.stop()`, להסיר אותו מ-`activeStreams` ו-`streamOrder`, אם זה `kind === "message"` ויש `audioBase64` ב-sub → push ל-history (חצי-מנוגן). לקרוא `playNextStream()`.
+   - אם אין live אבל `currentlyPlaying` (replay): לקרוא pause עליו, לאפס `currentlyPlaying = null`. אם אחרי זה יש streams בתור → `playNextStream()`. אחרת — `setStatus("מוכן")` ועדכון state.
+   - אם אין שום דבר מתנגן ויש פריטים ב-`streamOrder` שלא התחילו — `playNextStream()` (זה מקרה קצה, בדרך כלל לא יקרה).
+   - בכל מקרה — לקרוא `updateMicButton()` בסוף.
+
+6. **`handlePrev()`** — פונקציה חדשה. הלוגיקה:
+   - אם יש `currentlyPlaying` (replay מתנגן): pause + restart מההתחלה (יצירת Audio חדש על אותו base64). זה "אחורה לתחילת הסגמנט הנוכחי".
+   - אם יש `currentStream` live: pause + restart לא אפשרי (זה stream). אז לקחת את האחרון מ-`playbackHistory` (ה-element הקודם, לא הנוכחי) ולהפעיל replay עליו דרך `playSubBubbleAudio`. אם history ריק — תגובה ויזואלית קצרה (flash) או disable.
+   - אם אין שום דבר מתנגן: pop מ-`playbackHistory` (האחרון) ולהפעיל `playSubBubbleAudio` עליו. אם history ריק — disable.
+   - **חשוב**: לפני replay לעצור הכל אחר עם `pauseAllAudio()`.
+
+7. **Click handlers** — `prevBtn.addEventListener("click", handlePrev)` ו-`nextBtn.addEventListener("click", handleNext)`.
+
+8. **Keyboard shortcuts** (אופציונלי, אבל נחמד) — `←` קורא ל-handlePrev, `→` קורא ל-handleNext. רק כש-document.activeElement אינו input/textarea. להוסיף ליד shortcut הקיים של `replayLastBtn.click()` (שורה 1814).
+
+9. **`stopAllAudio()`** (שורה 1008) — לאפס גם `playbackHistory.length = 0`? **לא**. היסטוריה צריכה להישאר זמינה גם אחרי stop. רק `currentStream`/`currentlyPlaying`/`streamOrder` מתאפסים שם. ה-history נשאר עד שינוי session או reload.
+
+**Edge cases לזכור:**
+
+- **history מתוך bubble שעדיין ניגן live ונקטע ע"י next**: אם המשתמש דילג באמצע live של message שצריך `audioBase64`, ייתכן שה-`getBase64()` יחזיר רק את ה-chunks שהגיעו עד אותו רגע. זה בסדר — הוא ישוחזר ב-replay כקובץ קצר. עדיף מאשר לאבד את הסגמנט.
+- **next על תור ריק וגם currentStream ריק**: לא לעשות כלום, אולי flash על הכפתור (CSS `:active`).
+- **prev על תור ריק והיסטוריה ריקה**: זהה — disable או flash.
+- **משתמש לוחץ next מהר ברצף**: כל לחיצה רק מקדמת אחד — אסור שיתבצעו שני dispatch מקבילים. ה-onComplete עשוי לא להגיע מיידית כש-stop נקרא; להשתמש בקוד הקיים שמטפל בזה (`activeStreams.delete` בקריאה ידנית).
+
+**קבצים:** `frontend/index.html` בלבד.
+
+**בדיקה:**
+- syntax: `node --check` על הסקריפט המוטמע (להוציא את ה-`<script>` ל-temp file).
+- empirical: בריצה אמיתית — לדבר עם המודל, לקבל מסר ארוך עם 3+ סגמנטים. ללחוץ ⏭ באמצע סגמנט אחד → צריך להתחיל את הסגמנט הבא מיד. ללחוץ ⏮ אחרי 2 סגמנטים → צריך לחזור לסגמנט הקודם מההתחלה. אם ה-history ריק (תחילת שיחה) → ⏮ disabled.
+
+**Commit suggestion:** `(ui): כפתורי קדימה/אחורה לניווט בתור הניגון`
 
 ---
 
@@ -198,17 +284,49 @@ Backend מלא: `server.ts`, `acp-bridge.ts`, `stt.ts`, `tts.ts`, `system-prompt
 
 ---
 
-## תלויות בין משימות (v4)
+## תלויות בין משימות (v4 + v5)
 
-משימה יחידה — אין תלויות.
+- **Q** עצמאית לחלוטין — frontend בלבד, אין תלויות.
+- **P** עצמאית — backend בלבד. מסתמכת על `findSentenceBoundary` (קיים מ-D) ועל `flushThought` (קיים מ-E + J).
+- **Q ו-P לא מתנגשות** — קבצים שונים. אפשר לבצע ברצף או במקביל (אם היו שני מבצעים).
 
-**הערה:** P מסתמכת על `findSentenceBoundary` שכבר נכתבה ב-D ועל `flushThought` שכבר נכתבה ב-E + J. כל הבסיס קיים, P היא רק חיבור של חיתוך-לפי-משפט לזרם ה-thought.
+**סדר מומלץ:** Q קודם (Avi צריכה את זה בריצה החיה), P אחרי. שניהם לפני v6 (ריפקטור).
 
 ---
 
-## הערכת זמן (גס) — v4
+## הערכת זמן (גס)
 
-| משימה | זמן |
-|--------|-----|
-| P | 10-15 דק' |
-| **סה"כ** | **~15 דק'** |
+| משימה | זמן | קובץ |
+|--------|-----|------|
+| Q | 30-45 דק' | `frontend/index.html` |
+| P | 10-15 דק' | `backend/src/server.ts` |
+| **סה"כ v4 + v5** | **~60 דק'** | |
+
+---
+
+## v6 — תכנון ריפקטור (טרם מומש, רק כיוון)
+
+> **לא משימה לביצוע — רק רישום של הכיוון לאיטרציה הבאה.** ה-planner יפרק לפרוטוקול מפורט אחרי ש-Q ו-P מסתיימות וחוזרים empirically יציבות.
+
+### הרציונל
+
+`backend/src/server.ts` הוא 939 שורות. הפונקציה `handlePrompt` תופסת ~240 שורות (440-677), עם 5 buffers + queue + 3 helpers מקוננים בתוך closure אחד. כל מצב חדש דורש נגיעה במקומות מרוחקים. גם יש בזבוז — מחשבות וקריאות לכלים מתורגמות ומוקראות גם כשמסר עוקף אותם מיד (משימה L חותכת ב-frontend, אבל ה-Gemini call וה-ElevenLabs call כבר נעשו).
+
+### עקרונות העבודה
+
+1. **בדיקות לפני ריפקטור.** כותבים סוויטת בדיקות אינטגרציה שמכסה את כל ההתנהגויות הקיימות (כולל באגים שתוקנו ועקיפות). הסוויטה רצה על הקוד הנוכחי ועוברת.
+2. **חילוץ behaviors.md.** מקור: שיחות OpenCode הקודמות (`conversations_search` + קריאה), `walkthrough.md`, `learnings.md`, וקריאת הקוד עצמו. כל באג שתוקן → התנהגות. כל workaround → התנהגות. כל פיצ'ר → התנהגות.
+3. **ריפקטור עם הבדיקות עוברות בכל commit.** מחלקת `ConnectionState`, פונקציות טהורות (`processChunk`, `decideTtsPriority`), חלוקה לקבצים נפרדים (אולי `prompt-handler.ts`, `tts-queue.ts`).
+4. **בזבוז המחשבות מטופל כחלק מהארכיטקטורה החדשה** — TTS queue מבוסס priority עם hold/cancel: מחשבות וקריאות-לכלים ב-"hold" עד שיודעים שאין מסר אחריהן (delay קטן, או cancellation token).
+5. **ב-worktree נפרד** — `git worktree add ../voice-acp-refactor refactor`. ה-master ממשיך לרוץ אצל Avi, מקבל hot-fixes רק במידת הצורך. כשהריפקטור גמור — merge חזרה. ראה `learnings.md` לגבי git-worktree-shared-assets אם רלוונטי.
+6. **אין שרת חי ב-worktree של הריפקטור** — הבדיקות רצות עם `bun test`, בלי OneCLI, בלי tunnel. רק בסוף, כשהכל ירוק, מקימים שרת זמני על port נפרד לבדיקה empirical.
+
+### תוצרים צפויים
+
+- `docs/behaviors.md` — תיעוד אנושי של כל ההתנהגויות (גם פיצ'רים, גם עקיפות, גם באגים-שתוקנו).
+- `backend/tests/` — סוויטת בדיקות ש-100% ממנה עוברת לפני ואחרי הריפקטור.
+- `backend/src/connection-state.ts` (חדש) — class שאוסף את state per-WS connection.
+- `backend/src/prompt-handler.ts` (חדש) — לוגיקת ה-prompt streaming, נטו.
+- `backend/src/tts-queue.ts` (חדש) — תור עם priority, hold, cancel.
+- `backend/src/server.ts` (קצוץ) — נשאר רק WebSocket routing + HTTP endpoints.
+- תיקון אגב: בזבוז Gemini/ElevenLabs על מחשבות שייקטעו (`tts-queue` יבטל אותן לפני שליחה).

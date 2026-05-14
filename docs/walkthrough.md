@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-05-14 18:05
+
+### תכנון v5 (משימה Q — ניווט בתור הניגון) + רישום כיוון v6 (ריפקטור)
+
+**רקע:** Avi פתחה דיון מורחב אחרי שמצאה בשיחה empirical קודמת שמודל זיהה שלוש "חולשות ארכיטקטוניות". בדיקה של ה-planner את הקוד הראתה ש:
+- שתי טענות לא נכונות (TTS queue: ה-frontend כבר חותך thoughts ב-handleAudioStart message; חיתוך משפט: server.ts:697-719 כולל הגנות מקיצורים ומספרים עשרוניים).
+- טענה אחת נכונה: handler ענק (handlePrompt 240 שורות בתוך closure אחד עם 5 buffers, queue, 3 helpers מקוננים).
+
+**החלטה:** ריפקטור צריך לקרות, אבל קודם תיקון נקודתי לכאב הכי דחוף — ElevenLabs לפעמים "משתגע" ומדבר ג'יבריש למשך דקות, ואין דרך לדלג מסגמנט.
+
+**משימה Q (חדשה ב-`docs/plan.md`):** כפתורי ⏮ ו-⏭ לניווט בתור הניגון של ה-frontend. שתי שכבות אודיו במשחק — `StreamingAudio` (live) ו-`Audio` (replay). תור = `streamOrder[]` (קדימה) + `playbackHistory[]` חדש (אחורה). רק `message` נשמר ל-history (יש לו `audioBase64`). תיאור מפורט עם 9 שלבי שינוי, state חדש, edge cases (history מתוך bubble שנקטע באמצע, lapping של לחיצות, history vs reload). frontend בלבד, ~30-45 דקות.
+
+**v6 (רישום בלבד, לא משימה):** ריפקטור backend. תוצרים: `behaviors.md` (חילוץ מהשיחות+walkthrough+קוד), `backend/tests/`, `connection-state.ts`, `prompt-handler.ts`, `tts-queue.ts` (priority + hold + cancel — מטפל גם בבזבוז Gemini/ElevenLabs על מחשבות שייחתכו). יבוצע ב-worktree נפרד `voice-acp-refactor` כדי לא לחסום את הריצה החיה של Avi.
+
+**משימה P (תיקון UX לתרגום thoughts לפי משפט)** — נשארה ממתינה למבצע, ללא שינוי.
+
+**סדר מומלץ:** Q (frontend, דחוף) → P (backend, פתוח) → v6 (refactor, נפרד).
+
+---
+
 ## 2026-05-14 17:35
 
 ### תיקון הפעלה: OneCLI agent ייעודי + הוצאת שגיאות provider למשתמש
