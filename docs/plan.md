@@ -1,181 +1,482 @@
-# Plan — שיפורי v2 ל-voice-acp
+# Plan — voice-acp v2
 
-> תוכנית עבודה מפורטת לסשן הבנייה הנוכחי. כל סעיף כולל: מה לעשות, איפה, ומה התלויות.
-> אחרי השלמה, להעביר את הסעיפים הרלוונטיים ל-`spec.md` ולהעיף תיוג מ-`future-features.md`.
-
----
-
-## עקרון מנחה
-
-**Gemini Flash Lite = שכבת הנגשה אודיו.** בכל מקום שטקסט מהמערכת לא נשמע טבעי — מעבירים ל-Gemini במקום לבנות לוגיקה ייעודית. זול, מהיר, גנרי.
-
-המודולים שייווצרו מתחת לעקרון הזה:
-
-```
-backend/src/gemini-helper.ts (חדש)
-├── translateThought(englishText) → hebrew
-├── narrateToolCall(context, toolCall) → hebrew sentence
-└── (עתידי, ב-future-features) shouldInterrupt(...)
-```
+> תוכנית עבודה אקטיבית. **המבצע קורא רק את הסעיף "משימות לביצוע"**.
+> ארכיטקטורה כללית: `docs/spec.md`. רעיונות נדחים: `docs/future-features.md`.
 
 ---
 
-## מצב פתיחה (15 במאי 2026, אחרי סיום הסוכן הקודם)
+## מצב נוכחי (2026-05-14)
 
-הסוכן הקודם השלים:
-- Streaming TTS — `audio_start` / `audio_chunk` / `audio_end` (MediaSource API ב-frontend, fallback ל-blob).
-- Markdown rendering בצד שרת — `message_rendered` נשלח עם HTML מנוקה.
-- Folder picker modal — `/api/ls` + UI עם breadcrumb.
+POC v1 הושלם וקומט. ה-stack פעיל E2E: WebSocket + ACP + Gemini STT + ElevenLabs TTS + streaming, פיצול sub-bubbles, היסטוריה, car mode. ראה `docs/walkthrough.md` 2026-05-14.
 
-קוד פתוח שעוד לא קומט: כל `backend/` ו-`frontend/` (untracked). יש שינוי לא־staged ב-`spec.md` (eleven_v3).
-
-### באג שזיהיתי בקוד הקיים
-
-ב-`frontend/index.html` שורות 1195 ו-1203 — תנאי `playQueue.length === 0` מתייחס למשתנה שהוסר עם המעבר ל-streaming. צריך להחליף ב-`streamOrder.length === 0` או דומה.
+**v2 = שכבת הנגשה אודיו.** עיקרון מנחה: בכל מקום שטקסט מהמערכת לא נשמע טבעי — Gemini Flash Lite מתרגם/מנסח במקום לוגיקה ייעודית. גנרי, זול, מהיר.
 
 ---
 
-## תוכנית ביצוע
+## ארכיטקטורת `gemini-helper.ts` (מקובע)
 
-### שלב 1 — תוכן ופרומפטים
-
-**1.1 — תיקון באג `playQueue`**
-- קובץ: `frontend/index.html`
-- הסרת ההתייחסות ל-`playQueue` (לא קיים יותר). להחליף ב-`streamOrder.length === 0 && !currentStream && !currentlyPlaying`.
-
-**1.2 — עדכון `system-prompt.ts`**
-- הוספת ההוראות הבאות:
-  - "תחשוב איך זה נשמע, לא איך זה נראה בקריאה."
-  - "כל פלט שלך יוקרא דרך TTS. הנח שאין למשתמש מסך."
-  - "סכם פלט של כלים בקצרה. אל תצטט אותם."
-- חיזוק ההוראה הקיימת לגבי בלי טבלאות / קוד / emojis / רשימות עם bullets.
-
-**1.3 — עדכון `stt.ts`**
-- prompt חדש:
-  - "המשתמש מדבר עברית בהקשר של פיתוח תוכנה."
-  - "אם מילה לא ברורה — העדף פירוש טכנולוגי הגיוני על פני literal."
-  - "תקן disfluencies מובהקות (חזרות, "אה", שגיאות הגייה ברורות)."
-  - "פלט: רק התמלול. אם שקט/לא מובן — מחרוזת ריקה."
-- חתימת הפונקציה תקבל פרמטר אופציונלי `previousResponse?: string` שייכלל בקונטקסט של ה-prompt.
-
-**1.4 — חיבור context ל-STT**
-- קובץ: `backend/src/server.ts`
-- ConnState יקבל שדה חדש `lastAgentMessage: string | null`.
-- בכל `flushMessage()` של live response — לשמור את הטקסט.
-- ב-`handleAudio` — להעביר את `state.lastAgentMessage` ל-`transcribeAudio`.
-
----
-
-### שלב 2 — `gemini-helper.ts`
-
-**2.1 — מבנה הקובץ**
+מודול חדש: `backend/src/gemini-helper.ts`. כל מקומות הנגשה האודיו עוברים דרכו.
 
 ```
 gemini-helper.ts
-├── instance יחיד של GoogleGenAI (כמו ב-stt.ts)
+├── ai (instance יחיד של GoogleGenAI, apiKey: "placeholder" — OneCLI מטפל)
 ├── DEFAULT_MODEL = "gemini-flash-lite-latest"
 ├── translationCache: Map<string, string>
-├── narrationCache: Map<string, string> (key = toolCallId)
-│
+├── narrationCache: Map<string, string>  (key = toolCallId)
 ├── translateThought(text): Promise<string>
-└── narrateToolCall(ctx, toolCall): Promise<string>
+└── narrateToolCall(ctx, tool): Promise<string>
 ```
 
-**2.2 — `translateThought`**
-- Prompt:
-  ```
-  Translate the following English text into natural spoken Hebrew, suitable
-  for being read aloud through TTS. Output ONLY the Hebrew translation —
-  no commentary, no quotes, no English.
-  ```
-- Cache לפי טקסט אנגלי (מחשבות חוזרות נפוצות).
-- Fallback: אם נכשל, להחזיר את הטקסט המקורי (כדי שתמיד תהיה הקראה).
+---
 
-**2.3 — `narrateToolCall`**
-- קלט: `{ userMessage, recentMessages: string[], toolCall: { kind, title, rawInput? } }`.
-- Prompt:
+## הסכמות מקובעות
+
+1. **תצוגת thought:** שתי שפות בבועה אחת — אנגלית מקור (קטן/אפור) + תרגום עברי (בולט). מפריד עדין.
+2. **Bash commands ב-narration:** לא מזכירים את הפקודה עצמה — רק את התכלית.
+3. **STT עם context:** מצרפים את הודעת המודל הקודמת ל-prompt התמלול.
+4. **Voice ל-thoughts:** אותו voice של המסר הראשי. toggle לקול שני נדחה ל-future-features.
+
+---
+
+## משימות לביצוע
+
+> כל משימה אטומית — אפשר לקחת אחת ולעשות commit נפרד. סדר ביצוע מומלץ A→I. A/B/G/H/I עצמאיות (ניתן במקביל). C חייבת לפני E/F.
+> בכל משימה: **commit יחיד**, הודעה בעברית, פורמט `(scope): כותרת\n\n- שינוי 1\n- שינוי 2`.
+
+---
+
+### A. חיזוק `system-prompt.ts` (קל)
+
+**מטרה:** לחזק את ההוראה למודל לחשוב על הקראה ולא על תצוגה.
+
+**קובץ:** `backend/src/system-prompt.ts`
+
+**שינוי:** להוסיף שתי שורות לסעיף "חוקי תגובה" של `VOICE_SYSTEM_PROMPT` (אחרי השורה "כל מה שאתה כותב בתור תשובה (לא thinking) יוקרא בקול..."):
+
+```
+- תחשוב על איך התשובה שלך נשמעת, לא איך היא נראית בקריאה על מסך.
+- המשתמש שומע אותך, לא קורא. אין לו מסך מולו.
+```
+
+**שים לב:** הקובץ כבר מכיל "אם פלט של כלי ארוך — סכם בקצרה" ו"בלי טבלאות / קוד / markdown" — לא לכפול.
+
+**בדיקה:** `cd backend && bunx tsc --noEmit`. שינוי טקסט בלבד, אמור לעבור מיד.
+
+**Commit suggestion:** `(prompts): חיזוק system prompt — דגש על הקראה ולא קריאה`
+
+---
+
+### B. שדרוג STT prompt + העברת context
+
+**מטרה:** תמלול עברי טכנולוגי יותר מדויק. שימוש בהודעה הקודמת של המודל כ-disambiguation context.
+
+**קבצים:**
+- `backend/src/stt.ts` — שינוי פרומפט וחתימה
+- `backend/src/server.ts` — שמירת `lastAgentMessage` והעברתו
+
+**B.1 — `stt.ts`:**
+
+החליפי את `TRANSCRIBE_PROMPT` הנוכחי בפרומפט חדש:
+
+```
+The user is speaking Hebrew in a software development context.
+Transcribe the audio exactly as spoken, with minor corrections:
+- If a word is unclear, prefer a sensible technological interpretation
+  (e.g. "ריאקט" over "ראקת", "באג" over "בק").
+- Fix obvious disfluencies (repetitions, "אה אה", false starts).
+- Preserve the original language (Hebrew or English).
+
+Output ONLY the transcription itself — no introductions, no quotes,
+no explanations, no formatting. If the audio is silent or unintelligible,
+return an empty string.
+```
+
+הוסיפי שדה אופציונלי ל-`SttOptions`:
+```ts
+/** הודעת המודל הקודמת — תיכלל כקונטקסט לתמלול מדויק יותר. */
+previousResponse?: string;
+```
+
+אם `previousResponse` הועבר, להוסיף כ-text part *לפני* האודיו:
+```ts
+contents: createUserContent([
+  ...(opts.previousResponse ? [`Recent assistant message (for context only — do NOT transcribe this): "${opts.previousResponse}"`] : []),
+  createPartFromBase64(audioBase64, mimeType),
+  prompt,
+])
+```
+
+**B.2 — `server.ts`:**
+
+ב-`ConnState` (סביב שורה 86) הוסיפי שדה:
+```ts
+lastAgentMessage: string | null;
+```
+ואתחול ל-`null` ב-`open` handler.
+
+ב-`flushMessage` (בתוך `handleUserInput`, סביב שורה 383), אחרי `totalMessageChars += t.length`:
+```ts
+state.lastAgentMessage = t;
+```
+(שמירת ה-flush האחרון מספיקה; לא צריך לצבור.)
+
+ב-`handleAudio` (סביב שורה 315), בקריאה ל-`transcribeAudio`:
+```ts
+const transcript = await transcribeAudio(msg.data, {
+  mimeType: msg.mimeType ?? "audio/webm",
+  previousResponse: state.lastAgentMessage ?? undefined,
+});
+```
+
+**בדיקה:** `bunx tsc --noEmit` חובה. בדיקה ידנית: שיחה של 2-3 פניות עוקבות — לוודא שהקונטקסט עוזר על מילים דו-משמעיות.
+
+**Commit suggestion:** `(stt): פרומפט מהוקצע לעברית טכנולוגית + context מההודעה הקודמת`
+
+---
+
+### C. יצירת `backend/src/gemini-helper.ts`
+
+**מטרה:** מודול עזר משותף — translateThought + narrateToolCall עם caching ו-timeouts.
+
+**קובץ חדש:** `backend/src/gemini-helper.ts`
+
+**שלד:**
+
+```ts
+import { GoogleGenAI, createUserContent } from "@google/genai";
+
+const DEFAULT_MODEL = "gemini-flash-lite-latest";
+const TRANSLATE_TIMEOUT_MS = 2500;
+const NARRATE_TIMEOUT_MS = 1500;
+
+const ai = new GoogleGenAI({ apiKey: "placeholder" });
+
+const translationCache = new Map<string, string>();
+const narrationCache = new Map<string, string>();  // key = toolCallId
+
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+```
+
+**C.1 — `translateThought(text: string): Promise<string>`:**
+
+- אם `translationCache.has(text)` → החזר מיד.
+- אחרת: קריאה ל-Gemini עם הפרומפט:
+  ```
+  Translate the following text into natural spoken Hebrew, suitable for
+  being read aloud through TTS. Output ONLY the Hebrew translation —
+  no commentary, no quotes, no English, no markdown.
+
+  Text:
+  <text>
+  ```
+- timeout: `TRANSLATE_TIMEOUT_MS`. ב-fail/timeout → החזר את הטקסט המקורי (fallback).
+- שמרי תוצאה מוצלחת ב-cache.
+
+**C.2 — `narrateToolCall(ctx, tool): Promise<string>`:**
+
+חתימה:
+```ts
+export interface NarrateContext {
+  userMessage: string;
+  recentMessages: string[];   // עד 3 אחרונות, סדר כרונולוגי
+}
+export interface ToolCallForNarrate {
+  toolCallId: string;
+  kind?: string;              // read/edit/execute/search/think/...
+  title: string;
+}
+```
+
+- אם `narrationCache.has(toolCallId)` → החזר מיד.
+- אחרת: פרומפט:
   ```
   You are narrating a coding assistant's actions out loud in Hebrew.
-  Given the user's request and recent assistant context, describe in ONE short
-  conversational Hebrew sentence what the assistant is about to do — and WHY
-  in this context. Don't list parameters; explain the intent.
-  
+  Given the user's request and recent context, describe in ONE short
+  conversational Hebrew sentence what the assistant is about to do —
+  and WHY in this context. Don't list parameters; explain the intent.
+  Don't repeat the user's words verbatim.
+
   Examples:
-  - Tool: read README.md  → "עכשיו אני בודק את ה-README כדי לראות מה הפרויקט"
-  - Tool: bash "ls"        → "אני מציץ מה יש בתיקייה"
-  - Tool: edit hello.js    → "מעדכן את הפונקציה שדיברנו עליה"
-  
-  Output ONLY the Hebrew sentence.
+  - Tool: read README.md          → "אני בודק את ה-README כדי לראות מה הפרויקט"
+  - Tool: execute bash "ls"       → "אני מציץ מה יש בתיקייה"
+  - Tool: edit hello.js           → "מעדכן את הפונקציה שדיברנו עליה"
+  - Tool: execute "npm run build" → "מריץ build לראות שאין שגיאות"
+
+  User said: "<userMessage>"
+  Recent assistant context: <recentMessages.join(" · ") or "—" אם ריק>
+
+  Tool: <kind ?? "?"> — <title>
+
+  Output ONLY the Hebrew sentence (no quotes, no markdown).
   ```
-- Cache לפי `toolCallId` (כל call מתואר פעם אחת).
-- אם הקריאה לוקחת > 1500ms — להמשיך בלי לחכות, ולעבור ל-fallback (title גולמי).
+- timeout: `NARRATE_TIMEOUT_MS`. ב-fail/timeout → החזר את ה-`title` הגולמי.
+- שמרי לפי `toolCallId`.
+
+**CLI test block (אופציונלי, לבדיקה עצמאית):**
+```ts
+if (import.meta.main) {
+  const arg = process.argv[2];
+  if (!arg) {
+    console.error("שימוש: bun src/gemini-helper.ts <english text>");
+    process.exit(1);
+  }
+  const start = Date.now();
+  const result = await translateThought(arg);
+  console.log(`(${Date.now() - start}ms): ${result}`);
+}
+```
+
+**בדיקה:** `bunx tsc --noEmit`. אחרי כתיבה, להפעיל את ה-CLI test:
+```bash
+cd backend && bun src/gemini-helper.ts "I should check the README first to understand the project."
+```
+פלט צפוי: משפט עברי טבעי.
+
+**Commit suggestion:** `(gemini-helper): מודול עזר לתרגום מחשבות ונראציה של tool calls`
 
 ---
 
-### שלב 3 — חיתוך לפי משפט
+### D. חיתוך לפי משפט ב-`flushMessage`
 
-**3.1 — שדרוג `flushMessage` ב-`server.ts`**
-- היום: flush רק על מעבר kind (message → thought / tool_call).
-- שיפור: בתוך זרם message, להפעיל flush גם בסוף משפט.
-- חוקי חיתוך (regex):
-  - `[.!?]\s` (נקודה / שאלה / קריאה + רווח)
-  - `\n\n+` (שורה ריקה)
-  - `:\s` (נקודתיים + רווח — הפסקה לפני רשימה)
-  - או 200 תווים בלי גבול טבעי (forced flush).
-- ב-buffer צריך לקרוא את הregex רק בסוף chunk כדי לא לחתוך באמצע מספר/קיצור (`Mr.`).
-- **חשוב**: לא לחתוך פסקה שכוללת רק עברית — שם נקודות פחות נפוצות, אז הגבול של 200 תווים תופס שם.
+**מטרה:** קטעי TTS קצרים יותר → אודיו מתחיל מהר יותר, חוויית streaming טבעית.
+
+**קובץ:** `backend/src/server.ts` (בתוך `handleUserInput`)
+
+**מצב היום:** `flushMessage` מתבצע רק על מעבר kind (message → thought / tool_call) או סוף תור. תשובה ארוכה = קטע ארוך אחד.
+
+**שינוי:** לזהות גבול משפט בתוך `messageBuffer` בכל קבלת chunk, ולעשות flush אם מצאנו גבול.
+
+**מימוש:**
+
+הוסיפי פונקציית עזר:
+```ts
+function findSentenceBoundary(s: string): number {
+  // מחזיר אינדקס *אחרי* הגבול האחרון, או -1 אם אין.
+  // בודק (מסוף הbuffer חזרה) את הסימנים: .!? + רווח, : + רווח, \n\n.
+  // לא חותך אם הנקודה אחרי קיצור (Mr.) או באמצע מספר (3.14).
+  const patterns = [
+    /[.!?][\s\n]/g,
+    /:\s/g,
+    /\n\n+/g,
+  ];
+  let last = -1;
+  for (const re of patterns) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(s)) !== null) {
+      const end = m.index + m[0].length;
+      // בדיקת קיצורים — אם לפני הנקודה יש "Mr"/"Dr"/"vs" וכו' — דלג
+      if (m[0][0] === '.') {
+        const before = s.slice(Math.max(0, m.index - 3), m.index);
+        if (/\b(Mr|Dr|Mrs|Ms|St|vs|etc|i\.e|e\.g)$/i.test(before)) continue;
+        // מספר עשרוני: 3.14 — דלג
+        if (/\d$/.test(before) && /^\d/.test(s.slice(end))) continue;
+      }
+      if (end > last) last = end;
+    }
+  }
+  // forced flush — 200 תווים בלי גבול
+  if (last === -1 && s.length >= 200) {
+    // נסי לחתוך ברווח האחרון לפני 200
+    const slice = s.slice(0, 200);
+    const lastSpace = slice.lastIndexOf(" ");
+    return lastSpace > 100 ? lastSpace + 1 : 200;
+  }
+  return last;
+}
+```
+
+ב-`onChunk` כאשר `kind === "message"` (סביב שורה 404-411):
+```ts
+messageBuffer += chunk;
+let boundary: number;
+while ((boundary = findSentenceBoundary(messageBuffer)) !== -1) {
+  const head = messageBuffer.slice(0, boundary);
+  const rest = messageBuffer.slice(boundary);
+  messageBuffer = head;
+  flushMessage();           // שולח head ל-TTS + רינדור
+  messageBuffer = rest;     // השארית מצטברת ל-flush הבא
+}
+```
+
+**שיקול עברית:** בעברית נקודה נדירה יותר. ה-fallback של 200 תווים מטפל בזה.
+
+**בדיקה:** `bunx tsc --noEmit`. בדיקה ידנית: שאלה עם תשובה ארוכה — לראות שבועות מתחלקות לקטעים ולא לבועה ארוכה אחת.
+
+**Commit suggestion:** `(server): חיתוך flushMessage לפי גבול משפט בנוסף למעבר kind`
 
 ---
 
-### שלב 4 — Thought translation + TTS
+### E. תרגום thoughts + הקראה
 
-**4.1 — Backend (`server.ts`)**
-- `ServerMessage` חדש: `audio_start.kind` יכלול `"thought"` בנוסף ל-`"message"` / `"tool_title"`.
-- buffer חדש: `thoughtBuffer` (במקביל ל-`messageBuffer`).
-- `flushThought()` — דומה ל-`flushMessage`:
-  1. תרגום דרך `gemini-helper.translateThought`.
-  2. שליחת `text_chunk` עם `kind: "thought_translation"` ל-frontend (טקסט עברי).
-  3. `queueTts(translatedText, "thought")`.
-- `onChunk` עבור `kind === "thought"`:
-  - לצבור ב-`thoughtBuffer`.
-  - flush לפי גבולות משפט (כמו ב-message) **או** על מעבר ל-message / tool_call.
+**תלות:** דורש את C (`translateThought`).
 
-**4.2 — Frontend (`index.html`)**
-- `ServerMessage` חדש `text_chunk.kind = "thought_translation"` → להוסיף שורה חדשה לבועת thought.
-- בועת thought תכיל שתי שורות מובחנות:
-  - שורה 1 (קטן, מעומעם, italic): טקסט אנגלי מקור.
-  - שורה 2 (גדול יותר, ברור, עברית): התרגום.
-  - מפריד עדין ביניהן.
-- `handleAudioStart` עם `kind === "thought"` — לקשור ל-bubble thought (לא message).
-- צ'יים שונה (אופציונלי, כרגע אותו צ'יים).
+**מטרה:** הקראה של reasoning המודל בעברית, לא רק תצוגה של האנגלית.
+
+**E.1 — Backend (`server.ts`):**
+
+**שינויי `ServerMessage`:**
+- `audio_start.kind` יקבל ערך חדש: `"thought"`.
+- `text_chunk` יקבל kind חדש `"thought_translation"`.
+
+```ts
+| { type: "text_chunk"; text: string; kind: "message" | "thought" | "thought_translation" }
+// ...
+| { type: "audio_start"; streamId: string; kind: "message" | "tool_title" | "thought" }
+```
+
+**ConnState חדש:** `thoughtBuffer: string` (במקביל ל-`messageBuffer`).
+
+**ב-`onChunk` עבור `kind === "thought"`** (סביב שורה 407):
+- צבירה ב-`thoughtBuffer` (במקום רק לעשות flush של messageBuffer).
+- flush של thoughtBuffer ב-:
+  - מעבר ל-`message` או `tool_call` (create)
+  - או סוף תור
+
+**`flushThought()` חדש:**
+```ts
+const flushThought = () => {
+  const t = thoughtBuffer.trim();
+  thoughtBuffer = "";
+  if (!t) return;
+  // queue async: תרגום → text_chunk → TTS
+  ttsQueue = ttsQueue.then(async () => {
+    const hebrew = await translateThought(t);
+    send(ws, { type: "text_chunk", text: hebrew, kind: "thought_translation" });
+    const streamId = `s${Date.now().toString(36)}-${streamCounter++}`;
+    try {
+      send(ws, { type: "audio_start", streamId, kind: "thought" });
+      await streamCachedTextToSpeech(hebrew, { voiceId: state.voiceId ?? undefined },
+        (chunk) => send(ws, { type: "audio_chunk", streamId,
+          data: Buffer.from(chunk).toString("base64") }));
+      send(ws, { type: "audio_end", streamId });
+    } catch (e) {
+      console.error(`[ws] TTS thought נכשל: ${(e as Error).message}`);
+      send(ws, { type: "audio_end", streamId });
+    }
+  });
+};
+```
+
+קרא ל-`flushThought()` בכל מקום שהיום `flushMessage()` נקרא במעבר kind, וגם בסוף תור.
+
+**E.2 — Frontend (`index.html`):**
+
+**SubBubble — שיטה חדשה `setThoughtTranslation(hebrewText)`:**
+- יוצרת שורה שנייה בתוך הבועה, מתחת לטקסט האנגלי.
+- styling: גודל רגיל, italic, צבע ברור (בניגוד לאנגלית שהיא קטן+אפור).
+- מפריד עדין (border-top דקיק או margin).
+
+**Handler חדש ל-`text_chunk` עם `kind === "thought_translation"`:**
+- מוצא את ה-thought bubble האחרון בתור הנוכחי.
+- קורא ל-`setThoughtTranslation(text)`.
+
+**Handler ל-`audio_start` עם `kind === "thought"`:**
+- מקשר את ה-stream לבועת ה-thought (לא לבועת message). אותו צ'יים, אותה תור ניגון.
+
+**בדיקה:** restart server, שאלה שמייצרת thought ארוך, לראות:
+- אנגלית מקור מוצגת בבועת thought (כמו היום).
+- תרגום עברי נוסף מתחתיה.
+- ההקראה היא של התרגום העברי.
+
+**Commit suggestion:** `(thoughts): תרגום thoughts לעברית + הקראה דרך gemini-helper`
 
 ---
 
-### שלב 5 — Tool narration + TTS
+### F. נראציה של tool calls
 
-**5.1 — איסוף context ב-`server.ts`**
-- ConnState יקבל:
-  - `lastUserText: string` — הודעת המשתמש האחרונה (transcript).
-  - `recentMessages: string[]` (limit 3 אחרונות) — flushed messages של ה-agent בתור הזה.
+**תלות:** דורש את C (`narrateToolCall`).
 
-**5.2 — שינוי `onToolCall`**
-- היום: `queueTts(event.title.trim(), "tool_title")`.
-- חדש: עוטף ב-async:
-  1. אם זה create — `narrate = await narrateToolCall({...}, event)`.
-  2. `queueTts(narrate, "tool_narration")`.
-- אם narration נכשל / timeout — fallback ל-`event.title`.
+**מטרה:** במקום להקריא את ה-title הגולמי של ה-tool ("Read README.md"), Gemini מנסח משפט קצר טבעי בעברית עם הקשר.
 
-**5.3 — Frontend**
-- `audio_start.kind = "tool_narration"` — מתנהג כמו tool_title (אותו צ'יים, אותה queue).
+**F.1 — context tracking ב-`server.ts`:**
+
+ב-`ConnState`:
+```ts
+lastUserText: string | null;
+recentMessages: string[];     // FIFO, max 3
+```
+איתחול ב-`open`.
+
+ב-`handleAudio`, אחרי קבלת transcript:
+```ts
+state.lastUserText = transcript;
+```
+
+ב-`flushMessage`, אחרי `totalMessageChars += t.length`:
+```ts
+state.recentMessages.push(t);
+if (state.recentMessages.length > 3) state.recentMessages.shift();
+```
+
+**F.2 — שינוי `onToolCall`** (סביב שורות 413-430):
+
+החליפי את:
+```ts
+if (event.event === "create") {
+  flushMessage();
+  if (event.title?.trim()) {
+    queueTts(event.title.trim(), "tool_title");
+  }
+}
+```
+
+ב:
+```ts
+if (event.event === "create") {
+  flushMessage();
+  flushThought();          // אם יש thought שמחכה — לסיים אותו קודם
+  if (event.title?.trim()) {
+    ttsQueue = ttsQueue.then(async () => {
+      let narrate = event.title!.trim();
+      try {
+        narrate = await narrateToolCall({
+          userMessage: state.lastUserText ?? "",
+          recentMessages: state.recentMessages.slice(-3),
+        }, {
+          toolCallId: event.toolCallId,
+          kind: event.toolKind,
+          title: event.title!,
+        });
+      } catch (e) {
+        console.error(`[ws] narrate נכשל: ${(e as Error).message}`);
+      }
+      const streamId = `s${Date.now().toString(36)}-${streamCounter++}`;
+      try {
+        send(ws, { type: "audio_start", streamId, kind: "tool_title" });
+        await streamCachedTextToSpeech(narrate, { voiceId: state.voiceId ?? undefined },
+          (chunk) => send(ws, { type: "audio_chunk", streamId,
+            data: Buffer.from(chunk).toString("base64") }));
+        send(ws, { type: "audio_end", streamId });
+      } catch {
+        send(ws, { type: "audio_end", streamId });
+      }
+    });
+  }
+}
+```
+
+**אל תוסיפי `kind: "tool_narration"` חדש** — שמרי `kind: "tool_title"` הקיים כדי לא לשבור את ה-frontend. הוא לא יודע מה ה-text — רק את הצ'יים.
+
+**F.3 — Frontend:** אין שינוי. אותו kind, אותו handler.
+
+**בדיקה:** restart server, שאלה שמייצרת מספר tool calls שונים, לראות שכל אחד מקבל נראציה הגיונית שונה. לבדוק שגם Bash commands מקבלים תיאור של תכלית ולא שם הפקודה.
+
+**Commit suggestion:** `(tools): נראציה של tool calls דרך Gemini במקום title גולמי`
 
 ---
 
-### שלב 6 — UI שדרוגים
+### G. UI: mic button state machine — pause/resume
 
-**6.1 — Mic button state machine (חדש מההודעה האחרונה)**
+**מטרה:** במצב speaking, לחיצה על המיקרופון תעשה pause/resume של ההקראה במקום להתחיל הקלטה.
 
-State machine מעודכן:
+**קובץ:** `frontend/index.html`
 
+**State machine חדש:**
 ```
 idle      ──click──► recording
 recording ──click──► idle (sends audio)
@@ -183,39 +484,106 @@ speaking  ──click──► paused
 paused    ──click──► speaking
 ```
 
-מצב `speaking` = יש `currentStream` או `currentlyPlaying` פעיל.
-מצב `paused` = audio.pause() נקרא, אבל ה-audio object עדיין חי.
+- `speaking` = `currentStream != null || currentlyPlaying != null` ולא paused.
+- `paused` = `audio.pause()` נקרא, ה-Audio/StreamingAudio object עוד קיים.
 
-עיצוב כפתור:
-- idle: 🎙 (כחול)
-- recording: ⏺ (אדום, פועם)
-- speaking: ⏸ (אדום עדין, ללא פעימה)
-- paused: ▶ (כחול עם הילה)
+**שינויים ב-`StreamingAudio`:**
 
-**כפתור Stop קטן** ליד הכפתור הגדול (החלפת מקום עם replay-last):
-- מוצג רק במצבי speaking/paused.
-- לחיצה: עוצר את כל ה-streams, מנקה queue, חוזר ל-idle.
-- replay-last מועבר למיקום שני (או נמחק — נראה).
+הוסיפי שתי methods:
+```js
+pause() { try { this.audio.pause(); } catch {} }
+resume() { try { this.audio.play(); } catch {} }
+```
 
-קוד:
-- פונקציה `getMicButtonState()` שמחזירה `'idle'|'recording'|'speaking'|'paused'`.
-- בכל שינוי ב-`currentStream`/`currentlyPlaying`/`isRecording` — לקרוא `updateMicButton()`.
-- ב-StreamingAudio נוסיף `pause()` ו-`resume()` (resume = `this.audio.play()`).
+**State גלובלי חדש:** `let audioIsPaused = false;`
 
-**6.2 — גלילה חכמה**
+**פונקציה חדשה:**
+```js
+function getMicButtonState() {
+  if (isRecording) return "recording";
+  if (currentlyPlaying || currentStream) {
+    return audioIsPaused ? "paused" : "speaking";
+  }
+  return "idle";
+}
 
+function updateMicButton() {
+  const s = getMicButtonState();
+  btn.dataset.state = s;
+  // עדכון אייקון + צבע ב-CSS לפי data-state
+  btn.textContent = ({ idle: "🎙", recording: "⏺", speaking: "⏸", paused: "▶" })[s];
+}
+```
+
+**עיצוב כפתור (CSS):**
+- `[data-state="idle"]` — כחול.
+- `[data-state="recording"]` — אדום, `animation: pulse 1s infinite`.
+- `[data-state="speaking"]` — אדום עדין, ללא פעימה.
+- `[data-state="paused"]` — כחול עם הילה (`box-shadow: 0 0 12px rgba(0,128,255,.5)`).
+
+**click handler חדש:**
+```js
+btn.addEventListener("click", () => {
+  const s = getMicButtonState();
+  if (s === "idle") startRecording();
+  else if (s === "recording") stopRecording();
+  else if (s === "speaking") {
+    audioIsPaused = true;
+    currentStream?.pause();
+    currentlyPlaying?.pause();
+    updateMicButton();
+  } else if (s === "paused") {
+    audioIsPaused = false;
+    currentStream?.resume();
+    currentlyPlaying?.play();
+    updateMicButton();
+  }
+});
+```
+
+**`updateMicButton()` נקראת:**
+- בכל שינוי ב-`isRecording`.
+- בכל שינוי ב-`currentStream` (start/end).
+- בכל שינוי ב-`currentlyPlaying` (start/end).
+- אחרי pause/resume.
+
+**כפתור Stop קטן:**
+- `<button id="stop-btn" class="stop-btn" aria-label="עצור">⏹</button>`.
+- מוצג רק כש-`getMicButtonState() ∈ {"speaking", "paused"}`.
+- לחיצה: עוצר את `currentStream`, `currentlyPlaying`, מנקה `streamOrder` ו-`activeStreams`, מאפס `audioIsPaused`, חוזר ל-idle.
+- replay-last נשאר במיקום הנוכחי שלו. לא משנים מיקום.
+
+**בדיקה:** restart. בדיקה ידנית: שאלה ארוכה → תוך כדי הקראה ללחוץ פעם → ההקראה נעצרת והכפתור הופך ל-▶. ללחוץ שוב → ממשיכה מהמקום. לחיצה על stop → הכל מתנקה.
+
+**Commit suggestion:** `(ui): mic button state machine — pause/resume להקראה + כפתור stop`
+
+---
+
+### H. UI: גלילה חכמה
+
+**מטרה:** auto-scroll רק כשהמשתמש קרוב לתחתית. אם הוא גלל למעלה לקרוא משהו — לא לדרוס.
+
+**קובץ:** `frontend/index.html`
+
+**משתנים גלובליים חדשים:**
 ```js
 const SCROLL_THRESHOLD_PX = 60;
 let autoScrollEnabled = true;
 let suppressScrollEvents = false;
+```
 
+**listener על `chatEl.scroll`:**
+```js
 chatEl.addEventListener("scroll", () => {
   if (suppressScrollEvents) return;
   const distance = chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight;
   autoScrollEnabled = distance <= SCROLL_THRESHOLD_PX;
   jumpDownBtn.classList.toggle("visible", !autoScrollEnabled);
 });
+```
 
+**`scrollChatToBottom()` חדשה:**
+```js
 function scrollChatToBottom() {
   if (!autoScrollEnabled) return;
   suppressScrollEvents = true;
@@ -224,147 +592,149 @@ function scrollChatToBottom() {
 }
 ```
 
-UI:
-- כפתור צף "↓" בפינה ימנית-תחתונה של ה-chat (לא ה-page).
-- מוצג רק כש-`autoScrollEnabled === false`.
-- לחיצה: גלילה לתחתית + מחזיר auto.
-- אנימציית fade-in/out.
+**החליפי בקוד הקיים:** כל מקום שעושה `chatEl.scrollTop = chatEl.scrollHeight` → `scrollChatToBottom()`.
 
-**6.3 — `dir="auto"` לכל הבועות**
+**UI חדש — כפתור ↓:**
+```html
+<button id="jump-down" class="jump-down" aria-label="גלול למטה">↓</button>
+```
+CSS:
+- `position: absolute` בתוך ה-chat container.
+- `bottom: 12px; right: 12px;`
+- מעגלי, צל קטן, רקע חצי-שקוף.
+- `opacity: 0; pointer-events: none; transition: opacity 200ms;`
+- `.visible { opacity: 1; pointer-events: auto; }`
 
-ב-`SubBubble` constructor:
+**click handler:**
 ```js
-this.bubbleEl.setAttribute("dir", "auto");
+jumpDownBtn.addEventListener("click", () => {
+  autoScrollEnabled = true;
+  chatEl.scrollTop = chatEl.scrollHeight;
+  jumpDownBtn.classList.remove("visible");
+});
 ```
 
-ב-`renderToolItem`:
-```js
-item.querySelector("span:last-child").setAttribute("dir", "auto");
-```
+**בדיקה:** restart. שאלה ארוכה — תוך כדי הקראה לגלול למעלה — לראות שה-auto-scroll נעצר וה-↓ מופיע. ללחוץ ↓ — לחזור לתחתית, ה-auto חוזר.
 
-ב-`setHtml` (כדי שגם HTML של markdown יקבל) — להוסיף `dir="auto"` על top-level children:
-```js
-setHtml(html) {
-  this.hasHtml = true;
-  this.bubbleEl.innerHTML = html;
-  for (const child of this.bubbleEl.children) {
-    if (!child.hasAttribute("dir")) child.setAttribute("dir", "auto");
-  }
-}
-```
+**Commit suggestion:** `(ui): גלילה חכמה — auto-scroll מותנה בקרבה לתחתית + כפתור ↓`
 
 ---
 
-### שלב 7 — סיום
+### I. UI: `dir="auto"` לכל הבועות (קל)
 
-**7.1 — בדיקה ידנית**
-- restart לserver.
-- E2E בדפדפן: שאלה → תמלול → השמעה → ראייה של thought translation + tool narration + מצב pause.
-- בדיקה של גלילה חכמה.
-- בדיקה של RTL/LTR.
+**מטרה:** טקסט עברי יוצג RTL, אנגלי LTR — בלי תיוג ידני, גם בהיסטוריה וגם ב-live.
 
-**7.2 — עדכון `spec.md`**
-- הוספת סעיפים על gemini-helper.
-- עדכון ServerMessage types.
-- הוספת state machine של mic button.
+**קובץ:** `frontend/index.html`
 
-**7.3 — עדכון `walkthrough.md`**
-- רשומה חדשה למצב v2 הזה.
+**שלוש נקודות מימוש:**
 
-**7.4 — Commit**
-- כל הקבצים החדשים + עדכונים.
-- הודעת קומיט בעברית, מפורטת.
+1. **ב-`SubBubble` constructor** (אחרי יצירת `this.bubbleEl`):
+   ```js
+   this.bubbleEl.setAttribute("dir", "auto");
+   ```
+
+2. **ב-`renderToolItem`** (או הפונקציה שמרנדרת פריט ברשימת tools):
+   ```js
+   item.querySelector("span:last-child")?.setAttribute("dir", "auto");
+   ```
+
+3. **ב-`setHtml`** (כדי שגם markdown HTML יקבל):
+   ```js
+   setHtml(html) {
+     this.hasHtml = true;
+     this.bubbleEl.innerHTML = html;
+     for (const child of this.bubbleEl.children) {
+       if (!child.hasAttribute("dir")) child.setAttribute("dir", "auto");
+     }
+   }
+   ```
+
+**בדיקה:** restart. שאלה שמייצרת תשובה מעורבת (עברית + שם פונקציה באנגלית + פסקאות מרובות) — לראות שכל פסקה ממוקמת נכון לפי תוכנה.
+
+**Commit suggestion:** `(ui): dir="auto" לבועות, פריטי tools, ו-markdown HTML`
 
 ---
 
-## תלויות בין שלבים
+## משימות בעבודה (executor)
+
+— (אין כרגע)
+
+---
+
+## משימות שבוצעו
+
+### תיקון באג `playQueue` residual (commit 77f32bb, 2026-05-14)
+ב-`frontend/index.html` שורות 1197/1205, ההתייחסות ל-`playQueue.length === 0` הוחלפה ב-`!currentlyPlaying && !currentStream && streamOrder.length === 0`. בוצע בסשן הקודם של הסוכן הקודם.
+
+### POC v1 — תשתית מלאה (commits 77f32bb..5650fba, 2026-05-14)
+Backend מלא: `server.ts`, `acp-bridge.ts`, `stt.ts`, `tts.ts`, `system-prompt.ts`, `markdown.ts`. Frontend מלא: `index.html` (chat + streaming + car mode + history), `config.html`. תועד ב-`docs/walkthrough.md` 2026-05-14 08:45.
+
+### תשתית קואורדינציה בין סוכנים (commits 4fff13a..1fbdb00, 2026-05-14)
+יצירת `docs/agents/` עם README + planner.md + executor.md. הוספת סעיף "פרוטוקול עבודה מקבילית" ל-AGENTS.md. כללי Edit/Write לקבצים משותפים, וקומיטים אוטונומיים בלי אישור Avi.
+
+---
+
+## רעיונות לדיון (טרם הוחלט)
+
+### א. התראות אקטיביות מהמבצע ל-Avi
+
+היום הקואורדינציה מבוססת על `tail -f docs/agents/*.md` בטרמינל. אם Avi לא בודק — שאלות מהמבצע עלולות להתעכב.
+
+**אפשרויות:**
+1. Linux desktop notification (libnotify) כשהמבצע כותב ❓.
+2. ntfy.sh / Telegram bot push.
+3. דחיפה ל-voice-acp עצמו: הbackend מאזין לשינויים ב-`docs/agents/*.md` ומשמיע התראה דרך WebSocket לדפדפן.
+
+**ממתין להחלטת Avi.** כרגע "לא דחוף" — המודל עובד מצוין ידנית.
+
+### ב. הפרדת `plan.md` ל-`plan.md` + `discussion.md`
+
+הסעיף הזה ("רעיונות לדיון") עלול לבלבל את המבצע אם הוא יקרא מעבר ל"משימות לביצוע". שלוש אופציות:
+1. **להשאיר כפי שהוא** — כותרת ברורה, ופרוטוקול המבצע מורה לקרוא רק "משימות לביצוע".
+2. **לפצל**: `plan.md` (אקטיבי בלבד) + `discussion.md` (טיוטות).
+3. **לתייג כל סעיף** עם "לביצוע"/"לדיון"/"דחוי".
+
+**ממתין להחלטת Avi.** כרגע אופציה 1 בתוקף.
+
+---
+
+## תוכניות ארוכות טווח / future-features
+
+ראה `docs/future-features.md`. הסיכום: 16 פיצ'רים דחויים מודעת. הבולטים: קול משני ל-thoughts, VAD + Gemini decision-maker, permission UI, full input streaming ל-ElevenLabs WS, LRU+disk cache ל-TTS, PWA ל-iOS car mode.
+
+---
+
+## תלויות בין משימות
 
 ```
-1 (prompts) ──┐
-              ├─► 3 (sentence cut) ──┐
-2 (helper) ───┤                      ├─► 4 (thought) ──┐
-              └──► 5 (narration) ────┘                 │
-                                                       ├─► 7 (test+commit)
-6.1 mic state ─────────────────────────────────────────┤
-6.2 scroll    ─────────────────────────────────────────┤
-6.3 dir       ─────────────────────────────────────────┘
+A (prompt)     ──┐
+B (stt+ctx)    ──┤
+G (mic state)  ──┼── עצמאיות, אפשר בכל סדר
+H (scroll)     ──┤
+I (dir=auto)   ──┘
+
+C (helper) ──┬──► E (thought)
+             └──► F (narration)
+
+D (sentence cut) — עצמאית, אבל אפקט יפה ביותר אחרי E+F
 ```
 
-- שלבים 1, 2, 6.x מקבילים (אפשר לעבוד עליהם בכל סדר).
-- שלב 3, 4, 5 דורשים את 1+2.
-- שלב 7 אחרון.
+**סדר ביצוע מומלץ:** A → B → C → D → E → F → G → H → I.
+**מקביליות:** A/B/G/H/I אפשר במקביל. C חייבת לפני E/F.
 
 ---
 
 ## הערכת זמן (גס)
 
-| שלב | זמן |
-|------|-----|
-| 1 (prompts) | 15 דק' |
-| 2 (gemini-helper) | 30 דק' |
-| 3 (sentence cut) | 20 דק' |
-| 4 (thought) | 40 דק' |
-| 5 (narration) | 30 דק' |
-| 6.1 (mic state) | 35 דק' |
-| 6.2 (scroll) | 20 דק' |
-| 6.3 (dir) | 10 דק' |
-| 7 (commit+docs) | 20 דק' |
+| משימה | זמן |
+|--------|-----|
+| A | 5 דק' |
+| B | 15-20 דק' |
+| C | 30 דק' |
+| D | 25-30 דק' |
+| E | 35-40 דק' |
+| F | 25-30 דק' |
+| G | 30-35 דק' |
+| H | 20 דק' |
+| I | 10 דק' |
 | **סה"כ** | **~3.5 שעות** |
-
----
-
-## הסכמות שמובאות מהתכנון (מקובע)
-
-1. תצוגת thought: **שתי שפות** — אנגלית מקור (קטן/אפור) + תרגום עברי (בולט). מפריד עדין.
-2. Bash commands ב-narration: **לא** מזכירים את הפקודה עצמה — רק את התכלית.
-3. STT עם context: **כן** — מצרפים את הודעת המודל הקודמת לprompt התמלול.
-4. Voice ל-thoughts: **אותו voice** של המסר הראשי. ה-toggle לקול שני נדחה ל-future-features.
-
----
-
-## רעיונות לדיון (לא חלק מתוכנית הביצוע הקיימת)
-
-> סעיף שנוסף ע"י Avi בסיבוב הבא, אחרי שעלו רעיונות שצריך לדון בהם ולסגור החלטות לפני ביצוע. בניגוד לתוכנית למעלה, כאן עדיין אין הסכמה סופית.
-
-### א. ארכיטקטורת קואורדינציה בין סוכנים
-
-**הקשר:** עוברים למודל של מתכנן בסשן אחד + מבצע בסשן אחר, כל אחד ב-worktree משלו. כדי שלא ידרסו אחד את השני, צריך פרוטוקול ברור.
-
-**מה כבר עשינו (בסיבוב הזה):**
-- יצרנו `docs/agents/` עם פרוטוקול ראשוני: כל סוכן כותב לקובץ שלו בלבד.
-- הוספנו ל-`AGENTS.md` סעיף "פרוטוקול עבודה מקבילית".
-- יצרנו קבצי stub `planner.md` ו-`executor.md`.
-
-**שאלות פתוחות לדיון:**
-1. האם מספיק קובץ אחד לכל סוכן, או שכדאי גם קבצי append-only ייעודיים לשאלות/תשובות?
-2. איך המשתמש (Avi) מקבל **התראה** על שאלה מהמבצע? כרגע — `tail -f`. אם זה לא מספיק, צריך לחשוב על:
-   - notification דרך ה-OS (Linux desktop notifications, ntfy.sh, וכו')
-   - דחיפה ל-voice-acp עצמו (האזנה לקבצים ושליחה דרך WebSocket)
-   - polling פשוט מצד המשתמש (פתוח בטרמינל)
-3. מה קורה אם בכל זאת שני סוכנים מנסים לכתוב לאותו קובץ (באג בפרוטוקול)?
-   - הסתמכות על אטומיות של append-only writes < 4KB (POSIX).
-   - הוספת `flock` או `write-temp-then-rename`.
-   - בשלב POC: לא לטפל, רק לזהות ולעצור.
-
-### ב. הוראות מבצע מובנות יותר בפרומפט
-
-**הקשר:** כשהמבצע נתקע בשאלה עקרונית, מה הוא צריך לעשות?
-
-**הסכמה ראשונית (לחיזוק):**
-- **לעצור רק עם הנושא הספציפי שתקוע**, להמשיך עם משימות אחרות שאינן תלויות בו.
-- לכתוב את השאלה לקובץ שלו ב-`docs/agents/` עם הסימן ❓.
-- לא להמציא ארכיטקטורה — אם משהו לא ברור, לשאול ולא להחליט מיוזמתו.
-- אם **אין** משימות עצמאיות זמינות בכלל — לעצור לגמרי עם סטטוס "בהפסקה".
-
-**נכנס ל-`AGENTS.md`** (סעיף "פרוטוקול עבודה מקבילית").
-
-### ג. הפרדה ברורה בין "תוכנית ביצוע" ל"רעיונות לדיון"
-
-**הקשר:** `plan.md` היום מכיל גם תוכנית מפורטת (סעיפים 1-7) וגם את הרעיונות החדשים (הסעיף הזה). יש סיכון של בלבול — המבצע יחשוב שהרעיונות לדיון הם משימה לבצע.
-
-**הצעות:**
-- להשאיר את החלוקה כפי שהיא (התוכנית למעלה, רעיונות בסוף) — הכותרת מבדילה.
-- להפריד לקבצים: `plan.md` (אקטיבי) + `discussion.md` (טיוטות).
-- להשאיר הכל ב-plan.md ולסמן בכל סעיף **"לביצוע"** / **"לדיון"** / **"דחוי"**.
-
-**אין החלטה עדיין.** המבצע צריך לקרוא **רק** את הסעיפים שמסומנים "לביצוע".
