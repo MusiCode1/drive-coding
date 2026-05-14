@@ -260,7 +260,7 @@ export async function textToSpeech(text: string): Promise<string> {
       },
       body: JSON.stringify({
         text,
-        model_id: "eleven_multilingual_v2",
+        model_id: "eleven_v3",  // היחיד שתומך עברית כראוי (לפי /v1/models)
         voice_settings: { stability: 0.5, similarity_boost: 0.75 },
       }),
     },

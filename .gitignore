@@ -1,0 +1,7 @@
+test-workspace/
+backend/node_modules/
+backend/bun.lock
+backend/bun.lockb
+.DS_Store
+*.log
+.codenomad/

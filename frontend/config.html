@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>voice-acp · הגדרות</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f1115;
+        --bg-elev: #161922;
+        --fg: #e6e6e6;
+        --fg-dim: #a0a0a0;
+        --muted: #6a6a6a;
+        --accent: #4f8cff;
+        --accent-hi: #6ba1ff;
+        --recording: #ff4f4f;
+        --border: #2a2f3a;
+        --field: #1a1f2a;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+      .card {
+        width: 100%;
+        max-width: 540px;
+        background: var(--bg-elev);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 24px;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 20px;
+        font-weight: 600;
+      }
+      .subtitle {
+        font-size: 13px;
+        color: var(--fg-dim);
+        margin-bottom: 20px;
+      }
+      .field {
+        margin-bottom: 16px;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--fg-dim);
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      input[type="text"],
+      select {
+        width: 100%;
+        background: var(--field);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        color: var(--fg);
+        font-size: 14px;
+        font-family: inherit;
+      }
+      input[type="text"]:focus,
+      select:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      input[type="text"][dir="ltr"] {
+        font-family: ui-monospace, "SF Mono", Consolas, monospace;
+        font-size: 13px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: stretch;
+      }
+      .row > input[type="text"] {
+        flex: 1;
+      }
+      .checkbox {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      .checkbox input {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--accent);
+      }
+      button {
+        background: var(--accent);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background 0.15s;
+      }
+      button:hover:not(:disabled) {
+        background: var(--accent-hi);
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      button.secondary {
+        background: var(--field);
+        color: var(--fg-dim);
+        border: 1px solid var(--border);
+      }
+      button.secondary:hover:not(:disabled) {
+        background: var(--bg);
+        color: var(--fg);
+      }
+
+      /* modal */
+      .modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+      }
+      .modal[hidden] { display: none; }
+      .modal-content {
+        background: var(--bg-elev);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 18px;
+        width: 90%;
+        max-width: 640px;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+      .modal-title { font-weight: 600; font-size: 14px; }
+      .modal-close {
+        background: transparent;
+        color: var(--fg-dim);
+        border: 1px solid var(--border);
+        padding: 4px 10px;
+        font-size: 13px;
+      }
+      .breadcrumb {
+        font-family: ui-monospace, "SF Mono", Consolas, monospace;
+        font-size: 12px;
+        background: var(--field);
+        padding: 8px 10px;
+        border-radius: 6px;
+        direction: ltr;
+        text-align: left;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+      .crumb {
+        color: var(--accent-hi);
+        cursor: pointer;
+      }
+      .crumb:hover { text-decoration: underline; }
+      .crumb-sep { color: var(--muted); margin: 0 3px; }
+      .picker-list {
+        overflow-y: auto;
+        flex: 1;
+        min-height: 200px;
+        max-height: 50vh;
+        background: var(--field);
+        border-radius: 6px;
+        padding: 6px;
+      }
+      .picker-item {
+        padding: 8px 10px;
+        cursor: pointer;
+        border-radius: 4px;
+        font-size: 14px;
+        direction: ltr;
+        text-align: left;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .picker-item:hover { background: var(--bg); }
+      .picker-item .icon { opacity: 0.7; }
+      .modal-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+      .picker-status {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .picker-status.error { color: var(--recording); }
+      .actions {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin-top: 20px;
+      }
+      .actions .start {
+        padding: 12px 20px;
+        font-size: 15px;
+      }
+      .status-line {
+        font-size: 12px;
+        color: var(--muted);
+        min-height: 16px;
+        margin-top: 4px;
+      }
+      .status-line.error {
+        color: var(--recording);
+      }
+      .help {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>הגדרות שיחה</h1>
+      <div class="subtitle">בחרי תיקיית עבודה, מודל, ו-session — ופתחי את ה-voice interface.</div>
+
+      <div class="field">
+        <label for="cwd">תיקיית עבודה (cwd)</label>
+        <div class="row">
+          <input id="cwd" type="text" dir="ltr" placeholder="לא נבחרה" />
+          <button id="browse-btn" class="secondary" type="button">בחר…</button>
+          <button id="load-btn" class="secondary" type="button">טען אפשרויות</button>
+        </div>
+        <div class="help">אפשר לכתוב path ידנית, או ללחוץ "בחר…" לדפדפן תיקיות.</div>
+        <div class="status-line" id="load-status"></div>
+      </div>
+
+      <!-- Folder Picker Modal -->
+      <div id="picker-modal" class="modal" hidden>
+        <div class="modal-content">
+          <div class="modal-header">
+            <div class="modal-title">בחירת תיקייה</div>
+            <button id="picker-close" class="modal-close" type="button">סגור</button>
+          </div>
+          <div id="picker-breadcrumb" class="breadcrumb"></div>
+          <div id="picker-list" class="picker-list"></div>
+          <div class="modal-footer">
+            <div id="picker-status" class="picker-status"></div>
+            <button id="picker-select" type="button">בחר את התיקייה הזו</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="model">מודל</label>
+        <select id="model">
+          <option value="">— ברירת מחדל —</option>
+        </select>
+        <div class="help" id="model-help">לחצי "טען אפשרויות" כדי לראות את המודלים הזמינים.</div>
+      </div>
+
+      <div class="field">
+        <label for="session">Session</label>
+        <select id="session">
+          <option value="">— חדשה —</option>
+        </select>
+        <div class="help" id="session-help">או בחרי session קיימת מהרשימה.</div>
+      </div>
+
+      <div class="field">
+        <label for="voice">קול ה-TTS</label>
+        <select id="voice">
+          <option value="">— ברירת מחדל —</option>
+        </select>
+        <div class="help" id="voice-help">נטען אוטומטית בעת פתיחת הדף.</div>
+      </div>
+
+      <div class="field">
+        <label class="checkbox">
+          <input id="car" type="checkbox" />
+          מצב רכב (לחצן Play בבלוטוס מפעיל הקלטה)
+        </label>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="secondary" id="reset-btn">איפוס</button>
+        <button type="button" class="start" id="start-btn" disabled>פתח</button>
+      </div>
+    </div>
+
+    <script>
+      const LS_KEY = "voice-acp:config";
+      const $ = (id) => document.getElementById(id);
+
+      const cwdInput = $("cwd");
+      const browseBtn = $("browse-btn");
+      const loadBtn = $("load-btn");
+      const loadStatus = $("load-status");
+      const pickerModal = $("picker-modal");
+      const pickerBreadcrumb = $("picker-breadcrumb");
+      const pickerList = $("picker-list");
+      const pickerStatus = $("picker-status");
+      const pickerCloseBtn = $("picker-close");
+      const pickerSelectBtn = $("picker-select");
+      const modelSelect = $("model");
+      const modelHelp = $("model-help");
+      const sessionSelect = $("session");
+      const sessionHelp = $("session-help");
+      const voiceSelect = $("voice");
+      const voiceHelp = $("voice-help");
+      const carInput = $("car");
+      const startBtn = $("start-btn");
+      const resetBtn = $("reset-btn");
+
+      // ── Restore last config ──────────────────────────────────────────────
+      function loadStoredConfig() {
+        try {
+          const raw = localStorage.getItem(LS_KEY);
+          if (!raw) return {};
+          return JSON.parse(raw);
+        } catch {
+          return {};
+        }
+      }
+      function saveConfig() {
+        const cfg = {
+          cwd: cwdInput.value.trim(),
+          model: modelSelect.value,
+          session: sessionSelect.value,
+          voice: voiceSelect.value,
+          car: carInput.checked,
+        };
+        try {
+          localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+        } catch {}
+      }
+
+      const stored = loadStoredConfig();
+      if (stored.cwd) cwdInput.value = stored.cwd;
+      if (stored.car) carInput.checked = true;
+
+      function updateStartButton() {
+        startBtn.disabled = !cwdInput.value.trim();
+      }
+      updateStartButton();
+      cwdInput.addEventListener("input", updateStartButton);
+
+      // ── טען אפשרויות ────────────────────────────────────────────────────
+      loadBtn.addEventListener("click", async () => {
+        const cwd = cwdInput.value.trim();
+        if (!cwd) {
+          loadStatus.textContent = "צריך להזין cwd קודם";
+          loadStatus.className = "status-line error";
+          return;
+        }
+        loadStatus.textContent = "טוען (יכול לקחת כמה שניות)…";
+        loadStatus.className = "status-line";
+        loadBtn.disabled = true;
+
+        try {
+          const res = await fetch(
+            "/api/info?cwd=" + encodeURIComponent(cwd),
+          );
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `שגיאה ${res.status}`);
+          }
+          const info = await res.json();
+
+          // populate models
+          modelSelect.innerHTML = '<option value="">— ברירת מחדל —</option>';
+          (info.availableModels || []).forEach((m) => {
+            const opt = document.createElement("option");
+            opt.value = m.modelId;
+            opt.textContent = m.name + (m.description ? ` — ${m.description}` : "");
+            modelSelect.appendChild(opt);
+          });
+          if (stored.model && [...modelSelect.options].some((o) => o.value === stored.model)) {
+            modelSelect.value = stored.model;
+          } else if (info.currentModelId) {
+            modelSelect.value = info.currentModelId;
+          }
+          modelHelp.textContent =
+            (info.availableModels || []).length + " מודלים זמינים.";
+
+          // populate sessions
+          sessionSelect.innerHTML = '<option value="">— חדשה —</option>';
+          (info.sessions || []).forEach((s) => {
+            const opt = document.createElement("option");
+            opt.value = s.sessionId;
+            const label =
+              (s.title || s.sessionId.slice(0, 12) + "…") +
+              (s.updatedAt ? `  ·  ${formatDate(s.updatedAt)}` : "");
+            opt.textContent = label;
+            sessionSelect.appendChild(opt);
+          });
+          if (stored.session && [...sessionSelect.options].some((o) => o.value === stored.session)) {
+            sessionSelect.value = stored.session;
+          }
+          sessionHelp.textContent =
+            (info.sessions || []).length + " sessions קיימות ב-cwd זה.";
+
+          loadStatus.textContent = "טעון.";
+        } catch (e) {
+          loadStatus.textContent = "שגיאה בטעינה: " + e.message;
+          loadStatus.className = "status-line error";
+        } finally {
+          loadBtn.disabled = false;
+        }
+      });
+
+      function formatDate(iso) {
+        try {
+          const d = new Date(iso);
+          return d.toLocaleString("he-IL", {
+            day: "2-digit",
+            month: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        } catch {
+          return iso;
+        }
+      }
+
+      // ── Folder picker ────────────────────────────────────────────────────
+      let pickerCurrentPath = null;
+      let pickerHome = null;
+
+      browseBtn.addEventListener("click", () => {
+        const start =
+          cwdInput.value.trim() ||
+          stored.cwd ||
+          ""; // backend יחזיר את HOME אם נבקש /
+        openPicker(start);
+      });
+      pickerCloseBtn.addEventListener("click", () => {
+        pickerModal.hidden = true;
+      });
+      pickerSelectBtn.addEventListener("click", () => {
+        if (pickerCurrentPath) {
+          cwdInput.value = pickerCurrentPath;
+          pickerModal.hidden = true;
+          updateStartButton();
+        }
+      });
+      pickerModal.addEventListener("click", (e) => {
+        if (e.target === pickerModal) pickerModal.hidden = true;
+      });
+
+      async function openPicker(initialPath) {
+        pickerModal.hidden = false;
+        // אם לא ניתנה תיקייה, ננסה לטעון /home/user או /home דרך /api/ls
+        let target = initialPath;
+        if (!target) {
+          // ננסה לקבל את ה-home מהשרת על-ידי קריאה ל-/api/ls עם נתיב לא חוקי
+          // → השרת מחזיר שגיאה עם home בinfo, אבל יש לי דרך פשוטה יותר —
+          // לטעון את ה-HOME מ-process.env זה לא זמין בfrontend. ננסה /home
+          target = pickerHome || "/home";
+        }
+        await navigateTo(target);
+      }
+
+      async function navigateTo(path) {
+        pickerStatus.textContent = "טוען…";
+        pickerStatus.className = "picker-status";
+        pickerList.innerHTML = "";
+        try {
+          const res = await fetch(
+            "/api/ls?path=" + encodeURIComponent(path),
+          );
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${res.status}`);
+          }
+          const info = await res.json();
+          pickerCurrentPath = info.path;
+          pickerHome = info.home;
+          renderBreadcrumb(info.path, info.home);
+          renderPickerEntries(info);
+          pickerStatus.textContent = `${info.entries.length} תיקיות`;
+        } catch (e) {
+          pickerStatus.textContent = e.message;
+          pickerStatus.className = "picker-status error";
+          // אם הנתיב לא חוקי, ננסה לחזור ל-home
+          if (path !== pickerHome && pickerHome) {
+            setTimeout(() => navigateTo(pickerHome), 100);
+          }
+        }
+      }
+
+      function renderBreadcrumb(path, home) {
+        pickerBreadcrumb.innerHTML = "";
+        const parts = path.split("/").filter(Boolean);
+        const root = document.createElement("span");
+        root.className = "crumb";
+        root.textContent = "/";
+        root.addEventListener("click", () => navigateTo(home || "/home"));
+        pickerBreadcrumb.appendChild(root);
+        let cur = "";
+        for (let i = 0; i < parts.length; i++) {
+          cur += "/" + parts[i];
+          const sep = document.createElement("span");
+          sep.className = "crumb-sep";
+          sep.textContent = " / ";
+          pickerBreadcrumb.appendChild(sep);
+          const c = document.createElement("span");
+          c.className = "crumb";
+          c.textContent = parts[i];
+          const target = cur;
+          c.addEventListener("click", () => navigateTo(target));
+          pickerBreadcrumb.appendChild(c);
+        }
+      }
+
+      function renderPickerEntries(info) {
+        pickerList.innerHTML = "";
+        if (info.parent) {
+          const up = document.createElement("div");
+          up.className = "picker-item";
+          up.innerHTML = '<span class="icon">⬆</span><span>..</span>';
+          up.addEventListener("click", () => navigateTo(info.parent));
+          pickerList.appendChild(up);
+        }
+        if (info.entries.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "picker-item";
+          empty.style.color = "var(--muted)";
+          empty.style.cursor = "default";
+          empty.textContent = "תיקייה ריקה";
+          pickerList.appendChild(empty);
+        }
+        for (const e of info.entries) {
+          const item = document.createElement("div");
+          item.className = "picker-item";
+          item.innerHTML = `<span class="icon">📁</span><span>${e.name}</span>`;
+          const next =
+            info.path.endsWith("/") ? info.path + e.name : info.path + "/" + e.name;
+          item.addEventListener("click", () => navigateTo(next));
+          pickerList.appendChild(item);
+        }
+      }
+
+      // ── טעינת קולות (פעם אחת בעת load) ────────────────────────────────────
+      async function loadVoices() {
+        voiceHelp.textContent = "טוען קולות…";
+        try {
+          const res = await fetch("/api/voices");
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${res.status}`);
+          }
+          const info = await res.json();
+          const defaultId = info.defaultVoiceId;
+          voiceSelect.innerHTML = "";
+          // אופציה ל"ברירת מחדל מהשרת"
+          const defOpt = document.createElement("option");
+          defOpt.value = "";
+          defOpt.textContent = defaultId
+            ? `— ברירת מחדל (${defaultId.slice(0, 8)}…) —`
+            : "— ברירת מחדל —";
+          voiceSelect.appendChild(defOpt);
+          // הקולות מסודרים מראש לפי priority בbackend
+          for (const v of info.voices ?? []) {
+            const opt = document.createElement("option");
+            opt.value = v.voiceId;
+            const langTag = v.supportsHebrew
+              ? "🇮🇱"
+              : v.languages?.length
+                ? `[${v.languages[0]}]`
+                : "";
+            const cat =
+              v.category === "premade"
+                ? ""
+                : v.category === "professional"
+                  ? "✓"
+                  : "•";
+            opt.textContent = `${langTag} ${cat} ${v.name}`.trim();
+            voiceSelect.appendChild(opt);
+          }
+          if (
+            stored.voice &&
+            [...voiceSelect.options].some((o) => o.value === stored.voice)
+          ) {
+            voiceSelect.value = stored.voice;
+          }
+          voiceHelp.textContent = `${info.voices?.length ?? 0} קולות זמינים. 🇮🇱 = תומך עברית.`;
+        } catch (e) {
+          voiceHelp.textContent = "טעינת קולות נכשלה: " + e.message;
+        }
+      }
+      loadVoices();
+
+      // ── פתח ──────────────────────────────────────────────────────────────
+      startBtn.addEventListener("click", () => {
+        const cwd = cwdInput.value.trim();
+        if (!cwd) return;
+        saveConfig();
+        const p = new URLSearchParams();
+        p.set("cwd", cwd);
+        if (modelSelect.value) p.set("model", modelSelect.value);
+        if (sessionSelect.value) p.set("session", sessionSelect.value);
+        if (voiceSelect.value) p.set("voice", voiceSelect.value);
+        if (carInput.checked) p.set("car", "1");
+        location.href = "/?" + p.toString();
+      });
+
+      // ── איפוס ────────────────────────────────────────────────────────────
+      resetBtn.addEventListener("click", () => {
+        if (!confirm("לאפס את כל ההגדרות?")) return;
+        try {
+          localStorage.removeItem(LS_KEY);
+        } catch {}
+        cwdInput.value = "";
+        modelSelect.innerHTML = '<option value="">— ברירת מחדל —</option>';
+        sessionSelect.innerHTML = '<option value="">— חדשה —</option>';
+        voiceSelect.value = "";
+        carInput.checked = false;
+        loadStatus.textContent = "";
+        modelHelp.textContent = "לחצי 'טען אפשרויות' כדי לראות את המודלים הזמינים.";
+        sessionHelp.textContent = "או בחרי session קיימת מהרשימה.";
+        updateStartButton();
+      });
+    </script>
+  </body>
+</html>

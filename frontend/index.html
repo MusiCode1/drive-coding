@@ -1,0 +1,1512 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>voice-acp</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f1115;
+        --bg-elev: #161922;
+        --fg: #e6e6e6;
+        --fg-dim: #a0a0a0;
+        --muted: #6a6a6a;
+        --accent: #4f8cff;
+        --accent-hi: #6ba1ff;
+        --recording: #ff4f4f;
+        --thinking: #ffaa33;
+        --speaking: #4fff8a;
+        --bubble-user: #2a3550;
+        --bubble-agent: #1d2230;
+        --border: #2a2f3a;
+        --tool-bg: #1a1f2a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100dvh;
+        overflow: hidden;
+      }
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* header */
+      header {
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-shrink: 0;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--fg-dim);
+      }
+      header .meta {
+        font-size: 11px;
+        color: var(--muted);
+        font-family: ui-monospace, "SF Mono", Consolas, monospace;
+        text-align: left;
+        direction: ltr;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 60%;
+      }
+
+      /* chat */
+      #chat {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 12px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        scroll-behavior: smooth;
+      }
+      #chat:empty::before {
+        content: "התחילו לדבר — תוכן השיחה יופיע כאן.";
+        color: var(--muted);
+        font-size: 13px;
+        align-self: center;
+        margin: auto;
+      }
+
+      /* bubble */
+      .msg {
+        max-width: 85%;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .msg.user {
+        align-self: flex-start;
+      }
+      .msg.agent {
+        align-self: flex-end;
+      }
+      .bubble {
+        padding: 10px 14px;
+        border-radius: 14px;
+        font-size: 14px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+      .msg.user .bubble {
+        background: var(--bubble-user);
+        border-bottom-right-radius: 4px;
+      }
+      .msg.agent .bubble {
+        background: var(--bubble-agent);
+        border-bottom-left-radius: 4px;
+      }
+      .bubble:empty::after {
+        content: "…";
+        color: var(--muted);
+      }
+      /* markdown content inside bubble */
+      .bubble p { margin: 0 0 0.5em; }
+      .bubble p:last-child { margin-bottom: 0; }
+      .bubble h1, .bubble h2, .bubble h3, .bubble h4 {
+        margin: 0.5em 0 0.3em;
+        font-weight: 600;
+      }
+      .bubble h1 { font-size: 1.2em; }
+      .bubble h2 { font-size: 1.1em; }
+      .bubble h3, .bubble h4 { font-size: 1em; }
+      .bubble ul, .bubble ol {
+        margin: 0.3em 0;
+        padding-inline-start: 1.5em;
+      }
+      .bubble li { margin: 0.15em 0; }
+      .bubble code {
+        background: rgba(255,255,255,0.07);
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-family: ui-monospace, "SF Mono", Consolas, monospace;
+        font-size: 0.92em;
+      }
+      .bubble pre {
+        background: rgba(0,0,0,0.3);
+        padding: 8px 10px;
+        border-radius: 6px;
+        overflow-x: auto;
+        margin: 0.4em 0;
+        direction: ltr;
+        text-align: left;
+      }
+      .bubble pre code { background: none; padding: 0; }
+      .bubble a { color: var(--accent-hi); }
+      .bubble blockquote {
+        border-inline-start: 3px solid var(--border);
+        padding-inline-start: 10px;
+        margin: 0.4em 0;
+        color: var(--fg-dim);
+      }
+      .bubble table {
+        border-collapse: collapse;
+        margin: 0.4em 0;
+      }
+      .bubble th, .bubble td {
+        border: 1px solid var(--border);
+        padding: 4px 8px;
+      }
+
+      /* thought sub-bubble */
+      .msg.agent.thought .bubble {
+        background: transparent;
+        border: 1px dashed var(--border);
+        color: var(--fg-dim);
+        font-style: italic;
+        font-size: 12.5px;
+        line-height: 1.5;
+      }
+      .msg.agent.thought .bubble::before {
+        content: "💭 ";
+        opacity: 0.6;
+      }
+
+      /* tools sub-bubble */
+      .msg.agent.tools-bubble .bubble {
+        background: var(--tool-bg);
+        border: 1px solid var(--border);
+        padding: 6px 12px;
+        cursor: pointer;
+        user-select: none;
+      }
+      .tools-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 12px;
+        color: var(--fg-dim);
+        font-family: ui-monospace, "SF Mono", Consolas, monospace;
+      }
+      .tools-summary {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .tools-arrow {
+        font-size: 10px;
+        opacity: 0.5;
+        transition: transform 0.15s;
+      }
+      .tools-bubble.expanded .tools-arrow {
+        transform: rotate(90deg);
+      }
+      .tools-details {
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px solid var(--border);
+        display: none;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .tools-bubble.expanded .tools-details {
+        display: flex;
+      }
+      .tool-item {
+        font-size: 11px;
+        font-family: ui-monospace, "SF Mono", Consolas, monospace;
+        color: var(--fg-dim);
+        padding: 2px 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .tool-item.in_progress {
+        color: var(--thinking);
+      }
+      .tool-item.failed {
+        color: var(--recording);
+      }
+      .tool-item .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--muted);
+        flex-shrink: 0;
+      }
+      .tool-item.in_progress .status-dot {
+        background: var(--thinking);
+        animation: pulse-dot 1s infinite;
+      }
+      .tool-item.completed .status-dot {
+        background: var(--speaking);
+      }
+      .tool-item.failed .status-dot {
+        background: var(--recording);
+      }
+      @keyframes pulse-dot {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+      }
+
+      /* per-message replay */
+      .msg-actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 2px;
+      }
+      .replay-btn {
+        background: var(--tool-bg);
+        border: 1px solid var(--border);
+        color: var(--fg-dim);
+        border-radius: 999px;
+        width: 32px;
+        height: 32px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 14px;
+        transition: all 0.15s;
+      }
+      .replay-btn:hover {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: white;
+      }
+      .replay-btn:disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+      }
+      .replay-btn.failed {
+        color: var(--recording);
+        border-color: var(--recording);
+      }
+      .replay-btn .spinner {
+        width: 14px;
+        height: 14px;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        display: inline-block;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      /* error */
+      .error {
+        color: var(--recording);
+        background: rgba(255, 79, 79, 0.1);
+        border: 1px solid rgba(255, 79, 79, 0.3);
+        padding: 10px 14px;
+        border-radius: 14px;
+        font-size: 13px;
+        align-self: center;
+        max-width: 85%;
+      }
+
+      /* footer / controls */
+      footer {
+        flex-shrink: 0;
+        padding: 14px 16px 22px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        background: var(--bg-elev);
+      }
+      #status {
+        font-size: 12px;
+        color: var(--muted);
+        min-height: 16px;
+        text-align: center;
+      }
+      #status.recording {
+        color: var(--recording);
+      }
+      #status.thinking {
+        color: var(--thinking);
+      }
+      #status.speaking {
+        color: var(--speaking);
+      }
+      .controls {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      #btn {
+        width: 110px;
+        height: 110px;
+        border-radius: 50%;
+        border: none;
+        font-size: 44px;
+        cursor: pointer;
+        background: var(--accent);
+        color: white;
+        box-shadow:
+          0 4px 18px rgba(79, 140, 255, 0.4),
+          0 0 0 0 rgba(79, 140, 255, 0.6);
+        transition: transform 0.15s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #btn:hover:not(:disabled) {
+        transform: scale(1.04);
+      }
+      #btn:active:not(:disabled) {
+        transform: scale(0.97);
+      }
+      #btn:disabled {
+        background: #2a2f3a;
+        cursor: not-allowed;
+      }
+      #btn.recording {
+        background: var(--recording);
+        animation: pulse 1.2s infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          box-shadow: 0 0 0 0 rgba(255, 79, 79, 0.6);
+        }
+        50% {
+          box-shadow: 0 0 0 18px rgba(255, 79, 79, 0);
+        }
+      }
+      #replay-last {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        color: var(--fg-dim);
+        border-radius: 50%;
+        width: 56px;
+        height: 56px;
+        font-size: 22px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.15s;
+      }
+      #replay-last:hover:not(:disabled) {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: white;
+      }
+      #replay-last:disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>voice-acp</h1>
+      <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1;justify-content:flex-end;">
+        <div class="meta" id="meta">מתחבר…</div>
+        <a href="/config.html" title="הגדרות" style="color:var(--fg-dim);text-decoration:none;font-size:18px;line-height:1;flex-shrink:0;">⚙</a>
+      </div>
+    </header>
+
+    <div id="chat" aria-live="polite"></div>
+
+    <footer>
+      <div id="status">לחצי על הכפתור כדי לדבר</div>
+      <div class="controls">
+        <button id="replay-last" disabled title="השמע את ההודעה האחרונה">🔊</button>
+        <button id="btn" disabled aria-label="הקלטה">🎙</button>
+      </div>
+    </footer>
+
+    <script>
+      // ── URL params ─────────────────────────────────────────────────────────
+      const params = new URLSearchParams(location.search);
+      const cwd = params.get("cwd");
+      const sessionIdParam = params.get("session");
+      const modelParam = params.get("model");
+      const voiceParam = params.get("voice"); // voiceId של ElevenLabs
+      const carMode = params.get("car") === "1" || params.get("car") === "true";
+
+      // ── אלמנטים ────────────────────────────────────────────────────────────
+      const btn = document.getElementById("btn");
+      const replayLastBtn = document.getElementById("replay-last");
+      const statusEl = document.getElementById("status");
+      const metaEl = document.getElementById("meta");
+      const chatEl = document.getElementById("chat");
+
+      function setStatus(text, cls) {
+        statusEl.textContent = text;
+        statusEl.className = cls || "";
+      }
+
+      // אם אין cwd — הפנייה לדף ההגדרות
+      if (!cwd) {
+        location.replace("/config.html");
+      }
+
+      // ── State ──────────────────────────────────────────────────────────────
+      let ws;
+      let sessionId = sessionIdParam;
+      let isRecording = false;
+      let mediaRecorder = null;
+      let audioChunks = [];
+
+      /** @type {AgentTurn[]} */
+      const turns = [];
+      /** @type {AgentTurn|null} */
+      let currentTurn = null;
+      /** @type {SubBubble|null} */
+      let currentUserSub = null; // הבועת user שנבנית כרגע (בעיקר בהיסטוריה)
+      /** @type {SubBubble|null} */
+      let lastAudioSub = null; // הבועה האחרונה עם אודיו (לכפתור "השמע אחרון")
+      let historyLastRole = null; // "user" | "agent" | null — לזיהוי גבולות תור בהיסטוריה
+
+      // ── Sub-bubble ─────────────────────────────────────────────────────────
+      // מייצג בועת UI אחת. סוגים: "user", "thought", "tools", "message".
+      // למצב הכפתור של אודיו יש state machine:
+      //   "pending"  — bubble live, מחכה ל-TTS אוטומטי (ספינר)
+      //   "ready"    — אודיו זמין, כפתור 🔊 פעיל
+      //   "cold"     — bubble היסטוריה, אין אודיו (כפתור פעיל ללחיצה lazy)
+      //   "fetching" — בועת היסטוריה לחצה, מחכה ל-/api/tts (ספינר)
+      //   "failed"   — TTS נכשל, אייקון אזהרה (ניתן לנסות שוב)
+      class SubBubble {
+        constructor(kind, opts = {}) {
+          this.kind = kind; // "user" | "thought" | "tools" | "message"
+          this.historic = opts.historic ?? false;
+          this.text = "";
+          this.tools = new Map();
+          this.audioBase64 = null;
+          this.expanded = false;
+          this.hasHtml = false; // האם הוחל markdown HTML
+          this._streamId = null; // streamId של ה-streaming audio שמשויך (אם בכלל)
+          this.audioState =
+            kind === "message"
+              ? this.historic
+                ? "cold"
+                : "pending"
+              : null;
+
+          this.el = document.createElement("div");
+          const role = kind === "user" ? "user" : "agent";
+          this.el.className = `msg ${role} ${kind === "tools" ? "tools-bubble" : kind}`;
+
+          this.bubbleEl = document.createElement("div");
+          this.bubbleEl.className = "bubble";
+
+          if (kind === "tools") {
+            this.bubbleEl.addEventListener("click", () => this.toggleExpanded());
+            this.headerEl = document.createElement("div");
+            this.headerEl.className = "tools-header";
+            this.summaryEl = document.createElement("div");
+            this.summaryEl.className = "tools-summary";
+            this.arrowEl = document.createElement("span");
+            this.arrowEl.className = "tools-arrow";
+            this.arrowEl.textContent = "▸";
+            this.headerEl.appendChild(this.summaryEl);
+            this.headerEl.appendChild(this.arrowEl);
+            this.bubbleEl.appendChild(this.headerEl);
+
+            this.detailsEl = document.createElement("div");
+            this.detailsEl.className = "tools-details";
+            this.bubbleEl.appendChild(this.detailsEl);
+          }
+
+          this.el.appendChild(this.bubbleEl);
+
+          // אזור אודיו רק לבועות message
+          if (kind === "message") {
+            this.audioBtn = document.createElement("button");
+            this.audioBtn.className = "replay-btn";
+            this.audioBtn.style.alignSelf = "flex-end";
+            this.audioBtn.addEventListener("click", () => this.handleAudioClick());
+            this.el.appendChild(this.audioBtn);
+            this.renderAudioControl();
+          }
+
+          chatEl.appendChild(this.el);
+          scrollChatToBottom();
+        }
+
+        renderAudioControl() {
+          if (!this.audioBtn) return;
+          const btn = this.audioBtn;
+          btn.classList.remove("failed");
+          btn.disabled = false;
+          switch (this.audioState) {
+            case "pending":
+            case "fetching":
+              btn.innerHTML = '<span class="spinner"></span>';
+              btn.title =
+                this.audioState === "pending"
+                  ? "ממתין להפקת אודיו…"
+                  : "טוען אודיו…";
+              btn.disabled = true;
+              break;
+            case "ready":
+              btn.textContent = "🔊";
+              btn.title = "השמע שוב";
+              break;
+            case "cold":
+              btn.textContent = "🔊";
+              btn.title = "השמע (יווצר אודיו)";
+              break;
+            case "failed":
+              btn.textContent = "⚠";
+              btn.title = "הפקת אודיו נכשלה. לחיצה לניסיון נוסף";
+              btn.classList.add("failed");
+              break;
+            default:
+              btn.style.display = "none";
+          }
+        }
+
+        setAudioState(s) {
+          this.audioState = s;
+          this.renderAudioControl();
+        }
+
+        async handleAudioClick() {
+          if (this.audioState === "ready") {
+            playSubBubbleAudio(this);
+          } else if (this.audioState === "cold" || this.audioState === "failed") {
+            await this.fetchAudio();
+          }
+          // pending / fetching — מתעלם
+        }
+
+        async fetchAudio() {
+          this.setAudioState("fetching");
+          try {
+            const res = await fetch("/api/tts", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                text: this.text,
+                ...(voiceParam ? { voiceId: voiceParam } : {}),
+              }),
+            });
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              throw new Error(err.error || `HTTP ${res.status}`);
+            }
+            const json = await res.json();
+            this.audioBase64 = json.data;
+            this.setAudioState("ready");
+            lastAudioSub = this;
+            replayLastBtn.disabled = false;
+            playSubBubbleAudio(this);
+          } catch (e) {
+            this.setAudioState("failed");
+            showError("טעינת אודיו נכשלה: " + e.message);
+          }
+        }
+
+        appendText(chunk) {
+          this.text += chunk;
+          if (this.kind === "tools") return;
+          // אם כבר הוחל HTML, לא דורסים אותו (במצב streaming השרת שולח
+          // message_rendered אחרי שכל ה-chunks הגיעו, אז זה לא קורה)
+          if (this.hasHtml) return;
+          this.bubbleEl.textContent = this.text;
+          scrollChatToBottom();
+        }
+
+        setHtml(html) {
+          this.hasHtml = true;
+          this.bubbleEl.innerHTML = html;
+          scrollChatToBottom();
+        }
+
+        upsertTool(id, info) {
+          const existing = this.tools.get(id) || {};
+          this.tools.set(id, { ...existing, ...info });
+          this.renderTools();
+        }
+
+        renderTools() {
+          const count = this.tools.size;
+          // summary: אם כלי אחד — מציגים אותו ישירות; אם יותר — ספירה.
+          this.summaryEl.innerHTML = "";
+          if (count === 1) {
+            const [info] = this.tools.values();
+            this.summaryEl.appendChild(this.renderToolItem(info, true));
+            this.arrowEl.style.visibility = "hidden";
+          } else {
+            this.arrowEl.style.visibility = "";
+            const label = document.createElement("span");
+            const noun = count === 2 ? "כלים" : count > 10 ? "כלים" : "כלים";
+            label.textContent = `${count} ${noun}`;
+            this.summaryEl.appendChild(label);
+            // אייקונים של עד 5 הכלים
+            for (const info of Array.from(this.tools.values()).slice(0, 5)) {
+              const dot = document.createElement("span");
+              dot.className = "tool-item " + (info.status || "");
+              dot.style.padding = "0";
+              dot.innerHTML = `<span class="status-dot"></span>${toolIcon(info.toolKind)}`;
+              this.summaryEl.appendChild(dot);
+            }
+          }
+          // details — תמיד מציג את הכל מורחב
+          this.detailsEl.innerHTML = "";
+          for (const info of this.tools.values()) {
+            this.detailsEl.appendChild(this.renderToolItem(info, false));
+          }
+        }
+
+        renderToolItem(info, inSummary) {
+          const item = document.createElement("div");
+          item.className = "tool-item " + (info.status || "");
+          item.innerHTML = `<span class="status-dot"></span><span>${toolIcon(info.toolKind)} ${escapeHtml(info.title || info.toolKind || "tool")}</span>`;
+          if (inSummary) item.style.padding = "0";
+          return item;
+        }
+
+        toggleExpanded() {
+          if (this.tools.size <= 1) return; // אין מה להרחיב
+          this.expanded = !this.expanded;
+          this.el.classList.toggle("expanded", this.expanded);
+        }
+
+        attachReplay(base64) {
+          this.audioBase64 = base64;
+          this.setAudioState("ready");
+        }
+      }
+
+      // ── Agent turn — אוסף של sub-bubbles ───────────────────────────────────
+      class AgentTurn {
+        constructor(opts = {}) {
+          this.historic = opts.historic ?? false;
+          this.subs = []; // SubBubble[]
+          /** @type {SubBubble|null} */
+          this.currentSub = null;
+        }
+
+        appendThought(text) {
+          if (!this.currentSub || this.currentSub.kind !== "thought") {
+            this.currentSub = new SubBubble("thought");
+            this.subs.push(this.currentSub);
+          }
+          this.currentSub.appendText(text);
+        }
+
+        appendMessage(text) {
+          if (!this.currentSub || this.currentSub.kind !== "message") {
+            this.currentSub = new SubBubble("message", {
+              historic: this.historic,
+            });
+            this.subs.push(this.currentSub);
+          }
+          this.currentSub.appendText(text);
+        }
+
+        upsertToolCall(id, info) {
+          if (!this.currentSub || this.currentSub.kind !== "tools") {
+            this.currentSub = new SubBubble("tools");
+            this.subs.push(this.currentSub);
+          }
+          this.currentSub.upsertTool(id, info);
+        }
+
+        attachAudioToNextPendingMessage(base64) {
+          // מצרף את האודיו לבועת message **הראשונה שאין לה אודיו עדיין**.
+          // ה-audio_ready events מגיעים בסדר (TTS queue ב-backend), אז הראשון
+          // שייך לסגמנט הראשון ש-flushed, השני לשני, וכו'.
+          const target = this.subs.find(
+            (s) => s.kind === "message" && !s.audioBase64,
+          );
+          if (target) {
+            target.attachReplay(base64);
+            lastAudioSub = target;
+            replayLastBtn.disabled = false;
+          }
+          return target ?? null;
+        }
+      }
+
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, (c) => ({
+          "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+        }[c]));
+      }
+
+      function toolIcon(kind) {
+        switch (kind) {
+          case "read": return "📖";
+          case "edit": return "✏️";
+          case "delete": return "🗑";
+          case "move": return "↪";
+          case "search": return "🔍";
+          case "execute": return "⚡";
+          case "think": return "💭";
+          case "fetch": return "🌐";
+          case "switch_mode": return "↻";
+          default: return "🔧";
+        }
+      }
+
+      function scrollChatToBottom() {
+        chatEl.scrollTop = chatEl.scrollHeight;
+      }
+
+      function showError(msg) {
+        const el = document.createElement("div");
+        el.className = "error";
+        el.textContent = "שגיאה: " + msg;
+        chatEl.appendChild(el);
+        scrollChatToBottom();
+        console.error(msg);
+      }
+
+      // ── Audio playback — Streaming + Replay ────────────────────────────────
+      //
+      // לlive TTS: backend שולח audio_start → audio_chunk* → audio_end.
+      // יוצרים StreamingAudio שמנגן progressively (MediaSource אם נתמך),
+      // ושומר את האודיו לreplay מאוחר יותר.
+      //
+      // לreplay (גם של live וגם של /api/tts): playSubBubbleAudio עם base64 מלא.
+
+      let currentlyPlaying = null; // Audio | StreamingAudio הפעיל ב-replay
+
+      // ── StreamingAudio: ניגון progressive של MP3 chunks ────────────────────
+      class StreamingAudio {
+        constructor(kind) {
+          this.kind = kind;
+          this.chunks = []; // Uint8Array[] — לreplay
+          this.streamEnded = false;
+          this._completedCallbacks = [];
+          this._completed = false;
+
+          this.audio = new Audio();
+          this.audio.addEventListener("ended", () => this._fireComplete());
+          this.audio.addEventListener("error", () => {
+            console.error("StreamingAudio error:", this.audio.error);
+            this._fireComplete();
+          });
+
+          this.useMSE = false;
+          if (
+            "MediaSource" in window &&
+            MediaSource.isTypeSupported("audio/mpeg")
+          ) {
+            try {
+              this.mediaSource = new MediaSource();
+              this.audio.src = URL.createObjectURL(this.mediaSource);
+              this.pending = [];
+              this.useMSE = true;
+              this.mediaSource.addEventListener("sourceopen", () => {
+                try {
+                  this.sourceBuffer = this.mediaSource.addSourceBuffer("audio/mpeg");
+                  this.sourceBuffer.addEventListener("updateend", () =>
+                    this._flushBuffer(),
+                  );
+                  this._flushBuffer();
+                } catch (e) {
+                  console.error("addSourceBuffer failed, fallback:", e);
+                  this.useMSE = false;
+                  this._fallbackToBlob();
+                }
+              });
+            } catch {
+              this.useMSE = false;
+            }
+          }
+        }
+
+        appendChunk(base64) {
+          const bin = atob(base64);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          this.chunks.push(bytes);
+          if (this.useMSE) {
+            this.pending.push(bytes);
+            this._flushBuffer();
+          }
+        }
+
+        _flushBuffer() {
+          if (!this.sourceBuffer || this.sourceBuffer.updating) return;
+          if (this.pending.length === 0) {
+            if (
+              this.streamEnded &&
+              this.mediaSource?.readyState === "open"
+            ) {
+              try { this.mediaSource.endOfStream(); } catch {}
+            }
+            return;
+          }
+          try {
+            this.sourceBuffer.appendBuffer(this.pending.shift());
+          } catch (e) {
+            console.error("appendBuffer:", e);
+          }
+        }
+
+        endStream() {
+          this.streamEnded = true;
+          if (this.useMSE) {
+            this._flushBuffer();
+          } else {
+            this._fallbackToBlob();
+          }
+        }
+
+        _fallbackToBlob() {
+          if (this.chunks.length === 0) return;
+          const blob = new Blob(this.chunks, { type: "audio/mpeg" });
+          this.audio.src = URL.createObjectURL(blob);
+          if (this._playOnEnd) {
+            this.audio.play().catch(() => {});
+          }
+        }
+
+        play() {
+          if (!this.useMSE && !this.streamEnded) {
+            this._playOnEnd = true;
+            return Promise.resolve();
+          }
+          return this.audio.play();
+        }
+
+        pause() {
+          this.audio.pause();
+        }
+
+        getBase64() {
+          let total = 0;
+          for (const c of this.chunks) total += c.length;
+          const buf = new Uint8Array(total);
+          let off = 0;
+          for (const c of this.chunks) {
+            buf.set(c, off);
+            off += c.length;
+          }
+          let bin = "";
+          const CHUNK = 0x8000;
+          for (let i = 0; i < buf.length; i += CHUNK) {
+            bin += String.fromCharCode.apply(null, buf.subarray(i, i + CHUNK));
+          }
+          return btoa(bin);
+        }
+
+        onComplete(cb) {
+          this._completedCallbacks.push(cb);
+        }
+
+        _fireComplete() {
+          if (this._completed) return;
+          this._completed = true;
+          for (const cb of this._completedCallbacks) cb(this);
+          this._completedCallbacks = [];
+        }
+      }
+
+      // ── Streaming state + queue ────────────────────────────────────────────
+      const activeStreams = new Map(); // streamId → StreamingAudio
+      const streamOrder = []; // ordered FIFO of streamIds
+      let currentStream = null;
+
+      function handleAudioStart(streamId, kind) {
+        let sub = null;
+        if (kind === "message") {
+          const turn = currentTurn ?? turns[turns.length - 1];
+          if (turn) {
+            sub = turn.subs.find(
+              (s) =>
+                s.kind === "message" &&
+                !s.audioBase64 &&
+                !s._streamId,
+            );
+            if (sub) sub._streamId = streamId;
+          }
+        }
+        const stream = new StreamingAudio(kind);
+        stream.streamId = streamId;
+        stream.sub = sub;
+        activeStreams.set(streamId, stream);
+        streamOrder.push(streamId);
+        stream.onComplete(() => {
+          activeStreams.delete(streamId);
+          const i = streamOrder.indexOf(streamId);
+          if (i >= 0) streamOrder.splice(i, 1);
+          if (currentStream === stream) {
+            currentStream = null;
+            playNextStream();
+          }
+        });
+        if (!currentStream) startStream(stream);
+      }
+
+      async function startStream(stream) {
+        currentStream = stream;
+        setStatus("מדבר…", "speaking");
+        if (stream.kind === "tool_title") {
+          await playToolChime();
+        }
+        stream.play().catch(() => {});
+      }
+
+      function playNextStream() {
+        while (streamOrder.length > 0) {
+          const next = activeStreams.get(streamOrder[0]);
+          if (next) {
+            startStream(next);
+            return;
+          }
+          streamOrder.shift();
+        }
+        if (!currentlyPlaying) setStatus("מוכן. לחצי כדי לדבר.");
+      }
+
+      function handleAudioChunk(streamId, base64) {
+        const stream = activeStreams.get(streamId);
+        if (stream) stream.appendChunk(base64);
+      }
+
+      function handleAudioEnd(streamId) {
+        const stream = activeStreams.get(streamId);
+        if (!stream) return;
+        stream.endStream();
+        // שמירת האודיו על ה-sub לreplay
+        if (stream.sub) {
+          stream.sub.audioBase64 = stream.getBase64();
+          stream.sub.setAudioState("ready");
+          lastAudioSub = stream.sub;
+          replayLastBtn.disabled = false;
+        }
+      }
+
+      function stopAllStreaming() {
+        if (currentStream) {
+          try { currentStream.pause(); } catch {}
+        }
+        currentStream = null;
+        streamOrder.length = 0;
+        activeStreams.clear();
+      }
+
+      // ── Replay (one-shot, user-initiated) ──────────────────────────────────
+      function playSubBubbleAudio(sub) {
+        if (!sub?.audioBase64) return;
+        stopAllStreaming();
+        if (currentlyPlaying) {
+          try { currentlyPlaying.pause(); } catch {}
+          currentlyPlaying = null;
+        }
+        const audio = new Audio("data:audio/mpeg;base64," + sub.audioBase64);
+        currentlyPlaying = audio;
+        setStatus("מדבר…", "speaking");
+        audio.addEventListener("ended", () => {
+          if (currentlyPlaying === audio) currentlyPlaying = null;
+          setStatus("מוכן. לחצי כדי לדבר.");
+        });
+        audio.addEventListener("error", () => {
+          if (currentlyPlaying === audio) currentlyPlaying = null;
+          showError("שגיאה בניגון");
+        });
+        audio.play().catch((e) => showError("ניגון אוטומטי חסום: " + e.message));
+      }
+
+      replayLastBtn.addEventListener("click", () => {
+        if (lastAudioSub) playSubBubbleAudio(lastAudioSub);
+      });
+
+      // ── Audio cues (חד-פעמיים, generated by Web Audio API) ───────────────
+      let audioCtx;
+      function getAudioCtx() {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        return audioCtx;
+      }
+
+      // צ'יים קצר שמסמן "המודל התחיל לחשוב". מתנגן פעם אחת בלבד.
+      function playThinkingChime() {
+        try {
+          const ctx = getAudioCtx();
+          const t = ctx.currentTime;
+          const osc = ctx.createOscillator();
+          const g = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.value = 392; // G4 — נעים, נמוך
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.08, t + 0.02);
+          g.gain.linearRampToValueAtTime(0, t + 0.18);
+          osc.connect(g).connect(ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.2);
+        } catch {}
+      }
+
+      // צ'יים מובחן ל-tool call — שני tones מהירים יורדים. נשמע "סוכרי" וקצר.
+      // משמש לפני TTS של כותרת הכלי, כדי שהמשתמשת תדע שמה ששומעת זה תיאור פעולה.
+      async function playToolChime() {
+        try {
+          const ctx = getAudioCtx();
+          const t = ctx.currentTime;
+          const osc = ctx.createOscillator();
+          const g = ctx.createGain();
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(659, t); // E5
+          osc.frequency.setValueAtTime(523, t + 0.07); // C5
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.1, t + 0.015);
+          g.gain.linearRampToValueAtTime(0, t + 0.16);
+          osc.connect(g).connect(ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.18);
+          await new Promise((r) => setTimeout(r, 200));
+        } catch {}
+      }
+
+      // ── WebSocket ──────────────────────────────────────────────────────────
+      function connect() {
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+        ws.addEventListener("open", () => {
+          metaEl.textContent = "מחובר. מאתחל…";
+          ws.send(
+            JSON.stringify({
+              type: "init",
+              cwd,
+              ...(sessionId ? { sessionId } : {}),
+              ...(modelParam ? { model: modelParam } : {}),
+              ...(voiceParam ? { voice: voiceParam } : {}),
+            }),
+          );
+        });
+
+        ws.addEventListener("message", (ev) => {
+          let msg;
+          try {
+            msg = JSON.parse(ev.data);
+          } catch {
+            return;
+          }
+          handleServerMessage(msg);
+        });
+
+        ws.addEventListener("close", () => {
+          metaEl.textContent = "החיבור נסגר";
+          btn.disabled = true;
+        });
+
+        ws.addEventListener("error", () => {
+          metaEl.textContent = "שגיאת חיבור";
+        });
+      }
+
+      function handleServerMessage(msg) {
+        switch (msg.type) {
+          case "ready":
+            sessionId = msg.sessionId;
+            metaEl.textContent = `${shortCwd(cwd)} · ${shortId(sessionId)}`;
+            btn.disabled = false;
+            setStatus("מוכן. לחצי כדי לדבר.");
+            break;
+
+          case "transcript": {
+            // הודעת משתמש חדשה — בועה בודדת
+            const userSub = new SubBubble("user");
+            userSub.appendText(msg.text);
+            // התחלת תור חדש של agent
+            currentTurn = new AgentTurn();
+            turns.push(currentTurn);
+            break;
+          }
+
+          case "thinking":
+            setStatus("חושב…", "thinking");
+            playThinkingChime();
+            if (!currentTurn) {
+              currentTurn = new AgentTurn();
+              turns.push(currentTurn);
+            }
+            break;
+
+          case "text_chunk":
+            if (!currentTurn) break;
+            if (msg.kind === "thought") {
+              currentTurn.appendThought(msg.text);
+            } else {
+              currentTurn.appendMessage(msg.text);
+            }
+            break;
+
+          case "tool_call":
+            if (!currentTurn) break;
+            currentTurn.upsertToolCall(msg.toolCallId, {
+              title: msg.title,
+              toolKind: msg.toolKind,
+              status: msg.status,
+            });
+            break;
+
+          // ── Streaming TTS events ───────────────────────────────────────
+          case "audio_start":
+            handleAudioStart(msg.streamId, msg.kind);
+            break;
+          case "audio_chunk":
+            handleAudioChunk(msg.streamId, msg.data);
+            break;
+          case "audio_end":
+            handleAudioEnd(msg.streamId);
+            break;
+
+          // ── Markdown rendering ─────────────────────────────────────────
+          case "message_rendered": {
+            const turn = currentTurn ?? turns[turns.length - 1];
+            if (!turn) break;
+            const sub = turn.subs.find(
+              (s) => s.kind === "message" && !s.hasHtml,
+            );
+            if (sub) sub.setHtml(msg.html);
+            break;
+          }
+
+          // ── Legacy: audio_ready (כעת רק מ-/api/tts לhistorical bubbles) ─
+          case "audio_ready":
+            // כרגע לא בשימוש מ-live; משאירים לתאימות אחורה
+            break;
+
+          case "done":
+            currentTurn = null;
+            // אחרי מעבר ל-streaming TTS אין יותר playQueue; ה-state של ניגון
+            // נמדד דרך currentStream/streamOrder וגם currentlyPlaying (replay).
+            if (!currentlyPlaying && !currentStream && streamOrder.length === 0) {
+              setStatus("מוכן. לחצי כדי לדבר.");
+            }
+            break;
+
+          case "error":
+            showError(msg.message);
+            currentTurn = null;
+            if (!currentlyPlaying && !currentStream && streamOrder.length === 0) {
+              setStatus("שגיאה. לחצי כדי לנסות שוב.");
+            }
+            break;
+
+          // ── היסטוריה ────────────────────────────────────────────────────
+          case "history_start":
+            chatEl.innerHTML = "";
+            turns.length = 0;
+            currentTurn = null;
+            currentUserSub = null;
+            historyLastRole = null;
+            setStatus("טוען היסטוריה…", "thinking");
+            break;
+
+          case "history_chunk":
+            appendHistoryChunk(msg.kind, msg.text);
+            break;
+
+          case "history_tool_call":
+            appendHistoryToolCall(msg);
+            break;
+
+          case "history_done":
+            // התור האחרון נסגר; נכנסים למצב מוכן רגיל
+            currentTurn = null;
+            currentUserSub = null;
+            historyLastRole = null;
+            setStatus("מוכן. לחצי כדי לדבר.");
+            break;
+        }
+      }
+
+      function appendHistoryChunk(kind, text) {
+        if (kind === "user_message") {
+          if (historyLastRole !== "user") {
+            currentUserSub = new SubBubble("user");
+            currentTurn = null;
+            historyLastRole = "user";
+          }
+          currentUserSub.appendText(text);
+        } else {
+          if (historyLastRole !== "agent") {
+            currentTurn = new AgentTurn({ historic: true });
+            turns.push(currentTurn);
+            currentUserSub = null;
+            historyLastRole = "agent";
+          }
+          if (kind === "thought") currentTurn.appendThought(text);
+          else if (kind === "message") currentTurn.appendMessage(text);
+        }
+      }
+
+      function appendHistoryToolCall(msg) {
+        if (historyLastRole !== "agent" || !currentTurn) {
+          currentTurn = new AgentTurn({ historic: true });
+          turns.push(currentTurn);
+          currentUserSub = null;
+          historyLastRole = "agent";
+        }
+        currentTurn.upsertToolCall(msg.toolCallId, {
+          title: msg.title,
+          toolKind: msg.toolKind,
+          status: msg.status,
+        });
+      }
+
+      function shortCwd(p) {
+        if (!p) return "";
+        const parts = p.split("/");
+        return parts.length > 2 ? ".../" + parts.slice(-2).join("/") : p;
+      }
+      function shortId(id) {
+        return id ? id.slice(0, 12) + "…" : "";
+      }
+
+      // ── Recording ──────────────────────────────────────────────────────────
+      async function startRecording() {
+        if (isRecording) return;
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+          let mimeType = "audio/webm;codecs=opus";
+          if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = "audio/webm";
+          if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = "";
+
+          mediaRecorder = new MediaRecorder(
+            stream,
+            mimeType ? { mimeType } : undefined,
+          );
+          audioChunks = [];
+          mediaRecorder.addEventListener("dataavailable", (e) => {
+            if (e.data.size > 0) audioChunks.push(e.data);
+          });
+          mediaRecorder.addEventListener("stop", async () => {
+            stream.getTracks().forEach((t) => t.stop());
+            await sendAudio();
+          });
+          mediaRecorder.start();
+          isRecording = true;
+          btn.classList.add("recording");
+          btn.textContent = "⏺";
+          setStatus("מקליט… לחצי שוב לסיום", "recording");
+        } catch (e) {
+          showError("לא ניתן לגשת למיקרופון: " + e.message);
+        }
+      }
+
+      function stopRecording() {
+        if (!isRecording) return;
+        isRecording = false;
+        btn.classList.remove("recording");
+        btn.textContent = "🎙";
+        setStatus("שולח…");
+        mediaRecorder.stop();
+      }
+
+      async function sendAudio() {
+        const blob = new Blob(audioChunks, {
+          type: mediaRecorder.mimeType || "audio/webm",
+        });
+        const buf = await blob.arrayBuffer();
+        const base64 = arrayBufferToBase64(buf);
+        ws.send(
+          JSON.stringify({
+            type: "audio",
+            data: base64,
+            mimeType: mediaRecorder.mimeType || "audio/webm",
+          }),
+        );
+      }
+
+      function arrayBufferToBase64(buf) {
+        const bytes = new Uint8Array(buf);
+        let s = "";
+        const CHUNK = 0x8000;
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+          s += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+        }
+        return btoa(s);
+      }
+
+      // ── Interaction ────────────────────────────────────────────────────────
+      btn.addEventListener("click", () => {
+        if (!ws || ws.readyState !== 1) {
+          showError("לא מחובר לשרת");
+          return;
+        }
+        if (isRecording) stopRecording();
+        else startRecording();
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (e.code === "Space" && !e.repeat && !btn.disabled) {
+          // לא תופס אם המיקוד בכפתור — כדי לא ליצור double-toggle
+          if (document.activeElement === btn) return;
+          e.preventDefault();
+          if (isRecording) stopRecording();
+          else startRecording();
+        }
+      });
+
+      // ── Car mode (Bluetooth media keys via Media Session API) ────────────
+      // יוצר WAV ריק (שקט) inline, מנגן ב-loop כדי להחזיק את ה-MediaSession
+      // פעיל. כפתורי Play/Pause בבלוטוס יקראו לטוגלים שלנו.
+
+      // צ'יים קצר בהפעלה — feedback אודיו + מקפיץ את MediaSession לפעולה
+      async function playStartupChime(audioCtx) {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = "sine";
+        // שני tones ניחמדים — A5 ואז E6
+        const t = audioCtx.currentTime;
+        osc.frequency.setValueAtTime(880, t);
+        osc.frequency.setValueAtTime(1318.5, t + 0.18);
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.18, t + 0.02);
+        g.gain.linearRampToValueAtTime(0, t + 0.4);
+        osc.connect(g).connect(audioCtx.destination);
+        osc.start(t);
+        osc.stop(t + 0.42);
+        await new Promise((r) => setTimeout(r, 450));
+      }
+
+      // יוצר source של רעש לבן ב-loop רציף (gapless) דרך Web Audio API.
+      // לעומת HTML <audio> עם loop=true, ב-AudioBufferSourceNode הloop הוא
+      // ברמת ה-buffer — לא שומעים שום קליק או הפסקה.
+      function createNoiseSource(audioCtx, durationSeconds, gainValue) {
+        const sampleRate = audioCtx.sampleRate;
+        const buffer = audioCtx.createBuffer(
+          1,
+          Math.round(sampleRate * durationSeconds),
+          sampleRate,
+        );
+        const data = buffer.getChannelData(0);
+        // float32 בטווח [-1, 1]; gain נמוך לפני המכפלה כדי לא להעמיס
+        for (let i = 0; i < data.length; i++) {
+          data[i] = (Math.random() * 2 - 1);
+        }
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.loop = true;
+        const gain = audioCtx.createGain();
+        gain.gain.value = gainValue;
+        source.connect(gain).connect(audioCtx.destination);
+        source.start();
+        return { source, gain };
+      }
+
+      let carNoiseCtx = null;
+      let carNoiseSource = null;
+      let carNoiseGain = null;
+      let carModeActive = false;
+
+      function setMediaSessionState(playing) {
+        if (!("mediaSession" in navigator)) return;
+        navigator.mediaSession.playbackState = playing ? "playing" : "paused";
+      }
+
+      async function enableCarMode() {
+        if (carModeActive) return;
+        if (!("mediaSession" in navigator)) {
+          showError("הדפדפן לא תומך ב-Media Session API");
+          return;
+        }
+
+        // 1. metadata + handlers נרשמים ראשונים, לפני שמתחילים אודיו,
+        //    כדי שהמערכת תזהה אותנו ברגע שאודיו מתחיל לנגן.
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: "voice-acp",
+          artist: "ACP voice interface",
+        });
+
+        // 2+3. AudioContext אחד שמשמש גם לצ'יים וגם ל-noise loop.
+        try {
+          carNoiseCtx = new (window.AudioContext || window.webkitAudioContext)();
+          if (carNoiseCtx.state === "suspended") await carNoiseCtx.resume();
+          await playStartupChime(carNoiseCtx);
+
+          // רעש רציף gapless. duration=5s buffer (בלי קליקים כי ה-loop
+          // ברמת ה-AudioBufferSourceNode). gain=0.015 = רעש רקע נמוך מאוד,
+          // נשמע כ-hiss עדין שלא מפריע אבל מספיק למזיהוי המערכת.
+          const { source, gain } = createNoiseSource(carNoiseCtx, 5, 0.015);
+          carNoiseSource = source;
+          carNoiseGain = gain;
+        } catch (e) {
+          showError("לא ניתן להפעיל אודיו רקע: " + e.message);
+          return;
+        }
+
+        // toggle: כש-state=playing → לחיצה תיקרא pause → התחל הקלטה
+        navigator.mediaSession.setActionHandler("pause", () => {
+          if (btn.disabled) return;
+          if (!isRecording) startRecording();
+          else stopRecording();
+        });
+        navigator.mediaSession.setActionHandler("play", () => {
+          if (btn.disabled) return;
+          if (isRecording) stopRecording();
+          else startRecording();
+        });
+        // אופציונלי — השמע אחרון
+        try {
+          navigator.mediaSession.setActionHandler("previoustrack", () => {
+            replayLastBtn.click();
+          });
+        } catch {}
+
+        setMediaSessionState(true);
+        carModeActive = true;
+        carEnableBtn.textContent = "🚗 בקרת רכב פעילה";
+        carEnableBtn.disabled = true;
+      }
+
+      // לחצן הפעלה — מופיע רק במצב car
+      const carEnableBtn = document.createElement("button");
+      carEnableBtn.id = "car-enable";
+      carEnableBtn.style.cssText =
+        "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);" +
+        "background:var(--accent);color:white;border:none;border-radius:14px;" +
+        "padding:20px 28px;font-size:16px;font-weight:600;cursor:pointer;" +
+        "box-shadow:0 8px 32px rgba(79,140,255,0.5);z-index:1000;";
+      carEnableBtn.textContent = "🚗 הפעל בקרת רכב";
+      carEnableBtn.addEventListener("click", async () => {
+        await enableCarMode();
+        carEnableBtn.remove();
+      });
+      if (carMode) {
+        document.body.appendChild(carEnableBtn);
+      }
+
+      // עדכון state של MediaSession בכל מעבר הקלטה — דרך MutationObserver
+      // על המחלקה של הכפתור (במקום לעטוף את הפונקציות, שזה fragile).
+      const _btnObserver = new MutationObserver(() => {
+        if (!carModeActive) return;
+        // ב-state "playing" של MediaSession → לחיצה תיקרא "pause" handler
+        // אנחנו רוצים שכאשר מקליטים — ה-state יהיה "paused" כדי שהלחיצה
+        // הבאה תיקרא "play" handler ותסיים את ההקלטה.
+        setMediaSessionState(!btn.classList.contains("recording"));
+      });
+      _btnObserver.observe(btn, { attributes: true, attributeFilter: ["class"] });
+
+      // ── Boot ───────────────────────────────────────────────────────────────
+      if (cwd) connect();
+    </script>
+  </body>
+</html>

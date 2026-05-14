@@ -1,0 +1,23 @@
+{
+  "name": "voice-acp-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/server.ts",
+    "start": "bun src/server.ts",
+    "test:tts": "bun src/tts.ts",
+    "test:stt": "bun src/stt.ts",
+    "test:acp": "bun src/acp-bridge.ts"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^0.21.0",
+    "@google/genai": "^2.2.0",
+    "marked": "^18.0.3",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^6.0.0"
+  }
+}
