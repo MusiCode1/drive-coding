@@ -461,11 +461,14 @@ unintelligible, return an empty string.
 
 ## משימות בעבודה (executor)
 
-- **O** — STT prompt + Flash (התחיל 2026-05-14 15:20)
+— (אין כרגע. **v3 הושלם** — ראה "משימות שבוצעו".)
 
 ---
 
 ## משימות שבוצעו
+
+### O — שיפור פרומפט STT + מעבר ל-Flash (2026-05-14 15:30)
+backend: `stt.ts` — `DEFAULT_MODEL` עבר מ-`gemini-flash-lite-latest` ל-`gemini-flash-latest`. `TRANSCRIBE_PROMPT` הורחב עם הוראות פיסוק (פסיק/נקודה/?/!), שבירת פסקאות (`\\n\\n`) בשינויי נושא, "preserve intent" ב-disfluencies, "do NOT add content". `bunx tsc --noEmit` עבר. **v3 הושלם.**
 
 ### N — שמירת הקלטות לדיסק (2026-05-14 15:20)
 backend: מודול חדש `recordings.ts` עם `saveRecording` + `saveRecordingMetadata`, controlled by `VOICE_ACP_SAVE_RECORDINGS` (ברירת מחדל ON). נתיב: `$XDG_CACHE_HOME/voice-acp/recordings`. `ConnState` קיבל `cwd` + `sessionId`. ב-`handleAudio`: שמירה ברקע במקביל ל-STT, metadata אחרי transcript (בלי await). לוג סטטוס בתחילת ריצה. `bunx tsc --noEmit` עבר.

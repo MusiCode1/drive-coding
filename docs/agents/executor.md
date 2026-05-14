@@ -84,11 +84,18 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** פעיל — v3 בעבודה
+- **סטטוס:** סיים — **v3 הושלם** (משימות J-O, 6 commits)
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** משימה O — `backend/src/stt.ts` (Flash + prompt משופר)
+- **עובד על:** —
 
 ## לוג
+
+### [2026-05-14 15:30] ✅ סיימתי משימה O + סיום v3
+`stt.ts`: `DEFAULT_MODEL` עבר ל-`gemini-flash-latest` (לא Lite). `TRANSCRIBE_PROMPT` הורחב עם פיסוק, שבירת פסקאות, ו-"do NOT add content". `bunx tsc --noEmit` עבר.
+
+**סיום סשן v3.** בוצעו 6 משימות J-O לפי הסדר המומלץ, כל אחת קומיט נפרד עם הודעה בעברית בפורמט מוסכם. כל commit כולל עדכון walkthrough.md ו-plan.md. אין שאלות פתוחות.
+
+הצעדים הבאים: בדיקה empirical של אבי דרך השרת ב-tmux + tunnel. שתי tmux sessions של אבי כבר רצות (`voice-acp-server`, `voice-acp-tunnel`) — hot-reload של bun היה אמור לקלוט את כל השינויים. אם יש בעיות, אבי יכוון.
 
 ### [2026-05-14 15:20] ✅ סיימתי משימה N
 מודול חדש `backend/src/recordings.ts` עם save+metadata. ConnState קיבל cwd+sessionId. `handleAudio` שומר ברקע. controlled by `VOICE_ACP_SAVE_RECORDINGS` env (default ON). `bunx tsc --noEmit` עבר.

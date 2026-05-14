@@ -8,20 +8,28 @@
 import { GoogleGenAI, createPartFromBase64, createUserContent } from "@google/genai";
 
 // alias מתעדכן אוטומטית — לא לנעול גרסה.
-// Flash Lite מספיק לתמלול: מהיר, זול, תומך מולטימודל.
-const DEFAULT_MODEL = "gemini-flash-lite-latest";
+// Flash הרגיל (לא Lite) — איכות תמלול עברי טובה יותר; פיסוק ופסקאות.
+const DEFAULT_MODEL = "gemini-flash-latest";
 
 const TRANSCRIBE_PROMPT =
   `The user is speaking Hebrew in a software development context.
-Transcribe the audio exactly as spoken, with minor corrections:
+Transcribe the audio exactly as spoken, with these requirements:
+
+- Add appropriate punctuation (commas, periods, question marks,
+  exclamation marks) at natural pauses and sentence boundaries.
+- Break into paragraphs (use \\n\\n) at major topic shifts or after
+  long pauses (over 1.5 seconds).
 - If a word is unclear, prefer a sensible technological interpretation
   (e.g. "ריאקט" over "ראקת", "באג" over "בק").
-- Fix obvious disfluencies (repetitions, "אה אה", false starts).
+- Fix obvious disfluencies (repetitions, "אה אה", false starts) — but
+  preserve the user's intent and phrasing.
+- Do NOT add content the user did not say. No introductions, no
+  summaries, no commentary, no acknowledgments.
 - Preserve the original language (Hebrew or English).
 
-Output ONLY the transcription itself — no introductions, no quotes,
-no explanations, no formatting. If the audio is silent or unintelligible,
-return an empty string.`;
+Output ONLY the transcription itself, as plain text with punctuation
+and paragraph breaks as instructed. If the audio is silent or
+unintelligible, return an empty string.`;
 
 // instance יחיד — OneCLI מטפל ב-auth בדרך
 const ai = new GoogleGenAI({ apiKey: "placeholder" });
