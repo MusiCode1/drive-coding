@@ -86,9 +86,16 @@
 
 - **סטטוס:** פעיל — v3 בעבודה
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** משימה N — `backend/src/server.ts` (recordings)
+- **עובד על:** משימה O — `backend/src/stt.ts` (Flash + prompt משופר)
 
 ## לוג
+
+### [2026-05-14 15:20] ✅ סיימתי משימה N
+מודול חדש `backend/src/recordings.ts` עם save+metadata. ConnState קיבל cwd+sessionId. `handleAudio` שומר ברקע. controlled by `VOICE_ACP_SAVE_RECORDINGS` env (default ON). `bunx tsc --noEmit` עבר.
+
+שמתי לב ש-Avi הקים שתי tmux sessions במקביל: `voice-acp-server` ו-`voice-acp-tunnel` (כתובת חדשה `musicode-voiceacp.nue.tuns.sh`). הוא בודק empirically. hot-reload של bun יטפל בקובץ החדש אוטומטית.
+
+עובר ל-O — המשימה האחרונה ב-v3.
 
 ### [2026-05-14 15:05] ✅ סיימתי משימה M
 גלילה חכמה לפי user intent. הסרת SCROLL_THRESHOLD_PX + suppressScrollEvents. listeners על wheel/touch/keyboard/mousedown מסמנים userInteractionAt. ה-scroll handler מכבה אוטו רק אם isUser (תוך 500ms מקלט). `node --check` עבר.

@@ -4,6 +4,34 @@
 
 ---
 
+## 2026-05-14 15:20
+
+### משימה N — שמירת הקלטות לדיסק (executor)
+
+**מטרה:** כל הקלטה של המשתמש נשמרת לדיסק יחד עם metadata. בסיס לפיצ'רים עתידיים (replay של סשנים, בחינת prompts שונים על אותה הקלטה).
+
+**מודול חדש: `backend/src/recordings.ts`**
+
+- `recordingsEnabled` + `recordingsDir` exports — לוג בתחילת ריצה.
+- `SAVE_RECORDINGS_ENABLED` — קריאת `process.env.VOICE_ACP_SAVE_RECORDINGS`. ערך `0` או `false` (case-insensitive) משבית. ברירת מחדל: מופעל.
+- נתיב: `$XDG_CACHE_HOME/voice-acp/recordings` או `$HOME/.cache/voice-acp/recordings`.
+- `ensureDir()` עם flag כדי לא לקרוא ל-`mkdir` כל פעם.
+- `saveRecording(base64, mimeType, sessionId)` → מחזיר `RecordingInfo` או `null`. שם: `<ISO-stamp>_<sid-short>.<ext>`. `ext` נגזר מ-mimeType (webm/ogg/mp3/wav/m4a/flac/audio).
+- `saveRecordingMetadata(info, meta)` → כותב את ה-sidecar JSON עם שם תואם.
+- כל שגיאה מודפסת ל-stderr בלי לזרוק — אסור שזה יעצור את ה-flow.
+
+**שינויים ב-`backend/src/server.ts`:**
+
+- import של recordings.
+- `ConnState` קיבל `cwd: string | null` ו-`sessionId: string | null` (נדרשים ל-metadata). שניהם מאותחלים ל-null ב-open.
+- ב-`handleInit`: `state.cwd = msg.cwd` (בתחילה). אחרי `loadSession`/`newSession`: `state.sessionId = sessionResult.sessionId`.
+- ב-`handleAudio`: שמירת ההקלטה מתחילה **ברקע** במקביל ל-STT (`saveRecording` קוראים בלי `await`). אחרי `transcribeAudio` החזיר, `recPromise.then(info => saveRecordingMetadata(...))` בלי await — שכבת ה-IO לא דוחה את התגובה ל-frontend. ה-metadata כולל: timestamp, sessionId, cwd, mimeType, audioSize, transcript, sttModel.
+- לוג בתחילת ריצה: `recordings: ON (path)` או `OFF`.
+
+**אימות:** `bunx tsc --noEmit` עבר. שמירה בפועל תאומת ב-`~/.cache/voice-acp/recordings/` בריצה הבאה.
+
+---
+
 ## 2026-05-14 15:05
 
 ### משימה M — גלילה חכמה לפי user intent (executor)

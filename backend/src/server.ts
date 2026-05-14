@@ -17,6 +17,12 @@ import { createAcpBridge, type AcpBridge } from "./acp-bridge.ts";
 import { VOICE_SYSTEM_PROMPT } from "./system-prompt.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { narrateToolCall, translateThought } from "./gemini-helper.ts";
+import {
+  recordingsDir,
+  recordingsEnabled,
+  saveRecording,
+  saveRecordingMetadata,
+} from "./recordings.ts";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const FRONTEND_DIR = resolve(import.meta.dir, "../../frontend");
@@ -114,6 +120,10 @@ interface ConnState {
    * כרונולוגי. משמש כקונטקסט ל-narrateToolCall.
    */
   recentMessages: string[];
+  /** ה-cwd שנשלח ב-init. נשמר ל-metadata של הקלטות. */
+  cwd: string | null;
+  /** sessionId האקטיבי (אחרי handleInit). נשמר ל-metadata של הקלטות. */
+  sessionId: string | null;
 }
 
 const states = new WeakMap<WebSocket, ConnState>();
@@ -164,6 +174,8 @@ const server = Bun.serve({
         lastAgentMessage: null,
         lastUserText: null,
         recentMessages: [],
+        cwd: null,
+        sessionId: null,
       });
       console.log("[ws] חיבור חדש");
     },
@@ -200,6 +212,9 @@ const server = Bun.serve({
 console.log(`שרת voice-acp רץ ב-http://localhost:${server.port}`);
 console.log(`  GET  http://localhost:${server.port}/    → frontend`);
 console.log(`  WS   ws://localhost:${server.port}/ws    → תקשורת קולית`);
+console.log(
+  `  recordings: ${recordingsEnabled ? "ON" : "OFF"} (${recordingsDir})`,
+);
 
 // ── טיפול בהודעות ────────────────────────────────────────────────────────────
 
@@ -243,8 +258,9 @@ async function handleInit(
     return;
   }
 
-  // שמירת voiceId לשימוש בכל ה-TTS של ה-session הזה
+  // שמירת voiceId + cwd לשימוש בכל ה-TTS וה-recordings של ה-session
   state.voiceId = msg.voice ?? null;
+  state.cwd = msg.cwd;
 
   console.log(
     `[ws] init cwd=${msg.cwd} session=${msg.sessionId ?? "(new)"} voice=${state.voiceId ?? "(default)"}`,
@@ -315,6 +331,8 @@ async function handleInit(
     }
   }
 
+  state.sessionId = sessionResult.sessionId;
+
   send(ws, {
     type: "ready",
     sessionId: sessionResult.sessionId,
@@ -337,13 +355,33 @@ async function handleAudio(
     return;
   }
 
+  // 0. שמירת הקלטה (אופציונלי, controlled by env). מתבצע ברקע במקביל
+  //    ל-STT כדי לא להאריך את ה-latency של התגובה.
+  const mimeType = msg.mimeType ?? "audio/webm";
+  const recPromise = saveRecording(msg.data, mimeType, state.sessionId);
+
   // 1. STT: אודיו → טקסט
   console.log(`[ws] STT (${msg.data.length} chars base64)`);
   const transcript = await transcribeAudio(msg.data, {
-    mimeType: msg.mimeType ?? "audio/webm",
+    mimeType,
     previousResponse: state.lastAgentMessage ?? undefined,
   });
   send(ws, { type: "transcript", text: transcript });
+
+  // השלמת שמירת ההקלטה ברקע + metadata עם transcript.
+  // לא ממתינים — אסור שזה ידחה את ה-prompt או את ה-done.
+  recPromise.then(async (info) => {
+    if (!info) return;
+    await saveRecordingMetadata(info, {
+      timestamp: info.timestamp,
+      sessionId: state.sessionId,
+      cwd: state.cwd,
+      mimeType,
+      audioSize: Buffer.from(msg.data, "base64").byteLength,
+      transcript,
+      sttModel: "gemini-flash-latest",
+    });
+  });
 
   if (!transcript) {
     send(ws, { type: "done" });

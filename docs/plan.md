@@ -461,11 +461,14 @@ unintelligible, return an empty string.
 
 ## משימות בעבודה (executor)
 
-- **N** — שמירת הקלטות לדיסק (התחיל 2026-05-14 15:05)
+- **O** — STT prompt + Flash (התחיל 2026-05-14 15:20)
 
 ---
 
 ## משימות שבוצעו
+
+### N — שמירת הקלטות לדיסק (2026-05-14 15:20)
+backend: מודול חדש `recordings.ts` עם `saveRecording` + `saveRecordingMetadata`, controlled by `VOICE_ACP_SAVE_RECORDINGS` (ברירת מחדל ON). נתיב: `$XDG_CACHE_HOME/voice-acp/recordings`. `ConnState` קיבל `cwd` + `sessionId`. ב-`handleAudio`: שמירה ברקע במקביל ל-STT, metadata אחרי transcript (בלי await). לוג סטטוס בתחילת ריצה. `bunx tsc --noEmit` עבר.
 
 ### M — גלילה חכמה לפי user intent (2026-05-14 15:05)
 frontend: הסרת `SCROLL_THRESHOLD_PX` + `suppressScrollEvents`. מודל חדש מבוסס `userInteractionAt` + listeners על wheel/touch/keyboard/mousedown. ה-scroll handler מכבה אוטו רק אם פעולת קלט קרתה תוך 500ms. תוכן שמתווסף לא יכבה. distance ≤ 10 מחזיר אוטו. `node --check` עבר.
