@@ -663,6 +663,9 @@ jumpDownBtn.addEventListener("click", () => {
 
 ## משימות שבוצעו
 
+### D — חיתוך `flushMessage` לפי גבול משפט (2026-05-14 11:40)
+ב-`server.ts`: `findSentenceBoundary` חדשה (export, יחידה ניתנת לבדיקה). הגנה מקיצורים (Mr./Dr./i.e./e.g.) ומספרים עשרוניים. forced flush ב-200 תווים לעברית. ה-`onChunk` של `message` עושה loop של חיתוך וזרימה. אומת ב-unit test על 8 מקרים. `bunx tsc --noEmit` עבר.
+
 ### C — `gemini-helper.ts` (2026-05-14 11:25)
 קובץ חדש: `backend/src/gemini-helper.ts`. שני exports: `translateThought` (timeout 2500ms, cache לפי טקסט) ו-`narrateToolCall` (timeout 1500ms, cache לפי toolCallId). שתי הפונקציות מטופלות עם withTimeout + try/catch שמחזירים fallback (טקסט מקורי / title גולמי). אומת שה-fallback עובד גם בלי auth.
 

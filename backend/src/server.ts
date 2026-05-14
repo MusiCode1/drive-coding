@@ -414,6 +414,16 @@ async function handleUserInput(
         send(ws, { type: "text_chunk", text: chunk, kind });
         if (kind === "message") {
           messageBuffer += chunk;
+          // חיתוך לפי גבול משפט — מאפשר התחלת TTS מהר ולא לחכות לסוף ההודעה.
+          let boundary = findSentenceBoundary(messageBuffer);
+          while (boundary !== -1) {
+            const head = messageBuffer.slice(0, boundary);
+            const rest = messageBuffer.slice(boundary);
+            messageBuffer = head;
+            flushMessage(); // שולח head, מאפס את messageBuffer ל-""
+            messageBuffer = rest;
+            boundary = findSentenceBoundary(messageBuffer);
+          }
         } else if (kind === "thought" && messageBuffer.length > 0) {
           // thought באמצע — flush של ה-message הנוכחי כדי שיתאים לחלוקת
           // הבועות ב-frontend (כל מעבר kind יוצר בועה חדשה).
@@ -457,6 +467,47 @@ async function handleUserInput(
 }
 
 // ── עזרים ────────────────────────────────────────────────────────────────────
+
+/**
+ * מוצא את גבול המשפט האחרון במחרוזת. מחזיר אינדקס *אחרי* הגבול,
+ * או -1 אם אין גבול בטוח.
+ *
+ * גבולות מזוהים:
+ * - סוף משפט: `.`/`!`/`?` ואחריהם רווח/שורה חדשה.
+ * - נקודתיים + רווח.
+ * - שורה ריקה (`\n\n`).
+ *
+ * הגנות:
+ * - לא חותך אחרי קיצורים שכיחים (`Mr.`, `Dr.`, `i.e.`, `e.g.` וכו').
+ * - לא חותך באמצע מספר עשרוני (`3.14`).
+ *
+ * forced flush: אם אין גבול אבל המחרוזת ארוכה מ-200 תווים, חותך ברווח
+ * האחרון לפני 200 (פתרון לעברית שבה נקודות נדירות יותר).
+ */
+export function findSentenceBoundary(s: string): number {
+  const patterns = [/[.!?][\s\n]/g, /:\s/g, /\n\n+/g];
+  let last = -1;
+  for (const re of patterns) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(s)) !== null) {
+      const end = m.index + m[0].length;
+      if (m[0][0] === ".") {
+        const before = s.slice(Math.max(0, m.index - 3), m.index);
+        if (/\b(Mr|Dr|Mrs|Ms|St|vs|etc|i\.e|e\.g)$/i.test(before)) continue;
+        // מספר עשרוני: 3.14 — דלג
+        if (/\d$/.test(before) && /^\d/.test(s.slice(end))) continue;
+      }
+      if (end > last) last = end;
+    }
+  }
+  // forced flush — מחרוזת ארוכה בלי גבול
+  if (last === -1 && s.length >= 200) {
+    const slice = s.slice(0, 200);
+    const lastSpace = slice.lastIndexOf(" ");
+    return lastSpace > 100 ? lastSpace + 1 : 200;
+  }
+  return last;
+}
 
 function send(ws: any, msg: ServerMessage): void {
   ws.send(JSON.stringify(msg));

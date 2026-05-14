@@ -86,9 +86,16 @@
 
 - **סטטוס:** פעיל
 - **Worktree:** `/home/user/projects/voice-acp` (master — אין worktree נפרד, עובדים על אותו repo)
-- **עובד על:** משימה D — `backend/src/server.ts` (חיתוך flushMessage לפי גבול משפט)
+- **עובד על:** משימה E — תרגום thoughts + הקראה (`server.ts` + `frontend/index.html`)
 
 ## לוג
+
+### [2026-05-14 11:40] ✅ סיימתי משימה D
+ב-`server.ts`: הוספתי `findSentenceBoundary` (export) ועדכנתי את ה-`onChunk` של `message` ל-loop חיתוך-וזרימה. הגנות מקיצורים ומספרים עשרוניים. forced flush ב-200. אומת ב-unit test על 8 מקרים (כולל עברית, אנגלית, Mr./Dr., 3.14, נקודתיים+\\n, forced flush). `bunx tsc --noEmit` עבר.
+
+הזדמנות (לא ב-plan): ה-CLI test הריץ דרך `onecli run --` ועבד יפה — `translateThought` ב-829ms, `narrateToolCall` ב-607ms. learnings.md עודכן עם syntax של `onecli run --`.
+
+עובר ל-E — תלוי ב-C (`translateThought`), שכבר קיים.
 
 ### [2026-05-14 11:25] ✅ סיימתי משימה C
 יצרתי `backend/src/gemini-helper.ts`. שני שירותים: `translateThought` (timeout 2.5s, cache לפי טקסט, fallback מקורי) ו-`narrateToolCall` (timeout 1.5s, cache לפי toolCallId, fallback ל-title). withTimeout + try/catch מבטיחים שאסור שיעצרו את ה-flow.

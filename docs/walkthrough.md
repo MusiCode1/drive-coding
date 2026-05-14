@@ -4,6 +4,42 @@
 
 ---
 
+## 2026-05-14 11:40
+
+### משימה D — חיתוך flushMessage לפי גבול משפט (executor)
+
+**מטרה:** קטעי TTS קצרים יותר → ההקראה מתחילה מהר יותר אחרי שהמודל מתחיל לכתוב, ולא ממתינה לסוף הודעה שלמה.
+
+**`backend/src/server.ts`:**
+
+הוספת `findSentenceBoundary(s: string): number` ב-section "עזרים" (export, לבדיקות יחידה). הפונקציה מחזירה אינדקס *אחרי* הגבול האחרון, או -1.
+
+גבולות מזוהים:
+- `.`/`!`/`?` ואחריהם רווח/שורה חדשה.
+- `:` + רווח.
+- שורה ריקה (`\n\n+`).
+
+הגנות:
+- קיצורים שכיחים (`Mr.`, `Dr.`, `Mrs.`, `Ms.`, `St.`, `vs.`, `etc.`, `i.e.`, `e.g.`) — לא חותך אחרי הנקודה שלהם.
+- מספר עשרוני (`3.14`) — לא חותך באמצע.
+
+forced flush: אם המחרוזת ארוכה מ-200 תווים בלי גבול, חותך ברווח האחרון לפני 200 (או ב-200 אם אין רווח אחרי 100). פתרון לעברית — בה נקודות נדירות יותר.
+
+**ב-`onChunk` עבור `kind === "message"`:** במקום רק לצבור ל-`messageBuffer`, נעשה loop של `while ((boundary = findSentenceBoundary(...)) !== -1)`. כל איטרציה: חיתוך ב-`head` (מ-0 עד הגבול), שמירת `rest`, קריאה ל-`flushMessage()` (ששולח ל-TTS+render ומאפס את ה-buffer ל-""), ואז שמירת `rest` חזרה ב-`messageBuffer`. הלולאה ממשיכה אם יש עוד גבול ב-`rest`.
+
+**הביצוע נשמר ב-rendering:** `flushMessage` ממשיך לקרוא ל-`renderMarkdown` ולשלוח `message_rendered` לפני TTS. סגמנט קצר → רינדור קצר → בועה משלו ב-frontend. הfrontend כבר תומך בקבלה רב-בועתית של "message" (כל `text_chunk + message_rendered` יוצר בועה).
+
+**אומת ב-unit test:**
+- `"ראיתי את הקובץ. הוא נראה תקין."` → גבול ב-16 (חיתוך אחרי "ראיתי את הקובץ. ").
+- `"Hello Mr. Smith and Dr. Jones."` → -1 (קיצורים מוסתרים, ו-"Jones." בסוף בלי רווח לא נחשב גבול).
+- `"The value is 3.14 exactly."` → -1 (3.14 מוגן; "exactly." בסוף בלי רווח לא גבול).
+- `"Section one:\nNext stuff"` → גבול ב-13 (`:\n`).
+- מחרוזת `"x"×220` → גבול ב-200 (forced flush).
+
+`bunx tsc --noEmit` עבר.
+
+---
+
 ## 2026-05-14 11:25
 
 ### משימה C — `gemini-helper.ts` (executor)
@@ -19,7 +55,7 @@
 - שני caches נפרדים: `translationCache: Map<text, hebrew>`, `narrationCache: Map<toolCallId, hebrew>`. אין eviction (POC).
 - כל שגיאה מודפסת ל-stderr בלי לקרוס.
 - שני שירותים מאתחלים `ai = new GoogleGenAI({ apiKey: "placeholder" })` — OneCLI מטפל ב-auth.
-- CLI test entrypoint עם `import.meta.main`: `bun src/gemini-helper.ts "<text>"`. אומת שה-fallback עובד גם בלי OneCLI (API נכשל → טקסט מקורי חוזר ב-285ms).
+- CLI test entrypoint עם `import.meta.main`: `bun src/gemini-helper.ts "<text>"`. אומת ש-fallback עובד בלי OneCLI (API נכשל → טקסט מקורי חוזר ב-285ms) **ושה-happy path עובד דרך OneCLI**: `onecli run -- bun src/gemini-helper.ts "I should check the README first..."` → `"כדאי לי לבדוק את הקובץ ריד-מי קודם כדי להבין את הפרויקט."` ב-829ms (תחת ה-2.5s timeout). גם `narrateToolCall` אומת דרך `onecli run -- bun -e ...` עם `tool: { kind: "read", title: "Read README.md" }` → `"אני קורא את ה-README כדי להבין על מה הפרויקט הזה"` ב-607ms.
 
 `bunx tsc --noEmit` עבר.
 
