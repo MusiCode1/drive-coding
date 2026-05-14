@@ -91,6 +91,12 @@ export interface SessionResult {
 export interface AcpBridge {
   /** ה-session ID של ה-session הפעיל (אם נוצרה). */
   sessionId: string | null;
+  /**
+   * מחזיר עד N שורות אחרונות של stderr של opencode acp. שימושי לדיאגנוסטיקה
+   * כשתוצאה ריקה — לעתים opencode בולע שגיאות provider (כמו "credit balance
+   * too low") ומחזיר stopReason=end_turn בלי לעדכן את ה-client.
+   */
+  getRecentStderr(): string[];
   /** יצירת session חדשה. */
   newSession(): Promise<SessionResult>;
   /**
@@ -127,18 +133,36 @@ export async function createAcpBridge(
 
   // ה-cwd שאנחנו רוצים לעבוד עליו עובר ב-newSession; את התהליך עצמו מריצים מ-cwd
   // הנוכחי (לא משנה כי הוא מקשיב לבקשות).
-  const proc: ChildProcessByStdio<Writable, Readable, Readable | null> = spawn(
+  // stderr תמיד pipe — אנחנו רוצים לקרוא אותו (גם לבליעה וגם לתפיסת errors).
+  // אם printAgentLogs=true — נוסיף --print-logs ל-opencode ונעביר את ה-stderr
+  // ל-stderr שלנו תוך תפיסה במקביל.
+  const proc: ChildProcessByStdio<Writable, Readable, Readable> = spawn(
     opencodeBin,
     ["acp", ...(opts.printAgentLogs ? ["--print-logs"] : [])],
     {
-      stdio: ["pipe", "pipe", opts.printAgentLogs ? "inherit" : "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     },
   ) as any;
 
-  // אם לא רוצים לוגים — לבלוע את ה-stderr כדי שלא תהיה דליפת זיכרון
-  if (!opts.printAgentLogs && proc.stderr) {
-    proc.stderr.on("data", () => {});
-  }
+  // Ring buffer של 100 השורות האחרונות של stderr — לדיאגנוסטיקה במצב error.
+  const STDERR_BUFFER_SIZE = 100;
+  const stderrBuffer: string[] = [];
+  let stderrLineFrag = "";
+  proc.stderr.on("data", (chunk: Buffer | string) => {
+    const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    if (opts.printAgentLogs) {
+      process.stderr.write(text);
+    }
+    stderrLineFrag += text;
+    const lines = stderrLineFrag.split("\n");
+    stderrLineFrag = lines.pop() ?? "";
+    for (const line of lines) {
+      stderrBuffer.push(line);
+      if (stderrBuffer.length > STDERR_BUFFER_SIZE) {
+        stderrBuffer.shift();
+      }
+    }
+  });
 
   // המרת Node streams ל-Web streams (נדרש ע"י ndJsonStream)
   const writableStdin = Writable.toWeb(proc.stdin) as WritableStream<Uint8Array>;
@@ -257,6 +281,10 @@ export async function createAcpBridge(
   const bridge: AcpBridge = {
     get sessionId() {
       return sessionId;
+    },
+
+    getRecentStderr() {
+      return [...stderrBuffer];
     },
 
     async newSession() {

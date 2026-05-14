@@ -4,6 +4,31 @@
 
 ---
 
+## 2026-05-14 17:35
+
+### תיקון הפעלה: OneCLI agent ייעודי + הוצאת שגיאות provider למשתמש
+
+**הבעיה שהתגלתה בריצה empirical:** prompts חזרו ריקים עם `stopReason=end_turn`. הסיבה האמיתית הסתתרה ב-stderr של `opencode acp` שה-bridge בלע: `400 invalid_request_error: "Your credit balance is too low to access the Anthropic API"`. ה-OneCLI default agent (`secretMode: all`) הזריק את ה-Anthropic token שלו לכל קריאה ל-`api.anthropic.com`, עקף את ה-OAuth של opencode plugin, וחייב את הקרדיט של OneCLI במקום את המנוי של המשתמש.
+
+**פתרון:**
+- נוצר OneCLI agent חדש בשם `voice-acp` (id `3f08d584-...`) במצב `selective` עם רק 2 secrets — ElevenLabs (`264c2eb8-...`) ו-Google Generative Language (`df221fc3-...`). **אין** Anthropic.
+- הפעלה: `onecli run --agent voice-acp -- bun src/server.ts`. Anthropic עוברת ישירות דרך OAuth של opencode.
+- `AGENTS.md` עודכן עם ההוראות וההסבר.
+
+**שיפורי דיאגנוסטיקה ב-server:**
+- `backend/src/acp-bridge.ts`: ה-stderr של `opencode acp` נתפס תמיד ל-ring buffer של 100 שורות אחרונות, גם כש-`printAgentLogs=false`. נוספה method `getRecentStderr()`.
+- `backend/src/server.ts`:
+  - env var חדש `VOICE_ACP_VERBOSE=1` מדליק stderr passthrough של opencode ל-stderr של ה-server.
+  - בסיום prompt עם 0 chunks, `extractProviderError` מחפש ב-stderr שורות עם `"message":"..."` של provider errors (credit/auth/rate) או `ERROR ... error=...` של opencode. אם נמצא — שולח `sendError` ל-frontend עם ההודעה האמיתית, במקום "המודל לא ענה".
+  - אם היו thoughts או tool_calls אך לא message — שולח הודעה ידידותית "המודל ביצע פעולות אבל לא חזר עם תשובה מילולית".
+  - לוג סטטוס בתחילת ריצה: `verbose: ON/OFF`.
+
+**Counters ולוגים מפורטים:** הקוד הקיים מסכם בסוף כל prompt: `message=Xch thought=Ych user_msg=Zch tools=Ncreate+Mupdate`, ומדפיס כל tool_call create/update עם kind+title. שימושי לעקיבה גם בלי VERBOSE.
+
+**learnings.md עודכן** עם שני entries: OneCLI default agent injection (drains paid balance), ו-tmux NO_PROXY inheritance.
+
+---
+
 ## 2026-05-14 15:30
 
 ### משימה O — שיפור פרומפט STT + מעבר ל-Flash (executor) — סיום v3

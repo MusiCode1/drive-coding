@@ -27,6 +27,39 @@ import {
 const PORT = Number(process.env.PORT ?? 3000);
 const FRONTEND_DIR = resolve(import.meta.dir, "../../frontend");
 
+/**
+ * האם להציג stderr של opencode acp ב-stderr של ה-server.
+ * controlled by `VOICE_ACP_VERBOSE`. ערך `1`/`true` (case-insensitive) מפעיל.
+ * בכל מקרה, ה-stderr נתפס לbuffer פנימי ל-error extraction.
+ */
+const VERBOSE = (() => {
+  const v = (process.env.VOICE_ACP_VERBOSE ?? "0").toLowerCase();
+  return v === "1" || v === "true";
+})();
+
+/**
+ * מחפש בשורות stderr של opencode patterns של provider errors שלא מועברים דרך
+ * ACP. למשל, שגיאות 400/401/429 של Anthropic/Google שם opencode מחזיר
+ * stopReason=end_turn ובולע את ה-message. מחזיר טקסט קצר ל-frontend.
+ */
+function extractProviderError(stderrLines: string[]): string | null {
+  // מחפשים JSON של "responseBody" שכולל error.message — זה הפורמט של AI_APICallError.
+  for (let i = stderrLines.length - 1; i >= 0 && i >= stderrLines.length - 30; i--) {
+    const line = stderrLines[i];
+    const m = line.match(/"message":"([^"]{10,400})"/);
+    if (m && /credit|invalid|unauthor|forbid|rate|limit|key/i.test(m[1])) {
+      return m[1];
+    }
+  }
+  // לחפש שורת ERROR של opencode במצב error
+  for (let i = stderrLines.length - 1; i >= 0 && i >= stderrLines.length - 50; i--) {
+    const line = stderrLines[i];
+    const m = line.match(/ERROR.*?error=(.+?)(?:\s+stack=|$)/);
+    if (m) return m[1].slice(0, 200);
+  }
+  return null;
+}
+
 // ── סוגי הודעות WebSocket ─────────────────────────────────────────────────────
 
 type ClientMessage =
@@ -215,6 +248,9 @@ console.log(`  WS   ws://localhost:${server.port}/ws    → תקשורת קול�
 console.log(
   `  recordings: ${recordingsEnabled ? "ON" : "OFF"} (${recordingsDir})`,
 );
+console.log(
+  `  verbose:    ${VERBOSE ? "ON" : "OFF"} (set VOICE_ACP_VERBOSE=1 ל-stderr של opencode)`,
+);
 
 // ── טיפול בהודעות ────────────────────────────────────────────────────────────
 
@@ -265,7 +301,7 @@ async function handleInit(
   console.log(
     `[ws] init cwd=${msg.cwd} session=${msg.sessionId ?? "(new)"} voice=${state.voiceId ?? "(default)"}`,
   );
-  state.bridge = await createAcpBridge({ cwd: msg.cwd });
+  state.bridge = await createAcpBridge({ cwd: msg.cwd, printAgentLogs: VERBOSE });
 
   let sessionResult;
   if (msg.sessionId) {
@@ -611,8 +647,25 @@ async function handleUserInput(
     }
 
     if (totalMessageChars === 0) {
-      console.log(`[ws] תשובה ריקה — מדלגים על TTS`);
-      sendError(ws, "המודל לא ענה. נסי לנסח את השאלה אחרת.");
+      // המודל לא הוציא message. ייתכן שזו שגיאת provider שopencode בלע.
+      // ננסה לחלץ אותה מ-stderr של ה-acp child.
+      const stderrLines = state.bridge.getRecentStderr();
+      const providerError = extractProviderError(stderrLines);
+      if (providerError) {
+        console.log(`[ws] תשובה ריקה — שגיאת provider: ${providerError}`);
+        sendError(ws, `שגיאת provider: ${providerError}`);
+      } else if (cntThought > 0 || toolCreates.length > 0) {
+        console.log(
+          `[ws] תשובה ריקה — היו thoughts/tools (${cntThought}ch, ${toolCreates.length}t)`,
+        );
+        sendError(
+          ws,
+          "המודל ביצע פעולות אבל לא חזר עם תשובה מילולית. נסי לבקש סיכום.",
+        );
+      } else {
+        console.log(`[ws] תשובה ריקה — מדלגים על TTS`);
+        sendError(ws, "המודל לא ענה. נסי לנסח את השאלה אחרת.");
+      }
     }
 
     // לא מחכים ל-ttsQueue להסתיים לפני "done" —

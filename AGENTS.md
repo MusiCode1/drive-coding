@@ -57,6 +57,12 @@ open frontend/index.html
 
 **למה `--agent voice-acp` נדרש:** ה-default agent של OneCLI הוא `secretMode: all`, כלומר מזריק את **כל** ה-secrets — כולל Anthropic. ה-OAuth של opencode plugin ל-Anthropic ייעקוף, וכל קריאות ה-API יחויבו על חשבון OneCLI ולא על המנוי של המשתמש. ה-agent `voice-acp` הוא selective עם רק שני secrets (Gemini + ElevenLabs), אז Anthropic עוברת עם OAuth של opencode.
 
+### דיאגנוסטיקה ולוגים
+
+- ברירת מחדל: השרת מדפיס רק לוגים מסוכמים שלו (STT, prompt, סיכום).
+- **`VOICE_ACP_VERBOSE=1`** לפני ה-`onecli run` — מציג גם את ה-stderr המלא של `opencode acp` (מאות שורות INFO/WARN/ERROR פר prompt). שימושי כשמשהו נשבר.
+- בכל מקרה ה-server תופס את 100 שורות ה-stderr האחרונות. אם prompt חזר ריק והייתה שגיאת provider (credit, auth, rate limit), הוא מחלץ את ההודעה ושולח אותה ל-frontend כ-`error` במקום "המודל לא ענה".
+
 ## חוקי עבודה
 
 1. **Frontend** — HTML בודד בלבד. אין build step, אין framework, אין bundler.
