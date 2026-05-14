@@ -4,6 +4,29 @@
 
 ---
 
+## 2026-05-14 11:25
+
+### משימה C — `gemini-helper.ts` (executor)
+
+קובץ חדש: `backend/src/gemini-helper.ts`. שני שירותים לנגישות אודיו דרך `gemini-flash-lite-latest`:
+
+**`translateThought(text)`** — תרגום reasoning של המודל מאנגלית לעברית מדוברת. cache לפי הטקסט המלא; timeout 2500ms; fallback לטקסט המקורי בכל כשל (כולל timeout).
+
+**`narrateToolCall(ctx, tool)`** — ניסוח משפט קצר בעברית שמתאר מה הסוכן הולך לעשות, על בסיס `userMessage` ו-`recentMessages`. הפרומפט כולל 4 דוגמאות (read/bash/edit/build) שמדגימות "תכלית, לא פרמטרים". cache לפי `toolCallId`; timeout 1500ms; fallback ל-`title` הגולמי.
+
+**עיצוב:**
+- `withTimeout` helper: `Promise.race` עם resolve-מהיר ל-fallback. אם ה-API לא חוזר בזמן, ה-flow ממשיך מיד עם ה-fallback. ה-promise המקורי ממשיך ברקע (POC — לא AbortController).
+- שני caches נפרדים: `translationCache: Map<text, hebrew>`, `narrationCache: Map<toolCallId, hebrew>`. אין eviction (POC).
+- כל שגיאה מודפסת ל-stderr בלי לקרוס.
+- שני שירותים מאתחלים `ai = new GoogleGenAI({ apiKey: "placeholder" })` — OneCLI מטפל ב-auth.
+- CLI test entrypoint עם `import.meta.main`: `bun src/gemini-helper.ts "<text>"`. אומת שה-fallback עובד גם בלי OneCLI (API נכשל → טקסט מקורי חוזר ב-285ms).
+
+`bunx tsc --noEmit` עבר.
+
+המודול עצמאי — אין שינוי ב-`server.ts` עדיין. הוא ייכנס לשימוש ב-E ו-F.
+
+---
+
 ## 2026-05-14 11:15
 
 ### משימה B — STT prompt טכנולוגי + context (executor)

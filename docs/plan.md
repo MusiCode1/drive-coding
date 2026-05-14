@@ -663,6 +663,9 @@ jumpDownBtn.addEventListener("click", () => {
 
 ## משימות שבוצעו
 
+### C — `gemini-helper.ts` (2026-05-14 11:25)
+קובץ חדש: `backend/src/gemini-helper.ts`. שני exports: `translateThought` (timeout 2500ms, cache לפי טקסט) ו-`narrateToolCall` (timeout 1500ms, cache לפי toolCallId). שתי הפונקציות מטופלות עם withTimeout + try/catch שמחזירים fallback (טקסט מקורי / title גולמי). אומת שה-fallback עובד גם בלי auth.
+
 ### B — STT prompt טכנולוגי + context (2026-05-14 11:15)
 `stt.ts`: TRANSCRIBE_PROMPT חדש (עברית טכנולוגית, תיקוני disfluencies, שפה מקורית); שדה `previousResponse` ב-SttOptions; אם הועבר נשלח כ-text part לפני האודיו.
 `server.ts`: שדה `lastAgentMessage` ב-ConnState; נשמר ב-flushMessage; מועבר ב-handleAudio. `bunx tsc --noEmit` עבר.

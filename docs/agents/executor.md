@@ -86,9 +86,16 @@
 
 - **סטטוס:** פעיל
 - **Worktree:** `/home/user/projects/voice-acp` (master — אין worktree נפרד, עובדים על אותו repo)
-- **עובד על:** משימה C — `backend/src/gemini-helper.ts` (קובץ חדש)
+- **עובד על:** משימה D — `backend/src/server.ts` (חיתוך flushMessage לפי גבול משפט)
 
 ## לוג
+
+### [2026-05-14 11:25] ✅ סיימתי משימה C
+יצרתי `backend/src/gemini-helper.ts`. שני שירותים: `translateThought` (timeout 2.5s, cache לפי טקסט, fallback מקורי) ו-`narrateToolCall` (timeout 1.5s, cache לפי toolCallId, fallback ל-title). withTimeout + try/catch מבטיחים שאסור שיעצרו את ה-flow.
+
+CLI test ירץ ואומת את ה-fallback (API key לא תקף כי OneCLI לא פעיל ב-shell ישיר → טקסט מקורי חוזר). `bunx tsc --noEmit` עבר.
+
+המודול מוכן לשימוש ב-E ו-F. עובר ל-D (עצמאית).
 
 ### [2026-05-14 11:15] ✅ סיימתי משימה B
 `stt.ts`: TRANSCRIBE_PROMPT חדש עם הוראות עברית טכנולוגית + תיקוני disfluencies. שדה `previousResponse` ב-SttOptions; אם קיים נשלח כ-text part לפני האודיו עם הבהרה "do NOT transcribe this".
