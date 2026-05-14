@@ -86,9 +86,16 @@
 
 - **סטטוס:** פעיל
 - **Worktree:** `/home/user/projects/voice-acp` (master — אין worktree נפרד, עובדים על אותו repo)
-- **עובד על:** משימה B — `backend/src/stt.ts` + `backend/src/server.ts`
+- **עובד על:** משימה C — `backend/src/gemini-helper.ts` (קובץ חדש)
 
 ## לוג
+
+### [2026-05-14 11:15] ✅ סיימתי משימה B
+`stt.ts`: TRANSCRIBE_PROMPT חדש עם הוראות עברית טכנולוגית + תיקוני disfluencies. שדה `previousResponse` ב-SttOptions; אם קיים נשלח כ-text part לפני האודיו עם הבהרה "do NOT transcribe this".
+`server.ts`: `lastAgentMessage` ב-ConnState, נשמר ב-flushMessage, מועבר ב-handleAudio.
+`bunx tsc --noEmit` עבר. ממתין לאישור empirical בשיחה — אבל פיצ'ר additive (אין רגרסיה).
+
+עובר ל-C — יצירת `gemini-helper.ts`.
 
 ### [2026-05-14 11:05] ✅ סיימתי משימה A
 הוספתי שתי שורות ל-`VOICE_SYSTEM_PROMPT` ב-`backend/src/system-prompt.ts`: דגש שהתשובה תוקרא לא תוצג, והבהרה שלמשתמש אין מסך. `bunx tsc --noEmit` עבר. עדכנתי walkthrough + plan.

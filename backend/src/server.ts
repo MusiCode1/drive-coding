@@ -90,6 +90,11 @@ interface ConnState {
   firstPromptSent: boolean;
   /** קול ה-TTS שנבחר ל-session הזה (`voiceId` של ElevenLabs). */
   voiceId: string | null;
+  /**
+   * הקטע האחרון מהודעת המודל ש-flushה. משמש כקונטקסט ל-STT —
+   * עוזר ל-Gemini לפענח מילים דו-משמעיות לפי מה שנאמר קודם.
+   */
+  lastAgentMessage: string | null;
 }
 
 const states = new WeakMap<WebSocket, ConnState>();
@@ -137,6 +142,7 @@ const server = Bun.serve({
         busy: false,
         firstPromptSent: false,
         voiceId: null,
+        lastAgentMessage: null,
       });
       console.log("[ws] חיבור חדש");
     },
@@ -314,6 +320,7 @@ async function handleAudio(
   console.log(`[ws] STT (${msg.data.length} chars base64)`);
   const transcript = await transcribeAudio(msg.data, {
     mimeType: msg.mimeType ?? "audio/webm",
+    previousResponse: state.lastAgentMessage ?? undefined,
   });
   send(ws, { type: "transcript", text: transcript });
 
@@ -385,6 +392,9 @@ async function handleUserInput(
       messageBuffer = "";
       if (!t) return;
       totalMessageChars += t.length;
+      // שמירת הקטע האחרון כקונטקסט ל-STT של ההודעה הבאה.
+      // ה-flush האחרון מספיק — הוא הקטע שזכור למשתמש כשהוא מגיב.
+      state.lastAgentMessage = t;
       // רנדור markdown — נשלח לפני TTS כדי שהממשק יציג מיד את הגרסה היפה
       try {
         const html = renderMarkdown(t);

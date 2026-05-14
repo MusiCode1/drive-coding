@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-05-14 11:15
+
+### משימה B — STT prompt טכנולוגי + context (executor)
+
+המשך v2. שדרוג איכות התמלול של Gemini בשני צירים.
+
+**ב-`backend/src/stt.ts`:**
+
+החלפת `TRANSCRIBE_PROMPT` ל-prompt מורחב שמציין במפורש שהמשתמש מדבר עברית בהקשר של פיתוח תוכנה. ה-prompt החדש מורה למודל להעדיף פירוש טכנולוגי במקרי ספק ("ריאקט" לא "ראקת", "באג" לא "בק"), לתקן disfluencies (חזרות, "אה אה", false starts), ולשמור על השפה המקורית. הוספת שדה אופציונלי `previousResponse?: string` ל-`SttOptions`. אם הועבר — הוא נשלח כ-text part *לפני* האודיו, עם תיוג ברור שזה "for context only — do NOT transcribe this".
+
+**ב-`backend/src/server.ts`:**
+
+הוספת `lastAgentMessage: string | null` ל-`ConnState`, אתחול ל-`null` ב-`open`. ב-`flushMessage` כל cycle שומר את הקטע האחרון ב-`state.lastAgentMessage`. ב-`handleAudio` הקריאה ל-`transcribeAudio` כוללת עכשיו `previousResponse: state.lastAgentMessage ?? undefined`.
+
+**המוטיבציה:** בשיחה רציפה, מילים דו-משמעיות כמו "פונקציה" / "פוסיציה", "באג" / "בק", "Edit" / "אדיט" — תלויות בקונטקסט. Gemini עם הקטע האחרון של המודל מקבל את ה-context הזה ישירות. שמירת ה-flush האחרון בלבד (לא צבירה) — זה הקטע שזכור למשתמש כשהוא מגיב.
+
+`bunx tsc --noEmit` עבר.
+
+---
+
 ## 2026-05-14 11:05
 
 ### משימה A — חיזוק `system-prompt.ts` (executor)

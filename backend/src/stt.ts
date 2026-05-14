@@ -12,9 +12,16 @@ import { GoogleGenAI, createPartFromBase64, createUserContent } from "@google/ge
 const DEFAULT_MODEL = "gemini-flash-lite-latest";
 
 const TRANSCRIBE_PROMPT =
-  "Transcribe this audio exactly as spoken, preserving the original language. " +
-  "Return only the transcription — no introductions, no explanations, no quotes, " +
-  "no formatting. If the audio is silent or unintelligible, return an empty string.";
+  `The user is speaking Hebrew in a software development context.
+Transcribe the audio exactly as spoken, with minor corrections:
+- If a word is unclear, prefer a sensible technological interpretation
+  (e.g. "ריאקט" over "ראקת", "באג" over "בק").
+- Fix obvious disfluencies (repetitions, "אה אה", false starts).
+- Preserve the original language (Hebrew or English).
+
+Output ONLY the transcription itself — no introductions, no quotes,
+no explanations, no formatting. If the audio is silent or unintelligible,
+return an empty string.`;
 
 // instance יחיד — OneCLI מטפל ב-auth בדרך
 const ai = new GoogleGenAI({ apiKey: "placeholder" });
@@ -26,6 +33,8 @@ export interface SttOptions {
   mimeType?: string;
   /** prompt מותאם אישית (אם רוצים שפה ספציפית, סגנון וכו'). */
   prompt?: string;
+  /** הודעת המודל הקודמת — תיכלל כקונטקסט לתמלול מדויק יותר. */
+  previousResponse?: string;
 }
 
 /**
@@ -46,6 +55,11 @@ export async function transcribeAudio(
   const response = await ai.models.generateContent({
     model,
     contents: createUserContent([
+      ...(opts.previousResponse
+        ? [
+            `Recent assistant message (for context only — do NOT transcribe this): "${opts.previousResponse}"`,
+          ]
+        : []),
       createPartFromBase64(audioBase64, mimeType),
       prompt,
     ]),

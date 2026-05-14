@@ -663,6 +663,10 @@ jumpDownBtn.addEventListener("click", () => {
 
 ## משימות שבוצעו
 
+### B — STT prompt טכנולוגי + context (2026-05-14 11:15)
+`stt.ts`: TRANSCRIBE_PROMPT חדש (עברית טכנולוגית, תיקוני disfluencies, שפה מקורית); שדה `previousResponse` ב-SttOptions; אם הועבר נשלח כ-text part לפני האודיו.
+`server.ts`: שדה `lastAgentMessage` ב-ConnState; נשמר ב-flushMessage; מועבר ב-handleAudio. `bunx tsc --noEmit` עבר.
+
 ### A — חיזוק `system-prompt.ts` (2026-05-14 11:05)
 הוספת שתי שורות לסעיף "חוקי תגובה" של `VOICE_SYSTEM_PROMPT`: דגש שהתשובה תוקרא ולא תוצג, ושלמשתמש אין מסך. `bunx tsc --noEmit` עבר.
 
