@@ -4,6 +4,34 @@
 
 ---
 
+## 2026-05-15 03:30 (master, planner-agent Tama)
+
+### תכנון vNext — מחקר מקיף: prior art, ספריות, ארכיטקטורה
+
+אבי ביקש מחקר על: (1) האם יש ACP bridges בוגרים, (2) האם מישהו כבר עשה voice-CLI, (3) ספריות שיכולות לחסוך פיתוח, (4) ארכיטקטורה רעיונית להפרדת backend.
+
+נכתב `docs/vnext-research.md` חדש (8 פרקים, ~500 שורות).
+
+**5 ממצאים שמשנים את הארכיטקטורה:**
+
+1. **`@flutur/acp-http-bridge` (Alemusica/acp-http-bridge)** — adapter שמיישם בדיוק את הרעיון של אבי מ-D23 — bridge שעוטף ACP stdio agents ב-WebSocket + HTTP/SSE. מבוסס RFD רשמית. תכונות כבר ממומשות: WebSocket מלא, persistent sessions עם `session/load`, multi-tab fan-out, 18 tests passing. בוטל ה-package שלנו `packages/acp-bridge/` — נצרוך את שלהם. נוספה D25.
+
+2. **RFD רשמית קיימת ב-ACP** — "Streamable HTTP & WebSocket Transport". `Acp-Connection-Id` + `Acp-Session-Id` headers, HTTP/2 required, single `/acp` endpoint. אנחנו מיישרים לזה. נוספה D26.
+
+3. **`evanstern/voice-coda`** — מתחרה ישיר באנגלית. React Router 7 PWA + Hono + tRPC + openWakeWord + Whisper + OpenAI/Google/Piper TTS. תומך Anthropic/Claude Code/OpenCode (אבל לא דרך ACP — adapters ידניים). אנגלית בלבד, אין RTL, generic chat UI. ה-niche הייחודי שלנו ברור: **ACP + עברית + drive-first**. נוספה D29 (ללמוד, לא להעתיק).
+
+4. **ספריות functional TS:** `neverthrow` + `Zod` מספיקות. לא Effect-TS (paradigm shift כבד מדי, ROI נמוך). `@ricky0123/vad-web` ל-VAD בעתיד (2k★, Silero VAD via ONNX, מוכן). נוספה D27.
+
+5. **Hexagonal architecture עם 5 layers:** Pure Core (no IO) / Ports (interfaces) / Adapters (implementations) / Application (orchestration) / Delivery (HTTP+WS). דוגמת קוד מלאה ב-research §5. נוספה D28.
+
+עדכוני monorepo: הסרת `packages/acp-bridge/`, הוספת תיקיה `core/ports/` עם interfaces, תיקיה `backend/adapters/` עם implementations, וtree מסודר יותר ל-`backend/app/`, `backend/delivery/`. רשימת dependencies חיצוניים מפורטת.
+
+3 שאלות חדשות פתוחות: (Q-NEW-1) להשתמש ב-bridge as-is / contribute / fork? (Q-NEW-2) להוסיף Whisper+Piper local options ל-MVP? (Q-NEW-3) ללמוד מ-voice-coda?
+
+המסמך `vnext-architecture.md` גדל ל-~920 שורות. `vnext-research.md` חדש ב-~500 שורות.
+
+---
+
 ## 2026-05-15 02:50 (master, planner-agent Tama)
 
 ### תכנון vNext — שכבה 1.7: acp-bridge + Claude Code

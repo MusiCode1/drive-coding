@@ -88,9 +88,32 @@
 
 - **סטטוס:** פעיל — המשך סשן `ses_1d26848f8ffetPtC3UQ2eLBrpt` (planner). שלב: דיון על ארכיטקטורת הגרסה הבאה.
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** ✅ שכבה 1.7. נוספו D23 (acp-bridge) + D24 (claude-agent-acp). פרק חדש §7.4a, עדכון monorepo + deployment diagram. נסגרו Q12+Q18, נוספו Q14a (bridge protocol) + Q14b (wake word library).
+- **עובד על:** ✅ מחקר מקיף — `docs/vnext-research.md` חדש. נמצא ACP bridge מוכן (`@flutur/acp-http-bridge`). נמצא מתחרה ישיר (`voice-coda`). 5 החלטות חדשות D25-D29. monorepo עודכן.
 
 ## לוג
+
+### [2026-05-15 03:30] ✅ מחקר מקיף — `vnext-research.md` + 5 החלטות חדשות
+אבי ביקש מחקר על: ACP bridges קיימים, voice-CLI prior art, ספריות מועילות, ארכיטקטורת backend פונקציונלית.
+
+נכתב מסמך חדש `docs/vnext-research.md` (8 פרקים, ~500 שורות) עם ממצאים שמשנים את הארכיטקטורה:
+
+**ממצא #1 — `@flutur/acp-http-bridge` (Alemusica/acp-http-bridge):** קיים adapter שמיישם בדיוק את הרעיון של אבי מ-D23. מבוסס על RFD רשמית של ACP, WebSocket מלא + HTTP/SSE alpha, persistent sessions עם `session/load` ל-resume אחרי restart, multi-tab fan-out. **18 בדיקות עוברות.** במקום לכתוב bridge משלנו → נצרוך אותו. בוטל ה-package `packages/acp-bridge/` מהמונורפו, נוספה D25.
+
+**ממצא #2 — RFD רשמית קיימת:** [Streamable HTTP & WebSocket Transport](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/rfds/streamable-http-websocket-transport.mdx). headers: `Acp-Connection-Id` + `Acp-Session-Id`. POST + GET (SSE) או WebSocket upgrade על `/acp` endpoint יחיד. אנחנו מיישרים — D26.
+
+**ממצא #3 — `voice-coda` (evanstern):** מתחרה ישיר! React Router 7 PWA + Hono+tRPC + openWakeWord + Whisper + OpenAI/Google/Piper TTS. תומך Anthropic/Claude Code/OpenCode (אבל **לא דרך ACP** — adapters ידניים). אנגלית בלבד, אין RTL, אין drive-first UX. ה-niche הייחודי שלנו ברור: ACP + עברית + drive-first. נוספה D29.
+
+**ממצא #4 — ספריות:** `neverthrow` + `Zod` מספיקות, לא Effect-TS (כבד מדי). `@ricky0123/vad-web` ל-VAD בעתיד (2k stars, Silero VAD via ONNX). נוספה D27.
+
+**ממצא #5 — Hexagonal architecture עם 5 layers:** Pure Core / Ports / Adapters / Application / Delivery. דוגמת קוד מלאה ב-research §5. נוספה D28.
+
+עדכונים ל-`vnext-architecture.md`:
+- 5 החלטות חדשות (D25-D29).
+- §7.4a עודכן — `@flutur/acp-http-bridge` במקום bridge משלנו.
+- §8 monorepo — הסרת `packages/acp-bridge/`, dependencies חיצוניים מפורטים.
+- 3 שאלות חדשות (Q-NEW-1: use as-is / contribute / fork; Q-NEW-2: Whisper+Piper local options; Q-NEW-3: voice-coda כ-reference).
+
+הצעדים הבאים: ממתין לתשובות אבי על Q9-Q17 + Q-NEW-1-3. אז שכבה 2 — sequence diagrams, API spec, WS protocol spec לפי ACP RFD.
 
 ### [2026-05-15 02:50] ✅ שכבה 1.7 — acp-bridge + Claude Code adapter
 אבי הציע 3 דברים:

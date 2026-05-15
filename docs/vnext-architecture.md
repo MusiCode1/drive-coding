@@ -170,6 +170,11 @@
 | **D22** | **אין הקלדה ב-MVP** | קולי בלבד. לא נעול — נשקול אחר כך |
 | **D23** | **`acp-bridge`: stdio↔WebSocket wrapper** | רעיון אבי. כל agent רץ כתהליך עצמאי, חושף WS. backend מתחבר. שורד נפילת backend. |
 | **D24** | **Claude Code דרך `@agentclientprotocol/claude-agent-acp`** | adapter רשמי, 1.9k stars, v0.34.0 (2026-05-15). תומך תמונות, MCP, slash commands |
+| **D25** | **השתמש ב-`@flutur/acp-http-bridge`** — לא לכתוב משלנו | קיים, מיישר ל-RFD רשמית, WebSocket + HTTP/SSE, persistent sessions. ראה `vnext-research.md` §1 |
+| **D26** | **התאם את WebSocket protocol ל-ACP Streamable HTTP & WebSocket RFD** | headers: `Acp-Connection-Id`, `Acp-Session-Id`. spec רשמי קיים |
+| **D27** | **אמץ neverthrow + Zod, לא Effect-TS** | קל, ROI גבוה, ללא paradigm shift |
+| **D28** | **Hexagonal architecture עם 5 layers** | Pure Core / Ports / Adapters / Application / Delivery. ראה `vnext-research.md` §5 |
+| **D29** | **`voice-coda` הוא reference architecture** | מתחרה ישיר באנגלית. ללמוד, לא להעתיק. הייחוד שלנו: ACP + עברית + drive-first |
 
 ---
 
@@ -370,32 +375,43 @@
 **אחריות:** initialize, session/new, session/prompt, session/cancel, parsing של session/update.
 **Sub-domains:** `AcpTransport` (websocket-to-bridge / stdio), `AcpClient` (logic).
 
-### 7.4a ACP Bridge (חדש — רעיון אבי)
-**מה:** תהליך עוטף שמריץ CLI agent עם stdio, וחושף אותו ב-WebSocket.
-**אחריות:** spawn(CLI), proxy של JSON-RPC בין stdio של ה-CLI ל-WS לlocal client (= backend שלנו), survival.
-**מחזור חיים:**
-1. backend → `POST /agents` ל-bridge-manager.
-2. bridge-manager spawn-טי `acp-bridge` חדש (תהליך נפרד, `setsid`).
-3. ה-bridge spawn-טי את ה-CLI (opencode/claude/gemini) כ-child.
-4. ה-bridge פותח WS על port דינמי, מודיע ל-manager.
-5. backend מתחבר ל-WS, מבצע ACP handshake דרך ה-bridge.
-6. אם backend נופל → ה-WS נסגר, ה-bridge ממשיך לרוץ, ה-CLI ממשיך לעבד events.
-7. backend חוזר → מתחבר מחדש ל-bridge, מקבל את ה-pending updates.
-8. למשתמש "כיבוי" → backend שולח `shutdown` ל-bridge, שמת graceful.
+### 7.4a ACP Bridge — צרכן של `@flutur/acp-http-bridge` (עדכון D25)
 
-**Pure?** לא — תהליך עצמאי עם state ו-IO. אבל ה-logic של ה-routing/buffering יהיה pure.
+הרעיון של אבי כבר ממומש בעולם. אנחנו לא בונים — אנחנו צורכים.
 
-**יתרונות:**
-- Survival: backend נופל, agent ממשיך.
-- Decoupling: backend יכול להתעדכן בלי לסיים agents.
-- Future-proof: agents אפשר לחלוק בין משתמשים (לא במכוון, אבל אפשרי).
-- אגנוסטי לCLI: כל CLI שדובר ACP-over-stdio עובד בלי שינוי.
+**מה זה:** `@flutur/acp-http-bridge` הוא npm package שעוטף ACP stdio agents ב-WebSocket + HTTP/SSE. מיישר ל-[RFD רשמית](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/rfds/streamable-http-websocket-transport.mdx).
 
-**עלות:**
-- שכבת process נוספת ל-spawn/לנהל.
-- צריך protocol קטן בין backend ל-bridge (JSON-RPC over WS — ACP מוצף).
-- צריך mechanism ל-process discovery (`bridge-manager`).
-- צריך buffer של pending updates ב-bridge ל-replay אחרי reconnect.
+**איך אנחנו משתמשים בו:**
+```ts
+// packages/backend/src/adapters/acp-bridge-transport.ts
+import { startBridge } from "@flutur/acp-http-bridge"
+
+export async function createBridgeTransport(cliBin: string, cwd: string) {
+  const handle = await startBridge({
+    agentBin: cliBin,
+    cwd,
+    port: 0, // OS-assigned
+  })
+  // Returns handle with .shutdown() and WS URL
+  return { wsUrl: handle.url, shutdown: handle.shutdown }
+}
+```
+
+**מה אנחנו מקבלים חינם:**
+- ✅ stdio↔WebSocket wrapping
+- ✅ HTTP/SSE alternative
+- ✅ Persistent sessions (disk + `session/load` resume)
+- ✅ Multi-tab fan-out (כל ה-clients מקבלים אותם notifications)
+- ✅ ACP handshake handling
+
+**מה עדיין חסר ושנצטרך לפתח:**
+- ❌ Interactive `requestPermission` (כרגע auto-approve בלבד)
+- ❌ Multi-session per connection
+- ❌ Resumability דרך `Last-Event-ID`
+
+**אסטרטגיה:** נשתמש as-is ב-MVP. כשנצטרך multi-session (slice 6+) — נפתח PRs לקהילה. ראה `vnext-research.md` §1.
+
+**Survival:** ה-bridge רץ כ-child process שלנו במונחים של מי שspawn-ים אותו, אבל הוא תהליך נפרד עם sessionId נשמר ב-disk. backend נופל → bridge ממשיך → backend חוזר → `session/load` מצליח → reconnect שקוף.
 
 ### 7.5 Voice Pipeline
 **מה:** STT → LLM router → TTS.
@@ -422,48 +438,52 @@
 ```
 drive-coding/
 ├── packages/
-│   ├── protocol/          # types משותפים (frontend + backend + bridge)
+│   ├── protocol/          # Zod schemas + types משותפים
 │   │   ├── src/
-│   │   │   ├── ws-messages.ts   # FE↔BE WS message types
-│   │   │   ├── bridge.ts        # BE↔Bridge WS message types (ACP envelope)
-│   │   │   ├── api.ts           # HTTP API types
-│   │   │   └── agent.ts         # Agent/Session domain types
+│   │   │   ├── ws-messages.ts   # FE↔BE WS protocol (Zod)
+│   │   │   ├── api.ts           # HTTP API types (Zod)
+│   │   │   ├── agent.ts         # Agent/Session domain types
+│   │   │   └── acp-envelope.ts  # ACP types (re-export from @agentclientprotocol/sdk)
 │   │   └── package.json
 │   │
-│   ├── core/              # functional core (pure logic, shared with bridge)
+│   ├── core/              # ⭐ Pure functional core — NO IO
 │   │   ├── src/
-│   │   │   ├── acp/             # ACP parsing, types, JSON-RPC envelope
-│   │   │   ├── voice/           # STT/TTS/translation logic (pure)
-│   │   │   ├── pipeline/        # voice pipeline orchestration (pure)
-│   │   │   └── i18n/            # i18n core
+│   │   │   ├── ports/           # interfaces (SttProvider, TtsProvider, AcpTransport, CacheStore)
+│   │   │   ├── voice/           # pipeline planning, sentence-boundary, decisions
+│   │   │   ├── acp/             # message parsing, provider-error extraction
+│   │   │   ├── cache/           # cache key derivation, eviction policies (pure)
+│   │   │   └── i18n/            # message catalogs + formatting
+│   │   ├── tests/               # 100% pure unit tests
 │   │   └── package.json
 │   │
-│   ├── acp-bridge/        # ⭐ חדש — wrapper של CLI agent
+│   ├── backend/           # Imperative shell — IO + adapters + delivery
 │   │   ├── src/
-│   │   │   ├── bridge.ts        # entry — spawn CLI + WS server
-│   │   │   ├── manager.ts       # spawn/list/kill bridges (לbackend)
-│   │   │   ├── stdio-proxy.ts   # CLI stdio ↔ WS message routing
-│   │   │   ├── buffer.ts        # pending updates queue (לreconnect)
-│   │   │   └── lifecycle.ts     # spawn, watchdog, shutdown
-│   │   ├── package.json
-│   │   └── Dockerfile
+│   │   │   ├── server.ts        # entry: HTTP + WS server
+│   │   │   ├── boot.ts          # wire ports ↔ adapters
+│   │   │   ├── adapters/        # implementations של ports
+│   │   │   │   ├── acp-bridge-transport.ts    # uses @flutur/acp-http-bridge
+│   │   │   │   ├── gemini-stt.ts
+│   │   │   │   ├── gemini-translator.ts
+│   │   │   │   ├── elevenlabs-tts.ts
+│   │   │   │   ├── whisper-local-stt.ts       # optional (BYOC)
+│   │   │   │   ├── piper-tts.ts               # optional (BYOC)
+│   │   │   │   ├── disk-cache.ts
+│   │   │   │   └── memory-cache.ts
+│   │   │   ├── app/             # application orchestration
+│   │   │   │   ├── voice-orchestrator.ts
+│   │   │   │   ├── agent-orchestrator.ts
+│   │   │   │   └── identity.ts
+│   │   │   └── delivery/        # HTTP routes, WS handlers
+│   │   │       ├── http-api.ts
+│   │   │       └── ws-handler.ts
+│   │   ├── Dockerfile
+│   │   └── package.json
 │   │
-│   ├── backend/           # imperative shell (services, IO)
-│   │   ├── src/
-│   │   │   ├── server.ts        # entry point, HTTP + WS (לfrontend)
-│   │   │   ├── identity/        # token issuance/validation
-│   │   │   ├── orchestrator/    # agent lifecycle (delegates ל-bridge-manager)
-│   │   │   ├── bridge-client/   # WS client ל-acp-bridge instances
-│   │   │   ├── adapters/        # Gemini, ElevenLabs HTTP clients
-│   │   │   └── cache/           # CacheStore implementations
-│   │   ├── package.json
-│   │   └── Dockerfile
-│   │
-│   └── frontend/          # SvelteKit app
+│   └── frontend/          # SvelteKit (drive-first UI)
 │       ├── src/
 │       │   ├── routes/
 │       │   │   ├── +page.svelte             # dashboard
-│       │   │   ├── agent/[id]/+page.svelte  # ממשק קולי
+│       │   │   ├── agent/[id]/+page.svelte  # ממשק קולי (כפתור גדול)
 │       │   │   ├── agent/new/+page.svelte   # יצירת agent חדש
 │       │   │   └── settings/+page.svelte
 │       │   ├── lib/
@@ -473,21 +493,31 @@ drive-coding/
 │       │   │   │   └── AgentCard.svelte
 │       │   │   ├── stores/
 │       │   │   │   ├── agent.ts             # per-agent store factory
-│       │   │   │   ├── dashboard.ts         # רשימת agents
+│       │   │   │   ├── dashboard.ts
 │       │   │   │   └── settings.ts
 │       │   │   ├── api/                     # WS+HTTP clients
 │       │   │   ├── audio/                   # MediaRecorder + playback
-│       │   │   └── i18n/                    # locale loading
+│       │   │   └── i18n/                    # locale loading (Paraglide?)
 │       │   └── app.html
 │       └── package.json
 │
-├── docs/                  # תיעוד שמועתק מהPOC + מסמך זה
-├── tests/                 # integration tests חוצי-package
-├── docker-compose.yml     # backend + (n × bridges)
+├── docs/                  # תיעוד
+├── tests/                 # cross-package integration tests
+├── docker-compose.yml
 ├── bun-workspace.json     # או pnpm-workspace
-├── package.json
-└── README.md
+└── package.json
 ```
+
+**Dependencies חיצוניים מרכזיים:**
+- `@flutur/acp-http-bridge` — wrapping ACP stdio agents (D25)
+- `@agentclientprotocol/sdk` — types ושיתוף
+- `@agentclientprotocol/claude-agent-acp` — Claude Code adapter (D24)
+- `neverthrow` — `Result<T, E>` ב-core (D27)
+- `zod` — schemas ב-protocol (D27)
+- `@google/genai` — STT/translator
+- `@ricky0123/vad-web` — VAD בעתיד (לא ב-MVP)
+
+**הסרה משמעותית:** ה-package `packages/acp-bridge/` שתוכנן ב-D23 הוסר. אנחנו לא בונים — אנחנו צורכים את `@flutur/acp-http-bridge` (D25).
 
 ### 8.2 Key boundaries
 
