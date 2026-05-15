@@ -86,11 +86,40 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** פעיל — ✅ v6 ירד למאסטר (fast-forward `45a6992..cd463ac`). ממתין להחלטה על המשך.
+- **סטטוס:** פעיל — המשך סשן `ses_1d26848f8ffetPtC3UQ2eLBrpt` (planner). שלב: דיון על ארכיטקטורת הגרסה הבאה.
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** —
+- **עובד על:** ✅ שכבה 1 של `docs/vnext-architecture.md` נכתבה. ממתין לתשובות אבי על 8 שאלות פתוחות (§5 + נספח B).
 
 ## לוג
+
+### [2026-05-15 01:45] ✅ שכבה 1 של `vnext-architecture.md` הושלמה
+מסמך תכנון חדש ב-`docs/vnext-architecture.md`. 11 פרקים + 2 נספחים. מכסה: עקרונות מנחים (functional core/imperative shell, ACP-agnostic, agent-as-entity, stateless+cache, FE/BE separation, types משותפים, i18n מובנה), 12 החלטות locked, 8 שאלות פתוחות (deployment target, ACP transport, agent orchestration, cache backend, identity, pricing/BYOK, i18n scope, frontend routes), mental model (tmux for AI agents), 7 domains, monorepo structure (protocol/core/backend/frontend), deployment story, 10 vertical slices ב-roadmap.
+
+נחתמתי כ-Tama בפרויקט הזה. אבי הוא בן — לפנות בלשון זכר.
+
+הצעדים הבאים: ממתין לתשובות אבי על 8 שאלות. אחרי זה, שכבה 2 — חפירה לעומק בכל domain (data models, sequence diagrams, API spec, protocol spec).
+
+### [2026-05-15 01:30] דיון ארכיטקטוני עם אבי — סיכום
+שיחה במוד יועץ: 4 תורות. החלטות שנלקחו:
+- Greenfield, לא ריפקטור (worktree `voice-acp-v2`).
+- TS + Bun (backend), SvelteKit (frontend).
+- Functional core, imperative shell — לא fp library (Effect.ts/fp-ts).
+- ACP transport מופשט (תמיכה ב-multi-CLI, לא רק opencode).
+- Agent process כ-entity עצמאית — שורד סגירת דף (כמו tmux/codenomad).
+- אין DB משלנו, רק cache לתרגום/תמלול/הקראה.
+- Frontend = full app (routing, dashboard, multi-session), לא SPA יחיד.
+- רב-לשוני, בענן (Cloudflare Containers / Fly.io / VPS — לא Workers/Vercel functions).
+
+מחקר מהיר: ACP הוא JSON-RPC 2.0 transport-agnostic. אין implementation רשמית של ACP-over-HTTP — כולם stdio. נבנה `AcpTransport` interface כדי להישאר open ל-HTTP בעתיד.
+
+אבי עובר לטקסט-first (לא דרך הממשק הקולי). אני יכולה לחזור ל-markdown מלא במסמכים.
+
+### [2026-05-15 01:15] התחלתי המשך סשן — קראתי את ההיסטוריה ואת המצב
+המשכתי סשן קודם דרך `mcp_Conversations_read`. סיכום: v6 ירד למאסטר ב-fast-forward (15ebc8b), הניקיון הושלם (worktree + branch + tmux sessions של refactor הוסרו), השרת הראשי על port 3000 ממשיך לרוץ. ה-master נקי פרט לשני קבצים מקומיים שלא קומטו: `docs/plan.md` (תוספת סעיף ג — באגי config.html של Avi) ו-`docs/future-features.md` (תוספת סעיפים 18+19 — hold music לכתיבת קבצים, ו-message-id cache). אלה תוספות שלי מהסשן הקודם שצריכות להיכנס לקומיט עצמאי.
+
+Avi שאלה לתכנן "ארכיטקטורה אופטימלית לגרסה הבאה". יש שלוש פרשנויות אפשריות: (1) פיצ'רים על אותה ארכיטקטורה — config bugs, שכבה 7 של tts-queue priority/cancel, פיצ'רים מ-future-features; (2) ריפקטור frontend (`index.html` 2000+ שורות → קומפוננטות / Svelte); (3) חשיבה מחדש על המודל — pesristence משלנו, branching, multi-modal, multi-agent.
+
+עוברת למוד יועץ — שואלת את Avi לפני שאני נכנסת לתכנון.
 
 ### [2026-05-15 01:00] ✅ merge: refactor → master (v6 הושלם)
 Avi בדקה את הריפקטור empirically דרך מנהרת `musicode-musicode-voiceacp-refactor.nue.tuns.sh` (port 3001, OneCLI agent voice-acp, tmux sessions `voice-acp-refactor-server` + `voice-acp-refactor-tunnel`). אישרה שכל ההתנהגויות נשמרו, כולל הקפיצה המיידית מהקראת מחשבה למסר ברגע שמוכן (משימה L).

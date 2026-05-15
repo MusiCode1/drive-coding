@@ -4,6 +4,34 @@
 
 ---
 
+## 2026-05-15 01:45 (master, planner-agent Tama)
+
+### תכנון vNext — מסמך ארכיטקטורה ראשון
+
+אבי ביקש לתכנן את הגרסה הבאה מאפס — לא ריפקטור של ה-POC. דיון מורחב במוד יועץ עם planner-agent (חתום Tama). ארבעה תורות עיקריים:
+
+1. **שאלות-על:** איפה ירוץ (ענן/מקומי)? עם opencode HTTP או stdio? תשובה: רב-לשוני, בענן, ACP על פני vendor lock-in.
+2. **דרישות הליבה:** CLI שורד סגירת דף, multi-session, הפעלה/כיבוי כמו codenomad, worktree לפיתוח מקביל.
+3. **שפה ופרדיגמה:** TS על Bun (אבי מכיר), SvelteKit ל-frontend, functional core + imperative shell (לא fp library מלאה — כדי לאפשר port עתידי ל-Go).
+4. **frontend מלא:** routing, dashboard, settings — לא SPA יחיד.
+
+תוצר: `docs/vnext-architecture.md` — שכבה ראשונה (11 פרקים + 2 נספחים, ~600 שורות). מכסה: עקרונות מנחים, 12 החלטות locked, 8 שאלות פתוחות, mental model ("tmux לסוכני AI"), 7 domains, monorepo structure, deployment story, ו-roadmap של 10 vertical slices.
+
+החלטות בולטות שננעלו:
+- Greenfield ב-worktree `voice-acp-v2`. ה-POC ב-master ימשיך לעבוד עד מעבר.
+- Backend ו-frontend נפרדים מהיום הראשון (services נפרדים, types משותפים ב-package `@voice-acp/protocol`).
+- Agent process = entity עצמאית עם UUID. WebSocket = subscription, לא lifecycle.
+- אין DB משלנו. רק cache (memory/disk/R2/KV) ל-Gemini ו-ElevenLabs.
+- ACP transport מופשט (`AcpTransport` interface). stdio ל-MVP, HTTP בעתיד אם יבשיל.
+
+שאלות פתוחות שאבי צריך לענות עליהן (נספח B במסמך): hosting target (Fly.io / Cloudflare Containers / VPS), agent orchestration model (parent process / systemd / containers), cache backend, identity strategy (anonymous → OAuth?), pricing model (BYOK?), i18n scope, frontend routes.
+
+מחקר טכני: ACP הוא JSON-RPC 2.0 transport-agnostic. אין implementation רשמית של ACP-over-HTTP — כל הסוכנים מדברים stdio.
+
+תוספות לקבצים מ-master שהיו לפני סשן זה (לא קומטו עדיין): סעיף ג ב-`plan.md` (באגי config.html של אבי), סעיפים 18+19 ב-`future-features.md` (hold music, message-id cache). יקומטו יחד עם המסמך החדש.
+
+---
+
 ## 2026-05-14 23:55 (worktree `voice-acp-refactor` / branch `refactor`)
 
 ### v6 שכבה 7 — message router + parser + lifecycle helpers + 22 בדיקות
