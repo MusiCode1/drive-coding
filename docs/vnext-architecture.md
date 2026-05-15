@@ -1,9 +1,10 @@
-# vNext Architecture — voice-acp
+# vNext Architecture — drive-coding (לשעבר voice-acp)
 
-> **סטטוס:** טיוטה ראשונה (שכבה 1 — עקרונות, החלטות, חלוקה למודולים).
-> **כותב:** Tama (planner agent), בדיון עם Avi.
+> **סטטוס:** טיוטה שנייה (שכבה 1.5 — עקרונות, החלטות, מודולים, UX, תשובות לשאלות פתוחות).
+> **כותב:** Tama (planner agent), בדיון עם אבי.
 > **תאריך התחלה:** 2026-05-15.
-> **לא קוד פעיל** — תיעוד תכנון. הקוד יבוצע ב-worktree נפרד `voice-acp-v2`.
+> **שם מועדף:** `drive-coding` (אבי לאישור).
+> **לא קוד פעיל** — תיעוד תכנון. הקוד יבוצע ב-worktree נפרד `drive-coding` (או `voice-acp-v2` זמני).
 
 ---
 
@@ -27,7 +28,13 @@
 
 ### מה הגרסה הבאה עושה
 
-ממשק שיחה רב-לשוני, רב-משתמש (אנונימי בהתחלה), שמתפקד כשכבה קולית מעל **כל CLI agent שמדבר ACP** — לא רק opencode. רץ בענן, נגיש מכל דפדפן, עם dashboard לניהול סשנים פעילים.
+**ממשק קולי לסוכני CLI לשימוש hands-free.**
+
+ממשק שיחה רב-לשוני (עברית קודם, אנגלית אחר כך), רב-משתמש (אנונימי), שמתפקד כשכבה קולית מעל **כל CLI agent שמדבר ACP** — opencode, Gemini CLI, Claude Code (דרך adapter), וכל מה שיגיע. מיועד בעיקר לשימוש במצבים שהידיים תפוסות: **נהיגה ("drive coding"), שטיפת כלים, ריצה, בישול**. רץ בקונטיינר אצל אבי בפרוקסמוקס, נגיש דרך מנהרת Cloudflare, מיועד לאימוץ קהילתי של מפתחים.
+
+### תיאור בכמה מילים (אבי, 2026-05-15)
+
+> ממשק קולי לסוכני CLI. יש ממשקים גרפיים כמו codenomad או opencode WEB. אני יוצר ממשק קולי שבו ניתן לנהל את ה-CLI בשיחה קולית בזמן נהיגה או שטיפת כלים. אפשר להתחבר לכל CLI תומך ACP, גם Claude Code תומך עם מתאם.
 
 ### מה הגרסה הבאה איננה
 
@@ -142,127 +149,114 @@
 | D1 | TypeScript + Bun ב-backend | אבי מכיר; port עתידי ל-Go אפשרי דרך פונקציונלי |
 | D2 | SvelteKit ב-frontend | אבי בחר במפורש |
 | D3 | Greenfield, לא ריפקטור | "לתכנן את הכל מחדש" |
-| D4 | Worktree `voice-acp-v2` | master ימשיך לעבוד עד מעבר |
+| D4 | Worktree `voice-acp-v2` (או `drive-coding`) | master ימשיך לעבוד עד מעבר |
 | D5 | Functional core, imperative shell | לא fp library מלא |
 | D6 | ACP transport מופשט | תמיכה ב-multi-CLI; transport pluggable |
-| D7 | Agent process = entity עצמאית | "tmux for AI agents" — שורד סגירת דף |
-| D8 | אין DB משלנו | רק cache (KV/R2/disk) ל-Gemini+ElevenLabs |
+| D7 | Agent process = entity עצמאית | שורד סגירת דף; אבל ימות עם backend ב-MVP |
+| D8 | אין DB משלנו | רק cache (memory→disk→R2 בעתיד) ל-Gemini+ElevenLabs |
 | D9 | Backend ו-frontend נפרדים | services נפרדים, API מתועד, types משותפים |
-| D10 | i18n מובנה מהתחלה | אין hardcoded strings |
-| D11 | Identity אנונימי בהתחלה | token ב-localStorage; auth אמיתי בעתיד |
+| D10 | i18n מובנה מהתחלה | אין hardcoded strings; **שפת ברירת מחדל: עברית** |
+| D11 | Identity אנונימי, **לא עכשיו OAuth** | token ב-localStorage; auth אמיתי לעתיד אם נדרש |
 | D12 | Multi-session מהתחלה | dashboard, routing |
+| **D13** | **שם הפרויקט: `drive-coding`** (לאישור אבי) | משקף את היעד — voice-first hands-free |
+| **D14** | **Deployment ראשון: Proxmox container + CF tunnel** | אצל אבי. ענן ציבורי בעתיד אם נדרש |
+| **D15** | **ACP transport: stdio בלבד ל-MVP** | HTTP יעלה רק אם survival מקבל עדיפות |
+| **D16** | **Agent dies with backend (MVP)** | survival mechanism נדחה לאחרי MVP |
+| **D17** | **Cache: disk בלבד ל-MVP** | abstraction `CacheStore` תאפשר R2/KV אחר כך |
+| **D18** | **Pricing: BYOC (Bring Your Own CLI)** | המשתמש משתמש ב-CLI שלו עם המינוי שלו. אנחנו משלמים רק על STT/TTS (Gemini, ElevenLabs) |
+| **D19** | **UX: כפתור גדול יחיד** | start/stop של הקלטה + cancel של model במצב "speaking" |
+| **D20** | **שפות התחלה: עברית בלבד** | אנגלית כשירגיש בשל |
+| **D21** | **Frontend routes** מאושרים (§5 Q8) | `/`, `/agent/new`, `/agent/:id`, `/settings` |
+| **D22** | **אין הקלדה ב-MVP** | קולי בלבד. לא נעול — נשקול אחר כך |
 
 ---
 
-## 5. שאלות פתוחות
+## 5. שאלות פתוחות (היסטוריה + חדשות)
 
-### Q1. איפה לפרוס את ה-backend?
+### ✅ נסגרו (תשובות אבי, 2026-05-15)
 
-האופציות:
+**Q1. איפה לפרוס?** → Proxmox container אצל אבי + Cloudflare tunnel. אימוץ קהילתי של מפתחים. ראה §9.
 
-| אופציה | יתרונות | חסרונות |
-|--------|---------|---------|
-| **Fly.io** | persistent volumes, multi-region, container native, זול | לא Cloudflare-native |
-| **Cloudflare Containers** (beta) | Cloudflare-native, אינטגרציה עם R2/KV, edge | beta — risky for production |
-| **Railway / Render** | פשוט להתחיל, deploy מ-git | פחות שליטה |
-| **VPS פרטי (Hetzner/DO)** | זול, שליטה מלאה | תחזוקה ידנית |
-| **Coder Workspaces** (אצלי) | חינם לי | רק לדוגמה ולפיתוח |
+**Q2. ACP transport?** → stdio בלבד ל-MVP. `AcpTransport` interface נשמר open. HTTP יהיה רלוונטי רק אם survival יקבל עדיפות.
 
-**המלצה לעת עתה:** להתחיל עם **Coder workspace** לפיתוח ו-staging, ולתכנן ל-**Fly.io** ל-production. Cloudflare Containers נשמור כיעד ארוך-טווח אם תתבגר.
+**Q3. Agent orchestration?** → ההורה (backend) מריץ. CLI ימות עם backend ב-MVP. בעתיד נשקול survival אם זה כואב.
 
-**ממתין להחלטת אבי.**
+**Q4. Cache?** → disk ל-MVP. abstraction תאפשר R2/KV אחר כך.
 
-### Q2. ACP transport — stdio או HTTP?
+**Q5. Identity?** → אנונימי, OAuth לא עכשיו.
 
-מצב נוכחי:
-- ACP הוא JSON-RPC 2.0, transport-agnostic מבחינה תיאורטית.
-- אין implementation רשמית של ACP-over-HTTP שמצאתי. כולם משתמשים ב-stdio (subprocess).
-- opencode חושף **HTTP API משלו** (לא ACP — API פנימי שגיליתי בעבר ב-port אקראי, ראה learnings 2026-05-11). זה יעזור לבעיית "agent ממשיך לרוץ אחרי סגירת דף", אבל יקבע אותנו ל-opencode.
+**Q6. Pricing?** → **BYOC** (Bring Your Own CLI). המשתמש משתמש ב-CLI עם מינוי משלו (`opencode` עם OAuth/sub, `gemini` עם key משלו וכו'). אנחנו ממומנים רק את STT/TTS (Gemini ו-ElevenLabs) אצל אבי, או BYOK לאלה בעתיד. קהל יעד: **מפתחים**, לא קהל רחב.
 
-**הצעה:** לבנות `AcpTransport` interface מההתחלה. לעת עתה — `StdioTransport` (כמו היום). אם בעתיד תגיע HTTP transport רשמית, נוסיף `HttpTransport` בלי לשבור כלום. ה-CLIs האחרים (Gemini CLI, Claude Code) רובם מדברים stdio בכל מקרה.
+**Q7. i18n?** → עברית בלבד מהיום הראשון. אנגלית כשירגיש בשל. **i18n layer מובנה בכל זאת** כדי שתוספת שפה תהיה pull request של JSON, לא ריפקטור.
 
-**ממתין לאישור אבי.**
+**Q8. Frontend routes?** → טיוטה אושרה. הוסף `/settings` למפתחי STT/TTS כשנעבור ל-BYOK.
 
-### Q3. Agent process orchestration — איך מנהלים את הdaemons?
+---
 
-הדרישה: agent process חי גם אחרי שהדפדפן נסגר. צריך service ב-backend שמחזיק registry של agents חיים.
+### ⏳ שאלות חדשות שעלו (סשן 2026-05-15)
 
-האופציות:
+#### Q9. שם הפרויקט סופי
 
-**A. Single backend process מנהל כל ה-agents כ-children שלו.**
-- פשוט. ה-backend הוא parent ל-spawn(opencode).
-- בעיה: אם ה-backend נופל, כל ה-agents מתים.
-- בעיה: scaling — agent אחד לא יכול לעבור בין backends.
+הצעות, לפי סדר ההמלצה שלי:
 
-**B. Daemon per agent — systemd / supervisord.**
-- כל agent הוא service נפרד ברמת ה-OS.
-- ה-backend רק מדבר איתו (דרך socket/HTTP).
-- שורד נפילת backend.
-- מורכב יותר ל-deploy.
+| שם | תחושה | הערות |
+|----|--------|------|
+| **`drive-coding`** ⭐ | ברור, ספציפי לקהל יעד | מומלץ. tagline: "voice interface for CLI agents" |
+| `drive-assistant` | רחב יותר | פחות "מפתחים", יותר "אביזר" |
+| `roadcode` | קצר, ייחודי, פנוי | חמוד. פחות מתאר |
+| `whilecode` | משחק על `while` loop + `while driving` | פנוי, גיקי, אבל לא מסביר עצמו |
+| `voxcode` | vox = קול | פחות drive-y |
 
-**C. Container per agent.**
-- כמו ב-Coder. כל agent הוא container.
-- isolation מקסימלי.
-- overhead גדול יותר.
+**ההמלצה שלי: `drive-coding`.** ניתן להישאר עם `voice-acp` בתור worktree זמני עד שתחליט. ממתין לאישור.
 
-**המלצה ראשונית:** **A** ל-MVP. ה-backend הוא parent. אם נצטרך resilience, נעבור ל-B אחר כך. **ממתין להחלטה.**
+#### Q10. Stop mechanism — איך עוצרים את המודל באמצע
 
-### Q4. Cache — איפה לאחסן?
+ניתחתי שלוש אופציות (ראה דיון בסשן):
 
-לפי הסביבה:
+| אופציה | יתרון | חיסרון |
+|--------|-------|---------|
+| **A.** כפתור stop נפרד | חד-משמעי | שני כפתורים — לא drive-friendly |
+| **B.** **אותו כפתור הקלטה** | כפתור אחד, חוויה זורמת | false-positive אפשרי |
+| **C.** מילת מפתח ("עצור"/"די") | hands-free | false-positive, רעש |
 
-| סביבה | TTS audio | Translation text | STT text |
-|-------|-----------|------------------|----------|
-| dev (Coder) | disk (`./cache/`) | in-memory + disk | in-memory + disk |
-| Fly.io | volume (mounted) | volume | volume |
-| Cloudflare Containers | R2 | KV | R2 (אם כדאי) |
+**ההמלצה שלי: B.** במצב `speaking`, לחיצה על הכפתור הגדול = (1) `session/cancel` ל-ACP, (2) עצירת TTS playback מיד, (3) פתיחת הקלטה חדשה. זה ה-state machine הבסיסי של ה-UI. ממתין לאישור.
 
-**הצעה:** abstraction `CacheStore` עם implementations: `MemoryCache`, `DiskCache`, `R2Cache`, `KvCache`. ה-app בוחר בזמן ריצה לפי env.
+#### Q11. Wake word — מתי להיכנס?
 
-**ממתין לאישור אבי.**
+אבי הזכיר wake word ל-hands-free טהור. ההצעה שלי: **לא ב-MVP**. אחרי שהגרסה הבסיסית יציבה ויש משתמשים, נכניס POC נפרד עם Picovoice Porcupine או Web Speech API. נדרוש שיהיה דטרמיניסטי מאוד (false-positive rate נמוך מ-1 בשעה). ממתין לאישור שזה הסדר הנכון.
 
-### Q5. Identity — איך מתחיל, איך מתבגר?
+#### Q12. Backend survival — האם נטפל בזה אחרי MVP?
 
-**שלב 1 (MVP):** anonymous token ב-localStorage. הdashboard של המשתמש = כל ה-agents שיש ל-token שלו.
-- **חיסרון:** אם המשתמש מנקה את ה-localStorage או עובר דפדפן — מאבד את הסשנים.
+ב-D16 הוחלט: agent מת עם backend. אבל אם backend נופל פעמיים בשבוע כי יש bug, זה הופך לכאב. השאלה היא **מתי** לחזור לזה:
+- **Option A:** רק אם זה הופך לבעיה בפועל (reactive).
+- **Option B:** אחרי slice 5 (MVP voice working) — לפני שיש משתמשים אחרים.
 
-**שלב 2 (אם נדרש):** OAuth (GitHub / Google) או magic link — token נשמר ב-server-side K/V עם user ID.
+**ההמלצה שלי: A.** Bun + supervisord = backend ש-restartים תוך 1-2 שניות. ה-cost של "פתח agent מחדש" הוא נמוך. ממתין לאישור.
 
-**הצעה:** להתחיל עם anonymous, לתכנן את ה-data model כך שמעבר ל-authenticated לא ידרוש שינוי שיברה. **ממתין לאישור.**
+#### Q13. הקלדה — האם וכמה
 
-### Q6. Pricing — מי משלם על Gemini ו-ElevenLabs?
+אבי אמר "לא קנאי" להחלטה לא לאפשר הקלדה. השאלה: באיזה stage להוסיף?
+- **לא ב-MVP** — קולי בלבד פותח את כל ההנחות (אין צורך ב-keyboard handling, אין דאגה מ-IME).
+- **אם נוסיף אחר כך:** input field שמופיע בלחיצת toggle, שולח prompt כ-text במקום audio. הצרכים שונים: לא צריך STT, לא צריך הקלטה. הצורך כן: הצגת הטקסט בבועה.
 
-ב-POC המקומי — הכל אבי. בענן עם משתמשים אנונימיים — מי משלם?
+**ההמלצה שלי:** לא ב-MVP. נחזור לזה כשמשתמש קונקרטי יבקש. ממתין לאישור.
 
-**אופציות:**
-1. **חינם (אבי משלם הכל)** — נפתח לעולם, נראה מה קורה. מסוכן אם viralizes.
-2. **BYOK (Bring Your Own Key)** — המשתמש מזין את ה-keys שלו ל-Gemini/ElevenLabs. אין עלות ל-host.
-3. **Quota** — חינם עד X דקות/חודש, אחרי זה צריך מפתח משלך.
+#### Q14. UI Components — כמה מינימליסטי?
 
-**הצעה:** BYOK בהתחלה — הכי בטוח. UI שמבקש מפתחות בשימוש ראשון, שומר ב-localStorage או על השרת ל-token שלו. **דרושה החלטה.**
+עוד פירוט על "כפתור גדול":
 
-### Q7. i18n — מאיפה השפה נקבעת?
+**מסך agent חי (`/agent/:id`):**
+- כפתור עגול ענק במרכז (3 מצבים: idle / recording / speaking).
+- מעל הכפתור: בועות שיחה (scroll history).
+- מתחת לכפתור: סטטוס טקסטואלי קטן ("מקליט...", "המודל חושב...", "מדבר...").
+- בפינה: כפתור hamburger לתפריט (חזרה ל-dashboard, settings, כיבוי agent).
+- **זה הכל.** אין tabs, אין side panels, אין pop-ups.
 
-**אופציות:**
-1. שפת הדפדפן (`Accept-Language` header).
-2. ידנית ב-preferences של המשתמש.
-3. גם וגם — auto-detect אבל ניתן לשנות.
+**Dashboard (`/`):**
+- רשימת agents חיים (cards גדולים).
+- כפתור "+ סוכן חדש" גדול בראש.
 
-**הצעה:** #3. **אבל גם:** השפה של ה-conversation (מה שהמודל יענה ובמה אבי מדבר) היא **נפרדת** משפת ה-UI. למשל, UI באנגלית אבל אבי מדבר בעברית.
-
-### Q8. Frontend routes / pages — מה יש?
-
-טיוטה ראשונית:
-
-```
-/                   — landing / dashboard (רשימת agents חיים)
-/agent/new          — יצירת agent חדש (בחירת CLI, cwd, model)
-/agent/:id          — הממשק הקולי עצמו (חי)
-/settings           — preferences (voice, language, API keys)
-/login              — בעתיד (auth)
-```
-
-**ממתין לאישור.**
+**אישור?**
 
 ---
 
@@ -458,46 +452,147 @@ export function createAgentStore(agentId: string) {
 ### 9.1 Architecture diagram
 
 ```
-┌─────────────────────────┐
-│   Browser (SvelteKit)   │
-│   served from CDN       │
-└──────────┬──────────────┘
-           │ WebSocket + HTTPS
-           ▼
-┌─────────────────────────┐         ┌──────────────────┐
-│   Backend Service       │◄────────│  R2 / KV (cache) │
-│   (Bun on Fly.io)       │         └──────────────────┘
-│   - HTTP API            │
-│   - WebSocket           │         ┌──────────────────┐
-│   - Agent Orchestrator  │◄────────│  Gemini API      │
-│   - Voice Pipeline      │         └──────────────────┘
-└──────────┬──────────────┘
-           │ stdio                  ┌──────────────────┐
-           ▼                        │  ElevenLabs API  │
-┌─────────────────────────┐◄────────└──────────────────┘
-│  CLI Agent Processes    │
-│  (opencode/Gemini/etc)  │
-│  spawned as children    │
-└─────────────────────────┘
+              ┌────────────────────────────┐
+              │   Public users (mobile,    │
+              │   browser, in-car)         │
+              └──────────────┬─────────────┘
+                             │ HTTPS / WSS
+                             ▼
+                  ┌──────────────────────┐
+                  │  Cloudflare Tunnel   │ (no public IP)
+                  └──────────┬───────────┘
+                             │
+                             ▼
+   ┌──────────────────────────────────────────────────┐
+   │   Proxmox host (אצל אבי)                          │
+   │  ┌──────────────────────────────────────────┐    │
+   │  │  Container: drive-coding (LXC/Docker)    │    │
+   │  │                                          │    │
+   │  │  ┌──────────────────────────┐            │    │
+   │  │  │  Backend (Bun)           │            │    │
+   │  │  │  - HTTP + WebSocket      │            │    │
+   │  │  │  - Agent Orchestrator    │            │    │
+   │  │  │  - Voice Pipeline        │            │    │
+   │  │  │  - Static frontend serve │            │    │
+   │  │  └──────────┬───────────────┘            │    │
+   │  │             │ stdio                      │    │
+   │  │  ┌──────────▼───────────────┐            │    │
+   │  │  │  CLI Agent children      │            │    │
+   │  │  │  (opencode/gemini/...)   │            │    │
+   │  │  └──────────────────────────┘            │    │
+   │  │                                          │    │
+   │  │  Volume mount: /data/cache               │    │
+   │  └──────────────────────────────────────────┘    │
+   └──────────────────────────────────────────────────┘
+                             │
+              ┌──────────────┴───────────────┐
+              ▼                              ▼
+     ┌──────────────────┐          ┌──────────────────┐
+     │  Gemini API      │          │  ElevenLabs API  │
+     └──────────────────┘          └──────────────────┘
 ```
 
 ### 9.2 Environments
 
 | Env | Where | Purpose |
 |-----|-------|---------|
-| `dev` | Coder workspace, local | פיתוח יומיומי |
-| `staging` | Fly.io app `voice-acp-staging` | בדיקות עם build אמיתי |
-| `prod` | Fly.io app `voice-acp` | אבי ועוד אם נוסיף |
+| `dev` | Coder workspace / מחשב אישי | פיתוח יומיומי |
+| `prod` | Proxmox container אצל אבי | היחיד לעת עתה |
 
 ### 9.3 Frontend deploy
 
-SvelteKit עם adapter סטטי → Cloudflare Pages. קל, חינם, edge.
+**שלב 1 (MVP):** Frontend נבנה ל-static (SvelteKit adapter-static) ומוגש על-ידי ה-backend עצמו על אותו origin. פשטות מעל הכל.
 
-חלופה: adapter-node ב-image של ה-backend (אם נרצה SSR לעומס SEO — כנראה לא).
+**שלב 2 (אם הקהילה גדלה):** SvelteKit ל-Cloudflare Pages, backend נשאר ב-Proxmox עם CORS. עוזר ל-latency גלובלי ול-edge caching של static assets.
 
 ### 9.4 Backend deploy
 
-Bun ב-Docker על Fly.io. volume ל-cache. multi-region אם נרצה latency לא ישראלי.
+Bun ב-Docker בתוך LXC. Container תקין כ-Docker host. אם נעדיף LXC native — Bun מותקן ישירות, יותר קליל אבל פחות isolated.
+
+Volume mount ל-`/data/cache` (TTS audio, translation text, STT cache).
+
+Cloudflare tunnel (`cloudflared`) רץ או על ה-host או בקונטיינר נפרד, מצביע ל-`localhost:3000`.
+
+### 9.5 Updates
+
+- Push ל-`main` branch (אחרי שעוברים מ-worktree).
+- GitHub Actions: build + push Docker image ל-ghcr.io.
+- Container אצל אבי משתמש ב-Watchtower או webhook להזנקת `docker pull && restart`.
+
+לעת עתה זה future. בשלב הראשון — `git pull && docker compose up -d --build` ידני.
+
+---
+
+## 9.6 UX Principles — Drive-First
+
+זה הדגש המרכזי שמבדיל את הפרויקט מ-codenomad או opencode web. כל החלטת UI נשפטת לפי **"האם זה עובד עם ידיים על ההגה ועיניים על הכביש?"**.
+
+### עקרונות
+
+1. **כפתור אחד גדול במרכז.** start/stop של הקלטה + cancel של מודל. אין כפתור נפרד לכל פעולה.
+2. **Touch targets מינימום 80px.** אצבע בנהיגה לא מדייקת.
+3. **High contrast, large text.** הבועות גדולות, ניתנות לקריאה גם במבט קצר.
+4. **TTS-first feedback.** כל מצב חשוב גם נשמע (לא רק נראה). למשל "מקליט" לא רק טקסט קטן — גם צליל אישור.
+5. **בלי modals/dialogs.** הם דורשים אצבע מדויקת והסתכלות.
+6. **בלי scroll מורכב.** scroll הבועות אוטומטי, אין pinch-zoom.
+7. **Wake lock + landscape lock.** המסך לא יכבה, ולא יסתובב באמצע ריצה.
+8. **Media Session API.** כפתור bluetooth ברכב יוכל להפעיל/לעצור הקלטה.
+
+### UI Surfaces
+
+| Surface | Purpose | Style |
+|---------|---------|-------|
+| Dashboard `/` | רשימת agents חיים + כפתור "+ חדש" | cards גדולים, scroll vertical |
+| Agent live `/agent/:id` | ממשק קולי פעיל | כפתור גדול במרכז, בועות מעליו |
+| Settings `/settings` | קולות, שפה, מפתחות BYOK בעתיד | רגיל, לא drive-friendly |
+| Agent new `/agent/new` | בחירת CLI, cwd, model | רגיל. רק לפני הנהיגה |
+
+### State Machine של הכפתור הגדול
+
+```
+                    ┌──────────────────┐
+              ┌────►│      idle         │◄────┐
+              │     └─────────┬────────┘     │
+              │               │ click         │
+              │               ▼               │ done speaking
+              │     ┌──────────────────┐     │ (no user click)
+              │     │   recording       │     │
+              │     └─────────┬────────┘     │
+              │               │ click         │
+              │ click         ▼               │
+              │     ┌──────────────────┐     │
+              │     │  processing       │     │
+              │     │ (STT + ACP)       │     │
+              │     └─────────┬────────┘     │
+              │               │ first chunk   │
+              │               ▼               │
+              │     ┌──────────────────┐     │
+              │     │   speaking        │─────┘
+              │     │ (model streaming) │
+              │     └─────────┬────────┘
+              │               │ click (interrupt)
+              │               ▼
+              │     ┌──────────────────┐
+              └─────│   cancelling      │
+                    │ (cancel + audio   │
+                    │  stop)            │
+                    └──────────────────┘
+                             │
+                             ▼
+                       (back to recording)
+```
+
+### צבעי המצב (לכפתור הגדול)
+
+| State | Color | אנימציה |
+|-------|-------|---------|
+| idle | אפור כחלחל | אין |
+| recording | אדום עז | פעימה רכה (1Hz) |
+| processing | סגול | rotation slow |
+| speaking | ירוק | waveform או pulse לפי volume |
+| cancelling | כתום | flash מהיר |
+
+ממתין לאישור / שיפור.
 
 ---
 
@@ -610,20 +705,67 @@ git worktree add ../voice-acp-v2 -b vnext
 
 ---
 
-## נספח B — שאלות שאבי צריך לענות עליהן
+## נספח A2 — Comparison: drive-coding vs existing tools
 
-(תקציר של §5 לנוחות)
+| כלי | Voice? | Multi-CLI? | RTL? | Hands-free? | OS / Platform |
+|-----|--------|------------|------|-------------|---------------|
+| **codenomad** | ❌ | ❌ (opencode only) | ✅ | ❌ | Web |
+| **opencode web** | ❌ | ❌ | ⚠️ חלקי | ❌ | Web |
+| **Zed** | ❌ | ✅ (ACP) | ❌ (כתב מראה!) | ❌ | Desktop |
+| **Claude desktop** | ⚠️ TTS only | ❌ | ✅ | ❌ | Desktop |
+| **drive-coding (vNext)** | ✅ | ✅ (ACP) | ✅ | ✅ | Web (mobile-first) |
 
-1. איפה לפרוס? (Fly.io / Cloudflare Containers / VPS)
-2. ACP transport — להישאר עם stdio בלבד או לבנות גם HTTP?
-3. Agent orchestration — backend הוא parent (פשוט) או systemd (resilience)?
-4. Cache backend — disk ל-MVP או לקפוץ ישר ל-R2?
-5. Identity — אנונימי ל-MVP, OAuth מתי?
-6. Pricing — BYOK / quota / hosted?
-7. i18n — מה השפות לתמוך? (he, en, אחרות?)
-8. Frontend routes — האם הטיוטה ב-§5 Q8 מספקת?
+ה-niche הייחודי שלנו: **voice + multi-CLI + RTL + drive-friendly**. אין מתחרה ישיר. ה-CLI החזק ביותר עם voice היום הוא Whisper.cpp + ChatGPT plugins, אבל זה לא מחובר לקודינג עם ACP.
+
+ה-prior art שכן קיים — Whisperflow, Wispr Flow — הם כללי לכל typing, לא ל-coding workflow. drive-coding ממוקד בסוכני קוד.
+
+### השלכה ל-codenomad
+
+אבי הזכיר: "הייתי רוצה ש-codenomad יתחבר דרך ACP ל-CLI מרובים ולא רק לאופנקוד".
+
+הפרויקט שלנו מאיץ את זה — הקוד של AcpTransport ו-AcpClient שיתפתח כאן יוכל בעתיד להיות package נפרד שמשרת גם את codenomad וגם את drive-coding. שווה לחשוב על זה כשמגיעים ל-slice 3.
 
 ---
 
-> **המשך:** שכבה 2 של מסמך זה תיכתב אחרי שאבי יחזור עם תשובות.
+## נספח B — שאלות שעוד פתוחות לאבי (אחרי סבב 2)
+
+1. **Q9.** שם הפרויקט — האם `drive-coding` מאושר? אם לא, באיזה לבחור מהאופציות ב-§5?
+2. **Q10.** Stop mechanism — האם אופציה **B** (אותו כפתור הקלטה גם cancel) מאושרת?
+3. **Q11.** Wake word — האם דחיית POC נפרד עד אחרי MVP מאושרת?
+4. **Q12.** Backend survival — האם reactive (Option A — לטפל רק אם זה כואב) מאושר?
+5. **Q13.** הקלדה ב-MVP — האם אישור ל"לא ב-MVP"?
+6. **Q14.** UI Components — האם פירוט "כפתור גדול + בועות + סטטוס" ב-§5 Q14 מספק?
+7. **(חדש) Q15.** State machine של הכפתור — האם הדיאגרמה ב-§9.6 משקפת את מה שאתה רוצה?
+8. **(חדש) Q16.** Frontend routes — האם לפצל את `/settings` ל-`/settings/voice`, `/settings/cli`, וכו', או כל הכל בעמוד אחד?
+
+ובנוסף — שאלות שצצות מההחלטות עצמן:
+
+9. **(חדש) Q17.** Image format לפריסה — Docker או LXC native? בקונטיינר אצלך מה יותר נוח לתחזק?
+10. **(חדש) Q18.** Multi-CLI adapter strategy — Claude Code דרך adapter. מי כותב את ה-adapter? יש מוכן בקהילה?
+
+---
+
+## נספח C — Roadmap מפורט אחרי תשובות
+
+(טיוטה — יוחלף אחרי שכבה 2)
+
+לקראת **shipping אצל אבי**:
+1. סגירת שאלות Q9-Q18 (סבב נוסף).
+2. שכבה 2 של המסמך — data models, API spec, WS protocol spec.
+3. scaffold worktree + monorepo.
+4. Slices 1-5 (foundations + voice MVP).
+5. בדיקה משותפת — אבי משווה ל-POC.
+6. החלפה.
+
+לקראת **shipping לקהילת מפתחים**:
+7. Slices 6-7 (multi-session, ניקוי + dashboard).
+8. Slice 8 (cache פרסיסטנטי).
+9. Slice 9 (i18n + אנגלית).
+10. Slice 10 (deploy hardening, supervisor, monitoring).
+11. README + onboarding מסמך + video demo.
+12. הכרזה (HN? Reddit? Lobste.rs? Twitter?).
+
+---
+
+> **המשך:** שכבה 2 של מסמך זה תיכתב אחרי שאבי יחזור עם תשובות לסבב Q9-Q18.
 > שכבה 2 תכלול: data models מלאים, sequence diagrams, פירוט API, ו-protocol spec.

@@ -88,9 +88,32 @@
 
 - **סטטוס:** פעיל — המשך סשן `ses_1d26848f8ffetPtC3UQ2eLBrpt` (planner). שלב: דיון על ארכיטקטורת הגרסה הבאה.
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** ✅ שכבה 1 של `docs/vnext-architecture.md` נכתבה. ממתין לתשובות אבי על 8 שאלות פתוחות (§5 + נספח B).
+- **עובד על:** ✅ שכבה 1.5 של `docs/vnext-architecture.md`. נסגרו Q1-Q8, נוספו 10 החלטות D13-D22, נוספו שאלות חדשות Q9-Q18, נוסף פרק UX מלא (§9.6), נספח השוואה לכלים.
 
 ## לוג
+
+### [2026-05-15 02:20] ✅ שכבה 1.5 — תשובות אבי עובדו + שם פרויקט + UX
+תשובות אבי על 8 השאלות הראשונות:
+- Q1 Hosting → Proxmox container + CF tunnel (אצל אבי). יעד אימוץ קהילתי של מפתחים.
+- Q2 ACP transport → stdio בלבד ל-MVP. interface נשמר open.
+- Q3 Orchestration → parent process (ההורה). agent מת עם backend ב-MVP.
+- Q4 Cache → disk ל-MVP.
+- Q5 Identity → אנונימי, לא OAuth עכשיו.
+- Q6 Pricing → BYOC (Bring Your Own CLI) — המשתמש משתמש ב-CLI שלו עם מינוי משלו.
+- Q7 i18n → עברית בלבד מהיום הראשון, אנגלית כשבשל. layer מובנה.
+- Q8 Routes → טיוטה אושרה.
+
+עוד החלטות שעלו: הקלדה לא ב-MVP (לא נעול), שם הפרויקט הצעה `drive-coding`, ה-product description התחדדה: ממשק קולי hands-free לסוכני CLI לשימוש בנהיגה/שטיפת כלים/ריצה.
+
+הוספתי למסמך:
+- 10 החלטות נוספות (D13-D22).
+- 10 שאלות חדשות (Q9-Q18) — שם פרויקט, stop mechanism, wake word, survival, הקלדה, UI components, state machine, settings split, image format, multi-CLI adapters.
+- פרק UX מלא חדש (§9.6) — drive-first principles, state machine של הכפתור הגדול, צבעי מצבים.
+- נספח השוואה (A2) ל-codenomad/opencode/Zed/Claude — שיקופ ש-drive-coding ב-niche ייחודי.
+- עדכון פרק deployment (§9) — Proxmox + CF tunnel ארכיטקטורה.
+- עדכון roadmap (נספח C) — shipping אצל אבי vs shipping לקהילה.
+
+הצעדים הבאים: ממתין לתשובות אבי על Q9-Q18 ושכבה 2 (data models, sequence diagrams, API spec).
 
 ### [2026-05-15 01:45] ✅ שכבה 1 של `vnext-architecture.md` הושלמה
 מסמך תכנון חדש ב-`docs/vnext-architecture.md`. 11 פרקים + 2 נספחים. מכסה: עקרונות מנחים (functional core/imperative shell, ACP-agnostic, agent-as-entity, stateless+cache, FE/BE separation, types משותפים, i18n מובנה), 12 החלטות locked, 8 שאלות פתוחות (deployment target, ACP transport, agent orchestration, cache backend, identity, pricing/BYOK, i18n scope, frontend routes), mental model (tmux for AI agents), 7 domains, monorepo structure (protocol/core/backend/frontend), deployment story, 10 vertical slices ב-roadmap.

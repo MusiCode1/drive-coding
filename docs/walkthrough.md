@@ -4,6 +4,31 @@
 
 ---
 
+## 2026-05-15 02:20 (master, planner-agent Tama)
+
+### תכנון vNext — שכבה 1.5: סגירת שאלות + UX + Drive Coding
+
+אבי ענה על 8 השאלות שהיו פתוחות + הוסיף הקשר שמשנה הרבה:
+- **שם הפרויקט הוצע: `drive-coding`** — ממשק קולי לסוכני CLI בנהיגה/שטיפת כלים/ריצה. ה-niche הייחודי הוא voice + multi-CLI + RTL + hands-free. אין מתחרה ישיר (codenomad לא תומך בקול ולא ב-multi-CLI, Zed לא תומך ב-RTL).
+- **Deployment:** Proxmox container אצל אבי + Cloudflare tunnel. יעד: אימוץ קהילתי של מפתחים. לא ענן ציבורי בשלב ראשון.
+- **Pricing model: BYOC** (Bring Your Own CLI) — המשתמש משתמש ב-`opencode`/`gemini`/`claude` עם המינוי שלו. אנחנו ממומנים רק את ה-STT/TTS (Gemini+ElevenLabs) של אבי, או BYOK בעתיד.
+- **stdio בלבד** ל-MVP — אין HTTP transport. עם זאת `AcpTransport` interface יישאר open.
+- **Agent מת עם backend** ב-MVP — survival mechanism נדחה. ה-cost של פתיחת agent מחדש קל.
+- **שפה: עברית בלבד**. i18n layer מובנה כדי שהוספת אנגלית תהיה JSON patch.
+
+נוספו 10 החלטות (D13-D22), 10 שאלות חדשות (Q9-Q18 — בעיקר UX), ופרק חדש מלא §9.6 על UX principles:
+- כפתור גדול אחד שעושה הכל (start/stop של הקלטה + cancel של model).
+- Touch targets ≥ 80px, high contrast, large text.
+- State machine מפורש: idle → recording → processing → speaking → cancelling.
+- Wake lock + Media Session API לטובת mobile.
+- אין modals, אין scroll מורכב, אין הקלדה.
+
+נוסף נספח השוואה לכלים מתחרים (codenomad/opencode/Zed/Claude) שמראה את ה-positioning הייחודי.
+
+המסמך גדל ל-~820 שורות. שכבה 2 (data models, sequence diagrams, API spec) תיכתב אחרי סבב נוסף של תשובות אבי על Q9-Q18.
+
+---
+
 ## 2026-05-15 01:45 (master, planner-agent Tama)
 
 ### תכנון vNext — מסמך ארכיטקטורה ראשון
