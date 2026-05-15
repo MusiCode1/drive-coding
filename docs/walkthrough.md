@@ -4,6 +4,58 @@
 
 ---
 
+## 2026-05-14 23:55 (worktree `voice-acp-refactor` / branch `refactor`)
+
+### v6 שכבה 7 — message router + parser + lifecycle helpers + 22 בדיקות
+
+**רקע (Avi):** "אני בעד לעשות כמה שיותר לוגיקה טהורה שאינה מחוברת ליישום ספציפי. ואז קל לבדוק אותה. ו-Bun.serve לא ממש עוזר בעניין הזה."
+
+עיקרון מנחה לשכבה הזו — extract ה-WebSocket handler logic לפונקציות טהורות שלא יודעות מ-Bun.serve. Bun.serve נשאר רק עוטף את ה-events ל-pure functions.
+
+**`src/message-router.ts` (חדש)** — שלוש פונקציות + interface אחד:
+
+1. **`parseClientMessage(raw: string | Buffer): ParseResult`** — JSON parsing עם error handling. מחזיר union type, לא זורק.
+2. **`MessageHandlers` interface** — `onInit`, `onAudio`, `onText`, `onCancel`. כל אחד מקבל `sink + state + msg`.
+3. **`routeClientMessage(sink, state, msg, handlers)`** — switch לפי `msg.type`, dispatch ל-handler. unknown → sendError. שגיאות הdler מועברות החוצה (caller wraps).
+4. **`disposeConnection(state)`** — close-time cleanup. אם יש bridge, מעצב dispose עם catch-and-ignore.
+5. **`cancelActivePrompt(state)`** — wrapper של bridge.cancel עם catch-and-ignore.
+
+**ב-`server.ts`:**
+- `Bun.serve.websocket.message` עכשיו: parseClientMessage → אם error → sink.sendError; אחרת try { routeClientMessage } catch { sendError }.
+- `Bun.serve.websocket.close` עכשיו: `disposeConnection(state)` במקום inline.
+- `messageHandlers` const מועבר ל-routeClientMessage. handlers משתמשים ב-deps factories שכבר היו (`promptDeps`, `createAcpBridge`).
+- הקוד הישן (`handleMessage`, `handleInit`, `handleAudio`, `handleUserInput`) הוסר. server.ts: 306 → 269 שורות (-12%).
+
+**בדיקות חדשות: `tests/message-router.test.ts` — 22 בדיקות בארבע קבוצות:**
+
+- **parseClientMessage (8):** valid string, valid Buffer, invalid → 'JSON לא תקין', empty string → invalid, whitespace → invalid, number/array technically valid (no shape validation), complex nested preserved, Hebrew text preserved.
+- **routeClientMessage (7):** init/audio/text/cancel each dispatches correctly, unknown type → sendError no handler called, handler error propagates, state passed through, sink passed through.
+- **disposeConnection (3):** no bridge → noop, bridge → dispose called, dispose throws → silently swallowed (close mustn't crash).
+- **cancelActivePrompt (3):** no bridge → noop, bridge → cancel called, cancel throws → silently swallowed.
+
+**אימות:**
+- `bun test` → **289 pass, 0 fail, 511 expect() calls, 579ms** (37 unit + 18 ACP + 18 prompt + 9 audio + 14 init + 29 markdown + 13 static + 53 HTTP + 20 tts-cache + 35 gemini + 21 rec + 22 message-router).
+- `bunx tsc --noEmit` → נקי.
+
+**מצב server.ts:** 888 (מקור) → 269 (אחרי שכבה 7), -70%.
+
+**מצב כיסוי סופי לפי `behaviors.md`:**
+- ✅ ACP, PROMPT, TTS cache, GEMINI, REC, HTTP, MARKDOWN, STATIC, WS routing+lifecycle (כולל JSON parse + close + cancel) — כיסוי ישיר.
+- ⚠ STT `transcribeAudio` ו-TTS `textToSpeech`/`streamTextToSpeech` — fetch wrappers דקים שלא נבדקו ישירות. ערך הכיסוי שלהם נמוך (רק transport).
+- ⚠ `createAcpBridge` spawn-based wrapper — דורש spawn אמיתי לבדיקה, לא ראלי.
+- ⚠ `Bun.serve` wiring ב-server.ts — נשאר רק glue של 30-40 שורות, בלי לוגיקה.
+- ⚠ frontend — מחוץ לסקופ.
+
+**v6 הושלם סופית.** כל הלוגיקה הטהורה של ה-backend מכוסה. Bun.serve נשאר wiring רזה ש-tests מקבלים שלא ניתן לבדיקה (Bun.serve הוא כמעט framework — בדיקת אותו = בדיקת Bun עצמו).
+
+**הצעדים הבאים:**
+- merge של refactor ל-master.
+- אופציה אחרי: שכבה 8 (tts-queue priority/cancel — שינוי לוגי לטיפול בבזבוז).
+
+ממתין להחלטת Avi.
+
+---
+
 ## 2026-05-14 23:30 (worktree `voice-acp-refactor` / branch `refactor`)
 
 ### v6 שכבה 6 — סיום הכיסוי: TTS cache + GEMINI helpers + REC + 76 בדיקות

@@ -86,11 +86,18 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** פעיל — **v6 הושלם** (267 בדיקות, כל ה-backend מכוסה)
+- **סטטוס:** פעיל — **v6 הושלם סופית** (289 בדיקות, server.ts קוצץ ל-269 שורות)
 - **Worktree:** `/home/user/projects/voice-acp-refactor` (branch `refactor`)
 - **עובד על:** —
 
 ## לוג
+
+### [2026-05-14 23:55] v6 שכבה 7 — message router + parser + lifecycle helpers
+לפי תובנת Avi — Bun.serve לא עוזר לבדיקה, אז כל הלוגיקה ש-בתוך WebSocket handlers צריכה לצאת לפונקציות טהורות. נוצר `message-router.ts` עם `parseClientMessage`, `routeClientMessage`, `disposeConnection`, `cancelActivePrompt`. server.ts הופך glue בלבד. 22 בדיקות חדשות. server.ts: 306 → 269 שורות.
+
+**v6 סופי:** 289 בדיקות, tsc נקי. ה-backend מכוסה במלואו פרט ל-transport thin wrappers (STT/TTS fetch) ו-spawn (createAcpBridge), שאינם ראליים לבדיקה.
+
+הצעדים הבאים: merge למאסטר.
 
 ### [2026-05-14 23:30] v6 שכבה 6 — TTS cache + GEMINI + REC + 76 בדיקות
 שלוש קטגוריות שעוד לא היו מכוסות. TTS cache (20 בדיקות) — extraction ל-`tts-cache.ts` class. GEMINI helpers (35) — ריפקטור ל-`createGeminiHelper(ai)` factory עם mock AI. REC (21) — extraction של `extFromMime` ו-`buildRecordingPaths` ל-pure helpers + integration tests עם tmp dir.

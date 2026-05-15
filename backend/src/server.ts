@@ -35,6 +35,13 @@ import { handleApiVoices as apiVoicesLogic } from "./api-voices.ts";
 import { handleApiTts as apiTtsLogic } from "./api-tts.ts";
 import { handleApiLs as apiLsLogic } from "./api-ls.ts";
 import { handleApiInfo as apiInfoLogic } from "./api-info.ts";
+import {
+  cancelActivePrompt,
+  disposeConnection,
+  parseClientMessage,
+  routeClientMessage,
+  type MessageHandlers,
+} from "./message-router.ts";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const FRONTEND_DIR = resolve(import.meta.dir, "../../frontend");
@@ -99,27 +106,24 @@ const server = Bun.serve({
     async message(ws, raw) {
       const state = states.get(ws as any);
       if (!state) return;
+      const sink = wsSink(ws);
 
-      let msg: ClientMessage;
-      try {
-        msg = JSON.parse(typeof raw === "string" ? raw : raw.toString());
-      } catch (e) {
-        sendError(ws, "JSON לא תקין");
+      const parsed = parseClientMessage(raw);
+      if (!parsed.ok) {
+        sink.sendError(parsed.error);
         return;
       }
 
       try {
-        await handleMessage(ws, state, msg);
+        await routeClientMessage(sink, state, parsed.msg, messageHandlers);
       } catch (e) {
         console.error("[ws] שגיאה בטיפול בהודעה:", e);
-        sendError(ws, String((e as Error).message ?? e));
+        sink.sendError(String((e as Error).message ?? e));
       }
     },
     async close(ws) {
       const state = states.get(ws as any);
-      if (state?.bridge) {
-        await state.bridge.dispose().catch(() => {});
-      }
+      if (state) await disposeConnection(state);
       states.delete(ws as any);
       console.log("[ws] חיבור נסגר");
     },
@@ -136,37 +140,7 @@ console.log(
   `  verbose:    ${VERBOSE ? "ON" : "OFF"} (set VOICE_ACP_VERBOSE=1 ל-stderr של opencode)`,
 );
 
-// ── טיפול בהודעות ────────────────────────────────────────────────────────────
-
-async function handleMessage(
-  ws: any,
-  state: ConnState,
-  msg: ClientMessage,
-): Promise<void> {
-  switch (msg.type) {
-    case "init":
-      await handleInit(ws, state, msg);
-      break;
-
-    case "audio":
-      await handleAudio(ws, state, msg);
-      break;
-
-    case "text":
-      // נתיב דיבוג — מדלגים על STT, ישר prompt
-      await handleUserInput(ws, state, msg.text);
-      break;
-
-    case "cancel":
-      if (state.bridge) {
-        await state.bridge.cancel().catch(() => {});
-      }
-      break;
-
-    default:
-      sendError(ws, `סוג הודעה לא ידוע: ${(msg as any).type}`);
-  }
-}
+// ── עזרים ────────────────────────────────────────────────────────────────────
 
 /** Build a MessageSink that wraps a Bun WebSocket. */
 function wsSink(ws: any): MessageSink {
@@ -179,49 +153,38 @@ function wsSink(ws: any): MessageSink {
 /** Standard PromptHandlerDeps used by every handler in production. */
 const promptDeps = {
   systemPrompt: VOICE_SYSTEM_PROMPT,
-  streamTts: (text: string, voiceId: string | undefined, onChunk: (c: Uint8Array) => void) =>
-    streamCachedTextToSpeech(text, { voiceId }, onChunk),
+  streamTts: (
+    text: string,
+    voiceId: string | undefined,
+    onChunk: (c: Uint8Array) => void,
+  ) => streamCachedTextToSpeech(text, { voiceId }, onChunk),
   translateThought,
   narrateToolCall,
   renderMarkdown,
 };
 
-async function handleInit(
-  ws: any,
-  state: ConnState,
-  msg: Extract<ClientMessage, { type: "init" }>,
-): Promise<void> {
-  await handleInitMessage(wsSink(ws), state, msg, {
-    createBridge: (opts) => createAcpBridge(opts),
-    renderMarkdown,
-    printAgentLogs: VERBOSE,
-  });
-}
+/** Production message handlers — passed to `routeClientMessage`. */
+const messageHandlers: MessageHandlers = {
+  onInit: (sink, state, msg) =>
+    handleInitMessage(sink, state, msg, {
+      createBridge: (opts) => createAcpBridge(opts),
+      renderMarkdown,
+      printAgentLogs: VERBOSE,
+    }),
+  onAudio: (sink, state, msg) =>
+    handleAudioInput(sink, state, msg, {
+      ...promptDeps,
+      saveRecording,
+      saveRecordingMetadata,
+      transcribeAudio,
+      sttModelName: "gemini-flash-latest",
+    }),
+  onText: (sink, state, text) =>
+    handlePromptText(sink, state, text, promptDeps),
+  onCancel: (state) => cancelActivePrompt(state),
+};
 
-async function handleAudio(
-  ws: any,
-  state: ConnState,
-  msg: Extract<ClientMessage, { type: "audio" }>,
-): Promise<void> {
-  await handleAudioInput(wsSink(ws), state, msg, {
-    ...promptDeps,
-    saveRecording,
-    saveRecordingMetadata,
-    transcribeAudio,
-    sttModelName: "gemini-flash-latest",
-  });
-}
-
-async function handleUserInput(
-  ws: any,
-  state: ConnState,
-  text: string,
-): Promise<void> {
-  await handlePromptText(wsSink(ws), state, text, promptDeps);
-}
-
-
-// ── עזרים ────────────────────────────────────────────────────────────────────
+// ── Low-level send helpers ──────────────────────────────────────────────────
 
 function send(ws: any, msg: ServerMessage): void {
   ws.send(JSON.stringify(msg));
