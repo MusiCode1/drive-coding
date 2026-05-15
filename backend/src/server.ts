@@ -30,6 +30,11 @@ import { createConnState } from "./conn-state.ts";
 import { handlePromptText } from "./prompt-handler.ts";
 import { handleAudioInput } from "./audio-handler.ts";
 import { handleInitMessage } from "./init-handler.ts";
+import { resolveStaticPath } from "./static-path.ts";
+import { handleApiVoices as apiVoicesLogic } from "./api-voices.ts";
+import { handleApiTts as apiTtsLogic } from "./api-tts.ts";
+import { handleApiLs as apiLsLogic } from "./api-ls.ts";
+import { handleApiInfo as apiInfoLogic } from "./api-info.ts";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const FRONTEND_DIR = resolve(import.meta.dir, "../../frontend");
@@ -226,213 +231,76 @@ function sendError(ws: any, message: string): void {
   send(ws, { type: "error", message });
 }
 
-/**
- * GET /api/info?cwd=<path>
- *
- * spawns opencode זמני, מוציא רשימת מודלים זמינים + sessions קיימות, וסוגר.
- * עלות: ~3-5 שניות לכל קריאה (overhead של opencode).
- */
 async function handleApiInfo(url: URL): Promise<Response> {
-  const cwd = url.searchParams.get("cwd");
-  if (!cwd) {
-    return Response.json({ error: "חסר פרמטר cwd" }, { status: 400 });
-  }
-
-  let bridge: AcpBridge | null = null;
-  try {
-    bridge = await createAcpBridge({ cwd });
-    // יוצרים session זמני רק כדי לקבל את ה-availableModels
-    const tempSession = await bridge.newSession();
-    // ננסה לטעון sessions קיימות (אם הסוכן תומך)
-    const sessions = await bridge.listSessions().catch(() => []);
-
-    return Response.json({
-      cwd,
-      availableModels: tempSession.availableModels ?? [],
-      currentModelId: tempSession.currentModelId ?? null,
-      sessions,
-    });
-  } catch (e) {
-    return Response.json(
-      { error: String((e as Error).message ?? e) },
-      { status: 500 },
-    );
-  } finally {
-    await bridge?.dispose().catch(() => {});
-  }
+  const result = await apiInfoLogic(url.searchParams.get("cwd"), {
+    createBridge: (opts) => createAcpBridge(opts),
+  });
+  return Response.json(result.body, {
+    status: result.ok ? 200 : result.status,
+  });
 }
 
 /**
- * GET /api/voices → רשימת קולות זמינים מ-ElevenLabs.
- * מחזיר רק שדות שימושיים, ומסמן קולות שתומכים עברית.
+ * GET /api/voices → list of available ElevenLabs voices, sorted.
  */
 async function handleApiVoices(): Promise<Response> {
-  try {
-    const res = await fetch("https://api.elevenlabs.io/v1/voices", {
-      headers: {
-        "xi-api-key": "placeholder", // OneCLI מזריק את האמיתי
-        Accept: "application/json",
-      },
-    });
-    if (!res.ok) {
-      return Response.json(
-        { error: `ElevenLabs error ${res.status}` },
-        { status: 502 },
-      );
-    }
-    const data: any = await res.json();
-    const voices = (data?.voices ?? []).map((v: any) => {
-      const langs = (v.verified_languages ?? []).map(
-        (l: any) => l.language ?? l.language_id,
-      );
-      return {
-        voiceId: v.voice_id,
-        name: v.name,
-        category: v.category, // premade / cloned / generated / professional
-        description: v.description ?? null,
-        languages: langs,
-        supportsHebrew: langs.includes("he") || (v.labels?.language === "he"),
-      };
-    });
-    // מיון: ברירת מחדל ראשון, אחר-כך תומכי עברית, אחר-כך premade, ואז שאר
-    const defaultId = process.env.ELEVENLABS_VOICE_ID ?? "";
-    voices.sort((a: any, b: any) => {
-      if (a.voiceId === defaultId) return -1;
-      if (b.voiceId === defaultId) return 1;
-      if (a.supportsHebrew !== b.supportsHebrew) {
-        return a.supportsHebrew ? -1 : 1;
-      }
-      const order = { premade: 0, professional: 1, cloned: 2, generated: 3 };
-      const ao = order[a.category as keyof typeof order] ?? 9;
-      const bo = order[b.category as keyof typeof order] ?? 9;
-      if (ao !== bo) return ao - bo;
-      return a.name.localeCompare(b.name);
-    });
-    return Response.json({
-      defaultVoiceId: defaultId || null,
-      voices,
-    });
-  } catch (e) {
-    return Response.json(
-      { error: String((e as Error).message ?? e) },
-      { status: 500 },
-    );
-  }
+  const result = await apiVoicesLogic({
+    defaultVoiceId: process.env.ELEVENLABS_VOICE_ID ?? "",
+    async fetchVoices() {
+      const res = await fetch("https://api.elevenlabs.io/v1/voices", {
+        headers: {
+          "xi-api-key": "placeholder", // OneCLI injects real key
+          Accept: "application/json",
+        },
+      });
+      if (!res.ok) return { ok: false, status: res.status };
+      const data: any = await res.json();
+      return { ok: true, status: 200, voices: data?.voices ?? [] };
+    },
+  });
+  return Response.json(result.body, {
+    status: result.ok ? 200 : result.status,
+  });
 }
 
-/**
- * POST /api/tts
- * Body: { text, voiceId? }
- * → { data: <base64 MP3> }
- *
- * משמש להשמעה lazy של בועות היסטוריה. עובר דרך cache, אז קריאה חוזרת
- * לאותו טקסט+voice מחזירה מיד.
- */
 async function handleApiTts(req: Request): Promise<Response> {
-  let body: { text?: string; voiceId?: string };
-  try {
-    body = (await req.json()) as { text?: string; voiceId?: string };
-  } catch {
-    return Response.json({ error: "JSON לא תקין" }, { status: 400 });
-  }
-  const text = (body.text ?? "").trim();
-  if (!text) {
-    return Response.json({ error: "חסר text" }, { status: 400 });
-  }
-  try {
-    const data = await cachedTextToSpeechBase64(text, {
-      voiceId: body.voiceId,
-    });
-    return Response.json({ data });
-  } catch (e) {
-    return Response.json(
-      { error: String((e as Error).message ?? e) },
-      { status: 500 },
-    );
-  }
+  const result = await apiTtsLogic(
+    () => req.json(),
+    {
+      async textToSpeech(text, voiceId) {
+        return cachedTextToSpeechBase64(text, { voiceId });
+      },
+    },
+  );
+  return Response.json(result.body, {
+    status: result.ok ? 200 : result.status,
+  });
 }
 
-/**
- * GET /api/ls?path=<absolute>&showHidden=1
- * רשימת תת-תיקיות בנתיב נתון. מסנן קבצים, מציג רק תיקיות.
- *
- * סייגי ביטחון: רק תחת `$HOME` או `/tmp`. dot-folders מסוננים כברירת מחדל.
- */
 async function handleApiLs(url: URL): Promise<Response> {
-  const path = url.searchParams.get("path") ?? "";
-  const showHidden = url.searchParams.get("showHidden") === "1";
-  const home = process.env.HOME ?? "/home/user";
-
-  if (!path.startsWith("/")) {
-    return Response.json(
-      { error: "path חייב להיות absolute" },
-      { status: 400 },
-    );
-  }
-  // ביטחון: רק תחת home או /tmp
-  const allowed = [home, "/tmp"];
-  const isAllowed = allowed.some(
-    (root) => path === root || path.startsWith(root + PATH_SEP),
+  const result = await apiLsLogic(
+    url.searchParams.get("path") ?? "",
+    url.searchParams.get("showHidden") === "1",
+    {
+      home: process.env.HOME ?? "/home/user",
+      async readDirectory(path) {
+        return readdir(path, { withFileTypes: true });
+      },
+    },
   );
-  if (!isAllowed) {
-    return Response.json(
-      { error: `path מחוץ לטווח המותר (מותר רק תחת ${home} או /tmp)` },
-      { status: 403 },
-    );
-  }
-
-  try {
-    const entries = await readdir(path, { withFileTypes: true });
-    const dirs = entries
-      .filter((e) => {
-        if (!e.isDirectory()) return false;
-        if (!showHidden && e.name.startsWith(".")) return false;
-        return true;
-      })
-      .map((e) => ({ name: e.name, type: "directory" as const }))
-      .sort((a, b) => a.name.localeCompare(b.name, "he"));
-
-    // parent מותר רק אם הוא בתוך הטווח המותר
-    let parent: string | null = path === "/" ? null : dirname(path);
-    if (parent) {
-      const parentAllowed = allowed.some(
-        (root) => parent === root || parent!.startsWith(root + PATH_SEP),
-      );
-      if (!parentAllowed) parent = null;
-    }
-
-    return Response.json({
-      path,
-      parent,
-      home,
-      entries: dirs,
-    });
-  } catch (e) {
-    return Response.json(
-      { error: String((e as Error).message ?? e) },
-      { status: 500 },
-    );
-  }
+  return Response.json(result.body, {
+    status: result.ok ? 200 : result.status,
+  });
 }
 
 async function serveStatic(pathname: string): Promise<Response> {
-  // הגנת path traversal — לאשר רק שמות סבירים
-  if (pathname.includes("..") || pathname.includes("\0")) {
-    return new Response("Bad request", { status: 400 });
+  const result = resolveStaticPath(pathname, FRONTEND_DIR);
+  if (!result.ok) {
+    return new Response(result.message, { status: result.status });
   }
-
-  const relative = pathname === "/" ? "/index.html" : pathname;
-  const filePath = resolve(FRONTEND_DIR, "." + relative);
-
-  // לוודא שהקובץ באמת תחת FRONTEND_DIR (הגנת escaping)
-  if (!filePath.startsWith(FRONTEND_DIR)) {
-    return new Response("Forbidden", { status: 403 });
-  }
-
-  const file = Bun.file(filePath);
+  const file = Bun.file(result.filePath);
   if (!(await file.exists())) {
     return new Response("Not found", { status: 404 });
   }
-
   return new Response(file);
 }

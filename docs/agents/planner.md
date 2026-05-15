@@ -86,11 +86,20 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** פעיל — שכבה 4 של v6 הושלמה (audio + init handlers)
+- **סטטוס:** פעיל — שכבה 5 של v6 הושלמה (markdown + static + 4 HTTP endpoints, 95 בדיקות חדשות)
 - **Worktree:** `/home/user/projects/voice-acp-refactor` (branch `refactor`)
 - **עובד על:** —
 
 ## לוג
+
+### [2026-05-14 22:30] v6 שכבה 5 — markdown + static + HTTP endpoints
+שני אזורי security-critical שלא היו מכוסים: MARKDOWN sanitization (29 בדיקות, ישירות על renderMarkdown) ו-STATIC file serving (13 בדיקות, אחרי extraction ל-`static-path.ts`). אז 4 HTTP endpoints יצאו ל-files נפרדים (`api-voices`, `api-tts`, `api-ls`, `api-info`), כל אחד עם deps interface ו-pure logic מובדל. 53 בדיקות חדשות. server.ts: 438→306 שורות (-66% מהמקור 888).
+
+**סה"כ:** 191 בדיקות עוברות. tsc נקי.
+
+**שלוש קטגוריות עוד לא מכוסות:** TTS cache (Map ops), GEMINI helpers (timeout/cache, מכוסה בעקיפין), REC (file IO). כולן עדיפות נמוכה.
+
+הצעדים הבאים: או השלמה (TTS+GEMINI+REC, ~25 בדיקות), או merge למאסטר. ממתין להחלטה.
 
 ### [2026-05-14 21:30] v6 שכבה 4 — audio-handler + init-handler + 23 בדיקות
 שני handlers נוספים יצאו מ-server.ts: `audio-handler.ts` (`handleAudioInput`) ו-`init-handler.ts` (`handleInitMessage`). server.ts קוצץ ל-438 שורות (-51% מהמקור 888).

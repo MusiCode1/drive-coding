@@ -4,6 +4,75 @@
 
 ---
 
+## 2026-05-14 22:30 (worktree `voice-acp-refactor` / branch `refactor`)
+
+### v6 שכבה 5 — כיסוי אזורים שלא כוסו: markdown + static + 4 HTTP endpoints + 95 בדיקות
+
+**רקע:** אחרי שכבה 4, נשארו שלוש קטגוריות שלמות לא מכוסות ב-`behaviors.md` — MARKDOWN sanitization (security), STATIC file serving (security), HTTP endpoints (4 endpoints, 16 התנהגויות). כל אלה נכתבו עכשיו.
+
+**קבוצה 1 — pure functions (42 בדיקות):**
+
+- **`tests/markdown.test.ts` — 29 בדיקות.** בדיקה ישירה של `renderMarkdown` (אין צורך ב-extraction — כבר פונקציה טהורה). כיסוי: basic rendering (GFM, breaks, bold, italic, Hebrew), הסרת תגיות paired (script, style, iframe, object, embed, form, noscript — case-insensitive, multiline), הסרת self-closing (meta, link, base), הסרת event handlers (onclick, onerror — quoted/unquoted, case-insensitive), הסרת `javascript:` URLs (href/src/action), שילובים מורכבים.
+
+- **`src/static-path.ts` (חדש)** — extracted `resolveStaticPath(pathname, frontendDir)` מ-`serveStatic`. מחזיר union type עם `{ok: true, filePath}` או `{ok: false, status, message}`. ה-`serveStatic` ב-server.ts הפך wrapper של 7 שורות.
+
+- **`tests/static-path.test.ts` — 13 בדיקות.** path traversal `..`, null byte, normal paths, `/` rewriting, FRONTEND_DIR variation, backslashes, trailing slashes.
+
+**קבוצה 2 — HTTP endpoints (53 בדיקות):**
+
+הוצאתי 4 endpoints ל-files נפרדים, כל אחד עם deps interface ו-pure logic נפרד.
+
+- **`src/api-voices.ts` (חדש)** — `mapVoice(raw)` + `sortVoices(voices, defaultId)` + `handleApiVoices(deps)`. ה-sort logic הוא pure function ניתנת לבדיקה ישירה. ה-handler מקבל `fetchVoices` callback.
+  - **`tests/api-voices.test.ts` — 19 בדיקות.** mapping (basic fields, missing description, languages from verified_languages/language_id, supportsHebrew via languages או labels), sorting (default first, Hebrew priority, category order, alphabetical within category, unknown category, full chain), orchestration (fetch fails → 500, upstream not ok → 502, empty → empty, mapped+sorted, defaultVoiceId null).
+
+- **`src/api-tts.ts` (חדש)** — `handleApiTts(bodyJson, deps)`. validation + delegate.
+  - **`tests/api-tts.test.ts` — 9 בדיקות.** invalid JSON, missing text, empty text, whitespace-only, valid → calls textToSpeech, voiceId optional, text trimmed, textToSpeech throws → 500.
+
+- **`src/api-ls.ts` (חדש)** — `handleApiLs(path, showHidden, deps)`. validation + security + readdir + sort.
+  - **`tests/api-ls.test.ts` — 17 בדיקות.** input validation (absolute, empty, outside $HOME/tmp, exact $HOME, /tmp, prefix-but-no-separator trick), filtering (files filtered, dot-folders default vs showHidden), sorting (Hebrew locale, English), parent rules (set when inside, null at boundary $HOME, null at /tmp, set inside /tmp), response shape, ENOENT → 500.
+
+- **`src/api-info.ts` (חדש)** — `handleApiInfo(cwd, deps)`. ה-deps כולל `createBridge` factory.
+  - **`tests/api-info.test.ts` — 8 בדיקות.** missing cwd → 400, empty cwd → 400, happy path עם models+sessions, availableModels missing → empty, listSessions failure → empty (silent catch), bridge disposed in happy path, createBridge throws → 500, newSession throws → 500 + dispose still called.
+
+**ב-`server.ts`:**
+- 4 ה-API handlers הפכו wrappers של 5-10 שורות כל אחד.
+- מ-438 שורות לפני שכבה 5 → 306 שורות אחרי. סה"כ מ-888 → 306 (-66% מהמקור).
+
+**אימות:**
+- `bun test` → **191 pass, 0 fail, 372 expect() calls, 234ms** (37 unit + 18 ACP + 18 prompt + 9 audio + 14 init + 29 markdown + 13 static + 53 HTTP).
+- `bunx tsc --noEmit` → נקי.
+
+**מצב server.ts לאורך הריפקטור:**
+- מקורי: 888 שורות.
+- אחרי שכבה 3: 546 (-39%).
+- אחרי שכבה 4: 438 (-51%).
+- אחרי שכבה 5: 306 (-66%).
+
+**מצב כיסוי לפי `behaviors.md`:**
+- ✅ STT (פונקציות חיצוניות — מכוסה בעקיפין דרך audio-handler)
+- ✅ ACP (18 בדיקות)
+- ✅ PROMPT (18 בדיקות)
+- ⚠ TTS (cache logic לא נבדק ישירות — נבדק בעקיפין)
+- ⚠ GEMINI (timeout/cache logic לא נבדק — מכוסה בעקיפין)
+- ⚠ REC (לא נבדק — file IO)
+- ✅ WS (entry conditions ב-init/audio handlers)
+- ✅ HTTP (53 בדיקות)
+- ✅ MARKDOWN (29 בדיקות)
+- ✅ STATIC (13 בדיקות)
+- ⚠ SYSPROMPT (לא קריא לבדיקה — string constant)
+- ⚠ URL/UI-* (frontend — לא בסקופ הריפקטור הנוכחי)
+
+**שלוש הקטגוריות שעוד לא — TTS cache, GEMINI helpers, REC** — נמוכות עדיפות. ה-TTS cache הוא Map operations בלבד, ה-GEMINI מכוסה כבר בעקיפין דרך prompt-handler tests עם mocks. REC הוא file IO שאם נשבר ייצור console.error אבל לא יעצור flow.
+
+**הצעדים הבאים:**
+- אופציה א: השלמת המכוסה — REC + GEMINI + TTS cache (~25 בדיקות נוספות).
+- אופציה ב: merge למאסטר ומעבר לאיטרציה הבאה.
+- אופציה ג: שכבה 5 המקורית — tts-queue עם priority/cancel (שינוי לוגי, לא רק tests).
+
+ממתין להחלטת Avi.
+
+---
+
 ## 2026-05-14 21:30 (worktree `voice-acp-refactor` / branch `refactor`)
 
 ### v6 שכבה 4 — extraction של handleAudioInput + handleInitMessage + 23 בדיקות
