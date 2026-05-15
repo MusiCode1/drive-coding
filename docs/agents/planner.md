@@ -86,11 +86,22 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** פעיל — ה-e2e עבר. ממתין להחלטת Avi על המשך.
-- **Worktree:** `/home/user/projects/voice-acp-refactor` (branch `refactor`)
+- **סטטוס:** פעיל — ✅ v6 ירד למאסטר (fast-forward `45a6992..cd463ac`). ממתין להחלטה על המשך.
+- **Worktree:** `/home/user/projects/voice-acp` (master)
 - **עובד על:** —
 
 ## לוג
+
+### [2026-05-15 01:00] ✅ merge: refactor → master (v6 הושלם)
+Avi בדקה את הריפקטור empirically דרך מנהרת `musicode-musicode-voiceacp-refactor.nue.tuns.sh` (port 3001, OneCLI agent voice-acp, tmux sessions `voice-acp-refactor-server` + `voice-acp-refactor-tunnel`). אישרה שכל ההתנהגויות נשמרו, כולל הקפיצה המיידית מהקראת מחשבה למסר ברגע שמוכן (משימה L).
+
+Fast-forward merge: `git merge --ff-only refactor` במאסטר. 10 קומיטים נכנסו ב-merge יחיד. ה-master מכיל עכשיו: 14 קבצי `src/` חדשים (handlers, parsers, helpers), 17 קבצי `tests/` עם 289 בדיקות עוברות, ו-`docs/behaviors.md` המלא. `server.ts` ירד מ-888 שורות ל-269 (פחות שבעים אחוז).
+
+הצעדים הבאים שעוד פתוחים:
+1. **שכבה 7** — `tts-queue` עם priority/cancel לטיפול בבזבוז של מחשבות וקריאות-לכלים שייקטעו. היה בסקופ המקורי של v6, נדחה.
+2. **פיצ'רים מ-`future-features.md`** — שיקוף טעינה בעלייה, שם sessionב-header, וכו'.
+3. **frontend refactor** — תמיד היה ידוע שייעשה בנפרד.
+4. **ניקיון:** הסרת worktree `voice-acp-refactor` והsessions שלו (מחכה לאישור).
 
 ### [2026-05-15 00:50] ✅ בדיקת e2e עם הקלטה שמורה — עברה
 חידוש אחרי תקיעה ב-00:32. הפעלתי שוב את השרת ב-port 3001 עם OneCLI agent voice-acp. הרצתי `test-e2e-audio.ts` עם ההקלטה הקטנה ביותר (~110KB). תוצאה ראשונה — pipeline עבד עד ה-TTS, אבל TTS נכשל כי `ELEVENLABS_VOICE_ID חסר` (env var; ב-frontend הוא בא מ-URL params דרך init). תיקנתי את הסקריפט להוסיף `voice` ב-init. הרצה שנייה — **הכל ירוק**: STT 7.5s → opencode prompt → text_chunk → TTS שני סגמנטים → done תוך 11.9s. אין שגיאה ב-backend. סקריפט הבדיקה לא ראה `audio_chunk` כי שם השדה ב-message-router שונה — לא קריטי, ה-server log מאשר ש-TTS עבד.
