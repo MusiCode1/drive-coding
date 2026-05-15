@@ -28,6 +28,8 @@ import type { ClientMessage, ServerMessage, MessageSink } from "./ws-protocol.ts
 import type { ConnState } from "./conn-state.ts";
 import { createConnState } from "./conn-state.ts";
 import { handlePromptText } from "./prompt-handler.ts";
+import { handleAudioInput } from "./audio-handler.ts";
+import { handleInitMessage } from "./init-handler.ts";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const FRONTEND_DIR = resolve(import.meta.dir, "../../frontend");
@@ -161,96 +163,33 @@ async function handleMessage(
   }
 }
 
+/** Build a MessageSink that wraps a Bun WebSocket. */
+function wsSink(ws: any): MessageSink {
+  return {
+    send: (msg) => send(ws, msg),
+    sendError: (message) => sendError(ws, message),
+  };
+}
+
+/** Standard PromptHandlerDeps used by every handler in production. */
+const promptDeps = {
+  systemPrompt: VOICE_SYSTEM_PROMPT,
+  streamTts: (text: string, voiceId: string | undefined, onChunk: (c: Uint8Array) => void) =>
+    streamCachedTextToSpeech(text, { voiceId }, onChunk),
+  translateThought,
+  narrateToolCall,
+  renderMarkdown,
+};
+
 async function handleInit(
   ws: any,
   state: ConnState,
   msg: Extract<ClientMessage, { type: "init" }>,
 ): Promise<void> {
-  if (state.bridge) {
-    sendError(ws, "כבר אותחל");
-    return;
-  }
-
-  // שמירת voiceId + cwd לשימוש בכל ה-TTS וה-recordings של ה-session
-  state.voiceId = msg.voice ?? null;
-  state.cwd = msg.cwd;
-
-  console.log(
-    `[ws] init cwd=${msg.cwd} session=${msg.sessionId ?? "(new)"} voice=${state.voiceId ?? "(default)"}`,
-  );
-  state.bridge = await createAcpBridge({ cwd: msg.cwd, printAgentLogs: VERBOSE });
-
-  let sessionResult;
-  if (msg.sessionId) {
-    // session קיימת — נטען עם streaming של היסטוריה ל-frontend.
-    // ההיסטוריה כוללת את ה-system prompt, אז מסמנים כנשלח.
-    state.firstPromptSent = true;
-    send(ws, { type: "history_start" });
-
-    // buffer לרינדור markdown של סגמנטים בהיסטוריה (כמו flushMessage ב-live)
-    let historyMessageBuffer = "";
-    const flushHistoryMessage = () => {
-      const t = historyMessageBuffer.trim();
-      historyMessageBuffer = "";
-      if (!t) return;
-      try {
-        const html = renderMarkdown(t);
-        send(ws, { type: "message_rendered", html, source: "history" });
-      } catch (e) {
-        console.error(`[ws] render history נכשל: ${(e as Error).message}`);
-      }
-    };
-
-    sessionResult = await state.bridge.loadSession(msg.sessionId, {
-      onChunk: (chunk, kind) => {
-        send(ws, { type: "history_chunk", text: chunk, kind });
-        if (kind === "message") {
-          historyMessageBuffer += chunk;
-        } else if (
-          (kind === "thought" || kind === "user_message") &&
-          historyMessageBuffer.length > 0
-        ) {
-          flushHistoryMessage();
-        }
-      },
-      onToolCall: (event) => {
-        send(ws, {
-          type: "history_tool_call",
-          event: event.event,
-          toolCallId: event.toolCallId,
-          title: event.title,
-          toolKind: event.toolKind,
-          status: event.status,
-        });
-        if (event.event === "create" && historyMessageBuffer.length > 0) {
-          flushHistoryMessage();
-        }
-      },
-    });
-    // flush סופי
-    flushHistoryMessage();
-    send(ws, { type: "history_done" });
-  } else {
-    sessionResult = await state.bridge.newSession();
-  }
-
-  // אם התבקש model ספציפי — הגדרה אחרי הקמת ה-session
-  if (msg.model && msg.model !== sessionResult.currentModelId) {
-    try {
-      await state.bridge.setModel(msg.model);
-      sessionResult.currentModelId = msg.model;
-    } catch {
-      sendError(ws, `לא ניתן להגדיר model=${msg.model}; נשאר עם ברירת המחדל`);
-    }
-  }
-
-  state.sessionId = sessionResult.sessionId;
-
-  send(ws, {
-    type: "ready",
-    sessionId: sessionResult.sessionId,
-    availableModels: sessionResult.availableModels,
-    currentModelId: sessionResult.currentModelId,
+  await handleInitMessage(wsSink(ws), state, msg, {
+    createBridge: (opts) => createAcpBridge(opts),
+    renderMarkdown,
+    printAgentLogs: VERBOSE,
   });
 }
 
@@ -259,49 +198,13 @@ async function handleAudio(
   state: ConnState,
   msg: Extract<ClientMessage, { type: "audio" }>,
 ): Promise<void> {
-  if (!state.bridge) {
-    sendError(ws, "צריך לשלוח init קודם");
-    return;
-  }
-  if (state.busy) {
-    sendError(ws, "כבר בעיבוד הודעה אחרת");
-    return;
-  }
-
-  // 0. שמירת הקלטה (אופציונלי, controlled by env). מתבצע ברקע במקביל
-  //    ל-STT כדי לא להאריך את ה-latency של התגובה.
-  const mimeType = msg.mimeType ?? "audio/webm";
-  const recPromise = saveRecording(msg.data, mimeType, state.sessionId);
-
-  // 1. STT: אודיו → טקסט
-  console.log(`[ws] STT (${msg.data.length} chars base64)`);
-  const transcript = await transcribeAudio(msg.data, {
-    mimeType,
-    previousResponse: state.lastAgentMessage ?? undefined,
+  await handleAudioInput(wsSink(ws), state, msg, {
+    ...promptDeps,
+    saveRecording,
+    saveRecordingMetadata,
+    transcribeAudio,
+    sttModelName: "gemini-flash-latest",
   });
-  send(ws, { type: "transcript", text: transcript });
-
-  // השלמת שמירת ההקלטה ברקע + metadata עם transcript.
-  // לא ממתינים — אסור שזה ידחה את ה-prompt או את ה-done.
-  recPromise.then(async (info) => {
-    if (!info) return;
-    await saveRecordingMetadata(info, {
-      timestamp: info.timestamp,
-      sessionId: state.sessionId,
-      cwd: state.cwd,
-      mimeType,
-      audioSize: Buffer.from(msg.data, "base64").byteLength,
-      transcript,
-      sttModel: "gemini-flash-latest",
-    });
-  });
-
-  if (!transcript) {
-    send(ws, { type: "done" });
-    return;
-  }
-
-  await handleUserInput(ws, state, transcript);
 }
 
 async function handleUserInput(
@@ -309,18 +212,7 @@ async function handleUserInput(
   state: ConnState,
   text: string,
 ): Promise<void> {
-  const sink: MessageSink = {
-    send: (msg) => send(ws, msg),
-    sendError: (message) => sendError(ws, message),
-  };
-  await handlePromptText(sink, state, text, {
-    systemPrompt: VOICE_SYSTEM_PROMPT,
-    streamTts: (segText, voiceId, onChunk) =>
-      streamCachedTextToSpeech(segText, { voiceId }, onChunk),
-    translateThought,
-    narrateToolCall,
-    renderMarkdown,
-  });
+  await handlePromptText(wsSink(ws), state, text, promptDeps);
 }
 
 

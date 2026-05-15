@@ -86,11 +86,22 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** פעיל — שכבה 3 של v6 הושלמה (extraction + bedikot של handlePromptText)
+- **סטטוס:** פעיל — שכבה 4 של v6 הושלמה (audio + init handlers)
 - **Worktree:** `/home/user/projects/voice-acp-refactor` (branch `refactor`)
 - **עובד על:** —
 
 ## לוג
+
+### [2026-05-14 21:30] v6 שכבה 4 — audio-handler + init-handler + 23 בדיקות
+שני handlers נוספים יצאו מ-server.ts: `audio-handler.ts` (`handleAudioInput`) ו-`init-handler.ts` (`handleInitMessage`). server.ts קוצץ ל-438 שורות (-51% מהמקור 888).
+
+audio-handler: 9 בדיקות (entry conditions, STT flow, recording behavior). init-handler: 14 בדיקות (entry, newSession, loadSession עם history, model override). Init משתמש ב-hand-rolled stub bridge כי המבדק הוא orchestration לא protocol.
+
+תגלית: `history_tool_call` נשלח לפני `message_rendered` של הטקסט הקודם. עדכנתי behaviors.md עם UI-HIST-7. סומן כפוטנציאל-לתיקון.
+
+**סה"כ:** 96 בדיקות עוברות (37 unit + 18 ACP + 18 prompt + 9 audio + 14 init).
+
+הצעדים הבאים: או שכבה 5 (TTS queue עם priority/cancel — דורש שינוי לוגי), או בדיקות נוספות (HTTP/markdown), או merge. ממתין להחלטה.
 
 ### [2026-05-14 20:50] v6 שכבה 3 — extraction של handlePromptText + 18 בדיקות
 **ריפקטור הראשון הגדול של server.ts.** ה-handler שהיה 240 שורות בתוך closure חולץ ל-3 קבצים: `ws-protocol.ts` (types + MessageSink), `conn-state.ts` (interface + factory), `prompt-handler.ts` (handlePromptText עם deps interface). server.ts קוצץ מ-888 ל-546 שורות (39% פחות).

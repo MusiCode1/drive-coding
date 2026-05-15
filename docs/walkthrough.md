@@ -4,6 +4,64 @@
 
 ---
 
+## 2026-05-14 21:30 (worktree `voice-acp-refactor` / branch `refactor`)
+
+### v6 שכבה 4 — extraction של handleAudioInput + handleInitMessage + 23 בדיקות
+
+**אותה תבנית של שכבה 3 — handlers נוספים יוצאים ל-files נפרדים עם deps interface.**
+
+**שני קבצים חדשים:**
+
+1. **`src/audio-handler.ts`** — `handleAudioInput(sink, state, audioMsg, deps)`.
+   - `AudioHandlerDeps` extends `PromptHandlerDeps` ומוסיף: `saveRecording`, `saveRecordingMetadata`, `transcribeAudio`, `sttModelName`.
+   - הפונקציה: בדיקת busy + bridge → save recording (background) → transcribe → send transcript → metadata write (fire-and-forget) → empty? done; אחרת delegate ל-`handlePromptText`.
+
+2. **`src/init-handler.ts`** — `handleInitMessage(sink, state, initMsg, deps)`.
+   - `InitHandlerDeps`: `createBridge`, `renderMarkdown`, `printAgentLogs`.
+   - הפונקציה: צור bridge → newSession או loadSession (עם streaming של היסטוריה) → setModel אם צריך → send ready.
+   - היסטוריה כוללת flushHistoryMessage עם markdown rendering, ו-`firstPromptSent=true` כי ה-system prompt כבר חלק מהמטען.
+
+**ב-`server.ts`:**
+- `handleInit` ו-`handleAudio` הופכים ל-wrappers דקים (5-9 שורות כל אחד).
+- מתווסף helper `wsSink(ws)` שעוטף WebSocket ב-`MessageSink`.
+- מתווסף constant `promptDeps` שמרכז את כל ה-prompt-handler dependencies לפעם אחת.
+- server.ts קוצץ עוד פעם מ-546 ל-438 שורות (-19%, סה"כ -51% מהמקור 888).
+
+**בדיקות חדשות:**
+
+- **`tests/audio-handler.test.ts` — 9 בדיקות** ב-3 קבוצות:
+  - entry conditions (2): bridge=null → error, busy=true → error.
+  - STT flow (4): transcript לפני prompt, previousResponse, mimeType default+explicit, empty transcript → done.
+  - recording (3): saveRecording נקרא תמיד, metadata כולל all fields, save הוא fire-and-forget (handler לא מחכה).
+
+- **`tests/init-handler.test.ts` — 14 בדיקות** ב-4 קבוצות:
+  - entry (4): already initialized → error, voiceId+cwd stored, createBridge args.
+  - newSession (3): basic, models in ready, firstPromptSent stays false.
+  - loadSession (4): firstPromptSent=true, history events, message_rendered with source=history, tool_call flushes pending message.
+  - model override (3): match → no setModel, differ → setModel + update, failure → error + ready still sent.
+
+**Stub bridge pattern:** init-handler tests use a hand-rolled stub of `AcpBridge` (כי הוא לא משתמש ב-protocol mechanics — רק orchestration). audio-handler tests משלבים loopback bridge + deps mocks.
+
+**תגלית מהבדיקות:** ב-history loadSession, ה-`history_tool_call` event נשלח **לפני** ה-`message_rendered` של הטקסט הקודם. הקוד שולח את ה-event ל-frontend ואז קורא ל-flush. ה-frontend צריך להחליף את תוכן ה-bubble בדיעבד. עדכנתי behaviors.md עם UI-HIST-7 המתעד את ההתנהגות הזו ומסמן אותה כפוטנציאלית-לתיקון. אם תיקון יבוצע — הבדיקה חייבת להתעדכן בו זמנית.
+
+**אימות:**
+- `bun test` → **96 pass, 0 fail, 181 expect() calls, 211ms** (37 unit + 18 ACP + 18 prompt + 9 audio + 14 init).
+- `bunx tsc --noEmit` → נקי.
+
+**מצב server.ts:**
+- מקור: 888 שורות.
+- אחרי שכבה 3: 546 שורות (-39%).
+- אחרי שכבה 4: 438 שורות (-51% מסה"כ).
+
+**הצעדים הבאים:**
+- שכבה 5 — TTS queue עצמאי כדי לטפל בבזבוז של מחשבות וכלים שייחתכו (הנושא שעלה בתחילת הסשן). דורש שינוי לוגי, לא רק extraction.
+- או — בדיקות נוספות לאזורים שכרגע לא מכוסים (HTTP endpoints, markdown sanitization).
+- או — merge של refactor למאסטר, ואז new iteration.
+
+ממתין להחלטת Avi.
+
+---
+
 ## 2026-05-14 20:50 (worktree `voice-acp-refactor` / branch `refactor`)
 
 ### v6 שכבה 3 — extraction של handlePromptText + 18 integration tests

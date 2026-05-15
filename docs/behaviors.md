@@ -725,7 +725,10 @@ thought/message: אם role≠"agent" → AgentTurn חדש (historic=true), role=
 מקור: `index.html:1553-1559`.
 
 ### UI-HIST-5: ב-backend, flushHistoryMessage עם markdown
-loadSession מבצע rendering של message segments דרך onChunk: thought/user_message או tool_call create גורר flush. בסוף — flush סופי. מקור: `server.ts:313-355`.
+loadSession מבצע rendering של message segments דרך onChunk: thought/user_message או tool_call create גורר flush. בסוף — flush סופי. מקור: `init-handler.ts` (אחרי extraction מ-server.ts).
+
+### UI-HIST-7: סדר history_tool_call לפני message_rendered (פוטנציאלי לתיקון)
+ב-onToolCall, ה-`sink.send(history_tool_call)` נקרא **לפני** `flushHistoryMessage()`. כלומר ה-frontend מקבל את ה-tool_call event לפני שה-HTML של המסר הקודם נשלח. בהמשך ה-flush מתבצע ו-message_rendered מגיע. ה-frontend צריך להתמודד עם הסדר הזה (להחליף תוכן bubble קיים). אם יוחלף בעתיד — צריך לעדכן את הבדיקה במקביל.
 
 ### UI-HIST-6: בועת message היסטורית — audioState="cold"
 כפתור 🔊 פעיל ללחיצה. הקליק → fetchAudio דרך /api/tts. מקור: `index.html:617-619, 714-738`.
