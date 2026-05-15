@@ -189,6 +189,8 @@ voice-acp לא משתמש ב-MCP servers נוספים — passthrough של openc
 ### PROMPT-8: messageBuffer + flushMessage לפי גבול משפט
 `onChunk(kind="message")`: `messageBuffer += chunk`, ואז loop של `findSentenceBoundary` — אם נמצא גבול: חיתוך ל-head, flush, וכל פעם ה-rest ממשיך. מקור: `server.ts:557-570`.
 
+**חשוב — batching:** `findSentenceBoundary` מחזיר את הגבול ה**אחרון** ב-buffer (לא הראשון). כלומר chunk עם 3 משפטים שלמים (`"A. B. C. "`) → flush **יחיד** של כל הטקסט עד הגבול האחרון, ולא 3 flushes נפרדים. רק המשפט שעוד לא הסתיים (אם יש) נשאר ב-buffer ל-chunk הבא או ל-end-of-turn flush. נחשף בכתיבת בדיקות לשכבה 3 של הריפקטור — חשוב שריפקטור עתידי לא ישנה את ההתנהגות הזו.
+
 ### PROMPT-9: flushMessage עושה 3 פעולות בסדר
 1. trim + **דריסה** של `lastAgentMessage` (לא הצברה — רק ה-flush האחרון נשמר) + push ל-`recentMessages` (FIFO max 3).
 2. `renderMarkdown` → `message_rendered` event.

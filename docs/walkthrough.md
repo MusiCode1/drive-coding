@@ -4,6 +4,53 @@
 
 ---
 
+## 2026-05-14 20:50 (worktree `voice-acp-refactor` / branch `refactor`)
+
+### v6 שכבה 3 — extraction של handlePromptText + 18 integration tests
+
+**הריפקטור הראשון הגדול של server.ts.** ה-handler שהיה 240 שורות בתוך closure ענק חולץ ל-3 קבצים חדשים:
+
+1. **`src/ws-protocol.ts`** — types של `ClientMessage` ו-`ServerMessage`, plus `MessageSink` interface (`send` + `sendError`). הוצא מ-server.ts כדי שhandlers יוכלו להשתמש בלי לתלות ב-`Bun.serve`.
+
+2. **`src/conn-state.ts`** — `ConnState` interface + `createConnState()` factory. הוצא מאותה סיבה.
+
+3. **`src/prompt-handler.ts`** — `handlePromptText(sink, state, text, deps)`. ה-deps כולל systemPrompt, streamTts callback, translateThought, narrateToolCall, renderMarkdown. כך אפשר לבדוק עם mocks.
+
+**ב-`server.ts`:**
+- ההגדרות של ClientMessage/ServerMessage/ConnState נמחקו (מועברות ל-imports).
+- `handleUserInput` הצטמצם לwrapper של 11 שורות שבונה sink + deps ומפעיל את `handlePromptText`.
+- הקובץ קוצץ מ-888 ל-546 שורות.
+
+**בדיקות חדשות: `tests/prompt-handler.test.ts` — 18 בדיקות בחמש קבוצות:**
+
+- **basic flow** (4): thinking→done, busy flag set during + cleared, busy cleared on throw, bridge=null → sendError.
+- **system prompt injection** (1): first prompt עם prefix, second בלי, firstPromptSent עובר ל-true.
+- **message streaming** (4): single sentence → text_chunk + message_rendered + audio_*, multiple sentences (BATCHED — ראה תגלית למטה), lastAgentMessage **overwritten** לא accumulated, recentMessages FIFO max 3.
+- **thought flow** (3): thought_chunk → translate → text_chunk thought_translation + audio kind=thought, translate→null מדלג על שניהם, kind transition (thought→message) מפעיל flush של שני ה-buffers.
+- **tool calls** (2): create → narrateToolCall עם snapshot context + audio tool_title, title ריק → אין narration.
+- **empty response** (3): 0 chars → "המודל לא ענה", 0 chars + thoughts → "ביצע פעולות", error followed by done.
+
+**הוספת harness אלגנטי:**
+- `recordingSink()` — `MessageSink` שאוסף כל event למערך + מערך errors נפרד.
+- `defaultDeps(overrides)` — deps עם no-op TTS, identity translation, raw-title narration, ו-`<p>${text}</p>` markdown. tests עוקפים שדות בודדים.
+- `setupHandler(agent)` — מקים loopback בridge + fresh state + sink + new session, מוכן לקריאה.
+- `makeAgent(promptImpl)` — Agent minimal עם default initialize/newSession/וכו', רק `prompt` ניתן לוצקה.
+
+**תגלית מהבדיקות — חשוב!**
+
+הבדיקה "multiple sentences in one chunk" צפתה 3 flushes של 3 משפטים בנפרד. בפועל הוצאו רק 2: שני המשפטים השלמים הראשונים flushed יחד כסגמנט אחד, והשלישי (בלי trailing whitespace) flushed ב-end-of-turn. הסיבה: `findSentenceBoundary` מחזיר את הגבול ה**אחרון** ב-buffer, לא הראשון. הקוד עושה batch-flush, לא per-sentence flush.
+
+זו התנהגות שלא תועדה במפורש ב-`behaviors.md` (PROMPT-8). עדכנתי שם הערה ברורה שזה batching, ושהוא חייב להישמר בריפקטור עתידי.
+
+**אימות:**
+- `bun test` → **73 pass, 0 fail, 130 expect() calls, 167ms** (37 unit + 18 ACP bridge + 18 prompt handler).
+- `bunx tsc --noEmit` → נקי.
+- server.ts קוצץ מ-888 ל-546 שורות (39% פחות).
+
+**הצעדים הבאים:** שכבה 4 — extraction של `handleAudio` ו-`handleInit` באותה תבנית. אז שכבה 5 — אופציונלי — `tts-queue.ts` עצמאי (כדי לטפל בבזבוז שמחשבות+כלים שייחתכו לא ייצרכו Gemini/ElevenLabs). ממתין להוראת Avi.
+
+---
+
 ## 2026-05-14 19:35 (worktree `voice-acp-refactor` / branch `refactor`)
 
 ### v6 שכבה 2 — Integration tests של ה-ACP bridge דרך loopback streams

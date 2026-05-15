@@ -86,11 +86,22 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** פעיל — שכבה 2 של v6 הושלמה (integration tests של ACP bridge דרך loopback)
+- **סטטוס:** פעיל — שכבה 3 של v6 הושלמה (extraction + bedikot של handlePromptText)
 - **Worktree:** `/home/user/projects/voice-acp-refactor` (branch `refactor`)
 - **עובד על:** —
 
 ## לוג
+
+### [2026-05-14 20:50] v6 שכבה 3 — extraction של handlePromptText + 18 בדיקות
+**ריפקטור הראשון הגדול של server.ts.** ה-handler שהיה 240 שורות בתוך closure חולץ ל-3 קבצים: `ws-protocol.ts` (types + MessageSink), `conn-state.ts` (interface + factory), `prompt-handler.ts` (handlePromptText עם deps interface). server.ts קוצץ מ-888 ל-546 שורות (39% פחות).
+
+18 בדיקות חדשות בקובץ `tests/prompt-handler.test.ts`: basic flow (4), system prompt injection (1), message streaming (4), thought flow (3), tool calls (2), empty response handling (3). harness אלגנטי: recordingSink + defaultDeps + setupHandler + makeAgent.
+
+**תגלית מהבדיקות:** `findSentenceBoundary` מחזיר את הגבול ה**אחרון** ב-buffer, לא הראשון. תוצאה: chunk עם 3 משפטים שלמים → flush יחיד עם כל הטקסט עד הגבול האחרון, לא 3 flushes. עדכנתי את behaviors.md (PROMPT-8) עם הערה שזה batching שצריך להישמר בריפקטור.
+
+**סה"כ:** 73 בדיקות עוברות (37 unit + 18 ACP + 18 prompt). tsc נקי.
+
+**הצעדים הבאים:** שכבה 4 — handleAudio + handleInit באותה תבנית. או שכבה 5 — tts-queue עצמאי לטיפול בבזבוז. ממתין להחלטת Avi.
 
 ### [2026-05-14 19:35] v6 שכבה 2 — ACP bridge integration tests דרך loopback streams
 Avi הציעה לחפש אם SDK של ACP חושף נקודות בדיקה. בדיוק כך — `acp.test.js` של ה-SDK מדגים תבנית loopback: שני TransformStreams + ClientSideConnection + AgentSideConnection mock. שני הצדדים מדברים JSON-RPC אמיתי, רק בלי תהליך.

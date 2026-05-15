@@ -24,7 +24,10 @@ import {
   saveRecordingMetadata,
 } from "./recordings.ts";
 import { findSentenceBoundary } from "./sentence-boundary.ts";
-import { extractProviderError } from "./provider-error.ts";
+import type { ClientMessage, ServerMessage, MessageSink } from "./ws-protocol.ts";
+import type { ConnState } from "./conn-state.ts";
+import { createConnState } from "./conn-state.ts";
+import { handlePromptText } from "./prompt-handler.ts";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const FRONTEND_DIR = resolve(import.meta.dir, "../../frontend");
@@ -40,103 +43,8 @@ const VERBOSE = (() => {
 })();
 
 // ── סוגי הודעות WebSocket ─────────────────────────────────────────────────────
-
-type ClientMessage =
-  | {
-      type: "init";
-      cwd: string;
-      sessionId?: string;
-      model?: string;
-      voice?: string;
-    }
-  | { type: "audio"; data: string; mimeType?: string }
-  | { type: "text"; text: string } // שליחת טקסט (לדיבוג, בלי STT)
-  | { type: "cancel" };
-
-type ServerMessage =
-  | {
-      type: "ready";
-      sessionId: string;
-      availableModels?: Array<{ modelId: string; name: string; description?: string }>;
-      currentModelId?: string;
-    }
-  | { type: "transcript"; text: string }
-  | { type: "thinking" }
-  | {
-      type: "text_chunk";
-      text: string;
-      kind: "message" | "thought" | "thought_translation";
-    }
-  | {
-      type: "tool_call";
-      event: "create" | "update";
-      toolCallId: string;
-      title: string;
-      toolKind?: string;
-      status?: string;
-    }
-  | {
-      type: "audio_ready";
-      data: string; // base64 MP3
-      kind: "message" | "tool_title";
-    }
-  // streaming TTS — מחליף audio_ready ל-live messages
-  | {
-      type: "audio_start";
-      streamId: string;
-      kind: "message" | "tool_title" | "thought";
-    }
-  | { type: "audio_chunk"; streamId: string; data: string } // base64 MP3 chunk
-  | { type: "audio_end"; streamId: string }
-  // נשלח כשסגמנט message הסתיים — html מרונדר ממרקדאון
-  | { type: "message_rendered"; html: string; source: "live" | "history" }
-  | { type: "done" }
-  | { type: "error"; message: string }
-  // היסטוריה — נשלח רק במהלך טעינת session קיים
-  | { type: "history_start" }
-  | {
-      type: "history_chunk";
-      text: string;
-      kind: "message" | "thought" | "user_message";
-    }
-  | {
-      type: "history_tool_call";
-      event: "create" | "update";
-      toolCallId: string;
-      title: string;
-      toolKind?: string;
-      status?: string;
-    }
-  | { type: "history_done" };
-
-// state per WebSocket connection
-interface ConnState {
-  bridge: AcpBridge | null;
-  busy: boolean;
-  /** האם כבר נשלח prompt בsession הזה? משפיע על הזרקת ה-system prompt. */
-  firstPromptSent: boolean;
-  /** קול ה-TTS שנבחר ל-session הזה (`voiceId` של ElevenLabs). */
-  voiceId: string | null;
-  /**
-   * הקטע האחרון מהודעת המודל ש-flushה. משמש כקונטקסט ל-STT —
-   * עוזר ל-Gemini לפענח מילים דו-משמעיות לפי מה שנאמר קודם.
-   */
-  lastAgentMessage: string | null;
-  /**
-   * הטקסט האחרון שהמשתמש שלח (transcript או text ישיר). משמש כקונטקסט
-   * ל-narrateToolCall — "המשתמש ביקש X, ועכשיו אני עושה Y".
-   */
-  lastUserText: string | null;
-  /**
-   * עד 3 הסגמנטים האחרונים של הודעות המודל (כל flushMessage). סדר
-   * כרונולוגי. משמש כקונטקסט ל-narrateToolCall.
-   */
-  recentMessages: string[];
-  /** ה-cwd שנשלח ב-init. נשמר ל-metadata של הקלטות. */
-  cwd: string | null;
-  /** sessionId האקטיבי (אחרי handleInit). נשמר ל-metadata של הקלטות. */
-  sessionId: string | null;
-}
+// (Defined in ws-protocol.ts — imported above. Kept here as a re-export
+// marker so old grep patterns still find this section.)
 
 const states = new WeakMap<WebSocket, ConnState>();
 
@@ -178,17 +86,7 @@ const server = Bun.serve({
   },
   websocket: {
     open(ws) {
-      states.set(ws as any, {
-        bridge: null,
-        busy: false,
-        firstPromptSent: false,
-        voiceId: null,
-        lastAgentMessage: null,
-        lastUserText: null,
-        recentMessages: [],
-        cwd: null,
-        sessionId: null,
-      });
+      states.set(ws as any, createConnState());
       console.log("[ws] חיבור חדש");
     },
     async message(ws, raw) {
@@ -411,260 +309,20 @@ async function handleUserInput(
   state: ConnState,
   text: string,
 ): Promise<void> {
-  if (!state.bridge) {
-    sendError(ws, "אין session");
-    return;
-  }
-  state.lastUserText = text;
-  state.busy = true;
-
-  try {
-    // 2. אות "חושב" — צ'יים חד-פעמי ב-frontend
-    send(ws, { type: "thinking" });
-
-    // 3. prompt ל-ACP + streaming.
-    //    ב-prompt הראשון של ה-session מזריקים system prompt כ-prefix.
-    const isFirst = !state.firstPromptSent;
-    const promptText = isFirst ? VOICE_SYSTEM_PROMPT + text : text;
-    state.firstPromptSent = true;
-
-    // TTS queue: כל קריאה ל-queueTts מוסיפה משימה לשרשרת. הסדר נשמר.
-    // כך אפשר לקרוא TTS לקטעי הודעה ולכותרות כלים בזמן אמת,
-    // והאודיו ינוגן ב-frontend לפי הסדר.
-    let ttsQueue: Promise<void> = Promise.resolve();
-    let totalMessageChars = 0;
-    // streaming TTS: שולח audio_start → audio_chunk* → audio_end.
-    // ה-frontend מנגן progressively (Media Source) או אוסף ומנגן בסוף (fallback).
-    let streamCounter = 0;
-    const streamTts = async (
-      text: string,
-      kind: "message" | "tool_title" | "thought",
-    ): Promise<void> => {
-      const streamId = `s${Date.now().toString(36)}-${streamCounter++}`;
-      try {
-        send(ws, { type: "audio_start", streamId, kind });
-        await streamCachedTextToSpeech(
-          text,
-          { voiceId: state.voiceId ?? undefined },
-          (chunk) => {
-            send(ws, {
-              type: "audio_chunk",
-              streamId,
-              data: Buffer.from(chunk).toString("base64"),
-            });
-          },
-        );
-        send(ws, { type: "audio_end", streamId });
-      } catch (e) {
-        console.error(`[ws] TTS streaming נכשל (${kind}): ${(e as Error).message}`);
-        send(ws, { type: "audio_end", streamId });
-      }
-    };
-    const queueTts = (text: string, kind: "message" | "tool_title") => {
-      ttsQueue = ttsQueue.then(() => streamTts(text, kind));
-    };
-
-    // buffer מצטבר של chunks של "message" — מתפרק לקטעי TTS+render לפי גבולות.
-    let messageBuffer = "";
-    const flushMessage = () => {
-      const t = messageBuffer.trim();
-      messageBuffer = "";
-      if (!t) return;
-      totalMessageChars += t.length;
-      // שמירת הקטע האחרון כקונטקסט ל-STT של ההודעה הבאה.
-      // ה-flush האחרון מספיק — הוא הקטע שזכור למשתמש כשהוא מגיב.
-      state.lastAgentMessage = t;
-      // הוספה ל-recentMessages (FIFO, max 3) — קונטקסט ל-narrateToolCall.
-      state.recentMessages.push(t);
-      if (state.recentMessages.length > 3) state.recentMessages.shift();
-      // רנדור markdown — נשלח לפני TTS כדי שהממשק יציג מיד את הגרסה היפה
-      try {
-        const html = renderMarkdown(t);
-        send(ws, { type: "message_rendered", html, source: "live" });
-      } catch (e) {
-        console.error(`[ws] render נכשל: ${(e as Error).message}`);
-      }
-      console.log(`[ws] TTS message segment (${t.length} chars)`);
-      queueTts(t, "message");
-    };
-
-    // thoughtBuffer מצטבר במקביל ל-messageBuffer.
-    // flushThought: מתרגם דרך Gemini → שולח text_chunk thought_translation
-    // → TTS עם kind "thought" (frontend מקשר ל-bubble המקורי של ה-thought).
-    // אם התרגום נכשל (null) — דילוג מוחלט: אין text_chunk ואין TTS,
-    // המשתמש יראה רק את המקור האנגלי בלי קול.
-    let thoughtBuffer = "";
-    const flushThought = () => {
-      const t = thoughtBuffer.trim();
-      thoughtBuffer = "";
-      if (!t) return;
-      console.log(`[ws] thought segment (${t.length} chars) → תרגום + TTS`);
-      ttsQueue = ttsQueue.then(async () => {
-        const hebrew = await translateThought(t);
-        if (hebrew === null) {
-          console.log(
-            `[ws] thought translation failed — דילוג על TTS לסגמנט הזה`,
-          );
-          return;
-        }
-        send(ws, {
-          type: "text_chunk",
-          text: hebrew,
-          kind: "thought_translation",
-        });
-        await streamTts(hebrew, "thought");
-      });
-    };
-
-    console.log(`[ws] prompt (${isFirst ? "first" : "follow-up"}): ${text}`);
-    // מונים לסיכום בסוף ה-prompt (debug)
-    let cntMessage = 0;
-    let cntThought = 0;
-    let cntUser = 0;
-    let toolCreates: Array<{ id: string; kind?: string; title: string }> = [];
-    let toolUpdates = 0;
-    await state.bridge.prompt(promptText, {
-      onChunk: (chunk, kind) => {
-        // user_message_chunk מגיע רק בהיסטוריה (loadSession), לא ב-prompt רגיל.
-        if (kind === "user_message") {
-          cntUser += chunk.length;
-          return;
-        }
-        if (kind === "message") cntMessage += chunk.length;
-        else if (kind === "thought") cntThought += chunk.length;
-        send(ws, { type: "text_chunk", text: chunk, kind });
-        if (kind === "message") {
-          // אם הגיע thought לפני — הוא נגמר. flush אותו ל-תרגום+TTS.
-          if (thoughtBuffer.length > 0) flushThought();
-          messageBuffer += chunk;
-          // חיתוך לפי גבול משפט — מאפשר התחלת TTS מהר ולא לחכות לסוף ההודעה.
-          let boundary = findSentenceBoundary(messageBuffer);
-          while (boundary !== -1) {
-            const head = messageBuffer.slice(0, boundary);
-            const rest = messageBuffer.slice(boundary);
-            messageBuffer = head;
-            flushMessage(); // שולח head, מאפס את messageBuffer ל-""
-            messageBuffer = rest;
-            boundary = findSentenceBoundary(messageBuffer);
-          }
-        } else if (kind === "thought") {
-          // thought באמצע — flush של ה-message הנוכחי (לחלוקת בועות ב-frontend).
-          if (messageBuffer.length > 0) flushMessage();
-          thoughtBuffer += chunk;
-          // חיתוך לפי גבול משפט — אנלוגי ל-message: מאפשר התחלת תרגום+TTS
-          // של ה-thought מהר ולא לחכות לסוף ה-thought block.
-          let boundary = findSentenceBoundary(thoughtBuffer);
-          while (boundary !== -1) {
-            const head = thoughtBuffer.slice(0, boundary);
-            const rest = thoughtBuffer.slice(boundary);
-            thoughtBuffer = head;
-            flushThought(); // שולח head ל-תרגום+TTS, מאפס thoughtBuffer ל-""
-            thoughtBuffer = rest;
-            boundary = findSentenceBoundary(thoughtBuffer);
-          }
-        }
-      },
-      onToolCall: (event) => {
-        if (event.event === "create") {
-          toolCreates.push({
-            id: event.toolCallId,
-            kind: event.toolKind,
-            title: event.title ?? "",
-          });
-          console.log(
-            `[ws] tool_call create: kind=${event.toolKind ?? "?"} title="${event.title ?? "(empty)"}" status=${event.status ?? "?"}`,
-          );
-        } else {
-          toolUpdates++;
-          console.log(
-            `[ws] tool_call update: id=${event.toolCallId.slice(0, 8)} status=${event.status ?? "?"}`,
-          );
-        }
-        send(ws, {
-          type: "tool_call",
-          event: event.event,
-          toolCallId: event.toolCallId,
-          title: event.title,
-          toolKind: event.toolKind,
-          status: event.status,
-        });
-        // tool create — לסגור גם message וגם thought שהיו פתוחים, ואז
-        // נראציה דרך Gemini במקום הכותרת הגולמית.
-        if (event.event === "create") {
-          flushMessage();
-          flushThought();
-          const rawTitle = event.title?.trim();
-          if (rawTitle) {
-            console.log(`[ws] narrate tool (raw: ${rawTitle})`);
-            // לוקחים snapshot של ההקשר ברגע ה-create — כדי שאם פעולות
-            // נוספות מעדכנות recentMessages במקביל, הנראציה תייצג נכון
-            // את המצב כש-ה-tool נקרא.
-            const userMessage = state.lastUserText ?? "";
-            const recentSnapshot = state.recentMessages.slice(-3);
-            const toolForNarrate = {
-              toolCallId: event.toolCallId,
-              kind: event.toolKind,
-              title: rawTitle,
-            };
-            ttsQueue = ttsQueue.then(async () => {
-              let narrate = rawTitle;
-              try {
-                narrate = await narrateToolCall(
-                  { userMessage, recentMessages: recentSnapshot },
-                  toolForNarrate,
-                );
-              } catch (e) {
-                console.error(`[ws] narrate נכשל: ${(e as Error).message}`);
-              }
-              await streamTts(narrate, "tool_title");
-            });
-          }
-        }
-      },
-    });
-
-    // סוף תור — flush של כל מה שנשאר ב-buffers
-    flushMessage();
-    flushThought();
-
-    console.log(
-      `[ws] סיכום prompt: message=${cntMessage}ch thought=${cntThought}ch user_msg=${cntUser}ch tools=${toolCreates.length}create+${toolUpdates}update`,
-    );
-    if (toolCreates.length > 0) {
-      console.log(
-        `[ws]   tools: ${toolCreates.map((t) => `${t.kind ?? "?"}/"${t.title}"`).join(", ")}`,
-      );
-    }
-
-    if (totalMessageChars === 0) {
-      // המודל לא הוציא message. ייתכן שזו שגיאת provider שopencode בלע.
-      // ננסה לחלץ אותה מ-stderr של ה-acp child.
-      const stderrLines = state.bridge.getRecentStderr();
-      const providerError = extractProviderError(stderrLines);
-      if (providerError) {
-        console.log(`[ws] תשובה ריקה — שגיאת provider: ${providerError}`);
-        sendError(ws, `שגיאת provider: ${providerError}`);
-      } else if (cntThought > 0 || toolCreates.length > 0) {
-        console.log(
-          `[ws] תשובה ריקה — היו thoughts/tools (${cntThought}ch, ${toolCreates.length}t)`,
-        );
-        sendError(
-          ws,
-          "המודל ביצע פעולות אבל לא חזר עם תשובה מילולית. נסי לבקש סיכום.",
-        );
-      } else {
-        console.log(`[ws] תשובה ריקה — מדלגים על TTS`);
-        sendError(ws, "המודל לא ענה. נסי לנסח את השאלה אחרת.");
-      }
-    }
-
-    // לא מחכים ל-ttsQueue להסתיים לפני "done" —
-    // ה-frontend מטפל בתור הניגון בעצמו ו-audio_ready ימשיכו להגיע.
-    send(ws, { type: "done" });
-  } finally {
-    state.busy = false;
-  }
+  const sink: MessageSink = {
+    send: (msg) => send(ws, msg),
+    sendError: (message) => sendError(ws, message),
+  };
+  await handlePromptText(sink, state, text, {
+    systemPrompt: VOICE_SYSTEM_PROMPT,
+    streamTts: (segText, voiceId, onChunk) =>
+      streamCachedTextToSpeech(segText, { voiceId }, onChunk),
+    translateThought,
+    narrateToolCall,
+    renderMarkdown,
+  });
 }
+
 
 // ── עזרים ────────────────────────────────────────────────────────────────────
 
