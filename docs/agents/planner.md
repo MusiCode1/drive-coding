@@ -86,11 +86,22 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** פעיל — **v6 הושלם סופית** (289 בדיקות, server.ts קוצץ ל-269 שורות)
+- **סטטוס:** פעיל — ה-e2e עבר. ממתין להחלטת Avi על המשך.
 - **Worktree:** `/home/user/projects/voice-acp-refactor` (branch `refactor`)
 - **עובד על:** —
 
 ## לוג
+
+### [2026-05-15 00:50] ✅ בדיקת e2e עם הקלטה שמורה — עברה
+חידוש אחרי תקיעה ב-00:32. הפעלתי שוב את השרת ב-port 3001 עם OneCLI agent voice-acp. הרצתי `test-e2e-audio.ts` עם ההקלטה הקטנה ביותר (~110KB). תוצאה ראשונה — pipeline עבד עד ה-TTS, אבל TTS נכשל כי `ELEVENLABS_VOICE_ID חסר` (env var; ב-frontend הוא בא מ-URL params דרך init). תיקנתי את הסקריפט להוסיף `voice` ב-init. הרצה שנייה — **הכל ירוק**: STT 7.5s → opencode prompt → text_chunk → TTS שני סגמנטים → done תוך 11.9s. אין שגיאה ב-backend. סקריפט הבדיקה לא ראה `audio_chunk` כי שם השדה ב-message-router שונה — לא קריטי, ה-server log מאשר ש-TTS עבד.
+
+**מסקנה:** הריפקטור עובר e2e אמיתי דרך OneCLI. מוכן ל-merge למאסטר.
+
+הצעדים הבאים הפתוחים (עדיפויות לפי דחיפות):
+1. **merge `refactor` → `master`** (מומלץ ראשון — הריפקטור מאומת).
+2. **שכבה 7** — `tts-queue` עם priority/cancel לטיפול בבזבוז המחשבות (היה בסקופ המקורי של v6, נדחה).
+3. **פיצ'רים מ-`future-features.md`** — שיקוף טעינה, שם session ב-header, RTL refactor לאחור.
+4. **frontend refactor** — תמיד היה ידוע שזה ייעשה בנפרד.
 
 ### [2026-05-14 23:55] v6 שכבה 7 — message router + parser + lifecycle helpers
 לפי תובנת Avi — Bun.serve לא עוזר לבדיקה, אז כל הלוגיקה ש-בתוך WebSocket handlers צריכה לצאת לפונקציות טהורות. נוצר `message-router.ts` עם `parseClientMessage`, `routeClientMessage`, `disposeConnection`, `cancelActivePrompt`. server.ts הופך glue בלבד. 22 בדיקות חדשות. server.ts: 306 → 269 שורות.

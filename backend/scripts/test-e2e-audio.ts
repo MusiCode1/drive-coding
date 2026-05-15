@@ -25,7 +25,8 @@ const start = Date.now();
 
 ws.addEventListener("open", () => {
   console.log(`[+${Date.now() - start}ms] מחובר. שולח init…`);
-  ws.send(JSON.stringify({ type: "init", cwd: CWD }));
+  const voice = process.env.VOICE_ID ?? "IKne3meq5aSn9XLyUdCD";
+  ws.send(JSON.stringify({ type: "init", cwd: CWD, voice }));
 });
 
 ws.addEventListener("message", (ev) => {
@@ -38,6 +39,10 @@ ws.addEventListener("message", (ev) => {
       ws.send(
         JSON.stringify({ type: "audio", data: audioB64, mimeType: MIME }),
       );
+      break;
+    case "audio_chunk":
+      audioReceived = true;
+      console.log(`[+${t}ms] audio_chunk (${(msg.data as string).length} chars b64)`);
       break;
     case "transcript":
       console.log(`[+${t}ms] תמלול: "${msg.text}"`);
