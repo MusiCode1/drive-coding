@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-05-15 02:50 (master, planner-agent Tama)
+
+### תכנון vNext — שכבה 1.7: acp-bridge + Claude Code
+
+אבי הציע שלושה רעיונות שמשנים את הארכיטקטורה:
+
+**1. `acp-bridge` — תהליך עוטף stdio↔WebSocket.** רעיון חזק שפותר שתי בעיות בו זמנית: (א) survival של ה-CLI אם הbackend קורס, (ב) פתח עתידי ל-multi-client sharing. בוטלו D15 (stdio בלבד) ו-D16 (agent dies with backend). נוספו D23 ו-§7.4a חדש עם תיאור מלא של mahzor חיים, יתרונות ועלויות. ה-monorepo גדל ב-package נוסף — `packages/acp-bridge/` עם 5 קבצים (bridge, manager, stdio-proxy, buffer, lifecycle). ה-deployment diagram עודכן כדי לשקף bridges על port range נפרד, עם הסבר על failure modes (backend crash, bridge crash, tunnel down).
+
+**2. Wake word ל-hands-free טהור.** אבי מכיר פרויקטים שמזהים מילה custom עם דגימות אימון, ללא LLM, low-resource. הוספתי Q14b עם סקירה של 5 ספריות (Porcupine, Snowboy, openWakeWord, Vosk, Web Speech API) והמלצה על openWakeWord — open source, custom wake words, רץ ב-browser דרך ONNX. POC נפרד אחרי MVP.
+
+**3. Claude Code adapter קיים** — תיקון לידע שלי: לא של Zed עצמם, אלא `agentclientprotocol/claude-agent-acp` (תחת ה-org של הפרוטוקול), 1.9k stars, v0.34.0 שוחרר באותו יום. תומך בתמונות, MCP, slash commands, terminals, TODO lists. אישרתי דרך GitHub fetch. נוספה D24 ועדכון §A2 עם טבלת CLIs נתמכים.
+
+שאלות חדשות נוספו (Q14a על ה-protocol של ה-bridge — WS/HTTP+SSE, port allocation, supervisor, buffer, auth, discovery). שני שאלות ישנות (Q12 survival, Q18 multi-CLI adapter) נסגרו בעקבות D23 ו-D24.
+
+המסמך גדל ל-~870 שורות. שכבה 2 (data models, sequence diagrams, API spec) תיכתב אחרי סבב נוסף של תשובות אבי על Q9-Q17 + Q14a/Q14b.
+
+---
+
 ## 2026-05-15 02:20 (master, planner-agent Tama)
 
 ### תכנון vNext — שכבה 1.5: סגירת שאלות + UX + Drive Coding

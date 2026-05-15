@@ -88,9 +88,31 @@
 
 - **סטטוס:** פעיל — המשך סשן `ses_1d26848f8ffetPtC3UQ2eLBrpt` (planner). שלב: דיון על ארכיטקטורת הגרסה הבאה.
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** ✅ שכבה 1.5 של `docs/vnext-architecture.md`. נסגרו Q1-Q8, נוספו 10 החלטות D13-D22, נוספו שאלות חדשות Q9-Q18, נוסף פרק UX מלא (§9.6), נספח השוואה לכלים.
+- **עובד על:** ✅ שכבה 1.7. נוספו D23 (acp-bridge) + D24 (claude-agent-acp). פרק חדש §7.4a, עדכון monorepo + deployment diagram. נסגרו Q12+Q18, נוספו Q14a (bridge protocol) + Q14b (wake word library).
 
 ## לוג
+
+### [2026-05-15 02:50] ✅ שכבה 1.7 — acp-bridge + Claude Code adapter
+אבי הציע 3 דברים:
+1. **stdio↔HTTP wrapper** — תהליך עוטף שמריץ CLI ב-stdio וחושף ב-HTTP/WS. ממשיך לרוץ גם אם הbackend קורס.
+2. **Wake word** — פרויקטים שמזהים מילה custom עם דגימות אימון, ללא LLM, low-resource. לבחינה.
+3. **Adapter רשמי של ACP ל-Claude Code** — Zed כתבו אותו.
+
+תיקון לידע שלי: ה-adapter הוא תחת `agentclientprotocol/claude-agent-acp` (org של הפרוטוקול, לא של Zed עצמם). אישרתי דרך GitHub fetch: 1.9k stars, v0.34.0 שוחרר היום (2026-05-15), תומך בתמונות, MCP, slash commands, terminals, TODO lists.
+
+הוספתי למסמך:
+- **D23** — acp-bridge: stdio↔WebSocket wrapper.
+- **D24** — Claude Code דרך claude-agent-acp.
+- ביטול D15+D16 (החלטות קודמות על stdio בלבד + agent-dies-with-backend).
+- פרק חדש **§7.4a** — תיאור ה-acp-bridge domain, מחזור חיים, יתרונות+עלויות.
+- עדכון **§8** monorepo: package חדש `packages/acp-bridge/` עם bridge/manager/stdio-proxy/buffer/lifecycle. גם פירוט מקיף יותר של `frontend/lib/` (components, stores, audio, i18n).
+- עדכון **§9.1** deployment diagram עם bridges processes נפרדים, port range, ו-failure modes.
+- **Q14a** (חדש) — protocol של ה-bridge: WS/HTTP+SSE, port allocation, supervisor, buffer size, auth, discovery. עם המלצותיי.
+- **Q14b** (חדש) — wake word library survey: Porcupine, Snowboy, openWakeWord, Vosk, Web Speech. המלצתי: openWakeWord.
+- עדכון **§A2** comparison: CLIs נתמכים מהיום הראשון.
+- עדכון **נספח B**: סגירה של Q12+Q18, הוספה של Q14a+Q14b.
+
+המסמך גדל ל-~870 שורות. הצעדים הבאים: ממתין לתשובות Q9-Q17 + Q14a/Q14b. אחרי זה — שכבה 2 (data models, sequence diagrams, API spec, WS protocol spec).
 
 ### [2026-05-15 02:20] ✅ שכבה 1.5 — תשובות אבי עובדו + שם פרויקט + UX
 תשובות אבי על 8 השאלות הראשונות:

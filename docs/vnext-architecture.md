@@ -160,14 +160,16 @@
 | D12 | Multi-session מהתחלה | dashboard, routing |
 | **D13** | **שם הפרויקט: `drive-coding`** (לאישור אבי) | משקף את היעד — voice-first hands-free |
 | **D14** | **Deployment ראשון: Proxmox container + CF tunnel** | אצל אבי. ענן ציבורי בעתיד אם נדרש |
-| **D15** | **ACP transport: stdio בלבד ל-MVP** | HTTP יעלה רק אם survival מקבל עדיפות |
-| **D16** | **Agent dies with backend (MVP)** | survival mechanism נדחה לאחרי MVP |
+| ~~D15~~ | ~~ACP transport: stdio בלבד ל-MVP~~ | **מבוטל ב-D23** |
+| ~~D16~~ | ~~Agent dies with backend (MVP)~~ | **מבוטל ב-D23** |
 | **D17** | **Cache: disk בלבד ל-MVP** | abstraction `CacheStore` תאפשר R2/KV אחר כך |
 | **D18** | **Pricing: BYOC (Bring Your Own CLI)** | המשתמש משתמש ב-CLI שלו עם המינוי שלו. אנחנו משלמים רק על STT/TTS (Gemini, ElevenLabs) |
 | **D19** | **UX: כפתור גדול יחיד** | start/stop של הקלטה + cancel של model במצב "speaking" |
 | **D20** | **שפות התחלה: עברית בלבד** | אנגלית כשירגיש בשל |
 | **D21** | **Frontend routes** מאושרים (§5 Q8) | `/`, `/agent/new`, `/agent/:id`, `/settings` |
 | **D22** | **אין הקלדה ב-MVP** | קולי בלבד. לא נעול — נשקול אחר כך |
+| **D23** | **`acp-bridge`: stdio↔WebSocket wrapper** | רעיון אבי. כל agent רץ כתהליך עצמאי, חושף WS. backend מתחבר. שורד נפילת backend. |
+| **D24** | **Claude Code דרך `@agentclientprotocol/claude-agent-acp`** | adapter רשמי, 1.9k stars, v0.34.0 (2026-05-15). תומך תמונות, MCP, slash commands |
 
 ---
 
@@ -177,9 +179,9 @@
 
 **Q1. איפה לפרוס?** → Proxmox container אצל אבי + Cloudflare tunnel. אימוץ קהילתי של מפתחים. ראה §9.
 
-**Q2. ACP transport?** → stdio בלבד ל-MVP. `AcpTransport` interface נשמר open. HTTP יהיה רלוונטי רק אם survival יקבל עדיפות.
+**Q2. ACP transport?** → ~~stdio בלבד~~ → **`acp-bridge` (stdio↔WebSocket wrapper).** רעיון אבי (סשן 3). כל CLI רץ בתהליך נפרד שעוטף stdio ב-WS. ה-backend מתחבר ל-WS. ראה D23 ו-§7.4a.
 
-**Q3. Agent orchestration?** → ההורה (backend) מריץ. CLI ימות עם backend ב-MVP. בעתיד נשקול survival אם זה כואב.
+**Q3. Agent orchestration?** → ~~ההורה מריץ, CLI מת עם backend~~ → **bridges עצמאיים שורדים נפילת backend.** ראה §9.1. אבל ה-bridges הם עדיין children של ה-bridge-manager שאצלנו בקונטיינר.
 
 **Q4. Cache?** → disk ל-MVP. abstraction תאפשר R2/KV אחר כך.
 
@@ -240,6 +242,43 @@
 - **אם נוסיף אחר כך:** input field שמופיע בלחיצת toggle, שולח prompt כ-text במקום audio. הצרכים שונים: לא צריך STT, לא צריך הקלטה. הצורך כן: הצגת הטקסט בבועה.
 
 **ההמלצה שלי:** לא ב-MVP. נחזור לזה כשמשתמש קונקרטי יבקש. ממתין לאישור.
+
+#### Q14a. ACP Bridge — פירוט פרוטוקול
+
+הרעיון של D23 דורש החלטות:
+
+1. **Transport בין backend ל-bridge:** WebSocket (המלצתי — JSON-RPC over WS, bidirectional טבעי), HTTP+SSE, או Unix domain socket (local-only, יותר מהיר)?
+2. **Port allocation:** טווח קבוע (7100-7199) או OS-assigned? איך backend מוצא את ה-port אחרי restart?
+3. **Process supervisor:** mini-supervisor משלנו ב-bridge-manager (פשוט), או systemd user services (חזק יותר אבל תלוי OS), או supervisord (תלות נוספת)?
+4. **Buffer size:** כמה updates ה-bridge שומר בזיכרון בזמן שhe-backend offline? 100? 1000? unbounded?
+5. **Authentication:** ה-WS של ה-bridge רץ על localhost בלבד. צריך auth? token בסיסי בכל זאת ליתרון של hardening?
+6. **Discovery:** קובץ `bridges.json` ב-`/data/` (פשוט), Unix socket discovery, או רישום ב-K/V?
+
+**ההמלצה שלי:**
+- WebSocket (JSON-RPC over WS) — סטנדרטי, bidirectional, supports notifications.
+- OS-assigned port + שמירה ב-`/data/bridges.json` (kid-style — בlocalhost).
+- mini-supervisor משלנו ב-`bridge-manager` (Bun) — restart-on-crash, kill-on-shutdown.
+- Buffer: 500 updates (זה ~30 דקות של שיחה רגילה).
+- אין auth — localhost-only, ולא expose מעבר ל-container.
+- `bridges.json` registry. בעתיד אם נצטרך scaling, מעבר ל-Redis/SQLite.
+
+**ממתין לאישור.**
+
+#### Q14b. Wake word — איזה library?
+
+אבי הזכיר פרויקטים שמזהים מילה custom עם דגימות אימון, ללא LLM, low-resource. הסקירה שלי:
+
+| ספרייה | רישוי | Wake word custom | Runtime | הערות |
+|--------|-------|------------------|---------|-------|
+| **Picovoice Porcupine** | Commercial (free tier: 3 wake words) | ✅ דרך console | WASM, ONNX | best in class, אבל לא open source |
+| **Snowboy** | Apache 2.0 | ✅ | C++ | discontinued 2020, אבל forks חיים |
+| **openWakeWord** | Apache 2.0 | ✅ דרך training | Python + ONNX (גם WASM) | חדש, פעיל, fully open |
+| **Vosk** | Apache 2.0 | ⚠️ זה STT, לא wake | C++/Python/WASM | overkill ל-wake word |
+| **Web Speech API** | Browser built-in | ❌ keywords לא custom | native | תמיכה רעה ב-Hebrew |
+
+**ההמלצה שלי לבדיקה:** **openWakeWord** — open, custom, רץ ב-browser דרך ONNX Runtime Web. נצטרך שאבי יקליט ~50-100 דגימות של ה-wake phrase לאימון. POC ב-slice עתידי (אחרי MVP).
+
+**שאלת אבי על MVP:** האם להציג wake word כ-feature מובטח ב-roadmap (slice 11+), או רק "מה שמעניין לחקור"?
 
 #### Q14. UI Components — כמה מינימליסטי?
 
@@ -329,7 +368,34 @@
 ### 7.4 ACP
 **מה:** abstraction של פרוטוקול ACP.
 **אחריות:** initialize, session/new, session/prompt, session/cancel, parsing של session/update.
-**Sub-domains:** `AcpTransport` (stdio/http), `AcpClient` (logic).
+**Sub-domains:** `AcpTransport` (websocket-to-bridge / stdio), `AcpClient` (logic).
+
+### 7.4a ACP Bridge (חדש — רעיון אבי)
+**מה:** תהליך עוטף שמריץ CLI agent עם stdio, וחושף אותו ב-WebSocket.
+**אחריות:** spawn(CLI), proxy של JSON-RPC בין stdio של ה-CLI ל-WS לlocal client (= backend שלנו), survival.
+**מחזור חיים:**
+1. backend → `POST /agents` ל-bridge-manager.
+2. bridge-manager spawn-טי `acp-bridge` חדש (תהליך נפרד, `setsid`).
+3. ה-bridge spawn-טי את ה-CLI (opencode/claude/gemini) כ-child.
+4. ה-bridge פותח WS על port דינמי, מודיע ל-manager.
+5. backend מתחבר ל-WS, מבצע ACP handshake דרך ה-bridge.
+6. אם backend נופל → ה-WS נסגר, ה-bridge ממשיך לרוץ, ה-CLI ממשיך לעבד events.
+7. backend חוזר → מתחבר מחדש ל-bridge, מקבל את ה-pending updates.
+8. למשתמש "כיבוי" → backend שולח `shutdown` ל-bridge, שמת graceful.
+
+**Pure?** לא — תהליך עצמאי עם state ו-IO. אבל ה-logic של ה-routing/buffering יהיה pure.
+
+**יתרונות:**
+- Survival: backend נופל, agent ממשיך.
+- Decoupling: backend יכול להתעדכן בלי לסיים agents.
+- Future-proof: agents אפשר לחלוק בין משתמשים (לא במכוון, אבל אפשרי).
+- אגנוסטי לCLI: כל CLI שדובר ACP-over-stdio עובד בלי שינוי.
+
+**עלות:**
+- שכבת process נוספת ל-spawn/לנהל.
+- צריך protocol קטן בין backend ל-bridge (JSON-RPC over WS — ACP מוצף).
+- צריך mechanism ל-process discovery (`bridge-manager`).
+- צריך buffer של pending updates ב-bridge ל-replay אחרי reconnect.
 
 ### 7.5 Voice Pipeline
 **מה:** STT → LLM router → TTS.
@@ -354,29 +420,40 @@
 ### 8.1 Monorepo structure
 
 ```
-voice-acp-v2/
+drive-coding/
 ├── packages/
-│   ├── protocol/          # types משותפים (frontend + backend)
+│   ├── protocol/          # types משותפים (frontend + backend + bridge)
 │   │   ├── src/
-│   │   │   ├── ws-messages.ts   # WS message types
+│   │   │   ├── ws-messages.ts   # FE↔BE WS message types
+│   │   │   ├── bridge.ts        # BE↔Bridge WS message types (ACP envelope)
 │   │   │   ├── api.ts           # HTTP API types
 │   │   │   └── agent.ts         # Agent/Session domain types
 │   │   └── package.json
 │   │
-│   ├── core/              # functional core (backend logic, pure)
+│   ├── core/              # functional core (pure logic, shared with bridge)
 │   │   ├── src/
-│   │   │   ├── acp/             # ACP parsing, types
+│   │   │   ├── acp/             # ACP parsing, types, JSON-RPC envelope
 │   │   │   ├── voice/           # STT/TTS/translation logic (pure)
-│   │   │   ├── pipeline/        # voice pipeline orchestration
+│   │   │   ├── pipeline/        # voice pipeline orchestration (pure)
 │   │   │   └── i18n/            # i18n core
 │   │   └── package.json
 │   │
+│   ├── acp-bridge/        # ⭐ חדש — wrapper של CLI agent
+│   │   ├── src/
+│   │   │   ├── bridge.ts        # entry — spawn CLI + WS server
+│   │   │   ├── manager.ts       # spawn/list/kill bridges (לbackend)
+│   │   │   ├── stdio-proxy.ts   # CLI stdio ↔ WS message routing
+│   │   │   ├── buffer.ts        # pending updates queue (לreconnect)
+│   │   │   └── lifecycle.ts     # spawn, watchdog, shutdown
+│   │   ├── package.json
+│   │   └── Dockerfile
+│   │
 │   ├── backend/           # imperative shell (services, IO)
 │   │   ├── src/
-│   │   │   ├── server.ts        # entry point, HTTP + WS
+│   │   │   ├── server.ts        # entry point, HTTP + WS (לfrontend)
 │   │   │   ├── identity/        # token issuance/validation
-│   │   │   ├── orchestrator/    # agent lifecycle
-│   │   │   ├── transport/       # AcpTransport implementations
+│   │   │   ├── orchestrator/    # agent lifecycle (delegates ל-bridge-manager)
+│   │   │   ├── bridge-client/   # WS client ל-acp-bridge instances
 │   │   │   ├── adapters/        # Gemini, ElevenLabs HTTP clients
 │   │   │   └── cache/           # CacheStore implementations
 │   │   ├── package.json
@@ -385,20 +462,29 @@ voice-acp-v2/
 │   └── frontend/          # SvelteKit app
 │       ├── src/
 │       │   ├── routes/
-│       │   │   ├── +page.svelte          # dashboard
+│       │   │   ├── +page.svelte             # dashboard
 │       │   │   ├── agent/[id]/+page.svelte  # ממשק קולי
+│       │   │   ├── agent/new/+page.svelte   # יצירת agent חדש
 │       │   │   └── settings/+page.svelte
 │       │   ├── lib/
 │       │   │   ├── components/
+│       │   │   │   ├── BigButton.svelte
+│       │   │   │   ├── BubbleChat.svelte
+│       │   │   │   └── AgentCard.svelte
 │       │   │   ├── stores/
-│       │   │   ├── api/                  # WS+HTTP clients
-│       │   │   └── i18n/                 # locale loading
+│       │   │   │   ├── agent.ts             # per-agent store factory
+│       │   │   │   ├── dashboard.ts         # רשימת agents
+│       │   │   │   └── settings.ts
+│       │   │   ├── api/                     # WS+HTTP clients
+│       │   │   ├── audio/                   # MediaRecorder + playback
+│       │   │   └── i18n/                    # locale loading
 │       │   └── app.html
 │       └── package.json
 │
 ├── docs/                  # תיעוד שמועתק מהPOC + מסמך זה
 ├── tests/                 # integration tests חוצי-package
-├── pnpm-workspace.yaml    # או bun workspace
+├── docker-compose.yml     # backend + (n × bridges)
+├── bun-workspace.json     # או pnpm-workspace
 ├── package.json
 └── README.md
 ```
@@ -463,27 +549,35 @@ export function createAgentStore(agentId: string) {
                   └──────────┬───────────┘
                              │
                              ▼
-   ┌──────────────────────────────────────────────────┐
-   │   Proxmox host (אצל אבי)                          │
-   │  ┌──────────────────────────────────────────┐    │
-   │  │  Container: drive-coding (LXC/Docker)    │    │
-   │  │                                          │    │
-   │  │  ┌──────────────────────────┐            │    │
-   │  │  │  Backend (Bun)           │            │    │
-   │  │  │  - HTTP + WebSocket      │            │    │
-   │  │  │  - Agent Orchestrator    │            │    │
-   │  │  │  - Voice Pipeline        │            │    │
-   │  │  │  - Static frontend serve │            │    │
-   │  │  └──────────┬───────────────┘            │    │
-   │  │             │ stdio                      │    │
-   │  │  ┌──────────▼───────────────┐            │    │
-   │  │  │  CLI Agent children      │            │    │
-   │  │  │  (opencode/gemini/...)   │            │    │
-   │  │  └──────────────────────────┘            │    │
-   │  │                                          │    │
-   │  │  Volume mount: /data/cache               │    │
-   │  └──────────────────────────────────────────┘    │
-   └──────────────────────────────────────────────────┘
+   ┌────────────────────────────────────────────────────────┐
+   │   Proxmox host (אצל אבי)                                │
+   │  ┌──────────────────────────────────────────────────┐  │
+   │  │  Container: drive-coding                          │  │
+   │  │                                                   │  │
+   │  │  ┌──────────────────────────┐                     │  │
+   │  │  │  Backend (Bun)           │                     │  │
+   │  │  │  - HTTP + WebSocket (FE) │                     │  │
+   │  │  │  - Voice Pipeline        │                     │  │
+   │  │  │  - Static frontend serve │                     │  │
+   │  │  │  - bridge-client (per-id)│                     │  │
+   │  │  └─────┬────────────────────┘                     │  │
+   │  │        │ WebSocket (JSON-RPC ACP)                 │  │
+   │  │        │ localhost:7100..7199                     │  │
+   │  │  ┌─────▼──────────────────────────────────────┐   │  │
+   │  │  │  acp-bridge processes (one per agent)      │   │  │
+   │  │  │  ┌─────────────┐  ┌─────────────┐          │   │  │
+   │  │  │  │  bridge #1  │  │  bridge #2  │  ...     │   │  │
+   │  │  │  │  WS :7100   │  │  WS :7101   │          │   │  │
+   │  │  │  │     │       │  │     │       │          │   │  │
+   │  │  │  │     ▼ stdio │  │     ▼ stdio │          │   │  │
+   │  │  │  │   opencode  │  │   gemini    │          │   │  │
+   │  │  │  └─────────────┘  └─────────────┘          │   │  │
+   │  │  │  Each bridge survives backend crashes      │   │  │
+   │  │  └────────────────────────────────────────────┘   │  │
+   │  │                                                   │  │
+   │  │  Volume mount: /data/cache (TTS, STT, transl.)   │  │
+   │  └──────────────────────────────────────────────────┘  │
+   └────────────────────────────────────────────────────────┘
                              │
               ┌──────────────┴───────────────┐
               ▼                              ▼
@@ -491,6 +585,12 @@ export function createAgentStore(agentId: string) {
      │  Gemini API      │          │  ElevenLabs API  │
      └──────────────────┘          └──────────────────┘
 ```
+
+**זרימת מקרי קצה:**
+- **Backend נופל:** bridges ממשיכים לקבל events מ-CLIs ומאחסנים ב-buffer.
+- **Backend עולה מחדש:** bridge-manager טוען את הregistry (קובץ JSON ב-`/data/bridges.json`), מתחבר מחדש לכל bridge, מקבל את ה-buffered events.
+- **Bridge נופל:** backend מסמן את ה-agent כ-"מת" ב-dashboard. המשתמש יכול לבחור לפתוח מחדש (יאבד state פנימי של ה-CLI, אבל אפשר להציע `session/load` כדי להמשיך).
+- **Cloudflare tunnel נופל:** משתמשים מקבלים 521. backend ו-bridges ממשיכים.
 
 ### 9.2 Environments
 
@@ -723,25 +823,38 @@ git worktree add ../voice-acp-v2 -b vnext
 
 אבי הזכיר: "הייתי רוצה ש-codenomad יתחבר דרך ACP ל-CLI מרובים ולא רק לאופנקוד".
 
-הפרויקט שלנו מאיץ את זה — הקוד של AcpTransport ו-AcpClient שיתפתח כאן יוכל בעתיד להיות package נפרד שמשרת גם את codenomad וגם את drive-coding. שווה לחשוב על זה כשמגיעים ל-slice 3.
+הפרויקט שלנו מאיץ את זה — הקוד של `acp-bridge` ו-`AcpClient` שיתפתחו כאן יוכלו בעתיד להיות package נפרד שמשרת גם את codenomad וגם את drive-coding. שווה לחשוב על זה כשמגיעים ל-slice 3.
+
+### CLIs נתמכים מהיום הראשון
+
+| CLI | Adapter | Status |
+|-----|---------|--------|
+| opencode | native ACP (built-in) | ✅ נתמך ב-POC |
+| Gemini CLI | ?? לבדוק במחקר | ⚠️ צריך בדיקה |
+| **Claude Code** | **`@agentclientprotocol/claude-agent-acp`** v0.34.0 | ✅ adapter רשמי (1.9k★) |
+
+ה-Claude Code adapter תומך ב: context @-mentions, images, tool calls, edit review, TODO lists, terminals (interactive + background), slash commands, MCP servers. הכל דרך ACP — כך שאנחנו לא צריכים adapter משלנו, רק להפעיל את התהליך הזה דרך `acp-bridge`.
 
 ---
 
-## נספח B — שאלות שעוד פתוחות לאבי (אחרי סבב 2)
+## נספח B — שאלות שעוד פתוחות לאבי (אחרי סבב 3)
 
-1. **Q9.** שם הפרויקט — האם `drive-coding` מאושר? אם לא, באיזה לבחור מהאופציות ב-§5?
-2. **Q10.** Stop mechanism — האם אופציה **B** (אותו כפתור הקלטה גם cancel) מאושרת?
-3. **Q11.** Wake word — האם דחיית POC נפרד עד אחרי MVP מאושרת?
-4. **Q12.** Backend survival — האם reactive (Option A — לטפל רק אם זה כואב) מאושר?
-5. **Q13.** הקלדה ב-MVP — האם אישור ל"לא ב-MVP"?
-6. **Q14.** UI Components — האם פירוט "כפתור גדול + בועות + סטטוס" ב-§5 Q14 מספק?
-7. **(חדש) Q15.** State machine של הכפתור — האם הדיאגרמה ב-§9.6 משקפת את מה שאתה רוצה?
-8. **(חדש) Q16.** Frontend routes — האם לפצל את `/settings` ל-`/settings/voice`, `/settings/cli`, וכו', או כל הכל בעמוד אחד?
+**עיקרי הסבב הזה:**
 
-ובנוסף — שאלות שצצות מההחלטות עצמן:
+1. **Q9.** שם הפרויקט — האם `drive-coding` מאושר?
+2. **Q10.** Stop mechanism — אופציה B (אותו כפתור)?
+3. **Q11.** Wake word ב-MVP — POC נפרד אחרי MVP?
+4. **Q13.** הקלדה ב-MVP — לא?
+5. **Q14.** UI Components — פירוט אושר?
+6. **Q14a.** ACP Bridge protocol — האם ההמלצות שלי (WS + OS-port + mini-supervisor + 500-buffer + no auth + registry קובץ) מאושרות?
+7. **Q14b.** Wake word library — openWakeWord לבחירה לכשנגיע אליו?
+8. **Q15.** State machine של הכפתור — משקף נכון?
+9. **Q16.** Frontend `/settings` — עמוד אחד או פיצול?
+10. **Q17.** Image format — Docker או LXC native?
 
-9. **(חדש) Q17.** Image format לפריסה — Docker או LXC native? בקונטיינר אצלך מה יותר נוח לתחזק?
-10. **(חדש) Q18.** Multi-CLI adapter strategy — Claude Code דרך adapter. מי כותב את ה-adapter? יש מוכן בקהילה?
+**~~נסגרו~~ בסבב הזה (3):**
+- ~~Q12. Backend survival~~ → נפתר עם D23 (acp-bridge).
+- ~~Q18. Multi-CLI adapter~~ → Claude Code דרך adapter רשמי (D24).
 
 ---
 
