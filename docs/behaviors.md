@@ -910,6 +910,24 @@ hidden ב-idle ללא היסטוריה. מופיעים כשיש playbackHistory 
 - **19:50** — תיקון פערים אחרי בדיקה (sub-agent ses_1d835201). נוספו 3 קטגוריות שלמות (HTTP, MARKDOWN, STATIC) ופערים בקטגוריות קיימות. סה"כ ~170 התנהגויות.
 - **20:20** — סקירה מעמיקה שנייה. נוספו 6 קטגוריות חדשות: SYSPROMPT (תוכן ה-system prompt בפירוט), URL (5 params של frontend), UI-HEADER (header של index), UI-RECORD (MediaRecorder flow), CONFIG-PICKER (folder picker — 10 התנהגויות נפרדות). הרחבת CONFIG הקיימת מ-5 לפריט 11. סה"כ ~210 התנהגויות.
 
+### סטטוס כיסוי בדיקות (סוף שכבה 6 של v6)
+
+- ✅ **ACP** (18 בדיקות) — `tests/acp-bridge.test.ts`
+- ✅ **PROMPT** (18) — `tests/prompt-handler.test.ts`
+- ✅ **STT** (מכוסה בעקיפין דרך audio-handler tests)
+- ✅ **TTS** cache (20) — `tests/tts-cache.test.ts`
+- ✅ **GEMINI** (35) — `tests/gemini-helper.test.ts`
+- ✅ **REC** (21) — `tests/recordings.test.ts`
+- ✅ **WS** entry conditions (ב-init/audio handlers)
+- ✅ **HTTP** (53) — 4 קבצי api-*.test.ts
+- ✅ **MARKDOWN** (29) — `tests/markdown.test.ts`
+- ✅ **STATIC** (13) — `tests/static-path.test.ts`
+- ✅ Helpers — findSentenceBoundary (21), extractProviderError (16)
+- ⚠ **SYSPROMPT** — string constant, לא נצרך testing.
+- ⚠ **URL/UI-*** — frontend, ריפקטור frontend בעתיד.
+
+**סה"כ:** 267 בדיקות עוברות, מכסות את כל ההתנהגויות הקריטיות של ה-backend.
+
 ### אזורים שנבדקו בסקירה השנייה ולא הניבו פערים חדשים
 
 - `backend/scripts/test-e2e.ts` ו-`test-e2e-audio.ts` — סקריפטים לבדיקה ידנית של ה-stack המלא, לא קוד פרודקשן. לא נצרך בדיקות.

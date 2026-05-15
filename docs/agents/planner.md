@@ -86,11 +86,18 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** פעיל — שכבה 5 של v6 הושלמה (markdown + static + 4 HTTP endpoints, 95 בדיקות חדשות)
+- **סטטוס:** פעיל — **v6 הושלם** (267 בדיקות, כל ה-backend מכוסה)
 - **Worktree:** `/home/user/projects/voice-acp-refactor` (branch `refactor`)
 - **עובד על:** —
 
 ## לוג
+
+### [2026-05-14 23:30] v6 שכבה 6 — TTS cache + GEMINI + REC + 76 בדיקות
+שלוש קטגוריות שעוד לא היו מכוסות. TTS cache (20 בדיקות) — extraction ל-`tts-cache.ts` class. GEMINI helpers (35) — ריפקטור ל-`createGeminiHelper(ai)` factory עם mock AI. REC (21) — extraction של `extFromMime` ו-`buildRecordingPaths` ל-pure helpers + integration tests עם tmp dir.
+
+**v6 הושלם:** 267 בדיקות עוברות. כל ה-backend מכוסה. ה-frontend לא בסקופ.
+
+הצעדים הבאים: merge למאסטר. אופציה אחרי: שכבה 7 (tts-queue priority/cancel).
 
 ### [2026-05-14 22:30] v6 שכבה 5 — markdown + static + HTTP endpoints
 שני אזורי security-critical שלא היו מכוסים: MARKDOWN sanitization (29 בדיקות, ישירות על renderMarkdown) ו-STATIC file serving (13 בדיקות, אחרי extraction ל-`static-path.ts`). אז 4 HTTP endpoints יצאו ל-files נפרדים (`api-voices`, `api-tts`, `api-ls`, `api-info`), כל אחד עם deps interface ו-pure logic מובדל. 53 בדיקות חדשות. server.ts: 438→306 שורות (-66% מהמקור 888).

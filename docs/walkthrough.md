@@ -4,6 +4,70 @@
 
 ---
 
+## 2026-05-14 23:30 (worktree `voice-acp-refactor` / branch `refactor`)
+
+### v6 שכבה 6 — סיום הכיסוי: TTS cache + GEMINI helpers + REC + 76 בדיקות
+
+**רקע:** אחרי שכבה 5, נשארו שלוש קטגוריות לא מכוסות (TTS cache, GEMINI, REC). זה כיסוי הסיום של הריפקטור.
+
+**TTS cache (20 בדיקות):**
+- **`src/tts-cache.ts` (חדש):** class `TtsCache` עם API מלא — `keyOf`, `get`, `set`, `has`, `size`, `clear`, `stats`. exported `DEFAULT_MODEL_ID = "eleven_v3"`.
+- **`src/tts.ts`:** משתמש ב-singleton instance של `TtsCache`. הקוד הקיים נשאר עובד.
+- **`tests/tts-cache.test.ts` — 20 בדיקות:** key construction (same/different text/voice/model, env fallback, format, empty inputs), get/set/has, size+clear, stats (counts entries, sums bytes, after overwrite, after clear), isolation בין instances.
+
+**GEMINI helpers (35 בדיקות):**
+- **ריפקטור של `gemini-helper.ts`:** מבנה חדש — `createGeminiHelper(ai, opts)` factory שמחזיר `{translateThought, narrateToolCall, resetCaches, cacheSizes}`. הסינגלטון של production נשאר זמין דרך `defaultHelper`. exported גם `withTimeout`, `buildNarratePrompt`, `GeminiLike` interface, ו-constants. ה-imports הקיימים (`translateThought` ו-`narrateToolCall`) עדיין עובדים.
+- **`tests/gemini-helper.test.ts` — 35 בדיקות בארבע קבוצות:**
+  - withTimeout utility (3): resolves fast, fallback on slow, null fallback.
+  - translateThought happy path (4): translation returned, default model, custom model override, output trimmed.
+  - translateThought failure modes (6): empty input → null no API call, empty response → null, undefined text → null, whitespace-only → null, AI throws → null, timeout → null.
+  - translateThought cache (5): same input → cache hit, different input → no hit, trim part of key, null NOT cached → retries, sizes/reset helpers.
+  - narrateToolCall happy + fallback (8): returns narration, trimmed, throws → fallback to title, timeout → fallback, empty → fallback, title empty → kind fallback, both empty → "פעולה".
+  - narrateToolCall cache (4): same toolCallId hit (different ctx), different toolCallId → no hit, fallback NOT cached → retries, narrations counted separately.
+  - buildNarratePrompt pure (5): includes user message, recentMessages join with ` · `, empty recent → `—`, kind defaults to `?`, kind included, 4 examples present.
+
+**REC (21 בדיקות):**
+- **ריפקטור של `recordings.ts`:** נחשפו `extFromMime` ו-`buildRecordingPaths` כ-pure functions exported. הלוגיקה הקיימת ב-`saveRecording` נשארה עובדת — היא משתמשת ב-helpers.
+- **`tests/recordings.test.ts` — 21 בדיקות:**
+  - extFromMime (11): webm, ogg+codecs, ogg, mp3, mpeg → mp3, wav, m4a, mp4 → m4a, flac, case-insensitive, unknown → "audio" fallback.
+  - buildRecordingPaths (7): standard inputs, audio + meta share base, colon/period replaced, null sessionId → "no-sess", sessionId truncated to 8 chars, ext from mimeType, baseDir variation.
+  - saveRecordingMetadata integration with tmp dir (3): valid JSON written, 2-space indent, error doesn't throw.
+
+**אימות:**
+- `bun test` → **267 pass, 0 fail, 476 expect() calls, 601ms** (37 unit + 18 ACP + 18 prompt + 9 audio + 14 init + 29 markdown + 13 static + 53 HTTP + 20 tts-cache + 35 gemini + 21 rec).
+- `bunx tsc --noEmit` → נקי.
+
+**סיכום מצב הכיסוי לפי `behaviors.md`:**
+- ✅ STT (מכוסה בעקיפין דרך audio-handler tests)
+- ✅ ACP (18 בדיקות)
+- ✅ PROMPT (18 בדיקות)
+- ✅ TTS cache (20 בדיקות, חדש)
+- ✅ GEMINI (35 בדיקות, חדש)
+- ✅ REC (21 בדיקות, חדש)
+- ✅ WS (entry conditions ב-init/audio handlers)
+- ✅ HTTP (53 בדיקות)
+- ✅ MARKDOWN (29 בדיקות)
+- ✅ STATIC (13 בדיקות)
+- ⚠ SYSPROMPT (string constant — לא נצרך testing)
+- ⚠ URL/UI-* (frontend — ריפקטור frontend בעתיד)
+
+**כל ה-backend מכוסה במלואו** — 267 בדיקות שמכסות את כל ההתנהגויות הקריטיות שתועדו ב-`behaviors.md`.
+
+**מצב server.ts לאורך הריפקטור:**
+- מקורי: 888 שורות.
+- אחרי שכבה 3: 546 (-39%).
+- אחרי שכבה 4: 438 (-51%).
+- אחרי שכבה 5: 306 (-66%).
+- אחרי שכבה 6: 306 (לא השתנה — הקטגוריות החדשות לא נגעו ב-server).
+
+**הצעדים הבאים:**
+- merge של refactor ל-master.
+- אופציה אחרי merge: שכבה 7 (אם רוצים) — tts-queue עם priority/cancel לטיפול בבזבוז.
+
+ממתין להחלטת Avi.
+
+---
+
 ## 2026-05-14 22:30 (worktree `voice-acp-refactor` / branch `refactor`)
 
 ### v6 שכבה 5 — כיסוי אזורים שלא כוסו: markdown + static + 4 HTTP endpoints + 95 בדיקות

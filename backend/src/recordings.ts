@@ -30,7 +30,12 @@ async function ensureDir(): Promise<void> {
   dirEnsured = true;
 }
 
-function extFromMime(mimeType: string): string {
+/**
+ * Pure helper — file extension for a given MIME type.
+ *
+ * Exported for tests.
+ */
+export function extFromMime(mimeType: string): string {
   const m = mimeType.toLowerCase();
   if (m.includes("webm")) return "webm";
   if (m.includes("ogg")) return "ogg";
@@ -39,6 +44,31 @@ function extFromMime(mimeType: string): string {
   if (m.includes("m4a") || m.includes("mp4")) return "m4a";
   if (m.includes("flac")) return "flac";
   return "audio";
+}
+
+/**
+ * Pure helper — builds the audio + metadata file paths for a recording.
+ *
+ * Filename format: `<ISO-timestamp-safe>_<sid-short>.<ext>` where:
+ *   - ISO timestamp's `:` and `.` are replaced with `-` (filesystem-safe).
+ *   - sid-short is the first 8 chars of `sessionId`, or `"no-sess"` if null.
+ *
+ * Exported for tests.
+ */
+export function buildRecordingPaths(
+  baseDir: string,
+  iso: string,
+  sessionId: string | null,
+  mimeType: string,
+): { audioPath: string; metaPath: string } {
+  const stampForName = iso.replace(/[:.]/g, "-");
+  const sid = (sessionId ?? "no-sess").slice(0, 8);
+  const ext = extFromMime(mimeType);
+  const base = `${stampForName}_${sid}`;
+  return {
+    audioPath: `${baseDir}/${base}.${ext}`,
+    metaPath: `${baseDir}/${base}.json`,
+  };
 }
 
 export interface RecordingInfo {
@@ -60,12 +90,12 @@ export async function saveRecording(
   try {
     await ensureDir();
     const iso = new Date().toISOString();
-    const stampForName = iso.replace(/[:.]/g, "-");
-    const sid = (sessionId ?? "no-sess").slice(0, 8);
-    const ext = extFromMime(mimeType);
-    const base = `${stampForName}_${sid}`;
-    const audioPath = `${RECORDINGS_DIR}/${base}.${ext}`;
-    const metaPath = `${RECORDINGS_DIR}/${base}.json`;
+    const { audioPath, metaPath } = buildRecordingPaths(
+      RECORDINGS_DIR,
+      iso,
+      sessionId,
+      mimeType,
+    );
     await Bun.write(audioPath, Buffer.from(audioBase64, "base64"));
     return { audioPath, metaPath, timestamp: iso };
   } catch (e) {

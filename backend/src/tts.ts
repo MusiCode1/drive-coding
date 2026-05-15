@@ -76,14 +76,14 @@ export async function textToSpeechBase64(
 }
 
 // ── Cache (in-memory) ────────────────────────────────────────────────────────
-// אותו טקסט + אותו voice + אותו model = אותו אודיו → cache hit.
-// בלי LRU/eviction לעת עתה: לשימוש POC בלבד. עלות זיכרון ~30-100KB לפריט.
-const ttsCache = new Map<string, string>();
+
+import { TtsCache } from "./tts-cache.ts";
+
+/** Singleton cache used by both `cachedTextToSpeechBase64` and `streamCachedTextToSpeech`. */
+const ttsCache = new TtsCache();
 
 function cacheKey(text: string, opts: TtsOptions): string {
-  const voiceId = opts.voiceId ?? process.env.ELEVENLABS_VOICE_ID ?? "";
-  const modelId = opts.modelId ?? "eleven_v3";
-  return `${voiceId}|${modelId}|${text}`;
+  return ttsCache.keyOf(text, opts, process.env.ELEVENLABS_VOICE_ID ?? "");
 }
 
 /**
@@ -103,9 +103,7 @@ export async function cachedTextToSpeechBase64(
 }
 
 export function ttsCacheStats(): { entries: number; bytes: number } {
-  let bytes = 0;
-  for (const v of ttsCache.values()) bytes += v.length;
-  return { entries: ttsCache.size, bytes };
+  return ttsCache.stats();
 }
 
 // ── Streaming TTS ─────────────────────────────────────────────────────────────
