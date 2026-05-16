@@ -86,11 +86,57 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** פעיל — המשך סשן `ses_1d26848f8ffetPtC3UQ2eLBrpt` (planner). שלב: דיון על ארכיטקטורת הגרסה הבאה.
+- **סטטוס:** בהפסקה — סשן לילי הסתיים. ממתינה לאבי בבוקר להחלטה על blocker (API key injection).
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** 🌙 ריצה אוטונומית — ✅ Slice 2 (`985f174`), ✅ Slice 3 (`2958687`). כותבת Slice 4 brief.
+- **עובד על:** ✅ Slices 1-5 הושלמו. blocker אמיתי ב-Slice 5 — SDKs דורשים env vars, OneCLI מזריק רק headers. ראה לוג למטה.
 
 ## לוג
+
+### [2026-05-16 14:25] ✅ Slice 5 הושלם (commit `4ab8caa`) — עם blocker על smoke E2E חי
+
+sub-agent Yolo+Sonnet. ~85 דק'. 140 tests (93→140, +47), DoD 14/15.
+
+**מה נוסף:**
+- Core voice (TDD): `sentence-boundary.ts`, `cache-key.ts`, `translation-prompt.ts`
+- Core ports: `SttPort`, `TtsPort`, `TranslatorPort`, `CacheStore`, `VoiceError`
+- WS schemas: `AudioMessage` (client), `SttPartialMessage` + `AudioChunkMessage` + `TranslationMessage` (server)
+- Backend voice: custom `gemini-transcription` AI SDK provider (D39), `providers.ts` registries, `pipeline.ts` (transcribe/speak/translate), `cache-disk.ts`
+- Backend integration: `agent-session.sendAudioPrompt()` flow מלא, `ws-agent.ts` audio handler
+- Frontend: `recorder.ts` (MediaRecorder), `player.ts` (AudioQueue), `voice-session.svelte.ts` state machine, push-to-talk button ב-`+page.svelte`
+- Deps: `ai`, `@ai-sdk/elevenlabs`, `@ai-sdk/google`, `@ai-sdk/provider`, `@google/genai`, `neverthrow`
+
+**🚨 Blocker שנמצא — דורש החלטת אבי:**
+
+`@ai-sdk/elevenlabs` ו-`@google/genai` בודקים את ה-API key בעצמם (env var `ELEVENLABS_API_KEY` / `GOOGLE_API_KEY` או constructor parameter). אם אין — fail מוקדם לפני שהבקשה נשלחת. אבל **OneCLI מזריק את ה-key רק כ-HTTP header ב-proxy** (`xi-api-key`, `x-goog-api-key`).
+
+ה-HTTP fetch הישיר ל-API שלהם עובד מצוין דרך OneCLI (נבדק). הבעיה היא ב-layer של ה-SDK validation.
+
+**אפשרויות פתרון (אבי יחליט):**
+1. **Placeholder API key** — להעביר ל-SDK key מזויף (`'placeholder'`); ה-SDK ישלח בקשה עם header זה ו-OneCLI יחליף לאמיתי. **חשש:** ה-Gemini SDK עלול לשלוח את ה-key ב-body/query, לא בheader, וזה ישבור.
+2. **טעינה מ-Bitwarden ב-startup** — backend טוען keys מ-Bitwarden ומגדיר env vars לפני SDK init. עוקף את OneCLI לחלוטין.
+3. **fetch ישיר במקום SDK** — כותבים adapters מותאמים כפי שתוכנן ב-POC. מאבד את כל היתרון של D38.
+4. **OneCLI feature request** — להוסיף mode שמזריק גם ל-env (לא קיים היום).
+
+**ההמלצה של Tama:** אופציה 1 לראשונה — לבדוק. אם נשבר, אופציה 2.
+
+**מה עובד היום:**
+- typecheck ✅, lint ✅, 140 tests ✅
+- backend מתחיל ב-`pnpm dev`, ה-pipeline modules נטענים
+- ה-architecture נכונה; הכל מקושר; חסר רק key flow
+
+**DoD פריט 15** (smoke E2E voice round-trip חי) — Partial. החלקים האחרים 14/15.
+
+### [2026-05-16 13:55] ✅ Slice 4 הושלם (commit `2c5db20`)
+
+sub-agent Yolo+Sonnet, tmux קרס בסיום ה-smoke E2E השני; Tama קמט בעצמו.
+
+93 tests (60→93, +33), DoD 12/12. Files: `ws-streams.ts`, `client-impl.ts`, `acp-transport.ts`, `agent-session.ts`, `ws-agent.ts`, frontend store + chat UI.
+
+**Smoke E2E #1:** initialize handshake נגד opencode acp הצליח — `{protocolVersion:1, agentCapabilities:{...}, agentInfo:{name:"OpenCode", version:"1.14.46"}}`. **Smoke #2** (prompt round-trip) — tmux קרס בעת `npx -y @rebornix/stdio-to-ws` השני.
+
+**גילוי תיקון מ-Yolo:** ACP SDK שינה `option.id` → `option.optionId`, ו-`Bun.upgrade<T>` לא מקבל generic (משתמשים `data satisfies T`).
+
+**Resolved blocker — opencode "Session not found":** הסיבה — env vars `OPENCODE_SERVER_BASE_URL`/`OPENCODE_RUN_ID` שאני (Tama) רץ תחתיהן. נקיתי env (`env -u OPENCODE_SERVER_BASE_URL ...`) לפני `opencode run` של sub-agents.
 
 ### [2026-05-16 05:50] ✅ Slice 3 הושלם (commit `2958687`)
 sub-agent Yolo+Sonnet. ~15 דק'. 52 tests (6+8 חדשות), DoD 12/12.
