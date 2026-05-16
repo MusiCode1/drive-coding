@@ -78,6 +78,10 @@ export function createAgentSession(opts: {
 }): AgentSession {
   const subscribers = new Set<Subscriber>()
 
+  // PROMPT-1: busy flag — prevents concurrent prompts from corrupting state.
+  // Set synchronously before the first await so that back-to-back calls are caught.
+  let isBusy = false
+
   function broadcast(msg: ServerMessage): void {
     for (const sub of subscribers) {
       try {
@@ -147,10 +151,22 @@ export function createAgentSession(opts: {
     },
 
     async sendPrompt(text) {
+      // PROMPT-1: reject concurrent prompts — flag is set synchronously
+      if (isBusy) {
+        broadcast({ type: "error", code: "BUSY", message: "כבר בעיבוד הודעה אחרת" })
+        return
+      }
+      isBusy = true
+
       broadcast({ type: "thinking" })
 
       try {
         const response = await opts.transport.prompt({ text }, handleNotification)
+
+        // ACP-13: non-end_turn stop reasons indicate unexpected termination — log warning
+        if (response.stopReason !== "end_turn") {
+          console.warn(`[agent-session] prompt completed with stopReason=${response.stopReason}`)
+        }
 
         broadcast({
           type: "done",
@@ -162,6 +178,8 @@ export function createAgentSession(opts: {
           code: "PROMPT_FAILED",
           message: e instanceof Error ? e.message : String(e),
         })
+      } finally {
+        isBusy = false
       }
     },
 
