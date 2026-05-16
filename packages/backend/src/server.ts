@@ -1,0 +1,30 @@
+import { Hono } from "hono"
+import { cors } from "hono/cors"
+import { registerHttp } from "./delivery/http"
+import { registerEchoWs, type WsData } from "./delivery/ws-echo"
+
+const app = new Hono()
+
+app.use("*", cors({ origin: ["http://localhost:5173"], credentials: true }))
+
+registerHttp(app)
+
+const echo = registerEchoWs(app) // returns { websocket } for Bun.serve
+
+const port = Number(process.env.PORT ?? 4000)
+
+Bun.serve<WsData>({
+  port,
+  fetch: (req, server) => {
+    const url = new URL(req.url)
+    if (url.pathname === "/ws/echo") {
+      const upgraded = server.upgrade(req, { data: { id: crypto.randomUUID() } })
+      if (upgraded) return // WS upgraded
+      return new Response("WS upgrade failed", { status: 426 })
+    }
+    return app.fetch(req)
+  },
+  websocket: echo.websocket,
+})
+
+console.log(`[backend] listening on http://localhost:${port}`)

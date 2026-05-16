@@ -1,7 +1,8 @@
-test-workspace/
-backend/node_modules/
-backend/bun.lock
-backend/bun.lockb
-.DS_Store
+node_modules/
+dist/
+build/
+.svelte-kit/
 *.log
-.codenomad/
+.env
+.env.local
+.DS_Store

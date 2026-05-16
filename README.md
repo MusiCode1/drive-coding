@@ -1,38 +1,28 @@
-# voice-acp
+# drive-coding
 
-ממשק שיחה קולי ל-OpenCode דרך פרוטוקול ACP.
+Voice-first hands-free interface for ACP-compatible CLI agents.
 
-## מטרה
-
-ממשק push-to-talk פשוט שמאפשר שיחה קולית עם מודל AI דרך OpenCode, תוך שימוש
-בפרוטוקול ACP כשכבת תקשורת — כדי שהממשק יהיה ניתן לחיבור לכל CLI שתומך ב-ACP
-בעתיד.
-
-## עיקרון הפעולה
-
-```
-[לחיצה על כפתור] → הקלטה → STT (Gemini) → OpenCode via ACP → TTS (ElevenLabs) → השמעה
-```
-
-## רכיבים
-
-- **frontend/** — דף HTML בודד עם כפתור push-to-talk
-- **backend/** — שרת Bun: מגשר WebSocket ↔ ACP, מטפל ב-STT ו-TTS
-- **docs/spec.md** — מפרט טכני מלא
-
-## הפעלה
+## Quick Start
 
 ```bash
-# דרישות: opencode, bun, משתני סביבה ב-.env
-cd backend && bun install && bun run dev
-# פתיחת frontend/index.html בדפדפן
-# URL params: ?cwd=/path/to/workspace&session=SESSION_ID
+pnpm install
+pnpm dev
 ```
 
-## תצורה
+- Backend: http://localhost:4000
+- Frontend: http://localhost:5173
 
-ראה `.env.example` לרשימת משתני הסביבה הנדרשים.
+## Commands
 
-## מצב
+```bash
+pnpm install       # install all dependencies
+pnpm dev           # run all packages in parallel
+pnpm test          # run all tests
+pnpm typecheck     # TypeScript check
+pnpm lint          # Biome lint
+pnpm format        # Biome format
+```
 
-POC — לא מוכן לייצור.
+## Architecture
+
+See `docs/vnext-architecture.md` for full technical decisions (D1-D50).
