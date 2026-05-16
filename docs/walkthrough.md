@@ -3,6 +3,68 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-16 14:20 (vnext, executor-agent Yolo)
+
+### Slice 5 — Voice Pipeline: STT (Gemini) + TTS (ElevenLabs v3) + Translator (Gemini Flash)
+
+Yolo (executor) השלים Slice 5 — voice pipeline מלא, פרט ל-live API call test (ראה "ניסיונות smoke").
+
+**מה נוסף (LOC):**
+
+| קובץ | שורות | תיאור |
+|------|--------|-------|
+| `packages/core/src/voice/sentence-boundary.ts` | 22 | port מPOC — חלוקה למשפטים |
+| `packages/core/src/voice/cache-key.ts` | 15 | SHA-256 cache key |
+| `packages/core/src/voice/translation-prompt.ts` | 14 | Hebrew/English translation prompt builder |
+| `packages/core/src/ports.ts` | +35 | SttPort, TtsPort, TranslatorPort, CacheStore, VoiceError |
+| `packages/core/src/schemas/ws-messages.ts` | +25 | AudioMessage (client), SttPartialMessage, AudioChunkMessage, TranslationMessage |
+| `packages/backend/src/voice/providers/gemini-transcription.ts` | 71 | Custom AI SDK TranscriptionModelV3 provider |
+| `packages/backend/src/voice/providers.ts` | 50 | STT/TTS/translator registries (1 each) |
+| `packages/backend/src/voice/cache-disk.ts` | 38 | DiskCache CacheStore implementation |
+| `packages/backend/src/voice/pipeline.ts` | 130 | 3 functions: transcribeUserAudio, speakSentence, translateText |
+| `packages/backend/src/app/agent-session.ts` | +100 | sendAudioPrompt — full voice round-trip |
+| `packages/backend/src/delivery/ws-agent.ts` | +50 | audio message handler |
+| `packages/backend/src/server.ts` | +10 | DiskCache + DEFAULT_REGISTRIES boot |
+| `packages/frontend/src/lib/audio/recorder.ts` | 48 | MediaRecorder wrapper |
+| `packages/frontend/src/lib/audio/player.ts` | 54 | AudioQueue — sequential mp3 playback |
+| `packages/frontend/src/lib/stores/voice-session.svelte.ts` | 146 | Voice state machine |
+| `packages/frontend/src/lib/stores/agent-session.svelte.ts` | +15 | sendRaw, setVoiceMessageHandler |
+| `packages/frontend/src/routes/agent/[id]/+page.svelte` | +100 | push-to-talk button + voice UI |
+| `packages/backend/tests/voice-pipeline.test.ts` | 244 | 13 tests מ-pipeline |
+| `packages/core/tests/voice/sentence-boundary.test.ts` | 130 | 21 tests (TDD) |
+| `packages/core/tests/voice/cache-key.test.ts` | 45 | 7 tests (TDD) |
+| `packages/core/tests/voice/translation-prompt.test.ts` | 55 | 6 tests (TDD) |
+
+**מספרי tests:**
+- לפני: 93 tests
+- אחרי: **140 tests** (+47)
+
+**DoD Slice 5 — 14/15:**
+
+1. ✅ `sentence-boundary.ts`, `cache-key.ts`, `translation-prompt.ts` — pure, TDD
+2. ✅ Core voice tests: 34 cases (21 sentence-boundary, 7 cache-key, 6 translation-prompt)
+3. ✅ Core ports: SttPort, TtsPort, TranslatorPort, CacheStore
+4. ✅ WS schemas: audio ClientMessage + stt_partial, audio_chunk, translation ServerMessages
+5. ✅ Backend deps: ai, @ai-sdk/elevenlabs, @ai-sdk/google, @ai-sdk/provider, @google/genai
+6. ✅ `gemini-transcription.ts` — TranscriptionModelV3 compliant, previousAssistantText context
+7. ✅ `providers.ts` — 3 registries (gemini/flash-context, elevenlabs/v3, gemini/flash-lite)
+8. ✅ `pipeline.ts` — 3 functions Result-returning
+9. ✅ `cache-disk.ts` — DiskCache, data/cache/tts/
+10. ✅ `agent-session.ts.sendAudioPrompt` — STT → ACP → sentence batching → translation → TTS
+11. ✅ `ws-agent.ts` handles `type: "audio"` message
+12. ✅ Frontend: Recorder + AudioQueue + push-to-talk button + VoiceState machine
+13. ✅ typecheck + lint נקי
+14. ✅ tests 140 (היה 93, +47)
+15. ⚠️ Smoke E2E partial — server עולה, pipeline נטען, ElevenLabs HTTP fetch עובד דרך onecli header injection. Full TTS/STT live call לא הצליח כי @ai-sdk SDKs מחפשים env vars (ELEVENLABS_API_KEY) בעוד onecli מזריק HTTP headers בלבד. יצריך Slice 6 לטעון keys מ-Bitwarden ב-runtime.
+
+**Gotchas שנתגלו:**
+- `ai` מייצא `experimental_generateSpeech` ו-`experimental_transcribe` (לא `generateSpeech`/`transcribe` ישירות)
+- `@ai-sdk/elevenlabs` ו-`@google/genai` דורשים env vars — onecli מזריק headers בלבד
+- `neverthrow` לא היה ב-backend deps — הוסף
+
+**Next:** Slice 6 — reconnect + multi-session + API key loading מ-Bitwarden.
+
+---
 ## 2026-05-16 13:55 (vnext, executor-agent Yolo + planner-agent Tama)
 
 ### Slice 4 — AcpTransport + chat UI (closed-loop ACP)

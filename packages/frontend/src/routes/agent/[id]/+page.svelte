@@ -4,6 +4,7 @@ import { onDestroy } from "svelte"
 import { page } from "$app/state"
 import { getAgent } from "$lib/api/agents"
 import { createAgentSessionStore } from "$lib/stores/agent-session.svelte"
+import { createVoiceSessionStore } from "$lib/stores/voice-session.svelte"
 
 let agentId = $derived(page.params.id ?? "")
 let agent = $state<AgentPublic | null>(null)
@@ -11,6 +12,9 @@ let loadError = $state<string | null>(null)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 let session = $derived(createAgentSessionStore(agentId))
+// Voice store — delegates audio messages via session
+let voice = $derived(createVoiceSessionStore(session))
+
 let inputText = $state("")
 
 async function loadAgent(): Promise<void> {
@@ -73,6 +77,15 @@ function onKeydown(e: KeyboardEvent): void {
     send()
   }
 }
+
+// Voice status labels
+const voiceStateLabel: Record<string, string> = {
+  idle: "לחץ והחזק לדבר",
+  recording: "מקליט...",
+  transcribing: "מתמלל...",
+  thinking: "המודל חושב...",
+  speaking: "מנגן...",
+}
 </script>
 
 <main>
@@ -99,9 +112,14 @@ function onKeydown(e: KeyboardEvent): void {
             <span class="bubble" dir="auto">{msg.text}</span>
           </li>
         {/each}
-        {#if session.status === "thinking"}
+        {#if session.status === "thinking" || voice.voiceState === "thinking"}
           <li class="msg msg-assistant">
             <span class="bubble thinking" aria-live="polite">חושב...</span>
+          </li>
+        {/if}
+        {#if voice.sttText}
+          <li class="msg msg-user">
+            <span class="bubble stt-preview" dir="auto" title="STT">🎙 {voice.sttText}</span>
           </li>
         {/if}
       </ul>
@@ -109,6 +127,44 @@ function onKeydown(e: KeyboardEvent): void {
       {#if session.error}
         <p class="error" role="alert">{session.error}</p>
       {/if}
+
+      {#if voice.voiceError}
+        <p class="error" role="alert">{voice.voiceError}</p>
+      {/if}
+
+      <!-- Voice status indicator -->
+      {#if voice.voiceState !== "idle"}
+        <div class="voice-status" aria-live="polite">
+          {voiceStateLabel[voice.voiceState] ?? voice.voiceState}
+        </div>
+      {/if}
+
+      <!-- Push-to-talk button -->
+      <div class="ptt-area">
+        <button
+          class="ptt-btn"
+          class:recording={voice.isRecording}
+          class:active={voice.voiceState !== "idle"}
+          onpointerdown={async (e) => {
+            e.preventDefault()
+            await voice.startRecording()
+          }}
+          onpointerup={async () => {
+            await voice.stopRecording()
+          }}
+          onpointerleave={async () => {
+            if (voice.isRecording) await voice.stopRecording()
+          }}
+          disabled={session.status !== "connected"}
+          aria-label="לחץ והחזק לדבר"
+          title="Push-to-talk"
+        >
+          🎙
+        </button>
+        <span class="ptt-label">
+          {voiceStateLabel[voice.voiceState] ?? "לחץ והחזק לדבר"}
+        </span>
+      </div>
 
       <form onsubmit={(e) => { e.preventDefault(); send() }}>
         <textarea
@@ -124,7 +180,7 @@ function onKeydown(e: KeyboardEvent): void {
             type="submit"
             disabled={!inputText.trim() || session.status !== "connected"}
           >שלח</button>
-          {#if session.status === "thinking"}
+          {#if session.status === "thinking" || voice.voiceState === "thinking"}
             <button type="button" onclick={session.cancel} class="btn-cancel">
               בטל
             </button>
@@ -200,7 +256,6 @@ function onKeydown(e: KeyboardEvent): void {
 
   .msg { display: flex; }
 
-  /* User messages on the right (in RTL this is on the start side visually) */
   .msg-user      { justify-content: flex-end; }
   .msg-assistant { justify-content: flex-start; }
   .msg-thought   { justify-content: flex-start; opacity: 0.7; }
@@ -240,6 +295,80 @@ function onKeydown(e: KeyboardEvent): void {
     font-style: italic;
   }
 
+  .bubble.stt-preview {
+    background: #ede9fe;
+    color: #4c1d95;
+    font-style: italic;
+    border: 1px dashed #a78bfa;
+  }
+
+  /* ─── Push-to-talk ─── */
+  .ptt-area {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 0;
+  }
+
+  .ptt-btn {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 3px solid #2563eb;
+    background: white;
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    user-select: none;
+    touch-action: none;
+  }
+
+  .ptt-btn:not(:disabled):hover {
+    background: #eff6ff;
+    border-color: #1d4ed8;
+  }
+
+  .ptt-btn.recording {
+    background: #ef4444;
+    border-color: #b91c1c;
+    animation: pulse 1s infinite;
+  }
+
+  .ptt-btn.active:not(.recording) {
+    background: #fef3c7;
+    border-color: #d97706;
+  }
+
+  .ptt-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+    50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+  }
+
+  .ptt-label {
+    color: #4b5563;
+    font-size: 0.9rem;
+  }
+
+  .voice-status {
+    background: #fef3c7;
+    color: #92400e;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    text-align: center;
+    margin-bottom: 0.25rem;
+  }
+
+  /* ─── Form ─── */
   form {
     display: flex;
     flex-direction: column;

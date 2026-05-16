@@ -1,4 +1,5 @@
 import type { PromptResponse, SessionNotification } from "@agentclientprotocol/sdk"
+import type { Result } from "neverthrow"
 import type { Agent, CreateAgentInput } from "./schemas"
 
 export type { PromptResponse, SessionNotification }
@@ -107,4 +108,33 @@ export interface BridgeManager {
 
   /** subscribe ל-crash events. callback נקרא כש-bridge מת לבד. */
   onCrash(handler: (bridgeId: string, exitCode: number | null) => void): () => void
+}
+
+// ─── Voice ports (Slice 5) ────────────────────────────────────
+
+export type VoiceError =
+  | { readonly kind: "stt_failed"; readonly message: string }
+  | { readonly kind: "tts_failed"; readonly message: string }
+  | { readonly kind: "translation_failed"; readonly message: string }
+  | { readonly kind: "cache_error"; readonly message: string }
+
+export interface SttPort {
+  transcribe(
+    audioBytes: Uint8Array,
+    mimeType: string,
+    options?: { previousAssistantText?: string },
+  ): Promise<Result<{ text: string }, VoiceError>>
+}
+
+export interface TtsPort {
+  synthesize(text: string, voiceId: string): Promise<Result<{ mp3Bytes: Uint8Array }, VoiceError>>
+}
+
+export interface TranslatorPort {
+  translate(text: string, targetLang: "he" | "en"): Promise<Result<{ text: string }, VoiceError>>
+}
+
+export interface CacheStore {
+  get(key: string): Promise<Uint8Array | null>
+  set(key: string, value: Uint8Array): Promise<void>
 }

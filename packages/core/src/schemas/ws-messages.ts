@@ -15,7 +15,16 @@ export type PromptMessage = typeof PromptMessage.infer
 export const CancelMessage = type({ type: "'cancel'" })
 export type CancelMessage = typeof CancelMessage.infer
 
-export const ClientMessage = PingMessage.or(PromptMessage).or(CancelMessage)
+// Slice 5: audio voice message
+export const AudioMessage = type({
+  type: "'audio'",
+  agentId: "string",
+  audioBase64: "string",
+  mimeType: "string",
+})
+export type AudioMessage = typeof AudioMessage.infer
+
+export const ClientMessage = PingMessage.or(PromptMessage).or(CancelMessage).or(AudioMessage)
 export type ClientMessage = typeof ClientMessage.infer
 
 // ─── Server → Client ─────────────────────────────────────────
@@ -69,6 +78,26 @@ export const ErrorMessage = type({
 })
 export type ErrorMessage = typeof ErrorMessage.infer
 
+// Slice 5: voice server messages
+export const SttPartialMessage = type({
+  type: "'stt_partial'",
+  text: "string",
+})
+export type SttPartialMessage = typeof SttPartialMessage.infer
+
+export const AudioChunkMessage = type({
+  type: "'audio_chunk'",
+  mp3Base64: "string",
+})
+export type AudioChunkMessage = typeof AudioChunkMessage.infer
+
+export const TranslationMessage = type({
+  type: "'translation'",
+  original: "string",
+  translated: "string",
+})
+export type TranslationMessage = typeof TranslationMessage.infer
+
 export const ServerMessage = HelloMessage.or(PongMessage)
   .or(ConnectedMessage)
   .or(ThinkingMessage)
@@ -76,5 +105,8 @@ export const ServerMessage = HelloMessage.or(PongMessage)
   .or(ToolCallMessage)
   .or(DoneMessage)
   .or(ErrorMessage)
+  .or(SttPartialMessage)
+  .or(AudioChunkMessage)
+  .or(TranslationMessage)
 
 export type ServerMessage = typeof ServerMessage.infer

@@ -17,6 +17,10 @@ export type AgentSessionStatus = "disconnected" | "connecting" | "connected" | "
  *  - Chat message list (with streaming append)
  *  - Status and error state
  *
+ * Slice 5: extended with:
+ *  - onVoiceMessage callback for voice pipeline message delegation
+ *  - sendRaw for sending arbitrary JSON via WS (used by voice store)
+ *
  * Usage: call in a .svelte file, use returned reactive fields directly.
  */
 export function createAgentSessionStore(agentId: string) {
@@ -24,6 +28,9 @@ export function createAgentSessionStore(agentId: string) {
   let status = $state<AgentSessionStatus>("disconnected")
   let error = $state<string | null>(null)
   let ws = $state<WebSocket | null>(null)
+
+  // Slice 5: voice message delegate
+  let voiceMessageHandler: ((raw: string) => void) | null = null
 
   function appendChunk(kind: ChatMessage["kind"], text: string): void {
     const last = messages[messages.length - 1]
@@ -48,6 +55,9 @@ export function createAgentSessionStore(agentId: string) {
   }
 
   function handle(raw: string): void {
+    // Delegate to voice handler if registered (processes audio_chunk, stt_partial, etc.)
+    voiceMessageHandler?.(raw)
+
     let msg: ServerMessage
     try {
       msg = JSON.parse(raw) as ServerMessage
@@ -86,7 +96,7 @@ export function createAgentSessionStore(agentId: string) {
         status = "connected"
         break
       default:
-        // pong, hello — ignore in chat context
+        // pong, hello, stt_partial, audio_chunk, translation — handled by voiceMessageHandler or ignored
         break
     }
   }
@@ -128,9 +138,21 @@ export function createAgentSessionStore(agentId: string) {
     ws.send(JSON.stringify({ type: "prompt", text }))
   }
 
+  /** Send arbitrary JSON payload via WS. Used by voice pipeline to send audio messages. */
+  function sendRaw(payload: unknown): boolean {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false
+    ws.send(JSON.stringify(payload))
+    return true
+  }
+
   function cancel(): void {
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     ws.send(JSON.stringify({ type: "cancel" }))
+  }
+
+  /** Register a voice message handler (called with every raw WS message). */
+  function setVoiceMessageHandler(handler: (raw: string) => void): void {
+    voiceMessageHandler = handler
   }
 
   return {
@@ -149,6 +171,8 @@ export function createAgentSessionStore(agentId: string) {
     connect,
     disconnect,
     sendPrompt,
+    sendRaw,
     cancel,
+    setVoiceMessageHandler,
   }
 }

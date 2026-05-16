@@ -11,10 +11,16 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.21.1",
+    "@ai-sdk/elevenlabs": "^2.0.33",
+    "@ai-sdk/google": "^3.0.75",
+    "@ai-sdk/provider": "^3.0.10",
     "@drive-coding/core": "workspace:*",
+    "@google/genai": "^2.3.0",
     "@types/ws": "^8.18.1",
+    "ai": "^6.0.184",
     "arktype": "^2.0.0",
     "hono": "^4.6.0",
+    "neverthrow": "^8.0.0",
     "ws": "^8.20.1"
   },
   "devDependencies": {

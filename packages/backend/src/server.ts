@@ -1,3 +1,4 @@
+import * as path from "node:path"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { createBridgeManager } from "./acp/bridge-manager.js"
@@ -7,6 +8,8 @@ import { registerHttp } from "./delivery/http.js"
 import { registerAgentsHttp } from "./delivery/http-agents.js"
 import { type AgentWsData, createAgentWsHandler } from "./delivery/ws-agent.js"
 import { type WsData as EchoWsData, registerEchoWs } from "./delivery/ws-echo.js"
+import { DiskCache } from "./voice/cache-disk.js"
+import { DEFAULT_REGISTRIES } from "./voice/providers.js"
 
 const app = new Hono()
 
@@ -17,13 +20,21 @@ const registry = createInMemoryAgentRegistry()
 const bridgeManager = createBridgeManager()
 const orchestrator = createAgentOrchestrator({ registry, bridgeManager })
 
+// Voice pipeline dependencies (Slice 5)
+const ttsCache = new DiskCache(path.resolve("data/cache/tts"))
+await ttsCache.init()
+
 // HTTP routes
 registerHttp(app)
 registerAgentsHttp(app, { registry, orchestrator })
 
 // WS handlers
 const echo = registerEchoWs(app)
-const agentWs = createAgentWsHandler({ orchestrator })
+const agentWs = createAgentWsHandler({
+  orchestrator,
+  registries: DEFAULT_REGISTRIES,
+  cache: ttsCache,
+})
 
 type WsData = EchoWsData | AgentWsData
 
