@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { AgentPublic } from "@drive-coding/core"
+import { renderMarkdown } from "@drive-coding/core"
 import { onDestroy, tick } from "svelte"
 import { page } from "$app/state"
 import { getAgent } from "$lib/api/agents"
@@ -118,7 +119,13 @@ const voiceStateLabel: Record<string, string> = {
     {#if agent.status === "starting"}
       <p class="notice">הסוכן מאותחל... ממתין ל-bridge.</p>
     {:else if agent.status === "crashed"}
-      <p class="error">הסוכן קרס. נסה שוב מהדשבורד.</p>
+      <p class="error">
+        הסוכן קרס.
+        {#if agent.crashReason}
+          <span class="crash-reason">{agent.crashReason}</span>
+        {/if}
+        נסה שוב מהדשבורד.
+      </p>
     {:else}
       <!-- Chat area -->
       <ul class="chat" aria-label="שיחה" bind:this={chatEl}>
@@ -147,6 +154,9 @@ const voiceStateLabel: Record<string, string> = {
                   </details>
                 {/if}
               </div>
+            {:else if msg.kind === "assistant"}
+              <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+              <span class="bubble bubble-md" dir="auto">{@html renderMarkdown(msg.text)}</span>
             {:else}
               <span class="bubble" dir="auto">{msg.text}</span>
             {/if}
@@ -543,4 +553,94 @@ const voiceStateLabel: Record<string, string> = {
     background: #ef4444;
   }
   .btn-cancel:hover { background: #dc2626; }
+
+  .crash-reason {
+    display: block;
+    font-family: ui-monospace, monospace;
+    font-size: 0.85rem;
+    margin: 0.4rem 0;
+    padding: 0.3rem 0.5rem;
+    background: rgba(185, 28, 28, 0.08);
+    border-radius: 4px;
+    word-break: break-word;
+  }
+
+  /* ─── Markdown rendered HTML inside assistant bubbles ─── */
+  .bubble-md {
+    white-space: normal; /* override pre-wrap — markdown handles newlines */
+  }
+
+  :global(.bubble-md p) {
+    margin: 0 0 0.5em;
+  }
+  :global(.bubble-md p:last-child) {
+    margin-bottom: 0;
+  }
+  :global(.bubble-md strong) {
+    font-weight: 700;
+  }
+  :global(.bubble-md em) {
+    font-style: italic;
+  }
+  :global(.bubble-md a) {
+    color: #1d4ed8;
+    text-decoration: underline;
+    word-break: break-all;
+  }
+  :global(.bubble-md code) {
+    font-family: ui-monospace, monospace;
+    font-size: 0.85em;
+    background: rgba(0, 0, 0, 0.08);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }
+  :global(.bubble-md pre) {
+    background: rgba(0, 0, 0, 0.06);
+    border-radius: 6px;
+    padding: 0.6rem 0.8rem;
+    overflow-x: auto;
+    margin: 0.5em 0;
+    max-width: 100%;
+  }
+  :global(.bubble-md pre code) {
+    background: transparent;
+    padding: 0;
+    font-size: 0.85rem;
+    white-space: pre;
+  }
+  :global(.bubble-md ul),
+  :global(.bubble-md ol) {
+    margin: 0.25em 0 0.5em 1.4em;
+    padding: 0;
+  }
+  :global(.bubble-md li) {
+    margin-bottom: 0.2em;
+  }
+  :global(.bubble-md table) {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.5em 0;
+    font-size: 0.9em;
+  }
+  :global(.bubble-md th),
+  :global(.bubble-md td) {
+    border: 1px solid #d1d5db;
+    padding: 0.3rem 0.6rem;
+    text-align: start;
+  }
+  :global(.bubble-md th) {
+    background: rgba(0, 0, 0, 0.05);
+    font-weight: 600;
+  }
+  :global(.bubble-md blockquote) {
+    border-inline-start: 3px solid #d1d5db;
+    margin: 0.5em 0;
+    padding: 0.3em 0.8em;
+    color: #6b7280;
+  }
+  :global(.bubble-md hr) {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 0.75em 0;
+  }
 </style>

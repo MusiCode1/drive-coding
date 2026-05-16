@@ -3,6 +3,38 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-16 17:40 (vnext, Yolo)
+
+### Slice 5.6 — port v1: provider-error + markdown (198 tests)
+
+השלמת slice שנפל באמצע עקב tmux crash. הוחזרה עבודה uncommitted והושלם החצי השני.
+
+#### מה בוצע?
+
+**1. provider-error (port מ-v1):**
+- `packages/core/src/acp/provider-error.ts` — port מילולי מ-v1. פונקציה `extractProviderError(stderrLines)` סורקת stderr buffer ומחזירה שגיאת provider אמיתית (JSON message עם keyword, או opencode ERROR log line).
+- `packages/core/tests/acp/provider-error.test.ts` — 16 tests כולל: pattern 1 (JSON message), pattern 2 (opencode ERROR log), edge cases, scan window (last 30/50 lines).
+- Wire: `bridge-spawn.ts` שומר FIFO buffer של 200 שורות stderr. `bridge-manager.ts` חושף `getStderr()`. `agent-orchestrator.ts` קורא `extractProviderError` ב-catch ושומר `crashReason` ב-registry.
+- Schema: `AgentPublic.crashReason?: string` נוסף. Frontend `+page.svelte` מציג `crashReason` ב-block מעוצב במקום "הסוכן קרס" גנרי.
+
+**2. markdown (port מ-v1 + wire ל-frontend):**
+- `packages/core/src/ui/markdown.ts` — port מ-v1. `renderMarkdown(text)` ממיר markdown ל-HTML נקי עם sanitization (XSS, event attrs, js: URLs, dangerous tags).
+- תלות: `marked@18` הוספה ל-`packages/core/package.json`. ה-API (`marked.parse`, `marked.setOptions`) תואם את v1.
+- `packages/core/tests/ui/markdown.test.ts` — 29 tests: GFM, tables, breaks, bold/italic, Hebrew, XSS sanitization, paired tags, self-closing tags, event attrs, javascript: URLs.
+- `packages/core/src/index.ts` — הוסף `export * from "./ui/markdown"`.
+- `+page.svelte` — assistant messages עכשיו `{@html renderMarkdown(msg.text)}` עם class `bubble-md`. CSS: support מלא לאלמנטי HTML (`p`, `a`, `code`, `pre`, `ul/ol`, `table`, `blockquote`, `hr`, headings).
+
+**3. lint fixes:**
+- formatting בקבצי provider-error (biome -- for loops inline style).
+- `result!.length` → `result?.length` (non-null assertion lint).
+
+#### תוצאות
+
+- `pnpm typecheck` — נקי.
+- `pnpm lint` — נקי.
+- `pnpm test` — 185 core + 13 frontend = **198 tests** ✓ (יעד: 198).
+
+---
 ## 2026-05-16 16:30 (vnext, Tama)
 
 ### Slice 5.5 closeout — חלק 1: UI tool calls + 3 conformance fixes

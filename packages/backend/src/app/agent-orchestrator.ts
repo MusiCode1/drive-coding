@@ -1,5 +1,7 @@
 import type { Agent, AgentRegistry, BridgeManager, CreateAgentInput } from "@drive-coding/core"
+import { extractProviderError } from "@drive-coding/core/acp/provider-error"
 import { createAcpWsTransport } from "../acp/acp-transport.js"
+import type { BridgeHandleWithStderr } from "../acp/bridge-manager.js"
 import { type AgentSession, createAgentSession } from "./agent-session.js"
 
 export type AgentOrchestrator = {
@@ -13,18 +15,33 @@ export type AgentOrchestrator = {
   getSession(id: string): AgentSession | null
 }
 
+/** BridgeManager with optional spawnWithStderr extension (added in Slice 5.6). */
+type ExtendedBridgeManager = BridgeManager & {
+  spawnWithStderr?: (
+    bridgeId: string,
+    input: Parameters<BridgeManager["spawn"]>[1],
+  ) => Promise<BridgeHandleWithStderr>
+}
+
 export function createAgentOrchestrator(deps: {
   registry: AgentRegistry
-  bridgeManager: BridgeManager
+  bridgeManager: ExtendedBridgeManager
 }): AgentOrchestrator {
   const sessions = new Map<string, AgentSession>()
+  // Stores stderr getters keyed by agent id, for crash extraction
+  const stderrGetters = new Map<string, () => string[]>()
 
   // Wire crash handler: when a bridge dies unexpectedly, mark agent as crashed
   deps.bridgeManager.onCrash(async (bridgeId, exitCode) => {
     try {
       const existing = await deps.registry.get(bridgeId)
       if (existing && existing.status !== "closed") {
-        await deps.registry.update(bridgeId, { status: "crashed" })
+        // Try to extract a provider-specific crash reason from stderr
+        const getStderr = stderrGetters.get(bridgeId)
+        const crashReason = getStderr ? (extractProviderError(getStderr()) ?? undefined) : undefined
+
+        await deps.registry.update(bridgeId, { status: "crashed", crashReason })
+        stderrGetters.delete(bridgeId)
       }
       const session = sessions.get(bridgeId)
       if (session) {
@@ -45,11 +62,22 @@ export function createAgentOrchestrator(deps: {
 
       try {
         // 2. Spawn bridge — waits for port detection (up to 30s)
-        const handle = await deps.bridgeManager.spawn(agent.id, {
-          cliKind: input.cliKind,
-          cwd: input.cwd,
-          modelOverride: input.modelOverride ?? null,
-        })
+        // Prefer spawnWithStderr for stderr access; fall back to plain spawn.
+        let handle: BridgeHandleWithStderr | Awaited<ReturnType<BridgeManager["spawn"]>>
+        if (deps.bridgeManager.spawnWithStderr) {
+          handle = await deps.bridgeManager.spawnWithStderr(agent.id, {
+            cliKind: input.cliKind,
+            cwd: input.cwd,
+            modelOverride: input.modelOverride ?? null,
+          })
+          stderrGetters.set(agent.id, (handle as BridgeHandleWithStderr).getStderr)
+        } else {
+          handle = await deps.bridgeManager.spawn(agent.id, {
+            cliKind: input.cliKind,
+            cwd: input.cwd,
+            modelOverride: input.modelOverride ?? null,
+          })
+        }
 
         // 3. ACP handshake: initialize + session/new
         const transport = await createAcpWsTransport({
@@ -70,7 +98,12 @@ export function createAgentOrchestrator(deps: {
         })
         return updated
       } catch (e) {
-        await deps.registry.update(agent.id, { status: "crashed" }).catch(() => {})
+        // Try to extract a provider error from stderr before marking crashed
+        const getStderr = stderrGetters.get(agent.id)
+        const crashReason = getStderr ? (extractProviderError(getStderr()) ?? undefined) : undefined
+        stderrGetters.delete(agent.id)
+
+        await deps.registry.update(agent.id, { status: "crashed", crashReason }).catch(() => {})
         throw new Error(
           `spawn/attach failed for agent ${agent.id}: ${e instanceof Error ? e.message : String(e)}`,
         )
@@ -97,6 +130,9 @@ export function createAgentOrchestrator(deps: {
 
       // Kill bridge process
       await deps.bridgeManager.kill(id)
+
+      // Clean up stderr getter
+      stderrGetters.delete(id)
 
       // Remove from registry
       try {

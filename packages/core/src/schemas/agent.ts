@@ -24,6 +24,8 @@ export const Agent = type({
   // Bridge details (יתמלאו ב-Slice 3)
   "bridgePort?": "number",
   "acpSessionId?": "string",
+  // Provider error reason (Slice 5.6 — D47)
+  "crashReason?": "string",
 })
 export type Agent = typeof Agent.infer
 
@@ -35,6 +37,8 @@ export const AgentPublic = type({
   modelOverride: "string | null",
   status: AgentStatus,
   createdAt: "string.date.iso",
+  // Populated when status='crashed' and provider error was extracted (Slice 5.6)
+  "crashReason?": "string",
 })
 export type AgentPublic = typeof AgentPublic.infer
 
@@ -54,7 +58,7 @@ export type AgentList = typeof AgentList.infer
 
 // Helper — Agent → AgentPublic
 export function toAgentPublic(agent: Agent): AgentPublic {
-  return {
+  const pub: AgentPublic = {
     id: agent.id,
     cliKind: agent.cliKind,
     cwd: agent.cwd,
@@ -62,4 +66,8 @@ export function toAgentPublic(agent: Agent): AgentPublic {
     status: agent.status,
     createdAt: agent.createdAt,
   }
+  if (agent.crashReason !== undefined) {
+    pub.crashReason = agent.crashReason
+  }
+  return pub
 }

@@ -1,5 +1,6 @@
 export type * from "./ports"
 export * from "./schemas"
+export * from "./ui/markdown"
 export * from "./voice/cache-key"
 export * from "./voice/sentence-boundary"
 export * from "./voice/translation-prompt"

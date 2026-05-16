@@ -8,7 +8,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./schemas/*": "./src/schemas/*.ts",
-    "./voice/*": "./src/voice/*.ts"
+    "./voice/*": "./src/voice/*.ts",
+    "./acp/*": "./src/acp/*.ts",
+    "./ui/*": "./src/ui/*.ts"
   },
   "scripts": {
     "build": "tsc --build",
@@ -17,6 +19,7 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.21.1",
     "arktype": "^2.0.0",
+    "marked": "^18.0.3",
     "neverthrow": "^8.0.0"
   }
 }

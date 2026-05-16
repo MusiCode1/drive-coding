@@ -20,10 +20,10 @@ export interface AgentRegistry {
   /** רשימת כל ה-agents (no filter — אין identity ב-MVP). */
   list(): Promise<ReadonlyArray<Agent>>
 
-  /** עדכון status / bridge details. throw אם id לא קיים. */
+  /** עדכון status / bridge details / crashReason. throw אם id לא קיים. */
   update(
     id: string,
-    patch: Partial<Pick<Agent, "status" | "bridgePort" | "acpSessionId">>,
+    patch: Partial<Pick<Agent, "status" | "bridgePort" | "acpSessionId" | "crashReason">>,
   ): Promise<Agent>
 
   /** הסרה. throw אם לא קיים. */

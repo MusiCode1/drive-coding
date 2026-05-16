@@ -31,11 +31,17 @@ export type SpawnResult = {
   readonly child: ChildProcess
   readonly port: number
   readonly pid: number
+  /** Returns a snapshot copy of the last ≤200 stderr lines (FIFO). */
+  readonly getStderr: () => string[]
 }
 
 /**
  * Spawn stdio-to-ws + reads stdout until port is detected.
  * Throws if port not detected within timeoutMs or process exits.
+ *
+ * stderr is buffered as a rolling FIFO of 200 lines — accessible via
+ * `getStderr()` on the returned SpawnResult. Used by agent-orchestrator
+ * to extract provider-specific error messages after a crash.
  */
 export async function spawnAndWaitForPort(opts: SpawnOptions): Promise<SpawnResult> {
   const timeout = opts.portTimeoutMs ?? 30000
@@ -50,18 +56,47 @@ export async function spawnAndWaitForPort(opts: SpawnOptions): Promise<SpawnResu
     throw new Error("spawn returned no pid")
   }
 
+  // Rolling FIFO stderr buffer — max 200 lines
+  const STDERR_MAX_LINES = 200
+  const stderrLines: string[] = []
+  let stderrPartial = "" // accumulates chars until newline
+
+  function appendStderrChunk(chunk: Buffer): void {
+    const text = stderrPartial + chunk.toString("utf8")
+    const parts = text.split("\n")
+    // Everything except the last element is a complete line
+    for (let i = 0; i < parts.length - 1; i++) {
+      stderrLines.push(parts[i] ?? "")
+      if (stderrLines.length > STDERR_MAX_LINES) {
+        stderrLines.shift()
+      }
+    }
+    // Last element may be partial — keep for next chunk
+    stderrPartial = parts[parts.length - 1] ?? ""
+  }
+
+  function flushStderrPartial(): void {
+    if (stderrPartial.length > 0) {
+      stderrLines.push(stderrPartial)
+      if (stderrLines.length > STDERR_MAX_LINES) {
+        stderrLines.shift()
+      }
+      stderrPartial = ""
+    }
+  }
+
   return new Promise<SpawnResult>((resolve, reject) => {
     let resolved = false
     let stdoutBuf = ""
-    let stderrBuf = ""
 
     const timeoutHandle = setTimeout(() => {
       if (!resolved) {
         resolved = true
         child.kill("SIGTERM")
+        flushStderrPartial()
         reject(
           new Error(
-            `Port not detected within ${timeout}ms. stdout: ${stdoutBuf.slice(0, 500)} | stderr: ${stderrBuf.slice(0, 500)}`,
+            `Port not detected within ${timeout}ms. stdout: ${stdoutBuf.slice(0, 500)} | stderr: ${stderrLines.slice(-10).join("\n")}`,
           ),
         )
       }
@@ -78,23 +113,29 @@ export async function spawnAndWaitForPort(opts: SpawnOptions): Promise<SpawnResu
         if (port !== null) {
           resolved = true
           clearTimeout(timeoutHandle)
-          resolve({ child, port, pid: child.pid ?? 0 })
+          resolve({
+            child,
+            port,
+            pid: child.pid ?? 0,
+            getStderr: () => [...stderrLines],
+          })
           return
         }
       }
     })
 
     child.stderr.on("data", (chunk: Buffer) => {
-      stderrBuf += chunk.toString("utf8")
+      appendStderrChunk(chunk)
     })
 
     child.on("exit", (code) => {
       if (!resolved) {
         resolved = true
         clearTimeout(timeoutHandle)
+        flushStderrPartial()
         reject(
           new Error(
-            `Process exited (code=${code}) before port detected. stdout: ${stdoutBuf.slice(0, 500)} | stderr: ${stderrBuf.slice(0, 500)}`,
+            `Process exited (code=${code}) before port detected. stdout: ${stdoutBuf.slice(0, 500)} | stderr: ${stderrLines.slice(-10).join("\n")}`,
           ),
         )
       }
