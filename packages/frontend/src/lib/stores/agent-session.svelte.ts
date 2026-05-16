@@ -82,6 +82,30 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     messages = messages.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
   }
 
+  /**
+   * Upsert a streaming user message — used by stt_partial.
+   * If the last message is a streaming user bubble, update its text.
+   * Otherwise append a new streaming user bubble.
+   * This keeps the STT preview in chronological order BEFORE the assistant
+   * response (rather than at the bottom of the chat as a separate node).
+   */
+  function upsertStreamingUser(text: string): void {
+    const last = messages[messages.length - 1]
+    if (last && last.kind === "user" && last.isStreaming) {
+      messages = [...messages.slice(0, -1), { ...last, text }]
+    } else {
+      messages = [
+        ...messages,
+        {
+          id: crypto.randomUUID(),
+          kind: "user",
+          text,
+          isStreaming: true,
+        },
+      ]
+    }
+  }
+
   function handle(raw: string): void {
     // Delegate to voice handler if registered (processes audio_chunk, stt_partial, etc.)
     voiceMessageHandler?.(raw)
@@ -149,8 +173,14 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
         error = `${msg.code}: ${msg.message}`
         status = "connected"
         break
+      case "stt_partial":
+        // Promote STT preview to a chronologically-positioned user bubble.
+        // voice-session also handles this to track sttText for its own state,
+        // but we own the message list rendering here.
+        upsertStreamingUser(msg.text)
+        break
       default:
-        // pong, hello, stt_partial, audio_chunk, translation — handled by voiceMessageHandler or ignored
+        // pong, hello, audio_chunk, translation — handled by voiceMessageHandler or ignored
         break
     }
   }

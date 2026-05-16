@@ -212,21 +212,9 @@ async function onFileUpload(e: Event) {
   const file = input.files?.[0]
   if (!file) return
   input.value = "" // reset so same file can be re-selected
-  const arrayBuf = await file.arrayBuffer()
-  const uint8 = new Uint8Array(arrayBuf)
-  let binary = ""
-  const chunkSize = 8192
-  for (let i = 0; i < uint8.length; i += chunkSize) {
-    binary += String.fromCharCode(...uint8.subarray(i, i + chunkSize))
-  }
-  const base64 = btoa(binary)
-  // Send through exact same WS path as mic recording
-  session.sendRaw({
-    type: "audio",
-    agentId: session.agentId,
-    audioBase64: base64,
-    mimeType: file.type || "audio/webm",
-  })
+  // Use voice store so state advances (transcribing → thinking) — otherwise
+  // audio_chunk events arrive while voiceState is "idle" and get dropped.
+  await voice.sendAudioBlob(file, file.type || "audio/webm")
 }
 
 // ── Main mic button click ────────────────────────────────────────────────────
@@ -425,18 +413,15 @@ function toggleTool(id: string) {
                 <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                 <div class="bubble bubble-agent" dir="auto">{@html renderMarkdown(msg.text)}</div>
               {:else}
-                <!-- user -->
-                <div class="bubble bubble-user" dir="auto">{msg.text}</div>
+                <!-- user (typed or transcribed via STT) -->
+                <div
+                  class="bubble bubble-user"
+                  class:stt-streaming={msg.isStreaming}
+                  dir="auto"
+                >{#if msg.isStreaming}🎙 {/if}{msg.text}</div>
               {/if}
             </li>
           {/each}
-
-          <!-- STT preview while transcribing -->
-          {#if voice.sttText}
-            <li class="msg msg-user">
-              <div class="bubble bubble-user stt-preview" dir="auto">🎙 {voice.sttText}</div>
-            </li>
-          {/if}
         </ul>
 
         <!-- Jump-down button -->
@@ -800,8 +785,8 @@ function toggleTool(id: string) {
     opacity: 0.6;
   }
 
-  /* STT preview */
-  .stt-preview {
+  /* STT in-flight user bubble (italic + slight transparency until finalized) */
+  .stt-streaming {
     font-style: italic;
     opacity: 0.75;
   }

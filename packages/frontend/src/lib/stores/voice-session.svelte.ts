@@ -19,12 +19,17 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
   let voiceState = $state<VoiceState>("idle")
   let sttText = $state<string | null>(null)
   let voiceError = $state<string | null>(null)
+  // Reactive mirror of player.hasLastPlayed — the property on AudioQueue is
+  // a plain JS field, NOT $state, so Svelte components can't react to it
+  // directly. We bump this flag whenever the player starts a new track.
+  let hasReplayable = $state(false)
 
   const recorder = new Recorder()
   const player = new AudioQueue({
     onStateChange: (playing) => {
       if (playing) {
         voiceState = "speaking"
+        hasReplayable = true
       } else if (voiceState === "speaking") {
         voiceState = "idle"
       }
@@ -116,6 +121,51 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
     }
   }
 
+  /**
+   * Send a pre-recorded audio blob through the same pipeline as live recording.
+   * Used by:
+   *  - the hidden #audio-file-input (QA, debug)
+   *  - any future "upload audio" UI
+   *
+   * Critically — moves voiceState to "thinking" so that subsequent audio_chunk
+   * events from the backend will be enqueued for playback. Without this,
+   * audio_chunk arriving while voiceState is "idle" gets silently dropped.
+   */
+  async function sendAudioBlob(blob: Blob, mimeType?: string): Promise<void> {
+    if (blob.size === 0) return
+    voiceState = "transcribing"
+    voiceError = null
+    sttText = null
+
+    try {
+      const arrayBuf = await blob.arrayBuffer()
+      const uint8 = new Uint8Array(arrayBuf)
+      let binary = ""
+      const chunkSize = 8192
+      for (let i = 0; i < uint8.length; i += chunkSize) {
+        binary += String.fromCharCode(...uint8.subarray(i, i + chunkSize))
+      }
+      const base64 = btoa(binary)
+      const finalMime = mimeType ?? blob.type ?? "audio/webm"
+
+      voiceState = "thinking"
+      const sent = agentSession.sendRaw({
+        type: "audio",
+        agentId: agentSession.agentId,
+        audioBase64: base64,
+        mimeType: finalMime,
+      })
+
+      if (!sent) {
+        voiceError = "WebSocket לא מחובר"
+        voiceState = "idle"
+      }
+    } catch (e) {
+      voiceError = e instanceof Error ? e.message : "שגיאה בשליחת האודיו"
+      voiceState = "idle"
+    }
+  }
+
   function cancel(): void {
     player.clear()
     voiceState = "idle"
@@ -139,12 +189,14 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
     get isRecording() {
       return voiceState === "recording"
     },
-    /** True when there is a previous audio response that can be replayed. */
+    /** True when there is a previous audio response that can be replayed.
+     *  Reactive — backed by hasReplayable $state, not the plain player.hasLastPlayed field. */
     get canReplayLast() {
-      return player.hasLastPlayed
+      return hasReplayable
     },
     startRecording,
     stopRecording,
+    sendAudioBlob,
     cancel,
     replayLast,
   }

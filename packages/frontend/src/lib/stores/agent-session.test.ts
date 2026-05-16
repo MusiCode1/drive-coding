@@ -183,6 +183,53 @@ describe("createAgentSessionStore", () => {
     vi.useRealTimers()
   })
 
+  it("stt_partial creates a streaming user message in chronological order", async () => {
+    const store = createAgentSessionStore("a")
+    store.connect()
+    await new Promise<void>((r) => queueMicrotask(r))
+    const ws = getLastWs()
+
+    // 1. First stt_partial → adds user bubble
+    ws.onmessage?.({ data: JSON.stringify({ type: "stt_partial", text: "שלום" }) })
+    expect(store.messages).toHaveLength(1)
+    expect(store.messages[0]?.kind).toBe("user")
+    expect(store.messages[0]?.text).toBe("שלום")
+    expect(store.messages[0]?.isStreaming).toBe(true)
+
+    // 2. Subsequent stt_partial updates the same bubble (not duplicate)
+    ws.onmessage?.({ data: JSON.stringify({ type: "stt_partial", text: "שלום, אני בודקת" }) })
+    expect(store.messages).toHaveLength(1)
+    expect(store.messages[0]?.text).toBe("שלום, אני בודקת")
+
+    // 3. text_chunk for assistant appears AFTER the user bubble
+    ws.onmessage?.({ data: JSON.stringify({ type: "text_chunk", kind: "message", text: "שומע" }) })
+    expect(store.messages).toHaveLength(2)
+    expect(store.messages[0]?.kind).toBe("user")
+    expect(store.messages[1]?.kind).toBe("assistant")
+
+    // 4. done finalizes streaming user message too
+    ws.onmessage?.({ data: JSON.stringify({ type: "done", stopReason: "end_turn" }) })
+    expect(store.messages[0]?.isStreaming).toBe(false)
+  })
+
+  it("stt_partial does NOT overwrite a non-streaming user message (sent via text)", async () => {
+    const store = createAgentSessionStore("a")
+    store.connect()
+    await new Promise<void>((r) => queueMicrotask(r))
+    const ws = getLastWs()
+
+    // Simulate text prompt — adds a non-streaming user message
+    store.sendPrompt("טקסט ראשון")
+    expect(store.messages).toHaveLength(1)
+    expect(store.messages[0]?.isStreaming).toBeUndefined()
+
+    // Now a voice STT arrives — should add a NEW user message, not overwrite
+    ws.onmessage?.({ data: JSON.stringify({ type: "stt_partial", text: "קול שני" }) })
+    expect(store.messages).toHaveLength(2)
+    expect(store.messages[0]?.text).toBe("טקסט ראשון")
+    expect(store.messages[1]?.text).toBe("קול שני")
+  })
+
   it("handles every ServerMessage variant without throwing", async () => {
     const store = createAgentSessionStore("a")
     store.connect()
