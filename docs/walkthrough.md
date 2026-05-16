@@ -4,6 +4,30 @@
 
 ---
 
+## 2026-05-15 04:00 (master, planner-agent Tama)
+
+### תכנון vNext — תיקון ממצאים אחרי בדיקה ספקנית של אבי
+
+אבי שאל שלוש שאלות חדות שחשפו פערים במחקר הקודם:
+
+1. **למה ל-`@flutur/acp-http-bridge` אין כוכבים ולמה הוא לא ב-npm?** בדיקה שנייה: `package.json` מראה `"version": "0.1.0-alpha.0"`, ה-README מטעה ("npm install..."), בפועל לא published. ביטול **D25**, הוספת **D30** — נכתוב bridge משלנו ב-`packages/acp-bridge/` בהשראת הקוד שלהם (Apache 2.0 מאפשר). ~200 שורות, שליטה מלאה. במקביל נפנה ל-Alemusica עם help/PR offer.
+
+2. **`voice-coda` — האם מספיק טוב לתרום ACP במקום לכתוב משלנו?** בדיקה: ה-LICENSE file חוזר 404, אין license field ב-package.json. **משפטית "all rights reserved"** = אסור fork/copy/PR בלי הסכמה. ביטול **D29**, הוספת **D32** — לא להישען. inspiration רעיונית בלבד. לשלוח issue ל-evanstern על license. נמשיך עצמאית.
+
+3. **`ArkType` במקום `Zod`?** אבי כבר משתמש ב-ArkType. הצדקה: bundle קטן (~10KB vs 13KB), claim של performance ~100× ב-runtime, syntax יותר טבעי (TS-like DSL: `type({ name: "string" })`), וייחוד נוסף מ-voice-coda (שם Zod). עדכון **D27 → D31**: ArkType + neverthrow.
+
+**Bonus — חששות over-engineering:** **D28 צומצם.** במקום 5 layers כ-packages נפרדים, אנחנו מתחילים עם **2 packages בלבד** (`core` + `backend`) + frontend נפרד. השכבות (ports/adapters/app/delivery) הן רק תיקיות בתוך `backend/`. ה-`packages/protocol/` יחולץ רק כשנצטרך (למשל מעבר ל-Go).
+
+**neverthrow הוסבר** באריכות: `Result<T, E>` עם ok/err, chaining דרך .map/.andThen/.match, ResultAsync לאסינכרוני. ערך גבוה בליבה הטהורה, פחות ב-IO shell.
+
+המסמכים שעודכנו:
+- `vnext-architecture.md`: D25/D27/D29 בוטלו (קוו מעליהם), D30/D31/D32 נוספו.
+- `vnext-research.md`: §1.4 עודכן (לא ניתן להישען על npm dep), §2.1 עודכן (license missing — סיבה לזהירות), §4.1+4.2 עודכנו (ArkType row חדשה, ההמלצה השתנתה), §8 TL;DR נכתב מחדש.
+
+הצעדים הבאים: ממתין לאבי על Q9-Q17 + Q-NEW-1/2/3 + שאלת voice-coda license outreach.
+
+---
+
 ## 2026-05-15 03:30 (master, planner-agent Tama)
 
 ### תכנון vNext — מחקר מקיף: prior art, ספריות, ארכיטקטורה

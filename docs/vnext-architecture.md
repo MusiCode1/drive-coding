@@ -170,11 +170,14 @@
 | **D22** | **אין הקלדה ב-MVP** | קולי בלבד. לא נעול — נשקול אחר כך |
 | **D23** | **`acp-bridge`: stdio↔WebSocket wrapper** | רעיון אבי. כל agent רץ כתהליך עצמאי, חושף WS. backend מתחבר. שורד נפילת backend. |
 | **D24** | **Claude Code דרך `@agentclientprotocol/claude-agent-acp`** | adapter רשמי, 1.9k stars, v0.34.0 (2026-05-15). תומך תמונות, MCP, slash commands |
-| **D25** | **השתמש ב-`@flutur/acp-http-bridge`** — לא לכתוב משלנו | קיים, מיישר ל-RFD רשמית, WebSocket + HTTP/SSE, persistent sessions. ראה `vnext-research.md` §1 |
+| ~~D25~~ | ~~השתמש ב-`@flutur/acp-http-bridge`~~ | **מבוטל ב-D30** — לא published ב-npm, alpha-0, 0 stars. נכתוב משלנו בהשראתו |
 | **D26** | **התאם את WebSocket protocol ל-ACP Streamable HTTP & WebSocket RFD** | headers: `Acp-Connection-Id`, `Acp-Session-Id`. spec רשמי קיים |
-| **D27** | **אמץ neverthrow + Zod, לא Effect-TS** | קל, ROI גבוה, ללא paradigm shift |
-| **D28** | **Hexagonal architecture עם 5 layers** | Pure Core / Ports / Adapters / Application / Delivery. ראה `vnext-research.md` §5 |
-| **D29** | **`voice-coda` הוא reference architecture** | מתחרה ישיר באנגלית. ללמוד, לא להעתיק. הייחוד שלנו: ACP + עברית + drive-first |
+| ~~D27~~ | ~~neverthrow + Zod~~ | **עודכן ב-D31** — `neverthrow + ArkType` (אבי כבר משתמש ב-ArkType, ביצועים טובים יותר) |
+| **D28** | **Hexagonal architecture, אבל מינימלי** | התחל עם 2 packages (`core` + `backend`). שכבות בתוך `backend/` הן תיקיות, לא packages. הוספת `protocol/` רק כשנצטרך |
+| ~~D29~~ | ~~`voice-coda` כ-reference architecture~~ | **עודכן ב-D32** — voice-coda **אין license**. רק inspiration רעיונית. אסור fork/copy בלי הסכמת evanstern |
+| **D30** | **`acp-bridge` משלנו בהשראת `Alemusica/acp-http-bridge`** | Apache 2.0 מאפשר העתקת רעיונות עם attribution. ~200 שורות בלבד. שליטה מלאה |
+| **D31** | **ArkType + neverthrow** | אבי כבר מכיר ArkType, ביצועים ~100× מ-Zod, syntax קצר יותר. neverthrow ל-`Result<T,E>` ב-core |
+| **D32** | **לא להישען על voice-coda — לפנות בנימוס לבדיקת license** | אם יחזיר MIT/Apache, נשקול שיתוף פעולה. בינתיים — independent build |
 
 ---
 

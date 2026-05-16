@@ -88,9 +88,44 @@
 
 - **סטטוס:** פעיל — המשך סשן `ses_1d26848f8ffetPtC3UQ2eLBrpt` (planner). שלב: דיון על ארכיטקטורת הגרסה הבאה.
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** ✅ מחקר מקיף — `docs/vnext-research.md` חדש. נמצא ACP bridge מוכן (`@flutur/acp-http-bridge`). נמצא מתחרה ישיר (`voice-coda`). 5 החלטות חדשות D25-D29. monorepo עודכן.
+- **עובד על:** ✅ תיקון ממצאים — bridge לא ב-npm, voice-coda ללא license. D25+D27+D29 עודכנו ב-D30+D31+D32. ArkType במקום Zod. Hexagonal מינימלי (2 packages).
 
 ## לוג
+
+### [2026-05-15 04:00] ✅ תיקון ממצאים אחרי שאלות אבי
+אבי שאל ספקנית על שלושה דברים. בדיקה שנייה הוכיחה שהיה צודק:
+
+**ממצא #1 — `@flutur/acp-http-bridge` לא בשל:**
+- ה-package.json: `version: "0.1.0-alpha.0"`.
+- **לא published ב-npm** (ה-README שלהם מטעה).
+- 0 stars, 17 ימים, 18 בדיקות.
+- License: Apache-2.0.
+- ביטול D25, הוספת **D30**: לכתוב bridge משלנו ב-`packages/acp-bridge/` (~200 שורות) בהשראת הקוד שלהם. Apache 2.0 מאפשר. שליטה מלאה. במקביל, נציע help ל-Alemusica דרך issue/PR.
+
+**ממצא #2 — `voice-coda` ללא license:**
+- LICENSE file → 404. package.json בלי license field.
+- **משפטית: "all rights reserved" כברירת מחדל.** אסור fork/copy.
+- Stack שלהם (server): Hono + tRPC + Anthropic SDK + OpenAI + Google TTS + Zod 4 + ws + pino. לא משתמשים ב-`@agentclientprotocol/sdk` — מאשר שזה לא ACP.
+- ביטול D29, הוספת **D32**: לא להישען. רק inspiration רעיונית. לפנות לevanstern בנימוס לבירור license.
+
+**ממצא #3 — ArkType מועדף על Zod:**
+- אבי כבר משתמש ב-ArkType.
+- Bundle: 10KB vs 13KB.
+- Performance claim: ~100× מהיר ב-runtime validation.
+- Syntax יותר טבעי: `type({ name: "string" })` במקום `z.object({ name: z.string() })`.
+- ייחוד נוסף מ-voice-coda (שם Zod).
+- עדכון D27 ל-**D31**: ArkType + neverthrow.
+
+**מענה ל-over-engineering concern:**
+- D28 עודכן: התחלה מינימלית — **2 packages בלבד** (`core` + `backend`). Layers בתוך `backend/` הן תיקיות, לא packages. הוספת `protocol/` רק כשבאמת צריך (למשל בעת מעבר ל-Go).
+
+**neverthrow explanation:**
+- `Result<T, E>` עם ok/err.
+- chaining דרך `.map`, `.andThen`, `.match`.
+- אסינכרוני: `ResultAsync<T, E>` עם `.fromPromise(fn, mapError)`.
+- ערך גבוה ב-`packages/core/`, פחות ב-`packages/backend/` (איפה ממילא יש exceptions מ-libs).
+
+הצעדים הבאים: ממתין ל-(1) תשובות אבי על Q9-Q17 + Q-NEW-1/2/3, (2) האם לשלוח issue ל-evanstern על voice-coda license, (3) אישור על אימוץ ArkType + neverthrow + 2-package מינימלי. אז שכבה 2.
 
 ### [2026-05-15 03:30] ✅ מחקר מקיף — `vnext-research.md` + 5 החלטות חדשות
 אבי ביקש מחקר על: ACP bridges קיימים, voice-CLI prior art, ספריות מועילות, ארכיטקטורת backend פונקציונלית.

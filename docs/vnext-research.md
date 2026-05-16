@@ -83,32 +83,50 @@ src/
 - כולם stdio-only. ה-typescript SDK ב-173 stars.
 - אם נתרום HTTP transport — זה יהיה contribution גדול שמשרת את כל ה-ecosystem.
 
-### 1.4 ❗ השלכה ל-D23
+### 1.4 ❗ עדכון: לא ניתן להישען על `@flutur/acp-http-bridge` כ-npm dep
 
-ה-D23 שלי בארכיטקטורה (acp-bridge — wrapper משלנו) **כבר קיים בעולם**. במקום לבנות אותו, נוכל:
+בדיקה שנייה (אבי שאל למה אין כוכבים):
+- **`package.json`:** `"version": "0.1.0-alpha.0"` — alpha מוקדם.
+- **לא published ב-npm.** ה-README שלהם מטעה ("npm install...") אבל אין שם.
+- 0 stars, 17 days old.
+- License: Apache-2.0.
+- קוד: 7 קבצים, ~200 שורות. פשוט ברובו.
 
-**Option A:** להשתמש ב-`@flutur/acp-http-bridge` as-is כ-npm dependency.
+**מסקנה:** ההמלצה הקודמת (use as-is npm dep) **לא ישימה**. במקום זה:
 
-**Option B:** לתרום PRs ל-`acp-http-bridge` עבור הפיצ'רים שחסרים לנו (multi-session, interactive permissions).
+**Option A (חדש):** **לכתוב bridge משלנו** בהשראת הקוד שלהם (Apache 2.0 מאפשר). שליטה מלאה, ~200 שורות שכוללות hexagonal pattern של ה-RFD. מחזיר את `packages/acp-bridge/` ל-monorepo.
 
-**Option C:** לעשות fork ולפתח את הפיצ'רים שלנו, ולהציע למתחזק שירצה.
+**Option B:** להשתמש ב-`@agent-relay/acp-bridge` (Apache-2.0, גרסה 6.0.22, פעיל לפני 11 שעות). יותר בוגר אבל ייעודי ל-"Agent Relay" — צריך לחקור אם API שלו תואם.
 
-**Option D:** לכתוב משלנו בכל זאת — אם הצרכים שלנו שונים מספיק.
+**Option C:** לעשות fork של `Alemusica/acp-http-bridge`, לpublish תחת `@drive-coding/acp-bridge`. אבל אז אנחנו אחראים לתחזוקה לקהילה.
 
-**המלצה שלי:** **B + A**. נתחיל עם A (משתמשים as-is), ובמקביל נפתח PRs ל-multi-session כשנצטרך (slice 6 — multi-session). זה גם בונה goodwill בקהילה.
+**Option D:** לתרום ל-Alemusica — לעזור להם לpublish, להוסיף בדיקות, להוסיף features שאנחנו צריכים. Long-term play.
+
+**המלצה חדשה: A + D.** נכתוב bridge משלנו (פנימי) ל-MVP. במקביל, נפתח issues ב-`Alemusica/acp-http-bridge` להציע help — אם הם רוצים, נמזג. אם לא, השלנו עובד.
 
 ---
 
 ## 2. Voice CLI prior art
 
-### 2.1 ❗ קיים מתחרה ישיר — `voice-coda`
+### 2.1 ❗ קיים מתחרה ישיר — `voice-coda` (אבל ללא license)
 
-**`evanstern/voice-coda`** (GitHub, 0 stars, 177 commits, פעיל)
+**`evanstern/voice-coda`** ([GitHub](https://github.com/evanstern/voice-coda), 0 stars, 177 commits, פעיל)
 
 המוצר:
 > "Wake with 'Coda,' code by voice. A hands-free voice interface for coding agents — talk through Bluetooth earbuds while your hands are busy, and have the agent work on code, manage repos, and talk back."
 
 **זה בדיוק drive-coding באנגלית.** אבי חייב לקרוא את ה-README שלהם.
+
+⚠️ **License — אין.** בדיקה: ה-LICENSE file חוזר 404, package.json בלי `license` field. **משפטית, בלי license מפורש, הקוד הוא "all rights reserved" כברירת מחדל.** אנחנו לא יכולים:
+- לעשות fork.
+- להעתיק קוד.
+- לשנות ולהריץ.
+- אפילו לתרום PR (ה-PR שלנו תהיה תחת unclear terms).
+
+מה שאנחנו **יכולים** לעשות:
+- לקרוא ולמהר ידע. מבנים אדריכליים אינם מוגנים copyright.
+- לזהות אילו libs הם משתמשים (ראה למטה).
+- לפתוח issue ולשאול את evanstern על license. אם הוא משיב MIT/Apache — הכל נפתח.
 
 ארכיטקטורה שלהם:
 ```
@@ -221,16 +239,17 @@ Passive listen → Wake-word detected → Capture request → STT → AI → TTS
 | **[Effect-TS](https://effect.website/)** | ecosystem שלם ל-FP — Effect type, schema, streams, deps injection | **גבוהה מאוד** | ❌ overkill, למידה ענקית |
 | **fp-ts** | "FP for TypeScript" classic — pipe, Either, Option, Task | גבוהה | ❌ דורש הבנת FP עמוקה |
 | **[neverthrow](https://github.com/supermacro/neverthrow)** | `Result<T, E>` type בלבד. קל לאימוץ הדרגתי | נמוכה | ✅ מומלץ — קל וערך גבוה |
-| **[Zod](https://zod.dev/)** | Schema validation + type inference | בינונית | ✅ מומלץ — סטנדרט תעשייה. גם `voice-coda` משתמש |
+| **[Zod](https://zod.dev/)** | Schema validation + type inference | בינונית | ⚠️ סטנדרט אבל אבי מעדיף ArkType |
+| **[ArkType](https://arktype.io/)** | Schema validation עם TS-syntax DSL, ~100× מהיר מ-Zod | בינונית | ✅ **מומלץ** — אבי כבר משתמש, ביצועים טובים, syntax קצר |
 | **ts-pattern** | Pattern matching ב-TS | בינונית | ✅ אם נרצה — מאוד שימושי ל-state machines |
 | **[XState](https://stately.ai/)** | Statecharts library מלא | גבוהה | ⚠️ overkill ל-MVP, אבל מעולה לכפתור הגדול |
 
-### 4.2 ההצעה שלי לאימוץ
+### 4.2 ההצעה שלי לאימוץ (מעודכן)
 
 **מינימום (MVP):**
 - TypeScript נקי, ESM-only
-- Zod ל-schemas (חוצה את `protocol/` package)
-- neverthrow ל-`Result<T, E>` בlogic functions (חוצה את `core/`)
+- **ArkType** ל-schemas (חוצה ל-`core/schemas.ts`, גם backend גם frontend)
+- **neverthrow** ל-`Result<T, E>` בlogic functions (חוצה את `core/`)
 
 **אם נצטרך:**
 - ts-pattern ל-pattern matching מורכב על ACP messages
@@ -238,6 +257,7 @@ Passive listen → Wake-word detected → Capture request → STT → AI → TTS
 
 **לא:**
 - Effect-TS, fp-ts — paradigm shift כבד, ROI נמוך לפרויקט שלנו
+- Zod — אבי כבר ב-ArkType, אין סיבה לעבור
 
 ---
 
@@ -459,13 +479,13 @@ drive-coding/
 
 ---
 
-## 8. סיכום הממצאים — TL;DR
+## 8. סיכום הממצאים — TL;DR (מעודכן אחרי בדיקה שנייה)
 
-1. **השתמש ב-`@flutur/acp-http-bridge`** — אל תכתוב bridge משלך. RFD רשמית, implementation מאומת.
-2. **`voice-coda` הוא מתחרה ישיר** באנגלית — קרא את הקוד שלהם, לא משלם copy-paste, אבל יש lessons.
-3. **`@ricky0123/vad-web` ל-VAD בעתיד** — לא ב-MVP, אבל זה ה-path קדימה.
-4. **openWakeWord ל-wake word** — אמת ב-`voice-coda`, custom model אפשרי.
-5. **לא Effect-TS, כן neverthrow + Zod** — קל וערך גבוה.
-6. **Hexagonal architecture** עם 5 layers (Core / Ports / Adapters / App / Delivery).
-7. **Whisper לוקלי + Piper לוקלי** כאופציה ל-BYOC — חיסכון לחלק מהמשתמשים.
-8. **ACP RFD רשמית קיימת** — אנחנו מיישרים את הפרוטוקול שלנו ל-spec, לא ממציאים.
+1. **`@flutur/acp-http-bridge` לא בשל** — alpha-0, לא ב-npm, 0 stars. נכתוב bridge משלנו (~200 שורות) בהשראתו (Apache 2.0). חוזרים ל-D23.
+2. **ACP RFD רשמית קיימת** — אנחנו מיישרים את הפרוטוקול שלנו ל-spec, לא ממציאים.
+3. **`voice-coda` ללא license** — אסור fork/copy. רק inspiration רעיונית. נשלח issue לevanstern.
+4. **ArkType + neverthrow** — לא Zod (אבי כבר ב-ArkType). ביצועים טובים יותר, syntax מפושט.
+5. **`@ricky0123/vad-web` ל-VAD בעתיד** — לא ב-MVP, אבל זה ה-path קדימה.
+6. **openWakeWord ל-wake word** — אומת ב-`voice-coda`, custom model אפשרי.
+7. **Hexagonal architecture מינימלי** — 2 packages (`core` + `backend`), שכבות בתוך `backend/` הן רק תיקיות.
+8. **Whisper לוקלי + Piper לוקלי** כאופציה ל-BYOC — חיסכון לחלק מהמשתמשים.
