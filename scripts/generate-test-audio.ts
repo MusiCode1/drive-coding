@@ -15,15 +15,15 @@ import { experimental_generateSpeech as generateSpeech } from "ai"
 // ── Parse args ──────────────────────────────────────────────────────────────
 
 const VOICES: Record<string, string> = {
-  sarah: "EXAVITQu4vr4xnSDxMaL",   // Mature, Reassuring (default)
-  roger: "CwhRBWXzGAHq8TQ4Fs17",   // Laid-Back, Casual
-  laura: "FGY2WhTYpPnrIDTdsKH5",   // Enthusiast, Quirky
-  charlie: "IKne3meq5aSn9XLyUdCD",  // Deep, Confident
-  george: "JBFqnCBsd6RMkjVDRZzb",   // Warm, Storyteller
-  callum: "N2lVS1w4EtoT3dr4eOWO",   // Husky
-  river: "SAz9YHcvj6GT2YYXdXww",    // Relaxed, Neutral
-  alice: "Xb7hH8MSUJpSbSDYk0k2",    // Clear, Engaging
-  liam: "TX3LPaxmHKxFdv7VOQHJ",     // Energetic
+  sarah: "EXAVITQu4vr4xnSDxMaL", // Mature, Reassuring (default)
+  roger: "CwhRBWXzGAHq8TQ4Fs17", // Laid-Back, Casual
+  laura: "FGY2WhTYpPnrIDTdsKH5", // Enthusiast, Quirky
+  charlie: "IKne3meq5aSn9XLyUdCD", // Deep, Confident
+  george: "JBFqnCBsd6RMkjVDRZzb", // Warm, Storyteller
+  callum: "N2lVS1w4EtoT3dr4eOWO", // Husky
+  river: "SAz9YHcvj6GT2YYXdXww", // Relaxed, Neutral
+  alice: "Xb7hH8MSUJpSbSDYk0k2", // Clear, Engaging
+  liam: "TX3LPaxmHKxFdv7VOQHJ", // Energetic
 }
 
 let text = ""
@@ -35,7 +35,8 @@ let listVoices = false
 const args = process.argv.slice(2)
 let i = 0
 while (i < args.length) {
-  const arg = args[i]!
+  const arg = args[i]
+  if (arg === undefined) break
   if (arg === "--help" || arg === "-h") {
     showHelp = true
     break
@@ -43,10 +44,10 @@ while (i < args.length) {
     listVoices = true
     break
   } else if ((arg === "--voice" || arg === "-v") && args[i + 1]) {
-    voiceName = args[i + 1]!.toLowerCase()
+    voiceName = (args[i + 1] ?? "").toLowerCase()
     i += 2
   } else if ((arg === "--out" || arg === "-o") && args[i + 1]) {
-    outPath = args[i + 1]!
+    outPath = args[i + 1] ?? outPath
     i += 2
   } else if (!arg.startsWith("-")) {
     text = arg
@@ -61,7 +62,8 @@ while (i < args.length) {
 // ── Help ─────────────────────────────────────────────────────────────────────
 
 if (showHelp || (!text && !listVoices)) {
-  console.log(`
+  console.log(
+    `
 יוצר קובץ אודיו MP3 דרך ElevenLabs v3.
 
 שימוש:
@@ -84,7 +86,8 @@ if (showHelp || (!text && !listVoices)) {
   - חייב לרוץ דרך OneCLI: onecli run --agent voice-acp -- bun ...
   - חייב NO_PROXY=localhost,127.0.0.1,::1 (אחרת OneCLI proxy חוסם localhost)
   - כל הקולות תומכים עברית דרך eleven_v3
-`.trim())
+`.trim(),
+  )
   process.exit(showHelp ? 0 : 1)
 }
 
