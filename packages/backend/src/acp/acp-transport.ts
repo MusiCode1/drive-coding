@@ -167,6 +167,20 @@ export async function createAcpWsTransport(opts: AcpTransportOptions): Promise<A
         } catch (e) {
           clearTimeout(timeout)
           ws.terminate()
+          // Detect ACP-defined `auth_required` JSON-RPC error and surface
+          // it as a typed error so the caller can show an auth UI instead
+          // of a generic "connection closed" message.
+          // ACP error code: -32000 with data: { code: "auth_required", ... }
+          // (the SDK wraps these as `RequestError`).
+          const err = e as { code?: number; data?: { code?: string }; message?: string }
+          if (err?.data?.code === "auth_required") {
+            const authErr = new Error(
+              `ACP agent requires authentication: ${err.message ?? "auth_required"}`,
+            )
+            ;(authErr as Error & { kind?: string }).kind = "auth_required"
+            reject(authErr)
+            return
+          }
           reject(e)
         }
       })()

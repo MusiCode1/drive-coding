@@ -5,6 +5,12 @@ export type ChatMessage = {
   kind: "user" | "assistant" | "thought" | "tool_call"
   text: string
   isStreaming?: boolean
+  // tool_call extra metadata (Slice 5.5)
+  toolCallId?: string
+  toolKind?: string
+  toolStatus?: string
+  toolLocations?: string[]
+  toolContent?: string
 }
 
 export type AgentSessionStatus = "disconnected" | "connecting" | "connected" | "thinking"
@@ -77,16 +83,42 @@ export function createAgentSessionStore(agentId: string) {
       case "text_chunk":
         appendChunk(msg.kind === "message" ? "assistant" : "thought", msg.text)
         break
-      case "tool_call":
-        messages = [
-          ...messages,
-          {
-            id: crypto.randomUUID(),
-            kind: "tool_call",
-            text: msg.title,
-          },
-        ]
+      case "tool_call": {
+        // Same toolCallId may arrive multiple times (initial + updates).
+        // Merge into existing bubble if found.
+        const existing = messages.find(
+          (m) => m.kind === "tool_call" && m.toolCallId === msg.toolCallId,
+        )
+        if (existing) {
+          messages = messages.map((m) =>
+            m === existing
+              ? {
+                  ...m,
+                  text: msg.title || m.text,
+                  toolKind: msg.kind ?? m.toolKind,
+                  toolStatus: msg.status ?? m.toolStatus,
+                  toolLocations: msg.locations ?? m.toolLocations,
+                  toolContent: msg.content ?? m.toolContent,
+                }
+              : m,
+          )
+        } else {
+          messages = [
+            ...messages,
+            {
+              id: crypto.randomUUID(),
+              kind: "tool_call",
+              text: msg.title,
+              toolCallId: msg.toolCallId,
+              toolKind: msg.kind,
+              toolStatus: msg.status,
+              toolLocations: msg.locations,
+              toolContent: msg.content,
+            },
+          ]
+        }
         break
+      }
       case "done":
         finalizeStreaming()
         status = "connected"
@@ -156,6 +188,7 @@ export function createAgentSessionStore(agentId: string) {
   }
 
   return {
+    agentId,
     get messages() {
       return messages
     },

@@ -3,6 +3,36 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-16 16:30 (vnext, Tama)
+
+### Slice 5.5 closeout — חלק 1: UI tool calls + 3 conformance fixes
+
+ניצול ה-conformance review של Yolo (`46cfb88`) לתיקון 4 מ-6 ממצאים.
+
+**1. `tool_call` UI שדרוג (Critical UX gap):**
+- Backend (`agent-session.ts`): handle גם `tool_call` וגם `tool_call_update`. extraction של `kind`, `status`, `locations`, `content`. summariseToolContent מקצר ל-2000 תווים.
+- Schema (`ws-messages.ts`): ToolCallMessage הורחב עם `kind`, `status`, `locations[]`, `content`.
+- Frontend store (`agent-session.svelte.ts`): merge של tool_call+update לאותה bubble לפי `toolCallId`.
+- Page (`+page.svelte`): UI עשיר — כותרת + kind badge + status (צבע לפי completed/failed/in_progress/pending) + locations chips + `<details>` collapsible לפלט (max-height 240px, scroll, pre dir=ltr).
+
+**2. Auto-scroll:**
+$effect מאזין ל-`messages.length` ול-`messages.at(-1).text.length` (לעדכוני streaming). אחרי tick → `chatEl.scrollTop = scrollHeight`.
+
+**3. stopReason מועבר נכון (Yolo finding #5):**
+`sendAudioPrompt` שמר `promptStopReason` מ-`response.stopReason` במקום hardcoded `"end_turn"`. תואם ACP spec.
+
+**4. auth_required detection (Yolo finding #4):**
+`acp-transport.ts` catch — מזהה `err.data.code === "auth_required"` ומחזיר Error עם `kind: "auth_required"`. orchestrator/UI ידעו בעתיד להציג auth flow במקום generic crash.
+
+**5. agentId fix (היה blocker של voice):**
+`createAgentSessionStore` לא חשפה `agentId` ב-return. voice-session ניסה `agentSession.agentId` → undefined → validation error `INVALID_MSG: agentId must be a string`. תיקון: 1 שורה (`return { agentId, ... }`).
+
+**Tests:** 140/140 ✓ (לא נוספו).
+
+**מה עוד נותר ל-Slice 5.5:**
+- Frontend tests (sub-agent מטפל ברקע): AgentSessionPublic contract, unit test ל-store, voice flow unit test
+- voice push-to-talk בדיקה בדפדפן (Avi)
+
 ## 2026-05-16 15:50 (vnext, Tama)
 
 ### Slice 5 closeout — UI E2E עובד, ACP bugs תוקנו

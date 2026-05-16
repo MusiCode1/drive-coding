@@ -58,10 +58,26 @@ export const TextChunkMessage = type({
 })
 export type TextChunkMessage = typeof TextChunkMessage.infer
 
+/**
+ * Tool call notification. Sent on initial `tool_call` event AND on every
+ * `tool_call_update` — frontend uses `toolCallId` to merge into a single
+ * UI element (status badge, content section).
+ *
+ * `kind`: ACP ToolKind = "read" | "edit" | "delete" | "move" | "search" |
+ *   "execute" | "think" | "fetch" | "switch_mode" | "other"
+ * `status`: ACP ToolCallStatus = "pending" | "in_progress" | "completed" | "failed"
+ * `locations`: array of file paths (for "follow-along" UI)
+ * `content`: human-readable preview of tool output (text only — diff/terminal
+ *   are summarised to a single line for Slice 5.5; richer rendering in Slice 7)
+ */
 export const ToolCallMessage = type({
   type: "'tool_call'",
   toolCallId: "string",
   title: "string",
+  "kind?": "string",
+  "status?": "string",
+  "locations?": "string[]",
+  "content?": "string",
 })
 export type ToolCallMessage = typeof ToolCallMessage.infer
 

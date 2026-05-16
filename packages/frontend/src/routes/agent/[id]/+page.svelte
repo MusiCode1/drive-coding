@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { AgentPublic } from "@drive-coding/core"
-import { onDestroy } from "svelte"
+import { onDestroy, tick } from "svelte"
 import { page } from "$app/state"
 import { getAgent } from "$lib/api/agents"
 import { createAgentSessionStore } from "$lib/stores/agent-session.svelte"
@@ -16,6 +16,21 @@ let session = $derived(createAgentSessionStore(agentId))
 let voice = $derived(createVoiceSessionStore(session))
 
 let inputText = $state("")
+let chatEl = $state<HTMLUListElement | null>(null)
+
+// Auto-scroll to bottom when new messages arrive
+$effect(() => {
+  // Track messages length AND last message text length (for streaming updates)
+  const _len = session.messages.length
+  const _lastText = session.messages[session.messages.length - 1]?.text.length ?? 0
+  void _len
+  void _lastText
+  tick().then(() => {
+    if (chatEl) {
+      chatEl.scrollTop = chatEl.scrollHeight
+    }
+  })
+})
 
 async function loadAgent(): Promise<void> {
   loadError = null
@@ -106,10 +121,35 @@ const voiceStateLabel: Record<string, string> = {
       <p class="error">הסוכן קרס. נסה שוב מהדשבורד.</p>
     {:else}
       <!-- Chat area -->
-      <ul class="chat" aria-label="שיחה">
+      <ul class="chat" aria-label="שיחה" bind:this={chatEl}>
         {#each session.messages as msg (msg.id)}
           <li class="msg msg-{msg.kind}">
-            <span class="bubble" dir="auto">{msg.text}</span>
+            {#if msg.kind === "tool_call"}
+              <div class="tool-bubble tool-status-{msg.toolStatus ?? 'pending'}">
+                <div class="tool-head">
+                  <span class="tool-kind">{msg.toolKind ?? "tool"}</span>
+                  <span class="tool-title" dir="auto">{msg.text}</span>
+                  {#if msg.toolStatus}
+                    <span class="tool-status-badge">{msg.toolStatus}</span>
+                  {/if}
+                </div>
+                {#if msg.toolLocations && msg.toolLocations.length > 0}
+                  <div class="tool-locations" dir="ltr">
+                    {#each msg.toolLocations as loc}
+                      <code>{loc}</code>
+                    {/each}
+                  </div>
+                {/if}
+                {#if msg.toolContent}
+                  <details class="tool-content">
+                    <summary>פלט ({msg.toolContent.length} תווים)</summary>
+                    <pre dir="ltr">{msg.toolContent}</pre>
+                  </details>
+                {/if}
+              </div>
+            {:else}
+              <span class="bubble" dir="auto">{msg.text}</span>
+            {/if}
           </li>
         {/each}
         {#if session.status === "thinking" || voice.voiceState === "thinking"}
@@ -288,6 +328,92 @@ const voiceStateLabel: Record<string, string> = {
     font-size: 0.85rem;
     border-radius: 6px;
     color: #78350f;
+  }
+
+  .msg-tool_call { justify-content: stretch; }
+
+  .tool-bubble {
+    flex: 1;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    color: #78350f;
+    max-width: 100%;
+  }
+  .tool-bubble.tool-status-completed {
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+    color: #14532d;
+  }
+  .tool-bubble.tool-status-failed {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #7f1d1d;
+  }
+  .tool-bubble.tool-status-in_progress {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1e3a8a;
+  }
+  .tool-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .tool-kind {
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+    padding: 0.1rem 0.4rem;
+    background: rgba(0, 0, 0, 0.07);
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .tool-title {
+    flex: 1;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tool-status-badge {
+    font-size: 0.7rem;
+    opacity: 0.7;
+  }
+  .tool-locations {
+    margin-top: 0.4rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+  .tool-locations code {
+    font-size: 0.75rem;
+    background: rgba(0, 0, 0, 0.05);
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+  }
+  .tool-content {
+    margin-top: 0.4rem;
+  }
+  .tool-content summary {
+    cursor: pointer;
+    font-size: 0.75rem;
+    opacity: 0.8;
+    user-select: none;
+  }
+  .tool-content pre {
+    margin: 0.4rem 0 0;
+    padding: 0.5rem;
+    background: rgba(0, 0, 0, 0.06);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    max-height: 240px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
   }
 
   .bubble.thinking {

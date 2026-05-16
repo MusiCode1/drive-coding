@@ -17,6 +17,33 @@ import type { VoiceRegistries } from "../voice/providers.js"
 export type Subscriber = (msg: ServerMessage) => void
 
 /**
+ * Summarise ToolCallContent[] to a short text preview for UI.
+ * Content types: `content` (Content block — text/image), `diff`, `terminal`.
+ * For Slice 5.5 we collapse everything to a single string; richer rendering
+ * (collapsible diff, live terminal) is Slice 7.
+ */
+function summariseToolContent(items: ReadonlyArray<unknown>): string {
+  const parts: string[] = []
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue
+    const it = item as Record<string, unknown>
+    if (it.type === "content" && it.content && typeof it.content === "object") {
+      const inner = it.content as Record<string, unknown>
+      if (inner.type === "text" && typeof inner.text === "string") {
+        parts.push(inner.text)
+      }
+    } else if (it.type === "diff" && typeof it.path === "string") {
+      parts.push(`diff: ${it.path}`)
+    } else if (it.type === "terminal") {
+      parts.push("terminal output")
+    }
+  }
+  const joined = parts.join("\n")
+  // Cap at 2000 chars to avoid choking the WS frame on huge file reads.
+  return joined.length > 2000 ? `${joined.slice(0, 2000)}…` : joined
+}
+
+/**
  * AgentSession holds an AcpTransport and a set of WS subscribers.
  * All subscribers receive every broadcast event (multi-tab fan-out).
  * Slice 5: extended with sendAudioPrompt for voice round-trip.
@@ -87,15 +114,25 @@ export function createAgentSession(opts: {
         }
         break
       }
-      case "tool_call": {
+      case "tool_call":
+      case "tool_call_update": {
         broadcast({
           type: "tool_call",
           toolCallId: String(update.toolCallId),
-          title: update.title,
+          title: "title" in update && typeof update.title === "string" ? update.title : "tool call",
+          ...(update.kind != null ? { kind: update.kind } : {}),
+          ...(update.status != null ? { status: update.status } : {}),
+          ...(update.locations != null && update.locations.length > 0
+            ? { locations: update.locations.map((l) => l.path) }
+            : {}),
+          ...(update.content != null && update.content.length > 0
+            ? { content: summariseToolContent(update.content) }
+            : {}),
         })
         break
       }
-      // Other update kinds (plan, usage, etc.) — silent in Slice 4/5
+      // Other update kinds (plan, usage, available_commands, etc.) —
+      // silent in Slice 5.5. Slice 7+ will surface them.
       default:
         break
     }
@@ -188,8 +225,9 @@ export function createAgentSession(opts: {
         ttsActive = false
       }
 
+      let promptStopReason = "end_turn"
       try {
-        await opts.transport.prompt({ text: userText }, (notification) => {
+        const response = await opts.transport.prompt({ text: userText }, (notification) => {
           // Forward to text_chunk subscribers (display streaming text)
           handleNotification(notification)
 
@@ -206,6 +244,7 @@ export function createAgentSession(opts: {
             }
           }
         })
+        promptStopReason = response.stopReason
       } catch (e) {
         broadcast({
           type: "error",
@@ -233,7 +272,7 @@ export function createAgentSession(opts: {
 
       broadcast({
         type: "done",
-        stopReason: "end_turn",
+        stopReason: promptStopReason,
       })
     },
 
