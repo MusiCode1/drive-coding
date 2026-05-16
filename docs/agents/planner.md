@@ -88,9 +88,18 @@
 
 - **סטטוס:** פעיל — המשך סשן `ses_1d26848f8ffetPtC3UQ2eLBrpt` (planner). שלב: דיון על ארכיטקטורת הגרסה הבאה.
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** 🌙 ריצה אוטונומית — ✅ Slice 2 (`985f174`). כותבת Slice 3 brief.
+- **עובד על:** 🌙 ריצה אוטונומית — ✅ Slice 2 (`985f174`), ✅ Slice 3 (`2958687`). כותבת Slice 4 brief.
 
 ## לוג
+
+### [2026-05-16 05:50] ✅ Slice 3 הושלם (commit `2958687`)
+sub-agent Yolo+Sonnet. ~15 דק'. 52 tests (6+8 חדשות), DoD 12/12.
+
+Slice 3 כולל: BridgeManager interface (core/ports.ts), CliKind→command mapping (cli-config.ts), parsePortFromStdout + spawnAndWaitForPort (bridge-spawn.ts), createBridgeManager (in-memory Map + child_process.spawn + crash listener), createAgentOrchestrator (agent.status: starting→ready/crashed), frontend polling.
+
+סטיות מ-brief: (1) `ChildProcessWithoutNullStreams` → `ChildProcess` ל-TS typing, (2) `child.pid!` → `child.pid ?? 0` (biome noNonNullAssertion), (3) mock `any` → typed interface, (4) `store.delete` לפני SIGTERM (להבחין kill vs crash).
+
+לא נבדק E2E: spawn אמיתי של opencode דרך stdio-to-ws — Slice 4. בוצע commit נוסף `341bc86`: סנכרון docs/vnext-*.md מ-lint סבב 8.
 
 ### [2026-05-16 05:25] ✅ Slice 2 הושלם (commit `985f174`)
 sub-agent: Yolo + Sonnet 4-6 ב-tmux. 14 דק' עבודה. 17 files changed, 1745+/62-, 36 tests, DoD 12/12 ✅.
