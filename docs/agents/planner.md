@@ -88,7 +88,7 @@
 
 - **סטטוס:** פעיל — המשך סשן `ses_1d26848f8ffetPtC3UQ2eLBrpt` (planner). שלב: דיון על ארכיטקטורת הגרסה הבאה.
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** ✅ Lint סבב 8 — עברה על 3 המסמכים ותיקנה 29 סתירות (D8/D11 descope, AI SDK alignment, Slice 1 ✅, scope tags). ממתין ל-Slice 2 brief.
+- **עובד על:** 🌙 ריצה אוטונומית — Slices 2→3→4 (5 אם API keys). אבי ישן. עצירה אם stuck או אחרי Slice 4.
 
 ## לוג
 
