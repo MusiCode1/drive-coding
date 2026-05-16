@@ -52,9 +52,18 @@ export function wsToStreams(ws: WebSocket): {
           }
         }
 
-        // Ensure NDJSON newline termination
-        const line = text.endsWith("\n") ? text : `${text}\n`
-        controller.enqueue(encoder.encode(line))
+        // Forward bytes as-is. The SDK's ndJsonStream buffers across calls
+        // and parses on `\n` boundaries. DO NOT add `\n` artificially —
+        // stdio-to-ws may split a single ACP message across multiple WS
+        // frames (e.g. when opencode writes a long content stream that
+        // exceeds the stdout buffer). Adding `\n` to a partial frame causes
+        // the SDK to parse it as a complete message → "Unterminated string"
+        // error and the stream tears down mid-conversation.
+        //
+        // Trust that opencode terminates every complete JSON-RPC message
+        // with a `\n` byte; partial frames will be concatenated in the
+        // SDK's internal buffer and parsed only when the terminator arrives.
+        controller.enqueue(encoder.encode(text))
       })
       ws.on("close", () => {
         try {
