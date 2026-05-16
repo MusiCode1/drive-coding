@@ -1,4 +1,5 @@
 import type { CacheStore } from "@drive-coding/core"
+import type { Cache } from "@drive-coding/core/cache/types"
 import { cacheKeyFor } from "@drive-coding/core/voice/cache-key"
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
 import { buildTranslationPrompt } from "@drive-coding/core/voice/translation-prompt"
@@ -9,6 +10,7 @@ import {
 } from "ai"
 import type { Result } from "neverthrow"
 import { err, ok } from "neverthrow"
+import { sha256Key } from "./cache-keys.js"
 import type { VoiceRegistries } from "./providers.js"
 
 export interface VoiceConfig {
@@ -108,17 +110,47 @@ const TRANSLATE_TIMEOUT_MS = 2500
  * Translates text to the target language using Gemini Flash.
  * GEMINI-3: times out after TRANSLATE_TIMEOUT_MS (2500ms) to avoid blocking the audio pipeline.
  * On timeout or any error → returns Err; the caller decides whether to skip or retry.
- * Slice 5: always translates (language detection is future work).
+ *
+ * Phase 3: optional Cache<string> parameter. On cache hit, LLM is skipped entirely.
+ * Cache key = sha256(text + "|" + targetLang). Pass null to skip caching.
  */
 export async function translateText(
   text: string,
   config: VoiceConfig,
   registries: Pick<VoiceRegistries, "translator">,
+  cache: Cache<string> | null = null,
   timeoutMs = TRANSLATE_TIMEOUT_MS,
 ): Promise<Result<string, string>> {
   const model = registries.translator[config.translatorModel as keyof typeof registries.translator]
   if (!model) return err(`Unknown translator model: ${config.translatorModel}`)
 
+  // Phase 3: cache lookup
+  if (cache !== null) {
+    const cacheKey = await sha256Key(`${text}|${config.targetLang}`)
+    const cached = await cache.get(cacheKey)
+    if (cached !== null) {
+      return ok(cached)
+    }
+
+    // Cache miss — call LLM, then store result
+    try {
+      const translatePromise = generateText({
+        model,
+        prompt: buildTranslationPrompt(text, config.targetLang),
+      })
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Translation timeout after ${timeoutMs}ms`)), timeoutMs),
+      )
+      const { text: translated } = await Promise.race([translatePromise, timeoutPromise])
+      const trimmed = translated.trim()
+      await cache.set(cacheKey, trimmed)
+      return ok(trimmed)
+    } catch (e: unknown) {
+      return err(`Translation failed: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  // No cache — original path
   try {
     const translatePromise = generateText({
       model,
