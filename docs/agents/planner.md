@@ -86,11 +86,28 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** בהפסקה — סשן לילי הסתיים. ממתינה לאבי בבוקר להחלטה על blocker (API key injection).
-- **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** ✅ Slices 1-5 הושלמו. blocker אמיתי ב-Slice 5 — SDKs דורשים env vars, OneCLI מזריק רק headers. ראה לוג למטה.
+- **סטטוס:** בהפסקה — סשן הסתיים. כל ה-blockers נפתרו.
+- **Worktree:** `/home/user/projects/voice-acp` (master) + `voice-acp-v2` (vnext)
+- **עובד על:** ✅ Slices 1-5 הושלמו, כולל voice round-trip חי. הצעדים הבאים: Slice 6 (multi-session + reconnect + cache eviction) או drive-first UX מ-Slice 7.
 
 ## לוג
+
+### [2026-05-16 14:40] ✅ Slice 5 — DoD 15/15 (commit `9b7c912`)
+
+אבי קם, אמר "פלייסהולדר". נבחר אופציה 1 — placeholder API keys ל-SDK constructors. ה-OneCLI proxy מחליף את ה-header value ברמת הרשת. עבד מהפעם הראשונה.
+
+**Smoke E2E חי (3 בדיקות נפרדות):**
+1. `generateText` Gemini Flash Lite → "שלום! איך אני יכול לעזור..."
+2. `generateSpeech` ElevenLabs v3 → 36KB MP3 עברי תקין
+3. Full TTS Hebrew → MP3 → STT → text round-trip
+
+**גילויים בדרך:**
+- `gemini-2.0-flash` + `gemini-2.0-flash-lite` deprecated → עודכן ל-`gemini-flash-latest` + `gemini-flash-lite-latest`
+- `experimental_speech` ב-AI SDK v6 → `experimental_generateSpeech` (Yolo כבר השתמש בנכון)
+- ElevenLabs voices מצריכים voice_id, לא שם — `'Rachel'` נכשל, `'EXAVITQu4vr4xnSDxMaL'` (Sarah) עבד
+- Gemini STT עושה transliteration לאנגלית (`"שלום" → "Shalom"`) — תיקון 1-line ב-prompt ל-Slice 7/8
+
+**אישור D38:** AI SDK + OneCLI selective agent + placeholder pattern = clean. real key לעולם לא נכנס למשתני התהליך.
 
 ### [2026-05-16 14:25] ✅ Slice 5 הושלם (commit `4ab8caa`) — עם blocker על smoke E2E חי
 
