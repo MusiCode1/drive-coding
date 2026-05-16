@@ -1,13 +1,20 @@
 import { Hono } from "hono"
 import { cors } from "hono/cors"
+import { createInMemoryAgentRegistry } from "./agents/registry"
 import { registerHttp } from "./delivery/http"
+import { registerAgentsHttp } from "./delivery/http-agents"
 import { registerEchoWs, type WsData } from "./delivery/ws-echo"
 
 const app = new Hono()
 
 app.use("*", cors({ origin: ["http://localhost:5173"], credentials: true }))
 
+// Boot dependencies
+const registry = createInMemoryAgentRegistry()
+
+// HTTP routes
 registerHttp(app)
+registerAgentsHttp(app, { registry })
 
 const echo = registerEchoWs(app) // returns { websocket } for Bun.serve
 
