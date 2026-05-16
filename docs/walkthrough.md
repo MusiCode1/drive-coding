@@ -3,6 +3,60 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-16 20:20 (vnext, Yolo — backend tests pri 🔴)
+
+### Backend Test Coverage — Priority 1 (47 tests חדשים)
+
+לפי `docs/backend-test-plan.md`, סגירת פערי כיסוי ב-backend. 3 קבצים
+חשופים שבהם כבר נמצאו באגים ב-prod (NDJSON `\n`, warmup timing,
+filter כל frame ולא רק הראשון). TDD: test → impl נשאר ירוק.
+
+#### קבצים שכוסו
+
+**1. `ws-streams.ts` — 20 tests**
+- Readable side: ACP JSON-RPC frame passthrough; `connected` / `heartbeat`
+  / `disconnected` swallowed (לא רק על ההודעה הראשונה — באג ידוע); unknown
+  type swallowed + `console.warn`; partial frames נשמרים as-is **בלי**
+  הוספת `\n` (באג שני שתוקן בעבר); 2 frames שמרכיבים JSON אחד; string
+  vs Buffer data; ws close/error → controller.close/error; double-close
+  guard.
+- Writable side: line + `\n` נשלח כ-frame; שתי שורות → שני frames;
+  שורה ריקה לא נשלחת; `ws.send` שזורק נבלע בשקט; `close()` → `ws.close()`;
+  כשws כבר CLOSED → אין `ws.close`; `abort(reason)` → `ws.close(1011, reason)`.
+
+**2. `acp-transport.ts` — 14 tests**
+- `MockWebSocket` מדמה את stdio-to-ws: שולח `connected` frame אחרי open,
+  עונה ל-`initialize`/`session/new`/`session/prompt`/`session/cancel`.
+- happy path; capabilities default ל-`loadSession=false` כש-agentCapabilities
+  חסר; sessionId propagation; WS error → reject `ACP WS error`;
+  stdio-to-ws handshake timeout (10s עם fake timers); clientCapabilities.fs;
+  clientInfo.name = `drive-coding`; cwd forwarding; custom protocolVersion;
+  prompt forwarding + onUpdate; cancel + sessionId; shutdown closes WS;
+  `auth_required` error → `kind: 'auth_required'` typed error.
+
+**3. `client-impl.ts` — 13 tests**
+- requestPermission: `allow_once` > `allow_always` > non-reject > first;
+  options ריק → cancelled; reject_once+allow_once → בוחר allow_once;
+  unknown kind → still picks (non-reject fallback).
+- sessionUpdate forwards notification.
+- fs operations עם `mkdtemp` + cleanup: readTextFile עם/בלי line+limit,
+  ENOENT throws; writeTextFile יוצר ומחליף קובץ.
+
+#### Stats
+
+- 3 commits לאורך הסשן (kept tmux-crash-safe)
+- 232 backend tests (היה 185) — נוספו 47 טסטים TDD
+- `pnpm typecheck` ✅, `pnpm lint` ✅, `pnpm test` ✅
+- Coverage backend: 10/19 → 13/19 קבצים (לפי קבצים)
+
+#### באגים שלא מצאו תיקון
+
+כל ה-tests עברו ירוק על הimpl הקיים — אין עדויות חדשות לבאג ה-`audio_chunk` החסר.
+הimpl של ws-streams + acp-transport נראה תקין; ייתכן שהבעיה במקום אחר
+ב-pipeline (אולי `voice/pipeline.ts` או callbacks ב-`agent-session`). יבדק
+ב-🟡 כשנכסה את `ws-agent.ts` ו-`gemini-transcription.ts`.
+
+---
 ## 2026-05-16 19:55 (vnext, Yolo — QA + fix)
 
 ### QA Pass + 4 Bug Fixes (56 frontend tests)
