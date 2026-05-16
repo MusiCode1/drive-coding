@@ -1,15 +1,19 @@
 import { type AgentRegistry, CreateAgentInput, toAgentPublic } from "@drive-coding/core"
 import { type } from "arktype"
 import type { Hono } from "hono"
+import type { AgentOrchestrator } from "../app/agent-orchestrator"
 
-export function registerAgentsHttp(app: Hono, deps: { registry: AgentRegistry }): void {
+export function registerAgentsHttp(
+  app: Hono,
+  deps: { registry: AgentRegistry; orchestrator: AgentOrchestrator },
+): void {
   // GET /api/agents — רשימה
   app.get("/api/agents", async (c) => {
     const all = await deps.registry.list()
     return c.json({ agents: all.map(toAgentPublic) })
   })
 
-  // POST /api/agents — יצירה
+  // POST /api/agents — יצירה דרך orchestrator
   app.post("/api/agents", async (c) => {
     let body: unknown
     try {
@@ -23,8 +27,13 @@ export function registerAgentsHttp(app: Hono, deps: { registry: AgentRegistry })
       return c.json({ error: parsed.summary }, 400)
     }
 
-    const agent = await deps.registry.create(parsed)
-    return c.json({ agent: toAgentPublic(agent) }, 201)
+    try {
+      const agent = await deps.orchestrator.createAndSpawn(parsed)
+      return c.json({ agent: toAgentPublic(agent) }, 201)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return c.json({ error: msg }, 500)
+    }
   })
 
   // GET /api/agents/:id — פרטי agent
@@ -35,14 +44,13 @@ export function registerAgentsHttp(app: Hono, deps: { registry: AgentRegistry })
     return c.json({ agent: toAgentPublic(agent) })
   })
 
-  // DELETE /api/agents/:id — מחיקה
+  // DELETE /api/agents/:id — מחיקה דרך orchestrator
   app.delete("/api/agents/:id", async (c) => {
     const id = c.req.param("id")
-    try {
-      await deps.registry.delete(id)
-      return c.body(null, 204)
-    } catch {
-      return c.json({ error: "agent not found" }, 404)
-    }
+    const existing = await deps.registry.get(id)
+    if (!existing) return c.json({ error: "agent not found" }, 404)
+
+    await deps.orchestrator.deleteAndKill(id)
+    return c.body(null, 204)
   })
 }

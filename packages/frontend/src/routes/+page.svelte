@@ -1,11 +1,12 @@
 <script lang="ts">
 import type { AgentPublic } from "@drive-coding/core"
-import { onMount } from "svelte"
+import { onDestroy, onMount } from "svelte"
 import { deleteAgent, listAgents } from "$lib/api/agents"
 
 let agents = $state<AgentPublic[]>([])
 let loading = $state(true)
 let error = $state<string | null>(null)
+let pollTimer: ReturnType<typeof setInterval> | null = null
 
 async function load(): Promise<void> {
   loading = true
@@ -13,10 +14,35 @@ async function load(): Promise<void> {
   try {
     const { agents: list } = await listAgents()
     agents = [...list].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    schedulePoll()
   } catch (e) {
     error = e instanceof Error ? e.message : "טעינה נכשלה"
   } finally {
     loading = false
+  }
+}
+
+function schedulePoll(): void {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+  // Poll only if any agent is starting
+  const hasStarting = agents.some((a) => a.status === "starting")
+  if (hasStarting) {
+    pollTimer = setInterval(async () => {
+      try {
+        const { agents: fresh } = await listAgents()
+        agents = [...fresh].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+        // Stop polling if no more starting
+        if (!agents.some((a) => a.status === "starting") && pollTimer) {
+          clearInterval(pollTimer)
+          pollTimer = null
+        }
+      } catch {
+        // silent — keep polling
+      }
+    }, 2000)
   }
 }
 
@@ -31,6 +57,9 @@ async function remove(id: string): Promise<void> {
 }
 
 onMount(load)
+onDestroy(() => {
+  if (pollTimer) clearInterval(pollTimer)
+})
 </script>
 
 <main>

@@ -1,13 +1,30 @@
 import { Hono } from "hono"
 import { describe, expect, it } from "vitest"
 import { createInMemoryAgentRegistry } from "../src/agents/registry"
+import type { AgentOrchestrator } from "../src/app/agent-orchestrator"
 import { registerAgentsHttp } from "../src/delivery/http-agents"
 
 function makeApp() {
   const app = new Hono()
   const registry = createInMemoryAgentRegistry()
-  registerAgentsHttp(app, { registry })
-  return { app, registry }
+
+  // Mock orchestrator — stub createAndSpawn ל-status ready ישר
+  const orchestrator: AgentOrchestrator = {
+    async createAndSpawn(input) {
+      const agent = await registry.create(input)
+      const updated = await registry.update(agent.id, {
+        status: "ready",
+        bridgePort: 7100,
+      })
+      return updated
+    },
+    async deleteAndKill(id) {
+      await registry.delete(id).catch(() => {})
+    },
+  }
+
+  registerAgentsHttp(app, { registry, orchestrator })
+  return { app, registry, orchestrator }
 }
 
 describe("HTTP /api/agents", () => {
@@ -54,6 +71,20 @@ describe("HTTP /api/agents", () => {
       expect(body.agent.status).toBe("ready")
     })
 
+    it("creates agent with status=ready and bridgePort via orchestrator", async () => {
+      const { app } = makeApp()
+      const res = await app.request("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cliKind: "opencode", cwd: "/tmp" }),
+      })
+      expect(res.status).toBe(201)
+      const body = await res.json()
+      expect(body.agent.status).toBe("ready")
+      // bridgePort לא ב-AgentPublic — בודק שאין error ויש agent
+      expect(body.agent.id).toBeTruthy()
+    })
+
     it("rejects empty cwd", async () => {
       const { app } = makeApp()
       const res = await app.request("/api/agents", {
@@ -94,6 +125,27 @@ describe("HTTP /api/agents", () => {
       expect(res.status).toBe(201)
       const body = await res.json()
       expect(body.agent.modelOverride).toBe("claude-sonnet-4")
+    })
+
+    it("returns 500 if orchestrator throws", async () => {
+      const app = new Hono()
+      const registry = createInMemoryAgentRegistry()
+      const failingOrchestrator: AgentOrchestrator = {
+        async createAndSpawn() {
+          throw new Error("bridge spawn failed")
+        },
+        async deleteAndKill() {},
+      }
+      registerAgentsHttp(app, { registry, orchestrator: failingOrchestrator })
+
+      const res = await app.request("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cliKind: "opencode", cwd: "/tmp" }),
+      })
+      expect(res.status).toBe(500)
+      const body = await res.json()
+      expect(body.error).toContain("bridge spawn failed")
     })
   })
 
