@@ -163,6 +163,59 @@ describe("renderMarkdown — sanitization: javascript: URLs (MARKDOWN-6)", () =>
   })
 })
 
+describe("renderMarkdown — MARKDOWN-7: sanitization replace order", () => {
+  /**
+   * Covers behavior MARKDOWN-7: paired → self-closing → event attrs → javascript hrefs.
+   * All four sanitization passes must be applied, even when XSS vectors are combined.
+   */
+  test("MARKDOWN-7: paired tag + self-closing + event attr + js-href — all removed in correct order", () => {
+    const input = [
+      "<script>stealCreds()</script>", // paired tag
+      "<iframe src='x'/>", // self-closing
+      '<a onclick="evil()" href="javascript:bad()">click</a>', // event attr + js-href
+    ].join("")
+
+    const html = renderMarkdown(input)
+
+    // Paired tag (pass 1)
+    expect(html).not.toContain("<script")
+    expect(html).not.toContain("stealCreds")
+    // Self-closing (pass 2)
+    expect(html).not.toContain("<iframe")
+    // Event attribute (pass 3)
+    expect(html).not.toContain("onclick")
+    expect(html).not.toContain("evil()")
+    // JavaScript href (pass 4)
+    expect(html).not.toContain("javascript:")
+    expect(html).not.toContain("bad()")
+    // Safe text preserved
+    expect(html).toContain("click")
+  })
+
+  test("MARKDOWN-7: script tag with onclick attribute — both paired removal and event attr removal apply", () => {
+    // If paired removal runs first, the entire <script>...</script> is gone.
+    // The event attr pass would find nothing remaining — this tests order integrity.
+    const html = renderMarkdown(`<script onclick="x()">code</script>after`)
+    expect(html).not.toContain("<script")
+    expect(html).not.toContain("onclick")
+    expect(html).not.toContain("code")
+    expect(html).toContain("after")
+  })
+
+  test("MARKDOWN-7: self-closing dangerous tag (meta) + javascript href — both passes apply", () => {
+    // Pass 2 removes <meta …>, pass 4 removes javascript: from href
+    const html = renderMarkdown(
+      `<meta http-equiv="refresh" content="0; url=evil"/><a href="javascript:xss()">safe</a>`,
+    )
+    // Self-closing pass: meta removed
+    expect(html).not.toContain("<meta")
+    // JS-href pass: javascript: removed from <a>
+    expect(html).not.toContain("javascript:")
+    // Safe text preserved
+    expect(html).toContain("safe")
+  })
+})
+
 describe("renderMarkdown — combined / edge cases", () => {
   test("normal markdown with embedded XSS attempt → markdown preserved, script removed", () => {
     const html = renderMarkdown(

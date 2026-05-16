@@ -288,6 +288,18 @@ describe("createAcpWsTransport", () => {
     expect(ws?.close).toHaveBeenCalled()
   })
 
+  it("ACP-17: session/new always includes mcpServers: []", async () => {
+    /** Covers behavior ACP-17: newSession sends mcpServers:[] — drive-coding uses no extra MCP servers */
+    const transport = await createAcpWsTransport({ wsUrl: "ws://test", cwd: "/tmp" })
+    await transport.start({ cwd: "/tmp" })
+
+    const ws = mockInstances[0]
+    const newSessLine = ws?.sentMessages.find((m) => m.includes('"session/new"')) ?? ""
+    const parsed = JSON.parse(newSessLine.trim())
+    expect(Array.isArray(parsed.params.mcpServers)).toBe(true)
+    expect(parsed.params.mcpServers).toHaveLength(0)
+  })
+
   it("auth_required error during initialize → rejects with kind='auth_required'", async () => {
     resetMockState({
       initializeError: {
