@@ -195,6 +195,13 @@ export function createAgentSession(opts: {
       }
 
       const userText = sttRes.value
+
+      // STT-8: empty transcript (silent audio) → done immediately, skip ACP prompt
+      if (!userText.trim()) {
+        broadcast({ type: "done", stopReason: "end_turn" })
+        return
+      }
+
       callbacks.onSttPartial(userText)
 
       // 2. Send user text to ACP agent, accumulate text_chunks
