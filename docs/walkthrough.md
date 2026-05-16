@@ -3,6 +3,85 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-16 20:28 (vnext, Yolo — backend tests pri 🟡)
+
+### Backend Test Coverage — Priority 2 (60 tests חדשים)
+
+המשך כיסוי backend לפי `docs/backend-test-plan.md`. 5 קבצים של "חשוב
+אבל לא נמצאו בו באגים ב-prod". TDD: כל test נכתב, ה-impl עבר ירוק בלי
+תיקונים (סימן שהimpl יציב).
+
+#### קבצים שכוסו
+
+**1. `cli-config.ts` — 15 tests**
+- `getCliCommand` לכל 4 ה-kinds (opencode/claude/gemini/codex).
+- opencode מתעלם מ-modelOverride — וידוא חשוב כי `opencode acp` לא
+  מקבל `-m`/`--model` (learning 2026-05-16). הtest יציל מ-regression
+  אם מישהו "יתקן" לשים `--model` שם.
+- `OPENCODE_BIN` env override.
+- modelOverride ריק / whitespace / null → לא מתווסף `--model`.
+- `buildStdioToWsArgs`: `--persist` + `--grace-period -1`, port=0/12345,
+  CLI command מצורף כstring יחיד.
+
+**2. `agent-orchestrator.ts` — 11 tests**
+- happy path → status=ready, bridgePort+acpSessionId.
+- bridge spawn failure / ACP attach failure → status=crashed.
+- deleteAndKill ↔ kill + session removed.
+- deleteAndKill על agent לא קיים → no-op.
+- crash listener: bridge מת → status=crashed; agent ב-closed לא נדרס.
+- spawnWithStderr preferred path; modelOverride מועבר.
+
+המוק: `vi.mock('../src/acp/acp-transport.js')` מחליף את
+`createAcpWsTransport` באובייקט קבוע, ו-Registry/BridgeManager mocks
+ב-memory.
+
+**3. `ws-agent.ts` — 14 tests**
+- open: known agent → 'connected' + subscribe; unknown → AGENT_NOT_FOUND + close 1008.
+- message: invalid JSON, unknown type, ping, prompt, cancel, audio (base64 decode).
+- agent removed mid-session → AGENT_NOT_FOUND error.
+- broadcasts: session subscriber → ws.send forwarded.
+- close → unsubscribe (זיהוי memory leak פוטנציאלי).
+- tryUpgrade: URL match, no-match, upgrade=false → Response 426.
+
+**4. `cache-disk.ts` — 10 tests**
+- init() יוצר תיקייה; idempotent.
+- set/get roundtrip עם bytes זהים; missing key → null.
+- last write wins; sha256 hex key; empty buffer; 100KB byte-exact.
+- get לפני init() → null (graceful, no throw).
+
+**5. `gemini-transcription.ts` — 10 tests**
+- provider shape: specificationVersion='v3', modelId, provider='gemini-transcription'.
+- doGenerate מחזיר {text, segments:[], warnings:[], response.modelId}.
+- מבנה contents שנשלח: prompt + inlineData{mimeType, base64}.
+- WITH/WITHOUT previousAssistantText — prompt משתנה (context-aware STT, D39).
+- prompt תמיד כולל הוראת Hebrew script (אל transliterate — learning 2026-05-16).
+- audio גם כ-base64 string (לא רק Uint8Array).
+- response.text=undefined → '' (no crash).
+
+#### Stats
+
+- 5 commits לאורך הסשן (kept tmux-crash-safe)
+- 292 backend tests (היה 232) — נוספו 60 טסטים TDD
+- `pnpm typecheck` ✅, `pnpm lint` ✅ (תוקן: imports order, non-null
+  assertions → `?.`)
+- Coverage backend: 13/19 → 18/19 קבצים. נשאר `server.ts` (wiring בלבד)
+  ו-4 קבצי `🟢` בעדיפות נמוכה.
+
+#### באג audio_chunk — לא נחשף ב-tests
+
+הtests של `ws-agent.ts`, `gemini-transcription.ts`, `cache-disk.ts`
+עברו ירוק על הimpl הקיים. ה-pipeline למעלה (`agent-session.sendAudioPrompt`)
+כבר היה מכוסה ב-tests קיימים. הtests החדשים לא מצאו את הbug. ייתכן:
+- בעיית timing ב-`splitIntoSentences` — חוזר ריק על chunks קצרים
+  ומשאיר את הbuffer מלא עד flush.
+- TTS provider החזיר 401 / cache miss + ElevenLabs rate-limit.
+- Race ב-`ttsActive` flag (לא raceטוב, אבל לא תמיד הbug).
+
+הצעה לחקירה: tests של `voice/pipeline.ts` (כבר קיים) — להוסיף tests
+ל-`speakSentence` עם empty audio + cache fail + retry. לא נכלל בתוכנית
+הזו (`voice-pipeline.test.ts` כבר קיים, לא חסר).
+
+---
 ## 2026-05-16 20:20 (vnext, Yolo — backend tests pri 🔴)
 
 ### Backend Test Coverage — Priority 1 (47 tests חדשים)
