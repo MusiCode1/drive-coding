@@ -3,6 +3,43 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-16 (docs) — מיפוי כיסוי behaviors v1 → vnext
+
+### behaviors-coverage.md נוצר
+
+מסמך מיפוי מלא של 223 behaviors מ-v1 (`docs/archive/v1/behaviors.md`) לכיסוי ב-vnext.
+נסרקו כל 33 קבצי tests ב-`packages/{core,backend,frontend}`.
+
+#### סטטיסטיקה
+
+| סטטוס | כמות | אחוז |
+|--------|------|------|
+| ✅ מכוסה | 43 | 19% |
+| ⚠️ חלקית | 15 | 7% |
+| ❌ לא מכוסה | 15 | 7% |
+| 🚫 לא רלוונטי | 150 | 67% |
+| **סה"כ** | **223** | |
+
+#### למה 67% "לא רלוונטי"?
+
+vnext הוא ארכיטקטורה שונה לחלוטין: multi-agent platform עם SvelteKit frontend.
+קטגוריות שלמות נפלו: CONFIG/CONFIG-PICKER (21), STATIC (5), URL (5), UI-HEADER (4), UI-HIST (7), SYSPROMPT (7), REC (8), רוב HTTP (14).
+
+#### פערים מסוכנים (❌) — ממוינים לפי priority
+
+1. **PROMPT-1** — busy flag, מניעת concurrent prompts → עלול לגרום לstate corruption
+2. **STT-8** — empty transcript → done מיידי (לא נבדק, עלול לשלוח פרומפט ריק ל-ACP)
+3. **PROMPT-5** — serial TTS queue (race condition ב-audio chunks)
+4. **ACP-9** — unknown sessionUpdate types → עלול להוריד transport
+5. **TTS-2** — missing voice ID env var → TTS נכשל בשקט
+6. **GEMINI-3** — translation timeout (pipeline חסומה)
+7. **ACP-13** — stopReason ≠ end_turn handling
+8. **MARKDOWN-7** — סדר replace operations
+9. **ACP-17** — mcpServers:[] ב-session/new
+
+ראה `docs/behaviors-coverage.md` לפירוט מלא + הצעות לסגירת פערים.
+
+---
 ## 2026-05-16 20:32 (vnext, Yolo — backend tests pri 🟢 — סיום)
 
 ### Backend Test Coverage — Priority 3 (16 tests חדשים)
