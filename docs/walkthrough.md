@@ -3,6 +3,72 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-16 19:55 (vnext, Yolo — QA + fix)
+
+### QA Pass + 4 Bug Fixes (56 frontend tests)
+
+QA מקיף לפי `docs/frontend-spec.md §20` מול browser חי ב-linux-gui
+(pw-clean.sh + CDP attach דרך `your-app.nue.tuns.sh`).
+מצאנו 4 באגים, תיקנו ב-TDD, וידאנו ב-browser.
+
+#### באגים שתוקנו
+
+**1. dashboard `confirm()` — הפרת §9.6 #5 ("בלי modals/dialogs")**
+- `routes/+page.svelte`: `confirm("למחוק את הסוכן?")` → inline confirm.
+- הכפתור × עכשיו מחליף את עצמו בקבוצת "למחוק? [אשר] [בטל]" באותו card.
+- מתאים לנהיגה — אצבע גדולה, אין מודל שחוסם.
+
+**2. audio_chunk dropped on file upload**
+- `routes/agent/[id]/+page.svelte`: `onFileUpload` קרא ל-`session.sendRaw`
+  ישירות בלי לעדכן את `voiceState`. בקבלת audio_chunk הguard ב-
+  voice-session דחה (`if (voiceState === "thinking"||"speaking")` → false).
+- Fix: הוספנו `voice.sendAudioBlob(blob, mimeType)` ב-voice-session
+  שמקדם את ה-state ל-`transcribing → thinking` בדיוק כמו stopRecording.
+- 2 טסטים חדשים: שולח payload נכון; קודם state.
+
+**3. STT preview הופיע אחרי תשובת הassistant**
+- הbubble `🎙 …` היה ב-template נפרד אחרי `{#each session.messages}`,
+  ולא היה משולב ב-messages — תוצאה: תמיד בתחתית הצ'אט גם אחרי תשובה.
+- Fix: ב-agent-session, message מסוג `stt_partial` עושה upsert בtoך
+  messages — מעדכן user bubble streaming קיים או יוצר חדש. בrender,
+  user bubble streaming מקבל `🎙 ` prefix + italic. `done` מסיים streaming.
+- 2 טסטים חדשים: chronological order; לא דורס user bubble של טקסט.
+
+**4. replay-last נשאר disabled גם אחרי שמע**
+- `voice.canReplayLast` החזיר `player.hasLastPlayed` — property רגיל
+  על AudioQueue, **לא** `$state`. Svelte 5 לא יודע לעקוב — `$derived`
+  שקורא לו לעולם לא re-evaluates.
+- Fix: הוספנו `hasReplayable = $state(false)` ב-voice-session שמתעדכן
+  ב-`onStateChange(true)` של ה-player. `canReplayLast` מחזיר אותו.
+- טסט חדש: `canReplayLast` הופך true אחרי audio_chunk.
+
+#### עבר QA ב-browser
+
+§20 blockers (כולם ✅): `dir="rtl"`, mic 110px×5 states+animations,
+bubbles RTL alignment, markdown rendering, text prompt E2E, voice E2E
+via upload, auto-scroll+jump-down (verified scroll-to-top → button
+appears → click → scrolls back), status text colors, error display,
+audio cues (code path), replay-last (now functional), stop button
+visible only in speaking, tools collapsible + status dots (arrow
+rotates 90°), thought 💭, WS reconnect (backoff array verified).
+
+car mode `?car=1`: enable button מופיע, click → "🚗 בקרת רכב פעילה",
+text input מוסתר ב-car mode (לפי spec §4).
+
+#### בעיה backend מחוץ לתחום
+
+ה-TTS pipeline בbackend לא שולח `audio_chunk` עבור כל ה-prompts —
+המודל החזיר תשובה טקסטואלית אבל אין audio_chunk events ב-WS log
+(verified). frontend מתפקד נכון על מה שמגיע — אם chunks יגיעו, הם
+ינוגנו וreplay יהיה זמין. לא בתחום ה-QA (אסור לערוך backend).
+
+#### Stats
+
+- 4 commits לאורך הסשן (לא בסוף בלבד — kept tmux-crash-safe)
+- 56 frontend tests (היה 51) — נוספו 5 טסטים TDD
+- pnpm typecheck ✅, pnpm lint ✅ (פתרנו 3 warnings ב-scripts/), pnpm test ✅
+
+---
 ## 2026-05-16 18:35 (vnext, Yolo)
 
 ### UI Parity Fix — 7 באגים מה-review (236 tests)
