@@ -86,11 +86,39 @@
 
 ## מצב נוכחי
 
-- **סטטוס:** בהפסקה — סשן הסתיים. כל ה-blockers נפתרו.
+- **סטטוס:** פעיל — UI E2E עובד, ACP bugs תוקנו, ממתינה להחלטה על Slice הבא.
 - **Worktree:** `/home/user/projects/voice-acp` (master) + `voice-acp-v2` (vnext)
-- **עובד על:** ✅ Slices 1-5 הושלמו, כולל voice round-trip חי. הצעדים הבאים: Slice 6 (multi-session + reconnect + cache eviction) או drive-first UX מ-Slice 7.
+- **עובד על:** ✅ Slices 1-5 + ACP fixes + Conformance review. הצעדים הבאים: לפי spec — Slice 6 (multi-session+cache+reconnect). בפועל מומלץ לטפל קודם ב-conformance gaps שלא נסגרו (tool_call_update, voice E2E בדיקה).
 
 ## לוג
+
+### [2026-05-16 15:50] ✅ Slice 5 closeout — UI E2E עובד (commit `b0ead2b`)
+
+Avi בדק את ה-UI ונתקע עם `disconnected`. cascade של 3 באגים תוקנו ברצף:
+
+1. **`-m` flag שגוי** ב-`opencode acp` (`cli-config.ts`) — opencode acp לא מקבל model flag, יוצא עם help → subprocess מת. הסרתי.
+
+2. **Conformance review** — Avi שאל "יש docs של ACP?". שיגרתי Yolo+Sonnet עם brief מפורט (12 תחומי בדיקה, 14 spec URLs). דוח 632 שורות ב-`docs/reviews/acp-conformance.md` (commit `46cfb88`). ההיפותזה שלי על capabilities ריקות הופרכה — spec אומר optional. אבל 6 issues אחרים זוהו.
+
+3. **Root cause אמיתי — `\n` חסר ב-NDJSON** (`ws-streams.ts`). stdio-to-ws מעביר frame → stdin verbatim, opencode מצפה NDJSON. ה-`split("\n")` שלנו זרק את ה-delimiter. ה-`ndJsonStream` של ה-SDK כותב `{...}\n`, אנחנו פצלנו ושלחנו בלי `\n`. opencode ממתין לעוד data לעולם.
+
+**עוד תיקונים שנכנסו ב-`b0ead2b`:**
+- `acp-transport.ts`: המתנה ל-stdio-to-ws `connected` + 1500ms warmup, timeout 10s→45s, structured logging, `clientInfo`+`clientCapabilities.fs`
+- `client-impl.ts`: permission לפי `kind` (typed enum), fs handlers
+- `ws-streams.ts`: filter על כל הודעה לא רק ראשונה
+- `http-options.ts` חדש: GET /api/options עם models+projects
+- `frontend/agent/new`: 2 selects עם freeform fallback
+- `vite.config`: allowedHosts ל-tuns.sh
+
+**E2E עובד:** Avi בדק prompt בעברית, ה-agent ביצע tool calls (`read`, `bash`) והחזיר תוצאות. ~2.5s handshake. Tunnel ב-https://your-app.nue.tuns.sh.
+
+**Conformance gaps שעדיין פתוחים (לא חוסמים):**
+- `tool_call_update` לא מוצג נכון ב-UI (badges קטנים בלי תוכן) — Slice 7
+- `stopReason` hardcoded ב-`sendAudioPrompt`
+- `auth_required` error לא מזוהה
+- voice push-to-talk לא נבדק בדפדפן עדיין
+
+**Tests:** 140/140 ✓.
 
 ### [2026-05-16 14:40] ✅ Slice 5 — DoD 15/15 (commit `9b7c912`)
 
