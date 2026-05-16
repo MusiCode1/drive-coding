@@ -3,6 +3,76 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-16 20:32 (vnext, Yolo — backend tests pri 🟢 — סיום)
+
+### Backend Test Coverage — Priority 3 (16 tests חדשים)
+
+סיום תוכנית הכיסוי לפי `docs/backend-test-plan.md`. 4 קבצי "low logic"
+שעדיין שווה לכסות כדי להגן מ-regression.
+
+#### קבצים שכוסו
+
+**1. `http-options.ts` — 7 tests**
+- GET /api/options → `{models, projects}`.
+- כל 4 ה-CLIs יש להם מערכי models לא ריקים.
+- `execFileSync("opencode", ["models"])` ממוקם דרך `vi.mock("node:child_process")`,
+  מסיר 10s מזמן הרצת הסשן (התנהגות אמיתית קוראת ל-opencode עם 5s timeout).
+- fallback ל-MODEL_FALLBACKS כש-execFileSync זורק.
+- projects: כל path אבסולוטי, אין `user-files` או `node_modules`, capped 50.
+- Preferred prefixes order (anthropic/claude-opus קודם).
+
+**2. `providers.ts` — 4 tests**
+- `STT_REGISTRY['gemini/flash-context']` — v3 spec.
+- `TTS_REGISTRY['elevenlabs/v3']` — modelId קיים.
+- `TRANSLATOR_REGISTRY['gemini/flash-lite']` — קיים.
+- `DEFAULT_REGISTRIES` ממופה נכון.
+
+**3. `ws-echo.ts` — 4 tests**
+- open → hello + version.
+- ping → pong + echoOf + serverTime.
+- Invalid JSON → INVALID_JSON.
+- Unknown type → INVALID_MSG.
+
+**4. `http.ts` — 1 test**
+- GET /api/health → `{status: 'ok', version, uptime}`.
+
+#### Stats סופי
+
+- 12 commits לאורך הסשן (kept tmux-crash-safe)
+- 308 backend tests (היה 185 בתחילה, נוספו 123 tests TDD)
+- 56 frontend tests (לא נגעתי)
+- `pnpm typecheck` ✅, `pnpm lint` ✅, `pnpm test` ✅
+- Coverage backend: **18/19 קבצים** (server.ts לא נכלל לפי התוכנית — wiring only)
+
+#### סה"כ tests חדשים לפי קובץ
+
+| קובץ | Tests | Priority |
+|------|-------|----------|
+| ws-streams.ts | 20 | 🔴 |
+| acp-transport.ts | 14 | 🔴 |
+| client-impl.ts | 13 | 🔴 |
+| cli-config.ts | 15 | 🟡 |
+| agent-orchestrator.ts | 11 | 🟡 |
+| ws-agent.ts | 14 | 🟡 |
+| cache-disk.ts | 10 | 🟡 |
+| gemini-transcription.ts | 10 | 🟡 |
+| http-options.ts | 7 | 🟢 |
+| providers.ts | 4 | 🟢 |
+| ws-echo.ts | 4 | 🟢 |
+| http.ts | 1 | 🟢 |
+| **סה"כ** | **123** |  |
+
+המספר עלה מעל היעד המקורי של 86 (כיסוי טוב יותר בקבצים העיקריים).
+
+#### באג audio_chunk — לא תוקן
+
+כל ה-tests החדשים עברו ירוק על הimpl הקיים — סימן ש-ws-streams /
+acp-transport / ws-agent / gemini-transcription / cache-disk תקינים.
+הצוואר צר נשאר ב-`voice/pipeline.ts` או ב-race-condition ב-`ttsActive`
+flag ב-`agent-session.sendAudioPrompt`. דורש חקירה מקור-לקבלן עם logs
+לחיים — לא בתחום של unit tests סטטיים.
+
+---
 ## 2026-05-16 20:28 (vnext, Yolo — backend tests pri 🟡)
 
 ### Backend Test Coverage — Priority 2 (60 tests חדשים)
