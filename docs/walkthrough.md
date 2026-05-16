@@ -3,6 +3,61 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-16 17:50 (vnext, Yolo)
+
+### Slice 7 — Drive-First UX (222 tests)
+
+יישום §9.6 "UX Principles — Drive-First". ה-UI השתנה מ-scaffold ל-product: dark mode, כפתור 110px, state machine 5-states, animations, smart scroll, audio cues, car mode, wake lock.
+
+#### מה בוצע?
+
+**1. Design tokens + Layout:**
+- `+layout.svelte` — dark mode CSS variables מלאים (16 tokens): `--bg`, `--recording`, `--speaking`, `--tool-bg` וכו'. Global keyframes: `pulse`, `rotate-slow`, `flash-fast`, `pulse-dot`, `spin`.
+- Layout flex: `body → flex-column, 100dvh, overflow-hidden`. Header + chat-wrap (flex:1) + footer (flex-shrink:0).
+
+**2. State machine (TDD):**
+- `stores/mic-state.svelte.ts` — `deriveMicState()` פונקציה pure. 5 states: idle/recording/processing/speaking/cancelling. `MIC_STATUS_TEXT`, `MIC_ICONS` maps.
+- `stores/mic-state.test.ts` — 9 tests לכל transition.
+
+**3. Smart scroll (TDD):**
+- `stores/smart-scroll.ts` — `deriveScrollState()` פונקציה pure. User-intent detection בחלון 500ms.
+- `stores/smart-scroll.test.ts` — 7 tests: at-bottom, user-scroll, programmatic-content.
+
+**4. Car mode (TDD):**
+- `stores/car-mode.svelte.ts` — `createCarMode()` store. Media Session API handlers (play/pause → toggle recording). Landscape lock optional.
+- `stores/car-mode.test.ts` — 8 tests: register handlers, play/pause triggers, isActive, graceful no-mediaSession.
+
+**5. Audio cues (Web Audio API):**
+- `audio/cues.ts` — 5 synthesized cues ללא mp3 files. `recordingStart(880Hz)`, `recordingStop(660Hz)`, `thinking(C5→E5)`, `speaking(E5→C5)`, `error(E4→A3)`. Lazy AudioContext, SSR safe.
+
+**6. Agent live page (שכתוב מלא):**
+- `routes/agent/[id]/+page.svelte` — drive-first UX מלא:
+  - MIC button 110px עגול, 5 states + animations (pulse/rotate-slow/flash-fast)
+  - Status text מתחת לכפתור עם צבע per-state
+  - Side controls: replay-last (56px) + stop (hidden when idle)
+  - Smart scroll + jump-down button
+  - Bubble redesign: user (bubble-user), agent (bubble-agent עם markdown מלא), thought (dashed italic), tools (collapsible עם arrow + status dots)
+  - Audio cues on state transitions (`$effect`)
+  - Wake Lock: acquired on recording, released on idle
+  - Car mode: `?car=1` → enable button → Media Session handlers
+  - No-pinch-zoom via `<svelte:head>` viewport meta
+
+**7. Dashboard upgrade:**
+- `routes/+page.svelte` — cards גדולים (min-height: 100px), empty state עם אייקון 🎙 + הסבר + כפתור גדול, settings FAB, dark mode מלא.
+
+#### החלטות ארכיטקטורה
+
+- **Web Audio במקום mp3**: D42 דורש "5 cues" — יושם ב-Web Audio oscillator. אין צורך ב-`static/sounds/` assets. mp3 files — future Slice 8.
+- **prevMicState = $state("idle")**: Svelte 5 מתריע אם `$state` מאותחל עם ערך derived — פתרנו עם type annotation מפורש.
+- **@keyframes ב-layout ללא :global()**: Svelte לא תומך ב-`:global(@keyframes ...)`. הפתרון: `@keyframes` ישירות ב-`<style>` של layout — הם global בטבעם כי הקובץ הוא layout component.
+
+#### תוצאות
+
+- `pnpm typecheck` — נקי (0 errors, 0 warnings).
+- `pnpm lint` — נקי.
+- `pnpm test` — 185 core + 37 frontend = **222 tests** ✓ (+24 חדשים מ-Slice 7: mic-state, smart-scroll, car-mode).
+
+---
 ## 2026-05-16 17:40 (vnext, Yolo)
 
 ### Slice 5.6 — port v1: provider-error + markdown (198 tests)
