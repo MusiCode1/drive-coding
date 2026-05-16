@@ -201,6 +201,34 @@ onDestroy(() => {
   releaseWakeLock()
 })
 
+// ── Hidden file upload — sends audio through same pipeline as mic recording ──
+// Useful for testing voice flow without a real microphone (QA, playwright, debug).
+// The input is invisible; activate by clicking it programmatically or via
+// document.querySelector('#audio-file-input').click() in devtools.
+let fileInputEl = $state<HTMLInputElement | null>(null)
+
+async function onFileUpload(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  input.value = "" // reset so same file can be re-selected
+  const arrayBuf = await file.arrayBuffer()
+  const uint8 = new Uint8Array(arrayBuf)
+  let binary = ""
+  const chunkSize = 8192
+  for (let i = 0; i < uint8.length; i += chunkSize) {
+    binary += String.fromCharCode(...uint8.subarray(i, i + chunkSize))
+  }
+  const base64 = btoa(binary)
+  // Send through exact same WS path as mic recording
+  session.sendRaw({
+    type: "audio",
+    agentId: session.agentId,
+    audioBase64: base64,
+    mimeType: file.type || "audio/webm",
+  })
+}
+
 // ── Main mic button click ────────────────────────────────────────────────────
 async function onMicClick() {
   if (micState === "idle" || micState === "processing") {
@@ -488,6 +516,17 @@ function toggleTool(id: string) {
         <div class="side-btn-spacer" aria-hidden="true"></div>
       {/if}
     </div>
+
+    <!-- Hidden audio file upload — same pipeline as mic recording.
+         Activate: document.querySelector('#audio-file-input').click() -->
+    <input
+      id="audio-file-input"
+      type="file"
+      accept="audio/*"
+      style="display:none"
+      bind:this={fileInputEl}
+      onchange={onFileUpload}
+    />
 
     <!-- Car mode enable button (only in car mode and not yet active) -->
     {#if isCarMode && !carMode.isActive}
