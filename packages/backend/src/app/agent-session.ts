@@ -226,9 +226,14 @@ export function createAgentSession(opts: {
             translator: registries.translator,
           })
           if (trRes.isErr()) {
+            console.warn(
+              `[voice/pipeline] Translation failed, skipping sentence (${sentence.length}ch): ${trRes.error}`,
+            )
             callbacks.onError(trRes.error)
-            ttsActive = false
-            return
+            // Skip this sentence but continue processing the rest of the queue.
+            // Previously this did `ttsActive = false; return` which orphaned
+            // remaining sentences — root cause of missing audio_chunk events.
+            continue
           }
 
           callbacks.onTranslation?.(sentence, trRes.value)
@@ -293,6 +298,19 @@ export function createAgentSession(opts: {
       while (ttsActive && attempts < 300) {
         await new Promise((r) => setTimeout(r, 100))
         attempts++
+      }
+
+      // 5. Drain safety — if processQueue aborted mid-flight (e.g. from a
+      // fire-and-forget call that errored) items may remain in the queue.
+      // Retry until empty or a hard cap to avoid infinite loops.
+      let drainAttempts = 0
+      while (sentenceQueue.length > 0 && drainAttempts < 10) {
+        drainAttempts++
+        await processQueue()
+        // If processQueue returned immediately (ttsActive was true), wait a tick
+        if (ttsActive) {
+          await new Promise((r) => setTimeout(r, 50))
+        }
       }
 
       broadcast({

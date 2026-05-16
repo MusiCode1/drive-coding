@@ -5,7 +5,7 @@
  */
 
 import type { AcpTransport, PromptResponse, SessionNotification } from "@drive-coding/core"
-import { ok } from "neverthrow"
+import { err, ok } from "neverthrow"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 // Mock the pipeline module BEFORE importing agent-session (vitest hoists vi.mock calls)
@@ -223,5 +223,132 @@ describe("AgentSession.sendAudioPrompt — PROMPT-5: serial TTS queue", () => {
     if (audioChunks.length >= 3) {
       expect(audioChunks[2]).toContain("S3")
     }
+  })
+})
+
+// ─── BUG: Translation error must NOT drop remaining queue items ──
+
+describe("AgentSession.sendAudioPrompt — translation error resilience", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("translation error on one sentence does not drop the rest of the queue", async () => {
+    // Arrange: STT returns text
+    vi.mocked(pipeline.transcribeUserAudio).mockResolvedValue(ok("prompt text"))
+
+    // ACP responds with 3 sentences in a single chunk
+    // splitIntoSentences returns all 3 immediately, no remaining
+    vi.mocked(pipeline.splitIntoSentences)
+      .mockReturnValueOnce({
+        sentences: ["Sentence A.", "Sentence B.", "Sentence C."],
+        remaining: "",
+      })
+      .mockReturnValue({ sentences: [], remaining: "" })
+
+    // translateText: succeeds for A and C, FAILS for B
+    vi.mocked(pipeline.translateText).mockImplementation(async (text) => {
+      if (text === "Sentence B.") {
+        // Simulate translation timeout
+        return err("Translation timeout after 2500ms")
+      }
+      return ok(`translated:${text}`)
+    })
+
+    // speakSentence: always succeeds, calls onChunk
+    vi.mocked(pipeline.speakSentence).mockImplementation(
+      async (_text, _cfg, _reg, _cache, onChunk) => {
+        onChunk(`audio:${_text}`)
+        return ok(undefined)
+      },
+    )
+
+    const transport = makeMockTransport({
+      async onPrompt(_text, onUpdate) {
+        onUpdate({
+          sessionId: "s",
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "Sentence A. Sentence B. Sentence C." },
+            messageId: null,
+          },
+        } as SessionNotification)
+        return { stopReason: "end_turn" }
+      },
+    })
+
+    const session = createAgentSession({ agentId: "a", transport })
+    const { callbacks, audioChunks, errors } = makeCallbacks()
+
+    await session.sendAudioPrompt(
+      new Uint8Array([1]),
+      "audio/webm",
+      baseVoiceConfig,
+      callbacks,
+      mockRegistries,
+      mockCache,
+    )
+
+    // B's error should be reported
+    expect(errors.length).toBeGreaterThanOrEqual(1)
+    expect(errors.some((e) => e.includes("Translation timeout"))).toBe(true)
+
+    // CRITICAL: A and C must still produce audio!
+    // With the bug, only A produces audio (processQueue aborts after B fails)
+    expect(audioChunks.length).toBe(2)
+    expect(audioChunks[0]).toContain("Sentence A.")
+    expect(audioChunks[1]).toContain("Sentence C.")
+  })
+
+  it("translation error on trailing buffer still broadcasts done", async () => {
+    // Arrange: response has no sentence boundaries → all goes to trailing flush
+    vi.mocked(pipeline.transcribeUserAudio).mockResolvedValue(ok("prompt"))
+
+    // splitIntoSentences: never finds boundaries
+    vi.mocked(pipeline.splitIntoSentences).mockReturnValue({
+      sentences: [],
+      remaining: "short reply",
+    })
+
+    // translateText always fails (simulates Gemini being down)
+    vi.mocked(pipeline.translateText).mockResolvedValue(
+      err("Translation failed: 503 Service Unavailable"),
+    )
+
+    const transport = makeMockTransport({
+      async onPrompt(_text, onUpdate) {
+        onUpdate({
+          sessionId: "s",
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "short reply" },
+            messageId: null,
+          },
+        } as SessionNotification)
+        return { stopReason: "end_turn" }
+      },
+    })
+
+    const session = createAgentSession({ agentId: "a", transport })
+    const broadcasts: Array<{ type: string }> = []
+    session.subscribe((msg) => broadcasts.push(msg))
+
+    const { callbacks, audioChunks, errors } = makeCallbacks()
+
+    await session.sendAudioPrompt(
+      new Uint8Array([1]),
+      "audio/webm",
+      baseVoiceConfig,
+      callbacks,
+      mockRegistries,
+      mockCache,
+    )
+
+    // Error should be reported
+    expect(errors.length).toBeGreaterThanOrEqual(1)
+    // Done must still be broadcast (not hang)
+    expect(broadcasts.some((m) => m.type === "done")).toBe(true)
+    // No audio (translation failed) — this is expected behavior
+    expect(audioChunks.length).toBe(0)
   })
 })
