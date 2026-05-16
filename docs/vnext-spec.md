@@ -1,10 +1,12 @@
 # vNext Technical Spec — drive-coding
 
-> **סטטוס:** שכבה 2 — מפרט טכני להתחלת implementation.
+> **סטטוס:** שכבה 2 (אחרי lint סבב 8, 2026-05-16) — מפרט טכני להתחלת implementation.
 > **כותב:** Tama (planner agent).
-> **תאריך:** 2026-05-15.
-> **תלות:** `vnext-architecture.md` (החלטות D1-D32), `vnext-research.md` (ממצאים).
+> **תאריך:** 2026-05-15 (עודכן 2026-05-16).
+> **תלות:** `vnext-architecture.md` (החלטות D1-D50), `vnext-research.md` (ממצאים).
 > **מטרה:** לתת ל-executor מספיק פרטים כדי להתחיל לכתוב קוד.
+>
+> **הערה חשובה ל-MVP:** אין identity, אין auth, אין tokens. רץ אצל אבי בלבד. `Authorization` headers ו-`ownerToken` שמופיעים בדוגמאות הם **לא ב-MVP** (D11 [future]).
 
 ---
 
@@ -53,15 +55,9 @@ Browser ──────WS────── Backend ──────WS─�
 ```ts
 import { type } from "arktype"
 
-// ─── Identity ────────────────────────────────────────────
-
-export const UserToken = type({
-  token: "string >= 32",        // random 32+ chars
-  createdAt: "string.date.iso",
-})
-export type UserToken = typeof UserToken.infer
-
 // ─── Agent ───────────────────────────────────────────────
+// ב-MVP אין identity. כל ה-agents שייכים ל-instance.
+// אם נפתח לכמה משתמשים בעתיד (D11 [future]) — נוסיף ownerId אופציונלי.
 
 export const CliKind = type("'opencode' | 'claude' | 'gemini' | 'codex'")
 export type CliKind = typeof CliKind.infer
@@ -73,7 +69,6 @@ export type AgentStatus = typeof AgentStatus.infer
 
 export const Agent = type({
   id: "string.uuid",
-  ownerToken: "string",
   cliKind: CliKind,
   cwd: "string",
   modelOverride: "string | null",
@@ -97,18 +92,20 @@ export const AgentPublic = type({
 })
 export type AgentPublic = typeof AgentPublic.infer
 
-// ─── Voice settings ──────────────────────────────────────
+// ─── Voice settings (D38 + D43) ───────────────────────────
+// per-user (אחד לכל instance ב-MVP). שמור ב-localStorage.
+// sttModel/ttsModel/translatorModel הם keys ב-AI SDK registries
+// (לדוגמה: 'gemini/flash-context', 'elevenlabs/v3', 'gemini/flash-lite')
 
-export const TtsBackend = type("'elevenlabs' | 'piper'")
-export const SttBackend = type("'gemini' | 'whisper-local'")
-export const Language = type("'he' | 'en'")  // הרחבה בעתיד
+export const Language = type("'he' | 'en'")  // הרחבה בעתיד דרך i18n
 
 export const VoiceSettings = type({
   language: Language,
-  sttBackend: SttBackend,
-  ttsBackend: TtsBackend,
-  ttsVoiceId: "string",                // ElevenLabs voice id, או Piper voice name
-  "thoughtVoiceId?": "string",         // אופציונלי, אם רוצה קול מובחן למחשבות
+  sttModel: "string",                  // key ב-STT_REGISTRY
+  ttsModel: "string",                  // key ב-TTS_REGISTRY
+  translatorModel: "string",           // key ב-TRANSLATOR_REGISTRY
+  ttsVoiceId: "string",                // voice id ספציפי לprovider
+  "thoughtVoiceId?": "string",         // אופציונלי
 })
 export type VoiceSettings = typeof VoiceSettings.infer
 
@@ -168,15 +165,15 @@ export type Bubble = typeof Bubble.infer
 
 ```
 WSS /ws/agent/:agentId
-Header: Authorization: Bearer <userToken>
 ```
 
-ב-connect, ה-backend בודק:
-1. token תקף (UserToken).
-2. agent קיים ושייך ל-token.
-3. agent בסטטוס `ready` או `busy`.
+ב-MVP אין auth. ב-connect, ה-backend בודק:
+1. agent קיים ב-Map (in-memory).
+2. agent בסטטוס `ready` או `busy`.
 
 אם משהו לא תקין → close code 1008 + reason.
+
+**[future]:** אם נפתח לכמה משתמשים, נוסיף `Authorization: Bearer <token>` header + validation.
 
 ### 3.2 Server → Client messages
 
@@ -374,120 +371,23 @@ export function createAcpWsTransport(wsUrl: string): AcpTransport {
 
 ### 4.5 Authentication
 
-אין ב-WS עצמו (rebornix לא מטפל ב-auth ל-bridge). ה-WS חי על `127.0.0.1` — לא expose מעבר ל-container. אם נצטרך auth (למשל אם ה-bridge יישלח דרך Dev Tunnel ל-טלפון של אבי), ה-acp-ui מציע pattern: `Authorization: Bearer <token>` כ-WebSocket subprotocol.
+אין ב-WS של ה-bridge — חי על `127.0.0.1` בלבד, לא expose מעבר ל-container. ה-backend הוא היחיד שניגש.
 
-### 4.2 Bridge → Backend messages
-
-```ts
-// (לא בArkType — internal, TypeScript types בלבד)
-
-import type {
-  SessionNotification,
-  PromptResponse,
-  RequestPermissionRequest,
-} from "@agentclientprotocol/sdk"
-
-export type BridgeServerMessage =
-  | {
-      readonly type: "ready"
-      readonly capabilities: AcpCapabilities
-      readonly sessionId?: string         // אם session/load הצליח (resume)
-    }
-  | {
-      readonly type: "sessionUpdate"
-      readonly payload: SessionNotification
-    }
-  | {
-      readonly type: "promptComplete"
-      readonly id: number                 // matches client's prompt.id
-      readonly payload: PromptResponse
-    }
-  | {
-      readonly type: "requestPermission"
-      readonly id: number                 // server-initiated request id
-      readonly payload: RequestPermissionRequest
-    }
-  | {
-      readonly type: "writeFile" | "readFile" | "createTerminal"
-              | "terminalOutput" | "waitForTerminalExit"
-              | "releaseTerminal" | "killTerminalCommand"
-      readonly id: number
-      readonly payload: unknown           // ACP-specific
-    }
-  | {
-      readonly type: "error"
-      readonly message: string
-      readonly fatal: boolean             // אם fatal → bridge מת בקרוב
-    }
-```
-
-### 4.3 Backend → Bridge messages
-
-```ts
-export type BridgeClientMessage =
-  | {
-      readonly type: "prompt"
-      readonly id: number                 // לקישור עם promptComplete
-      readonly text: string
-    }
-  | {
-      readonly type: "cancel"
-    }
-  | {
-      readonly type: "permissionResponse"
-      readonly id: number                 // matches requestPermission.id
-      readonly outcome: "allow_once" | "allow_always" | "deny"
-    }
-  | {
-      readonly type: "fileResponse"
-      readonly id: number
-      readonly payload: unknown
-    }
-  | {
-      readonly type: "shutdown"
-    }
-```
-
-### 4.4 Buffer + Replay (D23)
-
-ה-bridge שומר buffer של 500 ה-`sessionUpdate` האחרונים. כש-backend נופל וחוזר:
-
-1. Backend מתחבר מחדש ל-bridge port.
-2. ה-bridge מוכרח לשלוח שוב את ה-`ready` (עם `sessionId` ש-resumed).
-3. ה-bridge מסמן את ה-events מה-buffer כ-`replayed: true` (שדה אופציונלי בעטיפה).
-4. Backend יודע שאלה replay ולא triggering חדש (אם רלוונטי).
-
-**גודל buffer:** 500 messages = ~30 דקות שיחה ממוצעת. אם המשתמש לא חוזר תוך 30 דקות → events ישנים נמחקים.
-
-### 4.5 Authentication
-
-אין. ה-WS חי על `127.0.0.1` בלבד, ולא expose מעבר ל-container. ה-backend הוא היחיד שיכול לגשת.
+**[future]** אם ה-bridge יישלח דרך Dev Tunnel (D33 — `--tunnel-name`) ל-טלפון של אבי, ה-acp-ui מציע pattern: `Authorization: Bearer <token>` כ-WebSocket subprotocol.
 
 ---
 
 ## 5. HTTP API Spec
 
-כל ה-endpoints מתחת ל-`/api/`. כולם מצפים ל-`Authorization: Bearer <userToken>` חוץ מ-`/api/identity/token`.
+כל ה-endpoints מתחת ל-`/api/`. **ב-MVP אין auth** — אין `Authorization` header.
 
-### 5.1 Identity
+**[future]** Identity endpoint:
 
-#### `POST /api/identity/token`
-
-יצירת token חדש (anonymous).
-
-**Request:** ריק.
-
-**Response 200:**
-```json
-{
-  "token": "abc123…",
-  "createdAt": "2026-05-15T04:00:00.000Z"
-}
+```
+POST /api/identity/token   # יחזיר anonymous token. דחוי ל-future אם נפתח לכמה משתמשים.
 ```
 
-ה-frontend שומר ב-localStorage. ב-pages הבאים שולח כ-`Authorization: Bearer …`.
-
-### 5.2 Agents
+### 5.1 Agents
 
 #### `GET /api/agents`
 
@@ -534,36 +434,58 @@ export type BridgeClientMessage =
 
 **Response 204:** empty.
 
-### 5.3 Voices
+### 5.2 Providers (D36)
 
-#### `GET /api/voices`
+#### `GET /api/providers`
 
-רשימת קולות זמינים, מקובצים לפי backend.
+רשימת מודלים זמינים מ-AI SDK registries.
 
 **Response 200:**
 ```json
 {
-  "elevenlabs": [{ "id": "...", "name": "...", "language": "he" }, ...],
-  "piper": [{ "id": "...", "name": "...", "language": "he" }, ...]
+  "stt": [
+    { "id": "gemini/flash-context", "label": "Gemini Flash (Hebrew)" },
+    { "id": "openai/whisper-1", "label": "OpenAI Whisper" },
+    { "id": "deepgram/nova-3", "label": "Deepgram Nova-3" }
+  ],
+  "tts": [
+    { "id": "elevenlabs/v3", "label": "ElevenLabs v3 (Hebrew)" },
+    { "id": "openai/tts-1", "label": "OpenAI TTS" }
+  ],
+  "translator": [
+    { "id": "gemini/flash-lite", "label": "Gemini Flash Lite" },
+    { "id": "openai/gpt-4o-mini", "label": "GPT-4o mini" }
+  ]
 }
 ```
 
-#### `POST /api/voices/preview`
+#### `GET /api/providers/:type/:id/voices`
 
-הקראת טקסט קצר לבדיקה.
+רשימת voices ל-TTS provider ספציפי (אם רלוונטי — למשל ElevenLabs).
+
+**Response 200:**
+```json
+{
+  "voices": [{ "id": "rachel-he", "name": "Rachel (Hebrew)", "language": "he" }, ...]
+}
+```
+
+#### `POST /api/providers/tts/preview`
+
+הקראת טקסט קצר לבדיקה (D36).
 
 **Request:**
 ```json
 {
-  "voiceId": "...",
-  "backend": "elevenlabs",
+  "ttsModel": "elevenlabs/v3",
+  "voiceId": "rachel-he",
   "text": "שלום, זה דגם הקול הזה."
 }
 ```
 
 **Response 200:** `audio/mpeg` stream.
 
-### 5.4 Filesystem (לתמיכת cwd picker)
+### 5.3 Filesystem (לתמיכת cwd picker)
 
 #### `GET /api/fs/list?path=/home/user`
 
@@ -582,7 +504,7 @@ export type BridgeClientMessage =
 
 **Response 403:** path מחוץ לאזור מורשה.
 
-### 5.5 Health
+### 5.4 Health
 
 #### `GET /api/health`
 
@@ -739,24 +661,21 @@ export interface CacheStore<T> {
 }
 
 // ─── Identity ─────────────────────────────────────────────────
-
-export interface IdentityStore {
-  issueToken(): { readonly token: string; readonly createdAt: Date }
-  validate(token: string): Promise<boolean>
-}
+// ב-MVP אין identity. הסעיף הזה ריק. [future] אם נפתח לכמה משתמשים:
+//   IdentityStore עם issueToken + validate. ראה D11.
 
 // ─── Agent Registry ───────────────────────────────────────────
+// in-memory Map ב-MVP (D8). אין ownerToken (D11).
 
-import type { Agent, AgentPublic } from "./schemas"
+import type { Agent } from "./schemas"
 
 export interface AgentRegistry {
   create(input: {
-    readonly ownerToken: string
     readonly cliKind: Agent["cliKind"]
     readonly cwd: string
     readonly modelOverride: string | null
   }): Promise<Agent>
-  list(ownerToken: string): Promise<ReadonlyArray<Agent>>
+  list(): Promise<ReadonlyArray<Agent>>
   get(id: string): Promise<Agent | null>
   update(id: string, patch: Partial<Agent>): Promise<Agent>
   delete(id: string): Promise<void>
@@ -791,7 +710,7 @@ Browser              Backend             BridgeMgr           Bridge             
    │                    │                    │<─────────────────┤                  │
    │                    │ BridgeHandle       │                  │                  │
    │                    │<───────────────────┤                  │                  │
-   │                    │ persist Agent      │                  │                  │
+   │                    │ store in Map<id,A> │                  │                  │
    │ 201 {agent}        │                    │                  │                  │
    │<───────────────────┤                    │                  │                  │
    │                    │                    │                  │                  │
@@ -923,11 +842,13 @@ Tab B                     │                          │
 
 ---
 
-## 8. Slice 1 — concrete first deliverable
+## 8. Slice 1 — concrete first deliverable ✅ הושלם
 
 ### 8.1 מה זה Slice 1
 
 Slice 1 הוא ה-vertical slice הראשון. תוצר: **echo server עובד מהדפדפן עד ה-backend וחזרה.** אין CLI, אין voice, אין ACP. רק תשתית.
+
+**✅ הושלם:** commit `68a2b18` ב-worktree `/home/user/projects/voice-acp-v2` על branch `vnext`. ה-brief המלא ב-`docs/slice-1-brief.md`. סקירת ההישגים והסטיות מ-brief — ב-`docs/agents/planner.md` ביום 2026-05-16.
 
 ### 8.2 משימות
 
@@ -937,7 +858,7 @@ Slice 1 הוא ה-vertical slice הראשון. תוצר: **echo server עובד 
 | 2 | scaffold monorepo (Bun workspaces) | root + `packages/core/`, `packages/backend/`, `packages/frontend/` | 30 דק' |
 | 3 | `packages/core/src/schemas.ts` עם UserToken + Agent + ClientMessage + ServerMessage (חלקי) | ArkType | 30 דק' |
 | 4 | `packages/core/src/ports.ts` עם interfaces ראשונים | TypeScript | 20 דק' |
-| 5 | `packages/backend/src/server.ts` — Bun HTTP + WS, endpoint `/api/identity/token` + WS echo | Bun | 45 דק' |
+| 5 | `packages/backend/src/server.ts` — Bun HTTP + WS, endpoint `/api/health` + WS echo (`/ws/echo`) | Bun | 45 דק' |
 | 6 | `packages/frontend/` — SvelteKit + adapter-static, page `/` שמתחבר ל-WS ושולח/מקבל ping | SvelteKit | 60 דק' |
 | 7 | `Dockerfile` ל-backend + `docker-compose.yml` בסיסי | Docker | 30 דק' |
 | 8 | בדיקה ידנית: `bun dev` ב-backend, `bun dev` ב-frontend, פתיחת לdפדפן, שליחת ping, קבלת pong | — | 15 דק' |
@@ -946,24 +867,24 @@ Slice 1 הוא ה-vertical slice הראשון. תוצר: **echo server עובד 
 
 ### 8.3 Definition of done — Slice 1
 
-- [ ] Worktree קיים, branch `vnext`.
-- [ ] Monorepo רץ עם `bun install` ב-root.
-- [ ] `cd packages/backend && bun dev` מאפיינים HTTP על port 4000 + WS על אותו port.
-- [ ] `POST /api/identity/token` מחזיר `{ token, createdAt }`.
-- [ ] `cd packages/frontend && bun dev` מאפיין על port 5173.
-- [ ] פתיחת `http://localhost:5173` → דף "Hello drive-coding".
-- [ ] לחיצה על כפתור "Connect" → WebSocket מתחבר ל-backend, שולח `{ type: "ping" }`, מקבל `{ type: "pong" }`.
-- [ ] `bunx tsc --noEmit` ב-3 ה-packages עובר.
-- [ ] `bun test` ב-`packages/core` רץ (אפילו עם 0 בדיקות).
+- [x] Worktree קיים, branch `vnext`. ✅
+- [x] Monorepo רץ עם `pnpm install` ב-root. ✅
+- [x] `cd packages/backend && bun dev` מאפיינים HTTP על port 4000 + WS על אותו port. ✅
+- [x] `GET /api/health` מחזיר JSON תקף. ✅
+- [x] `cd packages/frontend && pnpm dev` מאפיין על port 5173. ✅
+- [x] פתיחת `http://localhost:5173` → דף "drive-coding — Slice 1". ✅
+- [x] לחיצה על כפתור "Connect" → WebSocket מתחבר ל-backend, שולח `{ type: "ping" }`, מקבל `{ type: "pong" }`. ✅
+- [x] `pnpm typecheck` ב-3 ה-packages עובר. ✅
+- [x] `pnpm test` רץ (3 בדיקות ב-core). ✅
 
-### 8.4 Slice 1 לא כולל
+### 8.4 Slice 1 לא כלל
 
 - ACP, CLI, Bridge.
 - STT, TTS, Translator.
-- Authentication אמיתי (token validation בסיסי בלבד).
-- Agent management (אין `POST /api/agents` עוד).
-- UI אמיתי (רק "Hello + Connect" כפתור).
-- Cloudflare tunnel (זה ב-Slice 10).
+- Identity / authentication (אין במ-MVP — D11).
+- Agent management (אין `POST /api/agents` עוד — Slice 2).
+- UI אמיתי (רק "Connect + Ping" כפתור).
+- Cloudflare tunnel (Slice 10).
 
 ### 8.5 Slices הבאים (קצר)
 
@@ -990,11 +911,11 @@ Slice 1 הוא ה-vertical slice הראשון. תוצר: **echo server עובד 
 
 שאלות שעוד נצטרך לפתור במהלך ה-implementation:
 
-1. **Token storage** — in-memory map (יאבד ב-restart) או SQLite מינימלי (פרסיסטנטי)? המלצה: SQLite ב-`/data/identity.db`. אחר כך אפשר להחליף.
-2. **Bridge crash detection** — איך backend יודע ש-bridge מת? heartbeat (ping) כל 5s? מעקב אחרי process exit code? המלצה: שניהם.
-3. **CLI not found** — מה אם המשתמש מבקש `gemini` ואין `gemini` ב-PATH? validation ב-create flow + שגיאה ברורה.
-4. **Concurrent prompts על אותו session** — ACP מאפשר רק prompt אחד פעיל. אם המשתמש שולח prompt חדש לפני שהקודם נגמר, צריך cancel אוטומטי ראשית. ראה D19.
-5. **TTS streaming vs buffered** — האם לשלוח `audio_chunk` תוך כדי TTS streaming (low latency, מורכב) או לחכות ל-full mp3 (פשוט, latency של ~1s)? המלצה: streaming מההתחלה כמו ב-POC.
+1. **Bridge crash detection** — איך backend יודע ש-bridge מת? heartbeat (ping) כל 5s? מעקב אחרי process exit code? המלצה: שניהם.
+2. **CLI not found** — מה אם המשתמש מבקש `gemini` ואין `gemini` ב-PATH? validation ב-create flow + שגיאה ברורה.
+3. **Concurrent prompts על אותו session** — ACP מאפשר רק prompt אחד פעיל. אם המשתמש שולח prompt חדש לפני שהקודם נגמר, צריך cancel אוטומטי ראשית. ראה D19.
+4. **TTS streaming vs buffered** — האם לשלוח `audio_chunk` תוך כדי TTS streaming (low latency, מורכב) או לחכות ל-full mp3 (פשוט, latency של ~1s)? המלצה: streaming מההתחלה כמו ב-POC.
+5. **Bridge cleanup ב-backend crash** — bridges של agents שאבדו ב-Map הופכים ל-orphans. cron שיהרוג כאלה אחרי N דקות בלי connection? המלצה: כן, חלק מ-Slice 6.
 
 ---
 

@@ -19,7 +19,9 @@
 
 ## 1. ACP Bridge
 
-### 1.1 ❗ קיים adapter רשמי שמיישם בדיוק את הרעיון של אבי
+> ⚠️ **§1.1-§1.4 הם historical** — תיעוד של בדיקות וחזרות בסבבים מוקדמים. **הפתרון הסופי ב-§1.5 (`@rebornix/stdio-to-ws`).** D33 ננעל.
+
+### 1.1 ❗ קיים adapter רשמי שמיישם בדיוק את הרעיון של אבי (historical)
 
 **`@flutur/acp-http-bridge`** (GitHub: [`Alemusica/acp-http-bridge`](https://github.com/Alemusica/acp-http-bridge))
 
@@ -372,6 +374,8 @@ Passive listen → Wake-word detected → Capture request → STT → AI → TTS
 
 ## 5. Architectural patterns
 
+> ⚠️ **§5.2 (5 layers + SttProvider/TtsProvider ports) הוא historical.** D38 החליף ports מותאמים אישית ב-AI SDK contracts (`TranscriptionModelV3`/`SpeechModelV3`/`LanguageModelV3`). השכבות עדיין רלוונטיות כעקרון, אבל ה-implementation שונה. ראה `vnext-architecture.md` §7.5 ו-§8 לעדכון.
+
 ### 5.1 הדפוסים הנפוצים
 
 | דפוס | מקור | רלוונטי לנו? |
@@ -473,30 +477,25 @@ export async function executeVoiceRoundtrip(
 
 ## 6. Recommendations
 
-### 6.1 החלטות חדשות שצריך לעדכן ב-`vnext-architecture.md`
+> ⚠️ **§6 הוא historical** — ההמלצות שלי בסבב 2 לפני שגילינו את `@rebornix/stdio-to-ws` (סבב 3) ו-Vercel AI SDK (סבב 4). הסעיף נשאר ל-traceability. **לעדכון סופי ב-D-table של `vnext-architecture.md` §4.**
 
-**D25 (חדש):** השתמש ב-`@flutur/acp-http-bridge` כ-npm dependency. בטל את `packages/acp-bridge/` מהמונורפו שלנו. נחזור אליו רק אם הצרכים יתבדלו.
+### 6.1 ~~המלצות חדשות~~ (סופרסט ע"י D33, D38, D31)
 
-**D26 (חדש):** התאם את ה-WebSocket protocol של ה-backend↔frontend לפי ה-ACP Streamable HTTP & WebSocket RFD. headers: `Acp-Connection-Id`, `Acp-Session-Id`. POST + GET (SSE) או WebSocket upgrade על endpoint יחיד.
+**~~D25~~** (flutur) — מבוטל ב-D33.
 
-**D27 (חדש):** אמץ את ה-stack של `voice-coda` כ-reference למקומות שלא ייחודיים לנו:
-- **Zod** ל-schemas (`packages/protocol/`).
-- **Radix + Tailwind** ל-UI primitives (אם נרצה — Svelte UI library דומה: `bits-ui` + Tailwind).
-- **Whisper local fallback** כאופציה ל-MVP (גם Gemini, גם whisper-cpp).
-- **Piper TTS** כאופציה לוקלית ל-MVP (גם ElevenLabs, גם Piper).
+**~~D26~~** (ACP RFD enforce ל-FE↔BE) — תוקן ב-D26 הסופי: future בלבד.
 
-**D28 (חדש):** אמץ Hexagonal architecture עם 5 layers (Pure Core / Ports / Adapters / Application / Delivery). ראה §5.
+**~~D27 (Zod)~~** — מבוטל ב-D31 (ArkType).
 
-**D29 (חדש):** ספריות support מאומצות:
-- **neverthrow** — `Result<T, E>`.
-- **Zod** — schemas.
-- אין Effect-TS / fp-ts לעת עתה.
+**~~D28~~** (5 layers) — תוקן ב-D40 (AI SDK contracts ב-layer 2).
 
-**Q-NEW-1:** האם להשתמש ב-`@flutur/acp-http-bridge` as-is, או לפתח עליו (PRs לקהילה), או לעשות fork? המלצה: as-is ל-MVP, PRs ב-slice 6+.
+**~~D29~~** (Zod + neverthrow) — Zod מבוטל ב-D31.
 
-**Q-NEW-2:** האם להוסיף Whisper local + Piper כאופציה ל-MVP (BYOK-friendly), או רק Gemini+ElevenLabs כמו ב-POC?
+**~~Q-NEW-1~~** — נסגר ב-D33.
 
-**Q-NEW-3:** האם להסתכל על voice-coda כ-reference architecture (לא לcopy-paste, אבל ללמוד) או להתעלם וללכת בדרך שלנו?
+**~~Q-NEW-2~~** (Whisper+Piper local) — מתווסף בקלות דרך AI SDK registry (D38).
+
+**~~Q-NEW-3~~** — נסגר ב-D32 (voice-coda רק inspiration רעיונית).
 
 ### 6.2 שינויים שאני מציע ב-monorepo
 

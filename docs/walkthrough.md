@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-05-16 05:00 (master, planner-agent Tama)
+
+### vNext — סבב 8: Consistency lint על 3 המסמכים
+
+אבי שאל "למה הטעות הזו קרתה? היו לנו מסמכים." (התייחסות לסטייה שלי שהציעה SQLite למרות D8). זיהיתי 3 כשלי תהליך: (1) חוסר consistency check בין D-decisions, (2) scope creep MVP/Cloud, (3) קפיצה למימוש לפני שאלת YAGNI.
+
+אבי דרש "תיקון הכל". סבב 8 = lint יסודי על 3 המסמכים. 29 תיקונים:
+
+**18 סתירות אקטיביות:** הסרת auth/identity מ-D-table, schemas, ports, endpoints, sequence diagrams. תיקון VoiceSettings ל-AI SDK key strings. הסרת bridges.json registry. מחיקת §4 כפילות ב-spec.
+
+**10 historical markings:** §10.3 Vertical slices → pointer ל-spec §8.5. §11 Roadmap → progress עם Slice 1 ✅. §8.1 monorepo → 2 packages. research §1.1+§5+§6 → banners.
+
+**4 תוספות:** Scope tags `[mvp]`/`[future]`/`[both]` ב-D-table. D11 שוכתב (no identity ב-MVP). D-decisions שעברו refinement (D8, D14, D17, D20, D26, D32, D34).
+
+המסמכים עכשיו consistent. ה-Slice 2 brief ייכתב על בסיס spec נקי — אין identity, אין SQLite, in-memory Map, חיים בזיכרון, restart = יצירת agents חדשים (acceptable).
+
+הצעדים הבאים: כתיבת `docs/slice-2-brief.md` ואז sub-agent (Task tool רגיל, לא acpx — לפי בקשת אבי).
+
+---
+
 ## 2026-05-16 03:00 (master, planner-agent Tama)
 
 ### תכנון vNext — סבב 7: SDK mock agent + acpx conformance suite

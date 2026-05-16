@@ -88,9 +88,51 @@
 
 - **סטטוס:** פעיל — המשך סשן `ses_1d26848f8ffetPtC3UQ2eLBrpt` (planner). שלב: דיון על ארכיטקטורת הגרסה הבאה.
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** ✅ סבב 7 — D49+D50: SDK mock agent + acpx conformance suite. test infrastructure מוכנה.
+- **עובד על:** ✅ Lint סבב 8 — עברה על 3 המסמכים ותיקנה 29 סתירות (D8/D11 descope, AI SDK alignment, Slice 1 ✅, scope tags). ממתין ל-Slice 2 brief.
 
 ## לוג
+
+### [2026-05-16 05:00] ✅ סבב 8 — Consistency lint על 3 המסמכים
+אבי שאל "למה הטעות הזו קרתה? היו לנו מסמכים." זיהיתי 3 כשלי תהליך: (1) חוסר consistency check בין D-decisions כשהוספתי חדשים, (2) scope creep בין "MVP אצל אבי" ל-"קהילה עתידית", (3) קפיצה למימוש במקום לשאלת YAGNI.
+
+אבי דרש "תיקון הכל". עברתי על 3 המסמכים:
+
+**A. סתירות אקטיביות תוקנו (18):**
+- `architecture.md` §1: "התחלה של auth" — הוסר
+- `architecture.md` §2.4: Stateless table — Identity row עבר ל-`[future]` עם הסבר על agent registry in-memory + cache בקבצים
+- `architecture.md` §3: דרישות אבי — table חדש עם Scope column מבוסס D-decisions
+- `architecture.md` §5: שאלות פתוחות — קוצרו ל-table יבש של Q→D→תוצאה
+- `architecture.md` §6 Mental Model: זרימה עודכנה (אין auth header, bridges שורדים, backend crash flow)
+- `architecture.md` §7.2: Identity domain → הסבר על MVP scope + future plan
+- `architecture.md` §7.3: Agent Orchestration — in-memory Map, acceptable loss
+- `architecture.md` §8.1 dependencies: better-sqlite3/node:sqlite הוסרו
+- `architecture.md` §9.1: bridges.json registry הוסר; failure modes עודכן (D8 — no persistence)
+- `spec.md` header: D1-D32 → D1-D50 + הערה על MVP scope
+- `spec.md` §2.1: UserToken schema הוסר; Agent.ownerToken הוסר; VoiceSettings עבר ל-`sttModel: string`/`ttsModel: string` (כפתורי registry ב-D38)
+- `spec.md` §3.1: Auth header הוסר; token validation הוסר
+- `spec.md` §4: כפילות (4.2-4.5 שניה) נמחקה
+- `spec.md` §5: Identity endpoint הוסר; "כל ה-endpoints מצפים ל-Bearer" הוסר; Voices → Providers (D36)
+- `spec.md` §6.3: IdentityStore הוסר; AgentRegistry — אין ownerToken
+- `spec.md` §7.1: "persist Agent" → "store in Map<id,A>"
+- `spec.md` §8.2: endpoint תוקן `/api/identity/token` → `/api/health`
+- `spec.md` §9: "Token storage SQLite/in-memory?" הוסר
+
+**B. סעיפים שסומנו כ-historical (10):**
+- `architecture.md` §10.3: Vertical slices — pointer ל-spec §8.5
+- `architecture.md` §11: Roadmap — progress עם Slice 1 ✅
+- `architecture.md` §10.1: worktree — סמן "✅ נעשה ב-Slice 1"
+- `architecture.md` §8.1 monorepo: עודכן ל-2 packages + frontend (`protocol/` הוסר; `core/ports/` עם Stt/Tts הוסר)
+- `spec.md` §8: Slice 1 — ✅ הושלם + DoD ✅✅✅; §8.5 — Slice 8 התעדכן
+- `research.md` §1.1: banner "historical; ראה §1.5"
+- `research.md` §5: banner על D38 שמחליף ports
+- `research.md` §6: כל ה-D25/D27/D29 + Q-NEW-1/2/3 סומנו כ-superseded
+
+**C. תוספות (4):**
+- D-table: Scope tags `[mvp]`/`[future]`/`[both]` נוספו
+- D11 שוכתב לפי D11 [future]: אין identity ב-MVP
+- D-decisions שעודכנו: D8 (cache בקבצים + Map בזיכרון), D11 (no identity), D14 (Proxmox MVP, ענן future), D17 (disk), D20 (עברית MVP, אנגלית future), D26 (RFD future אם נחשוף bridge), D32 (license outreach mvp), D34 (acp-ui awareness future)
+
+הצעדים הבאים: כתיבת `slice-2-brief.md` (Dashboard + agent creation + in-memory Map, אין identity, אין SQLite). אז sub-agent עם Task tool רגיל (לא acpx — בקשת אבי).
 
 ### [2026-05-16 03:00] ✅ סבב 7 — SDK mock agent + acpx conformance suite
 אבי שאל "יש ל-ACP mock לבדיקות, לא?". זכרון מ-v6: היו לnu loopback TransformStreams. בדקתי שני כלים:
