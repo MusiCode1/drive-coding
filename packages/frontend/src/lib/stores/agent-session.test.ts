@@ -1,7 +1,7 @@
 import { ClientMessage, ServerMessage } from "@drive-coding/core"
 import { type } from "arktype"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { getLastWs, installWebSocketMock } from "./__test-helpers__"
+import { getLastWs, installWebSocketMock, MockWebSocket } from "./__test-helpers__"
 import { type AgentSessionPublic, createAgentSessionStore } from "./agent-session.svelte"
 
 describe("createAgentSessionStore", () => {
@@ -101,6 +101,86 @@ describe("createAgentSessionStore", () => {
     expect(store.messages).toHaveLength(1) // לא 2!
     expect(store.messages[0]?.toolStatus).toBe("completed")
     expect(store.messages[0]?.toolContent).toBe("data")
+  })
+
+  // ── Reconnect tests (Slice 7 fix) ──────────────────────────────────────────
+
+  it("schedules reconnect on unexpected WS close (error banner)", async () => {
+    vi.useFakeTimers()
+    const store = createAgentSessionStore("a")
+    store.connect()
+    await new Promise<void>((r) => queueMicrotask(r))
+    const ws = getLastWs()
+
+    // Simulate server-side close (not intentional)
+    ws.close()
+
+    expect(store.status).toBe("disconnected")
+    expect(store.error).toContain("מתחבר מחדש")
+
+    vi.useRealTimers()
+  })
+
+  it("reconnects after delay on unexpected close", async () => {
+    vi.useFakeTimers()
+    const store = createAgentSessionStore("a")
+    store.connect()
+    await new Promise<void>((r) => queueMicrotask(r))
+    const ws = getLastWs()
+    const initialInstanceCount = MockWebSocket.instances.length
+
+    ws.close() // unexpected close → should schedule reconnect
+
+    // Fast-forward past first retry delay (1000ms)
+    vi.advanceTimersByTime(1500)
+    await new Promise<void>((r) => queueMicrotask(r))
+
+    expect(MockWebSocket.instances.length).toBeGreaterThan(initialInstanceCount)
+
+    vi.useRealTimers()
+  })
+
+  it("does NOT reconnect on intentional disconnect", async () => {
+    vi.useFakeTimers()
+    const store = createAgentSessionStore("a")
+    store.connect()
+    await new Promise<void>((r) => queueMicrotask(r))
+    const initialCount = MockWebSocket.instances.length
+
+    store.disconnect() // intentional
+
+    expect(store.status).toBe("disconnected")
+    expect(store.error).toBeNull()
+
+    // Fast-forward — no reconnect should happen
+    vi.advanceTimersByTime(5000)
+    await new Promise<void>((r) => queueMicrotask(r))
+    expect(MockWebSocket.instances.length).toBe(initialCount)
+
+    vi.useRealTimers()
+  })
+
+  it("resets retryCount to 0 on successful reconnect", async () => {
+    vi.useFakeTimers()
+    const store = createAgentSessionStore("a")
+    store.connect()
+    await new Promise<void>((r) => queueMicrotask(r))
+
+    // Simulate unexpected close → reconnect
+    getLastWs().close()
+    vi.advanceTimersByTime(1500)
+    await new Promise<void>((r) => queueMicrotask(r))
+
+    // New WS connected (onopen fires)
+    await new Promise<void>((r) => queueMicrotask(r))
+
+    // After reconnect succeeds — the error should be cleared by "connected" message
+    const newWs = getLastWs()
+    newWs.onmessage?.({ data: JSON.stringify({ type: "connected", agentId: "a" }) })
+    expect(store.status).toBe("connected")
+    expect(store.error).toBeNull()
+
+    vi.useRealTimers()
   })
 
   it("handles every ServerMessage variant without throwing", async () => {

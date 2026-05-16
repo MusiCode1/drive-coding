@@ -16,9 +16,18 @@ let agent = $state<AgentPublic | null>(null)
 let loadError = $state<string | null>(null)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
-let session = $derived(createAgentSessionStore(agentId))
-let voice = $derived(createVoiceSessionStore(session))
+let session = $state(createAgentSessionStore(agentId))
+let voice = $state(createVoiceSessionStore(session))
 let carMode = $state(createCarMode())
+
+// Fix: when agentId changes — close old WS and create fresh stores (Bug 4)
+$effect(() => {
+  const id = agentId
+  // disconnect previous session before replacing
+  session.disconnect()
+  session = createAgentSessionStore(id)
+  voice = createVoiceSessionStore(session)
+})
 
 // ── URL params ──────────────────────────────────────────────────────────────
 let isCarMode = $derived(
@@ -33,13 +42,23 @@ let autoScrollEnabled = $state(true)
 let showJumpDown = $state(false)
 let lastUserInteractionAt = $state(0)
 
+// ── isCancelling state — set on explicit cancel, cleared when voice returns to idle ──
+let isCancelling = $state(false)
+
+// Auto-clear isCancelling when voice pipeline reaches idle (Bug 1 / Bug 3)
+$effect(() => {
+  if (voice.voiceState === "idle") {
+    isCancelling = false
+  }
+})
+
 // ── Derived mic state from voice pipeline ────────────────────────────────────
 let micState = $derived(
   deriveMicState({
     isRecording: voice.isRecording,
     isThinking: session.status === "thinking" || voice.voiceState === "transcribing",
     isAudioPlaying: voice.voiceState === "speaking",
-    isCancelling: false, // set by explicit cancel action below
+    isCancelling,
   }),
 )
 
@@ -184,6 +203,7 @@ async function onMicClick() {
   } else if (micState === "recording") {
     await voice.stopRecording()
   } else if (micState === "speaking") {
+    isCancelling = true
     voice.cancel()
     session.cancel()
   } else if (micState === "cancelling") {
@@ -193,12 +213,13 @@ async function onMicClick() {
 
 // ── Stop button (speaking only) ──────────────────────────────────────────────
 function onStop() {
+  isCancelling = true
   voice.cancel()
   session.cancel()
 }
 
-// ── Replay last — placeholder for when we have audio tracking ────────────────
-let hasPlayedAudio = $derived(voice.voiceState === "speaking" || prevMicState === "speaking")
+// ── Replay last — wired to AudioQueue.hasLastPlayed ──────────────────────────
+let hasPlayedAudio = $derived(voice.canReplayLast)
 
 // ── Car mode enable ────────────────────────────────────────────────────────────
 function enableCarMode() {
@@ -206,6 +227,7 @@ function enableCarMode() {
     startRecording: () => voice.startRecording(),
     stopRecording: () => voice.stopRecording(),
     isRecording: () => voice.isRecording,
+    onReplayLast: () => voice.replayLast(),
   })
 
   // Landscape lock — only in car mode, optional
@@ -427,7 +449,7 @@ function toggleTool(id: string) {
         disabled={!hasPlayedAudio}
         title="השמע את ההודעה האחרונה"
         aria-label="השמע אחרון"
-        onclick={() => {/* Slice 8 — replay last audio */}}
+        onclick={() => voice.replayLast()}
       >🔊</button>
 
       <!-- BIG mic button (110px) -->

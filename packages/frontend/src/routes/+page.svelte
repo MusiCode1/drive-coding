@@ -315,7 +315,7 @@ onDestroy(() => {
   .delete-btn {
     position: absolute;
     top: 12px;
-    inset-inline-start: 12px;
+    inset-inline-end: 12px;
     background: transparent;
     border: none;
     font-size: 22px;

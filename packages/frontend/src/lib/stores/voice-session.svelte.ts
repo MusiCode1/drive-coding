@@ -121,6 +121,11 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
     voiceState = "idle"
   }
 
+  /** Replay the last audio response from the beginning. */
+  function replayLast(): void {
+    player.replayLast()
+  }
+
   return {
     get voiceState() {
       return voiceState
@@ -134,8 +139,13 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
     get isRecording() {
       return voiceState === "recording"
     },
+    /** True when there is a previous audio response that can be replayed. */
+    get canReplayLast() {
+      return player.hasLastPlayed
+    },
     startRecording,
     stopRecording,
     cancel,
+    replayLast,
   }
 }

@@ -34,13 +34,15 @@ export interface AgentSessionPublic {
  * createAgentSessionStore — Svelte 5 rune-based store for a single agent WS session.
  *
  * Manages:
- *  - WS connection lifecycle
+ *  - WS connection lifecycle (with exponential backoff reconnect)
  *  - Chat message list (with streaming append)
  *  - Status and error state
  *
  * Slice 5: extended with:
  *  - onVoiceMessage callback for voice pipeline message delegation
  *  - sendRaw for sending arbitrary JSON via WS (used by voice store)
+ *
+ * Slice 7 fix: exponential backoff reconnect on unexpected WS close.
  *
  * Usage: call in a .svelte file, use returned reactive fields directly.
  */
@@ -49,6 +51,11 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
   let status = $state<AgentSessionStatus>("disconnected")
   let error = $state<string | null>(null)
   let ws = $state<WebSocket | null>(null)
+
+  // Reconnect state
+  let retryCount = 0
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
+  let intentionallyClosed = false
 
   // Slice 5: voice message delegate
   let voiceMessageHandler: ((raw: string) => void) | null = null
@@ -148,8 +155,23 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     }
   }
 
+  const RETRY_DELAYS = [1000, 2000, 4000, 8000, 15000, 30000]
+
+  function scheduleReconnect(): void {
+    if (retryTimer !== null) return
+    const delay = RETRY_DELAYS[Math.min(retryCount, RETRY_DELAYS.length - 1)] ?? 30000
+    const attempt = retryCount + 1
+    error = `מתחבר מחדש... (ניסיון ${attempt})`
+    retryTimer = setTimeout(() => {
+      retryTimer = null
+      retryCount++
+      connect()
+    }, delay)
+  }
+
   function connect(): void {
     if (ws) return
+    intentionallyClosed = false
     status = "connecting"
     error = null
 
@@ -157,21 +179,35 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     ws = new WebSocket(`${proto}//${location.host}/ws/agent/${agentId}`)
 
     ws.onmessage = (e) => handle(String(e.data))
+
+    ws.onopen = () => {
+      // status will be set to "connected" via "connected" server message
+      retryCount = 0
+    }
+
     ws.onerror = () => {
       error = "WebSocket connection error"
-      status = "disconnected"
-      ws = null
     }
+
     ws.onclose = () => {
       status = "disconnected"
       ws = null
+      if (!intentionallyClosed) {
+        scheduleReconnect()
+      }
     }
   }
 
   function disconnect(): void {
+    intentionallyClosed = true
+    if (retryTimer !== null) {
+      clearTimeout(retryTimer)
+      retryTimer = null
+    }
     ws?.close()
     ws = null
     status = "disconnected"
+    error = null
   }
 
   function sendPrompt(text: string): void {

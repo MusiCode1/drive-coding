@@ -84,4 +84,33 @@ describe("createCarMode", () => {
     ).not.toThrow()
     expect(cm.isActive).toBe(false)
   })
+
+  // ── previoustrack handler (Slice 7 fix) ───────────────────────────────────
+
+  it("previoustrack handler is registered (not null) on enable", () => {
+    const cm = createCarMode()
+    cm.enable({ startRecording: vi.fn(), stopRecording: vi.fn(), isRecording: () => false })
+    // Verify setActionHandler was called with previoustrack and a function (not null)
+    expect(mockSession.setActionHandler).toHaveBeenCalledWith("previoustrack", expect.any(Function))
+  })
+
+  it("previoustrack handler calls onReplayLast when set", () => {
+    const onReplayLast = vi.fn()
+    const cm = createCarMode()
+    cm.enable({
+      startRecording: vi.fn(),
+      stopRecording: vi.fn(),
+      isRecording: () => false,
+      onReplayLast,
+    })
+    mockSession._triggerAction("previoustrack")
+    expect(onReplayLast).toHaveBeenCalledOnce()
+  })
+
+  it("previoustrack handler is a no-op when onReplayLast not provided", () => {
+    const cm = createCarMode()
+    cm.enable({ startRecording: vi.fn(), stopRecording: vi.fn(), isRecording: () => false })
+    // Should not throw even without onReplayLast
+    expect(() => mockSession._triggerAction("previoustrack")).not.toThrow()
+  })
 })

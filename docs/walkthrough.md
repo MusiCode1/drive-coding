@@ -3,6 +3,48 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-16 18:35 (vnext, Yolo)
+
+### UI Parity Fix — 7 באגים מה-review (236 tests)
+
+תיקון כל ה-blockers וה-high-value items מ-`docs/reviews/ui-parity-review.md`. סה"כ 7 תיקונים, 16 טסטים חדשים, 236 סה"כ (מ-220).
+
+#### מה בוצע?
+
+**1. תיקון 1 — `dir="rtl"` (verified):**
+- `app.html` כבר מכיל `<html lang="he" dir="rtl">` — לא היה נדרש שינוי. הדוח ציין זאת כ-bug אך הקוד היה תקין.
+
+**2. תיקון 2 — `$derived` → `$state` + cleanup (Bug 4 ב-review):**
+- `routes/agent/[id]/+page.svelte`: שינוי `session` ו-`voice` מ-`$derived` ל-`$state`. הוסף `$effect` שסוגר את ה-WS הישן לפני יצירת session חדש כשמשתנה `agentId`. מונע זליגת WebSocket connections.
+
+**3. תיקון 3 — `isCancelling` wired (Bug 1 ב-review):**
+- `+page.svelte`: הוסף `let isCancelling = $state(false)`. מדלק ב-`onMicClick` וב-`onStop` כשעוברים ל-cancel. מכבה אוטומטית ב-`$effect` כש-`voiceState === "idle"`. כעת state `cancelling` ניתן להגיע אליו — הכפתור מציג ✕ + flash כתום.
+
+**4. תיקון 4 — WS reconnect עם exponential backoff (Bug 5 ב-review):**
+- `lib/stores/agent-session.svelte.ts`: הוסף `scheduleReconnect()` עם delays `[1s, 2s, 4s, 8s, 15s, 30s]`. WS סגירה לא-מכוונת מציג "מתחבר מחדש... (ניסיון N)" ב-error. `disconnect()` מפסיק reconnect ואינה מציג error. `retryCount` מאופס כשהחיבור מצליח.
+- טסטים חדשים: 4 טסטים לreconnect (schedules, actually reconnects, no reconnect on intentional, resets count).
+
+**5. תיקון 5 — replay-last button wired:**
+- `lib/audio/player.ts`: הוסף `private lastPlayed` שנשמר ב-`tick()` בכל פעם שמנגנים. `replayLast()` מאפס `currentTime=0` ומפעיל `play()`. `hasLastPlayed` getter.
+- `lib/stores/voice-session.svelte.ts`: חשוף `replayLast()` ו-`canReplayLast` getter.
+- `+page.svelte`: wire הכפתור 🔊 — `onclick={() => voice.replayLast()}`, `disabled={!voice.canReplayLast}`.
+- טסטים חדשים: 7 טסטים ב-`player.test.ts` (hasLastPlayed, replayLast, isPlaying, clear).
+
+**6. תיקון 6 — car mode previoustrack handler (Bug 3 ב-review):**
+- `lib/stores/car-mode.svelte.ts`: `setActionHandler("previoustrack", null)` → `setActionHandler("previoustrack", () => controls.onReplayLast?.())`. הוסף `onReplayLast?: () => void` ל-`CarModeControls` interface.
+- `+page.svelte`: wire `onReplayLast: () => voice.replayLast()` ב-`enableCarMode()`.
+- טסטים חדשים: 3 טסטים (registered as function not null, calls onReplayLast, no-op without onReplayLast).
+
+**7. תיקון 7 — delete-btn RTL position (Bug 6 ב-review):**
+- `routes/+page.svelte`: `inset-inline-start: 12px` → `inset-inline-end: 12px`. כפתור ה-× כעת ב-RTL = שמאל (צד לוגי נכון, כנגד ה-`padding-inline-end: 60px` של card-link).
+
+#### מצב טסטים
+
+- סה"כ: **236 tests** (185 ב-workspace root, 51 ב-frontend package) — הכל עובר ✅
+- typecheck: נקי ✅
+- lint (Biome): נקי ✅
+
+---
 ## 2026-05-16 17:50 (vnext, Yolo)
 
 ### Slice 7 — Drive-First UX (222 tests)

@@ -6,12 +6,16 @@
  *
  * Spec: D19, §9.6 "Media Session API — bluetooth car button"
  * Reference: v1 index.html:1878-2019
+ *
+ * Slice 7 fix: previoustrack handler now calls onReplayLast callback
+ * instead of setting null (which cleared the handler).
  */
 
 export interface CarModeControls {
   startRecording: () => void
   stopRecording: () => void
   isRecording: () => boolean
+  onReplayLast?: () => void
 }
 
 export interface CarModePublic {
@@ -58,11 +62,13 @@ export function createCarMode(): CarModePublic {
       }
     })
 
-    // Optional: previous track → replay last audio
+    // previoustrack → replay last audio (v1 behaviour)
     try {
-      navigator.mediaSession.setActionHandler("previoustrack", null)
+      navigator.mediaSession.setActionHandler("previoustrack", () => {
+        controls.onReplayLast?.()
+      })
     } catch {
-      // ignore — not all browsers support this action
+      // Not all browsers support the previoustrack action
     }
 
     active = true
