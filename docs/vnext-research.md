@@ -161,6 +161,29 @@ npx @rebornix/stdio-to-ws "opencode acp" --tunnel-name drive-coding-prod --persi
 
 **רלוונטיות לנו:** לא ל-bridge. אבל יש שם רעיונות מעניינים — flows (TypeScript workflows), graceful cancel, queue owner TTL — שכדאי ללמוד מהם בעתיד.
 
+### 1.7a ❗❗ עדכון 5 — acpx conformance suite + SDK mock agent
+
+לאחר שאלה של אבי על mocks ל-ACP, גילינו שני כלים מוכנים:
+
+**1. SDK example agent** (`@agentclientprotocol/sdk/src/examples/agent.ts`):
+- ACP-compliant mock agent מובנה ב-SDK
+- שני patterns שימוש:
+  - Loopback streams: `AgentSideConnection` + `ClientSideConnection` באותו process (כמו ב-v6)
+  - spawn child: `npx tsx node_modules/@agentclientprotocol/sdk/src/examples/agent.ts` ולדבר stdio
+- D49 — לא נכתוב mock agent משלנו
+
+**2. acpx conformance suite** (`openclaw/acpx/conformance/`):
+- **Normative spec** ב-`spec/v1.md` — חוזה protocol-level. יחיד בעולם.
+- **20 required cases** ב-data-driven JSON (`cases/*.json`)
+- **Runner ב-TS** (`runner/run.ts`)
+- **Mock ACP adapter** מובנה
+- Coverage: `initialize`, `session/new`, `session/prompt`, `session/update`, `session/cancel`, baseline errors
+- Nightly CI workflow מוגדר (`conformance:nightly`)
+- Run: `pnpm run conformance:run -- --agent-command "..."`
+- D50 — נריץ ב-CI nightly נגד ה-AcpTransport שלנו + real adapters (opencode/claude/gemini)
+
+**זה משחרר אותנו מלהמציא testing infrastructure.** במקום לכתוב 20 tests ידנית, אנחנו צורכים suite שכבר נבנה ע"י קהילת ACP. וגם מספק validation אמיתית שאנחנו protocol-compliant.
+
 ### 1.8 ❗❗❗ עדכון 4 (סבב 4) — Vercel AI SDK הוא ה-provider abstraction הנכון
 
 אבי הציע: "בטח יש מישהו שכבר בנה הפשטה לכל ספקי ה-LLM, למשל Vercel". התשובה — **כן, וזה Vercel AI SDK**, וזה משנה את הspec שלנו לחלוטין.

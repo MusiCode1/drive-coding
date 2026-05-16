@@ -88,9 +88,23 @@
 
 - **סטטוס:** פעיל — המשך סשן `ses_1d26848f8ffetPtC3UQ2eLBrpt` (planner). שלב: דיון על ארכיטקטורת הגרסה הבאה.
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** ✅ סבב 6 — D45-D48: Node+Bun universal, TDD partial, port pure tests מ-v1, Vitest. מוכן ל-Slice 1.
+- **עובד על:** ✅ סבב 7 — D49+D50: SDK mock agent + acpx conformance suite. test infrastructure מוכנה.
 
 ## לוג
+
+### [2026-05-16 03:00] ✅ סבב 7 — SDK mock agent + acpx conformance suite
+אבי שאל "יש ל-ACP mock לבדיקות, לא?". זכרון מ-v6: היו לnu loopback TransformStreams. בדקתי שני כלים:
+
+1. **SDK examples** — `@agentclientprotocol/sdk/src/examples/agent.ts` הוא ACP-compliant mock agent מובנה. שני patterns: loopback streams (in-process) או spawn child (יותר ריאלי). **D49: לא נכתוב mock agent משלנו.**
+
+2. **acpx conformance suite** — תגלית חשובה! `openclaw/acpx/conformance/` יש להם normative `spec/v1.md`, 20 required cases ב-JSON, runner ב-TS, mock adapter מובנה, nightly CI. coverage: initialize, session/new, session/prompt, session/update, session/cancel, baseline errors. **D50: נריץ ב-CI nightly נגד ה-AcpTransport שלנו + real adapters.**
+
+עדכוני spec:
+- D49 + D50 חדשים ב-architecture
+- §1.7a חדש ב-research
+- §8.5 Slice 4 עודכן: tests = loopback mock + conformance suite
+
+המסמכים production-ready. D1-D50 נעולות. ירוק ל-Slice 1.
 
 ### [2026-05-16 02:45] ✅ סבב 6 — Node+Bun universal, TDD partial, port pure tests
 אבי קיבל את הspec ושאל 3 שאלות חכמות אחרונות לפני Slice 1:

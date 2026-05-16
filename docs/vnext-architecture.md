@@ -194,6 +194,8 @@
 | **D46** | **TDD חלקי — core full, backend partial** | `/tdd` skill ב-executor mode. core (sentence-boundary, cancel, custom Gemini provider) ב-red-green-refactor. delivery עם validation tests. IO heavy עם integration |
 | **D47** | **Port pure tests מ-v1** | ~96 בדיקות עוברות 1:1 (sentence-boundary, provider-error, markdown, tts-cache, recordings paths). ~193 לא רלוונטיות בגלל D33+D38 |
 | **D48** | **Vitest כtest runner** | universal Node+Bun. `pnpm workspaces`. tests ב-`packages/{core,backend}/tests/` |
+| **D49** | **Mock agent ל-integration tests מתוך SDK** | `@agentclientprotocol/sdk/src/examples/agent.ts` — ACP-compliant mock מובנה. שני patterns: loopback streams (in-process) או spawn child (יותר ריאלי). חוסך לנו לכתוב mock agent משלנו |
+| **D50** | **acpx conformance suite ב-CI nightly** | `openclaw/acpx/conformance/` — 20 required cases ב-JSON, runner ב-TS, mock adapter מובנה, normative spec ב-`spec/v1.md`. נריץ נגד ה-AcpTransport שלנו ונגד real adapters (opencode/claude/gemini) ב-nightly |
 
 ---
 

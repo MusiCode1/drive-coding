@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-05-16 03:00 (master, planner-agent Tama)
+
+### תכנון vNext — סבב 7: SDK mock agent + acpx conformance suite
+
+אבי שאל "יש ל-ACP mock לבדיקות, לא?". בדיקה גילתה שני כלים מוכנים שמשנים את strategy ה-testing:
+
+1. **SDK example agent** — `@agentclientprotocol/sdk/src/examples/agent.ts` הוא ACP-compliant mock מובנה. D49 — לא נכתוב mock משלנו. שני patterns: loopback streams (in-process, מהיר) או spawn child (יותר ריאלי).
+
+2. **⭐ acpx conformance suite** — תגלית חשובה. `openclaw/acpx/conformance/` יש להם normative spec ב-`spec/v1.md`, 20 required cases ב-JSON data-driven, runner ב-TS, mock adapter מובנה, nightly CI workflow מוגדר. coverage מלא של ACP v1 core: initialize/session lifecycle/errors. D50 — נריץ ב-CI nightly נגד ה-AcpTransport שלנו + real adapters (opencode/claude/gemini).
+
+זה משחרר אותנו מלהמציא testing infrastructure ל-ACP. במקום לכתוב ~20 integration tests ידנית, אנחנו צורכים suite שכבר נבנה ע"י הקהילה, וגם מקבלים validation אמיתית של protocol compliance.
+
+D49 + D50 נוספו. §1.7a חדש ב-research. §8.5 Slice 4 עודכן עם tests = loopback mock + conformance suite. D1-D50 נעולות.
+
+---
+
 ## 2026-05-16 02:45 (master, planner-agent Tama)
 
 ### תכנון vNext — סבב 6: Node+Bun universal, TDD partial, port pure tests

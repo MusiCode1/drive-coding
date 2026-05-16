@@ -971,7 +971,7 @@ Slice 1 הוא ה-vertical slice הראשון. תוצר: **echo server עובד 
 |-------|------|
 | 2 | Identity persistence + dashboard (רשימת agents ריקה) + agent creation flow ב-UI |
 | 3 | `BridgeManager` — spawn `npx @rebornix/stdio-to-ws "opencode acp" --port 0 --persist --grace-period -1`, parse port, manage lifecycle (פשוט מאוד אחרי D33) |
-| 4 | `AcpTransport` adapter סביב `ClientSideConnection` של `@agentclientprotocol/sdk`. `/agent/:id` עם chat טקסטואלי בלי voice |
+| 4 | `AcpTransport` adapter סביב `ClientSideConnection` של `@agentclientprotocol/sdk`. `/agent/:id` עם chat טקסטואלי בלי voice. **Tests:** loopback `AgentSideConnection` mock (D49) + run acpx conformance suite (D50) נגד test agent שלנו |
 | 5 | **Voice pipeline (D38)** — install AI SDK + 5 providers (`openai`, `elevenlabs`, `deepgram`, `google`, custom `gemini-transcription`). registry של STT/TTS/translator. `transcribe()` + `speech()` + `generateText()` integration. voice round-trip עובד עם Gemini STT + ElevenLabs v3 TTS + Gemini Flash translator |
 | 6 | Multi-session + disk cache (לפי `text + voice + model` key) + reconnect (משתמשים ב-`--client-id` של bridge) |
 | 7 | Drive-first UX מלא — כפתור גדול, state machine, animations, **D35 audio cues** (mp3 ב-static) |
