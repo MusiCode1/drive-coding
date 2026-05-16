@@ -88,9 +88,26 @@
 
 - **סטטוס:** פעיל — המשך סשן `ses_1d26848f8ffetPtC3UQ2eLBrpt` (planner). שלב: דיון על ארכיטקטורת הגרסה הבאה.
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** ✅ תיקון ממצאים — bridge לא ב-npm, voice-coda ללא license. D25+D27+D29 עודכנו ב-D30+D31+D32. ArkType במקום Zod. Hexagonal מינימלי (2 packages).
+- **עובד על:** ✅ שכבה 2 הסתיימה — `vnext-spec.md` חדש (~750 שורות). 3 פרוטוקולים, ArkType schemas, ports, sequence diagrams, Slice 1 מוגדר. מוכן ל-executor.
 
 ## לוג
+
+### [2026-05-15 04:30] ✅ שכבה 2 — `vnext-spec.md` הושלמה
+אבי אישר "בגדול הכל כן" על Q9-Q17, Q-NEW-1/2/3, ArkType, Hexagonal מינימלי, voice-coda outreach.
+
+נכתב `docs/vnext-spec.md` (~750 שורות, 9 פרקים):
+
+1. **3 פרוטוקולים מובחנים:** FE↔BE (`drive-coding-ws`), BE↔Bridge (`drive-coding-bridge-ws`), Bridge↔CLI (ACP stdio standard).
+2. **Domain models ב-ArkType:** UserToken, Agent (פנימי + AgentPublic), CliKind, AgentStatus, VoiceSettings, Bubble, ServerMessage, ClientMessage. דוגמה לשימוש מ-Svelte runes.
+3. **FE↔BE protocol מלא:** 11 ServerMessage types, 6 ClientMessage types. Multi-tab fan-out מתועד.
+4. **BE↔Bridge protocol:** BridgeServerMessage (ready, sessionUpdate, promptComplete, requestPermission, fileOps), BridgeClientMessage (prompt, cancel, permissionResponse, shutdown). Buffer 500 + replay אחרי backend restart.
+5. **HTTP API:** identity (`POST /api/identity/token`), agents (CRUD), voices (`GET` + `POST /preview`), filesystem picker (`GET /api/fs/list`), health.
+6. **Ports interfaces TypeScript:** SttProvider, TtsProvider, TranslatorProvider, AcpTransport, BridgeManager, CacheStore, IdentityStore, AgentRegistry. כולם עם ResultAsync<T, E> מ-neverthrow.
+7. **5 Sequence diagrams:** יצירת agent, voice round-trip, cancel mid-speech, disconnect+reconnect, multi-tab fan-out.
+8. **Slice 1 מוגדר במלואו:** scaffold worktree + monorepo + echo server. 8 משימות, ~3.5 שעות, DoD מפורט. רשימת 9 slices אחריו.
+9. **5 שאלות פתוחות לimplementation:** token storage (SQLite?), bridge crash detection, CLI not found, concurrent prompts, TTS streaming vs buffered.
+
+הצעדים הבאים: אבי קורא את spec, אם מאשר → executor פותח worktree `voice-acp-v2` ומתחיל ב-Slice 1.
 
 ### [2026-05-15 04:00] ✅ תיקון ממצאים אחרי שאלות אבי
 אבי שאל ספקנית על שלושה דברים. בדיקה שנייה הוכיחה שהיה צודק:

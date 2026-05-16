@@ -4,6 +4,32 @@
 
 ---
 
+## 2026-05-15 04:30 (master, planner-agent Tama)
+
+### תכנון vNext — שכבה 2: spec טכני להתחלת implementation
+
+אבי אישר "בגדול הכל כן" על שאר השאלות הפתוחות (Q9-Q17, Q-NEW-1/2/3 + ArkType גם ב-frontend + Hexagonal מינימלי + voice-coda outreach). שכבה 2 הושלמה.
+
+נכתב `docs/vnext-spec.md` (~750 שורות, 9 פרקים) — מסמך טכני מפורט להתחלת implementation. הפרדה משלושה פרוטוקולים מובחנים:
+
+1. **`drive-coding-ws` (FE↔BE)** — voice events (`audio_start`, `audio_chunk`, `audio_end`, `cancel`) + chat events (`text_chunk`, `audio_start`, `tool_call`, `bubble_persisted`, `done`). 11 ServerMessage types, 6 ClientMessage types.
+
+2. **`drive-coding-bridge-ws` (BE↔Bridge)** — ACP envelope על WS, פנימי. BridgeServerMessage (ready, sessionUpdate, promptComplete, requestPermission, fileOps), BridgeClientMessage (prompt, cancel, permissionResponse, shutdown). Buffer 500 + replay אחרי backend restart.
+
+3. **ACP stdio (Bridge↔CLI)** — לא בתחום שלנו, סטנדרט ACP.
+
+Domain models ב-ArkType. ports interfaces ב-TypeScript עם `ResultAsync<T,E>` מ-neverthrow לכל IO. 5 sequence diagrams (agent creation, voice round-trip, cancel mid-speech, disconnect+reconnect, multi-tab fan-out). HTTP API עם 9 endpoints (identity, agents CRUD, voices, filesystem, health).
+
+**Slice 1 מוגדר במלואו** — 8 משימות (scaffold worktree, monorepo, schemas, ports, echo server, frontend, Docker), DoD מפורט (10 checkboxes), ~3.5 שעות. תוצר: echo dialect מהדפדפן ל-backend וחזרה. אין CLI/voice/ACP — רק תשתית.
+
+רשימת 9 slices אחריו: identity persistence + dashboard, acp-bridge wrapper, AcpTransport adapter, voice pipeline (Gemini+ElevenLabs), multi-session+cache+reconnect, drive-first UX, Whisper+Piper local options, i18n, production deploy.
+
+5 שאלות פתוחות לimplementation זמן: token storage (SQLite?), bridge crash detection, CLI not found, concurrent prompts, TTS streaming vs buffered.
+
+המסמך מוכן ל-executor. אחרי אישור אבי על spec → executor פותח worktree `voice-acp-v2` ומתחיל ב-Slice 1.
+
+---
+
 ## 2026-05-15 04:00 (master, planner-agent Tama)
 
 ### תכנון vNext — תיקון ממצאים אחרי בדיקה ספקנית של אבי
