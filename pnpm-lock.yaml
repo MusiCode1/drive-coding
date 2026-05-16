@@ -23,15 +23,24 @@ importers:
 
   packages/backend:
     dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: ^0.21.1
+        version: 0.21.1(zod@4.4.3)
       '@drive-coding/core':
         specifier: workspace:*
         version: link:../core
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       arktype:
         specifier: ^2.0.0
         version: 2.2.0
       hono:
         specifier: ^4.6.0
         version: 4.12.18
+      ws:
+        specifier: ^8.20.1
+        version: 8.20.1
     devDependencies:
       '@types/bun':
         specifier: latest
@@ -42,6 +51,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: ^0.21.1
+        version: 0.21.1(zod@4.4.3)
       arktype:
         specifier: ^2.0.0
         version: 2.2.0
@@ -75,6 +87,11 @@ importers:
         version: 6.4.2(@types/node@22.19.19)
 
 packages:
+
+  '@agentclientprotocol/sdk@0.21.1':
+    resolution: {integrity: sha512-ZTLH+o9QxcZDLX/9ww+W7C2iExnXFM+vD/uGFVSlR61Kzj9FaxUqBC6Rv/kwgA7qVWYUEI9c5ZNqCuO9PM4rKg==}
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
 
   '@ark/schema@0.56.0':
     resolution: {integrity: sha512-ECg3hox/6Z/nLajxXqNhgPtNdHWC9zNsDyskwO28WinoFEnWow4IsERNz9AnXRhTZJnYIlAJ4uGn3nlLk65vZA==}
@@ -503,6 +520,9 @@ packages:
   '@types/trusted-types@2.0.7':
     resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
 
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
+
   '@vitest/expect@4.1.6':
     resolution: {integrity: sha512-7EHDquPthALSV0jhhjgEW8FXaviMx7rSqu8W6oqCoAuOhKov814P99QDV1pxMA3QPv21YudvJngIhjrNI4opLg==}
 
@@ -853,10 +873,29 @@ packages:
     engines: {node: '>=8'}
     hasBin: true
 
+  ws@8.20.1:
+    resolution: {integrity: sha512-It4dO0K5v//JtTXuPkfEOaI3uUN87iYPnqo/ZzqCoG3g8uhA66QUMs/SrM0YK7/NAu+r4LMh/9dq2A7k+rHs+w==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   zimmerframe@1.1.4:
     resolution: {integrity: sha512-B58NGBEoc8Y9MWWCQGl/gq9xBCe4IiKM0a2x7GZdQKOW5Exr8S1W24J6OgM1njK8xCRGvAJIL/MxXHf6SkmQKQ==}
 
+  zod@4.4.3:
+    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+
 snapshots:
+
+  '@agentclientprotocol/sdk@0.21.1(zod@4.4.3)':
+    dependencies:
+      zod: 4.4.3
 
   '@ark/schema@0.56.0':
     dependencies:
@@ -1147,6 +1186,10 @@ snapshots:
       undici-types: 6.21.0
 
   '@types/trusted-types@2.0.7': {}
+
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 22.19.19
 
   '@vitest/expect@4.1.6':
     dependencies:
@@ -1472,4 +1515,8 @@ snapshots:
       siginfo: 2.0.0
       stackback: 0.0.2
 
+  ws@8.20.1: {}
+
   zimmerframe@1.1.4: {}
+
+  zod@4.4.3: {}

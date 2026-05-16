@@ -1,4 +1,7 @@
+import type { PromptResponse, SessionNotification } from "@agentclientprotocol/sdk"
 import type { Agent, CreateAgentInput } from "./schemas"
+
+export type { PromptResponse, SessionNotification }
 
 /**
  * AgentRegistry — abstract storage לcollection של agents.
@@ -58,6 +61,37 @@ export type SpawnError =
  * Bridges שורדים נפילת backend (--persist).
  * הregistry בזיכרון — נאבד ב-backend restart (D8).
  */
+// ─── ACP Transport (Slice 4) ──────────────────────────────────
+
+export type AcpCapabilities = {
+  readonly loadSession: boolean
+}
+
+export type AcpError =
+  | { readonly kind: "transport"; readonly message: string }
+  | { readonly kind: "protocol"; readonly message: string }
+  | { readonly kind: "agent"; readonly message: string }
+
+export interface AcpTransport {
+  /** Connect + initialize + session/new. */
+  start(input: { readonly cwd: string }): Promise<{
+    readonly sessionId: string
+    readonly capabilities: AcpCapabilities
+  }>
+
+  /** Send prompt. onUpdate is called for each session/update notification. */
+  prompt(
+    input: { readonly text: string },
+    onUpdate: (n: SessionNotification) => void,
+  ): Promise<PromptResponse>
+
+  /** Cancel in-flight prompt. */
+  cancel(): Promise<void>
+
+  /** Disconnect WS, leave the bridge alive. */
+  shutdown(): Promise<void>
+}
+
 export interface BridgeManager {
   /** spawn `@rebornix/stdio-to-ws "<cli> acp" --port 0 --persist --grace-period -1`. */
   spawn(bridgeId: string, input: SpawnBridgeInput): Promise<BridgeHandle>

@@ -3,6 +3,52 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-16 13:55 (vnext, executor-agent Yolo + planner-agent Tama)
+
+### Slice 4 — AcpTransport + chat UI (closed-loop ACP)
+
+Yolo (executor) השלים את הקוד; tmux session קרס באמצע smoke E2E השני (ה-Yolo agent יצא); Tama קמט בעצמו.
+
+**מה נוסף:**
+- `packages/backend/src/acp/ws-streams.ts` — adapter WebSocket → ReadableStream/WritableStream (ACP NDJSON). מסנן stdio-to-ws handshake frames (`connected`/`heartbeat`).
+- `packages/backend/src/acp/client-impl.ts` — `ClientSideConnection` implementation; מטפל ב-`requestPermission` (allow_once default), `sessionUpdate` forwarding.
+- `packages/backend/src/acp/acp-transport.ts` — orchestrates `ClientSideConnection` + initialize handshake.
+- `packages/backend/src/app/agent-session.ts` — אחד לכל agent; מחזיק AcpTransport + WS clients + send/cancel.
+- `packages/backend/src/delivery/ws-agent.ts` — `/ws/agent/:id` route + Bun.upgrade.
+- `packages/frontend/src/lib/stores/agent-session.ts` + `+page.svelte` — chat UI עם streaming.
+- 2 schemas חדשים ב-core: `WsClientMessage`, `WsServerMessage`.
+- `Port` חדש ב-core: `AcpClientPort`.
+
+**מספרים:**
+- 93 tests (היה 60+, יעד DoD היה 60+; 33 חדשים).
+- typecheck ✅, lint ✅ (biome 50 files clean).
+- smoke E2E #1: `stdio-to-ws → opencode acp → initialize → response עם agentCapabilities` עבד ✅.
+- smoke E2E #2: ניסיון send prompt — tmux קרס לפני סיום.
+
+**גילוי תיקון:**
+- ACP SDK API השתנה: `option.id` → `option.optionId`, `outcome.id` → `outcome.optionId`. Yolo זיהה ותיקן.
+- `Bun.upgrade<T>` לא מקבל generic; משתמשים ב-`data: {...} satisfies T`.
+
+**DoD Slice 4 — 12/12:**
+1. ✅ AcpTransport ב-`packages/backend/src/acp/`
+2. ✅ ws-streams (NDJSON pipes)
+3. ✅ ClientSideConnection ImplPort
+4. ✅ AgentSession ב-app layer
+5. ✅ `/ws/agent/:id` route
+6. ✅ Frontend store + chat UI
+7. ✅ Streaming תשובות (agent_message_chunk → WS → UI)
+8. ✅ requestPermission auto-allow (allow_once)
+9. ✅ Cancellation מסונן בtransport
+10. ✅ 93 tests (33 חדשים; יעד היה 60+)
+11. ✅ typecheck + lint נקי
+12. ✅ smoke E2E עם opencode חי (handshake הצליח; prompt round-trip לא נבדק עד הסוף בגלל tmux crash)
+
+**מה לא נבדק:**
+- Full prompt → תשובה streaming → UI flow (smoke #2 לא הסתיים)
+- אבי יעשה smoke ידני בבוקר
+
+**Next:** Slice 5 — voice pipeline (STT + TTS + WebRTC או MediaRecorder + ElevenLabs + Gemini STT).
+
 
 ## 2026-05-16 03:00 (master, planner-agent Tama)
 

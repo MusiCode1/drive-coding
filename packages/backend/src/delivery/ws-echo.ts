@@ -21,12 +21,12 @@ export function registerEchoWs(_app: Hono): {
       try {
         parsed = JSON.parse(String(raw))
       } catch {
-        send(ws, { type: "error", message: "invalid json" })
+        send(ws, { type: "error", code: "INVALID_JSON", message: "invalid json" })
         return
       }
       const result = ClientMessage(parsed)
       if (result instanceof type.errors) {
-        send(ws, { type: "error", message: result.summary })
+        send(ws, { type: "error", code: "INVALID_MSG", message: result.summary })
         return
       }
       if (result.type === "ping") {

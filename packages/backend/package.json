@@ -10,9 +10,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^0.21.1",
     "@drive-coding/core": "workspace:*",
+    "@types/ws": "^8.18.1",
     "arktype": "^2.0.0",
-    "hono": "^4.6.0"
+    "hono": "^4.6.0",
+    "ws": "^8.20.1"
   },
   "devDependencies": {
     "@types/bun": "latest",

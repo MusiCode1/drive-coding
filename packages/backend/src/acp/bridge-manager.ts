@@ -29,7 +29,9 @@ export function createBridgeManager(): BridgeManager {
       }
 
       const cli = getCliCommand(input.cliKind)
-      const args = buildStdioToWsArgs(cli, 0) // OS-assigned port
+      // Use a random port in ephemeral range (stdio-to-ws doesn't support port=0 / OS-assigned)
+      const randomPort = 40000 + Math.floor(Math.random() * 20000)
+      const args = buildStdioToWsArgs(cli, randomPort)
 
       // Use npx by default (universal Node+Bun per D45)
       const bin = "npx"
