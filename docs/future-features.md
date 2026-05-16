@@ -69,6 +69,21 @@ streaming דרך MediaSource Extensions.
 - אם backend מתפוצץ מ-load.
 - אם רוצים שמשתמשים אחרים יריצו self-hosted בלי OneCLI.
 
+עדכון 2026-05-16 (תובנה של אבי): הכיוון האמיתי לעתיד הוא יותר רדיקלי
+מהמודל ה-hybrid לעיל. במקום 3 endpoints + WS עם text_chunks מעובדים,
+המודל הטהור הוא:
+- backend מזרים את ה-ACP session events הגולמיים ל-client כפי שהם.
+- backend חושף 2 endpoints proxy בלבד: `/api/translate` ו-`/api/tts`
+  (וגם `/api/transcribe`). העברה שקופה ל-Gemini ו-ElevenLabs עם
+  הזרקת API keys.
+- ה-client מטפל ב-coordination, sentence splitting, narration של
+  tool calls, ניהול buffer של thought↔message↔tool_call, decision
+  של מה לתרגם, ניהול cache.
+- ה-backend נהיה proxy טהור — שכבה דקה שמטפלת ב-secrets בלבד.
+
+יתרון מהותי: ה-rendering לוגיקה כולה במקום אחד (client), קל לבדוק,
+קל לשנות, ניתן לעקוף אם רוצים BYOC ולעבוד ישירות מול ה-APIs.
+
 ---
 
 ## הנחיות לעדכון הקובץ הזה
