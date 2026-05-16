@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { AgentPublic } from "@drive-coding/core"
 import { renderMarkdown } from "@drive-coding/core"
-import { onDestroy, tick } from "svelte"
+import { onDestroy, tick, untrack } from "svelte"
 import { page } from "$app/state"
 import { getAgent } from "$lib/api/agents"
 import { cues } from "$lib/audio/cues"
@@ -20,13 +20,18 @@ let session = $state(createAgentSessionStore(agentId))
 let voice = $state(createVoiceSessionStore(session))
 let carMode = $state(createCarMode())
 
-// Fix: when agentId changes — close old WS and create fresh stores (Bug 4)
+// Fix: when agentId changes — close old WS and create fresh stores (Bug 4).
+// untrack() prevents writing to session/voice from being registered as reactive
+// dependencies of this effect, which would cause an infinite update loop:
+// agentId changes → effect runs → writes session → session changes → effect re-runs → ...
 $effect(() => {
-  const id = agentId
-  // disconnect previous session before replacing
-  session.disconnect()
-  session = createAgentSessionStore(id)
-  voice = createVoiceSessionStore(session)
+  const id = agentId // reactive: track agentId changes
+  untrack(() => {
+    // non-reactive block: disconnect + replace stores without re-triggering this effect
+    session.disconnect()
+    session = createAgentSessionStore(id)
+    voice = createVoiceSessionStore(session)
+  })
 })
 
 // ── URL params ──────────────────────────────────────────────────────────────
