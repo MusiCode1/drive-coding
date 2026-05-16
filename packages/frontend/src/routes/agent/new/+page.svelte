@@ -1,30 +1,71 @@
 <script lang="ts">
 import type { CliKind } from "@drive-coding/core"
+import { onMount } from "svelte"
 import { goto } from "$app/navigation"
 import { createAgent } from "$lib/api/agents"
 
 let cliKind = $state<CliKind>("opencode")
 let cwd = $state("")
+let customCwd = $state("")
 let modelOverride = $state("")
+let customModel = $state("")
 let submitting = $state(false)
 let error = $state<string | null>(null)
+
+let models = $state<Record<string, string[]>>({})
+let projects = $state<string[]>([])
+let loadingOptions = $state(true)
+
+onMount(async () => {
+  try {
+    const res = await fetch("/api/options")
+    if (res.ok) {
+      const data = (await res.json()) as {
+        models: Record<string, string[]>
+        projects: string[]
+      }
+      models = data.models
+      projects = data.projects
+      // Sensible defaults
+      const firstModel = data.models[cliKind]?.[0]
+      if (firstModel) modelOverride = firstModel
+      const firstProject = data.projects[0]
+      if (firstProject) cwd = firstProject
+    }
+  } catch (err) {
+    console.warn("/api/options failed", err)
+  } finally {
+    loadingOptions = false
+  }
+})
+
+// When CLI changes, reset model to first option for that CLI
+$effect(() => {
+  const cliModels = models[cliKind]
+  const first = cliModels?.[0]
+  if (first && cliModels && !cliModels.includes(modelOverride) && modelOverride !== "__custom__") {
+    modelOverride = first
+  }
+})
 
 async function submit(e: SubmitEvent): Promise<void> {
   e.preventDefault()
   error = null
 
-  const trimmedCwd = cwd.trim()
-  if (!trimmedCwd) {
+  const finalCwd = cwd === "__custom__" ? customCwd.trim() : cwd.trim()
+  if (!finalCwd) {
     error = "נדרשת תיקיית עבודה"
     return
   }
+
+  const finalModel = modelOverride === "__custom__" ? customModel.trim() : modelOverride.trim()
 
   submitting = true
   try {
     const { agent } = await createAgent({
       cliKind,
-      cwd: trimmedCwd,
-      modelOverride: modelOverride.trim() || null,
+      cwd: finalCwd,
+      modelOverride: finalModel || null,
     })
     await goto(`/agent/${agent.id}`)
   } catch (err) {
@@ -54,30 +95,62 @@ async function submit(e: SubmitEvent): Promise<void> {
 
     <label>
       <span>תיקיית עבודה (cwd)</span>
-      <input
-        type="text"
-        bind:value={cwd}
-        placeholder="/home/user/projects/foo"
-        dir="ltr"
-        required
-      />
+      <select bind:value={cwd} required dir="ltr" disabled={loadingOptions}>
+        {#if loadingOptions}
+          <option value="">טוען...</option>
+        {:else}
+          {#each projects as p}
+            <option value={p}>{p}</option>
+          {/each}
+          <option value="__custom__">— נתיב אחר —</option>
+        {/if}
+      </select>
     </label>
 
+    {#if cwd === "__custom__"}
+      <label>
+        <span>נתיב מותאם</span>
+        <input
+          type="text"
+          bind:value={customCwd}
+          placeholder="/home/user/projects/foo"
+          dir="ltr"
+        />
+      </label>
+    {/if}
+
     <label>
-      <span>Model override (אופציונלי)</span>
-      <input
-        type="text"
-        bind:value={modelOverride}
-        placeholder="claude-sonnet-4 / gpt-5 / ..."
-        dir="ltr"
-      />
+      <span>מודל</span>
+      <select bind:value={modelOverride} dir="ltr" disabled={loadingOptions}>
+        {#if loadingOptions}
+          <option value="">טוען...</option>
+        {:else}
+          <option value="">ברירת מחדל של ה-CLI</option>
+          {#each models[cliKind] ?? [] as m}
+            <option value={m}>{m}</option>
+          {/each}
+          <option value="__custom__">— מודל אחר —</option>
+        {/if}
+      </select>
     </label>
+
+    {#if modelOverride === "__custom__"}
+      <label>
+        <span>מודל מותאם</span>
+        <input
+          type="text"
+          bind:value={customModel}
+          placeholder="provider/model-name"
+          dir="ltr"
+        />
+      </label>
+    {/if}
 
     {#if error}
       <p class="error">{error}</p>
     {/if}
 
-    <button type="submit" disabled={submitting} class="primary">
+    <button type="submit" disabled={submitting || loadingOptions} class="primary">
       {submitting ? "יוצר..." : "צור"}
     </button>
   </form>

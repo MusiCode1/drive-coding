@@ -30,18 +30,63 @@ export type AcpTransportOptions = {
 export async function createAcpWsTransport(opts: AcpTransportOptions): Promise<AcpTransport> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(opts.wsUrl)
+    const t0 = Date.now()
+    const log = (msg: string) => console.log(`[acp] +${Date.now() - t0}ms ${msg}`)
 
-    // Timeout: 10s for WS open + handshake
+    log(`connecting to ${opts.wsUrl}`)
+
+    // Timeout: 45s for the full handshake (WS open + initialize + newSession).
+    // opencode acp can take 10-20s to spawn + initialize on a cold start
+    // (npm cache miss, model auth check), and newSession itself may take a
+    // few more seconds while opencode reads AGENTS.md and project context.
+    // bridge-manager spawn timeout is 30s — this must be >= that.
+    const HANDSHAKE_TIMEOUT_MS = 45_000
     const timeout = setTimeout(() => {
-      if (ws.readyState !== ws.OPEN) {
-        ws.terminate()
-        reject(new Error("ACP WS connection timeout"))
-      }
-    }, 10_000)
+      log(`handshake timeout (${HANDSHAKE_TIMEOUT_MS}ms)`)
+      ws.terminate()
+      reject(new Error(`ACP handshake timeout after ${HANDSHAKE_TIMEOUT_MS}ms`))
+    }, HANDSHAKE_TIMEOUT_MS)
 
     ws.on("open", () => {
+      log("ws open")
       ;(async () => {
         try {
+          // Wait for stdio-to-ws to spawn the agent subprocess and send its
+          // handshake `{"type":"connected"}`. If we send `initialize` before
+          // this, stdio-to-ws drops the frame (no subprocess to write to yet)
+          // and we hang waiting for a response that never comes.
+          log("waiting for stdio-to-ws handshake")
+          await new Promise<void>((res, rej) => {
+            const handshakeTimeout = setTimeout(() => {
+              ws.off("message", onMsg)
+              rej(new Error("stdio-to-ws handshake not received"))
+            }, 10_000)
+            const onMsg = (data: Buffer | string) => {
+              const text = typeof data === "string" ? data : data.toString("utf8")
+              if (text.includes('"connected"')) {
+                clearTimeout(handshakeTimeout)
+                ws.off("message", onMsg)
+                res()
+              }
+              // (any other early frames will be replayed via wsToStreams once
+              // we attach below — but ws.on() is fire-and-forget; safer to
+              // attach BEFORE the handshake event arrives. Since the only
+              // pre-handshake frame is `connected` itself, we lose nothing.)
+            }
+            ws.on("message", onMsg)
+          })
+          log("← stdio-to-ws connected")
+
+          // stdio-to-ws sends `connected` the moment the WS upgrade completes —
+          // BEFORE the agent subprocess has finished spawning. If we send
+          // `initialize` immediately, stdio-to-ws drops the frame (no live
+          // stdin to write to yet). Wait a bit for the subprocess to come up.
+          // Empirically 500-1000ms is enough for opencode acp cold start.
+          // TODO: stdio-to-ws should emit a second frame when subprocess is
+          // ready — file an issue upstream.
+          await new Promise((r) => setTimeout(r, 1500))
+          log("subprocess warmup done")
+
           const { readable, writable } = wsToStreams(ws)
 
           // ndJsonStream wraps raw byte streams into AnyMessage streams
@@ -60,22 +105,32 @@ export async function createAcpWsTransport(opts: AcpTransportOptions): Promise<A
           const conn = new ClientSideConnection((_agent) => clientImpl, stream)
 
           // 1. Initialize
+          log("→ initialize")
           const initResult = await conn.initialize({
             protocolVersion: opts.protocolVersion ?? 1,
-            clientCapabilities: {},
+            clientCapabilities: {
+              fs: { readTextFile: true, writeTextFile: true },
+            },
+            clientInfo: {
+              name: "drive-coding",
+              version: "0.1.0",
+            },
           })
+          log(`← initialize ok (agent=${initResult.agentInfo?.name ?? "?"})`)
 
           const capabilities: AcpCapabilities = {
             loadSession: initResult.agentCapabilities?.loadSession ?? false,
           }
 
           // 2. New session
+          log(`→ newSession (cwd=${opts.cwd})`)
           const sessionResult = await conn.newSession({
             cwd: opts.cwd,
             mcpServers: [],
           })
 
           const sessionId = sessionResult.sessionId
+          log(`← newSession ok (sessionId=${sessionId})`)
 
           clearTimeout(timeout)
 

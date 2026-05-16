@@ -6,6 +6,7 @@ import { createInMemoryAgentRegistry } from "./agents/registry.js"
 import { createAgentOrchestrator } from "./app/agent-orchestrator.js"
 import { registerHttp } from "./delivery/http.js"
 import { registerAgentsHttp } from "./delivery/http-agents.js"
+import { registerHttpOptions } from "./delivery/http-options.js"
 import { type AgentWsData, createAgentWsHandler } from "./delivery/ws-agent.js"
 import { type WsData as EchoWsData, registerEchoWs } from "./delivery/ws-echo.js"
 import { DiskCache } from "./voice/cache-disk.js"
@@ -26,6 +27,7 @@ await ttsCache.init()
 
 // HTTP routes
 registerHttp(app)
+registerHttpOptions(app)
 registerAgentsHttp(app, { registry, orchestrator })
 
 // WS handlers

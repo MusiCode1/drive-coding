@@ -27,7 +27,8 @@ function send(ws: ServerWebSocket<AgentWsData>, msg: ServerMessage): void {
 const DEFAULT_VOICE_CONFIG: VoiceConfig = {
   sttModel: "gemini/flash-context",
   ttsModel: "elevenlabs/v3",
-  ttsVoiceId: "Rachel",
+  // Sarah — pleasant Hebrew-capable voice. ElevenLabs requires voice_id, not name.
+  ttsVoiceId: "EXAVITQu4vr4xnSDxMaL",
   translatorModel: "gemini/flash-lite",
   targetLang: "he",
 }

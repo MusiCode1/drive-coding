@@ -3,6 +3,59 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-16 15:50 (vnext, Tama)
+
+### Slice 5 closeout — UI E2E עובד, ACP bugs תוקנו
+
+Avi חזר לבדוק את ה-UI בדפדפן (linux-gui). הודעה ראשונה שלו תקועה עם `disconnected` ו-"ממתין ל-bridge". cascade של 3 באגים שהתגלו ותוקנו ברצף.
+
+**Bug #1 — model override ב-CLI args:**
+הצורה הראשונה: הוספתי `-m anthropic/claude-sonnet-4-6` ל-`opencode acp` בקוד `cli-config.ts`. `opencode acp` **לא תומך** ב-flag הזה — יוצא מיד עם help → ה-subprocess מת → `ACP connection closed`. ה-model selection ב-ACP נעשה דרך `unstable_setSessionModel` או דרך `session/new` config (לא דרך CLI). הסרתי את ה-flag.
+
+**Bug #2 — Conformance check חשף 6 ממצאים:**
+Avi שאל "יש לנו docs של ACP לוודא שאנחנו תואמים?". שיגרתי sub-agent (Yolo+Sonnet) שקרא את ה-SDK schema, 11 דפי spec מ-`agentclientprotocol.com`, ו-7 קבצי ACP code שלנו. דוח 632 שורות ב-`docs/reviews/acp-conformance.md` (commit `5dba1e0`).
+
+הממצא הקריטי שלי על `clientCapabilities: {}` ריק **הופרך** — ה-spec מפורש שכל ה-capabilities optional. אבל זוהו 6 issues:
+- 🔴 Critical: `requestPermission` בודק `optionId === "allow_once"` במקום `kind === "allow_once"` (kind הוא typed enum)
+- 🟡 חסר `clientInfo` (SHOULD בspec)
+- 🟡 חסר `fs` capability declaration (handlers קיימים אך agent לא יודע)
+- 🟡 לא מטופל `auth_required` error
+- 🟢 first-message filter ב-ws-streams (רק על הודעה ראשונה)
+- 🟢 `stopReason` hardcoded ב-`sendAudioPrompt`
+
+**Bug #3 — ה-root cause האמיתי: NDJSON `\n` חסר:**
+התיקונים של Yolo לא היו מספיקים. ה-flow עדיין הצליח להגיע ל-`initialize` אבל נתקע 45s ללא תגובה. עם logging trace ב-`ws-streams.ts` ובהשוואה ל-test ידני שעבד — גיליתי:
+
+```diff
+-ws.send(line)         // missing \n delimiter
++ws.send(`${line}\n`)  // NDJSON needs newline
+```
+
+stdio-to-ws מעביר WS frame → subprocess stdin verbatim. opencode acp מצפה NDJSON. בלי `\n` הוא ממתין לעוד data לעולם. ה-`ndJsonStream` של ה-SDK כותב לנו `{...}\n`, אבל ה-`split("\n")` שלנו **חתך** את ה-`\n` ולא הוסיף בחזרה.
+
+זה היה הסיבה האמיתית של "newSession תקוע" — לא capabilities, לא race timing, אלא delimiter חסר.
+
+**עוד תיקונים שנכנסו:**
+- `acp-transport.ts`: המתנה ל-stdio-to-ws `connected` frame + 1.5s warmup לפני initialize (subprocess cold start)
+- `acp-transport.ts`: timeout 10s → 45s (sync עם bridge spawn 30s)
+- `acp-transport.ts`: structured logging `[acp] +Nms ...`
+- `acp-transport.ts`: `clientInfo` + `clientCapabilities.fs`
+- `client-impl.ts`: `kind` במקום `optionId` ב-permission lookup; `readTextFile`+`writeTextFile` handlers
+- `ws-streams.ts`: filter על כל הודעה (לא רק ראשונה); זיהוי frames לא-ACP
+- `http-options.ts` חדש: `GET /api/options` עם models + projects לdropdowns
+- `frontend/agent/new/+page.svelte`: 2 selects (CLI's models + ~/projects) + custom freeform fallback
+- `vite.config.ts`: `allowedHosts: [".tuns.sh", ...]` עבור tunnel
+
+**מצב E2E:**
+ה-handshake לוקח ~2.5s (initialize 300ms, newSession 700ms, plus 1.5s warmup). Avi בדק בדפדפן עם prompt בעברית "בדיקת התקשורת של הממשק החדש עם המודל דרך ACP". המודל ענה, ביצע `read` ו-`bash` tool calls, החזיר תוצאות. **ה-flow עובד E2E end-to-end.**
+
+UI gross — tool calls מוצגים כbadges קטנים `read`/`bash` בלי תוכן, אין auto-scroll, typography גנרי. Slice 7 (drive-first UX) יטפל.
+
+**Voice (push-to-talk):**
+ה-frontend code מוכן (Recorder + AudioQueue + button) אבל **לא נבדק בדפדפן** עוד. נדרש בדיקה.
+
+**Tests:** 140/140 ✓. typecheck ✓. lint ✓.
+
 ## 2026-05-16 14:40 (vnext, Tama)
 
 ### Slice 5 — DoD 15/15: voice round-trip חי עבד

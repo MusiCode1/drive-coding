@@ -22,9 +22,11 @@ export function geminiTranscription(modelId: string): TranscriptionModelV3 {
       const geminiOpts = options.providerOptions?.gemini as Record<string, unknown> | undefined
       const prevText = geminiOpts?.previousAssistantText as string | undefined
 
+      const hebrewRule =
+        "Output in the original script of the language spoken. If Hebrew is spoken, output Hebrew letters — do NOT transliterate to Latin characters."
       const prompt = prevText
-        ? `Transcribe the user's audio. Context: the previous assistant said:\n"${prevText}"\n\nTranscribe ONLY the user's audio, in the language spoken.`
-        : "Transcribe the audio. Output ONLY the spoken words, no commentary."
+        ? `Transcribe the user's audio. Context: the previous assistant said:\n"${prevText}"\n\nTranscribe ONLY the user's audio, in the language spoken. ${hebrewRule}`
+        : `Transcribe the audio. Output ONLY the spoken words, no commentary. ${hebrewRule}`
 
       // Convert audio to base64 for inline data
       const audioBytes =

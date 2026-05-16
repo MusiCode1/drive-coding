@@ -21,25 +21,34 @@ export function wsToStreams(ws: WebSocket): {
   // Readable — incoming WS frames → byte stream
   const readable = new ReadableStream<Uint8Array>({
     start(controller) {
-      // stdio-to-ws sends {"type":"connected","clientId":"..."} immediately on WS open.
-      // This is stdio-to-ws's own handshake — NOT part of ACP JSON-RPC protocol.
-      // We must skip these non-ACP frames, otherwise the SDK's ndJsonStream fails to parse them.
-      let isFirstMessage = true
+      // stdio-to-ws sends NON-ACP wrapper frames at any time:
+      //   - `{"type":"connected","clientId":"..."}`  — on WS open
+      //   - `{"type":"heartbeat"}`                   — periodically (every ~30s)
+      // These are stdio-to-ws's own protocol, NOT JSON-RPC. They MUST be
+      // filtered out, otherwise the SDK's ndJsonStream parser sees them as
+      // ACP messages, fails to dispatch, and the connection is torn down.
+      // Filter on EVERY frame (not only first) — heartbeats arrive throughout
+      // the session.
+      const STDIO_TO_WS_FRAME_TYPES = new Set(["connected", "heartbeat", "disconnected", "error"])
 
       ws.on("message", (data: Buffer | string) => {
         const text = typeof data === "string" ? data : data.toString("utf8")
 
-        // Filter out stdio-to-ws protocol messages (connected/heartbeat) that precede ACP
-        if (isFirstMessage) {
-          isFirstMessage = false
+        // Quick path: ACP JSON-RPC messages always start with {"jsonrpc":
+        // stdio-to-ws wrappers start with {"type": — we can early-detect.
+        if (!text.includes('"jsonrpc"')) {
           try {
-            const parsed = JSON.parse(text) as { type?: string }
-            if (parsed.type === "connected" || parsed.type === "heartbeat") {
-              // stdio-to-ws handshake — skip, not ACP protocol
+            const parsed = JSON.parse(text) as { type?: string; jsonrpc?: string }
+            if (parsed.jsonrpc === undefined && parsed.type !== undefined) {
+              if (STDIO_TO_WS_FRAME_TYPES.has(parsed.type)) {
+                return // swallow stdio-to-ws wrapper
+              }
+              // unknown non-ACP frame — log and skip rather than corrupt the stream
+              console.warn("[ws-streams] dropped non-ACP frame:", text.slice(0, 200))
               return
             }
           } catch {
-            // not JSON — pass through to ACP
+            // not JSON — fall through (could be partial NDJSON line)
           }
         }
 
@@ -68,11 +77,13 @@ export function wsToStreams(ws: WebSocket): {
   const writable = new WritableStream<Uint8Array>({
     write(chunk) {
       const text = decoder.decode(chunk)
-      // stdio-to-ws does line framing; send each non-empty line as separate frame
+      // stdio-to-ws pipes WS frame → subprocess stdin verbatim. opencode acp
+      // expects NDJSON (newline-delimited JSON). The SDK's ndJsonStream
+      // writes us `{...}\n` lines — we must preserve the trailing newline.
       for (const line of text.split("\n")) {
         if (line.trim().length > 0) {
           try {
-            ws.send(line)
+            ws.send(`${line}\n`)
           } catch {
             // ws already closed
           }

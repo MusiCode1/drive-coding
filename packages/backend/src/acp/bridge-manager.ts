@@ -28,7 +28,7 @@ export function createBridgeManager(): BridgeManager {
         throw new Error(`Bridge ${bridgeId} already exists`)
       }
 
-      const cli = getCliCommand(input.cliKind)
+      const cli = getCliCommand(input.cliKind, input.modelOverride)
       // Use a random port in ephemeral range (stdio-to-ws doesn't support port=0 / OS-assigned)
       const randomPort = 40000 + Math.floor(Math.random() * 20000)
       const args = buildStdioToWsArgs(cli, randomPort)
