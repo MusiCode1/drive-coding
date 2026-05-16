@@ -4,6 +4,28 @@
 
 ---
 
+## 2026-05-15 05:00 (master, planner-agent Tama)
+
+### תכנון vNext — ממצא קריטי: bridge מוכן + מתחרה web נוסף
+
+אבי הצביע על שיחה אחרת (`ses_1d1d7e005ffehwl6wIsjsw6wKI`) שבה הסוכן השני מצא:
+
+1. **`@rebornix/stdio-to-ws`** — fork של marimo-team, **published ב-npm** (`@rebornix/stdio-to-ws@0.2.0`), Apache-2.0. תומך `--persist`, `--grace-period -1`, `--tunnel-name` (Microsoft Dev Tunnels integration ל-`wss://` URL ציבורי). בשימוש ע"י acp-ui (274★) — מאומת בproduction.
+
+   **השלכה:** ביטול D30 (write our own bridge), הוספת D33 (spawn `@rebornix/stdio-to-ws`). §4 ב-spec נכתב מחדש — אנחנו consumer של JSON-RPC ACP גולמי דרך WS, לא מגדירים פרוטוקול. Slice 3 בroadmap הצטמצם מ-"כתוב bridge ~200 שורות" ל-"spawn npm package + parse port" — חיסכון של 70% מהעבודה.
+
+2. **`formulahendry/acp-ui`** — Vue 3 + Tauri + Web client בוגר ל-ACP, MIT license, 274★. cross-platform, 11 agents נתמכים, web build חי ב-acp-ui.github.io. תומך session/load reconnect + $/ping heartbeat + foreground resumption. **חסר voice + RTL + drive-first UX** — בדיוק מה שאנחנו מציעים.
+
+   **השלכה:** הוספת D34 ו-Q-NEW-4 — שאלה אסטרטגית: (A) build from scratch, (B) fork acp-ui ולהוסיף voice+RTL, (C) hybrid (build voice gateway + svelte FE, accept acp-ui כ-alternative client). ההמלצה שלי: C ≈ A — SvelteKit הוא הבחירה של אבי, drive-first הוא הייחוד שלנו, fork ל-Vue היה tax לא-תרומתי.
+
+3. **`openclaw/acpx`** — CLI client (לא bridge), 2.7k⭐, MIT, 16 agents נתמכים. inspiration ל-flows ו-queue management בעתיד, לא רלוונטי עכשיו.
+
+עדכוני מסמכים: `vnext-architecture.md` (ביטול D30, הוספת D33+D34, פרק §7.4a שכתוב, Q-NEW-4 חדש), `vnext-spec.md` (§4 BE↔Bridge נכתב מחדש, §8.5 roadmap עודכן), `vnext-research.md` (סעיפים 1.5/1.6/1.7 חדשים על rebornix/acp-ui/acpx, TL;DR שכתוב).
+
+ממתין לאבי על Q-NEW-4 (האם אופציה A/B/C) ולאישור סופי להתחלת Slice 1.
+
+---
+
 ## 2026-05-15 04:30 (master, planner-agent Tama)
 
 ### תכנון vNext — שכבה 2: spec טכני להתחלת implementation

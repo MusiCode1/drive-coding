@@ -83,7 +83,7 @@ src/
 - כולם stdio-only. ה-typescript SDK ב-173 stars.
 - אם נתרום HTTP transport — זה יהיה contribution גדול שמשרת את כל ה-ecosystem.
 
-### 1.4 ❗ עדכון: לא ניתן להישען על `@flutur/acp-http-bridge` כ-npm dep
+### 1.4 ❗ עדכון 1: `@flutur/acp-http-bridge` לא בשל
 
 בדיקה שנייה (אבי שאל למה אין כוכבים):
 - **`package.json`:** `"version": "0.1.0-alpha.0"` — alpha מוקדם.
@@ -103,6 +103,63 @@ src/
 **Option D:** לתרום ל-Alemusica — לעזור להם לpublish, להוסיף בדיקות, להוסיף features שאנחנו צריכים. Long-term play.
 
 **המלצה חדשה: A + D.** נכתוב bridge משלנו (פנימי) ל-MVP. במקביל, נפתח issues ב-`Alemusica/acp-http-bridge` להציע help — אם הם רוצים, נמזג. אם לא, השלנו עובד.
+
+### 1.5 ❗❗ עדכון 2: נמצא הפתרון הנכון — `@rebornix/stdio-to-ws`
+
+**אבי הצביע על שיחה אחרת** (`ses_1d1d7e005ffehwl6wIsjsw6wKI`) שבה סוכן אחר מצא את הפתרון הבוגר.
+
+**`@rebornix/stdio-to-ws`** ([GitHub](https://github.com/rebornix/stdio-to-ws), [npm](https://www.npmjs.com/package/@rebornix/stdio-to-ws)):
+- **Fork פעיל** של `marimo-team/stdio-to-ws` (19 stars, יציב, v0.2.0).
+- **Published ב-npm** (`@rebornix/stdio-to-ws` v0.2.0). ניתן להריץ `npx`.
+- License: Apache-2.0.
+- Dependencies: `ws`, `minimist`, `string-argv`, **Microsoft Dev Tunnels SDKs** (5 חבילות).
+- **תוספות מעבר ל-upstream:**
+  - `--persist` — keep child alive during disconnections (קריטי למובייל)
+  - `--grace-period <seconds>` (`-1` = infinite)
+  - `--tunnel` / `--tunnel-name <name>` — Microsoft Dev Tunnels integration: מקבלים `wss://` URL ציבורי בלי TLS/proxy ידני
+  - Client-Id replay buffer ב-reconnect
+
+**שימוש:**
+```bash
+npx @rebornix/stdio-to-ws "opencode acp" --port 0 --persist --grace-period -1
+```
+
+או עם tunnel ל-טלפון/airpods:
+```bash
+npx @rebornix/stdio-to-ws "opencode acp" --tunnel-name drive-coding-prod --persist
+```
+
+**משמש ב-production ע"י:** [`formulahendry/acp-ui`](https://github.com/formulahendry/acp-ui) — 274 stars, web client בוגר ל-ACP. ה-README שלו מציע ב-flow המוצע ל-mobile setup.
+
+**מסקנה: D33 — לא לכתוב bridge משלנו. spawn-ים את `@rebornix/stdio-to-ws` כ-CLI binary.** Slice 3 בroadmap מצטמצם מ-"כתוב bridge ~200 שורות" ל-"spawn npm package + parse port".
+
+### 1.6 ❗❗ עדכון 3: `formulahendry/acp-ui` — web UI בוגר
+
+**מתחרה ישיר נוסף**, עם MIT license (זמין לfork) ו-274 stars.
+
+**מה זה:**
+- Vue 3 + Tauri (cross-platform: Windows, macOS, Linux, Android, iOS, **Web**).
+- web build חי ב-[acp-ui.github.io](https://acp-ui.github.io/) — אין צורך להתקין.
+- **MIT license** ✅
+- 274⭐, 27 forks, פעיל (v0.1.15 מ-May 2026).
+- 11 agents pre-configured (Copilot, Claude, Gemini, Qwen, Codex, OpenCode, OpenClaw, Kiro, Hermes, Auggie, Qoder).
+- WebSocket transport עם session/load + foreground reconnect + $/ping heartbeat.
+- אופציה ל-Authorization Bearer ב-WS subprotocol.
+- משתמש ב-`@rebornix/stdio-to-ws` כ-bridge (מאשר את העדכון בעדכון 2).
+
+**מה חסר:**
+- **Voice — אין.** זה הייחוד הקריטי שלנו.
+- **RTL — לא צוין.** Vue אבל לא מובהק.
+- **Drive-first UX — לא.** chat UI generic.
+
+**שאלה אסטרטגית — Q-NEW-4:** האם לבנות מאפס (אופציה A), לעשות fork ל-acp-ui ולהוסיף voice + RTL (אופציה B), או היברידי (אופציה C)?
+- ההמלצה שלי: **C ≈ A** עם awareness של acp-ui. SvelteKit הוא הבחירה שלך, drive-first הוא הייחוד שלנו, fork ל-Vue היה tax לא-תרומתי. ראה Q-NEW-4 ב-`vnext-architecture.md`.
+
+### 1.7 הקשר רחב — `openclaw/acpx`
+
+**`openclaw/acpx`** (2.7k stars, MIT, npm) — לא bridge, אלא **headless CLI client**. תומך ב-16 agents מובנים, persistent sessions, prompt queueing, named sessions, flows. v0.8.0 (alpha).
+
+**רלוונטיות לנו:** לא ל-bridge. אבל יש שם רעיונות מעניינים — flows (TypeScript workflows), graceful cancel, queue owner TTL — שכדאי ללמוד מהם בעתיד.
 
 ---
 
@@ -479,13 +536,16 @@ drive-coding/
 
 ---
 
-## 8. סיכום הממצאים — TL;DR (מעודכן אחרי בדיקה שנייה)
+## 8. סיכום הממצאים — TL;DR (מעודכן אחרי סבב 3)
 
-1. **`@flutur/acp-http-bridge` לא בשל** — alpha-0, לא ב-npm, 0 stars. נכתוב bridge משלנו (~200 שורות) בהשראתו (Apache 2.0). חוזרים ל-D23.
-2. **ACP RFD רשמית קיימת** — אנחנו מיישרים את הפרוטוקול שלנו ל-spec, לא ממציאים.
-3. **`voice-coda` ללא license** — אסור fork/copy. רק inspiration רעיונית. נשלח issue לevanstern.
-4. **ArkType + neverthrow** — לא Zod (אבי כבר ב-ArkType). ביצועים טובים יותר, syntax מפושט.
-5. **`@ricky0123/vad-web` ל-VAD בעתיד** — לא ב-MVP, אבל זה ה-path קדימה.
-6. **openWakeWord ל-wake word** — אומת ב-`voice-coda`, custom model אפשרי.
-7. **Hexagonal architecture מינימלי** — 2 packages (`core` + `backend`), שכבות בתוך `backend/` הן רק תיקיות.
-8. **Whisper לוקלי + Piper לוקלי** כאופציה ל-BYOC — חיסכון לחלק מהמשתמשים.
+1. ❗❗ **`@rebornix/stdio-to-ws` הוא הפתרון** — published ב-npm, Apache-2.0, תומך `--persist`, `--grace-period`, Microsoft Dev Tunnels. בשימוש ע"י acp-ui (274★). **D33: spawn it, don't write it.**
+2. ❗❗ **`formulahendry/acp-ui` הוא מתחרה web UI בוגר** — MIT, 274★, Vue+Tauri+Web, 11 agents נתמכים. אופציה אסטרטגית: build vs fork (Q-NEW-4).
+3. ~~`@flutur/acp-http-bridge`~~ — לא בשל, מבוטל.
+4. ACP RFD רשמית קיימת — אנחנו מיישרים את הפרוטוקול שלנו ל-spec.
+5. `voice-coda` ללא license — אסור fork/copy. רק inspiration רעיונית.
+6. **ArkType + neverthrow** — לא Zod (אבי כבר ב-ArkType).
+7. `@ricky0123/vad-web` ל-VAD בעתיד — לא ב-MVP.
+8. openWakeWord ל-wake word — אומת ב-`voice-coda`, custom model אפשרי.
+9. **Hexagonal architecture מינימלי** — 2 packages (`core` + `backend`).
+10. Whisper לוקלי + Piper לוקלי כאופציה ל-BYOC.
+11. `openclaw/acpx` (2.7k★) — CLI client, לא bridge. inspiration ל-flows ו-queue management.

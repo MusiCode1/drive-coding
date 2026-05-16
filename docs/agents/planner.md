@@ -88,9 +88,30 @@
 
 - **סטטוס:** פעיל — המשך סשן `ses_1d26848f8ffetPtC3UQ2eLBrpt` (planner). שלב: דיון על ארכיטקטורת הגרסה הבאה.
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** ✅ שכבה 2 הסתיימה — `vnext-spec.md` חדש (~750 שורות). 3 פרוטוקולים, ArkType schemas, ports, sequence diagrams, Slice 1 מוגדר. מוכן ל-executor.
+- **עובד על:** ✅ ממצא קריטי — `@rebornix/stdio-to-ws` קיים ב-npm. ביטול D30, הוספת D33+D34. נמצא גם acp-ui (274★) — שאלה אסטרטגית Q-NEW-4 (build vs fork).
 
 ## לוג
+
+### [2026-05-15 05:00] ✅ ממצא קריטי — bridge מוכן ב-npm + acp-ui מתחרה web
+אבי הצביע על שיחה אחרת (`ses_1d1d7e005ffehwl6wIsjsw6wKI`) שבה הסוכן מצא:
+
+**ממצא #1 — `@rebornix/stdio-to-ws`:** Fork פעיל של `marimo-team/stdio-to-ws` (19★ upstream), **published ב-npm** כ-`@rebornix/stdio-to-ws@0.2.0`, Apache-2.0. תוספות מעבר ל-upstream:
+- `--persist` + `--grace-period -1` (CLI שורד disconnects, קריטי למובייל)
+- `--tunnel` / `--tunnel-name` — Microsoft Dev Tunnels integration לקבלת `wss://` URL ציבורי
+- Client-Id replay buffer
+
+בשימוש ע"י acp-ui (274★). זה בדיוק מה שאנחנו צריכים. **בוטל D30 (write our own), הוספת D33 (spawn this).**
+
+**ממצא #2 — `formulahendry/acp-ui`:** Vue 3 + Tauri + Web client בוגר ל-ACP, MIT, 274★, 11 agents נתמכים, web build חי ב-acp-ui.github.io. תומך session/load + foreground reconnect + $/ping. **חסר voice + RTL + drive-first.** הוספת D34 ו-Q-NEW-4: שאלה אסטרטגית — build A-Z vs fork acp-ui vs hybrid.
+
+**ממצא #3 — `openclaw/acpx`:** CLI client (לא bridge), 2.7k★, MIT, 16 agents מובנים. inspiration ל-flows ו-queue management בעתיד.
+
+עדכוני מסמכים:
+- `vnext-architecture.md`: ביטול D30, הוספת D33 (rebornix bridge) + D34 (acp-ui awareness). §7.4a עודכן עם דוגמת spawn של stdio-to-ws. §8 monorepo: dependencies רשימה מתוקנת. Q-NEW-4 חדש עם 3 אופציות אסטרטגיות (A: build, B: fork acp-ui, C: hybrid) והמלצה ל-C ≈ A.
+- `vnext-spec.md`: §4 (BE↔Bridge protocol) נכתב מחדש — אנחנו לא מגדירים פרוטוקול, אנחנו consumer של JSON-RPC ACP גולמי דרך WS שנפתח ע"י `stdio-to-ws`. שימוש ב-`ClientSideConnection` של ACP SDK. §8.5 roadmap: Slice 3 הצטמצם דרסטית (spawn ו-parse port במקום ~200 שורות bridge).
+- `vnext-research.md`: סעיפים 1.5, 1.6, 1.7 חדשים על rebornix, acp-ui, acpx. §8 TL;DR נכתב מחדש.
+
+הצעדים הבאים: ממתין ל-Q-NEW-4 (build vs fork) ולאישור הסופי לתחילת Slice 1.
 
 ### [2026-05-15 04:30] ✅ שכבה 2 — `vnext-spec.md` הושלמה
 אבי אישר "בגדול הכל כן" על Q9-Q17, Q-NEW-1/2/3, ArkType, Hexagonal מינימלי, voice-coda outreach.

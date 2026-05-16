@@ -175,9 +175,11 @@
 | ~~D27~~ | ~~neverthrow + Zod~~ | **עודכן ב-D31** — `neverthrow + ArkType` (אבי כבר משתמש ב-ArkType, ביצועים טובים יותר) |
 | **D28** | **Hexagonal architecture, אבל מינימלי** | התחל עם 2 packages (`core` + `backend`). שכבות בתוך `backend/` הן תיקיות, לא packages. הוספת `protocol/` רק כשנצטרך |
 | ~~D29~~ | ~~`voice-coda` כ-reference architecture~~ | **עודכן ב-D32** — voice-coda **אין license**. רק inspiration רעיונית. אסור fork/copy בלי הסכמת evanstern |
-| **D30** | **`acp-bridge` משלנו בהשראת `Alemusica/acp-http-bridge`** | Apache 2.0 מאפשר העתקת רעיונות עם attribution. ~200 שורות בלבד. שליטה מלאה |
+| ~~D30~~ | ~~`acp-bridge` משלנו בהשראת `Alemusica/acp-http-bridge`~~ | **מבוטל ב-D33** — נמצא פתרון בוגר ב-npm |
 | **D31** | **ArkType + neverthrow** | אבי כבר מכיר ArkType, ביצועים ~100× מ-Zod, syntax קצר יותר. neverthrow ל-`Result<T,E>` ב-core |
 | **D32** | **לא להישען על voice-coda — לפנות בנימוס לבדיקת license** | אם יחזיר MIT/Apache, נשקול שיתוף פעולה. בינתיים — independent build |
+| **D33** | **השתמש ב-`@rebornix/stdio-to-ws` כ-bridge** | published ב-npm (v0.2.0, Apache-2.0). תומך `--persist`, `--grace-period`, Microsoft Dev Tunnels (`--tunnel`/`--tunnel-name`). משמש ב-acp-ui (274★). לא לכתוב משלנו |
+| **D34** | **`acp-ui` של formulahendry קיים — נשקול אסטרטגיה** | 274⭐, MIT, Vue+Tauri+Web. תומך 11 agents native, web build חי ב-acp-ui.github.io. לא תומך voice/RTL. **ראה Q-NEW-4 — build vs fork acp-ui** |
 
 ---
 
@@ -378,43 +380,67 @@
 **אחריות:** initialize, session/new, session/prompt, session/cancel, parsing של session/update.
 **Sub-domains:** `AcpTransport` (websocket-to-bridge / stdio), `AcpClient` (logic).
 
-### 7.4a ACP Bridge — צרכן של `@flutur/acp-http-bridge` (עדכון D25)
+### 7.4a ACP Bridge — צרכן של `@rebornix/stdio-to-ws` (עדכון D33)
 
-הרעיון של אבי כבר ממומש בעולם. אנחנו לא בונים — אנחנו צורכים.
+הרעיון של אבי ממומש בpackage בוגר ב-npm. אנחנו לא בונים — אנחנו spawn-ים.
 
-**מה זה:** `@flutur/acp-http-bridge` הוא npm package שעוטף ACP stdio agents ב-WebSocket + HTTP/SSE. מיישר ל-[RFD רשמית](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/rfds/streamable-http-websocket-transport.mdx).
+**מה זה:** `@rebornix/stdio-to-ws` (fork של `marimo-team/stdio-to-ws`) הוא בinary שעוטף **כל** stdio process ב-WebSocket. ב-npm, Apache-2.0, v0.2.0. משמש ב-`acp-ui` (274★) שזה ה-web client הכי בוגר ל-ACP.
 
 **איך אנחנו משתמשים בו:**
 ```ts
-// packages/backend/src/adapters/acp-bridge-transport.ts
-import { startBridge } from "@flutur/acp-http-bridge"
+// packages/backend/src/adapters/bridge-spawn.ts
+import { spawn, type ChildProcess } from "node:child_process"
 
-export async function createBridgeTransport(cliBin: string, cwd: string) {
-  const handle = await startBridge({
-    agentBin: cliBin,
-    cwd,
-    port: 0, // OS-assigned
-  })
-  // Returns handle with .shutdown() and WS URL
-  return { wsUrl: handle.url, shutdown: handle.shutdown }
+export type BridgeHandle = {
+  readonly port: number
+  readonly process: ChildProcess
+  readonly wsUrl: string
+}
+
+export async function spawnBridge(opts: {
+  cliCommand: string         // e.g., "opencode acp"
+  port: number               // OS-assigned (use 0)
+  cwd: string
+  persist?: boolean          // keep CLI alive on disconnects
+  gracePeriod?: number       // -1 for infinite (mobile)
+  tunnelName?: string        // optional Dev Tunnel
+}): Promise<BridgeHandle> {
+  const args = [
+    "@rebornix/stdio-to-ws",
+    opts.cliCommand,
+    "--port", String(opts.port),
+    ...(opts.persist ? ["--persist"] : []),
+    ...(opts.gracePeriod !== undefined
+      ? ["--grace-period", String(opts.gracePeriod)]
+      : []),
+    ...(opts.tunnelName
+      ? ["--tunnel-name", opts.tunnelName]
+      : []),
+  ]
+  const proc = spawn("npx", args, { cwd: opts.cwd, stdio: ["ignore", "pipe", "pipe"] })
+  // Parse port from stdout, return handle
+  // ...
 }
 ```
 
 **מה אנחנו מקבלים חינם:**
-- ✅ stdio↔WebSocket wrapping
-- ✅ HTTP/SSE alternative
-- ✅ Persistent sessions (disk + `session/load` resume)
-- ✅ Multi-tab fan-out (כל ה-clients מקבלים אותם notifications)
-- ✅ ACP handshake handling
+- ✅ stdio↔WebSocket wrapping (line / NDJSON framing — ACP native)
+- ✅ **`--persist` + `--grace-period -1`** — CLI שורד disconnects (חיוני למובייל ולנהיגה)
+- ✅ Client-Id replay buffer
+- ✅ **Microsoft Dev Tunnels integration** (`--tunnel-name`) — `wss://` URL יציב מבלי TLS/proxy ידני
+- ✅ בinary בלבד, ללא integration code שלנו לתחזוקה
 
-**מה עדיין חסר ושנצטרך לפתח:**
-- ❌ Interactive `requestPermission` (כרגע auto-approve בלבד)
-- ❌ Multi-session per connection
-- ❌ Resumability דרך `Last-Event-ID`
+**מה אנחנו עדיין צריכים לעשות:**
+- כתיבת `BridgeManager` ב-`backend/adapters/` שspawn-ים, מנטר, ו-killing את ה-bridge processes
+- כתיבת `AcpTransport` adapter שמתחבר ל-WS שה-bridge חושף ומדבר ACP JSON-RPC
+- (זה מה ש-`@agentclientprotocol/sdk` עושה — שני שלבים שמקצרים ל-~100 שורות)
 
-**אסטרטגיה:** נשתמש as-is ב-MVP. כשנצטרך multi-session (slice 6+) — נפתח PRs לקהילה. ראה `vnext-research.md` §1.
-
-**Survival:** ה-bridge רץ כ-child process שלנו במונחים של מי שspawn-ים אותו, אבל הוא תהליך נפרד עם sessionId נשמר ב-disk. backend נופל → bridge ממשיך → backend חוזר → `session/load` מצליח → reconnect שקוף.
+**Survival flow:**
+1. Backend spawn-ים `npx @rebornix/stdio-to-ws "opencode acp" --port 0 --persist --grace-period -1`
+2. ה-bridge מדפיס "Listening on ws://127.0.0.1:7100"
+3. Backend connect ל-WS, מבצע ACP handshake, מקבל `connectionId` + `sessionId`
+4. Backend נופל / מתעדכן → ה-bridge ממשיך, מצבר sessionUpdate notifications, ה-CLI ממשיך לעבד
+5. Backend חוזר → reconnect ל-WS עם `X-Client-Id` header → bridge עושה replay של ה-buffered events
 
 ### 7.5 Voice Pipeline
 **מה:** STT → LLM router → TTS.
@@ -512,15 +538,15 @@ drive-coding/
 ```
 
 **Dependencies חיצוניים מרכזיים:**
-- `@flutur/acp-http-bridge` — wrapping ACP stdio agents (D25)
-- `@agentclientprotocol/sdk` — types ושיתוף
+- **`@rebornix/stdio-to-ws`** — bridge לכל CLI (D33). spawn דרך `npx`, אין צורך ב-import.
+- `@agentclientprotocol/sdk` — JSON-RPC types + client-side connection
 - `@agentclientprotocol/claude-agent-acp` — Claude Code adapter (D24)
-- `neverthrow` — `Result<T, E>` ב-core (D27)
-- `zod` — schemas ב-protocol (D27)
-- `@google/genai` — STT/translator
+- `neverthrow` — `Result<T, E>` ב-core (D31)
+- `arktype` — schemas ב-`core/schemas.ts` (D31)
+- `@google/genai` — STT + translator (Gemini)
 - `@ricky0123/vad-web` — VAD בעתיד (לא ב-MVP)
 
-**הסרה משמעותית:** ה-package `packages/acp-bridge/` שתוכנן ב-D23 הוסר. אנחנו לא בונים — אנחנו צורכים את `@flutur/acp-http-bridge` (D25).
+**הסרה משמעותית:** ה-package `packages/acp-bridge/` שתוכנן ב-D23 ושוב ב-D30 — בוטל סופית ב-D33. אנחנו spawn-ים את `@rebornix/stdio-to-ws` כ-CLI binary, לא קוד שלנו.
 
 ### 8.2 Key boundaries
 
@@ -888,6 +914,79 @@ git worktree add ../voice-acp-v2 -b vnext
 **~~נסגרו~~ בסבב הזה (3):**
 - ~~Q12. Backend survival~~ → נפתר עם D23 (acp-bridge).
 - ~~Q18. Multi-CLI adapter~~ → Claude Code דרך adapter רשמי (D24).
+
+---
+
+### ⏳ שאלה אסטרטגית קריטית — Q-NEW-4
+
+**הקשר:** מצאנו את `formulahendry/acp-ui` (274★, MIT, Vue 3 + Tauri) — web/mobile/desktop client בוגר ל-ACP עם 11 agents pre-configured. הוא **לא** תומך ב-voice וב-RTL. הוא משמש בעצמו את `@rebornix/stdio-to-ws` כ-bridge.
+
+זה משנה את הבחירה האסטרטגית הגדולה. שלוש אופציות:
+
+#### אופציה A: Build from scratch (התוכנית המקורית)
+
+- כותבים SvelteKit frontend חדש לחלוטין.
+- backend Bun, ports/adapters, voice pipeline, drive-first UX מהיום הראשון.
+- שולטים בכל קווי הקוד.
+
+**יתרונות:**
+- 100% ייחוד — drive-first, RTL, voice, Hebrew מהיום הראשון.
+- SvelteKit כמו שאבי בחר.
+- אין תלות בעדכוני upstream.
+- learning experience עמוק.
+
+**חסרונות:**
+- ~10 slices, חודשי עבודה.
+- צריך לכתוב מחדש: routing, agent management UI, sessions list, permission dialogs, slash commands, tool call visualization, model picker, traffic monitor.
+- חלק מהדברים חופפים ל-acp-ui.
+
+#### אופציה B: Fork `acp-ui` והוסף voice + RTL
+
+- מתחילים ב-fork של formulahendry/acp-ui.
+- מוסיפים voice layer (STT/TTS/translator) + RTL + drive-first UX.
+- שומרים את כל ה-multi-agent + cross-platform support.
+
+**יתרונות:**
+- חיסכון של ~70% מהעבודה — הbase מוכן ועובד.
+- 11 agents כבר נתמכים.
+- Mobile/Web/Desktop builds ready.
+- session/load + foreground reconnect כבר ממומשים.
+- MIT license — חופשי לחלוטין.
+
+**חסרונות:**
+- **Vue 3, לא SvelteKit** — אבי הצהיר על SvelteKit.
+- Tauri — תלות נוספת (ל-desktop builds).
+- צריך לחיות עם החלטות UX שלא בחרנו (chat-first, לא drive-first).
+- עדכוני upstream דורשים merge work.
+- branding שלהם — צריך לעשות rename ל-drive-coding.
+
+#### אופציה C: Hybrid — voice gateway נפרד + שמירה על acp-ui כ-alternative
+
+- אנחנו בונים backend עם voice pipeline + Svelte frontend ייעודי ל-drive mode.
+- ה-backend חושף את ה-WS protocol של drive-coding.
+- במקביל, ה-bridge עצמו (`stdio-to-ws`) חי כ-CLI נפרד שגם משמש את acp-ui.
+- המשתמש יכול לבחור: drive-coding (drive-first) או acp-ui (chat-first), שניהם מתחברים לאותם CLIs.
+
+**יתרונות:**
+- Drive-first UX שלם בחירת SvelteKit.
+- אופציה backup — אם משהו לא עובד ב-drive-coding, יש acp-ui כ-alternative client לאותו setup.
+- contribution לקהילה (קל יותר לתרום ל-stdio-to-ws + לעודד שימוש שכן עובד).
+
+**חסרונות:**
+- כמעט כמו אופציה A מבחינת היקף.
+- "alternative client" הוא יתרון מינורי לרוב המשתמשים שיבחרו אחד מהם.
+
+#### ההמלצה שלי
+
+**אופציה C — בעצם כמעט A אבל עם awareness של acp-ui.**
+
+הסיבות:
+1. SvelteKit הוא המבחר שלך, לא Vue. למעבר ל-Vue יש tax לא-תרומתי.
+2. drive-first UX הוא הייחוד שלנו — הוא מצדיק build מאפס.
+3. ה-bridge (stdio-to-ws) גם ככה לא משלנו — חסכנו שם 40% מהעבודה.
+4. ה-CLIs פותחים את הברירה — אפילו אם נבחר A, משתמש שלא רוצה drive-mode יוכל להשתמש ב-acp-ui עם אותו setup.
+
+**ממתין להחלטה.** אם תבחר B (fork), כל ה-spec ב-`vnext-spec.md` משתנה דרסטית. אם תבחר A או C, נמשיך כמתוכנן עם תיקון ה-bridge ל-`@rebornix/stdio-to-ws`.
 
 ---
 

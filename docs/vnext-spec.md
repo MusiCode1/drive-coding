@@ -308,15 +308,73 @@ export type ClientMessage = typeof ClientMessage.infer
 
 ## 4. Backend ↔ Bridge WS Protocol
 
-זהו הפרוטוקול הפנימי של ה-bridge שלנו (D30). פשוט יותר מה-ACP RFD המלא, כי ה-bridge חי באותו container כמו ה-backend ויש בקרה מלאה על שני הצדדים.
+**עדכון D33:** במקום bridge משלנו, אנחנו spawn-ים את `@rebornix/stdio-to-ws`. הוא מגדיר את ה-protocol — אנחנו רק consumer.
 
-### 4.1 Endpoint
+### 4.1 איך עובד `stdio-to-ws`
+
+ה-bridge פותח WS server. כל message שמגיע ב-WS עובר ל-stdin של ה-CLI; כל line מ-stdout של ה-CLI נשלח כ-WS message. ACP משתמש ב-NDJSON, אז framing="line" (default) מתאים בדיוק.
 
 ```
-ws://127.0.0.1:<bridgePort>/acp
+Backend ──── WS message (JSON-RPC) ────► stdio-to-ws ────► CLI stdin
+Backend ◄──── WS message (JSON-RPC) ──── stdio-to-ws ◄──── CLI stdout
 ```
 
-הפורט מוקצה ב-OS-assigned ע"י ה-bridge ומדווח ל-backend ב-spawn time.
+**שום פרוטוקול envelope משלנו.** ה-WS payloads הם **JSON-RPC 2.0 גולמי של ACP**.
+
+### 4.2 Endpoint
+
+```
+ws://127.0.0.1:<port>/
+```
+
+הפורט מודפס ב-stdout של `stdio-to-ws` ב-startup. ה-`BridgeManager` שלנו cap-ר אותו.
+
+### 4.3 שימוש ב-`@agentclientprotocol/sdk` כ-client
+
+ה-SDK הרשמי של ACP מספק `ClientSideConnection` שעוטף את ה-JSON-RPC dispatching. אנחנו עוטפים אותו ב-`AcpTransport` adapter:
+
+```ts
+// packages/backend/src/adapters/acp-transport-ws.ts
+import { ClientSideConnection } from "@agentclientprotocol/sdk"
+import { WebSocket } from "ws"
+import type { AcpTransport, AcpCapabilities } from "@drive-coding/core/ports"
+
+export function createAcpWsTransport(wsUrl: string): AcpTransport {
+  const ws = new WebSocket(wsUrl)
+  // Adapt WebSocket to the SDK's expected ReadableStream/WritableStream
+  const conn = new ClientSideConnection(/* streams */, clientImpl)
+
+  return {
+    async initialize() {
+      const result = await conn.initialize({ /* protocol version, capabilities */ })
+      return ok(toAcpCapabilities(result))
+    },
+    async newSession({ cwd }) {
+      const result = await conn.newSession({ cwd, mcpServers: [] })
+      return ok({ sessionId: result.sessionId })
+    },
+    // ...
+  }
+}
+```
+
+ה-`clientImpl` מספק את ה-callbacks ל-`requestPermission`, `fs/*`, `terminal/*`. רובם נסיים ב-`-32601 Method not found` כי frontend-וב לא תומך בהם.
+
+### 4.4 Persistence + Reconnect (לפי `--persist`)
+
+כש-spawn-ים עם `--persist --grace-period -1`:
+
+1. backend מתחבר → `stdio-to-ws` שולח `{"type": "connected", "clientId": "..."}` כ-first frame.
+2. backend שומר את ה-`clientId` (בזיכרון או ב-disk).
+3. backend נופל → ה-bridge מצבר notifications.
+4. backend חוזר → connect שוב עם header `X-Client-Id: <saved>`.
+5. ה-bridge עושה replay של ה-notifications שהוא צבר.
+
+זה משתחרר אותנו מלממש את ה-replay buffer בעצמנו — `stdio-to-ws` עושה את זה.
+
+### 4.5 Authentication
+
+אין ב-WS עצמו (rebornix לא מטפל ב-auth ל-bridge). ה-WS חי על `127.0.0.1` — לא expose מעבר ל-container. אם נצטרך auth (למשל אם ה-bridge יישלח דרך Dev Tunnel ל-טלפון של אבי), ה-acp-ui מציע pattern: `Authorization: Bearer <token>` כ-WebSocket subprotocol.
 
 ### 4.2 Bridge → Backend messages
 
@@ -898,14 +956,16 @@ Slice 1 הוא ה-vertical slice הראשון. תוצר: **echo server עובד 
 | Slice | תוצר |
 |-------|------|
 | 2 | Identity persistence + dashboard (רשימת agents ריקה) + agent creation flow ב-UI |
-| 3 | `acp-bridge` — wrapper של opencode עם stdio↔WS. ניתן לדבר איתו ידנית מ-CLI |
-| 4 | חיבור backend ↔ bridge (`AcpTransport` adapter) — `/agent/:id` עם chat טקסטואלי בלי voice |
+| 3 | `BridgeManager` — spawn `npx @rebornix/stdio-to-ws "opencode acp" --port 0 --persist --grace-period -1`, parse port, manage lifecycle (פשוט מאוד אחרי D33) |
+| 4 | `AcpTransport` adapter סביב `ClientSideConnection` של `@agentclientprotocol/sdk`. `/agent/:id` עם chat טקסטואלי בלי voice |
 | 5 | Voice pipeline — STT (Gemini) + TTS (ElevenLabs) — voice round-trip עובד |
-| 6 | Multi-session + cache + reconnect/replay |
+| 6 | Multi-session + disk cache + reconnect (משתמשים ב-`--client-id` של bridge) |
 | 7 | Drive-first UX מלא — כפתור גדול, state machine, animations |
 | 8 | Whisper local + Piper local (BYOC options) |
 | 9 | i18n infra (גם עברית) + UI text catalogs |
 | 10 | Production deploy — Docker compose + Cloudflare tunnel + systemd |
+
+**שינוי משמעותי לאחר D33:** Slice 3 הצטמצם דרסטית. במקום לכתוב 200 שורות bridge — אנחנו spawn-ים npm package + parsing port. פשטות. ההמלצה: לאחד את 3+4 ל-Slice יחיד אם הזמן מאפשר.
 
 ---
 
