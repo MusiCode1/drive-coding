@@ -88,9 +88,30 @@
 
 - **סטטוס:** פעיל — המשך סשן `ses_1d26848f8ffetPtC3UQ2eLBrpt` (planner). שלב: דיון על ארכיטקטורת הגרסה הבאה.
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** ✅ סבב 5 — סגירת Q-NEW-4/5/6/7 ב-D41-D44. כל ההחלטות נעולות. מוכן ל-Slice 1.
+- **עובד על:** ✅ סבב 6 — D45-D48: Node+Bun universal, TDD partial, port pure tests מ-v1, Vitest. מוכן ל-Slice 1.
 
 ## לוג
+
+### [2026-05-16 02:45] ✅ סבב 6 — Node+Bun universal, TDD partial, port pure tests
+אבי קיבל את הspec ושאל 3 שאלות חכמות אחרונות לפני Slice 1:
+
+1. **Node + Bun compatibility** — שיהיה ניתן להריץ עם `npx drive-coding` או `bunx drive-coding`. **D45:** Hono ל-HTTP/WS (אגנוסטי), `node:sqlite` או `better-sqlite3`, pnpm workspaces. Bun runtime כ-fast-path. רק 10-15% throughput loss וזה לא bottleneck.
+
+2. **תאימות לקוד הקיים + בדיקות** — לא, וזה לפי D3 (greenfield). **D47:** Port pure tests מ-v1 — ~96 בדיקות עוברות 1:1 (sentence-boundary 21, provider-error 16, markdown 29, tts-cache 20, recordings ~10). ~193 לא רלוונטיות בגלל D33+D38.
+
+3. **TDD?** — **D46:** חלקי. `/tdd` skill ב-executor mode. core (sentence-boundary, cancel, custom Gemini provider) ב-red-green-refactor. delivery עם validation tests. IO heavy עם integration tests. UI עם manual + Playwright.
+
+עדכונים:
+- **D45** — Runtime-agnostic Node 22+ ו-Bun via Hono
+- **D46** — TDD partial — core full, backend partial, UI minimal
+- **D47** — Port ~96 pure tests מ-v1, השאר לא רלוונטי
+- **D48** — Vitest כtest runner universal
+
+dependencies list עודכן: hono + `@hono/node-server`, better-sqlite3/`node:sqlite`, vitest, pnpm. ה-Bun נשאר כ-fast-path אופציונלי.
+
+כל ה-D-החלטות (D1-D48) נעולות. כל ה-Q שאלות פתוחות נסגרו. **המסמכים production-ready. ירוק ל-Slice 1.**
+
+הצעד הבא: אבי בוחר אופציה (A) sub-agent / (B) ימשיך בסשן הזה / (C) executor session ידני נפרד.
 
 ### [2026-05-16 02:30] ✅ סבב 5 — סגירת השאלות הפתוחות, מוכנים ל-Slice 1
 אבי קיבל את ההמלצות חוץ ממחיקת קונטיינר 134:

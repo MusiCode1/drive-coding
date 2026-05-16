@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-05-16 02:45 (master, planner-agent Tama)
+
+### תכנון vNext — סבב 6: Node+Bun universal, TDD partial, port pure tests
+
+אבי שאל 3 שאלות חכמות אחרונות לפני Slice 1:
+
+1. **Node + Bun compatibility** — שיהיה ניתן להריץ עם `npx` או `bunx`. **D45:** Hono ל-HTTP/WS אגנוסטי, `node:sqlite` או `better-sqlite3`, pnpm workspaces. Bun runtime כ-fast-path אופציונלי. רק 10-15% throughput loss וזה לא ה-bottleneck.
+
+2. **תאימות לקוד הקיים + 289 הבדיקות** — לא לחלוטין (D3 = greenfield), אבל ה-pure helpers ינדדו. **D47:** Port ~96 pure tests מ-v1 (sentence-boundary 21, provider-error 16, markdown 29, tts-cache 20, recordings ~10). ~193 לא רלוונטיות בגלל D33 (bridge חיצוני) ו-D38 (AI SDK).
+
+3. **TDD?** — **D46:** חלקי. `/tdd` skill ב-executor mode ל-core (full red-green-refactor) ו-custom Gemini provider. backend עם validation tests, IO heavy עם integration, UI עם manual+Playwright.
+
+4 D-החלטות נוספות (D45-D48). dependencies list עודכן: hono + @hono/node-server, better-sqlite3 או node:sqlite, vitest, pnpm. Bun נשאר כ-fast-path אופציונלי.
+
+**סיכום סופי:** D1-D48 נעולות, Q1-Q17 + כל Q-NEW נסגרו. המסמכים production-ready. אבי קיבל סיכום one-pager של התוכנית והארכיטקטורה.
+
+הצעד הבא: ירוק ל-Slice 1.
+
+---
+
 ## 2026-05-16 02:00 (master, planner-agent Tama)
 
 ### תכנון vNext — סבב 4: Vercel AI SDK + voice-coda tested

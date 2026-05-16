@@ -190,6 +190,10 @@
 | **D42** | **Audio cues — minimal 5 צלילים ל-MVP** (Q-NEW-5) | `recording_start`, `recording_stop`, `thinking`, `tool_call`, `error`. theme picker מאוחר יותר |
 | **D43** | **Provider scope — per-user** (Q-NEW-6) | בחירה אחת ב-`/settings` חלה על כל ה-agents של המשתמש. per-agent בעתיד אם נדרש |
 | **D44** | **קונטיינר 134 (voice-coda) נשמר** (Q-NEW-7) | reference + comparison לאחר Slices הבאים |
+| **D45** | **Runtime-agnostic: Node 22+ ו-Bun** | Hono ל-HTTP/WS (אגנוסטי). `node:sqlite` או `better-sqlite3`. `npx drive-coding` ו-`bunx drive-coding` שניהם עובדים |
+| **D46** | **TDD חלקי — core full, backend partial** | `/tdd` skill ב-executor mode. core (sentence-boundary, cancel, custom Gemini provider) ב-red-green-refactor. delivery עם validation tests. IO heavy עם integration |
+| **D47** | **Port pure tests מ-v1** | ~96 בדיקות עוברות 1:1 (sentence-boundary, provider-error, markdown, tts-cache, recordings paths). ~193 לא רלוונטיות בגלל D33+D38 |
+| **D48** | **Vitest כtest runner** | universal Node+Bun. `pnpm workspaces`. tests ב-`packages/{core,backend}/tests/` |
 
 ---
 
@@ -625,8 +629,14 @@ drive-coding/
 
 **Dependencies חיצוניים מרכזיים:**
 
+Runtime layer (D45 — Node+Bun universal):
+- `hono` + `@hono/node-server` — HTTP+WS framework. אגנוסטי.
+- `better-sqlite3` (universal) או `node:sqlite` (Node 22.5+)
+- `vitest` — tests (D48)
+- `pnpm` workspaces
+
 ACP transport:
-- **`@rebornix/stdio-to-ws`** — bridge לכל CLI (D33). spawn דרך `npx`, אין צורך ב-import.
+- **`@rebornix/stdio-to-ws`** — bridge לכל CLI (D33). spawn דרך `npx`/`bunx`.
 - `@agentclientprotocol/sdk` — JSON-RPC types + ClientSideConnection
 - `@agentclientprotocol/claude-agent-acp` — Claude Code adapter (D24)
 
