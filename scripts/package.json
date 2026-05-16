@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "dependencies": {
+    "@ai-sdk/elevenlabs": "*",
+    "ai": "*"
+  }
+}

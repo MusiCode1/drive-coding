@@ -7,3 +7,4 @@ build/
 .env.local
 .DS_Store
 packages/backend/data/
+scripts/node_modules
