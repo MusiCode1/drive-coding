@@ -6,6 +6,9 @@ import type { CacheStore } from "@drive-coding/core"
  * DiskCache — simple on-disk TTS cache.
  * Stores mp3 files as `{dir}/{sha256}.mp3`.
  * Slice 5: no eviction. Files accumulate until manually cleared.
+ *
+ * @deprecated Use createDiskCache<T>({ namespace, baseDir, encode, decode })
+ * from ./cache.ts for new code. DiskCache is kept for backward compatibility.
  */
 export class DiskCache implements CacheStore {
   constructor(private readonly dir: string) {}
