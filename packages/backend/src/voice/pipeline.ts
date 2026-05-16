@@ -74,6 +74,11 @@ export async function speakSentence(
   const model = registries.tts[config.ttsModel as keyof typeof registries.tts]
   if (!model) return err(`Unknown TTS model: ${config.ttsModel}`)
 
+  // TTS-2: voice ID is required — missing env var means TTS would silently fail with a 401
+  if (!config.ttsVoiceId) {
+    return err("TTS voice ID is not configured (ELEVENLABS_VOICE_ID missing)")
+  }
+
   const key = await cacheKeyFor(text, config.ttsVoiceId, config.ttsModel)
   const cached = await cache.get(key)
   if (cached) {
@@ -96,23 +101,34 @@ export async function speakSentence(
   }
 }
 
+/** GEMINI-3: default timeout for translation requests (ms). */
+const TRANSLATE_TIMEOUT_MS = 2500
+
 /**
  * Translates text to the target language using Gemini Flash.
+ * GEMINI-3: times out after TRANSLATE_TIMEOUT_MS (2500ms) to avoid blocking the audio pipeline.
+ * On timeout or any error → returns Err; the caller decides whether to skip or retry.
  * Slice 5: always translates (language detection is future work).
  */
 export async function translateText(
   text: string,
   config: VoiceConfig,
   registries: Pick<VoiceRegistries, "translator">,
+  timeoutMs = TRANSLATE_TIMEOUT_MS,
 ): Promise<Result<string, string>> {
   const model = registries.translator[config.translatorModel as keyof typeof registries.translator]
   if (!model) return err(`Unknown translator model: ${config.translatorModel}`)
 
   try {
-    const { text: translated } = await generateText({
+    const translatePromise = generateText({
       model,
       prompt: buildTranslationPrompt(text, config.targetLang),
     })
+    // GEMINI-3: race against timeout — a hung Gemini call blocks the audio pipeline
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Translation timeout after ${timeoutMs}ms`)), timeoutMs),
+    )
+    const { text: translated } = await Promise.race([translatePromise, timeoutPromise])
     return ok(translated.trim())
   } catch (e: unknown) {
     return err(`Translation failed: ${e instanceof Error ? e.message : String(e)}`)

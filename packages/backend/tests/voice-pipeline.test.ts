@@ -1,5 +1,5 @@
 import type { CacheStore } from "@drive-coding/core"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   speakSentence,
   transcribeUserAudio,
@@ -195,6 +195,30 @@ describe("speakSentence", () => {
   })
 })
 
+// ─── speakSentence — TTS-2: missing voice ID ─────────────────
+
+describe("speakSentence — TTS-2: missing ttsVoiceId", () => {
+  /** Covers behavior TTS-2: missing ELEVENLABS_VOICE_ID → Err returned immediately */
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("TTS-2: empty ttsVoiceId → returns Err without calling TTS API", async () => {
+    const result = await speakSentence(
+      "test text",
+      { ...baseConfig, ttsVoiceId: "" },
+      { tts: mockRegistries.tts },
+      makeCache(),
+      () => {},
+    )
+
+    expect(result.isErr()).toBe(true)
+    if (result.isErr()) expect(result.error).toMatch(/voice.*ID|ttsVoiceId/i)
+    // TTS API must NOT be called
+    expect(ai.experimental_generateSpeech).not.toHaveBeenCalled()
+  })
+})
+
 // ─── translateText ───────────────────────────────────────────
 describe("translateText", () => {
   beforeEach(() => {
@@ -238,6 +262,49 @@ describe("translateText", () => {
     const result = await translateText("hello", baseConfig, {
       translator: mockRegistries.translator,
     })
+    expect(result.isOk()).toBe(true)
+    if (result.isOk()) expect(result.value).toBe("שלום")
+  })
+})
+
+// ─── translateText — GEMINI-3: timeout ────────────────────────
+
+describe("translateText — GEMINI-3: translation timeout", () => {
+  /** Covers behavior GEMINI-3: timeout 2500ms → Err, pipeline continues */
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("GEMINI-3: translation that takes > timeoutMs → returns Err (timeout)", async () => {
+    // Mock generateText to never resolve (simulates a hung API call)
+    vi.mocked(ai.generateText).mockImplementation(() => new Promise<never>(() => {}))
+
+    const resultPromise = translateText("Hello", baseConfig, {
+      translator: mockRegistries.translator,
+    })
+
+    // Advance fake timers past the timeout
+    await vi.advanceTimersByTimeAsync(3000)
+
+    const result = await resultPromise
+    expect(result.isErr()).toBe(true)
+    if (result.isErr()) expect(result.error).toMatch(/timeout|Translation failed/i)
+  })
+
+  it("GEMINI-3: translation that resolves before timeout → returns ok", async () => {
+    vi.mocked(ai.generateText).mockResolvedValue({ text: "שלום" } as never)
+
+    const resultPromise = translateText("Hello", baseConfig, {
+      translator: mockRegistries.translator,
+    })
+    await vi.advanceTimersByTimeAsync(100)
+    const result = await resultPromise
+
     expect(result.isOk()).toBe(true)
     if (result.isOk()) expect(result.value).toBe("שלום")
   })
