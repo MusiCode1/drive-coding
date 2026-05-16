@@ -1,13 +1,34 @@
-import { elevenlabs } from "@ai-sdk/elevenlabs"
-import { google } from "@ai-sdk/google"
+import { createElevenLabs } from "@ai-sdk/elevenlabs"
+import { createGoogleGenerativeAI } from "@ai-sdk/google"
 import { geminiTranscription } from "./providers/gemini-transcription.js"
+
+/**
+ * Placeholder API keys.
+ *
+ * The SDKs (`@ai-sdk/elevenlabs`, `@ai-sdk/google`) check for an API key at
+ * construction time and fail-fast if missing. They send the key as HTTP header
+ * (`xi-api-key`, `x-goog-api-key`). In our runtime, OneCLI's proxy gateway
+ * intercepts outbound requests to the matching host and **replaces** the
+ * header value with the real secret. So a placeholder is sufficient — the
+ * real value never lives in our process memory.
+ *
+ * If OneCLI is NOT in the request path (e.g. unit tests), the placeholder
+ * causes a 401 from the upstream API, which is the desired behaviour.
+ *
+ * See learning 2026-05-14 (OneCLI selective agent) and learning 2026-05-13
+ * (ElevenLabs v3 is the only Hebrew-capable model).
+ */
+const PLACEHOLDER_KEY = "onecli-injects-this-at-proxy"
+
+const elevenlabs = createElevenLabs({ apiKey: PLACEHOLDER_KEY })
+const google = createGoogleGenerativeAI({ apiKey: PLACEHOLDER_KEY })
 
 /**
  * STT registry — maps model key to TranscriptionModelV3.
  * Slice 5: only Gemini Flash with context support (D39).
  */
 export const STT_REGISTRY = {
-  "gemini/flash-context": geminiTranscription("gemini-2.0-flash"),
+  "gemini/flash-context": geminiTranscription("gemini-flash-latest"),
 } as const
 
 export type SttModelKey = keyof typeof STT_REGISTRY
@@ -27,7 +48,7 @@ export type TtsModelKey = keyof typeof TTS_REGISTRY
  * Slice 5: Gemini Flash Lite for fast translation (D38).
  */
 export const TRANSLATOR_REGISTRY = {
-  "gemini/flash-lite": google("gemini-2.0-flash-lite"),
+  "gemini/flash-lite": google("gemini-flash-lite-latest"),
 } as const
 
 export type TranslatorModelKey = keyof typeof TRANSLATOR_REGISTRY

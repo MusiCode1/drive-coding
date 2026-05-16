@@ -15,7 +15,9 @@ export function geminiTranscription(modelId: string): TranscriptionModelV3 {
     modelId,
 
     async doGenerate(options) {
-      const ai = new GoogleGenAI({})
+      // Placeholder API key — OneCLI proxy replaces the `x-goog-api-key` header
+      // value at the network boundary. See providers.ts for full rationale.
+      const ai = new GoogleGenAI({ apiKey: "onecli-injects-this-at-proxy" })
 
       const geminiOpts = options.providerOptions?.gemini as Record<string, unknown> | undefined
       const prevText = geminiOpts?.previousAssistantText as string | undefined
