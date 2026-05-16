@@ -186,6 +186,10 @@
 | **D38** | **Vercel AI SDK כליבת ה-provider abstraction** ⭐ | החלפת ports מותאמים אישית ב-`TranscriptionModelV3`/`SpeechModelV3`/`LanguageModelV3`. 25+ providers רשמיים + 35+ community. spec פתוח לcustom providers (~30 שורות). חוסך ~800-1000 שורות backend |
 | **D39** | **Custom Gemini transcription provider שלנו** | AI SDK לא תומך ב-Gemini ל-STT (כי Gemini לא חושף Whisper-style). נכתוב adapter שעוטף `generateContent` עם audio inline, ~80 שורות. ייחודי אצלנו: previousAssistantText context support |
 | **D40** | **Hexagonal layer 2 — AI SDK contracts במקום ports שלנו** | עדכון של D28. ה-"Ports" של AI SDK (`TranscriptionModelV3` וכו') הופכים ל-interface שלנו. ה-`@ai-sdk/provider` הוא ה-package |
+| **D41** | **Build from scratch, לא fork acp-ui** (Q-NEW-4) | drive-first הוא הייחוד שלנו; Vue/Tauri tax לא-תרומתי; אבי בחר SvelteKit |
+| **D42** | **Audio cues — minimal 5 צלילים ל-MVP** (Q-NEW-5) | `recording_start`, `recording_stop`, `thinking`, `tool_call`, `error`. theme picker מאוחר יותר |
+| **D43** | **Provider scope — per-user** (Q-NEW-6) | בחירה אחת ב-`/settings` חלה על כל ה-agents של המשתמש. per-agent בעתיד אם נדרש |
+| **D44** | **קונטיינר 134 (voice-coda) נשמר** (Q-NEW-7) | reference + comparison לאחר Slices הבאים |
 
 ---
 

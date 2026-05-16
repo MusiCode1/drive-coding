@@ -88,9 +88,22 @@
 
 - **סטטוס:** פעיל — המשך סשן `ses_1d26848f8ffetPtC3UQ2eLBrpt` (planner). שלב: דיון על ארכיטקטורת הגרסה הבאה.
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** ✅ D38-D40 — Vercel AI SDK כליבת provider abstraction. D35-D36 (audio cues, provider UI) נוספו. Slice 5 הצטמצם דרסטית. מוכן לתחילת Slice 1.
+- **עובד על:** ✅ סבב 5 — סגירת Q-NEW-4/5/6/7 ב-D41-D44. כל ההחלטות נעולות. מוכן ל-Slice 1.
 
 ## לוג
+
+### [2026-05-16 02:30] ✅ סבב 5 — סגירת השאלות הפתוחות, מוכנים ל-Slice 1
+אבי קיבל את ההמלצות חוץ ממחיקת קונטיינר 134:
+- **D41** (Q-NEW-4): Build from scratch, לא fork acp-ui
+- **D42** (Q-NEW-5): Audio cues minimal — 5 צלילים בלבד ב-MVP
+- **D43** (Q-NEW-6): Provider scope per-user (לא per-agent)
+- **D44** (Q-NEW-7): קונטיינר 134 נשמר ל-reference
+
+כל ההחלטות (D1-D44) נעולות. כל השאלות הפתוחות (Q1-Q17 + Q-NEW-1/2/3/4/5/6/7) נסגרו.
+
+אבי ביקש תקציר של התוכנית והארכיטקטורה — סופק כתשובה בדיון.
+
+הצעד הבא: ירוק לפתיחת worktree `voice-acp-v2` ו-Slice 1 (~3.5 שעות).
 
 ### [2026-05-16 02:00] ✅ סבב 4 — Vercel AI SDK + voice-coda נוסה בקונטיינר
 אחרי שאבי ניסה את voice-coda בקונטיינר 134 (פרוס דרך sub-agent — VMID 134, IP 192.168.x.x, hostname `voice-coda-test`), הוא החליט: "נחמד אבל מדמיין משהו טוב יותר".
