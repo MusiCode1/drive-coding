@@ -180,6 +180,12 @@
 | **D32** | **לא להישען על voice-coda — לפנות בנימוס לבדיקת license** | אם יחזיר MIT/Apache, נשקול שיתוף פעולה. בינתיים — independent build |
 | **D33** | **השתמש ב-`@rebornix/stdio-to-ws` כ-bridge** | published ב-npm (v0.2.0, Apache-2.0). תומך `--persist`, `--grace-period`, Microsoft Dev Tunnels (`--tunnel`/`--tunnel-name`). משמש ב-acp-ui (274★). לא לכתוב משלנו |
 | **D34** | **`acp-ui` של formulahendry קיים — נשקול אסטרטגיה** | 274⭐, MIT, Vue+Tauri+Web. תומך 11 agents native, web build חי ב-acp-ui.github.io. לא תומך voice/RTL. **ראה Q-NEW-4 — build vs fork acp-ui** |
+| **D35** | **Audio cues — צלילי feedback למצבים** | מ-`voice-coda` ניסיון של אבי. מינימליסטי: recording_start/stop, thinking, tool_call, error. קבצי mp3 ב-`frontend/static/sounds/`. theme picker ב-settings |
+| **D36** | **Provider catalog ב-UI** | רשימה דינמית מ-`GET /api/providers`. dropdown ב-`/settings` ל-STT/TTS/translator. החלפה ב-runtime ללא restart |
+| **D37** | ~~SttProvider עם capability flags~~ | **מבוטל ב-D38** — AI SDK מטפל ב-capabilities דרך `warnings` field |
+| **D38** | **Vercel AI SDK כליבת ה-provider abstraction** ⭐ | החלפת ports מותאמים אישית ב-`TranscriptionModelV3`/`SpeechModelV3`/`LanguageModelV3`. 25+ providers רשמיים + 35+ community. spec פתוח לcustom providers (~30 שורות). חוסך ~800-1000 שורות backend |
+| **D39** | **Custom Gemini transcription provider שלנו** | AI SDK לא תומך ב-Gemini ל-STT (כי Gemini לא חושף Whisper-style). נכתוב adapter שעוטף `generateContent` עם audio inline, ~80 שורות. ייחודי אצלנו: previousAssistantText context support |
+| **D40** | **Hexagonal layer 2 — AI SDK contracts במקום ports שלנו** | עדכון של D28. ה-"Ports" של AI SDK (`TranscriptionModelV3` וכו') הופכים ל-interface שלנו. ה-`@ai-sdk/provider` הוא ה-package |
 
 ---
 
@@ -442,11 +448,84 @@ export async function spawnBridge(opts: {
 4. Backend נופל / מתעדכן → ה-bridge ממשיך, מצבר sessionUpdate notifications, ה-CLI ממשיך לעבד
 5. Backend חוזר → reconnect ל-WS עם `X-Client-Id` header → bridge עושה replay של ה-buffered events
 
-### 7.5 Voice Pipeline
-**מה:** STT → LLM router → TTS.
-**אחריות:** המרה דו-כיוונית בין אודיו לטקסט, plus translation אם נדרש.
-**Sub-modules:** `Stt` (Gemini), `Tts` (ElevenLabs), `Translator` (Gemini), `Cache`.
-**Pure?** core כן; HTTP fetches ב-edges.
+### 7.5 Voice Pipeline (D38 — Vercel AI SDK)
+
+**מה:** STT → translator/narrator → TTS, כל אחד עם בחירת provider דינמית.
+
+**אחריות:** orchestration (sentence boundary, cancel, cache). ה-provider abstraction מ-Vercel AI SDK.
+
+**Provider registry** (`backend/voice/providers.ts`):
+```ts
+import { openai } from '@ai-sdk/openai'
+import { elevenlabs } from '@ai-sdk/elevenlabs'
+import { deepgram } from '@ai-sdk/deepgram'
+import { google } from '@ai-sdk/google'
+import { geminiTranscription } from './providers/gemini-transcription' // D39
+
+import type { TranscriptionModelV3, SpeechModelV3, LanguageModelV3 } from '@ai-sdk/provider'
+
+export const STT_REGISTRY: Record<string, TranscriptionModelV3> = {
+  'gemini/flash-context': geminiTranscription('gemini-flash-latest'),  // ייעודי שלנו, תומך context
+  'openai/whisper-1': openai.transcription('whisper-1'),
+  'openai/gpt-4o-transcribe': openai.transcription('gpt-4o-transcribe'),
+  'deepgram/nova-3': deepgram.transcription('nova-3'),
+  'elevenlabs/scribe': elevenlabs.transcription('scribe_v1'),
+}
+
+export const TTS_REGISTRY: Record<string, SpeechModelV3> = {
+  'elevenlabs/v3': elevenlabs.speech('eleven_v3'),     // הכי טוב לעברית
+  'openai/tts-1': openai.speech('tts-1'),
+  'openai/tts-1-hd': openai.speech('tts-1-hd'),
+  'google/wavenet-he': google.speech('wavenet-he-IL'),
+}
+
+export const TRANSLATOR_REGISTRY: Record<string, LanguageModelV3> = {
+  'gemini/flash-lite': google('gemini-flash-lite-latest'),  // הקיים מה-POC
+  'openai/gpt-4o-mini': openai('gpt-4o-mini'),
+  'anthropic/haiku': anthropic('claude-haiku-latest'),
+}
+```
+
+**Pipeline orchestration** (`backend/voice/pipeline.ts`):
+```ts
+import { experimental_transcribe as transcribe, experimental_speech as speech, generateText } from 'ai'
+
+export async function voiceRoundtrip(input, deps, settings) {
+  // STT
+  const sttResult = await transcribe({
+    model: STT_REGISTRY[settings.sttModel],
+    audio: input.audioBytes,
+    providerOptions: settings.sttOptions,  // למשל לGemini: { gemini: { previousAssistantText: '...' } }
+  })
+
+  // הfeedback ל-frontend
+  deps.sendThinking(sttResult.text)
+
+  // ACP prompt (לא דרך AI SDK — דרך acp-bridge)
+  await deps.acpPrompt(sttResult.text)
+  // ה-ACP מחזיר session/update events. ב-onChunk נחתוך משפטים ונשלח ל-TTS.
+
+  // ל-thoughts — translator
+  for (const thought of accumulatedThoughts) {
+    const { text: translated } = await generateText({
+      model: TRANSLATOR_REGISTRY[settings.translatorModel],
+      prompt: TRANSLATE_THOUGHT_PROMPT(thought, settings.language),
+    })
+    deps.sendThoughtTranslation(translated)
+    // TTS
+    const audio = await speech({
+      model: TTS_REGISTRY[settings.ttsModel],
+      text: translated,
+      voice: settings.ttsVoiceId,
+    })
+    deps.sendAudio(audio.audioBytes)
+  }
+}
+```
+
+**Pure?** הליבה (sentence boundary, cancel logic, cache key derivation) — כן. הקריאות עצמן ב-pipeline shell.
+
+**Sub-modules:** `pipeline.ts` (orchestration), `providers.ts` (registries), `providers/gemini-transcription.ts` (custom D39), `cache.ts`.
 
 ### 7.6 Cache
 **מה:** persistence של קריאות יקרות.
@@ -485,19 +564,22 @@ drive-coding/
 │   │   ├── tests/               # 100% pure unit tests
 │   │   └── package.json
 │   │
-│   ├── backend/           # Imperative shell — IO + adapters + delivery
+│   ├── backend/           # Imperative shell — IO + integrations + delivery
 │   │   ├── src/
 │   │   │   ├── server.ts        # entry: HTTP + WS server
-│   │   │   ├── boot.ts          # wire ports ↔ adapters
-│   │   │   ├── adapters/        # implementations של ports
-│   │   │   │   ├── acp-bridge-transport.ts    # uses @flutur/acp-http-bridge
-│   │   │   │   ├── gemini-stt.ts
-│   │   │   │   ├── gemini-translator.ts
-│   │   │   │   ├── elevenlabs-tts.ts
-│   │   │   │   ├── whisper-local-stt.ts       # optional (BYOC)
-│   │   │   │   ├── piper-tts.ts               # optional (BYOC)
-│   │   │   │   ├── disk-cache.ts
-│   │   │   │   └── memory-cache.ts
+│   │   │   ├── boot.ts          # wire registries + dependencies
+│   │   │   ├── acp/             # ACP integration (D33)
+│   │   │   │   ├── bridge-spawn.ts        # spawn @rebornix/stdio-to-ws
+│   │   │   │   ├── bridge-manager.ts      # lifecycle, port allocation
+│   │   │   │   └── acp-transport.ts       # wraps ClientSideConnection
+│   │   │   ├── voice/           # voice pipeline + providers (D38)
+│   │   │   │   ├── providers.ts            # STT/TTS/translator registries
+│   │   │   │   ├── providers/
+│   │   │   │   │   └── gemini-transcription.ts   # custom (D39)
+│   │   │   │   ├── pipeline.ts             # round-trip orchestration
+│   │   │   │   ├── sentence-boundary.ts    # pure, מהPOC
+│   │   │   │   ├── cancel.ts               # cancel mid-speech state machine
+│   │   │   │   └── cache.ts                # in-memory + disk
 │   │   │   ├── app/             # application orchestration
 │   │   │   │   ├── voice-orchestrator.ts
 │   │   │   │   ├── agent-orchestrator.ts
@@ -538,15 +620,31 @@ drive-coding/
 ```
 
 **Dependencies חיצוניים מרכזיים:**
+
+ACP transport:
 - **`@rebornix/stdio-to-ws`** — bridge לכל CLI (D33). spawn דרך `npx`, אין צורך ב-import.
-- `@agentclientprotocol/sdk` — JSON-RPC types + client-side connection
+- `@agentclientprotocol/sdk` — JSON-RPC types + ClientSideConnection
 - `@agentclientprotocol/claude-agent-acp` — Claude Code adapter (D24)
+
+Voice (D38 — Vercel AI SDK):
+- `ai` — core SDK (`transcribe`, `speech`, `generateText`)
+- `@ai-sdk/provider` — types ל-custom providers (D39)
+- `@ai-sdk/openai` — Whisper, GPT-4o-transcribe, TTS, GPT-4o-mini (translator)
+- `@ai-sdk/elevenlabs` — Scribe (STT), Eleven v3 (TTS — הכי טוב לעברית)
+- `@ai-sdk/deepgram` — Nova-3 (STT הכי מהיר)
+- `@ai-sdk/google` — Gemini Flash (translator + native API ל-custom STT)
+- `@ai-sdk/anthropic` — Claude Haiku (translator fallback, אופציונלי)
+- `@google/genai` — used by custom Gemini transcription provider (D39)
+
+Schemas + utilities:
 - `neverthrow` — `Result<T, E>` ב-core (D31)
 - `arktype` — schemas ב-`core/schemas.ts` (D31)
-- `@google/genai` — STT + translator (Gemini)
-- `@ricky0123/vad-web` — VAD בעתיד (לא ב-MVP)
 
-**הסרה משמעותית:** ה-package `packages/acp-bridge/` שתוכנן ב-D23 ושוב ב-D30 — בוטל סופית ב-D33. אנחנו spawn-ים את `@rebornix/stdio-to-ws` כ-CLI binary, לא קוד שלנו.
+Future:
+- `@ricky0123/vad-web` — VAD (לא ב-MVP)
+- `@ai-sdk/groq` / `@ai-sdk/mistral` / ... — תוספות לפי דרישת משתמש
+
+**הסרה משמעותית:** ה-package `packages/acp-bridge/` שתוכנן ב-D23 ושוב ב-D30 — בוטל סופית ב-D33. ה-adapters המותאמים אישית ל-STT/TTS שתוכננו ב-D27 הוחלפו ב-Vercel AI SDK packages (D38). חיסכון מוערך: ~800-1000 שורות backend.
 
 ### 8.2 Key boundaries
 

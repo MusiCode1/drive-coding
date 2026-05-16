@@ -4,6 +4,54 @@
 
 ---
 
+## 2026-05-16 02:00 (master, planner-agent Tama)
+
+### תכנון vNext — סבב 4: Vercel AI SDK + voice-coda tested
+
+אבי ניסה את voice-coda בקונטיינר 134 (`voice-coda-test`, 192.168.x.x) שנפרס ע"י sub-agent. תגובה: "נחמד אבל מדמיין משהו טוב יותר".
+
+הצרכים החדשים שהוגדרו:
+- ממשק קולי ברור יותר (קיים ב-§9.6)
+- **צלילים שמסמנים פעולות** ⭐ חדש
+- ריצה גם כשהדף סגור (קיים ב-D33)
+- multi-agent (קיים ב-D12)
+- תמלול חכם של Gemini (חדש ב-D39)
+- **Provider abstraction לתמיכה בהרבה ספקים** ⭐ חדש
+
+אבי הציע "בטח Vercel" — והוא צודק. **Vercel AI SDK** הוא ה-provider abstraction הנכון:
+- TypeScript first, MIT, 30k⭐
+- API אחיד ל-`transcribe`, `speech`, `generateText`
+- 25+ providers רשמיים + 35+ community
+- spec פתוח `language-model-v3` ל-custom providers (~30 שורות)
+- Streaming + AbortSignal + middleware מובנים
+
+בדיקת Gemini OpenAI compatibility: chat completions כן, audio לא, Responses API לא. אז OpenAI envelope אחיד לא מספיק.
+
+**6 D-החלטות חדשות (D35-D40):**
+- D35 — Audio cues system (mp3, theme picker)
+- D36 — Provider catalog ב-UI (dropdown ב-/settings, runtime swap)
+- D37 — מבוטל (AI SDK מטפל ב-capabilities)
+- D38 ⭐ — Vercel AI SDK כליבת provider abstraction. **חוסך ~800-1000 שורות backend.**
+- D39 — Custom Gemini transcription provider (AI SDK לא תומך). ~80 שורות.
+- D40 — Hexagonal layer 2 משתמש ב-AI SDK contracts (עדכון D28)
+
+**שינויי spec:**
+- §7.5 (Voice Pipeline) שוכתב מלא עם registries + pipeline orchestration דרך AI SDK
+- §8 monorepo: `voice/` package במקום `adapters/`. dependencies list עם 7 חבילות AI SDK
+- §6 (Ports) שוכתב — אין יותר SttProvider/TtsProvider/TranslatorProvider שלנו. שימוש ב-`@ai-sdk/provider`. דוגמת קוד מלאה ל-D39
+- §8.5 roadmap: Slice 5 הצטמצם דרסטית (npm install + 5 שורות registry במקום 4 adapters). Slice 8 שינה כיוון מ-"local providers" ל-"provider catalog UI"
+
+**חיסכון מצטבר ב-roadmap:**
+- D33 (אחרי סבב 3): bridge מצטמצם מ-200 שורות ל-spawn npm package
+- D38 (סבב 4 הזה): voice adapters מצטמצמים מ-~600 שורות ל-~80 (custom Gemini בלבד)
+- סה"כ: ~800 שורות backend פחות לכתוב, ועדכון פשוט יותר לתוספת ספק
+
+קונטיינר 134 נשאר עומד ל-reference. אם לא יצטרך עוד יום — `pct stop 134 && pct destroy 134`.
+
+המסמכים production-ready להתחלת Slice 1. ממתין לאישור Q-NEW-5/6/7 ולירוק.
+
+---
+
 ## 2026-05-15 05:00 (master, planner-agent Tama)
 
 ### תכנון vNext — ממצא קריטי: bridge מוכן + מתחרה web נוסף

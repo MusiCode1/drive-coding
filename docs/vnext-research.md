@@ -161,6 +161,35 @@ npx @rebornix/stdio-to-ws "opencode acp" --tunnel-name drive-coding-prod --persi
 
 **רלוונטיות לנו:** לא ל-bridge. אבל יש שם רעיונות מעניינים — flows (TypeScript workflows), graceful cancel, queue owner TTL — שכדאי ללמוד מהם בעתיד.
 
+### 1.8 ❗❗❗ עדכון 4 (סבב 4) — Vercel AI SDK הוא ה-provider abstraction הנכון
+
+אבי הציע: "בטח יש מישהו שכבר בנה הפשטה לכל ספקי ה-LLM, למשל Vercel". התשובה — **כן, וזה Vercel AI SDK**, וזה משנה את הspec שלנו לחלוטין.
+
+**[Vercel AI SDK](https://ai-sdk.dev/)** (`ai` npm, 30k+ stars):
+
+- TypeScript first, MIT, maintained by Vercel.
+- API אחיד ל-`generateText`, `streamText`, `transcribe`, `speech`, `generateImage`, `generateObject`.
+- **25+ providers רשמיים:** OpenAI, Anthropic, Google (Gemini), Mistral, DeepSeek, Cerebras, Groq, ElevenLabs, Deepgram, Rev.ai, AssemblyAI, Gladia, LMNT, Hume, Cohere, xAI, Bedrock, Vertex, Azure, Fireworks, Together, Perplexity, Fal, DeepInfra, Baseten.
+- **35+ community providers:** Ollama, OpenRouter, Cloudflare Workers AI, Claude Code, Gemini CLI, ועוד.
+- **spec פתוח `language-model-v3`** — כל אחד יכול לכתוב provider משלו ב-~30 שורות.
+- middleware, streaming, AbortSignal, error handling, telemetry — מובנה.
+
+**STT providers ב-AI SDK:** OpenAI Whisper (3 גרסאות), ElevenLabs Scribe, Groq Whisper, Azure, Deepgram (5 דגמים), Rev.ai (3), Gladia, AssemblyAI, Fal.
+
+**Gemini Transcription — חסר ב-AI SDK.** Google לא חושפים Whisper-style endpoint ל-Gemini STT. נצטרך לכתוב custom provider (D39, ~80 שורות) שעוטף את `generateContent` native API.
+
+**Gemini OpenAI compatibility:** כן ל-chat completions (`https://generativelanguage.googleapis.com/v1beta/openai/`). לא ל-audio. לא ל-Responses API (כי זה ייחודי ל-OpenAI 2025).
+
+**השלכה על הspec:**
+- ביטול ports מותאמים אישית ל-STT/TTS/Translator ב-`packages/core/src/ports.ts`.
+- שימוש ב-`TranscriptionModelV3`, `SpeechModelV3`, `LanguageModelV3` מ-`@ai-sdk/provider`.
+- registries ב-`backend/voice/providers.ts`: STT_REGISTRY, TTS_REGISTRY, TRANSLATOR_REGISTRY.
+- custom Gemini transcription ב-`backend/voice/providers/gemini-transcription.ts` (D39).
+- frontend מקבל רשימת מפתחות מ-`GET /api/providers`, dropdown ב-`/settings` ל-runtime swapping.
+- **חיסכון מוערך:** ~800-1000 שורות backend. תוספת ספק חדש = שורה ב-registry.
+
+**ההחלטות שננעלו:** D38, D39, D40 (עדכון של D28 — Layer 2 משתמש ב-AI SDK contracts).
+
 ---
 
 ## 2. Voice CLI prior art
@@ -536,16 +565,18 @@ drive-coding/
 
 ---
 
-## 8. סיכום הממצאים — TL;DR (מעודכן אחרי סבב 3)
+## 8. סיכום הממצאים — TL;DR (מעודכן אחרי סבב 4)
 
-1. ❗❗ **`@rebornix/stdio-to-ws` הוא הפתרון** — published ב-npm, Apache-2.0, תומך `--persist`, `--grace-period`, Microsoft Dev Tunnels. בשימוש ע"י acp-ui (274★). **D33: spawn it, don't write it.**
-2. ❗❗ **`formulahendry/acp-ui` הוא מתחרה web UI בוגר** — MIT, 274★, Vue+Tauri+Web, 11 agents נתמכים. אופציה אסטרטגית: build vs fork (Q-NEW-4).
-3. ~~`@flutur/acp-http-bridge`~~ — לא בשל, מבוטל.
-4. ACP RFD רשמית קיימת — אנחנו מיישרים את הפרוטוקול שלנו ל-spec.
-5. `voice-coda` ללא license — אסור fork/copy. רק inspiration רעיונית.
-6. **ArkType + neverthrow** — לא Zod (אבי כבר ב-ArkType).
-7. `@ricky0123/vad-web` ל-VAD בעתיד — לא ב-MVP.
-8. openWakeWord ל-wake word — אומת ב-`voice-coda`, custom model אפשרי.
-9. **Hexagonal architecture מינימלי** — 2 packages (`core` + `backend`).
-10. Whisper לוקלי + Piper לוקלי כאופציה ל-BYOC.
-11. `openclaw/acpx` (2.7k★) — CLI client, לא bridge. inspiration ל-flows ו-queue management.
+1. ❗❗❗ **Vercel AI SDK הוא ה-provider abstraction** — TypeScript, 30k★, 25+ official + 35+ community providers, spec פתוח ל-custom. **D38: אימוץ מלא, מחליף ports מותאמים אישית.**
+2. ❗❗ **`@rebornix/stdio-to-ws` הוא הbridge** — published ב-npm, Apache-2.0, תומך `--persist`, `--grace-period`, Microsoft Dev Tunnels. **D33: spawn it.**
+3. ❗❗ **`formulahendry/acp-ui` הוא מתחרה web UI בוגר** — MIT, 274★. אופציה Q-NEW-4: build vs fork. ההמלצה: build (drive-first הוא הייחוד).
+4. ~~`@flutur/acp-http-bridge`~~ — לא בשל, מבוטל.
+5. ACP RFD רשמית קיימת — אנחנו מיישרים את הפרוטוקול שלנו ל-spec.
+6. `voice-coda` ללא license — אסור fork/copy. inspiration רעיונית.
+7. **Gemini STT חסר ב-AI SDK** → D39: custom provider שלנו, ~80 שורות, תומך previousAssistantText context.
+8. **Gemini OpenAI compatibility** — chat completions כן, audio לא, Responses API לא.
+9. **ArkType + neverthrow** — לא Zod (אבי כבר ב-ArkType).
+10. `@ricky0123/vad-web` ל-VAD בעתיד — לא ב-MVP.
+11. openWakeWord ל-wake word — אומת ב-`voice-coda`.
+12. **Hexagonal מינימלי** — 2 packages (`core` + `backend`), AI SDK contracts ב-Layer 2.
+13. `openclaw/acpx` (2.7k★) — inspiration ל-flows ו-queue management.

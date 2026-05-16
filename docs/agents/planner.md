@@ -88,9 +88,45 @@
 
 - **סטטוס:** פעיל — המשך סשן `ses_1d26848f8ffetPtC3UQ2eLBrpt` (planner). שלב: דיון על ארכיטקטורת הגרסה הבאה.
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** ✅ ממצא קריטי — `@rebornix/stdio-to-ws` קיים ב-npm. ביטול D30, הוספת D33+D34. נמצא גם acp-ui (274★) — שאלה אסטרטגית Q-NEW-4 (build vs fork).
+- **עובד על:** ✅ D38-D40 — Vercel AI SDK כליבת provider abstraction. D35-D36 (audio cues, provider UI) נוספו. Slice 5 הצטמצם דרסטית. מוכן לתחילת Slice 1.
 
 ## לוג
+
+### [2026-05-16 02:00] ✅ סבב 4 — Vercel AI SDK + voice-coda נוסה בקונטיינר
+אחרי שאבי ניסה את voice-coda בקונטיינר 134 (פרוס דרך sub-agent — VMID 134, IP 192.168.x.x, hostname `voice-coda-test`), הוא החליט: "נחמד אבל מדמיין משהו טוב יותר".
+
+הצרכים החדשים שהוגדרו:
+- ממשק קולי ברור יותר → ב-§9.6 UX (קיים)
+- **צלילים שמסמנים פעולות** ⭐ חדש → **D35**
+- ריצה גם כשהדף סגור → D33 acp-bridge (קיים)
+- כמה סוכנים במקביל → D12 multi-session (קיים)
+- תמלול חכם של Gemini → D39 (חדש)
+- **Provider abstraction** ⭐ חדש לדגש → **D38**
+
+בדיקה: Gemini תומך ב-OpenAI compatibility ל-chat בלבד, לא audio, לא Responses API. אז OpenAI envelope אחיד לא מספיק.
+
+אבי הציע "בטח Vercel" — והוא צודק:
+
+**[Vercel AI SDK](https://ai-sdk.dev/)** — TypeScript, 30k★, MIT. 25+ providers רשמיים + 35+ community. API אחיד ל-`transcribe`/`speech`/`generateText`. spec פתוח `language-model-v3` ל-custom providers (~30 שורות). מובנה streaming, AbortSignal, error handling.
+
+החלטות חדשות:
+- **D35** — Audio cues system. mp3 ב-`frontend/static/sounds/`. minimal events: recording_start/stop, thinking, tool_call, error. theme picker ב-settings.
+- **D36** — Provider catalog ב-UI. `GET /api/providers` עם רשימה דינמית. dropdown ב-`/settings`. החלפה ב-runtime.
+- **D37** — `SttProvider capability flags` — מבוטל (AI SDK מטפל דרך `warnings`).
+- **D38** ⭐ — Vercel AI SDK כליבת provider abstraction. החלפת ports מותאמים אישית ב-`TranscriptionModelV3`/`SpeechModelV3`/`LanguageModelV3`. registries ב-`backend/voice/providers.ts`. חיסכון ~800-1000 שורות backend.
+- **D39** — Custom Gemini transcription provider. AI SDK לא תומך, נכתוב adapter ~80 שורות. ייחודי שלנו: previousAssistantText context.
+- **D40** — Hexagonal layer 2 משתמש ב-AI SDK contracts. עדכון של D28.
+
+שינויי spec:
+- `vnext-architecture.md`: 6 D-החלטות חדשות (D35-D40). §7.5 (Voice Pipeline) שוכתב מלא עם registries + pipeline orchestration. §8 monorepo structure: `voice/` package במקום `adapters/`. dependencies list מפורט עם 7 חבילות AI SDK.
+- `vnext-spec.md`: §6 שוכתב — אין יותר SttProvider/TtsProvider/TranslatorProvider שלנו. שימוש ב-`@ai-sdk/provider` types. דוגמת קוד מלאה ל-D39. §8.5 roadmap עודכן — Slice 5 הצטמצם דרסטית, Slice 8 שינה כיוון מ-"local providers" ל-"provider catalog UI".
+- `vnext-research.md`: §1.8 חדש על AI SDK, §8 TL;DR נכתב מחדש (סבב 4).
+
+עוד דברים:
+- קונטיינר 134 (voice-coda) — נשאר עומד ל-reference. אם אבי לא יצטרך אותו עוד 24h אמליץ למחוק (`pct stop 134 && pct destroy 134`).
+- voice-coda issue ל-evanstern על license — לא נשלח עדיין. שאלה פתוחה: האם רלוונטי אחרי שהחלטנו על AI SDK?
+
+הצעדים הבאים: ממתין לאישור על Q-NEW-5/6/7 (audio cues theme, provider scope, container fate), ולירוק לתחילת Slice 1. כל המסמכים מסונכרנים ובמצב production-ready.
 
 ### [2026-05-15 05:00] ✅ ממצא קריטי — bridge מוכן ב-npm + acp-ui מתחרה web
 אבי הצביע על שיחה אחרת (`ses_1d1d7e005ffehwl6wIsjsw6wKI`) שבה הסוכן מצא:

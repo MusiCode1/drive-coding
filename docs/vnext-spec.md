@@ -600,7 +600,78 @@ export type BridgeClientMessage =
 
 ## 6. Ports
 
-הinterfaces האלה חיים ב-`packages/core/src/ports.ts`. הקוד ב-`core/` משתמש בהם בלבד; ה-implementations חיים ב-`packages/backend/src/adapters/`.
+**עדכון D38:** במקום ports מותאמים אישית ל-STT/TTS/Translator, אנחנו משתמשים ב-`@ai-sdk/provider` של Vercel AI SDK כסטנדרט. רק ports ייחודיים לנו (ACP, BridgeManager, IdentityStore, AgentRegistry) חיים ב-`core/ports.ts`.
+
+### 6.1 Voice Providers — מאומצים מ-AI SDK
+
+```ts
+// אין צורך להגדיר — מתוך @ai-sdk/provider
+
+import type {
+  TranscriptionModelV3,
+  SpeechModelV3,
+  LanguageModelV3,
+} from "@ai-sdk/provider"
+
+// ה-models מוגדרים ב-backend/voice/providers.ts:
+import { STT_REGISTRY, TTS_REGISTRY, TRANSLATOR_REGISTRY } from "./providers"
+```
+
+ה-`TranscriptionModelV3` interface הוא של AI SDK ולא נשלט על-ידינו. רואה https://github.com/vercel/ai/tree/main/packages/provider/src/transcription-model
+
+ה-pipeline משתמש דרך `ai`:
+
+```ts
+import { experimental_transcribe as transcribe } from "ai"
+
+const result = await transcribe({
+  model: STT_REGISTRY[voiceSettings.sttModel],
+  audio: audioBytes,
+  abortSignal: controller.signal,
+})
+// result.text, result.segments, result.language, result.durationInSeconds
+```
+
+### 6.2 Custom Provider — `geminiTranscription` (D39)
+
+AI SDK לא תומך ב-Gemini ל-STT (כי Gemini לא חושף Whisper-style endpoint). נכתוב משלנו:
+
+```ts
+// packages/backend/src/voice/providers/gemini-transcription.ts
+
+import type { TranscriptionModelV3, TranscriptionModelV3CallOptions } from "@ai-sdk/provider"
+import { GoogleGenerativeAI } from "@google/genai"
+
+export function geminiTranscription(modelId: string): TranscriptionModelV3 {
+  return {
+    specificationVersion: "v3",
+    provider: "gemini-custom",
+    modelId,
+
+    async doGenerate(options: TranscriptionModelV3CallOptions) {
+      const genai = new GoogleGenerativeAI({ apiKey: process.env.GEMINI_API_KEY })
+      const model = genai.getGenerativeModel({ model: modelId })
+
+      // ייחודי שלנו — context מהמסר הקודם
+      const previousContext = options.providerOptions?.gemini?.previousAssistantText
+      const systemPrompt = buildSystemPrompt(options.providerOptions?.gemini?.languageHint, previousContext)
+
+      const result = await model.generateContent([
+        { text: systemPrompt },
+        { inlineData: { mimeType: options.mediaType, data: bytesToBase64(options.audio) } },
+      ], { abortSignal: options.abortSignal })
+
+      return {
+        text: result.response.text(),
+        warnings: [],
+        // optional: segments, language, durationInSeconds (אם Gemini יחזיר)
+      }
+    },
+  }
+}
+```
+
+### 6.3 Ports שלנו (נשארים בכוח)
 
 ```ts
 // packages/core/src/ports.ts
@@ -608,67 +679,10 @@ export type BridgeClientMessage =
 import type { ResultAsync } from "neverthrow"
 import type {
   SessionNotification,
-  RequestPermissionRequest,
   PromptResponse,
 } from "@agentclientprotocol/sdk"
 
-// ─── STT ──────────────────────────────────────────────────────
-
-export type SttInput = {
-  readonly audioBytes: Uint8Array
-  readonly mimeType: string
-  readonly languageHint: string                // 'he' | 'en'
-  readonly previousAssistantText: string | null
-}
-
-export type SttOutput = {
-  readonly text: string
-  readonly durationMs: number
-}
-
-export type SttError =
-  | { readonly kind: "network"; readonly message: string }
-  | { readonly kind: "auth"; readonly message: string }
-  | { readonly kind: "quota"; readonly message: string }
-  | { readonly kind: "invalid_audio"; readonly message: string }
-  | { readonly kind: "unknown"; readonly message: string }
-
-export interface SttProvider {
-  transcribe(input: SttInput): ResultAsync<SttOutput, SttError>
-}
-
-// ─── TTS ──────────────────────────────────────────────────────
-
-export type TtsInput = {
-  readonly text: string
-  readonly voiceId: string
-  readonly languageHint: string
-}
-
-export type TtsOutput = {
-  readonly audioBytes: Uint8Array
-  readonly mimeType: string                    // 'audio/mpeg' / 'audio/opus'
-}
-
-export type TtsError = SttError                // אותו שלד
-
-export interface TtsProvider {
-  synthesize(input: TtsInput): ResultAsync<TtsOutput, TtsError>
-}
-
-// ─── Translator ───────────────────────────────────────────────
-
-export type TranslateInput = {
-  readonly text: string
-  readonly fromLang: string
-  readonly toLang: string
-}
-
-export interface TranslatorProvider {
-  translate(input: TranslateInput): ResultAsync<string, SttError>
-}
-
-// ─── ACP Transport (אחר ה-bridge) ─────────────────────────────
+// ─── ACP Transport ─────────────────────────────────────────────
 
 export type AcpCapabilities = {
   readonly loadSession: boolean
@@ -958,14 +972,17 @@ Slice 1 הוא ה-vertical slice הראשון. תוצר: **echo server עובד 
 | 2 | Identity persistence + dashboard (רשימת agents ריקה) + agent creation flow ב-UI |
 | 3 | `BridgeManager` — spawn `npx @rebornix/stdio-to-ws "opencode acp" --port 0 --persist --grace-period -1`, parse port, manage lifecycle (פשוט מאוד אחרי D33) |
 | 4 | `AcpTransport` adapter סביב `ClientSideConnection` של `@agentclientprotocol/sdk`. `/agent/:id` עם chat טקסטואלי בלי voice |
-| 5 | Voice pipeline — STT (Gemini) + TTS (ElevenLabs) — voice round-trip עובד |
-| 6 | Multi-session + disk cache + reconnect (משתמשים ב-`--client-id` של bridge) |
-| 7 | Drive-first UX מלא — כפתור גדול, state machine, animations |
-| 8 | Whisper local + Piper local (BYOC options) |
+| 5 | **Voice pipeline (D38)** — install AI SDK + 5 providers (`openai`, `elevenlabs`, `deepgram`, `google`, custom `gemini-transcription`). registry של STT/TTS/translator. `transcribe()` + `speech()` + `generateText()` integration. voice round-trip עובד עם Gemini STT + ElevenLabs v3 TTS + Gemini Flash translator |
+| 6 | Multi-session + disk cache (לפי `text + voice + model` key) + reconnect (משתמשים ב-`--client-id` של bridge) |
+| 7 | Drive-first UX מלא — כפתור גדול, state machine, animations, **D35 audio cues** (mp3 ב-static) |
+| 8 | **Provider catalog UI (D36)** — `GET /api/providers` עם רשימה דינמית מ-registries. dropdown ב-`/settings` ל-STT/TTS/translator. test buttons. החלפה ב-runtime |
 | 9 | i18n infra (גם עברית) + UI text catalogs |
 | 10 | Production deploy — Docker compose + Cloudflare tunnel + systemd |
 
-**שינוי משמעותי לאחר D33:** Slice 3 הצטמצם דרסטית. במקום לכתוב 200 שורות bridge — אנחנו spawn-ים npm package + parsing port. פשטות. ההמלצה: לאחד את 3+4 ל-Slice יחיד אם הזמן מאפשר.
+**שינויים משמעותיים:**
+- **Slice 3 (אחרי D33)** הצטמצם דרסטית. במקום לכתוב 200 שורות bridge — אנחנו spawn-ים npm package + parsing port. ההמלצה: לאחד את 3+4 ל-Slice יחיד אם הזמן מאפשר.
+- **Slice 5 (אחרי D38)** הצטמצם דרסטית. במקום לכתוב 4 adapters (Gemini STT + Gemini translator + ElevenLabs TTS + cache) — `npm install` של 5 packages + 5 שורות registry + ~80 שורות custom Gemini transcription provider.
+- **Slice 8 השתנה** מ-"Whisper local + Piper local" ל-"Provider catalog UI". המקור (BYOC עם local models) הוכלל ב-Slice 5 (כל ספק שזמין ב-AI SDK = מתווסף ל-registry בקלות).
 
 ---
 
