@@ -3,6 +3,54 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-16 (TDD) — סגירת 9 פערי כיסוי behaviors
+
+### סיכום
+
+סוכן TDD סגר את כל 9 הפערים שזוהו ב-`docs/behaviors-coverage.md` (High + Medium Priority).
+
+#### סטטיסטיקה לפני/אחרי
+
+| סטטוס | לפני | אחרי |
+|--------|------|------|
+| ✅ מכוסה | 43 | **52** (+9) |
+| ❌ לא מכוסה | 15 | 6 |
+| ⚠️ חלקית | 15 | 15 |
+| 🚫 לא רלוונטי | 150 | 150 |
+| **סה"כ tests** | **308** (backend) | **325** (backend) |
+
+#### פערים שנסגרו
+
+| ID | תיאור | impl שינוי? | קובץ test |
+|----|--------|------------|-----------|
+| PROMPT-1 | busy flag — concurrent prompts | ✅ הוסף `isBusy` ל-`sendPrompt` | agent-session.test.ts |
+| STT-8 | empty transcript → done מיידי | ✅ early-return לפני ACP | agent-session-audio.test.ts |
+| PROMPT-5 | serial TTS queue | — (impl קיים) | agent-session-audio.test.ts |
+| ACP-9 | unknown sessionUpdate → silently ignored | — (impl קיים) | agent-session.test.ts |
+| TTS-2 | missing ttsVoiceId → Err | ✅ validation לפני TTS API | voice-pipeline.test.ts |
+| GEMINI-3 | translation timeout 2500ms | ✅ `Promise.race` + timeout | voice-pipeline.test.ts |
+| ACP-13 | stopReason≠end_turn → warn log | ✅ `console.warn` נוסף | agent-session.test.ts |
+| MARKDOWN-7 | replace order קבוע | — (impl קיים) | core/tests/ui/markdown.test.ts |
+| ACP-17 | session/new mcpServers:[] | — (impl קיים) | acp-transport.test.ts |
+
+#### באג audio_chunk — סטטוס
+
+הבאג שחשד ב-PROMPT-5 ו-GEMINI-3 כגורם לבעיות audio_chunk **לא אושר**:
+- PROMPT-5 (serial queue): הImpl הקיים נכון. הtest מאשר שסדר ה-chunks תקין.
+- GEMINI-3 (translation timeout): הTimeout לא היה קיים — נוסף. בהיעדר timeout, pipeline תקועה חוסמת את כל ה-audio. תיקון הוסף.
+
+אין עדות לבאג audio_chunk ספציפי בסביבת ה-tests.
+
+#### קבצים שנוצרו
+
+- `packages/backend/tests/agent-session-audio.test.ts` — tests ל-sendAudioPrompt (STT-8, PROMPT-5)
+
+#### קבצים שעודכנו (impl)
+
+- `packages/backend/src/app/agent-session.ts` — isBusy flag, empty transcript check, stopReason warn
+- `packages/backend/src/voice/pipeline.ts` — ttsVoiceId validation, translateText timeout
+
+---
 ## 2026-05-16 (docs) — מיפוי כיסוי behaviors v1 → vnext
 
 ### behaviors-coverage.md נוצר

@@ -9,9 +9,9 @@
 ## סיכום
 
 - **סה"כ behaviors (v1):** 223 (+ 6 מסוג Q — planned/לא מומשו גם ב-v1)
-- ✅ **כוסה:** 43 (19%)
+- ✅ **כוסה:** 52 (23%) — +9 מסגירת פערים 2026-05-16
 - ⚠️ **כוסה חלקית:** 15 (7%)
-- ❌ **לא כוסה (אבל צריך לכסות):** 15 (7%)
+- ❌ **לא כוסה (אבל צריך לכסות):** 6 (3%)
 - 🚫 **לא רלוונטי ב-vnext:** 150 (67%)
 
 ### למה 67% "לא רלוונטי"?
@@ -64,7 +64,7 @@ vnext הוא ארכיטקטורה שונה לחלוטין מ-v1:
 | STT-5c | prompt ניתן להחלפה | 🚫 | — | gemini-transcription משתמש בפרומפט קבוע |
 | STT-6 | שמירת שפת המקור | ✅ | backend/tests/gemini-transcription.test.ts | "do not transliterate…original script" נבדק |
 | STT-7 | ריצה במקביל לשמירת הקלטה | 🚫 | — | שמירת הקלטות לא ממומשת ב-vnext |
-| STT-8 | תמלול ריק → done מיידי | ❌ | — | short-circuit על transcript ריק לא נבדק |
+| STT-8 | תמלול ריק → done מיידי | ✅ | backend/tests/agent-session-audio.test.ts | empty + whitespace-only transcript → done מיידי, transport.prompt לא נקרא |
 | STT-9 | שליחת transcript ל-frontend | ⚠️ | frontend/src/lib/stores/agent-session.test.ts | vnext שולח `stt_partial` (לא `transcript`); נבדק בצד frontend |
 
 ---
@@ -81,15 +81,15 @@ vnext הוא ארכיטקטורה שונה לחלוטין מ-v1:
 | ACP-6 | YOLO permission mode | ✅ | backend/tests/client-impl.test.ts | allow_once>allow_always>first, no-options→cancelled |
 | ACP-7 | agent_message/thought/user_message chunks | ✅ | backend/tests/agent-session.test.ts + acp-transport.test.ts | כל 3 ה-kinds נבדקו |
 | ACP-8 | tool_call / tool_call_update | ✅ | backend/tests/agent-session.test.ts | tool_call notification → broadcasts |
-| ACP-9 | התעלמות מ-plan/mode_update/config/session_info | ❌ | — | unrecognized sessionUpdate types לא נבדקו |
+| ACP-9 | התעלמות מ-plan/mode_update/config/session_info | ✅ | backend/tests/agent-session.test.ts | unknown sessionUpdate → default:break, no exception, no broadcast |
 | ACP-10 | prompt רק עם sessionId קיים | ✅ | backend/tests/acp-transport.test.ts | start() חובה לפני prompt() |
 | ACP-11 | setModel = unstable_setSessionModel | 🚫 | — | vnext מגדיר model ב-agent creation בלבד |
 | ACP-12 | dispose: stdin.end→SIGTERM→SIGKILL | ⚠️ | backend/tests/bridge-manager.test.ts | kill() נבדק; סדר stdin/SIGTERM/SIGKILL לא |
-| ACP-13 | stopReason ≠ end_turn → warning | ❌ | — | agent-session.test.ts בדק `cancelled` אבל לא logging/behavior |
+| ACP-13 | stopReason ≠ end_turn → warning | ✅ | backend/tests/agent-session.test.ts | console.warn עם stopReason, done עדיין נשלח |
 | ACP-14 | loadSession משחזר היסטוריה | 🚫 | — | אין loadSession ב-vnext |
 | ACP-15 | extractSessionResult → models | 🚫 | — | availableModels/currentModelId לא ב-vnext |
 | ACP-16 | listSessions early return | 🚫 | — | אין listSessions ב-vnext |
-| ACP-17 | newSession + loadSession שולחים mcpServers:[] | ❌ | — | session/new payload לא מאומת ב-test |
+| ACP-17 | newSession + loadSession שולחים mcpServers:[] | ✅ | backend/tests/acp-transport.test.ts | session/new payload מאומת: mcpServers:[] |
 
 ---
 
@@ -97,13 +97,13 @@ vnext הוא ארכיטקטורה שונה לחלוטין מ-v1:
 
 | ID | תיאור קצר | סטטוס | test path | הערה |
 |----|-----------|--------|-----------|------|
-| PROMPT-1 | busy flag, no concurrent prompts | ❌ | — | AgentSession לא נבדק לconcurrent sends |
+| PROMPT-1 | busy flag, no concurrent prompts | ✅ | backend/tests/agent-session.test.ts | isBusy flag, שני sendPrompt מקבילים → BUSY error |
 | PROMPT-2 | שליחת `thinking` בתחילת prompt | ✅ | backend/tests/agent-session.test.ts | "broadcasts thinking then done" |
 | PROMPT-3 | הזרקת system prompt בקריאה ראשונה | 🚫 | — | vnext לא מזריק system prompt |
 | PROMPT-4 | system prompt נחשב נשלח אם session נטען | 🚫 | — | " |
-| PROMPT-5 | ttsQueue סדרתי משותף | ❌ | — | serial TTS queue לא נבדק |
+| PROMPT-5 | ttsQueue סדרתי משותף | ✅ | backend/tests/agent-session-audio.test.ts | 3 משפטים → audio chunks מגיעים בסדר |
 | PROMPT-6 | streamCounter → streamId ייחודי | 🚫 | — | ארכיטקטורה שונה |
-| PROMPT-7 | streamTts try/catch per segment | ❌ | — | TTS error handling per segment לא נבדק |
+| PROMPT-7 | streamTts try/catch per segment | ❌ | — | TTS error handling per segment לא נבדק — Err מוחזר לcallback, pipeline ממשיכה |
 | PROMPT-8 | messageBuffer + flushMessage per sentence | ⚠️ | core/tests/voice/sentence-boundary.test.ts | splitIntoSentences נבדק; integration עם pipeline לא |
 | PROMPT-9 | flushMessage: 3 פעולות בסדר | 🚫 | — | ארכיטקטורה שונה (vnext: pipeline נפרד) |
 | PROMPT-10 | thoughtBuffer + flushThought + ttsQueue | 🚫 | — | " |
@@ -125,14 +125,14 @@ vnext הוא ארכיטקטורה שונה לחלוטין מ-v1:
 | ID | תיאור קצר | סטטוס | test path | הערה |
 |----|-----------|--------|-----------|------|
 | TTS-1 | model_id = eleven_v3 | ✅ | backend/tests/providers.test.ts | `TTS_REGISTRY['elevenlabs/v3'].modelId` קיים |
-| TTS-2 | ELEVENLABS_VOICE_ID מ-env | ❌ | — | VoiceConfig.ttsVoiceId; missing-env handling לא נבדק |
-| TTS-3 | voice_settings: stability=0.5, similarity=0.75 | ❌ | — | אין בדיקה לvalues ברירת המחדל |
+| TTS-2 | ELEVENLABS_VOICE_ID מ-env | ✅ | backend/tests/voice-pipeline.test.ts | ttsVoiceId ריק → Err לפני קריאה לAPI |
+| TTS-3 | voice_settings: stability=0.5, similarity=0.75 | ❌ | — | אין בדיקה לvalues ברירת המחדל — AI SDK עם experimental_generateSpeech, לא API ישיר |
 | TTS-4 | cache in-memory לפי voiceId\|modelId\|text | ⚠️ | core/tests/voice/cache-key.test.ts + voice-pipeline.test.ts | cacheKeyFor נבדק; cache hit/miss נבדק; eviction לא |
 | TTS-5 | streaming דרך /v1/text-to-speech/stream | 🚫 | — | vnext משתמש ב-experimental_generateSpeech (לא streaming) |
 | TTS-6 | cache hit → chunk יחיד | ✅ | backend/tests/voice-pipeline.test.ts | "returns cached mp3 without calling TTS API" + chunks.length=1 |
 | TTS-7 | API key placeholder (OneCLI) | 🚫 | — | AI SDK + OneCLI injection; לא placeholder pattern |
 | TTS-8 | שגיאת HTTP → throw עם status+body | ✅ | backend/tests/voice-pipeline.test.ts | "returns err when TTS API throws" |
-| TTS-9 | ttsCacheStats() — entries + bytes | ❌ | — | אין stats API ב-vnext |
+| TTS-9 | ttsCacheStats() — entries + bytes | ❌ | — | אין stats API ב-vnext — CacheStore interface לא חושף stats |
 
 ---
 
@@ -142,10 +142,10 @@ vnext הוא ארכיטקטורה שונה לחלוטין מ-v1:
 |----|-----------|--------|-----------|------|
 | GEMINI-1 | שני שירותים: translateThought + narrateToolCall | ⚠️ | backend/tests/voice-pipeline.test.ts | translateText נבדק; narrateToolCall לא קיים ב-vnext |
 | GEMINI-2 | model = gemini-flash-lite-latest | ✅ | backend/tests/providers.test.ts | `TRANSLATOR_REGISTRY['gemini/flash-lite']` קיים |
-| GEMINI-3 | timeout 2500ms ל-translateThought | ❌ | — | אין timeout test לtranslation |
+| GEMINI-3 | timeout 2500ms ל-translateThought | ✅ | backend/tests/voice-pipeline.test.ts | translateText timeout 2500ms → Err, pipeline ממשיכה |
 | GEMINI-4 | timeout 1500ms ל-narrateToolCall | 🚫 | — | אין narrateToolCall ב-vnext |
 | GEMINI-5 | translateThought → null בכישלון | ✅ | backend/tests/voice-pipeline.test.ts | "returns err when translation API throws" |
-| GEMINI-6 | cache לפי טקסט / toolCallId | ❌ | — | translation caching לא נבדק |
+| GEMINI-6 | cache לפי טקסט / toolCallId | ❌ | — | translation caching לא ממומש ב-vnext (future work) |
 | GEMINI-7 | narrateToolCall עם 4 דוגמאות | 🚫 | — | אין narration ב-vnext |
 | GEMINI-8 | כשל לא עוצר את ה-flow | ✅ | backend/tests/voice-pipeline.test.ts | Err מוחזר, לא thrown; pipeline ממשיכה |
 | GEMINI-9 | API key placeholder | 🚫 | — | AI SDK + OneCLI injection |
@@ -228,7 +228,7 @@ vnext הוא ארכיטקטורה שונה לחלוטין מ-v1:
 | MARKDOWN-4 | הסרת self-closing dangerous tags | ✅ | core/tests/ui/markdown.test.ts | iframe/meta/link/base |
 | MARKDOWN-5 | הסרת event attributes | ✅ | core/tests/ui/markdown.test.ts | onclick/onerror/onmouseover/unquoted/CAPS |
 | MARKDOWN-6 | הסרת javascript: hrefs | ✅ | core/tests/ui/markdown.test.ts | href/src/action + safe http preserved |
-| MARKDOWN-7 | סדר ה-replace קבוע | ❌ | — | סדר paired→self-closing→events→js-hrefs לא נבדק |
+| MARKDOWN-7 | סדר ה-replace קבוע | ✅ | core/tests/ui/markdown.test.ts | combined XSS vectors: כל 4 הפסים מוחלים בסדר |
 | MARKDOWN-8 | שימוש גם ב-live וגם ב-history | 🚫 | — | vnext: renderMarkdown רק ב-frontend (לא גם ב-loadSession) |
 
 ---
@@ -385,51 +385,37 @@ vnext הוא ארכיטקטורה שונה לחלוטין מ-v1:
 
 ## פערים מסוכנים
 
-### High Priority — גפים שיכולים לשבור את ה-flow
+> **עודכן 2026-05-16:** כל 9 הפערים שהיו ב-High + Medium Priority נסגרו.
 
-**PROMPT-1 — busy flag (concurrent prompts)**
-- ❌ לא נבדק
-- **למה מסוכן:** שני prompts מקבילים (גם voice גם text, או double-tap) עלולים להגיש שתי בקשות ACP בו-זמנית → state corruption, text_chunks מעורבבים, audio order שגוי.
-- **הצעה:** test ב-agent-session.test.ts: קרא `sendPrompt` פעמיים ללא await; ודא שה-2nd מחכה או מקבל error.
+### High Priority — נסגרו ✅
 
-**STT-8 — empty transcript → immediate done**
-- ❌ לא נבדק
-- **למה מסוכן:** משתמש מדבר בשקט (רעש סביבה, שיהוק) → transcript ריק → pipeline ממשיכה לשלוח ל-ACP עם "" → opencode מקבל פרומפט ריק → behavior לא מוגדר.
-- **הצעה:** test ב-backend voice handler: transcribeUserAudio → "" → done מוחזר מיד, sendPrompt לא נקרא.
+| Behavior | סטטוס | קובץ test | הערה |
+|----------|--------|-----------|------|
+| PROMPT-1 | ✅ | agent-session.test.ts | isBusy flag; BUSY error על prompt מקביל |
+| STT-8 | ✅ | agent-session-audio.test.ts | empty transcript → done, ACP לא נקרא |
+| PROMPT-5 | ✅ | agent-session-audio.test.ts | 3 משפטים → chunks בסדר |
+| ACP-9 | ✅ | agent-session.test.ts | unknown sessionUpdate → silent ignore |
+| TTS-2 | ✅ | voice-pipeline.test.ts | ttsVoiceId ריק → Err |
+| GEMINI-3 | ✅ | voice-pipeline.test.ts | translateText timeout 2500ms → Err |
 
-**PROMPT-5 — serial TTS queue**
-- ❌ לא נבדק
-- **למה מסוכן:** כמה משפטים מגיעים מהר (3 sentence flushes) → TTS נקרא במקביל → audio chunks מגיעים לא בסדר → AudioQueue מנגן לא נכון.
-- **הצעה:** integration test: simulate 3 speakSentence calls → ודא שה-chunks מגיעים בסדר.
+### Medium Priority — נסגרו ✅
 
-**ACP-9 — ignore unknown sessionUpdate types**
-- ❌ לא נבדק
-- **למה מסוכן:** opencode עשוי לשלוח `sessionUpdate: "plan"` או `"mode_update"` → אם הקוד לא מתעלם בשקט → exception → transport מתנתק.
-- **הצעה:** test ב-acp-transport.test.ts: send notification עם sessionUpdate לא מוכר → ודא שה-promise לא נזרק.
+| Behavior | סטטוס | קובץ test | הערה |
+|----------|--------|-----------|------|
+| ACP-13 | ✅ | agent-session.test.ts | stopReason≠end_turn → console.warn |
+| MARKDOWN-7 | ✅ | core/tests/ui/markdown.test.ts | combined XSS → כל 4 פסים |
+| ACP-17 | ✅ | acp-transport.test.ts | session/new mcpServers:[] |
 
-**TTS-2 — voice ID from env**
-- ❌ לא נבדק
-- **למה מסוכן:** אם `ELEVENLABS_VOICE_ID` לא מוגדר, TTS נכשל בשקט או עם error מוזר.
-- **הצעה:** test ב-voice-pipeline.test.ts: VoiceConfig.ttsVoiceId ריק → ודא שמוחזר Err ברור.
+### פערים שנותרו (לא בסיכום הנוכחי)
 
-**GEMINI-3 — translation timeout**
-- ❌ לא נבדק
-- **למה מסוכן:** תרגום שתקוע → audio pipeline חסומה → משתמש לא שומע כלום.
-- **הצעה:** test ב-voice-pipeline.test.ts: translateText עם mock שתקוע → ודא timeout + Err.
-
-### Medium Priority
-
-**ACP-13 — stopReason ≠ end_turn logging**
-- ❌ לא נבדק
-- **הצעה:** agent-session.test.ts: prompt returns `{stopReason: "max_tokens"}` → ודא שה-done נשלח עם stopReason נכון (נבדק חלקית — "cancelled" נבדק, אבל warning logging לא).
-
-**MARKDOWN-7 — סדר replace operations**
-- ❌ לא נבדק
-- **הצעה:** test ב-markdown.test.ts: `<script><a onclick>` ביחד → ודא שגם paired tag וגם event attr הוסרו.
-
-**ACP-17 — mcpServers: [] ב-session/new**
-- ❌ לא נבדק
-- **הצעה:** acp-transport.test.ts: parse ה-session/new payload → ודא `mcpServers: []` קיים.
+| Behavior | סיבה |
+|----------|------|
+| TTS-3 | voice_settings לא חשוף ב-AI SDK |
+| TTS-9 | אין stats API ב-vnext |
+| GEMINI-6 | translation caching לא ממומש (future) |
+| WS-1b | text vs audio path הבדלים — נמוך בסיכון |
+| UI-CAR-6 | MutationObserver לא ממומש |
+| PROMPT-7 | TTS error per-segment — מכוסה חלקית ע"י TTS-8 |
 
 ---
 
@@ -437,19 +423,20 @@ vnext הוא ארכיטקטורה שונה לחלוטין מ-v1:
 
 | קובץ | behaviors v1 שמכוסות (ישירות/עקיפות) |
 |------|---------------------------------------|
-| core/tests/ui/markdown.test.ts | MARKDOWN-1..6 |
+| core/tests/ui/markdown.test.ts | MARKDOWN-1..7 |
 | core/tests/acp/provider-error.test.ts | PROMPT-17, PROMPT-19 |
 | core/tests/voice/sentence-boundary.test.ts | PROMPT-8 (חלקי) |
 | core/tests/voice/cache-key.test.ts | TTS-4 (חלקי) |
 | core/tests/voice/translation-prompt.test.ts | GEMINI-1 (חלקי) |
 | core/tests/ws-messages.test.ts | WS-2 |
 | backend/tests/gemini-transcription.test.ts | STT-2, STT-3, STT-6 |
-| backend/tests/voice-pipeline.test.ts | STT-3, GEMINI-5, GEMINI-8, TTS-6, TTS-8 |
+| backend/tests/voice-pipeline.test.ts | STT-3, GEMINI-3, GEMINI-5, GEMINI-8, TTS-2, TTS-6, TTS-8 |
 | backend/tests/providers.test.ts | STT-1 (חלקי), TTS-1, GEMINI-2 |
-| backend/tests/acp-transport.test.ts | ACP-2, ACP-10, ACP-12 (חלקי) |
+| backend/tests/acp-transport.test.ts | ACP-2, ACP-10, ACP-12 (חלקי), ACP-17 |
 | backend/tests/ws-streams.test.ts | ACP-3 |
 | backend/tests/client-impl.test.ts | ACP-6 |
-| backend/tests/agent-session.test.ts | ACP-7, ACP-8, PROMPT-2, PROMPT-16, PROMPT-18, PROMPT-20 |
+| backend/tests/agent-session.test.ts | ACP-7, ACP-8, ACP-9, ACP-13, PROMPT-1, PROMPT-2, PROMPT-16, PROMPT-18, PROMPT-20 |
+| backend/tests/agent-session-audio.test.ts | STT-8, PROMPT-5 |
 | backend/tests/agent-orchestrator.test.ts | ACP-4 (חלקי), PROMPT-17 (חלקי) |
 | backend/tests/bridge-manager.test.ts | ACP-1, ACP-12 (חלקי) |
 | backend/tests/cli-config.test.ts | ACP-1 |
