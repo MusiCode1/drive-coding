@@ -88,9 +88,21 @@
 
 - **סטטוס:** פעיל — המשך סשן `ses_1d26848f8ffetPtC3UQ2eLBrpt` (planner). שלב: דיון על ארכיטקטורת הגרסה הבאה.
 - **Worktree:** `/home/user/projects/voice-acp` (master)
-- **עובד על:** 🌙 ריצה אוטונומית — Slices 2→3→4 (5 אם API keys). אבי ישן. עצירה אם stuck או אחרי Slice 4.
+- **עובד על:** 🌙 ריצה אוטונומית — ✅ Slice 2 (`985f174`). כותבת Slice 3 brief.
 
 ## לוג
+
+### [2026-05-16 05:25] ✅ Slice 2 הושלם (commit `985f174`)
+sub-agent: Yolo + Sonnet 4-6 ב-tmux. 14 דק' עבודה. 17 files changed, 1745+/62-, 36 tests, DoD 12/12 ✅.
+
+**סטיות מ-brief (תועדו ב-commit):**
+1. frontend validation: arktype הוסר מ-frontend (לא ב-dependencies). הbackend עושה validation, errors מגיעים מה-API.
+2. biome.json: override ל-svelte (mutes noUnusedVariables/noUnusedImports — Biome לא מנתח templates).
+3. +layout.svelte: biome-ignore הוסר אחרי ה-override.
+
+**Smoke tests עברו:** GET/POST/GET:id/DELETE על `/api/agents`.
+
+ממשיכה ל-Slice 3 brief.
 
 ### [2026-05-16 05:00] ✅ סבב 8 — Consistency lint על 3 המסמכים
 אבי שאל "למה הטעות הזו קרתה? היו לנו מסמכים." זיהיתי 3 כשלי תהליך: (1) חוסר consistency check בין D-decisions כשהוספתי חדשים, (2) scope creep בין "MVP אצל אבי" ל-"קהילה עתידית", (3) קפיצה למימוש במקום לשאלת YAGNI.
