@@ -15,6 +15,21 @@ export type ChatMessage = {
 
 export type AgentSessionStatus = "disconnected" | "connecting" | "connected" | "thinking"
 
+/** Public contract of createAgentSessionStore — used for dependency injection and type safety. */
+export interface AgentSessionPublic {
+  readonly agentId: string
+  readonly messages: ChatMessage[]
+  readonly status: AgentSessionStatus
+  readonly error: string | null
+  readonly isConnected: boolean
+  connect(): void
+  disconnect(): void
+  sendPrompt(text: string): void
+  sendRaw(payload: unknown): boolean
+  cancel(): void
+  setVoiceMessageHandler(handler: (raw: string) => void): void
+}
+
 /**
  * createAgentSessionStore — Svelte 5 rune-based store for a single agent WS session.
  *
@@ -29,7 +44,7 @@ export type AgentSessionStatus = "disconnected" | "connecting" | "connected" | "
  *
  * Usage: call in a .svelte file, use returned reactive fields directly.
  */
-export function createAgentSessionStore(agentId: string) {
+export function createAgentSessionStore(agentId: string): AgentSessionPublic {
   let messages = $state<ChatMessage[]>([])
   let status = $state<AgentSessionStatus>("disconnected")
   let error = $state<string | null>(null)

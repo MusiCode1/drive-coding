@@ -1,14 +1,8 @@
 import { AudioQueue } from "$lib/audio/player"
 import { Recorder } from "$lib/audio/recorder"
+import type { AgentSessionPublic } from "./agent-session.svelte"
 
 export type VoiceState = "idle" | "recording" | "transcribing" | "thinking" | "speaking"
-
-/** Minimal interface of agent-session store needed by voice store */
-export interface VoiceSessionDeps {
-  readonly agentId: string
-  sendRaw: (payload: unknown) => boolean
-  setVoiceMessageHandler: (handler: (raw: string) => void) => void
-}
 
 /**
  * createVoiceSessionStore — Svelte 5 rune-based store for voice interaction.
@@ -21,7 +15,7 @@ export interface VoiceSessionDeps {
  * Designed to work alongside createAgentSessionStore.
  * Voice WS messages are routed via agentSession.setVoiceMessageHandler.
  */
-export function createVoiceSessionStore(agentSession: VoiceSessionDeps) {
+export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
   let voiceState = $state<VoiceState>("idle")
   let sttText = $state<string | null>(null)
   let voiceError = $state<string | null>(null)
