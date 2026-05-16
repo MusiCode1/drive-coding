@@ -7,6 +7,8 @@ let agents = $state<AgentPublic[]>([])
 let loading = $state(true)
 let error = $state<string | null>(null)
 let pollTimer: ReturnType<typeof setInterval> | null = null
+// Inline confirm — §9.6 #5: no modals/dialogs. Track which agent is "pending delete".
+let confirmDeleteId = $state<string | null>(null)
 
 async function load(): Promise<void> {
   loading = true
@@ -44,8 +46,16 @@ function schedulePoll(): void {
   }
 }
 
-async function remove(id: string): Promise<void> {
-  if (!confirm("למחוק את הסוכן?")) return
+function requestDelete(id: string): void {
+  confirmDeleteId = id
+}
+
+function cancelDelete(): void {
+  confirmDeleteId = null
+}
+
+async function confirmDelete(id: string): Promise<void> {
+  confirmDeleteId = null
   try {
     await deleteAgent(id)
     await load()
@@ -98,7 +108,7 @@ onDestroy(() => {
   {:else}
     <ul class="cards" role="list">
       {#each agents as agent (agent.id)}
-        <li class="card">
+        <li class="card" class:card-confirm-delete={confirmDeleteId === agent.id}>
           <a href={`/agent/${agent.id}`} class="card-link" aria-label={`פתח סוכן ${agent.cliKind}`}>
             <div class="card-top">
               <span class="card-title">{agent.cliKind}</span>
@@ -109,12 +119,29 @@ onDestroy(() => {
               <div class="card-crash" dir="auto">{agent.crashReason}</div>
             {/if}
           </a>
-          <button
-            class="delete-btn"
-            onclick={() => remove(agent.id)}
-            aria-label={`מחק סוכן ${agent.cliKind}`}
-            title="מחק"
-          >×</button>
+          {#if confirmDeleteId === agent.id}
+            <!-- Inline confirm (§9.6 #5: no modals) -->
+            <div class="delete-confirm" role="group" aria-label="אישור מחיקה">
+              <span class="delete-confirm-text">למחוק?</span>
+              <button
+                class="confirm-btn confirm-yes"
+                onclick={() => confirmDelete(agent.id)}
+                aria-label="אשר מחיקה"
+              >אשר</button>
+              <button
+                class="confirm-btn confirm-no"
+                onclick={cancelDelete}
+                aria-label="בטל מחיקה"
+              >בטל</button>
+            </div>
+          {:else}
+            <button
+              class="delete-btn"
+              onclick={() => requestDelete(agent.id)}
+              aria-label={`מחק סוכן ${agent.cliKind}`}
+              title="מחק"
+            >×</button>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -331,6 +358,57 @@ onDestroy(() => {
   .delete-btn:hover {
     color: var(--recording);
     background: rgba(255, 79, 79, 0.1);
+  }
+
+  /* ── Inline delete confirm (§9.6 #5: no window.confirm) ─────────────────── */
+  .delete-confirm {
+    position: absolute;
+    top: 8px;
+    inset-inline-end: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg);
+    border: 1px solid var(--recording);
+    border-radius: 10px;
+    padding: 4px 8px;
+    box-shadow: 0 4px 16px rgba(255, 79, 79, 0.25);
+  }
+
+  .delete-confirm-text {
+    font-size: 12px;
+    color: var(--fg);
+    font-weight: 500;
+    padding-inline-end: 4px;
+  }
+
+  .confirm-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    min-height: 32px;
+    touch-action: manipulation;
+    font-family: inherit;
+  }
+
+  .confirm-yes {
+    background: var(--recording);
+    color: white;
+  }
+  .confirm-yes:hover { opacity: 0.85; }
+
+  .confirm-no {
+    background: var(--bg-elev);
+    color: var(--fg-dim);
+    border: 1px solid var(--border);
+  }
+  .confirm-no:hover { color: var(--fg); border-color: var(--accent); }
+
+  .card-confirm-delete {
+    border-color: var(--recording);
   }
 
   /* ── Settings link (fixed bottom) ─────────────────────────────────────── */
