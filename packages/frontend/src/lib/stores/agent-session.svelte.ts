@@ -61,6 +61,8 @@ export interface AgentSessionPublic {
   readonly messages: ChatMessage[]
   /** Phase 2: new visual bubble list (replaces messages for rendering). */
   readonly bubbles: Bubble[]
+  /** Phase 6: true while history events are being replayed. */
+  readonly isLoadingHistory: boolean
   readonly status: AgentSessionStatus
   readonly error: string | null
   readonly isConnected: boolean
@@ -72,6 +74,8 @@ export interface AgentSessionPublic {
   setVoiceMessageHandler(handler: (raw: string) => void): void
   /** Phase 6: clear all bubbles (used by history_start). */
   clearBubbles(): void
+  /** Phase 6: get the last saved recording ID (from audio_recording_saved). */
+  getRecordingId(): string | null
 }
 
 /**
@@ -90,6 +94,10 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
   let status = $state<AgentSessionStatus>("disconnected")
   let error = $state<string | null>(null)
   let ws = $state<WebSocket | null>(null)
+  /** Phase 6: true while history_* events are streaming. */
+  let isLoadingHistory = $state(false)
+  /** Phase 6: most recently saved recording ID (from audio_recording_saved). */
+  let lastRecordingId = $state<string | null>(null)
 
   // Reconnect state
   let retryCount = 0
@@ -333,8 +341,50 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
         upsertBubbleUser(msg.text)
         break
 
+      // ── Phase 6: Slice 8a history events ─────────────────────────────────
+
+      case "history_start":
+        // Clear existing state, enter history loading mode (no auto-play)
+        messages = []
+        bubbles = []
+        isLoadingHistory = true
+        break
+
+      case "history_chunk": {
+        // Same grouping logic as text_chunk, but segments are marked historical
+        const hKind = msg.kind === "user_message" ? "user" : (msg.kind as "message" | "thought")
+        const hSegment: BubbleSegment = { text: msg.text, historical: true }
+        const last = bubbles[bubbles.length - 1]
+        if (last && last.kind === hKind && last.messageId === msg.messageId) {
+          bubbles = [...bubbles.slice(0, -1), { ...last, segments: [...last.segments, hSegment] }]
+        } else {
+          bubbles = [...bubbles, { kind: hKind, messageId: msg.messageId, segments: [hSegment] }]
+        }
+        break
+      }
+
+      case "history_tool_call":
+        bubbles = [
+          ...bubbles,
+          {
+            kind: "tool",
+            messageId: null,
+            segments: [{ toolCallId: msg.toolCallId, toolTitle: msg.title, historical: true }],
+          },
+        ]
+        break
+
+      case "history_done":
+        isLoadingHistory = false
+        break
+
+      case "audio_recording_saved":
+        // Store the latest recording ID — associated with the most recent user message
+        lastRecordingId = msg.recordingId
+        break
+
       default:
-        // pong, hello, audio_chunk, translation, history_* — handled by voiceMessageHandler or Phase 5/6
+        // pong, hello, audio_chunk, translation — handled by voiceMessageHandler or ignored
         break
     }
   }
@@ -429,6 +479,8 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
   function clearBubbles(): void {
     bubbles = []
     messages = []
+    isLoadingHistory = false
+    lastRecordingId = null
   }
 
   return {
@@ -438,6 +490,9 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     },
     get bubbles() {
       return bubbles
+    },
+    get isLoadingHistory() {
+      return isLoadingHistory
     },
     get status() {
       return status
@@ -455,5 +510,8 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     cancel,
     setVoiceMessageHandler,
     clearBubbles,
+    getRecordingId() {
+      return lastRecordingId
+    },
   }
 }
