@@ -236,6 +236,50 @@ describe("createAgentWsHandler — message()", () => {
     expect(callArgs[1]).toBe("audio/webm")
   })
 
+  it("DUP-1: voiceCallbacks.onAudioChunk MUST NOT send audio_chunk frame (broadcast uses subscribe)", async () => {
+    // Regression: agent-session.ts broadcasts audio_chunk with full Tier 1 metadata
+    // (segmentId, messageId, kind, originalText, translatedText). The legacy
+    // callbacks.onAudioChunk(mp3Base64) was previously also sending a *second*
+    // audio_chunk frame (mp3Base64 only) — causing the FE to play each TTS twice
+    // because the frontend dedup-by-segmentId check fell through when segmentId
+    // was absent.
+    //
+    // After fix: invoking voiceCallbacks.onAudioChunk must be a no-op for WS.
+    const session = makeSession()
+    const orchestrator = {
+      getSession: vi.fn(() => session),
+    } as unknown as AgentOrchestrator
+    const handler = createAgentWsHandler({
+      orchestrator,
+      registries: mockRegistries,
+      cache: mockCache,
+    })
+
+    const { ws, sent } = makeWs("agent-1")
+    handler.websocket.open?.(ws)
+
+    await handler.websocket.message?.(
+      ws,
+      JSON.stringify({
+        type: "audio",
+        agentId: "agent-1",
+        audioBase64: Buffer.from([1, 2, 3]).toString("base64"),
+        mimeType: "audio/webm",
+      }),
+    )
+    await new Promise((r) => setImmediate(r))
+
+    const callArgs = (session.sendAudioPrompt as ReturnType<typeof vi.fn>).mock.calls[0] ?? []
+    const voiceCallbacks = callArgs[3] as { onAudioChunk: (mp3: string) => void }
+
+    const sentBefore = sent.length
+    voiceCallbacks.onAudioChunk("base64-mp3-data")
+    const sentAfter = sent.length
+
+    // No new WS frame allowed — audio_chunk MUST only come via session.subscribe broadcast.
+    expect(sentAfter).toBe(sentBefore)
+  })
+
   it("agent removed mid-session → message responds AGENT_NOT_FOUND", async () => {
     let session: AgentSession | null = makeSession()
     const orchestrator = {

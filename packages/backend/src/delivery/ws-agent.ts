@@ -134,10 +134,20 @@ export function createAgentWsHandler(deps: {
           // Decode base64 audio
           const audioBytes = Buffer.from(result.audioBase64, "base64")
 
-          // Voice callbacks — fan out to this WS client
+          // Voice callbacks — fan out to this WS client.
+          //
+          // NOTE: onAudioChunk is intentionally a no-op. audio_chunk events are
+          // broadcast with full Tier 1 metadata (segmentId, messageId, kind,
+          // originalText, translatedText) via session.subscribe(). Sending here
+          // would emit a *second* audio_chunk WS frame without metadata, which
+          // bypasses the frontend's segmentId-keyed dedup and causes each TTS
+          // segment to be played twice. The callback field is retained because
+          // VoiceCallbacks declares it (legacy tests pass a counting impl).
           const voiceCallbacks = {
             onSttPartial: (text: string) => send(ws, { type: "stt_partial", text }),
-            onAudioChunk: (mp3Base64: string) => send(ws, { type: "audio_chunk", mp3Base64 }),
+            onAudioChunk: (_mp3Base64: string) => {
+              /* no-op — see comment above */
+            },
             onTranslation: (original: string, translated: string) =>
               send(ws, { type: "translation", original, translated }),
             onError: (message: string) => send(ws, { type: "error", code: "VOICE_ERROR", message }),

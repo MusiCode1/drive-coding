@@ -4,6 +4,45 @@
 
 ---
 
+## 2026-05-17 19:20 — Bug Fix: TTS double playback (audio_chunk duplicated על WS)
+
+### הבעיה שדווחה (אבי, post-Slice 9)
+
+כל סגמנט TTS — במיוחד מחשבות — נשמע **פעמיים** ברצף בדפדפן.
+
+### Root cause
+
+ב-Slice 5 (לפני Tier 1) ה-WS event `audio_chunk` היה minimal: `{ type, mp3Base64 }`. ה-handler ב-`ws-agent.ts:140` חיווט `voiceCallbacks.onAudioChunk` ל-`send(ws, { type: "audio_chunk", mp3Base64 })`.
+
+ב-Tier 1 (`tier-1-voice-pipeline-brief.md §6`) ה-WS event הורחב ל-`{ type, mp3Base64, segmentId, messageId, kind, originalText, translatedText }`, וה-broadcast הועבר ל-`agent-session.ts:470-482` עם metadata מלא. אבל ה-callback הישן ב-`ws-agent.ts:140` **לא הוסר** — והוא המשיך לשגר `audio_chunk` שני בלי metadata על כל segment.
+
+ב-frontend, ה-dedup של B13 (`voice-session.svelte.ts:91-94`) בודק `if (segmentId && segmentCache.has(segmentId))`. ההודעה השנייה (legacy) נטולת `segmentId` → התנאי קצר-מעגל ל-false → ה-MP3 מוכנס שוב ל-AudioQueue ומנוגן בפעם השנייה.
+
+### תיקון
+
+- `packages/backend/src/delivery/ws-agent.ts:140-149` — `onAudioChunk` הפך ל-no-op מתועד. ה-audio_chunk עובר רק דרך `session.subscribe()` broadcast (עם metadata מלא).
+- ה-callback נשאר ב-interface `VoiceCallbacks` כי טסטים סופרים אותו לכימות; הוסרה רק שכבת ה-WS.
+
+### Regression test
+
+- `packages/backend/tests/ws-agent.test.ts:DUP-1` — מעלה audio prompt, חולץ את `voiceCallbacks` שעובר ל-`sendAudioPrompt`, קורא ידנית ל-`voiceCallbacks.onAudioChunk(...)`, ומאמת `ws.send` לא נקרא. נופל לפני התיקון (`1 → 2`), עובר אחריו.
+
+### תוצאות
+
+- 491 backend tests ירוקים (+1)
+- 119 frontend tests ירוקים (ללא שינוי)
+- typecheck נקי
+- בדיקה ידנית בדפדפן ממתינה
+
+### Bugs נוספים שעדיין פתוחים
+
+נחקרו ולא תוקנו ב-commit הזה (ראו תגובת הסוכן בסשן):
+
+- **באג 2: אין "קפיצה" להודעה כשהיא מגיעה** — `UI-AUDIO-8` מסומן 🚫 ב-behaviors-coverage. `decide-tts-priority.ts` תוכנן (vnext-architecture.md:628) ולא נכתב. דורש priority queue + cancel ל-pending thoughts ב-`agent-session.ts:processQueue` + drop ב-frontend AudioQueue.
+- **באג 3: "תור ל-ElevenLabs"** — אינו באג עצמאי. תוצאה ישירה של היעדר באג 2 (sequential FIFO תקין by-design).
+
+---
+
 ## 2026-05-17 15:00 — Slice logging-infra: Logging Infrastructure
 
 ### מה בוצע
