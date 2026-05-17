@@ -4,6 +4,70 @@
 
 ---
 
+## 2026-05-17 21:00 — Slice 10 Research + Brief: FE-Orchestrated Refactor
+
+### רקע
+
+‏אחרי תיקון ‏TTS duplication (55c5bab), ‏נסקרו ‏עוד שני באגים פתוחים:
+- ‏#2: ‏אין "קפיצה" להודעה כשהיא מגיעה (‏UI-AUDIO-8 מסומן 🚫)
+- ‏#3: ‏תור ל-ElevenLabs ‏מרגיש "תקוע" כשיש מחשבות לפני הודעה
+
+‏דיון אדריכלי ‏עם אבי הוביל ‏ל-decision: ‏לא לתקן ב-BE עם `decide-tts-priority`,
+‏אלא לבצע ‏refactor ‏מהותי — ‏‏הפיכת ה-server ל-proxy טיפש + cache,
+‏והעברת כל orchestration ל-FE.
+
+### החלטות ארכיטקטוניות סגורות
+
+1. ‏BE = ‏bytes pipe ל-stdio-to-ws + 4 endpoints (translate/tts/narrate/stt) + cache
+2. ‏FE = ‏ACP client מלא (`@agentclientprotocol/sdk` בדפדפן) + voice orchestrator
+3. ‏Streaming TTS ‏in-scope (MediaSource API, ‏ללא Safari fallback)
+4. ‏localStorage לplayback state
+5. ‏Auto-allow_once permissions בinterim, ‏UI prompt בעתיד
+6. ‏ACP fs.readTextFile/writeTextFile ‏לא ‏מוצהר — ‏opencode קורא לבד מהדיסק
+
+### Worktree
+
+‏Slice 10 מתבצע ב-worktree נפרד: `/home/user/projects/voice-acp-v3` על branch `vnext-fe-orchestrated`.
+‏ה-vnext החי ב-v2 ‏ממשיך לעבוד עד שה-refactor יסיים.
+
+### Research findings (`docs/slice-10-research.md`)
+
+- ‏`@agentclientprotocol/sdk@0.21.1` ‏רץ בדפדפן ‏‏ללא שינוי (Web Standards only — ‏TextEncoder/Decoder, ReadableStream, WritableStream)
+- ‏acp-ui (formulahendry) כ-reference: ‏לאמץ heartbeat $/ping + no auto-reconnect; ‏לא לאמץ manual JSON-RPC client (SDK עובד)
+- ‏`@ai-sdk/elevenlabs` לא תומך streaming TTS → ‏BE עוקף עם fetch ישיר ל-`/v1/text-to-speech/{id}/stream`
+- ‏AbortController ‏מתפלל ל-fetch upstream דרך AI SDK
+- ‏Bun WS proxy: ~50 שורות
+- ‏`core/` ‏100% portable ל-FE (חוץ מ-log/index.ts שכבר מפוצל)
+
+### Brief — Phases
+
+| Phase | משימה | זמן |
+|-------|--------|------|
+| ‏P1 | BE thin proxy + 4 endpoints | 5-7h |
+| ‏P2 | FE ACP client (SDK + ndJsonStream + Client impl) | 5-7h |
+| ‏P3 | FE voice orchestrator (accumulator + prefetch + streaming MediaSource) | 5-7h |
+| ‏P4 | Cleanup + parity + docs | 3-4h |
+
+‏סה"כ: 18-25h. ‏BE shrinks ‏ב-~1200 שורות impl + ~600 שורות tests.
+‏FE growns ‏‏ב-~800 שורות impl + 200 tests.
+
+### TDD strategy
+
+‏**Outer-loop בלבד.** ‏Integration tests מקדימים כל phase ב-DoD level. ‏Unit tests רק לפונקציות עם
+‏edge cases מורכבים (sentence-boundary, prefetch policy). ‏‏לא per-function strict TDD —
+‏‏‏‏‏refactor של ‏glue/wiring לא ‏מרוויח מ-strict TDD ‏ומאט.
+
+### קבצים שנוספו
+
+- ‏`docs/slice-10-research.md` — ‏‏מסמך מחקר ‏(‏‏סיכום ‏unknowns שנסגרו)
+- ‏`docs/slice-10-fe-orchestrated-brief.md` — brief מלא ‏(architecture, API contracts, phases, DoD, prompt לexecutor)
+
+### Next step
+
+‏Executor agent (Sonnet 4.6) יקבל את ה-brief ויבצע Phase 1 → 4. ‏‏יחזור עם commits פר phase.
+
+---
+
 ## 2026-05-17 19:20 — Bug Fix: TTS double playback (audio_chunk duplicated על WS)
 
 ### הבעיה שדווחה (אבי, post-Slice 9)
