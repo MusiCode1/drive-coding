@@ -12,7 +12,13 @@ export class Recorder {
 
   async start(): Promise<void> {
     log.info({}, "start")
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch (e: unknown) {
+      log.error({ err: String(e) }, "mic permission denied")
+      throw e
+    }
     // audio/webm;codecs=opus is supported in Chrome/Firefox; falls back to browser default
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"

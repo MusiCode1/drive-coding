@@ -10,8 +10,11 @@
  */
 
 import type { Cache } from "@drive-coding/core/cache/types"
+import { createLogger } from "@drive-coding/core/log"
 import type { Result } from "neverthrow"
 import { err, ok } from "neverthrow"
+
+const log = createLogger("backend.voice.narration")
 
 /** Default narration timeout in ms (shorter than translation: text is usually 1-2 sentences). */
 export const NARRATE_TIMEOUT_MS = 1500
@@ -106,8 +109,10 @@ export async function narrateToolCall(
   // Cache hit — return without calling LLM
   const cached = await cache.get(tool.toolCallId)
   if (cached !== null) {
+    log.debug({ key: tool.toolCallId.slice(0, 8), cache: "hit" }, "narration cache hit")
     return ok(cached.text)
   }
+  log.debug({ key: tool.toolCallId.slice(0, 8), cache: "miss" }, "narration cache miss")
 
   const fallback = tool.title.trim() || tool.kind || "פעולה"
   const prompt = buildNarratePrompt(ctx, tool)
@@ -122,6 +127,7 @@ export async function narrateToolCall(
   )
 
   let rawText: string
+  const t0 = performance.now()
   try {
     rawText = await Promise.race([generator.generateContent(prompt), timeoutPromise])
   } catch (e: unknown) {
@@ -133,6 +139,7 @@ export async function narrateToolCall(
   }
 
   const text = rawText.trim() || fallback
+  const dur = Math.round(performance.now() - t0)
 
   // Store in cache
   await cache.set(tool.toolCallId, {
@@ -141,5 +148,6 @@ export async function narrateToolCall(
     createdAt: new Date().toISOString(),
   })
 
+  log.info({ dur, len: text.length }, "narrate done")
   return ok(text)
 }

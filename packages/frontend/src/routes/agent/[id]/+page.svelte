@@ -10,6 +10,7 @@ import BubbleKind from "$lib/components/BubbleKind.svelte"
 import FloatingHeader from "$lib/components/FloatingHeader.svelte"
 import MicCluster from "$lib/components/MicCluster.svelte"
 import Sidebar from "$lib/components/Sidebar.svelte"
+import { createLogger } from "$lib/log"
 import type { Bubble } from "$lib/stores/agent-session.svelte"
 import { createAgentSessionStore } from "$lib/stores/agent-session.svelte"
 import { createCarMode } from "$lib/stores/car-mode.svelte"
@@ -21,6 +22,8 @@ import { sheetState } from "$lib/stores/sheet-state.svelte"
 import { sidebarState } from "$lib/stores/sidebar-state.svelte"
 import { deriveScrollState } from "$lib/stores/smart-scroll"
 import { createVoiceSessionStore } from "$lib/stores/voice-session.svelte"
+
+const log = createLogger("fe.route.agent")
 
 let agentId = $derived(page.params.id ?? "")
 let agent = $state<AgentPublic | null>(null)
@@ -199,8 +202,8 @@ function schedulePoll(): void {
           pollTimer = null
           if (fresh.status === "ready") session.connect()
         }
-      } catch {
-        // keep polling
+      } catch (e: unknown) {
+        log.warn({ err: String(e) }, "poll: getAgent failed, retrying")
       }
     }, 2000)
   }
@@ -301,8 +304,8 @@ async function handleSheetAgentClose(agentId: string) {
   try {
     await deleteAgent(agentId)
     goto("/")
-  } catch {
-    // ignore
+  } catch (e: unknown) {
+    log.warn({ err: String(e), agentId }, "deleteAgent failed")
   }
 }
 </script>

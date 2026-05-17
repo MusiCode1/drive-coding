@@ -3,7 +3,9 @@
  *
  * Persisted settings (localStorage). Voice picker, thought voice, audio cues, language.
  */
+import { createLogger } from "$lib/log"
 
+const log = createLogger("fe.settings")
 const STORAGE_KEY = "drive-coding-settings-v1"
 
 export type AudioCues = {
@@ -37,20 +39,26 @@ function load(): Settings {
     return { ...DEFAULTS, audioCues: { ...DEFAULTS.audioCues } }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { ...DEFAULTS, audioCues: { ...DEFAULTS.audioCues } }
+    if (!raw) {
+      log.debug({}, "load: no saved settings, using defaults")
+      return { ...DEFAULTS, audioCues: { ...DEFAULTS.audioCues } }
+    }
     const parsed = JSON.parse(raw) as Partial<Settings>
+    log.debug({}, "load: settings loaded from localStorage")
     return {
       ...DEFAULTS,
       ...parsed,
       audioCues: { ...DEFAULTS.audioCues, ...(parsed.audioCues ?? {}) },
     }
-  } catch {
+  } catch (e: unknown) {
+    log.warn({ err: String(e) }, "load: localStorage parse error, using defaults")
     return { ...DEFAULTS, audioCues: { ...DEFAULTS.audioCues } }
   }
 }
 
 function save(s: Settings): void {
   if (typeof localStorage === "undefined") return
+  log.debug({}, "save: settings saved to localStorage")
   localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
 }
 
