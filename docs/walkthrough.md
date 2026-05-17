@@ -3,6 +3,34 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-17 02:55 — Slice 8a Phase 4: existingSessionId בOrchestrator + Dedup
+
+### סיכום
+
+TDD Phase 4 — תמיכה ב-`existingSessionId` ב-`agent-orchestrator.ts` ו-`http-agents.ts`.
+6 טסטים חדשים, כולם ירוקים. typecheck ו-lint נקיים.
+
+#### מה בוצע
+
+**1. `agent-orchestrator.ts` — CreateAndSpawnInput + Dedup + LoadSession path**
+- `CreateAndSpawnInput = CreateAgentInput & { existingSessionId?: string | null }`
+- Dedup check: אם קיים agent עם `cwd === input.cwd && acpSessionId === existingSessionId` ו-status=ready/busy → מחזיר אותו בלי spawn חדש
+- עם `existingSessionId`: קורא `createAcpWsLoadTransport` (Phase 1) במקום `createAcpWsTransport`
+- ללא `existingSessionId`: התנהגות קיימת (ללא שינוי)
+- `onHistoryUpdate` מ-`createAcpWsLoadTransport` מטופל ב-Phase 5
+
+**2. `http-agents.ts` — CreateAgentInputFull**
+- `CreateAgentInputFull` — ArkType schema backend-only שמוסיף `existingSessionId?`
+- מחליף את `CreateAgentInput` ב-POST /api/agents
+- Backward compatible (שדה אופציונלי)
+
+#### החלטות ארכיטקטורה
+
+- **`CreateAndSpawnInput` בbackend, לא בcore**: הextension הוא backend-only logic. core schema `CreateAgentInput` לא שונה — נשאר `packages/core` נקי
+- **Dedup רק ל-ready/busy**: agent crashed/closed לא לשימוש חוזר — spawn חדש
+- **`onHistoryUpdate: () => {}` זמני**: Phase 4 מממש את הinfrastructure; Phase 5 יחבר את ה-callback לAgentSession broadcasts
+
+---
 ## 2026-05-17 02:35 — Slice 8a Phase 3: HTTP Endpoints (/api/projects, /api/sessions, /api/recordings, /api/fs/browse)
 
 ### סיכום

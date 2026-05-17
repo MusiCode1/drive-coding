@@ -1,7 +1,18 @@
-import { type AgentRegistry, CreateAgentInput, toAgentPublic } from "@drive-coding/core"
+import { type AgentRegistry, CliKind, toAgentPublic } from "@drive-coding/core"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import type { AgentOrchestrator } from "../app/agent-orchestrator"
+
+/**
+ * Backend-only extension of CreateAgentInput — includes existingSessionId
+ * for Slice 8a session loading. Defined here because it extends core schema.
+ */
+const CreateAgentInputFull = type({
+  cliKind: CliKind,
+  cwd: "string >= 1",
+  "modelOverride?": "string | null",
+  "existingSessionId?": "string | null",
+})
 
 export function registerAgentsHttp(
   app: Hono,
@@ -22,7 +33,8 @@ export function registerAgentsHttp(
       return c.json({ error: "invalid json" }, 400)
     }
 
-    const parsed = CreateAgentInput(body)
+    // Validate with full schema (includes optional existingSessionId for Slice 8a)
+    const parsed = CreateAgentInputFull(body)
     if (parsed instanceof type.errors) {
       return c.json({ error: parsed.summary }, 400)
     }

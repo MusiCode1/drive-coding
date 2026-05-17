@@ -1,12 +1,22 @@
 import type { Agent, AgentRegistry, BridgeManager, CreateAgentInput } from "@drive-coding/core"
 import { extractProviderError } from "@drive-coding/core/acp/provider-error"
-import { createAcpWsTransport } from "../acp/acp-transport.js"
+import { createAcpWsLoadTransport, createAcpWsTransport } from "../acp/acp-transport.js"
 import type { BridgeHandleWithStderr } from "../acp/bridge-manager.js"
 import { type AgentSession, createAgentSession } from "./agent-session.js"
 
+/**
+ * Slice 8a: backend-only extension of CreateAgentInput.
+ * existingSessionId — if provided, loads an existing ACP session via
+ * session/load instead of session/new. Dedup: if an active agent with the
+ * same (cwd, acpSessionId) exists, returns it without spawning.
+ */
+export type CreateAndSpawnInput = CreateAgentInput & {
+  existingSessionId?: string | null
+}
+
 export type AgentOrchestrator = {
   /** Create an agent (registry) + spawn bridge + ACP attach. On failure: status='crashed'. */
-  createAndSpawn(input: CreateAgentInput): Promise<Agent>
+  createAndSpawn(input: CreateAndSpawnInput): Promise<Agent>
 
   /** Delete agent + kill bridge + shutdown session. */
   deleteAndKill(id: string): Promise<void>
@@ -55,7 +65,23 @@ export function createAgentOrchestrator(deps: {
   })
 
   return {
-    async createAndSpawn(input: CreateAgentInput): Promise<Agent> {
+    async createAndSpawn(input: CreateAndSpawnInput): Promise<Agent> {
+      const existingSessionId = input.existingSessionId ?? null
+
+      // ── Dedup check (Slice 8a) ──────────────────────────────────────────────
+      // If an active agent already holds this (cwd, acpSessionId), return it
+      // directly without spawning a new bridge.
+      if (existingSessionId) {
+        const allAgents = await deps.registry.list()
+        const duplicate = allAgents.find(
+          (a) =>
+            a.cwd === input.cwd &&
+            a.acpSessionId === existingSessionId &&
+            (a.status === "ready" || a.status === "busy"),
+        )
+        if (duplicate) return duplicate
+      }
+
       // 1. Create with status='starting'
       const agent = await deps.registry.create(input)
       await deps.registry.update(agent.id, { status: "starting" })
@@ -79,12 +105,33 @@ export function createAgentOrchestrator(deps: {
           })
         }
 
-        // 3. ACP handshake: initialize + session/new
-        const transport = await createAcpWsTransport({
-          wsUrl: handle.wsUrl,
-          cwd: input.cwd,
-        })
-        const { sessionId, capabilities: _caps } = await transport.start({ cwd: input.cwd })
+        // 3. ACP handshake: session/new OR session/load
+        let sessionId: string
+        let transport: Awaited<ReturnType<typeof createAcpWsTransport>>
+
+        if (existingSessionId) {
+          // Load path: connect to existing session, collect history notifications.
+          // Phase 5 will route these notifications through AgentSession broadcasts.
+          // For Phase 4, we buffer them (no-op).
+          transport = await createAcpWsLoadTransport({
+            wsUrl: handle.wsUrl,
+            cwd: input.cwd,
+            sessionId: existingSessionId,
+            onHistoryUpdate: () => {
+              // Phase 5 will wire this to AgentSession.handleHistoryNotification
+            },
+          })
+          const startResult = await transport.start({ cwd: input.cwd })
+          sessionId = startResult.sessionId
+        } else {
+          // New session path (existing behavior)
+          transport = await createAcpWsTransport({
+            wsUrl: handle.wsUrl,
+            cwd: input.cwd,
+          })
+          const startResult = await transport.start({ cwd: input.cwd })
+          sessionId = startResult.sessionId
+        }
 
         // 4. Create AgentSession for fan-out
         // Wire getStderr so provider errors surface after empty responses (PROMPT-17)
