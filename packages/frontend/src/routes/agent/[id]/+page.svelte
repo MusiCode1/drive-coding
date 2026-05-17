@@ -267,21 +267,7 @@ $effect(() => {
   if (session.error) cues.error()
 })
 
-// ── Text input (accessibility fallback) ─────────────────────────────────────
-let inputText = $state("")
-
-function send(): void {
-  if (!inputText.trim()) return
-  session.sendPrompt(inputText.trim())
-  inputText = ""
-}
-
-function onKeydown(e: KeyboardEvent): void {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault()
-    send()
-  }
-}
+// B4: text input removed — voice-only interface (no keyboard input)
 
 // ── Bubble click-to-play (Phase 8) ──────────────────────────────────────────
 function onBubblePlayRequest(bubble: Bubble) {
@@ -465,29 +451,7 @@ async function handleSheetAgentClose(agentId: string) {
       <div class="car-active-badge">🚗 בקרת רכב פעילה</div>
     {/if}
 
-    {#if !isCarMode}
-      <form class="text-form" onsubmit={(e) => { e.preventDefault(); send() }}>
-        <textarea
-          bind:value={inputText}
-          onkeydown={onKeydown}
-          placeholder="הקלד הודעה..."
-          rows="2"
-          disabled={session.status !== "connected"}
-          aria-label="הודעה"
-          dir="auto"
-        ></textarea>
-        <div class="form-actions">
-          <button
-            type="submit"
-            class="send-btn"
-            disabled={!inputText.trim() || session.status !== "connected"}
-          >שלח</button>
-          {#if session.status === "thinking" || voice.voiceState === "transcribing"}
-            <button type="button" class="cancel-btn" onclick={session.cancel}>בטל</button>
-          {/if}
-        </div>
-      </form>
-    {/if}
+    <!-- B4 removed: text form removed — voice-only interface -->
   </footer>
 
     <!-- ── Mobile: BottomSheet ───────────────────────────────────────────── -->

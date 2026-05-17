@@ -46,15 +46,27 @@ describe("agent-session bubble grouping (Phase 2)", () => {
     expect(store.bubbles[0]?.segments[0]?.text).toBe("שלום")
   })
 
-  // ── 2: consecutive same-kind, no messageId → segments in same bubble ────────
-  it("consecutive same-kind chunks (no messageId) → segments in same bubble", async () => {
+  // ── 2: consecutive same-kind, no messageId → text concatenated in same segment ──
+  it("consecutive same-kind chunks (no messageId) → text concatenated in one segment (B1)", async () => {
     const { store, ws } = await makeConnected()
     fire(ws, { type: "text_chunk", kind: "message", text: "A" })
     fire(ws, { type: "text_chunk", kind: "message", text: "B" })
     fire(ws, { type: "text_chunk", kind: "message", text: "C" })
     expect(store.bubbles).toHaveLength(1)
-    expect(store.bubbles[0]?.segments).toHaveLength(3)
-    expect(store.bubbles[0]?.segments[2]?.text).toBe("C")
+    // B1 fix: 3 chunks → 1 segment with concatenated text (not 3 separate visual segments)
+    expect(store.bubbles[0]?.segments).toHaveLength(1)
+    expect(store.bubbles[0]?.segments[0]?.text).toBe("ABC")
+  })
+
+  // ── B1 TDD: 3 chunks with same messageId → 1 segment with full text ─────────
+  it("B1: 3 chunks with same messageId form 1 segment with concatenated text", async () => {
+    const { store, ws } = await makeConnected()
+    fire(ws, { type: "text_chunk", kind: "message", text: "שלום, ", messageId: "m1" })
+    fire(ws, { type: "text_chunk", kind: "message", text: "אני שומע ", messageId: "m1" })
+    fire(ws, { type: "text_chunk", kind: "message", text: "אותך.", messageId: "m1" })
+    expect(store.bubbles).toHaveLength(1)
+    expect(store.bubbles[0]?.segments).toHaveLength(1)
+    expect(store.bubbles[0]?.segments[0]?.text).toBe("שלום, אני שומע אותך.")
   })
 
   // ── 3: kind change → new bubble ────────────────────────────────────────────
@@ -77,24 +89,27 @@ describe("agent-session bubble grouping (Phase 2)", () => {
     expect(store.bubbles[1]?.segments[0]?.text).toBe("second")
   })
 
-  // ── 5: same messageId same kind → same bubble ──────────────────────────────
-  it("same messageId and same kind appends to same bubble", async () => {
+  // ── 5: same messageId same kind → text concatenated into one segment ─────────
+  it("same messageId and same kind concatenates text into one segment (B1)", async () => {
     const { store, ws } = await makeConnected()
     fire(ws, { type: "text_chunk", kind: "message", text: "part1", messageId: "m1" })
     fire(ws, { type: "text_chunk", kind: "message", text: "part2", messageId: "m1" })
     expect(store.bubbles).toHaveLength(1)
-    expect(store.bubbles[0]?.segments).toHaveLength(2)
-    expect(store.bubbles[0]?.segments[1]?.text).toBe("part2")
+    // B1 fix: concat into single segment
+    expect(store.bubbles[0]?.segments).toHaveLength(1)
+    expect(store.bubbles[0]?.segments[0]?.text).toBe("part1part2")
   })
 
   // ── 6: thought kind groups correctly with messageId ─────────────────────────
-  it("thought kind chunks with same messageId → segments in same thought bubble", async () => {
+  it("thought kind chunks with same messageId → text concatenated in same thought bubble", async () => {
     const { store, ws } = await makeConnected()
     fire(ws, { type: "text_chunk", kind: "thought", text: "segment A", messageId: "t1" })
     fire(ws, { type: "text_chunk", kind: "thought", text: "segment B", messageId: "t1" })
     expect(store.bubbles).toHaveLength(1)
     expect(store.bubbles[0]?.kind).toBe("thought")
-    expect(store.bubbles[0]?.segments).toHaveLength(2)
+    // B1 fix: concat into single segment
+    expect(store.bubbles[0]?.segments).toHaveLength(1)
+    expect(store.bubbles[0]?.segments[0]?.text).toBe("segment Asegment B")
   })
 
   // ── 7: chronological order: thought → tool → thought → message = 4 bubbles ─

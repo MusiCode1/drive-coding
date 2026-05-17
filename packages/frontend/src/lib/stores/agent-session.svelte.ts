@@ -154,9 +154,14 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
   // ── Phase 2: Bubble helpers ───────────────────────────────────────────────
 
   /**
-   * Append a text segment to the bubble list.
-   * Grouping rule: same kind AND same messageId (null == null) → append segment.
-   * Otherwise → create new bubble.
+   * Append a text chunk to the bubble list.
+   *
+   * Grouping rule: same kind AND same messageId (null == null) → concatenate text
+   * into the last segment of the existing bubble (B1 fix). Otherwise → new bubble.
+   *
+   * B1 fix: instead of creating a new BubbleSegment per text_chunk (which caused
+   * every token to appear as a separate visual "sticker"), we concat text into the
+   * last segment so the full message renders as one contiguous string.
    */
   function appendBubbleChunk(
     kind: "message" | "thought",
@@ -165,15 +170,44 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     opts?: { originalText?: string; translatedText?: string },
   ): void {
     const last = bubbles[bubbles.length - 1]
-    const segment: BubbleSegment = {
-      text,
-      originalText: opts?.originalText,
-      translatedText: opts?.translatedText,
-    }
     if (last && last.kind === kind && last.messageId === messageId) {
-      bubbles = [...bubbles.slice(0, -1), { ...last, segments: [...last.segments, segment] }]
+      // Same bubble: concatenate into the last segment instead of creating a new one.
+      const lastSeg = last.segments[last.segments.length - 1]
+      if (lastSeg) {
+        const updatedSeg: BubbleSegment = {
+          ...lastSeg,
+          text: (lastSeg.text ?? "") + text,
+          // Optionally update translation metadata (used by audio_chunk bridge in B10)
+          ...(opts?.originalText !== undefined ? { originalText: opts.originalText } : {}),
+          ...(opts?.translatedText !== undefined ? { translatedText: opts.translatedText } : {}),
+        }
+        bubbles = [
+          ...bubbles.slice(0, -1),
+          { ...last, segments: [...last.segments.slice(0, -1), updatedSeg] },
+        ]
+      } else {
+        // Empty segments array (defensive) — create first segment
+        bubbles = [
+          ...bubbles.slice(0, -1),
+          {
+            ...last,
+            segments: [
+              { text, originalText: opts?.originalText, translatedText: opts?.translatedText },
+            ],
+          },
+        ]
+      }
     } else {
-      bubbles = [...bubbles, { kind, messageId, segments: [segment] }]
+      bubbles = [
+        ...bubbles,
+        {
+          kind,
+          messageId,
+          segments: [
+            { text, originalText: opts?.originalText, translatedText: opts?.translatedText },
+          ],
+        },
+      ]
     }
   }
 

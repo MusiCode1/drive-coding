@@ -4,6 +4,30 @@
 
 ---
 
+## 2026-05-17 10:35 — Slice 9 Follow-up: Phase 1 — תיקוני UI קריטיים (B1, B4)
+
+### מה בוצע?
+
+**B1 — Bubble grouping תוקן:**
+- `appendBubbleChunk` ב-`agent-session.svelte.ts` שונה: במקום ליצור `BubbleSegment` חדש לכל `text_chunk` (שגרם לכל מילה להופיע כ-"מדבקה" נפרדת), עכשיו מצרף (concat) את הטקסט ל-segment האחרון באותה bubble.
+- כלל: same kind + same messageId → concat לsegment האחרון; different kind/messageId → bubble חדש.
+- 4 טסטים חדשים (TDD, red→green), 3 טסטים קיימים עודכנו לתיאור התנהגות החדשה.
+
+**B4 — הסרת textbox + כפתור "שלח":**
+- הוסר ה-block `{#if !isCarMode}` שהכיל `<textarea>` + `<button>שלח</button>` מ-`+page.svelte`.
+- הסרת פונקציות `inputText`, `send()`, `onKeydown()` שאיניהן נחוצות יותר.
+- הממשק הוא voice-only בלבד.
+
+**תיקון TypeScript pre-existing:**
+- `CreateAndSpawnInput.existingSessionId` שונה מ-`string | null` ל-`string` (ניקוי intersection type).
+- `http-agents.ts`: מוסיף `?? undefined` בנקודת המעבר ל-orchestrator (null → undefined).
+
+### מעקפים ופתרונות
+
+- תיקון ה-B1 מחייב עדכון 3 טסטים קיימים שציפו לsegments מרובים — התנהגות הישנה הייתה שגויה, הטסטים תוקנו לציפייה הנכונה (concat).
+
+---
+
 ## 2026-05-17 03:30 — Slice 9: Frontend Refactor מלא — 12 Phases, 58 tests חדשים
 
 ### סיכום Slice 9

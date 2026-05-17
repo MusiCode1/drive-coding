@@ -40,7 +40,11 @@ export function registerAgentsHttp(
     }
 
     try {
-      const agent = await deps.orchestrator.createAndSpawn(parsed)
+      // null → undefined: HTTP schema accepts null (JSON compat), orchestrator expects string | undefined
+      const agent = await deps.orchestrator.createAndSpawn({
+        ...parsed,
+        existingSessionId: parsed.existingSessionId ?? undefined,
+      })
       return c.json({ agent: toAgentPublic(agent) }, 201)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)

@@ -12,7 +12,8 @@ import type { RecordingsStore } from "./recordings-store.js"
  * same (cwd, acpSessionId) exists, returns it without spawning.
  */
 export type CreateAndSpawnInput = CreateAgentInput & {
-  existingSessionId?: string | null
+  /** Optional: load an existing ACP session instead of creating a new one. */
+  existingSessionId?: string
 }
 
 export type AgentOrchestrator = {
