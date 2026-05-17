@@ -4,6 +4,51 @@
 
 ---
 
+## 2026-05-17 15:00 — Slice logging-infra: Logging Infrastructure
+
+### מה בוצע
+
+- הוספת `packages/core/src/log/` מבוסס pino: Logger עם child fields, ns היררכי, sinks pluggable
+  - types.ts, namespace.ts, config.ts, index.ts (Node), browser.ts (browser + remote transmit)
+  - 57 טסטים חדשים (namespace + config + api) — כולם ירוקים
+- Backend: `log-setup.ts` עם dual transport (stdout JSON + stderr pretty); LOG_WIRE shortcut
+- Frontend: inline script ב-app.html שטוען LogConfig מ-URL/LS; `src/lib/log.ts` re-export
+- Wire tracing: `backend.acp.wire.*` (ACP NDJSON), `backend.ws.wire.*` (FE↔BE), `fe.ws.wire.*` (FE side)
+- LOG_WIRE shortcut: `LOG_WIRE=1|acp|ws` ב-BE, `?wire=1|acp|ws` ב-FE
+- Backend conversion: כל ~20 console.log/warn/error הוסבו ל-Logger עם correlation IDs (promptId)
+  - sendAudioPrompt: log.info boundaries (start + STT done + ACP done + sendAudioPrompt done)
+  - processQueue: ttsActive false↔true debug transitions
+  - ws-agent: JSON parse warn (silent error חשוף!), connect/disconnect info
+- Frontend conversion: state transitions, audio events, silent errors חשופות
+  - fe.voice: setState helper עם log.info state transition (idle→recording→thinking→speaking)
+  - fe.audio.player: enqueue/tick/ended debug, playback errors warn
+  - catch {} ריקים → log.warn (voice msg parse failed, replay autoplay blocked)
+- Remote sink: pino `browser.transmit` → POST /api/client-log → namespace `client.*`
+  - Rate limit: 500 entries / IP / minute; ArkType validation
+  - 6 טסטים חדשים לendpoint
+
+### איך להפעיל
+
+- BE: `LOG_LEVEL=debug LOG_NS='backend.voice.*,backend.session.tts' bun run src/server.ts`
+- BE wire: `LOG_WIRE=acp bun run src/server.ts`
+- FE: פתח `?log=debug&logNs=fe.voice,fe.audio.*` ב-URL
+- FE remote: `?log=debug&logRemote=1` → לוגים מהbrowser מופיעים ב-BE בtail
+- Sticky: הוסף `&logSticky=1` → נשמר ב-localStorage לreload הבא
+
+### Bugs שגילוי המעקב חשף
+
+- JSON parse fail ב-ws-agent.ts (היה שותק — עכשיו log.warn)
+- 5 catch {} ריקים בFE שאכלו errors — הוסבו ל-warn
+- ttsActive race condition עכשיו נראה בlog (debug level)
+
+### סטטיסטיקות
+
+- 63 טסטים חדשים (57 core/log + 6 http-client-log)
+- 7 commits (Phase 1-5 + lint fix + Phase 4 fix)
+- 490 core+backend tests + 119 frontend tests = 609 ירוקים
+
+---
+
 ## 2026-05-17 11:00 — Slice 9 Follow-up: Phases 2-5 — Data flow + Infrastructure + Polish
 
 ### מה בוצע?
