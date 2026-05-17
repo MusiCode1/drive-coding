@@ -33,6 +33,7 @@ describe("createVoiceSessionStore", () => {
       setVoiceMessageHandler: () => {},
       clearBubbles: () => {},
       getRecordingId: () => null,
+      addTranslatedSegment: () => {},
     }
     const store = createVoiceSessionStore(fake)
     expect(store.voiceState).toBe("idle")
