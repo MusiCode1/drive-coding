@@ -311,9 +311,12 @@ export function createAgentSession(opts: {
 
       // ── 1. STT ──────────────────────────────────────────────────────────────
       const tStt = performance.now()
-      const sttRes = await transcribeUserAudio({ bytes: audioBytes, mimeType }, voiceConfig, {
-        stt: registries.stt,
-      })
+      const sttRes = await transcribeUserAudio(
+        { bytes: audioBytes, mimeType },
+        voiceConfig,
+        { stt: registries.stt },
+        log,
+      )
 
       if (sttRes.isErr()) {
         log.warn({ err: sttRes.error }, "STT failed")
@@ -477,6 +480,7 @@ export function createAgentSession(opts: {
               // Backward compat — existing tests capture audio via callbacks
               callbacks.onAudioChunk(mp3Base64)
             },
+            log,
           )
           if (ttsRes.isErr()) callbacks.onError(ttsRes.error)
         }
