@@ -4,6 +4,46 @@
 
 ---
 
+## 2026-05-17 22:00 — Slice 10 brief — second-pass review + redesign
+
+### הסיבה
+
+‏אבי שאל אם קראתי את הקבצים לעומק. ‏הודיתי שלא — קראתי ‏~7 קבצים BE/FE עיקריים, ‏אבל ‏‏15+ קבצים תומכים נשארו ‏לא קרואים. ‏‏בוצע ‏second-pass.
+
+### תיקונים ארכיטקטוניים שאבי הוסיף
+
+‏**שינוי גדול**: ‏מ-endpoints מותאמים (`/api/translate`, `/api/tts`, ...) ‏ל-**transparent proxy**. ‏ה-FE משתמשת ב-SDKs המקוריים ‏(`@ai-sdk/google`, ‏`@google/genai`) ‏עם `baseURL` ‏שמצביע ל-BE proxy. ‏ה-BE forwards ‏ל-Google/ElevenLabs as-is, ‏OneCLI ‏מזריק keys.
+
+‏יתרון ‏אדריכלי: ‏העתיד יוכל לעבור ל-FE-only ‏(keys בצד לקוח) ‏עם החלפת `baseURL` בלבד.
+
+### תיקוני brief נוספים (13 פערים)
+
+‏‏‏בסעיף 13 של ה-brief — ‏טבלה מלאה.
+
+‏‏הקריטיים:
+- ‏BE לא עושה ACP handshake — ‏FE עושה. ‏BE רק spawns ‏+ ‏מחזיר wsUrl. ‏אחרי handshake, ‏FE קוראת ‏ל-`POST /api/agents/:id/session-attached`.
+- ‏History events `history_*` ‏הוסרו — ‏FE קוראת ‏ל-`session/load` ‏ישירות.
+- ‏ws-streams filter: ‏לא רק `connected` ב-handshake, ‏אלא ‏גם `heartbeat` (כל ~30s), `disconnected`, `error` לאורך ‏ה-session.
+- ‏Warmup 1500ms ‏אחרי `connected` frame ‏(subprocess warmup) — ‏לא היה בbrief.
+- ‏narration cache key = toolCallId (לא content hash).
+- ‏BE shrinks ‏עוד יותר ‏ממה ‏שתיארתי: ‏~1700 שורות impl + 800 tests (כולל narration.ts ‏ו-gemini-transcription.ts).
+
+### עוד פתוח לאישור
+
+‏שתי שאלות בסעיף 14:
+1. ‏Dedup ב-BE או FE? ‏המלצה: BE.
+2. ‏server_event channel ב-WS ‏או polling? ‏המלצה: polling ב-MVP.
+
+### הזמן הנדרש מעודכן
+
+‏Phases (4-6h, 5-7h, 5-7h, 2-3h) = **16-23h** ‏(מעט פחות מהראשון בגלל ‏הסרת endpoints מותאמים).
+
+### Next step
+
+‏אבי יקרא את ה-brief המעודכן. ‏אחרי שתחליט על השאלות הפתוחות, ‏אעביר ל-Sonnet executor.
+
+---
+
 ## 2026-05-17 21:00 — Slice 10 Research + Brief: FE-Orchestrated Refactor
 
 ### רקע

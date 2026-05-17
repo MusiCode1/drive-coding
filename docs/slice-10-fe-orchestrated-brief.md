@@ -20,20 +20,30 @@
 
 ## 1. ‏ההכרעות הארכיטקטוניות
 
+‏‏(מעודכן 2026-05-17 ‏אחרי second-pass review של הקוד הקיים + ‏ההכרעה של אבי על proxy שקוף)
+
 | תחום | החלטה | בסיס |
 |------|--------|------|
-| ‏ACP parsing | FE — ‏`@agentclientprotocol/sdk` ‏‏בדפדפן | ‏ה-SDK Web Standards only |
-| ‏Voice queue + playlist + prefetch | FE | ‏‏פינוי coupling, FE-centric UX |
-| ‏BE = bytes pipe + endpoints + cache | ‏כן | ‏BE לא חייב להיות ACP membrane |
-| ‏fs.readTextFile/writeTextFile | ‏לא מוצהר | ‏opencode קורא לבד מ-disk |
-| ‏Permission UI | auto-allow_once ‏(כמו היום) | ‏UI prompt — slice עתידי |
-| ‏STT | `POST /api/stt`, ‏FE שולחת `session/prompt` בנפרד | ‏separated concerns |
-| ‏Streaming TTS | ✅ in-scope, ‏MediaSource API | ‏‏אבי החליט (לא Safari) |
-| ‏Cache | ‏content-hash בלבד (`sha256(text+voiceId)`) | ‏פשטות |
+| ‏ACP transport | **FE** — ‏`@agentclientprotocol/sdk` ‏‏בדפדפן + ‏בנייה של ‏client impl + initialize + session/new \| session/load | ‏ה-SDK Web Standards only. ‏מאמצים גם listSessions + loadSession כדי להיפטר מ-history events ב-WS |
+| ‏Voice orchestration | FE | ‏‏פינוי coupling, FE-centric UX |
+| ‏BE responsibility | spawn ‏stdio-to-ws + WS bytes pipe + ‏**transparent HTTP proxy** ‏ל-Google + ‏ElevenLabs + native endpoints קטנים | ‏BE ‏באמת ‏טיפש — ‏לא יודע ‏מה ‏עובר ‏ב-proxy ‏פרט ל-cache rule |
+| ‏HTTP endpoints | **transparent proxy** — ‏`/proxy/google/*` ‏ו-`/proxy/elevenlabs/*`. ‏FE ‏משתמשת ב-SDKs המקוריים עם `baseURL` ‏כדי להפנות לproxy | ‏המודל ‏שאבי מציע: ‏לעתיד אפשר לשים מפתחות בצד לקוח ‏ולעקוף את ה-BE לחלוטין. ‏אותה תעבורה, ‏אותו פרוטוקול |
+| ‏Cache | ‏rule-based על URL patterns ‏ב-proxy: ‏Gemini ‏`generateContent` ו-ElevenLabs ‏`text-to-speech` עם hash על body | ‏SDK-native — ‏אין `/api/translate` ‏מותאם |
+| ‏STT | **FE** — ‏`@google/genai` ‏עם baseURL→proxy. ‏FE שולחת audio inline ב-generateContent | ‏אחיד עם translate/narrate שגם הם generateContent |
+| ‏Streaming TTS | ✅ — ‏FE עושה fetch ישיר ל-`/proxy/elevenlabs/v1/text-to-speech/{id}/stream` (לא דרך SDK שלא תומך), ‏עם MediaSource | ‏ללא Safari fallback (אבי) |
+| ‏Recordings | **endpoint native** ‏`POST /api/recordings` ‏ו-`GET /api/recordings/:id` — ‏fs access, ‏‏לא ל-proxy. ‏FE מעלה ‏ברקע במקביל ל-STT | ‏לא חלק מ-Gemini protocol |
+| ‏Sessions / Projects / fs/browse | **endpoints native** ‏(כמו היום) | ‏‏לא חלק מ-protocol כלשהו |
+| ‏Agent ‏handshake | ‏**FE** ‏עושה initialize + session/new \| session/load דרך SDK | ‏BE מספק רק ‏‏wsUrl/port |
+| ‏Agent registry sync | ‏FE קוראת ל-`POST /api/agents/:id/session-attached { sessionId }` ‏אחרי שה-handshake הצליח | ‏BE ‏מעדכן registry + projectsRegistry |
+| ‏fs.readTextFile/writeTextFile | ‏FE לא ‏‏מצהיר | ‏opencode קורא לבד מהדיסק |
+| ‏Permission UI | auto-allow_once ב-FE ‏(כמו היום) | ‏UI prompt — slice עתידי |
+| ‏Narration cache | ‏key = `toolCallId` (לא content hash) | ‏כפי שהיום ב-narrateToolCall. ‏cache hits ‏בעיקר על retry ‏באותו session |
 | ‏localStorage state | playback position + ‏playedSegmentIds ‏(TTL 24h) | ‏refresh recovery |
 | ‏Multi-tab | ‏לא נתמך פעיל. ‏cache הופך אותו ל-tolerable | ‏drive-coding מכשיר אחד |
 | ‏Heartbeat | `$/ping` ‏כל 25s ‏מ-FE | ‏‏NAT/proxy idle eviction |
 | ‏Auto-reconnect ‏ב-WS | ‏❌ — UI prompt למשתמש | ‏acp-ui מסבירים — desync session |
+| ‏Warmup ‏אחרי stdio-to-ws ‏`connected` frame | ‏1500ms ‏לפני initialize | ‏subprocess warmup (קיים היום ב-BE, יעבור ל-FE) |
+| ‏stdio-to-ws wrapper frames | ‏‏FE מסנן `connected`, ‏`heartbeat`, ‏`disconnected`, ‏`error` **לאורך כל הsession** (לא רק handshake) | ‏‏stdio-to-ws שולח heartbeat כל ~30s |
 
 ---
 
@@ -92,9 +102,11 @@
 
 ---
 
-## 3. BE — API Contracts
+## 3. BE — API Contracts (transparent proxy + native endpoints)
 
-### `/ws/agent/:agentId` — bytes pipe
+‏ה-BE ‏אינו ‏מציע API ‏מותאם ל-voice ‏אלא **proxy שקוף** ל-Google ולElevenLabs ‏בנוסף ‏ל-endpoints native קטנים.
+
+### 3.1 `/ws/agent/:agentId` — WS bytes pipe
 
 ‏עוטף את ה-WS של stdio-to-ws ‏ב-loopback. ‏הbytes ‏עוברים as-is ‏בשני הכיוונים. ‏ה-BE לא מפרסר, ‏לא מאמת, ‏לא מעשיר.
 
@@ -103,99 +115,114 @@
 - ‏stdio-to-ws crashes → `close(1011, "bridge closed")`
 - ‏FE נסגר → BE סוגר את ה-bridge WS
 
-‏לא יותר ‏`ServerMessage` schema, ‏לא יותר ‏`audio_chunk`, ‏לא יותר ‏`history_*` ‏events. ‏ה-FE רואה את ‏ה-frames ‏הraw של stdio-to-ws + JSON-RPC של ACP.
+‏אין יותר ‏`ServerMessage` schema, ‏אין יותר ‏`audio_chunk`, ‏אין יותר ‏`history_*` ‏events. ‏ה-FE רואה ‏‏frames raw ‏‏‏של stdio-to-ws + ‏ACP JSON-RPC.
 
-### `POST /api/stt`
+### 3.2 ‏Transparent proxy — ‏`/proxy/google/*` ‏ו-‏`/proxy/elevenlabs/*`
 
-```ts
-// Request:
-type SttRequest = {
-  audioBase64: string
-  mimeType: string  // "audio/webm" | "audio/mp4" | ...
-  agentId?: string   // optional — for recording association
-  previousAssistantText?: string  // D39 STT context
-}
-
-// Response:
-type SttResponse = {
-  text: string
-  recordingId: string  // saved to recordings-store
-}
-
-// Errors: 400 (invalid audio), 502 (Gemini failed)
-```
-
-### `POST /api/translate`
+‏**Pattern:** ‏ה-FE קורא ל-`https://my-be.tuns.sh/proxy/google/v1beta/models/.../generateContent` ‏(לדוגמה). ‏ה-BE מקבל, ‏מסיר ‏את prefix `/proxy/google`, ‏עושה ‏fetch ‏ל-`https://generativelanguage.googleapis.com/v1beta/models/.../generateContent`. ‏ה-headers ו-body ‏עוברים as-is.
 
 ```ts
-// Request:
-type TranslateRequest = {
-  text: string
-  targetLang: "he" | "en"
-}
+// pseudocode
+app.all("/proxy/google/*", proxy("https://generativelanguage.googleapis.com"))
+app.all("/proxy/elevenlabs/*", proxy("https://api.elevenlabs.io"))
 
-// Response:
-type TranslateResponse = {
-  translated: string
-  cacheHit: boolean
+function proxy(upstreamBase) {
+  return async (c) => {
+    const path = c.req.path.replace(/^\/proxy\/[^/]+/, "")
+    const url = upstreamBase + path + c.req.url.searchParams_string
+    // cache check first
+    if (isCacheable(c.req.method, path, c.req.body)) {
+      const key = await hashRequest(c.req.method, path, body)
+      const cached = await proxyCache.get(key)
+      if (cached) return new Response(cached.body, { headers: cached.headers, status: 200 })
+    }
+    
+    const upstream = await fetch(url, {
+      method: c.req.method,
+      headers: c.req.headers,  // OneCLI יחליף ‏את ה-api-key header על המסלול
+      body: c.req.body,
+      signal: c.req.raw.signal,
+    })
+    
+    // Optionally tee to cache for cacheable patterns
+    if (isCacheable(...) && upstream.ok) {
+      const [forFe, forCache] = upstream.body.tee()
+      cacheAsync(key, forCache, upstream.headers)
+      return new Response(forFe, { headers: upstream.headers, status: upstream.status })
+    }
+    
+    return new Response(upstream.body, { headers: upstream.headers, status: upstream.status })
+  }
 }
-
-// Errors: 502 (Gemini failed/timeout)
-// AbortSignal: יpropagated ל-fetch upstream
 ```
 
-### `POST /api/tts` — streaming
+‏**OneCLI integration:** ‏ה-BE עצמו ‏‏רץ ‏מאחורי OneCLI proxy ‏(HTTPS_PROXY env). ‏ה-fetch ‏החיצוני ‏עובר דרכו. ‏OneCLI מזהה את ה-host (`generativelanguage.googleapis.com` ‏או `api.elevenlabs.io`) ‏ו-**מחליף ‏את ה-API-key header** ‏בערך האמיתי לפני ‏ה-forward לupstream.
 
-```ts
-// Request:
-type TtsRequest = {
-  text: string
-  voiceId: string
-  modelId?: "eleven_v3" | "eleven_multilingual_v2" | ...  // default eleven_v3
-}
+‏ה-headers ‏מ-FE יכילו placeholder ‏(כמו ‏שהSDKs מנסחים אותם). ‏ה-OneCLI ‏לא ‏מבדיל ‏בין fetch של BE לbcfetch שמתחיל ב-FE — ‏הוא ‏מסתכל ‏על ‏host destination.
 
-// Response: HTTP 200, Content-Type: audio/mpeg, Transfer-Encoding: chunked
-//   Body: stream of MP3 bytes
-// Or on cache hit: HTTP 200, same content-type, full body from disk
-// Header: X-Cache: "hit" | "miss"
+‏**מותר ‏‏ב-MVP** ‏לוותר על proxy ‏על ‏‏responses שאי-cacheable (e.g., streaming) ‏ו-stream as-is. ‏Hono ‏ב-Bun ‏מאפשר ‏`return new Response(upstream.body, {...})` ‏שעובר זריקה ‏מהירה.
 
-// Errors: 502 (ElevenLabs failed), 499 (client closed = abort)
-// AbortSignal: יpropagated; partial cache write נמחק
+### 3.3 ‏Cache rules ‏ב-proxy
+
+‏BE מזהה דפוסים ‏ספציפיים ‏ל-cache:
+
+| Pattern | מתודה | Cache key | TTL |
+|---------|--------|-----------|-----|
+| `/proxy/google/v1beta/models/*:generateContent` | POST | `sha256(method + path + JSON body)` | unlimited (disk) |
+| `/proxy/elevenlabs/v1/text-to-speech/{voiceId}/stream` | POST | `sha256(method + path + JSON body)` | unlimited |
+| `/proxy/google/v1beta/models/*:streamGenerateContent` | POST | NOT cached (streaming generative) | — |
+| ‏שאר ה-paths | * | NOT cached, ‏transparent forward | — |
+
+‏‏ה-`generateContent` cache ‏מכסה גם ‏translate, ‏narration, ‏ו-STT (‏כי כולם generateContent ‏עם body ‏שונה). ‏STT ‏לא ‏צפוי ל-hit (audio שונה כל פעם) ‏אבל הוא לא נכשל בcache miss.
+
+### 3.4 ‏Native endpoints ‏(unchanged, ‏עם הוספה קטנה)
+
+| Endpoint | מתודה | מטרה |
+|----------|--------|------|
+| `/api/agents` | POST | ‏create agent + spawn bridge + ‏החזרת ‏`{ agentId, wsUrl, bridgePort }` |
+| `/api/agents` | GET | ‏רשימה |
+| `/api/agents/:id` | DELETE | ‏‏cleanup + kill bridge |
+| `/api/agents/:id/session-attached` | POST 🆕 | ‏FE מודיע ‏שhandshake הצליח: ‏`{ sessionId }`. ‏BE ‏מעדכן registry + projectsRegistry |
+| `/api/sessions` | GET | ‏רשימה union (כמו היום) |
+| `/api/projects` | GET | רשימת cwds (כמו היום) |
+| `/api/projects/:hash/sessions` | GET | sessions לפי project |
+| `/api/recordings` | POST 🆕 | ‏‏‏‏שמירת audio: ‏`{ audioBase64, mimeType }` → ‏`{ id }`. ‏FE מעלה ברקע במקביל ל-STT |
+| `/api/recordings/:id` | GET | ‏ה-audio (כמו היום) |
+| `/api/fs/browse?path=` | GET | ‏‏file picker (כמו היום) |
+| `/api/client-log` | POST | ‏FE remote logging (כמו היום) |
+| `/api/health` | GET | ‏‏‏health |
+
+### 3.5 ‏מה ‏‏שהוסר
+
+- ‏`/api/stt`, ‏`/api/translate`, ‏`/api/tts`, ‏`/api/narrate` — ‏**לא נדרשים**. ‏ה-FE קורא ל-Gemini/ElevenLabs ‏ישירות ‏דרך proxy עם ה-SDKs המקוריים.
+- ‏`ServerMessage` schema ב-WS (כל ה-`text_chunk`, `audio_chunk`, `tool_call`, `history_*`, ‏וכו') — ‏ה-WS pipe בלבד.
+
+### 3.6 ‏Agent creation flow (מעודכן)
+
+‏‏היום: ‏BE עושה הכל — ‏spawn + initialize + session/new + ‏record. ‏מחזיר Agent ‏עם `acpSessionId` ‏וready.
+
+‏אחרי:
+
+```
+1. FE: POST /api/agents { cwd, cliKind, existingSessionId? }
+2. BE: registry.create + bridgeManager.spawn — ‏מחזיר { agentId, wsUrl, bridgePort }
+   ‏status = "spawning"
+3. FE: ‏פותח WebSocket ל-/ws/agent/:agentId (proxy ל-bridge)
+4. FE: ‏ממתין לframe `{type:"connected"}` ‏מ-stdio-to-ws (handshake)
+5. FE: ‏warmup 1500ms (subprocess ready)
+6. FE: SDK.initialize(...)
+7. FE: SDK.newSession({cwd}) — או SDK.loadSession({sessionId, cwd}) — מחזיר sessionId
+8. FE: POST /api/agents/:agentId/session-attached { sessionId }
+9. BE: ‏registry.update({ status: "ready", acpSessionId })
+   + projectsRegistry.recordCwd + projectsRegistry.recordSession
+10. ‏FE: ‏סוכן ready, ‏מוכן ל-prompt
 ```
 
-### `POST /api/narrate`
+‏Dedup ‏מ-existing sessionId: ‏ב-FE side. ‏FE קוראת לראשונה ל-`GET /api/agents`, ‏מחפש agent קיים עם ‏`(cwd, sessionId)`, ‏ואם יש — ‏מתחבר אליו במקום ליצור חדש. ‏‏(או ‏BE יכול ‏לעשות dedup ‏ב-POST, ‏אם אם FE שולח ‏existingSessionId — ‏BE בודק registry ‏ומחזיר agent קיים. ‏פשוט יותר ל-BE.)
 
-```ts
-// Request:
-type NarrateRequest = {
-  userMessage: string
-  recentMessages: string[]  // FIFO max 3
-  tool: { toolCallId: string; title: string; kind?: string }
-}
+‏Crash handling: ‏‏היום BE שומר stderr, ‏מחלץ provider error. ‏ימשיך — ‏BE מנטר את ה-bridge process. ‏אם crash, BE שולח ‏`{type:"server_event","kind":"bridge_crash","crashReason":"..."}` ‏על ה-WS pipe ‏(או מעדכן registry, ‏ו-FE polls).
 
-// Response:
-type NarrateResponse = {
-  narrated: string
-  cacheHit: boolean
-}
-
-// Errors: 502 (Gemini failed/timeout), returns title as fallback ב-FE
-// Cache key: sha256(userMessage + "|" + recentMessages.join("|") + "|" + toolCallId)
-```
-
-### `POST /api/recordings` (חדש, מועבר מ-/api/stt חלקית)
-
-‏אופציונלי לMVP — ‏אם המוצר ‏‏רוצה ‏שמירת recording בלי STT. ‏‏בשלב ראשון `/api/stt` ‏יעשה ‏את שני הדברים.
-
-### Endpoints קיימים ‏(unchanged)
-
-- ‏`POST /api/agents` — ‏create agent (cwd + cliKind), ‏‏‏מחזיר agentId
-- ‏`GET /api/agents` — ‏רשימה
-- ‏`DELETE /api/agents/:id`
-- ‏`GET /api/sessions`, ‏`/api/projects`, ‏`/api/projects/:hash/sessions`
-- ‏`GET /api/recordings/:id` — ‏streaming audio playback
-- ‏`GET /api/fs/browse?path=...` — ‏file picker
-- ‏`POST /api/client-log` — ‏FE remote logging
+‏**החלטה לdesign:** ‏לwireup MVP ‏בלי `server_event` frames. ‏FE poll `/api/agents/:id` ‏מדי 5s ‏כשconnect lost. ‏slice עתידי ‏יוסיף ‏server-event channel.
 
 ---
 
@@ -608,222 +635,364 @@ export function createAgentWsHandler(deps: { orchestrator: AgentOrchestrator }) 
 }
 ```
 
-### `/api/translate`
+### `/proxy/google/*` ו-`/proxy/elevenlabs/*` — transparent proxy
 
 ```ts
-// packages/backend/src/delivery/http-voice.ts
-app.post("/api/translate", async (c) => {
-  const { text, targetLang } = await c.req.json()
-  const cacheKey = await sha256Key(`${text}|${targetLang}`)
-  
-  const cached = await translateCache.get(cacheKey)
-  if (cached !== null) {
-    return c.json({ translated: cached, cacheHit: true })
-  }
-  
-  const signal = c.req.raw.signal
-  try {
-    const { text: translated } = await generateText({
-      model: registries.translator["gemini/flash-lite"],
-      prompt: buildTranslationPrompt(text, targetLang),
-      abortSignal: signal,
-    })
-    const trimmed = translated.trim()
-    await translateCache.set(cacheKey, trimmed)
-    return c.json({ translated: trimmed, cacheHit: false })
-  } catch (e) {
-    if (signal.aborted) return c.body(null, 499)
-    return c.json({ error: String(e) }, 502)
-  }
-})
-```
+// packages/backend/src/delivery/http-proxy.ts
+import { createProxyCache, computeCacheKey, isCacheableRequest } from "./proxy-cache"
 
-### `/api/tts` — streaming
+const proxyCache = createProxyCache(path.resolve("data/cache/proxy"))
 
-```ts
-app.post("/api/tts", async (c) => {
-  const { text, voiceId, modelId = "eleven_v3" } = await c.req.json()
-  const cacheKey = await sha256Key(`${text}|${voiceId}|${modelId}`)
-  
-  const cached = await ttsCache.get(cacheKey)
-  if (cached !== null) {
-    return c.body(cached, 200, {
-      "content-type": "audio/mpeg",
-      "x-cache": "hit",
-    })
-  }
-  
-  const signal = c.req.raw.signal
-  const upstream = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
-    {
-      method: "POST",
-      headers: {
-        "xi-api-key": "placeholder-onecli-injects",
-        "Content-Type": "application/json",
-        "Accept": "audio/mpeg",
-      },
-      body: JSON.stringify({
-        text,
-        model_id: modelId,
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
-      }),
-      signal,
-    },
-  )
-  
-  if (!upstream.ok) {
-    return c.json({ error: `ElevenLabs ${upstream.status}` }, 502)
-  }
-  
-  // Tee the stream: one to client, one to cache buffer
-  const [toClient, toCache] = upstream.body!.tee()
-  
-  // Cache in background
-  ;(async () => {
-    const chunks: Uint8Array[] = []
-    const reader = toCache.getReader()
-    try {
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        chunks.push(value)
+const PROXY_HOSTS: Record<string, string> = {
+  google: "https://generativelanguage.googleapis.com",
+  elevenlabs: "https://api.elevenlabs.io",
+}
+
+export function registerProxyHttp(app: Hono): void {
+  app.all("/proxy/:provider/*", async (c) => {
+    const provider = c.req.param("provider")
+    const upstream = PROXY_HOSTS[provider]
+    if (!upstream) return c.json({ error: "unknown provider" }, 404)
+    
+    // ‏הסרת ‏prefix
+    const pathSuffix = new URL(c.req.url).pathname.replace(`/proxy/${provider}`, "")
+    const search = new URL(c.req.url).search
+    const targetUrl = `${upstream}${pathSuffix}${search}`
+    
+    // ‏Forward את ה-headers כפי שבאים. ‏OneCLI יחליף ‏api-key headers ‏על המסלול.
+    const headers = new Headers(c.req.raw.headers)
+    headers.delete("host")  // ‏אסור לupstream
+    
+    // ‏Read body once
+    const body = c.req.method === "GET" || c.req.method === "HEAD"
+      ? null
+      : new Uint8Array(await c.req.arrayBuffer())
+    
+    // Cache check
+    let cacheKey: string | null = null
+    if (isCacheableRequest(c.req.method, pathSuffix, body)) {
+      cacheKey = await computeCacheKey(c.req.method, pathSuffix, body)
+      const cached = await proxyCache.get(cacheKey)
+      if (cached) {
+        return new Response(cached.body, {
+          status: 200,
+          headers: { ...cached.headers, "x-cache": "hit" },
+        })
       }
-      const total = new Uint8Array(chunks.reduce((s, c) => s + c.length, 0))
-      let offset = 0
-      for (const c of chunks) { total.set(c, offset); offset += c.length }
-      await ttsCache.set(cacheKey, total)
-    } catch {
-      // partial — don't cache
     }
-  })()
-  
-  return new Response(toClient, {
-    status: 200,
-    headers: {
-      "content-type": "audio/mpeg",
-      "x-cache": "miss",
-    },
+    
+    // Forward to upstream
+    const signal = c.req.raw.signal
+    const res = await fetch(targetUrl, {
+      method: c.req.method,
+      headers,
+      body,
+      signal,
+    })
+    
+    // Stream back to FE; tee for cache if applicable
+    if (cacheKey && res.ok && res.body) {
+      const [toClient, toCache] = res.body.tee()
+      cacheStreamInBackground(cacheKey, toCache, res.headers)
+      return new Response(toClient, {
+        status: res.status,
+        headers: { ...Object.fromEntries(res.headers), "x-cache": "miss" },
+      })
+    }
+    
+    return new Response(res.body, {
+      status: res.status,
+      headers: res.headers,
+    })
   })
-})
-```
+}
 
-### `/api/stt`
+function isCacheableRequest(method: string, path: string, body: Uint8Array | null): boolean {
+  if (method !== "POST" || !body) return false
+  // Gemini generateContent (translate, narrate, STT)
+  if (/^\/v1beta\/models\/[^/]+:generateContent\b/.test(path)) return true
+  // ElevenLabs streaming TTS
+  if (/^\/v1\/text-to-speech\/[^/]+\/stream\b/.test(path)) return true
+  return false
+}
 
-```ts
-app.post("/api/stt", async (c) => {
-  const { audioBase64, mimeType, previousAssistantText } = await c.req.json()
-  const audioBytes = Buffer.from(audioBase64, "base64")
-  
-  // 1. Save recording
-  let recordingId: string | undefined
+async function computeCacheKey(method: string, path: string, body: Uint8Array | null): Promise<string> {
+  const hasher = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`${method}|${path}|${body ? new TextDecoder().decode(body) : ""}`),
+  )
+  return Buffer.from(hasher).toString("hex")
+}
+
+async function cacheStreamInBackground(
+  key: string,
+  stream: ReadableStream<Uint8Array>,
+  headers: Headers,
+): Promise<void> {
+  const chunks: Uint8Array[] = []
+  const reader = stream.getReader()
   try {
-    const saved = await recordingsStore.save(new Uint8Array(audioBytes), mimeType)
-    recordingId = saved.id
-  } catch (e) {
-    log.warn({ err: e }, "recording save failed")
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      if (value) chunks.push(value)
+    }
+    const total = chunks.reduce((s, c) => s + c.length, 0)
+    const merged = new Uint8Array(total)
+    let off = 0
+    for (const c of chunks) { merged.set(c, off); off += c.length }
+    
+    // Store body + relevant headers (content-type)
+    const meta = { contentType: headers.get("content-type") ?? "application/octet-stream" }
+    await proxyCache.set(key, { body: merged, headers: meta })
+  } catch {
+    // partial — לא ‏cache
   }
-  
-  // 2. STT
-  const sttRes = await transcribeUserAudio(
-    { bytes: new Uint8Array(audioBytes), mimeType },
-    { sttModel: "gemini/flash-context", previousAssistantText, ...defaultConfig },
-    { stt: registries.stt },
-  )
-  
-  if (sttRes.isErr()) {
-    return c.json({ error: sttRes.error }, 502)
-  }
-  
-  return c.json({ text: sttRes.value, recordingId })
-})
+}
 ```
 
-### `/api/narrate`
+### Cache implementation
 
 ```ts
-app.post("/api/narrate", async (c) => {
-  const { userMessage, recentMessages, tool } = await c.req.json()
-  const cacheKey = await sha256Key(
-    `${userMessage}|${recentMessages.join("|")}|${tool.toolCallId}`,
-  )
-  
-  const cached = await narrateCache.get(cacheKey)
-  if (cached) return c.json({ narrated: cached.text, cacheHit: true })
-  
-  const signal = c.req.raw.signal
-  const result = await narrateToolCall(
-    { userMessage, recentMessages },
-    { toolCallId: tool.toolCallId, kind: tool.kind, title: tool.title },
-    narrationGenerator,
-    inMemoryCacheAdapter,
-  )
-  
-  if (result.isErr()) {
-    if (signal.aborted) return c.body(null, 499)
-    return c.json({ error: result.error }, 502)
+// packages/backend/src/delivery/proxy-cache.ts
+type CachedEntry = {
+  body: Uint8Array
+  headers: { contentType: string }
+}
+
+export function createProxyCache(baseDir: string) {
+  // ‏מבוסס createDiskCache<Uint8Array> ‏הקיים, ‏עם header sidecar
+  const bodyCache = createDiskCache<Uint8Array>({
+    namespace: "proxy",
+    baseDir,
+    encode: (v) => v,
+    decode: (v) => v,
+  })
+  // ‏Header נשמר ב-JSON sidecar: ‏key + ".headers"
+  return {
+    async get(key: string): Promise<CachedEntry | null> {
+      const body = await bodyCache.get(key)
+      if (!body) return null
+      const headersText = await bodyCache.get(`${key}.headers`).then(b => b ? new TextDecoder().decode(b) : null)
+      const headers = headersText ? JSON.parse(headersText) : { contentType: "application/octet-stream" }
+      return { body, headers }
+    },
+    async set(key: string, entry: CachedEntry) {
+      await bodyCache.set(key, entry.body)
+      await bodyCache.set(`${key}.headers`, new TextEncoder().encode(JSON.stringify(entry.headers)))
+    },
   }
-  
-  await narrateCache.set(cacheKey, { text: result.value, toolTitle: tool.title, createdAt: new Date().toISOString() })
-  return c.json({ narrated: result.value, cacheHit: false })
+}
+```
+
+### `/api/recordings` (חדש — ‏POST)
+
+```ts
+app.post("/api/recordings", async (c) => {
+  const { audioBase64, mimeType } = await c.req.json()
+  const bytes = Buffer.from(audioBase64, "base64")
+  const { id } = await recordingsStore.save(new Uint8Array(bytes), mimeType)
+  return c.json({ id })
 })
 ```
 
-### מחיקות מה-BE
+### `/api/agents/:id/session-attached` (חדש)
 
-‏בPhase 4 ‏(cleanup):
-- ‏`packages/backend/src/app/agent-session.ts` — ‏מוסיר 90% (~700 שורות). ‏נשארות ~50 שורות ‏ל-lifecycle bookkeeping ‏אם נדרש.
-- ‏`packages/backend/src/acp/acp-transport.ts` — ‏מוסיר לחלוטין (380 שורות)
-- ‏`packages/backend/src/acp/client-impl.ts` — ‏מוסיר לחלוטין (58 שורות)
-- ‏`packages/backend/src/acp/ws-streams.ts` — ‏מוסיר לחלוטין (mostly ‏עובר ל-FE)
-- ‏`packages/backend/src/voice/pipeline.ts` — ‏חלקים נשארים (translateText, transcribeUserAudio); ‏speakSentence ‏מוחלף ב-streaming fetch
-- ‏`packages/backend/src/voice/narration.ts` — ‏נשאר as-is
-- ‏‏טסטים מ-`agent-session-coordination.test.ts`, ‏`agent-session-audio.test.ts`, ‏`agent-session-history.test.ts`, ‏`ws-protocol-tier1.test.ts` — ‏‏רובם מועברים ל-FE או נמחקים
+```ts
+app.post("/api/agents/:id/session-attached", async (c) => {
+  const agentId = c.req.param("id")
+  const { sessionId } = await c.req.json()
+  
+  const agent = await registry.get(agentId)
+  if (!agent) return c.json({ error: "agent not found" }, 404)
+  
+  await registry.update(agentId, { status: "ready", acpSessionId: sessionId })
+  await projectsRegistry.recordCwd(agent.cwd, agent.cliKind)
+  await projectsRegistry.recordSession(agent.cwd, sessionId)
+  
+  return c.json({ ok: true })
+})
+```
 
-‏סך הכל ‏‏BE shrinks ‏ב-~1200 שורות impl + ~600 שורות tests.
+### `/ws/agent/:id` ‏‏‏(`packages/backend/src/delivery/ws-agent.ts` ‏refactor)
+
+```ts
+export function createAgentWsHandler(deps: { orchestrator: AgentOrchestrator }) {
+  return {
+    async open(feWs) {
+      const agentId = feWs.data.agentId
+      const port = deps.orchestrator.getBridgePort(agentId)
+      if (!port) {
+        feWs.close(1008, "agent not found")
+        return
+      }
+      
+      const bridgeWs = new WebSocket(`ws://127.0.0.1:${port}/`)
+      feWs.data.bridgeWs = bridgeWs
+      
+      // Buffer FE messages until bridge is open
+      const pendingFromFe: (string | Uint8Array)[] = []
+      let bridgeOpen = false
+      feWs.data.pendingFromFe = pendingFromFe
+      
+      bridgeWs.on("open", () => {
+        bridgeOpen = true
+        for (const msg of pendingFromFe) bridgeWs.send(msg)
+        pendingFromFe.length = 0
+        feWs.data.bridgeOpen = true
+      })
+      
+      bridgeWs.on("message", (data) => {
+        try {
+          feWs.send(typeof data === "string" ? data : data)
+        } catch { /* ws closing */ }
+      })
+      
+      bridgeWs.on("close", () => feWs.close(1011, "bridge closed"))
+      bridgeWs.on("error", () => feWs.close(1011, "bridge error"))
+    },
+    
+    message(feWs, raw) {
+      if (feWs.data.bridgeOpen) {
+        feWs.data.bridgeWs?.send(raw)
+      } else {
+        feWs.data.pendingFromFe.push(raw)
+      }
+    },
+    
+    close(feWs) {
+      feWs.data.bridgeWs?.close()
+    },
+  }
+}
+```
+
+### Orchestrator changes
+
+‏`agent-orchestrator.ts:createAndSpawn` ‏מצטמצם דרסטית:
+
+```ts
+async createAndSpawn(input): Promise<{ agentId, wsUrl, bridgePort }> {
+  // dedup check (כמו היום, על cwd+sessionId)
+  if (input.existingSessionId) {
+    const dup = findActiveDuplicate(...)
+    if (dup) return { agentId: dup.id, wsUrl: dup.wsUrl, bridgePort: dup.bridgePort }
+  }
+  
+  const agent = await registry.create(input)
+  await registry.update(agent.id, { status: "spawning" })
+  
+  const handle = await bridgeManager.spawnWithStderr(agent.id, {
+    cliKind: input.cliKind,
+    cwd: input.cwd,
+    modelOverride: input.modelOverride ?? null,
+  })
+  
+  stderrGetters.set(agent.id, handle.getStderr)
+  
+  await registry.update(agent.id, { bridgePort: handle.port })
+  // status stays "spawning" — FE will mark "ready" via /api/agents/:id/session-attached
+  
+  return {
+    agentId: agent.id,
+    wsUrl: handle.wsUrl,
+    bridgePort: handle.port,
+  }
+}
+```
+
+**הסר** מ-orchestrator:
+- ‏יצירת ‏ACP transport (createAcpWsTransport / createAcpWsLoadTransport)
+- ‏createAgentSession
+- ‏historyBuffer ‏ו-history broadcast
+- ‏‏‏הקריאה ל-projectsRegistry.recordSession ‏(עוברת ל-`/api/agents/:id/session-attached`)
+
+‏ה-orchestrator עדיין מנהל crash listening — ‏אם bridge מת, מסמן status=crashed עם crashReason מ-stderr.
+
+### מחיקות מה-BE (Phase 4)
+
+‏- ‏`packages/backend/src/app/agent-session.ts` — ‏**נמחק לחלוטין** (755 שורות).
+‏- ‏`packages/backend/src/acp/acp-transport.ts` — ‏נמחק לחלוטין (380 שורות).
+‏- ‏`packages/backend/src/acp/client-impl.ts` — ‏נמחק לחלוטין (58 שורות).
+‏- ‏`packages/backend/src/acp/ws-streams.ts` — ‏נמחק לחלוטין (~130 שורות; ‏עובר ל-FE).
+‏- ‏`packages/backend/src/voice/pipeline.ts` — ‏**נמחק לחלוטין** (~185 שורות). ‏ה-FE קורא ל-Gemini ‏דרך SDK ישירות.
+‏- ‏`packages/backend/src/voice/narration.ts` — ‏**נמחק לחלוטין** (~153 שורות). ‏ה-FE ‏‏בונה ‏את ה-prompt ‏ומשתמש ב-`@ai-sdk/google` `generateText`.
+‏- ‏`packages/backend/src/voice/providers/gemini-transcription.ts` — ‏נמחק (FE עושה ‏STT דרך ‏SDK).
+‏- ‏`packages/backend/src/voice/cache-disk.ts` — ‏יוחלף ב-`createDiskCache` הגנרי ‏(שכבר קיים ב-`cache.ts`). ‏אופציונלי לarchive בPhase 4.
+‏- ‏`packages/backend/src/voice/cache.ts` + ‏`cache-keys.ts` — ‏נשאר ‏(משתמש ב-`/proxy/*` ‏cache).
+‏- ‏`packages/backend/src/voice/providers.ts` — ‏‏ייתכן ‏שהוא ‏נמחק לחלוטין (FE עושה את הSDKs). ‏אבל ‏אם רוצים ‏שgem still תוכל לעשות something server-side ‏בעתיד, ‏ניתן להשאיר.
+‏- ‏טסטים: ‏`agent-session-*.test.ts` (3 קבצים), ‏`ws-protocol-tier1.test.ts`, ‏`narration.test.ts`, ‏`voice-pipeline.test.ts`, ‏`translate-cache.test.ts`, ‏`gemini-transcription.test.ts` — ‏‏‏רובם נמחקים, ‏חלקם מועברים ל-FE עם תרגום ל-Svelte stores.
+
+‏סך הכל ‏BE shrinks ‏ב-~1700 שורות impl + ~800 שורות tests.
 
 ---
 
 ## 6. ‏FE — Implementation Sketch
 
-### ACP client
+### 6.1 ACP — ws-to-streams (port מ-BE עם תיקון)
+
+‏הקובץ ‏הקיים ב-BE ‏(`packages/backend/src/acp/ws-streams.ts`, 131 שורות) ‏מועבר ל-FE עם התאמות:
+1. ‏עובד ‏על `WebSocket` של דפדפן ‏(לא ‏`ws` npm)
+2. ‏‏ה-set של frame types ‏לסינון: `connected`, ‏`heartbeat`, ‏`disconnected`, ‏`error` — ‏ב-**כל ה-session** (לא רק handshake), ‏בגלל ‏ש-stdio-to-ws שולח heartbeat כל ~30s
+3. ‏‏שמירה ‏על ‏‏אופן ה-fragmentation: ‏‏לא להוסיף `\n` לframes נכנסים ‏(לאפשר ל-SDK ‏לאסוף partial frames)
+4. ‏‏בכתיבה ‏‏ל-WS: ‏לפצל על `\n` ‏ולשלוח כל שורה ‏כ-frame בנפרד, ‏לכל שורה ‏להוסיף ‏suffix `\n` ‏(opencode מצפה ל-NDJSON delimited stream)
 
 ```ts
 // lib/acp/ws-to-streams.ts
+const STDIO_TO_WS_FRAME_TYPES = new Set(["connected", "heartbeat", "disconnected", "error"])
+
 export function wsToWebStreams(ws: WebSocket): {
   readable: ReadableStream<Uint8Array>
   writable: WritableStream<Uint8Array>
 } {
-  const readable = new ReadableStream({
+  const encoder = new TextEncoder()
+  const decoder = new TextDecoder()
+  
+  const readable = new ReadableStream<Uint8Array>({
     start(controller) {
       ws.addEventListener("message", (ev) => {
-        if (typeof ev.data === "string") {
-          // stdio-to-ws wrapper frame? swallow
-          if (ev.data.startsWith('{"type":"connected"') || 
-              ev.data.startsWith('{"type":"disconnected"')) return
-          controller.enqueue(new TextEncoder().encode(ev.data))
-        } else if (ev.data instanceof ArrayBuffer) {
-          controller.enqueue(new Uint8Array(ev.data))
+        const text = typeof ev.data === "string" 
+          ? ev.data 
+          : ev.data instanceof ArrayBuffer ? decoder.decode(ev.data) : String(ev.data)
+        
+        // ‏Filter stdio-to-ws wrapper frames לאורך כל הsession
+        if (!text.includes('"jsonrpc"')) {
+          try {
+            const parsed = JSON.parse(text) as { type?: string; jsonrpc?: string }
+            if (parsed.jsonrpc === undefined && parsed.type !== undefined) {
+              if (STDIO_TO_WS_FRAME_TYPES.has(parsed.type)) return  // swallow
+              console.warn("dropped non-ACP frame:", text.slice(0, 200))
+              return
+            }
+          } catch { /* fallthrough — could be partial NDJSON */ }
         }
+        
+        // Forward as-is — ‏לא להוסיף `\n`, ‏ה-SDK יחזיק buffer ‏ל-partial frames
+        controller.enqueue(encoder.encode(text))
       })
-      ws.addEventListener("close", () => controller.close())
-      ws.addEventListener("error", (e) => controller.error(e))
+      ws.addEventListener("close", () => { try { controller.close() } catch {} })
+      ws.addEventListener("error", (e) => { try { controller.error(e) } catch {} })
     },
   })
   
-  const writable = new WritableStream({
+  const writable = new WritableStream<Uint8Array>({
     write(chunk) {
-      const text = new TextDecoder().decode(chunk)
-      ws.send(text)  // SDK appends newlines internally
+      const text = decoder.decode(chunk)
+      // ‏פיצול על `\n` — ‏SDK ‏כותב לנו `{...}\n` לכל הודעה
+      for (const line of text.split("\n")) {
+        if (line.trim().length > 0) {
+          try { ws.send(`${line}\n`) } catch { /* ws closed */ }
+        }
+      }
     },
-    close() {
-      ws.close()
-    },
+    close() { try { ws.close() } catch {} },
   })
   
   return { readable, writable }
 }
 ```
+
+### 6.2 ACP client (orchestrator-level)
 
 ```ts
 // lib/acp/client.ts
@@ -831,19 +1000,23 @@ import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk"
 import { wsToWebStreams } from "./ws-to-streams"
 import { createClientImpl } from "./client-impl"
 
+const WARMUP_DELAY_MS = 1500
+
 export async function createAcpClient(agentId: string, onUpdate: (n: SessionNotification) => void) {
   const proto = location.protocol === "https:" ? "wss:" : "ws:"
   const ws = new WebSocket(`${proto}//${location.host}/ws/agent/${agentId}`)
   
+  // 1. ‏WS open
   await new Promise<void>((resolve, reject) => {
     ws.addEventListener("open", () => resolve(), { once: true })
     ws.addEventListener("error", () => reject(new Error("WS connect failed")), { once: true })
   })
   
-  // Wait for stdio-to-ws handshake (one `connected` frame)
+  // 2. ‏‏המתנה ל-stdio-to-ws ‏`{type:"connected"}` ‏handshake frame
   await new Promise<void>((resolve) => {
     const onMsg = (ev: MessageEvent) => {
-      if (typeof ev.data === "string" && ev.data.includes('"connected"')) {
+      const text = typeof ev.data === "string" ? ev.data : ""
+      if (text.includes('"type":"connected"')) {
         ws.removeEventListener("message", onMsg)
         resolve()
       }
@@ -851,21 +1024,24 @@ export async function createAcpClient(agentId: string, onUpdate: (n: SessionNoti
     ws.addEventListener("message", onMsg)
   })
   
-  // Build streams + connection
+  // 3. ‏Warmup — subprocess עוד לא מוכן ‏לקלוט initialize
+  await new Promise(r => setTimeout(r, WARMUP_DELAY_MS))
+  
+  // 4. ‏בניית streams + connection
   const { readable, writable } = wsToWebStreams(ws)
   const stream = ndJsonStream(writable, readable)
   
   const client = createClientImpl({ onUpdate })
   const conn = new ClientSideConnection(_agent => client, stream)
   
-  // Initialize
+  // 5. Initialize
   const initResult = await conn.initialize({
     protocolVersion: 1,
     clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
     clientInfo: { name: "drive-coding", version: "0.2.0" },
   })
   
-  // Heartbeat
+  // 6. Heartbeat $/ping ‏כל 25s — ‏NAT/proxy keepalive
   const heartbeat = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ jsonrpc: "2.0", method: "$/ping" }) + "\n")
@@ -875,6 +1051,31 @@ export async function createAcpClient(agentId: string, onUpdate: (n: SessionNoti
   return {
     conn,
     capabilities: initResult.agentCapabilities,
+    
+    /** newSession או loadSession, מחזיר sessionId */
+    async newSession(opts: { cwd: string }) {
+      return conn.newSession({ cwd: opts.cwd, mcpServers: [] })
+    },
+    
+    async loadSession(opts: { cwd: string; sessionId: string }) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (conn as any).loadSession({ sessionId: opts.sessionId, cwd: opts.cwd, mcpServers: [] })
+    },
+    
+    /** session/list — ל-FE שרוצה לרשום sessions ישנים לפני create */
+    async listSessions() {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (conn as any).listSessions({})
+    },
+    
+    async prompt(sessionId: string, text: string) {
+      return conn.prompt({ sessionId, prompt: [{ type: "text", text }] })
+    },
+    
+    async cancel(sessionId: string) {
+      return conn.cancel({ sessionId })
+    },
+    
     close() {
       clearInterval(heartbeat)
       ws.close()
@@ -883,7 +1084,7 @@ export async function createAcpClient(agentId: string, onUpdate: (n: SessionNoti
 }
 ```
 
-### Client impl
+### 6.3 ‏Client impl ‏(`fs` capabilities לא ‏מוצהר)
 
 ```ts
 // lib/acp/client-impl.ts
@@ -894,9 +1095,13 @@ export function createClientImpl(opts: {
 }): Client {
   return {
     async requestPermission(params) {
-      // auto-allow_once (Phase: future slice will add UI)
+      // auto-allow_once. ‏slice עתידי יוסיף UI prompt.
       const byKind = (k: string) => params.options.find(o => o.kind === k)
-      const chosen = byKind("allow_once") ?? byKind("allow_always") ?? params.options[0]
+      const chosen =
+        byKind("allow_once") ??
+        byKind("allow_always") ??
+        params.options.find(o => !o.kind.startsWith("reject")) ??
+        params.options[0]
       if (!chosen) return { outcome: { outcome: "cancelled" } }
       return { outcome: { outcome: "selected", optionId: chosen.optionId } }
     },
@@ -905,100 +1110,319 @@ export function createClientImpl(opts: {
       opts.onUpdate(notification)
     },
     
-    // fs.readTextFile + writeTextFile: NOT declared, agent reads disk directly.
-    // No implementation needed — SDK won't call methods we don't declare.
+    // ‏fs.readTextFile + writeTextFile: ‏NOT declared ב-clientCapabilities.
+    // opencode ‏יקרא לדיסק לבד.
   }
 }
 ```
+
+### 6.4 Voice clients — ‏SDKs המקוריים עם baseURL→proxy
+
+```ts
+// lib/voice/sdks.ts — singleton SDK instances configured for our proxy
+import { createGoogleGenerativeAI } from "@ai-sdk/google"
+import { GoogleGenAI } from "@google/genai"
+
+const PROXY_BASE = `${location.protocol}//${location.host}`
+
+/** ‏‏לתרגום + narration — generateText. */
+export const googleAi = createGoogleGenerativeAI({
+  apiKey: "browser-placeholder",  // לא חשוב מה
+  baseURL: `${PROXY_BASE}/proxy/google/v1beta`,
+})
+
+/** ‏ל-STT — ‏multimodal generateContent עם audio inline. */
+export const googleGenAi = new GoogleGenAI({
+  apiKey: "browser-placeholder",
+  httpOptions: { baseURL: `${PROXY_BASE}/proxy/google` },
+})
+```
+
+### 6.5 STT client
+
+```ts
+// lib/voice/stt-client.ts
+import { googleGenAi } from "./sdks"
+import { saveRecording } from "./recordings-client"
+
+export async function transcribe(blob: Blob, opts: {
+  previousAssistantText?: string
+  signal?: AbortSignal
+}): Promise<{ text: string; recordingId: string }> {
+  const audioBytes = new Uint8Array(await blob.arrayBuffer())
+  const mimeType = blob.type || "audio/webm"
+  
+  // ‏Save recording ברקע במקביל ל-STT
+  const recordingPromise = saveRecording(audioBytes, mimeType)
+  
+  const hebrewRule = "Output in the original script of the language spoken. If Hebrew, output Hebrew letters."
+  const prompt = opts.previousAssistantText
+    ? `Transcribe the user's audio. Context: previous assistant said: "${opts.previousAssistantText}". Transcribe ONLY user's audio. ${hebrewRule}`
+    : `Transcribe the audio. ${hebrewRule}`
+  
+  const base64 = btoa(String.fromCharCode(...audioBytes))
+  
+  const response = await googleGenAi.models.generateContent({
+    model: "gemini-flash-latest",
+    contents: [{
+      role: "user",
+      parts: [
+        { text: prompt },
+        { inlineData: { mimeType, data: base64 } },
+      ],
+    }],
+    config: { abortSignal: opts.signal },  // ‏אם ה-SDK תומך, אחרת ‏נסיף custom fetch
+  })
+  
+  const { id: recordingId } = await recordingPromise
+  return { text: response.text ?? "", recordingId }
+}
+```
+
+### 6.6 Translate client
+
+```ts
+// lib/voice/translate-client.ts
+import { generateText } from "ai"
+import { googleAi } from "./sdks"
+
+const TIMEOUT_MS = 2500
+
+export async function translate(text: string, targetLang: "he" | "en", signal?: AbortSignal): Promise<string> {
+  const prompt = `Translate the following text to ${targetLang === "he" ? "Hebrew" : "English"}.
+Output ONLY the translated text, no explanations.
+
+Text:
+${text}`
+  
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(new Error(`Translate timeout ${TIMEOUT_MS}ms`)), TIMEOUT_MS)
+  signal?.addEventListener("abort", () => ac.abort(), { once: true })
+  
+  try {
+    const result = await generateText({
+      model: googleAi("gemini-flash-lite-latest"),
+      prompt,
+      abortSignal: ac.signal,
+    })
+    return result.text.trim()
+  } finally {
+    clearTimeout(timer)
+  }
+}
+```
+
+### 6.7 TTS streaming client — ‏fetch ישיר (SDK לא תומך)
+
+```ts
+// lib/voice/tts-client.ts
+const PROXY_BASE = `${location.protocol}//${location.host}/proxy/elevenlabs`
+
+export async function synthesizeStreaming(opts: {
+  text: string
+  voiceId: string
+  modelId?: string
+  signal?: AbortSignal
+}): Promise<ReadableStream<Uint8Array>> {
+  const modelId = opts.modelId ?? "eleven_v3"
+  const response = await fetch(
+    `${PROXY_BASE}/v1/text-to-speech/${opts.voiceId}/stream`,
+    {
+      method: "POST",
+      headers: {
+        "xi-api-key": "browser-placeholder",
+        "content-type": "application/json",
+        "accept": "audio/mpeg",
+      },
+      body: JSON.stringify({
+        text: opts.text,
+        model_id: modelId,
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+      }),
+      signal: opts.signal,
+    },
+  )
+  
+  if (!response.ok) {
+    throw new Error(`TTS failed: ${response.status} ${await response.text().catch(() => "")}`)
+  }
+  if (!response.body) {
+    throw new Error("TTS: no body in response")
+  }
+  
+  return response.body
+}
+```
+
+### 6.8 Narration client
+
+```ts
+// lib/voice/narrate-client.ts
+import { generateText } from "ai"
+import { googleAi } from "./sdks"
+import { buildNarratePrompt } from "$lib/voice/narration-prompt"  // ‏port מ-core/voice/narration.ts
+
+const TIMEOUT_MS = 1500
+
+export async function narrate(opts: {
+  userMessage: string
+  recentMessages: string[]
+  tool: { toolCallId: string; title: string; kind?: string }
+  signal?: AbortSignal
+}): Promise<string> {
+  const prompt = buildNarratePrompt(
+    { userMessage: opts.userMessage, recentMessages: opts.recentMessages },
+    { toolCallId: opts.tool.toolCallId, title: opts.tool.title, kind: opts.tool.kind },
+  )
+  
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), TIMEOUT_MS)
+  opts.signal?.addEventListener("abort", () => ac.abort(), { once: true })
+  
+  try {
+    const result = await generateText({
+      model: googleAi("gemini-flash-lite-latest"),
+      prompt,
+      abortSignal: ac.signal,
+    })
+    return result.text.trim() || opts.tool.title  // fallback
+  } catch (e) {
+    return opts.tool.title  // ‏fallback ב-error או timeout
+  } finally {
+    clearTimeout(timer)
+  }
+}
+```
+
+‏**Note:** ‏`buildNarratePrompt` ‏ב-core (`packages/core/src/voice/narration-prompt.ts`) — ‏עוברת ממקומה הנוכחי ב-`packages/backend/src/voice/narration.ts:71`. ‏היא pure function, ‏שייכת ל-core.
+
+### 6.9 Recordings client
+
+```ts
+// lib/voice/recordings-client.ts
+export async function saveRecording(bytes: Uint8Array, mimeType: string): Promise<{ id: string }> {
+  const audioBase64 = btoa(String.fromCharCode(...bytes))
+  const response = await fetch("/api/recordings", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ audioBase64, mimeType }),
+  })
+  if (!response.ok) throw new Error(`Save recording failed: ${response.status}`)
+  return response.json()
+}
+```
+
+### 6.10 ‏Cache hit detection ‏ב-FE
+
+‏ה-FE לא צריך לדעת ‏cache hit/miss — ‏ה-`X-Cache: hit|miss` header ‏זמין אם רוצים ‏‏debugging. ‏פנימית, ‏‏המהירות תעיד.
 
 ---
 
 ## 7. ‏Phases
 
-### Phase 1 — BE proxy + endpoints (5-7h)
+### Phase 1 — BE: proxy + native endpoints + WS pipe (4-6h)
 
-**מטרה:** ‏BE מוכן לקבל קריאות מ-FE.
+**מטרה:** ‏BE ‏‏הופך ל-proxy שקוף + ‏‏endpoints native קטנים.
 
 ‏Tasks:
-- ‏Refactor `/ws/agent/:id` ל-bytes pipe (~50 שורות)
-- ‏Endpoint `/api/translate` (cache, ‏abort)
-- ‏Endpoint `/api/tts` (streaming, ‏cache via tee)
-- ‏Endpoint `/api/stt` (אוחד עם recording save)
-- ‏Endpoint `/api/narrate` (cache)
-- ‏Integration tests: ‏curl לכל endpoint, ‏cache hit/miss, ‏abort
-- ‏ה-BE עדיין מחזיק קוד ישן (agent-session.ts) ‏לתאימות אחורה — ‏לא מוחק עדיין
+- ‏‏רישום ‏ב-`server.ts` של handler חדש ‏`registerProxyHttp(app)` ‏(`packages/backend/src/delivery/http-proxy.ts`)
+- ‏‏Proxy ל-`/proxy/google/*` ‏ול-`/proxy/elevenlabs/*` — ‏transparent forwarding
+- ‏Cache rule-based על URL patterns (generateContent + ‏TTS stream) — ‏‏`packages/backend/src/delivery/proxy-cache.ts`
+- ‏‏Refactor ‏`/ws/agent/:id` ‏ל-bytes pipe (~50 שורות; ‏מקובץ חדש `ws-agent.ts` במקום הישן)
+- ‏Endpoint חדש: ‏`POST /api/recordings` ‏(audioBase64 + mimeType → ‏id) — ‏‏מקובץ `http-history.ts` ‏(הרחבה)
+- ‏Endpoint חדש: ‏`POST /api/agents/:id/session-attached` ‏(sessionId → רישום ב-registry + projectsRegistry)
+- ‏Refactor `agent-orchestrator.createAndSpawn`: ‏מסיר ACP handshake, ‏מחזיר { agentId, wsUrl, bridgePort }
+- ‏Integration tests: ‏curl ‏לproxy עם cache hit/miss, ‏ל-WS pipe ‏עם mock stdio-to-ws
 
 ‏DoD:
-- ‏4 endpoints חדשים עוברים ‏unit + integration tests
+- ‏`POST /proxy/google/v1beta/models/gemini-flash-latest:generateContent` ‏זורם ל-upstream + ‏cache hit ב-2nd call
+- ‏`POST /proxy/elevenlabs/v1/text-to-speech/{id}/stream` ‏זורם chunks ‏בlive + cache hit ב-2nd call
+- ‏`POST /api/agents` ‏מחזיר ‏`{ agentId, wsUrl, bridgePort }` — ‏‏לא agent ready
+- ‏`POST /api/agents/:id/session-attached` ‏מסמן ‏status=ready
 - ‏`/ws/agent/:id` עובד pipe בtest mock עם stdio-to-ws fake
-- ‏Cache hit מחזיר ‏ב-<10ms, ‏cache miss ‏‏מצליח proxy
 
-**Commit:** `feat(backend): Phase 1 — voice endpoints + WS bytes pipe (slice 10)`
+**Commit:** `feat(backend): Phase 1 — transparent proxy + native endpoints (slice 10)`
 
-### Phase 2 — FE ACP client (5-7h)
+### Phase 2 — FE: ACP client (SDK) + agent flow (5-7h)
 
-**מטרה:** ‏FE מתחבר ‏ל-ACP דרך SDK, ‏רואה bubbles.
+**מטרה:** ‏FE ‏עושה ACP handshake ‏עצמאית, ‏מציג bubbles ‏מ-sessionUpdate.
 
 ‏Tasks:
-- ‏`lib/acp/ws-to-streams.ts` (~30 שורות)
-- ‏`lib/acp/client-impl.ts` (~40 שורות)
-- ‏`lib/acp/client.ts` (~80 שורות)
-- ‏Refactor `agent-session.svelte.ts`: ‏מתחבר עם SDK, ‏subscribes ל-sessionUpdate, ‏מבנה bubbles כמו היום (אבל מ-notifications raw)
-- ‏Heartbeat `$/ping` ‏כל 25s
-- ‏No auto-reconnect — ‏מציג "חיבור נפל, ‏לחץ לרענן"
-- ‏Integration test: ‏שיחה מקצה לקצה ‏‏(prompt → bubbles streaming)
+- ‏`packages/frontend/src/lib/acp/ws-to-streams.ts` — ‏port מ-BE עם תיקון frame types filter
+- ‏`packages/frontend/src/lib/acp/client-impl.ts` (~40 שורות)
+- ‏`packages/frontend/src/lib/acp/client.ts` — ‏createAcpClient עם warmup, heartbeat, newSession, loadSession, listSessions
+- ‏Refactor ‏`packages/frontend/src/lib/stores/agent-session.svelte.ts`:
+  - ‏POST `/api/agents` → ‏מקבל { agentId, wsUrl, bridgePort }
+  - ‏fork ‏acp client → ‏initialize + newSession|loadSession → sessionId
+  - ‏POST `/api/agents/:id/session-attached` { sessionId }
+  - ‏subscribe ל-sessionUpdate, ‏מבנה bubbles ‏מ-notifications raw (אותו ‏logic של היום)
+- ‏Refactor `routes/agent/[id]/+page.svelte`: ‏‏חיבור ‏לאflow החדש
+- ‏Heartbeat $/ping כל 25s (כבר בclient.ts)
+- ‏No auto-reconnect — UI prompt "חיבור נפל, רענן"
+- ‏Integration test: ‏‏prompt → bubbles streaming end-to-end (mock WS עם NDJSON)
 
 ‏DoD:
-- ‏ACP client ‏מבצע `initialize` + ‏`session/new` בהצלחה
-- ‏`session/prompt` ‏עם text → bubbles מתעדכנות עם text_chunks
-- ‏`session/load` ‏עם sessionId → history bubbles ‏מוצגות
-- ‏heartbeat נשלח כל 25s (verified ב-traffic log)
+- ‏ה-FE ‏יוצר agent, ‏עושה handshake, ‏שולח `session/prompt`, ‏מקבל text_chunks ‏ומציג bubbles
+- ‏`session/load` ‏ל-existing sessionId → history bubbles
+- ‏`session/list` (ב-page /sessions) — ‏ניתן ‏אבל אופציה לדחות לdebug עתידי
 
 **Commit:** `feat(frontend): Phase 2 — ACP client over WS pipe (slice 10)`
 
-### Phase 3 — FE voice orchestrator (5-7h)
+### Phase 3 — FE: voice orchestrator (5-7h)
 
-**מטרה:** ‏Voice flow מקצה לקצה ‏ב-FE: ‏record → STT → ACP → ‏translate → TTS streaming → play.
-
-‏Tasks:
-- ‏`lib/voice/stt-client.ts`, ‏`translate-client.ts`, ‏`tts-client.ts`, ‏`narrate-client.ts`
-- ‏`lib/voice/audio-stream.ts` (MediaSource-based)
-- ‏`lib/voice/playlist.ts` (`addSegment`, ‏`jumpTo`, ‏`prev`, ‏`next`)
-- ‏`lib/voice/orchestrator.ts` (the big one — coordination, prefetch, queue, abort)
-- ‏Refactor `voice-session.svelte.ts`: ‏‏delegates ל-orchestrator
-- ‏Refactor `routes/agent/[id]/+page.svelte`: ‏‏משתמש ב-stores החדשים, ‏מסיר את ה-effect של player.addSegment ‏הישן
-- ‏localStorage state persistence
-
-‏DoD:
-- ‏הקלטה → STT → ACP → ‏translate → TTS streaming → playback ‏‏פועלים מקצה לקצה
-- ‏prefetch של 2 segments קדימה
-- ‏prev/next ‏עובר instant ‏(cache hit אם כבר נטען)
-- ‏cancel ‏מבטל in-flight ‏fetch
-- ‏רענון tab משחזר ‏playback position ‏מ-localStorage
-
-**Commit:** `feat(frontend): Phase 3 — voice orchestrator + streaming TTS (slice 10)`
-
-### Phase 4 — BE cleanup + parity (3-4h)
-
-**מטרה:** ‏מחיקת קוד ישן, ‏‏וידוא שכל הפיצ'רים עובדים.
+**מטרה:** ‏Voice flow מקצה לקצה: ‏record → STT → ACP → translate → TTS streaming → playback.
 
 ‏Tasks:
-- ‏מחיקת `app/agent-session.ts` (רוב התוכן)
-- ‏מחיקת `acp/acp-transport.ts`, ‏`acp/client-impl.ts`, ‏`acp/ws-streams.ts`
-- ‏פינוי `voice/pipeline.ts` — speakSentence ‏הוסר (מחזיק רק translateText + transcribeUserAudio)
-- ‏מחיקת tests מיותרים: ‏coordination, audio, ws-protocol-tier1 ‏‏(integration לא נחוצה ‏יותר)
-- ‏העברת tests של sentence-boundary + cache-key ‏ל-FE ‏(import מ-core ‏עובד from FE)
-- ‏‏וידוא flows עובדים: ‏dashboard, /sessions, /agent/:id, file picker, settings, recording replay
-- ‏‏‏עדכון behaviors-coverage.md
-- ‏‏‏עדכון walkthrough.md ‏עם entry סיכום
+- ‏`packages/core/src/voice/narration-prompt.ts` — ‏פיצול `buildNarratePrompt` ‏מ-`backend/src/voice/narration.ts` ל-core (pure function)
+- ‏`packages/frontend/src/lib/voice/sdks.ts` — googleAi (@ai-sdk/google) + googleGenAi (@google/genai) עם baseURL→proxy
+- ‏`lib/voice/stt-client.ts`, ‏`translate-client.ts`, ‏`tts-client.ts`, ‏`narrate-client.ts`, ‏`recordings-client.ts`
+- ‏`lib/voice/audio-stream.ts` — MediaSource per segment, ‏Audio element pool
+- ‏`lib/voice/playlist.ts` — addSegment, ‏jumpTo, ‏prev, ‏next, ‏isPlayingBubble
+- ‏`lib/voice/orchestrator.ts` — ‏הליבה: ‏accumulators, ‏‏subscribe ‏ל-agentSession.onUpdate, ‏prefetch policy (lookahead 2), ‏AbortController per pending request
+- ‏Refactor `voice-session.svelte.ts` — delegate ל-orchestrator
+- ‏Refactor `routes/agent/[id]/+page.svelte` — ‏‏מסיר את ה-effects הישנים שsubscribed ל-`voice.currentlyPlayingSegmentId`
+- ‏localStorage state persistence (`stores/playback-storage.ts`)
+- ‏Settings: ‏voiceId default ‏מקבל אופציה במשך flow
 
 ‏DoD:
-- ‏BE shrinks ‏‏‏על ~1200 ‏שורות impl
+- ‏הקלטה → POST /api/recordings ‏ברקע + STT via /proxy/google ‏generateContent → text
+- ‏session/prompt עם text → notifications חוזרים
+- ‏accumulator + splitIntoSentences ‏מפיק jobs
+- ‏prefetch: ‏translate + TTS streaming + MediaSource playback בזרימה
+- ‏user jump → ‏pending requests aborted (‏fetch signal) → ‏playback מתחיל מ-target
+- ‏narration tool flow עובד (FE קורא ‏ל-/proxy/google עם narrate prompt)
+- ‏localStorage persistence (refresh test)
+- **‏"קפיצה להודעה" עובד** — ‏ה-FE ‏יודע ‏לבטל pending thoughts ‏ולקפוץ לmessage שהגיע
+
+**Commit:** `feat(frontend): Phase 3 — voice orchestrator + streaming TTS via proxy (slice 10)`
+
+### Phase 4 — BE cleanup + parity check (2-3h)
+
+**מטרה:** ‏מחיקת קוד ישן, ‏‏וידוא ‏parity ‏מלא.
+
+‏Tasks:
+- ‏מחיקת `packages/backend/src/app/agent-session.ts` ‏(755 שורות)
+- ‏מחיקת `packages/backend/src/acp/acp-transport.ts` (380 שורות)
+- ‏מחיקת `packages/backend/src/acp/client-impl.ts` (58 שורות)
+- ‏מחיקת `packages/backend/src/acp/ws-streams.ts` (131 שורות)
+- ‏מחיקת `packages/backend/src/voice/pipeline.ts` (185 שורות)
+- ‏מחיקת `packages/backend/src/voice/narration.ts` (153 שורות) — ‏אחרי שbuildNarratePrompt עבר ל-core
+- ‏מחיקת `packages/backend/src/voice/providers/gemini-transcription.ts` (73 שורות)
+- ‏מחיקת `packages/backend/src/voice/providers.ts` (66 שורות) — ‏אם אין שימוש server-side
+- ‏מחיקת cache-disk.ts ‏אם לא בשימוש
+- ‏עדכון `packages/backend/src/server.ts` ‏ל-imports החדשים בלבד
+- ‏מחיקת tests מיותרים (~10-15 קבצי test)
+- ‏‏וידוא flows ‏עובדים: ‏dashboard, ‏‏/sessions, ‏/agent/:id, ‏file picker, ‏settings, ‏recording replay
+- ‏‏עדכון `docs/behaviors-coverage.md` — UI-AUDIO-8 ‏עכשיו ✅
+- ‏‏עדכון `docs/walkthrough.md` ‏עם entry סיכום
+
+‏DoD:
+- ‏BE shrinks ‏‏ב-~1700 ‏שורות impl + ~800 שורות tests
 - ‏typecheck + lint ‏ירוקים
 - ‏‏כל ה-tests עוברים
-- ‏‏פיצ'רים שעבדו ב-vnext עובדים ב-vnext-fe-orchestrated
+- ‏‏manual smoke test ‏ב-browser: ‏record → STT → ACP → TTS playback ‏רצוף
 
-**Commit:** `chore(backend): Phase 4 — cleanup old voice + ACP code (slice 10)`
+**Commit:** `chore(backend): Phase 4 — remove old voice + ACP code (slice 10)`
 
 ### Phase 5 (אופציונלי) — UX polish
 
@@ -1103,11 +1527,77 @@ pnpm typecheck + pnpm lint + pnpm test ‏לפני כל commit.
 | מימד | תוצאה |
 |------|--------|
 | ‏Commits | 4 phases ‏(אופציה ל-5) |
-| ‏Tests חדשים | ‏~20-30 ‏(אבל ‏גם 50-80 ‏tests ‏ישנים נמחקים) |
-| ‏BE LoC ‏delta | ‏-1200 impl, -600 tests |
-| ‏FE LoC ‏delta | ‏+800 impl, +200 tests |
-| ‏New endpoints | 4 |
-| ‏‏New modules | 8 ‏(ב-FE `lib/acp/` ו-`lib/voice/`) |
+| ‏Tests חדשים | ‏~20-30 (כל שכבת ה-orchestrator + integration). ‏‏~80-100 ישנים נמחקים |
+| ‏BE LoC ‏delta | ‏**-1700 impl, -800 tests** |
+| ‏FE LoC ‏delta | ‏+900-1100 impl, +250 tests |
+| ‏New endpoints | ‏2 native (`/api/recordings POST`, ‏`/api/agents/:id/session-attached`) + ‏proxy routes (`/proxy/google/*`, ‏`/proxy/elevenlabs/*`) |
+| ‏‏New modules | ‏~10 ‏(ב-FE `lib/acp/` ו-`lib/voice/`) |
 | ‏‏Performance | streaming TTS ‏‏‏מוריד time-to-first-byte ‏מ-1-2s ל-200-300ms |
-| ‏‏UX wins | ‏prefetch + cancel = ‏‏jump-to-message ‏עובד טבעית; ‏skip לא בזבזני |
-| ‏‏Coupling reduction | ‏‏‏‏אין יותר WS schema לתחזק; ‏רק 4 HTTP contracts |
+| ‏‏UX wins | ‏prefetch + cancel = ‏jump-to-message ‏טבעי, ‏skip לא בזבזני |
+| ‏‏Coupling reduction | ‏אין יותר WS schema לתחזק; ‏ה-traffic ‏מ-FE זהה ל-OneCLI gateway pattern — ‏מאפשר ‏‏מעבר ל-FE-only (keys בצד לקוח) בעתיד |
+
+---
+
+## 13. ‏Second-pass review — ‏פערים ‏שתוקנו
+
+‏בעקבות ‏‏question של אבי ‏("האם קראת את הקבצים לעומק?") ‏בוצע ‏‏second-pass review של ‏15 קבצים שלא נכללו ב-original brief. ‏ה-gaps שנמצאו ‏ותוקנו ‏ב-brief זה:
+
+### תיקונים ארכיטקטוניים
+
+| # | הטענה המקורית ב-brief | התיקון |
+|---|------------------------|----------|
+| 1 | `/api/translate`, `/api/tts`, `/api/narrate`, `/api/stt` ‏כ-endpoints מותאמים | ‏**הוסר.** ‏המודל ‏הוא transparent proxy על Google + ElevenLabs. ‏FE משתמשת ב-SDKs המקוריים עם `baseURL`. ‏אבי החליט: ‏"השרת ‏טיפש" |
+| 2 | "BE עושה ACP handshake (initialize + newSession)" | ‏**שונה.** ‏BE רק spawn ‏+ ‏מחזיר wsUrl. FE עושה את ה-handshake דרך SDK. ‏FE מודיעה ל-BE על sessionId דרך endpoint חדש `/api/agents/:id/session-attached` |
+| 3 | History events `history_*` עוברים ב-WS | ‏**הוסר.** ‏ה-FE קוראת ‏ל-`session/load` ‏דרך SDK ומקבלת notifications ‏ישירות. ‏אין צורך ב-history events |
+| 4 | "stdio-to-ws מסנן רק `connected` ב-handshake" | ‏**שונה.** ‏מסנן ‏גם `heartbeat` (כל ~30s), ‏`disconnected`, ‏`error` ‏לאורך ה-session. ‏ראה `ws-streams.ts` המקורי |
+| 5 | "warmup delay" ‏לא ‏מוזכר | ‏**נוסף.** 1500ms ‏‏אחרי `connected` frame ‏לפני initialize. ‏subprocess עוד לא מוכן |
+| 6 | narration cache key = ‏content hash | ‏**שונה.** ‏key = toolCallId (כפי שcurrent narrateToolCall עושה). ‏cache hits בעיקר ב-retry באותו session |
+| 7 | "speakSentence stays in pipeline.ts" | ‏**שונה.** ‏speakSentence נמחק; ‏ה-FE עושה fetch streaming ישירות ל-`/proxy/elevenlabs` |
+| 8 | "voice/narration.ts stays as-is" | ‏**שונה.** ‏מוסיר ב-Phase 4 — ‏buildNarratePrompt עוברת ל-core כ-pure function, ‏ה-FE קורא ל-Gemini ‏דרך SDK |
+
+### תיקוני קוד מדויקים
+
+| # | הטענה המקורית | המציאות בקוד |
+|---|---------------|----------------|
+| 9 | "agent-session.ts shrinks 90%" | ‏**מוסר לחלוטין.** ‏ה-fan-out ‏נעלם — ‏ה-FE מקבל notifications ‏ישירות מ-ACP |
+| 10 | "BE shrinks ~1200 שורות" | ‏‏**יותר — ~1700 שורות impl + 800 tests.** ‏‏נכלל גם ‏narration.ts (153), ‏gemini-transcription.ts (73), ‏אם providers.ts מוסר (66) |
+| 11 | "ws-streams.ts logic — port ל-FE" | ‏✅ ‏עם תיקון: ‏filter set ‏מ-{connected} ל-{connected, heartbeat, disconnected, error}, ‏פיצול ב-write על `\n` ‏ושליחה ‏per line |
+| 12 | `recordings-store.save({bytes, mimeType}) → ?` | ‏**אומת:** ‏returns `{id: string, durationMs?: number}` |
+| 13 | "narration cache הוא in-memory" | ‏**אומת:** ‏ה-cache abstraction ‏(`Cache<NarrationValue>`) ‏כבר תומך ב-disk; ‏‏הbackend הקיים ‏מעביר ‏in-memory Map ב-`agent-session.ts:370`. ‏עבודה ‏עתידית ‏היא להפנות ‏אותו ל-`createDiskCache` — ‏‏במודל החדש זה ‏יקרה ‏אוטומטית ב-proxy cache |
+
+### Future-proofing (אבי highlight)
+
+‏המודל ‏עם ‏transparent proxy + SDKs מקוריים ‏מאפשר ‏‏בעתיד:
+1. ‏המשתמש מכניס ‏API keys ‏ב-FE settings → IndexedDB
+2. ‏FE ‏מחליף `baseURL` ‏מ-proxy ל-upstream ישיר
+3. ‏‏SDKs פולטים את ה-key ‏ישירות בheaders
+4. ‏BE ‏‏הופך ‏ל-stdio-to-ws ‏spawner בלבד (אין יותר proxy)
+
+‏זה אופציה אדריכלית לסליי-עתידי. ‏ה-brief זה ‏מספק את הצעד הראשון.
+
+---
+
+## 14. ‏Decisions עוד פתוחות לאישור אבי
+
+‏‏לפני שאני מוסיר ל-executor, ‏יש 2 שאלות שכדאי להבהיר:
+
+### 14.1 Dedup של existingSessionId — ‏BE ‏או FE?
+
+‏היום: BE עושה dedup ב-`agent-orchestrator.createAndSpawn` (מחפש agent קיים עם cwd+sessionId).
+
+‏אופציות:
+‏(א) ‏**BE keeps dedup** — ‏FE שולח `{ cwd, sessionId? }` ל-`POST /api/agents`, ‏BE בודק registry, ‏אם קיים מחזיר ‏את הקיים. ‏אם לא — ‏spawns חדש.
+‏(ב) ‏**FE עושה dedup** — ‏FE קוראת ‏`GET /api/agents`, ‏מחפש מקומית. ‏BE ‏‏תמיד spawns ‏ב-POST.
+
+‏המלצה: **(א)** — ‏לשמור ‏ב-BE. ‏יותר עקבי, ‏‏פחות round trips.
+
+### 14.2 ‏server_event channel ‏על ה-WS pipe?
+
+‏אם bridge crashed או provider error מ-stderr — ‏איך FE יודע?
+
+‏אופציות:
+‏(א) ‏**BE שולח על ה-WS pipe** frames של `{"type":"server_event","kind":"bridge_crash",...}`. ‏ה-FE צריך לסנן אותם (כמו `connected`/`heartbeat`).
+‏(ב) ‏**FE polls** `GET /api/agents/:id` ‏כשmusically ‏מאתר ‏error.
+‏(ג) ‏**SSE endpoint נפרד** `/api/agents/:id/events`.
+
+‏המלצה: ‏**(ב) ‏ב-MVP**. ‏ה-FE כבר ‏מטפל ב-error state ‏(`session.status = "crashed"`). ‏Polling ‏‏יקרה ‏‏רק כש-WS פתאום נופל ‏(rare). ‏slice עתידי ‏יוסיף channel ‏מפורש אם נצרך.
