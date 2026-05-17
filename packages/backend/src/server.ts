@@ -6,7 +6,6 @@ import { Hono } from "hono"
 const log = createLogger("backend.server")
 
 import { cors } from "hono/cors"
-import { listSessionsFromBridge } from "./acp/acp-transport.js"
 import { createBridgeManager } from "./acp/bridge-manager.js"
 import { createInMemoryAgentRegistry } from "./agents/registry.js"
 import { createAgentOrchestrator } from "./app/agent-orchestrator.js"
@@ -20,12 +19,13 @@ import {
   registerFsBrowseHttp,
   registerProjectsHttp,
   registerRecordingsHttp,
+  registerRecordingsPostHttp,
 } from "./delivery/http-history.js"
 import { registerHttpOptions } from "./delivery/http-options.js"
+import { registerProxyHttp } from "./delivery/http-proxy.js"
 import { type AgentWsData, createAgentWsHandler } from "./delivery/ws-agent.js"
 import { type WsData as EchoWsData, registerEchoWs } from "./delivery/ws-echo.js"
 import { DiskCache } from "./voice/cache-disk.js"
-import { DEFAULT_REGISTRIES } from "./voice/providers.js"
 
 const app = new Hono()
 
@@ -34,20 +34,20 @@ app.use("*", cors({ origin: ["http://localhost:5173"], credentials: true }))
 // Boot dependencies
 const registry = createInMemoryAgentRegistry()
 const bridgeManager = createBridgeManager()
-// Slice 8a: session history storage
 const projectsRegistry = createProjectsRegistry(path.resolve("data/cache"))
 const sessionsCache = createSessionsCache()
 const recordingsStore = createRecordingsStore(path.resolve("data/recordings"))
 
-// N4 fix: pass projectsRegistry so agent creation records cwds for the sessions UI
 const orchestrator = createAgentOrchestrator({
   registry,
   bridgeManager,
-  recordingsStore,
   projectsRegistry,
 })
 
 // fetchSessions: spawns a temp bridge, calls session/list, kills bridge
+// NOTE: listSessionsFromBridge is still used here for the sessions UI (not removed in Phase 1)
+const { listSessionsFromBridge } = await import("./acp/acp-transport.js")
+
 async function fetchSessions(cwd: string) {
   const projects = await projectsRegistry.getProjects()
   const entry = projects.find((p) => p.cwd === cwd)
@@ -68,7 +68,7 @@ async function fetchSessions(cwd: string) {
   }
 }
 
-// Voice pipeline dependencies (Slice 5)
+// TTS disk cache (kept for backward compat — Phase 4 will remove)
 const ttsCache = new DiskCache(path.resolve("data/cache/tts"))
 await ttsCache.init()
 
@@ -76,18 +76,18 @@ await ttsCache.init()
 registerHttp(app)
 registerHttpOptions(app)
 registerClientLogHttp(app)
-registerAgentsHttp(app, { registry, orchestrator })
+registerAgentsHttp(app, { registry, orchestrator, projectsRegistry })
 registerProjectsHttp(app, { projectsRegistry, sessionsCache, fetchSessions })
 registerRecordingsHttp(app, { recordingsStore })
+registerRecordingsPostHttp(app, { recordingsStore })
 registerFsBrowseHttp(app)
+
+// Slice 10: transparent proxy for Google + ElevenLabs
+registerProxyHttp(app, { cacheBaseDir: path.resolve("data/cache/proxy") })
 
 // WS handlers
 const echo = registerEchoWs(app)
-const agentWs = createAgentWsHandler({
-  orchestrator,
-  registries: DEFAULT_REGISTRIES,
-  cache: ttsCache,
-})
+const agentWs = createAgentWsHandler({ orchestrator })
 
 type WsData = EchoWsData | AgentWsData
 

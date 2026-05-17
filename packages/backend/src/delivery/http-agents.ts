@@ -2,6 +2,7 @@ import { type AgentRegistry, CliKind, toAgentPublic } from "@drive-coding/core"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import type { AgentOrchestrator } from "../app/agent-orchestrator"
+import type { ProjectsRegistry } from "../app/projects-registry"
 
 /**
  * Backend-only extension of CreateAgentInput — includes existingSessionId
@@ -16,7 +17,11 @@ const CreateAgentInputFull = type({
 
 export function registerAgentsHttp(
   app: Hono,
-  deps: { registry: AgentRegistry; orchestrator: AgentOrchestrator },
+  deps: {
+    registry: AgentRegistry
+    orchestrator: AgentOrchestrator
+    projectsRegistry?: ProjectsRegistry
+  },
 ): void {
   // GET /api/agents — רשימה
   app.get("/api/agents", async (c) => {
@@ -41,11 +46,12 @@ export function registerAgentsHttp(
 
     try {
       // null → undefined: HTTP schema accepts null (JSON compat), orchestrator expects string | undefined
-      const agent = await deps.orchestrator.createAndSpawn({
+      const result = await deps.orchestrator.createAndSpawn({
         ...parsed,
         existingSessionId: parsed.existingSessionId ?? undefined,
       })
-      return c.json({ agent: toAgentPublic(agent) }, 201)
+      // Return CreateAndSpawnResult shape (Slice 10)
+      return c.json(result, 201)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       return c.json({ error: msg }, 500)
@@ -68,5 +74,53 @@ export function registerAgentsHttp(
 
     await deps.orchestrator.deleteAndKill(id)
     return c.body(null, 204)
+  })
+
+  /**
+   * POST /api/agents/:id/session-attached
+   *
+   * Slice 10 Phase 1: FE calls this after ACP handshake succeeds.
+   * Updates registry status → "ready", records cwd + sessionId in projectsRegistry.
+   *
+   * Body: { sessionId: string }
+   * Response: { ok: true }
+   *
+   * MED-9 guard: if agent is already "ready" with a DIFFERENT acpSessionId → 409.
+   */
+  app.post("/api/agents/:id/session-attached", async (c) => {
+    const agentId = c.req.param("id")
+
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ error: "invalid json" }, 400)
+    }
+
+    const { sessionId } = body as Record<string, unknown>
+    if (typeof sessionId !== "string" || !sessionId) {
+      return c.json({ error: "sessionId is required" }, 400)
+    }
+
+    const agent = await deps.registry.get(agentId)
+    if (!agent) return c.json({ error: "agent not found" }, 404)
+
+    // MED-9 idempotent guard: if already ready with a DIFFERENT sessionId → conflict
+    if (agent.status === "ready" && agent.acpSessionId && agent.acpSessionId !== sessionId) {
+      return c.json({ error: "agent already attached to a different session" }, 409)
+    }
+
+    // Mark ready + record session
+    await deps.registry.update(agentId, { status: "ready", acpSessionId: sessionId })
+
+    if (deps.projectsRegistry) {
+      await deps.projectsRegistry.recordCwd(
+        agent.cwd,
+        agent.cliKind as import("@drive-coding/core").BridgeKind,
+      )
+      await deps.projectsRegistry.recordSession(agent.cwd, sessionId)
+    }
+
+    return c.json({ ok: true })
   })
 }

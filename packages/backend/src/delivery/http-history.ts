@@ -118,6 +118,49 @@ export function registerRecordingsHttp(
   })
 }
 
+// ─── POST /api/recordings ─────────────────────────────────────────────────────
+
+/**
+ * POST /api/recordings — Upload and persist an audio recording.
+ *
+ * Slice 10 Phase 1: FE uploads audio in the background in parallel with STT.
+ *
+ * Body: { audioBase64: string, mimeType: string }
+ * Response: { id: string }
+ */
+export function registerRecordingsPostHttp(
+  app: Hono,
+  deps: { recordingsStore: RecordingsStore },
+): void {
+  app.post("/api/recordings", async (c) => {
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ error: "invalid json" }, 400)
+    }
+
+    const { audioBase64, mimeType } = body as Record<string, unknown>
+
+    if (typeof audioBase64 !== "string" || !audioBase64) {
+      return c.json({ error: "audioBase64 is required" }, 400)
+    }
+    if (typeof mimeType !== "string" || !mimeType) {
+      return c.json({ error: "mimeType is required" }, 400)
+    }
+
+    let bytes: Uint8Array
+    try {
+      bytes = new Uint8Array(Buffer.from(audioBase64, "base64"))
+    } catch {
+      return c.json({ error: "invalid base64" }, 400)
+    }
+
+    const { id } = await deps.recordingsStore.save(bytes, mimeType)
+    return c.json({ id }, 201)
+  })
+}
+
 // ─── /api/fs/browse ───────────────────────────────────────────────────────────
 
 const HIDDEN_PREFIXES = [".git", ".opencode", ".svelte-kit", "node_modules", ".pnpm"]

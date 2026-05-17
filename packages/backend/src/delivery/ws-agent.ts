@@ -1,182 +1,142 @@
-import type { CacheStore } from "@drive-coding/core"
-import { ClientMessage, type ServerMessage } from "@drive-coding/core"
-import { createLogger } from "@drive-coding/core/log"
-import { type } from "arktype"
-import type { ServerWebSocket, WebSocketHandler } from "bun"
-import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
-import type { VoiceConfig } from "../voice/pipeline.js"
-import type { VoiceRegistries } from "../voice/providers.js"
+/**
+ * ws-agent.ts — WebSocket bytes pipe for /ws/agent/:id
+ *
+ * Slice 10 Phase 1 refactor.
+ *
+ * Acts as a bidirectional transparent proxy between the FE WebSocket
+ * and the stdio-to-ws bridge process on loopback.
+ *
+ * The BE does NOT parse, validate, or enrich the frames —
+ * raw ACP JSON-RPC bytes flow through as-is.
+ *
+ * Edge cases:
+ *   - Agent not found → close(1008, "agent not found")
+ *   - MED-8: second tab for same agentId → close(1008, "agent in use by another tab")
+ *   - FE sends before bridge ready → buffered in pendingFromFe, flushed at bridge open
+ *   - bridgeWs close → feWs.close(1011, "bridge closed")
+ *   - bridgeWs error → feWs.close(1011, "bridge error")
+ *   - feWs close → cleanup: activeFeWs.delete(agentId), bridgeWs.close()
+ */
 
-const wsWireLog = createLogger("backend.ws.wire")
-const wsAgentLog = createLogger("backend.ws.agent")
+import { createLogger } from "@drive-coding/core/log"
+import type { ServerWebSocket, WebSocketHandler } from "bun"
+import { WebSocket } from "ws"
+import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
+
+const log = createLogger("backend.ws.agent")
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type AgentWsData = {
   kind: "agent"
   agentId: string
-  unsubscribe?: () => void
+  bridgeWs?: WebSocket
+  pendingFromFe: Array<string | Buffer>
+  bridgeOpen: boolean
 }
 
-function send(ws: ServerWebSocket<AgentWsData>, msg: ServerMessage): void {
-  const json = JSON.stringify(msg)
-  wsWireLog.ns("tx").trace({ agentId: ws.data.agentId, type: msg.type, len: json.length }, "frame")
-  try {
-    ws.send(json)
-  } catch {
-    // ws already closed — ignore
-  }
-}
+// ─── Handler factory ──────────────────────────────────────────────────────────
 
-/**
- * Default voice configuration for Slice 5.
- * Slice 8 will allow per-agent override.
- */
-const DEFAULT_VOICE_CONFIG: VoiceConfig = {
-  sttModel: "gemini/flash-context",
-  ttsModel: "elevenlabs/v3",
-  // Sarah — pleasant Hebrew-capable voice. ElevenLabs requires voice_id, not name.
-  ttsVoiceId: "EXAVITQu4vr4xnSDxMaL",
-  translatorModel: "gemini/flash-lite",
-  targetLang: "he",
-}
-
-/**
- * WebSocket handler for /ws/agent/:id
- *
- * Protocol (drive-coding-ws):
- *   Client → Server: ping | prompt | cancel | audio  (ClientMessage)
- *   Server → Client: connected | thinking | text_chunk | tool_call | done | error
- *                    stt_partial | audio_chunk | translation  (ServerMessage)
- */
-export function createAgentWsHandler(deps: {
-  orchestrator: AgentOrchestrator
-  registries: VoiceRegistries
-  cache: CacheStore
-}): {
+export function createAgentWsHandler(deps: { orchestrator: AgentOrchestrator }): {
   websocket: WebSocketHandler<AgentWsData>
   tryUpgrade: (req: Request, server: ReturnType<typeof Bun.serve>) => Response | undefined
 } {
+  // MED-8: one active FE WS per agentId — prevents ACP state collision on second tab
+  const activeFeWs = new Map<string, ServerWebSocket<AgentWsData>>()
+
   const websocket: WebSocketHandler<AgentWsData> = {
-    open(ws) {
-      const agentId = ws.data.agentId
-      wsAgentLog.child({ agentId }).info({}, "WS connect")
-      const session = deps.orchestrator.getSession(agentId)
-      if (!session) {
-        send(ws, { type: "error", code: "AGENT_NOT_FOUND", message: agentId })
-        ws.close(1008, "agent not found")
+    async open(feWs) {
+      const agentId = feWs.data.agentId
+      log.child({ agentId }).info({}, "WS connect")
+
+      // MED-8: reject second tab connecting to same agent
+      if (activeFeWs.has(agentId)) {
+        log.child({ agentId }).warn({}, "second tab rejected")
+        feWs.close(1008, "agent in use by another tab")
         return
       }
 
-      send(ws, { type: "connected", agentId })
-
-      // Subscribe to session broadcasts
-      ws.data.unsubscribe = session.subscribe((msg) => send(ws, msg))
-    },
-
-    async message(ws, raw) {
-      const rawStr = String(raw)
-      wsWireLog.ns("rx").trace(
-        {
-          agentId: ws.data.agentId,
-          len: rawStr.length,
-          text: rawStr.length > 1000 ? `${rawStr.slice(0, 1000)}…` : rawStr,
-        },
-        "frame",
-      )
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(rawStr)
-      } catch {
-        wsAgentLog
-          .child({ agentId: ws.data.agentId })
-          .warn(
-            { raw: rawStr.length > 200 ? `${rawStr.slice(0, 200)}…` : rawStr },
-            "JSON parse failed",
-          )
-        send(ws, { type: "error", code: "INVALID_JSON", message: "invalid json" })
+      // Look up bridge port from orchestrator
+      const port = deps.orchestrator.getBridgePort(agentId)
+      if (!port) {
+        log.child({ agentId }).warn({}, "agent not found")
+        feWs.close(1008, "agent not found")
         return
       }
 
-      const result = ClientMessage(parsed)
-      if (result instanceof type.errors) {
-        send(ws, { type: "error", code: "INVALID_MSG", message: result.summary })
-        return
-      }
+      activeFeWs.set(agentId, feWs)
 
-      const session = deps.orchestrator.getSession(ws.data.agentId)
-      if (!session) {
-        send(ws, { type: "error", code: "AGENT_NOT_FOUND", message: ws.data.agentId })
-        return
-      }
+      // Connect to stdio-to-ws bridge on loopback
+      const bridgeWs = new WebSocket(`ws://127.0.0.1:${port}/`)
+      feWs.data.bridgeWs = bridgeWs
+      feWs.data.pendingFromFe = []
+      feWs.data.bridgeOpen = false
 
-      switch (result.type) {
-        case "ping":
-          send(ws, { type: "pong", echoOf: "ping", serverTime: Date.now() })
-          break
-
-        case "prompt":
-          // fire-and-forget — broadcasts via subscriber pattern
-          session.sendPrompt(result.text).catch((e) => {
-            wsAgentLog
-              .child({ agentId: ws.data.agentId })
-              .error({ err: e, op: "sendPrompt" }, "operation failed")
-          })
-          break
-
-        case "cancel":
-          await session.cancel().catch((e) => {
-            wsAgentLog
-              .child({ agentId: ws.data.agentId })
-              .error({ err: e, op: "cancel" }, "operation failed")
-          })
-          break
-
-        case "audio": {
-          // Decode base64 audio
-          const audioBytes = Buffer.from(result.audioBase64, "base64")
-
-          // Voice callbacks — fan out to this WS client.
-          //
-          // NOTE: onAudioChunk is intentionally a no-op. audio_chunk events are
-          // broadcast with full Tier 1 metadata (segmentId, messageId, kind,
-          // originalText, translatedText) via session.subscribe(). Sending here
-          // would emit a *second* audio_chunk WS frame without metadata, which
-          // bypasses the frontend's segmentId-keyed dedup and causes each TTS
-          // segment to be played twice. The callback field is retained because
-          // VoiceCallbacks declares it (legacy tests pass a counting impl).
-          const voiceCallbacks = {
-            onSttPartial: (text: string) => send(ws, { type: "stt_partial", text }),
-            onAudioChunk: (_mp3Base64: string) => {
-              /* no-op — see comment above */
-            },
-            onTranslation: (original: string, translated: string) =>
-              send(ws, { type: "translation", original, translated }),
-            onError: (message: string) => send(ws, { type: "error", code: "VOICE_ERROR", message }),
+      bridgeWs.on("open", () => {
+        feWs.data.bridgeOpen = true
+        // Flush buffered FE messages
+        for (const msg of feWs.data.pendingFromFe) {
+          try {
+            bridgeWs.send(msg)
+          } catch {
+            // bridge closing
           }
-
-          // fire-and-forget (done is broadcast by sendAudioPrompt)
-          session
-            .sendAudioPrompt(
-              new Uint8Array(audioBytes),
-              result.mimeType,
-              DEFAULT_VOICE_CONFIG,
-              voiceCallbacks,
-              deps.registries,
-              deps.cache,
-            )
-            .catch((e) => {
-              wsAgentLog
-                .child({ agentId: ws.data.agentId })
-                .error({ err: e, op: "sendAudioPrompt" }, "operation failed")
-              send(ws, { type: "error", code: "VOICE_ERROR", message: String(e) })
-            })
-          break
         }
+        feWs.data.pendingFromFe = []
+      })
+
+      bridgeWs.on("message", (data) => {
+        // Forward bridge frame as-is to FE.
+        // Bun ServerWebSocket.send accepts string | BufferSource.
+        // ws library delivers data as Buffer (which is Uint8Array-compatible).
+        try {
+          feWs.send(data as string | Buffer)
+        } catch {
+          // feWs closing
+        }
+      })
+
+      bridgeWs.on("close", () => {
+        log.child({ agentId }).info({}, "bridge closed — closing feWs")
+        try {
+          feWs.close(1011, "bridge closed")
+        } catch {
+          // already closed
+        }
+      })
+
+      bridgeWs.on("error", (err) => {
+        log.child({ agentId }).error({ err }, "bridge error — closing feWs")
+        try {
+          feWs.close(1011, "bridge error")
+        } catch {
+          // already closed
+        }
+      })
+    },
+
+    message(feWs, raw) {
+      // Forward FE message to bridge, or buffer if bridge not yet open
+      if (feWs.data.bridgeOpen && feWs.data.bridgeWs) {
+        try {
+          feWs.data.bridgeWs.send(raw as string | Buffer)
+        } catch {
+          // bridge closing
+        }
+      } else {
+        feWs.data.pendingFromFe.push(raw as string | Buffer)
       }
     },
 
-    close(ws) {
-      wsAgentLog.child({ agentId: ws.data.agentId }).info({}, "WS disconnect")
-      ws.data.unsubscribe?.()
+    close(feWs) {
+      const agentId = feWs.data.agentId
+      log.child({ agentId }).info({}, "WS disconnect — cleanup")
+      activeFeWs.delete(agentId)
+      try {
+        feWs.data.bridgeWs?.close()
+      } catch {
+        // already closed
+      }
     },
   }
 
@@ -187,7 +147,13 @@ export function createAgentWsHandler(deps: {
 
     const agentId = match[1] ?? ""
     const upgraded = server.upgrade(req, {
-      data: { kind: "agent", agentId } satisfies AgentWsData,
+      data: {
+        kind: "agent",
+        agentId,
+        bridgeWs: undefined,
+        pendingFromFe: [],
+        bridgeOpen: false,
+      } satisfies AgentWsData,
     })
     if (upgraded) return undefined
     return new Response("WS upgrade failed", { status: 426 })

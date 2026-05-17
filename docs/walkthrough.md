@@ -4,6 +4,49 @@
 
 ---
 
+## 2026-05-17 23:45 — Slice 10 Phase 1 — BE: transparent proxy + native endpoints + WS pipe
+
+executor (claude-sonnet-4-6) ביצע את Phase 1 של Slice 10 FE-Orchestrated Refactor.
+
+### שינויים עיקריים
+
+**קבצים חדשים:**
+- `packages/backend/src/delivery/http-proxy.ts` — transparent proxy ל-Google + ElevenLabs (`/proxy/google/*`, `/proxy/elevenlabs/*`) עם cache על `generateContent` ו-TTS stream
+- `packages/backend/src/delivery/proxy-cache.ts` — disk-backed cache עם `isCacheableRequest`, `computeCacheKey`, `createProxyCache`
+
+**Refactored:**
+- `packages/backend/src/delivery/ws-agent.ts` — הפך ל-bytes pipe בידirectional. הסיר את כל ה-ACP session logic. הוסיף MED-8 guard (second tab → close 1008), buffering לפני bridge open, close codes נכונים (1011 bridge closed/error).
+- `packages/backend/src/app/agent-orchestrator.ts` — slim drastically. הסיר createAcpWsTransport, createAgentSession, historyBuffer. `createAndSpawn` מחזיר `CreateAndSpawnResult` (status="spawning"). crash handler מעודכן (ללא session.shutdown). הוסיף `getBridgePort()`.
+- `packages/backend/src/delivery/http-agents.ts` — הוסיף `POST /api/agents/:id/session-attached` + MED-9 409 guard. עדכן POST /api/agents לחזיר `CreateAndSpawnResult`.
+- `packages/backend/src/delivery/http-history.ts` — הוסיף `POST /api/recordings` + `registerRecordingsPostHttp`.
+- `packages/backend/src/server.ts` — הוסיף רישום `registerProxyHttp`. עדכן deps של agentWs (ללא registries/cache). עדכן registerAgentsHttp עם projectsRegistry.
+
+**Tests חדשים (TDD outer-loop):**
+- `tests/http-proxy.test.ts` — isCacheableRequest, computeCacheKey, createProxyCache (12 tests ירוקים)
+- `tests/ws-agent-pipe.test.ts` — bytes pipe, MED-8, buffering, close codes (5 tests ירוקים)
+- `tests/http-recordings-post.test.ts` — POST /api/recordings (3 tests ירוקים)
+
+**Tests שנסמנו כ-skip:**
+- `tests/ws-agent.test.ts` — Slice 9 tests (old subscribe model) → `describe.skip` + comment "removed in slice 10 phase 4"
+- `tests/agent-orchestrator-history.test.ts` — Slice 8a tests (ACP load transport) → `describe.skip` + comment
+- `tests/agent-orchestrator.test.ts` — ה-test cases הישנים הוחלפו בcheckable tests לAPI החדש
+- `tests/http-agents.test.ts` — עודכן לAPIחדש (`CreateAndSpawnResult`) + הוסיף tests ל-session-attached
+
+### החלטות שנעשו אוטונומית
+
+1. **`status: "spawning"` vs registry** — ה-`AgentStatus` ב-core לא כולל "spawning". הפרדתי: registry משתמש ב-"starting" (קיים), ה-`CreateAndSpawnResult` שמוחזר ל-FE מכיל "spawning". זה נאמן לbrief (FE רואה "spawning") מבלי לשבור core schema.
+2. **`registerRecordingsPostHttp` export נפרד** — הוספתי function נפרדת (לא שיניתי את הקיימת) כדי לא לשבור tests קיימים של `registerRecordingsHttp`.
+3. **`_cache` singleton ב-http-proxy** — global ב-module scope. מאפשר test isolation על ידי שימוש ב-`createProxyCache` ישירות בtest. Decision: אפשרי לshare cache בין requests.
+4. **פעמיים לא cache-write בעת error** — `cacheStreamInBackground` catch silently מבטל cache save. לא חוסם FE.
+
+### מצב
+- typecheck: ✅ ירוק
+- lint: ✅ ירוק (1 pre-existing error ב-acp-transport.ts, לא בקוד חדש)
+- tests: ✅ 344 passed, 26 skipped (כולל tests חדשים)
+- commit: phase-1
+
+---
+
 ## 2026-05-17 22:30 — Slice 10 brief — audit + 16 findings fixed
 
 ‏‏סוכן auditor (general sub-agent) עבר על ‏ה-brief ‏‏ומצא 22 findings: 5 critical, 9 medium, 8 minor.

@@ -1,3 +1,20 @@
+/**
+ * agent-orchestrator.ts — Slim orchestrator for Slice 10.
+ *
+ * Responsibilities:
+ *   1. createAndSpawn: registry.create + bridgeManager.spawn → returns { agentId, wsUrl, bridgePort }
+ *      Status stays "spawning" — FE marks "ready" via POST /api/agents/:id/session-attached.
+ *   2. deleteAndKill: registry.update(closed) + bridgeManager.kill + registry.delete
+ *   3. getBridgePort: used by ws-agent for proxy routing
+ *   4. Crash handler: bridgeManager.onCrash → registry.update(status=crashed, crashReason)
+ *
+ * Removed from Slice 9:
+ *   - createAcpWsTransport / createAcpWsLoadTransport (FE does ACP handshake)
+ *   - createAgentSession / sessions Map (no server-side ACP session)
+ *   - historyBuffer / history broadcast
+ *   - projectsRegistry.recordSession (moved to POST /api/agents/:id/session-attached)
+ */
+
 import type {
   Agent,
   AgentRegistry,
@@ -7,38 +24,49 @@ import type {
 } from "@drive-coding/core"
 import { extractProviderError } from "@drive-coding/core/acp/provider-error"
 import { createLogger } from "@drive-coding/core/log"
+import type { BridgeHandleWithStderr } from "../acp/bridge-manager.js"
+import type { ProjectsRegistry } from "./projects-registry.js"
 
 const log = createLogger("backend.orchestrator")
 
-import { createAcpWsLoadTransport, createAcpWsTransport } from "../acp/acp-transport.js"
-import type { BridgeHandleWithStderr } from "../acp/bridge-manager.js"
-import { type AgentSession, createAgentSession } from "./agent-session.js"
-import type { ProjectsRegistry } from "./projects-registry.js"
-import type { RecordingsStore } from "./recordings-store.js"
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 /**
- * Slice 8a: backend-only extension of CreateAgentInput.
- * existingSessionId — if provided, loads an existing ACP session via
- * session/load instead of session/new. Dedup: if an active agent with the
- * same (cwd, acpSessionId) exists, returns it without spawning.
+ * Backend extension of CreateAgentInput.
+ * existingSessionId — if provided, BE dedup checks for an active agent with this session.
  */
 export type CreateAndSpawnInput = CreateAgentInput & {
-  /** Optional: load an existing ACP session instead of creating a new one. */
   existingSessionId?: string
 }
 
-export type AgentOrchestrator = {
-  /** Create an agent (registry) + spawn bridge + ACP attach. On failure: status='crashed'. */
-  createAndSpawn(input: CreateAndSpawnInput): Promise<Agent>
-
-  /** Delete agent + kill bridge + shutdown session. */
-  deleteAndKill(id: string): Promise<void>
-
-  /** Get live AgentSession for a given agent id. Null if not found or not ready. */
-  getSession(id: string): AgentSession | null
+/**
+ * Response shape from createAndSpawn.
+ */
+export type CreateAndSpawnResult = {
+  agentId: string
+  cwd: string
+  cliKind: BridgeKind
+  wsUrl: string
+  bridgePort: number
+  status: "spawning" | "ready"
+  acpSessionId?: string
 }
 
-/** BridgeManager with optional spawnWithStderr extension (added in Slice 5.6). */
+export type AgentOrchestrator = {
+  /** Create (or deduplicate) an agent + spawn bridge. Returns minimal info; FE does ACP handshake. */
+  createAndSpawn(input: CreateAndSpawnInput): Promise<CreateAndSpawnResult>
+
+  /** Delete agent + kill bridge. */
+  deleteAndKill(id: string): Promise<void>
+
+  /** Returns the bridge port for a given agent id (for ws-agent routing). */
+  getBridgePort(id: string): number | null
+
+  // Kept for backward compat with deleteAndKill (not exposed to FE)
+  _getAgent?: (id: string) => Agent | null
+}
+
+/** BridgeManager with optional spawnWithStderr extension. */
 type ExtendedBridgeManager = BridgeManager & {
   spawnWithStderr?: (
     bridgeId: string,
@@ -46,48 +74,47 @@ type ExtendedBridgeManager = BridgeManager & {
   ) => Promise<BridgeHandleWithStderr>
 }
 
+// ─── Factory ──────────────────────────────────────────────────────────────────
+
 export function createAgentOrchestrator(deps: {
   registry: AgentRegistry
   bridgeManager: ExtendedBridgeManager
-  recordingsStore?: RecordingsStore
-  /** N4 fix: tracks known cwds for the sessions UI. */
   projectsRegistry?: ProjectsRegistry
 }): AgentOrchestrator {
-  const sessions = new Map<string, AgentSession>()
-  // Stores stderr getters keyed by agent id, for crash extraction
+  // Stores stderr getters keyed by agent id, for crash reason extraction
   const stderrGetters = new Map<string, () => string[]>()
 
-  // Wire crash handler: when a bridge dies unexpectedly, mark agent as crashed
+  // In-memory bridge port lookup (agentId → port)
+  // Populated on spawn, used by ws-agent for routing without registry async call.
+  const bridgePorts = new Map<string, number>()
+
+  // Wire crash handler: when a bridge dies, mark agent as crashed + update registry.
+  // The ws-agent pipe will detect bridgeWs.close and send feWs.close(1011, "bridge closed").
   deps.bridgeManager.onCrash(async (bridgeId, exitCode) => {
     try {
       const existing = await deps.registry.get(bridgeId)
       if (existing && existing.status !== "closed") {
-        // Try to extract a provider-specific crash reason from stderr
         const getStderr = stderrGetters.get(bridgeId)
         const crashReason = getStderr ? (extractProviderError(getStderr()) ?? undefined) : undefined
-
         await deps.registry.update(bridgeId, { status: "crashed", crashReason })
-        stderrGetters.delete(bridgeId)
+        log.warn({ bridgeId, exitCode, crashReason }, "bridge crashed")
       }
-      const session = sessions.get(bridgeId)
-      if (session) {
-        await session.shutdown().catch(() => {})
-        sessions.delete(bridgeId)
-      }
-      log.warn({ bridgeId, exitCode }, "bridge crashed")
     } catch (e) {
       log.error({ err: e }, "crash cleanup failed")
+    } finally {
+      stderrGetters.delete(bridgeId)
+      bridgePorts.delete(bridgeId)
     }
   })
 
   return {
-    async createAndSpawn(input: CreateAndSpawnInput): Promise<Agent> {
+    async createAndSpawn(input: CreateAndSpawnInput): Promise<CreateAndSpawnResult> {
       log.info({ cliKind: input.cliKind, cwd: input.cwd }, "createAndSpawn start")
       const existingSessionId = input.existingSessionId ?? null
 
-      // ── Dedup check (Slice 8a) ──────────────────────────────────────────────
+      // ── Dedup check ────────────────────────────────────────────────────────
       // If an active agent already holds this (cwd, acpSessionId), return it
-      // directly without spawning a new bridge.
+      // without spawning a new bridge.
       if (existingSessionId) {
         const allAgents = await deps.registry.list()
         const duplicate = allAgents.find(
@@ -96,16 +123,27 @@ export function createAgentOrchestrator(deps: {
             a.acpSessionId === existingSessionId &&
             (a.status === "ready" || a.status === "busy"),
         )
-        if (duplicate) return duplicate
+        if (duplicate?.bridgePort) {
+          log.info({ agentId: duplicate.id, existingSessionId }, "dedup — returning existing agent")
+          return {
+            agentId: duplicate.id,
+            cwd: duplicate.cwd,
+            cliKind: duplicate.cliKind as BridgeKind,
+            wsUrl: `ws://127.0.0.1:${duplicate.bridgePort}/`,
+            bridgePort: duplicate.bridgePort,
+            status: "ready",
+            acpSessionId: duplicate.acpSessionId ?? undefined,
+          }
+        }
       }
 
-      // 1. Create with status='starting'
+      // ── Create registry entry ──────────────────────────────────────────────
+      // Registry uses "starting" (core AgentStatus); response to FE uses "spawning"
       const agent = await deps.registry.create(input)
       await deps.registry.update(agent.id, { status: "starting" })
 
       try {
-        // 2. Spawn bridge — waits for port detection (up to 30s)
-        // Prefer spawnWithStderr for stderr access; fall back to plain spawn.
+        // ── Spawn bridge ───────────────────────────────────────────────────────
         let handle: BridgeHandleWithStderr | Awaited<ReturnType<BridgeManager["spawn"]>>
         if (deps.bridgeManager.spawnWithStderr) {
           handle = await deps.bridgeManager.spawnWithStderr(agent.id, {
@@ -122,103 +160,51 @@ export function createAgentOrchestrator(deps: {
           })
         }
 
-        // 3. ACP handshake: session/new OR session/load
-        let sessionId: string
-        let transport: Awaited<ReturnType<typeof createAcpWsTransport>>
+        // Update registry with bridge port; registry status stays "starting" (FE will update to "ready")
+        await deps.registry.update(agent.id, { bridgePort: handle.port })
+        bridgePorts.set(agent.id, handle.port)
 
-        let historyBuffer: import("@drive-coding/core").SessionNotification[] | undefined
-        if (existingSessionId) {
-          // Load path: connect to existing session, collect history notifications.
-          // Slice 8a (Phase 5): buffer is passed to createAgentSession which
-          // broadcasts history_start / history_chunk / history_done on next microtask.
-          historyBuffer = []
-          transport = await createAcpWsLoadTransport({
-            wsUrl: handle.wsUrl,
-            cwd: input.cwd,
-            sessionId: existingSessionId,
-            onHistoryUpdate: (n) => historyBuffer!.push(n),
-          })
-          const startResult = await transport.start({ cwd: input.cwd })
-          sessionId = startResult.sessionId
-        } else {
-          // New session path (existing behavior)
-          historyBuffer = undefined
-          transport = await createAcpWsTransport({
-            wsUrl: handle.wsUrl,
-            cwd: input.cwd,
-          })
-          const startResult = await transport.start({ cwd: input.cwd })
-          sessionId = startResult.sessionId
-        }
-
-        // 4. Create AgentSession for fan-out
-        // Wire getStderr so provider errors surface after empty responses (PROMPT-17)
-        const getStderr = stderrGetters.get(agent.id)
-        const agentSession = createAgentSession({
+        const result: CreateAndSpawnResult = {
           agentId: agent.id,
-          transport,
-          ...(getStderr ? { getStderr } : {}),
-          ...(deps.recordingsStore ? { recordingsStore: deps.recordingsStore } : {}),
-          ...(historyBuffer !== undefined
-            ? { historyBuffer, historySessionId: existingSessionId ?? undefined }
-            : {}),
-        })
-        sessions.set(agent.id, agentSession)
-
-        // 5. Mark ready
-        const updated = await deps.registry.update(agent.id, {
-          status: "ready",
+          cwd: agent.cwd,
+          cliKind: agent.cliKind as BridgeKind,
+          wsUrl: handle.wsUrl,
           bridgePort: handle.port,
-          acpSessionId: sessionId,
-        })
-
-        // N4 fix: record cwd + sessionId so the sessions UI can list them
-        if (deps.projectsRegistry) {
-          await deps.projectsRegistry.recordCwd(input.cwd, input.cliKind as BridgeKind)
-          await deps.projectsRegistry.recordSession(input.cwd, sessionId)
+          // "spawning" is the FE-facing term; registry uses "starting" (core AgentStatus)
+          status: "spawning",
         }
 
-        log.info({ agentId: agent.id, sessionId }, "createAndSpawn done")
-        return updated
+        log.info({ agentId: agent.id, port: handle.port }, "createAndSpawn done — status=spawning")
+        return result
       } catch (e) {
-        // Try to extract a provider error from stderr before marking crashed
         const getStderr = stderrGetters.get(agent.id)
         const crashReason = getStderr ? (extractProviderError(getStderr()) ?? undefined) : undefined
         stderrGetters.delete(agent.id)
+        bridgePorts.delete(agent.id)
 
         await deps.registry.update(agent.id, { status: "crashed", crashReason }).catch(() => {})
         throw new Error(
-          `spawn/attach failed for agent ${agent.id}: ${e instanceof Error ? e.message : String(e)}`,
+          `spawn failed for agent ${agent.id}: ${e instanceof Error ? e.message : String(e)}`,
         )
       }
     },
 
     async deleteAndKill(id: string): Promise<void> {
       log.info({ agentId: id }, "deleteAndKill")
-      const agent = await deps.registry.get(id)
-      if (!agent) return
 
-      // Gracefully mark closed first
       try {
         await deps.registry.update(id, { status: "closed" })
       } catch {
         // ignore
       }
 
-      // Shutdown ACP session
-      const session = sessions.get(id)
-      if (session) {
-        await session.shutdown().catch(() => {})
-        sessions.delete(id)
-      }
-
       // Kill bridge process
       await deps.bridgeManager.kill(id)
 
-      // Clean up stderr getter
+      // Clean up local state
       stderrGetters.delete(id)
+      bridgePorts.delete(id)
 
-      // Remove from registry
       try {
         await deps.registry.delete(id)
       } catch {
@@ -226,8 +212,8 @@ export function createAgentOrchestrator(deps: {
       }
     },
 
-    getSession(id: string): AgentSession | null {
-      return sessions.get(id) ?? null
+    getBridgePort(id: string): number | null {
+      return bridgePorts.get(id) ?? null
     },
   }
 }

@@ -1,10 +1,13 @@
 /**
- * Phase 4 — TDD tests for agent-orchestrator with existingSessionId:
- *   - createAndSpawn with no existingSessionId: normal path (no change)
- *   - createAndSpawn with existingSessionId: uses createAcpWsLoadTransport
- *   - dedup: same (cwd, acpSessionId) → returns existing agent
- *   - dedup miss: different cwd → spawns new
- *   - loadSession error → agent status=crashed
+ * Phase 4 — TDD tests for agent-orchestrator with existingSessionId.
+ *
+ * NOTE: These tests are skipped because the orchestrator was refactored in
+ * Slice 10 Phase 1. The ACP session management (createAcpWsLoadTransport,
+ * loadSession, etc.) was moved to the FE. The orchestrator no longer creates
+ * sessions — it only spawns bridges and marks status="starting".
+ *
+ * These tests will be DELETED in Slice 10 Phase 4.
+ * New tests for dedup behavior are in agent-orchestrator.test.ts.
  */
 
 import type {
@@ -144,7 +147,8 @@ function makeBridgeManager(): { mgr: ExtBridgeMgr } {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe("AgentOrchestrator — existingSessionId (Phase 4)", () => {
+// removed in slice 10 phase 4 — orchestrator no longer manages ACP sessions
+describe.skip("AgentOrchestrator — existingSessionId (Phase 4)", () => {
   beforeEach(() => {
     mockLoadTransportShouldThrow = false
     mockLoadSessionId = "sess-loaded-1"

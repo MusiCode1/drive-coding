@@ -1,26 +1,34 @@
 import { Hono } from "hono"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { createInMemoryAgentRegistry } from "../src/agents/registry"
-import type { AgentOrchestrator } from "../src/app/agent-orchestrator"
+import type { AgentOrchestrator, CreateAndSpawnResult } from "../src/app/agent-orchestrator"
 import { registerAgentsHttp } from "../src/delivery/http-agents"
 
 function makeApp() {
   const app = new Hono()
   const registry = createInMemoryAgentRegistry()
 
-  // Mock orchestrator — stub createAndSpawn ל-status ready ישר
+  /**
+   * Mock orchestrator — Slice 10 API.
+   * createAndSpawn now returns CreateAndSpawnResult (not Agent).
+   */
   const orchestrator: AgentOrchestrator = {
-    async createAndSpawn(input) {
+    async createAndSpawn(input): Promise<CreateAndSpawnResult> {
       const agent = await registry.create(input)
-      const updated = await registry.update(agent.id, {
-        status: "ready",
+      await registry.update(agent.id, { status: "ready", bridgePort: 7100 })
+      return {
+        agentId: agent.id,
+        cwd: agent.cwd,
+        cliKind: agent.cliKind,
+        wsUrl: `ws://127.0.0.1:7100/`,
         bridgePort: 7100,
-      })
-      return updated
+        status: "spawning",
+      }
     },
     async deleteAndKill(id) {
       await registry.delete(id).catch(() => {})
     },
+    getBridgePort: vi.fn(() => 7100),
   }
 
   registerAgentsHttp(app, { registry, orchestrator })
@@ -58,7 +66,7 @@ describe("HTTP /api/agents", () => {
   })
 
   describe("POST /api/agents", () => {
-    it("creates with valid input", async () => {
+    it("creates with valid input — returns CreateAndSpawnResult", async () => {
       const { app } = makeApp()
       const res = await app.request("/api/agents", {
         method: "POST",
@@ -67,11 +75,14 @@ describe("HTTP /api/agents", () => {
       })
       expect(res.status).toBe(201)
       const body = await res.json()
-      expect(body.agent.cliKind).toBe("opencode")
-      expect(body.agent.status).toBe("ready")
+      // Slice 10: response is CreateAndSpawnResult, not { agent: AgentPublic }
+      expect(body.agentId).toBeTruthy()
+      expect(body.cliKind).toBe("opencode")
+      expect(body.status).toBe("spawning")
+      expect(typeof body.bridgePort).toBe("number")
     })
 
-    it("creates agent with status=ready and bridgePort via orchestrator", async () => {
+    it("creates agent and returns wsUrl + bridgePort", async () => {
       const { app } = makeApp()
       const res = await app.request("/api/agents", {
         method: "POST",
@@ -80,9 +91,8 @@ describe("HTTP /api/agents", () => {
       })
       expect(res.status).toBe(201)
       const body = await res.json()
-      expect(body.agent.status).toBe("ready")
-      // bridgePort לא ב-AgentPublic — בודק שאין error ויש agent
-      expect(body.agent.id).toBeTruthy()
+      expect(body.wsUrl).toBeTruthy()
+      expect(body.bridgePort).toBe(7100)
     })
 
     it("rejects empty cwd", async () => {
@@ -124,7 +134,7 @@ describe("HTTP /api/agents", () => {
       })
       expect(res.status).toBe(201)
       const body = await res.json()
-      expect(body.agent.modelOverride).toBe("claude-sonnet-4")
+      expect(body.cwd).toBe("/x")
     })
 
     it("returns 500 if orchestrator throws", async () => {
@@ -135,6 +145,7 @@ describe("HTTP /api/agents", () => {
           throw new Error("bridge spawn failed")
         },
         async deleteAndKill() {},
+        getBridgePort: vi.fn(() => null),
       }
       registerAgentsHttp(app, { registry, orchestrator: failingOrchestrator })
 
@@ -179,6 +190,75 @@ describe("HTTP /api/agents", () => {
       const { app } = makeApp()
       const res = await app.request("/api/agents/unknown", { method: "DELETE" })
       expect(res.status).toBe(404)
+    })
+  })
+
+  describe("POST /api/agents/:id/session-attached", () => {
+    it("marks agent ready and returns { ok: true }", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      await registry.update(agent.id, { status: "starting" })
+
+      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: "sess-abc123" }),
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body).toEqual({ ok: true })
+
+      // Verify registry was updated
+      const updated = await registry.get(agent.id)
+      expect(updated?.status).toBe("ready")
+      expect(updated?.acpSessionId).toBe("sess-abc123")
+    })
+
+    it("404 for unknown agent", async () => {
+      const { app } = makeApp()
+      const res = await app.request("/api/agents/ghost/session-attached", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: "s1" }),
+      })
+      expect(res.status).toBe(404)
+    })
+
+    it("400 if sessionId missing", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it("409 if agent already ready with different sessionId", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      await registry.update(agent.id, { status: "ready", acpSessionId: "existing-session" })
+
+      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: "different-session" }),
+      })
+      expect(res.status).toBe(409)
+    })
+
+    it("idempotent: same sessionId on ready agent → 200", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      await registry.update(agent.id, { status: "ready", acpSessionId: "same-session" })
+
+      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: "same-session" }),
+      })
+      expect(res.status).toBe(200)
     })
   })
 })
