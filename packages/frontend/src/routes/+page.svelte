@@ -1,14 +1,28 @@
 <script lang="ts">
 import type { AgentPublic } from "@drive-coding/core"
 import { onDestroy, onMount } from "svelte"
-import { deleteAgent, listAgents } from "$lib/api/agents"
+import { goto } from "$app/navigation"
+import { createAgent, deleteAgent, listAgents } from "$lib/api/agents"
+import FilePicker from "$lib/components/FilePicker.svelte"
 
 let agents = $state<AgentPublic[]>([])
 let loading = $state(true)
 let error = $state<string | null>(null)
 let pollTimer: ReturnType<typeof setInterval> | null = null
-// Inline confirm — §9.6 #5: no modals/dialogs. Track which agent is "pending delete".
 let confirmDeleteId = $state<string | null>(null)
+
+// Phase 11: File picker
+let showFilePicker = $state(false)
+
+async function onPickerSelect(path: string) {
+  showFilePicker = false
+  try {
+    const { agent } = await createAgent({ cwd: path, kind: "opencode" })
+    goto(`/agent/${agent.id}`)
+  } catch (e) {
+    error = e instanceof Error ? e.message : "יצירת סוכן נכשלה"
+  }
+}
 
 async function load(): Promise<void> {
   loading = true
@@ -87,10 +101,20 @@ onDestroy(() => {
 })
 </script>
 
+<!-- Phase 11: FilePicker modal -->
+<FilePicker
+  open={showFilePicker}
+  onSelect={onPickerSelect}
+  onClose={() => (showFilePicker = false)}
+/>
+
 <div class="dashboard">
   <header class="dash-header">
     <h1 class="dash-title">drive-coding</h1>
-    <a href="/agent/new" class="new-btn" aria-label="סוכן חדש">+ סוכן חדש</a>
+    <div class="dash-header-actions">
+      <a href="/sessions" class="icon-action-btn" aria-label="היסטוריה" title="היסטוריה">📚</a>
+      <button class="new-btn" onclick={() => (showFilePicker = true)} aria-label="סוכן חדש">+ סוכן חדש</button>
+    </div>
   </header>
 
   {#if loading}
@@ -169,6 +193,27 @@ onDestroy(() => {
     padding: 16px 20px;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
+  }
+
+  .dash-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .icon-action-btn {
+    color: var(--fg-dim);
+    text-decoration: none;
+    font-size: 18px;
+    padding: 8px;
+    border-radius: 8px;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .icon-action-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--fg);
+    text-decoration: none;
   }
 
   .dash-title {
