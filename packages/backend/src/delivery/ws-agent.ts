@@ -17,10 +17,7 @@ export type AgentWsData = {
 
 function send(ws: ServerWebSocket<AgentWsData>, msg: ServerMessage): void {
   const json = JSON.stringify(msg)
-  wsWireLog.ns("tx").trace(
-    { agentId: ws.data.agentId, type: msg.type, len: json.length },
-    "frame",
-  )
+  wsWireLog.ns("tx").trace({ agentId: ws.data.agentId, type: msg.type, len: json.length }, "frame")
   try {
     ws.send(json)
   } catch {

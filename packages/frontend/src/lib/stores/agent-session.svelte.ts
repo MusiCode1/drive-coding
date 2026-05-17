@@ -498,10 +498,12 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
 
     ws.onmessage = (e) => {
       const raw = String(e.data)
-      wireLog.ns("rx").trace(
-        { len: raw.length, text: raw.length > 1000 ? `${raw.slice(0, 1000)}…` : raw },
-        "frame",
-      )
+      wireLog
+        .ns("rx")
+        .trace(
+          { len: raw.length, text: raw.length > 1000 ? `${raw.slice(0, 1000)}…` : raw },
+          "frame",
+        )
       handle(raw)
     }
 
@@ -554,7 +556,9 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
   function sendRaw(payload: unknown): boolean {
     if (!ws || ws.readyState !== WebSocket.OPEN) return false
     const json = JSON.stringify(payload)
-    wireLog.ns("tx").trace({ type: (payload as { type?: string }).type ?? "raw", len: json.length }, "frame")
+    wireLog
+      .ns("tx")
+      .trace({ type: (payload as { type?: string }).type ?? "raw", len: json.length }, "frame")
     ws.send(json)
     return true
   }
