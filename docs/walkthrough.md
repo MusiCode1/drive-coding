@@ -4,6 +4,51 @@
 
 ---
 
+## 2026-05-17 11:00 — Slice 9 Follow-up: Phases 2-5 — Data flow + Infrastructure + Polish
+
+### מה בוצע?
+
+**Phase 2 — Data flow bugs (N1, B10, B15):**
+- N1: FloatingHeader props תוקנו — `agentName` = project dir name, `sessionTitle` = cliKind (לא הפוך)
+- B10: thought translation bridge — הוספת `addTranslatedSegment` ל-AgentSessionPublic.
+  כשaudio_chunk מגיע עם messageId+originalText+translatedText → voice-session קורא ל-
+  agentSession.addTranslatedSegment → מוסיף segment עם `{ text:hebrew, originalText:english }`.
+  SubSegment.svelte מציג שניהם (original dim LTR + translation RTL). 3 טסטים חדשים.
+- B15: click-to-play messageId pipeline — הוספת `messageId` ל-SegmentMeta. audio_chunk עם
+  messageId → נשמר ב-segmentCache → מועבר ל-player.addSegment. jumpToBubble() עובד. 1 טסט.
+
+**Phase 3 — Infrastructure (N4):**
+- N4: תיקון projects-registry ריק — הוספת `projectsRegistry` לdeps של createAgentOrchestrator.
+  לאחר createAndSpawn: קריאה ל-recordCwd() + recordSession() → GET /api/projects ו-/api/sessions
+  מחזירים data. sessions UI עובד.
+
+**Phase 4 — TTS/voice pipeline (B13, B14):**
+- B13: תיקון TTS duplication — disconnect() מנקה voiceMessageHandler + idempotency check
+  ב-audio_chunk handler (skip אם segmentId כבר ב-cache).
+- B14: sentence-boundary עברית — הטסטים מאמתים שהפונקציה עובדת. אין שינוי נדרש.
+
+**Phase 5 — Polish (B6, B9, B11, N2, N6, N7):**
+- B9: FilePicker tabindex="-1" לrole="dialog" (a11y fix)
+- N2: Dashboard — החלפת emojis ב-Lucide icons (book-open, settings, mic)
+- B6+N7: BottomSheet grip — touch target הוגדל ל-44px, hover state, חשיפה מ-44px
+- B11: BubbleKind — play indicator (▶ opacity 0.3) בפינה. נעלם בזמן השמעה.
+- N6: +page.svelte — חיבור audio cues לsettings store (בדיקת audioCues לפני הפעלה)
+
+### סטטוס כולל
+
+| Phase | Bugs | Commits | Status |
+|-------|------|---------|--------|
+| 1 | B1, B4, N5 | 5d8b82a, eed03a3 | ✅ |
+| 2 | N1, B10, B15 | 603fc93 | ✅ |
+| 3 | N4 | 4e9d12d | ✅ |
+| 4 | B13, B14 | 33d9a7f | ✅ |
+| 5 | B6, B9, B11, N2, N6, N7 | cef73a8 | ✅ |
+
+**טסטים:** 119 frontend + 454 backend = 573 total (היה 114+454 = 568)
+**typecheck:** ✅ | **lint:** ✅ (warnings only)
+
+---
+
 ## 2026-05-17 10:35 — Slice 9 Follow-up: Phase 1 — תיקוני UI קריטיים (B1, B4)
 
 ### מה בוצע?
