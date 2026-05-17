@@ -13,6 +13,8 @@
 export type PlaylistItem = {
   segmentId: string
   kind: "message" | "thought" | "narration"
+  /** Phase 8: messageId of the bubble this segment belongs to (null if unknown). */
+  messageId: string | null
 }
 
 /**
@@ -26,10 +28,14 @@ export function createPlayerStore() {
   /** Index in playlist of the currently/last-played segment. */
   let currentIndex = $state(-1)
 
-  function addSegment(segmentId: string, kind: "message" | "thought" | "narration"): void {
+  function addSegment(
+    segmentId: string,
+    kind: "message" | "thought" | "narration",
+    messageId: string | null = null,
+  ): void {
     // Avoid duplicates
     if (playlist.some((s) => s.segmentId === segmentId)) return
-    playlist = [...playlist, { segmentId, kind }]
+    playlist = [...playlist, { segmentId, kind, messageId }]
   }
 
   function jumpToSegment(segmentId: string): number {
@@ -59,6 +65,25 @@ export function createPlayerStore() {
       if (playlist[i]?.kind === kind) return i
     }
     return -1
+  }
+
+  /**
+   * Phase 8: jump to the first segment of a given bubble (by messageId).
+   * Returns the PlaylistItem to start from, or null if not found.
+   */
+  function jumpToBubble(messageId: string): PlaylistItem | null {
+    const idx = playlist.findIndex((s) => s.messageId === messageId)
+    if (idx < 0) return null
+    currentIndex = idx
+    return playlist[idx] ?? null
+  }
+
+  /**
+   * Phase 8: true if the currently-playing segment belongs to the given bubble.
+   */
+  function isPlayingBubble(messageId: string): boolean {
+    const current = playlist[currentIndex]
+    return current !== undefined && current.messageId === messageId
   }
 
   /**
@@ -99,6 +124,8 @@ export function createPlayerStore() {
     },
     addSegment,
     jumpToSegment,
+    jumpToBubble,
+    isPlayingBubble,
     goNext,
     goPrev,
     replayLastResponse,

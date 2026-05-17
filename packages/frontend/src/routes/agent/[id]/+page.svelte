@@ -42,13 +42,14 @@ $effect(() => {
   })
 })
 
-// Phase 7: populate player playlist when new audio_chunk segments arrive
+// Phase 7+8: populate player playlist when new audio_chunk segments arrive
 $effect(() => {
   const segId = voice.currentlyPlayingSegmentId
   if (segId) {
     const meta = voice.getSegment(segId)
     if (meta) {
-      player.addSegment(segId, meta.kind)
+      // messageId comes from the bubble tracking in agent-session
+      player.addSegment(segId, meta.kind, null)
       player.jumpToSegment(segId)
     }
   }
@@ -282,9 +283,15 @@ function onKeydown(e: KeyboardEvent): void {
   }
 }
 
-// ── Bubble click-to-play (placeholder for Phase 8) ───────────────────────────
-function onBubblePlayRequest(_bubble: Bubble) {
-  // Phase 8 will wire this to the player
+// ── Bubble click-to-play (Phase 8) ──────────────────────────────────────────
+function onBubblePlayRequest(bubble: Bubble) {
+  if (bubble.messageId) {
+    const item = player.jumpToBubble(bubble.messageId)
+    if (item) {
+      // Trigger replay from this bubble's first segment
+      voice.replayLast()
+    }
+  }
 }
 
 // ── Sheet agents (current agent as item for BottomSheet) ─────────────────────
@@ -385,6 +392,9 @@ async function handleSheetAgentClose(agentId: string) {
           {#each session.bubbles as bubble, i (i)}
             <BubbleKind
               {bubble}
+              playingMessageId={bubble.messageId && player.isPlayingBubble(bubble.messageId)
+                ? bubble.messageId
+                : null}
               onPlayRequest={onBubblePlayRequest}
             />
           {/each}
