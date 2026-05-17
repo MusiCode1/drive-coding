@@ -8,12 +8,14 @@ import { cues } from "$lib/audio/cues"
 import BottomSheet from "$lib/components/BottomSheet.svelte"
 import BubbleKind from "$lib/components/BubbleKind.svelte"
 import FloatingHeader from "$lib/components/FloatingHeader.svelte"
+import Sidebar from "$lib/components/Sidebar.svelte"
 import type { Bubble } from "$lib/stores/agent-session.svelte"
 import { createAgentSessionStore } from "$lib/stores/agent-session.svelte"
 import { createCarMode } from "$lib/stores/car-mode.svelte"
 import { device } from "$lib/stores/device.svelte"
 import { deriveMicState, MIC_ICONS, MIC_STATUS_TEXT } from "$lib/stores/mic-state.svelte"
 import { sheetState } from "$lib/stores/sheet-state.svelte"
+import { sidebarState } from "$lib/stores/sidebar-state.svelte"
 import { deriveScrollState } from "$lib/stores/smart-scroll"
 import { createVoiceSessionStore } from "$lib/stores/voice-session.svelte"
 
@@ -299,26 +301,41 @@ async function handleSheetAgentClose(agentId: string) {
 </svelte:head>
 
 <div class="page-wrap" class:page-mobile={device.isMobile}>
-  <!-- ── Header: floating (mobile) / classic (desktop) ──────────────────── -->
-  {#if device.isMobile}
-    <!-- Floating header — overlays chat, abs positioned inside .page-wrap -->
-    <FloatingHeader
-      agentName={agent?.cliKind ?? ""}
-      sessionTitle={agent ? agent.cwd.split("/").pop() ?? "" : ""}
+  <!-- ── Desktop: sidebar ────────────────────────────────────────────────── -->
+  {#if device.isDesktop}
+    <Sidebar
+      agents={sheetAgents}
+      currentAgentId={agentId}
+      collapsed={sidebarState.isCollapsed}
+      carModeActive={carMode.isActive}
+      onCollapseToggle={() => sidebarState.toggle()}
+      onCarModeToggle={enableCarMode}
+      onAgentSelect={(id) => goto(`/agent/${id}`)}
     />
-  {:else}
-    <header>
-      <a href="/" class="back-link" aria-label="חזרה לדשבורד">←</a>
-      {#if agent}
-        <h1 class="title">{agent.cliKind}</h1>
-        <div class="meta" dir="ltr">{agent.cwd}</div>
-      {/if}
-      <div class="header-end">
-        <span class="badge badge-{session.status}">{session.status}</span>
-        <a href="/settings" class="settings-link" title="הגדרות" aria-label="הגדרות">⚙</a>
-      </div>
-    </header>
   {/if}
+
+  <!-- ── Main column (header + chat + footer) ────────────────────────────── -->
+  <div class="main-col">
+    <!-- ── Header: floating (mobile) / classic (desktop) ──────────────── -->
+    {#if device.isMobile}
+      <!-- Floating header — overlays chat, abs positioned inside .main-col -->
+      <FloatingHeader
+        agentName={agent?.cliKind ?? ""}
+        sessionTitle={agent ? agent.cwd.split("/").pop() ?? "" : ""}
+      />
+    {:else}
+      <header>
+        <a href="/" class="back-link" aria-label="חזרה לדשבורד">←</a>
+        {#if agent}
+          <h1 class="title">{agent.cliKind}</h1>
+          <div class="meta" dir="ltr">{agent.cwd}</div>
+        {/if}
+        <div class="header-end">
+          <span class="badge badge-{session.status}">{session.status}</span>
+          <a href="/settings" class="settings-link" title="הגדרות" aria-label="הגדרות">⚙</a>
+        </div>
+      </header>
+    {/if}
 
   <!-- ── Chat area ────────────────────────────────────────────────────────── -->
   {#if loadError}
@@ -473,32 +490,49 @@ async function handleSheetAgentClose(agentId: string) {
     {/if}
   </footer>
 
-  <!-- ── Mobile: BottomSheet ─────────────────────────────────────────────── -->
-  {#if device.isMobile}
-    <BottomSheet
-      agents={sheetAgents}
-      currentAgentId={agentId}
-      carModeActive={carMode.isActive}
-      onCarModeToggle={enableCarMode}
-      onAgentSelect={(id) => goto(`/agent/${id}`)}
-      onAgentClose={handleSheetAgentClose}
-    />
-  {/if}
+    <!-- ── Mobile: BottomSheet ───────────────────────────────────────────── -->
+    {#if device.isMobile}
+      <BottomSheet
+        agents={sheetAgents}
+        currentAgentId={agentId}
+        carModeActive={carMode.isActive}
+        onCarModeToggle={enableCarMode}
+        onAgentSelect={(id) => goto(`/agent/${id}`)}
+        onAgentClose={handleSheetAgentClose}
+      />
+    {/if}
+  </div> <!-- end .main-col -->
 </div>
 
 <style>
   /* ── Page wrapper ──────────────────────────────────────────────────────── */
   .page-wrap {
     display: flex;
-    flex-direction: column;
+    flex-direction: row; /* sidebar | main-col */
     height: 100dvh;
     overflow: hidden;
   }
 
-  /* Mobile: position:relative needed for absolute floating header + bottom sheet */
+  /* Mobile: stack vertically + position:relative for floating elements */
   .page-wrap.page-mobile {
+    flex-direction: column;
     position: relative;
     overflow: hidden;
+  }
+
+  /* ── Main column (header + chat + footer) ───────────────────────────────── */
+  .main-col {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Mobile: main-col fills all height (sidebar is hidden) */
+  .page-wrap.page-mobile .main-col {
+    position: relative; /* for absolute floating header + bottom sheet */
+    height: 100%;
   }
 
   /* ── Header ────────────────────────────────────────────────────────────── */
