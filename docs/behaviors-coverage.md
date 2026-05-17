@@ -342,11 +342,19 @@ vnext הוא ארכיטקטורה שונה לחלוטין מ-v1:
 
 ### UI-HIST (7 behaviors)
 
-🚫 כולה לא רלוונטי — אין history loading ב-vnext frontend (session continuity מנוהל ע"י ה-agent עצמו).
+**Slice 8a (backend):** כל הinfrastructure ממומש. Frontend refactor יחבר אותו ב-Slice 8b.
 
-| ID | סטטוס |
-|----|--------|
-| UI-HIST-1..7 | 🚫 |
+| ID | תיאור קצר | סטטוס | הערה |
+|----|-----------|--------|------|
+| UI-HIST-1 | `/sessions` — רשימת sessions | ✅ (backend) | `GET /api/sessions` + `GET /api/projects/:hash/sessions` |
+| UI-HIST-2 | טעינת session ישן | ✅ (backend) | `createAcpWsLoadTransport` + `existingSessionId` ב-orchestrator |
+| UI-HIST-3 | Dedup — session כבר פעיל → redirect | ✅ (backend) | dedup check ב-`createAndSpawn` |
+| UI-HIST-4 | `history_start` event | ✅ (backend) | `agent-session` → `queueMicrotask` broadcast |
+| UI-HIST-5 | `history_chunk` events בסדר | ✅ (backend) | mapping: message/thought/user_message |
+| UI-HIST-6 | `history_tool_call` event | ✅ (backend) | `tool_call` notification → `history_tool_call` |
+| UI-HIST-7 | `history_done` event | ✅ (backend) | לאחר לולאת buffer |
+
+*גם:* `audio_recording_saved` event (לא היה ב-v1) — ✅ (backend, Slice 8a Phase 5)
 
 ---
 

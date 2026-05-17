@@ -3,6 +3,56 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-17 03:30 — Slice 8a: Session History Backend — סיכום כולל
+
+### סיכום Slice 8a
+
+**5 Phases, 5 commits, 62 tests חדשים** — backend מלא ל-session history.
+
+| Phase | תיאור | Tests | Commit |
+|-------|--------|-------|--------|
+| 1 | ACP transport: `listSessionsFromBridge` + `createAcpWsLoadTransport` | 12 | 2fa4fde |
+| 2 | Storage: `projects-registry`, `sessions-cache`, `recordings-store` | 16 | 326b1d5 |
+| 3 | HTTP: `/api/projects`, `/api/sessions`, `/api/recordings`, `/api/fs/browse` | 12 | 0096c6f |
+| 4 | Orchestrator: `existingSessionId` + dedup | 6 | 4f8db0f |
+| 5 | WS events: history_start/chunk/tool_call/done + audio_recording_saved | 16 | 315a5e1 |
+
+**סה"כ:** 62 tests חדשים (מתוך ~45-55 שהיה מתוכנן ב-brief).
+
+#### פיצ'רים שנוספו
+
+**Transport (Phase 1)**
+- `listSessionsFromBridge(wsUrl, cwd)`: ResultAsync, -32601→ok([]) fallback (Gemini)
+- `createAcpWsLoadTransport(wsUrl, cwd, sessionId, onHistoryUpdate)`: session/load path
+
+**Storage (Phase 2)**
+- `ProjectsRegistry`: disk-backed JSON, recordCwd/recordSession/getProjects (DESC sort)
+- `SessionsCache`: in-memory TTL Map (5min default)
+- `RecordingsStore`: disk-backed audio (`<uuid>.<ext>` + index.json sidecar)
+
+**HTTP (Phase 3)**
+- `GET /api/projects` — projects מRegistry
+- `GET /api/projects/:cwdHash/sessions` — cache-aside (sha256-base64url key)
+- `GET /api/sessions` — union of all cwds, DESC sort, limit 50
+- `GET /api/recordings/:id` — audio bytes + Content-Type
+- `GET /api/fs/browse?path=` — directory listing (security guard + hidden filter)
+
+**Orchestrator (Phase 4)**
+- `CreateAndSpawnInput.existingSessionId?`
+- Dedup: ready/busy agent בavoid spawn מיותר
+- `createAcpWsLoadTransport` path
+
+**WS Events (Phase 5)**
+- 5 new ArkType schemas: HistoryStart/Chunk/ToolCall/Done + AudioRecordingSaved
+- `createAgentSession`: historyBuffer → queueMicrotask → ordered broadcast
+- `sendAudioPrompt`: recording save → `audio_recording_saved` לפני STT
+
+#### מה לא כלול (frontend — Slice 8b)
+- `/sessions` page ו-`/session/:cwdHash/:sessionId` route
+- History bubbles rendering
+- Recording replay (click-to-play UX)
+
+---
 ## 2026-05-17 03:15 — Slice 8a Phase 5: WS History Events + audio_recording_saved
 
 ### סיכום
