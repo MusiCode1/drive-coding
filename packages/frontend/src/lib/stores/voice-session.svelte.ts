@@ -188,6 +188,7 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
         setState("idle")
       }
     } catch (e) {
+      log.warn({ err: e }, "stopRecording failed")
       voiceError = e instanceof Error ? e.message : "שגיאה בשליחת האודיו"
       setState("idle")
     }
@@ -223,6 +224,7 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
         setState("idle")
       }
     } catch (e) {
+      log.warn({ err: e }, "sendAudioBlob failed")
       voiceError = e instanceof Error ? e.message : "שגיאה בשליחת האודיו"
       setState("idle")
     }
