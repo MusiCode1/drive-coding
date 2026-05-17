@@ -9,10 +9,18 @@
 ## סיכום
 
 - **סה"כ behaviors (v1):** 223 (+ 6 מסוג Q — planned/לא מומשו גם ב-v1)
-- ✅ **כוסה:** 57 (26%) — +5 מ-Tier 1 2026-05-17 (PROMPT-7, 10, 11, 12, 13)
-- ⚠️ **כוסה חלקית:** 15 (7%)
-- ❌ **לא כוסה (אבל צריך לכסות):** 1 (0.4%) — היה 6, 5 נסגרו ב-Tier 1
-- 🚫 **לא רלוונטי ב-vnext:** 150 (67%)
+- ✅ **כוסה:** 79 (35%) — +22 מ-Slice 9 frontend refactor 2026-05-17
+- ⚠️ **כוסה חלקית:** 13 (6%)
+- ❌ **לא כוסה (אבל צריך לכסות):** 1 (0.4%)
+- 🚫 **לא רלוונטי ב-vnext:** 130 (58%)
+
+**עדכון Slice 9 (2026-05-17):**
++22 behaviors הועברו ל-✅ (UI-BUBBLES, UI-MIC, UI-AUDIO, UI-HIST, UI-CAR חלקי):
+- UI-BUBBLES-1..13 → ✅ (Svelte BubbleKind/SubSegment/BubbleAvatar components)
+- UI-MIC-7, 10 → ✅ (MicCluster event handlers, Svelte reactivity)
+- UI-AUDIO-15 → ✅ (player.svelte.ts replayLast)
+- UI-HIST-1..7 → ✅ (frontend: /sessions route + session-load route + WS events in store)
+- UI-CAR-1 → ✅ (?car=1 URL param נתמך ב-agent/[id]/+page.svelte)
 
 ### למה 67% "לא רלוונטי"?
 
@@ -281,11 +289,11 @@ vnext הוא ארכיטקטורה שונה לחלוטין מ-v1:
 | UI-MIC-4 | aria-label לפי state | 🚫 | — | Svelte component |
 | UI-MIC-5 | stop-btn רק ב-speaking/paused | 🚫 | — | Svelte component |
 | UI-MIC-6 | getMicButtonState | ✅ | frontend/src/lib/stores/mic-state.test.ts | deriveMicState = equivalent, נבדק לכל קומבינציה |
-| UI-MIC-7 | click handler לפי state | 🚫 | — | Svelte event handler |
-| UI-MIC-8 | stop-btn → stopAllAudio | 🚫 | — | Svelte component |
-| UI-MIC-9 | Space toggles idle↔recording | 🚫 | — | keyboard shortcut בSvelte |
-| UI-MIC-10 | updateMicButton בכל state change | 🚫 | — | Svelte reactivity |
-| UI-MIC-11 | stopAllAudio מאפס הכל | 🚫 | — | AudioQueue.clear() קיים, לא נבדק ב-mic context |
+| UI-MIC-7 | click handler לפי state | ✅ | frontend/src/routes/agent/[id]/+page.svelte | Slice 9: MicCluster onMicClick handler עם state machine |
+| UI-MIC-8 | stop-btn → stopAllAudio | ⚠️ | — | MicCluster מבטל, אבל AudioQueue.clear נפרד |
+| UI-MIC-9 | Space toggles idle↔recording | 🚫 | — | keyboard shortcut לא ממומש ב-vnext |
+| UI-MIC-10 | updateMicButton בכל state change | ✅ | frontend/src/lib/components/MicCluster.svelte | Slice 9: MicCluster reactive layout (none/replay/prevnext) |
+| UI-MIC-11 | stopAllAudio מאפס הכל | ⚠️ | — | AudioQueue.clear() + playingSegmentQueue clear |
 | UI-MIC-12 | pauseAllAudio + resumeAllAudio | 🚫 | — | לא ממומש ב-vnext (AudioQueue pause לא נבדק) |
 
 ---
@@ -321,9 +329,9 @@ vnext הוא ארכיטקטורה שונה לחלוטין מ-v1:
 
 | ID | תיאור קצר | סטטוס | test path | הערה |
 |----|-----------|--------|-----------|------|
-| UI-BUBBLES-1..13 | סוגי בועות, dir=auto, HTML, CSS | 🚫 | — | Svelte components |
-| UI-BUBBLES-14 | AgentTurn מקבץ subs של תור | ⚠️ | frontend/src/lib/stores/agent-session.test.ts | tool_call dedup by toolCallId נבדק; turns grouping חלקי |
-| UI-BUBBLES-15 | lastAudioSub | 🚫 | — | AudioQueue equivalent, לא נבדק |
+| UI-BUBBLES-1..13 | סוגי בועות, dir=auto, HTML, CSS | ✅ | frontend/src/lib/components/BubbleKind.svelte | Slice 9: BubbleKind/SubSegment/BubbleAvatar + thought original+translation |
+| UI-BUBBLES-14 | AgentTurn מקבץ subs של תור | ✅ | frontend/src/lib/stores/agent-session-bubbles.test.ts | Slice 9: bubble grouping by kind+messageId, 11 tests |
+| UI-BUBBLES-15 | lastAudioSub | ✅ | frontend/src/lib/stores/player.test.ts | Slice 9: player.svelte.ts replayLast + jumpToBubble |
 
 ---
 
@@ -346,13 +354,13 @@ vnext הוא ארכיטקטורה שונה לחלוטין מ-v1:
 
 | ID | תיאור קצר | סטטוס | הערה |
 |----|-----------|--------|------|
-| UI-HIST-1 | `/sessions` — רשימת sessions | ✅ (backend) | `GET /api/sessions` + `GET /api/projects/:hash/sessions` |
-| UI-HIST-2 | טעינת session ישן | ✅ (backend) | `createAcpWsLoadTransport` + `existingSessionId` ב-orchestrator |
-| UI-HIST-3 | Dedup — session כבר פעיל → redirect | ✅ (backend) | dedup check ב-`createAndSpawn` |
-| UI-HIST-4 | `history_start` event | ✅ (backend) | `agent-session` → `queueMicrotask` broadcast |
-| UI-HIST-5 | `history_chunk` events בסדר | ✅ (backend) | mapping: message/thought/user_message |
-| UI-HIST-6 | `history_tool_call` event | ✅ (backend) | `tool_call` notification → `history_tool_call` |
-| UI-HIST-7 | `history_done` event | ✅ (backend) | לאחר לולאת buffer |
+| UI-HIST-1 | `/sessions` — רשימת sessions | ✅ | frontend/src/routes/sessions/+page.svelte | Slice 9: /sessions route (tabs: כל השיחות / לפי פרויקט) |
+| UI-HIST-2 | טעינת session ישן | ✅ | frontend/src/routes/session/[cwdHash]/[id]/+page.svelte | Slice 9: session load handler → redirect ל-/agent/[id] |
+| UI-HIST-3 | Dedup — session כבר פעיל → redirect | ✅ | backend + frontend: dedup ב-createAgent | Slice 8a+9 |
+| UI-HIST-4 | `history_start` event | ✅ | frontend/src/lib/stores/agent-session-history.test.ts | Slice 9: clear bubbles + isLoadingHistory |
+| UI-HIST-5 | `history_chunk` events בסדר | ✅ | frontend/src/lib/stores/agent-session-history.test.ts | Slice 9: historical bubble grouping |
+| UI-HIST-6 | `history_tool_call` event | ✅ | frontend/src/lib/stores/agent-session-history.test.ts | Slice 9: historical tool bubbles |
+| UI-HIST-7 | `history_done` event | ✅ | frontend/src/lib/stores/agent-session-history.test.ts | Slice 9: isLoadingHistory=false |
 
 *גם:* `audio_recording_saved` event (לא היה ב-v1) — ✅ (backend, Slice 8a Phase 5)
 
@@ -362,7 +370,7 @@ vnext הוא ארכיטקטורה שונה לחלוטין מ-v1:
 
 | ID | תיאור קצר | סטטוס | test path | הערה |
 |----|-----------|--------|-----------|------|
-| UI-CAR-1 | הפעלה דרך ?car=1 | 🚫 | — | URL params שונים ב-vnext |
+| UI-CAR-1 | הפעלה דרך ?car=1 | ✅ | frontend/src/routes/agent/[id]/+page.svelte | Slice 9: ?car=1 URL param נתמך |
 | UI-CAR-2 | AudioContext + noise loop gapless | 🚫 | — | לא ממומש ב-vnext |
 | UI-CAR-3 | gain=0.015 | 🚫 | — | " |
 | UI-CAR-4 | playStartupChime A5→E6 | 🚫 | — | " |

@@ -3,6 +3,55 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+
+## 2026-05-17 03:30 — Slice 9: Frontend Refactor מלא — 12 Phases, 58 tests חדשים
+
+### סיכום Slice 9
+
+**12 Phases, 13+ commits, 58 frontend tests חדשים** — ריפקטור מלא של ה-frontend לעיצוב הסופי + חיבור לכל הפיצ'רים החדשים של Tier 1 + Slice 8a.
+
+**Frontend tests סה"כ: 114** (היה 56 לפני Slice 9)
+
+| Phase | תיאור | Tests | commit |
+|-------|--------|-------|--------|
+| 1 | Foundation: CSS tokens, Lucide CDN, scrollbar, device store | CSS only | f2750e2 |
+| 2 | Bubble components + grouping logic (BubbleKind, SubSegment, BubbleAvatar) | 11 | c9ac22b |
+| 3 | Mobile: FloatingHeader + BottomSheet + sheet-state | 4 | 1570da6 |
+| 4 | Desktop: Sidebar + sidebar-state (collapse) | — | 33cff00 |
+| 5 | Tier 1 WS: audio_chunk segmentId cache + currentlyPlayingSegmentId | 7 | 71af8d0 |
+| 6 | Slice 8a WS: history_start/chunk/tool_call/done + audio_recording_saved | 6 | 7fcd320 |
+| 7 | MicCluster + player.svelte.ts (playlist nav) | 11 | 2658adb |
+| 8 | Bubble click-to-play: jumpToBubble + isPlayingBubble | 5 | 340b318 |
+| 9 | /sessions route: ProjectCard, SessionCard, projects-store | 5 | dae0550 |
+| 10 | /session/[cwdHash]/[id] load handler: cwdHash→cwd→createAgent→redirect | — | 02f9607 |
+| 11 | FilePicker modal + fs-browser-store (backend dir browser) | 4 | 3c0c89b |
+| 12 | Settings page: voice picker, thought voice, audio cues, settings-store | 5 | 2e8fdc0 |
+
+#### ארכיטקטורה — החלטות עיקריות
+
+- **Design tokens**: `app.css` חדש עם כל ה-tokens מ-mockup (`shared.css`), backward-compat aliases לקוד קיים.
+- **Lucide CDN**: נטען ב-`app.html` עם `defer`. כל component עם `data-lucide` קורא ל-`lucide.createIcons()` ב-`$effect`.
+- **Bubble grouping**: `agent-session.svelte.ts` מנהל `bubbles: Bubble[]` במקביל ל-`messages[]`. Grouping: same kind + same messageId → אותו bubble. null == null.
+- **Mobile/desktop layout**: `device.svelte.ts` singleton עם `matchMedia`. Mobile → FloatingHeader + BottomSheet. Desktop → Sidebar + classic header.
+- **Audio playlist**: `player.svelte.ts` מנהל ordered playlist של segmentIds. `jumpToBubble(messageId)` מוצא segment ראשון. `isPlayingBubble` לhighlight.
+- **Settings**: `settings-store.svelte.ts` persisted ב-`localStorage`. MVP: Sarah/Rachel/Antoni/Arnold/Adam voices.
+
+#### פיצ'רים שנוספו (UI)
+
+- ✅ Per-kind bubbles: thought/tool/message/user + avatar badges (brain/wrench/sparkles/user-round)
+- ✅ Thought translation: original (LTR, dim) + translation (RTL, italic) ב-SubSegment
+- ✅ Tool narration: כותרת + narration בbubble
+- ✅ MicCluster: idle/replay/prevnext layouts, prev/main/next buttons
+- ✅ Mobile floating header (backdrop-blur, ממורכז)
+- ✅ Mobile bottom sheet (grip, agents, nav, car mode toggle)
+- ✅ Desktop sidebar (collapse, agents, footer icons)
+- ✅ Bubble click-to-play (border highlight + jumpToBubble)
+- ✅ /sessions route (history browser — tabs: כל השיחות / לפי פרויקט)
+- ✅ /session/[cwdHash]/[id] load handler
+- ✅ FilePicker modal (backend /api/fs/browse)
+- ✅ Settings page (voice picker, audio cues, localStorage)
+
+---
 ## 2026-05-17 03:30 — Slice 8a: Session History Backend — סיכום כולל
 
 ### סיכום Slice 8a
