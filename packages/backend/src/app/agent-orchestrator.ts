@@ -1,8 +1,15 @@
-import type { Agent, AgentRegistry, BridgeManager, CreateAgentInput } from "@drive-coding/core"
+import type {
+  Agent,
+  AgentRegistry,
+  BridgeKind,
+  BridgeManager,
+  CreateAgentInput,
+} from "@drive-coding/core"
 import { extractProviderError } from "@drive-coding/core/acp/provider-error"
 import { createAcpWsLoadTransport, createAcpWsTransport } from "../acp/acp-transport.js"
 import type { BridgeHandleWithStderr } from "../acp/bridge-manager.js"
 import { type AgentSession, createAgentSession } from "./agent-session.js"
+import type { ProjectsRegistry } from "./projects-registry.js"
 import type { RecordingsStore } from "./recordings-store.js"
 
 /**
@@ -39,6 +46,8 @@ export function createAgentOrchestrator(deps: {
   registry: AgentRegistry
   bridgeManager: ExtendedBridgeManager
   recordingsStore?: RecordingsStore
+  /** N4 fix: tracks known cwds for the sessions UI. */
+  projectsRegistry?: ProjectsRegistry
 }): AgentOrchestrator {
   const sessions = new Map<string, AgentSession>()
   // Stores stderr getters keyed by agent id, for crash extraction
@@ -157,6 +166,13 @@ export function createAgentOrchestrator(deps: {
           bridgePort: handle.port,
           acpSessionId: sessionId,
         })
+
+        // N4 fix: record cwd + sessionId so the sessions UI can list them
+        if (deps.projectsRegistry) {
+          await deps.projectsRegistry.recordCwd(input.cwd, input.cliKind as BridgeKind)
+          await deps.projectsRegistry.recordSession(input.cwd, sessionId)
+        }
+
         return updated
       } catch (e) {
         // Try to extract a provider error from stderr before marking crashed

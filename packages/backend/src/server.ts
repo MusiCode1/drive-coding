@@ -33,7 +33,13 @@ const projectsRegistry = createProjectsRegistry(path.resolve("data/cache"))
 const sessionsCache = createSessionsCache()
 const recordingsStore = createRecordingsStore(path.resolve("data/recordings"))
 
-const orchestrator = createAgentOrchestrator({ registry, bridgeManager, recordingsStore })
+// N4 fix: pass projectsRegistry so agent creation records cwds for the sessions UI
+const orchestrator = createAgentOrchestrator({
+  registry,
+  bridgeManager,
+  recordingsStore,
+  projectsRegistry,
+})
 
 // fetchSessions: spawns a temp bridge, calls session/list, kills bridge
 async function fetchSessions(cwd: string) {
