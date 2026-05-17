@@ -87,7 +87,13 @@ export function createAgentOrchestrator(deps: {
         const { sessionId, capabilities: _caps } = await transport.start({ cwd: input.cwd })
 
         // 4. Create AgentSession for fan-out
-        const agentSession = createAgentSession({ agentId: agent.id, transport })
+        // Wire getStderr so provider errors surface after empty responses (PROMPT-17)
+        const getStderr = stderrGetters.get(agent.id)
+        const agentSession = createAgentSession({
+          agentId: agent.id,
+          transport,
+          ...(getStderr ? { getStderr } : {}),
+        })
         sessions.set(agent.id, agentSession)
 
         // 5. Mark ready

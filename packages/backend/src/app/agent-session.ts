@@ -4,6 +4,7 @@ import type {
   ServerMessage,
   SessionNotification,
 } from "@drive-coding/core"
+import { extractProviderError } from "@drive-coding/core/acp/provider-error"
 import type { Cache } from "@drive-coding/core/cache/types"
 import { generateText } from "ai"
 import type {
@@ -178,10 +179,32 @@ export function createAgentSession(opts: {
       broadcast({ type: "thinking" })
 
       try {
-        const response = await opts.transport.prompt({ text }, handleNotification)
+        let totalMessageChars = 0
+
+        const response = await opts.transport.prompt({ text }, (notification) => {
+          handleNotification(notification)
+          // Track message chars for PROMPT-17 provider error detection
+          const update = notification.update
+          if (update.sessionUpdate === "agent_message_chunk" && update.content.type === "text") {
+            totalMessageChars += update.content.text.length
+          }
+        })
 
         if (response.stopReason !== "end_turn") {
           console.warn(`[agent-session] prompt completed with stopReason=${response.stopReason}`)
+        }
+
+        // PROMPT-17: if model returned nothing and stderr shows a provider error, surface it
+        if (totalMessageChars === 0 && response.stopReason === "end_turn" && opts.getStderr) {
+          const stderrLines = opts.getStderr()
+          const providerErr = extractProviderError(stderrLines)
+          if (providerErr) {
+            broadcast({
+              type: "error",
+              code: "PROVIDER_ERROR",
+              message: `שגיאת provider: ${providerErr}`,
+            })
+          }
         }
 
         broadcast({
@@ -399,6 +422,7 @@ export function createAgentSession(opts: {
       broadcast({ type: "thinking" })
 
       let promptStopReason = "end_turn"
+      let totalMessageChars = 0
 
       try {
         const response = await opts.transport.prompt({ text: userText }, (notification) => {
@@ -409,6 +433,7 @@ export function createAgentSession(opts: {
               const content = update.content
               if (content.type !== "text") break
               const chunk = content.text
+              totalMessageChars += chunk.length
 
               // PROMPT-12: if thought was buffering, flush it synchronously-first
               if (acpThoughtBuffer.length > 0) {
@@ -555,6 +580,19 @@ export function createAgentSession(opts: {
         })
         callbacks.onError(`ACP failed: ${e instanceof Error ? e.message : String(e)}`)
         return
+      }
+
+      // PROMPT-17: surface provider error when model returns 0 message chars
+      if (totalMessageChars === 0 && promptStopReason === "end_turn" && opts.getStderr) {
+        const stderrLines = opts.getStderr()
+        const providerErr = extractProviderError(stderrLines)
+        if (providerErr) {
+          broadcast({
+            type: "error",
+            code: "PROVIDER_ERROR",
+            message: `שגיאת provider: ${providerErr}`,
+          })
+        }
       }
 
       // ── 6. Flush trailing buffers ──────────────────────────────────────────
