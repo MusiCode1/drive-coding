@@ -1,4 +1,8 @@
 import type { WebSocket } from "ws"
+import { createLogger } from "@drive-coding/core/log"
+
+const wireRx = createLogger("backend.acp.wire").ns("rx")
+const wireTx = createLogger("backend.acp.wire").ns("tx")
 
 /**
  * Convert ws.WebSocket → { readable: ReadableStream<Uint8Array>, writable: WritableStream<Uint8Array> }
@@ -63,6 +67,10 @@ export function wsToStreams(ws: WebSocket): {
         // Trust that opencode terminates every complete JSON-RPC message
         // with a `\n` byte; partial frames will be concatenated in the
         // SDK's internal buffer and parsed only when the terminator arrives.
+        wireRx.trace(
+          { len: text.length, text: text.length > 2000 ? `${text.slice(0, 2000)}…` : text },
+          "frame",
+        )
         controller.enqueue(encoder.encode(text))
       })
       ws.on("close", () => {
@@ -89,15 +97,19 @@ export function wsToStreams(ws: WebSocket): {
       // stdio-to-ws pipes WS frame → subprocess stdin verbatim. opencode acp
       // expects NDJSON (newline-delimited JSON). The SDK's ndJsonStream
       // writes us `{...}\n` lines — we must preserve the trailing newline.
-      for (const line of text.split("\n")) {
-        if (line.trim().length > 0) {
-          try {
-            ws.send(`${line}\n`)
-          } catch {
-            // ws already closed
+        for (const line of text.split("\n")) {
+          if (line.trim().length > 0) {
+            wireTx.trace(
+              { len: line.length, text: line.length > 2000 ? `${line.slice(0, 2000)}…` : line },
+              "frame",
+            )
+            try {
+              ws.send(`${line}\n`)
+            } catch {
+              // ws already closed
+            }
           }
         }
-      }
     },
     close() {
       if (ws.readyState === ws.OPEN) {

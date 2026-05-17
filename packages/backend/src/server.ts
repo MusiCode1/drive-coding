@@ -1,3 +1,4 @@
+import "./log-setup.js" // MUST be first — initialises logger before any other imports
 import * as path from "node:path"
 import { Hono } from "hono"
 import { cors } from "hono/cors"

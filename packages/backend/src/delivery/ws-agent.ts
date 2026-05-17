@@ -1,10 +1,13 @@
 import type { CacheStore } from "@drive-coding/core"
 import { ClientMessage, type ServerMessage } from "@drive-coding/core"
+import { createLogger } from "@drive-coding/core/log"
 import { type } from "arktype"
 import type { ServerWebSocket, WebSocketHandler } from "bun"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import type { VoiceConfig } from "../voice/pipeline.js"
 import type { VoiceRegistries } from "../voice/providers.js"
+
+const wsWireLog = createLogger("backend.ws.wire")
 
 export type AgentWsData = {
   kind: "agent"
@@ -13,8 +16,13 @@ export type AgentWsData = {
 }
 
 function send(ws: ServerWebSocket<AgentWsData>, msg: ServerMessage): void {
+  const json = JSON.stringify(msg)
+  wsWireLog.ns("tx").trace(
+    { agentId: ws.data.agentId, type: msg.type, len: json.length },
+    "frame",
+  )
   try {
-    ws.send(JSON.stringify(msg))
+    ws.send(json)
   } catch {
     // ws already closed — ignore
   }
@@ -66,9 +74,18 @@ export function createAgentWsHandler(deps: {
     },
 
     async message(ws, raw) {
+      const rawStr = String(raw)
+      wsWireLog.ns("rx").trace(
+        {
+          agentId: ws.data.agentId,
+          len: rawStr.length,
+          text: rawStr.length > 1000 ? `${rawStr.slice(0, 1000)}…` : rawStr,
+        },
+        "frame",
+      )
       let parsed: unknown
       try {
-        parsed = JSON.parse(String(raw))
+        parsed = JSON.parse(rawStr)
       } catch {
         send(ws, { type: "error", code: "INVALID_JSON", message: "invalid json" })
         return

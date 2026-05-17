@@ -1,4 +1,7 @@
 import type { ServerMessage } from "@drive-coding/core"
+import { createLogger } from "$lib/log"
+
+const wireLog = createLogger("fe.ws.wire")
 
 // ── Existing types (backward compat) ─────────────────────────────────────────
 
@@ -493,7 +496,14 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     const proto = location.protocol === "https:" ? "wss:" : "ws:"
     ws = new WebSocket(`${proto}//${location.host}/ws/agent/${agentId}`)
 
-    ws.onmessage = (e) => handle(String(e.data))
+    ws.onmessage = (e) => {
+      const raw = String(e.data)
+      wireLog.ns("rx").trace(
+        { len: raw.length, text: raw.length > 1000 ? `${raw.slice(0, 1000)}…` : raw },
+        "frame",
+      )
+      handle(raw)
+    }
 
     ws.onopen = () => {
       retryCount = 0
@@ -536,18 +546,24 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     messages = [...messages, userMsg]
     // Phase 2: add user bubble for typed messages too
     bubbles = [...bubbles, { kind: "user", messageId: null, segments: [{ text }] }]
-    ws.send(JSON.stringify({ type: "prompt", text }))
+    const json = JSON.stringify({ type: "prompt", text })
+    wireLog.ns("tx").trace({ type: "prompt", len: json.length }, "frame")
+    ws.send(json)
   }
 
   function sendRaw(payload: unknown): boolean {
     if (!ws || ws.readyState !== WebSocket.OPEN) return false
-    ws.send(JSON.stringify(payload))
+    const json = JSON.stringify(payload)
+    wireLog.ns("tx").trace({ type: (payload as { type?: string }).type ?? "raw", len: json.length }, "frame")
+    ws.send(json)
     return true
   }
 
   function cancel(): void {
     if (!ws || ws.readyState !== WebSocket.OPEN) return
-    ws.send(JSON.stringify({ type: "cancel" }))
+    const json = JSON.stringify({ type: "cancel" })
+    wireLog.ns("tx").trace({ type: "cancel", len: json.length }, "frame")
+    ws.send(json)
   }
 
   function setVoiceMessageHandler(handler: (raw: string) => void): void {
