@@ -1,10 +1,11 @@
 <script lang="ts">
 import type { AgentPublic } from "@drive-coding/core"
-import { renderMarkdown } from "@drive-coding/core"
 import { onDestroy, tick, untrack } from "svelte"
 import { page } from "$app/state"
 import { getAgent } from "$lib/api/agents"
 import { cues } from "$lib/audio/cues"
+import BubbleKind from "$lib/components/BubbleKind.svelte"
+import type { Bubble } from "$lib/stores/agent-session.svelte"
 import { createAgentSessionStore } from "$lib/stores/agent-session.svelte"
 import { createCarMode } from "$lib/stores/car-mode.svelte"
 import { deriveMicState, MIC_ICONS, MIC_STATUS_TEXT } from "$lib/stores/mic-state.svelte"
@@ -21,13 +22,9 @@ let voice = $state(createVoiceSessionStore(session))
 let carMode = $state(createCarMode())
 
 // Fix: when agentId changes — close old WS and create fresh stores (Bug 4).
-// untrack() prevents writing to session/voice from being registered as reactive
-// dependencies of this effect, which would cause an infinite update loop:
-// agentId changes → effect runs → writes session → session changes → effect re-runs → ...
 $effect(() => {
-  const id = agentId // reactive: track agentId changes
+  const id = agentId
   untrack(() => {
-    // non-reactive block: disconnect + replace stores without re-triggering this effect
     session.disconnect()
     session = createAgentSessionStore(id)
     voice = createVoiceSessionStore(session)
@@ -47,17 +44,16 @@ let autoScrollEnabled = $state(true)
 let showJumpDown = $state(false)
 let lastUserInteractionAt = $state(0)
 
-// ── isCancelling state — set on explicit cancel, cleared when voice returns to idle ──
+// ── isCancelling state ──────────────────────────────────────────────────────
 let isCancelling = $state(false)
 
-// Auto-clear isCancelling when voice pipeline reaches idle (Bug 1 / Bug 3)
 $effect(() => {
   if (voice.voiceState === "idle") {
     isCancelling = false
   }
 })
 
-// ── Derived mic state from voice pipeline ────────────────────────────────────
+// ── Derived mic state ────────────────────────────────────────────────────────
 let micState = $derived(
   deriveMicState({
     isRecording: voice.isRecording,
@@ -91,7 +87,6 @@ $effect(() => {
   const current = micState
   if (current === prevMicState) return
 
-  // Audio cues on state transitions
   if (current === "recording") {
     cues.recordingStart()
     acquireWakeLock()
@@ -104,27 +99,22 @@ $effect(() => {
     releaseWakeLock()
   }
 
-  // Update car mode media session playback state
   carMode.setPlaybackState(current !== "recording")
-
   prevMicState = current
 })
 
 // ── Auto-scroll effect ────────────────────────────────────────────────────────
 $effect(() => {
-  const _len = session.messages.length
-  const _lastText = session.messages[session.messages.length - 1]?.text.length ?? 0
+  const _len = session.bubbles.length
+  const _lastSegments = session.bubbles[session.bubbles.length - 1]?.segments.length ?? 0
   void _len
-  void _lastText
+  void _lastSegments
   if (!autoScrollEnabled) return
   tick().then(() => {
-    if (chatEl) {
-      chatEl.scrollTop = chatEl.scrollHeight
-    }
+    if (chatEl) chatEl.scrollTop = chatEl.scrollHeight
   })
 })
 
-// ── User interaction tracking (smart scroll) ─────────────────────────────────
 function markUserInteraction() {
   lastUserInteractionAt = Date.now()
 }
@@ -180,9 +170,7 @@ function schedulePoll(): void {
         if (fresh.status !== "starting") {
           if (pollTimer !== null) clearInterval(pollTimer)
           pollTimer = null
-          if (fresh.status === "ready") {
-            session.connect()
-          }
+          if (fresh.status === "ready") session.connect()
         }
       } catch {
         // keep polling
@@ -201,19 +189,14 @@ onDestroy(() => {
   releaseWakeLock()
 })
 
-// ── Hidden file upload — sends audio through same pipeline as mic recording ──
-// Useful for testing voice flow without a real microphone (QA, playwright, debug).
-// The input is invisible; activate by clicking it programmatically or via
-// document.querySelector('#audio-file-input').click() in devtools.
+// ── Hidden file upload ────────────────────────────────────────────────────────
 let fileInputEl = $state<HTMLInputElement | null>(null)
 
 async function onFileUpload(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
-  input.value = "" // reset so same file can be re-selected
-  // Use voice store so state advances (transcribing → thinking) — otherwise
-  // audio_chunk events arrive while voiceState is "idle" and get dropped.
+  input.value = ""
   await voice.sendAudioBlob(file, file.type || "audio/webm")
 }
 
@@ -232,14 +215,12 @@ async function onMicClick() {
   }
 }
 
-// ── Stop button (speaking only) ──────────────────────────────────────────────
 function onStop() {
   isCancelling = true
   voice.cancel()
   session.cancel()
 }
 
-// ── Replay last — wired to AudioQueue.hasLastPlayed ──────────────────────────
 let hasPlayedAudio = $derived(voice.canReplayLast)
 
 // ── Car mode enable ────────────────────────────────────────────────────────────
@@ -251,7 +232,6 @@ function enableCarMode() {
     onReplayLast: () => voice.replayLast(),
   })
 
-  // Landscape lock — only in car mode, optional
   if ("orientation" in screen && screen.orientation && "lock" in screen.orientation) {
     ;(screen.orientation as unknown as { lock: (o: string) => Promise<void> })
       .lock("landscape")
@@ -259,12 +239,11 @@ function enableCarMode() {
   }
 }
 
-// ── Error audio cue ──────────────────────────────────────────────────────────
 $effect(() => {
   if (session.error) cues.error()
 })
 
-// ── Text input (keep for accessibility) ─────────────────────────────────────
+// ── Text input (accessibility fallback) ─────────────────────────────────────
 let inputText = $state("")
 
 function send(): void {
@@ -280,43 +259,13 @@ function onKeydown(e: KeyboardEvent): void {
   }
 }
 
-// ── Tool icon helper ──────────────────────────────────────────────────────────
-function toolIcon(kind: string | undefined): string {
-  switch (kind) {
-    case "read":
-      return "📖"
-    case "edit":
-      return "✏️"
-    case "delete":
-      return "🗑"
-    case "move":
-      return "↪"
-    case "search":
-      return "🔍"
-    case "execute":
-      return "⚡"
-    case "think":
-      return "💭"
-    case "fetch":
-      return "🌐"
-    case "switch_mode":
-      return "↻"
-    default:
-      return "🔧"
-  }
-}
-
-// ── Tools bubble expand state ─────────────────────────────────────────────────
-let expandedToolIds = $state(new Set<string>())
-function toggleTool(id: string) {
-  const next = new Set(expandedToolIds)
-  if (next.has(id)) next.delete(id)
-  else next.add(id)
-  expandedToolIds = next
+// ── Bubble click-to-play (placeholder for Phase 8) ───────────────────────────
+function onBubblePlayRequest(_bubble: Bubble) {
+  // Phase 8 will wire this to the player
 }
 </script>
 
-<!-- No-pinch-zoom viewport (§9.6 "No pinch-zoom") -->
+<!-- No-pinch-zoom viewport -->
 <svelte:head>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 </svelte:head>
@@ -348,12 +297,9 @@ function toggleTool(id: string) {
         נסה שוב מהדשבורד.
       </div>
     {:else}
-      <div
-        id="chat-wrap"
-        class="chat-wrap"
-      >
+      <div class="chat-wrap">
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-        <ul
+        <div
           class="chat"
           aria-label="שיחה"
           aria-live="polite"
@@ -366,63 +312,17 @@ function toggleTool(id: string) {
           onkeydown={markUserInteraction}
           role="log"
         >
-          {#each session.messages as msg (msg.id)}
-            <li class="msg msg-{msg.kind}">
-              {#if msg.kind === "tool_call"}
-                <!-- Tool call bubble — collapsible with arrow -->
-                <!-- svelte-ignore a11y_click_events_have_key_events -->
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <div
-                  class="tools-bubble"
-                  class:expanded={msg.toolCallId ? expandedToolIds.has(msg.toolCallId) : false}
-                  onclick={() => msg.toolCallId && toggleTool(msg.toolCallId)}
-                >
-                  <div class="tools-header">
-                    <div class="tools-summary">
-                      <span class="tool-item tool-item-{msg.toolStatus ?? 'pending'}">
-                        <span class="status-dot"></span>
-                        <span dir="auto">{toolIcon(msg.toolKind)} {msg.text}</span>
-                      </span>
-                    </div>
-                    {#if msg.toolStatus}
-                      <span class="tool-status-badge tool-status-{msg.toolStatus}">{msg.toolStatus}</span>
-                    {/if}
-                    <span class="tools-arrow">▸</span>
-                  </div>
-                  {#if msg.toolCallId && expandedToolIds.has(msg.toolCallId)}
-                    <div class="tools-details">
-                      {#if msg.toolLocations && msg.toolLocations.length > 0}
-                        <div class="tool-locations" dir="ltr">
-                          {#each msg.toolLocations as loc}
-                            <code>{loc}</code>
-                          {/each}
-                        </div>
-                      {/if}
-                      {#if msg.toolContent}
-                        <pre dir="ltr" class="tool-content">{msg.toolContent}</pre>
-                      {/if}
-                    </div>
-                  {/if}
-                </div>
-              {:else if msg.kind === "thought"}
-                <div class="bubble bubble-thought" dir="auto">
-                  <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                  {@html renderMarkdown(msg.text)}
-                </div>
-              {:else if msg.kind === "assistant"}
-                <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                <div class="bubble bubble-agent" dir="auto">{@html renderMarkdown(msg.text)}</div>
-              {:else}
-                <!-- user (typed or transcribed via STT) -->
-                <div
-                  class="bubble bubble-user"
-                  class:stt-streaming={msg.isStreaming}
-                  dir="auto"
-                >{#if msg.isStreaming}🎙 {/if}{msg.text}</div>
-              {/if}
-            </li>
+          {#each session.bubbles as bubble, i (i)}
+            <BubbleKind
+              {bubble}
+              onPlayRequest={onBubblePlayRequest}
+            />
           {/each}
-        </ul>
+
+          {#if session.bubbles.length === 0}
+            <div class="chat-empty">התחילו לדבר — תוכן השיחה יופיע כאן.</div>
+          {/if}
+        </div>
 
         <!-- Jump-down button -->
         <button
@@ -433,7 +333,6 @@ function toggleTool(id: string) {
         >↓</button>
       </div>
 
-      <!-- Error display -->
       {#if session.error}
         <div class="error-banner" role="alert">{session.error}</div>
       {/if}
@@ -447,9 +346,7 @@ function toggleTool(id: string) {
 
   <!-- ── Footer / Controls ──────────────────────────────────────────────── -->
   <footer>
-    <!-- Status text below button -->
     <div
-      id="status"
       class="status"
       class:recording={micState === "recording"}
       class:processing={micState === "processing"}
@@ -459,9 +356,7 @@ function toggleTool(id: string) {
       {MIC_STATUS_TEXT[micState]}
     </div>
 
-    <!-- Control row: replay-last | mic button | stop -->
     <div class="controls">
-      <!-- Replay last (56px) -->
       <button
         class="side-btn"
         disabled={!hasPlayedAudio}
@@ -470,7 +365,6 @@ function toggleTool(id: string) {
         onclick={() => voice.replayLast()}
       >🔊</button>
 
-      <!-- BIG mic button (110px) -->
       <button
         id="mic-btn"
         class="mic-btn"
@@ -487,7 +381,6 @@ function toggleTool(id: string) {
         {MIC_ICONS[micState]}
       </button>
 
-      <!-- Stop (56px) — visible only when speaking -->
       <button
         class="side-btn stop-btn"
         class:hidden={micState !== "speaking" && micState !== "cancelling"}
@@ -496,14 +389,11 @@ function toggleTool(id: string) {
         aria-label="עצור הקראה"
       >⏹</button>
 
-      <!-- Spacer when stop hidden (keeps button centered) -->
       {#if micState !== "speaking" && micState !== "cancelling"}
         <div class="side-btn-spacer" aria-hidden="true"></div>
       {/if}
     </div>
 
-    <!-- Hidden audio file upload — same pipeline as mic recording.
-         Activate: document.querySelector('#audio-file-input').click() -->
     <input
       id="audio-file-input"
       type="file"
@@ -513,7 +403,6 @@ function toggleTool(id: string) {
       onchange={onFileUpload}
     />
 
-    <!-- Car mode enable button (only in car mode and not yet active) -->
     {#if isCarMode && !carMode.isActive}
       <button class="car-enable-btn" onclick={enableCarMode}>
         🚗 הפעל בקרת רכב
@@ -522,7 +411,6 @@ function toggleTool(id: string) {
       <div class="car-active-badge">🚗 בקרת רכב פעילה</div>
     {/if}
 
-    <!-- Text input (accessibility fallback — collapsed in car mode) -->
     {#if !isCarMode}
       <form class="text-form" onsubmit={(e) => { e.preventDefault(); send() }}>
         <textarea
@@ -532,6 +420,7 @@ function toggleTool(id: string) {
           rows="2"
           disabled={session.status !== "connected"}
           aria-label="הודעה"
+          dir="auto"
         ></textarea>
         <div class="form-actions">
           <button
@@ -678,19 +567,16 @@ function toggleTool(id: string) {
 
   .chat {
     flex: 1;
-    list-style: none;
-    padding: 12px 16px;
-    margin: 0;
+    padding: 16px 16px 32px; /* extra bottom padding for avatar badges */
     overflow-y: auto;
     overflow-x: hidden;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 32px; /* space between bubbles — avatars extend 19px below */
     scroll-behavior: smooth;
   }
 
-  .chat:empty::before {
-    content: "התחילו לדבר — תוכן השיחה יופיע כאן.";
+  .chat-empty {
     color: var(--muted);
     font-size: 13px;
     align-self: center;
@@ -702,7 +588,7 @@ function toggleTool(id: string) {
     position: absolute;
     bottom: 14px;
     inset-inline-end: 14px;
-    background: var(--bg-elev);
+    background: var(--bg-elevated);
     border: 1px solid var(--border);
     color: var(--fg);
     border-radius: 50%;
@@ -731,232 +617,6 @@ function toggleTool(id: string) {
     color: white;
   }
 
-  /* ── Messages ────────────────────────────────────────────────────────────── */
-  .msg {
-    display: flex;
-    max-width: 85%;
-  }
-
-  .msg-user    { align-self: flex-start; }
-  .msg-assistant { align-self: flex-end; }
-  .msg-thought { align-self: flex-end; opacity: 0.85; }
-  .msg-tool_call { align-self: stretch; max-width: 100%; }
-
-  /* ── Bubble base ─────────────────────────────────────────────────────────── */
-  .bubble {
-    padding: 10px 14px;
-    border-radius: 14px;
-    font-size: 14px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-  }
-
-  .bubble:empty::after {
-    content: "…";
-    color: var(--muted);
-  }
-
-  /* user bubble — RTL: left side */
-  .bubble-user {
-    background: var(--bubble-user);
-    border-bottom-right-radius: 4px;
-  }
-
-  /* agent bubble — RTL: right side */
-  .bubble-agent {
-    background: var(--bubble-agent);
-    border-bottom-left-radius: 4px;
-    white-space: normal; /* markdown handles newlines */
-  }
-
-  /* thought bubble */
-  .bubble-thought {
-    background: transparent;
-    border: 1px dashed var(--border);
-    color: var(--fg-dim);
-    font-style: italic;
-    font-size: 12.5px;
-    white-space: normal;
-  }
-
-  .bubble-thought::before {
-    content: "💭 ";
-    opacity: 0.6;
-  }
-
-  /* STT in-flight user bubble (italic + slight transparency until finalized) */
-  .stt-streaming {
-    font-style: italic;
-    opacity: 0.75;
-  }
-
-  /* ── Markdown inside bubbles ─────────────────────────────────────────────── */
-  :global(.bubble-agent p)           { margin: 0 0 0.5em; }
-  :global(.bubble-agent p:last-child) { margin-bottom: 0; }
-  :global(.bubble-agent h1), :global(.bubble-agent h2),
-  :global(.bubble-agent h3), :global(.bubble-agent h4) {
-    margin: 0.5em 0 0.3em;
-    font-weight: 600;
-  }
-  :global(.bubble-agent h1) { font-size: 1.2em; }
-  :global(.bubble-agent h2) { font-size: 1.1em; }
-  :global(.bubble-agent h3), :global(.bubble-agent h4) { font-size: 1em; }
-  :global(.bubble-agent ul), :global(.bubble-agent ol) {
-    margin: 0.3em 0;
-    padding-inline-start: 1.5em;
-  }
-  :global(.bubble-agent li) { margin: 0.15em 0; }
-  :global(.bubble-agent code) {
-    background: rgba(255, 255, 255, 0.07);
-    padding: 1px 5px;
-    border-radius: 4px;
-    font-family: ui-monospace, "SF Mono", Consolas, monospace;
-    font-size: 0.92em;
-  }
-  :global(.bubble-agent pre) {
-    background: rgba(0, 0, 0, 0.3);
-    padding: 8px 10px;
-    border-radius: 6px;
-    overflow-x: auto;
-    margin: 0.4em 0;
-    direction: ltr;
-    text-align: left;
-  }
-  :global(.bubble-agent pre code) { background: none; padding: 0; }
-  :global(.bubble-agent a) { color: var(--accent-hi); }
-  :global(.bubble-agent blockquote) {
-    border-inline-start: 3px solid var(--border);
-    padding-inline-start: 10px;
-    margin: 0.4em 0;
-    color: var(--fg-dim);
-  }
-  :global(.bubble-agent table) { border-collapse: collapse; margin: 0.4em 0; }
-  :global(.bubble-agent th), :global(.bubble-agent td) {
-    border: 1px solid var(--border);
-    padding: 4px 8px;
-  }
-
-  :global(.bubble-thought p)           { margin: 0 0 0.4em; }
-  :global(.bubble-thought p:last-child) { margin-bottom: 0; }
-
-  /* ── Tools bubble ────────────────────────────────────────────────────────── */
-  .msg-tool_call { justify-content: stretch; }
-
-  .tools-bubble {
-    flex: 1;
-    background: var(--tool-bg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 6px 12px;
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .tools-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    font-size: 12px;
-    color: var(--fg-dim);
-    font-family: ui-monospace, "SF Mono", Consolas, monospace;
-  }
-
-  .tools-summary {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .tools-arrow {
-    font-size: 10px;
-    opacity: 0.5;
-    transition: transform 0.15s;
-    flex-shrink: 0;
-  }
-
-  .tools-bubble.expanded .tools-arrow {
-    transform: rotate(90deg);
-  }
-
-  .tools-details {
-    margin-top: 6px;
-    padding-top: 6px;
-    border-top: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .tool-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    color: var(--fg-dim);
-  }
-
-  .tool-item-in_progress { color: var(--thinking); }
-  .tool-item-failed      { color: var(--recording); }
-  .tool-item-completed   { color: var(--speaking); }
-
-  .status-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--muted);
-    flex-shrink: 0;
-  }
-
-  .tool-item-in_progress .status-dot {
-    background: var(--thinking);
-    animation: pulse-dot 1s infinite;
-  }
-  .tool-item-completed .status-dot { background: var(--speaking); }
-  .tool-item-failed    .status-dot { background: var(--recording); }
-
-  .tool-status-badge {
-    font-size: 10px;
-    opacity: 0.6;
-    font-family: ui-monospace, monospace;
-  }
-  .tool-status-completed { color: var(--speaking); }
-  .tool-status-failed    { color: var(--recording); }
-  .tool-status-in_progress { color: var(--thinking); }
-
-  .tool-locations {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-top: 4px;
-  }
-
-  .tool-locations code {
-    font-size: 11px;
-    background: rgba(255, 255, 255, 0.05);
-    padding: 1px 5px;
-    border-radius: 3px;
-    font-family: ui-monospace, monospace;
-    color: var(--fg-dim);
-  }
-
-  .tool-content {
-    margin: 4px 0 0;
-    padding: 6px 8px;
-    background: rgba(0, 0, 0, 0.25);
-    border-radius: 4px;
-    font-size: 11px;
-    max-height: 180px;
-    overflow: auto;
-    white-space: pre-wrap;
-    word-break: break-all;
-    color: var(--fg-dim);
-  }
-
   /* ── Footer ──────────────────────────────────────────────────────────────── */
   footer {
     flex-shrink: 0;
@@ -966,10 +626,9 @@ function toggleTool(id: string) {
     flex-direction: column;
     align-items: center;
     gap: 10px;
-    background: var(--bg-elev);
+    background: var(--bg-elevated);
   }
 
-  /* ── Status text ─────────────────────────────────────────────────────────── */
   .status {
     font-size: 12px;
     color: var(--muted);
@@ -979,9 +638,9 @@ function toggleTool(id: string) {
   }
 
   .status.recording  { color: var(--recording); }
-  .status.processing { color: var(--thinking); }
+  .status.processing { color: var(--processing); }
   .status.speaking   { color: var(--speaking); }
-  .status.cancelling { color: #ff9933; }
+  .status.cancelling { color: var(--cancelling); }
 
   /* ── Controls row ────────────────────────────────────────────────────────── */
   .controls {
@@ -990,7 +649,7 @@ function toggleTool(id: string) {
     gap: 16px;
   }
 
-  /* ── BIG mic button (110px, §9.6 ≥80px) ─────────────────────────────────── */
+  /* ── BIG mic button ─────────────────────────────────────────────────────── */
   .mic-btn {
     width: 110px;
     height: 110px;
@@ -1043,7 +702,7 @@ function toggleTool(id: string) {
     animation: flash-fast 0.3s infinite;
   }
 
-  /* ── Side buttons (56px, §9.6 "touch targets ≥80px"  — 56 is acceptable for secondary controls) */
+  /* ── Side buttons ───────────────────────────────────────────────────────── */
   .side-btn {
     background: var(--bg);
     border: 1px solid var(--border);
@@ -1111,7 +770,7 @@ function toggleTool(id: string) {
     font-weight: 600;
   }
 
-  /* ── Text input form (non-car mode) ──────────────────────────────────────── */
+  /* ── Text input form ─────────────────────────────────────────────────────── */
   .text-form {
     display: flex;
     flex-direction: column;
@@ -1133,7 +792,6 @@ function toggleTool(id: string) {
     font-family: inherit;
     font-size: 14px;
     resize: none;
-    direction: rtl;
   }
 
   textarea:focus {

@@ -1,5 +1,7 @@
 import type { ServerMessage } from "@drive-coding/core"
 
+// ── Existing types (backward compat) ─────────────────────────────────────────
+
 export type ChatMessage = {
   id: string
   kind: "user" | "assistant" | "thought" | "tool_call"
@@ -15,10 +17,50 @@ export type ChatMessage = {
 
 export type AgentSessionStatus = "disconnected" | "connecting" | "connected" | "thinking"
 
+// ── Phase 2: Bubble types ─────────────────────────────────────────────────────
+
+/** The visual kind of a bubble (maps to distinct styling in BubbleKind.svelte). */
+export type BubbleKind = "thought" | "tool" | "message" | "user"
+
+/**
+ * One segment within a bubble.
+ * - text / message bubbles: `text` holds the content.
+ * - thought bubbles: `text` = translated Hebrew, `originalText` = original English.
+ * - tool bubbles: `toolCallId` + `toolTitle` + optional `narration`.
+ * - user bubbles: `text` = STT transcript.
+ *
+ * Populated progressively:
+ *   Phase 2: text, toolCallId, toolTitle, narration (from WS tool_call / tool_call_update)
+ *   Phase 5: originalText, translatedText (from audio_chunk)
+ *   Phase 6: historical flag (from history_chunk)
+ */
+export type BubbleSegment = {
+  text?: string
+  originalText?: string
+  translatedText?: string
+  // tool_call specific
+  toolCallId?: string
+  toolTitle?: string
+  narration?: string
+  // metadata
+  historical?: boolean
+  isStreaming?: boolean
+}
+
+/** A grouped visual bubble containing one or more segments. */
+export type Bubble = {
+  kind: BubbleKind
+  /** Stable UUID from server — used for Tier 1 grouping. null for events without messageId. */
+  messageId: string | null
+  segments: BubbleSegment[]
+}
+
 /** Public contract of createAgentSessionStore — used for dependency injection and type safety. */
 export interface AgentSessionPublic {
   readonly agentId: string
   readonly messages: ChatMessage[]
+  /** Phase 2: new visual bubble list (replaces messages for rendering). */
+  readonly bubbles: Bubble[]
   readonly status: AgentSessionStatus
   readonly error: string | null
   readonly isConnected: boolean
@@ -28,26 +70,23 @@ export interface AgentSessionPublic {
   sendRaw(payload: unknown): boolean
   cancel(): void
   setVoiceMessageHandler(handler: (raw: string) => void): void
+  /** Phase 6: clear all bubbles (used by history_start). */
+  clearBubbles(): void
 }
 
 /**
  * createAgentSessionStore — Svelte 5 rune-based store for a single agent WS session.
  *
- * Manages:
- *  - WS connection lifecycle (with exponential backoff reconnect)
- *  - Chat message list (with streaming append)
- *  - Status and error state
+ * Phase 2 additions:
+ *  - `bubbles` state: per-kind bubbles with sub-segments, grouped by messageId
+ *  - Bubble grouping logic for text_chunk, tool_call, tool_call_update, stt_partial
  *
- * Slice 5: extended with:
- *  - onVoiceMessage callback for voice pipeline message delegation
- *  - sendRaw for sending arbitrary JSON via WS (used by voice store)
- *
- * Slice 7 fix: exponential backoff reconnect on unexpected WS close.
- *
- * Usage: call in a .svelte file, use returned reactive fields directly.
+ * Phase 5 will extend with: audio_chunk originalText/translatedText pairing
+ * Phase 6 will extend with: history_* events, historical bubble flag
  */
 export function createAgentSessionStore(agentId: string): AgentSessionPublic {
   let messages = $state<ChatMessage[]>([])
+  let bubbles = $state<Bubble[]>([])
   let status = $state<AgentSessionStatus>("disconnected")
   let error = $state<string | null>(null)
   let ws = $state<WebSocket | null>(null)
@@ -57,13 +96,14 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
   let retryTimer: ReturnType<typeof setTimeout> | null = null
   let intentionallyClosed = false
 
-  // Slice 5: voice message delegate
+  // Voice message delegate
   let voiceMessageHandler: ((raw: string) => void) | null = null
+
+  // ── Legacy messages helpers ───────────────────────────────────────────────
 
   function appendChunk(kind: ChatMessage["kind"], text: string): void {
     const last = messages[messages.length - 1]
     if (last && last.kind === kind && last.isStreaming) {
-      // Append to the last streaming message of the same kind
       messages = [...messages.slice(0, -1), { ...last, text: last.text + text }]
     } else {
       messages = [
@@ -80,15 +120,12 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
 
   function finalizeStreaming(): void {
     messages = messages.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
+    bubbles = bubbles.map((b) => ({
+      ...b,
+      segments: b.segments.map((s) => (s.isStreaming ? { ...s, isStreaming: false } : s)),
+    }))
   }
 
-  /**
-   * Upsert a streaming user message — used by stt_partial.
-   * If the last message is a streaming user bubble, update its text.
-   * Otherwise append a new streaming user bubble.
-   * This keeps the STT preview in chronological order BEFORE the assistant
-   * response (rather than at the bottom of the chat as a separate node).
-   */
   function upsertStreamingUser(text: string): void {
     const last = messages[messages.length - 1]
     if (last && last.kind === "user" && last.isStreaming) {
@@ -106,8 +143,111 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     }
   }
 
+  // ── Phase 2: Bubble helpers ───────────────────────────────────────────────
+
+  /**
+   * Append a text segment to the bubble list.
+   * Grouping rule: same kind AND same messageId (null == null) → append segment.
+   * Otherwise → create new bubble.
+   */
+  function appendBubbleChunk(
+    kind: "message" | "thought",
+    text: string,
+    messageId: string | null,
+    opts?: { originalText?: string; translatedText?: string },
+  ): void {
+    const last = bubbles[bubbles.length - 1]
+    const segment: BubbleSegment = {
+      text,
+      originalText: opts?.originalText,
+      translatedText: opts?.translatedText,
+    }
+    if (last && last.kind === kind && last.messageId === messageId) {
+      bubbles = [...bubbles.slice(0, -1), { ...last, segments: [...last.segments, segment] }]
+    } else {
+      bubbles = [...bubbles, { kind, messageId, segments: [segment] }]
+    }
+  }
+
+  /**
+   * Create or update a tool bubble.
+   * Lookup by toolCallId — if found, update title/narration; else create new.
+   */
+  function appendToolBubble(
+    toolCallId: string,
+    toolTitle: string,
+    opts?: { narration?: string },
+  ): void {
+    const existingIdx = bubbles.findIndex(
+      (b) => b.kind === "tool" && b.segments.some((s) => s.toolCallId === toolCallId),
+    )
+    if (existingIdx >= 0) {
+      bubbles = bubbles.map((b, i) =>
+        i === existingIdx
+          ? {
+              ...b,
+              segments: b.segments.map((s) =>
+                s.toolCallId === toolCallId
+                  ? {
+                      ...s,
+                      toolTitle: toolTitle || s.toolTitle,
+                      narration: opts?.narration ?? s.narration,
+                    }
+                  : s,
+              ),
+            }
+          : b,
+      )
+    } else {
+      bubbles = [
+        ...bubbles,
+        {
+          kind: "tool",
+          messageId: null,
+          segments: [{ toolCallId, toolTitle, narration: opts?.narration }],
+        },
+      ]
+    }
+  }
+
+  /** Update narration on existing tool bubble segment (from tool_call_update). */
+  function updateToolNarration(toolCallId: string, narration: string): void {
+    bubbles = bubbles.map((b) => {
+      if (b.kind !== "tool") return b
+      if (!b.segments.some((s) => s.toolCallId === toolCallId)) return b
+      return {
+        ...b,
+        segments: b.segments.map((s) => (s.toolCallId === toolCallId ? { ...s, narration } : s)),
+      }
+    })
+  }
+
+  /**
+   * Create or update streaming user bubble (from stt_partial).
+   * Only ONE streaming user bubble can exist at a time — update it in place.
+   */
+  function upsertBubbleUser(text: string): void {
+    const idx = bubbles.findIndex((b) => b.kind === "user" && b.segments.some((s) => s.isStreaming))
+    if (idx >= 0) {
+      bubbles = bubbles.map((b, i) =>
+        i === idx
+          ? {
+              ...b,
+              segments: b.segments.map((s) => (s.isStreaming ? { ...s, text } : s)),
+            }
+          : b,
+      )
+    } else {
+      bubbles = [
+        ...bubbles,
+        { kind: "user", messageId: null, segments: [{ text, isStreaming: true }] },
+      ]
+    }
+  }
+
+  // ── WS message handler ────────────────────────────────────────────────────
+
   function handle(raw: string): void {
-    // Delegate to voice handler if registered (processes audio_chunk, stt_partial, etc.)
     voiceMessageHandler?.(raw)
 
     let msg: ServerMessage
@@ -123,15 +263,20 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
         status = "connected"
         error = null
         break
+
       case "thinking":
         status = "thinking"
         break
-      case "text_chunk":
+
+      case "text_chunk": {
+        const messageId = msg.messageId ?? null
         appendChunk(msg.kind === "message" ? "assistant" : "thought", msg.text)
+        appendBubbleChunk(msg.kind === "message" ? "message" : "thought", msg.text, messageId)
         break
+      }
+
       case "tool_call": {
-        // Same toolCallId may arrive multiple times (initial + updates).
-        // Merge into existing bubble if found.
+        // Legacy messages — merge by toolCallId
         const existing = messages.find(
           (m) => m.kind === "tool_call" && m.toolCallId === msg.toolCallId,
         )
@@ -163,27 +308,38 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
             },
           ]
         }
+        // Phase 2: bubbles — create/update tool bubble
+        appendToolBubble(msg.toolCallId, msg.title, { narration: msg.narration })
         break
       }
+
+      case "tool_call_update":
+        // Phase 2: update narration on existing tool bubble
+        updateToolNarration(msg.toolCallId, msg.narration)
+        break
+
       case "done":
         finalizeStreaming()
         status = "connected"
         break
+
       case "error":
         error = `${msg.code}: ${msg.message}`
         status = "connected"
         break
+
       case "stt_partial":
-        // Promote STT preview to a chronologically-positioned user bubble.
-        // voice-session also handles this to track sttText for its own state,
-        // but we own the message list rendering here.
         upsertStreamingUser(msg.text)
+        upsertBubbleUser(msg.text)
         break
+
       default:
-        // pong, hello, audio_chunk, translation — handled by voiceMessageHandler or ignored
+        // pong, hello, audio_chunk, translation, history_* — handled by voiceMessageHandler or Phase 5/6
         break
     }
   }
+
+  // ── Reconnect ─────────────────────────────────────────────────────────────
 
   const RETRY_DELAYS = [1000, 2000, 4000, 8000, 15000, 30000]
 
@@ -199,6 +355,8 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     }, delay)
   }
 
+  // ── Connection lifecycle ──────────────────────────────────────────────────
+
   function connect(): void {
     if (ws) return
     intentionallyClosed = false
@@ -211,7 +369,6 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     ws.onmessage = (e) => handle(String(e.data))
 
     ws.onopen = () => {
-      // status will be set to "connected" via "connected" server message
       retryCount = 0
     }
 
@@ -248,10 +405,11 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
       text,
     }
     messages = [...messages, userMsg]
+    // Phase 2: add user bubble for typed messages too
+    bubbles = [...bubbles, { kind: "user", messageId: null, segments: [{ text }] }]
     ws.send(JSON.stringify({ type: "prompt", text }))
   }
 
-  /** Send arbitrary JSON payload via WS. Used by voice pipeline to send audio messages. */
   function sendRaw(payload: unknown): boolean {
     if (!ws || ws.readyState !== WebSocket.OPEN) return false
     ws.send(JSON.stringify(payload))
@@ -263,15 +421,23 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     ws.send(JSON.stringify({ type: "cancel" }))
   }
 
-  /** Register a voice message handler (called with every raw WS message). */
   function setVoiceMessageHandler(handler: (raw: string) => void): void {
     voiceMessageHandler = handler
+  }
+
+  /** Phase 6: clear bubbles for history reload. */
+  function clearBubbles(): void {
+    bubbles = []
+    messages = []
   }
 
   return {
     agentId,
     get messages() {
       return messages
+    },
+    get bubbles() {
+      return bubbles
     },
     get status() {
       return status
@@ -288,5 +454,6 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     sendRaw,
     cancel,
     setVoiceMessageHandler,
+    clearBubbles,
   }
 }
