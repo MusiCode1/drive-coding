@@ -51,10 +51,18 @@ export const ThinkingMessage = type({
 })
 export type ThinkingMessage = typeof ThinkingMessage.infer
 
+/**
+ * Text chunk from ACP — streamed incrementally.
+ *
+ * Tier 1 additions (Phase 4):
+ *   messageId — UUID stable across all chunks of the same message/thought turn.
+ *     Allows frontend to group bubbles and link audio_chunks back to their source.
+ */
 export const TextChunkMessage = type({
   type: "'text_chunk'",
   kind: "'message' | 'thought'",
   text: "string",
+  "messageId?": "string",
 })
 export type TextChunkMessage = typeof TextChunkMessage.infer
 
@@ -69,6 +77,10 @@ export type TextChunkMessage = typeof TextChunkMessage.infer
  * `locations`: array of file paths (for "follow-along" UI)
  * `content`: human-readable preview of tool output (text only — diff/terminal
  *   are summarised to a single line for Slice 5.5; richer rendering in Slice 7)
+ *
+ * Tier 1 additions (Phase 4):
+ *   narration — Hebrew sentence describing the tool action (populated later via
+ *     tool_call_update after narrateToolCall resolves).
  */
 export const ToolCallMessage = type({
   type: "'tool_call'",
@@ -78,6 +90,7 @@ export const ToolCallMessage = type({
   "status?": "string",
   "locations?": "string[]",
   "content?": "string",
+  "narration?": "string",
 })
 export type ToolCallMessage = typeof ToolCallMessage.infer
 
@@ -101,9 +114,24 @@ export const SttPartialMessage = type({
 })
 export type SttPartialMessage = typeof SttPartialMessage.infer
 
+/**
+ * Audio chunk from TTS.
+ *
+ * Tier 1 additions (Phase 4):
+ *   segmentId — unique UUID per TTS segment (one sentence = one segment).
+ *   messageId — parent message/thought ID (links segment back to text_chunk).
+ *   kind — "message" | "thought" | "narration".
+ *   originalText — source English text before translation.
+ *   translatedText — Hebrew text that was synthesised.
+ */
 export const AudioChunkMessage = type({
   type: "'audio_chunk'",
   mp3Base64: "string",
+  "segmentId?": "string",
+  "messageId?": "string",
+  "kind?": "'message' | 'thought' | 'narration'",
+  "originalText?": "string",
+  "translatedText?": "string",
 })
 export type AudioChunkMessage = typeof AudioChunkMessage.infer
 
@@ -114,11 +142,24 @@ export const TranslationMessage = type({
 })
 export type TranslationMessage = typeof TranslationMessage.infer
 
+/**
+ * Sent after narrateToolCall resolves — updates the tool card with a
+ * natural Hebrew narration of what the agent is doing.
+ * Tier 1 (Phase 4): new event.
+ */
+export const ToolCallUpdateMessage = type({
+  type: "'tool_call_update'",
+  toolCallId: "string",
+  narration: "string",
+})
+export type ToolCallUpdateMessage = typeof ToolCallUpdateMessage.infer
+
 export const ServerMessage = HelloMessage.or(PongMessage)
   .or(ConnectedMessage)
   .or(ThinkingMessage)
   .or(TextChunkMessage)
   .or(ToolCallMessage)
+  .or(ToolCallUpdateMessage)
   .or(DoneMessage)
   .or(ErrorMessage)
   .or(SttPartialMessage)
