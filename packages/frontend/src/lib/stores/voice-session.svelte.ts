@@ -67,6 +67,9 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
             const translatedText = parsed.translatedText as string | undefined
             const messageId = parsed.messageId as string | undefined
 
+            // B13 fix: idempotency — skip if we've already processed this segmentId
+            if (segmentId && segmentCache.has(segmentId)) break
+
             // Phase 5: cache segment metadata (B15 fix: include messageId)
             if (segmentId) {
               segmentCache.set(segmentId, { kind, originalText, translatedText, messageId })

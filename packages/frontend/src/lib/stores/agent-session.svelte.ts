@@ -522,6 +522,8 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     ws = null
     status = "disconnected"
     error = null
+    // B13 fix: clear voice handler so old session doesn't keep calling it after reconnect
+    voiceMessageHandler = null
   }
 
   function sendPrompt(text: string): void {
