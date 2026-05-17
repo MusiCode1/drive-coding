@@ -51,6 +51,7 @@ export function makeMockSession(overrides: Partial<AgentSessionPublic> = {}): Ag
     agentId: "test-agent",
     messages: [],
     bubbles: [],
+    isLoadingHistory: false,
     status: "connected",
     error: null,
     isConnected: true,
@@ -61,6 +62,7 @@ export function makeMockSession(overrides: Partial<AgentSessionPublic> = {}): Ag
     cancel: vi.fn(),
     setVoiceMessageHandler: vi.fn(),
     clearBubbles: vi.fn(),
+    getRecordingId: vi.fn(() => null),
     ...overrides,
   }
 }
