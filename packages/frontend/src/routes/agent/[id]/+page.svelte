@@ -1,14 +1,19 @@
 <script lang="ts">
 import type { AgentPublic } from "@drive-coding/core"
 import { onDestroy, tick, untrack } from "svelte"
+import { goto } from "$app/navigation"
 import { page } from "$app/state"
-import { getAgent } from "$lib/api/agents"
+import { deleteAgent, getAgent } from "$lib/api/agents"
 import { cues } from "$lib/audio/cues"
+import BottomSheet from "$lib/components/BottomSheet.svelte"
 import BubbleKind from "$lib/components/BubbleKind.svelte"
+import FloatingHeader from "$lib/components/FloatingHeader.svelte"
 import type { Bubble } from "$lib/stores/agent-session.svelte"
 import { createAgentSessionStore } from "$lib/stores/agent-session.svelte"
 import { createCarMode } from "$lib/stores/car-mode.svelte"
+import { device } from "$lib/stores/device.svelte"
 import { deriveMicState, MIC_ICONS, MIC_STATUS_TEXT } from "$lib/stores/mic-state.svelte"
+import { sheetState } from "$lib/stores/sheet-state.svelte"
 import { deriveScrollState } from "$lib/stores/smart-scroll"
 import { createVoiceSessionStore } from "$lib/stores/voice-session.svelte"
 
@@ -263,6 +268,29 @@ function onKeydown(e: KeyboardEvent): void {
 function onBubblePlayRequest(_bubble: Bubble) {
   // Phase 8 will wire this to the player
 }
+
+// ── Sheet agents (current agent as item for BottomSheet) ─────────────────────
+let sheetAgents = $derived(
+  agent
+    ? [
+        {
+          id: agent.id,
+          name: agent.cwd.split("/").pop() ?? agent.cliKind,
+          status: agent.status,
+          cliKind: agent.cliKind,
+        },
+      ]
+    : [],
+)
+
+async function handleSheetAgentClose(agentId: string) {
+  try {
+    await deleteAgent(agentId)
+    goto("/")
+  } catch {
+    // ignore
+  }
+}
 </script>
 
 <!-- No-pinch-zoom viewport -->
@@ -270,19 +298,27 @@ function onBubblePlayRequest(_bubble: Bubble) {
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 </svelte:head>
 
-<div class="page-wrap">
-  <!-- ── Header ──────────────────────────────────────────────────────────── -->
-  <header>
-    <a href="/" class="back-link" aria-label="חזרה לדשבורד">←</a>
-    {#if agent}
-      <h1 class="title">{agent.cliKind}</h1>
-      <div class="meta" dir="ltr">{agent.cwd}</div>
-    {/if}
-    <div class="header-end">
-      <span class="badge badge-{session.status}">{session.status}</span>
-      <a href="/settings" class="settings-link" title="הגדרות" aria-label="הגדרות">⚙</a>
-    </div>
-  </header>
+<div class="page-wrap" class:page-mobile={device.isMobile}>
+  <!-- ── Header: floating (mobile) / classic (desktop) ──────────────────── -->
+  {#if device.isMobile}
+    <!-- Floating header — overlays chat, abs positioned inside .page-wrap -->
+    <FloatingHeader
+      agentName={agent?.cliKind ?? ""}
+      sessionTitle={agent ? agent.cwd.split("/").pop() ?? "" : ""}
+    />
+  {:else}
+    <header>
+      <a href="/" class="back-link" aria-label="חזרה לדשבורד">←</a>
+      {#if agent}
+        <h1 class="title">{agent.cliKind}</h1>
+        <div class="meta" dir="ltr">{agent.cwd}</div>
+      {/if}
+      <div class="header-end">
+        <span class="badge badge-{session.status}">{session.status}</span>
+        <a href="/settings" class="settings-link" title="הגדרות" aria-label="הגדרות">⚙</a>
+      </div>
+    </header>
+  {/if}
 
   <!-- ── Chat area ────────────────────────────────────────────────────────── -->
   {#if loadError}
@@ -301,6 +337,7 @@ function onBubblePlayRequest(_bubble: Bubble) {
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <div
           class="chat"
+          class:chat-floating={device.isMobile}
           aria-label="שיחה"
           aria-live="polite"
           bind:this={chatEl}
@@ -345,7 +382,7 @@ function onBubblePlayRequest(_bubble: Bubble) {
   {/if}
 
   <!-- ── Footer / Controls ──────────────────────────────────────────────── -->
-  <footer>
+  <footer class:footer-mobile={device.isMobile}>
     <div
       class="status"
       class:recording={micState === "recording"}
@@ -435,6 +472,18 @@ function onBubblePlayRequest(_bubble: Bubble) {
       </form>
     {/if}
   </footer>
+
+  <!-- ── Mobile: BottomSheet ─────────────────────────────────────────────── -->
+  {#if device.isMobile}
+    <BottomSheet
+      agents={sheetAgents}
+      currentAgentId={agentId}
+      carModeActive={carMode.isActive}
+      onCarModeToggle={enableCarMode}
+      onAgentSelect={(id) => goto(`/agent/${id}`)}
+      onAgentClose={handleSheetAgentClose}
+    />
+  {/if}
 </div>
 
 <style>
@@ -443,6 +492,12 @@ function onBubblePlayRequest(_bubble: Bubble) {
     display: flex;
     flex-direction: column;
     height: 100dvh;
+    overflow: hidden;
+  }
+
+  /* Mobile: position:relative needed for absolute floating header + bottom sheet */
+  .page-wrap.page-mobile {
+    position: relative;
     overflow: hidden;
   }
 
@@ -576,6 +631,11 @@ function onBubblePlayRequest(_bubble: Bubble) {
     scroll-behavior: smooth;
   }
 
+  /* Mobile: add top padding so chat doesn't hide under floating header */
+  .chat.chat-floating {
+    padding-top: 80px;
+  }
+
   .chat-empty {
     color: var(--muted);
     font-size: 13px;
@@ -627,6 +687,11 @@ function onBubblePlayRequest(_bubble: Bubble) {
     align-items: center;
     gap: 10px;
     background: var(--bg-elevated);
+  }
+
+  /* Mobile: add extra bottom padding to keep mic above the bottom sheet grip */
+  footer.footer-mobile {
+    padding-bottom: 50px;
   }
 
   .status {
