@@ -9,9 +9,9 @@
 ## סיכום
 
 - **סה"כ behaviors (v1):** 223 (+ 6 מסוג Q — planned/לא מומשו גם ב-v1)
-- ✅ **כוסה:** 52 (23%) — +9 מסגירת פערים 2026-05-16
+- ✅ **כוסה:** 57 (26%) — +5 מ-Tier 1 2026-05-17 (PROMPT-7, 10, 11, 12, 13)
 - ⚠️ **כוסה חלקית:** 15 (7%)
-- ❌ **לא כוסה (אבל צריך לכסות):** 6 (3%)
+- ❌ **לא כוסה (אבל צריך לכסות):** 1 (0.4%) — היה 6, 5 נסגרו ב-Tier 1
 - 🚫 **לא רלוונטי ב-vnext:** 150 (67%)
 
 ### למה 67% "לא רלוונטי"?
@@ -103,17 +103,17 @@ vnext הוא ארכיטקטורה שונה לחלוטין מ-v1:
 | PROMPT-4 | system prompt נחשב נשלח אם session נטען | 🚫 | — | " |
 | PROMPT-5 | ttsQueue סדרתי משותף | ✅ | backend/tests/agent-session-audio.test.ts | 3 משפטים → audio chunks מגיעים בסדר |
 | PROMPT-6 | streamCounter → streamId ייחודי | 🚫 | — | ארכיטקטורה שונה |
-| PROMPT-7 | streamTts try/catch per segment | ❌ | — | TTS error handling per segment לא נבדק — Err מוחזר לcallback, pipeline ממשיכה |
+| PROMPT-7 | TTS error per segment → pipeline ממשיכה | ✅ | backend/tests/agent-session-audio.test.ts + agent-session-coordination.test.ts | Tier 1 Phase 4: processQueue continue על TTS error; COORD-4/10 |
 | PROMPT-8 | messageBuffer + flushMessage per sentence | ⚠️ | core/tests/voice/sentence-boundary.test.ts | splitIntoSentences נבדק; integration עם pipeline לא |
 | PROMPT-9 | flushMessage: 3 פעולות בסדר | 🚫 | — | ארכיטקטורה שונה (vnext: pipeline נפרד) |
-| PROMPT-10 | thoughtBuffer + flushThought + ttsQueue | 🚫 | — | " |
-| PROMPT-11 | מעבר kind → flush buffer השני | 🚫 | — | " |
-| PROMPT-12 | tool_call create → flush + narration | 🚫 | — | אין tool narration ב-vnext |
-| PROMPT-13 | בסוף תור → flushMessage + flushThought | 🚫 | — | ארכיטקטורה שונה |
+| PROMPT-10 | thoughtBuffer + flushThought + ttsQueue | ✅ | backend/tests/agent-session-coordination.test.ts | Tier 1 Phase 4: COORD-1..6 — thought translated+TTS'd, trailing buffer flushed |
+| PROMPT-11 | מעבר message→thought → flush message buffer | ✅ | backend/tests/agent-session-coordination.test.ts | Tier 1 Phase 4: COORD-12 — thought chunk while message buffered |
+| PROMPT-12 | tool_call create → flush + narration queue | ✅ | backend/tests/agent-session-coordination.test.ts | Tier 1 Phase 4: COORD-7..10, COORD-15..20 — narrateToolCall + tool_call_update |
+| PROMPT-13 | בסוף תור → flushMessage + flushThought | ✅ | backend/tests/agent-session-coordination.test.ts | Tier 1 Phase 4: COORD-3 — trailing buffers flushed after ACP response |
 | PROMPT-14 | סיכום prompt ל-log | 🚫 | — | " |
 | PROMPT-15 | chunk kind=user_message → ignore | 🚫 | — | " |
 | PROMPT-16 | text_chunk לכל chunk (כולל מחשבות) | ✅ | backend/tests/agent-session.test.ts | message + thought chunks → broadcasts |
-| PROMPT-17 | totalMessageChars=0 → extract provider error | ✅ | core/tests/acp/provider-error.test.ts + agent-orchestrator.test.ts | extractProviderError נבדק כולל stderr integration |
+| PROMPT-17 | totalMessageChars=0 → extract provider error | ✅ | backend/tests/provider-error.test.ts | Tier 1 Phase 5: PERR-1..7 — sendPrompt + sendAudioPrompt, getStderr injection |
 | PROMPT-18 | done לפני ttsQueue מסיים | ✅ | backend/tests/agent-session.test.ts | done נשלח אחרי prompt חוזר (לא מחכה TTS) |
 | PROMPT-19 | extractProviderError — patterns | ✅ | core/tests/acp/provider-error.test.ts | שני patterns + כל 7 keywords נבדקו |
 | PROMPT-20 | cancel → bridge.cancel | ✅ | backend/tests/agent-session.test.ts | "cancel calls transport.cancel" |
