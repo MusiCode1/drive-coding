@@ -3,6 +3,43 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-17 02:35 — Slice 8a Phase 3: HTTP Endpoints (/api/projects, /api/sessions, /api/recordings, /api/fs/browse)
+
+### סיכום
+
+TDD Phase 3 — 3 קובצי delivery חדשים + חיבור ל-server.ts.
+12 טסטים חדשים, כולם ירוקים. typecheck ו-lint נקיים.
+
+#### מה בוצע
+
+**1. `http-history.ts`** — 3 קבוצות endpoints
+
+- `registerProjectsHttp`:
+  - `GET /api/projects` — מחזיר projects מהregistry
+  - `GET /api/projects/:cwdHash/sessions` — cache-aside: מ-sessionsCache או קורא fetchSessions
+  - `GET /api/sessions` — איחוד sessions מכל ה-cwds, ממויין updatedAt DESC, limit 50
+  - `cwdHash = SHA-256(cwd).base64url` (URL-safe, ללא padding)
+
+- `registerRecordingsHttp`:
+  - `GET /api/recordings/:id` — מחזיר bytes עם Content-Type נכון, 404 אם לא נמצא
+
+- `registerFsBrowseHttp`:
+  - `GET /api/fs/browse?path=` — רשימת ספריות עם security guard (403 מחוץ לhome)
+  - `realpath()` לפני בדיקה (מגן מ-symlink traversal)
+  - מסנן `.git`, `node_modules` וכד'
+  - 400 אם path חסר
+
+**2. חיבור ב-`server.ts`**
+- `fetchSessions(cwd)`: spawns temp bridge → listSessionsFromBridge → kills bridge
+- `projectsRegistry`, `sessionsCache`, `recordingsStore` נוצרים ב-boot
+
+#### החלטות ארכיטקטורה
+
+- **`fetchSessions` כ-dependency injection**: מאפשר mock בטסטים — לא צריך bridge אמיתי
+- **`allowedBase` configurable ב-`registerFsBrowseHttp`**: מאפשר טסטים עם `/tmp` כbase במקום `/home/user`
+- **recordings ב-`data/recordings/`**: עקביות עם `data/cache/tts`
+
+---
 ## 2026-05-17 02:15 — Slice 8a Phase 2: Storage Layer (projects-registry + sessions-cache + recordings-store)
 
 ### סיכום

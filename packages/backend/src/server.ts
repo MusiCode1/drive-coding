@@ -1,11 +1,20 @@
 import * as path from "node:path"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
+import { listSessionsFromBridge } from "./acp/acp-transport.js"
 import { createBridgeManager } from "./acp/bridge-manager.js"
 import { createInMemoryAgentRegistry } from "./agents/registry.js"
 import { createAgentOrchestrator } from "./app/agent-orchestrator.js"
+import { createProjectsRegistry } from "./app/projects-registry.js"
+import { createRecordingsStore } from "./app/recordings-store.js"
+import { createSessionsCache } from "./app/sessions-cache.js"
 import { registerHttp } from "./delivery/http.js"
 import { registerAgentsHttp } from "./delivery/http-agents.js"
+import {
+  registerFsBrowseHttp,
+  registerProjectsHttp,
+  registerRecordingsHttp,
+} from "./delivery/http-history.js"
 import { registerHttpOptions } from "./delivery/http-options.js"
 import { type AgentWsData, createAgentWsHandler } from "./delivery/ws-agent.js"
 import { type WsData as EchoWsData, registerEchoWs } from "./delivery/ws-echo.js"
@@ -21,6 +30,32 @@ const registry = createInMemoryAgentRegistry()
 const bridgeManager = createBridgeManager()
 const orchestrator = createAgentOrchestrator({ registry, bridgeManager })
 
+// Slice 8a: session history storage
+const projectsRegistry = createProjectsRegistry(path.resolve("data/cache"))
+const sessionsCache = createSessionsCache()
+const recordingsStore = createRecordingsStore(path.resolve("data/recordings"))
+
+// fetchSessions: spawns a temp bridge, calls session/list, kills bridge
+async function fetchSessions(cwd: string) {
+  const projects = await projectsRegistry.getProjects()
+  const entry = projects.find((p) => p.cwd === cwd)
+  if (!entry) return []
+  const bridgeId = crypto.randomUUID()
+  try {
+    const handle = await bridgeManager.spawn(bridgeId, {
+      cliKind: entry.kind,
+      cwd,
+      modelOverride: null,
+    })
+    const result = await listSessionsFromBridge({ wsUrl: handle.wsUrl, cwd })
+    return result.isOk() ? [...result.value] : []
+  } catch {
+    return []
+  } finally {
+    await bridgeManager.kill(bridgeId).catch(() => {})
+  }
+}
+
 // Voice pipeline dependencies (Slice 5)
 const ttsCache = new DiskCache(path.resolve("data/cache/tts"))
 await ttsCache.init()
@@ -29,6 +64,9 @@ await ttsCache.init()
 registerHttp(app)
 registerHttpOptions(app)
 registerAgentsHttp(app, { registry, orchestrator })
+registerProjectsHttp(app, { projectsRegistry, sessionsCache, fetchSessions })
+registerRecordingsHttp(app, { recordingsStore })
+registerFsBrowseHttp(app)
 
 // WS handlers
 const echo = registerEchoWs(app)
