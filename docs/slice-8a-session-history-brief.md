@@ -73,7 +73,7 @@ packages/backend/src/
 │   └── agent-session.ts              # handle session/load notifications → history_* events; save recording
 └── server.ts                         # wire new HTTP routes
 
-packages/core/src/protocol/messages.ts  # extend with HistoryStartMessage,
+packages/core/src/schemas/ws-messages.ts  # extend with HistoryStartMessage,
                                          HistoryChunkMessage, HistoryToolCallMessage,
                                          HistoryDoneMessage, AudioRecordingSavedMessage
 ```
@@ -201,7 +201,7 @@ Tests: happy path (no existingSessionId), happy path with existingSessionId, ded
 
 ### Phase 5 — WS history events + recording saved (8-10 tests)
 
-**New WS schemas (extend `protocol/messages.ts`):**
+**New WS schemas (extend `schemas/ws-messages.ts`):**
 ```typescript
 const HistoryStartMessage = type({
   type: "'history_start'",
@@ -297,14 +297,14 @@ audio_recording_saved { recordingId, mimeType, durationMs? }
 
 **מותר:**
 - `packages/backend/src/**`, `packages/backend/tests/**`
-- `packages/core/src/protocol/messages.ts` (extend schemas)
+- `packages/core/src/schemas/ws-messages.ts` (extend schemas)
 - `docs/walkthrough.md` (entry חדש)
 - `docs/behaviors-coverage.md` (עדכון סטטוסים)
 - `.recordings/`, `.cache/projects-registry.json` (gitignored)
 
 **אסור:**
 - `packages/frontend/src/**` — frontend refactor יבוא אחר כך
-- `packages/core/src/**` חוץ מ-`protocol/messages.ts`
+- `packages/core/src/**` חוץ מ-`schemas/ws-messages.ts`
 - `docs/reviews/**`, `docs/archive/**`
 
 ---
@@ -339,7 +339,7 @@ Phase ירוק → typecheck/lint/test → commit אוטומטי. אם נתקל 
 1. טען את הסקילים: tdd, dev-conventions, commit, update-walkthrough.
 2. קרא את ה-brief מקצה לקצה.
 3. קרא את הקוד הקיים: acp-transport.ts, agent-orchestrator.ts, agent-session.ts,
-   protocol/messages.ts.
+   schemas/ws-messages.ts.
 4. קרא v1 reference: acp-bridge.ts (listSessions, loadSession, extractSessionResult).
 5. בצע לפי Phase 1→5 בסדר. TDD חובה: test → red → impl → green → refactor.
 6. commit פר Phase. פורמט עברי. דוגמאות:
@@ -350,8 +350,8 @@ Phase ירוק → typecheck/lint/test → commit אוטומטי. אם נתקל 
 
 pnpm typecheck + pnpm lint + pnpm test לפני כל commit.
 
-אסור לערוך: packages/frontend/src/**, packages/core/src/** חוץ מ-protocol/messages.ts.
-מותר: backend/src, backend/tests, protocol/messages.ts, docs/walkthrough.md, docs/behaviors-coverage.md.
+אסור לערוך: packages/frontend/src/**, packages/core/src/** חוץ מ-schemas/ws-messages.ts.
+מותר: backend/src, backend/tests, schemas/ws-messages.ts, docs/walkthrough.md, docs/behaviors-coverage.md.
 
 ה-backend רץ ברקע ב-tmux `be`. אל תפיל. אם צריך לבדוק integration חי — שאל קודם.
 
