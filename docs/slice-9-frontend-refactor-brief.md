@@ -7,7 +7,9 @@
 > **סוג:** Frontend בעיקר (SvelteKit + Svelte 5 runes). חלק קטן של schema
 > imports מ-core. backend לא נוגע.
 > **TDD חובה** ללוגיקה. CSS pure — בדיקה ויזואלית ב-browser.
-> **Sub-agent:** Sonnet 4.6
+> **Sub-agent:** Sonnet 4.6 **חובה** — לא Opus. Slice זה implementation לפי
+> spec ברור, אין צורך ב-Opus. Opus יעלה ~10x ולא יוסיף ערך. אם
+> ה-launcher של הסוכן הוא Opus — **סגור ופתח מחדש עם Sonnet.**
 > **זמן הערכה:** 10-14 שעות עבודה.
 >
 > **בסיס המוצא:**
@@ -464,6 +466,9 @@ Phase ירוק → typecheck/lint/test → commit אוטומטי. אם נתקל 
 ---
 
 ## 11. Prompt לסוכן
+
+**חובה Sonnet 4.6** — אל תריץ עם Opus. Slice זה implementation לפי spec
+ברור, אין צורך בOpus היקר.
 
 ```
 אתה סוכן ריפקטור frontend של drive-coding.
