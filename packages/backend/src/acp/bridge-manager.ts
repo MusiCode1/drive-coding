@@ -1,7 +1,10 @@
 import type { ChildProcess } from "node:child_process"
 import type { BridgeHandle, BridgeManager, SpawnBridgeInput } from "@drive-coding/core"
+import { createLogger } from "@drive-coding/core/log"
 import { spawnAndWaitForPort } from "./bridge-spawn.js"
 import { buildStdioToWsArgs, getCliCommand } from "./cli-config.js"
+
+const log = createLogger("backend.bridge.manager")
 
 type Entry = {
   readonly handle: BridgeHandle
@@ -26,7 +29,7 @@ export function createBridgeManager(): BridgeManager & {
       try {
         handler(bridgeId, exitCode)
       } catch (e) {
-        console.error("[bridge-manager] crash handler threw:", e)
+        log.warn({ err: e, bridgeId }, "crash handler threw")
       }
     }
   }
@@ -80,6 +83,7 @@ export function createBridgeManager(): BridgeManager & {
       }
     })
 
+    log.info({ bridgeId, port: result.port, pid: result.pid }, "spawn ok")
     return { ...handle, getStderr: result.getStderr }
   }
 
@@ -108,6 +112,7 @@ export function createBridgeManager(): BridgeManager & {
     async kill(bridgeId: string): Promise<boolean> {
       const entry = store.get(bridgeId)
       if (!entry) return false
+      log.info({ bridgeId }, "kill")
 
       // Mark as removed before exit event fires, to avoid notifyCrash
       store.delete(bridgeId)

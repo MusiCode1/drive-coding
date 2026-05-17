@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { WebSocket as WsWebSocket } from "ws"
 import { wsToStreams } from "../src/acp/ws-streams"
 
@@ -59,16 +59,6 @@ function collectReadable(stream: ReadableStream<Uint8Array>): {
 }
 
 describe("wsToStreams — readable (WS → Stream)", () => {
-  let warnSpy: ReturnType<typeof vi.spyOn>
-
-  beforeEach(() => {
-    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
-  })
-
-  afterEach(() => {
-    warnSpy.mockRestore()
-  })
-
   it("ACP JSON-RPC frame passes through as-is", async () => {
     const { ws, cast } = makeWs()
     const { readable } = wsToStreams(cast)
@@ -114,7 +104,7 @@ describe("wsToStreams — readable (WS → Stream)", () => {
     expect(chunks).toEqual([])
   })
 
-  it("unknown non-ACP frame is swallowed + console.warn called", async () => {
+  it("unknown non-ACP frame is swallowed (no bytes forwarded)", async () => {
     const { ws, cast } = makeWs()
     const { readable } = wsToStreams(cast)
     const { chunks } = collectReadable(readable)
@@ -122,8 +112,8 @@ describe("wsToStreams — readable (WS → Stream)", () => {
     ws.emit("message", Buffer.from('{"type":"unknown_xyz"}'))
     await new Promise((r) => setImmediate(r))
 
+    // Frame is swallowed — no bytes forwarded to stream
     expect(chunks).toEqual([])
-    expect(warnSpy).toHaveBeenCalled()
   })
 
   it("partial JSON-RPC frame (no trailing \\n) is forwarded as-is — NOT padded", async () => {

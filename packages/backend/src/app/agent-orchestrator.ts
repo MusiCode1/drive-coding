@@ -6,6 +6,10 @@ import type {
   CreateAgentInput,
 } from "@drive-coding/core"
 import { extractProviderError } from "@drive-coding/core/acp/provider-error"
+import { createLogger } from "@drive-coding/core/log"
+
+const log = createLogger("backend.orchestrator")
+
 import { createAcpWsLoadTransport, createAcpWsTransport } from "../acp/acp-transport.js"
 import type { BridgeHandleWithStderr } from "../acp/bridge-manager.js"
 import { type AgentSession, createAgentSession } from "./agent-session.js"
@@ -70,14 +74,15 @@ export function createAgentOrchestrator(deps: {
         await session.shutdown().catch(() => {})
         sessions.delete(bridgeId)
       }
-      console.warn(`[orchestrator] bridge ${bridgeId} crashed with code ${exitCode}`)
+      log.warn({ bridgeId, exitCode }, "bridge crashed")
     } catch (e) {
-      console.error("[orchestrator] crash cleanup failed:", e)
+      log.error({ err: e }, "crash cleanup failed")
     }
   })
 
   return {
     async createAndSpawn(input: CreateAndSpawnInput): Promise<Agent> {
+      log.info({ cliKind: input.cliKind, cwd: input.cwd }, "createAndSpawn start")
       const existingSessionId = input.existingSessionId ?? null
 
       // ── Dedup check (Slice 8a) ──────────────────────────────────────────────
@@ -173,6 +178,7 @@ export function createAgentOrchestrator(deps: {
           await deps.projectsRegistry.recordSession(input.cwd, sessionId)
         }
 
+        log.info({ agentId: agent.id, sessionId }, "createAndSpawn done")
         return updated
       } catch (e) {
         // Try to extract a provider error from stderr before marking crashed
@@ -188,6 +194,7 @@ export function createAgentOrchestrator(deps: {
     },
 
     async deleteAndKill(id: string): Promise<void> {
+      log.info({ agentId: id }, "deleteAndKill")
       const agent = await deps.registry.get(id)
       if (!agent) return
 

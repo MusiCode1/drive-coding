@@ -1,6 +1,15 @@
 import type { AcpTransport, PromptResponse, SessionNotification } from "@drive-coding/core"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import type { LogEntry } from "@drive-coding/core/log"
+import { addSink, initLogger } from "@drive-coding/core/log"
+import { describe, expect, it, vi } from "vitest"
 import { createAgentSession } from "../src/app/agent-session"
+
+// Silence pino output in tests
+vi.spyOn(process.stdout, "write").mockReturnValue(true)
+vi.spyOn(process.stderr, "write").mockReturnValue(true)
+
+// Enable logger for all namespaces in tests
+initLogger({ level: "trace", ns: "*", format: "json", remote: false })
 
 function makeMockTransport(opts?: {
   onPrompt?: (text: string, onUpdate: (n: SessionNotification) => void) => Promise<PromptResponse>
@@ -315,18 +324,14 @@ describe("AgentSession — ACP-9: unknown sessionUpdate types silently ignored",
 })
 
 describe("AgentSession — ACP-13: stopReason ≠ end_turn logs warning", () => {
-  /** Covers behavior ACP-13: stopReason ≠ end_turn → log warning, not error */
-  let warnSpy: ReturnType<typeof vi.spyOn>
+  /** Covers behavior ACP-13: stopReason ≠ end_turn → log warning (via Logger sink), done still broadcast */
 
-  beforeEach(() => {
-    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
-  })
+  it("stopReason=max_tokens → Logger.warn contains stopReason, done still broadcast", async () => {
+    const warnEntries: LogEntry[] = []
+    const removeSink = addSink((e) => {
+      if (e.level === "warn") warnEntries.push(e)
+    })
 
-  afterEach(() => {
-    warnSpy.mockRestore()
-  })
-
-  it("stopReason=max_tokens → console.warn contains stopReason, done still broadcast", async () => {
     const transport = makeMockTransport({
       async onPrompt() {
         return { stopReason: "max_tokens" }
@@ -340,17 +345,25 @@ describe("AgentSession — ACP-13: stopReason ≠ end_turn logs warning", () => 
     })
 
     await session.sendPrompt("go")
+    removeSink()
 
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("max_tokens"))
+    expect(warnEntries.some((e) => String(e.fields?.stopReason).includes("max_tokens"))).toBe(true)
     expect(doneEvents[0]).toBe("max_tokens")
   })
 
-  it("stopReason=end_turn → no console.warn", async () => {
+  it("stopReason=end_turn → no warn log about stopReason", async () => {
+    const warnEntries: LogEntry[] = []
+    const removeSink = addSink((e) => {
+      if (e.level === "warn" && String(e.fields?.stopReason).includes("end_turn"))
+        warnEntries.push(e)
+    })
+
     const transport = makeMockTransport()
     const session = createAgentSession({ agentId: "a", transport })
 
     await session.sendPrompt("go")
+    removeSink()
 
-    expect(warnSpy).not.toHaveBeenCalled()
+    expect(warnEntries).toHaveLength(0)
   })
 })

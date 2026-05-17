@@ -1,6 +1,10 @@
 import "./log-setup.js" // MUST be first — initialises logger before any other imports
 import * as path from "node:path"
+import { createLogger } from "@drive-coding/core/log"
 import { Hono } from "hono"
+
+const log = createLogger("backend.server")
+
 import { cors } from "hono/cors"
 import { listSessionsFromBridge } from "./acp/acp-transport.js"
 import { createBridgeManager } from "./acp/bridge-manager.js"
@@ -141,4 +145,4 @@ Bun.serve<WsData>({
   },
 })
 
-console.log(`[backend] listening on http://localhost:${port}`)
+log.info({ port }, "listening")

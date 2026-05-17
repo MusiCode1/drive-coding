@@ -6,6 +6,7 @@ import type {
 } from "@drive-coding/core"
 import { extractProviderError } from "@drive-coding/core/acp/provider-error"
 import type { Cache } from "@drive-coding/core/cache/types"
+import { createLogger } from "@drive-coding/core/log"
 import { generateText } from "ai"
 import type {
   NarrateContext,
@@ -100,6 +101,7 @@ export function createAgentSession(opts: {
   /** Slice 8a: when provided, audio blobs are saved before STT + audio_recording_saved emitted. */
   recordingsStore?: RecordingsStore
 }): AgentSession {
+  const baseLog = createLogger("backend.session").child({ agentId: opts.agentId })
   const subscribers = new Set<Subscriber>()
 
   // PROMPT-1: busy flag — prevents concurrent prompts from corrupting state.
@@ -113,7 +115,7 @@ export function createAgentSession(opts: {
       try {
         sub(msg)
       } catch (e) {
-        console.error("[agent-session] subscriber threw:", e)
+        baseLog.error({ err: e }, "subscriber threw")
       }
     }
   }
@@ -251,7 +253,7 @@ export function createAgentSession(opts: {
         })
 
         if (response.stopReason !== "end_turn") {
-          console.warn(`[agent-session] prompt completed with stopReason=${response.stopReason}`)
+          baseLog.warn({ stopReason: response.stopReason }, "non-end-turn stopReason")
         }
 
         // PROMPT-17: if model returned nothing and stderr shows a provider error, surface it
@@ -283,11 +285,19 @@ export function createAgentSession(opts: {
     },
 
     async sendAudioPrompt(audioBytes, mimeType, voiceConfig, callbacks, registries, cache) {
+      const promptId = crypto.randomUUID().slice(0, 8)
+      const log = baseLog.ns("audio").child({ promptId })
+      const t0 = performance.now()
+
+      log.info({ bytes: audioBytes.length, mimeType }, "sendAudioPrompt start")
+
       // ── 0. Save recording (Slice 8a) ─────────────────────────────────────────
       // Persist the raw audio BEFORE STT so the user can replay it later.
       if (opts.recordingsStore) {
         try {
+          const tRec = performance.now()
           const { id: recordingId } = await opts.recordingsStore.save(audioBytes, mimeType)
+          log.debug({ recordingId, dur: performance.now() - tRec }, "recording saved")
           broadcast({
             type: "audio_recording_saved",
             recordingId,
@@ -295,21 +305,24 @@ export function createAgentSession(opts: {
           })
         } catch (e) {
           // Non-fatal — recording storage failure should not block the voice pipeline
-          console.warn("[agent-session] failed to save recording:", e)
+          log.warn({ err: String(e) }, "recording save failed")
         }
       }
 
       // ── 1. STT ──────────────────────────────────────────────────────────────
+      const tStt = performance.now()
       const sttRes = await transcribeUserAudio({ bytes: audioBytes, mimeType }, voiceConfig, {
         stt: registries.stt,
       })
 
       if (sttRes.isErr()) {
+        log.warn({ err: sttRes.error }, "STT failed")
         callbacks.onError(sttRes.error)
         return
       }
 
       const userText = sttRes.value
+      log.info({ dur: performance.now() - tStt, len: userText.length }, "STT done")
 
       // STT-8: empty transcript → done immediately, skip ACP prompt
       if (!userText.trim()) {
@@ -377,11 +390,28 @@ export function createAgentSession(opts: {
 
       // ── 3. processQueue ──────────────────────────────────────────────────────
       async function processQueue(): Promise<void> {
-        if (ttsActive) return
+        if (ttsActive) {
+          log
+            .ns("tts")
+            .debug(
+              { queueLen: sentenceQueue.length },
+              "processQueue called but ttsActive=true — skip",
+            )
+          return
+        }
+        log.ns("tts").debug({ queueLen: sentenceQueue.length }, "ttsActive: false→true")
         ttsActive = true
         while (sentenceQueue.length > 0 && !audioPromptCancelled) {
           const job = sentenceQueue.shift()
           if (job === undefined) break
+          log.ns("tts").debug(
+            {
+              kind: job.kind,
+              segmentId:
+                job.kind !== "narration" ? job.segmentId.slice(0, 8) : job.segmentId.slice(0, 8),
+            },
+            "processing job",
+          )
 
           let textToSpeak: string
           let originalText: string
@@ -415,9 +445,7 @@ export function createAgentSession(opts: {
               null,
             )
             if (tr.isErr()) {
-              console.warn(
-                `[voice/pipeline] Translation failed, skipping sentence (${job.text.length}ch): ${tr.error}`,
-              )
+              log.warn({ err: tr.error, charLen: job.text.length }, "translation failed — skip")
               callbacks.onError(tr.error)
               // continue — don't drop remaining queue items (Phase 1 fix preserved)
               continue
@@ -451,6 +479,7 @@ export function createAgentSession(opts: {
           )
           if (ttsRes.isErr()) callbacks.onError(ttsRes.error)
         }
+        log.ns("tts").debug({}, "ttsActive: true→false")
         ttsActive = false
       }
 
@@ -497,6 +526,8 @@ export function createAgentSession(opts: {
       // ── 5. ACP prompt ─────────────────────────────────────────────────────────
       broadcast({ type: "thinking" })
 
+      log.info({ len: userText.length }, "→ ACP prompt")
+      const tAcp = performance.now()
       let promptStopReason = "end_turn"
       let totalMessageChars = 0
 
@@ -648,7 +679,12 @@ export function createAgentSession(opts: {
           }
         })
         promptStopReason = response.stopReason
+        log.info(
+          { dur: performance.now() - tAcp, stopReason: promptStopReason },
+          "← ACP prompt done",
+        )
       } catch (e) {
+        log.error({ err: e }, "ACP prompt failed")
         broadcast({
           type: "error",
           code: "PROMPT_FAILED",
@@ -692,6 +728,10 @@ export function createAgentSession(opts: {
         }
       }
 
+      log.info(
+        { dur: performance.now() - t0, stopReason: promptStopReason },
+        "sendAudioPrompt done",
+      )
       broadcast({
         type: "done",
         stopReason: promptStopReason,

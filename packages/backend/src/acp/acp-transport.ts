@@ -6,10 +6,13 @@ import type {
   PromptResponse,
   SessionNotification,
 } from "@drive-coding/core"
+import { createLogger } from "@drive-coding/core/log"
 import { ResultAsync } from "neverthrow"
 import { WebSocket } from "ws"
 import { createClientImpl } from "./client-impl.js"
 import { wsToStreams } from "./ws-streams.js"
+
+const baseLog = createLogger("backend.acp.transport")
 
 export type AcpTransportOptions = {
   /** ws://127.0.0.1:<port>/ */
@@ -52,22 +55,25 @@ function setupWsAndInitialize(opts: {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(opts.wsUrl)
     const t0 = Date.now()
-    const log = (msg: string) => console.log(`[acp] +${Date.now() - t0}ms ${msg}`)
+    const transportLog = baseLog.child({ wsUrl: opts.wsUrl })
 
-    log(`connecting to ${opts.wsUrl}`)
+    transportLog.debug({}, "connecting")
 
     const HANDSHAKE_TIMEOUT_MS = 45_000
     const timeout = setTimeout(() => {
-      log(`handshake timeout (${HANDSHAKE_TIMEOUT_MS}ms)`)
+      transportLog.warn(
+        { dur: Date.now() - t0, timeoutMs: HANDSHAKE_TIMEOUT_MS },
+        "handshake timeout",
+      )
       ws.terminate()
       reject(new Error(`ACP handshake timeout after ${HANDSHAKE_TIMEOUT_MS}ms`))
     }, HANDSHAKE_TIMEOUT_MS)
 
     ws.on("open", () => {
-      log("ws open")
+      transportLog.debug({}, "ws open")
       ;(async () => {
         try {
-          log("waiting for stdio-to-ws handshake")
+          transportLog.debug({}, "waiting for stdio-to-ws handshake")
           await new Promise<void>((res, rej) => {
             const handshakeTimeout = setTimeout(() => {
               ws.off("message", onMsg)
@@ -83,12 +89,12 @@ function setupWsAndInitialize(opts: {
             }
             ws.on("message", onMsg)
           })
-          log("← stdio-to-ws connected")
+          transportLog.debug({}, "← stdio-to-ws connected")
 
           if (opts.warmupDelayMs > 0) {
             await new Promise((r) => setTimeout(r, opts.warmupDelayMs))
           }
-          log("subprocess warmup done")
+          transportLog.debug({}, "subprocess warmup done")
 
           const { readable, writable } = wsToStreams(ws)
           const stream = ndJsonStream(writable, readable)
@@ -103,7 +109,8 @@ function setupWsAndInitialize(opts: {
 
           const conn = new ClientSideConnection((_agent) => clientImpl, stream)
 
-          log("→ initialize")
+          const tInit = Date.now()
+          transportLog.debug({}, "→ initialize")
           const initResult = await conn.initialize({
             protocolVersion: opts.protocolVersion ?? 1,
             clientCapabilities: {
@@ -114,7 +121,10 @@ function setupWsAndInitialize(opts: {
               version: "0.1.0",
             },
           })
-          log(`← initialize ok (agent=${initResult.agentInfo?.name ?? "?"})`)
+          transportLog.info(
+            { dur: Date.now() - tInit, agent: initResult.agentInfo?.name ?? "?" },
+            "initialize done",
+          )
 
           const capabilities: AcpCapabilities = {
             loadSession: initResult.agentCapabilities?.loadSession ?? false,
@@ -177,17 +187,16 @@ export async function createAcpWsTransport(opts: AcpTransportOptions): Promise<A
     protocolVersion: opts.protocolVersion,
   })
 
-  const t0 = Date.now()
-  const log = (msg: string) => console.log(`[acp] +${Date.now() - t0}ms ${msg}`)
-
-  log(`→ newSession (cwd=${opts.cwd})`)
+  const tNew = Date.now()
+  const transportLog = baseLog.child({ wsUrl: opts.wsUrl, cwd: opts.cwd })
+  transportLog.debug({ cwd: opts.cwd }, "→ newSession")
   const sessionResult = await conn.newSession({
     cwd: opts.cwd,
     mcpServers: [],
   })
 
   const sessionId = sessionResult.sessionId
-  log(`← newSession ok (sessionId=${sessionId})`)
+  transportLog.info({ dur: Date.now() - tNew, sessionId }, "newSession done")
 
   const transport: AcpTransport = {
     async start(_input) {
@@ -313,8 +322,8 @@ export async function createAcpWsLoadTransport(opts: {
     warmupDelayMs: opts.warmupDelayMs ?? 1500,
   })
 
-  const t0 = Date.now()
-  const log = (msg: string) => console.log(`[acp] +${Date.now() - t0}ms ${msg}`)
+  const tLoad = Date.now()
+  const loadLog = baseLog.child({ wsUrl: opts.wsUrl, cwd: opts.cwd })
 
   // Set history update handler BEFORE calling loadSession so notifications
   // that arrive during the load are forwarded.
@@ -322,7 +331,7 @@ export async function createAcpWsLoadTransport(opts: {
 
   let loadedSessionId = opts.sessionId
   try {
-    log(`→ loadSession (sessionId=${opts.sessionId}, cwd=${opts.cwd})`)
+    loadLog.debug({ sessionId: opts.sessionId, cwd: opts.cwd }, "→ loadSession")
     // The ACP SDK's loadSession is called via `as any` because the typed API
     // may not include it depending on SDK version (same pattern as v1).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -332,7 +341,7 @@ export async function createAcpWsLoadTransport(opts: {
       mcpServers: [],
     })
     loadedSessionId = (res as { sessionId?: string })?.sessionId ?? opts.sessionId
-    log(`← loadSession ok (sessionId=${loadedSessionId})`)
+    loadLog.info({ dur: Date.now() - tLoad, sessionId: loadedSessionId }, "loadSession done")
   } finally {
     // Clear history handler — future prompt() calls use their own onUpdate
     setOnUpdate(null)

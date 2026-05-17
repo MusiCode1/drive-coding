@@ -3,6 +3,7 @@ import type { WebSocket } from "ws"
 
 const wireRx = createLogger("backend.acp.wire").ns("rx")
 const wireTx = createLogger("backend.acp.wire").ns("tx")
+const streamsLog = createLogger("backend.acp.streams")
 
 /**
  * Convert ws.WebSocket → { readable: ReadableStream<Uint8Array>, writable: WritableStream<Uint8Array> }
@@ -48,7 +49,10 @@ export function wsToStreams(ws: WebSocket): {
                 return // swallow stdio-to-ws wrapper
               }
               // unknown non-ACP frame — log and skip rather than corrupt the stream
-              console.warn("[ws-streams] dropped non-ACP frame:", text.slice(0, 200))
+              streamsLog.warn(
+                { text: text.length > 200 ? `${text.slice(0, 200)}…` : text },
+                "dropped non-ACP frame",
+              )
               return
             }
           } catch {

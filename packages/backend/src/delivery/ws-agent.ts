@@ -8,6 +8,7 @@ import type { VoiceConfig } from "../voice/pipeline.js"
 import type { VoiceRegistries } from "../voice/providers.js"
 
 const wsWireLog = createLogger("backend.ws.wire")
+const wsAgentLog = createLogger("backend.ws.agent")
 
 export type AgentWsData = {
   kind: "agent"
@@ -57,6 +58,7 @@ export function createAgentWsHandler(deps: {
   const websocket: WebSocketHandler<AgentWsData> = {
     open(ws) {
       const agentId = ws.data.agentId
+      wsAgentLog.child({ agentId }).info({}, "WS connect")
       const session = deps.orchestrator.getSession(agentId)
       if (!session) {
         send(ws, { type: "error", code: "AGENT_NOT_FOUND", message: agentId })
@@ -84,6 +86,12 @@ export function createAgentWsHandler(deps: {
       try {
         parsed = JSON.parse(rawStr)
       } catch {
+        wsAgentLog
+          .child({ agentId: ws.data.agentId })
+          .warn(
+            { raw: rawStr.length > 200 ? `${rawStr.slice(0, 200)}…` : rawStr },
+            "JSON parse failed",
+          )
         send(ws, { type: "error", code: "INVALID_JSON", message: "invalid json" })
         return
       }
@@ -108,13 +116,17 @@ export function createAgentWsHandler(deps: {
         case "prompt":
           // fire-and-forget — broadcasts via subscriber pattern
           session.sendPrompt(result.text).catch((e) => {
-            console.error("[ws-agent] sendPrompt failed:", e)
+            wsAgentLog
+              .child({ agentId: ws.data.agentId })
+              .error({ err: e, op: "sendPrompt" }, "operation failed")
           })
           break
 
         case "cancel":
           await session.cancel().catch((e) => {
-            console.error("[ws-agent] cancel failed:", e)
+            wsAgentLog
+              .child({ agentId: ws.data.agentId })
+              .error({ err: e, op: "cancel" }, "operation failed")
           })
           break
 
@@ -142,7 +154,9 @@ export function createAgentWsHandler(deps: {
               deps.cache,
             )
             .catch((e) => {
-              console.error("[ws-agent] sendAudioPrompt failed:", e)
+              wsAgentLog
+                .child({ agentId: ws.data.agentId })
+                .error({ err: e, op: "sendAudioPrompt" }, "operation failed")
               send(ws, { type: "error", code: "VOICE_ERROR", message: String(e) })
             })
           break
@@ -151,6 +165,7 @@ export function createAgentWsHandler(deps: {
     },
 
     close(ws) {
+      wsAgentLog.child({ agentId: ws.data.agentId }).info({}, "WS disconnect")
       ws.data.unsubscribe?.()
     },
   }
