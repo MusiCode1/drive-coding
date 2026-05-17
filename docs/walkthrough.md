@@ -3,6 +3,41 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-17 03:15 — Slice 8a Phase 5: WS History Events + audio_recording_saved
+
+### סיכום
+
+TDD Phase 5 — השלמת פיצ'ר ה-session history.
+16 טסטים חדשים, כולם ירוקים. typecheck ו-lint נקיים.
+
+#### מה בוצע
+
+**1. New WS schemas ב-`ws-messages.ts` (core)**
+- `HistoryStartMessage` — `{ type: 'history_start', agentId, sessionId }`
+- `HistoryChunkMessage` — `{ type: 'history_chunk', kind: 'message'|'thought'|'user_message', text, messageId }`
+- `HistoryToolCallMessage` — `{ type: 'history_tool_call', toolCallId, title, kind?, status? }`
+- `HistoryDoneMessage` — `{ type: 'history_done' }`
+- `AudioRecordingSavedMessage` — `{ type: 'audio_recording_saved', recordingId, mimeType, durationMs? }`
+- כל 5 הוכנסו ל-`ServerMessage` union
+
+**2. `agent-session.ts` — history replay + recording save**
+- חדש: opts תומך ב-`historyBuffer?`, `historySessionId?`, `recordingsStore?`
+- אם `historyBuffer` מוגדר: מתזמן `queueMicrotask` שמבצע:
+  - `history_start` → לכל notification → `history_chunk`/`history_tool_call` → `history_done`
+  - mapping: `agent_message_chunk→message`, `agent_thought_chunk→thought`, `user_message_chunk→user_message`
+- `sendAudioPrompt` שלב 0: אם `recordingsStore` מוגדר → `save(bytes, mimeType)` → broadcast `audio_recording_saved`
+
+**3. `agent-orchestrator.ts` — העברת historyBuffer**
+- `onHistoryUpdate: (n) => historyBuffer.push(n)` (מחליף את ה-no-op מPhase 4)
+- מעביר `{ historyBuffer, historySessionId }` ל-`createAgentSession`
+
+#### החלטות ארכיטקטורה
+
+- **`queueMicrotask` לhistory replay**: מאפשר לcallers להירשם לפני שהevents נשלחות (בלי race condition בסינכרוני)
+- **non-fatal recording save**: שגיאה בשמירת recording לא מפסיקה את ה-voice pipeline — רק `console.warn`
+- **`queueMicrotask` vs `setImmediate`**: `queueMicrotask` רץ לפני `setImmediate` אבל אחרי הsync code הנוכחי — מתאים למודל subscriber
+
+---
 ## 2026-05-17 02:55 — Slice 8a Phase 4: existingSessionId בOrchestrator + Dedup
 
 ### סיכום

@@ -154,6 +154,65 @@ export const ToolCallUpdateMessage = type({
 })
 export type ToolCallUpdateMessage = typeof ToolCallUpdateMessage.infer
 
+// ─── Slice 8a: Session History events ─────────────────────────────────────────
+
+/**
+ * Sent once when a session is loaded from history (before history_chunk stream).
+ * Frontend uses this to reset the chat area.
+ */
+export const HistoryStartMessage = type({
+  type: "'history_start'",
+  agentId: "string",
+  sessionId: "string",
+})
+export type HistoryStartMessage = typeof HistoryStartMessage.infer
+
+/**
+ * Streamed during session/load — represents one historical message fragment.
+ * kind: 'message' | 'thought' | 'user_message'
+ * messageId: stable UUID for grouping fragments of the same turn.
+ */
+export const HistoryChunkMessage = type({
+  type: "'history_chunk'",
+  kind: "'message' | 'thought' | 'user_message'",
+  text: "string",
+  messageId: "string",
+})
+export type HistoryChunkMessage = typeof HistoryChunkMessage.infer
+
+/**
+ * Historical tool call notification — similar to ToolCallMessage but
+ * scoped to the history replay stream.
+ */
+export const HistoryToolCallMessage = type({
+  type: "'history_tool_call'",
+  toolCallId: "string",
+  title: "string",
+  "kind?": "string",
+  "status?": "string",
+})
+export type HistoryToolCallMessage = typeof HistoryToolCallMessage.infer
+
+/**
+ * Signals end of history replay. Frontend enables the input after this.
+ */
+export const HistoryDoneMessage = type({
+  type: "'history_done'",
+})
+export type HistoryDoneMessage = typeof HistoryDoneMessage.infer
+
+/**
+ * Emitted immediately after the user's audio blob is saved to disk
+ * (before STT). Allows frontend to show a replay button on the audio bubble.
+ */
+export const AudioRecordingSavedMessage = type({
+  type: "'audio_recording_saved'",
+  recordingId: "string",
+  mimeType: "string",
+  "durationMs?": "number",
+})
+export type AudioRecordingSavedMessage = typeof AudioRecordingSavedMessage.infer
+
 export const ServerMessage = HelloMessage.or(PongMessage)
   .or(ConnectedMessage)
   .or(ThinkingMessage)
@@ -165,5 +224,10 @@ export const ServerMessage = HelloMessage.or(PongMessage)
   .or(SttPartialMessage)
   .or(AudioChunkMessage)
   .or(TranslationMessage)
+  .or(HistoryStartMessage)
+  .or(HistoryChunkMessage)
+  .or(HistoryToolCallMessage)
+  .or(HistoryDoneMessage)
+  .or(AudioRecordingSavedMessage)
 
 export type ServerMessage = typeof ServerMessage.infer

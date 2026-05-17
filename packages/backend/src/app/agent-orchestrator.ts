@@ -109,22 +109,23 @@ export function createAgentOrchestrator(deps: {
         let sessionId: string
         let transport: Awaited<ReturnType<typeof createAcpWsTransport>>
 
+        let historyBuffer: import("@drive-coding/core").SessionNotification[] | undefined
         if (existingSessionId) {
           // Load path: connect to existing session, collect history notifications.
-          // Phase 5 will route these notifications through AgentSession broadcasts.
-          // For Phase 4, we buffer them (no-op).
+          // Slice 8a (Phase 5): buffer is passed to createAgentSession which
+          // broadcasts history_start / history_chunk / history_done on next microtask.
+          historyBuffer = []
           transport = await createAcpWsLoadTransport({
             wsUrl: handle.wsUrl,
             cwd: input.cwd,
             sessionId: existingSessionId,
-            onHistoryUpdate: () => {
-              // Phase 5 will wire this to AgentSession.handleHistoryNotification
-            },
+            onHistoryUpdate: (n) => historyBuffer!.push(n),
           })
           const startResult = await transport.start({ cwd: input.cwd })
           sessionId = startResult.sessionId
         } else {
           // New session path (existing behavior)
+          historyBuffer = undefined
           transport = await createAcpWsTransport({
             wsUrl: handle.wsUrl,
             cwd: input.cwd,
@@ -140,6 +141,9 @@ export function createAgentOrchestrator(deps: {
           agentId: agent.id,
           transport,
           ...(getStderr ? { getStderr } : {}),
+          ...(historyBuffer !== undefined
+            ? { historyBuffer, historySessionId: existingSessionId ?? undefined }
+            : {}),
         })
         sessions.set(agent.id, agentSession)
 

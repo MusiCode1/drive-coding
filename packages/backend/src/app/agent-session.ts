@@ -23,6 +23,7 @@ import {
   type VoiceConfig,
 } from "../voice/pipeline.js"
 import type { VoiceRegistries } from "../voice/providers.js"
+import type { RecordingsStore } from "./recordings-store.js"
 
 export type Subscriber = (msg: ServerMessage) => void
 
@@ -89,6 +90,15 @@ export function createAgentSession(opts: {
   transport: AcpTransport
   /** Optional: callback to retrieve stderr lines from the running agent bridge. */
   getStderr?: () => string[]
+  /**
+   * Slice 8a: session history support.
+   * When provided, the session broadcasts history_start → history_chunks → history_done
+   * on the next microtask (giving callers time to subscribe before events fire).
+   */
+  historyBuffer?: SessionNotification[]
+  historySessionId?: string
+  /** Slice 8a: when provided, audio blobs are saved before STT + audio_recording_saved emitted. */
+  recordingsStore?: RecordingsStore
 }): AgentSession {
   const subscribers = new Set<Subscriber>()
 
@@ -106,6 +116,56 @@ export function createAgentSession(opts: {
         console.error("[agent-session] subscriber threw:", e)
       }
     }
+  }
+
+  // ── Slice 8a: History replay ────────────────────────────────────────────────
+  // If a historyBuffer was provided (agent created with existingSessionId), schedule
+  // history broadcast for the next microtask so callers can subscribe first.
+  if (opts.historyBuffer !== undefined && opts.historySessionId) {
+    const buffer = opts.historyBuffer
+    const sessionId = opts.historySessionId
+    queueMicrotask(() => {
+      broadcast({ type: "history_start", agentId: opts.agentId, sessionId })
+      for (const notification of buffer) {
+        const update = notification.update
+        switch (update.sessionUpdate) {
+          case "agent_message_chunk":
+          case "agent_thought_chunk":
+          case "user_message_chunk": {
+            const content = update.content
+            if (content.type !== "text") break
+            const kind =
+              update.sessionUpdate === "agent_message_chunk"
+                ? ("message" as const)
+                : update.sessionUpdate === "agent_thought_chunk"
+                  ? ("thought" as const)
+                  : ("user_message" as const)
+            broadcast({
+              type: "history_chunk",
+              kind,
+              text: content.text,
+              messageId: crypto.randomUUID(),
+            })
+            break
+          }
+          case "tool_call": {
+            broadcast({
+              type: "history_tool_call",
+              toolCallId: String(update.toolCallId),
+              title: "title" in update && typeof update.title === "string" ? update.title : "",
+              ...("kind" in update && update.kind != null ? { kind: String(update.kind) } : {}),
+              ...("status" in update && update.status != null
+                ? { status: String(update.status) }
+                : {}),
+            })
+            break
+          }
+          default:
+            break
+        }
+      }
+      broadcast({ type: "history_done" })
+    })
   }
 
   /**
@@ -223,6 +283,22 @@ export function createAgentSession(opts: {
     },
 
     async sendAudioPrompt(audioBytes, mimeType, voiceConfig, callbacks, registries, cache) {
+      // ── 0. Save recording (Slice 8a) ─────────────────────────────────────────
+      // Persist the raw audio BEFORE STT so the user can replay it later.
+      if (opts.recordingsStore) {
+        try {
+          const { id: recordingId } = await opts.recordingsStore.save(audioBytes, mimeType)
+          broadcast({
+            type: "audio_recording_saved",
+            recordingId,
+            mimeType,
+          })
+        } catch (e) {
+          // Non-fatal — recording storage failure should not block the voice pipeline
+          console.warn("[agent-session] failed to save recording:", e)
+        }
+      }
+
       // ── 1. STT ──────────────────────────────────────────────────────────────
       const sttRes = await transcribeUserAudio({ bytes: audioBytes, mimeType }, voiceConfig, {
         stt: registries.stt,
