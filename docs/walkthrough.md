@@ -3,6 +3,97 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-17 03:00 — Tier 1 Voice Pipeline: Phases 1-6
+
+### סיכום
+
+סוכן TDD יישם את מלא Tier 1 של voice pipeline — 6 Phases, 57 tests חדשים (+37 בנוסף לבסיס).
+כל tests ירוקים, typecheck ו-lint נקיים. 7 behaviors מ-v1 שוחזרו.
+
+#### Phases שבוצעו
+
+| Phase | תיאור | קבצים | Tests |
+|-------|--------|--------|-------|
+| 1 | Cache\<T\> factory | core/cache/types.ts, backend/voice/cache.ts, cache-keys.ts | 8 (CACHE-1..8) |
+| 2 | narration.ts | backend/voice/narration.ts | 14 (NARR-1..14) |
+| 3 | translateText cache | backend/voice/pipeline.ts | 4 (TRANS-CACHE-1..4) |
+| 4 | Coordination מלאה | backend/app/agent-session.ts, core/schemas/ws-messages.ts | 25 (COORD-1..25) |
+| 5 | Provider error | backend/app/agent-session.ts + orchestrator.ts | 7 (PERR-1..7) |
+| 6 | WS protocol + E2E | core/schemas/ws-messages.ts | 7 (PROTO-1..6 + E2E-1) |
+
+#### מה בוצע
+
+**1. Cache\<T\> — factory גנרי (Phase 1)**
+- `packages/core/src/cache/types.ts`: ממשק `Cache<T>` (get/set/has)
+- `packages/backend/src/voice/cache.ts`: `createDiskCache<T>` עם namespace separation, lazy mkdir, encode/decode
+- `packages/backend/src/voice/cache-keys.ts`: `sha256Key()` helper
+- `packages/backend/src/voice/cache-disk.ts`: מסומן `@deprecated`, קוד מקורי נשמר לתאימות
+
+**2. Narration (Phase 2)**
+- `packages/backend/src/voice/narration.ts`: port מ-v1 gemini-helper.ts
+- `buildNarratePrompt` (pure) + `narrateToolCall` (async, Result\<string,string\>)
+- `NarrationGenerator` interface (decoupled מ-@google/genai)
+- Cache hit → ללא קריאת LLM; timeout 1500ms → Err
+
+**3. Translation cache (Phase 3)**
+- `translateText` קיבל פרמטר רביעי: `cache: Cache<string> | null`
+- Cache key = sha256(text + "|" + targetLang)
+- null cache → fallback לנתיב הישן (backward compat)
+
+**4. Coordination מלאה (Phase 4)**
+- `sendAudioPrompt` מחודש לחלוטין:
+  - `acpMessageBuffer` + `acpThoughtBuffer` — thought/message נפרדים
+  - `currentMessageId` / `currentThoughtId` — UUIDs stable per turn
+  - `TtsJob` union: message | thought | narration (עם segmentId + messageId)
+  - `processQueue`: narration → `narrateToolCall` → `tool_call_update` broadcast
+  - `flushMessage` / `flushThought`: FIFO recentMessages (max 3) לnarration context
+  - PROMPT-11: message buffer flushed כשthought מגיע
+  - PROMPT-12: thought buffer flushed כשtool_call מגיע
+  - `audioPromptCancelled` flag עוצר processQueue ב-cancel
+  - `callbacks.onAudioChunk` נשמר לbackward compat
+- WS protocol extension: TextChunkMessage.messageId?, AudioChunkMessage.segmentId/kind/originalText/translatedText, ToolCallUpdateMessage חדש, ToolCallMessage.narration?
+
+**5. Provider error (Phase 5)**
+- `createAgentSession({ getStderr?: () => string[] })` — Phase 4 כבר הוסיף
+- `sendPrompt` + `sendAudioPrompt`: אחרי response, אם 0 chars + getStderr → extractProviderError → PROVIDER_ERROR broadcast
+- `agent-orchestrator.ts`: מעביר `getStderr` ל-createAgentSession
+
+**6. WS protocol tests + E2E (Phase 6)**
+- ArkType schema validation tests לכל הtype extensions
+- E2E test: thought→message→tool_call → בדיקת כל WS events עם IDs נכונים
+
+#### סטטיסטיקה לפני/אחרי Tier 1
+
+| סטטוס | לפני | אחרי |
+|--------|------|------|
+| ✅ מכוסה | 52 | **57** (+5) |
+| ❌ לא מכוסה | 6 | 1 |
+| **סה"כ tests** | **335** | **392** (+57) |
+
+#### Behaviors שנסגרו
+
+- PROMPT-7: TTS error per segment → pipeline ממשיכה
+- PROMPT-10: thoughtBuffer + flushThought + ttsQueue
+- PROMPT-11: message→thought flush
+- PROMPT-12: tool_call → flush + narration (narrateToolCall)
+- PROMPT-13: trailing buffers flushed at end of turn
+- PROMPT-17: totalMessageChars=0 → provider error (כבר היה ✅, תוקן reference)
+
+#### החלטות ארכיטקטורה
+
+- `DiskCache` נשמר `@deprecated` (לא מומר ל-wrapper) — הבדלי נתיב פנימי היו שוברים tests ישנים
+- `narrationGenerator` נוצר inside `sendAudioPrompt` משתמש ב-translator model (Gemini Flash Lite)
+- narration cache: in-memory Map per sendAudioPrompt call (reset בין קריאות)
+- translation cache: null בתוך sendAudioPrompt (Phase 4) — disk cache בעתיד דרך delivery layer
+- `void flushMessage()` fire-and-forget בnotification handler (sync) מכיוון שהsync part pushes לqueue לפני ה-await
+
+#### מעקפים ופתרונות
+
+- **import order (Biome)**: כל קובץ דרש import ordering ידני לפי סדר alphabetical ש-Biome מצפה
+- **`err()` vs manual mock**: mock של Result עם `{isOk,isErr}` plain object לא הכיל `.error` — תוקן ל-`err("...")` מneverthrow
+- **`findIndex` → `indexOf`**: Biome's `useIndexOf` rule דרשה החלפה לstring equality
+
+---
 ## 2026-05-16 (TDD) — סגירת 9 פערי כיסוי behaviors
 
 ### סיכום
