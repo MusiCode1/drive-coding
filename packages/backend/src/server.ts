@@ -15,6 +15,7 @@ import { createRecordingsStore } from "./app/recordings-store.js"
 import { createSessionsCache } from "./app/sessions-cache.js"
 import { registerHttp } from "./delivery/http.js"
 import { registerAgentsHttp } from "./delivery/http-agents.js"
+import { registerClientLogHttp } from "./delivery/http-client-log.js"
 import {
   registerFsBrowseHttp,
   registerProjectsHttp,
@@ -74,6 +75,7 @@ await ttsCache.init()
 // HTTP routes
 registerHttp(app)
 registerHttpOptions(app)
+registerClientLogHttp(app)
 registerAgentsHttp(app, { registry, orchestrator })
 registerProjectsHttp(app, { projectsRegistry, sessionsCache, fetchSessions })
 registerRecordingsHttp(app, { recordingsStore })
