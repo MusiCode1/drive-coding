@@ -7,6 +7,9 @@
 
 import type { ProjectRecord, SessionRecord } from "$lib/api/sessions"
 import { listProjectSessions, listProjects, listSessions } from "$lib/api/sessions"
+import { createLogger } from "$lib/log"
+
+const log = createLogger("fe.api")
 
 export type { ProjectRecord, SessionRecord }
 
@@ -24,6 +27,7 @@ export function createProjectsStore() {
 
     loading = true
     error = null
+    log.debug({}, "fetch projects + sessions")
     try {
       const [sess, proj] = await Promise.all([listSessions(), listProjects()])
       // Sort sessions newest-first
@@ -33,6 +37,7 @@ export function createProjectsStore() {
       projects = proj
       lastLoaded = Date.now()
     } catch (e) {
+      log.warn({ err: e }, "fetch failed")
       error = e instanceof Error ? e.message : "טעינה נכשלה"
     } finally {
       loading = false

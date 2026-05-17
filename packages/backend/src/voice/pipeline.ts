@@ -1,5 +1,7 @@
 import type { CacheStore } from "@drive-coding/core"
 import type { Cache } from "@drive-coding/core/cache/types"
+import type { Logger } from "@drive-coding/core/log"
+import { createLogger } from "@drive-coding/core/log"
 import { cacheKeyFor } from "@drive-coding/core/voice/cache-key"
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
 import { buildTranslationPrompt } from "@drive-coding/core/voice/translation-prompt"
@@ -12,6 +14,8 @@ import type { Result } from "neverthrow"
 import { err, ok } from "neverthrow"
 import { sha256Key } from "./cache-keys.js"
 import type { VoiceRegistries } from "./providers.js"
+
+const baseLog = createLogger("backend.voice")
 
 export interface VoiceConfig {
   /** Key in STT_REGISTRY */
@@ -43,11 +47,15 @@ export async function transcribeUserAudio(
   audio: { bytes: Uint8Array; mimeType: string },
   config: VoiceConfig,
   registries: Pick<VoiceRegistries, "stt">,
+  parentLog: Logger = baseLog,
 ): Promise<Result<string, string>> {
+  const log = parentLog.ns("stt")
   const model = registries.stt[config.sttModel as keyof typeof registries.stt]
   if (!model) return err(`Unknown STT model: ${config.sttModel}`)
 
+  log.debug({ bytes: audio.bytes.length, model: config.sttModel }, "start")
   try {
+    const t0 = performance.now()
     const result = await transcribe({
       model,
       audio: audio.bytes,
@@ -55,6 +63,7 @@ export async function transcribeUserAudio(
         ? { gemini: { previousAssistantText: config.previousAssistantText } }
         : undefined,
     })
+    log.debug({ dur: performance.now() - t0, len: result.text.length }, "done")
     return ok(result.text)
   } catch (e: unknown) {
     return err(`STT failed: ${e instanceof Error ? e.message : String(e)}`)
@@ -72,7 +81,9 @@ export async function speakSentence(
   registries: Pick<VoiceRegistries, "tts">,
   cache: CacheStore,
   onChunk: (mp3Base64: string) => void,
+  parentLog: Logger = baseLog,
 ): Promise<Result<void, string>> {
+  const log = parentLog.ns("tts")
   const model = registries.tts[config.ttsModel as keyof typeof registries.tts]
   if (!model) return err(`Unknown TTS model: ${config.ttsModel}`)
 
@@ -84,11 +95,13 @@ export async function speakSentence(
   const key = await cacheKeyFor(text, config.ttsVoiceId, config.ttsModel)
   const cached = await cache.get(key)
   if (cached) {
+    log.debug({ cache: "hit", key: key.slice(0, 8), bytes: cached.byteLength }, "served from cache")
     onChunk(Buffer.from(cached).toString("base64"))
     return ok(undefined)
   }
 
   try {
+    const t0 = performance.now()
     const result = await generateSpeech({
       model,
       text,
@@ -96,6 +109,7 @@ export async function speakSentence(
     })
     const mp3Bytes = result.audio.uint8Array
     await cache.set(key, mp3Bytes)
+    log.info({ cache: "miss", dur: performance.now() - t0, bytes: mp3Bytes.byteLength }, "tts done")
     onChunk(Buffer.from(mp3Bytes).toString("base64"))
     return ok(undefined)
   } catch (e: unknown) {

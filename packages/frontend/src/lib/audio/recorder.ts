@@ -2,11 +2,16 @@
  * Recorder — wraps MediaRecorder for push-to-talk.
  * Returns a clean `{ start(), stop(): Promise<{ blob, mimeType }> }` API.
  */
+import { createLogger } from "$lib/log"
+
+const log = createLogger("fe.audio.recorder")
+
 export class Recorder {
   private mr: MediaRecorder | null = null
   private chunks: Blob[] = []
 
   async start(): Promise<void> {
+    log.info({}, "start")
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     // audio/webm;codecs=opus is supported in Chrome/Firefox; falls back to browser default
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
@@ -29,6 +34,7 @@ export class Recorder {
       const mimeType = this.mr.mimeType || "audio/webm"
       this.mr.onstop = () => {
         const blob = new Blob(this.chunks, { type: mimeType })
+        log.info({ bytes: blob.size, mimeType }, "stop")
         this.mr?.stream.getTracks().forEach((t) => {
           t.stop()
         })

@@ -382,7 +382,8 @@ export function createAgentSession(opts: {
           try {
             const { text } = await generateText({ model, prompt })
             return text
-          } catch {
+          } catch (e) {
+            baseLog.warn({ err: e }, "narration gen returned empty")
             return ""
           }
         },
