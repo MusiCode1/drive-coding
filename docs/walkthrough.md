@@ -3,6 +3,44 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-17 02:15 — Slice 8a Phase 2: Storage Layer (projects-registry + sessions-cache + recordings-store)
+
+### סיכום
+
+TDD Phase 2 — שלושה מודולי אחסון חדשים ב-`packages/backend/src/app/`.
+16 טסטים חדשים, כולם ירוקים. typecheck ו-lint נקיים.
+
+#### מה בוצע
+
+**1. `projects-registry.ts`** — disk-backed JSON store של cwds
+- קריאה וכתיבה ל-`<baseDir>/projects-registry.json`
+- `recordCwd(cwd, kind)`: יוצר/מעדכן entry עם `lastSeen` ISO
+- `recordSession(cwd, sessionId)`: עדכון `lastSessionId` בלבד
+- `getProjects()`: מחזיר ממויין לפי `lastSeen DESC`
+- `mkdir({ recursive: true })` — ניצור תיקייה אם לא קיימת
+- 5 טסטים
+
+**2. `sessions-cache.ts`** — in-memory TTL cache
+- `Map<string, { sessions, cachedAt }>` עם TTL (ברירת מחדל 5 דקות)
+- `get(cwd)`: null אם פג תוקף / לא קיים
+- `set(cwd, sessions)`: מאפס שעון TTL
+- `invalidate(cwd)`: ניקוי ידני מיידי
+- 4 טסטים (כולל fake-timers לבדיקת TTL)
+
+**3. `recordings-store.ts`** — disk-backed recordings
+- שמירה ל-`<baseDir>/<uuid>.<ext>` (ext ממיפוי mimeType)
+- `index.json` סייד-קאר עם `{ id → { filename, mimeType, savedAt, bytes } }`
+- `save / get / delete / stats`
+- ניצור baseDir רקורסיבית
+- 7 טסטים (roundtrip, null on miss, deep dir, ext mapping, stats, delete)
+
+#### החלטות ארכיטקטורה
+
+- **index.json vs filesystem scan**: index.json נוח יותר לstats + get מהיר ללא stat/readdir
+- **`delete` מוחק מהindex ומהdisk**: שני המקומות תמיד בסנכרון. אם הקובץ כבר נמחק — `unlink` נכשל בשקט
+- **`SessionInfo` type מיובא מ-acp-transport**: sessions-cache לא מגדיר type משלו
+
+---
 ## 2026-05-17 01:55 — Slice 8a Phase 1: ACP Transport Extensions (listSessions + loadSession)
 
 ### סיכום
