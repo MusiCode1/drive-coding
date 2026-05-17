@@ -16,6 +16,7 @@ import { createCarMode } from "$lib/stores/car-mode.svelte"
 import { device } from "$lib/stores/device.svelte"
 import { deriveMicState } from "$lib/stores/mic-state.svelte"
 import { createPlayerStore } from "$lib/stores/player.svelte"
+import { settingsStore } from "$lib/stores/settings-store.svelte"
 import { sheetState } from "$lib/stores/sheet-state.svelte"
 import { sidebarState } from "$lib/stores/sidebar-state.svelte"
 import { deriveScrollState } from "$lib/stores/smart-scroll"
@@ -111,14 +112,16 @@ $effect(() => {
   const current = micState
   if (current === prevMicState) return
 
+  // N6 fix: check settings before firing each cue
+  const ac = settingsStore.audioCues
   if (current === "recording") {
-    cues.recordingStart()
+    if (ac.recordingStart) cues.recordingStart()
     acquireWakeLock()
   } else if (prevMicState === "recording" && current === "processing") {
-    cues.recordingStop()
-    cues.thinking()
+    if (ac.recordingStart) cues.recordingStop()
+    if (ac.thinking) cues.thinking()
   } else if (current === "speaking") {
-    cues.speaking()
+    if (ac.speaking) cues.speaking()
   } else if (current === "idle") {
     releaseWakeLock()
   }

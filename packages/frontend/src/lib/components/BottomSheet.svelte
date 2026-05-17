@@ -182,8 +182,8 @@ function agentStatusText(agent: AgentItem): string {
     background: var(--bg-elevated);
     border-top: 1px solid var(--border);
     border-radius: 20px 20px 0 0;
-    /* Show just the grip handle when closed */
-    transform: translateY(calc(100% - 30px));
+    /* B6 fix: expose 44px (full grip touch target) when closed */
+    transform: translateY(calc(100% - 44px));
     transition: transform 0.3s ease;
     z-index: 30;
     max-height: 70%;
@@ -197,14 +197,30 @@ function agentStatusText(agent: AgentItem): string {
   }
 
   /* ── Grip ────────────────────────────────────────────────────────────────── */
+  /* B6+N7 fix: taller touch target (44px min) so grip is easy to tap on mobile.
+     Visible indicator remains 40×4px, but the clickable area is the full 44px. */
   .sheet-grip {
+    width: 100%;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .sheet-grip::after {
+    content: "";
+    display: block;
     width: 40px;
     height: 4px;
     background: var(--border-strong);
     border-radius: 2px;
-    margin: var(--s-2) auto;
-    cursor: pointer;
-    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+
+  .sheet-grip:hover::after {
+    background: var(--fg-dim);
   }
 
   /* ── Scrollable content ─────────────────────────────────────────────────── */

@@ -12,6 +12,7 @@
 
 import type { Bubble } from "$lib/stores/agent-session.svelte"
 import BubbleAvatar from "./BubbleAvatar.svelte"
+import Icon from "./Icon.svelte"
 import SubSegment from "./SubSegment.svelte"
 
 interface Props {
@@ -49,6 +50,13 @@ function handleClick() {
   {#each bubble.segments as segment, i (i)}
     <SubSegment {segment} kind={bubble.kind} />
   {/each}
+
+  <!-- B11: play indicator — small icon visible when bubble is clickable but not playing -->
+  {#if onPlayRequest && bubble.kind !== "user" && !isCurrentlyPlaying}
+    <div class="play-indicator" aria-hidden="true">
+      <Icon name="play" size={12} />
+    </div>
+  {/if}
 
   <!-- Avatar badge — positioned outside the bubble -->
   <BubbleAvatar kind={bubble.kind} />
@@ -114,5 +122,22 @@ function handleClick() {
 
   .bubble-kind.clickable:hover {
     opacity: 0.92;
+  }
+
+  /* B11: play indicator — bottom-end corner, low opacity */
+  .play-indicator {
+    position: absolute;
+    bottom: var(--s-2);
+    inset-inline-end: var(--s-2);
+    opacity: 0.3;
+    color: var(--fg-dim);
+    display: flex;
+    align-items: center;
+    pointer-events: none;
+    transition: opacity 0.15s;
+  }
+
+  .bubble-kind.clickable:hover .play-indicator {
+    opacity: 0.7;
   }
 </style>

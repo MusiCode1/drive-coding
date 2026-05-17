@@ -48,7 +48,9 @@ function handleKeydown(e: KeyboardEvent) {
 
 {#if open}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="modal-backdrop" onclick={onClose} onkeydown={handleKeydown} role="dialog" aria-modal="true">
+  <!-- B9 fix: tabindex="-1" required for role="dialog" (a11y interactive_supports_focus) -->
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
+  <div class="modal-backdrop" onclick={onClose} onkeydown={handleKeydown} role="dialog" aria-modal="true" tabindex="-1">
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="modal-box" onclick={(e) => e.stopPropagation()}>

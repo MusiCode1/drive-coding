@@ -4,6 +4,7 @@ import { onDestroy, onMount } from "svelte"
 import { goto } from "$app/navigation"
 import { createAgent, deleteAgent, listAgents } from "$lib/api/agents"
 import FilePicker from "$lib/components/FilePicker.svelte"
+import Icon from "$lib/components/Icon.svelte"
 
 let agents = $state<AgentPublic[]>([])
 let loading = $state(true)
@@ -112,7 +113,10 @@ onDestroy(() => {
   <header class="dash-header">
     <h1 class="dash-title">drive-coding</h1>
     <div class="dash-header-actions">
-      <a href="/sessions" class="icon-action-btn" aria-label="היסטוריה" title="היסטוריה">📚</a>
+      <!-- N2 fix: Lucide icon instead of emoji -->
+      <a href="/sessions" class="icon-action-btn" aria-label="היסטוריה" title="היסטוריה">
+        <Icon name="book-open" size={18} />
+      </a>
       <button class="new-btn" onclick={() => (showFilePicker = true)} aria-label="סוכן חדש">+ סוכן חדש</button>
     </div>
   </header>
@@ -124,7 +128,8 @@ onDestroy(() => {
   {:else if agents.length === 0}
     <!-- Empty state (§9.6 DoD #32) -->
     <div class="empty-state">
-      <div class="empty-icon">🎙</div>
+      <!-- N2 fix: Lucide icon instead of emoji -->
+      <div class="empty-icon"><Icon name="mic" size={56} /></div>
       <div class="empty-title">אין סוכנים פעילים</div>
       <div class="empty-desc">לחצי "+ סוכן חדש" כדי להתחיל.</div>
       <a href="/agent/new" class="new-btn new-btn-large">+ סוכן חדש</a>
@@ -171,8 +176,10 @@ onDestroy(() => {
     </ul>
   {/if}
 
-  <!-- Settings link -->
-  <a href="/settings" class="settings-link" title="הגדרות">⚙</a>
+  <!-- Settings link (N2 fix: Lucide icon instead of emoji) -->
+  <a href="/settings" class="settings-link" title="הגדרות" aria-label="הגדרות">
+    <Icon name="settings" size={22} />
+  </a>
 </div>
 
 <style>
