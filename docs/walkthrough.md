@@ -3,6 +3,43 @@
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.
 
 ---
+## 2026-05-17 01:55 — Slice 8a Phase 1: ACP Transport Extensions (listSessions + loadSession)
+
+### סיכום
+
+TDD Phase 1 — הוספת תמיכה ב-`listSessionsFromBridge` ו-`createAcpWsLoadTransport` ל-`acp-transport.ts`.
+12 טסטים חדשים, כולם ירוקים. typecheck ו-lint נקיים.
+
+#### מה בוצע
+
+**1. ריפקטור `setupWsAndInitialize` (helper פרטי)**
+- חולצה הלוגיקה המשותפת של פתיחת WS + handshake + initialize מ-`createAcpWsTransport`
+- תמיכה ב-`warmupDelayMs` option (0 בטסטים, 1500 בproduction)
+- שמירה על `auth_required` error handling
+
+**2. `SessionInfo` type (exported)**
+- `{ sessionId, cwd, title, updatedAt }` — uniform schema שעובד עם כל ה-CLIs
+
+**3. `listSessionsFromBridge(opts)` — ResultAsync**
+- קורא ACP `session/list` (ללא `session/new`)
+- Fallback: `-32601 Method not found` → `ok([])` (תמיכה ב-Gemini שלא תומך ב-list)
+- שגיאת transport → `err({ kind: 'transport', ... })`
+- 5 טסטים
+
+**4. `createAcpWsLoadTransport(opts)` — Promise\<AcpTransport\>**
+- קורא `session/load` (ללא `session/new`) — מטרה: טעינת session קיים
+- `onHistoryUpdate` callback מקבל notifications במהלך הload (לפני resolve)
+- Transport מחזיר אחר loadSession ניתן לשימוש ל-`prompt()` רגיל
+- `onHistoryUpdate` מתנקה אחרי load — prompts עתידיים לא "מזהמים" את callback ההיסטוריה
+- 7 טסטים
+
+#### החלטות ארכיטקטורה
+
+- **`setupWsAndInitialize` כ-private helper**: הלוגיקה המשותפת (WS setup, initialized) מחולצת פנימית, לא exported — כי שימוש חיצוני לא נדרש
+- **ResultAsync עבור listSessions, Promise עבור loadTransport**: listSessions יכול להיכשל בנחת (CLI לא תומך) → ResultAsync מתאים. loadTransport זה חלק מ-agent creation flow שכבר זורק → Promise מספיק
+- **warmupDelayMs=0 בטסטים**: מונע 1.5s בכל test, שוות ערך לproduction-behavior
+
+---
 ## 2026-05-17 03:00 — Tier 1 Voice Pipeline: Phases 1-6
 
 ### סיכום

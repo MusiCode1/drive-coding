@@ -1,10 +1,12 @@
 import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk"
 import type {
   AcpCapabilities,
+  AcpError,
   AcpTransport,
   PromptResponse,
   SessionNotification,
 } from "@drive-coding/core"
+import { ResultAsync } from "neverthrow"
 import { WebSocket } from "ws"
 import { createClientImpl } from "./client-impl.js"
 import { wsToStreams } from "./ws-streams.js"
@@ -14,20 +16,39 @@ export type AcpTransportOptions = {
   readonly wsUrl: string
   readonly cwd: string
   readonly protocolVersion?: number
+  /** Warmup delay (ms) after stdio-to-ws connected frame. Default 1500. */
+  readonly warmupDelayMs?: number
+}
+
+/** Uniform session info returned by session/list across all CLI kinds. */
+export type SessionInfo = {
+  readonly sessionId: string
+  readonly cwd: string
+  readonly title: string
+  readonly updatedAt: string
+}
+
+// ─── Internal WS setup helper ─────────────────────────────────────────────────
+
+type WsSetup = {
+  conn: ClientSideConnection
+  capabilities: AcpCapabilities
+  setOnUpdate: (handler: ((n: SessionNotification) => void) | null) => void
+  ws: WebSocket
 }
 
 /**
- * Creates an AcpTransport that connects to a stdio-to-ws bridge via WebSocket.
+ * Opens a WS connection to a stdio-to-ws bridge, waits for the `connected`
+ * handshake, applies the warmup delay, runs the ACP `initialize` handshake,
+ * and returns the raw connection setup.
  *
- * The transport:
- *  1. Opens a WS connection to the bridge
- *  2. Converts ws frames ↔ byte streams via wsToStreams
- *  3. Wraps in ndJsonStream (NDJSON encoding/decoding expected by SDK)
- *  4. Creates a ClientSideConnection with the SDK
- *  5. Performs initialize + newSession handshake
- *  6. Returns an AcpTransport ready for prompt/cancel/shutdown
+ * Does NOT call session/new or session/load — caller decides which to use.
  */
-export async function createAcpWsTransport(opts: AcpTransportOptions): Promise<AcpTransport> {
+function setupWsAndInitialize(opts: {
+  wsUrl: string
+  warmupDelayMs: number
+  protocolVersion?: number
+}): Promise<WsSetup> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(opts.wsUrl)
     const t0 = Date.now()
@@ -35,11 +56,6 @@ export async function createAcpWsTransport(opts: AcpTransportOptions): Promise<A
 
     log(`connecting to ${opts.wsUrl}`)
 
-    // Timeout: 45s for the full handshake (WS open + initialize + newSession).
-    // opencode acp can take 10-20s to spawn + initialize on a cold start
-    // (npm cache miss, model auth check), and newSession itself may take a
-    // few more seconds while opencode reads AGENTS.md and project context.
-    // bridge-manager spawn timeout is 30s — this must be >= that.
     const HANDSHAKE_TIMEOUT_MS = 45_000
     const timeout = setTimeout(() => {
       log(`handshake timeout (${HANDSHAKE_TIMEOUT_MS}ms)`)
@@ -51,10 +67,6 @@ export async function createAcpWsTransport(opts: AcpTransportOptions): Promise<A
       log("ws open")
       ;(async () => {
         try {
-          // Wait for stdio-to-ws to spawn the agent subprocess and send its
-          // handshake `{"type":"connected"}`. If we send `initialize` before
-          // this, stdio-to-ws drops the frame (no subprocess to write to yet)
-          // and we hang waiting for a response that never comes.
           log("waiting for stdio-to-ws handshake")
           await new Promise<void>((res, rej) => {
             const handshakeTimeout = setTimeout(() => {
@@ -68,32 +80,19 @@ export async function createAcpWsTransport(opts: AcpTransportOptions): Promise<A
                 ws.off("message", onMsg)
                 res()
               }
-              // (any other early frames will be replayed via wsToStreams once
-              // we attach below — but ws.on() is fire-and-forget; safer to
-              // attach BEFORE the handshake event arrives. Since the only
-              // pre-handshake frame is `connected` itself, we lose nothing.)
             }
             ws.on("message", onMsg)
           })
           log("← stdio-to-ws connected")
 
-          // stdio-to-ws sends `connected` the moment the WS upgrade completes —
-          // BEFORE the agent subprocess has finished spawning. If we send
-          // `initialize` immediately, stdio-to-ws drops the frame (no live
-          // stdin to write to yet). Wait a bit for the subprocess to come up.
-          // Empirically 500-1000ms is enough for opencode acp cold start.
-          // TODO: stdio-to-ws should emit a second frame when subprocess is
-          // ready — file an issue upstream.
-          await new Promise((r) => setTimeout(r, 1500))
+          if (opts.warmupDelayMs > 0) {
+            await new Promise((r) => setTimeout(r, opts.warmupDelayMs))
+          }
           log("subprocess warmup done")
 
           const { readable, writable } = wsToStreams(ws)
-
-          // ndJsonStream wraps raw byte streams into AnyMessage streams
-          // that the SDK's Connection reads/writes
           const stream = ndJsonStream(writable, readable)
 
-          // Mutable reference for the sessionUpdate callback
           let onUpdateHandler: ((n: SessionNotification) => void) | null = null
 
           const clientImpl = createClientImpl({
@@ -104,7 +103,6 @@ export async function createAcpWsTransport(opts: AcpTransportOptions): Promise<A
 
           const conn = new ClientSideConnection((_agent) => clientImpl, stream)
 
-          // 1. Initialize
           log("→ initialize")
           const initResult = await conn.initialize({
             protocolVersion: opts.protocolVersion ?? 1,
@@ -122,56 +120,22 @@ export async function createAcpWsTransport(opts: AcpTransportOptions): Promise<A
             loadSession: initResult.agentCapabilities?.loadSession ?? false,
           }
 
-          // 2. New session
-          log(`→ newSession (cwd=${opts.cwd})`)
-          const sessionResult = await conn.newSession({
-            cwd: opts.cwd,
-            mcpServers: [],
-          })
-
-          const sessionId = sessionResult.sessionId
-          log(`← newSession ok (sessionId=${sessionId})`)
-
           clearTimeout(timeout)
-
-          const transport: AcpTransport = {
-            async start(_input) {
-              return { sessionId, capabilities }
+          resolve({
+            conn,
+            capabilities,
+            setOnUpdate: (h) => {
+              onUpdateHandler = h
             },
-
-            async prompt(input, onUpdate) {
-              onUpdateHandler = onUpdate
-              try {
-                const response: PromptResponse = await conn.prompt({
-                  sessionId,
-                  prompt: [{ type: "text", text: input.text }],
-                })
-                return response
-              } finally {
-                onUpdateHandler = null
-              }
-            },
-
-            async cancel() {
-              await conn.cancel({ sessionId })
-            },
-
-            async shutdown() {
-              if (ws.readyState === ws.OPEN) {
-                ws.close()
-              }
-            },
-          }
-
-          resolve(transport)
+            ws,
+          })
         } catch (e) {
           clearTimeout(timeout)
           ws.terminate()
-          // Detect ACP-defined `auth_required` JSON-RPC error and surface
-          // it as a typed error so the caller can show an auth UI instead
-          // of a generic "connection closed" message.
-          // ACP error code: -32000 with data: { code: "auth_required", ... }
-          // (the SDK wraps these as `RequestError`).
+          // Detect ACP-defined `auth_required` JSON-RPC error and surface it as
+          // a typed error so the caller can show an auth UI instead of a generic
+          // "connection closed" message. ACP error code: -32000 with
+          // data: { code: "auth_required", ... }.
           const err = e as { code?: number; data?: { code?: string }; message?: string }
           if (err?.data?.code === "auth_required") {
             const authErr = new Error(
@@ -191,4 +155,217 @@ export async function createAcpWsTransport(opts: AcpTransportOptions): Promise<A
       reject(new Error(`ACP WS error: ${err.message}`))
     })
   })
+}
+
+// ─── createAcpWsTransport (existing, uses session/new) ───────────────────────
+
+/**
+ * Creates an AcpTransport that connects to a stdio-to-ws bridge via WebSocket.
+ *
+ * The transport:
+ *  1. Opens a WS connection to the bridge
+ *  2. Converts ws frames ↔ byte streams via wsToStreams
+ *  3. Wraps in ndJsonStream (NDJSON encoding/decoding expected by SDK)
+ *  4. Creates a ClientSideConnection with the SDK
+ *  5. Performs initialize + newSession handshake
+ *  6. Returns an AcpTransport ready for prompt/cancel/shutdown
+ */
+export async function createAcpWsTransport(opts: AcpTransportOptions): Promise<AcpTransport> {
+  const { conn, capabilities, setOnUpdate, ws } = await setupWsAndInitialize({
+    wsUrl: opts.wsUrl,
+    warmupDelayMs: opts.warmupDelayMs ?? 1500,
+    protocolVersion: opts.protocolVersion,
+  })
+
+  const t0 = Date.now()
+  const log = (msg: string) => console.log(`[acp] +${Date.now() - t0}ms ${msg}`)
+
+  log(`→ newSession (cwd=${opts.cwd})`)
+  const sessionResult = await conn.newSession({
+    cwd: opts.cwd,
+    mcpServers: [],
+  })
+
+  const sessionId = sessionResult.sessionId
+  log(`← newSession ok (sessionId=${sessionId})`)
+
+  const transport: AcpTransport = {
+    async start(_input) {
+      return { sessionId, capabilities }
+    },
+
+    async prompt(input, onUpdate) {
+      setOnUpdate(onUpdate)
+      try {
+        const response: PromptResponse = await conn.prompt({
+          sessionId,
+          prompt: [{ type: "text", text: input.text }],
+        })
+        return response
+      } finally {
+        setOnUpdate(null)
+      }
+    },
+
+    async cancel() {
+      await conn.cancel({ sessionId })
+    },
+
+    async shutdown() {
+      if (ws.readyState === ws.OPEN) {
+        ws.close()
+      }
+    },
+  }
+
+  return transport
+}
+
+// ─── listSessionsFromBridge ──────────────────────────────────────────────────
+
+/**
+ * Lists ACP sessions for a given bridge endpoint.
+ * - Calls ACP session/list after initialize (no session creation).
+ * - Returns ok([]) if CLI doesn't support session/list (error code -32601).
+ * - Returns err({ kind: 'transport', ... }) on WS errors.
+ * - Closes the WS connection when done.
+ */
+export function listSessionsFromBridge(opts: {
+  wsUrl: string
+  cwd: string
+  /** Warmup delay after connected frame. Default 1500ms. Pass 0 in tests. */
+  warmupDelayMs?: number
+}): ResultAsync<readonly SessionInfo[], AcpError> {
+  return ResultAsync.fromPromise(
+    _listSessionsImpl(opts),
+    (e): AcpError => ({
+      kind: "transport",
+      message: e instanceof Error ? e.message : String(e),
+    }),
+  )
+}
+
+async function _listSessionsImpl(opts: {
+  wsUrl: string
+  cwd: string
+  warmupDelayMs?: number
+}): Promise<readonly SessionInfo[]> {
+  const { conn, ws } = await setupWsAndInitialize({
+    wsUrl: opts.wsUrl,
+    warmupDelayMs: opts.warmupDelayMs ?? 1500,
+  })
+
+  try {
+    let sessions: readonly SessionInfo[] = []
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const res = await (conn as any).listSessions({})
+      const raw: unknown[] = (res as { sessions?: unknown[] })?.sessions ?? []
+      sessions = raw.map((s): SessionInfo => {
+        const item = s as Record<string, unknown>
+        return {
+          sessionId: String(item["sessionId"] ?? ""),
+          cwd: String(item["cwd"] ?? ""),
+          title: String(item["title"] ?? ""),
+          updatedAt: String(item["updatedAt"] ?? ""),
+        }
+      })
+    } catch (e: unknown) {
+      // -32601: Method not found → fallback empty (e.g. Gemini doesn't support session/list)
+      const err = e as { code?: number }
+      if (err?.code === -32601) {
+        sessions = []
+      } else {
+        throw e
+      }
+    }
+    return sessions
+  } finally {
+    if (ws.readyState === (ws as unknown as { OPEN: number }).OPEN) {
+      ws.close()
+    }
+  }
+}
+
+// ─── createAcpWsLoadTransport (uses session/load instead of session/new) ─────
+
+/**
+ * Creates an AcpTransport that loads an existing session (session/load) instead
+ * of creating a new one (session/new).
+ *
+ * History notifications received during session/load are forwarded to
+ * `onHistoryUpdate`. After the load resolves, `onHistoryUpdate` is cleared so
+ * future prompt() notifications are handled by prompt's own onUpdate.
+ *
+ * The returned transport implements the same AcpTransport interface as
+ * createAcpWsTransport, with `start()` returning the loaded sessionId.
+ */
+export async function createAcpWsLoadTransport(opts: {
+  wsUrl: string
+  cwd: string
+  sessionId: string
+  onHistoryUpdate: (n: SessionNotification) => void
+  /** Warmup delay after connected frame. Default 1500ms. Pass 0 in tests. */
+  warmupDelayMs?: number
+}): Promise<AcpTransport> {
+  const { conn, capabilities, setOnUpdate, ws } = await setupWsAndInitialize({
+    wsUrl: opts.wsUrl,
+    warmupDelayMs: opts.warmupDelayMs ?? 1500,
+  })
+
+  const t0 = Date.now()
+  const log = (msg: string) => console.log(`[acp] +${Date.now() - t0}ms ${msg}`)
+
+  // Set history update handler BEFORE calling loadSession so notifications
+  // that arrive during the load are forwarded.
+  setOnUpdate(opts.onHistoryUpdate)
+
+  let loadedSessionId = opts.sessionId
+  try {
+    log(`→ loadSession (sessionId=${opts.sessionId}, cwd=${opts.cwd})`)
+    // The ACP SDK's loadSession is called via `as any` because the typed API
+    // may not include it depending on SDK version (same pattern as v1).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await (conn as any).loadSession({
+      sessionId: opts.sessionId,
+      cwd: opts.cwd,
+      mcpServers: [],
+    })
+    loadedSessionId = (res as { sessionId?: string })?.sessionId ?? opts.sessionId
+    log(`← loadSession ok (sessionId=${loadedSessionId})`)
+  } finally {
+    // Clear history handler — future prompt() calls use their own onUpdate
+    setOnUpdate(null)
+  }
+
+  const transport: AcpTransport = {
+    async start(_input) {
+      return { sessionId: loadedSessionId, capabilities }
+    },
+
+    async prompt(input, onUpdate) {
+      setOnUpdate(onUpdate)
+      try {
+        const response: PromptResponse = await conn.prompt({
+          sessionId: loadedSessionId,
+          prompt: [{ type: "text", text: input.text }],
+        })
+        return response
+      } finally {
+        setOnUpdate(null)
+      }
+    },
+
+    async cancel() {
+      await conn.cancel({ sessionId: loadedSessionId })
+    },
+
+    async shutdown() {
+      if (ws.readyState === (ws as unknown as { OPEN: number }).OPEN) {
+        ws.close()
+      }
+    },
+  }
+
+  return transport
 }
