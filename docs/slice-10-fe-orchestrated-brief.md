@@ -35,7 +35,7 @@
 | ‏Sessions / Projects / fs/browse | **endpoints native** ‏(כמו היום) | ‏‏לא חלק מ-protocol כלשהו |
 | ‏Agent ‏handshake | ‏**FE** ‏עושה initialize + session/new \| session/load דרך SDK | ‏BE מספק רק ‏‏wsUrl/port |
 | ‏Agent registry sync | ‏FE קוראת ל-`POST /api/agents/:id/session-attached { sessionId }` ‏אחרי שה-handshake הצליח | ‏BE ‏מעדכן registry + projectsRegistry |
-| ‏fs.readTextFile/writeTextFile | ‏FE לא ‏‏מצהיר | ‏opencode קורא לבד מהדיסק |
+| ‏fs.readTextFile/writeTextFile | ‏FE לא ‏‏מצהיר (capabilities=false) | ‏opencode ‏מתועד שיש לו ‏tool calls פנימיים לread/write ‏(לא דרך ACP fs caps). **‏אבל**: ‏ב-Phase 2 חובה smoke test — prompt "‏‏קרא לי את ה-README" — ‏אם opencode מבקש fs/readTextFile ‏(error -32601), ‏‏ה-decision ‏מתבטל ‏‏ו-FE מקבל ‏capabilities=true + יישום של fs forwarding לBE |
 | ‏Permission UI | auto-allow_once ב-FE ‏(כמו היום) | ‏UI prompt — slice עתידי |
 | ‏Narration cache | ‏key = `toolCallId` (לא content hash) | ‏כפי שהיום ב-narrateToolCall. ‏cache hits ‏בעיקר על retry ‏באותו session |
 | ‏localStorage state | playback position + ‏playedSegmentIds ‏(TTL 24h) | ‏refresh recovery |
@@ -106,14 +106,15 @@
 
 ‏ה-BE ‏אינו ‏מציע API ‏מותאם ל-voice ‏אלא **proxy שקוף** ל-Google ולElevenLabs ‏בנוסף ‏ל-endpoints native קטנים.
 
-### 3.1 `/ws/agent/:agentId` — WS bytes pipe
+### 3.1 `/ws/agent/:id` — WS bytes pipe
 
 ‏עוטף את ה-WS של stdio-to-ws ‏ב-loopback. ‏הbytes ‏עוברים as-is ‏בשני הכיוונים. ‏ה-BE לא מפרסר, ‏לא מאמת, ‏לא מעשיר.
 
 ‏Edge cases:
 - ‏Agent לא קיים → `close(1008, "agent not found")`
+- ‏**Tab שני ל-agent קיים** (MED-8): ‏BE מנהל ‏`Map<agentId, ServerWebSocket>`. ‏אם feWs חדש מגיע לagentId ‏עם entry ‏פעיל → `close(1008, "agent in use by another tab")`. ‏ACP ‏הוא stateful — ‏שני tabs מנסים initialize+session/new על אותו bridge ‏יגרמו ‏ל-collision. ‏ה-UI ‏צריך להציע ‏‏"close other tab" ‏או delete agent (לפתיחה חדשה).
 - ‏stdio-to-ws crashes → `close(1011, "bridge closed")`
-- ‏FE נסגר → BE סוגר את ה-bridge WS
+- ‏FE נסגר → BE סוגר את ה-bridge WS, ‏מסיר ‏מ-Map
 
 ‏אין יותר ‏`ServerMessage` schema, ‏אין יותר ‏`audio_chunk`, ‏אין יותר ‏`history_*` ‏events. ‏ה-FE רואה ‏‏frames raw ‏‏‏של stdio-to-ws + ‏ACP JSON-RPC.
 
@@ -205,24 +206,62 @@ function proxy(upstreamBase) {
 
 ```
 1. FE: POST /api/agents { cwd, cliKind, existingSessionId? }
-2. BE: registry.create + bridgeManager.spawn — ‏מחזיר { agentId, wsUrl, bridgePort }
-   ‏status = "spawning"
-3. FE: ‏פותח WebSocket ל-/ws/agent/:agentId (proxy ל-bridge)
-4. FE: ‏ממתין לframe `{type:"connected"}` ‏מ-stdio-to-ws (handshake)
-5. FE: ‏warmup 1500ms (subprocess ready)
-6. FE: SDK.initialize(...)
-7. FE: SDK.newSession({cwd}) — או SDK.loadSession({sessionId, cwd}) — מחזיר sessionId
-8. FE: POST /api/agents/:agentId/session-attached { sessionId }
-9. BE: ‏registry.update({ status: "ready", acpSessionId })
-   + projectsRegistry.recordCwd + projectsRegistry.recordSession
-10. ‏FE: ‏סוכן ready, ‏מוכן ל-prompt
+
+2. BE-side dedup (אם existingSessionId הועבר):
+   ‏BE בודק registry — אם יש agent עם (cwd, acpSessionId === existingSessionId) ב-status=ready/busy:
+     → ‏מחזיר { agentId, wsUrl, bridgePort, status: "ready", acpSessionId }
+     → ‏‏FE מדלג ‏ל-step 10 (כבר ‏יש WS פתוח? לא — צריך לפתוח. אבל ‏לא צריך handshake.)
+     
+3. BE-side (ללא dedup): registry.create + bridgeManager.spawn
+   → ‏מחזיר { agentId, wsUrl, bridgePort, status: "spawning" }
+   
+4. FE: ‏פותח WebSocket ל-/ws/agent/:id (proxy ל-bridge)
+
+5. (אם status="ready" מ-dedup): FE רק מחבר WS, ‏לא עושה initialize/newSession/loadSession.
+   ה-bridge כבר מאתחל ‏(מ-spawn קודם). ‏ה-SDK ‏עדיין צריך לעבוד עם הconnection,
+   ‏אבל initialize כבר נעשה בעבר. **‏פתרון: ‏ה-FE שומר את הinitialize state ב-localStorage
+   per (agentId), משחזר וממשיך.** ‏או: ‏הbrief מחליט שדדodup-via-existingSessionId לא נתמך
+   ב-MVP, ‏ה-FE תמיד spawn חדש. ‏ראה Decision למטה.
+   
+6. (אם status="spawning"): FE ‏ממתין לframe `{type:"connected"}` ‏מ-stdio-to-ws (handshake)
+7. FE: ‏warmup 1500ms (subprocess ready)
+8. FE: SDK.initialize(...)
+9. FE: SDK.newSession({cwd}) — או SDK.loadSession({sessionId, cwd}) — מחזיר sessionId
+10. FE: POST /api/agents/:id/session-attached { sessionId }
+11. BE: ‏registry.update({ status: "ready", acpSessionId })
+    + projectsRegistry.recordCwd + projectsRegistry.recordSession
+12. ‏FE: ‏סוכן ready, ‏מוכן ל-prompt
 ```
 
-‏Dedup ‏מ-existing sessionId: ‏ב-FE side. ‏FE קוראת לראשונה ל-`GET /api/agents`, ‏מחפש agent קיים עם ‏`(cwd, sessionId)`, ‏ואם יש — ‏מתחבר אליו במקום ליצור חדש. ‏‏(או ‏BE יכול ‏לעשות dedup ‏ב-POST, ‏אם אם FE שולח ‏existingSessionId — ‏BE בודק registry ‏ומחזיר agent קיים. ‏פשוט יותר ל-BE.)
+‏**Response format ‏מ-POST /api/agents:**
 
-‏Crash handling: ‏‏היום BE שומר stderr, ‏מחלץ provider error. ‏ימשיך — ‏BE מנטר את ה-bridge process. ‏אם crash, BE שולח ‏`{type:"server_event","kind":"bridge_crash","crashReason":"..."}` ‏על ה-WS pipe ‏(או מעדכן registry, ‏ו-FE polls).
+```ts
+type CreateAgentResponse = {
+  agentId: string
+  cwd: string
+  cliKind: BridgeKind
+  wsUrl: string  // ‏ל-debugging; FE משתמש ב-/ws/agent/:id
+  bridgePort: number
+  status: "spawning" | "ready"  // "ready" רק אם dedup הצליח
+  acpSessionId?: string  // קיים רק אם status === "ready"
+}
+```
 
-‏**החלטה לdesign:** ‏לwireup MVP ‏בלי `server_event` frames. ‏FE poll `/api/agents/:id` ‏מדי 5s ‏כשconnect lost. ‏slice עתידי ‏יוסיף ‏server-event channel.
+**‏Dedup decision (פתרון MED-1):**
+
+‏‏ל-MVP: ‏**BE עושה dedup**. ‏FE שולח `existingSessionId?`, ‏ה-BE בודק registry, ‏ואם מצא duplicate ‏ב-status=ready/busy → ‏מחזיר אותו עם `status: "ready"` + `acpSessionId`.
+
+‏אבל: ‏**FE לא ‏יכול ‏לקפוץ ‏על handshake** — ‏ה-WS connection חדש, ‏ה-SDK צריך initialize שוב על ה-stream. ‏‏זה מגביל את הרווח של dedup.
+
+‏‏**ההחלטה ב-MVP**: ‏BE dedup ‏מחזיר ‏את ה-existing agentId, אבל **FE תמיד עושה ‏handshake** (initialize + loadSession). ‏זה ‏‏מספק את הdedup ברמת BE-state (לא יצירת bridge שני), אבל ‏שומר על FE flow פשוט.
+
+‏Schema:
+- ‏FE קורא `POST /api/agents { cwd, cliKind, existingSessionId? }`
+- ‏BE response: ‏`{ agentId, wsUrl, bridgePort, status, acpSessionId? }`
+- ‏FE רואה `status === "ready"` → ‏‏החליט loadSession (לא newSession), ‏עם `acpSessionId` שחזר
+- ‏FE רואה `status === "spawning"` → ‏אם `existingSessionId` הועבר → ‏loadSession; ‏אחרת → newSession
+
+‏Crash handling: ‏ראה ‏סעיף "Crash handling במצב החדש" ב-§5.
 
 ---
 
@@ -586,33 +625,46 @@ export function savePlaybackState(state: PlaybackState): void {
 
 ```ts
 export function createAgentWsHandler(deps: { orchestrator: AgentOrchestrator }) {
+  // MED-8: ‏one feWs per agentId — ‏‏ACP collision prevention
+  const activeFeWs = new Map<string, ServerWebSocket<AgentWsData>>()
+  
   return {
     async open(feWs) {
       const agentId = feWs.data.agentId
+      
+      // ‏MED-8: ‏‏‏‏אם כבר יש tab עם feWs פעיל — ‏reject
+      if (activeFeWs.has(agentId)) {
+        feWs.close(1008, "agent in use by another tab")
+        return
+      }
+      
       const port = deps.orchestrator.getBridgePort(agentId)
       if (!port) {
         feWs.close(1008, "agent not found")
         return
       }
       
+      activeFeWs.set(agentId, feWs)
+      
       const bridgeWs = new WebSocket(`ws://127.0.0.1:${port}/`)
       feWs.data.bridgeWs = bridgeWs
       
       // Buffer FE messages until bridge is open
       const pendingFromFe: (string | Uint8Array)[] = []
-      let bridgeOpen = false
       feWs.data.pendingFromFe = pendingFromFe
+      feWs.data.bridgeOpen = false
       
       bridgeWs.on("open", () => {
-        bridgeOpen = true
         for (const msg of pendingFromFe) bridgeWs.send(msg)
         pendingFromFe.length = 0
         feWs.data.bridgeOpen = true
       })
       
       bridgeWs.on("message", (data) => {
+        // ‏Bun ServerWebSocket.send מקבל string | BufferSource ‏(Buffer ‏הוא BufferSource).
+        // ‏‏אין צורך ב-conversion — ‏forward as-is.
         try {
-          feWs.send(typeof data === "string" ? data : data)
+          feWs.send(data as string | Buffer)
         } catch { /* ws closing */ }
       })
       
@@ -629,6 +681,8 @@ export function createAgentWsHandler(deps: { orchestrator: AgentOrchestrator }) 
     },
     
     close(feWs) {
+      const agentId = feWs.data.agentId
+      activeFeWs.delete(agentId)
       feWs.data.bridgeWs?.close()
     },
   }
@@ -814,59 +868,6 @@ app.post("/api/agents/:id/session-attached", async (c) => {
 })
 ```
 
-### `/ws/agent/:id` ‏‏‏(`packages/backend/src/delivery/ws-agent.ts` ‏refactor)
-
-```ts
-export function createAgentWsHandler(deps: { orchestrator: AgentOrchestrator }) {
-  return {
-    async open(feWs) {
-      const agentId = feWs.data.agentId
-      const port = deps.orchestrator.getBridgePort(agentId)
-      if (!port) {
-        feWs.close(1008, "agent not found")
-        return
-      }
-      
-      const bridgeWs = new WebSocket(`ws://127.0.0.1:${port}/`)
-      feWs.data.bridgeWs = bridgeWs
-      
-      // Buffer FE messages until bridge is open
-      const pendingFromFe: (string | Uint8Array)[] = []
-      let bridgeOpen = false
-      feWs.data.pendingFromFe = pendingFromFe
-      
-      bridgeWs.on("open", () => {
-        bridgeOpen = true
-        for (const msg of pendingFromFe) bridgeWs.send(msg)
-        pendingFromFe.length = 0
-        feWs.data.bridgeOpen = true
-      })
-      
-      bridgeWs.on("message", (data) => {
-        try {
-          feWs.send(typeof data === "string" ? data : data)
-        } catch { /* ws closing */ }
-      })
-      
-      bridgeWs.on("close", () => feWs.close(1011, "bridge closed"))
-      bridgeWs.on("error", () => feWs.close(1011, "bridge error"))
-    },
-    
-    message(feWs, raw) {
-      if (feWs.data.bridgeOpen) {
-        feWs.data.bridgeWs?.send(raw)
-      } else {
-        feWs.data.pendingFromFe.push(raw)
-      }
-    },
-    
-    close(feWs) {
-      feWs.data.bridgeWs?.close()
-    },
-  }
-}
-```
-
 ### Orchestrator changes
 
 ‏`agent-orchestrator.ts:createAndSpawn` ‏מצטמצם דרסטית:
@@ -908,6 +909,40 @@ async createAndSpawn(input): Promise<{ agentId, wsUrl, bridgePort }> {
 - ‏‏‏הקריאה ל-projectsRegistry.recordSession ‏(עוברת ל-`/api/agents/:id/session-attached`)
 
 ‏ה-orchestrator עדיין מנהל crash listening — ‏אם bridge מת, מסמן status=crashed עם crashReason מ-stderr.
+
+### Crash handling במצב החדש (תיקון CRIT-4)
+
+‏ה-`AgentSession` ‏נמחק לחלוטין, ‏אז ‏‏ה-listener הקיים ‏ב-`agent-orchestrator.ts:61-81` ‏לא יכול ‏לעשות ‏`session.shutdown()` ‏יותר. ‏ה-flow ‏החדש:
+
+```ts
+deps.bridgeManager.onCrash(async (bridgeId, exitCode) => {
+  try {
+    const agent = await deps.registry.get(bridgeId)
+    if (agent && agent.status !== "closed") {
+      const getStderr = stderrGetters.get(bridgeId)
+      const crashReason = getStderr 
+        ? (extractProviderError(getStderr()) ?? undefined) 
+        : undefined
+      await deps.registry.update(bridgeId, { status: "crashed", crashReason })
+    }
+    stderrGetters.delete(bridgeId)
+    // ‏אין יותר ‏session.shutdown() — ‏ה-bridge ‏‏כבר מת ‏וה-WS pipe ‏יסגר אוטומטית.
+    // ‏‏ה-ws-agent handler ‏(bridgeWs.on("close") → feWs.close(1011, "bridge closed"))
+    // ‏יודיע ל-FE.
+    log.warn({ bridgeId, exitCode, crashReason }, "bridge crashed")
+  } catch (e) {
+    log.error({ err: e }, "crash cleanup failed")
+  }
+})
+```
+
+**‏Flow מ-FE צד:**
+1. ‏ה-FE רואה ‏ב-WS event `close` ‏עם code 1011 ‏ו-reason "bridge closed"
+2. ‏ה-FE עוצר את ה-ACP connection (ה-SDK ‏‏מקבל ‏stream close → ‏rejects pending requests)
+3. ‏ה-FE polls ‏‏פעם אחת ‏`GET /api/agents/:id` ‏לקבל את `status: "crashed"` + `crashReason`
+4. ‏ה-FE ‏מציג ‏באם UI שגיאת crash ‏עם הסיבה
+
+‏Pending prompts ב-SDK: ‏ה-SDK ‏‏rejects את ה-Promise ‏ב-`conn.prompt(...)` ‏כשה-stream נסגר ‏(SDK semantics). ‏ה-FE ‏מטפל ב-error ‏ב-`try/catch`.
 
 ### מחיקות מה-BE (Phase 4)
 
@@ -1012,11 +1047,18 @@ export async function createAcpClient(agentId: string, onUpdate: (n: SessionNoti
     ws.addEventListener("error", () => reject(new Error("WS connect failed")), { once: true })
   })
   
-  // 2. ‏‏המתנה ל-stdio-to-ws ‏`{type:"connected"}` ‏handshake frame
-  await new Promise<void>((resolve) => {
+  // 2. ‏‏המתנה ל-stdio-to-ws ‏`{type:"connected"}` ‏handshake frame — ‏עם 10s timeout (MED-4)
+  const HANDSHAKE_TIMEOUT_MS = 10_000
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      ws.removeEventListener("message", onMsg)
+      ws.close()
+      reject(new Error(`stdio-to-ws handshake timeout after ${HANDSHAKE_TIMEOUT_MS}ms`))
+    }, HANDSHAKE_TIMEOUT_MS)
     const onMsg = (ev: MessageEvent) => {
       const text = typeof ev.data === "string" ? ev.data : ""
       if (text.includes('"type":"connected"')) {
+        clearTimeout(timer)
         ws.removeEventListener("message", onMsg)
         resolve()
       }
@@ -1034,12 +1076,28 @@ export async function createAcpClient(agentId: string, onUpdate: (n: SessionNoti
   const client = createClientImpl({ onUpdate })
   const conn = new ClientSideConnection(_agent => client, stream)
   
-  // 5. Initialize
-  const initResult = await conn.initialize({
-    protocolVersion: 1,
-    clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
-    clientInfo: { name: "drive-coding", version: "0.2.0" },
-  })
+  // 5. Initialize — ‏עם handling של auth_required (MIN-7)
+  let initResult
+  try {
+    initResult = await conn.initialize({
+      protocolVersion: 1,
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+      clientInfo: { name: "drive-coding", version: "0.2.0" },
+    })
+  } catch (e) {
+    // ‏ACP error code -32000 ‏עם data.code === "auth_required" — ‏‏CLI דורש login
+    const err = e as { code?: number; data?: { code?: string }; message?: string }
+    if (err?.data?.code === "auth_required") {
+      const authErr = new Error(
+        `ACP agent requires authentication: ${err.message ?? "auth_required"}. ‏הפעל ב-shell: '<cli> auth login'.`,
+      )
+      ;(authErr as Error & { kind?: string }).kind = "auth_required"
+      ws.close()
+      throw authErr
+    }
+    ws.close()
+    throw e
+  }
   
   // 6. Heartbeat $/ping ‏כל 25s — ‏NAT/proxy keepalive
   const heartbeat = setInterval(() => {
@@ -1058,14 +1116,15 @@ export async function createAcpClient(agentId: string, onUpdate: (n: SessionNoti
     },
     
     async loadSession(opts: { cwd: string; sessionId: string }) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (conn as any).loadSession({ sessionId: opts.sessionId, cwd: opts.cwd, mcpServers: [] })
+      // ‏ב-SDK 0.21.1 ‏loadSession ‏מטופס טבעית ‏(acp.d.ts:294). ‏אין צורך ב-`as any`.
+      // ‏כשה-agent ‏לא תומך ‏(capabilities.loadSession === false) ‏‏זורק -32601 — ‏וטף ב-try/catch.
+      return conn.loadSession({ sessionId: opts.sessionId, cwd: opts.cwd, mcpServers: [] })
     },
     
     /** session/list — ל-FE שרוצה לרשום sessions ישנים לפני create */
     async listSessions() {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (conn as any).listSessions({})
+      // ‏SDK 0.21.1 typed (acp.d.ts:322). אם CLI לא תומך → -32601 → catch ‏ב-caller.
+      return conn.listSessions({})
     },
     
     async prompt(sessionId: string, text: string) {
@@ -1125,16 +1184,25 @@ import { GoogleGenAI } from "@google/genai"
 
 const PROXY_BASE = `${location.protocol}//${location.host}`
 
-/** ‏‏לתרגום + narration — generateText. */
+/**
+ * ‏‏לתרגום + narration — `generateText` ‏מ-`@ai-sdk/google`.
+ * ‏‏שים לב: ‏ה-SDK הזה מקבל `baseURL` ‏(capital `URL`) — ‏index.d.ts:494.
+ */
 export const googleAi = createGoogleGenerativeAI({
-  apiKey: "browser-placeholder",  // לא חשוב מה
+  apiKey: "browser-placeholder",  // ‏placeholder; ‏OneCLI ‏יחליף ב-proxy
   baseURL: `${PROXY_BASE}/proxy/google/v1beta`,
 })
 
-/** ‏ל-STT — ‏multimodal generateContent עם audio inline. */
+/**
+ * ‏ל-STT — multimodal `generateContent` ‏עם audio inline ‏מ-`@google/genai`.
+ * ‏**חשוב:** ‏ה-SDK ‏הזה מקבל `httpOptions.baseUrl` ‏(lowercase `u`) — ‏web.d.ts:5904.
+ * ‏טעות casing ‏(`baseURL` במקום `baseUrl`) ‏גורמת לSDK ‏להתעלם ‏ולפנות ‏לדפדפן ישירות
+ * ‏ל-generativelanguage.googleapis.com → CORS + 401.
+ * ‏ה-baseUrl ‏צריך ‏‏לסיים ב-`/` ‏לפני צירוף ‏ה-apiVersion (`v1beta`).
+ */
 export const googleGenAi = new GoogleGenAI({
   apiKey: "browser-placeholder",
-  httpOptions: { baseURL: `${PROXY_BASE}/proxy/google` },
+  httpOptions: { baseUrl: `${PROXY_BASE}/proxy/google/` },
 })
 ```
 
@@ -1144,6 +1212,7 @@ export const googleGenAi = new GoogleGenAI({
 // lib/voice/stt-client.ts
 import { googleGenAi } from "./sdks"
 import { saveRecording } from "./recordings-client"
+import { bytesToBase64 } from "./base64"
 
 export async function transcribe(blob: Blob, opts: {
   previousAssistantText?: string
@@ -1160,7 +1229,8 @@ export async function transcribe(blob: Blob, opts: {
     ? `Transcribe the user's audio. Context: previous assistant said: "${opts.previousAssistantText}". Transcribe ONLY user's audio. ${hebrewRule}`
     : `Transcribe the audio. ${hebrewRule}`
   
-  const base64 = btoa(String.fromCharCode(...audioBytes))
+  // MED-5: ‏‏chunked conversion ‏- ‏btoa(String.fromCharCode(...bytes)) ‏‏זורק ‏על audio גדול
+  const base64 = bytesToBase64(audioBytes)
   
   const response = await googleGenAi.models.generateContent({
     model: "gemini-flash-latest",
@@ -1296,12 +1366,26 @@ export async function narrate(opts: {
 
 ‏**Note:** ‏`buildNarratePrompt` ‏ב-core (`packages/core/src/voice/narration-prompt.ts`) — ‏עוברת ממקומה הנוכחי ב-`packages/backend/src/voice/narration.ts:71`. ‏היא pure function, ‏שייכת ל-core.
 
-### 6.9 Recordings client
+### 6.9 Recordings client + base64 helper
+
+```ts
+// lib/voice/base64.ts — MED-5: chunked conversion ל-audio גדול
+export function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ""
+  const chunkSize = 8192
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+  }
+  return btoa(binary)
+}
+```
 
 ```ts
 // lib/voice/recordings-client.ts
+import { bytesToBase64 } from "./base64"
+
 export async function saveRecording(bytes: Uint8Array, mimeType: string): Promise<{ id: string }> {
-  const audioBase64 = btoa(String.fromCharCode(...bytes))
+  const audioBase64 = bytesToBase64(bytes)
   const response = await fetch("/api/recordings", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -1316,6 +1400,16 @@ export async function saveRecording(bytes: Uint8Array, mimeType: string): Promis
 
 ‏ה-FE לא צריך לדעת ‏cache hit/miss — ‏ה-`X-Cache: hit|miss` header ‏זמין אם רוצים ‏‏debugging. ‏פנימית, ‏‏המהירות תעיד.
 
+### 6.11 ‏TTS error / partial MP3 policy (MIN-5)
+
+‏אם MediaSource ‏נקטע ‏‏‏(network error, ‏upstream 5xx, ‏partial MP3):
+
+‏- ‏ה-segment הנוכחי ‏מסומן ‏`state: "cancelled"` ‏ב-AudioStream
+‏- ‏ה-orchestrator ‏מקבל את ‏ה-rejection ‏מ-`audioStream.play(segmentId)` ‏‏ומתקדם ‏ל-segment הבא ‏ב-playlist (skip)
+‏- ‏‏ה-bubble ‏נשאר ב-UI ‏עם indicator ‏שגיאה (אופציה: ‏‏אדום קל ‏או tooltip)
+‏- ‏‏אין retry אוטומטי ‏ב-MVP. ‏אם המשתמש לוחץ ‏על ה-bubble — ‏jumpToBubble יתחיל ‏fresh fetch (אם cache hit, ‏‏בריא; אחרת ‏fresh upstream call)
+‏- ‏ה-cache **לא** ‏נכתב ‏על partial MP3 (כבר ב-§3.2 cache logic: ‏`catch { /* partial — ‏לא ‏cache */ }`)
+
 ---
 
 ## 7. ‏Phases
@@ -1323,6 +1417,12 @@ export async function saveRecording(bytes: Uint8Array, mimeType: string): Promis
 ### Phase 1 — BE: proxy + native endpoints + WS pipe (4-6h)
 
 **מטרה:** ‏BE ‏‏הופך ל-proxy שקוף + ‏‏endpoints native קטנים.
+
+**Operational requirement (חובה):** ‏ה-BE **חייב לרוץ ‏מאחורי OneCLI agent `voice-acp`** — אחרת ‏הproxy לupstream Gemini/ElevenLabs ‏יחזיר 401 ‏(אין key injection). ‏ה-tmux command:
+```bash
+onecli run --agent voice-acp -- bun src/server.ts
+```
+‏‏ה-`server.ts` ‏‏‏לא ‏‏מצהיר ‏על HTTPS_PROXY — ‏הוא ‏בא ‏מסביבת ‏ה-OneCLI runtime. ‏ראה learnings 2026-05-14, 2026-05-16.
 
 ‏Tasks:
 - ‏‏רישום ‏ב-`server.ts` של handler חדש ‏`registerProxyHttp(app)` ‏(`packages/backend/src/delivery/http-proxy.ts`)
@@ -1365,6 +1465,11 @@ export async function saveRecording(bytes: Uint8Array, mimeType: string): Promis
 - ‏ה-FE ‏יוצר agent, ‏עושה handshake, ‏שולח `session/prompt`, ‏מקבל text_chunks ‏ומציג bubbles
 - ‏`session/load` ‏ל-existing sessionId → history bubbles
 - ‏`session/list` (ב-page /sessions) — ‏ניתן ‏אבל אופציה לדחות לdebug עתידי
+- **‏FE לא שולח `session/prompt` ‏לפני שpost /api/agents/:id/session-attached ‏הצליח** (MED-9 race) — ‏ה-state machine ב-`agent-session.svelte.ts` ‏צריך status guard
+- ‏‏**handshake timeout** ‏(MED-4): ‏אם stdio-to-ws ‏לא ‏שולח `connected` ‏תוך 10s, ‏FE זורק שגיאה ‏ומציג ‏UI לרענון
+- ‏**auth_required handling** ‏(MIN-7): ‏אם initialize ‏זורק עם `data.code === "auth_required"`, ‏FE מציג ‏הודעה: "‏הסוכן דורש login — ‏הפעל `<cli> auth login` ‏ב-shell ‏אצלך"
+- **‏Multi-tab guard** ‏(MED-8): ‏‏tab שני ‏מנסה לפתוח ‏אותה agent → ‏מקבל ‏close(1008) → ‏מציג UI "סוכן בשימוש ב-tab אחר"
+- ‏**fs caps smoke test:** ‏prompt "‏קרא לי את ה-README.md ‏‏‏ותסכם" ‏(או דומה). ‏opencode ‏מבצע ‏tool_call read ‏פנימי, ‏מחזיר תוכן ב-`session/update`. ‏אם ‏ה-FE רואה JSON-RPC `fs/read_text_file` request ‏מ-agent → ‏-32601 (Method not found) ‏‏מוחזר → ‏‏‏‏שבירה. ‏אם זה ‏קורה: ‏טול ‏‏את ‏ה-decision מחדש (port fs caps ל-FE).
 
 **Commit:** `feat(frontend): Phase 2 — ACP client over WS pipe (slice 10)`
 
@@ -1434,8 +1539,8 @@ export async function saveRecording(bytes: Uint8Array, mimeType: string): Promis
 
 - [ ] 4 ‏phases הושלמו עם commits
 - [ ] `pnpm typecheck` + `pnpm lint` + `pnpm test` ‏ירוקים
-- [ ] BE shrinks ‏ב-~1200 שורות impl + ~600 שורות tests
-- [ ] FE ‏מכיל ‏~800 שורות חדשות ב-`lib/acp/` ‏ו-`lib/voice/`
+- [ ] BE shrinks ‏ב-~1700 שורות impl + ~800 שורות tests
+- [ ] FE ‏מכיל ‏~900-1100 שורות חדשות ב-`lib/acp/` ‏ו-`lib/voice/`
 - [ ] ‏הקלטה → תמלול → ACP → תרגום → TTS streaming → playback ‏עובד בדפדפן
 - [ ] Prev/next/jump עובדים instant על cache hits
 - [ ] Cancel ‏מבטל in-flight fetch (verified ב-network tab)
@@ -1492,9 +1597,29 @@ Slice 10 ‏הופך את ה-server ל-proxy טיפש + cache. ‏FE מנהל ה
 הכרעות סגורות (לא להחזיר):
 - streaming TTS in-scope ‏(MediaSource, ‏ללא Safari fallback)
 - ACP SDK ‏רץ בדפדפן ישירות (Web Standards only)
-- BE = bytes pipe + 4 endpoints + cache
+- BE = bytes pipe + transparent proxy + cache + native endpoints קטנים
 - localStorage לplayback state
 - auto-allow_once permissions ‏(UI prompt בעתיד)
+- ‏Multi-tab: ‏ws-agent ‏מאלץ ‏one feWs per agentId (MED-8)
+- ‏Dedup ‏ב-BE לפי (cwd, sessionId) — ‏מחזיר ‏status: "ready" + acpSessionId אם hit (MED-1)
+- ‏fs caps: ‏מוצהר false. ‏Phase 2 ‏‏smoke test מאמת ‏שopencode עובד בלעדיהם (CRIT-3)
+
+⚠️  ‏‏‏‏‏‏‏‏‏‏‏‏‏‏‏‏‏‏‏‏‏‏‏‏‏‏‏‏‏‏אזהרות קריטיות (audit findings — לא לפספס):
+
+1. **שתי SDKs ל-Google, ‏casing ‏שונה:**
+   - `@ai-sdk/google`: ‏`createGoogleGenerativeAI({ baseURL })` — ‏capital `URL`
+   - `@google/genai`: ‏`new GoogleGenAI({ httpOptions: { baseUrl } })` — ‏lowercase `u`
+   ‏זאת ‏עובדה ש-SDKs ‏שונים. ‏‏אל ‏תבלבל.
+
+2. **`(conn as any).loadSession/listSessions` ‏מיותר ב-SDK 0.21.1.** ‏הם methods טבעיים. ‏‏‏‏השתמש ב-`conn.loadSession(...)` ‏ישירות.
+
+3. **BE חייב לרוץ דרך `onecli run --agent voice-acp -- bun src/server.ts`** — ‏אחרת ‏ה-proxy ל-Gemini/ElevenLabs מקבל 401 (key injection ‏מ-OneCLI ‏חיוני).
+
+4. **`btoa(String.fromCharCode(...bytes))` ‏זורק על audio גדול.** ‏השתמש ב-chunked converter ב-`lib/voice/base64.ts`.
+
+5. **Handshake timeout 10s** ‏ב-`createAcpClient` — ‏אם stdio-to-ws ‏לא ‏עונה ‏עם `connected` frame, ‏זרוק שגיאה ‏ופתח UI לרענון.
+
+6. **fs caps smoke test ב-Phase 2** — ‏prompt "‏קרא את ה-README" → ‏בדוק ‏‏שopencode לא ‏זורק `fs/read_text_file` request אלינו. ‏אם זורק → ‏טול ‏את ‏ה-decision מחדש.
 
 עבודה:
 1. ‏טען skills: tdd (outer-loop בלבד!), dev-conventions, Svelte-MCP, commit, update-walkthrough.

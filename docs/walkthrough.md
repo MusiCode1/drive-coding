@@ -4,6 +4,53 @@
 
 ---
 
+## 2026-05-17 22:30 — Slice 10 brief — audit + 16 findings fixed
+
+‏‏סוכן auditor (general sub-agent) עבר על ‏ה-brief ‏‏ומצא 22 findings: 5 critical, 9 medium, 8 minor.
+‏הדוח ב-`docs/slice-10-audit-report.md`.
+
+### CRITs ‏(תוקנו ‏לפני executor)
+
+1. **CRIT-1** — ‏‏`@google/genai` ‏מצפה ‏ל-`baseUrl` (lowercase u), ‏לא ‏`baseURL`. תוקן ב-§6.4 + ‏אזהרה ‏בpromptly.
+2. **CRIT-2** — ‏SDK 0.21.1 ‏מטפס ‏`loadSession` ‏ו-`listSessions` ‏טבעית. הסר ‏`as any` ב-§6.2.
+3. **CRIT-3** — ‏`fs.readTextFile/writeTextFile = false` ‏לא ‏אומת. ‏הוסף DoD smoke test ב-Phase 2: ‏prompt "‏קרא את ה-README" → ‏אם opencode זורק `fs/read_text_file` request → ‏טול ‏decision מחדש.
+4. **CRIT-4** — ‏Crash handler ב-orchestrator תלוי ב-AgentSession ‏שנמחק. ‏הוסף ‏ב-§5 ‏סעיף "Crash handling במצב החדש" ‏עם flow ‏מפורט: ‏orchestrator → ‏registry status=crashed → ‏ws-agent's bridgeWs.on("close") → feWs.close(1011) → ‏FE רואה ‏‏ב-WS close → polls ‏GET /api/agents/:id.
+5. **CRIT-5** — ‏BE חייב לרוץ דרך `onecli run --agent voice-acp -- bun src/server.ts`. הוסף Operational requirement ב-Phase 1.
+
+### MEDs (תוקנו)
+
+- **MED-1** — ‏Response של `POST /api/agents` ‏מחזיר ‏עכשיו ‏`{ status, acpSessionId? }`. ‏אם dedup hit, status=ready + acpSessionId.
+- **MED-3** — ‏‏typo ב-pseudocode (`typeof data === "string" ? data : data`) תוקן.
+- **MED-4** — ‏Handshake timeout 10s ב-`createAcpClient` ‏‏אם stdio-to-ws ‏לא ‏שולח ‏`connected` frame.
+- **MED-5** — ‏Base64 chunked converter ‏ב-`lib/voice/base64.ts` במקום ‏`btoa(String.fromCharCode(...))` ‏שזורק ‏על audio גדול.
+- **MED-8** — Multi-tab: ‏ws-agent מנהל Map\<agentId, ServerWebSocket\>. ‏tab שני → ‏close(1008, "agent in use by another tab").
+- **MED-9** — ‏Race protection: DoD ב-Phase 2 ‏מציין ש-FE לא שולח `session/prompt` ‏לפני שsession-attached הצליח.
+
+### MINs (תוקנו)
+
+- ‏MIN-1+2: ‏מספרי שורות עקביים — 1700 impl, 800 tests (BE delta).
+- ‏MIN-3: ‏הסרת duplicate code block של ws-agent (‏היה ‏פעמיים).
+- ‏MIN-4: ‏`:id` ‏עקבי בכל הbrief.
+- ‏MIN-5: ‏TTS error policy ‏(skip segment ‏בpartial MP3, ‏אין retry MVP).
+- ‏MIN-7: ‏ACP `auth_required` ‏error handler — ‏FE מציג UI להפעיל `<cli> auth login`.
+
+### Open decisions ‏‏שאבי לאשר
+
+‏סעיף 14 ב-brief — ‏אבי כבר ‏בחר ‏על MVP:
+- ‏Dedup ב-BE: ✅
+- ‏server_event polling ‏(לא WS frames): ✅
+
+### Stats
+
+‏Brief: 1708 שורות ‏(‏גדל ‏ב-~170 ‏אחרי תיקונים)
+‏Audit report: 439 שורות
+
+### Next step
+
+‏‏‏Slice 10 brief מוכן ‏ל-executor. ‏אבי לאשר ‏final ‏ו-‏ניעבור ל-Task(executor) ‏לPhase 1.
+
+---
+
 ## 2026-05-17 22:00 — Slice 10 brief — second-pass review + redesign
 
 ### הסיבה
