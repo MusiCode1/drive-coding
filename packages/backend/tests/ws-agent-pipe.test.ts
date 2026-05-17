@@ -235,4 +235,36 @@ describe("ws-agent bytes pipe", () => {
     await new Promise((r) => setTimeout(r, 200))
     expect(bridge.wss.clients.size).toBe(0)
   })
+
+  it("bridge closes → feWs.close(1011, 'bridge closed')", async () => {
+    const agentId = "bridge-close-test"
+    const orchestrator = {
+      getBridgePort: vi.fn(() => bridge.port),
+    }
+    const handler = createAgentWsHandler({ orchestrator: orchestrator as never })
+    const { ws, closeArgs } = makeMockFeWs(agentId)
+
+    await handler.websocket.open?.(ws as never)
+
+    // Wait for bridge connection
+    await new Promise<void>((resolve) => {
+      const check = () => {
+        if (bridge.wss.clients.size > 0) resolve()
+        else setTimeout(check, 10)
+      }
+      check()
+    })
+    await new Promise((r) => setTimeout(r, 100))
+
+    // Close the bridge WS server from the server side
+    for (const client of bridge.wss.clients) client.close()
+
+    // Wait for feWs to receive close with 1011
+    await new Promise((r) => setTimeout(r, 300))
+
+    expect(closeArgs.some(([code]) => code === 1011)).toBe(true)
+    expect(
+      closeArgs.some(([, reason]) => reason === "bridge closed"),
+    ).toBe(true)
+  })
 })
