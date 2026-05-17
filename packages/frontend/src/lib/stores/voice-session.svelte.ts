@@ -1,5 +1,6 @@
 import { AudioQueue } from "$lib/audio/player"
 import { Recorder } from "$lib/audio/recorder"
+import { createLogger } from "$lib/log"
 import type { AgentSessionPublic } from "./agent-session.svelte"
 
 export type VoiceState = "idle" | "recording" | "transcribing" | "thinking" | "speaking"
@@ -25,6 +26,8 @@ export type SegmentMeta = {
  *  - playingSegmentQueue: parallel to AudioQueue, maps segments to IDs
  */
 export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
+  const log = createLogger("fe.voice").child({ agentId: agentSession.agentId })
+
   let voiceState = $state<VoiceState>("idle")
   let sttText = $state<string | null>(null)
   let voiceError = $state<string | null>(null)
@@ -36,16 +39,22 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
   let playingSegmentQueue: Array<string | null> = []
   let currentlyPlayingSegmentId = $state<string | null>(null)
 
+  function setState(next: VoiceState): void {
+    if (voiceState === next) return
+    log.info({ from: voiceState, to: next }, "state transition")
+    voiceState = next
+  }
+
   const recorder = new Recorder()
   const player = new AudioQueue({
     onStateChange: (playing) => {
       if (playing) {
-        voiceState = "speaking"
+        setState("speaking")
         hasReplayable = true
         // Phase 5: update currently playing segment from the queue
         currentlyPlayingSegmentId = playingSegmentQueue.shift() ?? null
       } else if (voiceState === "speaking") {
-        voiceState = "idle"
+        setState("idle")
         currentlyPlayingSegmentId = null
       }
     },
@@ -67,8 +76,22 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
             const translatedText = parsed.translatedText as string | undefined
             const messageId = parsed.messageId as string | undefined
 
+            log.debug(
+              {
+                segmentId: segmentId?.slice(0, 8),
+                kind,
+                originalLen: originalText?.length,
+                translatedLen: translatedText?.length,
+                messageId: messageId?.slice(0, 8),
+              },
+              "audio_chunk received",
+            )
+
             // B13 fix: idempotency — skip if we've already processed this segmentId
-            if (segmentId && segmentCache.has(segmentId)) break
+            if (segmentId && segmentCache.has(segmentId)) {
+              log.debug({ segmentId: segmentId.slice(0, 8) }, "duplicate segment — skip")
+              break
+            }
 
             // Phase 5: cache segment metadata (B15 fix: include messageId)
             if (segmentId) {
@@ -97,21 +120,24 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
         case "done":
           // If no audio chunks came, go back to idle
           if (!player.isPlaying && voiceState === "thinking") {
-            voiceState = "idle"
+            setState("idle")
           }
           break
         case "error":
           if (voiceState !== "idle") {
             voiceError = parsed.message as string
-            voiceState = "idle"
+            setState("idle")
             player.clear()
             playingSegmentQueue = []
             currentlyPlayingSegmentId = null
           }
           break
       }
-    } catch {
-      // ignore parse errors
+    } catch (e) {
+      log.warn(
+        { err: e, raw: raw.length > 200 ? `${raw.slice(0, 200)}…` : raw },
+        "voice msg parse failed",
+      )
     }
   })
 
@@ -121,21 +147,22 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
     sttText = null
     try {
       await recorder.start()
-      voiceState = "recording"
+      setState("recording")
     } catch (e) {
+      log.error({ err: e }, "mic permission denied")
       voiceError = e instanceof Error ? e.message : "מיקרופון לא זמין"
     }
   }
 
   async function stopRecording(): Promise<void> {
     if (voiceState !== "recording") return
-    voiceState = "transcribing"
+    setState("transcribing")
 
     try {
       const { blob, mimeType } = await recorder.stop()
 
       if (blob.size === 0) {
-        voiceState = "idle"
+        setState("idle")
         return
       }
 
@@ -148,7 +175,7 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
       }
       const base64 = btoa(binary)
 
-      voiceState = "thinking"
+      setState("thinking")
       const sent = agentSession.sendRaw({
         type: "audio",
         agentId: agentSession.agentId,
@@ -158,17 +185,17 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
 
       if (!sent) {
         voiceError = "WebSocket לא מחובר"
-        voiceState = "idle"
+        setState("idle")
       }
     } catch (e) {
       voiceError = e instanceof Error ? e.message : "שגיאה בשליחת האודיו"
-      voiceState = "idle"
+      setState("idle")
     }
   }
 
   async function sendAudioBlob(blob: Blob, mimeType?: string): Promise<void> {
     if (blob.size === 0) return
-    voiceState = "transcribing"
+    setState("transcribing")
     voiceError = null
     sttText = null
 
@@ -183,7 +210,7 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
       const base64 = btoa(binary)
       const finalMime = mimeType ?? blob.type ?? "audio/webm"
 
-      voiceState = "thinking"
+      setState("thinking")
       const sent = agentSession.sendRaw({
         type: "audio",
         agentId: agentSession.agentId,
@@ -193,11 +220,11 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
 
       if (!sent) {
         voiceError = "WebSocket לא מחובר"
-        voiceState = "idle"
+        setState("idle")
       }
     } catch (e) {
       voiceError = e instanceof Error ? e.message : "שגיאה בשליחת האודיו"
-      voiceState = "idle"
+      setState("idle")
     }
   }
 
@@ -205,7 +232,7 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
     player.clear()
     playingSegmentQueue = []
     currentlyPlayingSegmentId = null
-    voiceState = "idle"
+    setState("idle")
   }
 
   function replayLast(): void {

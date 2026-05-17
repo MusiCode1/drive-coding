@@ -5,6 +5,10 @@
  *
  * Slice 7 fix: tracks lastPlayed for replay-last feature.
  */
+import { createLogger } from "$lib/log"
+
+const log = createLogger("fe.audio.player")
+
 export class AudioQueue {
   private queue: HTMLAudioElement[] = []
   private playing = false
@@ -16,14 +20,19 @@ export class AudioQueue {
   }
 
   enqueue(mp3Base64: string): void {
+    log.debug(
+      { bytes: mp3Base64.length, queueLen: this.queue.length, playing: this.playing },
+      "enqueue",
+    )
     const audio = new Audio(`data:audio/mp3;base64,${mp3Base64}`)
     audio.addEventListener("ended", () => {
+      log.debug({}, "tick: ended")
       this.playing = false
       this.onStateChange?.(false)
       this.tick()
     })
     audio.addEventListener("error", (e) => {
-      console.error("[audio-queue] playback error", e)
+      log.warn({ err: e }, "playback error")
       this.playing = false
       this.onStateChange?.(false)
       this.tick()
@@ -33,14 +42,21 @@ export class AudioQueue {
   }
 
   private tick(): void {
-    if (this.playing) return
+    if (this.playing) {
+      log.debug({}, "tick: already playing — skip")
+      return
+    }
     const next = this.queue.shift()
-    if (!next) return
+    if (!next) {
+      log.debug({}, "tick: queue empty")
+      return
+    }
+    log.debug({ queueLeft: this.queue.length }, "tick: play next")
     this.playing = true
     this.lastPlayed = next
     this.onStateChange?.(true)
     next.play().catch((e) => {
-      console.error("[audio-queue] play() failed", e)
+      log.warn({ err: e }, "play() autoplay blocked")
       this.playing = false
       this.onStateChange?.(false)
       this.tick()
@@ -57,8 +73,8 @@ export class AudioQueue {
   replayLast(): void {
     if (!this.lastPlayed) return
     this.lastPlayed.currentTime = 0
-    this.lastPlayed.play().catch(() => {
-      // Autoplay policy may block — silent fail
+    this.lastPlayed.play().catch((e) => {
+      log.warn({ err: e }, "replay autoplay blocked")
     })
   }
 

@@ -6,7 +6,7 @@
     <title>drive-coding</title>
     <!-- Log config — runs synchronously before any bundle loads -->
     <script>
-      (function () {
+      (() => {
         var p = new URLSearchParams(location.search);
         function pick(k, ls) {
           var v = p.get(k);

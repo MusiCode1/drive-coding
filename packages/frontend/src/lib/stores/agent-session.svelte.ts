@@ -2,6 +2,7 @@ import type { ServerMessage } from "@drive-coding/core"
 import { createLogger } from "$lib/log"
 
 const wireLog = createLogger("fe.ws.wire")
+const baseLog = createLogger("fe.session")
 
 // ── Existing types (backward compat) ─────────────────────────────────────────
 
@@ -103,6 +104,8 @@ export interface AgentSessionPublic {
  * Phase 6 will extend with: history_* events, historical bubble flag
  */
 export function createAgentSessionStore(agentId: string): AgentSessionPublic {
+  const log = baseLog.child({ agentId })
+
   let messages = $state<ChatMessage[]>([])
   let bubbles = $state<Bubble[]>([])
   let status = $state<AgentSessionStatus>("disconnected")
@@ -342,6 +345,10 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     try {
       msg = JSON.parse(raw) as ServerMessage
     } catch (e) {
+      log.warn(
+        { err: e, raw: raw.length > 200 ? `${raw.slice(0, 200)}…` : raw },
+        "WS msg parse failed",
+      )
       error = `parse error: ${e}`
       return
     }
@@ -460,6 +467,7 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
 
       case "audio_recording_saved":
         // Store the latest recording ID — associated with the most recent user message
+        log.debug({ recordingId: msg.recordingId.slice(0, 8) }, "recording received from BE")
         lastRecordingId = msg.recordingId
         break
 
@@ -477,6 +485,7 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     if (retryTimer !== null) return
     const delay = RETRY_DELAYS[Math.min(retryCount, RETRY_DELAYS.length - 1)] ?? 30000
     const attempt = retryCount + 1
+    log.info({ attempt, delay }, "scheduling reconnect")
     error = `מתחבר מחדש... (ניסיון ${attempt})`
     retryTimer = setTimeout(() => {
       retryTimer = null
@@ -493,6 +502,8 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     status = "connecting"
     error = null
 
+    log.info({}, "WS connect attempt")
+
     const proto = location.protocol === "https:" ? "wss:" : "ws:"
     ws = new WebSocket(`${proto}//${location.host}/ws/agent/${agentId}`)
 
@@ -508,14 +519,17 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     }
 
     ws.onopen = () => {
+      log.info({ retries: retryCount }, "WS open")
       retryCount = 0
     }
 
     ws.onerror = () => {
+      log.warn({}, "WS error")
       error = "WebSocket connection error"
     }
 
     ws.onclose = () => {
+      log.info({ wasOpen: status === "connected", intentional: intentionallyClosed }, "WS close")
       status = "disconnected"
       ws = null
       if (!intentionallyClosed) {

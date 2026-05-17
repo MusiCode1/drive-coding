@@ -3,6 +3,9 @@ import type { CliKind } from "@drive-coding/core"
 import { onMount } from "svelte"
 import { goto } from "$app/navigation"
 import { createAgent } from "$lib/api/agents"
+import { createLogger } from "$lib/log"
+
+const log = createLogger("fe.route.agent")
 
 let cliKind = $state<CliKind>("opencode")
 let cwd = $state("")
@@ -33,7 +36,7 @@ onMount(async () => {
       if (firstProject) cwd = firstProject
     }
   } catch (err) {
-    console.warn("/api/options failed", err)
+    log.warn({ err }, "/api/options fetch failed")
   } finally {
     loadingOptions = false
   }
