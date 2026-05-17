@@ -8,12 +8,14 @@ import { cues } from "$lib/audio/cues"
 import BottomSheet from "$lib/components/BottomSheet.svelte"
 import BubbleKind from "$lib/components/BubbleKind.svelte"
 import FloatingHeader from "$lib/components/FloatingHeader.svelte"
+import MicCluster from "$lib/components/MicCluster.svelte"
 import Sidebar from "$lib/components/Sidebar.svelte"
 import type { Bubble } from "$lib/stores/agent-session.svelte"
 import { createAgentSessionStore } from "$lib/stores/agent-session.svelte"
 import { createCarMode } from "$lib/stores/car-mode.svelte"
 import { device } from "$lib/stores/device.svelte"
-import { deriveMicState, MIC_ICONS, MIC_STATUS_TEXT } from "$lib/stores/mic-state.svelte"
+import { deriveMicState } from "$lib/stores/mic-state.svelte"
+import { createPlayerStore } from "$lib/stores/player.svelte"
 import { sheetState } from "$lib/stores/sheet-state.svelte"
 import { sidebarState } from "$lib/stores/sidebar-state.svelte"
 import { deriveScrollState } from "$lib/stores/smart-scroll"
@@ -27,6 +29,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 let session = $state(createAgentSessionStore(agentId))
 let voice = $state(createVoiceSessionStore(session))
 let carMode = $state(createCarMode())
+let player = $state(createPlayerStore())
 
 // Fix: when agentId changes — close old WS and create fresh stores (Bug 4).
 $effect(() => {
@@ -35,7 +38,20 @@ $effect(() => {
     session.disconnect()
     session = createAgentSessionStore(id)
     voice = createVoiceSessionStore(session)
+    player.clear()
   })
+})
+
+// Phase 7: populate player playlist when new audio_chunk segments arrive
+$effect(() => {
+  const segId = voice.currentlyPlayingSegmentId
+  if (segId) {
+    const meta = voice.getSegment(segId)
+    if (meta) {
+      player.addSegment(segId, meta.kind)
+      player.jumpToSegment(segId)
+    }
+  }
 })
 
 // ── URL params ──────────────────────────────────────────────────────────────
@@ -400,53 +416,27 @@ async function handleSheetAgentClose(agentId: string) {
 
   <!-- ── Footer / Controls ──────────────────────────────────────────────── -->
   <footer class:footer-mobile={device.isMobile}>
-    <div
-      class="status"
-      class:recording={micState === "recording"}
-      class:processing={micState === "processing"}
-      class:speaking={micState === "speaking"}
-      class:cancelling={micState === "cancelling"}
-    >
-      {MIC_STATUS_TEXT[micState]}
-    </div>
-
-    <div class="controls">
-      <button
-        class="side-btn"
-        disabled={!hasPlayedAudio}
-        title="השמע את ההודעה האחרונה"
-        aria-label="השמע אחרון"
-        onclick={() => voice.replayLast()}
-      >🔊</button>
-
-      <button
-        id="mic-btn"
-        class="mic-btn"
-        data-state={micState}
-        disabled={session.status !== "connected" && session.status !== "thinking"}
-        onclick={onMicClick}
-        aria-label={
-          micState === "recording" ? "עצור הקלטה"
-          : micState === "speaking" ? "עצור הקראה"
-          : micState === "processing" ? "ממתין..."
-          : "התחל הקלטה"
-        }
-      >
-        {MIC_ICONS[micState]}
-      </button>
-
-      <button
-        class="side-btn stop-btn"
-        class:hidden={micState !== "speaking" && micState !== "cancelling"}
-        onclick={onStop}
-        title="עצור הקראה"
-        aria-label="עצור הקראה"
-      >⏹</button>
-
-      {#if micState !== "speaking" && micState !== "cancelling"}
-        <div class="side-btn-spacer" aria-hidden="true"></div>
-      {/if}
-    </div>
+    <!-- Phase 7: MicCluster replaces raw mic button + side buttons -->
+    <MicCluster
+      {micState}
+      disabled={session.status !== "connected" && session.status !== "thinking"}
+      hasPriorTts={hasPlayedAudio}
+      hasNext={player.hasNext}
+      hasPrev={player.hasPrev}
+      onMicClick={onMicClick}
+      onPrev={() => {
+        const item = player.goPrev()
+        if (item) voice.replayLast() // Phase 7: nav — simplified, full impl in Phase 8
+      }}
+      onNext={() => {
+        const item = player.goNext()
+        if (item) voice.replayLast() // Phase 7: nav — simplified, full impl in Phase 8
+      }}
+      onReplay={() => {
+        player.replayLastResponse()
+        voice.replayLast()
+      }}
+    />
 
     <input
       id="audio-file-input"
