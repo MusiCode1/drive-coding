@@ -76,6 +76,17 @@ export interface AgentSessionPublic {
   clearBubbles(): void
   /** Phase 6: get the last saved recording ID (from audio_recording_saved). */
   getRecordingId(): string | null
+  /**
+   * B10 bridge: called by voice-session when audio_chunk arrives with translation.
+   * Adds a translated segment (text=Hebrew, originalText=English) to the bubble
+   * identified by messageId + kind.
+   */
+  addTranslatedSegment(
+    messageId: string,
+    kind: "message" | "thought",
+    originalText: string,
+    translatedText: string,
+  ): void
 }
 
 /**
@@ -262,6 +273,38 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
         segments: b.segments.map((s) => (s.toolCallId === toolCallId ? { ...s, narration } : s)),
       }
     })
+  }
+
+  /**
+   * B10 bridge: add a translated segment (originalText=English, text=Hebrew)
+   * to the bubble identified by messageId + kind.
+   *
+   * Called by voice-session when audio_chunk arrives with originalText/translatedText.
+   * Appends a new segment so SubSegment renders both original + translation.
+   */
+  function addTranslatedSegment(
+    messageId: string,
+    kind: "message" | "thought",
+    originalText: string,
+    translatedText: string,
+  ): void {
+    // Find the bubble by kind + messageId (search from end — most recent)
+    const idx = [...bubbles]
+      .reverse()
+      .findIndex((b) => b.kind === kind && b.messageId === messageId)
+    if (idx < 0) return // no matching bubble — nothing to update
+    const realIdx = bubbles.length - 1 - idx
+    const bubble = bubbles[realIdx]
+    if (!bubble) return
+
+    const newSegment: BubbleSegment = {
+      text: translatedText,
+      originalText,
+      translatedText,
+    }
+    bubbles = bubbles.map((b, i) =>
+      i === realIdx ? { ...b, segments: [...b.segments, newSegment] } : b,
+    )
   }
 
   /**
@@ -547,5 +590,6 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     getRecordingId() {
       return lastRecordingId
     },
+    addTranslatedSegment,
   }
 }

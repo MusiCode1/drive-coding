@@ -12,6 +12,8 @@ export type SegmentMeta = {
   kind: "message" | "thought" | "narration"
   originalText?: string
   translatedText?: string
+  /** B15 fix: messageId of the bubble this segment belongs to. */
+  messageId?: string | null
 }
 
 /**
@@ -63,10 +65,21 @@ export function createVoiceSessionStore(agentSession: AgentSessionPublic) {
               (parsed.kind as "message" | "thought" | "narration" | undefined) ?? "message"
             const originalText = parsed.originalText as string | undefined
             const translatedText = parsed.translatedText as string | undefined
+            const messageId = parsed.messageId as string | undefined
 
-            // Phase 5: cache segment metadata
+            // Phase 5: cache segment metadata (B15 fix: include messageId)
             if (segmentId) {
-              segmentCache.set(segmentId, { kind, originalText, translatedText })
+              segmentCache.set(segmentId, { kind, originalText, translatedText, messageId })
+            }
+
+            // B10 bridge: when translation metadata arrives, update the bubble in agent-session
+            if (
+              messageId &&
+              originalText !== undefined &&
+              translatedText !== undefined &&
+              (kind === "thought" || kind === "message")
+            ) {
+              agentSession.addTranslatedSegment(messageId, kind, originalText, translatedText)
             }
 
             // Push segmentId to the parallel queue BEFORE enqueue (tick() may fire synchronously)

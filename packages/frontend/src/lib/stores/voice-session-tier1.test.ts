@@ -161,4 +161,18 @@ describe("voice-session Tier 1 audio_chunk caching (Phase 5)", () => {
     // No audio_chunk fired yet
     expect(store.currentlyPlayingSegmentId).toBeNull()
   })
+
+  // ── B15: audio_chunk with messageId stores it in segmentCache ──────────────
+  it("B15: audio_chunk with messageId stores it in segment cache", async () => {
+    const { store, fake } = await makeThinkingStore()
+    fireMessage(fake, {
+      type: "audio_chunk",
+      mp3Base64: "abc",
+      segmentId: "seg-b15",
+      kind: "message",
+      messageId: "msg-abc",
+    })
+    const seg = store.getSegment("seg-b15")
+    expect(seg?.messageId).toBe("msg-abc")
+  })
 })

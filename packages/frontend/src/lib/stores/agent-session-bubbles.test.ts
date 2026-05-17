@@ -163,4 +163,41 @@ describe("agent-session bubble grouping (Phase 2)", () => {
     expect(userBubbles).toHaveLength(1)
     expect(userBubbles[0]?.segments[0]?.text).toBe("שלום, אני בודקת")
   })
+
+  // ── B10: addTranslatedSegment adds translated segment to matching bubble ────
+  it("B10: addTranslatedSegment adds segment with text=Hebrew + originalText=English", async () => {
+    const { store, ws } = await makeConnected()
+    fire(ws, {
+      type: "text_chunk",
+      kind: "thought",
+      text: "The user is testing...",
+      messageId: "m1",
+    })
+    store.addTranslatedSegment("m1", "thought", "The user is testing...", "המשתמש בודק...")
+    const thoughtBubble = store.bubbles.find((b) => b.kind === "thought")
+    expect(thoughtBubble?.segments).toHaveLength(2)
+    const translated = thoughtBubble?.segments[1]
+    expect(translated?.text).toBe("המשתמש בודק...")
+    expect(translated?.originalText).toBe("The user is testing...")
+  })
+
+  it("B10: addTranslatedSegment is a no-op when no matching bubble exists", async () => {
+    const { store } = await makeConnected()
+    // No bubbles created — should not throw
+    store.addTranslatedSegment("nonexistent", "thought", "orig", "translated")
+    expect(store.bubbles).toHaveLength(0)
+  })
+
+  it("B10: addTranslatedSegment targets correct bubble by messageId when multiple bubbles exist", async () => {
+    const { store, ws } = await makeConnected()
+    fire(ws, { type: "text_chunk", kind: "thought", text: "first thought", messageId: "m1" })
+    fire(ws, { type: "text_chunk", kind: "thought", text: "second thought", messageId: "m2" })
+    store.addTranslatedSegment("m2", "thought", "second thought", "מחשבה שנייה")
+    expect(store.bubbles).toHaveLength(2)
+    // m1 bubble untouched (1 segment from text_chunk)
+    expect(store.bubbles[0]?.segments).toHaveLength(1)
+    // m2 bubble gets the translated segment added
+    expect(store.bubbles[1]?.segments).toHaveLength(2)
+    expect(store.bubbles[1]?.segments[1]?.text).toBe("מחשבה שנייה")
+  })
 })

@@ -48,8 +48,8 @@ $effect(() => {
   if (segId) {
     const meta = voice.getSegment(segId)
     if (meta) {
-      // messageId comes from the bubble tracking in agent-session
-      player.addSegment(segId, meta.kind, null)
+      // B15 fix: pass messageId so jumpToBubble() can work for click-to-play
+      player.addSegment(segId, meta.kind, meta.messageId ?? null)
       player.jumpToSegment(segId)
     }
   }
@@ -328,9 +328,10 @@ async function handleSheetAgentClose(agentId: string) {
     <!-- ── Header: floating (mobile) / classic (desktop) ──────────────── -->
     {#if device.isMobile}
       <!-- Floating header — overlays chat, abs positioned inside .main-col -->
+      <!-- N1 fix: agentName = project dir name, sessionTitle = cliKind -->
       <FloatingHeader
-        agentName={agent?.cliKind ?? ""}
-        sessionTitle={agent ? agent.cwd.split("/").pop() ?? "" : ""}
+        agentName={agent ? agent.cwd.split("/").pop() ?? "" : ""}
+        sessionTitle={agent?.cliKind ?? ""}
       />
     {:else}
       <header>
