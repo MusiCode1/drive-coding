@@ -123,7 +123,147 @@
 
 ---
 
-## 3. Bugs פחות קריטיים
+## 3. Bugs קריטיים נוספים — דווחו על-ידי אבי (testing manual)
+
+### 🔴 B12 — אין UI לבחירת sessions קודמים
+
+‏**מה אבי דיווח:** "עדיין אני לא רואה אפשרות לבחור סשנים קודמים."
+
+‏**מה אמור להיות:**
+- ‏ב-dashboard: כפתור "📚 היסטוריה" (קיים) → ניווט ל-`/sessions`
+- ‏ב-`/sessions`: tabs "כל הסשנים" / "לפי פרויקט" + list של sessions עם title+date+cli kind
+- ‏click על session → POST /api/agents עם existingSessionId → redirect ל-/agent/[new]
+
+‏**איפה לחפש:**
+- ‏`packages/frontend/src/routes/sessions/+page.svelte` — וודא שקיים ו-renders
+- ‏`packages/frontend/src/lib/stores/projects-store.svelte.ts` — בדוק fetch ל-`/api/sessions`
+- ‏`packages/frontend/src/lib/components/SessionCard.svelte` — וודא click handler נכון
+- ‏API endpoint `/api/sessions` — וודא שמחזיר data (test עם curl)
+
+‏**בדיקה ידנית:**
+```bash
+curl -s http://localhost:4000/api/sessions | jq '.[0:3]'
+```
+‏אם API מחזיר sessions אבל UI ריק → bug ב-frontend store/component.
+‏אם API ריק → ייתכן שאין sessions ידועים. צור agent עם cwd שיש לו opencode sessions (`/home/user/projects/voice-acp-v2`), שלח prompt, וודא שה-cwd נרשם ב-projects-registry, ואז refresh /sessions.
+
+### 🔴 B13 — TTS בעיות חמורות: 2 מילים בלבד / duplication
+
+‏**מה אבי דיווח:**
+- ‏לפעמים: שומעים רק 2 מילים ראשונות מה-message, אז שקט
+- ‏לפעמים: כל segment נשמע **פעמיים ברצף**, ואז ה-segment הבא פעמיים ברצף
+
+‏**זה bug התנהגות לא דטרמיניסטית** — שני סימפטומים שונים, תלוי תזמון. כנראה race condition ב-player או ב-pipeline.
+
+‏**איפה לחפש:**
+- ‏`packages/frontend/src/lib/stores/voice-session.svelte.ts` — `audio_chunk` handler, `Map<segmentId, blob>`
+- ‏`packages/frontend/src/lib/stores/player.svelte.ts` — `enqueue()`, playback logic, segmentId tracking
+- ‏ייתכן: כל audio_chunk נכנס ל-queue פעמיים? בדוק שאין double-handler registration (לדוגמה: `setVoiceMessageHandler` נקרא פעמיים, או `onMount` רץ פעמיים בגלל SSR/CSR mismatch)
+- ‏ייתכן: ה-player playing במקביל עם MediaSource ועם blob URL parallel
+- ‏ייתכן: backend שולח audio_chunk per text_chunk **ולא** per sentence-segment — ראה B14
+
+‏**בדיקה:** הוסף logging זמני ב-`voice-session.svelte.ts` audio_chunk handler:
+```typescript
+console.log(`[audio_chunk] segmentId=${msg.segmentId}, kind=${msg.kind}, bytes=${msg.mp3Base64.length}`)
+```
+‏אם רואים אותו segmentId 2 פעמים — duplication ב-handler.
+‏אם רואים רק 1 segmentId לתשובה ארוכה — backend לא שולח את השאר.
+
+‏**הצעת fix לaudio duplication:**
+‏Map<segmentId, blob> — בדוק אם segmentId כבר ב-Map לפני enqueue. אם כן — דלג (idempotent).
+
+‏**הצעת fix ל-"רק 2 מילים":** קשור ל-B14.
+
+### 🔴 B14 — חיתוך לסגמנטים לפי chunk ולא לפי sentence
+
+‏**מה אבי דיווח:** "כמו שראית, החיתוך לסגמנטים הוא פשוט לפי צ'אנק ולא לפי סגמנט."
+
+‏**הסבר:** ה-backend Tier 1 אמור לעבוד כך:
+- ‏ACP שולח `text_chunk` per token/word
+- ‏backend מאגר ב-`acpMessageBuffer` (ב-`agent-session.ts`)
+- ‏רק כש-`splitIntoSentences` מוצא boundary (./?/!) → flush ל-TTS
+- ‏TTS מקבל **משפט שלם**, מחזיר audio של משפט שלם
+- ‏ה-frontend מקבל **1 audio_chunk per sentence** (לא per token)
+
+‏**מה כנראה קורה ב-bug:**
+- ‏Backend שולח audio_chunk לכל text_chunk (chunk-level)
+- ‏או: `splitIntoSentences` לא מוצא boundary בעברית (חוסר תמיכה?) → flush בסוף בלבד
+- ‏Frontend מקבל הרבה audio_chunks קצרים שלא ניתן לנגן ברצף
+
+‏**איפה לחפש (backend):**
+- ‏`packages/backend/src/app/agent-session.ts` ב-`sendAudioPrompt` — flow של buffer + flushMessage + processQueue
+- ‏`packages/core/src/voice/sentence-boundary.ts` — `splitIntoSentences` — האם תומך ב-`. ! ?` עברי? מה הre-pattern?
+
+‏**בדיקה:**
+```typescript
+// vitest
+splitIntoSentences("שלום, אני שומע אותך. המערכת עובדת תקין.")
+// expected: { sentences: ["שלום, אני שומע אותך.", "המערכת עובדת תקין."], remaining: "" }
+```
+
+‏אם זה לא עובד עם punctuation עברי → bug ב-regex של splitIntoSentences.
+
+‏**הצעת fix:**
+‏בדוק את ה-pattern ב-`sentence-boundary.ts`. אם הוא משתמש ב-`[.!?]` רק (English), עברית עם `?` (ש-RTL הופך) אולי נכשל. וודא שעובד עם `. ! ?` ASCII.
+
+‏**הצעת fix אם punctuation נכון אבל buffer לא מאסף:**
+‏ב-backend, וודא ש-`acpMessageBuffer += text` עובד נכון, וש-`splitIntoSentences` נקרא **על ה-buffer** ולא על כל chunk בנפרד.
+
+‏**אם חיתוך לסגמנט נכון ב-backend אבל לא ב-frontend:**
+‏ראה B1 — ה-frontend bubble grouping. ייתכן שה-frontend יוצר sub-segment per audio_chunk במקום לאחד.
+
+### 🔴 B15 — לחיצה על הודעה לא משמיעה אותה
+
+‏**מה אבי דיווח:** "לחיצה על הודעה לא משמיעה אותה."
+
+‏**מה אמור להיות (לפי mockup + Slice 9 brief §1 #7):**
+- ‏click על bubble → `player.jumpToBubble(messageId)` → start playing from first segment
+- ‏visual: לוגו play קטן בפינה (idle) + border מודגש (during playback)
+
+‏**איפה:**
+- ‏`packages/frontend/src/lib/components/BubbleKind.svelte` — `onclick={() => player.jumpToBubble(messageId)}`
+- ‏`packages/frontend/src/lib/stores/player.svelte.ts` — `jumpToBubble()` method
+
+‏**בדיקה:**
+- ‏click על user bubble → אמור fetch `/api/recordings/:id` ו-play
+- ‏click על message bubble → אמור לנגן את ה-segments מהcache
+
+‏**הצעות חקירה:**
+1. ‏האם `jumpToBubble` בכלל נקרא? הוסף `console.log` ב-handler.
+2. ‏האם `segments` ב-bubble כוללים `segmentId` תקין? לעיתים rendering מ-history בלי IDs נכונים.
+3. ‏האם `audioCache` (Map<segmentId, blob>) מכיל את ה-blob של ה-bubble? אם לא, player אין מה לנגן.
+4. ‏האם user bubble מצליח fetch ל-`/api/recordings/:id`? בדוק `recordingId` מועבר נכון.
+
+‏**ראה גם B11** (visual indicator) — שני הbugs קשורים.
+
+### 🔴 B16 — אין חיווי בזמן upload + STT
+
+‏**מה אבי דיווח:** "בזמן שמחכים עד שההקלטה תעלה ותתומלל, אין שום חיווי שמראה מה קורה עכשיו."
+
+‏**מה אמור להיות:** ה-mic state machine מ-`mic-state.svelte.ts`:
+- ‏tap → `recording` (כפתור אדום + pulse)
+- ‏tap שוב → `processing` (כפתור סגול + rotate animation, status text "מעבד...")
+- ‏אחרי STT/ACP → `speaking` (כפתור ירוק)
+
+‏**מה כנראה קורה:** state חוזר ל-idle מיד אחרי upload, או לא עובר ל-processing.
+
+‏**איפה:**
+- ‏`packages/frontend/src/lib/stores/voice-session.svelte.ts` — `sendAudioBlob()` — וודא שמעדכן `voiceState` ל-`processing` או `thinking`
+- ‏`packages/frontend/src/lib/stores/mic-state.svelte.ts` — state derivations
+- ‏`packages/frontend/src/lib/components/MicCluster.svelte` — וודא שמרנדר אנימציה ב-processing state
+- ‏`statusLabel` derived — וודא שמחזיר "מעבד..." או "מקליט..." ב-processing/thinking
+
+‏**הצעת fix:**
+1. ‏ב-`sendAudioBlob()` (ב-voice-session) או ב-`onFileUpload()` (ב-page) — אחרי שליחת WS message, set `voiceState = "thinking"` מיד.
+2. ‏שמירת state עד ל-`text_chunk` ראשון או `audio_chunk` ראשון מ-WS.
+3. ‏ב-`MicCluster.svelte` — וודא שיש מקרה `thinking`/`processing` עם:
+   - ‏background: var(--processing) #8855ff
+   - ‏animation: rotate-slow 2s linear infinite
+   - ‏statusLabel: "מעבד..."
+
+---
+
+## 4. Bugs פחות קריטיים
 
 ### 🟡 B8 — Choose File button visible (DEV-only — ‏אני חשפתי בטסט)
 
@@ -206,32 +346,41 @@
 
 ## 5. עבודה שצריך לעשות
 
-### Phase 1 — תיקוני critical (B1-B5)
+### Phase 1 — תיקוני critical voice pipeline (B13, B14, B16)
 
-1. ‏Bubble grouping fix (B1) — TDD: test שמראה ש-3 chunks → 1 sub-segment
-2. ‏Mic double-icon (B2) — fix template
-3. ‏Avatars בbubbles (B3) — וודא BubbleAvatar wired נכון
-4. ‏הסרת textbox+שלח (B4)
-5. ‏Header layout (B5) — RTL fix
+‏אלה הbugs שמונעים שימוש בפועל. תקן אותם **ראשונים**.
 
-### Phase 2 — תיקוני medium (B6-B11)
+1. ‏**B14** — Sentence boundary בbackend (וב-frontend אם זה גם שם). בדוק `splitIntoSentences` עם עברית.
+2. ‏**B13** — TTS duplication / 2 מילים. add logging, find root cause. fix idempotency ב-audioCache.
+3. ‏**B16** — Loading indicator בזמן upload+STT. set `voiceState='thinking'` מיד אחרי send.
 
-6. ‏Bottom sheet handle visibility (B6)
-7. ‏Sparkles avatar שנעלם dashboard (B7)
-8. ‏FilePicker warnings (B9 — 2 תיקונים)
-9. ‏Thought translation display (B10)
-10. ‏Click-to-play visual indicator (B11)
+### Phase 2 — תיקוני critical visual + UX (B1-B5, B12, B15)
 
-### Phase 3 — בדיקות + תיקוני flows שלא נבדקו (Q1-Q8)
+4. ‏**B1** — Bubble grouping fix (per messageId, append to last segment).
+5. ‏**B12** — sessions UI: בדוק `/sessions` page פותחת ומציגה sessions.
+6. ‏**B15** — Click-to-play: וודא `jumpToBubble` נקרא ומגיע ל-player.
+7. ‏**B2** — Mic double-icon — fix template.
+8. ‏**B3** — Avatars בכל bubble (user/thought/tool/message).
+9. ‏**B4** — הסרת textbox+שלח כפתור.
+10. ‏**B5** — Header layout (RTL ordering).
 
-11. ‏בדוק `/sessions` page (Q1)
-12. ‏בדוק `/session/[cwdHash]/[id]` route (Q2)
-13. ‏בדוק file picker modal (Q3)
-14. ‏בדוק settings page (Q4)
-15. ‏בדוק recording playback (Q5)
-16. ‏בדוק history bubbles (Q6)
-17. ‏בדוק mobile responsive (Q7)
-18. ‏בדוק audio playback (Q8)
+### Phase 3 — תיקוני medium (B6-B11)
+
+11. ‏**B6** — Bottom sheet handle יותר visible.
+12. ‏**B7** — Sparkles avatar שנעלם dashboard.
+13. ‏**B9** — FilePicker warnings (initialPath + tabindex).
+14. ‏**B10** — Thought translation display (original + translation).
+15. ‏**B11** — Click-to-play visual indicator (play icon בפינה + border).
+
+### Phase 4 — בדיקות + תיקוני flows שלא נבדקו (Q2-Q8)
+
+16. ‏בדוק `/session/[cwdHash]/[id]` route (Q2)
+17. ‏בדוק file picker modal (Q3)
+18. ‏בדוק settings page (Q4)
+19. ‏בדוק recording playback (Q5)
+20. ‏בדוק history bubbles (Q6)
+21. ‏בדוק mobile responsive (Q7)
+22. ‏בדוק audio playback (Q8)
 
 ---
 
@@ -338,8 +487,8 @@ port 5173. tunnel: https://your-app.nue.tuns.sh
 
 ## 10. סיכום צפוי
 
-- 11 fixes (B1-B11)
-- 8 בדיקות + תיקונים פוטנציאליים (Q1-Q8)
-- ~15-20 commits
-- ~10-20 tests חדשים (בעיקר ל-bubble grouping)
-- 3-5 שעות עבודה
+- 16 fixes (B1-B16)
+- 7 בדיקות + תיקונים פוטנציאליים (Q2-Q8; Q1 הפך ל-B12)
+- ~20-25 commits
+- ~15-25 tests חדשים
+- 5-8 שעות עבודה
