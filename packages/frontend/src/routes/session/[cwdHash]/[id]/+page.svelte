@@ -33,7 +33,7 @@ onMount(async () => {
     // 2. Create/reuse agent with existingSessionId
     const { agent } = await createAgent({
       cwd,
-      kind: cliKind as "opencode",
+      cliKind: cliKind as "opencode",
       existingSessionId: sessionId,
     } as Parameters<typeof createAgent>[0])
 

@@ -42,13 +42,13 @@ let {
 /** Whether the side buttons should be shown. */
 type ClusterLayout = "none" | "replay" | "prevnext"
 
-let layout = $derived<ClusterLayout>((): ClusterLayout => {
+let layout: ClusterLayout = $derived.by(() => {
   if (micState === "speaking") return "prevnext"
   if (micState === "idle" && hasPriorTts) return "replay"
   return "none"
 })
 
-let statusLabel = $derived((): string => {
+let statusLabel: string = $derived.by(() => {
   switch (micState) {
     case "recording":
       return "מקליט..."
@@ -67,13 +67,13 @@ let statusLabel = $derived((): string => {
 <div class="mic-cluster-wrap">
   <!-- Status text -->
   <div class="mic-status" class:recording={micState === "recording"} class:speaking={micState === "speaking"} class:cancelling={micState === "cancelling"}>
-    {statusLabel()}
+    {statusLabel}
   </div>
 
   <!-- Cluster row -->
   <div class="mic-cluster">
     <!-- Left slot: prev (speaking) or empty spacer -->
-    {#if layout() === "prevnext"}
+    {#if layout === "prevnext"}
       <button
         class="cluster-btn"
         onclick={onPrev}
@@ -83,7 +83,7 @@ let statusLabel = $derived((): string => {
       >
         <Icon name="chevrons-right" size={22} />
       </button>
-    {:else if layout() === "replay"}
+    {:else if layout === "replay"}
       <button
         class="cluster-btn cluster-btn-replay"
         onclick={onReplay}
@@ -121,7 +121,7 @@ let statusLabel = $derived((): string => {
     </button>
 
     <!-- Right slot: next (speaking) or empty spacer -->
-    {#if layout() === "prevnext"}
+    {#if layout === "prevnext"}
       <button
         class="cluster-btn"
         onclick={onNext}

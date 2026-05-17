@@ -3,6 +3,7 @@ import { extractProviderError } from "@drive-coding/core/acp/provider-error"
 import { createAcpWsLoadTransport, createAcpWsTransport } from "../acp/acp-transport.js"
 import type { BridgeHandleWithStderr } from "../acp/bridge-manager.js"
 import { type AgentSession, createAgentSession } from "./agent-session.js"
+import type { RecordingsStore } from "./recordings-store.js"
 
 /**
  * Slice 8a: backend-only extension of CreateAgentInput.
@@ -36,6 +37,7 @@ type ExtendedBridgeManager = BridgeManager & {
 export function createAgentOrchestrator(deps: {
   registry: AgentRegistry
   bridgeManager: ExtendedBridgeManager
+  recordingsStore?: RecordingsStore
 }): AgentOrchestrator {
   const sessions = new Map<string, AgentSession>()
   // Stores stderr getters keyed by agent id, for crash extraction
@@ -141,6 +143,7 @@ export function createAgentOrchestrator(deps: {
           agentId: agent.id,
           transport,
           ...(getStderr ? { getStderr } : {}),
+          ...(deps.recordingsStore ? { recordingsStore: deps.recordingsStore } : {}),
           ...(historyBuffer !== undefined
             ? { historyBuffer, historySessionId: existingSessionId ?? undefined }
             : {}),

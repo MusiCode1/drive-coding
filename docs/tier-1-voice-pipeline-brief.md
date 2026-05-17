@@ -6,6 +6,17 @@
 > **סוג:** Backend-only. שינויי frontend מינוריים (שדות חדשים ב-WS events).
 > **TDD חובה.** Sub-agent: Sonnet 4.6.
 > **זמן הערכה:** 4-6 שעות עבודה.
+>
+> **בסיס המוצא:** commit `636c3bc` (fix(voice): translation error no longer
+> drops remaining audio queue). ב-commit הזה תוקן root cause של באג ה-audio_chunk:
+> - `processQueue` משתמש ב-`continue` (לא `return`) על translation error.
+> - drain safety loop אחרי polling.
+> - `console.warn` עם פרטי הכשל.
+> - test file חדש: `packages/backend/tests/agent-session-audio.test.ts`
+>   עם 6 tests: STT-8 (3), PROMPT-5 (1), translation error handling (2).
+>
+> **חשוב — אל תכתוב מחדש את `processQueue`.** הרחב את הקיים. ה-pattern
+> של `continue` ו-drain safety נשמרים. הוסף לrope קיים, אל תייצר מחדש.
 
 ---
 

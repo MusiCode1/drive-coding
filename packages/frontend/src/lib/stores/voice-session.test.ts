@@ -20,6 +20,8 @@ describe("createVoiceSessionStore", () => {
     const fake: AgentSessionPublic = {
       agentId: "x",
       messages: [],
+      bubbles: [],
+      isLoadingHistory: false,
       status: "connected",
       error: null,
       isConnected: true,
@@ -29,6 +31,8 @@ describe("createVoiceSessionStore", () => {
       sendRaw: () => true,
       cancel: () => {},
       setVoiceMessageHandler: () => {},
+      clearBubbles: () => {},
+      getRecordingId: () => null,
     }
     const store = createVoiceSessionStore(fake)
     expect(store.voiceState).toBe("idle")
@@ -115,7 +119,9 @@ describe("createVoiceSessionStore", () => {
     expect(store.voiceState).toBe("thinking")
 
     // 3. audio_chunk arriving now should trigger speaking state
-    capturedHandler?.(JSON.stringify({ type: "audio_chunk", mp3Base64: "abc" }))
+    ;(capturedHandler as ((raw: string) => void) | null)?.(
+      JSON.stringify({ type: "audio_chunk", mp3Base64: "abc" }),
+    )
     // (player.enqueue is called; state would change to speaking via onStateChange)
   })
 
@@ -153,7 +159,9 @@ describe("createVoiceSessionStore", () => {
     await store.sendAudioBlob(new Blob([new Uint8Array([1])], { type: "audio/mp3" }))
     await flushAsync()
 
-    capturedHandler?.(JSON.stringify({ type: "audio_chunk", mp3Base64: "abc" }))
+    ;(capturedHandler as ((raw: string) => void) | null)?.(
+      JSON.stringify({ type: "audio_chunk", mp3Base64: "abc" }),
+    )
     await flushAsync()
 
     expect(store.canReplayLast).toBe(true)

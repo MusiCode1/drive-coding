@@ -28,12 +28,12 @@ app.use("*", cors({ origin: ["http://localhost:5173"], credentials: true }))
 // Boot dependencies
 const registry = createInMemoryAgentRegistry()
 const bridgeManager = createBridgeManager()
-const orchestrator = createAgentOrchestrator({ registry, bridgeManager })
-
 // Slice 8a: session history storage
 const projectsRegistry = createProjectsRegistry(path.resolve("data/cache"))
 const sessionsCache = createSessionsCache()
 const recordingsStore = createRecordingsStore(path.resolve("data/recordings"))
+
+const orchestrator = createAgentOrchestrator({ registry, bridgeManager, recordingsStore })
 
 // fetchSessions: spawns a temp bridge, calls session/list, kills bridge
 async function fetchSessions(cwd: string) {

@@ -47,6 +47,8 @@ export const CreateAgentInput = type({
   cliKind: CliKind,
   cwd: "string >= 1",
   "modelOverride?": "string | null",
+  // Slice 8a: load an existing ACP session via session/load instead of newSession
+  "existingSessionId?": "string",
 })
 export type CreateAgentInput = typeof CreateAgentInput.infer
 
