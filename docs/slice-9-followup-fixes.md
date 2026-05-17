@@ -7,12 +7,31 @@
 > **סוג:** Frontend בעיקר. כלולים גם 2-3 backend fixes.
 > **TDD:** חובה ל-logic. CSS pure ויזואלי.
 > **Sub-agent:** Sonnet 4.6 **חובה** — לא Opus.
-> **זמן הערכה:** 3-5 שעות עבודה.
+> **זמן הערכה:** 5-8 שעות עבודה (23 fixes).
+>
+> **‏⭐ מקור אמת מוביל: `docs/slice-9-bugs-investigation.md`**
+> דוח חקירה שבוצע על-ידי Opus 4.7 sub-agent. מכיל עבור כל bug:
+> - **Reproduction steps** מדויקים
+> - **Root cause** + file:line (איפה לתקן)
+> - **Fix proposal** קונקרטי
+> - **Evidence** (screenshots ב-`/tmp/investigation/`)
+>
+> ה-file הזה (`slice-9-followup-fixes.md`) משלים את הדוח עם context רחב יותר.
+> **קרא את הדוח קודם, ואז את הקובץ הזה.**
 >
 > **בסיס המוצא:**
-> - commit `409d86b` (סיום Slice 9 — עם 9 TS errors שתיקנתי ב-commits 7e8a9a... fcc9... שעוד יתווספו)
+> - commit `935ab61` (אחרי Slice 9 + investigation brief)
 > - frontend חי על `https://your-app.nue.tuns.sh`
 > - backend חי על port 4000
+> - test-voice.mp3 ב-`/tmp/test-voice.mp3` (גם ב-linux-gui:/tmp/)
+>
+> **סיכום מ-הדוח:** 19 bugs מאומתים (8 critical, 7 medium, 4 minor) +
+> 7 חדשים שגילה הסוכן (N1-N7). הbugs הקריטיים ביותר:
+> - **B1** — bubble grouping (root cause: appendBubbleChunk יוצר segment חדש)
+> - **B4** — textbox לזרוק
+> - **N5** — Icon.svelte/Lucide CDN מערבב DOM (ארכיטקטוני)
+> - **B10** — thought translation: 2 bugs (agent-session + voice-session bridge)
+> - **N4** — projects-registry ריק → sessions UI ריק
 
 ---
 
@@ -346,41 +365,65 @@ splitIntoSentences("שלום, אני שומע אותך. המערכת עובדת 
 
 ## 5. עבודה שצריך לעשות
 
-### Phase 1 — תיקוני critical voice pipeline (B13, B14, B16)
+‏**סדר ה-Phases משוקלל לפי המלצות הסוכן Opus** ב-`docs/slice-9-bugs-investigation.md §5`.
+‏כל bug — קרא את הקטע המלא בדוח החקירה לפני התיקון (יש root cause + fix proposal).
 
-‏אלה הbugs שמונעים שימוש בפועל. תקן אותם **ראשונים**.
+### Phase 1 — Critical visual bugs (UI בסיסי לא קריא)
 
-1. ‏**B14** — Sentence boundary בbackend (וב-frontend אם זה גם שם). בדוק `splitIntoSentences` עם עברית.
-2. ‏**B13** — TTS duplication / 2 מילים. add logging, find root cause. fix idempotency ב-audioCache.
-3. ‏**B16** — Loading indicator בזמן upload+STT. set `voiceState='thinking'` מיד אחרי send.
+1. ‏**B1** — Bubble grouping: ב-`appendBubbleChunk` (`agent-session.svelte.ts:161-178`)
+   append ל-last streaming segment במקום ליצור חדש. ~10-15 שורות.
+2. ‏**B4** — הסרת textbox+שלח: מחיקת block `.text-form` ב-`+page.svelte:468-490`.
+3. ‏**N5** — Icon rendering: Lucide CDN createIcons() מערבב DOM tree של Svelte.
+   **Fix ארכיטקטוני** — החלף Icon.svelte ל-inline SVG דרך `lucide-svelte` npm package.
+   מתקן גם את N5 וגם את B2 ועוד.
 
-### Phase 2 — תיקוני critical visual + UX (B1-B5, B12, B15)
+### Phase 2 — Data flow bugs (פיצ'רים שבורים)
 
-4. ‏**B1** — Bubble grouping fix (per messageId, append to last segment).
-5. ‏**B12** — sessions UI: בדוק `/sessions` page פותחת ומציגה sessions.
-6. ‏**B15** — Click-to-play: וודא `jumpToBubble` נקרא ומגיע ל-player.
-7. ‏**B2** — Mic double-icon — fix template.
-8. ‏**B3** — Avatars בכל bubble (user/thought/tool/message).
-9. ‏**B4** — הסרת textbox+שלח כפתור.
-10. ‏**B5** — Header layout (RTL ordering).
+4. ‏**B10** — Thought translation: bridge metadata מ-voice-session ל-agent-session.
+   2 root causes ב-קבצים שונים. ראה דוח חקירה §B10.
+5. ‏**B15** — Click-to-play: pass `audio_chunk.messageId` ל-`player.addSegment` ב-`+page.svelte:51`.
+6. ‏**N1** — Header text: swap props ב-`+page.svelte:346`:
+   `agentName={agent.cwd.split("/").pop()}`, `sessionTitle={sessionTitle ?? agent.cliKind}`.
 
-### Phase 3 — תיקוני medium (B6-B11)
+### Phase 3 — Infrastructure (sessions backend)
 
-11. ‏**B6** — Bottom sheet handle יותר visible.
-12. ‏**B7** — Sparkles avatar שנעלם dashboard.
-13. ‏**B9** — FilePicker warnings (initialPath + tabindex).
-14. ‏**B10** — Thought translation display (original + translation).
-15. ‏**B11** — Click-to-play visual indicator (play icon בפינה + border).
+7. ‏**N4** — Projects registry: וודא `recordCwd()` נקרא ב-`agent-orchestrator.ts:create()`.
+   בלי זה כל פיצ'ר sessions לא שמיש.
+8. ‏**B12** — Sessions page: אחרי N4, וודא שה-data זורם לUI.
 
-### Phase 4 — בדיקות + תיקוני flows שלא נבדקו (Q2-Q8)
+### Phase 4 — TTS/voice pipeline (לא ניתן לאמת ללא הקלטה חיה)
 
-16. ‏בדוק `/session/[cwdHash]/[id]` route (Q2)
-17. ‏בדוק file picker modal (Q3)
-18. ‏בדוק settings page (Q4)
-19. ‏בדוק recording playback (Q5)
-20. ‏בדוק history bubbles (Q6)
-21. ‏בדוק mobile responsive (Q7)
-22. ‏בדוק audio playback (Q8)
+9. ‏**B13** — TTS duplication: root cause חשוד = handler stale אחרי disconnect (ראה דוח §B13).
+   Fix: ב-`disconnect()` של agent-session, נקה `voiceMessageHandler`. הוסף idempotency
+   במ-Map ב-`audioCache` (skip כbר אם segmentId קיים).
+10. ‏**B14** — Sentence boundary (backend): בדוק `splitIntoSentences` עם עברית.
+    אם הוא נכשל על `?` או `!` עברי → תקן regex.
+11. ‏**B16** — Loading indicator: minimum display time (1500ms) ל-processing state.
+
+### Phase 5 — Medium polish
+
+12. ‏**B3** — Avatars visibility (ייפתר אוטומטית אחרי B1, אבל אמת)
+13. ‏**B5** — Header layout (ייפתר אחרי N1)
+14. ‏**B6** — Bottom sheet handle יותר visible.
+15. ‏**B9** — FilePicker warnings (initialPath ↔ $state, tabindex).
+16. ‏**B11** — Click-to-play visual indicator (play icon בפינה).
+17. ‏**N2** — Replace emojis עם Lucide icons ב-dashboard.
+18. ‏**N3** — Desktop header refactor לפי mockup.
+19. ‏**N6** — Wire audio cues settings ל-cues module.
+20. ‏**N7** — BottomSheet grip click handler.
+
+### Phase 6 — בדיקות flows שלא נבדקו (Q2-Q8 — אופציונלי)
+
+21. ‏Q2 — `/session/[cwdHash]/[id]` route
+22. ‏Q3 — file picker modal flow
+23. ‏Q5 — recording playback
+24. ‏Q6 — history bubbles cold state
+25. ‏Q7 — mobile responsive (390×780 viewport)
+26. ‏Q8 — audio playback בקול אמיתי
+
+‏**Bugs שלא בסקופ** (לפי דוח §5):
+- ‏B2, B7, B8 — לא קיימים (false positives שלי בbrief המקורי)
+- ‏B9 — warnings build-time בלבד, low priority
 
 ---
 
@@ -430,8 +473,8 @@ fix ירוק → typecheck/lint/test → commit אוטומטי. רק החלטה 
 **חובה Sonnet 4.6** — לא Opus.
 
 ```
-אתה סוכן תיקון bugs של drive-coding frontend. Slice 9 הושלם אבל יש bugs
-חזותיים חמורים. תפקידך לתקן את הכל.
+אתה סוכן תיקון bugs של drive-coding frontend. Slice 9 הושלם, סוכן Opus
+עשה חקירה יסודית, ועכשיו תורך לתקן.
 
 נתיבים:
 - worktree (CWD): /home/user/projects/voice-acp-v2
@@ -439,32 +482,43 @@ fix ירוק → typecheck/lint/test → commit אוטומטי. רק החלטה 
   + קבצים: /tmp/drive-coding-mockups/final.html + shared.css
 - v1 reference: /home/user/projects/voice-acp/frontend/index.html
 
-מקור אמת: docs/slice-9-followup-fixes.md (קרא קצה-לקצה לפני שמתחילים).
+⭐ מקור אמת מוביל: docs/slice-9-bugs-investigation.md
+   דוח חקירה מפורט (374 שורות) שעשה Opus. מכיל לכל bug:
+   - status (אומת/חלקי/לא קיים)
+   - reproduction steps
+   - root cause + file:line מדויק
+   - fix proposal קונקרטי
+   - evidence (screenshots ב-/tmp/investigation/)
+
+קובץ משלים: docs/slice-9-followup-fixes.md
+   context רחב יותר + Phases מסודרות + DoD + רשימת מותר/אסור.
 
 עבודה:
 1. טען skills: tdd, dev-conventions, Svelte-MCP, rtl-adaptation,
    commit, update-walkthrough.
-2. קרא את ה-brief מקצה לקצה.
-3. קרא את הקבצים הרלוונטיים:
-   - packages/frontend/src/lib/stores/agent-session.svelte.ts (B1 — bubble grouping)
-   - packages/frontend/src/lib/components/MicCluster.svelte (B2 — double mic)
-   - packages/frontend/src/lib/components/BubbleAvatar.svelte (B3)
-   - packages/frontend/src/lib/components/BubbleKind.svelte (B3, B10, B11)
-   - packages/frontend/src/lib/components/SubSegment.svelte (B10)
-   - packages/frontend/src/lib/components/FloatingHeader.svelte (B5)
-   - packages/frontend/src/lib/components/BottomSheet.svelte (B6)
-   - packages/frontend/src/lib/components/FilePicker.svelte (B9)
-   - packages/frontend/src/routes/agent/[id]/+page.svelte (B4)
-   - packages/frontend/src/routes/+page.svelte (B7)
-4. קרא את mockup: /tmp/drive-coding-mockups/final.html + shared.css.
-5. בצע לפי Phase 1 → 2 → 3 בסדר. TDD חובה ל-logic.
-6. commit פר fix או פר Phase. פורמט עברי.
+2. קרא את docs/slice-9-bugs-investigation.md מקצה לקצה — זה המקור העיקרי.
+3. קרא את docs/slice-9-followup-fixes.md לcontext + Phases.
+4. עיין ב-screenshots ב-/tmp/investigation/ (6 קבצים).
+5. בצע לפי Phase 1 → 2 → 3 → 4 → 5 בסדר.
+   לכל bug — קרא את הקטע ב-investigation report (יש file:line מדויק).
+   TDD חובה ל-logic. CSS pure ויזואלי בלי tests.
+6. commit פר fix או פר Phase. פורמט עברי. ‏ראה דוגמאות בהיסטוריה.
 7. בסוף — עדכן docs/walkthrough.md.
 
 pnpm typecheck + pnpm lint + pnpm test לפני כל commit.
 
-אסור לערוך: packages/core/src/** חוץ מ-schemas/agent.ts ו-schemas/ws-messages.ts,
-docs/reviews/**, docs/archive/**, docs/slice-9-followup-fixes.md.
+אסור לערוך:
+- packages/core/src/** חוץ מ-schemas/agent.ts ו-schemas/ws-messages.ts
+- docs/reviews/**, docs/archive/**
+- docs/slice-9-bugs-investigation.md (זה מקור האמת — לא לערוך)
+- docs/slice-9-followup-fixes.md (זה הbrief — לא לערוך)
+- docs/slice-9-investigation-brief.md (היה לסוכן הקודם)
+
+מותר:
+- packages/frontend/src/**
+- packages/backend/src/** (לתיקון N4 ייתכן נדרש)
+- packages/frontend/package.json (אם N5 דורש lucide-svelte npm package)
+- docs/walkthrough.md (entry בסוף)
 
 ה-backend רץ ברקע ב-tmux `be` על port 4000. ה-frontend ב-tmux `fe` על
 port 5173. tunnel: https://your-app.nue.tuns.sh
@@ -479,16 +533,82 @@ port 5173. tunnel: https://your-app.nue.tuns.sh
 יצרת agent עם cwd שתבחר (לדוגמה /home/user/projects/voice-acp-v2)
 דרך POST /api/agents עם cliKind=opencode.
 
+חשוב — Phase 1 fix N5 (Icon.svelte / Lucide CDN) הוא ארכיטקטוני:
+שינוי מ-CDN ל-lucide-svelte דורש pnpm install + שינוי בכל 11 components
+שמשתמשים ב-Icon. אם זה גדול מדי — תיקון חלקי (clear DOM לפני update)
+מספיק בינתיים. תעדוף שיעבור.
+
 אוטונומיה גורפת — בסוף כל fix ירוק → commit אוטומטי. רק החלטה
 ארכיטקטונית לא מכוסה ב-brief → עצור ושאל.
 ```
 
 ---
 
-## 10. סיכום צפוי
+## 10. Bugs חדשים שנמצאו בחקירה (2026-05-17)
 
-- 16 fixes (B1-B16)
+> נמצאו על-ידי Opus 4.6 investigation agent. דוח מלא: `docs/slice-9-bugs-investigation.md`.
+
+### 🟡 N1 — Header text מציג CLI kind במקום project name
+
+‏**מה רואים:** FloatingHeader מציג "opencode" כ-agent name ו-"voice-acp-v2" כ-session title. צריך להיות הפוך (project name → agent-line, session title + cli → session-line).
+
+‏**איפה:** `packages/frontend/src/routes/agent/[id]/+page.svelte:346-348`
+```svelte
+<FloatingHeader
+  agentName={agent?.cliKind ?? ""}           <!-- צריך: agent.cwd.split("/").pop() -->
+  sessionTitle={agent.cwd.split("/").pop()}  <!-- צריך: session title -->
+/>
+```
+
+### 🟡 N2 — Dashboard משתמש ב-emojis במקום Lucide icons
+
+‏**מה רואים:** 📚 ו-⚙ ו-🎙 כ-emojis בדשבורד. ה-brief מציין Lucide icons בכל מקום.
+
+‏**איפה:**
+- `packages/frontend/src/routes/+page.svelte:115` — `📚` → `<Icon name="book-open" />`
+- `packages/frontend/src/routes/+page.svelte:128` — `🎙` → `<Icon name="mic" />`
+- `packages/frontend/src/routes/+page.svelte:175` — `⚙` → `<Icon name="settings" />`
+
+### 🟡 N3 — Desktop header בסגנון ישן (pre-refactor)
+
+‏**מה רואים:** ב-desktop mode ה-header ב-agent page מציג "← חזרה", badge, ו-"⚙" — כולם בסגנון ישן. ה-mockup מצפה ל-classic header עם project name + session title.
+
+‏**איפה:** `packages/frontend/src/routes/agent/[id]/+page.svelte:350-360`
+
+### 🔴 N4 — Projects registry ריק — sessions לא נשמרים
+
+‏**מה רואים:** `GET /api/projects` ו-`GET /api/sessions` מחזירים מערכים ריקים, למרות ש-2 agents פעילים. `/sessions` מציג "אין שיחות קודמות".
+
+‏**איפה:** Backend — `packages/backend/src/app/agent-orchestrator.ts` — ה-`recordCwd()` call ככל הנראה חסר/לא מחובר.
+
+### 🔴 N5 — Icon.svelte: Lucide createIcons() מערבב DOM → double icons
+
+‏**מה רואים:** כשה-mic עובר ל-speaking, ייתכן ש-2 SVGs (mic + volume-2) מוצגים. Lucide מחליף `<i>` ב-`<svg>` ישירות ב-DOM מאחורי הגב של Svelte.
+
+‏**איפה:** `packages/frontend/src/lib/components/Icon.svelte:30-41`
+- `lucide.createIcons()` נקרא **גלובלית** ומחליף DOM elements ש-Svelte לא מודע להם.
+- **הצעת fix:** מעבר ל-`lucide-svelte` (npm package) שמרנדר SVG inline — מונע DOM manipulation.
+
+### 🟡 N6 — Audio cues settings toggle לא מחובר
+
+‏**מה רואים:** Settings page מציג 4 checkboxes (כולם ✅), אבל `cues.ts` לא קורא מ-`settings-store`. ה-cues תמיד מופעלים.
+
+‏**איפה:**
+- `packages/frontend/src/lib/audio/cues.ts` — אין import של settings store
+- `packages/frontend/src/routes/agent/[id]/+page.svelte:110-128` — קורא ל-cues ישירות בלי בדיקת settings
+
+### 🟡 N7 — BottomSheet grip לא מגיב ל-click
+
+‏**מה רואים:** ה-grip (40×4px) נראה בתחתית אבל לא פותח את ה-sheet ב-click.
+
+‏**איפה:** `packages/frontend/src/lib/components/BottomSheet.svelte` — בדוק שה-click handler על ה-grip מחובר ל-`sheetState.toggle()`.
+
+---
+
+## 11. סיכום צפוי (מעודכן)
+
+- 23 fixes (B1-B16 + N1-N7)
 - 7 בדיקות + תיקונים פוטנציאליים (Q2-Q8; Q1 הפך ל-B12)
-- ~20-25 commits
-- ~15-25 tests חדשים
-- 5-8 שעות עבודה
+- ~25-30 commits
+- ~20-30 tests חדשים
+- 6-10 שעות עבודה
