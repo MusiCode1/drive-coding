@@ -4,6 +4,48 @@
 
 ---
 
+## 2026-05-18 02:35 — Slice 10 Phase 2 — FE: ACP client over WS pipe
+
+executor (claude-sonnet-4-6) ביצע את Phase 2 של Slice 10 FE-Orchestrated Refactor.
+verifier-phase: PASS, 0 bugs.
+
+### שינויים עיקריים
+
+**קבצים חדשים (FE):**
+- `packages/frontend/src/lib/acp/ws-to-streams.ts` — browser WebSocket → ReadableStream/WritableStream. סינון stdio-to-ws wrapper frames (connected/heartbeat/disconnected/error) לאורך כל הsession. NDJSON outbound: split on \n, send each line with \n suffix.
+- `packages/frontend/src/lib/acp/client-impl.ts` — ACP Client implementation. auto-allow_once permissions. fs caps = false (smoke test Phase 2). sessionUpdate → onUpdate callback.
+- `packages/frontend/src/lib/acp/client.ts` (`createAcpClient`) — handshake timeout 10s (MED-4), warmup 1500ms, heartbeat $/ping כל 25s, auth_required handling עם kind="auth_required" (MIN-7), loadSession/listSessions ישירות ללא as-any (CRIT-2), onClose callback לMED-8.
+
+**Refactored:**
+- `packages/frontend/src/lib/stores/agent-session.svelte.ts` — מחזיר לACP-based flow:
+  - status machine: spawning→connecting→connected
+  - sendPrompt guard (MED-9): rejected if status !== "connected" | "thinking"
+  - handleSessionUpdate: agent_message_chunk/agent_thought_chunk/tool_call/tool_call_update/stt_partial
+  - MED-8: WS close 1008 → status=crashed + "סוכן בשימוש ב-tab אחר". close 1011 → status=crashed + "Bridge נכשל"
+  - `_testInjectNotification` test helper לbubble tests ישירים
+- `packages/frontend/src/lib/api/agents.ts` — הוסיף `sessionAttached(agentId, sessionId)` function
+
+**Tests חדשים (TDD outer-loop):**
+- `packages/frontend/src/lib/acp/ws-to-streams.test.ts` — 8 tests: frame filtering, NDJSON outbound, readable close
+- `packages/frontend/src/lib/acp/client.test.ts` — handshake timeout (MED-4), heartbeat placeholder
+- `packages/frontend/src/lib/stores/agent-session-acp.test.ts` — 7 tests: state machine, sendPrompt guard, bubble accumulation
+
+**Tests שעודכנו:**
+- `agent-session-bubbles.test.ts`, `agent-session-history.test.ts`, `agent-session.test.ts` — הוחלפו WS-direct protocol messages ב-`_testInjectNotification` helper
+
+### החלטות שנעשו
+
+1. **_testInjectNotification optional** — הוספת test helper כ-optional ב-interface כדי לא לשבור mock. real store תמיד מממש. production code לא קורא.
+2. **handleSessionUpdate centralized** — כל notification מגיע ל-callback אחד. voiceMessageHandler מקבל copy בJSON לPhase 3 orchestration.
+3. **MED-8 בשתי שכבות** — client.ts חושף onClose, agent-session.svelte.ts מחזיק את הלוגיקה. ניתן לtest כל אחד בנפרד.
+
+### Results
+- 132 tests ✅ (18 test files)
+- typecheck: 0 errors ✅
+- lint: 1 pre-existing error (acp-transport.ts, יוסר Phase 4) ✅
+
+---
+
 ## 2026-05-17 23:45 — Slice 10 Phase 1 — BE: transparent proxy + native endpoints + WS pipe
 
 executor (claude-sonnet-4-6) ביצע את Phase 1 של Slice 10 FE-Orchestrated Refactor.
