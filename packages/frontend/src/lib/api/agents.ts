@@ -1,4 +1,5 @@
 import type { AgentList, AgentPublic, CreateAgentInput } from "@drive-coding/core"
+import { clearAgentMetadata, saveAgentMetadata } from "$lib/stores/agent-storage"
 
 const API_BASE = "" // proxy via vite (D45 frontend dev)
 
@@ -32,7 +33,16 @@ export async function createAgent(input: CreateAgentInput): Promise<CreateAgentR
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error ?? `createAgent failed: ${res.status}`)
   }
-  return res.json()
+  const data = (await res.json()) as CreateAgentResponse
+  // F-5: cache agent metadata locally for recovery after BE restart
+  saveAgentMetadata({
+    agentId: data.agentId,
+    cwd: data.cwd,
+    cliKind: data.cliKind,
+    acpSessionId: data.acpSessionId ?? null,
+    modelOverride: input.modelOverride ?? null,
+  })
+  return data
 }
 
 export async function getAgent(id: string): Promise<{ agent: AgentPublic }> {
@@ -44,6 +54,8 @@ export async function getAgent(id: string): Promise<{ agent: AgentPublic }> {
 export async function deleteAgent(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/api/agents/${id}`, { method: "DELETE" })
   if (!res.ok) throw new Error(`deleteAgent failed: ${res.status}`)
+  // F-5: drop the local cache so we don't try to recover a deliberately-killed agent
+  clearAgentMetadata(id)
 }
 
 /** Phase 2: notify BE that ACP session handshake succeeded. */

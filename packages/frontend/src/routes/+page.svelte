@@ -1,16 +1,23 @@
 <script lang="ts">
-import type { AgentPublic } from "@drive-coding/core"
+import type { AgentPublic, CliKind } from "@drive-coding/core"
 import { onDestroy, onMount } from "svelte"
 import { goto } from "$app/navigation"
 import { createAgent, deleteAgent, listAgents } from "$lib/api/agents"
+import { listProjects, type ProjectRecord } from "$lib/api/sessions"
 import FilePicker from "$lib/components/FilePicker.svelte"
 import Icon from "$lib/components/Icon.svelte"
+import { notifications } from "$lib/stores/notifications-store.svelte"
 
 let agents = $state<AgentPublic[]>([])
+let projects = $state<ProjectRecord[]>([])
 let loading = $state(true)
 let error = $state<string | null>(null)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let confirmDeleteId = $state<string | null>(null)
+
+// F-5: notifications surfaced from agent-recovery (cache miss / spawn failure).
+// Snapshot on mount; dismiss is manual (or via auto-clear on unmount).
+let dashboardNotices = $state<Array<{ id: string; kind: "info" | "error"; text: string }>>([])
 
 // Phase 11: File picker
 let showFilePicker = $state(false)
@@ -25,12 +32,38 @@ async function onPickerSelect(path: string) {
   }
 }
 
+async function onContinueProject(p: ProjectRecord) {
+  try {
+    const { agentId } = await createAgent({
+      cwd: p.cwd,
+      cliKind: (p.kind ?? "opencode") as CliKind,
+      existingSessionId: p.lastSessionId,
+    })
+    goto(`/agent/${agentId}`)
+  } catch (e) {
+    error = e instanceof Error ? e.message : "יצירת סוכן נכשלה"
+  }
+}
+
+function projectLabel(cwd: string): string {
+  return cwd.split("/").filter(Boolean).slice(-2).join("/") || cwd
+}
+
+function dismissNotice(id: string): void {
+  dashboardNotices = dashboardNotices.filter((n) => n.id !== id)
+  notifications.dismiss(id)
+}
+
 async function load(): Promise<void> {
   loading = true
   error = null
   try {
-    const { agents: list } = await listAgents()
+    const [{ agents: list }, projList] = await Promise.all([listAgents(), listProjects()])
     agents = [...list].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    // Sort projects by lastSeen DESC (BE already does this, defensive)
+    projects = [...projList].sort(
+      (a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime(),
+    )
     schedulePoll()
   } catch (e) {
     error = e instanceof Error ? e.message : "טעינה נכשלה"
@@ -96,7 +129,12 @@ function statusLabel(status: string): string {
   }
 }
 
-onMount(load)
+onMount(() => {
+  // Snapshot any pending notifications (typically from agent-recovery after BE restart).
+  // We copy locally so user can dismiss without disturbing the store.
+  dashboardNotices = notifications.list.map((n) => ({ id: n.id, kind: n.kind, text: n.text }))
+  void load()
+})
 onDestroy(() => {
   if (pollTimer) clearInterval(pollTimer)
 })
@@ -121,12 +159,20 @@ onDestroy(() => {
     </div>
   </header>
 
+  <!-- F-5: notifications from agent-recovery (BE restart flow) -->
+  {#each dashboardNotices as notice (notice.id)}
+    <div class="error-banner" role="alert" data-kind={notice.kind}>
+      <span>{notice.text}</span>
+      <button class="notice-dismiss" onclick={() => dismissNotice(notice.id)} aria-label="סגור">×</button>
+    </div>
+  {/each}
+
   {#if loading}
     <div class="loading-state">טוען סוכנים...</div>
   {:else if error}
     <div class="error-banner" role="alert">שגיאה: {error}</div>
-  {:else if agents.length === 0}
-    <!-- Empty state (§9.6 DoD #32) -->
+  {:else if agents.length === 0 && projects.length === 0}
+    <!-- Empty state (§9.6 DoD #32) — only when truly nothing -->
     <div class="empty-state">
       <!-- N2 fix: Lucide icon instead of emoji -->
       <div class="empty-icon"><Icon name="mic" size={56} /></div>
@@ -135,45 +181,71 @@ onDestroy(() => {
       <a href="/agent/new" class="new-btn new-btn-large">+ סוכן חדש</a>
     </div>
   {:else}
-    <ul class="cards" role="list">
-      {#each agents as agent (agent.id)}
-        <li class="card" class:card-confirm-delete={confirmDeleteId === agent.id}>
-          <a href={`/agent/${agent.id}`} class="card-link" aria-label={`פתח סוכן ${agent.cliKind}`}>
-            <div class="card-top">
-              <span class="card-title">{agent.cliKind}</span>
-              <span class="card-status status-{agent.status}">{statusLabel(agent.status)}</span>
-            </div>
-            <div class="card-cwd" dir="ltr">{agent.cwd}</div>
-            {#if agent.status === "crashed" && agent.crashReason}
-              <div class="card-crash" dir="auto">{agent.crashReason}</div>
-            {/if}
-          </a>
-          {#if confirmDeleteId === agent.id}
-            <!-- Inline confirm (§9.6 #5: no modals) -->
-            <div class="delete-confirm" role="group" aria-label="אישור מחיקה">
-              <span class="delete-confirm-text">למחוק?</span>
+    <div class="scroll-area">
+      {#if agents.length > 0}
+        <h2 class="section-title">סוכנים פעילים</h2>
+        <ul class="cards" role="list">
+          {#each agents as agent (agent.id)}
+            <li class="card" class:card-confirm-delete={confirmDeleteId === agent.id}>
+              <a href={`/agent/${agent.id}`} class="card-link" aria-label={`פתח סוכן ${agent.cliKind}`}>
+                <div class="card-top">
+                  <span class="card-title">{agent.cliKind}</span>
+                  <span class="card-status status-{agent.status}">{statusLabel(agent.status)}</span>
+                </div>
+                <div class="card-cwd" dir="ltr">{agent.cwd}</div>
+                {#if agent.status === "crashed" && agent.crashReason}
+                  <div class="card-crash" dir="auto">{agent.crashReason}</div>
+                {/if}
+              </a>
+              {#if confirmDeleteId === agent.id}
+                <!-- Inline confirm (§9.6 #5: no modals) -->
+                <div class="delete-confirm" role="group" aria-label="אישור מחיקה">
+                  <span class="delete-confirm-text">למחוק?</span>
+                  <button
+                    class="confirm-btn confirm-yes"
+                    onclick={() => confirmDelete(agent.id)}
+                    aria-label="אשר מחיקה"
+                  >אשר</button>
+                  <button
+                    class="confirm-btn confirm-no"
+                    onclick={cancelDelete}
+                    aria-label="בטל מחיקה"
+                  >בטל</button>
+                </div>
+              {:else}
+                <button
+                  class="delete-btn"
+                  onclick={() => requestDelete(agent.id)}
+                  aria-label={`מחק סוכן ${agent.cliKind}`}
+                  title="מחק"
+                >×</button>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
+      {#if projects.length > 0}
+        <h2 class="section-title">פרויקטים אחרונים</h2>
+        <ul class="cards" role="list">
+          {#each projects as project (project.cwd)}
+            <li class="card">
               <button
-                class="confirm-btn confirm-yes"
-                onclick={() => confirmDelete(agent.id)}
-                aria-label="אשר מחיקה"
-              >אשר</button>
-              <button
-                class="confirm-btn confirm-no"
-                onclick={cancelDelete}
-                aria-label="בטל מחיקה"
-              >בטל</button>
-            </div>
-          {:else}
-            <button
-              class="delete-btn"
-              onclick={() => requestDelete(agent.id)}
-              aria-label={`מחק סוכן ${agent.cliKind}`}
-              title="מחק"
-            >×</button>
-          {/if}
-        </li>
-      {/each}
-    </ul>
+                class="card-link card-link-button"
+                onclick={() => onContinueProject(project)}
+                aria-label={`המשך עבודה ב-${projectLabel(project.cwd)}`}
+              >
+                <div class="card-top">
+                  <span class="card-title">{projectLabel(project.cwd)}</span>
+                  <span class="card-status status-ready">המשך</span>
+                </div>
+                <div class="card-cwd" dir="ltr">{project.cwd}</div>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
   {/if}
 
   <!-- Settings link (N2 fix: Lucide icon instead of emoji) -->
@@ -274,7 +346,59 @@ onDestroy(() => {
     margin: 12px 20px;
     border-radius: 10px;
     font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
   }
+
+  /* F-5: info-kind notification is less alarming than error */
+  .error-banner[data-kind="info"] {
+    color: var(--fg);
+    background: rgba(79, 140, 255, 0.08);
+    border-color: rgba(79, 140, 255, 0.25);
+  }
+
+  .notice-dismiss {
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px 8px;
+    opacity: 0.7;
+  }
+  .notice-dismiss:hover { opacity: 1; }
+
+  /* F-5: section headings — separates "סוכנים פעילים" from "פרויקטים אחרונים" */
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg-dim);
+    margin: 16px 20px 4px 20px;
+    text-transform: none;
+  }
+
+  .scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* F-5: button used as card-link for "continue project" rows */
+  .card-link-button {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: inherit;
+    width: 100%;
+    font: inherit;
+    color: inherit;
+    padding-inline-end: 20px; /* no delete button — full width */
+  }
+  .card-link-button:hover { background: rgba(255, 255, 255, 0.02); }
 
   .empty-state {
     flex: 1;
@@ -304,11 +428,9 @@ onDestroy(() => {
 
   /* ── Cards grid (DoD §9.6: ≥100px height, big touch targets) ─────────────── */
   .cards {
-    flex: 1;
     list-style: none;
-    padding: 16px 20px;
+    padding: 8px 20px 16px 20px;
     margin: 0;
-    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 12px;
