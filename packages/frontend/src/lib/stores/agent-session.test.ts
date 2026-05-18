@@ -61,8 +61,12 @@ describe("createAgentSessionStore", () => {
 
   it("clearBubbles resets all state", () => {
     const store = createAgentSessionStore("a")
+    // ACP envelope shape (Slice 10)
     // biome-ignore lint/style/noNonNullAssertion: test-only helper always present on real store
-    store._testInjectNotification!({ type: "agent_message_chunk", text: "hi", messageId: "m1" })
+    store._testInjectNotification!({
+      sessionId: "sess-1",
+      update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hi" } },
+    })
     expect(store.bubbles.length).toBeGreaterThan(0)
     store.clearBubbles()
     expect(store.bubbles.length).toBe(0)
@@ -80,9 +84,12 @@ describe("createAgentSessionStore", () => {
 
   it("disconnect resets status to spawning", () => {
     const store = createAgentSessionStore("a")
-    // Manually simulate connected state via inject + status manipulation
+    // ACP envelope shape (Slice 10)
     // biome-ignore lint/style/noNonNullAssertion: test-only helper always present on real store
-    store._testInjectNotification!({ type: "agent_message_chunk", text: "test", messageId: "m1" })
+    store._testInjectNotification!({
+      sessionId: "sess-1",
+      update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "test" } },
+    })
     store.disconnect()
     expect(store.status).toBe("spawning")
   })

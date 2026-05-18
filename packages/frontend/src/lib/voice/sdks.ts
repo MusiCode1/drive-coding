@@ -12,7 +12,10 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google"
 import { GoogleGenAI } from "@google/genai"
 
-const PROXY_BASE = `${location.protocol}//${location.host}`
+// Relative URLs — SDK init runs at module-load time (incl. SSR).
+// `location.*` is browser-only and would crash SSR. fetch() in the browser
+// resolves relative URLs against window.location, so this is functionally
+// identical for actual API calls (which only happen in the browser anyway).
 
 /**
  * For translation + narration — `generateText` from `@ai-sdk/google`.
@@ -20,7 +23,7 @@ const PROXY_BASE = `${location.protocol}//${location.host}`
  */
 export const googleAi = createGoogleGenerativeAI({
   apiKey: "browser-placeholder", // placeholder; OneCLI injects real key at proxy
-  baseURL: `${PROXY_BASE}/proxy/google/v1beta`,
+  baseURL: "/proxy/google/v1beta",
 })
 
 /**
@@ -32,5 +35,5 @@ export const googleAi = createGoogleGenerativeAI({
  */
 export const googleGenAi = new GoogleGenAI({
   apiKey: "browser-placeholder",
-  httpOptions: { baseUrl: `${PROXY_BASE}/proxy/google/` }, // lowercase 'u', trailing slash required
+  httpOptions: { baseUrl: "/proxy/google/" }, // lowercase 'u', trailing slash required
 })

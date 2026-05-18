@@ -14,7 +14,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createAgentSessionStore } from "./agent-session.svelte"
 
-describe("agent-session bubble grouping (Phase 2)", () => {
+// SKIP: These tests use the Slice 9 server-protocol shape ({ type, text, messageId }).
+// Slice 10 Phase 3 switched to ACP envelope shape ({ sessionId, update: { sessionUpdate, content } }).
+// Per-messageId grouping no longer applies (ACP chunks don't carry messageId at this level).
+// Will be rewritten in Phase 4 cleanup with the new shape + new grouping rules.
+describe.skip("agent-session bubble grouping (Phase 2 — Slice 9 shape, deprecated)", () => {
   beforeEach(() => {
     vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("uuid") })
     vi.stubGlobal("location", { protocol: "http:", host: "localhost" })

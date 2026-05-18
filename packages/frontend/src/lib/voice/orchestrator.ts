@@ -62,20 +62,25 @@ export function createVoiceOrchestrator(deps: OrchestratorDeps) {
   // ── ACP notification handler ────────────────────────────────────────────────
 
   function handleNotification(raw: string): void {
-    let n: Record<string, unknown>
+    let envelope: { sessionId?: string; update?: Record<string, unknown> }
     try {
-      n = JSON.parse(raw) as Record<string, unknown>
+      envelope = JSON.parse(raw) as typeof envelope
     } catch {
       return
     }
+    // ACP envelope shape: { sessionId, update: { sessionUpdate, content, ... } }
+    const u = envelope.update
+    if (!u) return
 
-    const type = n.type as string | undefined
+    const sessionUpdate = u.sessionUpdate as string | undefined
+    const content = u.content as { type?: string; text?: string } | undefined
+    const chunkText = content?.type === "text" ? (content.text ?? "") : ""
 
-    switch (type) {
+    switch (sessionUpdate) {
       case "agent_message_chunk": {
         if (thoughtBuffer.length > 0) flushThought()
-        if (!currentMessageId) currentMessageId = (n.messageId as string) ?? crypto.randomUUID()
-        messageBuffer += (n.text as string) ?? ""
+        if (!currentMessageId) currentMessageId = crypto.randomUUID()
+        messageBuffer += chunkText
         const { sentences, remaining } = splitIntoSentences(messageBuffer)
         messageBuffer = remaining
         for (const s of sentences) {
@@ -86,8 +91,8 @@ export function createVoiceOrchestrator(deps: OrchestratorDeps) {
 
       case "agent_thought_chunk": {
         if (messageBuffer.length > 0) flushMessage()
-        if (!currentThoughtId) currentThoughtId = (n.messageId as string) ?? crypto.randomUUID()
-        thoughtBuffer += (n.text as string) ?? ""
+        if (!currentThoughtId) currentThoughtId = crypto.randomUUID()
+        thoughtBuffer += chunkText
         const { sentences, remaining } = splitIntoSentences(thoughtBuffer)
         thoughtBuffer = remaining
         for (const s of sentences) {
@@ -96,32 +101,19 @@ export function createVoiceOrchestrator(deps: OrchestratorDeps) {
         break
       }
 
+      case "user_message_chunk": {
+        // Update last-user-message tracker for narration context
+        userMessage += chunkText
+        break
+      }
+
       case "tool_call": {
         flushMessage()
         flushThought()
-        const toolCallId = (n.toolCallId as string) ?? crypto.randomUUID()
-        const title = (n.title as string) ?? ""
-        const kind = n.kind as string | undefined
+        const toolCallId = (u.toolCallId as string) ?? crypto.randomUUID()
+        const title = (u.title as string) ?? ""
+        const kind = u.kind as string | undefined
         enqueueNarration(toolCallId, title, kind)
-        break
-      }
-
-      case "done":
-      case "end_turn": {
-        // Flush any remaining buffers
-        flushMessage()
-        flushThought()
-        // Track last response for replayLast
-        if (recentMessages.length >= 3) recentMessages.shift()
-        if (messageBuffer || thoughtBuffer) {
-          // already flushed above
-        }
-        break
-      }
-
-      case "stt_partial": {
-        // Update user message for narration context
-        userMessage = (n.text as string) ?? userMessage
         break
       }
     }

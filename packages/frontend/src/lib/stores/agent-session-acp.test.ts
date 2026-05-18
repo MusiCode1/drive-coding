@@ -122,15 +122,20 @@ describe("agent-session ACP state machine (Phase 2)", () => {
 
     if (!lastAcpClient) throw new Error("lastAcpClient not set")
 
+    // ACP envelope shape: { sessionId, update: { sessionUpdate, content } }
     lastAcpClient.triggerUpdate({
-      type: "agent_message_chunk",
-      messageId: "msg-1",
-      text: "שלום, ",
+      sessionId: "mock-session-id",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "שלום, " },
+      },
     })
     lastAcpClient.triggerUpdate({
-      type: "agent_message_chunk",
-      messageId: "msg-1",
-      text: "אני כאן.",
+      sessionId: "mock-session-id",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "אני כאן." },
+      },
     })
 
     const messageBubbles = store.bubbles.filter((b) => b.kind === "message")
@@ -146,9 +151,11 @@ describe("agent-session ACP state machine (Phase 2)", () => {
 
     if (!lastAcpClient) throw new Error("lastAcpClient not set")
     lastAcpClient.triggerUpdate({
-      type: "agent_thought_chunk",
-      messageId: "thought-1",
-      text: "I need to think about this...",
+      sessionId: "mock-session-id",
+      update: {
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: "I need to think about this..." },
+      },
     })
 
     const thoughtBubbles = store.bubbles.filter((b) => b.kind === "thought")
@@ -164,10 +171,13 @@ describe("agent-session ACP state machine (Phase 2)", () => {
 
     if (!lastAcpClient) throw new Error("lastAcpClient not set")
     lastAcpClient.triggerUpdate({
-      type: "tool_call",
-      toolCallId: "tc-1",
-      title: "Reading file...",
-      kind: "read",
+      sessionId: "mock-session-id",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tc-1",
+        title: "Reading file...",
+        kind: "read",
+      },
     })
 
     const toolBubbles = store.bubbles.filter((b) => b.kind === "tool")

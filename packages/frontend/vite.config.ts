@@ -8,6 +8,7 @@ export default defineConfig({
     allowedHosts: [".tuns.sh", ".trycloudflare.com", "localhost"],
     proxy: {
       "/api": "http://localhost:4000",
+      "/proxy": "http://localhost:4000",
       "/ws": { target: "ws://localhost:4000", ws: true },
     },
   },

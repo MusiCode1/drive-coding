@@ -315,41 +315,42 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
    * Also forwards to voiceMessageHandler for Phase 3 voice orchestration.
    */
   function handleSessionUpdate(notification: SessionNotification): void {
-    // Forward to voice handler (Phase 3)
+    // Forward to voice handler (Phase 3) — orchestrator gets the raw ACP envelope.
     voiceMessageHandler?.(JSON.stringify(notification))
 
-    const n = notification as {
-      type?: string
-      messageId?: string
-      text?: string
+    // ACP envelope shape: { sessionId, update: { sessionUpdate: "<kind>", ...payload } }
+    // (NOT { type: "<kind>", ... } — that was the Slice 9 server-protocol shape).
+    const update = notification.update as {
+      sessionUpdate?: string
+      content?: { type?: string; text?: string }
       toolCallId?: string
       title?: string
       kind?: string
       status?: string
-      locations?: string[]
-      content?: string
-      narration?: string
-      stopReason?: string
-    }
+      locations?: { path: string }[]
+    } & Record<string, unknown>
 
-    switch (n.type) {
+    // Extract text from ContentChunk payload (agent_message_chunk / agent_thought_chunk).
+    // content is a ContentBlock (e.g. { type: "text", text: "..." } or audio/image variants).
+    const chunkText = update.content?.type === "text" ? (update.content.text ?? "") : ""
+
+    switch (update.sessionUpdate) {
       case "agent_message_chunk": {
-        const messageId = n.messageId ?? null
-        appendChunk("assistant", n.text ?? "")
-        appendBubbleChunk("message", n.text ?? "", messageId)
+        appendChunk("assistant", chunkText)
+        appendBubbleChunk("message", chunkText, null)
         break
       }
 
       case "agent_thought_chunk": {
-        const messageId = n.messageId ?? null
-        appendChunk("thought", n.text ?? "")
-        appendBubbleChunk("thought", n.text ?? "", messageId)
+        appendChunk("thought", chunkText)
+        appendBubbleChunk("thought", chunkText, null)
         break
       }
 
       case "tool_call": {
-        const toolCallId = n.toolCallId ?? ""
-        const title = n.title ?? ""
+        const toolCallId = update.toolCallId ?? ""
+        const title = update.title ?? ""
+        const locationPaths = update.locations?.map((l) => l.path)
         // Legacy messages
         const existing = messages.find((m) => m.kind === "tool_call" && m.toolCallId === toolCallId)
         if (existing) {
@@ -358,10 +359,9 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
               ? {
                   ...m,
                   text: title || m.text,
-                  toolKind: n.kind ?? m.toolKind,
-                  toolStatus: n.status ?? m.toolStatus,
-                  toolLocations: n.locations ?? m.toolLocations,
-                  toolContent: n.content ?? m.toolContent,
+                  toolKind: update.kind ?? m.toolKind,
+                  toolStatus: update.status ?? m.toolStatus,
+                  toolLocations: locationPaths ?? m.toolLocations,
                 }
               : m,
           )
@@ -373,39 +373,28 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
               kind: "tool_call",
               text: title,
               toolCallId,
-              toolKind: n.kind,
-              toolStatus: n.status,
-              toolLocations: n.locations,
-              toolContent: n.content,
+              toolKind: update.kind,
+              toolStatus: update.status,
+              toolLocations: locationPaths,
             },
           ]
         }
         // Bubbles
-        appendToolBubble(toolCallId, title, { narration: n.narration })
+        appendToolBubble(toolCallId, title, {})
         break
       }
 
       case "tool_call_update": {
-        if (n.toolCallId && n.narration) {
-          updateToolNarration(n.toolCallId, n.narration)
+        // ACP tool_call_update may include title/status changes; narration is FE-side (Phase 3)
+        if (update.toolCallId && update.title) {
+          updateToolNarration(update.toolCallId, update.title)
         }
         break
       }
 
-      case "stt_partial": {
-        upsertStreamingUser(n.text ?? "")
-        upsertBubbleUser(n.text ?? "")
-        break
-      }
-
-      case "done":
-      case "end_turn": {
-        finalizeStreaming()
-        break
-      }
-
       default:
-        // pong, hello, audio_chunk, etc. — handled by voiceMessageHandler or ignored
+        // user_message_chunk, plan, available_commands_update, current_mode_update, etc.
+        // → currently not surfaced in UI (future slice if needed)
         break
     }
   }

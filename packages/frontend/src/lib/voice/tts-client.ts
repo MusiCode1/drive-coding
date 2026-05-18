@@ -8,7 +8,9 @@
  * Returns ReadableStream<Uint8Array> for MediaSource consumption.
  */
 
-const PROXY_BASE = `${location.protocol}//${location.host}/proxy/elevenlabs`
+// Relative URL — fetch() in the browser resolves against window.location.
+// Top-level `location.*` would crash SSR.
+const PROXY_BASE = "/proxy/elevenlabs"
 
 export interface TtsOptions {
   text: string

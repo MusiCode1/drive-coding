@@ -107,30 +107,37 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
       return c.json({ error: "upstream fetch failed" }, 502)
     }
 
+    // ── Build response headers ────────────────────────────────────────────────
+    // CRITICAL: Bun/fetch transparently decompresses gzip/deflate response bodies,
+    // but the original `content-encoding` and `content-length` headers describe
+    // the COMPRESSED body. Forwarding them as-is makes the FE try to decompress
+    // an already-decompressed payload → ERR_CONTENT_DECODING_FAILED.
+    // Strip both — the browser will read the decompressed body via chunked transfer.
+    const sanitizedHeaders = new Headers(res.headers)
+    sanitizedHeaders.delete("content-encoding")
+    sanitizedHeaders.delete("content-length")
+
     // ── Tee for cache on success ──────────────────────────────────────────────
     if (cacheKey && res.ok && res.body) {
       const [toClient, toCache] = res.body.tee()
-      const contentType = res.headers.get("content-type") ?? "application/octet-stream"
+      const contentType = sanitizedHeaders.get("content-type") ?? "application/octet-stream"
 
       // Cache in background — do not await
       cacheStreamInBackground(proxyCache, cacheKey, toCache, contentType).catch((e) => {
         log.warn({ err: e, cacheKey }, "background cache write failed")
       })
 
-      const responseHeaders: Record<string, string> = {
-        ...Object.fromEntries(res.headers.entries()),
-        "x-cache": "miss",
-      }
+      sanitizedHeaders.set("x-cache", "miss")
       return new Response(toClient, {
         status: res.status,
-        headers: responseHeaders,
+        headers: sanitizedHeaders,
       })
     }
 
     // Transparent passthrough (non-cacheable or upstream error)
     return new Response(res.body, {
       status: res.status,
-      headers: res.headers,
+      headers: sanitizedHeaders,
     })
   })
 }
