@@ -1,6 +1,7 @@
 import type { SessionNotification } from "@agentclientprotocol/sdk"
 import { createAcpClient } from "$lib/acp/client"
 import { createLogger } from "$lib/log"
+import { recoverAgent } from "./agent-recovery"
 
 const baseLog = createLogger("fe.session")
 
@@ -409,12 +410,36 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     log.info({}, "ACP connect start")
 
     try {
-      // 1. Create ACP client (handshake: WS open + connected frame + warmup + initialize)
+      // F-5: verify the agent exists in BE BEFORE opening the WS. If BE was
+      // restarted (in-memory registry, D8), the old agentId no longer exists
+      // and we should attempt recovery from localStorage cache. Doing the
+      // GET first means the only remaining cause of WS close(1008) is "agent
+      // in use by another tab".
+      const agentRes = await fetch(`/api/agents/${agentId}`)
+      if (agentRes.status === 404) {
+        log.warn({ agentId }, "agent not found in BE — attempting recovery")
+        await recoverAgent(agentId)
+        return // recoverAgent navigates away; nothing more to do here
+      }
+      if (!agentRes.ok) {
+        throw new Error(`getAgent failed: ${agentRes.status}`)
+      }
+      const agentData = (await agentRes.json()) as {
+        agent?: { cwd?: string; acpSessionId?: string }
+      }
+      const agentCwd = agentData.agent?.cwd ?? "/"
+      const existingSessionId = agentData.agent?.acpSessionId
+      log.info({ agentCwd, hasExistingSession: !!existingSessionId }, "resolved agent state")
+
+      // Create ACP client (handshake: WS open + connected frame + warmup + initialize)
       // MED-8: onClose handles WS close codes:
       //   1008 = "agent in use by another tab" (ws-agent.ts closes the second feWs)
       //   1011 = "bridge crashed" (ws-agent.ts closes feWs when bridge dies)
       const handleWsClose = (code: number, reason: string) => {
         if (code === 1008) {
+          // After the GET-first check above, the only path to 1008 is the
+          // multi-tab guard in ws-agent.ts. "agent not found" was already
+          // intercepted via HTTP 404 → recoverAgent.
           error = "סוכן בשימוש ב-tab אחר"
           status = "crashed"
           acpClient = null
@@ -433,15 +458,6 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
         }
       }
       acpClient = await createAcpClient(agentId, handleSessionUpdate, handleWsClose)
-
-      // 2. Fetch agent details to get cwd + existing acpSessionId (if any)
-      const agentRes = await fetch(`/api/agents/${agentId}`)
-      const agentData = (await agentRes.json()) as {
-        agent?: { cwd?: string; acpSessionId?: string }
-      }
-      const agentCwd = agentData.agent?.cwd ?? "/"
-      const existingSessionId = agentData.agent?.acpSessionId
-      log.info({ agentCwd, hasExistingSession: !!existingSessionId }, "resolved agent state")
 
       // 3. Either load existing session (after reload / dedup hit) or create new
       let sessionId: string | null = null
