@@ -5,3 +5,4 @@ backend/bun.lockb
 .DS_Store
 *.log
 .codenomad/
+.specstory/
