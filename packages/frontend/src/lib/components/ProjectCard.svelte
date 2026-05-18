@@ -14,6 +14,14 @@ let { project, onclick }: Props = $props()
 function cwdLabel(cwd: string): string {
   return cwd.split("/").filter(Boolean).slice(-2).join("/")
 }
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString("he-IL", { day: "numeric", month: "short", year: "numeric" })
+  } catch {
+    return iso
+  }
+}
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -21,7 +29,7 @@ function cwdLabel(cwd: string): string {
 <div class="project-card" {onclick} role="button" tabindex="0">
   <div class="project-name" dir="ltr">{cwdLabel(project.cwd)}</div>
   <div class="project-cwd" dir="ltr">{project.cwd}</div>
-  <div class="project-count">{project.sessionCount} שיחות</div>
+  <div class="project-count">נצפה לאחרונה: {formatDate(project.lastSeen)}</div>
 </div>
 
 <style>

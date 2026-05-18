@@ -1,22 +1,21 @@
 /**
- * Phase 3 — TDD tests for HTTP endpoints:
- *   GET /api/projects                        — list known projects
- *   GET /api/projects/:cwdHash/sessions      — sessions for a project (cache + fetch)
- *   GET /api/sessions                        — union across all cwds
- *   GET /api/recordings/:id                  — serve audio bytes
- *   GET /api/fs/browse?path=                 — directory listing (with security guard)
+ * TDD tests for HTTP endpoints (updated fe-fetch-sessions):
+ *   GET /api/projects          — list known projects
+ *   GET /api/recordings/:id    — serve audio bytes
+ *   GET /api/fs/browse?path=   — directory listing (with security guard)
+ *
+ * Removed (sessions now FE-driven via ACP WS):
+ *   GET /api/projects/:cwdHash/sessions
+ *   GET /api/sessions
  */
 
-import { createHash } from "node:crypto"
 import { rm } from "node:fs/promises"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { SessionInfo } from "../src/acp/acp-transport.js"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createProjectsRegistry } from "../src/app/projects-registry.js"
 import { createRecordingsStore } from "../src/app/recordings-store.js"
-import { createSessionsCache } from "../src/app/sessions-cache.js"
 import {
   registerFsBrowseHttp,
   registerProjectsHttp,
@@ -25,17 +24,13 @@ import {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function cwdToHash(cwd: string): string {
-  return createHash("sha256").update(cwd).digest("base64url")
-}
-
 let tmpDir: string
 
 async function makeTmpDir(): Promise<string> {
   return join(tmpdir(), `dc-http-test-${crypto.randomUUID()}`)
 }
 
-// ─── /api/projects and /api/projects/:cwdHash/sessions ───────────────────────
+// ─── /api/projects ───────────────────────────────────────────────────────────
 
 describe("GET /api/projects", () => {
   beforeEach(async () => {
@@ -46,13 +41,11 @@ describe("GET /api/projects", () => {
     await rm(tmpDir, { recursive: true, force: true })
   })
 
-  function makeApp(fetchSessions?: (cwd: string) => Promise<readonly SessionInfo[]>) {
+  function makeApp() {
     const app = new Hono()
     const projectsRegistry = createProjectsRegistry(tmpDir)
-    const sessionsCache = createSessionsCache({ ttlMs: 60_000 })
-    const fetchSessionsFn = fetchSessions ?? (() => Promise.resolve([]))
-    registerProjectsHttp(app, { projectsRegistry, sessionsCache, fetchSessions: fetchSessionsFn })
-    return { app, projectsRegistry, sessionsCache }
+    registerProjectsHttp(app, { projectsRegistry })
+    return { app, projectsRegistry }
   }
 
   it("returns empty array when no projects recorded", async () => {
@@ -75,74 +68,14 @@ describe("GET /api/projects", () => {
     expect(body.projects[0].kind).toBe("opencode")
   })
 
-  it("GET /api/projects/:cwdHash/sessions — cache hit returns cached sessions without fetching", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue([])
-    const { app, projectsRegistry, sessionsCache } = makeApp(fetchSpy)
-    await projectsRegistry.recordCwd("/proj/x", "opencode")
+  it("returns lastSessionId when recordSession was called", async () => {
+    const { app, projectsRegistry } = makeApp()
+    await projectsRegistry.recordCwd("/proj/z", "opencode")
+    await projectsRegistry.recordSession("/proj/z", "sess-xyz")
 
-    const cachedSessions: SessionInfo[] = [
-      { sessionId: "s1", cwd: "/proj/x", title: "Cached", updatedAt: "2026-01-01T00:00:00Z" },
-    ]
-    sessionsCache.set("/proj/x", cachedSessions)
-
-    const hash = cwdToHash("/proj/x")
-    const res = await app.request(`/api/projects/${hash}/sessions`)
-    expect(res.status).toBe(200)
+    const res = await app.request("/api/projects")
     const body = await res.json()
-    expect(body.sessions).toHaveLength(1)
-    expect(body.sessions[0].sessionId).toBe("s1")
-    expect(fetchSpy).not.toHaveBeenCalled()
-  })
-
-  it("GET /api/projects/:cwdHash/sessions — cache miss calls fetchSessions and caches result", async () => {
-    const sessions: SessionInfo[] = [
-      { sessionId: "s2", cwd: "/proj/y", title: "Fresh", updatedAt: "2026-02-01T00:00:00Z" },
-    ]
-    const fetchSpy = vi.fn().mockResolvedValue(sessions)
-    const { app, projectsRegistry, sessionsCache } = makeApp(fetchSpy)
-    await projectsRegistry.recordCwd("/proj/y", "opencode")
-
-    const hash = cwdToHash("/proj/y")
-    const res = await app.request(`/api/projects/${hash}/sessions`)
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.sessions).toHaveLength(1)
-    expect(body.sessions[0].sessionId).toBe("s2")
-    expect(fetchSpy).toHaveBeenCalledOnce()
-
-    // Second call should hit cache
-    await app.request(`/api/projects/${hash}/sessions`)
-    expect(fetchSpy).toHaveBeenCalledOnce() // still once
-    expect(sessionsCache.get("/proj/y")).not.toBeNull()
-  })
-
-  it("GET /api/projects/:cwdHash/sessions — unknown cwdHash → 404", async () => {
-    const { app } = makeApp()
-    const hash = cwdToHash("/proj/unknown")
-    const res = await app.request(`/api/projects/${hash}/sessions`)
-    expect(res.status).toBe(404)
-  })
-
-  it("GET /api/sessions — merges sessions from all cwds, sorted by updatedAt DESC", async () => {
-    const allSessions: SessionInfo[] = [
-      { sessionId: "s-old", cwd: "/proj/a", title: "Old", updatedAt: "2026-01-01T00:00:00Z" },
-      { sessionId: "s-new", cwd: "/proj/b", title: "New", updatedAt: "2026-06-01T00:00:00Z" },
-    ]
-    const fetchSpy = vi
-      .fn()
-      .mockImplementation((cwd: string) =>
-        Promise.resolve(allSessions.filter((s) => s.cwd === cwd)),
-      )
-    const { app, projectsRegistry } = makeApp(fetchSpy)
-    await projectsRegistry.recordCwd("/proj/a", "opencode")
-    await projectsRegistry.recordCwd("/proj/b", "claude")
-
-    const res = await app.request("/api/sessions")
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.sessions).toHaveLength(2)
-    expect(body.sessions[0].sessionId).toBe("s-new") // newest first
-    expect(body.sessions[1].sessionId).toBe("s-old")
+    expect(body.projects[0].lastSessionId).toBe("sess-xyz")
   })
 })
 
@@ -193,8 +126,7 @@ describe("GET /api/fs/browse", () => {
   }
 
   it("returns directory entries for a valid path", async () => {
-    // Use /tmp (or tmpdir()) which definitely exists and has entries
-    const { app } = makeApp(tmpdir()) // allow /tmp as base in tests
+    const { app } = makeApp(tmpdir())
     const res = await app.request(`/api/fs/browse?path=${encodeURIComponent(tmpdir())}`)
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -214,7 +146,6 @@ describe("GET /api/fs/browse", () => {
   })
 
   it("returns 403 when path resolves outside allowedBase (path traversal)", async () => {
-    // allowedBase is /tmp, but path is /etc → outside
     const { app } = makeApp(tmpdir())
     const res = await app.request("/api/fs/browse?path=/etc")
     expect(res.status).toBe(403)

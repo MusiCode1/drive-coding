@@ -1,17 +1,17 @@
 /**
- * Phase 2 — TDD tests for storage layer:
+ * TDD tests for storage layer (updated fe-fetch-sessions):
  *   - projects-registry.ts: disk-backed JSON store of cwds
- *   - sessions-cache.ts: in-memory TTL cache for session/list results
  *   - recordings-store.ts: disk-backed recordings (webm/mp3/wav)
+ *
+ * sessions-cache.ts removed — session listing is now FE-driven via ACP WS.
  */
 
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createProjectsRegistry } from "../src/app/projects-registry.js"
 import { createRecordingsStore } from "../src/app/recordings-store.js"
-import { createSessionsCache } from "../src/app/sessions-cache.js"
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
 
@@ -88,47 +88,6 @@ describe("createProjectsRegistry", () => {
 
     const projects = await reg.getProjects()
     expect(projects[0]?.lastSessionId).toBe("sess-abc-123")
-  })
-})
-
-// ─── sessions-cache ──────────────────────────────────────────────────────────
-
-describe("createSessionsCache", () => {
-  it("cache miss returns null for unknown cwd", () => {
-    const cache = createSessionsCache()
-    expect(cache.get("/unknown")).toBeNull()
-  })
-
-  it("cache hit returns sessions within TTL", () => {
-    const cache = createSessionsCache({ ttlMs: 5_000 })
-    const sessions = [
-      { sessionId: "s1", cwd: "/proj", title: "Title", updatedAt: "2026-01-01T00:00:00Z" },
-    ] as const
-    cache.set("/proj", sessions)
-
-    const result = cache.get("/proj")
-    expect(result).not.toBeNull()
-    expect(result?.[0]?.sessionId).toBe("s1")
-  })
-
-  it("returns null after TTL expires", () => {
-    vi.useFakeTimers()
-    try {
-      const cache = createSessionsCache({ ttlMs: 1_000 })
-      cache.set("/proj", [])
-
-      vi.advanceTimersByTime(1_001)
-      expect(cache.get("/proj")).toBeNull()
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it("manual invalidation clears the entry immediately", () => {
-    const cache = createSessionsCache()
-    cache.set("/proj", [])
-    cache.invalidate("/proj")
-    expect(cache.get("/proj")).toBeNull()
   })
 })
 

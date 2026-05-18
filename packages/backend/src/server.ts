@@ -29,7 +29,6 @@ import { createInMemoryAgentRegistry } from "./agents/registry.js"
 import { createAgentOrchestrator } from "./app/agent-orchestrator.js"
 import { createProjectsRegistry } from "./app/projects-registry.js"
 import { createRecordingsStore } from "./app/recordings-store.js"
-import { createSessionsCache } from "./app/sessions-cache.js"
 import { registerHttp } from "./delivery/http.js"
 import { registerAgentsHttp } from "./delivery/http-agents.js"
 import { registerClientLogHttp } from "./delivery/http-client-log.js"
@@ -41,6 +40,7 @@ import {
 } from "./delivery/http-history.js"
 import { registerHttpOptions } from "./delivery/http-options.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
+// Note: createSessionsCache removed — session listing is now FE-driven via ACP WS
 import { createAgentWsHandler } from "./delivery/ws-agent.js"
 import { createEchoWsHandler } from "./delivery/ws-echo.js"
 
@@ -52,7 +52,6 @@ app.use("*", cors({ origin: ["http://localhost:5173"], credentials: true }))
 const registry = createInMemoryAgentRegistry()
 const bridgeManager = createBridgeManager()
 const projectsRegistry = createProjectsRegistry(path.resolve("data/cache"))
-const sessionsCache = createSessionsCache()
 const recordingsStore = createRecordingsStore(path.resolve("data/recordings"))
 
 const orchestrator = createAgentOrchestrator({
@@ -61,35 +60,12 @@ const orchestrator = createAgentOrchestrator({
   projectsRegistry,
 })
 
-// fetchSessions: spawns a temp bridge, calls session/list, kills bridge
-const { listSessionsFromBridge } = await import("./acp/session-types.js")
-
-async function fetchSessions(cwd: string) {
-  const projects = await projectsRegistry.getProjects()
-  const entry = projects.find((p) => p.cwd === cwd)
-  if (!entry) return []
-  const bridgeId = crypto.randomUUID()
-  try {
-    const handle = await bridgeManager.spawn(bridgeId, {
-      cliKind: entry.kind,
-      cwd,
-      modelOverride: null,
-    })
-    const result = await listSessionsFromBridge({ wsUrl: handle.wsUrl, cwd })
-    return result.isOk() ? [...result.value] : []
-  } catch {
-    return []
-  } finally {
-    await bridgeManager.kill(bridgeId).catch(() => {})
-  }
-}
-
 // HTTP routes
 registerHttp(app)
 registerHttpOptions(app)
 registerClientLogHttp(app)
 registerAgentsHttp(app, { registry, orchestrator, projectsRegistry })
-registerProjectsHttp(app, { projectsRegistry, sessionsCache, fetchSessions })
+registerProjectsHttp(app, { projectsRegistry })
 registerRecordingsHttp(app, { recordingsStore })
 registerRecordingsPostHttp(app, { recordingsStore })
 registerFsBrowseHttp(app)

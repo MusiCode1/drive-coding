@@ -2,84 +2,91 @@
 /**
  * /sessions — history browser.
  *
- * Two tabs:
- *  - "כל השיחות" — all sessions flat, sorted by updatedAt DESC
- *  - "לפי פרויקט" — projects list → drill into project sessions
+ * Shows all known projects from /api/projects.
+ * Each project has a quick "המשך אחרון" button (uses lastSessionId if available)
+ * and a "ראה סשנים" button that drills into /sessions/[cwdHash].
+ *
+ * Session listing per-project is FE-driven via ACP WS — see sessions-ws.ts.
+ * The old "כל השיחות" tab (union via /api/sessions) has been removed because
+ * that endpoint is gone. Use the per-project drill-down instead.
  */
 import { onMount } from "svelte"
 import { goto } from "$app/navigation"
-import ProjectCard from "$lib/components/ProjectCard.svelte"
-import SessionCard from "$lib/components/SessionCard.svelte"
 import { createProjectsStore } from "$lib/stores/projects-store.svelte"
 
 const store = createProjectsStore()
 
-type Tab = "sessions" | "projects"
-let activeTab = $state<Tab>("sessions")
-
 onMount(async () => {
   await store.load()
-  // Refresh on focus
   window.addEventListener("focus", () => store.load())
 })
-
-function openSession(cwdHash: string, sessionId: string) {
-  // cwdHash is a SHA-256 base64url — URL-safe, no special chars, no encoding needed.
-  // sessionId may contain letters/digits/underscores — also URL-safe.
-  goto(`/session/${cwdHash}/${encodeURIComponent(sessionId)}?cli=opencode`)
-}
 
 function openProject(cwdHash: string) {
   goto(`/sessions/${encodeURIComponent(cwdHash)}`)
 }
+
+function continueLastSession(cwdHash: string, lastSessionId: string) {
+  goto(`/session/${cwdHash}/${encodeURIComponent(lastSessionId)}?cli=opencode`)
+}
+
+function cwdLabel(cwd: string): string {
+  return cwd.split("/").filter(Boolean).slice(-2).join("/")
+}
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString("he-IL", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    })
+  } catch {
+    return iso
+  }
+}
 </script>
 
 <div class="sessions-page">
-  <!-- Header -->
   <header class="page-header">
     <a href="/" class="back-link">← דשבורד</a>
     <h1 class="page-title">היסטוריה</h1>
   </header>
 
-  <!-- Tab switcher -->
-  <div class="tab-bar">
-    <button class="tab" class:active={activeTab === "sessions"} onclick={() => (activeTab = "sessions")}>
-      כל השיחות
-    </button>
-    <button class="tab" class:active={activeTab === "projects"} onclick={() => (activeTab = "projects")}>
-      לפי פרויקט
-    </button>
-  </div>
-
-  <!-- Content -->
-  <div class="tab-content">
+  <div class="content">
     {#if store.loading}
       <div class="state-msg">טוען...</div>
     {:else if store.error}
       <div class="error-banner" role="alert">{store.error}</div>
-    {:else if activeTab === "sessions"}
-      {#if store.sessions.length === 0}
-        <div class="state-msg">אין שיחות קודמות.</div>
-      {:else}
-        <div class="card-grid">
-          {#each store.sessions.slice(0, 50) as session (session.sessionId)}
-            <SessionCard
-              {session}
-              onclick={() => openSession(session.cwdHash, session.sessionId)}
-            />
-          {/each}
-        </div>
-      {/if}
+    {:else if store.projects.length === 0}
+      <div class="state-msg">אין פרויקטים קודמים.</div>
     {:else}
-      {#if store.projects.length === 0}
-        <div class="state-msg">אין פרויקטים.</div>
-      {:else}
-        <div class="card-grid">
-          {#each store.projects as project (project.cwdHash)}
-            <ProjectCard {project} onclick={() => openProject(project.cwdHash)} />
-          {/each}
-        </div>
-      {/if}
+      <div class="project-list">
+        {#each store.projects as project (project.cwdHash)}
+          <div class="project-row">
+            <div class="project-info">
+              <div class="project-name" dir="ltr">{cwdLabel(project.cwd)}</div>
+              <div class="project-cwd" dir="ltr">{project.cwd}</div>
+              <div class="project-meta">נצפה לאחרונה: {formatDate(project.lastSeen)}</div>
+            </div>
+            <div class="project-actions">
+              {#if project.lastSessionId}
+                <button
+                  class="btn-primary"
+                  onclick={() => continueLastSession(project.cwdHash, project.lastSessionId!)}
+                >
+                  המשך אחרון
+                </button>
+              {/if}
+              <button
+                class="btn-secondary"
+                onclick={() => openProject(project.cwdHash)}
+              >
+                ראה סשנים
+              </button>
+            </div>
+          </div>
+        {/each}
+      </div>
     {/if}
   </div>
 </div>
@@ -107,10 +114,7 @@ function openProject(cwdHash: string) {
     font-size: 0.9rem;
   }
 
-  .back-link:hover {
-    color: var(--fg);
-    text-decoration: none;
-  }
+  .back-link:hover { color: var(--fg); }
 
   .page-title {
     margin: 0;
@@ -118,44 +122,98 @@ function openProject(cwdHash: string) {
     font-weight: 600;
   }
 
-  .tab-bar {
-    display: flex;
-    gap: 0;
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-
-  .tab {
-    padding: var(--s-3) var(--s-5);
-    border: none;
-    background: transparent;
-    color: var(--fg-dim);
-    font-size: 0.9rem;
-    cursor: pointer;
-    border-bottom: 2px solid transparent;
-    transition: color 0.15s, border-color 0.15s;
-    font-family: inherit;
-  }
-
-  .tab:hover {
-    color: var(--fg);
-  }
-
-  .tab.active {
-    color: var(--accent);
-    border-bottom-color: var(--accent);
-  }
-
-  .tab-content {
+  .content {
     flex: 1;
     overflow-y: auto;
     padding: var(--s-4);
   }
 
-  .card-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  .project-list {
+    display: flex;
+    flex-direction: column;
     gap: var(--s-3);
+  }
+
+  .project-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-4);
+    padding: var(--s-4);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    transition: border-color 0.15s;
+  }
+
+  .project-row:hover { border-color: var(--accent); }
+
+  .project-info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    min-width: 0;
+  }
+
+  .project-name {
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--accent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .project-cwd {
+    font-size: 0.78rem;
+    color: var(--fg-muted);
+    font-family: ui-monospace, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .project-meta {
+    font-size: 0.78rem;
+    color: var(--fg-dim);
+  }
+
+  .project-actions {
+    display: flex;
+    gap: var(--s-2);
+    flex-shrink: 0;
+  }
+
+  .btn-primary {
+    padding: var(--s-2) var(--s-4);
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .btn-primary:hover { opacity: 0.85; }
+
+  .btn-secondary {
+    padding: var(--s-2) var(--s-4);
+    background: transparent;
+    color: var(--fg-dim);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
   .state-msg {

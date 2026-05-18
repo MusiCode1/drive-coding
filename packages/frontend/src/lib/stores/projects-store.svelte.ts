@@ -1,45 +1,37 @@
 /**
- * projects-store.svelte.ts — Phase 9.
+ * projects-store.svelte.ts — Phase 9 (updated fe-fetch-sessions).
  *
- * Manages /api/projects + /api/sessions data with memory cache.
+ * Manages /api/projects data with memory cache.
  * Refreshed on focus and on explicit load() call.
+ *
+ * Session listing has been removed from this store — it now happens
+ * per-page via ACP WebSocket (see sessions-ws.ts + sessions/[cwdHash] route).
  */
 
-import { cwdToHash } from "@drive-coding/core/cwd-hash"
-import type { ProjectRecord, SessionRecord } from "$lib/api/sessions"
-import { listProjectSessions, listProjects, listSessions } from "$lib/api/sessions"
+import type { ProjectRecord } from "$lib/api/sessions"
+import { listProjects } from "$lib/api/sessions"
 import { createLogger } from "$lib/log"
 
 const log = createLogger("fe.api")
 
-export type { ProjectRecord, SessionRecord }
+export type { ProjectRecord }
 
 export function createProjectsStore() {
-  let sessions = $state<SessionRecord[]>([])
   let projects = $state<ProjectRecord[]>([])
   let loading = $state(false)
   let error = $state<string | null>(null)
   let lastLoaded = $state<number>(0)
 
-  /** Load all sessions + projects. Uses memory cache (5s TTL). */
+  /** Load projects. Uses memory cache (5s TTL). */
   async function load(force = false): Promise<void> {
     const now = Date.now()
     if (!force && lastLoaded > 0 && now - lastLoaded < 5000) return
 
     loading = true
     error = null
-    log.debug({}, "fetch projects + sessions")
+    log.debug({}, "fetch projects")
     try {
-      const [rawSess, proj] = await Promise.all([listSessions(), listProjects()])
-      // Attach cwdHash to each session (computed via Web Crypto — same algo as BE)
-      const sessWithHash = await Promise.all(
-        rawSess.map(async (s) => ({ ...s, cwdHash: await cwdToHash(s.cwd) })),
-      )
-      // Sort sessions newest-first
-      sessions = [...sessWithHash].sort(
-        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-      )
-      projects = proj
+      projects = await listProjects()
       lastLoaded = Date.now()
     } catch (e) {
       log.warn({ err: e }, "fetch failed")
@@ -49,22 +41,7 @@ export function createProjectsStore() {
     }
   }
 
-  /** Load sessions for a specific project. */
-  async function loadProjectSessions(cwdHash: string): Promise<SessionRecord[]> {
-    try {
-      const sess = await listProjectSessions(cwdHash)
-      return [...sess].sort(
-        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-      )
-    } catch {
-      return []
-    }
-  }
-
   return {
-    get sessions() {
-      return sessions
-    },
     get projects() {
       return projects
     },
@@ -75,6 +52,5 @@ export function createProjectsStore() {
       return error
     },
     load,
-    loadProjectSessions,
   }
 }
