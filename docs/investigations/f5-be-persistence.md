@@ -3,7 +3,11 @@
 > ‏Source finding: ‏`docs/slice-10-exploratory-test-report.md` ‏#F-5 (MAJOR).
 > ‏Investigation date: 2026-05-18.
 > ‏Mode: code-only (no runtime reproduction).
+>
+> **‏‏הוראה ‏לכל ‏סוכן ‏שמעדכן ‏את ‏המסמך ‏הזה:** ‏אל ‏‏תמחק ‏טקסט ‏קיים. ‏‏הוסף Revision חדש ‏בסוף ‏הקובץ ‏עם ‏תאריך ‏ועם ‏ציון ‏אילו ‏סעיפים ‏‏‏מהקודמים ‏לא ‏‏רלוונטיים ‏יותר. ‏‏הטקסט ‏הישן ‏‏‏נשאר ‏‏‏כדי ‏שיהיה ‏קל ‏להבין ‏‏את ‏ההקשר ‏וההתפתחות ‏‏‏‏של ‏ההחלטה.
+>
 > ‏**Revision 2** (2026-05-18, ‏post-Avi feedback): ‏עודכן ‏לפי ‏הקונטקסט ‏הארכיטקטוני העדכני ‏וההחלטה ‏שהפתרון ‏יהיה ‏FE-only.
+> **Revision 3** (2026-05-18, ‏post-code-read): ‏‏מתחת — ‏Proposed fix ‏‏ממוקד ‏עם ‏localStorage cache ‏מלא, ‏מבוסס ‏בדיקה ‏מעמיקה ‏של ‏ה-FE flow. ‏סעיף ‏"Proposed fix" ‏‏ב-Revision 2 ‏(אופציות ‏A/B/C) ‏‏אינו ‏רלוונטי ‏יותר — ‏בחירת ‏‏‏אבי ‏היא ‏Option A ‏מורחבת ‏(‏cache ‏מלא, ‏‏‏לא ‏רק ‏cwd+sessionId).
 
 ## Bug recap
 
@@ -190,3 +194,230 @@ if (agentRes.status === 404) {
 | Dashboard ‏"פרויקטים ‏אחרונים" (Option C ‏extension) | ~50 | 1 | 1 e2e | 1-2 ‏שעות |
 | ‏סה"כ (‏לא ‏כולל ‏Dashboard) | ~85 | 3-4 | 3 | **2-3 ‏שעות** |
 | ‏סה"כ (כולל ‏Dashboard) | ~135 | 4-5 | 4 | **‏יום עבודה** |
+
+---
+
+# Revision 3 — ‏פתרון ‏ממוקד ‏עם ‏localStorage cache ‏מלא
+
+> ‏תאריך: 2026-05-18.
+> ‏ההחלטה ‏של ‏אבי: ‏localStorage cache ‏מלא ‏(כל ‏הנתונים ‏‏שצריך ‏לrecover), ‏‏לא ‏רק ‏cwd+sessionId. ‏‏‏‏אופציות ‏B ‏ו-C ‏מ-Revision ‏2 ‏‏לא ‏נבחרו.
+> ‏‏‏הסעיפים ‏הבאים ‏מ-Revision ‏2 ‏‏אינם ‏‏רלוונטיים ‏יותר: ‏"Proposed fix — FE auto-recovery on 404" ‏(כולל ‏Options ‏A/B/C ‏וההמלצה). ‏סעיפי ‏Risks/Open ‏questions/Effort ‏‏‏מ-Revision ‏2 ‏בעלי ‏ערך ‏‏רקע ‏אבל ‏מוחלפים ‏‏‏בסעיפים ‏המקבילים ‏למטה.
+
+## ‏‏ממצאים ‏‏‏חדשים מבדיקת ‏הקוד
+
+### ‏‏1. ‏cwdHash ‏הוא ‏דטרמיניסטי
+
+‏`packages/core/src/cwd-hash.ts:29` — ‏`cwdToHash(cwd) = SHA-256(cwd)` base64url, ‏‏‏מחושב ‏בFE ‏ובBE. ‏אין ‏‏‏‏צורך ‏לשמור ‏‏‏‏מיפוי ‏‏בשום ‏מקום — ‏כל ‏‏‏מי ‏‏שיש ‏לו ‏cwd, ‏יש ‏לו hash, ‏ולהיפך ‏הוא ‏‏לפי ‏`/api/projects` ‏(‏שמותמד ‏ב-`data/cache/projects-registry.json`). ‏זה ‏מבטל ‏את ‏הדאגה ‏שאבי ‏העלה ‏לגבי ‏Option ‏B ‏‏(‏‏‏שלא ‏‏‏‏מצריך ‏‏‏מימוש ‏‏‏מצדנו ‏בכל ‏מקרה).
+
+### ‏‏2. ‏‏‏יש ‏‏תבנית ‏localStorage ‏קיימת ב-FE
+
+‏`packages/frontend/src/lib/stores/playback-storage.ts` — ‏‏‏רשום ‏ב-key ‏`voice-acp:playback:<agentId>`, ‏TTL ‏24h, ‏load/save/clear ‏עם try/catch ‏ל-quota. ‏‏‏אעשה ‏fileחדש ‏`agent-storage.ts` ‏‏לפי ‏‏‏אותה ‏‏‏תבנית.
+
+### ‏‏3. ‏ה-trigger ‏האמיתי ‏הוא ‏WS close ‏1008, ‏לא ‏HTTP ‏404
+
+‏‏ב-`agent-session.svelte.ts:404-435` ‏‏ה-`createAcpClient(agentId)` ‏רץ ‏**ראשון** ‏(שורה 435). ‏רק ‏אחריו (‏שורה 438) ‏בא ‏ה-fetch ‏ל-`/api/agents/<id>`. ‏‏אחרי ‏BE restart:
+
+‏-‏ ‏WS ‏מתחבר ‏ל-`/ws/agent/<oldId>`
+‏-‏ ‏BE: `ws-agent.ts:56-60` — ‏`bridgeManager.getChild(<oldId>)` ‏מחזיר ‏`null` ‏→ ‏`feWs.close(1008, "agent not found")`
+‏-‏ ‏FE: ‏`handleWsClose(1008, "agent not found")` ‏‏‏שורות ‏417-421 ‏‏‏‏מטפל ‏ב-1008 ‏אבל ‏**לא ‏בודק ‏reason** — ‏מציג ‏"‏סוכן ‏בשימוש ‏ב-tab ‏אחר" ‏גם ‏כש-reason הוא "agent not found". ‏‏זה bug ‏בפני ‏עצמו ‏שגם ‏הוא ‏צריך ‏‏‏לטיפול ‏ב-fix.
+
+‏ה-recovery ‏‏לכן ‏‏‏חייב ‏‏להיות מבוסס ‏‏‏על ‏ה-WS close 1008 ‏‏‏עם ‏reason "agent not found" — ‏‏לא ‏על ‏HTTP 404 ‏שמגיע ‏מאוחר ‏מדי.
+
+### ‏‏‏4. ‏ה-route ‏‏‏‏‏מטפל ‏‏אוטומטית ‏בשינוי ‏agentId
+
+‏`packages/frontend/src/routes/agent/[id]/+page.svelte:47-59` ‏‏‏יש ‏`$effect` ‏שעוקב ‏‏אחרי ‏`agentId` (‏מ-`page.params.id`). ‏כשהוא ‏‏‏משתנה — ‏הוא ‏עושה ‏`session.disconnect()` ‏ויוצר ‏stores ‏חדשים. ‏‏זה ‏‏‏אומר ‏ש-`goto(/agent/<newId>, { replaceState: true })` ‏‏מהrecovery ‏‏יביא ‏אוטומטית ‏‏לחיבור ‏מחדש ‏‏עם ‏ה-agentId ‏החדש, ‏‏‏ללא ‏‏שום ‏שינוי ‏‏בקוד ‏ה-route ‏עצמו.
+
+## ‏‏פתרון ‏מפורט
+
+### ‏שלב ‏1 — ‏קובץ ‏חדש: ‏`packages/frontend/src/lib/stores/agent-storage.ts`
+
+```ts
+/**
+ * agent-storage.ts — localStorage cache של נתוני agent ל-recovery אחרי BE restart.
+ * 
+ * Key: "voice-acp:agent:<agentId>"
+ * TTL: 7 ‏ימים (‏ארוך מדי ‏עבור opencode שעלול ‏לעשות session rotation, ‏אבל ‏סביר ‏עבור bookmarks)
+ */
+
+const KEY_PREFIX = "voice-acp:agent:"
+const TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+export type AgentMetadata = {
+  agentId: string
+  cwd: string
+  cliKind: string
+  acpSessionId: string | null
+  modelOverride: string | null
+  savedAt: number
+}
+
+export function saveAgentMetadata(meta: Omit<AgentMetadata, "savedAt">): void {
+  try {
+    localStorage.setItem(
+      KEY_PREFIX + meta.agentId,
+      JSON.stringify({ ...meta, savedAt: Date.now() }),
+    )
+  } catch {
+    // quota — ignore
+  }
+}
+
+export function loadAgentMetadata(agentId: string): AgentMetadata | null {
+  try {
+    const raw = localStorage.getItem(KEY_PREFIX + agentId)
+    if (!raw) return null
+    const meta = JSON.parse(raw) as AgentMetadata
+    if (Date.now() - meta.savedAt > TTL_MS) {
+      localStorage.removeItem(KEY_PREFIX + agentId)
+      return null
+    }
+    return meta
+  } catch {
+    return null
+  }
+}
+
+export function clearAgentMetadata(agentId: string): void {
+  try {
+    localStorage.removeItem(KEY_PREFIX + agentId)
+  } catch {}
+}
+```
+
+### ‏שלב ‏‏2 — ‏עדכון ‏‏`api/agents.ts:createAgent`
+
+‏‏‏אחרי ‏‏הצלחת ‏POST: ‏שמור ‏meta ‏ל-localStorage. ‏גם ‏ב-`deleteAgent` — ‏מחק ‏את ‏ה-cache.
+
+```diff
+// api/agents.ts:25
+export async function createAgent(input: CreateAgentInput): Promise<CreateAgentResponse> {
+  const res = await fetch(`${API_BASE}/api/agents`, { method: "POST", ... })
+  if (!res.ok) { ... }
+  const data = await res.json()
++ saveAgentMetadata({
++   agentId: data.agentId,
++   cwd: data.cwd,
++   cliKind: data.cliKind,
++   acpSessionId: data.acpSessionId ?? null,
++   modelOverride: input.modelOverride ?? null,
++ })
+  return data
+}
+
+// api/agents.ts:44
+export async function deleteAgent(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/agents/${id}`, { method: "DELETE" })
+  if (!res.ok) throw new Error(`deleteAgent failed: ${res.status}`)
++ clearAgentMetadata(id)
+}
+```
+
+‏‏הערה: ‏גם ‏ה-acpSessionId ‏מתעדכן ‏אחרי ‏ה-handshake (‏ב-`session-attached`). ‏צריך ‏‏לעדכן ‏את ‏ה-cache ‏גם ‏שם — ‏אחרת ‏ב-recovery ‏‏‏נחזור ‏‏‏לסשן ‏ישן ‏שלא ‏מתאים. ‏אפשרות 1: ‏‏‏לקרוא ‏‏ל-`saveAgentMetadata` ‏גם ‏‏ב-`sessionAttached`. ‏‏‏אפשרות ‏2: ‏ב-recovery, ‏‏לשלוף ‏‏‏את ‏‏ה-`lastSessionId` ‏העדכני ‏מ-`/api/projects` ‏(שמותמד ‏בdisk) ‏‏‏לפי ‏ה-cwd ‏מ-cache. **‏המלצה: ‏‏אפשרות ‏2** — ‏‏‏מקור ‏אמת ‏יחיד, ‏ופחות ‏write races.
+
+### ‏שלב ‏3 — ‏עדכון ‏`agent-session.svelte.ts:handleWsClose`
+
+```diff
+const handleWsClose = (code: number, reason: string) => {
+-  if (code === 1008) {
++  if (code === 1008 && reason === "agent in use by another tab") {
+     error = "סוכן בשימוש ב-tab אחר"
+     status = "crashed"
+     acpClient = null
++  } else if (code === 1008 && reason === "agent not found") {
++    // BE restart — try recovery
++    void recoverAgent(agentId)
+   } else if (code === 1011) {
+     ...
+```
+
+### ‏שלב ‏4 — ‏פונקצית ‏`recoverAgent`
+
+‏‏יכולה ‏לחיות ב-`agent-session.svelte.ts` ‏‏או ‏לעבור ‏‏ל-`agent-recovery.ts` ‏נפרד. ‏המלצה: ‏‏‏נפרד, ‏‏‏‏יותר ‏קל ‏לבדוק.
+
+```ts
+// packages/frontend/src/lib/stores/agent-recovery.ts
+export async function recoverAgent(oldAgentId: string): Promise<void> {
+  const meta = loadAgentMetadata(oldAgentId)
+  if (!meta) {
+    // No cache — go to dashboard with toast
+    showToast("הסוכן נסגר ולא ניתן לשחזרו אוטומטית. חזרה ל-dashboard.")
+    await goto("/")
+    return
+  }
+
+  try {
+    // Get latest acpSessionId from projects-registry (more reliable than cache)
+    const projects = await listProjects()
+    const project = projects.find((p) => p.cwd === meta.cwd)
+    const existingSessionId = project?.lastSessionId ?? meta.acpSessionId ?? undefined
+
+    const fresh = await createAgent({
+      cwd: meta.cwd,
+      cliKind: meta.cliKind as CreateAgentInput["cliKind"],
+      existingSessionId,
+      modelOverride: meta.modelOverride,
+    })
+
+    // Cleanup old cache entry (a new one was just saved by createAgent)
+    clearAgentMetadata(oldAgentId)
+
+    // Replace URL — the $effect in /agent/[id]/+page.svelte will rebuild stores
+    await goto(`/agent/${fresh.agentId}`, { replaceState: true })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    showToast(`שחזור סוכן נכשל: ${msg}. חזרה ל-dashboard.`)
+    clearAgentMetadata(oldAgentId)
+    await goto("/")
+  }
+}
+```
+
+### ‏שלב ‏5 — ‏Toast ‏(אם ‏לא ‏קיים)
+
+‏‏בדיקה ‏‏מהירה ‏‏בtask ‏הבא: ‏אם ‏‏אין ‏Toast component ‏ב-`packages/frontend/src/lib/components/` — ‏‏לכתוב ‏אחד ‏פשוט ‏(banner ‏עליון, ‏3-5 ‏שניות, ‏auto-dismiss). ‏אם ‏יש — ‏‏‏להשתמש ‏‏בקיים.
+
+### ‏שלב ‏‏6 — ‏Tests
+
+‏-‏ ‏`agent-storage.test.ts` — ‏unit: ‏save → load → expire → clear (‏לפי ‏תבנית ‏של ‏`playback-storage.test.ts:18-113`).
+‏-‏ ‏`agent-recovery.test.ts` — ‏unit ‏עם ‏mocks: ‏cache hit + ‏success path, ‏cache miss → toast, ‏createAgent failure → toast.
+‏-‏ ‏‏‏e2e (optional, ‏‏אם ‏‏‏יש ‏‏‏זמן): ‏playwright ‏שמדמה BE restart ‏(‏לעצור ‏ולהפעיל BE) ‏ובודק ‏‏שה-`/agent/<id>` ‏‏מתאושש.
+
+## Affected files (Revision 3)
+
+‏חדשים:
+- ‏`packages/frontend/src/lib/stores/agent-storage.ts` — ~60 ‏שורות
+- ‏`packages/frontend/src/lib/stores/agent-recovery.ts` — ~50 ‏שורות
+- ‏`packages/frontend/src/lib/stores/agent-storage.test.ts` — ~80 ‏שורות
+- ‏`packages/frontend/src/lib/stores/agent-recovery.test.ts` — ~60 ‏שורות
+- ‏(‏אולי) ‏`packages/frontend/src/lib/components/Toast.svelte` — ~50 ‏שורות
+
+‏‏מתעדכנים:
+- ‏`packages/frontend/src/lib/api/agents.ts:25,44` — ‏save/clear ב-create/delete (~5 ‏שורות ‏כל ‏אחד)
+- ‏`packages/frontend/src/lib/stores/agent-session.svelte.ts:417-421` — ‏‏פיצול ‏1008 ‏לפי ‏reason ‏‏‏‏וקריאה ל-`recoverAgent` (~10 ‏שורות)
+
+## Risks (Revision ‏3)
+
+‏-‏ ‏**Stale acpSessionId**: ‏‏אם ‏opencode ‏‏ניקה ‏‏את ‏הסשן ‏בinterval שבין ‏ה-crash ‏ל-recovery — ‏ה-`loadSession` ‏‏ייכשל. ‏‏הקוד ‏ב-`agent-session.svelte.ts:457-464` ‏‏כבר ‏‏עושה ‏fallback ‏ל-`newSession`. ‏‏המשתמש ‏יראה ‏‏שיחה ‏ריקה ‏בלי ‏‏אינדיקציה. ‏שיפור ‏אפשרי: ‏banner ‏‏‏"‏סשן ‏קודם ‏לא ‏‏‏זמין — ‏מתחילים ‏‏חדש" (פתח).
+‏-‏ ‏**localStorage ‏ב-‏tab ‏אחר**: ‏אם ‏המשתמש ‏פתח ‏את ‏ה-URL ‏בtab/דפדפן ‏אחר ‏(שלא ‏‏‏‏עשה ‏‏‏createAgent ‏‏אצלו) — ‏‏אין ‏cache, ‏‏ייפול ‏ל-fallback toast. ‏זה ‏acceptable.
+‏-‏ ‏**Recovery loop**: ‏אם ‏‏‏ה-createAgent החדש ‏גם ‏נופל ‏מיד (cwd ‏‏נמחק, ‏OneCLI ‏לא ‏רץ ‏‏וכו') — ‏ה-toast ‏יתפס ‏את ‏השגיאה, ‏אין ‏לולאה.
+‏-‏ ‏**Multi-tab race**: ‏שני ‏tabs ‏על ‏אותו ‏agentId, ‏BE crash, ‏‏שניהם ‏מקבלים ‏1008 ‏‏וקוראים ל-recoverAgent. ‏אבי, ‏זה ‏סציוריו ‏שלא ‏בדקתי: ‏‏‏שני ‏POSTs ‏ל-`/api/agents` ‏‏ייצרו ‏‏שני agentId ‏‏שונים — ‏אלא ‏אם ‏ה-dedup ‏‏ב-orchestrator (`agent-orchestrator.ts:118-138`) ‏מזהה ‏לפי ‏`existingSessionId`. ‏‏יזהה, ‏‏אבל ‏רק ‏אם ‏ה-`existingSessionId` ‏לא ‏null. ‏‏‏אחרת ‏יווצרו ‏שני agents ‏‏מקבילים ‏‏(orphan).
+
+## Open questions for Avi (Revision 3)
+
+1. **‏Banner ‏‏"‏סשן ‏אבוד"**: ‏‏האם ‏ה-recovery ‏ש-ends ‏עם ‏newSession (כי ‏loadSession ‏נכשל) ‏צריך ‏banner ‏גלוי, ‏או ‏‏שקט?
+2. **‏Dashboard ‏"פרויקטים ‏אחרונים"**: ‏‏עדיין ‏ב-scope ‏או ‏‏slice ‏‏‏נפרד? ‏‏מהמעבר ‏בקוד ‏ראיתי ‏ש-Dashboard ‏‏כיום ‏רק ‏‏‏מציג ‏agents — ‏גישה ‏ל-`/api/projects` ‏‏‏‏היא ‏fixe ‏‏‏‏‏בinterface, ‏‏לא ‏שדרוג ‏גדול. ‏‏המלצה: ‏‏לכלול. ‏(‏~50 ‏שורות, ‏שעה ‏עבודה)
+3. **‏Multi-tab ‏edge case**: ‏האם ‏שווה ‏לטפל ‏‏ב-MVP, ‏‏‏או ‏לתעד ‏‏כידוע? ‏הfix ‏‏‏הוא ‏לוודא ‏ש-`existingSessionId` ‏מועבר ‏(תמיד ‏‏יש ‏לנו ‏‏אותו ‏מ-`/api/projects`) — ‏‏בעצם ‏‏זה ‏‏מטופל ‏‏אוטומטית ‏‏‏‏בתכנון.
+4. **‏Toast component**: ‏‏‏לכתוב ‏‏‏מינימליסטי ‏‏בתוך ‏ה-fix, ‏‏או ‏‏‏שיש ‏Toast ‏‏שכבר ‏קיים ‏שלא ‏מצאתי? ‏(‏‏‏ה-executor ‏יבדוק ‏ב-`lib/components/` ‏לפני ‏‏שיכתוב חדש)
+
+## Estimated effort (Revision 3)
+
+| חלק | LoC | קבצים | Tests | זמן |
+|-----|-----|--------|-------|-----|
+| `agent-storage.ts` + ‏test | ~140 | 2 | 1 | 1 ‏שעה |
+| `agent-recovery.ts` + ‏test | ~110 | 2 | 1 | 1-2 ‏שעות |
+| ‏עדכון ‏`api/agents.ts` (save+clear) | ~10 | 1 | (cover ב-recovery tests) | 15 ‏דקות |
+| ‏עדכון ‏`agent-session.svelte.ts` (‏1008 ‏split) | ~10 | 1 | 1 | 30 ‏דקות |
+| Toast component (אם ‏‏‏לא ‏קיים) | ~50 | 1 | (‏manual) | 30 ‏דקות |
+| **‏סה"כ ‏‏(ללא Dashboard)** | **~320** | **6-7** | **3-4** | **3-4 ‏שעות** |
+| Dashboard ‏"פרויקטים ‏אחרונים" ‏(‏‏‏‏אם ‏‏‏‏‏בscope) | +50 | +1 | +1 | +1 ‏שעה |
+| **‏סה"כ ‏(כולל)** | **~370** | **7-8** | **4-5** | **‏‏יום ‏עבודה** |
