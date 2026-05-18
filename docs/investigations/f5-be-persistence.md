@@ -421,3 +421,123 @@ export async function recoverAgent(oldAgentId: string): Promise<void> {
 | **‏סה"כ ‏‏(ללא Dashboard)** | **~320** | **6-7** | **3-4** | **3-4 ‏שעות** |
 | Dashboard ‏"פרויקטים ‏אחרונים" ‏(‏‏‏‏אם ‏‏‏‏‏בscope) | +50 | +1 | +1 | +1 ‏שעה |
 | **‏סה"כ ‏(כולל)** | **~370** | **7-8** | **4-5** | **‏‏יום ‏עבודה** |
+
+---
+
+# Revision 4 — ‏‏‏שינוי ‏סדר ‏‏‏ה-flow: HTTP GET ‏לפני ‏WS
+
+> ‏תאריך: 2026-05-18.
+> ‏‏‏‏‏הקשר: ‏‏דיון ‏ארכיטקטוני ‏עם ‏אבי ‏על ‏‏מה ‏ה-trigger ‏הנכון ‏ל-recovery. ‏‏‏הגענו ‏להחלטה: ‏‏לעשות ‏`GET /api/agents/<id>` ‏לפני ‏פתיחת ‏WS, ‏‏ולא ‏להסתמך ‏על ‏WS close ‏1008 ‏‏‏עם ‏reason ‏string ‏כדי ‏להבחין ‏בין ‏‏סוגי ‏‏שגיאות.
+> ‏‏‏‏הסעיפים ‏הבאים ‏מ-Revision ‏3 ‏‏אינם ‏רלוונטיים ‏יותר: ‏"‏שלב ‏3 — ‏עדכון ‏`agent-session.svelte.ts:handleWsClose`" ‏(‏ה-split ‏לפי ‏reason ‏‏‏בוטל). ‏שאר ‏‏סעיפי ‏‏הפתרון ‏‏מ-Revision ‏‏3 ‏‏‏‏‏(agent-storage, ‏agent-recovery, ‏‏עדכון ‏api/agents.ts) ‏‏עדיין ‏‏בתוקף.
+
+## ‏‏‏רקע ‏ההחלטה
+
+‏שקלנו ‏‏שלוש ‏‏אופציות ‏‏‏לזיהוי ‏"agent ‏‏לא ‏קיים":
+
+| ‏אופציה | ‏‏רעיון | ‏בעיה |
+|--------|---------|--------|
+| A | ‏‏‏‏האזנה ‏ל-`close(1008, "agent not found")` | ‏‏מסתמך ‏על reason string ‏שעלול ‏‏‏להשתנות; ‏‏מערבב ‏‏‏שני ‏מצבי 1008 ‏בקוד ‏זהה |
+| B | ‏GET ‏לפני ‏WS | RTT ‏נוסף ‏(~10-50ms ‏מקומי) |
+| C | ‏4xx ‏על ‏ה-handshake ‏עצמו | ‏Browser ‏API ‏לא ‏חושף ‏HTTP status ‏‏לכישלון ‏upgrade — ‏‏פחות ‏אינפורמטיבי ‏מ-A |
+
+‏‏גם ‏שקלנו ‏‏‏‏‏לתוכף ‏‏‏אובייקט ‏JSON ‏ב-reason ‏של ‏ה-close ‏‏(‏לקודד ‏עוד ‏מידע ‏מובנה) — ‏‏לא ‏תקין:
+
+‏-‏ ‏‏RFC 6455 §5.5.1 ‏‏‏מגביל ‏‏reason ‏ל-123 ‏בתים
+‏-‏ ‏ה-spec ‏‏‏‏מציין ‏‏‏‏‏‏‏שהtext ‏הוא "human-readable", ‏‏לא ‏‏מציע ‏מבנה
+‏-‏ ‏‏‏הסטנדרט ‏בכל ‏המימושים (SDK, ‏debug tools, ‏DevTools) ‏‏הוא ‏מחרוזת ‏‏‏‏פשוטה
+‏-‏ ‏‏‏היה ‏מתעתע ‏את ‏מי ‏שיעבוד ‏על ‏הקוד ‏אחרינו
+
+**‏בחירה: ‏B**. ‏עלות ‏RTT ‏זניחה ‏‏‏‏בהשוואה ‏ל-clarity. ‏בונוס: ‏גם ‏‏מנקה ‏את ‏הbug ‏הקיים ‏שבו ‏ה-FE ‏מציג ‏"‏סוכן ‏בשימוש ‏ב-tab ‏אחר" ‏לכל 1008 — ‏עכשיו 1008 ‏יכול ‏להיות ‏רק ‏המקרה ‏הזה, ‏כי ‏את ‏ה-"not found" ‏תפסנו ‏‏‏‏קודם ‏ב-HTTP.
+
+## ‏‏עדכון ‏פתרון
+
+### ‏שלב ‏3 (‏‏מעודכן) — ‏GET ‏לפני ‏WS ‏ב-`connect()`
+
+‏ב-`agent-session.svelte.ts:404`:
+
+```diff
+async function connect(): Promise<void> {
+  if (status === "connecting" || status === "connected") return
+  status = "connecting"
+  error = null
+  log.info({}, "ACP connect start")
+
+  try {
++   // 0. Verify agent exists — if not, try recovery from localStorage cache
++   const agentRes = await fetch(`/api/agents/${agentId}`)
++   if (agentRes.status === 404) {
++     log.warn({ agentId }, "agent not found in BE — attempting recovery")
++     await recoverAgent(agentId)
++     return  // recoverAgent either navigates away or throws
++   }
++   if (!agentRes.ok) {
++     throw new Error(`getAgent failed: ${agentRes.status}`)
++   }
++   const agentData = (await agentRes.json()) as {
++     agent?: { cwd?: string; acpSessionId?: string }
++   }
++   const agentCwd = agentData.agent?.cwd ?? "/"
++   const existingSessionId = agentData.agent?.acpSessionId
++
+    // 1. Create ACP client (WS handshake)
+    const handleWsClose = (code: number, reason: string) => {
+-     if (code === 1008) {
++     if (code === 1008) {
++       // After the GET-first check above, 1008 can now only mean "in use by another tab"
+        error = "סוכן בשימוש ב-tab אחר"
+        status = "crashed"
+        acpClient = null
+      } else if (code === 1011) {
+        ...
+      }
+    }
+    acpClient = await createAcpClient(agentId, handleSessionUpdate, handleWsClose)
+
+-   // 2. Fetch agent details to get cwd + existing acpSessionId (if any)
+-   const agentRes = await fetch(`/api/agents/${agentId}`)
+-   const agentData = (await agentRes.json()) as { ... }
+-   const agentCwd = agentData.agent?.cwd ?? "/"
+-   const existingSessionId = agentData.agent?.acpSessionId
+
+    // 3. Either load existing session or create new
+    let sessionId: string | null = null
+    if (existingSessionId) {
+      ...
+```
+
+### ‏שלב ‏4 (‏מ-Revision ‏3, ‏‏ללא ‏שינוי) — ‏`recoverAgent`
+
+‏‏אותו ‏‏קוד ‏‏כמו ‏‏ב-Revision ‏3 §"שלב ‏4". ‏מקבל ‏`oldAgentId`, ‏שולף ‏מ-`localStorage`, ‏שולח ‏POST ‏חדש, ‏עושה ‏`goto(/agent/<newId>, { replaceState: true })`.
+
+‏הבדל ‏יחיד: ‏עכשיו ‏‏הוא ‏‏נקרא ‏ישירות ‏מ-`connect()` ‏ולא ‏מ-`handleWsClose` — ‏זרימה ‏פשוטה יותר.
+
+### ‏‏‏‏הסרת ‏בעיה: ‏1008 ‏ambiguity
+
+‏‏ב-Revision ‏3 ‏‏הצעתי ‏‏לפצל ‏את ‏ה-1008 ‏לפי ‏reason. ‏ב-Revision ‏4 ‏‏אין ‏‏צורך — ‏המסלול ‏היחיד ‏שמוביל ‏ל-1008 ‏הוא ‏"agent in use by another tab", ‏כי ‏את ‏"agent not found" ‏‏תפסנו ‏‏ב-HTTP ‏לפני ‏ה-WS ‏נפתח ‏בכלל. ‏ה-error message ‏ב-FE ‏‏‏הופך ‏לתקין ‏‏אוטומטית.
+
+## ‏‏ארכיטקטורה ‏‏(הבהרה ‏‏מ-discussion)
+
+‏לתיעוד: ‏‏ה-BE ‏שולח ‏ל-CLI ‏subprocess **כלום** ‏מעבר ‏ל-`spawn()`. ‏ה-initialize ‏ACP ‏מגיע ‏‏מה-FE ‏‏‏דרך ‏ה-WS ‏‏pipe ‏(`client.ts:92-98`), ‏ו-newSession ‏‏מגיע ‏‏אחריו ‏(`agent-session.svelte.ts:467`). ‏זה ‏‏‏תקין ‏‏לפי ‏ACP — ‏אגנט ‏‏יכול ‏‏לחיות ‏בלי ‏סשן ‏עד ‏שמתחברים ‏אליו.
+
+‏המשמעות ‏ל-recovery: ‏ה-POST ‏‏ל-`/api/agents` ‏‏‏בrecovery ‏‏יוצר ‏‏agent ‏חדש ‏שאין ‏‏לו ‏סשן ‏‏עדיין. ‏ה-FE ‏‏אחר ‏כך ‏‏‏יקרא ‏ל-`loadSession({ sessionId: existingSessionId })` ‏‏וזה ‏‏‏מה ‏שמחבר ‏‏את ‏הצדדים. ‏‏‏אותו ‏flow ‏‏כמו ‏ב-`/session/[cwdHash]/[id]/+page.svelte` ‏הקיים.
+
+## Estimated effort (Revision ‏4)
+
+‏‏זהה ‏ל-Revision ‏3 ‏-‏ ‏~10 ‏‏שורות. ‏לא ‏מוסיפים ‏Toast nor `agent-storage` נוספים — ‏זה ‏רק ‏אילו ‏שורות ‏‏יושבות ‏‏בקובץ ‏שונה.
+
+| ‏שינוי ‏מ-Revision ‏‏3 | ‏הפרש ‏LoC | ‏זמן |
+|----------------------|-----------|------|
+| ‏העברת ‏‏ה-fetch ‏ל-`/api/agents` ‏לפני ‏ה-WS | 0 (move) | 10 ‏דקות |
+| ‏הוספת ‏if 404 → recoverAgent | +5 | 10 ‏דקות |
+| ‏הסרת ‏ה-`reason` ‏split ‏מ-handleWsClose | -5 | 0 |
+| **‏סה"כ ‏הפרש** | **~0** | **20 ‏דקות** |
+
+‏‏סה"כ ‏‏מצטבר ‏לעבודה: **3-4 ‏שעות** ‏(‏ללא ‏Dashboard) ‏/ ‏**‏יום** ‏(כולל).
+
+## Open questions ‏שעדיין ‏‏פתוחים ‏(‏מ-Revision ‏3)
+
+1. ‏Banner ‏"‏סשן ‏אבוד" ‏‏כש-loadSession ‏נכשל?
+2. ‏Dashboard ‏"פרויקטים ‏אחרונים" — ‏‏בscope ‏או ‏נפרד?
+3. ‏Toast component — ‏‏‏יש ‏קיים ‏או ‏‏לכתוב חדש?
+
+‏**‏שאלת ‏‏Multi-tab** ‏(‏מ-Revision 3) ‏‏‏‏‏ירדה ‏מהsider: ‏‏הdedup ‏ב-`agent-orchestrator.ts:118-138` ‏מטפל ‏בה ‏‏כי ‏הdetermined `existingSessionId` ‏‏מתקבל ‏‏מ-`/api/projects` ‏(‏source of truth).
