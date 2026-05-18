@@ -52,7 +52,7 @@ describe("CreateAgentInput", () => {
 })
 
 describe("toAgentPublic", () => {
-  it("strips bridge fields", () => {
+  it("strips bridge fields but exposes acpSessionId (Slice 10)", () => {
     const agent = {
       id: "550e8400-e29b-41d4-a716-446655440000",
       cliKind: "opencode" as const,
@@ -65,7 +65,9 @@ describe("toAgentPublic", () => {
     }
     const pub = toAgentPublic(agent)
     expect(pub).not.toHaveProperty("bridgePort")
-    expect(pub).not.toHaveProperty("acpSessionId")
+    // Slice 10: acpSessionId IS exposed — FE needs it to call loadSession() on reload
+    // (instead of newSession() which would conflict with existing BE-registered session).
+    expect(pub.acpSessionId).toBe("sess_abc")
     expect(pub).toMatchObject({
       id: agent.id,
       cliKind: "opencode",

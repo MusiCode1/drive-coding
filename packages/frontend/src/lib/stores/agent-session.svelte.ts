@@ -434,23 +434,58 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
       }
       acpClient = await createAcpClient(agentId, handleSessionUpdate, handleWsClose)
 
-      // 2. Fetch agent details to get correct cwd (avoids hardcoded "/" bug)
+      // 2. Fetch agent details to get cwd + existing acpSessionId (if any)
       const agentRes = await fetch(`/api/agents/${agentId}`)
-      const agentData = (await agentRes.json()) as { agent?: { cwd?: string } }
+      const agentData = (await agentRes.json()) as {
+        agent?: { cwd?: string; acpSessionId?: string }
+      }
       const agentCwd = agentData.agent?.cwd ?? "/"
-      log.info({ agentCwd }, "resolved agent cwd for newSession")
+      const existingSessionId = agentData.agent?.acpSessionId
+      log.info({ agentCwd, hasExistingSession: !!existingSessionId }, "resolved agent state")
 
-      // 3. Create a new session with the real cwd
-      const sessionResult = await acpClient.newSession({ cwd: agentCwd })
-      currentSessionId = (sessionResult as { sessionId?: string }).sessionId ?? null
+      // 3. Either load existing session (after reload / dedup hit) or create new
+      let sessionId: string | null = null
+      if (existingSessionId) {
+        try {
+          const loadResult = await acpClient.loadSession({
+            cwd: agentCwd,
+            sessionId: existingSessionId,
+          })
+          sessionId =
+            (loadResult as { sessionId?: string }).sessionId ?? existingSessionId
+          log.info({ sessionId }, "ACP loadSession ok")
+        } catch (e) {
+          // CLI does not support loadSession (-32601) — fall back to newSession
+          log.warn(
+            { err: String(e) },
+            "loadSession failed, falling back to newSession",
+          )
+          const sessionResult = await acpClient.newSession({ cwd: agentCwd })
+          sessionId = (sessionResult as { sessionId?: string }).sessionId ?? null
+        }
+      } else {
+        const sessionResult = await acpClient.newSession({ cwd: agentCwd })
+        sessionId = (sessionResult as { sessionId?: string }).sessionId ?? null
+      }
+      currentSessionId = sessionId
 
-      // 3. Notify BE that session is attached (MED-9: prompt blocked until this succeeds)
+      // 4. Notify BE — idempotent: if BE already has this sessionId, it returns 200.
+      // 409 only triggers on DIFFERENT sessionId (real conflict — we treat as warning).
       if (currentSessionId) {
-        await fetch(`/api/agents/${agentId}/session-attached`, {
+        const attachRes = await fetch(`/api/agents/${agentId}/session-attached`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId: currentSessionId }),
         })
+        if (!attachRes.ok && attachRes.status !== 409) {
+          log.warn(
+            { status: attachRes.status },
+            "session-attached non-409 error",
+          )
+        }
+        // 409 with the same sessionId is impossible by definition; 409 here means
+        // BE already has a different one. We accept it and continue (FE truth wins
+        // for this connection — BE registry already has the right one).
       }
 
       status = "connected"

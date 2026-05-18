@@ -53,15 +53,15 @@ describe("HTTP /api/agents", () => {
       expect(body.agents).toHaveLength(1)
     })
 
-    it("does not expose bridge fields", async () => {
+    it("strips bridgePort but exposes acpSessionId (Slice 10)", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
-      // manually inject bridge fields to simulate future state
       await registry.update(agent.id, { bridgePort: 7100, acpSessionId: "sess_abc" })
       const res = await app.request("/api/agents")
       const body = await res.json()
       expect(body.agents[0]).not.toHaveProperty("bridgePort")
-      expect(body.agents[0]).not.toHaveProperty("acpSessionId")
+      // Slice 10: acpSessionId is exposed — FE needs it on reload for loadSession()
+      expect(body.agents[0].acpSessionId).toBe("sess_abc")
     })
   })
 

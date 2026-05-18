@@ -39,6 +39,10 @@ export const AgentPublic = type({
   createdAt: "string.date.iso",
   // Populated when status='crashed' and provider error was extracted (Slice 5.6)
   "crashReason?": "string",
+  // Slice 10: present once FE has completed ACP handshake and called /session-attached.
+  // FE uses this on reload to call loadSession() instead of newSession() — avoids
+  // 409 conflict and restores session history.
+  "acpSessionId?": "string",
 })
 export type AgentPublic = typeof AgentPublic.infer
 
@@ -70,6 +74,9 @@ export function toAgentPublic(agent: Agent): AgentPublic {
   }
   if (agent.crashReason !== undefined) {
     pub.crashReason = agent.crashReason
+  }
+  if (agent.acpSessionId !== undefined) {
+    pub.acpSessionId = agent.acpSessionId
   }
   return pub
 }
