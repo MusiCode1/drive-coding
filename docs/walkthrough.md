@@ -4,6 +4,100 @@
 
 ---
 
+## 2026-05-18 12:00 — Slice 10 F-1 fix — הסרת stdio-to-ws, in-process bridge, @hono/node-server
+
+### מה בוצע?
+
+תיקון F-1 (blocker קריטי): BE קרס עם `uncaughtException: spawn ENOENT npx` כשנסו ליצור agent עם PATH ריק או cwd פגום.
+שורש הבעיה: `bridge-spawn.ts:55` זרק `throw new Error("spawn returned no pid")` לפני שנרשם `child.on("error", ...)` — ה-error event בעבע ל-process כ-uncaughtException.
+
+**4 phases, 4 commits:**
+
+**Phase 1 — Server foundation (`@hono/node-server` + `ws.WebSocketServer`):**
+- מחליף `Bun.serve` ב-`serve()` מ-`@hono/node-server` + `http.on("upgrade")` handler
+- `ws.WebSocketServer` ב-noServer mode לecho ו-agent
+- עדכון `ws-echo.ts` ו-`ws-agent.ts` ל-ws library API
+
+**Phase 2 — New `bridge-manager.ts` עם spawn ישיר (TDD):**
+- מחיקת `bridge-spawn.ts` (152 שורות) + `buildStdioToWsArgs` + `bridge-spawn.test.ts`
+- שכתוב `bridge-manager.ts`: error listener נרשם **לפני** בדיקת `child.pid` — זה ה-fix המרכזי
+- spawn מחזיר handle מיד (port=0, wsUrl="") ללא המתנה ל-stdout port
+- 11 unit tests חדשים ב-bridge-manager.test.ts, 8 ב-bridge-failure-modes.test.ts
+
+**Phase 3 — WS-agent pipe (DIY) + orchestrator wiring:**
+- שכתוב `ws-agent.ts`: pipe ישיר `feWs → child.stdin/stdout` דרך readline
+- הסרת שכבת WS proxy ל-bridge subprocess
+- `feWs.close` → cleanup בלבד (NO `child.kill`)
+- `child.exit` → `feWs.close(1011, "bridge closed")`
+
+**Phase 4 — Defenses + cleanup:**
+- הוספת `process.on("uncaughtException")` + `process.on("unhandledRejection")` ב-server.ts (exit 1)
+- מחיקת `buildStdioToWsArgs` מ-cli-config.ts (נותר בdisk לפי Write issue, מחיקה Phase 4)
+- עדכון cli-config.test.ts — הסרת 4 tests של buildStdioToWsArgs שנמחק
+
+### מצב tests
+
+- **3 integration tests** ב-`bridge-failure-integration.test.ts` ✅ ירוקים (היו אדומים ב-3412f1b)
+- **8 unit tests** ב-`bridge-failure-modes.test.ts` ✅ ירוקים
+- **324 backend tests** + **167 frontend tests** = 491 tests — הכל ירוק
+- `pnpm typecheck` + `pnpm lint` ✅ ירוקים
+
+### החלטות ארכיטקטורה
+
+- `BridgeHandle.port` נשאר=0, `BridgeHandle.wsUrl` נשאר="" לתאימות אחורה עם schema (FE לא משתמש בהם ישירות)
+- `getBridgePort()` בorchestrator ממשיך לעבוד (מחזיר 0) — לא שובר FE API
+- `@hono/node-server` מפעיל httpServer שמחזיר `ServerType` — supports `.on("upgrade")`
+- WS pipe: `child.stdout.setEncoding("utf8")` + readline (לא BufferList) — נכון ל-NDJSON
+
+### commits
+- `4fd3b30` Phase 1 — @hono/node-server
+- `a9efb22` Phase 2 — bridge-manager חדש
+- `a997017` Phase 3 — ws-agent pipe
+- (Phase 4 commit — walkthrough + cleanup)
+
+---
+
+## 2026-05-18 11:15 — Slice 10 F-2 fix — cwd-hash + cwd-validate ספריות core, תיקון double-encoding
+
+### מה בוצע?
+
+תיקון F-2 (blocker), F-6 (minor), F-9 (cosmetic) מ-exploratory test report.
+שורש הבעיה: ה-FE ב-`/sessions` חישב cwdHash שגוי (fallback שהכניס `encodeURIComponent(cwd)` במקום hash אמיתי), ואז `openSession()` עטף אותו שוב עם `encodeURIComponent` → double-encode (`%252F`). גם `/session/[cwdHash]/[id]` הכיל fallback מסוכן שניסה לspawn עם `/${hash}` אם ה-project לא נמצא.
+
+#### מה בוצע?
+
+**1. ספריות core חדשות (TDD)**
+
+- `packages/core/src/cwd-hash.ts` — `cwdToHash(cwd): Promise<string>` ע"ב Web Crypto API (`crypto.subtle.digest`). אותה לוגיקה ב-Node ובדפדפן. פלט: base64url ללא padding — תואם 100% ל-`createHash('sha256').update(cwd).digest('base64url')` של Node.
+- `packages/core/src/cwd-validate.ts` — `validateCwd(cwd): Result<string, CwdValidationError>` (neverthrow). דוחה: ריק, לא-מוחלט, NUL, `%XX` (URL encoding artifacts), control chars, אורך > 4096. מחזיר cwd מנורמל (ללא trailing slash).
+- 21 טסטים חדשים (cwd-hash: 6, cwd-validate: 15).
+
+**2. Backend**
+
+- `http-history.ts` — מחיקת local `cwdToHash` (Node-only), import מ-`@drive-coding/core`. ה-find עבר ל-async `Promise.all` כי `cwdToHash` עכשיו async.
+- `http-agents.ts` — `validateCwd` לפני כל spawn. cwd לא תקין (כולל double-encoded) → HTTP 400, לא מנסה לspawn בכלל.
+- `agents/registry.ts` — belt-and-suspenders: `validateCwd` גם ב-`create()` מגן על קריאות שעוקפות את שכבת ה-HTTP.
+
+**3. Frontend**
+
+- `SessionRecord` — הוספת שדה `cwdHash: string` (מחושב client-side, לא מה-API).
+- `projects-store.svelte.ts` — אחרי `listSessions()`, חישוב `cwdHash` לכל session עם `Promise.all` + `cwdToHash`. פעם אחת ב-load, לא לכל click.
+- `/sessions/+page.svelte` — מחיקת find שבור (`p.cwdHash === session.cwd` — לא הגיוני). שימוש ישיר ב-`session.cwdHash`. `openSession()` ללא `encodeURIComponent` (base64url כבר URL-safe).
+- `/sessions/[cwdHash]/+page.svelte` — הסרת `encodeURIComponent` מיותר.
+- `/session/[cwdHash]/[id]/+page.svelte` — מחיקת fallback מסוכן `/${cwdHash}`. אם project לא נמצא → error "פרויקט לא נמצא", ללא ניסיון spawn.
+
+#### החלטות ארכיטקטורה
+
+- **Web Crypto API במקום Node crypto**: `crypto.subtle` זמין גלובלית ב-Node 22.5+ ובדפדפנים — מאפשר ספרייה אחת שעובדת בשני הצדדים ללא conditional imports.
+- **`%XX` ולא `%` בכלל**: regex `/%[0-9a-fA-F]{2}/` מדויק — מתיר תיקיה בשם `100%-coverage` אך דוחה `%2F` (URL-encoded slash). תיקיה עם `%` אמיתי תוצג ב-URL כ-`%25Folder` ואחרי decode אחד תחזור ל-`%Folder` שאינה עוברת את ה-pattern.
+- **cwdHash מחושב ב-FE ולא מתקבל מ-BE**: שומר על FE עצמאי (לפי D-decisions של הפרויקט). BE לא צריך לשנות את API `/api/sessions`.
+
+#### מעקפים
+
+- **`git stash` שגה**: במהלך העבודה הריצה `git stash` לצורך בדיקת baseline תפסה גם שינויים של סוכן מקביל. ה-stash pop נכשל עקב conflicts. פתרון: `stash drop` + מחיקת כל השינויים מחדש.
+
+---
+
 ## 2026-05-18 — ניקוי תיקיית docs/
 
 ### מה בוצע?

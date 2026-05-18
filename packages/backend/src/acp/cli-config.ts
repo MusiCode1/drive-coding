@@ -1,8 +1,8 @@
 import type { BridgeKind } from "@drive-coding/core"
 
 /**
- * מיפוי CliKind ל-command + args ל-`@rebornix/stdio-to-ws`.
- * Slice 3: רק opencode. שאר ה-CLIs יוסיפו ב-Slice עתידי.
+ * CLI command mapping for ACP agents.
+ * Slice 3: opencode only. Other CLIs to be added in future slices.
  */
 export type CliCommand = {
   readonly bin: string // executable path or name
@@ -45,22 +45,4 @@ export function getCliCommand(kind: BridgeKind, modelOverride?: string | null): 
           : ["-y", "@zed-industries/codex-acp@latest"],
       }
   }
-}
-
-/**
- * Args ל-stdio-to-ws שיעטוף את ה-CLI.
- * הCLI command מועבר כstring יחיד (stdio-to-ws עושה parse).
- */
-export function buildStdioToWsArgs(cli: CliCommand, port = 0): ReadonlyArray<string> {
-  const cliCommand = [cli.bin, ...cli.args].join(" ")
-  return [
-    "-y",
-    "@rebornix/stdio-to-ws",
-    cliCommand,
-    "--port",
-    String(port),
-    "--persist",
-    "--grace-period",
-    "-1",
-  ]
 }

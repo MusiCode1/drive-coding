@@ -6,6 +6,22 @@ import { Hono } from "hono"
 import { WebSocketServer } from "ws"
 
 const log = createLogger("backend.server")
+const procLog = createLogger("backend.process")
+
+// Safety nets — if any uncaught error slips through, log and exit gracefully.
+// This is the last line of defense; production code should never reach here.
+process.on("uncaughtException", (err) => {
+  procLog.error(
+    { err: { name: err.name, message: err.message, stack: err.stack } },
+    "uncaughtException — exiting",
+  )
+  process.exit(1)
+})
+
+process.on("unhandledRejection", (reason) => {
+  procLog.error({ reason: String(reason) }, "unhandledRejection — exiting")
+  process.exit(1)
+})
 
 import { cors } from "hono/cors"
 import { createBridgeManager } from "./acp/bridge-manager.js"
