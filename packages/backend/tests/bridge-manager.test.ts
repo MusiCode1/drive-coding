@@ -141,7 +141,7 @@ describe("BridgeManager (new in-process spawn)", () => {
     child.emit("exit", 1)
 
     await new Promise((r) => setTimeout(r, 20))
-    expect(onCrash).toHaveBeenCalledWith("a-crash", 1)
+    expect(onCrash).toHaveBeenCalledWith("a-crash", { exitCode: 1, signal: null })
   })
 
   it("spawn with no-pid rejects and no uncaught error", async () => {

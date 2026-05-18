@@ -51,6 +51,8 @@ function makeBridgeHandle(overrides?: Partial<BridgeHandle>): BridgeHandle {
   }
 }
 
+import type { BridgeCrashInfo } from "@drive-coding/core"
+
 type ExtendedBridgeManager = BridgeManager & {
   spawnWithStderr?: (
     bridgeId: string,
@@ -97,10 +99,10 @@ function makeBridgeManager(
   opts: {
     onSpawnError?: () => Error
     stderrLines?: string[]
-    onCrashCapture?: (handler: (id: string, code: number | null) => void) => void
+    onCrashCapture?: (handler: (id: string, info: BridgeCrashInfo) => void) => void
   } = {},
 ): { mgr: ExtendedBridgeManager; kill: ReturnType<typeof vi.fn> } {
-  let crashHandler: ((id: string, code: number | null) => void) | null = null
+  let crashHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
   const kill = vi.fn(async (_id: string) => true)
   const mgr: ExtendedBridgeManager = {
     async spawn(bridgeId) {
@@ -120,7 +122,7 @@ function makeBridgeManager(
       return []
     },
     kill,
-    onCrash(handler) {
+    onCrash(handler: (id: string, info: BridgeCrashInfo) => void) {
       crashHandler = handler
       opts.onCrashCapture?.(handler)
       return () => {
@@ -129,8 +131,8 @@ function makeBridgeManager(
     },
   }
   // expose for tests
-  ;(mgr as ExtendedBridgeManager & { _trigger: typeof crashHandler }).onCrash((id, code) =>
-    crashHandler?.(id, code),
+  ;(mgr as ExtendedBridgeManager & { _trigger: typeof crashHandler }).onCrash((id, info) =>
+    crashHandler?.(id, info),
   )
   return { mgr, kill }
 }
@@ -237,7 +239,7 @@ describe("AgentOrchestrator (Slice 10 — slim)", () => {
   })
 
   it("crash listener: when bridge dies, agent.status → crashed", async () => {
-    let capturedHandler: ((id: string, code: number | null) => void) | null = null
+    let capturedHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
     const { registry, state } = makeRegistry()
     const { mgr } = makeBridgeManager({
       onCrashCapture: (h) => {
@@ -254,7 +256,7 @@ describe("AgentOrchestrator (Slice 10 — slim)", () => {
 
     // Simulate bridge crash
     expect(capturedHandler).not.toBeNull()
-    capturedHandler?.(result.agentId, 1)
+    capturedHandler?.(result.agentId, { exitCode: 1, signal: null })
     // Crash handler is async — wait for microtasks
     await new Promise((r) => setImmediate(r))
     await new Promise((r) => setImmediate(r))
@@ -265,7 +267,7 @@ describe("AgentOrchestrator (Slice 10 — slim)", () => {
   })
 
   it("crash listener: closed agents are not re-marked crashed", async () => {
-    let capturedHandler: ((id: string, code: number | null) => void) | null = null
+    let capturedHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
     const { registry, state } = makeRegistry()
     const { mgr } = makeBridgeManager({
       onCrashCapture: (h) => {
@@ -284,10 +286,92 @@ describe("AgentOrchestrator (Slice 10 — slim)", () => {
     await registry.update(result.agentId, { status: "closed" })
 
     // Bridge dies (normal exit after kill) — should NOT flip back to crashed
-    capturedHandler?.(result.agentId, 0)
+    capturedHandler?.(result.agentId, { exitCode: 0, signal: null })
     await new Promise((r) => setImmediate(r))
 
     expect(state.get(result.agentId)?.status).toBe("closed")
+  })
+
+  it("crash listener: SIGKILL → agent.crashReason = 'Killed by signal SIGKILL'", async () => {
+    let capturedHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
+    const { registry, state } = makeRegistry()
+    const { mgr } = makeBridgeManager({
+      onCrashCapture: (h) => {
+        capturedHandler = h
+      },
+    })
+    const orch = createAgentOrchestrator({ registry, bridgeManager: mgr })
+
+    const result = await orch.createAndSpawn({
+      cliKind: "opencode",
+      cwd: "/tmp",
+      modelOverride: null,
+    })
+
+    capturedHandler?.(result.agentId, { exitCode: null, signal: "SIGKILL" })
+    await new Promise((r) => setImmediate(r))
+    await new Promise((r) => setImmediate(r))
+
+    const agent = state.get(result.agentId)
+    expect(agent?.status).toBe("crashed")
+    expect(agent?.crashReason).toBe("Killed by signal SIGKILL")
+  })
+
+  it("crash listener: ENOENT spawn error → agent.crashReason contains ENOENT", async () => {
+    let capturedHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
+    const { registry, state } = makeRegistry()
+    const { mgr } = makeBridgeManager({
+      onCrashCapture: (h) => {
+        capturedHandler = h
+      },
+    })
+    const orch = createAgentOrchestrator({ registry, bridgeManager: mgr })
+
+    const result = await orch.createAndSpawn({
+      cliKind: "opencode",
+      cwd: "/tmp",
+      modelOverride: null,
+    })
+
+    capturedHandler?.(result.agentId, {
+      exitCode: null,
+      signal: null,
+      spawnError: { code: "ENOENT", message: "spawn opencode ENOENT" },
+    })
+    await new Promise((r) => setImmediate(r))
+    await new Promise((r) => setImmediate(r))
+
+    const agent = state.get(result.agentId)
+    expect(agent?.status).toBe("crashed")
+    expect(agent?.crashReason).toBe("ENOENT: spawn opencode ENOENT")
+  })
+
+  it("crash listener: clean exit (code 0) → no crashReason", async () => {
+    let capturedHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
+    const { registry, state } = makeRegistry()
+    const { mgr } = makeBridgeManager({
+      onCrashCapture: (h) => {
+        capturedHandler = h
+      },
+    })
+    // Override status guard so we can observe crashReason even on code=0
+    const agent0 = makeAgent({ status: "ready" })
+    state.set(agent0.id, agent0)
+
+    const orch = createAgentOrchestrator({ registry, bridgeManager: mgr })
+    const result = await orch.createAndSpawn({
+      cliKind: "opencode",
+      cwd: "/tmp",
+      modelOverride: null,
+    })
+
+    capturedHandler?.(result.agentId, { exitCode: 0, signal: null })
+    await new Promise((r) => setImmediate(r))
+    await new Promise((r) => setImmediate(r))
+
+    const agent = state.get(result.agentId)
+    expect(agent?.status).toBe("crashed")
+    expect(agent?.crashReason).toBeUndefined()
   })
 
   it("createAndSpawn passes modelOverride to bridgeManager.spawnWithStderr", async () => {

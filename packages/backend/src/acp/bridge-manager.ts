@@ -1,5 +1,5 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
-import type { BridgeHandle, BridgeManager, SpawnBridgeInput } from "@drive-coding/core"
+import type { BridgeCrashInfo, BridgeHandle, BridgeManager, SpawnBridgeInput } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import { getCliCommand } from "./cli-config.js"
 
@@ -22,12 +22,12 @@ export function createBridgeManager(): BridgeManager & {
     stderrLines: string[]
   }
   const store = new Map<string, Entry>()
-  const crashHandlers = new Set<(bridgeId: string, exitCode: number | null) => void>()
+  const crashHandlers = new Set<(bridgeId: string, info: BridgeCrashInfo) => void>()
 
-  function notifyCrash(bridgeId: string, exitCode: number | null): void {
+  function notifyCrash(bridgeId: string, info: BridgeCrashInfo): void {
     for (const handler of crashHandlers) {
       try {
-        handler(bridgeId, exitCode)
+        handler(bridgeId, info)
       } catch (e) {
         log.warn({ err: e, bridgeId }, "crash handler threw")
       }
@@ -62,14 +62,19 @@ export function createBridgeManager(): BridgeManager & {
 
     // Register listeners immediately — before any async tick can emit error
     child.on("error", (err) => {
+      const errnoErr = err as NodeJS.ErrnoException
       childLog.warn(
-        { err: { message: err.message, code: (err as NodeJS.ErrnoException).code } },
+        { err: { message: err.message, code: errnoErr.code } },
         "child error event",
       )
       // If no pid → spawn failed; notify crash and remove from store
       if (!child.pid && store.has(bridgeId)) {
         store.delete(bridgeId)
-        notifyCrash(bridgeId, null)
+        notifyCrash(bridgeId, {
+          exitCode: null,
+          signal: null,
+          spawnError: { code: errnoErr.code, message: err.message },
+        })
       }
     })
 
@@ -83,11 +88,11 @@ export function createBridgeManager(): BridgeManager & {
       stderrPartial = parts[parts.length - 1] ?? ""
     })
 
-    child.on("exit", (code) => {
-      childLog.info({ code }, "child exit")
+    child.on("exit", (code, signal) => {
+      childLog.info({ code, signal }, "child exit")
       if (store.has(bridgeId)) {
         store.delete(bridgeId)
-        notifyCrash(bridgeId, code)
+        notifyCrash(bridgeId, { exitCode: code, signal: signal ?? null })
       }
     })
 
@@ -145,7 +150,7 @@ export function createBridgeManager(): BridgeManager & {
       })
     },
 
-    onCrash(handler) {
+    onCrash(handler: (bridgeId: string, info: BridgeCrashInfo) => void) {
       crashHandlers.add(handler)
       return () => {
         crashHandlers.delete(handler)
