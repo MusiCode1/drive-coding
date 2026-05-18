@@ -1,22 +1,18 @@
 import { ClientMessage, type ServerMessage } from "@drive-coding/core"
 import { type } from "arktype"
-import type { ServerWebSocket, WebSocketHandler } from "bun"
-import type { Hono } from "hono"
+import type { WebSocket } from "ws"
 
 export type WsData = { id: string }
 
-function send(ws: ServerWebSocket<WsData>, msg: ServerMessage): void {
+function send(ws: WebSocket, msg: ServerMessage): void {
   ws.send(JSON.stringify(msg))
 }
 
-export function registerEchoWs(_app: Hono): {
-  websocket: WebSocketHandler<WsData>
-} {
-  const websocket: WebSocketHandler<WsData> = {
-    open(ws) {
-      send(ws, { type: "hello", version: "0.0.0" })
-    },
-    message(ws, raw) {
+export function createEchoWsHandler(): (ws: WebSocket) => void {
+  return function onConnect(ws: WebSocket): void {
+    send(ws, { type: "hello", version: "0.0.0" })
+
+    ws.on("message", (raw) => {
       let parsed: unknown
       try {
         parsed = JSON.parse(String(raw))
@@ -36,10 +32,10 @@ export function registerEchoWs(_app: Hono): {
           serverTime: Date.now(),
         })
       }
-    },
-    close() {
+    })
+
+    ws.on("close", () => {
       // cleanup later
-    },
+    })
   }
-  return { websocket }
 }

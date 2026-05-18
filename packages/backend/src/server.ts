@@ -1,7 +1,9 @@
 import "./log-setup.js" // MUST be first — initialises logger before any other imports
 import * as path from "node:path"
 import { createLogger } from "@drive-coding/core/log"
+import { serve } from "@hono/node-server"
 import { Hono } from "hono"
+import { WebSocketServer } from "ws"
 
 const log = createLogger("backend.server")
 
@@ -23,8 +25,8 @@ import {
 } from "./delivery/http-history.js"
 import { registerHttpOptions } from "./delivery/http-options.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
-import { type AgentWsData, createAgentWsHandler } from "./delivery/ws-agent.js"
-import { type WsData as EchoWsData, registerEchoWs } from "./delivery/ws-echo.js"
+import { createAgentWsHandler } from "./delivery/ws-agent.js"
+import { createEchoWsHandler } from "./delivery/ws-echo.js"
 
 const app = new Hono()
 
@@ -80,65 +82,74 @@ registerFsBrowseHttp(app)
 registerProxyHttp(app, { cacheBaseDir: path.resolve("data/cache/proxy") })
 
 // WS handlers
-const echo = registerEchoWs(app)
-const agentWs = createAgentWsHandler({ orchestrator })
+const echoWss = new WebSocketServer({ noServer: true })
+const agentWss = new WebSocketServer({ noServer: true })
 
-type WsData = EchoWsData | AgentWsData
+const echoHandler = createEchoWsHandler()
+const agentWsHandler = createAgentWsHandler({ orchestrator })
+
+echoWss.on("connection", (ws) => {
+  echoHandler(ws)
+})
+
+agentWss.on("connection", (ws, req) => {
+  // Extract agentId from URL
+  const url = new URL(req.url ?? "", `http://localhost`)
+  const match = url.pathname.match(/^\/ws\/agent\/([^/]+)$/)
+  const agentId = match?.[1] ?? ""
+
+  // Attach data to ws for the handler (reusing AgentWsData shape)
+  const wsWithData = ws as typeof ws & {
+    data: {
+      kind: "agent"
+      agentId: string
+      bridgeWs: undefined
+      pendingFromFe: never[]
+      bridgeOpen: boolean
+    }
+  }
+  wsWithData.data = {
+    kind: "agent",
+    agentId,
+    bridgeWs: undefined,
+    pendingFromFe: [],
+    bridgeOpen: false,
+  }
+
+  agentWsHandler.websocket.open?.(wsWithData as never)
+
+  ws.on("message", (raw) => {
+    agentWsHandler.websocket.message?.(wsWithData as never, raw as string | Buffer)
+  })
+
+  ws.on("close", (code, reason) => {
+    agentWsHandler.websocket.close?.(wsWithData as never, code, reason.toString())
+  })
+})
 
 const port = Number(process.env.PORT ?? 4000)
 
-Bun.serve<WsData>({
-  port,
-  fetch(req, server) {
-    const url = new URL(req.url)
+const httpServer = serve({ fetch: app.fetch, port })
 
-    // /ws/echo — echo handler
-    if (url.pathname === "/ws/echo") {
-      const upgraded = server.upgrade(req, {
-        data: { id: crypto.randomUUID() } satisfies EchoWsData,
-      })
-      if (upgraded) return undefined
-      return new Response("WS upgrade failed", { status: 426 })
-    }
+httpServer.on("upgrade", (req, socket, head) => {
+  const url = new URL(req.url ?? "", `http://localhost`)
 
-    // /ws/agent/:id — agent handler
-    if (url.pathname.startsWith("/ws/agent/")) {
-      return agentWs.tryUpgrade(req, server) ?? app.fetch(req)
-    }
+  if (url.pathname === "/ws/echo") {
+    echoWss.handleUpgrade(req, socket, head, (ws) => {
+      echoWss.emit("connection", ws, req)
+    })
+    return
+  }
 
-    return app.fetch(req)
-  },
-  websocket: {
-    // Unified WS handler — dispatch by ws.data.kind
-    open(ws) {
-      const data = ws.data as WsData
-      if ("kind" in data && data.kind === "agent") {
-        agentWs.websocket.open?.(ws as Parameters<typeof agentWs.websocket.open>[0])
-      } else {
-        echo.websocket.open?.(ws as Parameters<typeof echo.websocket.open>[0])
-      }
-    },
-    message(ws, msg) {
-      const data = ws.data as WsData
-      if ("kind" in data && data.kind === "agent") {
-        // biome-ignore lint/suspicious/noExplicitAny: unified WS dispatch
-        agentWs.websocket.message?.(ws as any, msg)
-      } else {
-        // biome-ignore lint/suspicious/noExplicitAny: unified WS dispatch
-        echo.websocket.message?.(ws as any, msg)
-      }
-    },
-    close(ws, code, reason) {
-      const data = ws.data as WsData
-      if ("kind" in data && data.kind === "agent") {
-        // biome-ignore lint/suspicious/noExplicitAny: unified WS dispatch
-        agentWs.websocket.close?.(ws as any, code, reason)
-      } else {
-        // biome-ignore lint/suspicious/noExplicitAny: unified WS dispatch
-        echo.websocket.close?.(ws as any, code, reason)
-      }
-    },
-  },
+  if (url.pathname.startsWith("/ws/agent/")) {
+    agentWss.handleUpgrade(req, socket, head, (ws) => {
+      agentWss.emit("connection", ws, req)
+    })
+    return
+  }
+
+  // Unknown WS path — destroy socket
+  socket.destroy()
 })
 
 log.info({ port }, "listening")

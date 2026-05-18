@@ -16,6 +16,7 @@
     "@ai-sdk/provider": "^3.0.10",
     "@drive-coding/core": "workspace:*",
     "@google/genai": "^2.3.0",
+    "@hono/node-server": "^2.0.3",
     "@types/ws": "^8.18.1",
     "ai": "^6.0.184",
     "arktype": "^2.0.0",

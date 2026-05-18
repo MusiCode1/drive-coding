@@ -1,24 +1,26 @@
-import type { ServerWebSocket } from "bun"
-import { Hono } from "hono"
+import { EventEmitter } from "node:events"
 import { describe, expect, it, vi } from "vitest"
-import { registerEchoWs, type WsData } from "../src/delivery/ws-echo"
+import { createEchoWsHandler, type WsData } from "../src/delivery/ws-echo"
 
-function makeWs(): { ws: ServerWebSocket<WsData>; sent: string[] } {
+// Mock ws.WebSocket (only the parts we use: send + on/off/once/emit via EventEmitter)
+function makeWs(): { ws: import("ws").WebSocket; sent: string[] } {
   const sent: string[] = []
-  const ws = {
-    data: { id: "test" },
+  const emitter = new EventEmitter()
+  const ws = Object.assign(emitter, {
+    data: { id: "test" } as WsData,
     send: vi.fn((d: unknown) => {
       sent.push(typeof d === "string" ? d : String(d))
     }),
-  } as unknown as ServerWebSocket<WsData>
+    close: vi.fn(),
+  }) as unknown as import("ws").WebSocket
   return { ws, sent }
 }
 
-describe("registerEchoWs", () => {
-  it("open() sends 'hello' with version", () => {
-    const { websocket } = registerEchoWs(new Hono())
+describe("createEchoWsHandler", () => {
+  it("on connect sends 'hello' with version", () => {
+    const handler = createEchoWsHandler()
     const { ws, sent } = makeWs()
-    websocket.open?.(ws)
+    handler(ws)
 
     expect(sent).toHaveLength(1)
     const parsed = JSON.parse(sent[0] ?? "")
@@ -27,32 +29,45 @@ describe("registerEchoWs", () => {
   })
 
   it("ping message → pong with echoOf + serverTime", () => {
-    const { websocket } = registerEchoWs(new Hono())
+    const handler = createEchoWsHandler()
     const { ws, sent } = makeWs()
-    websocket.message?.(ws, JSON.stringify({ type: "ping" }))
+    handler(ws)
 
-    const parsed = JSON.parse(sent[0] ?? "")
+    // Emit a message event (as ws library does)
+    ws.emit("message", JSON.stringify({ type: "ping" }))
+
+    const pong = sent.find((s) => s.includes("pong"))
+    expect(pong).toBeDefined()
+    const parsed = JSON.parse(pong ?? "")
     expect(parsed.type).toBe("pong")
     expect(parsed.echoOf).toBe("ping")
     expect(typeof parsed.serverTime).toBe("number")
   })
 
   it("invalid JSON → error INVALID_JSON", () => {
-    const { websocket } = registerEchoWs(new Hono())
+    const handler = createEchoWsHandler()
     const { ws, sent } = makeWs()
-    websocket.message?.(ws, "not-json{{{{")
+    handler(ws)
 
-    const parsed = JSON.parse(sent[0] ?? "")
+    ws.emit("message", "not-json{{{{")
+
+    const errMsg = sent.find((s) => s.includes("INVALID_JSON"))
+    expect(errMsg).toBeDefined()
+    const parsed = JSON.parse(errMsg ?? "")
     expect(parsed.type).toBe("error")
     expect(parsed.code).toBe("INVALID_JSON")
   })
 
   it("unknown message type → error INVALID_MSG", () => {
-    const { websocket } = registerEchoWs(new Hono())
+    const handler = createEchoWsHandler()
     const { ws, sent } = makeWs()
-    websocket.message?.(ws, JSON.stringify({ type: "subscribe" }))
+    handler(ws)
 
-    const parsed = JSON.parse(sent[0] ?? "")
+    ws.emit("message", JSON.stringify({ type: "subscribe" }))
+
+    const errMsg = sent.find((s) => s.includes("INVALID_MSG"))
+    expect(errMsg).toBeDefined()
+    const parsed = JSON.parse(errMsg ?? "")
     expect(parsed.type).toBe("error")
     expect(parsed.code).toBe("INVALID_MSG")
   })

@@ -1,7 +1,8 @@
 /**
  * ws-agent.ts — WebSocket bytes pipe for /ws/agent/:id
  *
- * Slice 10 Phase 1 refactor.
+ * Phase 1: Converted from Bun.serve WebSocketHandler to ws library API.
+ * Phase 3: Will replace bridge WS proxy with direct in-process pipe.
  *
  * Acts as a bidirectional transparent proxy between the FE WebSocket
  * and the stdio-to-ws bridge process on loopback.
@@ -19,7 +20,6 @@
  */
 
 import { createLogger } from "@drive-coding/core/log"
-import type { ServerWebSocket, WebSocketHandler } from "bun"
 import { WebSocket } from "ws"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 
@@ -38,14 +38,47 @@ export type AgentWsData = {
 // ─── Handler factory ──────────────────────────────────────────────────────────
 
 export function createAgentWsHandler(deps: { orchestrator: AgentOrchestrator }): {
-  websocket: WebSocketHandler<AgentWsData>
-  tryUpgrade: (req: Request, server: ReturnType<typeof Bun.serve>) => Response | undefined
+  websocket: {
+    open?: (ws: {
+      data: AgentWsData
+      send: (d: string | Buffer) => void
+      close: (code: number, reason: string) => void
+    }) => Promise<void>
+    message?: (
+      ws: {
+        data: AgentWsData
+        send: (d: string | Buffer) => void
+        close: (code: number, reason: string) => void
+      },
+      raw: string | Buffer,
+    ) => void
+    close?: (
+      ws: {
+        data: AgentWsData
+        send: (d: string | Buffer) => void
+        close: (code: number, reason: string) => void
+      },
+      code: number,
+      reason: string,
+    ) => void
+  }
 } {
   // MED-8: one active FE WS per agentId — prevents ACP state collision on second tab
-  const activeFeWs = new Map<string, ServerWebSocket<AgentWsData>>()
+  const activeFeWs = new Map<
+    string,
+    {
+      data: AgentWsData
+      send: (d: string | Buffer) => void
+      close: (code: number, reason: string) => void
+    }
+  >()
 
-  const websocket: WebSocketHandler<AgentWsData> = {
-    async open(feWs) {
+  const websocket = {
+    async open(feWs: {
+      data: AgentWsData
+      send: (d: string | Buffer) => void
+      close: (code: number, reason: string) => void
+    }) {
       const agentId = feWs.data.agentId
       log.child({ agentId }).info({}, "WS connect")
 
@@ -87,8 +120,6 @@ export function createAgentWsHandler(deps: { orchestrator: AgentOrchestrator }):
 
       bridgeWs.on("message", (data) => {
         // Forward bridge frame as-is to FE.
-        // Bun ServerWebSocket.send accepts string | BufferSource.
-        // ws library delivers data as Buffer (which is Uint8Array-compatible).
         try {
           feWs.send(data as string | Buffer)
         } catch {
@@ -115,7 +146,14 @@ export function createAgentWsHandler(deps: { orchestrator: AgentOrchestrator }):
       })
     },
 
-    message(feWs, raw) {
+    message(
+      feWs: {
+        data: AgentWsData
+        send: (d: string | Buffer) => void
+        close: (code: number, reason: string) => void
+      },
+      raw: string | Buffer,
+    ) {
       // Forward FE message to bridge, or buffer if bridge not yet open
       if (feWs.data.bridgeOpen && feWs.data.bridgeWs) {
         try {
@@ -128,7 +166,11 @@ export function createAgentWsHandler(deps: { orchestrator: AgentOrchestrator }):
       }
     },
 
-    close(feWs) {
+    close(feWs: {
+      data: AgentWsData
+      send: (d: string | Buffer) => void
+      close: (code: number, reason: string) => void
+    }) {
       const agentId = feWs.data.agentId
       log.child({ agentId }).info({}, "WS disconnect — cleanup")
       activeFeWs.delete(agentId)
@@ -140,24 +182,5 @@ export function createAgentWsHandler(deps: { orchestrator: AgentOrchestrator }):
     },
   }
 
-  function tryUpgrade(req: Request, server: ReturnType<typeof Bun.serve>): Response | undefined {
-    const url = new URL(req.url)
-    const match = url.pathname.match(/^\/ws\/agent\/([^/]+)$/)
-    if (!match) return undefined
-
-    const agentId = match[1] ?? ""
-    const upgraded = server.upgrade(req, {
-      data: {
-        kind: "agent",
-        agentId,
-        bridgeWs: undefined,
-        pendingFromFe: [],
-        bridgeOpen: false,
-      } satisfies AgentWsData,
-    })
-    if (upgraded) return undefined
-    return new Response("WS upgrade failed", { status: 426 })
-  }
-
-  return { websocket, tryUpgrade }
+  return { websocket }
 }
