@@ -1,4 +1,4 @@
-import { type AgentRegistry, CliKind, toAgentPublic } from "@drive-coding/core"
+import { type AgentRegistry, CliKind, toAgentPublic, validateCwd } from "@drive-coding/core"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import type { AgentOrchestrator } from "../app/agent-orchestrator"
@@ -44,10 +44,18 @@ export function registerAgentsHttp(
       return c.json({ error: parsed.summary }, 400)
     }
 
+    // Validate cwd path — rejects double-encoded paths, NUL bytes, relative paths, etc.
+    const cwdResult = validateCwd(parsed.cwd)
+    if (cwdResult.isErr()) {
+      const e = cwdResult.error
+      return c.json({ error: `invalid cwd: ${e.kind}`, detail: e }, 400)
+    }
+
     try {
       // null → undefined: HTTP schema accepts null (JSON compat), orchestrator expects string | undefined
       const result = await deps.orchestrator.createAndSpawn({
         ...parsed,
+        cwd: cwdResult.value, // use normalised cwd (trailing slash stripped)
         existingSessionId: parsed.existingSessionId ?? undefined,
       })
       // Return CreateAndSpawnResult shape (Slice 10)

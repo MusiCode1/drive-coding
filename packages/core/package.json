@@ -15,7 +15,9 @@
     "./log": {
       "browser": "./src/log/browser.ts",
       "default": "./src/log/index.ts"
-    }
+    },
+    "./cwd-hash": "./src/cwd-hash.ts",
+    "./cwd-validate": "./src/cwd-validate.ts"
   },
   "scripts": {
     "build": "tsc --build",

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type { Agent, AgentRegistry, CreateAgentInput } from "@drive-coding/core"
+import { validateCwd } from "@drive-coding/core"
 
 /**
  * In-memory AgentRegistry.
@@ -11,11 +12,18 @@ export function createInMemoryAgentRegistry(): AgentRegistry {
 
   return {
     async create(input: CreateAgentInput): Promise<Agent> {
+      // Belt-and-suspenders: validate cwd even if http-agents already checked it.
+      // Guards against direct registry calls that bypass the HTTP layer.
+      const cwdResult = validateCwd(input.cwd)
+      if (cwdResult.isErr()) {
+        throw new Error(`invalid cwd: ${cwdResult.error.kind}`)
+      }
+
       const id = randomUUID()
       const agent: Agent = {
         id,
         cliKind: input.cliKind,
-        cwd: input.cwd,
+        cwd: cwdResult.value, // normalised
         modelOverride: input.modelOverride ?? null,
         status: "ready", // Slice 2 stub. Slice 3+: starting → ready
         createdAt: new Date().toISOString(),

@@ -24,7 +24,9 @@ onMount(async () => {
 })
 
 function openSession(cwdHash: string, sessionId: string) {
-  goto(`/session/${encodeURIComponent(cwdHash)}/${encodeURIComponent(sessionId)}?cli=opencode`)
+  // cwdHash is a SHA-256 base64url — URL-safe, no special chars, no encoding needed.
+  // sessionId may contain letters/digits/underscores — also URL-safe.
+  goto(`/session/${cwdHash}/${encodeURIComponent(sessionId)}?cli=opencode`)
 }
 
 function openProject(cwdHash: string) {
@@ -63,13 +65,7 @@ function openProject(cwdHash: string) {
           {#each store.sessions.slice(0, 50) as session (session.sessionId)}
             <SessionCard
               {session}
-              onclick={() => {
-                const proj = store.projects.find(
-                  (p) => p.cwd === session.cwd || p.cwdHash === session.cwd,
-                )
-                const hash = proj?.cwdHash ?? encodeURIComponent(session.cwd)
-                openSession(hash, session.sessionId)
-              }}
+              onclick={() => openSession(session.cwdHash, session.sessionId)}
             />
           {/each}
         </div>

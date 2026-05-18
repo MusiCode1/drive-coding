@@ -20,7 +20,8 @@ onMount(async () => {
 })
 
 function openSession(sessionId: string) {
-  goto(`/session/${encodeURIComponent(cwdHash)}/${encodeURIComponent(sessionId)}?cli=opencode`)
+  // cwdHash is a SHA-256 base64url from the URL — URL-safe, no encoding needed.
+  goto(`/session/${cwdHash}/${encodeURIComponent(sessionId)}?cli=opencode`)
 }
 </script>
 

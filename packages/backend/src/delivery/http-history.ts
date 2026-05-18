@@ -10,21 +10,15 @@
  * cwdHash = SHA-256(cwd) encoded as base64url (URL-safe, no padding).
  */
 
-import { createHash } from "node:crypto"
 import { readdir, realpath } from "node:fs/promises"
 import { homedir } from "node:os"
 import { resolve } from "node:path"
+import { cwdToHash } from "@drive-coding/core"
 import type { Hono } from "hono"
 import type { SessionInfo } from "../acp/session-types.js"
 import type { ProjectsRegistry } from "../app/projects-registry.js"
 import type { RecordingsStore } from "../app/recordings-store.js"
 import type { SessionsCache } from "../app/sessions-cache.js"
-
-// ─── Utilities ────────────────────────────────────────────────────────────────
-
-function cwdToHash(cwd: string): string {
-  return createHash("sha256").update(cwd).digest("base64url")
-}
 
 // ─── /api/projects + /api/sessions ───────────────────────────────────────────
 
@@ -51,9 +45,11 @@ export function registerProjectsHttp(
   app.get("/api/projects/:cwdHash/sessions", async (c) => {
     const cwdHash = c.req.param("cwdHash")
 
-    // Resolve cwdHash → cwd
+    // Resolve cwdHash → cwd (cwdToHash is async — compute all hashes in parallel)
     const allProjects = await deps.projectsRegistry.getProjects()
-    const entry = allProjects.find((p) => cwdToHash(p.cwd) === cwdHash)
+    const hashes = await Promise.all(allProjects.map((p) => cwdToHash(p.cwd)))
+    const entryIdx = hashes.findIndex((h) => h === cwdHash)
+    const entry = entryIdx >= 0 ? allProjects[entryIdx] : undefined
     if (!entry) {
       return c.json({ error: "project not found" }, 404)
     }

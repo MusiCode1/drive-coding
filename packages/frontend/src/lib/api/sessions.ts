@@ -5,6 +5,8 @@
 export type SessionRecord = {
   sessionId: string
   cwd: string
+  /** SHA-256(cwd) as base64url — computed client-side after load, not from API. */
+  cwdHash: string
   title: string
   updatedAt: string
   cliKind: string

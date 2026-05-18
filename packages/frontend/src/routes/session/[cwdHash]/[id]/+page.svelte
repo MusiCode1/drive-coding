@@ -25,14 +25,20 @@ let loadError = $state<string | null>(null)
 onMount(async () => {
   loadError = null
   try {
-    // 1. Resolve cwdHash → cwd
+    // 1. Resolve cwdHash → cwd via project registry
     const projects = await listProjects()
     const project = projects.find((p) => p.cwdHash === cwdHash)
-    const cwd = project?.cwd ?? `/${cwdHash}` // fallback if not found
+
+    // If project not found, the hash is unknown/invalid — do NOT attempt to spawn.
+    // This fixes F-6 (INVALID_HASH in URL trying to spawn with corrupted cwd).
+    if (!project) {
+      loadError = "פרויקט לא נמצא — הנתיב לא רשום במערכת"
+      return
+    }
 
     // 2. Create/reuse agent with existingSessionId
     const { agentId } = await createAgent({
-      cwd,
+      cwd: project.cwd,
       cliKind: cliKind as "opencode",
       existingSessionId: sessionId,
     } as Parameters<typeof createAgent>[0])
