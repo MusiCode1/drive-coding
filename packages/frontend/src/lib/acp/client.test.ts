@@ -2,8 +2,9 @@
  * client.test.ts — Tests for createAcpClient behaviors
  *
  * Tests focus on the observable behaviors:
- * 1. Handshake timeout (MED-4): 10s timeout on stdio-to-ws connected frame
- * 2. Heartbeat: $/ping sent every 25s
+ * 1. ACP initialize timeout: 10s timeout wrapping conn.initialize (data-driven
+ *    readiness — no synthetic handshake frame; readiness proven by ACP response).
+ * 2. Heartbeat: $/ping sent every 25s.
  *
  * Note: Full ACP initialize flow is tested in integration via the store tests.
  * This file tests the WS-level behaviors that don't require SDK mocking.
@@ -89,9 +90,9 @@ describe("createAcpClient — WS-level behaviors", () => {
     vi.clearAllMocks()
   })
 
-  // ── 1. Handshake timeout (MED-4) ─────────────────────────────────────────
+  // ── 1. ACP initialize timeout (data-driven readiness) ────────────────────
 
-  it("MED-4: throws and closes WS if connected frame not received within 10s", async () => {
+  it("throws and closes WS if ACP initialize gets no response within 10s", async () => {
     const { createAcpClient } = await import("./client.js")
 
     // connectPromise will reject — capture and handle it immediately to avoid unhandled rejection
@@ -100,16 +101,16 @@ describe("createAcpClient — WS-level behaviors", () => {
       rejectReason = e
     })
 
-    // Let WS open fire
+    // Let WS open fire — FE sends `initialize` immediately, no handshake wait.
     await new Promise<void>((r) => queueMicrotask(r))
 
-    // Advance 10s — no connected frame sent
+    // Advance 10s — no ACP response to initialize
     vi.advanceTimersByTime(10_001)
     await vi.runAllTimersAsync()
     await connectPromise
 
     expect(rejectReason).toBeInstanceOf(Error)
-    expect((rejectReason as Error).message).toMatch(/handshake timeout/i)
+    expect((rejectReason as Error).message).toMatch(/initialize timeout/i)
 
     const ws = wsInstances[0]
     expect(ws?.readyState).toBe(3) // CLOSED

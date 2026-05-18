@@ -1,18 +1,15 @@
 /**
  * ws-to-streams.ts — Browser WebSocket → { ReadableStream, WritableStream }
  *
- * Port of packages/backend/src/acp/ws-streams.ts with browser adaptations:
- * 1. Uses native browser WebSocket (not `ws` npm package)
- * 2. Filters stdio-to-ws wrapper frames THROUGHOUT the session (not only handshake)
- *    — stdio-to-ws sends heartbeat every ~30s and other frames at any time
- * 3. Readable: forwards ACP frames as-is WITHOUT adding \n
- *    (SDK buffers partial frames and parses on \n boundary — adding \n to partial
- *     frames causes "Unterminated string" error and stream teardown)
- * 4. Writable: splits chunk on \n, sends each non-empty line with \n suffix
- *    (opencode expects NDJSON newline-delimited stream)
+ * Contract (post-F1 fix — direct in-process pipe, no stdio-to-ws wrapper):
+ * 1. Uses native browser WebSocket (not `ws` npm package).
+ * 2. Readable: forwards every WS frame as-is to the SDK WITHOUT adding \n.
+ *    (SDK buffers partial frames and parses on \n boundary — adding \n to a
+ *     partial frame causes "Unterminated string" error and stream teardown.)
+ *    No filtering: every byte from the BE pipe is forwarded.
+ * 3. Writable: splits chunk on \n, sends each non-empty line with \n suffix
+ *    (opencode expects NDJSON newline-delimited stream).
  */
-
-const STDIO_TO_WS_FRAME_TYPES = new Set(["connected", "heartbeat", "disconnected", "error"])
 
 export function wsToWebStreams(ws: WebSocket): {
   readable: ReadableStream<Uint8Array>
@@ -21,7 +18,7 @@ export function wsToWebStreams(ws: WebSocket): {
   const encoder = new TextEncoder()
   const decoder = new TextDecoder()
 
-  // ── Readable: incoming WS frames → byte stream ────────────────────────────
+  // ── Readable: incoming WS frames → byte stream (forward as-is) ────────────
   const readable = new ReadableStream<Uint8Array>({
     start(controller) {
       ws.addEventListener("message", (ev: MessageEvent) => {
@@ -32,27 +29,9 @@ export function wsToWebStreams(ws: WebSocket): {
               ? decoder.decode(ev.data)
               : String(ev.data)
 
-        // Filter stdio-to-ws wrapper frames throughout entire session.
-        // ACP JSON-RPC messages always contain "jsonrpc" — quick early detection.
-        if (!text.includes('"jsonrpc"')) {
-          try {
-            const parsed = JSON.parse(text) as { type?: string; jsonrpc?: string }
-            if (parsed.jsonrpc === undefined && parsed.type !== undefined) {
-              if (STDIO_TO_WS_FRAME_TYPES.has(parsed.type)) {
-                return // swallow stdio-to-ws wrapper frame
-              }
-              // Unknown non-ACP frame — skip rather than corrupt the stream
-              console.warn("[acp] dropped non-ACP frame:", text.slice(0, 200))
-              return
-            }
-          } catch {
-            // Not JSON — fall through (could be partial NDJSON line)
-          }
-        }
-
         // Forward as-is — SDK buffers and parses on \n boundary.
-        // DO NOT add \n artificially — stdio-to-ws may split a single ACP message
-        // across multiple WS frames. Adding \n to a partial frame causes the SDK to
+        // DO NOT add \n artificially — a single ACP message may be split across
+        // multiple WS frames; adding \n to a partial frame causes the SDK to
         // parse it as a complete message → "Unterminated string" → stream teardown.
         controller.enqueue(encoder.encode(text))
       })
