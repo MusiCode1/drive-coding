@@ -250,7 +250,7 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
       child.emit("exit", 127)
 
       await new Promise((r) => setTimeout(r, 20))
-      expect(crashSpy).toHaveBeenCalledWith("agent-exit", 127)
+      expect(crashSpy).toHaveBeenCalledWith("agent-exit", { exitCode: 127, signal: null })
       expect(mgr.get("agent-exit")).toBeNull()
       expect(mgr.list()).toHaveLength(0)
 
@@ -309,7 +309,7 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
       expect(mgr.get("agent-x")).toBeNull()
       expect(mgr.list()).toHaveLength(0)
       // crash handler was called
-      expect(crashSpy).toHaveBeenCalledWith("agent-x", 127)
+      expect(crashSpy).toHaveBeenCalledWith("agent-x", { exitCode: 127, signal: null })
 
       await monitor.stopAndAssertClean()
     })

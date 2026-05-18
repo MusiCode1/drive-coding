@@ -1,6 +1,9 @@
 import type { PromptResponse, SessionNotification } from "@agentclientprotocol/sdk"
 import type { Result } from "neverthrow"
 import type { Agent, CreateAgentInput } from "./schemas"
+import type { BridgeCrashInfo } from "./acp/describe-crash.js"
+
+export type { BridgeCrashInfo }
 
 export type { PromptResponse, SessionNotification }
 
@@ -107,7 +110,7 @@ export interface BridgeManager {
   kill(bridgeId: string): Promise<boolean>
 
   /** subscribe ל-crash events. callback נקרא כש-bridge מת לבד. */
-  onCrash(handler: (bridgeId: string, exitCode: number | null) => void): () => void
+  onCrash(handler: (bridgeId: string, info: BridgeCrashInfo) => void): () => void
 }
 
 // ─── Voice ports (Slice 5) ────────────────────────────────────

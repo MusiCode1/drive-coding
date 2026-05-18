@@ -18,11 +18,12 @@
 import type {
   Agent,
   AgentRegistry,
+  BridgeCrashInfo,
   BridgeKind,
   BridgeManager,
   CreateAgentInput,
 } from "@drive-coding/core"
-import { extractProviderError } from "@drive-coding/core/acp/provider-error"
+import { describeCrash } from "@drive-coding/core/acp/describe-crash"
 import { createLogger } from "@drive-coding/core/log"
 import type { BridgeHandleWithStderr } from "../acp/bridge-manager.js"
 import type { ProjectsRegistry } from "./projects-registry.js"
@@ -90,14 +91,14 @@ export function createAgentOrchestrator(deps: {
 
   // Wire crash handler: when a bridge dies, mark agent as crashed + update registry.
   // The ws-agent pipe will detect bridgeWs.close and send feWs.close(1011, "bridge closed").
-  deps.bridgeManager.onCrash(async (bridgeId, exitCode) => {
+  deps.bridgeManager.onCrash(async (bridgeId, info: BridgeCrashInfo) => {
     try {
       const existing = await deps.registry.get(bridgeId)
       if (existing && existing.status !== "closed") {
         const getStderr = stderrGetters.get(bridgeId)
-        const crashReason = getStderr ? (extractProviderError(getStderr()) ?? undefined) : undefined
+        const crashReason = describeCrash(info, getStderr ? getStderr() : [])
         await deps.registry.update(bridgeId, { status: "crashed", crashReason })
-        log.warn({ bridgeId, exitCode, crashReason }, "bridge crashed")
+        log.warn({ bridgeId, exitCode: info.exitCode, signal: info.signal, crashReason }, "bridge crashed")
       }
     } catch (e) {
       log.error({ err: e }, "crash cleanup failed")
@@ -178,7 +179,13 @@ export function createAgentOrchestrator(deps: {
         return result
       } catch (e) {
         const getStderr = stderrGetters.get(agent.id)
-        const crashReason = getStderr ? (extractProviderError(getStderr()) ?? undefined) : undefined
+        const spawnError = e instanceof Error
+          ? { code: (e as NodeJS.ErrnoException).code, message: e.message }
+          : { message: String(e) }
+        const crashReason = describeCrash(
+          { exitCode: null, signal: null, spawnError },
+          getStderr ? getStderr() : [],
+        )
         stderrGetters.delete(agent.id)
         bridgePorts.delete(agent.id)
 
