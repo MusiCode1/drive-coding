@@ -10,3 +10,4 @@ packages/backend/data/
 scripts/node_modules
 .codenomad/
 .mockups-tmp
+.playwright-cli/
