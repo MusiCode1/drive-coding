@@ -12,10 +12,11 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google"
 import { GoogleGenAI } from "@google/genai"
 
-// Relative URLs — SDK init runs at module-load time (incl. SSR).
-// `location.*` is browser-only and would crash SSR. fetch() in the browser
-// resolves relative URLs against window.location, so this is functionally
-// identical for actual API calls (which only happen in the browser anyway).
+// SDK init runs at module-load time (incl. SSR — `location` is undefined there).
+// We use a stub in SSR; the real value resolves in the browser at runtime.
+// `@ai-sdk/google` accepts relative `baseURL` (fetch resolves against window).
+// `@google/genai` calls `new URL(httpOptions.baseUrl)` eagerly → REQUIRES absolute.
+const browserOrigin = typeof window !== "undefined" ? window.location.origin : "http://ssr-stub.local"
 
 /**
  * For translation + narration — `generateText` from `@ai-sdk/google`.
@@ -23,7 +24,7 @@ import { GoogleGenAI } from "@google/genai"
  */
 export const googleAi = createGoogleGenerativeAI({
   apiKey: "browser-placeholder", // placeholder; OneCLI injects real key at proxy
-  baseURL: "/proxy/google/v1beta",
+  baseURL: `${browserOrigin}/proxy/google/v1beta`,
 })
 
 /**
@@ -31,9 +32,10 @@ export const googleAi = createGoogleGenerativeAI({
  * IMPORTANT: this SDK uses `httpOptions.baseUrl` (lowercase u) — web.d.ts:5904.
  * Wrong casing (`baseURL` instead of `baseUrl`) causes SDK to ignore the option
  * and hit generativelanguage.googleapis.com directly → CORS error + 401.
- * The baseUrl MUST end with `/` before the SDK appends apiVersion (`v1beta`).
+ * The baseUrl MUST be absolute — SDK passes it to `new URL()` eagerly.
+ * baseUrl MUST end with `/` before the SDK appends apiVersion (`v1beta`).
  */
 export const googleGenAi = new GoogleGenAI({
   apiKey: "browser-placeholder",
-  httpOptions: { baseUrl: "/proxy/google/" }, // lowercase 'u', trailing slash required
+  httpOptions: { baseUrl: `${browserOrigin}/proxy/google/` },
 })
