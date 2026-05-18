@@ -30,6 +30,10 @@ export async function createAcpClient(
 ) {
   const proto = location.protocol === "https:" ? "wss:" : "ws:"
   const ws = new WebSocket(`${proto}//${location.host}/ws/agent/${agentId}`)
+  // BE forwards `Buffer` frames from stdio-to-ws (binary by default).
+  // Without this, browser delivers them as Blob → onMsg handler's `typeof === "string"`
+  // path mis-fires and the handshake "connected" frame is silently dropped → timeout.
+  ws.binaryType = "arraybuffer"
 
   // MED-8: listen for WS close events throughout the session
   // code 1008 = "agent in use by another tab" (set by ws-agent.ts on multi-tab collision)
@@ -56,8 +60,12 @@ export async function createAcpClient(
       )
     }, HANDSHAKE_TIMEOUT_MS)
 
+    const decoder = new TextDecoder()
     const onMsg = (ev: MessageEvent) => {
-      const text = typeof ev.data === "string" ? ev.data : ""
+      let text: string
+      if (typeof ev.data === "string") text = ev.data
+      else if (ev.data instanceof ArrayBuffer) text = decoder.decode(ev.data)
+      else text = "" // Blob is unexpected after binaryType=arraybuffer
       if (text.includes('"type":"connected"')) {
         clearTimeout(timer)
         ws.removeEventListener("message", onMsg)
