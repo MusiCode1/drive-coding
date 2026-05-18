@@ -3,41 +3,31 @@
 > ‏Source finding: ‏`docs/slice-10-exploratory-test-report.md` ‏#F-5 (MAJOR).
 > ‏Investigation date: 2026-05-18.
 > ‏Mode: code-only (no runtime reproduction).
+> ‏**Revision 2** (2026-05-18, ‏post-Avi feedback): ‏עודכן ‏לפי ‏הקונטקסט ‏הארכיטקטוני העדכני ‏וההחלטה ‏שהפתרון ‏יהיה ‏FE-only.
 
 ## Bug recap
 
-‏אחרי BE restart ‏(crash או ידני) ‏`GET /api/agents` ‏מחזיר ‏`{"agents":[]}`. ‏Dashboard מציג "אין סוכנים פעילים". ‏ה-FE שעדיין מחזיק `agentId` ישן ‏(bookmark, ‏‏טאב פתוח, ‏PWA shortcut) ‏מקבל 404 ‏ומציג שגיאה גנרית ‏(F-6 הוסר חלקית). ‏‏ה-bridges הישנים גם נעלמים בפועל ‏(ראה Root cause), ‏‏אז זה לא רק בעיית registry — ‏כל ה-state של ה-agents אבוד.
+‏אחרי BE restart ‏(crash או ידני) ‏`GET /api/agents` ‏מחזיר ‏`{"agents":[]}`. ‏Dashboard מציג "אין סוכנים פעילים". ‏ה-FE שעדיין מחזיק `agentId` ישן ‏(bookmark, ‏‏טאב פתוח, ‏PWA shortcut) ‏מקבל 404 ‏ומציג שגיאה גנרית. ‏‏ה-bridges הישנים גם נעלמים בפועל ‏‏כי ‏הם רצים ‏כ-child processes ‏ישירים של ‏BE — ‏‏‏מתים יחד איתו.
+
+## Architectural context (‏חשוב לפני root cause)
+
+‏ההחלטה ‏הארכיטקטונית ‏(אבי, ‏2026-05-18): ‏**BE כעת ‏מריץ את ‏ה-CLI ‏ישירות ‏ומחבר ‏ל-WebSocket — ‏‏לא ‏‏‏עוטף ‏ב-stdio-to-ws ‏‏עם `--persist`.** ‏זה ‏שינוי ‏יחסית ל-`docs/vnext-architecture.md:710-716` ‏(שמתאר ‏‏את ‏ה-wrapper ‏‏‏הישן ‏ש-`--persist` ‏בו). ‏‏השינוי ‏בוצע ‏‏כתגובה ל-F-1 ‏(BE ‏‏‏‏‏שורד spawn failures).
+
+**משמעות:** ‏ה-bridges ‏‏‏לא ‏אמורים ‏לשרוד BE crash — ‏זה ‏‏ההתנהגות ‏הנכונה ‏‏‏לפי ‏‏ההחלטה ‏החדשה. ‏‏הbug ‏הוא ‏לא ‏"BE איבד ‏state ‏שהיה ‏‏צריך לשמור" ‏אלא ‏"FE ‏‏לא ‏‏‏מטפל ‏בגרציה ‏‏‏במצב ‏ש-agentId ‏‏הישן ‏‏לא קיים יותר".
 
 ## Root cause
 
-‏שני "ערימות in-memory" שאובדות ב-restart, ‏ותו ‏מפתח שהארכיטקטורה הניחה ולא קיים בקוד.
+### ‏‏1. ‏‏State ‏in-memory ב-BE — ‏**by design**
 
-### ‏‏1. ‏Registry ‏בזיכרון בלבד
+‏`packages/backend/src/agents/registry.ts:10-56` — ‏`createInMemoryAgentRegistry` ‏‏מחזיק ‏`store = new Map<string, Agent>()`. ‏מודה ‏בcomment שורה 7: ‏"נאבד ב-restart (D8 — acceptable ל-MVP)".
+‏`packages/backend/src/app/agent-orchestrator.ts:85-89` — ‏`bridgePorts` + ‏`stderrGetters` ‏‏in-memory.
+‏`packages/backend/src/server.ts:52` — ‏אינסטנס יחיד ב-boot, ‏ללא load מ-disk.
 
-‏`packages/backend/src/agents/registry.ts:10-56` — ‏`createInMemoryAgentRegistry` ‏מחזיק ‏`store = new Map<string, Agent>()` ‏בסקופ של factory. ‏אין load מ-disk, ‏אין persist. ‏ה-comment בשורה 7 ‏מודה: ‏"נאבד ב-restart (D8 — acceptable ל-MVP)".
+‏זה ‏‏‏מותאם ל-D8 ‏(‏`docs/vnext-architecture.md:167` — ‏"‏אין DB משלנו").
 
-‏`packages/backend/src/server.ts:52` ‏מחבר ‏אינסטנס יחיד בעלייה: ‏`const registry = createInMemoryAgentRegistry()`. ‏אין boot hook שטוען מצב.
+### ‏‏2. ‏ה-CLI children מתים ‏עם BE — ‏**by design (post-F-1)**
 
-### ‏‏2. ‏Orchestrator מחזיק bridge ports ‏בזיכרון בלבד
-
-‏`packages/backend/src/app/agent-orchestrator.ts:85-89`:
-
-```ts
-const stderrGetters = new Map<string, () => string[]>()
-const bridgePorts = new Map<string, number>()
-```
-
-‏שתי ‏ה-maps נבנות מחדש כל boot — ‏אפילו אם הregistry היה persisted, ‏ws-agent ‏לא היה ‏יודע ‏לאן ‏לנתב.
-
-### ‏‏3. ‏ה-bridges עצמם מתים יחד עם BE ‏(architecture ≠ implementation)
-
-‏‏זה הממצא ‏הכי ‏מפתיע. ‏המסמך ‏`docs/vnext-architecture.md:710-716` ‏מצהיר ‏שה-bridges שורדים נפילת backend ‏באמצעות ‏`--persist`:
-
-> ‏Backend נופל: ‏bridges ממשיכים לרוץ ‏(`--persist`) ‏ומצברים events מ-CLI. ‏אבל ה-in-memory Map של ה-agent registry אבד.
-
-‏ו-D33 ‏(שורה 192) ‏מצהיר ‏שה-BE spawn-ים את ה-CLI דרך ‏`npx @rebornix/stdio-to-ws "opencode acp" --port 0 --persist --grace-period -1`.
-
-‏אבל ‏`packages/backend/src/acp/bridge-manager.ts:52-56` ‏‏מבצע ‏spawn ישיר ‏עם piped stdio:
+‏`packages/backend/src/acp/bridge-manager.ts:52-56`:
 
 ```ts
 child = spawn(cli.bin, [...cli.args], {
@@ -47,118 +37,156 @@ child = spawn(cli.bin, [...cli.args], {
 })
 ```
 
-‏וב-`cli-config.ts:22-25` ‏‏ה-bin הוא ‏ישירות ‏`opencode acp`, ‏ללא stdio-to-ws ‏בכלל. ‏כש-BE מת:
+‏ו-`cli-config.ts:22-25` — ‏`bin = "opencode acp"` ‏ישיר, ‏‏ללא `stdio-to-ws --persist`. ‏‏כש-BE מת: ‏stdin EOF → ‏ה-CLI children ‏יוצאים. ‏זה ‏ההתנהגות הנכונה ‏לפי ‏ההחלטה החדשה.
 
-‏-‏ ‏ה-pipes ‏נסגרים → ‏ה-CLI children ‏מקבלים stdin EOF → ‏יוצאים.
-‏-‏ ‏גם אם איכשהו ‏היו ‏שורדים, ‏ה-orchestrator לא יודע איזה port הם שמעו, ‏ו-`bridge-manager.ts:103` ‏מסמן את ‏`port: 0` ‏(‏"in-process: no port") — ‏אין דרך לחבר אליהם שוב.
+### ‏‏3. ‏FE ‏‏לא ‏מטפל ב-404 ‏על ‏agent
 
-‏המשמעות: ‏ההנחה שעליה ‏‏ה-architecture ‏‏ביססה ‏‏את ‏"acceptable to lose registry" ‏(‏‏הbridges שורדים) ‏‏לא ‏מתקיימת בפועל. ‏‏BE restart = ‏איבוד מוחלט של agents + bridges + sessions ‏(‏ב-BE; ‏opencode עצמו עדיין שומר conversations ב-disk שלו).
-
-### ‏‏4. ‏‏מה כן ‏מתמיד
-
-‏`packages/backend/src/app/projects-registry.ts:24-78` — ‏`createProjectsRegistry(baseDir)` ‏עם ‏`<baseDir>/projects-registry.json` ‏(שורה 5: "Persisted to ... — survives backend restarts"). ‏מכיל ‏לכל cwd: ‏`{cwd, kind, lastSeen, lastSessionId?}`.
-
-‏זה ה-building block היחיד הזמין: ‏אחרי restart יש לנו רשימת ‏cwds + ‏acpSessionId ‏האחרון של כל אחד. ‏אין לנו ‏מפת agentId → bridgePort.
-
-## Affected files
-
-- ‏`packages/backend/src/agents/registry.ts:10-56` — ‏in-memory Map, ‏ללא persist
-- ‏`packages/backend/src/server.ts:52` — ‏מחבר את האינסטנס היחיד ב-boot
-- ‏`packages/backend/src/app/agent-orchestrator.ts:85-89` — ‏`bridgePorts` + ‏`stderrGetters` ‏in-memory
-- ‏`packages/backend/src/acp/bridge-manager.ts:24,52-56,99-107` — ‏direct child spawn, ‏ללא stdio-to-ws / ‏`--persist`
-- ‏`packages/backend/src/acp/cli-config.ts:22-25` — ‏bin = ‏`opencode acp` ישיר
-- ‏`packages/backend/src/app/projects-registry.ts:1-78` — ‏**כבר מותמד**, ‏מכיל cwd+lastSessionId — ‏יסוד אפשרי לrecovery
-- ‏FE downstream ‏(‏לא root cause, ‏אבל ‏מציין את ה-UX):
-  - ‏`packages/frontend/src/lib/stores/agent-session.svelte.ts:438` — ‏`GET /api/agents/<oldId>` ‏מחזיר 404, ‏הקוד לא ‏מטפל ‏בfallback
-  - ‏`packages/frontend/src/routes/+page.svelte:32` — ‏`listAgents` ‏מחזיר ‏`[]`, ‏אין ‏UI ‏שמציע recovery מ-`/api/projects`
-
-## Reproduction
-
-‏לא שוחזר ‏(‏מחקר read-only). ‏העדויות ב-finding מאשרות התנהגות זמן-ריצה, ‏וקריאת הקוד מאשרת חד-משמעית: ‏אין שום ‏persist/load logic על Agent records, ‏וה-Map חי בסקופ של ‏process. ‏שחזור מלא יחייב ‏tmux restart של ‏be-v3 — ‏מחוץ ל-scope של מחקר.
-
-## Proposed fix
-
-‏שלוש אופציות, ‏מהקלה לכבדה. **‏ההמלצה: ‏Option A** ‏(תיקון UX בלבד) ‏בתור quick win, ‏ו-Option B ‏בroadmap אם הסיפור חוזר. ‏Option C ‏‏לא ‏לMVP.
-
-### Option A — ‏"Documented limitation" + ‏‏שיפור FE recovery (‏smallest)
-
-‏‏לא נוגעים בBE. ‏‏מנצלים את ‏`/api/projects` ‏שכבר ‏מותמד.
-
-1. ‏**Dashboard (`+page.svelte`)**: ‏כש-`listAgents()` ‏מחזיר ‏`[]` ‏ו-`/api/projects` ‏מחזיר ‏רשימה ‏לא ‏ריקה — ‏הצג section ‏"פרויקטים אחרונים" ‏עם כפתור ‏`[‏המשך עבודה]` ‏לכל פרויקט. ‏הclick קורא ‏`createAgent({ cwd, cliKind, existingSessionId: project.lastSessionId })` ‏ומנווט ל-`/agent/<id>`. ‏זהה לסשן history flow ‏שכבר קיים ב-`session/[cwdHash]/[id]/+page.svelte:39-44`.
-
-2. ‏**`/agent/[id]` 404 handling**: ‏ב-`agent-session.svelte.ts:438` ‏כש-`agentRes.status === 404` — ‏הצג ‏טוסט ‏"‏הסוכן ‏‏לא ‏‏זמין יותר" ‏ונווט אוטומטית ל-`/`. ‏מסיים ‏את ‏ה-UX hole של F-6.
-
-‏‏יתרון: ‏‏‏0 שינויי BE, ‏‏‏0 schema migration, ‏‏מתואם ‏‏עם ‏הקיים. ‏‏מעניק "מסלול ‏‏המשך עבודה" ‏שעובד עם ‏opencode loadSession ‏‏המובנה.
-
-‏חיסרון: ‏לא ‏מציל ‏in-flight prompts. ‏אם המשתמש ‏היה ‏באמצע ‏משפט בזמן ה-crash — ‏‏‏המשפט אבוד. ‏‏opencode loadSession ‏מחזיר ‏רק events שעבר commit (saved messages).
-
-### Option B — ‏File-backed agent registry (medium)
-
-‏בקצרה: ‏לעטוף את ‏`createInMemoryAgentRegistry` ‏עם persist layer ‏זהה לתבנית של ‏`projects-registry.ts`.
-
-‏Sketch:
+‏`packages/frontend/src/lib/stores/agent-session.svelte.ts:438`:
 
 ```ts
-// packages/backend/src/agents/persistent-registry.ts
-export function createPersistentAgentRegistry(baseDir: string): AgentRegistry {
-  const filePath = join(baseDir, "agents-registry.json")
-  const inMemory = createInMemoryAgentRegistry()
+const agentRes = await fetch(`/api/agents/${agentId}`)
+const agentData = (await agentRes.json()) as { agent?: { cwd?: string; acpSessionId?: string } }
+```
 
-  // Boot: load + transition all "live" agents to "crashed"
-  async function init() {
-    const data = await readFile(filePath, "utf8").catch(() => "{}")
-    const { agents = [] } = JSON.parse(data) as { agents: Agent[] }
-    for (const a of agents) {
-      const status = (a.status === "ready" || a.status === "busy" || a.status === "starting")
-        ? "crashed" as const
-        : a.status
-      await inMemory.create({ ...a })  // (needs internal seed API)
-      if (status !== a.status) {
-        await inMemory.update(a.id, { status, crashReason: "backend restarted" })
-      }
-    }
-  }
+‏‏אין בדיקה ‏ל-`!agentRes.ok`. ‏אם BE ‏החזיר ‏404, ‏`agentData.agent` ‏יהיה ‏`undefined`, ‏`agentCwd = "/"` ‏(fallback ‏גנרי) ‏וה-flow ‏ימשיך ‏לקרוס בהמשך. ‏זה ‏ה-root cause ‏האמיתי ‏של ‏הסימפטום שתועד.
 
-  // After each mutation: dump full state (atomic write — tmp + rename, כמו ב-projects-registry)
-  // ...
+‏`packages/frontend/src/lib/api/agents.ts:38-42`:
+
+```ts
+export async function getAgent(id: string): Promise<{ agent: AgentPublic }> {
+  const res = await fetch(`${API_BASE}/api/agents/${id}`)
+  if (!res.ok) throw new Error(`getAgent failed: ${res.status}`)
+  return res.json()
 }
 ```
 
-‏‏-‏ ‏בoot מסמן את ‏כל הסוכנים ‏שהיו ‏`ready`/`busy`/`starting` ‏‏כ-‏`crashed` ‏עם ‏`crashReason: "backend restarted"`. ‏הFE כבר ‏מטפל ב-`crashed` ‏‏(‏מציג ‏ב-dashboard ‏עם ‏badge).
-‏‏-‏ ‏מוסיפים ‏ב-FE כפתור ‏`[‏הקם מחדש]` ‏לסוכן crashed → ‏POST ‏‏עם ‏ה-`existingSessionId` ‏ששמרנו ‏ב-Agent record (‏‏‏אם ‏נשמר). ‏זה ‏מאפשר ‏גם ‏המשך ‏סשן וגם ‏סטטוס נקי ‏‏‏(לא ‏"‏‏פתאום היו [] ‏ואז ‏‏יש סוכן ‏חדש").
+‏‏‏‏‏הwrapper ‏הזה ‏כן ‏זורק, ‏אבל `agent-session.svelte.ts:438` ‏‏‏עוקף ‏אותו ‏(fetch ‏ידני) — ‏כנראה ‏‏שיירים מ-iteration קודמת.
 
-‏‏מצורך גם: ‏שינוי קטן ב-`bridgePorts`/`stderrGetters` — ‏כשresurrecting, ‏הם ‏עדיין ריקים. ‏אבל זה ‏OK ‏כי הbridges מתו ‏(ראה Root cause #3) — ‏הספאון השני יבנה מחדש.
+### ‏‏4. ‏Dashboard ‏לא ‏מציע ‏‏‏המשך עבודה ‏מ-`/api/projects`
 
-‏יתרון: ‏‏‏עדיין ‏עוזר ‏גם ‏ב-pkill / OOM / restart ‏ידני. ‏מאפשר ‏לצרכן ‏(FE) ‏‏לראות ‏היסטוריה ‏אמיתית ‏של ‏מה ‏שהיה ‏לפני ‏‏ה-crash, ‏לא ‏רק ‏‏רשימת ‏cwds.
+‏`packages/frontend/src/routes/+page.svelte:32` — ‏אם ‏`listAgents()` ‏מחזיר `[]`, ‏ה-dashboard ‏מציג ‏ריק. ‏הוא ‏לא ‏פונה ל-`/api/projects` ‏(‏שכן ‏מותמד ‏ב-`data/cache/projects-registry.json`) ‏‏כ-fallback ‏‏לרשימת ‏פרויקטים ‏זמינים ‏‏להמשך.
 
-‏חיסרון: ‏stale acpSessionId ‏ייתכן ‏שלא קיים יותר ב-opencode (‏אם הוא ‏עבר rotation, ‏‏cleanup ‏וכו'). ‏‏loadSession ‏‏ייכשל ‏וצריך fallback ל-`newSession` ‏(‏‏הקוד ‏ב-`agent-session.svelte.ts:457-464` ‏כבר ‏עושה ‏את ‏זה). ‏file ‏corruption באמצע ‏write ‏דורש ‏atomic-write pattern (‏write to tmp + rename), ‏שhe-projects-registry ‏לא ‏עושה ‏כרגע ‏‏(‏!).
+## Affected files
 
-### Option C — ‏True bridge survival ‏(largest, ‏לא ‏לMVP)
+‏FE only (BE ‏הוא ‏by design):
+- ‏`packages/frontend/src/lib/stores/agent-session.svelte.ts:438-489` — ‏אין ‏טיפול ‏ב-404
+- ‏`packages/frontend/src/lib/api/agents.ts:38-42` — ‏`getAgent` ‏זורק ‏ב-404, ‏אבל ‏לא ‏מבחין ‏בינו ‏ל-500
+- ‏`packages/frontend/src/routes/+page.svelte:32-40` — ‏אין fallback ‏ל-`/api/projects` ‏כש-agents ריקה
+- ‏`packages/frontend/src/routes/agent/[id]/+page.svelte` — ‏ה-host ‏שמרים את ‏ה-store; ‏ייתכן ‏צריך ‏‏לתפוס ‏שגיאה ‏ב-`onMount`
 
-‏מימוש ‏מה ‏ש-D33 ‏‏הניח: ‏עוטפים את ‏ה-CLI ‏ב-`@rebornix/stdio-to-ws --persist --grace-period -1`, ‏מותמדים ‏`bridgePort` ‏וגם ‏`acpSessionId`, ‏ועל boot scanning של ports קיימים + ‏reconnect ‏לbridges חיים. ‏מצריך תלות ‏npm חדשה, ‏ניהול ports ‏(allocation, ‏cleanup ‏orphans), ‏ועוד.
+‏BE (‏לקריאה ‏בלבד, ‏‏לא ‏‏לשינוי):
+- ‏`packages/backend/src/agents/registry.ts:10-56` — ‏in-memory ‏מכוון
+- ‏`packages/backend/src/acp/bridge-manager.ts:52-56` — ‏spawn ‏ישיר ‏מכוון
+- ‏`packages/backend/src/app/projects-registry.ts:1-78` — ‏**יסוד ‏‏‏‏‏ה-recovery**: ‏מכיל ‏`{cwd, kind, lastSeen, lastSessionId?}` ‏לכל ‏פרויקט. ‏FE ‏ניגש דרך `/api/projects`.
 
-‏מתאים רק אם BE crashes ‏נפוצים ו-zero loss ‏הוא דרישה. ‏אחרי F-1 ‏זה ‏לא ‏נראה ‏שזה ‏המצב.
+## Reproduction
+
+‏לא ‏שוחזר ‏(read-only). ‏העדויות ב-F-5 ‏מספיקות. ‏הקוד מאשר חד-משמעית את ‏הסיבה.
+
+## Proposed fix — ‏FE auto-recovery on 404
+
+‏‏ההחלטה ‏(אבי, 2026-05-18): ‏BE ‏לא ‏צריך ‏להיות mutated. ‏FE ‏צריך ‏לזהות 404 ‏על agent, ‏לבקש re-spawn ‏אוטומטית. ‏אם ‏ה-spawn ‏נכשל ‏(נתיב ‏נמחק, ‏‏שגיאה אחרת) — ‏הצג ‏הודעה ‏למשתמש.
+
+### ‏‏‏החלק החסר: ‏איך FE ‏‏יודע ‏‏`{cwd, cliKind, acpSessionId}` ‏‏‏אחרי ‏ש-agentId ‏אבוד?
+
+‏‏זו ‏‏‏‏השאלה ‏המרכזית. ‏ה-route `/agent/[id]` ‏‏מקבל ‏רק UUID — ‏‏‏‏אין ‏בו ‏‏הקשר ‏לcwd. ‏3 ‏אופציות:
+
+#### Option A — ‏localStorage ‏cache
+
+‏בכל `createAgent` ‏(`api/agents.ts:25`) — ‏write ‏ל-`localStorage["agent:" + agentId] = {cwd, cliKind, acpSessionId, savedAt}`. ‏‏ב-404 — ‏FE ‏שולף, ‏שולח POST ‏חדש ‏עם ‏אותו ‏`existingSessionId`, ‏‏מחליף את ‏‏ה-agentId ‏ב-URL ‏ב-`goto(replaceState: true)`. ‏אם ‏localStorage ריק (browser ‏‏אחר, ‏cleared) — ‏fall to ‏Option C.
+
+‏✅ ‏‏פשוט, ‏‏‏0 ‏שינוי ‏לroutes, ‏‏ידידותי ‏‏‏ל-PWA / bookmarks ‏‏על ‏אותו ‏device.
+‏❌ ‏‏לא ‏עובד ‏cross-device. ‏אם ‏המשתמש ‏‏פתח ‏‏‏‏‏שני ‏טאבים ‏ועשה ‏actions בשניהם, ‏ייתכן ‏ש-localStorage לא ‏‏‏סנכרני ‏עם ‏מה ‏ש-BE ראה ‏אחרון.
+
+#### Option B — ‏‏שינוי URL pattern ל-`/session/[cwdHash]/[sessionId]`
+
+‏ה-route ‏הזה ‏‏‏כבר ‏קיים ‏(`packages/frontend/src/routes/session/[cwdHash]/[id]/+page.svelte`) ‏עם ‏exact flow ‏‏שצריך: ‏‏מחפש cwd ‏ב-`/api/projects` ‏לפי hash, ‏שולח POST ‏עם `existingSessionId`. ‏‏‏‏האפשרות: ‏‏‏לסמן ‏את ‏`/agent/[id]` ‏‏כ-deprecated, ‏‏לשנות את ה-redirect ‏ב-`session/[cwdHash]/[id]/+page.svelte:47` ‏‏‏‏‏שיישאר ‏‏‏באותה ‏route ‏‏‏(לא ‏‏עובר ‏ל-`/agent/<id>`), ‏ולוודא ‏שכל ‏‏‏‏הקישורים ‏ל-agent ‏‏‏‏עוברים ‏‏לpattern הקבוע.
+
+‏✅ ‏cross-device, ‏‏עמיד ל-BE restart, ‏‏לא ‏צריך client-side cache, ‏URL ‏הוא source of truth.
+‏❌ ‏שינוי ‏‏בינוני ‏(routing migration, ‏עדכון ‏לינקים בכל מקום), ‏cwdHash ‏לפעמים ‏‏‏ארוך ‏ב-URL.
+
+#### Option C — ‏Dashboard ‏fallback ‏עם ‏הודעה למשתמש
+
+‏‏‏ב-404, ‏FE ‏‏מציג טוסט "‏הסוכן ‏נסגר — ‏בחר ‏פרויקט להמשך" ‏ומנווט ‏ל-`/` ‏(dashboard). ‏ה-dashboard ‏‏ירחיב ‏‏לכלול section "‏פרויקטים אחרונים" ‏שמושך מ-`/api/projects` ‏(‏‏עם lastSessionId). ‏המשתמש ‏‏בוחר ‏ידנית — ‏‏‏ה-FE ‏‏שולח POST ‏עם `existingSessionId`.
+
+‏✅ ‏פשוט ביותר, ‏0 ‏cache, ‏0 ‏routing. ‏‏מטפל ‏גם ב-edge cases ‏(cwd ‏‏‏‏שנמחק — ‏פשוט ‏לא ‏יוצג).
+‏❌ ‏‏‏לא ‏אוטומטי לגמרי — ‏‏‏המשתמש ‏‏‏צריך ‏click ‏אחד. ‏לאבי ‏‏‏לפי ‏ה-feedback ‏שלו ‏רצוי auto-recovery, ‏אז ‏זה ‏טיפה ‏פחות ‏אליגנטי.
+
+### ‏‏המלצה: ‏A + C ‏‏בשילוב
+
+1. **‏ראשי**: ‏`agent-session.svelte.ts` ‏ב-404 ‏מנסה ‏localStorage cache ‏→ ‏אם ‏יש — ‏re-spawn ‏שקט ‏(`Option A`), ‏‏מחליף agentId ‏ב-URL.
+2. **‏Fallback**: ‏אם ‏localStorage ריק או ‏ה-spawn ‏‏‏‏נכשל (‏cwd ‏נמחק, ‏ENOENT, ‏‏וכו') → ‏טוסט + ‏ניווט ‏ל-`/` (`Option C`).
+3. **Dashboard ‏הרחבה (`Option C` ‏חלקי)**: ‏אם ‏`listAgents() === []` ‏‏ו-`/api/projects` ‏לא ‏ריק — ‏הצג ‏section "‏‏‏פרויקטים ‏אחרונים" ‏עם ‏[‏המשך] לכל אחד.
+
+‏Option B ‏‏(routing migration) ‏‏‏שווה ‏שיקול ‏‏‏בעתיד ‏אם ‏הצורך ‏ב-cross-device URL stability ‏‏‏‏‏יעלה, ‏אבל לא ‏‏‏‏ב-scope ‏של ‏הbug ‏‏הזה.
+
+### Pseudo-code
+
+```ts
+// api/agents.ts — wrap createAgent to cache
+export async function createAgent(input: CreateAgentInput): Promise<CreateAgentResponse> {
+  const res = await fetch(`${API_BASE}/api/agents`, { ... })
+  if (!res.ok) { ... }
+  const data = await res.json()
+  // NEW: cache for recovery
+  localStorage.setItem(`agent:${data.agentId}`, JSON.stringify({
+    cwd: data.cwd,
+    cliKind: data.cliKind,
+    acpSessionId: data.acpSessionId,
+    savedAt: Date.now(),
+  }))
+  return data
+}
+
+// agent-session.svelte.ts — recovery on 404
+const agentRes = await fetch(`/api/agents/${agentId}`)
+if (agentRes.status === 404) {
+  const cached = localStorage.getItem(`agent:${agentId}`)
+  if (cached) {
+    const { cwd, cliKind, acpSessionId } = JSON.parse(cached)
+    try {
+      const fresh = await createAgent({ cwd, cliKind, existingSessionId: acpSessionId })
+      // Replace URL with new agentId, restart this flow
+      goto(`/agent/${fresh.agentId}`, { replaceState: true })
+      return
+    } catch (e) {
+      // cwd deleted / spawn failed — fall through to dashboard
+      showToast(`לא ניתן לשחזר את הסוכן: ${e.message}`)
+      goto("/")
+      return
+    }
+  }
+  // No cache — go to dashboard
+  showToast("הסוכן נסגר — בחר פרויקט להמשך")
+  goto("/")
+  return
+}
+```
 
 ## Risks
 
-‏-‏ **Option A**: ‏לא מסיר ‏את ‏הroot cause — ‏רק עוטף אותו. ‏אם opencode עצמו ‏‏לא שמר ‏את ‏הסשן, ‏ה-`existingSessionId` ‏שנעביר ‏‏יכשיל ‏את ‏ה-loadSession ‏ויקרה fallback ל-newSession ‏(‏שמייצר ‏סשן ‏חדש לגמרי). ‏המשתמש ‏יחשוב ‏שהוא ‏ממשיך ‏עבודה ‏אבל ‏יראה ‏‏שיחה ריקה. ‏‏צריך ‏‏visual ‏indicator ‏ש-"loaded vs. new".
-‏-‏ **Option B**: ‏file corruption mid-write (‏אם BE crash ‏באמצע ‏writeFile — ‏הקובץ ‏פסיק להיות JSON ‏תקין → ‏load כושל → ‏fall-through ל-Map ריקה = ‏בדיוק המצב ‏הקיים, ‏זה לפחות ‏no-regress). ‏אבל ‏עדיף ‏atomic-write. ‏stale entries (cwd ‏שנמחק) ‏‏צריכים ‏cleanup ‏או ‏טיפול ב-‏create. ‏schema migration ‏אם נשנה את ‏Agent type ‏בעתיד.
-‏-‏ **Option C**: ‏orphan bridges (ports ‏שתפוסים בלי שאיש יודע), ‏version skew בין BE ל-wrapper, ‏בעיות ‏permission ‏בproduction LXC.
+- ‏**localStorage cache stale**: ‏אם BE ‏עבר rotation ‏על opencode session IDs (‏cleanup ‏‏פנימי ‏שלו) — ‏ה-`existingSessionId` ‏ייכשל ‏ב-loadSession. ‏‏‏הקוד ‏ב-`agent-session.svelte.ts:457-464` ‏כבר ‏עושה fallback ‏ל-newSession, ‏‏אז ‏‏בtechnical level ‏זה ‏‏מטופל. ‏‏UX-wise: ‏המשתמש ‏‏‏יראה ‏‏שיחה ‏ריקה ‏ולא יבין ‏שזה ‏סשן ‏‏חדש. ‏‏‏‏‏שווה ‏banner קטן "‏סשן ‏ישן ‏לא ‏‏זמין — ‏‏מתחילים ‏‏חדש".
+- ‏**localStorage quota**: ‏‏כל ‏agent ‏‏מוסיף ‏‏‏~200 ‏בתים. ‏‏שווה ‏cleanup ‏periodic (TTL 30 ‏ימים ‏‏או ‏delete ‏ב-`deleteAgent` ‏‏בinitiation ‏מהמשתמש).
+- ‏**Race condition**: ‏אם ‏‏‏המשתמש ‏‏‏לוחץ ‏refresh ‏‏בדיוק כש-BE ‏רץ מחדש ‏ועדיין ‏בstartup — ‏ייתכן 503 ‏או ‏connection refused, ‏לא 404. ‏צריך retry ‏קצר ‏לפני ‏‏‏הtreating as 404.
+- ‏**Multi-tab**: ‏‏‏שני ‏טאבים פתוחים, ‏BE crash, ‏‏שניהם ‏‏מקבלים 404, ‏‏שניהם ‏עושים re-spawn ‏‏‏עם ‏אותו ‏existingSessionId. ‏BE ‏יש dedup ‏ב-`agent-orchestrator.ts:118-138` — ‏השני ‏יקבל ‏את ‏‏ה-agent ‏שהראשון יצר. ‏טוב.
 
 ## Open questions for Avi
 
-1. **‏האם ‏לבחון ‏מחדש את ‏D8 ל-v1?** ‏D8 ‏נכתב לMVP. ‏‏אחרי ‏F-1 הכאב פחת. ‏האם זה ‏accepted limitation או ‏שנשקיע בpersistence? **‏החלטה ‏ארכיטקטונית — ‏לא ‏אחליט ‏לבד.**
-2. **‏‏‏מה ‏קרה ל-stdio-to-ws wrapper?** ‏D33 ‏מתאר ‏ש-BE עוטף ‏את ‏ה-CLI ‏ב-`@rebornix/stdio-to-ws ... --persist`. ‏הקוד ‏הנוכחי ‏(bridge-manager.ts) ‏‏לא ‏עושה ‏את ‏זה — ‏‏spawn ‏ישיר ל-opencode acp ‏עם ‏stdio pipes. ‏האם זה ‏‏‏היה ‏פישוט מכוון ב-slice ‏מסוים, ‏או ‏regression ‏שלא ‏‏שמנו ‏עליו ‏לב? ‏ההחלטה ‏הזו ‏משפיעה ‏על ‏איזה option ‏בכלל ‏ישים — ‏אם ‏‏צריך ‏להחזיר את ה-wrapper, ‏זה ‏work חדש ‏בפני עצמו.
-3. **‏‏UX behaviour ‏על agentId ‏ישן ב-URL:** ‏‏אם משתמש ‏עם bookmark / PWA shortcut ‏‏ל-`/agent/<oldId>` ‏מקבל ‏404 ‏אחרי BE restart — ‏האם FE צריך auto-redirect ל-dashboard ‏‏עם ‏טוסט "‏סשן ‏‏הסתיים", ‏או ‏error מפורש ‏עם ‏כפתור "‏‏חזרה"?
-4. **Recovery semantics:** ‏‏כש-agent ‏מוקם ‏מחדש ‏עם ‏`existingSessionId` ‏ו-opencode ‏‏לא ‏מוצא ‏‏‏אותו ‏(rotation/cleanup) — ‏האם UX ‏אמור ‏ליצור newSession ‏שקט, ‏‏או ‏להציג ‏"‏הסשן ‏הישן ‏אבוד, ‏‏מתחילים ‏חדש"?
-5. **‏‏‏Backend deploy reality:** ‏בprod (Proxmox LXC, ‏‏‏סינגל-משתמש) — ‏כמה ‏‏פעמים BE באמת ‏עולה ‏מחדש? ‏אם ‏‏‏אף פעם ‏(systemd Restart=on-failure + ‏post-F-1 stable) — ‏Option A ‏מספיק. ‏אם ‏שבועי ‏(deploys) — ‏Option B ‏שווה.
+1. **‏Option ‏לבחור**: ‏אישרת ‏אוטומטיזציה ‏(לא ‏רק ‏Option ‏C ‏ידני). ‏‏‏עדיף ‏Option A ‏(localStorage cache) ‏או ‏‏‏שווה ‏לשקול ‏‏Option ‏B ‏(routing migration ‏‏‏‏ל-`/session/[cwdHash]/[id]`) ‏בתור ‏fix ‏‏‏מהותי יותר? ‏ההמלצה ‏שלי: ‏A + ‏‏fallback ל-C, ‏ולשמור ‏B ‏‏ל-slice עתידי.
+
+2. **‏Banner ‏"סשן ‏ישן ‏אבוד"**: ‏‏כש-loadSession ‏‏נכשל ‏ו-fallback ל-newSession — ‏‏האם ‏‏להציג ‏‏‏banner ‏שהמשתמש ‏‏יבין ‏שהוא ‏לא ‏‏‏ממשיך ‏שיחה, ‏או ‏‏לדלג בשקט?
+
+3. **Dashboard ‏"פרויקטים ‏אחרונים"**: ‏‏‏רוצה ‏שזה ‏יהיה ‏בscope ‏של ‏‏הbug ‏הזה, ‏‏‏או ‏slice ‏‏נפרד? ‏זה ‏~30 ‏שורות FE ‏נוספות.
+
+4. **Cleanup ‏ל-localStorage**: ‏‏TTL ‏(‏30 ‏ימים?) ‏או ‏‏cleanup רק ‏ב-`deleteAgent` ‏מפורש? ‏אם ‏המשתמש ‏מוחק 50 ‏agents ‏בלי refresh — ‏הcache ‏‏יגדל. ‏לא קריטי ‏אבל ‏שווה ‏‏‏החלטה.
 
 ## Estimated effort
 
-| Option | LoC חדש | קבצים חדשים | Tests | זמן |
-|--------|---------|--------------|-------|-----|
-| A (FE recovery) | ~50 | 0 | 1 e2e | 2-3 שעות |
-| B (file registry) | ~150 + ~30 FE | 1 BE (`persistent-registry.ts`) | 2 unit + 1 integration | יום עבודה |
-| C (stdio-to-ws + reconnect) | ~400+ | 2-3 + npm dep | 4-5 | 2-3 ימים |
-
-**‏המלצה לאבי:** ‏‏לאשר ‏Option A ‏עכשיו ‏(matches the "importance dropped after F-1" ‏הערה ב-finding), ‏‏ולסמן ‏Option B ‏‏ב-`future-features.md` ‏כסעיף ‏יעוד ‏אם ‏מצטברים ‏אירועי persistence loss ‏בproduction.
+| חלק | LoC | קבצים | Tests | זמן |
+|-----|-----|--------|-------|-----|
+| localStorage cache ב-`createAgent` | ~15 | 1 (api/agents.ts) | 1 unit | 30 ‏דקות |
+| 404 handler ב-`agent-session.svelte.ts` | ~30 | 1 | 1 unit + 1 e2e | 1-2 ‏שעות |
+| Toast component (אם ‏‏לא ‏קיים) | ~40 | 1-2 | 1 | 1 ‏שעה |
+| Dashboard ‏"פרויקטים ‏אחרונים" (Option C ‏extension) | ~50 | 1 | 1 e2e | 1-2 ‏שעות |
+| ‏סה"כ (‏לא ‏כולל ‏Dashboard) | ~85 | 3-4 | 3 | **2-3 ‏שעות** |
+| ‏סה"כ (כולל ‏Dashboard) | ~135 | 4-5 | 4 | **‏יום עבודה** |
