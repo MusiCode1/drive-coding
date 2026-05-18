@@ -4,6 +4,61 @@
 
 ---
 
+## 2026-05-18 05:15 — Slice 10 Phase 4 — BE cleanup + tests refactor
+
+executor (claude-sonnet-4-6) ביצע את Phase 4 של Slice 10 FE-Orchestrated Refactor.
+סיכום: הוסרו ~1600+ שורות קוד ישן, ה-tests עוברו ל-ACP shape.
+
+### שינויים עיקריים
+
+**BE — מחיקת קבצים ישנים (9 קבצים):**
+- `packages/backend/src/app/agent-session.ts` — הוסר (755 שורות). ACP נעשה ישירות ב-FE.
+- `packages/backend/src/acp/acp-transport.ts` — הוסר (380 שורות). FE משתמש ב-ws-to-streams שלו.
+- `packages/backend/src/acp/client-impl.ts`, `ws-streams.ts` — הוסרו (188 שורות).
+- `packages/backend/src/voice/pipeline.ts`, `narration.ts` — הוסרו (338 שורות). FE עושה STT/TTS/narration.
+- `packages/backend/src/voice/providers/gemini-transcription.ts`, `providers.ts` — הוסרו (139 שורות).
+- `packages/backend/src/voice/cache-disk.ts` — הוסר (deprecated DiskCache).
+
+**BE — קובץ חדש:**
+- `packages/backend/src/acp/session-types.ts` — SessionInfo type + listSessionsFromBridge (extracted מ-acp-transport.ts, עדיין נדרש ל-/api/sessions UI).
+
+**BE — עדכון server.ts:**
+- הוסרו imports: DiskCache + ttsCache (לא בשימוש עוד).
+- listSessionsFromBridge עובר עכשיו מ-session-types.ts במקום acp-transport.ts.
+
+**BE — מחיקת tests ישנים (16 קבצים):**
+- agent-session*.test.ts (4), acp-transport*.test.ts (2), ws-streams.test.ts, client-impl.test.ts, ws-protocol-tier1.test.ts, narration.test.ts, voice-pipeline.test.ts, gemini-transcription.test.ts, providers.test.ts, translate-cache.test.ts, cache-disk.test.ts, provider-error.test.ts.
+
+**FE — tests rewrite:**
+- `agent-session-bubbles.test.ts` — rewritten בACP shape ({ sessionId, update: { sessionUpdate, content } }). מחקנו tests של messageId grouping (לא קיים יותר). 13 tests חדשים.
+- `agent-session-history.test.ts` — rewritten. clearBubbles + unknown notification types. 3 tests.
+- `voice/orchestrator.test.ts` — rewritten בACP shape. הוסרו tests של Slice-9 shape. 10 tests.
+
+**FE — bug fix:**
+- `agent-session.svelte.ts`: `newSession({ cwd: "/" })` → fetch `/api/agents/:id` לקבלת ה-cwd האמיתי לפני newSession. סוכן נוצר עכשיו עם ה-working directory הנכון.
+
+### DoD Checklist
+
+- [x] BE shrinks ב-~1600 שורות impl + ~800 שורות tests
+- [x] `pnpm typecheck` ירוק
+- [x] `pnpm lint` — 0 errors (2 pre-existing warnings ב-projects-registry.ts)
+- [x] `pnpm test` ירוק (22 test files, 167 tests)
+- [x] docs/walkthrough.md — entry זה
+- [x] docs/behaviors-coverage.md — UI-AUDIO-8 ✅
+
+### Results
+- 167 tests ✅ (22 test files)
+- typecheck: 0 errors ✅
+- lint: 0 errors, 2 warnings pre-existing ✅
+
+### Key learnings
+
+1. **SessionInfo extraction pattern** — כשמוחקים module גדול שיש לו 1-2 functions עדיין בשימוש, עדיף לחלץ לקובץ נפרד ולא להחזיק את ה-module כולו בגלל dependency יחיד.
+2. **ACP ClientSideConnection toClient function** — יש להעביר `async sessionUpdate(_p: any) {}` עם `as any` למינימום Client impl עבור listSessions בלבד.
+3. **addTranslatedSegment + ACP null messageId** — ב-Slice 10, כל bubbles נוצרות עם `messageId=null` (ACP לא מספק messageId ברמת chunk). `addTranslatedSegment` שמחפש לפי messageId לא יעבוד — יטופל ב-Slice עתידי.
+
+---
+
 ## 2026-05-18 02:35 — Slice 10 Phase 2 — FE: ACP client over WS pipe
 
 executor (claude-sonnet-4-6) ביצע את Phase 2 של Slice 10 FE-Orchestrated Refactor.

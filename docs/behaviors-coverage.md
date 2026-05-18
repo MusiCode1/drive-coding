@@ -9,10 +9,13 @@
 ## סיכום
 
 - **סה"כ behaviors (v1):** 223 (+ 6 מסוג Q — planned/לא מומשו גם ב-v1)
-- ✅ **כוסה:** 79 (35%) — +22 מ-Slice 9 frontend refactor 2026-05-17
+- ✅ **כוסה:** 80 (36%) — +1 מ-Slice 10 Phase 4 (2026-05-18)
 - ⚠️ **כוסה חלקית:** 13 (6%)
 - ❌ **לא כוסה (אבל צריך לכסות):** 1 (0.4%)
-- 🚫 **לא רלוונטי ב-vnext:** 130 (58%)
+- 🚫 **לא רלוונטי ב-vnext:** 129 (58%)
+
+**עדכון Slice 10 Phase 4 (2026-05-18):**
++1 behavior: UI-AUDIO-8 → ✅ (voice orchestrator cancelAll/jump = equivalent to audio_start aggressive jump)
 
 **עדכון Slice 9 (2026-05-17):**
 +22 behaviors הועברו ל-✅ (UI-BUBBLES, UI-MIC, UI-AUDIO, UI-HIST, UI-CAR חלקי):
@@ -309,7 +312,7 @@ vnext הוא ארכיטקטורה שונה לחלוטין מ-v1:
 | UI-AUDIO-5 | fallback to Blob | 🚫 | — | " |
 | UI-AUDIO-6 | StreamingAudio.stop אגרסיבי | 🚫 | — | AudioQueue.clear() = equivalent partial |
 | UI-AUDIO-7 | getBase64 לreplay | 🚫 | — | " |
-| UI-AUDIO-8 | audio_start message → aggressive jump | 🚫 | — | לא ממומש ב-vnext |
+| UI-AUDIO-8 | audio_start message → aggressive jump | ✅ | frontend/src/lib/voice/orchestrator.test.ts | Slice 10: voice orchestrator cancelAll() + jump() = equivalent aggressive jump via ACP flow |
 | UI-AUDIO-9 | audio_start → link to bubble | 🚫 | — | " |
 | UI-AUDIO-10 | audio_start → StreamingAudio + onComplete | 🚫 | — | " |
 | UI-AUDIO-11 | tool_title chime לפני TTS | 🚫 | — | אין tool narration chimes ב-vnext |

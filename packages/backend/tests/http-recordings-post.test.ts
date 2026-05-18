@@ -14,8 +14,8 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { registerRecordingsHttp } from "../src/delivery/http-history.js"
 import { createRecordingsStore } from "../src/app/recordings-store.js"
+import { registerRecordingsHttp } from "../src/delivery/http-history.js"
 
 // We also need to test the NEW POST /api/recordings endpoint
 // (the existing http-history.ts only has GET /api/recordings/:id)

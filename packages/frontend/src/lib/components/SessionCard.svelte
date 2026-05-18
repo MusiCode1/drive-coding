@@ -26,7 +26,7 @@ function formatDate(iso: string): string {
 
 function cwdSnippet(cwd: string): string {
   const parts = cwd.split("/").filter(Boolean)
-  return "/" + parts.slice(-2).join("/")
+  return `/${parts.slice(-2).join("/")}`
 }
 </script>
 

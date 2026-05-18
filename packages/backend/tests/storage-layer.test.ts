@@ -108,7 +108,7 @@ describe("createSessionsCache", () => {
 
     const result = cache.get("/proj")
     expect(result).not.toBeNull()
-    expect(result![0]?.sessionId).toBe("s1")
+    expect(result?.[0]?.sessionId).toBe("s1")
   })
 
   it("returns null after TTL expires", () => {
@@ -150,8 +150,8 @@ describe("createRecordingsStore", () => {
 
     const result = await store.get(id)
     expect(result).not.toBeNull()
-    expect(result!.mimeType).toBe("audio/webm")
-    expect(Array.from(result!.bytes)).toEqual([1, 2, 3, 4, 5])
+    expect(result?.mimeType).toBe("audio/webm")
+    expect(Array.from(result?.bytes)).toEqual([1, 2, 3, 4, 5])
   })
 
   it("get with unknown id returns null", async () => {

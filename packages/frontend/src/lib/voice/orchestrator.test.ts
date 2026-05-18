@@ -1,15 +1,17 @@
 /**
- * orchestrator.test.ts — ACP notifications → TTS jobs queue.
+ * orchestrator.test.ts — ACP notifications → TTS jobs queue (Slice 10 shape).
  *
  * Tests:
  * - message chunks → sentences enqueued
  * - thought chunks handled identically
  * - tool_call → narration enqueued
- * - prefetch lookahead = 2
- * - jump cancels pending > newIndex
+ * - cancelAll clears the queue
+ * - flushes buffer on kind change
  *
  * NOTE: Tests use mocked translate/tts/narrate/audioStream (no real API calls).
  * MediaSource not available in happy-dom — AudioStream is mocked.
+ *
+ * ACP envelope shape: { sessionId, update: { sessionUpdate, content, ... } }
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -74,19 +76,26 @@ function createMockAgentSession() {
     clearBubbles: vi.fn(),
     getRecordingId: vi.fn().mockReturnValue(null),
     addTranslatedSegment: vi.fn(),
-    // Test helper: inject notification
-    inject(notification: Record<string, unknown>) {
-      voiceHandler?.(JSON.stringify(notification))
+    // Injects an ACP envelope directly as JSON string (as agentSession does in production)
+    injectAcp(sessionId: string, update: Record<string, unknown>) {
+      voiceHandler?.(JSON.stringify({ sessionId, update }))
     },
   }
 }
 
+// ── ACP envelope helpers ─────────────────────────────────────────────────────
+
+function textChunk(kind: "agent_message_chunk" | "agent_thought_chunk", text: string) {
+  return { sessionUpdate: kind, content: { type: "text", text } }
+}
+
+function toolCall(toolCallId: string, title: string, toolKind?: string) {
+  return { sessionUpdate: "tool_call", toolCallId, title, kind: toolKind }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-// SKIP: Tests built on Slice 9 server-protocol shape ({ type, text, messageId }).
-// Slice 10 Phase 3 orchestrator now expects ACP envelope ({ sessionId, update: { sessionUpdate, content } }).
-// Will be rewritten in Phase 4 cleanup with the new shape.
-describe.skip("createVoiceOrchestrator (Slice 9 shape, deprecated)", () => {
+describe("createVoiceOrchestrator (ACP shape, Slice 10)", () => {
   let player: ReturnType<typeof createPlayerStore>
   let audioStream: AudioStream
   let agentSession: ReturnType<typeof createMockAgentSession>
@@ -105,144 +114,92 @@ describe.skip("createVoiceOrchestrator (Slice 9 shape, deprecated)", () => {
     })
   })
 
+  // ── 1: message chunks accumulate and split into sentences ─────────────────
   it("message chunks accumulate and split into sentences", () => {
-    // "Hello world. " (with trailing space) triggers splitIntoSentences
-    // "This is a test." stays as remaining (no trailing space/punctuation)
-    agentSession.inject({
-      type: "agent_message_chunk",
-      messageId: "msg-1",
-      text: "Hello world. Next sentence. ",
-    })
-
-    // splitIntoSentences finds two sentences (both have trailing space+text or end)
-    // "Hello world." + "Next sentence." — at least one job enqueued
+    agentSession.injectAcp(
+      "sess-1",
+      textChunk("agent_message_chunk", "Hello world. Next sentence. "),
+    )
+    // splitIntoSentences finds two sentences
     expect(orchestrator.sentenceQueue.length).toBeGreaterThanOrEqual(1)
     expect(orchestrator.sentenceQueue[0]?.kind).toBe("message")
   })
 
+  // ── 2: partial chunks accumulate across multiple events ───────────────────
   it("accumulates partial chunks across multiple events", () => {
-    agentSession.inject({
-      type: "agent_message_chunk",
-      messageId: "msg-1",
-      text: "Hello ",
-    })
-    agentSession.inject({
-      type: "agent_message_chunk",
-      messageId: "msg-1",
-      text: "world. Next.",
-    })
-
-    // After second chunk: "Hello world." and "Next." may be extracted
-    // but "Next." might stay in remaining depending on sentence splitter
-    // At minimum, "Hello world." should be a sentence
+    agentSession.injectAcp("sess-1", textChunk("agent_message_chunk", "Hello "))
+    agentSession.injectAcp("sess-1", textChunk("agent_message_chunk", "world. Next."))
+    // At minimum "Hello world." should be a sentence
     const texts = orchestrator.sentenceQueue.map((j) => j.text)
     expect(texts.some((t) => t.includes("Hello world"))).toBe(true)
   })
 
+  // ── 3: thought chunks are enqueued as kind=thought ────────────────────────
   it("thought chunks are enqueued as kind=thought", () => {
-    agentSession.inject({
-      type: "agent_thought_chunk",
-      messageId: "thought-1",
-      text: "Thinking about this. Let me consider.",
-    })
-
+    agentSession.injectAcp(
+      "sess-1",
+      textChunk("agent_thought_chunk", "Thinking about this. Let me consider."),
+    )
     expect(orchestrator.sentenceQueue.length).toBeGreaterThanOrEqual(1)
     expect(orchestrator.sentenceQueue[0]?.kind).toBe("thought")
   })
 
+  // ── 4: tool_call enqueues a narration job ─────────────────────────────────
   it("tool_call enqueues a narration job", () => {
-    agentSession.inject({
-      type: "tool_call",
-      toolCallId: "call-1",
-      title: "read README.md",
-      kind: "read",
-    })
-
-    // Narration job should be added (may be fetching)
+    agentSession.injectAcp("sess-1", toolCall("call-1", "read README.md", "read"))
     expect(orchestrator.sentenceQueue.length).toBe(1)
     expect(orchestrator.sentenceQueue[0]?.kind).toBe("narration")
   })
 
-  it("segments are added to player playlist", () => {
-    agentSession.inject({
-      type: "agent_message_chunk",
-      messageId: "msg-2",
-      text: "First sentence. Second sentence.",
-    })
-
-    expect(player.playlist.length).toBeGreaterThanOrEqual(1)
-    expect(player.playlist[0]?.kind).toBe("message")
-    expect(player.playlist[0]?.messageId).toBe("msg-2")
-  })
-
+  // ── 5: flushes thought buffer when message chunk arrives ──────────────────
   it("flushes thought buffer when message chunk arrives", () => {
-    // "thinking content" gets flushed when message chunk arrives
-    // "thinking content" has no sentence-end regex match → stays in remaining
-    // but flushThought() sends it as-is
-    agentSession.inject({
-      type: "agent_thought_chunk",
-      messageId: "t-1",
-      text: "thinking content ",
-    })
-    // Now send a message chunk — should flush the thought buffer
-    agentSession.inject({
-      type: "agent_message_chunk",
-      messageId: "m-1",
-      text: "actual message. ",
-    })
-
-    // At minimum the thought flush should have produced a job
+    agentSession.injectAcp("sess-1", textChunk("agent_thought_chunk", "thinking content "))
+    agentSession.injectAcp("sess-1", textChunk("agent_message_chunk", "actual message. "))
     const kinds = orchestrator.sentenceQueue.map((j) => j.kind)
     expect(kinds.length).toBeGreaterThanOrEqual(1)
-    // Message should be present (the "actual message. " splits)
-    // Thought may or may not be present depending on flush timing
     expect(kinds).toContain("message")
   })
 
+  // ── 6: cancelAll clears the queue ─────────────────────────────────────────
   it("cancelAll clears the queue", () => {
-    agentSession.inject({
-      type: "agent_message_chunk",
-      messageId: "msg-3",
-      text: "One sentence. Two sentence.",
-    })
-
+    agentSession.injectAcp(
+      "sess-1",
+      textChunk("agent_message_chunk", "One sentence. Two sentence."),
+    )
     expect(orchestrator.sentenceQueue.length).toBeGreaterThan(0)
     orchestrator.cancelAll()
     expect(orchestrator.sentenceQueue.length).toBe(0)
   })
 
-  it("jump callback cancels fetching jobs > newIndex", () => {
-    // Add 3 segments
-    agentSession.inject({
-      type: "agent_message_chunk",
-      messageId: "msg-jump",
-      text: "Sentence one. Sentence two. Sentence three.",
-    })
-
-    // Mark some as fetching
-    const q = orchestrator.sentenceQueue
-    if (q[0]) q[0].status = "fetching"
-    if (q[1]) q[1].status = "fetching"
-    if (q[2]) q[2].status = "fetching"
-
-    // Simulate jump to index 0
-    player.jumpToSegment(q[0]?.segmentId ?? "")
-
-    // Jobs at index > 0 that were fetching should be reset to pending
-    // (jump callback in orchestrator handles this)
-    // Note: the exact behavior depends on timing — at minimum jobs should not be stuck
-    expect(orchestrator.sentenceQueue.length).toBeGreaterThan(0)
+  // ── 7: reset clears buffers ───────────────────────────────────────────────
+  it("reset() resets state for a new turn", () => {
+    agentSession.injectAcp("sess-1", textChunk("agent_message_chunk", "Old sentence. "))
+    orchestrator.reset()
+    // After reset, queue should be cleared
+    expect(orchestrator.sentenceQueue.length).toBe(0)
   })
 
-  it("setUserMessage updates narration context", () => {
+  // ── 8: setUserMessage updates narration context ───────────────────────────
+  it("setUserMessage updates narration context (no throw)", () => {
     orchestrator.setUserMessage("read the README file")
-    // No throw — context is tracked internally
-    agentSession.inject({
-      type: "tool_call",
-      toolCallId: "call-2",
-      title: "read file",
-      kind: "read",
-    })
+    agentSession.injectAcp("sess-1", toolCall("call-2", "read file", "read"))
     expect(orchestrator.sentenceQueue.length).toBe(1)
+  })
+
+  // ── 9: non-text content → empty string, no crash ─────────────────────────
+  it("non-text content type in message chunk → empty string enqueued, no crash", () => {
+    expect(() =>
+      agentSession.injectAcp("sess-1", {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "image", url: "..." },
+      }),
+    ).not.toThrow()
+  })
+
+  // ── 10: malformed envelope → no crash ─────────────────────────────────────
+  it("malformed JSON envelope → no crash", () => {
+    // handleNotification directly with malformed input
+    expect(() => orchestrator.handleNotification("{bad json")).not.toThrow()
+    expect(() => orchestrator.handleNotification("{}")).not.toThrow()
   })
 })

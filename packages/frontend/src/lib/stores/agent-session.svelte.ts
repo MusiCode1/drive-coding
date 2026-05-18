@@ -258,7 +258,7 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
   }
 
   /** Create or update streaming user bubble (stt_partial). */
-  function upsertBubbleUser(text: string): void {
+  function _upsertBubbleUser(text: string): void {
     const idx = bubbles.findIndex((b) => b.kind === "user" && b.segments.some((s) => s.isStreaming))
     if (idx >= 0) {
       bubbles = bubbles.map((b, i) =>
@@ -274,7 +274,7 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     }
   }
 
-  function finalizeStreaming(): void {
+  function _finalizeStreaming(): void {
     bubbles = bubbles.map((b) => ({
       ...b,
       segments: b.segments.map((s) => (s.isStreaming ? { ...s, isStreaming: false } : s)),
@@ -293,7 +293,7 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     }
   }
 
-  function upsertStreamingUser(text: string): void {
+  function _upsertStreamingUser(text: string): void {
     const last = messages[messages.length - 1]
     if (last && last.kind === "user" && last.isStreaming) {
       messages = [...messages.slice(0, -1), { ...last, text }]
@@ -434,8 +434,14 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
       }
       acpClient = await createAcpClient(agentId, handleSessionUpdate, handleWsClose)
 
-      // 2. Create a new session (or load existing — Phase 3 will handle existingSessionId)
-      const sessionResult = await acpClient.newSession({ cwd: "/" })
+      // 2. Fetch agent details to get correct cwd (avoids hardcoded "/" bug)
+      const agentRes = await fetch(`/api/agents/${agentId}`)
+      const agentData = (await agentRes.json()) as { agent?: { cwd?: string } }
+      const agentCwd = agentData.agent?.cwd ?? "/"
+      log.info({ agentCwd }, "resolved agent cwd for newSession")
+
+      // 3. Create a new session with the real cwd
+      const sessionResult = await acpClient.newSession({ cwd: agentCwd })
       currentSessionId = (sessionResult as { sessionId?: string }).sessionId ?? null
 
       // 3. Notify BE that session is attached (MED-9: prompt blocked until this succeeds)

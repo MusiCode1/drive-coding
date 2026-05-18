@@ -3,7 +3,7 @@
  *
  * Tests for the projects store (fetch, sort, cache).
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { createProjectsStore } from "./projects-store.svelte"
 
 // Mock fetch

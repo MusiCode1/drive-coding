@@ -6,7 +6,7 @@
  * Default TTL: 5 minutes. Keys are cwd strings.
  */
 
-import type { SessionInfo } from "../acp/acp-transport.js"
+import type { SessionInfo } from "../acp/session-types.js"
 
 type CacheEntry = {
   readonly sessions: readonly SessionInfo[]

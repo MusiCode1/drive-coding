@@ -1,19 +1,22 @@
 /**
- * agent-session-history.test.ts — Phase 6 tests (updated for ACP-based store)
+ * agent-session-history.test.ts — Phase 4 rewrite (ACP envelope shape)
  *
- * Note: History events (history_start, history_chunk, etc.) are now delivered
- * as ACP sessionUpdate notifications. Tests use _testInjectNotification().
+ * Tests for history-related behavior in agent-session store.
  *
- * In Phase 2, history is loaded via ACP loadSession which delivers sessionUpdate
- * notifications. The history_* types here represent the ACP notification types
- * that opencode emits during session history replay.
+ * In Slice 10, history is loaded via ACP loadSession which delivers sessionUpdate
+ * notifications as ACP envelopes. History replay tests (history_start etc.)
+ * are deferred to a future slice when opencode implements full history via ACP.
+ *
+ * This file covers clearBubbles() and robustness against unknown notification types.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createAgentSessionStore } from "./agent-session.svelte"
 
-// SKIP: Same reason as agent-session-bubbles.test.ts — uses Slice 9 server-protocol
-// shape; Slice 10 Phase 3 switched to ACP envelope shape. Will be rewritten in Phase 4.
-describe.skip("agent-session history events (Phase 6 — Slice 9 shape, deprecated)", () => {
+function makeAcp(sessionId: string, update: Record<string, unknown>) {
+  return { sessionId, update }
+}
+
+describe("agent-session history behavior (ACP shape, Slice 10)", () => {
   beforeEach(() => {
     vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("uuid") })
     vi.stubGlobal("location", { protocol: "http:", host: "localhost" })
@@ -23,16 +26,22 @@ describe.skip("agent-session history events (Phase 6 — Slice 9 shape, deprecat
     vi.unstubAllGlobals()
   })
 
-  function fire(store: ReturnType<typeof createAgentSessionStore>, msg: unknown) {
+  function fire(store: ReturnType<typeof createAgentSessionStore>, notification: unknown) {
     // biome-ignore lint/style/noNonNullAssertion: test-only helper always present on real store
-    store._testInjectNotification!(msg)
+    store._testInjectNotification!(notification)
   }
 
   // ── clearBubbles clears existing bubbles ────────────────────────────────
-  it("clearBubbles clears existing bubbles", () => {
-    const store = createAgentSessionStore("a")
-    // Add some live bubbles first via ACP notification
-    fire(store, { type: "agent_message_chunk", text: "existing", messageId: "m0" })
+  it("clearBubbles() clears bubbles and resets isLoadingHistory", () => {
+    const store = createAgentSessionStore("agent-a")
+    // Add some bubbles via ACP notification
+    fire(
+      store,
+      makeAcp("sess-1", {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "existing" },
+      }),
+    )
     expect(store.bubbles).toHaveLength(1)
 
     store.clearBubbles()
@@ -40,40 +49,34 @@ describe.skip("agent-session history events (Phase 6 — Slice 9 shape, deprecat
     expect(store.isLoadingHistory).toBe(false)
   })
 
-  // Note: history_start, history_chunk, history_tool_call, history_done events
-  // are opencode ACP internal notifications that arrive as sessionUpdate.
-  // These are currently passed through as "unknown type" by handleSessionUpdate.
-  // Phase 3+ will add specific handling when history replay is needed.
-  // For now, confirm they do NOT crash the store.
-
-  it("unknown notification types do not throw", () => {
-    const store = createAgentSessionStore("a")
+  // ── Unknown / future notification types do not crash the store ────────────
+  it("unknown sessionUpdate type does not throw", () => {
+    const store = createAgentSessionStore("agent-a")
     expect(() =>
-      fire(store, { type: "history_start", agentId: "a", sessionId: "sess-1" }),
+      fire(
+        store,
+        makeAcp("sess-1", {
+          sessionUpdate: "plan",
+          content: { type: "text", text: "planning..." },
+        }),
+      ),
     ).not.toThrow()
     expect(() =>
-      fire(store, { type: "history_chunk", kind: "message", text: "old", messageId: "m1" }),
+      fire(store, makeAcp("sess-1", { sessionUpdate: "available_commands_update" })),
     ).not.toThrow()
     expect(() =>
-      fire(store, { type: "history_tool_call", toolCallId: "tc1", title: "read" }),
+      fire(store, makeAcp("sess-1", { sessionUpdate: "current_mode_update", mode: "assistant" })),
     ).not.toThrow()
-    expect(() => fire(store, { type: "history_done" })).not.toThrow()
+    expect(store.bubbles).toHaveLength(0)
   })
 
-  // ── stt_partial creates user bubbles ────────────────────────────────────
-  it("stt_partial creates a user bubble via ACP notification", () => {
-    const store = createAgentSessionStore("a")
-    fire(store, { type: "stt_partial", text: "שלום" })
-    const userBubble = store.bubbles.find((b) => b.kind === "user")
-    expect(userBubble).toBeDefined()
-    expect(store.getRecordingId()).toBeNull()
-  })
-
-  // ── B10: addTranslatedSegment stores recordingId ────────────────────────
-  it("addTranslatedSegment is no-op for nonexistent messageId", () => {
-    const store = createAgentSessionStore("a")
-    fire(store, { type: "stt_partial", text: "שלום" })
-    store.addTranslatedSegment("nonexistent-id", "message", "orig", "translated")
-    expect(store.bubbles).toHaveLength(1) // only user bubble unchanged
+  // ── Valid ACP envelope with missing update content does not create bubbles ──
+  // Note: the store expects ACP SDK-shaped notifications (always has .update).
+  // Completely malformed envelopes (null/missing update) are not expected from SDK.
+  it("ACP envelope with empty update object creates no bubble and does not crash", () => {
+    const store = createAgentSessionStore("agent-a")
+    // { sessionId, update: {} } — valid envelope, unknown sessionUpdate type → no bubble
+    expect(() => fire(store, { sessionId: "sess-1", update: {} })).not.toThrow()
+    expect(store.bubbles).toHaveLength(0)
   })
 })

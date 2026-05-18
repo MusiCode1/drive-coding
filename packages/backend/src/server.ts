@@ -25,7 +25,6 @@ import { registerHttpOptions } from "./delivery/http-options.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
 import { type AgentWsData, createAgentWsHandler } from "./delivery/ws-agent.js"
 import { type WsData as EchoWsData, registerEchoWs } from "./delivery/ws-echo.js"
-import { DiskCache } from "./voice/cache-disk.js"
 
 const app = new Hono()
 
@@ -45,8 +44,7 @@ const orchestrator = createAgentOrchestrator({
 })
 
 // fetchSessions: spawns a temp bridge, calls session/list, kills bridge
-// NOTE: listSessionsFromBridge is still used here for the sessions UI (not removed in Phase 1)
-const { listSessionsFromBridge } = await import("./acp/acp-transport.js")
+const { listSessionsFromBridge } = await import("./acp/session-types.js")
 
 async function fetchSessions(cwd: string) {
   const projects = await projectsRegistry.getProjects()
@@ -67,10 +65,6 @@ async function fetchSessions(cwd: string) {
     await bridgeManager.kill(bridgeId).catch(() => {})
   }
 }
-
-// TTS disk cache (kept for backward compat — Phase 4 will remove)
-const ttsCache = new DiskCache(path.resolve("data/cache/tts"))
-await ttsCache.init()
 
 // HTTP routes
 registerHttp(app)
