@@ -4,6 +4,31 @@
 
 ---
 
+## 2026-05-18 — ניקוי תיקיית docs/
+
+### מה בוצע?
+
+ניקוי תיקיית `docs/` — העברת כל המסמכים שבוצעו או ששייכים לאיטרציות קודמות ל-`docs/archive/`.
+
+**הועבר ל-`archive/briefs/`:**
+- `tier-1-voice-pipeline-brief.md`
+- `slice-7-brief.md`, `slice-8a-session-history-brief.md`, `slice-8a-session-history-research.md`
+- `slice-9-frontend-refactor-brief.md`, `slice-9-investigation-brief.md`, `slice-9-followup-fixes.md`
+- `slice-10-fe-orchestrated-brief.md`, `slice-10-research.md`
+- `logging-plan.md`, `backend-test-plan.md`
+
+**הועבר ל-`archive/reviews/`:**
+- `slice-10-audit-report.md`, `slice-10-verification-report.md`, `slice-10-phase4-verification-report.md`
+- `logging-verification-report.md`
+- `reviews/acp-conformance.md`, `reviews/debug-infinite-loop.md`, `reviews/ui-parity-review.md`
+
+**תיקיית `docs/reviews/` נמחקה** (ריקה אחרי ההעברה).
+
+**נשאר ב-`docs/`:**
+`vnext-architecture.md`, `vnext-spec.md`, `vnext-research.md`, `frontend-spec.md`, `walkthrough.md`, `behaviors-coverage.md`, `audio-friendly-prompt-plan.md`, `future-features.md`
+
+---
+
 ## 2026-05-18 05:15 — Slice 10 Phase 4 — BE cleanup + tests refactor
 
 executor (claude-sonnet-4-6) ביצע את Phase 4 של Slice 10 FE-Orchestrated Refactor.
