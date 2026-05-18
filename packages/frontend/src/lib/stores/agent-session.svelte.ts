@@ -421,7 +421,29 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
 
     try {
       // 1. Create ACP client (handshake: WS open + connected frame + warmup + initialize)
-      acpClient = await createAcpClient(agentId, handleSessionUpdate)
+      // MED-8: onClose handles WS close codes:
+      //   1008 = "agent in use by another tab" (ws-agent.ts closes the second feWs)
+      //   1011 = "bridge crashed" (ws-agent.ts closes feWs when bridge dies)
+      const handleWsClose = (code: number, reason: string) => {
+        if (code === 1008) {
+          error = "סוכן בשימוש ב-tab אחר"
+          status = "crashed"
+          acpClient = null
+          log.warn({ code, reason }, "WS closed: agent in use by another tab")
+        } else if (code === 1011) {
+          error = `Bridge נכשל: ${reason || "bridge closed"}`
+          status = "crashed"
+          acpClient = null
+          log.warn({ code, reason }, "WS closed: bridge crashed")
+        } else if (code !== 1000 && code !== 1001) {
+          // Unexpected close — show reconnect UI
+          error = "חיבור נפל — רענן את הדף"
+          status = "disconnected"
+          acpClient = null
+          log.warn({ code, reason }, "WS closed unexpectedly")
+        }
+      }
+      acpClient = await createAcpClient(agentId, handleSessionUpdate, handleWsClose)
 
       // 2. Create a new session (or load existing — Phase 3 will handle existingSessionId)
       const sessionResult = await acpClient.newSession({ cwd: "/" })

@@ -23,9 +23,20 @@ const WARMUP_DELAY_MS = 1500
 const HANDSHAKE_TIMEOUT_MS = 10_000
 const HEARTBEAT_INTERVAL_MS = 25_000
 
-export async function createAcpClient(agentId: string, onUpdate: (n: SessionNotification) => void) {
+export async function createAcpClient(
+  agentId: string,
+  onUpdate: (n: SessionNotification) => void,
+  onClose?: (code: number, reason: string) => void,
+) {
   const proto = location.protocol === "https:" ? "wss:" : "ws:"
   const ws = new WebSocket(`${proto}//${location.host}/ws/agent/${agentId}`)
+
+  // MED-8: listen for WS close events throughout the session
+  // code 1008 = "agent in use by another tab" (set by ws-agent.ts on multi-tab collision)
+  // code 1011 = "bridge crashed" (set by ws-agent.ts when bridge dies)
+  ws.addEventListener("close", (ev: CloseEvent) => {
+    onClose?.(ev.code, ev.reason)
+  })
 
   // 1. Wait for WS open
   await new Promise<void>((resolve, reject) => {
