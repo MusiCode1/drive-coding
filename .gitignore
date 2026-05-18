@@ -11,3 +11,4 @@ scripts/node_modules
 .codenomad/
 .mockups-tmp
 .playwright-cli/
+.specstory/
