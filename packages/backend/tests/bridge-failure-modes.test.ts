@@ -15,7 +15,7 @@
  *
  * This file locks in the desired behavior at every layer where the failure
  * can leak:
- *   - `spawnAndWaitForPort` rejects cleanly on every failure mode
+ *   - `createBridgeManager().spawn` rejects cleanly on every failure mode
  *   - `createBridgeManager().spawn` propagates the rejection without
  *     leaving stray listeners on the lost child
  *   - `createAgentOrchestrator().createAndSpawn` returns an error to the
@@ -45,8 +45,9 @@ let spawnBehavior: SpawnBehavior = { kind: "success", port: 7100 }
 
 type MockChild = EventEmitter & {
   pid: number | undefined
-  stdout: EventEmitter
+  stdout: EventEmitter & { setEncoding?: ReturnType<typeof vi.fn> }
   stderr: EventEmitter
+  stdin: { write: ReturnType<typeof vi.fn> }
   kill: ReturnType<typeof vi.fn>
 }
 
@@ -60,16 +61,18 @@ vi.mock("node:child_process", () => {
         case "no-pid": {
           const child = new EventEmitter() as MockChild
           child.pid = undefined
-          child.stdout = new EventEmitter()
+          child.stdout = Object.assign(new EventEmitter(), { setEncoding: vi.fn() })
           child.stderr = new EventEmitter()
+          child.stdin = { write: vi.fn() }
           child.kill = vi.fn()
           return child
         }
         case "async-error": {
           const child = new EventEmitter() as MockChild
           child.pid = 12345
-          child.stdout = new EventEmitter()
+          child.stdout = Object.assign(new EventEmitter(), { setEncoding: vi.fn() })
           child.stderr = new EventEmitter()
+          child.stdin = { write: vi.fn() }
           child.kill = vi.fn()
           setTimeout(() => {
             child.emit(
@@ -82,8 +85,9 @@ vi.mock("node:child_process", () => {
         case "exit-before-port": {
           const child = new EventEmitter() as MockChild
           child.pid = 12345
-          child.stdout = new EventEmitter()
+          child.stdout = Object.assign(new EventEmitter(), { setEncoding: vi.fn() })
           child.stderr = new EventEmitter()
+          child.stdin = { write: vi.fn() }
           child.kill = vi.fn()
           if (spawnBehavior.kind === "exit-before-port") {
             const behavior = spawnBehavior
@@ -99,20 +103,12 @@ vi.mock("node:child_process", () => {
         case "success": {
           const child = new EventEmitter() as MockChild
           child.pid = 12345
-          child.stdout = new EventEmitter()
+          child.stdout = Object.assign(new EventEmitter(), { setEncoding: vi.fn() })
           child.stderr = new EventEmitter()
+          child.stdin = { write: vi.fn() }
           child.kill = vi.fn((_sig?: string) => {
             setTimeout(() => child.emit("exit", 0), 5)
           })
-          if (spawnBehavior.kind === "success") {
-            const behavior = spawnBehavior
-            setTimeout(() => {
-              child.stdout.emit(
-                "data",
-                Buffer.from(`Listening on ws://127.0.0.1:${behavior.port}/\n`),
-              )
-            }, 5)
-          }
           return child
         }
       }
@@ -167,7 +163,7 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
     vi.restoreAllMocks()
   })
 
-  describe("at spawnAndWaitForPort layer", () => {
+  describe("at bridge-manager layer", () => {
     it("rejects cleanly when spawn throws synchronously (Bun ENOENT edge case)", async () => {
       const monitor = withUncaughtMonitor()
       monitor.start()
@@ -179,14 +175,11 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
       })
       spawnBehavior = { kind: "throw-sync", error: enoent }
 
-      const { spawnAndWaitForPort } = await import("../src/acp/bridge-spawn")
+      const { createBridgeManager } = await import("../src/acp/bridge-manager")
+      const mgr = createBridgeManager()
+
       await expect(
-        spawnAndWaitForPort({
-          bin: "npx",
-          args: ["-y", "@rebornix/stdio-to-ws"],
-          cwd: "/tmp",
-          portTimeoutMs: 100,
-        }),
+        mgr.spawn("agent-fail", { cliKind: "opencode", cwd: "/tmp", modelOverride: null }),
       ).rejects.toThrow(/ENOENT/)
 
       await monitor.stopAndAssertClean()
@@ -198,14 +191,11 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
 
       spawnBehavior = { kind: "no-pid" }
 
-      const { spawnAndWaitForPort } = await import("../src/acp/bridge-spawn")
+      const { createBridgeManager } = await import("../src/acp/bridge-manager")
+      const mgr = createBridgeManager()
+
       await expect(
-        spawnAndWaitForPort({
-          bin: "npx",
-          args: [],
-          cwd: "/tmp",
-          portTimeoutMs: 100,
-        }),
+        mgr.spawn("agent-nopid", { cliKind: "opencode", cwd: "/tmp", modelOverride: null }),
       ).rejects.toThrow(/no pid/)
 
       await monitor.stopAndAssertClean()
@@ -216,84 +206,57 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
       monitor.start()
 
       const enoent = Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" })
+      // async-error: pid exists but then error fires async
+      // In new bridge-manager, spawn with pid succeeds synchronously but error fires later.
+      // The manager should survive without uncaught errors.
       spawnBehavior = { kind: "async-error", error: enoent, delayMs: 5 }
 
-      const { spawnAndWaitForPort } = await import("../src/acp/bridge-spawn")
-      await expect(
-        spawnAndWaitForPort({
-          bin: "npx",
-          args: [],
-          cwd: "/tmp",
-          portTimeoutMs: 200,
-        }),
-      ).rejects.toThrow()
+      const { createBridgeManager } = await import("../src/acp/bridge-manager")
+      const mgr = createBridgeManager()
 
-      await monitor.stopAndAssertClean()
-    })
-
-    it("rejects cleanly when child exits before emitting a port", async () => {
-      const monitor = withUncaughtMonitor()
-      monitor.start()
-
-      spawnBehavior = {
-        kind: "exit-before-port",
-        code: 1,
-        stderr: "npx: opencode not found\n",
-        delayMs: 5,
-      }
-
-      const { spawnAndWaitForPort } = await import("../src/acp/bridge-spawn")
-      await expect(
-        spawnAndWaitForPort({
-          bin: "npx",
-          args: [],
-          cwd: "/tmp",
-          portTimeoutMs: 200,
-        }),
-      ).rejects.toThrow(/exited/)
-
-      await monitor.stopAndAssertClean()
-    })
-
-    it("does not leak uncaught errors when a late async error fires after rejection", async () => {
-      // This is the trickiest case: spawn resolves the promise (via exit-before-port),
-      // and THEN an async error event fires on the same child after the promise has
-      // settled. The listener exists but the reject is a no-op. We must NOT crash.
-      const monitor = withUncaughtMonitor()
-      monitor.start()
-
-      spawnBehavior = {
-        kind: "exit-before-port",
-        code: 1,
-        stderr: "child died\n",
-        delayMs: 5,
-      }
-
-      const { spawnAndWaitForPort } = await import("../src/acp/bridge-spawn")
-      const promise = spawnAndWaitForPort({
-        bin: "npx",
-        args: [],
+      // spawn succeeds (pid=12345 returned), but then async error fires.
+      // The manager registers the error handler before the error fires,
+      // so it should handle it cleanly (remove from store + notify crash).
+      const spawnPromise = mgr.spawn("agent-async-err", {
+        cliKind: "opencode",
         cwd: "/tmp",
-        portTimeoutMs: 200,
+        modelOverride: null,
       })
+      // Spawn should resolve (pid is set), then crash event fires
+      await spawnPromise.catch(() => {})
 
-      // Get the mocked child and emit a LATE error after exit
-      const { spawn } = await import("node:child_process")
-      const child = vi.mocked(spawn).mock.results.at(-1)?.value as MockChild
-
-      await expect(promise).rejects.toThrow()
-
-      // Now fire a late error — there's no resolve/reject pending anymore.
-      setTimeout(() => {
-        const lateErr = Object.assign(new Error("late spawn error"), { code: "ENOENT" })
-        child.emit("error", lateErr)
-      }, 10)
+      // Give the async error time to fire
+      await new Promise((r) => setTimeout(r, 50))
 
       await monitor.stopAndAssertClean()
     })
-  })
 
-  describe("at bridge-manager layer", () => {
+    it("handles child exit cleanly (marks as crashed, no uncaught)", async () => {
+      const monitor = withUncaughtMonitor()
+      monitor.start()
+
+      spawnBehavior = { kind: "success", port: 7100 }
+
+      const { createBridgeManager } = await import("../src/acp/bridge-manager")
+      const mgr = createBridgeManager()
+      const crashSpy = vi.fn()
+      mgr.onCrash(crashSpy)
+
+      await mgr.spawn("agent-exit", { cliKind: "opencode", cwd: "/tmp", modelOverride: null })
+
+      // Simulate unexpected exit
+      const { spawn } = await import("node:child_process")
+      const child = vi.mocked(spawn).mock.results[0]?.value as MockChild
+      child.emit("exit", 127)
+
+      await new Promise((r) => setTimeout(r, 20))
+      expect(crashSpy).toHaveBeenCalledWith("agent-exit", 127)
+      expect(mgr.get("agent-exit")).toBeNull()
+      expect(mgr.list()).toHaveLength(0)
+
+      await monitor.stopAndAssertClean()
+    })
+
     it("createBridgeManager().spawn — propagates ENOENT cleanly, no leak", async () => {
       const monitor = withUncaughtMonitor()
       monitor.start()
@@ -350,6 +313,32 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
 
       await monitor.stopAndAssertClean()
     })
+
+    it("does not leak uncaught errors when late async error fires after entry removed", async () => {
+      // This is the trickiest case: spawn resolves (pid is set, entry in store),
+      // and THEN an async error event fires — the registered error handler
+      // must swallow it without any uncaught escape.
+      const monitor = withUncaughtMonitor()
+      monitor.start()
+
+      spawnBehavior = { kind: "success", port: 7100 }
+
+      const { createBridgeManager } = await import("../src/acp/bridge-manager")
+      const mgr = createBridgeManager()
+
+      await mgr.spawn("agent-late-err", { cliKind: "opencode", cwd: "/tmp", modelOverride: null })
+
+      // Delete entry from store (simulate kill)
+      await mgr.kill("agent-late-err")
+
+      // Now fire a late error on the child — should NOT escape
+      const { spawn } = await import("node:child_process")
+      const child = vi.mocked(spawn).mock.results[0]?.value as MockChild
+      const lateErr = Object.assign(new Error("late spawn error"), { code: "ENOENT" })
+      child.emit("error", lateErr)
+
+      await monitor.stopAndAssertClean()
+    })
   })
 
   describe("at orchestrator layer (end-to-end)", () => {
@@ -371,18 +360,22 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
         async create(input: { cliKind: string; cwd: string }) {
           const a = { id: crypto.randomUUID(), status: "starting", ...input }
           agents.set(a.id, a)
+          // biome-ignore lint/suspicious/noExplicitAny: test stub
           return a as any
         },
         async get(id: string) {
+          // biome-ignore lint/suspicious/noExplicitAny: test stub
           return (agents.get(id) ?? null) as any
         },
         async list() {
+          // biome-ignore lint/suspicious/noExplicitAny: test stub
           return [...agents.values()] as any
         },
         async update(id: string, patch: Record<string, unknown>) {
           const a = agents.get(id)
-          if (!a) return null as any
+          if (!a) return null as unknown as ReturnType<(typeof registry)["get"]>
           Object.assign(a, patch)
+          // biome-ignore lint/suspicious/noExplicitAny: test stub
           return a as any
         },
         async delete(id: string) {
@@ -390,6 +383,7 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
         },
       }
 
+      // biome-ignore lint/suspicious/noExplicitAny: test stub
       const orch = createAgentOrchestrator({ registry: registry as any, bridgeManager: mgr })
 
       await expect(

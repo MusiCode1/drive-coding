@@ -86,7 +86,7 @@ const echoWss = new WebSocketServer({ noServer: true })
 const agentWss = new WebSocketServer({ noServer: true })
 
 const echoHandler = createEchoWsHandler()
-const agentWsHandler = createAgentWsHandler({ orchestrator })
+const onAgentConnect = createAgentWsHandler({ orchestrator, bridgeManager })
 
 echoWss.on("connection", (ws) => {
   echoHandler(ws)
@@ -98,33 +98,7 @@ agentWss.on("connection", (ws, req) => {
   const match = url.pathname.match(/^\/ws\/agent\/([^/]+)$/)
   const agentId = match?.[1] ?? ""
 
-  // Attach data to ws for the handler (reusing AgentWsData shape)
-  const wsWithData = ws as typeof ws & {
-    data: {
-      kind: "agent"
-      agentId: string
-      bridgeWs: undefined
-      pendingFromFe: never[]
-      bridgeOpen: boolean
-    }
-  }
-  wsWithData.data = {
-    kind: "agent",
-    agentId,
-    bridgeWs: undefined,
-    pendingFromFe: [],
-    bridgeOpen: false,
-  }
-
-  agentWsHandler.websocket.open?.(wsWithData as never)
-
-  ws.on("message", (raw) => {
-    agentWsHandler.websocket.message?.(wsWithData as never, raw as string | Buffer)
-  })
-
-  ws.on("close", (code, reason) => {
-    agentWsHandler.websocket.close?.(wsWithData as never, code, reason.toString())
-  })
+  onAgentConnect(ws, agentId)
 })
 
 const port = Number(process.env.PORT ?? 4000)

@@ -1,26 +1,25 @@
 /**
  * ws-agent.ts — WebSocket bytes pipe for /ws/agent/:id
  *
- * Phase 1: Converted from Bun.serve WebSocketHandler to ws library API.
- * Phase 3: Will replace bridge WS proxy with direct in-process pipe.
+ * Phase 3: Direct in-process pipe from feWs → child.stdin/stdout.
+ * No intermediate WS bridge process needed.
  *
- * Acts as a bidirectional transparent proxy between the FE WebSocket
- * and the stdio-to-ws bridge process on loopback.
- *
- * The BE does NOT parse, validate, or enrich the frames —
- * raw ACP JSON-RPC bytes flow through as-is.
+ * Architecture:
+ *   feWs (ws.WebSocket from FE browser)
+ *     ↕ readline + stdin.write
+ *   child (ChildProcess spawned by bridge-manager)
  *
  * Edge cases:
  *   - Agent not found → close(1008, "agent not found")
  *   - MED-8: second tab for same agentId → close(1008, "agent in use by another tab")
- *   - FE sends before bridge ready → buffered in pendingFromFe, flushed at bridge open
- *   - bridgeWs close → feWs.close(1011, "bridge closed")
- *   - bridgeWs error → feWs.close(1011, "bridge error")
- *   - feWs close → cleanup: activeFeWs.delete(agentId), bridgeWs.close()
+ *   - child exit → feWs.close(1011, "bridge closed")
+ *   - feWs close → cleanup (rl.close + detach), NO child.kill
  */
 
+import type { ChildProcessWithoutNullStreams } from "node:child_process"
+import { createInterface } from "node:readline"
 import { createLogger } from "@drive-coding/core/log"
-import { WebSocket } from "ws"
+import type { WebSocket } from "ws"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 
 const log = createLogger("backend.ws.agent")
@@ -30,157 +29,82 @@ const log = createLogger("backend.ws.agent")
 export type AgentWsData = {
   kind: "agent"
   agentId: string
-  bridgeWs?: WebSocket
+  bridgeWs?: undefined
   pendingFromFe: Array<string | Buffer>
   bridgeOpen: boolean
 }
 
 // ─── Handler factory ──────────────────────────────────────────────────────────
 
-export function createAgentWsHandler(deps: { orchestrator: AgentOrchestrator }): {
-  websocket: {
-    open?: (ws: {
-      data: AgentWsData
-      send: (d: string | Buffer) => void
-      close: (code: number, reason: string) => void
-    }) => Promise<void>
-    message?: (
-      ws: {
-        data: AgentWsData
-        send: (d: string | Buffer) => void
-        close: (code: number, reason: string) => void
-      },
-      raw: string | Buffer,
-    ) => void
-    close?: (
-      ws: {
-        data: AgentWsData
-        send: (d: string | Buffer) => void
-        close: (code: number, reason: string) => void
-      },
-      code: number,
-      reason: string,
-    ) => void
-  }
-} {
+export function createAgentWsHandler(deps: {
+  orchestrator: AgentOrchestrator
+  bridgeManager: { getChild(bridgeId: string): ChildProcessWithoutNullStreams | null }
+}): (ws: WebSocket, agentId: string) => void {
   // MED-8: one active FE WS per agentId — prevents ACP state collision on second tab
-  const activeFeWs = new Map<
-    string,
-    {
-      data: AgentWsData
-      send: (d: string | Buffer) => void
-      close: (code: number, reason: string) => void
+  const activeFeWs = new Map<string, WebSocket>()
+
+  return function onConnect(feWs: WebSocket, agentId: string): void {
+    const childLog = log.child({ agentId })
+
+    // MED-8 guard
+    if (activeFeWs.has(agentId)) {
+      childLog.warn({}, "second tab rejected")
+      feWs.close(1008, "agent in use by another tab")
+      return
     }
-  >()
 
-  const websocket = {
-    async open(feWs: {
-      data: AgentWsData
-      send: (d: string | Buffer) => void
-      close: (code: number, reason: string) => void
-    }) {
-      const agentId = feWs.data.agentId
-      log.child({ agentId }).info({}, "WS connect")
+    const child = deps.bridgeManager.getChild(agentId)
+    if (!child) {
+      childLog.warn({}, "agent not found")
+      feWs.close(1008, "agent not found")
+      return
+    }
 
-      // MED-8: reject second tab connecting to same agent
-      if (activeFeWs.has(agentId)) {
-        log.child({ agentId }).warn({}, "second tab rejected")
-        feWs.close(1008, "agent in use by another tab")
-        return
-      }
+    activeFeWs.set(agentId, feWs)
+    childLog.info({ pid: child.pid }, "WS connect → pipe attached")
 
-      // Look up bridge port from orchestrator
-      const port = deps.orchestrator.getBridgePort(agentId)
-      if (!port) {
-        log.child({ agentId }).warn({}, "agent not found")
-        feWs.close(1008, "agent not found")
-        return
-      }
-
-      activeFeWs.set(agentId, feWs)
-
-      // Connect to stdio-to-ws bridge on loopback
-      const bridgeWs = new WebSocket(`ws://127.0.0.1:${port}/`)
-      feWs.data.bridgeWs = bridgeWs
-      feWs.data.pendingFromFe = []
-      feWs.data.bridgeOpen = false
-
-      bridgeWs.on("open", () => {
-        feWs.data.bridgeOpen = true
-        // Flush buffered FE messages
-        for (const msg of feWs.data.pendingFromFe) {
-          try {
-            bridgeWs.send(msg)
-          } catch {
-            // bridge closing
-          }
-        }
-        feWs.data.pendingFromFe = []
-      })
-
-      bridgeWs.on("message", (data) => {
-        // Forward bridge frame as-is to FE.
-        try {
-          feWs.send(data as string | Buffer)
-        } catch {
-          // feWs closing
-        }
-      })
-
-      bridgeWs.on("close", () => {
-        log.child({ agentId }).info({}, "bridge closed — closing feWs")
-        try {
-          feWs.close(1011, "bridge closed")
-        } catch {
-          // already closed
-        }
-      })
-
-      bridgeWs.on("error", (err) => {
-        log.child({ agentId }).error({ err }, "bridge error — closing feWs")
-        try {
-          feWs.close(1011, "bridge error")
-        } catch {
-          // already closed
-        }
-      })
-    },
-
-    message(
-      feWs: {
-        data: AgentWsData
-        send: (d: string | Buffer) => void
-        close: (code: number, reason: string) => void
-      },
-      raw: string | Buffer,
-    ) {
-      // Forward FE message to bridge, or buffer if bridge not yet open
-      if (feWs.data.bridgeOpen && feWs.data.bridgeWs) {
-        try {
-          feWs.data.bridgeWs.send(raw as string | Buffer)
-        } catch {
-          // bridge closing
-        }
-      } else {
-        feWs.data.pendingFromFe.push(raw as string | Buffer)
-      }
-    },
-
-    close(feWs: {
-      data: AgentWsData
-      send: (d: string | Buffer) => void
-      close: (code: number, reason: string) => void
-    }) {
-      const agentId = feWs.data.agentId
-      log.child({ agentId }).info({}, "WS disconnect — cleanup")
-      activeFeWs.delete(agentId)
+    // ── pipeChild ─────────────────────────────────────────────────────────────
+    // child.stdout (NDJSON lines) → feWs.send
+    child.stdout.setEncoding("utf8")
+    const rl = createInterface({ input: child.stdout, crlfDelay: Infinity })
+    rl.on("line", (line) => {
+      if (line.length === 0) return
       try {
-        feWs.data.bridgeWs?.close()
+        feWs.send(line)
+      } catch {
+        // feWs closing
+      }
+    })
+
+    // feWs message → child.stdin (add newline if missing)
+    feWs.on("message", (data) => {
+      try {
+        const text = data.toString()
+        const line = text.endsWith("\n") ? text : `${text}\n`
+        child.stdin.write(line)
+      } catch (err) {
+        childLog.warn({ err }, "stdin write failed")
+      }
+    })
+
+    // child exit → close feWs
+    const onChildExit = (code: number | null) => {
+      childLog.info({ code }, "child exited — closing feWs")
+      try {
+        feWs.close(1011, "bridge closed")
       } catch {
         // already closed
       }
-    },
-  }
+    }
+    child.once("exit", onChildExit)
 
-  return { websocket }
+    // feWs close → cleanup, but do NOT kill child
+    feWs.on("close", () => {
+      childLog.info({}, "WS disconnect — detaching pipe")
+      activeFeWs.delete(agentId)
+      rl.close()
+      child.off("exit", onChildExit)
+      // Important: do NOT call child.kill() — child survives FE disconnect
+    })
+  }
 }

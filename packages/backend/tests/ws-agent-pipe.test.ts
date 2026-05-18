@@ -1,113 +1,76 @@
 /**
- * Integration tests for ws-agent.ts — bytes pipe + MED-8 guard.
+ * ws-agent-pipe.test.ts — Integration tests for ws-agent.ts
  *
- * Slice 10 Phase 1 — TDD outer-loop tests written BEFORE implementation.
- *
- * Uses a real WebSocket server (ws npm) on a random port to act as the bridge,
- * and a mock Bun ServerWebSocket to act as the FE side.
+ * Phase 3 rewrite: direct in-process pipe via ChildProcess stdin/stdout.
+ * Uses mock ChildProcess (EventEmitter + PassThrough streams) to act as the child.
  *
  * Covers:
- *   - Message forwarding: FE → bridge (when bridge ready and buffered)
- *   - Message forwarding: bridge → FE
+ *   - Agent not found → close(1008, "agent not found")
  *   - MED-8: second tab connects to same agentId → close(1008, "agent in use by another tab")
- *   - bridgeWs close → feWs.close(1011, "bridge closed")
- *   - bridgeWs error → feWs.close(1011, "bridge error")
- *   - Unknown agentId → feWs.close(1008, "agent not found")
+ *   - FE message forwarded to child.stdin
+ *   - child.stdout line → forwarded to FE via feWs.send
+ *   - child exit → feWs.close(1011, "bridge closed")
+ *   - feWs close → cleanup (rl detached), child NOT killed
  */
 
+import { EventEmitter, PassThrough } from "node:stream"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { WebSocketServer } from "ws"
-import type { AgentWsData } from "../src/delivery/ws-agent.js"
+import type { WebSocket } from "ws"
 import { createAgentWsHandler } from "../src/delivery/ws-agent.js"
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Mock ChildProcess ────────────────────────────────────────────────────────
 
-/** Create a real WS server on a random port, returns { port, wss, close } */
-async function makeBridgeServer(): Promise<{
-  port: number
-  wss: WebSocketServer
-  receivedMessages: string[]
-  sendToClient: (msg: string) => void
-  closeServer: () => Promise<void>
-}> {
-  const receivedMessages: string[] = []
-  let clientSocket: import("ws").WebSocket | null = null
-
-  const wss = new WebSocketServer({ port: 0 })
-
-  await new Promise<void>((resolve) => wss.on("listening", resolve))
-
-  const addr = wss.address() as { port: number }
-
-  wss.on("connection", (ws) => {
-    clientSocket = ws
-    ws.on("message", (data) => {
-      receivedMessages.push(data.toString())
-    })
-  })
-
-  return {
-    port: addr.port,
-    wss,
-    receivedMessages,
-    sendToClient: (msg: string) => {
-      clientSocket?.send(msg)
-    },
-    closeServer: () =>
-      new Promise<void>((resolve) => {
-        clientSocket?.close()
-        wss.close(() => resolve())
-      }),
-  }
+type MockChild = EventEmitter & {
+  pid: number
+  stdout: PassThrough
+  stderr: PassThrough
+  stdin: PassThrough
+  kill: ReturnType<typeof vi.fn>
 }
 
-/** Mock Bun ServerWebSocket (FE side) */
-function makeMockFeWs(agentId: string): {
-  ws: ReturnType<typeof makeMockFeWs>["ws"]
-  sent: Array<string | Buffer>
-  closeArgs: Array<[number, string]>
-} {
-  const sent: Array<string | Buffer> = []
+function makeMockChild(pid = 12345): MockChild {
+  const child = new EventEmitter() as MockChild
+  child.pid = pid
+  child.stdout = new PassThrough()
+  child.stderr = new PassThrough()
+  child.stdin = new PassThrough()
+  child.kill = vi.fn()
+  return child
+}
+
+// ─── Mock FE WebSocket ────────────────────────────────────────────────────────
+
+type MockFeWs = EventEmitter & {
+  send: ReturnType<typeof vi.fn>
+  close: ReturnType<typeof vi.fn>
+  readyState: number
+}
+
+function makeMockFeWs(): { ws: WebSocket; sent: string[]; closeArgs: Array<[number, string]> } {
+  const sent: string[] = []
   const closeArgs: Array<[number, string]> = []
-  const ws = {
-    data: {
-      kind: "agent" as const,
-      agentId,
-      bridgeWs: undefined as unknown,
-      pendingFromFe: [] as unknown[],
-      bridgeOpen: false,
-    } as AgentWsData,
-    send: vi.fn((data: string | Buffer) => {
-      sent.push(data)
-    }),
-    close: vi.fn((code: number, reason: string) => {
-      closeArgs.push([code, reason])
-    }),
-  }
-  return { ws: ws as unknown as ReturnType<typeof makeMockFeWs>["ws"], sent, closeArgs }
+  const emitter = new EventEmitter() as MockFeWs
+  emitter.send = vi.fn((data: unknown) => {
+    sent.push(typeof data === "string" ? data : String(data))
+  })
+  emitter.close = vi.fn((code: number, reason: string) => {
+    closeArgs.push([code, reason])
+  })
+  emitter.readyState = 1 // OPEN
+  return { ws: emitter as unknown as WebSocket, sent, closeArgs }
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe("ws-agent bytes pipe", () => {
-  let bridge: Awaited<ReturnType<typeof makeBridgeServer>>
+describe("ws-agent in-process pipe", () => {
+  it("unknown agentId → close(1008, 'agent not found')", () => {
+    const orchestrator = { getBridgePort: vi.fn(() => null) } as never
+    const bridgeManager = { getChild: vi.fn(() => null) }
 
-  beforeEach(async () => {
-    bridge = await makeBridgeServer()
-  })
+    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
+    const { ws, closeArgs } = makeMockFeWs()
 
-  afterEach(async () => {
-    await bridge.closeServer()
-  })
-
-  it("unknown agentId → close(1008, 'agent not found')", async () => {
-    const orchestrator = {
-      getBridgePort: vi.fn(() => null),
-    }
-    const handler = createAgentWsHandler({ orchestrator: orchestrator as never })
-    const { ws, closeArgs } = makeMockFeWs("ghost-agent")
-
-    await handler.websocket.open?.(ws as never)
+    onConnect(ws, "ghost-agent")
 
     expect(closeArgs).toHaveLength(1)
     // biome-ignore lint/style/noNonNullAssertion: guarded by toHaveLength
@@ -116,97 +79,60 @@ describe("ws-agent bytes pipe", () => {
     expect(closeArgs[0]![1]).toContain("agent not found")
   })
 
-  it("FE message forwarded to bridge (with buffering before open)", async () => {
-    const agentId = "pipe-test-1"
-    const orchestrator = {
-      getBridgePort: vi.fn(() => bridge.port),
-    }
-    const handler = createAgentWsHandler({ orchestrator: orchestrator as never })
-    const { ws } = makeMockFeWs(agentId)
+  it("FE message forwarded to child.stdin", async () => {
+    const child = makeMockChild()
+    const orchestrator = { getBridgePort: vi.fn(() => null) } as never
+    const bridgeManager = { getChild: vi.fn(() => child) }
 
-    // open — triggers bridgeWs connect
-    await handler.websocket.open?.(ws as never)
+    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
+    const { ws } = makeMockFeWs()
 
-    // Wait for bridge WS connection to be established
-    await new Promise<void>((resolve) => {
-      const check = () => {
-        if (bridge.wss.clients.size > 0) resolve()
-        else setTimeout(check, 10)
-      }
-      check()
-    })
+    onConnect(ws, "agent-1")
 
-    // Wait a bit more for "open" event to fire on bridgeWs
-    await new Promise((r) => setTimeout(r, 100))
+    // Capture stdin writes
+    const stdinChunks: string[] = []
+    child.stdin.on("data", (chunk) => stdinChunks.push(chunk.toString()))
 
-    // Send message from FE
-    const testMsg = JSON.stringify({ jsonrpc: "2.0", method: "initialize" })
-    await handler.websocket.message?.(ws as never, testMsg)
+    // Emit FE message
+    const msg = JSON.stringify({ jsonrpc: "2.0", method: "initialize" })
+    ws.emit("message", msg)
 
-    // Wait for message to arrive at bridge
-    await new Promise<void>((resolve) => {
-      const check = () => {
-        if (bridge.receivedMessages.length > 0) resolve()
-        else setTimeout(check, 10)
-      }
-      setTimeout(check, 20)
-    })
-
-    expect(bridge.receivedMessages).toContain(testMsg)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(stdinChunks.join("")).toContain(msg)
   })
 
-  it("bridge message forwarded to FE", async () => {
-    const agentId = "pipe-test-2"
-    const orchestrator = {
-      getBridgePort: vi.fn(() => bridge.port),
-    }
-    const handler = createAgentWsHandler({ orchestrator: orchestrator as never })
-    const { ws, sent } = makeMockFeWs(agentId)
+  it("child.stdout line forwarded to FE", async () => {
+    const child = makeMockChild()
+    const orchestrator = { getBridgePort: vi.fn(() => null) } as never
+    const bridgeManager = { getChild: vi.fn(() => child) }
 
-    await handler.websocket.open?.(ws as never)
+    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
+    const { ws, sent } = makeMockFeWs()
 
-    // Wait for bridge WS connection
-    await new Promise<void>((resolve) => {
-      const check = () => {
-        if (bridge.wss.clients.size > 0) resolve()
-        else setTimeout(check, 10)
-      }
-      check()
-    })
-    await new Promise((r) => setTimeout(r, 100))
+    onConnect(ws, "agent-2")
 
-    // Bridge sends message to FE
-    const bridgeMsg = JSON.stringify({ jsonrpc: "2.0", result: { sessionId: "s1" }, id: 1 })
-    bridge.sendToClient(bridgeMsg)
+    // Send a line from child stdout
+    const line = JSON.stringify({ jsonrpc: "2.0", result: { sessionId: "s1" }, id: 1 })
+    child.stdout.write(`${line}\n`)
 
-    // Wait for FE to receive it
-    await new Promise<void>((resolve) => {
-      const check = () => {
-        if (sent.length > 0) resolve()
-        else setTimeout(check, 10)
-      }
-      setTimeout(check, 20)
-    })
-
-    const received = sent.map((s) => (typeof s === "string" ? s : s.toString()))
-    expect(received).toContain(bridgeMsg)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(sent).toContain(line)
   })
 
-  it("MED-8: second tab same agentId → close(1008, 'agent in use by another tab')", async () => {
-    const agentId = "dup-agent"
-    const orchestrator = {
-      getBridgePort: vi.fn(() => bridge.port),
-    }
-    const handler = createAgentWsHandler({ orchestrator: orchestrator as never })
+  it("MED-8: second tab same agentId → close(1008, 'agent in use by another tab')", () => {
+    const child = makeMockChild()
+    const orchestrator = { getBridgePort: vi.fn(() => null) } as never
+    const bridgeManager = { getChild: vi.fn(() => child) }
 
-    const { ws: ws1 } = makeMockFeWs(agentId)
-    const { ws: ws2, closeArgs: close2 } = makeMockFeWs(agentId)
+    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
+    const { ws: ws1 } = makeMockFeWs()
+    const { ws: ws2, closeArgs: close2 } = makeMockFeWs()
 
     // First tab connects
-    await handler.websocket.open?.(ws1 as never)
+    onConnect(ws1, "dup-agent")
 
     // Second tab connects with same agentId — should be rejected
-    await handler.websocket.open?.(ws2 as never)
+    onConnect(ws2, "dup-agent")
 
     expect(close2).toHaveLength(1)
     // biome-ignore lint/style/noNonNullAssertion: guarded by toHaveLength
@@ -215,54 +141,40 @@ describe("ws-agent bytes pipe", () => {
     expect(close2[0]![1]).toContain("agent in use by another tab")
   })
 
-  it("feWs close → removes from activeFeWs + closes bridgeWs", async () => {
-    const agentId = "close-test"
-    const orchestrator = {
-      getBridgePort: vi.fn(() => bridge.port),
-    }
-    const handler = createAgentWsHandler({ orchestrator: orchestrator as never })
-    const { ws } = makeMockFeWs(agentId)
+  it("child exit → feWs.close(1011, 'bridge closed')", async () => {
+    const child = makeMockChild()
+    const orchestrator = { getBridgePort: vi.fn(() => null) } as never
+    const bridgeManager = { getChild: vi.fn(() => child) }
 
-    await handler.websocket.open?.(ws as never)
+    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
+    const { ws, closeArgs } = makeMockFeWs()
 
-    // Wait for connection
-    await new Promise((r) => setTimeout(r, 150))
+    onConnect(ws, "exit-agent")
 
-    // Close FE WS
-    await handler.websocket.close?.(ws as never, 1000, "bye")
+    // Simulate child exit
+    child.emit("exit", 0)
 
-    // After FE closes, the bridge server should see the client disconnect
-    await new Promise((r) => setTimeout(r, 200))
-    expect(bridge.wss.clients.size).toBe(0)
-  })
-
-  it("bridge closes → feWs.close(1011, 'bridge closed')", async () => {
-    const agentId = "bridge-close-test"
-    const orchestrator = {
-      getBridgePort: vi.fn(() => bridge.port),
-    }
-    const handler = createAgentWsHandler({ orchestrator: orchestrator as never })
-    const { ws, closeArgs } = makeMockFeWs(agentId)
-
-    await handler.websocket.open?.(ws as never)
-
-    // Wait for bridge connection
-    await new Promise<void>((resolve) => {
-      const check = () => {
-        if (bridge.wss.clients.size > 0) resolve()
-        else setTimeout(check, 10)
-      }
-      check()
-    })
-    await new Promise((r) => setTimeout(r, 100))
-
-    // Close the bridge WS server from the server side
-    for (const client of bridge.wss.clients) client.close()
-
-    // Wait for feWs to receive close with 1011
-    await new Promise((r) => setTimeout(r, 300))
-
+    await new Promise((r) => setTimeout(r, 20))
     expect(closeArgs.some(([code]) => code === 1011)).toBe(true)
     expect(closeArgs.some(([, reason]) => reason === "bridge closed")).toBe(true)
+  })
+
+  it("feWs close → cleanup, child NOT killed", async () => {
+    const child = makeMockChild()
+    const orchestrator = { getBridgePort: vi.fn(() => null) } as never
+    const bridgeManager = { getChild: vi.fn(() => child) }
+
+    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
+    const { ws } = makeMockFeWs()
+
+    onConnect(ws, "close-agent")
+
+    // Close FE WS
+    ws.emit("close", 1000, "bye")
+
+    await new Promise((r) => setTimeout(r, 50))
+
+    // Child should NOT be killed
+    expect(child.kill).not.toHaveBeenCalled()
   })
 })

@@ -1,5 +1,5 @@
-import { EventEmitter } from "node:events"
 import { type ChildProcessWithoutNullStreams } from "node:child_process"
+import { EventEmitter } from "node:events"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 type MockChild = EventEmitter & {

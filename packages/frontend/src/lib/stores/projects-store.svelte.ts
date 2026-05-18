@@ -5,6 +5,7 @@
  * Refreshed on focus and on explicit load() call.
  */
 
+import { cwdToHash } from "@drive-coding/core/cwd-hash"
 import type { ProjectRecord, SessionRecord } from "$lib/api/sessions"
 import { listProjectSessions, listProjects, listSessions } from "$lib/api/sessions"
 import { createLogger } from "$lib/log"
@@ -29,9 +30,13 @@ export function createProjectsStore() {
     error = null
     log.debug({}, "fetch projects + sessions")
     try {
-      const [sess, proj] = await Promise.all([listSessions(), listProjects()])
+      const [rawSess, proj] = await Promise.all([listSessions(), listProjects()])
+      // Attach cwdHash to each session (computed via Web Crypto — same algo as BE)
+      const sessWithHash = await Promise.all(
+        rawSess.map(async (s) => ({ ...s, cwdHash: await cwdToHash(s.cwd) })),
+      )
       // Sort sessions newest-first
-      sessions = [...sess].sort(
+      sessions = [...sessWithHash].sort(
         (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
       )
       projects = proj
