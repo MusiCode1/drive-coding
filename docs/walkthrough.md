@@ -4,6 +4,57 @@
 
 ---
 
+## 2026-05-18 16:15 — Slice 10 F-1 followup — Data-driven readiness (CBug1 fix)
+
+### מה בוצע?
+
+תיקון `CBug1` שהתגלה במהלך verifier-slice-heavy של Slice 10 F-1: אחרי F-1 fix, FE היה תקוע ב-loop של 10s WS connect → disconnect, הסוכן לעולם לא הגיע ל-`ready`. הסיבה: ה-FE עוד חיכה ל-frame סינתטי `{"type":"connected"}` של `stdio-to-ws` שהוסר ב-Phase 2 של F-1.
+
+תוך כדי החקירה התגלה bug שני שהיה מוסתר ע"י ה-handshake timeout: ה-BE שלח NDJSON **בלי `\n` delimiter**, מה שגרם ל-`ndJsonStream` ב-FE לחכות לעולמים על message שלם.
+
+**3 vertical TDD slices:**
+
+**Slice 1 — `ws-to-streams.ts` filter removal:**
+- מחיקת `STDIO_TO_WS_FRAME_TYPES` set + ה-filter block של ~17 שורות
+- ה-stream מעביר עכשיו כל WS frame as-is ל-SDK
+- מחיקת 3 obsolete tests של swallowing, הוספת 2 tests חדשים של forward-all
+
+**Slice 2 — `client.ts` data-driven readiness:**
+- מחיקת step 2 (handshake wait — 25 שורות ל-`{"type":"connected"}`)
+- מחיקת step 3 (1.5s warmup — היה לאחר stdio-to-ws connected)
+- הוספת `Promise.race` סביב `conn.initialize(...)` עם `INIT_TIMEOUT_MS = 10_000` כ-safety net
+- שינוי test MED-4 ל-test על initialize timeout במקום handshake timeout
+
+**Slice 3 — `ws-agent.ts` NDJSON \n preservation:**
+- שורה אחת (`feWs.send(\`${line}\\n\`)`) — `readline` מסיר את ה-`\n`, צריך להחזירו
+- עדכון test ב-`ws-agent-pipe.test.ts` שתיעד את ההתנהגות השגויה
+
+### החלטות ארכיטקטורה
+
+- **Data-driven readiness over synthetic handshake**: ה-FE שלח עכשיו `initialize` מיד אחרי `ws.open`. ה-ACP response עצמו הוא ה-readiness signal — לא frame סינתטי. אין race condition בפועל (ה-listener רשום ב-server לפני שה-FE רואה ה-101 response — bug יקרה רק ב-tcp-localhost עם latency 0, וגם אז לא תועד).
+- **Safety net דרך `Promise.race` עם 10s על initialize**: אם BE pipe או child broken, ה-FE זורק "ACP initialize timeout" — שומר על הגנה דומה ל-handshake timeout הישן בלי החוזה הסינתטי.
+- **`\n` delimiter כ-contract חיוני של NDJSON**: ה-`feWs.send(line)` (בלי \n) היה bug עוד מ-Phase 3 של F-1 — אבל הוסתר ע"י ה-handshake timeout שעצר את ה-flow לפני שה-bug יכל להתגלות.
+
+### מעקפים ופתרונות
+
+- **NBug1 (`fetchSessions` עם `wsUrl=""`) נשאר open** — out-of-scope. ב-`server.ts:78` עדיין מנסה לפתוח WS לbridge port שלא קיים. ה-catch מחזיר `[]` gracefully אבל זה meta-pattern של אותו "consumers שלא הותאמו" כמו CBug1+Bug3. יש לטפל ב-slice עתידי (ייתכן F-5).
+
+### Smoke ידני
+
+- POST /api/agents עם cwd=/tmp → status: spawning → starting → **ready** (acpSessionId נוצר)
+- FE: /agent/:id → connected → קלט "מה השעה?" → opencode reasoning → bash tool call → "16:15" — flow מקצה לקצה מלא ✅
+
+### Tests
+
+| מדד | סטטוס |
+|---|---|
+| FE tests | 166 passed (היו 167, מחיקת 3 obsolete + הוספת 2) |
+| BE+core tests | 324 passed, 11 skipped (אותו count כמו אחרי F-1) |
+| typecheck | ✅ |
+| lint | 3 errors pre-existing (NBug2 בדוח המאמת, לא regression) |
+
+---
+
 ## 2026-05-18 12:00 — Slice 10 F-1 fix — הסרת stdio-to-ws, in-process bridge, @hono/node-server
 
 ### מה בוצע?

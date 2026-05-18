@@ -101,7 +101,10 @@ describe("ws-agent in-process pipe", () => {
     expect(stdinChunks.join("")).toContain(msg)
   })
 
-  it("child.stdout line forwarded to FE", async () => {
+  it("child.stdout line forwarded to FE with \\n preserved (NDJSON delimiter)", async () => {
+    // The FE consumes the WS stream via ndJsonStream which parses on \n boundary.
+    // If BE strips \n (readline does that), the SDK waits forever for completion.
+    // Therefore BE must re-append \n before sending each line.
     const child = makeMockChild()
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
     const bridgeManager = { getChild: vi.fn(() => child) }
@@ -111,12 +114,12 @@ describe("ws-agent in-process pipe", () => {
 
     onConnect(ws, "agent-2")
 
-    // Send a line from child stdout
+    // Send a line from child stdout (with \n as opencode emits NDJSON)
     const line = JSON.stringify({ jsonrpc: "2.0", result: { sessionId: "s1" }, id: 1 })
     child.stdout.write(`${line}\n`)
 
     await new Promise((r) => setTimeout(r, 20))
-    expect(sent).toContain(line)
+    expect(sent).toContain(`${line}\n`)
   })
 
   it("MED-8: second tab same agentId → close(1008, 'agent in use by another tab')", () => {

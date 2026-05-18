@@ -1,13 +1,13 @@
 /**
  * client.ts — createAcpClient: high-level ACP client for FE
  *
- * Flow:
- * 1. WS connect to /ws/agent/<agentId>
- * 2. Wait for stdio-to-ws {"type":"connected"} frame (10s timeout — MED-4)
- * 3. 1500ms warmup — subprocess needs time to stabilize before initialize
- * 4. Build streams (wsToWebStreams → ndJsonStream → ClientSideConnection)
- * 5. initialize() with fs caps = false (CRIT-3 decision, smoke-tested in Phase 2)
- * 6. Start heartbeat $/ping every 25s (NAT/proxy keepalive)
+ * Flow (data-driven readiness — F-1 followup, post-stdio-to-ws):
+ * 1. WS connect to /ws/agent/<agentId> + wait for `open`.
+ * 2. Build streams (wsToWebStreams → ndJsonStream → ClientSideConnection).
+ * 3. initialize() with fs caps = false, wrapped in Promise.race with 10s timeout.
+ *    Readiness is proven by the ACP response itself — no synthetic handshake frame.
+ *    If no response within INIT_TIMEOUT_MS → close WS, throw "ACP initialize timeout".
+ * 4. Start heartbeat $/ping every 25s (NAT/proxy keepalive).
  *
  * auth_required (MIN-7): if initialize throws with data.code === "auth_required",
  * rethrow with kind = "auth_required" so UI can display "<cli> auth login" message.
@@ -19,8 +19,7 @@ import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk"
 import { createClientImpl } from "./client-impl.js"
 import { wsToWebStreams } from "./ws-to-streams.js"
 
-const WARMUP_DELAY_MS = 1500
-const HANDSHAKE_TIMEOUT_MS = 10_000
+const INIT_TIMEOUT_MS = 10_000
 const HEARTBEAT_INTERVAL_MS = 25_000
 
 export async function createAcpClient(
@@ -30,9 +29,9 @@ export async function createAcpClient(
 ) {
   const proto = location.protocol === "https:" ? "wss:" : "ws:"
   const ws = new WebSocket(`${proto}//${location.host}/ws/agent/${agentId}`)
-  // BE forwards `Buffer` frames from stdio-to-ws (binary by default).
-  // Without this, browser delivers them as Blob → onMsg handler's `typeof === "string"`
-  // path mis-fires and the handshake "connected" frame is silently dropped → timeout.
+  // BE may forward binary `Buffer` frames from child stdout (NDJSON bytes).
+  // Without binaryType=arraybuffer, browser delivers them as Blob — harder to decode
+  // synchronously in the stream pipeline. arraybuffer keeps the decode path uniform.
   ws.binaryType = "arraybuffer"
 
   // MED-8: listen for WS close events throughout the session
@@ -48,55 +47,41 @@ export async function createAcpClient(
     ws.addEventListener("error", () => reject(new Error("WS connect failed")), { once: true })
   })
 
-  // 2. Wait for stdio-to-ws {"type":"connected"} handshake frame (10s timeout)
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      ws.removeEventListener("message", onMsg)
-      ws.close()
-      reject(
-        new Error(
-          `stdio-to-ws handshake timeout after ${HANDSHAKE_TIMEOUT_MS}ms — subprocess may not be running`,
-        ),
-      )
-    }, HANDSHAKE_TIMEOUT_MS)
-
-    const decoder = new TextDecoder()
-    const onMsg = (ev: MessageEvent) => {
-      let text: string
-      if (typeof ev.data === "string") text = ev.data
-      else if (ev.data instanceof ArrayBuffer) text = decoder.decode(ev.data)
-      else text = "" // Blob is unexpected after binaryType=arraybuffer
-      if (text.includes('"type":"connected"')) {
-        clearTimeout(timer)
-        ws.removeEventListener("message", onMsg)
-        resolve()
-      }
-    }
-    ws.addEventListener("message", onMsg)
-  })
-
-  // 3. Warmup — subprocess needs ~1.5s to stabilize after stdio-to-ws connected
-  // (observed: initialize sent too early → message dropped silently)
-  await new Promise((r) => setTimeout(r, WARMUP_DELAY_MS))
-
-  // 4. Build streams + connection
+  // 2. Build streams + connection — SDK starts reading from the pipe immediately.
   const { readable, writable } = wsToWebStreams(ws)
   const stream = ndJsonStream(writable, readable)
 
   const client = createClientImpl({ onUpdate })
   const conn = new ClientSideConnection((_agent) => client, stream)
 
-  // 5. initialize with fs caps = false
+  // 3. initialize with fs caps = false — wrapped in Promise.race with 10s timeout.
+  //    Receiving a valid ACP response is itself the readiness signal; no synthetic
+  //    handshake frame is needed. If the BE pipe or the child is broken, the
+  //    timeout fires with a clear error.
+  let initTimer: ReturnType<typeof setTimeout> | undefined
   let initResult: Awaited<ReturnType<typeof conn.initialize>>
   try {
-    initResult = await conn.initialize({
-      protocolVersion: 1,
-      clientCapabilities: {
-        fs: { readTextFile: false, writeTextFile: false },
-      },
-      clientInfo: { name: "drive-coding", version: "0.2.0" },
-    })
+    initResult = await Promise.race([
+      conn.initialize({
+        protocolVersion: 1,
+        clientCapabilities: {
+          fs: { readTextFile: false, writeTextFile: false },
+        },
+        clientInfo: { name: "drive-coding", version: "0.2.0" },
+      }),
+      new Promise<never>((_, reject) => {
+        initTimer = setTimeout(() => {
+          reject(
+            new Error(
+              `ACP initialize timeout after ${INIT_TIMEOUT_MS}ms — no response from agent (bridge or child unresponsive)`,
+            ),
+          )
+        }, INIT_TIMEOUT_MS)
+      }),
+    ])
+    if (initTimer !== undefined) clearTimeout(initTimer)
   } catch (e) {
+    if (initTimer !== undefined) clearTimeout(initTimer)
     // MIN-7: auth_required error — rethrow with kind for UI
     const err = e as { code?: number; data?: { code?: string }; message?: string }
     if (err?.data?.code === "auth_required") {
@@ -112,7 +97,7 @@ export async function createAcpClient(
     throw e
   }
 
-  // 6. Heartbeat $/ping every 25s — prevent NAT/proxy idle eviction
+  // 4. Heartbeat $/ping every 25s — prevent NAT/proxy idle eviction
   const heartbeat = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(`${JSON.stringify({ jsonrpc: "2.0", method: "$/ping" })}\n`)

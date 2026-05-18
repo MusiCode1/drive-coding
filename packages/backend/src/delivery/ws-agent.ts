@@ -65,12 +65,15 @@ export function createAgentWsHandler(deps: {
 
     // ── pipeChild ─────────────────────────────────────────────────────────────
     // child.stdout (NDJSON lines) → feWs.send
+    // readline strips the trailing \n; we must re-append it because the FE's
+    // ndJsonStream parser uses \n as the message boundary (without it the SDK
+    // buffers a partial frame and never resolves the pending request).
     child.stdout.setEncoding("utf8")
     const rl = createInterface({ input: child.stdout, crlfDelay: Infinity })
     rl.on("line", (line) => {
       if (line.length === 0) return
       try {
-        feWs.send(line)
+        feWs.send(`${line}\n`)
       } catch {
         // feWs closing
       }

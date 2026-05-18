@@ -1,9 +1,8 @@
 /**
  * ws-to-streams.test.ts — TDD for FE WebSocket → Web Streams bridge
  *
- * Key behaviors:
- * 1. stdio-to-ws wrapper frames (connected/heartbeat/disconnected/error) are
- *    swallowed THROUGHOUT the session (not only during handshake).
+ * Key behaviors (post-F1 fix — direct in-process pipe, no stdio-to-ws wrapper):
+ * 1. Every WS frame forwarded as-is to readable (no filtering of synthetic frames).
  * 2. ACP frames forwarded as-is — NO extra \n added (would corrupt partial NDJSON).
  * 3. Writable: chunk → split on \n → each non-empty line sent as separate WS frame
  *    with \n suffix.
@@ -67,73 +66,35 @@ describe("wsToWebStreams", () => {
     vi.clearAllMocks()
   })
 
-  // ── Readable: filter tests ──────────────────────────────────────────────────
+  // ── Readable: forward-all (no filtering — post-stdio-to-ws) ───────────────
 
-  it("swallows stdio-to-ws 'connected' frame and does NOT enqueue it", async () => {
+  it("forwards {type:'connected'}-shaped frames as-is (no filtering)", async () => {
+    // After F-1 fix removed stdio-to-ws, no synthetic wrapper frames exist.
+    // ws-to-streams must forward every WS frame as-is to the SDK.
     const ws = new TestWebSocket() as unknown as WebSocket
     const { readable } = wsToWebStreams(ws)
-
     const reader = readable.getReader()
 
-    // Send a connected frame — should be swallowed
-    ;(ws as unknown as TestWebSocket).emit("message", {
-      data: '{"type":"connected","clientId":"abc"}',
-    })
-
-    // Then send an ACP frame — should arrive
-    ;(ws as unknown as TestWebSocket).emit("message", {
-      data: '{"jsonrpc":"2.0","id":1,"result":{}}',
-    })
+    const frame = '{"type":"connected","clientId":"abc"}'
+    ;(ws as unknown as TestWebSocket).emit("message", { data: frame })
 
     const { value } = await reader.read()
     const decoder = new TextDecoder()
     const text = decoder.decode(value)
-    expect(text).toContain('"jsonrpc"')
-    expect(text).not.toContain('"type":"connected"')
+    expect(text).toBe(frame)
     reader.releaseLock()
   })
 
-  it("swallows stdio-to-ws 'heartbeat' frames (sent periodically throughout session)", async () => {
+  it("forwards arbitrary non-ACP-shaped frames as-is (no filtering of unknown 'type' fields)", async () => {
     const ws = new TestWebSocket() as unknown as WebSocket
     const { readable } = wsToWebStreams(ws)
     const reader = readable.getReader()
 
-    // Multiple heartbeats
-    ;(ws as unknown as TestWebSocket).emit("message", { data: '{"type":"heartbeat"}' })
-    ;(ws as unknown as TestWebSocket).emit("message", { data: '{"type":"heartbeat"}' })
-
-    // Then real ACP message
-    ;(ws as unknown as TestWebSocket).emit("message", {
-      data: '{"jsonrpc":"2.0","method":"notifications/sessionUpdate","params":{}}',
-    })
+    const frame = '{"type":"heartbeat"}'
+    ;(ws as unknown as TestWebSocket).emit("message", { data: frame })
 
     const { value } = await reader.read()
-    const decoder = new TextDecoder()
-    const text = decoder.decode(value)
-    expect(text).toContain("sessionUpdate")
-    expect(text).not.toContain("heartbeat")
-    reader.releaseLock()
-  })
-
-  it("swallows 'disconnected' and 'error' stdio-to-ws frames", async () => {
-    const ws = new TestWebSocket() as unknown as WebSocket
-    const { readable } = wsToWebStreams(ws)
-    const reader = readable.getReader()
-
-    ;(ws as unknown as TestWebSocket).emit("message", { data: '{"type":"disconnected"}' })
-    ;(ws as unknown as TestWebSocket).emit("message", {
-      data: '{"type":"error","message":"oops"}',
-    })
-    ;(ws as unknown as TestWebSocket).emit("message", {
-      data: '{"jsonrpc":"2.0","id":2,"result":{}}',
-    })
-
-    const { value } = await reader.read()
-    const decoder = new TextDecoder()
-    const text = decoder.decode(value)
-    expect(text).toContain('"jsonrpc"')
-    expect(text).not.toContain('"type":"disconnected"')
-    expect(text).not.toContain('"type":"error"')
+    expect(new TextDecoder().decode(value)).toBe(frame)
     reader.releaseLock()
   })
 
