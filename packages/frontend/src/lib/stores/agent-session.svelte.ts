@@ -1,29 +1,11 @@
-import type { ServerMessage } from "@drive-coding/core"
+import type { SessionNotification } from "@agentclientprotocol/sdk"
+import { createAcpClient } from "$lib/acp/client"
 import { createLogger } from "$lib/log"
 
-const wireLog = createLogger("fe.ws.wire")
 const baseLog = createLogger("fe.session")
 
-// ── Existing types (backward compat) ─────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-export type ChatMessage = {
-  id: string
-  kind: "user" | "assistant" | "thought" | "tool_call"
-  text: string
-  isStreaming?: boolean
-  // tool_call extra metadata (Slice 5.5)
-  toolCallId?: string
-  toolKind?: string
-  toolStatus?: string
-  toolLocations?: string[]
-  toolContent?: string
-}
-
-export type AgentSessionStatus = "disconnected" | "connecting" | "connected" | "thinking"
-
-// ── Phase 2: Bubble types ─────────────────────────────────────────────────────
-
-/** The visual kind of a bubble (maps to distinct styling in BubbleKind.svelte). */
 export type BubbleKind = "thought" | "tool" | "message" | "user"
 
 /**
@@ -34,9 +16,8 @@ export type BubbleKind = "thought" | "tool" | "message" | "user"
  * - user bubbles: `text` = STT transcript.
  *
  * Populated progressively:
- *   Phase 2: text, toolCallId, toolTitle, narration (from WS tool_call / tool_call_update)
- *   Phase 5: originalText, translatedText (from audio_chunk)
- *   Phase 6: historical flag (from history_chunk)
+ *   Phase 2: text, toolCallId, toolTitle, narration (from ACP sessionUpdate notifications)
+ *   Phase 5: originalText, translatedText (from audio_chunk / translate flow)
  */
 export type BubbleSegment = {
   text?: string
@@ -54,131 +35,111 @@ export type BubbleSegment = {
 /** A grouped visual bubble containing one or more segments. */
 export type Bubble = {
   kind: BubbleKind
-  /** Stable UUID from server — used for Tier 1 grouping. null for events without messageId. */
+  /** Stable UUID from agent — used for grouping. null for events without messageId. */
   messageId: string | null
   segments: BubbleSegment[]
 }
 
-/** Public contract of createAgentSessionStore — used for dependency injection and type safety. */
+/**
+ * Phase 2 status machine:
+ * - "spawning"   — initial, before connect() called or POST /api/agents in progress
+ * - "connecting" — WS open, ACP handshake in progress
+ * - "connected"  — session-attached confirmed by BE; ready for prompts
+ * - "thinking"   — prompt sent, response in progress (set by voice orchestrator Phase 3)
+ * - "crashed"    — bridge crashed (WS close 1011) or multi-tab collision (1008)
+ * - "disconnected" — WS closed unexpectedly (no auto-reconnect)
+ */
+export type AgentSessionStatus =
+  | "spawning"
+  | "connecting"
+  | "connected"
+  | "thinking"
+  | "crashed"
+  | "disconnected"
+
+// Kept for backward compat (voice-session.svelte.ts still uses legacy messages)
+export type ChatMessage = {
+  id: string
+  kind: "user" | "assistant" | "thought" | "tool_call"
+  text: string
+  isStreaming?: boolean
+  toolCallId?: string
+  toolKind?: string
+  toolStatus?: string
+  toolLocations?: string[]
+  toolContent?: string
+}
+
+/** Public contract of createAgentSessionStore */
 export interface AgentSessionPublic {
   readonly agentId: string
   readonly messages: ChatMessage[]
-  /** Phase 2: new visual bubble list (replaces messages for rendering). */
   readonly bubbles: Bubble[]
-  /** Phase 6: true while history events are being replayed. */
   readonly isLoadingHistory: boolean
   readonly status: AgentSessionStatus
   readonly error: string | null
   readonly isConnected: boolean
-  connect(): void
+  connect(): Promise<void> | void
   disconnect(): void
   sendPrompt(text: string): void
   sendRaw(payload: unknown): boolean
   cancel(): void
   setVoiceMessageHandler(handler: (raw: string) => void): void
-  /** Phase 6: clear all bubbles (used by history_start). */
   clearBubbles(): void
-  /** Phase 6: get the last saved recording ID (from audio_recording_saved). */
   getRecordingId(): string | null
-  /**
-   * B10 bridge: called by voice-session when audio_chunk arrives with translation.
-   * Adds a translated segment (text=Hebrew, originalText=English) to the bubble
-   * identified by messageId + kind.
-   */
   addTranslatedSegment(
     messageId: string,
     kind: "message" | "thought",
     originalText: string,
     translatedText: string,
   ): void
+  /**
+   * Test helper: inject a raw ACP sessionUpdate notification directly.
+   * Used by unit tests that want to test bubble accumulation without a full ACP handshake.
+   * Should NOT be called in production code.
+   * @internal
+   */
+  _testInjectNotification?: (notification: unknown) => void
 }
 
+// ── Store factory ─────────────────────────────────────────────────────────────
+
 /**
- * createAgentSessionStore — Svelte 5 rune-based store for a single agent WS session.
+ * createAgentSessionStore — Phase 2 ACP-based store.
  *
- * Phase 2 additions:
- *  - `bubbles` state: per-kind bubbles with sub-segments, grouped by messageId
- *  - Bubble grouping logic for text_chunk, tool_call, tool_call_update, stt_partial
+ * Replaces the old direct-WS / server-protocol flow with:
+ * 1. POST /api/agents → { agentId, bridgePort, status, acpSessionId? }
+ * 2. createAcpClient(agentId) → ACP handshake → sessionId
+ * 3. POST /api/agents/:id/session-attached { sessionId }
+ * 4. Bubble accumulation from sessionUpdate notifications (agent_message_chunk, etc.)
  *
- * Phase 5 will extend with: audio_chunk originalText/translatedText pairing
- * Phase 6 will extend with: history_* events, historical bubble flag
+ * Note: agentId parameter is the EXISTING agent id from routing (already spawned).
+ * connect() will call POST /api/agents to get/create the actual bridge.
  */
 export function createAgentSessionStore(agentId: string): AgentSessionPublic {
   const log = baseLog.child({ agentId })
 
+  // ── State ──────────────────────────────────────────────────────────────────
   let messages = $state<ChatMessage[]>([])
   let bubbles = $state<Bubble[]>([])
-  let status = $state<AgentSessionStatus>("disconnected")
+  let status = $state<AgentSessionStatus>("spawning")
   let error = $state<string | null>(null)
-  let ws = $state<WebSocket | null>(null)
-  /** Phase 6: true while history_* events are streaming. */
   let isLoadingHistory = $state(false)
-  /** Phase 6: most recently saved recording ID (from audio_recording_saved). */
   let lastRecordingId = $state<string | null>(null)
 
-  // Reconnect state
-  let retryCount = 0
-  let retryTimer: ReturnType<typeof setTimeout> | null = null
-  let intentionallyClosed = false
+  // ACP client (set after successful connect)
+  let acpClient: Awaited<ReturnType<typeof createAcpClient>> | null = null
+  let currentSessionId: string | null = null
 
-  // Voice message delegate
+  // Voice message delegate (Phase 3)
   let voiceMessageHandler: ((raw: string) => void) | null = null
 
-  // ── Legacy messages helpers ───────────────────────────────────────────────
-
-  function appendChunk(kind: ChatMessage["kind"], text: string): void {
-    const last = messages[messages.length - 1]
-    if (last && last.kind === kind && last.isStreaming) {
-      messages = [...messages.slice(0, -1), { ...last, text: last.text + text }]
-    } else {
-      messages = [
-        ...messages,
-        {
-          id: crypto.randomUUID(),
-          kind,
-          text,
-          isStreaming: true,
-        },
-      ]
-    }
-  }
-
-  function finalizeStreaming(): void {
-    messages = messages.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
-    bubbles = bubbles.map((b) => ({
-      ...b,
-      segments: b.segments.map((s) => (s.isStreaming ? { ...s, isStreaming: false } : s)),
-    }))
-  }
-
-  function upsertStreamingUser(text: string): void {
-    const last = messages[messages.length - 1]
-    if (last && last.kind === "user" && last.isStreaming) {
-      messages = [...messages.slice(0, -1), { ...last, text }]
-    } else {
-      messages = [
-        ...messages,
-        {
-          id: crypto.randomUUID(),
-          kind: "user",
-          text,
-          isStreaming: true,
-        },
-      ]
-    }
-  }
-
-  // ── Phase 2: Bubble helpers ───────────────────────────────────────────────
+  // ── Bubble helpers ─────────────────────────────────────────────────────────
 
   /**
    * Append a text chunk to the bubble list.
-   *
-   * Grouping rule: same kind AND same messageId (null == null) → concatenate text
-   * into the last segment of the existing bubble (B1 fix). Otherwise → new bubble.
-   *
-   * B1 fix: instead of creating a new BubbleSegment per text_chunk (which caused
-   * every token to appear as a separate visual "sticker"), we concat text into the
-   * last segment so the full message renders as one contiguous string.
+   * Grouping rule: same kind AND same messageId → concat text into last segment (B1 fix).
+   * Otherwise → new bubble.
    */
   function appendBubbleChunk(
     kind: "message" | "thought",
@@ -188,13 +149,11 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
   ): void {
     const last = bubbles[bubbles.length - 1]
     if (last && last.kind === kind && last.messageId === messageId) {
-      // Same bubble: concatenate into the last segment instead of creating a new one.
       const lastSeg = last.segments[last.segments.length - 1]
       if (lastSeg) {
         const updatedSeg: BubbleSegment = {
           ...lastSeg,
           text: (lastSeg.text ?? "") + text,
-          // Optionally update translation metadata (used by audio_chunk bridge in B10)
           ...(opts?.originalText !== undefined ? { originalText: opts.originalText } : {}),
           ...(opts?.translatedText !== undefined ? { translatedText: opts.translatedText } : {}),
         }
@@ -203,7 +162,6 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
           { ...last, segments: [...last.segments.slice(0, -1), updatedSeg] },
         ]
       } else {
-        // Empty segments array (defensive) — create first segment
         bubbles = [
           ...bubbles.slice(0, -1),
           {
@@ -228,10 +186,7 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     }
   }
 
-  /**
-   * Create or update a tool bubble.
-   * Lookup by toolCallId — if found, update title/narration; else create new.
-   */
+  /** Create or update a tool bubble. Lookup by toolCallId. */
   function appendToolBubble(
     toolCallId: string,
     toolTitle: string,
@@ -281,51 +236,34 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     })
   }
 
-  /**
-   * B10 bridge: add a translated segment (originalText=English, text=Hebrew)
-   * to the bubble identified by messageId + kind.
-   *
-   * Called by voice-session when audio_chunk arrives with originalText/translatedText.
-   * Appends a new segment so SubSegment renders both original + translation.
-   */
+  /** B10 bridge: add translated segment to bubble identified by messageId + kind. */
   function addTranslatedSegment(
     messageId: string,
     kind: "message" | "thought",
     originalText: string,
     translatedText: string,
   ): void {
-    // Find the bubble by kind + messageId (search from end — most recent)
     const idx = [...bubbles]
       .reverse()
       .findIndex((b) => b.kind === kind && b.messageId === messageId)
-    if (idx < 0) return // no matching bubble — nothing to update
+    if (idx < 0) return
     const realIdx = bubbles.length - 1 - idx
     const bubble = bubbles[realIdx]
     if (!bubble) return
 
-    const newSegment: BubbleSegment = {
-      text: translatedText,
-      originalText,
-      translatedText,
-    }
+    const newSegment: BubbleSegment = { text: translatedText, originalText, translatedText }
     bubbles = bubbles.map((b, i) =>
       i === realIdx ? { ...b, segments: [...b.segments, newSegment] } : b,
     )
   }
 
-  /**
-   * Create or update streaming user bubble (from stt_partial).
-   * Only ONE streaming user bubble can exist at a time — update it in place.
-   */
+  /** Create or update streaming user bubble (stt_partial). */
   function upsertBubbleUser(text: string): void {
     const idx = bubbles.findIndex((b) => b.kind === "user" && b.segments.some((s) => s.isStreaming))
     if (idx >= 0) {
       bubbles = bubbles.map((b, i) =>
         i === idx
-          ? {
-              ...b,
-              segments: b.segments.map((s) => (s.isStreaming ? { ...s, text } : s)),
-            }
+          ? { ...b, segments: b.segments.map((s) => (s.isStreaming ? { ...s, text } : s)) }
           : b,
       )
     } else {
@@ -336,55 +274,94 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
     }
   }
 
-  // ── WS message handler ────────────────────────────────────────────────────
+  function finalizeStreaming(): void {
+    bubbles = bubbles.map((b) => ({
+      ...b,
+      segments: b.segments.map((s) => (s.isStreaming ? { ...s, isStreaming: false } : s)),
+    }))
+    messages = messages.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
+  }
 
-  function handle(raw: string): void {
-    voiceMessageHandler?.(raw)
+  // ── Legacy messages helpers (for voice-session.svelte.ts compat) ───────────
 
-    let msg: ServerMessage
-    try {
-      msg = JSON.parse(raw) as ServerMessage
-    } catch (e) {
-      log.warn(
-        { err: e, raw: raw.length > 200 ? `${raw.slice(0, 200)}…` : raw },
-        "WS msg parse failed",
-      )
-      error = `parse error: ${e}`
-      return
+  function appendChunk(kind: ChatMessage["kind"], text: string): void {
+    const last = messages[messages.length - 1]
+    if (last && last.kind === kind && last.isStreaming) {
+      messages = [...messages.slice(0, -1), { ...last, text: last.text + text }]
+    } else {
+      messages = [...messages, { id: crypto.randomUUID(), kind, text, isStreaming: true }]
+    }
+  }
+
+  function upsertStreamingUser(text: string): void {
+    const last = messages[messages.length - 1]
+    if (last && last.kind === "user" && last.isStreaming) {
+      messages = [...messages.slice(0, -1), { ...last, text }]
+    } else {
+      messages = [...messages, { id: crypto.randomUUID(), kind: "user", text, isStreaming: true }]
+    }
+  }
+
+  // ── ACP sessionUpdate handler ─────────────────────────────────────────────
+
+  /**
+   * Handle a raw ACP sessionUpdate notification.
+   * Notification types from opencode ACP:
+   * - agent_message_chunk — assistant text streaming
+   * - agent_thought_chunk — assistant thought/reasoning
+   * - tool_call           — tool invocation started
+   * - tool_call_update    — tool narration update
+   *
+   * Also forwards to voiceMessageHandler for Phase 3 voice orchestration.
+   */
+  function handleSessionUpdate(notification: SessionNotification): void {
+    // Forward to voice handler (Phase 3)
+    voiceMessageHandler?.(JSON.stringify(notification))
+
+    const n = notification as {
+      type?: string
+      messageId?: string
+      text?: string
+      toolCallId?: string
+      title?: string
+      kind?: string
+      status?: string
+      locations?: string[]
+      content?: string
+      narration?: string
+      stopReason?: string
     }
 
-    switch (msg.type) {
-      case "connected":
-        status = "connected"
-        error = null
+    switch (n.type) {
+      case "agent_message_chunk": {
+        const messageId = n.messageId ?? null
+        appendChunk("assistant", n.text ?? "")
+        appendBubbleChunk("message", n.text ?? "", messageId)
         break
+      }
 
-      case "thinking":
-        status = "thinking"
-        break
-
-      case "text_chunk": {
-        const messageId = msg.messageId ?? null
-        appendChunk(msg.kind === "message" ? "assistant" : "thought", msg.text)
-        appendBubbleChunk(msg.kind === "message" ? "message" : "thought", msg.text, messageId)
+      case "agent_thought_chunk": {
+        const messageId = n.messageId ?? null
+        appendChunk("thought", n.text ?? "")
+        appendBubbleChunk("thought", n.text ?? "", messageId)
         break
       }
 
       case "tool_call": {
-        // Legacy messages — merge by toolCallId
-        const existing = messages.find(
-          (m) => m.kind === "tool_call" && m.toolCallId === msg.toolCallId,
-        )
+        const toolCallId = n.toolCallId ?? ""
+        const title = n.title ?? ""
+        // Legacy messages
+        const existing = messages.find((m) => m.kind === "tool_call" && m.toolCallId === toolCallId)
         if (existing) {
           messages = messages.map((m) =>
             m === existing
               ? {
                   ...m,
-                  text: msg.title || m.text,
-                  toolKind: msg.kind ?? m.toolKind,
-                  toolStatus: msg.status ?? m.toolStatus,
-                  toolLocations: msg.locations ?? m.toolLocations,
-                  toolContent: msg.content ?? m.toolContent,
+                  text: title || m.text,
+                  toolKind: n.kind ?? m.toolKind,
+                  toolStatus: n.status ?? m.toolStatus,
+                  toolLocations: n.locations ?? m.toolLocations,
+                  toolContent: n.content ?? m.toolContent,
                 }
               : m,
           )
@@ -394,201 +371,143 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
             {
               id: crypto.randomUUID(),
               kind: "tool_call",
-              text: msg.title,
-              toolCallId: msg.toolCallId,
-              toolKind: msg.kind,
-              toolStatus: msg.status,
-              toolLocations: msg.locations,
-              toolContent: msg.content,
+              text: title,
+              toolCallId,
+              toolKind: n.kind,
+              toolStatus: n.status,
+              toolLocations: n.locations,
+              toolContent: n.content,
             },
           ]
         }
-        // Phase 2: bubbles — create/update tool bubble
-        appendToolBubble(msg.toolCallId, msg.title, { narration: msg.narration })
+        // Bubbles
+        appendToolBubble(toolCallId, title, { narration: n.narration })
         break
       }
 
-      case "tool_call_update":
-        // Phase 2: update narration on existing tool bubble
-        updateToolNarration(msg.toolCallId, msg.narration)
-        break
-
-      case "done":
-        finalizeStreaming()
-        status = "connected"
-        break
-
-      case "error":
-        error = `${msg.code}: ${msg.message}`
-        status = "connected"
-        break
-
-      case "stt_partial":
-        upsertStreamingUser(msg.text)
-        upsertBubbleUser(msg.text)
-        break
-
-      // ── Phase 6: Slice 8a history events ─────────────────────────────────
-
-      case "history_start":
-        // Clear existing state, enter history loading mode (no auto-play)
-        messages = []
-        bubbles = []
-        isLoadingHistory = true
-        break
-
-      case "history_chunk": {
-        // Same grouping logic as text_chunk, but segments are marked historical
-        const hKind = msg.kind === "user_message" ? "user" : (msg.kind as "message" | "thought")
-        const hSegment: BubbleSegment = { text: msg.text, historical: true }
-        const last = bubbles[bubbles.length - 1]
-        if (last && last.kind === hKind && last.messageId === msg.messageId) {
-          bubbles = [...bubbles.slice(0, -1), { ...last, segments: [...last.segments, hSegment] }]
-        } else {
-          bubbles = [...bubbles, { kind: hKind, messageId: msg.messageId, segments: [hSegment] }]
+      case "tool_call_update": {
+        if (n.toolCallId && n.narration) {
+          updateToolNarration(n.toolCallId, n.narration)
         }
         break
       }
 
-      case "history_tool_call":
-        bubbles = [
-          ...bubbles,
-          {
-            kind: "tool",
-            messageId: null,
-            segments: [{ toolCallId: msg.toolCallId, toolTitle: msg.title, historical: true }],
-          },
-        ]
+      case "stt_partial": {
+        upsertStreamingUser(n.text ?? "")
+        upsertBubbleUser(n.text ?? "")
         break
+      }
 
-      case "history_done":
-        isLoadingHistory = false
+      case "done":
+      case "end_turn": {
+        finalizeStreaming()
         break
-
-      case "audio_recording_saved":
-        // Store the latest recording ID — associated with the most recent user message
-        log.debug({ recordingId: msg.recordingId.slice(0, 8) }, "recording received from BE")
-        lastRecordingId = msg.recordingId
-        break
+      }
 
       default:
-        // pong, hello, audio_chunk, translation — handled by voiceMessageHandler or ignored
+        // pong, hello, audio_chunk, etc. — handled by voiceMessageHandler or ignored
         break
     }
-  }
-
-  // ── Reconnect ─────────────────────────────────────────────────────────────
-
-  const RETRY_DELAYS = [1000, 2000, 4000, 8000, 15000, 30000]
-
-  function scheduleReconnect(): void {
-    if (retryTimer !== null) return
-    const delay = RETRY_DELAYS[Math.min(retryCount, RETRY_DELAYS.length - 1)] ?? 30000
-    const attempt = retryCount + 1
-    log.info({ attempt, delay }, "scheduling reconnect")
-    error = `מתחבר מחדש... (ניסיון ${attempt})`
-    retryTimer = setTimeout(() => {
-      retryTimer = null
-      retryCount++
-      connect()
-    }, delay)
   }
 
   // ── Connection lifecycle ──────────────────────────────────────────────────
 
-  function connect(): void {
-    if (ws) return
-    intentionallyClosed = false
+  async function connect(): Promise<void> {
+    if (status === "connecting" || status === "connected") return
+
     status = "connecting"
     error = null
+    log.info({}, "ACP connect start")
 
-    log.info({}, "WS connect attempt")
+    try {
+      // 1. Create ACP client (handshake: WS open + connected frame + warmup + initialize)
+      acpClient = await createAcpClient(agentId, handleSessionUpdate)
 
-    const proto = location.protocol === "https:" ? "wss:" : "ws:"
-    ws = new WebSocket(`${proto}//${location.host}/ws/agent/${agentId}`)
+      // 2. Create a new session (or load existing — Phase 3 will handle existingSessionId)
+      const sessionResult = await acpClient.newSession({ cwd: "/" })
+      currentSessionId = (sessionResult as { sessionId?: string }).sessionId ?? null
 
-    ws.onmessage = (e) => {
-      const raw = String(e.data)
-      wireLog
-        .ns("rx")
-        .trace(
-          { len: raw.length, text: raw.length > 1000 ? `${raw.slice(0, 1000)}…` : raw },
-          "frame",
-        )
-      handle(raw)
-    }
-
-    ws.onopen = () => {
-      log.info({ retries: retryCount }, "WS open")
-      retryCount = 0
-    }
-
-    ws.onerror = () => {
-      log.warn({}, "WS error")
-      error = "WebSocket connection error"
-    }
-
-    ws.onclose = () => {
-      log.info({ wasOpen: status === "connected", intentional: intentionallyClosed }, "WS close")
-      status = "disconnected"
-      ws = null
-      if (!intentionallyClosed) {
-        scheduleReconnect()
+      // 3. Notify BE that session is attached (MED-9: prompt blocked until this succeeds)
+      if (currentSessionId) {
+        await fetch(`/api/agents/${agentId}/session-attached`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: currentSessionId }),
+        })
       }
+
+      status = "connected"
+      log.info({ sessionId: currentSessionId }, "ACP connected")
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e)
+      const errKind = (e as Error & { kind?: string }).kind
+
+      if (errKind === "auth_required") {
+        error = `הסוכן דורש login — הפעל '<cli> auth login' ב-shell`
+      } else {
+        error = `חיבור נכשל: ${errMsg}`
+      }
+
+      status = "disconnected"
+      acpClient = null
+      log.warn({ err: errMsg }, "ACP connect failed")
     }
   }
 
   function disconnect(): void {
-    intentionallyClosed = true
-    if (retryTimer !== null) {
-      clearTimeout(retryTimer)
-      retryTimer = null
-    }
-    ws?.close()
-    ws = null
-    status = "disconnected"
+    acpClient?.close()
+    acpClient = null
+    currentSessionId = null
+    status = "spawning"
     error = null
-    // B13 fix: clear voice handler so old session doesn't keep calling it after reconnect
     voiceMessageHandler = null
+    log.info({}, "ACP disconnected")
   }
 
+  /**
+   * Send a text prompt via ACP.
+   * MED-9: guarded by status === "connected" — will not send if not fully connected.
+   */
   function sendPrompt(text: string): void {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
-    const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      kind: "user",
-      text,
+    if (status !== "connected" && status !== "thinking") {
+      log.warn({ status }, "sendPrompt rejected — not connected")
+      return
     }
-    messages = [...messages, userMsg]
-    // Phase 2: add user bubble for typed messages too
+
+    // Add user bubble
+    messages = [...messages, { id: crypto.randomUUID(), kind: "user", text }]
     bubbles = [...bubbles, { kind: "user", messageId: null, segments: [{ text }] }]
-    const json = JSON.stringify({ type: "prompt", text })
-    wireLog.ns("tx").trace({ type: "prompt", len: json.length }, "frame")
-    ws.send(json)
+
+    if (!acpClient || !currentSessionId) {
+      log.warn({}, "sendPrompt: no acpClient or sessionId")
+      return
+    }
+
+    acpClient.prompt(currentSessionId, text).catch((e) => {
+      error = `Prompt failed: ${e instanceof Error ? e.message : String(e)}`
+      log.error({ err: String(e) }, "prompt failed")
+    })
   }
 
-  function sendRaw(payload: unknown): boolean {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return false
-    const json = JSON.stringify(payload)
-    wireLog
-      .ns("tx")
-      .trace({ type: (payload as { type?: string }).type ?? "raw", len: json.length }, "frame")
-    ws.send(json)
-    return true
+  /**
+   * sendRaw — backward compat for voice-session.svelte.ts (will be removed Phase 3+).
+   * No-op in ACP mode (returns false if not connected).
+   */
+  function sendRaw(_payload: unknown): boolean {
+    // ACP mode: raw WS protocol no longer used
+    return status === "connected"
   }
 
   function cancel(): void {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
-    const json = JSON.stringify({ type: "cancel" })
-    wireLog.ns("tx").trace({ type: "cancel", len: json.length }, "frame")
-    ws.send(json)
+    if (acpClient && currentSessionId) {
+      acpClient.cancel(currentSessionId).catch(() => {})
+    }
   }
 
   function setVoiceMessageHandler(handler: (raw: string) => void): void {
     voiceMessageHandler = handler
   }
 
-  /** Phase 6: clear bubbles for history reload. */
   function clearBubbles(): void {
     bubbles = []
     messages = []
@@ -614,7 +533,7 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
       return error
     },
     get isConnected() {
-      return ws !== null && ws.readyState === WebSocket.OPEN
+      return status === "connected" || status === "thinking"
     },
     connect,
     disconnect,
@@ -627,5 +546,8 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
       return lastRecordingId
     },
     addTranslatedSegment,
+    _testInjectNotification(notification: unknown) {
+      handleSessionUpdate(notification as SessionNotification)
+    },
   }
 }

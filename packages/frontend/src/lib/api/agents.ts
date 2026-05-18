@@ -31,3 +31,13 @@ export async function deleteAgent(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/api/agents/${id}`, { method: "DELETE" })
   if (!res.ok) throw new Error(`deleteAgent failed: ${res.status}`)
 }
+
+/** Phase 2: notify BE that ACP session handshake succeeded. */
+export async function sessionAttached(agentId: string, sessionId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/agents/${agentId}/session-attached`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId }),
+  })
+  if (!res.ok) throw new Error(`sessionAttached failed: ${res.status}`)
+}

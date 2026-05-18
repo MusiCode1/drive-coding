@@ -263,8 +263,6 @@ describe("ws-agent bytes pipe", () => {
     await new Promise((r) => setTimeout(r, 300))
 
     expect(closeArgs.some(([code]) => code === 1011)).toBe(true)
-    expect(
-      closeArgs.some(([, reason]) => reason === "bridge closed"),
-    ).toBe(true)
+    expect(closeArgs.some(([, reason]) => reason === "bridge closed")).toBe(true)
   })
 })

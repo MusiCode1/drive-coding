@@ -64,6 +64,7 @@ export function makeMockSession(overrides: Partial<AgentSessionPublic> = {}): Ag
     clearBubbles: vi.fn(),
     getRecordingId: vi.fn(() => null),
     addTranslatedSegment: vi.fn(),
+    _testInjectNotification: vi.fn(),
     ...overrides,
   }
 }
