@@ -31,14 +31,14 @@ onMount(async () => {
     const cwd = project?.cwd ?? `/${cwdHash}` // fallback if not found
 
     // 2. Create/reuse agent with existingSessionId
-    const { agent } = await createAgent({
+    const { agentId } = await createAgent({
       cwd,
       cliKind: cliKind as "opencode",
       existingSessionId: sessionId,
     } as Parameters<typeof createAgent>[0])
 
     // 3. Redirect
-    goto(`/agent/${agent.id}`, { replaceState: true })
+    goto(`/agent/${agentId}`, { replaceState: true })
   } catch (e) {
     loadError = e instanceof Error ? e.message : "טעינת session נכשלה"
   }

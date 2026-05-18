@@ -18,8 +18,8 @@ let showFilePicker = $state(false)
 async function onPickerSelect(path: string) {
   showFilePicker = false
   try {
-    const { agent } = await createAgent({ cwd: path, cliKind: "opencode" })
-    goto(`/agent/${agent.id}`)
+    const { agentId } = await createAgent({ cwd: path, cliKind: "opencode" })
+    goto(`/agent/${agentId}`)
   } catch (e) {
     error = e instanceof Error ? e.message : "יצירת סוכן נכשלה"
   }

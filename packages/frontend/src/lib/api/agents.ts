@@ -2,13 +2,27 @@ import type { AgentList, AgentPublic, CreateAgentInput } from "@drive-coding/cor
 
 const API_BASE = "" // proxy via vite (D45 frontend dev)
 
+/**
+ * Slice 10: POST /api/agents response shape (CreateAndSpawnResult).
+ * BE no longer does ACP handshake — FE handles it then calls /session-attached.
+ */
+export type CreateAgentResponse = {
+  agentId: string
+  cwd: string
+  cliKind: string
+  wsUrl: string
+  bridgePort: number
+  status: "spawning" | "ready"
+  acpSessionId?: string
+}
+
 export async function listAgents(): Promise<AgentList> {
   const res = await fetch(`${API_BASE}/api/agents`)
   if (!res.ok) throw new Error(`listAgents failed: ${res.status}`)
   return res.json()
 }
 
-export async function createAgent(input: CreateAgentInput): Promise<{ agent: AgentPublic }> {
+export async function createAgent(input: CreateAgentInput): Promise<CreateAgentResponse> {
   const res = await fetch(`${API_BASE}/api/agents`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

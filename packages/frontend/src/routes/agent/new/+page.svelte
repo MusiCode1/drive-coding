@@ -65,12 +65,12 @@ async function submit(e: SubmitEvent): Promise<void> {
 
   submitting = true
   try {
-    const { agent } = await createAgent({
+    const { agentId } = await createAgent({
       cliKind,
       cwd: finalCwd,
       modelOverride: finalModel || null,
     })
-    await goto(`/agent/${agent.id}`)
+    await goto(`/agent/${agentId}`)
   } catch (err) {
     error = err instanceof Error ? err.message : "יצירה נכשלה"
   } finally {

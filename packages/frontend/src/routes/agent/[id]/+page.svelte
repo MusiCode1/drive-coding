@@ -178,7 +178,11 @@ async function loadAgent(): Promise<void> {
   try {
     const { agent: fetched } = await getAgent(agentId)
     agent = fetched
-    if (fetched.status === "ready" && session.status === "disconnected") {
+    // Slice 10: BE-registry status "starting" means bridge is spawned and ready
+    // for ACP handshake. FE drives handshake → session-attached → status="ready".
+    // No deadlock: we connect on "starting" too.
+    const canConnect = fetched.status === "starting" || fetched.status === "ready"
+    if (canConnect && session.status === "disconnected") {
       session.connect()
     }
     schedulePoll()
@@ -192,6 +196,8 @@ function schedulePoll(): void {
     clearInterval(pollTimer)
     pollTimer = null
   }
+  // Poll only until status leaves "starting" (which now reflects bridge alive +
+  // pre-handshake). Once FE finishes session-attached, BE flips to "ready".
   if (agent?.status === "starting") {
     pollTimer = setInterval(async () => {
       try {
@@ -200,7 +206,11 @@ function schedulePoll(): void {
         if (fresh.status !== "starting") {
           if (pollTimer !== null) clearInterval(pollTimer)
           pollTimer = null
-          if (fresh.status === "ready") session.connect()
+          // Note: session.connect() already triggered above on first load.
+          // If for some reason we missed it (rare race), reconnect here.
+          if (fresh.status === "ready" && session.status === "disconnected") {
+            session.connect()
+          }
         }
       } catch (e: unknown) {
         log.warn({ err: String(e) }, "poll: getAgent failed, retrying")
