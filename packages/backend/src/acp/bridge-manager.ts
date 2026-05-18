@@ -1,26 +1,26 @@
-import type { ChildProcess } from "node:child_process"
+import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import type { BridgeHandle, BridgeManager, SpawnBridgeInput } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
-import { spawnAndWaitForPort } from "./bridge-spawn.js"
-import { buildStdioToWsArgs, getCliCommand } from "./cli-config.js"
+import { getCliCommand } from "./cli-config.js"
 
 const log = createLogger("backend.bridge.manager")
+const STDERR_MAX_LINES = 200
 
-type Entry = {
-  readonly handle: BridgeHandle
-  readonly child: ChildProcess
-  /** Returns a snapshot of the last ≤200 stderr lines from the bridge process. */
-  readonly getStderr: () => string[]
-}
-
-/** Extended handle with stderr access — used internally by orchestrator. */
+/** Extended handle with stderr access and direct child — used internally by orchestrator. */
 export type BridgeHandleWithStderr = BridgeHandle & {
   readonly getStderr: () => string[]
+  readonly child: ChildProcessWithoutNullStreams
 }
 
 export function createBridgeManager(): BridgeManager & {
   spawnWithStderr(bridgeId: string, input: SpawnBridgeInput): Promise<BridgeHandleWithStderr>
+  getChild(bridgeId: string): ChildProcessWithoutNullStreams | null
 } {
+  type Entry = {
+    handle: BridgeHandle
+    child: ChildProcessWithoutNullStreams
+    stderrLines: string[]
+  }
   const store = new Map<string, Entry>()
   const crashHandlers = new Set<(bridgeId: string, exitCode: number | null) => void>()
 
@@ -38,96 +38,110 @@ export function createBridgeManager(): BridgeManager & {
     bridgeId: string,
     input: SpawnBridgeInput,
   ): Promise<BridgeHandleWithStderr> {
-    if (store.has(bridgeId)) {
-      throw new Error(`Bridge ${bridgeId} already exists`)
-    }
+    if (store.has(bridgeId)) throw new Error(`Bridge ${bridgeId} already exists`)
 
     const cli = getCliCommand(input.cliKind, input.modelOverride)
-    // Use a random port in ephemeral range (stdio-to-ws doesn't support port=0 / OS-assigned)
-    const randomPort = 40000 + Math.floor(Math.random() * 20000)
-    const args = buildStdioToWsArgs(cli, randomPort)
+    const childLog = log.child({ bridgeId, cwd: input.cwd, bin: cli.bin })
+    childLog.info({}, "spawn start")
 
-    // Use npx by default (universal Node+Bun per D45)
-    const bin = "npx"
+    const stderrLines: string[] = []
+    let stderrPartial = ""
 
-    const result = await spawnAndWaitForPort({
-      bin,
-      args,
-      cwd: input.cwd,
-      portTimeoutMs: 30000,
+    let child: ChildProcessWithoutNullStreams
+    try {
+      child = spawn(cli.bin, [...cli.args], {
+        cwd: input.cwd,
+        env: process.env,
+        stdio: ["pipe", "pipe", "pipe"],
+      })
+    } catch (err) {
+      // Bun edge case: spawn throws synchronously on ENOENT
+      childLog.warn({ err }, "spawn threw synchronously")
+      throw err
+    }
+
+    // Register listeners immediately — before any async tick can emit error
+    child.on("error", (err) => {
+      childLog.warn(
+        { err: { message: err.message, code: (err as NodeJS.ErrnoException).code } },
+        "child error event",
+      )
+      // If no pid → spawn failed; notify crash and remove from store
+      if (!child.pid && store.has(bridgeId)) {
+        store.delete(bridgeId)
+        notifyCrash(bridgeId, null)
+      }
     })
 
-    const handle: BridgeHandle = {
-      bridgeId,
-      cliKind: input.cliKind,
-      cwd: input.cwd,
-      port: result.port,
-      pid: result.pid,
-      wsUrl: `ws://127.0.0.1:${result.port}/`,
-      startedAt: new Date(),
-    }
+    child.stderr.on("data", (chunk: Buffer) => {
+      const text = stderrPartial + chunk.toString("utf8")
+      const parts = text.split("\n")
+      for (let i = 0; i < parts.length - 1; i++) {
+        stderrLines.push(parts[i] ?? "")
+        if (stderrLines.length > STDERR_MAX_LINES) stderrLines.shift()
+      }
+      stderrPartial = parts[parts.length - 1] ?? ""
+    })
 
-    const entry: Entry = {
-      handle,
-      child: result.child,
-      getStderr: result.getStderr,
-    }
-
-    store.set(bridgeId, entry)
-
-    // Crash listener — only notifies for unexpected exits (not when we kill it)
-    result.child.on("exit", (code) => {
+    child.on("exit", (code) => {
+      childLog.info({ code }, "child exit")
       if (store.has(bridgeId)) {
         store.delete(bridgeId)
         notifyCrash(bridgeId, code)
       }
     })
 
-    log.info({ bridgeId, port: result.port, pid: result.pid }, "spawn ok")
-    return { ...handle, getStderr: result.getStderr }
+    if (!child.pid) {
+      // Error event will handle cleanup separately. Return error to caller.
+      throw new Error(`spawn returned no pid (bin=${cli.bin})`)
+    }
+
+    const handle: BridgeHandle = {
+      bridgeId,
+      cliKind: input.cliKind,
+      cwd: input.cwd,
+      port: 0, // in-process: no port. Field kept for backward compat.
+      pid: child.pid,
+      wsUrl: "", // in-process: no WS URL.
+      startedAt: new Date(),
+    }
+
+    store.set(bridgeId, { handle, child, stderrLines })
+    childLog.info({ pid: child.pid }, "spawn ok")
+    return { ...handle, getStderr: () => [...stderrLines], child }
   }
 
   return {
-    // Extended method with stderr access
-    async spawnWithStderr(
-      bridgeId: string,
-      input: SpawnBridgeInput,
-    ): Promise<BridgeHandleWithStderr> {
+    async spawn(bridgeId, input) {
       return spawnInternal(bridgeId, input)
     },
 
-    // Standard BridgeManager interface — delegates to internal
-    async spawn(bridgeId: string, input: SpawnBridgeInput): Promise<BridgeHandle> {
+    async spawnWithStderr(bridgeId, input) {
       return spawnInternal(bridgeId, input)
     },
 
-    get(bridgeId: string): BridgeHandle | null {
+    get(bridgeId) {
       return store.get(bridgeId)?.handle ?? null
     },
 
-    list(): ReadonlyArray<BridgeHandle> {
+    getChild(bridgeId) {
+      return store.get(bridgeId)?.child ?? null
+    },
+
+    list() {
       return [...store.values()].map((e) => e.handle)
     },
 
-    async kill(bridgeId: string): Promise<boolean> {
+    async kill(bridgeId) {
       const entry = store.get(bridgeId)
       if (!entry) return false
       log.info({ bridgeId }, "kill")
-
-      // Mark as removed before exit event fires, to avoid notifyCrash
+      // Remove before exit event fires — prevents notifyCrash on intentional kill
       store.delete(bridgeId)
-
-      return new Promise((resolve) => {
-        const onExit = () => {
-          resolve(true)
-        }
-        entry.child.once("exit", onExit)
+      return new Promise<boolean>((resolve) => {
+        entry.child.once("exit", () => resolve(true))
         entry.child.kill("SIGTERM")
-
-        // Force kill after 5s
-        setTimeout(() => {
-          entry.child.kill("SIGKILL")
-        }, 5000)
+        setTimeout(() => entry.child.kill("SIGKILL"), 5000)
       })
     },
 

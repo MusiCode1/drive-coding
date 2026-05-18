@@ -72,7 +72,10 @@ vi.mock("node:child_process", () => {
           child.stderr = new EventEmitter()
           child.kill = vi.fn()
           setTimeout(() => {
-            child.emit("error", spawnBehavior.kind === "async-error" ? spawnBehavior.error : new Error())
+            child.emit(
+              "error",
+              spawnBehavior.kind === "async-error" ? spawnBehavior.error : new Error(),
+            )
           }, spawnBehavior.delayMs ?? 5)
           return child
         }
@@ -308,26 +311,42 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
       await monitor.stopAndAssertClean()
     })
 
-    it("createBridgeManager — exit-before-port leaves manager in clean state", async () => {
+    it("createBridgeManager — child exit removes bridge from store, no uncaught", async () => {
       const monitor = withUncaughtMonitor()
       monitor.start()
 
+      // exit-before-port: pid=12345 exists, but child exits quickly.
+      // In the new in-process bridge-manager, spawn() succeeds synchronously
+      // (pid is valid), and then the exit event fires and removes from store.
       spawnBehavior = {
         kind: "exit-before-port",
         code: 127,
         stderr: "command not found\n",
+        delayMs: 5,
       }
 
       const { createBridgeManager } = await import("../src/acp/bridge-manager")
       const mgr = createBridgeManager()
+      const crashSpy = vi.fn()
+      mgr.onCrash(crashSpy)
 
-      await expect(
-        mgr.spawn("agent-x", { cliKind: "opencode", cwd: "/tmp", modelOverride: null }),
-      ).rejects.toThrow()
+      // Spawn should succeed (pid is set)
+      const handle = await mgr.spawn("agent-x", {
+        cliKind: "opencode",
+        cwd: "/tmp",
+        modelOverride: null,
+      })
+      expect(handle.pid).toBe(12345)
+      expect(mgr.get("agent-x")).not.toBeNull()
 
-      // Manager should not have this bridge in its store
+      // Wait for exit to fire
+      await new Promise((r) => setTimeout(r, 50))
+
+      // Manager should not have this bridge in its store after exit
       expect(mgr.get("agent-x")).toBeNull()
       expect(mgr.list()).toHaveLength(0)
+      // crash handler was called
+      expect(crashSpy).toHaveBeenCalledWith("agent-x", 127)
 
       await monitor.stopAndAssertClean()
     })
