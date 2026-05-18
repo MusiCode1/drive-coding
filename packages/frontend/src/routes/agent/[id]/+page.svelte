@@ -16,6 +16,7 @@ import { createAgentSessionStore } from "$lib/stores/agent-session.svelte"
 import { createCarMode } from "$lib/stores/car-mode.svelte"
 import { device } from "$lib/stores/device.svelte"
 import { deriveMicState } from "$lib/stores/mic-state.svelte"
+import { createPlaybackStorageSync, loadPlaybackState } from "$lib/stores/playback-storage"
 import { createPlayerStore } from "$lib/stores/player.svelte"
 import { settingsStore } from "$lib/stores/settings-store.svelte"
 import { sheetState } from "$lib/stores/sheet-state.svelte"
@@ -30,31 +31,52 @@ let agent = $state<AgentPublic | null>(null)
 let loadError = $state<string | null>(null)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
-let session = $state(createAgentSessionStore(agentId))
-let voice = $state(createVoiceSessionStore(session))
-let carMode = $state(createCarMode())
 let player = $state(createPlayerStore())
+let session = $state(createAgentSessionStore(agentId))
+// Phase 3: voice session now delegates to orchestrator; needs player + getVoiceId
+let voice = $state(
+  createVoiceSessionStore({
+    agentSession: session,
+    player,
+    getVoiceId: () => settingsStore.voiceId,
+  }),
+)
+let carMode = $state(createCarMode())
 
 // Fix: when agentId changes — close old WS and create fresh stores (Bug 4).
 $effect(() => {
   const id = agentId
   untrack(() => {
     session.disconnect()
-    session = createAgentSessionStore(id)
-    voice = createVoiceSessionStore(session)
     player.clear()
+    session = createAgentSessionStore(id)
+    voice = createVoiceSessionStore({
+      agentSession: session,
+      player,
+      getVoiceId: () => settingsStore.voiceId,
+    })
   })
 })
 
-// Phase 7+8: populate player playlist when new audio_chunk segments arrive
+// Phase 3: orchestrator manages player segments — no manual $effect needed.
+// currentlyPlayingSegmentId still available for bubble highlighting (backward compat).
+
+// ── Playback state persistence (Phase 3) ────────────────────────────────────
+const storageSync = createPlaybackStorageSync(agentId, () => null)
+
 $effect(() => {
-  const segId = voice.currentlyPlayingSegmentId
-  if (segId) {
-    const meta = voice.getSegment(segId)
-    if (meta) {
-      // B15 fix: pass messageId so jumpToBubble() can work for click-to-play
-      player.addSegment(segId, meta.kind, meta.messageId ?? null)
-      player.jumpToSegment(segId)
+  const idx = player.currentIndex
+  const ids = player.playlist.map((p) => p.segmentId)
+  storageSync.sync(idx, ids)
+})
+
+// Load persisted state on agent mount (restore playback position)
+$effect(() => {
+  if (agentId) {
+    const saved = loadPlaybackState(agentId)
+    if (saved && saved.currentSegmentIndex > 0) {
+      // Note: actual restoration requires segments to be re-created by orchestrator.
+      // For now, just log — full restoration is Phase 4+.
     }
   }
 })
@@ -472,7 +494,24 @@ async function handleSheetAgentClose(agentId: string) {
       <div class="car-active-badge">🚗 בקרת רכב פעילה</div>
     {/if}
 
-    <!-- B4 removed: text form removed — voice-only interface -->
+    <!-- DEBUG: text input for smoke-testing fs caps without voice (Phase 3 only) -->
+    {#if import.meta.env.DEV}
+      <form
+        class="debug-text-form"
+        onsubmit={(e) => {
+          e.preventDefault()
+          const fd = new FormData(e.currentTarget as HTMLFormElement)
+          const text = (fd.get("dbg") as string ?? "").trim()
+          if (text && session.isConnected) {
+            session.sendPrompt(text)
+          }
+          ;(e.currentTarget as HTMLFormElement).reset()
+        }}
+      >
+        <input name="dbg" type="text" placeholder="debug: שלח prompt ישיר" class="debug-input" />
+        <button type="submit" class="debug-send">↵</button>
+      </form>
+    {/if}
   </footer>
 
     <!-- ── Mobile: BottomSheet ───────────────────────────────────────────── -->
@@ -917,4 +956,34 @@ async function handleSheetAgentClose(agentId: string) {
   }
 
   .cancel-btn:hover { opacity: 0.85; }
+
+  /* ── Debug text form (DEV only) ─────────────────────────────────────────── */
+  .debug-text-form {
+    display: flex;
+    gap: 4px;
+    width: 100%;
+    max-width: 600px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--border);
+    opacity: 0.7;
+  }
+  .debug-input {
+    flex: 1;
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 12px;
+  }
+  .debug-send {
+    padding: 4px 10px;
+    border: none;
+    border-radius: 6px;
+    background: var(--muted);
+    color: var(--fg);
+    cursor: pointer;
+    font-size: 12px;
+  }
 </style>
