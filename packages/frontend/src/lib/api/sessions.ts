@@ -17,6 +17,10 @@ export type ProjectRecord = {
   cwd: string
   lastSeen: string
   sessionCount: number
+  /** F-5: present in BE response, used for recovery POST. Optional for legacy entries. */
+  kind?: string
+  /** F-5: BE persists the last sessionId per cwd in projects-registry.json. */
+  lastSessionId?: string
 }
 
 const API_BASE = ""
