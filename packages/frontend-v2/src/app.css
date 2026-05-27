@@ -1,0 +1,39 @@
+/* Minimal dark theme — placeholder until proper design system */
+:root {
+  --bg: #0f1115;
+  --bg-elev: #181b22;
+  --fg: #e8e8ea;
+  --fg-dim: #a0a4ac;
+  --muted: #6a6f7a;
+  --border: #2a2f3a;
+  --accent: #4f8cff;
+  --accent-hi: #6fa3ff;
+  --recording: #ff4f4f;
+  --speaking: #4fff8a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  height: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: 1rem;
+}
+
+button {
+  cursor: pointer;
+}

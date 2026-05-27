@@ -4,6 +4,99 @@
 
 ---
 
+## 2026-05-27 22:35 — frontend-v2: בנייה מאפס במבנה החדש (slice 0)
+
+### מה בוצע?
+
+יצירת `packages/frontend-v2/` — בנייה מאפס של ה-FE לפי הארכיטקטורה החדשה (view-models classes + Context + 5 שכבות). יושב לצד `packages/frontend/` הקיים שעוד עובד, ב-worktree נפרד (`/home/user/projects/voice-acp/v2/`) על branch `experiment/frontend-v2`.
+
+הרקע: ה-FE הקיים הצטבר לכאוס — `agent/[id]/+page.svelte` בן 989 שורות, שני state systems מקבילים, 4 מערכות localStorage עצמאיות, side effects פזורים בroutes. במקום refactor גדול, ההחלטה הייתה לבנות מאפס בסביבה נקייה ולוודא שהמבנה החדש עובד end-to-end לפני קבלת החלטה על המשך.
+
+**1. Worktree setup**
+
+```bash
+git worktree add ../v2 -b experiment/frontend-v2 refactor/acp-neutral
+```
+
+הבסיס הוא `refactor/acp-neutral` — כי אנחנו רוצים את ה-ACP החדש (transport-agnostic) ב-frontend-v2. שני ה-worktrees יכולים לרוץ במקביל (ports נפרדים: 5174 לקיים, 5175 לחדש).
+
+**2. Slice 0 — text-only chat (13 קבצים)**
+
+```
+packages/frontend-v2/
+├── package.json + 3 config files
+└── src/
+    ├── app.html / app.css / app.d.ts
+    ├── lib/
+    │   ├── context.ts                    # createContext זוגות
+    │   ├── view-models/
+    │   │   ├── settings.svelte.ts        # class + localStorage (cliKind, lastCwd)
+    │   │   └── agent-session.svelte.ts   # class + ACP integration
+    │   ├── engines/
+    │   │   ├── ws-to-streams.ts          # copy מ-FE הישן
+    │   │   └── ws-transport.ts           # copy מ-FE הישן
+    │   ├── adapters/
+    │   │   └── agents-api.ts             # REST /api/agents
+    │   └── actions/
+    │       └── connect-agent.ts          # createAgent + attach + goto
+    └── routes/
+        ├── +layout.svelte                # composition root
+        ├── +page.svelte                  # / — connect form
+        └── chat/+page.svelte             # /chat — textarea + bubbles
+```
+
+**3. AGENTS.md לתת-פרויקט (180 שורות)**
+
+מסמך באנגלית/עברית עם:
+- 5 שכבות + חוקי import חד-כיווניים.
+- **חמשת חוקי הזהב למניעת כאוס:**
+  1. Routes הם shells דקים (ספיק קשיח: 150 שורות).
+  2. View-models מייצגים entities, לא screens.
+  3. Components הם leaves (`<script>` < 50 שורות).
+  4. Side effects שייכים ל-owner של ה-state.
+  5. אסור "backward compat in place" — או refactor או הסר.
+- מודל ה-domain (3 ערוצי תקשורת: Mic / AgentSession / Speaker).
+- 5 שאלות בקרה עצמית לפני הוספת פיצ'ר חדש.
+- Slice 1 brief (Mic + STT) כצעד הבא המוצע.
+
+**4. הרצה end-to-end**
+
+- BE על port 4000 (Hono + opencode דרך bun).
+- FE-v2 על port 5175 (vite dev).
+- Pico tunnel: `https://your-app-v2.nue.tuns.sh`.
+- אומת ידנית: טופס connect → ניווט ל-/chat → שליחת prompt → קבלת bubbles עם תגובה.
+
+### החלטות ארכיטקטורה
+
+- **Worktree לצד הקיים, לא replace**: היכולת להשוות זה-מול-זה בלי לאבד את מה שעובד. אם v2 לא יצליח — `git worktree remove ../v2` ונחזור. אם כן — מיזוג עתידי.
+- **שני שרתים במקביל (5174 + 5175)**: כל אחד מצביע לאותו BE. אפשר לבדוק regression מול הקיים מבלי לעצור אחד מהם.
+- **AgentSession כ-class, לא factory**: שדה ראשון של רגרסיה למודל החדש. `attach()` במקום `createAgentSessionStore()` — לא משתנה ה-instance בין agents, רק ה-state.
+- **Context API ל-DI**: `setSession(...)` ב-layout, `getSession()` בכל route. אין יותר prop drilling, אין יותר module-level singletons.
+- **`new AcpClient(new WsAcpTransport(url))` במקום WS ישיר**: ה-ACP extraction (commit 0344335) משחק כאן. AgentSession לא יודע על WebSocket.
+- **חוק קשיח על גודל route**: 150 שורות. ה-`/chat/+page.svelte` ב-251 שורות (חורג!) — אבל זה כולל CSS. ה-`<script>` כ-50 שורות. אם נצטרך — נחלץ component.
+
+### מעקפים ופתרונות
+
+- **`copy` של ws-transport ל-v2**: במקום לעשות import בין packages, העתקנו ידנית. הסיבה: `packages/frontend-v2` רוצה להיות עצמאי, ו-`packages/frontend/src/lib/acp/ws-transport.ts` הוא קוד browser-specific שלא שייך ל-`core/`. בעתיד אפשר להוציא ל-`packages/fe-shared/`, אבל לא עכשיו.
+- **`status === "error"` במקום recovery**: אם BE קורס באמצע — האפליקציה מציגה את ה-error ועוצרת. אין recovery flow, אין notifications. בכוונה — minimum viable.
+- **אין persistence של agentId**: refresh על `/chat` → `$effect` רואה `status === "idle"` → redirect ל-`/`. במקום cache localStorage מורכב, פשטות.
+
+### מה אין בכוונה (slice 0)
+
+מיקרופון, STT, TTS, Speaker, VoiceMode, Player, recordings, session picker, settings page, recovery flow, error toasts, FilePicker, dashboard, history. כל אלה יבואו ב-slices הבאות (כל אחד יום אחד מקסימום).
+
+### Branch + מצב
+
+```
+experiment/frontend-v2 (worktree v2/)
+  └─ מבוסס על refactor/acp-neutral
+       └─ מבוסס על main + 2 commits (translate + reorg plan)
+```
+
+לא נמזג. ה-experiment עצמאי — נחליט מאוחר יותר אם להמשיך לבנות ולמזג, או להפסיק.
+
+---
+
 ## 2026-05-25 21:45 — ACP extraction ל-core (transport-agnostic)
 
 ### מה בוצע?

@@ -137,6 +137,34 @@ importers:
         specifier: ^4.0.0
         version: 4.1.6(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(happy-dom@20.9.0)(vite@6.4.2(@types/node@22.19.19))
 
+  packages/frontend-v2:
+    dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: ^0.21.1
+        version: 0.21.1(zod@4.4.3)
+      '@drive-coding/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@sveltejs/adapter-static':
+        specifier: ^3.0.0
+        version: 3.0.10(@sveltejs/kit@2.60.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.55.7)(vite@6.4.2(@types/node@22.19.19)))(svelte@5.55.7)(typescript@5.9.3)(vite@6.4.2(@types/node@22.19.19)))
+      '@sveltejs/kit':
+        specifier: ^2.8.0
+        version: 2.60.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.55.7)(vite@6.4.2(@types/node@22.19.19)))(svelte@5.55.7)(typescript@5.9.3)(vite@6.4.2(@types/node@22.19.19))
+      '@sveltejs/vite-plugin-svelte':
+        specifier: ^5.0.0
+        version: 5.1.1(svelte@5.55.7)(vite@6.4.2(@types/node@22.19.19))
+      svelte:
+        specifier: ^5.0.0
+        version: 5.55.7
+      svelte-check:
+        specifier: ^4.0.0
+        version: 4.4.8(picomatch@4.0.4)(svelte@5.55.7)(typescript@5.9.3)
+      vite:
+        specifier: ^6.0.0
+        version: 6.4.2(@types/node@22.19.19)
+
 packages:
 
   '@agentclientprotocol/sdk@0.21.1':
