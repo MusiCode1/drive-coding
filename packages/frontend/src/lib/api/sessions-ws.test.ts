@@ -4,7 +4,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { listSessionsViaActiveAgent, listSessionsViaTempAgent } from "./sessions-ws"
 
-// Minimal mock that satisfies the Awaited<ReturnType<typeof createAcpClient>> shape
+// Minimal mock that satisfies the Awaited<ReturnType<typeof connectToAgent>> shape
 function makeMockAcp(overrides: Partial<{ listSessions: () => Promise<unknown> }> = {}) {
   return {
     conn: {},
@@ -15,7 +15,7 @@ function makeMockAcp(overrides: Partial<{ listSessions: () => Promise<unknown> }
     prompt: async () => ({}),
     cancel: async () => ({}),
     close: () => {},
-  } as unknown as Awaited<ReturnType<typeof import("$lib/acp/client").createAcpClient>>
+  } as unknown as Awaited<ReturnType<typeof import("$lib/acp/connect").connectToAgent>>
 }
 
 describe("listSessionsViaActiveAgent", () => {

@@ -1,5 +1,5 @@
 import type { SessionNotification } from "@agentclientprotocol/sdk"
-import { createAcpClient } from "$lib/acp/client"
+import { connectToAgent } from "$lib/acp/connect"
 import { createLogger } from "$lib/log"
 import { recoverAgent } from "./agent-recovery"
 
@@ -117,7 +117,7 @@ export interface AgentSessionPublic {
  *
  * Replaces the old direct-WS / server-protocol flow with:
  * 1. POST /api/agents → { agentId, bridgePort, status, acpSessionId? }
- * 2. createAcpClient(agentId) → ACP handshake → sessionId
+ * 2. connectToAgent(agentId) → WS open → ACP handshake → sessionId
  * 3. POST /api/agents/:id/session-attached { sessionId }
  * 4. Bubble accumulation from sessionUpdate notifications (agent_message_chunk, etc.)
  *
@@ -136,7 +136,7 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
   let lastRecordingId = $state<string | null>(null)
 
   // ACP client (set after successful connect)
-  let acpClient: Awaited<ReturnType<typeof createAcpClient>> | null = null
+  let acpClient: Awaited<ReturnType<typeof connectToAgent>> | null = null
   let currentSessionId: string | null = null
 
   // Voice message delegate (Phase 3)
@@ -466,7 +466,7 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
           log.warn({ code, reason }, "WS closed unexpectedly")
         }
       }
-      acpClient = await createAcpClient(agentId, handleSessionUpdate, handleWsClose)
+      acpClient = await connectToAgent(agentId, handleSessionUpdate, handleWsClose)
 
       // 3. Either load existing session (after reload / dedup hit) or create new
       let sessionId: string | null = null

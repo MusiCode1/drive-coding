@@ -13,7 +13,7 @@
  */
 
 import type { CliKind } from "@drive-coding/core"
-import { createAcpClient } from "$lib/acp/client"
+import { connectToAgent } from "$lib/acp/connect"
 import { createAgent, deleteAgent } from "$lib/api/agents"
 
 export type SessionInfo = {
@@ -29,7 +29,7 @@ export type SessionInfo = {
  * Throws on any other error.
  */
 export async function listSessionsViaActiveAgent(
-  acp: Awaited<ReturnType<typeof createAcpClient>>,
+  acp: Awaited<ReturnType<typeof connectToAgent>>,
 ): Promise<SessionInfo[]> {
   try {
     const res = await acp.listSessions()
@@ -53,12 +53,12 @@ export async function listSessionsViaTempAgent(
   cliKind: CliKind,
 ): Promise<SessionInfo[]> {
   let tempAgentId: string | null = null
-  let acp: Awaited<ReturnType<typeof createAcpClient>> | null = null
+  let acp: Awaited<ReturnType<typeof connectToAgent>> | null = null
   try {
     const { agentId } = await createAgent({ cwd, cliKind })
     tempAgentId = agentId
     // noop session-update handler — we only care about the listSessions response
-    acp = await createAcpClient(agentId, () => {})
+    acp = await connectToAgent(agentId, () => {})
     return await listSessionsViaActiveAgent(acp)
   } finally {
     try {

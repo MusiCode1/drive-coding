@@ -29,8 +29,8 @@ let lastAcpClient: MockAcpClient | null = null
 
 // ── Top-level vi.mock (hoisted before all tests) ──────────────────────────────
 
-vi.mock("$lib/acp/client", () => ({
-  createAcpClient: vi.fn(async (_agentId: string, onUpdate: OnUpdate) => {
+vi.mock("$lib/acp/connect", () => ({
+  connectToAgent: vi.fn(async (_agentId: string, onUpdate: OnUpdate) => {
     const client = new MockAcpClient(onUpdate)
     lastAcpClient = client
     return {

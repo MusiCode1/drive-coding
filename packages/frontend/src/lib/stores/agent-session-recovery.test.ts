@@ -2,7 +2,7 @@
  * agent-session-recovery.test.ts
  *
  * Verifies that connect() does a GET to /api/agents/<id> BEFORE opening the WS,
- * and routes 404 to recoverAgent() without ever calling createAcpClient.
+ * and routes 404 to recoverAgent() without ever calling connectToAgent.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -14,9 +14,9 @@ vi.mock("./agent-recovery", () => ({
   recoverAgent: (id: string) => recoverAgentMock(id),
 }))
 
-const createAcpClientMock = vi.fn()
-vi.mock("$lib/acp/client", () => ({
-  createAcpClient: (...args: unknown[]) => createAcpClientMock(...args),
+const connectToAgentMock = vi.fn()
+vi.mock("$lib/acp/connect", () => ({
+  connectToAgent: (...args: unknown[]) => connectToAgentMock(...args),
 }))
 
 import { createAgentSessionStore } from "./agent-session.svelte"
@@ -37,7 +37,7 @@ function fetchOnce(status: number, body: unknown = {}) {
 
 beforeEach(() => {
   recoverAgentMock.mockClear()
-  createAcpClientMock.mockClear()
+  connectToAgentMock.mockClear()
   vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("uuid") })
   vi.stubGlobal("location", { protocol: "http:", host: "localhost:4000" })
 })
@@ -52,18 +52,18 @@ describe("connect() — GET /api/agents/<id> before WS", () => {
     const store = createAgentSessionStore("old-id")
     await store.connect()
     expect(recoverAgentMock).toHaveBeenCalledWith("old-id")
-    expect(createAcpClientMock).not.toHaveBeenCalled()
+    expect(connectToAgentMock).not.toHaveBeenCalled()
   })
 
-  it("on 200: proceeds to createAcpClient", async () => {
+  it("on 200: proceeds to connectToAgent", async () => {
     vi.stubGlobal("fetch", fetchOnce(200, { agent: { cwd: "/x", acpSessionId: undefined } }))
-    // Make createAcpClient throw so we don't have to wire the full handshake.
+    // Make connectToAgent throw so we don't have to wire the full handshake.
     // We only care that it's reached at all.
-    createAcpClientMock.mockRejectedValue(new Error("stop here"))
+    connectToAgentMock.mockRejectedValue(new Error("stop here"))
     const store = createAgentSessionStore("live-id")
     await store.connect()
     expect(recoverAgentMock).not.toHaveBeenCalled()
-    expect(createAcpClientMock).toHaveBeenCalledTimes(1)
+    expect(connectToAgentMock).toHaveBeenCalledTimes(1)
   })
 
   it("on 500: throws (sets error state) and does NOT call recoverAgent", async () => {
@@ -71,7 +71,7 @@ describe("connect() — GET /api/agents/<id> before WS", () => {
     const store = createAgentSessionStore("bad-id")
     await store.connect()
     expect(recoverAgentMock).not.toHaveBeenCalled()
-    expect(createAcpClientMock).not.toHaveBeenCalled()
+    expect(connectToAgentMock).not.toHaveBeenCalled()
     expect(store.error).toMatch(/getAgent failed: 500/)
   })
 })
