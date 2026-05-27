@@ -4,6 +4,95 @@
 
 ---
 
+## 2026-05-25 21:45 — ACP extraction ל-core (transport-agnostic)
+
+### מה בוצע?
+
+הוצאת לוגיקת ה-ACP מהצמדה ל-WebSocket. עכשיו ה-protocol logic חי ב-`packages/core/acp/` ופועל מעל כל transport שמממש את ה-`AcpTransport` interface. ה-FE מספק `WsAcpTransport` (WebSocket), ובעתיד אפשר יהיה להוסיף stdio transport ל-BE או mock לטסטים מבלי לשנות את ה-protocol code.
+
+המבנה החדש פותח את הדלת להריץ ACP גם בצד שרת (replay, automation) באותו קוד.
+
+**1. AcpTransport interface (`core/acp/transport.ts`)**
+
+```ts
+interface AcpTransport {
+  readable: ReadableStream<Uint8Array>
+  writable: WritableStream<Uint8Array>
+  close(): void
+  onClose(cb: (code, reason) => void): void
+}
+```
+
+מינימלי בכוונה — שני streams + lifecycle hooks. כל מה שמעל זה (heartbeat, reconnect, NAT keepalive) הוא transport-specific.
+
+**2. MockAcpTransport (`core/acp/transport-mock.ts`)**
+
+מימוש בזיכרון לטסטים. `emitFrame()` לדמות agent→client, `sentFrames[]` לקלוט client→agent, `simulateClose()` ל-disconnect. חי ב-`core/` (לא ב-`tests/`) כי הוא חלק מהחוזה — packages downstream משתמשים בו.
+
+**3. createAcpClient ניטרלי (`core/acp/client.ts`)**
+
+ה-`lib/acp/client.ts` הישן (155 שורות, WebSocket-hardcoded) הוחלף:
+- פרמטר ראשון: `transport: AcpTransport` במקום `agentId`.
+- ללא WS construction פנימית.
+- ללא `wsToWebStreams`.
+- ללא heartbeat ($/ping עבר ל-WS transport).
+- ללא `onClose` ב-signature — caller נרשם ישירות על transport.
+- `initTimeoutMs` כ-option (default 10s, טסטים מעבירים 50ms).
+
+**4. WsAcpTransport ב-FE (`lib/acp/ws-transport.ts`)**
+
+עוטף WebSocket + מספק `AcpTransport`. כולל heartbeat $/ping כל 25s (NAT keepalive — דאגה של WS transport, לא של protocol). `waitForOpen()` async helper לקריאה לפני העברה ל-`createAcpClient`.
+
+**5. connectToAgent helper (`lib/acp/connect.ts`)**
+
+```ts
+connectToAgent(agentId, onUpdate, onClose?) → Promise<AcpClient>
+```
+
+מרכיב WsAcpTransport + AcpClient בקריאה אחת. ה-signature מקבילה ל-`createAcpClient` הישן ל-drop-in replacement.
+
+**6. החלפת consumers**
+
+- `lib/stores/agent-session.svelte.ts:469` — import + call.
+- `lib/api/sessions-ws.ts` — שתי קריאות (`listSessionsViaActiveAgent`/`ViaTempAgent`).
+- שלושה test files עודכנו את ה-`vi.mock` path.
+
+**7. מחיקה**
+
+- `lib/acp/client.ts` (155 שורות) — נמחק.
+- `lib/acp/client-impl.ts` (42 שורות) — נמחק.
+- `lib/acp/client.test.ts` (253 שורות, חלקם placeholders) — נמחק.
+
+`lib/acp/` נשארת עם 4 קבצים: `ws-transport`, `connect`, `ws-to-streams` + הטסטים שלהם.
+
+### החלטות ארכיטקטורה
+
+- **Heartbeat = transport concern, not protocol concern**: `$/ping` כל 25s הוא NAT keepalive. stdio לא צריך, mock לא צריך, רק WS צריך. הועבר ל-WsAcpTransport.
+- **`onClose` מבחוץ**: caller נרשם ישירות על `transport.onClose()` לפני שהוא מעביר ל-`createAcpClient`. שינוי signature מהישן (שקיבל onClose כפרמטר) — מאפשר ל-FE wrapper לעטוף.
+- **`initTimeoutMs` כ-option**: אפשר לטסטים להעביר 50ms במקום fake timers, שיוצרים false-positive unhandled-rejection ב-vitest 4.x עם Promise.race.
+- **Mock ב-`core/`, לא ב-`tests/`**: ה-mock הוא חלק מהחוזה שcheckers downstream צריכים לקבל. כל package שירצה לטסט consumer של AcpClient ישתמש באותו mock.
+
+### מעקפים ופתרונות
+
+- **`initPromise.catch(() => {})`**: ב-`createAcpClient`, ה-SDK initialize promise נשאר תלוי כש-race מסתיים בtimeout. מסמנים אותו כ-handled למניעת unhandled-rejection. השגיאה האמיתית עדיין מתפסת ע"י Promise.race.
+- **`ws?: WebSocket` כפרמטר constructor**: `WsAcpTransport(url, ws?)` — הפרמטר השני אופציונלי, להזרקת TestWebSocket בטסטים. production תמיד פותח עצמאית.
+- **JSON-RPC method name: `session/update`**: ה-SDK משתמש ב-`session/update` (עם slash) ב-method של notifications, לא ב-`sessionUpdate` (שזה רק שדה בתוך params). תפסתי את זה בtest שלי שנכשל בתחילה.
+
+### Branch + commits
+
+```
+03d786a (fe/acp): WsAcpTransport + connectToAgent helper
+0344335 (core/acp): createAcpClient + createClientImpl ניטרליים לטרנספורט
+f2acea9 (core/acp): AcpTransport interface + MockAcpTransport
+5eb6c3a (fe): החלפת consumers ל-connectToAgent החדש
+8f85564 (fe/acp): מחיקת client.ts + client-impl.ts הישנים
+```
+
+**טסטים:** +31 חדשים (10 mock + 9 client core + 12 ws-transport FE). -5 ישנים (deletion). סה"כ +26 tests.
+**Build + typecheck נקיים. 596 טסטים ירוקים.**
+
+---
+
 ## 2026-05-25 19:35 — תרגום structured-output + cache + הפרדת toolTitle/narration
 
 ### מה בוצע?
