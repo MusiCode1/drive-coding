@@ -4,6 +4,60 @@
 
 ---
 
+## 2026-05-25 19:35 — תרגום structured-output + cache + הפרדת toolTitle/narration
+
+### מה בוצע?
+
+שיפור שלושת המסלולים של ה-voice pipeline: ה-translate הופך לחסכוני וב-cache, ה-orchestrator מדלג על תרגום מיותר, וה-bubble model של tool calls מפריד בין הטקסט הטכני של ACP ל-narration הקולי של Gemini.
+
+**1. `translate-client.ts` — מעבר ל-`generateObject` עם discriminated union**
+
+- במקום `generateText` שמחזיר תמיד טקסט חדש, Gemini עכשיו מחזיר אחד משני schema: `{"status":"already_in_target"}` (כש-source כבר בעברית) או `{"status":"translated","text":"..."}`.
+- חוסך tokens משמעותית כשהמשתמשת מדברת עברית — אין paraphrase מיותר של טקסט שלא צריך לתרגם.
+- `gemini-flash-lite-latest` נשאר model ברירת המחדל (לפי הלמידה שצריך לבחון אם structured-output יציב — כרגע עובד).
+
+**2. `translate-cache.ts` (חדש) — persistent cache ב-localStorage**
+
+- מפתחות: `voice-acp:translate:v1:<sha256(text|targetLang)>`.
+- שווה לכלל ה-app session: reload לא מחייב re-translation לאותו טקסט.
+- Versioned prefix (`v1`) כדי לאפשר migration עתידי.
+- SSR-safe (no-op כשאין `window`).
+- QuotaExceeded → silent fail (cache הוא אופטימיזציה, לא נדרש).
+
+**3. `orchestrator.ts` — translate רק על thought chunks**
+
+- Messages מגיעים מהסוכן בשפת המשתמשת (עברית כשהיא מדברת עברית) — אין צורך לתרגם.
+- Narration נוצרת בעברית ע"י `narrate-client` — אין צורך לתרגם.
+- רק `thought` chunks (שמגיעים באנגלית) עוברים דרך `translate()`.
+- חיסכון של ~2/3 מקריאות Gemini ב-pipeline ה-output.
+
+**4. `agent-session.svelte.ts` — `toolTitle` ↔ `narration` הפרדה**
+
+- ב-`tool_call_update` של ACP, ה-title הוא raw/technical (`"read file (executing)"`).
+- ה-`narration` הוא הטקסט הקולי של Gemini (`"אני בודק את הקובץ README"`).
+- לפני התיקון: ACP title update **דרס** את ה-narration. אחרי: רק `toolTitle` מתעדכן, `narration` נשאר.
+- ה-orchestrator הוא ה-owner היחיד של `narration` דרך `updateToolNarration()` החדש על ה-public API.
+- שניהם מוצגים side-by-side ב-`SubSegment.svelte` (קיים).
+
+**5. תוכנית reorg של ה-FE (`docs/frontend-reorganization-plan.md`)**
+
+- מסמך תכנון חדש (~1000 שורות) למבנה מחדש של ה-FE: view-models classes (Svelte 5) + Context + 5 שכבות + 4 routes.
+- כולל בחינה ביקורתית מול הקוד הקיים — 13 פערים תועדו.
+- לא מומש עדיין — תכנון בלבד. הצעד הבא: extraction של ACP למודול ניטרלי ב-`core/`.
+
+### החלטות ארכיטקטורה
+
+- **Discriminated union במקום optional field**: ה-schema הוא `anyOf` עם שני סוגים שונים (`already_in_target` בלי שדה text, `translated` עם text). זה כופה על Gemini לבחור מסלול אחד ומחזיר minimal payload כש-no-op.
+- **Cache write נעשה ב-`await` ולא fire-and-forget**: sha256 מהיר (~1ms) וטסטים צריכים להיות דטרמיניסטיים. ב-prod ההפסד זניח.
+- **Translate skip לפי `job.kind`**: נחשבה אופציה לבדוק את שפת הטקסט בזמן ריצה, אבל זה מוסיף latency על כל chunk. בחירה לפי kind היא zero-cost ונכונה ב-99% מהמקרים.
+
+### מעקפים ופתרונות
+
+- **Empty translated text treated as failure**: אם Gemini מחזיר `{"status":"translated","text":""}` (rare malformed response) — מתייחסים לזה כשגיאה ולא cache. אחרת ה-cache היה מתמלא ב-junk שלא ניתן להתאושש ממנו.
+- **`appendToolBubble` ב-`tool_call_update`**: ה-fix החליף `updateToolNarration(toolId, title)` ב-`appendToolBubble(toolId, title)`. ההפרש: appendToolBubble מעדכן רק את ה-toolTitle של הsegment הקיים (`s.toolTitle = title`), בלי לגעת ב-narration.
+
+---
+
 ## 2026-05-18 16:15 — Slice 10 F-1 followup — Data-driven readiness (CBug1 fix)
 
 ### מה בוצע?

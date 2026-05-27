@@ -95,6 +95,13 @@ export interface AgentSessionPublic {
     translatedText: string,
   ): void
   /**
+   * Update the `narration` field on an existing tool bubble segment.
+   * Called by the voice orchestrator after Gemini's narrate() resolves —
+   * gives the bubble a natural-language Hebrew description distinct from
+   * the raw ACP `toolTitle`.
+   */
+  updateToolNarration(toolCallId: string, narration: string): void
+  /**
    * Test helper: inject a raw ACP sessionUpdate notification directly.
    * Used by unit tests that want to test bubble accumulation without a full ACP handshake.
    * Should NOT be called in production code.
@@ -386,9 +393,11 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
       }
 
       case "tool_call_update": {
-        // ACP tool_call_update may include title/status changes; narration is FE-side (Phase 3)
+        // ACP tool_call_update may update the tool title (raw, technical).
+        // The voice-friendly `narration` field is owned by the voice orchestrator
+        // (Gemini narrate() result) — do NOT overwrite it here.
         if (update.toolCallId && update.title) {
-          updateToolNarration(update.toolCallId, update.title)
+          appendToolBubble(update.toolCallId, update.title)
         }
         break
       }
@@ -614,6 +623,7 @@ export function createAgentSessionStore(agentId: string): AgentSessionPublic {
       return lastRecordingId
     },
     addTranslatedSegment,
+    updateToolNarration,
     _testInjectNotification(notification: unknown) {
       handleSessionUpdate(notification as SessionNotification)
     },

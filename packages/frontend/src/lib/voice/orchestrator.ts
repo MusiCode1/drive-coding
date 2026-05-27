@@ -173,6 +173,11 @@ export function createVoiceOrchestrator(deps: OrchestratorDeps) {
           job.text = text
           job.status = "pending"
           job.abort = null
+          // Propagate Gemini's natural-language narration to the visual bubble
+          // (distinct from ACP's raw toolTitle — both render side by side in
+          // SubSegment.svelte). Failure path skips this — bubble keeps the
+          // raw toolTitle only.
+          agentSession.updateToolNarration(toolCallId, text)
           pumpQueue()
         }
       })
@@ -220,16 +225,26 @@ export function createVoiceOrchestrator(deps: OrchestratorDeps) {
     job.abort = ac
 
     try {
-      // 1. Translate text to Hebrew
-      const translated = await translate(job.text, "he", ac.signal)
-      if (translated === null || ac.signal.aborted) {
-        job.status = "failed"
-        return
+      // 1. Translate to Hebrew — only for thought chunks.
+      //    Messages from the agent are already in the user's language when the
+      //    user spoke Hebrew, and narration text is generated in Hebrew by
+      //    narrate-client. Running them through translate() would waste a
+      //    Gemini round-trip and risk paraphrasing.
+      let textToSpeak: string
+      if (job.kind === "thought") {
+        const tr = await translate(job.text, "he", ac.signal)
+        if (tr === null || ac.signal.aborted) {
+          job.status = "failed"
+          return
+        }
+        textToSpeak = tr.status === "already_in_target" ? job.text : tr.text
+      } else {
+        textToSpeak = job.text
       }
 
       // 2. TTS streaming
       const stream = await synthesizeStreaming({
-        text: translated,
+        text: textToSpeak,
         voiceId: deps.getVoiceId(),
         signal: ac.signal,
       })

@@ -204,8 +204,10 @@ describe("agent-session bubble grouping (ACP shape, Slice 10)", () => {
     expect(store.bubbles[0]?.segments[0]?.toolTitle).toBe("read file (updated)")
   })
 
-  // ── 8: tool_call_update adds narration via title to existing tool bubble ──
-  it("tool_call_update with title updates narration on existing tool bubble", () => {
+  // ── 8: tool_call_update updates toolTitle and leaves narration untouched ──
+  // narration is now owned exclusively by the voice orchestrator (Gemini result);
+  // ACP title updates land on toolTitle only.
+  it("tool_call_update with title updates toolTitle, not narration", () => {
     const store = makeStore()
     fire(
       store,
@@ -216,12 +218,25 @@ describe("agent-session bubble grouping (ACP shape, Slice 10)", () => {
       makeAcp("sess-1", {
         sessionUpdate: "tool_call_update",
         toolCallId: "tc1",
-        title: "בודק קבצים...",
+        title: "read file (executing)",
       }),
     )
-    // narration is stored via updateToolNarration — check segment narration field
     const toolSeg = store.bubbles[0]?.segments[0]
-    expect(toolSeg?.narration).toBe("בודק קבצים...")
+    expect(toolSeg?.toolTitle).toBe("read file (executing)")
+    expect(toolSeg?.narration).toBeUndefined()
+  })
+
+  // ── 8b: updateToolNarration sets narration without touching toolTitle ─────
+  it("updateToolNarration writes only to narration (orchestrator path)", () => {
+    const store = makeStore()
+    fire(
+      store,
+      makeAcp("sess-1", { sessionUpdate: "tool_call", toolCallId: "tc1", title: "read file" }),
+    )
+    store.updateToolNarration("tc1", "אני בודק את הקובץ README")
+    const toolSeg = store.bubbles[0]?.segments[0]
+    expect(toolSeg?.toolTitle).toBe("read file")
+    expect(toolSeg?.narration).toBe("אני בודק את הקובץ README")
   })
 
   // ── 9: non-text content type → empty string appended (no crash) ───────────

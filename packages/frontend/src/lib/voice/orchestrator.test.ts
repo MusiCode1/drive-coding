@@ -18,11 +18,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createPlayerStore } from "$lib/stores/player.svelte"
 import type { AudioStream } from "./audio-stream"
 import { createVoiceOrchestrator } from "./orchestrator"
+import { synthesizeStreaming as synthesizeMock } from "./tts-client"
+import { translate as translateMock } from "./translate-client"
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
 vi.mock("./translate-client", () => ({
-  translate: vi.fn().mockResolvedValue("translated text"),
+  translate: vi.fn().mockResolvedValue({ status: "translated", text: "translated text" }),
 }))
 
 vi.mock("./tts-client", () => ({
@@ -76,6 +78,7 @@ function createMockAgentSession() {
     clearBubbles: vi.fn(),
     getRecordingId: vi.fn().mockReturnValue(null),
     addTranslatedSegment: vi.fn(),
+    updateToolNarration: vi.fn(),
     // Injects an ACP envelope directly as JSON string (as agentSession does in production)
     injectAcp(sessionId: string, update: Record<string, unknown>) {
       voiceHandler?.(JSON.stringify({ sessionId, update }))
@@ -201,5 +204,126 @@ describe("createVoiceOrchestrator (ACP shape, Slice 10)", () => {
     // handleNotification directly with malformed input
     expect(() => orchestrator.handleNotification("{bad json")).not.toThrow()
     expect(() => orchestrator.handleNotification("{}")).not.toThrow()
+  })
+
+  // ── 11: translate() is called ONLY for thought jobs ───────────────────────
+  // Regression guard — before 2026-05-18, fetchSegment translated message and
+  // narration too, causing wasted Gemini calls + occasional paraphrasing.
+  it("translate() is invoked only for thought jobs (not message/narration)", async () => {
+    // Run 3 different kinds through the queue and let the playback loop pump.
+    agentSession.injectAcp("sess-1", textChunk("agent_message_chunk", "Hello world. "))
+    agentSession.injectAcp("sess-1", textChunk("agent_thought_chunk", "Thinking now. "))
+    agentSession.injectAcp("sess-1", toolCall("call-1", "read README", "read"))
+
+    // Let microtasks + a tick of the playback loop run.
+    await new Promise((r) => setTimeout(r, 50))
+
+    const calls = vi.mocked(translateMock).mock.calls
+    // Every call's first arg is the thought text — none from message/narration.
+    for (const args of calls) {
+      const arg0 = args[0] as string
+      expect(arg0).toContain("Thinking")
+    }
+    // Sanity: translate WAS called for the thought.
+    expect(calls.length).toBeGreaterThanOrEqual(1)
+  })
+
+  // ── 12: message jobs go to TTS verbatim (no translate round-trip) ─────────
+  it("message text reaches synthesizeStreaming verbatim — no translate", async () => {
+    agentSession.injectAcp(
+      "sess-1",
+      textChunk("agent_message_chunk", "טקסט עברי של ההודעה. "),
+    )
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(vi.mocked(translateMock)).not.toHaveBeenCalled()
+    const ttsCalls = vi.mocked(synthesizeMock).mock.calls
+    expect(ttsCalls.length).toBeGreaterThanOrEqual(1)
+    const arg = ttsCalls[0]?.[0] as { text: string }
+    expect(arg.text).toContain("טקסט עברי של ההודעה")
+  })
+
+  // ── 13: narration jobs go to TTS verbatim ─────────────────────────────────
+  it("narration text reaches synthesizeStreaming verbatim — no translate", async () => {
+    // narrate() mock returns "אני בודק את הקוד" — that exact string must hit TTS.
+    agentSession.injectAcp("sess-1", toolCall("call-1", "read README", "read"))
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(vi.mocked(translateMock)).not.toHaveBeenCalled()
+    const ttsCalls = vi.mocked(synthesizeMock).mock.calls
+    expect(ttsCalls.length).toBeGreaterThanOrEqual(1)
+    const arg = ttsCalls[0]?.[0] as { text: string }
+    expect(arg.text).toBe("אני בודק את הקוד")
+  })
+
+  // ── 13b: Gemini narration is propagated back to the visual bubble ─────────
+  // Ensures the orchestrator calls agentSession.updateToolNarration after
+  // narrate() resolves, so the bubble shows both raw ACP toolTitle AND
+  // Gemini's natural-language narration.
+  it("tool_call → updateToolNarration is called with the Gemini result", async () => {
+    agentSession.injectAcp("sess-1", toolCall("call-42", "read README", "read"))
+    await new Promise((r) => setTimeout(r, 50))
+
+    const calls = (agentSession.updateToolNarration as ReturnType<typeof vi.fn>).mock.calls
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toEqual(["call-42", "אני בודק את הקוד"])
+  })
+
+  // ── 13c: narrate failure → bubble narration is NOT touched ────────────────
+  it("narrate() rejects → updateToolNarration is NOT called (bubble keeps toolTitle only)", async () => {
+    const { narrate: narrateMock } = await import("./narrate-client")
+    vi.mocked(narrateMock).mockRejectedValueOnce(new Error("gemini timeout"))
+
+    agentSession.injectAcp("sess-1", toolCall("call-43", "read README", "read"))
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(agentSession.updateToolNarration).not.toHaveBeenCalled()
+  })
+
+  // ── 14: thought with `already_in_target` → original text reaches TTS ──────
+  it("thought + status=already_in_target → original thought text reaches TTS", async () => {
+    vi.mocked(translateMock).mockResolvedValue({ status: "already_in_target" })
+    agentSession.injectAcp(
+      "sess-1",
+      textChunk("agent_thought_chunk", "מחשבה כבר בעברית. "),
+    )
+    await new Promise((r) => setTimeout(r, 50))
+
+    const ttsCalls = vi.mocked(synthesizeMock).mock.calls
+    expect(ttsCalls.length).toBeGreaterThanOrEqual(1)
+    const arg = ttsCalls[0]?.[0] as { text: string }
+    expect(arg.text).toContain("מחשבה כבר בעברית")
+  })
+
+  // ── 15: thought + status=translated → translated text reaches TTS ─────────
+  it("thought + status=translated → translated text reaches TTS", async () => {
+    vi.mocked(translateMock).mockResolvedValue({
+      status: "translated",
+      text: "מחשבה מתורגמת",
+    })
+    agentSession.injectAcp(
+      "sess-1",
+      textChunk("agent_thought_chunk", "An English thought. "),
+    )
+    await new Promise((r) => setTimeout(r, 50))
+
+    const ttsCalls = vi.mocked(synthesizeMock).mock.calls
+    expect(ttsCalls.length).toBeGreaterThanOrEqual(1)
+    const arg = ttsCalls[0]?.[0] as { text: string }
+    expect(arg.text).toBe("מחשבה מתורגמת")
+  })
+
+  // ── 16: thought + translate=null → job fails, no TTS call for that job ────
+  it("thought + translate=null → job is failed, TTS not invoked", async () => {
+    vi.mocked(translateMock).mockResolvedValue(null)
+    agentSession.injectAcp(
+      "sess-1",
+      textChunk("agent_thought_chunk", "An English thought. "),
+    )
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(vi.mocked(synthesizeMock)).not.toHaveBeenCalled()
+    const failed = orchestrator.sentenceQueue.find((j) => j.kind === "thought")
+    expect(failed?.status).toBe("failed")
   })
 })
