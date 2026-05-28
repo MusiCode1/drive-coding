@@ -1,7 +1,7 @@
 # Bubble Model — Design Decision
 
 > **תאריך**: 2026-05-28.
-> **סטטוס**: ‎הצעה ‎לפני slice 2. ‎יש לאשר ‎עם ‎ה-planner ‎לפני ‎יישום ‎ב-slice 2.
+> **סטטוס**: ✅ ‎הוטמע ‎ב-slice 2 ‎(commit 1, 2026-05-28). ‎השאלות ‎הפתוחות ‎שמסומנות ‎לסגירה ‎ב-slice 2 ‎סגורות ‎בסוף ‎המסמך.
 > **מקור**: ‎נדרש ‎לפי **חוק ‎זהב #5** ‎ב-`AGENTS.md` ‎(אסור backward compat in place).
 
 ---
@@ -126,12 +126,12 @@ type Bubble = UserBubble | MessageBubble | ThoughtBubble | ToolBubble
 
 ## ‎פתוחות
 
-| # | ‎שאלה | ‎מתי ‎להחליט |
-|---|------|---------|
-| 1 | `Segment.id` ‎— `crypto.randomUUID()` ‎או ‎deterministic (`${messageId}-${index}`)? | slice 2 |
-| 2 | ‎`ToolBubble.segments` — `never[]` ‎(טיפוס) ‎או ‎פשוט ‎השמטה? | slice 4 |
-| 3 | ‎האם ‎`MessageBubble.segments` ‎מכיל ‎sentence-split (לטובת TTS) ‎או ‎chunks ‎כפי ‎שמגיעים? | slice 2 — תלוי ‎בארכיטקטורת ‎`Speaker` |
-| 4 | ‎`createdAt` נחוץ עם `id` ‎ב-UUID? | אם ‎ה-id ‎הוא UUID v7 — לא; ‎אחרת ‎כן ‎ל-stable order |
+| # | ‎שאלה | ‎מתי ‎להחליט | ‎הכרעה |
+|---|------|---------|----------|
+| 1 | `Segment.id` ‎— `crypto.randomUUID()` ‎או ‎deterministic (`${messageId}-${index}`)? | slice 2 | ✅ ‎`crypto.randomUUID()`. ‎שני ‎שיקולים: ‎(1) ‎אין ‎צורך ‎בdeterministic — ‎id ‎לא ‎מועבר ‎ל-backend ‎ב-slice 2; ‎(2) ‎chunk ‎נופל ‎לפעמים ‎ב-array ‎מאוחר ‎מהמצופה ‎עקב reactivity ordering, ‎ו-UUID ‎random ‎שורד ‎collisions ‎טוב ‎יותר ‎מ-index. |
+| 2 | ‎`ToolBubble.segments` — `never[]` ‎(טיפוס) ‎או ‎פשוט ‎השמטה? | slice 4 | ‎נשאר ‎פתוח. ‎ב-slice 2 ‎הוגדר ‎כ-`never[]` ‎כדי ‎לאחד ‎את ‎ה-union, ‎אבל ‎ה-`tool` variant ‎לא ‎מאוכלס. |
+| 3 | ‎האם ‎`MessageBubble.segments` ‎מכיל ‎sentence-split (לטובת TTS) ‎או ‎chunks ‎כפי ‎שמגיעים? | slice 2 — תלוי ‎בארכיטקטורת ‎`Speaker` | ✅ ‎**chunks ‎כפי ‎שמגיעים** (1 ‎segment per ‎ACP chunk). ‎ה-Speaker ‎עושה ‎sentence-split ‎פנימית ‎ב-`splitIntoSentences` ‎על ‎buffer ‎שמצטבר ‎per bubble. ‎יתרון: ‎ה-bubble model ‎נשאר ‎agnostic ‎ל-TTS ‎ויכול ‎להציג ‎את ‎הזרם ‎כמו ‎שהוא ‎מגיע ‎ל-UI. |
+| 4 | ‎`createdAt` נחוץ עם `id` ‎ב-UUID? | אם ‎ה-id ‎הוא UUID v7 — לא; ‎אחרת ‎כן ‎ל-stable order | ✅ ‎`createdAt` ‎נשמר. ‎אנחנו ‎ב-UUID v4 (`crypto.randomUUID`) ‎שלא ‎נושא ‎טיימסטמפ. ‎`Date.now()` ‎נכתב ‎בעת ‎יצירת ‎הbubble ‎ומשמש ‎לסידור ‎תצוגה ‎יציב. |
 
 ---
 
