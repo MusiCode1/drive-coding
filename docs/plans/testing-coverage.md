@@ -1,7 +1,7 @@
 # Testing Coverage — תוכנית
 
 > **תאריך**: 2026-05-28
-> **סטטוס**: ‏טיוטה — ‏לביצוע ‏בסשן ‏נפרד
+> **סטטוס**: ‏הושלם 2026-05-28 22:55 (branch `testing-coverage`, ‏לפני merge ל-dev)
 > **Complexity**: 5/10 (verifier: light)
 > **תלות**: ‏אין. ‏יכול לרוץ ‏במקביל לסבבים אחרים.
 > **מתבסס על**: ‏`docs/plans/README.md` (מבנה), ‏`tests/smoke/README.md` (smoke convention)
@@ -473,7 +473,17 @@ beforeEach(() => {
 
 ---
 
-## §10 — מה אחרי הסבב
+## §10 — ‏סטיות ‏מהbrief ‏(ביצוע)
+
+‏- **Commit 2 (cache-replay)**: ‏הניסיון ‏לפי ‏ה-brief ‏(שולח את אותו prompt ‏פעמיים לסוכן) ‏החזיר 0 ‏cache hits ‏ב-pass 2 — ‏הסוכן ‏לא ‏דטרמיניסטי גם ‏ב-"השב במילה אחת בלבד". ‏§6 ‏Risk #2 ‏אישר ‏fallback ‏ל-soft assert, ‏אבל ‏בחרתי ‏גישה ‏אלטרנטיבית: ‏שתי ‏קריאות ‏fetch ‏ישירות ‏מהדפדפן (`page.evaluate`) ‏עם body ‏זהה ‏ו-nonce ‏ייחודי ‏פר ‏ריצה. ‏עוקף ‏את ‏ה-LLM, ‏יציב ומהיר, ‏עדיין ‏מקיף ‏את ‏המסלול ‏Vite proxy → ‏BE → ‏OneCLI → ‏cache writeback. ‏Asserts קשים: ‏pass1 `miss`, ‏pass2 `hit` ‏לשתי הקריאות.
+
+‏- **Commit 4**: ‏השארתי ‏טכניקה ‏אחת ‏(switch-with-never) ‏אבל ‏הוספתי ‏גם ‏שכבה ‏שנייה ‏(`Equals<Bubble["kind"], KnownKind>` ‏עם ‏conditional types) ‏כי ‏זה ‏נותן ‏שגיאה ‏ברורה ‏יותר ‏שמצביעה ‏על ‏השמיט ‏הספציפי. ‏Mutation-tested.
+
+‏- **שאר ‏ה-commits**: ‏לפי ‏ה-brief, ‏ללא ‏סטיות ‏משמעותיות.
+
+---
+
+## §11 — מה אחרי הסבב
 
 ‏אחרי הסבב, ‏יש ‏5 ‏tests חדשים (3 ‏smoke + 1 unit + 1 type-level) + ‏run-all script.
 

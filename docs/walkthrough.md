@@ -4,6 +4,75 @@
 
 ---
 
+## 2026-05-28 22:55 — testing-coverage הושלם: ‎3 ‎smoke ‎חדשים + ‎unit ‎ל-Settings + ‎FE ‎vitest setup
+
+### ‎מה בוצע?
+
+‎סבב ‎שלא ‎נוגע ‎בקוד ‎הפרודקשן, ‎מוסיף ‎coverage ‎שמגן ‎על ‎slice 9a (Voice ‎picker), ‎על ‎ה-BE ‎proxy ‎cache, ‎על ‎Bug ‎D1 ‎(spurious ‎WS ‎1005), ‎ועל ‎exhaustiveness ‎של ‎Bubble ‎renderer. ‎לפי ‎`docs/plans/testing-coverage.md`.
+
+7 ‎commits ‎(0–6), ‎ב-worktree ‎`testing-coverage` ‎יוצא ‎מ-`dev`.
+
+**Commit 0 — `tests/smoke/run-all.mjs` runner**
+- ‎מגלה ‎אוטומטית ‎כל ‎`*.mjs` ‎בתיקייה ‎(חוץ ‎מ-run-all ‎עצמו) ‎ומריץ ‎sequentially.
+- ‎sequential ‎בכוונה: ‎ה-BE ‎צובר ‎sessions, ‎parallel ‎היה ‎מסתיר ‎race ‎bugs ‎(לפי ‎brief ‎Q4).
+- ‎כל ‎child ‎יורש ‎את ‎ה-env ‎(FE_URL, ‎CWD ‎וכו'), ‎אז ‎override ‎ב-runner ‎מתפשט.
+- ‎מאסף ‎את ‎ה-`RESULT: {…}` ‎של ‎כל ‎test ‎ומחזיר ‎aggregate ‎`RESULT: {ok,total,passed,tests:[…]}`.
+- ‎`npm test` ‎← ‎alias ‎ל-run-all.
+
+**Commit 1 — `voice-picker.mjs` (slice 9a regression)**
+- ‎פותח ‎`/`, ‎מנקה ‎localStorage, ‎טוען ‎מחדש.
+- ‎מאתר ‎את ‎ה-`<select>` ‎השני ‎(cliKind ‎הוא ‎הראשון, ‎voice ‎השני), ‎מחכה ‎ל-`options.length > 1` ‎אחרי ‎`loadVoices`.
+- ‎Asserts: ‎default ‎= ‎Sarah ‎(`EXAVITQu4vr4xnSDxMaL`), ‎בחירת ‎voice ‎אחר ‎נשמר ‎ל-localStorage, ‎אחרי ‎reload ‎עדיין ‎נבחר, ‎GET ‎`/proxy/elevenlabs/v1/voices` ‎נצפה. ‎עבר ‎(40 ‎voices ‎בקטלוג).
+
+**Commit 2 — `cache-replay.mjs` (BE proxy cache)**
+- ‎סטיה ‎מודעת ‎מה-brief: ‎הניסיון ‎הראשון ‎(הסוכן ‎עונה ‎פעמיים ‎על ‎אותו ‎prompt) ‎החזיר ‎0 ‎hits ‎— ‎הסוכן ‎לא ‎דטרמיניסטי ‎גם ‎ב-"השב ‎במילה ‎אחת ‎בלבד". ‎ה-brief ‎§6 ‎Risk #2 ‎אישר ‎fallback ‎ל-soft ‎assert, ‎אבל ‎גישה ‎יציבה ‎יותר ‎היא ‎`fetch()` ‎ישיר ‎מהדפדפן ‎עם ‎body ‎זהה.
+- ‎שולח ‎שתי ‎בקשות ‎זהות ‎ל-`POST /v1/text-to-speech/<voice>/stream` ‎+ ‎שתיים ‎ל-`POST /v1beta/models/.../generateContent`. ‎asserts: ‎pass1 ‎`miss`, ‎pass2 ‎`hit` ‎לשניהם.
+- ‎nonce ‎ייחודי ‎פר ‎ריצה ‎כדי ‎לא ‎לסמוך ‎על ‎cache ‎קודם.
+- ‎הסטיה ‎עדיין ‎מקיפה ‎את ‎ה-pipeline ‎שאנחנו ‎רוצים ‎לרגרס ‎נגדו: ‎Vite ‎proxy ‎→ ‎BE ‎→ ‎OneCLI ‎→ ‎cache ‎writeback. ‎עבר.
+
+**Commit 3 — `disconnect.mjs` (Bug D1 regression)**
+- ‎Connect ‎→ ‎click ‎`button.disconnect` ‎→ ‎waitForURL ‎`/` ‎→ ‎2s ‎settle ‎ל-WS ‎close ‎async.
+- ‎Asserts: ‎אין ‎`.error` ‎על ‎עמוד ‎ה-connect, ‎אין ‎console.error/pageerror ‎חדשים ‎מאז ‎הלחיצה. ‎עבר.
+- ‎אם ‎ה-`#detached` flag ‎ב-`agent-session.svelte.ts` ‎ייעלם ‎בעתיד, ‎הtest ‎ייפול.
+
+**Commit 4 — `bubble.exhaustive.ts` (compile-time guard)**
+- ‎קובץ ‎type-only ‎ב-`packages/frontend/src/lib/types/`. ‎שתי ‎שכבות ‎הגנה:
+  1. ‎switch ‎על ‎`b.kind` ‎עם ‎default ‎שמשתמש ‎ב-`const _exhaustive: never = b`.
+  2. ‎`Equals<Bubble["kind"], KnownKind>` ‎מבוסס ‎על ‎conditional ‎types ‎— ‎אם ‎ה-union ‎גדל ‎ו-`KnownKind` ‎לא, ‎ה-`= true` ‎נופל.
+- ‎`svelte-check` ‎ממילא ‎מאמת ‎את ‎`{:else if bubble.kind === "X"}` ‎ב-renderer ‎עצמו ‎— ‎שני ‎המקומות ‎יחד ‎מבטיחים ‎שvariant ‎חדש ‎יזעק.
+- ‎אומת ‎ב-mutation: ‎הסרת ‎`"tool"` ‎מ-KnownKind ‎→ ‎typecheck ‎נפל ‎כצפוי.
+
+**Commit 5 — Settings unit tests + ‎vitest ‎setup ‎ל-FE**
+- ‎`packages/frontend/vitest.config.ts` ‎חדש: ‎`svelte({hot:false})` ‎plugin ‎(לא ‎sveltekit ‎— ‎פוצץ ‎SSR/boot), ‎`environment: 'node'`, ‎alias ‎ל-`$lib`.
+- ‎`src/lib/view-models/settings.test.svelte.ts` ‎— ‎7 ‎בדיקות ‎(default voice, ‎persist, ‎reload, ‎loadVoices ‎happy ‎path, ‎idempotency, ‎retry-on-error, ‎concurrency-guard).
+- ‎Mock pattern: ‎`vi.mock("../adapters/voice/voices")` ‎(hoisted) ‎+ ‎localStorage ‎stubbed ‎ב-Map ‎פנימי ‎ב-beforeEach.
+- ‎ה-root ‎`vitest.config.ts` ‎עודכן ‎ל-`projects: [core, backend, frontend]`.
+- ‎`pnpm test` ‎עכשיו: ‎356/367 ‎עוברים ‎(לפני: ‎349; ‎11 ‎skipped ‎עוד ‎מ-core/backend ‎שאינם ‎חלק ‎מהסבב).
+
+**Commit 6 — walkthrough + plan status**
+
+### ‎סטטוס ‎DoD ‎(testing-coverage §5)
+| # | ‎בדיקה | ‎סטטוס |
+|---|---|---|
+| 1 | ‎`voice-picker.mjs` עובר | ✓ |
+| 2 | ‎`cache-replay.mjs` עובר | ✓ |
+| 3 | ‎`disconnect.mjs` עובר | ✓ |
+| 4 | ‎`run-all.mjs` רץ 4/4 | ✓ |
+| 5 | ‎Bubble exhaustive typecheck | ✓ (mutation-tested) |
+| 6 | ‎Settings unit tests | ✓ (7/7) |
+| 7 | ‎root vitest ‎כולל FE | ✓ |
+| 8 | ‎RESULT JSON בכל smoke | ✓ |
+| 9 | ‎lint:i18n + typecheck + build ירוקים | ✓ |
+| 10 | ‎chat-roundtrip לא נשבר | ✓ |
+
+### ‎פתוח לעתיד
+- ‎`voice-roundtrip.mjs` ‎(אחרי ‎slice ‎3 ‎— ‎Mic ‎+ ‎STT).
+- ‎CI ‎שמריץ ‎`run-all.mjs` ‎+ ‎`pnpm test` ‎על ‎PR.
+- ‎Cleanup ‎של ‎BE ‎sessions ‎בין ‎smoke ‎tests ‎(אם ‎יצטבר ‎debt).
+- ‎Component tests ‎עם ‎testing-library/svelte ‎(לא ‎ב-scope ‎כרגע ‎— ‎ROI ‎נמוך).
+
+---
+
 ## 2026-05-28 18:50 — slice 2 הושלם: Speaker + TTS streaming + Bubble model מורחב
 
 ### ‎מה בוצע?
