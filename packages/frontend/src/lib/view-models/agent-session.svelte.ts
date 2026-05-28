@@ -39,6 +39,12 @@ export class AgentSession {
 
   #client: AcpClient | null = null
   #sessionId: string | null = null
+  /**
+   * True between detach() and the next attach(). Suppresses spurious
+   * `WS closed (1005)` errors from onClose firing after the user
+   * explicitly disconnected.
+   */
+  #detached = false
 
   /**
    * Create a new agent for (cwd, cliKind), open WS, handshake ACP, register
@@ -51,6 +57,7 @@ export class AgentSession {
     this.status = "connecting"
     this.error = null
     this.bubbles = []
+    this.#detached = false
 
     try {
       // 1. Create agent on the BE
@@ -62,6 +69,10 @@ export class AgentSession {
       const proto = location.protocol === "https:" ? "wss:" : "ws:"
       const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
       transport.onClose((code, reason) => {
+        // Suppress errors when the close was caused by an explicit detach().
+        // The browser closes the WS asynchronously, so onClose fires after detach
+        // has already cleared state.
+        if (this.#detached) return
         if (code !== 1000 && code !== 1001) {
           this.error = `WS closed (${code}): ${reason || "no reason"}`
           this.status = "error"
@@ -90,6 +101,7 @@ export class AgentSession {
   }
 
   detach = (): void => {
+    this.#detached = true  // ‏לפני ה-cleanup — ‏ה-WS close fires async
     this.#cleanup()
     this.status = "idle"
     this.error = null
