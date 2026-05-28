@@ -4,6 +4,45 @@
 
 ---
 
+## 2026-05-28 13:30 — ניקוי docs/: ארכיון של מסמכי v1 + איפוס behaviors-coverage ל-v2
+
+### מה בוצע?
+
+ביקורת על כל המסמכים ב-`docs/` של ה-worktree `v2` (ענף `experiment/frontend-v2`) — אילו עוד רלוונטיים ל-v2 ואילו תיעוד היסטורי של v1. ‏v2 התחיל מאפס ב-slice 0, כך שרוב מסמכי slice 10 (שמתייחסים ל-`packages/frontend/` הישן) כבר לא רלוונטיים כקריאה פעילה.
+
+**1. העברה לארכיון** (בלי שינוי תוכן):
+- `archive/briefs/slice-10-f1-fix-brief.md`
+- `archive/reviews/slice-10-f1-verification-report.md`
+- `archive/reviews/slice-10-exploratory-test-report.md`
+- `archive/v1/i18n-gap-report.md` — הלקח כבר ב-`vnext-architecture.md` §2.7 + D10
+- `archive/investigations/` (שתי חקירות F-1 + F-5 — שניהם merged)
+- `archive/prompts/` (תבנית חקירת slice 10)
+
+**2. behaviors-coverage.md — איפוס + עותק לארכיון**
+- העתקה מדויקת ל-`archive/v1/behaviors-coverage.md` (קפוא, תיעוד היסטורי).
+- כתיבה מחדש של `docs/behaviors-coverage.md` כגרסה נקייה ל-v2:
+  - כל ה-✅/⚠️ של `packages/frontend/` → ❌ עם הערה `v1-covered, v2-pending`.
+  - core + backend ✅ נשמרו (חבילות משותפות, עדיין רלוונטיות).
+  - כל ה-🚫 נשמרו (החלטות ארכיטקטורה).
+  - הוסר: סעיפי Slice 9/10 specific.
+  - נוסף: סעיף **DoD per slice** + **טבלת לוג עדכונים** עם רשומה ראשונה (slice 0).
+
+**3. מסמכים שנשארו פעילים ב-`docs/`** (10):
+‏`vnext-architecture.md`, `vnext-spec.md`, `vnext-research.md`, `frontend-spec.md`, `audio-friendly-prompt-plan.md`, `behaviors-coverage.md`, `future-features.md`, `reference.md`, `walkthrough.md`.
+
+### החלטות
+
+- **עותק נקי במקום מחיקה**: ‏המקור של `behaviors-coverage.md` נשמר ב-`archive/v1/` כדי שיהיה אפשר להשוות מה כיסה v1 לעומת מה ש-v2 בנה. הקובץ הפעיל הוא checklist נקי, לא קובץ מבולבל.
+- **core/backend ✅ נשמרו ב-v2**: ‏אלו חבילות שמשותפות בין v1 ל-v2 — אין סיבה לאפס behaviors שכבר נבדקות במקרה הזה.
+- **i18n-gap-report ללא העברה של "לקח"**: ‏בדיקה אישרה שהלקח כבר מתועד ב-`vnext-architecture.md` D10 ו-§2.7 (אין hardcoded strings, i18n layer מהיום הראשון, Slice 9 ייעודי). אין כפילות נדרשת.
+- **`frontend-reorganization-plan.md` כבר היה ב-`archive/v2-planning/`**: ‏הועבר בסשן קודם לפני הסבב הזה — לא נדרש פעולה.
+
+### מעקפים ופתרונות
+
+- **DoD חדש לכל slice**: ‏הוספתי ל-`behaviors-coverage.md` הוראה ש-DoD של כל slice חייב לכלול עדכון של הקובץ הזה. בלי זה, הקובץ ישוב להתישן (זה בדיוק מה שקרה ב-v1 — ראה את ה-update logs של Slice 9/10 שהפכו את הקובץ ל-mix של מצב נכון + סטטוסים מיושנים).
+
+---
+
 ## 2026-05-27 22:35 — frontend-v2: בנייה מאפס במבנה החדש (slice 0)
 
 ### מה בוצע?

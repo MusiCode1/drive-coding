@@ -1,12 +1,22 @@
 # vNext Technical Spec — drive-coding
 
-> **סטטוס:** שכבה 2 (אחרי lint סבב 8, 2026-05-16) — מפרט טכני להתחלת implementation.
+> **‏‎סטטוס:** שכבה 2 (אחרי lint סבב 8, 2026-05-16) — מפרט טכני להתחלת implementation.
 > **כותב:** Tama (planner agent).
 > **תאריך:** 2026-05-15 (עודכן 2026-05-16).
 > **תלות:** `vnext-architecture.md` (החלטות D1-D50), `vnext-research.md` (ממצאים).
 > **מטרה:** לתת ל-executor מספיק פרטים כדי להתחיל לכתוב קוד.
 >
 > **הערה חשובה ל-MVP:** אין identity, אין auth, אין tokens. רץ אצל אבי בלבד. `Authorization` headers ו-`ownerToken` שמופיעים בדוגמאות הם **לא ב-MVP** (D11 [future]).
+
+---
+
+> **⚠️ ‏‎עדכון 2026-05-27 ‎— ‎חלקים obsolete:**
+>
+> ‎ה-roadmap ‎ב-§8.5 (Slices ‎הבאים) ‎**הוחלף** ‎ע"י ‎`packages/frontend-v2/docs/slices.md`. ‎ה-slices 2-10 ‎הקיימים מומשו ב-`packages/frontend/` ‎אבל ‎הצטברו ‎לכאוס; ‎ההמשך נעשה ‎ב-`packages/frontend-v2/` ‎(rebuild-from-scratch).
+>
+> ‎ה-protocol ‎(§3 FE↔BE WS Messages, §4 BE↔Bridge, §5 HTTP API) ‎חלקית obsolete גם כן: ‎ה-FE ‎עבר ל-client-side voice orchestration ‎(החלטה ‎ש-`docs/future-features.md` ‎תיעדה כ-"rejected", ‎אבל ‎נעשתה בפועל). ‎ה-FE ‎שולח טקסט ‎ולא ‎audio_chunk ל-BE, ‎והTTS/translate ‎מתבצעים ‎דרך adapter calls ב-FE.
+>
+> ‎חלקים ‎שעדיין רלוונטיים: ‎ה-schemas (`Agent`, `VoiceSettings`, `Bubble`), ‎ה-REST endpoints ל-`/api/agents`, ‎והHTTP API לoptions ‎ול-providers. ‎ראה ‎גם ‎`packages/frontend-v2/docs/slices.md` ‎ל-source-of-truth ‎חדש ‎על ‎ה-FE.
 
 ---
 
