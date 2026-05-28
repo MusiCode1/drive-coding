@@ -95,6 +95,10 @@ After `cd .worktrees/<name>`, run `pnpm install && pnpm hooks:install`.
 - `docs/frontend-spec.md` — drive-first UX spec (still authoritative)
 - `packages/frontend/docs/slices.md` — **current slice roadmap** (source of truth)
 - `packages/frontend/AGENTS.md` — five golden rules for FE code
+- `docs/conventions/parallel-safe-code.md` — **additive design** for shared files.
+  Read BEFORE touching `context.ts`, `+layout.svelte`, `i18n/keys.ts`, `chat/+page.svelte`,
+  or any other file that 2+ future slices will modify. Required for parallel agent work.
+- `docs/plans/README.md` — how to write a slice plan (for handoff to executor agents).
 
 ## Working with Tama (planner)
 

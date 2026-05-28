@@ -83,6 +83,21 @@ adapters/       — I/O. פונקציות שמחזירות Promises.
 
 ---
 
+## Parallel-safe additive design
+
+ל-`docs/conventions/parallel-safe-code.md` יש קונבנציה מחייבת לשינויים
+בקבצים משותפים (`context.ts`, `+layout.svelte`, `chat/+page.svelte`,
+`i18n/keys.ts`, וכל קובץ שצפוי להיגעת ב-2+ slices עתידיים).
+
+**TL;DR**:
+- Additive only: הוסף, אל תשנה.
+- Section headers (`// ─── domain ───`) → עבוד רק בsection שלך.
+- שינוי invasive → עצור ושאל את Tama.
+
+חובה לקרוא לפני נגיעה בקובץ משותף.
+
+---
+
 ## מבנה התיקיות
 
 ```
