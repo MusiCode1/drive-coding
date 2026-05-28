@@ -16,12 +16,21 @@ if (session.status === "idle") {
 let promptText = $state("")
 let chatEl = $state<HTMLElement | null>(null)
 
-// Auto-scroll on new content
+// Auto-scroll on new content. We read the bubble count AND the last bubble's
+// segment count + last segment text length — those three together cover all
+// the cases that should retrigger the effect (new bubble, new segment, append).
 $effect(() => {
-  const _len = session.bubbles.length
-  const _lastText = session.bubbles[session.bubbles.length - 1]?.text.length ?? 0
-  void _len
-  void _lastText
+  const _bubbleCount = session.bubbles.length
+  const last = session.bubbles[session.bubbles.length - 1]
+  const _segCount =
+    last !== undefined && last.kind !== "tool" ? last.segments.length : 0
+  const _lastSegLen =
+    last !== undefined && last.kind !== "tool"
+      ? (last.segments[last.segments.length - 1]?.text.length ?? 0)
+      : 0
+  void _bubbleCount
+  void _segCount
+  void _lastSegLen
   tick().then(() => {
     if (chatEl) chatEl.scrollTop = chatEl.scrollHeight
   })
@@ -59,9 +68,17 @@ function disconnect() {
             ? t("chat.bubble.user")
             : bubble.kind === "thought"
               ? t("chat.bubble.thought")
-              : t("chat.bubble.agent")}
+              : bubble.kind === "tool"
+                ? t("chat.bubble.agent")
+                : t("chat.bubble.agent")}
         </div>
-        <div class="text">{bubble.text}</div>
+        {#if bubble.kind !== "tool"}
+          <div class="text">
+            {#each bubble.segments as seg (seg.id)}<span>{seg.text}</span>{/each}
+            <!-- forces Svelte reactivity on .segments.push() — gotcha §6 #2 -->
+            <span class="hidden">{bubble.segments.length}</span>
+          </div>
+        {/if}
       </div>
     {/each}
     {#if session.bubbles.length === 0}
@@ -214,6 +231,11 @@ function disconnect() {
   .text {
     white-space: pre-wrap;
     word-wrap: break-word;
+  }
+
+  .text > .hidden {
+    /* used only to pin a reactive read on segments.length — never displayed */
+    display: none;
   }
 
   .empty {
