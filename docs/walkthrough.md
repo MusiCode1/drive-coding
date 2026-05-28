@@ -4,6 +4,46 @@
 
 ---
 
+## 2026-05-28 14:45 — rename ‎`frontend-v2/` → `frontend/` (cutover early)
+
+### מה בוצע?
+
+‎בעקבות ‎מחיקת ‎ה-FE ‎הישן ‎(15 ‎דקות ‎קודם), ‎אין ‎סיבה ‎להמשיך ‎לקרוא ‎ל-package "‎v2". ‎בוצע ‎חלק ‎מ-slice 13 ‎(cutover) ‎מוקדם: ‎שם ‎ה-package, ‎ספרייה, ‎ו-references ‎פעילים ‎שונו ‎ל-`frontend`. ‎לא ‎בוצע ‎merge ל-`main` ‎(זה ‎יקרה ‎אחרי ‎שאר ‎ה-slices).
+
+**1. שינוי שם ספרייה + package**
+- ‎`git mv packages/frontend-v2 packages/frontend` — Git ‎מזהה ‎אוטומטית ‎כ-rename ‎(99 ‎קבצים).
+- ‎`packages/frontend/package.json`: ‎`@drive-coding/frontend-v2` ‎→ ‎`@drive-coding/frontend`, ‎port ‎`5175` ‎→ ‎`5174` ‎(ה-port ‎הקלאסי ‎של ‎ה-FE ‎הישן, ‎שעכשיו ‎פנוי).
+
+**2. references פעילים שעודכנו**
+- ‎`packages/frontend/AGENTS.md` — ‎עדכון ‎כותרת + ‎פסקת ‎"מה ‎זה" + ‎פקודות ‎pnpm.
+- ‎`packages/frontend/docs/slices.md` — ‎עדכון ‎כל ‎ה-references ‎ל-`packages/frontend-v2/`, ‎sliced 13 ‎סומן ‎🔄 ‎(in-progress).
+- ‎`AGENTS.md` (root) — ‎`packages/frontend-v2/` ‎→ ‎`packages/frontend/`, ‎עם ‎הערה ‎שהוא ‎"נבנה ‎כ-`frontend-v2/`".
+- ‎`vitest.config.ts` ‎+ ‎`scripts/lint-no-hebrew-in-code.{py,sh}` ‎— ‎עדכון ‎נתיב.
+- ‎`docs/vnext-spec.md` ‎ו-`docs/behaviors-coverage.md` ‎— ‎references ‎ל-`frontend-v2` ‎הוסבו ‎(עם ‎הזכרת ‎ההיסטוריה).
+- ‎`pnpm-lock.yaml` ‎— ‎התעדכן ‎אוטומטית ‎ב-`pnpm install`.
+
+**3. references שנשארו ב-`frontend-v2`**
+- ‎`docs/walkthrough.md`: ‎כל ‎הרשומות ‎הקודמות ‎נשארו ‎כתיעוד ‎היסטורי ‎(הן ‎נכונות ‎לזמן ‎שלהן).
+- ‎`docs/archive/`: ‎נשאר ‎ארכיב, ‎לא ‎ערוך.
+- ‎בקבצים ‎אקטיביים: ‎פסקאות ‎שמסבירות ‎את ‎ההיסטוריה ‎("נוצר ‎כ-`frontend-v2/` ‎ב-2026-05-27") ‎נשארו ‎בכוונה.
+
+### החלטות ארכיטקטורה
+
+- ‎**Early cutover, ‎לא ‎slice 13 ‎מלא**: ‎ה-cutover ‎לפי ‎`slices.md` ‎היה ‎אמור ‎לקרות ‎אחרי ‎שכל ‎ה-slices ‎הקודמים ‎הסתיימו. ‎אבל ‎ברגע ‎שהישן ‎נמחק ‎אין ‎סיבה ‎לדחות ‎את ‎השם. ‎חצי ‎מ-13 ‎בוצע ‎עכשיו ‎(rename ‎בענף ‎`dev`). ‎חצי ‎השני ‎(merge ‎ל-main) ‎יקרה ‎עם ‎סיום ‎שאר ‎ה-slices.
+- ‎**port 5174**: ‎ה-FE ‎הישן ‎השתמש ‎ב-5174, ‎`frontend-v2` ‎השתמש ‎ב-5175 ‎כדי ‎לא ‎להתנגש. ‎עכשיו ‎הישן ‎נעלם, ‎חוזרים ‎ל-5174 ‎הסטנדרטי.
+- ‎**`@drive-coding/frontend` name**: ‎עקבי ‎עם ‎שאר ‎ה-packages ‎(`@drive-coding/core`, ‎`@drive-coding/backend`). ‎אין ‎יותר ‎"-v2" ‎ב-namespace.
+
+### Tests + smoke
+
+- ‎`pnpm install`: ✅ (36 packages added בגלל ‎שינוי ‎שם ‎— ‎אותם ‎packages, ‎ב-store ‎חדש)
+- ‎`pnpm typecheck`: ✅
+- ‎`pnpm test`: ✅ (354 ‎טסטים ‎ירוקים)
+- ‎`pnpm --filter @drive-coding/frontend build`: ✅
+- ‎`./scripts/lint-no-hebrew-in-code.sh`: ✅
+- ‎ה-pre-commit hook ‎ירוץ ‎אוטומטית ‎ב-commit הבא.
+
+---
+
 ## 2026-05-28 14:30 — שינוי שם branch ‎ל-`dev` + מחיקת ה-FE הישן
 
 ### מה בוצע?

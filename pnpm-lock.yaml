@@ -91,7 +91,7 @@ importers:
         specifier: ^13.1.3
         version: 13.1.3
 
-  packages/frontend-v2:
+  packages/frontend:
     dependencies:
       '@agentclientprotocol/sdk':
         specifier: ^0.21.1

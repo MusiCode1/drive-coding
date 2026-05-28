@@ -1,6 +1,6 @@
 # Behaviors Coverage Map — v2
 
-> מיפוי behaviors מ-v1 (`docs/archive/v1/behaviors.md`) לכיסוי ב-`packages/frontend-v2/`.
+> מיפוי behaviors מ-v1 (`docs/archive/v1/behaviors.md`) לכיסוי ב-`packages/frontend/` (החדש).
 > תאריך איפוס: 2026-05-27 (slice 0 — בנייה מאפס במבנה החדש).
 > איפוס בוצע על בסיס `docs/archive/v1/behaviors-coverage.md` (סטטוס v1, קפוא).
 
@@ -8,7 +8,7 @@
 
 ## מה השתנה באיפוס
 
-`packages/frontend-v2/` נבנה מאפס. הקובץ המקורי (כעת בארכיון) סימן ✅ כל behavior שנכוסה ב-`packages/frontend/` הישן — קוד ש-v2 לא משתמש בו.
+ה-FE החדש נבנה מאפס (התחיל כ-`frontend-v2/`, שונה השם ל-`frontend/`). הקובץ המקורי (כעת בארכיון) סימן ✅ כל behavior שנכוסה ב-FE הישן — קוד שהחדש לא משתמש בו.
 
 לכן באיפוס הזה:
 
@@ -44,7 +44,7 @@
 
 | תאריך | Slice | שינוי |
 |-------|-------|-------|
-| 2026-05-27 | slice 0 | התחלת `packages/frontend-v2/` — text-only chat. עדיין לא נספרו behaviors. |
+| 2026-05-27 | slice 0 | התחלת ה-FE החדש (אז `packages/frontend-v2/`) — text-only chat. עדיין לא נספרו behaviors. |
 
 ---
 

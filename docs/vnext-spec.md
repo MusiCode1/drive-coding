@@ -12,11 +12,11 @@
 
 > **⚠️ ‎עדכון 2026-05-27 ‎— ‎חלקים obsolete:**
 >
-> ‎ה-roadmap ‎ב-§8.5 (Slices ‎הבאים) ‎**הוחלף** ‎ע"י ‎`packages/frontend-v2/docs/slices.md`. ‎ה-slices 2-10 ‎הקיימים מומשו ב-`packages/frontend/` ‎אבל ‎הצטברו ‎לכאוס; ‎ההמשך נעשה ‎ב-`packages/frontend-v2/` ‎(rebuild-from-scratch).
+> ‎ה-roadmap ‎ב-§8.5 (Slices ‎הבאים) ‎**הוחלף** ‎ע"י ‎`packages/frontend/docs/slices.md`. ‎ה-slices 2-10 ‎הקיימים מומשו ב-`packages/frontend/` (‎הישן, ‎נמחק ‎מ-`dev` ‎ב-2026-05-28) ‎אבל ‎הצטברו ‎לכאוס; ‎ההמשך נעשה ‎ב-`packages/frontend/` ‎החדש ‎(rebuild-from-scratch ‎שהתחיל ‎כ-`frontend-v2/`).
 >
 > ‎ה-protocol ‎(§3 FE↔BE WS Messages, §4 BE↔Bridge, §5 HTTP API) ‎חלקית obsolete גם כן: ‎ה-FE ‎עבר ל-client-side voice orchestration ‎(החלטה ‎ש-`docs/future-features.md` ‎תיעדה כ-"rejected", ‎אבל ‎נעשתה בפועל). ‎ה-FE ‎שולח טקסט ‎ולא ‎audio_chunk ל-BE, ‎והTTS/translate ‎מתבצעים ‎דרך adapter calls ב-FE.
 >
-> ‎חלקים ‎שעדיין רלוונטיים: ‎ה-schemas (`Agent`, `VoiceSettings`, `Bubble`), ‎ה-REST endpoints ל-`/api/agents`, ‎והHTTP API לoptions ‎ול-providers. ‎ראה ‎גם ‎`packages/frontend-v2/docs/slices.md` ‎ל-source-of-truth ‎חדש ‎על ‎ה-FE.
+> ‎חלקים ‎שעדיין רלוונטיים: ‎ה-schemas (`Agent`, `VoiceSettings`, `Bubble`), ‎ה-REST endpoints ל-`/api/agents`, ‎והHTTP API לoptions ‎ול-providers. ‎ראה ‎גם ‎`packages/frontend/docs/slices.md` ‎ל-source-of-truth ‎חדש ‎על ‎ה-FE.
 
 ---
 

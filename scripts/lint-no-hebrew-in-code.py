@@ -8,7 +8,7 @@ text. Hebrew inside line comments (`//`) and block comments (`/* */`) is
 allowed — those are developer notes.
 
 Scope:
-  - packages/frontend-v2/
+  - packages/frontend/
   - packages/core/
   - packages/backend/
 
@@ -29,7 +29,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 SCAN_DIRS = [
-    "packages/frontend-v2",
+    "packages/frontend",
     "packages/core",
     "packages/backend",
 ]

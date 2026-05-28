@@ -19,15 +19,16 @@ See `docs/vnext-architecture.md` for full spec.
 
 - `packages/core/` — pure logic, no IO. Tests TDD.
 - `packages/backend/` — Hono + adapters. Integration tests.
-- `packages/frontend-v2/` — the active FE: SvelteKit drive-first PWA, clean 5-layer
-  architecture (view-models / actions / engines / adapters / routes). Has its own
-  `AGENTS.md` with five golden rules. Will be renamed to `frontend/` at slice 13 (cutover).
+- `packages/frontend/` — SvelteKit drive-first PWA, clean 5-layer architecture
+  (view-models / actions / engines / adapters / routes). Has its own `AGENTS.md`
+  with five golden rules. Built fresh in 2026-05 as `frontend-v2/`, renamed to
+  `frontend/` after the legacy code was deleted.
 
 The legacy `packages/frontend/` (accumulated chaos, 989-line route) was deleted from
 this `dev` branch on 2026-05-28. It still exists on the `main` branch for reference
 and can be checked out there if needed.
 
-The current slice roadmap is `packages/frontend-v2/docs/slices.md`.
+The current slice roadmap is `packages/frontend/docs/slices.md`.
 
 ## Conventions
 
@@ -70,8 +71,8 @@ specific commit (rare): `git commit --no-verify`.
 - `docs/vnext-spec.md` — protocol, schemas, ports. §8.5 (slices) is OBSOLETE — see below.
 - `docs/vnext-research.md` — competitor analysis, library research
 - `docs/frontend-spec.md` — drive-first UX spec (still authoritative)
-- `packages/frontend-v2/docs/slices.md` — **current slice roadmap** (source of truth)
-- `packages/frontend-v2/AGENTS.md` — five golden rules for FE-v2 code
+- `packages/frontend/docs/slices.md` — **current slice roadmap** (source of truth)
+- `packages/frontend/AGENTS.md` — five golden rules for FE code
 
 ## Working with Tama (planner)
 
