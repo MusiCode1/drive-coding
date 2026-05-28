@@ -31,10 +31,17 @@ pnpm --filter @drive-coding/frontend-v2 dev
 
 # Terminal 3 — smoke
 cd tests/smoke
-node chat-roundtrip.mjs
+node run-all.mjs           # every smoke test (the recommended entry point)
+node chat-roundtrip.mjs    # one specific test
+npm test                   # alias for run-all.mjs
 ```
 
 Exit 0 = pass, exit 1 = fail (with reason).
+
+The `run-all.mjs` runner spawns each `*.mjs` in this folder sequentially
+(BE has shared state across runs — sessions accumulate; parallelism would
+mask race bugs). It captures each test's `RESULT: {...}` line and emits a
+final aggregate `RESULT: {ok, total, passed, tests:[...]}`.
 
 ## Output formats
 
@@ -92,6 +99,11 @@ The `result` shape:
 | `HEADED` | unset | Set to `1` to show the browser window |
 
 ## Tests
+
+### `run-all.mjs`
+
+Runner. Discovers `*.mjs` (except itself), runs them sequentially, aggregates
+results. Emits `RESULT: {ok, total, passed, tests:[...]}`. Exit 0 = all passed.
 
 ### `chat-roundtrip.mjs`
 

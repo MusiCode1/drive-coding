@@ -5,7 +5,8 @@
   "type": "module",
   "description": "End-to-end smoke tests for voice-acp. Not part of the workspace — install separately with `npm install` to avoid polluting workspace lockfile with Playwright binaries.",
   "scripts": {
-    "test": "node chat-roundtrip.mjs"
+    "test": "node run-all.mjs",
+    "test:one": "node chat-roundtrip.mjs"
   },
   "dependencies": {
     "playwright": "^1.60.0"
