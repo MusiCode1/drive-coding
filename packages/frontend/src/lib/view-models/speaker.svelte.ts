@@ -27,7 +27,7 @@ import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
 import { untrack } from "svelte"
 import type { AgentSession, AgentSessionStatus } from "./agent-session.svelte"
 import { AudioStream } from "../engines/audio-stream"
-import { Player } from "../engines/player"
+import { Player } from "../engines/player.svelte"
 import { synthesizeStreaming } from "../adapters/voice/tts"
 import { translate } from "../adapters/voice/translate"
 
