@@ -11,7 +11,10 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.21.1",
-    "@drive-coding/core": "workspace:*"
+    "@ai-sdk/google": "^3.0.75",
+    "@drive-coding/core": "workspace:*",
+    "@google/genai": "^2.3.0",
+    "ai": "^6.0.184"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.0",
