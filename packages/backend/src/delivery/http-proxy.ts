@@ -80,7 +80,7 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
       cacheKey = await computeCacheKey(c.req.method, pathSuffix, body)
       const cached = await proxyCache.get(cacheKey)
       if (cached) {
-        log.debug({ provider, path: pathSuffix }, "proxy cache hit")
+        log.info({ provider, path: pathSuffix }, "proxy cache hit")
         return new Response(cached.body, {
           status: 200,
           headers: {
@@ -92,7 +92,10 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
     }
 
     // ── Forward to upstream ──────────────────────────────────────────────────
-    log.debug({ provider, path: pathSuffix, cacheKey }, "proxy cache miss — forwarding")
+    log.info(
+      { provider, path: pathSuffix, cacheable: cacheKey !== null },
+      "proxy → upstream",
+    )
 
     let res: Response
     try {
@@ -105,6 +108,17 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
     } catch (e) {
       log.error({ err: e, provider, path: pathSuffix }, "upstream fetch failed")
       return c.json({ error: "upstream fetch failed" }, 502)
+    }
+
+    // ── Observability for upstream errors ────────────────────────────────────
+    // Upstream non-2xx is NOT a network failure — fetch resolved successfully.
+    // But the FE sees a 401/400/500 from elevenlabs/google and the BE was
+    // silent until now. Log so credential / quota issues are visible.
+    if (!res.ok) {
+      log.warn(
+        { provider, path: pathSuffix, status: res.status },
+        "proxy upstream non-2xx",
+      )
     }
 
     // ── Build response headers ────────────────────────────────────────────────
