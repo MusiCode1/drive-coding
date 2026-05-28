@@ -1,7 +1,11 @@
 import type { Catalog } from "../keys.js"
 
+/**
+ * Hebrew catalog. Append new keys in domain blocks below — see
+ * docs/conventions/parallel-safe-code.md (technique #4: append-only catalogs).
+ */
 export const he: Catalog = {
-  // Connect page
+  // ─── connect ─── (slice 0)
   "connect.title": "drive-coding v2",
   "connect.subtitle": "חבר ל-CLI agent",
   "connect.cli.label": "CLI",
@@ -11,7 +15,7 @@ export const he: Catalog = {
   "connect.submitting": "מתחבר…",
   "connect.error.prefix": "שגיאה:",
 
-  // Chat page
+  // ─── chat ─── (slice 0.5 + slice 2)
   "chat.bubble.user": "אני",
   "chat.bubble.thought": "מחשבה",
   "chat.bubble.agent": "סוכן",
@@ -20,4 +24,13 @@ export const he: Catalog = {
   "chat.send": "שלח",
   "chat.disconnect": "נתק",
   "chat.audioToggle": "אודיו",
+
+  // ─── mic ─── (slice 3 will add here)
+  // ─── voice-mode ─── (slice 3)
+  // ─── tool-bubble ─── (slice 4)
+  // ─── audio-cues ─── (slice 6)
+  // ─── car-mode ─── (slice 7)
+  // ─── sessions ─── (slice 8)
+  // ─── settings ─── (slice 9)
+  // ─── recordings ─── (slice 10)
 }

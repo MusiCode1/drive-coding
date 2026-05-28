@@ -2,12 +2,17 @@
  * MessageKey — single source of truth for all UI strings.
  *
  * Adding a new string:
- *   1. Add the key here.
- *   2. Add the translation in catalogs/he.ts (required) and catalogs/en.ts (placeholder ok).
+ *   1. Add the key to the appropriate `// ─── <domain> ───` block below.
+ *      If no block matches, append a new block AT THE END of the union.
+ *   2. Add the translation in catalogs/he.ts (required) and catalogs/en.ts
+ *      (placeholder ok) — in the same domain block.
  *   3. Use via `t("your.key")`.
  *
  * NEVER inline Hebrew (or any UI text) in code. The lint script
  * `scripts/lint-no-hebrew-in-code.sh` enforces this.
+ *
+ * ─── Parallel-safe additive design (docs/conventions/parallel-safe-code.md) ───
+ * Two slices that add keys land in different blocks → git auto-merge.
  */
 
 export type Locale = "he" | "en"
@@ -15,7 +20,7 @@ export type Locale = "he" | "en"
 export const LOCALES: readonly Locale[] = ["he", "en"]
 
 export type MessageKey =
-  // Connect page (/)
+  // ─── connect ─── (slice 0)
   | "connect.title"
   | "connect.subtitle"
   | "connect.cli.label"
@@ -24,7 +29,7 @@ export type MessageKey =
   | "connect.submit"
   | "connect.submitting"
   | "connect.error.prefix"
-  // Chat page (/chat)
+  // ─── chat ─── (slice 0.5 + slice 2)
   | "chat.bubble.user"
   | "chat.bubble.thought"
   | "chat.bubble.agent"
@@ -33,6 +38,14 @@ export type MessageKey =
   | "chat.send"
   | "chat.disconnect"
   | "chat.audioToggle"
+  // ─── mic ─── (slice 3 will add here)
+  // ─── voice-mode ─── (slice 3)
+  // ─── tool-bubble ─── (slice 4)
+  // ─── audio-cues ─── (slice 6)
+  // ─── car-mode ─── (slice 7)
+  // ─── sessions ─── (slice 8)
+  // ─── settings ─── (slice 9)
+  // ─── recordings ─── (slice 10)
 
 /**
  * MessageValue — string or function for parameterized messages.

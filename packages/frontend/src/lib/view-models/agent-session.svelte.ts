@@ -30,7 +30,18 @@ export type AgentSessionStatus =
   | "thinking"    // prompt sent, awaiting agent response
   | "error"
 
+/**
+ * ─── Parallel-safe additive design (docs/conventions/parallel-safe-code.md) ───
+ *
+ * Adding a new method to AgentSession:
+ *   - State changes (`$state` fields) → INVASIVE. Stop and ask Tama.
+ *   - New public method (`loadSession`, etc.) → ADDITIVE. Place it in the
+ *     appropriate `// ─── domain ───` block, or append a new block before
+ *     `// ─── private ───`.
+ *   - New private helper → ADDITIVE. Place in `// ─── private ───`.
+ */
 export class AgentSession {
+  // ─── state ─── (INVASIVE to modify — coordinate via Tama)
   status = $state<AgentSessionStatus>("idle")
   error = $state<string | null>(null)
   bubbles = $state<Bubble[]>([])
@@ -45,6 +56,8 @@ export class AgentSession {
    * explicitly disconnected.
    */
   #detached = false
+
+  // ─── connection lifecycle ─────────────────────────
 
   /**
    * Create a new agent for (cwd, cliKind), open WS, handshake ACP, register
@@ -108,6 +121,8 @@ export class AgentSession {
     this.bubbles = []
   }
 
+  // ─── prompting ────────────────────────────────────
+
   /**
    * Send a text prompt. `opts.recordingId` is reserved for slice 10 (replay).
    * Returns a Promise that resolves when the turn completes (or rejects on error).
@@ -137,6 +152,12 @@ export class AgentSession {
       this.status = "error"
     }
   }
+
+  // ─── session persistence ─── (slice 8 will add loadSession, listSessions)
+
+  // ─── recordings ─── (slice 10 will add)
+
+  // ─── private ─────────────────────────────────────
 
   #cleanup(): void {
     try {
