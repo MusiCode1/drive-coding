@@ -43,6 +43,50 @@
 
 ---
 
+## 2026-05-28 13:27 — Roadmap ל-frontend-v2 (slices.md) + סימון obsolete
+
+### מה בוצע?
+
+קריאה שיטתית של כל מסמכי התכנון (3 דורות: v1 archive, vnext, post-pivot) וכתיבת roadmap ממוקד ל-frontend-v2.
+
+**1. סקירה — 6101 שורות תיעוד**
+
+עברתי על: `vnext-architecture.md` (1082, D1-D50), `vnext-spec.md` (922), `frontend-spec.md` (695), `behaviors-coverage.md` (469), `audio-friendly-prompt-plan.md` (396), `i18n-gap-report.md` (276), `future-features.md` (93), `archive/v1/*` (~2160).
+
+תובנות:
+- ה-vision של drive-first מתועד בפירוט ב-`frontend-spec.md` (car mode, 5-state mic, audio cues, MediaSession, wake lock, replay nav).
+- vnext-spec הניח BE-orchestrated voice — בפועל הקוד עבר ל-client-side ב-`packages/frontend/src/lib/voice/orchestrator.ts`. ב-`future-features.md` תועד כ-"rejected", אבל בוצע.
+- חוב i18n: D10 הצהיר "אין hardcoded Hebrew" — בפועל היו 150 hardcoded ב-FE (תועד ב-`i18n-gap-report.md`, הועבר לארכיון בסבב הזה).
+- פיצ'רים מתועדים-לא-מומשו: recordings backup, audio-friendly prompt injection, replay nav (⏮/⏭), permission UI, thought voice.
+
+**2. `packages/frontend-v2/docs/slices.md`** (213 שורות, חדש)
+
+Roadmap מובנה:
+- 14 slices (0-13): מ-text foundation עד cutover.
+- 5 ימים ל-MVP (slices 1-3 + 4-5), ~15 ימים ל-cutover מלא.
+- cross-references למקורות אמת (איזה מסמך לפנות לאיזו שאלה).
+- פירוט סקירה (לא brief מלא) לכל slice — 2-5 שורות.
+- טבלת פיצ'רים שנדחים עם סיבות.
+- הוראות איך מתחילים slice חדש.
+
+**3. סימון obsolete במסמכים קיימים**
+
+- `docs/frontend-reorganization-plan.md` (1002 שורות) → `docs/archive/v2-planning/`. תוכן in-place refactor הוחלף ב-build-from-scratch approach.
+- `docs/vnext-spec.md` — banner ⚠️ בראש שמסמן §8.5 (slices roadmap) כ-obsolete, ומציין ש-§3-5 (protocol) חלקית obsolete (FE עבר ל-client-side voice). schemas + REST endpoints עדיין source-of-truth.
+
+### החלטות
+
+- **Roadmap נפרד לתת-package**: `packages/frontend-v2/docs/slices.md` ולא `docs/slices.md`. הסיבה — ה-roadmap הוא ל-FE-v2 בלבד, וכש-cutover (slice 13) יקרה, הוא יזוז עם frontend-v2.
+- **לא ארכיב את vnext-architecture/spec בכללותם**: ה-D-table של architecture עדיין שולט; ה-protocol של spec עדיין בשימוש (BE לא השתנה). רק ה-roadmap section ב-spec מסומן obsolete.
+- **"פירוט סקירה" ולא brief מלא**: לקח מ-`frontend-reorganization-plan.md` (1002 שורות שגרמו לשיתוק) — brief נכתב רק כשמתחילים את ה-slice הספציפי, לא מראש לכל ה-13.
+
+### מעקפים ופתרונות
+
+- **Banner ב-vnext-spec במקום חיתוך**: בחרתי banner ולא לחתוך את §8.5 לארכיון נפרד — המסמך עוד נקרא כתכנון-היסטורי, וחיתוך באמצע ישבור את הקריאה. ה-banner ⚠️ ברור.
+- **התנגשות עם סוכן מקביל**: בזמן העריכה הזו רצה מקבילית עוד עבודה (commit `2ad89a5` — ניקוי docs/). הרשומה הזו לwalkthrough נדרסה ע"י העריכה המקבילה ונוספה שוב בסבב נפרד.
+
+---
+
 ## 2026-05-27 22:35 — frontend-v2: בנייה מאפס במבנה החדש (slice 0)
 
 ### מה בוצע?
