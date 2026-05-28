@@ -43,9 +43,10 @@
 
 ```
 Slice 0    ✅ הושלם   text-only chat (connect + send prompt + bubbles)
-Slice 0.5  📋 הבא     i18n infra + lint rule + מיגרציה ‎של ~20 מחרוזות
-Slice 1    💭 מתוכנן  Mic + STT (אישה ‎מדברת)
-Slice 2+   💭 מתוכנן  ראה ‎טבלה ‎למטה
+Slice 0.5  ✅ הושלם   i18n infra + lint rule + מיגרציה ‎של ~20 מחרוזות
+Slice 1    ⏭️ מדולג   Mic + STT — נחזור אליו ב-slice 3 (משולב עם VoiceMode)
+Slice 2    ✅ הושלם   Speaker + TTS streaming + Bubble model מורחב (2026-05-28)
+Slice 3+   💭 מתוכנן  ראה ‎טבלה ‎למטה
 ```
 
 ---
@@ -55,9 +56,9 @@ Slice 2+   💭 מתוכנן  ראה ‎טבלה ‎למטה
 | # | ‎שם | ‎תוצר | ‎תלות | ‎גודל | Status |
 |---|------|--------|--------|--------|--------|
 | 0 | Text foundation | ‎connect + chat טקסטואלי + bubbles streaming | — | — | ✅ |
-| 0.5 | **i18n infra** | ‎`core/i18n/` + ‎`t(key)` + ‎lint rule ‎+ ‎מיגרציה ‎של ~20 ‎מחרוזות ‎קיימות | 0 | ~‎חצי יום | 📋 הבא |
-| 1 | Mic + STT | ‎אישה ‎מדברת ‎→ STT ‎→ ‎sendPrompt | 0.5 | ~1 ‎יום | 💭 |
-| 2 | Speaker + TTS | ‎chunks ‎מסוכן ‎→ ‎TTS ‎→ ‎אודיו ‎(sentence-by-sentence) | 1 + Bubble model מורחב | ~‎2 ‎ימים | 💭 |
+| 0.5 | **i18n infra** | ‎`core/i18n/` + ‎`t(key)` + ‎lint rule ‎+ ‎מיגרציה ‎של ~20 ‎מחרוזות ‎קיימות | 0 | ~‎חצי יום | ✅ |
+| 1 | Mic + STT | ‎אישה ‎מדברת ‎→ STT ‎→ ‎sendPrompt | 0.5 | ~1 ‎יום | ⏭️ מדולג, נחזור ב-slice 3 |
+| 2 | Speaker + TTS | ‎chunks ‎מסוכן ‎→ ‎TTS ‎→ ‎אודיו ‎(sentence-by-sentence) | 0.5 + Bubble model מורחב | ~‎2 ‎ימים | ✅ |
 | 3 | VoiceMode FSM | ‎composite 5-state (idle/recording/transcribing/thinking/speaking) | 1, 2 | ~‎חצי יום | 💭 |
 | 8 | Session picker | `/sessions` ‎— ‎רשימת sessions ישנים, ‎resume | 0.5 | ~1 ‎יום | 💭 |
 | 9 | Settings page | `/settings` ‎— ‎voice picker ‎(ElevenLabs voices), ‎audio cues toggles | 0.5, 6 | ~1 ‎יום | 💭 |

@@ -19,4 +19,5 @@ export const he: Catalog = {
   "chat.prompt.placeholder": "כתוב prompt…",
   "chat.send": "שלח",
   "chat.disconnect": "נתק",
+  "chat.audioToggle": "אודיו",
 }

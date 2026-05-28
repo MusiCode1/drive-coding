@@ -32,6 +32,7 @@ export type MessageKey =
   | "chat.prompt.placeholder"
   | "chat.send"
   | "chat.disconnect"
+  | "chat.audioToggle"
 
 /**
  * MessageValue — string or function for parameterized messages.

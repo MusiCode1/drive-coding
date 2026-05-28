@@ -1,10 +1,20 @@
 # Slice 2 — Speaker + TTS — תוכנית
 
 > **תאריך**: 2026-05-28
-> **סטטוס**: ‏טיוטה — ‏מחכה לאישור לפני יצירת worktree
+> **סטטוס**: ✅ הושלם 2026-05-28 (commits befa707..9cbc373 + fixup 988814a)
 > **Complexity**: 9/10 (verifier: heavy)
 > **תלות**: ‏slice 0.5 (i18n) ✅ הושלם. ‏slice 1 (Mic+STT) — **מדולג**, ‏נחזור אליו ב-slice 3
 > **מתבסס על**: ‏`docs/plans/README.md` — ‏מבנה תוכניות
+
+## סטיות מהתכנון
+
+‏סטיות שתועדו תוך כדי ביצוע:
+
+1. **commit 0 — sentence-boundary test**: ה-brief אמר "‎יצירה ‎חדשה ‎— ‎אין test קיים ב-dev". ‏בפועל יש test קיים ב-`packages/core/tests/voice/sentence-boundary.test.ts` ‏שנשכתב מאפס לפי ה-spec החדש.
+2. **commit 0 — test 7 input**: ה-brief השתמש ב-`"hello world. bye"` (lowercase). ‏ICU לא חותכת על `. lowercase` ‏(מתייחס לקיצור) — שונה ל-`Bye` ‏לבדיקה משמעותית.
+3. **commit 3 — Speaker.state**: ה-brief הציע `$derived` field initializer. ‏TS לא מאפשר forward-reference ל-private field — הומרה ל-getter, ‏שעדיין tracked.
+4. **commit 3.1 (fixup)**: `engines/player.ts` שונה ל-`player.svelte.ts` (verifier-phase תפס runtime crash `rune_outside_svelte`).
+5. **package name**: ה-brief מתייחס ל-`@drive-coding/frontend`. ‏בפועל ה-package נשאר `@drive-coding/frontend-v2` (cutover לא הושלם — שייך ל-slice 13). ‏פקודות `pnpm --filter` ‏השתמשו בשם הישן.
 
 ---
 

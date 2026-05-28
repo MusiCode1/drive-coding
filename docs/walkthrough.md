@@ -4,6 +4,76 @@
 
 ---
 
+## 2026-05-28 18:50 — slice 2 הושלם: Speaker + TTS streaming + Bubble model מורחב
+
+### ‎מה בוצע?
+
+‎סבב ‎הפיתוח השני ‎ב-FE החדש. ‎אחרי slice 0.5 (i18n) — ‎דילגנו על slice 1 (Mic) ‎ועברנו ‎ישר ל-slice 2 (Speaker), ‎ראה ‎`docs/plans/slice-2-speaker-tts.md`.
+
+‎חמישה ‎commits ‎+ ‎fixup ‎אחד ‎שתפס verifier-phase:
+
+**Commit 0 — sentence-boundary refactor (TDD, ‎ב-core)**
+- ‎`Intl.Segmenter` ‎עם granularity:'sentence' ‎ו-'word' ‎להחלפת ‎ה-regex ‎הישן ‎שחתך ‎על ‎comma/colon ‎ועל ‎`Dr.`.
+- ‎options ‎חדשות: ‎`minChars` (‎ברירת ‎מחדל ‎20 ‎— ‎ממזג ‎segments ‎קצרים ‎לתוך ‎הבא ‎בתוך ‎אותו ‎paragraph), ‎`maxChars` (200 ‎— ‎חותך ‎ארוכים ‎על ‎word boundary), ‎`locale` ('he' ‎ברירת ‎מחדל).
+- 16 ‎בדיקות ‎עברו ‎(8 ‎מה-brief ‎+ ‎8 ‎עזר).
+- ‎סטיה ‎מה-brief: ‎ה-test ‎השביעי ‎השתמש ‎ב-"hello world. bye" (lowercase) ‎— ‎אבל ‎ICU ‎לא ‎חותכת ‎על `. lowercase` (‎מתייחס ‎לקיצור). ‎שונה ‎ל-`Bye` ‎להפעיל ‎את ‎הסיפא ‎של ‎split-then-remaining.
+
+**Commit 1 — Bubble model refactor (manual, atomic)**
+- ‎`types/bubble.ts` ‎חדש: ‎discriminated union ‎עם ‎4 ‎variants ‎(`UserBubble`, ‎`MessageBubble`, ‎`ThoughtBubble`, ‎`ToolBubble`). ‎לכל ‎אחד ‎`segments: Segment[]` ‎+ ‎`messageId: string | null` ‎+ ‎`createdAt`.
+- ‎`AgentSession`: ‎`#appendChunk` ‎מקבץ ‎chunks ‎לפי ‎(kind, ‎messageId). ‎`null` ‎messageId ‎תמיד ‎מתחיל ‎bubble ‎חדש ‎(לפי ‎ACP spec).
+- ‎`sendPrompt` ‎עבר ל-async ‎+ ‎קיבל ‎`opts?: { recordingId?: string }` ‎(הכנה ‎לslice 10).
+- ‎`chat/+page.svelte`: ‎לולאה ‎פנימית ‎על ‎`bubble.segments` ‎עם ‎`.length` reactivity guard.
+- `verifier-phase` ‎אחרי commit 1 ‎אישר ‎שה-UI מתנהג ‎זהה ל-slice 0.5.
+
+**Commit 2 — adapters + engines (manual, ‎copy מ-main)**
+- ‎`adapters/voice/sdks.ts` ‎— ‎copy ‎as-is ‎מ-main. ‎שתי ‎SDKs ‎עם ‎convention ‎שונה: ‎`@ai-sdk/google` ‎עם ‎`baseURL` ‎ו-`@google/genai` ‎עם ‎`httpOptions.baseUrl`. ‎`apiKey: "browser-placeholder"` ‎— ‎OneCLI ‎מחליף ‎ב-proxy.
+- ‎`adapters/voice/tts.ts` ‎— ‎`fetch` ‎ישיר ‎ל-`/proxy/elevenlabs/v1/text-to-speech/.../stream`. ‎`xi-api-key` placeholder. ‎`model_id: 'eleven_v3'` ‎(היחיד ‎שתומך ‎עברית).
+- ‎`adapters/voice/translate.ts` ‎— ‎copy מ-main, ‎ללא ‎`translate-cache` (BE proxy-cache מספיק ל-slice 2) ‎וללא ‎`$lib/log` (‎לא ‎קיים ‎ב-dev) ‎— ‎`console.warn` ‎ישיר. ‎`generateObject` ‎עם ‎`anyOf` schema ‎חוסך ‎tokens ‎כשטקסט ‎כבר ‎בעברית.
+- ‎`engines/audio-stream.ts` ‎— ‎copy ‎as-is. ‎כל ‎segment ‎מקבל ‎`<audio>` + MediaSource ‎פנימיים ‎(לא ‎ב-DOM). ‎5s timeout ‎על ‎sourceopen.
+- ‎`engines/player.svelte.ts` ‎— ‎חדש ‎(לא ‎ב-main). ‎FIFO queue ‎+ ‎`#playLoop`. ‎`MIN-5`: ‎ב-error/cancelled ‎skip ‎ולהמשיך.
+- ‎FE deps ‎נוספו: ‎`@ai-sdk/google`, ‎`@google/genai`, ‎`ai`.
+
+**Commit 3 — Speaker view-model + fixup**
+- ‎`speaker.svelte.ts`: ‎class ‎עם ‎`enabled` ‎`$state(true)` ‎ו-`state` ‎getter (`'idle' | 'speaking'`) ‎שנגזר ‎מ-`#player.state`.
+- ‎`$effect` ‎ב-`$effect.root` ‎שמאזין ‎ל-bubbles + status + enabled. ‎קורא ‎`bubble.segments.length` ‎לכל ‎bubble ‎ל-pin reactivity. ‎כל ‎הwrites ‎עטופים ‎ב-`untrack()`.
+- ‎Pipeline: ‎chunks ‎→ ‎per-bubble buffer ‎→ ‎splitIntoSentences ‎→ ‎TtsJob ‎→ ‎`#pumpFetchLoop` (LOOKAHEAD=2) ‎→ ‎translate (thoughts) ‎+ ‎synthesizeStreaming ‎→ ‎`audioStream.prepareSegment` ‎→ ‎`player.addSegment`.
+- ‎Constants ‎slice 2: ‎`VOICE_ID='EXAVITQu4vr4xnSDxMaL'` (Sarah), ‎`TARGET_LANG='he'`, ‎`MIN_CHARS=20`, ‎`MAX_CHARS=200`.
+- ‎`#stopAndClear` ‎(נקרא ‎על-ידי ‎`toggle()`): ‎abort fetches ‎+ ‎player.stop ‎+ ‎audioStream.clear ‎+ ‎fast-forward processedSegments ‎כדי ‎שre-enable ‎לא ‎ינגן ‎היסטוריה.
+
+**Fixup commit 3.1 — verifier-phase תפס באג**
+- ‎ה-verifier ‎גילה ‎ש-`engines/player.ts` ‎השתמש ‎ב-`$state` ‎אבל ‎הוא ‎`.ts` ‎רגיל, ‎לא ‎`.svelte.ts`. ‎ה-vite-plugin-svelte ‎לא ‎מבצע transform ‎על ‎`.ts` ‎ישיר ‎— ‎ה-runes ‎זלגו ‎ל-runtime ‎ו-`root.svelte` ‎קרס ‎ב-mount ‎עם ‎`rune_outside_svelte`.
+- ‎svelte-check ‎לא ‎תפס ‎(הוא ‎בודק ‎רק ‎דרך ‎ה-`.svelte`). ‎נחשף ‎רק ‎ב-runtime.
+- ‎תיקון: ‎`git mv player.ts player.svelte.ts` ‎+ ‎עדכון ‎import ‎ב-speaker.
+- ‎`verifier-phase` ‎שני ‎אישר: ‎TTS ‎10/10 ‎בקשות ‎עם ‎200, ‎5 ‎translate ‎עם ‎200, ‎cache hits ‎על ‎sentences ‎חוזרות. ‎pipeline ‎עובד ‎end-to-end.
+
+**Commit 4 — UI toggle**
+- ‎i18n key ‎חדש: ‎`chat.audioToggle` (`אודיו` / `Audio`).
+- ‎checkbox ‎בheader: ‎`checked={speaker.enabled}` ‎+ ‎`onchange={() => speaker.toggle()}`. ‎בחירת ‎`onchange` ‎ולא ‎`bind:checked` ‎— ‎כדי ‎ש-`Speaker.toggle()` ‎יבצע ‎את ‎ה-side-effect ‎של ‎stop ‎בעת ‎disable.
+
+### ‎החלטות ‎ארכיטקטורה
+
+- ‎**Speaker ‎ללא ‎`Settings` dependency**: ‎ה-brief ‎המקורי ‎הציע ‎`Speaker(opts: { session, settings })`. ‎הסרנו ‎כי ‎ב-slice 2 ‎אין ‎שדה ‎`voiceId` ‎ב-Settings, ‎והקול ‎hardcoded. ‎slice 9 ‎(voice picker) ‎יוסיף ‎את ‎ה-dep ‎עם ‎שדה ‎`voiceId` ‎ל-Settings ‎ויסיר ‎את ‎ה-`VOICE_ID` const.
+- ‎**`state` ‎כ-getter ‎ולא ‎`$derived` field**: ‎TS ‎לא ‎מאפשר ‎forward-reference ‎ל-private fields ‎ב-field initializer. ‎getter ‎עם ‎`return this.#player.state === ...` ‎עדיין ‎tracked ‎— ‎הקריאה ‎ל-`$state` ‎בפנים ‎נתפסת ‎ע"י ‎Svelte.
+- ‎**Buffer per bubble, ‎לא per kind**: ‎ה-brief ‎הציע ‎buffer ‎אחד ‎ל-message ‎ואחד ‎ל-thought ‎עם ‎flush בעת ‎החלפת ‎kind. ‎ה-state ‎החדש ‎עם ‎`messageId` ‎ובובלים ‎נפרדים ‎הופך ‎את ‎זה ‎לטבעי ‎יותר: ‎`bubbleStates: Map<string, { processedSegments, buffer }>` ‎— ‎אין ‎צורך ‎בflush ‎בין ‎bubbles ‎שונים, ‎רק ‎בסוף ‎turn.
+- ‎**`onchange` ‎ולא ‎`bind:checked`**: ‎שני ‎הפתרונות ‎בbrief, ‎בחירתי. ‎`onchange` ‎מבטיח ‎ש-`#stopAndClear` ‎ירוץ ‎בעת ‎disable. ‎ב-bind ‎ישיר ‎הייתי ‎צריך ‎$effect ‎נוסף ‎לשמירת ‎ההתנהגות.
+
+### ‎Tests ‎+ ‎verification
+
+- ‎`pnpm test` (core, ‎16 ‎בדיקות ‎sentence-boundary ‎חדשות) ✅
+- ‎`pnpm typecheck` ✅
+- ‎`pnpm build` (core + FE) ✅
+- ‎`pnpm lint:i18n` ✅
+- ‎`verifier-phase` ‎אחרי ‎commit 1 ✅
+- ‎`verifier-phase` ‎אחרי ‎commit 3 ‎— ‎ראשון ❌ (תפס באג runtime), ‎שני ✅ ‎אחרי fixup
+- ‎`verifier-slice-heavy` ‎בסוף ‎— ‎ראה ‎הרשומה ‎הבאה
+
+### ‎פתוחות
+
+- ‎שם ‎ה-package ‎עדיין ‎`@drive-coding/frontend-v2` ‎(לא ‎עודכן ‎ב-`cutover` commit). ‎שייך ‎ל-slice 13. ‎עד ‎אז ‎חייבים ‎`pnpm --filter @drive-coding/frontend-v2 ...`.
+- ‎`docs/plans/` ‎נוצר ‎כדי ‎לאכלס ‎את ‎ה-brief ‎של ‎slice 2 ‎— ‎`README.md` ‎ו-`slice-2-speaker-tts.md` ‎הועתקו ‎מ-dev (‎היו ‎untracked ‎שם ‎— ‎יוכנסו ‎ל-git ‎ב-`dev` ‎בעצמאות).
+
+---
+
 ## 2026-05-28 14:45 — rename ‎`frontend-v2/` → `frontend/` (cutover early)
 
 ### מה בוצע?

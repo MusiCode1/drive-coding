@@ -1,0 +1,67 @@
+/**
+ * Bubble model — shared between view-models, components and Speaker.
+ *
+ * Discriminated union by `kind`. Each variant carries exactly the fields it
+ * needs; consumers that don't need a field simply don't access it. See
+ * `packages/frontend/docs/bubble-model.md` for the rationale.
+ *
+ * In slice 2 we use `user`, `message`, `thought`. `tool` is declared now so
+ * later slices can light it up without another atomic refactor (golden rule
+ * #5: no "backward compat in place").
+ */
+
+export type Segment = {
+  id: string
+  text: string
+}
+
+export type ThoughtSegment = Segment & {
+  /** Original (untranslated) text — populated by Speaker after Hebrew translation. */
+  originalText?: string
+}
+
+export type BubbleBase = {
+  id: string
+  /** ACP message id — null for synthetic bubbles (user prompts, tool calls). */
+  messageId: string | null
+  createdAt: number
+}
+
+export type UserBubble = BubbleBase & {
+  kind: "user"
+  messageId: null
+  segments: Segment[]
+  /** Slice 10 — id in the BE RecordingsStore for replay. */
+  recordingId?: string
+}
+
+export type MessageBubble = BubbleBase & {
+  kind: "message"
+  segments: Segment[]
+}
+
+export type ThoughtBubble = BubbleBase & {
+  kind: "thought"
+  segments: ThoughtSegment[]
+}
+
+export type ToolCall = {
+  toolCallId: string
+  name: string
+  args: unknown
+  status: "pending" | "in_progress" | "completed" | "failed"
+  /** ACP raw title (technical). */
+  title?: string
+  /** Gemini-generated prose (Hebrew). */
+  narration?: string
+}
+
+export type ToolBubble = BubbleBase & {
+  kind: "tool"
+  messageId: null
+  toolCall: ToolCall
+  /** Always empty — keeps the shape uniform with content bubbles for the union. */
+  segments: never[]
+}
+
+export type Bubble = UserBubble | MessageBubble | ThoughtBubble | ToolBubble
