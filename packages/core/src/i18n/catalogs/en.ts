@@ -24,4 +24,5 @@ export const en: Catalog = {
   "chat.prompt.placeholder": "Type a prompt…",
   "chat.send": "Send",
   "chat.disconnect": "Disconnect",
+  "chat.audioToggle": "Audio",
 }

@@ -1,9 +1,10 @@
 <script lang="ts">
 import { tick } from "svelte"
 import { goto } from "$app/navigation"
-import { getI18n, getSession } from "$lib/context"
+import { getI18n, getSession, getSpeaker } from "$lib/context"
 
 const session = getSession()
+const speaker = getSpeaker()
 const t = getI18n().t
 
 // Synchronous guard: refresh / direct nav with no active connection → home.
@@ -57,6 +58,14 @@ function disconnect() {
       <span class="status status-{session.status}">{session.status}</span>
       <span class="cwd" dir="ltr">{session.cwd ?? ""}</span>
     </div>
+    <label class="audio-toggle" title={t("chat.audioToggle")}>
+      <input
+        type="checkbox"
+        checked={speaker.enabled}
+        onchange={() => speaker.toggle()}
+      />
+      <span>{t("chat.audioToggle")}</span>
+    </label>
     <button class="disconnect" onclick={disconnect}>{t("chat.disconnect")}</button>
   </header>
 
@@ -168,6 +177,24 @@ function disconnect() {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .audio-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-inline-start: auto;
+    margin-inline-end: 0.75rem;
+    color: var(--fg-dim);
+    font-size: 0.8rem;
+    user-select: none;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .audio-toggle input {
+    accent-color: var(--accent);
+    cursor: pointer;
   }
 
   .disconnect {
