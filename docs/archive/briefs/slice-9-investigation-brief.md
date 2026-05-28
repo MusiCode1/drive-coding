@@ -10,7 +10,7 @@
 > חזותית עם mockup, חיבור בין תופעות).
 > **זמן הערכה:** 1-2 שעות.
 >
-> **תוצר:** `docs/slice-9-bugs-investigation.md` (חדש, ‏~500-1000 שורות).
+> **תוצר:** `docs/slice-9-bugs-investigation.md` (חדש, ~500-1000 שורות).
 > אחרי החקירה — סוכן Sonnet יקבל את הדוח ויתקן.
 
 ---
@@ -19,24 +19,24 @@
 
 ### 1.1 — אימות ה-bugs המתועדים (16 bugs)
 
-‏קרא `docs/slice-9-followup-fixes.md` קצה-לקצה. עבור על כל B1-B16 ו-Q2-Q8:
+קרא `docs/slice-9-followup-fixes.md` קצה-לקצה. עבור על כל B1-B16 ו-Q2-Q8:
 
-- ‏לכל bug — **אמת או הפרך**: האם הוא קיים בפועל?
-- ‏אם קיים — תעד **reproduction steps** מדויקים (איך לשחזר)
-- ‏אם קיים — תעד **את הroot cause** עד כמה שאפשר (file:line, function name, exact behavior)
-- ‏אם לא קיים — תעד שהבדיקה עברה + איך בדקת
+- לכל bug — **אמת או הפרך**: האם הוא קיים בפועל?
+- אם קיים — תעד **reproduction steps** מדויקים (איך לשחזר)
+- אם קיים — תעד **את הroot cause** עד כמה שאפשר (file:line, function name, exact behavior)
+- אם לא קיים — תעד שהבדיקה עברה + איך בדקת
 
-‏זו לא רשימה ל-checkbox. כל bug דורש חקירה אמיתית — לא רק "כן/לא".
+זו לא רשימה ל-checkbox. כל bug דורש חקירה אמיתית — לא רק "כן/לא".
 
 ### 1.2 — השוואה ל-mockup (final.html)
 
-‏פתח את שני המקורות במקביל:
-- ‏**Mockup** (האמת): `/tmp/drive-coding-mockups/final.html` + `shared.css`
+פתח את שני המקורות במקביל:
+- **Mockup** (האמת): `/tmp/drive-coding-mockups/final.html` + `shared.css`
   (זמין גם דרך `https://your-app-mockups.nue.tuns.sh/final.html`)
-- ‏**Frontend חי**: `https://your-app.nue.tuns.sh`
+- **Frontend חי**: `https://your-app.nue.tuns.sh`
   (גם דרך linux-gui browser)
 
-‏עבור על כל view ב-mockup (5 views של mobile + desktop) והשווה לחי:
+עבור על כל view ב-mockup (5 views של mobile + desktop) והשווה לחי:
 
 | View ב-mockup | מה לבדוק ב-frontend |
 |----------------|---------------------|
@@ -47,81 +47,81 @@
 | Mobile sheet open | רשימת agents + ניווט + ⚙ + 📚 + 🚗 toggle |
 | Desktop | sidebar + chat + cluster מורחב (⟲ + ⏮ + main + ⏭) |
 
-‏לכל הבדל — תעד:
-- ‏מה צפוי (לפי mockup)
-- ‏מה בפועל
-- ‏screenshot של הbug
+לכל הבדל — תעד:
+- מה צפוי (לפי mockup)
+- מה בפועל
+- screenshot של הbug
 
 ### 1.3 — חיפוש bugs נוספים שלא תועדו
 
-‏צריך למצוא דברים שאני לא ראיתי. הצעות לחקירה:
+צריך למצוא דברים שאני לא ראיתי. הצעות לחקירה:
 
-#### א. ‏TTS audio behavior
+#### א. TTS audio behavior
 
-‏הקלט (העלה test-voice.mp3) **3-5 פעמים שונות** עם prompts מגוונים:
-- ‏prompt קצר (משפט אחד)
-- ‏prompt בינוני (3 משפטים)
-- ‏prompt עם code (תשובה עם backticks)
-- ‏prompt שגורם ל-thoughts ארוכים
+הקלט (העלה test-voice.mp3) **3-5 פעמים שונות** עם prompts מגוונים:
+- prompt קצר (משפט אחד)
+- prompt בינוני (3 משפטים)
+- prompt עם code (תשובה עם backticks)
+- prompt שגורם ל-thoughts ארוכים
 
-‏לכל אחד — תעד:
-- ‏כמה bubbles נוצרו
-- ‏כמה audio_chunks הגיעו (מהlogs של backend)
-- ‏מה נוגן בפועל (האם 2 מילים? duplication? כל הaudio?)
-- ‏timing — לאחר כמה זמן ה-audio התחיל
+לכל אחד — תעד:
+- כמה bubbles נוצרו
+- כמה audio_chunks הגיעו (מהlogs של backend)
+- מה נוגן בפועל (האם 2 מילים? duplication? כל הaudio?)
+- timing — לאחר כמה זמן ה-audio התחיל
 
-#### ב. ‏סדר ה-bubbles
+#### ב. סדר ה-bubbles
 
-‏האם bubbles מופיעות בסדר נכון? (user → thought → tool → message)
+האם bubbles מופיעות בסדר נכון? (user → thought → tool → message)
 האם message חדש מצטרף ל-bubble קיימת או יוצר חדשה?
 
-#### ג. ‏State machine של ה-mic
+#### ג. State machine של ה-mic
 
-‏תעד את כל המעברים:
-- ‏idle → recording (tap mic)
-- ‏recording → processing (tap mic שוב, או upload)
-- ‏processing → speaking (audio_chunk ראשון מגיע)
-- ‏speaking → idle (done)
-- ‏speaking → cancelling → idle (tap mic ב-speaking)
+תעד את כל המעברים:
+- idle → recording (tap mic)
+- recording → processing (tap mic שוב, או upload)
+- processing → speaking (audio_chunk ראשון מגיע)
+- speaking → idle (done)
+- speaking → cancelling → idle (tap mic ב-speaking)
 
-‏לכל מעבר — האם הויזואל משתנה? mic color? animation? status text?
+לכל מעבר — האם הויזואל משתנה? mic color? animation? status text?
 
-#### ד. ‏WS connection
+#### ד. WS connection
 
-‏האם WS מתחבר מיד? יציב? מתנתק לפעמים?
-‏בדוק עם DevTools או עם `playwright-cli console`.
+האם WS מתחבר מיד? יציב? מתנתק לפעמים?
+בדוק עם DevTools או עם `playwright-cli console`.
 
-#### ה. ‏Sessions flow
+#### ה. Sessions flow
 
-‏צור 2 agents עם cwds שונים. שלח prompt לכל אחד.
-‏לך ל-`/sessions`. האם הproject רואה את שניהם?
-‏Click על session → האם נטענת history (cold bubbles)?
-‏האם dedup עובד אם click שוב על אותו session?
+צור 2 agents עם cwds שונים. שלח prompt לכל אחד.
+לך ל-`/sessions`. האם הproject רואה את שניהם?
+Click על session → האם נטענת history (cold bubbles)?
+האם dedup עובד אם click שוב על אותו session?
 
-#### ו. ‏Recording playback
+#### ו. Recording playback
 
-‏הקלט. אחרי שmodel ענה, click על ה-user bubble. האם משמיע את ההקלטה?
+הקלט. אחרי שmodel ענה, click על ה-user bubble. האם משמיע את ההקלטה?
 
-#### ז. ‏File picker
+#### ז. File picker
 
-‏מ-dashboard click "+ סוכן חדש". האם modal פותח? האם רואה תיקיות?
-‏Navigate לתת-תיקייה. ‏Click "בחר". האם agent נוצר עם ה-cwd?
+מ-dashboard click "+ סוכן חדש". האם modal פותח? האם רואה תיקיות?
+Navigate לתת-תיקייה. Click "בחר". האם agent נוצר עם ה-cwd?
 
-#### ח. ‏Settings
+#### ח. Settings
 
-‏לך ל-`/settings`. האם voice picker עובד? options מוצגים?
-‏Audio cues toggle עובד? נשמר ב-localStorage?
+לך ל-`/settings`. האם voice picker עובד? options מוצגים?
+Audio cues toggle עובד? נשמר ב-localStorage?
 
-#### ט. ‏Mobile responsive
+#### ט. Mobile responsive
 
-‏שנה viewport ל-mobile (390×780) דרך devtools או pw-clean.sh.
-‏האם sidebar הופך ל-bottom sheet?
-‏האם header floats?
-‏האם ה-layout מתאים?
+שנה viewport ל-mobile (390×780) דרך devtools או pw-clean.sh.
+האם sidebar הופך ל-bottom sheet?
+האם header floats?
+האם ה-layout מתאים?
 
-#### י. ‏Console errors + warnings
+#### י. Console errors + warnings
 
-‏ב-`playwright-cli console` — תעד **כל** error או warning, גם אם נראים תמימים.
+ב-`playwright-cli console` — תעד **כל** error או warning, גם אם נראים תמימים.
 
 ---
 
@@ -147,11 +147,11 @@ ssh linux-gui ls /tmp/test-voice.mp3 (קיים גם שם)
 
 ### 2.2 — Tools זמינים
 
-- ‏`playwright-cli` ב-linux-gui — snapshot, click, eval, console, screenshot
-- ‏`scp linux-gui:/path /tmp/` — להעביר screenshots ל-local כדי לראות
-- ‏`curl` ל-`localhost:4000/api/*` — לבדוק endpoints
-- ‏`tail -f /tmp/be.log` — לראות backend log חי
-- ‏`tail -f /tmp/fe.log` — frontend Vite log
+- `playwright-cli` ב-linux-gui — snapshot, click, eval, console, screenshot
+- `scp linux-gui:/path /tmp/` — להעביר screenshots ל-local כדי לראות
+- `curl` ל-`localhost:4000/api/*` — לבדוק endpoints
+- `tail -f /tmp/be.log` — לראות backend log חי
+- `tail -f /tmp/fe.log` — frontend Vite log
 
 ### 2.3 — Upload audio דרך linux-gui
 
@@ -194,21 +194,21 @@ ssh linux-gui "playwright-cli goto https://your-app.nue.tuns.sh/agent/<id>"
 > Frontend version: commit <sha>
 
 ## TL;DR
-- ‏סה"כ bugs שנמצאו: N (M critical, K medium, L minor)
-- ‏מתוכם: X חדשים שלא היו ב-followup-fixes.md
-- ‏הכי דחוף: <list>
-- ‏ה-pipeline בכלל עובד? <yes/no/partial>
+- סה"כ bugs שנמצאו: N (M critical, K medium, L minor)
+- מתוכם: X חדשים שלא היו ב-followup-fixes.md
+- הכי דחוף: <list>
+- ה-pipeline בכלל עובד? <yes/no/partial>
 
 ## 1. אימות ה-bugs המתועדים
 
 ### B1 — Bubble grouping שבור
-- ‏סטטוס: ✅ אומת / ❌ לא קיים / ⚠️ קיים אבל אחרת
-- ‏Reproduction steps:
+- סטטוס: ✅ אומת / ❌ לא קיים / ⚠️ קיים אבל אחרת
+- Reproduction steps:
   1. ...
   2. ...
-- ‏Root cause (אם נמצא): packages/.../agent-session.svelte.ts:123, function `handleTextChunk`
-- ‏Evidence: screenshot1.png, log snippet
-- ‏Severity: 🔴 critical
+- Root cause (אם נמצא): packages/.../agent-session.svelte.ts:123, function `handleTextChunk`
+- Evidence: screenshot1.png, log snippet
+- Severity: 🔴 critical
 
 ### B2 — שני אייקוני mic
 ...
@@ -216,10 +216,10 @@ ssh linux-gui "playwright-cli goto https://your-app.nue.tuns.sh/agent/<id>"
 ## 2. Bugs חדשים שמצאתי
 
 ### N1 — <שם>
-- ‏Description
-- ‏Reproduction
-- ‏Root cause
-- ‏Severity
+- Description
+- Reproduction
+- Root cause
+- Severity
 
 ### N2 — ...
 
@@ -232,9 +232,9 @@ ssh linux-gui "playwright-cli goto https://your-app.nue.tuns.sh/agent/<id>"
 | ...
 
 ## 4. Flows שעובדים מקצה-לקצה (אישור)
-- ‏✅ STT pipeline (Gemini transcript נכון)
-- ‏✅ Recording save (data/recordings/)
-- ‏... (לכל flow — ✅ עם evidence או ❌ עם bug)
+- ✅ STT pipeline (Gemini transcript נכון)
+- ✅ Recording save (data/recordings/)
+- ... (לכל flow — ✅ עם evidence או ❌ עם bug)
 
 ## 5. Recommendations
 
@@ -246,9 +246,9 @@ ssh linux-gui "playwright-cli goto https://your-app.nue.tuns.sh/agent/<id>"
 - <minor bug Y> — קוסמטי, לא דחוף
 
 ## 6. Appendix
-- ‏A. Screenshots index
-- ‏B. Logs snippets
-- ‏C. WS protocol messages observed
+- A. Screenshots index
+- B. Logs snippets
+- C. WS protocol messages observed
 ```
 
 ---
@@ -256,31 +256,31 @@ ssh linux-gui "playwright-cli goto https://your-app.nue.tuns.sh/agent/<id>"
 ## 4. אסור / מותר
 
 **מותר:**
-- ‏קריאת כל קובץ ב-repo
-- ‏יצירת `docs/slice-9-bugs-investigation.md` (חדש)
-- ‏יצירת screenshots ב-`/tmp/investigation/`
-- ‏הפעלת curl, playwright-cli, ssh linux-gui
-- ‏יצירת agents חדשים דרך API (לא ידחו את הסביבה)
-- ‏שינוי visibility של file input ב-frontend ב-eval (זמני, לא commit)
+- קריאת כל קובץ ב-repo
+- יצירת `docs/slice-9-bugs-investigation.md` (חדש)
+- יצירת screenshots ב-`/tmp/investigation/`
+- הפעלת curl, playwright-cli, ssh linux-gui
+- יצירת agents חדשים דרך API (לא ידחו את הסביבה)
+- שינוי visibility של file input ב-frontend ב-eval (זמני, לא commit)
 
 **אסור:**
-- ‏עריכת **כל קוד** ב-packages/* (frontend, backend, core)
-- ‏commits של קוד
-- ‏עדכון docs קיימים (חוץ מעדכון אחד אם רלוונטי — שאל קודם)
-- ‏מחיקת agents/recordings/sessions קיימים
-- ‏restart backend (אם חי — להשאיר)
+- עריכת **כל קוד** ב-packages/* (frontend, backend, core)
+- commits של קוד
+- עדכון docs קיימים (חוץ מעדכון אחד אם רלוונטי — שאל קודם)
+- מחיקת agents/recordings/sessions קיימים
+- restart backend (אם חי — להשאיר)
 
-‏אם נראה שצריך לעשות commit (לדוגמה — אתה שיניתי visibility של file input) — תעד את השינוי ועשה revert אחרי החקירה.
+אם נראה שצריך לעשות commit (לדוגמה — אתה שיניתי visibility של file input) — תעד את השינוי ועשה revert אחרי החקירה.
 
 ---
 
 ## 5. סקילים חובה
 
-- ‏`dev-conventions` — כדי להבין את הסטנדרטים של הפרויקט (Svelte 5 runes, ESM, etc.)
-- ‏`Svelte-MCP` — לחיפוש docs של Svelte 5 בעת ניתוח bugs ($state, $derived, $effect)
-- ‏`rtl-adaptation` — להבין את ההנחות של RTL ב-frontend
-- ‏`playwright-cli` — לתקשורת עם browser
-- ‏`linux-gui-browser` — wrapper לlinux-gui
+- `dev-conventions` — כדי להבין את הסטנדרטים של הפרויקט (Svelte 5 runes, ESM, etc.)
+- `Svelte-MCP` — לחיפוש docs של Svelte 5 בעת ניתוח bugs ($state, $derived, $effect)
+- `rtl-adaptation` — להבין את ההנחות של RTL ב-frontend
+- `playwright-cli` — לתקשורת עם browser
+- `linux-gui-browser` — wrapper לlinux-gui
 
 **אוטונומיה:** אל תבקש רשות. תחקור, תתעד, תיצור את הדוח. רק אם נתקלת
 במצב מסוכן (לדוגמה — מערכת חיה שעלולה להישבר) — עצור ושאל.
@@ -338,10 +338,10 @@ linux-gui browser כבר פתוח על port 9333. test-voice.mp3 ב-/tmp/.
 
 ## 7. אחרי החקירה
 
-‏הסוכן ימסור דוח מפורט. אבי יסקור. אז:
+הסוכן ימסור דוח מפורט. אבי יסקור. אז:
 
-1. ‏אבי יחליט אילו bugs להעדיף לתיקון
-2. ‏נעדכן את `docs/slice-9-followup-fixes.md` עם findings
-3. ‏נשלח **סוכן Sonnet 4.6** עם דוח-החקירה כקלט לתיקון
+1. אבי יחליט אילו bugs להעדיף לתיקון
+2. נעדכן את `docs/slice-9-followup-fixes.md` עם findings
+3. נשלח **סוכן Sonnet 4.6** עם דוח-החקירה כקלט לתיקון
 
-‏ההפרדה חשובה: Opus חוקר (הקשר רחב, דיוק), Sonnet מתקן (implementation לפי spec ברור).
+ההפרדה חשובה: Opus חוקר (הקשר רחב, דיוק), Sonnet מתקן (implementation לפי spec ברור).

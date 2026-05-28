@@ -28,6 +28,6 @@ export async function connectAgent(params: {
   if (params.session.status === "connected") {
     await goto("/chat")
   }
-  // ‎on error, the session VM already set status="error" + error message.
-  // ‎the connect page will render that — no navigation.
+  // on error, the session VM already set status="error" + error message.
+  // the connect page will render that — no navigation.
 }

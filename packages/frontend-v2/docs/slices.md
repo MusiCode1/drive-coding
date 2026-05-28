@@ -1,14 +1,14 @@
 # Slices Roadmap — frontend-v2
 
-> **‏‎סטטוס**: ‎חי, ‎עדכון 2026-05-27.
-> **‏‎תפקיד**: ‎מקור-אמת ‎יחיד לסדר ה-slices של ‎`packages/frontend-v2/`.
-> **‏‎מחליף**: ‎`docs/frontend-reorganization-plan.md` ‎(הועבר ל-archive) ‎+ ‎חלק §8.5 ב-`docs/vnext-spec.md` (סומן obsolete).
+> **‎סטטוס**: ‎חי, ‎עדכון 2026-05-27.
+> **‎תפקיד**: ‎מקור-אמת ‎יחיד לסדר ה-slices של ‎`packages/frontend-v2/`.
+> **‎מחליף**: ‎`docs/frontend-reorganization-plan.md` ‎(הועבר ל-archive) ‎+ ‎חלק §8.5 ב-`docs/vnext-spec.md` (סומן obsolete).
 
 ---
 
-## ‏‎רקע ‎— ‎למה ‎יש מסמך ‎חדש
+## ‎רקע ‎— ‎למה ‎יש מסמך ‎חדש
 
-‎עד 2026-05-27 ‎הפיתוח התנהל ב-`packages/frontend/` ‎לפי `docs/vnext-spec.md` ‎(10 slices). ‏‎ה-slices מומשו (1-10) ‎אבל הקוד הצטבר לכאוס:
+‎עד 2026-05-27 ‎הפיתוח התנהל ב-`packages/frontend/` ‎לפי `docs/vnext-spec.md` ‎(10 slices). ‎ה-slices מומשו (1-10) ‎אבל הקוד הצטבר לכאוס:
 ‎- ‎`agent/[id]/+page.svelte` = ‎989 ‎שורות.
 ‎- ‎`messages` ‎ו-`bubbles` ‎שתי מערכות מקבילות באותו store.
 ‎- ‎4 ‎מערכות localStorage עצמאיות.
@@ -20,7 +20,7 @@
 
 ---
 
-## ‏‎מקורות אמת ‎(מה לקרוא למה)
+## ‎מקורות אמת ‎(מה לקרוא למה)
 
 | ‎שאלה | ‎לאיזה ‎מסמך לפנות |
 |------|-------------------|
@@ -36,7 +36,7 @@
 
 ---
 
-## ‏‎סטטוס נוכחי
+## ‎סטטוס נוכחי
 
 ```
 Slice 0  ✅ הושלם   text-only chat (connect + send prompt + bubbles)
@@ -47,7 +47,7 @@ Slice 3+ 💭 מתוכנן  ראה ‎טבלה ‎למטה
 
 ---
 
-## ‏‎טבלת ‎ה-slices
+## ‎טבלת ‎ה-slices
 
 | # | ‎שם | ‎תוצר | ‎תלות | ‎גודל | Status |
 |---|------|--------|--------|--------|--------|
@@ -66,12 +66,12 @@ Slice 3+ 💭 מתוכנן  ראה ‎טבלה ‎למטה
 | 12 | i18n infrastructure | ‎message catalogs, ‎locale loading, ‎אנגלית אופציונלית | — | ~‎2 ‎ימים | 💭 |
 | 13 | Cutover | ‎מחיקת `packages/frontend/`, rename `frontend-v2/` → `frontend/` | 1-11 | ~‎חצי יום | 💭 |
 
-**‏‎סה"כ ‎לcutover מלא: ‎~‎15 ‎ימי עבודה.**
-**‏‎סה"כ ‎ל-MVP ‎(slices 1-3 + 4-5): ‎~‎5 ‎ימים.**
+**‎סה"כ ‎לcutover מלא: ‎~‎15 ‎ימי עבודה.**
+**‎סה"כ ‎ל-MVP ‎(slices 1-3 + 4-5): ‎~‎5 ‎ימים.**
 
 ---
 
-## ‏‎פירוט slices ‎— ‎סקירה ‎(לא ‎brief מלא)
+## ‎פירוט slices ‎— ‎סקירה ‎(לא ‎brief מלא)
 
 ### Slice 1 ‎— Mic + STT
 
@@ -79,7 +79,7 @@ Slice 3+ 💭 מתוכנן  ראה ‎טבלה ‎למטה
 
 ### Slice 2 ‎— Speaker + TTS
 
-‎ה-pipeline ‎ההפוך ‎של ‎Slice 1. ‏‎Speaker מקבל chunks מ-AgentSession, ‎מפצל למשפטים ‎(`core/voice/sentence-boundary`), ‎מתרגם thoughts ‎(`core/voice/translate-cache` + ‎`@drive-coding/core/voice/translation-prompt`), ‎ומסנתז TTS ‎(ElevenLabs eleven_v3). ‎AudioStream engine מנהל ‎MediaSource ‎ל-streaming playback.
+‎ה-pipeline ‎ההפוך ‎של ‎Slice 1. ‎Speaker מקבל chunks מ-AgentSession, ‎מפצל למשפטים ‎(`core/voice/sentence-boundary`), ‎מתרגם thoughts ‎(`core/voice/translate-cache` + ‎`@drive-coding/core/voice/translation-prompt`), ‎ומסנתז TTS ‎(ElevenLabs eleven_v3). ‎AudioStream engine מנהל ‎MediaSource ‎ל-streaming playback.
 
 ‎מתבסס ‎על האדריכלות שכבר מומשה ‎ב-`packages/frontend/src/lib/voice/orchestrator.ts` ‎(417 ‎שורות) — ‎אבל ‎עם החוקים החדשים ‎(לא orchestrator factory, ‎אלא ‎Speaker class).
 
@@ -177,7 +177,7 @@ Slice 3+ 💭 מתוכנן  ראה ‎טבלה ‎למטה
 
 ---
 
-## ‏‎פיצ'רים ‎שנדחים (לא במסגרת ‎ה-roadmap הזה)
+## ‎פיצ'רים ‎שנדחים (לא במסגרת ‎ה-roadmap הזה)
 
 | ‎פיצ'ר | ‎סיבה לדחייה | ‎מקור |
 |--------|---------------|--------|
@@ -191,7 +191,7 @@ Slice 3+ 💭 מתוכנן  ראה ‎טבלה ‎למטה
 
 ---
 
-## ‏‎איך מתחילים slice חדש
+## ‎איך מתחילים slice חדש
 
 ‎לפי `packages/frontend-v2/AGENTS.md` §‎"לפני שמוסיפים פיצ'ר חדש":
 
@@ -204,7 +204,7 @@ Slice 3+ 💭 מתוכנן  ראה ‎טבלה ‎למטה
 
 ---
 
-## ‏‎עדכונים ‎לעתיד ‎של המסמך ‎הזה
+## ‎עדכונים ‎לעתיד ‎של המסמך ‎הזה
 
 ‎להוסיף ‎טור ב-טבלה ‎"מספר commits" ‎אחרי שmid-cutover. ‎להוסיף ‎הערות ‎על ‎סטיות ‎מהתכנון.
 

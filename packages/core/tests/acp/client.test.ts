@@ -108,7 +108,7 @@ describe("createAcpClient — happy path", () => {
 })
 
 describe("createAcpClient — timeout", () => {
-  // ‎Tests use initTimeoutMs: 50 instead of fake timers — Promise.race + fake
+  // Tests use initTimeoutMs: 50 instead of fake timers — Promise.race + fake
   // timers triggers spurious unhandled-rejection reports in vitest 4.x.
   // 50ms is well above microtask noise and fast enough for tests.
   const TIMEOUT = 50

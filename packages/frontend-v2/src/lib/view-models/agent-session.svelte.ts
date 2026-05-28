@@ -17,10 +17,10 @@ import { createAgent, notifySessionAttached } from "$lib/adapters/agents-api"
 import type { CliKind } from "@drive-coding/core"
 
 export type AgentSessionStatus =
-  | "idle"        // ‏‎no agent yet
-  | "connecting"  // ‏‎creating agent + ACP handshake
-  | "connected"   // ‏‎ready to receive prompts
-  | "thinking"    // ‏‎prompt sent, awaiting agent response
+  | "idle"        // no agent yet
+  | "connecting"  // creating agent + ACP handshake
+  | "connected"   // ready to receive prompts
+  | "thinking"    // prompt sent, awaiting agent response
   | "error"
 
 export type BubbleKind = "user" | "message" | "thought"
@@ -102,13 +102,13 @@ export class AgentSession {
     if (!this.#client || !this.#sessionId) return
     if (!text.trim()) return
 
-    // ‎optimistic: ‎add user bubble immediately
+    // optimistic: add user bubble immediately
     this.bubbles.push({ id: crypto.randomUUID(), kind: "user", text })
     this.status = "thinking"
 
     this.#client.prompt(this.#sessionId, text).then(
       () => {
-        // ‎prompt complete — ‎back to connected
+        // prompt complete — back to connected
         if (this.status === "thinking") this.status = "connected"
       },
       (err: unknown) => {
@@ -130,7 +130,7 @@ export class AgentSession {
   }
 
   #onSessionUpdate = (notification: SessionNotification): void => {
-    // ‎ACP envelope: ‎{ sessionId, update: { sessionUpdate, content, ... } }
+    // ACP envelope: { sessionId, update: { sessionUpdate, content, ... } }
     const update = notification.update as {
       sessionUpdate?: string
       content?: { type?: string; text?: string }
@@ -148,7 +148,7 @@ export class AgentSession {
   #appendChunk(kind: "message" | "thought", text: string): void {
     const last = this.bubbles[this.bubbles.length - 1]
     if (last && last.kind === kind) {
-      // ‎mutate the proxy directly — ‎reactivity ‎fires
+      // mutate the proxy directly — reactivity fires
       last.text += text
     } else {
       this.bubbles.push({ id: crypto.randomUUID(), kind, text })

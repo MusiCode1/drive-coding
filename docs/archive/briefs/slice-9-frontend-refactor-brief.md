@@ -415,7 +415,7 @@ thinking, done, error, ping/pong
 - `lucide.createIcons()` נקרא אחרי כל DOM mutation גדול (או בקובץ `+layout.svelte` עם reactive trigger)
 - RLM (U+200F) **לא נדרש ב-frontend** — זה רק לCLI rendering. ה-DOM תופס direction נכון.
 - Scrollbar — `scrollbar-width: thin` + custom webkit pseudo-elements (כמו ב-mockup).
-- ‏Mobile-first: ‎CSS classes ל-`@media (max-width: 1023px)` (mobile, default) ו-`@media (min-width: 1024px)` (desktop).
+- Mobile-first: CSS classes ל-`@media (max-width: 1023px)` (mobile, default) ו-`@media (min-width: 1024px)` (desktop).
 
 ---
 
@@ -425,7 +425,7 @@ thinking, done, error, ping/pong
 - [ ] `pnpm typecheck` + `pnpm lint` + `pnpm test` ירוקים
 - [ ] ~40-60 frontend tests חדשים (סה"כ ~100+ frontend)
 - [ ] Mobile + desktop responsive עובדים — בדוק ידנית ב-browser/devtools
-- [ ] ‏Tier 1 features גלויים: tool narration, thought translation, bubble click-to-play
+- [ ] Tier 1 features גלויים: tool narration, thought translation, bubble click-to-play
 - [ ] Slice 8a features גלויים: /sessions, history bubbles (cold), recording replay
 - [ ] File picker פותח ובוחר תיקייה ב-/home/user
 - [ ] Settings page עם voice picker + audio cues toggle (localStorage)

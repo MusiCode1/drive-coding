@@ -1,6 +1,6 @@
 # vNext Technical Spec — drive-coding
 
-> **‏‎סטטוס:** שכבה 2 (אחרי lint סבב 8, 2026-05-16) — מפרט טכני להתחלת implementation.
+> **‎סטטוס:** שכבה 2 (אחרי lint סבב 8, 2026-05-16) — מפרט טכני להתחלת implementation.
 > **כותב:** Tama (planner agent).
 > **תאריך:** 2026-05-15 (עודכן 2026-05-16).
 > **תלות:** `vnext-architecture.md` (החלטות D1-D50), `vnext-research.md` (ממצאים).
@@ -10,7 +10,7 @@
 
 ---
 
-> **⚠️ ‏‎עדכון 2026-05-27 ‎— ‎חלקים obsolete:**
+> **⚠️ ‎עדכון 2026-05-27 ‎— ‎חלקים obsolete:**
 >
 > ‎ה-roadmap ‎ב-§8.5 (Slices ‎הבאים) ‎**הוחלף** ‎ע"י ‎`packages/frontend-v2/docs/slices.md`. ‎ה-slices 2-10 ‎הקיימים מומשו ב-`packages/frontend/` ‎אבל ‎הצטברו ‎לכאוס; ‎ההמשך נעשה ‎ב-`packages/frontend-v2/` ‎(rebuild-from-scratch).
 >

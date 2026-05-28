@@ -6,7 +6,7 @@
 
 ## 1. הבעיה
 
-voice-acp-v3 הוא ממשק קולי לחלוטין מעל ‎ACP CLIs (`opencode`, `claude`, `gemini`, `codex`). הפלט של ה-CLI מסונתז ב-TTS ומושמע למשתמש. אבל ה-CLIs מאומנים לפלט בסביבה ויזואלית:
+voice-acp-v3 הוא ממשק קולי לחלוטין מעל ACP CLIs (`opencode`, `claude`, `gemini`, `codex`). הפלט של ה-CLI מסונתז ב-TTS ומושמע למשתמש. אבל ה-CLIs מאומנים לפלט בסביבה ויזואלית:
 
 - ‫**Markdown** — כותרות `##`, `**bold**`, רשימות עם `-`, code fences ב-` ``` `
 - ‫**Emojis** — ✅ ❌ → •
@@ -16,19 +16,19 @@ voice-acp-v3 הוא ממשק קולי לחלוטין מעל ‎ACP CLIs (`openco
 
 TTS משמיע את כל זה literally. המשתמש שומע "asterisk asterisk hello asterisk asterisk", או שה-emoji נהיה רעש דקודי, או שכתובת URL נקראת תו-תו במשך 30 שניות.
 
-**המטרה:** לגרום ל-CLI לפלוט פרוזה טבעית, קצרה, ‏ ‏ TTS-friendly, **בלי לשנות את הקוד של ה-CLI עצמו**.
+**המטרה:** לגרום ל-CLI לפלוט פרוזה טבעית, קצרה,   TTS-friendly, **בלי לשנות את הקוד של ה-CLI עצמו**.
 
 ---
 
 ## 2. הרעיון
 
-נזריק **system prompt נוסף** ל-CLI שמדריך אותו לפלט בסגנון מתאים לאודיו. הזרקה דרך **OpenCode plugin** הטעון בזמן ‏spawn ‏של ה-sub-process.
+נזריק **system prompt נוסף** ל-CLI שמדריך אותו לפלט בסגנון מתאים לאודיו. הזרקה דרך **OpenCode plugin** הטעון בזמן spawn של ה-sub-process.
 
-הפלאגין מתחבר ל-hook הקיים ‏`experimental.chat.system.transform` שמאפשר ל-‏plugins ‏להוסיף / להחליף / לערוך את מערך ה-system prompts לפני כל קריאה ל-LLM.
+הפלאגין מתחבר ל-hook הקיים `experimental.chat.system.transform` שמאפשר ל-plugins להוסיף / להחליף / לערוך את מערך ה-system prompts לפני כל קריאה ל-LLM.
 
-הטעינה של הפלאגין מתבצעת דרך ‎env var **`OPENCODE_CONFIG_CONTENT`** — מנגנון פנימי של OpenCode שמקבל JSON של קונפיג מלא כמחרוזת, **בלי לדרוש קובץ קונפיג על דיסק ובלי לגעת ב-cwd של ה-CLI**.
+הטעינה של הפלאגין מתבצעת דרך env var **`OPENCODE_CONFIG_CONTENT`** — מנגנון פנימי של OpenCode שמקבל JSON של קונפיג מלא כמחרוזת, **בלי לדרוש קובץ קונפיג על דיסק ובלי לגעת ב-cwd של ה-CLI**.
 
-זוהי בדיוק הגישה ש-CodeNomad משתמש בה כדי להזריק את הפלאגין שלו ‏ל-OpenCode. אומתה ב-3 מקורות: ‏OpenCode source‏, ‏tests פעילים, ויישום ‏production ‏ ב-CodeNomad.
+זוהי בדיוק הגישה ש-CodeNomad משתמש בה כדי להזריק את הפלאגין שלו ל-OpenCode. אומתה ב-3 מקורות: OpenCode source, tests פעילים, ויישום production  ב-CodeNomad.
 
 ---
 
@@ -38,26 +38,26 @@ TTS משמיע את כל זה literally. המשתמש שומע "asterisk asteris
 
 ### A. `.opencode/plugins/audio-friendly.ts` ב-cwd
 
-OpenCode קולט אוטומטית פלאגינים מתיקיית ‏`.opencode/plugins/` בכל cwd. פשוט.
+OpenCode קולט אוטומטית פלאגינים מתיקיית `.opencode/plugins/` בכל cwd. פשוט.
 
 ‫**חסרון מכריע:** ה-cwd שייך **למשתמש** — הוא הפרויקט שעליו הוא עובד. אסור לנו לדחוף לתוכו `.opencode/` סמוי, ובוודאי לא להגביל אותו לעבוד רק ב-cwd ספציפי. זו פגיעה בבעלות של המשתמש על הפרויקט שלו.
 
 ### B. `~/.config/opencode/plugins/audio-friendly.ts` (גלובלי)
 
-OpenCode קולט פלאגינים גלובליים מ-‏`~/.config/opencode/plugins/`.
+OpenCode קולט פלאגינים גלובליים מ-`~/.config/opencode/plugins/`.
 
-‫**חסרון מכריע:** יחול **גם** על שימוש רגיל של ‏ OpenCode בטרמינל של המשתמש, מחוץ ל-voice-acp. המשתמש יראה פלט בלי emoji ובלי markdown גם כש-OpenCode פתוח ב-terminal לעבודה רגילה. לא רוצים.
+‫**חסרון מכריע:** יחול **גם** על שימוש רגיל של  OpenCode בטרמינל של המשתמש, מחוץ ל-voice-acp. המשתמש יראה פלט בלי emoji ובלי markdown גם כש-OpenCode פתוח ב-terminal לעבודה רגילה. לא רוצים.
 
 ### C. `OPENCODE_CONFIG_CONTENT` env var (הנבחרת)
 
-OpenCode טוען קונפיג מלא ‏מ-‏ env var, ממזג אותו לקונפיג שכבר נטען מקבצים. הפלאגין מצוין ב-‏ `plugin: ["file:///abs/path/to/plugin.ts"]`. ה-env var מועבר רק ל-sub-process של voice-acp.
+OpenCode טוען קונפיג מלא מ- env var, ממזג אותו לקונפיג שכבר נטען מקבצים. הפלאגין מצוין ב- `plugin: ["file:///abs/path/to/plugin.ts"]`. ה-env var מועבר רק ל-sub-process של voice-acp.
 
 ‫**יתרונות:**
 1. אפס נגיעה ב-cwd של המשתמש.
 2. אפס קבצים זמניים על דיסק (אין race conditions ב-cleanup).
 3. ממוזג עם קונפיג שכבר קיים אצל המשתמש (לא דורס את `.opencode/opencode.json` שלו אם יש).
-4. נשלט per-spawn — אם בעתיד נרצה toggle (מצב קולי ‏on/off), פשוט נכלול/לא נכלול את ה-env var.
-5. מאומת ‏ב-‏ production (CodeNomad).
+4. נשלט per-spawn — אם בעתיד נרצה toggle (מצב קולי on/off), פשוט נכלול/לא נכלול את ה-env var.
+5. מאומת ב- production (CodeNomad).
 
 ---
 
@@ -78,7 +78,7 @@ if (process.env.OPENCODE_CONFIG_CONTENT) {
 }
 ```
 
-הקונפיג ממוזג ב-‏priority "local" — אחרי global, אחרי `--config` flag, אחרי `OPENCODE_CONFIG_DIR`, **אחרי** קונפיגים מ-‏`.opencode/opencode.json` של הפרויקט. זה אומר שלפלאגין שלנו תהיה עדיפות גבוהה במיזוג, אבל הפלאגינים של המשתמש לא יידרסו — שניהם יירוצו, ‏ב-‏sequence (ראה ‏ §4.3).
+הקונפיג ממוזג ב-priority "local" — אחרי global, אחרי `--config` flag, אחרי `OPENCODE_CONFIG_DIR`, **אחרי** קונפיגים מ-`.opencode/opencode.json` של הפרויקט. זה אומר שלפלאגין שלנו תהיה עדיפות גבוהה במיזוג, אבל הפלאגינים של המשתמש לא יידרסו — שניהם יירוצו, ב-sequence (ראה  §4.3).
 
 ### 4.2 פורמט ה-config
 
@@ -91,7 +91,7 @@ JSON object רגיל, אותו סכמה שמופיעה ב-`opencode.json`:
 }
 ```
 
-ה-‏`plugin` יכול להיות:
+ה-`plugin` יכול להיות:
 
 | פורמט                                            | תיאור                                                |
 | ------------------------------------------------ | ---------------------------------------------------- |
@@ -100,11 +100,11 @@ JSON object רגיל, אותו סכמה שמופיעה ב-`opencode.json`:
 | `"package@file:/abs/path/to/tarball.tgz"`        | tarball מקומי (CodeNomad משתמש בזה ב-prod)            |
 | `"file:///abs/path/to/plugin.ts"`                | קובץ TS/JS ישיר (CodeNomad משתמש בזה ב-dev)         |
 
-הבחירה שלנו: **`file://` URL ל-TS file בתוך ה-repo**. אין צורך לפרסם ל-npm ולא ‏לעשות ‏ tarball — OpenCode טוען את הקובץ ישירות עם Bun.
+הבחירה שלנו: **`file://` URL ל-TS file בתוך ה-repo**. אין צורך לפרסם ל-npm ולא לעשות  tarball — OpenCode טוען את הקובץ ישירות עם Bun.
 
 ### 4.3 ה-Hook עצמו
 
-‫**הגדרה:** ‏`packages/plugin/src/index.ts:290-295`
+‫**הגדרה:** `packages/plugin/src/index.ts:290-295`
 
 ```ts
 "experimental.chat.system.transform"?: (
@@ -113,7 +113,7 @@ JSON object רגיל, אותו סכמה שמופיעה ב-`opencode.json`:
 ) => Promise<void> | void
 ```
 
-‫**איפה הוא נורה:** ‏`packages/opencode/src/session/llm.ts:114-118` — **לפני כל קריאה ל-LLM** (כל הודעה במשתמש בסשן).
+‫**איפה הוא נורה:** `packages/opencode/src/session/llm.ts:114-118` — **לפני כל קריאה ל-LLM** (כל הודעה במשתמש בסשן).
 
 ```ts
 const header = system[0]
@@ -131,10 +131,10 @@ if (system.length > 2 && system[0] === header) {
 ```
 
 **הסבר ה-rejoin:** OpenCode מבנה את ה-system prompt כ-2 חלקים בשביל cache:
-- `system[0]` = "header" (agent prompt + provider prompt) — צד מטא יציב, ‏cacheable
-- שאר ה-array = "rest" — דברים שעשויים להשתנות, מצורפים ל-‎`\n`
+- `system[0]` = "header" (agent prompt + provider prompt) — צד מטא יציב, cacheable
+- שאר ה-array = "rest" — דברים שעשויים להשתנות, מצורפים ל-`\n`
 
-אם הפלאגין שלנו עשה `output.system.push(audioPrompt)` (הוסיף בסוף), ה-header נשאר זהה, וה-rejoin ימזג את הפרומפט שלנו לתוך ה-"rest". ‏ה-cache נשמר. **לא** לעשות `output.system.unshift(...)` — זה ידרוס את ה-header וישבור caching.
+אם הפלאגין שלנו עשה `output.system.push(audioPrompt)` (הוסיף בסוף), ה-header נשאר זהה, וה-rejoin ימזג את הפרומפט שלנו לתוך ה-"rest". ה-cache נשמר. **לא** לעשות `output.system.unshift(...)` — זה ידרוס את ה-header וישבור caching.
 
 ### 4.4 סדר הפעלת hooks מ-plugins מרובים
 
@@ -146,7 +146,7 @@ if (system.length > 2 && system[0] === header) {
 > ‫3. Global plugin directory
 > ‫4. Project plugin directory
 
-‫המשמעות: אם המשתמש הגדיר פלאגין משלו ‏שגם הוא משנה את ה-system, **שני הפלאגינים ירוצו, בסדר**. הפלאגין שלנו נוסף אחרון (כי הוא מגיע מ-`OPENCODE_CONFIG_CONTENT` שמתעדכן ב-priority "local"). זה ‏ה-‏behavior שאנחנו רוצים — נוסיף עוד הוראות, לא נדרוס.
+‫המשמעות: אם המשתמש הגדיר פלאגין משלו שגם הוא משנה את ה-system, **שני הפלאגינים ירוצו, בסדר**. הפלאגין שלנו נוסף אחרון (כי הוא מגיע מ-`OPENCODE_CONFIG_CONTENT` שמתעדכן ב-priority "local"). זה ה-behavior שאנחנו רוצים — נוסיף עוד הוראות, לא נדרוס.
 
 ---
 
@@ -174,9 +174,9 @@ export const AudioFriendly: Plugin = async () => ({
 
 הערות:
 
-1. ‏ה-export name לא משנה — OpenCode סורק את כל ה-named exports ובודק שהם plugin functions. ‏`export default` עובד גם.
-2. ‏ה-‏factory `async () => ({...})` חייב להחזיר אובייקט עם hook אחד או יותר.
-3. אין צורך לקרוא ‏ל-`_input` (sessionID/model) — הפרומפט שלנו זהה לכל סשן.
+1. ה-export name לא משנה — OpenCode סורק את כל ה-named exports ובודק שהם plugin functions. `export default` עובד גם.
+2. ה-factory `async () => ({...})` חייב להחזיר אובייקט עם hook אחד או יותר.
+3. אין צורך לקרוא ל-`_input` (sessionID/model) — הפרומפט שלנו זהה לכל סשן.
 4. שימוש ב-`push` (לא `unshift`) בשביל לשמור על מבנה caching של 2 חלקים (ראה §4.3).
 
 ### 5.2 חבילת ה-dependencies
@@ -193,8 +193,8 @@ export const AudioFriendly: Plugin = async () => ({
 
 הפלאגין הוא **TS שמועבר as-is ל-OpenCode**. OpenCode (שעובד עם Bun) טוען TS ישירות, אז אין שלב build נפרד. בזמן ריצה:
 
-- ‫**Dev (`pnpm dev`):** הקובץ ב-‏`packages/backend/plugins/audio-friendly.ts` נטען ישירות.
-- ‫**Prod (אם נארוז את voice-acp כ-binary):** הקובץ חייב להישאר נגיש כקובץ נפרד (לא מוכלל ב-bundle). זאת כי OpenCode טוען אותו דרך ‏ `file://` URL בזמן ריצה — לא ‏ bundled עם הקוד שלנו.
+- ‫**Dev (`pnpm dev`):** הקובץ ב-`packages/backend/plugins/audio-friendly.ts` נטען ישירות.
+- ‫**Prod (אם נארוז את voice-acp כ-binary):** הקובץ חייב להישאר נגיש כקובץ נפרד (לא מוכלל ב-bundle). זאת כי OpenCode טוען אותו דרך  `file://` URL בזמן ריצה — לא  bundled עם הקוד שלנו.
 
 זה משפיע על **כל אסטרטגיית packaging עתידית** של voice-acp:
 - חייב להעתיק את `plugins/audio-friendly.ts` ל-output dir של ה-build
@@ -251,8 +251,8 @@ OUTPUT RULES (strict):
 
 **שיקולים על הפרומפט:**
 
-- **אורך:** ארוך יחסית (~30 שורות). מבחינת cost — בקריאה אחת זה לא מהותי. ‏בקריאות מרובות זה ‏cached.
-- **טון:** הוראות ברורות, ‏imperative ‏, ‏בלי "please".
+- **אורך:** ארוך יחסית (~30 שורות). מבחינת cost — בקריאה אחת זה לא מהותי. בקריאות מרובות זה cached.
+- **טון:** הוראות ברורות, imperative , בלי "please".
 - **דוגמאות:** נכללו דוגמאות "במקום X תגיד Y" — חיוניות, מודלים נצמדים לדוגמאות.
 - **שפה:** אנגלית למרות שהמשתמשת מדברת עברית — כי המודלים מבינים אנגלית טוב יותר ב-system prompts. הפלט עצמו יישאר בעברית כשהמשתמשת מדברת עברית, כי המודלים מתאימים את שפת התשובה לשפת הקלט.
 
@@ -271,7 +271,7 @@ OUTPUT RULES (strict):
 1. **חישוב הנתיב המוחלט** לפלאגין ב-runtime. אופציות:
    - `path.resolve(import.meta.dirname, "../../plugins/audio-friendly.ts")` — יחסי לקובץ. שביר ב-bundling.
    - ‫env var `VOICE_ACP_PLUGIN_DIR` עם default → `path.resolve(process.cwd(), "plugins")` — ניתן ל-override.
-   - לקרוא ל-‏`require.resolve` / equivalent על constant מוסכם.
+   - לקרוא ל-`require.resolve` / equivalent על constant מוסכם.
 2. **המרה ל-file URL:** `pathToFileURL(absPath).href` (חובה, OpenCode מצפה ל-`file://`).
 3. **בניית JSON config:**
    ```ts
@@ -290,13 +290,13 @@ OUTPUT RULES (strict):
    }
    ```
 
-הערה: ‏`spawnAndWaitForPort` כיום לא מודע ל-‏`cliKind`. צריך או להעביר את ‏`cliKind` כפרמטר, או להעביר את ה-‏env ‏מוכן מ-‏`bridge-manager.ts` (שיודע מה ה-cliKind). הפתרון השני אלגנטי יותר — bridge-manager בונה את ה-env והופך ל-source of truth.
+הערה: `spawnAndWaitForPort` כיום לא מודע ל-`cliKind`. צריך או להעביר את `cliKind` כפרמטר, או להעביר את ה-env מוכן מ-`bridge-manager.ts` (שיודע מה ה-cliKind). הפתרון השני אלגנטי יותר — bridge-manager בונה את ה-env והופך ל-source of truth.
 
 ### מיזוג עם קונפיג קיים של המשתמש (אופציונלי, מומלץ)
 
-המשתמש עשוי להגדיר משלו ‏ ‏ `OPENCODE_CONFIG_CONTENT` בסביבה. אם נדרוס אותו ‏ ‏ ב-spawn ‏ של voice-acp — נשבור את ה-‏ ‏ workflow ‏ שלו.
+המשתמש עשוי להגדיר משלו   `OPENCODE_CONFIG_CONTENT` בסביבה. אם נדרוס אותו   ב-spawn  של voice-acp — נשבור את ה-  workflow  שלו.
 
-‏Pattern ‏שהיה ‏ ל-CodeNomad ‏(`opencode-plugin.ts:46-61`):
+Pattern שהיה  ל-CodeNomad (`opencode-plugin.ts:46-61`):
 
 ```ts
 function buildOpencodeConfigContent(existing: string | undefined, pluginUrl: string): string {
@@ -315,65 +315,65 @@ function buildOpencodeConfigContent(existing: string | undefined, pluginUrl: str
 }
 ```
 
-נשתמש ב-pattern דומה — לא דורסים, ‏ ממזגים את הפלאגין שלנו אל ‏plugins ‏הקיימים.
+נשתמש ב-pattern דומה — לא דורסים,  ממזגים את הפלאגין שלנו אל plugins הקיימים.
 
 ---
 
 ## 8. היקף ה-CLIs
 
-הפלאגין הזה **רלוונטי רק ל-‏OpenCode**. בכל אחד מה-CLIs האחרים נצטרך מנגנון מקביל:
+הפלאגין הזה **רלוונטי רק ל-OpenCode**. בכל אחד מה-CLIs האחרים נצטרך מנגנון מקביל:
 
 | CLI                | מנגנון אפשרי                                                                                                          | סטטוס מחקרי                     |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
 | ‫`opencode`        | פלאגין דרך `OPENCODE_CONFIG_CONTENT` (הסיפור הזה)                                                                       | מאומת                           |
 | ‫`claude` (acp)   | ‫`claude-agent-acp` מבוסס Claude Code SDK. תומך ב-`appendSystemPrompt` בקריאות. צריך לבדוק האם ה-acp wrapper חושף flag. | טרם נחקר                        |
-| ‫`gemini` (acp)   | ‫`gemini-cli --experimental-acp`. ‏ Gemini CLI ‏ תומך ב-‏`GEMINI_SYSTEM_MD` env var → קובץ system prompt. סביר.        | טרם נחקר                        |
+| ‫`gemini` (acp)   | ‫`gemini-cli --experimental-acp`.  Gemini CLI  תומך ב-`GEMINI_SYSTEM_MD` env var → קובץ system prompt. סביר.        | טרם נחקר                        |
 | ‫`codex` (acp)    | ‫`@zed-industries/codex-acp` עם `--system` flag? צריך לבדוק.                                                          | טרם נחקר                        |
 
-‫**ההמלצה:** להתחיל מ-OpenCode (יחסית פשוט, תיעוד טוב). אחרי שזה עובד ‏ ‏ end-to-end, ‏ לחקור את שלושת האחרים בנפרד. ייתכן שלכל אחד תידרש גישה שונה — אין מנגנון אחיד ‏ ‏ cross-CLI להזרקת system prompt.
+‫**ההמלצה:** להתחיל מ-OpenCode (יחסית פשוט, תיעוד טוב). אחרי שזה עובד   end-to-end,  לחקור את שלושת האחרים בנפרד. ייתכן שלכל אחד תידרש גישה שונה — אין מנגנון אחיד   cross-CLI להזרקת system prompt.
 
 ---
 
-## 9. סיכונים, ‏gotchas‏, ושאלות פתוחות
+## 9. סיכונים, gotchas, ושאלות פתוחות
 
-### 9.1 ‏`experimental.` prefix
+### 9.1 `experimental.` prefix
 
-ה-hook מסומן כ-‏`experimental.` — ‫**OpenCode עשוי לשנות את ה-API בלי הודעה**. שני מיטיגציות:
+ה-hook מסומן כ-`experimental.` — ‫**OpenCode עשוי לשנות את ה-API בלי הודעה**. שני מיטיגציות:
 
-- ‫להריץ smoke test ב-CI שמוודא שה-hook עדיין יורה — בדיקה פשוטה: spawn opencode + שליחת prompt + ‏assert ‏שהפלט לא מכיל emojis.
+- ‫להריץ smoke test ב-CI שמוודא שה-hook עדיין יורה — בדיקה פשוטה: spawn opencode + שליחת prompt + assert שהפלט לא מכיל emojis.
 - לעקוב אחרי ה-changelog של OpenCode ולעדכן כשהוא יוצב.
 
 ### 9.2 התקנה אוטומטית של תלויות
 
-OpenCode מריץ `bun install` ‏ב-startup בכל ‏plugin directory ‏שהוא מאתר, כדי להבטיח שיש את ‏`@opencode-ai/plugin`. זה קורה רק לגבי ‏directories, לא ‏לגבי ‏file:// plugins ‏ישירים. אנחנו ב-file:// path → ‏לא צפויות התקנות-רקע מהפלאגין שלנו. **לבדוק.**
+OpenCode מריץ `bun install` ב-startup בכל plugin directory שהוא מאתר, כדי להבטיח שיש את `@opencode-ai/plugin`. זה קורה רק לגבי directories, לא לגבי file:// plugins ישירים. אנחנו ב-file:// path → לא צפויות התקנות-רקע מהפלאגין שלנו. **לבדוק.**
 
 ### 9.3 startup latency
 
-‏טעינת פלאגין נוסף תוסיף מס' עשרות ms ל-startup של opencode acp (Bun import + factory invocation). ‏אם זה משמעותי, לבדוק ‏בפועל.
+טעינת פלאגין נוסף תוסיף מס' עשרות ms ל-startup של opencode acp (Bun import + factory invocation). אם זה משמעותי, לבדוק בפועל.
 
 ### 9.4 התנהגות שונה בין מודלים
 
-המודלים מגיבים אחרת ל-system prompts. ‏Claude נוטה לציית; Gemini נוטה להתעלם מהוראות "no markdown" אחרי כמה תורים; ‏GPT-4 מאזן. ייתכן שנצטרך פרומפט שונה למודלים שונים, או reinforcement בכל ‏turn ‏(וריאנט: ‏hook ‏שגם משנה כל user message ולא רק את ה-system).
+המודלים מגיבים אחרת ל-system prompts. Claude נוטה לציית; Gemini נוטה להתעלם מהוראות "no markdown" אחרי כמה תורים; GPT-4 מאזן. ייתכן שנצטרך פרומפט שונה למודלים שונים, או reinforcement בכל turn (וריאנט: hook שגם משנה כל user message ולא רק את ה-system).
 
 ### 9.5 פגיעה ב-tool calls / structured output
 
-הפרומפט שלנו אומר "no JSON dumps". זה עלול להתנגש עם מצבים בהם המודל אמור לקרוא ל-tool עם args מורכבים. ‏צריך לחדד: "no JSON in user-facing output" — לא "no JSON ever". להוסיף בחירה לשונית בפרומפט.
+הפרומפט שלנו אומר "no JSON dumps". זה עלול להתנגש עם מצבים בהם המודל אמור לקרוא ל-tool עם args מורכבים. צריך לחדד: "no JSON in user-facing output" — לא "no JSON ever". להוסיף בחירה לשונית בפרומפט.
 
 ### 9.6 מצבים בהם דווקא רוצים markdown
 
-לדוגמה: המשתמשת מבקשת ‏ "תראה לי בדיוק את הקוד של הפונקציה". ‏כאן רוצים שהמודל יציג את הקוד גם אם הוא ייקרא לא טוב ב-TTS, או יעדיף ‏fallback ‏ל-‏rendering ויזואלי במסך.
+לדוגמה: המשתמשת מבקשת  "תראה לי בדיוק את הקוד של הפונקציה". כאן רוצים שהמודל יציג את הקוד גם אם הוא ייקרא לא טוב ב-TTS, או יעדיף fallback ל-rendering ויזואלי במסך.
 
 ‫**פתרון אפשרי:** הפרומפט מאפשר ‫code על-פי בקשה מפורשת ("unless the user explicitly asks to hear code"). זה כבר כלול בטיוטה.
 
-### 9.7 שאלה פתוחה: ‏per-session toggle?
+### 9.7 שאלה פתוחה: per-session toggle?
 
-האם נרצה ‏ב-‎voice-acp לאפשר מצב "טקסט מלא" (יראה markdown כרגיל) למשתמשת שמשתמשת ב-typing fallback? אם כן — ה-‏plugin ‏ יקרא env var נוסף (לדוגמה: ‏`VOICE_ACP_AUDIO_MODE=on`) ויחליט בפנים האם להוסיף את הפרומפט. ‏כך אותו ‏plugin ‏שלנו מתאים לשני המצבים.
+האם נרצה ב-voice-acp לאפשר מצב "טקסט מלא" (יראה markdown כרגיל) למשתמשת שמשתמשת ב-typing fallback? אם כן — ה-plugin  יקרא env var נוסף (לדוגמה: `VOICE_ACP_AUDIO_MODE=on`) ויחליט בפנים האם להוסיף את הפרומפט. כך אותו plugin שלנו מתאים לשני המצבים.
 
 נדחה לעתיד.
 
-### 9.8 שאלה פתוחה: ‏TTS-aware formatting
+### 9.8 שאלה פתוחה: TTS-aware formatting
 
-‏גרסה מתקדמת תוכל לעשות יותר מהזרקת פרומפט — למשל, ‏ ב-‎ `experimental.chat.messages.transform` ‏ לקחת ‏פלט ‏שמכיל markdown ולהמיר ‏טקסטואלית ל-‎prose ‏ (regex / mini-NLP). יתרון: סובלנות לכשלי המודל. חסרון: סיכון לעיוות תוכן לגיטימי. נדחה.
+גרסה מתקדמת תוכל לעשות יותר מהזרקת פרומפט — למשל,  ב- `experimental.chat.messages.transform`  לקחת פלט שמכיל markdown ולהמיר טקסטואלית ל-prose  (regex / mini-NLP). יתרון: סובלנות לכשלי המודל. חסרון: סיכון לעיוות תוכן לגיטימי. נדחה.
 
 ---
 
@@ -381,16 +381,16 @@ OpenCode מריץ `bun install` ‏ב-startup בכל ‏plugin directory ‏שה
 
 - ‫`pnpm dev` עובד כמו קודם.
 - spawning של opencode acp מצליח עם ה-env var, אין שגיאות startup.
-- ב-prompt אמיתי שמבקש "תראה לי את הסשנים הפתוחים" — הפלט פרוזה, בלי emoji, בלי `**bold**`, ‏בלי vertical list.
+- ב-prompt אמיתי שמבקש "תראה לי את הסשנים הפתוחים" — הפלט פרוזה, בלי emoji, בלי `**bold**`, בלי vertical list.
 - ה-cache headers שב-Anthropic API ממשיכים לעבוד (נבדק על ידי headers `anthropic-cache-creation-input-tokens` / `cache-read-input-tokens`).
-- ה-AUDIO_PROMPT לא דולף לפלט עצמו ("As per my system instructions...") — בעיה ידועה במודלים, יהיה צורך ב-‎iteration.
-- כשמשתמשת מגדירה ‏ OPENCODE_CONFIG_CONTENT ‏ משלה — היא נשמרת, הפלאגין שלנו רק מתווסף ‏אליה ‏(לא דורס).
+- ה-AUDIO_PROMPT לא דולף לפלט עצמו ("As per my system instructions...") — בעיה ידועה במודלים, יהיה צורך ב-iteration.
+- כשמשתמשת מגדירה  OPENCODE_CONFIG_CONTENT  משלה — היא נשמרת, הפלאגין שלנו רק מתווסף אליה (לא דורס).
 
 ---
 
-## 11. עתיד — מה לא ‏בסיפור הזה ‏אבל קשור
+## 11. עתיד — מה לא בסיפור הזה אבל קשור
 
-- ‫**Slice עוקב — claude-agent-acp:** מחקר על האם יש מנגנון להזרקת system prompt לפני שליחת ‏prompt ל-‏Claude ‏דרך ‏acp.
-- ‫**Slice עוקב — gemini-cli ‏ו-‏codex-acp:** מחקר דומה לכל אחד מהשניים.
+- ‫**Slice עוקב — claude-agent-acp:** מחקר על האם יש מנגנון להזרקת system prompt לפני שליחת prompt ל-Claude דרך acp.
+- ‫**Slice עוקב — gemini-cli ו-codex-acp:** מחקר דומה לכל אחד מהשניים.
 - ‫**Slice עוקב — לוח שליטה למשתמשת:** מסך ב-frontend לערוך את הפרומפט עצמו (לא לקודד אותו).
-- ‫**Slice עוקב — ‎‏TTS preprocessor כ-safety net:** במקרה שהמודל מפר את ההוראות, מסיר emojis/markdown ב-pipeline לפני שליחה ל-ElevenLabs.
+- ‫**Slice עוקב — TTS preprocessor כ-safety net:** במקרה שהמודל מפר את ההוראות, מסיר emojis/markdown ב-pipeline לפני שליחה ל-ElevenLabs.

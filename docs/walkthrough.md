@@ -8,7 +8,7 @@
 
 ### מה בוצע?
 
-ביקורת על כל המסמכים ב-`docs/` של ה-worktree `v2` (ענף `experiment/frontend-v2`) — אילו עוד רלוונטיים ל-v2 ואילו תיעוד היסטורי של v1. ‏v2 התחיל מאפס ב-slice 0, כך שרוב מסמכי slice 10 (שמתייחסים ל-`packages/frontend/` הישן) כבר לא רלוונטיים כקריאה פעילה.
+ביקורת על כל המסמכים ב-`docs/` של ה-worktree `v2` (ענף `experiment/frontend-v2`) — אילו עוד רלוונטיים ל-v2 ואילו תיעוד היסטורי של v1. v2 התחיל מאפס ב-slice 0, כך שרוב מסמכי slice 10 (שמתייחסים ל-`packages/frontend/` הישן) כבר לא רלוונטיים כקריאה פעילה.
 
 **1. העברה לארכיון** (בלי שינוי תוכן):
 - `archive/briefs/slice-10-f1-fix-brief.md`
@@ -28,18 +28,18 @@
   - נוסף: סעיף **DoD per slice** + **טבלת לוג עדכונים** עם רשומה ראשונה (slice 0).
 
 **3. מסמכים שנשארו פעילים ב-`docs/`** (10):
-‏`vnext-architecture.md`, `vnext-spec.md`, `vnext-research.md`, `frontend-spec.md`, `audio-friendly-prompt-plan.md`, `behaviors-coverage.md`, `future-features.md`, `reference.md`, `walkthrough.md`.
+`vnext-architecture.md`, `vnext-spec.md`, `vnext-research.md`, `frontend-spec.md`, `audio-friendly-prompt-plan.md`, `behaviors-coverage.md`, `future-features.md`, `reference.md`, `walkthrough.md`.
 
 ### החלטות
 
-- **עותק נקי במקום מחיקה**: ‏המקור של `behaviors-coverage.md` נשמר ב-`archive/v1/` כדי שיהיה אפשר להשוות מה כיסה v1 לעומת מה ש-v2 בנה. הקובץ הפעיל הוא checklist נקי, לא קובץ מבולבל.
-- **core/backend ✅ נשמרו ב-v2**: ‏אלו חבילות שמשותפות בין v1 ל-v2 — אין סיבה לאפס behaviors שכבר נבדקות במקרה הזה.
-- **i18n-gap-report ללא העברה של "לקח"**: ‏בדיקה אישרה שהלקח כבר מתועד ב-`vnext-architecture.md` D10 ו-§2.7 (אין hardcoded strings, i18n layer מהיום הראשון, Slice 9 ייעודי). אין כפילות נדרשת.
-- **`frontend-reorganization-plan.md` כבר היה ב-`archive/v2-planning/`**: ‏הועבר בסשן קודם לפני הסבב הזה — לא נדרש פעולה.
+- **עותק נקי במקום מחיקה**: המקור של `behaviors-coverage.md` נשמר ב-`archive/v1/` כדי שיהיה אפשר להשוות מה כיסה v1 לעומת מה ש-v2 בנה. הקובץ הפעיל הוא checklist נקי, לא קובץ מבולבל.
+- **core/backend ✅ נשמרו ב-v2**: אלו חבילות שמשותפות בין v1 ל-v2 — אין סיבה לאפס behaviors שכבר נבדקות במקרה הזה.
+- **i18n-gap-report ללא העברה של "לקח"**: בדיקה אישרה שהלקח כבר מתועד ב-`vnext-architecture.md` D10 ו-§2.7 (אין hardcoded strings, i18n layer מהיום הראשון, Slice 9 ייעודי). אין כפילות נדרשת.
+- **`frontend-reorganization-plan.md` כבר היה ב-`archive/v2-planning/`**: הועבר בסשן קודם לפני הסבב הזה — לא נדרש פעולה.
 
 ### מעקפים ופתרונות
 
-- **DoD חדש לכל slice**: ‏הוספתי ל-`behaviors-coverage.md` הוראה ש-DoD של כל slice חייב לכלול עדכון של הקובץ הזה. בלי זה, הקובץ ישוב להתישן (זה בדיוק מה שקרה ב-v1 — ראה את ה-update logs של Slice 9/10 שהפכו את הקובץ ל-mix של מצב נכון + סטטוסים מיושנים).
+- **DoD חדש לכל slice**: הוספתי ל-`behaviors-coverage.md` הוראה ש-DoD של כל slice חייב לכלול עדכון של הקובץ הזה. בלי זה, הקובץ ישוב להתישן (זה בדיוק מה שקרה ב-v1 — ראה את ה-update logs של Slice 9/10 שהפכו את הקובץ ל-mix של מצב נכון + סטטוסים מיושנים).
 
 ---
 
@@ -591,48 +591,48 @@ executor (claude-sonnet-4-6) ביצע את Phase 1 של Slice 10 FE-Orchestrated
 
 ## 2026-05-17 22:30 — Slice 10 brief — audit + 16 findings fixed
 
-‏‏סוכן auditor (general sub-agent) עבר על ‏ה-brief ‏‏ומצא 22 findings: 5 critical, 9 medium, 8 minor.
-‏הדוח ב-`docs/slice-10-audit-report.md`.
+סוכן auditor (general sub-agent) עבר על ה-brief ומצא 22 findings: 5 critical, 9 medium, 8 minor.
+הדוח ב-`docs/slice-10-audit-report.md`.
 
-### CRITs ‏(תוקנו ‏לפני executor)
+### CRITs (תוקנו לפני executor)
 
-1. **CRIT-1** — ‏‏`@google/genai` ‏מצפה ‏ל-`baseUrl` (lowercase u), ‏לא ‏`baseURL`. תוקן ב-§6.4 + ‏אזהרה ‏בpromptly.
-2. **CRIT-2** — ‏SDK 0.21.1 ‏מטפס ‏`loadSession` ‏ו-`listSessions` ‏טבעית. הסר ‏`as any` ב-§6.2.
-3. **CRIT-3** — ‏`fs.readTextFile/writeTextFile = false` ‏לא ‏אומת. ‏הוסף DoD smoke test ב-Phase 2: ‏prompt "‏קרא את ה-README" → ‏אם opencode זורק `fs/read_text_file` request → ‏טול ‏decision מחדש.
-4. **CRIT-4** — ‏Crash handler ב-orchestrator תלוי ב-AgentSession ‏שנמחק. ‏הוסף ‏ב-§5 ‏סעיף "Crash handling במצב החדש" ‏עם flow ‏מפורט: ‏orchestrator → ‏registry status=crashed → ‏ws-agent's bridgeWs.on("close") → feWs.close(1011) → ‏FE רואה ‏‏ב-WS close → polls ‏GET /api/agents/:id.
-5. **CRIT-5** — ‏BE חייב לרוץ דרך `onecli run --agent voice-acp -- bun src/server.ts`. הוסף Operational requirement ב-Phase 1.
+1. **CRIT-1** — `@google/genai` מצפה ל-`baseUrl` (lowercase u), לא `baseURL`. תוקן ב-§6.4 + אזהרה בpromptly.
+2. **CRIT-2** — SDK 0.21.1 מטפס `loadSession` ו-`listSessions` טבעית. הסר `as any` ב-§6.2.
+3. **CRIT-3** — `fs.readTextFile/writeTextFile = false` לא אומת. הוסף DoD smoke test ב-Phase 2: prompt "קרא את ה-README" → אם opencode זורק `fs/read_text_file` request → טול decision מחדש.
+4. **CRIT-4** — Crash handler ב-orchestrator תלוי ב-AgentSession שנמחק. הוסף ב-§5 סעיף "Crash handling במצב החדש" עם flow מפורט: orchestrator → registry status=crashed → ws-agent's bridgeWs.on("close") → feWs.close(1011) → FE רואה ב-WS close → polls GET /api/agents/:id.
+5. **CRIT-5** — BE חייב לרוץ דרך `onecli run --agent voice-acp -- bun src/server.ts`. הוסף Operational requirement ב-Phase 1.
 
 ### MEDs (תוקנו)
 
-- **MED-1** — ‏Response של `POST /api/agents` ‏מחזיר ‏עכשיו ‏`{ status, acpSessionId? }`. ‏אם dedup hit, status=ready + acpSessionId.
-- **MED-3** — ‏‏typo ב-pseudocode (`typeof data === "string" ? data : data`) תוקן.
-- **MED-4** — ‏Handshake timeout 10s ב-`createAcpClient` ‏‏אם stdio-to-ws ‏לא ‏שולח ‏`connected` frame.
-- **MED-5** — ‏Base64 chunked converter ‏ב-`lib/voice/base64.ts` במקום ‏`btoa(String.fromCharCode(...))` ‏שזורק ‏על audio גדול.
-- **MED-8** — Multi-tab: ‏ws-agent מנהל Map\<agentId, ServerWebSocket\>. ‏tab שני → ‏close(1008, "agent in use by another tab").
-- **MED-9** — ‏Race protection: DoD ב-Phase 2 ‏מציין ש-FE לא שולח `session/prompt` ‏לפני שsession-attached הצליח.
+- **MED-1** — Response של `POST /api/agents` מחזיר עכשיו `{ status, acpSessionId? }`. אם dedup hit, status=ready + acpSessionId.
+- **MED-3** — typo ב-pseudocode (`typeof data === "string" ? data : data`) תוקן.
+- **MED-4** — Handshake timeout 10s ב-`createAcpClient` אם stdio-to-ws לא שולח `connected` frame.
+- **MED-5** — Base64 chunked converter ב-`lib/voice/base64.ts` במקום `btoa(String.fromCharCode(...))` שזורק על audio גדול.
+- **MED-8** — Multi-tab: ws-agent מנהל Map\<agentId, ServerWebSocket\>. tab שני → close(1008, "agent in use by another tab").
+- **MED-9** — Race protection: DoD ב-Phase 2 מציין ש-FE לא שולח `session/prompt` לפני שsession-attached הצליח.
 
 ### MINs (תוקנו)
 
-- ‏MIN-1+2: ‏מספרי שורות עקביים — 1700 impl, 800 tests (BE delta).
-- ‏MIN-3: ‏הסרת duplicate code block של ws-agent (‏היה ‏פעמיים).
-- ‏MIN-4: ‏`:id` ‏עקבי בכל הbrief.
-- ‏MIN-5: ‏TTS error policy ‏(skip segment ‏בpartial MP3, ‏אין retry MVP).
-- ‏MIN-7: ‏ACP `auth_required` ‏error handler — ‏FE מציג UI להפעיל `<cli> auth login`.
+- MIN-1+2: מספרי שורות עקביים — 1700 impl, 800 tests (BE delta).
+- MIN-3: הסרת duplicate code block של ws-agent (היה פעמיים).
+- MIN-4: `:id` עקבי בכל הbrief.
+- MIN-5: TTS error policy (skip segment בpartial MP3, אין retry MVP).
+- MIN-7: ACP `auth_required` error handler — FE מציג UI להפעיל `<cli> auth login`.
 
-### Open decisions ‏‏שאבי לאשר
+### Open decisions שאבי לאשר
 
-‏סעיף 14 ב-brief — ‏אבי כבר ‏בחר ‏על MVP:
-- ‏Dedup ב-BE: ✅
-- ‏server_event polling ‏(לא WS frames): ✅
+סעיף 14 ב-brief — אבי כבר בחר על MVP:
+- Dedup ב-BE: ✅
+- server_event polling (לא WS frames): ✅
 
 ### Stats
 
-‏Brief: 1708 שורות ‏(‏גדל ‏ב-~170 ‏אחרי תיקונים)
-‏Audit report: 439 שורות
+Brief: 1708 שורות (גדל ב-~170 אחרי תיקונים)
+Audit report: 439 שורות
 
 ### Next step
 
-‏‏‏Slice 10 brief מוכן ‏ל-executor. ‏אבי לאשר ‏final ‏ו-‏ניעבור ל-Task(executor) ‏לPhase 1.
+Slice 10 brief מוכן ל-executor. אבי לאשר final ו-ניעבור ל-Task(executor) לPhase 1.
 
 ---
 
@@ -640,39 +640,39 @@ executor (claude-sonnet-4-6) ביצע את Phase 1 של Slice 10 FE-Orchestrated
 
 ### הסיבה
 
-‏אבי שאל אם קראתי את הקבצים לעומק. ‏הודיתי שלא — קראתי ‏~7 קבצים BE/FE עיקריים, ‏אבל ‏‏15+ קבצים תומכים נשארו ‏לא קרואים. ‏‏בוצע ‏second-pass.
+אבי שאל אם קראתי את הקבצים לעומק. הודיתי שלא — קראתי ~7 קבצים BE/FE עיקריים, אבל 15+ קבצים תומכים נשארו לא קרואים. בוצע second-pass.
 
 ### תיקונים ארכיטקטוניים שאבי הוסיף
 
-‏**שינוי גדול**: ‏מ-endpoints מותאמים (`/api/translate`, `/api/tts`, ...) ‏ל-**transparent proxy**. ‏ה-FE משתמשת ב-SDKs המקוריים ‏(`@ai-sdk/google`, ‏`@google/genai`) ‏עם `baseURL` ‏שמצביע ל-BE proxy. ‏ה-BE forwards ‏ל-Google/ElevenLabs as-is, ‏OneCLI ‏מזריק keys.
+**שינוי גדול**: מ-endpoints מותאמים (`/api/translate`, `/api/tts`, ...) ל-**transparent proxy**. ה-FE משתמשת ב-SDKs המקוריים (`@ai-sdk/google`, `@google/genai`) עם `baseURL` שמצביע ל-BE proxy. ה-BE forwards ל-Google/ElevenLabs as-is, OneCLI מזריק keys.
 
-‏יתרון ‏אדריכלי: ‏העתיד יוכל לעבור ל-FE-only ‏(keys בצד לקוח) ‏עם החלפת `baseURL` בלבד.
+יתרון אדריכלי: העתיד יוכל לעבור ל-FE-only (keys בצד לקוח) עם החלפת `baseURL` בלבד.
 
 ### תיקוני brief נוספים (13 פערים)
 
-‏‏‏בסעיף 13 של ה-brief — ‏טבלה מלאה.
+בסעיף 13 של ה-brief — טבלה מלאה.
 
-‏‏הקריטיים:
-- ‏BE לא עושה ACP handshake — ‏FE עושה. ‏BE רק spawns ‏+ ‏מחזיר wsUrl. ‏אחרי handshake, ‏FE קוראת ‏ל-`POST /api/agents/:id/session-attached`.
-- ‏History events `history_*` ‏הוסרו — ‏FE קוראת ‏ל-`session/load` ‏ישירות.
-- ‏ws-streams filter: ‏לא רק `connected` ב-handshake, ‏אלא ‏גם `heartbeat` (כל ~30s), `disconnected`, `error` לאורך ‏ה-session.
-- ‏Warmup 1500ms ‏אחרי `connected` frame ‏(subprocess warmup) — ‏לא היה בbrief.
-- ‏narration cache key = toolCallId (לא content hash).
-- ‏BE shrinks ‏עוד יותר ‏ממה ‏שתיארתי: ‏~1700 שורות impl + 800 tests (כולל narration.ts ‏ו-gemini-transcription.ts).
+הקריטיים:
+- BE לא עושה ACP handshake — FE עושה. BE רק spawns + מחזיר wsUrl. אחרי handshake, FE קוראת ל-`POST /api/agents/:id/session-attached`.
+- History events `history_*` הוסרו — FE קוראת ל-`session/load` ישירות.
+- ws-streams filter: לא רק `connected` ב-handshake, אלא גם `heartbeat` (כל ~30s), `disconnected`, `error` לאורך ה-session.
+- Warmup 1500ms אחרי `connected` frame (subprocess warmup) — לא היה בbrief.
+- narration cache key = toolCallId (לא content hash).
+- BE shrinks עוד יותר ממה שתיארתי: ~1700 שורות impl + 800 tests (כולל narration.ts ו-gemini-transcription.ts).
 
 ### עוד פתוח לאישור
 
-‏שתי שאלות בסעיף 14:
-1. ‏Dedup ב-BE או FE? ‏המלצה: BE.
-2. ‏server_event channel ב-WS ‏או polling? ‏המלצה: polling ב-MVP.
+שתי שאלות בסעיף 14:
+1. Dedup ב-BE או FE? המלצה: BE.
+2. server_event channel ב-WS או polling? המלצה: polling ב-MVP.
 
 ### הזמן הנדרש מעודכן
 
-‏Phases (4-6h, 5-7h, 5-7h, 2-3h) = **16-23h** ‏(מעט פחות מהראשון בגלל ‏הסרת endpoints מותאמים).
+Phases (4-6h, 5-7h, 5-7h, 2-3h) = **16-23h** (מעט פחות מהראשון בגלל הסרת endpoints מותאמים).
 
 ### Next step
 
-‏אבי יקרא את ה-brief המעודכן. ‏אחרי שתחליט על השאלות הפתוחות, ‏אעביר ל-Sonnet executor.
+אבי יקרא את ה-brief המעודכן. אחרי שתחליט על השאלות הפתוחות, אעביר ל-Sonnet executor.
 
 ---
 
@@ -680,63 +680,63 @@ executor (claude-sonnet-4-6) ביצע את Phase 1 של Slice 10 FE-Orchestrated
 
 ### רקע
 
-‏אחרי תיקון ‏TTS duplication (55c5bab), ‏נסקרו ‏עוד שני באגים פתוחים:
-- ‏#2: ‏אין "קפיצה" להודעה כשהיא מגיעה (‏UI-AUDIO-8 מסומן 🚫)
-- ‏#3: ‏תור ל-ElevenLabs ‏מרגיש "תקוע" כשיש מחשבות לפני הודעה
+אחרי תיקון TTS duplication (55c5bab), נסקרו עוד שני באגים פתוחים:
+- #2: אין "קפיצה" להודעה כשהיא מגיעה (UI-AUDIO-8 מסומן 🚫)
+- #3: תור ל-ElevenLabs מרגיש "תקוע" כשיש מחשבות לפני הודעה
 
-‏דיון אדריכלי ‏עם אבי הוביל ‏ל-decision: ‏לא לתקן ב-BE עם `decide-tts-priority`,
-‏אלא לבצע ‏refactor ‏מהותי — ‏‏הפיכת ה-server ל-proxy טיפש + cache,
-‏והעברת כל orchestration ל-FE.
+דיון אדריכלי עם אבי הוביל ל-decision: לא לתקן ב-BE עם `decide-tts-priority`,
+אלא לבצע refactor מהותי — הפיכת ה-server ל-proxy טיפש + cache,
+והעברת כל orchestration ל-FE.
 
 ### החלטות ארכיטקטוניות סגורות
 
-1. ‏BE = ‏bytes pipe ל-stdio-to-ws + 4 endpoints (translate/tts/narrate/stt) + cache
-2. ‏FE = ‏ACP client מלא (`@agentclientprotocol/sdk` בדפדפן) + voice orchestrator
-3. ‏Streaming TTS ‏in-scope (MediaSource API, ‏ללא Safari fallback)
-4. ‏localStorage לplayback state
-5. ‏Auto-allow_once permissions בinterim, ‏UI prompt בעתיד
-6. ‏ACP fs.readTextFile/writeTextFile ‏לא ‏מוצהר — ‏opencode קורא לבד מהדיסק
+1. BE = bytes pipe ל-stdio-to-ws + 4 endpoints (translate/tts/narrate/stt) + cache
+2. FE = ACP client מלא (`@agentclientprotocol/sdk` בדפדפן) + voice orchestrator
+3. Streaming TTS in-scope (MediaSource API, ללא Safari fallback)
+4. localStorage לplayback state
+5. Auto-allow_once permissions בinterim, UI prompt בעתיד
+6. ACP fs.readTextFile/writeTextFile לא מוצהר — opencode קורא לבד מהדיסק
 
 ### Worktree
 
-‏Slice 10 מתבצע ב-worktree נפרד: `/home/user/projects/voice-acp-v3` על branch `vnext-fe-orchestrated`.
-‏ה-vnext החי ב-v2 ‏ממשיך לעבוד עד שה-refactor יסיים.
+Slice 10 מתבצע ב-worktree נפרד: `/home/user/projects/voice-acp-v3` על branch `vnext-fe-orchestrated`.
+ה-vnext החי ב-v2 ממשיך לעבוד עד שה-refactor יסיים.
 
 ### Research findings (`docs/slice-10-research.md`)
 
-- ‏`@agentclientprotocol/sdk@0.21.1` ‏רץ בדפדפן ‏‏ללא שינוי (Web Standards only — ‏TextEncoder/Decoder, ReadableStream, WritableStream)
-- ‏acp-ui (formulahendry) כ-reference: ‏לאמץ heartbeat $/ping + no auto-reconnect; ‏לא לאמץ manual JSON-RPC client (SDK עובד)
-- ‏`@ai-sdk/elevenlabs` לא תומך streaming TTS → ‏BE עוקף עם fetch ישיר ל-`/v1/text-to-speech/{id}/stream`
-- ‏AbortController ‏מתפלל ל-fetch upstream דרך AI SDK
-- ‏Bun WS proxy: ~50 שורות
-- ‏`core/` ‏100% portable ל-FE (חוץ מ-log/index.ts שכבר מפוצל)
+- `@agentclientprotocol/sdk@0.21.1` רץ בדפדפן ללא שינוי (Web Standards only — TextEncoder/Decoder, ReadableStream, WritableStream)
+- acp-ui (formulahendry) כ-reference: לאמץ heartbeat $/ping + no auto-reconnect; לא לאמץ manual JSON-RPC client (SDK עובד)
+- `@ai-sdk/elevenlabs` לא תומך streaming TTS → BE עוקף עם fetch ישיר ל-`/v1/text-to-speech/{id}/stream`
+- AbortController מתפלל ל-fetch upstream דרך AI SDK
+- Bun WS proxy: ~50 שורות
+- `core/` 100% portable ל-FE (חוץ מ-log/index.ts שכבר מפוצל)
 
 ### Brief — Phases
 
 | Phase | משימה | זמן |
 |-------|--------|------|
-| ‏P1 | BE thin proxy + 4 endpoints | 5-7h |
-| ‏P2 | FE ACP client (SDK + ndJsonStream + Client impl) | 5-7h |
-| ‏P3 | FE voice orchestrator (accumulator + prefetch + streaming MediaSource) | 5-7h |
-| ‏P4 | Cleanup + parity + docs | 3-4h |
+| P1 | BE thin proxy + 4 endpoints | 5-7h |
+| P2 | FE ACP client (SDK + ndJsonStream + Client impl) | 5-7h |
+| P3 | FE voice orchestrator (accumulator + prefetch + streaming MediaSource) | 5-7h |
+| P4 | Cleanup + parity + docs | 3-4h |
 
-‏סה"כ: 18-25h. ‏BE shrinks ‏ב-~1200 שורות impl + ~600 שורות tests.
-‏FE growns ‏‏ב-~800 שורות impl + 200 tests.
+סה"כ: 18-25h. BE shrinks ב-~1200 שורות impl + ~600 שורות tests.
+FE growns ב-~800 שורות impl + 200 tests.
 
 ### TDD strategy
 
-‏**Outer-loop בלבד.** ‏Integration tests מקדימים כל phase ב-DoD level. ‏Unit tests רק לפונקציות עם
-‏edge cases מורכבים (sentence-boundary, prefetch policy). ‏‏לא per-function strict TDD —
-‏‏‏‏‏refactor של ‏glue/wiring לא ‏מרוויח מ-strict TDD ‏ומאט.
+**Outer-loop בלבד.** Integration tests מקדימים כל phase ב-DoD level. Unit tests רק לפונקציות עם
+edge cases מורכבים (sentence-boundary, prefetch policy). לא per-function strict TDD —
+refactor של glue/wiring לא מרוויח מ-strict TDD ומאט.
 
 ### קבצים שנוספו
 
-- ‏`docs/slice-10-research.md` — ‏‏מסמך מחקר ‏(‏‏סיכום ‏unknowns שנסגרו)
-- ‏`docs/slice-10-fe-orchestrated-brief.md` — brief מלא ‏(architecture, API contracts, phases, DoD, prompt לexecutor)
+- `docs/slice-10-research.md` — מסמך מחקר (סיכום unknowns שנסגרו)
+- `docs/slice-10-fe-orchestrated-brief.md` — brief מלא (architecture, API contracts, phases, DoD, prompt לexecutor)
 
 ### Next step
 
-‏Executor agent (Sonnet 4.6) יקבל את ה-brief ויבצע Phase 1 → 4. ‏‏יחזור עם commits פר phase.
+Executor agent (Sonnet 4.6) יקבל את ה-brief ויבצע Phase 1 → 4. יחזור עם commits פר phase.
 
 ---
 
