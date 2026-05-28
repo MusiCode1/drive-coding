@@ -80,6 +80,30 @@ After `cd .worktrees/<name>`, run `pnpm install && pnpm hooks:install`.
   port at startup. The proxy to `/api`, `/proxy`, `/ws` always points at BE 4000,
   regardless of FE port.
 
+## Backend MUST run through OneCLI
+
+The BE proxy at `/proxy/elevenlabs/*` and `/proxy/google/*` requires API
+credentials injected by the OneCLI gateway. **Do NOT start the BE with a
+plain `pnpm` command** — every TTS/translate call will return 401/400.
+
+```bash
+# ✅ Correct
+cd packages/backend
+onecli run --agent voice-acp -- bun --watch src/server.ts
+
+# ❌ Wrong — works for boot, fails on every proxy request
+pnpm --filter @drive-coding/backend dev
+```
+
+The `voice-acp` OneCLI agent injects `xi-api-key` for `api.elevenlabs.io`
+and `x-goog-api-key` for `generativelanguage.googleapis.com`. It does NOT
+inject Anthropic credentials (intentional — see `~/.config/opencode/learnings.md`
+2026-05-14 about Anthropic balance drain).
+
+How to tell if the BE is missing OneCLI: the FE shows `TTS failed: 401`
+and the BE log shows `proxy upstream non-2xx` warnings (since the
+observability commit `a76e7c1`).
+
 ## What NOT to do
 
 - No secrets in code (`.env` is gitignored)
