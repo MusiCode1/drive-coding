@@ -4,6 +4,46 @@
 
 ---
 
+## 2026-05-28 14:30 — שינוי שם branch ‎ל-`dev` + מחיקת ה-FE הישן
+
+### מה בוצע?
+
+‏המהלך ‎הוא ‎step ‎בכיוון ‎cutover (slice 13) ‎— ‎גם ‎אם ‎הוא ‎עוד ‎לא ‎ה-cutover ‎עצמו. ‎ה-FE ‎הישן הפך ל-orphan-on-`main` במקום legacy שצריך לתחזק לצד החדש.
+
+**1. שינוי שם branch + worktree**
+- ‎`git branch -m experiment/frontend-v2 dev` ‎— ‎שם ‎הענף ‎הוא ‎עכשיו ‎`dev`.
+- ‎`git worktree move /home/user/projects/voice-acp/v2 .../dev` ‎— ‎הספרייה ‎הועברה ‎לשם ‎תואם.
+- ‎בוצע ‎מתוך ‎`main/` worktree ‎(לא ‎ניתן ‎להזיז ‎worktree ‎שעובדים ‎בו).
+
+**2. מחיקת `packages/frontend/` מ-dev**
+- ‎`git rm -rf packages/frontend` (~968K, ~50+ ‎קבצים).
+- ‎`node_modules` ‎שנותרו ‎— ‎`rm -rf` ‎ידני (לא ‎tracked).
+- ‎הקוד ‎נשאר ‎על ‎branch ‎`main` ‎לעיון — ‎אם ‎יהיה ‎צורך לחזור, ‎`git checkout main -- packages/frontend`.
+
+**3. עדכון רכיבי תצורה**
+- ‎`package.json` (root): ‎`"test": "vitest run"` ‎(הוסר ‎`pnpm --filter @drive-coding/frontend test`).
+- ‎`vitest.config.ts`: ‎הסרת ‎`packages/frontend` ‎מ-`projects[]`.
+- ‎`pnpm install` ‎— ‎`pnpm-lock.yaml` ‎התעדכן ‎אוטומטית ‎(הסרת ‎דרישות ‎שהיו ‎רק ‎ב-FE ‎הישן).
+- ‎`AGENTS.md` (root) — ‎עדכון ‎ה-Structure section. ‎הוסר ‎"Legacy frozen" ‎— ‎הוחלף ‎בהערה ‎שה-FE ‎הישן ‎חי ‎רק ‎ב-`main`.
+- ‎`packages/frontend-v2/AGENTS.md` ‎+ ‎`docs/slices.md` — ‎הוסר ‎"לצד ‎הישן" ‎phrasing, ‎עדכון ‎תיאור slice 13 ‎(אין ‎צורך ‎ב-`git rm` ‎ב-cutover, ‎רק ‎ב-`mv`).
+- ‎`scripts/lint-no-hebrew-in-code.{py,sh}` ‎— ‎הוסרה ‎ההערה ‎"frontend (legacy, frozen) excluded".
+
+### החלטות ארכיטקטורה
+
+- ‎**אל ‎לעדכן ‎docs/walkthrough.md ‎ו-docs/archive/ ‎לסילוק ‎אזכורי ‎`packages/frontend/`**: ‎אלה ‎תיעוד ‎היסטורי. ‎הם ‎מתארים ‎את ‎הקוד ‎כפי ‎שהיה ‎באותו ‎רגע ‎בזמן. ‎שכתוב = ‎אובדן ‎הקשר.
+- ‎**מחיקה ב-`dev` ‎בלבד, ‎לא ‎ב-main**: ‎ה-FE ‎הישן ‎נשמר ‎ב-`main` כ-snapshot ‎שאפשר ‎לחזור ‎אליו ‎(checkout ‎נקודתי). ‎לאחר ‎merge ‎של ‎`dev` ‎ל-`main` ‎(אחרי ‎slice 13), ‎ה-FE ‎הישן ‎יעלם ‎לחלוטין ‎— ‎אבל ‎ב-git history.
+- ‎**vitest projects ‎לא ‎כולל ‎`frontend-v2`** עדיין: ‎אין ‎שם ‎טסטים ‎(slice 0+0.5 ‎לא ‎כתבו). ‎להוסיף ‎כש-יהיה ‎`vitest.config.ts` ‎ב-frontend-v2 ‎(עם ‎plugin ‎sveltekit).
+
+### Tests + smoke
+
+- ‎`pnpm typecheck`: ✅
+- ‎`pnpm test`: ✅ ‎(354 ‎ב-`packages/core` + `packages/backend`)
+- ‎`pnpm --filter @drive-coding/frontend-v2 build`: ✅ (4.22s)
+- ‎`./scripts/lint-no-hebrew-in-code.sh`: ✅
+- ‎`git worktree list`: ‎✅ ‎`dev` ‎ב-`/home/user/projects/voice-acp/dev`, ‎`main` ‎נשאר ‎ב-`main/` ‎על ‎branch ‎`refactor/acp-neutral`.
+
+---
+
 ## 2026-05-28 14:00 — Slice 0.5: i18n infra + lint rule + ניקוי טכני לפני slice 1
 
 ### מה בוצע?

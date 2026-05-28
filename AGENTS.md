@@ -19,12 +19,14 @@ See `docs/vnext-architecture.md` for full spec.
 
 - `packages/core/` — pure logic, no IO. Tests TDD.
 - `packages/backend/` — Hono + adapters. Integration tests.
-- `packages/frontend/` — SvelteKit drive-first PWA. **Legacy** — accumulated chaos. Frozen for now.
-- `packages/frontend-v2/` — **active** rebuild from scratch with the clean 5-layer architecture
-  (view-models / actions / engines / adapters / routes). Has its own `AGENTS.md` with five
-  golden rules. New code goes here. Will be renamed to `frontend/` at slice 13 (cutover).
+- `packages/frontend-v2/` — the active FE: SvelteKit drive-first PWA, clean 5-layer
+  architecture (view-models / actions / engines / adapters / routes). Has its own
+  `AGENTS.md` with five golden rules. Will be renamed to `frontend/` at slice 13 (cutover).
 
-When working on the FE, always work in `packages/frontend-v2/` unless explicitly told otherwise.
+The legacy `packages/frontend/` (accumulated chaos, 989-line route) was deleted from
+this `dev` branch on 2026-05-28. It still exists on the `main` branch for reference
+and can be checked out there if needed.
+
 The current slice roadmap is `packages/frontend-v2/docs/slices.md`.
 
 ## Conventions

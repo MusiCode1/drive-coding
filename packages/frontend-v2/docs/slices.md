@@ -67,7 +67,7 @@ Slice 2+   💭 מתוכנן  ראה ‎טבלה ‎למטה
 | 7 | Drive-first chrome | car mode (?car=1), Media Session API, wake lock, landscape lock | 1, 2, 6 | ~‎2 ‎ימים | 💭 |
 | 10 | Recordings + replay | ‎שמירת הקלטות, ‎replay של שיחה מלאה (user audio + agent TTS חדש) | 1, 2, 8 + BE work | ~‎2 ‎ימים | 💭 |
 | 11 | Audio-friendly prompt | ‎OpenCode plugin injection (audio-friendly system prompt) — דורש BE work | 0 | ~‎2 ‎ימים | 💭 |
-| 13 | Cutover | ‎מחיקת `packages/frontend/`, rename `frontend-v2/` → `frontend/` | כל ‎הקודמים | ~‎חצי יום | 💭 |
+| 13 | Cutover | rename ‎`frontend-v2/` ‎→ ‎`frontend/` ‎(הישן ‎כבר נמחק ‎ב-2026-05-28) | כל ‎הקודמים | ~‎חצי יום | 💭 |
 
 **‎סה"כ ‎לcutover מלא: ‎~‎15-16 ‎ימי עבודה.**
 **‎סה"כ ‎ל-"כלי ‎יומיומי ‎שמיש" ‎(slices 0.5 + 1-3 + 8-9): ‎~‎5 ‎ימים.**
@@ -218,7 +218,7 @@ Slice 2+   💭 מתוכנן  ראה ‎טבלה ‎למטה
 
 ### Slice 13 ‎— Cutover
 
-‎אחרי ‎שcomponent parity מוצא: ‎`git rm -r packages/frontend/` ‎+ ‎`mv packages/frontend-v2/ packages/frontend/`. ‎עדכון ‎package.json, ‎pnpm-workspace.yaml, ‎scripts. ‎ביטול ‎branch ‎`experiment/frontend-v2`. ‎merge ל-main.
+‎אחרי ‎שcomponent parity מוצא: ‎`mv packages/frontend-v2/ packages/frontend/`. ‎עדכון ‎package.json, ‎pnpm-workspace.yaml, ‎scripts, ‎vitest.config. ‎merge ‎ל-main (‎ב-merge ‎הענף ‎הישן ‎ימחק ‎אוטומטית — ‎הוא ‎לא ‎קיים ‎ב-`dev`).
 
 ---
 

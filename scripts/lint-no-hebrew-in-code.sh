@@ -8,7 +8,6 @@
 # Exit 0 = clean. Exit 1 = violations found.
 #
 # Scope: packages/frontend-v2/, packages/core/, packages/backend/.
-# `packages/frontend/` (legacy, frozen) is intentionally excluded.
 #
 # Usage: scripts/lint-no-hebrew-in-code.sh
 # Run from repo root.

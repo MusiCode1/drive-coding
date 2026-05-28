@@ -12,8 +12,6 @@ Scope:
   - packages/core/
   - packages/backend/
 
-The legacy `packages/frontend/` is intentionally NOT scanned (frozen).
-
 Allowlist (paths where Hebrew IS allowed in strings):
   - packages/core/src/i18n/catalogs/*  (source of truth)
   - packages/core/src/voice/*-prompt.ts  (LLM prompts)

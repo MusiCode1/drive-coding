@@ -2,10 +2,11 @@
 
 ## מה זה
 
-בנייה מחדש של ה-FE מאפס, עם המבנה החדש (view-models classes + Context + 5 שכבות).
-נוצר ב-`experiment/frontend-v2` אחרי ש-`packages/frontend/` הצטבר לכאוס (989 שורות ב-route אחד).
+ה-FE היחיד בענף `dev`. נבנה מאפס במבנה החדש (view-models classes + Context + 5 שכבות)
+אחרי ש-`packages/frontend/` הישן הצטבר לכאוס (989 שורות ב-route אחד).
 
-**ה-FE הקיים ב-`packages/frontend/` עוד עובד.** יוחלף (אולי) כש-v2 יגיע ל-feature parity.
+ה-FE הישן עוד קיים בענף `main` בלבד — לעיון היסטורי. ב-`dev` הוא נמחק (2026-05-28).
+ב-cutover (slice 13) הספרייה תשונה ל-`packages/frontend/`.
 
 ---
 
