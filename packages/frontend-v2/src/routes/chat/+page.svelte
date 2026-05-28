@@ -1,19 +1,20 @@
 <script lang="ts">
 import { tick } from "svelte"
 import { goto } from "$app/navigation"
-import { getSession } from "$lib/context"
+import { getI18n, getSession } from "$lib/context"
 
 const session = getSession()
+const t = getI18n().t
+
+// Synchronous guard: refresh / direct nav with no active connection → home.
+// Runs during component setup before any markup renders, so no flicker.
+// (csr=false in +layout.ts → script body runs only in the browser.)
+if (session.status === "idle") {
+  goto("/", { replaceState: true })
+}
 
 let promptText = $state("")
 let chatEl = $state<HTMLElement | null>(null)
-
-// Redirect to / if no active connection (refresh / direct nav)
-$effect(() => {
-  if (session.status === "idle") {
-    goto("/")
-  }
-})
 
 // Auto-scroll on new content
 $effect(() => {
@@ -40,26 +41,31 @@ function disconnect() {
 }
 </script>
 
+{#if session.status !== "idle"}
 <div class="chat-page">
   <header>
     <div class="meta">
       <span class="status status-{session.status}">{session.status}</span>
       <span class="cwd" dir="ltr">{session.cwd ?? ""}</span>
     </div>
-    <button class="disconnect" onclick={disconnect}>נתק</button>
+    <button class="disconnect" onclick={disconnect}>{t("chat.disconnect")}</button>
   </header>
 
   <div class="chat" bind:this={chatEl}>
     {#each session.bubbles as bubble (bubble.id)}
       <div class="bubble bubble-{bubble.kind}">
         <div class="kind-label">
-          {bubble.kind === "user" ? "אני" : bubble.kind === "thought" ? "מחשבה" : "סוכן"}
+          {bubble.kind === "user"
+            ? t("chat.bubble.user")
+            : bubble.kind === "thought"
+              ? t("chat.bubble.thought")
+              : t("chat.bubble.agent")}
         </div>
         <div class="text">{bubble.text}</div>
       </div>
     {/each}
     {#if session.bubbles.length === 0}
-      <div class="empty">התחל לכתוב למטה…</div>
+      <div class="empty">{t("chat.empty")}</div>
     {/if}
   </div>
 
@@ -70,7 +76,7 @@ function disconnect() {
   <form onsubmit={onSubmit}>
     <textarea
       bind:value={promptText}
-      placeholder="כתוב prompt…"
+      placeholder={t("chat.prompt.placeholder")}
       rows="2"
       disabled={session.status !== "connected" && session.status !== "thinking"}
       onkeydown={(e) => {
@@ -87,10 +93,11 @@ function disconnect() {
         (session.status !== "connected" && session.status !== "thinking")
       }
     >
-      שלח
+      {t("chat.send")}
     </button>
   </form>
 </div>
+{/if}
 
 <style>
   .chat-page {

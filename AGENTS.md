@@ -19,7 +19,13 @@ See `docs/vnext-architecture.md` for full spec.
 
 - `packages/core/` — pure logic, no IO. Tests TDD.
 - `packages/backend/` — Hono + adapters. Integration tests.
-- `packages/frontend/` — SvelteKit drive-first PWA.
+- `packages/frontend/` — SvelteKit drive-first PWA. **Legacy** — accumulated chaos. Frozen for now.
+- `packages/frontend-v2/` — **active** rebuild from scratch with the clean 5-layer architecture
+  (view-models / actions / engines / adapters / routes). Has its own `AGENTS.md` with five
+  golden rules. New code goes here. Will be renamed to `frontend/` at slice 13 (cutover).
+
+When working on the FE, always work in `packages/frontend-v2/` unless explicitly told otherwise.
+The current slice roadmap is `packages/frontend-v2/docs/slices.md`.
 
 ## Conventions
 
@@ -37,9 +43,17 @@ pnpm install
 pnpm dev              # all packages
 pnpm test             # all tests
 pnpm typecheck
-pnpm lint
+pnpm lint             # Biome
+pnpm lint:i18n        # scripts/lint-no-hebrew-in-code.sh — blocks Hebrew in code
 pnpm format
+pnpm hooks:install    # one-time: set core.hooksPath=.githooks (runs pre-commit lint)
 ```
+
+## Git hooks
+
+After clone, run `pnpm hooks:install` once. It sets `core.hooksPath=.githooks/`
+so `.githooks/pre-commit` runs the i18n lint before every commit. To skip a
+specific commit (rare): `git commit --no-verify`.
 
 ## What NOT to do
 
@@ -51,9 +65,11 @@ pnpm format
 ## Reference
 
 - `docs/vnext-architecture.md` — 50 decisions (D1-D50)
-- `docs/vnext-spec.md` — protocol, schemas, ports, roadmap
+- `docs/vnext-spec.md` — protocol, schemas, ports. §8.5 (slices) is OBSOLETE — see below.
 - `docs/vnext-research.md` — competitor analysis, library research
-- `docs/slice-X-brief.md` — current slice's implementation brief
+- `docs/frontend-spec.md` — drive-first UX spec (still authoritative)
+- `packages/frontend-v2/docs/slices.md` — **current slice roadmap** (source of truth)
+- `packages/frontend-v2/AGENTS.md` — five golden rules for FE-v2 code
 
 ## Working with Tama (planner)
 

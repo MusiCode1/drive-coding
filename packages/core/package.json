@@ -12,6 +12,7 @@
     "./acp/*": "./src/acp/*.ts",
     "./ui/*": "./src/ui/*.ts",
     "./cache/*": "./src/cache/*.ts",
+    "./i18n": "./src/i18n/index.ts",
     "./log": {
       "browser": "./src/log/browser.ts",
       "default": "./src/log/index.ts"

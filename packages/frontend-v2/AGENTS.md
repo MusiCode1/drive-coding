@@ -124,19 +124,23 @@ User (voice) → Mic → text → AgentSession → text → Agent (ACP)
 
 ---
 
-## מצב נוכחי (slice 0 — text only)
+## מצב נוכחי (slice 0.5 הושלם — i18n + text only)
 
 ✓ טקסט בלבד, אין voice עדיין.
-✓ View-models: Settings, AgentSession.
+✓ View-models: Settings, AgentSession, I18nVM.
 ✓ ACP integration דרך WsAcpTransport + `@drive-coding/core/acp`.
 ✓ 2 routes: `/` ו-`/chat`.
-✓ typecheck נקי.
+✓ i18n: `@drive-coding/core/i18n` + lint rule (`scripts/lint-no-hebrew-in-code.sh`).
+✓ SPA-only (`+layout.ts` עם `ssr=false`).
+✓ typecheck + build נקיים.
 
 **לא קיים עדיין:** Mic, Speaker, VoiceMode, Player, CarMode, recordings, session picker, settings page, recovery flow, error toasts.
 
 ---
 
-## slice הבא מומלץ — slice 1: voice input
+## slice הבא — slice 1: voice input
+
+ראה `docs/slices.md` ‎לטבלת ‎ה-slices ‎המלאה ‎ולנימוקי ‎הסדר.
 
 **הוספת Mic + STT:**
 - `view-models/mic.svelte.ts` — class Mic (state: `idle`/`recording`/`transcribing`).
@@ -146,10 +150,22 @@ User (voice) → Mic → text → AgentSession → text → Agent (ACP)
 - `context.ts` + זוג ל-Mic.
 - `+layout` + 4 שורות.
 - `/chat/+page.svelte` + `<MicButton />` ליד textarea.
+- ‎API ‎ציבורי ‎חדש: ‎`AgentSession.sendPrompt(text, opts?: { recordingId?: string })` — ‎הכנה ‎ל-slice 10, ‎`opts` ‎נשאר ‎unused ‎בslice 1.
+- ‎כל ‎מחרוזת ‎חדשה ‎עוברת ‎דרך ‎`t(key)`. ‎להוסיף ‎מפתחות ‎ל-`packages/core/src/i18n/keys.ts` ‎ול-`catalogs/`.
 
 אחרי slice 1: אישה יכולה לדבר במקום להקליד.
 
-**slice 2 בעתיד: voice output (Speaker + TTS + VoiceMode).**
+**slice 2 בעתיד: voice output (Speaker + TTS + VoiceMode) + Bubble model מורחב** — ראה `docs/bubble-model.md`.
+
+---
+
+## i18n — איך להוסיף מחרוזת חדשה
+
+1. ‎הוסף ‎key ‎ל-`packages/core/src/i18n/keys.ts` (union type `MessageKey`).
+2. ‎הוסף ‎ערך ‎ב-`packages/core/src/i18n/catalogs/he.ts` (‎חובה).
+3. ‎הוסף ‎scaffold ‎ב-`packages/core/src/i18n/catalogs/en.ts` (יכול ‎להיות ‎אנגלית ‎placeholder).
+4. ‎השתמש: ‎`const t = getI18n().t` ‎ב-`<script>`, ‎ואז ‎`{t("your.key")}` ‎ב-markup.
+5. ‎הרץ ‎`scripts/lint-no-hebrew-in-code.sh` ‎לוודא ‎שלא ‎הוספת ‎מחרוזת ‎עברית ‎ישירות ‎בקוד.
 
 ---
 

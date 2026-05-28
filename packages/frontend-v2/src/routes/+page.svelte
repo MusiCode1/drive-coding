@@ -1,10 +1,12 @@
 <script lang="ts">
 import type { CliKind } from "@drive-coding/core"
 import { connectAgent } from "$lib/actions/connect-agent"
-import { getSession, getSettings } from "$lib/context"
+import { getI18n, getSession, getSettings } from "$lib/context"
 
 const settings = getSettings()
 const session = getSession()
+const i18n = getI18n()
+const t = i18n.t
 
 let cliKind = $state<CliKind>(settings.cliKind)
 let cwd = $state(settings.lastCwd)
@@ -17,12 +19,12 @@ async function onSubmit(e: SubmitEvent) {
 </script>
 
 <main class="connect">
-  <h1>drive-coding v2</h1>
-  <p class="subtitle">חבר ל-CLI agent</p>
+  <h1>{t("connect.title")}</h1>
+  <p class="subtitle">{t("connect.subtitle")}</p>
 
   <form onsubmit={onSubmit}>
     <label>
-      <span>CLI</span>
+      <span>{t("connect.cli.label")}</span>
       <select bind:value={cliKind} disabled={session.status === "connecting"}>
         <option value="opencode">opencode</option>
         <option value="claude">claude</option>
@@ -32,24 +34,24 @@ async function onSubmit(e: SubmitEvent) {
     </label>
 
     <label>
-      <span>תיקיית עבודה</span>
+      <span>{t("connect.cwd.label")}</span>
       <input
         type="text"
         bind:value={cwd}
-        placeholder="/home/user/projects/X"
+        placeholder={t("connect.cwd.placeholder")}
         dir="ltr"
         disabled={session.status === "connecting"}
       />
     </label>
 
     <button type="submit" disabled={!cwd.trim() || session.status === "connecting"}>
-      {session.status === "connecting" ? "מתחבר…" : "חבר"}
+      {session.status === "connecting" ? t("connect.submitting") : t("connect.submit")}
     </button>
   </form>
 
   {#if session.error}
     <div class="error" role="alert">
-      <strong>שגיאה:</strong>
+      <strong>{t("connect.error.prefix")}</strong>
       {session.error}
     </div>
   {/if}

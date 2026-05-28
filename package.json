@@ -15,13 +15,15 @@
     "test:watch": "vitest",
     "typecheck": "tsc --build",
     "lint": "biome check .",
-    "format": "biome format --write ."
+    "lint:i18n": "./scripts/lint-no-hebrew-in-code.sh",
+    "format": "biome format --write .",
+    "hooks:install": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",
+    "@types/node": "^22.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^4.0.0",
-    "@types/node": "^22.0.0"
+    "vitest": "^4.0.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

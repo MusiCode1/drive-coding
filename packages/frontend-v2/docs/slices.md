@@ -1,8 +1,11 @@
 # Slices Roadmap — frontend-v2
 
-> **‎סטטוס**: ‎חי, ‎עדכון 2026-05-27.
+> **‎סטטוס**: ‎חי, ‎עדכון 2026-05-28.
 > **‎תפקיד**: ‎מקור-אמת ‎יחיד לסדר ה-slices של ‎`packages/frontend-v2/`.
 > **‎מחליף**: ‎`docs/frontend-reorganization-plan.md` ‎(הועבר ל-archive) ‎+ ‎חלק §8.5 ב-`docs/vnext-spec.md` (סומן obsolete).
+>
+> **שינוי 2026-05-28**: נוסף slice 0.5 (i18n) ושונה סדר ה-slices אחרי בדיקת ‎מסמכי ‎התכנון.
+> ‎ראה §"סדר ‎ה-slices ‎— ‎נימוקים".
 
 ---
 
@@ -39,10 +42,10 @@
 ## ‎סטטוס נוכחי
 
 ```
-Slice 0  ✅ הושלם   text-only chat (connect + send prompt + bubbles)
-Slice 1  📋 הבא     Mic + STT (אישה ‎מדברת)
-Slice 2  💭 מתוכנן  Speaker + TTS (סוכן מדבר)
-Slice 3+ 💭 מתוכנן  ראה ‎טבלה ‎למטה
+Slice 0    ✅ הושלם   text-only chat (connect + send prompt + bubbles)
+Slice 0.5  📋 הבא     i18n infra + lint rule + מיגרציה ‎של ~20 מחרוזות
+Slice 1    💭 מתוכנן  Mic + STT (אישה ‎מדברת)
+Slice 2+   💭 מתוכנן  ראה ‎טבלה ‎למטה
 ```
 
 ---
@@ -52,26 +55,79 @@ Slice 3+ 💭 מתוכנן  ראה ‎טבלה ‎למטה
 | # | ‎שם | ‎תוצר | ‎תלות | ‎גודל | Status |
 |---|------|--------|--------|--------|--------|
 | 0 | Text foundation | ‎connect + chat טקסטואלי + bubbles streaming | — | — | ✅ |
-| 1 | Mic + STT | ‎אישה ‎מדברת ‎→ STT ‎→ ‎sendPrompt | 0 | ~1 ‎יום | 📋 הבא |
-| 2 | Speaker + TTS | ‎chunks ‎מסוכן ‎→ ‎TTS ‎→ ‎אודיו ‎(sentence-by-sentence) | 0, 1 | ~‎2 ‎ימים | 💭 |
+| 0.5 | **i18n infra** | ‎`core/i18n/` + ‎`t(key)` + ‎lint rule ‎+ ‎מיגרציה ‎של ~20 ‎מחרוזות ‎קיימות | 0 | ~‎חצי יום | 📋 הבא |
+| 1 | Mic + STT | ‎אישה ‎מדברת ‎→ STT ‎→ ‎sendPrompt | 0.5 | ~1 ‎יום | 💭 |
+| 2 | Speaker + TTS | ‎chunks ‎מסוכן ‎→ ‎TTS ‎→ ‎אודיו ‎(sentence-by-sentence) | 1 + Bubble model מורחב | ~‎2 ‎ימים | 💭 |
 | 3 | VoiceMode FSM | ‎composite 5-state (idle/recording/transcribing/thinking/speaking) | 1, 2 | ~‎חצי יום | 💭 |
-| 4 | Bubble polish | ‎markdown, ‎tool bubbles עם status dots, ‎thought styling | 0 | ~1 ‎יום | 💭 |
+| 8 | Session picker | `/sessions` ‎— ‎רשימת sessions ישנים, ‎resume | 0.5 | ~1 ‎יום | 💭 |
+| 9 | Settings page | `/settings` ‎— ‎voice picker ‎(ElevenLabs voices), ‎audio cues toggles | 0.5, 6 | ~1 ‎יום | 💭 |
+| 4 | Bubble polish | ‎markdown, ‎tool bubbles עם status dots, ‎thought styling | 0.5 | ~1 ‎יום | 💭 |
 | 5 | Smart scroll | ‎auto-scroll, ‎jump-down button, ‎user-interaction detection | 0 | ~‎חצי יום | 💭 |
 | 6 | Audio cues | ‎5 ‎צלילים ‎ב-Web Audio (recording start/stop, thinking, speaking, error) | 3 | ~‎חצי יום | 💭 |
 | 7 | Drive-first chrome | car mode (?car=1), Media Session API, wake lock, landscape lock | 1, 2, 6 | ~‎2 ‎ימים | 💭 |
-| 8 | Session picker | `/sessions` ‎— ‎רשימת sessions ישנים, ‎resume | 0 | ~1 ‎יום | 💭 |
-| 9 | Settings page | `/settings` ‎— ‎voice picker ‎(ElevenLabs voices), ‎audio cues toggles | 6 | ~1 ‎יום | 💭 |
-| 10 | Recordings + replay | ‎שמירת הקלטות, ‎replay של שיחה מלאה (user audio + agent TTS חדש) | 1, 2, 8 | ~‎2 ‎ימים | 💭 |
-| 11 | Audio-friendly prompt | ‎OpenCode plugin injection (audio-friendly system prompt) | 0 | ~‎2 ‎ימים | 💭 |
-| 12 | i18n infrastructure | ‎message catalogs, ‎locale loading, ‎אנגלית אופציונלית | — | ~‎2 ‎ימים | 💭 |
-| 13 | Cutover | ‎מחיקת `packages/frontend/`, rename `frontend-v2/` → `frontend/` | 1-11 | ~‎חצי יום | 💭 |
+| 10 | Recordings + replay | ‎שמירת הקלטות, ‎replay של שיחה מלאה (user audio + agent TTS חדש) | 1, 2, 8 + BE work | ~‎2 ‎ימים | 💭 |
+| 11 | Audio-friendly prompt | ‎OpenCode plugin injection (audio-friendly system prompt) — דורש BE work | 0 | ~‎2 ‎ימים | 💭 |
+| 13 | Cutover | ‎מחיקת `packages/frontend/`, rename `frontend-v2/` → `frontend/` | כל ‎הקודמים | ~‎חצי יום | 💭 |
 
-**‎סה"כ ‎לcutover מלא: ‎~‎15 ‎ימי עבודה.**
-**‎סה"כ ‎ל-MVP ‎(slices 1-3 + 4-5): ‎~‎5 ‎ימים.**
+**‎סה"כ ‎לcutover מלא: ‎~‎15-16 ‎ימי עבודה.**
+**‎סה"כ ‎ל-"כלי ‎יומיומי ‎שמיש" ‎(slices 0.5 + 1-3 + 8-9): ‎~‎5 ‎ימים.**
+
+---
+
+## ‎סדר ‎ה-slices ‎— ‎נימוקים
+
+ה-roadmap המקורי היה ‎1→2→3→4→5→6→7→8→9→10→11→12. ‎שינויים ‎ב-2026-05-28:
+
+### 1. ‎הוספת ‎slice 0.5 ‎(i18n) ‎לפני slice 1
+
+‎ה-`i18n-gap-report.md` (‎הועבר ‎לארכיון) ‎תיעד ‎את ה-anti-pattern שקרה ‎ב-FE ‎הישן: ‎D10 ‎הצהיר ‎"אין hardcoded strings" ‎אבל ה-slice של i18n נדחה ‎שוב ‎ושוב, ‎ובסוף ‎הצטברו ‎150 ‎מחרוזות ‎ב-21 קבצים. **‎ב-v2 ‎ב-slice 0 ‎יש רק ~20 ‎מחרוזות** — ‎עלות ‎חילוץ ‎נמוכה ‎פי 7-10 ‎מאשר ‎בסוף slice 11.
+
+‎בנוסף ל-extraction: lint rule (Biome/grep ‎ב-pre-commit) ‎שחוסם ‎`[\u0590-\u05FF]` ‎בקוד ‎מחוץ ‎ל-catalog ‎ו-prompts. ‎בלי lint rule, ‎כל slice עתידי יכניס מחרוזות עבריות ‎חדשות ‎ויעקור ‎את ‎המאמץ.
+
+### 2. ‎דחיפת slices 8-9 ‎(Session picker + Settings) ‎לפני 4-7
+
+‎אחרי slices 1-3 ‎יש ‎voice in/out ‎עובד. ‎השאלה ‎הבאה ‎של המשתמש היא "‎איך ‎אני ‎חוזר ‎לסשן ‎שעבדתי ‎עליו ‎אתמול" ‎ו-"‎איך ‎אני ‎בוחר ‎קול", ‎לא "‎הbubbles ‎יפים ‎יותר". ‎סדר ‎4-7 ‎הוא ‎polish — ‎חשוב ‎אבל ‎לא ‎חוסם ‎שימוש ‎יומיומי.
+
+### 3. ‎slice 12 ‎(i18n) ‎הוסר ‎— ‎הוחלף ב-0.5
+
+‎ה-roadmap המקורי שמר i18n ‎ל-slice 12 ‎(לפני cutover). ‎זה ‎בדיוק ‎הדפוס ‎שיצר ‎את ‎הבעיה ב-v1. ‎מבוטל ל-טובת ‎0.5.
+
+### 4. ‎הוספת ‎"Bubble model ‎מורחב" ‎כתלות ‎של ‎slice 2
+
+‎לפי **חוק ‎זהב #5** ‎ב-`AGENTS.md` ‎(אסור backward compat in place), ‎שינוי ‎ה-state model ‎של ‎`bubbles` ‎צריך ‎להיעשות ‎במכה ‎אחת ‎ולא ‎בהדרגה. ‎ה-bubble ‎השטוח ‎הנוכחי (`{ id, kind, text }`) ‎לא ‎מספיק ‎ל-slice 2 (‎צריך ‎segments ל-streaming TTS), ‎slice 4 (tool bubbles ‎עם ‎status), ‎ו-slice 10 (recordingId ‎ב-user bubbles). ‎ראה ‎`docs/bubble-model.md` ‎להחלטה.
 
 ---
 
 ## ‎פירוט slices ‎— ‎סקירה ‎(לא ‎brief מלא)
+
+### Slice 0.5 ‎— i18n infrastructure
+
+**‎מטרה**: ‎לפתור ‎את ‎D10 ‎לפני ‎שהמחרוזות ‎יצטברו ‎שוב.
+
+**‎נגיעות** (5 ‎חדשים + 3 ‎שינויים):
+
+‎חדשים:
+- ‎`packages/core/src/i18n/keys.ts` — `MessageKey` type (union ‎של ‎מפתחות), `Locale` type.
+- ‎`packages/core/src/i18n/catalogs/he.ts` — ‎עברית ‎(ברירת ‎מחדל).
+- ‎`packages/core/src/i18n/catalogs/en.ts` — ‎אנגלית ‎(scaffold ‎בלבד, ‎יושלם ‎עתידי).
+- ‎`packages/core/src/i18n/index.ts` — ‎`createI18n({ locale })` → `{ t, setLocale, locale }`.
+- ‎`packages/frontend-v2/src/lib/view-models/i18n.svelte.ts` — VM ‎עוטף ‎עם ‎`$state` ‎ל-locale.
+- ‎`scripts/lint-no-hebrew-in-code.sh` (‎או ‎Biome custom rule) — ‎חוסם ‎`[\u0590-\u05FF]` ‎ב-`*.ts`/`*.svelte` ‎מחוץ ‎ל-catalogs ‎ו-prompts ‎ב-`core/voice/`.
+
+‎שינויים:
+- ‎`+layout.svelte` ‎— ‎יצירת `i18n` ‎VM ‎+ ‎setContext.
+- ‎`+page.svelte` ‎ו-`chat/+page.svelte` ‎— ‎החלפת ‎כל ‎מחרוזת ‎עברית ‎ב-`t(...)`.
+- ‎`agent-session.svelte.ts` ‎— ‎הודעות ‎שגיאה ‎דרך ‎`t(...)`. ‎אם ‎ה-VM ‎לא ‎יכול ‎לגשת ‎ל-context, ‎להחזיר ‎message key במקום ‎טקסט ‎והroute ‎יתרגם.
+
+**Locale detection**: `navigator.language` → ‎עברית אם he, ‎אחרת ‎אנגלית. ‎אופציה ‎לדריסה ‎ב-Settings (‎יושלם ‎ב-slice 9).
+
+**Lint enforcement**: ‎`scripts/lint-no-hebrew-in-code.sh` ‎פותח את ‎הקובץ, ‎מסנן ‎שורות ‎שמתחילות ‎ב-`//` ‎או ‎`*` ‎(הערות), ‎ובודק ‎`[\u0590-\u05FF]`. ‎whitelist: ‎`packages/core/src/i18n/catalogs/`, ‎`packages/core/src/voice/*prompt.ts` (LLM ‎prompts), ‎`docs/**`.
+
+**DoD**:
+- ‎`pnpm exec ./scripts/lint-no-hebrew-in-code.sh` ‎יוצא 0.
+- ‎כל ‎ה-FE-v2 ‎הקיים ‎פועל ‎אותו ‎דבר ‎(connect + chat). ‎אישור ‎ידני.
+- ‎`pnpm typecheck` ‎ירוק.
+- ‎ה-script ‎רץ ‎ב-CI / pre-commit (‎עדיף).
 
 ### Slice 1 ‎— Mic + STT
 
@@ -159,17 +215,6 @@ Slice 3+ 💭 מתוכנן  ראה ‎טבלה ‎למטה
 ‎מתבצע ‎ב-`OPENCODE_CONFIG_CONTENT` env var ‎ב-spawn (‎עוקף את ‎ה-cwd ‎של ‎המשתמשת).
 
 ‎ראה ‎`docs/audio-friendly-prompt-plan.md` ‎לתכנון מלא ‎— ‎8 ‎פסקאות, ‎כולל ‎חלופות שנשללו ‎והטמעה ב-CodeNomad כ-reference.
-
-### Slice 12 ‎— i18n infrastructure
-
-‎פותר חוב ‎שתועד ‎ב-D10 ‎(2026-05-15) ‎שלא ‎יושם. ‎כיום ~‎150 hardcoded Hebrew strings ‎ב-FE.
-
-‎יוצרים:
-‎- ‎`packages/core/src/i18n/` ‎עם locale catalogs (he, en).
-‎- ‎`view-models/i18n.svelte.ts` ‎עם ‎`t(key)` ‎function ‎ו-locale state.
-‎- ‎הזזת ‎כל ‎ה-strings ‎ב-FE ל-catalogs.
-
-‎ראה ‎`docs/i18n-gap-report.md` ‎— ‎דוח מלא של הפער.
 
 ### Slice 13 ‎— Cutover
 

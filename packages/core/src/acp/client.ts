@@ -96,7 +96,7 @@ export async function createAcpClient(
     if (err?.data?.code === "auth_required") {
       const authErr = new Error(
         `ACP agent requires authentication: ${err.message ?? "auth_required"}. ` +
-          `הפעל ב-shell: '<cli> auth login'.`,
+          `Run in shell: '<cli> auth login'.`,
       )
       ;(authErr as Error & { kind?: string }).kind = "auth_required"
       transport.close()

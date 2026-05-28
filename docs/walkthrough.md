@@ -4,6 +4,90 @@
 
 ---
 
+## 2026-05-28 14:00 — Slice 0.5: i18n infra + lint rule + ניקוי טכני לפני slice 1
+
+### מה בוצע?
+
+‎סבב ‎הכנה ‎לפני slice 1 ‎של ‎frontend-v2: ‎דחיפת ‎ה-i18n ‎שהיה ‎מתוכנן ‎ל-slice 12 ‎ל-slice 0.5, ‎עוד ‎לפני ‎שהמחרוזות הצטברו. ‎לפי ‎ה-`i18n-gap-report.md` ‎(הועבר ‎לארכיון ‎ב-2026-05-28), ‎ב-FE ‎הישן ‎הצטברו 150 ‎מחרוזות ‎ב-21 ‎קבצים ‎כי ‎i18n נדחה מ-slice ל-slice. ‎ב-v2 ‎בשלב 0 ‎יש ‎רק ~20 ‎מחרוזות — ‎עלות חילוץ נמוכה פי 7-10.
+
+**1. עדכון `slices.md` — סדר חדש**
+
+- ‎הוספת slice 0.5 ‎(i18n) ‎לפני slice 1.
+- ‎דחיפת slices 8-9 ‎(Session picker + Settings) ‎לפני 4-7 ‎— ‎אחרי ‎voice in/out (1-3) ‎הצורך ‎הבא ‎הוא ‎חזרה ‎לסשנים ‎ישנים, ‎לא bubble polish.
+- ‎הסרת slice 12 ‎(i18n) — ‎הוחלף ‎ע"י 0.5.
+- ‎הוספת ‎"Bubble model ‎מורחב" ‎כתלות ‎של ‎slice 2 (‎ראה ‎`docs/bubble-model.md` ‎החדש).
+
+**2. עדכון root AGENTS.md**
+
+- ‎הוספת ‎אזכור ‎של ‎`packages/frontend-v2/` ‎כ-active rebuild ‎(legacy ‎`packages/frontend/` ‎frozen).
+- ‎הפניה ‎ל-`packages/frontend-v2/docs/slices.md` ‎כ-source-of-truth ‎לroadmap.
+
+**3. תיקון $effect redirect ב-chat/+page.svelte**
+
+- ‎הוסף ‎`+layout.ts` ‎עם ‎`ssr = false; prerender = false; csr = true` — SPA טהור.
+- ‎ה-redirect ‎על ‎`status === "idle"` ‎עבר ‎מ-`$effect` ‎ל-synchronous check ‎ב-`<script>` body, ‎לפני ‎שה-DOM ‎מתמלא.
+- ‎ה-markup ‎עטוף ‎ב-`{#if session.status !== "idle"}` ‎— ‎אין flicker.
+
+**4. מסמך bubble-model.md**
+
+- ‎`packages/frontend-v2/docs/bubble-model.md` (חדש).
+- ‎Discriminated union ‎עם ‎4 variants (user / message / thought / tool).
+- ‎הוחלט ‎ליישם ‎בתחילת slice 2 (לא 0.5 ולא 1) ‎— ‎`Speaker` ‎הוא ‎ה-consumer ‎הראשון ‎שדורש ‎את ‎השדות ‎החדשים (`segments`, ‎`messageId`).
+
+**5. Slice 0.5 — i18n infra**
+
+‎נוצרו ‎(6 ‎קבצים ‎חדשים):
+- ‎`packages/core/src/i18n/keys.ts` — `MessageKey` ‎type ‎+ ‎`Locale` ‎type.
+- ‎`packages/core/src/i18n/catalogs/he.ts` ‎+ ‎`en.ts` — catalogs.
+- ‎`packages/core/src/i18n/index.ts` — `createI18n` ‎+ ‎`detectLocale` ‎(לפי ‎`navigator.language`).
+- ‎`packages/frontend-v2/src/lib/view-models/i18n.svelte.ts` — ‎`I18nVM` ‎reactive ‎עם ‎`$state` ‎locale.
+- ‎`packages/frontend-v2/src/lib/context.ts` ‎— ‎זוג ‎`getI18n`/`setI18n`.
+
+‎נוצרו ‎(scripts):
+- ‎`scripts/lint-no-hebrew-in-code.py` + ‎wrapper ‎`.sh` ‎— ‎סורק ‎`packages/frontend-v2/`, ‎`packages/core/`, ‎`packages/backend/` ‎אחרי ‎Hebrew code points ‎בstring literals. ‎whitelist: ‎`catalogs/`, ‎`voice/*-prompt.ts`, ‎tests/fixtures.
+- ‎`packages/frontend/` ‎(legacy) ‎לא ‎נסרק ‎בכוונה — ‎frozen.
+
+‎שונו:
+- ‎`+layout.svelte` ‎— ‎יצירת ‎`I18nVM` + ‎`setI18n`.
+- ‎`+page.svelte` (connect) — ‎כל ‎8 ‎המחרוזות ‎עברו ‎ל-`t(key)`.
+- ‎`chat/+page.svelte` ‎— ‎כל ‎9 ‎המחרוזות ‎עברו ‎ל-`t(key)`.
+- ‎`packages/core/src/acp/client.ts` ‎— ‎מחרוזת ‎אחת ‎עברית ‎הוסבה ‎לאנגלית ‎("Run in shell:" ‎במקום ‎"הפעל ‎ב-shell:") ‎— ‎שגיאות ‎טכניות ‎נשארות ‎אנגלית, ‎עטיפת ‎FE ‎עתידית.
+- ‎`packages/core/package.json` ‎— ‎הוספת ‎`"./i18n": "./src/i18n/index.ts"` ‎ל-exports.
+
+### החלטות ארכיטקטורה
+
+- ‎**i18n ‎ב-`core/` ‎ולא ‎ב-`frontend-v2/`**: ‎ה-`I18n` ‎הוא ‎לוגיקה ‎טהורה ‎(catalog + lookup) ‎ללא ‎DOM. ‎שם ‎מתאים — ‎`packages/core/src/i18n/`. ‎ה-`I18nVM` ‎הוא ‎ה-wrapper ‎הreactive ‎ב-FE — ‎שם ‎ה-`$state` ‎חי.
+- **English-only error messages in core**: ‎שגיאות ‎מ-core ‎(`acp/client.ts` ‎וכו') ‎יישארו ‎אנגלית — ‎טכני, ‎דומיין ‎של ‎המתכנתת. ‎ה-FE ‎יעטוף ‎אותן ‎ב-message keys אם ‎יהיו ‎user-facing. ‎אותה ‎הנחה ‎שתועדה ‎ב-`i18n-gap-report.md` (החלטה ‎שאומצה ‎ב-F-8).
+- ‎**Lint רץ ‎גם ‎כ-pre-commit hook**: ‎ראה ‎סעיף ‎"Pre-commit hook" ‎בסוף ‎הרשומה ‎הזו. ‎ה-hook ‎מותקן ‎דרך ‎`core.hooksPath` ‎(לא ‎husky/simple-git-hooks).
+- ‎**Locale detection ב-mount ‎בלבד**: ‎`I18nVM` ‎קורא ‎ל-`detectLocale()` ‎ב-constructor. ‎שינוי ‎locale ‎ב-`navigator.language` ‎אחרי mount לא ‎יזוהה ‎— ‎acceptable, ‎דרישת ‎ה-MVP. ‎ה-Settings ‎עתידי ‎(slice 9) ‎יוסיף ‎override.
+
+### מעקפים ופתרונות
+
+- **`strip_jsdoc_blocks` pre-pass בסקריפט lint**: ‎הניסיון ‎הראשון ‎להפעיל ‎state machine ‎שמזהה ‎block comments ‎יחד ‎עם ‎string literals ‎נפל ‎על ‎regex literals (`/.../`) ‎שהכילו ‎quotes (`"`/`'`). ‎ה-state machine ‎חשב ‎ש-quote בתוך regex ‎הוא ‎תחילת ‎string ‎ובלע ‎את ‎שאר ‎הקובץ. ‎הפתרון: ‎pre-pass ‎נפרד ‎שמנקה ‎את ‎כל ‎`/* ... */` ‎לפני ‎ה-state machine ‎הראשי, ‎ואז ‎ה-state machine ‎עוסק ‎רק ‎ב-`//` ‎+ ‎string literals.
+- ‎**`.js` ‎suffix ‎ב-imports ‎של ‎core**: ‎ה-tsconfig ‎לא ‎מאפשר ‎`.ts` ‎ב-import paths (`allowImportingTsExtensions: false`). ‎השאר ‎עקבי ‎עם ‎שאר ‎ה-core (NodeNext / ESM ‎convention).
+
+### Tests + smoke
+
+- ‎core typecheck: ✅
+- ‎frontend-v2 typecheck: ✅ (`svelte-check found 0 errors`)
+- ‎frontend-v2 build: ✅ (`built in 4.22s`)
+- ‎`pnpm test`: ✅ (354 + 249 = 603 ‎טסטים ‎ירוקים)
+- ‎`scripts/lint-no-hebrew-in-code.sh`: ✅ ("No hardcoded Hebrew in code")
+
+### Pre-commit hook (post-slice 0.5)
+
+‎הוספת pre-commit ‎hook ‎שמריץ ‎את ‎ה-lint ‎אוטומטית ‎לפני ‎כל ‎commit.
+
+‎הגישה: ‎`.githooks/pre-commit` ‎(committed ‎ל-repo) ‎+ ‎`git config core.hooksPath .githooks` ‎(הפעלה ‎חד-פעמית ‎דרך ‎`pnpm hooks:install`).
+
+‎ניסיון ‎ראשון ‎היה ‎עם ‎`simple-git-hooks` ‎(devDep) — ‎נכשל ‎כי ‎ה-`.git` ‎של ‎ה-worktree הוא ‎file ‎ולא ‎directory ‎(bare repo + worktrees), ‎וה-package ‎ניסה ‎לעשות ‎`mkdir .git/hooks`. ‎הוסר.
+
+‎הפתרון ‎עם ‎`core.hooksPath` ‎עובד ‎נכון ‎על ‎bare ‎repos, ‎committed ‎ל-git, ‎ולא ‎דורש ‎npm deps.
+
+‎בדיקה: ‎הוספתי ‎שורת ‎Hebrew ‎מכוונת ‎ל-`packages/core/src/index.ts`, ‎ניסיתי ‎`git commit`, ‎ה-hook ‎דחה ‎עם exit 1. ‎הוסר.
+
+---
+
 ## 2026-05-28 13:30 — ניקוי docs/: ארכיון של מסמכי v1 + איפוס behaviors-coverage ל-v2
 
 ### מה בוצע?
