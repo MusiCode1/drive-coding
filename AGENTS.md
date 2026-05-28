@@ -58,6 +58,28 @@ After clone, run `pnpm hooks:install` once. It sets `core.hooksPath=.githooks/`
 so `.githooks/pre-commit` runs the i18n lint before every commit. To skip a
 specific commit (rare): `git commit --no-verify`.
 
+## Worktrees
+
+All worktrees live under `.worktrees/<branch-name>/`. Create a new one with:
+
+```bash
+git worktree add .worktrees/<name> -b <name> dev
+```
+
+Don't pollute the project root with worktree directories. The two long-lived
+worktrees `dev/` and `main/` (at the project root) are the exception, not the rule.
+Any new branch for a slice / bugfix / experiment goes under `.worktrees/`.
+
+After `cd .worktrees/<name>`, run `pnpm install && pnpm hooks:install`.
+
+## Ports
+
+- **Backend**: fixed at `4000`. Single instance — don't run two BEs in parallel.
+  The second one will fail on `EADDRINUSE` (intentional).
+- **Frontend (Vite dev)**: OS-assigned (no fixed port). Vite prints the chosen
+  port at startup. The proxy to `/api`, `/proxy`, `/ws` always points at BE 4000,
+  regardless of FE port.
+
 ## What NOT to do
 
 - No secrets in code (`.env` is gitignored)

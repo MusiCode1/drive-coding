@@ -1,12 +1,12 @@
-# AGENTS.md — frontend-v2
+# AGENTS.md — frontend
 
 ## מה זה
 
-ה-FE היחיד בענף `dev`. נבנה מאפס במבנה החדש (view-models classes + Context + 5 שכבות)
-אחרי ש-`packages/frontend/` הישן הצטבר לכאוס (989 שורות ב-route אחד).
+ה-FE של הפרויקט. נבנה מאפס ב-2026-05-27 כ-`frontend-v2/` במבנה החדש
+(view-models classes + Context + 5 שכבות) אחרי שה-FE הישן הצטבר לכאוס
+(989 שורות ב-route אחד). שונה השם ל-`frontend/` ב-2026-05-28 (cutover early).
 
-ה-FE הישן עוד קיים בענף `main` בלבד — לעיון היסטורי. ב-`dev` הוא נמחק (2026-05-28).
-ב-cutover (slice 13) הספרייה תשונה ל-`packages/frontend/`.
+ה-FE הישן עוד קיים בענף `main` בלבד — לעיון היסטורי. ב-`dev` הוא נמחק.
 
 ---
 
@@ -174,9 +174,9 @@ User (voice) → Mic → text → AgentSession → text → Agent (ACP)
 
 ```bash
 pnpm install
-pnpm --filter @drive-coding/frontend-v2 dev          # port 5175
-pnpm --filter @drive-coding/frontend-v2 typecheck
-pnpm --filter @drive-coding/frontend-v2 build
+pnpm --filter @drive-coding/frontend dev          # port: OS-assigned, see startup log
+pnpm --filter @drive-coding/frontend typecheck
+pnpm --filter @drive-coding/frontend build
 ```
 
 ה-BE רץ נפרד על 4000 (`pnpm --filter @drive-coding/backend dev`).
