@@ -36,6 +36,51 @@ node chat-roundtrip.mjs
 
 Exit 0 = pass, exit 1 = fail (with reason).
 
+## Output formats
+
+The script prints human-readable output AND a single structured line
+prefixed with `RESULT: ` for parseability:
+
+```
+=== Bubbles ===
+  [user] Me / שלום
+  [thought] ...
+...
+✓ SMOKE PASSED
+RESULT: {"ok":true,"bubbles":[...],"proxy":{...},"console":{...}}
+```
+
+To extract just the structured result:
+```bash
+node chat-roundtrip.mjs 2>&1 | grep "^RESULT: " | sed 's/^RESULT: //' | jq .
+```
+
+The `result` shape:
+```ts
+{
+  ok: boolean
+  feUrl: string
+  prompt: string
+  cli: string
+  bubbles: { kind: string; text: string }[]
+  proxy: {
+    requests: number
+    errors: number
+    errorDetails: { status: number; url: string }[]
+    cacheHits: number
+    cacheMisses: number
+    cacheOther: number
+  }
+  console: {
+    errors: number
+    warnings: number
+    errorDetails: string[]   // first 5
+    warningDetails: string[] // first 5
+  }
+  failures: string[]
+}
+```
+
 ## Environment overrides
 
 | var | default | meaning |

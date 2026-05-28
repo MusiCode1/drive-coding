@@ -1,6 +1,5 @@
 <script lang="ts">
 import { getI18n, getSession, getSpeaker } from "$lib/context"
-import VoicePicker from "./VoicePicker.svelte"
 
 const session = getSession()
 const speaker = getSpeaker()
@@ -15,7 +14,6 @@ let { onDisconnect }: { onDisconnect: () => void } = $props()
     <span class="cwd" dir="ltr">{session.cwd ?? ""}</span>
   </div>
   <div class="controls">
-    <VoicePicker />
     <label class="audio-toggle" title={t("chat.audioToggle")}>
       <input
         type="checkbox"

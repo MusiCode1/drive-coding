@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { CliKind } from "@drive-coding/core"
 import { connectAgent } from "$lib/actions/connect-agent"
+import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import { getI18n, getSession, getSettings } from "$lib/context"
 
 const settings = getSettings()
@@ -42,6 +43,11 @@ async function onSubmit(e: SubmitEvent) {
         dir="ltr"
         disabled={session.status === "connecting"}
       />
+    </label>
+
+    <label>
+      <span>{t("chat.voicePicker.label")}</span>
+      <VoicePicker />
     </label>
 
     <button type="submit" disabled={!cwd.trim() || session.status === "connecting"}>

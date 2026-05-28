@@ -51,6 +51,17 @@ const TIMEOUT_RESPONSE_MS = 30_000
 
 // ─── helpers ───
 const failures = []
+const result = {
+  ok: false,
+  feUrl: FE_URL,
+  prompt: PROMPT,
+  cli: CLI,
+  bubbles: [],
+  proxy: { requests: 0, errors: 0, errorDetails: [], cacheHits: 0, cacheMisses: 0, cacheOther: 0 },
+  console: { errors: 0, warnings: 0, errorDetails: [], warningDetails: [] },
+  failures: [],
+}
+
 function expect(condition, message) {
   if (!condition) failures.push(message)
 }
@@ -178,14 +189,37 @@ try {
   // No page errors
   expect(pageErrors.length === 0, `page errors:\n  ${summarize(pageErrors)}`)
 
-  // ─── Output ───
-  console.log("=== Bubbles ===")
-  for (const b of bubbles) console.log(`  [${b.kind}] ${b.text}`)
-  console.log(`=== Proxy: ${proxyRequests.length} requests, ${proxyErrors.length} errors ===`)
+  // ─── Capture summary for structured output ───
   const hits = proxyResponses.filter((r) => r.cache === "hit").length
   const misses = proxyResponses.filter((r) => r.cache === "miss").length
-  console.log(`  cache: ${hits} hits, ${misses} misses, ${proxyResponses.length - hits - misses} other`)
-  console.log(`=== Console: ${consoleErrors.length} errors, ${consoleWarnings.length} warnings ===`)
+  result.bubbles = bubbles
+  result.proxy = {
+    requests: proxyRequests.length,
+    errors: proxyErrors.length,
+    errorDetails: proxyErrors.map((r) => ({ status: r.status, url: r.url })),
+    cacheHits: hits,
+    cacheMisses: misses,
+    cacheOther: proxyResponses.length - hits - misses,
+  }
+  result.console = {
+    errors: consoleErrors.length,
+    warnings: consoleWarnings.length,
+    errorDetails: consoleErrors.slice(0, 5),
+    warningDetails: consoleWarnings.slice(0, 5),
+  }
+
+  // ─── Human-readable output ───
+  console.log("=== Bubbles ===")
+  for (const b of bubbles) console.log(`  [${b.kind}] ${b.text}`)
+  console.log(
+    `=== Proxy: ${proxyRequests.length} requests, ${proxyErrors.length} errors ===`,
+  )
+  console.log(
+    `  cache: ${hits} hits, ${misses} misses, ${result.proxy.cacheOther} other`,
+  )
+  console.log(
+    `=== Console: ${consoleErrors.length} errors, ${consoleWarnings.length} warnings ===`,
+  )
   if (consoleWarnings.length > 0) {
     console.log("  warnings:\n  " + summarize(consoleWarnings, 5))
   }
@@ -195,12 +229,18 @@ try {
   await browser.close()
 }
 
-// ─── Verdict ───
-if (failures.length === 0) {
+// ─── Verdict + structured result ───
+result.ok = failures.length === 0
+result.failures = failures
+
+if (result.ok) {
   console.log("\n✓ SMOKE PASSED")
-  process.exit(0)
 } else {
   console.log("\n✗ SMOKE FAILED")
   for (const f of failures) console.log(`  - ${f}`)
-  process.exit(1)
 }
+
+// Single-line JSON result for parseability (grep "^RESULT: " | sed 's/^RESULT: //').
+console.log("RESULT: " + JSON.stringify(result))
+
+process.exit(result.ok ? 0 : 1)
