@@ -26,13 +26,12 @@
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
 import { untrack } from "svelte"
 import type { AgentSession, AgentSessionStatus } from "./agent-session.svelte"
+import type { Settings } from "./settings.svelte"
 import { AudioStream } from "../engines/audio-stream"
 import { Player } from "../engines/player.svelte"
 import { synthesizeStreaming } from "../adapters/voice/tts"
 import { translate } from "../adapters/voice/translate"
 
-// Slice 2 constants — slice 9 will move voiceId into Settings.
-const VOICE_ID = "EXAVITQu4vr4xnSDxMaL" // Sarah, ElevenLabs (learnings 2026-05-13)
 const TARGET_LANG = "he" as const
 const MIN_CHARS = 20
 const MAX_CHARS = 200
@@ -58,6 +57,7 @@ export class Speaker {
   enabled: boolean = $state(true)
 
   readonly #session: AgentSession
+  readonly #settings: Settings
   readonly #audioStream: AudioStream
   readonly #player: Player
 
@@ -80,8 +80,9 @@ export class Speaker {
   // Set by constructor — kept so destroy() can stop the effect.
   #disposeEffect: (() => void) | null = null
 
-  constructor(opts: { session: AgentSession }) {
+  constructor(opts: { session: AgentSession; settings: Settings }) {
     this.#session = opts.session
+    this.#settings = opts.settings
     this.#audioStream = new AudioStream()
     this.#player = new Player(this.#audioStream)
 
@@ -229,7 +230,7 @@ export class Speaker {
 
       const stream = await synthesizeStreaming({
         text,
-        voiceId: VOICE_ID,
+        voiceId: this.#settings.voiceId,
         signal: job.abort.signal,
       })
       await this.#audioStream.prepareSegment(job.segmentId, stream, job.abort)

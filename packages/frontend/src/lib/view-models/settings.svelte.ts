@@ -1,20 +1,35 @@
 /**
- * Settings — minimal user preferences (cliKind + lastCwd).
- * Persists to localStorage so the connect form remembers.
+ * Settings — user preferences. Persists to localStorage.
+ *
+ * ─── Parallel-safe additive design (docs/conventions/parallel-safe-code.md) ───
+ *
+ * Adding a new persisted field:
+ *   1. Append it to the `Persisted` type below.
+ *   2. Append its default to `DEFAULTS`.
+ *   3. Append a `$state` field + setter in the appropriate `// ─── domain ───`
+ *      block of the class. Setter must call `save()`.
+ *
+ * Non-persisted fields (e.g. loaded-from-API caches) go in the relevant
+ * domain block without a setter that writes to localStorage.
  */
 
 import type { CliKind } from "@drive-coding/core"
+import { listVoices, type Voice } from "../adapters/voice/voices"
 
 const STORAGE_KEY = "drive-coding-v2-settings"
+
+const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL" // Sarah, ElevenLabs
 
 type Persisted = {
   cliKind: CliKind
   lastCwd: string
+  voiceId: string
 }
 
 const DEFAULTS: Persisted = {
   cliKind: "opencode",
   lastCwd: "",
+  voiceId: DEFAULT_VOICE_ID,
 }
 
 function load(): Persisted {
@@ -38,22 +53,70 @@ function save(s: Persisted): void {
 }
 
 export class Settings {
+  // ─── connect form ───
   cliKind = $state<CliKind>(DEFAULTS.cliKind)
   lastCwd = $state(DEFAULTS.lastCwd)
+
+  // ─── voice ───
+  voiceId = $state<string>(DEFAULTS.voiceId)
+  /** Loaded async from ElevenLabs via `loadVoices()`. Empty until then. */
+  availableVoices = $state<Voice[]>([])
+  voicesLoading = $state<boolean>(false)
+  voicesError = $state<string | null>(null)
 
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
     this.lastCwd = loaded.lastCwd
+    this.voiceId = loaded.voiceId
   }
+
+  // ─── connect form ───
 
   setCliKind = (k: CliKind): void => {
     this.cliKind = k
-    save({ cliKind: this.cliKind, lastCwd: this.lastCwd })
+    this.#persist()
   }
 
   setLastCwd = (cwd: string): void => {
     this.lastCwd = cwd
-    save({ cliKind: this.cliKind, lastCwd: this.lastCwd })
+    this.#persist()
+  }
+
+  // ─── voice ───
+
+  setVoiceId = (id: string): void => {
+    this.voiceId = id
+    this.#persist()
+  }
+
+  /**
+   * Fetch the voice catalog from ElevenLabs (via BE proxy + OneCLI).
+   * Idempotent: subsequent calls reuse `availableVoices` if already loaded
+   * and not currently in-flight. Errors are stored on `voicesError`.
+   */
+  loadVoices = async (): Promise<void> => {
+    if (this.voicesLoading) return
+    if (this.availableVoices.length > 0 && this.voicesError === null) return
+    this.voicesLoading = true
+    this.voicesError = null
+    try {
+      const voices = await listVoices()
+      this.availableVoices = voices
+    } catch (e) {
+      this.voicesError = e instanceof Error ? e.message : String(e)
+    } finally {
+      this.voicesLoading = false
+    }
+  }
+
+  // ─── private ───
+
+  #persist(): void {
+    save({
+      cliKind: this.cliKind,
+      lastCwd: this.lastCwd,
+      voiceId: this.voiceId,
+    })
   }
 }

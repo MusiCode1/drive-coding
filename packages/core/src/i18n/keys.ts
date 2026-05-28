@@ -38,6 +38,10 @@ export type MessageKey =
   | "chat.send"
   | "chat.disconnect"
   | "chat.audioToggle"
+  // ─── voice picker ─── (slice 9 — voice selection)
+  | "chat.voicePicker.label"
+  | "chat.voicePicker.loading"
+  | "chat.voicePicker.error"
   // ─── mic ─── (slice 3 will add here)
   // ─── voice-mode ─── (slice 3)
   // ─── tool-bubble ─── (slice 4)

@@ -29,6 +29,11 @@ export const en: Catalog = {
   "chat.disconnect": "Disconnect",
   "chat.audioToggle": "Audio",
 
+  // ─── voice picker ─── (slice 9)
+  "chat.voicePicker.label": "Voice",
+  "chat.voicePicker.loading": "Loading voices…",
+  "chat.voicePicker.error": "Failed to load voices",
+
   // ─── mic ─── (slice 3 will add here)
   // ─── voice-mode ─── (slice 3)
   // ─── tool-bubble ─── (slice 4)

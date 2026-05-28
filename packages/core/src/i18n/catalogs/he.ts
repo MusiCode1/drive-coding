@@ -25,6 +25,11 @@ export const he: Catalog = {
   "chat.disconnect": "נתק",
   "chat.audioToggle": "אודיו",
 
+  // ─── voice picker ─── (slice 9)
+  "chat.voicePicker.label": "קול",
+  "chat.voicePicker.loading": "טוען קולות…",
+  "chat.voicePicker.error": "שגיאה בטעינת קולות",
+
   // ─── mic ─── (slice 3 will add here)
   // ─── voice-mode ─── (slice 3)
   // ─── tool-bubble ─── (slice 4)

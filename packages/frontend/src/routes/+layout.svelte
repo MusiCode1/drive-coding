@@ -31,8 +31,8 @@ const settings = new Settings()
 // ─── session ───────────────────────────────────────
 const session = new AgentSession()
 
-// ─── speaker ─── (depends on session)
-const speaker = new Speaker({ session })
+// ─── speaker ─── (depends on session + settings)
+const speaker = new Speaker({ session, settings })
 
 // ─── mic ─── (slice 3 will add here)
 // ─── voice-mode ─── (slice 3 — depends on mic + session + speaker)

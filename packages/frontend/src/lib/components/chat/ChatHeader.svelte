@@ -1,5 +1,6 @@
 <script lang="ts">
 import { getI18n, getSession, getSpeaker } from "$lib/context"
+import VoicePicker from "./VoicePicker.svelte"
 
 const session = getSession()
 const speaker = getSpeaker()
@@ -13,15 +14,18 @@ let { onDisconnect }: { onDisconnect: () => void } = $props()
     <span class="status status-{session.status}">{session.status}</span>
     <span class="cwd" dir="ltr">{session.cwd ?? ""}</span>
   </div>
-  <label class="audio-toggle" title={t("chat.audioToggle")}>
-    <input
-      type="checkbox"
-      checked={speaker.enabled}
-      onchange={() => speaker.toggle()}
-    />
-    <span>{t("chat.audioToggle")}</span>
-  </label>
-  <button class="disconnect" onclick={onDisconnect}>{t("chat.disconnect")}</button>
+  <div class="controls">
+    <VoicePicker />
+    <label class="audio-toggle" title={t("chat.audioToggle")}>
+      <input
+        type="checkbox"
+        checked={speaker.enabled}
+        onchange={() => speaker.toggle()}
+      />
+      <span>{t("chat.audioToggle")}</span>
+    </label>
+    <button class="disconnect" onclick={onDisconnect}>{t("chat.disconnect")}</button>
+  </div>
 </header>
 
 <style>
@@ -72,12 +76,17 @@ let { onDisconnect }: { onDisconnect: () => void } = $props()
     white-space: nowrap;
   }
 
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-inline-start: auto;
+  }
+
   .audio-toggle {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    margin-inline-start: auto;
-    margin-inline-end: 0.75rem;
     color: var(--fg-dim);
     font-size: 0.8rem;
     user-select: none;
