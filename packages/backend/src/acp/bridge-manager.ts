@@ -48,8 +48,9 @@ export function createBridgeManager(): BridgeManager & {
     const stderrLines: string[] = []
     let stderrPartial = ""
 
-    // Inject audio-friendly plugin for opencode spawns only.
-    // For other cliKinds (claude, gemini, codex) — env passes through unchanged.
+    // Inject the prompt-injector plugin (carries the audio-friendly prompt
+    // via plugin options) for opencode spawns only. For other cliKinds
+    // (claude, gemini, codex) — env passes through unchanged.
     const envWithPlugin =
       input.cliKind === "opencode"
         ? {
