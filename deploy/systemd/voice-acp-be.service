@@ -9,11 +9,12 @@ WorkingDirectory=/home/user/projects/voice-acp/dev
 Environment=PORT=4000
 Environment=FE_STATIC_DIR=/home/user/projects/voice-acp/dev/packages/frontend/build
 Environment=CORS_ORIGINS=https://drive-coding.pages.dev,http://localhost:4000
-# ONECLI_API_HOST is not inherited from the interactive shell in systemd context.
-# Set it to the OneCLI gateway address (see ~/.onecli/ for credentials).
-# Example: Environment=ONECLI_API_HOST=http://192.168.33.18:10254
-Environment=ONECLI_API_HOST=http://192.168.33.18:10254
-ExecStart=/home/user/.local/bin/onecli run --agent voice-acp -- /home/user/.bun/bin/bun packages/backend/src/server.ts
+# systemd gives a minimal PATH (/usr/bin:/bin) — opencode/npx/node/onecli are NOT
+# on it, so the BE fails to spawn the CLI agent ("spawn returned no pid").
+# Source the shared env script: it sets the full PATH, ONECLI_API_HOST, fnm and
+# locale, and is explicitly designed to be sourced by systemd user services.
+# `exec` replaces the shell so systemd tracks the real onecli/bun process.
+ExecStart=/bin/bash -c 'source /home/user/.config/shell/shared-env.sh && exec onecli run --agent voice-acp -- bun packages/backend/src/server.ts'
 Restart=on-failure
 RestartSec=2
 
