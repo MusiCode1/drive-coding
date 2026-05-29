@@ -1,21 +1,33 @@
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import { AUDIO_FRIENDLY_PROMPT } from "./prompts/index.js"
+
+/**
+ * Plugin entry in opencode config — either a bare file URL (no options)
+ * or a tuple `[url, options]`. Matches `@opencode-ai/plugin`'s
+ * `Config.plugin` type.
+ */
+type PluginEntry = string | [string, Record<string, unknown>]
 
 /**
  * Builds OPENCODE_CONFIG_CONTENT for spawning opencode with the
- * audio-friendly plugin injected. Merges with user's existing
- * OPENCODE_CONFIG_CONTENT if any (see docs/audio-friendly-prompt-plan.md §7).
+ * generic `prompt-injector` plugin loaded, configured with the
+ * audio-friendly prompt text. Merges with the user's existing
+ * OPENCODE_CONFIG_CONTENT if any.
+ *
+ * See `docs/audio-friendly-prompt-plan.md` §7 and the slice-14 brief
+ * for the design.
  */
 export function buildOpencodeConfigContent(
   existingEnv: string | undefined,
 ): string {
   // The plugin file lives at a fixed location relative to this source file.
-  // Dev: packages/backend/plugins/audio-friendly.ts
+  // Dev: packages/backend/plugins/prompt-injector.ts
   // import.meta.dirname = packages/backend/src → go up one level to backend root,
   // then into plugins/.
   const pluginPath = path.resolve(
     import.meta.dirname,
-    "../plugins/audio-friendly.ts",
+    "../plugins/prompt-injector.ts",
   )
   const pluginUrl = pathToFileURL(pluginPath).href
 
@@ -23,18 +35,33 @@ export function buildOpencodeConfigContent(
   const config = existingEnv?.trim()
     ? (JSON.parse(existingEnv) as Record<string, unknown>)
     : {}
-  const existingPlugins = Array.isArray(config.plugin)
-    ? [...(config.plugin as unknown[])]
-    : typeof config.plugin === "string"
-      ? [config.plugin]
-      : []
-  if (!existingPlugins.includes(pluginUrl)) {
-    existingPlugins.push(pluginUrl)
+
+  // `plugin` may be: undefined, a single string (single plugin shorthand),
+  // or an array of entries (each a string OR [url, options] tuple).
+  let existingPlugins: PluginEntry[] = []
+  if (Array.isArray(config.plugin)) {
+    existingPlugins = [...(config.plugin as PluginEntry[])]
+  } else if (typeof config.plugin === "string") {
+    existingPlugins = [config.plugin]
   }
+
+  // Our entry: a tuple so we can pass the prompt text via options.
+  const ourEntry: PluginEntry = [
+    pluginUrl,
+    { text: AUDIO_FRIENDLY_PROMPT },
+  ]
+
+  // Dedup by URL — handle both string entries and tuple entries.
+  const filtered = existingPlugins.filter((p) =>
+    Array.isArray(p) ? p[0] !== pluginUrl : p !== pluginUrl,
+  )
+  filtered.push(ourEntry)
 
   return JSON.stringify({
     ...config,
-    $schema: (config.$schema as string) ?? "https://opencode.ai/config.json",
-    plugin: existingPlugins,
+    $schema:
+      (config.$schema as string | undefined) ??
+      "https://opencode.ai/config.json",
+    plugin: filtered,
   })
 }

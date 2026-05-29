@@ -42,6 +42,68 @@ typecheck FE ✅ | tests 7/7 ✅ | lint:i18n ✅
 
 ---
 
+## 2026-05-29 — slice 14: Generic prompt injector plugin
+
+### מה בוצע?
+
+הפלאגין `audio-friendly.ts` (slice 11) עבר refactor ל-plugin generic בשם `prompt-injector.ts`. הטקסט עצמו עבר מהפלאגין ל-BE כקטלוג prompts (`packages/backend/src/prompts/`), ומועבר ל-plugin דרך `options.text` (tuple `[url, options]` ב-config של opencode).
+
+המטרה: הפרדת mechanism מ-data. הפלאגין הופך לרכיב reusable, וה-BE שולט באיזה טקסט נכנס לכל spawn. פותח דלת לפרופילי prompt מרובים (audio / coding / tutoring) ול-picker עתידי ב-Settings.
+
+3 commits, worktree `slice-14-prompt-injector` (מ-dev tip `9be1ca5`).
+
+**Commit 1 — Generic prompt-injector plugin**
+- מחק `packages/backend/plugins/audio-friendly.ts`.
+- יצר `packages/backend/plugins/prompt-injector.ts`: `PluginModule` עם `id: "prompt-injector"`, `server(input, options?)` שקורא `options.text` ודוחף ל-`output.system` ב-hook `experimental.chat.system.transform`. No-op אם הטקסט חסר/ריק.
+- ה-API אומת מול `@opencode-ai/plugin@1.15.12` (dist/index.d.ts): `PluginOptions`, tuple ב-`Config.plugin`, `PluginModule.id`. הכל קיים.
+- עדכון README של הפלאגינים.
+
+**Commit 2 — BE owns the prompt + wires it via options**
+- חדש: `packages/backend/src/prompts/audio-friendly.ts` — `AUDIO_FRIENDLY_PROMPT` (copy byte-identical של הטקסט מ-slice 11 — שומר על אותו upstream behavior).
+- חדש: `packages/backend/src/prompts/index.ts` — re-export, הכנה לפרופילים נוספים.
+- `plugin-config.ts`: עודכן ל-tuple `[pluginUrl, { text: AUDIO_FRIENDLY_PROMPT }]`. שמירת merge מ-slice 11 (array + string-shorthand), dedup-by-URL עובד גם על entries בצורת string וגם tuple.
+- `bridge-manager.ts`: רק עדכון comment (הקריאה ל-`buildOpencodeConfigContent` ללא שינוי).
+
+**Commit 3 — Walkthrough + brief status + slices.md**
+- הרשומה הזו, סטטוס "הושלם" ב-brief, שורה חדשה ב-`slices.md`, הערה בראש `docs/audio-friendly-prompt-plan.md`.
+
+### Smoke (DoD #5+#6)
+
+BE על port 4002 (4000/4001 תפוסים), FE על 5175, smoke `chat-roundtrip.mjs`:
+- Prompt: "say hello in one word"
+- Agent reply: "Hello." — פרוזה טהורה, אין markdown/emoji/URLs (soft assertions passed)
+- 4 proxy requests, 0 errors, 0 console errors
+- BE log: spawn ok, אין שום plugin-load warning
+
+### בדיקות merge logic (DoD #8 + #8b)
+
+ידני דרך `bun -e`, 6 sub-tests:
+1. empty existing env → ה-entry שלנו יחיד
+2. existing array `["other-plugin"]` → שתי entries, שלנו האחרון
+3. existing **string** `"single-name"` → upgrade ל-array, שתי entries
+4. idempotent — אם ה-URL שלנו כבר קיים (כ-string bare), dedup → entry יחיד tuple
+5. extra config fields (theme, model) → נשמרים
+6. options.text מכיל את הטקסט המלא
+
+### Stack פיתוח/בדיקה
+
+- typecheck (backend): pass
+- tests: 356 pass, 11 skipped (אותו מספר כמו לפני)
+- lint:i18n: pass (אין מחרוזות עברית בקוד)
+- pre-commit hook: ירוק על כל 3 הcommits
+
+### החלטות + סטיות
+
+- ה-`@opencode-ai/plugin` API היה זהה למה שהbrief הניח (verified ב-dist/index.d.ts) — לא נדרש commit 0 לאימות.
+- לא נוספו unit tests ל-`buildOpencodeConfigContent` (ה-brief הגדיר approach=manual). ה-merge logic נבדק ידנית. אם רוצים coverage קבוע — slice עתידי שמוסיף test יהיה תוספת זולה.
+- לא עודכן smoke (אותם soft assertions של slice 11 — הוודאו בידיים שהם עוברים, אין צורך בtest חדש).
+
+### מה אחרי
+
+הplumbing מוכן לslice עתידי: Settings page עם picker לפרופיל prompt, או הוספת קבצים נוספים תחת `prompts/` (coding-focused, tutoring). per-session override ידרוש שינוי קל ב-bridge-manager לקבל prompt name פר spawn.
+
+---
+
 ## 2026-05-29 — slice 8: Session Picker (inline ב-connect form)
 
 ### מה בוצע?

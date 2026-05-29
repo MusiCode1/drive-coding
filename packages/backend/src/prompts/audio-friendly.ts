@@ -1,6 +1,18 @@
-import type { Plugin } from "@opencode-ai/plugin"
-
-const AUDIO_PROMPT = `
+/**
+ * System prompt that steers the LLM toward speech-friendly prose output:
+ * no markdown, no emojis, no URLs, no JSON dumps, short conversational
+ * responses. Used by the voice-only interface where the LLM's text output
+ * is read aloud (TTS) and the user does not see the words.
+ *
+ * Originally lived inline in `plugins/audio-friendly.ts` (slice 11).
+ * Moved here in slice 14 so the plugin can be generic and the BE owns
+ * the prompt catalog.
+ *
+ * The text MUST stay byte-identical to the slice-11 version, so the
+ * smoke-test soft assertions (no emoji, no **bold**, no URLs) keep
+ * passing and there is no regression in upstream LLM behavior.
+ */
+export const AUDIO_FRIENDLY_PROMPT = `
 You are talking to a user through a voice-only interface. Your text output
 is converted to speech and read aloud — the user does not see your words.
 
@@ -42,9 +54,3 @@ OUTPUT RULES (strict):
 10. Errors: describe what failed and why in one sentence, then offer
     the next step. Do not paste stack traces.
 `.trim()
-
-export const AudioFriendly: Plugin = async () => ({
-  "experimental.chat.system.transform": async (_input, output) => {
-    output.system.push(AUDIO_PROMPT)
-  },
-})
