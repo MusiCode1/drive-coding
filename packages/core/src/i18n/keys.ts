@@ -58,6 +58,11 @@ export type MessageKey =
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)
+  | "sessions.loadButton"
+  | "sessions.loading"
+  | "sessions.label"
+  | "sessions.startNew"
+  | "sessions.error"
   // ─── settings ─── (slice 9)
   // ─── recordings ─── (slice 10)
 
