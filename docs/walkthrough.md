@@ -4,6 +4,44 @@
 
 ---
 
+## 2026-05-29 13:35 — slice 8.1: user_message_chunk handler ל-history replay
+
+### מה בוצע?
+
+תיקון follow-up ל-slice 8 שסגר gap ב-loadSession.
+
+לפי ‏ACP spec (`session-setup#loading-sessions`), ‏סוכן MUST replay history דרך
+‏`session/update` notifications לפני שמשיב ל-`session/load`. ‏ה-notifications כוללים
+‏`user_message_chunk` (לא רק `agent_message_chunk` ו-`agent_thought_chunk`).
+
+עד התיקון: `#onSessionUpdate` הכיר רק שני סוגי chunks של הסוכן. אפילו אם OpenCode שלח user_message_chunk ב-history replay — ה-FE התעלם, ו-user bubbles מהעבר לא הופיעו אחרי load.
+
+**1. Frontend changes** (commit `fc2bc97`)
+
+- `packages/frontend/src/lib/types/bubble.ts`: `UserBubble.messageId` הורחב מ-`null` ל-`string | null`. ‏Live prompts ממשיכים להעביר `null` (synthetic optimistic bubble ב-sendPrompt); ‏history replay מקבל את ה-ACP messageId לצורך grouping.
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+  - ‏case שלישי ב-`#onSessionUpdate` עבור `user_message_chunk` → קורא ל-`#appendChunk("user", ...)`.
+  - ‏`#appendChunk` הורחבה: ‏signature מקבל `kind: "message" | "thought" | "user"`. ‏הbranch של ‏grouping (chunks באותו messageId → segments באותו bubble) ‏ושל יצירת bubble חדש (messageId שונה / null) ‏הורחב להכיר גם `UserBubble`.
+
+**2. Core package**
+
+‏לא נגעה. ‏ה-`packages/core/tsconfig.tsbuildinfo` השתנה כי הרצתי `pnpm --filter @drive-coding/core build` ‏לפני typecheck של FE (TS6305 incremental cache issue) — ‏זה build artifact, ‏לא src.
+
+### החלטות ארכיטקטורה
+
+- **‏Loosening UserBubble.messageId על פני kind חדש**: ‏נשקלה הוספת `kind: "user-historical"` נפרד, ‏אבל זה מצריך שיכפול ב-`BubbleRenderer` ‏וב-`UserBubble.svelte`. ‏הloosening אדיטיב לחלוטין — ‏consumer יחיד (UserBubble.svelte) ‏לא ניגש בכלל ל-messageId, ‏ו-Speaker enqueue רק עבור `kind ∈ {message, thought}` ‏אז הוא לא מושפע.
+- **שימוש חוזר ב-`#appendChunk` במקום `#appendUserChunk` נפרד**: ‏אותו pattern grouping בדיוק. ‏הפרדה הייתה duplicate ~25 שורות.
+
+### בדיקות
+
+typecheck FE ✅ | tests 7/7 ✅ | lint:i18n ✅
+
+### מנהרה לבדיקה ידנית
+
+`https://your-app-s8.nue.tuns.sh` — ‏OpenCode עם cwd בעל history → ‏טען סשנים → ‏בחר → Connect. ‏אם OpenCode שולח `user_message_chunk` ב-replay, ‏יופיעו user bubbles מהעבר.
+
+---
+
 ## 2026-05-29 — slice 8: Session Picker (inline ב-connect form)
 
 ### מה בוצע?
