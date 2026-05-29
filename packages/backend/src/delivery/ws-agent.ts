@@ -21,8 +21,10 @@ import { createInterface } from "node:readline"
 import { createLogger } from "@drive-coding/core/log"
 import type { WebSocket } from "ws"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
+import { decodeWireLine } from "./wire-decode.js"
 
 const log = createLogger("backend.ws.agent")
+const wireLog = createLogger("backend.ws.wire")
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,6 +47,18 @@ export function createAgentWsHandler(deps: {
 
   return function onConnect(feWs: WebSocket, agentId: string): void {
     const childLog = log.child({ agentId })
+    const childWireLog = wireLog.child({ agentId })
+
+    function logWire(dir: "in" | "out", raw: string): void {
+      try {
+        const s = decodeWireLine(raw)
+        const type = s.sessionUpdate ?? s.method ?? s.responseKind ?? (s.unparsed ? "unparsed" : "unknown")
+        childWireLog.debug({ dir, type, id: s.id }, "wire")
+        if (!s.unparsed) childWireLog.trace({ dir, frame: s.parsed }, "wire-full")
+      } catch {
+        // never let logging break the pipe
+      }
+    }
 
     // MED-8 guard
     if (activeFeWs.has(agentId)) {
@@ -77,6 +91,7 @@ export function createAgentWsHandler(deps: {
       } catch {
         // feWs closing
       }
+      logWire("in", line) // tap (after send; failure-isolated)
     })
 
     // feWs message → child.stdin (add newline if missing)
@@ -85,6 +100,7 @@ export function createAgentWsHandler(deps: {
         const text = data.toString()
         const line = text.endsWith("\n") ? text : `${text}\n`
         child.stdin.write(line)
+        logWire("out", text.trim()) // tap (after write; trim removes trailing \n for decode)
       } catch (err) {
         childLog.warn({ err }, "stdin write failed")
       }
