@@ -102,10 +102,13 @@ export class Speaker {
           .filter((b) => b.kind === "message" || b.kind === "thought")
           .map((b) => (b as { segments: { id: string }[] }).segments.length)
         void _segCounts
+        // Slice 4: tracked so that $effect re-runs when loadSession() finishes
+        // and clears the flag — allowing new live chunks to flow to TTS.
+        const isLoadingHistory = this.#session.isLoadingHistory
 
         // ── Writes (untracked) ─────────────────────────────────────────
         untrack(() => {
-          this.#processBubbles(bubbles, enabled)
+          this.#processBubbles(bubbles, enabled, isLoadingHistory)
           this.#handleStatusTransition(status, enabled)
           this.#prevStatus = status
         })
@@ -141,7 +144,28 @@ export class Speaker {
   // Internals
   // ──────────────────────────────────────────────────────────────────────
 
-  #processBubbles(bubbles: AgentSession["bubbles"], enabled: boolean): void {
+  #processBubbles(
+    bubbles: AgentSession["bubbles"],
+    enabled: boolean,
+    isLoadingHistory: boolean,
+  ): void {
+    // Slice 4: while loadSession() is replaying history, mark bubbles as processed
+    // without enqueuing TTS jobs. The effect re-runs once isLoadingHistory → false,
+    // at which point new live chunks resume normal TTS flow.
+    if (isLoadingHistory) {
+      for (const bubble of bubbles) {
+        if (bubble.kind !== "message" && bubble.kind !== "thought") continue
+        let state = this.#bubbleStates.get(bubble.id)
+        if (state === undefined) {
+          state = { processedSegments: 0, buffer: "" }
+          this.#bubbleStates.set(bubble.id, state)
+        }
+        state.processedSegments = bubble.segments.length
+        state.buffer = ""
+      }
+      return
+    }
+
     for (const bubble of bubbles) {
       if (bubble.kind !== "message" && bubble.kind !== "thought") continue
       const segArr = bubble.segments

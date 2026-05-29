@@ -47,6 +47,9 @@ export class AgentSession {
   bubbles = $state<Bubble[]>([])
   agentId = $state<string | null>(null)
   cwd = $state<string | null>(null)
+  // ─── slice 4: replay guard ─── (additive)
+  /** True while loadSession() is replaying history. Speaker reads this (tracked) to suppress TTS. */
+  isLoadingHistory = $state(false)
 
   #client: AcpClient | null = null
   #sessionId: string | null = null
@@ -195,7 +198,13 @@ export class AgentSession {
       this.#client = await createAcpClient(transport, this.#onSessionUpdate)
 
       // ── loadSession instead of newSession ──
-      await this.#client.loadSession({ sessionId: input.sessionId, cwd: input.cwd })
+      // Suppress Speaker TTS during history replay (slice 4: replay-quiet).
+      this.isLoadingHistory = true
+      try {
+        await this.#client.loadSession({ sessionId: input.sessionId, cwd: input.cwd })
+      } finally {
+        this.isLoadingHistory = false
+      }
       this.#sessionId = input.sessionId
 
       // 4. Notify BE (same as attach, best-effort)
