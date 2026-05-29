@@ -37,3 +37,27 @@ textarea {
 button {
   cursor: pointer;
 }
+
+/* Global dark-theme select. Component-scoped CSS in +page.svelte only
+   reaches selects authored there (CLI dropdown); selects rendered inside
+   child components (SessionPicker, VoicePicker) fall back to native white
+   unless styled globally here. */
+select {
+  padding: 0.7rem 0.8rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.2);
+}
+
+select option {
+  background: var(--bg-elev);
+  color: var(--fg);
+}

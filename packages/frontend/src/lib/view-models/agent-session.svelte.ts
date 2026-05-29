@@ -344,6 +344,7 @@ export class AgentSession {
   #handleToolCallUpdate(update: {
     toolCallId?: string
     status?: ToolCall["status"]
+    rawInput?: unknown
     rawOutput?: unknown
     kind?: string
     title?: string
@@ -355,9 +356,13 @@ export class AgentSession {
     if (idx === -1) return
     const old = this.bubbles[idx] as ToolBubble
     // Svelte 5: replace object wholesale (not in-place mutation) to trigger reactivity.
+    // rawInput is merged here because ACP agents (e.g. opencode) often send a
+    // minimal tool_call first (empty/absent rawInput) and the actual command
+    // arrives in tool_call_update — see ACP ToolCallUpdate.rawInput in the spec.
     const newToolCall: ToolCall = {
       ...old.toolCall,
       ...(update.status !== undefined && { status: update.status }),
+      ...(update.rawInput !== undefined && { args: update.rawInput }),
       ...(update.rawOutput !== undefined && { result: update.rawOutput }),
       ...(update.kind !== undefined && { kind: update.kind }),
       ...(update.title !== undefined && { title: update.title }),
