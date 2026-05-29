@@ -44,7 +44,7 @@ export async function transcribe(
   // MED-5: chunked base64 conversion
   const base64 = bytesToBase64(audioBytes)
 
-  const response = await googleGenAi.models.generateContent({
+  const response = await googleGenAi().models.generateContent({
     model: "gemini-flash-latest",
     contents: [
       {

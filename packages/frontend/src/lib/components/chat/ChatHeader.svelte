@@ -23,6 +23,7 @@ let { onDisconnect }: { onDisconnect: () => void } = $props()
       <span>{t("chat.audioToggle")}</span>
     </label>
     <button class="disconnect" onclick={onDisconnect}>{t("chat.disconnect")}</button>
+    <a href="/settings" class="settings-link" aria-label={t("settings.title")}>⚙️</a>
   </div>
 </header>
 
@@ -110,5 +111,13 @@ let { onDisconnect }: { onDisconnect: () => void } = $props()
   .disconnect:hover {
     color: var(--recording);
     border-color: var(--recording);
+  }
+
+  .settings-link {
+    text-decoration: none;
+    font-size: 1.2rem;
+    line-height: 1;
+    padding: 0.25rem;
+    flex-shrink: 0;
   }
 </style>

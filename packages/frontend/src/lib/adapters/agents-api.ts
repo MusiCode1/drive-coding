@@ -6,6 +6,7 @@
  */
 
 import type { CliKind } from "@drive-coding/core"
+import { beUrl } from "$lib/util/be-url"
 
 export type CreateAgentInput = {
   cwd: string
@@ -21,7 +22,7 @@ export type CreateAgentResponse = {
 }
 
 export async function createAgent(input: CreateAgentInput): Promise<CreateAgentResponse> {
-  const res = await fetch("/api/agents", {
+  const res = await fetch(beUrl("/api/agents"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -33,8 +34,10 @@ export async function createAgent(input: CreateAgentInput): Promise<CreateAgentR
   return (await res.json()) as CreateAgentResponse
 }
 
-export async function getAgent(agentId: string): Promise<{ agent: { cwd: string; status: string } }> {
-  const res = await fetch(`/api/agents/${agentId}`)
+export async function getAgent(
+  agentId: string,
+): Promise<{ agent: { cwd: string; status: string } }> {
+  const res = await fetch(beUrl(`/api/agents/${agentId}`))
   if (!res.ok) {
     throw new Error(`getAgent failed: ${res.status}`)
   }
@@ -42,7 +45,7 @@ export async function getAgent(agentId: string): Promise<{ agent: { cwd: string;
 }
 
 export async function notifySessionAttached(agentId: string, sessionId: string): Promise<void> {
-  await fetch(`/api/agents/${agentId}/session-attached`, {
+  await fetch(beUrl(`/api/agents/${agentId}/session-attached`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sessionId }),
@@ -50,7 +53,7 @@ export async function notifySessionAttached(agentId: string, sessionId: string):
 }
 
 export async function deleteAgent(agentId: string): Promise<void> {
-  const res = await fetch(`/api/agents/${agentId}`, { method: "DELETE" })
+  const res = await fetch(beUrl(`/api/agents/${agentId}`), { method: "DELETE" })
   if (!res.ok) {
     const body = await res.text().catch(() => "")
     throw new Error(`deleteAgent failed: ${res.status} ${body}`)

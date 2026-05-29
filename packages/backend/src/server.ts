@@ -29,6 +29,7 @@ import { createInMemoryAgentRegistry } from "./agents/registry.js"
 import { createAgentOrchestrator } from "./app/agent-orchestrator.js"
 import { createProjectsRegistry } from "./app/projects-registry.js"
 import { createRecordingsStore } from "./app/recordings-store.js"
+import { parseCorsOrigins } from "./delivery/cors-config.js"
 import { registerHttp } from "./delivery/http.js"
 import { registerAgentsHttp } from "./delivery/http-agents.js"
 import { registerClientLogHttp } from "./delivery/http-client-log.js"
@@ -46,7 +47,7 @@ import { createEchoWsHandler } from "./delivery/ws-echo.js"
 
 const app = new Hono()
 
-app.use("*", cors({ origin: ["http://localhost:5173"], credentials: true }))
+app.use("*", cors({ origin: parseCorsOrigins(process.env.CORS_ORIGINS), credentials: true }))
 
 // Boot dependencies
 const registry = createInMemoryAgentRegistry()

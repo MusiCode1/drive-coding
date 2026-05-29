@@ -15,6 +15,7 @@
 
 import type { CliKind } from "@drive-coding/core"
 import { listVoices, type Voice } from "../adapters/voice/voices"
+import { setBeUrlBase } from "../util/be-url"
 
 const STORAGE_KEY = "drive-coding-v2-settings"
 
@@ -24,12 +25,14 @@ type Persisted = {
   cliKind: CliKind
   lastCwd: string
   voiceId: string
+  beUrl: string
 }
 
 const DEFAULTS: Persisted = {
   cliKind: "opencode",
   lastCwd: "",
   voiceId: DEFAULT_VOICE_ID,
+  beUrl: "",
 }
 
 function load(): Persisted {
@@ -64,11 +67,16 @@ export class Settings {
   voicesLoading = $state<boolean>(false)
   voicesError = $state<string | null>(null)
 
+  // ─── backend ───
+  beUrl = $state<string>(DEFAULTS.beUrl)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
     this.lastCwd = loaded.lastCwd
     this.voiceId = loaded.voiceId
+    this.beUrl = loaded.beUrl
+    setBeUrlBase(this.beUrl)
   }
 
   // ─── connect form ───
@@ -110,6 +118,35 @@ export class Settings {
     }
   }
 
+  // ─── backend ───
+
+  /**
+   * Validates and sets the BE base URL. Empty string disables the override
+   * (falls back to same-origin / Vite proxy). Returns a Result-like value so
+   * the settings form can render validation errors without throwing.
+   */
+  setBeUrl = (value: string): { ok: true } | { ok: false; error: string } => {
+    const trimmed = value.trim().replace(/\/$/, "")
+    if (trimmed === "") {
+      this.beUrl = ""
+      setBeUrlBase(this.beUrl)
+      this.#persist()
+      return { ok: true }
+    }
+    try {
+      const u = new URL(trimmed)
+      if (u.protocol !== "http:" && u.protocol !== "https:") {
+        return { ok: false, error: "scheme must be http or https" }
+      }
+      this.beUrl = trimmed
+      setBeUrlBase(this.beUrl)
+      this.#persist()
+      return { ok: true }
+    } catch {
+      return { ok: false, error: "malformed URL" }
+    }
+  }
+
   // ─── private ───
 
   #persist(): void {
@@ -117,6 +154,7 @@ export class Settings {
       cliKind: this.cliKind,
       lastCwd: this.lastCwd,
       voiceId: this.voiceId,
+      beUrl: this.beUrl,
     })
   }
 }

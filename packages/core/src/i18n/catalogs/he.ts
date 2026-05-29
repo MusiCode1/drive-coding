@@ -60,5 +60,11 @@ export const he: Catalog = {
   "sessions.startNew": "חדש",
   "sessions.error": "שגיאה בטעינה",
   // ─── settings ─── (slice 9)
+  "settings.title": "הגדרות",
+  "settings.beUrl.label": "כתובת השרת (BE URL)",
+  "settings.beUrl.help": "השאר ריק במצב פיתוח. בפרודקשן (Cloudflare) הזן את הכתובת המלאה של ה-BE.",
+  "settings.beUrl.invalid": "כתובת לא תקינה",
+  "settings.beUrl.saved": "נשמר ✓",
+  "settings.back": "חזרה",
   // ─── recordings ─── (slice 10)
 }

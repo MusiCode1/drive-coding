@@ -64,5 +64,12 @@ export const en: Catalog = {
   "sessions.startNew": "New",
   "sessions.error": "Failed to load",
   // ─── settings ─── (slice 9)
+  "settings.title": "Settings",
+  "settings.beUrl.label": "Backend URL",
+  "settings.beUrl.help":
+    "Leave empty in dev mode. In production (Cloudflare) enter the full BE URL.",
+  "settings.beUrl.invalid": "Invalid URL",
+  "settings.beUrl.saved": "Saved ✓",
+  "settings.back": "Back",
   // ─── recordings ─── (slice 10)
 }
