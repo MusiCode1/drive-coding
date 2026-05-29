@@ -1,13 +1,13 @@
 /**
- * Bubble model — shared between view-models, components and Speaker.
+ * מודל Bubble — משותף בין view-models, קומפוננטות וה-Speaker.
  *
- * Discriminated union by `kind`. Each variant carries exactly the fields it
- * needs; consumers that don't need a field simply don't access it. See
- * `packages/frontend/docs/bubble-model.md` for the rationale.
+ * איחוד מובחן (Discriminated union) לפי `kind`. כל סוג (variant) נושא בדיוק את השדות
+ * שהוא צריך; צרכנים שלא צריכים שדה מסוים פשוט לא ניגשים אליו. ראה
+ * את `packages/frontend/docs/bubble-model.md` להסבר המלא.
  *
- * In slice 2 we use `user`, `message`, `thought`. `tool` is declared now so
- * later slices can light it up without another atomic refactor (golden rule
- * #5: no "backward compat in place").
+ * ב-slice 2 אנו משתמשים ב-`user`, `message`, `thought`. סוג ה-`tool` מוצהר עכשיו כדי
+ * שסלייסים מאוחרים יותר יוכלו להשתמש בו ללא רפקטור אטומי נוסף (כלל זהב
+ * #5: אין "תאימות לאחור במקום").
  */
 
 export type Segment = {
@@ -16,13 +16,13 @@ export type Segment = {
 }
 
 export type ThoughtSegment = Segment & {
-  /** Original (untranslated) text — populated by Speaker after Hebrew translation. */
+  /** טקסט מקורי (לפני תרגום) — מאוכלס על ידי ה-Speaker לאחר התרגום לעברית. */
   originalText?: string
 }
 
 export type BubbleBase = {
   id: string
-  /** ACP message id — null for synthetic bubbles (user prompts, tool calls). */
+  /** מזהה הודעת ACP — null עבור בועות סינתטיות (פרומפטים של משתמש, tool calls). */
   messageId: string | null
   createdAt: number
 }
@@ -30,13 +30,13 @@ export type BubbleBase = {
 export type UserBubble = BubbleBase & {
   kind: "user"
   /**
-   * Live prompts (sendPrompt): always null — synthetic optimistic bubble.
-   * History replay (loadSession → user_message_chunk): ACP messageId, used to
-   * group consecutive chunks of the same historic user message into one bubble.
+   * פרומפטים חיים (sendPrompt): תמיד null — בועה סינתטית ואופטימית.
+   * ניגון היסטוריה (loadSession → user_message_chunk): מזהה הודעת ACP, משמש לקיבוץ
+   * מקטעים עוקבים של אותה הודעת משתמש היסטורית לתוך בועה אחת.
    */
   messageId: string | null
   segments: Segment[]
-  /** Slice 10 — id in the BE RecordingsStore for replay. */
+  /** Slice 10 — מזהה בתוך ה-BE RecordingsStore עבור ניגון מחדש (replay). */
   recordingId?: string
 }
 
@@ -55,13 +55,13 @@ export type ToolCall = {
   name: string
   args: unknown
   status: "pending" | "in_progress" | "completed" | "failed"
-  /** ACP raw title (technical). */
+  /** כותרת ACP גולמית (טכנית). */
   title?: string
-  /** Gemini-generated prose (Hebrew). */
+  /** פרוזה שנוצרה על ידי Gemini (בעברית). */
   narration?: string
-  /** ACP ToolKind: read/edit/delete/move/search/execute/think/fetch/switch_mode/other */
+  /** סוג הכלי (ToolKind) של ACP: read/edit/delete/move/search/execute/think/fetch/switch_mode/other */
   kind?: string
-  /** Raw output returned by the tool (from ACP rawOutput). */
+  /** פלט גולמי שהוחזר על ידי הכלי (מתוך ACP rawOutput). */
   result?: unknown
 }
 
@@ -69,7 +69,7 @@ export type ToolBubble = BubbleBase & {
   kind: "tool"
   messageId: null
   toolCall: ToolCall
-  /** Always empty — keeps the shape uniform with content bubbles for the union. */
+  /** תמיד ריק — שומר על מבנה אחיד מול בועות תוכן עבור האיחוד (union). */
   segments: never[]
 }
 

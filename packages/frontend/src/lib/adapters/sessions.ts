@@ -1,11 +1,11 @@
 /**
- * sessions.ts — adapter for listing ACP sessions.
+ * sessions.ts — אדפטר עבור קבלת רשימת sessions של ACP.
  *
- * Uses a throwaway agent (spawn → listSessions → delete) so the caller
- * doesn't need an active ACP connection.
+ * משתמש בסוכן חד-פעמי (spawn → listSessions → delete) כדי שהקורא
+ * לא יזדקק לחיבור ACP פעיל.
  *
- * Cost: ~300-700ms (spawn + ACP handshake + listSessions + delete).
- * Only call on explicit user interaction — always show a spinner first.
+ * עלות: ~300-700ms (spawn + ACP handshake + listSessions + delete).
+ * קרא רק בפעולת משתמש מפורשת — תמיד הצג ספינר תחילה.
  */
 
 import type { CliKind } from "@drive-coding/core"
@@ -17,57 +17,57 @@ import { beWsUrl } from "$lib/util/be-url"
 export type SessionInfo = {
   sessionId: string
   cwd: string
-  title: string // empty string if CLI doesn't return a title
-  updatedAt: string // ISO timestamp (or empty string if missing)
+  title: string // מחרוזת ריקה אם ה-CLI לא מחזיר כותרת
+  updatedAt: string // חותמת זמן ISO (או מחרוזת ריקה אם חסר)
 }
 
 /**
- * List sessions for a (cwd, cliKind) combo by spawning a throwaway agent,
- * calling ACP listSessions, then deleting the agent.
+ * מחזיר רשימת sessions עבור קומבינציה של (cwd, cliKind) על ידי יצירת סוכן חד-פעמי,
+ * קריאה ל-ACP listSessions, ואז מחיקת הסוכן.
  *
- * Returns [] if:
- *   - CLI doesn't support session/list (-32601, e.g. Gemini)
- *   - No previous sessions exist for this cwd
+ * מחזיר [] אם:
+ *   - ה-CLI לא תומך ב-session/list (שגיאה -32601, למשל Gemini)
+ *   - לא קיימים sessions קודמים עבור ה-cwd הזה
  *
- * Throws on:
- *   - Failed spawn (cwd doesn't exist, binary missing)
- *   - Network errors
+ * זורק שגיאה ב:
+ *   - כישלון יצירת סוכן (cwd לא קיים, קובץ בינארי חסר)
+ *   - שגיאות רשת
  */
 export async function listSessionsForCwd(cwd: string, cliKind: CliKind): Promise<SessionInfo[]> {
   let tempAgentId: string | null = null
   let acp: Awaited<ReturnType<typeof createAcpClient>> | null = null
 
   try {
-    // 1. Spawn a throwaway agent
+    // 1. צור סוכן חד-פעמי
     const { agentId } = await createAgent({ cwd, cliKind })
     tempAgentId = agentId
 
-    // 2. Open WS transport + ACP handshake
+    // 2. פתח תעבורת WS + לחיצת יד של ACP
     const transport = new WsAcpTransport(beWsUrl(`/ws/agent/${agentId}`))
     await transport.waitForOpen()
 
-    // noop update handler — only care about listSessions response
+    // noop update handler — אכפת לנו רק מתשובת ה-listSessions
     acp = await createAcpClient(transport, () => {})
 
-    // 3. Call listSessions
+    // 3. קרא ל-listSessions
     try {
       const res = await acp.listSessions()
       const raw = (res as { sessions?: unknown[] }).sessions ?? []
       return raw.map(normalizeSession)
     } catch (e) {
-      // -32601 = method not found (e.g. Gemini doesn't support listSessions)
+      // -32601 = מתודה לא נמצאה (למשל Gemini לא תומך ב-listSessions)
       if ((e as { code?: number }).code === -32601) return []
       throw e
     }
   } finally {
-    // Always clean up: close WS first, then fire-and-forget DELETE
+    // תמיד נקה בסוף: קודם סגור WS, ואז מחיקה מסוג fire-and-forget
     try {
       acp?.close()
     } catch {
-      // already closed
+      // כבר סגור
     }
     if (tempAgentId !== null) {
-      // fire-and-forget: BE kills child on DELETE; WS already closed above
+      // fire-and-forget: השרת (BE) הורג את תהליך הילד במחיקה (DELETE); ה-WS כבר נסגר למעלה
       void deleteAgent(tempAgentId).catch(() => {})
     }
   }

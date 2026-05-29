@@ -1,15 +1,15 @@
 <script lang="ts">
 /**
- * MessageBubble — renders agent message with full Markdown support.
+ * MessageBubble — מרנדר את הודעת הסוכן עם תמיכה מלאה ב-Markdown.
  *
- * Slice 4: switched from plain text to sanitized Markdown.
- * DOMPurify sanitizes the marked output — safe against XSS injected via agent.
+ * Slice 4: עבר מטקסט פשוט ל-Markdown מחוטא (sanitized).
+ * DOMPurify מחטא את הפלט של marked — בטוח כנגד התקפות XSS שמוזרקות דרך הסוכן.
  *
- * dir="auto" on the content container: browser decides LTR/RTL per-paragraph
- * based on the first strong bidi character. Handles Hebrew text correctly.
+ * המאפיין dir="auto" על מיכל התוכן: הדפדפן מחליט האם זה LTR/RTL לכל פסקה
+ * בהתבסס על התו הדו-כיווני (bidi) החזק הראשון. מטפל בטקסט עברי בצורה נכונה.
  *
- * Streaming note: renderMarkdown receives the whole bubble text, not one
- * segment at a time. Markdown constructs can span ACP chunks.
+ * הערת הזרמה (Streaming): הפונקציה renderMarkdown מקבלת את כל טקסט הבועה, ולא
+ * מקטע אחד בכל פעם. מבני Markdown יכולים להשתרע על פני מספר מקטעי ACP.
  */
 import type { MessageBubble } from "$lib/types/bubble"
 import { getI18n } from "$lib/context"
@@ -37,11 +37,11 @@ const t = getI18n().t
   }
 
   .bubble-message {
-    /* RTL: flex-end = left side (agent is on the left) */
+    /* יישור RTL: הערך flex-end = צד שמאל (הסוכן נמצא בצד שמאל) */
     align-self: flex-end;
     background: var(--bg-elev);
     border: 1px solid var(--border);
-    /* Asymmetric: flat corner points toward the agent (bottom-left in RTL) */
+    /* א-סימטרי: הפינה השטוחה מצביעה לכיוון הסוכן (שמאל-למטה ב-RTL) */
     border-bottom-left-radius: 4px;
   }
 
@@ -60,7 +60,7 @@ const t = getI18n().t
     display: none;
   }
 
-  /* Markdown element styles — scoped via :global inside .text */
+  /* עיצוב רכיבי Markdown — תחומי (scoped) דרך :global בתוך .text */
   .text :global(p) {
     margin: 0.25em 0;
   }

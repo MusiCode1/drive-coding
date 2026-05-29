@@ -1,13 +1,13 @@
 <script lang="ts">
 /**
- * BubbleRenderer — switch dispatcher per Bubble variant.
+ * BubbleRenderer — מחלק קריאות (switch dispatcher) לכל סוג של Bubble.
  *
- * Adding a new bubble kind:
- *   1. Add the variant to packages/frontend/src/lib/types/bubble.ts.
- *   2. Create components/chat/bubbles/<NewKind>Bubble.svelte.
- *   3. Add an `{:else if bubble.kind === "newkind"}` branch below.
+ * הוספת סוג חדש של bubble:
+ *   1. הוסף את הסוג ל-packages/frontend/src/lib/types/bubble.ts.
+ *   2. צור את components/chat/bubbles/<NewKind>Bubble.svelte.
+ *   3. הוסף ענף `{:else if bubble.kind === "newkind"}` למטה.
  *
- * Per parallel-safe-code.md technique #2 (switch dispatcher in leaf component).
+ * לפי parallel-safe-code.md טכניקה #2 (switch dispatcher ברכיב leaf קצה).
  */
 import type { Bubble } from "$lib/types/bubble"
 import UserBubble from "./bubbles/UserBubble.svelte"

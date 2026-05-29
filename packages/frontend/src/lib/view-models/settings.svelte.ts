@@ -1,16 +1,16 @@
 /**
- * Settings — user preferences. Persists to localStorage.
+ * Settings — העדפות המשתמש. נשמר (Persists) ל-localStorage.
  *
- * ─── Parallel-safe additive design (docs/conventions/parallel-safe-code.md) ───
+ * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
  *
- * Adding a new persisted field:
- *   1. Append it to the `Persisted` type below.
- *   2. Append its default to `DEFAULTS`.
- *   3. Append a `$state` field + setter in the appropriate `// ─── domain ───`
- *      block of the class. Setter must call `save()`.
+ * הוספת שדה שמור חדש:
+ *   1. הוסף אותו בסוף הטיפוס `Persisted` למטה.
+ *   2. הוסף את ערך ברירת המחדל שלו ל-`DEFAULTS`.
+ *   3. הוסף שדה `$state` + מתודת set (setter) בבלוק ה-`// ─── domain ───`
+ *      המתאים של המחלקה. מתודת ה-set חייבת לקרוא ל-`save()`.
  *
- * Non-persisted fields (e.g. loaded-from-API caches) go in the relevant
- * domain block without a setter that writes to localStorage.
+ * שדות שלא נשמרים (למשל מטמונים שנטענים מ-API) נכנסים לבלוק ה-domain
+ * הרלוונטי ללא מתודת set שכותבת ל-localStorage.
  */
 
 import type { CliKind } from "@drive-coding/core"
@@ -51,23 +51,23 @@ function save(s: Persisted): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
   } catch {
-    // quota / disabled storage — silently skip
+    // מכסה (quota) / אחסון מושבת — דלג בשקט
   }
 }
 
 export class Settings {
-  // ─── connect form ───
+  // ─── טופס חיבור ───
   cliKind = $state<CliKind>(DEFAULTS.cliKind)
   lastCwd = $state(DEFAULTS.lastCwd)
 
-  // ─── voice ───
+  // ─── קול ───
   voiceId = $state<string>(DEFAULTS.voiceId)
-  /** Loaded async from ElevenLabs via `loadVoices()`. Empty until then. */
+  /** נטען אסינכרונית מ-ElevenLabs דרך `loadVoices()`. ריק עד אז. */
   availableVoices = $state<Voice[]>([])
   voicesLoading = $state<boolean>(false)
   voicesError = $state<string | null>(null)
 
-  // ─── backend ───
+  // ─── שרת ───
   beUrl = $state<string>(DEFAULTS.beUrl)
 
   constructor() {
@@ -79,7 +79,7 @@ export class Settings {
     setBeUrlBase(this.beUrl)
   }
 
-  // ─── connect form ───
+  // ─── טופס חיבור ───
 
   setCliKind = (k: CliKind): void => {
     this.cliKind = k
@@ -91,7 +91,7 @@ export class Settings {
     this.#persist()
   }
 
-  // ─── voice ───
+  // ─── קול ───
 
   setVoiceId = (id: string): void => {
     this.voiceId = id
@@ -99,9 +99,9 @@ export class Settings {
   }
 
   /**
-   * Fetch the voice catalog from ElevenLabs (via BE proxy + OneCLI).
-   * Idempotent: subsequent calls reuse `availableVoices` if already loaded
-   * and not currently in-flight. Errors are stored on `voicesError`.
+   * מביא את קטלוג הקולות מ-ElevenLabs (דרך פרוקסי BE + רכיב OneCLI).
+   * אידמפוטנטי (Idempotent): קריאות עוקבות עושות שימוש חוזר ב-`availableVoices` אם כבר נטען
+   * ואינו בטעינה כרגע (in-flight). שגיאות נשמרות ב-`voicesError`.
    */
   loadVoices = async (): Promise<void> => {
     if (this.voicesLoading) return
@@ -118,12 +118,12 @@ export class Settings {
     }
   }
 
-  // ─── backend ───
+  // ─── שרת ───
 
   /**
-   * Validates and sets the BE base URL. Empty string disables the override
-   * (falls back to same-origin / Vite proxy). Returns a Result-like value so
-   * the settings form can render validation errors without throwing.
+   * מאמת (Validates) ומגדיר את ה-URL הבסיסי של ה-BE. מחרוזת ריקה מבטלת את הדריסה
+   * (חוזר ל-same-origin / פרוקסי של Vite). מחזיר ערך דמוי Result כך ש
+   * טופס ההגדרות יוכל לרנדר שגיאות וולידציה מבלי לזרוק שגיאות (throwing).
    */
   setBeUrl = (value: string): { ok: true } | { ok: false; error: string } => {
     const trimmed = value.trim().replace(/\/$/, "")
@@ -147,7 +147,7 @@ export class Settings {
     }
   }
 
-  // ─── private ───
+  // ─── פרטי ───
 
   #persist(): void {
     save({

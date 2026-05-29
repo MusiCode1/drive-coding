@@ -1,13 +1,13 @@
 /**
- * base64.ts — chunked Uint8Array → base64 conversion.
+ * base64.ts — המרה של Uint8Array ל-base64 במקטעים (chunks).
  *
- * MED-5 (audit): btoa(String.fromCharCode(...bytes)) throws "Maximum call stack size exceeded"
- * for audio > ~100KB because of spread operator stack overflow.
- * Hebrew voice notes are 30-300KB — right in the danger zone.
+ * ביקורת MED-5: הקריאה btoa(String.fromCharCode(...bytes)) זורקת שגיאת "Maximum call stack size exceeded"
+ * עבור אודיו גדול מ-~100KB בגלל גלישת מחסנית (stack overflow) של ה-spread operator.
+ * הודעות קוליות בעברית הן בגודל 30-300KB — בדיוק באזור המסוכן.
  *
- * Solution: process in 8192-byte chunks.
+ * פתרון: עיבוד במקטעים של 8192 בתים.
  *
- * Copied as-is from main/packages/frontend/src/lib/voice/base64.ts (slice 3).
+ * הועתק כפי שהוא מ-main/packages/frontend/src/lib/voice/base64.ts (slice 3).
  */
 
 export function bytesToBase64(bytes: Uint8Array): string {

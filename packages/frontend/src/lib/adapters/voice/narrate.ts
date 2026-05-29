@@ -1,12 +1,12 @@
 /**
- * narrate.ts — generate a short Hebrew prose sentence describing a tool call.
+ * narrate.ts — מחולל משפט פרוזה קצר בעברית שמתאר קריאה לכלי (tool call).
  *
- * Uses generateText (plain string, not JSON) via @ai-sdk/google → BE proxy.
- * The prompt is built by buildNarratePrompt from @drive-coding/core (already exists).
- * The BE proxy-cache captures the generateContent call — same prompt on reload → hit.
+ * משתמש ב-generateText (מחרוזת פשוטה, לא JSON) דרך @ai-sdk/google → פרוקסי ב-BE.
+ * הפרומפט נבנה על ידי buildNarratePrompt מתוך @drive-coding/core (כבר קיים).
+ * ה-proxy-cache ב-BE תופס את קריאת ה-generateContent — אותו פרומפט בריענון → hit בזיכרון מטמון.
  *
- * Timeout 3000ms. Returns null on timeout/error/abort (UI shows loading state).
- * Model: gemini-flash-lite-latest (cheap, fast, Hebrew-capable).
+ * פסק זמן (timeout) של 3000ms. מחזיר null במקרה של פסק זמן/שגיאה/ביטול (ה-UI מראה מצב טעינה).
+ * מודל: gemini-flash-lite-latest (זול, מהיר, בעל יכולות בעברית).
  */
 
 import { generateText } from "ai"
@@ -20,8 +20,8 @@ import {
 const TIMEOUT_MS = 3000
 
 /**
- * Generate a Hebrew narration for a tool call.
- * Returns the Hebrew sentence, or null on any error.
+ * מחולל קריינות בעברית עבור קריאה לכלי.
+ * מחזיר את המשפט בעברית, או null בכל שגיאה שהיא.
  */
 export async function narrate(
   ctx: NarrateContext,

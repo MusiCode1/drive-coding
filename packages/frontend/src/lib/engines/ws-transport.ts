@@ -1,19 +1,19 @@
 /**
- * ws-transport.ts — Browser WebSocket implementation of AcpTransport.
+ * ws-transport.ts — מימוש WebSocket בדפדפן עבור AcpTransport.
  *
- * Wraps a `WebSocket` with the streams pipeline (`wsToWebStreams`) and adds
- * NAT keepalive ($/ping every 25s) — a WS-specific concern that doesn't
- * apply to stdio or mock transports.
+ * עוטף `WebSocket` יחד עם צינור הזרמים (`wsToWebStreams`) ומוסיף
+ * keepalive לטובת NAT (שליחת $/ping כל 25 שניות) — עניין ספציפי ל-WS שלא
+ * חל על תעבורת stdio או mock.
  *
- * Lifecycle:
+ * מחזור חיים (Lifecycle):
  *   new WsAcpTransport(url)
- *     → WS in CONNECTING state, streams already wired
+ *     → ה-WS במצב CONNECTING, הזרמים כבר מחוברים
  *   await transport.waitForOpen()
- *     → resolves when WS reaches OPEN (heartbeat starts automatically)
- *     → rejects on "error" event
+ *     → משלים (resolves) כשה-WS מגיע ל-OPEN (ה-heartbeat מתחיל אוטומטית)
+ *     → דוחה (rejects) באירוע "error"
  *   pass to createAcpClient(transport, onUpdate)
  *
- * close() / WS close-from-other-side → heartbeat stops, onClose listeners fire.
+ * close() / ה-WS נסגר מהצד השני → ה-heartbeat נעצר, ה-onClose listeners מופעלים.
  */
 
 import type { AcpTransport } from "@drive-coding/core/acp/transport"
@@ -30,17 +30,16 @@ export class WsAcpTransport implements AcpTransport {
   #heartbeatTimer: ReturnType<typeof setInterval> | undefined
 
   constructor(url: string, ws?: WebSocket) {
-    // The `ws` parameter is for tests — production code passes only the URL.
+    // הפרמטר `ws` מיועד לטסטים — קוד הייצור מעביר רק את ה-URL.
     this.#ws = ws ?? new WebSocket(url)
-    // BE may forward binary `Buffer` frames from child stdout (NDJSON bytes).
-    // Without binaryType=arraybuffer, browser delivers them as Blob — harder to
-    // decode synchronously in the stream pipeline. arraybuffer keeps the decode
-    // path uniform.
+    // ה-BE עשוי להעביר מסגרות בינאריות של `Buffer` מה-stdout של הילד (בתי NDJSON).
+    // ללא binaryType=arraybuffer, הדפדפן יעביר אותם כ-Blob — מה שקשה יותר
+    // לפענח בצורה סינכרונית בצינור הזרם. arraybuffer שומר על נתיב פיענוח אחיד.
     this.#ws.binaryType = "arraybuffer"
 
-    // Start heartbeat as soon as the connection is open. We register the
-    // listener unconditionally in the constructor so callers don't have to
-    // call waitForOpen() in order to get keepalive behavior.
+    // מתחיל את פעימות הלב (heartbeat) ברגע שהחיבור פתוח. אנחנו רושמים את
+    // המאזין ללא תנאי בבנאי (constructor) כדי שהקוראים לא יצטרכו
+    // לקרוא ל-waitForOpen() כדי לקבל התנהגות keepalive.
     this.#ws.addEventListener(
       "open",
       () => {
@@ -62,11 +61,11 @@ export class WsAcpTransport implements AcpTransport {
   }
 
   /**
-   * Resolves when the WebSocket reaches OPEN state. Rejects on "error" event.
-   * Safe to call multiple times — idempotent when already open.
+   * מסתיים כשה-WebSocket מגיע למצב OPEN. נדחה באירוע "error".
+   * בטוח לקריאה מספר פעמים — אידמפוטנטי כשהוא כבר פתוח.
    *
-   * Callers must await this before passing the transport to `createAcpClient`,
-   * otherwise the SDK's initial write will fail.
+   * קוראים חייבים להמתין על זה לפני העברת ה-transport אל `createAcpClient`,
+   * אחרת הכתיבה הראשונית של ה-SDK תיכשל.
    */
   async waitForOpen(): Promise<void> {
     if (this.#ws.readyState === WebSocket.OPEN) return
@@ -98,7 +97,7 @@ export class WsAcpTransport implements AcpTransport {
         try {
           this.#ws.send(`${JSON.stringify({ jsonrpc: "2.0", method: "$/ping" })}\n`)
         } catch {
-          // ws transitioning to closed — next interval check will skip
+          // ה-WS עובר למצב סגור — בדיקת האינטרוול הבאה תדלג על כך
         }
       }
     }, HEARTBEAT_INTERVAL_MS)

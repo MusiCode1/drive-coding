@@ -1,26 +1,26 @@
 /**
- * Speaker — the agent's "mouth".
+ * Speaker — "פיו" של הסוכן.
  *
- * Subscribes to AgentSession.bubbles. For every new chunk of a message or
- * thought bubble it:
- *   1. accumulates text into a per-bubble buffer
- *   2. runs `splitIntoSentences` to extract complete sentences
- *   3. enqueues a TTS job per sentence
- *   4. the fetch-loop honours a lookahead of LOOKAHEAD concurrent fetches
- *   5. each completed fetch is handed to `Player` via `AudioStream`
+ * מנוי ל-AgentSession.bubbles. עבור כל מקטע חדש של בועת הודעה או
+ * מחשבה:
+ *   1. צובר טקסט לתוך buffer פר-בועה
+ *   2. מריץ `splitIntoSentences` לחילוץ משפטים שלמים
+ *   3. מכניס לתור TTS job לכל משפט
+ *   4. לולאת ה-fetch מכבדת lookahead של LOOKAHEAD fetches מקביליים
+ *   5. כל fetch שהושלם מועבר ל-`Player` דרך `AudioStream`
  *
- * Thoughts go through Gemini translation to Hebrew before TTS. Messages are
- * spoken as-is (the agent is already prompted to respond in Hebrew).
+ * מחשבות עוברות תרגום Gemini לעברית לפני TTS. הודעות מושמעות כמות שהן
+ * (הסוכן כבר מקבל הוראה להגיב בעברית).
  *
- * Slice 2: Speaker holds the voice id as a `const`. Slice 9 will wire it
- * through Settings — same field, just becomes a dynamic getter.
+ * Slice 2: Speaker מחזיק את מזהה הקול כ-`const`. Slice 9 יחבר אותו
+ * דרך Settings — אותו שדה, פשוט הופך ל-getter דינמי.
  *
- * Reactivity rules (Svelte 5):
- *   - reads from `session.bubbles[*].segments` are inside the effect and DO
- *     track. That's what makes Speaker re-run when chunks arrive.
- *   - writes to `#bubbleStates` and `#jobs` are plain (non-state) data
- *     structures and don't retrigger. State writes (`state`, `currentSegmentId`)
- *     go through `untrack` defensively (learnings 2026-05-16).
+ * כללי ריאקטיביות (Svelte 5):
+ *   - קריאות מ-`session.bubbles[*].segments` הן בתוך ה-effect וכן נעקבות.
+ *     זה מה שגורם ל-Speaker לרוץ מחדש כשמקטעים מגיעים.
+ *   - כתיבות ל-`#bubbleStates` ו-`#jobs` הן מבני נתונים רגילים (לא state)
+ *     ולא מפעילות מחדש. כתיבות state (`state`, `currentSegmentId`)
+ *     עוברות דרך `untrack` בזהירות (learnings 2026-05-16).
  */
 
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
@@ -49,7 +49,7 @@ export type TtsJob = {
   text: string
   status: TtsJobStatus
   abort: AbortController
-  /** Slice 4: bubble id, used by thought jobs to write back translated text. */
+  /** Slice 4: מזהה בועה, בשימוש jobs של מחשבות לכתיבת טקסט מתורגם חזרה. */
   bubbleId?: string
 }
 
@@ -67,11 +67,11 @@ export class Speaker {
   readonly #player: Player
 
   /**
-   * Derived from `#player.state`. Implemented as a getter rather than a
-   * `$derived` field so the reference to `#player` is evaluated lazily after
-   * the constructor has run (TS doesn't allow forward-referencing private
-   * fields from a field initializer). The getter is still tracked: reading
-   * `#player.state` inside it pulls in the underlying `$state` dependency.
+   * נגזר מ-`#player.state`. מיושם כ-getter ולא כשדה `$derived`
+   * כדי שההפניה ל-`#player` תוערך lazily אחרי שהבנאי רץ
+   * (TypeScript לא מאפשר הפניה קדמית לשדות פרטיים מ-field initializer).
+   * ה-getter עדיין נעקב: קריאה של `#player.state` בתוכו מושכת
+   * את תלות ה-`$state` הבסיסית.
    */
   get state(): "idle" | "speaking" {
     return this.#player.state === "playing" ? "speaking" : "idle"
@@ -81,14 +81,14 @@ export class Speaker {
   #jobs: TtsJob[] = []
   #activeFetches = 0
   #prevStatus: AgentSessionStatus = "idle"
-  /** Slice 4: tracks how many segments of each ThoughtBubble have been translated. */
+  /** Slice 4: עוקב כמה מקטעים של כל ThoughtBubble תורגמו. */
   #translatedSegByBubble: Map<string, number> = new Map()
-  /** Slice 4: toolCallIds currently being narrated (prevents duplicate in-flight narrations). */
+  /** Slice 4: toolCallIds שמסופרים כעת (מונע כפילות narrations בטיסה). */
   #narratingCallIds: Set<string> = new Set()
-  /** Tool calls already narrated or intentionally skipped (history replay / failed narrate). */
+  /** קריאות tool שכבר סוּפרו או דולגו בכוונה (השמעה חוזרת של היסטוריה / כשל narrate). */
   #processedNarrationCallIds: Set<string> = new Set()
 
-  // Set by constructor — kept so destroy() can stop the effect.
+  // מוגדר על ידי הבנאי — נשמר כדי שה-destroy() יוכל לעצור את ה-effect.
   #disposeEffect: (() => void) | null = null
 
   constructor(opts: { session: AgentSession; settings: Settings }) {
@@ -97,27 +97,27 @@ export class Speaker {
     this.#audioStream = new AudioStream()
     this.#player = new Player(this.#audioStream)
 
-    // The single effect that drives everything: reads bubbles + status + enabled.
-    // Writes are wrapped in `untrack` (gotcha §6 #5).
+    // ה-effect היחיד שמניע הכל: קורא bubbles + status + enabled.
+    // כתיבות עטופות ב-`untrack` (gotcha §6 #5).
     this.#disposeEffect = $effect.root(() => {
       $effect(() => {
-        // ── Reads (tracked) ────────────────────────────────────────────
+        // ── קריאות (נעקבות) ────────────────────────────────────────────
         const status = this.#session.status
         const enabled = this.enabled
-        // walk bubbles → reads bubble.kind, bubble.id, bubble.messageId,
-        // bubble.segments (and via the segment-count guard, bubble.segments.length)
+        // עוברים על bubbles → קוראים bubble.kind, bubble.id, bubble.messageId,
+        // bubble.segments (ודרך שומר ספירת המקטעים, bubble.segments.length)
         const bubbles = this.#session.bubbles
-        // Pin reactivity on each bubble's segments.length so a `push` to
-        // segments triggers the effect (gotcha §6 #2).
+        // נועל ריאקטיביות על segments.length של כל בועה כדי ש-`push` ל-
+        // segments יפעיל את ה-effect (gotcha §6 #2).
         const _segCounts = bubbles
           .filter((b) => b.kind === "message" || b.kind === "thought")
           .map((b) => (b as { segments: { id: string }[] }).segments.length)
         void _segCounts
-        // Slice 4: tracked so that $effect re-runs when loadSession() finishes
-        // and clears the flag — allowing new live chunks to flow to TTS.
+        // Slice 4: נעקב כדי ש-$effect ירוץ מחדש כאשר loadSession() מסיים
+        // ומנקה את הדגל — מאפשר למקטעים חיים חדשים לזרום ל-TTS.
         const isLoadingHistory = this.#session.isLoadingHistory
-        // Slice 4: pin reactivity on tool bubble status + narration so we notice
-        // when a tool call becomes completed or narration is written back.
+        // Slice 4: נועל ריאקטיביות על סטטוס בועת tool + narration כדי להבחין
+        // כאשר קריאת tool מושלמת או narration נכתב חזרה.
         const _toolStatus = bubbles
           .filter((b) => b.kind === "tool")
           .map((b) => {
@@ -126,7 +126,7 @@ export class Speaker {
           })
         void _toolStatus
 
-        // ── Writes (untracked) ─────────────────────────────────────────
+        // ── כתיבות (לא-נעקבות) ─────────────────────────────────────────
         untrack(() => {
           this.#processBubbles(bubbles, enabled, isLoadingHistory)
           this.#processToolBubbles(bubbles, isLoadingHistory)
@@ -138,8 +138,8 @@ export class Speaker {
   }
 
   /**
-   * Toggle voice playback. Disabling clears the queue and stops playback.
-   * Re-enabling does NOT replay history — only newly-arriving chunks are spoken.
+   * מחליף הפעלת קול. כיבוי מנקה את התור ועוצר הפעלה.
+   * הפעלה מחדש **אינה** משחזרת היסטוריה — רק מקטעים חדשים שמגיעים מושמעים.
    */
   toggle(): void {
     this.enabled = !this.enabled
@@ -147,9 +147,9 @@ export class Speaker {
   }
 
   /**
-   * Stop playback + clear pending TTS jobs, without changing `enabled`.
-   * Unlike toggle(): toggle also flips enabled. stop() only stops.
-   * Used by: VoiceMode.cancel() (slice 3).
+   * עוצר הפעלה + מנקה TTS jobs ממתינים, ללא שינוי של `enabled`.
+   * בניגוד ל-toggle(): toggle גם מעיף את enabled. stop() רק עוצר.
+   * בשימוש ע"י: VoiceMode.cancel() (slice 3).
    */
   stop(): void {
     this.#stopAndClear()
@@ -162,7 +162,7 @@ export class Speaker {
   }
 
   // ──────────────────────────────────────────────────────────────────────
-  // Internals
+  // פנימיות
   // ──────────────────────────────────────────────────────────────────────
 
   #processBubbles(
@@ -170,9 +170,9 @@ export class Speaker {
     enabled: boolean,
     isLoadingHistory: boolean,
   ): void {
-    // Slice 4: while loadSession() is replaying history, mark bubbles as processed
-    // without enqueuing TTS jobs. The effect re-runs once isLoadingHistory → false,
-    // at which point new live chunks resume normal TTS flow.
+    // Slice 4: בזמן ש-loadSession() משחזר היסטוריה, מסמן בועות כמעובדות
+    // ללא הכנסת TTS jobs לתור. ה-effect רץ מחדש ברגע שה-isLoadingHistory → false,
+    // ובאותה נקודה מקטעים חיים חדשים חוזרים לזרום TTS רגיל.
     if (isLoadingHistory) {
       for (const bubble of bubbles) {
         if (bubble.kind !== "message" && bubble.kind !== "thought") continue
@@ -205,7 +205,7 @@ export class Speaker {
       state.processedSegments = segArr.length
 
       if (!enabled) {
-        // Discard — when toggled on later we don't want to spam stale content.
+        // מושלך — כשמופעל שוב לאחר מכן לא רוצים לשגר תוכן ישן.
         state.buffer = ""
         continue
       }
@@ -225,7 +225,7 @@ export class Speaker {
   }
 
   #handleStatusTransition(status: AgentSessionStatus, enabled: boolean): void {
-    // Turn ended? Flush every per-bubble buffer as a final segment.
+    // התור הסתיים? פלוש כל buffer פר-בועה כמקטע אחרון.
     const justFinished =
       this.#prevStatus === "thinking" && (status === "connected" || status === "error")
     if (justFinished && enabled) {
@@ -278,13 +278,13 @@ export class Speaker {
       if (job.kind === "thought") {
         const result = await translate(text, TARGET_LANG, job.abort.signal)
         if (result !== null && result.status === "translated") {
-          // Slice 4: write back to the segment so ThoughtBubble can show HE+EN.
+          // Slice 4: כתיבה חזרה למקטע כדי ש-ThoughtBubble יוכל להציג HE+EN.
           if (job.bubbleId !== undefined) {
             this.#persistThoughtTranslation(job.bubbleId, job.text, result.text)
           }
           text = result.text
         }
-        // already_in_target or null → keep original text (originalText stays undefined)
+        // already_in_target או null → שמור טקסט מקורי (originalText נשאר undefined)
       }
 
       if (job.abort.signal.aborted) {
@@ -301,7 +301,7 @@ export class Speaker {
       this.#player.addSegment(job.segmentId)
       job.status = "ready"
     } catch (e) {
-      // MIN-5: skip + continue, don't throw.
+      // MIN-5: דלג + המשך, אל תזרוק.
       job.status = "error"
       console.warn("TTS job failed, skipping segment", {
         id: job.segmentId,
@@ -311,8 +311,8 @@ export class Speaker {
   }
 
   /**
-   * Slice 4: for each completed ToolBubble missing narration, fire-and-forget narrate().
-   * Called from untrack() — async writes go back through $state proxy (fine).
+   * Slice 4: עבור כל ToolBubble שהושלמה שחסרה narration, פתח narrate() בשריפה-ושכח.
+   * נקרא מ-untrack() — כתיבות אסינכרוניות חוזרות דרך proxy של $state (בסדר).
    */
   #processToolBubbles(
     bubbles: AgentSession["bubbles"],
@@ -331,7 +331,7 @@ export class Speaker {
         continue
       }
       if (this.#processedNarrationCallIds.has(tc.toolCallId)) continue
-      if (this.#narratingCallIds.has(tc.toolCallId)) continue  // in flight
+      if (this.#narratingCallIds.has(tc.toolCallId)) continue  // בטיסה
 
       this.#narratingCallIds.add(tc.toolCallId)
       this.#processedNarrationCallIds.add(tc.toolCallId)
@@ -354,7 +354,7 @@ export class Speaker {
         const maybeBubble = this.#session.bubbles[idx]
         if (maybeBubble === undefined || maybeBubble.kind !== "tool") return
         const old: ToolBubble = maybeBubble
-        // Replace whole bubble (Svelte 5 reactivity).
+        // החלף בועה שלמה (ריאקטיביות Svelte 5).
         this.#session.bubbles[idx] = {
           ...old,
           toolCall: { ...old.toolCall, narration: text },
@@ -366,16 +366,15 @@ export class Speaker {
   }
 
   /**
-   * Slice 4: write translation result back to a ThoughtBubble segment.
+   * Slice 4: כתיבת תוצאת תרגום חזרה למקטע של ThoughtBubble.
    *
-   * Each TtsJob for a thought bubble corresponds to one sentence from the
-   * accumulated buffer. We map jobs sequentially to segments (segIdx counter
-   * per bubble). Precision note: sentence boundaries don't perfectly align with
-   * ACP segment boundaries — the displayed translation is sentence-level, not
-   * segment-level. This is acceptable for MVP display purposes.
+   * כל TtsJob עבור בועת מחשבה תואם למשפט אחד מה-buffer המצטבר.
+   * ממפים jobs ברצף למקטעים (מונה segIdx פר-בועה). הערת דיוק: גבולות משפט
+   * אינם מתואמים בדיוק עם גבולות מקטע ACP — התרגום המוצג הוא ברמת משפט, לא
+   * ברמת מקטע. מקובל למטרות תצוגת MVP.
    *
-   * After update: seg.text = Hebrew (prominent), seg.originalText = English (small).
-   * Svelte 5: replace entire bubble object to trigger reactivity.
+   * אחרי עדכון: seg.text = עברית (בולטת), seg.originalText = אנגלית (קטנה).
+   * Svelte 5: החלף אובייקט בועה שלם כדי להפעיל ריאקטיביות.
    */
   #persistThoughtTranslation(
     bubbleId: string,
@@ -390,17 +389,17 @@ export class Speaker {
 
     const segIdx = this.#translatedSegByBubble.get(bubbleId) ?? 0
     if (segIdx >= bubble.segments.length) {
-      // More sentences than segments — no segment to update.
+      // יותר משפטים ממקטעים — אין מקטע לעדכן.
       return
     }
 
-    // Replace the segment at segIdx: swap text → Hebrew, originalText → English.
+    // החלף את המקטע ב-segIdx: החלף text → עברית, originalText → אנגלית.
     const updatedSegments: ThoughtBubble["segments"] = bubble.segments.map((seg, i) =>
       i === segIdx
         ? { ...seg, text: translatedHebrew, originalText: originalEnglish }
         : seg,
     )
-    // Replace whole bubble (Svelte 5 reactivity — index assignment triggers update).
+    // החלף בועה שלמה (ריאקטיביות Svelte 5 — השמת index מפעילה עדכון).
     this.#session.bubbles[idx] = { ...bubble, segments: updatedSegments }
     this.#translatedSegByBubble.set(bubbleId, segIdx + 1)
   }
@@ -411,14 +410,14 @@ export class Speaker {
         try {
           job.abort.abort()
         } catch {
-          // already aborted
+          // כבר בוטל
         }
       }
     }
     this.#jobs = []
     this.#player.stop()
     this.#audioStream.clear()
-    // Mark every existing bubble as fully processed so re-enable doesn't replay.
+    // סמן כל בועה קיימת כמעובדת לחלוטין כך שהפעלה מחדש לא תשחזר.
     for (const bubble of this.#session.bubbles) {
       if (bubble.kind !== "message" && bubble.kind !== "thought") continue
       const state = this.#bubbleStates.get(bubble.id) ?? {

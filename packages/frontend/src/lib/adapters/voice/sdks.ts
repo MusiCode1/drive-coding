@@ -1,16 +1,16 @@
 /**
- * sdks.ts — SDK factories configured for our BE proxy.
+ * sdks.ts — מפעלי SDK (factories) המוגדרים עבור הפרוקסי ב-BE שלנו.
  *
- * CRIT-1 (audit): two SDKs, two different casing conventions:
- *   @ai-sdk/google  → baseURL  (capital URL) — for generateText (translate, narrate)
- *   @google/genai   → httpOptions.baseUrl (lowercase u) — for generateContent + multimodal (STT)
+ * ביקורת CRIT-1: שני SDKs, שתי מוסכמות של אותיות רישיות (casing) שונות:
+ *   @ai-sdk/google  → baseURL  (URL באותיות רישיות) — עבור generateText (תרגום, קריינות)
+ *   @google/genai   → httpOptions.baseUrl (u באותיות קטנות) — עבור generateContent + multimodal (STT)
  *
- * Both are now FACTORIES (functions, not consts): each call resolves the
- * current `beUrl()` so Settings.beUrl changes are picked up without restart.
- * The overhead of creating a provider per call is negligible (~0.1ms).
+ * שניהם עכשיו FACTORIES (פונקציות, לא קבועים consts): כל קריאה מפענחת את
+ * ה-`beUrl()` הנוכחי כדי ששינויים ב-Settings.beUrl ייתפסו ללא הפעלה מחדש.
+ * העלות (overhead) של יצירת provider לכל קריאה היא זניחה (~0.1ms).
  *
- * apiKey "browser-placeholder" is intentional — OneCLI proxy replaces it at
- * the gateway. See learnings 2026-05-16: "OneCLI + AI SDK = placeholder apiKey pattern"
+ * מפתח ה-API "browser-placeholder" הוא מכוון — הפרוקסי של OneCLI מחליף אותו
+ * בשער (gateway). ראה learnings 2026-05-16: "OneCLI + AI SDK = placeholder apiKey pattern"
  */
 
 import { createGoogleGenerativeAI } from "@ai-sdk/google"
@@ -18,29 +18,29 @@ import { GoogleGenAI } from "@google/genai"
 import { beUrl } from "$lib/util/be-url"
 
 /**
- * For translation + narration — `generateText` / `generateObject` from `@ai-sdk/google`.
- * Note: this SDK uses `baseURL` (capital URL) — index.d.ts:494.
- * Callers use: googleAi("gemini-flash-lite-latest")
- * Same call signature as before (was a const provider, now a factory) — no
- * caller changes needed.
+ * עבור תרגום + קריינות — `generateText` / `generateObject` מתוך `@ai-sdk/google`.
+ * הערה: ה-SDK הזה משתמש ב-`baseURL` (URL באותיות רישיות) — מתוך index.d.ts:494.
+ * קוראים משתמשים ב: googleAi("gemini-flash-lite-latest")
+ * אותה חתימת קריאה כמו קודם (היה provider קבוע, עכשיו מפעל) — אין
+ * צורך בשינויים בקוראים.
  */
 export function googleAi(model: string) {
   const provider = createGoogleGenerativeAI({
-    apiKey: "browser-placeholder", // placeholder; OneCLI injects real key at proxy
+    apiKey: "browser-placeholder", // פלייסיהולדר; OneCLI מזריק את המפתח האמיתי בפרוקסי
     baseURL: beUrl("/proxy/google/v1beta"),
   })
   return provider(model)
 }
 
 /**
- * For STT — multimodal `generateContent` with audio inline from `@google/genai`.
- * IMPORTANT: this SDK uses `httpOptions.baseUrl` (lowercase u) — web.d.ts:5904.
- * Wrong casing (`baseURL` instead of `baseUrl`) causes SDK to ignore the option
- * and hit generativelanguage.googleapis.com directly → CORS error + 401.
- * The baseUrl MUST be absolute — SDK passes it to `new URL()` eagerly.
- * `beUrl()` always returns an absolute URL in the browser.
- * baseUrl MUST end with `/` before the SDK appends apiVersion (`v1beta`).
- * Callers use: googleGenAi().models.generateContent(...)
+ * עבור STT (המרת דיבור לטקסט) — `generateContent` מולטימודאלי עם אודיו inline מתוך `@google/genai`.
+ * חשוב: ה-SDK הזה משתמש ב-`httpOptions.baseUrl` (u באותיות קטנות) — מתוך web.d.ts:5904.
+ * אותיות רישיות שגויות (`baseURL` במקום `baseUrl`) גורמות ל-SDK להתעלם מהאופציה
+ * ולפנות ישירות ל-generativelanguage.googleapis.com → שגיאת CORS + שגיאת 401.
+ * ה-baseUrl חייב להיות מוחלט (absolute) — ה-SDK מעביר אותו ל-`new URL()` באופן מיידי (eagerly).
+ * `beUrl()` תמיד מחזיר URL מוחלט בדפדפן.
+ * baseUrl חייב להסתיים ב-`/` לפני שה-SDK מוסיף את ה-apiVersion (`v1beta`).
+ * קוראים משתמשים ב: googleGenAi().models.generateContent(...)
  */
 export function googleGenAi(): GoogleGenAI {
   return new GoogleGenAI({

@@ -1,32 +1,32 @@
 /**
- * be-url.ts — module-level Backend URL base for all FE → BE calls.
+ * be-url.ts — כתובת URL בסיסית של ה-Backend ברמת המודול (module-level) לכל קריאות ה-FE → BE.
  *
- * NOT a Svelte context: adapters (e.g. sdks.ts) read this during their own
- * module init, which happens outside any component setup — `getSettings()`
- * would throw `lifecycle_outside_component` there. So we keep a plain module
- * variable, updated by the Settings VM on load + on user save.
+ * לא קונטקסט של Svelte: אדפטרים (למשל sdks.ts) קוראים את זה במהלך אתחול המודול
+ * שלהם, שקורה מחוץ לכל הקמת קומפוננטה — `getSettings()` 
+ * יזרוק שם שגיאת `lifecycle_outside_component`. לכן אנחנו שומרים משתנה
+ * מודול רגיל, שמתעדכן על ידי ה-Settings VM בטעינה + בשמירה של המשתמש.
  *
- * Empty base → uses location.origin (Vite proxy handles same-origin paths in
- * dev; in prod the BE is same-origin too unless overridden).
- * Set base   → absolute cross-origin base (needs CORS — see slice 15a).
+ * בסיס ריק → משתמש ב-location.origin (פרוקסי של Vite מטפל בנתיבי same-origin ב-
+ * dev; בפרודקשן ה-BE הוא גם same-origin אלא אם כן נדרס).
+ * בסיס מוגדר → בסיס absolute חוצה-מקורות (cross-origin) (דורש CORS — ראה slice 15a).
  */
 
 let _beUrl = ""
 
 /**
- * Called by the Settings VM on construction (from persisted value) and on
- * every user save. Trailing slash is stripped for consistent concatenation.
+ * נקרא על ידי ה-Settings VM בעת בנייה (מערך שנשמר) ובכל
+ * שמירה של משתמש. לוכסן סוגר (Trailing slash) מוסר לצורך שרשור עקבי.
  */
 export function setBeUrlBase(value: string): void {
   _beUrl = value.replace(/\/$/, "")
 }
 
 /**
- * Build an absolute BE URL for `fetch()`.
+ * בונה כתובת BE מוחלטת (absolute URL) עבור קריאות `fetch()`.
  *
- * Empty base → `location.origin` + path (Vite proxy / same-origin).
- * Set base   → that base + path (cross-origin).
- * SSR (no `location`) → returns the path as-is (no fetch happens in SSR).
+ * בסיס ריק → `location.origin` + הנתיב (Vite proxy / same-origin).
+ * בסיס מוגדר → הבסיס הזה + הנתיב (cross-origin).
+ * SSR (אין `location`) → מחזיר את הנתיב כפי שהוא (לא קורה fetch ב-SSR).
  */
 export function beUrl(path: string): string {
   const normalized = path.startsWith("/") ? path : `/${path}`
@@ -36,7 +36,7 @@ export function beUrl(path: string): string {
 }
 
 /**
- * Build a BE WebSocket URL. Same base logic, but http → ws and https → wss.
+ * בונה כתובת BE ל-WebSocket. אותה לוגיקת בסיס, רק http → ws ו-https → wss.
  */
 export function beWsUrl(path: string): string {
   const normalized = path.startsWith("/") ? path : `/${path}`
@@ -46,7 +46,7 @@ export function beWsUrl(path: string): string {
   return `${proto}//${location.host}${normalized}`
 }
 
-/** Testing only — reset internal state between tests. */
+/** לטסטים בלבד — מאפס מצב פנימי (internal state) בין טסטים. */
 export function _resetForTests(): void {
   _beUrl = ""
 }

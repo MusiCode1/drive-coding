@@ -1,35 +1,34 @@
 /**
- * bubble.exhaustive.ts — compile-time exhaustiveness check for the Bubble union.
+ * bubble.exhaustive.ts — בדיקת מיצוי (exhaustiveness) בזמן קומפילציה לאיחוד ה-Bubble.
  *
- * Companion to `BubbleRenderer.svelte` (the switch dispatcher for bubble
- * variants). If a future slice adds a new variant to `Bubble` (e.g.
- * `SystemBubble`) but forgets to update `BubbleRenderer.svelte`, the runtime
- * switch will silently no-op for the new kind — a quiet regression.
+ * מלווה ל-`BubbleRenderer.svelte` (הרכיב שמחלק את קריאות הבועות). אם slice עתידי
+ * יוסיף סוג חדש ל-`Bubble` (למשל `SystemBubble`) אבל ישכח לעדכן את
+ * `BubbleRenderer.svelte`, ה-switch בזמן ריצה יתעלם מהסוג החדש — רגרסיה שקטה.
  *
- * This file forces TypeScript to flag that omission at typecheck time:
+ * קובץ זה מכריח את TypeScript לסמן השמטה כזו בזמן typecheck:
  *
- *   1. `kindCheck` enumerates every kind via a `switch (b.kind)` and assigns
- *      the post-switch `b` to `never`. If a new variant is added without a
- *      matching `case`, `b` will be the missing variant (not `never`) and
- *      the assignment will fail.
+ *   1. `kindCheck` מונה כל סוג דרך `switch (b.kind)` ומקצה
+ *      את `b` אחרי ה-switch ל-`never`. אם יתווסף סוג חדש ללא
+ *      `case` תואם, `b` יהיה הסוג החסר (ולא `never`) ו-
+ *      ההקצאה תיכשל.
  *
- *   2. `kindLiteral` is the union of all `Bubble["kind"]` literals as it
- *      currently exists; the local `KnownKind` next to it enumerates the
- *      kinds we *expect* to handle. The `Equals` helper requires the two to
- *      be identical, forcing this file to be updated alongside the union.
+ *   2. `kindLiteral` הוא איחוד כל הליטרלים של `Bubble["kind"]` כפי
+ *      שהוא קיים כעת; ה-`KnownKind` המקומי לידו מונה את
+ *      הסוגים שאנחנו *מצפים* לטפל בהם. עוזר ה-`Equals` דורש ששניהם
+ *      יהיו זהים, מה שמכריח את הקובץ הזה להתעדכן יחד עם האיחוד.
  *
- * Limitation: this guarantees `Bubble` is a closed union and that every
- * kind is enumerated *here*. It does NOT directly verify that
- * `BubbleRenderer.svelte` handles every kind — Svelte's `svelte-check`
- * already does that for the `{:else if bubble.kind === "X"}` chain. The
- * combination of the two means any new variant must touch both files.
+ * מגבלה: זה מבטיח ש-`Bubble` הוא איחוד סגור ושכל
+ * סוג נמנה *כאן*. זה לא מאמת ישירות ש-
+ * `BubbleRenderer.svelte` מטפל בכל סוג — ה-`svelte-check` של Svelte
+ * כבר עושה את זה עבור שרשרת ה-`{:else if bubble.kind === "X"}`. ה-
+ * שילוב של שניהם אומר שכל סוג חדש חייב לגעת בשני הקבצים.
  *
- * NOT executed at runtime. Pure type-level guard. Imported nowhere.
+ * לא מורץ בזמן אמת (runtime). שומר רק ברמת ה-type. לא מיובא לשום מקום.
  */
 
 import type { Bubble } from "./bubble"
 
-// ─── 1. Switch exhaustiveness on bubble.kind ──────────────────────────────────
+// ─── 1. בדיקת מיצוי של Switch על bubble.kind ──────────────────────────────────
 
 function kindCheck(b: Bubble): string {
   switch (b.kind) {
@@ -42,8 +41,8 @@ function kindCheck(b: Bubble): string {
     case "tool":
       return "tool"
     default: {
-      // If a new variant is added to `Bubble`, `b` here will be that variant
-      // (not `never`), and this assignment will fail typecheck.
+      // אם נוסף סוג (variant) חדש ל-`Bubble`, ה-`b` כאן יהיה הסוג הזה
+      // (ולא `never`), וההקצאה הזו תיכשל ב-typecheck.
       const _exhaustive: never = b
       return _exhaustive
     }
@@ -51,19 +50,19 @@ function kindCheck(b: Bubble): string {
 }
 void kindCheck
 
-// ─── 2. Literal-union equality with the explicit list of kinds ────────────────
+// ─── 2. שוויון Literal-union מול הרשימה המפורשת של הסוגים ────────────────
 
 type Equals<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
   ? true
   : false
 
-/** Every kind we currently know how to render. Adding a variant to `Bubble`
- *  requires adding it here too — otherwise `_kindsMatch` flips to `false`
- *  and the `: true` annotation rejects it. */
+/** כל סוג שאנחנו יודעים כרגע איך לרנדר. הוספת סוג חדש ל-`Bubble`
+ *  דורשת הוספה גם כאן — אחרת `_kindsMatch` הופך ל-`false`
+ *  ואנוטציית ה-`: true` תדחה אותו. */
 type KnownKind = "user" | "message" | "thought" | "tool"
 
-// If this line errors with "Type 'false' is not assignable to type 'true'",
-// a new bubble kind was added without updating this file (and very likely
-// without updating BubbleRenderer.svelte either).
+// אם השורה הזו מחזירה שגיאת "Type 'false' is not assignable to type 'true'",
+// כנראה שנוסף סוג bubble חדש ללא עדכון הקובץ הזה (וכנראה גם
+// ללא עדכון BubbleRenderer.svelte).
 const _kindsMatch: Equals<Bubble["kind"], KnownKind> = true
 void _kindsMatch

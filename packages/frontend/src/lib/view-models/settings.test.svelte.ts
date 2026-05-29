@@ -1,26 +1,26 @@
 /**
- * settings.test.svelte.ts — unit tests for the Settings view-model.
+ * settings.test.svelte.ts — טסטים ליחידה (unit tests) עבור ה-Settings view-model.
  *
- * Why `.svelte.ts` extension on a test file:
- *   Vite-plugin-svelte's preprocessor only runs on `*.svelte`, `*.svelte.ts`,
- *   `*.svelte.js`. We don't actually need runes in the test itself, but
- *   colocating the extension with the SUT (settings.svelte.ts) avoids
- *   surprises if a future test ever uses `$state` directly. It also makes
- *   the include glob in vitest.config.ts simpler.
+ * למה סיומת `.svelte.ts` על קובץ טסט:
+ *   ה-preprocessor של Vite-plugin-svelte רץ רק על קבצי `*.svelte`, `*.svelte.ts`,
+ *   `*.svelte.js`. אנחנו לא באמת צריכים runes בטסט עצמו, אבל
+ *   מיקום משותף של הסיומת עם ה-SUT (הקובץ settings.svelte.ts הנבדק) מונע
+ *   הפתעות אם טסט עתידי אי פעם ישתמש ישירות ב-`$state`. זה גם הופך את
+ *   ה-glob של הכללה (include glob) בקובץ vitest.config.ts לפשוט יותר.
  *
- * Coverage (mapped to docs/plans/testing-coverage.md §4 Commit 5 tests 1–7):
- *   1. Default voiceId = Sarah when localStorage empty.
- *   2. setVoiceId writes to localStorage.
- *   3. New Settings() reads the persisted voiceId.
- *   4. loadVoices populates availableVoices + drives loading/error state.
- *   5. Idempotency: 2 sequential loadVoices → adapter called once.
- *   6. Retry on error: failed → 2nd call refetches.
- *   7. Concurrency: 2 unawaited loadVoices → adapter called once (loading guard).
+ * כיסוי (ממופה ל-docs/plans/testing-coverage.md סעיף §4 Commit 5 טסטים 1–7):
+ *   1. ברירת המחדל voiceId = שרה (Sarah) כש-localStorage ריק.
+ *   2. המתודה setVoiceId כותבת ל-localStorage.
+ *   3. פעולת New Settings() קוראת את ה-voiceId השמור.
+ *   4. פעולת loadVoices מאכלסת את availableVoices + מניעה מצב loading/error.
+ *   5. אידמפוטנטיות (Idempotency): שתי קריאות loadVoices רצופות → קריאה אחת לאדפטר.
+ *   6. ניסיון חוזר בשגיאה: קריאה נכשלה → קריאה שנייה מבקשת מחדש (refetches).
+ *   7. מקביליות: שתי קריאות loadVoices שלא המתינו להן → קריאה אחת לאדפטר (שומר loading guard).
  */
 
 import { beforeEach, describe, expect, test, vi } from "vitest"
 
-// Mock the voices adapter BEFORE importing Settings. `vi.mock` is hoisted.
+// צור Mock לאדפטר של ה-voices לפני ייבוא Settings. הקריאה `vi.mock` מקודמת מעלה (hoisted).
 vi.mock("../adapters/voice/voices", () => ({
   listVoices: vi.fn(),
 }))
@@ -95,7 +95,7 @@ describe("Settings — loadVoices", () => {
     expect(s.voicesError).toBeNull()
 
     const inflight = s.loadVoices()
-    // Synchronously after call: loading flag is set BEFORE the await.
+    // סינכרונית אחרי הקריאה: דגל ה-loading מוגדר לפני ה-await.
     expect(s.voicesLoading).toBe(true)
 
     await inflight
@@ -137,7 +137,7 @@ describe("Settings — loadVoices", () => {
 
   test("concurrent: 2 unawaited calls → adapter invoked once (loading guard)", async () => {
     installLocalStorage()
-    // Hold the first call open so the 2nd one can hit the loading guard.
+    // השאר את הקריאה הראשונה פתוחה כדי שהשנייה תוכל להיתקל ב-loading guard.
     let resolveFirst!: (v: typeof voicesFixture) => void
     vi.mocked(listVoices).mockImplementationOnce(
       () => new Promise<typeof voicesFixture>((r) => (resolveFirst = r)),
@@ -145,7 +145,7 @@ describe("Settings — loadVoices", () => {
     const s = new Settings()
 
     const p1 = s.loadVoices()
-    const p2 = s.loadVoices() // should bail on `voicesLoading === true`
+    const p2 = s.loadVoices() // אמור לעצור (bail) כי `voicesLoading === true`
     expect(vi.mocked(listVoices)).toHaveBeenCalledTimes(1)
 
     resolveFirst(voicesFixture)

@@ -1,13 +1,13 @@
 /**
- * AgentSession — minimal view-model for a single ACP session.
+ * AgentSession — view-model מינימלי עבור סשן ACP יחיד.
  *
- * Owns:
- *   - connection state (status, error)
- *   - bubble accumulation from session/update notifications
- *   - public methods: attach/detach/sendPrompt
+ * מנהל (Owns):
+ *   - מצב חיבור (status, error)
+ *   - הצטברות בועות (bubble accumulation) מהתראות session/update
+ *   - מתודות ציבוריות: attach/detach/sendPrompt
  *
- * Uses the transport-agnostic AcpClient from @drive-coding/core/acp,
- * wrapped with the FE-side WsAcpTransport.
+ * משתמש ב-AcpClient האגנוסטי לתעבורה מתוך @drive-coding/core/acp,
+ * עטוף עם ה-WsAcpTransport מצד ה-FE.
  */
 
 import type { SessionNotification } from "@agentclientprotocol/sdk"
@@ -26,51 +26,51 @@ import type {
 } from "$lib/types/bubble"
 
 export type AgentSessionStatus =
-  | "idle"        // no agent yet
-  | "connecting"  // creating agent + ACP handshake
-  | "connected"   // ready to receive prompts
-  | "thinking"    // prompt sent, awaiting agent response
+  | "idle"        // טרם נוצר סוכן
+  | "connecting"  // יוצר סוכן + לחיצת יד של ACP
+  | "connected"   // מוכן לקבל פרומפטים
+  | "thinking"    // נשלח פרומפט, ממתין לתגובת הסוכן
   | "error"
 
 /**
- * ─── Parallel-safe additive design (docs/conventions/parallel-safe-code.md) ───
+ * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
  *
- * Adding a new method to AgentSession:
- *   - State changes (`$state` fields) → INVASIVE. Stop and ask Tama.
- *   - New public method (`loadSession`, etc.) → ADDITIVE. Place it in the
- *     appropriate `// ─── domain ───` block, or append a new block before
+ * הוספת מתודה חדשה ל-AgentSession:
+ *   - שינויי State (שדות `$state`) → פולשני (INVASIVE). עצור ושאל את Tama.
+ *   - מתודה ציבורית חדשה (`loadSession` וכו') → תוספתי (ADDITIVE). מקם בבלוק
+ *     ה-`// ─── domain ───` המתאים, או הוסף בלוק חדש לפני
  *     `// ─── private ───`.
- *   - New private helper → ADDITIVE. Place in `// ─── private ───`.
+ *   - פונקציית עזר פרטית חדשה → תוספתי (ADDITIVE). מקם ב-`// ─── private ───`.
  */
 export class AgentSession {
-  // ─── state ─── (INVASIVE to modify — coordinate via Tama)
+  // ─── state ─── (פולשני לעריכה — תאם מול Tama)
   status = $state<AgentSessionStatus>("idle")
   error = $state<string | null>(null)
   bubbles = $state<Bubble[]>([])
   agentId = $state<string | null>(null)
   cwd = $state<string | null>(null)
-  // ─── slice 4: replay guard + narration context ─── (additive)
-  /** True while loadSession() is replaying history. Speaker reads this (tracked) to suppress TTS. */
+  // ─── slice 4: replay guard + narration context ─── (תוספתי)
+  /** True בזמן ש-loadSession() מנגן היסטוריה מחדש. ה-Speaker קורא את זה (תחת מעקב) כדי להשתיק TTS. */
   isLoadingHistory = $state(false)
-  /** The most recent prompt text sent by the user — used by Speaker for narration context. */
+  /** טקסט הפרומפט האחרון שנשלח על ידי המשתמש — משמש את ה-Speaker להקשר עבור קריינות. */
   lastUserMessage = $state("")
 
   #client: AcpClient | null = null
   #sessionId: string | null = null
-  /** O(1) lookup for tool_call_update by toolCallId. Slice 4. */
+  /** חיפוש בסיבוכיות O(1) עבור tool_call_update לפי toolCallId. מ-Slice 4. */
   #toolBubbleByCallId: Map<string, ToolBubble> = new Map()
   /**
-   * True between detach() and the next attach(). Suppresses spurious
-   * `WS closed (1005)` errors from onClose firing after the user
-   * explicitly disconnected.
+   * הערך הוא True בין detach() ל-attach() הבא. משתיק
+   * שגיאות `WS closed (1005)` מזויפות מאירועי onClose שמופעלים לאחר שהמשתמש
+   * התנתק באופן מפורש.
    */
   #detached = false
 
-  // ─── connection lifecycle ─────────────────────────
+  // ─── מחזור חיי חיבור (connection lifecycle) ─────────────────────────
 
   /**
-   * Create a new agent for (cwd, cliKind), open WS, handshake ACP, register
-   * notification handler. After resolution the session is ready for sendPrompt.
+   * יצירת סוכן חדש עבור (cwd, cliKind), פתיחת WS, לחיצת יד של ACP, ורישום
+   * של מאזין להתראות. לאחר ההשלמה, הסשן מוכן עבור sendPrompt.
    */
   attach = async (input: { cwd: string; cliKind: CliKind }): Promise<void> => {
     if (this.status === "connecting" || this.status === "connected") {
@@ -82,18 +82,18 @@ export class AgentSession {
     this.#detached = false
 
     try {
-      // 1. Create agent on the BE
+      // 1. צור סוכן בצד השרת (BE)
       const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
       this.agentId = agentId
       this.cwd = input.cwd
 
-      // 2. Open WS transport
+      // 2. פתח תעבורת WS
       const proto = location.protocol === "https:" ? "wss:" : "ws:"
       const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
       transport.onClose((code, reason) => {
-        // Suppress errors when the close was caused by an explicit detach().
-        // The browser closes the WS asynchronously, so onClose fires after detach
-        // has already cleared state.
+        // השתק שגיאות כאשר הסגירה נגרמה על ידי קריאה מפורשת ל-detach().
+        // הדפדפן סוגר את ה-WS בצורה אסינכרונית, לכן onClose מופעל אחרי ש-detach
+        // כבר ניקה את המצב (state).
         if (this.#detached) return
         if (code !== 1000 && code !== 1001) {
           this.error = `WS closed (${code}): ${reason || "no reason"}`
@@ -102,7 +102,7 @@ export class AgentSession {
       })
       await transport.waitForOpen()
 
-      // 3. ACP handshake + new session
+      // 3. לחיצת יד של ACP + סשן חדש
       this.#client = await createAcpClient(transport, this.#onSessionUpdate)
       const sessionResult = await this.#client.newSession({ cwd: input.cwd })
       this.#sessionId = (sessionResult as { sessionId?: string }).sessionId ?? null
@@ -110,7 +110,7 @@ export class AgentSession {
         throw new Error("newSession returned no sessionId")
       }
 
-      // 4. Tell BE which sessionId we attached (best-effort)
+      // 4. תגיד ל-BE לאיזה sessionId התחברנו (מאמץ מיטבי - best-effort)
       await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
 
       this.status = "connected"
@@ -130,21 +130,21 @@ export class AgentSession {
     this.bubbles = []
   }
 
-  // ─── prompting ────────────────────────────────────
+  // ─── פרומפטים (prompting) ────────────────────────────────────
 
   /**
-   * Send a text prompt. `opts.recordingId` is reserved for slice 10 (replay).
-   * Returns a Promise that resolves when the turn completes (or rejects on error).
+   * שולח פרומפט של טקסט. `opts.recordingId` שמור עבור slice 10 (ניגון מחדש).
+   * מחזיר Promise שמסתיים כשהתור מושלם (או נדחה בשגיאה).
    */
   sendPrompt = async (text: string, opts?: { recordingId?: string }): Promise<void> => {
     if (this.status !== "connected" && this.status !== "thinking") return
     if (!this.#client || !this.#sessionId) return
     if (!text.trim()) return
 
-    // Slice 4: capture for narration context
+    // Slice 4: לכידה לטובת הקשר הקריינות
     this.lastUserMessage = text
 
-    // optimistic: add user bubble immediately (single segment, no messageId)
+    // אופטימי (optimistic): הוסף בועת משתמש מיד (מקטע יחיד, ללא messageId)
     const userBubble: UserBubble = {
       id: crypto.randomUUID(),
       kind: "user",
@@ -165,12 +165,12 @@ export class AgentSession {
     }
   }
 
-  // ─── session persistence ─── (slice 8)
+  // ─── התמדת סשן (session persistence) ─── (מ-slice 8)
 
   /**
-   * Load an existing ACP session by sessionId.
-   * Similar to attach() but calls loadSession instead of newSession.
-   * After resolution, status === "connected" and the session is ready for sendPrompt.
+   * טוען סשן ACP קיים לפי sessionId.
+   * דומה ל-attach() אך קורא ל-loadSession במקום ל-newSession.
+   * לאחר ההשלמה, המצב הוא "connected" והסשן מוכן עבור sendPrompt.
    */
   loadSession = async (input: {
     sessionId: string
@@ -186,12 +186,12 @@ export class AgentSession {
     this.#detached = false
 
     try {
-      // 1. Create agent on the BE (same as attach)
+      // 1. צור סוכן בצד השרת (זהה ל-attach)
       const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
       this.agentId = agentId
       this.cwd = input.cwd
 
-      // 2. Open WS transport + onClose (same as attach)
+      // 2. פתח תעבורת WS + הוסף מאזין onClose (זהה ל-attach)
       const proto = location.protocol === "https:" ? "wss:" : "ws:"
       const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
       transport.onClose((code, reason) => {
@@ -203,11 +203,11 @@ export class AgentSession {
       })
       await transport.waitForOpen()
 
-      // 3. ACP handshake (same as attach)
+      // 3. לחיצת יד של ACP (זהה ל-attach)
       this.#client = await createAcpClient(transport, this.#onSessionUpdate)
 
-      // ── loadSession instead of newSession ──
-      // Suppress Speaker TTS during history replay (slice 4: replay-quiet).
+      // ── קריאה ל-loadSession במקום ל-newSession ──
+      // השתק את ה-TTS של ה-Speaker במהלך ניגון מחדש של ההיסטוריה (slice 4: replay-quiet).
       this.isLoadingHistory = true
       try {
         await this.#client.loadSession({ sessionId: input.sessionId, cwd: input.cwd })
@@ -216,7 +216,7 @@ export class AgentSession {
       }
       this.#sessionId = input.sessionId
 
-      // 4. Notify BE (same as attach, best-effort)
+      // 4. הודע ל-BE (זהה ל-attach, מאמץ מיטבי)
       await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
 
       this.status = "connected"
@@ -228,11 +228,11 @@ export class AgentSession {
     }
   }
 
-  // ─── slice 4: narration context helpers ─── (additive)
+  // ─── slice 4: עזרי הקשר לקריינות ─── (תוספתי)
 
   /**
-   * Returns the text of the last n assistant MessageBubbles as strings.
-   * Used by Speaker to build NarrateContext for tool call narration.
+   * מחזיר את הטקסט של ה-n MessageBubbles האחרונות של הסייען כמחרוזות.
+   * משמש את ה-Speaker כדי לבנות NarrateContext עבור קריינות קריאה לכלי.
    */
   recentAssistantMessages(n: number = 3): string[] {
     const result: string[] = []
@@ -245,7 +245,7 @@ export class AgentSession {
     return result
   }
 
-  // ─── recordings ─── (slice 10 will add)
+  // ─── הקלטות (recordings) ─── (יתווסף ב-slice 10)
 
   // ─── private ─────────────────────────────────────
 
@@ -261,13 +261,13 @@ export class AgentSession {
   }
 
   #onSessionUpdate = (notification: SessionNotification): void => {
-    // ACP envelope: { sessionId, update: { sessionUpdate, content, messageId, ... } }
-    // messageId is on the outer update object (ACP unstable extension).
+    // מעטפת ACP: צורה של { sessionId, update: { sessionUpdate, content, messageId, ... } }
+    // ה-messageId נמצא על אובייקט ה-update החיצוני (הרחבה לא יציבה של ACP).
     const update = notification.update as {
       sessionUpdate?: string
       content?: { type?: string; text?: string }
       messageId?: string | null
-      // ─── slice 4: tool call fields ───
+      // ─── slice 4: שדות של קריאה לכלי ───
       toolCallId?: string
       title?: string
       kind?: string
@@ -276,9 +276,9 @@ export class AgentSession {
       status?: ToolCall["status"]
     }
 
-    // ─── slice 4: handle tool notifications before text guard ───
-    // tool_call / tool_call_update don't carry text content — must be handled
-    // before `if (!text) return`.
+    // ─── slice 4: טיפול בהתראות של כלים לפני שומר הטקסט (text guard) ───
+    // ההתראות tool_call / tool_call_update לא נושאות תוכן טקסט — חובה לטפל בהן
+    // לפני השורה `if (!text) return`.
     if (update.sessionUpdate === "tool_call") {
       this.#handleToolCall(update)
       return
@@ -298,14 +298,14 @@ export class AgentSession {
     } else if (update.sessionUpdate === "agent_thought_chunk") {
       this.#appendChunk("thought", text, messageId)
     } else if (update.sessionUpdate === "user_message_chunk") {
-      // Sent by the agent during loadSession history replay (per ACP spec
-      // §session-setup#loading-sessions). Never arrives for live turns —
-      // those originate from sendPrompt and we add the optimistic bubble there.
+      // נשלח על ידי הסוכן במהלך ניגון מחדש של ההיסטוריה מ-loadSession (לפי מפרט ACP
+      // סעיף §session-setup#loading-sessions). לעולם לא מגיע בתורים חיים —
+      // אלה מקורם מ-sendPrompt ואנחנו מוסיפים להם את הבועה האופטימית שם.
       this.#appendChunk("user", text, messageId)
     }
   }
 
-  // ─── slice 4: tool call handlers ────────────────────────────
+  // ─── slice 4: מטפלים עבור קריאות לכלים (tool call handlers) ────────────────────────────
 
   #handleToolCall(update: {
     toolCallId?: string
@@ -316,8 +316,8 @@ export class AgentSession {
     status?: ToolCall["status"]
   }): void {
     if (update.toolCallId === undefined) return
-    // ACP schema: tool_call requires toolCallId + title. title may be undefined
-    // in practice if the agent sends a minimal notification, so fallback gracefully.
+    // סכמת ACP: התראה tool_call דורשת toolCallId + title. ה-title עלול להיות undefined
+    // בפועל אם הסוכן שולח התראה מינימלית, לכן יש לסגת בצורה עדינה.
     const bubble: ToolBubble = {
       id: crypto.randomUUID(),
       kind: "tool",
@@ -325,11 +325,11 @@ export class AgentSession {
       createdAt: Date.now(),
       toolCall: {
         toolCallId: update.toolCallId,
-        // name = kind if available, else title. Used internally + for narrate prompt.
+        // השם שווה ל-kind אם זמין, אחרת title. משמש פנימית + עבור הפרומפט של narrate.
         name: update.kind ?? update.title ?? "tool",
         kind: update.kind,
         args: update.rawInput ?? {},
-        // status is optional on initial tool_call; default to "pending"
+        // הסטטוס הוא אופציונלי ב-tool_call ראשוני; כברירת מחדל "pending"
         status: update.status ?? "pending",
         title: update.title,
         narration: undefined,
@@ -355,10 +355,10 @@ export class AgentSession {
     )
     if (idx === -1) return
     const old = this.bubbles[idx] as ToolBubble
-    // Svelte 5: replace object wholesale (not in-place mutation) to trigger reactivity.
-    // rawInput is merged here because ACP agents (e.g. opencode) often send a
-    // minimal tool_call first (empty/absent rawInput) and the actual command
-    // arrives in tool_call_update — see ACP ToolCallUpdate.rawInput in the spec.
+    // Svelte 5: החלף את האובייקט בשלמותו (ולא מוטציה במקום) כדי להפעיל ריאקטיביות.
+    // שדה rawInput ממוזג כאן כי סוכני ACP (למשל opencode) לרוב שולחים
+    // הודעת tool_call מינימלית תחילה (ללא rawInput או ריק) והפקודה האמיתית
+    // מגיעה ב-tool_call_update — ראה ToolCallUpdate.rawInput במפרט ACP.
     const newToolCall: ToolCall = {
       ...old.toolCall,
       ...(update.status !== undefined && { status: update.status }),
@@ -368,7 +368,7 @@ export class AgentSession {
       ...(update.title !== undefined && { title: update.title }),
     }
     this.bubbles[idx] = { ...old, toolCall: newToolCall }
-    // Keep the Map in sync (pointing to the new bubble object)
+    // שמור על ה-Map מסונכרן (מצביע לאובייקט ה-bubble החדש)
     this.#toolBubbleByCallId.set(update.toolCallId, this.bubbles[idx] as ToolBubble)
   }
 
@@ -378,8 +378,8 @@ export class AgentSession {
     messageId: string | null,
   ): void {
     const last = this.bubbles[this.bubbles.length - 1]
-    // Group only when: (a) same kind AND (b) non-null matching messageId.
-    // Null/missing messageId always starts a new bubble (per ACP grouping rule).
+    // קבץ יחד רק כאשר: (א) מאותו סוג, וגם (ב) מזהה הודעה (messageId) תואם ושאינו null.
+    // מזהה הודעה null או חסר תמיד מתחיל בועה חדשה (לפי כלל הקיבוץ של ACP).
     const canGroup =
       last !== undefined &&
       last.kind === kind &&
@@ -388,7 +388,7 @@ export class AgentSession {
 
     if (canGroup && last !== undefined) {
       const seg: Segment = { id: crypto.randomUUID(), text }
-      // last is MessageBubble | ThoughtBubble | UserBubble — all have segments arrays
+      // last הוא מסוג MessageBubble | ThoughtBubble | UserBubble — לכולם יש מערכי segments
       if (last.kind === "message") {
         (last as MessageBubble).segments.push(seg)
       } else if (last.kind === "thought") {

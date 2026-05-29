@@ -1,13 +1,13 @@
 <script lang="ts">
 /**
- * ThoughtBubble — shows agent's internal reasoning.
+ * ThoughtBubble — מציג את תהליך החשיבה הפנימי של הסוכן.
  *
- * Slice 4: each segment may have been translated by Speaker.
- *   seg.text        = Hebrew (translated, prominent)
- *   seg.originalText = English (source, shown small/dimmed below)
+ * Slice 4: כל מקטע (segment) יכול היה להיות מתורגם על ידי ה-Speaker.
+ *   seg.text        = עברית (מתורגם, מובלט)
+ *   seg.originalText = אנגלית (מקור, מוצג בקטן/מעומעם למטה)
  *
- * When originalText is undefined (translation not yet arrived or thought was
- * already Hebrew), shows seg.text as-is — graceful fallback.
+ * כאשר originalText הוא undefined (התרגום טרם הגיע או שהמחשבה הייתה
+ * כבר בעברית), מציג את seg.text כפי שהוא — התדרדרות עדינה (graceful fallback).
  */
 import type { ThoughtBubble } from "$lib/types/bubble"
 import { getI18n } from "$lib/context"
@@ -28,7 +28,7 @@ const displaySegments = $derived(visibleThoughtSegments(bubble.segments))
       {/if}
     </div>
   {/each}
-  <!-- forces Svelte reactivity on .segments.push() and originalText arrival -->
+  <!-- כופה ריאקטיביות של Svelte בעת .segments.push() או כשה-originalText מגיע -->
   <span class="hidden">{bubble.segments.length}</span>
 </div>
 
@@ -41,7 +41,7 @@ const displaySegments = $derived(visibleThoughtSegments(bubble.segments))
   }
 
   .bubble-thought {
-    /* RTL: flex-end = left side (thought is from the agent, same side) */
+    /* יישור RTL: הערך flex-end = צד שמאל (המחשבה היא מהסוכן, אותו צד) */
     align-self: flex-end;
     background: transparent;
     border: 1px dashed var(--border);

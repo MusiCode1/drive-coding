@@ -1,17 +1,17 @@
 <script lang="ts">
 /**
- * Composition root — instantiates all primary view-models and wires them
- * into context. The only place in the app where `new <VM>()` happens.
+ * Composition root — מאתחל (instantiates) את כל ה-view-models הראשיים ומחבר
+ * אותם לקונטקסט. זהו המקום היחיד באפליקציה שבו קוראים ל-`new <VM>()`.
  *
- * ─── Parallel-safe additive design (docs/conventions/parallel-safe-code.md) ───
+ * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
  *
- * Adding a new VM:
- *   1. Add `import { Foo } from "$lib/view-models/foo.svelte"` to imports.
- *   2. Append a new `// ─── <domain> ───` block in the section below.
- *      Order matters only when a VM depends on another (declare deps first).
- *   3. Add `setFoo(foo)` to the corresponding setContext block.
+ * הוספת VM חדש:
+ *   1. הוסף `import { Foo } from "$lib/view-models/foo.svelte"` לייבואים.
+ *   2. הוסף בלוק `// ─── <domain> ───` חדש באזור למטה.
+ *      לסדר יש חשיבות רק כאשר VM תלוי באחר (הצהר קודם על תלויות).
+ *   3. הוסף `setFoo(foo)` בבלוק ה-setContext המתאים.
  *
- * Two slices that add independent VMs land in different sections → git auto-merge.
+ * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
  */
 import "../app.css"
 import { setI18n, setMic, setSession, setSettings, setSpeaker, setVoiceMode } from "$lib/context"
@@ -27,24 +27,24 @@ let { children } = $props()
 // ─── i18n ──────────────────────────────────────────
 const i18n = new I18nVM()
 
-// ─── settings ──────────────────────────────────────
+// ─── הגדרות ──────────────────────────────────────
 const settings = new Settings()
 
-// ─── session ───────────────────────────────────────
+// ─── סשן ───────────────────────────────────────
 const session = new AgentSession()
 
-// ─── speaker ─── (depends on session + settings)
+// ─── speaker ─── (תלוי ב-session + settings)
 const speaker = new Speaker({ session, settings })
 
-// ─── mic ─── (slice 3 — depends on session)
+// ─── mic ─── (slice 3 — תלוי ב-session)
 const mic = new Mic({ session })
 
-// ─── voice-mode ─── (slice 3 — depends on mic + session + speaker)
+// ─── voice-mode ─── (slice 3 — תלוי ב-mic + session + speaker)
 const voiceMode = new VoiceMode({ mic, session, speaker })
 
 // ─── car-mode ─── (slice 7)
 
-// ─── wiring ───────────────────────────────────────
+// ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
 setSession(session)

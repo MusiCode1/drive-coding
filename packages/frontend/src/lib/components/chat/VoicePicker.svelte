@@ -1,16 +1,16 @@
 <script lang="ts">
 /**
- * VoicePicker — bare <select> wired to Settings.voiceId.
+ * VoicePicker — רכיב <select> חשוף שמחובר ל-Settings.voiceId.
  *
- * Layout-agnostic: the parent wraps it in whatever label / container
- * matches the surrounding form. Used by:
- *   - routes/+page.svelte (connect form, with form-style label)
+ * אגנוסטי לפריסה (Layout-agnostic): אב הרכיב עוטף אותו באיזו תווית / מיכל
+ * שמתאימים לטופס שמסביב. בשימוש על ידי:
+ *   - routes/+page.svelte (טופס התחברות, עם תווית בסגנון טופס)
  *
- * On mount, triggers `settings.loadVoices()` (idempotent). Failure leaves
- * the current voiceId as a fallback option so the TTS pipeline doesn't break.
+ * בעת טעינה (mount), מפעיל את `settings.loadVoices()` (אידמפוטנטי). כשלון משאיר
+ * את ה-voiceId הנוכחי כאפשרות חלופית (fallback) כדי שתהליך ה-TTS לא יישבר.
  *
- * Per parallel-safe-code.md, the VM holds the data; this component is a
- * thin leaf that reads + writes one field.
+ * לפי parallel-safe-code.md, ה-VM (View Model) מחזיק את הנתונים; הרכיב הזה
+ * הוא קצה (leaf) דק שקורא + כותב שדה אחד בלבד.
  */
 import { getI18n, getSettings } from "$lib/context"
 
@@ -18,7 +18,7 @@ const settings = getSettings()
 const t = getI18n().t
 
 $effect(() => {
-  // Idempotent — guarded inside Settings.loadVoices.
+  // אידמפוטנטי — מוגן בתוך Settings.loadVoices.
   void settings.loadVoices()
 })
 
@@ -27,8 +27,8 @@ function onChange(e: Event) {
   settings.setVoiceId(target.value)
 }
 
-// Show the currently-selected voiceId as a placeholder option when the
-// catalog is empty so the select still has a value.
+// הצג את ה-voiceId שנבחר כרגע כאפשרות חלופית (placeholder) כאשר
+// הקטלוג ריק כדי של-<select> עדיין יהיה ערך.
 const hasVoices = $derived(settings.availableVoices.length > 0)
 </script>
 
@@ -52,7 +52,7 @@ const hasVoices = $derived(settings.availableVoices.length > 0)
 </select>
 
 <style>
-  /* Inherits styles from parent form. Add overrides if needed. */
+  /* יורש עיצוב מהטופס האב. הוסף דריסות במידת הצורך. */
   select:disabled {
     opacity: 0.6;
     cursor: progress;

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
- * markdown.test.ts — TDD tests for renderMarkdown.
+ * markdown.test.ts — טסטים בשיטת TDD עבור renderMarkdown.
  *
- * Runs in jsdom environment (see annotation above) because DOMPurify requires
- * a DOM. jsdom provides window + document so DOMPurify.sanitize() works.
+ * רץ בסביבת jsdom (ראה אנוטציה למעלה) משום ש-DOMPurify דורש
+ * DOM פעיל. jsdom מספק window + document כדי ש-DOMPurify.sanitize() יעבוד.
  */
 
 import { describe, it, expect } from "vitest"

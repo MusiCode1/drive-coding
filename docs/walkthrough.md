@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-06-03 — slice 19c: Hebrew Comments Frontend
+
+### מה בוצע?
+
+תרגום מלא של כל הערות הקוד מאנגלית לעברית בחבילת ה-Frontend (`packages/frontend/src/`).
+התרגום כלל קבצי TypeScript ו-Svelte תוך שמירה על כללי ה-Svelte וה-JSDoc. 
+לא בוצע שום שינוי בקוד הלוגי או הפונקציונלי.
+
+**עיקרי השינויים:**
+- תרגום הערות `//` ובלוקים של `/* */` ו-`/** JSDoc */`.
+- תרגום הערות `<!-- HTML comment -->` בתבניות Svelte.
+- הקפדה מלאה על השארת ה-directives הייעודיים באנגלית (כמו `<!-- svelte-ignore ... -->` או `@ts-ignore`) כדי לא לשבור Typecheck.
+
+הסליס עבר בדיקות Typecheck, lint:i18n, וטסטים בהצלחה כנדרש ב-DoD.
+
+---
+
 ## 2026-05-29 — slice 18: WS Wire Logger (passive bidirectional tap)
 
 ### מה בוצע?

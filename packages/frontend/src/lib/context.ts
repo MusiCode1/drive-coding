@@ -1,14 +1,14 @@
 /**
- * context.ts — createContext pairs for the app singletons.
+ * context.ts — צמדי createContext עבור הסינגלטונים של האפליקציה.
  *
- * One pair per primary view-model. Use `set*` in the composition root
- * (+layout.svelte) and `get*` in any component below it.
+ * צמד אחד לכל view-model ראשי. השתמש ב-`set*` בנקודת ההרכבה (composition root)
+ * (+layout.svelte) וב-`get*` בכל רכיב שתחתיו.
  *
- * ─── Parallel-safe additive design (docs/conventions/parallel-safe-code.md) ───
+ * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
  *
- * Adding a new VM pair: append a new `// ─── <domain> ───` block AT THE END
- * of the file. Do not edit existing blocks. Imports go in the import block
- * at top (alphabetical within group is nice but not required).
+ * הוספת צמד VM חדש: הוסף בלוק `// ─── <domain> ───` חדש בסוף
+ * הקובץ. אל תערוך בלוקים קיימים. ייבואים הולכים לבלוק הייבוא
+ * למעלה (סדר אלפביתי בתוך קבוצה זה נחמד אבל לא חובה).
  */
 
 import { createContext } from "svelte"
@@ -22,10 +22,10 @@ import type { VoiceMode } from "./view-models/derived/voice-mode.svelte"
 // ─── i18n ──────────────────────────────────────────
 export const [getI18n, setI18n] = createContext<I18nVM>()
 
-// ─── settings ──────────────────────────────────────
+// ─── הגדרות ──────────────────────────────────────
 export const [getSettings, setSettings] = createContext<Settings>()
 
-// ─── session ───────────────────────────────────────
+// ─── סשן ───────────────────────────────────────
 export const [getSession, setSession] = createContext<AgentSession>()
 
 // ─── speaker ───────────────────────────────────────
@@ -37,4 +37,4 @@ export const [getMic, setMic] = createContext<Mic>()
 // ─── voice-mode ─── (slice 3)
 export const [getVoiceMode, setVoiceMode] = createContext<VoiceMode>()
 
-// ─── car-mode ─── (slice 7 will add here)
+// ─── car-mode ─── (slice 7 יוסיף כאן)

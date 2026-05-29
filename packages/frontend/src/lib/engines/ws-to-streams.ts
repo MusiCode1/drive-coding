@@ -1,14 +1,14 @@
 /**
- * ws-to-streams.ts — Browser WebSocket → { ReadableStream, WritableStream }
+ * ws-to-streams.ts — דפדפן WebSocket → { ReadableStream, WritableStream }
  *
- * Contract (post-F1 fix — direct in-process pipe, no stdio-to-ws wrapper):
- * 1. Uses native browser WebSocket (not `ws` npm package).
- * 2. Readable: forwards every WS frame as-is to the SDK WITHOUT adding \n.
- *    (SDK buffers partial frames and parses on \n boundary — adding \n to a
- *     partial frame causes "Unterminated string" error and stream teardown.)
- *    No filtering: every byte from the BE pipe is forwarded.
- * 3. Writable: splits chunk on \n, sends each non-empty line with \n suffix
- *    (opencode expects NDJSON newline-delimited stream).
+ * חוזה (אחרי תיקון F1 — צינור in-process ישיר, ללא עטיפת stdio-to-ws):
+ * 1. משתמש ב-WebSocket הטבעי של הדפדפן (ולא בחבילת `ws` של npm).
+ * 2. קריאה (Readable): מעביר כל מסגרת (frame) של WS כפי שהיא ל-SDK ללא הוספת \n.
+ *    (ה-SDK אוגר מסגרות חלקיות ומנתח אותן בגבול של \n — הוספת \n ל-
+ *     מסגרת חלקית תגרום לשגיאת "Unterminated string" ולקריסת הזרם.)
+ *    ללא סינון: כל בית שמגיע מצינור ה-BE מועבר הלאה.
+ * 3. כתיבה (Writable): מפצל את ה-chunk לפי \n, שולח כל שורה לא ריקה עם סיומת \n
+ *    (opencode מצפה לזרם NDJSON מופרד בשורות חדשות).
  */
 
 export function wsToWebStreams(ws: WebSocket): {
@@ -18,7 +18,7 @@ export function wsToWebStreams(ws: WebSocket): {
   const encoder = new TextEncoder()
   const decoder = new TextDecoder()
 
-  // ── Readable: incoming WS frames → byte stream (forward as-is) ────────────
+  // ── Readable: מסגרות WS נכנסות → זרם בתים (מועבר כפי שהוא) ────────────
   const readable = new ReadableStream<Uint8Array>({
     start(controller) {
       ws.addEventListener("message", (ev: MessageEvent) => {
@@ -29,10 +29,10 @@ export function wsToWebStreams(ws: WebSocket): {
               ? decoder.decode(ev.data)
               : String(ev.data)
 
-        // Forward as-is — SDK buffers and parses on \n boundary.
-        // DO NOT add \n artificially — a single ACP message may be split across
-        // multiple WS frames; adding \n to a partial frame causes the SDK to
-        // parse it as a complete message → "Unterminated string" → stream teardown.
+        // מעביר כפי שהוא — ה-SDK אוגר ומנתח בגבולות של \n.
+        // אל תוסיף \n באופן מלאכותי — הודעת ACP אחת יכולה להיות מחולקת על פני
+        // מספר מסגרות WS; הוספת \n למסגרת חלקית תגרום ל-SDK
+        // לנתח אותה כהודעה שלמה → שגיאת "Unterminated string" → קריסת הזרם.
         controller.enqueue(encoder.encode(text))
       })
 
@@ -40,7 +40,7 @@ export function wsToWebStreams(ws: WebSocket): {
         try {
           controller.close()
         } catch {
-          // already closed
+          // כבר סגור
         }
       })
 
@@ -48,24 +48,24 @@ export function wsToWebStreams(ws: WebSocket): {
         try {
           controller.error(e)
         } catch {
-          // already errored
+          // כבר בשגיאה
         }
       })
     },
   })
 
-  // ── Writable: byte stream → outgoing WS frames (one frame per NDJSON line) ─
+  // ── Writable: זרם בתים → מסגרות WS יוצאות (מסגרת אחת לכל שורת NDJSON) ─
   const writable = new WritableStream<Uint8Array>({
     write(chunk) {
       const text = decoder.decode(chunk)
-      // SDK writes `{...}\n` lines — split on \n and send each as a separate frame.
-      // opencode (via stdio-to-ws) expects NDJSON: each WS frame = one JSON-RPC message + \n.
+      // ה-SDK כותב שורות `{...}\n` — פצל לפי \n ושלח כל אחת כמסגרת נפרדת.
+      // המערכת של opencode (דרך stdio-to-ws) מצפה ל-NDJSON: כל מסגרת WS = הודעת JSON-RPC אחת + \n.
       for (const line of text.split("\n")) {
         if (line.trim().length > 0) {
           try {
             ws.send(`${line}\n`)
           } catch {
-            // ws already closed
+            // ה-WS כבר סגור
           }
         }
       }

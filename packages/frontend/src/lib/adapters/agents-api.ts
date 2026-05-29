@@ -1,8 +1,8 @@
 /**
- * agents-api.ts — minimal REST client for /api/agents.
+ * agents-api.ts — לקוח REST מינימלי עבור /api/agents.
  *
- * Just enough to support: create agent, get agent info, delete agent.
- * No retries, no schema validation — fast path for v2.
+ * מספיק בדיוק כדי לתמוך ב: יצירת סוכן, קבלת מידע על הסוכן, מחיקת סוכן.
+ * ללא ניסיונות חוזרים, ללא וולידציית סכמה — נתיב מהיר ל-v2.
  */
 
 import type { CliKind } from "@drive-coding/core"
