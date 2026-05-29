@@ -189,6 +189,26 @@ try {
   // No page errors
   expect(pageErrors.length === 0, `page errors:\n  ${summarize(pageErrors)}`)
 
+  // ─── Audio-friendly assertions (soft — warn only, do not fail) ───
+  // These verify the audio-friendly plugin is active and the model is complying.
+  // Marked soft because LLMs don't always follow instructions 100%.
+  const msgBubbles = bubbles.filter((b) => b.kind === "message")
+  const msgText = msgBubbles.map((b) => b.text).join("\n")
+  const audioFriendlyWarnings = []
+  if (/\p{Extended_Pictographic}/u.test(msgText)) {
+    audioFriendlyWarnings.push("agent output contains emoji (audio-friendly plugin may not be active)")
+  }
+  if (/\*\*/.test(msgText)) {
+    audioFriendlyWarnings.push("agent output contains markdown bold (**) — audio-unfriendly")
+  }
+  if (/https?:\/\/\S+/.test(msgText)) {
+    audioFriendlyWarnings.push("agent output contains URLs — audio-unfriendly")
+  }
+  if (audioFriendlyWarnings.length > 0) {
+    console.warn("[audio-friendly] WARNINGS (soft — not a hard failure):")
+    for (const w of audioFriendlyWarnings) console.warn("  " + w)
+  }
+
   // ─── Capture summary for structured output ───
   const hits = proxyResponses.filter((r) => r.cache === "hit").length
   const misses = proxyResponses.filter((r) => r.cache === "miss").length

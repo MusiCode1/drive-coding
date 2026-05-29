@@ -25,6 +25,7 @@
     "ws": "^8.20.1"
   },
   "devDependencies": {
+    "@opencode-ai/plugin": "^1.15.12",
     "@types/bun": "latest",
     "bun-types": "latest"
   }

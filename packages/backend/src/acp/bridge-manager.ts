@@ -1,6 +1,7 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import type { BridgeCrashInfo, BridgeHandle, BridgeManager, SpawnBridgeInput } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
+import { buildOpencodeConfigContent } from "../plugin-config.js"
 import { getCliCommand } from "./cli-config.js"
 
 const log = createLogger("backend.bridge.manager")
@@ -47,11 +48,23 @@ export function createBridgeManager(): BridgeManager & {
     const stderrLines: string[] = []
     let stderrPartial = ""
 
+    // Inject audio-friendly plugin for opencode spawns only.
+    // For other cliKinds (claude, gemini, codex) — env passes through unchanged.
+    const envWithPlugin =
+      input.cliKind === "opencode"
+        ? {
+            ...process.env,
+            OPENCODE_CONFIG_CONTENT: buildOpencodeConfigContent(
+              process.env.OPENCODE_CONFIG_CONTENT,
+            ),
+          }
+        : process.env
+
     let child: ChildProcessWithoutNullStreams
     try {
       child = spawn(cli.bin, [...cli.args], {
         cwd: input.cwd,
-        env: process.env,
+        env: envWithPlugin,
         stdio: ["pipe", "pipe", "pipe"],
       })
     } catch (err) {
