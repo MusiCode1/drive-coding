@@ -1,29 +1,29 @@
 /**
- * narration-prompt.ts — pure function for building narration prompts.
+ * narration-prompt.ts — פונקציה טהורה לבניית פרומפטים של קריינות.
  *
- * Ported from packages/backend/src/voice/narration.ts:buildNarratePrompt.
- * This lives in core because it's pure logic with no IO dependencies.
+ * הוסב (Ported) מ-packages/backend/src/voice/narration.ts:buildNarratePrompt.
+ * זה יושב ב-core כי זו לוגיקה טהורה ללא תלויות IO.
  */
 
-// ─── Context / Tool types ─────────────────────────────────────
+// ─── סוגי Tool / Context ─────────────────────────────────────
 
 export interface NarrateContext {
-  /** What the user said (post-STT). */
+  /** מה המשתמש אמר (אחרי STT). */
   userMessage: string
-  /** FIFO max 3 of recent assistant messages (for context). */
+  /** FIFO של עד 3 הודעות עוזר אחרונות (עבור הקשר). */
   recentMessages: string[]
 }
 
 export interface ToolCallForNarrate {
-  /** Unique tool call ID — used as cache key. */
+  /** מזהה קריאת tool ייחודי — משמש כמפתח מטמון. */
   toolCallId: string
-  /** ACP ToolKind: read/edit/execute/search/think/... */
+  /** סוג ACP ToolKind: read/edit/execute/search/think/... */
   kind?: string
-  /** Raw title as supplied by the model. */
+  /** כותרת גולמית כפי שסופקה על ידי המודל. */
   title: string
 }
 
-// ─── Examples (exported for tests) ───────────────────────────
+// ─── דוגמאות (מיוצאות עבור בדיקות) ───────────────────────────
 
 export const NARRATE_EXAMPLES = `Examples:
 - Tool: read README.md          → "אני בודק את ה-README כדי לראות מה הפרויקט"
@@ -31,11 +31,11 @@ export const NARRATE_EXAMPLES = `Examples:
 - Tool: edit hello.js           → "מעדכן את הפונקציה שדיברנו עליה"
 - Tool: execute "npm run build" → "מריץ build לראות שאין שגיאות"`
 
-// ─── buildNarratePrompt — pure ────────────────────────────────
+// ─── buildNarratePrompt — טהורה ────────────────────────────────
 
 /**
- * Builds the narration prompt. Pure function — exported for tests.
- * Ported from packages/backend/src/voice/narration.ts:buildNarratePrompt.
+ * בונה את פרומפט הקריינות. פונקציה טהורה — מיוצאת עבור בדיקות.
+ * הוסבה מ-packages/backend/src/voice/narration.ts:buildNarratePrompt.
  */
 export function buildNarratePrompt(ctx: NarrateContext, tool: ToolCallForNarrate): string {
   const recent = ctx.recentMessages.length ? ctx.recentMessages.join(" · ") : "—"

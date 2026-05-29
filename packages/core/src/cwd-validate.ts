@@ -1,27 +1,27 @@
 /**
- * cwd-validate.ts — pure validation of a working-directory path string.
+ * cwd-validate.ts — ולידציה טהורה של מחרוזת נתיב תיקיית-עבודה.
  *
- * Returns Result<string, CwdValidationError> (neverthrow).
- * On Ok: the normalised cwd (trailing slash stripped, except root "/").
- * On Err: a tagged union describing exactly what is wrong.
+ * מחזיר Result<string, CwdValidationError> (neverthrow).
+ * במקרה של Ok: ה-cwd המנורמל (ללא אלכסון סופי, למעט שורש "/").
+ * במקרה של Err: איחוד מתויג המתאר בדיוק מה שגוי.
  *
- * Rules enforced:
- *   - non-empty
- *   - absolute (starts with "/")
- *   - no NUL bytes (would truncate C-string in spawn syscall)
- *   - no control characters U+0001–U+001F (log injection, path corruption)
- *   - no percent-encoded sequences %XX (artifact of URL double-encoding)
- *   - length ≤ 4096 (Linux PATH_MAX)
+ * חוקים נאכפים:
+ *   - לא ריק
+ *   - מוחלט (מתחיל ב-"/")
+ *   - ללא בתי NUL (יקצר C-string בקריאת מערכת spawn)
+ *   - ללא תווי בקרה U+0001–U+001F (הזרקת לוג, השחתת נתיב)
+ *   - ללא רצפי קידוד אחוזים %XX (תוצר לוואי של קידוד URL כפול)
+ *   - אורך ≤ 4096 (PATH_MAX בלינוקס)
  *
- * Deliberately NOT enforced:
- *   - path existence (IO — belongs in shell, not core)
- *   - path traversal (resolve/realpath — IO)
- *   - % characters not followed by two hex digits (legitimate in filenames)
+ * בכוונה לא נאכף:
+ *   - קיום הנתיב (IO — שייך למעטפת, לא ל-core)
+ *   - חציית נתיב (resolve/realpath — IO)
+ *   - תווי % שאינם מלווים בשתי ספרות הקסדצימליות (חוקיים בשמות קבצים)
  */
 
 import { err, ok, type Result } from "neverthrow"
 
-// ─── Error types ─────────────────────────────────────────────────────────────
+// ─── סוגי שגיאות ─────────────────────────────────────────────────────────────
 
 export type CwdValidationError =
   | { kind: "empty" }
@@ -31,54 +31,54 @@ export type CwdValidationError =
   | { kind: "contains_control_chars"; codepoint: number }
   | { kind: "too_long"; length: number }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── קבועים ────────────────────────────────────────────────────────────────
 
 /** Linux PATH_MAX */
 const MAX_LENGTH = 4096
 
-/** Matches URL percent-encoded sequences: % followed by exactly two hex digits */
+/** תואם לרצפי קידוד אחוזים של URL: % מלווה בדיוק בשתי ספרות הקסדצימליות */
 const PERCENT_ENCODED_RE = /%[0-9a-fA-F]{2}/
 
-/** Matches ASCII control characters U+0001–U+001F (excludes NUL which is checked first) */
+/** תואם לתווי בקרה של ASCII מ-U+0001 עד U+001F (מוציא את NUL שנבדק קודם) */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: intentionally matching control chars
 const CONTROL_CHAR_RE = /[\u0001-\u001f]/
 
-// ─── Validator ────────────────────────────────────────────────────────────────
+// ─── מאמת (Validator) ────────────────────────────────────────────────────────────────
 
 /**
- * Validate and normalise a cwd path string.
+ * אימות ונרמול מחרוזת נתיב cwd.
  *
- * @param cwd - raw string from user input or URL parameter
+ * @param cwd - מחרוזת גולמית מקלט המשתמש או מפרמטר URL
  * @returns Ok(normalisedCwd) | Err(CwdValidationError)
  */
 export function validateCwd(cwd: string): Result<string, CwdValidationError> {
-  // 1. Empty
+  // 1. ריק
   if (cwd.length === 0) {
     return err({ kind: "empty" })
   }
 
-  // 2. Too long (check before further processing)
+  // 2. ארוך מדי (בדיקה לפני המשך עיבוד)
   if (cwd.length > MAX_LENGTH) {
     return err({ kind: "too_long", length: cwd.length })
   }
 
-  // 3. Absolute path required
+  // 3. נתיב מוחלט נדרש
   if (!cwd.startsWith("/")) {
     return err({ kind: "not_absolute", got: cwd })
   }
 
-  // 4. NUL byte
+  // 4. בית NUL
   if (cwd.includes("\u0000")) {
     return err({ kind: "contains_null" })
   }
 
-  // 5. Percent-encoded sequences (%XX) — artifact of URL double-encoding
+  // 5. רצפי קידוד אחוזים (%XX) — תוצר לוואי של קידוד URL כפול
   const percentMatch = cwd.match(PERCENT_ENCODED_RE)
   if (percentMatch) {
     return err({ kind: "contains_percent_encoding", match: percentMatch[0] })
   }
 
-  // 6. Control characters U+0001–U+001F
+  // 6. תווי בקרה U+0001–U+001F
   const controlMatch = cwd.match(CONTROL_CHAR_RE)
   if (controlMatch) {
     return err({
@@ -87,7 +87,7 @@ export function validateCwd(cwd: string): Result<string, CwdValidationError> {
     })
   }
 
-  // 7. Normalise: strip trailing slash, except root "/"
+  // 7. נרמול: הסרת אלכסון סופי, למעט שורש "/"
   const normalised = cwd.length > 1 && cwd.endsWith("/") ? cwd.slice(0, -1) : cwd
 
   return ok(normalised)

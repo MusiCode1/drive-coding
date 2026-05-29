@@ -1,11 +1,11 @@
 /**
- * Browser logger entry — same API as index.ts, uses pino/browser.
+ * נקודת כניסה של ה-logger לדפדפן — אותו API כמו index.ts, משתמש ב-pino/browser.
  *
- * Imported by: packages/frontend/src/lib/log.ts
+ * מיובא על ידי: packages/frontend/src/lib/log.ts
  *
- * pino/browser outputs to console (pretty-ish) and supports transmit for remote sink.
+ * pino/browser מוציא לקונסולה (יחסית יפה) ותומך ב-transmit עבור יעד מרוחק (remote sink).
  */
-// @ts-expect-error — pino/browser has no bundled .d.ts; skipLibCheck covers runtime
+// @ts-expect-error — ל-pino/browser אין bundled .d.ts; ה-skipLibCheck מכסה את זמן הריצה
 import pino from "pino/browser"
 import { isEnabledForNs } from "./namespace.js"
 import type { Fields, Level, LogConfig, LogEntry, Logger } from "./types.js"
@@ -14,7 +14,7 @@ export { parseLogConfig } from "./config.js"
 export type { Fields, Level, LogConfig, LogEntry, Logger }
 export { isEnabledForNs }
 
-// ── Global state ──────────────────────────────────────────────────────────────
+// ── מצב גלובלי ──────────────────────────────────────────────────────────────
 
 let _config: LogConfig = {
   level: "info",
@@ -27,7 +27,7 @@ let _config: LogConfig = {
 let _pinoInstance: any = null
 const _sinks: Array<(entry: LogEntry) => void> = []
 
-// ── Remote buffer ─────────────────────────────────────────────────────────────
+// ── חוצץ מרוחק ─────────────────────────────────────────────────────────────
 
 const _buffer: LogEntry[] = []
 let _flushTimer: ReturnType<typeof setTimeout> | null = null
@@ -47,7 +47,7 @@ function flush(): void {
   }
   if (_buffer.length === 0) return
   const payload = JSON.stringify({ entries: _buffer.splice(0) })
-  // Use globalThis to avoid TS DOM lib requirement in core tsconfig
+  // שימוש ב-globalThis כדי להימנע מדרישת ספריות DOM של TS ב-tsconfig של ה-core
   const nav = (globalThis as Record<string, unknown>).navigator as
     | { sendBeacon?: (url: string, data: Blob) => boolean }
     | undefined
@@ -58,12 +58,12 @@ function flush(): void {
     nav.sendBeacon("/api/client-log", new Blob([payload], { type: "application/json" }))
   } else if (fetchFn) {
     fetchFn("/api/client-log", { method: "POST", body: payload, keepalive: true }).catch(() => {
-      /* silent — remote failures don't break the app */
+      /* שקט — כשלים מרוחקים אינם שוברים את האפליקציה */
     })
   }
 }
 
-// Register unload handlers if in browser context
+// רישום handlers לפריקה אם אנחנו בהקשר של דפדפן
 const gThis = globalThis as Record<string, unknown>
 if (typeof gThis.window !== "undefined") {
   const win = gThis.window as {
@@ -73,13 +73,13 @@ if (typeof gThis.window !== "undefined") {
   win.addEventListener("pagehide", flush)
 }
 
-// ── Public API ────────────────────────────────────────────────────────────────
+// ── API ציבורי ────────────────────────────────────────────────────────────────
 
 export function initLogger(config: LogConfig): void {
   _config = config
 
   _pinoInstance = pino({
-    level: "trace", // pino level set to trace; we do our own level filtering
+    level: "trace", // רמת pino מכוונת ל-trace; אנחנו עושים את סינון הרמות בעצמנו
     browser: {
       asObject: true,
       transmit: {
@@ -123,7 +123,7 @@ export function createLogger(namespace: string): Logger {
   return makeLogger(namespace, {})
 }
 
-// ── Internal ──────────────────────────────────────────────────────────────────
+// ── פנימי ──────────────────────────────────────────────────────────────────
 
 const LEVEL_VALUES: Record<Level, number> = {
   silent: 100,
@@ -145,7 +145,7 @@ function emit(level: Level, ns: string, fields: Fields, msg: string | undefined)
 
   const instance = _pinoInstance
   if (instance) {
-    // pino/browser child with ns bound
+    // ילד pino/browser עם ns מאוגד
     // biome-ignore lint/suspicious/noExplicitAny: pino/browser child is untyped
     const child = (instance as any).child({ ns, ...fields })
     if (level !== "silent") {
@@ -167,7 +167,7 @@ function emit(level: Level, ns: string, fields: Fields, msg: string | undefined)
       try {
         sink(entry)
       } catch {
-        // Sink errors don't break the logger
+        // שגיאות Sink אינן שוברות את ה-logger
       }
     }
   }

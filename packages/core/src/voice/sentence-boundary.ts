@@ -1,26 +1,26 @@
 /**
- * Split a (possibly partial) buffer of text into "complete" sentences plus a
- * trailing `remaining` part. Designed for streaming TTS pipelines:
+ * פיצול חוצץ טקסט (אולי חלקי) ל"משפטים" שלמים, יחד עם שארית גוררת
+ * (`remaining`). מיועד עבור תהליכי עיבוד רציפים (streaming TTS pipelines):
  *
  *   const { sentences, remaining } = splitIntoSentences(buffer, opts)
  *   for (const s of sentences) enqueueForTts(s)
- *   // keep `remaining` and prepend to the next incoming chunk:
+ *   // שמור את ה-`remaining` והוסף אותו למקטע הנכנס הבא:
  *   buffer = remaining + nextChunk
  *
- * Uses `Intl.Segmenter` (ICU sentence boundaries) rather than ad-hoc regex.
- * That means abbreviations like "Dr.", URLs containing "3.14", and ":" / ","
- * are NOT treated as sentence boundaries.
+ * משתמש ב-`Intl.Segmenter` (גבולות משפט ICU) ולא בביטויים רגולריים (regex) ארעיים.
+ * זה אומר שקיצורים כמו ".Dr", כתובות URL המכילות "3.14", וסימנים כמו ":" / ","
+ * אינם נחשבים כגבולות של משפטים.
  *
- * Short raw segments (< minChars) are merged into the next segment within the
- * same paragraph. Long ones (> maxChars) are force-split on word boundaries.
+ * מקטעים גולמיים קצרים (< minChars) ממוזגים אל תוך המקטע הבא בתוך
+ * אותה הפסקה. ארוכים מדי (> maxChars) מפוצלים בכוח בגבולות המילים.
  */
 
 export type SplitOptions = {
-  /** Default 20. Raw segments shorter than this are merged into the next one. */
+  /** ברירת מחדל 20. מקטעים גולמיים קצרים מזה ממוזגים אל תוך המקטע הבא. */
   minChars?: number
-  /** Default 200. Raw segments longer than this are split on word boundaries. */
+  /** ברירת מחדל 200. מקטעים גולמיים ארוכים מזה מפוצלים בגבולות מילים. */
   maxChars?: number
-  /** Default "he". Locale passed to `Intl.Segmenter`. */
+  /** ברירת מחדל "he". האזור (Locale) המועבר ל-`Intl.Segmenter`. */
   locale?: string
 }
 
@@ -42,7 +42,7 @@ export function splitIntoSentences(buffer: string, opts: SplitOptions = {}): Spl
   const paragraphs = buffer.split(/\n{2,}/)
   const isMulti = paragraphs.length > 1
 
-  // Per-paragraph collected complete segments. Last paragraph may also emit `remaining`.
+  // מקטעים שלמים שנאספו עבור כל פסקה. הפסקה האחרונה יכולה גם לפלוט `remaining`.
   const perParagraph: string[][] = []
   let remaining = ""
 
@@ -63,17 +63,17 @@ export function splitIntoSentences(buffer: string, opts: SplitOptions = {}): Spl
       const seg = segs[sj] ?? ""
 
       if (isLastPara && isLastSeg && !isMulti) {
-        // Single-paragraph buffer: only commit the final segment if it has a
-        // terminator. Otherwise stash it as `remaining`.
+        // חוצץ של פסקה בודדת: מחייב את המקטע האחרון רק אם יש לו סמן סיום.
+        // אחרת מחביא אותו בתור `remaining`.
         if (TERMINATOR_RE.test(seg)) {
           completed.push(seg)
         } else {
           remaining = seg
         }
       } else {
-        // Multi-paragraph buffer commits everything (a paragraph break is a
-        // strong "user committed" signal), and non-final segments of the last
-        // paragraph are likewise committed.
+        // חוצץ מרובה-פסקאות מחייב את הכל (שבירת פסקה היא
+        // אות חזק של "אישור המשתמש"), וגם מקטעים שאינם-אחרונים של הפסקה
+        // האחרונה מחויבים באופן דומה.
         completed.push(seg)
       }
     }
@@ -84,8 +84,8 @@ export function splitIntoSentences(buffer: string, opts: SplitOptions = {}): Spl
   for (const paraSegs of perParagraph) {
     const trimmed = paraSegs.map((s) => s.trim()).filter((s) => s.length > 0)
 
-    // Merge short raw segments into the following one, **within the same
-    // paragraph only**. Paragraph breaks are stronger than the merge rule.
+    // מיזוג מקטעים גולמיים קצרים לתוך המקטע הבא אחריהם, **אך ורק באותה פסקה**.
+    // שבירות פסקה גוברות על כלל המיזוג.
     const merged: string[] = []
     let buf: string | null = null
     for (let i = 0; i < trimmed.length; i++) {
@@ -108,9 +108,9 @@ export function splitIntoSentences(buffer: string, opts: SplitOptions = {}): Spl
     }
   }
 
-  // Strip leading whitespace from `remaining` so streaming determinism holds:
-  // any leading space is residue of the boundary that was already consumed by
-  // the previously-emitted sentence.
+  // הסרת הרווחים המובילים מהשארית (remaining) כדי שהדטרמיניזם של ההזרמה יישמר:
+  // כל רווח מוביל הוא שארית של הגבול שכבר נבלעה על ידי המשפט
+  // שנפלט קודם לכן.
   remaining = remaining.replace(/^\s+/, "")
 
   return { sentences: final, remaining }
@@ -124,7 +124,7 @@ function forceSplitWords(text: string, maxChars: number, locale: string): string
     const w = piece.segment
     if ((cur + w).length > maxChars && cur.trim().length > 0) {
       chunks.push(cur.trim())
-      // start the new chunk without leading whitespace
+      // התחל את המקטע החדש ללא הרווחים המובילים
       cur = w.replace(/^\s+/, "")
     } else {
       cur += w

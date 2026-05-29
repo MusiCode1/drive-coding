@@ -1,22 +1,22 @@
 /**
- * client-impl.ts — ACP `Client` interface implementation (transport-agnostic).
+ * client-impl.ts — מימוש ממשק ה-ACP `Client` (אגנוסטי לתעבורה).
  *
- * Strategy:
- * - requestPermission: auto-allow_once policy (no UI yet — future slice).
- * - sessionUpdate: forwarded to caller via onUpdate callback.
- * - fs.readTextFile / writeTextFile: NOT declared (clientCapabilities.fs = false).
- *   opencode reads disk via its own internal tool calls (not ACP fs caps).
+ * אסטרטגיה:
+ * - requestPermission: מדיניות allow_once אוטומטית (ללא UI בשלב זה — slice עתידי).
+ * - sessionUpdate: מועבר למטרה דרך callback onUpdate.
+ * - fs.readTextFile / writeTextFile: לא מוצהר (clientCapabilities.fs = false).
+ *   opencode קורא מהדיסק דרך קריאות tool פנימיות שלו (לא ACP fs caps).
  *
- * This module is pure logic — no I/O, no DOM, no Node APIs. Reused by both
- * FE (browser WS transport) and any future BE-side ACP client.
+ * המודול הזה הוא לוגיקה טהורה — ללא I/O, ללא DOM, ללא Node APIs. נעשה בו שימוש גם
+ * ב-FE (browser WS transport) וגם בכל ACP client עתידי בצד ה-BE.
  */
 import type { Client, SessionNotification } from "@agentclientprotocol/sdk"
 
 export function createClientImpl(opts: { onUpdate: (n: SessionNotification) => void }): Client {
   return {
     /**
-     * Auto-allow_once: prefer allow_once > allow_always > first non-reject > first option.
-     * Future slices will add UI prompt for user confirmation.
+     * Auto-allow_once: מעדיף allow_once > allow_always > הראשון שאינו reject > האפשרות הראשונה.
+     * Slices עתידיים יוסיפו פרומפט UI לאישור משתמש.
      */
     async requestPermission(params) {
       const byKind = (k: string) => params.options.find((o) => o.kind === k)
@@ -36,8 +36,8 @@ export function createClientImpl(opts: { onUpdate: (n: SessionNotification) => v
       opts.onUpdate(notification)
     },
 
-    // fs.readTextFile + writeTextFile: NOT declared.
+    // fs.readTextFile + writeTextFile: לא מוצהר.
     // clientCapabilities.fs = { readTextFile: false, writeTextFile: false }
-    // opencode uses its own internal fs tool calls — does not need ACP fs caps for MVP.
+    // opencode משתמש בקריאות fs tool פנימיות שלו — לא זקוק ל-ACP fs caps ב-MVP.
   }
 }

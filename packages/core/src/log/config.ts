@@ -13,12 +13,12 @@ type ParseEnv = {
 }
 
 /**
- * parseLogConfig — merge config from multiple sources with precedence:
+ * parseLogConfig — מיזוג הגדרות ממספר מקורות בסדר עדיפות:
  *   URL params  >  localStorage (FE) / env (BE)  >  defaults
  *
- * @param opts.env        — process.env or similar (for BE / tests)
- * @param opts.search     — URL search string (for FE / tests)
- * @param opts.localStorage — localStorage-like object (for FE / tests)
+ * @param opts.env        — process.env או דומה (עבור BE / בדיקות)
+ * @param opts.search     — מחרוזת URL search (עבור FE / בדיקות)
+ * @param opts.localStorage — אובייקט דמוי localStorage (עבור FE / בדיקות)
  */
 export function parseLogConfig(opts: {
   env?: ParseEnv
@@ -34,7 +34,7 @@ export function parseLogConfig(opts: {
     ...opts.defaults,
   }
 
-  // Layer 1: env (BE) or localStorage (FE)
+  // שכבה 1: env (BE) או localStorage (FE)
   let level: Level = defaults.level
   let ns: string = defaults.ns
   let format: LogConfig["format"] = defaults.format
@@ -63,7 +63,7 @@ export function parseLogConfig(opts: {
     if (lsRemote === "1") remote = true
   }
 
-  // Layer 2: URL search params (highest priority)
+  // שכבה 2: URL search params (עדיפות גבוהה ביותר)
   if (opts.search) {
     const params = new URLSearchParams(opts.search)
     const urlLevel = params.get("log")
@@ -94,14 +94,14 @@ export function parseLogConfig(opts: {
 }
 
 /**
- * parseEnvConfig — convenience for Node.js backend.
- * Reads from process.env; supports LOG_WIRE shortcut.
+ * parseEnvConfig — נוחות עבור Node.js backend.
+ * קורא מ-process.env; תומך בקיצור הדרך LOG_WIRE.
  */
 export function parseEnvConfig(): LogConfig {
   const env = process.env as ParseEnv
   const config = parseLogConfig({ env, defaults: { format: "both" } })
 
-  // LOG_WIRE shortcut
+  // קיצור דרך LOG_WIRE
   const wireMode = process.env.LOG_WIRE
   if (wireMode) {
     config.level = "trace"

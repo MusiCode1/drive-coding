@@ -1,8 +1,8 @@
 import type { Catalog } from "../keys.js"
 
 /**
- * Hebrew catalog. Append new keys in domain blocks below — see
- * docs/conventions/parallel-safe-code.md (technique #4: append-only catalogs).
+ * קטלוג עברית. הוסף מפתחות חדשים בבלוקי domain למטה — ראה
+ * docs/conventions/parallel-safe-code.md (טכניקה #4: קטלוגים append-only).
  */
 export const he: Catalog = {
   // ─── connect ─── (slice 0)

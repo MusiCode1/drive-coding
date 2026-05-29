@@ -1,14 +1,14 @@
 /**
- * isEnabledForNs — checks whether a namespace matches the given CSV pattern.
+ * isEnabledForNs — בודק אם מרחב שם תואם לתבנית CSV הנתונה.
  *
- * Pattern syntax (comma-separated):
- *   *              — matches all
- *   voice.*        — prefix match: voice, voice.pipeline, voice.pipeline.tts
- *                    but NOT voicemail (must be exact prefix or followed by ".")
- *   voice.pipeline — exact match only (does NOT match voice.pipeline.tts)
- *   -noisy.x       — exclude (stronger than include)
+ * תחביר תבנית (מופרד בפסיקים):
+ *   *              — תואם להכל
+ *   voice.*        — התאמת קידומת: voice, voice.pipeline, voice.pipeline.tts
+ *                    אבל לא voicemail (חייב להיות קידומת מדויקת או עם "." אחריה)
+ *   voice.pipeline — התאמה מדויקת בלבד (לא תואם ל-voice.pipeline.tts)
+ *   -noisy.x       — החרגה (חזקה יותר מהכללה)
  *
- * Empty/invalid pattern → defaults to "*" (match all).
+ * תבנית ריקה/לא חוקית → נופל ל-"*" (תואם להכל).
  */
 export function isEnabledForNs(ns: string, pattern: string): boolean {
   if (!ns || !pattern || pattern.trim() === "") return true
@@ -31,7 +31,7 @@ export function isEnabledForNs(ns: string, pattern: string): boolean {
     }
   }
 
-  // "*" alone — include all by default if no explicit include
+  // "*" לבדו — כלול הכל כברירת מחדל אם אין הכללה מפורשת
   const hasAnyInclude = parts.some((p) => !p.startsWith("-"))
   if (!hasAnyInclude) return !excluded
 
@@ -42,9 +42,9 @@ function matchSingle(ns: string, pattern: string): boolean {
   if (pattern === "*") return true
   if (pattern.endsWith(".*")) {
     const prefix = pattern.slice(0, -2)
-    // matches exactly the prefix OR the prefix followed by "."
+    // תואם בדיוק לקידומת או לקידומת מלווה ב-"."
     return ns === prefix || ns.startsWith(`${prefix}.`)
   }
-  // exact match
+  // התאמה מדויקת
   return ns === pattern
 }
