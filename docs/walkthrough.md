@@ -4,6 +4,52 @@
 
 ---
 
+## 2026-05-29 — slice 3: Mic + STT + VoiceMode FSM
+
+### מה בוצע?
+
+MVP שיחה קולית מלאה: אישה לוחצת על כפתור מיקרופון, מדברת, לוחצת שוב — הטקסט מתומלל ע"י Gemini ונשלח לסוכן. הסוכן עונה קולית (Speaker מ-slice 2). כפתור המיקרופון משנה צבע ואנימציה לפי מצב (idle → recording → transcribing → thinking → speaking → idle).
+
+4 commits, worktree `slice-3-mic-voicemode`.
+
+**Commit 0 — engines + adapters (copy מ-main)**
+- `engines/recorder.ts`: MediaRecorder wrapper, getUserMedia, opus/webm.
+- `adapters/voice/base64.ts`: chunked base64 ל-large blobs.
+- `adapters/voice/transcribe.ts`: Gemini multimodal STT עם Hebrew script fix. saveRecording הוסר (stub recordingId="" — slice 10 ישלים).
+
+**Commit 1 — Mic view-model**
+- `view-models/mic.svelte.ts`: idle → recording → transcribing FSM.
+- toggle(): start / stop+transcribe+sendPrompt / no-op.
+- cancel(): עצירה בלי שליחה (slice 7 ישתמש).
+- error: MessageKey|null — component מתרגם.
+- i18n: 4 keys mic.error.* ב-he + en.
+
+**Commit 2 — VoiceMode FSM (derived)**
+- `view-models/derived/voice-mode.svelte.ts`: derived VM מ-Mic+AgentSession+Speaker.
+- 6 states: idle/recording/transcribing/thinking/speaking/cancelling.
+- cancel() מפעיל mic.cancel() + speaker.stop() (additive).
+- $effect לאיפוס isCancelling כש-3 מקורות חוזרים ל-idle. Phase verifier אישר: אין לולאה אינסופית ✅.
+- Speaker.stop() public method additive → #stopAndClear().
+
+**Commit 3 — MicButton + integration**
+- `components/chat/MicButton.svelte`: 6 states, צבעים + animations לפי frontend-spec §5 (pulse/rotate-slow/glow/flash-fast).
+- context.ts: getMic/setMic + getVoiceMode/setVoiceMode.
+- +layout.svelte: new Mic({ session }) + new VoiceMode({ mic, session, speaker }).
+- ChatInput.svelte: `<MicButton />` additive ב-end of form.
+- i18n: 6 keys voiceMode.status.* ב-he + en.
+
+### סטיות מהתכנון
+
+- MicButton בגודל 44px (לא 110px מה-spec) — בהתאמה ל-ChatInput row שהוא רצועה צרה. ה-110px מה-spec מיועד ל-standalone footer element (slice 7 car mode).
+- סדר speaking/thinking: הקוד מחזיר "speaking" לפני "thinking" (בניגוד קל ל-brief §3) — הגיוני יותר: אם speaker כבר מנגן, עדיף להראות "speaking".
+
+### בדיקות
+
+typecheck ✅ build ✅ lint:i18n ✅ (כל 4 commits)
+phase verifier אחרי commit 2 ✅
+
+---
+
 ## 2026-05-29 — slice-11 הושלם: audio-friendly prompt injection
 
 ### מה בוצע?
