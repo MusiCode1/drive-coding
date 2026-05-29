@@ -1,4 +1,5 @@
 <script lang="ts">
+import { goto } from "$app/navigation"
 import type { CliKind } from "@drive-coding/core"
 import { connectAgent } from "$lib/actions/connect-agent"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
@@ -42,7 +43,6 @@ async function onSubmit(e: SubmitEvent) {
     settings.setLastCwd(cwd.trim())
     await session.loadSession({ sessionId: selectedSessionId, cwd: cwd.trim(), cliKind })
     if (session.status === "connected") {
-      const { goto } = await import("$app/navigation")
       await goto("/chat")
     }
   } else {
