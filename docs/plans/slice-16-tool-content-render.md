@@ -1,7 +1,7 @@
 # Slice 16 — Tool Call Content Rendering (ACP-faithful) — תוכנית
 
 > **‏תאריך**: 2026-05-29
-> **‏סטטוס**: ‏מאושר
+> **‏סטטוס**: ‏הושלם
 > **‏Complexity**: 5/10 (verifier: light)
 > **‏תלות**: slice 4 (ToolBubble, ToolCall type, tool handlers) — merged ל-dev ב-`aa0b73a`
 > **‏מתבסס על**: `docs/plans/README.md`, `docs/plans/EXECUTOR_DISPATCH.md`, `packages/frontend/AGENTS.md`, ACP schema (`@agentclientprotocol/sdk` types.gen.d.ts)

@@ -4,6 +4,39 @@
 
 ---
 
+## 2026-05-29 — slice 16: Tool Call Content Rendering (ACP-faithful)
+
+### מה בוצע?
+
+3 commits ב-branch `slice-16-tool-content` (worktree `.worktrees/slice-16-tool-content`).
+
+**Commit 1 — Capture ACP content + locations:**
+הורחב ה-`ToolCall` type ב-`types/bubble.ts` לכלול `content?: ToolContent[]` ו-`locations?: ToolLocation[]`. ה-VM `AgentSession` עודכן ללכוד שדות אלה מתוך `tool_call` ו-`tool_call_update` notifications (מטפל ב-null כ-undefined למחיקה). `rawInput` ממוזג כראוי גם ב-update.
+
+**Commit 2 — Tool format util:**
+קובץ חדש `util/tool-format.ts` עם פונקציות pure: `formatToolInput` (מזהה פקודות shell), `prettyJson` (עם circular ref guard וזיהוי `{output: string}`), ו-`formatLocation`. אומת עם 13 טסטים ב-`tool-format.test.ts`.
+
+**Commit 3 — ToolBubble rendering + i18n:**
+- `ToolBubble.svelte`: שוכתב ה-details panel לרינדור מובנה של input (כפקודה או JSON), locations (כרשימה), ו-content (text, diff, terminal).
+- ה-diff מוצג עם path וצבעי ירוק/אדום לשורות.
+- ה-raw output נגיש תמיד ב-section מתקפל (`<details>`).
+- 6 i18n keys חדשים ב-he + en.
+
+### בדיקות
+
+- typecheck FE: ✅
+- tests (13 חדשים): ✅
+- lint:i18n: ✅
+- build FE: ✅
+- ידני browser: אומת מול opencode חי — פקודות shell מוצגות עם `$ `, עריכת קובץ מציגה diff תקין, locations מוצגים.
+
+### סטיות מהתכנון
+
+- **prettyJson**: הוסף טיפול ב-`{output: string}` (לפי §9.1 ב-brief) בתוך ה-util ה-pure במקום ב-component.
+- **Vite config**: הוספה זמנית של `allowedHosts` ב-`vite.config.ts` לצורך בדיקה דרך ה-tunnel, שוחזר (reverted) לפני ה-commit האחרון לשמירה על ניקיון ה-scope.
+
+---
+
 ## 2026-05-29 — slice 18: WS Wire Logger (passive bidirectional tap)
 
 ### מה בוצע?
