@@ -1,11 +1,11 @@
 /**
- * tts.ts — streaming TTS via ElevenLabs (direct fetch through BE proxy).
+ * tts.ts — המרת טקסט לדיבור (TTS) בהזרמה דרך ElevenLabs (קריאת fetch ישירה דרך הפרוקסי ב-BE).
  *
- * @ai-sdk/elevenlabs doesn't support streaming — use direct fetch.
- * Headers: xi-api-key placeholder — OneCLI injects real key at proxy.
+ * החבילה @ai-sdk/elevenlabs לא תומכת בהזרמה — לכן משתמשים ב-fetch ישיר.
+ * כותרות (Headers): ה-xi-api-key הוא פלייסיהולדר — OneCLI מזריק את המפתח האמיתי בפרוקסי.
  *
- * ElevenLabs v3 model required for Hebrew (learnings 2026-05-13).
- * Returns ReadableStream<Uint8Array> for MediaSource consumption.
+ * מודל v3 של ElevenLabs הכרחי עבור עברית (learnings 2026-05-13).
+ * מחזיר ReadableStream<Uint8Array> עבור שימוש ב-MediaSource.
  */
 
 import { beUrl } from "$lib/util/be-url"
@@ -18,7 +18,7 @@ export interface TtsOptions {
 }
 
 export async function synthesizeStreaming(opts: TtsOptions): Promise<ReadableStream<Uint8Array>> {
-  // eleven_v3 is the only ElevenLabs model that supports Hebrew (learnings 2026-05-13)
+  // eleven_v3 הוא מודל ה-ElevenLabs היחיד שתומך בעברית (learnings 2026-05-13)
   const modelId = opts.modelId ?? "eleven_v3"
 
   const response = await fetch(
@@ -26,7 +26,7 @@ export async function synthesizeStreaming(opts: TtsOptions): Promise<ReadableStr
     {
       method: "POST",
       headers: {
-        "xi-api-key": "browser-placeholder", // OneCLI proxy replaces with real key
+        "xi-api-key": "browser-placeholder", // הפרוקסי של OneCLI מחליף במפתח האמיתי
         "content-type": "application/json",
         accept: "audio/mpeg",
       },

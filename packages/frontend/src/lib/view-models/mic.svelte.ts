@@ -1,14 +1,14 @@
 /**
- * Mic — the user's "ear".
+ * Mic — "האוזן" של המשתמש.
  *
- * Single toggle() entry point driven by a MicButton component.
- * State machine: idle → recording → transcribing → idle
+ * נקודת כניסה (entry point) יחידה toggle() שמונעת על ידי רכיב ה-MicButton.
+ * מכונת מצבים (State machine): idle → recording → transcribing → idle
  *
- * On successful transcription, sends the text to AgentSession.sendPrompt().
- * recordingId is passed through (slice 10 will wire up the real BE endpoint;
- * for now it's always "").
+ * בתעתיק מוצלח, שולח את הטקסט אל AgentSession.sendPrompt().
+ * ה-recordingId מועבר הלאה (slice 10 יחבר לזה את ה-endpoint האמיתי ב-BE;
+ * כרגע הוא תמיד "").
  *
- * error stores a MessageKey so the component can translate it via t().
+ * השדה error שומר MessageKey כדי שהקומפוננטה תוכל לתרגם אותו בעזרת t().
  */
 
 import type { MessageKey } from "@drive-coding/core/i18n"
@@ -31,10 +31,10 @@ export class Mic {
   }
 
   /**
-   * Single entry point — the MicButton calls this. Behaves based on state:
-   *   idle        → start recording
-   *   recording   → stop, transcribe, send prompt
-   *   transcribing → no-op (button disabled)
+   * נקודת כניסה יחידה — ה-MicButton קורא לזה. מתנהג בהתאם למצב (state):
+   *   idle        → תחילת הקלטה
+   *   recording   → עצירה, תעתיק (transcribe), ושליחת פרומפט
+   *   transcribing → חוסר פעולה (no-op) (הכפתור מנוטרל)
    */
   toggle = async (): Promise<void> => {
     if (this.state === "idle") {
@@ -89,21 +89,21 @@ export class Mic {
       return
     }
 
-    // transcribing → no-op
+    // transcribing → חוסר פעולה (no-op)
   }
 
   /**
-   * Cancel mid-recording. Called by VoiceMode.cancel() (slice 7 will also
-   * wire a cancel button). Stops the recorder without sending a prompt.
+   * ביטול באמצע הקלטה. נקרא על ידי VoiceMode.cancel() (slice 7 יוסיף גם
+   * כפתור ביטול ייעודי). עוצר את המקליט (recorder) ללא שליחת פרומפט.
    */
   cancel(): void {
     if (this.state === "recording") {
-      // Stop the recorder without processing the result
+      // עצור את המקליט מבלי לעבד את התוצאה
       void this.#recorder.stop().catch(() => {})
       this.state = "idle"
       this.error = null
     }
-    // transcribing: can't cancel an in-flight Gemini request in this MVP.
-    // state will naturally return to idle after transcribe() resolves/rejects.
+    // במצב transcribing: אי אפשר לבטל בקשת Gemini שיצאה לדרך ב-MVP הנוכחי.
+    // המצב יחזור באופן טבעי ל-idle אחרי ש-transcribe() יסתיים (resolves/rejects).
   }
 }

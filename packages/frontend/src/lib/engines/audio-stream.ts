@@ -1,15 +1,15 @@
 /**
- * audio-stream.ts — MediaSource-based audio queue.
+ * audio-stream.ts — תור אודיו מבוסס MediaSource.
  *
- * Each segment gets its own <audio> element + MediaSource pair.
- * Simple and robust: no single-SourceBuffer sequence-mode complexity.
+ * כל מקטע (segment) מקבל אלמנט <audio> משלו + צמד MediaSource.
+ * פשוט ויציב: ללא הסיבוכיות של single-SourceBuffer ב-sequence-mode.
  *
- * MED-6 (audit): 5s timeout on sourceopen to avoid infinite hang.
- * MIN-5 (brief): If stream is interrupted, state="cancelled", play() rejects →
- *   Player advances to next segment (skip).
+ * ביקורת MED-6: פסק זמן של 5 שניות על sourceopen כדי למנוע תקיעה אינסופית.
+ * ביקורת MIN-5: אם הזרם (stream) נקטע, state="cancelled", והקריאה play() נדחית →
+ *   ה-Player מתקדם למקטע הבא (מדלג).
  *
- * NOTE: MediaSource is not available in happy-dom (test environment).
- * Tests that exercise this class must either mock MediaSource or skip.
+ * הערה: MediaSource אינו זמין ב-happy-dom (סביבת טסטים).
+ * טסטים שבודקים את המחלקה הזו חייבים לעשות mock ל-MediaSource או לדלג.
  */
 
 export type AudioSegmentState = "loading" | "ready" | "playing" | "ended" | "cancelled"
@@ -30,10 +30,10 @@ export class AudioStream {
   #current: AudioSegment | null = null
 
   /**
-   * Prepare a segment from a fetch response stream.
-   * Async; returns once MediaSource sourceopen fires (audio element is wired up).
-   * Stream consumption continues in background.
-   * MED-6: 5s timeout on sourceopen.
+   * מכין מקטע מתוך זרם התגובה (fetch response stream).
+   * אסינכרוני; חוזר ברגע ש-MediaSource sourceopen מופעל (אלמנט האודיו מחובר).
+   * צריכת הזרם נמשכת ברקע.
+   * ביקורת MED-6: פסק זמן של 5 שניות על sourceopen.
    */
   async prepareSegment(
     segmentId: string,
@@ -54,13 +54,13 @@ export class AudioStream {
     }
     this.#segments.set(segmentId, seg)
 
-    // MED-6: timeout on sourceopen (5s)
+    // ביקורת MED-6: פסק זמן על sourceopen (5 שניות)
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(new Error(`sourceopen timeout for segment ${segmentId}`))
       }, SOURCEOPEN_TIMEOUT_MS)
 
-      // Check if already open (race guard)
+      // בדוק אם כבר פתוח (הגנה מפני מרוץ תהליכים - race guard)
       if (mediaSource.readyState === "open") {
         clearTimeout(timer)
         seg.sourceBuffer = mediaSource.addSourceBuffer("audio/mpeg")
@@ -87,7 +87,7 @@ export class AudioStream {
       throw e
     })
 
-    // Consume stream in background, appending to SourceBuffer
+    // צרוך את הזרם ברקע, וצרף ל-SourceBuffer
     ;(async () => {
       const reader = stream.getReader()
       try {
@@ -104,7 +104,7 @@ export class AudioStream {
           seg.state = "ready"
         }
       } catch (_e) {
-        // MIN-5: stream interrupted — mark cancelled so play() rejects → skip
+        // ביקורת MIN-5: הזרם נקטע — סמן כמבוטל כדי ש-play() יידחה → דילוג
         if (seg.state !== "cancelled") {
           seg.state = "cancelled"
         }
@@ -113,25 +113,25 @@ export class AudioStream {
   }
 
   /**
-   * Play a segment. Waits if still loading (polls until ready or cancelled).
-   * MIN-5: If segment is cancelled, rejects → Player skips to next.
+   * מנגן מקטע. ממתין אם עדיין בטעינה (דוגם עד שמוכן או מבוטל).
+   * ביקורת MIN-5: אם המקטע בוטל, דוחה את ההבטחה (rejects) → ה-Player מדלג לבא.
    */
   async play(segmentId: string): Promise<void> {
     const seg = this.#segments.get(segmentId)
     if (!seg) throw new Error(`no segment ${segmentId}`)
 
-    // Pause previous segment if switching
+    // השהה את המקטע הקודם אם עוברים למקטע אחר
     if (this.#current && this.#current.segmentId !== segmentId) {
       this.#current.audio.pause()
     }
     this.#current = seg
 
-    // Wait for segment to be ready or cancelled
+    // המתן עד שהמקטע יהיה מוכן או יבוטל
     if (seg.state === "loading") {
       await this.#waitForReady(seg)
     }
 
-    // MIN-5: cancelled → reject, Player skips
+    // ביקורת MIN-5: המקטע מבוטל → reject, ה-Player ידלג
     if (seg.state === "cancelled") {
       throw new Error(`segment ${segmentId} was cancelled`)
     }
@@ -151,7 +151,7 @@ export class AudioStream {
     })
   }
 
-  /** Cancel a segment — abort fetch, pause audio, clean up. */
+  /** ביטול מקטע — מבטל את ה-fetch, משהה את האודיו ומנקה. */
   cancel(segmentId: string): void {
     const seg = this.#segments.get(segmentId)
     if (!seg) return
@@ -161,13 +161,13 @@ export class AudioStream {
     try {
       URL.revokeObjectURL(seg.audio.src)
     } catch {
-      // ignore
+      // התעלם
     }
     if (seg.mediaSource.readyState === "open") {
       try {
         seg.mediaSource.endOfStream()
       } catch {
-        // ignore
+        // התעלם
       }
     }
     this.#segments.delete(segmentId)
@@ -176,7 +176,7 @@ export class AudioStream {
     }
   }
 
-  /** Clear all segments. */
+  /** נקה את כל המקטעים. */
   clear(): void {
     for (const seg of this.#segments.values()) {
       this.cancel(seg.segmentId)
@@ -184,7 +184,7 @@ export class AudioStream {
     this.#current = null
   }
 
-  /** Append a chunk to SourceBuffer, waiting for updateend. */
+  /** צרף chunk ל-SourceBuffer, והמתן ל-updateend. */
   #appendBuffer(sb: SourceBuffer, chunk: Uint8Array): Promise<void> {
     return new Promise((resolve, reject) => {
       const onEnd = () => {
@@ -193,7 +193,7 @@ export class AudioStream {
       }
       sb.addEventListener("updateend", onEnd)
       try {
-        // Create a plain ArrayBuffer copy to avoid TypeScript's Uint8Array<ArrayBufferLike> mismatch
+        // צור עותק פשוט של ArrayBuffer כדי למנוע את השגיאה של Uint8Array<ArrayBufferLike> ב-TypeScript
         const buf = new ArrayBuffer(chunk.byteLength)
         new Uint8Array(buf).set(chunk)
         sb.appendBuffer(buf)
@@ -204,7 +204,7 @@ export class AudioStream {
     })
   }
 
-  /** Poll until segment transitions from "loading" to any other state. */
+  /** דגום עד שהמקטע יעבור ממצב "loading" לכל מצב אחר. */
   #waitForReady(seg: AudioSegment): Promise<void> {
     return new Promise((resolve) => {
       const check = () => {

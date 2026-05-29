@@ -1,12 +1,12 @@
 /**
- * player.ts — sequential segment player on top of AudioStream.
+ * player.ts — נגן מקטעים סדרתי שרץ על גבי AudioStream.
  *
- * Holds a FIFO queue of segment IDs and plays them through `AudioStream.play`
- * one after another. When a segment throws (cancelled / network error) we
- * skip it and continue with the next (MIN-5 behaviour).
+ * מחזיק תור FIFO של מזהי מקטעים (segment IDs) ומנגן אותם דרך `AudioStream.play`
+ * בזה אחר זה. כאשר מקטע זורק שגיאה (בוטל / שגיאת רשת) אנחנו
+ * מדלגים עליו וממשיכים לבא אחריו (התנהגות MIN-5).
  *
- * State is exposed as Svelte 5 `$state` so views can react to "is anything
- * playing right now?" via `player.state === "playing"`.
+ * ה-state חשוף בתור `$state` של Svelte 5 כך שהתצוגות (views) יכולות להגיב ל-"האם משהו
+ * מתנגן כרגע?" דרך `player.state === "playing"`.
  */
 
 import type { AudioStream } from "./audio-stream"
@@ -19,15 +19,15 @@ export class Player {
 
   #audioStream: AudioStream
   #queue: string[] = []
-  #playing = false // re-entrancy guard for #playLoop
+  #playing = false // שומר כניסה-מחדש (re-entrancy guard) עבור #playLoop
 
   constructor(audioStream: AudioStream) {
     this.#audioStream = audioStream
   }
 
   /**
-   * Append a segment to the playback queue. If the Player is idle, kicks off
-   * the play loop. Safe to call from any context.
+   * מצרף מקטע לתור הניגון. אם ה-Player נמצא במצב המתנה (idle), הוא מתחיל את
+   * לולאת הניגון. בטוח לקריאה מכל הקשר (context).
    */
   addSegment(segmentId: string): void {
     this.#queue.push(segmentId)
@@ -36,28 +36,28 @@ export class Player {
   }
 
   /**
-   * Reserved for slice 10 (recordings replay) — not used in slice 2.
-   * Clears the current queue and starts playing from `segmentId`.
+   * שמור עבור slice 10 (ניגון מחדש של הקלטות) — לא בשימוש ב-slice 2.
+   * מנקה את התור הנוכחי ומתחיל לנגן מ-`segmentId`.
    */
   jumpToSegment(segmentId: string): void {
     this.#queue = [segmentId]
     if (this.#playing) {
-      // current play() will resolve / reject naturally; the loop will then
-      // pick up the new queue contents.
+      // קריאת ה-play() הנוכחית תסתיים (resolve / reject) באופן טבעי; הלולאה
+      // תאסוף אז את תוכן התור החדש.
       return
     }
     void this.#playLoop()
   }
 
   /**
-   * Stop playback: pause current, drop queue, cancel every segment we own.
+   * עצירת הניגון: משהה את הנוכחי, מרוקן את התור, ומבטל כל מקטע שברשותנו.
    */
   stop(): void {
     const ids = [...this.#queue]
     if (this.currentSegmentId !== null) ids.push(this.currentSegmentId)
     this.#queue = []
     for (const id of ids) this.#audioStream.cancel(id)
-    // The browser may not fire ended/error after pause+revoke; expose idle immediately.
+    // ייתכן שהדפדפן לא יפעיל אירועי ended/error אחרי השהייה+ביטול; הצג מצב המתנה (idle) באופן מיידי.
     this.#playing = false
     this.state = "idle"
     this.currentSegmentId = null
@@ -74,7 +74,7 @@ export class Player {
         try {
           await this.#audioStream.play(id)
         } catch (_e) {
-          // MIN-5: cancelled / error → skip, continue with next.
+          // ביקורת MIN-5: בוטל / שגיאה → מדלגים, וממשיכים לבא בתור.
         }
       }
     } finally {

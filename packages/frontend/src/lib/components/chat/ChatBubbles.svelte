@@ -9,14 +9,14 @@ const t = getI18n().t
 let chatEl = $state<HTMLElement | null>(null)
 
 /**
- * Auto-scroll on new content. We read three reactive values explicitly so
- * the effect re-runs on bubble add, segment add, and text append:
- *   - bubble count
- *   - last bubble's segment count
- *   - last segment's text length
+ * גלילה אוטומטית (Auto-scroll) בתוכן חדש. אנו קוראים שלושה ערכים ריאקטיביים במפורש כדי
+ * שהאפקט ירוץ מחדש בהוספת בועה, הוספת מקטע, או הוספת טקסט:
+ *   - כמות הבועות (bubble count)
+ *   - כמות המקטעים בבועה האחרונה
+ *   - אורך הטקסט במקטע האחרון
  *
- * Per Svelte 5 + golden rule #4 — effect lives in the component that owns
- * the DOM bind:this.
+ * לפי Svelte 5 + כלל זהב #4 — האפקט חי בקומפוננטה שמחזיקה
+ * את ה-DOM bind:this.
  */
 $effect(() => {
   const _bubbleCount = session.bubbles.length

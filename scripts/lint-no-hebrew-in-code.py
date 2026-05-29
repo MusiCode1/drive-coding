@@ -57,7 +57,7 @@ def is_allowed(path: Path) -> bool:
 
 def strip_jsdoc_blocks(text: str) -> str:
     """
-    Pre-pass: blank out all `/** ... */` and `/* ... */` blocks.
+    Pre-pass: blank out all `/** ... */`, `/* ... */`, and `<!-- ... -->` blocks.
     Done before the main state machine so regex literals containing
     quotes (`/.../`) don't confuse comment detection.
 
@@ -73,6 +73,16 @@ def strip_jsdoc_blocks(text: str) -> str:
                 end = n
             else:
                 end += 2
+            for j in range(i, end):
+                if out[j] != "\n":
+                    out[j] = " "
+            i = end
+        elif i < n - 3 and text[i:i+4] == "<!--":
+            end = text.find("-->", i + 4)
+            if end == -1:
+                end = n
+            else:
+                end += 3
             for j in range(i, end):
                 if out[j] != "\n":
                     out[j] = " "

@@ -1,12 +1,12 @@
 /**
- * connect-agent.ts — orchestrates the connect flow.
+ * connect-agent.ts — מנהל את תהליך החיבור (connect flow).
  *
- * 1. Save the form values to settings (so they persist).
- * 2. Attach the session.
- * 3. Navigate to /chat on success.
+ * 1. שומר את ערכי הטופס לתוך ההגדרות (כדי שיישמרו).
+ * 2. מצרף את ה-session.
+ * 3. מנווט אל /chat במקרה של הצלחה.
  *
- * Action (not a method on Settings or AgentSession) because it composes
- * multiple view-models + navigation — a textbook cross-layer concern.
+ * זוהי Action (ולא מתודה על Settings או AgentSession) מכיוון שהיא משלבת
+ * מספר view-models יחד עם ניווט — דוגמה קלאסית לעניין חוצה שכבות.
  */
 
 import { goto } from "$app/navigation"
@@ -28,6 +28,6 @@ export async function connectAgent(params: {
   if (params.session.status === "connected") {
     await goto("/chat")
   }
-  // on error, the session VM already set status="error" + error message.
-  // the connect page will render that — no navigation.
+  // במקרה של שגיאה, ה-session VM כבר הגדיר status="error" + הודעת שגיאה.
+  // דף החיבור ירנדר את זה — ללא ניווט.
 }

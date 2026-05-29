@@ -10,7 +10,7 @@ const t = getI18n().t
   <div class="kind-label">{t("chat.bubble.user")}</div>
   <div class="text">
     {#each bubble.segments as seg (seg.id)}<span>{seg.text}</span>{/each}
-    <!-- forces Svelte reactivity on .segments.push() — see parallel-safe-code.md -->
+    <!-- כופה ריאקטיביות של Svelte בעת .segments.push() — ראה parallel-safe-code.md -->
     <span class="hidden">{bubble.segments.length}</span>
   </div>
 </div>
@@ -24,11 +24,11 @@ const t = getI18n().t
   }
 
   .bubble-user {
-    /* RTL: flex-start = right side (user is on the right) */
+    /* יישור RTL: הערך flex-start = צד ימין (המשתמש נמצא בצד ימין) */
     align-self: flex-start;
     background: var(--accent);
     color: white;
-    /* Asymmetric: flat corner points toward the user (bottom-right in RTL) */
+    /* א-סימטרי: הפינה השטוחה מצביעה לכיוון המשתמש (ימין-למטה ב-RTL) */
     border-bottom-right-radius: 4px;
   }
 

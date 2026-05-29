@@ -1,20 +1,20 @@
 /**
- * VoiceMode — derived FSM that summarises mic + session + speaker into a
- * single display state for MicButton.
+ * VoiceMode — FSM (מכונת מצבים) נגזרת שמסכמת את ה-mic + session + speaker לכדי
+ * מצב תצוגה יחיד עבור רכיב ה-MicButton.
  *
- * Does NOT hold primary state — it derives from three sources:
- *   - Mic.state         (recording / transcribing)
- *   - AgentSession.status (thinking)
- *   - Speaker.state     (speaking)
+ * אינו מחזיק מצב ראשי (primary state) — הוא נגזר משלושה מקורות:
+ *   - Mic.state         (הקלטה / תמלול)
+ *   - AgentSession.status (חושב)
+ *   - Speaker.state     (מדבר)
  *
- * isCancelling is the only mutable field: set by cancel(), reset by $effect
- * once all sources settle to idle.
+ * isCancelling הוא השדה היחיד שניתן לשינוי: מוגדר על ידי cancel(), מאופס על ידי $effect
+ * ברגע שכל המקורות נרגעים חזרה למצב המתנה (idle).
  *
- * Reactivity safety (learnings 2026-05-16):
- *   - $derived.by reads from three sources via getters — no writes → safe.
- *   - The $effect ONLY writes `isCancelling = false` and only when the three
- *     conditions are simultaneously true. Once false, the condition is no
- *     longer true → no infinite loop (risk #9 in brief).
+ * בטיחות ריאקטיבית (learnings 2026-05-16):
+ *   - $derived.by קורא משלושת המקורות באמצעות getters — אין כתיבות → בטוח.
+ *   - ה-$effect ONLY כותב `isCancelling = false` ורק כאשר כל שלושת
+ *     התנאים מתקיימים במקביל. ברגע ששקר, התנאי כבר אינו
+ *     מתקיים → אין לולאה אינסופית (סיכון #9 במפרט).
  */
 
 import type { Mic } from "../mic.svelte"
@@ -34,7 +34,7 @@ export class VoiceMode {
   readonly #session: AgentSession
   readonly #speaker: Speaker
 
-  /** Internal flag — set by cancel(), reset when FSM returns to idle */
+  /** דגל פנימי — מוגדר על ידי cancel(), מתאפס כשה-FSM חוזר למצב idle */
   isCancelling: boolean = $state(false)
 
   state: VoiceModeState = $derived.by(() => {
@@ -51,7 +51,7 @@ export class VoiceMode {
     this.#session = opts.session
     this.#speaker = opts.speaker
 
-    // Reset isCancelling once all sources settle back to idle
+    // אפס את isCancelling ברגע שכל המקורות חוזרים למצב idle
     $effect(() => {
       if (
         this.isCancelling &&
@@ -65,14 +65,14 @@ export class VoiceMode {
   }
 
   /**
-   * Cancel ongoing recording / TTS / request.
-   * Called by MicButton when state is "speaking" or "thinking",
-   * and will be called by the cancel button in slice 7.
+   * ביטול פעולת הקלטה / TTS / בקשה שרצה כרגע.
+   * נקרא על ידי ה-MicButton כשהמצב הוא "speaking" או "thinking",
+   * וייקרא גם על ידי כפתור הביטול ב-slice 7.
    */
   cancel(): void {
     this.isCancelling = true
     this.#mic.cancel()
-    // Speaker.stop() is an additive method added in this commit — see speaker.svelte.ts
+    // Speaker.stop() היא מתודה תוספתית (additive) שנוספה בקומִיט הזה — ראה speaker.svelte.ts
     this.#speaker.stop()
   }
 }

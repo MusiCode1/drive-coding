@@ -16,7 +16,7 @@ const ICONS: Record<VoiceModeState, string> = {
   cancelling: "✕",
 }
 
-// Map each VoiceMode state to its i18n label key
+// מיפוי כל מצב VoiceMode למפתח התווית i18n שלו
 function statusKey(s: VoiceModeState): MessageKey {
   switch (s) {
     case "idle":         return "voiceMode.status.idle"
@@ -36,7 +36,7 @@ function onClick() {
     return
   }
   if (voiceMode.state === "transcribing" || voiceMode.state === "cancelling") return
-  // idle or recording
+  // במצב idle (ממתין) או recording (מקליט)
   void mic.toggle()
 }
 </script>
@@ -94,7 +94,7 @@ function onClick() {
     opacity: 0.7;
   }
 
-  /* ── State colours ── */
+  /* ── צבעי מצבים (State colours) ── */
   .mic-idle {
     background: var(--accent);
     box-shadow: 0 2px 8px rgba(79, 140, 255, 0.4);
@@ -127,7 +127,7 @@ function onClick() {
     animation: flash-fast 0.3s infinite;
   }
 
-  /* ── Animations ── */
+  /* ── אנימציות ── */
   @keyframes pulse {
     0%, 100% { box-shadow: 0 0 0 0 rgba(255, 79, 79, 0.5); }
     50%       { box-shadow: 0 0 0 10px rgba(255, 79, 79, 0); }
@@ -156,7 +156,7 @@ function onClick() {
     line-height: 1.3;
   }
 
-  /* ── Icon (emoji) ── */
+  /* ── אייקון (אמוג'י) ── */
   .icon {
     display: flex;
     align-items: center;

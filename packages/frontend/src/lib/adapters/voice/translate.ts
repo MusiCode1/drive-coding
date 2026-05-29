@@ -1,20 +1,19 @@
 /**
- * translate.ts — translate text via Gemini Flash Lite (through BE proxy).
+ * translate.ts — תרגום טקסט דרך מודל Gemini Flash Lite (דרך הפרוקסי ב-BE).
  *
- * Uses generateObject with a discriminated-union JSON schema so Gemini can
- * signal "already in target language" with a minimal payload, avoiding both
- * unnecessary paraphrasing and wasted output tokens.
+ * משתמש ב-generateObject עם סכמת JSON של discriminated-union כך שמודל Gemini יכול
+ * לאותת "כבר בשפת היעד" עם מטען מינימלי, וכך לחסוך ניסוח מחדש מיותר ובזבוז טוקני פלט.
  *
- * Slice 2: no FE localStorage cache — the BE proxy already caches
- * `generateContent` (see packages/backend/src/delivery/proxy-cache.ts). If we
- * later need offline support we can re-introduce a thin localStorage layer.
+ * Slice 2: ללא שכבת זיכרון מטמון של localStorage ב-FE — הפרוקסי ב-BE כבר שומר במטמון
+ * את ה-`generateContent` (ראה packages/backend/src/delivery/proxy-cache.ts). אם
+ * נזדקק בעתיד לתמיכה באופליין, נוכל להחזיר שכבה דקה של localStorage.
  *
- * Timeout 2500ms with AbortController. Returns null on abort/timeout/error
- * (caller treats null as "skip translation, use original text").
+ * פסק זמן של 2500ms עם AbortController. מחזיר null בביטול/פסק זמן/שגיאה
+ * (הקורא מתייחס ל-null כאל "דלג על התרגום, השתמש בטקסט המקורי").
  *
- * Model: gemini-flash-lite-latest. Cheap, fast, deterministic enough for
- * short prose. learnings 2026-05-16: gemini-2.0-flash family is deprecated to
- * new users — must use `*-latest` aliases.
+ * מודל: gemini-flash-lite-latest. זול, מהיר ודטרמיניסטי מספיק עבור
+ * פרוזה קצרה. learnings 2026-05-16: משפחת gemini-2.0-flash יוצאת משימוש (deprecated)
+ * עבור משתמשים חדשים — חובה להשתמש בכינויים מסוג `*-latest`.
  */
 
 import { buildTranslationPrompt } from "@drive-coding/core/voice/translation-prompt"
@@ -28,10 +27,10 @@ export type TranslateResult =
   | { status: "translated"; text: string }
 
 /**
- * JSON schema enforced by Gemini's responseSchema. anyOf gives us a true
- * discriminated union — when the source is already Hebrew, Gemini emits
- * `{"status":"already_in_target"}` (~6 tokens) instead of repeating the
- * original text.
+ * סכמת JSON הנאכפת על ידי ה-responseSchema של Gemini. ה-anyOf נותן לנו union
+ * אמיתי (discriminated) — כאשר המקור הוא כבר בעברית, Gemini פולט
+ * `{"status":"already_in_target"}` (~6 טוקנים) במקום לחזור על
+ * הטקסט המקורי.
  */
 const translateSchema = jsonSchema<TranslateResult>({
   anyOf: [
@@ -56,10 +55,10 @@ const translateSchema = jsonSchema<TranslateResult>({
 })
 
 /**
- * Translate `text` to `targetLang`. Returns:
- *   - { status: "translated", text } when Gemini produced a translation
- *   - { status: "already_in_target" } when the source was already in target lang
- *   - null on abort, timeout, or any error
+ * מתרגם את `text` ל-`targetLang`. מחזיר:
+ *   - { status: "translated", text } כאשר Gemini הפיק תרגום
+ *   - { status: "already_in_target" } כאשר המקור היה כבר בשפת היעד
+ *   - null במקרה של ביטול (abort), פסק זמן, או כל שגיאה אחרת
  */
 export async function translate(
   text: string,
@@ -89,7 +88,7 @@ Respond as JSON matching the schema:
     })
     const obj = result.object
 
-    // Treat empty translated text as failure to avoid downstream TTS-of-emptiness.
+    // התייחס לטקסט ריק מתורגם כאל כישלון כדי למנוע TTS של שקט בהמשך התהליך.
     if (obj.status === "translated" && obj.text.trim().length === 0) {
       console.warn("translate returned empty text — treating as failure", { len: text.length })
       return null

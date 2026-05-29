@@ -1,17 +1,17 @@
 <script lang="ts">
 /**
- * ToolBubble — collapsible tool call display.
+ * ToolBubble — תצוגה מתקפלת של קריאה לכלי (tool call).
  *
- * Collapsed (default): status dot + Hebrew narration (or loading placeholder)
- * + technical title small below. Click anywhere → expand.
+ * מצב מקופל (ברירת מחדל): נקודת סטטוס + קריינות בעברית (או טקסט טעינה)
+ * + כותרת טכנית קטנה למטה. קליק בכל מקום → פתיחה.
  *
- * Expanded: same header + args/result panels dir="ltr".
+ * מצב פתוח: אותה כותרת + פאנלים של args/result עם dir="ltr".
  *
- * Slice 4: narration arrives async (~1-2s after completed). Svelte 5 $derived
- * re-renders automatically when bubble.toolCall.narration is written back.
+ * Slice 4: הקריינות מגיעה אסינכרונית (~1-2 שניות לאחר הסיום). ב-Svelte 5
+ * $derived מרנדר מחדש אוטומטית כאשר כותבים חזרה ל-bubble.toolCall.narration.
  *
- * Click is on the whole <button> container, not a nested <details>, so text
- * inside pre is still selectable (stopPropagation on the details section).
+ * לחיצה מתבצעת על כל המיכל של ה-<button>, ולא על <details> מקונן, כך שהטקסט
+ * בתוך ה-pre עדיין ניתן לבחירה (משתמשים ב-stopPropagation על אזור הפרטים).
  */
 import type { ToolBubble, ToolCall } from "$lib/types/bubble"
 import { getI18n } from "$lib/context"
@@ -77,7 +77,7 @@ function formatResult(value: unknown): string {
     </div>
   {/if}
 
-  <!-- Pin Svelte reactivity on narration arrival (slice 4) -->
+  <!-- כופה ריאקטיביות של Svelte עם הגעת הקריינות (slice 4) -->
   <span class="hidden">{tc.narration ?? ""}{tc.status}</span>
 </div>
 
@@ -89,7 +89,7 @@ function formatResult(value: unknown): string {
   }
 
   .bubble-tool {
-    /* Full width per frontend-spec §7 */
+    /* רוחב מלא לפי מפרט ה-frontend סעיף §7 */
     align-self: stretch;
     background: var(--bg-elev);
     border: 1px solid var(--border);
@@ -134,7 +134,7 @@ function formatResult(value: unknown): string {
     margin-top: 2px;
   }
 
-  /* Status dots */
+  /* נקודות סטטוס (Status dots) */
   .status-dot {
     display: inline-block;
     width: 8px;

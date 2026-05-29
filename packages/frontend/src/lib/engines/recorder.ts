@@ -1,10 +1,10 @@
 /**
- * Recorder — wraps MediaRecorder for push-to-talk.
- * Returns a clean `{ start(), stop(): Promise<{ blob, mimeType }> }` API.
+ * Recorder — עוטף את ה-MediaRecorder עבור פונקציונליות push-to-talk.
+ * מחזיר API נקי של `{ start(), stop(): Promise<{ blob, mimeType }> }`.
  *
- * Copied from main/packages/frontend/src/lib/audio/recorder.ts (slice 3).
- * Changes: replaced `import { createLogger } from "$lib/log"` + log calls
- * with console.warn/info (the new FE doesn't have a $lib/log module).
+ * הועתק מתוך main/packages/frontend/src/lib/audio/recorder.ts (slice 3).
+ * שינויים: הוחלף `import { createLogger } from "$lib/log"` + קריאות ללוג
+ * ב-console.warn/info (ל-FE החדש אין מודול $lib/log).
  */
 
 export class Recorder {
@@ -20,7 +20,7 @@ export class Recorder {
       console.warn("[recorder] mic permission denied", String(e))
       throw e
     }
-    // audio/webm;codecs=opus is supported in Chrome/Firefox; falls back to browser default
+    // הסוג audio/webm;codecs=opus נתמך ב-Chrome/Firefox; יש גיבוי ל-default של הדפדפן
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"
       : "audio/webm"

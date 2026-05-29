@@ -1,21 +1,21 @@
 /**
- * transcribe.ts — Speech-to-Text via Gemini multimodal (audio inline).
+ * transcribe.ts — המרת דיבור לטקסט דרך Gemini multimodal (אודיו inline).
  *
- * Uses @google/genai (NOT @ai-sdk/google) because it needs generateContent
- * with inlineData audio parts — @ai-sdk/google doesn't support multimodal audio.
+ * משתמש ב-@google/genai (ולא ב-@ai-sdk/google) כי הוא צריך את generateContent
+ * עם חלקי אודיו מסוג inlineData — החבילה @ai-sdk/google לא תומכת באודיו מולטימודאלי.
  *
- * CRIT-1: googleGenAi uses httpOptions.baseUrl (lowercase u) — see sdks.ts.
- * Hebrew transliteration gotcha (learnings 2026-05-16): Gemini returns Latin
- * by default. Must explicitly request Hebrew script in prompt.
+ * מזהה CRIT-1: האובייקט googleGenAi משתמש ב-httpOptions.baseUrl (עם u קטנה) — ראה sdks.ts.
+ * מלכודת תעתיק (transliteration) בעברית (learnings 2026-05-16): מודל Gemini מחזיר אותיות לטיניות
+ * כברירת מחדל. חייבים לבקש במפורש כתב עברי בפרומפט.
  *
- * saveRecording removed (slice 10 will add the BE endpoint). Returns
- * recordingId: "" as a stub — slice 10 will replace with the real call.
+ * הפונקציה saveRecording הוסרה (slice 10 יוסיף את ה-endpoint ב-BE). מחזיר
+ * כרגע recordingId: "" כפלייסיהולדר — slice 10 יחליף בקריאה האמיתית.
  *
- * Copied from main/packages/frontend/src/lib/voice/stt-client.ts (slice 3).
- * Changes:
- *   (a) removed `import { saveRecording } from "./recordings-client"`
- *   (b) replaced saveRecording call with Promise.resolve({ id: "" })
- *   (c) import of googleGenAi from "./sdks" unchanged (sdks.ts exists from slice 2)
+ * הועתק מתוך main/packages/frontend/src/lib/voice/stt-client.ts (slice 3).
+ * שינויים:
+ *   (a) הוסר `import { saveRecording } from "./recordings-client"`
+ *   (b) קריאת saveRecording הוחלפה ב-Promise.resolve({ id: "" })
+ *   (c) ייבוא של googleGenAi מתוך "./sdks" נשאר ללא שינוי (sdks.ts קיים החל מ-slice 2)
  */
 
 import { bytesToBase64 } from "./base64"
@@ -31,17 +31,17 @@ export async function transcribe(
   const audioBytes = new Uint8Array(await blob.arrayBuffer())
   const mimeType = blob.type || "audio/webm"
 
-  // Stub: slice 10 will replace with real saveRecording call
+  // פלייסיהולדר (Stub): slice 10 יחליף את זה בקריאה האמיתית ל-saveRecording
   const recordingPromise = Promise.resolve({ id: "" })
 
-  // Hebrew transliteration fix: explicit instruction to output Hebrew script
+  // תיקון תעתיק לעברית: הוראה מפורשת להוציא כתב עברי
   const hebrewRule =
     "Output in the original script of the language spoken. If Hebrew, output Hebrew letters."
   const prompt = opts.previousAssistantText
     ? `Transcribe the user's audio. Context: previous assistant said: "${opts.previousAssistantText}". Transcribe ONLY user's audio. ${hebrewRule}`
     : `Transcribe the audio. ${hebrewRule}`
 
-  // MED-5: chunked base64 conversion
+  // ביקורת MED-5: המרה ל-base64 במקטעים
   const base64 = bytesToBase64(audioBytes)
 
   const response = await googleGenAi().models.generateContent({
@@ -52,7 +52,7 @@ export async function transcribe(
         parts: [{ text: prompt }, { inlineData: { mimeType, data: base64 } }],
       },
     ],
-    // abortSignal via config if supported by this SDK version
+    // העברת abortSignal דרך ה-config אם נתמך על ידי גרסת ה-SDK הזו
     config: opts.signal ? ({ abortSignal: opts.signal } as Record<string, unknown>) : undefined,
   })
 

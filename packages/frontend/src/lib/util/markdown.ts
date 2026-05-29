@@ -1,18 +1,18 @@
 /**
- * markdown.ts — render Markdown to sanitized HTML.
+ * markdown.ts — רינדור (render) של Markdown ל-HTML מחוטא.
  *
- * Pipeline: marked.parse (CommonMark + GFM) → DOMPurify.sanitize.
+ * צינור עיבוד (Pipeline): הפונקציה marked.parse (CommonMark + GFM) → DOMPurify.sanitize.
  *
- * Conservative allowlist: only text formatting, headings, lists, links, code.
- * Strips all scripts, event handlers, and non-https/relative hrefs.
+ * רשימת הרשאות שמרנית (allowlist): רק עיצוב טקסט, כותרות, רשימות, קישורים, וקוד.
+ * מסיר את כל הסקריפטים, מאזיני אירועים, וקישורים (hrefs) שאינם https/יחסיים.
  *
- * Usage in components: {@html renderMarkdown(seg.text)}
- * Wrap in <div dir="auto"> for mixed Hebrew/English RTL handling.
+ * שימוש בקומפוננטות: {@html renderMarkdown(seg.text)}
+ * עטוף ב-<div dir="auto"> עבור טיפול RTL בטקסט מעורב עברית/אנגלית.
  *
- * SSR note: SvelteKit adapter-static has a server-render pass. DOMPurify
- * requires a DOM (document global). In SSR (typeof document === 'undefined'),
- * we skip sanitization — SSR output goes through Svelte's own serialization
- * and never reaches the browser DOM as raw innerHTML.
+ * הערת SSR: ל-adapter-static של SvelteKit יש מעבר (pass) רינדור בצד השרת. DOMPurify
+ * דורש DOM (המשתנה הגלובלי document). ב-SSR (כאשר typeof document === 'undefined'),
+ * אנו מדלגים על חיטוי — פלט ה-SSR עובר דרך הסריאליזציה של Svelte בעצמו
+ * ולעולם לא מגיע ל-DOM של הדפדפן כ-innerHTML גולמי.
  */
 
 import { marked } from "marked"
@@ -41,13 +41,13 @@ const ALLOWED_TAGS = [
 const ALLOWED_ATTR = ["href", "title", "lang", "dir"]
 
 /**
- * Render Markdown to sanitized HTML.
- * Safe to use with {@html} in Svelte components.
+ * מרנדר (Render) Markdown ל-HTML מחוטא.
+ * בטוח לשימוש עם {@html} בתוך קומפוננטות Svelte.
  */
 export function renderMarkdown(text: string): string {
   if (text.length === 0) return ""
   const html = marked.parse(text, { async: false, breaks: true, gfm: true }) as string
-  // DOMPurify requires a DOM — skip in SSR/Node environments without document.
+  // DOMPurify דורש DOM פעיל — דלג בסביבות SSR/Node ללא אובייקט document.
   if (typeof document === "undefined") return html
   return DOMPurify.sanitize(html, {
     ALLOWED_TAGS,

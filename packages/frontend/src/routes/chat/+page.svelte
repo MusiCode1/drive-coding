@@ -7,9 +7,9 @@ import ChatInput from "$lib/components/chat/ChatInput.svelte"
 
 const session = getSession()
 
-// Synchronous guard: refresh / direct nav with no active connection → home.
-// Runs during component setup before any markup renders, so no flicker.
-// (csr=false in +layout.ts → script body runs only in the browser.)
+// הגנה סינכרונית (guard): רענון / ניווט ישיר ללא חיבור פעיל → מעבר לדף הבית.
+// רץ במהלך הגדרת הקומפוננטה לפני שמרונדר markup כלשהו, לכן אין ריצוד (flicker).
+// (ההגדרה csr=false ב-+layout.ts → גוף הסקריפט רץ רק בדפדפן).
 if (session.status === "idle") {
   goto("/", { replaceState: true })
 }

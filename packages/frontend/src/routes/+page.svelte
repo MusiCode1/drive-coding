@@ -15,7 +15,7 @@ const t = i18n.t
 let cliKind = $state<CliKind>(settings.cliKind)
 let cwd = $state(settings.lastCwd)
 
-// ─── session picker state ───
+// ─── state עבור תפריט בחירת סשן (session picker) ───
 let sessions = $state<SessionInfo[]>([])
 let sessionsLoading = $state(false)
 let sessionsError = $state<string | null>(null)

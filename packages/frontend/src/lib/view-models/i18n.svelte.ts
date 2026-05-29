@@ -1,10 +1,10 @@
 /**
- * I18n view-model — reactive wrapper around @drive-coding/core/i18n.
+ * I18n view-model — מעטפת ריאקטיבית סביב @drive-coding/core/i18n.
  *
- * Provides `t(key)` for components. Locale is selected once at construction
- * (from navigator + Settings) and can be changed via `setLocale()`.
+ * מספק את הפונקציה `t(key)` עבור קומפוננטות. ה-locale נבחר פעם אחת בזמן הבנייה
+ * (מה-navigator + Settings) וניתן לשנותו דרך `setLocale()`.
  *
- * Reactive: `t` is a $derived getter so components re-render when locale changes.
+ * ריאקטיביות: `t` הוא מתודת $derived getter כך שהקומפוננטות ירונדרו מחדש כשה-locale משתנה.
  */
 
 import {
@@ -21,8 +21,8 @@ export class I18nVM {
   #i18n = $derived<I18n>(createI18n({ locale: this.locale }))
 
   /**
-   * t(key) — translate a message key. Reactive: components that call this
-   * inside a template / $derived will re-render when locale changes.
+   * t(key) — תרגום מפתח הודעה. ריאקטיבי: קומפוננטות שקוראות לזה
+   * מתוך טמפלייט / $derived ירונדרו מחדש כשה-locale משתנה.
    */
   t = (key: MessageKey): string => this.#i18n.t(key)
 

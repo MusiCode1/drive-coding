@@ -21,26 +21,33 @@
 
 ---
 
-## 2026-05-29 21:51 — slice 19a: Core comments translation
+## 2026-06-03 — slice 19c: Hebrew Comments Frontend
 
 ### מה בוצע?
 
-תרגום כל הערות הקוד וה-JSDoc ב-`packages/core/src/` מאנגלית לעברית, כהכנה לשחרור קוד פתוח. הפעולה לא שינתה לוגיקה כלל, רק הערות.
+תרגום מלא של כל הערות הקוד מאנגלית לעברית בחבילת ה-Frontend (`packages/frontend/src/`).
+התרגום כלל קבצי TypeScript ו-Svelte תוך שמירה על כללי ה-Svelte וה-JSDoc.
+לא בוצע שום שינוי בקוד הלוגי או הפונקציונלי.
 
-- נסרקו הקבצים ב-`packages/core/src/` שכללו הערות (JSDoc, inline comments).
-- הערות טכניות, הסברי פונקציות והערות JSDoc תורגמו לעברית טבעית תוך שמירה על מונחים טכניים.
-- הערות שמורות כמו `@ts-expect-error`, `biome-ignore`, והערות אזהרה בסקריפט נשארו כפי שהן.
-- תוקן באג קטן ב-`provider-error.ts` שגרם ל-`lint-no-hebrew-in-code.py` לזהות שורת קוד שגויה בגלל ציטוטי מחרוזות בתוך Literal Regex, מה ששבר את מעקב המצבים שלו.
+**עיקרי השינויים:**
+- תרגום הערות `//` ובלוקים של `/* */` ו-`/** JSDoc */`.
+- תרגום הערות `<!-- HTML comment -->` בתבניות Svelte.
+- הקפדה מלאה על השארת ה-directives הייעודיים באנגלית (כמו `<!-- svelte-ignore ... -->` או `@ts-ignore`) כדי לא לשבור Typecheck.
 
-### החלטות ארכיטקטורה
+הסליס עבר בדיקות Typecheck, lint:i18n, וטסטים בהצלחה כנדרש ב-DoD.
 
-- **שמירת Regex כ-`new RegExp` במקום Literal**: כדי להקל על סקריפט ה-lint הפשוט ללא צורך לשכתב את הפרסר מבוסס ה-state machine שלו, Regex שהכיל תווים שיכלו להיחשב למחרוזת שונה ל-`new RegExp(...)`.
-- תרגום לעברית מתיישב עם השפה המדוברת של הפרויקט, כהכנה לתיעוד כולל בעברית.
+---
 
-### בדיקות
-- `pnpm build --force` (נדרש אחרי worktree חדש)
-- `pnpm typecheck`
-- `pnpm lint:i18n` (חזר להיות ירוק אחרי התיקון הקטן ב-regex)
+## 2026-05-29 — slice 19a: Core comments translation
+
+### מה בוצע?
+
+תרגום כל הערות הקוד וה-JSDoc ב-`packages/core/src/` מאנגלית לעברית.
+הפעולה לא שינתה לוגיקה כלל, רק הערות.
+
+- הערות JSDoc, inline comments ו-section banners תורגמו לעברית תוך שמירה על מונחים טכניים.
+- הערות שמורות (`biome-ignore`, `@ts-ignore`) נשארו כפי שהן.
+- Section banners ב-`i18n/catalogs/` (שמות domain) לא תורגמו.
 
 ---
 
