@@ -247,13 +247,13 @@ export class AgentSession {
 
   // ─── הקלטות (recordings) ─── (יתווסף ב-slice 10)
 
-  // ─── private ─────────────────────────────────────
+  // ─── פרטי ─────────────────────────────────────
 
   #cleanup(): void {
     try {
       this.#client?.close()
     } catch {
-      // already closed
+      // כבר סגור
     }
     this.#client = null
     this.#sessionId = null

@@ -74,14 +74,14 @@ export function wsToWebStreams(ws: WebSocket): {
       try {
         ws.close()
       } catch {
-        // already closed
+        // כבר סגור
       }
     },
     abort(reason) {
       try {
         ws.close(1011, String(reason))
       } catch {
-        // already closed
+        // כבר סגור
       }
     },
   })

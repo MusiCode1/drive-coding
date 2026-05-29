@@ -82,7 +82,7 @@ export class WsAcpTransport implements AcpTransport {
     try {
       this.#ws.close()
     } catch {
-      // already closed
+      // כבר סגור
     }
   }
 
