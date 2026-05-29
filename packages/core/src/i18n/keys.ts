@@ -64,7 +64,13 @@ export type MessageKey =
   | "sessions.startNew"
   | "sessions.error"
   // ─── settings ─── (slice 9)
-  // ─── recordings ─── (slice 10)
+  | "settings.title"
+  | "settings.beUrl.label"
+  | "settings.beUrl.help"
+  | "settings.beUrl.invalid"
+  | "settings.beUrl.saved"
+  | "settings.back"
+// ─── recordings ─── (slice 10)
 
 /**
  * MessageValue — string or function for parameterized messages.
