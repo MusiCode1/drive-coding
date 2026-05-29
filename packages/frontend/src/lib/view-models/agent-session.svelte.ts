@@ -22,6 +22,8 @@ import type {
   ThoughtBubble,
   ToolBubble,
   ToolCall,
+  ToolContent,
+  ToolLocation,
   UserBubble,
 } from "$lib/types/bubble"
 
@@ -260,12 +262,65 @@ export class AgentSession {
     this.agentId = null
   }
 
+  #mapToolContent(raw: unknown): ToolContent[] {
+    if (!Array.isArray(raw)) return []
+    const out: ToolContent[] = []
+    for (const item of raw) {
+      if (typeof item !== "object" || item === null) continue
+      const t = (item as { type?: string }).type
+      if (t === "content") {
+        // { type:"content", content: ContentBlock }
+        const cb = (item as { content?: { type?: string; text?: string } }).content
+        if (cb?.type === "text" && typeof cb.text === "string") {
+          out.push({ type: "text", text: cb.text })
+        } else {
+          out.push({ type: "other", raw: item }) // image/audio/resource — future
+        }
+      } else if (t === "diff") {
+        const d = item as { path?: string; oldText?: string | null; newText?: string }
+        if (typeof d.path === "string" && typeof d.newText === "string") {
+          out.push({
+            type: "diff",
+            path: d.path,
+            oldText: d.oldText ?? undefined,
+            newText: d.newText,
+          })
+        } else {
+          out.push({ type: "other", raw: item })
+        }
+      } else if (t === "terminal") {
+        const term = item as { terminalId?: string }
+        if (typeof term.terminalId === "string") {
+          out.push({ type: "terminal", terminalId: term.terminalId })
+        } else {
+          out.push({ type: "other", raw: item })
+        }
+      } else {
+        out.push({ type: "other", raw: item })
+      }
+    }
+    return out
+  }
+
+  #mapLocations(raw: unknown): ToolLocation[] {
+    if (!Array.isArray(raw)) return []
+    const out: ToolLocation[] = []
+    for (const item of raw) {
+      if (typeof item !== "object" || item === null) continue
+      const l = item as { path?: string; line?: number }
+      if (typeof l.path === "string") {
+        out.push({ path: l.path, line: l.line })
+      }
+    }
+    return out
+  }
+
   #onSessionUpdate = (notification: SessionNotification): void => {
     // ACP envelope: { sessionId, update: { sessionUpdate, content, messageId, ... } }
     // messageId is on the outer update object (ACP unstable extension).
     const update = notification.update as {
       sessionUpdate?: string
-      content?: { type?: string; text?: string }
+      content?: any
       messageId?: string | null
       // ─── slice 4: tool call fields ───
       toolCallId?: string
@@ -274,6 +329,8 @@ export class AgentSession {
       rawInput?: unknown
       rawOutput?: unknown
       status?: ToolCall["status"]
+      // ─── slice 16 ───
+      locations?: unknown[] | null
     }
 
     // ─── slice 4: handle tool notifications before text guard ───
@@ -314,6 +371,8 @@ export class AgentSession {
     rawInput?: unknown
     rawOutput?: unknown
     status?: ToolCall["status"]
+    content?: unknown[] | null
+    locations?: unknown[] | null
   }): void {
     if (update.toolCallId === undefined) return
     // ACP schema: tool_call requires toolCallId + title. title may be undefined
@@ -334,6 +393,8 @@ export class AgentSession {
         title: update.title,
         narration: undefined,
         result: update.rawOutput,
+        content: update.content != null ? this.#mapToolContent(update.content) : undefined,
+        locations: update.locations != null ? this.#mapLocations(update.locations) : undefined,
       },
       segments: [],
     }
@@ -348,6 +409,8 @@ export class AgentSession {
     rawOutput?: unknown
     kind?: string
     title?: string
+    content?: unknown[] | null
+    locations?: unknown[] | null
   }): void {
     if (update.toolCallId === undefined) return
     const idx = this.bubbles.findIndex(
@@ -366,6 +429,12 @@ export class AgentSession {
       ...(update.rawOutput !== undefined && { result: update.rawOutput }),
       ...(update.kind !== undefined && { kind: update.kind }),
       ...(update.title !== undefined && { title: update.title }),
+      ...(update.content !== undefined && {
+        content: update.content === null ? undefined : this.#mapToolContent(update.content),
+      }),
+      ...(update.locations !== undefined && {
+        locations: update.locations === null ? undefined : this.#mapLocations(update.locations),
+      }),
     }
     this.bubbles[idx] = { ...old, toolCall: newToolCall }
     // Keep the Map in sync (pointing to the new bubble object)
