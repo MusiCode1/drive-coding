@@ -106,7 +106,8 @@ journalctl --user -u voice-acp-be -f
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| 401 on `/proxy/*` | OneCLI not injecting credentials | Check `onecli` path in service; run `onecli status` |
+| `AUTH_REQUIRED` / service exits immediately | `ONECLI_API_HOST` not set in systemd env (not inherited from shell) | Add `Environment=ONECLI_API_HOST=<gateway-url>` to the service file; `systemctl --user daemon-reload && systemctl --user restart voice-acp-be` |
+| 401 on `/proxy/*` | OneCLI not injecting credentials | Check `onecli` path in service; verify `ONECLI_API_HOST` is correct |
 | `voice-acp-build` fails with "pnpm not found" | PATH not initialized | Use `bash -lc 'which pnpm'` to diagnose; consider `corepack pnpm` as fallback |
 | Port 4000 already in use | Another process (e.g. dev mode) | Change `Environment=PORT=4001` in service; update `CORS_ORIGINS` accordingly |
 | Static files not served (404 on `/`) | `FE_STATIC_DIR` missing or wrong path | Verify path exists: `ls $FE_STATIC_DIR/index.html` |
