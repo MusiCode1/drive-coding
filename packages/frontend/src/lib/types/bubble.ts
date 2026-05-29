@@ -29,7 +29,12 @@ export type BubbleBase = {
 
 export type UserBubble = BubbleBase & {
   kind: "user"
-  messageId: null
+  /**
+   * Live prompts (sendPrompt): always null — synthetic optimistic bubble.
+   * History replay (loadSession → user_message_chunk): ACP messageId, used to
+   * group consecutive chunks of the same historic user message into one bubble.
+   */
+  messageId: string | null
   segments: Segment[]
   /** Slice 10 — id in the BE RecordingsStore for replay. */
   recordingId?: string

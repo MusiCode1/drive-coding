@@ -242,10 +242,19 @@ export class AgentSession {
       this.#appendChunk("message", text, messageId)
     } else if (update.sessionUpdate === "agent_thought_chunk") {
       this.#appendChunk("thought", text, messageId)
+    } else if (update.sessionUpdate === "user_message_chunk") {
+      // Sent by the agent during loadSession history replay (per ACP spec
+      // §session-setup#loading-sessions). Never arrives for live turns —
+      // those originate from sendPrompt and we add the optimistic bubble there.
+      this.#appendChunk("user", text, messageId)
     }
   }
 
-  #appendChunk(kind: "message" | "thought", text: string, messageId: string | null): void {
+  #appendChunk(
+    kind: "message" | "thought" | "user",
+    text: string,
+    messageId: string | null,
+  ): void {
     const last = this.bubbles[this.bubbles.length - 1]
     // Group only when: (a) same kind AND (b) non-null matching messageId.
     // Null/missing messageId always starts a new bubble (per ACP grouping rule).
@@ -257,14 +266,16 @@ export class AgentSession {
 
     if (canGroup && last !== undefined) {
       const seg: Segment = { id: crypto.randomUUID(), text }
-      // last is MessageBubble or ThoughtBubble — both have segments arrays
+      // last is MessageBubble | ThoughtBubble | UserBubble — all have segments arrays
       if (last.kind === "message") {
         (last as MessageBubble).segments.push(seg)
       } else if (last.kind === "thought") {
         (last as ThoughtBubble).segments.push(seg)
+      } else if (last.kind === "user") {
+        (last as UserBubble).segments.push(seg)
       }
     } else {
-      const newBubble: MessageBubble | ThoughtBubble =
+      const newBubble: MessageBubble | ThoughtBubble | UserBubble =
         kind === "message"
           ? {
               id: crypto.randomUUID(),
@@ -273,9 +284,17 @@ export class AgentSession {
               createdAt: Date.now(),
               segments: [{ id: crypto.randomUUID(), text }],
             }
-          : {
+          : kind === "thought"
+          ? {
               id: crypto.randomUUID(),
               kind: "thought",
+              messageId,
+              createdAt: Date.now(),
+              segments: [{ id: crypto.randomUUID(), text }],
+            }
+          : {
+              id: crypto.randomUUID(),
+              kind: "user",
               messageId,
               createdAt: Date.now(),
               segments: [{ id: crypto.randomUUID(), text }],
