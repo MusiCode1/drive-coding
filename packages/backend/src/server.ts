@@ -2,6 +2,7 @@ import "./log-setup.js" // חייב להיות ראשון — מאתחל לוג�
 import * as path from "node:path"
 import { createLogger } from "@drive-coding/core/log"
 import { serve } from "@hono/node-server"
+import { serveStatic } from "@hono/node-server/serve-static"
 import { Hono } from "hono"
 import { WebSocketServer } from "ws"
 
@@ -73,6 +74,19 @@ registerFsBrowseHttp(app)
 
 // Slice 10: פרוקסי שקוף עבור Google + ElevenLabs
 registerProxyHttp(app, { cacheBaseDir: path.resolve("data/cache/proxy") })
+
+// Slice 20: serve the built static FE (single-origin local prod).
+// Guarded by FE_STATIC_DIR — when unset (dev mode), Vite serves the FE
+// and this block is skipped, so the BE stays API/WS/proxy-only.
+const feStaticDir = process.env.FE_STATIC_DIR
+if (feStaticDir) {
+  // Assets first (js/css/etc), then SPA fallback to index.html for any
+  // unmatched path (client-side routing). Registered AFTER all /api,/proxy
+  // routes so it never shadows them.
+  app.use("/*", serveStatic({ root: feStaticDir }))
+  app.get("/*", serveStatic({ path: `${feStaticDir}/index.html` }))
+  log.info({ feStaticDir }, "serving static FE")
+}
 
 // מטפלי WS
 const echoWss = new WebSocketServer({ noServer: true })
