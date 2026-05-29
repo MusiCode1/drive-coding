@@ -46,10 +46,13 @@ export function buildOpencodeConfigContent(
   }
 
   // Our entry: a tuple so we can pass the prompt text via options.
-  const ourEntry: PluginEntry = [
-    pluginUrl,
-    { text: AUDIO_FRIENDLY_PROMPT },
-  ]
+  // Optional debug: if PROMPT_INJECTOR_DEBUG_PATH env var is set, the
+  // plugin will dump the final system-prompt array (JSON) to that path on
+  // every chat invocation. Useful for verifying injection end-to-end.
+  const debugWritePath = process.env.PROMPT_INJECTOR_DEBUG_PATH
+  const ourOptions: Record<string, unknown> = { text: AUDIO_FRIENDLY_PROMPT }
+  if (debugWritePath) ourOptions.debugWritePath = debugWritePath
+  const ourEntry: PluginEntry = [pluginUrl, ourOptions]
 
   // Dedup by URL — handle both string entries and tuple entries.
   const filtered = existingPlugins.filter((p) =>

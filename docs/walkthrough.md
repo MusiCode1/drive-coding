@@ -4,6 +4,58 @@
 
 ---
 
+## 2026-05-29 17:00 — prompt-injector: debug flag + i18n allowlist tidy-up
+
+### מה בוצע?
+
+שני שינויים קטנים סביב הplugin של slice 14, בעקבות בדיקה ידנית של ההזרקה בפועל.
+
+**1. Debug flag לplugin** (`packages/backend/plugins/prompt-injector.ts` + `packages/backend/src/plugin-config.ts`)
+
+הוסף option `debugWritePath` לplugin: אם מוגדר, הplugin כותב את ה-`output.system` הסופי כ-JSON אטומי לpath הנתון בכל invocation. שימושי לאמת end-to-end מה נשלח למודל.
+
+הBE מעביר את הoption רק אם env var `PROMPT_INJECTOR_DEBUG_PATH` מוגדר — opt-in, אפס overhead במצב רגיל.
+
+```bash
+# שימוש:
+PROMPT_INJECTOR_DEBUG_PATH=/tmp/voice-acp-system-prompt.json \
+  onecli run --agent voice-acp -- bun --watch src/server.ts
+
+# בכל chat turn — הקובץ מתעדכן אטומית:
+jq '{timestamp, systemPromptCount}' /tmp/voice-acp-system-prompt.json
+```
+
+הdump המעניין: התגלה שopencode מזריק prompt משלה של ~‎107KB (~‎27K tokens) — הוא מורכב מ-AGENTS.md (גלובלי + פרויקט), learnings.md (גלובלי + פרויקט), SOUL.md, ופrompt הbase של opencode עצמה. ה-audio-friendly שלנו הוא 2KB נוסף אחריו (push → סוף המערך). שווה לחזור לזה כשנתכנן מצב "voice-only" שמדלל את הinstructions של הcwd.
+
+**2. תיקון i18n allowlist** (`scripts/lint-no-hebrew-in-code.py`)
+
+הallowlist הכיל רק `/voice/.*-prompt.ts$` (לpacκages/core/src/voice/translation-prompt.ts). slice 14 העביר את הaudio-friendly prompt ל-`packages/backend/src/prompts/audio-friendly.ts` — אבל הallowlist לא עודכן. הוסף `packages/backend/src/prompts/` במפורש.
+
+הוקפץ עכשיו בגלל ניסוי לאמת הזרקה ע"י כלל debug זמני שביקש את המילה "גמל" בכל תגובה — ה-lint חסם בצדק את הכנסת מחרוזת עברית, התיקון הסיר את החסימה לnעתיד (קבצי prompts הם prompts ל-LLM, עברית מותרת שם).
+
+### אימות שההזרקה עובדת end-to-end
+
+ידני, עם ה-camel rule הזמני שהוסר אחר כך:
+
+- ‏Prompt: "What's 2+2?"
+- ‏Agent reply: `4\n\nגמל` ← הוכחה שהכלל הגיע למודל
+- ‏Debug dump הראה 2 פריטים ב-`output.system`: opencode (107KB) + שלנו (2KB)
+
+### בדיקות
+
+- ‏typecheck (backend): ✅
+- ‏tests: 356 passed (אותו מספר כמו לפני)
+- ‏lint:i18n: ✅
+- ‏הקובץ הזמני (`/tmp/voice-acp-system-prompt.json`) נוצר על כל chat turn, נכתב אטומית
+
+### החלטות
+
+- **‏הdump כולל את ה-prompt הbase של opencode**, לא רק את שלנו. זה היתרון של הhook `experimental.chat.system.transform` — הוא רואה את הarray אחרי שopencode מילאה אותו. שווה עוד יותר מ-prompt בודד.
+- **‏Atomic write דרך rename**: כתיבה ל-`.tmp` ואז `rename`. מונע partial reads אם משהו קורא את הקובץ באמצע.
+- **‏Try/catch סביב הdebug write**: שגיאת כתיבה לא תפיל chat. console.warn בלבד.
+
+---
+
 ## 2026-05-29 13:35 — slice 8.1: user_message_chunk handler ל-history replay
 
 ### מה בוצע?

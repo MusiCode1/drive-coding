@@ -37,6 +37,7 @@ SCAN_DIRS = [
 ALLOW_PATTERNS = [
     re.compile(r"packages/core/src/i18n/catalogs/"),
     re.compile(r"/voice/.*-prompt\.ts$"),
+    re.compile(r"packages/backend/src/prompts/"),  # LLM system prompts (slice 14)
     re.compile(r"\.test\.ts$"),
     re.compile(r"/tests/"),
     re.compile(r"/fixtures/"),
