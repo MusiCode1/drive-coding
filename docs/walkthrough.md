@@ -1,3 +1,23 @@
+## 2026-05-29 — slice 20: Local Prod Service
+
+### מה בוצע?
+
+BE (Hono) משמש עכשיו גם כ-static file server ל-FE הבנוי — single origin, ללא CORS.
+מוגדר כ-systemd user service יציב, עם build service שמפעיל מחדש.
+
+- **`packages/backend/src/server.ts`**: הוסף `serveStatic` מ-`@hono/node-server/serve-static`.
+  מותנה ב-`FE_STATIC_DIR` — ב-dev mode (Vite) ה-env לא מוגדר → ה-block מדולג.
+  SPA fallback ב-`app.get("/*")` עם נתיב מוחלט ל-`index.html`.
+- **`deploy/systemd/voice-acp-be.service`**: Type=simple, OneCLI gateway, absolute paths.
+  **gotcha**: `ONECLI_API_HOST` חייב להיות מוגדר ב-service (לא עובר מה-shell).
+- **`deploy/systemd/voice-acp-build.service`**: Type=oneshot, `bash -lc + source shared-env.sh`.
+  ExecStartPost מפעיל מחדש את ה-BE.
+- **`docs/deploy-local-service.md`**: מדריך התקנה, שימוש יומיומי, troubleshooting.
+
+**DoD**: כל 3 commits, typecheck נקי, integration tests עברו, service active ומגיש HTML.
+
+---
+
 ## 2026-06-03 — slice 19b: Backend Comments Translation
 
 ### מה בוצע?
