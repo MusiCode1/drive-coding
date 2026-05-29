@@ -1,6 +1,8 @@
 # Audio-Friendly System Prompt — תוכנית
 
 > סטטוס: תכנון בלבד. אין חלוקה לפאזות / DoD בקובץ הזה — רק הרעיון, ההצדקה, והפרטים הטכניים. brief נפרד יוכן כשנהיה מוכנים להתחיל מימוש.
+>
+> **עדכון 2026-05-29 (slice 14):** הפלאגין `audio-friendly.ts` עבר refactor ל-plugin generic בשם `prompt-injector.ts`. הטקסט עצמו עבר ל-`packages/backend/src/prompts/audio-friendly.ts`, ומועבר ל-plugin דרך `options.text` (tuple `[url, options]` ב-config). הרציונל המקורי (§§1-8) עדיין רלוונטי — רק המיקום של הטקסט השתנה. ראה `docs/plans/slice-14-prompt-injector-generic.md`.
 
 ---
 

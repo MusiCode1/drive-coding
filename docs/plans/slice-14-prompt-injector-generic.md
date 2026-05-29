@@ -1,7 +1,7 @@
 # Slice 14 — Generic Prompt Injector Plugin — תוכנית
 
 > **תאריך**: 2026-05-29
-> **סטטוס**: ‏טיוטה — ‏מחכה לאישור לפני יצירת worktree
+> **סטטוס**: ‏הושלם ✅ (worktree `slice-14-prompt-injector`, 3 commits, smoke passed)
 > **Complexity**: 4/10 (verifier: light)
 > **תלות**: ‏slice 11 ✅ (audio-friendly plugin ‏קיים — ‏זה ‏refactor + ‏הכללה ‏שלו)
 > **מתבסס על**: ‏`docs/plans/README.md`, ‏`docs/plans/EXECUTOR_DISPATCH.md`, ‏`docs/audio-friendly-prompt-plan.md` (design ‏מקורי)
