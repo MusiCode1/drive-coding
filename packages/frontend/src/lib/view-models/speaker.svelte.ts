@@ -27,10 +27,13 @@ import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
 import { untrack } from "svelte"
 import type { AgentSession, AgentSessionStatus } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
+import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
 import { AudioStream } from "../engines/audio-stream"
 import { Player } from "../engines/player.svelte"
 import { synthesizeStreaming } from "../adapters/voice/tts"
 import { translate } from "../adapters/voice/translate"
+import { narrate } from "../adapters/voice/narrate"
+import type { NarrateContext, ToolCallForNarrate } from "@drive-coding/core/voice/narration-prompt"
 
 const TARGET_LANG = "he" as const
 const MIN_CHARS = 20
@@ -46,6 +49,8 @@ export type TtsJob = {
   text: string
   status: TtsJobStatus
   abort: AbortController
+  /** Slice 4: bubble id, used by thought jobs to write back translated text. */
+  bubbleId?: string
 }
 
 type BubbleState = {
@@ -76,6 +81,12 @@ export class Speaker {
   #jobs: TtsJob[] = []
   #activeFetches = 0
   #prevStatus: AgentSessionStatus = "idle"
+  /** Slice 4: tracks how many segments of each ThoughtBubble have been translated. */
+  #translatedSegByBubble: Map<string, number> = new Map()
+  /** Slice 4: toolCallIds currently being narrated (prevents duplicate in-flight narrations). */
+  #narratingCallIds: Set<string> = new Set()
+  /** Tool calls already narrated or intentionally skipped (history replay / failed narrate). */
+  #processedNarrationCallIds: Set<string> = new Set()
 
   // Set by constructor — kept so destroy() can stop the effect.
   #disposeEffect: (() => void) | null = null
@@ -102,10 +113,23 @@ export class Speaker {
           .filter((b) => b.kind === "message" || b.kind === "thought")
           .map((b) => (b as { segments: { id: string }[] }).segments.length)
         void _segCounts
+        // Slice 4: tracked so that $effect re-runs when loadSession() finishes
+        // and clears the flag — allowing new live chunks to flow to TTS.
+        const isLoadingHistory = this.#session.isLoadingHistory
+        // Slice 4: pin reactivity on tool bubble status + narration so we notice
+        // when a tool call becomes completed or narration is written back.
+        const _toolStatus = bubbles
+          .filter((b) => b.kind === "tool")
+          .map((b) => {
+            const tc = (b as ToolBubble).toolCall
+            return `${tc.toolCallId}:${tc.status}:${tc.narration ?? ""}`
+          })
+        void _toolStatus
 
         // ── Writes (untracked) ─────────────────────────────────────────
         untrack(() => {
-          this.#processBubbles(bubbles, enabled)
+          this.#processBubbles(bubbles, enabled, isLoadingHistory)
+          this.#processToolBubbles(bubbles, isLoadingHistory)
           this.#handleStatusTransition(status, enabled)
           this.#prevStatus = status
         })
@@ -141,7 +165,28 @@ export class Speaker {
   // Internals
   // ──────────────────────────────────────────────────────────────────────
 
-  #processBubbles(bubbles: AgentSession["bubbles"], enabled: boolean): void {
+  #processBubbles(
+    bubbles: AgentSession["bubbles"],
+    enabled: boolean,
+    isLoadingHistory: boolean,
+  ): void {
+    // Slice 4: while loadSession() is replaying history, mark bubbles as processed
+    // without enqueuing TTS jobs. The effect re-runs once isLoadingHistory → false,
+    // at which point new live chunks resume normal TTS flow.
+    if (isLoadingHistory) {
+      for (const bubble of bubbles) {
+        if (bubble.kind !== "message" && bubble.kind !== "thought") continue
+        let state = this.#bubbleStates.get(bubble.id)
+        if (state === undefined) {
+          state = { processedSegments: 0, buffer: "" }
+          this.#bubbleStates.set(bubble.id, state)
+        }
+        state.processedSegments = bubble.segments.length
+        state.buffer = ""
+      }
+      return
+    }
+
     for (const bubble of bubbles) {
       if (bubble.kind !== "message" && bubble.kind !== "thought") continue
       const segArr = bubble.segments
@@ -173,7 +218,7 @@ export class Speaker {
       state.buffer = remaining
 
       for (const sentence of sentences) {
-        this.#enqueue(bubble.kind, bubble.messageId, sentence)
+        this.#enqueue(bubble.kind, bubble.messageId, sentence, bubble.id)
       }
     }
     this.#pumpFetchLoop()
@@ -189,14 +234,19 @@ export class Speaker {
         const bubble = this.#session.bubbles.find((b) => b.id === bubbleId)
         if (bubble === undefined) continue
         if (bubble.kind !== "message" && bubble.kind !== "thought") continue
-        this.#enqueue(bubble.kind, bubble.messageId, state.buffer.trim())
+        this.#enqueue(bubble.kind, bubble.messageId, state.buffer.trim(), bubble.id)
         state.buffer = ""
       }
       this.#pumpFetchLoop()
     }
   }
 
-  #enqueue(kind: "message" | "thought", messageId: string | null, text: string): void {
+  #enqueue(
+    kind: "message" | "thought",
+    messageId: string | null,
+    text: string,
+    bubbleId?: string,
+  ): void {
     if (text.length === 0) return
     this.#jobs.push({
       segmentId: crypto.randomUUID(),
@@ -205,6 +255,7 @@ export class Speaker {
       text,
       status: "pending",
       abort: new AbortController(),
+      bubbleId,
     })
   }
 
@@ -227,9 +278,13 @@ export class Speaker {
       if (job.kind === "thought") {
         const result = await translate(text, TARGET_LANG, job.abort.signal)
         if (result !== null && result.status === "translated") {
+          // Slice 4: write back to the segment so ThoughtBubble can show HE+EN.
+          if (job.bubbleId !== undefined) {
+            this.#persistThoughtTranslation(job.bubbleId, job.text, result.text)
+          }
           text = result.text
         }
-        // already_in_target or null → keep original text
+        // already_in_target or null → keep original text (originalText stays undefined)
       }
 
       if (job.abort.signal.aborted) {
@@ -253,6 +308,101 @@ export class Speaker {
         err: e instanceof Error ? e.message : String(e),
       })
     }
+  }
+
+  /**
+   * Slice 4: for each completed ToolBubble missing narration, fire-and-forget narrate().
+   * Called from untrack() — async writes go back through $state proxy (fine).
+   */
+  #processToolBubbles(
+    bubbles: AgentSession["bubbles"],
+    isLoadingHistory: boolean,
+  ): void {
+    for (const bubble of bubbles) {
+      if (bubble.kind !== "tool") continue
+      const tc = (bubble as ToolBubble).toolCall
+      if (isLoadingHistory) {
+        this.#processedNarrationCallIds.add(tc.toolCallId)
+        continue
+      }
+      if (tc.status !== "completed") continue
+      if (tc.narration !== undefined) {
+        this.#processedNarrationCallIds.add(tc.toolCallId)
+        continue
+      }
+      if (this.#processedNarrationCallIds.has(tc.toolCallId)) continue
+      if (this.#narratingCallIds.has(tc.toolCallId)) continue  // in flight
+
+      this.#narratingCallIds.add(tc.toolCallId)
+      this.#processedNarrationCallIds.add(tc.toolCallId)
+
+      const ctx: NarrateContext = {
+        userMessage: this.#session.lastUserMessage,
+        recentMessages: this.#session.recentAssistantMessages(3),
+      }
+      const tool: ToolCallForNarrate = {
+        toolCallId: tc.toolCallId,
+        kind: tc.kind,
+        title: tc.title ?? tc.name,
+      }
+      const bubbleId = bubble.id
+
+      void narrate(ctx, tool).then((text) => {
+        if (text === null) return
+        const idx = this.#session.bubbles.findIndex((b) => b.id === bubbleId)
+        if (idx === -1) return
+        const maybeBubble = this.#session.bubbles[idx]
+        if (maybeBubble === undefined || maybeBubble.kind !== "tool") return
+        const old: ToolBubble = maybeBubble
+        // Replace whole bubble (Svelte 5 reactivity).
+        this.#session.bubbles[idx] = {
+          ...old,
+          toolCall: { ...old.toolCall, narration: text },
+        }
+      }).finally(() => {
+        this.#narratingCallIds.delete(tc.toolCallId)
+      })
+    }
+  }
+
+  /**
+   * Slice 4: write translation result back to a ThoughtBubble segment.
+   *
+   * Each TtsJob for a thought bubble corresponds to one sentence from the
+   * accumulated buffer. We map jobs sequentially to segments (segIdx counter
+   * per bubble). Precision note: sentence boundaries don't perfectly align with
+   * ACP segment boundaries — the displayed translation is sentence-level, not
+   * segment-level. This is acceptable for MVP display purposes.
+   *
+   * After update: seg.text = Hebrew (prominent), seg.originalText = English (small).
+   * Svelte 5: replace entire bubble object to trigger reactivity.
+   */
+  #persistThoughtTranslation(
+    bubbleId: string,
+    originalEnglish: string,
+    translatedHebrew: string,
+  ): void {
+    const idx = this.#session.bubbles.findIndex((b) => b.id === bubbleId)
+    if (idx === -1) return
+    const maybeBubble = this.#session.bubbles[idx]
+    if (maybeBubble === undefined || maybeBubble.kind !== "thought") return
+    const bubble: ThoughtBubble = maybeBubble
+
+    const segIdx = this.#translatedSegByBubble.get(bubbleId) ?? 0
+    if (segIdx >= bubble.segments.length) {
+      // More sentences than segments — no segment to update.
+      return
+    }
+
+    // Replace the segment at segIdx: swap text → Hebrew, originalText → English.
+    const updatedSegments: ThoughtBubble["segments"] = bubble.segments.map((seg, i) =>
+      i === segIdx
+        ? { ...seg, text: translatedHebrew, originalText: originalEnglish }
+        : seg,
+    )
+    // Replace whole bubble (Svelte 5 reactivity — index assignment triggers update).
+    this.#session.bubbles[idx] = { ...bubble, segments: updatedSegments }
+    this.#translatedSegByBubble.set(bubbleId, segIdx + 1)
   }
 
   #stopAndClear(): void {

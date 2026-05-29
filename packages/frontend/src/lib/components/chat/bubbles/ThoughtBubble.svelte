@@ -1,17 +1,35 @@
 <script lang="ts">
+/**
+ * ThoughtBubble — shows agent's internal reasoning.
+ *
+ * Slice 4: each segment may have been translated by Speaker.
+ *   seg.text        = Hebrew (translated, prominent)
+ *   seg.originalText = English (source, shown small/dimmed below)
+ *
+ * When originalText is undefined (translation not yet arrived or thought was
+ * already Hebrew), shows seg.text as-is — graceful fallback.
+ */
 import type { ThoughtBubble } from "$lib/types/bubble"
 import { getI18n } from "$lib/context"
+import { visibleThoughtSegments } from "./bubble-rendering"
 
 let { bubble }: { bubble: ThoughtBubble } = $props()
 const t = getI18n().t
+const displaySegments = $derived(visibleThoughtSegments(bubble.segments))
 </script>
 
 <div class="bubble bubble-thought">
   <div class="kind-label">{t("chat.bubble.thought")}</div>
-  <div class="text">
-    {#each bubble.segments as seg (seg.id)}<span>{seg.text}</span>{/each}
-    <span class="hidden">{bubble.segments.length}</span>
-  </div>
+  {#each displaySegments as seg (seg.id)}
+    <div class="segment">
+      <div class="translated" dir="auto">{seg.text}</div>
+      {#if seg.originalText !== undefined}
+        <div class="original" dir="ltr">{seg.originalText}</div>
+      {/if}
+    </div>
+  {/each}
+  <!-- forces Svelte reactivity on .segments.push() and originalText arrival -->
+  <span class="hidden">{bubble.segments.length}</span>
 </div>
 
 <style>
@@ -23,11 +41,13 @@ const t = getI18n().t
   }
 
   .bubble-thought {
-    align-self: flex-start;
+    /* RTL: flex-end = left side (thought is from the agent, same side) */
+    align-self: flex-end;
     background: transparent;
     border: 1px dashed var(--border);
     color: var(--fg-dim);
     font-style: italic;
+    opacity: 0.85;
   }
 
   .kind-label {
@@ -37,12 +57,29 @@ const t = getI18n().t
     font-weight: 600;
   }
 
-  .text {
+  .segment {
+    margin-bottom: 0.4em;
+  }
+
+  .segment:last-child {
+    margin-bottom: 0;
+  }
+
+  .translated {
     white-space: pre-wrap;
     word-wrap: break-word;
   }
 
-  .text > .hidden {
+  .original {
+    font-size: 0.82em;
+    opacity: 0.55;
+    margin-top: 2px;
+    font-style: normal;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  .hidden {
     display: none;
   }
 </style>

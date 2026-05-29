@@ -1,6 +1,20 @@
 <script lang="ts">
+/**
+ * MessageBubble — renders agent message with full Markdown support.
+ *
+ * Slice 4: switched from plain text to sanitized Markdown.
+ * DOMPurify sanitizes the marked output — safe against XSS injected via agent.
+ *
+ * dir="auto" on the content container: browser decides LTR/RTL per-paragraph
+ * based on the first strong bidi character. Handles Hebrew text correctly.
+ *
+ * Streaming note: renderMarkdown receives the whole bubble text, not one
+ * segment at a time. Markdown constructs can span ACP chunks.
+ */
 import type { MessageBubble } from "$lib/types/bubble"
 import { getI18n } from "$lib/context"
+import { renderMarkdown } from "$lib/util/markdown"
+import { joinSegmentText } from "./bubble-rendering"
 
 let { bubble }: { bubble: MessageBubble } = $props()
 const t = getI18n().t
@@ -8,8 +22,8 @@ const t = getI18n().t
 
 <div class="bubble bubble-message">
   <div class="kind-label">{t("chat.bubble.agent")}</div>
-  <div class="text">
-    {#each bubble.segments as seg (seg.id)}<span>{seg.text}</span>{/each}
+  <div class="text" dir="auto">
+    {@html renderMarkdown(joinSegmentText(bubble.segments))}
     <span class="hidden">{bubble.segments.length}</span>
   </div>
 </div>
@@ -23,9 +37,12 @@ const t = getI18n().t
   }
 
   .bubble-message {
-    align-self: flex-start;
+    /* RTL: flex-end = left side (agent is on the left) */
+    align-self: flex-end;
     background: var(--bg-elev);
     border: 1px solid var(--border);
+    /* Asymmetric: flat corner points toward the agent (bottom-left in RTL) */
+    border-bottom-left-radius: 4px;
   }
 
   .kind-label {
@@ -36,11 +53,95 @@ const t = getI18n().t
   }
 
   .text {
-    white-space: pre-wrap;
     word-wrap: break-word;
   }
 
   .text > .hidden {
     display: none;
+  }
+
+  /* Markdown element styles — scoped via :global inside .text */
+  .text :global(p) {
+    margin: 0.25em 0;
+  }
+
+  .text :global(p:first-child) {
+    margin-top: 0;
+  }
+
+  .text :global(p:last-child) {
+    margin-bottom: 0;
+  }
+
+  .text :global(strong) {
+    font-weight: 700;
+  }
+
+  .text :global(em) {
+    font-style: italic;
+  }
+
+  .text :global(code) {
+    font-family: ui-monospace, monospace;
+    font-size: 0.88em;
+    background: var(--bg-base, rgba(0, 0, 0, 0.25));
+    padding: 0.1em 0.3em;
+    border-radius: 3px;
+  }
+
+  .text :global(pre) {
+    background: var(--bg-base, rgba(0, 0, 0, 0.35));
+    padding: 0.6rem 0.8rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 0.4em 0;
+  }
+
+  .text :global(pre code) {
+    background: none;
+    padding: 0;
+    font-size: 0.85em;
+  }
+
+  .text :global(ul),
+  .text :global(ol) {
+    padding-inline-start: 1.4em;
+    margin: 0.3em 0;
+  }
+
+  .text :global(li) {
+    margin: 0.15em 0;
+  }
+
+  .text :global(h1),
+  .text :global(h2),
+  .text :global(h3),
+  .text :global(h4) {
+    font-weight: 700;
+    margin: 0.4em 0 0.15em;
+    line-height: 1.25;
+  }
+
+  .text :global(h1) { font-size: 1.2em; }
+  .text :global(h2) { font-size: 1.1em; }
+  .text :global(h3) { font-size: 1em; }
+  .text :global(h4) { font-size: 0.95em; }
+
+  .text :global(blockquote) {
+    border-inline-start: 3px solid var(--border);
+    padding-inline-start: 0.7rem;
+    margin: 0.3em 0;
+    opacity: 0.8;
+  }
+
+  .text :global(a) {
+    color: var(--accent, #60a5fa);
+    text-decoration: underline;
+  }
+
+  .text :global(hr) {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0.5em 0;
   }
 </style>

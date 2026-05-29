@@ -57,7 +57,10 @@ export class Player {
     if (this.currentSegmentId !== null) ids.push(this.currentSegmentId)
     this.#queue = []
     for (const id of ids) this.#audioStream.cancel(id)
-    // The loop will exit on its next iteration (queue empty + current cancelled).
+    // The browser may not fire ended/error after pause+revoke; expose idle immediately.
+    this.#playing = false
+    this.state = "idle"
+    this.currentSegmentId = null
   }
 
   async #playLoop(): Promise<void> {

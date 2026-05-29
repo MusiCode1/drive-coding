@@ -1,7 +1,7 @@
 # Slice 4 — Bubble Polish — תוכנית
 
 > **‏תאריך**: 2026-05-29
-> **‏סטטוס**: ‏מאושר — ‏עבר 2 ‏סיבובי verifier (general agent), ‏מוכן ל-dispatch
+> **‏סטטוס**: ‏הושלם — ‏8 commits ב-branch slice-4-bubble-polish, ‏ממתין ל-merge ל-dev
 > **‏Complexity**: 8/10 (verifier: heavy + 1 phase verifier)
 > **‏תלות**: slice 2 (Speaker, ‏bubble model), slice 3 (VoiceMode), slice 8 (loadSession)
 > **‏מתבסס על**: `docs/plans/README.md` (מבנה), `docs/frontend-spec.md §7` (UI spec), `docs/conventions/parallel-safe-code.md` (additive)

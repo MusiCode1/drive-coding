@@ -24,9 +24,12 @@ const t = getI18n().t
   }
 
   .bubble-user {
-    align-self: flex-end;
+    /* RTL: flex-start = right side (user is on the right) */
+    align-self: flex-start;
     background: var(--accent);
     color: white;
+    /* Asymmetric: flat corner points toward the user (bottom-right in RTL) */
+    border-bottom-right-radius: 4px;
   }
 
   .kind-label {
