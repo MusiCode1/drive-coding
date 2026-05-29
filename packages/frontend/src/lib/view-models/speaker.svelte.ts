@@ -85,6 +85,8 @@ export class Speaker {
   #translatedSegByBubble: Map<string, number> = new Map()
   /** Slice 4: toolCallIds currently being narrated (prevents duplicate in-flight narrations). */
   #narratingCallIds: Set<string> = new Set()
+  /** Tool calls already narrated or intentionally skipped (history replay / failed narrate). */
+  #processedNarrationCallIds: Set<string> = new Set()
 
   // Set by constructor — kept so destroy() can stop the effect.
   #disposeEffect: (() => void) | null = null
@@ -316,15 +318,23 @@ export class Speaker {
     bubbles: AgentSession["bubbles"],
     isLoadingHistory: boolean,
   ): void {
-    if (isLoadingHistory) return
     for (const bubble of bubbles) {
       if (bubble.kind !== "tool") continue
       const tc = (bubble as ToolBubble).toolCall
+      if (isLoadingHistory) {
+        this.#processedNarrationCallIds.add(tc.toolCallId)
+        continue
+      }
       if (tc.status !== "completed") continue
-      if (tc.narration !== undefined) continue   // already narrated
+      if (tc.narration !== undefined) {
+        this.#processedNarrationCallIds.add(tc.toolCallId)
+        continue
+      }
+      if (this.#processedNarrationCallIds.has(tc.toolCallId)) continue
       if (this.#narratingCallIds.has(tc.toolCallId)) continue  // in flight
 
       this.#narratingCallIds.add(tc.toolCallId)
+      this.#processedNarrationCallIds.add(tc.toolCallId)
 
       const ctx: NarrateContext = {
         userMessage: this.#session.lastUserMessage,
@@ -338,7 +348,6 @@ export class Speaker {
       const bubbleId = bubble.id
 
       void narrate(ctx, tool).then((text) => {
-        this.#narratingCallIds.delete(tc.toolCallId)
         if (text === null) return
         const idx = this.#session.bubbles.findIndex((b) => b.id === bubbleId)
         if (idx === -1) return
@@ -350,6 +359,8 @@ export class Speaker {
           ...old,
           toolCall: { ...old.toolCall, narration: text },
         }
+      }).finally(() => {
+        this.#narratingCallIds.delete(tc.toolCallId)
       })
     }
   }

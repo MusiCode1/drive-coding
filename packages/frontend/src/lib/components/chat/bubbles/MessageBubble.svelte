@@ -2,18 +2,19 @@
 /**
  * MessageBubble — renders agent message with full Markdown support.
  *
- * Slice 4: switched from plain-text {seg.text} to {@html renderMarkdown(seg.text)}.
+ * Slice 4: switched from plain text to sanitized Markdown.
  * DOMPurify sanitizes the marked output — safe against XSS injected via agent.
  *
  * dir="auto" on the content container: browser decides LTR/RTL per-paragraph
  * based on the first strong bidi character. Handles Hebrew text correctly.
  *
- * Streaming note: renderMarkdown is called on each accumulated chunk. marked
- * handles partial markdown gracefully (doesn't crash on unclosed bold/code).
+ * Streaming note: renderMarkdown receives the whole bubble text, not one
+ * segment at a time. Markdown constructs can span ACP chunks.
  */
 import type { MessageBubble } from "$lib/types/bubble"
 import { getI18n } from "$lib/context"
 import { renderMarkdown } from "$lib/util/markdown"
+import { joinSegmentText } from "./bubble-rendering"
 
 let { bubble }: { bubble: MessageBubble } = $props()
 const t = getI18n().t
@@ -22,9 +23,7 @@ const t = getI18n().t
 <div class="bubble bubble-message">
   <div class="kind-label">{t("chat.bubble.agent")}</div>
   <div class="text" dir="auto">
-    {#each bubble.segments as seg (seg.id)}
-      {@html renderMarkdown(seg.text)}
-    {/each}
+    {@html renderMarkdown(joinSegmentText(bubble.segments))}
     <span class="hidden">{bubble.segments.length}</span>
   </div>
 </div>

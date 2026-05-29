@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-05-29 17:33 — slice 4: תיקוני verifier (NEEDS REVISION → תוקן)
+
+### מה בוצע?
+
+ה-heavy verifier סימן את ה-slice כ-NEEDS REVISION עם 4 ממצאים. תוקנו כולם:
+
+1. **Markdown per-segment** — `MessageBubble.svelte` רינדר כל segment בנפרד, מה ששבר Markdown שנפרס על פני chunks. עכשיו מצרף את כל ה-segments (`joinSegmentText`) לפני `renderMarkdown`.
+2. **Thought raw leftovers** — `ThoughtBubble.svelte` הציג משפט מתורגם + שאריות token גולמיות. עכשיו `visibleThoughtSegments` מציג רק segments מתורגמים אם קיים תרגום כלשהו.
+3. **loadSession narrate storm** — אחרי replay ה-effect הריץ narrate על כל ToolBubble היסטורי. עכשיו `#processedNarrationCallIds` מסמן כל tool call שנראה בזמן `isLoadingHistory` כ-processed.
+4. **Speaker cancel stuck** — `Player.stop()` לא איפס state ל-idle כש-ended/error לא ירו אחרי pause+revoke. עכשיו `stop()` מאפס `state="idle"` מיידית, כך ש-`VoiceMode.isCancelling` מתאפס.
+
+### מעקפים ופתרונות
+
+- הלוגיקה הטהורה חולצה ל-`bubble-rendering.ts` (joinSegmentText/visibleThoughtSegments) ונבדקת ב-`bubble-rendering.test.ts` — טסט קומפוננטה ישיר (mount/render) לא נתמך בקונפיג Vitest+Svelte הנוכחי כאן.
+- אומת: typecheck/test(369 passed)/lint:i18n/build ירוקים, ובדיקת replay חיה לא הראתה storm ב-BE log.
+
+---
+
 ## 2026-05-29 — slice 4: Bubble polish — data layer + UI layer
 
 ### מה בוצע?

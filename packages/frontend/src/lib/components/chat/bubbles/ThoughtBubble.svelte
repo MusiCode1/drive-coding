@@ -11,14 +11,16 @@
  */
 import type { ThoughtBubble } from "$lib/types/bubble"
 import { getI18n } from "$lib/context"
+import { visibleThoughtSegments } from "./bubble-rendering"
 
 let { bubble }: { bubble: ThoughtBubble } = $props()
 const t = getI18n().t
+const displaySegments = $derived(visibleThoughtSegments(bubble.segments))
 </script>
 
 <div class="bubble bubble-thought">
   <div class="kind-label">{t("chat.bubble.thought")}</div>
-  {#each bubble.segments as seg (seg.id)}
+  {#each displaySegments as seg (seg.id)}
     <div class="segment">
       <div class="translated" dir="auto">{seg.text}</div>
       {#if seg.originalText !== undefined}
