@@ -39,7 +39,8 @@ const t = getI18n().t
   }
 
   .bubble-thought {
-    align-self: flex-start;
+    /* RTL: flex-end = left side (thought is from the agent, same side) */
+    align-self: flex-end;
     background: transparent;
     border: 1px dashed var(--border);
     color: var(--fg-dim);

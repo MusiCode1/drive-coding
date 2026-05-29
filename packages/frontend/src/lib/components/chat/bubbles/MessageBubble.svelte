@@ -38,9 +38,12 @@ const t = getI18n().t
   }
 
   .bubble-message {
-    align-self: flex-start;
+    /* RTL: flex-end = left side (agent is on the left) */
+    align-self: flex-end;
     background: var(--bg-elev);
     border: 1px solid var(--border);
+    /* Asymmetric: flat corner points toward the agent (bottom-left in RTL) */
+    border-bottom-left-radius: 4px;
   }
 
   .kind-label {

@@ -62,7 +62,7 @@ Slice 3+   💭 מתוכנן  ראה ‎טבלה ‎למטה
 | 3 | VoiceMode FSM | ‎composite 6-state (idle/recording/transcribing/thinking/speaking/cancelling) + Mic + STT | 1, 2 | ~‎יום | ✅ |
 | 8 | Session picker | inline ב-connect form — "טען סשנים", dropdown, loadSession | 0.5 | ~1 יום | ✅ (2026-05-29, inline לא /sessions route — פחות חיכוך) |
 | 9 | Settings page | `/settings` ‎— ‎voice picker ‎(ElevenLabs voices), ‎audio cues toggles | 0.5, 6 | ~1 ‎יום | 💭 |
-| 4 | Bubble polish | ‎markdown, ‎tool bubbles עם status dots, ‎thought styling | 0.5 | ~1 ‎יום | 💭 |
+| 4 | Bubble polish | ‎markdown, ‎tool bubbles עם status dots, ‎thought styling | 0.5 | ~1 ‎יום | ✅ (2026-05-29) |
 | 5 | Smart scroll | ‎auto-scroll, ‎jump-down button, ‎user-interaction detection | 0 | ~‎חצי יום | 💭 |
 | 6 | Audio cues | ‎5 ‎צלילים ‎ב-Web Audio (recording start/stop, thinking, speaking, error) | 3 | ~‎חצי יום | 💭 |
 | 7 | Drive-first chrome | car mode (?car=1), Media Session API, wake lock, landscape lock | 1, 2, 6 | ~‎2 ‎ימים | 💭 |

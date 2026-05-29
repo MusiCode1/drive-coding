@@ -4,6 +4,62 @@
 
 ---
 
+## 2026-05-29 — slice 4: Bubble polish — data layer + UI layer
+
+### מה בוצע?
+
+8 commits ב-branch `slice-4-bubble-polish` (worktree `.worktrees/slice-4-bubble-polish`).
+
+**Phase 1 — Data Layer (4 commits):**
+
+**Commit 1 — Speaker replay correctness:**
+`AgentSession.isLoadingHistory = $state(false)` — מוגדר `true` לפני `loadSession()`, `false` ב-`finally`. Speaker קורא את ה-flag ב-tracked block של ה-`$effect` (לא בתוך `untrack`) כך שכשהflag משתנה ל-`false` — ה-effect מופעל מחדש ו-chunks חדשים ממשיכים לזרום ל-TTS. בזמן replay: `#processBubbles` מסמן את כל הbubbles כ-processed בלי enqueue.
+
+**Commit 2 — Tool call handlers:**
+`#onSessionUpdate` מטפל ב-`tool_call` + `tool_call_update` לפני ה-guard `if (!text) return` (כי ה-notifications האלה לא נושאים text content). `#handleToolCall` יוצר ToolBubble ומוסיף ל-`bubbles` + `#toolBubbleByCallId` map. `#handleToolCallUpdate` מחליף את ה-bubble כולה (Svelte 5 reactivity). `ToolCall` type קיבל `kind?` + `result?`.
+
+**Commit 3 — Translation persistence:**
+Speaker כותב את תרגום ה-thought חזרה ל-segment: `seg.text` ← עברית (מוצג בולט), `seg.originalText` ← אנגלית מקורית (מוצג קטן). `TtsJob` קיבל `bubbleId?`. `#translatedSegByBubble` counter ממפה TTS job לsegment (sequential, 1:1 approximation).
+
+**Commit 4 — Narrate adapter:**
+קובץ חדש `adapters/voice/narrate.ts` — קורא ל-`buildNarratePrompt` הקיים ב-core ומחזיר Hebrew sentence (via `generateText` + Gemini Flash Lite). Speaker.`#processToolBubbles` מופעל מתוך ה-effect הראשי לכל ToolBubble שstatus=completed ו-narration=undefined — fire-and-forget, כותב ל-bubble אחרי return. BE proxy cache תופסת חזרות אוטומטית. `AgentSession` קיבל `lastUserMessage` + `recentAssistantMessages()` לcontext.
+
+**Phase 1 verification: GO (verifier-phase) — אפס באגים בכל 18 פריטים.**
+
+---
+
+**Phase 2 — UI Layer (4 commits):**
+
+**Commit 5 — ToolBubble.svelte:**
+מימוש מלא: status dot (pending=gray, in_progress=orange+pulse, completed=green, failed=red) + Hebrew narration בולט + technical title קטן + arrow. Click → expand → args panel (JSON) + result panel. role=presentation על `.details` + stopPropagation לאפשר selection של טקסט ב-`<pre>`. 7 i18n keys חדשים.
+
+**Commit 6 — ThoughtBubble HE+EN:**
+כל segment מציג `.translated` (HE, בולט, dir=auto) + `.original` (EN, קטן/dim) אם `originalText` מאוכלסת. Fallback אלגנטי אם התרגום עדיין לא הגיע.
+
+**Commit 7 — Markdown rendering:**
+`renderMarkdown(text)` — `marked` (GFM+breaks) + `DOMPurify` (ALLOWED_TAGS מוגבל). XSS: script/onerror/javascript: href נחתמים. 11 TDD tests ב-jsdom environment. MessageBubble עבר ל-`{@html renderMarkdown(seg.text)}` בתוך `<div dir="auto">`. CSS מלא ל-h1-h4/code/pre/ul/ol/blockquote/a.
+
+**Commit 8 — RTL alignment + asymmetric radius:**
+App הוא `dir="rtl"` → flex-start=ימין, flex-end=שמאל.
+- UserBubble: `flex-start` (ימין) + `border-bottom-right-radius: 4px`
+- MessageBubble: `flex-end` (שמאל) + `border-bottom-left-radius: 4px`
+- ThoughtBubble: `flex-end` (שמאל, כמו agent)
+- ToolBubble: `stretch` (כבר מ-commit 5)
+
+### סטיות מהתכנון
+
+**Commit 3 — translation persistence:** הbrief ציין גישה של `segmentIds[]` per job — אימצתי גישה פשוטה יותר של counter sequential (`#translatedSegByBubble`). תוצאה זהה פונקציונלית (segment מקבל HE text + EN originalText), precision נמוכה יותר לThoughts עם הרבה segments ו-sentences לא-aligned — מקובל ב-MVP.
+
+**Commit 7 — jsdom dependency:** הוסיף `jsdom` ל-root devDependencies לצורך `@vitest-environment jsdom` ב-markdown tests. DOMPurify לא עובד בtest environment של node.
+
+### מה נשאר
+
+- Speaker יקרא narration של ToolBubble בקול (follow-up קטן, ~50 שורות)
+- Syntax highlighting בtool results (slice 10+)
+- Streaming markdown: flicker edge case לא נבדק לעומק
+
+---
+
 ## 2026-05-29 17:00 — prompt-injector: debug flag + i18n allowlist tidy-up
 
 ### מה בוצע?
