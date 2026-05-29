@@ -1,7 +1,7 @@
 # Slice 8 — Session Picker (inline ב-connect) — תוכנית
 
 > **תאריך**: 2026-05-29
-> **סטטוס**: ‏טיוטה — ‏מחכה לאישור לפני יצירת worktree
+> **סטטוס**: ‏הושלם — 2026-05-29 (4 commits, slice-8-session-picker branch)
 > **Complexity**: 5/10 (verifier: light)
 > **תלות**: ‏slice 0.5 (i18n) ✅. ‏slice 3 (Mic+VoiceMode) ✅ — ‏לא ‏ממש ‏תלוי בו, ‏אבל ‏שיחה ‏טעונה מצריכה ‏שאת ‏המיקרופון ‏פעיל ‏לhandle ‏המשך.
 > **מתבסס על**: ‏`docs/plans/README.md` (מבנה), ‏`docs/conventions/parallel-safe-code.md` (additive)

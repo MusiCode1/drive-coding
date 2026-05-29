@@ -4,6 +4,43 @@
 
 ---
 
+## 2026-05-29 — slice 8: Session Picker (inline ב-connect form)
+
+### מה בוצע?
+
+Session picker inline בתוך ה-connect form: כפתור "טען סשנים אחרונים", dropdown עם sessions קיימים, ובחירה → loadSession במקום newSession.
+
+4 commits, worktree `slice-8-session-picker`.
+
+**Commit 0 — sessions adapter + deleteAgent**
+- `adapters/agents-api.ts`: הוסף `deleteAgent` (additive).
+- `adapters/sessions.ts`: `listSessionsForCwd(cwd, cliKind)` — spawns temp agent, ACP listSessions, deletes agent. מחזיר [] ב--32601 (Gemini לא תומך).
+
+**Commit 1 — AgentSession.loadSession**
+- `view-models/agent-session.svelte.ts`: הוסף `loadSession` בsection `// ─── session persistence ───`.
+- זהה ל-attach() עם שינוי אחד: `loadSession` במקום `newSession`. sessionId מגיע מה-input.
+
+**Commit 2 — UI + i18n keys**
+- i18n: 5 keys חדשים (sessions.loadButton/loading/label/startNew/error) ב-he + en.
+- `components/connect/SessionPicker.svelte`: button + dropdown + relative time formatting + error state. חולץ לcomponent כי route עבר 150 שורות.
+- `routes/+page.svelte`: state (sessions, loading, error, selectedSessionId) + loadSessions() + SessionPicker.
+
+**Commit 3 — wire connect**
+- onSubmit: אם selectedSessionId != null → loadSession + goto('/chat').
+- ללא בחירה → connectAgent() רגיל (regression safe).
+- החלף dynamic import של goto בstatic.
+
+### סטיות מהתכנון
+
+- ה-roadmap המקורי ב-slices.md דיבר על `/sessions` route נפרד. ה-brief שינה ל-inline ב-connect form (פחות חיכוך, לפי בקשת המשתמש).
+- SessionPicker חולץ לcomponent (לא inline בroute) כי route עבר 150 שורות — לפי brief §6 risk 6.
+
+### בדיקות
+
+typecheck ✅ build ✅ lint:i18n ✅ tests ✅ (כל 4 commits)
+
+---
+
 ## 2026-05-29 — slice 3: Mic + STT + VoiceMode FSM
 
 ### מה בוצע?
