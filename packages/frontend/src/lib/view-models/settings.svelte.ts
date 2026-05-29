@@ -24,12 +24,14 @@ type Persisted = {
   cliKind: CliKind
   lastCwd: string
   voiceId: string
+  beUrl: string
 }
 
 const DEFAULTS: Persisted = {
   cliKind: "opencode",
   lastCwd: "",
   voiceId: DEFAULT_VOICE_ID,
+  beUrl: "",
 }
 
 function load(): Persisted {
@@ -96,18 +98,46 @@ export class Settings {
    * and not currently in-flight. Errors are stored on `voicesError`.
    */
   loadVoices = async (): Promise<void> => {
-    if (this.voicesLoading) return
-    if (this.availableVoices.length > 0 && this.voicesError === null) return
-    this.voicesLoading = true
-    this.voicesError = null
-    try {
-      const voices = await listVoices()
-      this.availableVoices = voices
-    } catch (e) {
-      this.voicesError = e instanceof Error ? e.message : String(e)
-    } finally {
-      this.voicesLoading = false
+    const result = await fetchVoices()
+    this.voices = result
+  }
+
+  // ─── backend ───
+
+  /**
+   * Validates and sets the BE base URL. Empty string disables the override
+   * (falls back to same-origin / Vite proxy). Returns a Result-like value so
+   * the settings form can render validation errors without throwing.
+   */
+  setBeUrl = (value: string): { ok: true } | { ok: false; error: string } => {
+    const trimmed = value.trim().replace(/\/$/, "")
+    if (trimmed === "") {
+      this.beUrl = ""
+      this.#persist()
+      return { ok: true }
     }
+    try {
+      const u = new URL(trimmed)
+      if (u.protocol !== "http:" && u.protocol !== "https:") {
+        return { ok: false, error: "scheme must be http or https" }
+      }
+      this.beUrl = trimmed
+      this.#persist()
+      return { ok: true }
+    } catch {
+      return { ok: false, error: "malformed URL" }
+    }
+  }
+
+  // ─── private ───
+  #persist(): void {
+    save({
+      cliKind: this.cliKind,
+      lastCwd: this.lastCwd,
+      voiceId: this.voiceId,
+      beUrl: this.beUrl,
+    })
+  }
   }
 
   // ─── private ───

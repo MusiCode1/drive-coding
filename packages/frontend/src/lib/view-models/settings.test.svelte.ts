@@ -78,10 +78,7 @@ describe("Settings — persisted voice", () => {
 
   test("new Settings() reads the persisted voiceId from localStorage", () => {
     const store = installLocalStorage()
-    store.set(
-      STORAGE_KEY,
-      JSON.stringify({ cliKind: "opencode", lastCwd: "", voiceId: "v2" }),
-    )
+    store.set(STORAGE_KEY, JSON.stringify({ cliKind: "opencode", lastCwd: "", voiceId: "v2" }))
     const s = new Settings()
     expect(s.voiceId).toBe("v2")
   })
