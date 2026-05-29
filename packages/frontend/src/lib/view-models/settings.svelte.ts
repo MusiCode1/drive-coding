@@ -15,6 +15,7 @@
 
 import type { CliKind } from "@drive-coding/core"
 import { listVoices, type Voice } from "../adapters/voice/voices"
+import { setBeUrlBase } from "../util/be-url"
 
 const STORAGE_KEY = "drive-coding-v2-settings"
 
@@ -66,11 +67,16 @@ export class Settings {
   voicesLoading = $state<boolean>(false)
   voicesError = $state<string | null>(null)
 
+  // ─── backend ───
+  beUrl = $state<string>(DEFAULTS.beUrl)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
     this.lastCwd = loaded.lastCwd
     this.voiceId = loaded.voiceId
+    this.beUrl = loaded.beUrl
+    setBeUrlBase(this.beUrl)
   }
 
   // ─── connect form ───
@@ -98,8 +104,18 @@ export class Settings {
    * and not currently in-flight. Errors are stored on `voicesError`.
    */
   loadVoices = async (): Promise<void> => {
-    const result = await fetchVoices()
-    this.voices = result
+    if (this.voicesLoading) return
+    if (this.availableVoices.length > 0 && this.voicesError === null) return
+    this.voicesLoading = true
+    this.voicesError = null
+    try {
+      const voices = await listVoices()
+      this.availableVoices = voices
+    } catch (e) {
+      this.voicesError = e instanceof Error ? e.message : String(e)
+    } finally {
+      this.voicesLoading = false
+    }
   }
 
   // ─── backend ───
@@ -113,6 +129,7 @@ export class Settings {
     const trimmed = value.trim().replace(/\/$/, "")
     if (trimmed === "") {
       this.beUrl = ""
+      setBeUrlBase(this.beUrl)
       this.#persist()
       return { ok: true }
     }
@@ -122,6 +139,7 @@ export class Settings {
         return { ok: false, error: "scheme must be http or https" }
       }
       this.beUrl = trimmed
+      setBeUrlBase(this.beUrl)
       this.#persist()
       return { ok: true }
     } catch {
@@ -130,23 +148,13 @@ export class Settings {
   }
 
   // ─── private ───
+
   #persist(): void {
     save({
       cliKind: this.cliKind,
       lastCwd: this.lastCwd,
       voiceId: this.voiceId,
       beUrl: this.beUrl,
-    })
-  }
-  }
-
-  // ─── private ───
-
-  #persist(): void {
-    save({
-      cliKind: this.cliKind,
-      lastCwd: this.lastCwd,
-      voiceId: this.voiceId,
     })
   }
 }
