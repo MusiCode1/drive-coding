@@ -4,6 +4,29 @@
 
 ---
 
+## 2026-05-29 — slice 18: WS Wire Logger (passive bidirectional tap)
+
+### מה בוצע?
+
+1 commit. השלמת ה-wire logging namespace שתוכנן בתשתית הלוגים של 2026-05-17.
+
+- **`wire-decode.ts`** — pure util `decodeWireLine(line): WireSummary`: מפענח שורת NDJSON לסיכום (method, sessionUpdate, id, responseKind, unparsed). לא זורק לעולם — fallback graceful על JSON לא תקין.
+- **`wire-decode.test.ts`** — 9 בדיקות TDD: request, result, error, session/update, tool_call, invalid JSON, non-object, empty params, parsed field.
+- **`ws-agent.ts`** (additive) — `const wireLog = createLogger("backend.ws.wire")` ברמת מודול; `childWireLog = wireLog.child({ agentId })` פר-connection; helper `logWire(dir, raw)` עטוף try/catch; tap calls: `logWire("in", line)` אחרי `feWs.send`, `logWire("out", text.trim())` אחרי `child.stdin.write`. הטפ נוגע אפס bytes, לא משנה סדר/timing של ה-pipe.
+
+### שימוש
+
+```bash
+LOG_WIRE=ws PORT=4001 onecli run --agent voice-acp -- bun --watch src/server.ts
+# כל frame שעובר → שורת log עם dir + type + id ב-debug; JSON מלא ב-trace
+```
+
+### צפוי עכשיו
+
+עם `LOG_WIRE=ws` + `loadSession` של סשן קיים — אפשר לראות אילו `sessionUpdate` types opencode שולח בהיסטוריה (tool_call? thoughts?). זה פותח את שאלת ה-replay לslice 16.
+
+---
+
 ## 2026-05-29 17:33 — slice 4: תיקוני verifier (NEEDS REVISION → תוקן)
 
 ### מה בוצע?
