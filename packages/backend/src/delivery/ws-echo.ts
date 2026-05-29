@@ -35,7 +35,7 @@ export function createEchoWsHandler(): (ws: WebSocket) => void {
     })
 
     ws.on("close", () => {
-      // cleanup later
+      // ניקוי מאוחר יותר
     })
   }
 }

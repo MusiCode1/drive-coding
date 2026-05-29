@@ -1,19 +1,19 @@
 /**
- * ws-agent.ts — WebSocket bytes pipe for /ws/agent/:id
+ * ws-agent.ts — צינור בתי WebSocket עבור /ws/agent/:id
  *
- * Phase 3: Direct in-process pipe from feWs → child.stdin/stdout.
- * No intermediate WS bridge process needed.
+ * Phase 3: צינור ישיר in-process מ-feWs ל-child.stdin/stdout.
+ * אין צורך בתהליך WS bridge מתווך.
  *
- * Architecture:
- *   feWs (ws.WebSocket from FE browser)
+ * ארכיטקטורה:
+ *   feWs (ws.WebSocket מדפדפן ה-FE)
  *     ↕ readline + stdin.write
- *   child (ChildProcess spawned by bridge-manager)
+ *   child (ChildProcess שהופעל על ידי bridge-manager)
  *
- * Edge cases:
- *   - Agent not found → close(1008, "agent not found")
- *   - MED-8: second tab for same agentId → close(1008, "agent in use by another tab")
- *   - child exit → feWs.close(1011, "bridge closed")
- *   - feWs close → cleanup (rl.close + detach), NO child.kill
+ * מקרי קצה:
+ *   - סוכן לא נמצא → סוגר close(1008, "agent not found")
+ *   - MED-8: טאב שני לאותו agentId → סוגר close(1008, "agent in use by another tab")
+ *   - יציאת ה-child → סוגר feWs.close(1011, "bridge closed")
+ *   - סגירת feWs → ניקוי (rl.close + detach), לא להרוג את ה-child (NO child.kill)
  */
 
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
@@ -26,7 +26,7 @@ import { decodeWireLine } from "./wire-decode.js"
 const log = createLogger("backend.ws.agent")
 const wireLog = createLogger("backend.ws.wire")
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── סוגים ────────────────────────────────────────────────────────────────────
 
 export type AgentWsData = {
   kind: "agent"
@@ -42,7 +42,7 @@ export function createAgentWsHandler(deps: {
   orchestrator: AgentOrchestrator
   bridgeManager: { getChild(bridgeId: string): ChildProcessWithoutNullStreams | null }
 }): (ws: WebSocket, agentId: string) => void {
-  // MED-8: one active FE WS per agentId — prevents ACP state collision on second tab
+  // MED-8: חיבור FE WS פעיל אחד לכל agentId — מונע התנגשות מצב ACP בטאב שני
   const activeFeWs = new Map<string, WebSocket>()
 
   return function onConnect(feWs: WebSocket, agentId: string): void {
@@ -56,11 +56,11 @@ export function createAgentWsHandler(deps: {
         childWireLog.debug({ dir, type, id: s.id }, "wire")
         if (!s.unparsed) childWireLog.trace({ dir, frame: s.parsed }, "wire-full")
       } catch {
-        // never let logging break the pipe
+        // לעולם אל תיתן ללוגים לשבור את הצינור
       }
     }
 
-    // MED-8 guard
+    // שומר MED-8
     if (activeFeWs.has(agentId)) {
       childLog.warn({}, "second tab rejected")
       feWs.close(1008, "agent in use by another tab")
@@ -78,10 +78,10 @@ export function createAgentWsHandler(deps: {
     childLog.info({ pid: child.pid }, "WS connect → pipe attached")
 
     // ── pipeChild ─────────────────────────────────────────────────────────────
-    // child.stdout (NDJSON lines) → feWs.send
-    // readline strips the trailing \n; we must re-append it because the FE's
-    // ndJsonStream parser uses \n as the message boundary (without it the SDK
-    // buffers a partial frame and never resolves the pending request).
+    // מ-child.stdout (שורות NDJSON) ל-feWs.send
+    // readline מסיר את ה-\n בסוף; אנחנו חייבים להוסיף אותו מחדש כי המפענח
+    // ndJsonStream של ה-FE משתמש ב-\n כגבול הודעה (בלעדיו ה-SDK שומר
+    // בחוצץ פריים חלקי ולעולם לא מסיים את הבקשה הממתינה).
     child.stdout.setEncoding("utf8")
     const rl = createInterface({ input: child.stdout, crlfDelay: Infinity })
     rl.on("line", (line) => {
@@ -89,41 +89,41 @@ export function createAgentWsHandler(deps: {
       try {
         feWs.send(`${line}\n`)
       } catch {
-        // feWs closing
+        // feWs נסגר
       }
-      logWire("in", line) // tap (after send; failure-isolated)
+      logWire("in", line) // האזנה (אחרי השליחה; מבודד מתקלות)
     })
 
-    // feWs message → child.stdin (add newline if missing)
+    // הודעת feWs ל-child.stdin (הוסף שורה חדשה אם חסר)
     feWs.on("message", (data) => {
       try {
         const text = data.toString()
         const line = text.endsWith("\n") ? text : `${text}\n`
         child.stdin.write(line)
-        logWire("out", text.trim()) // tap (after write; trim removes trailing \n for decode)
+        logWire("out", text.trim()) // האזנה (אחרי הכתיבה; trim מסיר \n סופי עבור פענוח)
       } catch (err) {
         childLog.warn({ err }, "stdin write failed")
       }
     })
 
-    // child exit → close feWs
+    // יציאת ה-child ל-close feWs
     const onChildExit = (code: number | null) => {
       childLog.info({ code }, "child exited — closing feWs")
       try {
         feWs.close(1011, "bridge closed")
       } catch {
-        // already closed
+        // כבר סגור
       }
     }
     child.once("exit", onChildExit)
 
-    // feWs close → cleanup, but do NOT kill child
+    // סגירת feWs לניקוי, אבל אל תהרוג את ה-child
     feWs.on("close", () => {
       childLog.info({}, "WS disconnect — detaching pipe")
       activeFeWs.delete(agentId)
       rl.close()
       child.off("exit", onChildExit)
-      // Important: do NOT call child.kill() — child survives FE disconnect
+      // חשוב: אל תקרא ל-child.kill() — ה-child שורד התנתקות של ה-FE
     })
   }
 }

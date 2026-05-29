@@ -3,17 +3,17 @@ import type { Agent, AgentRegistry, CreateAgentInput } from "@drive-coding/core"
 import { validateCwd } from "@drive-coding/core"
 
 /**
- * In-memory AgentRegistry.
+ * AgentRegistry בזיכרון.
  * נאבד ב-restart (D8 — acceptable ל-MVP).
- * Thread-safe? Bun + Node single-threaded JS — yes.
+ * האם Thread-safe? כן, Bun ו-Node מריצים JS ב-thread יחיד.
  */
 export function createInMemoryAgentRegistry(): AgentRegistry {
   const store = new Map<string, Agent>()
 
   return {
     async create(input: CreateAgentInput): Promise<Agent> {
-      // Belt-and-suspenders: validate cwd even if http-agents already checked it.
-      // Guards against direct registry calls that bypass the HTTP layer.
+      // חגורה ושלייקס: אימות ה-cwd גם אם http-agents כבר בדק אותו.
+      // מגן מפני קריאות ישירות ל-registry שעוקפות את שכבת ה-HTTP.
       const cwdResult = validateCwd(input.cwd)
       if (cwdResult.isErr()) {
         throw new Error(`invalid cwd: ${cwdResult.error.kind}`)
@@ -23,9 +23,9 @@ export function createInMemoryAgentRegistry(): AgentRegistry {
       const agent: Agent = {
         id,
         cliKind: input.cliKind,
-        cwd: cwdResult.value, // normalised
+        cwd: cwdResult.value, // מנורמל
         modelOverride: input.modelOverride ?? null,
-        status: "ready", // Slice 2 stub. Slice 3+: starting → ready
+        status: "ready", // Slice 2 stub. ב-Slice 3 ומעלה: starting → ready
         createdAt: new Date().toISOString(),
       }
       store.set(id, agent)

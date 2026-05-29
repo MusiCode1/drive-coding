@@ -1,11 +1,11 @@
 import type { BridgeKind } from "@drive-coding/core"
 
 /**
- * CLI command mapping for ACP agents.
- * Slice 3: opencode only. Other CLIs to be added in future slices.
+ * מיפוי פקודות CLI עבור סוכני ACP.
+ * Slice 3: רק opencode. CLI אחרים יתווספו בסלייסים עתידיים.
  */
 export type CliCommand = {
-  readonly bin: string // executable path or name
+  readonly bin: string // נתיב הרצה או שם
   readonly args: ReadonlyArray<string>
 }
 
@@ -15,10 +15,10 @@ export function getCliCommand(kind: BridgeKind, modelOverride?: string | null): 
     case "opencode":
       // אצל אבי ב-/home/user/.opencode/bin/opencode (D14 — Proxmox)
       // נסה bin in PATH ראשון, אחרת fallback.
-      // `opencode acp` doesn't accept -m / --model — it uses the default
-      // model from `opencode auth` config. Per-session model override needs
-      // to happen at session/new time via the ACP SDK (future slice).
-      // We accept modelOverride in the API but currently ignore it for opencode.
+      // `opencode acp` לא מקבל -m / --model — הוא משתמש במודל 
+      // ברירת המחדל מהקונפיגורציה של `opencode auth`. דריסת מודל פר-סשן
+      // צריכה לקרות בזמן session/new דרך ה-ACP SDK (סלייס עתידי).
+      // אנחנו מקבלים modelOverride ב-API אבל כרגע מתעלמים ממנו עבור opencode.
       return {
         bin: process.env.OPENCODE_BIN ?? "opencode",
         args: ["acp"],

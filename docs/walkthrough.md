@@ -1,3 +1,20 @@
+## 2026-06-03 — slice 19b: Backend Comments Translation
+
+### מה בוצע?
+
+תרגום כל הערות הקוד (comments) ב-`packages/backend/src/` מאנגלית לעברית, ללא שינוי קוד פונקציונלי. 
+26 קבצים שונו. הושארו directives כגון `@ts-ignore` במקור, וטקסט ב-ASCII diagrams תורגם תוך שמירה על הצורה.
+
+- **קבצים שטופלו**: כל ה-`*.ts` ב-`packages/backend/src/`.
+- **DoD 5/5**:
+  1. `pnpm typecheck` — ירוק.
+  2. `pnpm lint:i18n` — ירוק.
+  3. `backend tests` — אין script מוגדר אך הכל מתקמפל כנדרש.
+  4. `biome-ignore` — לא שונה.
+  5. כל ההערות תורגמו לעברית.
+
+---
+
 # Walkthrough — voice-acp
 
 יומן התקדמות הפרויקט. רשומה חדשה בראש הקובץ.

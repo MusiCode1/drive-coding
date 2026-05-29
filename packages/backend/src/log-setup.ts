@@ -1,8 +1,8 @@
 /**
- * Backend log initialization — MUST be imported first in server.ts (before all other imports).
+ * אתחול לוגים של השרת — חייב להיות מיובא ראשון ב-server.ts (לפני כל שאר היבואים).
  *
- * Reads LOG_LEVEL, LOG_NS, LOG_FORMAT, LOG_WIRE from process.env.
- * LOG_WIRE shortcut: "acp" | "ws" | "1" — sets level=trace + the relevant wire namespace.
+ * קורא LOG_LEVEL, LOG_NS, LOG_FORMAT, LOG_WIRE מ-process.env.
+ * קיצור דרך LOG_WIRE: "acp" | "ws" | "1" — מגדיר level=trace + את namespace ה-wire הרלוונטי.
  */
 import { initLogger, parseEnvConfig } from "@drive-coding/core/log"
 

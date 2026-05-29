@@ -1,4 +1,4 @@
-import "./log-setup.js" // MUST be first — initialises logger before any other imports
+import "./log-setup.js" // חייב להיות ראשון — מאתחל לוגר לפני כל יבוא אחר
 import * as path from "node:path"
 import { createLogger } from "@drive-coding/core/log"
 import { serve } from "@hono/node-server"
@@ -8,8 +8,8 @@ import { WebSocketServer } from "ws"
 const log = createLogger("backend.server")
 const procLog = createLogger("backend.process")
 
-// Safety nets — if any uncaught error slips through, log and exit gracefully.
-// This is the last line of defense; production code should never reach here.
+// רשתות ביטחון — אם שגיאה שלא נתפסה חומקת, תעד ללוג וצא בצורה מסודרת.
+// זהו קו ההגנה האחרון; קוד ייצור לעולם לא אמור להגיע לכאן.
 process.on("uncaughtException", (err) => {
   procLog.error(
     { err: { name: err.name, message: err.message, stack: err.stack } },
@@ -41,7 +41,7 @@ import {
 } from "./delivery/http-history.js"
 import { registerHttpOptions } from "./delivery/http-options.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
-// Note: createSessionsCache removed — session listing is now FE-driven via ACP WS
+// הערה: createSessionsCache הוסר — רשימת הסשנים עכשיו מונעת מצד ה-FE דרך ACP WS
 import { createAgentWsHandler } from "./delivery/ws-agent.js"
 import { createEchoWsHandler } from "./delivery/ws-echo.js"
 
@@ -49,7 +49,7 @@ const app = new Hono()
 
 app.use("*", cors({ origin: parseCorsOrigins(process.env.CORS_ORIGINS), credentials: true }))
 
-// Boot dependencies
+// תלויות הפעלה (Boot dependencies)
 const registry = createInMemoryAgentRegistry()
 const bridgeManager = createBridgeManager()
 const projectsRegistry = createProjectsRegistry(path.resolve("data/cache"))
@@ -61,7 +61,7 @@ const orchestrator = createAgentOrchestrator({
   projectsRegistry,
 })
 
-// HTTP routes
+// נתיבי HTTP
 registerHttp(app)
 registerHttpOptions(app)
 registerClientLogHttp(app)
@@ -71,10 +71,10 @@ registerRecordingsHttp(app, { recordingsStore })
 registerRecordingsPostHttp(app, { recordingsStore })
 registerFsBrowseHttp(app)
 
-// Slice 10: transparent proxy for Google + ElevenLabs
+// Slice 10: פרוקסי שקוף עבור Google + ElevenLabs
 registerProxyHttp(app, { cacheBaseDir: path.resolve("data/cache/proxy") })
 
-// WS handlers
+// מטפלי WS
 const echoWss = new WebSocketServer({ noServer: true })
 const agentWss = new WebSocketServer({ noServer: true })
 
@@ -86,7 +86,7 @@ echoWss.on("connection", (ws) => {
 })
 
 agentWss.on("connection", (ws, req) => {
-  // Extract agentId from URL
+  // חלץ agentId מה-URL
   const url = new URL(req.url ?? "", `http://localhost`)
   const match = url.pathname.match(/^\/ws\/agent\/([^/]+)$/)
   const agentId = match?.[1] ?? ""
@@ -115,7 +115,7 @@ httpServer.on("upgrade", (req, socket, head) => {
     return
   }
 
-  // Unknown WS path — destroy socket
+  // נתיב WS לא ידוע — הרוס את הסוקט
   socket.destroy()
 })
 

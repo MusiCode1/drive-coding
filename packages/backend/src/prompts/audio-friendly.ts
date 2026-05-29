@@ -1,16 +1,16 @@
 /**
- * System prompt that steers the LLM toward speech-friendly prose output:
- * no markdown, no emojis, no URLs, no JSON dumps, short conversational
- * responses. Used by the voice-only interface where the LLM's text output
- * is read aloud (TTS) and the user does not see the words.
+ * פרומפט מערכת המכוון את מודל השפה (LLM) לפלט פרוזה ידידותי לדיבור:
+ * ללא markdown, ללא אימוג'ים, ללא URLs, ללא פליטות JSON, תגובות קצרות ושיחתיות.
+ * בשימוש על ידי ממשק קולי בלבד שבו פלט הטקסט של ה-LLM נקרא בקול (TTS)
+ * והמשתמש אינו רואה את המילים.
  *
- * Originally lived inline in `plugins/audio-friendly.ts` (slice 11).
- * Moved here in slice 14 so the plugin can be generic and the BE owns
- * the prompt catalog.
+ * במקור ישב כ-inline ב-`plugins/audio-friendly.ts` (סלייס 11).
+ * הועבר לכאן בסלייס 14 כדי שהפלאגין יוכל להיות כללי וה-BE יחזיק
+ * בקטלוג הפרומפטים.
  *
- * The text MUST stay byte-identical to the slice-11 version, so the
- * smoke-test soft assertions (no emoji, no **bold**, no URLs) keep
- * passing and there is no regression in upstream LLM behavior.
+ * הטקסט חייב להישאר זהה בבתים (byte-identical) לגרסת סלייס 11, כדי שאימותי
+ * ה-smoke-test הרכים (ללא אימוג'י, ללא **מודגש**, ללא URLs) ימשיכו לעבור
+ * ולא תהיה רגרסיה בהתנהגות ה-LLM ב-upstream.
  */
 export const AUDIO_FRIENDLY_PROMPT = `
 You are talking to a user through a voice-only interface. Your text output

@@ -7,7 +7,7 @@ import { getCliCommand } from "./cli-config.js"
 const log = createLogger("backend.bridge.manager")
 const STDERR_MAX_LINES = 200
 
-/** Extended handle with stderr access and direct child — used internally by orchestrator. */
+/** Handle מורחב עם גישה ל-stderr ו-child ישיר — משמש פנימית את ה-orchestrator. */
 export type BridgeHandleWithStderr = BridgeHandle & {
   readonly getStderr: () => string[]
   readonly child: ChildProcessWithoutNullStreams
@@ -48,9 +48,9 @@ export function createBridgeManager(): BridgeManager & {
     const stderrLines: string[] = []
     let stderrPartial = ""
 
-    // Inject the prompt-injector plugin (carries the audio-friendly prompt
-    // via plugin options) for opencode spawns only. For other cliKinds
-    // (claude, gemini, codex) — env passes through unchanged.
+    // מזריק את הפלאגין prompt-injector (נושא את ה-audio-friendly prompt
+    // דרך אפשרויות הפלאגין) רק עבור הפעלות של opencode. עבור cliKinds אחרים
+    // (claude, gemini, codex) — ה-env עובר ללא שינוי.
     const envWithPlugin =
       input.cliKind === "opencode"
         ? {
@@ -69,19 +69,19 @@ export function createBridgeManager(): BridgeManager & {
         stdio: ["pipe", "pipe", "pipe"],
       })
     } catch (err) {
-      // Bun edge case: spawn throws synchronously on ENOENT
+      // מקרה קצה ב-Bun: הפונקציה spawn זורקת שגיאה סינכרונית על ENOENT
       childLog.warn({ err }, "spawn threw synchronously")
       throw err
     }
 
-    // Register listeners immediately — before any async tick can emit error
+    // רישום מאזינים באופן מיידי — לפני שאיזשהו async tick יכול לפלוט שגיאה
     child.on("error", (err) => {
       const errnoErr = err as NodeJS.ErrnoException
       childLog.warn(
         { err: { message: err.message, code: errnoErr.code } },
         "child error event",
       )
-      // If no pid → spawn failed; notify crash and remove from store
+      // אם אין pid → ה-spawn נכשל; מודיע על התרסקות ומסיר מהמאגר
       if (!child.pid && store.has(bridgeId)) {
         store.delete(bridgeId)
         notifyCrash(bridgeId, {
@@ -111,7 +111,7 @@ export function createBridgeManager(): BridgeManager & {
     })
 
     if (!child.pid) {
-      // Error event will handle cleanup separately. Return error to caller.
+      // אירוע Error יטפל בניקוי בנפרד. מחזיר שגיאה לקורא.
       throw new Error(`spawn returned no pid (bin=${cli.bin})`)
     }
 
@@ -119,9 +119,9 @@ export function createBridgeManager(): BridgeManager & {
       bridgeId,
       cliKind: input.cliKind,
       cwd: input.cwd,
-      port: 0, // in-process: no port. Field kept for backward compat.
+      port: 0, // in-process: ללא פורט. השדה נשמר לתאימות לאחור.
       pid: child.pid,
-      wsUrl: "", // in-process: no WS URL.
+      wsUrl: "", // in-process: ללא כתובת WS.
       startedAt: new Date(),
     }
 
@@ -155,7 +155,7 @@ export function createBridgeManager(): BridgeManager & {
       const entry = store.get(bridgeId)
       if (!entry) return false
       log.info({ bridgeId }, "kill")
-      // Remove before exit event fires — prevents notifyCrash on intentional kill
+      // הסרה לפני שאירוע ה-exit נורה — מונע notifyCrash בהריגה מכוונת
       store.delete(bridgeId)
       return new Promise<boolean>((resolve) => {
         entry.child.once("exit", () => resolve(true))

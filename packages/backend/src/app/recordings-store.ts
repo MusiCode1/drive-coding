@@ -1,10 +1,10 @@
 /**
- * RecordingsStore — disk-backed store for user audio recordings.
+ * RecordingsStore — מאגר מבוסס-דיסק עבור הקלטות אודיו של המשתמש.
  *
- * Slice 8a: saves raw audio bytes to `<baseDir>/<uuid>.<ext>`.
- * A sidecar `<baseDir>/index.json` tracks metadata (mimeType, savedAt, bytes).
- * Used by agent-session.sendAudioPrompt to persist recordings before STT.
- * No auto-cleanup in MVP.
+ * Slice 8a: שומר בתי אודיו גולמיים אל `<baseDir>/<uuid>.<ext>`.
+ * קובץ נלווה `<baseDir>/index.json` עוקב אחר מטא-דאטה (mimeType, savedAt, bytes).
+ * בשימוש של agent-session.sendAudioPrompt לשמירת הקלטות לפני תמלול (STT).
+ * אין ניקוי אוטומטי ב-MVP.
  */
 
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises"
@@ -21,7 +21,7 @@ type IndexFile = {
   readonly recordings: Record<string, RecordingMeta>
 }
 
-// Maps common audio MIME types to file extensions.
+// ממפה סוגי MIME נפוצים של אודיו לסיומות קבצים.
 const MIME_TO_EXT: Record<string, string> = {
   "audio/webm": "webm",
   "audio/mpeg": "mp3",
@@ -64,9 +64,9 @@ export function createRecordingsStore(baseDir: string) {
 
   return {
     /**
-     * Saves raw audio bytes to disk, returns a stable id.
-     * `durationMs` is not computed by the store (would require audio decoding);
-     * callers may pass it separately in the future.
+     * שומר בתי אודיו גולמיים לדיסק, מחזיר מזהה יציב.
+     * `durationMs` לא מחושב על ידי המאגר (ידרוש פענוח אודיו);
+     * קוראים עשויים להעביר אותו בנפרד בעתיד.
      */
     async save(bytes: Uint8Array, mimeType: string): Promise<{ id: string; durationMs?: number }> {
       await ensureDir()
@@ -85,7 +85,7 @@ export function createRecordingsStore(baseDir: string) {
       return { id }
     },
 
-    /** Returns the raw bytes and mimeType, or null if not found. */
+    /** מחזיר את הבתים הגולמיים ואת ה-mimeType, או null אם לא נמצא. */
     async get(id: string): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
       const index = await loadIndex()
       const meta = index[id]
@@ -99,7 +99,7 @@ export function createRecordingsStore(baseDir: string) {
       }
     },
 
-    /** Deletes the recording file and removes it from the index. No-op if not found. */
+    /** מוחק את קובץ ההקלטה ומסיר אותו מהאינדקס. לא עושה כלום אם לא נמצא. */
     async delete(id: string): Promise<void> {
       const index = await loadIndex()
       const meta = index[id]
@@ -108,14 +108,14 @@ export function createRecordingsStore(baseDir: string) {
       try {
         await unlink(join(baseDir, meta.filename))
       } catch {
-        // file may already be gone — safe to ignore
+        // ייתכן שהקובץ כבר איננו — בטוח להתעלם
       }
 
       const { [id]: _removed, ...rest } = index
       await saveIndex(rest)
     },
 
-    /** Returns aggregate stats: total count and total bytes on disk. */
+    /** מחזיר סטטיסטיקות מצטברות: ספירה כוללת וסך כל הבתים בדיסק. */
     async stats(): Promise<{ count: number; bytes: number }> {
       const index = await loadIndex()
       const entries = Object.values(index)
