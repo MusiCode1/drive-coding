@@ -1,0 +1,9 @@
+// OpenCode project config for voice-acp.
+// See https://opencode.ai/config.json for schema.
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // Project-specific instructions loaded by agent at session start.
+  // Merged with global instructions (~/.config/opencode/AGENTS.md etc.).
+  "instructions": ["./docs/learnings.md"]
+}
