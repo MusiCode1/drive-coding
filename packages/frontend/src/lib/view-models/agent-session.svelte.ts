@@ -153,7 +153,62 @@ export class AgentSession {
     }
   }
 
-  // ─── session persistence ─── (slice 8 will add loadSession, listSessions)
+  // ─── session persistence ─── (slice 8)
+
+  /**
+   * Load an existing ACP session by sessionId.
+   * Similar to attach() but calls loadSession instead of newSession.
+   * After resolution, status === "connected" and the session is ready for sendPrompt.
+   */
+  loadSession = async (input: {
+    sessionId: string
+    cwd: string
+    cliKind: CliKind
+  }): Promise<void> => {
+    if (this.status === "connecting" || this.status === "connected") {
+      throw new Error(`cannot loadSession in status ${this.status}`)
+    }
+    this.status = "connecting"
+    this.error = null
+    this.bubbles = []
+    this.#detached = false
+
+    try {
+      // 1. Create agent on the BE (same as attach)
+      const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
+      this.agentId = agentId
+      this.cwd = input.cwd
+
+      // 2. Open WS transport + onClose (same as attach)
+      const proto = location.protocol === "https:" ? "wss:" : "ws:"
+      const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+      transport.onClose((code, reason) => {
+        if (this.#detached) return
+        if (code !== 1000 && code !== 1001) {
+          this.error = `WS closed (${code}): ${reason || "no reason"}`
+          this.status = "error"
+        }
+      })
+      await transport.waitForOpen()
+
+      // 3. ACP handshake (same as attach)
+      this.#client = await createAcpClient(transport, this.#onSessionUpdate)
+
+      // ── loadSession instead of newSession ──
+      await this.#client.loadSession({ sessionId: input.sessionId, cwd: input.cwd })
+      this.#sessionId = input.sessionId
+
+      // 4. Notify BE (same as attach, best-effort)
+      await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
+
+      this.status = "connected"
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      this.error = `loadSession failed: ${msg}`
+      this.status = "error"
+      this.#cleanup()
+    }
+  }
 
   // ─── recordings ─── (slice 10 will add)
 
