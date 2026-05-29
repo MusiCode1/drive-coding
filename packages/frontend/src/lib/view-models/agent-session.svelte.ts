@@ -20,6 +20,8 @@ import type {
   MessageBubble,
   Segment,
   ThoughtBubble,
+  ToolBubble,
+  ToolCall,
   UserBubble,
 } from "$lib/types/bubble"
 
@@ -53,6 +55,8 @@ export class AgentSession {
 
   #client: AcpClient | null = null
   #sessionId: string | null = null
+  /** O(1) lookup for tool_call_update by toolCallId. Slice 4. */
+  #toolBubbleByCallId: Map<string, ToolBubble> = new Map()
   /**
    * True between detach() and the next attach(). Suppresses spurious
    * `WS closed (1005)` errors from onClose firing after the user
@@ -241,7 +245,27 @@ export class AgentSession {
       sessionUpdate?: string
       content?: { type?: string; text?: string }
       messageId?: string | null
+      // ─── slice 4: tool call fields ───
+      toolCallId?: string
+      title?: string
+      kind?: string
+      rawInput?: unknown
+      rawOutput?: unknown
+      status?: ToolCall["status"]
     }
+
+    // ─── slice 4: handle tool notifications before text guard ───
+    // tool_call / tool_call_update don't carry text content — must be handled
+    // before `if (!text) return`.
+    if (update.sessionUpdate === "tool_call") {
+      this.#handleToolCall(update)
+      return
+    }
+    if (update.sessionUpdate === "tool_call_update") {
+      this.#handleToolCallUpdate(update)
+      return
+    }
+
     const text = update.content?.type === "text" ? (update.content.text ?? "") : ""
     if (!text) return
 
@@ -257,6 +281,68 @@ export class AgentSession {
       // those originate from sendPrompt and we add the optimistic bubble there.
       this.#appendChunk("user", text, messageId)
     }
+  }
+
+  // ─── slice 4: tool call handlers ────────────────────────────
+
+  #handleToolCall(update: {
+    toolCallId?: string
+    title?: string
+    kind?: string
+    rawInput?: unknown
+    rawOutput?: unknown
+    status?: ToolCall["status"]
+  }): void {
+    if (update.toolCallId === undefined) return
+    // ACP schema: tool_call requires toolCallId + title. title may be undefined
+    // in practice if the agent sends a minimal notification, so fallback gracefully.
+    const bubble: ToolBubble = {
+      id: crypto.randomUUID(),
+      kind: "tool",
+      messageId: null,
+      createdAt: Date.now(),
+      toolCall: {
+        toolCallId: update.toolCallId,
+        // name = kind if available, else title. Used internally + for narrate prompt.
+        name: update.kind ?? update.title ?? "tool",
+        kind: update.kind,
+        args: update.rawInput ?? {},
+        // status is optional on initial tool_call; default to "pending"
+        status: update.status ?? "pending",
+        title: update.title,
+        narration: undefined,
+        result: update.rawOutput,
+      },
+      segments: [],
+    }
+    this.bubbles.push(bubble)
+    this.#toolBubbleByCallId.set(update.toolCallId, bubble)
+  }
+
+  #handleToolCallUpdate(update: {
+    toolCallId?: string
+    status?: ToolCall["status"]
+    rawOutput?: unknown
+    kind?: string
+    title?: string
+  }): void {
+    if (update.toolCallId === undefined) return
+    const idx = this.bubbles.findIndex(
+      (b) => b.kind === "tool" && b.toolCall.toolCallId === update.toolCallId,
+    )
+    if (idx === -1) return
+    const old = this.bubbles[idx] as ToolBubble
+    // Svelte 5: replace object wholesale (not in-place mutation) to trigger reactivity.
+    const newToolCall: ToolCall = {
+      ...old.toolCall,
+      ...(update.status !== undefined && { status: update.status }),
+      ...(update.rawOutput !== undefined && { result: update.rawOutput }),
+      ...(update.kind !== undefined && { kind: update.kind }),
+      ...(update.title !== undefined && { title: update.title }),
+    }
+    this.bubbles[idx] = { ...old, toolCall: newToolCall }
+    // Keep the Map in sync (pointing to the new bubble object)
+    this.#toolBubbleByCallId.set(update.toolCallId, this.bubbles[idx] as ToolBubble)
   }
 
   #appendChunk(

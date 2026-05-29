@@ -59,6 +59,10 @@ export type ToolCall = {
   title?: string
   /** Gemini-generated prose (Hebrew). */
   narration?: string
+  /** ACP ToolKind: read/edit/delete/move/search/execute/think/fetch/switch_mode/other */
+  kind?: string
+  /** Raw output returned by the tool (from ACP rawOutput). */
+  result?: unknown
 }
 
 export type ToolBubble = BubbleBase & {
