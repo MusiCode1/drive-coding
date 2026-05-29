@@ -27,6 +27,7 @@ import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
 import { untrack } from "svelte"
 import type { AgentSession, AgentSessionStatus } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
+import type { ThoughtBubble } from "$lib/types/bubble"
 import { AudioStream } from "../engines/audio-stream"
 import { Player } from "../engines/player.svelte"
 import { synthesizeStreaming } from "../adapters/voice/tts"
@@ -46,6 +47,8 @@ export type TtsJob = {
   text: string
   status: TtsJobStatus
   abort: AbortController
+  /** Slice 4: bubble id, used by thought jobs to write back translated text. */
+  bubbleId?: string
 }
 
 type BubbleState = {
@@ -76,6 +79,8 @@ export class Speaker {
   #jobs: TtsJob[] = []
   #activeFetches = 0
   #prevStatus: AgentSessionStatus = "idle"
+  /** Slice 4: tracks how many segments of each ThoughtBubble have been translated. */
+  #translatedSegByBubble: Map<string, number> = new Map()
 
   // Set by constructor — kept so destroy() can stop the effect.
   #disposeEffect: (() => void) | null = null
@@ -197,7 +202,7 @@ export class Speaker {
       state.buffer = remaining
 
       for (const sentence of sentences) {
-        this.#enqueue(bubble.kind, bubble.messageId, sentence)
+        this.#enqueue(bubble.kind, bubble.messageId, sentence, bubble.id)
       }
     }
     this.#pumpFetchLoop()
@@ -213,14 +218,19 @@ export class Speaker {
         const bubble = this.#session.bubbles.find((b) => b.id === bubbleId)
         if (bubble === undefined) continue
         if (bubble.kind !== "message" && bubble.kind !== "thought") continue
-        this.#enqueue(bubble.kind, bubble.messageId, state.buffer.trim())
+        this.#enqueue(bubble.kind, bubble.messageId, state.buffer.trim(), bubble.id)
         state.buffer = ""
       }
       this.#pumpFetchLoop()
     }
   }
 
-  #enqueue(kind: "message" | "thought", messageId: string | null, text: string): void {
+  #enqueue(
+    kind: "message" | "thought",
+    messageId: string | null,
+    text: string,
+    bubbleId?: string,
+  ): void {
     if (text.length === 0) return
     this.#jobs.push({
       segmentId: crypto.randomUUID(),
@@ -229,6 +239,7 @@ export class Speaker {
       text,
       status: "pending",
       abort: new AbortController(),
+      bubbleId,
     })
   }
 
@@ -251,9 +262,13 @@ export class Speaker {
       if (job.kind === "thought") {
         const result = await translate(text, TARGET_LANG, job.abort.signal)
         if (result !== null && result.status === "translated") {
+          // Slice 4: write back to the segment so ThoughtBubble can show HE+EN.
+          if (job.bubbleId !== undefined) {
+            this.#persistThoughtTranslation(job.bubbleId, job.text, result.text)
+          }
           text = result.text
         }
-        // already_in_target or null → keep original text
+        // already_in_target or null → keep original text (originalText stays undefined)
       }
 
       if (job.abort.signal.aborted) {
@@ -277,6 +292,46 @@ export class Speaker {
         err: e instanceof Error ? e.message : String(e),
       })
     }
+  }
+
+  /**
+   * Slice 4: write translation result back to a ThoughtBubble segment.
+   *
+   * Each TtsJob for a thought bubble corresponds to one sentence from the
+   * accumulated buffer. We map jobs sequentially to segments (segIdx counter
+   * per bubble). Precision note: sentence boundaries don't perfectly align with
+   * ACP segment boundaries — the displayed translation is sentence-level, not
+   * segment-level. This is acceptable for MVP display purposes.
+   *
+   * After update: seg.text = Hebrew (prominent), seg.originalText = English (small).
+   * Svelte 5: replace entire bubble object to trigger reactivity.
+   */
+  #persistThoughtTranslation(
+    bubbleId: string,
+    originalEnglish: string,
+    translatedHebrew: string,
+  ): void {
+    const idx = this.#session.bubbles.findIndex((b) => b.id === bubbleId)
+    if (idx === -1) return
+    const maybeBubble = this.#session.bubbles[idx]
+    if (maybeBubble === undefined || maybeBubble.kind !== "thought") return
+    const bubble: ThoughtBubble = maybeBubble
+
+    const segIdx = this.#translatedSegByBubble.get(bubbleId) ?? 0
+    if (segIdx >= bubble.segments.length) {
+      // More sentences than segments — no segment to update.
+      return
+    }
+
+    // Replace the segment at segIdx: swap text → Hebrew, originalText → English.
+    const updatedSegments: ThoughtBubble["segments"] = bubble.segments.map((seg, i) =>
+      i === segIdx
+        ? { ...seg, text: translatedHebrew, originalText: originalEnglish }
+        : seg,
+    )
+    // Replace whole bubble (Svelte 5 reactivity — index assignment triggers update).
+    this.#session.bubbles[idx] = { ...bubble, segments: updatedSegments }
+    this.#translatedSegByBubble.set(bubbleId, segIdx + 1)
   }
 
   #stopAndClear(): void {
