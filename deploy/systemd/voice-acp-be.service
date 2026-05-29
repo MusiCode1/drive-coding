@@ -1,0 +1,17 @@
+[Unit]
+Description=voice-acp backend (Hono + static FE, via OneCLI gateway)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/user/projects/voice-acp/dev
+Environment=PORT=4000
+Environment=FE_STATIC_DIR=/home/user/projects/voice-acp/dev/packages/frontend/build
+Environment=CORS_ORIGINS=https://drive-coding.pages.dev,http://localhost:4000
+ExecStart=/home/user/.local/bin/onecli run --agent voice-acp -- /home/user/.bun/bin/bun packages/backend/src/server.ts
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
