@@ -55,6 +55,13 @@ export const en: Catalog = {
   "chat.tool.args": "Input",
   "chat.tool.result": "Output",
   "chat.tool.loading_narration": "...",
+  // ─── slice 16 (ACP content) ───
+  "chat.tool.raw": "Raw output",
+  "chat.tool.locations": "Files",
+  "chat.tool.content": "Content",
+  "chat.tool.terminal": "Terminal",
+  "chat.tool.diff.added": "Added",
+  "chat.tool.diff.removed": "Removed",
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)

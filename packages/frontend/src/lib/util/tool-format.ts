@@ -27,6 +27,16 @@ export function formatToolInput(rawInput: unknown): FormattedInput {
 
 /** JSON.stringify(value, null, 2) with a fallback to String(value) on cycles. */
 export function prettyJson(value: unknown): string {
+  // §9.1: if it's a simple object with { output: string }, just return the string
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "output" in value &&
+    typeof (value as { output: unknown }).output === "string"
+  ) {
+    return (value as { output: string }).output
+  }
+
   try {
     return JSON.stringify(value, null, 2)
   } catch {

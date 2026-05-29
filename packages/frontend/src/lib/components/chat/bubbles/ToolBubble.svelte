@@ -15,6 +15,7 @@
  */
 import type { ToolBubble, ToolCall } from "$lib/types/bubble"
 import { getI18n } from "$lib/context"
+import { formatToolInput, prettyJson, formatLocation } from "$lib/util/tool-format"
 
 let { bubble }: { bubble: ToolBubble } = $props()
 let expanded = $state(false)
@@ -22,15 +23,7 @@ let expanded = $state(false)
 const t = getI18n().t
 const tc = $derived(bubble.toolCall)
 const showNarration = $derived(tc.narration !== undefined && tc.narration.length > 0)
-
-function formatResult(value: unknown): string {
-  if (typeof value === "string") return value
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
-  }
-}
+const input = $derived(formatToolInput(tc.args))
 </script>
 
 <div class="bubble bubble-tool" class:expanded>
@@ -64,15 +57,59 @@ function formatResult(value: unknown): string {
 
   {#if expanded}
     <div class="details" dir="ltr" role="presentation" onclick={(e) => e.stopPropagation()}>
-      <div class="section">
-        <div class="section-label">{t("chat.tool.args")}</div>
-        <pre>{JSON.stringify(tc.args, null, 2)}</pre>
-      </div>
-      {#if (tc as ToolCall).result !== undefined}
+      <!-- INPUT -->
+      {#if input.kind === "command"}
         <div class="section">
-          <div class="section-label">{t("chat.tool.result")}</div>
-          <pre>{formatResult((tc as ToolCall).result)}</pre>
+          <div class="section-label">{t("chat.tool.args")}</div>
+          <pre class="cmd">$ {input.command}</pre>
         </div>
+      {:else if input.kind === "json"}
+        <div class="section">
+          <div class="section-label">{t("chat.tool.args")}</div>
+          <pre>{input.json}</pre>
+        </div>
+      {/if}
+
+      <!-- LOCATIONS -->
+      {#if tc.locations && tc.locations.length > 0}
+        <div class="section">
+          <div class="section-label">{t("chat.tool.locations")}</div>
+          <ul class="locations">
+            {#each tc.locations as loc}
+              <li>{formatLocation(loc)}</li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+
+      <!-- CONTENT (ACP canonical) -->
+      {#if tc.content && tc.content.length > 0}
+        <div class="section">
+          <div class="section-label">{t("chat.tool.content")}</div>
+          {#each tc.content as c}
+            {#if c.type === "text"}
+              <pre>{c.text}</pre>
+            {:else if c.type === "diff"}
+              <div class="diff">
+                <div class="diff-path">{c.path}</div>
+                {#if c.oldText}<pre class="removed">{c.oldText}</pre>{/if}
+                <pre class="added">{c.newText}</pre>
+              </div>
+            {:else if c.type === "terminal"}
+              <div class="terminal-ref">{t("chat.tool.terminal")}: {c.terminalId}</div>
+            {:else}
+              <pre>{prettyJson(c.raw)}</pre>
+            {/if}
+          {/each}
+        </div>
+      {/if}
+
+      <!-- RAW OUTPUT (collapsible fallback — always available) -->
+      {#if tc.result !== undefined}
+        <details class="raw-output">
+          <summary>{t("chat.tool.raw")}</summary>
+          <pre>{prettyJson(tc.result)}</pre>
+        </details>
       {/if}
     </div>
   {/if}
@@ -199,6 +236,82 @@ function formatResult(value: unknown): string {
     overflow-x: auto;
     max-height: 300px;
     overflow-y: auto;
+  }
+
+  .cmd {
+    color: #4ade80; /* light green */
+  }
+
+  .locations {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+    opacity: 0.8;
+  }
+
+  .locations li {
+    margin-bottom: 2px;
+  }
+
+  .diff {
+    margin-bottom: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .diff-path {
+    background: var(--bg-elev);
+    padding: 2px 0.5rem;
+    font-size: 0.7rem;
+    font-family: ui-monospace, monospace;
+    border-bottom: 1px solid var(--border);
+    opacity: 0.8;
+  }
+
+  .diff pre {
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .diff .removed {
+    background: rgba(239, 68, 68, 0.15); /* red tint */
+    color: #f87171;
+  }
+
+  .diff .added {
+    background: rgba(34, 197, 94, 0.15); /* green tint */
+    color: #4ade80;
+  }
+
+  .terminal-ref {
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+    opacity: 0.7;
+    font-style: italic;
+  }
+
+  .raw-output {
+    margin-top: 0.8rem;
+  }
+
+  .raw-output summary {
+    font-size: 0.7rem;
+    opacity: 0.5;
+    cursor: pointer;
+    user-select: none;
+    outline: none;
+    text-transform: uppercase;
+  }
+
+  .raw-output summary:hover {
+    opacity: 0.8;
+  }
+
+  .raw-output[open] summary {
+    margin-bottom: 4px;
   }
 
   .hidden {
