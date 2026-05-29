@@ -74,11 +74,32 @@ After `cd .worktrees/<name>`, run `pnpm install && pnpm hooks:install`.
 
 ## Ports
 
-- **Backend**: fixed at `4000`. Single instance — don't run two BEs in parallel.
-  The second one will fail on `EADDRINUSE` (intentional).
+- **Backend**: defaults to `4000`. Override with `PORT=<n>` env var.
 - **Frontend (Vite dev)**: OS-assigned (no fixed port). Vite prints the chosen
-  port at startup. The proxy to `/api`, `/proxy`, `/ws` always points at BE 4000,
-  regardless of FE port.
+  port at startup. The proxy to `/api`, `/proxy`, `/ws` defaults to BE on 4000,
+  override with `BE_PORT=<n>` env var passed to Vite.
+
+### Running parallel worktrees
+
+To run multiple BE+FE pairs simultaneously (e.g. two executor agents in two
+worktrees), each pair gets its own port number. Convention: BE port 4000 for
+the first worktree, 4001 for the second, etc.
+
+```bash
+# Worktree A — BE on 4000, FE Vite proxies → 4000 (default)
+cd .worktrees/slice-X
+PORT=4000 onecli run --agent voice-acp -- bun --watch src/server.ts
+pnpm --filter @drive-coding/frontend-v2 dev
+# (no env var needed — FE defaults to BE_PORT=4000)
+
+# Worktree B — BE on 4001, FE Vite proxies → 4001
+cd .worktrees/slice-Y
+PORT=4001 onecli run --agent voice-acp -- bun --watch src/server.ts
+BE_PORT=4001 pnpm --filter @drive-coding/frontend-v2 dev
+```
+
+Each worktree's FE will get a different OS-assigned Vite port — no conflict
+on the FE side. Tunnels (if used) point at each FE's specific Vite port.
 
 ## Backend MUST run through OneCLI
 
