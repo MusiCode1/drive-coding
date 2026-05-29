@@ -41,13 +41,15 @@ Copy the unit files from the repo to the systemd user directory:
 mkdir -p ~/.config/systemd/user
 cp deploy/systemd/voice-acp-be.service ~/.config/systemd/user/
 cp deploy/systemd/voice-acp-build.service ~/.config/systemd/user/
+cp deploy/systemd/voice-acp-tunnel.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 ```
 
-Enable and start the BE service:
+Enable and start the BE service (and the tunnel):
 
 ```bash
 systemctl --user enable --now voice-acp-be.service
+systemctl --user enable --now voice-acp-tunnel.service
 ```
 
 ---
@@ -71,6 +73,26 @@ Open `http://localhost:4000/` (or `http://<host-ip>:4000/` on LAN).
 
 The BE listens on all interfaces by default (node-server). Restrict to
 localhost in the future if needed.
+
+---
+
+## Public Tunnel (single-origin)
+
+`voice-acp-tunnel.service` exposes the BE (which serves FE + API + WS on :4000)
+through a pico/tuns.sh SSH tunnel — one origin, no CORS/proxy split.
+
+- URL: `https://your-app-build.nue.tuns.sh`
+- The service `Wants=voice-acp-be.service` (starts after the BE, stops with it).
+- SSH auto-recovery: `ServerAliveInterval=15` + `ServerAliveCountMax=3` detect a
+  dead link (~45s) and exit; `ExitOnForwardFailure=yes` exits on forward failure;
+  `Restart=always` + `RestartSec=5` brings it back on the same subdomain.
+
+```bash
+systemctl --user status voice-acp-tunnel       # active (running)
+journalctl --user -u voice-acp-tunnel -f       # tunnel log
+```
+
+Verified: killing the ssh process → systemd restarts it within ~5s, same subdomain.
 
 ---
 
