@@ -11,7 +11,7 @@
  * הוסר מ-Slice 9:
  *   - createAcpWsTransport / createAcpWsLoadTransport (ה-FE מבצע ACP handshake)
  *   - createAgentSession / sessions Map (אין סשן ACP בצד השרת)
- *   - historyBuffer / history broadcast
+ *   - historyBuffer / שידור היסטוריה
  *   - projectsRegistry.recordSession (הועבר אל POST /api/agents/:id/session-attached)
  */
 
@@ -75,7 +75,7 @@ type ExtendedBridgeManager = BridgeManager & {
   ) => Promise<BridgeHandleWithStderr>
 }
 
-// ─── Factory ──────────────────────────────────────────────────────────────────
+// ─── פקטורי ──────────────────────────────────────────────────────────────────
 
 export function createAgentOrchestrator(deps: {
   registry: AgentRegistry

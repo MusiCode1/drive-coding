@@ -18,7 +18,7 @@ export type CachedEntry = {
   headers: { contentType: string }
 }
 
-// ─── Cache rules ──────────────────────────────────────────────────────────────
+// ─── כללי מטמון ──────────────────────────────────────────────────────────────
 
 /**
  * מחזיר true אם התגובה של בקשה זו צריכה להישמר במטמון.
@@ -33,7 +33,7 @@ export function isCacheableRequest(method: string, path: string, body: Uint8Arra
   if (method !== "POST" || !body) return false
   // Gemini generateContent (translate, narrate, STT) — אבל לא streamGenerateContent
   if (/^\/v1beta\/models\/[^/]+:generateContent\b/.test(path)) return true
-  // ElevenLabs streaming TTS
+  // ElevenLabs streaming TTS (זרם TTS של ElevenLabs)
   if (/^\/v1\/text-to-speech\/[^/]+\/stream\b/.test(path)) return true
   return false
 }
@@ -63,7 +63,7 @@ export function createProxyCache(baseDir: string) {
   // שני מטמונים לוגיים החולקים את אותו namespace: גוף (body) + תגיות נלוות (headers).
   // אנו משתמשים במופע אחד של createDiskCache עם שני סוגי מפתחות:
   //   key         → body (Uint8Array)
-  //   key.headers → JSON-encoded header metadata
+  //   key.headers → מטה-נתוני headers מקודדים ב-JSON
   const store = createDiskCache<Uint8Array>({
     namespace: "proxy",
     baseDir,

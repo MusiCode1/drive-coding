@@ -36,7 +36,7 @@ export type AgentWsData = {
   bridgeOpen: boolean
 }
 
-// ─── Handler factory ──────────────────────────────────────────────────────────
+// ─── פקטורית טיפולן ──────────────────────────────────────────────────────────
 
 export function createAgentWsHandler(deps: {
   orchestrator: AgentOrchestrator
@@ -77,7 +77,7 @@ export function createAgentWsHandler(deps: {
     activeFeWs.set(agentId, feWs)
     childLog.info({ pid: child.pid }, "WS connect → pipe attached")
 
-    // ── pipeChild ─────────────────────────────────────────────────────────────
+    // ── pipeChild — ניתוב ──────────────────────────────────────────────────────
     // מ-child.stdout (שורות NDJSON) ל-feWs.send
     // readline מסיר את ה-\n בסוף; אנחנו חייבים להוסיף אותו מחדש כי המפענח
     // ndJsonStream של ה-FE משתמש ב-\n כגבול הודעה (בלעדיו ה-SDK שומר

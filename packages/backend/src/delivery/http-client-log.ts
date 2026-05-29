@@ -44,7 +44,7 @@ function checkRateLimit(ip: string, count: number): boolean {
   return bucket.count <= 500
 }
 
-// ── Handler ───────────────────────────────────────────────────────────────────
+// ── טיפולן ───────────────────────────────────────────────────────────────────
 
 export function registerClientLogHttp(app: Hono): void {
   app.post("/api/client-log", async (c) => {
