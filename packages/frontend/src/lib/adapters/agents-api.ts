@@ -48,3 +48,11 @@ export async function notifySessionAttached(agentId: string, sessionId: string):
     body: JSON.stringify({ sessionId }),
   })
 }
+
+export async function deleteAgent(agentId: string): Promise<void> {
+  const res = await fetch(`/api/agents/${agentId}`, { method: "DELETE" })
+  if (!res.ok) {
+    const body = await res.text().catch(() => "")
+    throw new Error(`deleteAgent failed: ${res.status} ${body}`)
+  }
+}
