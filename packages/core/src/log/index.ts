@@ -1,8 +1,8 @@
 /**
- * Node.js logger entry — createLogger, initLogger, addSink, getLogConfig.
+ * נקודת כניסה של ה-logger ל-Node.js — createLogger, initLogger, addSink, getLogConfig.
  *
- * Uses pino for structured logging.
- * Dual transport: stderr (pretty) + stdout (JSON) controlled by config.format.
+ * משתמש ב-pino עבור רישום מובנה (structured logging).
+ * תעבורה כפולה: stderr (pretty) + stdout (JSON) נשלט על ידי config.format.
  */
 import pino from "pino"
 import { isEnabledForNs } from "./namespace.js"
@@ -12,7 +12,7 @@ export { parseEnvConfig, parseLogConfig } from "./config.js"
 export type { Fields, Level, LogConfig, LogEntry, Logger }
 export { isEnabledForNs }
 
-// ── Global state ──────────────────────────────────────────────────────────────
+// ── מצב גלובלי ──────────────────────────────────────────────────────────────
 
 let _config: LogConfig = {
   level: "info",
@@ -23,7 +23,7 @@ let _config: LogConfig = {
 
 const _sinks: Array<(entry: LogEntry) => void> = []
 
-// ── pino instances (lazy, created on first initLogger call) ───────────────────
+// ── מופעי pino (עצלנים, נוצרים בקריאה הראשונה ל-initLogger) ───────────────────
 
 let _pinoJson: pino.Logger | null = null
 let _pinoPretty: pino.Logger | null = null
@@ -48,7 +48,7 @@ function createPino(destination: NodeJS.WritableStream, pretty: boolean): pino.L
   return pino({ level: "trace" }, destination)
 }
 
-// ── Public API ────────────────────────────────────────────────────────────────
+// ── API ציבורי ────────────────────────────────────────────────────────────────
 
 export function initLogger(config: LogConfig): void {
   _config = config
@@ -67,7 +67,7 @@ export function getLogConfig(): LogConfig {
   return _config
 }
 
-/** Add a custom sink. Returns an unsubscribe function. */
+/** הוספת sink מותאם אישית. מחזיר פונקציית ביטול רישום (unsubscribe). */
 export function addSink(sink: (entry: LogEntry) => void): () => void {
   _sinks.push(sink)
   return () => {
@@ -76,12 +76,12 @@ export function addSink(sink: (entry: LogEntry) => void): () => void {
   }
 }
 
-/** Create a logger for the given namespace. */
+/** צור logger עבור המרחב (namespace) הנתון. */
 export function createLogger(namespace: string): Logger {
   return makeLogger(namespace, {})
 }
 
-// ── Internal ──────────────────────────────────────────────────────────────────
+// ── פנימי ──────────────────────────────────────────────────────────────────
 
 const LEVEL_VALUES: Record<Level, number> = {
   silent: 100,
@@ -103,14 +103,14 @@ function emit(level: Level, ns: string, fields: Fields, msg: string | undefined)
 
   const ts = Date.now()
 
-  // Emit to pino sinks
+  // פליטה ל-pino sinks
   const pinoFields = { ns, ...fields }
   if (level !== "silent") {
     if (_pinoJson) _pinoJson[level](pinoFields, msg ?? "")
     if (_pinoPretty) _pinoPretty[level](pinoFields, msg ?? "")
   }
 
-  // Emit to custom sinks
+  // פליטה ל-sinks מותאמים אישית
   if (_sinks.length > 0) {
     const entry: LogEntry = {
       ts,
@@ -123,7 +123,7 @@ function emit(level: Level, ns: string, fields: Fields, msg: string | undefined)
       try {
         sink(entry)
       } catch {
-        // Sink errors don't break the logger
+        // שגיאות Sink אינן שוברות את ה-logger
       }
     }
   }

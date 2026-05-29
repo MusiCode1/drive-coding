@@ -1,24 +1,24 @@
 /**
- * client.ts — createAcpClient: transport-agnostic ACP client.
+ * client.ts — createAcpClient: ACP client אגנוסטי לתעבורה.
  *
- * Flow (data-driven readiness):
- * 1. Caller hands in an open `AcpTransport`. Transport must be ready
- *    to send/receive bytes before this is called (e.g. WS already in OPEN state).
- * 2. Build streams pipeline: transport.readable/writable → ndJsonStream →
+ * זרימה (מוכנות מבוססת-נתונים):
+ * 1. הקורא מעביר AcpTransport פתוח. התעבורה חייבת להיות מוכנה לשליחה/קבלה
+ *    לפני שקוראים לפונקציה הזו (למשל WS כבר במצב OPEN).
+ * 2. בניית pipeline של streams: transport.readable/writable → ndJsonStream →
  *    ClientSideConnection.
- * 3. initialize() with fs caps = false, wrapped in Promise.race with 10s timeout.
- *    Readiness is proven by the ACP response itself — no synthetic handshake frame.
- *    If no response within INIT_TIMEOUT_MS → close transport, throw timeout.
+ * 3. initialize() עם fs caps = false, עטוף ב-Promise.race עם timeout של 10 שניות.
+ *    המוכנות מוכחת על-ידי תגובת ה-ACP עצמה — אין frame handshake סינתטי.
+ *    אם אין תגובה בתוך INIT_TIMEOUT_MS → סוגר transport, זורק timeout.
  *
- * auth_required: if initialize throws with data.code === "auth_required",
- * rethrow with kind = "auth_required" so UI can display "<cli> auth login" message.
+ * auth_required: אם initialize זורקת עם data.code === "auth_required",
+ * זורק מחדש עם kind = "auth_required" כדי שה-UI יציג הודעת "<cli> auth login".
  *
- * Lifecycle decisions OUT of this module:
- *   - Heartbeat / NAT keepalive — transport-specific concern. WS transport
- *     does this internally (see WsAcpTransport). Stdio + mock don't need it.
- *   - onClose subscription — caller registers directly on the transport
- *     BEFORE passing it here.
- *   - Auto-reconnect — not handled at any layer. UI shows "refresh" prompt.
+ * החלטות מחזור חיים מחוץ למודול זה:
+ *   - Heartbeat / NAT keepalive — עניין ספציפי לתעבורה. תעבורת WS
+ *     מטפלת בזה פנימית (ראה WsAcpTransport). Stdio + mock אינם זקוקים לזה.
+ *   - onClose subscription — הקורא רושם ישירות על התעבורה
+ *     לפני שמעביר אותה לכאן.
+ *   - Auto-reconnect — לא מטופל באף שכבה. ה-UI מציג פרומפט "רענן".
  */
 import type { SessionNotification } from "@agentclientprotocol/sdk"
 import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk"
@@ -28,7 +28,7 @@ import type { AcpTransport } from "./transport.js"
 const DEFAULT_INIT_TIMEOUT_MS = 10_000
 
 export type AcpClientOptions = {
-  /** Override the initialize timeout. Defaults to 10s. Tests pass a small value. */
+  /** דריסת timeout האתחול. ברירת מחדל: 10 שניות. בבדיקות מעבירים ערך קטן. */
   initTimeoutMs?: number
 }
 
@@ -53,15 +53,14 @@ export async function createAcpClient(
 ): Promise<AcpClient> {
   const initTimeoutMs = options.initTimeoutMs ?? DEFAULT_INIT_TIMEOUT_MS
 
-  // Build streams + connection — SDK starts reading from the pipe immediately.
+  // בניית streams + connection — ה-SDK מתחיל לקרוא מהצינור מיד.
   const stream = ndJsonStream(transport.writable, transport.readable)
   const client = createClientImpl({ onUpdate })
   const conn = new ClientSideConnection((_agent) => client, stream)
 
-  // initialize with fs caps = false — wrapped in Promise.race with the timeout.
-  // Receiving a valid ACP response is itself the readiness signal; no synthetic
-  // handshake frame is needed. If the transport or the agent is unresponsive,
-  // the timeout fires with a clear error.
+  // initialize עם fs caps = false — עטוף ב-Promise.race עם timeout.
+  // קבלת תגובת ACP תקינה היא עצמה אות המוכנות; אין צורך ב-frame handshake
+  // סינתטי. אם התעבורה או הסוכן אינם מגיבים, ה-timeout נורה עם שגיאה ברורה.
   let initTimer: ReturnType<typeof setTimeout> | undefined
   let initResult: Awaited<ReturnType<typeof conn.initialize>>
   const initPromise = conn.initialize({
@@ -71,9 +70,9 @@ export async function createAcpClient(
     },
     clientInfo: { name: "drive-coding", version: "0.2.0" },
   })
-  // Mark initPromise as handled to suppress unhandled-rejection if the race
-  // resolves via timeout. The actual rejection (if any) is still observed
-  // by Promise.race below.
+  // מסמנים את initPromise כמטופל כדי לדכא unhandled-rejection אם ה-race
+  // מסתיים דרך timeout. הדחייה האמיתית (אם קיימת) עדיין נצפית
+  // על-ידי Promise.race למטה.
   initPromise.catch(() => {})
   try {
     initResult = await Promise.race([
@@ -91,7 +90,7 @@ export async function createAcpClient(
     if (initTimer !== undefined) clearTimeout(initTimer)
   } catch (e) {
     if (initTimer !== undefined) clearTimeout(initTimer)
-    // auth_required error — rethrow with kind for UI
+    // שגיאת auth_required — זורק מחדש עם kind ל-UI
     const err = e as { code?: number; data?: { code?: string }; message?: string }
     if (err?.data?.code === "auth_required") {
       const authErr = new Error(
@@ -110,38 +109,38 @@ export async function createAcpClient(
     conn,
     capabilities: initResult.agentCapabilities,
 
-    /** Create a new ACP session */
+    /** יוצר session ACP חדש */
     async newSession(opts: { cwd: string }) {
       return conn.newSession({ cwd: opts.cwd, mcpServers: [] })
     },
 
     /**
-     * Load an existing ACP session by sessionId.
-     * May throw -32601 if CLI does not support loadSession capability.
+     * טוען session ACP קיים לפי sessionId.
+     * עשוי לזרוק -32601 אם ה-CLI אינו תומך ביכולת loadSession.
      */
     async loadSession(opts: { cwd: string; sessionId: string }) {
       return conn.loadSession({ sessionId: opts.sessionId, cwd: opts.cwd, mcpServers: [] })
     },
 
     /**
-     * List sessions from the agent.
-     * May throw -32601 if CLI does not support listSessions capability.
+     * מפרט sessions מהסוכן.
+     * עשוי לזרוק -32601 אם ה-CLI אינו תומך ביכולת listSessions.
      */
     async listSessions() {
       return conn.listSessions({})
     },
 
-    /** Send a text prompt in the given session */
+    /** שולח פרומפט טקסטואלי ב-session הנתון */
     async prompt(sessionId: string, text: string) {
       return conn.prompt({ sessionId, prompt: [{ type: "text", text }] })
     },
 
-    /** Cancel current operation in the given session */
+    /** מבטל פעולה פעילה ב-session הנתון */
     async cancel(sessionId: string) {
       return conn.cancel({ sessionId })
     },
 
-    /** Close the underlying transport */
+    /** סוגר את התעבורה הבסיסית */
     close() {
       transport.close()
     },

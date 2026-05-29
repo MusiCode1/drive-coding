@@ -1,19 +1,19 @@
 import { type } from "arktype"
 
-// CLI kinds נתמכים (D6 + D24)
+// סוגי CLI נתמכים (D6 + D24)
 export const CliKind = type("'opencode' | 'claude' | 'gemini' | 'codex'")
 export type CliKind = typeof CliKind.infer
 
-// Status state machine
+// מכונת מצבים (State machine) של סטטוס
 // starting: בתהליך spawn (Slice 3+)
 // ready: זמין לקבל prompts
 // busy: prompt בעבודה
 // crashed: bridge נפל
-// closed: כובה ע"י user
+// closed: כובה ע"י המשתמש
 export const AgentStatus = type("'starting' | 'ready' | 'busy' | 'crashed' | 'closed'")
 export type AgentStatus = typeof AgentStatus.infer
 
-// Internal — backend בלבד
+// פנימי — מיועד ל-backend בלבד
 export const Agent = type({
   id: "string.uuid",
   cliKind: CliKind,
@@ -21,15 +21,15 @@ export const Agent = type({
   modelOverride: "string | null",
   status: AgentStatus,
   createdAt: "string.date.iso",
-  // Bridge details (יתמלאו ב-Slice 3)
+  // פרטי Bridge (יתמלאו ב-Slice 3)
   "bridgePort?": "number",
   "acpSessionId?": "string",
-  // Provider error reason (Slice 5.6 — D47)
+  // סיבת שגיאת ספק (Slice 5.6 — D47)
   "crashReason?": "string",
 })
 export type Agent = typeof Agent.infer
 
-// Public — מה שה-frontend מקבל
+// פומבי — מה שה-frontend מקבל
 export const AgentPublic = type({
   id: "string.uuid",
   cliKind: CliKind,
@@ -37,21 +37,21 @@ export const AgentPublic = type({
   modelOverride: "string | null",
   status: AgentStatus,
   createdAt: "string.date.iso",
-  // Populated when status='crashed' and provider error was extracted (Slice 5.6)
+  // מאוכלס כאשר status='crashed' ושגיאת הספק חולצה (Slice 5.6)
   "crashReason?": "string",
-  // Slice 10: present once FE has completed ACP handshake and called /session-attached.
-  // FE uses this on reload to call loadSession() instead of newSession() — avoids
-  // 409 conflict and restores session history.
+  // Slice 10: נוכח ברגע שה-FE השלים את לחיצת היד של ה-ACP וקרא ל-/session-attached.
+  // ה-FE משתמש בזה בעת רענון כדי לקרוא ל-loadSession() במקום newSession() — מונע
+  // התנגשות 409 ומשחזר את היסטוריית ה-session.
   "acpSessionId?": "string",
 })
 export type AgentPublic = typeof AgentPublic.infer
 
-// Input ל-POST /api/agents
+// קלט ל-POST /api/agents
 export const CreateAgentInput = type({
   cliKind: CliKind,
   cwd: "string >= 1",
   "modelOverride?": "string | null",
-  // Slice 8a: load an existing ACP session via session/load instead of newSession
+  // Slice 8a: טעינת session ACP קיים דרך session/load במקום newSession
   "existingSessionId?": "string",
 })
 export type CreateAgentInput = typeof CreateAgentInput.infer
@@ -62,7 +62,7 @@ export const AgentList = type({
 })
 export type AgentList = typeof AgentList.infer
 
-// Helper — Agent → AgentPublic
+// פונקציית עזר — המרה מ-Agent ל-AgentPublic
 export function toAgentPublic(agent: Agent): AgentPublic {
   const pub: AgentPublic = {
     id: agent.id,

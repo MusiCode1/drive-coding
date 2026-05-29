@@ -1,15 +1,15 @@
 /**
- * i18n — minimal translation layer.
+ * i18n — שכבת תרגום מינימלית.
  *
- * `createI18n({ locale })` returns:
- *   - t(key): string — translate, falls back to "he" if missing in current locale.
- *   - locale: Locale (read-only — to change, create a new instance or use the view-model).
+ * `createI18n({ locale })` מחזירה:
+ *   - t(key): string — תרגום, נופל ל-"he" אם חסר ב-locale הנוכחי.
+ *   - locale: Locale (לקריאה בלבד — כדי לשנות, צור מופע חדש או השתמש ב-view-model).
  *
- * The FE wraps this in a Svelte view-model (`view-models/i18n.svelte.ts`) that
- * exposes `t` reactively. Other consumers (BE, tests) can use this directly.
+ * ה-FE עוטף את זה ב-view-model של Svelte (view-models/i18n.svelte.ts) ש-
+ * חושף את `t` באופן ריאקטיבי. צרכנים אחרים (BE, בדיקות) יכולים להשתמש בזה ישירות.
  *
- * Locale detection (`detectLocale()`) returns "he" if `navigator.language` starts
- * with "he", else "en". Defaults to "he" when navigator is unavailable (SSR/tests).
+ * זיהוי Locale (detectLocale()) מחזיר "he" אם navigator.language מתחיל
+ * ב-"he", אחרת "en". נופל ל-"he" כאשר navigator אינו זמין (SSR/בדיקות).
  */
 
 import { en } from "./catalogs/en.js"
@@ -21,9 +21,9 @@ export type { Locale, MessageKey } from "./keys.js"
 const CATALOGS: Record<Locale, Catalog> = { he, en }
 
 /**
- * Default locale — Hebrew. Used when:
- *   - The requested locale's catalog is missing a key (fallback).
- *   - detectLocale() can't read navigator.
+ * ברירת המחדל ל-locale — עברית. בשימוש כאשר:
+ *   - הקטלוג של ה-locale המבוקש חסר מפתח (fallback).
+ *   - detectLocale() לא יכול לקרוא את navigator.
  */
 export const DEFAULT_LOCALE: Locale = "he"
 
@@ -42,8 +42,8 @@ export function createI18n(opts: { locale: Locale }): I18n {
 }
 
 /**
- * detectLocale — best-effort locale detection from browser preference.
- * Returns DEFAULT_LOCALE when navigator is unavailable.
+ * detectLocale — מאמץ מיטבי לזיהוי locale מהעדפת הדפדפן.
+ * מחזיר DEFAULT_LOCALE כאשר navigator אינו זמין.
  */
 export function detectLocale(): Locale {
   if (typeof navigator === "undefined") return DEFAULT_LOCALE

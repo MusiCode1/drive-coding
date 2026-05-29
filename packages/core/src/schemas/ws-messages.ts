@@ -1,6 +1,6 @@
 import { type } from "arktype"
 
-// ─── Client → Server ─────────────────────────────────────────
+// ─── לקוח → שרת ─────────────────────────────────────────
 
 export const PingMessage = type({ type: "'ping'" })
 export type PingMessage = typeof PingMessage.infer
@@ -15,7 +15,7 @@ export type PromptMessage = typeof PromptMessage.infer
 export const CancelMessage = type({ type: "'cancel'" })
 export type CancelMessage = typeof CancelMessage.infer
 
-// Slice 5: audio voice message
+// Slice 5: הודעת קול אודיו
 export const AudioMessage = type({
   type: "'audio'",
   agentId: "string",
@@ -27,7 +27,7 @@ export type AudioMessage = typeof AudioMessage.infer
 export const ClientMessage = PingMessage.or(PromptMessage).or(CancelMessage).or(AudioMessage)
 export type ClientMessage = typeof ClientMessage.infer
 
-// ─── Server → Client ─────────────────────────────────────────
+// ─── שרת → לקוח ─────────────────────────────────────────
 
 export const HelloMessage = type({ type: "'hello'", version: "string" })
 export type HelloMessage = typeof HelloMessage.infer
@@ -39,7 +39,7 @@ export const PongMessage = type({
 })
 export type PongMessage = typeof PongMessage.infer
 
-// Slice 4: rich server messages
+// Slice 4: הודעות שרת עשירות
 export const ConnectedMessage = type({
   type: "'connected'",
   agentId: "string",
@@ -52,11 +52,11 @@ export const ThinkingMessage = type({
 export type ThinkingMessage = typeof ThinkingMessage.infer
 
 /**
- * Text chunk from ACP — streamed incrementally.
+ * מקטע טקסט מה-ACP — מוזרם בהדרגה.
  *
- * Tier 1 additions (Phase 4):
- *   messageId — UUID stable across all chunks of the same message/thought turn.
- *     Allows frontend to group bubbles and link audio_chunks back to their source.
+ * תוספות מדור 1 (שלב 4):
+ *   messageId — UUID יציב על פני כל המקטעים של אותו תור message/thought.
+ *     מאפשר ל-frontend לקבץ בועות ולקשר audio_chunks חזרה למקור שלהם.
  */
 export const TextChunkMessage = type({
   type: "'text_chunk'",
@@ -67,20 +67,20 @@ export const TextChunkMessage = type({
 export type TextChunkMessage = typeof TextChunkMessage.infer
 
 /**
- * Tool call notification. Sent on initial `tool_call` event AND on every
- * `tool_call_update` — frontend uses `toolCallId` to merge into a single
- * UI element (status badge, content section).
+ * התראת קריאת tool. נשלחת באירוע `tool_call` הראשוני וגם בכל
+ * `tool_call_update` — ה-frontend משתמש ב-`toolCallId` כדי למזג לאלמנט
+ * UI יחיד (תג סטטוס, אזור תוכן).
  *
- * `kind`: ACP ToolKind = "read" | "edit" | "delete" | "move" | "search" |
+ * `kind`: סוג ה-ACP ToolKind = "read" | "edit" | "delete" | "move" | "search" |
  *   "execute" | "think" | "fetch" | "switch_mode" | "other"
- * `status`: ACP ToolCallStatus = "pending" | "in_progress" | "completed" | "failed"
- * `locations`: array of file paths (for "follow-along" UI)
- * `content`: human-readable preview of tool output (text only — diff/terminal
- *   are summarised to a single line for Slice 5.5; richer rendering in Slice 7)
+ * `status`: סטטוס ה-ACP ToolCallStatus = "pending" | "in_progress" | "completed" | "failed"
+ * `locations`: מערך של נתיבי קבצים (עבור מעקב UI "follow-along")
+ * `content`: תצוגה מקדימה קריאה למשתמש של פלט ה-tool (טקסט בלבד — diff/terminal
+ *   מסוכמים לשורה בודדת ב-Slice 5.5; רינדור עשיר יותר ב-Slice 7)
  *
- * Tier 1 additions (Phase 4):
- *   narration — Hebrew sentence describing the tool action (populated later via
- *     tool_call_update after narrateToolCall resolves).
+ * תוספות מדור 1 (שלב 4):
+ *   narration — משפט בעברית המתאר את פעולת ה-tool (יאכלס בהמשך דרך
+ *     tool_call_update לאחר ש-narrateToolCall מסתיים).
  */
 export const ToolCallMessage = type({
   type: "'tool_call'",
@@ -107,7 +107,7 @@ export const ErrorMessage = type({
 })
 export type ErrorMessage = typeof ErrorMessage.infer
 
-// Slice 5: voice server messages
+// Slice 5: הודעות קול מהשרת
 export const SttPartialMessage = type({
   type: "'stt_partial'",
   text: "string",
@@ -115,14 +115,14 @@ export const SttPartialMessage = type({
 export type SttPartialMessage = typeof SttPartialMessage.infer
 
 /**
- * Audio chunk from TTS.
+ * מקטע אודיו מה-TTS.
  *
- * Tier 1 additions (Phase 4):
- *   segmentId — unique UUID per TTS segment (one sentence = one segment).
- *   messageId — parent message/thought ID (links segment back to text_chunk).
- *   kind — "message" | "thought" | "narration".
- *   originalText — source English text before translation.
- *   translatedText — Hebrew text that was synthesised.
+ * תוספות מדור 1 (שלב 4):
+ *   segmentId — UUID ייחודי לכל מקטע TTS (משפט אחד = מקטע אחד).
+ *   messageId — מזהה ההודעה/מחשבה האב (מקשר את המקטע חזרה ל-text_chunk).
+ *   kind — סוג: "message" | "thought" | "narration".
+ *   originalText — טקסט המקור באנגלית לפני תרגום.
+ *   translatedText — טקסט בעברית שסונתז.
  */
 export const AudioChunkMessage = type({
   type: "'audio_chunk'",
@@ -143,9 +143,9 @@ export const TranslationMessage = type({
 export type TranslationMessage = typeof TranslationMessage.infer
 
 /**
- * Sent after narrateToolCall resolves — updates the tool card with a
- * natural Hebrew narration of what the agent is doing.
- * Tier 1 (Phase 4): new event.
+ * נשלחת לאחר סיום narrateToolCall — מעדכנת את כרטיס ה-tool
+ * בתיאור טבעי בעברית של מה שהסוכן עושה כעת.
+ * דור 1 (שלב 4): אירוע חדש.
  */
 export const ToolCallUpdateMessage = type({
   type: "'tool_call_update'",
@@ -154,11 +154,11 @@ export const ToolCallUpdateMessage = type({
 })
 export type ToolCallUpdateMessage = typeof ToolCallUpdateMessage.infer
 
-// ─── Slice 8a: Session History events ─────────────────────────────────────────
+// ─── Slice 8a: אירועי היסטוריית Session ─────────────────────────────────────────
 
 /**
- * Sent once when a session is loaded from history (before history_chunk stream).
- * Frontend uses this to reset the chat area.
+ * נשלחת פעם אחת כאשר נטען session מההיסטוריה (לפני הזרמת history_chunk).
+ * ה-frontend משתמש בזה כדי לאפס את אזור הצ'אט.
  */
 export const HistoryStartMessage = type({
   type: "'history_start'",
@@ -168,9 +168,9 @@ export const HistoryStartMessage = type({
 export type HistoryStartMessage = typeof HistoryStartMessage.infer
 
 /**
- * Streamed during session/load — represents one historical message fragment.
+ * מוזרם במהלך session/load — מייצג קטע של הודעה היסטורית אחת.
  * kind: 'message' | 'thought' | 'user_message'
- * messageId: stable UUID for grouping fragments of the same turn.
+ * messageId: UUID יציב לקיבוץ קטעים של אותו תור.
  */
 export const HistoryChunkMessage = type({
   type: "'history_chunk'",
@@ -181,8 +181,8 @@ export const HistoryChunkMessage = type({
 export type HistoryChunkMessage = typeof HistoryChunkMessage.infer
 
 /**
- * Historical tool call notification — similar to ToolCallMessage but
- * scoped to the history replay stream.
+ * התראת קריאת tool היסטורית — דומה ל-ToolCallMessage אך
+ * מוגבלת לזרם השחזור של ההיסטוריה.
  */
 export const HistoryToolCallMessage = type({
   type: "'history_tool_call'",
@@ -194,7 +194,7 @@ export const HistoryToolCallMessage = type({
 export type HistoryToolCallMessage = typeof HistoryToolCallMessage.infer
 
 /**
- * Signals end of history replay. Frontend enables the input after this.
+ * מאותתת על סיום שחזור ההיסטוריה. ה-frontend מאפשר את הקלט לאחר מכן.
  */
 export const HistoryDoneMessage = type({
   type: "'history_done'",
@@ -202,8 +202,8 @@ export const HistoryDoneMessage = type({
 export type HistoryDoneMessage = typeof HistoryDoneMessage.infer
 
 /**
- * Emitted immediately after the user's audio blob is saved to disk
- * (before STT). Allows frontend to show a replay button on the audio bubble.
+ * נפלטת מיד לאחר שקובץ האודיו (blob) של המשתמש נשמר בדיסק
+ * (לפני STT). מאפשרת ל-frontend להציג כפתור השמעה חוזרת בבועת האודיו.
  */
 export const AudioRecordingSavedMessage = type({
   type: "'audio_recording_saved'",

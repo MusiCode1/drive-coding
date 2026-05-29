@@ -11,7 +11,7 @@ export type LogEntry = {
 
 export type LogConfig = {
   level: Level
-  ns: string // CSV pattern; "*" default
+  ns: string // תבנית CSV; "*" כברירת מחדל
   format: "pretty" | "json" | "both"
   remote?: boolean
 }
@@ -22,8 +22,8 @@ export interface Logger {
   info(fields?: Fields, msg?: string): void
   warn(fields?: Fields, msg?: string): void
   error(fieldsOrErr?: Fields | Error, msg?: string): void
-  /** Create a child logger with inherited fields. */
+  /** צור logger ילד עם שדות שעוברים בירושה. */
   child(fields: Fields): Logger
-  /** Create a sub-namespace logger. log.ns("stt") on "voice" → "voice.stt" */
+  /** צור logger של תת-מרחב שם. log.ns("stt") על "voice" → "voice.stt" */
   ns(suffix: string): Logger
 }

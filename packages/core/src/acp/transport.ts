@@ -1,22 +1,22 @@
 /**
- * transport.ts — AcpTransport interface.
+ * transport.ts — ממשק AcpTransport.
  *
- * Dependency-inversion seam between the ACP client logic (transport-agnostic)
- * and the underlying byte transport (WebSocket on FE, stdio on BE, mock in tests).
+ * תפר היפוך-תלויות (Dependency-inversion) בין הלוגיקה של לקוח ה-ACP (אגנוסטית לתעבורה)
+ * לתעבורת הבתים הבסיסית (WebSocket ב-FE, stdio ב-BE, mock בבדיקות).
  *
- * Contract:
- *   - `readable`: stream of incoming bytes from the agent (NDJSON frames).
- *     The ACP SDK reads this via `ndJsonStream` which buffers on `\n` boundaries.
- *   - `writable`: stream of outgoing bytes to the agent. The SDK writes
- *     `{...}\n` lines.
- *   - `close()`: caller-initiated termination.
- *   - `onClose(cb)`: subscription to non-caller-initiated termination
- *     (transport disconnect, agent crash, etc.). May fire 0 or 1 times per
- *     transport instance.
+ * חוזה:
+ *   - readable: זרם של בתים נכנסים מהסוכן (NDJSON frames).
+ *     ה-ACP SDK קורא את זה דרך ndJsonStream שאוגר על גבולות \n.
+ *   - writable: זרם של בתים יוצאים לסוכן. ה-SDK כותב
+ *     שורות של {...}\n.
+ *   - close(): סיום ביוזמת הקורא.
+ *   - onClose(cb): רישום לסיום שלא ביוזמת הקורא
+ *     (ניתוק תעבורה, קריסת סוכן, וכו'). עשוי להיקרא 0 או 1 פעמים לכל
+ *     מופע של תעבורה.
  *
- * Both streams are byte streams (`Uint8Array`) to match the SDK contract.
- * Transports that work in text (e.g. browser WebSocket) must convert with
- * `TextEncoder`/`TextDecoder` internally.
+ * שני הזרמים הם זרמי בתים (Uint8Array) כדי להתאים לחוזה של ה-SDK.
+ * תעבורות שעובדות בטקסט (למשל browser WebSocket) חייבות להמיר עם
+ * TextEncoder/TextDecoder פנימית.
  */
 
 export interface AcpTransport {

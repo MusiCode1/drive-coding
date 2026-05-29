@@ -1,18 +1,18 @@
 /**
- * MessageKey — single source of truth for all UI strings.
+ * MessageKey — מקור האמת היחיד לכל מחרוזות ה-UI.
  *
- * Adding a new string:
- *   1. Add the key to the appropriate `// ─── <domain> ───` block below.
- *      If no block matches, append a new block AT THE END of the union.
- *   2. Add the translation in catalogs/he.ts (required) and catalogs/en.ts
- *      (placeholder ok) — in the same domain block.
- *   3. Use via `t("your.key")`.
+ * הוספת מחרוזת חדשה:
+ *   1. הוסף את המפתח לבלוק `// ─── <domain> ───` המתאים למטה.
+ *      אם אין בלוק מתאים, הוסף בלוק חדש **בסוף** האיחוד (union).
+ *   2. הוסף את התרגום ב-catalogs/he.ts (חובה) וב-catalogs/en.ts
+ *      (פלייסולדר מספיק) — באותו בלוק דומיין.
+ *   3. השתמש באמצעות `t("your.key")`.
  *
- * NEVER inline Hebrew (or any UI text) in code. The lint script
- * `scripts/lint-no-hebrew-in-code.sh` enforces this.
+ * לעולם אל תשלב עברית (או כל טקסט UI אחר) ישירות בקוד. סקריפט ה-lint
+ * `scripts/lint-no-hebrew-in-code.sh` אוכף זאת.
  *
- * ─── Parallel-safe additive design (docs/conventions/parallel-safe-code.md) ───
- * Two slices that add keys land in different blocks → git auto-merge.
+ * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
+ * שני slices שמוסיפים מפתחות נוחתים בבלוקים שונים → git auto-merge.
  */
 
 export type Locale = "he" | "en"
@@ -80,8 +80,8 @@ export type MessageKey =
 // ─── recordings ─── (slice 10)
 
 /**
- * MessageValue — string or function for parameterized messages.
- * Phase 1: only literal strings. If we need parameters later, change to:
+ * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
+ * שלב 1: מחרוזות ליטרליות בלבד. אם נזדקק לפרמטרים בהמשך, נשנה ל:
  *   string | ((params: Record<string, string | number>) => string)
  */
 export type MessageValue = string

@@ -1,12 +1,12 @@
 import type { Catalog } from "../keys.js"
 
 /**
- * English catalog — scaffold. Translations are placeholders; refine when
- * we actually ship an English UI. The catalog must be complete (all keys
- * present) so the type system can enforce coverage at compile time.
+ * קטלוג אנגלית — שלד. התרגומים הם placeholder; לשפר כאשר
+ * נשלח ממשק משתמש באנגלית בפועל. הקטלוג חייב להיות שלם (כל המפתחות
+ * נוכחים) כדי שמערכת הטיפוסים תוכל לאכוף כיסוי בזמן קומפילציה.
  *
- * Append new keys in domain blocks below — see
- * docs/conventions/parallel-safe-code.md (technique #4: append-only catalogs).
+ * הוסף מפתחות חדשים בבלוקי domain למטה — ראה
+ * docs/conventions/parallel-safe-code.md (טכניקה #4: קטלוגים append-only).
  */
 export const en: Catalog = {
   // ─── connect ─── (slice 0)
