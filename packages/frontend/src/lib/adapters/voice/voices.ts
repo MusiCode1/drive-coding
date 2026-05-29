@@ -8,7 +8,7 @@
  * the proxy. Same pattern as tts.ts (learnings 2026-05-16).
  */
 
-const PROXY_BASE = "/proxy/elevenlabs"
+import { beUrl } from "$lib/util/be-url"
 
 export type Voice = {
   voice_id: string
@@ -28,7 +28,7 @@ type VoicesResponse = {
  * Errors are bubbled — callers (typically a VM) catch + log.
  */
 export async function listVoices(signal?: AbortSignal): Promise<Voice[]> {
-  const res = await fetch(`${PROXY_BASE}/v1/voices`, {
+  const res = await fetch(beUrl("/proxy/elevenlabs/v1/voices"), {
     method: "GET",
     headers: {
       "xi-api-key": "browser-placeholder", // OneCLI replaces at proxy
