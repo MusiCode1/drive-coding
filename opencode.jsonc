@@ -5,5 +5,5 @@
 
   // Project-specific instructions loaded by agent at session start.
   // Merged with global instructions (~/.config/opencode/AGENTS.md etc.).
-  "instructions": ["./docs/learnings.md"]
+  // "instructions": ["./docs/learnings.md"]  // migrated to opencode-memfs (2026-05-29)
 }
