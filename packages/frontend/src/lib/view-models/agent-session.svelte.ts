@@ -153,7 +153,62 @@ export class AgentSession {
     }
   }
 
-  // ─── session persistence ─── (slice 8 will add loadSession, listSessions)
+  // ─── session persistence ─── (slice 8)
+
+  /**
+   * Load an existing ACP session by sessionId.
+   * Similar to attach() but calls loadSession instead of newSession.
+   * After resolution, status === "connected" and the session is ready for sendPrompt.
+   */
+  loadSession = async (input: {
+    sessionId: string
+    cwd: string
+    cliKind: CliKind
+  }): Promise<void> => {
+    if (this.status === "connecting" || this.status === "connected") {
+      throw new Error(`cannot loadSession in status ${this.status}`)
+    }
+    this.status = "connecting"
+    this.error = null
+    this.bubbles = []
+    this.#detached = false
+
+    try {
+      // 1. Create agent on the BE (same as attach)
+      const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
+      this.agentId = agentId
+      this.cwd = input.cwd
+
+      // 2. Open WS transport + onClose (same as attach)
+      const proto = location.protocol === "https:" ? "wss:" : "ws:"
+      const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+      transport.onClose((code, reason) => {
+        if (this.#detached) return
+        if (code !== 1000 && code !== 1001) {
+          this.error = `WS closed (${code}): ${reason || "no reason"}`
+          this.status = "error"
+        }
+      })
+      await transport.waitForOpen()
+
+      // 3. ACP handshake (same as attach)
+      this.#client = await createAcpClient(transport, this.#onSessionUpdate)
+
+      // ── loadSession instead of newSession ──
+      await this.#client.loadSession({ sessionId: input.sessionId, cwd: input.cwd })
+      this.#sessionId = input.sessionId
+
+      // 4. Notify BE (same as attach, best-effort)
+      await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
+
+      this.status = "connected"
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      this.error = `loadSession failed: ${msg}`
+      this.status = "error"
+      this.#cleanup()
+    }
+  }
 
   // ─── recordings ─── (slice 10 will add)
 
@@ -187,10 +242,19 @@ export class AgentSession {
       this.#appendChunk("message", text, messageId)
     } else if (update.sessionUpdate === "agent_thought_chunk") {
       this.#appendChunk("thought", text, messageId)
+    } else if (update.sessionUpdate === "user_message_chunk") {
+      // Sent by the agent during loadSession history replay (per ACP spec
+      // §session-setup#loading-sessions). Never arrives for live turns —
+      // those originate from sendPrompt and we add the optimistic bubble there.
+      this.#appendChunk("user", text, messageId)
     }
   }
 
-  #appendChunk(kind: "message" | "thought", text: string, messageId: string | null): void {
+  #appendChunk(
+    kind: "message" | "thought" | "user",
+    text: string,
+    messageId: string | null,
+  ): void {
     const last = this.bubbles[this.bubbles.length - 1]
     // Group only when: (a) same kind AND (b) non-null matching messageId.
     // Null/missing messageId always starts a new bubble (per ACP grouping rule).
@@ -202,14 +266,16 @@ export class AgentSession {
 
     if (canGroup && last !== undefined) {
       const seg: Segment = { id: crypto.randomUUID(), text }
-      // last is MessageBubble or ThoughtBubble — both have segments arrays
+      // last is MessageBubble | ThoughtBubble | UserBubble — all have segments arrays
       if (last.kind === "message") {
         (last as MessageBubble).segments.push(seg)
       } else if (last.kind === "thought") {
         (last as ThoughtBubble).segments.push(seg)
+      } else if (last.kind === "user") {
+        (last as UserBubble).segments.push(seg)
       }
     } else {
-      const newBubble: MessageBubble | ThoughtBubble =
+      const newBubble: MessageBubble | ThoughtBubble | UserBubble =
         kind === "message"
           ? {
               id: crypto.randomUUID(),
@@ -218,9 +284,17 @@ export class AgentSession {
               createdAt: Date.now(),
               segments: [{ id: crypto.randomUUID(), text }],
             }
-          : {
+          : kind === "thought"
+          ? {
               id: crypto.randomUUID(),
               kind: "thought",
+              messageId,
+              createdAt: Date.now(),
+              segments: [{ id: crypto.randomUUID(), text }],
+            }
+          : {
+              id: crypto.randomUUID(),
+              kind: "user",
               messageId,
               createdAt: Date.now(),
               segments: [{ id: crypto.randomUUID(), text }],

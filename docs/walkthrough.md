@@ -4,6 +4,81 @@
 
 ---
 
+## 2026-05-29 13:35 — slice 8.1: user_message_chunk handler ל-history replay
+
+### מה בוצע?
+
+תיקון follow-up ל-slice 8 שסגר gap ב-loadSession.
+
+לפי ‏ACP spec (`session-setup#loading-sessions`), ‏סוכן MUST replay history דרך
+‏`session/update` notifications לפני שמשיב ל-`session/load`. ‏ה-notifications כוללים
+‏`user_message_chunk` (לא רק `agent_message_chunk` ו-`agent_thought_chunk`).
+
+עד התיקון: `#onSessionUpdate` הכיר רק שני סוגי chunks של הסוכן. אפילו אם OpenCode שלח user_message_chunk ב-history replay — ה-FE התעלם, ו-user bubbles מהעבר לא הופיעו אחרי load.
+
+**1. Frontend changes** (commit `fc2bc97`)
+
+- `packages/frontend/src/lib/types/bubble.ts`: `UserBubble.messageId` הורחב מ-`null` ל-`string | null`. ‏Live prompts ממשיכים להעביר `null` (synthetic optimistic bubble ב-sendPrompt); ‏history replay מקבל את ה-ACP messageId לצורך grouping.
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+  - ‏case שלישי ב-`#onSessionUpdate` עבור `user_message_chunk` → קורא ל-`#appendChunk("user", ...)`.
+  - ‏`#appendChunk` הורחבה: ‏signature מקבל `kind: "message" | "thought" | "user"`. ‏הbranch של ‏grouping (chunks באותו messageId → segments באותו bubble) ‏ושל יצירת bubble חדש (messageId שונה / null) ‏הורחב להכיר גם `UserBubble`.
+
+**2. Core package**
+
+‏לא נגעה. ‏ה-`packages/core/tsconfig.tsbuildinfo` השתנה כי הרצתי `pnpm --filter @drive-coding/core build` ‏לפני typecheck של FE (TS6305 incremental cache issue) — ‏זה build artifact, ‏לא src.
+
+### החלטות ארכיטקטורה
+
+- **‏Loosening UserBubble.messageId על פני kind חדש**: ‏נשקלה הוספת `kind: "user-historical"` נפרד, ‏אבל זה מצריך שיכפול ב-`BubbleRenderer` ‏וב-`UserBubble.svelte`. ‏הloosening אדיטיב לחלוטין — ‏consumer יחיד (UserBubble.svelte) ‏לא ניגש בכלל ל-messageId, ‏ו-Speaker enqueue רק עבור `kind ∈ {message, thought}` ‏אז הוא לא מושפע.
+- **שימוש חוזר ב-`#appendChunk` במקום `#appendUserChunk` נפרד**: ‏אותו pattern grouping בדיוק. ‏הפרדה הייתה duplicate ~25 שורות.
+
+### בדיקות
+
+typecheck FE ✅ | tests 7/7 ✅ | lint:i18n ✅
+
+### מנהרה לבדיקה ידנית
+
+`https://your-app-s8.nue.tuns.sh` — ‏OpenCode עם cwd בעל history → ‏טען סשנים → ‏בחר → Connect. ‏אם OpenCode שולח `user_message_chunk` ב-replay, ‏יופיעו user bubbles מהעבר.
+
+---
+
+## 2026-05-29 — slice 8: Session Picker (inline ב-connect form)
+
+### מה בוצע?
+
+Session picker inline בתוך ה-connect form: כפתור "טען סשנים אחרונים", dropdown עם sessions קיימים, ובחירה → loadSession במקום newSession.
+
+4 commits, worktree `slice-8-session-picker`.
+
+**Commit 0 — sessions adapter + deleteAgent**
+- `adapters/agents-api.ts`: הוסף `deleteAgent` (additive).
+- `adapters/sessions.ts`: `listSessionsForCwd(cwd, cliKind)` — spawns temp agent, ACP listSessions, deletes agent. מחזיר [] ב--32601 (Gemini לא תומך).
+
+**Commit 1 — AgentSession.loadSession**
+- `view-models/agent-session.svelte.ts`: הוסף `loadSession` בsection `// ─── session persistence ───`.
+- זהה ל-attach() עם שינוי אחד: `loadSession` במקום `newSession`. sessionId מגיע מה-input.
+
+**Commit 2 — UI + i18n keys**
+- i18n: 5 keys חדשים (sessions.loadButton/loading/label/startNew/error) ב-he + en.
+- `components/connect/SessionPicker.svelte`: button + dropdown + relative time formatting + error state. חולץ לcomponent כי route עבר 150 שורות.
+- `routes/+page.svelte`: state (sessions, loading, error, selectedSessionId) + loadSessions() + SessionPicker.
+
+**Commit 3 — wire connect**
+- onSubmit: אם selectedSessionId != null → loadSession + goto('/chat').
+- ללא בחירה → connectAgent() רגיל (regression safe).
+- החלף dynamic import של goto בstatic.
+
+### סטיות מהתכנון
+
+- ה-roadmap המקורי ב-slices.md דיבר על `/sessions` route נפרד. ה-brief שינה ל-inline ב-connect form (פחות חיכוך, לפי בקשת המשתמש).
+- SessionPicker חולץ לcomponent (לא inline בroute) כי route עבר 150 שורות — לפי brief §6 risk 6.
+
+### בדיקות
+
+typecheck ✅ build ✅ lint:i18n ✅ tests ✅ (כל 4 commits)
+
+---
+
 ## 2026-05-29 — slice 3: Mic + STT + VoiceMode FSM
 
 ### מה בוצע?

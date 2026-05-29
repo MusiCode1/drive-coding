@@ -1,8 +1,11 @@
 <script lang="ts">
+import { goto } from "$app/navigation"
 import type { CliKind } from "@drive-coding/core"
 import { connectAgent } from "$lib/actions/connect-agent"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
+import SessionPicker from "$lib/components/connect/SessionPicker.svelte"
 import { getI18n, getSession, getSettings } from "$lib/context"
+import { listSessionsForCwd, type SessionInfo } from "$lib/adapters/sessions"
 
 const settings = getSettings()
 const session = getSession()
@@ -12,10 +15,39 @@ const t = i18n.t
 let cliKind = $state<CliKind>(settings.cliKind)
 let cwd = $state(settings.lastCwd)
 
+// ─── session picker state ───
+let sessions = $state<SessionInfo[]>([])
+let sessionsLoading = $state(false)
+let sessionsError = $state<string | null>(null)
+let selectedSessionId = $state<string | null>(null)
+
+async function loadSessions() {
+  sessionsLoading = true
+  sessionsError = null
+  sessions = []
+  selectedSessionId = null
+  try {
+    sessions = await listSessionsForCwd(cwd.trim(), cliKind)
+  } catch (e) {
+    sessionsError = e instanceof Error ? e.message : String(e)
+  } finally {
+    sessionsLoading = false
+  }
+}
+
 async function onSubmit(e: SubmitEvent) {
   e.preventDefault()
   if (!cwd.trim()) return
-  await connectAgent({ cliKind, cwd: cwd.trim(), session, settings })
+  if (selectedSessionId !== null) {
+    settings.setCliKind(cliKind)
+    settings.setLastCwd(cwd.trim())
+    await session.loadSession({ sessionId: selectedSessionId, cwd: cwd.trim(), cliKind })
+    if (session.status === "connected") {
+      await goto("/chat")
+    }
+  } else {
+    await connectAgent({ cliKind, cwd: cwd.trim(), session, settings })
+  }
 }
 </script>
 
@@ -44,6 +76,17 @@ async function onSubmit(e: SubmitEvent) {
         disabled={session.status === "connecting"}
       />
     </label>
+
+    <SessionPicker
+      {cwd}
+      {cliKind}
+      {sessions}
+      loading={sessionsLoading}
+      error={sessionsError}
+      {selectedSessionId}
+      onload={loadSessions}
+      onselect={(id) => { selectedSessionId = id }}
+    />
 
     <label>
       <span>{t("chat.voicePicker.label")}</span>

@@ -47,6 +47,11 @@ export const he: Catalog = {
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)
+  "sessions.loadButton": "טען סשנים אחרונים",
+  "sessions.loading": "טוען…",
+  "sessions.label": "סשן קיים",
+  "sessions.startNew": "חדש",
+  "sessions.error": "שגיאה בטעינה",
   // ─── settings ─── (slice 9)
   // ─── recordings ─── (slice 10)
 }

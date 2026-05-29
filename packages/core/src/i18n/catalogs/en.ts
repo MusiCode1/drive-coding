@@ -51,6 +51,11 @@ export const en: Catalog = {
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)
+  "sessions.loadButton": "Load recent sessions",
+  "sessions.loading": "Loading…",
+  "sessions.label": "Existing session",
+  "sessions.startNew": "New",
+  "sessions.error": "Failed to load",
   // ─── settings ─── (slice 9)
   // ─── recordings ─── (slice 10)
 }
