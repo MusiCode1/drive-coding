@@ -23,7 +23,7 @@ export function extractProviderError(stderrLines: string[]): string | null {
   // דפוס 1: "message":"..." עם מילת מפתח רלוונטית, סריקת 30 השורות האחרונות.
   for (let i = stderrLines.length - 1; i >= 0 && i >= stderrLines.length - 30; i--) {
     const line = stderrLines[i]
-    const m = line?.match(new RegExp('"message":"([^"]{10,400})"'))
+    const m = line?.match(/"message":"([^"]{10,400})"/)
     if (m?.[1] && /credit|invalid|unauthor|forbid|rate|limit|key/i.test(m[1])) {
       return m[1]
     }

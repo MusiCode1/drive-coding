@@ -11,7 +11,7 @@
  *   await transport.waitForOpen()
  *     → משלים (resolves) כשה-WS מגיע ל-OPEN (ה-heartbeat מתחיל אוטומטית)
  *     → דוחה (rejects) באירוע "error"
- *   pass to createAcpClient(transport, onUpdate)
+ *   מעבירים ל-createAcpClient(transport, onUpdate)
  *
  * close() / ה-WS נסגר מהצד השני → ה-heartbeat נעצר, ה-onClose listeners מופעלים.
  */

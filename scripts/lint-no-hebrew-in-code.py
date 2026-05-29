@@ -92,18 +92,38 @@ def strip_jsdoc_blocks(text: str) -> str:
     return "".join(out)
 
 
+# Characters that, as the last significant token before a `/`, mean the `/`
+# starts a regex literal (not a division operator). Covers operators, opening
+# brackets, and statement separators. After an identifier, number, `)`, or `]`
+# a `/` is division, so we leave it as code.
+_REGEX_PREV_CHARS = set("(,=:[!&|?{};+-*%<>~^")
+
+
+def _prev_significant(out: list[str]) -> str:
+    """Last non-whitespace char already emitted to `out` (or '' at start)."""
+    for c in reversed(out):
+        if c not in " \t\r\n":
+            return c
+    return ""
+
+
 def strip_all_comments(text: str) -> str:
     """
     Walk the full file as a single character stream with a state machine.
     Replace every comment character with a space, preserving line breaks
     and column counts. Strings are preserved as-is.
 
-    States: code | line_comment | str_dq | str_sq | str_bt
+    States: code | line_comment | str_dq | str_sq | str_bt | regex
     (Block comments are handled in strip_jsdoc_blocks before this.)
+
+    Regex literals (`/.../flags`) are tracked so that quote characters inside
+    them (e.g. `/"message":"..."/`) don't open a phantom string state and
+    swallow the Hebrew comments that follow.
     """
     text = strip_jsdoc_blocks(text)
     out: list[str] = []
     state = "code"
+    in_char_class = False  # inside [...] within a regex
     i = 0
     n = len(text)
     while i < n:
@@ -114,6 +134,13 @@ def strip_all_comments(text: str) -> str:
                 out.append("  ")
                 state = "line_comment"
                 i += 2
+                continue
+            if ch == "/" and _prev_significant(out) in _REGEX_PREV_CHARS:
+                # Start of a regex literal.
+                state = "regex"
+                in_char_class = False
+                out.append(ch)
+                i += 1
                 continue
             if ch == '"':
                 state = "str_dq"
@@ -130,6 +157,26 @@ def strip_all_comments(text: str) -> str:
                 state = "code"
             else:
                 out.append(" ")
+            i += 1
+            continue
+        if state == "regex":
+            # Preserve regex source as-is; just track when it ends so quotes
+            # inside it don't trigger string state. `/` inside [...] is literal.
+            if ch == "\\" and i + 1 < n:
+                out.append(ch)
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if ch == "[":
+                in_char_class = True
+            elif ch == "]":
+                in_char_class = False
+            elif ch == "/" and not in_char_class:
+                state = "code"
+            elif ch == "\n":
+                # Unterminated regex on this line — bail back to code.
+                state = "code"
+            out.append(ch)
             i += 1
             continue
         # In a string literal: handle escapes, preserve text.
