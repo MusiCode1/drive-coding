@@ -50,6 +50,14 @@ export type ThoughtBubble = BubbleBase & {
   segments: ThoughtSegment[]
 }
 
+export type ToolContentText = { type: "text"; text: string }
+export type ToolContentDiff = { type: "diff"; path: string; oldText?: string; newText: string }
+export type ToolContentTerminal = { type: "terminal"; terminalId: string }
+export type ToolContentOther = { type: "other"; raw: unknown } // image/audio/resource/unknown
+export type ToolContent = ToolContentText | ToolContentDiff | ToolContentTerminal | ToolContentOther
+
+export type ToolLocation = { path: string; line?: number }
+
 export type ToolCall = {
   toolCallId: string
   name: string
@@ -63,6 +71,9 @@ export type ToolCall = {
   kind?: string
   /** פלט גולמי שהוחזר על ידי הכלי (מתוך ACP rawOutput). */
   result?: unknown
+  // ─── slice 16 (ACP content) ───
+  content?: ToolContent[]
+  locations?: ToolLocation[]
 }
 
 export type ToolBubble = BubbleBase & {

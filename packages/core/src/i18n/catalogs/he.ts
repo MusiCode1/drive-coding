@@ -51,6 +51,13 @@ export const he: Catalog = {
   "chat.tool.args": "קלט",
   "chat.tool.result": "פלט",
   "chat.tool.loading_narration": "...",
+  // ─── slice 16 (ACP content) ───
+  "chat.tool.raw": "פלט גולמי",
+  "chat.tool.locations": "קבצים",
+  "chat.tool.content": "תוכן",
+  "chat.tool.terminal": "טרמינל",
+  "chat.tool.diff.added": "נוסף",
+  "chat.tool.diff.removed": "הוסר",
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)

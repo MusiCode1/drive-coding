@@ -62,6 +62,13 @@ export type MessageKey =
   | "chat.tool.args"
   | "chat.tool.result"
   | "chat.tool.loading_narration"
+  // ─── slice 16 (ACP content) ───
+  | "chat.tool.raw"
+  | "chat.tool.locations"
+  | "chat.tool.content"
+  | "chat.tool.terminal"
+  | "chat.tool.diff.added"
+  | "chat.tool.diff.removed"
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)
