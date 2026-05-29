@@ -44,6 +44,13 @@ export const he: Catalog = {
   "voiceMode.status.speaking": "מדבר…",
   "voiceMode.status.cancelling": "מבטל…",
   // ─── tool-bubble ─── (slice 4)
+  "chat.tool.status.pending": "ממתין",
+  "chat.tool.status.in_progress": "בתהליך",
+  "chat.tool.status.completed": "הושלם",
+  "chat.tool.status.failed": "נכשל",
+  "chat.tool.args": "קלט",
+  "chat.tool.result": "פלט",
+  "chat.tool.loading_narration": "...",
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)

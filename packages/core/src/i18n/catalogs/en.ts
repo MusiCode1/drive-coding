@@ -48,6 +48,13 @@ export const en: Catalog = {
   "voiceMode.status.speaking": "Speaking…",
   "voiceMode.status.cancelling": "Cancelling…",
   // ─── tool-bubble ─── (slice 4)
+  "chat.tool.status.pending": "Pending",
+  "chat.tool.status.in_progress": "In progress",
+  "chat.tool.status.completed": "Completed",
+  "chat.tool.status.failed": "Failed",
+  "chat.tool.args": "Input",
+  "chat.tool.result": "Output",
+  "chat.tool.loading_narration": "...",
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)

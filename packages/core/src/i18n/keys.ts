@@ -55,6 +55,13 @@ export type MessageKey =
   | "voiceMode.status.speaking"
   | "voiceMode.status.cancelling"
   // ─── tool-bubble ─── (slice 4)
+  | "chat.tool.status.pending"
+  | "chat.tool.status.in_progress"
+  | "chat.tool.status.completed"
+  | "chat.tool.status.failed"
+  | "chat.tool.args"
+  | "chat.tool.result"
+  | "chat.tool.loading_narration"
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)
