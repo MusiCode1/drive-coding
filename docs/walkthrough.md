@@ -4,6 +4,49 @@
 
 ---
 
+## 2026-05-29 — slice-11 הושלם: audio-friendly prompt injection
+
+### מה בוצע?
+
+BE-only slice שמזריק system prompt ל-opencode sub-processes דרך `OPENCODE_CONFIG_CONTENT`.
+כשמשתמשת מחוברת ל-opencode דרך voice-acp, הסוכן עונה בפרוזה ידידותית לאודיו —
+ללא markdown, ללא emojis, ללא URLs, רשימות כפרוזה זורמת.
+
+4 commits, מ-`dev` tip `01667fb`.
+
+**Commit 0 — תלויות + מבנה**
+- `packages/backend/plugins/` נוצרה עם `README.md` המסביר את ה-pattern.
+- `@opencode-ai/plugin ^1.15.12` נוסף ל-`devDependencies` של backend (type-only).
+
+**Commit 1 — הפלאגין**
+- `packages/backend/plugins/audio-friendly.ts` — OpenCode plugin עם 10 חוקי פלט
+  לסביבת קול. משתמש ב-`output.system.push()` (לא `unshift`) לשמירת cache structure.
+- תוכן הפרומפט: copy literal מ-`docs/audio-friendly-prompt-plan.md §6`.
+  לא שונה — Tama יעדכן אחרי בדיקה אקוסטית.
+
+**Commit 2 — Integration**
+- `packages/backend/src/plugin-config.ts` — בונה JSON config עם `file://` URL לפלאגין.
+  ממזג עם `OPENCODE_CONFIG_CONTENT` קיים (לא דורס plugins של המשתמש).
+- `packages/backend/src/acp/bridge-manager.ts` — שינוי additive ב-`spawnInternal`:
+  `if cliKind === "opencode"` → env מכיל הפלאגין. אחרת env = `process.env`.
+
+**Commit 3 — Smoke test**
+- `tests/smoke/chat-roundtrip.mjs` — 3 soft assertions (warn בלבד):
+  אין emoji, אין `**`, אין URLs בפלט הסוכן.
+  Soft כי מודלים לא תמיד מציייתים ל-system prompts.
+
+### הרצה ידנית נדרשת (DoD item 3)
+לבדיקת אקוסטית מלאה עם BE+FE פעיל:
+- BE: `cd packages/backend && PORT=4001 onecli run --agent voice-acp -- bun --watch src/server.ts`
+- FE: `BE_PORT=4001 pnpm --filter @drive-coding/frontend-v2 dev`
+- שלחי prompt: "מה תוכל לעשות בשבילי?"
+- ציפייה: פרוזה בלי emoji + בלי markdown + בלי URLs.
+
+### סטיות מה-brief
+- אין סטיות מהותיות. `tsc --force` נדרש בworktree חדש (core dist לא נבנה ב-`pnpm build` הרגיל — ידוע).
+
+---
+
 ## 2026-05-28 22:55 — testing-coverage הושלם: ‎3 ‎smoke ‎חדשים + ‎unit ‎ל-Settings + ‎FE ‎vitest setup
 
 ### ‎מה בוצע?

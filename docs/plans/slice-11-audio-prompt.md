@@ -1,7 +1,7 @@
 # Slice 11 — Audio-Friendly Prompt Injection — תוכנית
 
 > **תאריך**: 2026-05-28
-> **סטטוס**: ‏טיוטה — ‏מחכה לאישור לפני יצירת worktree
+> **סטטוס**: ✅ הושלם — 2026-05-29
 > **Complexity**: 5/10 (verifier: light)
 > **תלות**: ‏אין — ‏BE-only, ‏עצמאי לחלוטין מ-slices אחרות. ‏יכול לרוץ במקביל ל-slice 3.
 > **מתבסס על**: ‏`docs/audio-friendly-prompt-plan.md` (design מלא — ‏396 שורות, ‏פירוט מלא של ה-rationale, ‏ה-alternatives, ‏הgotchas)
