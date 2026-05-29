@@ -27,11 +27,13 @@ import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
 import { untrack } from "svelte"
 import type { AgentSession, AgentSessionStatus } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
-import type { ThoughtBubble } from "$lib/types/bubble"
+import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
 import { AudioStream } from "../engines/audio-stream"
 import { Player } from "../engines/player.svelte"
 import { synthesizeStreaming } from "../adapters/voice/tts"
 import { translate } from "../adapters/voice/translate"
+import { narrate } from "../adapters/voice/narrate"
+import type { NarrateContext, ToolCallForNarrate } from "@drive-coding/core/voice/narration-prompt"
 
 const TARGET_LANG = "he" as const
 const MIN_CHARS = 20
@@ -81,6 +83,8 @@ export class Speaker {
   #prevStatus: AgentSessionStatus = "idle"
   /** Slice 4: tracks how many segments of each ThoughtBubble have been translated. */
   #translatedSegByBubble: Map<string, number> = new Map()
+  /** Slice 4: toolCallIds currently being narrated (prevents duplicate in-flight narrations). */
+  #narratingCallIds: Set<string> = new Set()
 
   // Set by constructor — kept so destroy() can stop the effect.
   #disposeEffect: (() => void) | null = null
@@ -110,10 +114,20 @@ export class Speaker {
         // Slice 4: tracked so that $effect re-runs when loadSession() finishes
         // and clears the flag — allowing new live chunks to flow to TTS.
         const isLoadingHistory = this.#session.isLoadingHistory
+        // Slice 4: pin reactivity on tool bubble status + narration so we notice
+        // when a tool call becomes completed or narration is written back.
+        const _toolStatus = bubbles
+          .filter((b) => b.kind === "tool")
+          .map((b) => {
+            const tc = (b as ToolBubble).toolCall
+            return `${tc.toolCallId}:${tc.status}:${tc.narration ?? ""}`
+          })
+        void _toolStatus
 
         // ── Writes (untracked) ─────────────────────────────────────────
         untrack(() => {
           this.#processBubbles(bubbles, enabled, isLoadingHistory)
+          this.#processToolBubbles(bubbles, isLoadingHistory)
           this.#handleStatusTransition(status, enabled)
           this.#prevStatus = status
         })
@@ -290,6 +304,52 @@ export class Speaker {
       console.warn("TTS job failed, skipping segment", {
         id: job.segmentId,
         err: e instanceof Error ? e.message : String(e),
+      })
+    }
+  }
+
+  /**
+   * Slice 4: for each completed ToolBubble missing narration, fire-and-forget narrate().
+   * Called from untrack() — async writes go back through $state proxy (fine).
+   */
+  #processToolBubbles(
+    bubbles: AgentSession["bubbles"],
+    isLoadingHistory: boolean,
+  ): void {
+    if (isLoadingHistory) return
+    for (const bubble of bubbles) {
+      if (bubble.kind !== "tool") continue
+      const tc = (bubble as ToolBubble).toolCall
+      if (tc.status !== "completed") continue
+      if (tc.narration !== undefined) continue   // already narrated
+      if (this.#narratingCallIds.has(tc.toolCallId)) continue  // in flight
+
+      this.#narratingCallIds.add(tc.toolCallId)
+
+      const ctx: NarrateContext = {
+        userMessage: this.#session.lastUserMessage,
+        recentMessages: this.#session.recentAssistantMessages(3),
+      }
+      const tool: ToolCallForNarrate = {
+        toolCallId: tc.toolCallId,
+        kind: tc.kind,
+        title: tc.title ?? tc.name,
+      }
+      const bubbleId = bubble.id
+
+      void narrate(ctx, tool).then((text) => {
+        this.#narratingCallIds.delete(tc.toolCallId)
+        if (text === null) return
+        const idx = this.#session.bubbles.findIndex((b) => b.id === bubbleId)
+        if (idx === -1) return
+        const maybeBubble = this.#session.bubbles[idx]
+        if (maybeBubble === undefined || maybeBubble.kind !== "tool") return
+        const old: ToolBubble = maybeBubble
+        // Replace whole bubble (Svelte 5 reactivity).
+        this.#session.bubbles[idx] = {
+          ...old,
+          toolCall: { ...old.toolCall, narration: text },
+        }
       })
     }
   }

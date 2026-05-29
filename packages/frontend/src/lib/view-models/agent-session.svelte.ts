@@ -49,9 +49,11 @@ export class AgentSession {
   bubbles = $state<Bubble[]>([])
   agentId = $state<string | null>(null)
   cwd = $state<string | null>(null)
-  // ─── slice 4: replay guard ─── (additive)
+  // ─── slice 4: replay guard + narration context ─── (additive)
   /** True while loadSession() is replaying history. Speaker reads this (tracked) to suppress TTS. */
   isLoadingHistory = $state(false)
+  /** The most recent prompt text sent by the user — used by Speaker for narration context. */
+  lastUserMessage = $state("")
 
   #client: AcpClient | null = null
   #sessionId: string | null = null
@@ -139,6 +141,9 @@ export class AgentSession {
     if (!this.#client || !this.#sessionId) return
     if (!text.trim()) return
 
+    // Slice 4: capture for narration context
+    this.lastUserMessage = text
+
     // optimistic: add user bubble immediately (single segment, no messageId)
     const userBubble: UserBubble = {
       id: crypto.randomUUID(),
@@ -221,6 +226,23 @@ export class AgentSession {
       this.status = "error"
       this.#cleanup()
     }
+  }
+
+  // ─── slice 4: narration context helpers ─── (additive)
+
+  /**
+   * Returns the text of the last n assistant MessageBubbles as strings.
+   * Used by Speaker to build NarrateContext for tool call narration.
+   */
+  recentAssistantMessages(n: number = 3): string[] {
+    const result: string[] = []
+    for (let i = this.bubbles.length - 1; i >= 0 && result.length < n; i--) {
+      const b = this.bubbles[i]
+      if (b?.kind === "message") {
+        result.unshift(b.segments.map((s) => s.text).join(""))
+      }
+    }
+    return result
   }
 
   // ─── recordings ─── (slice 10 will add)
