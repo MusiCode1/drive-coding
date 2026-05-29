@@ -42,7 +42,11 @@ export type MessageKey =
   | "chat.voicePicker.label"
   | "chat.voicePicker.loading"
   | "chat.voicePicker.error"
-  // ─── mic ─── (slice 3 will add here)
+  // ─── mic ─── (slice 3)
+  | "mic.error.permission"
+  | "mic.error.notFound"
+  | "mic.error.transcribe"
+  | "mic.error.generic"
   // ─── voice-mode ─── (slice 3)
   // ─── tool-bubble ─── (slice 4)
   // ─── audio-cues ─── (slice 6)

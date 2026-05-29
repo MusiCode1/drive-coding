@@ -34,7 +34,12 @@ export const en: Catalog = {
   "chat.voicePicker.loading": "Loading voices…",
   "chat.voicePicker.error": "Failed to load voices",
 
-  // ─── mic ─── (slice 3 will add here)
+  // ─── mic ─── (slice 3)
+  "mic.error.permission": "Microphone access denied. Allow access in browser settings.",
+  "mic.error.notFound": "No microphone found. Connect a microphone and try again.",
+  "mic.error.transcribe": "Transcription failed. Please try again.",
+  "mic.error.generic": "Microphone error. Please try again.",
+
   // ─── voice-mode ─── (slice 3)
   // ─── tool-bubble ─── (slice 4)
   // ─── audio-cues ─── (slice 6)

@@ -30,7 +30,12 @@ export const he: Catalog = {
   "chat.voicePicker.loading": "טוען קולות…",
   "chat.voicePicker.error": "שגיאה בטעינת קולות",
 
-  // ─── mic ─── (slice 3 will add here)
+  // ─── mic ─── (slice 3)
+  "mic.error.permission": "הגישה למיקרופון נדחתה. אפשר גישה בהגדרות הדפדפן.",
+  "mic.error.notFound": "לא נמצא מיקרופון. חבר מיקרופון ונסה שוב.",
+  "mic.error.transcribe": "התמלול נכשל. נסה שוב.",
+  "mic.error.generic": "שגיאה במיקרופון. נסה שוב.",
+
   // ─── voice-mode ─── (slice 3)
   // ─── tool-bubble ─── (slice 4)
   // ─── audio-cues ─── (slice 6)
