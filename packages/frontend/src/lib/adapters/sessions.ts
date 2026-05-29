@@ -12,12 +12,13 @@ import type { CliKind } from "@drive-coding/core"
 import { createAcpClient } from "@drive-coding/core/acp/client"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
 import { createAgent, deleteAgent } from "$lib/adapters/agents-api"
+import { beWsUrl } from "$lib/util/be-url"
 
 export type SessionInfo = {
   sessionId: string
   cwd: string
-  title: string       // empty string if CLI doesn't return a title
-  updatedAt: string   // ISO timestamp (or empty string if missing)
+  title: string // empty string if CLI doesn't return a title
+  updatedAt: string // ISO timestamp (or empty string if missing)
 }
 
 /**
@@ -32,10 +33,7 @@ export type SessionInfo = {
  *   - Failed spawn (cwd doesn't exist, binary missing)
  *   - Network errors
  */
-export async function listSessionsForCwd(
-  cwd: string,
-  cliKind: CliKind,
-): Promise<SessionInfo[]> {
+export async function listSessionsForCwd(cwd: string, cliKind: CliKind): Promise<SessionInfo[]> {
   let tempAgentId: string | null = null
   let acp: Awaited<ReturnType<typeof createAcpClient>> | null = null
 
@@ -45,8 +43,7 @@ export async function listSessionsForCwd(
     tempAgentId = agentId
 
     // 2. Open WS transport + ACP handshake
-    const proto = location.protocol === "https:" ? "wss:" : "ws:"
-    const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+    const transport = new WsAcpTransport(beWsUrl(`/ws/agent/${agentId}`))
     await transport.waitForOpen()
 
     // noop update handler — only care about listSessions response

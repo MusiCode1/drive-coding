@@ -14,20 +14,15 @@ import type { SessionNotification } from "@agentclientprotocol/sdk"
 import { createAcpClient, type AcpClient } from "@drive-coding/core/acp/client"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
 import { createAgent, notifySessionAttached } from "$lib/adapters/agents-api"
+import { beWsUrl } from "$lib/util/be-url"
 import type { CliKind } from "@drive-coding/core"
-import type {
-  Bubble,
-  MessageBubble,
-  Segment,
-  ThoughtBubble,
-  UserBubble,
-} from "$lib/types/bubble"
+import type { Bubble, MessageBubble, Segment, ThoughtBubble, UserBubble } from "$lib/types/bubble"
 
 export type AgentSessionStatus =
-  | "idle"        // no agent yet
-  | "connecting"  // creating agent + ACP handshake
-  | "connected"   // ready to receive prompts
-  | "thinking"    // prompt sent, awaiting agent response
+  | "idle" // no agent yet
+  | "connecting" // creating agent + ACP handshake
+  | "connected" // ready to receive prompts
+  | "thinking" // prompt sent, awaiting agent response
   | "error"
 
 /**
@@ -79,8 +74,7 @@ export class AgentSession {
       this.cwd = input.cwd
 
       // 2. Open WS transport
-      const proto = location.protocol === "https:" ? "wss:" : "ws:"
-      const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+      const transport = new WsAcpTransport(beWsUrl(`/ws/agent/${agentId}`))
       transport.onClose((code, reason) => {
         // Suppress errors when the close was caused by an explicit detach().
         // The browser closes the WS asynchronously, so onClose fires after detach
@@ -114,7 +108,7 @@ export class AgentSession {
   }
 
   detach = (): void => {
-    this.#detached = true  // ‏לפני ה-cleanup — ‏ה-WS close fires async
+    this.#detached = true // ‏לפני ה-cleanup — ‏ה-WS close fires async
     this.#cleanup()
     this.status = "idle"
     this.error = null
@@ -180,8 +174,7 @@ export class AgentSession {
       this.cwd = input.cwd
 
       // 2. Open WS transport + onClose (same as attach)
-      const proto = location.protocol === "https:" ? "wss:" : "ws:"
-      const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+      const transport = new WsAcpTransport(beWsUrl(`/ws/agent/${agentId}`))
       transport.onClose((code, reason) => {
         if (this.#detached) return
         if (code !== 1000 && code !== 1001) {
@@ -250,29 +243,22 @@ export class AgentSession {
     }
   }
 
-  #appendChunk(
-    kind: "message" | "thought" | "user",
-    text: string,
-    messageId: string | null,
-  ): void {
+  #appendChunk(kind: "message" | "thought" | "user", text: string, messageId: string | null): void {
     const last = this.bubbles[this.bubbles.length - 1]
     // Group only when: (a) same kind AND (b) non-null matching messageId.
     // Null/missing messageId always starts a new bubble (per ACP grouping rule).
     const canGroup =
-      last !== undefined &&
-      last.kind === kind &&
-      messageId !== null &&
-      last.messageId === messageId
+      last !== undefined && last.kind === kind && messageId !== null && last.messageId === messageId
 
     if (canGroup && last !== undefined) {
       const seg: Segment = { id: crypto.randomUUID(), text }
       // last is MessageBubble | ThoughtBubble | UserBubble — all have segments arrays
       if (last.kind === "message") {
-        (last as MessageBubble).segments.push(seg)
+        ;(last as MessageBubble).segments.push(seg)
       } else if (last.kind === "thought") {
-        (last as ThoughtBubble).segments.push(seg)
+        ;(last as ThoughtBubble).segments.push(seg)
       } else if (last.kind === "user") {
-        (last as UserBubble).segments.push(seg)
+        ;(last as UserBubble).segments.push(seg)
       }
     } else {
       const newBubble: MessageBubble | ThoughtBubble | UserBubble =
@@ -285,20 +271,20 @@ export class AgentSession {
               segments: [{ id: crypto.randomUUID(), text }],
             }
           : kind === "thought"
-          ? {
-              id: crypto.randomUUID(),
-              kind: "thought",
-              messageId,
-              createdAt: Date.now(),
-              segments: [{ id: crypto.randomUUID(), text }],
-            }
-          : {
-              id: crypto.randomUUID(),
-              kind: "user",
-              messageId,
-              createdAt: Date.now(),
-              segments: [{ id: crypto.randomUUID(), text }],
-            }
+            ? {
+                id: crypto.randomUUID(),
+                kind: "thought",
+                messageId,
+                createdAt: Date.now(),
+                segments: [{ id: crypto.randomUUID(), text }],
+              }
+            : {
+                id: crypto.randomUUID(),
+                kind: "user",
+                messageId,
+                createdAt: Date.now(),
+                segments: [{ id: crypto.randomUUID(), text }],
+              }
       this.bubbles.push(newBubble)
     }
   }
