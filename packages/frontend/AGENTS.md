@@ -140,38 +140,30 @@ User (voice) → Mic → text → AgentSession → text → Agent (ACP)
 
 ---
 
-## מצב נוכחי (slice 0.5 הושלם — i18n + text only)
+## מצב נוכחי (slice 3 הושלם — Mic + STT + VoiceMode FSM)
 
-✓ טקסט בלבד, אין voice עדיין.
-✓ View-models: Settings, AgentSession, I18nVM.
+✓ שיחה קולית MVP: מיקרופון → STT (Gemini) → sendPrompt → Speaker TTS.
+✓ View-models: Settings, AgentSession, I18nVM, Speaker, Mic, VoiceMode (derived).
 ✓ ACP integration דרך WsAcpTransport + `@drive-coding/core/acp`.
 ✓ 2 routes: `/` ו-`/chat`.
 ✓ i18n: `@drive-coding/core/i18n` + lint rule (`scripts/lint-no-hebrew-in-code.sh`).
 ✓ SPA-only (`+layout.ts` עם `ssr=false`).
 ✓ typecheck + build נקיים.
 
-**לא קיים עדיין:** Mic, Speaker, VoiceMode, Player, CarMode, recordings, session picker, settings page, recovery flow, error toasts.
+**לא קיים עדיין:** Bubble polish (slice 4), CarMode (slice 7), recordings, session picker, settings page, recovery flow, error toasts.
 
 ---
 
-## slice הבא — slice 1: voice input
+## slice הבא — slice 4: Bubble polish
 
-ראה `docs/slices.md` ‎לטבלת ‎ה-slices ‎המלאה ‎ולנימוקי ‎הסדר.
+ראה `docs/slices.md` לטבלת ה-slices המלאה.
 
-**הוספת Mic + STT:**
-- `view-models/mic.svelte.ts` — class Mic (state: `idle`/`recording`/`transcribing`).
-- `engines/recorder.ts` — copy מ-FE הישן (MediaRecorder).
-- `adapters/voice/transcribe.ts` — copy מ-FE הישן (Gemini STT).
-- `components/MicButton.svelte` — ~50 שורות, מקבל getContext.
-- `context.ts` + זוג ל-Mic.
-- `+layout` + 4 שורות.
-- `/chat/+page.svelte` + `<MicButton />` ליד textarea.
-- ‎API ‎ציבורי ‎חדש: ‎`AgentSession.sendPrompt(text, opts?: { recordingId?: string })` — ‎הכנה ‎ל-slice 10, ‎`opts` ‎נשאר ‎unused ‎בslice 1.
-- ‎כל ‎מחרוזת ‎חדשה ‎עוברת ‎דרך ‎`t(key)`. ‎להוסיף ‎מפתחות ‎ל-`packages/core/src/i18n/keys.ts` ‎ול-`catalogs/`.
-
-אחרי slice 1: אישה יכולה לדבר במקום להקליד.
-
-**slice 2 בעתיד: voice output (Speaker + TTS + VoiceMode) + Bubble model מורחב** — ראה `docs/bubble-model.md`.
+**מה כולל:**
+- Markdown rendering ב-message bubbles.
+- Thought bubbles עם 💭 prefix + dashed border + italic.
+- Tool bubbles collapsible עם status dots.
+- RTL alignment (user ימין, agent שמאל).
+- ראה `docs/frontend-spec.md §7` לפרטי עיצוב.
 
 ---
 

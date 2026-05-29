@@ -1,7 +1,7 @@
 # Slice 3 — Mic + STT + VoiceMode FSM — תוכנית
 
 > **תאריך**: 2026-05-28
-> **סטטוס**: ‏טיוטה — ‏מחכה לאישור לפני יצירת worktree
+> **סטטוס**: הושלם 2026-05-29
 > **Complexity**: 7/10 (verifier: light + ‏phase verifier אחרי commit 2)
 > **תלות**: ‏slice 0.5 ✅, ‏slice 2 ✅. ‏slice 1 ‏(Mic standalone) ‏דולג — ‏משולב כאן
 > **מתבסס על**: ‏`docs/plans/README.md` (מבנה), ‏`docs/conventions/parallel-safe-code.md` (additive)
