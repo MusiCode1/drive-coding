@@ -37,6 +37,12 @@ export const he: Catalog = {
   "mic.error.generic": "שגיאה במיקרופון. נסה שוב.",
 
   // ─── voice-mode ─── (slice 3)
+  "voiceMode.status.idle": "מיקרופון",
+  "voiceMode.status.recording": "מקליט…",
+  "voiceMode.status.transcribing": "מתמלל…",
+  "voiceMode.status.thinking": "חושב…",
+  "voiceMode.status.speaking": "מדבר…",
+  "voiceMode.status.cancelling": "מבטל…",
   // ─── tool-bubble ─── (slice 4)
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)

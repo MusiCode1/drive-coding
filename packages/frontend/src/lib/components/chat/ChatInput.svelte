@@ -1,5 +1,6 @@
 <script lang="ts">
 import { getI18n, getSession } from "$lib/context"
+import MicButton from "./MicButton.svelte"
 
 const session = getSession()
 const t = getI18n().t
@@ -38,6 +39,7 @@ const isDisabled = $derived(
   >
     {t("chat.send")}
   </button>
+  <MicButton />
 </form>
 
 <style>

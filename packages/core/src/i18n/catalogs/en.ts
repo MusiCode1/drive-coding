@@ -41,6 +41,12 @@ export const en: Catalog = {
   "mic.error.generic": "Microphone error. Please try again.",
 
   // ─── voice-mode ─── (slice 3)
+  "voiceMode.status.idle": "Microphone",
+  "voiceMode.status.recording": "Recording…",
+  "voiceMode.status.transcribing": "Transcribing…",
+  "voiceMode.status.thinking": "Thinking…",
+  "voiceMode.status.speaking": "Speaking…",
+  "voiceMode.status.cancelling": "Cancelling…",
   // ─── tool-bubble ─── (slice 4)
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)

@@ -14,11 +14,13 @@
  * Two slices that add independent VMs land in different sections → git auto-merge.
  */
 import "../app.css"
-import { setI18n, setSession, setSettings, setSpeaker } from "$lib/context"
+import { setI18n, setMic, setSession, setSettings, setSpeaker, setVoiceMode } from "$lib/context"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
+import { Mic } from "$lib/view-models/mic.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
 import { Speaker } from "$lib/view-models/speaker.svelte"
+import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 
 let { children } = $props()
 
@@ -34,8 +36,12 @@ const session = new AgentSession()
 // ─── speaker ─── (depends on session + settings)
 const speaker = new Speaker({ session, settings })
 
-// ─── mic ─── (slice 3 will add here)
+// ─── mic ─── (slice 3 — depends on session)
+const mic = new Mic({ session })
+
 // ─── voice-mode ─── (slice 3 — depends on mic + session + speaker)
+const voiceMode = new VoiceMode({ mic, session, speaker })
+
 // ─── car-mode ─── (slice 7)
 
 // ─── wiring ───────────────────────────────────────
@@ -43,7 +49,8 @@ setI18n(i18n)
 setSettings(settings)
 setSession(session)
 setSpeaker(speaker)
-// new VM → add its setX(x) here as well
+setMic(mic)
+setVoiceMode(voiceMode)
 </script>
 
 {@render children?.()}

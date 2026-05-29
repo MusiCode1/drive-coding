@@ -48,6 +48,12 @@ export type MessageKey =
   | "mic.error.transcribe"
   | "mic.error.generic"
   // ─── voice-mode ─── (slice 3)
+  | "voiceMode.status.idle"
+  | "voiceMode.status.recording"
+  | "voiceMode.status.transcribing"
+  | "voiceMode.status.thinking"
+  | "voiceMode.status.speaking"
+  | "voiceMode.status.cancelling"
   // ─── tool-bubble ─── (slice 4)
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
