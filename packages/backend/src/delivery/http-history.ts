@@ -1,16 +1,16 @@
 /**
- * HTTP endpoints — session history support (updated fe-fetch-sessions).
+ * נקודות קצה HTTP — תמיכה בהיסטוריית סשנים (fe-fetch-sessions מעודכן).
  *
- *   GET  /api/projects   — list known projects (from registry)
- *   GET  /api/recordings/:id  — serve raw audio bytes
- *   POST /api/recordings      — upload and persist audio
- *   GET  /api/fs/browse?path= — directory listing (security-guarded)
+ *   GET  /api/projects   — רשימת פרויקטים מוכרים (מה-registry)
+ *   GET  /api/recordings/:id  — מגיש בתי אודיו גולמיים
+ *   POST /api/recordings      — מעלה ושומר אודיו
+ *   GET  /api/fs/browse?path= — רשימת ספריות (מאובטח)
  *
- * Removed (fe-fetch-sessions):
- *   GET /api/projects/:cwdHash/sessions — sessions now fetched FE-side via ACP WS
- *   GET /api/sessions                  — union view removed; see sessions-ws.ts on FE
+ * הוסר (fe-fetch-sessions):
+ *   GET /api/projects/:cwdHash/sessions — סשנים עכשיו נמשכים בצד ה-FE דרך ACP WS
+ *   GET /api/sessions                  — תצוגת איחוד הוסרה; ראה sessions-ws.ts ב-FE
  *
- * cwdHash = SHA-256(cwd) encoded as base64url (URL-safe, no padding).
+ * cwdHash = SHA-256(cwd) מקודד כ-base64url (בטוח ל-URL, ללא ריפוד).
  */
 
 import { readdir, realpath } from "node:fs/promises"
@@ -59,12 +59,12 @@ export function registerRecordingsHttp(
 // ─── POST /api/recordings ─────────────────────────────────────────────────────
 
 /**
- * POST /api/recordings — Upload and persist an audio recording.
+ * POST /api/recordings — מעלה ושומר הקלטת אודיו.
  *
- * Slice 10 Phase 1: FE uploads audio in the background in parallel with STT.
+ * Slice 10 Phase 1: ה-FE מעלה אודיו ברקע במקביל לתמלול (STT).
  *
- * Body: { audioBase64: string, mimeType: string }
- * Response: { id: string }
+ * גוף הבקשה (Body): { audioBase64: string, mimeType: string }
+ * תגובה (Response): { id: string }
  */
 export function registerRecordingsPostHttp(
   app: Hono,
@@ -106,7 +106,7 @@ const HIDDEN_PREFIXES = [".git", ".opencode", ".svelte-kit", "node_modules", ".p
 export function registerFsBrowseHttp(
   app: Hono,
   opts: {
-    /** Security guard: paths outside this base return 403. Default: os.homedir(). */
+    /** שומר אבטחה: נתיבים מחוץ לבסיס זה מחזירים 403. ברירת מחדל: os.homedir(). */
     allowedBase?: string
   } = {},
 ): void {
@@ -118,7 +118,7 @@ export function registerFsBrowseHttp(
       return c.json({ error: "path query param is required" }, 400)
     }
 
-    // Resolve to absolute, then realpath to follow symlinks
+    // המרה לנתיב אבסולוטי ואז realpath למעקב אחר סימלינקים
     const normalized = resolve(rawPath)
     let real: string
     try {
@@ -127,7 +127,7 @@ export function registerFsBrowseHttp(
       return c.json({ error: "path not found" }, 404)
     }
 
-    // Security: must be within allowedBase
+    // אבטחה: חייב להיות בתוך allowedBase
     const safeBase = await realpath(allowedBase).catch(() => allowedBase)
     if (!real.startsWith(`${safeBase}/`) && real !== safeBase) {
       return c.json({ error: "access denied" }, 403)
@@ -144,10 +144,10 @@ export function registerFsBrowseHttp(
       .filter((d) => !HIDDEN_PREFIXES.some((prefix) => d.name.startsWith(prefix)))
       .map((d) => ({
         name: d.name,
-        isDir: d.isDirectory() || d.isSymbolicLink(), // treat symlinks as navigable
+        isDir: d.isDirectory() || d.isSymbolicLink(), // מתייחס לסימלינקים כניתנים לניווט
       }))
       .sort((a, b) => {
-        // Dirs first, then files, then alphabetical
+        // ספריות קודם, אחר כך קבצים, ואז סדר אלפביתי
         if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
         return a.name.localeCompare(b.name)
       })

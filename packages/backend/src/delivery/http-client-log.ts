@@ -1,10 +1,10 @@
 /**
- * POST /api/client-log — receives batched log entries from the frontend browser.
+ * POST /api/client-log — מקבל רשומות לוג מקובצות מהדפדפן (frontend).
  *
- * Validates, rate-limits, and re-emits entries through the backend Logger
- * under the namespace `client.<original-ns>`.
+ * מאמת, מגביל קצב (rate-limits), ופולט מחדש רשומות דרך הלוגר של השרת
+ * תחת ה-namespace של `client.<original-ns>`.
  *
- * Rate limit: max 500 entries per IP per minute.
+ * מגבלת קצב: מקסימום 500 רשומות לכל IP בדקה.
  */
 
 import type { Fields } from "@drive-coding/core/log"
@@ -12,7 +12,7 @@ import { createLogger } from "@drive-coding/core/log"
 import { type } from "arktype"
 import type { Hono } from "hono"
 
-// ── ArkType schema ────────────────────────────────────────────────────────────
+// ── סכימת ArkType ────────────────────────────────────────────────────────────
 
 const ClientLogEntry = type({
   ts: "number",
@@ -24,11 +24,11 @@ const ClientLogEntry = type({
 
 const ClientLogPayload = type({ entries: ClientLogEntry.array() })
 
-// ── Logger ────────────────────────────────────────────────────────────────────
+// ── לוגר ────────────────────────────────────────────────────────────────────
 
 const clientLog = createLogger("client")
 
-// ── Rate limiting ─────────────────────────────────────────────────────────────
+// ── הגבלת קצב ─────────────────────────────────────────────────────────────
 
 type Bucket = { count: number; resetAt: number }
 const ipBuckets = new Map<string, Bucket>()
@@ -44,7 +44,7 @@ function checkRateLimit(ip: string, count: number): boolean {
   return bucket.count <= 500
 }
 
-// ── Handler ───────────────────────────────────────────────────────────────────
+// ── טיפולן ───────────────────────────────────────────────────────────────────
 
 export function registerClientLogHttp(app: Hono): void {
   app.post("/api/client-log", async (c) => {
@@ -70,7 +70,7 @@ export function registerClientLogHttp(app: Hono): void {
       const subLog = clientLog.ns(e.ns)
       const fields: Fields = (e.fields ?? {}) as Fields
       const msg = e.msg ?? ""
-      // Call the appropriate level method
+      // קורא למתודה ברמה המתאימה
       if (e.level === "error") {
         subLog.error(fields, msg)
       } else if (e.level === "warn") {

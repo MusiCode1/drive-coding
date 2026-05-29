@@ -1,14 +1,14 @@
 /**
- * createDiskCache<T> — generic namespaced disk cache factory.
+ * createDiskCache<T> — factory גנרי למטמון דיסק מבוסס namespace.
  *
- * Stores each entry as a raw binary file at:
+ * שומר כל רשומה כקובץ בינארי גולמי ב:
  *   {baseDir}/{namespace}/{key}
  *
- * The caller supplies encode/decode functions; the factory handles
- * directory creation (idempotent, concurrent-safe) and file I/O.
+ * הקורא מספק פונקציות קידוד/פענוח (encode/decode); ה-factory מטפל
+ * ביצירת הספריה (אידמפוטנטי, בטוח למקביליות) וקלט/פלט של קבצים.
  *
- * This replaces the old DiskCache class — cache-disk.ts is now a thin
- * wrapper that delegates to createDiskCache<Uint8Array>.
+ * זה מחליף את המחלקה הישנה DiskCache — כעת cache-disk.ts הוא עטיפה
+ * דקה שמאצילה ל-createDiskCache<Uint8Array>.
  */
 
 import * as fs from "node:fs/promises"
@@ -24,8 +24,8 @@ export function createDiskCache<T>(opts: {
   const { namespace, baseDir, encode, decode } = opts
   const dir = path.join(baseDir, namespace)
 
-  // Ensure the namespace directory exists (lazy, on first write).
-  // We store the promise so concurrent first-writes share it.
+  // ודא שספריית ה-namespace קיימת (lazy, בכתיבה ראשונה).
+  // אנו שומרים את ההבטחה (promise) כך שכתיבות ראשונות מקבילות ישתפו אותה.
   let initPromise: Promise<void> | null = null
   function ensureDir(): Promise<void> {
     if (!initPromise) {

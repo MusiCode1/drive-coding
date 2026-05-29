@@ -1,12 +1,11 @@
 /**
- * Prompt catalog for the voice-acp backend.
+ * קטלוג פרומפטים עבור ה-voice-acp backend.
  *
- * Each prompt is a plain `string` constant. The `prompt-injector` plugin
- * picks one up via `options.text` at agent-spawn time (see
+ * כל פרומפט הוא קבוע `string` פשוט. הפלאגין `prompt-injector`
+ * לוקח אחד דרך `options.text` בזמן הפעלת הסוכן (agent-spawn, ראה
  * `plugin-config.ts`).
  *
- * Adding a new prompt = add a new file here + re-export below. A future
- * slice (Settings / per-session override) will let the user pick which
- * one is active.
+ * הוספת פרומפט חדש = הוספת קובץ חדש כאן + ייצוא מחדש למטה. סלייס עתידי
+ * (הגדרות / דריסה פר-סשן) יאפשר למשתמש לבחור איזה מהם פעיל.
  */
 export { AUDIO_FRIENDLY_PROMPT } from "./audio-friendly.js"

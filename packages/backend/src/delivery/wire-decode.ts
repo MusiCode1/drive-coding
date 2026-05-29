@@ -1,23 +1,23 @@
 /**
- * wire-decode.ts — Passive decode of an NDJSON wire line (one JSON-RPC / ACP frame)
- * into a compact summary for logging.
+ * wire-decode.ts — פענוח פסיבי של שורת NDJSON (פריים אחד של JSON-RPC / ACP)
+ * לסיכום קומפקטי עבור כתיבה ללוג.
  *
- * NEVER throws — returns a "raw" summary on parse failure so the caller can
- * still log something without breaking the pipe.
+ * לעולם לא זורק שגיאה — מחזיר סיכום "גולמי" במקרה של כישלון בפענוח כדי שהקורא
+ * יוכל בכל זאת לרשום משהו ללוג בלי לשבור את הצינור (pipe).
  */
 
 export type WireSummary = {
-  /** JSON-RPC method (requests/notifications) if present. */
+  /** מתודת JSON-RPC (בקשות/התראות) אם קיימת. */
   method?: string
-  /** ACP sessionUpdate type (agent_message_chunk / tool_call / ...) if present. */
+  /** סוג ACP sessionUpdate (agent_message_chunk / tool_call / ...) אם קיים. */
   sessionUpdate?: string
-  /** JSON-RPC id (request/response correlation) if present. */
+  /** מזהה JSON-RPC (מתאם בין בקשה/תגובה) אם קיים. */
   id?: string | number
-  /** "result" | "error" for responses; undefined otherwise. */
+  /** "result" | "error" עבור תגובות; undefined אחרת. */
   responseKind?: "result" | "error"
-  /** true when the line was not valid JSON. */
+  /** true כאשר השורה אינה JSON תקין. */
   unparsed: boolean
-  /** The parsed object (for trace-level full logging), or undefined if unparsed. */
+  /** האובייקט המפוענח (עבור לוגים מלאים ברמת trace), או undefined אם לא פוענח. */
   parsed?: unknown
 }
 
@@ -37,7 +37,7 @@ export function decodeWireLine(line: string): WireSummary {
   if (typeof o.id === "string" || typeof o.id === "number") summary.id = o.id
   if ("result" in o) summary.responseKind = "result"
   else if ("error" in o) summary.responseKind = "error"
-  // ACP session/update notification: params.update.sessionUpdate
+  // התראת ACP session/update: params.update.sessionUpdate
   const params = o.params as Record<string, unknown> | undefined
   const upd = params?.update as Record<string, unknown> | undefined
   if (upd && typeof upd.sessionUpdate === "string") summary.sessionUpdate = upd.sessionUpdate

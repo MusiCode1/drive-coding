@@ -1,22 +1,22 @@
 /**
- * http-proxy.ts — Transparent HTTP proxy for Google + ElevenLabs.
+ * http-proxy.ts — פרוקסי HTTP שקוף עבור Google + ElevenLabs.
  *
  * Slice 10 Phase 1.
  *
- * Routes:
+ * נתיבים (Routes):
  *   /proxy/google/*      → https://generativelanguage.googleapis.com/*
  *   /proxy/elevenlabs/*  → https://api.elevenlabs.io/*
  *
- * The proxy:
- *   1. Strips the /proxy/<provider> prefix.
- *   2. Forwards headers as-is (deleting "host" so upstream accepts them).
- *   3. For cacheable requests: checks cache first; on miss, tees the response
- *      body to cache in the background while streaming to FE.
- *   4. For non-cacheable requests: transparent passthrough.
+ * הפרוקסי:
+ *   1. מסיר את הקידומת /proxy/<provider>.
+ *   2. מעביר headers כמו שהם (מוחק "host" כדי שה-upstream יקבל אותם).
+ *   3. עבור בקשות הניתנות לשמירה במטמון: בודק מטמון קודם; בחוסר (miss), מפצל את 
+ *      תגובת ה-body למטמון ברקע תוך כדי הזרמה ל-FE.
+ *   4. עבור בקשות שלא נשמרות במטמון: העברה שקופה.
  *
- * OneCLI integration: when the BE runs via `onecli run --agent voice-acp`,
- * outbound fetch goes through the OneCLI HTTPS_PROXY which replaces the
- * placeholder API-key headers with real credentials.
+ * שילוב OneCLI: כשהשרת רץ דרך `onecli run --agent voice-acp`,
+ * קריאות ה-fetch היוצאות עוברות דרך HTTPS_PROXY של OneCLI שמחליף את
+ * ה-headers של ה-API-key הזמניים בהרשאות האמיתיות.
  */
 
 import * as path from "node:path"
@@ -26,16 +26,16 @@ import { computeCacheKey, createProxyCache, isCacheableRequest } from "./proxy-c
 
 const log = createLogger("backend.proxy")
 
-// ─── Provider map ─────────────────────────────────────────────────────────────
+// ─── מיפוי ספקים ─────────────────────────────────────────────────────────────
 
 const PROXY_HOSTS: Record<string, string> = {
   google: "https://generativelanguage.googleapis.com",
   elevenlabs: "https://api.elevenlabs.io",
 }
 
-// ─── Cache singleton ──────────────────────────────────────────────────────────
+// ─── סינגלטון מטמון ──────────────────────────────────────────────────────────
 
-// Lazily created on first registerProxyHttp call.
+// נוצר בעצלנות בקריאה הראשונה ל-registerProxyHttp.
 let _cache: ReturnType<typeof createProxyCache> | null = null
 
 function getCache(cacheBaseDir: string) {
@@ -45,7 +45,7 @@ function getCache(cacheBaseDir: string) {
   return _cache
 }
 
-// ─── Registration ─────────────────────────────────────────────────────────────
+// ─── רישום ─────────────────────────────────────────────────────────────
 
 export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {}): void {
   const cacheBaseDir = opts.cacheBaseDir ?? path.resolve("data/cache/proxy")
@@ -58,23 +58,23 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
       return c.json({ error: "unknown provider" }, 404)
     }
 
-    // Strip the /proxy/<provider> prefix from the pathname
+    // הסר את הקידומת /proxy/<provider> משם הנתיב
     const fullPath = new URL(c.req.url).pathname
     const pathSuffix = fullPath.replace(`/proxy/${provider}`, "")
     const search = new URL(c.req.url).search
     const targetUrl = `${upstreamBase}${pathSuffix}${search}`
 
-    // Build forwarded headers — copy as-is, delete "host" (breaks upstream)
+    // בנה headers להעברה — העתק כמו שהם, מחק "host" (שובר upstream)
     const headers = new Headers(c.req.raw.headers)
     headers.delete("host")
 
-    // Read body once (null for GET/HEAD)
+    // קרא body פעם אחת (null עבור GET/HEAD)
     let body: Uint8Array | null = null
     if (c.req.method !== "GET" && c.req.method !== "HEAD") {
       body = new Uint8Array(await c.req.arrayBuffer())
     }
 
-    // ── Cache check ──────────────────────────────────────────────────────────
+    // ── בדיקת מטמון ──────────────────────────────────────────────────────────
     let cacheKey: string | null = null
     if (isCacheableRequest(c.req.method, pathSuffix, body)) {
       cacheKey = await computeCacheKey(c.req.method, pathSuffix, body)
@@ -91,7 +91,7 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
       }
     }
 
-    // ── Forward to upstream ──────────────────────────────────────────────────
+    // ── העברה ל-upstream ──────────────────────────────────────────────────
     log.info(
       { provider, path: pathSuffix, cacheable: cacheKey !== null },
       "proxy → upstream",
@@ -110,10 +110,10 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
       return c.json({ error: "upstream fetch failed" }, 502)
     }
 
-    // ── Observability for upstream errors ────────────────────────────────────
-    // Upstream non-2xx is NOT a network failure — fetch resolved successfully.
-    // But the FE sees a 401/400/500 from elevenlabs/google and the BE was
-    // silent until now. Log so credential / quota issues are visible.
+    // ── תצפיתנות לשגיאות upstream ────────────────────────────────────
+    // סטטוס שאינו 2xx מה-upstream אינו כשל רשת — ה-fetch הסתיים בהצלחה.
+    // אבל ה-FE רואה 401/400/500 מ-elevenlabs/google והשרת היה
+    // שקט עד עכשיו. מבצע לוג כדי שבעיות הרשאות / מכסה יהיו גלויות.
     if (!res.ok) {
       log.warn(
         { provider, path: pathSuffix, status: res.status },
@@ -121,22 +121,22 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
       )
     }
 
-    // ── Build response headers ────────────────────────────────────────────────
-    // CRITICAL: Bun/fetch transparently decompresses gzip/deflate response bodies,
-    // but the original `content-encoding` and `content-length` headers describe
-    // the COMPRESSED body. Forwarding them as-is makes the FE try to decompress
-    // an already-decompressed payload → ERR_CONTENT_DECODING_FAILED.
-    // Strip both — the browser will read the decompressed body via chunked transfer.
+    // ── הרכבת headers לתגובה ────────────────────────────────────────────────
+    // קריטי: Bun/fetch מפענח gzip/deflate בשקיפות,
+    // אבל header ה-`content-encoding` וה-`content-length` המקוריים מתארים
+    // את ה-body הדחוס. העברתם כמו שהם גורמת ל-FE לנסות לפענח
+    // payload שכבר פוענח → ERR_CONTENT_DECODING_FAILED.
+    // מסירים את שניהם — הדפדפן קורא את ה-body המפוענח דרך chunked transfer.
     const sanitizedHeaders = new Headers(res.headers)
     sanitizedHeaders.delete("content-encoding")
     sanitizedHeaders.delete("content-length")
 
-    // ── Tee for cache on success ──────────────────────────────────────────────
+    // ── פיצול למטמון בהצלחה ──────────────────────────────────────────────
     if (cacheKey && res.ok && res.body) {
       const [toClient, toCache] = res.body.tee()
       const contentType = sanitizedHeaders.get("content-type") ?? "application/octet-stream"
 
-      // Cache in background — do not await
+      // שמירה במטמון ברקע — אל תמתין
       cacheStreamInBackground(proxyCache, cacheKey, toCache, contentType).catch((e) => {
         log.warn({ err: e, cacheKey }, "background cache write failed")
       })
@@ -148,7 +148,7 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
       })
     }
 
-    // Transparent passthrough (non-cacheable or upstream error)
+    // העברה שקופה (לא ניתן לשמור במטמון או שגיאת upstream)
     return new Response(res.body, {
       status: res.status,
       headers: sanitizedHeaders,
@@ -156,7 +156,7 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
   })
 }
 
-// ─── Background cache write ───────────────────────────────────────────────────
+// ─── כתיבה למטמון ברקע ───────────────────────────────────────────────────
 
 async function cacheStreamInBackground(
   cache: ReturnType<typeof createProxyCache>,
@@ -173,7 +173,7 @@ async function cacheStreamInBackground(
       if (value) chunks.push(value)
     }
 
-    // Merge all chunks into a single Uint8Array
+    // מזג את כל ה-chunks ל-Uint8Array אחד
     const totalLength = chunks.reduce((s, c) => s + c.length, 0)
     const merged = new Uint8Array(totalLength)
     let offset = 0
@@ -184,6 +184,6 @@ async function cacheStreamInBackground(
 
     await cache.set(key, { body: merged, headers: { contentType } })
   } catch {
-    // Partial response — skip cache, no-op
+    // תגובה חלקית — דלג על המטמון, אל תעשה כלום
   }
 }

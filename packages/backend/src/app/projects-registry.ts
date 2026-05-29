@@ -1,9 +1,9 @@
 /**
- * ProjectsRegistry — disk-backed JSON store of known project cwds.
+ * ProjectsRegistry — מאגר JSON מבוסס-דיסק של נתיבי פרויקטים מוכרים.
  *
- * Slice 8a: tracks every cwd the backend has seen, keyed by (cwd, kind).
- * Persisted to `<baseDir>/projects-registry.json` — survives backend restarts.
- * Sorted by lastSeen DESC when returned.
+ * Slice 8a: עוקב אחרי כל cwd שהשרת ראה, מקוטלג לפי (cwd, kind).
+ * נשמר אל `<baseDir>/projects-registry.json` — שורד הפעלות מחדש של השרת.
+ * ממוין לפי lastSeen בסדר יורד כשמוחזר.
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises"
@@ -41,7 +41,7 @@ export function createProjectsRegistry(baseDir: string) {
   }
 
   return {
-    /** Record that a cwd was used. Creates or updates the entry. */
+    /** מתעד ש-cwd היה בשימוש. יוצר או מעדכן את הרשומה. */
     async recordCwd(cwd: string, kind: BridgeKind): Promise<void> {
       const projects = await load()
       const idx = projects.findIndex((p) => p.cwd === cwd)
@@ -56,7 +56,7 @@ export function createProjectsRegistry(baseDir: string) {
       }
     },
 
-    /** Update the lastSessionId for an existing cwd. No-op if cwd unknown. */
+    /** מעדכן את ה-lastSessionId עבור cwd קיים. לא עושה כלום אם ה-cwd אינו מוכר. */
     async recordSession(cwd: string, sessionId: string): Promise<void> {
       const projects = await load()
       const idx = projects.findIndex((p) => p.cwd === cwd)
@@ -67,7 +67,7 @@ export function createProjectsRegistry(baseDir: string) {
       await persist(updated)
     },
 
-    /** Returns all known projects, sorted by lastSeen DESC (newest first). */
+    /** מחזיר את כל הפרויקטים המוכרים, ממוינים לפי lastSeen יורד (הכי חדש ראשון). */
     async getProjects(): Promise<readonly ProjectEntry[]> {
       const projects = await load()
       return [...projects].sort(

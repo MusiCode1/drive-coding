@@ -5,9 +5,9 @@ import * as path from "node:path"
 import type { Hono } from "hono"
 
 /**
- * Returns a curated list of models per CLI, plus a list of project directories
- * to choose from in the New Agent form. Slice 5+ scaffolding — Slice 8 will
- * replace with proper provider catalog UI.
+ * מחזיר רשימה מנופה של מודלים לכל CLI, בתוספת רשימת ספריות פרויקטים
+ * לבחירה בטופס סוכן חדש. Scaffolding עבור Slice 5 ומעלה — Slice 8
+ * יחליף את זה ב-UI קטלוג ספקים אמיתי.
  */
 
 const MODEL_FALLBACKS = {
@@ -36,7 +36,7 @@ function listOpencodeModels(): string[] {
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean)
-    // Prefer common high-quality models first.
+    // מעדיף מודלים נפוצים באיכות גבוהה קודם.
     const preferredPrefixes = [
       "anthropic/claude-opus-4-7",
       "anthropic/claude-opus-4-6",
@@ -52,7 +52,7 @@ function listOpencodeModels(): string[] {
       const exact = lines.find((l) => l === pref)
       if (exact) picked.push(exact)
     }
-    // Also include any remaining anthropic/openai/google models, capped.
+    // כולל גם את שאר המודלים של anthropic/openai/google, עם הגבלת כמות.
     const remaining = lines
       .filter(
         (l) =>
@@ -78,20 +78,20 @@ function listProjectDirs(): string[] {
         if (!e.isDirectory()) continue
         if (e.name.startsWith(".")) continue
         const full = path.join(root, e.name)
-        // Skip non-readable / massive mounts (e.g. user-files rclone).
+        // מדלג על mounts לא קריאים / ענקיים (למשל rclone של user-files).
         if (e.name === "user-files" || e.name === "node_modules") continue
         try {
           statSync(full)
           dirs.push(full)
         } catch {
-          // skip
+          // דלג
         }
       }
     } catch {
-      // skip
+      // דלג
     }
   }
-  // Cap at 50 to keep dropdown manageable.
+  // מגביל ל-50 כדי לשמור על dropdown סביר.
   return dirs.slice(0, 50)
 }
 

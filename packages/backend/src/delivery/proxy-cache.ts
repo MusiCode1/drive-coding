@@ -1,45 +1,45 @@
 /**
- * proxy-cache.ts — Cache abstraction for the transparent HTTP proxy.
+ * proxy-cache.ts — הפשטת מטמון עבור פרוקסי ה-HTTP השקוף.
  *
  * Slice 10 Phase 1.
  *
- * Stores cacheable responses (Gemini generateContent + ElevenLabs TTS stream)
- * on disk. Each entry consists of:
- *   - body file:    {baseDir}/proxy/{key}
- *   - headers file: {baseDir}/proxy/{key}.headers (JSON sidecar)
+ * שומר תגובות הניתנות לשמירה במטמון (Gemini generateContent + ElevenLabs TTS stream)
+ * על הדיסק. כל רשומה מורכבת מ:
+ *   - קובץ body:    {baseDir}/proxy/{key}
+ *   - קובץ headers: {baseDir}/proxy/{key}.headers (קובץ JSON נלווה)
  */
 
 import { createDiskCache } from "../voice/cache.js"
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── סוגים ────────────────────────────────────────────────────────────────────
 
 export type CachedEntry = {
   body: Uint8Array
   headers: { contentType: string }
 }
 
-// ─── Cache rules ──────────────────────────────────────────────────────────────
+// ─── כללי מטמון ──────────────────────────────────────────────────────────────
 
 /**
- * Returns true if this request's response should be cached.
+ * מחזיר true אם התגובה של בקשה זו צריכה להישמר במטמון.
  *
- * Rules (from §3.3 of the brief):
- *   POST /v1beta/models/*:generateContent              → cached
- *   POST /v1/text-to-speech/{voiceId}/stream            → cached
- *   POST /v1beta/models/*:streamGenerateContent         → NOT cached (streaming generative)
- *   Everything else                                     → NOT cached
+ * כללים (מ-§3.3 של ה-brief):
+ *   POST /v1beta/models/*:generateContent              → נשמר במטמון (cached)
+ *   POST /v1/text-to-speech/{voiceId}/stream            → נשמר במטמון (cached)
+ *   POST /v1beta/models/*:streamGenerateContent         → לא נשמר במטמון (streaming generative)
+ *   כל השאר                                     → לא נשמר במטמון
  */
 export function isCacheableRequest(method: string, path: string, body: Uint8Array | null): boolean {
   if (method !== "POST" || !body) return false
-  // Gemini generateContent (translate, narrate, STT) — but NOT streamGenerateContent
+  // Gemini generateContent (translate, narrate, STT) — אבל לא streamGenerateContent
   if (/^\/v1beta\/models\/[^/]+:generateContent\b/.test(path)) return true
-  // ElevenLabs streaming TTS
+  // ElevenLabs streaming TTS (זרם TTS של ElevenLabs)
   if (/^\/v1\/text-to-speech\/[^/]+\/stream\b/.test(path)) return true
   return false
 }
 
 /**
- * Computes a deterministic cache key for a request.
+ * מחשב מפתח מטמון דטרמיניסטי עבור בקשה.
  * key = sha256(method + "|" + path + "|" + body_as_string).hex
  */
 export async function computeCacheKey(
@@ -53,17 +53,17 @@ export async function computeCacheKey(
   return Buffer.from(hashBuffer).toString("hex")
 }
 
-// ─── Proxy cache factory ──────────────────────────────────────────────────────
+// ─── Factory למטמון פרוקסי ──────────────────────────────────────────────────────
 
 /**
- * Creates a disk-backed proxy cache.
- * baseDir: root directory (e.g. "data/cache/proxy").
+ * יוצר מטמון פרוקסי מבוסס דיסק.
+ * baseDir: ספריית השורש (למשל "data/cache/proxy").
  */
 export function createProxyCache(baseDir: string) {
-  // Two logical caches sharing the same namespace: body + sidecar headers.
-  // We use a single createDiskCache instance with two key types:
+  // שני מטמונים לוגיים החולקים את אותו namespace: גוף (body) + תגיות נלוות (headers).
+  // אנו משתמשים במופע אחד של createDiskCache עם שני סוגי מפתחות:
   //   key         → body (Uint8Array)
-  //   key.headers → JSON-encoded header metadata
+  //   key.headers → מטה-נתוני headers מקודדים ב-JSON
   const store = createDiskCache<Uint8Array>({
     namespace: "proxy",
     baseDir,
@@ -84,7 +84,7 @@ export function createProxyCache(baseDir: string) {
             contentType: string
           }
         } catch {
-          // use default
+          // השתמש בברירת מחדל
         }
       }
 

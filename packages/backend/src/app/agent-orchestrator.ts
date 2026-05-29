@@ -1,18 +1,18 @@
 /**
- * agent-orchestrator.ts — Slim orchestrator for Slice 10.
+ * agent-orchestrator.ts — אורקסטרטור רזה עבור Slice 10.
  *
- * Responsibilities:
- *   1. createAndSpawn: registry.create + bridgeManager.spawn → returns { agentId, wsUrl, bridgePort }
- *      Status stays "spawning" — FE marks "ready" via POST /api/agents/:id/session-attached.
- *   2. deleteAndKill: registry.update(closed) + bridgeManager.kill + registry.delete
- *   3. getBridgePort: used by ws-agent for proxy routing
- *   4. Crash handler: bridgeManager.onCrash → registry.update(status=crashed, crashReason)
+ * תחומי אחריות:
+ *   1. createAndSpawn: קורא ל-registry.create + bridgeManager.spawn → מחזיר { agentId, wsUrl, bridgePort }
+ *      הסטטוס נשאר "spawning" — ה-FE מסמן "ready" דרך POST /api/agents/:id/session-attached.
+ *   2. deleteAndKill: קורא ל-registry.update(closed) + bridgeManager.kill + registry.delete
+ *   3. getBridgePort: בשימוש של ws-agent עבור ניתוב פרוקסי
+ *   4. טיפול בהתרסקויות: bridgeManager.onCrash → מבצע registry.update(status=crashed, crashReason)
  *
- * Removed from Slice 9:
- *   - createAcpWsTransport / createAcpWsLoadTransport (FE does ACP handshake)
- *   - createAgentSession / sessions Map (no server-side ACP session)
- *   - historyBuffer / history broadcast
- *   - projectsRegistry.recordSession (moved to POST /api/agents/:id/session-attached)
+ * הוסר מ-Slice 9:
+ *   - createAcpWsTransport / createAcpWsLoadTransport (ה-FE מבצע ACP handshake)
+ *   - createAgentSession / sessions Map (אין סשן ACP בצד השרת)
+ *   - historyBuffer / שידור היסטוריה
+ *   - projectsRegistry.recordSession (הועבר אל POST /api/agents/:id/session-attached)
  */
 
 import type {
@@ -30,18 +30,18 @@ import type { ProjectsRegistry } from "./projects-registry.js"
 
 const log = createLogger("backend.orchestrator")
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── סוגים ────────────────────────────────────────────────────────────────────
 
 /**
- * Backend extension of CreateAgentInput.
- * existingSessionId — if provided, BE dedup checks for an active agent with this session.
+ * הרחבת צד-שרת של CreateAgentInput.
+ * existingSessionId — אם סופק, השרת בודק כפילויות עבור סוכן פעיל עם הסשן הזה.
  */
 export type CreateAndSpawnInput = CreateAgentInput & {
   existingSessionId?: string
 }
 
 /**
- * Response shape from createAndSpawn.
+ * מבנה התגובה מ-createAndSpawn.
  */
 export type CreateAndSpawnResult = {
   agentId: string
@@ -54,20 +54,20 @@ export type CreateAndSpawnResult = {
 }
 
 export type AgentOrchestrator = {
-  /** Create (or deduplicate) an agent + spawn bridge. Returns minimal info; FE does ACP handshake. */
+  /** יוצר (או מבצע דה-דופליקציה) לסוכן + מפעיל bridge. מחזיר מידע מינימלי; ה-FE מבצע ACP handshake. */
   createAndSpawn(input: CreateAndSpawnInput): Promise<CreateAndSpawnResult>
 
-  /** Delete agent + kill bridge. */
+  /** מוחק סוכן + הורג את ה-bridge. */
   deleteAndKill(id: string): Promise<void>
 
-  /** Returns the bridge port for a given agent id (for ws-agent routing). */
+  /** מחזיר את פורט ה-bridge עבור מזהה סוכן נתון (עבור ניתוב ב-ws-agent). */
   getBridgePort(id: string): number | null
 
-  // Kept for backward compat with deleteAndKill (not exposed to FE)
+  // נשמר לתאימות לאחור עם deleteAndKill (לא נחשף ל-FE)
   _getAgent?: (id: string) => Agent | null
 }
 
-/** BridgeManager with optional spawnWithStderr extension. */
+/** BridgeManager עם הרחבת spawnWithStderr אופציונלית. */
 type ExtendedBridgeManager = BridgeManager & {
   spawnWithStderr?: (
     bridgeId: string,
@@ -75,22 +75,22 @@ type ExtendedBridgeManager = BridgeManager & {
   ) => Promise<BridgeHandleWithStderr>
 }
 
-// ─── Factory ──────────────────────────────────────────────────────────────────
+// ─── פקטורי ──────────────────────────────────────────────────────────────────
 
 export function createAgentOrchestrator(deps: {
   registry: AgentRegistry
   bridgeManager: ExtendedBridgeManager
   projectsRegistry?: ProjectsRegistry
 }): AgentOrchestrator {
-  // Stores stderr getters keyed by agent id, for crash reason extraction
+  // שומר פונקציות getStderr מקוטלגות לפי מזהה סוכן, לחילוץ סיבת התרסקות
   const stderrGetters = new Map<string, () => string[]>()
 
-  // In-memory bridge port lookup (agentId → port)
-  // Populated on spawn, used by ws-agent for routing without registry async call.
+  // חיפוש פורט bridge בזיכרון (agentId → port)
+  // מאוכלס ב-spawn, בשימוש ws-agent לניתוב ללא קריאה אסינכרונית ל-registry.
   const bridgePorts = new Map<string, number>()
 
-  // Wire crash handler: when a bridge dies, mark agent as crashed + update registry.
-  // The ws-agent pipe will detect bridgeWs.close and send feWs.close(1011, "bridge closed").
+  // מאזין התרסקויות: כש-bridge מת, סמן סוכן כ-crashed + עדכן registry.
+  // צינור ה-ws-agent יזהה bridgeWs.close וישלח feWs.close(1011, "bridge closed").
   deps.bridgeManager.onCrash(async (bridgeId, info: BridgeCrashInfo) => {
     try {
       const existing = await deps.registry.get(bridgeId)
@@ -113,9 +113,9 @@ export function createAgentOrchestrator(deps: {
       log.info({ cliKind: input.cliKind, cwd: input.cwd }, "createAndSpawn start")
       const existingSessionId = input.existingSessionId ?? null
 
-      // ── Dedup check ────────────────────────────────────────────────────────
-      // If an active agent already holds this (cwd, acpSessionId), return it
-      // without spawning a new bridge.
+      // ── בדיקת כפילויות ────────────────────────────────────────────────────────
+      // אם סוכן פעיל כבר מחזיק את ה-(cwd, acpSessionId) הזה, החזר אותו
+      // ללא הפעלת bridge חדש.
       if (existingSessionId) {
         const allAgents = await deps.registry.list()
         const duplicate = allAgents.find(
@@ -138,13 +138,13 @@ export function createAgentOrchestrator(deps: {
         }
       }
 
-      // ── Create registry entry ──────────────────────────────────────────────
-      // Registry uses "starting" (core AgentStatus); response to FE uses "spawning"
+      // ── יצירת רשומת registry ──────────────────────────────────────────────
+      // ה-registry משתמש ב-"starting" (בליבת AgentStatus); התגובה ל-FE משתמשת ב-"spawning"
       const agent = await deps.registry.create(input)
       await deps.registry.update(agent.id, { status: "starting" })
 
       try {
-        // ── Spawn bridge ───────────────────────────────────────────────────────
+        // ── הפעלת bridge ───────────────────────────────────────────────────────
         let handle: BridgeHandleWithStderr | Awaited<ReturnType<BridgeManager["spawn"]>>
         if (deps.bridgeManager.spawnWithStderr) {
           handle = await deps.bridgeManager.spawnWithStderr(agent.id, {
@@ -161,7 +161,7 @@ export function createAgentOrchestrator(deps: {
           })
         }
 
-        // Update registry with bridge port; registry status stays "starting" (FE will update to "ready")
+        // מעדכן את ה-registry עם פורט ה-bridge; הסטטוס נשאר "starting" (ה-FE יעדכן ל-"ready")
         await deps.registry.update(agent.id, { bridgePort: handle.port })
         bridgePorts.set(agent.id, handle.port)
 
@@ -171,7 +171,7 @@ export function createAgentOrchestrator(deps: {
           cliKind: agent.cliKind as BridgeKind,
           wsUrl: handle.wsUrl,
           bridgePort: handle.port,
-          // "spawning" is the FE-facing term; registry uses "starting" (core AgentStatus)
+          // "spawning" הוא המונח מול ה-FE; ה-registry משתמש ב-"starting" (בליבת AgentStatus)
           status: "spawning",
         }
 
@@ -202,20 +202,20 @@ export function createAgentOrchestrator(deps: {
       try {
         await deps.registry.update(id, { status: "closed" })
       } catch {
-        // ignore
+        // התעלם
       }
 
-      // Kill bridge process
+      // הרוג את תהליך ה-bridge
       await deps.bridgeManager.kill(id)
 
-      // Clean up local state
+      // נקה מצב מקומי
       stderrGetters.delete(id)
       bridgePorts.delete(id)
 
       try {
         await deps.registry.delete(id)
       } catch {
-        // ignore if already gone
+        // התעלם if already gone
       }
     },
 

@@ -5,8 +5,8 @@ import type { AgentOrchestrator } from "../app/agent-orchestrator"
 import type { ProjectsRegistry } from "../app/projects-registry"
 
 /**
- * Backend-only extension of CreateAgentInput — includes existingSessionId
- * for Slice 8a session loading. Defined here because it extends core schema.
+ * הרחבת צד-שרת בלבד של CreateAgentInput — כולל existingSessionId
+ * עבור טעינת סשן ב-Slice 8a. מוגדר כאן כי זה מרחיב את סכימת הליבה.
  */
 const CreateAgentInputFull = type({
   cliKind: CliKind,
@@ -38,13 +38,13 @@ export function registerAgentsHttp(
       return c.json({ error: "invalid json" }, 400)
     }
 
-    // Validate with full schema (includes optional existingSessionId for Slice 8a)
+    // מאמת מול הסכימה המלאה (כולל existingSessionId אופציונלי עבור Slice 8a)
     const parsed = CreateAgentInputFull(body)
     if (parsed instanceof type.errors) {
       return c.json({ error: parsed.summary }, 400)
     }
 
-    // Validate cwd path — rejects double-encoded paths, NUL bytes, relative paths, etc.
+    // מאמת נתיב cwd — דוחה נתיבים בקידוד כפול, בתי NUL, נתיבים יחסיים, וכו'.
     const cwdResult = validateCwd(parsed.cwd)
     if (cwdResult.isErr()) {
       const e = cwdResult.error
@@ -52,13 +52,13 @@ export function registerAgentsHttp(
     }
 
     try {
-      // null → undefined: HTTP schema accepts null (JSON compat), orchestrator expects string | undefined
+      // null → undefined: סכימת ה-HTTP מקבלת null (תאימות JSON), ה-orchestrator מצפה ל-string | undefined
       const result = await deps.orchestrator.createAndSpawn({
         ...parsed,
-        cwd: cwdResult.value, // use normalised cwd (trailing slash stripped)
+        cwd: cwdResult.value, // משתמש ב-cwd מנורמל (לוכסן סוגר הוסר)
         existingSessionId: parsed.existingSessionId ?? undefined,
       })
-      // Return CreateAndSpawnResult shape (Slice 10)
+      // מחזיר את מבנה CreateAndSpawnResult (סלייס 10)
       return c.json(result, 201)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -87,13 +87,13 @@ export function registerAgentsHttp(
   /**
    * POST /api/agents/:id/session-attached
    *
-   * Slice 10 Phase 1: FE calls this after ACP handshake succeeds.
-   * Updates registry status → "ready", records cwd + sessionId in projectsRegistry.
+   * Slice 10 Phase 1: ה-FE קורא לזה אחרי הצלחת ה-ACP handshake.
+   * מעדכן את סטטוס ה-registry ל-"ready", מתעד cwd + sessionId ב-projectsRegistry.
    *
-   * Body: { sessionId: string }
-   * Response: { ok: true }
+   * גוף הבקשה (Body): { sessionId: string }
+   * תגובה (Response): { ok: true }
    *
-   * MED-9 guard: if agent is already "ready" with a DIFFERENT acpSessionId → 409.
+   * שומר MED-9: אם הסוכן כבר "ready" עם acpSessionId אחר → 409.
    */
   app.post("/api/agents/:id/session-attached", async (c) => {
     const agentId = c.req.param("id")
@@ -113,12 +113,12 @@ export function registerAgentsHttp(
     const agent = await deps.registry.get(agentId)
     if (!agent) return c.json({ error: "agent not found" }, 404)
 
-    // MED-9 idempotent guard: if already ready with a DIFFERENT sessionId → conflict
+    // שומר אידמפוטנטי MED-9: אם כבר ready עם sessionId שונה → קונפליקט
     if (agent.status === "ready" && agent.acpSessionId && agent.acpSessionId !== sessionId) {
       return c.json({ error: "agent already attached to a different session" }, 409)
     }
 
-    // Mark ready + record session
+    // מסמן כ-ready ומתעד סשן
     await deps.registry.update(agentId, { status: "ready", acpSessionId: sessionId })
 
     if (deps.projectsRegistry) {
