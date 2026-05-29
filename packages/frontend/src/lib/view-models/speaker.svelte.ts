@@ -122,6 +122,15 @@ export class Speaker {
     if (!this.enabled) this.#stopAndClear()
   }
 
+  /**
+   * Stop playback + clear pending TTS jobs, without changing `enabled`.
+   * Unlike toggle(): toggle also flips enabled. stop() only stops.
+   * Used by: VoiceMode.cancel() (slice 3).
+   */
+  stop(): void {
+    this.#stopAndClear()
+  }
+
   destroy(): void {
     this.#disposeEffect?.()
     this.#disposeEffect = null
