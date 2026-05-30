@@ -63,6 +63,7 @@ Slice 3+   💭 מתוכנן  ראה ‎טבלה ‎למטה
 | 8 | Session picker | inline ב-connect form — "טען סשנים", dropdown, loadSession | 0.5 | ~1 יום | ✅ (2026-05-29, inline לא /sessions route — פחות חיכוך) |
 | 9 | Settings page | `/settings` ‎— ‎voice picker ‎(ElevenLabs voices), ‎audio cues toggles | 0.5, 6 | ~1 ‎יום | 💭 |
 | 4 | Bubble polish | ‎markdown, ‎tool bubbles עם status dots, ‎thought styling | 0.5 | ~1 ‎יום | ✅ (2026-05-29) |
+| 15 | **Backend URL config + CF deployment** | CORS env var (15a), Settings.beUrl + /settings page (15b), adapter migration (15c), CF Pages deploy guide + build verification (15d) | 0.5 | ~1 יום | ✅ (2026-05-30) |
 | 16 | Tool call content | ACP faithful rendering (diff, terminal, locations, shell commands) | 4 | ~1 יום | ✅ (2026-05-29) |
 | 5 | Smart scroll | ‎auto-scroll, ‎jump-down button, ‎user-interaction detection | 0 | ~‎חצי יום | 💭 |
 | 6 | Audio cues | ‎5 ‎צלילים ‎ב-Web Audio (recording start/stop, thinking, speaking, error) | 3 | ~‎חצי יום | 💭 |

@@ -116,6 +116,20 @@ onecli run --agent voice-acp -- bun --watch src/server.ts
 pnpm --filter @drive-coding/backend dev
 ```
 
+### Running BE with CORS for deployed CF Pages FE
+
+When connecting the deployed `https://drive-coding.pages.dev` FE to a local BE,
+include the Pages origin in `CORS_ORIGINS`:
+
+```bash
+# Local BE serving both local and CF Pages FE (consistent with deploy/systemd/voice-acp-be.service)
+CORS_ORIGINS="https://drive-coding.pages.dev,http://localhost:4000" \
+  PORT=4000 onecli run --agent voice-acp -- bun --watch src/server.ts
+```
+
+See `docs/deploy-cf-pages.md` for full deploy instructions and known limitations
+(mixed-content + Private Network Access).
+
 The `voice-acp` OneCLI agent injects `xi-api-key` for `api.elevenlabs.io`
 and `x-goog-api-key` for `generativelanguage.googleapis.com`. It does NOT
 inject Anthropic credentials (intentional — see `~/.config/opencode/learnings.md`

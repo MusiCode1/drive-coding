@@ -1,7 +1,7 @@
 # Slice 15b — Settings Page Shell — תוכנית
 
 > **‏תאריך**: 2026-05-29
-> **‏סטטוס**: ‏הושלם — ‏פאזה 2 ‏מתוך 4 ‏של slice 15 (CF deployment family)
+> **‏סטטוס**: ‏בוצע — ‏פאזה 2 ‏מתוך 4 ‏של slice 15 (CF deployment family)
 > **‏Complexity**: 3/10 (verifier: ‏אין — ‏נכלל ב-verifier-slice-light בסוף slice 15)
 > **‏תלות**: 15a (לא חוסם — ‏FE לא יודע על CORS; ‏אבל merge sequence הוא a → b → c → d)
 > **‏מתבסס על**: `docs/plans/README.md`, `docs/conventions/parallel-safe-code.md`, `packages/frontend/AGENTS.md` (5 חוקי הזהב)

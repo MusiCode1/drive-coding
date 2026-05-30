@@ -1,7 +1,7 @@
 # Slice 15a — BE CORS — תוכנית
 
 > **‏תאריך**: 2026-05-29
-> **‏סטטוס**: ‏הושלם — ‏פאזה 1 ‏מתוך 4 ‏של slice 15 (CF deployment family)
+> **‏סטטוס**: ‏בוצע — ‏פאזה 1 ‏מתוך 4 ‏של slice 15 (CF deployment family)
 > **‏Complexity**: 2/10 (verifier: ‏אין — ‏נכלל ב-verifier-slice-light הכולל בסוף slice 15)
 > **‏תלות**: ‏אין
 > **‏מתבסס על**: `docs/plans/README.md`, `docs/plans/EXECUTOR_DISPATCH.md`

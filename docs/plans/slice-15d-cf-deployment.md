@@ -1,7 +1,7 @@
 # Slice 15d — Cloudflare Pages Deployment — תוכנית
 
 > **‏תאריך**: 2026-05-29
-> **‏סטטוס**: ‏מאושר — ‏פאזה 4 ‏מתוך 4 ‏של slice 15 (CF deployment family)
+> **‏סטטוס**: ‏בוצע — ‏פאזה 4 ‏מתוך 4 ‏של slice 15 (CF deployment family)
 > **‏Complexity**: 3/10 (verifier: ‏אין — ‏נכלל ב-verifier-slice-light הכולל בסוף slice 15)
 > **‏תלות**: 15a (CORS env var), 15b (Settings.beUrl), 15c (adapter migration ל-beUrl)
 > **‏מתבסס על**: `docs/plans/EXECUTOR_DISPATCH.md`, `packages/frontend/AGENTS.md`
