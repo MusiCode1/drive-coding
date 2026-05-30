@@ -1,7 +1,7 @@
 # Slice 15c — Adapter Migration to beUrl() — תוכנית
 
 > **‏תאריך**: 2026-05-29
-> **‏סטטוס**: ‏הושלם — ‏פאזה 3 ‏מתוך 4 ‏של slice 15 (CF deployment family)
+> **‏סטטוס**: ‏בוצע — ‏פאזה 3 ‏מתוך 4 ‏של slice 15 (CF deployment family)
 > **‏Complexity**: 4/10 (verifier: ‏אין — ‏נכלל ב-verifier-slice-light בסוף slice 15)
 > **‏תלות**: 15a (CORS — ‏נדרש להבחירה Cross-origin בפועל), 15b (Settings.beUrl)
 > **‏מתבסס על**: `docs/plans/README.md`, `packages/frontend/AGENTS.md`

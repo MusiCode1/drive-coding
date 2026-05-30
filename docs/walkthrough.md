@@ -1,3 +1,42 @@
+## 2026-05-30 — Slice 15 (15a-d): Backend URL config + CF Pages deployment
+
+### מה בוצע?
+
+4 slices שמממשים פריסת ה-FE ל-Cloudflare Pages תוך הפרדת FE מ-BE (bring-your-own-backend).
+
+#### 15a — BE CORS env var (`cors-config.ts`)
+
+- הוסף `CORS_ORIGINS` env var ל-BE — מפרסר רשימת origins מופרדת בפסיקים.
+- `packages/backend/src/delivery/cors-config.ts`: parser + Hono middleware.
+- `deploy/systemd/voice-acp-be.service`: הוסיף `CORS_ORIGINS=https://drive-coding.pages.dev,http://localhost:4000`.
+- BE מגיב עם `Access-Control-Allow-Origin` נכון לכל origin ברשימה.
+
+#### 15b — Settings page (`/settings`)
+
+- נוצר route `/settings` עם view-model `Settings.beUrl`.
+- `packages/frontend/src/lib/view-models/settings.svelte.ts`: `beUrl` שדה עם `localStorage` persist.
+- `packages/frontend/src/routes/settings/+page.svelte`: UI פשוט עם שדה URL + "שמור".
+- הגדרת BE URL מקומית מ-`/settings` ← לא מ-env.
+
+#### 15c — Adapter migration to `beUrl()`
+
+- הועבר כל קוד שמבצע fetch ל-BE (adapters) להשתמש ב-`beUrl()` / `beWsUrl()` מ-`packages/frontend/src/lib/util/be-url.ts`.
+- BE URL ריק → same-origin (Vite proxy או BE מגיש FE). מוגדר → cross-origin (עם CORS מ-15a).
+- כל ה-adapters מעודכנים: STT, TTS, translate, agents, WS transport.
+
+#### 15d — CF Pages deploy (הסבב הזה)
+
+- `pnpm --filter @drive-coding/frontend-v2 build` מייצר `packages/frontend/build/` — SPA static עם `index.html` fallback.
+- `docs/deploy-cf-pages.md` נוצר עם: build command, deploy (Direct Upload + dashboard), CORS command, מגבלות ידועות (mixed-content + PNA/Chrome 94+).
+- `AGENTS.md` עודכן עם פקודת הרצה של BE עם `CORS_ORIGINS` ל-CF Pages.
+- אימות curl: preflight ל-`https://drive-coding.pages.dev` החזיר `204 + Access-Control-Allow-Origin: https://drive-coding.pages.dev` ✅.
+- לא נוצר `wrangler.toml` (Direct Upload לא דורש; Git-integration = slice עתידי).
+- פריסה בפועל ל-CF = Tama מבצעת ידנית.
+
+**DoD**: typecheck ✅, lint:i18n ✅, build ✅ (`build/index.html`), CORS preflight ✅.
+
+---
+
 ## 2026-05-30 — תיקון: opencode-clean.sh — strip OneCLI proxy vars
 
 ### מה בוצע?
