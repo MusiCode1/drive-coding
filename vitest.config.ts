@@ -4,6 +4,6 @@ export default defineConfig({
   test: {
     // The frontend has its own vitest.config.ts (svelte plugin required for
     // `.svelte.ts` runes — see packages/frontend/vitest.config.ts).
-    projects: ["packages/core", "packages/backend", "packages/frontend"],
+    projects: ["packages/core", "packages/backend", "packages/frontend", "scripts"],
   },
 })
