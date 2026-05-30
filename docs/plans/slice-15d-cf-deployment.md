@@ -12,7 +12,17 @@
 
 ‏⚠️ **‏אתה ה-executor** — ‏אל תdelegate ל-sub-agent מסוג executor. ‏ראה `EXECUTOR_DISPATCH.md §0`.
 
-‏רץ באותו worktree של 15a/b/c: `.worktrees/slice-15-cf-deployment/`. ‏לפני שמתחילים, ‏וודא ש-15a + 15b + 15c כבר ב-commits ‏בbranch הזה.
+‏**‏עדכון 2026-05-30**: 15a/b/c **‏כבר merged ל-dev** (וגם slice 20 — ‏BE שמגיש static + systemd + tunnel). ‏ה-worktree הישן `.worktrees/slice-15-cf-deployment/` ‏נמחק. ‏צור worktree חדש מ-dip הנוכחי:
+
+```bash
+cd /home/user/projects/voice-acp
+git worktree add .worktrees/slice-15d-cf-deployment -b slice-15d-cf-deployment dev
+cd .worktrees/slice-15d-cf-deployment
+pnpm install
+pnpm hooks:install
+```
+
+‏Base: dev tip ‏הנוכחי (`d6e3db1` ‏או חדש יותר). ‏כל מה ש-15d מניח (CORS parser, Settings.beUrl, adapter beUrl, serveStatic) ‏כבר ב-dev.
 
 ‏Reading list (must-read, ~‎10 ‏דק'):
 
@@ -31,10 +41,12 @@
 ‏מודל הפריסה: **‏"bring your own backend"**.
 
 ‏- ה-FE ‏נבנה כ-static SPA ‏ונפרס ל-**Cloudflare Pages** ‏תחת ה-domain הדיפולטי `drive-coding.pages.dev` (‏לא subdomain של example.com, ‏לא DNS/tunnel config).
-‏- ה-BE ‏נשאר **‏מקומי לחלוטין** (`localhost:4000`), ‏לא נחשף לאינטרנט בסבב הזה.
-‏- ‏כל משתמש שרוצה לחבר BE ‏מקליד את ה-URL ‏שלו ב-`/settings` (‏התשתית שנבנתה ב-15b/15c). ‏עבור ה-developer: `http://localhost:4000` ‏עובד מהדפדפן המקומי בלבד.
+‏- ה-BE ‏רץ מקומית (`localhost:4000`). ‏**‏עדכון (slice 20)**: ‏ה-BE ‏עכשיו גם מגיש את ה-FE ‏בעצמו (single origin) ‏וגם נחשף דרך tunnel קיים (`https://your-app-build.nue.tuns.sh`). ‏CF Pages ‏הוא נתיב **‏ציבורי נוסף** — ‏לא מחליף את המקומי/tunnel.
+‏- ‏כל משתמש שרוצה לחבר BE ‏מ-CF ‏מקליד את ה-URL ‏שלו ב-`/settings` (‏התשתית שנבנתה ב-15b/15c).
 
-‏החוויה: ‏אחרי 15d, ‏הפקודה `pnpm --filter @drive-coding/frontend-v2 build` ‏מייצרת `build/` ‏שניתן לפרוס ל-CF Pages; ‏הוראות הפריסה מתועדות; ‏וה-BE ‏המקומי, ‏כשמריצים אותו עם `CORS_ORIGINS=https://drive-coding.pages.dev,http://localhost:5173`, ‏מאשר קריאות cross-origin מה-FE ‏המפורס.
+‏החוויה: ‏אחרי 15d, ‏הפקודה `pnpm --filter @drive-coding/frontend-v2 build` ‏מייצרת `build/` ‏שניתן לפרוס ל-CF Pages; ‏הוראות הפריסה מתועדות; ‏וה-BE ‏המקומי, ‏כשמריצים אותו עם `CORS_ORIGINS=https://drive-coding.pages.dev,http://localhost:4000` (‏זה הערך שכבר מוגדר ב-`deploy/systemd/voice-acp-be.service` מ-slice 20), ‏מאשר קריאות cross-origin מה-FE ‏המפורס.
+
+‏**‏הערת CORS**: ‏slice 20 ‏כבר קבע `CORS_ORIGINS=https://drive-coding.pages.dev,http://localhost:4000` ב-systemd service. ‏ה-`5173` (Vite dev) ‏רלוונטי רק ל-dev mode ידני, ‏לא ל-prod service. ‏ב-15d ‏השתמש ב-`4000` ‏לעקביות עם ה-service הפרוד.
 
 ‏**הבהרה חשובה (‏תיעוד בלבד, ‏לא מימוש)**: ‏ה-FE ‏הציבורי ב-`pages.dev` ‏לא יוכל להגיע ל-`localhost:4000` ‏של אף אחד מלבד מי שמריץ את ה-BE ‏על אותו מחשב שבו פתוח הדפדפן. ‏וגם אז — ‏ראה §3.6 (Private Network Access). ‏זה תרחיש מודע. ‏חשיפת BE לאינטרנט = ‏slice עתידי.
 
@@ -136,14 +148,14 @@ test -f packages/frontend/build/index.html && echo OK
 ‏1. ‏תעד ב-`AGENTS.md` (root, §Ports ‏או §Backend) + ‏ב-`docs/deploy-cf-pages.md` ‏את פקודת ההרצה המומלצת של ה-BE ‏המקומי כשעובדים מול ה-FE ‏המפורס:
 
 ```bash
-CORS_ORIGINS="https://drive-coding.pages.dev,http://localhost:5173" \
+CORS_ORIGINS="https://drive-coding.pages.dev,http://localhost:4000" \
   PORT=4000 onecli run --agent voice-acp -- bun --watch src/server.ts
 ```
 
 ‏2. ‏אימות ידני (‏הפעל BE ‏זמני על 4002 ‏עם ה-env): ‏הרץ preflight curl ‏וודא ‏שה-origin מאושר:
 
 ```bash
-CORS_ORIGINS="https://drive-coding.pages.dev,http://localhost:5173" PORT=4002 \
+CORS_ORIGINS="https://drive-coding.pages.dev,http://localhost:4000" PORT=4002 \
   onecli run --agent voice-acp -- bun --watch src/server.ts &
 sleep 3
 curl -sI -X OPTIONS http://localhost:4002/api/agents \
@@ -167,14 +179,13 @@ curl -sI -X OPTIONS http://localhost:4002/api/agents \
 ‏**מה לעשות**:
 
 ‏1. ‏Walkthrough entry ‏אחד ‏שמסכם את כל slice 15 (15a CORS env, 15b Settings page, 15c adapter migration, 15d CF Pages deploy). ‏השתמש ב-skill `update-walkthrough` ‏אם קיים `docs/walkthrough.md`.
-‏2. ‏עדכן status ל-✅/Done ‏ב-`packages/frontend/docs/slices.md` ‏עבור slice 15.
+   ‏**‏שים לב (אומת ע"י verifier 2026-05-30)**: 15a-c ‏**‏לא תועדו ‏עדיין** ב-`docs/walkthrough.md`. ‏כתוב entry **‏מלא** ‏לכל slice 15 (15a-d) — ‏לא "השלם מה שחסר". ‏אין כפילות לחשוש ממנה.
+‏2. **‏slice 15 ‏לא קיים בטבלה ב-`packages/frontend/docs/slices.md`** (אומת). ‏**‏הוסף שורה חדשה** ‏לטבלה (לא רק "סמן Done"): ‏entry ל-"15 — Backend URL config + CF deployment" ‏עם status ✅. ‏מקם אותו ‏בסדר הגיוני (למשל אחרי 16, ‏או ליד 8/9 ‏לפי נושא).
 ‏3. ‏עדכן את ה-`> **‏סטטוס**` ‏ב-‏ראש כל אחד מ-4 ה-briefs (15a-d) ‏ל-"‏בוצע".
 
-‏> **‏הערה**: ‏אם 15c ‏כבר עדכן walkthrough/slices.md/status (‏בדוק `git log` ‏של ה-branch) — ‏אל תכפיל. ‏השלם רק את מה שחסר (‏בעיקר 15d ‏עצמו).
-
 ‏**DoD**:
-‏- [ ] walkthrough ‏מעודכן (‏ללא כפילות)
-‏- [ ] slices.md ‏מעודכן
+‏- [ ] walkthrough ‏entry מלא ל-slice 15 (15a-d)
+‏- [ ] slices.md ‏— ‏שורה חדשה ל-slice 15 נוספה (status ✅)
 ‏- [ ] 4 briefs ‏סטטוס מעודכן
 
 ---
@@ -192,7 +203,7 @@ curl -sI -X OPTIONS http://localhost:4002/api/agents \
 ‏3. **‏Deploy ‏אופציה B (CF dashboard / Git integration)**: ‏build command `pnpm --filter @drive-coding/frontend-v2 build`, ‏output dir `packages/frontend/build`, ‏root dir `/` (monorepo root). ‏(‏זה ה-flow ‏שבו `wrangler.toml` ‏יהיה רלוונטי — ‏slice עתידי.)
 ‏4. **‏URL**: `https://drive-coding.pages.dev`.
 ‏5. **‏מודל BYO-backend**: ‏הסבר ש-FE ‏ציבורי + BE ‏מקומי, ‏המשתמש מקליד BE URL ‏ב-`/settings`, ‏ושזה עובד רק כשה-BE ‏נגיש מהדפדפן (‏localhost ‏באותו מחשב).
-‏6. **‏CORS**: ‏פקודת ההרצה של ה-BE ‏עם `CORS_ORIGINS=https://drive-coding.pages.dev,http://localhost:5173`.
+‏6. **‏CORS**: ‏פקודת ההרצה של ה-BE ‏עם `CORS_ORIGINS=https://drive-coding.pages.dev,http://localhost:4000` (‏עקבי עם slice 20 systemd service).
 ‏7. **‏מגבלות ידועות (‏§3.6)**:
    ‏- ‏Mixed-content: ‏HTTPS FE → HTTP localhost BE ‏חסום בחלק מהדפדפנים.
    ‏- ‏Private Network Access (Chrome 94+): ‏חוסם public→localhost ‏גם אחרי mixed-content override; ‏דורש `Access-Control-Allow-Private-Network: true` ‏מה-BE.
@@ -208,7 +219,7 @@ curl -sI -X OPTIONS http://localhost:4002/api/agents \
 ‏| ‏HTTPS FE → HTTP localhost BE ‏חסום (mixed-content + PNA) | ‏גבוה | ‏מתועד כמגבלה ידועה (§3.6). ‏לא חוסם את ה-slice — ‏ה-deliverable הוא ה-deploy + ‏התיעוד |
 ‏| executor ‏יוצר `wrangler.toml` ‏מיותר שנועל dashboard config | ‏בינוני | ‏§3.5 ‏אומר במפורש לא ליצור; DoD Commit 1 ‏בודק שאין |
 ‏| build ‏שבור ‏בגלל 15c | ‏בינוני | ‏אם build נכשל — Escalation (‏רגרסיה, ‏לא scope) |
-‏| ‏duplicate walkthrough ‏אם 15c ‏כבר עדכן | ‏בינוני | Commit 3 ‏הערה: ‏בדוק git log, ‏אל תכפיל |
+‏| slices.md ‏אין בו slice 15 (executor יחפש שורה שלא קיימת) | ‏אומת | Commit 3: ‏הוסף שורה חדשה, ‏לא "סמן Done" |
 
 ---
 
@@ -228,6 +239,6 @@ curl -sI -X OPTIONS http://localhost:4002/api/agents \
 ‏- [ ] ‏אין `wrangler.toml` ‏חדש (‏§3.5)
 ‏- [ ] `docs/deploy-cf-pages.md` ‏מלא ‏עם build/deploy/CORS/limitations (‏כולל PNA)
 ‏- [ ] `CORS_ORIGINS` ‏עם `https://drive-coding.pages.dev` ‏מתועד ‏ואומת ב-curl
-‏- [ ] walkthrough + slices.md + 4 briefs status ‏מעודכנים (‏ללא כפילות מ-15c)
+‏- [ ] walkthrough entry מלא ל-slice 15 (15a-d) + slices.md שורה חדשה + 4 briefs status מעודכנים
 ‏- [ ] typecheck + lint:i18n clean (‏validation על 15c, ‏אין קוד חדש ב-15d)
 ‏- [ ] ‏פריסה בפועל **‏לא** ‏בוצעה ע"י executor (‏Tama ‏מבצעת/‏מאשרת)
