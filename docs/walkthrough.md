@@ -1,3 +1,30 @@
+## 2026-05-30 — תיקון: opencode-clean.sh — strip OneCLI proxy vars
+
+### מה בוצע?
+
+תיקון באג: `session/new` החזיר `"No models available"` (או `"socket connection was closed unexpectedly"`) בכל ניסיון חיבור.
+
+#### שורש הבעיה
+
+ה-BE רץ תחת `onecli run --agent voice-acp`, שמזריק:
+- `ANTHROPIC_API_KEY=placeholder` — דורס את ה-OAuth המאוחסן של opencode
+- `HTTP_PROXY` / `HTTPS_PROXY` — מנתב את opencode דרך פרוקסי OneCLI (שאין לו credentials ל-Anthropic)
+
+opencode ניסה לבצע `session/new` עם ה-placeholder, קיבל כשלון auth, והחזיר שגיאת Internal Error.
+
+#### הפתרון
+
+ברמת ה-service unit (לא בקוד):
+- נוצר `scripts/opencode-clean.sh` — wrapper שמריץ `env -u ANTHROPIC_API_KEY -u HTTP_PROXY ...` לפני `opencode "$@"`
+- `deploy/systemd/voice-acp-be.service` קיבל `Environment=OPENCODE_BIN=.../opencode-clean.sh`
+- `cli-config.ts` כבר תומך ב-`OPENCODE_BIN` (לא נדרש שינוי קוד)
+
+#### תוצאה
+
+`session/new` מחזיר `sessionId` תקין (נבדק ב-WS test).
+
+---
+
 ## 2026-05-29 — slice 20: Local Prod Service
 
 ### מה בוצע?

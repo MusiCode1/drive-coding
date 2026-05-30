@@ -9,6 +9,9 @@ WorkingDirectory=/home/user/projects/voice-acp/dev
 Environment=PORT=4000
 Environment=FE_STATIC_DIR=/home/user/projects/voice-acp/dev/packages/frontend/build
 Environment=CORS_ORIGINS=https://drive-coding.pages.dev,http://localhost:4000
+# opencode has its own Anthropic OAuth — strip OneCLI's proxy/placeholder vars
+# that would otherwise break opencode's auth (see scripts/opencode-clean.sh).
+Environment=OPENCODE_BIN=/home/user/projects/voice-acp/dev/scripts/opencode-clean.sh
 # systemd gives a minimal PATH (/usr/bin:/bin) — opencode/npx/node/onecli are NOT
 # on it, so the BE fails to spawn the CLI agent ("spawn returned no pid").
 # Source the shared env script: it sets the full PATH, ONECLI_API_HOST, fnm and
