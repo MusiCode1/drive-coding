@@ -32,10 +32,10 @@ export function getCliCommand(kind: BridgeKind, modelOverride?: string | null): 
       }
     case "gemini":
       return {
-        bin: "npx",
+        bin: "gemini",
         args: model
-          ? ["-y", "@google/gemini-cli@latest", "--experimental-acp", "--model", model]
-          : ["-y", "@google/gemini-cli@latest", "--experimental-acp"],
+          ? ["--acp", "--model", model]
+          : ["--acp"],
       }
     case "codex":
       return {
@@ -43,6 +43,14 @@ export function getCliCommand(kind: BridgeKind, modelOverride?: string | null): 
         args: model
           ? ["-y", "@zed-industries/codex-acp@latest", "--model", model]
           : ["-y", "@zed-industries/codex-acp@latest"],
+      }
+
+    case "qoder":
+      return {
+        bin: "qodercli",
+        args: model
+          ? ["--acp", "--model", model]
+          : ["--acp"],
       }
   }
 }

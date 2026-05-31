@@ -35,7 +35,7 @@ export interface AgentRegistry {
 
 // ─── חדש ב-Slice 3 ──────────────────────────────
 
-export type BridgeKind = "opencode" | "claude" | "gemini" | "codex"
+export type BridgeKind = "opencode" | "claude" | "gemini" | "codex" | "qoder"
 
 export type SpawnBridgeInput = {
   readonly cliKind: BridgeKind
