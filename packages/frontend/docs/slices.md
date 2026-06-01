@@ -71,6 +71,8 @@ Slice 3+   💭 מתוכנן  ראה ‎טבלה ‎למטה
 | 10 | Recordings + replay | ‎שמירת הקלטות, ‎replay של שיחה מלאה (user audio + agent TTS חדש) | 1, 2, 8 + BE work | ~‎2 ‎ימים | 💭 |
 | 11 | Audio-friendly prompt | ‎OpenCode plugin injection (audio-friendly system prompt) — דורש BE work | 0 | ~‎2 ‎ימים | ✅ |
 | 14 | Generic prompt injector | ‎Refactor של ‎slice 11 — ‎plugin הופך ‎generic ‎(text דרך ‎options), ‎הטקסט עובר ל-`packages/backend/src/prompts/` ‎(הכנה לפרופילים מרובים / picker עתידי) | 11 | ~‎חצי יום | ✅ |
+| 22 | **TTS ordering + tool narration audio** | OrderKey + OrderedQueue (fetch מקבילי בסדר נכון) + tool narration כ-TTS job + provenance על AudioSegment | 2, 4 | ~1 יום | ✅ (2026-06-01) |
+| 23 | **Agent options panel** | פאנל הגדרות סוכן (model, provider, temperature) | 8, 15 | ~1 יום | ✅ (2026-06-01) |
 | 13 | Cutover | rename ‎`frontend-v2/` ‎→ ‎`frontend/` ‎(הישן ‎כבר נמחק ‎ב-2026-05-28) | כל ‎הקודמים | ~‎חצי יום | 💭 |
 
 **‎סה"כ ‎לcutover מלא: ‎~‎15-16 ‎ימי עבודה.**

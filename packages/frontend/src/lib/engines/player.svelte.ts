@@ -1,14 +1,15 @@
 /**
- * player.ts — נגן מקטעים סדרתי שרץ על גבי AudioStream.
+ * player.ts — נגן מקטעים ממוין לפי OrderKey שרץ על גבי AudioStream.
  *
- * מחזיק תור FIFO של מזהי מקטעים (segment IDs) ומנגן אותם דרך `AudioStream.play`
- * בזה אחר זה. כאשר מקטע זורק שגיאה (בוטל / שגיאת רשת) אנחנו
- * מדלגים עליו וממשיכים לבא אחריו (התנהגות MIN-5).
+ * slice 22: מחליף תור FIFO פשוט ב-OrderedQueue ממוין לפי (seq, segmentIndex).
+ * המשמעות: גם אם fetch של משפט מאוחר חוזר לפני משפט מוקדם (קבלנות מקבילית),
+ * ה-Player ינגן בסדר הכרונולוגי הנכון.
  *
- * ה-state חשוף בתור `$state` של Svelte 5 כך שהתצוגות (views) יכולות להגיב ל-"האם משהו
- * מתנגן כרגע?" דרך `player.state === "playing"`.
+ * best-effort skip (MIN-5): AudioStream.play ממתין אם state="loading" ודוחה אם
+ * "cancelled" — כך שמשפט שנכשל מדולג ומשפט הבא נשמע. אין timeout נוסף ב-Player.
  */
 
+import { OrderedQueue, type OrderKey } from "@drive-coding/core/voice/tts-queue"
 import type { AudioStream } from "./audio-stream"
 
 export type PlayerState = "idle" | "playing"
@@ -18,7 +19,7 @@ export class Player {
   currentSegmentId: string | null = $state(null)
 
   #audioStream: AudioStream
-  #queue: string[] = []
+  #queue = new OrderedQueue<string>()  // slice 22: היה string[]
   #playing = false // שומר כניסה-מחדש (re-entrancy guard) עבור #playLoop
 
   constructor(audioStream: AudioStream) {
@@ -26,11 +27,12 @@ export class Player {
   }
 
   /**
-   * מצרף מקטע לתור הניגון. אם ה-Player נמצא במצב המתנה (idle), הוא מתחיל את
+   * מצרף מקטע לתור הממוין. אם ה-Player נמצא במצב המתנה (idle), הוא מתחיל את
    * לולאת הניגון. בטוח לקריאה מכל הקשר (context).
+   * slice 22: מקבל orderKey לסדר נכון תחת fetch מקבילי.
    */
-  addSegment(segmentId: string): void {
-    this.#queue.push(segmentId)
+  addSegment(segmentId: string, orderKey: OrderKey): void {
+    this.#queue.insert(orderKey, segmentId)
     if (this.#playing) return
     void this.#playLoop()
   }
@@ -38,14 +40,12 @@ export class Player {
   /**
    * שמור עבור slice 10 (ניגון מחדש של הקלטות) — לא בשימוש ב-slice 2.
    * מנקה את התור הנוכחי ומתחיל לנגן מ-`segmentId`.
+   * slice 22: משתמש ב-orderKey של {seq:-1, segmentIndex:0} — תמיד ראשון.
    */
   jumpToSegment(segmentId: string): void {
-    this.#queue = [segmentId]
-    if (this.#playing) {
-      // קריאת ה-play() הנוכחית תסתיים (resolve / reject) באופן טבעי; הלולאה
-      // תאסוף אז את תוכן התור החדש.
-      return
-    }
+    this.#queue.clear()
+    this.#queue.insert({ seq: -1, segmentIndex: 0 }, segmentId)
+    if (this.#playing) return
     void this.#playLoop()
   }
 
@@ -53,9 +53,11 @@ export class Player {
    * עצירת הניגון: משהה את הנוכחי, מרוקן את התור, ומבטל כל מקטע שברשותנו.
    */
   stop(): void {
-    const ids = [...this.#queue]
+    const ids: string[] = []
+    let n = this.#queue.takeNext()
+    while (n !== undefined) { ids.push(n.value); n = this.#queue.takeNext() }
     if (this.currentSegmentId !== null) ids.push(this.currentSegmentId)
-    this.#queue = []
+    this.#queue.clear()
     for (const id of ids) this.#audioStream.cancel(id)
     // ייתכן שהדפדפן לא יפעיל אירועי ended/error אחרי השהייה+ביטול; הצג מצב המתנה (idle) באופן מיידי.
     this.#playing = false
@@ -67,15 +69,16 @@ export class Player {
     this.#playing = true
     this.state = "playing"
     try {
-      while (this.#queue.length > 0) {
-        const id = this.#queue.shift()
-        if (id === undefined) break
+      let next = this.#queue.takeNext()
+      while (next !== undefined) {
+        const id = next.value
         this.currentSegmentId = id
         try {
           await this.#audioStream.play(id)
         } catch (_e) {
-          // ביקורת MIN-5: בוטל / שגיאה → מדלגים, וממשיכים לבא בתור.
+          // MIN-5: בוטל / שגיאה / לא-מוכן → דלג, המשך לבא בתור (best-effort).
         }
+        next = this.#queue.takeNext()
       }
     } finally {
       this.#playing = false

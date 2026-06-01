@@ -15,6 +15,11 @@
  * Slice 2: Speaker מחזיק את מזהה הקול כ-`const`. Slice 9 יחבר אותו
  * דרך Settings — אותו שדה, פשוט הופך ל-getter דינמי.
  *
+ * Slice 22: OrderAllocator מקצה orderKey דטרמיניסטי לכל job (seq יציב
+ * פר-bubble, segmentIndex עולה פר משפט). Player מנגן לפי סדר זה גם
+ * כשfetch מקבילי חוזר בסדר הפוך. קריינות כלים (tool narration) הוכנסה
+ * לתור כ-job רגיל עם orderKey כרונולוגי.
+ *
  * כללי ריאקטיביות (Svelte 5):
  *   - קריאות מ-`session.bubbles[*].segments` הן בתוך ה-effect וכן נעקבות.
  *     זה מה שגורם ל-Speaker לרוץ מחדש כשמקטעים מגיעים.
@@ -24,6 +29,11 @@
  */
 
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
+import {
+  OrderAllocator,
+  type OrderKey,
+} from "@drive-coding/core/voice/tts-queue"
+import { cacheKeyFor } from "@drive-coding/core/voice/cache-key"
 import { untrack } from "svelte"
 import type { AgentSession, AgentSessionStatus } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
@@ -44,13 +54,17 @@ export type TtsJobStatus = "pending" | "fetching" | "ready" | "error"
 
 export type TtsJob = {
   segmentId: string
-  kind: "message" | "thought"
+  kind: "message" | "thought" | "tool"   // slice 22: הוסף "tool"
   messageId: string | null
   text: string
   status: TtsJobStatus
   abort: AbortController
   /** Slice 4: מזהה בועה, בשימוש jobs של מחשבות לכתיבת טקסט מתורגם חזרה. */
   bubbleId?: string
+  // ─── slice 22 ───
+  orderKey: OrderKey            // (seq, segmentIndex)
+  /** ל-tool: toolCallId לכתיבת narration חזרה לבועה אחרי ה-fetch. */
+  toolCallId?: string
 }
 
 type BubbleState = {
@@ -83,10 +97,11 @@ export class Speaker {
   #prevStatus: AgentSessionStatus = "idle"
   /** Slice 4: עוקב כמה מקטעים של כל ThoughtBubble תורגמו. */
   #translatedSegByBubble: Map<string, number> = new Map()
-  /** Slice 4: toolCallIds שמסופרים כעת (מונע כפילות narrations בטיסה). */
-  #narratingCallIds: Set<string> = new Set()
+  // slice 22: #narratingCallIds הוסר — #processedNarrationCallIds הוא ה-guard
   /** קריאות tool שכבר סוּפרו או דולגו בכוונה (השמעה חוזרת של היסטוריה / כשל narrate). */
   #processedNarrationCallIds: Set<string> = new Set()
+  /** slice 22: מקצה orderKey לבועות. לוגיקה ב-core (נבדק unit). */
+  readonly #orderAlloc = new OrderAllocator()
 
   // מוגדר על ידי הבנאי — נשמר כדי שה-destroy() יוכל לעצור את ה-effect.
   #disposeEffect: (() => void) | null = null
@@ -248,6 +263,9 @@ export class Speaker {
     bubbleId?: string,
   ): void {
     if (text.length === 0) return
+    const bid = bubbleId ?? messageId ?? crypto.randomUUID()
+    // slice 22: הקצה orderKey דטרמיניסטי — seq יציב פר-bubble, segmentIndex עולה
+    const orderKey = this.#orderAlloc.next(bid)
     this.#jobs.push({
       segmentId: crypto.randomUUID(),
       kind,
@@ -256,6 +274,7 @@ export class Speaker {
       status: "pending",
       abort: new AbortController(),
       bubbleId,
+      orderKey,
     })
   }
 
@@ -275,6 +294,7 @@ export class Speaker {
   async #fetchJob(job: TtsJob): Promise<void> {
     try {
       let text = job.text
+
       if (job.kind === "thought") {
         const result = await translate(text, TARGET_LANG, job.abort.signal)
         if (result !== null && result.status === "translated") {
@@ -285,6 +305,11 @@ export class Speaker {
           text = result.text
         }
         // already_in_target או null → שמור טקסט מקורי (originalText נשאר undefined)
+      } else if (job.kind === "tool") {
+        // slice 22: narration נוצר כאן (best-effort). null → דלג על ה-job.
+        const narrationText = await this.#narrateForJob(job)
+        if (narrationText === null) { job.status = "error"; return }
+        text = narrationText
       }
 
       if (job.abort.signal.aborted) {
@@ -292,13 +317,18 @@ export class Speaker {
         return
       }
 
+      // slice 22: חשב textHash על הטקסט שמסונתז (provenance)
+      const textHash = await cacheKeyFor(text, this.#settings.voiceId, "eleven_v3")
       const stream = await synthesizeStreaming({
         text,
         voiceId: this.#settings.voiceId,
         signal: job.abort.signal,
       })
-      await this.#audioStream.prepareSegment(job.segmentId, stream, job.abort)
-      this.#player.addSegment(job.segmentId)
+      await this.#audioStream.prepareSegment(job.segmentId, stream, job.abort, {
+        messageId: job.messageId,
+        textHash,
+      })
+      this.#player.addSegment(job.segmentId, job.orderKey)
       job.status = "ready"
     } catch (e) {
       // MIN-5: דלג + המשך, אל תזרוק.
@@ -311,8 +341,9 @@ export class Speaker {
   }
 
   /**
-   * Slice 4: עבור כל ToolBubble שהושלמה שחסרה narration, פתח narrate() בשריפה-ושכח.
+   * Slice 4: עבור כל ToolBubble שהושלמה שחסרה narration, צור TTS job עם orderKey.
    * נקרא מ-untrack() — כתיבות אסינכרוניות חוזרות דרך proxy של $state (בסדר).
+   * slice 22: הסיר #narratingCallIds (היה memory leak potential). Guard: #processedNarrationCallIds.
    */
   #processToolBubbles(
     bubbles: AgentSession["bubbles"],
@@ -331,38 +362,65 @@ export class Speaker {
         continue
       }
       if (this.#processedNarrationCallIds.has(tc.toolCallId)) continue
-      if (this.#narratingCallIds.has(tc.toolCallId)) continue  // בטיסה
-
-      this.#narratingCallIds.add(tc.toolCallId)
+      // slice 22: ה-#narratingCallIds Set הוסר. guard: #processedNarrationCallIds בלבד.
       this.#processedNarrationCallIds.add(tc.toolCallId)
 
-      const ctx: NarrateContext = {
-        userMessage: this.#session.lastUserMessage,
-        recentMessages: this.#session.recentAssistantMessages(3),
-      }
-      const tool: ToolCallForNarrate = {
-        toolCallId: tc.toolCallId,
-        kind: tc.kind,
-        title: tc.title ?? tc.name,
-      }
-      const bubbleId = bubble.id
+      // slice 22: הקצה orderKey כרונולוגי לבועת ה-tool (כמו message/thought),
+      // דרך אותו OrderAllocator — לכן ה-seq של ה-tool נכון יחסית למשפטים סביבו.
+      const bid = bubble.id
+      const orderKey = this.#orderAlloc.next(bid)
 
-      void narrate(ctx, tool).then((text) => {
-        if (text === null) return
-        const idx = this.#session.bubbles.findIndex((b) => b.id === bubbleId)
-        if (idx === -1) return
-        const maybeBubble = this.#session.bubbles[idx]
-        if (maybeBubble === undefined || maybeBubble.kind !== "tool") return
-        const old: ToolBubble = maybeBubble
-        // החלף בועה שלמה (ריאקטיביות Svelte 5).
-        this.#session.bubbles[idx] = {
-          ...old,
-          toolCall: { ...old.toolCall, narration: text },
-        }
-      }).finally(() => {
-        this.#narratingCallIds.delete(tc.toolCallId)
+      this.#jobs.push({
+        segmentId: crypto.randomUUID(),
+        kind: "tool",
+        messageId: null,
+        text: "",            // יתמלא ב-#narrateForJob
+        status: "pending",
+        abort: new AbortController(),
+        bubbleId: bid,
+        toolCallId: tc.toolCallId,
+        orderKey,
       })
+      this.#pumpFetchLoop()
     }
+  }
+
+  /**
+   * slice 22: קוראת narrate(), כותבת את הטקסט חזרה לבועה (לתצוגה),
+   * ומחזירה את הטקסט ל-TTS. מאחדת לוגיקה שהייתה ב-.then() הישן.
+   */
+  async #narrateForJob(job: TtsJob): Promise<string | null> {
+    if (job.toolCallId === undefined || job.bubbleId === undefined) return null
+    const idx = this.#session.bubbles.findIndex((b) => b.id === job.bubbleId)
+    if (idx === -1) return null
+    const b = this.#session.bubbles[idx]
+    if (b === undefined || b.kind !== "tool") return null
+    const tc = b.toolCall
+
+    const ctx: NarrateContext = {
+      userMessage: this.#session.lastUserMessage,
+      recentMessages: this.#session.recentAssistantMessages(3),
+    }
+    const tool: ToolCallForNarrate = {
+      toolCallId: tc.toolCallId,
+      kind: tc.kind,
+      title: tc.title ?? tc.name,
+    }
+    const text = await narrate(ctx, tool, job.abort.signal)
+    if (text === null) return null
+
+    // כתוב narration חזרה לבועה (תצוגה) — Svelte 5: החלף בועה שלמה.
+    const cur = this.#session.bubbles.findIndex((x) => x.id === job.bubbleId)
+    if (cur !== -1) {
+      const maybe = this.#session.bubbles[cur]
+      if (maybe !== undefined && maybe.kind === "tool") {
+        this.#session.bubbles[cur] = {
+          ...maybe,
+          toolCall: { ...maybe.toolCall, narration: text },
+        }
+      }
+    }
+    return text
   }
 
   /**
@@ -417,6 +475,8 @@ export class Speaker {
     this.#jobs = []
     this.#player.stop()
     this.#audioStream.clear()
+    // slice 22: נקה את ה-allocator (seq גלובלי לא מתאפס — מונוטוני בין שיחות)
+    this.#orderAlloc.clear()
     // סמן כל בועה קיימת כמעובדת לחלוטין כך שהפעלה מחדש לא תשחזר.
     for (const bubble of this.#session.bubbles) {
       if (bubble.kind !== "message" && bubble.kind !== "thought") continue
