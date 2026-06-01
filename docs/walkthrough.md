@@ -91,6 +91,52 @@
 - verifier-phase (calev) אחרי commit 2: GO.
 - verifier-slice-light בסוף — ראה docs/slice-22-verification-report.md.
 
+## 2026-06-01 — Slice 23: Agent Options Panel
+
+### מה בוצע?
+
+ווידג'ט מתקפל בצ'אט שמאפשר לשנות מודל, סוכן/mode, ואפשרויות config — **על הסשן הפתוח** דרך ACP `session/set_config_option`.
+
+#### Commit 1 — AcpClient methods
+
+- `packages/core/src/acp/client.ts`: הוסף 3 methods: `setSessionConfigOption`, `setSessionMode`, `setSessionModel`.
+- `SetSessionConfigOptionRequest` הוא discriminated union — branch לפי `typeof opts.value`.
+
+#### Commit 2 — AgentSession captures + applyConfigOption
+
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+  - שדות state חדשים: `configOptions`, `models`, `modes` (מאוכלסים מ-newSession/loadSession).
+  - `#captureSessionConfig(result)` — private helper שנקרא אחרי `newSession` ו-`loadSession`.
+  - `applyConfigOption(configId, value)` — public method עם 3 מסלולים (id-exact / category / direct).
+  - תיקון: `loadSession` שומר את ה-return value (היה נזרק).
+
+#### Commit 3 — AgentOptionsPanel UI + i18n
+
+- `packages/frontend/src/lib/components/chat/AgentOptionsPanel.svelte`: component leaf עם `flex-shrink:0`.
+  - מוסתר לגמרי כשאין config.
+  - Model dropdown (עדיפות: session.models → configOptions by category).
+  - Agent/Mode dropdown (עדיפות: session.modes → configOptions by category).
+  - Extra configOptions (select + boolean).
+- `packages/frontend/src/routes/chat/+page.svelte`: הוסף `<AgentOptionsPanel />` בין ChatHeader ל-ChatBubbles.
+- i18n: הוסף `agentOptions.title`, `agentOptions.model.label`, `agentOptions.agent.label`.
+
+#### Commit 4 — fix: ה-panel לא התקפל + default cwd
+
+- **fix collapse**: ה-`$effect` של auto-open היה `if (hasContent && !open) open = true` — רץ בכל שינוי של `open`, ולכן ברגע שהמשתמש קיפל (`open=false`) ה-effect מיד החזיר ל-`true`. הווידג'ט "לא התקפל".
+  - תיקון: flag `autoOpened` (לא-reactive) שמבטיח auto-open פעם אחת בלבד. אחרי הפתיחה הראשונית, לחיצת toggle מכובדת.
+- **default cwd**: `DEFAULTS.lastCwd` שונה מ-`""` ל-`"/home/user"` (settings.svelte.ts). מנגנון localStorage כבר גובר (load(): `{...DEFAULTS, ...parsed}`), כך שזה משפיע רק כשאין ערך שמור. TODO בקוד: לבקש מהשרת דרך `GET /api/options` (כבר משתמש ב-os.homedir).
+
+### בדיקות ידניות
+
+- ✅ ווידג'ט מופיע עם dropdowns מאוכלסים מ-session/new (50+ מודלים, 7 agents, Effort dropdown).
+- ✅ LOG_WIRE=ws מאשר: `session/set_config_option` נשלח עם `configId:"model"` ו-modelId הנכון.
+- ✅ typecheck ירוק + lint:i18n ירוק + build ירוק.
+
+### חריגות
+
+- `SessionConfigBoolean.currentValue` (לא `value`) — תוקן בזמן פיתוח.
+- `core/dist/index.d.ts` missing — נדרש `pnpm --filter @drive-coding/core build --force` אחרי worktree add.
+
 ---
 
 ## 2026-05-30 — Slice 15 (15a-d): Backend URL config + CF Pages deployment

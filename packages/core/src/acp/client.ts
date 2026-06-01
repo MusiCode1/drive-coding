@@ -20,7 +20,12 @@
  *     לפני שמעביר אותה לכאן.
  *   - Auto-reconnect — לא מטופל באף שכבה. ה-UI מציג פרומפט "רענן".
  */
-import type { SessionNotification } from "@agentclientprotocol/sdk"
+import type {
+  SessionNotification,
+  SetSessionConfigOptionResponse,
+  SetSessionModeResponse,
+  SetSessionModelResponse,
+} from "@agentclientprotocol/sdk"
 import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk"
 import { createClientImpl } from "./client-impl.js"
 import type { AcpTransport } from "./transport.js"
@@ -44,6 +49,23 @@ export type AcpClient = {
   prompt(sessionId: string, text: string): ReturnType<ClientSideConnection["prompt"]>
   cancel(sessionId: string): ReturnType<ClientSideConnection["cancel"]>
   close(): void
+
+  // ─── session config (slice 23) ───
+  setSessionConfigOption(opts: {
+    sessionId: string
+    configId: string
+    value: string | boolean
+  }): Promise<SetSessionConfigOptionResponse>
+
+  setSessionMode(opts: {
+    sessionId: string
+    modeId: string
+  }): Promise<SetSessionModeResponse>
+
+  setSessionModel(opts: {
+    sessionId: string
+    modelId: string
+  }): Promise<SetSessionModelResponse>
 }
 
 export async function createAcpClient(
@@ -143,6 +165,45 @@ export async function createAcpClient(
     /** סוגר את התעבורה הבסיסית */
     close() {
       transport.close()
+    },
+
+    // ─── session config (slice 23) ───
+
+    /** מגדיר אפשרות config על סשן פתוח. discriminated union לפי typeof value. */
+    async setSessionConfigOption(opts: {
+      sessionId: string
+      configId: string
+      value: string | boolean
+    }): Promise<SetSessionConfigOptionResponse> {
+      if (typeof opts.value === "boolean") {
+        return conn.setSessionConfigOption({
+          sessionId: opts.sessionId,
+          configId: opts.configId,
+          type: "boolean" as const,
+          value: opts.value,
+        })
+      }
+      return conn.setSessionConfigOption({
+        sessionId: opts.sessionId,
+        configId: opts.configId,
+        value: opts.value,
+      })
+    },
+
+    /** משנה את ה-mode של סשן פתוח. */
+    async setSessionMode(opts: {
+      sessionId: string
+      modeId: string
+    }): Promise<SetSessionModeResponse> {
+      return conn.setSessionMode({ sessionId: opts.sessionId, modeId: opts.modeId })
+    },
+
+    /** משנה את המודל של סשן פתוח (unstable API). */
+    async setSessionModel(opts: {
+      sessionId: string
+      modelId: string
+    }): Promise<SetSessionModelResponse> {
+      return conn.unstable_setSessionModel({ sessionId: opts.sessionId, modelId: opts.modelId })
     },
   }
 }

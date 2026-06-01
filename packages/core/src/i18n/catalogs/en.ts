@@ -79,4 +79,8 @@ export const en: Catalog = {
   "settings.beUrl.saved": "Saved ✓",
   "settings.back": "Back",
   // ─── recordings ─── (slice 10)
+  // ─── agent-options ─── (slice 23)
+  "agentOptions.title": "Session options",
+  "agentOptions.model.label": "Model",
+  "agentOptions.agent.label": "Agent",
 }

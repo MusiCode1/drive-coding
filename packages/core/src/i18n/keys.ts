@@ -85,6 +85,10 @@ export type MessageKey =
   | "settings.beUrl.saved"
   | "settings.back"
 // ─── recordings ─── (slice 10)
+// ─── agent-options ─── (slice 23)
+  | "agentOptions.title"
+  | "agentOptions.model.label"
+  | "agentOptions.agent.label"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

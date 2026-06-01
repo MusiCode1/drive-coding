@@ -10,7 +10,12 @@
  * עטוף עם ה-WsAcpTransport מצד ה-FE.
  */
 
-import type { SessionNotification } from "@agentclientprotocol/sdk"
+import type {
+  SessionNotification,
+  SessionConfigOption,
+  SessionModeState,
+  SessionModelState,
+} from "@agentclientprotocol/sdk"
 import { createAcpClient, type AcpClient } from "@drive-coding/core/acp/client"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
 import { createAgent, notifySessionAttached } from "$lib/adapters/agents-api"
@@ -56,6 +61,14 @@ export class AgentSession {
   isLoadingHistory = $state(false)
   /** טקסט הפרומפט האחרון שנשלח על ידי המשתמש — משמש את ה-Speaker להקשר עבור קריינות. */
   lastUserMessage = $state("")
+
+  // ─── slice 23: session config ─── (תוספתי)
+  /** אפשרויות config של הסשן הפתוח — מאוכלס מתגובת newSession/loadSession. */
+  configOptions = $state<SessionConfigOption[]>([])
+  /** מצב המודלים הזמינים — null אם ה-agent לא חשף מידע מודל. */
+  models = $state<SessionModelState | null>(null)
+  /** מצב ה-modes הזמינים — null אם ה-agent לא חשף מידע mode. */
+  modes = $state<SessionModeState | null>(null)
 
   #client: AcpClient | null = null
   #sessionId: string | null = null
@@ -111,6 +124,7 @@ export class AgentSession {
       if (!this.#sessionId) {
         throw new Error("newSession returned no sessionId")
       }
+      this.#captureSessionConfig(sessionResult)   // slice 23: לכוד config מה-session
 
       // 4. תגיד ל-BE לאיזה sessionId התחברנו (מאמץ מיטבי - best-effort)
       await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
@@ -212,7 +226,8 @@ export class AgentSession {
       // השתק את ה-TTS של ה-Speaker במהלך ניגון מחדש של ההיסטוריה (slice 4: replay-quiet).
       this.isLoadingHistory = true
       try {
-        await this.#client.loadSession({ sessionId: input.sessionId, cwd: input.cwd })
+        const loadResult = await this.#client.loadSession({ sessionId: input.sessionId, cwd: input.cwd })
+        this.#captureSessionConfig(loadResult)   // slice 23: לכוד config (sessionId מ-input, לא מ-response)
       } finally {
         this.isLoadingHistory = false
       }
@@ -247,9 +262,75 @@ export class AgentSession {
     return result
   }
 
+  // ─── slice 23: session config ─── (תוספתי)
+
+  /**
+   * מחיל שינוי config על הסשן הפתוח. קורא ל-setSessionConfigOption עם
+   * discriminated fallback ל-setSessionModel/setSessionMode.
+   * מדלג בשקט אם הסשן לא מחובר.
+   */
+  applyConfigOption = async (configId: string, value: string | boolean): Promise<void> => {
+    if (this.status !== "connected" && this.status !== "thinking") return
+    if (!this.#client || !this.#sessionId) return
+
+    // מסלול 1: option קיים ב-configOptions לפי id
+    const optById = this.configOptions.find((o) => o.id === configId)
+    if (optById) {
+      const res = await this.#client.setSessionConfigOption({
+        sessionId: this.#sessionId, configId, value,
+      })
+      this.configOptions = res.configOptions
+      return
+    }
+
+    // מסלול 2: fallback key "model"/"mode" — חפש לפי category
+    if (configId === "model" && typeof value === "string") {
+      const byCat = this.configOptions.find((o) => o.category === "model")
+      if (byCat) {
+        const res = await this.#client.setSessionConfigOption({
+          sessionId: this.#sessionId, configId: byCat.id, value,
+        })
+        this.configOptions = res.configOptions
+        return
+      }
+      // fallback — setSessionModel ישיר; עדכן models ידנית למניעת UI desync
+      await this.#client.setSessionModel({ sessionId: this.#sessionId, modelId: value })
+      if (this.models) this.models = { ...this.models, currentModelId: value }
+      return
+    }
+    if (configId === "mode" && typeof value === "string") {
+      const byCat = this.configOptions.find((o) => o.category === "mode")
+      if (byCat) {
+        const res = await this.#client.setSessionConfigOption({
+          sessionId: this.#sessionId, configId: byCat.id, value,
+        })
+        this.configOptions = res.configOptions
+        return
+      }
+      // fallback — setSessionMode ישיר; עדכן modes ידנית
+      await this.#client.setSessionMode({ sessionId: this.#sessionId, modeId: value })
+      if (this.modes) this.modes = { ...this.modes, currentModeId: value }
+      return
+    }
+
+    // מסלול 3: לא נמצא — skip בשקט
+    console.warn(`[AgentSession] configId "${configId}" not available — skipping`)
+  }
+
   // ─── הקלטות (recordings) ─── (יתווסף ב-slice 10)
 
   // ─── פרטי ─────────────────────────────────────
+
+  /** לוכד configOptions/models/modes מתגובת session/new או session/load */
+  #captureSessionConfig(result: {
+    configOptions?: SessionConfigOption[] | null
+    models?: SessionModelState | null
+    modes?: SessionModeState | null
+  }): void {
+    this.configOptions = result.configOptions ?? []
+    this.models = result.models ?? null
+    this.modes = result.modes ?? null
+  }
 
   #cleanup(): void {
     try {
