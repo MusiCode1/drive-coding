@@ -30,11 +30,9 @@ type Persisted = {
 
 const DEFAULTS: Persisted = {
   cliKind: "opencode",
-  // TODO: לבקש את ה-home dir מהשרת במקום לקבע אותו. ה-endpoint GET /api/options
-  // כבר קיים (packages/backend/src/delivery/http-options.ts) ומשתמש ב-os.homedir()
-  // פנימית — רק להוסיף לו שדה `homeDir` בתגובה ולמשוך אותו ב-FE כ-default ל-lastCwd
-  // (כש-localStorage ריק). הקיבוע הזה ספציפי-למכונה; ה-endpoint יהפוך אותו לנייד.
-  lastCwd: "/home/user",
+  // Slice 24: lastCwd נשלף מ-GET /api/options.homeDir ב-+page.svelte (async, אחרי init).
+  // ריק עד אז — המשתמש ימלא ידנית אם ה-fetch נכשל.
+  lastCwd: "",
   voiceId: DEFAULT_VOICE_ID,
   beUrl: "",
 }
