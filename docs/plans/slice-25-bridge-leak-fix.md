@@ -1,11 +1,11 @@
 # Slice 25 — Bridge Process Leak Fix — ‏תוכנית
 
 > **‏תאריך**: 2026-06-01
-> **‏סטטוס**: ‏מאושר (‏אביגיל: READY ‏אחרי תיקון תיעוד, 2026-06-01)
+> **‏סטטוס**: ✅ PLAN-VERIFIED (‏אביגיל סבב 2: READY — ‏שני ה-findings ‏מסבב 1 ‏תוקנו, ‏אפס findings ‏חדשים)
 > **Complexity**: 2/10 (verifier: light)
 > **‏תלויות (`depends_on`)**: []
 > **‏Base**: dev
-> **‏Dev tip**: `62b41a0dcdb039bcdd09dba99f97238496f2924b`
+> **‏Dev tip**: `7859964`
 
 ---
 
@@ -15,7 +15,7 @@
 
 ### ‏תלויות (חובה)
 
-‏slice זה **‏מבוסס על dev בלבד**. ‏כל הסמלים שצוינו להלן קיימים ב-dev tip `62b41a0`:
+‏slice זה **‏מבוסס על dev בלבד**. ‏כל הסמלים שצוינו להלן קיימים ב-dev tip `7859964`:
 
 - `packages/frontend/src/lib/view-models/agent-session.svelte.ts` — `AgentSession` ‏עם `attach`, `loadSession`, `detach`, `#cleanup`, `agentId`.
 - `packages/frontend/src/lib/adapters/agents-api.ts` — `createAgent`, `deleteAgent` (‏שניהם כבר קיימים ‏ועובדים).
@@ -25,7 +25,7 @@
 
 `depends_on: []`.
 
-> **‏הערה על base**: ‏slices 22/23/24 ‏מתוכננים/ממתינים אך **‏לא ממוזגים** ל-dev. ‏slice זה נוגע רק ב-`#cleanup`/`detach` ‏של `AgentSession` ‏וב-i18n — ‏אזורים שאינם נוגעים ב-22/23/24. ‏לכן `base: dev`, `depends_on: []`. ‏אם 23 ‏(שמרחיב את אותו VM) ‏יתמזג לפני סלייס זה — ‏אין התנגשות state (‏23 ‏מוסיף שדות, ‏25 ‏מוסיף שורה ב-`#cleanup`). ‏מרדכי ‏ממזג בסדר.
+> **‏הערה על base**: ‏slices 22/23 ‏**‏כבר מוזגו** ל-dev (tip `7859964`); ‏slice 24 ‏ממתין dispatch. ‏slice זה נוגע רק ב-`#cleanup`/`detach` ‏של `AgentSession` ‏וב-i18n — ‏אזורים שאינם מתנגשים עם 24. `#cleanup` ‏נמצא כעת בשורה 335 (‏אחרי תוספות slice 23: `#detached`, `#captureSessionConfig`). ‏לכן `base: dev`, `depends_on: []`.
 
 ### Worktree
 
@@ -149,7 +149,7 @@ attach/loadSession  catch  →  #cleanup()     ← ‏אותו תיקון חל �
 |---|---|
 | `packages/frontend/src/lib/view-models/agent-session.svelte.ts` | ‏import `deleteAgent` + ‏עדכון `#cleanup` |
 
-**Before** (‏קוד קיים, ‏שורות ~254–263):
+**Before** (‏קוד קיים, ‏שורות 335–344):
 
 ```ts
 #cleanup(): void {
@@ -186,7 +186,7 @@ attach/loadSession  catch  →  #cleanup()     ← ‏אותו תיקון חל �
 }
 ```
 
-**Import** (‏שורה 16 ‏קיימת): ‏הוסף `deleteAgent` ‏ל-import הקיים:
+**Import** (‏שורה 21 ‏קיימת): ‏הוסף `deleteAgent` ‏ל-import הקיים:
 
 ```ts
 // before:
@@ -195,7 +195,7 @@ import { createAgent, notifySessionAttached } from "$lib/adapters/agents-api"
 import { createAgent, deleteAgent, notifySessionAttached } from "$lib/adapters/agents-api"
 ```
 
-> ⚠️ ‏אל תיצור import חדש — ‏הוסף ל-import הקיים בשורה 16.
+> ⚠️ ‏אל תיצור import חדש — ‏הוסף ל-import הקיים בשורה 21.
 
 **Verification**:
 

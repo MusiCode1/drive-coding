@@ -1,7 +1,7 @@
 # Slice 24 — Client-Keyed Proxy Cache — ‏תוכנית
 
 > **‏תאריך**: 2026-06-01
-> **‏סטטוס**: ‏עודכן (‏נוסף Commit 3 — default cwd מהשרת) → ‏ממתין re-verify אביגיל
+> **‏סטטוס**: ‏הושלם — calev light GO (2026-06-01)
 > **Complexity**: 5/10 (verifier: light + phase על Commit 1)
 > **‏תלויות (`depends_on`)**: []
 > **‏Base**: dev

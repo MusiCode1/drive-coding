@@ -1,3 +1,55 @@
+## 2026-06-01 13:25 — slice 24: client-keyed proxy cache + homeDir default cwd
+
+### מה בוצע?
+
+4 commits על branch `slice-24-client-keyed-proxy-cache` (worktree `.worktrees/slice-24-client-keyed-proxy-cache/`).
+בסיס: `115419d`.
+
+#### Commit 0.5 — sha256Key ל-core (TDD)
+
+- הוספת `sha256Key(input: string): Promise<string>` ל-`packages/core/src/voice/cache-key.ts`
+  לצד `cacheKeyFor` הקיים. מיוצא דרך `core/index.ts:6`.
+- מחיקת `packages/backend/src/voice/cache-keys.ts` — לא היה בשימוש.
+- 5 טסטים חדשים (TDD: אדום→ירוק).
+
+#### Commit 1 — BE: x-cache-key + x-cache-meta + sanitizeCacheKey (integration)
+
+- `proxy-cache.ts`: הרחבת `CachedEntry` עם `meta?: Record<string,unknown>`.
+  `set()` כותב `{key}.meta`; `get()` קורא אותו.
+- `proxy-cache.ts`: `sanitizeCacheKey(clientKey)` — sha256(clientKey) למניעת path traversal.
+  key קריא נשמר ב-`meta._clientKey` לצורך מחיקה עתידית.
+- `http-proxy.ts`: קריאת `x-cache-key` + `x-cache-meta`, מחיקתם לפני forward ל-upstream,
+  שימוש ב-clientKey כמפתח (אחרי sanitize) כשנשלח + cacheable.
+  fallback: `computeCacheKey` (התנהגות ישנה — לא נשברה).
+- calev phase-verifier: GO.
+
+#### Commit 2 — FE: 3 adapters שולחים headers (integration)
+
+- `adapters/voice/cache-headers.ts` (חדש): `narrateCacheHeaders`, `translateCacheHeaders`, `ttsCacheHeaders`.
+  מפתחות: `narrate:<toolCallId>`, `translate:<sha256(text|lang)>`, `tts:<voiceId>:<sha256(text|model)>`.
+  `messageId` metadata בלבד (ACP UNSTABLE, לא במפתח).
+- `sdks.ts`: `googleAi()` מקבל `headers?: Record<string,string>` (additive).
+- `narrate.ts` / `translate.ts` / `tts.ts`: שולחים headers לכל קריאה.
+- `speaker.svelte.ts`: מעביר `job.messageId` ל-`translate()` ו-`synthesizeStreaming()`.
+- 20 integration tests ב-`cache-headers.test.ts`.
+
+#### Commit 3 — BE-provided default cwd (integration)
+
+- `http-options.ts`: `GET /api/options` מחזיר `homeDir: os.homedir()`.
+- `adapters/options.ts` (חדש): `fetchServerOptions()` → `{ models, projects, homeDir }`.
+- `settings.svelte.ts`: `DEFAULTS.lastCwd = ""` (הוסרת קיבוע `/home/user` + TODO).
+- `+page.svelte`: `onMount` קורא `fetchServerOptions()`, מציב `cwd = homeDir`
+  רק אם localStorage ריק ולא הוקלד. אם fetch נכשל → שקט.
+
+#### בדיקות
+
+- typecheck + lint:i18n נקיים.
+- `pnpm test`: 504 עוברים (12 skipped) — מ-441 בבסיס (+63 חדשים בסך הכל).
+- calev phase-verifier אחרי Commit 1: GO.
+- calev light-verifier בסוף הסליס: ממתין.
+
+---
+
 ## 2026-06-01 — refactor: מקור-אמת אחד ל-CLIs (שמות + פקודות)
 
 ### מה בוצע?
