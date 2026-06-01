@@ -19,6 +19,7 @@
 import { buildTranslationPrompt } from "@drive-coding/core/voice/translation-prompt"
 import { generateObject, jsonSchema } from "ai"
 import { googleAi } from "./sdks"
+import { translateCacheHeaders } from "./cache-headers"
 
 const TIMEOUT_MS = 2500
 
@@ -59,11 +60,14 @@ const translateSchema = jsonSchema<TranslateResult>({
  *   - { status: "translated", text } כאשר Gemini הפיק תרגום
  *   - { status: "already_in_target" } כאשר המקור היה כבר בשפת היעד
  *   - null במקרה של ביטול (abort), פסק זמן, או כל שגיאה אחרת
+ * Slice 24: שולח x-cache-key + x-cache-meta לפי sha256(text|lang) (מפתח יציב).
+ * messageId אופציונלי — metadata בלבד (UNSTABLE ב-ACP spec).
  */
 export async function translate(
   text: string,
   targetLang: "he" | "en",
   signal?: AbortSignal,
+  messageId?: string | null,
 ): Promise<TranslateResult | null> {
   const basePrompt = buildTranslationPrompt(text, targetLang)
   const prompt = `${basePrompt}
@@ -71,6 +75,8 @@ export async function translate(
 Respond as JSON matching the schema:
 - If the source is already in the target language, return {"status":"already_in_target"} (omit any text field).
 - Otherwise, return {"status":"translated","text":"<the translated text>"}.`
+
+  const cacheHeaders = await translateCacheHeaders(text, targetLang, messageId ?? null)
 
   const ac = new AbortController()
   const timer = setTimeout(
@@ -81,7 +87,7 @@ Respond as JSON matching the schema:
 
   try {
     const result = await generateObject({
-      model: googleAi("gemini-flash-lite-latest"),
+      model: googleAi("gemini-flash-lite-latest", cacheHeaders),
       schema: translateSchema,
       prompt,
       abortSignal: ac.signal,

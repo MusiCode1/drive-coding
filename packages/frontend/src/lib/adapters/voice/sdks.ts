@@ -21,13 +21,14 @@ import { beUrl } from "$lib/util/be-url"
  * עבור תרגום + קריינות — `generateText` / `generateObject` מתוך `@ai-sdk/google`.
  * הערה: ה-SDK הזה משתמש ב-`baseURL` (URL באותיות רישיות) — מתוך index.d.ts:494.
  * קוראים משתמשים ב: googleAi("gemini-flash-lite-latest")
- * אותה חתימת קריאה כמו קודם (היה provider קבוע, עכשיו מפעל) — אין
- * צורך בשינויים בקוראים.
+ * Slice 24: קוראים יכולים להעביר headers אופציונלי (למשל x-cache-key + x-cache-meta)
+ * שיישלחו לכל הבקשות של ה-provider הזה (כלומר לבקשה הספציפית הזו, כי ה-factory per-call).
  */
-export function googleAi(model: string) {
+export function googleAi(model: string, headers?: Record<string, string>) {
   const provider = createGoogleGenerativeAI({
     apiKey: "browser-placeholder", // פלייסיהולדר; OneCLI מזריק את המפתח האמיתי בפרוקסי
     baseURL: beUrl("/proxy/google/v1beta"),
+    headers,
   })
   return provider(model)
 }
