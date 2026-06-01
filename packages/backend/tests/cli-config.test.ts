@@ -48,19 +48,21 @@ describe("getCliCommand", () => {
     expect(cmd.args).toContain("claude-sonnet-4-5")
   })
 
-  it("gemini without model → npx gemini-cli --experimental-acp", () => {
+  it("gemini without model → gemini --acp", () => {
     const cmd = getCliCommand("gemini")
-    expect(cmd.bin).toBe("npx")
-    expect(cmd.args).toContain("--experimental-acp")
-    expect(cmd.args.join(" ")).toContain("@google/gemini-cli")
+    // gemini binary מותקן ישירות (~/.vite-plus/bin/gemini) ומקבל --acp.
+    // --experimental-acp הוא deprecated (gemini --help: "use --acp instead").
+    expect(cmd.bin).toBe("gemini")
+    expect(cmd.args).toContain("--acp")
     expect(cmd.args).not.toContain("--model")
   })
 
   it("gemini with model → adds --model flag", () => {
     const cmd = getCliCommand("gemini", "gemini-2.5-pro")
+    expect(cmd.bin).toBe("gemini")
+    expect(cmd.args).toContain("--acp")
     expect(cmd.args).toContain("--model")
     expect(cmd.args).toContain("gemini-2.5-pro")
-    expect(cmd.args).toContain("--experimental-acp")
   })
 
   it("codex without model → npx codex-acp", () => {
@@ -73,6 +75,20 @@ describe("getCliCommand", () => {
     const cmd = getCliCommand("codex", "gpt-5")
     expect(cmd.args).toContain("--model")
     expect(cmd.args).toContain("gpt-5")
+  })
+
+  it("qoder without model → qodercli --acp", () => {
+    const cmd = getCliCommand("qoder")
+    expect(cmd.bin).toBe("qodercli")
+    expect(cmd.args).toContain("--acp")
+    expect(cmd.args).not.toContain("--model")
+  })
+
+  it("qoder with model → adds --model flag", () => {
+    const cmd = getCliCommand("qoder", "some-model")
+    expect(cmd.args).toContain("--acp")
+    expect(cmd.args).toContain("--model")
+    expect(cmd.args).toContain("some-model")
   })
 
   it("modelOverride trim — empty/whitespace string treated as no model", () => {

@@ -1,11 +1,9 @@
 import type { PromptResponse, SessionNotification } from "@agentclientprotocol/sdk"
 import type { Result } from "neverthrow"
-import type { Agent, CreateAgentInput } from "./schemas"
 import type { BridgeCrashInfo } from "./acp/describe-crash.js"
+import type { Agent, CliKind, CreateAgentInput } from "./schemas"
 
-export type { BridgeCrashInfo }
-
-export type { PromptResponse, SessionNotification }
+export type { BridgeCrashInfo, PromptResponse, SessionNotification }
 
 /**
  * AgentRegistry — אחסון מופשט לאוסף של סוכנים.
@@ -35,7 +33,9 @@ export interface AgentRegistry {
 
 // ─── חדש ב-Slice 3 ──────────────────────────────
 
-export type BridgeKind = "opencode" | "claude" | "gemini" | "codex" | "qoder"
+// BridgeKind = alias ל-CliKind. שם היסטורי (Slice 3) — נשמר לתאימות,
+// אבל מקור-האמת היחיד הוא CLI_KINDS ב-schemas/agent.ts.
+export type BridgeKind = CliKind
 
 export type SpawnBridgeInput = {
   readonly cliKind: BridgeKind

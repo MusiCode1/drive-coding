@@ -1,3 +1,52 @@
+## 2026-06-01 — refactor: מקור-אמת אחד ל-CLIs (שמות + פקודות)
+
+### מה בוצע?
+
+איחוד מקור-האמת ל-CLIs. לפני: 3 מקורות חופפים ולא-מסונכרנים — `BridgeKind`
+(core/ports, 5 סוגים), `CliKind` (core/schemas, 4 סוגים בלי qoder), ו-bin/args
+(backend, עם dead-code switch אחרי return). אחרי: מקום אחד.
+
+#### core/src/schemas/agent.ts — מקור-האמת
+
+- `CLI_SPECS` — רשומה אחת לכל CLI: `{ bin, args, supportsModelFlag }`. כולל qoder.
+- `CLI_KINDS` נגזר מ-`Object.keys(CLI_SPECS)`.
+- `CliKind` (arktype) נבנה דרך `type.enumerated(...CLI_KINDS)`.
+- `type CliKind = keyof typeof CLI_SPECS`.
+- הוספת CLI = רשומה אחת ב-CLI_SPECS; הכל (שם/סכמה/dropdown/פקודה) נגזר.
+
+#### core/src/ports.ts
+
+- `BridgeKind` הפך ל-`export type BridgeKind = CliKind` (alias). ייבוא type-only —
+  לא שובר את `export type *`.
+
+#### backend/src/acp/cli-config.ts
+
+- מחיקת ה-dead-code switch. `getCliCommand` קורא `CLI_SPECS[kind]` ומבצע רק
+  resolution תלוי-ריצה: `OPENCODE_BIN` (process.env, בזמן-קריאה — תוקן באג
+  של eager read) + הוספת `--model` כש-supportsModelFlag.
+
+#### frontend/src/routes/+page.svelte
+
+- ה-CLI dropdown נגזר מ-`{#each CLI_KINDS}` במקום 4 `<option>` קשיחים.
+  qoder מופיע אוטומטית עכשיו.
+
+#### backend/src/server.ts
+
+- הערת הרצה ידנית סודרה (פקודה מלאה רב-שורתית + הפניה ל-service file).
+
+### בדיקות
+
+- typecheck נקי. 441 tests passed (0 failed).
+- תוקנו 3 טסטי gemini מיושנים (ציפו ל-`npx @google/gemini-cli --experimental-acp`;
+  ה-binary האמיתי הוא `gemini --acp`, ו-`--experimental-acp` deprecated). נוספו 2 טסטי qoder.
+- lint:i18n נקי. biome נקי על הקבצים שנגעתי.
+
+### חריגות
+
+- 49 biome errors נותרו ב-dev בקבצים שלא נגעתי בהם (pre-existing) — מחוץ ל-scope.
+
+---
+
 ## 2026-05-30 — Slice 15 (15a-d): Backend URL config + CF Pages deployment
 
 ### מה בוצע?

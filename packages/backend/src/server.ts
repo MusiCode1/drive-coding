@@ -134,3 +134,16 @@ httpServer.on("upgrade", (req, socket, head) => {
 })
 
 log.info({ port }, "listening")
+
+/**
+ * הרצה ידנית (dev/debug) — BE על פורט נפרד, משרת FE סטטי, דרך OneCLI:
+ *
+ *   OPENCODE_BIN=/home/user/projects/voice-acp/dev/scripts/opencode-clean.sh \
+ *   FE_STATIC_DIR=/home/user/projects/voice-acp/dev/packages/frontend/build \
+ *   CORS_ORIGINS="https://drive-coding.pages.dev" \
+ *   PORT=4005 LOG_LEVEL=trace LOG_NS='*' LOG_FORMAT=pretty \
+ *   onecli run --agent voice-acp -- bun --watch \
+ *   /home/user/projects/voice-acp/dev/packages/backend/src/server.ts
+ *
+ * השירות הקבוע (systemd) מוגדר ב-deploy/systemd/voice-acp-be.service.
+ */

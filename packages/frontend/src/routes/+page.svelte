@@ -1,11 +1,11 @@
 <script lang="ts">
+import { CLI_KINDS, type CliKind } from "@drive-coding/core"
 import { goto } from "$app/navigation"
-import type { CliKind } from "@drive-coding/core"
 import { connectAgent } from "$lib/actions/connect-agent"
+import { listSessionsForCwd, type SessionInfo } from "$lib/adapters/sessions"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import SessionPicker from "$lib/components/connect/SessionPicker.svelte"
 import { getI18n, getSession, getSettings } from "$lib/context"
-import { listSessionsForCwd, type SessionInfo } from "$lib/adapters/sessions"
 
 const settings = getSettings()
 const session = getSession()
@@ -59,10 +59,9 @@ async function onSubmit(e: SubmitEvent) {
     <label>
       <span>{t("connect.cli.label")}</span>
       <select bind:value={cliKind} disabled={session.status === "connecting"}>
-        <option value="opencode">opencode</option>
-        <option value="claude">claude</option>
-        <option value="gemini">gemini</option>
-        <option value="codex">codex</option>
+        {#each CLI_KINDS as kind (kind)}
+          <option value={kind}>{kind}</option>
+        {/each}
       </select>
     </label>
 

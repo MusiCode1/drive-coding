@@ -1,8 +1,50 @@
 import { type } from "arktype"
 
-// סוגי CLI נתמכים (D6 + D24)
-export const CliKind = type("'opencode' | 'claude' | 'gemini' | 'codex'")
-export type CliKind = typeof CliKind.infer
+// ─── מקור-האמת היחיד ל-CLIs (שמות + פקודות) ─────────────────────────────────
+// כאן יושב הכל במקום אחד: רשימת ה-CLIs, וגם פקודת ההרצה (bin/args) של כל אחד.
+// הוספת CLI חדש = רשומה אחת ב-CLI_SPECS, וזהו — השם, הסכמה (arktype), ה-FE
+// dropdown, ופקודת ההרצה כולם נגזרים מכאן.
+//
+// הערה ארכיטקטונית: bin/args הם נתונים סטטיים (מחרוזות), לא IO — ה-IO עצמו
+// (spawn) חי ב-backend. resolution תלוי-סביבה (OPENCODE_BIN, הוספת --model)
+// קורה ב-backend (getCliCommand), כי הוא נשען על process.env בזמן-ריצה.
+// (D6 + D24)
+
+export type CliSpec = {
+  /** פקודת ההרצה (נתיב או שם ב-PATH). */
+  readonly bin: string
+  /** ארגומנטים קבועים שמועברים תמיד. */
+  readonly args: readonly string[]
+  /**
+   * האם ה-CLI מקבל דריסת מודל דרך `--model <id>` בשורת הפקודה.
+   * opencode = false: `opencode acp` לא מקבל `--model` — דריסת מודל פר-סשן
+   * קורית בזמן session/new דרך ה-ACP SDK (לא דרך argv).
+   */
+  readonly supportsModelFlag: boolean
+}
+
+export const CLI_SPECS = {
+  opencode: { bin: "opencode", args: ["acp"], supportsModelFlag: false },
+  claude: {
+    bin: "npx",
+    args: ["-y", "@agentclientprotocol/claude-agent-acp@latest"],
+    supportsModelFlag: true,
+  },
+  gemini: { bin: "gemini", args: ["--acp"], supportsModelFlag: true },
+  codex: {
+    bin: "npx",
+    args: ["-y", "@zed-industries/codex-acp@latest"],
+    supportsModelFlag: true,
+  },
+  qoder: { bin: "qodercli", args: ["--acp"], supportsModelFlag: true },
+} as const satisfies Record<string, CliSpec>
+
+// רשימת השמות נגזרת ממפתחות ה-specs — אין כפילות.
+export const CLI_KINDS = Object.keys(CLI_SPECS) as readonly (keyof typeof CLI_SPECS)[]
+
+// arktype enum נבנה מרשימת המקור — נשאר מסונכרן אוטומטית.
+export const CliKind = type.enumerated(...CLI_KINDS)
+export type CliKind = keyof typeof CLI_SPECS
 
 // מכונת מצבים (State machine) של סטטוס
 // starting: בתהליך spawn (Slice 3+)
