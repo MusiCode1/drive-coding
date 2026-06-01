@@ -1,4 +1,6 @@
 <script lang="ts">
+// TODO redesign-4: השורות הבאות הן proof זמני של Lucide — redesign-4 יחליף ממילא
+import SettingsIcon from "@lucide/svelte/icons/settings"
 import { goto } from "$app/navigation"
 import { getI18n, getSettings } from "$lib/context"
 
@@ -26,7 +28,8 @@ let showSaved = $derived(savedAt !== undefined && Date.now() - savedAt < 3000)
 <main class="settings">
   <header>
     <button type="button" onclick={() => goto("/chat")}>← {t("settings.back")}</button>
-    <h1>{t("settings.title")}</h1>
+    <!-- TODO redesign-4: proof זמני — SettingsIcon ייוחלף בעיצוב מלא -->
+    <h1><SettingsIcon size={20} strokeWidth={1.75} style="vertical-align:middle;margin-inline-end:0.4em;" />{t("settings.title")}</h1>
   </header>
 
   <form
