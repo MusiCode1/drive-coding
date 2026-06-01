@@ -5,51 +5,70 @@
  * Delete this file together with the TEMPORARY block in bridge-manager.ts
  * when background-agent management (future "slice A") lands.
  * See docs/plans/slice-26-bridge-idle-reaper.md §7.
+ *
+ * Implementation note: we use `sleep 100` as the bridge binary to get a
+ * long-lived process that doesn't exit during the test. This avoids the
+ * bridge-manager cleaning up the entry on child exit before we can test
+ * the listIdle logic against it. afterEach kills all spawned processes.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
-import { spawn } from "node:child_process"
 import { createBridgeManager } from "./bridge-manager.js"
 
-// Helper: spawn a long-running no-op process to satisfy bridge-manager's spawn requirement.
-// "cat" with no args reads stdin forever and never exits on its own.
-let catProcesses: ChildProcessWithoutNullStreams[] = []
+const SLEEP_BIN = "/usr/bin/sleep"
 
-function spawnCat(): void {
-  // We don't need to track individually — afterEach kills all
-}
+// Long-lived child processes spawned during tests — killed in afterEach
+let spawnedChildren: ChildProcessWithoutNullStreams[] = []
 
 describe("bridge-manager listIdle (TEMPORARY slice 26)", () => {
   let bm: ReturnType<typeof createBridgeManager>
 
   beforeEach(() => {
     bm = createBridgeManager()
-    catProcesses = []
+    spawnedChildren = []
   })
 
   afterEach(() => {
-    // Kill all spawned cat processes
-    for (const p of catProcesses) {
+    for (const p of spawnedChildren) {
       try {
         p.kill("SIGKILL")
       } catch {
         // already dead
       }
     }
-    catProcesses = []
+    spawnedChildren = []
   })
 
-  // Spawn a bridge using a harmless cat process and track it
+  /**
+   * Spawn a bridge backed by `sleep 100` — a real, long-lived process.
+   * Using the opencode cliKind but overriding via OPENCODE_BIN env trick
+   * is not available; instead we rely on a fallback: if `opencode` is not
+   * found bun test would fail. We directly use the `bm` internal spawn
+   * by working around cliKind. Since the test environment may not have
+   * opencode, we use `sleep` via the `gemini` cliKind which maps to `gemini`
+   * binary — also absent. The safest approach: use cliKind "opencode" and
+   * set OPENCODE_BIN to /usr/bin/sleep via process.env before spawn.
+   */
   async function spawnBridge(id: string): Promise<void> {
-    const handle = await bm.spawnWithStderr(id, {
-      cliKind: "opencode",
-      cwd: "/tmp",
-      modelOverride: null,
-    })
-    // Track the child so afterEach can clean up
+    // Temporarily override OPENCODE_BIN so bridge-manager spawns `sleep 100`
+    const original = process.env.OPENCODE_BIN
+    process.env.OPENCODE_BIN = SLEEP_BIN
+    try {
+      await bm.spawnWithStderr(id, {
+        cliKind: "opencode",
+        cwd: "/tmp",
+        modelOverride: null,
+      })
+    } finally {
+      if (original === undefined) {
+        delete process.env.OPENCODE_BIN
+      } else {
+        process.env.OPENCODE_BIN = original
+      }
+    }
     const child = bm.getChild(id)
-    if (child) catProcesses.push(child)
+    if (child) spawnedChildren.push(child)
   }
 
   // Test 1: active WS (hasActiveWs=true) — never in idle list
