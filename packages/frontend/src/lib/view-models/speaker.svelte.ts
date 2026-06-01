@@ -24,6 +24,7 @@
  */
 
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
+import type { OrderKey } from "@drive-coding/core/voice/tts-queue"
 import { untrack } from "svelte"
 import type { AgentSession, AgentSessionStatus } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
@@ -298,7 +299,9 @@ export class Speaker {
         signal: job.abort.signal,
       })
       await this.#audioStream.prepareSegment(job.segmentId, stream, job.abort)
-      this.#player.addSegment(job.segmentId)
+      // slice 22 placeholder — orderKey יוחלף ב-#orderAlloc.next() ב-commit 3
+      const _orderKey: OrderKey = { seq: 0, segmentIndex: 0 }
+      this.#player.addSegment(job.segmentId, _orderKey)
       job.status = "ready"
     } catch (e) {
       // MIN-5: דלג + המשך, אל תזרוק.
