@@ -74,4 +74,8 @@ export const he: Catalog = {
   "settings.beUrl.saved": "נשמר ✓",
   "settings.back": "חזרה",
   // ─── recordings ─── (slice 10)
+  // ─── agent-options ─── (slice 23)
+  "agentOptions.title": "הגדרות סשן",
+  "agentOptions.model.label": "מודל",
+  "agentOptions.agent.label": "סוכן",
 }

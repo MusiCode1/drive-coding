@@ -2,6 +2,7 @@
 import { goto } from "$app/navigation"
 import { getSession } from "$lib/context"
 import ChatHeader from "$lib/components/chat/ChatHeader.svelte"
+import AgentOptionsPanel from "$lib/components/chat/AgentOptionsPanel.svelte"
 import ChatBubbles from "$lib/components/chat/ChatBubbles.svelte"
 import ChatInput from "$lib/components/chat/ChatInput.svelte"
 
@@ -23,6 +24,7 @@ function onDisconnect() {
 {#if session.status !== "idle"}
 <div class="chat-page">
   <ChatHeader {onDisconnect} />
+  <AgentOptionsPanel />
   <ChatBubbles />
 
   {#if session.error}
