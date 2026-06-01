@@ -1,11 +1,14 @@
 # Slice 24 — Client-Keyed Proxy Cache — ‏תוכנית
 
 > **‏תאריך**: 2026-06-01
-> **‏סטטוס**: ‏מאושר (‏אביגיל: READY, 2026-06-01)
+> **‏סטטוס**: ‏עודכן (‏נוסף Commit 3 — default cwd מהשרת) → ‏ממתין re-verify אביגיל
 > **Complexity**: 5/10 (verifier: light + phase על Commit 1)
 > **‏תלויות (`depends_on`)**: []
 > **‏Base**: dev
-> **‏Dev tip**: `62b41a0`
+> **‏Dev tip**: `138ec85` (‏אחרי merge 22+23+refactor CLIs + ‏ארכוב docs)
+>
+> **‏הערה**: ‏Commit 3 (default cwd) ‏עצמאי לוגית מ-cache. ‏צורף ‏כדי לחסוך תקורת
+> ‏slice נפרד על שינוי קטן. ‏לא משנה את complexity (BE endpoint טריוויאלי + FE consume).
 
 ---
 
@@ -15,7 +18,7 @@
 
 ### ‏תלויות (‏חובה!)
 
-‏slice זה **‏אין לו תלויות** — ‏בנוי ישירות על dev (`62b41a0`).
+‏slice זה **‏אין לו תלויות** — ‏בנוי ישירות על dev (`138ec85`).
 ‏הוא נוגע בקבצים שנוצרו ב-Slice 10 (proxy-cache, http-proxy) ‏אבל אלה כבר ב-dev (merged).
 
 ### ‏רקע — ‏למה ה-slice הזה קיים (‏קרא לפני הכל)
@@ -117,6 +120,7 @@ pnpm install && pnpm hooks:install
 ‏| ‏מחיקת `x-cache-*` ‏לפני forward ל-upstream | ✅ | ‏בslice הזה |
 ‏| narrate/translate/tts ‏שולחים headers ‏מה-FE | ✅ | ‏בslice הזה |
 ‏| fallback ל-sha256(body) ‏כשאין header | ✅ | ‏בslice הזה |
+‏| `GET /api/options` ‏מחזיר `homeDir` + ‏FE ‏משתמש ‏כ-default cwd | ✅ | ‏בslice הזה (Commit 3, ‏עצמאי) |
 ‏| ‏מחיקה סלקטיבית בפועל (API/UI ‏ל-clear) | ❌ | slice ‏עתידי (‏ה-metadata ‏מכין קרקע) |
 ‏| query layer / index ‏לפי messageId | ❌ | slice ‏עתידי (YAGNI) |
 ‏| ‏תיקון replay ‏של opencode | ❌ | fork ‏ב-`~/vendor/opencode`, ‏מסלול נפרד |
@@ -363,6 +367,65 @@ pnpm lint:i18n   # ‏וודא ‏אין ‏מחרוזות ‏עברית ‏בק
 
 ---
 
+### Commit 3 — BE-provided default cwd (approach: integration + manual)
+
+> **‏למה ‏פה**: ‏זה ‏TODO ‏קטן ‏עצמאי ‏(‏BE endpoint + FE consume) ‏שלא ‏מצדיק ‏slice ‏משלו.
+> ‏מתלבש ‏על ‏slice 24 ‏כי ‏שניהם ‏FE-adapter↔BE-delivery. ‏לא ‏קשור ‏ל-cache ‏לוגית —
+> ‏commit ‏נפרד ‏לגמרי, ‏ניתן ‏לבדיקה ‏עצמאית.
+>
+> **‏הרקע**: ‏ב-`settings.svelte.ts` ‏יש ‏היום `DEFAULTS.lastCwd = "/home/user"` ‏(‏קיבוע
+> ‏ספציפי-למכונה, ‏נכנס ‏ב-slice 23). ‏מחליפים ‏אותו ‏בערך ‏מהשרת ‏כדי ‏שיהיה ‏נייד.
+
+> **⚠️ ‏מצב ‏קיים (‏אומת ‏ע"י ‏אביגיל, 138ec85)**: ‏ה-FE **‏לא ‏מושך ‏היום ‏את `/api/options`**
+> ‏בשום ‏מקום. ‏אין `adapters/options.ts`. ‏ה-`session.models` ‏שקיים ‏ב-FE ‏מגיע ‏מ-ACP
+> `session/new|load` (`#captureSessionConfig`), ‏**‏לא** ‏מה-endpoint. ‏לכן ‏Commit 3 ‏הוא
+> **greenfield** ‏בצד ‏FE — ‏יוצרים ‏adapter ‏חדש ‏ונקודת-משיכה ‏חדשה.
+
+**BE (‏טריוויאלי)**:
+- `packages/backend/src/delivery/http-options.ts` — ‏ה-handler ‏של `GET /api/options`
+  ‏כבר ‏מייבא `os` (‏שורה 3) ‏ומשתמש ‏ב-`os.homedir()` (‏שורה 70, `listProjectDirs`).
+  ‏התגובה ‏היום (‏שורה 107): `c.json({ models, projects })`. ‏שנה ‏ל-
+  `c.json({ models, projects, homeDir: os.homedir() })`.
+
+**FE — greenfield**:
+- ‏**‏צור** `packages/frontend/src/lib/adapters/options.ts` — ‏adapter ‏חדש:
+  ```ts
+  export type ServerOptions = { models: Record<string,string[]>; projects: string[]; homeDir: string }
+  export async function fetchServerOptions(): Promise<ServerOptions> {
+    const res = await fetch(beUrl("/api/options"))   // beUrl מ-$lib/util/be-url
+    if (!res.ok) throw new Error(`/api/options ${res.status}`)
+    return res.json()
+  }
+  ```
+  ‏(‏השתמש ב-`beUrl` ‏מ-`$lib/util/be-url` — ‏כמו ‏שאר ‏ה-adapters ‏עושים ל-FE↔BE.)
+- `packages/frontend/src/lib/view-models/settings.svelte.ts`:
+  - ‏החזר ‏את `DEFAULTS.lastCwd` ‏ל-`""` (‏הסר ‏את ‏הקיבוע `/home/user`).
+  - ‏הסר ‏את ‏ה-TODO comment ‏שמעל ‏(‏שורות ~33).
+- ‏**‏נקודת ‏המשיכה — ‏ב-`+page.svelte` ‏ה-connect** (`routes/+page.svelte`, ‏שם ה-cwd ‏חי
+  ‏ב-`let cwd = $state(settings.lastCwd)` ‏שורה 16). **‏לא ‏ב-layout**:
+  - `onMount` ‏(‏או `$effect` ‏חד-פעמי): ‏קרא `fetchServerOptions()`. ‏אם **‏גם** `settings.lastCwd`
+    ‏ריק **‏וגם** ‏ה-`$state` ‏המקומי `cwd` ‏ריק (‏המשתמש ‏עוד ‏לא ‏הקליד) → ‏הצב `cwd = homeDir`.
+  - **‏init-timing (‏קריטי — ‏אביגיל ‏סימנה)**: `cwd` ‏הוא `$state` ‏מקומי ‏שמועתק ‏מ-`settings.lastCwd`
+    ‏ב-init (‏שורה 16). ‏ה-fetch ‏הוא **async** ‏— ‏הוא יחזור ‏*‏אחרי* ‏ה-init. ‏לכן ‏חובה ‏לעדכן ‏את
+    ‏ה-`$state` ‏המקומי `cwd` ‏ישירות ‏כשה-fetch ‏חוזר (‏לא ‏להסתמך ‏על ‏re-init). ‏הגנה: ‏עדכן ‏רק ‏אם
+    ‏המשתמש ‏לא ‏הקליד ‏בינתיים (`cwd` ‏עדיין ‏ריק/‏שווה ‏ל-`settings.lastCwd` ‏המקורי).
+  - ‏אם ‏ה-fetch ‏נכשל → ‏שקט, ‏cwd ‏נשאר ‏ריק (‏המשתמש ‏יקליד ‏ידנית). ‏לא ‏לשבור ‏את ‏מסך ‏ה-connect.
+
+> **‏עיקרון ‏השמירה (‏קריטי)**: ‏ה-homeDir ‏מהשרת ‏הוא ‏רק ‏**‏default ‏כשאין ‏ערך ‏שמור ‏ולא ‏הוקלד**.
+> ‏localStorage ‏עדיין ‏גובר ‏(‏המשתמש ‏בחר ‏נתיב ‏→ ‏`settings.lastCwd` ‏לא ‏ריק ‏→ ‏לא ‏דורסים).
+
+**Verification**:
+```bash
+pnpm test --filter @drive-coding/backend   # ‏טסט: GET /api/options ‏מחזיר homeDir
+pnpm typecheck
+# manual:
+# 1. ‏נקה localStorage → ‏טען / → ‏שדה ‏הנתיב ‏מאוכלס ‏ב-homeDir ‏מהשרת (‏גם ‏אם ‏מגיע ‏async)
+# 2. ‏בחר ‏נתיב ‏אחר ‏→ reload → ‏הנתיב ‏שנבחר ‏נשמר (localStorage ‏גובר, ‏לא ‏נדרס ‏ע"י homeDir)
+# 3. ‏הקלד ‏נתיב ‏לפני ‏שה-fetch ‏חוזר → ‏מה ‏שהקלדת ‏לא ‏נדרס
+```
+
+---
+
 ## §5 — DoD verifiable
 
 | # | ‏בדיקה | ‏איך |
@@ -378,6 +441,8 @@ pnpm lint:i18n   # ‏וודא ‏אין ‏מחרוזות ‏עברית ‏בק
 | 8 | 3 ‏adapters ‏שולחים headers | Network tab: narrate+translate+tts ‏עם x-cache-key |
 | 9 | reload → ‏נרטיב ‏זהה | manual: ‏שלח prompt ‏עם tool, reload, ‏אותו ‏נרטיב, x-cache:hit |
 | 10 | regression: ‏השמעה ‏רגילה ‏עובדת | manual: ‏שיחה ‏קולית ‏חדשה, TTS ‏מתנגן ‏כרגיל |
+| 11 | `/api/options` ‏מחזיר homeDir | `curl localhost:4000/api/options` → ‏יש ‏`homeDir` |
+| 12 | default cwd ‏מהשרת (Commit 3) | manual: ‏נקה localStorage → ‏שדה ‏הנתיב = homeDir; ‏בחר ‏אחר → reload → ‏נשמר |
 
 ‏לא "‏הכל עובד" — ‏checkbox ‏עם ‏פקודה ‏לכל ‏אחד.
 
