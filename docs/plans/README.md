@@ -1,7 +1,7 @@
 # Plans — איך כותבים תוכנית לסבב פיתוח
 
 > ‏**תכלית**: ‏מסגרת אחידה לכתיבת מסמכי תכנון (briefs) ‏לסבבים שניתנים לסוכן executor חדש.
-> ‏**מתייחס לסוכנים**: ‏Sonnet (executor), ‏עם Opus (Tama) ‏כplanner.
+> ‏**מתייחס לסוכנים**: ‏Sonnet (executor), ‏עם Opus (מרדכי) ‏כplanner.
 > ‏**משלים את**: ‏ה-`tdd` skill (~/.agents/skills/tdd/) ‏שמכסה את workflow ה-TDD עצמו.
 
 ---
@@ -100,7 +100,7 @@
 
 ### §7 — Escalation triggers
 
-‏רשימה שמתחילה ב-"‏אם X — ‏עצור ושאל את Tama בparent task":
+‏רשימה שמתחילה ב-"‏אם X — ‏עצור ושאל את מרדכי בparent task":
 
 - ‏החלטה ארכיטקטונית שלא מכוסה ב-D1-D50
 - ‏ספרייה חיצונית נכשלת באופן שמעיד על stack שגוי
@@ -108,7 +108,7 @@
 - ‏BE proxy לא מועבר לupstream שדרוש לסבב
 - ‏OneCLI לא מזריק credentials הצפויות
 
-‏זה משלים את ה-section ב-AGENTS.md "Working with Tama".
+‏זה משלים את ה-section ב-AGENTS.md "Working with מרדכי".
 
 ### §8 — Complexity score + ‏verifier choice
 

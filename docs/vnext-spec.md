@@ -1,7 +1,7 @@
 # vNext Technical Spec — drive-coding
 
 > **‎סטטוס:** שכבה 2 (אחרי lint סבב 8, 2026-05-16) — מפרט טכני להתחלת implementation.
-> **כותב:** Tama (planner agent).
+> **כותב:** מרדכי (planner agent).
 > **תאריך:** 2026-05-15 (עודכן 2026-05-16).
 > **תלות:** `vnext-architecture.md` (החלטות D1-D50), `vnext-research.md` (ממצאים).
 > **מטרה:** לתת ל-executor מספיק פרטים כדי להתחיל לכתוב קוד.

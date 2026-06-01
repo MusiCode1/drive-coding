@@ -92,7 +92,7 @@ adapters/       — I/O. פונקציות שמחזירות Promises.
 **TL;DR**:
 - Additive only: הוסף, אל תשנה.
 - Section headers (`// ─── domain ───`) → עבוד רק בsection שלך.
-- שינוי invasive → עצור ושאל את Tama.
+- שינוי invasive → עצור ושאל את מרדכי.
 
 חובה לקרוא לפני נגיעה בקובץ משותף.
 

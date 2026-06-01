@@ -8,7 +8,7 @@
 
 ## 0. ‏Role — ‏אתה ‏הexecutor
 
-‏אם ‏קיבלת ‏prompt ‏מ-Tama ‏שאומר "‏בצע ‏docs/plans/slice-X.md" — **‏אתה ‏הexecutor**.
+‏אם ‏קיבלת ‏prompt ‏מ-מרדכי ‏שאומר "‏בצע ‏docs/plans/slice-X.md" — **‏אתה ‏הexecutor**.
 ‏אל ‏תdelegate ‏ל-sub-agent ‏מסוג `executor` ‏עם Task. ‏אתה ‏מבצע ‏ישירות.
 
 ‏ה-Task tool ‏עם ‏executor/verifier sub-agents קיים — ‏אבל ‏השימוש ‏היחיד שלך בו:
@@ -21,7 +21,7 @@
 | `general` | ‏מחקר ‏רוחבי ‏(read-only ‏עזר) — ‏לא ‏ליישום |
 | `executor` | ❌ ‏אל ‏תקרא ‏לו. ‏אתה ‏הוא. |
 
-‏אם ‏הbrief ‏גדול ‏מאוד ‏ויש ‏פיתוי ‏לדelegate — ‏עצור ‏ושאל את Tama ‏לפצל ‏ל-2 slices.
+‏אם ‏הbrief ‏גדול ‏מאוד ‏ויש ‏פיתוי ‏לדelegate — ‏עצור ‏ושאל את מרדכי ‏לפצל ‏ל-2 slices.
 
 ---
 
@@ -48,9 +48,9 @@ pnpm hooks:install   # ‏חובה — ‏מפעיל pre-commit hook ל-Hebrew l
 **‏אם ‏port 4000 ‏פנוי**: ‏BE על 4000 (default).
 **‏אם ‏port 4000 ‏תפוס** (e.g. dev workspace ‏רץ, ‏או executor אחר ‏פתח): ‏עבור ‏ל-4001, ‏4002, ‏וכו'.
 
-**‏אסור ‏לשאול ‏את ‏Tama** ‏על ‏הבחירה ‏הזו. ‏בדוק ‏עם `ss -tln | grep :4000` ‏או ‏פשוט ‏נסה ‏4000 ‏ואם ‏EADDRINUSE — ‏עבור ‏לבא ‏חופשי.
+**‏אסור ‏לשאול ‏את ‏מרדכי** ‏על ‏הבחירה ‏הזו. ‏בדוק ‏עם `ss -tln | grep :4000` ‏או ‏פשוט ‏נסה ‏4000 ‏ואם ‏EADDRINUSE — ‏עבור ‏לבא ‏חופשי.
 
-‏**אסור ‏להרוג** ‏BE/FE/tunnel ‏רץ ‏ש-Tama ‏הפעילה ‏ידנית. ‏היא ‏משתמשת ‏בהם ‏לבדיקות.
+‏**אסור ‏להרוג** ‏BE/FE/tunnel ‏רץ ‏ש-מרדכי ‏הפעילה ‏ידנית. ‏היא ‏משתמשת ‏בהם ‏לבדיקות.
 
 ```bash
 # ‏BE על port חופשי (דוגמה: 4001)
@@ -93,7 +93,7 @@ ssh -i ~/.ssh/pico \
 
 ‏URL: ‏`https://your-app.tuns.sh`
 
-**‏אסור** ‏להרוג tunnel ש-Tama ‏הפעילה. ‏אם ‏את ‏צריכה tunnel נפרד — ‏השתמש ‏ב-`-R drive-coding-<slice>:80:...` ‏(שם ‏שונה ‏= ‏subdomain ‏נפרד).
+**‏אסור** ‏להרוג tunnel ש-מרדכי ‏הפעילה. ‏אם ‏את ‏צריכה tunnel נפרד — ‏השתמש ‏ב-`-R drive-coding-<slice>:80:...` ‏(שם ‏שונה ‏= ‏subdomain ‏נפרד).
 
 ---
 
@@ -136,7 +136,7 @@ ssh -i ~/.ssh/pico \
 
 ## 6. ‏Escalation — ‏מתי לעצור ולשאול
 
-**‏עצרי ‏ושאלי ‏את ‏Tama** ‏רק ‏אם:
+**‏עצרי ‏ושאלי ‏את ‏מרדכי** ‏רק ‏אם:
 
 1. ‏ה-brief §7 ‏מציין ‏את ‏המצב ‏הזה ‏כ-trigger
 2. ‏החלטה ‏ארכיטקטונית ‏שלא ‏מכוסה ‏(D1-D50 ‏או ‏ה-brief)
@@ -148,7 +148,7 @@ ssh -i ~/.ssh/pico \
 - ‏איך ‏ליצור worktree (§1)
 - ‏איך ‏להפעיל BE (§3)
 - ‏איזה ‏style ‏לכתוב ‏cleanup logic (החלטה ‏לוקלית, ‏רשמי ‏ב-commit msg)
-- ‏שיקול ‏אסתטי ‏(font size, spacing) — ‏החליטי, ‏Tama תחזור אם רוצה ‏אחרת
+- ‏שיקול ‏אסתטי ‏(font size, spacing) — ‏החליטי, ‏מרדכי תחזור אם רוצה ‏אחרת
 
 ‏ספק? ‏בחר ‏את ‏האופציה ‏הפשוטה ‏יותר ‏ורשום ‏בcommit message ‏מה ‏החלטת.
 
@@ -169,7 +169,7 @@ ssh -i ~/.ssh/pico \
 ‏בסוף ה-slice:
   ‏1. ‏commit ‏אחרון: walkthrough + slices.md status + brief status
   ‏2. ‏verifier-slice-light
-  ‏3. ‏דווחי ל-Tama: ‏branch מוכן, סטיות, ‏מה ‏הסיכון, ‏צריך merge.
+  ‏3. ‏דווחי ל-מרדכי: ‏branch מוכן, סטיות, ‏מה ‏הסיכון, ‏צריך merge.
 ```
 
 ---
@@ -180,9 +180,9 @@ ssh -i ~/.ssh/pico \
 
 ‏אם ‏הוא ‏חוסם:
 - ‏סביר ‏להניח ‏ששכחת ‏לעבור ‏לi18n. ‏השם ‏את ‏המחרוזת ‏ב-catalog + ‏השתמשי ‏ב-`t(key)`.
-- ‏אם ‏זה ‏באמת ‏צריך ‏להישאר (e.g. ‏prompt ל-LLM) — ‏השם ‏ב-`packages/core/src/voice/*.ts` (whitelisted) ‏או ‏שאל ‏את ‏Tama.
+- ‏אם ‏זה ‏באמת ‏צריך ‏להישאר (e.g. ‏prompt ל-LLM) — ‏השם ‏ב-`packages/core/src/voice/*.ts` (whitelisted) ‏או ‏שאל ‏את ‏מרדכי.
 
-‏אל ‏תעקפי ‏עם ‏`--no-verify` ‏אלא ‏אם ‏Tama ‏אישר.
+‏אל ‏תעקפי ‏עם ‏`--no-verify` ‏אלא ‏אם ‏מרדכי ‏אישר.
 
 ---
 
@@ -190,7 +190,7 @@ ssh -i ~/.ssh/pico \
 
 ‏הbrief ‏אומר ‏איזה ‏סטטוס ‏לעדכן ‏(כללית: status ‏ב-`packages/frontend/docs/slices.md`, ‏סטטוס ‏ב-brief ‏עצמו).
 
-‏אל ‏תcommit על דעת עצמך ‏ל-dev. ‏ה-branch מוכן, Tama תעשה merge.
+‏אל ‏תcommit על דעת עצמך ‏ל-dev. ‏ה-branch מוכן, מרדכי תעשה merge.
 
 ‏אל ‏תfush ל-remote (אין remote כרגע ‏בכל ‏מקרה).
 
@@ -204,5 +204,5 @@ ssh -i ~/.ssh/pico \
 3. ‏BE עם onecli run --agent voice-acp -- ...
 4. ‏פר commit: ‏typecheck + lint:i18n + test
 5. ‏verifier-slice-light בסוף (phase verifier אם הbrief אומר)
-6. ‏ה-branch מוכן, Tama תעשה merge
+6. ‏ה-branch מוכן, מרדכי תעשה merge
 ```

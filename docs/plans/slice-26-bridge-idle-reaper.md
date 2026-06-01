@@ -421,7 +421,7 @@ pnpm --filter @drive-coding/backend build  # ‏אם קיים build ל-BE; ‏א
 - ‏`deleteAndKill` ‏לא מנקה את ה-registry (‏הסוכן נשאר ב-`/api/agents` ‏אחרי reap) — ‏באג BE ‏נפרד, ‏עצור.
 - ‏אתה רוצה לשנות את התנהגות `ws-agent.ts:126` (child שורד WS close) — ‏עצור (‏זה future A).
 - ‏אתה רוצה להוסיף persistence ‏ל-bridges — ‏עצור (‏מחוץ ל-scope).
-- ‏מתברר שאין דרך נקייה למעקב hasActiveWs ‏בלי שינוי invasive ב-store — ‏דווח ל-Tama.
+- ‏מתברר שאין דרך נקייה למעקב hasActiveWs ‏בלי שינוי invasive ב-store — ‏דווח ל-מרדכי.
 
 ### ‏תנאי-מחיקה (‏קריטי — ‏זה סלייס זמני)
 

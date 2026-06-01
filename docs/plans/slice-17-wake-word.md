@@ -995,7 +995,7 @@ pnpm lint:i18n
 
 ## §7 — Escalation triggers
 
-‏עצור ‏ושאל ‏את Tama ‏אם:
+‏עצור ‏ושאל ‏את מרדכי ‏אם:
 
 1. ‏ה-lib `openwakeword-wasm-browser` ‏לא ‏מצליחה לטעון ‏ב-browser (CORS, ‏MIME type, ‏missing wasm) — ‏ייתכן ‏שצריך ‏Vite plugin ‏או ‏headers ‏מיוחדים. ‏אם ‏ניסית ‏2 ‏גישות ‏ולא ‏עבד — ‏עצור.
 2. ‏שני ‏getUserMedia ‏מאותו mic ‏גורמים ‏לכשל ‏לא ‏צפוי (echo, ‏ה-WakeWord ‏שומע ‏את ‏עצמו, ‏track ‏שני ‏נכשל) — ‏ייתכן ‏שצריך ‏לעבור ‏ל-single-stream + patch ‏(future, §10) ‏מוקדם ‏מהצפוי.

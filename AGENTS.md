@@ -159,9 +159,9 @@ observability commit `a76e7c1`).
   or any other file that 2+ future slices will modify. Required for parallel agent work.
 - `docs/plans/README.md` — how to write a slice plan (for handoff to executor agents).
 
-## Working with Tama (planner)
+## עבודה עם מרדכי (planner)
 
-If you hit any of these — **stop and ask Tama via the parent task**:
+If you hit any of these — **stop and ask מרדכי via the parent task**:
 - Architectural decision not covered by D1-D50
 - Spec ambiguity that affects > 50 lines of code
 - A library/tool failing in a way that suggests our stack choice was wrong

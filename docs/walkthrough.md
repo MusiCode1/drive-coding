@@ -172,7 +172,7 @@
 - `AGENTS.md` עודכן עם פקודת הרצה של BE עם `CORS_ORIGINS` ל-CF Pages.
 - אימות curl: preflight ל-`https://drive-coding.pages.dev` החזיר `204 + Access-Control-Allow-Origin: https://drive-coding.pages.dev` ✅.
 - לא נוצר `wrangler.toml` (Direct Upload לא דורש; Git-integration = slice עתידי).
-- פריסה בפועל ל-CF = Tama מבצעת ידנית.
+- פריסה בפועל ל-CF = מרדכי מבצעת ידנית.
 
 **DoD**: typecheck ✅, lint:i18n ✅, build ✅ (`build/index.html`), CORS preflight ✅.
 
@@ -662,7 +662,7 @@ BE-only slice שמזריק system prompt ל-opencode sub-processes דרך `OPENC
 - `packages/backend/plugins/audio-friendly.ts` — OpenCode plugin עם 10 חוקי פלט
   לסביבת קול. משתמש ב-`output.system.push()` (לא `unshift`) לשמירת cache structure.
 - תוכן הפרומפט: copy literal מ-`docs/audio-friendly-prompt-plan.md §6`.
-  לא שונה — Tama יעדכן אחרי בדיקה אקוסטית.
+  לא שונה — מרדכי יעדכן אחרי בדיקה אקוסטית.
 
 **Commit 2 — Integration**
 - `packages/backend/src/plugin-config.ts` — בונה JSON config עם `file://` URL לפלאגין.
@@ -2770,7 +2770,7 @@ text input מוסתר ב-car mode (לפי spec §4).
 - `pnpm test` — 185 core + 13 frontend = **198 tests** ✓ (יעד: 198).
 
 ---
-## 2026-05-16 16:30 (vnext, Tama)
+## 2026-05-16 16:30 (vnext, מרדכי)
 
 ### Slice 5.5 closeout — חלק 1: UI tool calls + 3 conformance fixes
 
@@ -2800,7 +2800,7 @@ $effect מאזין ל-`messages.length` ול-`messages.at(-1).text.length` (לע
 - Frontend tests (sub-agent מטפל ברקע): AgentSessionPublic contract, unit test ל-store, voice flow unit test
 - voice push-to-talk בדיקה בדפדפן (Avi)
 
-## 2026-05-16 15:50 (vnext, Tama)
+## 2026-05-16 15:50 (vnext, מרדכי)
 
 ### Slice 5 closeout — UI E2E עובד, ACP bugs תוקנו
 
@@ -2853,7 +2853,7 @@ UI gross — tool calls מוצגים כbadges קטנים `read`/`bash` בלי ת
 
 **Tests:** 140/140 ✓. typecheck ✓. lint ✓.
 
-## 2026-05-16 14:40 (vnext, Tama)
+## 2026-05-16 14:40 (vnext, מרדכי)
 
 ### Slice 5 — DoD 15/15: voice round-trip חי עבד
 
@@ -2945,11 +2945,11 @@ Yolo (executor) השלים Slice 5 — voice pipeline מלא, פרט ל-live API
 **Next:** Slice 6 — reconnect + multi-session + API key loading מ-Bitwarden.
 
 ---
-## 2026-05-16 13:55 (vnext, executor-agent Yolo + planner-agent Tama)
+## 2026-05-16 13:55 (vnext, executor-agent Yolo + planner-agent מרדכי)
 
 ### Slice 4 — AcpTransport + chat UI (closed-loop ACP)
 
-Yolo (executor) השלים את הקוד; tmux session קרס באמצע smoke E2E השני (ה-Yolo agent יצא); Tama קמט בעצמו.
+Yolo (executor) השלים את הקוד; tmux session קרס באמצע smoke E2E השני (ה-Yolo agent יצא); מרדכי קמט בעצמו.
 
 **מה נוסף:**
 - `packages/backend/src/acp/ws-streams.ts` — adapter WebSocket → ReadableStream/WritableStream (ACP NDJSON). מסנן stdio-to-ws handshake frames (`connected`/`heartbeat`).
@@ -2992,7 +2992,7 @@ Yolo (executor) השלים את הקוד; tmux session קרס באמצע smoke E
 **Next:** Slice 5 — voice pipeline (STT + TTS + WebRTC או MediaRecorder + ElevenLabs + Gemini STT).
 
 
-## 2026-05-16 03:00 (master, planner-agent Tama)
+## 2026-05-16 03:00 (master, planner-agent מרדכי)
 
 ### תכנון vNext — סבב 7: SDK mock agent + acpx conformance suite
 
@@ -3008,7 +3008,7 @@ D49 + D50 נוספו. §1.7a חדש ב-research. §8.5 Slice 4 עודכן עם t
 
 ---
 
-## 2026-05-16 02:45 (master, planner-agent Tama)
+## 2026-05-16 02:45 (master, planner-agent מרדכי)
 
 ### תכנון vNext — סבב 6: Node+Bun universal, TDD partial, port pure tests
 
@@ -3028,7 +3028,7 @@ D49 + D50 נוספו. §1.7a חדש ב-research. §8.5 Slice 4 עודכן עם t
 
 ---
 
-## 2026-05-16 02:00 (master, planner-agent Tama)
+## 2026-05-16 02:00 (master, planner-agent מרדכי)
 
 ### תכנון vNext — סבב 4: Vercel AI SDK + voice-coda tested
 
@@ -3076,7 +3076,7 @@ D49 + D50 נוספו. §1.7a חדש ב-research. §8.5 Slice 4 עודכן עם t
 
 ---
 
-## 2026-05-15 05:00 (master, planner-agent Tama)
+## 2026-05-15 05:00 (master, planner-agent מרדכי)
 
 ### תכנון vNext — ממצא קריטי: bridge מוכן + מתחרה web נוסף
 
@@ -3098,7 +3098,7 @@ D49 + D50 נוספו. §1.7a חדש ב-research. §8.5 Slice 4 עודכן עם t
 
 ---
 
-## 2026-05-15 04:30 (master, planner-agent Tama)
+## 2026-05-15 04:30 (master, planner-agent מרדכי)
 
 ### תכנון vNext — שכבה 2: spec טכני להתחלת implementation
 
@@ -3124,7 +3124,7 @@ Domain models ב-ArkType. ports interfaces ב-TypeScript עם `ResultAsync<T,E>`
 
 ---
 
-## 2026-05-15 04:00 (master, planner-agent Tama)
+## 2026-05-15 04:00 (master, planner-agent מרדכי)
 
 ### תכנון vNext — תיקון ממצאים אחרי בדיקה ספקנית של אבי
 
@@ -3148,7 +3148,7 @@ Domain models ב-ArkType. ports interfaces ב-TypeScript עם `ResultAsync<T,E>`
 
 ---
 
-## 2026-05-15 03:30 (master, planner-agent Tama)
+## 2026-05-15 03:30 (master, planner-agent מרדכי)
 
 ### תכנון vNext — מחקר מקיף: prior art, ספריות, ארכיטקטורה
 
@@ -3176,7 +3176,7 @@ Domain models ב-ArkType. ports interfaces ב-TypeScript עם `ResultAsync<T,E>`
 
 ---
 
-## 2026-05-15 02:50 (master, planner-agent Tama)
+## 2026-05-15 02:50 (master, planner-agent מרדכי)
 
 ### תכנון vNext — שכבה 1.7: acp-bridge + Claude Code
 
@@ -3194,7 +3194,7 @@ Domain models ב-ArkType. ports interfaces ב-TypeScript עם `ResultAsync<T,E>`
 
 ---
 
-## 2026-05-15 02:20 (master, planner-agent Tama)
+## 2026-05-15 02:20 (master, planner-agent מרדכי)
 
 ### תכנון vNext — שכבה 1.5: סגירת שאלות + UX + Drive Coding
 
@@ -3219,11 +3219,11 @@ Domain models ב-ArkType. ports interfaces ב-TypeScript עם `ResultAsync<T,E>`
 
 ---
 
-## 2026-05-15 01:45 (master, planner-agent Tama)
+## 2026-05-15 01:45 (master, planner-agent מרדכי)
 
 ### תכנון vNext — מסמך ארכיטקטורה ראשון
 
-אבי ביקש לתכנן את הגרסה הבאה מאפס — לא ריפקטור של ה-POC. דיון מורחב במוד יועץ עם planner-agent (חתום Tama). ארבעה תורות עיקריים:
+אבי ביקש לתכנן את הגרסה הבאה מאפס — לא ריפקטור של ה-POC. דיון מורחב במוד יועץ עם planner-agent (חתום מרדכי). ארבעה תורות עיקריים:
 
 1. **שאלות-על:** איפה ירוץ (ענן/מקומי)? עם opencode HTTP או stdio? תשובה: רב-לשוני, בענן, ACP על פני vendor lock-in.
 2. **דרישות הליבה:** CLI שורד סגירת דף, multi-session, הפעלה/כיבוי כמו codenomad, worktree לפיתוח מקביל.

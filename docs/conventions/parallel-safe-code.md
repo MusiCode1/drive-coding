@@ -174,7 +174,7 @@ class AgentSession {
 2. ‏**Section headers**: ‏אם הקובץ משתמש ב-`// ─── domain ───` ‏— ‏עבוד רק בsection ‏הרלוונטית ל-slice שלך. ‏אם אין section ‏מתאימה, ‏הוסף section חדשה בסוף.
 3. ‏**Append at end of section**: ‏אל תשרבב באמצע. ‏השורות הקיימות נשארות במקומן.
 4. ‏**Imports**: ‏imports נוספים ב-block המתאים (e.g., ‏imports של svelte, ‏imports של $lib, ‏imports יחסיים). ‏אם יש imports group ‏מסומן — ‏הוסף בסוף הgroup.
-5. ‏**שינוי invasive**: ‏אם ה-slice דורש שינוי signature, ‏refactor של state, ‏rename — ‏**עצור ושאל את Tama**. ‏זה דורש קומיט preparation נפרד לפני עבודה parallel.
+5. ‏**שינוי invasive**: ‏אם ה-slice דורש שינוי signature, ‏refactor של state, ‏rename — ‏**עצור ושאל את מרדכי**. ‏זה דורש קומיט preparation נפרד לפני עבודה parallel.
 6. ‏**Order doesn't matter**: ‏אל תבזבז זמן על "‏לסדר אלפבתית" ‏או "‏לקבץ נכון". ‏זה אינטרס invasive.
 
 ---
@@ -234,7 +234,7 @@ class AgentSession {
 1. ‏בדוק האם השינוי משנה behavior של code שכבר עובד → ‏invasive.
 2. ‏בדוק האם consumers ‏צריכים שינוי → ‏invasive.
 3. ‏בדוק האם הtest קיים נופל → ‏invasive (גם אם נראה additive).
-4. ‏אם אפילו אחד מאלה כן → ‏עצור ושאל את Tama.
+4. ‏אם אפילו אחד מאלה כן → ‏עצור ושאל את מרדכי.
 
 ---
 
@@ -265,7 +265,7 @@ class AgentSession {
 
 ## 11. למי המסמך הזה מיועד
 
-- ‏**Planner (Tama/Opus)**: ‏לקרוא לפני כתיבת brief לסבב מקבילי. ‏לוודא שהbrief מסמן additive/invasive נכון לכל commit.
+- ‏**Planner (מרדכי/Opus)**: ‏לקרוא לפני כתיבת brief לסבב מקבילי. ‏לוודא שהbrief מסמן additive/invasive נכון לכל commit.
 - ‏**Executor (Sonnet)**: ‏לקרוא לפני נגיעה בקובץ משותף. ‏לוודא ש-section headers מכובדים ושהשינוי הוא additive.
 - ‏**Verifier**: ‏לבדוק שה-commit לא הכניס invasive change בלי תיעוד.
 
