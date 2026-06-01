@@ -1,5 +1,124 @@
 # Decisions — voice-acp
 
+## 2026-06-01 — convention: הערות בקוד בעברית
+
+### רציונל
+המשתמשת ביקשה במפורש שהערות בקוד (code comments) יהיו **בעברית** — לאורך כל
+ה-codebase, לקוד חדש ולהערות אנגלית קיימות כשנוגעים בקובץ. זה תואם את העובדה
+שרוב ה-VMs כבר כתובים עם הערות עברית (Mic, Speaker, AgentSession וכו').
+
+### למה זה לא מתנגש עם lint:i18n
+ה-`scripts/lint-no-hebrew-in-code.sh` חוסם עברית **ב-runtime strings** (מחרוזות
+שמגיעות למשתמש — חייבות לעבור i18n catalog, D10). אבל ה-state machine שלו **מנקה
+הערות לפני הסריקה** → הערות עברית מותרות במפורש ועוברות. אין התנגשות בין שתי הדרישות.
+
+### היקף ואופן יישום
+~610 שורות הערות אנגלית בקוד (frontend ~265, core ~224, backend ~122). לא מתורגם
+במכה אחת — **opportunistic**: כל slice/תיקון שנוגע בקובץ מתרגם את ההערות בו תוך כדי.
+הכלל עצמו (התקף, לא הרציונל) נשמר כ-convention; לא נכתב ב-AGENTS.md לפי בקשת המשתמשת.
+
+## 2026-06-01 — slice 9a (speech toggles): ההעדפה ב-Settings, ה-Speaker קורא וקוצר ב-pipeline קיים
+
+### רציונל
+שלושת ה-toggles (הקראת מחשבות / קריינות כלים / תרגום מחשבות) הם **העדפות מתמשכות**
+→ שייכים ל-`Settings` (entity persisted, לא state חולף). ה-`Speaker` הוא ה-owner של
+החלטת "מה להקריא", ולכן הוא **קורא** את ה-flags מ-`this.#settings` בתוך ה-`$effect`
+הקיים שלו ומקצר את ה-pipeline (`if (!flag) skip`). אין VM חדש, אין engine חדש, אין
+`$effect` חדש — owner-correct לפי חוק זהב #4, ועקבי עם ההערה שהייתה ב-Speaker מ-slice 2
+("Slice 9 יחבר אותו דרך Settings").
+
+### החלטה: speech toggles עכשיו (9a), cue toggles אחר כך (9b)
+slice 9 המקורי כלל גם "audio cues toggles". פיצלתי: 9a = speech toggles + voice picker
+(נשען כולו על קוד merged), 9b = cue toggles (volume/mute) שיבוא **אחרי** slice 6 — כי
+ה-`CuesEngine` (שעליו ה-toggle יקשור) עדיין לא merged. אין על מה לקשור toggle שלא קיים.
+
+### תלות UI בין הגדרה 1 ל-3
+"תרגום מחשבות" הגיוני רק כש"הקראת מחשבות" דלוקה (אם לא מקריאים — אין מה לתרגם).
+ההחלטה (עם המשתמשת): שתי בוליאניות **עצמאיות ב-state** (נשמרות בנפרד), אבל ה-toggle
+של התרגום **מנוטרל ויזואלית** ב-UI כשהקראת מחשבות כבויה (`disabled` + עמעום). לא מאפסים
+את הערך — חוזר פעיל כשמדליקים שוב הקראה. נקי יותר ל-drive-first מאשר עצמאי-לגמרי.
+
+### עדינות: מתי כל flag נקרא (א-סימטריה מכוונת)
+speakThoughts/narrateTools נקראים בזמן **enqueue** (ב-`$effect`, tracked) → סימון
+`processedSegments` בדילוג מונע בליעת היסטוריה אחרי הדלקת toggle (עקבי עם טיפול `!enabled`).
+translateThoughts נקרא בזמן **fetch** (ב-`#fetchJob`, async, לא tracked) → משפיע על jobs
+שמתבצעים מרגע השינוי, לא רטרואקטיבית. אביגיל אישרה ששתי הגישות נכונות.
+
+### ממצאי אביגיל (READY, סבב 1)
+brief יוצא-דופן באיכותו. המבחן הקריטי — ה-tip זז מ-56139d7 ל-7859964 אחרי merge של
+design-principles — עבר במלואו: כל 13 מספרי השורות ב-Speaker מדויקים. החור שחששתי ממנו
+(בליעת thoughts אחרי הדלקת toggle) — אין: ה-skip זהה בדיוק ל-`!enabled` הקיים. finding
+יחיד קל: §3 כתב "8 מפתחות" במקום "6" → תוקן.
+
+## 2026-06-01 — slice 25 (bridge leak fix): FE cleanup הורג bridge, לא נוגעים ב-BE
+
+### רציונל
+כל מחזור connect→disconnect (וכן reload / שגיאת חיבור) השאיר תהליך CLI יתום וחי
+ב-BE לנצח. הסיבה ארכיטקטונית ובכוונה: `ws-agent.ts:126` **לא** הורג את ה-child
+בסגירת WS, כדי לאפשר reconnect עתידי (future "agents-ברקע", גישה A). אבל ה-FE
+מעולם לא ביקש מחיקה מפורשת. הבחירה: **תיקון עצירת-דימום (גישה B)** — `#cleanup`
+ב-`AgentSession` שולח `DELETE /api/agents/:id` (fire-and-forget) לפני איפוס ה-agentId.
+שלושת מסלולי ה-cleanup (detach, attach-catch, loadSession-catch) מקבלים את התיקון
+בחינם כי כולם עוברים דרך `#cleanup`. **לא נוגעים ב-BE/ws-agent** — התשתית ל-future A
+נשארת שלמה; agents-ברקע עם ממשק ניהול הוא slice עתידי נפרד.
+
+### ממצאי אביגיל
+- **סבב 1: USABLE-AFTER-FIX.** ה-brief הזהיר שוב-ושוב ש-`lint:i18n` חוסם הערות עברית
+  ומורה לאליעזר לתרגם — **הפוך מהמציאות**: ה-lint מנקה את כל ההערות (state machine)
+  לפני סריקה, והערות עברית מותרות במפורש (כל ה-VM כבר כתוב בעברית ועובר). אזהרה הפוכה
+  שהייתה גורמת לתרגום מיותר / רעש בשאלה פתוחה #3.
+- **סבב 2: READY.** האזהרה הוסרה, ה-After נשאר עברית (הנכון), ומספרי השורות סונכרנו
+  ל-dev tip חדש (dev התקדם מ-`62b41a0` ל-`7859964` בין הסבבים — slices 22+23 מוזגו;
+  `#cleanup` זז מ-~254 ל-335, import מ-16 ל-21). אין מסלול cleanup רביעי; תוספות
+  slice 23 (`#detached`, `#captureSessionConfig`) לא מתנגשות.
+
+### רעיונות שנדחו
+- **גישה A (agents-ברקע + ממשק)** — נדחתה לעתיד. עצירת הדימום דחופה ופשוטה (6 שורות);
+  reconnect-by-session + רשימת agents פעילים זה scope גדול בנפרד.
+- **timeout/GC ל-bridges יתומים ב-BE** — נדחה. רשת-ביטחון מיותרת כש-FE מנקה נכון.
+
+## 2026-06-01 — slice 6 (audio cues): owner-driven, אפס $effect
+
+### רציונל
+ה-brief המקורי (29/5) הניח ש-slice 3 (VoiceMode) לא merged, ולכן בחר **מנגנון חיצוני**
+("Cues VM") שמנחש מתי לנגן cue מתוך `VoiceMode.state` ה-`$derived`, וה-integration נדחה
+ל-follow-up. כשחזרנו ל-slice 6 התברר ש-slice 3 כבר ב-dev → ההצדקה לגישה החיצונית
+(להישאר additive בזמן מקביליות) נעלמה. שוכתב ל-**owner-driven (חוק זהב #4)**: כל cue
+מנוגן ע"י ה-VM שמחזיק את ה-state שעובר transition — Mic (recordingStart/Stop),
+Speaker (speaking), AgentSession (thinking/error).
+
+### שינוי-כיוון תוך כדי תכנון: effect → מתודה מפורשת
+הגרסה הראשונה של ה-rewrite השתמשה ב-`$effect` לזיהוי transitions (גם ב-Speaker וגם
+ב-AgentSession). המשתמשת הטילה ספק: `$effect` הוא reactive-magic פחות יציב ומפורש ממתודה.
+צדקה. שונה לשלושה פתרונות מפורשים לפי המבנה של כל VM:
+- **Mic** — transition אחד מקומי → קריאה ישירה ב-`toggle()`.
+- **Speaker/Player** — Player מקבל `onPlaybackStart?` callback גנרי (לא יודע על cues),
+  קורא לו ב-`#playLoop` כש-`state="playing"`. Speaker מספק את ה-callback.
+- **AgentSession** — `status` נכתב ב-12 מקומות מפוזרים → **setter מרכז `#setStatus()`**
+  שכל ה-writes עוברים דרכו. זה refactor INVASIVE (מאושר: slice 3 merged → אין מקביליות)
+  שגם מנקה code smell קיים (12 writes ללא נקודת-mutation אחת).
+
+### החלטה: CuesEngine הוא engine, לא VM
+owner של AudioContext ללא `$state` ריאקטיבי — בדיוק כמו Recorder/Player/AudioStream.
+ב-FE הזה "engine" = imperative resource owner של הדפדפן (browser-only), לא shared
+client/server. ה-shared layer הוא `core/`. Web Audio → client-only → engine.
+
+### ממצאי אביגיל (3 סבבים — דוגמה לערך plan-gate)
+- **סבב 1 (USABLE-AFTER-FIX)**: תפסה שה-`#playing` guard ב-Player מונע רק `#playLoop`
+  מקבילי, לא re-entry סדרתי. עם LOOKAHEAD=2 ו-fetch אסינכרוני התור מתרוקן בין משפטים →
+  cue "speaking" היה חוזר באמצע הדיבור.
+- **סבב 2 (NEEDS-REWORK)**: התיקון הראשון שלי (reset של `#spokeThisTurn` ב-`#stopAndClear`)
+  הפך את הבאג — `#stopAndClear` לא רץ בסוף תור רגיל (רק toggle-off/cancel/destroy), אז
+  הדגל נשאר `true` וה-cue נבלע מתור 2 ואילך. אביגיל הצביעה על נקודת ה-reset הנכונה.
+- **סבב 3 (READY)**: reset עבר ל-`#handleStatusTransition` על מעבר `→ thinking` (תחילת תור),
+  שרץ לפני עדכון `#prevStatus`. reset-on-turn-start עדיף על reset-on-turn-end (נקודה אחת
+  ודאית מול זיהוי כל מסלולי הסיום כולל error).
+
+### החלטות-משנה לעתיד
+- ההבחנה primary/derived VMs לא מיושמת (derived/ עם דייר אחד — VoiceMode). נשארת פתוחה.
+- עלה צורך במסמך `design-principles.md` מרכז + סטנדרט reactivity ($effect מתי/לא) +
+  סטנדרט state-machine (`#setStatus`-style). מתוכנן כ-session נפרד (consolidation + review).
+
 ## 2026-06-01 — refactor: מקור-אמת אחד ל-CLIs
 
 ### רציונל
