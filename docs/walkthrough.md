@@ -27,6 +27,12 @@
 - `packages/frontend/src/routes/chat/+page.svelte`: הוסף `<AgentOptionsPanel />` בין ChatHeader ל-ChatBubbles.
 - i18n: הוסף `agentOptions.title`, `agentOptions.model.label`, `agentOptions.agent.label`.
 
+#### Commit 4 — fix: ה-panel לא התקפל + default cwd
+
+- **fix collapse**: ה-`$effect` של auto-open היה `if (hasContent && !open) open = true` — רץ בכל שינוי של `open`, ולכן ברגע שהמשתמש קיפל (`open=false`) ה-effect מיד החזיר ל-`true`. הווידג'ט "לא התקפל".
+  - תיקון: flag `autoOpened` (לא-reactive) שמבטיח auto-open פעם אחת בלבד. אחרי הפתיחה הראשונית, לחיצת toggle מכובדת.
+- **default cwd**: `DEFAULTS.lastCwd` שונה מ-`""` ל-`"/home/user"` (settings.svelte.ts). מנגנון localStorage כבר גובר (load(): `{...DEFAULTS, ...parsed}`), כך שזה משפיע רק כשאין ערך שמור. TODO בקוד: לבקש מהשרת דרך `GET /api/options` (כבר משתמש ב-os.homedir).
+
 ### בדיקות ידניות
 
 - ✅ ווידג'ט מופיע עם dropdowns מאוכלסים מ-session/new (50+ מודלים, 7 agents, Effort dropdown).

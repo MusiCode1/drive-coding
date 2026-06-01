@@ -17,6 +17,7 @@ const t = getI18n().t
 
 // ─── state מקומי ───
 let open = $state(false)
+let autoOpened = false   // guard — auto-open once only (prevents re-open on user close)
 
 // ─── helper — flatten select options (groups → flat list) ───
 type SelectOpt = { value: string; name: string; description?: string | null }
@@ -43,9 +44,12 @@ const hasContent = $derived(
   extraOptions.length > 0
 )
 
-// פתח אוטומטית כשיש תוכן בפעם הראשונה
+// פתח אוטומטית כשיש תוכן — פעם אחת בלבד
 $effect(() => {
-  if (hasContent && !open) open = true
+  if (hasContent && !autoOpened) {
+    autoOpened = true
+    open = true
+  }
 })
 
 // ─── event handlers ───
