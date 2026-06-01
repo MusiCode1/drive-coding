@@ -1,3 +1,51 @@
+## 2026-06-01 — Slice 22: TTS ordering + tool narration audio
+
+### מה בוצע?
+
+הוספת מנגנון סדר דטרמיניסטי ל-TTS playback (OrderKey) + השמעת קריינות כלים קולית.
+
+#### Commit 0 — core: tts-queue (TDD)
+
+- `packages/core/src/voice/tts-queue.ts`: 3 building blocks pure — `compareOrderKey` (signed, seq שלילי guard), `OrderedQueue<T>` (sorted insert, regression: fetch מקבילי), `OrderAllocator` (seq יציב פר-bubble, גלובלי לא מתאפס).
+- `packages/core/tests/voice/tts-queue.test.ts`: 17 טסטים TDD. כולל regression test לfetch מקבילי.
+
+#### Commit 1 — engine: AudioStream provenance (manual)
+
+- `AudioSegment` += `{ messageId?, textHash? }` (כתיבה בלבד — slice 10 יקרא).
+- `prepareSegment()` += `provenance?` אופציונלי — backward-compat.
+
+#### Commit 2 — engine: Player OrderedQueue (manual) + verifier-phase ✅
+
+- `Player.#queue`: `string[]` → `OrderedQueue<string>`.
+- `addSegment(id, orderKey)` — חתימה חדשה.
+- `#playLoop`: `takeNext()` loop במקום `shift()`.
+- `stop()`: `takeNext()` loop לריקון.
+- `jumpToSegment()`: `{seq:-1, segmentIndex:0}` — תמיד ראשון.
+- calev verifier-phase: GO (0 bugs, TTS flow תקין).
+
+#### Commit 3 — vm: Speaker orderKey + tool narration (integration)
+
+- `TtsJob` += `orderKey`, `toolCallId`, `kind: "tool"`.
+- `#orderAlloc = new OrderAllocator()` — מקצה orderKey לכל job.
+- `#enqueue()`: `#orderAlloc.next(bid)` במקום ספירה ידנית.
+- `#fetchJob()`: `cacheKeyFor()` לtextHash, `prepareSegment(+provenance)`, `addSegment(+orderKey)`.
+- `#processToolBubbles()`: הסיר `#narratingCallIds` (memory leak). tool job → `#jobs` עם orderKey כרונולוגי.
+- `#narrateForJob()`: מתודה חדשה — narrate() + כתיבה לבועה + return text.
+- `#stopAndClear()`: `#orderAlloc.clear()`.
+
+### חריגות
+
+- Commit 2 כלל placeholder `{seq:0,segmentIndex:0}` ב-Speaker (הוסר ב-commit 3) כדי לשמור typecheck ירוק בין commits. זה atomic pair — בלתי-ניתן לפיצול ללא typecheck failures.
+
+### בדיקות
+
+- 217 unit tests ירוקים (17 חדשים ב-tts-queue: compareOrderKey, OrderedQueue, OrderAllocator).
+- typecheck + lint:i18n + build נקיים.
+- verifier-phase (calev) אחרי commit 2: GO.
+- verifier-slice-light בסוף — ראה docs/slice-22-verification-report.md.
+
+---
+
 ## 2026-05-30 — Slice 15 (15a-d): Backend URL config + CF Pages deployment
 
 ### מה בוצע?
