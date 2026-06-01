@@ -56,11 +56,15 @@ export class Mic {
         }
         return
       }
+      // slice 6: cue אחרי הרשאה הוענקה + הקלטה התחילה בפועל
+      this.#cues?.play("recordingStart")
       return
     }
 
     if (this.state === "recording") {
       this.state = "transcribing"
+      // slice 6: cue מיד אחרי מעבר ל-transcribing (הקלטה הסתיימה)
+      this.#cues?.play("recordingStop")
       let blob: Blob
       try {
         const result = await this.#recorder.stop()

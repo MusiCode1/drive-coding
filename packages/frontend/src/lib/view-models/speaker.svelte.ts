@@ -81,6 +81,8 @@ export class Speaker {
   readonly #audioStream: AudioStream
   readonly #player: Player
   readonly #cues?: CuesEngine
+  // slice 6: guard — מונע ניגון חוזר של cue "speaking" באותו תור (re-entry סדרתי)
+  #spokeThisTurn = false
 
   /**
    * נגזר מ-`#player.state`. מיושם כ-getter ולא כשדה `$derived`
@@ -113,7 +115,13 @@ export class Speaker {
     this.#settings = opts.settings
     this.#cues = opts.cues
     this.#audioStream = new AudioStream()
-    this.#player = new Player(this.#audioStream)
+    // slice 6: onPlaybackStart callback — נקרא פעם אחת כש-Player עובר idle→playing.
+    // guard #spokeThisTurn מונע re-entry סדרתי בתוך אותו תור (LOOKAHEAD=2 + async fetches).
+    this.#player = new Player(this.#audioStream, () => {
+      if (this.#spokeThisTurn) return
+      this.#spokeThisTurn = true
+      this.#cues?.play("speaking")
+    })
 
     // ה-effect היחיד שמניע הכל: קורא bubbles + status + enabled.
     // כתיבות עטופות ב-`untrack` (gotcha §6 #5).
@@ -243,6 +251,12 @@ export class Speaker {
   }
 
   #handleStatusTransition(status: AgentSessionStatus, enabled: boolean): void {
+    // slice 6: תור דיבור חדש מתחיל כש-status עובר ל-thinking → אפס את ה-cue guard.
+    // reset כאן (turn-start) ולא ב-#stopAndClear (לא רץ בסוף תור רגיל).
+    if (status === "thinking" && this.#prevStatus !== "thinking") {
+      this.#spokeThisTurn = false
+    }
+
     // התור הסתיים? פלוש כל buffer פר-בועה כמקטע אחרון.
     const justFinished =
       this.#prevStatus === "thinking" && (status === "connected" || status === "error")
@@ -466,6 +480,8 @@ export class Speaker {
   }
 
   #stopAndClear(): void {
+    // slice 6: reset משני — לcancel/toggle-off (לא רץ בסוף תור רגיל)
+    this.#spokeThisTurn = false
     for (const job of this.#jobs) {
       if (job.status === "fetching" || job.status === "pending") {
         try {
