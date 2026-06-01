@@ -21,6 +21,9 @@ export type AudioSegment = {
   sourceBuffer: SourceBuffer | null
   abortController: AbortController
   state: AudioSegmentState
+  // ─── slice 22: provenance (metadata בלבד — אין צרכן ב-slice זה) ───
+  messageId?: string | null
+  textHash?: string
 }
 
 const SOURCEOPEN_TIMEOUT_MS = 5000
@@ -39,6 +42,7 @@ export class AudioStream {
     segmentId: string,
     stream: ReadableStream<Uint8Array>,
     ac: AbortController,
+    provenance?: { messageId: string | null; textHash: string },  // slice 22: provenance
   ): Promise<void> {
     const audio = new Audio()
     const mediaSource = new MediaSource()
@@ -51,6 +55,8 @@ export class AudioStream {
       sourceBuffer: null,
       abortController: ac,
       state: "loading",
+      messageId: provenance?.messageId,
+      textHash: provenance?.textHash,
     }
     this.#segments.set(segmentId, seg)
 
