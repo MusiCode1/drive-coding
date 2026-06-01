@@ -13,7 +13,7 @@
 3. [VAD ו-Wake word libraries](#3-vad-ו-wake-word)
 4. [Functional TypeScript libraries](#4-functional-ts)
 5. [Architectural patterns](#5-architectural-patterns)
-6. [המלצות לעדכון `vnext-architecture.md`](#6-recommendations)
+6. [המלצות לעדכון `vnext-planning.md`](#6-recommendations)
 
 ---
 
@@ -155,7 +155,7 @@ npx @rebornix/stdio-to-ws "opencode acp" --tunnel-name drive-coding-prod --persi
 - **Drive-first UX — לא.** chat UI generic.
 
 **שאלה אסטרטגית — Q-NEW-4:** האם לבנות מאפס (אופציה A), לעשות fork ל-acp-ui ולהוסיף voice + RTL (אופציה B), או היברידי (אופציה C)?
-- ההמלצה שלי: **C ≈ A** עם awareness של acp-ui. SvelteKit הוא הבחירה שלך, drive-first הוא הייחוד שלנו, fork ל-Vue היה tax לא-תרומתי. ראה Q-NEW-4 ב-`vnext-architecture.md`.
+- ההמלצה שלי: **C ≈ A** עם awareness של acp-ui. SvelteKit הוא הבחירה שלך, drive-first הוא הייחוד שלנו, fork ל-Vue היה tax לא-תרומתי. ראה Q-NEW-4 ב-`vnext-planning.md`.
 
 ### 1.7 הקשר רחב — `openclaw/acpx`
 
@@ -374,7 +374,7 @@ Passive listen → Wake-word detected → Capture request → STT → AI → TTS
 
 ## 5. Architectural patterns
 
-> ⚠️ **§5.2 (5 layers + SttProvider/TtsProvider ports) הוא historical.** D38 החליף ports מותאמים אישית ב-AI SDK contracts (`TranscriptionModelV3`/`SpeechModelV3`/`LanguageModelV3`). השכבות עדיין רלוונטיות כעקרון, אבל ה-implementation שונה. ראה `vnext-architecture.md` §7.5 ו-§8 לעדכון.
+> ⚠️ **§5.2 (5 layers + SttProvider/TtsProvider ports) הוא historical.** D38 החליף ports מותאמים אישית ב-AI SDK contracts (`TranscriptionModelV3`/`SpeechModelV3`/`LanguageModelV3`). השכבות עדיין רלוונטיות כעקרון, אבל ה-implementation שונה. ראה `vnext-planning.md` §7.5 ו-§8 לעדכון.
 
 ### 5.1 הדפוסים הנפוצים
 
@@ -477,7 +477,7 @@ export async function executeVoiceRoundtrip(
 
 ## 6. Recommendations
 
-> ⚠️ **§6 הוא historical** — ההמלצות שלי בסבב 2 לפני שגילינו את `@rebornix/stdio-to-ws` (סבב 3) ו-Vercel AI SDK (סבב 4). הסעיף נשאר ל-traceability. **לעדכון סופי ב-D-table של `vnext-architecture.md` §4.**
+> ⚠️ **§6 הוא historical** — ההמלצות שלי בסבב 2 לפני שגילינו את `@rebornix/stdio-to-ws` (סבב 3) ו-Vercel AI SDK (סבב 4). הסעיף נשאר ל-traceability. **לעדכון סופי ב-D-table של `vnext-planning.md` §4.**
 
 ### 6.1 ~~המלצות חדשות~~ (סופרסט ע"י D33, D38, D31)
 
@@ -499,7 +499,7 @@ export async function executeVoiceRoundtrip(
 
 ### 6.2 שינויים שאני מציע ב-monorepo
 
-המבנה החדש (תיקון ל-§8 ב-`vnext-architecture.md`):
+המבנה החדש (תיקון ל-§8 ב-`vnext-planning.md`):
 
 ```
 drive-coding/

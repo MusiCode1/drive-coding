@@ -4,7 +4,7 @@
 > סוכן שעובד על frontend **קורא קובץ זה** — לא צריך לקרוא 5 מסמכים נפרדים.
 >
 > **מבוסס על:**
-> - `vnext-architecture.md §9.6` — עקרונות drive-first (קובע כשיש סתירה)
+> - `vnext-planning.md §9.6` — עקרונות drive-first (קובע כשיש סתירה)
 > - `/home/user/projects/voice-acp/frontend/index.html` — reference implementation (POC v1, 2025 שורות, עבד ב-prod)
 > - `reviews/ui-parity-review.md` — gap analysis (מה חסר ומה שבור)
 

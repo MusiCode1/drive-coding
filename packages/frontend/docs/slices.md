@@ -28,7 +28,7 @@
 | ‎שאלה | ‎לאיזה ‎מסמך לפנות |
 |------|-------------------|
 | ‎עקרונות UX (drive-first, ‎car mode, ‎mic states) | ‎`docs/frontend-spec.md` |
-| ‎D1-D50 ‎(החלטות ‎ארכיטקטוניות) | ‎`docs/vnext-architecture.md` |
+| ‎D1-D50 ‎(החלטות ‎ארכיטקטוניות) | ‎`docs/design-principles.md §6` |
 | ‎פרוטוקול BE↔FE, ‎schemas | ‎`docs/vnext-spec.md` §3-6 (§8.5 obsolete) |
 | ‎ACP protocol, ‎transport-agnostic client | ‎`packages/core/src/acp/` ‎+ tests |
 | ‎Behaviors checklist (feature parity) | ‎`docs/behaviors-coverage.md` |
@@ -236,8 +236,8 @@ Slice 3+   💭 מתוכנן  ראה ‎טבלה ‎למטה
 | ‎VAD + ‎Gemini interrupt | ‎מורכב מאוד, ‎דורש POC נפרד | ‎`docs/future-features.md` |
 | ‎Permission UI (voice + click) | ‎yolo mode עובד | ‎`docs/future-features.md` |
 | ‎Replay nav buttons (⏮/⏭) | ‎נחמד, ‎לא ‎חיוני | ‎`docs/archive/v1/plan.md` משימה Q |
-| ‎Wake word | ‎דורש POC נפרד | ‎`docs/vnext-architecture.md` Q11 |
-| ‎Multi-tenant / auth | ‎אישה ‎יחידה ‎(D11) | ‎`docs/vnext-architecture.md` |
+| ‎Wake word | ‎דורש POC נפרד | ‎`docs/vnext-planning.md` Q11 |
+| ‎Multi-tenant / auth | ‎אישה ‎יחידה ‎(D11) | ‎`docs/vnext-planning.md` |
 | ‎Mobile/Desktop builds | ‎web בלבד ב-v2 | — |
 
 ---

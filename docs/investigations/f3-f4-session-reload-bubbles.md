@@ -65,7 +65,7 @@ if (existingSessionId) {
 
 **זאת השערה — לא אומתה in-process עם opencode**. אם נכונה, אין דרך לתקן את F-4 רק ב-FE — חייב מנגנון buffering ב-BE.
 
-האדריכלות המקורית (`docs/vnext-architecture.md:287-296`) אכן צפתה BE-side buffer לאחר disconnect:
+האדריכלות המקורית (`docs/vnext-planning.md:287-296`) אכן צפתה BE-side buffer לאחר disconnect:
 
 > 4. User: סוגר דף
 >    → WebSocket closes

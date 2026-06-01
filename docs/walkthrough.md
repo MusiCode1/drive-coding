@@ -1000,7 +1000,7 @@ BE-only slice שמזריק system prompt ל-opencode sub-processes דרך `OPENC
 - `archive/briefs/slice-10-f1-fix-brief.md`
 - `archive/reviews/slice-10-f1-verification-report.md`
 - `archive/reviews/slice-10-exploratory-test-report.md`
-- `archive/v1/i18n-gap-report.md` — הלקח כבר ב-`vnext-architecture.md` §2.7 + D10
+- `archive/v1/i18n-gap-report.md` — הלקח כבר ב-`vnext-planning.md` §2.7 + D10
 - `archive/investigations/` (שתי חקירות F-1 + F-5 — שניהם merged)
 - `archive/prompts/` (תבנית חקירת slice 10)
 
@@ -1014,13 +1014,13 @@ BE-only slice שמזריק system prompt ל-opencode sub-processes דרך `OPENC
   - נוסף: סעיף **DoD per slice** + **טבלת לוג עדכונים** עם רשומה ראשונה (slice 0).
 
 **3. מסמכים שנשארו פעילים ב-`docs/`** (10):
-`vnext-architecture.md`, `vnext-spec.md`, `vnext-research.md`, `frontend-spec.md`, `audio-friendly-prompt-plan.md`, `behaviors-coverage.md`, `future-features.md`, `reference.md`, `walkthrough.md`.
+`vnext-planning.md`, `vnext-spec.md`, `vnext-research.md`, `frontend-spec.md`, `audio-friendly-prompt-plan.md`, `behaviors-coverage.md`, `future-features.md`, `reference.md`, `walkthrough.md`.
 
 ### החלטות
 
 - **עותק נקי במקום מחיקה**: המקור של `behaviors-coverage.md` נשמר ב-`archive/v1/` כדי שיהיה אפשר להשוות מה כיסה v1 לעומת מה ש-v2 בנה. הקובץ הפעיל הוא checklist נקי, לא קובץ מבולבל.
 - **core/backend ✅ נשמרו ב-v2**: אלו חבילות שמשותפות בין v1 ל-v2 — אין סיבה לאפס behaviors שכבר נבדקות במקרה הזה.
-- **i18n-gap-report ללא העברה של "לקח"**: בדיקה אישרה שהלקח כבר מתועד ב-`vnext-architecture.md` D10 ו-§2.7 (אין hardcoded strings, i18n layer מהיום הראשון, Slice 9 ייעודי). אין כפילות נדרשת.
+- **i18n-gap-report ללא העברה של "לקח"**: בדיקה אישרה שהלקח כבר מתועד ב-`vnext-planning.md` D10 ו-§2.7 (אין hardcoded strings, i18n layer מהיום הראשון, Slice 9 ייעודי). אין כפילות נדרשת.
 - **`frontend-reorganization-plan.md` כבר היה ב-`archive/v2-planning/`**: הועבר בסשן קודם לפני הסבב הזה — לא נדרש פעולה.
 
 ### מעקפים ופתרונות
@@ -1037,7 +1037,7 @@ BE-only slice שמזריק system prompt ל-opencode sub-processes דרך `OPENC
 
 **1. סקירה — 6101 שורות תיעוד**
 
-עברתי על: `vnext-architecture.md` (1082, D1-D50), `vnext-spec.md` (922), `frontend-spec.md` (695), `behaviors-coverage.md` (469), `audio-friendly-prompt-plan.md` (396), `i18n-gap-report.md` (276), `future-features.md` (93), `archive/v1/*` (~2160).
+עברתי על: `vnext-planning.md` (1082, D1-D50), `vnext-spec.md` (922), `frontend-spec.md` (695), `behaviors-coverage.md` (469), `audio-friendly-prompt-plan.md` (396), `i18n-gap-report.md` (276), `future-features.md` (93), `archive/v1/*` (~2160).
 
 תובנות:
 - ה-vision של drive-first מתועד בפירוט ב-`frontend-spec.md` (car mode, 5-state mic, audio cues, MediaSession, wake lock, replay nav).
@@ -1475,7 +1475,7 @@ f2acea9 (core/acp): AcpTransport interface + MockAcpTransport
 **תיקיית `docs/reviews/` נמחקה** (ריקה אחרי ההעברה).
 
 **נשאר ב-`docs/`:**
-`vnext-architecture.md`, `vnext-spec.md`, `vnext-research.md`, `frontend-spec.md`, `walkthrough.md`, `behaviors-coverage.md`, `audio-friendly-prompt-plan.md`, `future-features.md`
+`vnext-planning.md`, `vnext-spec.md`, `vnext-research.md`, `frontend-spec.md`, `walkthrough.md`, `behaviors-coverage.md`, `audio-friendly-prompt-plan.md`, `future-features.md`
 
 ---
 
@@ -1804,7 +1804,7 @@ Executor agent (Sonnet 4.6) יקבל את ה-brief ויבצע Phase 1 → 4. י�
 
 נחקרו ולא תוקנו ב-commit הזה (ראו תגובת הסוכן בסשן):
 
-- **באג 2: אין "קפיצה" להודעה כשהיא מגיעה** — `UI-AUDIO-8` מסומן 🚫 ב-behaviors-coverage. `decide-tts-priority.ts` תוכנן (vnext-architecture.md:628) ולא נכתב. דורש priority queue + cancel ל-pending thoughts ב-`agent-session.ts:processQueue` + drop ב-frontend AudioQueue.
+- **באג 2: אין "קפיצה" להודעה כשהיא מגיעה** — `UI-AUDIO-8` מסומן 🚫 ב-behaviors-coverage. `decide-tts-priority.ts` תוכנן (vnext-planning.md:628) ולא נכתב. דורש priority queue + cancel ל-pending thoughts ב-`agent-session.ts:processQueue` + drop ב-frontend AudioQueue.
 - **באג 3: "תור ל-ElevenLabs"** — אינו באג עצמאי. תוצאה ישירה של היעדר באג 2 (sequential FIFO תקין by-design).
 
 ---
@@ -3092,7 +3092,7 @@ D49 + D50 נוספו. §1.7a חדש ב-research. §8.5 Slice 4 עודכן עם t
 
 3. **`openclaw/acpx`** — CLI client (לא bridge), 2.7k⭐, MIT, 16 agents נתמכים. inspiration ל-flows ו-queue management בעתיד, לא רלוונטי עכשיו.
 
-עדכוני מסמכים: `vnext-architecture.md` (ביטול D30, הוספת D33+D34, פרק §7.4a שכתוב, Q-NEW-4 חדש), `vnext-spec.md` (§4 BE↔Bridge נכתב מחדש, §8.5 roadmap עודכן), `vnext-research.md` (סעיפים 1.5/1.6/1.7 חדשים על rebornix/acp-ui/acpx, TL;DR שכתוב).
+עדכוני מסמכים: `vnext-planning.md` (ביטול D30, הוספת D33+D34, פרק §7.4a שכתוב, Q-NEW-4 חדש), `vnext-spec.md` (§4 BE↔Bridge נכתב מחדש, §8.5 roadmap עודכן), `vnext-research.md` (סעיפים 1.5/1.6/1.7 חדשים על rebornix/acp-ui/acpx, TL;DR שכתוב).
 
 ממתין לאבי על Q-NEW-4 (האם אופציה A/B/C) ולאישור סופי להתחלת Slice 1.
 
@@ -3141,7 +3141,7 @@ Domain models ב-ArkType. ports interfaces ב-TypeScript עם `ResultAsync<T,E>`
 **neverthrow הוסבר** באריכות: `Result<T, E>` עם ok/err, chaining דרך .map/.andThen/.match, ResultAsync לאסינכרוני. ערך גבוה בליבה הטהורה, פחות ב-IO shell.
 
 המסמכים שעודכנו:
-- `vnext-architecture.md`: D25/D27/D29 בוטלו (קוו מעליהם), D30/D31/D32 נוספו.
+- `vnext-planning.md`: D25/D27/D29 בוטלו (קוו מעליהם), D30/D31/D32 נוספו.
 - `vnext-research.md`: §1.4 עודכן (לא ניתן להישען על npm dep), §2.1 עודכן (license missing — סיבה לזהירות), §4.1+4.2 עודכנו (ArkType row חדשה, ההמלצה השתנתה), §8 TL;DR נכתב מחדש.
 
 הצעדים הבאים: ממתין לאבי על Q9-Q17 + Q-NEW-1/2/3 + שאלת voice-coda license outreach.
@@ -3172,7 +3172,7 @@ Domain models ב-ArkType. ports interfaces ב-TypeScript עם `ResultAsync<T,E>`
 
 3 שאלות חדשות פתוחות: (Q-NEW-1) להשתמש ב-bridge as-is / contribute / fork? (Q-NEW-2) להוסיף Whisper+Piper local options ל-MVP? (Q-NEW-3) ללמוד מ-voice-coda?
 
-המסמך `vnext-architecture.md` גדל ל-~920 שורות. `vnext-research.md` חדש ב-~500 שורות.
+המסמך `vnext-planning.md` גדל ל-~920 שורות. `vnext-research.md` חדש ב-~500 שורות.
 
 ---
 
@@ -3230,7 +3230,7 @@ Domain models ב-ArkType. ports interfaces ב-TypeScript עם `ResultAsync<T,E>`
 3. **שפה ופרדיגמה:** TS על Bun (אבי מכיר), SvelteKit ל-frontend, functional core + imperative shell (לא fp library מלאה — כדי לאפשר port עתידי ל-Go).
 4. **frontend מלא:** routing, dashboard, settings — לא SPA יחיד.
 
-תוצר: `docs/vnext-architecture.md` — שכבה ראשונה (11 פרקים + 2 נספחים, ~600 שורות). מכסה: עקרונות מנחים, 12 החלטות locked, 8 שאלות פתוחות, mental model ("tmux לסוכני AI"), 7 domains, monorepo structure, deployment story, ו-roadmap של 10 vertical slices.
+תוצר: `docs/vnext-planning.md` — שכבה ראשונה (11 פרקים + 2 נספחים, ~600 שורות). מכסה: עקרונות מנחים, 12 החלטות locked, 8 שאלות פתוחות, mental model ("tmux לסוכני AI"), 7 domains, monorepo structure, deployment story, ו-roadmap של 10 vertical slices.
 
 החלטות בולטות שננעלו:
 - Greenfield ב-worktree `voice-acp-v2`. ה-POC ב-master ימשיך לעבוד עד מעבר.

@@ -1,10 +1,15 @@
-# vNext Architecture — drive-coding (לשעבר voice-acp)
+# vNext Planning — drive-coding (מסמך תכנון היסטורי)
 
-> **סטטוס:** טיוטה שנייה (שכבה 1.5 — עקרונות, החלטות, מודולים, UX, תשובות לשאלות פתוחות).
+> **⚠️ מסמך תכנון היסטורי.** נכתב ב-2026-05-15 בתחילת תכנון הגרסה הבאה, *לפני*
+> שהקוד נבנה. הוא מתעד את **הרקע** — איך הגענו להחלטות (7 סבבי דיון עם אבי),
+> ה-mental model, ו-module map מתוכנן. חלקים ממנו תיארו עתיד שכבר התרחש (הפרויקט
+> נבנה, השם נשאר `voice-acp`, ה-monorepo קיים).
+>
+> **ההחלטות הננעלות (D1-D50) עברו למסמך חי:** `docs/design-principles.md §6`.
+> שם הן canonical ומתוחזקות. כאן נשאר רק הרקע. אם אתה מחפש "מה הוחלט" — לך ל-
+> `design-principles.md`. אם אתה מחפש "*למה* הוחלט / איך חשבנו על זה" — קרא כאן.
+>
 > **כותב:** מרדכי (planner agent), בדיון עם אבי.
-> **תאריך התחלה:** 2026-05-15.
-> **שם מועדף:** `drive-coding` (אבי לאישור).
-> **לא קוד פעיל** — תיעוד תכנון. הקוד יבוצע ב-worktree נפרד `drive-coding` (או `voice-acp-v2` זמני).
 
 ---
 
@@ -151,68 +156,14 @@ backend נפילה ב-MVP = `pct restart` של הקונטיינר + יצירת a
 
 ---
 
-## 4. החלטות שנלקחו (locked)
+## 4. החלטות שנלקחו (locked) — D1-D50
 
-**Scope tags:** `[mvp]` = ב-MVP אצל אבי. `[future]` = vision לעתיד, לא ב-MVP. `[both]` = עיקרון יסוד שתקף לשני המצבים.
-
-| # | Scope | החלטה | הקשר |
-|---|-------|-------|------|
-| D1 | [both] | TypeScript + Bun ב-backend | אבי מכיר; port עתידי ל-Go אפשרי דרך פונקציונלי |
-| D2 | [both] | SvelteKit ב-frontend | אבי בחר במפורש |
-| D3 | [both] | Greenfield, לא ריפקטור | "לתכנן את הכל מחדש" |
-| D4 | [both] | Worktree `voice-acp-v2` | master ימשיך לעבוד עד מעבר |
-| D5 | [both] | Functional core, imperative shell | לא fp library מלא |
-| D6 | [both] | ACP transport מופשט | תמיכה ב-multi-CLI; transport pluggable |
-| D7 | [both] | Agent process = entity עצמאית | שורד סגירת דף (ה-bridge ב-D33, לא הregistry) |
-| D8 | [both] | אין DB משלנו | cache בקבצים. agent registry בזיכרון. localStorage ל-prefs. CLI שומר conversation |
-| D9 | [both] | Backend ו-frontend נפרדים | services נפרדים, API מתועד, types משותפים |
-| D10 | [both] | i18n layer מובנה מהתחלה | אין hardcoded strings; **שפת ברירת מחדל: עברית** |
-| **D11** | **[future]** | **אין identity ב-MVP.** אנונימי + tokens רק אם נפתח לכמה משתמשים | תוקן 2026-05-16: ב-MVP אבי לבדו. אין auth, אין tokens, אין `ownerId` |
-| D12 | [both] | Multi-session מהתחלה | dashboard, routing. אבל ללא identity — כל ה-agents שייכים ל-instance |
-| D13 | [both] | שם הפרויקט: `drive-coding` | משקף את היעד — voice-first hands-free |
-| D14 | [mvp] | Deployment ראשון: Proxmox container + CF tunnel | אצל אבי. ענן ציבורי [future] אם הקהילה תגדל |
-| ~~D15~~ | — | ~~ACP transport: stdio בלבד ל-MVP~~ | מבוטל ב-D33 |
-| ~~D16~~ | — | ~~Agent dies with backend (MVP)~~ | מבוטל ב-D23/D33 |
-| D17 | [mvp] | Cache: disk בלבד ל-MVP | `/data/cache/{tts,stt,translations}/<hash>.*`. R2/KV ב-[future] |
-| D18 | [both] | Pricing: BYOC (Bring Your Own CLI) | משתמש משתמש ב-CLI עם המינוי שלו. STT/TTS אצל אבי ב-MVP, BYOK ב-[future] |
-| D19 | [both] | UX: כפתור גדול יחיד | start/stop + cancel של model במצב "speaking" |
-| D20 | [mvp] | שפות התחלה: עברית בלבד | אנגלית [future] כשירגיש בשל |
-| D21 | [both] | Frontend routes: `/`, `/agent/new`, `/agent/:id`, `/settings` | (Q8 closed) |
-| D22 | [mvp] | אין הקלדה ב-MVP | קולי בלבד. לא נעול — נשקול אחר כך |
-| D23 | [both] | bridges שורדים נפילת backend | דרך D33: `--persist --grace-period -1` |
-| D24 | [both] | Claude Code דרך `@agentclientprotocol/claude-agent-acp` | adapter רשמי, 1.9k★ |
-| ~~D25~~ | — | ~~`@flutur/acp-http-bridge`~~ | מבוטל ב-D33 |
-| D26 | [future] | התאם WS ל-ACP Streamable HTTP RFD | רלוונטי רק אם נחשוף את ה-bridge בעתיד. ב-MVP ה-FE↔BE protocol שלנו (drive-coding-ws), לא RFD |
-| ~~D27~~ | — | ~~neverthrow + Zod~~ | מעודכן ב-D31 |
-| D28 | [both] | Hexagonal architecture מינימלי | 2 packages (`core` + `backend`). שכבות בתוך `backend/` הן תיקיות |
-| ~~D29~~ | — | ~~`voice-coda` כ-reference~~ | מעודכן ב-D32 (license missing) |
-| ~~D30~~ | — | ~~`acp-bridge` משלנו~~ | מבוטל ב-D33 |
-| D31 | [both] | ArkType + neverthrow | ביצועים, syntax, מה שאבי כבר משתמש |
-| D32 | [mvp] | לא להישען על voice-coda — לפנות בנימוס ל-license | בינתיים independent build |
-| D33 | [both] | spawn `@rebornix/stdio-to-ws` כ-bridge | npm published, `--persist`, `--grace-period`, Dev Tunnels |
-| D34 | [future] | `acp-ui` של formulahendry קיים — awareness | 274⭐, MIT, alternative client. drive-coding מתמקד במקום אחר (D41) |
-| D35 | [mvp] | Audio cues — צלילי feedback | recording_start/stop, thinking, tool_call, error |
-| D36 | [mvp] | Provider catalog ב-UI | `GET /api/providers` + dropdown ב-`/settings` |
-| ~~D37~~ | — | ~~SttProvider capability flags~~ | מבוטל ב-D38 |
-| D38 | [both] | **Vercel AI SDK** כליבת provider abstraction ⭐ | `TranscriptionModelV3`/`SpeechModelV3`/`LanguageModelV3`. 25+ providers רשמיים + custom (D39) |
-| D39 | [both] | Custom Gemini transcription provider | AI SDK לא תומך. ~80 שורות. previousAssistantText context |
-| D40 | [both] | Hexagonal layer 2 = AI SDK contracts | עדכון D28 |
-| D41 | [both] | Build from scratch, לא fork acp-ui | drive-first הוא הייחוד; SvelteKit |
-| D42 | [mvp] | Audio cues — 5 צלילים | minimal MVP. theme picker [future] |
-| D43 | [mvp] | Provider scope per-user | ב-`/settings`. per-agent [future] |
-| D44 | [mvp] | קונטיינר 134 (voice-coda) נשמר | reference |
-| D45 | [both] | Runtime-agnostic: Node 22+ ו-Bun | Hono אגנוסטי. `npx`/`bunx` שניהם |
-| D46 | [both] | TDD חלקי — core full, backend partial | `/tdd` skill ב-executor |
-| D47 | [both] | Port pure tests מ-v1 | ~96 בדיקות port-able |
-| D48 | [both] | Vitest כtest runner | universal Node+Bun |
-| D49 | [both] | Mock agent מתוך SDK ל-integration tests | `@agentclientprotocol/sdk/src/examples/agent.ts` |
-| D50 | [both] | acpx conformance suite ב-CI nightly | `openclaw/acpx/conformance/` + real adapters |
-| **D45** | **Runtime-agnostic: Node 22+ ו-Bun** | Hono ל-HTTP/WS (אגנוסטי). `node:sqlite` או `better-sqlite3`. `npx drive-coding` ו-`bunx drive-coding` שניהם עובדים |
-| **D46** | **TDD חלקי — core full, backend partial** | `/tdd` skill ב-executor mode. core (sentence-boundary, cancel, custom Gemini provider) ב-red-green-refactor. delivery עם validation tests. IO heavy עם integration |
-| **D47** | **Port pure tests מ-v1** | ~96 בדיקות עוברות 1:1 (sentence-boundary, provider-error, markdown, tts-cache, recordings paths). ~193 לא רלוונטיות בגלל D33+D38 |
-| **D48** | **Vitest כtest runner** | universal Node+Bun. `pnpm workspaces`. tests ב-`packages/{core,backend}/tests/` |
-| **D49** | **Mock agent ל-integration tests מתוך SDK** | `@agentclientprotocol/sdk/src/examples/agent.ts` — ACP-compliant mock מובנה. שני patterns: loopback streams (in-process) או spawn child (יותר ריאלי). חוסך לנו לכתוב mock agent משלנו |
-| **D50** | **acpx conformance suite ב-CI nightly** | `openclaw/acpx/conformance/` — 20 required cases ב-JSON, runner ב-TS, mock adapter מובנה, normative spec ב-`spec/v1.md`. נריץ נגד ה-AcpTransport שלנו ונגד real adapters (opencode/claude/gemini) ב-nightly |
+> **⚠️ הטבלה המלאה עברה ל-`docs/design-principles.md §6`** (2026-06-01) —
+> שם היא canonical ומתוחזקת. הקוד והמסמכים מצביעים ל-D# כסמכות חיה, ולכן היא
+> שייכת למסמך החי ולא למסמך התכנון ההיסטורי הזה.
+>
+> מה שנשאר *כאן* (למטה, §3 ומעלה) הוא ה**רקע**: הדרישות של אבי, ה-mental model,
+> ושאלות התכנון שנסגרו (§5) — ההקשר שממנו נגזרו ההחלטות.
 
 ---
 

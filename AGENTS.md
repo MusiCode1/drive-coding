@@ -3,7 +3,7 @@
 ## Project
 
 Voice-first hands-free interface for ACP-compatible CLI agents.
-See `docs/vnext-architecture.md` for full spec.
+See the documentation map below. Start with `docs/design-principles.md`.
 
 ## Stack
 
@@ -146,23 +146,32 @@ observability commit `a76e7c1`).
 - No adapters in `core/` — they live in `backend/adapters/`
 - No browser globals in `core/`
 
-## Reference
+## Documentation map — which doc answers which question
 
-- `docs/vnext-architecture.md` — 50 decisions (D1-D50)
-- `docs/vnext-spec.md` — protocol, schemas, ports. §8.5 (slices) is OBSOLETE — see below.
-- `docs/vnext-research.md` — competitor analysis, library research
-- `docs/frontend-spec.md` — drive-first UX spec (still authoritative)
-- `packages/frontend/docs/slices.md` — **current slice roadmap** (source of truth)
-- `packages/frontend/AGENTS.md` — five golden rules for FE code
-- `docs/conventions/parallel-safe-code.md` — **additive design** for shared files.
-  Read BEFORE touching `context.ts`, `+layout.svelte`, `i18n/keys.ts`, `chat/+page.svelte`,
-  or any other file that 2+ future slices will modify. Required for parallel agent work.
-- `docs/plans/README.md` — how to write a slice plan (for handoff to executor agents).
+This file is a **map**. It tells you *which* doc to open; the docs themselves hold
+the detail. Open the right one before writing code.
+
+| If you need… | Open | Status |
+|--------------|------|--------|
+| **Code design rules** — layers, what an "engine" is, when to use `$effect` vs a method, state-machine pattern, primary-vs-derived VMs | `docs/design-principles.md` §1-5 | **canonical** |
+| **The 50 architectural decisions (D1-D50)** | `docs/design-principles.md` §6 | **canonical** |
+| **FE five golden rules** (the short, injected version) | `packages/frontend/AGENTS.md` | canonical (design-principles expands it) |
+| **UX spec** — drive-first, colors, mic states, bubbles, car mode | `docs/frontend-spec.md` | canonical |
+| **FE↔BE protocol, schemas, ports** | `docs/vnext-spec.md` | canonical (§8.5 slices is OBSOLETE) |
+| **The current slice roadmap** | `packages/frontend/docs/slices.md` | **source of truth** for slice order |
+| **Additive design** for shared files (parallel agent work) | `docs/conventions/parallel-safe-code.md` | canonical — read BEFORE touching `context.ts`, `+layout.svelte`, `i18n/keys.ts`, `chat/+page.svelte` |
+| **Per-slice rationale** (why the code looks the way it does) | `docs/decisions/voice-acp.md` | living log (written by מרדכי) |
+| **How to write a slice plan** (handoff to executor) | `docs/plans/README.md` | canonical |
+| **Planning history** — *how* we reached D1-D50, mental model, competitor/library research | `docs/vnext-planning.md`, `docs/vnext-research.md` | **historical** (not maintained) |
+
+> **Reading order for a new code task:** `design-principles.md` (rules) →
+> `frontend/AGENTS.md` (FE golden rules) → the relevant spec (`frontend-spec.md` §X)
+> → `parallel-safe-code.md` if you touch a shared file.
 
 ## עבודה עם מרדכי (planner)
 
 If you hit any of these — **stop and ask מרדכי via the parent task**:
-- Architectural decision not covered by D1-D50
+- Architectural decision not covered by D1-D50 (`design-principles.md §6`)
 - Spec ambiguity that affects > 50 lines of code
 - A library/tool failing in a way that suggests our stack choice was wrong
 - A test infrastructure gap

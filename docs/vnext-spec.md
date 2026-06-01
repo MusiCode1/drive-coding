@@ -3,7 +3,7 @@
 > **‎סטטוס:** שכבה 2 (אחרי lint סבב 8, 2026-05-16) — מפרט טכני להתחלת implementation.
 > **כותב:** מרדכי (planner agent).
 > **תאריך:** 2026-05-15 (עודכן 2026-05-16).
-> **תלות:** `vnext-architecture.md` (החלטות D1-D50), `vnext-research.md` (ממצאים).
+> **תלות:** `design-principles.md §6` (החלטות D1-D50), `vnext-research.md` (ממצאים).
 > **מטרה:** לתת ל-executor מספיק פרטים כדי להתחיל לכתוב קוד.
 >
 > **הערה חשובה ל-MVP:** אין identity, אין auth, אין tokens. רץ אצל אבי בלבד. `Authorization` headers ו-`ownerToken` שמופיעים בדוגמאות הם **לא ב-MVP** (D11 [future]).

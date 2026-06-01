@@ -25,4 +25,4 @@ pnpm format        # Biome format
 
 ## Architecture
 
-See `docs/vnext-architecture.md` for full technical decisions (D1-D50).
+See `docs/vnext-planning.md` for full technical decisions (D1-D50).
