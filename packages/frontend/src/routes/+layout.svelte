@@ -14,12 +14,13 @@
  * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
  */
 import "../app.css"
-import { setI18n, setMic, setSession, setSettings, setSpeaker, setVoiceMode } from "$lib/context"
+import { setI18n, setMic, setSession, setSettings, setSpeaker, setTheme, setVoiceMode } from "$lib/context"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
 import { Speaker } from "$lib/view-models/speaker.svelte"
+import { ThemeVM } from "$lib/view-models/theme.svelte"
 import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 
 let { children } = $props()
@@ -44,6 +45,9 @@ const voiceMode = new VoiceMode({ mic, session, speaker })
 
 // ─── car-mode ─── (slice 7)
 
+// ─── theme ─── (redesign-1)
+const theme = new ThemeVM()
+
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
@@ -51,6 +55,7 @@ setSession(session)
 setSpeaker(speaker)
 setMic(mic)
 setVoiceMode(voiceMode)
+setTheme(theme)
 </script>
 
 {@render children?.()}
