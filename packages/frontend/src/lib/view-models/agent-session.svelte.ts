@@ -18,7 +18,7 @@ import type {
 } from "@agentclientprotocol/sdk"
 import { createAcpClient, type AcpClient } from "@drive-coding/core/acp/client"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
-import { createAgent, notifySessionAttached } from "$lib/adapters/agents-api"
+import { createAgent, deleteAgent, notifySessionAttached } from "$lib/adapters/agents-api"
 import type { CliKind } from "@drive-coding/core"
 import type {
   Bubble,
@@ -333,6 +333,8 @@ export class AgentSession {
   }
 
   #cleanup(): void {
+    // לכוד את ה-agentId לפני האיפוס — צריך אותו ל-deleteAgent.
+    const agentId = this.agentId
     try {
       this.#client?.close()
     } catch {
@@ -341,6 +343,11 @@ export class AgentSession {
     this.#client = null
     this.#sessionId = null
     this.agentId = null
+    // הורג את ה-bridge בצד ה-BE. ה-BE לא הורג את ה-child בסגירת WS לבד
+    // (ws-agent.ts:126 — בכוונה, לאפשר reconnect עתידי), לכן ה-FE אחראי
+    // לבקש מחיקה מפורשת. fire-and-forget — לא חוסם, לא זורק (cleanup רץ גם
+    // ב-error path; ראה sessions.ts:71 לאותו דפוס).
+    if (agentId) void deleteAgent(agentId).catch(() => {})
   }
 
   #mapToolContent(raw: unknown): ToolContent[] {
