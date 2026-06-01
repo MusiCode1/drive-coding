@@ -1,3 +1,37 @@
+## 2026-06-01 — slice 26: idle-bridge reaper BE (TEMPORARY — רשת ביטחון לדליפות)
+
+### מה בוצע?
+
+הוספת reaper תקופתי בצד שרת שמנקה bridges שדלפו בגלל reload/סגירת טאב — המקרים שslice 25 (FE cleanup) לא מכסה. **זמני** — יימחק עם "future A" (ניהול agents-ברקע).
+
+#### bridge-manager.ts (TDD — 6/6 טסטים)
+
+- הרחבת `Entry` בשלושה שדות (TEMPORARY): `hasActiveWs`, `lastDetachedAt`, `createdAt`
+- הוספת 3 מתודות: `markAttached` / `markDetached` / `listIdle(timeoutMs, now)`
+- לוגיקת `listIdle`: active WS לעולם לא נאסף; detached >= timeout נאסף; never-had-WS grace period = timeout×2
+- קובץ בדיקות: `bridge-manager.idle.test.ts` (6 תרחישים, injected `now`)
+
+#### ws-agent.ts
+
+- הרחבת deps type: `markAttached` + `markDetached` (TEMPORARY)
+- קריאת `markAttached(agentId)` אחרי WS connect
+- קריאת `markDetached(agentId)` לפני rl.close() ב-WS close
+
+#### server.ts
+
+- interval reaper: `BRIDGE_IDLE_TIMEOUT_MS` env (default 300,000ms), scan interval = min(timeout, 60s)
+- קורא `orchestrator.deleteAndKill` (לא bridgeManager.kill ישירות — כדי לנקות registry)
+- `reaper.unref()` — לא מחזיק event loop
+
+#### בדיקות calev
+
+- Phase verifier (Commit 2): GO — שני תרחישים הפוכים אומתו בpord 4004
+
+#### חריגות
+
+- בdist/tests: כשלון בtest #4 בריצה מ-dist בגלל mock env; תוקן בטסט src/ ע"י OPENCODE_BIN=/usr/bin/sleep
+- pre-existing failures: ws-agent-pipe (EventEmitter), bridge-failure-modes (vi.mocked), disk-cache (Promise.all) — לא שייכים לslice זה
+
 ## 2026-06-01 — refactor: מקור-אמת אחד ל-CLIs (שמות + פקודות)
 
 ### מה בוצע?
