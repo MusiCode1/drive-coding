@@ -1,3 +1,59 @@
+## 2026-06-01 — slice 6: Audio Cues (owner-driven, 5 cues, Web Audio API)
+
+### מה בוצע?
+
+CuesEngine + אינטגרציה ב-3 VMs (Mic, Speaker, AgentSession) — owner-driven,
+ללא $effect, ללא ניחוש מ-derived state.
+
+#### commit 0 — CuesEngine (TDD)
+
+- `packages/frontend/src/lib/engines/cues.ts` — engine חדש.
+- 5 cues: recordingStart (A5/880Hz), recordingStop (E5/660Hz),
+  thinking (C5→E5 glide), speaking (E5→C5), error (E4→A3).
+- Lazy AudioContext: נוצר בקריאה הראשונה ל-play() בלבד (user gesture).
+- enabled toggle: false → no-op ללא יצירת context. SSR guard.
+- 13 structural tests ב-cues.test.ts (vi.stubGlobal mock AudioContext).
+
+#### commit 1 — context + layout wiring
+
+- `context.ts`: getCues/setCues pair (additive, section חדש בסוף).
+- `+layout.svelte`: const cues = new CuesEngine() לפני session/speaker/mic.
+  cues מועבר ל-3 ctors (optional). setCues(cues) ב-wiring block.
+- AgentSession/Speaker/Mic: ctor מקבל `cues?` (אין שימוש עדיין — typecheck guard).
+
+#### commit 2 — Mic + Player callback + Speaker guard
+
+- `Mic.toggle()`: recordingStart אחרי recorder.start() הצליח (הרשאה ניתנה);
+  recordingStop מיד על transition recording→transcribing. cancel(): ללא cue.
+- `Player`: ctor מקבל onPlaybackStart?:()=>void. קורא callback ב-idle→playing.
+- `Speaker`: onPlaybackStart = guard + cues?.play("speaking").
+  #spokeThisTurn guard מונע re-entry סדרתי (LOOKAHEAD=2).
+  reset על →thinking (turn-start); reset משני ב-#stopAndClear (cancel/toggle-off).
+  מוסד ממצא אביגיל: reset-on-turn-start ולא reset-on-turn-end.
+
+#### commit 3 — AgentSession #setStatus (INVASIVE — מאושר)
+
+- setter מרכז: #setStatus(next) — נקודת-mutation יחידה ל-status.
+  idempotent, מנגן cue רק על transition (next !== prev).
+  thinking → cues?.play("thinking"), error → cues?.play("error").
+- הוחלפו 12 writes מפוזרות ב-6 מקומות → this.#setStatus(X).
+- טסטים קיימים לא נשברו (no state machine changes — החלפה מכנית 1:1).
+
+### בדיקות
+
+- typecheck נקי. 56 tests passed (0 failed). build ✓. i18n lint נקי.
+- DoD 1-5 (CuesEngine structural): ירוקים ב-tests.
+- DoD 6-9 (manual cues): בדיקה ידנית נדרשת — calev light יבצע.
+
+### חריגות מהתכנון
+
+- קובץ `slice-6-audio-cues.md` בworktree הוא גרסה ישנה (לפני השכתוב); הגרסה
+  העדכנית ב-dev/docs/plans/. תוכן ה-commits תואם את התכנון המעודכן.
+- בdebug: vi.fn(() => instance) אינו תקף כ-constructor — נדרש
+  vi.fn().mockImplementation(function() { return instance }). תוקן בtests.
+
+---
+
 ## 2026-06-01 — refactor: מקור-אמת אחד ל-CLIs (שמות + פקודות)
 
 ### מה בוצע?

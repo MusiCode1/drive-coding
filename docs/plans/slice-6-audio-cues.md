@@ -1,7 +1,7 @@
 # Slice 6 — Audio Cues — תוכנית
 
 > **תאריך**: 2026-05-29
-> **סטטוס**: ‏ממתינה ל-dispatch (אחרי תיקוני אביגיל)
+> **סטטוס**: ✅ הושלם (2026-06-01 — executed by eliezer, calev verification pending)
 > **Complexity**: 3/10 (verifier: light)
 > **תלות**: ‏dev tip. ‏הCues engine + ‏VM ‏עצמאיים. (אביגיל: ‏dev כבר כולל מבנה של slice 3, הbrief תואם).
 > **מתבסס על**: ‏`docs/plans/README.md` (מבנה), ‏`docs/conventions/parallel-safe-code.md` (additive), ‏`docs/frontend-spec.md §10` (cue specs)
