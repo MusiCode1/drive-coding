@@ -1,9 +1,9 @@
 # Slice 6 — Audio Cues — תוכנית
 
 > **תאריך**: 2026-05-29
-> **סטטוס**: ‏טיוטה — ‏מחכה לאישור לפני יצירת worktree
+> **סטטוס**: ‏ממתינה ל-dispatch (אחרי תיקוני אביגיל)
 > **Complexity**: 3/10 (verifier: light)
-> **תלות**: ‏אין. ‏הCues engine + ‏VM ‏עצמאיים — ‏לא תלויים ב-slice 3 (Mic+VoiceMode).
+> **תלות**: ‏dev tip. ‏הCues engine + ‏VM ‏עצמאיים. (אביגיל: ‏dev כבר כולל מבנה של slice 3, הbrief תואם).
 > **מתבסס על**: ‏`docs/plans/README.md` (מבנה), ‏`docs/conventions/parallel-safe-code.md` (additive), ‏`docs/frontend-spec.md §10` (cue specs)
 
 ---
@@ -53,7 +53,7 @@ pnpm hooks:install
 
 **reference**:
 
-- ‏`packages/frontend/src/lib/engines/audio-stream.ts` — ‏דוגמה ‏לengine ‏ב-FE ‏עם ‏browser APIs
+- ‏`packages/frontend/src/lib/engines/recorder.ts` — ‏דוגמה ‏לengine ‏ב-FE ‏עם ‏browser APIs
 - ‏`packages/frontend/src/lib/view-models/i18n.svelte.ts` — ‏דוגמה ‏ל-VM ‏עם ‏$state ‏פשוט
 - ‏`~/.config/opencode/learnings.md` — ‏gotchas רוחביים
 
@@ -166,7 +166,7 @@ export class CuesEngine {
   play(cue: CueId): void
 
   /** ‏Cleanup, ‏לקריאה ‏ב-destroy ‏של layout (ייתכן). */
-  close(): void
+  close(): Promise<void>
 }
 ```
 
@@ -179,6 +179,9 @@ play(cue):
   if (!#ctx) {
     try { #ctx = new AudioContext() }
     catch { return }  // ‏browser ‏חסם
+  }
+  if (#ctx.state === "suspended") {
+    void #ctx.resume()
   }
   switch (cue):
     case "recordingStart": playTone(880, 120)
@@ -201,7 +204,12 @@ playTone(freq, ms):
   osc.stop(t + ms / 1000 + 0.05)
 
 playGlide(fromFreq, toFreq, ms):
-  ‏דומה ‏אבל osc.frequency.linearRampToValueAtTime(toFreq, t + ms/1000)
+  const t = #ctx.currentTime
+  const osc = #ctx.createOscillator()
+  const gain = #ctx.createGain()
+  osc.frequency.setValueAtTime(fromFreq, t)
+  osc.frequency.linearRampToValueAtTime(toFreq, t + ms/1000)
+  // ... rest same as playTone (gain setup, connect, start/stop)
 ```
 
 **Tests** (structural — ‏בדיקת shape, ‏לא ‏שמע ‏בפועל):
