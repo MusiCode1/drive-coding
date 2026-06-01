@@ -1,7 +1,7 @@
 # Slice 25 — Bridge Process Leak Fix — ‏תוכנית
 
 > **‏תאריך**: 2026-06-01
-> **‏סטטוס**: ‏מאושר (‏אביגיל: READY ‏אחרי תיקון תיעוד, 2026-06-01)
+> **‏סטטוס**: ✅ הושלם (2026-06-01, commit 5c6e920)
 > **Complexity**: 2/10 (verifier: light)
 > **‏תלויות (`depends_on`)**: []
 > **‏Base**: dev
@@ -302,4 +302,9 @@ pnpm --filter @drive-coding/frontend-v2 build
 
 ## ‏סטיות מהתכנון (‏מתעדכן ע"י executor ‏תוך כדי)
 
-- (‏טרם בוצע)
+- **error path (cwd שגוי, spawn ENOENT)**: agent בstatus=crashed נשאר ב-`/api/agents` לאחר connect נכשל.
+  הסיבה: `createAgent` POST מוחזר בהצלחה (agent נוצר ב-BE עם status=crashed); FE מקבל agentId ומגדיר `this.agentId`;
+  WS `waitForOpen` מצליח (ה-WS endpoint מקבל connection גם ל-crashed agents); ה-`try` לא נכשל בשלב ה-WS;
+  לכן ה-catch שקורא ל-`#cleanup` לא נקרא. זהו מסלול שונה מ-DoD#7 שציפה ל-cleanup.
+  **לא regression** — קיים ב-dev base לפני הסלייס. מדווח לcalev.
+- שאר DoD items (1-6, 8-9) עברו בהצלחה.

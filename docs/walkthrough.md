@@ -1,3 +1,29 @@
+## 2026-06-01 14:10 — slice 25: תיקון דליפת bridge (עצירת דימום)
+
+### מה בוצע?
+
+**1. תיקון `#cleanup` ב-AgentSession**
+
+- הוספת `deleteAgent` לimport מ-`$lib/adapters/agents-api` (שורה 21).
+- בתחילת `#cleanup`: לכידת `agentId` לפני האיפוס ל-null.
+- בסיום `#cleanup`: `if (agentId) void deleteAgent(agentId).catch(() => {})` — fire-and-forget, בדיוק כמו `sessions.ts:71`.
+- חל על כל מסלולי ה-cleanup: `detach` (disconnect מפורש), `attach` catch, `loadSession` catch.
+
+### בדיקות
+
+- typecheck: ✅ ירוק
+- lint:i18n: ✅ ירוק
+- tests: ✅ 458 passed, 0 failures
+- בדיקה ידנית: 3× connect→disconnect — 0 agents אחרי כל disconnect ✅
+- DoD#8 regression: connect→prompt→disconnect — הכל עובד ✅
+
+### חריגות
+
+- error path (cwd שגוי, spawn=ENOENT): agent בstatus=crashed נשאר ב-`/api/agents`.
+  הסיבה: `createAgent` מחזיר agentId לפני שה-spawn נכשל; `waitForOpen` מצליח על WS
+  ל-crashed agent; לכן ה-`try` לא נכשל וה-`#cleanup` catch לא נקרא.
+  זהו מסלול נפרד (לא regression — קיים ב-dev base לפני הסלייס). מדווח לcalev.
+
 ## 2026-06-01 — refactor: מקור-אמת אחד ל-CLIs (שמות + פקודות)
 
 ### מה בוצע?
