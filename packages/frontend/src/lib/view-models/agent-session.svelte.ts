@@ -99,7 +99,7 @@ export class AgentSession {
     if (this.status === "connecting" || this.status === "connected") {
       throw new Error(`cannot attach in status ${this.status}`)
     }
-    this.status = "connecting"
+    this.#setStatus("connecting")
     this.error = null
     this.bubbles = []
     this.#detached = false
@@ -120,7 +120,7 @@ export class AgentSession {
         if (this.#detached) return
         if (code !== 1000 && code !== 1001) {
           this.error = `WS closed (${code}): ${reason || "no reason"}`
-          this.status = "error"
+          this.#setStatus("error")
         }
       })
       await transport.waitForOpen()
@@ -137,11 +137,11 @@ export class AgentSession {
       // 4. תגיד ל-BE לאיזה sessionId התחברנו (מאמץ מיטבי - best-effort)
       await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
 
-      this.status = "connected"
+      this.#setStatus("connected")
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = msg
-      this.status = "error"
+      this.#setStatus("error")
       this.#cleanup()
     }
   }
@@ -149,7 +149,7 @@ export class AgentSession {
   detach = (): void => {
     this.#detached = true  // ‏לפני ה-cleanup — ‏ה-WS close fires async
     this.#cleanup()
-    this.status = "idle"
+    this.#setStatus("idle")
     this.error = null
     this.bubbles = []
   }
@@ -178,14 +178,14 @@ export class AgentSession {
       ...(opts?.recordingId !== undefined ? { recordingId: opts.recordingId } : {}),
     }
     this.bubbles.push(userBubble)
-    this.status = "thinking"
+    this.#setStatus("thinking")
 
     try {
       await this.#client.prompt(this.#sessionId, text)
-      if (this.status === "thinking") this.status = "connected"
+      if (this.status === "thinking") this.#setStatus("connected")
     } catch (err: unknown) {
       this.error = `prompt failed: ${err instanceof Error ? err.message : String(err)}`
-      this.status = "error"
+      this.#setStatus("error")
     }
   }
 
@@ -204,7 +204,7 @@ export class AgentSession {
     if (this.status === "connecting" || this.status === "connected") {
       throw new Error(`cannot loadSession in status ${this.status}`)
     }
-    this.status = "connecting"
+    this.#setStatus("connecting")
     this.error = null
     this.bubbles = []
     this.#detached = false
@@ -222,7 +222,7 @@ export class AgentSession {
         if (this.#detached) return
         if (code !== 1000 && code !== 1001) {
           this.error = `WS closed (${code}): ${reason || "no reason"}`
-          this.status = "error"
+          this.#setStatus("error")
         }
       })
       await transport.waitForOpen()
@@ -244,11 +244,11 @@ export class AgentSession {
       // 4. הודע ל-BE (זהה ל-attach, מאמץ מיטבי)
       await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
 
-      this.status = "connected"
+      this.#setStatus("connected")
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = `loadSession failed: ${msg}`
-      this.status = "error"
+      this.#setStatus("error")
       this.#cleanup()
     }
   }
@@ -326,6 +326,21 @@ export class AgentSession {
   }
 
   // ─── הקלטות (recordings) ─── (יתווסף ב-slice 10)
+
+  // ─── slice 6: setter מרכז ─── (additive — מנתב את כל ה-status writes)
+
+  /**
+   * נקודת-mutation יחידה ל-status. כל שינוי status עובר דרך כאן.
+   * מנגן audio cue ב-transitions רלוונטיים (slice 6). אין $effect — קריאה מפורשת.
+   * idempotent: אם next === prev — לא מנגן cue (אין transition).
+   */
+  #setStatus(next: AgentSessionStatus): void {
+    const prev = this.status
+    if (next === prev) return
+    this.status = next
+    if (next === "thinking") this.#cues?.play("thinking")
+    else if (next === "error") this.#cues?.play("error")
+  }
 
   // ─── פרטי ─────────────────────────────────────
 
