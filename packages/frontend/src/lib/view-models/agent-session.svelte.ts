@@ -17,6 +17,7 @@ import type {
   SessionModelState,
 } from "@agentclientprotocol/sdk"
 import { createAcpClient, type AcpClient } from "@drive-coding/core/acp/client"
+import type { CuesEngine } from "$lib/engines/cues"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
 import { createAgent, notifySessionAttached } from "$lib/adapters/agents-api"
 import type { CliKind } from "@drive-coding/core"
@@ -50,6 +51,13 @@ export type AgentSessionStatus =
  *   - פונקציית עזר פרטית חדשה → תוספתי (ADDITIVE). מקם ב-`// ─── private ───`.
  */
 export class AgentSession {
+  // ─── slice 6: cues injection ─── (אופציונלי — slice 9 יקשר ל-Settings)
+  readonly #cues?: CuesEngine
+
+  constructor(opts?: { cues?: CuesEngine }) {
+    this.#cues = opts?.cues
+  }
+
   // ─── state ─── (פולשני לעריכה — תאם מול Tama)
   status = $state<AgentSessionStatus>("idle")
   error = $state<string | null>(null)

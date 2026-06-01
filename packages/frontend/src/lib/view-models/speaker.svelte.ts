@@ -35,6 +35,7 @@ import {
 } from "@drive-coding/core/voice/tts-queue"
 import { cacheKeyFor } from "@drive-coding/core/voice/cache-key"
 import { untrack } from "svelte"
+import type { CuesEngine } from "../engines/cues"
 import type { AgentSession, AgentSessionStatus } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
 import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
@@ -79,6 +80,7 @@ export class Speaker {
   readonly #settings: Settings
   readonly #audioStream: AudioStream
   readonly #player: Player
+  readonly #cues?: CuesEngine
 
   /**
    * נגזר מ-`#player.state`. מיושם כ-getter ולא כשדה `$derived`
@@ -106,9 +108,10 @@ export class Speaker {
   // מוגדר על ידי הבנאי — נשמר כדי שה-destroy() יוכל לעצור את ה-effect.
   #disposeEffect: (() => void) | null = null
 
-  constructor(opts: { session: AgentSession; settings: Settings }) {
+  constructor(opts: { session: AgentSession; settings: Settings; cues?: CuesEngine }) {
     this.#session = opts.session
     this.#settings = opts.settings
+    this.#cues = opts.cues
     this.#audioStream = new AudioStream()
     this.#player = new Player(this.#audioStream)
 

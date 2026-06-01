@@ -12,6 +12,7 @@
  */
 
 import type { MessageKey } from "@drive-coding/core/i18n"
+import type { CuesEngine } from "../engines/cues"
 import type { AgentSession } from "./agent-session.svelte"
 import { Recorder } from "../engines/recorder"
 import { transcribe } from "../adapters/voice/transcribe"
@@ -24,10 +25,12 @@ export class Mic {
 
   readonly #session: AgentSession
   readonly #recorder: Recorder
+  readonly #cues?: CuesEngine
 
-  constructor(opts: { session: AgentSession }) {
+  constructor(opts: { session: AgentSession; cues?: CuesEngine }) {
     this.#session = opts.session
     this.#recorder = new Recorder()
+    this.#cues = opts.cues
   }
 
   /**
