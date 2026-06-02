@@ -16,11 +16,19 @@ export type BridgeHandleWithStderr = BridgeHandle & {
 export function createBridgeManager(): BridgeManager & {
   spawnWithStderr(bridgeId: string, input: SpawnBridgeInput): Promise<BridgeHandleWithStderr>
   getChild(bridgeId: string): ChildProcessWithoutNullStreams | null
+  // ─── TEMPORARY (slice 26) ───
+  markAttached(bridgeId: string): void
+  markDetached(bridgeId: string): void
+  listIdle(timeoutMs: number, now: number): string[]
 } {
   type Entry = {
     handle: BridgeHandle
     child: ChildProcessWithoutNullStreams
     stderrLines: string[]
+    // ─── TEMPORARY (slice 26) — idle-reaper tracking ───
+    hasActiveWs: boolean
+    lastDetachedAt: number | null
+    createdAt: number
   }
   const store = new Map<string, Entry>()
   const crashHandlers = new Set<(bridgeId: string, info: BridgeCrashInfo) => void>()
@@ -125,7 +133,15 @@ export function createBridgeManager(): BridgeManager & {
       startedAt: new Date(),
     }
 
-    store.set(bridgeId, { handle, child, stderrLines })
+    store.set(bridgeId, {
+      handle,
+      child,
+      stderrLines,
+      // ─── TEMPORARY (slice 26) — idle-reaper tracking ───
+      hasActiveWs: false,
+      lastDetachedAt: null,
+      createdAt: Date.now(),
+    })
     childLog.info({ pid: child.pid }, "spawn ok")
     return { ...handle, getStderr: () => [...stderrLines], child }
   }
@@ -169,6 +185,36 @@ export function createBridgeManager(): BridgeManager & {
       return () => {
         crashHandlers.delete(handler)
       }
+    },
+
+    // ─── TEMPORARY (slice 26): idle-reaper support ───
+    // Remove together with this whole block when background-agent management
+    // (future "slice A") lands. See docs/plans/slice-26-bridge-idle-reaper.md §7.
+    markAttached(bridgeId: string) {
+      const e = store.get(bridgeId)
+      if (e) e.hasActiveWs = true
+    },
+
+    markDetached(bridgeId: string) {
+      const e = store.get(bridgeId)
+      if (e) {
+        e.hasActiveWs = false
+        e.lastDetachedAt = Date.now()
+      }
+    },
+
+    listIdle(timeoutMs: number, now: number): string[] {
+      const out: string[] = []
+      for (const [id, e] of store) {
+        if (e.hasActiveWs) continue // active WS — never reap
+        if (e.lastDetachedAt !== null) {
+          if (now - e.lastDetachedAt >= timeoutMs) out.push(id)
+        } else {
+          // Never had a WS — grace period: 2x timeout before reaping
+          if (now - e.createdAt >= timeoutMs * 2) out.push(id)
+        }
+      }
+      return out
     },
   }
 }

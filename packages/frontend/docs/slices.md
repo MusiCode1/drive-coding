@@ -73,6 +73,9 @@ Slice 3+   💭 מתוכנן  ראה ‎טבלה ‎למטה
 | 14 | Generic prompt injector | ‎Refactor של ‎slice 11 — ‎plugin הופך ‎generic ‎(text דרך ‎options), ‎הטקסט עובר ל-`packages/backend/src/prompts/` ‎(הכנה לפרופילים מרובים / picker עתידי) | 11 | ~‎חצי יום | ✅ |
 | 22 | **TTS ordering + tool narration audio** | OrderKey + OrderedQueue (fetch מקבילי בסדר נכון) + tool narration כ-TTS job + provenance על AudioSegment | 2, 4 | ~1 יום | ✅ (2026-06-01) |
 | 23 | **Agent Options Panel** | ווידג'ט config סשן (model/agent/configOptions) על סשן פתוח דרך ACP setSessionConfigOption | 0.5, 8 | ~חצי יום | ✅ (2026-06-01) |
+| 24 | **Client-keyed proxy cache** | מפתח cache לפי clientId — מונע דליפת cache בין sessions | BE | ~חצי יום | ✅ (2026-06-01) |
+| 25 | **Bridge leak fix (FE cleanup)** | #cleanup שולח deleteAgent ב-3 מסלולי detach/attach-error/loadSession-error | FE | ~חצי יום | 💭 מאושר, ממתין dispatch |
+| 26 | **Idle-bridge reaper (BE)** ⚠️ זמני | setInterval reaper שמנקה bridges ללא WS פעיל — רשת ביטחון עד future A | BE | ~חצי יום | ✅ (2026-06-01) — **למחיקה ב-future A** |
 | 13 | Cutover | rename ‎`frontend-v2/` ‎→ ‎`frontend/` ‎(הישן ‎כבר נמחק ‎ב-2026-05-28) | כל ‎הקודמים | ~‎חצי יום | 💭 |
 
 **‎סה"כ ‎לcutover מלא: ‎~‎15-16 ‎ימי עבודה.**

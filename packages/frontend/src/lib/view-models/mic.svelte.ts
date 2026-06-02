@@ -12,6 +12,7 @@
  */
 
 import type { MessageKey } from "@drive-coding/core/i18n"
+import type { CuesEngine } from "../engines/cues"
 import type { AgentSession } from "./agent-session.svelte"
 import { Recorder } from "../engines/recorder"
 import { transcribe } from "../adapters/voice/transcribe"
@@ -24,10 +25,12 @@ export class Mic {
 
   readonly #session: AgentSession
   readonly #recorder: Recorder
+  readonly #cues?: CuesEngine
 
-  constructor(opts: { session: AgentSession }) {
+  constructor(opts: { session: AgentSession; cues?: CuesEngine }) {
     this.#session = opts.session
     this.#recorder = new Recorder()
+    this.#cues = opts.cues
   }
 
   /**
@@ -53,11 +56,15 @@ export class Mic {
         }
         return
       }
+      // slice 6: cue אחרי הרשאה הוענקה + הקלטה התחילה בפועל
+      this.#cues?.play("recordingStart")
       return
     }
 
     if (this.state === "recording") {
       this.state = "transcribing"
+      // slice 6: cue מיד אחרי מעבר ל-transcribing (הקלטה הסתיימה)
+      this.#cues?.play("recordingStop")
       let blob: Blob
       try {
         const result = await this.#recorder.stop()

@@ -89,6 +89,17 @@ describe("HTTP GET /api/options", () => {
     expect(body.projects.length).toBeLessThanOrEqual(50)
   })
 
+  it("Slice 24: returns homeDir field (non-empty string, absolute path)", async () => {
+    execFileSyncMock.mockReturnValue("")
+    const app = makeApp()
+    const res = await app.request("/api/options")
+    const body = (await res.json()) as { homeDir: string }
+
+    expect(typeof body.homeDir).toBe("string")
+    expect(body.homeDir.length).toBeGreaterThan(0)
+    expect(body.homeDir.startsWith("/")).toBe(true)
+  })
+
   it("opencode list prefers known anthropic/openai/google prefixes (preferred picks first)", async () => {
     execFileSyncMock.mockReturnValue(
       [

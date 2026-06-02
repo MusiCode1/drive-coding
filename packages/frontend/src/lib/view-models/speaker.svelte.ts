@@ -35,6 +35,7 @@ import {
 } from "@drive-coding/core/voice/tts-queue"
 import { cacheKeyFor } from "@drive-coding/core/voice/cache-key"
 import { untrack } from "svelte"
+import type { CuesEngine } from "../engines/cues"
 import type { AgentSession, AgentSessionStatus } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
 import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
@@ -79,6 +80,9 @@ export class Speaker {
   readonly #settings: Settings
   readonly #audioStream: AudioStream
   readonly #player: Player
+  readonly #cues?: CuesEngine
+  // slice 6: guard — מונע ניגון חוזר של cue "speaking" באותו תור (re-entry סדרתי)
+  #spokeThisTurn = false
 
   /**
    * נגזר מ-`#player.state`. מיושם כ-getter ולא כשדה `$derived`
@@ -106,11 +110,18 @@ export class Speaker {
   // מוגדר על ידי הבנאי — נשמר כדי שה-destroy() יוכל לעצור את ה-effect.
   #disposeEffect: (() => void) | null = null
 
-  constructor(opts: { session: AgentSession; settings: Settings }) {
+  constructor(opts: { session: AgentSession; settings: Settings; cues?: CuesEngine }) {
     this.#session = opts.session
     this.#settings = opts.settings
+    this.#cues = opts.cues
     this.#audioStream = new AudioStream()
-    this.#player = new Player(this.#audioStream)
+    // slice 6: onPlaybackStart callback — נקרא פעם אחת כש-Player עובר idle→playing.
+    // guard #spokeThisTurn מונע re-entry סדרתי בתוך אותו תור (LOOKAHEAD=2 + async fetches).
+    this.#player = new Player(this.#audioStream, () => {
+      if (this.#spokeThisTurn) return
+      this.#spokeThisTurn = true
+      this.#cues?.play("speaking")
+    })
 
     // ה-effect היחיד שמניע הכל: קורא bubbles + status + enabled.
     // כתיבות עטופות ב-`untrack` (gotcha §6 #5).
@@ -240,6 +251,12 @@ export class Speaker {
   }
 
   #handleStatusTransition(status: AgentSessionStatus, enabled: boolean): void {
+    // slice 6: תור דיבור חדש מתחיל כש-status עובר ל-thinking → אפס את ה-cue guard.
+    // reset כאן (turn-start) ולא ב-#stopAndClear (לא רץ בסוף תור רגיל).
+    if (status === "thinking" && this.#prevStatus !== "thinking") {
+      this.#spokeThisTurn = false
+    }
+
     // התור הסתיים? פלוש כל buffer פר-בועה כמקטע אחרון.
     const justFinished =
       this.#prevStatus === "thinking" && (status === "connected" || status === "error")
@@ -296,7 +313,8 @@ export class Speaker {
       let text = job.text
 
       if (job.kind === "thought") {
-        const result = await translate(text, TARGET_LANG, job.abort.signal)
+        // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)
+        const result = await translate(text, TARGET_LANG, job.abort.signal, job.messageId)
         if (result !== null && result.status === "translated") {
           // Slice 4: כתיבה חזרה למקטע כדי ש-ThoughtBubble יוכל להציג HE+EN.
           if (job.bubbleId !== undefined) {
@@ -319,9 +337,11 @@ export class Speaker {
 
       // slice 22: חשב textHash על הטקסט שמסונתז (provenance)
       const textHash = await cacheKeyFor(text, this.#settings.voiceId, "eleven_v3")
+      // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)
       const stream = await synthesizeStreaming({
         text,
         voiceId: this.#settings.voiceId,
+        messageId: job.messageId,
         signal: job.abort.signal,
       })
       await this.#audioStream.prepareSegment(job.segmentId, stream, job.abort, {
@@ -463,6 +483,8 @@ export class Speaker {
   }
 
   #stopAndClear(): void {
+    // slice 6: reset משני — לcancel/toggle-off (לא רץ בסוף תור רגיל)
+    this.#spokeThisTurn = false
     for (const job of this.#jobs) {
       if (job.status === "fetching" || job.status === "pending") {
         try {

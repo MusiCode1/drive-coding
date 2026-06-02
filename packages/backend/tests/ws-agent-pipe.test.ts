@@ -65,7 +65,7 @@ function makeMockFeWs(): { ws: WebSocket; sent: string[]; closeArgs: Array<[numb
 describe("ws-agent in-process pipe", () => {
   it("unknown agentId → close(1008, 'agent not found')", () => {
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
-    const bridgeManager = { getChild: vi.fn(() => null) }
+    const bridgeManager = { getChild: vi.fn(() => null), markAttached: vi.fn(), markDetached: vi.fn() }
 
     const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
     const { ws, closeArgs } = makeMockFeWs()
@@ -82,7 +82,7 @@ describe("ws-agent in-process pipe", () => {
   it("FE message forwarded to child.stdin", async () => {
     const child = makeMockChild()
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
-    const bridgeManager = { getChild: vi.fn(() => child) }
+    const bridgeManager = { getChild: vi.fn(() => child), markAttached: vi.fn(), markDetached: vi.fn() }
 
     const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
     const { ws } = makeMockFeWs()
@@ -107,7 +107,7 @@ describe("ws-agent in-process pipe", () => {
     // Therefore BE must re-append \n before sending each line.
     const child = makeMockChild()
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
-    const bridgeManager = { getChild: vi.fn(() => child) }
+    const bridgeManager = { getChild: vi.fn(() => child), markAttached: vi.fn(), markDetached: vi.fn() }
 
     const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
     const { ws, sent } = makeMockFeWs()
@@ -125,7 +125,7 @@ describe("ws-agent in-process pipe", () => {
   it("MED-8: second tab same agentId → close(1008, 'agent in use by another tab')", () => {
     const child = makeMockChild()
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
-    const bridgeManager = { getChild: vi.fn(() => child) }
+    const bridgeManager = { getChild: vi.fn(() => child), markAttached: vi.fn(), markDetached: vi.fn() }
 
     const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
     const { ws: ws1 } = makeMockFeWs()
@@ -147,7 +147,7 @@ describe("ws-agent in-process pipe", () => {
   it("child exit → feWs.close(1011, 'bridge closed')", async () => {
     const child = makeMockChild()
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
-    const bridgeManager = { getChild: vi.fn(() => child) }
+    const bridgeManager = { getChild: vi.fn(() => child), markAttached: vi.fn(), markDetached: vi.fn() }
 
     const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
     const { ws, closeArgs } = makeMockFeWs()
@@ -165,7 +165,7 @@ describe("ws-agent in-process pipe", () => {
   it("feWs close → cleanup, child NOT killed", async () => {
     const child = makeMockChild()
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
-    const bridgeManager = { getChild: vi.fn(() => child) }
+    const bridgeManager = { getChild: vi.fn(() => child), markAttached: vi.fn(), markDetached: vi.fn() }
 
     const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
     const { ws } = makeMockFeWs()

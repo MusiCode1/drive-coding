@@ -1,7 +1,9 @@
 <script lang="ts">
 import { CLI_KINDS, type CliKind } from "@drive-coding/core"
 import { goto } from "$app/navigation"
+import { onMount } from "svelte"
 import { connectAgent } from "$lib/actions/connect-agent"
+import { fetchServerOptions } from "$lib/adapters/options"
 import { listSessionsForCwd, type SessionInfo } from "$lib/adapters/sessions"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import SessionPicker from "$lib/components/connect/SessionPicker.svelte"
@@ -14,6 +16,25 @@ const t = i18n.t
 
 let cliKind = $state<CliKind>(settings.cliKind)
 let cwd = $state(settings.lastCwd)
+
+// Slice 24: אכלס cwd מה-homeDir של השרת אם אין ערך שמור ולא הוקלד
+// init-timing: cwd הוא $state מקומי שמועתק מ-settings.lastCwd ב-init.
+// fetch חוזר אחרי init → מעדכן cwd ישירות (לא מסתמך על re-init).
+// עדכן רק אם cwd עדיין ריק (המשתמש לא הקליד בינתיים).
+onMount(() => {
+  fetchServerOptions()
+    .then((opts) => {
+      if (cwd === "" || cwd === settings.lastCwd) {
+        // localStorage ריק והמשתמש לא הקליד — הצב homeDir
+        if (!settings.lastCwd && cwd === "") {
+          cwd = opts.homeDir
+        }
+      }
+    })
+    .catch(() => {
+      // fetch נכשל → cwd נשאר ריק, המשתמש יקליד ידנית. לא לשבור את מסך ה-connect.
+    })
+})
 
 // ─── state עבור תפריט בחירת סשן (session picker) ───
 let sessions = $state<SessionInfo[]>([])

@@ -9,17 +9,21 @@
  */
 
 import { beUrl } from "$lib/util/be-url"
+import { ttsCacheHeaders } from "./cache-headers"
 
 export interface TtsOptions {
   text: string
   voiceId: string
   modelId?: string
+  messageId?: string | null
   signal?: AbortSignal
 }
 
 export async function synthesizeStreaming(opts: TtsOptions): Promise<ReadableStream<Uint8Array>> {
   // eleven_v3 הוא מודל ה-ElevenLabs היחיד שתומך בעברית (learnings 2026-05-13)
   const modelId = opts.modelId ?? "eleven_v3"
+
+  const cacheHeaders = await ttsCacheHeaders(opts.text, opts.voiceId, modelId, opts.messageId ?? null)
 
   const response = await fetch(
     beUrl(`/proxy/elevenlabs/v1/text-to-speech/${opts.voiceId}/stream`),
@@ -29,6 +33,7 @@ export async function synthesizeStreaming(opts: TtsOptions): Promise<ReadableStr
         "xi-api-key": "browser-placeholder", // הפרוקסי של OneCLI מחליף במפתח האמיתי
         "content-type": "application/json",
         accept: "audio/mpeg",
+        ...cacheHeaders,
       },
       body: JSON.stringify({
         text: opts.text,

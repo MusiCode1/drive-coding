@@ -14,7 +14,8 @@
  * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
  */
 import "../app.css"
-import { setI18n, setMic, setSession, setSettings, setSpeaker, setVoiceMode } from "$lib/context"
+import { setCues, setI18n, setMic, setSession, setSettings, setSpeaker, setVoiceMode } from "$lib/context"
+import { CuesEngine } from "$lib/engines/cues"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
@@ -30,14 +31,17 @@ const i18n = new I18nVM()
 // ─── הגדרות ──────────────────────────────────────
 const settings = new Settings()
 
+// ─── cues ─── (slice 6 — אין תלויות חיצוניות, חייב להיות לפני session/speaker/mic)
+const cues = new CuesEngine()
+
 // ─── סשן ───────────────────────────────────────
-const session = new AgentSession()
+const session = new AgentSession({ cues })
 
-// ─── speaker ─── (תלוי ב-session + settings)
-const speaker = new Speaker({ session, settings })
+// ─── speaker ─── (תלוי ב-session + settings + cues)
+const speaker = new Speaker({ session, settings, cues })
 
-// ─── mic ─── (slice 3 — תלוי ב-session)
-const mic = new Mic({ session })
+// ─── mic ─── (slice 3 — תלוי ב-session + cues)
+const mic = new Mic({ session, cues })
 
 // ─── voice-mode ─── (slice 3 — תלוי ב-mic + session + speaker)
 const voiceMode = new VoiceMode({ mic, session, speaker })
@@ -47,6 +51,7 @@ const voiceMode = new VoiceMode({ mic, session, speaker })
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
+setCues(cues)
 setSession(session)
 setSpeaker(speaker)
 setMic(mic)
