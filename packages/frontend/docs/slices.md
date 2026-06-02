@@ -66,14 +66,14 @@ Slice 3+   💭 מתוכנן  ראה ‎טבלה ‎למטה
 | 15 | **Backend URL config + CF deployment** | CORS env var (15a), Settings.beUrl + /settings page (15b), adapter migration (15c), CF Pages deploy guide + build verification (15d) | 0.5 | ~1 יום | ✅ (2026-05-30) |
 | 16 | Tool call content | ACP faithful rendering (diff, terminal, locations, shell commands) | 4 | ~1 יום | ✅ (2026-05-29) |
 | 5 | Smart scroll | ‎auto-scroll, ‎jump-down button, ‎user-interaction detection | 0 | ~‎חצי יום | 💭 |
-| 6 | Audio cues | ‎5 ‎צלילים ‎ב-Web Audio (recording start/stop, thinking, speaking, error) | 3 | ~‎חצי יום | ✅ (2026-06-01) |
+| 6 | Audio cues | ‎5 ‎צלילים ‎ב-Web Audio (recording start/stop, thinking, speaking, error) | 3 | ~‎חצי יום | 💭 |
 | 7 | Drive-first chrome | car mode (?car=1), Media Session API, wake lock, landscape lock | 1, 2, 6 | ~‎2 ‎ימים | 💭 |
 | 10 | Recordings + replay | ‎שמירת הקלטות, ‎replay של שיחה מלאה (user audio + agent TTS חדש) | 1, 2, 8 + BE work | ~‎2 ‎ימים | 💭 |
 | 11 | Audio-friendly prompt | ‎OpenCode plugin injection (audio-friendly system prompt) — דורש BE work | 0 | ~‎2 ‎ימים | ✅ |
 | 14 | Generic prompt injector | ‎Refactor של ‎slice 11 — ‎plugin הופך ‎generic ‎(text דרך ‎options), ‎הטקסט עובר ל-`packages/backend/src/prompts/` ‎(הכנה לפרופילים מרובים / picker עתידי) | 11 | ~‎חצי יום | ✅ |
 | 22 | **TTS ordering + tool narration audio** | OrderKey + OrderedQueue (fetch מקבילי בסדר נכון) + tool narration כ-TTS job + provenance על AudioSegment | 2, 4 | ~1 יום | ✅ (2026-06-01) |
 | 23 | **Agent Options Panel** | ווידג'ט config סשן (model/agent/configOptions) על סשן פתוח דרך ACP setSessionConfigOption | 0.5, 8 | ~חצי יום | ✅ (2026-06-01) |
-| 24 | **Client-keyed proxy cache** | x-cache-key/meta headers מ-FE → BE; sanitizeCacheKey; sha256Key ל-core; homeDir default cwd | — | ~1 יום | ✅ (2026-06-01) |
+| 25 | **Bridge Process Leak Fix** | `#cleanup` שולח deleteAgent — עוצר דליפת bridge processes בBE | — | ~חצי שעה | ✅ (2026-06-01) |
 | 13 | Cutover | rename ‎`frontend-v2/` ‎→ ‎`frontend/` ‎(הישן ‎כבר נמחק ‎ב-2026-05-28) | כל ‎הקודמים | ~‎חצי יום | 💭 |
 
 **‎סה"כ ‎לcutover מלא: ‎~‎15-16 ‎ימי עבודה.**
