@@ -39,6 +39,8 @@ export const en: Catalog = {
   "mic.error.notFound": "No microphone found. Connect a microphone and try again.",
   "mic.error.transcribe": "Transcription failed. Please try again.",
   "mic.error.generic": "Microphone error. Please try again.",
+  // ─── mic retry ─── (slice sessions-inline)
+  "mic.retry": "Try again",
 
   // ─── voice-mode ─── (slice 3)
   "voiceMode.status.idle": "Microphone",

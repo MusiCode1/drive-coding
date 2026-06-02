@@ -35,6 +35,8 @@ export const he: Catalog = {
   "mic.error.notFound": "לא נמצא מיקרופון. חבר מיקרופון ונסה שוב.",
   "mic.error.transcribe": "התמלול נכשל. נסה שוב.",
   "mic.error.generic": "שגיאה במיקרופון. נסה שוב.",
+  // ─── mic retry ─── (slice sessions-inline)
+  "mic.retry": "נסה שוב",
 
   // ─── voice-mode ─── (slice 3)
   "voiceMode.status.idle": "מיקרופון",
