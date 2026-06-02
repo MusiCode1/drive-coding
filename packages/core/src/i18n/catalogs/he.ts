@@ -78,6 +78,8 @@ export const he: Catalog = {
   "agentOptions.title": "הגדרות סשן",
   "agentOptions.model.label": "מודל",
   "agentOptions.agent.label": "סוכן",
+  // ─── smart-scroll ─── (redesign-7)
+  "chat.jumpDown": "הודעות חדשות",
   // ─── modals ─── (redesign-6)
   "modal.sessions.title": "סשנים אחרונים",
   "modal.sessions.refresh": "רענן",

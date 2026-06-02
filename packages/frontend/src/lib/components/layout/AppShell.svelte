@@ -15,13 +15,15 @@
  * ─── redesign-2 ───
  */
 import { tick } from "svelte"
-import { getResponsive, getSession } from "$lib/context"
+import { getResponsive, getSession, getI18n } from "$lib/context"
 import AppHeader from "./AppHeader.svelte"
 import Sidebar from "./Sidebar.svelte"
 import BottomSheet from "./BottomSheet.svelte"
 // ─── redesign-6: modals ───
 import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
 import SessionsDialog from "$lib/components/modals/SessionsDialog.svelte"
+// ─── redesign-7: smart-scroll ───
+import ArrowDownIcon from "@lucide/svelte/icons/arrow-down"
 
 let { children, onDisconnect }: {
   children: import("svelte").Snippet
@@ -30,14 +32,36 @@ let { children, onDisconnect }: {
 
 const responsive = getResponsive()
 const session = getSession()
+const t = getI18n().t
 
 // scroll node — ה-AppShell הוא owner (חוק זהב #4)
 let scrollEl = $state<HTMLElement | null>(null)
 
+// ─── redesign-7: smart-scroll state ───
+const SCROLL_THRESHOLD = 50 // px מהתחתית = "בתחתית"
+let isAtBottom = $state(true)
+let hasNewBelow = $state(false)
+
+function checkIsAtBottom(): boolean {
+  if (!scrollEl) return true
+  return scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < SCROLL_THRESHOLD
+}
+
+function onScroll() {
+  isAtBottom = checkIsAtBottom()
+  if (isAtBottom) hasNewBelow = false
+}
+
+function jumpToBottom() {
+  if (!scrollEl) return
+  scrollEl.scrollTop = scrollEl.scrollHeight
+  isAtBottom = true
+  hasNewBelow = false
+}
+
 /**
- * Auto-scroll — הועבר מ-ChatBubbles:21-36 ככתבו.
- * קורא שלושה ערכים ריאקטיביים: bubble count, seg count, seg text length.
- * scrollEl חליפת chatEl (ChatBubbles מאבד bind:this ב-Commit 4 הזה).
+ * Smart auto-scroll (redesign-7) — מחליף את ה-auto-scroll הבלתי-מותנה.
+ * רק אם המשתמש בתחתית → נצמד. אחרת → hasNewBelow=true.
  */
 $effect(() => {
   const _bubbleCount = session.bubbles.length
@@ -52,7 +76,12 @@ $effect(() => {
   void _segCount
   void _lastSegLen
   tick().then(() => {
-    if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight
+    if (!scrollEl) return
+    if (isAtBottom) {
+      scrollEl.scrollTop = scrollEl.scrollHeight
+    } else {
+      hasNewBelow = true
+    }
   })
 })
 </script>
@@ -79,12 +108,27 @@ $effect(() => {
       <div
         bind:this={scrollEl}
         class="chat-scroll flex-1 overflow-y-auto px-4 pt-20 pb-10"
+        onscroll={onScroll}
       >
         <!-- max-w-2xl: בועות צרות ממורכזות (fix A2a — קריאות בדסקטופ) -->
         <div class="flex flex-col gap-5 max-w-2xl mx-auto w-full">
           {@render children()}
         </div>
       </div>
+
+      <!-- redesign-7: כפתור JumpDown (צף, מוצג כש-!בתחתית + יש תוכן חדש) -->
+      {#if !isAtBottom && hasNewBelow}
+        <button
+          class="absolute bottom-20 start-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full text-[13px] font-medium shadow-lg"
+          style="background:var(--accent); color:white; transform:translateX(-50%)"
+          onclick={jumpToBottom}
+          aria-label={t("chat.jumpDown")}
+          title={t("chat.jumpDown")}
+        >
+          <ArrowDownIcon size={14} strokeWidth={2.5} />
+          {t("chat.jumpDown")}
+        </button>
+      {/if}
     </div>
   </div>
 

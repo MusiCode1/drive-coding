@@ -83,6 +83,8 @@ export const en: Catalog = {
   "agentOptions.title": "Session options",
   "agentOptions.model.label": "Model",
   "agentOptions.agent.label": "Agent",
+  // ─── smart-scroll ─── (redesign-7)
+  "chat.jumpDown": "New messages",
   // ─── modals ─── (redesign-6)
   "modal.sessions.title": "Recent sessions",
   "modal.sessions.refresh": "Refresh",
