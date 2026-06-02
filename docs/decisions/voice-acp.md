@@ -87,6 +87,141 @@ VoicePicker **לא נמחק** (connect route משתמש בו, +page.svelte:92) �
 - **לכתוב את 5 ה-primitives ידנית** (בלי component-lib): נדחה כברירת-מחדל — a11y+focus-trap עבודה אמיתית עם סיכון-באגים. נשאר כ-fallback ל-Select אם Bits נלחם ב-RTL.
 - **לפצל C1/C2 ל-slices מוקדמים עצמאיים** (לפני foundation): נדחה — שניהם נוגעים בקומפוננטות שייכתבו מחדש; פיצול = עבודה כפולה.
 - **Skeleton UI**: נדחה (§1.2 spec) — opinionated, "look" גנרי, מתנגש בפלטה הייחודית.
+## 2026-06-02 — redesign debug: סטיות מהתוכנית בדיבוג ההרכבה המצטברת (worktree redesign-7)
+
+אחרי שכל 7 ה-slices של ה-redesign בוצעו (calev GO בבידוד) אך לא מוזגו, ההרכבה
+המצטברת (tip redesign-7) נבדקה במובייל אמיתי והתגלו באגים שאף slice לא תפס
+בבידוד. התיקונים בוצעו ישירות ב-worktree redesign-7 (לא brief/executor — באגי
+layout שאובחנו במדויק), בשיטת "מרדכי מבצע + verifier אחרי". להלן כל הסטיות מהתוכנית.
+
+### למה הבאגים נפלו בין הכיסאות
+calev בדק כל slice בבידוד — שם כל אחד תקין. הבאגים נולדו מ-**ההרכבה** + מ-**נתונים
+אמיתיים** (שיחה ארוכה עם בלוקי קוד), שלא נבדקו ב-isolation. זה חיזק את הצורך
+בכלי ה-mock (ר' למטה) ובבדיקה על נתונים אמיתיים, לא רק happy-path ריק.
+
+### B1 — RecordFooter: child בתוך scroll → footer slot כ-sibling shrink-0
+**תוכנית (redesign-4/7):** RecordFooter רונדר בתוך `children` של ה-scroll → נגלל וצף
+באמצע בסשן ריק. **תיקון:** AppShell חושף snippet slot נפרד `footer`, sibling של
+`.chat-scroll`, מעוגן `shrink-0` בתחתית (כמו ChatColumn במוקאפ). `chat/+page.svelte`
+מעביר RecordFooter דרך `{#snippet footer()}`. הוסר `onDisconnect` prop drilling.
+
+### B2 — disconnect+audio: חוב מ-redesign-2 שלא נפדה → הועברו ל-SessionOptionsPanel
+**שורש:** redesign-2 מחק את ChatHeader אך השאיר disconnect+audio ב-AppHeader זמנית
+(הערת "ימוקם מחדש ב-redesign-3"). redesign-3 לא קלט את ה-chit ל-DoD שלו → 4 פקדים
+ב-header → הכותרת הממורכזת (absolute) חופפת את הסטטוס במובייל צר. **תיקון:** הוסרו
+מ-AppHeader, הועברו ל-SessionOptionsPanel (disconnect = `session.detach()`+`goto("/")`
+ישירות, audio דרך `getSpeaker()` — לא prop drilling). header נקי = 2 פקדים כמו מוקאפ.
+**ביקורת חובות מלאה:** מתוך 6 chits בשרשרת — 5 נפדו (SessionOptionsPanel מחווט,
+AgentOptionsPanel מוזג+נמחק, FolderPicker מחווט, proof-Lucide הוסר, carMode placeholder
+מכוון). רק disconnect+audio נשאר — תוקן כאן.
+
+### B3 — mic-card גולש 682px: flexbox min-w-0 חסר
+**שורש:** ה-flex item של עמודת התוכן (AppShell) חסר `min-w-0` → התרחב ל-min-content
+(714) במקום להתכווץ ל-390 (flexbox gotcha). `overflow-hidden` חתך ויזואלית אבל המרכוז
+חושב לפי 714 → mic גלש שמאלה. **התגלה רק עם session אמיתי** (תוכן עברי ארוך מעלה את
+ה-min-content). **תיקון:** `min-w-0` על עמודת התוכן.
+
+### B4 — bubbles+בלוקי קוד גולשים: min-w-0 בשרשרת הבועות
+אותו שורש משפחתי כמו B3, בכל רמה. `truncate font-mono` (ToolBubble) ו-inline code
+(MessageBubble) דחפו את ה-min-content. **תיקון:** `min-w-0`+`break-words` על 4 הבועות
+(wrapper + inner container), `overflow-wrap:anywhere` ל-inline `code`.
+
+### B5 — vh במובייל אמיתי: BottomSheet height מ-vh ל-{sheetPx}px
+**שורש (נמדד על CPH2747 דרך Edge+CDP):** `vh`/`lvh`=752 (large viewport, כולל סרגלי
+דפדפן) אך `dvh`/`svh`/`innerHeight`=625. ה-sheet `height:80vh` חושב 601px (צריך 500) →
+הידית צפה על המיקרופון. **תיקון:** height מ-`{SHEET_VH*100}vh` ל-`{sheetPx}px` (JS
+`window.innerHeight` = dvh מדויק ב-Edge Android). `bottom:1098` נשאר מתחת למסך אך לא
+מזיק (רק top קובע את ה-peek הנראה).
+
+### UX-1 — RTL: physical → logical classes
+האפליקציה כבר RTL (`<html dir="rtl">` + dir attributes קיימים). רק 3 physical classes
+נותרו ולא התהפכו: UserBubble `rounded-bl-sm`→`rounded-es-sm`, MessageBubble
+`rounded-br-sm`→`rounded-ee-sm`, mic-card logical corners, Switch קיבל `dir="ltr"`
+(toggle ויזואלי — חריג שלא מתהפך). `left-1/2 -translate-x-1/2` (centering) נשאר — לא RTL.
+
+### UX-2 — מובייל: fade במקום כרטיס
+**מוקאפ:** במובייל אין mic-card — הרקע שטוח וההודעות נמוגות דרך chat-fade. **תיקון:**
+class `.mic-plain` (כש-`responsive.isMobile`) מאפס border/radius/shadow/bg של ה-mic-card,
+footer מקבל `background:var(--bg)`.
+
+### UX-3 — chat-fade: wrapper סביב הגלילה (תוצר-לוואי של B1)
+**שורש:** אחרי B1 (footer הפך sibling), ה-chat-fade (`absolute bottom-0` של העמודה)
+נתקע מתחת ל-footer האטום ונעלם → פס חד. **תיקון:** אזור הגלילה עטוף ב-wrapper
+`relative flex-1`, ה-fade `bottom-0` בתוכו → נצמד לגבול גלילה/footer (המוקאפ עושה זאת
+ב-JS עם `footer.offsetHeight`; אנחנו ב-CSS נקי). JumpDown הוזז `bottom-20`→`bottom-4`.
+
+### UX-4 — BottomSheet: גרירה רציפה + 3 detents
+**תוכנית:** sheet בינארי (peek↔open, snap ±30px). **בקשת משתמשת:** גרירה עם האצבע +
+לקבוע כמה ייפתח. **תיקון:** UiShellVM קיבל `sheetDetent` ("peek"|"half"|"full") +
+`sheetDragPx` (גובה רציף בזמן גרירה), `sheetOpen` הפך getter (peek=סגור, לתאימות
+openSheet/closeSheet). BottomSheet: pointermove רציף, pointerup snap ל-detent קרוב,
+רקע/opacity interpolated לפי הגובה הגלוי. peek=28px (רק הידית, היה 60px עם תוכן בולט),
+grip `w-12 h-1.5` `var(--border-str)` (היה `w-10 h-1` `var(--border)` — כמעט בלתי-נראה).
+
+### UX-5 — מעבר Type↔Record: opacity-crossfade מוערם + רגע ריק
+**תוכנית (redesign-4):** `{#if mode}` + `transition:fade` של Svelte → הוספה/הסרה של DOM,
+out+in במקביל, reflow → קפיצה. **תיקון (לפי מוקאפ 443-467 שמשתמש ב-`hidden` toggle לא
+`{#if}`):** שני panes תמיד ב-DOM, מוערמים באותו תא grid (`grid-row/column:1`), מעבר
+ב-opacity+visibility בלבד. **timing:** 0.3s לכל שלב + `transition-delay:0.3s` ל-pane
+הנכנס → היוצא דוהה לגמרי, רגע ריק ~300ms (שניהם opacity 0), אז הנכנס עולה. סה"כ ~600ms.
+
+### כלי DEV-only — Mock sessions (flow C, נאמן ל-ACP)
+**צורך:** לדבג עיצוב בלי לטעון שיחות אמיתיות (כל loadSession = bridge ~300MB דולף;
+ניקינו 11 bridges = 3.4GB). **החלטה — flow C (הכי נאמן, בחירת המשתמשת):** ה-fixtures
+הם **ACP updates גולמיים** (לא Bubble[]), וה-mock מזרים אותם דרך **אותו `#onSessionUpdate`**
+האמיתי → תופס גם באגי המרה/מיזוג chunks. נדחו flow A (ממלא bubbles ישירות) ו-B (route).
+- **חילוץ:** `/tmp/fixtures/extract-raw.py` — מדבר ACP stdio ישירות (`opencode acp`:
+  initialize → `session/load` עם **`mcpServers:[]`** חובה → אוסף `session/update`). תהליך
+  חד-פעמי, מת מיד — אפס bridges. (נדחו: חילוץ דרך DOM/browser, חילוץ דרך BE endpoint.)
+- **אחסון:** `static/fixtures/*.json` (fetch בזמן ריצה, מחוץ ל-bundle). 6 fixtures:
+  greeting(5u)/tool-spill/phone-tunnel/mitm(259u)/salary-prev/salary-attendance. tool
+  results ארוכים קוצצו ל-~2KB (`[truncated for fixture]`) — 41MB→512KB.
+- **הזרקה:** `loadSession` ב-`import.meta.env.DEV` מזהה `mock:<name>` → `#loadMockSession`
+  fetch+מזרים. **trigger:** URL `?mock=<name>` (+`&stream=<ms>` ל-delay) דרך `location.search`
+  (לא `$page` store — לא מוכן ב-init), או picker (`🧪 MOCK:` מוזרק ב-DEV). `window.__session`
+  חשוף ב-DEV. הכל tree-shaken מ-prod.
+- **באג שנחשף ותוקן (timing):** הלולאה הסינכרונית דחפה את כל ה-bubbles בבת אחת, וה-`$effect`
+  של ה-Speaker רץ רק אחרי שכבר `isLoadingHistory=false` → הקריא הכל ב-TTS. **תיקון:**
+  `await tick()` אחרי הלולאה (בעוד `isLoadingHistory=true`) מאלץ flush → replay-quiet עובד.
+  (ACP אמיתי לא סובל מזה — updates אסינכרוניים.)
+
+### סטטוס
+כל הבאגים תוקנו, typecheck 0, 49 tests, i18n נקי. עדיין **לא merged** — ממתין לאישור
+משתמשת. merge יחיד של redesign-7 מביא את כל 1-7 (שרשרת לינארית) + תיקוני הדיבוג.
+
+## 2026-06-02 — redesign-6: Modals — Bits Dialog ✅
+
+### הכרעת Dialog
+
+**Bits Dialog** (bits-ui@2.18.1 — כבר מותקן מ-redesign-3): focus-trap, Esc, click-outside, scroll-lock מובנים.
+- בדיקת RTL: Bits Dialog משתמש ב-Portal על `document.body` — עובד ב-RTL (dir לא חשוב ל-Dialog עצמו).
+- לא נוצר `ui/Dialog.svelte` wrapper (אין צורך — Bits Dialog משומש ישירות ב-modals).
+- אם RTL נשבר > 30 שורות hacks → custom modal (focus-trap ידני), בהתאם ל-§7.
+
+## 2026-06-02 — redesign-3: Settings — Bits Switch + native Select fallback
+
+### הכרעת component-lib
+
+**Switch → Bits UI** (`bits-ui Switch.Root + Switch.Thumb`):
+- תומך RTL + a11y מובנה (aria-checked, keyboard, focus-trap)
+- עובד עם `.toggle` CSS helper מ-app.css (RTL-safe: `right: 3px` / `right: calc(100% - 23px)`)
+- שלוש שכבות disabled: `pointer-events-none` על label, `aria-disabled`, `onCheckedChange={disabled ? undefined : handler}`
+
+**Select → native `<select>` מעוצב בTailwind** (fallback, לא Bits Select):
+- Bits Select דורש: Portal + JS overhead + Trigger/Content/Item composition + RTL quirks
+- native styled `<select>` — RTL-safe בדפדפן, מינימל, תואם לVoicePicker הקיים
+- אשר גם ב-§7 של ה-brief: "fallback native styled select — לגיטימי"
+- תועד גם ב-`components/ui/Select.svelte` (comment)
+
+### ממצאי אביגיל (redesign-3)
+
+ר' `reports/voice-acp/slice-redesign-3-settings-avigail.md` — USABLE-AFTER-FIX (2 סבבים). כל findings תוקנו לפני handoff לאליעזר.
+
+### ממצאי calev (redesign-3)
+
+calev light: PARTIAL→GO (2 findings, שניהם תוקנו):
+- F1: translateThoughts disabled לוגי — תוקן ב-SettingToggle (aria-disabled + onCheckedChange guard)
+- F2: decisions entry — entry זה
 
 ## 2026-06-01 — convention: הערות בקוד בעברית
 

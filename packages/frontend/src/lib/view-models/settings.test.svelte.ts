@@ -84,6 +84,65 @@ describe("Settings — persisted voice", () => {
   })
 })
 
+describe("Settings — speech toggles (redesign-3 / 9a)", () => {
+  test("default values: all 3 speech flags true, carMode false", () => {
+    installLocalStorage()
+    const s = new Settings()
+    expect(s.speakThoughts).toBe(true)
+    expect(s.narrateTools).toBe(true)
+    expect(s.translateThoughts).toBe(true)
+    expect(s.carMode).toBe(false)
+  })
+
+  test("setSpeakThoughts(false) writes to localStorage", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setSpeakThoughts(false)
+    expect(s.speakThoughts).toBe(false)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.speakThoughts).toBe(false)
+  })
+
+  test("setNarrateTools(false) writes to localStorage", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setNarrateTools(false)
+    expect(s.narrateTools).toBe(false)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.narrateTools).toBe(false)
+  })
+
+  test("setTranslateThoughts(false) writes to localStorage", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setTranslateThoughts(false)
+    expect(s.translateThoughts).toBe(false)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.translateThoughts).toBe(false)
+  })
+
+  test("new Settings() reads persisted speech flags", () => {
+    const store = installLocalStorage()
+    store.set(
+      STORAGE_KEY,
+      JSON.stringify({ speakThoughts: false, narrateTools: false, translateThoughts: false }),
+    )
+    const s = new Settings()
+    expect(s.speakThoughts).toBe(false)
+    expect(s.narrateTools).toBe(false)
+    expect(s.translateThoughts).toBe(false)
+  })
+
+  test("backward-compat: localStorage without speech flags → defaults to true", () => {
+    const store = installLocalStorage()
+    store.set(STORAGE_KEY, JSON.stringify({ cliKind: "opencode", voiceId: "v1", beUrl: "" }))
+    const s = new Settings()
+    expect(s.speakThoughts).toBe(true)
+    expect(s.narrateTools).toBe(true)
+    expect(s.translateThoughts).toBe(true)
+  })
+})
+
 describe("Settings — loadVoices", () => {
   test("populates availableVoices and drives loading/error", async () => {
     installLocalStorage()

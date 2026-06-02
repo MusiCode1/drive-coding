@@ -2,6 +2,7 @@
   import type { CliKind } from "@drive-coding/core"
   import type { SessionInfo } from "$lib/adapters/sessions"
   import { getI18n } from "$lib/context"
+  import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
 
   const i18n = getI18n()
   const t = i18n.t
@@ -42,6 +43,15 @@
       return iso.slice(0, 10)
     }
   }
+
+  // אפשרות "סשן חדש" (value="") + הסשנים הקיימים.
+  const sessionOptions = $derived<SelectOption[]>([
+    { value: "", label: t("sessions.startNew") },
+    ...sessions.map((s) => ({
+      value: s.sessionId,
+      label: `${s.title || s.sessionId.slice(0, 8)} — ${formatDate(s.updatedAt)}`,
+    })),
+  ])
 </script>
 
 <div class="session-picker">
@@ -57,20 +67,13 @@
   {#if sessions.length > 0}
     <label class="session-label">
       <span>{t("sessions.label")}</span>
-      <select
+      <Select
         value={selectedSessionId ?? ""}
-        onchange={(e) => {
-          const val = (e.target as HTMLSelectElement).value
-          onselect(val === "" ? null : val)
-        }}
-      >
-        <option value="">{t("sessions.startNew")}</option>
-        {#each sessions as s (s.sessionId)}
-          <option value={s.sessionId}>
-            {s.title || s.sessionId.slice(0, 8)} — {formatDate(s.updatedAt)}
-          </option>
-        {/each}
-      </select>
+        options={sessionOptions}
+        title={t("sessions.label")}
+        ariaLabel={t("sessions.label")}
+        onchange={(v) => onselect(v === "" ? null : v)}
+      />
     </label>
   {:else if error !== null}
     <div class="session-error" role="alert">

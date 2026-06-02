@@ -1,50 +1,34 @@
 <script lang="ts">
+/**
+ * UserBubble — בועת משתמש (C4).
+ *
+ * עיצוב מוקאפ 249-255: self-start, avatar user, bubble-user token.
+ * flex gap-2 self-start items-end.
+ *
+ * ─── redesign-5 (C4) ───
+ */
 import type { UserBubble } from "$lib/types/bubble"
 import { getI18n } from "$lib/context"
+import Avatar from "$lib/components/chat/Avatar.svelte"
+import { joinSegmentText } from "./bubble-rendering"
 
 let { bubble }: { bubble: UserBubble } = $props()
 const t = getI18n().t
 </script>
 
-<div class="bubble bubble-user">
-  <div class="kind-label">{t("chat.bubble.user")}</div>
-  <div class="text">
-    {#each bubble.segments as seg (seg.id)}<span>{seg.text}</span>{/each}
-    <!-- כופה ריאקטיביות של Svelte בעת .segments.push() — ראה parallel-safe-code.md -->
+<div class="flex gap-2 self-start max-w-[85%] min-w-0 items-end">
+  <Avatar kind="user" />
+  <div
+    class="px-3.5 py-2.5 rounded-2xl rounded-es-sm text-sm leading-relaxed whitespace-pre-wrap break-words min-w-0"
+    style="background:var(--bubble-user)"
+    dir="auto"
+  >
+    {joinSegmentText(bubble.segments)}
+    <!-- כופה ריאקטיביות -->
     <span class="hidden">{bubble.segments.length}</span>
   </div>
 </div>
 
 <style>
-  .bubble {
-    max-width: 80%;
-    padding: 0.7rem 0.9rem;
-    border-radius: 12px;
-    line-height: 1.4;
-  }
-
-  .bubble-user {
-    /* יישור RTL: הערך flex-start = צד ימין (המשתמש נמצא בצד ימין) */
-    align-self: flex-start;
-    background: var(--accent);
-    color: white;
-    /* א-סימטרי: הפינה השטוחה מצביעה לכיוון המשתמש (ימין-למטה ב-RTL) */
-    border-bottom-right-radius: 4px;
-  }
-
-  .kind-label {
-    font-size: 0.7rem;
-    opacity: 0.7;
-    margin-bottom: 4px;
-    font-weight: 600;
-  }
-
-  .text {
-    white-space: pre-wrap;
-    word-wrap: break-word;
-  }
-
-  .text > .hidden {
-    display: none;
-  }
+  .hidden { display: none; }
 </style>

@@ -130,6 +130,10 @@ export class Speaker {
         // ── קריאות (נעקבות) ────────────────────────────────────────────
         const status = this.#session.status
         const enabled = this.enabled
+        // redesign-3 / slice 9a: העדפות הקראה (reactive — toggle מפעיל את ה-effect מחדש)
+        const speakThoughts = this.#settings.speakThoughts
+        const narrateTools = this.#settings.narrateTools
+        // translateThoughts נקרא ב-#fetchJob (async, לא tracked כאן)
         // עוברים על bubbles → קוראים bubble.kind, bubble.id, bubble.messageId,
         // bubble.segments (ודרך שומר ספירת המקטעים, bubble.segments.length)
         const bubbles = this.#session.bubbles
@@ -154,9 +158,9 @@ export class Speaker {
 
         // ── כתיבות (לא-נעקבות) ─────────────────────────────────────────
         untrack(() => {
-          this.#processBubbles(bubbles, enabled, isLoadingHistory)
-          this.#processToolBubbles(bubbles, isLoadingHistory)
-          this.#handleStatusTransition(status, enabled)
+          this.#processBubbles(bubbles, enabled, isLoadingHistory, speakThoughts)
+          this.#processToolBubbles(bubbles, isLoadingHistory, narrateTools)
+          this.#handleStatusTransition(status, enabled, speakThoughts)
           this.#prevStatus = status
         })
       })
@@ -195,6 +199,7 @@ export class Speaker {
     bubbles: AgentSession["bubbles"],
     enabled: boolean,
     isLoadingHistory: boolean,
+    speakThoughts: boolean,
   ): void {
     // Slice 4: בזמן ש-loadSession() משחזר היסטוריה, מסמן בועות כמעובדות
     // ללא הכנסת TTS jobs לתור. ה-effect רץ מחדש ברגע שה-isLoadingHistory → false,
@@ -215,11 +220,19 @@ export class Speaker {
 
     for (const bubble of bubbles) {
       if (bubble.kind !== "message" && bubble.kind !== "thought") continue
+
+      // redesign-3 / slice 9a: הקראת מחשבות כבויה → סמן מעובד ודלג (בלי TTS job).
+      // סימון processedSegments מבטיח שהדלקה מחדש לא תשגר תוכן ישן.
       const segArr = bubble.segments
       let state = this.#bubbleStates.get(bubble.id)
       if (state === undefined) {
         state = { processedSegments: 0, buffer: "" }
         this.#bubbleStates.set(bubble.id, state)
+      }
+      if (bubble.kind === "thought" && !speakThoughts) {
+        state.processedSegments = segArr.length
+        state.buffer = ""
+        continue
       }
 
       if (state.processedSegments >= segArr.length) continue
@@ -250,7 +263,7 @@ export class Speaker {
     this.#pumpFetchLoop()
   }
 
-  #handleStatusTransition(status: AgentSessionStatus, enabled: boolean): void {
+  #handleStatusTransition(status: AgentSessionStatus, enabled: boolean, speakThoughts: boolean): void {
     // slice 6: תור דיבור חדש מתחיל כש-status עובר ל-thinking → אפס את ה-cue guard.
     // reset כאן (turn-start) ולא ב-#stopAndClear (לא רץ בסוף תור רגיל).
     if (status === "thinking" && this.#prevStatus !== "thinking") {
@@ -266,6 +279,11 @@ export class Speaker {
         const bubble = this.#session.bubbles.find((b) => b.id === bubbleId)
         if (bubble === undefined) continue
         if (bubble.kind !== "message" && bubble.kind !== "thought") continue
+        // redesign-3 / slice 9a: אל תפלוש buffer של thought כשהקראת מחשבות כבויה.
+        if (bubble.kind === "thought" && !speakThoughts) {
+          state.buffer = ""
+          continue
+        }
         this.#enqueue(bubble.kind, bubble.messageId, state.buffer.trim(), bubble.id)
         state.buffer = ""
       }
@@ -313,16 +331,20 @@ export class Speaker {
       let text = job.text
 
       if (job.kind === "thought") {
-        // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)
-        const result = await translate(text, TARGET_LANG, job.abort.signal, job.messageId)
-        if (result !== null && result.status === "translated") {
-          // Slice 4: כתיבה חזרה למקטע כדי ש-ThoughtBubble יוכל להציג HE+EN.
-          if (job.bubbleId !== undefined) {
-            this.#persistThoughtTranslation(job.bubbleId, job.text, result.text)
+        // redesign-3 / slice 9a: תרגום מחשבות מותנה ב-toggle.
+        // כבוי → הקרא טקסט מקורי (אנגלית). נקרא ברגע ה-fetch (לא tracked).
+        if (this.#settings.translateThoughts) {
+          // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)
+          const result = await translate(text, TARGET_LANG, job.abort.signal, job.messageId)
+          if (result !== null && result.status === "translated") {
+            // Slice 4: כתיבה חזרה למקטע כדי ש-ThoughtBubble יוכל להציג HE+EN.
+            if (job.bubbleId !== undefined) {
+              this.#persistThoughtTranslation(job.bubbleId, job.text, result.text)
+            }
+            text = result.text
           }
-          text = result.text
+          // already_in_target או null → שמור טקסט מקורי (originalText נשאר undefined)
         }
-        // already_in_target או null → שמור טקסט מקורי (originalText נשאר undefined)
       } else if (job.kind === "tool") {
         // slice 22: narration נוצר כאן (best-effort). null → דלג על ה-job.
         const narrationText = await this.#narrateForJob(job)
@@ -368,6 +390,7 @@ export class Speaker {
   #processToolBubbles(
     bubbles: AgentSession["bubbles"],
     isLoadingHistory: boolean,
+    narrateTools: boolean,
   ): void {
     for (const bubble of bubbles) {
       if (bubble.kind !== "tool") continue
@@ -382,6 +405,11 @@ export class Speaker {
         continue
       }
       if (this.#processedNarrationCallIds.has(tc.toolCallId)) continue
+      // redesign-3 / slice 9a: קריינות כלים כבויה → סמן processed ודלג (בלי narrate/TTS).
+      if (!narrateTools) {
+        this.#processedNarrationCallIds.add(tc.toolCallId)
+        continue
+      }
       // slice 22: ה-#narratingCallIds Set הוסר. guard: #processedNarrationCallIds בלבד.
       this.#processedNarrationCallIds.add(tc.toolCallId)
 

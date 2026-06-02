@@ -7,6 +7,7 @@ import { fetchServerOptions } from "$lib/adapters/options"
 import { listSessionsForCwd, type SessionInfo } from "$lib/adapters/sessions"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import SessionPicker from "$lib/components/connect/SessionPicker.svelte"
+import Select from "$lib/components/ui/Select.svelte"
 import { getI18n, getSession, getSettings } from "$lib/context"
 
 const settings = getSettings()
@@ -42,6 +43,23 @@ let sessionsLoading = $state(false)
 let sessionsError = $state<string | null>(null)
 let selectedSessionId = $state<string | null>(null)
 
+// ─── DEV-only: mock fixtures (static/fixtures/*.json) — דיבוג עיצוב ללא ACP ───
+const MOCK_FIXTURES: SessionInfo[] = import.meta.env.DEV
+  ? [
+      ["greeting", "שיחה קצרה (3 בועות)"],
+      ["tool-spill", "בינוני — הרבה הודעות (25)"],
+      ["phone-tunnel", "בינוני מאוזן (39)"],
+      ["mitm", "ארוך — בלוקי קוד (180)"],
+      ["salary-prev", "ארוך — הרבה כלים (189)"],
+      ["salary-attendance", "ארוך מאוד (209)"],
+    ].map(([name, label]) => ({
+      sessionId: `mock:${name}`,
+      cwd: "/mock",
+      title: `🧪 MOCK: ${label}`,
+      updatedAt: "",
+    }))
+  : []
+
 async function loadSessions() {
   sessionsLoading = true
   sessionsError = null
@@ -52,6 +70,8 @@ async function loadSessions() {
   } catch (e) {
     sessionsError = e instanceof Error ? e.message : String(e)
   } finally {
+    // ב-dev: הצג את ה-mock fixtures בראש הרשימה (גם אם הטעינה האמיתית נכשלה)
+    sessions = [...MOCK_FIXTURES, ...sessions]
     sessionsLoading = false
   }
 }
@@ -79,11 +99,14 @@ async function onSubmit(e: SubmitEvent) {
   <form onsubmit={onSubmit}>
     <label>
       <span>{t("connect.cli.label")}</span>
-      <select bind:value={cliKind} disabled={session.status === "connecting"}>
-        {#each CLI_KINDS as kind (kind)}
-          <option value={kind}>{kind}</option>
-        {/each}
-      </select>
+      <Select
+        value={cliKind}
+        options={CLI_KINDS.map((k) => ({ value: k, label: k }))}
+        title={t("connect.cli.label")}
+        ariaLabel={t("connect.cli.label")}
+        disabled={session.status === "connecting"}
+        onchange={(v) => (cliKind = v as CliKind)}
+      />
     </label>
 
     <label>

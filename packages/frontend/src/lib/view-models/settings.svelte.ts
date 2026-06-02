@@ -26,6 +26,12 @@ type Persisted = {
   lastCwd: string
   voiceId: string
   beUrl: string
+  // ─── דיבור ─── (redesign-3 / 9a)
+  speakThoughts: boolean
+  narrateTools: boolean
+  translateThoughts: boolean
+  // ─── רכב ─── (redesign-3, חיווט מלא: slice 7)
+  carMode: boolean
 }
 
 const DEFAULTS: Persisted = {
@@ -35,6 +41,12 @@ const DEFAULTS: Persisted = {
   lastCwd: "",
   voiceId: DEFAULT_VOICE_ID,
   beUrl: "",
+  // ─── דיבור ─── (redesign-3 / 9a)
+  speakThoughts: true,
+  narrateTools: true,
+  translateThoughts: true,
+  // ─── רכב ───
+  carMode: false,
 }
 
 function load(): Persisted {
@@ -72,6 +84,14 @@ export class Settings {
   // ─── שרת ───
   beUrl = $state<string>(DEFAULTS.beUrl)
 
+  // ─── דיבור ─── (redesign-3 / 9a)
+  speakThoughts = $state<boolean>(DEFAULTS.speakThoughts)
+  narrateTools = $state<boolean>(DEFAULTS.narrateTools)
+  translateThoughts = $state<boolean>(DEFAULTS.translateThoughts)
+
+  // ─── רכב ─── (redesign-3; חיווט מלא: slice 7)
+  carMode = $state<boolean>(DEFAULTS.carMode)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -79,6 +99,12 @@ export class Settings {
     this.voiceId = loaded.voiceId
     this.beUrl = loaded.beUrl
     setBeUrlBase(this.beUrl)
+    // ─── דיבור ───
+    this.speakThoughts = loaded.speakThoughts
+    this.narrateTools = loaded.narrateTools
+    this.translateThoughts = loaded.translateThoughts
+    // ─── רכב ───
+    this.carMode = loaded.carMode
   }
 
   // ─── טופס חיבור ───
@@ -149,6 +175,30 @@ export class Settings {
     }
   }
 
+  // ─── דיבור ─── (redesign-3 / 9a)
+
+  setSpeakThoughts = (v: boolean): void => {
+    this.speakThoughts = v
+    this.#persist()
+  }
+
+  setNarrateTools = (v: boolean): void => {
+    this.narrateTools = v
+    this.#persist()
+  }
+
+  setTranslateThoughts = (v: boolean): void => {
+    this.translateThoughts = v
+    this.#persist()
+  }
+
+  // ─── רכב ─── (redesign-3)
+
+  setCarMode = (v: boolean): void => {
+    this.carMode = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -157,6 +207,10 @@ export class Settings {
       lastCwd: this.lastCwd,
       voiceId: this.voiceId,
       beUrl: this.beUrl,
+      speakThoughts: this.speakThoughts,
+      narrateTools: this.narrateTools,
+      translateThoughts: this.translateThoughts,
+      carMode: this.carMode,
     })
   }
 }

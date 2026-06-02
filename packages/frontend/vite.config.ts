@@ -1,4 +1,5 @@
 import { sveltekit } from "@sveltejs/kit/vite"
+import tailwindcss from "@tailwindcss/vite"
 import { defineConfig } from "vite"
 
 // BE port — defaults to 4000, override with BE_PORT=4001 for parallel worktrees.
@@ -6,7 +7,7 @@ import { defineConfig } from "vite"
 const BE_PORT = Number(process.env.BE_PORT ?? 4000)
 
 export default defineConfig({
-  plugins: [sveltekit()],
+  plugins: [tailwindcss(), sveltekit()],
   server: {
     // port: OS-assigned. Vite prints chosen port at startup.
     allowedHosts: [".tuns.sh", ".trycloudflare.com", "localhost"],
