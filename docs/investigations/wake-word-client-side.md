@@ -295,6 +295,28 @@ releases ב-npm רשמי (יש tarball מובנה ברפו). ‏סיכון נמ�
 הצעד הראשון: PoC של 2 שעות שמאמת ש-`runWav()` על ה-WAV הדמו (`hey_jarvis_11-2.wav`
 שמסופק ברפו) מחזיר score גבוה. אם כן — נבנה את ה-engine.
 
+## 6.5 ✅ POC בוצע ועובד (2026-06-02)
+
+ה-POC קיים ב-`poc/wake-word/` (branch `poc-wake-word`, commit `e36f11f`). דף בודד
+שטוען את `WakeWordEngine` של `openwakeword-wasm-browser` ישירות בדפדפן, עם
+`onnxruntime-web` מ-CDN (import map, single-thread WASM — עוקף את דרישת COOP/COEP).
+
+**מה אומת:**
+- `runWav()` על `hey_jarvis_11-2.wav` החזיר **score 0.999** (Chrome headless) —
+  הצנרת המלאה (melspec → embedding → VAD → classifier) חיה בדפדפן.
+- זיהוי מיקרופון חי אומת ידנית ע"י המשתמשת דרך tunnel HTTPS — עובד.
+
+**מבנה:** קוד המקור (`index.html`, `poc.js`, `fetch-assets.sh`, `README.md`)
+בגיט; הבינאריים (engine 16MB + מודלים 9.9MB + WAV) ב-`assets/` שב-gitignore,
+משוחזרים ע"י `./fetch-assets.sh`. הרצה: `python3 -m http.server` (getUserMedia
+דורש secure context — localhost או HTTPS).
+
+**מסקנה:** track C-new מאושר אמפירית. slice 17 יכול להתבסס על הקוד הזה בביטחון.
+המודלים אנגלית-בלבד (hey_jarvis וכו') — עברית נשארת track D (אימון `.onnx`, §5).
+
+**צעד הבא שנשקל (טרם מומש):** בידוד מילת ה-wake מההקלטה — לתפוס רק את האודיו
+*בין* האמירה הראשונה לשנייה, בלי המילה עצמה. ניתוח טכני נמצא ב-§6.6.
+
 ### הצעת ארכיטקטורה (לכל אחת מהדרכים)
 
 `engine` חדש בשם `WakeListener` / `VadListener` ב-`engines/`:
