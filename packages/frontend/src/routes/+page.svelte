@@ -5,6 +5,7 @@ import { connectAgent } from "$lib/actions/connect-agent"
 import { listSessionsForCwd, type SessionInfo } from "$lib/adapters/sessions"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import SessionPicker from "$lib/components/connect/SessionPicker.svelte"
+import Select from "$lib/components/ui/Select.svelte"
 import { getI18n, getSession, getSettings } from "$lib/context"
 
 const settings = getSettings()
@@ -77,11 +78,14 @@ async function onSubmit(e: SubmitEvent) {
   <form onsubmit={onSubmit}>
     <label>
       <span>{t("connect.cli.label")}</span>
-      <select bind:value={cliKind} disabled={session.status === "connecting"}>
-        {#each CLI_KINDS as kind (kind)}
-          <option value={kind}>{kind}</option>
-        {/each}
-      </select>
+      <Select
+        value={cliKind}
+        options={CLI_KINDS.map((k) => ({ value: k, label: k }))}
+        title={t("connect.cli.label")}
+        ariaLabel={t("connect.cli.label")}
+        disabled={session.status === "connecting"}
+        onchange={(v) => (cliKind = v as CliKind)}
+      />
     </label>
 
     <label>

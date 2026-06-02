@@ -43,9 +43,16 @@ const visiblePx = $derived(
   uiShell.sheetDragPx ?? detentVisible(uiShell.sheetDetent),
 )
 
-// אינטרפולציה peek→full עבור רקע/צל/opacity (0 ב-peek, 1 ב-full)
+// openness: 0 ב-peek, 1 ב-full — לשימוש ב-backdrop (כהות הדרגתית).
 const openness = $derived(
   Math.max(0, Math.min(1, (visiblePx - PEEK_PX) / (sheetPx - PEEK_PX))),
+)
+
+// fill: אטימות הרקע/צל/תוכן של ה-sheet עצמו. מגיע ל-1 כבר ב-half (לא ב-full),
+// כך שב-detent האמצעי ה-sheet אטום ולא שקוף-למחצה. מתחיל שקוף ב-peek, אטום מ-half.
+const halfPx = $derived(detentVisible("half"))
+const fill = $derived(
+  Math.max(0, Math.min(1, (visiblePx - PEEK_PX) / (halfPx - PEEK_PX))),
 )
 
 // ─── גרירה (משתני-עזר לא-ריאקטיביים — בלי $state) ───
@@ -111,9 +118,9 @@ function onPointerUp() {
   style="height:{sheetPx}px;
          transform:translateY({sheetPx - visiblePx}px);
          transition-duration:300ms;
-         background:color-mix(in srgb, var(--bg-elev) {openness * 100}%, transparent);
-         border-top:1px solid color-mix(in srgb, var(--border) {openness * 100}%, transparent);
-         box-shadow:0 -8px 24px rgba(0,0,0,{0.35 * openness})"
+         background:color-mix(in srgb, var(--bg-elev) {fill * 100}%, transparent);
+         border-top:1px solid color-mix(in srgb, var(--border) {fill * 100}%, transparent);
+         box-shadow:0 -8px 24px rgba(0,0,0,{0.35 * fill})"
 >
   <!-- ידית גרירה -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -133,7 +140,7 @@ function onPointerUp() {
   <!-- תוכן — דוהה לפי openness, ללא אינטראקציה כשכמעט-סגור -->
   <div
     class="flex flex-col gap-4 px-4 pt-2 pb-6 flex-1 min-h-0 overflow-y-auto"
-    style="opacity:{openness}; pointer-events:{openness > 0.1 ? 'auto' : 'none'}"
+    style="opacity:{fill}; pointer-events:{fill > 0.1 ? 'auto' : 'none'}"
   >
     <SessionOptionsPanel />
   </div>

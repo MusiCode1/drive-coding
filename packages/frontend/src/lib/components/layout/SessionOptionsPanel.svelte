@@ -14,6 +14,7 @@ import Volume2Icon from "@lucide/svelte/icons/volume-2"
 import VolumeXIcon from "@lucide/svelte/icons/volume-x"
 import { goto } from "$app/navigation"
 import { getI18n, getSession, getModals, getSpeaker } from "$lib/context"
+import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 
 const t = getI18n().t
@@ -37,6 +38,9 @@ function flattenSelectOptions(option: SessionConfigOption): SelectOpt[] {
   return sel.options.flatMap((item) => ("options" in item ? item.options : [item]))
 }
 
+const toSelectOptions = (items: { value: string; name: string }[]): SelectOption[] =>
+  items.map((o) => ({ value: o.value, label: o.name }))
+
 // ─── חישובים ───
 
 /** configOptions שאינם model/mode */
@@ -54,21 +58,6 @@ const hasAgentOptions = $derived(
 )
 
 // ─── event handlers ───
-async function onModelChange(e: Event) {
-  const value = (e.target as HTMLSelectElement).value
-  await session.applyConfigOption("model", value)
-}
-
-async function onModeChange(e: Event) {
-  const value = (e.target as HTMLSelectElement).value
-  await session.applyConfigOption("mode", value)
-}
-
-async function onSelectChange(configId: string, e: Event) {
-  const value = (e.target as HTMLSelectElement).value
-  await session.applyConfigOption(configId, value)
-}
-
 async function onCheckboxChange(configId: string, e: Event) {
   const checked = (e.target as HTMLInputElement).checked
   await session.applyConfigOption(configId, checked)
@@ -86,16 +75,13 @@ async function onCheckboxChange(configId: string, e: Event) {
     {#if (session.modes?.availableModes?.length ?? 0) > 0}
     <label class="flex flex-col gap-1">
       <span class="text-[11px] px-1" style="color:var(--fg-dim)">{t("agentOptions.agent.label")}</span>
-      <select
-        class="rounded-lg px-2.5 py-2 text-[13px] outline-none border appearance-none"
-        style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
-        value={session.modes?.currentModeId}
-        onchange={onModeChange}
-      >
-        {#each session.modes!.availableModes as m (m.id)}
-          <option value={m.id}>{m.name}</option>
-        {/each}
-      </select>
+      <Select
+        value={session.modes?.currentModeId ?? ""}
+        options={toSelectOptions(session.modes!.availableModes.map((m) => ({ value: m.id, name: m.name })))}
+        title={t("agentOptions.agent.label")}
+        ariaLabel={t("agentOptions.agent.label")}
+        onchange={(v) => session.applyConfigOption("mode", v)}
+      />
     </label>
     {:else if session.configOptions.find((o) => o.category === "mode")}
       {@const modeOpt = session.configOptions.find((o) => o.category === "mode")!}
@@ -103,16 +89,13 @@ async function onCheckboxChange(configId: string, e: Event) {
       {#if modeChoices.length > 0}
       <label class="flex flex-col gap-1">
         <span class="text-[11px] px-1" style="color:var(--fg-dim)">{t("agentOptions.agent.label")}</span>
-        <select
-          class="rounded-lg px-2.5 py-2 text-[13px] outline-none border appearance-none"
-          style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
-          value={(modeOpt as Extract<typeof modeOpt, { type: "select" }>).currentValue}
-          onchange={(e) => onSelectChange(modeOpt.id, e)}
-        >
-          {#each modeChoices as opt (opt.value)}
-            <option value={opt.value}>{opt.name}</option>
-          {/each}
-        </select>
+        <Select
+          value={(modeOpt as Extract<typeof modeOpt, { type: "select" }>).currentValue ?? ""}
+          options={toSelectOptions(modeChoices)}
+          title={t("agentOptions.agent.label")}
+          ariaLabel={t("agentOptions.agent.label")}
+          onchange={(v) => session.applyConfigOption(modeOpt.id, v)}
+        />
       </label>
       {/if}
     {/if}
@@ -121,16 +104,13 @@ async function onCheckboxChange(configId: string, e: Event) {
     {#if (session.models?.availableModels?.length ?? 0) > 0}
     <label class="flex flex-col gap-1">
       <span class="text-[11px] px-1" style="color:var(--fg-dim)">{t("agentOptions.model.label")}</span>
-      <select
-        class="rounded-lg px-2.5 py-2 text-[13px] outline-none border appearance-none"
-        style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
-        value={session.models?.currentModelId}
-        onchange={onModelChange}
-      >
-        {#each session.models!.availableModels as m (m.modelId)}
-          <option value={m.modelId}>{m.name}</option>
-        {/each}
-      </select>
+      <Select
+        value={session.models?.currentModelId ?? ""}
+        options={toSelectOptions(session.models!.availableModels.map((m) => ({ value: m.modelId, name: m.name })))}
+        title={t("agentOptions.model.label")}
+        ariaLabel={t("agentOptions.model.label")}
+        onchange={(v) => session.applyConfigOption("model", v)}
+      />
     </label>
     {:else if session.configOptions.find((o) => o.category === "model")}
       {@const modelOpt = session.configOptions.find((o) => o.category === "model")!}
@@ -138,16 +118,13 @@ async function onCheckboxChange(configId: string, e: Event) {
       {#if modelChoices.length > 0}
       <label class="flex flex-col gap-1">
         <span class="text-[11px] px-1" style="color:var(--fg-dim)">{t("agentOptions.model.label")}</span>
-        <select
-          class="rounded-lg px-2.5 py-2 text-[13px] outline-none border appearance-none"
-          style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
-          value={(modelOpt as Extract<typeof modelOpt, { type: "select" }>).currentValue}
-          onchange={(e) => onSelectChange(modelOpt.id, e)}
-        >
-          {#each modelChoices as opt (opt.value)}
-            <option value={opt.value}>{opt.name}</option>
-          {/each}
-        </select>
+        <Select
+          value={(modelOpt as Extract<typeof modelOpt, { type: "select" }>).currentValue ?? ""}
+          options={toSelectOptions(modelChoices)}
+          title={t("agentOptions.model.label")}
+          ariaLabel={t("agentOptions.model.label")}
+          onchange={(v) => session.applyConfigOption(modelOpt.id, v)}
+        />
       </label>
       {/if}
     {/if}
@@ -159,16 +136,13 @@ async function onCheckboxChange(configId: string, e: Event) {
         {#if choices.length > 0}
         <label class="flex flex-col gap-1">
           <span class="text-[11px] px-1" style="color:var(--fg-dim)">{opt.name}</span>
-          <select
-            class="rounded-lg px-2.5 py-2 text-[13px] outline-none border appearance-none"
-            style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
-            value={(opt as Extract<typeof opt, { type: "select" }>).currentValue}
-            onchange={(e) => onSelectChange(opt.id, e)}
-          >
-            {#each choices as o (o.value)}
-              <option value={o.value}>{o.name}</option>
-            {/each}
-          </select>
+          <Select
+            value={(opt as Extract<typeof opt, { type: "select" }>).currentValue ?? ""}
+            options={toSelectOptions(choices)}
+            title={opt.name}
+            ariaLabel={opt.name}
+            onchange={(v) => session.applyConfigOption(opt.id, v)}
+          />
         </label>
         {/if}
       {:else if opt.type === "boolean"}
