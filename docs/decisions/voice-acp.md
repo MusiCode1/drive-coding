@@ -623,3 +623,35 @@ auto-load לא ירוץ בדסקטופ (sheet לא נפתח שם). round 2 (אח
 - החלפת מודל התמלול (flash-latest→2.5-flash/lite) — נדחה (משתמשת): נשארים flash-latest.
 - איחוד voices.loadVoices ל-with-retry בסבב הזה — נדחה (scope creep), סבב נפרד.
 - NotificationsVM (טיפול שגיאות מרכזי) — slice עתידי נפרד (כבר מתועד).
+
+## 2026-06-02 — ניקוי queue: fix-idle-flaky + slice-9a נזרקו, sessions-inline נשאר
+
+### רציונל
+מעבר על ה-briefs הפתוחים ב-`docs/plans/` מול מצב dev בפועל (tip 718be28). שלוש החלטות:
+
+1. **slice-fix-idle-flaky → DISCARDED (נסגר בינתיים)**. הטסט `bridge-manager.idle.test.ts`
+   test 4 היה flaky תחת עומס scheduler: קורא `Date.now()` *אחרי* `await spawnBridge`
+   ומניח שהוא שווה ל-`createdAt` שנקבע *בתוך* spawn → drift חורג מה-grace (ה-`-1`
+   מחדד את התנאי). הקוד (`listIdle`) תקין. במקום התיקון המלא (getter `getCreatedAt`),
+   סומן `it.skip` על test 4 בלבד עם הערה מפנה. עוצר את ההבהוב בלי לגעת בקוד הייצור.
+
+2. **slice-9a-speech-toggles → DISCARDED (מומש אחרת)**. ה-redesign כבר מימש את כל ה-slice:
+   3 ה-toggles (`speakThoughts`/`narrateTools`/`translateThoughts`) קיימים ב-Settings VM
+   (שורות 229-260, setters + persist), וה-UI ב-`SettingsScreen.svelte` (VoicePicker
+   שורה 72, toggles 78-90, לוגיקת `translateDisabled` כש-speakThoughts כבוי 26/30-31).
+   אפילו carMode נוסף. ה-brief מיותר — אומת מול dev.
+
+3. **slice-sessions-inline-transcribe-resilience → נשאר (טרם בוצע)**. אומת מול dev שאף
+   חלק לא קיים: `with-retry` חסר ב-core, `listSessions` חסר ב-AgentSession,
+   SessionOptionsPanel placeholder בלבד, SessionsDialog עדיין קיים, mic בלי
+   retryTranscribe/lastBlob. זה ה-slice הפתוח היחיד שצריך ביצוע. ה-base בכותרת
+   (`266322f`) ישן — dev התקדם ל-718be28, צריך אימות line-numbers/rebase לפני dispatch.
+
+### החלטות-מפתח
+- "לסגור flaky בינתיים" = `it.skip` ממוקד + הערה, **לא** מחיקת טסט ולא שינוי קוד ייצור.
+  שומר את הכוונה לתיקון עתידי (אם slice-A של background-agents ינחת ויחליף את כל הבלוק).
+- אימות מול dev בפועל (grep על קוד) לפני זריקת brief — לא להניח "כנראה מומש".
+
+### רעיונות שנדחו
+- ביצוע התיקון המלא של ה-flaky (getCreatedAt getter) — נדחה (משתמשת): לא שווה את ה-slice
+  על טסט TEMPORARY שעתיד להימחק. skip מספיק.

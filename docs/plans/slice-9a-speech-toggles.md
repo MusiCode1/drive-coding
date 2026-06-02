@@ -1,7 +1,10 @@
 # Slice 9a — Speech Toggles + Voice Picker UI — ‏תוכנית
 
 > **‏תאריך**: 2026-06-01
-> **‏סטטוס**: ‏מאושר (plan-verified ✅ — אביגיל READY, 2026-06-01). ‏ממתין ל-dispatch.
+> **‏סטטוס**: ❌ DISCARDED (2026-06-02, החלטת משתמשת) — ‏מומש בצורה אחרת במהלך ה-redesign.
+>   ‏3 ה-toggles (speakThoughts/narrateTools/translateThoughts) + VoicePicker + לוגיקת
+>   ‏translateDisabled קיימים ב-dev: `Settings VM` (229-260) + `SettingsScreen.svelte`
+>   ‏(72/78-90). ‏אומת מול dev tip 718be28. ‏ה-brief מיותר. ‏ראה decisions/voice-acp.md.
 > **Complexity**: 3/10 (verifier: calev light)
 > **‏תלויות (`depends_on`)**: [] — ‏בנוי ישירות על dev. ‏(slice 6 audio-cues **‏לא** ‏תלות — ‏ראה §2.)
 > **‏Base**: dev
