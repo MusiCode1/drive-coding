@@ -1,74 +1,98 @@
-// app.js — wires the library, both orbs, and the capture recorder together.
+// app.js — wires the library + the (single) DOM orb + capture recorder.
+// The orb itself is the start/stop button.
 
 import { WakeWordDetector } from "./wake-word-lib.js";
 import { createDomOrb } from "./orb-dom.js";
-import { createCanvasOrb } from "./orb-canvas.js";
 import { createCapture } from "./capture.js";
 
-const toggleBtn = document.getElementById("toggle");
 const statusEl = document.getElementById("status");
 
-const domOrb = createDomOrb(document.getElementById("orb-dom"));
-const canvasOrb = createCanvasOrb(document.getElementById("orb-canvas"));
-const orbs = [domOrb, canvasOrb];
+// ── Cue tones (start / end) via a shared AudioContext ──────────────────────
+const cueCtx = new (window.AudioContext || window.webkitAudioContext)();
+function tone(freq, durMs, type = "sine") {
+  if (cueCtx.state === "suspended") cueCtx.resume();
+  const osc = cueCtx.createOscillator();
+  const gain = cueCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, cueCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.18, cueCtx.currentTime + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, cueCtx.currentTime + durMs / 1000);
+  osc.connect(gain); gain.connect(cueCtx.destination);
+  osc.start();
+  osc.stop(cueCtx.currentTime + durMs / 1000 + 0.02);
+}
+const cueStart = () => tone(880, 160);   // higher → "go"
+const cueEnd = () => tone(440, 220);     // lower  → "done"
 
+// ── Orb (single, DOM) — also the start/stop button ─────────────────────────
+let running = false;
+
+const orb = createDomOrb(document.getElementById("orb-dom"), {
+  onClick: () => toggleListening(),
+});
+
+// ── Capture recorder ───────────────────────────────────────────────────────
 const capture = createCapture({
   clipsContainer: document.getElementById("cap-clips"),
   statusEl: document.getElementById("cap-status"),
   trimInput: document.getElementById("cap-trim"),
-  onStart: () => orbs.forEach((o) => o.setCapturing(true)),
-  onStop: () => orbs.forEach((o) => o.setCapturing(false)),
+  onStart: () => {
+    cueStart();
+    orb.setState("recording");
+  },
+  onStop: (url) => {
+    cueEnd();
+    orb.setState("listening"); // back to listening (mic still on)
+    // Wait ~1s after the end cue, then play back the captured clip.
+    if (url) {
+      setTimeout(() => { new Audio(url).play().catch(() => {}); }, 1000);
+    }
+  },
 });
 
+// ── Detector ────────────────────────────────────────────────────────────────
 const detector = new WakeWordDetector({
   keywords: ["hey_jarvis"],
   baseAssetUrl: "assets/models",
 });
 
-// Library events → orbs + capture.
-detector.on("level", (rms) => orbs.forEach((o) => o.setLevel(rms)));
-detector.on("vadStart", () => orbs.forEach((o) => o.setVad(true)));
-detector.on("vadEnd", () => orbs.forEach((o) => o.setVad(false)));
+detector.on("level", (rms) => orb.setLevel(rms));
 detector.on("detect", ({ keyword, score }) => {
-  orbs.forEach((o) => o.flash());
+  orb.flash();
   capture.onWakeWord(keyword, score);
 });
 detector.on("error", (e) => { console.error(e); statusEl.textContent = `error: ${e.message}`; });
 
-// Feed raw frames to the capture recorder (the lib emits 'frame' per chunk).
-detector.on("frame", (frame) => capture.pushFrame(frame));
-
-let running = false;
-
-toggleBtn.addEventListener("click", async () => {
-  if (!running) {
-    toggleBtn.disabled = true;
-    try {
-      await detector.start();
-      running = true;
-      toggleBtn.textContent = "Stop Listening";
-      statusEl.textContent = "👂 listening — say \"hey jarvis\"";
-    } catch (e) {
-      statusEl.textContent = `start failed: ${e.message}`;
-    } finally {
-      toggleBtn.disabled = false;
-    }
-  } else {
+// ── Listening toggle (driven by tapping the orb) ─────────────────────────────
+async function toggleListening() {
+  if (running) {
+    // Tapping while running always shuts everything down (incl. mid-recording).
+    capture.abort();
     await detector.stop();
     running = false;
-    orbs.forEach((o) => o.reset());
-    toggleBtn.textContent = "Start Listening";
-    statusEl.textContent = "stopped";
+    orb.reset(); // grey
+    statusEl.textContent = "off — tap the orb to listen";
+    return;
   }
-});
+  // start
+  statusEl.textContent = "starting…";
+  try {
+    await detector.start();
+    running = true;
+    orb.setState("listening"); // blue
+    statusEl.textContent = "👂 listening — say \"hey jarvis\"";
+  } catch (e) {
+    statusEl.textContent = `start failed: ${e.message}`;
+  }
+}
 
-// Load models on page open.
+// ── Load models on open ──────────────────────────────────────────────────────
 (async () => {
+  statusEl.textContent = "loading models…";
   try {
     await detector.load();
-    toggleBtn.disabled = false;
-    toggleBtn.textContent = "Start Listening";
-    statusEl.textContent = "models loaded — ready";
+    statusEl.textContent = "ready — tap the orb to listen";
   } catch (e) {
     statusEl.textContent = `model load failed: ${e.message}`;
   }

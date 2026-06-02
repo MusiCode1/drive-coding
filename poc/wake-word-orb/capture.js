@@ -47,7 +47,7 @@ export function createCapture({ clipsContainer, statusEl, trimInput, onStart, on
     }
     setStatus(url ? "✅ saved. Say the wake word to record again." : "⚠️ empty capture.");
     buffer = [];
-    onStop?.();
+    onStop?.(url); // hand the recorded clip URL back (for delayed auto-play)
   }
 
   // Called on each detect: toggles start/stop.
@@ -55,5 +55,11 @@ export function createCapture({ clipsContainer, statusEl, trimInput, onStart, on
     if (!capturing) start(); else stop();
   }
 
-  return { pushFrame, onWakeWord, get capturing() { return capturing; } };
+  // Force-stop without saving (used when the user taps the orb mid-recording).
+  function abort() {
+    capturing = false;
+    buffer = [];
+  }
+
+  return { pushFrame, onWakeWord, abort, get capturing() { return capturing; } };
 }
