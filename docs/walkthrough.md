@@ -11,6 +11,13 @@ Commits על branch `slice-wake-word-infra` (base: `poc-wake-word`).
 - 5 טסטים (TDD: אדום→ירוק): midpoint, same value, factor=0, factor=1, fractional.
 - typecheck: נקי. core tests: 403 pass.
 
+#### Commit 5 — view-model: WakeWordVM (integration tests)
+
+- `view-models/wake-word.svelte.ts`: WakeWordVM — mode/level/flashCount/$state, toggle(), $effect (mode→engine.start/stop), detect→capture start/stop, cue tones (OscillatorNode).
+- `view-models/wake-word.test.svelte.ts`: 9 integration tests (mock engine): mode transitions, flashCount, detect #1/#2, level, error.
+- חריגה מחוק זהב #1 (VM לא ב-+layout): מתועד בהערה — route בדיקה standalone.
+- typecheck: נקי. 50 test files, 494 tests pass.
+
 #### Commit 4 — engine: WakeWordEngine + WakeWordCapture (IO + unit)
 
 - `engines/wake-word/wake-word-engine.ts`: WakeWordEngine (מקביל ל-WakeWordDetector ב-POC). load/start/stop, queue serialization, VAD+pipeline+level events. `ort.env.wasm.numThreads = 1` (single-thread).
