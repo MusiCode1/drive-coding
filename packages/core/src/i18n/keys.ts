@@ -88,6 +88,7 @@ export type MessageKey =
 // ─── agent-options ─── (slice 23)
   | "agentOptions.title"
   | "agentOptions.model.label"
+  | "agentOptions.model.other"
   | "agentOptions.agent.label"
   // ─── smart-scroll ─── (redesign-7)
   | "chat.jumpDown"

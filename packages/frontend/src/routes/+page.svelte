@@ -6,15 +6,26 @@ import { listSessionsForCwd, type SessionInfo } from "$lib/adapters/sessions"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import SessionPicker from "$lib/components/connect/SessionPicker.svelte"
 import Select from "$lib/components/ui/Select.svelte"
-import { getI18n, getSession, getSettings } from "$lib/context"
+import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
+import FolderIcon from "@lucide/svelte/icons/folder"
+import { getI18n, getSession, getSettings, getModals } from "$lib/context"
 
 const settings = getSettings()
 const session = getSession()
+const modals = getModals()
 const i18n = getI18n()
 const t = i18n.t
 
 let cliKind = $state<CliKind>(settings.cliKind)
 let cwd = $state(settings.lastCwd)
+
+// C10: כפתור בחירת תיקייה פותח FolderPickerDialog (שכותב ל-settings.lastCwd).
+// סנכרון: כשה-dialog נסגר, משוך את הבחירה ל-cwd המקומי (input מבוקר).
+let folderWasOpen = $state(false)
+$effect(() => {
+  if (folderWasOpen && !modals.folderOpen) cwd = settings.lastCwd
+  folderWasOpen = modals.folderOpen
+})
 
 // ─── state עבור תפריט בחירת סשן (session picker) ───
 let sessions = $state<SessionInfo[]>([])
@@ -90,13 +101,26 @@ async function onSubmit(e: SubmitEvent) {
 
     <label>
       <span>{t("connect.cwd.label")}</span>
-      <input
-        type="text"
-        bind:value={cwd}
-        placeholder={t("connect.cwd.placeholder")}
-        dir="ltr"
-        disabled={session.status === "connecting"}
-      />
+      <div class="cwd-row">
+        <input
+          type="text"
+          bind:value={cwd}
+          placeholder={t("connect.cwd.placeholder")}
+          dir="ltr"
+          disabled={session.status === "connecting"}
+        />
+        <!-- C10: פותח את בורר התיקיות (FolderPickerDialog) -->
+        <button
+          type="button"
+          class="folder-btn"
+          onclick={() => modals.openFolder()}
+          disabled={session.status === "connecting"}
+          aria-label={t("settings.folder.pick")}
+          title={t("settings.folder.pick")}
+        >
+          <FolderIcon size={18} strokeWidth={1.75} />
+        </button>
+      </div>
     </label>
 
     <SessionPicker
@@ -127,6 +151,9 @@ async function onSubmit(e: SubmitEvent) {
     </div>
   {/if}
 </main>
+
+<!-- C10: בורר תיקיות (מרונדר כאן כי דף החיבור אינו עטוף ב-AppShell) -->
+<FolderPickerDialog />
 
 <style>
   .connect {
@@ -176,6 +203,39 @@ async function onSubmit(e: SubmitEvent) {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.2);
+  }
+
+  /* C10: שורת cwd — input גמיש + כפתור תיקייה */
+  .cwd-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .cwd-row input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .folder-btn {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    padding: 0 0.8rem;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--fg-dim);
+    cursor: pointer;
+  }
+
+  .folder-btn:hover:not(:disabled) {
+    color: var(--fg);
+    border-color: var(--accent);
+  }
+
+  .folder-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   button {
