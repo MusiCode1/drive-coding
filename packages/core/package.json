@@ -18,7 +18,8 @@
       "default": "./src/log/index.ts"
     },
     "./cwd-hash": "./src/cwd-hash.ts",
-    "./cwd-validate": "./src/cwd-validate.ts"
+    "./cwd-validate": "./src/cwd-validate.ts",
+    "./async/*": "./src/async/*.ts"
   },
   "scripts": {
     "build": "tsc --build",
