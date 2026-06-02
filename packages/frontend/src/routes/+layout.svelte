@@ -14,7 +14,7 @@
  * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
  */
 import "../app.css"
-import { setI18n, setMic, setResponsive, setSession, setSettings, setSpeaker, setTheme, setUiShell, setVoiceMode } from "$lib/context"
+import { setI18n, setMic, setModals, setResponsive, setSession, setSettings, setSpeaker, setTheme, setUiShell, setVoiceMode } from "$lib/context"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
@@ -24,6 +24,7 @@ import { Speaker } from "$lib/view-models/speaker.svelte"
 import { ThemeVM } from "$lib/view-models/theme.svelte"
 import { UiShellVM } from "$lib/view-models/ui-shell.svelte"
 import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
+import { ModalsVM } from "$lib/view-models/modals.svelte"
 
 let { children } = $props()
 
@@ -56,6 +57,9 @@ const responsive = new ResponsiveVM()
 // ─── ui-shell ─── (redesign-2)
 const uiShell = new UiShellVM()
 
+// ─── modals ─── (redesign-6)
+const modals = new ModalsVM()
+
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
@@ -66,6 +70,7 @@ setVoiceMode(voiceMode)
 setTheme(theme)
 setResponsive(responsive)
 setUiShell(uiShell)
+setModals(modals)
 </script>
 
 {@render children?.()}

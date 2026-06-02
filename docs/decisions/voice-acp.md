@@ -1,5 +1,14 @@
 # Decisions — voice-acp
 
+## 2026-06-02 — redesign-6: Modals — Bits Dialog ✅
+
+### הכרעת Dialog
+
+**Bits Dialog** (bits-ui@2.18.1 — כבר מותקן מ-redesign-3): focus-trap, Esc, click-outside, scroll-lock מובנים.
+- בדיקת RTL: Bits Dialog משתמש ב-Portal על `document.body` — עובד ב-RTL (dir לא חשוב ל-Dialog עצמו).
+- לא נוצר `ui/Dialog.svelte` wrapper (אין צורך — Bits Dialog משומש ישירות ב-modals).
+- אם RTL נשבר > 30 שורות hacks → custom modal (focus-trap ידני), בהתאם ל-§7.
+
 ## 2026-06-02 — redesign-3: Settings — Bits Switch + native Select fallback
 
 ### הכרעת component-lib

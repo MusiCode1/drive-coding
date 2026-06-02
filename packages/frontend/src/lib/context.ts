@@ -21,6 +21,7 @@ import type { Speaker } from "./view-models/speaker.svelte"
 import type { ThemeVM } from "./view-models/theme.svelte"
 import type { UiShellVM } from "./view-models/ui-shell.svelte"
 import type { VoiceMode } from "./view-models/derived/voice-mode.svelte"
+import type { ModalsVM } from "./view-models/modals.svelte"
 
 // ─── i18n ──────────────────────────────────────────
 export const [getI18n, setI18n] = createContext<I18nVM>()
@@ -50,3 +51,6 @@ export const [getResponsive, setResponsive] = createContext<ResponsiveVM>()
 
 // ─── ui-shell ─── (redesign-2)
 export const [getUiShell, setUiShell] = createContext<UiShellVM>()
+
+// ─── modals ─── (redesign-6)
+export const [getModals, setModals] = createContext<ModalsVM>()
