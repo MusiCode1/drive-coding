@@ -11,6 +11,11 @@ Commits על branch `slice-wake-word-infra` (base: `poc-wake-word`).
 - 5 טסטים (TDD: אדום→ירוק): midpoint, same value, factor=0, factor=1, fractional.
 - typecheck: נקי. core tests: 403 pass.
 
+#### Commit 6 — component: VoiceOrb.svelte (manual)
+
+- `components/VoiceOrb.svelte`: נורית קולית. props: vm. lerp ב-rAF loop (החלקה ויזואלית). צבע לפי vm.mode (grey/blue/red). flash ב-$effect על vm.flashCount. role=button + click/keydown → vm.toggle(). שתי timings CSS נפרדות (background-color 300ms, size/filter 80ms).
+- typecheck: נקי. 50 test files, 494 tests pass.
+
 #### Commit 5 — view-model: WakeWordVM (integration tests)
 
 - `view-models/wake-word.svelte.ts`: WakeWordVM — mode/level/flashCount/$state, toggle(), $effect (mode→engine.start/stop), detect→capture start/stop, cue tones (OscillatorNode).
