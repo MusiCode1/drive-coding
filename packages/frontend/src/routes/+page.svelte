@@ -164,8 +164,7 @@ async function onSubmit(e: SubmitEvent) {
     color: var(--fg-dim);
   }
 
-  input,
-  select {
+  input {
     padding: 0.7rem 0.8rem;
     background: var(--bg-elev);
     border: 1px solid var(--border);
@@ -173,8 +172,7 @@ async function onSubmit(e: SubmitEvent) {
     color: var(--fg);
   }
 
-  input:focus,
-  select:focus {
+  input:focus {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.2);

@@ -22,6 +22,23 @@ const modals = getModals()
 
 // translateThoughts disabled כש-speakThoughts כבוי
 const translateDisabled = $derived(!settings.speakThoughts)
+
+// ─── beUrl ─── (הוחזר אחרי ה-redesign — ה-VM קיים, רק ה-UI נשמט)
+// טופס מבוקר: ערך הקלט נפרד מ-settings.beUrl, נשמר רק על blur/Enter דרך
+// setBeUrl (שמחזיר Result). beUrlStatus משקף ולידציה/שמירה להצגה בלבד.
+let beUrlInput = $state(settings.beUrl)
+let beUrlStatus = $state<{ kind: "idle" | "saved" | "error"; msg?: string }>({ kind: "idle" })
+
+function commitBeUrl() {
+  const res = settings.setBeUrl(beUrlInput)
+  if (res.ok) {
+    // מנרמל את הקלט לערך שנשמר בפועל (trim + הסרת / מסיים)
+    beUrlInput = settings.beUrl
+    beUrlStatus = { kind: "saved" }
+  } else {
+    beUrlStatus = { kind: "error", msg: res.error }
+  }
+}
 </script>
 
 <section
@@ -75,6 +92,33 @@ const translateDisabled = $derived(!settings.speakThoughts)
       >
         <option>—</option>
       </select>
+    </label>
+
+    <!-- beUrl — נשמר על blur/Enter; ריק = same-origin / פרוקסי Vite -->
+    <label class="flex flex-col gap-1.5">
+      <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.beUrl.label")}</span>
+      <input
+        dir="ltr"
+        bind:value={beUrlInput}
+        placeholder="https://be.example.com"
+        class="rounded-xl px-3 py-3 text-sm font-mono outline-none border"
+        style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
+        oninput={() => (beUrlStatus = { kind: "idle" })}
+        onblur={commitBeUrl}
+        onkeydown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault()
+            commitBeUrl()
+          }
+        }}
+      />
+      {#if beUrlStatus.kind === "error"}
+        <span class="text-[12px]" style="color:var(--recording)">{t("settings.beUrl.invalid")}</span>
+      {:else if beUrlStatus.kind === "saved"}
+        <span class="text-[12px]" style="color:var(--accent)">{t("settings.beUrl.saved")}</span>
+      {:else}
+        <span class="text-[12px]" style="color:var(--fg-muted)">{t("settings.beUrl.help")}</span>
+      {/if}
     </label>
   </SettingsCard>
 
