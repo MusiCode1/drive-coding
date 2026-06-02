@@ -87,3 +87,9 @@ clip. Live mic + cue audio not auto-tested (no mic/audio device in headless env)
 English keywords only (`hey_jarvis` etc.). Hebrew needs a trained `.onnx` (see
 `docs/investigations/wake-word-client-side.md` §5, track D). The library is the
 reusable artifact intended to back slice 17.
+
+## Event stream log
+
+A log box prints each event with a timestamp (seconds + frame #): VAD
+start/end (with segment length), DETECT (with score + offset after VAD start),
+and capture start/stop. Useful for inspecting timing and debugging.
