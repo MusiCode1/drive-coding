@@ -1,11 +1,7 @@
 # Slice sessions-inline + transcribe-resilience — תוכנית
 
 > **תאריך**: 2026-06-02
-> **סטטוס**: ✅ READY ל-dispatch (אביגיל round 2 — אחרי תיקון 4 findings). **טרם בוצע** —
->   אומת מול dev tip 718be28: with-retry חסר, listSessions חסר ב-AgentSession,
->   SessionOptionsPanel עדיין placeholder, SessionsDialog עדיין קיים, mic בלי
->   retryTranscribe. ⚠️ ה-base בכותרת (`266322f`) ישן — dev התקדם ל-718be28; לוודא
->   rebase/אימות line-numbers לפני dispatch (ראו §0). זה ה-slice הפתוח היחיד לביצוע.
+> **סטטוס**: ✅ **הושלם** — 2026-06-02. 5 commits (d7d6519..164a191). calev light GO (17/17).
 > **Complexity**: 6/10 (verifier: light + phase על Commit 4)
 > **תלויות (`depends_on`)**: [] — הכל כבר ב-dev (redesign-7 + with-timeout מוזגו ב-`266322f`)
 > **Base**: dev (`266322f`)
@@ -594,6 +590,6 @@ pnpm --filter @drive-coding/frontend-v2 build
 
 ## סטיות מהתכנון (מתעדכן ע"י executor תוך כדי)
 
-> ה-executor מתעד פה כל סטייה מה-brief ולמה.
-
-- (טרם בוצע)
+- **טסט transcribe.test.ts**: שיניתי את הטסט הקיים (שבדק TIMEOUT=15000) לטסטים חדשים שמשקפים את המצב החדש (30000 + withRetry). הטסטים עדיין mockים גם withTimeout וגם withRetry (brief אמר שאפשר למקק withRetry/withTimeout). הלוגיקה נבדקת ב-core tests.
+- **#runTranscribe חולץ**: חילצתי #runTranscribe() פרטי ב-Mic (DRY: toggle+retryTranscribe). ה-brief הציע זאת ("שקול לחלץ") — אימצתי.
+- **calev light**: GO 17/17. finding יחיד: 2 שגיאות TS קדם-קיימות ב-narrate.test.ts (לא שלנו).

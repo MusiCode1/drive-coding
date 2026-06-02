@@ -1,3 +1,26 @@
+## 2026-06-02 — slice sessions-inline-transcribe-resilience הושלם — calev GO (17/17)
+
+### מה בוצע?
+
+Slice `sessions-inline-transcribe-resilience` הושלם ב-5 commits. calev light: GO, 17/17 DoD, finding יחיד קדם-קיים (2 שגיאות TS ב-narrate.test.ts — לא שלנו).
+
+| commit | hash | תוכן |
+|---|---|---|
+| C0 | d7d6519 | with-retry helper ב-core (TDD, 6 טסטים) |
+| C1 | c18dc8e | transcribe timeout 30s + withRetry (3 נסיונות, backoff 800ms) |
+| C2 | f1029db | mic #lastBlob + retryTranscribe + canRetry + כפתור "נסה שוב" ב-MicLarge |
+| C3 | acee79d | AgentSession.listSessions() inline דרך #client + cache |
+| C4 | 164a191 | SessionOptionsPanel inline + מחיקת SessionsDialog + modals cleanup |
+
+branch: slice-sessions-inline, base: dev (9eb3ea2).
+דוח calev phase Commit 2: reports/voice-acp/slice-sessions-inline-commit2-calev.md
+דוח calev light slice: reports/voice-acp/slice-sessions-inline-transcribe-resilience-calev.md
+
+#### חריגות
+
+- typecheck: 2 שגיאות ב-narrate.test.ts קדם-קיימות מ-dev (לא שלנו)
+- הkicker flaky bridge-manager.idle test4 — ידוע מ-slice-26, לא קשור
+
 ## 2026-06-02 — slice review-fixes-2 הושלם — calev GO (13/13)
 
 ### מה בוצע?
