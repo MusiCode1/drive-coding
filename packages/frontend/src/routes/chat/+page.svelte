@@ -1,12 +1,12 @@
 <script lang="ts">
 /**
- * /chat — route דק. redesign-3: AgentOptionsPanel נמחק, תוכנו ב-SessionOptionsPanel.
+ * /chat — route דק. redesign-4: RecordFooter מחליף ChatInput.
  */
 import { goto } from "$app/navigation"
 import { getSession } from "$lib/context"
 import AppShell from "$lib/components/layout/AppShell.svelte"
 import ChatBubbles from "$lib/components/chat/ChatBubbles.svelte"
-import ChatInput from "$lib/components/chat/ChatInput.svelte"
+import RecordFooter from "$lib/components/chat/RecordFooter.svelte"
 
 const session = getSession()
 
@@ -35,6 +35,6 @@ function onDisconnect() {
       </div>
     {/if}
 
-    <ChatInput />
+    <RecordFooter />
   </AppShell>
 {/if}
