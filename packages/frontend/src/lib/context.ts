@@ -18,6 +18,7 @@ import type { Mic } from "./view-models/mic.svelte"
 import type { Settings } from "./view-models/settings.svelte"
 import type { Speaker } from "./view-models/speaker.svelte"
 import type { VoiceMode } from "./view-models/derived/voice-mode.svelte"
+import type { CuesEngine } from "./engines/cues"
 
 // ─── i18n ──────────────────────────────────────────
 export const [getI18n, setI18n] = createContext<I18nVM>()
@@ -36,5 +37,8 @@ export const [getMic, setMic] = createContext<Mic>()
 
 // ─── voice-mode ─── (slice 3)
 export const [getVoiceMode, setVoiceMode] = createContext<VoiceMode>()
+
+// ─── cues ─── (slice 6)
+export const [getCues, setCues] = createContext<CuesEngine>()
 
 // ─── car-mode ─── (slice 7 יוסיף כאן)

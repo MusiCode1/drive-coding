@@ -21,9 +21,12 @@ export class Player {
   #audioStream: AudioStream
   #queue = new OrderedQueue<string>()  // slice 22: היה string[]
   #playing = false // שומר כניסה-מחדש (re-entrancy guard) עבור #playLoop
+  // slice 6: callback גנרי (לא יודע על cues — Speaker מספק)
+  #onPlaybackStart?: () => void
 
-  constructor(audioStream: AudioStream) {
+  constructor(audioStream: AudioStream, onPlaybackStart?: () => void) {
     this.#audioStream = audioStream
+    this.#onPlaybackStart = onPlaybackStart
   }
 
   /**
@@ -68,6 +71,9 @@ export class Player {
   async #playLoop(): Promise<void> {
     this.#playing = true
     this.state = "playing"
+    // slice 6: callback גנרי — מופעל פעם אחת כשה-Player עובר idle→playing.
+    // Speaker מספק callback שמנגן cue "speaking" + guard #spokeThisTurn.
+    this.#onPlaybackStart?.()
     try {
       let next = this.#queue.takeNext()
       while (next !== undefined) {

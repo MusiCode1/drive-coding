@@ -66,7 +66,7 @@ Slice 3+   💭 מתוכנן  ראה ‎טבלה ‎למטה
 | 15 | **Backend URL config + CF deployment** | CORS env var (15a), Settings.beUrl + /settings page (15b), adapter migration (15c), CF Pages deploy guide + build verification (15d) | 0.5 | ~1 יום | ✅ (2026-05-30) |
 | 16 | Tool call content | ACP faithful rendering (diff, terminal, locations, shell commands) | 4 | ~1 יום | ✅ (2026-05-29) |
 | 5 | Smart scroll | ‎auto-scroll, ‎jump-down button, ‎user-interaction detection | 0 | ~‎חצי יום | 💭 |
-| 6 | Audio cues | ‎5 ‎צלילים ‎ב-Web Audio (recording start/stop, thinking, speaking, error) | 3 | ~‎חצי יום | 💭 |
+| 6 | Audio cues | ‎5 ‎צלילים ‎ב-Web Audio (recording start/stop, thinking, speaking, error) | 3 | ~‎חצי יום | ✅ (2026-06-01) |
 | 7 | Drive-first chrome | car mode (?car=1), Media Session API, wake lock, landscape lock | 1, 2, 6 | ~‎2 ‎ימים | 💭 |
 | 10 | Recordings + replay | ‎שמירת הקלטות, ‎replay של שיחה מלאה (user audio + agent TTS חדש) | 1, 2, 8 + BE work | ~‎2 ‎ימים | 💭 |
 | 11 | Audio-friendly prompt | ‎OpenCode plugin injection (audio-friendly system prompt) — דורש BE work | 0 | ~‎2 ‎ימים | ✅ |
