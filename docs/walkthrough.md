@@ -1,3 +1,16 @@
+## 2026-06-02 — slice wake-word-infra: תשתית wake-word ב-FE + route בדיקה
+
+### מה בוצע?
+
+Commits על branch `slice-wake-word-infra` (base: `poc-wake-word`).
+
+#### Commit 1 — core: lerp (TDD)
+
+- הוספת `lerp(current, target, factor)` ל-`packages/core/src/ui/math.ts`. טהור, ללא תלויות.
+- export additive ב-`packages/core/src/index.ts`.
+- 5 טסטים (TDD: אדום→ירוק): midpoint, same value, factor=0, factor=1, fractional.
+- typecheck: נקי. core tests: 403 pass.
+
 ## 2026-06-01 13:25 — slice 24: client-keyed proxy cache + homeDir default cwd
 
 ### מה בוצע?
