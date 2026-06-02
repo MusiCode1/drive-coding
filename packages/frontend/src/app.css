@@ -201,7 +201,10 @@
     border: 1px solid var(--border);
     border-bottom: none;
     box-shadow: 0 -10px 30px rgba(0,0,0,.28);
-    transition: background .3s, box-shadow .3s, border-color .3s;
+    /* padding-block-end מתאנמט עם המעבר ל/מ-מצב hidden (ר' RecordFooter).
+       הקטנה (→record/typing) מיד; הגדלה (→hidden) עם delay (ר' .is-hidden). */
+    transition: background .3s, box-shadow .3s, border-color .3s,
+                padding-block-end .3s ease 0s;
   }
 
   /* מובייל: ה-mic שטוח — בלי כרטיס. ה-fade הוא #chat-fade של אזור הגלילה
@@ -212,5 +215,14 @@
     box-shadow: none;
     background: transparent;
     max-width: 100%;
+  }
+
+  /* מצב hidden (מובייל): pb גדול כדי שה-toggle ירחף מעל ידית ה-BottomSheet (28px).
+     ה-delay 0.3s רק בהגדלה (→hidden) — אחרי שה-pane דהה וה-rows התכווץ; כך ה-footer
+     לא "מתרומם" לפני שמתכווץ. ההקטנה (→record) נשארת מיידית (מה-.mic-card הבסיסי). */
+  .is-hidden.mic-plain .mic-card {
+    padding-block-end: 2.25rem;
+    transition: background .3s, box-shadow .3s, border-color .3s,
+                padding-block-end .3s ease .3s;
   }
 }
