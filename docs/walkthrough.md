@@ -1,3 +1,18 @@
+## 2026-06-02 — slice review-fixes-2 Commit 1: agents-api timeout (TDD)
+
+### מה בוצע?
+
+Commit 1 של `slice-review-fixes-2`.
+
+#### C1 — withTimeout ב-agents-api.ts
+- `agents-api.ts`: ייבוא withTimeout מ-core. קבוע `AGENTS_API_TIMEOUT_MS = 10000`.
+- `createAgent`: הוסף param `signal?: AbortSignal` (additive). עוטף fetch ב-withTimeout.
+- `deleteAgent`: עוטף fetch ב-withTimeout(10000, "deleteAgent").
+- `notifySessionAttached`: עוטף fetch ב-withTimeout(10000, "notifySessionAttached"). fire-and-forget, אין external signal.
+- `getAgent`: לא שונה. נוספה הערת TODO(review-fixes-2) מעל הפונקציה.
+- `agents-api.test.ts` (חדש): 8 טסטים — createAgent happy/signal/timeout/http-error, deleteAgent happy/timeout, notifySessionAttached happy/timeout. withTimeout mocked.
+- typecheck: 0, tests: 462, lint:i18n: נקי.
+
 ## 2026-06-02 — redesign vNext שרשרת הושלמה (slices 3-7)
 
 ### מה בוצע?
