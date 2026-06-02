@@ -2,48 +2,179 @@
 /**
  * SessionOptionsPanel — תוכן משותף DRY לסייד-בר (דסקטופ) ולBottom-Sheet (מובייל).
  *
- * סבב זה: **shell בלבד** — selects placeholder (לא מחווטים לAPI).
- * redesign-3 יחווט לאפשרויות סוכן/מודל/חשיבה ורשימת סשנים.
+ * redesign-3: חיווט dropdowns (סוכן/מודל/חשיבה) מתוך לוגיקת AgentOptionsPanel.
+ * AgentOptionsPanel נמחק; כל הלוגיקה כאן.
  *
  * ─── redesign-2 ───
+ * ─── redesign-3 (חיווט dropdowns) ───
  */
 import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
-import { getI18n } from "$lib/context"
+import { getI18n, getSession } from "$lib/context"
+import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 
 const t = getI18n().t
+const session = getSession()
+
+// ─── helper — flatten select options (groups → flat list) ───
+type SelectOpt = { value: string; name: string; description?: string | null }
+
+function flattenSelectOptions(option: SessionConfigOption): SelectOpt[] {
+  if (option.type !== "select") return []
+  const sel = option as Extract<SessionConfigOption, { type: "select" }>
+  return sel.options.flatMap((item) => ("options" in item ? item.options : [item]))
+}
+
+// ─── חישובים ───
+
+/** configOptions שאינם model/mode */
+const extraOptions = $derived(
+  session.configOptions.filter((o) => o.category !== "model" && o.category !== "mode")
+)
+
+/** האם יש אפשרויות סוכן/מודל להציג */
+const hasAgentOptions = $derived(
+  (session.models?.availableModels?.length ?? 0) > 0 ||
+  session.configOptions.some((o) => o.category === "model") ||
+  (session.modes?.availableModes?.length ?? 0) > 0 ||
+  session.configOptions.some((o) => o.category === "mode") ||
+  extraOptions.length > 0
+)
+
+// ─── event handlers ───
+async function onModelChange(e: Event) {
+  const value = (e.target as HTMLSelectElement).value
+  await session.applyConfigOption("model", value)
+}
+
+async function onModeChange(e: Event) {
+  const value = (e.target as HTMLSelectElement).value
+  await session.applyConfigOption("mode", value)
+}
+
+async function onSelectChange(configId: string, e: Event) {
+  const value = (e.target as HTMLSelectElement).value
+  await session.applyConfigOption(configId, value)
+}
+
+async function onCheckboxChange(configId: string, e: Event) {
+  const checked = (e.target as HTMLInputElement).checked
+  await session.applyConfigOption(configId, checked)
+}
 </script>
 
-<!-- אפשרויות סוכן -->
+<!-- אפשרויות סוכן — מחווט מ-redesign-3 -->
 <div class="flex flex-col gap-2.5">
   <div class="text-[11px] font-semibold uppercase tracking-wider px-1" style="color:var(--fg-dim)">
     {t("sidebar.agentOptions")}
   </div>
 
-  <!-- סוכן — placeholder, redesign-3 יחווט -->
-  <label class="flex flex-col gap-1">
-    <span class="text-[11px] px-1" style="color:var(--fg-dim)">{t("agentOptions.agent.label")}</span>
-    <!-- TODO redesign-3: wire to agent options -->
-    <select
-      class="rounded-lg px-2.5 py-2 text-[13px] outline-none border appearance-none"
-      style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
-      disabled
-    >
-      <option>build</option>
-    </select>
-  </label>
+  {#if hasAgentOptions}
+    <!-- סוכן/Mode dropdown -->
+    {#if (session.modes?.availableModes?.length ?? 0) > 0}
+    <label class="flex flex-col gap-1">
+      <span class="text-[11px] px-1" style="color:var(--fg-dim)">{t("agentOptions.agent.label")}</span>
+      <select
+        class="rounded-lg px-2.5 py-2 text-[13px] outline-none border appearance-none"
+        style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
+        value={session.modes?.currentModeId}
+        onchange={onModeChange}
+      >
+        {#each session.modes!.availableModes as m (m.id)}
+          <option value={m.id}>{m.name}</option>
+        {/each}
+      </select>
+    </label>
+    {:else if session.configOptions.find((o) => o.category === "mode")}
+      {@const modeOpt = session.configOptions.find((o) => o.category === "mode")!}
+      {@const modeChoices = flattenSelectOptions(modeOpt)}
+      {#if modeChoices.length > 0}
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] px-1" style="color:var(--fg-dim)">{t("agentOptions.agent.label")}</span>
+        <select
+          class="rounded-lg px-2.5 py-2 text-[13px] outline-none border appearance-none"
+          style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
+          value={(modeOpt as Extract<typeof modeOpt, { type: "select" }>).currentValue}
+          onchange={(e) => onSelectChange(modeOpt.id, e)}
+        >
+          {#each modeChoices as opt (opt.value)}
+            <option value={opt.value}>{opt.name}</option>
+          {/each}
+        </select>
+      </label>
+      {/if}
+    {/if}
 
-  <!-- מודל — placeholder -->
-  <label class="flex flex-col gap-1">
-    <span class="text-[11px] px-1" style="color:var(--fg-dim)">{t("agentOptions.model.label")}</span>
-    <!-- TODO redesign-3: wire to model options -->
-    <select
-      class="rounded-lg px-2.5 py-2 text-[13px] outline-none border appearance-none"
-      style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
-      disabled
-    >
-      <option>claude-sonnet</option>
-    </select>
-  </label>
+    <!-- מודל dropdown -->
+    {#if (session.models?.availableModels?.length ?? 0) > 0}
+    <label class="flex flex-col gap-1">
+      <span class="text-[11px] px-1" style="color:var(--fg-dim)">{t("agentOptions.model.label")}</span>
+      <select
+        class="rounded-lg px-2.5 py-2 text-[13px] outline-none border appearance-none"
+        style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
+        value={session.models?.currentModelId}
+        onchange={onModelChange}
+      >
+        {#each session.models!.availableModels as m (m.modelId)}
+          <option value={m.modelId}>{m.name}</option>
+        {/each}
+      </select>
+    </label>
+    {:else if session.configOptions.find((o) => o.category === "model")}
+      {@const modelOpt = session.configOptions.find((o) => o.category === "model")!}
+      {@const modelChoices = flattenSelectOptions(modelOpt)}
+      {#if modelChoices.length > 0}
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] px-1" style="color:var(--fg-dim)">{t("agentOptions.model.label")}</span>
+        <select
+          class="rounded-lg px-2.5 py-2 text-[13px] outline-none border appearance-none"
+          style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
+          value={(modelOpt as Extract<typeof modelOpt, { type: "select" }>).currentValue}
+          onchange={(e) => onSelectChange(modelOpt.id, e)}
+        >
+          {#each modelChoices as opt (opt.value)}
+            <option value={opt.value}>{opt.name}</option>
+          {/each}
+        </select>
+      </label>
+      {/if}
+    {/if}
+
+    <!-- שאר configOptions (לא model/mode) -->
+    {#each extraOptions as opt (opt.id)}
+      {#if opt.type === "select"}
+        {@const choices = flattenSelectOptions(opt)}
+        {#if choices.length > 0}
+        <label class="flex flex-col gap-1">
+          <span class="text-[11px] px-1" style="color:var(--fg-dim)">{opt.name}</span>
+          <select
+            class="rounded-lg px-2.5 py-2 text-[13px] outline-none border appearance-none"
+            style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
+            value={(opt as Extract<typeof opt, { type: "select" }>).currentValue}
+            onchange={(e) => onSelectChange(opt.id, e)}
+          >
+            {#each choices as o (o.value)}
+              <option value={o.value}>{o.name}</option>
+            {/each}
+          </select>
+        </label>
+        {/if}
+      {:else if opt.type === "boolean"}
+        <label class="flex items-center gap-2">
+          <input
+            type="checkbox"
+            class="cursor-pointer"
+            checked={(opt as Extract<typeof opt, { type: "boolean" }>).currentValue}
+            onchange={(e) => onCheckboxChange(opt.id, e)}
+          />
+          <span class="text-[13px]" style="color:var(--fg-dim)">{opt.name}</span>
+        </label>
+      {/if}
+    {/each}
+
+  {:else}
+    <!-- placeholder כשאין חיבור פעיל -->
+    <div class="text-[12px] opacity-40 px-1">{t("agentOptions.agent.label")}: —</div>
+  {/if}
 </div>
 
 <!-- סשנים -->

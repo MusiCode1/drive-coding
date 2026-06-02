@@ -1,8 +1,10 @@
 <script lang="ts">
+/**
+ * /chat — route דק. redesign-3: AgentOptionsPanel נמחק, תוכנו ב-SessionOptionsPanel.
+ */
 import { goto } from "$app/navigation"
 import { getSession } from "$lib/context"
 import AppShell from "$lib/components/layout/AppShell.svelte"
-import AgentOptionsPanel from "$lib/components/chat/AgentOptionsPanel.svelte"
 import ChatBubbles from "$lib/components/chat/ChatBubbles.svelte"
 import ChatInput from "$lib/components/chat/ChatInput.svelte"
 
@@ -21,8 +23,6 @@ function onDisconnect() {
 
 {#if session.status !== "idle"}
   <AppShell {onDisconnect}>
-    <!-- AgentOptionsPanel נשאר זמנית; redesign-3 ימזג ל-SessionOptionsPanel -->
-    <AgentOptionsPanel />
     <ChatBubbles />
 
     {#if session.error}
