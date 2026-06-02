@@ -1,5 +1,30 @@
 # Decisions — voice-acp
 
+## 2026-06-02 — redesign-3: Settings — Bits Switch + native Select fallback
+
+### הכרעת component-lib
+
+**Switch → Bits UI** (`bits-ui Switch.Root + Switch.Thumb`):
+- תומך RTL + a11y מובנה (aria-checked, keyboard, focus-trap)
+- עובד עם `.toggle` CSS helper מ-app.css (RTL-safe: `right: 3px` / `right: calc(100% - 23px)`)
+- שלוש שכבות disabled: `pointer-events-none` על label, `aria-disabled`, `onCheckedChange={disabled ? undefined : handler}`
+
+**Select → native `<select>` מעוצב בTailwind** (fallback, לא Bits Select):
+- Bits Select דורש: Portal + JS overhead + Trigger/Content/Item composition + RTL quirks
+- native styled `<select>` — RTL-safe בדפדפן, מינימל, תואם לVoicePicker הקיים
+- אשר גם ב-§7 של ה-brief: "fallback native styled select — לגיטימי"
+- תועד גם ב-`components/ui/Select.svelte` (comment)
+
+### ממצאי אביגיל (redesign-3)
+
+ר' `reports/voice-acp/slice-redesign-3-settings-avigail.md` — USABLE-AFTER-FIX (2 סבבים). כל findings תוקנו לפני handoff לאליעזר.
+
+### ממצאי calev (redesign-3)
+
+calev light: PARTIAL→GO (2 findings, שניהם תוקנו):
+- F1: translateThoughts disabled לוגי — תוקן ב-SettingToggle (aria-disabled + onCheckedChange guard)
+- F2: decisions entry — entry זה
+
 ## 2026-06-01 — convention: הערות בקוד בעברית
 
 ### רציונל
