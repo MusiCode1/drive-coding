@@ -89,6 +89,19 @@ export type MessageKey =
   | "agentOptions.title"
   | "agentOptions.model.label"
   | "agentOptions.agent.label"
+  // ─── layout/header ─── (redesign-2)
+  | "header.menu"
+  | "header.settings"
+  | "header.connected"
+  | "header.disconnect"
+  | "header.audioOn"
+  | "header.audioOff"
+  | "sidebar.collapse"
+  | "sidebar.agentOptions"
+  | "sidebar.sessions"
+  | "sidebar.refresh"
+  | "sidebar.newSession"
+  | "sheet.handle"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

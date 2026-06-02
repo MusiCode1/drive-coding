@@ -83,4 +83,17 @@ export const en: Catalog = {
   "agentOptions.title": "Session options",
   "agentOptions.model.label": "Model",
   "agentOptions.agent.label": "Agent",
+  // ─── layout/header ─── (redesign-2)
+  "header.menu": "Menu",
+  "header.settings": "Settings",
+  "header.connected": "Connected",
+  "header.disconnect": "Disconnect",
+  "header.audioOn": "Mute audio",
+  "header.audioOff": "Unmute audio",
+  "sidebar.collapse": "Collapse panel",
+  "sidebar.agentOptions": "Agent options",
+  "sidebar.sessions": "Sessions",
+  "sidebar.refresh": "Refresh",
+  "sidebar.newSession": "New session",
+  "sheet.handle": "Drag to open",
 }

@@ -78,4 +78,17 @@ export const he: Catalog = {
   "agentOptions.title": "הגדרות סשן",
   "agentOptions.model.label": "מודל",
   "agentOptions.agent.label": "סוכן",
+  // ─── layout/header ─── (redesign-2)
+  "header.menu": "תפריט",
+  "header.settings": "הגדרות",
+  "header.connected": "מחובר",
+  "header.disconnect": "נתק",
+  "header.audioOn": "השתק שמע",
+  "header.audioOff": "הפעל שמע",
+  "sidebar.collapse": "קפל פאנל",
+  "sidebar.agentOptions": "אפשרויות סוכן",
+  "sidebar.sessions": "סשנים",
+  "sidebar.refresh": "רענן",
+  "sidebar.newSession": "סשן חדש",
+  "sheet.handle": "גרור לפתיחה",
 }
