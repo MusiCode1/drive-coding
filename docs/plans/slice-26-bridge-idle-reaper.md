@@ -1,7 +1,7 @@
 # Slice 26 — Temporary Bridge Idle-Reaper (BE) — ‏תוכנית
 
 > **‏תאריך**: 2026-06-01
-> **‏סטטוס**: ‏מאושר (‏אביגיל: READY, 2026-06-01)
+> **‏סטטוס**: ‏הושלם (‏אליעזר, 2026-06-01)
 > **Complexity**: 4/10 (verifier: light + phase על Commit 2)
 > **‏תלויות (`depends_on`)**: []
 > **‏Base**: dev
@@ -474,4 +474,11 @@ grep -rn "TEMPORARY (slice 26)" packages/backend/src
 
 ## ‏סטיות מהתכנון (‏מתעדכן ע"י executor ‏תוך כדי)
 
-- (‏טרם בוצע)
+- **‏bridge-manager.idle.test.ts**: שינוי גישת הטסט — במקום cliKind "opencode" ישיר (יוצא מיד),
+  משתמשים ב-`OPENCODE_BIN=/usr/bin/sleep` כדי לקבל process חי שלא יוצא תוך הבדיקה.
+  זה הכרחי כי bridge-manager מנקה entry ב-exit, ואז listIdle לא מוצא אותו.
+  הלוגיקה עצמה מדויקת לפי הbrief.
+- **core dist**: נדרשה `tsc --build --force` ב-packages/core/ בגלל missing dist/index.d.ts
+  (gotcha ידוע בworktrees חדשים).
+- **Test runner**: bun test ישיר מ-src/ עובד; dist/ tests מראים failures pre-existing (vi.mocked + EventEmitter)
+  שאינם קשורים לslice זה.

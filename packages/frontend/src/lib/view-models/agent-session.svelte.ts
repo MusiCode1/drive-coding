@@ -16,9 +16,11 @@ import type {
   SessionModeState,
   SessionModelState,
 } from "@agentclientprotocol/sdk"
+import { tick } from "svelte"
 import { createAcpClient, type AcpClient } from "@drive-coding/core/acp/client"
+import type { CuesEngine } from "$lib/engines/cues"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
-import { createAgent, notifySessionAttached } from "$lib/adapters/agents-api"
+import { createAgent, deleteAgent, notifySessionAttached } from "$lib/adapters/agents-api"
 import type { CliKind } from "@drive-coding/core"
 import type {
   Bubble,
@@ -50,6 +52,13 @@ export type AgentSessionStatus =
  *   - פונקציית עזר פרטית חדשה → תוספתי (ADDITIVE). מקם ב-`// ─── private ───`.
  */
 export class AgentSession {
+  // ─── slice 6: cues injection ─── (אופציונלי — slice 9 יקשר ל-Settings)
+  readonly #cues?: CuesEngine
+
+  constructor(opts?: { cues?: CuesEngine }) {
+    this.#cues = opts?.cues
+  }
+
   // ─── state ─── (פולשני לעריכה — תאם מול Tama)
   status = $state<AgentSessionStatus>("idle")
   error = $state<string | null>(null)
@@ -91,7 +100,7 @@ export class AgentSession {
     if (this.status === "connecting" || this.status === "connected") {
       throw new Error(`cannot attach in status ${this.status}`)
     }
-    this.status = "connecting"
+    this.#setStatus("connecting")
     this.error = null
     this.bubbles = []
     this.#detached = false
@@ -112,7 +121,7 @@ export class AgentSession {
         if (this.#detached) return
         if (code !== 1000 && code !== 1001) {
           this.error = `WS closed (${code}): ${reason || "no reason"}`
-          this.status = "error"
+          this.#setStatus("error")
         }
       })
       await transport.waitForOpen()
@@ -129,11 +138,11 @@ export class AgentSession {
       // 4. תגיד ל-BE לאיזה sessionId התחברנו (מאמץ מיטבי - best-effort)
       await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
 
-      this.status = "connected"
+      this.#setStatus("connected")
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = msg
-      this.status = "error"
+      this.#setStatus("error")
       this.#cleanup()
     }
   }
@@ -141,7 +150,7 @@ export class AgentSession {
   detach = (): void => {
     this.#detached = true  // ‏לפני ה-cleanup — ‏ה-WS close fires async
     this.#cleanup()
-    this.status = "idle"
+    this.#setStatus("idle")
     this.error = null
     this.bubbles = []
   }
@@ -170,14 +179,14 @@ export class AgentSession {
       ...(opts?.recordingId !== undefined ? { recordingId: opts.recordingId } : {}),
     }
     this.bubbles.push(userBubble)
-    this.status = "thinking"
+    this.#setStatus("thinking")
 
     try {
       await this.#client.prompt(this.#sessionId, text)
-      if (this.status === "thinking") this.status = "connected"
+      if (this.status === "thinking") this.#setStatus("connected")
     } catch (err: unknown) {
       this.error = `prompt failed: ${err instanceof Error ? err.message : String(err)}`
-      this.status = "error"
+      this.#setStatus("error")
     }
   }
 
@@ -196,10 +205,18 @@ export class AgentSession {
     if (this.status === "connecting" || this.status === "connected") {
       throw new Error(`cannot loadSession in status ${this.status}`)
     }
-    this.status = "connecting"
+    this.#setStatus("connecting")
     this.error = null
     this.bubbles = []
     this.#detached = false
+
+    // ─── DEV-only: mock session (sessionId "mock:<name>") ───
+    // זורם updates גולמיים מ-fixture דרך אותו #onSessionUpdate כמו ACP חי —
+    // ללא createAgent/WS/ACP. כלי דיבוג עיצוב; tree-shaken מ-prod build.
+    if (import.meta.env.DEV && input.sessionId.startsWith("mock:")) {
+      await this.#loadMockSession(input.sessionId.slice("mock:".length), input.cwd)
+      return
+    }
 
     try {
       // 1. צור סוכן בצד השרת (זהה ל-attach)
@@ -214,7 +231,7 @@ export class AgentSession {
         if (this.#detached) return
         if (code !== 1000 && code !== 1001) {
           this.error = `WS closed (${code}): ${reason || "no reason"}`
-          this.status = "error"
+          this.#setStatus("error")
         }
       })
       await transport.waitForOpen()
@@ -236,11 +253,11 @@ export class AgentSession {
       // 4. הודע ל-BE (זהה ל-attach, מאמץ מיטבי)
       await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
 
-      this.status = "connected"
+      this.#setStatus("connected")
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = `loadSession failed: ${msg}`
-      this.status = "error"
+      this.#setStatus("error")
       this.#cleanup()
     }
   }
@@ -319,6 +336,21 @@ export class AgentSession {
 
   // ─── הקלטות (recordings) ─── (יתווסף ב-slice 10)
 
+  // ─── slice 6: setter מרכז ─── (additive — מנתב את כל ה-status writes)
+
+  /**
+   * נקודת-mutation יחידה ל-status. כל שינוי status עובר דרך כאן.
+   * מנגן audio cue ב-transitions רלוונטיים (slice 6). אין $effect — קריאה מפורשת.
+   * idempotent: אם next === prev — לא מנגן cue (אין transition).
+   */
+  #setStatus(next: AgentSessionStatus): void {
+    const prev = this.status
+    if (next === prev) return
+    this.status = next
+    if (next === "thinking") this.#cues?.play("thinking")
+    else if (next === "error") this.#cues?.play("error")
+  }
+
   // ─── פרטי ─────────────────────────────────────
 
   /** לוכד configOptions/models/modes מתגובת session/new או session/load */
@@ -333,6 +365,8 @@ export class AgentSession {
   }
 
   #cleanup(): void {
+    // לכוד את ה-agentId לפני האיפוס — צריך אותו ל-deleteAgent.
+    const agentId = this.agentId
     try {
       this.#client?.close()
     } catch {
@@ -341,6 +375,11 @@ export class AgentSession {
     this.#client = null
     this.#sessionId = null
     this.agentId = null
+    // הורג את ה-bridge בצד ה-BE. ה-BE לא הורג את ה-child בסגירת WS לבד
+    // (ws-agent.ts:126 — בכוונה, לאפשר reconnect עתידי), לכן ה-FE אחראי
+    // לבקש מחיקה מפורשת. fire-and-forget — לא חוסם, לא זורק (cleanup רץ גם
+    // ב-error path; ראה sessions.ts:71 לאותו דפוס).
+    if (agentId) void deleteAgent(agentId).catch(() => {})
   }
 
   #mapToolContent(raw: unknown): ToolContent[] {
@@ -394,6 +433,45 @@ export class AgentSession {
       }
     }
     return out
+  }
+
+  /**
+   * DEV-only: טוען fixture של updates גולמיים ומזרים אותם דרך #onSessionUpdate —
+   * בדיוק כמו loadSession אמיתי (אותו ממיר, אותו status flow). מקור: static/fixtures/<name>.json.
+   * delayMs > 0 → השהיה בין updates (לדמות streaming חי לדיבוג scroll/animations).
+   */
+  #loadMockSession = async (name: string, cwd: string): Promise<void> => {
+    try {
+      const res = await fetch(`/fixtures/${name}.json`)
+      if (!res.ok) throw new Error(`fixture "${name}" not found (${res.status})`)
+      const data = (await res.json()) as { updates: unknown[] }
+      this.cwd = cwd
+      this.#sessionId = `mock:${name}`
+
+      // delay אופציונלי דרך ?stream=<ms> (ללא תשתית — sleep צד-לקוח בלבד)
+      const params = new URLSearchParams(typeof location !== "undefined" ? location.search : "")
+      const delayMs = Number(params.get("stream") ?? "0") || 0
+
+      this.isLoadingHistory = true
+      try {
+        for (const update of data.updates) {
+          // עוטף בצורת SessionNotification ({ update }) כמו ב-ACP אמיתי
+          this.#onSessionUpdate({ update } as unknown as SessionNotification)
+          if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs))
+        }
+        // tick(): מאלץ flush של ה-$effect של ה-Speaker בעוד isLoadingHistory=true,
+        // כך שכל הבועות מסומנות כמעובדות (replay-quiet) לפני ההצבה ל-false.
+        // בלי זה הלולאה הסינכרונית מסתיימת לפני שה-effect רץ → ה-Speaker מקריא הכל.
+        await tick()
+      } finally {
+        this.isLoadingHistory = false
+      }
+      this.status = "connected"
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      this.error = `mock loadSession failed: ${msg}`
+      this.status = "error"
+    }
   }
 
   #onSessionUpdate = (notification: SessionNotification): void => {

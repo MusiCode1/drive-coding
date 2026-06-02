@@ -104,6 +104,8 @@ export function registerHttpOptions(app: Hono): void {
       codex: MODEL_FALLBACKS.codex,
     }
     const projects = listProjectDirs()
-    return c.json({ models, projects })
+    // Slice 24: homeDir מאפשר ל-FE לאכלס את שדה ה-cwd ברירת מחדל (נייד, לא מקובע)
+    const homeDir = os.homedir()
+    return c.json({ models, projects, homeDir })
   })
 }

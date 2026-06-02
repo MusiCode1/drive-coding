@@ -84,6 +84,65 @@ describe("Settings — persisted voice", () => {
   })
 })
 
+describe("Settings — speech toggles (redesign-3 / 9a)", () => {
+  test("default values: all 3 speech flags true, carMode false", () => {
+    installLocalStorage()
+    const s = new Settings()
+    expect(s.speakThoughts).toBe(true)
+    expect(s.narrateTools).toBe(true)
+    expect(s.translateThoughts).toBe(true)
+    expect(s.carMode).toBe(false)
+  })
+
+  test("setSpeakThoughts(false) writes to localStorage", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setSpeakThoughts(false)
+    expect(s.speakThoughts).toBe(false)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.speakThoughts).toBe(false)
+  })
+
+  test("setNarrateTools(false) writes to localStorage", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setNarrateTools(false)
+    expect(s.narrateTools).toBe(false)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.narrateTools).toBe(false)
+  })
+
+  test("setTranslateThoughts(false) writes to localStorage", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setTranslateThoughts(false)
+    expect(s.translateThoughts).toBe(false)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.translateThoughts).toBe(false)
+  })
+
+  test("new Settings() reads persisted speech flags", () => {
+    const store = installLocalStorage()
+    store.set(
+      STORAGE_KEY,
+      JSON.stringify({ speakThoughts: false, narrateTools: false, translateThoughts: false }),
+    )
+    const s = new Settings()
+    expect(s.speakThoughts).toBe(false)
+    expect(s.narrateTools).toBe(false)
+    expect(s.translateThoughts).toBe(false)
+  })
+
+  test("backward-compat: localStorage without speech flags → defaults to true", () => {
+    const store = installLocalStorage()
+    store.set(STORAGE_KEY, JSON.stringify({ cliKind: "opencode", voiceId: "v1", beUrl: "" }))
+    const s = new Settings()
+    expect(s.speakThoughts).toBe(true)
+    expect(s.narrateTools).toBe(true)
+    expect(s.translateThoughts).toBe(true)
+  })
+})
+
 describe("Settings — loadVoices", () => {
   test("populates availableVoices and drives loading/error", async () => {
     installLocalStorage()
@@ -117,22 +176,94 @@ describe("Settings — loadVoices", () => {
     expect(s.availableVoices).toEqual(voicesFixture)
   })
 
-  test("retry on error: failed first call → second call refetches", async () => {
+  test("after error: extra plain call while retry pending does NOT fire immediately", async () => {
     installLocalStorage()
-    vi.mocked(listVoices)
-      .mockRejectedValueOnce(new Error("network down"))
-      .mockResolvedValueOnce(voicesFixture)
-    const s = new Settings()
+    vi.useFakeTimers()
+    try {
+      vi.mocked(listVoices).mockRejectedValue(new Error("network down"))
+      const s = new Settings()
 
-    await s.loadVoices()
-    expect(s.voicesError).toBe("network down")
-    expect(s.availableVoices).toEqual([])
-    expect(vi.mocked(listVoices)).toHaveBeenCalledTimes(1)
+      await s.loadVoices()
+      expect(s.voicesError).toBe("network down")
+      expect(vi.mocked(listVoices)).toHaveBeenCalledTimes(1)
 
-    await s.loadVoices()
-    expect(s.voicesError).toBeNull()
-    expect(s.availableVoices).toEqual(voicesFixture)
-    expect(vi.mocked(listVoices)).toHaveBeenCalledTimes(2)
+      // קריאה רגילה נוספת בזמן ש-retry כבר מתוזמן → לא יורה מיד (מונע DDoS).
+      await s.loadVoices()
+      expect(vi.mocked(listVoices)).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+  })
+
+  test("error → exponential backoff retry, then success resets", async () => {
+    installLocalStorage()
+    vi.useFakeTimers()
+    try {
+      vi.mocked(listVoices)
+        .mockRejectedValueOnce(new Error("down"))
+        .mockResolvedValueOnce(voicesFixture)
+      const s = new Settings()
+
+      await s.loadVoices() // נסיון 1 נכשל → מתזמן retry ב-2s
+      expect(vi.mocked(listVoices)).toHaveBeenCalledTimes(1)
+      expect(s.voicesError).toBe("down")
+
+      // לפני 2s — אין נסיון חוזר
+      await vi.advanceTimersByTimeAsync(1999)
+      expect(vi.mocked(listVoices)).toHaveBeenCalledTimes(1)
+
+      // אחרי 2s — הנסיון החוזר יורה ומצליח
+      await vi.advanceTimersByTimeAsync(1)
+      expect(vi.mocked(listVoices)).toHaveBeenCalledTimes(2)
+      expect(s.voicesError).toBeNull()
+      expect(s.availableVoices).toEqual(voicesFixture)
+    } finally {
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+  })
+
+  test("backoff caps after max retries (no infinite retry)", async () => {
+    installLocalStorage()
+    vi.useFakeTimers()
+    try {
+      vi.mocked(listVoices).mockRejectedValue(new Error("down"))
+      const s = new Settings()
+
+      await s.loadVoices() // נסיון 1
+      // הרץ הרבה זמן — כל ה-retries (6) ייצרו לכל היותר 7 קריאות, ואז עוצר.
+      await vi.advanceTimersByTimeAsync(5 * 60_000)
+      const calls = vi.mocked(listVoices).mock.calls.length
+      expect(calls).toBeLessThanOrEqual(7)
+      expect(calls).toBeGreaterThan(1)
+    } finally {
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+  })
+
+  test("force=true: explicit refresh refetches immediately, resets backoff", async () => {
+    installLocalStorage()
+    vi.useFakeTimers()
+    try {
+      vi.mocked(listVoices)
+        .mockRejectedValueOnce(new Error("down"))
+        .mockResolvedValueOnce(voicesFixture)
+      const s = new Settings()
+
+      await s.loadVoices()
+      expect(vi.mocked(listVoices)).toHaveBeenCalledTimes(1)
+
+      // רענון מפורש — מנסה מיד (לא מחכה ל-backoff).
+      await s.loadVoices(true)
+      expect(vi.mocked(listVoices)).toHaveBeenCalledTimes(2)
+      expect(s.voicesError).toBeNull()
+      expect(s.availableVoices).toEqual(voicesFixture)
+    } finally {
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
   })
 
   test("concurrent: 2 unawaited calls → adapter invoked once (loading guard)", async () => {

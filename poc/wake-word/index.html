@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wake Word POC — openWakeWord WASM</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0f1419;
+      color: #e6e6e6;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 2rem 1rem;
+      gap: 1.5rem;
+    }
+    h1 { font-size: 1.4rem; margin: 0; }
+    .sub { opacity: 0.6; font-size: 0.9rem; margin-top: -1rem; }
+    .controls { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; justify-content: center; }
+    button {
+      font-size: 1rem;
+      padding: 0.7rem 1.4rem;
+      border: 0;
+      border-radius: 0.6rem;
+      background: #2563eb;
+      color: white;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    select { font-size: 1rem; padding: 0.6rem; border-radius: 0.6rem; background: #1a2230; color: #e6e6e6; border: 1px solid #334; }
+    #status {
+      font-size: 0.95rem;
+      padding: 0.5rem 1rem;
+      border-radius: 0.6rem;
+      background: #1a2230;
+      min-width: 16rem;
+      text-align: center;
+    }
+    #banner {
+      font-size: 2rem;
+      font-weight: 700;
+      padding: 2rem;
+      border-radius: 1rem;
+      background: #16341f;
+      color: #4ade80;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      text-align: center;
+      min-width: 18rem;
+    }
+    #banner.show { opacity: 1; }
+    #meter { width: 18rem; height: 1.2rem; background: #1a2230; border-radius: 0.6rem; overflow: hidden; }
+    #meterFill { height: 100%; width: 0%; background: linear-gradient(90deg, #2563eb, #4ade80); transition: width 0.08s linear; }
+    .meterLabel { font-size: 0.8rem; opacity: 0.6; }
+    #log {
+      width: min(40rem, 90vw);
+      height: 12rem;
+      overflow-y: auto;
+      background: #11151c;
+      border-radius: 0.6rem;
+      padding: 0.75rem;
+      font-family: ui-monospace, monospace;
+      font-size: 0.8rem;
+      white-space: pre-wrap;
+      border: 1px solid #232c3a;
+    }
+    .speech { color: #fbbf24; }
+  </style>
+
+  <!-- Map the bare import 'onnxruntime-web' (used inside WakeWordEngine.js) to a CDN ESM build -->
+  <script type="importmap">
+  {
+    "imports": {
+      "onnxruntime-web": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/ort.min.mjs"
+    }
+  }
+  </script>
+</head>
+<body>
+  <h1>Wake Word POC</h1>
+  <p class="sub">openWakeWord running fully in-browser (WASM). Say the keyword out loud.</p>
+
+  <div class="controls">
+    <label>
+      Keyword:
+      <select id="keyword">
+        <option value="hey_jarvis">hey jarvis</option>
+        <option value="alexa">alexa</option>
+        <option value="hey_mycroft">hey mycroft</option>
+        <option value="hey_rhasspy">hey rhasspy</option>
+        <option value="timer">timer</option>
+        <option value="weather">weather</option>
+      </select>
+    </label>
+    <button id="start">Start listening</button>
+    <button id="stop" disabled>Stop</button>
+    <button id="testWav">Test with sample WAV</button>
+  </div>
+
+  <div id="status">Idle — press Start (will ask for mic permission)</div>
+
+  <div id="banner">👂 …</div>
+
+  <div>
+    <div class="meterLabel">live keyword score</div>
+    <div id="meter"><div id="meterFill"></div></div>
+  </div>
+
+  <div id="log"></div>
+
+  <script type="module" src="./poc.js"></script>
+</body>
+</html>

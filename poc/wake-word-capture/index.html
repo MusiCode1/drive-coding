@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>openWakeWord — Wake-to-Wake Capture POC</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+      /* Capture section additions (not in the original DCL demo). */
+      #capture-section { margin-top: 1.5rem; padding: 1rem; border: 2px solid #2563eb; border-radius: 0.6rem; }
+      #capture-section h3 { margin-top: 0; }
+      #cap-status { font-weight: 600; }
+      .cap-clip { margin: 0.6rem 0; padding: 0.5rem; background: rgba(0,0,0,0.05); border-radius: 0.4rem; }
+      .cap-clip p { margin: 0 0 0.3rem; font-size: 0.85rem; opacity: 0.8; }
+      .cap-controls { margin: 0.5rem 0; font-size: 0.9rem; }
+      /* Event-stream log box */
+      #event-log {
+        margin-top: 1rem;
+        height: 16rem;
+        overflow-y: auto;
+        background: #11151c;
+        color: #d6e2f0;
+        border-radius: 0.5rem;
+        padding: 0.6rem;
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+        font-size: 0.8rem;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        border: 1px solid #2a3543;
+      }
+      #event-log .ev-vad-start { color: #fbbf24; }   /* amber */
+      #event-log .ev-vad-end   { color: #f59e0b; opacity: 0.8; }
+      #event-log .ev-detect    { color: #4ade80; font-weight: 700; }  /* green */
+      #event-log .ev-cap       { color: #60a5fa; }   /* blue */
+      .log-controls { margin-top: 0.8rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>openWakeWord — Wake-to-Wake Capture POC</h1>
+        <h2>Say "Hey Jarvis" to START, speak freely (pauses OK), say "Hey Jarvis" again to STOP</h2>
+        <p>Based on the original DeepCoreLabs demo (main.js, unchanged except path fixes
+           + two hooks). The capture logic lives in capture.js.</p>
+
+        <div class="controls">
+            <select id="mic-select"></select>
+            <button id="start-button" disabled>Loading Models...</button>
+            <button id="test-button" disabled>Test from WAV</button>
+        </div>
+
+        <div class="control-group">
+            <label for="gain-slider">Input Gain:</label>
+            <input type="range" id="gain-slider" min="0" max="5" value="1" step="0.1">
+            <span id="gain-value">100%</span>
+        </div>
+
+        <p>Status: <span id="vad-status">●</span> <span id="status-text">...</span></p>
+
+        <div id="detection-result">
+            <p id="detection-text"></p>
+        </div>
+
+        <!-- NEW: capture controls + clips (driven by capture.js) -->
+        <div id="capture-section">
+            <h3>🎙️ Wake-to-wake capture</h3>
+            <p id="cap-status">idle</p>
+            <div class="cap-controls">
+                <label for="cap-trim">Trim trailing frames (removes 2nd wake word):</label>
+                <input type="number" id="cap-trim" value="16" min="0" max="60" style="width: 4rem;">
+                <span style="opacity:0.7;">(16 ≈ 1.28s)</span>
+            </div>
+            <div id="cap-clips"></div>
+        </div>
+
+        <!-- NEW: live event-stream log (VAD + detect timing) -->
+        <div class="log-controls">
+            <strong>Event stream</strong>
+            <button id="log-clear" type="button">Clear log</button>
+        </div>
+        <div id="event-log"></div>
+
+        <div class="chart-container">
+            <canvas id="score-chart"></canvas>
+        </div>
+
+        <div id="debug-audio-container">
+            <h3>Debug Audio Clips (VAD utterances — original behavior)</h3>
+        </div>
+    </div>
+
+    <!-- onnxruntime-web (WASM backend), pinned to the version the original demo used -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.22.0/ort.wasm.min.js"></script>
+    <script>const backend_mode = 'wasm';</script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="main.js"></script>
+    <script src="capture.js"></script>
+</body>
+</html>

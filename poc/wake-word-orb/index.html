@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wake Word — Voice Orb POC</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3;
+      margin: 0; min-height: 100vh; padding: 2rem 1rem;
+      display: flex; flex-direction: column; align-items: center; gap: 1.5rem;
+    }
+    h1 { font-size: 1.3rem; margin: 0; }
+    .sub { opacity: 0.6; font-size: 0.85rem; margin-top: -1rem; text-align: center; }
+    #status { font-size: 0.9rem; opacity: 0.85; min-height: 1.2em; }
+
+    .orb-stage {
+      width: 300px; height: 300px;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* The orb IS the start/stop button. */
+    .orb-dom-root { position: relative; width: 300px; height: 300px; display: flex; align-items: center; justify-content: center; }
+    .orb-dom-core {
+      width: 90px; height: 90px; border-radius: 50%;
+      background-color: #6b7280;        /* set by JS per state */
+      cursor: pointer;
+      position: relative;
+      display: flex; align-items: center; justify-content: center;
+      /* Two independent timings on two different properties:
+         - background-color: LONG  → smooth state transitions (grey↔blue↔red)
+         - width/height/filter: SHORT → track loudness per frame without lag */
+      transition:
+        background-color 0.3s ease,
+        width 0.08s linear,
+        height 0.08s linear,
+        filter 0.08s linear,
+        box-shadow 0.3s ease;
+      box-shadow: 0 0 30px rgba(255,255,255,0.12);
+    }
+    .orb-dom-core:hover { box-shadow: 0 0 38px rgba(255,255,255,0.22); }
+    .orb-dom-core:focus-visible { outline: 2px solid #93c5fd; outline-offset: 6px; }
+
+    .orb-dom-flash {
+      position: absolute; width: 100%; height: 100%; border-radius: 50%;
+      pointer-events: none; opacity: 0;
+    }
+    .orb-dom-flash.fire { animation: flashpulse 0.45s ease-out; }
+    @keyframes flashpulse {
+      0%   { opacity: 0.9; transform: scale(1);   box-shadow: 0 0 0 0 rgba(255,255,255,0.9); }
+      100% { opacity: 0;   transform: scale(2.4); box-shadow: 0 0 0 40px rgba(255,255,255,0); }
+    }
+
+    /* Capture + clips */
+    #capture { padding: 1rem; border: 1px solid #30363d; border-radius: 0.6rem; width: min(40rem, 92vw); }
+    #capture h3 { margin-top: 0; font-size: 1rem; }
+    .cap-controls { font-size: 0.85rem; margin: 0.5rem 0; }
+    .clip { margin: 0.5rem 0; padding: 0.5rem; background: rgba(255,255,255,0.04); border-radius: 0.4rem; }
+    .clip p { margin: 0 0 0.3rem; font-size: 0.8rem; opacity: 0.7; }
+    .clip a { color: #60a5fa; margin-inline-start: 0.5rem; font-size: 0.8rem; }
+
+    /* Event-stream log */
+    .log-head { width: min(40rem, 92vw); display: flex; justify-content: space-between; align-items: center; }
+    #event-log {
+      width: min(40rem, 92vw); height: 14rem; overflow-y: auto;
+      background: #11151c; color: #d6e2f0; border: 1px solid #2a3543; border-radius: 0.5rem;
+      padding: 0.6rem; font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 0.78rem; line-height: 1.5; white-space: pre-wrap;
+    }
+    #event-log .ev-vad-start { color: #fbbf24; }
+    #event-log .ev-vad-end   { color: #f59e0b; opacity: 0.85; }
+    #event-log .ev-detect    { color: #4ade80; font-weight: 700; }
+    #event-log .ev-cap       { color: #60a5fa; }
+    #log-clear { font-size: 0.8rem; padding: 0.3rem 0.7rem; border: 0; border-radius: 0.4rem; background: #30363d; color: #e6edf3; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Voice Orb</h1>
+  <p class="sub">Tap the orb to start/stop listening.<br />Grey = off · Blue = listening · Red = recording · darker = louder · flash = wake word.<br />Keywords: hey jarvis · alexa · hey mycroft · hey rhasspy. Say one to start a recording, any one again to stop.</p>
+
+  <div id="status">…</div>
+
+  <div class="orb-stage"><div id="orb-dom"></div></div>
+
+  <div id="capture">
+    <h3>🎙️ Recordings</h3>
+    <p id="cap-status">idle</p>
+    <div class="cap-controls">
+      <label for="cap-trim">Trim trailing frames:</label>
+      <input type="number" id="cap-trim" value="16" min="0" max="60" style="width:4rem;" />
+      <span style="opacity:0.6;">(16 ≈ 1.28s)</span>
+    </div>
+    <div id="cap-clips"></div>
+  </div>
+
+  <div class="log-head">
+    <strong style="font-size:0.9rem;">Event stream</strong>
+    <button id="log-clear" type="button">Clear</button>
+  </div>
+  <div id="event-log"></div>
+
+  <!-- onnxruntime-web (WASM) loaded globally; the lib uses window.ort -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.22.0/ort.wasm.min.js"></script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

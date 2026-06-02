@@ -76,223 +76,128 @@ Commit 0 של `slice-review-fixes-1` (worktree `.worktrees/slice-review-fixes-1/
 - TDD: טסטים אדומים קודם, אז implementation ירוק.
 - 6/6 טסטים ירוקים, typecheck נקי, lint:i18n נקי.
 
+## 2026-06-02 — slice-wake-word-infra: תשתית wake-word ב-FE + route בדיקה
+
+### סיכום ביצוע
+
+8 commits על `slice-wake-word-infra` (base: `poc-wake-word`, tip: `58729ed`).
+typecheck 0, build נקי, 494 tests pass (50 test files), lint:i18n נקי.
+DoD #5 עמד: "/wake-word-test" נטען, status="ready — tap the orb to listen".
+
+**סטייה מה-brief:** onnxruntime-web wasm paths — ה-brief ציין שאם Vite wasm נשבר אחרי 2 גישות לדווח, אבל גישה 3 (CDN) הצליחה. זה אותה גישה שה-POC השתמש בה.
+
 ## 2026-06-02 — redesign vNext שרשרת הושלמה (slices 3-7)
 
 ### מה בוצע?
 
-שרשרת redesign vNext — slice-3 עד slice-7 הושלמה. calev GO על כל slice.
+Commits על branch `slice-wake-word-infra` (base: `poc-wake-word`).
 
-| slice | branch | tip | commits | calev |
-|---|---|---|---|---|
-| redesign-3 | slice-redesign-3-settings | 06dc7b6 | 7 | GO 10/10 |
-| redesign-4 | slice-redesign-4-input-mic | 83349df | 4 | GO 9/10 |
-| redesign-5 | slice-redesign-5-bubbles | 1c36bf3 | 4 | GO 9/9 |
-| redesign-6 | slice-redesign-6-modals | 196b4f4 | 5 | GO 8/8 |
-| redesign-7 | slice-redesign-7-smart-scroll | 211f94a | 2 | GO 7/7 |
+#### Commit 1 — core: lerp (TDD)
 
-## 2026-06-02 — slice redesign-7 C1: Smart-scroll + JumpDown
+- הוספת `lerp(current, target, factor)` ל-`packages/core/src/ui/math.ts`. טהור, ללא תלויות.
+- export additive ב-`packages/core/src/index.ts`.
+- 5 טסטים (TDD: אדום→ירוק): midpoint, same value, factor=0, factor=1, fractional.
+- typecheck: נקי. core tests: 403 pass.
 
-### מה בוצע?
+#### Commit 7b — onnxruntime-web wasm: CDN כפתרון
 
-Commit 1 של `slice-redesign-7-smart-scroll` (worktree `.worktrees/slice-redesign-7-smart-scroll/`).
+**בעיה:** onnxruntime-web 1.22.x לא מוצא wasm files מ-node_modules ב-Vite dev.
+**פתרון:** `ort.env.wasm.wasmPaths = CDN` (זהה לגישת ה-POC).
+גישות שנוסו (2):
+1. ברירת מחדל — engine לא מוצא wasm.
+2. `static/ort-wasm/` + local wasmPaths — jsep.mjs MIME type שגוי (נכשל).
+3. CDN (cdnjs.cloudflare.com/onnxruntime-web/1.22.0/) — **עובד** ✅ ("ready" מוצג).
+- `wake-word-engine.ts`: הוספת `ort.env.wasm.wasmPaths = CDN_URL`.
+- typecheck: נקי. DoD #5 עמד — "/wake-word-test" נטען, status="ready — tap the orb to listen".
 
-#### C1 — smart-scroll + JumpDown
-- i18n: `chat.jumpDown`.
-- AppShell: auto-scroll מותנה ב-`isAtBottom` (THRESHOLD 50px). scroll listener `onScroll`. כפתור JumpDown צף (ArrowDown icon, accent, absolute bottom).
-- typecheck 0, build נקי, 447 tests pass, lint נקי.
+#### Commit 7b — onnxruntime-web wasm paths (WIP, לא פתור)
 
-## 2026-06-02 — slice redesign-6 C2-C4: FolderPickerDialog + SessionsDialog + חיווט
+**בעיה פתוחה:** onnxruntime-web 1.22.x לא מוצא את קבצי ה-wasm בסביבת Vite/SvelteKit.
+שתי גישות נוסו ונכשלו (DoD #5 לא עמד):
+1. ברירת מחדל — engine לא מוצא wasm.
+2. `ort.env.wasm.wasmPaths = "/ort-wasm/"` + העתקת wasm files ל-static/ — נכשל עם jsep.mjs Dynamic import + MIME type שגוי.
+ממתין להחלטת מרדכי (CDN? Vite plugin? downgrade?)
 
-### מה בוצע?
+- `wake-word-engine.ts`: הוספת `ort.env.wasm.wasmPaths = "/ort-wasm/"` (לא עוזר עדיין).
+- `static/ort-wasm/`: onnxruntime-web wasm+mjs files (4 קבצים).
 
-Commits 2-4 של `slice-redesign-6-modals`.
+#### Commit 7 — route + assets (manual)
 
-#### C2 — FolderPickerDialog (E2)
-- Bits Dialog: breadcrumb, fs-browse, up, "בחר תיקייה זו" → setLastCwd.
+- `routes/wake-word-test/+page.svelte`: route בדיקה standalone. יוצר WakeWordVM ישירות (חריג מחוק זהב #1 — מתועד בהערה). מרנדר VoiceOrb + status + clips.
+- `static/wake-word/models/`: העתקת 7 קבצי .onnx מ-poc-wake-word worktree (mel/embed/vad + 4 keywords; לא timer/weather).
+- מקור ה-models: poc/wake-word/assets/models/ ב-worktree poc-wake-word (לא poc/wake-word-orb/assets כפי שנכתב בbrief — הנתיב בפועל שונה).
+- build: נקי (wake-word-test נכלל). typecheck: נקי. lint:i18n: נקי. 50 test files, 494 tests.
 
-#### C3 — SessionsDialog + SessionCard (E1)
-- Bits Dialog: listSessionsForCwd, refresh, בחירה → loadSession + goto("/chat"), סשן חדש.
+#### Commit 6 — component: VoiceOrb.svelte (manual)
 
-#### C4 — חיווט
-- SessionOptionsPanel: refresh/newSession → `modals.openSessions()`.
-- SettingsScreen: "בחר…" → `modals.openFolder()`.
-- AppShell: מרנדר FolderPickerDialog + SessionsDialog (פעם אחת).
-- typecheck 0, build נקי, 447 tests pass, lint נקי.
+- `components/VoiceOrb.svelte`: נורית קולית. props: vm. lerp ב-rAF loop (החלקה ויזואלית). צבע לפי vm.mode (grey/blue/red). flash ב-$effect על vm.flashCount. role=button + click/keydown → vm.toggle(). שתי timings CSS נפרדות (background-color 300ms, size/filter 80ms).
+- typecheck: נקי. 50 test files, 494 tests pass.
 
-## 2026-06-02 — slice redesign-6 C1: fs-browse adapter + ModalsVM
+#### Commit 5 — view-model: WakeWordVM (integration tests)
 
-### מה בוצע?
+- `view-models/wake-word.svelte.ts`: WakeWordVM — mode/level/flashCount/$state, toggle(), $effect (mode→engine.start/stop), detect→capture start/stop, cue tones (OscillatorNode).
+- `view-models/wake-word.test.svelte.ts`: 9 integration tests (mock engine): mode transitions, flashCount, detect #1/#2, level, error.
+- חריגה מחוק זהב #1 (VM לא ב-+layout): מתועד בהערה — route בדיקה standalone.
+- typecheck: נקי. 50 test files, 494 tests pass.
 
-Commit 1 של `slice-redesign-6-modals` (worktree `.worktrees/slice-redesign-6-modals/`).
+#### Commit 4 — engine: WakeWordEngine + WakeWordCapture (IO + unit)
 
-#### C1 — fs-browse + ModalsVM + context
-- `adapters/fs-browse.ts`: browseFolder(path) → {path, entries[]} עם beUrl.
-- `view-models/modals.svelte.ts`: ModalsVM (sessionsOpen/folderOpen, open/close methods).
-- `context.ts`: getModals/setModals. `+layout.svelte`: new ModalsVM + setModals.
-- 12 מפתחות `modal.*` חדשים (he.ts + en.ts).
-- `docs/decisions`: redesign-6 Bits Dialog entry.
-- typecheck 0.
+- `engines/wake-word/wake-word-engine.ts`: WakeWordEngine (מקביל ל-WakeWordDetector ב-POC). load/start/stop, queue serialization, VAD+pipeline+level events. `ort.env.wasm.numThreads = 1` (single-thread).
+- `engines/wake-word/capture.ts`: WakeWordCapture (מקביל ל-createCapture). push/start/stop(trimFrames)/abort. מחזיר {wavBytes, frames} | null.
+- types.ts: הוספת DETECT_THRESHOLD/VAD_THRESHOLD exports (נדרשו ב-engine).
+- 9 unit tests ל-WakeWordCapture (buffer/trim/abort/wavBytes). IO של WakeWordEngine (getUserMedia) → manual ב-route.
+- typecheck: נקי. 49 test files, 485 tests pass.
 
-## 2026-06-02 — slice redesign-5 C3+C4: UserBubble + MessageBubble + ToolBubble
+#### Commit 3 — engine: types.ts + vad.ts + pipeline.ts (TDD, mock ort)
 
-### מה בוצע?
+- `engines/wake-word/types.ts`: WakeWordConfig (ArkType), MODEL_FILE_MAP (4 keywords בלי timer/weather), DetectEvent/VadEndEvent/WakeWordEventMap.
+- `engines/wake-word/vad.ts`: createVadState + runVadStep (Silero VAD state, mutations in-place).
+- `engines/wake-word/pipeline.ts`: inferWindowSize (מסיק shape[1] ← inputMetadata) + createScorePipeline (mel-buffer=76, hop=8, embedding-history=max-window).
+- package.json: הוספת `onnxruntime-web ^1.22.0` + `arktype ^2.0.0` לdependencies (נדרש לtype imports בCommit 3).
+- 17 טסטים (TDD: RED→GREEN): inferWindowSize/fallbacks, pipeline null-until-76, scores-after-76, window-slicing, reset(), createVadState, runVadStep/mutates-state.
+- typecheck: נקי. כל 48 test files עוברים (476 tests).
 
-Commits 3-4 של `slice-redesign-5-bubbles`.
+#### Commit 2 — engine: audio-math.ts + wav.ts (TDD)
 
-#### C3 — UserBubble + MessageBubble (C4)
-- UserBubble: self-start, avatar user, bubble-user token, joinSegmentText.
-- MessageBubble: self-end, avatar agent, bubble-agent token, markdown נשמר.
+- `packages/frontend/src/lib/engines/wake-word/audio-math.ts`: `computeRms`, `transformMel` (inline POC→פונקציה טהורה), קבועים SAMPLE_RATE/FRAME_SIZE/VAD_THRESHOLD/DETECT_THRESHOLD.
+- `packages/frontend/src/lib/engines/wake-word/wav.ts`: `encodeWav(frames, sampleRate?) → Uint8Array | null`. ממיר Float32 PCM16 עם WAV header 44B.
+- 16 טסטים (TDD: אדום→ירוק): computeRms (sin/const), transformMel (in-place), encodeWav (RIFF/WAVE/data headers, null על ריק, PCM size, sample rate, clamping).
+- חריגה: `noUncheckedIndexedAccess` → שימוש ב-`?? 0` ו-DataView בטסטים.
+- typecheck: נקי (0 errors). כל 46 test files עוברים.
 
-#### C4 — ToolBubble redesign (C2)
-- self-end + max-w-[78%] (לא stretch). avatar tool.
-- drill-down: native `<details>` — narration+status→args+result+content+locations.
-- content/locations מ-slice 16 נשמרו.
-- typecheck 0, build נקי, 464 tests pass, lint נקי.
-- agent-session/speaker/types/bubble לא שונו.
-
-## 2026-06-02 — slice redesign-5 C1+C2: ThoughtBubble fix + Avatar
-
-### מה בוצע?
-
-Commits 1-2 של `slice-redesign-5-bubbles` (worktree `.worktrees/slice-redesign-5-bubbles/`).
-
-#### C1 — ThoughtBubble טקסט רץ (C1 FIX)
-- ThoughtBubble.svelte מחדש: אם ללא-תרגום → joinSegmentText → טקסט רץ (מסיר div-per-segment).
-  אם מתורגם → per-segment תקין. data-model ולא נשמר. `hidden` span לריאקטיביות נשמר.
-
-#### C2 — Avatar component (C3)
-- Avatar.svelte: Lucide User/Sparkles/Brain/Wrench, color-mix tokens לפי kind, לפי avatarCfg.
-
-## 2026-06-02 — slice redesign-4 C2-C4: TypeArea + RecordFooter + חיווט
+## 2026-06-01 — slice 26: idle-bridge reaper BE (TEMPORARY — רשת ביטחון לדליפות)
 
 ### מה בוצע?
 
-Commits 2-4 של `slice-redesign-4-input-mic`.
+הוספת reaper תקופתי בצד שרת שמנקה bridges שדלפו בגלל reload/סגירת טאב — המקרים שslice 25 (FE cleanup) לא מכסה. **זמני** — יימחק עם "future A" (ניהול agents-ברקע).
 
-#### C2 — TypeArea
-- TypeArea.svelte: textarea + SendIcon + onSubmit (trim/sendPrompt/clear; Enter=שלח, Shift+Enter=שורה).
+#### bridge-manager.ts (TDD — 6/6 טסטים)
 
-#### C3 — RecordFooter + crossfade
-- RecordFooter.svelte: toggle record/typing (mode=$state מקומי), min-height:168px + transition:fade, mic-card/fade responsive.
+- הרחבת `Entry` בשלושה שדות (TEMPORARY): `hasActiveWs`, `lastDetachedAt`, `createdAt`
+- הוספת 3 מתודות: `markAttached` / `markDetached` / `listIdle(timeoutMs, now)`
+- לוגיקת `listIdle`: active WS לעולם לא נאסף; detached >= timeout נאסף; never-had-WS grace period = timeout×2
+- קובץ בדיקות: `bridge-manager.idle.test.ts` (6 תרחישים, injected `now`)
 
-#### C4 — חיווט + מחיקות
-- chat/+page.svelte: RecordFooter מחליף ChatInput.
-- מחיקת ChatInput.svelte + MicButton.svelte.
-- typecheck 0, build נקי, 447 tests pass, lint נקי.
+#### ws-agent.ts
 
-## 2026-06-02 — slice redesign-4 C1: i18n + MicLarge
+- הרחבת deps type: `markAttached` + `markDetached` (TEMPORARY)
+- קריאת `markAttached(agentId)` אחרי WS connect
+- קריאת `markDetached(agentId)` לפני rl.close() ב-WS close
 
-### מה בוצע?
+#### server.ts
 
-Commit 1 של `slice-redesign-4-input-mic` (worktree `.worktrees/slice-redesign-4-input-mic/`).
+- interval reaper: `BRIDGE_IDLE_TIMEOUT_MS` env (default 300,000ms), scan interval = min(timeout, 60s)
+- קורא `orchestrator.deleteAndKill` (לא bridgeManager.kill ישירות — כדי לנקות registry)
+- `reaper.unref()` — לא מחזיק event loop
 
-#### C1 — i18n + MicLarge
+#### בדיקות calev
 
-- 6 מפתחות `record.*` + `mic.stop` חדשים (he.ts + en.ts).
-- `components/chat/MicLarge.svelte` — לחצן mic 110px, Lucide icons (Mic/Volume2/Loader2/Square/X), state→color מ-app.css classes, stop button absolute ב-speaking, שגיאות mic.
-- typecheck 0, lint נקי.
+- Phase verifier (Commit 2): GO — שני תרחישים הפוכים אומתו בpord 4004
 
-## 2026-06-02 — slice redesign-3 סיום + calev PARTIAL→תיקון
+#### חריגות
 
-### מה בוצע?
-
-Fix אחרי calev PARTIAL (2 findings מינוריים):
-- F1: SettingToggle.svelte — `onCheckedChange` מוגן בתנאי `disabled` + `aria-disabled` — מונע שינוי state לוגי.
-- F2: decisions entry redesign-3 נכתב — Bits Switch ✅, native Select (fallback) ✅, רציונל מתועד.
-- 6 commits סה"כ על branch `slice-redesign-3-settings`, tip: `7edf7c9`.
-
-## 2026-06-02 — slice redesign-3 C5: SessionOptionsPanel חיווט + AgentOptionsPanel מחיקה
-
-### מה בוצע?
-
-Commit 5 של `slice-redesign-3-settings`.
-
-#### C5 — SessionOptionsPanel + AgentOptionsPanel deletion
-
-- `SessionOptionsPanel.svelte` — חיווט מלא של dropdowns מודל/סוכן/configOptions מתוך לוגיקת AgentOptionsPanel (flattenSelectOptions, applyConfigOption, models/modes/configOptions).
-- `routes/chat/+page.svelte` — הסרת `<AgentOptionsPanel/>` וה-import שלו.
-- מחיקת `components/chat/AgentOptionsPanel.svelte`.
-- typecheck 0, build נקי, i18n lint נקי, 447 tests pass.
-
-## 2026-06-02 — slice redesign-3 C4: SettingsScreen + toggles UI
-
-### מה בוצע?
-
-Commit 4 של `slice-redesign-3-settings`.
-
-#### C4 — SettingsScreen UI
-
-- i18n: 13 מפתחות `settings.*` חדשים ב-keys.ts + he.ts + en.ts.
-- `components/settings/SettingsCard.svelte` — כרטיס wrapper (כותרת uppercase + body).
-- `components/settings/SettingToggle.svelte` — שורת toggle (Switch + label), תומך disabled.
-- `components/settings/SettingsScreen.svelte` — 2 כרטיסים (חיבור + קול ודיבור), 4 toggles מחווטים ל-Settings, VoicePicker, כפתורי איפוס+שמור. לפי מוקאפ שורות 584-650.
-- `routes/settings/+page.svelte` — route דק (15 שורות): AppShell + SettingsScreen.
-- typecheck 0, build נקי, i18n lint נקי.
-
-## 2026-06-02 — slice redesign-3 C3: bits-ui + Switch/Select wrappers
-
-### מה בוצע?
-
-Commit 3 של `slice-redesign-3-settings` (worktree `.worktrees/slice-redesign-3-settings/`, branch `slice-redesign-3-settings`).
-
-#### C3 — Bits UI + ui wrappers
-
-- `pnpm add bits-ui@^2.18.1` ל-frontend-v2.
-- `components/ui/Switch.svelte` — עטיפה דקה של `bits-ui Switch.Root+Thumb` עם `.toggle` CSS helper מ-app.css (RTL-safe).
-- `components/ui/Select.svelte` — native styled `<select>` (fallback על Bits Select שמסורבל ב-RTL+Portal). תועד ב-decisions.
-- typecheck 0 errors, build נקי.
-
-## 2026-06-01 13:25 — slice 24: client-keyed proxy cache + homeDir default cwd
-
-### מה בוצע?
-
-4 commits על branch `slice-24-client-keyed-proxy-cache` (worktree `.worktrees/slice-24-client-keyed-proxy-cache/`).
-בסיס: `115419d`.
-
-#### Commit 0.5 — sha256Key ל-core (TDD)
-
-- הוספת `sha256Key(input: string): Promise<string>` ל-`packages/core/src/voice/cache-key.ts`
-  לצד `cacheKeyFor` הקיים. מיוצא דרך `core/index.ts:6`.
-- מחיקת `packages/backend/src/voice/cache-keys.ts` — לא היה בשימוש.
-- 5 טסטים חדשים (TDD: אדום→ירוק).
-
-#### Commit 1 — BE: x-cache-key + x-cache-meta + sanitizeCacheKey (integration)
-
-- `proxy-cache.ts`: הרחבת `CachedEntry` עם `meta?: Record<string,unknown>`.
-  `set()` כותב `{key}.meta`; `get()` קורא אותו.
-- `proxy-cache.ts`: `sanitizeCacheKey(clientKey)` — sha256(clientKey) למניעת path traversal.
-  key קריא נשמר ב-`meta._clientKey` לצורך מחיקה עתידית.
-- `http-proxy.ts`: קריאת `x-cache-key` + `x-cache-meta`, מחיקתם לפני forward ל-upstream,
-  שימוש ב-clientKey כמפתח (אחרי sanitize) כשנשלח + cacheable.
-  fallback: `computeCacheKey` (התנהגות ישנה — לא נשברה).
-- calev phase-verifier: GO.
-
-#### Commit 2 — FE: 3 adapters שולחים headers (integration)
-
-- `adapters/voice/cache-headers.ts` (חדש): `narrateCacheHeaders`, `translateCacheHeaders`, `ttsCacheHeaders`.
-  מפתחות: `narrate:<toolCallId>`, `translate:<sha256(text|lang)>`, `tts:<voiceId>:<sha256(text|model)>`.
-  `messageId` metadata בלבד (ACP UNSTABLE, לא במפתח).
-- `sdks.ts`: `googleAi()` מקבל `headers?: Record<string,string>` (additive).
-- `narrate.ts` / `translate.ts` / `tts.ts`: שולחים headers לכל קריאה.
-- `speaker.svelte.ts`: מעביר `job.messageId` ל-`translate()` ו-`synthesizeStreaming()`.
-- 20 integration tests ב-`cache-headers.test.ts`.
-
-#### Commit 3 — BE-provided default cwd (integration)
-
-- `http-options.ts`: `GET /api/options` מחזיר `homeDir: os.homedir()`.
-- `adapters/options.ts` (חדש): `fetchServerOptions()` → `{ models, projects, homeDir }`.
-- `settings.svelte.ts`: `DEFAULTS.lastCwd = ""` (הוסרת קיבוע `/home/user` + TODO).
-- `+page.svelte`: `onMount` קורא `fetchServerOptions()`, מציב `cwd = homeDir`
-  רק אם localStorage ריק ולא הוקלד. אם fetch נכשל → שקט.
-
-#### בדיקות
-
-- typecheck + lint:i18n נקיים.
-- `pnpm test`: 504 עוברים (12 skipped) — מ-441 בבסיס (+63 חדשים בסך הכל).
-- calev phase-verifier אחרי Commit 1: GO.
-- calev light-verifier בסוף הסליס: ממתין.
-
----
+- בdist/tests: כשלון בtest #4 בריצה מ-dist בגלל mock env; תוקן בטסט src/ ע"י OPENCODE_BIN=/usr/bin/sleep
+- pre-existing failures: ws-agent-pipe (EventEmitter), bridge-failure-modes (vi.mocked), disk-cache (Promise.all) — לא שייכים לslice זה
 
 ## 2026-06-01 — refactor: מקור-אמת אחד ל-CLIs (שמות + פקודות)
 

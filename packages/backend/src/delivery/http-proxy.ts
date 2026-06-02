@@ -1,7 +1,7 @@
 /**
  * http-proxy.ts — פרוקסי HTTP שקוף עבור Google + ElevenLabs.
  *
- * Slice 10 Phase 1.
+ * Slice 10 Phase 1. עודכן ב-Slice 24 (client-keyed proxy cache).
  *
  * נתיבים (Routes):
  *   /proxy/google/*      → https://generativelanguage.googleapis.com/*
@@ -10,9 +10,12 @@
  * הפרוקסי:
  *   1. מסיר את הקידומת /proxy/<provider>.
  *   2. מעביר headers כמו שהם (מוחק "host" כדי שה-upstream יקבל אותם).
- *   3. עבור בקשות הניתנות לשמירה במטמון: בודק מטמון קודם; בחוסר (miss), מפצל את 
+ *      Slice 24: מוחק גם x-cache-key ו-x-cache-meta לפני forward.
+ *   3. Slice 24: אם הלקוח שלח x-cache-key — משתמש בו (אחרי sanitize) כמפתח.
+ *      אחרת — fallback ל-sha256(method|path|body) כרגיל.
+ *   4. עבור בקשות הניתנות לשמירה במטמון: בודק מטמון קודם; בחוסר (miss), מפצל את
  *      תגובת ה-body למטמון ברקע תוך כדי הזרמה ל-FE.
- *   4. עבור בקשות שלא נשמרות במטמון: העברה שקופה.
+ *   5. עבור בקשות שלא נשמרות במטמון: העברה שקופה.
  *
  * שילוב OneCLI: כשהשרת רץ דרך `onecli run --agent voice-acp`,
  * קריאות ה-fetch היוצאות עוברות דרך HTTPS_PROXY של OneCLI שמחליף את
@@ -22,7 +25,12 @@
 import * as path from "node:path"
 import { createLogger } from "@drive-coding/core/log"
 import type { Hono } from "hono"
-import { computeCacheKey, createProxyCache, isCacheableRequest } from "./proxy-cache.js"
+import {
+  computeCacheKey,
+  createProxyCache,
+  isCacheableRequest,
+  sanitizeCacheKey,
+} from "./proxy-cache.js"
 
 const log = createLogger("backend.proxy")
 
@@ -68,16 +76,32 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
     const headers = new Headers(c.req.raw.headers)
     headers.delete("host")
 
+    // Slice 24: קרא headers של הלקוח לפני המחיקה
+    const clientKey = c.req.header("x-cache-key") // אופציונלי
+    const clientMetaRaw = c.req.header("x-cache-meta") // אופציונלי JSON
+
+    // Slice 24: מחק x-cache-* — לא אמורים להגיע ל-upstream
+    headers.delete("x-cache-key")
+    headers.delete("x-cache-meta")
+
     // קרא body פעם אחת (null עבור GET/HEAD)
     let body: Uint8Array | null = null
     if (c.req.method !== "GET" && c.req.method !== "HEAD") {
       body = new Uint8Array(await c.req.arrayBuffer())
     }
 
-    // ── בדיקת מטמון ──────────────────────────────────────────────────────────
+    // ── קביעת מפתח מטמון ─────────────────────────────────────────────────────
     let cacheKey: string | null = null
-    if (isCacheableRequest(c.req.method, pathSuffix, body)) {
+    if (clientKey && isCacheableRequest(c.req.method, pathSuffix, body)) {
+      // Slice 24: לקוח קבע מפתח — sanitize למניעת path traversal
+      cacheKey = await sanitizeCacheKey(clientKey)
+    } else if (isCacheableRequest(c.req.method, pathSuffix, body)) {
+      // fallback: sha256(method|path|body) — התנהגות ישנה
       cacheKey = await computeCacheKey(c.req.method, pathSuffix, body)
+    }
+
+    // ── בדיקת מטמון ──────────────────────────────────────────────────────────
+    if (cacheKey) {
       const cached = await proxyCache.get(cacheKey)
       if (cached) {
         log.info({ provider, path: pathSuffix }, "proxy cache hit")
@@ -136,8 +160,20 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
       const [toClient, toCache] = res.body.tee()
       const contentType = sanitizedHeaders.get("content-type") ?? "application/octet-stream"
 
+      // Slice 24: פענח meta מהלקוח (אם נשלח)
+      let meta: Record<string, unknown> | undefined
+      if (clientMetaRaw) {
+        try {
+          meta = JSON.parse(clientMetaRaw) as Record<string, unknown>
+          // שמור את ה-key הקריא ב-meta לצורך מחיקה סלקטיבית עתידית
+          meta["_clientKey"] = clientKey
+        } catch {
+          // meta לא תקין — התעלם
+        }
+      }
+
       // שמירה במטמון ברקע — אל תמתין
-      cacheStreamInBackground(proxyCache, cacheKey, toCache, contentType).catch((e) => {
+      cacheStreamInBackground(proxyCache, cacheKey, toCache, contentType, meta).catch((e) => {
         log.warn({ err: e, cacheKey }, "background cache write failed")
       })
 
@@ -163,6 +199,7 @@ async function cacheStreamInBackground(
   key: string,
   stream: ReadableStream<Uint8Array>,
   contentType: string,
+  meta?: Record<string, unknown>,
 ): Promise<void> {
   const chunks: Uint8Array[] = []
   const reader = stream.getReader()
@@ -182,7 +219,7 @@ async function cacheStreamInBackground(
       offset += chunk.length
     }
 
-    await cache.set(key, { body: merged, headers: { contentType } })
+    await cache.set(key, { body: merged, headers: { contentType }, meta })
   } catch {
     // תגובה חלקית — דלג על המטמון, אל תעשה כלום
   }

@@ -14,13 +14,18 @@
  * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
  */
 import "../app.css"
-import { setI18n, setMic, setSession, setSettings, setSpeaker, setVoiceMode } from "$lib/context"
+import { setCues, setI18n, setMic, setModals, setResponsive, setSession, setSettings, setSpeaker, setTheme, setUiShell, setVoiceMode } from "$lib/context"
+import { CuesEngine } from "$lib/engines/cues"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
+import { ResponsiveVM } from "$lib/view-models/responsive.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
 import { Speaker } from "$lib/view-models/speaker.svelte"
+import { ThemeVM } from "$lib/view-models/theme.svelte"
+import { UiShellVM } from "$lib/view-models/ui-shell.svelte"
 import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
+import { ModalsVM } from "$lib/view-models/modals.svelte"
 
 let { children } = $props()
 
@@ -30,27 +35,53 @@ const i18n = new I18nVM()
 // ─── הגדרות ──────────────────────────────────────
 const settings = new Settings()
 
+// ─── cues ─── (slice 6 — אין תלויות חיצוניות, חייב להיות לפני session/speaker/mic)
+const cues = new CuesEngine()
+
 // ─── סשן ───────────────────────────────────────
-const session = new AgentSession()
+const session = new AgentSession({ cues })
 
-// ─── speaker ─── (תלוי ב-session + settings)
-const speaker = new Speaker({ session, settings })
+// ─── speaker ─── (תלוי ב-session + settings + cues)
+const speaker = new Speaker({ session, settings, cues })
 
-// ─── mic ─── (slice 3 — תלוי ב-session)
-const mic = new Mic({ session })
+// ─── mic ─── (slice 3 — תלוי ב-session + cues)
+const mic = new Mic({ session, cues })
 
 // ─── voice-mode ─── (slice 3 — תלוי ב-mic + session + speaker)
 const voiceMode = new VoiceMode({ mic, session, speaker })
 
 // ─── car-mode ─── (slice 7)
 
+// ─── theme ─── (redesign-1)
+const theme = new ThemeVM()
+
+// ─── responsive ─── (redesign-2)
+const responsive = new ResponsiveVM()
+
+// ─── ui-shell ─── (redesign-2)
+const uiShell = new UiShellVM()
+
+// ─── modals ─── (redesign-6)
+const modals = new ModalsVM()
+
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
+setCues(cues)
 setSession(session)
 setSpeaker(speaker)
 setMic(mic)
 setVoiceMode(voiceMode)
+setTheme(theme)
+setResponsive(responsive)
+setUiShell(uiShell)
+setModals(modals)
+
+// ─── DEV-only: חשיפת ה-session ל-window לצורך חילוץ fixtures ודיבוג עיצוב ───
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  // biome-ignore lint/suspicious/noExplicitAny: dev debug hook
+  ;(window as any).__session = session
+}
 </script>
 
 {@render children?.()}

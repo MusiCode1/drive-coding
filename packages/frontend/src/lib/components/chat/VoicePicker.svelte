@@ -12,49 +12,46 @@
  * לפי parallel-safe-code.md, ה-VM (View Model) מחזיק את הנתונים; הרכיב הזה
  * הוא קצה (leaf) דק שקורא + כותב שדה אחד בלבד.
  */
+import { untrack } from "svelte"
 import { getI18n, getSettings } from "$lib/context"
+import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
 
 const settings = getSettings()
 const t = getI18n().t
 
 $effect(() => {
-  // אידמפוטנטי — מוגן בתוך Settings.loadVoices.
-  void settings.loadVoices()
+  // untrack: loadVoices כותב ל-voicesLoading/voicesError/availableVoices ($state).
+  // בלי untrack ה-$effect היה מגיב לכתיבות האלה ורץ שוב → לולאת retry על שגיאה
+  // (gotcha: $effect שקורא+כותב אותו $state). ה-retry האמיתי מתוזמן בתוך
+  // Settings.loadVoices (exponential backoff), לא כאן. כאן רק טריגר חד-פעמי ב-mount.
+  untrack(() => void settings.loadVoices())
 })
 
-function onChange(e: Event) {
-  const target = e.currentTarget as HTMLSelectElement
-  settings.setVoiceId(target.value)
-}
-
-// הצג את ה-voiceId שנבחר כרגע כאפשרות חלופית (placeholder) כאשר
-// הקטלוג ריק כדי של-<select> עדיין יהיה ערך.
 const hasVoices = $derived(settings.availableVoices.length > 0)
+
+// אפשרויות ל-Select. כשהקטלוג ריק — אפשרות יחידה עם ה-voiceId הנוכחי (fallback),
+// כדי שתהליך ה-TTS לא יישבר ול-Select תמיד יהיה ערך תקף.
+const voiceOptions = $derived<SelectOption[]>(
+  hasVoices
+    ? settings.availableVoices.map((v) => ({ value: v.voice_id, label: v.name }))
+    : [
+        {
+          value: settings.voiceId,
+          label: settings.voicesLoading
+            ? t("chat.voicePicker.loading")
+            : settings.voicesError !== null
+              ? t("chat.voicePicker.error")
+              : settings.voiceId,
+        },
+      ],
+)
 </script>
 
-<select
+<Select
   value={settings.voiceId}
-  onchange={onChange}
+  options={voiceOptions}
+  title={t("chat.voicePicker.label")}
+  ariaLabel={t("chat.voicePicker.label")}
   disabled={settings.voicesLoading && !hasVoices}
-  aria-label={t("chat.voicePicker.label")}
->
-  {#if hasVoices}
-    {#each settings.availableVoices as voice (voice.voice_id)}
-      <option value={voice.voice_id}>{voice.name}</option>
-    {/each}
-  {:else if settings.voicesLoading}
-    <option value={settings.voiceId}>{t("chat.voicePicker.loading")}</option>
-  {:else if settings.voicesError !== null}
-    <option value={settings.voiceId}>{t("chat.voicePicker.error")}</option>
-  {:else}
-    <option value={settings.voiceId}>{settings.voiceId}</option>
-  {/if}
-</select>
-
-<style>
-  /* יורש עיצוב מהטופס האב. הוסף דריסות במידת הצורך. */
-  select:disabled {
-    opacity: 0.6;
-    cursor: progress;
-  }
-</style>
+  onchange={(v) => settings.setVoiceId(v)}
+/>
