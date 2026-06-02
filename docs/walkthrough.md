@@ -11,6 +11,13 @@ Commits על branch `slice-wake-word-infra` (base: `poc-wake-word`).
 - 5 טסטים (TDD: אדום→ירוק): midpoint, same value, factor=0, factor=1, fractional.
 - typecheck: נקי. core tests: 403 pass.
 
+#### Commit 7 — route + assets (manual)
+
+- `routes/wake-word-test/+page.svelte`: route בדיקה standalone. יוצר WakeWordVM ישירות (חריג מחוק זהב #1 — מתועד בהערה). מרנדר VoiceOrb + status + clips.
+- `static/wake-word/models/`: העתקת 7 קבצי .onnx מ-poc-wake-word worktree (mel/embed/vad + 4 keywords; לא timer/weather).
+- מקור ה-models: poc/wake-word/assets/models/ ב-worktree poc-wake-word (לא poc/wake-word-orb/assets כפי שנכתב בbrief — הנתיב בפועל שונה).
+- build: נקי (wake-word-test נכלל). typecheck: נקי. lint:i18n: נקי. 50 test files, 494 tests.
+
 #### Commit 6 — component: VoiceOrb.svelte (manual)
 
 - `components/VoiceOrb.svelte`: נורית קולית. props: vm. lerp ב-rAF loop (החלקה ויזואלית). צבע לפי vm.mode (grey/blue/red). flash ב-$effect על vm.flashCount. role=button + click/keydown → vm.toggle(). שתי timings CSS נפרדות (background-color 300ms, size/filter 80ms).
