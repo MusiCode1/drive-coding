@@ -119,8 +119,8 @@ $effect(() => {
       <!-- redesign-7: כפתור JumpDown (צף, מוצג כש-!בתחתית + יש תוכן חדש) -->
       {#if !isAtBottom && hasNewBelow}
         <button
-          class="absolute bottom-20 start-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full text-[13px] font-medium shadow-lg"
-          style="background:var(--accent); color:white; transform:translateX(-50%)"
+          class="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full text-[13px] font-medium shadow-lg"
+          style="background:var(--accent); color:white"
           onclick={jumpToBottom}
           aria-label={t("chat.jumpDown")}
           title={t("chat.jumpDown")}
