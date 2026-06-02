@@ -1,28 +1,36 @@
-## 2026-06-01 14:10 — slice 25: תיקון דליפת bridge (עצירת דימום)
+## 2026-06-01 — slice 26: idle-bridge reaper BE (TEMPORARY — רשת ביטחון לדליפות)
 
 ### מה בוצע?
 
-**1. תיקון `#cleanup` ב-AgentSession**
+הוספת reaper תקופתי בצד שרת שמנקה bridges שדלפו בגלל reload/סגירת טאב — המקרים שslice 25 (FE cleanup) לא מכסה. **זמני** — יימחק עם "future A" (ניהול agents-ברקע).
 
-- הוספת `deleteAgent` לimport מ-`$lib/adapters/agents-api` (שורה 21).
-- בתחילת `#cleanup`: לכידת `agentId` לפני האיפוס ל-null.
-- בסיום `#cleanup`: `if (agentId) void deleteAgent(agentId).catch(() => {})` — fire-and-forget, בדיוק כמו `sessions.ts:71`.
-- חל על כל מסלולי ה-cleanup: `detach` (disconnect מפורש), `attach` catch, `loadSession` catch.
+#### bridge-manager.ts (TDD — 6/6 טסטים)
 
-### בדיקות
+- הרחבת `Entry` בשלושה שדות (TEMPORARY): `hasActiveWs`, `lastDetachedAt`, `createdAt`
+- הוספת 3 מתודות: `markAttached` / `markDetached` / `listIdle(timeoutMs, now)`
+- לוגיקת `listIdle`: active WS לעולם לא נאסף; detached >= timeout נאסף; never-had-WS grace period = timeout×2
+- קובץ בדיקות: `bridge-manager.idle.test.ts` (6 תרחישים, injected `now`)
 
-- typecheck: ✅ ירוק
-- lint:i18n: ✅ ירוק
-- tests: ✅ 458 passed, 0 failures
-- בדיקה ידנית: 3× connect→disconnect — 0 agents אחרי כל disconnect ✅
-- DoD#8 regression: connect→prompt→disconnect — הכל עובד ✅
+#### ws-agent.ts
 
-### חריגות
+- הרחבת deps type: `markAttached` + `markDetached` (TEMPORARY)
+- קריאת `markAttached(agentId)` אחרי WS connect
+- קריאת `markDetached(agentId)` לפני rl.close() ב-WS close
 
-- error path (cwd שגוי, spawn=ENOENT): agent בstatus=crashed נשאר ב-`/api/agents`.
-  הסיבה: `createAgent` מחזיר agentId לפני שה-spawn נכשל; `waitForOpen` מצליח על WS
-  ל-crashed agent; לכן ה-`try` לא נכשל וה-`#cleanup` catch לא נקרא.
-  זהו מסלול נפרד (לא regression — קיים ב-dev base לפני הסלייס). מדווח לcalev.
+#### server.ts
+
+- interval reaper: `BRIDGE_IDLE_TIMEOUT_MS` env (default 300,000ms), scan interval = min(timeout, 60s)
+- קורא `orchestrator.deleteAndKill` (לא bridgeManager.kill ישירות — כדי לנקות registry)
+- `reaper.unref()` — לא מחזיק event loop
+
+#### בדיקות calev
+
+- Phase verifier (Commit 2): GO — שני תרחישים הפוכים אומתו בpord 4004
+
+#### חריגות
+
+- בdist/tests: כשלון בtest #4 בריצה מ-dist בגלל mock env; תוקן בטסט src/ ע"י OPENCODE_BIN=/usr/bin/sleep
+- pre-existing failures: ws-agent-pipe (EventEmitter), bridge-failure-modes (vi.mocked), disk-cache (Promise.all) — לא שייכים לslice זה
 
 ## 2026-06-01 — refactor: מקור-אמת אחד ל-CLIs (שמות + פקודות)
 

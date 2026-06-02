@@ -40,7 +40,12 @@ export type AgentWsData = {
 
 export function createAgentWsHandler(deps: {
   orchestrator: AgentOrchestrator
-  bridgeManager: { getChild(bridgeId: string): ChildProcessWithoutNullStreams | null }
+  bridgeManager: {
+    getChild(bridgeId: string): ChildProcessWithoutNullStreams | null
+    // ─── TEMPORARY (slice 26) ───
+    markAttached(bridgeId: string): void
+    markDetached(bridgeId: string): void
+  }
 }): (ws: WebSocket, agentId: string) => void {
   // MED-8: חיבור FE WS פעיל אחד לכל agentId — מונע התנגשות מצב ACP בטאב שני
   const activeFeWs = new Map<string, WebSocket>()
@@ -75,6 +80,7 @@ export function createAgentWsHandler(deps: {
     }
 
     activeFeWs.set(agentId, feWs)
+    deps.bridgeManager.markAttached(agentId) // ← TEMPORARY (slice 26)
     childLog.info({ pid: child.pid }, "WS connect → pipe attached")
 
     // ── pipeChild — ניתוב ──────────────────────────────────────────────────────
@@ -121,6 +127,7 @@ export function createAgentWsHandler(deps: {
     feWs.on("close", () => {
       childLog.info({}, "WS disconnect — detaching pipe")
       activeFeWs.delete(agentId)
+      deps.bridgeManager.markDetached(agentId) // ← TEMPORARY (slice 26)
       rl.close()
       child.off("exit", onChildExit)
       // חשוב: אל תקרא ל-child.kill() — ה-child שורד התנתקות של ה-FE
