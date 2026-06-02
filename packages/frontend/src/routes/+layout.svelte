@@ -14,13 +14,15 @@
  * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
  */
 import "../app.css"
-import { setI18n, setMic, setSession, setSettings, setSpeaker, setTheme, setVoiceMode } from "$lib/context"
+import { setI18n, setMic, setResponsive, setSession, setSettings, setSpeaker, setTheme, setUiShell, setVoiceMode } from "$lib/context"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
+import { ResponsiveVM } from "$lib/view-models/responsive.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
 import { Speaker } from "$lib/view-models/speaker.svelte"
 import { ThemeVM } from "$lib/view-models/theme.svelte"
+import { UiShellVM } from "$lib/view-models/ui-shell.svelte"
 import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 
 let { children } = $props()
@@ -48,6 +50,12 @@ const voiceMode = new VoiceMode({ mic, session, speaker })
 // ─── theme ─── (redesign-1)
 const theme = new ThemeVM()
 
+// ─── responsive ─── (redesign-2)
+const responsive = new ResponsiveVM()
+
+// ─── ui-shell ─── (redesign-2)
+const uiShell = new UiShellVM()
+
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
@@ -56,6 +64,8 @@ setSpeaker(speaker)
 setMic(mic)
 setVoiceMode(voiceMode)
 setTheme(theme)
+setResponsive(responsive)
+setUiShell(uiShell)
 </script>
 
 {@render children?.()}

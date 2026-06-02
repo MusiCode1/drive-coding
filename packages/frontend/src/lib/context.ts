@@ -15,9 +15,11 @@ import { createContext } from "svelte"
 import type { AgentSession } from "./view-models/agent-session.svelte"
 import type { I18nVM } from "./view-models/i18n.svelte"
 import type { Mic } from "./view-models/mic.svelte"
+import type { ResponsiveVM } from "./view-models/responsive.svelte"
 import type { Settings } from "./view-models/settings.svelte"
 import type { Speaker } from "./view-models/speaker.svelte"
 import type { ThemeVM } from "./view-models/theme.svelte"
+import type { UiShellVM } from "./view-models/ui-shell.svelte"
 import type { VoiceMode } from "./view-models/derived/voice-mode.svelte"
 
 // ─── i18n ──────────────────────────────────────────
@@ -42,3 +44,9 @@ export const [getVoiceMode, setVoiceMode] = createContext<VoiceMode>()
 
 // ─── theme ───
 export const [getTheme, setTheme] = createContext<ThemeVM>()
+
+// ─── responsive ─── (redesign-2)
+export const [getResponsive, setResponsive] = createContext<ResponsiveVM>()
+
+// ─── ui-shell ─── (redesign-2)
+export const [getUiShell, setUiShell] = createContext<UiShellVM>()
