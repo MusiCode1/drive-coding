@@ -53,7 +53,7 @@ const capture = createCapture({
 
 // ── Detector ────────────────────────────────────────────────────────────────
 const detector = new WakeWordDetector({
-  keywords: ["hey_jarvis"],
+  keywords: ["hey_jarvis", "alexa", "hey_mycroft", "hey_rhasspy", "timer", "weather"],
   baseAssetUrl: "assets/models",
 });
 

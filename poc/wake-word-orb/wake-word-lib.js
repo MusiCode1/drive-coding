@@ -178,30 +178,60 @@ export async function runEmbedding(embModel, melWindow76, ortRef = ort) {
   return new Float32Array(out[embModel.outputNames[0]].data);
 }
 
-/** Run one keyword classifier on a 16×96 embedding window → score 0..1. (AHA #4) */
-export async function runClassifier(clsModel, embWindow16, ortRef = ort) {
-  const flat = new Float32Array(16 * 96);
-  for (let j = 0; j < embWindow16.length; j++) flat.set(embWindow16[j], j * 96);
-  const t = new ortRef.Tensor("float32", flat, [1, 16, 96]);
+/**
+ * Infer a classifier's embedding-window size from its input shape ([1, N, 96]).
+ * Different openWakeWord models use different N (e.g. 16, 22, 34). Falls back
+ * to `fallback` if the metadata isn't a finite number.
+ */
+export function inferWindowSize(session, fallback = 16) {
+  const inName = session.inputNames?.[0];
+  const md = session.inputMetadata;
+  if (!md || !inName) return fallback;
+  const meta = Array.isArray(md) ? md.find((m) => m?.name === inName) || md[0] : md[inName];
+  const dim = meta?.shape?.[1];
+  return typeof dim === "number" && Number.isFinite(dim) ? dim : fallback;
+}
+
+/**
+ * Run one keyword classifier on the LAST `windowSize` embeddings → score 0..1.
+ * `embHistory` may be longer than windowSize; only the tail is used. (AHA #4)
+ */
+export async function runClassifier(clsModel, embHistory, windowSize, ortRef = ort) {
+  const win = embHistory.slice(-windowSize);
+  const flat = new Float32Array(windowSize * 96);
+  for (let j = 0; j < win.length; j++) flat.set(win[j], j * 96);
+  const t = new ortRef.Tensor("float32", flat, [1, windowSize, 96]);
   const out = await clsModel.run({ [clsModel.inputNames[0]]: t });
   return out[clsModel.outputNames[0]].data[0];
 }
 
 /**
  * Build a stateful score pipeline that turns single frames into per-keyword
- * scores, managing the mel (76) and embedding (16) sliding windows internally.
+ * scores, managing the mel (76) and embedding sliding windows internally.
+ * Each classifier may need a different embedding-window size; this is inferred
+ * per model and the shared embedding history is sized to the largest.
  *
  * Returns { push(frame) -> Promise<{keyword: score}|null> , reset() }.
  * Returns null until the first 76-mel window fills; thereafter returns the
  * latest scores for every keyword on each emitting step.
  */
 export function createScorePipeline({ melModel, embModel, classifiers, ortRef = ort }) {
+  // Per-classifier window sizes, and the max (history length we must keep).
+  const windows = {};
+  let maxWindow = 16;
+  for (const name in classifiers) {
+    const w = inferWindowSize(classifiers[name]);
+    windows[name] = w;
+    if (w > maxWindow) maxWindow = w;
+  }
+
   let melBuffer = [];
   let embBuffer = [];
-  const initEmb = () => { embBuffer = []; for (let i = 0; i < 16; i++) embBuffer.push(new Float32Array(96).fill(0)); };
+  const initEmb = () => { embBuffer = []; for (let i = 0; i < maxWindow; i++) embBuffer.push(new Float32Array(96).fill(0)); };
   initEmb();
 
   return {
+    windows,
     reset() { melBuffer = []; initEmb(); },
     async push(frame) {
       const rows = await runMelspec(melModel, frame, ortRef);
@@ -216,7 +246,7 @@ export function createScorePipeline({ melModel, embModel, classifiers, ortRef = 
 
         latest = {};
         for (const name in classifiers) {
-          latest[name] = await runClassifier(classifiers[name], embBuffer, ortRef);
+          latest[name] = await runClassifier(classifiers[name], embBuffer, windows[name], ortRef);
         }
         melBuffer.splice(0, 8); // hop
       }
