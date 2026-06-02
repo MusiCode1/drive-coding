@@ -1,4 +1,14 @@
-## 2026-06-02 — slice wake-word-infra: תשתית wake-word ב-FE + route בדיקה
+## 2026-06-02 — slice-wake-word-infra: תשתית wake-word ב-FE + route בדיקה
+
+### סיכום ביצוע
+
+8 commits על `slice-wake-word-infra` (base: `poc-wake-word`, tip: `58729ed`).
+typecheck 0, build נקי, 494 tests pass (50 test files), lint:i18n נקי.
+DoD #5 עמד: "/wake-word-test" נטען, status="ready — tap the orb to listen".
+
+**סטייה מה-brief:** onnxruntime-web wasm paths — ה-brief ציין שאם Vite wasm נשבר אחרי 2 גישות לדווח, אבל גישה 3 (CDN) הצליחה. זה אותה גישה שה-POC השתמש בה.
+
+
 
 ### מה בוצע?
 
