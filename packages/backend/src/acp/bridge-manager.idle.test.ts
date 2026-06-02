@@ -116,7 +116,7 @@ describe("bridge-manager listIdle (TEMPORARY slice 26)", () => {
   it("4: never-attached bridge not returned within grace period", async () => {
     await spawnBridge("agent-4")
 
-    const createdAt = Date.now()
+    const createdAt = bm.getCreatedAt("agent-4")!   // נקודת-האמת האמיתית מה-store
     const timeout = 10_000
 
     // now - createdAt < timeout * 2
@@ -128,7 +128,7 @@ describe("bridge-manager listIdle (TEMPORARY slice 26)", () => {
   it("5: never-attached bridge returned after grace period expires", async () => {
     await spawnBridge("agent-5")
 
-    const createdAt = Date.now()
+    const createdAt = bm.getCreatedAt("agent-5")!   // נקודת-האמת האמיתית מה-store
     const timeout = 10_000
 
     // now - createdAt >= timeout * 2
