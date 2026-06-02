@@ -10,13 +10,15 @@
  *
  * ─── settings-redesign (redesign-3) ───
  */
-import { getI18n, getSettings } from "$lib/context"
+import { getI18n, getSettings, getModals } from "$lib/context"
 import SettingsCard from "./SettingsCard.svelte"
 import SettingToggle from "./SettingToggle.svelte"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 
 const settings = getSettings()
 const t = getI18n().t
+// ─── redesign-6 ───
+const modals = getModals()
 
 // translateThoughts disabled כש-speakThoughts כבוי
 const translateDisabled = $derived(!settings.speakThoughts)
@@ -40,10 +42,11 @@ const translateDisabled = $derived(!settings.speakThoughts)
           class="flex-1 rounded-xl px-3 py-3 text-sm font-mono outline-none border opacity-50"
           style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
         />
+        <!-- redesign-6: פותח FolderPickerDialog -->
         <button
-          disabled
-          class="px-4 rounded-xl text-sm font-medium border opacity-50"
+          class="px-4 rounded-xl text-sm font-medium border"
           style="background:var(--bg-card); border-color:var(--border); color:var(--fg-dim)"
+          onclick={() => modals.openFolder()}
         >
           {t("settings.folder.pick")}
         </button>

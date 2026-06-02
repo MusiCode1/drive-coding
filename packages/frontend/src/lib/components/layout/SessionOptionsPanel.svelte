@@ -9,11 +9,13 @@
  * ─── redesign-3 (חיווט dropdowns) ───
  */
 import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
-import { getI18n, getSession } from "$lib/context"
+import { getI18n, getSession, getModals } from "$lib/context"
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 
 const t = getI18n().t
 const session = getSession()
+// ─── redesign-6 ───
+const modals = getModals()
 
 // ─── helper — flatten select options (groups → flat list) ───
 type SelectOpt = { value: string; name: string; description?: string | null }
@@ -183,28 +185,29 @@ async function onCheckboxChange(configId: string, e: Event) {
     <span class="text-[11px] font-semibold uppercase tracking-wider" style="color:var(--fg-dim)">
       {t("sidebar.sessions")}
     </span>
-    <!-- TODO redesign-6: wire refresh -->
+    <!-- redesign-6: פותח SessionsDialog -->
     <button
       class="size-6 grid place-items-center rounded"
       style="color:var(--fg-dim)"
       title={t("sidebar.refresh")}
       aria-label={t("sidebar.refresh")}
+      onclick={() => modals.openSessions()}
     >
       <RefreshCwIcon size={13} strokeWidth={2} />
     </button>
   </div>
 
-  <!-- סשן חדש -->
-  <!-- TODO redesign-6: wire to create session -->
+  <!-- סשן חדש — פותח SessionsDialog -->
   <button
     class="shrink-0 text-start rounded-lg p-2.5 text-[13px] font-medium border border-dashed"
     style="border-color:var(--border); color:var(--accent)"
+    onclick={() => modals.openSessions()}
   >
     ＋ {t("sidebar.newSession")}
   </button>
 
-  <!-- placeholder רשימת סשנים — TODO redesign-6: wire -->
+  <!-- placeholder רשימת סשנים -->
   <div class="flex flex-col gap-2 overflow-y-auto chat-scroll flex-1 min-h-0 -mx-1 px-1">
-    <!-- ריק בינתיים -->
+    <!-- רשימה מלאה ב-SessionsDialog -->
   </div>
 </div>

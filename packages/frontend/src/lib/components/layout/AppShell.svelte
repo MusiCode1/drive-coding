@@ -19,6 +19,9 @@ import { getResponsive, getSession } from "$lib/context"
 import AppHeader from "./AppHeader.svelte"
 import Sidebar from "./Sidebar.svelte"
 import BottomSheet from "./BottomSheet.svelte"
+// ─── redesign-6: modals ───
+import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
+import SessionsDialog from "$lib/components/modals/SessionsDialog.svelte"
 
 let { children, onDisconnect }: {
   children: import("svelte").Snippet
@@ -89,4 +92,8 @@ $effect(() => {
   {#if responsive.isMobile}
     <BottomSheet />
   {/if}
+
+  <!-- redesign-6: modals (מרונדרים פעם אחת ב-AppShell) -->
+  <FolderPickerDialog />
+  <SessionsDialog />
 </div>
