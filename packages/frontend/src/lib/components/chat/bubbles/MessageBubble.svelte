@@ -17,10 +17,10 @@ let { bubble }: { bubble: MessageBubble } = $props()
 const t = getI18n().t
 </script>
 
-<div class="flex gap-2 self-end max-w-[85%] items-end flex-row-reverse">
+<div class="flex gap-2 self-end max-w-[85%] min-w-0 items-end flex-row-reverse">
   <Avatar kind="agent" />
   <div
-    class="px-3.5 py-2.5 rounded-2xl rounded-br-sm text-sm leading-relaxed"
+    class="px-3.5 py-2.5 rounded-2xl rounded-ee-sm text-sm leading-relaxed min-w-0 break-words"
     style="background:var(--bubble-agent)"
     dir="auto"
   >
@@ -43,7 +43,10 @@ const t = getI18n().t
     background: rgba(0,0,0,0.25);
     padding: 0.1em 0.3em;
     border-radius: 3px;
+    overflow-wrap: anywhere;
   }
+  /* code בתוך pre לא נשבר (יש ל-pre overflow-x:auto) */
+  div :global(pre code) { overflow-wrap: normal; }
   div :global(pre) {
     background: rgba(0,0,0,0.35);
     padding: 0.6rem 0.8rem;

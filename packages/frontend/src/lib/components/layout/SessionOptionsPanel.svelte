@@ -9,13 +9,24 @@
  * ─── redesign-3 (חיווט dropdowns) ───
  */
 import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
-import { getI18n, getSession, getModals } from "$lib/context"
+import LogOutIcon from "@lucide/svelte/icons/log-out"
+import Volume2Icon from "@lucide/svelte/icons/volume-2"
+import VolumeXIcon from "@lucide/svelte/icons/volume-x"
+import { goto } from "$app/navigation"
+import { getI18n, getSession, getModals, getSpeaker } from "$lib/context"
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 
 const t = getI18n().t
 const session = getSession()
 // ─── redesign-6 ───
 const modals = getModals()
+// ─── redesign-fix: disconnect + audio הועברו מ-AppHeader (פדיון חוב redesign-2/3) ───
+const speaker = getSpeaker()
+
+function onDisconnect() {
+  session.detach()
+  goto("/")
+}
 
 // ─── helper — flatten select options (groups → flat list) ───
 type SelectOpt = { value: string; name: string; description?: string | null }
@@ -210,4 +221,34 @@ async function onCheckboxChange(configId: string, e: Event) {
   <div class="flex flex-col gap-2 overflow-y-auto chat-scroll flex-1 min-h-0 -mx-1 px-1">
     <!-- רשימה מלאה ב-SessionsDialog -->
   </div>
+</div>
+
+<!-- פעולות סשן — audio toggle + disconnect (פדיון חוב: הועברו מ-AppHeader) -->
+<div class="flex flex-col gap-2 shrink-0 pt-2 border-t" style="border-color:var(--border)">
+  <!-- audio master toggle -->
+  <button
+    class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px]"
+    style="color:var(--fg-dim)"
+    onclick={() => speaker.toggle()}
+    aria-label={speaker.enabled ? t("header.audioOn") : t("header.audioOff")}
+  >
+    {#if speaker.enabled}
+      <Volume2Icon size={16} strokeWidth={1.75} />
+      <span>{t("header.audioOn")}</span>
+    {:else}
+      <VolumeXIcon size={16} strokeWidth={1.75} />
+      <span>{t("header.audioOff")}</span>
+    {/if}
+  </button>
+
+  <!-- disconnect -->
+  <button
+    class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px]"
+    style="color:var(--recording)"
+    onclick={onDisconnect}
+    aria-label={t("header.disconnect")}
+  >
+    <LogOutIcon size={16} strokeWidth={1.75} />
+    <span>{t("header.disconnect")}</span>
+  </button>
 </div>

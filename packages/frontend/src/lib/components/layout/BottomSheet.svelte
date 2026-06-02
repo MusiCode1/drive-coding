@@ -1,77 +1,140 @@
 <script lang="ts">
 /**
- * BottomSheet — sheet מובייל נגרר (peek → open).
- * גרירה על הידית: pointer events. לחיצה על הידית = toggle. backdrop = סגירה.
+ * BottomSheet — sheet מובייל עם גרירה רציפה + 3 נקודות עצירה (peek/half/full).
  *
- * peek = 60px. open = 80vh.
- * z-index: backdrop z-30, sheet z-40 (מוקאפ).
+ * האצבע גוררת רציף; בשחרור — snap לנקודה הקרובה. קליק על הידית = peek↔full.
+ * backdrop (מוצג כשלא-peek) = חזרה ל-peek.
  *
- * ─── redesign-2 ───
+ * detents (גובה גלוי מלמטה):
+ *   peek = 28px (רק הידית) · half = 45vh · full = 80vh.
+ * הרקע/הצל/התוכן דוהים בהדרגה לפי הגובה הגלוי (לא קפיצה).
+ *
+ * ─── redesign-2 · detents: redesign-fix ───
  */
 import { getI18n, getUiShell } from "$lib/context"
+import type { SheetDetent } from "$lib/view-models/ui-shell.svelte"
 import SessionOptionsPanel from "./SessionOptionsPanel.svelte"
 
 const uiShell = getUiShell()
 const t = getI18n().t
 
-// גרירה
-let dragStartY = 0
-let dragStartOpen = false
+const PEEK_PX = 28
+const SHEET_VH = 0.8 // גובה ה-sheet עצמו = 80vh
+
+// גובה החלון (reactive — מתעדכן ב-resize)
+let winH = $state(typeof window !== "undefined" ? window.innerHeight : 800)
+$effect(() => {
+  const onResize = () => (winH = window.innerHeight)
+  window.addEventListener("resize", onResize)
+  return () => window.removeEventListener("resize", onResize)
+})
+
+const sheetPx = $derived(winH * SHEET_VH) // גובה ה-sheet בפיקסלים
+
+/** גובה גלוי (px מלמטה) לכל detent. */
+function detentVisible(d: SheetDetent): number {
+  if (d === "peek") return PEEK_PX
+  if (d === "half") return Math.min(winH * 0.45, sheetPx)
+  return sheetPx // full
+}
+
+// הגובה הגלוי הנוכחי: בזמן גרירה — sheetDragPx; אחרת — לפי ה-detent.
+const visiblePx = $derived(
+  uiShell.sheetDragPx ?? detentVisible(uiShell.sheetDetent),
+)
+
+// אינטרפולציה peek→full עבור רקע/צל/opacity (0 ב-peek, 1 ב-full)
+const openness = $derived(
+  Math.max(0, Math.min(1, (visiblePx - PEEK_PX) / (sheetPx - PEEK_PX))),
+)
+
+// ─── גרירה (משתני-עזר לא-ריאקטיביים — בלי $state) ───
+let dragStartY = $state(0)
+let dragStartVisible = $state(0)
+let dragging = $state(false)
 
 function onPointerDown(e: PointerEvent) {
+  dragging = true
   dragStartY = e.clientY
-  dragStartOpen = uiShell.sheetOpen
+  dragStartVisible = detentVisible(uiShell.sheetDetent)
   ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
 }
 
-function onPointerUp(e: PointerEvent) {
-  const deltaY = e.clientY - dragStartY
-  // גרירה כלפי מעלה >= 30px → פתח; כלפי מטה >= 30px → סגור
-  if (deltaY < -30) {
-    uiShell.openSheet()
-  } else if (deltaY > 30) {
-    uiShell.closeSheet()
-  } else {
-    // קליק (תזוזה קטנה) → toggle
+function onPointerMove(e: PointerEvent) {
+  if (!dragging) return
+  // גרירה כלפי מעלה (clientY יורד) → יותר גלוי
+  const delta = dragStartY - e.clientY
+  const next = Math.max(PEEK_PX, Math.min(sheetPx, dragStartVisible + delta))
+  uiShell.sheetDragPx = next
+}
+
+function onPointerUp() {
+  if (!dragging) return
+  dragging = false
+  const current = uiShell.sheetDragPx
+  uiShell.sheetDragPx = null
+  if (current === null) {
+    // קליק (בלי תזוזה) → toggle
     uiShell.toggleSheet()
+    return
   }
+  // snap ל-detent הקרוב ביותר לפי הגובה הגלוי
+  const detents: SheetDetent[] = ["peek", "half", "full"]
+  let best: SheetDetent = "peek"
+  let bestDist = Infinity
+  for (const d of detents) {
+    const dist = Math.abs(detentVisible(d) - current)
+    if (dist < bestDist) {
+      bestDist = dist
+      best = d
+    }
+  }
+  uiShell.setDetent(best)
 }
 </script>
 
-<!-- backdrop — מוצג רק כשפתוח -->
+<!-- backdrop — מוצג כשלא-peek (פתוח חלקית/מלא) -->
 {#if uiShell.sheetOpen}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="fixed inset-0 z-30"
-    style="background:rgba(0,0,0,0.4)"
+    class="fixed inset-0 z-30 transition-opacity duration-200"
+    style="background:rgba(0,0,0,{0.4 * openness})"
     onclick={() => uiShell.closeSheet()}
   ></div>
 {/if}
 
-<!-- sheet עצמו -->
+<!-- sheet — גובה קבוע (full), ה-translateY קובע כמה גלוי. רקע/צל דוהים לפי openness. -->
 <div
-  class="fixed inset-x-0 bottom-0 z-40 flex flex-col rounded-t-2xl transition-transform duration-300"
-  style="background:var(--bg-elev); border-top:1px solid var(--border);
-         height:80vh;
-         transform:translateY({uiShell.sheetOpen ? '0' : 'calc(80vh - 60px)'})"
+  class="fixed inset-x-0 bottom-0 z-40 flex flex-col rounded-t-2xl"
+  class:transition-transform={!dragging}
+  style="height:{sheetPx}px;
+         transform:translateY({sheetPx - visiblePx}px);
+         transition-duration:300ms;
+         background:color-mix(in srgb, var(--bg-elev) {openness * 100}%, transparent);
+         border-top:1px solid color-mix(in srgb, var(--border) {openness * 100}%, transparent);
+         box-shadow:0 -8px 24px rgba(0,0,0,{0.35 * openness})"
 >
   <!-- ידית גרירה -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="flex items-center justify-center pt-3 pb-2 shrink-0 cursor-grab touch-none"
+    class="flex items-center justify-center py-2.5 shrink-0 cursor-grab touch-none"
     onpointerdown={onPointerDown}
+    onpointermove={onPointerMove}
     onpointerup={onPointerUp}
     aria-label={t("sheet.handle")}
     role="button"
     tabindex="0"
     onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') uiShell.toggleSheet() }}
   >
-    <div class="w-10 h-1 rounded-full" style="background:var(--border)"></div>
+    <div class="w-12 h-1.5 rounded-full" style="background:var(--border-str)"></div>
   </div>
 
-  <!-- תוכן -->
-  <div class="flex flex-col gap-4 px-4 pt-2 pb-6 flex-1 min-h-0 overflow-y-auto">
+  <!-- תוכן — דוהה לפי openness, ללא אינטראקציה כשכמעט-סגור -->
+  <div
+    class="flex flex-col gap-4 px-4 pt-2 pb-6 flex-1 min-h-0 overflow-y-auto"
+    style="opacity:{openness}; pointer-events:{openness > 0.1 ? 'auto' : 'none'}"
+  >
     <SessionOptionsPanel />
   </div>
 </div>

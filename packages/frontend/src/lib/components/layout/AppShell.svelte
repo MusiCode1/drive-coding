@@ -25,9 +25,9 @@ import SessionsDialog from "$lib/components/modals/SessionsDialog.svelte"
 // ─── redesign-7: smart-scroll ───
 import ArrowDownIcon from "@lucide/svelte/icons/arrow-down"
 
-let { children, onDisconnect }: {
+let { children, footer }: {
   children: import("svelte").Snippet
-  onDisconnect?: () => void
+  footer?: import("svelte").Snippet
 } = $props()
 
 const responsive = getResponsive()
@@ -88,7 +88,7 @@ $effect(() => {
 
 <div class="relative flex flex-col h-[100dvh] w-full mx-auto overflow-hidden" style="background:var(--bg)">
   <!-- AppHeader (absolute top) -->
-  <AppHeader {onDisconnect} />
+  <AppHeader />
 
   <!-- גוף: sidebar (דסקטופ) + תוכן -->
   <div class="flex flex-row flex-1 min-h-0">
@@ -96,39 +96,51 @@ $effect(() => {
       <Sidebar />
     {/if}
 
-    <!-- עמודת תוכן -->
-    <div class="relative flex flex-col flex-1 min-h-0">
-      <!-- chat-fade: overlay gradient בתחתית (הודעות "נמסות" לפני ה-footer) -->
-      <div
-        class="pointer-events-none absolute inset-x-0 bottom-0 z-10"
-        style="height:72px; background:linear-gradient(to top, var(--bg), transparent)"
-      ></div>
-
-      <!-- scroll area — owner של ה-scroll (חוק זהב #4) -->
-      <div
-        bind:this={scrollEl}
-        class="chat-scroll flex-1 overflow-y-auto px-4 pt-20 pb-10"
-        onscroll={onScroll}
-      >
-        <!-- max-w-2xl: בועות צרות ממורכזות (fix A2a — קריאות בדסקטופ) -->
-        <div class="flex flex-col gap-5 max-w-2xl mx-auto w-full">
-          {@render children()}
+    <!-- עמודת תוכן (min-w-0: מונע מ-flex item לגלוש מעבר לרוחב המסך — תיקון mic-card גולש) -->
+    <div class="relative flex flex-col flex-1 min-w-0 min-h-0">
+      <!-- אזור הגלילה עטוף ב-wrapper relative.flex-1 כדי שה-chat-fade ימוקם
+           בתחתיתו (bottom-0) — כלומר בדיוק בגבול שבין ההודעות ל-footer.
+           ה-wrapper מסתיים איפה שה-footer (sibling shrink-0) מתחיל, ולכן ה-fade
+           נצמד אוטומטית מעל ה-footer גם אם גובה ה-footer משתנה (מוקאפ 477-481). -->
+      <div class="relative flex-1 min-h-0">
+        <!-- scroll area — owner של ה-scroll (חוק זהב #4) -->
+        <div
+          bind:this={scrollEl}
+          class="chat-scroll h-full overflow-y-auto px-4 pt-20 pb-10"
+          onscroll={onScroll}
+        >
+          <!-- max-w-2xl: בועות צרות ממורכזות (fix A2a — קריאות בדסקטופ) -->
+          <div class="flex flex-col gap-5 max-w-2xl mx-auto w-full">
+            {@render children()}
+          </div>
         </div>
+
+        <!-- chat-fade: overlay gradient בתחתית אזור הגלילה (הודעות "נמסות"
+             לפני ה-footer). אחרי ה-scroll כדי לשבת מעליו (z) ולא להיחתך. -->
+        <div
+          class="pointer-events-none absolute inset-x-0 bottom-0 z-10"
+          style="height:72px; background:linear-gradient(to top, var(--bg), transparent)"
+        ></div>
+
+        <!-- redesign-7: כפתור JumpDown (צף, מוצג כש-!בתחתית + יש תוכן חדש) -->
+        {#if !isAtBottom && hasNewBelow}
+          <button
+            class="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full text-[13px] font-medium shadow-lg"
+            style="background:var(--accent); color:white"
+            onclick={jumpToBottom}
+            aria-label={t("chat.jumpDown")}
+            title={t("chat.jumpDown")}
+          >
+            <ArrowDownIcon size={14} strokeWidth={2.5} />
+            {t("chat.jumpDown")}
+          </button>
+        {/if}
       </div>
 
-      <!-- redesign-7: כפתור JumpDown (צף, מוצג כש-!בתחתית + יש תוכן חדש) -->
-      {#if !isAtBottom && hasNewBelow}
-        <button
-          class="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full text-[13px] font-medium shadow-lg"
-          style="background:var(--accent); color:white"
-          onclick={jumpToBottom}
-          aria-label={t("chat.jumpDown")}
-          title={t("chat.jumpDown")}
-        >
-          <ArrowDownIcon size={14} strokeWidth={2.5} />
-          {t("chat.jumpDown")}
-        </button>
-      {/if}
+      <!-- footer slot — sibling של ה-scroll (shrink-0), מעוגן בתחתית העמודה.
+           (תיקון layout: ה-RecordFooter היה בתוך children ולכן נגלל; כעת הוא
+           אח של chat-scroll כמו במוקאפ ChatColumn — footer shrink-0 בתחתית.) -->
+      {@render footer?.()}
     </div>
   </div>
 

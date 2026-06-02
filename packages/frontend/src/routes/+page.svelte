@@ -21,6 +21,23 @@ let sessionsLoading = $state(false)
 let sessionsError = $state<string | null>(null)
 let selectedSessionId = $state<string | null>(null)
 
+// ─── DEV-only: mock fixtures (static/fixtures/*.json) — דיבוג עיצוב ללא ACP ───
+const MOCK_FIXTURES: SessionInfo[] = import.meta.env.DEV
+  ? [
+      ["greeting", "שיחה קצרה (3 בועות)"],
+      ["tool-spill", "בינוני — הרבה הודעות (25)"],
+      ["phone-tunnel", "בינוני מאוזן (39)"],
+      ["mitm", "ארוך — בלוקי קוד (180)"],
+      ["salary-prev", "ארוך — הרבה כלים (189)"],
+      ["salary-attendance", "ארוך מאוד (209)"],
+    ].map(([name, label]) => ({
+      sessionId: `mock:${name}`,
+      cwd: "/mock",
+      title: `🧪 MOCK: ${label}`,
+      updatedAt: "",
+    }))
+  : []
+
 async function loadSessions() {
   sessionsLoading = true
   sessionsError = null
@@ -31,6 +48,8 @@ async function loadSessions() {
   } catch (e) {
     sessionsError = e instanceof Error ? e.message : String(e)
   } finally {
+    // ב-dev: הצג את ה-mock fixtures בראש הרשימה (גם אם הטעינה האמיתית נכשלה)
+    sessions = [...MOCK_FIXTURES, ...sessions]
     sessionsLoading = false
   }
 }

@@ -24,11 +24,11 @@ const showNarration = $derived(tc.narration !== undefined && tc.narration.length
 const input = $derived(formatToolInput(tc.args))
 </script>
 
-<div class="flex gap-2 self-end max-w-[78%] items-end flex-row-reverse">
+<div class="flex gap-2 self-end max-w-[78%] min-w-0 items-end flex-row-reverse">
   <Avatar kind="tool" />
 
   <div
-    class="rounded-xl border overflow-hidden text-[13px] flex-1"
+    class="rounded-xl border overflow-hidden text-[13px] flex-1 min-w-0"
     style="background:var(--bg-card); border-color:var(--border)"
   >
     <!-- summary שורה: status dot + narration/title -->

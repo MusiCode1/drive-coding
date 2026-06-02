@@ -196,11 +196,21 @@
   #sheet-grip:active { cursor: grabbing; }
 
   .mic-card {
-    border-top-left-radius: 28px; border-top-right-radius: 28px;
+    border-start-start-radius: 28px; border-start-end-radius: 28px;
     background: var(--bg-elev);
     border: 1px solid var(--border);
     border-bottom: none;
     box-shadow: 0 -10px 30px rgba(0,0,0,.28);
     transition: background .3s, box-shadow .3s, border-color .3s;
+  }
+
+  /* מובייל: ה-mic שטוח — בלי כרטיס. ה-fade הוא #chat-fade של אזור הגלילה
+     (ההודעות נמוגות לתוך המיקרופון). מוקאפ: .mic-plain. */
+  .mic-plain .mic-card {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+    max-width: 100%;
   }
 }

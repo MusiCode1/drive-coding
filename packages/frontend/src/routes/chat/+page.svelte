@@ -10,19 +10,27 @@ import RecordFooter from "$lib/components/chat/RecordFooter.svelte"
 
 const session = getSession()
 
+// ─── DEV-only: טעינה ישירה דרך URL — /chat?mock=<name> (חוסך את ה-picker) ───
+// עובר דרך אותו loadSession (flow C), כך שאין נתיב טעינה שונה.
+// location.search ישירות (זמין מיד ב-SPA — בלי תלות ב-$page store timing).
+const mockName =
+  import.meta.env.DEV && typeof location !== "undefined"
+    ? new URLSearchParams(location.search).get("mock")
+    : null
+
 // הגנה סינכרונית (guard): רענון / ניווט ישיר ללא חיבור פעיל → מעבר לדף הבית.
 if (session.status === "idle") {
-  goto("/", { replaceState: true })
+  if (mockName) {
+    void session.loadSession({ sessionId: `mock:${mockName}`, cwd: "/mock", cliKind: "opencode" })
+  } else {
+    goto("/", { replaceState: true })
+  }
 }
-
-function onDisconnect() {
-  session.detach()
-  goto("/")
-}
+// redesign-fix: disconnect עבר ל-SessionOptionsPanel (אין יותר onDisconnect prop)
 </script>
 
 {#if session.status !== "idle"}
-  <AppShell {onDisconnect}>
+  <AppShell>
     <ChatBubbles />
 
     {#if session.error}
@@ -35,6 +43,8 @@ function onDisconnect() {
       </div>
     {/if}
 
-    <RecordFooter />
+    {#snippet footer()}
+      <RecordFooter />
+    {/snippet}
   </AppShell>
 {/if}

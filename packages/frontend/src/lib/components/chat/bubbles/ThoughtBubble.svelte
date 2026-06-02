@@ -29,10 +29,10 @@ const isAllOriginal = $derived(displaySegments.every((seg) => seg.originalText =
 const runningText = $derived(isAllOriginal ? joinSegmentText(displaySegments) : null)
 </script>
 
-<div class="flex gap-2 self-end max-w-[85%] items-end flex-row-reverse">
+<div class="flex gap-2 self-end max-w-[85%] min-w-0 items-end flex-row-reverse">
   <Avatar kind="thought" />
   <div
-    class="px-3.5 py-2.5 rounded-xl text-[13px] leading-relaxed italic border border-dashed"
+    class="px-3.5 py-2.5 rounded-xl text-[13px] leading-relaxed italic border border-dashed min-w-0 break-words"
     style="border-color:var(--border-str); color:var(--fg-dim)"
   >
     <div class="text-[11px] font-semibold not-italic opacity-70 mb-1">

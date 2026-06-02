@@ -16,10 +16,10 @@ let { bubble }: { bubble: UserBubble } = $props()
 const t = getI18n().t
 </script>
 
-<div class="flex gap-2 self-start max-w-[85%] items-end">
+<div class="flex gap-2 self-start max-w-[85%] min-w-0 items-end">
   <Avatar kind="user" />
   <div
-    class="px-3.5 py-2.5 rounded-2xl rounded-bl-sm text-sm leading-relaxed whitespace-pre-wrap break-words"
+    class="px-3.5 py-2.5 rounded-2xl rounded-es-sm text-sm leading-relaxed whitespace-pre-wrap break-words min-w-0"
     style="background:var(--bubble-user)"
     dir="auto"
   >

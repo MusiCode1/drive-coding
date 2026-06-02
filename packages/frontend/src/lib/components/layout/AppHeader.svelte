@@ -2,29 +2,23 @@
 /**
  * AppHeader — header צף עם fade gradient.
  *
- * כולל: [☰ דסקטופ בלבד] [שם+cwd chip] ··· [status dot] [audio toggle] [disconnect] [⚙]
+ * כולל: [☰ דסקטופ בלבד] [שם+cwd chip] ··· [status dot] [⚙]
  *
- * disconnect + audio master: תוספת זמנית (אביגיל #1) — ימוקמו מחדש ב-redesign-3
- * (disconnect→SessionOptionsPanel; audio master→SettingsScreen).
+ * redesign-fix: disconnect + audio master הועברו ל-SessionOptionsPanel
+ * (פדיון החוב מ-redesign-2 — ה-header נקי כמו המוקאפ, 2 פקדים בלבד).
  *
  * hamburger: דסקטופ בלבד (מוסתר במובייל — sheet peek במקומו). (אביגיל #3)
  *
  * ─── redesign-2 ───
  */
-import LogOutIcon from "@lucide/svelte/icons/log-out"
 import MenuIcon from "@lucide/svelte/icons/menu"
 import FolderIcon from "@lucide/svelte/icons/folder"
 import SettingsIcon from "@lucide/svelte/icons/settings"
-import Volume2Icon from "@lucide/svelte/icons/volume-2"
-import VolumeXIcon from "@lucide/svelte/icons/volume-x"
-import { getI18n, getResponsive, getSession, getSpeaker, getUiShell } from "$lib/context"
-
-let { onDisconnect }: { onDisconnect?: () => void } = $props()
+import { getI18n, getResponsive, getSession, getUiShell } from "$lib/context"
 
 const responsive = getResponsive()
 const uiShell = getUiShell()
 const session = getSession()
-const speaker = getSpeaker()
 const t = getI18n().t
 
 // שם הסוכן — placeholder קבוע; redesign-3 יחבר לאפשרויות הסוכן
@@ -86,32 +80,6 @@ const cwdLabel = $derived(
         : 'var(--fg-dim)'}; {session.status === 'connected' ? 'box-shadow:0 0 8px var(--speaking)' : ''}"
     ></span>
   </span>
-
-  <!-- audio master toggle (זמני — redesign-3 יעביר ל-SettingsScreen) -->
-  <button
-    class="pointer-events-auto size-9 grid place-items-center rounded-lg text-[var(--fg-dim)] hover:bg-white/5 hover:text-[var(--fg)] shrink-0"
-    onclick={() => speaker.toggle()}
-    aria-label={speaker.enabled ? t("header.audioOn") : t("header.audioOff")}
-    title={speaker.enabled ? t("header.audioOn") : t("header.audioOff")}
-  >
-    {#if speaker.enabled}
-      <Volume2Icon size={20} strokeWidth={1.75} />
-    {:else}
-      <VolumeXIcon size={20} strokeWidth={1.75} />
-    {/if}
-  </button>
-
-  <!-- disconnect (זמני — redesign-3 יעביר ל-SessionOptionsPanel) -->
-  {#if onDisconnect}
-    <button
-      class="pointer-events-auto size-9 grid place-items-center rounded-lg text-[var(--fg-dim)] hover:bg-white/5 hover:text-[var(--fg)] shrink-0"
-      onclick={onDisconnect}
-      aria-label={t("header.disconnect")}
-      title={t("header.disconnect")}
-    >
-      <LogOutIcon size={20} strokeWidth={1.75} />
-    </button>
-  {/if}
 
   <!-- הגדרות -->
   <a

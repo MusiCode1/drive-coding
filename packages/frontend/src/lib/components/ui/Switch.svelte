@@ -18,10 +18,12 @@ interface Props {
 const { checked = false, onCheckedChange, disabled = false }: Props = $props()
 </script>
 
+<!-- dir="ltr": ה-toggle הוא רכיב ויזואלי (לא טקסט) — מונע היפוך מיקום ב-RTL -->
 <BitsSwitch.Root
   {checked}
   {disabled}
   {onCheckedChange}
+  dir="ltr"
   class="toggle {checked ? 'on' : ''} {disabled ? 'opacity-40 cursor-not-allowed' : ''}"
 >
   <BitsSwitch.Thumb />

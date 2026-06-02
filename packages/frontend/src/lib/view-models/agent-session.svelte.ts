@@ -16,6 +16,7 @@ import type {
   SessionModeState,
   SessionModelState,
 } from "@agentclientprotocol/sdk"
+import { tick } from "svelte"
 import { createAcpClient, type AcpClient } from "@drive-coding/core/acp/client"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
 import { createAgent, notifySessionAttached } from "$lib/adapters/agents-api"
@@ -200,6 +201,14 @@ export class AgentSession {
     this.error = null
     this.bubbles = []
     this.#detached = false
+
+    // ─── DEV-only: mock session (sessionId "mock:<name>") ───
+    // זורם updates גולמיים מ-fixture דרך אותו #onSessionUpdate כמו ACP חי —
+    // ללא createAgent/WS/ACP. כלי דיבוג עיצוב; tree-shaken מ-prod build.
+    if (import.meta.env.DEV && input.sessionId.startsWith("mock:")) {
+      await this.#loadMockSession(input.sessionId.slice("mock:".length), input.cwd)
+      return
+    }
 
     try {
       // 1. צור סוכן בצד השרת (זהה ל-attach)
@@ -394,6 +403,45 @@ export class AgentSession {
       }
     }
     return out
+  }
+
+  /**
+   * DEV-only: טוען fixture של updates גולמיים ומזרים אותם דרך #onSessionUpdate —
+   * בדיוק כמו loadSession אמיתי (אותו ממיר, אותו status flow). מקור: static/fixtures/<name>.json.
+   * delayMs > 0 → השהיה בין updates (לדמות streaming חי לדיבוג scroll/animations).
+   */
+  #loadMockSession = async (name: string, cwd: string): Promise<void> => {
+    try {
+      const res = await fetch(`/fixtures/${name}.json`)
+      if (!res.ok) throw new Error(`fixture "${name}" not found (${res.status})`)
+      const data = (await res.json()) as { updates: unknown[] }
+      this.cwd = cwd
+      this.#sessionId = `mock:${name}`
+
+      // delay אופציונלי דרך ?stream=<ms> (ללא תשתית — sleep צד-לקוח בלבד)
+      const params = new URLSearchParams(typeof location !== "undefined" ? location.search : "")
+      const delayMs = Number(params.get("stream") ?? "0") || 0
+
+      this.isLoadingHistory = true
+      try {
+        for (const update of data.updates) {
+          // עוטף בצורת SessionNotification ({ update }) כמו ב-ACP אמיתי
+          this.#onSessionUpdate({ update } as unknown as SessionNotification)
+          if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs))
+        }
+        // tick(): מאלץ flush של ה-$effect של ה-Speaker בעוד isLoadingHistory=true,
+        // כך שכל הבועות מסומנות כמעובדות (replay-quiet) לפני ההצבה ל-false.
+        // בלי זה הלולאה הסינכרונית מסתיימת לפני שה-effect רץ → ה-Speaker מקריא הכל.
+        await tick()
+      } finally {
+        this.isLoadingHistory = false
+      }
+      this.status = "connected"
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      this.error = `mock loadSession failed: ${msg}`
+      this.status = "error"
+    }
   }
 
   #onSessionUpdate = (notification: SessionNotification): void => {

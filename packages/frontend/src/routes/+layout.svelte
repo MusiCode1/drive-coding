@@ -71,6 +71,12 @@ setTheme(theme)
 setResponsive(responsive)
 setUiShell(uiShell)
 setModals(modals)
+
+// ─── DEV-only: חשיפת ה-session ל-window לצורך חילוץ fixtures ודיבוג עיצוב ───
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  // biome-ignore lint/suspicious/noExplicitAny: dev debug hook
+  ;(window as any).__session = session
+}
 </script>
 
 {@render children?.()}
