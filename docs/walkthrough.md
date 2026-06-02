@@ -1,3 +1,14 @@
+## 2026-06-02 — slice review-fixes-2 Commit 3: narrate → withTimeout (TDD)
+
+### מה בוצע?
+
+Commit 3 של `slice-review-fixes-2`.
+
+#### C3 — יישור narrate.ts ל-withTimeout
+- `narrate.ts`: הסר AbortController+setTimeout ידני (שורות 32-51). עטוף generateText ב-withTimeout(3000ms, "narrate"). try/catch סביב withTimeout → null בשגיאה/timeout. התנהגות שמורה לחלוטין.
+- `narrate.test.ts` (חדש): 5 טסטים — happy path / timeout→null / error→null / empty→null / signal. withTimeout mocked.
+- typecheck: 0, tests: 495, lint:i18n: נקי.
+
 ## 2026-06-02 — slice review-fixes-2 Commit 2: voices + tts timeout (TDD)
 
 ### מה בוצע?
