@@ -77,6 +77,7 @@ export const he: Catalog = {
   // ─── agent-options ─── (slice 23)
   "agentOptions.title": "הגדרות סשן",
   "agentOptions.model.label": "מודל",
+  "agentOptions.model.other": "אחר",
   "agentOptions.agent.label": "סוכן",
   // ─── smart-scroll ─── (redesign-7)
   "chat.jumpDown": "הודעות חדשות",
