@@ -78,6 +78,13 @@ export const he: Catalog = {
   "agentOptions.title": "הגדרות סשן",
   "agentOptions.model.label": "מודל",
   "agentOptions.agent.label": "סוכן",
+  // ─── record-footer ─── (redesign-4)
+  "record.tab.record": "הקלטה",
+  "record.tab.type": "הקלדה",
+  "record.status.idle": "לחץ להקלטה",
+  "record.send": "שלח",
+  "record.placeholder": "כתוב prompt…",
+  "mic.stop": "עצור",
   // ─── settings-redesign ─── (redesign-3)
   "settings.connection": "חיבור",
   "settings.voiceSpeech": "קול ודיבור",

@@ -83,6 +83,13 @@ export const en: Catalog = {
   "agentOptions.title": "Session options",
   "agentOptions.model.label": "Model",
   "agentOptions.agent.label": "Agent",
+  // ─── record-footer ─── (redesign-4)
+  "record.tab.record": "Record",
+  "record.tab.type": "Type",
+  "record.status.idle": "Tap to record",
+  "record.send": "Send",
+  "record.placeholder": "Type a prompt…",
+  "mic.stop": "Stop",
   // ─── settings-redesign ─── (redesign-3)
   "settings.connection": "Connection",
   "settings.voiceSpeech": "Voice & Speech",

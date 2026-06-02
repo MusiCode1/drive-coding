@@ -89,6 +89,13 @@ export type MessageKey =
   | "agentOptions.title"
   | "agentOptions.model.label"
   | "agentOptions.agent.label"
+  // ─── record-footer ─── (redesign-4)
+  | "record.tab.record"
+  | "record.tab.type"
+  | "record.status.idle"
+  | "record.send"
+  | "record.placeholder"
+  | "mic.stop"
   // ─── settings-redesign ─── (redesign-3)
   | "settings.connection"
   | "settings.voiceSpeech"
