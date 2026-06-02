@@ -14,15 +14,25 @@ import type { WakeWordConfig } from "../engines/wake-word/types.js"
 
 export type WakeWordMode = "off" | "listening" | "recording"
 
+export type WakeWordLogEntry = { t: number; text: string; kind: "vad" | "detect" | "cap" }
+
 export class WakeWordVM {
   mode: WakeWordMode = $state("off")
   level = $state(0)       // RMS גולמי (החלקה ב-VoiceOrb component)
   flashCount = $state(0)  // מוגדל בכל detect → component מפעיל אנימציה
   lastError: string | null = $state(null)
 
+  // ההקלטה הנוכחית בלבד (לא שומרים היסטוריה). url ל-<audio> controls.
+  currentClipUrl: string | null = $state(null)
+  currentClipLabel = $state("")
+
+  // לוג זרם-אירועים (חלון תצוגה ב-route הבדיקה).
+  logs: WakeWordLogEntry[] = $state([])
+
   readonly #engine: WakeWordEngine
   readonly #capture: WakeWordCapture
   #cueCtx: AudioContext | null = null
+  #frameIndex = 0
 
   constructor(config: WakeWordConfig) {
     this.#engine = new WakeWordEngine(config)
@@ -100,33 +110,65 @@ export class WakeWordVM {
 
   // ─── Event listeners ─────────────────────────────────────────────────────────
 
+  /** מוסיף שורה ללוג (תצוגה ב-route). שומר חלון אחרון בלבד. */
+  #log(text: string, kind: WakeWordLogEntry["kind"]): void {
+    const secs = (this.#frameIndex * 1280) / 16000
+    const next = [...this.logs, { t: secs, text, kind }]
+    // שמור עד 200 שורות אחרונות
+    this.logs = next.length > 200 ? next.slice(next.length - 200) : next
+  }
+
   #setupListeners(): void {
     this.#engine.on("level", (rms) => {
       this.level = rms
     })
 
     this.#engine.on("frame", (frame) => {
+      this.#frameIndex++
       this.#capture.pushFrame(frame)
     })
 
-    this.#engine.on("detect", ({ keyword: _kw }) => {
+    this.#engine.on("vadStart", () => {
+      this.#log("VAD ▶ speech start", "vad")
+    })
+
+    this.#engine.on("vadEnd", ({ frames }) => {
+      const s = ((frames ?? 0) * 1280) / 16000
+      this.#log(`VAD ■ speech end (${s.toFixed(2)}s)`, "vad")
+    })
+
+    this.#engine.on("detect", ({ keyword, score, sinceVadStart }) => {
       this.flashCount++
+      const since =
+        sinceVadStart != null
+          ? ` (+${((sinceVadStart * 1280) / 16000).toFixed(2)}s after VAD)`
+          : ""
+      this.#log(`DETECT ★ "${keyword}" ${score.toFixed(2)}${since}`, "detect")
 
       if (!this.#capture.capturing) {
         // wake #1 → התחל הקלטה
         this.#capture.start()
         this.#tone(880, 160) // cue start (גבוה = "go")
         this.mode = "recording"
+        this.#log("capture STARTED (wake #1)", "cap")
       } else {
         // wake #2 → עצור הקלטה
         const result = this.#capture.stop(16)
         this.#tone(440, 220) // cue end (נמוך = "done")
         this.mode = "listening"
+        this.#log("capture STOPPED (wake #2)", "cap")
 
-        // השמעה אוטומטית ~1s אחרי ה-cue
+        // ההקלטה הנוכחית בלבד — שחרר את הקודמת, חשוף את החדשה ב-controls.
         if (result?.wavBytes) {
-          const blob = new Blob([result.wavBytes.buffer as ArrayBuffer], { type: "audio/wav" })
+          if (this.currentClipUrl) URL.revokeObjectURL(this.currentClipUrl)
+          const blob = new Blob([result.wavBytes.buffer as ArrayBuffer], {
+            type: "audio/wav",
+          })
           const url = URL.createObjectURL(blob)
+          this.currentClipUrl = url
+          const secs = (result.frames * 1280) / 16000
+          this.currentClipLabel = `${secs.toFixed(1)}s @ ${new Date().toLocaleTimeString()}`
+          // השמעה אוטומטית ~1s אחרי ה-cue
           setTimeout(() => {
             const audio = new Audio(url)
             audio.play().catch(() => {})

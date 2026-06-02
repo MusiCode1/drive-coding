@@ -20,7 +20,13 @@
   })
 
   let status = $state("loading models...")
-  let clips: { url: string; label: string }[] = $state([])
+  let logEl: HTMLDivElement | undefined = $state()
+
+  // גלילה אוטומטית של תיבת הלוג לתחתית כשמגיעות שורות חדשות.
+  $effect(() => {
+    void vm.logs.length
+    if (logEl) logEl.scrollTop = logEl.scrollHeight
+  })
 
   onMount(async () => {
     try {
@@ -60,19 +66,28 @@
     <VoiceOrb {vm} />
   </div>
 
-  {#if clips.length > 0}
+  {#if vm.currentClipUrl}
     <section class="clips">
-      <h3>Recordings</h3>
-      {#each clips as clip}
-        <div class="clip">
-          <p>{clip.label}</p>
-          <!-- svelte-ignore a11y_media_has_caption -->
-          <audio controls src={clip.url}></audio>
-          <a href={clip.url} download="capture.wav">download</a>
-        </div>
-      {/each}
+      <h3>Current recording</h3>
+      <div class="clip">
+        <p>{vm.currentClipLabel}</p>
+        <!-- svelte-ignore a11y_media_has_caption -->
+        <audio controls src={vm.currentClipUrl}></audio>
+        <a href={vm.currentClipUrl} download="capture.wav">download</a>
+      </div>
     </section>
   {/if}
+
+  <section class="logbox">
+    <h3>Event log</h3>
+    <div class="log" bind:this={logEl}>
+      {#each vm.logs as entry (entry.t + entry.text)}
+        <div class="line {entry.kind}">
+          <span class="t">{entry.t.toFixed(2)}s</span> {entry.text}
+        </div>
+      {/each}
+    </div>
+  </section>
 </main>
 
 <style>
@@ -146,5 +161,43 @@
     color: #60a5fa;
     margin-inline-start: 0.5rem;
     font-size: 0.8rem;
+  }
+
+  .logbox {
+    width: min(40rem, 92vw);
+  }
+
+  .logbox h3 {
+    margin: 0 0 0.4rem;
+    font-size: 1rem;
+  }
+
+  .log {
+    height: 14rem;
+    overflow-y: auto;
+    background: #11151c;
+    border: 1px solid #2a3543;
+    border-radius: 0.5rem;
+    padding: 0.6rem;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+    line-height: 1.5;
+  }
+
+  .log .t {
+    opacity: 0.5;
+  }
+
+  .log .vad {
+    color: #fbbf24;
+  }
+
+  .log .detect {
+    color: #4ade80;
+    font-weight: 700;
+  }
+
+  .log .cap {
+    color: #60a5fa;
   }
 </style>
