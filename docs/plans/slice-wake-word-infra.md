@@ -1,21 +1,37 @@
 # Brief: slice — תשתית wake-word ב-FE + route בדיקה
 
 > סטטוס: brief מוכן ל-executor (אליעזר). complexity: 6/10.
-> verifier: calev light. depends_on: [] (base dev tip — למלא ב-§0).
+> verifier: calev light. depends_on: [] (base dev tip `bd691ea`).
 > base: dev. **אין מיזוג לקוד הקיים** — רק קבצים חדשים + route בדיקה מבודד.
 
 ## 0. הקשר וסביבה
 
-**מטרה:** להוציא את ה-POC המוכח (`poc/wake-word-orb/`) לקוד production ב-FE,
-לפי 5 השכבות, **בלי לגעת בקוד הקיים** (Mic, +layout, routes קיימים). ה-consumer
-היחיד הוא route בדיקה חדש `/wake-word-test` שמשחזר את התנהגות ה-POC בתוך ה-FE
-האמיתי. כך מאמתים שהתשתית עובדת לפני שממזגים לממשק (בעתיד, slice 17).
+**מטרה:** להוציא את ה-POC המוכח לקוד production ב-FE, לפי 5 השכבות, **בלי לגעת
+בקוד הקיים** (Mic, +layout, routes קיימים). ה-consumer היחיד הוא route בדיקה חדש
+`/wake-word-test` שמשחזר את התנהגות ה-POC בתוך ה-FE האמיתי. כך מאמתים שהתשתית
+עובדת לפני שממזגים לממשק (בעתיד, slice 17).
+
+⚠️ **שם ה-package**: ה-FE הוא `@drive-coding/frontend-v2` (כך ב-package.json),
+למרות שהתיקייה היא `packages/frontend/`. כל פקודות `pnpm --filter` חייבות
+`@drive-coding/frontend-v2`.
+
+⚠️ **ה-POC reference וחלק מהמסמכים אינם ב-dev** — הם ב-branch `poc-wake-word`,
+worktree קבוע על הדיסק ב-`/home/user/projects/voice-acp/.worktrees/poc-wake-word/`.
+ה-executor נפתח מ-dev, אז הוא **חייב לקרוא את ה-reference מנתיב אבסולוטי שם**:
 
 **מקורות-אמת (must-read לפני קוד):**
-- `poc/wake-word-orb/` — המימוש המוכח (engine+capture+orb+lib). זה ה-reference.
-- `docs/plans/wake-word-fe-design.md` — מסמך התכנון (מיפוי לשכבות).
-- `docs/investigations/wake-word-client-side.md` — feasibility + לקחים.
-- `packages/frontend/AGENTS.md` — 5 שכבות + חוקי זהב + חוקי import.
+- `/home/user/projects/voice-acp/.worktrees/poc-wake-word/poc/wake-word-orb/` —
+  המימוש המוכח (engine+capture+orb+lib). זה ה-reference. **לא ב-dev** — קרא מהנתיב
+  המלא הזה (read-only; אל תעבוד שם).
+- `/home/user/projects/voice-acp/.worktrees/poc-wake-word/docs/plans/wake-word-fe-design.md`
+  — מסמך התכנון (מיפוי לשכבות). **לא ב-dev** — קרא מהנתיב המלא.
+- `docs/investigations/wake-word-client-side.md` — feasibility + לקחים. **קיים ב-dev**
+  (אבל §6.5 על ה-POC רק ב-branch — לא קריטי).
+- `packages/frontend/AGENTS.md` — 5 שכבות + חוקי זהב + חוקי import. **קיים ב-dev**.
+
+> **קונבנציית נתיבים בהמשך ה-brief:** כל הופעה של `poc/wake-word-orb/...` פירושה
+> `/home/user/projects/voice-acp/.worktrees/poc-wake-word/poc/wake-word-orb/...`
+> (הקיצור לקריאוּת). פקודות `cp` בפועל ב-§6/§7 משתמשות בנתיב המלא.
 
 **worktree:**
 ```bash
@@ -26,7 +42,8 @@ pnpm install && pnpm hooks:install
 
 **הרצה לבדיקה ידנית (getUserMedia דורש secure context — localhost בסדר):**
 ```bash
-pnpm --filter @drive-coding/frontend dev   # פתח את ה-port שמודפס, נווט ל-/wake-word-test
+pnpm --filter @drive-coding/frontend-v2 dev   # פתח את ה-port שמודפס, נווט ל-/wake-word-test
+# ⚠️ שם ה-package הוא frontend-v2 (התיקייה היא packages/frontend/, אבל ה-name ב-package.json הוא @drive-coding/frontend-v2)
 ```
 
 **סביבה:** ה-models הם binaries (~10MB). מועתקים מ-`poc/wake-word-orb/assets/models/`.
@@ -107,6 +124,8 @@ export const VAD_THRESHOLD = 0.5
 export const DETECT_THRESHOLD = 0.5
 export function computeRms(chunk: Float32Array): number  // sqrt(mean(x^2))
 export function transformMel(data: Float32Array): void   // x/10 + 2 במקום (AHA #1)
+// ⚠️ ב-POC הנוסחה הזו inline בתוך runMelspec (wake-word-lib.js), לא פונקציה נפרדת.
+// כאן מחלצים אותה לפונקציה טהורה חדשה (כדי שתהיה testable). pipeline.ts יקרא לה.
 ```
 **`engines/wake-word/wav.ts`**:
 ```ts
@@ -212,6 +231,14 @@ export class WakeWordVM {
 
 ## 4. נקודות עדינות / הכרעות מימוש
 
+- **שמות מ-POC → production (renames מכוונים):** ה-brief נותן שמות שונים מה-POC,
+  בכוונה (התאמה לקונבנציות FE). מיפוי כדי שלא תחפש לשווא ב-POC:
+  - `WakeWordEngine` (brief) ← `WakeWordDetector` (POC `wake-word-lib.js`).
+  - `runVadStep` (brief) ← `runVad` (POC).
+  - `WakeWordCapture.stop(trimFrames)` (brief, פרמטר) ← ב-POC ה-trim נקרא מ-DOM
+    input (`trimInput.value`); כאן הוא פרמטר מפורש (engine לא יודע על DOM).
+  - `encodeWav→Uint8Array` (brief) ← `createWavBlob→Blob` (POC); ה-VM/route עוטף
+    ל-Blob. הלוגיקה (header+PCM16) זהה.
 - **VM ב-route, לא ב-+layout:** חוק זהב אומר ש-VMs נוצרים ב-+layout. כאן חריג
   מכוון — זה route בדיקה standalone שלא חלק מה-app. ה-VM נוצר ב-route עצמו
   ומת איתו. **לתעד בהערה.** (לא להוסיף ל-context.ts — זה לא singleton של האפליקציה.)
@@ -228,8 +255,8 @@ export class WakeWordVM {
 ## 5. Definition of Done (calev light)
 
 1. `pnpm --filter @drive-coding/core typecheck` + core tests ירוקים (lerp + audio-math + wav + pipeline).
-2. `pnpm --filter @drive-coding/frontend typecheck` נקי.
-3. `pnpm --filter @drive-coding/frontend build` נקי.
+2. `pnpm --filter @drive-coding/frontend-v2 typecheck` נקי.
+3. `pnpm --filter @drive-coding/frontend-v2 build` נקי.
 4. `pnpm lint:i18n` נקי (אין עברית קשיחה).
 5. `/wake-word-test` נטען, המודלים נטענים (סטטוס "ready").
 6. לחיצה על הנורית → מאזין (כחול). אמירת wake word → נורית אדומה + cue.
