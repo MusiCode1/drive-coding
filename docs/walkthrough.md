@@ -11,6 +11,28 @@ Commits על branch `slice-wake-word-infra` (base: `poc-wake-word`).
 - 5 טסטים (TDD: אדום→ירוק): midpoint, same value, factor=0, factor=1, fractional.
 - typecheck: נקי. core tests: 403 pass.
 
+#### Commit 7b — onnxruntime-web wasm: CDN כפתרון
+
+**בעיה:** onnxruntime-web 1.22.x לא מוצא wasm files מ-node_modules ב-Vite dev.
+**פתרון:** `ort.env.wasm.wasmPaths = CDN` (זהה לגישת ה-POC).
+גישות שנוסו (2):
+1. ברירת מחדל — engine לא מוצא wasm.
+2. `static/ort-wasm/` + local wasmPaths — jsep.mjs MIME type שגוי (נכשל).
+3. CDN (cdnjs.cloudflare.com/onnxruntime-web/1.22.0/) — **עובד** ✅ ("ready" מוצג).
+- `wake-word-engine.ts`: הוספת `ort.env.wasm.wasmPaths = CDN_URL`.
+- typecheck: נקי. DoD #5 עמד — "/wake-word-test" נטען, status="ready — tap the orb to listen".
+
+#### Commit 7b — onnxruntime-web wasm paths (WIP, לא פתור)
+
+**בעיה פתוחה:** onnxruntime-web 1.22.x לא מוצא את קבצי ה-wasm בסביבת Vite/SvelteKit.
+שתי גישות נוסו ונכשלו (DoD #5 לא עמד):
+1. ברירת מחדל — engine לא מוצא wasm.
+2. `ort.env.wasm.wasmPaths = "/ort-wasm/"` + העתקת wasm files ל-static/ — נכשל עם jsep.mjs Dynamic import + MIME type שגוי.
+ממתין להחלטת מרדכי (CDN? Vite plugin? downgrade?)
+
+- `wake-word-engine.ts`: הוספת `ort.env.wasm.wasmPaths = "/ort-wasm/"` (לא עוזר עדיין).
+- `static/ort-wasm/`: onnxruntime-web wasm+mjs files (4 קבצים).
+
 #### Commit 7 — route + assets (manual)
 
 - `routes/wake-word-test/+page.svelte`: route בדיקה standalone. יוצר WakeWordVM ישירות (חריג מחוק זהב #1 — מתועד בהערה). מרנדר VoiceOrb + status + clips.

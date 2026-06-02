@@ -17,6 +17,9 @@ import { createScorePipeline } from "./pipeline.js"
 
 // single-thread mode — עוקף COOP/COEP שאינן מוגדרות (לקח מה-POC)
 ort.env.wasm.numThreads = 1
+// wasm files: CDN — זהה לגישת ה-POC (ort.wasm.min.js = onnxruntime-web 1.22.0 bundle)
+// ⚠️ הOracle env לא אידאלי (Vite wasm MIME), CDN הוא הפתרון הסביר לbuild קיים.
+ort.env.wasm.wasmPaths = "https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.22.0/"
 
 // ─── Tiny event emitter ───────────────────────────────────────────────────────
 
