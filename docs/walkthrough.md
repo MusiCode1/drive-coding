@@ -1,3 +1,92 @@
+## 2026-06-02 — slice-wake-word-infra: תשתית wake-word ב-FE + route בדיקה
+
+### סיכום ביצוע
+
+8 commits על `slice-wake-word-infra` (base: `poc-wake-word`, tip: `58729ed`).
+typecheck 0, build נקי, 494 tests pass (50 test files), lint:i18n נקי.
+DoD #5 עמד: "/wake-word-test" נטען, status="ready — tap the orb to listen".
+
+**סטייה מה-brief:** onnxruntime-web wasm paths — ה-brief ציין שאם Vite wasm נשבר אחרי 2 גישות לדווח, אבל גישה 3 (CDN) הצליחה. זה אותה גישה שה-POC השתמש בה.
+
+
+
+### מה בוצע?
+
+Commits על branch `slice-wake-word-infra` (base: `poc-wake-word`).
+
+#### Commit 1 — core: lerp (TDD)
+
+- הוספת `lerp(current, target, factor)` ל-`packages/core/src/ui/math.ts`. טהור, ללא תלויות.
+- export additive ב-`packages/core/src/index.ts`.
+- 5 טסטים (TDD: אדום→ירוק): midpoint, same value, factor=0, factor=1, fractional.
+- typecheck: נקי. core tests: 403 pass.
+
+#### Commit 7b — onnxruntime-web wasm: CDN כפתרון
+
+**בעיה:** onnxruntime-web 1.22.x לא מוצא wasm files מ-node_modules ב-Vite dev.
+**פתרון:** `ort.env.wasm.wasmPaths = CDN` (זהה לגישת ה-POC).
+גישות שנוסו (2):
+1. ברירת מחדל — engine לא מוצא wasm.
+2. `static/ort-wasm/` + local wasmPaths — jsep.mjs MIME type שגוי (נכשל).
+3. CDN (cdnjs.cloudflare.com/onnxruntime-web/1.22.0/) — **עובד** ✅ ("ready" מוצג).
+- `wake-word-engine.ts`: הוספת `ort.env.wasm.wasmPaths = CDN_URL`.
+- typecheck: נקי. DoD #5 עמד — "/wake-word-test" נטען, status="ready — tap the orb to listen".
+
+#### Commit 7b — onnxruntime-web wasm paths (WIP, לא פתור)
+
+**בעיה פתוחה:** onnxruntime-web 1.22.x לא מוצא את קבצי ה-wasm בסביבת Vite/SvelteKit.
+שתי גישות נוסו ונכשלו (DoD #5 לא עמד):
+1. ברירת מחדל — engine לא מוצא wasm.
+2. `ort.env.wasm.wasmPaths = "/ort-wasm/"` + העתקת wasm files ל-static/ — נכשל עם jsep.mjs Dynamic import + MIME type שגוי.
+ממתין להחלטת מרדכי (CDN? Vite plugin? downgrade?)
+
+- `wake-word-engine.ts`: הוספת `ort.env.wasm.wasmPaths = "/ort-wasm/"` (לא עוזר עדיין).
+- `static/ort-wasm/`: onnxruntime-web wasm+mjs files (4 קבצים).
+
+#### Commit 7 — route + assets (manual)
+
+- `routes/wake-word-test/+page.svelte`: route בדיקה standalone. יוצר WakeWordVM ישירות (חריג מחוק זהב #1 — מתועד בהערה). מרנדר VoiceOrb + status + clips.
+- `static/wake-word/models/`: העתקת 7 קבצי .onnx מ-poc-wake-word worktree (mel/embed/vad + 4 keywords; לא timer/weather).
+- מקור ה-models: poc/wake-word/assets/models/ ב-worktree poc-wake-word (לא poc/wake-word-orb/assets כפי שנכתב בbrief — הנתיב בפועל שונה).
+- build: נקי (wake-word-test נכלל). typecheck: נקי. lint:i18n: נקי. 50 test files, 494 tests.
+
+#### Commit 6 — component: VoiceOrb.svelte (manual)
+
+- `components/VoiceOrb.svelte`: נורית קולית. props: vm. lerp ב-rAF loop (החלקה ויזואלית). צבע לפי vm.mode (grey/blue/red). flash ב-$effect על vm.flashCount. role=button + click/keydown → vm.toggle(). שתי timings CSS נפרדות (background-color 300ms, size/filter 80ms).
+- typecheck: נקי. 50 test files, 494 tests pass.
+
+#### Commit 5 — view-model: WakeWordVM (integration tests)
+
+- `view-models/wake-word.svelte.ts`: WakeWordVM — mode/level/flashCount/$state, toggle(), $effect (mode→engine.start/stop), detect→capture start/stop, cue tones (OscillatorNode).
+- `view-models/wake-word.test.svelte.ts`: 9 integration tests (mock engine): mode transitions, flashCount, detect #1/#2, level, error.
+- חריגה מחוק זהב #1 (VM לא ב-+layout): מתועד בהערה — route בדיקה standalone.
+- typecheck: נקי. 50 test files, 494 tests pass.
+
+#### Commit 4 — engine: WakeWordEngine + WakeWordCapture (IO + unit)
+
+- `engines/wake-word/wake-word-engine.ts`: WakeWordEngine (מקביל ל-WakeWordDetector ב-POC). load/start/stop, queue serialization, VAD+pipeline+level events. `ort.env.wasm.numThreads = 1` (single-thread).
+- `engines/wake-word/capture.ts`: WakeWordCapture (מקביל ל-createCapture). push/start/stop(trimFrames)/abort. מחזיר {wavBytes, frames} | null.
+- types.ts: הוספת DETECT_THRESHOLD/VAD_THRESHOLD exports (נדרשו ב-engine).
+- 9 unit tests ל-WakeWordCapture (buffer/trim/abort/wavBytes). IO של WakeWordEngine (getUserMedia) → manual ב-route.
+- typecheck: נקי. 49 test files, 485 tests pass.
+
+#### Commit 3 — engine: types.ts + vad.ts + pipeline.ts (TDD, mock ort)
+
+- `engines/wake-word/types.ts`: WakeWordConfig (ArkType), MODEL_FILE_MAP (4 keywords בלי timer/weather), DetectEvent/VadEndEvent/WakeWordEventMap.
+- `engines/wake-word/vad.ts`: createVadState + runVadStep (Silero VAD state, mutations in-place).
+- `engines/wake-word/pipeline.ts`: inferWindowSize (מסיק shape[1] ← inputMetadata) + createScorePipeline (mel-buffer=76, hop=8, embedding-history=max-window).
+- package.json: הוספת `onnxruntime-web ^1.22.0` + `arktype ^2.0.0` לdependencies (נדרש לtype imports בCommit 3).
+- 17 טסטים (TDD: RED→GREEN): inferWindowSize/fallbacks, pipeline null-until-76, scores-after-76, window-slicing, reset(), createVadState, runVadStep/mutates-state.
+- typecheck: נקי. כל 48 test files עוברים (476 tests).
+
+#### Commit 2 — engine: audio-math.ts + wav.ts (TDD)
+
+- `packages/frontend/src/lib/engines/wake-word/audio-math.ts`: `computeRms`, `transformMel` (inline POC→פונקציה טהורה), קבועים SAMPLE_RATE/FRAME_SIZE/VAD_THRESHOLD/DETECT_THRESHOLD.
+- `packages/frontend/src/lib/engines/wake-word/wav.ts`: `encodeWav(frames, sampleRate?) → Uint8Array | null`. ממיר Float32 PCM16 עם WAV header 44B.
+- 16 טסטים (TDD: אדום→ירוק): computeRms (sin/const), transformMel (in-place), encodeWav (RIFF/WAVE/data headers, null על ריק, PCM size, sample rate, clamping).
+- חריגה: `noUncheckedIndexedAccess` → שימוש ב-`?? 0` ו-DataView בטסטים.
+- typecheck: נקי (0 errors). כל 46 test files עוברים.
+
 ## 2026-06-01 — slice 26: idle-bridge reaper BE (TEMPORARY — רשת ביטחון לדליפות)
 
 ### מה בוצע?
