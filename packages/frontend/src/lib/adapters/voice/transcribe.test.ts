@@ -1,20 +1,24 @@
 /**
- * transcribe.test.ts — TDD עבור F3: transcribe עם withTimeout.
+ * transcribe.test.ts — TDD עבור transcribe עם withTimeout + withRetry.
  *
- * 2 טסטים:
+ * 3 טסטים:
  *  1. happy path — generateContent מחזיר text מהר → transcribe מחזיר { text, recordingId }.
- *  2. timeout — withTimeout דוחה (מדומה) → transcribe דוחה (F3 סגור).
+ *  2. retry — generateContent זורק פעם אחת ואז מצליח → transcribe מחזיר text, נקרא פעמיים.
+ *  3. exhausted — תמיד זורק → transcribe זורק אחרי 3 נסיונות.
  *
  * הערה על גישת הטסטים:
- *  - withTimeout עצמו נmock כאן כי vi.useFakeTimers ב-jsdom יוצר race condition
- *    עם unhandledRejection detection של vitest@4.1.6 (PromiseRejectionHandledWarning).
- *  - הlogi של timeout גופו נbדק ב-packages/core/tests/async/with-timeout.test.ts.
- *  - הטסט כאן מאמת שה-throw של withTimeout מתפשט ל-caller (mic.svelte.ts catch).
+ *  - withTimeout ו-withRetry מוmockים כי vi.useFakeTimers ב-jsdom יוצר race conditions.
+ *  - הלוגיקה של timeout/retry גופה נבדקת ב-packages/core/tests/async/.
+ *  - הטסט כאן מאמת שה-throw של withTimeout/withRetry מתפשט ל-caller.
  */
 import { describe, expect, it, vi } from "vitest"
 
 vi.mock("@drive-coding/core/async/with-timeout", () => ({
   withTimeout: vi.fn(),
+}))
+
+vi.mock("@drive-coding/core/async/with-retry", () => ({
+  withRetry: vi.fn(),
 }))
 
 vi.mock("./sdks", () => ({
@@ -32,14 +36,21 @@ vi.mock("$lib/util/be-url", () => ({
 }))
 
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
+import { withRetry } from "@drive-coding/core/async/with-retry"
 import { transcribe } from "./transcribe"
 
 const mockWithTimeout = withTimeout as ReturnType<typeof vi.fn>
+const mockWithRetry = withRetry as ReturnType<typeof vi.fn>
 
 describe("transcribe", () => {
-  // 1. happy path
+  // 1. happy path — generateContent מצליח → transcribe מחזיר text
   it("מחזיר text ו-recordingId כאשר generateContent מגיב מהר", async () => {
-    // withTimeout קורא ל-fn ומחזיר את תוצאתו
+    // withRetry קורא ל-fn שלו, withTimeout קורא ל-fn שלו
+    mockWithRetry.mockImplementation(
+      async (fn: (attempt: number) => Promise<unknown>) => {
+        return fn(0)
+      },
+    )
     mockWithTimeout.mockImplementation(
       async (fn: (signal: AbortSignal) => Promise<unknown>) => {
         return fn(new AbortController().signal)
@@ -57,18 +68,68 @@ describe("transcribe", () => {
 
     expect(result.text).toBe("שלום")
     expect(result.recordingId).toBe("")
+    // וודא TRANSCRIBE_TIMEOUT_MS === 30000
     expect(mockWithTimeout).toHaveBeenCalledWith(
       expect.any(Function),
-      15000,
+      30000,
       expect.objectContaining({ label: "transcribe" }),
+    )
+    // וודא שwithRetry נקרא עם 3 retries + label transcribe
+    expect(mockWithRetry).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({ retries: 3, label: "transcribe" }),
     )
   })
 
-  // 2. timeout — מאמת F3 סגור: withTimeout זורק → transcribe זורק
-  it("דוחה כאשר withTimeout זורק שגיאת timeout (F3)", async () => {
-    mockWithTimeout.mockRejectedValue(new Error("transcribe timeout 15000ms"))
+  // 2. retry — generateContent זורק פעם, ואז withRetry קורא ל-fn שוב ומצליח
+  it("מנסה שוב כאשר generateContent זורק פעם אחת ואז מצליח", async () => {
+    let callCount = 0
+    // withRetry: קורא ל-fn 2 פעמים — פעם ראשונה זורק, פעם שניה מחזיר
+    mockWithRetry.mockImplementation(
+      async (fn: (attempt: number) => Promise<unknown>) => {
+        callCount++
+        if (callCount === 1) {
+          // סימולציה: זרוק פעם ראשונה, נסה שוב
+          try {
+            await fn(0)
+          } catch {
+            // retry
+          }
+          return fn(1) // נסיון שני — מצליח
+        }
+        return fn(0)
+      },
+    )
+    // withTimeout תמיד קורא ל-fn שלו
+    mockWithTimeout.mockImplementation(
+      async (fn: (signal: AbortSignal) => Promise<unknown>) => {
+        return fn(new AbortController().signal)
+      },
+    )
+
+    let genCallCount = 0
+    const mockGenContent = vi.fn().mockImplementation(async () => {
+      genCallCount++
+      if (genCallCount === 1) throw new Error("socket error")
+      return { text: "הצלחה" }
+    })
+    const { googleGenAi } = await import("./sdks")
+    ;(googleGenAi as ReturnType<typeof vi.fn>).mockReturnValue({
+      models: { generateContent: mockGenContent },
+    })
 
     const blob = new Blob(["audio"], { type: "audio/webm" })
-    await expect(transcribe(blob)).rejects.toThrow("transcribe timeout 15000ms")
+    const result = await transcribe(blob)
+
+    expect(result.text).toBe("הצלחה")
+    expect(genCallCount).toBe(2)
+  })
+
+  // 3. exhausted — תמיד זורק → transcribe זורק
+  it("דוחה כאשר withRetry זורק (מיצוי נסיונות)", async () => {
+    mockWithRetry.mockRejectedValue(new Error("transcribe failed after 3 retries"))
+
+    const blob = new Blob(["audio"], { type: "audio/webm" })
+    await expect(transcribe(blob)).rejects.toThrow("transcribe failed after 3 retries")
   })
 })
