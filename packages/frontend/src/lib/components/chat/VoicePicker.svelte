@@ -12,6 +12,7 @@
  * לפי parallel-safe-code.md, ה-VM (View Model) מחזיק את הנתונים; הרכיב הזה
  * הוא קצה (leaf) דק שקורא + כותב שדה אחד בלבד.
  */
+import { untrack } from "svelte"
 import { getI18n, getSettings } from "$lib/context"
 import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
 
@@ -19,8 +20,11 @@ const settings = getSettings()
 const t = getI18n().t
 
 $effect(() => {
-  // אידמפוטנטי — מוגן בתוך Settings.loadVoices.
-  void settings.loadVoices()
+  // untrack: loadVoices כותב ל-voicesLoading/voicesError/availableVoices ($state).
+  // בלי untrack ה-$effect היה מגיב לכתיבות האלה ורץ שוב → לולאת retry על שגיאה
+  // (gotcha: $effect שקורא+כותב אותו $state). ה-retry האמיתי מתוזמן בתוך
+  // Settings.loadVoices (exponential backoff), לא כאן. כאן רק טריגר חד-פעמי ב-mount.
+  untrack(() => void settings.loadVoices())
 })
 
 const hasVoices = $derived(settings.availableVoices.length > 0)
