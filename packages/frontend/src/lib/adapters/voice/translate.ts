@@ -8,14 +8,16 @@
  * את ה-`generateContent` (ראה packages/backend/src/delivery/proxy-cache.ts). אם
  * נזדקק בעתיד לתמיכה באופליין, נוכל להחזיר שכבה דקה של localStorage.
  *
- * פסק זמן של 2500ms עם AbortController. מחזיר null בביטול/פסק זמן/שגיאה
- * (הקורא מתייחס ל-null כאל "דלג על התרגום, השתמש בטקסט המקורי").
+ * review-fixes-1 (Commit 3): מחליף AbortController+setTimeout ידני ב-withTimeout.
+ * ה-ai SDK תומך ב-abortSignal — ה-signal עושה גם ביטול-רשת אמיתי וגם race מגן.
+ * מחזיר null בביטול/פסק זמן/שגיאה (הקורא מתייחס ל-null כאל "דלג על התרגום").
  *
  * מודל: gemini-flash-lite-latest. זול, מהיר ודטרמיניסטי מספיק עבור
  * פרוזה קצרה. learnings 2026-05-16: משפחת gemini-2.0-flash יוצאת משימוש (deprecated)
  * עבור משתמשים חדשים — חובה להשתמש בכינויים מסוג `*-latest`.
  */
 
+import { withTimeout } from "@drive-coding/core/async/with-timeout"
 import { buildTranslationPrompt } from "@drive-coding/core/voice/translation-prompt"
 import { generateObject, jsonSchema } from "ai"
 import { googleAi } from "./sdks"
@@ -76,22 +78,22 @@ Respond as JSON matching the schema:
 - If the source is already in the target language, return {"status":"already_in_target"} (omit any text field).
 - Otherwise, return {"status":"translated","text":"<the translated text>"}.`
 
+  // משלב slice 24 (x-cache-key) עם review-fixes-1 (withTimeout):
+  // ה-cacheHeaders עוברים ל-model, וה-withTimeout עוטף ומספק abort+timeout.
   const cacheHeaders = await translateCacheHeaders(text, targetLang, messageId ?? null)
 
-  const ac = new AbortController()
-  const timer = setTimeout(
-    () => ac.abort(new Error(`Translate timeout ${TIMEOUT_MS}ms`)),
-    TIMEOUT_MS,
-  )
-  signal?.addEventListener("abort", () => ac.abort(), { once: true })
-
   try {
-    const result = await generateObject({
-      model: googleAi("gemini-flash-lite-latest", cacheHeaders),
-      schema: translateSchema,
-      prompt,
-      abortSignal: ac.signal,
-    })
+    const result = await withTimeout(
+      (signal) =>
+        generateObject({
+          model: googleAi("gemini-flash-lite-latest", cacheHeaders),
+          schema: translateSchema,
+          prompt,
+          abortSignal: signal,
+        }),
+      TIMEOUT_MS,
+      { signal, label: "translate" },
+    )
     const obj = result.object
 
     // התייחס לטקסט ריק מתורגם כאל כישלון כדי למנוע TTS של שקט בהמשך התהליך.
@@ -106,7 +108,5 @@ Respond as JSON matching the schema:
       len: text.length,
     })
     return null
-  } finally {
-    clearTimeout(timer)
   }
 }

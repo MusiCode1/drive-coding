@@ -20,7 +20,15 @@ function handleSave() {
   }
 }
 
-let showSaved = $derived(savedAt !== undefined && Date.now() - savedAt < 3000)
+let showSaved = $derived(savedAt !== undefined)
+
+$effect(() => {
+  if (savedAt === undefined) return
+  const timer = setTimeout(() => {
+    savedAt = undefined
+  }, 3000)
+  return () => clearTimeout(timer)
+})
 </script>
 
 <main class="settings">
