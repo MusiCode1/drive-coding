@@ -1,5 +1,93 @@
 # Decisions — voice-acp
 
+## 2026-06-01 — redesign vNext: חלוקה ל-slices + foundation-first
+
+### רציונל החלוקה
+שיפוץ העיצוב (spec: `docs/plans/redesign-vnext.md`, anchor: `redesign-vnext-mockup.html`)
+מפורק לפי עיקרון מנחה: **הפרדה בין "custom UI" ל-"primitives"**. ה-foundation ראשון
+(תשתית בלבד), ואחריו ה-slices מסודרים כך שכל מה ש-headless component-lib *לא* נוגעת בו
+(layout shell, mic, bubbles, avatars, header) בא **לפני** מה שכן (Settings=Switch/Select,
+Modals=Dialog/Sheet). זה לא שרירותי — זה מתזמן את ההכרעה על ה-component-lib לרגע שבו
+יהיה הכי הרבה מידע (קוד אמיתי, RTL נבדק), בעלות-טעות מינימלית.
+
+הפירוק (JIT — רק foundation נכתב כ-brief מלא כעת; השאר כותרות):
+1. **redesign-1 foundation** (complexity 5, depends_on []) — Tailwind 4 + 4 themes + Lucide. תשתית שקופה, לא נוגע במסכים.
+2. **redesign-2 layout shell** (depends_on [1]) — AppShell/AppHeader/Sidebar+BottomSheet (A1/A2/A3/A4/A5/H). custom לגמרי. ה-BottomSheet drag → אולי vaul-svelte, נבדק שם.
+3. **redesign-3 settings** (depends_on [1,2]) — SettingsScreen (D1/D2). **כאן ההכרעה על component-lib** (Switch/Select). חופף ל-slice 9a (speech toggles) — לתאם, לא לכפול.
+4. **redesign-4 input+mic** (depends_on [1,2]) — RecordFooter, toggle הקלדה/הקלטה, mic 110px (B1/B2/B3/B4). custom.
+5. **redesign-5 bubbles** (depends_on [1,2]) — ToolBubble align (C2), avatars (C3), פלטה על בועות (C4). **כולל באג segments C1 — slice ייעודי עם plan-verify** (data-model).
+6. **redesign-6 modals** (depends_on [1,2,3]) — SessionsScreen (E1) + FolderPicker (E2) + Dialog. תלוי בהכרעת component-lib מ-3.
+7. **redesign-7 smart-scroll** (depends_on [1,2]) — G1 (jump-down) + A5. ♻️ מ-v1.
+
+C1 (באג segments) ו-C2 (tool align) הם תיקוני-באג שאפשר לשחרר מוקדם — אבל **לא לפני foundation**
+(שניהם נוגעים בקומפוננטות שייכתבו מחדש; פיצול מהקשר העיצובי = עבודה כפולה). לכן נשארים תחת redesign-5.
+
+### ההכרעה על component-lib — מתוזמנת, לא פתוחה-באוויר
+**Bits UI כמוביל; הכרעה סופית ב-redesign-3 (Settings).** רציונל: ה-foundation לא צריך ספרייה
+(Tailwind+themes+icons בלבד), אז המתנה חינמית; וה-primitives (Sheet/Select/Dialog/Switch)
+מרוכזים ב-2 slices בלבד (3+6) → עלות-אימוץ ועלות-החלפה נמוכות. הערך של headless lib הוא
+**ההתנהגות הבלתי-נראית** (a11y/aria, focus-trap+restore, ניהול-מקלדת, scroll-lock, click-outside,
+positioning) — לא העיצוב (שאנחנו עושים מצוין ב-Tailwind, כפי שהמוקאפ מוכיח). Bits מנצח על Melt
+כי הוא קומפוננטות-מוכנות runes-native (Melt = builders low-level; אנחנו בונים אפליקציה, לא ספרייה).
+**סייג**: אם Bits נלחם ב-RTL/עיצוב על Select — חזרה ל-native styled `<select>` היא תשובה לגיטימית.
+
+### redesign-2: multi-route + AppShell-as-component (לא single-page/route-group)
+המוקאפ הוא single-page (`data-view` שמתחלף ב-JS) — זה **artifact של HTML סטטי**, לא הוראת-מימוש.
+במוצר נשארים **multi-route** (`/`, `/chat`, `/settings`), וה-shell המשותף הוא **קומפוננטה עוטפת**
+(`AppShell` ב-lib/components/layout) עם `{@render children()}`, **לא** route-group (`(name)/`) ו**לא**
+nested `+layout`. רציונל: route-group = הזזת קבצים invasive; AppShell-component = אפס הזזה, שומר
+חוק-זהב #1 (לא route ענק), משותף ל-chat+settings. (אביגיל אישרה: תבנית Svelte 5 ישימה, אין מלכוד.)
+
+### redesign-2: scroll ownership עובר ל-AppShell (תיקון double-scroll)
+אביגיל תפסה: ChatBubbles **כבר** scroll-container (overflow-y:auto + auto-scroll $effect), וה-AppShell
+עוטף ב-scroll נוסף → double-scroll ששובר את הגלילה. **הכרעה**: ה-scroll עובר ל-AppShell; ChatBubbles
+מאבד את ה-overflow+bind:this+$effect (הופך ל-content בלבד). ה-auto-scroll $effect עובר ל-AppShell
+(חוק-זהב #4 — owner של ה-DOM node). redesign-7 (smart-scroll) יושב על אותו scroll-container.
+
+### redesign-2: disconnect + audio-master עוברים ל-AppHeader (מניעת רגרסיה)
+ChatHeader הנמחק החזיק `onDisconnect` (session.detach) + audio-toggle (speaker.enabled/toggle).
+ה-AppHeader של המוקאפ לא כולל אותם. כדי לא לאבד פונקציונליות: שניהם נשמרים ב-AppHeader כאייקונים
+(LogOut + Volume2/VolumeX). **ימוקמו מחדש ב-redesign-3**: disconnect→SessionOptionsPanel, audio-master→
+SettingsScreen ליד 3 ה-toggles המפורטים. (אביגיל #1.)
+
+### redesign-3: Bits UI Switch ✅, native Select (fallback) ✅ — מתועד
+
+בוחרים **Bits UI Switch** (Root+Thumb) עם ה-`.toggle` CSS helper מ-app.css — RTL-safe, a11y מובנה.
+**Native styled `<select>`** (לא Bits Select): Bits Select דורש Portal + JS overhead + RTL quirks שמסובכים לצרוך. ה-brief (§7) אישר: "fallback native styled select — לגיטימי". SelectOpts מוחזרים כ-props פשוטים. תועד ב-`components/ui/Select.svelte` (comment).
+
+### redesign-3: בולע את slice 9a (לא מבוצע בנפרד)
+slice 9a (speech toggles, plan-verified, base dev) נבלע ל-redesign-3 כדי לא לעצב toggles פעמיים
+(פעם CSS גלם ב-9a, פעם Bits/Tailwind ב-redesign-3). הלוגיקה זהה (Settings fields + Speaker getters,
+processedSegments מונע בליעה), העיצוב לפי המוקאפ. **9a מסומן superseded — לא יבוצע.**
+VoicePicker **לא נמחק** (connect route משתמש בו, +page.svelte:92) — reuse בתוך SettingsScreen.
+
+### redesign-5: C1 (segments bug) = rendering-only, לא data-model refactor
+ה-spec רמז "אולי slice עם data-model refactor". אחרי בדיקת קוד: **לא צריך.** ה-Speaker צורך
+`bubble.segments` כ-buffer ומריץ splitIntoSentences בעצמו (לא מסתמך על segment=משפט); MessageBubble
+כבר עושה join לטקסט רץ. רק **ThoughtBubble** עושה div-per-segment (זה הבאג). התיקון: ThoughtBubble
+מרנדר טקסט-רץ (מקור) / per-משפט (מתורגם). ה-data-model של segments **נשאר** — Speaker+thought-translation
+תלויים בו. (חוסך slice שלם של refactor מסוכן.)
+
+### foundation = תשתית שקופה (לא ממיר קומפוננטות)
+ה-foundation **לא** ממיר את 14 הקומפוננטות הקיימות ל-Tailwind ולא משנה אף מסך. הוא מגדיר את
+אותם שמות-tokens (`--bg`/`--fg`/`--accent`...) שהקומפוננטות כבר צורכות דרך `var()`, כך שהן
+ממשיכות לעבוד זהה. המיגרציה בפועל קורית slice-by-slice כשכל אזור נכתב-מחדש מהמוקאפ. זה מכבד
+חוק-זהב #5 (אסור backward-compat-in-place — או refactor מלא של אזור, או לא לגעת). DoD דורש
+ש-/chat ייראה **זהה** לפני/אחרי (regression check ויזואלי).
+
+### ממצאי אביגיל (foundation, 2 סבבים)
+- סבב 1: USABLE-AFTER-FIX. blocker #1: כל פקודות `pnpm --filter @drive-coding/frontend` נכשלות —
+  שם ה-package הוא `@drive-coding/frontend-v2` (התיקייה `frontend/` אך השם הפנימי נשאר -v2 מה-cutover).
+  +2 בלבולים: גרסת Lucide שגויה (`^0.500.0` — `@lucide/svelte@next`=1.3.x), נתיבי `var(--muted)` חסרי `chat/`.
+- spot-check מלא עבר: context.ts createContext, +layout additive, SPA-only, token-coverage, plugin-order, חוק-זהב #4.
+- סבב 2 אחרי תיקון: **READY**. findings #4 (Icon value-export — fallback מכסה) ו-#5 (Heebo לא נטען — regression-neutral) התקבלו כ-wontfix מתועדים.
+
+### רעיונות שנדחו
+- **מיגרציה הדרגתית של Tailwind** (page-by-page side-by-side): נדחה — המשתמשת הכריעה מיגרציה מלאה. אבל "מלאה" ≠ "במכה אחת": ה-foundation תשתית, ההמרה slice-by-slice.
+- **לכתוב את 5 ה-primitives ידנית** (בלי component-lib): נדחה כברירת-מחדל — a11y+focus-trap עבודה אמיתית עם סיכון-באגים. נשאר כ-fallback ל-Select אם Bits נלחם ב-RTL.
+- **לפצל C1/C2 ל-slices מוקדמים עצמאיים** (לפני foundation): נדחה — שניהם נוגעים בקומפוננטות שייכתבו מחדש; פיצול = עבודה כפולה.
+- **Skeleton UI**: נדחה (§1.2 spec) — opinionated, "look" גנרי, מתנגש בפלטה הייחודית.
+
 ## 2026-06-01 — convention: הערות בקוד בעברית
 
 ### רציונל
