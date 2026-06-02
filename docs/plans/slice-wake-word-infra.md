@@ -81,7 +81,7 @@ packages/core/src/ui/
 
 packages/frontend/
   package.json                         # + onnxruntime-web dependency
-  static/wake-word/models/*.onnx       # 9 קבצים מ-POC (mel/embed/vad + 4 classifiers... ראה §6)
+  static/wake-word/models/*.onnx       # 7 קבצים מ-POC (mel/embed/vad + 4 classifiers; NOT timer/weather — ראה §6)
   src/lib/
     engines/wake-word/
       audio-math.ts                    # computeRms, transformMel, קבועים
@@ -217,9 +217,10 @@ export class WakeWordVM {
 ### Commit 7 — route בדיקה + assets + dependency
 - **`package.json`**: הוסף `"onnxruntime-web": "^1.22.0"` ל-dependencies.
   `pnpm install`.
-- **`static/wake-word/models/`**: העתק 9 קבצי .onnx מ-`poc/wake-word-orb/assets/models/`
-  (mel, embed, vad + alexa/jarvis/mycroft/rhasspy. **לא** timer/weather).
-  ⚠️ binaries — לוודא שלא נחסמים ע"י .gitignore לא רצוי (static אמור להיכלל).
+- **`static/wake-word/models/`**: העתק **7** קבצי .onnx מ-`poc/wake-word-orb/assets/models/`
+   (3 משותפים: mel/embed/vad + 4 keywords: jarvis/alexa/mycroft/rhasspy.
+   **לא** timer/weather — ראה §6 לרשימה המדויקת.)
+   ⚠️ binaries — לוודא שלא נחסמים ע"י .gitignore לא רצוי (static אמור להיכלל).
 - **`src/routes/wake-word-test/+page.svelte`** — ה-consumer היחיד:
   - יוצר `new WakeWordVM(...)` (route זה standalone, לא דרך +layout — מותר כי
     זה route בדיקה מבודד, לא חלק מה-app shell. תיעוד בהערה למה חריג).
