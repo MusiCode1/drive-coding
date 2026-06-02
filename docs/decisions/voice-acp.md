@@ -1,5 +1,74 @@
 # Decisions — voice-acp
 
+## 2026-06-02 — slice review-fixes-2: timeout בכל ה-FE adapters (sequel ל-helper)
+
+### רציונל
+אחרי ש-review-fixes-1 הוסיף את `withTimeout`, סרקנו את כל הקוד למקומות שצריכים timeout.
+מצאנו: agents-api (createAgent/notifySessionAttached/deleteAgent — 0 timeout), voices+tts
+(F7 — picker/TTS נתקעים), narrate (timeout ידני — כפילות). מחילים את ה-helper על כולם.
+
+### היקף — מה בפנים ומה בחוץ
+**בחוץ במכוון**: (א) **BE proxy streaming** (`http-proxy.ts`) — timeout על stream הוא
+בעיה שונה (connect-vs-stream), סבב נפרד. (ב) **getAgent** — אין לו צרכן בקוד (grep);
+החלטת המשתמשת: לא לגעת, רק הערת TODO שמפנה תשומת לב. לא לתקן F4 כאן.
+
+### הנקודה העדינה — tts connect-timeout בלי לקטוע streaming
+`synthesizeStreaming` מחזיר ReadableStream. `fetch()` resolve על קבלת ה-headers (לפני
+צריכת הגוף), אז `withTimeout` עוטף רק את ה-connect+first-response; ה-stream שמוחזר נצרך
+אחרי שה-helper הסתיים והטיימר נוקה → הזרמת אודיו ארוכה לא נקטעת. אביגיל אישרה טכנית.
+
+### שרשור
+depends_on=[slice-review-fixes-1]. base = branch slice-review-fixes-1 (לא dev, ה-helper
+עוד לא merged). סדר merge: review-fixes-1 → dev, ואז review-fixes-2 → dev.
+
+### ממצאי אביגיל
+READY סבב 1 (נדיר). 2 minors 🟢: caller שלישי של createAgent (sessions.ts:42 — signal
+additive בטוח), narrate block 32-51 (לא 32-54). שניהם תוקנו.
+
+## 2026-06-02 — slice review-fixes-1: F1+F3 (לא T6), ו-Promise.race ל-transcribe
+
+### רציונל
+מתוך ה-code review (2026-06-01) בחרנו לאגד 3 באגים ל-slice "review-fixes" אחד.
+אחרי חקירה — **T6 (cache-key sanitization) ירד**: הוא כבר מומש ומחווט בתוך slice 24
+(`sanitizeCacheKey` = sha256 ב-proxy-cache.ts:63, נקרא ב-http-proxy.ts:97). ה-review
+נכתב על tip 115419d, לפני שהקוד הזה נכתב. נשארו F1+F3 — שניהם FE, קצרים, depends_on=[].
+
+### ההכרעה הקריטית — `withTimeout` helper ב-core (לא inline Promise.race)
+בתחילה תכננו Promise.race inline בתוך transcribe. המשתמשת שאלה אם עדיף helper משותף —
+ובדיקה הראתה 3+ צרכנים (F3 transcribe, F7 voices+tts, ו-translate שעושה ידנית) → abstraction
+מוצדק. נכתב `withTimeout(fn, ms, opts?)` ב-`core/src/async/with-timeout.ts` (export חדש `/async/*`).
+
+**הסמנטיקה**: ה-helper **תמיד** עושה `Promise.race` (משחרר את ה-await ללא תלות ב-SDK)
+**וגם** תמיד מספק `AbortSignal` (ביטול-רשת אמיתי כש-SDK תומך, כמו ה-`ai` SDK של translate).
+שני העולמות בפונקציה אחת — הקורא בוחר אם להעביר את ה-signal ל-SDK שלו.
+
+**שני מלכודות שה-helper מטפל בהן מפורשות** (המשתמשת זיהתה את הראשונה):
+- **unhandled rejection**: כשה-timeout מנצח, הצד המפסיד (ה-fn) עלול לדחות מאוחר (AbortError)
+  כשאף אחד כבר לא עושה לו await → `void work.catch(()=>{})` בולע (בלי לגזול מהקורא — ה-reference
+  המקורי עדיין ב-race).
+- **timer leak**: `clearTimeout` ב-finally לכל כיוון. כש-work מנצח → ה-timeout Promise נשאר
+  pending לנצח (לא reject) → GC, לא unhandled.
+
+**למה helper ולא 4 inline copies**: בדיוק 2 המלכודות האלה קל לשכוח בהעתקה ידנית (כמו שראינו
+ב-slice 26 עם mock לא מעודכן). פונקציה אחת מטופלת-היטב + טסטים = מקור-אמת יחיד.
+
+מבנה: Commit 0 helper (TDD, כולל טסט no-unhandled-rejection ו-timer-cleanup), Commit 1 F3,
+Commit 2 F1, Commit 3 יישור translate.ts ל-helper. T6 ירד (כבר ב-slice 24).
+
+### ממצאי אביגיל
+סבב 1: USABLE-AFTER-FIX, 4 findings. הקריטי (1+2): ה-brief נתן לאליעזר **שתי גישות
+סותרות** (abortSignal-only ב-§4/§6/DoD מול Promise.race ב-§9), וה-brief עצמו הודה
+ש-abortSignal-only עלול לא לתקן את הבאג. תוקן ע"י בחירת Promise.race וסנכרון כל הסעיפים.
+minors: line numbers של mic.svelte.ts הם reference (slice 6 עשוי להזיז), טענת "טסטים
+negative" ל-T6 לא אומתה (הוסרה). סבב 2: **READY** (1 minor — ASCII diagram stale, תוקן).
+
+### שינויי-כיוון
+F3 timeout שונה מהתקן-זהב translate.ts ב-2 דברים מתועדים: (א) Promise.race ולא
+abortSignal-only, (ב) זורק ולא מחזיר null (כי ה-Mic VM כבר תופס ב-catch).
+
+### רעיונות שנדחו
+abortSignal-only (כמו translate) — נדחה כי ה-SDK לא מבטיח שמכבד אותו → לא עמיד.
+
 ## 2026-06-01 — redesign vNext: חלוקה ל-slices + foundation-first
 
 ### רציונל החלוקה

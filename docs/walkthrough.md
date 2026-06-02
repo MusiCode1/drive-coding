@@ -1,3 +1,81 @@
+## 2026-06-02 — slice review-fixes-2 Commit 1: agents-api timeout (TDD)
+
+### מה בוצע?
+
+Commit 1 של `slice-review-fixes-2`.
+
+#### C1 — withTimeout ב-agents-api.ts
+- `agents-api.ts`: ייבוא withTimeout מ-core. קבוע `AGENTS_API_TIMEOUT_MS = 10000`.
+- `createAgent`: הוסף param `signal?: AbortSignal` (additive). עוטף fetch ב-withTimeout.
+- `deleteAgent`: עוטף fetch ב-withTimeout(10000, "deleteAgent").
+- `notifySessionAttached`: עוטף fetch ב-withTimeout(10000, "notifySessionAttached"). fire-and-forget, אין external signal.
+- `getAgent`: לא שונה. נוספה הערת TODO(review-fixes-2) מעל הפונקציה.
+- `agents-api.test.ts` (חדש): 8 טסטים — createAgent happy/signal/timeout/http-error, deleteAgent happy/timeout, notifySessionAttached happy/timeout. withTimeout mocked.
+- typecheck: 0, tests: 462, lint:i18n: נקי.
+
+## 2026-06-02 — slice review-fixes-1 הושלם — calev GO (14/14)
+
+### מה בוצע?
+
+Slice `review-fixes-1` הושלם ב-4 commits. calev light: GO, 14/14 DoD, 0 findings.
+
+| commit | hash | תוכן |
+|---|---|---|
+| C0 | ecc6152 | withTimeout helper + 6 tests (core) |
+| C1 | 568bb6a | F3: transcribe timeout |
+| C2 | 67694fb | F1: showSaved timer |
+| C3 | 2a551d4 | translate → withTimeout |
+
+branch: slice-review-fixes-1, base: bd691ea.
+דוח calev: dev/reports/voice-acp/slice-review-fixes-1-calev.md
+
+## 2026-06-02 — slice review-fixes-1 Commit 3: translate → withTimeout (TDD)
+
+### מה בוצע?
+
+Commit 3 של `slice-review-fixes-1`.
+
+#### C3 — יישור translate ל-withTimeout
+- `translate.ts`: הסר AbortController+setTimeout ידני (שורות 75-105). עטוף generateObject ב-withTimeout(2500ms,'translate'). try/catch סביב withTimeout → null בשגיאה/timeout. התנהגות שמורה.
+- `translate.test.ts` (חדש): 5 טסטים — happy path / timeout→null / error→null / already_in_target / empty→null. withTimeout mocked.
+- typecheck: 0, tests: 471, lint:i18n: נקי.
+
+## 2026-06-02 — slice review-fixes-1 Commit 2: F1 settings "נשמר" נעלם (manual)
+
+### מה בוצע?
+
+Commit 2 של `slice-review-fixes-1`.
+
+#### C2 — F1: showSaved timer
+- `routes/settings/+page.svelte:23`: החלף `$derived(savedAt!==undefined && Date.now()-savedAt<3000)` ב-`$derived(savedAt!==undefined)` + `$effect` עם setTimeout(3000) שמאפס savedAt + clearTimeout ב-return.
+- `$derived` עם Date.now() לא reactive → לא מתחשב מחדש. `$effect` מגיב ל-savedAt.
+- typecheck: 0, build FE: ✓, lint:i18n: נקי.
+
+## 2026-06-02 — slice review-fixes-1 Commit 1: F3 transcribe timeout (TDD)
+
+### מה בוצע?
+
+Commit 1 של `slice-review-fixes-1`.
+
+#### C1 — F3: transcribe דרך withTimeout
+- `packages/frontend/src/lib/adapters/voice/transcribe.ts`: הוסף import withTimeout, TRANSCRIBE_TIMEOUT_MS=15000. עטף generateContent ב-withTimeout. הסיר AbortController ידני.
+- `packages/frontend/src/lib/adapters/voice/transcribe.test.ts` (חדש): 2 טסטים — happy path + timeout→throw. withTimeout מmocked (jsdom fake timers יוצרים PromiseRejectionHandledWarning ב-vitest@4.1.6; לוגיקת timeout מכוסה ב-core tests).
+- `packages/core/src/async/with-timeout.ts`: הפריד בין timeout Promise constructor ל-timer הפעלה — timeoutReject נשמר וה-timer נורה אחרי void timeout.catch(()=>{}).
+- typecheck: 0, tests: 466, lint:i18n: נקי.
+
+## 2026-06-02 — slice review-fixes-1 Commit 0: withTimeout helper
+
+### מה בוצע?
+
+Commit 0 של `slice-review-fixes-1` (worktree `.worktrees/slice-review-fixes-1/`).
+
+#### C0 — withTimeout helper ב-core (TDD)
+- קובץ חדש: `packages/core/src/async/with-timeout.ts` — helper שעוטף פעולה אסינכרונית ב-timeout. תומך ב-SDK שמכבד AbortSignal וגם ב-SDK שמתעלם ממנו (Promise.race).
+- קובץ חדש: `packages/core/tests/async/with-timeout.test.ts` — 6 טסטים: happy path, timeout/race, abort propagation, external signal, timer cleanup, no-unhandled-rejection.
+- `packages/core/package.json`: הוסף export `"./async/*": "./src/async/*.ts"`.
+- TDD: טסטים אדומים קודם, אז implementation ירוק.
+- 6/6 טסטים ירוקים, typecheck נקי, lint:i18n נקי.
+
 ## 2026-06-02 — redesign vNext שרשרת הושלמה (slices 3-7)
 
 ### מה בוצע?
