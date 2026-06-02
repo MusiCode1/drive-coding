@@ -11,6 +11,15 @@ Commits על branch `slice-wake-word-infra` (base: `poc-wake-word`).
 - 5 טסטים (TDD: אדום→ירוק): midpoint, same value, factor=0, factor=1, fractional.
 - typecheck: נקי. core tests: 403 pass.
 
+#### Commit 3 — engine: types.ts + vad.ts + pipeline.ts (TDD, mock ort)
+
+- `engines/wake-word/types.ts`: WakeWordConfig (ArkType), MODEL_FILE_MAP (4 keywords בלי timer/weather), DetectEvent/VadEndEvent/WakeWordEventMap.
+- `engines/wake-word/vad.ts`: createVadState + runVadStep (Silero VAD state, mutations in-place).
+- `engines/wake-word/pipeline.ts`: inferWindowSize (מסיק shape[1] ← inputMetadata) + createScorePipeline (mel-buffer=76, hop=8, embedding-history=max-window).
+- package.json: הוספת `onnxruntime-web ^1.22.0` + `arktype ^2.0.0` לdependencies (נדרש לtype imports בCommit 3).
+- 17 טסטים (TDD: RED→GREEN): inferWindowSize/fallbacks, pipeline null-until-76, scores-after-76, window-slicing, reset(), createVadState, runVadStep/mutates-state.
+- typecheck: נקי. כל 48 test files עוברים (476 tests).
+
 #### Commit 2 — engine: audio-math.ts + wav.ts (TDD)
 
 - `packages/frontend/src/lib/engines/wake-word/audio-math.ts`: `computeRms`, `transformMel` (inline POC→פונקציה טהורה), קבועים SAMPLE_RATE/FRAME_SIZE/VAD_THRESHOLD/DETECT_THRESHOLD.
