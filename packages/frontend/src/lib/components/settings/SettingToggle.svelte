@@ -22,7 +22,13 @@ const { label, checked, onCheckedChange, disabled = false }: Props = $props()
   style="border-top:1px solid var(--border)"
   class:opacity-40={disabled}
   class:pointer-events-none={disabled}
+  aria-disabled={disabled}
 >
   <span class="text-sm" style="color:var(--fg)">{label}</span>
-  <Switch {checked} {onCheckedChange} {disabled} />
+  <!-- disabled=true מעביר ל-BitsSwitch.Root (disabled prop) + pointer-events-none על label חוסם click -->
+  <Switch
+    {checked}
+    onCheckedChange={disabled ? undefined : onCheckedChange}
+    {disabled}
+  />
 </label>
