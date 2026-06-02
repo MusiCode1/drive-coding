@@ -1,3 +1,169 @@
+## 2026-06-02 — redesign vNext שרשרת הושלמה (slices 3-7)
+
+### מה בוצע?
+
+שרשרת redesign vNext — slice-3 עד slice-7 הושלמה. calev GO על כל slice.
+
+| slice | branch | tip | commits | calev |
+|---|---|---|---|---|
+| redesign-3 | slice-redesign-3-settings | 06dc7b6 | 7 | GO 10/10 |
+| redesign-4 | slice-redesign-4-input-mic | 83349df | 4 | GO 9/10 |
+| redesign-5 | slice-redesign-5-bubbles | 1c36bf3 | 4 | GO 9/9 |
+| redesign-6 | slice-redesign-6-modals | 196b4f4 | 5 | GO 8/8 |
+| redesign-7 | slice-redesign-7-smart-scroll | 211f94a | 2 | GO 7/7 |
+
+## 2026-06-02 — slice redesign-7 C1: Smart-scroll + JumpDown
+
+### מה בוצע?
+
+Commit 1 של `slice-redesign-7-smart-scroll` (worktree `.worktrees/slice-redesign-7-smart-scroll/`).
+
+#### C1 — smart-scroll + JumpDown
+- i18n: `chat.jumpDown`.
+- AppShell: auto-scroll מותנה ב-`isAtBottom` (THRESHOLD 50px). scroll listener `onScroll`. כפתור JumpDown צף (ArrowDown icon, accent, absolute bottom).
+- typecheck 0, build נקי, 447 tests pass, lint נקי.
+
+## 2026-06-02 — slice redesign-6 C2-C4: FolderPickerDialog + SessionsDialog + חיווט
+
+### מה בוצע?
+
+Commits 2-4 של `slice-redesign-6-modals`.
+
+#### C2 — FolderPickerDialog (E2)
+- Bits Dialog: breadcrumb, fs-browse, up, "בחר תיקייה זו" → setLastCwd.
+
+#### C3 — SessionsDialog + SessionCard (E1)
+- Bits Dialog: listSessionsForCwd, refresh, בחירה → loadSession + goto("/chat"), סשן חדש.
+
+#### C4 — חיווט
+- SessionOptionsPanel: refresh/newSession → `modals.openSessions()`.
+- SettingsScreen: "בחר…" → `modals.openFolder()`.
+- AppShell: מרנדר FolderPickerDialog + SessionsDialog (פעם אחת).
+- typecheck 0, build נקי, 447 tests pass, lint נקי.
+
+## 2026-06-02 — slice redesign-6 C1: fs-browse adapter + ModalsVM
+
+### מה בוצע?
+
+Commit 1 של `slice-redesign-6-modals` (worktree `.worktrees/slice-redesign-6-modals/`).
+
+#### C1 — fs-browse + ModalsVM + context
+- `adapters/fs-browse.ts`: browseFolder(path) → {path, entries[]} עם beUrl.
+- `view-models/modals.svelte.ts`: ModalsVM (sessionsOpen/folderOpen, open/close methods).
+- `context.ts`: getModals/setModals. `+layout.svelte`: new ModalsVM + setModals.
+- 12 מפתחות `modal.*` חדשים (he.ts + en.ts).
+- `docs/decisions`: redesign-6 Bits Dialog entry.
+- typecheck 0.
+
+## 2026-06-02 — slice redesign-5 C3+C4: UserBubble + MessageBubble + ToolBubble
+
+### מה בוצע?
+
+Commits 3-4 של `slice-redesign-5-bubbles`.
+
+#### C3 — UserBubble + MessageBubble (C4)
+- UserBubble: self-start, avatar user, bubble-user token, joinSegmentText.
+- MessageBubble: self-end, avatar agent, bubble-agent token, markdown נשמר.
+
+#### C4 — ToolBubble redesign (C2)
+- self-end + max-w-[78%] (לא stretch). avatar tool.
+- drill-down: native `<details>` — narration+status→args+result+content+locations.
+- content/locations מ-slice 16 נשמרו.
+- typecheck 0, build נקי, 464 tests pass, lint נקי.
+- agent-session/speaker/types/bubble לא שונו.
+
+## 2026-06-02 — slice redesign-5 C1+C2: ThoughtBubble fix + Avatar
+
+### מה בוצע?
+
+Commits 1-2 של `slice-redesign-5-bubbles` (worktree `.worktrees/slice-redesign-5-bubbles/`).
+
+#### C1 — ThoughtBubble טקסט רץ (C1 FIX)
+- ThoughtBubble.svelte מחדש: אם ללא-תרגום → joinSegmentText → טקסט רץ (מסיר div-per-segment).
+  אם מתורגם → per-segment תקין. data-model ולא נשמר. `hidden` span לריאקטיביות נשמר.
+
+#### C2 — Avatar component (C3)
+- Avatar.svelte: Lucide User/Sparkles/Brain/Wrench, color-mix tokens לפי kind, לפי avatarCfg.
+
+## 2026-06-02 — slice redesign-4 C2-C4: TypeArea + RecordFooter + חיווט
+
+### מה בוצע?
+
+Commits 2-4 של `slice-redesign-4-input-mic`.
+
+#### C2 — TypeArea
+- TypeArea.svelte: textarea + SendIcon + onSubmit (trim/sendPrompt/clear; Enter=שלח, Shift+Enter=שורה).
+
+#### C3 — RecordFooter + crossfade
+- RecordFooter.svelte: toggle record/typing (mode=$state מקומי), min-height:168px + transition:fade, mic-card/fade responsive.
+
+#### C4 — חיווט + מחיקות
+- chat/+page.svelte: RecordFooter מחליף ChatInput.
+- מחיקת ChatInput.svelte + MicButton.svelte.
+- typecheck 0, build נקי, 447 tests pass, lint נקי.
+
+## 2026-06-02 — slice redesign-4 C1: i18n + MicLarge
+
+### מה בוצע?
+
+Commit 1 של `slice-redesign-4-input-mic` (worktree `.worktrees/slice-redesign-4-input-mic/`).
+
+#### C1 — i18n + MicLarge
+
+- 6 מפתחות `record.*` + `mic.stop` חדשים (he.ts + en.ts).
+- `components/chat/MicLarge.svelte` — לחצן mic 110px, Lucide icons (Mic/Volume2/Loader2/Square/X), state→color מ-app.css classes, stop button absolute ב-speaking, שגיאות mic.
+- typecheck 0, lint נקי.
+
+## 2026-06-02 — slice redesign-3 סיום + calev PARTIAL→תיקון
+
+### מה בוצע?
+
+Fix אחרי calev PARTIAL (2 findings מינוריים):
+- F1: SettingToggle.svelte — `onCheckedChange` מוגן בתנאי `disabled` + `aria-disabled` — מונע שינוי state לוגי.
+- F2: decisions entry redesign-3 נכתב — Bits Switch ✅, native Select (fallback) ✅, רציונל מתועד.
+- 6 commits סה"כ על branch `slice-redesign-3-settings`, tip: `7edf7c9`.
+
+## 2026-06-02 — slice redesign-3 C5: SessionOptionsPanel חיווט + AgentOptionsPanel מחיקה
+
+### מה בוצע?
+
+Commit 5 של `slice-redesign-3-settings`.
+
+#### C5 — SessionOptionsPanel + AgentOptionsPanel deletion
+
+- `SessionOptionsPanel.svelte` — חיווט מלא של dropdowns מודל/סוכן/configOptions מתוך לוגיקת AgentOptionsPanel (flattenSelectOptions, applyConfigOption, models/modes/configOptions).
+- `routes/chat/+page.svelte` — הסרת `<AgentOptionsPanel/>` וה-import שלו.
+- מחיקת `components/chat/AgentOptionsPanel.svelte`.
+- typecheck 0, build נקי, i18n lint נקי, 447 tests pass.
+
+## 2026-06-02 — slice redesign-3 C4: SettingsScreen + toggles UI
+
+### מה בוצע?
+
+Commit 4 של `slice-redesign-3-settings`.
+
+#### C4 — SettingsScreen UI
+
+- i18n: 13 מפתחות `settings.*` חדשים ב-keys.ts + he.ts + en.ts.
+- `components/settings/SettingsCard.svelte` — כרטיס wrapper (כותרת uppercase + body).
+- `components/settings/SettingToggle.svelte` — שורת toggle (Switch + label), תומך disabled.
+- `components/settings/SettingsScreen.svelte` — 2 כרטיסים (חיבור + קול ודיבור), 4 toggles מחווטים ל-Settings, VoicePicker, כפתורי איפוס+שמור. לפי מוקאפ שורות 584-650.
+- `routes/settings/+page.svelte` — route דק (15 שורות): AppShell + SettingsScreen.
+- typecheck 0, build נקי, i18n lint נקי.
+
+## 2026-06-02 — slice redesign-3 C3: bits-ui + Switch/Select wrappers
+
+### מה בוצע?
+
+Commit 3 של `slice-redesign-3-settings` (worktree `.worktrees/slice-redesign-3-settings/`, branch `slice-redesign-3-settings`).
+
+#### C3 — Bits UI + ui wrappers
+
+- `pnpm add bits-ui@^2.18.1` ל-frontend-v2.
+- `components/ui/Switch.svelte` — עטיפה דקה של `bits-ui Switch.Root+Thumb` עם `.toggle` CSS helper מ-app.css (RTL-safe).
+- `components/ui/Select.svelte` — native styled `<select>` (fallback על Bits Select שמסורבל ב-RTL+Portal). תועד ב-decisions.
+- typecheck 0 errors, build נקי.
+
 ## 2026-06-01 13:25 — slice 24: client-keyed proxy cache + homeDir default cwd
 
 ### מה בוצע?
