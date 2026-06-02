@@ -82,6 +82,10 @@ export class Settings {
   availableVoices = $state<Voice[]>([])
   voicesLoading = $state<boolean>(false)
   voicesError = $state<string | null>(null)
+  /** מונה נסיונות כושלים רצופים — מזין את ה-backoff. מתאפס בהצלחה / force. */
+  #voicesRetries = 0
+  /** ה-timer של הנסיון החוזר המתוזמן (null = אין retry ממתין). */
+  #voicesRetryTimer: ReturnType<typeof setTimeout> | null = null
 
   // ─── שרת ───
   beUrl = $state<string>(DEFAULTS.beUrl)
@@ -130,21 +134,65 @@ export class Settings {
 
   /**
    * מביא את קטלוג הקולות מ-ElevenLabs (דרך פרוקסי BE + רכיב OneCLI).
-   * אידמפוטנטי (Idempotent): קריאות עוקבות עושות שימוש חוזר ב-`availableVoices` אם כבר נטען
-   * ואינו בטעינה כרגע (in-flight). שגיאות נשמרות ב-`voicesError`.
+   *
+   * retry עם exponential backoff: בכשל מתזמן נסיון חוזר (2s,4s,8s,16s,cap 30s)
+   * עד #VOICES_MAX_RETRIES, ואז עוצר. הצלחה / `force=true` מאפסים backoff ו-timer.
+   *
+   * חשוב: ה-retry מתוזמן כאן (setTimeout), **לא** מ-$effect של הקורא — אחרת
+   * הכתיבה ל-voicesError הייתה מפעילה את ה-$effect מחדש בקצב event-loop (DDoS).
+   * הקורא (VoicePicker) מפעיל פעם אחת ב-mount עטוף ב-untrack. שגיאות → voicesError.
    */
-  loadVoices = async (): Promise<void> => {
+  loadVoices = async (force = false): Promise<void> => {
     if (this.voicesLoading) return
+    // טעינה מוצלחת קיימת — אל תטען שוב.
     if (this.availableVoices.length > 0 && this.voicesError === null) return
+
+    if (force) {
+      // רענון מפורש (כפתור / beUrl השתנה) — בטל retry ממתין ואפס backoff.
+      this.#clearVoicesRetry()
+      this.#voicesRetries = 0
+    } else if (this.#voicesRetryTimer !== null) {
+      // כבר יש retry מתוזמן — אל תכפיל קריאות.
+      return
+    }
+
     this.voicesLoading = true
     this.voicesError = null
     try {
       const voices = await listVoices()
       this.availableVoices = voices
+      this.#voicesRetries = 0
     } catch (e) {
       this.voicesError = e instanceof Error ? e.message : String(e)
+      this.#scheduleVoicesRetry()
     } finally {
       this.voicesLoading = false
+    }
+  }
+
+  static #VOICES_MAX_RETRIES = 6
+  static #VOICES_BASE_DELAY_MS = 2000
+  static #VOICES_MAX_DELAY_MS = 30_000
+
+  /** מתזמן נסיון חוזר עם exponential backoff, עד תקרת הנסיונות. */
+  #scheduleVoicesRetry(): void {
+    if (this.#voicesRetries >= Settings.#VOICES_MAX_RETRIES) return
+    const delay = Math.min(
+      Settings.#VOICES_BASE_DELAY_MS * 2 ** this.#voicesRetries,
+      Settings.#VOICES_MAX_DELAY_MS,
+    )
+    this.#voicesRetries += 1
+    this.#clearVoicesRetry()
+    this.#voicesRetryTimer = setTimeout(() => {
+      this.#voicesRetryTimer = null
+      void this.loadVoices()
+    }, delay)
+  }
+
+  #clearVoicesRetry(): void {
+    if (this.#voicesRetryTimer !== null) {
+      clearTimeout(this.#voicesRetryTimer)
+      this.#voicesRetryTimer = null
     }
   }
 
