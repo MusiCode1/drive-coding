@@ -53,7 +53,9 @@ const capture = createCapture({
 
 // ── Detector ────────────────────────────────────────────────────────────────
 const detector = new WakeWordDetector({
-  keywords: ["hey_jarvis", "alexa", "hey_mycroft", "hey_rhasspy", "timer", "weather"],
+  // timer/weather are sentence-command detectors with high false positives on
+  // general speech (timer fired on plain talking) — kept out. Real wake words only.
+  keywords: ["hey_jarvis", "alexa", "hey_mycroft", "hey_rhasspy"],
   baseAssetUrl: "assets/models",
 });
 
