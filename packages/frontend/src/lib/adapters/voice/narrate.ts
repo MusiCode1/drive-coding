@@ -11,6 +11,7 @@
 
 import { generateText } from "ai"
 import { googleAi } from "./sdks"
+import { narrateCacheHeaders } from "./cache-headers"
 import {
   buildNarratePrompt,
   type NarrateContext,
@@ -22,6 +23,7 @@ const TIMEOUT_MS = 3000
 /**
  * מחולל קריינות בעברית עבור קריאה לכלי.
  * מחזיר את המשפט בעברית, או null בכל שגיאה שהיא.
+ * Slice 24: שולח x-cache-key + x-cache-meta לפי toolCallId (מפתח יציב).
  */
 export async function narrate(
   ctx: NarrateContext,
@@ -29,12 +31,13 @@ export async function narrate(
   signal?: AbortSignal,
 ): Promise<string | null> {
   const prompt = buildNarratePrompt(ctx, tool)
+  const cacheHeaders = await narrateCacheHeaders(tool.toolCallId, tool.kind)
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(new Error(`narrate timeout ${TIMEOUT_MS}ms`)), TIMEOUT_MS)
   signal?.addEventListener("abort", () => ac.abort(), { once: true })
   try {
     const result = await generateText({
-      model: googleAi("gemini-flash-lite-latest"),
+      model: googleAi("gemini-flash-lite-latest", cacheHeaders),
       prompt,
       abortSignal: ac.signal,
     })

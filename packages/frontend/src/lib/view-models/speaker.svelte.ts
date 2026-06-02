@@ -313,7 +313,8 @@ export class Speaker {
       let text = job.text
 
       if (job.kind === "thought") {
-        const result = await translate(text, TARGET_LANG, job.abort.signal)
+        // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)
+        const result = await translate(text, TARGET_LANG, job.abort.signal, job.messageId)
         if (result !== null && result.status === "translated") {
           // Slice 4: כתיבה חזרה למקטע כדי ש-ThoughtBubble יוכל להציג HE+EN.
           if (job.bubbleId !== undefined) {
@@ -336,9 +337,11 @@ export class Speaker {
 
       // slice 22: חשב textHash על הטקסט שמסונתז (provenance)
       const textHash = await cacheKeyFor(text, this.#settings.voiceId, "eleven_v3")
+      // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)
       const stream = await synthesizeStreaming({
         text,
         voiceId: this.#settings.voiceId,
+        messageId: job.messageId,
         signal: job.abort.signal,
       })
       await this.#audioStream.prepareSegment(job.segmentId, stream, job.abort, {
