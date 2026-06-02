@@ -1,27 +1,35 @@
 <script lang="ts">
 /**
- * SettingsScreen — מסך הגדרות מחדש לפי מוקאפ redesign-vnext (שורות 584-650).
+ * SettingsScreen — מסך הגדרות.
  *
  * כרטיסים:
- *  1. "חיבור" — תיקייה (placeholder), מודל (placeholder), session (placeholder)
- *  2. "קול ודיבור" — VoicePicker + 4 toggles (speakThoughts/narrateTools/translateThoughts/carMode)
+ *  1. "קול ודיבור" — VoicePicker + toggles (speakThoughts/narrateTools/translateThoughts/carMode)
+ *  2. "שרת" — beUrl
+ *
+ * הוסר (redesign-fix): כרטיס "חיבור" (תיקייה/מודל/session) — כל הבוררים האלה
+ * זמינים מחוץ ל-Settings (דף החיבור / SessionOptionsPanel), כך שהם מיותרים כאן.
  *
  * כפתורי איפוס ושמור.
  *
- * ─── settings-redesign (redesign-3) ───
+ * ─── settings-redesign (redesign-3) · redesign-fix ───
  */
-import { getI18n, getSettings, getModals } from "$lib/context"
+import { goto } from "$app/navigation"
+import { getI18n, getSettings } from "$lib/context"
 import SettingsCard from "./SettingsCard.svelte"
 import SettingToggle from "./SettingToggle.svelte"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 
 const settings = getSettings()
 const t = getI18n().t
-// ─── redesign-6 ───
-const modals = getModals()
 
 // translateThoughts disabled כש-speakThoughts כבוי
 const translateDisabled = $derived(!settings.speakThoughts)
+
+// כיבוי הקראת מחשבות מכבה גם את תרגום המחשבות (לא נשאר דלוק-לא-זמין)
+function onSpeakThoughtsChange(v: boolean) {
+  settings.setSpeakThoughts(v)
+  if (!v) settings.setTranslateThoughts(false)
+}
 
 // ─── beUrl ─── (הוחזר אחרי ה-redesign — ה-VM קיים, רק ה-UI נשמט)
 // טופס מבוקר: ערך הקלט נפרד מ-settings.beUrl, נשמר רק על blur/Enter דרך
@@ -39,6 +47,16 @@ function commitBeUrl() {
     beUrlStatus = { kind: "error", msg: res.error }
   }
 }
+
+// F1: "נשמר ✓" נעלם אחרי 3s. דפוס מ-67694fb — $effect שמגיב ל-beUrlStatus,
+// ה-cleanup מבטל timer קודם (שמירה חוזרת) ומנקה ב-teardown (מניעת set אחרי unmount).
+$effect(() => {
+  if (beUrlStatus.kind !== "saved") return
+  const timer = setTimeout(() => {
+    beUrlStatus = { kind: "idle" }
+  }, 3000)
+  return () => clearTimeout(timer)
+})
 </script>
 
 <section
@@ -46,57 +64,45 @@ function commitBeUrl() {
 >
   <h1 class="text-xl font-semibold mb-1">{t("settings.title")}</h1>
 
-  <!-- כרטיס חיבור -->
-  <SettingsCard title={t("settings.connection")}>
-    <!-- תיקיית עבודה — placeholder ל-redesign-6 -->
+  <!-- כרטיס קול ודיבור -->
+  <SettingsCard title={t("settings.voiceSpeech")}>
+    <!-- Voice picker -->
     <label class="flex flex-col gap-1.5">
-      <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.folder.label")}</span>
-      <div class="flex gap-2">
-        <input
-          dir="ltr"
-          disabled
-          placeholder="/home/user"
-          class="flex-1 rounded-xl px-3 py-3 text-sm font-mono outline-none border opacity-50"
-          style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
-        />
-        <!-- redesign-6: פותח FolderPickerDialog -->
-        <button
-          class="px-4 rounded-xl text-sm font-medium border"
-          style="background:var(--bg-card); border-color:var(--border); color:var(--fg-dim)"
-          onclick={() => modals.openFolder()}
-        >
-          {t("settings.folder.pick")}
-        </button>
-      </div>
+      <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.voice.label")}</span>
+      <VoicePicker />
     </label>
 
-    <!-- מודל — placeholder ל-redesign-3 C5 / SessionOptionsPanel -->
-    <label class="flex flex-col gap-1.5">
-      <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.model.label")}</span>
-      <select
+    <!-- toggles — מוקאפ שורות 626-643 -->
+    <div class="flex flex-col divide-y" style="border-color:var(--border)">
+      <SettingToggle
+        label={t("settings.toggle.speakThoughts")}
+        checked={settings.speakThoughts}
+        onCheckedChange={onSpeakThoughtsChange}
+      />
+      <SettingToggle
+        label={t("settings.toggle.narrateTools")}
+        checked={settings.narrateTools}
+        onCheckedChange={(v) => settings.setNarrateTools(v)}
+      />
+      <SettingToggle
+        label={t("settings.toggle.translateThoughts")}
+        checked={settings.translateThoughts}
+        onCheckedChange={(v) => settings.setTranslateThoughts(v)}
+        disabled={translateDisabled}
+      />
+      <!-- מצב רכב — מושבת זמנית (לא מחווט עדיין, slice 7) -->
+      <SettingToggle
+        label={t("settings.toggle.carMode")}
+        checked={settings.carMode}
+        onCheckedChange={(v) => settings.setCarMode(v)}
         disabled
-        class="rounded-xl px-3 py-3 text-sm outline-none border opacity-50 appearance-none"
-        style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
-      >
-        <option>—</option>
-      </select>
-    </label>
+      />
+    </div>
+  </SettingsCard>
 
-    <!-- Session — placeholder ל-redesign-6 -->
+  <!-- כרטיס שרת — beUrl. נשמר על blur/Enter; ריק = same-origin / פרוקסי Vite -->
+  <SettingsCard title={t("settings.beUrl.label")}>
     <label class="flex flex-col gap-1.5">
-      <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.session.label")}</span>
-      <select
-        disabled
-        class="rounded-xl px-3 py-3 text-sm outline-none border opacity-50 appearance-none"
-        style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
-      >
-        <option>—</option>
-      </select>
-    </label>
-
-    <!-- beUrl — נשמר על blur/Enter; ריק = same-origin / פרוקסי Vite -->
-    <label class="flex flex-col gap-1.5">
-      <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.beUrl.label")}</span>
       <input
         dir="ltr"
         bind:value={beUrlInput}
@@ -122,40 +128,6 @@ function commitBeUrl() {
     </label>
   </SettingsCard>
 
-  <!-- כרטיס קול ודיבור -->
-  <SettingsCard title={t("settings.voiceSpeech")}>
-    <!-- Voice picker -->
-    <label class="flex flex-col gap-1.5">
-      <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.voice.label")}</span>
-      <VoicePicker />
-    </label>
-
-    <!-- 4 toggles — מוקאפ שורות 626-643 -->
-    <div class="flex flex-col divide-y" style="border-color:var(--border)">
-      <SettingToggle
-        label={t("settings.toggle.speakThoughts")}
-        checked={settings.speakThoughts}
-        onCheckedChange={(v) => settings.setSpeakThoughts(v)}
-      />
-      <SettingToggle
-        label={t("settings.toggle.narrateTools")}
-        checked={settings.narrateTools}
-        onCheckedChange={(v) => settings.setNarrateTools(v)}
-      />
-      <SettingToggle
-        label={t("settings.toggle.translateThoughts")}
-        checked={settings.translateThoughts}
-        onCheckedChange={(v) => settings.setTranslateThoughts(v)}
-        disabled={translateDisabled}
-      />
-      <SettingToggle
-        label={t("settings.toggle.carMode")}
-        checked={settings.carMode}
-        onCheckedChange={(v) => settings.setCarMode(v)}
-      />
-    </div>
-  </SettingsCard>
-
   <!-- כפתורי איפוס + שמור -->
   <div class="flex gap-3 mt-2">
     <button
@@ -173,7 +145,7 @@ function commitBeUrl() {
     <button
       class="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
       style="background:var(--accent)"
-      onclick={() => history.back()}
+      onclick={() => goto("/chat")}
     >
       {t("settings.saveOpen")}
     </button>

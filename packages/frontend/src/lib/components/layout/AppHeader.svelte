@@ -14,12 +14,30 @@
 import MenuIcon from "@lucide/svelte/icons/menu"
 import FolderIcon from "@lucide/svelte/icons/folder"
 import SettingsIcon from "@lucide/svelte/icons/settings"
+import { page } from "$app/state"
+import { goto } from "$app/navigation"
 import { getI18n, getResponsive, getSession, getUiShell } from "$lib/context"
 
 const responsive = getResponsive()
 const uiShell = getUiShell()
 const session = getSession()
 const t = getI18n().t
+
+// ⚙ כ-toggle: ב-/settings → חזרה; אחרת → פתיחת /settings.
+// פתיחת /settings סוגרת גם את ה-bottom-sheet אם היה פתוח, כך שבחזרה
+// המשתמש לא מוצא אותו תקוע פתוח (redesign-fix).
+const onSettings = $derived(page.url.pathname === "/settings")
+
+function toggleSettings() {
+  if (onSettings) {
+    // חזרה ל-chat. goto מפורש (לא history.back) — אם נכנסו ל-/settings ישירות
+    // אין דף קודם וה-back יוצא מהאפליקציה ל-about:blank.
+    goto("/chat")
+  } else {
+    uiShell.closeSheet()
+    goto("/settings")
+  }
+}
 
 // שם הסוכן — placeholder קבוע; redesign-3 יחבר לאפשרויות הסוכן
 const agentName = "drive-coding"
@@ -81,13 +99,16 @@ const cwdLabel = $derived(
     ></span>
   </span>
 
-  <!-- הגדרות -->
-  <a
-    href="/settings"
-    class="pointer-events-auto size-9 grid place-items-center rounded-lg text-[var(--fg-dim)] hover:bg-white/5 hover:text-[var(--fg)] shrink-0"
+  <!-- הגדרות — toggle: ב-/settings סוגר (חזרה), אחרת פותח -->
+  <button
+    type="button"
+    class="pointer-events-auto size-9 grid place-items-center rounded-lg shrink-0 hover:bg-white/5"
+    style="color:{onSettings ? 'var(--accent)' : 'var(--fg-dim)'}"
+    onclick={toggleSettings}
     aria-label={t("header.settings")}
+    aria-pressed={onSettings}
     title={t("header.settings")}
   >
     <SettingsIcon size={20} strokeWidth={1.75} />
-  </a>
+  </button>
 </header>
