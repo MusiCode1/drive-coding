@@ -25,6 +25,11 @@ let entries = $state<FsEntry[]>([])
 let loading = $state(false)
 let error = $state<string | null>(null)
 
+// טעינה ב-$effect כשה-dialog נפתח (onOpenChange לא נורה בפתיחה programmatic ב-Bits controlled mode)
+$effect(() => {
+  if (modals.folderOpen) void loadFolder(currentPath)
+})
+
 // breadcrumb — פיצול הנתיב לחלקים
 const breadcrumbs = $derived(
   currentPath.split("/").filter(Boolean)
@@ -45,9 +50,9 @@ async function loadFolder(path: string) {
 }
 
 // טוען את התיקייה בפתיחת dialog
+// onOpenChange רק לסנכרון close (Bits UI מפעיל כשרוצה לסגור)
 function onOpenChange(open: boolean) {
   modals.folderOpen = open
-  if (open) void loadFolder(currentPath)
 }
 
 function navigateTo(name: string) {

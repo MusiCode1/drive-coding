@@ -25,6 +25,11 @@ let sessions = $state<SessionInfo[]>([])
 let loading = $state(false)
 let error = $state<string | null>(null)
 
+// טעינה ב-$effect כשה-dialog נפתח (onOpenChange לא נורה בפתיחה programmatic ב-Bits controlled mode)
+$effect(() => {
+  if (modals.sessionsOpen) void loadSessions()
+})
+
 async function loadSessions() {
   loading = true
   error = null
@@ -37,9 +42,9 @@ async function loadSessions() {
   }
 }
 
+// onOpenChange רק לסנכרון close
 function onOpenChange(open: boolean) {
   modals.sessionsOpen = open
-  if (open) void loadSessions()
 }
 
 async function selectSession(info: SessionInfo) {
