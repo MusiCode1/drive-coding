@@ -7,7 +7,9 @@
  *
  * ─── redesign-2 ───
  * ─── redesign-3 (חיווט dropdowns) ───
+ * ─── slice sessions-inline: סשנים inline (מחליף SessionsDialog) ───
  */
+import { untrack } from "svelte"
 import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
 import LogOutIcon from "@lucide/svelte/icons/log-out"
 import Volume2Icon from "@lucide/svelte/icons/volume-2"
@@ -15,19 +17,20 @@ import VolumeXIcon from "@lucide/svelte/icons/volume-x"
 import SettingsIcon from "@lucide/svelte/icons/settings"
 import { goto } from "$app/navigation"
 import { page } from "$app/state"
-import { getI18n, getSession, getModals, getSpeaker, getResponsive, getUiShell } from "$lib/context"
+import { getI18n, getSession, getSpeaker, getResponsive, getUiShell, getSettings } from "$lib/context"
 import Select, { type SelectOption, type SelectGroup } from "$lib/components/ui/Select.svelte"
+import SessionCard from "$lib/components/modals/SessionCard.svelte"
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 
 const t = getI18n().t
 const session = getSession()
-// ─── redesign-6 ───
-const modals = getModals()
 // ─── redesign-fix: disconnect + audio הועברו מ-AppHeader (פדיון חוב redesign-2/3) ───
 const speaker = getSpeaker()
 // ─── redesign-fix: ⚙ במובייל יורד ל-sheet; navigation toggle כמו ב-AppHeader ───
 const responsive = getResponsive()
 const uiShell = getUiShell()
+// ─── slice sessions-inline: settings לקבלת cliKind לבחירת סשן ───
+const settings = getSettings()
 const onSettings = $derived(page.url.pathname === "/settings")
 
 function onDisconnect() {
@@ -95,6 +98,45 @@ async function onCheckboxChange(configId: string, e: Event) {
   const checked = (e.target as HTMLInputElement).checked
   await session.applyConfigOption(configId, checked)
 }
+
+// ─── slice sessions-inline: טעינת סשנים inline ───
+
+/**
+ * בחירת סשן: detach + loadSession + ניווט ל-/chat.
+ * חיקוי של selectSession ב-SessionsDialog (שורות 50-58 שנמחק).
+ */
+async function selectSession(info: { sessionId: string; cwd: string }) {
+  session.detach()
+  await session.loadSession({
+    sessionId: info.sessionId,
+    cwd: info.cwd,
+    cliKind: settings.cliKind,
+  })
+  uiShell.closeSheet()
+  await goto("/chat")
+}
+
+/**
+ * סשן חדש: detach + חזרה לדף החיבור (שם בוחרים cwd/cliKind).
+ * detach קודם כדי לשחרר את ה-bridge הנוכחי.
+ */
+function onNewSession() {
+  session.detach()
+  goto("/")
+}
+
+/**
+ * טריגר טעינת סשנים — מגיב ל-responsive.isMobile ו-uiShell.sheetOpen.
+ * דסקטופ: sidebar תמיד גלוי → טוען מיד.
+ * מובייל: טוען כש-sheetOpen === true (המשתמש פתח את ה-sheet).
+ * untrack: listSessions כותב sessionsLoading/Error → בלי untrack נכנסים ללולאה.
+ * idempotent+cache (#sessionsLoaded) מונע DDoS אפילו בלי untrack.
+ */
+$effect(() => {
+  const shouldLoad = responsive.isMobile ? uiShell.sheetOpen : true
+  if (!shouldLoad) return
+  untrack(() => void session.listSessions())
+})
 </script>
 
 <!-- שורת פעולות עליונה: השתק · נתק · ⚙ — בראש בכל המצבים (redesign-fix) -->
@@ -242,35 +284,43 @@ async function onCheckboxChange(configId: string, e: Event) {
   {/if}
 </div>
 
-<!-- סשנים — תופסים את שאר הגובה. (B9 עתידי: טעינה inline. כרגע דרך SessionsDialog) -->
+<!-- סשנים — inline (slice sessions-inline: מחליף SessionsDialog) -->
 <div class="flex flex-col gap-2 flex-1 min-h-0">
   <div class="flex items-center justify-between px-1 shrink-0">
     <span class="text-[11px] font-semibold uppercase tracking-wider" style="color:var(--fg-dim)">
       {t("sidebar.sessions")}
     </span>
-    <!-- redesign-6: פותח SessionsDialog -->
+    <!-- רענון — קורא listSessions(true) ישירות (לא פותח dialog) -->
     <button
       class="size-6 grid place-items-center rounded"
       style="color:var(--fg-dim)"
       title={t("sidebar.refresh")}
       aria-label={t("sidebar.refresh")}
-      onclick={() => modals.openSessions()}
+      onclick={() => void session.listSessions(true)}
     >
       <RefreshCwIcon size={13} strokeWidth={2} />
     </button>
   </div>
 
-  <!-- סשן חדש — פותח SessionsDialog -->
+  <!-- סשן חדש — detach + goto("/") -->
   <button
     class="shrink-0 text-start rounded-lg p-2.5 text-[13px] font-medium border border-dashed"
     style="border-color:var(--border); color:var(--accent)"
-    onclick={() => modals.openSessions()}
+    onclick={onNewSession}
   >
     ＋ {t("sidebar.newSession")}
   </button>
 
-  <!-- placeholder רשימת סשנים -->
+  <!-- רשימת סשנים inline -->
   <div class="flex flex-col gap-2 overflow-y-auto chat-scroll flex-1 min-h-0 -mx-1 px-1">
-    <!-- רשימה מלאה ב-SessionsDialog -->
+    {#if session.sessionsLoading}
+      <div class="text-[12px] opacity-50 px-1">{t("modal.sessions.loading")}</div>
+    {:else if session.sessionsError}
+      <div class="text-[12px] px-1" style="color:var(--recording)">{t("modal.sessions.error")}: {session.sessionsError}</div>
+    {:else}
+      {#each session.sessions as s (s.sessionId)}
+        <SessionCard session={s} isActive={false} onSelect={() => selectSession(s)} />
+      {/each}
+    {/if}
   </div>
 </div>

@@ -19,9 +19,8 @@ import { getResponsive, getSession, getI18n } from "$lib/context"
 import AppHeader from "./AppHeader.svelte"
 import Sidebar from "./Sidebar.svelte"
 import BottomSheet from "./BottomSheet.svelte"
-// ─── redesign-6: modals ───
+// ─── redesign-6: modals (SessionsDialog הוסר ב-slice sessions-inline — סשנים עכשיו inline) ───
 import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
-import SessionsDialog from "$lib/components/modals/SessionsDialog.svelte"
 // ─── redesign-7: smart-scroll ───
 import ArrowDownIcon from "@lucide/svelte/icons/arrow-down"
 
@@ -149,7 +148,6 @@ $effect(() => {
     <BottomSheet />
   {/if}
 
-  <!-- redesign-6: modals (מרונדרים פעם אחת ב-AppShell) -->
+  <!-- redesign-6: modals (SessionsDialog הוסר ב-slice sessions-inline) -->
   <FolderPickerDialog />
-  <SessionsDialog />
 </div>
