@@ -1,3 +1,43 @@
+## 2026-06-02 — slice review-fixes-2 הושלם — calev GO (13/13)
+
+### מה בוצע?
+
+Slice `review-fixes-2` הושלם ב-3 commits. calev light: GO, 13/13 DoD, 0 findings.
+
+| commit | hash | תוכן |
+|---|---|---|
+| C1 | 914c6f9 | agents-api timeout (createAgent/deleteAgent/notifySessionAttached) |
+| C2 | 47c0a0b | voices + tts timeout (listVoices + synthesizeStreaming connect-only) |
+| C3 | 6ec497e | narrate → withTimeout (הסרת AbortController ידני) |
+
+branch: slice-review-fixes-2, base: slice-review-fixes-1 (2a551d4).
+דוח calev: reports/voice-acp/slice-review-fixes-2-calev.md
+
+## 2026-06-02 — slice review-fixes-2 Commit 3: narrate → withTimeout (TDD)
+
+### מה בוצע?
+
+Commit 3 של `slice-review-fixes-2`.
+
+#### C3 — יישור narrate.ts ל-withTimeout
+- `narrate.ts`: הסר AbortController+setTimeout ידני (שורות 32-51). עטוף generateText ב-withTimeout(3000ms, "narrate"). try/catch סביב withTimeout → null בשגיאה/timeout. התנהגות שמורה לחלוטין.
+- `narrate.test.ts` (חדש): 5 טסטים — happy path / timeout→null / error→null / empty→null / signal. withTimeout mocked.
+- typecheck: 0, tests: 495, lint:i18n: נקי.
+
+## 2026-06-02 — slice review-fixes-2 Commit 2: voices + tts timeout (TDD)
+
+### מה בוצע?
+
+Commit 2 של `slice-review-fixes-2`.
+
+#### C2 — withTimeout ב-voices.ts + tts.ts
+- `voices.ts`: קבוע `VOICES_TIMEOUT_MS = 8000`. listVoices עוטף fetch ב-withTimeout. signal חיצוני מועבר.
+- `tts.ts`: קבוע `TTS_CONNECT_TIMEOUT_MS = 10000`. synthesizeStreaming עוטף **רק** את ה-fetch (connect). `return response.body` נשאר **מחוץ** ל-withTimeout — הזרמה לא נקטעת.
+- הנקודה הקריטית: withTimeout resolve ברגע שה-headers מגיעים, טיימר נוקה. ה-stream נצרך אחרי ה-withTimeout — אין race.
+- `voices.test.ts` (חדש): 5 טסטים — happy/empty/signal/timeout/http-error.
+- `tts.test.ts` (חדש): 6 טסטים — happy/streaming-safety/signal/timeout/http-error/no-body.
+- typecheck: 0, tests: 490, lint:i18n: נקי.
+
 ## 2026-06-02 — slice review-fixes-2 Commit 1: agents-api timeout (TDD)
 
 ### מה בוצע?
