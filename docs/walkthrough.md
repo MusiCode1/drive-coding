@@ -11,6 +11,14 @@ Commits על branch `slice-wake-word-infra` (base: `poc-wake-word`).
 - 5 טסטים (TDD: אדום→ירוק): midpoint, same value, factor=0, factor=1, fractional.
 - typecheck: נקי. core tests: 403 pass.
 
+#### Commit 4 — engine: WakeWordEngine + WakeWordCapture (IO + unit)
+
+- `engines/wake-word/wake-word-engine.ts`: WakeWordEngine (מקביל ל-WakeWordDetector ב-POC). load/start/stop, queue serialization, VAD+pipeline+level events. `ort.env.wasm.numThreads = 1` (single-thread).
+- `engines/wake-word/capture.ts`: WakeWordCapture (מקביל ל-createCapture). push/start/stop(trimFrames)/abort. מחזיר {wavBytes, frames} | null.
+- types.ts: הוספת DETECT_THRESHOLD/VAD_THRESHOLD exports (נדרשו ב-engine).
+- 9 unit tests ל-WakeWordCapture (buffer/trim/abort/wavBytes). IO של WakeWordEngine (getUserMedia) → manual ב-route.
+- typecheck: נקי. 49 test files, 485 tests pass.
+
 #### Commit 3 — engine: types.ts + vad.ts + pipeline.ts (TDD, mock ort)
 
 - `engines/wake-word/types.ts`: WakeWordConfig (ArkType), MODEL_FILE_MAP (4 keywords בלי timer/weather), DetectEvent/VadEndEvent/WakeWordEventMap.

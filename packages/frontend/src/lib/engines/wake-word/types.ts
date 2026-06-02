@@ -20,6 +20,11 @@ export const WakeWordConfigSchema = type({
 
 export type WakeWordConfig = typeof WakeWordConfigSchema.infer
 
+// ─── Default thresholds ───────────────────────────────────────────────────────
+
+export const DETECT_THRESHOLD = 0.5
+export const VAD_THRESHOLD = 0.5
+
 // ─── Model file map (רק keywords שנתמכים — לא timer/weather) ─────────────────
 
 export const MODEL_FILE_MAP: Record<string, string> = {
