@@ -1,5 +1,35 @@
 # Decisions — voice-acp
 
+## 2026-06-02 — slice fix-idle-flaky: ייצוב flaky test ב-bridge-manager.idle.test.ts
+
+### רציונל
+‏אחרי merge של integration-all (dev `266322f`), `bridge-manager.idle.test.ts` test 4
+‏נכשל **אקראית** ב-`pnpm test` מלא (עומס scheduler) ועבר 12/12 לבד. שורש: הטסט קורא
+‏`createdAt = Date.now()` *אחרי* `await spawnBridge`, אבל ה-`e.createdAt` האמיתי נקבע
+‏*בתוך* spawn (bridge-manager.ts:143). ה-`await spawnBridge` היקר מכניס drift → `now`
+‏שהטסט בונה (`createdAt_test + timeout*2 - 1`) נמדד מול `e.createdAt` קטן יותר → delta
+‏בפועל ≥ `timeout*2` → ה-bridge מוחזר → `not.toContain` נכשל. **קוד הפרודקשן `listIdle`
+‏תקין** (אומת בלוג חי + 5 ריצות).
+
+### הכרעה — getter ולא hack
+‏חשיפת getter `getCreatedAt(id)` שמחזיר את ה-`createdAt` האמיתי מה-store, והטסטים 4+5
+‏מודדים ממנו (לא מ-`Date.now()`). נדחתה החלופה "ללכוד `Date.now()` לפני spawn + שוליים"
+‏— hack עם שוליים שרירותיים. ה-getter מסיר את כל אי-הוודאות: טסט וקוד מודדים מאותו ערך.
+‏**אסור לגעת ב-`listIdle` עצמו.** הקובץ + getter מסומנים TEMPORARY slice 26, יימחקו
+‏עם נחיתת background-agent management.
+
+### ממצאי אביגיל
+‏READY סבב 1. 2 findings לא-חוסמים: 🟡 ה-brief נימק שטסטים 2/3/6 לא-flaky כי "הטסט
+‏שולט בנקודת הזמן" — אביגיל הצביעה שזה לא מדויק מכניזמית (`lastDetachedAt` נקבע בקוד
+‏בדיוק כמו `createdAt`); הסיבה האמיתית = אין `await` יקר בין `markDetached` ל-`listIdle`
+‏בטסט (אותו tick, drift≈0). המסקנה זהה (לא צריך לתקן 2/3/6), רק הנימוח עודכן ב-§3.
+‏🟢 הערת `sleep 100` מיושנת בטסט — לא מה-brief.
+
+### שינויי-כיוון
+‏אין. תיקון נימוח-בלבד ב-§3 לפי finding 🟡. ה-verdict היה READY מלכתחילה.
+
+---
+
 ## 2026-06-02 — slice review-fixes-2: timeout בכל ה-FE adapters (sequel ל-helper)
 
 ### רציונל
