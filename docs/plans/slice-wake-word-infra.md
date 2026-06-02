@@ -1,8 +1,10 @@
 # Brief: slice — תשתית wake-word ב-FE + route בדיקה
 
 > סטטוס: brief מוכן ל-executor (אליעזר). complexity: 6/10.
-> verifier: calev light. depends_on: [] (base dev tip `bd691ea`).
-> base: dev. **אין מיזוג לקוד הקיים** — רק קבצים חדשים + route בדיקה מבודד.
+> verifier: calev light. depends_on: [].
+> base: **`poc-wake-word`** (לא dev) — כדי שה-POC reference, מסמך התכנון וה-brief
+> יהיו זמינים בתוך ה-worktree. קוד ה-FE/core ב-poc-wake-word זהה ל-dev (ההפרש =
+> docs בלבד), אז הבסיס-קוד תקין. **אין מיזוג לקוד הקיים** — רק קבצים חדשים + route מבודד.
 
 ## 0. הקשר וסביבה
 
@@ -15,27 +17,19 @@
 למרות שהתיקייה היא `packages/frontend/`. כל פקודות `pnpm --filter` חייבות
 `@drive-coding/frontend-v2`.
 
-⚠️ **ה-POC reference וחלק מהמסמכים אינם ב-dev** — הם ב-branch `poc-wake-word`,
-worktree קבוע על הדיסק ב-`/home/user/projects/voice-acp/.worktrees/poc-wake-word/`.
-ה-executor נפתח מ-dev, אז הוא **חייב לקרוא את ה-reference מנתיב אבסולוטי שם**:
+מכיוון שה-base הוא `poc-wake-word`, **כל ה-reference זמין בתוך ה-worktree החדש**
+בנתיבים יחסיים רגילים (אין צורך בנתיבים אבסולוטיים):
 
-**מקורות-אמת (must-read לפני קוד):**
-- `/home/user/projects/voice-acp/.worktrees/poc-wake-word/poc/wake-word-orb/` —
-  המימוש המוכח (engine+capture+orb+lib). זה ה-reference. **לא ב-dev** — קרא מהנתיב
-  המלא הזה (read-only; אל תעבוד שם).
-- `/home/user/projects/voice-acp/.worktrees/poc-wake-word/docs/plans/wake-word-fe-design.md`
-  — מסמך התכנון (מיפוי לשכבות). **לא ב-dev** — קרא מהנתיב המלא.
-- `docs/investigations/wake-word-client-side.md` — feasibility + לקחים. **קיים ב-dev**
-  (אבל §6.5 על ה-POC רק ב-branch — לא קריטי).
-- `packages/frontend/AGENTS.md` — 5 שכבות + חוקי זהב + חוקי import. **קיים ב-dev**.
+**מקורות-אמת (must-read לפני קוד) — כולם ב-worktree:**
+- `poc/wake-word-orb/` — המימוש המוכח (engine+capture+orb+lib). זה ה-reference
+  (read-only; אל תערוך — רק קרא והעתק ממנו).
+- `docs/plans/wake-word-fe-design.md` — מסמך התכנון (מיפוי לשכבות).
+- `docs/investigations/wake-word-client-side.md` — feasibility + לקחים.
+- `packages/frontend/AGENTS.md` — 5 שכבות + חוקי זהב + חוקי import.
 
-> **קונבנציית נתיבים בהמשך ה-brief:** כל הופעה של `poc/wake-word-orb/...` פירושה
-> `/home/user/projects/voice-acp/.worktrees/poc-wake-word/poc/wake-word-orb/...`
-> (הקיצור לקריאוּת). פקודות `cp` בפועל ב-§6/§7 משתמשות בנתיב המלא.
-
-**worktree:**
+**worktree:** (נפתח מ-`poc-wake-word`, לא dev — ראה הסבר ב-header)
 ```bash
-git worktree add .worktrees/slice-wake-word-infra -b slice-wake-word-infra dev
+git worktree add .worktrees/slice-wake-word-infra -b slice-wake-word-infra poc-wake-word
 cd .worktrees/slice-wake-word-infra
 pnpm install && pnpm hooks:install
 ```
@@ -264,7 +258,7 @@ export class WakeWordVM {
    אמירה שנייה → חזרה לכחול + clip נשמר + השמעה אוטומטית.
 7. הנורית מגיבה לעוצמת קול (גודל + גוון) ול-VAD/detect (flash).
 8. **אפס שינוי** ב: Mic, +layout.svelte, context.ts, routes קיימים (/, /chat, /settings).
-   (calev: `git diff --stat dev` — רק קבצים חדשים + package.json + core/index.ts + core/ui/).
+   (calev: `git diff --stat poc-wake-word` — רק קבצים חדשים + package.json + core/index.ts + core/ui/).
 9. כל 4 ה-keywords נטענים בלי קריסת window-size (jarvis/alexa/mycroft/rhasspy).
 
 ## 6. assets — רשימת המודלים להעתקה
