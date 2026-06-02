@@ -582,3 +582,44 @@ deprecated ("use --acp instead"). הקוד היה נכון, הטסט מיושן 
 - ‏מחיקת ‏query layer / index ‏לפי messageId: ‏נדחה (YAGNI) — ‏ה-metadata ‏נשמר, ‏אבל ‏ה-query ‏יבוא ‏עם ‏פיצ'ר ‏אמיתי.
 - ‏"‏החזרת ‏קריאות ‏ל-BE" (‏במקום FE): ‏נשקל ‏ונדחה ‏לעת ‏עתה — ‏שובר ‏את slice 10, ‏מחזיר 600+ ‏שורות ‏ל-BE.
   ‏נשמר ‏כתוכנית-מגירה ‏אם `@ai-sdk/google` header passthrough ‏ייכשל ‏ב-Commit 0.
+
+## 2026-06-02 — slice-sessions-inline-transcribe-resilience: סשנים inline + עמידות תמלול
+
+### רציונל
+brief מאוחד, שני נושאים בלתי-תלויים שעלו מבדיקת UI ידנית + אבחון תשתית:
+
+**עמידות תמלול** — אבחון (סקר תשתית `infra-survey.sh`, 2026-06-02): התמלול נכשל
+לסירוגין עם `socket connection closed unexpectedly` → 502. **לא** billing ולא מודל
+(בקשה בודדת מצליחה; `gemini-flash-latest`=`gemini-3.5-flash` תקין). הסיבה: חוסר
+יציבות transport ל-Google דרך OneCLI תחת עומס. בנוסף: `flash-latest` איטי (5-10s
+ל-"hi" בגלל thinking) — קרוב ל-timeout 15s. הפתרון: timeout 15s→30s + retry עם
+exponential backoff (helper אחיד חדש `with-retry` ב-core) + שמירת blob + כפתור
+"נסה שוב" (כש-הכל נכשל, אפשר בעוד כמה דקות). **לא מחליפים מודל** (החלטת משתמשת).
+
+**סשנים inline** — היום רשימת הסשנים ב-SessionOptionsPanel ריקה, וטעינתה פותחת
+**סוכן חד-פעמי חדש** (spawn יקר ~300-700ms + סיכון bridge-leak כמו slice 25) גם
+כשכבר יש סשן פעיל עם ערוץ ACP פתוח. ההחלטה: כשיש חיבור פעיל, לטעון דרך
+`session.listSessions()` (החיבור הקיים, `AcpClient.listSessions` שכבר קיים) — **בלי
+spawn**. cache + רענון מפורש. ה-spawn (`listSessionsForCwd`) נשאר כ-fallback לדף
+החיבור (שם אין חיבור). SessionsDialog המיותר נמחק (הרשימה inline מחליפה אותו).
+
+### החלטות-מפתח
+- **base = dev** (`266322f`) ולא שרשור — סוכן אחר השלים merge של כל האינטגרציה
+  (redesign + BE + review-fixes) ל-dev, אז הכל זמין. depends_on=[].
+- **helper retry אחיד** ב-core (`with-retry`) — ממש את ה-TODO שנרשם אחרי תיקון
+  ה-DDoS של loadVoices. ישמש transcribe; איחוד voices.loadVoices אליו דחוי לסבב נפרד.
+- **INVASIVE state ב-2 VMs** (Mic: #lastBlob; AgentSession: sessions/cache) — אושר
+  ע"י משתמשת. תוספתי בלבד (שדות+מתודות, לא שינוי state קיים).
+- **$effect auto-load** בדסקטופ vs מובייל: `shouldLoad = isMobile ? sheetOpen : true`
+  + untrack (gotcha: $effect קורא+כותב state → DDoS). idempotent+cache מונע לולאה.
+
+### ממצאי אביגיל
+round 1: USABLE-AFTER-FIX, 4 findings (כולם 🟡): line numbers ב-Commit 4 (off ~50),
+detach שורה 150 לא 142, נתיב טסט core (tests/async/ לא src/async/), ו-$effect
+auto-load לא ירוץ בדסקטופ (sheet לא נפתח שם). round 2 (אחרי תיקון): READY, 0 findings.
+כל ה-APIs/return-types/i18n/DELETE-callers אומתו מדויק.
+
+### רעיונות שנדחו
+- החלפת מודל התמלול (flash-latest→2.5-flash/lite) — נדחה (משתמשת): נשארים flash-latest.
+- איחוד voices.loadVoices ל-with-retry בסבב הזה — נדחה (scope creep), סבב נפרד.
+- NotificationsVM (טיפול שגיאות מרכזי) — slice עתידי נפרד (כבר מתועד).
