@@ -11,6 +11,14 @@ Commits על branch `slice-wake-word-infra` (base: `poc-wake-word`).
 - 5 טסטים (TDD: אדום→ירוק): midpoint, same value, factor=0, factor=1, fractional.
 - typecheck: נקי. core tests: 403 pass.
 
+#### Commit 2 — engine: audio-math.ts + wav.ts (TDD)
+
+- `packages/frontend/src/lib/engines/wake-word/audio-math.ts`: `computeRms`, `transformMel` (inline POC→פונקציה טהורה), קבועים SAMPLE_RATE/FRAME_SIZE/VAD_THRESHOLD/DETECT_THRESHOLD.
+- `packages/frontend/src/lib/engines/wake-word/wav.ts`: `encodeWav(frames, sampleRate?) → Uint8Array | null`. ממיר Float32 PCM16 עם WAV header 44B.
+- 16 טסטים (TDD: אדום→ירוק): computeRms (sin/const), transformMel (in-place), encodeWav (RIFF/WAVE/data headers, null על ריק, PCM size, sample rate, clamping).
+- חריגה: `noUncheckedIndexedAccess` → שימוש ב-`?? 0` ו-DataView בטסטים.
+- typecheck: נקי (0 errors). כל 46 test files עוברים.
+
 ## 2026-06-01 13:25 — slice 24: client-keyed proxy cache + homeDir default cwd
 
 ### מה בוצע?
