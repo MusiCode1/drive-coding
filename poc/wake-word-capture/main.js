@@ -284,13 +284,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 vadStatusIndicator.classList.toggle('active', vadFired);
 
                 if (vadFired) {
-                    if (!isSpeechActive) { utteranceBuffer = []; }
+                    if (!isSpeechActive) {
+                        utteranceBuffer = [];
+                        if (window.onVadStart) window.onVadStart(); // CAPTURE HOOK
+                    }
                     isSpeechActive = true;
                     vadHangoverCounter = VAD_HANGOVER_FRAMES;
                 } else if (isSpeechActive) {
                     vadHangoverCounter--;
                     if (vadHangoverCounter <= 0) {
                         isSpeechActive = false;
+                        if (window.onVadEnd) window.onVadEnd(); // CAPTURE HOOK
                         const audioUrl = createWavBlobUrl(utteranceBuffer);
                         if (audioUrl) {
                             const clipContainer = document.createElement('div');

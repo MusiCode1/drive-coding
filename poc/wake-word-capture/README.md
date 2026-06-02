@@ -56,6 +56,19 @@ python3 -m http.server 8080       # getUserMedia needs localhost/https
 3. Say **"hey jarvis"** again → a clip appears under "Wake-to-wake capture".
 4. Play it back / download. Adjust "Trim trailing frames" if the 2nd word leaks in.
 
+## Event stream log
+
+A live log box prints the timing of every event, so you can see how the pieces
+line up:
+
+- `VAD ▶ speech start` / `VAD ■ speech end (segment Ns)` — VAD segment boundaries.
+- `DETECT ★ "hey_jarvis" score=… — N frames after VAD start` — the moment a wake
+  word fires, and how late it is relative to the segment start (this is the
+  latency the fixed trim compensates for; observed ~6-8 frames ≈ 0.5-0.65s).
+- `capture STARTED / STOPPED` — the wake-to-wake capture boundaries.
+
+Each line is timestamped in seconds and frame number (1 frame = 80ms).
+
 ## Known caveats
 
 - **Cooldown**: the engine has a 2s detection cooldown, so the *minimum* capture

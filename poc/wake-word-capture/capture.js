@@ -24,13 +24,33 @@ document.addEventListener("DOMContentLoaded", () => {
   const capStatus = document.getElementById("cap-status");
   const capClips = document.getElementById("cap-clips");
   const trimInput = document.getElementById("cap-trim");
+  const logBox = document.getElementById("event-log");
+  const logClearBtn = document.getElementById("log-clear");
 
   let capturing = false;
   let buffer = []; // Float32Array frames accumulated between wake words
 
+  // Global frame counter (every onAudioChunk = 1 frame = 80ms). Lets us show
+  // *when* events happen and how far apart, in frames and seconds.
+  let frameCount = 0;
+  let lastVadStartFrame = null;
+
   function setStatus(text) {
     if (capStatus) capStatus.textContent = text;
   }
+
+  // Append a line to the event-stream log box.
+  function logEvent(text, cls) {
+    if (!logBox) return;
+    const secs = (frameCount * FRAME / SAMPLE_RATE).toFixed(2);
+    const line = document.createElement("div");
+    if (cls) line.className = cls;
+    line.textContent = `t=${secs}s  f#${frameCount}  ${text}`;
+    logBox.appendChild(line);
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  if (logClearBtn) logClearBtn.addEventListener("click", () => { logBox.innerHTML = ""; });
 
   // Same WAV encoder as the original main.js createWavBlobUrl, kept standalone here.
   function framesToWavUrl(frames) {
@@ -120,19 +140,42 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // --- Hooks consumed from main.js ---
   window.onAudioChunk = (chunk) => {
+    frameCount++;
     if (capturing) {
       // Copy: ONNX/worklet buffers get reused, so we must clone before storing.
       buffer.push(new Float32Array(chunk));
     }
   };
 
+  window.onVadStart = () => {
+    lastVadStartFrame = frameCount;
+    logEvent("VAD ▶ speech start", "ev-vad-start");
+  };
+
+  window.onVadEnd = () => {
+    const dur = lastVadStartFrame != null ? frameCount - lastVadStartFrame : null;
+    const durTxt = dur != null ? ` (segment ${dur} frames ≈ ${(dur * FRAME / SAMPLE_RATE).toFixed(2)}s)` : "";
+    logEvent(`VAD ■ speech end${durTxt}`, "ev-vad-end");
+  };
+
   window.onWakeWord = (name, score) => {
+    // Show how late the detect fired relative to the current VAD segment start —
+    // this is the "latency" the fixed trim compensates for.
+    const since = lastVadStartFrame != null ? frameCount - lastVadStartFrame : null;
+    const sinceTxt = since != null
+      ? ` — ${since} frames (≈${(since * FRAME / SAMPLE_RATE).toFixed(2)}s) after VAD start`
+      : "";
+    logEvent(`DETECT ★ "${name}" score=${score.toFixed(2)}${sinceTxt}`, "ev-detect");
+
     if (!capturing) {
       startCapture();
+      logEvent("capture STARTED (wake #1)", "ev-cap");
     } else {
       stopCapture();
+      logEvent("capture STOPPED (wake #2)", "ev-cap");
     }
   };
 
   setStatus("idle — start listening above, then say the wake word to begin a capture.");
+  if (logBox) logEvent("ready — waiting for events", "ev-cap");
 });
