@@ -8,7 +8,10 @@
  * הפרוקסי. אותו דפוס כמו ב-tts.ts (learnings 2026-05-16).
  */
 
+import { withTimeout } from "@drive-coding/core/async/with-timeout"
 import { beUrl } from "$lib/util/be-url"
+
+const VOICES_TIMEOUT_MS = 8000
 
 export type Voice = {
   voice_id: string
@@ -28,14 +31,19 @@ type VoicesResponse = {
  * השגיאות מבעבעות למעלה — הקוראים (בדרך כלל VM) תופסים + מדפיסים ללוג.
  */
 export async function listVoices(signal?: AbortSignal): Promise<Voice[]> {
-  const res = await fetch(beUrl("/proxy/elevenlabs/v1/voices"), {
-    method: "GET",
-    headers: {
-      "xi-api-key": "browser-placeholder", // OneCLI מחליף בפרוקסי
-      accept: "application/json",
-    },
-    signal,
-  })
+  const res = await withTimeout(
+    (s) =>
+      fetch(beUrl("/proxy/elevenlabs/v1/voices"), {
+        method: "GET",
+        headers: {
+          "xi-api-key": "browser-placeholder", // OneCLI מחליף בפרוקסי
+          accept: "application/json",
+        },
+        signal: s,
+      }),
+    VOICES_TIMEOUT_MS,
+    { signal, label: "listVoices" },
+  )
 
   if (!res.ok) {
     const body = await res.text().catch(() => "")

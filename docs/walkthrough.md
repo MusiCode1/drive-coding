@@ -1,3 +1,17 @@
+## 2026-06-02 — slice review-fixes-2 Commit 2: voices + tts timeout (TDD)
+
+### מה בוצע?
+
+Commit 2 של `slice-review-fixes-2`.
+
+#### C2 — withTimeout ב-voices.ts + tts.ts
+- `voices.ts`: קבוע `VOICES_TIMEOUT_MS = 8000`. listVoices עוטף fetch ב-withTimeout. signal חיצוני מועבר.
+- `tts.ts`: קבוע `TTS_CONNECT_TIMEOUT_MS = 10000`. synthesizeStreaming עוטף **רק** את ה-fetch (connect). `return response.body` נשאר **מחוץ** ל-withTimeout — הזרמה לא נקטעת.
+- הנקודה הקריטית: withTimeout resolve ברגע שה-headers מגיעים, טיימר נוקה. ה-stream נצרך אחרי ה-withTimeout — אין race.
+- `voices.test.ts` (חדש): 5 טסטים — happy/empty/signal/timeout/http-error.
+- `tts.test.ts` (חדש): 6 טסטים — happy/streaming-safety/signal/timeout/http-error/no-body.
+- typecheck: 0, tests: 490, lint:i18n: נקי.
+
 ## 2026-06-02 — slice review-fixes-2 Commit 1: agents-api timeout (TDD)
 
 ### מה בוצע?
