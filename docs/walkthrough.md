@@ -1,3 +1,18 @@
+## 2026-06-02 — slice review-fixes-2 הושלם — calev GO (13/13)
+
+### מה בוצע?
+
+Slice `review-fixes-2` הושלם ב-3 commits. calev light: GO, 13/13 DoD, 0 findings.
+
+| commit | hash | תוכן |
+|---|---|---|
+| C1 | 914c6f9 | agents-api timeout (createAgent/deleteAgent/notifySessionAttached) |
+| C2 | 47c0a0b | voices + tts timeout (listVoices + synthesizeStreaming connect-only) |
+| C3 | 6ec497e | narrate → withTimeout (הסרת AbortController ידני) |
+
+branch: slice-review-fixes-2, base: slice-review-fixes-1 (2a551d4).
+דוח calev: reports/voice-acp/slice-review-fixes-2-calev.md
+
 ## 2026-06-02 — slice review-fixes-2 Commit 3: narrate → withTimeout (TDD)
 
 ### מה בוצע?
