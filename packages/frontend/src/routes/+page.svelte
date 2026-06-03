@@ -7,6 +7,7 @@ import { fetchServerOptions } from "$lib/adapters/options"
 import { listSessionsForCwd, type SessionInfo } from "$lib/adapters/sessions"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import SessionPicker from "$lib/components/connect/SessionPicker.svelte"
+import LanguageSelect from "$lib/components/settings/LanguageSelect.svelte"
 import Select from "$lib/components/ui/Select.svelte"
 import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
 import FolderIcon from "@lucide/svelte/icons/folder"
@@ -108,6 +109,11 @@ async function onSubmit(e: SubmitEvent) {
   <p class="subtitle">{t("connect.subtitle")}</p>
 
   <form onsubmit={onSubmit}>
+    <label>
+      <span>{t("settings.language.label")}</span>
+      <LanguageSelect />
+    </label>
+
     <label>
       <span>{t("connect.cli.label")}</span>
       <Select
