@@ -1,3 +1,27 @@
+## 2026-06-03 — slice fix-switch-session-warm הושלם — calev GO (phase: GO)
+
+### מה בוצע?
+
+תיקון-המשך ל-slice-sessions-inline: החלפת סשן ב-warm reload (ללא WS חדש).
+calev phase על Commit 1: GO, 1 finding קדם-קיים (409 ב-notifySessionAttached — מכוסה ב-catch).
+
+| commit | hash | תוכן |
+|---|---|---|
+| C1 | fb7c2d7 | AgentSession.switchSession() warm reload + עדכון selectSession ב-panel |
+
+branch: slice-sessions-inline (תוספת לאותו branch), base: 1a28601.
+דוח calev phase: reports/voice-acp/slice-fix-switch-session-warm-calev-phase.md
+
+#### מה השתנה
+
+- `AgentSession.switchSession()` — מתודה חדשה: קורא `#client.loadSession()` (ACP) על WS/bridge הקיים, ללא createAgent/detach/WS חדש. fallback ל-loadSession הכבד אם #client===null. זורק אם status!=="connected". לא קורא #cleanup בשגיאה (החיבור נשאר חי).
+- `SessionOptionsPanel.selectSession()` — הסרת `session.detach()` + החלפת `session.loadSession()` ב-`session.switchSession()`.
+
+#### חריגות
+
+- typecheck: 2 שגיאות קדם-קיימות ב-narrate.test.ts (לא שלנו)
+- 409 ב-notifySessionAttached: pre-existing, best-effort catch מטפל
+
 ## 2026-06-02 — slice sessions-inline-transcribe-resilience הושלם — calev GO (17/17)
 
 ### מה בוצע?
