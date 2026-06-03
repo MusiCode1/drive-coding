@@ -1,3 +1,19 @@
+## 2026-06-03 17:39 — slice ws-reconnect-infra — Commit 5: תיקון NBug1+NBug2 (calev-heavy)
+
+### מה בוצע?
+
+תיקון 2 בלוקרים שcalev-heavy מצא (NO-GO → צריך תיקון).
+
+| באג | תיקון |
+|---|---|
+| NBug1: cold reconnect מדליף ה-agent הקודם (DoD#16) | `#coldReconnect` שומר `prevAgentId` ומוחק אותו לאחר `loadSession` מוצלח (רק אם agentId השתנה) |
+| NBug2: reconnect() עם WS חי — #client לא נסגר | הוסף `this.#client?.close()` לפני `this.#client = null` ב-`#coldReconnect` |
+
+**בדיקות**: 634 tests ✓, typecheck ✓.
+**חריגות**: calev-heavy הריץ BE+FE חיים ומצא דליפת agents בפועל. תוצאה: 9/11 DoD לפני תיקון; לאחר תיקון pending re-verify.
+
+---
+
 ## 2026-06-03 17:04 — slice ws-reconnect-infra — Commit 4: Docs + סטטוס + build ✓
 
 ### מה בוצע?

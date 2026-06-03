@@ -226,9 +226,16 @@ export class AgentSession {
    * cold: יוצר agent חדש דרך loadSession מאפס.
    * guard 217 זורק אם status==="connecting"||"connected" — אם warm הכשיל ב-connecting,
    * מאפסים ל-disconnected שעובר את ה-guard.
+   *
+   * ⚠️ NBug1+NBug2 fix: חובה לסגור את #client הישן (close WS) ולמחוק את ה-agentId הקודם
+   * לפני שloadSession יוצר agent חדש — אחרת agents מצטברים חיים ב-BE (DoD#16).
    */
   #coldReconnect = async (): Promise<void> => {
-    this.#client = null   // נקה client מת
+    // שמור agentId הקודם לפני שloadSession ידרוס אותו
+    const prevAgentId = this.agentId
+    // סגור את ה-WS/client הישן (NBug2: מנע WS ו-agent תקועים ב-BE)
+    try { this.#client?.close() } catch { /* כבר סגור */ }
+    this.#client = null
     if (this.status === "connecting" || this.status === "connected") {
       this.#setStatus("disconnected")   // מאפס מצב שהשאיר warm-fail; עובר את guard 217
     }
@@ -237,6 +244,11 @@ export class AgentSession {
       cwd: this.cwd!,
       cliKind: this.#cliKind!,
     })
+    // מחק את ה-agent הישן אחרי שloadSession הצליח לייצר חדש (NBug1: מנע agent leak)
+    // רק אם ה-agentId השתנה (loadSession קובע agentId חדש; prevAgentId הוא הישן)
+    if (prevAgentId && prevAgentId !== this.agentId) {
+      void deleteAgent(prevAgentId).catch(() => {})
+    }
   }
 
   /**
