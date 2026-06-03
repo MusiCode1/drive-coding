@@ -106,6 +106,7 @@ export type MessageKey =
   | "modal.folder.up"
   | "modal.folder.loading"
   | "modal.folder.error"
+  | "modal.folder.showHidden"
   | "modal.close"
   // ─── record-footer ─── (redesign-4)
   | "record.tab.record"

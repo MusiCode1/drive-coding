@@ -24,10 +24,15 @@ let currentPath = $state(settings.lastCwd || "/home/user")
 let entries = $state<FsEntry[]>([])
 let loading = $state(false)
 let error = $state<string | null>(null)
+let showHidden = $state(false)
 
 // טעינה ב-$effect כשה-dialog נפתח (onOpenChange לא נורה בפתיחה programmatic ב-Bits controlled mode)
+// איפוס showHidden בכל פתיחה (לפי §2: מקומי, מתאפס)
 $effect(() => {
-  if (modals.folderOpen) void loadFolder(currentPath)
+  if (modals.folderOpen) {
+    showHidden = false
+    void loadFolder(currentPath)
+  }
 })
 
 // breadcrumb — פיצול הנתיב לחלקים
@@ -39,7 +44,7 @@ async function loadFolder(path: string) {
   loading = true
   error = null
   try {
-    const result = await browseFolder(path)
+    const result = await browseFolder(path, showHidden)
     currentPath = result.path
     entries = result.entries.filter((e) => e.isDir)
   } catch (err) {
@@ -47,6 +52,11 @@ async function loadFolder(path: string) {
   } finally {
     loading = false
   }
+}
+
+function onToggleHidden() {
+  showHidden = !showHidden
+  void loadFolder(currentPath)
 }
 
 // טוען את התיקייה בפתיחת dialog
@@ -109,6 +119,12 @@ function pickFolder() {
             {/if}
           {/each}
         </div>
+
+        <!-- checkbox: הצג תיקיות מוסתרות -->
+        <label class="mx-4 mb-1 flex items-center gap-2 text-xs shrink-0" style="color:var(--fg-dim)">
+          <input type="checkbox" checked={showHidden} onchange={onToggleHidden} class="cursor-pointer" />
+          {t("modal.folder.showHidden")}
+        </label>
 
         <!-- רשימת תיקיות -->
         <div class="flex-1 overflow-y-auto chat-scroll px-4 pb-2 flex flex-col gap-1.5" dir="ltr">
