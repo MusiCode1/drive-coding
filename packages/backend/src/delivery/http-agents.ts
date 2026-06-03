@@ -90,10 +90,11 @@ export function registerAgentsHttp(
    * Slice 10 Phase 1: ה-FE קורא לזה אחרי הצלחת ה-ACP handshake.
    * מעדכן את סטטוס ה-registry ל-"ready", מתעד cwd + sessionId ב-projectsRegistry.
    *
-   * גוף הבקשה (Body): { sessionId: string }
+   * גוף הבקשה (Body): { sessionId: string, replace?: true }
+   *   replace: כשמורם (warm switch), מאפשר דריסת sessionId קיים. ללא replace → guard MED-9 פעיל.
    * תגובה (Response): { ok: true }
    *
-   * שומר MED-9: אם הסוכן כבר "ready" עם acpSessionId אחר → 409.
+   * שומר MED-9: אם הסוכן כבר "ready" עם acpSessionId אחר → 409 (רק כש-replace !== true).
    */
   app.post("/api/agents/:id/session-attached", async (c) => {
     const agentId = c.req.param("id")
@@ -105,7 +106,7 @@ export function registerAgentsHttp(
       return c.json({ error: "invalid json" }, 400)
     }
 
-    const { sessionId } = body as Record<string, unknown>
+    const { sessionId, replace } = body as Record<string, unknown>
     if (typeof sessionId !== "string" || !sessionId) {
       return c.json({ error: "sessionId is required" }, 400)
     }
@@ -113,8 +114,8 @@ export function registerAgentsHttp(
     const agent = await deps.registry.get(agentId)
     if (!agent) return c.json({ error: "agent not found" }, 404)
 
-    // שומר אידמפוטנטי MED-9: אם כבר ready עם sessionId שונה → קונפליקט
-    if (agent.status === "ready" && agent.acpSessionId && agent.acpSessionId !== sessionId) {
+    // שומר MED-9: חוסם דריסה לא-מכוונת. warm switch מצהיר replace:true ועוקף ביודעין.
+    if (replace !== true && agent.status === "ready" && agent.acpSessionId && agent.acpSessionId !== sessionId) {
       return c.json({ error: "agent already attached to a different session" }, 409)
     }
 
