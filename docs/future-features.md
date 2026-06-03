@@ -164,6 +164,50 @@ streaming דרך MediaSource Extensions.
 
 ---
 
+## 4. מחיקה ועריכת-שם של סשנים
+
+תאריך הרעיון: 2026-06-03
+
+תיאור: בטופס connect וברשימת הסשנים (sidebar) — אפשרות למחוק סשן ולערוך את שמו.
+
+מוטיבציה:
+- סשנים ישנים מצטברים ב-`session/list` (ראינו 100 בפועל) בלי דרך לנקות.
+- כותרות אוטומטיות של הסוכן ("New session - 2026-...") לא תמיד קריאות; המשתמש ירצה שם משלו.
+
+מורכבות: נמוכה (אם הפרוטוקול יתמוך) — capability-gated, slice קטן ונקי.
+
+### למה לא עכשיו — חסם פרוטוקול (חקירה מלאה: `docs/investigations/2026-06-03-session-delete-rename.md`)
+
+| פעולה | בספק ACP | ב-SDK שלנו `0.21.1` | ב-opencode `1.15.12` |
+|--------|----------|----------------------|----------------------|
+| **מחיקה** (`session/delete`) | ✅ Preview (מ-2026-06-02, RFD #1335) | ❌ לא חשוף | ❌ `-32601 Method not found` |
+| **עריכת-שם ע"י המשתמש** | ❌ לא קיים בספק כלל | ❌ | ❌ `-32601` |
+
+- **`session/close` ≠ מחיקה** — אומת אמפירית: מחזיר `{}` אבל הסשן נשאר ב-`session/list`.
+  הוא משחרר משאבים/תהליך בלבד.
+- **מחיקה** קיימת בספק כ-`session/delete` (capability-gated דרך
+  `agentCapabilities.sessionCapabilities.delete`), אבל ה-RFD עבר ל-Preview רק ב-2026-06-02 —
+  אחרי שגרסת ה-SDK שלנו (`0.21.1`) ננעלה, ו-opencode 1.15.12 עוד לא מימש.
+- **עריכת-שם ע"י המשתמש פשוט לא קיימת בפרוטוקול.** מה שיש (`SessionInfoUpdate`) הוא ההפך:
+  notification **מהסוכן ללקוח** (agent-initiated) — הסוכן קובע/מעדכן את הכותרת, הלקוח רק מציג.
+
+קווי מימוש (כשיתאפשר):
+- **מחיקה**: שדרג `@agentclientprotocol/sdk` לגרסה שחושפת `deleteSession` +
+  `sessionCapabilities.delete`, ושדרג opencode לגרסה שמכריזה על ה-capability. אז:
+  `initialize` → אם `sessionCapabilities.delete` קיים → הצג כפתור מחיקה ב-SessionCard →
+  `conn.deleteSession({ sessionId })` → refresh list. CLIs שלא תומכים פשוט לא יראו כפתור.
+- **עריכת-שם**: רק אם הספק יוסיף RFD ל-set-title ע"י הלקוח, או — החלטה מודעת לעקוף
+  ל-opencode HTTP API (`PATCH /session/:id`), מגודר ל-`cliKind === "opencode"`, מתועד
+  ב-decisions. **לא מומלץ** — שובר CLI-agnosticism.
+
+מתי כן לחזור:
+- **מחיקה**: כששדרוג SDK + opencode זמינים (לבדוק `sessionCapabilities.delete` ב-handshake).
+- **עריכת-שם**: כשהספק יוסיף תמיכה, או אם opencode-only עקיפה הופכת לדרישה קשיחה.
+
+החלטה שהתקבלה (2026-06-03): **מחיקה — דחייה עד שדרוג. עריכת-שם — ויתור** (לא קיים בפרוטוקול).
+
+---
+
 ## הנחיות לעדכון הקובץ הזה
 
 - כשמשתמש זורק רעיון ואומר "לא עכשיו" — לתעד כאן במקום לאבד.
