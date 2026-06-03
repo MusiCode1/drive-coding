@@ -86,6 +86,84 @@ streaming דרך MediaSource Extensions.
 
 ---
 
+## 2. ביטול הקלטה בלי לשלוח למודל
+
+תאריך הרעיון: 2026-06-03
+
+תיאור: דרך לבטל הקלטה פעילה **בלי לשלוח אותה למודל** — פשוט לעצור את
+המיקרופון ולזרוק את ה-blob, בלי לעבור דרך transcribe או sendPrompt.
+
+מוטיבציה:
+- היום ביטול turn (`cancel`) קשור לזרימת השליחה/התמלול. הרעיון כאן שונה:
+  המשתמש מקליט, ומחליט באמצע שהוא לא רוצה לשלוח בכלל.
+- כפתור/מחווה שעוצר את ההקלטה ומשליך אותה — מבלי שתגיע למודל.
+
+מורכבות: קטנה.
+
+קווי מימוש:
+- ב-`Mic` view-model: action `discard()` שעוצר את ה-Recorder engine
+  ומאפס את ה-state ל-`idle` בלי לקרוא ל-`transcribe`/`sendPrompt`.
+- UI: כפתור/מחווה במצב `recording` (לצד כפתור העצירה-ושליחה הרגיל).
+- לוודא שלא נשמר recordingId ולא נוצר user bubble.
+
+החלטה שהתקבלה: **לא לעכשיו.** נרשם כרעיון בלבד, טרם תוכנן.
+
+---
+
+## 3. כפתור רענון / שחזור חיבור WebSocket
+
+תאריך הרעיון: 2026-06-03
+
+תיאור: חיבור ה-WebSocket נופל לעיתים קרובות. צריך:
+1. **טווח קצר (מה שרוצים עכשיו):** כפתור רענון ידני שמאפשר להחזיר את
+   החיבור — פעולת reconnect שהמשתמש מפעיל.
+2. **טווח ארוך (האידאל):** מנגנון reconnect אוטומטי שמנסה להחזיר את
+   החיבור לבד כשהוא נופל.
+
+מוטיבציה:
+- החיבור נופל הרבה, והמשתמש נתקע בלי דרך פשוטה להחזיר אותו חוץ מ-reload
+  מלא של הדף.
+
+מורכבות: קטנה (כפתור ידני) → בינונית (reconnect אוטומטי עם backoff).
+
+קווי מימוש:
+- כפתור ידני: action שסוגר את ה-WS הקיים ופותח מחדש (warm reload דומה
+  ל-`switchSession` שכבר קיים) — בלי לאבד את ה-bubbles.
+- אוטומטי: listener על `close` ב-WS engine → retry עם backoff (אפשר
+  לשלב עם helper ה-retry האחיד המתוכנן).
+
+קשור:
+- "WS closed 1005" שטופל ב-switch-session warm reload.
+- slice 10 (recovery/reconnect) ב-roadmap.
+- helper retry/backoff אחיד (future feature נפרד).
+
+החלטה שהתקבלה: **לא לעכשיו.** בינתיים מסתפקים בכפתור הידני בלבד.
+
+---
+
+## BUG — קריינות כלים מושמעת גם כש-Speaker מושתק
+
+תאריך הרעיון: 2026-06-03 (התגלה בבדיקה הידנית של slice fix-409)
+
+תיאור: כש-Speaker מושתק כללית (`enabled=false`, ה-toggle הראשי), הודעות ומחשבות
+נחסמות נכון אבל **קריינות כלים** (tool narration) עדיין מושמעת.
+
+שורש הבעיה: `Speaker.#processToolBubbles` (`packages/frontend/src/lib/view-models/speaker.svelte.ts:390`)
+בודק רק את ההגדרה `narrateTools` (שורה 409) — ולא את `enabled`. לעומת זאת `#processBubbles`
+(שורה 246) כן בודק `enabled` עבור message/thought. כלומר ה-mute הראשי לא חל על מסלול ה-tools.
+שים לב: ה-`$effect` כבר קורא `this.enabled` (שורה 132) ומעביר אותו ל-`#processBubbles`, אבל
+**לא** מעביר אותו ל-`#processToolBubbles` (שורה 162).
+
+מורכבות: נמוכה (~15 דק'). תיקון: להעביר `enabled` ל-`#processToolBubbles`, וכש-`!enabled`
+לסמן `#processedNarrationCallIds.add(tc.toolCallId)` ולדלג (כמו ה-`!narrateTools` בשורה 409) —
+כדי שהדלקה מחדש לא תשמיע narration ישן. לשקול טסט-VM שמכסה את שני הדגלים.
+
+קווי מימוש: slice קטן נפרד (`slice-fix-mute-tool-narration`). depends_on: []. base: dev.
+
+החלטה שהתקבלה: known bug, מתוכנן ל-slice נפרד. **לא תוקן ב-slice fix-409** (מחוץ ל-scope).
+
+---
+
 ## הנחיות לעדכון הקובץ הזה
 
 - כשמשתמש זורק רעיון ואומר "לא עכשיו" — לתעד כאן במקום לאבד.
