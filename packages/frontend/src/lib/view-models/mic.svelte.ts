@@ -9,6 +9,11 @@
  * כרגע הוא תמיד "").
  *
  * השדה error שומר MessageKey כדי שהקומפוננטה תוכל לתרגם אותו בעזרת t().
+ *
+ * ─── slice sessions-inline: blob שמירה + retryTranscribe + canRetry ───
+ * #lastBlob — שומר את הבלוב של ההקלטה האחרונה כאשר תמלול נכשל.
+ * retryTranscribe() — מנסה שוב לתמלל את ה-blob השמור (public).
+ * canRetry — getter שמחזיר true אם יש blob שמור (לUI).
  */
 
 import type { MessageKey } from "@drive-coding/core/i18n"
@@ -26,11 +31,19 @@ export class Mic {
   readonly #session: AgentSession
   readonly #recorder: Recorder
   readonly #cues?: CuesEngine
+  // ─── slice sessions-inline: blob שמירה ───
+  #lastBlob: Blob | null = null
 
   constructor(opts: { session: AgentSession; cues?: CuesEngine }) {
     this.#session = opts.session
     this.#recorder = new Recorder()
     this.#cues = opts.cues
+  }
+
+  // ─── slice sessions-inline: getter ל-UI ───
+  /** מחזיר true אם יש blob שמור מהקלטה שתמלולה נכשל — אפשרות לנסות שוב. */
+  get canRetry(): boolean {
+    return this.#lastBlob !== null
   }
 
   /**
@@ -76,27 +89,25 @@ export class Mic {
         return
       }
 
-      let text: string
-      let recordingId: string
-      try {
-        const result = await transcribe(blob)
-        text = result.text
-        recordingId = result.recordingId
-      } catch (e: unknown) {
-        this.state = "idle"
-        console.warn("[mic] transcribe() failed", e)
-        this.error = "mic.error.transcribe"
-        return
-      }
-
-      if (text.trim().length > 0) {
-        void this.#session.sendPrompt(text, { recordingId })
-      }
-      this.state = "idle"
+      // ─── slice sessions-inline: שמור blob לפני תמלול ───
+      this.#lastBlob = blob
+      await this.#runTranscribe(blob)
       return
     }
 
     // transcribing → חוסר פעולה (no-op)
+  }
+
+  /**
+   * מנסה שוב לתמלל את ההקלטה האחרונה ששמורה (אחרי כשל). no-op אם אין blob שמור.
+   * ─── slice sessions-inline ───
+   */
+  retryTranscribe = async (): Promise<void> => {
+    if (this.#lastBlob === null) return
+    if (this.state !== "idle") return
+    this.state = "transcribing"
+    this.error = null
+    await this.#runTranscribe(this.#lastBlob)
   }
 
   /**
@@ -112,5 +123,35 @@ export class Mic {
     }
     // במצב transcribing: אי אפשר לבטל בקשת Gemini שיצאה לדרך ב-MVP הנוכחי.
     // המצב יחזור באופן טבעי ל-idle אחרי ש-transcribe() יסתיים (resolves/rejects).
+  }
+
+  // ─── פרטי: לוגיקת transcribe משותפת ל-toggle ו-retryTranscribe ───
+
+  /**
+   * מריץ תמלול על blob נתון. אחראי על עדכון state, error, ו-#lastBlob.
+   * ב-catch: משאיר #lastBlob שמור (לא מאפס) כדי לאפשר retryTranscribe.
+   * בהצלחה: מאפס #lastBlob (לא צריך יותר).
+   */
+  #runTranscribe = async (blob: Blob): Promise<void> => {
+    let text: string
+    let recordingId: string
+    try {
+      const result = await transcribe(blob)
+      text = result.text
+      recordingId = result.recordingId
+    } catch (e: unknown) {
+      this.state = "idle"
+      console.warn("[mic] transcribe() failed", e)
+      this.error = "mic.error.transcribe"
+      // #lastBlob נשמר — המשתמש יכול לנסות שוב דרך retryTranscribe()
+      return
+    }
+
+    // הצלחה: נקה blob (לא צריך יותר)
+    this.#lastBlob = null
+    if (text.trim().length > 0) {
+      void this.#session.sendPrompt(text, { recordingId })
+    }
+    this.state = "idle"
   }
 }

@@ -101,6 +101,16 @@ function onClick() {
       role="alert"
     >
       {t(mic.error)}
+      <!-- כפתור "נסה שוב" — רק כשיש blob שמור (תמלול נכשל, ניתן לנסות שוב) -->
+      {#if mic.error === "mic.error.transcribe" && mic.canRetry}
+        <button
+          class="block mx-auto mt-1 px-2 py-0.5 rounded text-[11px] font-medium border"
+          style="border-color:var(--recording); color:var(--recording)"
+          onclick={() => void mic.retryTranscribe()}
+        >
+          {t("mic.retry")}
+        </button>
+      {/if}
     </div>
   {/if}
 </div>

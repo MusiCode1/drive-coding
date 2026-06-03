@@ -33,6 +33,8 @@ import type {
   ToolLocation,
   UserBubble,
 } from "$lib/types/bubble"
+// ─── slice sessions-inline: ייבוא טיפוס + normalize ───
+import { type SessionInfo, normalizeSessionInfo } from "$lib/adapters/sessions"
 
 export type AgentSessionStatus =
   | "idle"        // טרם נוצר סוכן
@@ -78,6 +80,12 @@ export class AgentSession {
   models = $state<SessionModelState | null>(null)
   /** מצב ה-modes הזמינים — null אם ה-agent לא חשף מידע mode. */
   modes = $state<SessionModeState | null>(null)
+
+  // ─── redesign-fix: רשימת סשנים inline ─── (תוספתי)
+  sessions = $state<SessionInfo[]>([])
+  sessionsLoading = $state<boolean>(false)
+  sessionsError = $state<string | null>(null)
+  #sessionsLoaded = false   // True אחרי טעינה מוצלחת אחת — cache; force=true מרענן
 
   #client: AcpClient | null = null
   #sessionId: string | null = null
@@ -153,6 +161,10 @@ export class AgentSession {
     this.#setStatus("idle")
     this.error = null
     this.bubbles = []
+    // ─── slice sessions-inline: ניקוי cache סשנים ───
+    this.sessions = []
+    this.#sessionsLoaded = false
+    this.sessionsError = null
   }
 
   // ─── פרומפטים (prompting) ────────────────────────────────────
@@ -262,6 +274,67 @@ export class AgentSession {
     }
   }
 
+  // ─── slice fix-switch-session-warm: החלפת סשן ב-warm reload ─── (תוספתי)
+
+  /**
+   * החלפת סשן על החיבור הקיים — warm reload.
+   * דורש #client פעיל. קורא ל-loadSession של ACP על אותו WS/bridge (ללא createAgent/WS חדש).
+   * אם אין #client — נופל ל-loadSession הכבד (יצירת agent חדש).
+   *
+   * למה לא detach+loadSession: detach הורג את ה-bridge וגורם ל-race של WS closed (1005)
+   * + spawn מיותר. כאן משתמשים בחיבור הקיים — מיידי, ללא race.
+   * (אומת: opencode session/load עובד cross-cwd על אותו bridge.)
+   */
+  switchSession = async (input: {
+    sessionId: string
+    cwd: string
+    cliKind: CliKind
+  }): Promise<void> => {
+    // אין חיבור פעיל → נתיב כבד (דפנסיבי; ה-panel מוצג רק עם חיבור)
+    if (this.#client === null) {
+      return this.loadSession(input)
+    }
+    // לא להחליף באמצע thinking/connecting
+    if (this.status !== "connected") {
+      throw new Error(`cannot switchSession in status ${this.status}`)
+    }
+    // DEV mock: עדיין דרך הנתיב הכבד (mock לא רץ על #client חי)
+    if (import.meta.env.DEV && input.sessionId.startsWith("mock:")) {
+      return this.loadSession(input)
+    }
+
+    this.#setStatus("connecting")
+    this.error = null
+    this.bubbles = []
+
+    try {
+      this.isLoadingHistory = true
+      try {
+        const loadResult = await this.#client.loadSession({
+          sessionId: input.sessionId,
+          cwd: input.cwd,
+        })
+        this.#captureSessionConfig(loadResult)
+      } finally {
+        this.isLoadingHistory = false
+      }
+      this.#sessionId = input.sessionId
+      this.cwd = input.cwd
+
+      // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים)
+      if (this.agentId) {
+        await notifySessionAttached(this.agentId, input.sessionId).catch(() => {})
+      }
+
+      this.#setStatus("connected")
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      this.error = `switchSession failed: ${msg}`
+      this.#setStatus("error")
+      // לא #cleanup — החיבור עדיין תקין; רק הטעינה נכשלה. השאר את ה-#client חי.
+    }
+  }
+
   // ─── slice 4: עזרי הקשר לקריינות ─── (תוספתי)
 
   /**
@@ -332,6 +405,37 @@ export class AgentSession {
 
     // מסלול 3: לא נמצא — skip בשקט
     console.warn(`[AgentSession] configId "${configId}" not available — skipping`)
+  }
+
+  // ─── redesign-fix: רשימת סשנים inline ─── (תוספתי)
+
+  /**
+   * מביא את רשימת הסשנים דרך החיבור ה-ACP הקיים (#client) — ללא spawn של סוכן.
+   * cache: טעינה מוצלחת אחת; force=true מרענן. no-op אם אין חיבור פעיל (#client===null)
+   * — אז דף החיבור משתמש ב-listSessionsForCwd (spawn) במקום.
+   */
+  listSessions = async (force = false): Promise<void> => {
+    if (this.#client === null) return          // אין חיבור — לא טוענים פה
+    if (this.sessionsLoading) return
+    if (this.#sessionsLoaded && !force) return
+    this.sessionsLoading = true
+    this.sessionsError = null
+    try {
+      const res = await this.#client.listSessions()
+      const raw = (res as { sessions?: unknown[] }).sessions ?? []
+      this.sessions = raw.map(normalizeSessionInfo)
+      this.#sessionsLoaded = true
+    } catch (e) {
+      // -32601 = ה-CLI לא תומך (Gemini) → רשימה ריקה, לא שגיאה
+      if ((e as { code?: number }).code === -32601) {
+        this.sessions = []
+        this.#sessionsLoaded = true
+      } else {
+        this.sessionsError = e instanceof Error ? e.message : String(e)
+      }
+    } finally {
+      this.sessionsLoading = false
+    }
   }
 
   // ─── הקלטות (recordings) ─── (יתווסף ב-slice 10)

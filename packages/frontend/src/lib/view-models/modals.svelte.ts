@@ -5,21 +5,15 @@
  * לפי חוק זהב #2 — entity שחי עצמאית בלי קשר לאיזה screen פתוח.
  *
  * ─── redesign-6 ───
+ * ─── slice sessions-inline: הוסר sessionsOpen/openSessions/closeSessions ───
+ *     סשנים מוצגים inline ב-SessionOptionsPanel (לא דרך dialog).
+ *     FolderPicker נשאר (C10 + Settings).
  */
 export class ModalsVM {
-  sessionsOpen = $state(false)
   folderOpen = $state(false)
-
-  openSessions(): void {
-    this.sessionsOpen = true
-  }
 
   openFolder(): void {
     this.folderOpen = true
-  }
-
-  closeSessions(): void {
-    this.sessionsOpen = false
   }
 
   closeFolder(): void {

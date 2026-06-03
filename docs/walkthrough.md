@@ -16,6 +16,53 @@ Slice `fix-idle-flaky` — ייצוב flaky test ב-bridge-manager.idle.test.ts.
 DoD: 10/10 ריצות `pnpm test` — 452 passed, 0 failed.
 typecheck: 0, lint:i18n: נקי.
 
+## 2026-06-03 — slice fix-switch-session-warm הושלם — calev GO (phase: GO)
+
+### מה בוצע?
+
+תיקון-המשך ל-slice-sessions-inline: החלפת סשן ב-warm reload (ללא WS חדש).
+calev phase על Commit 1: GO, 1 finding קדם-קיים (409 ב-notifySessionAttached — מכוסה ב-catch).
+
+| commit | hash | תוכן |
+|---|---|---|
+| C1 | fb7c2d7 | AgentSession.switchSession() warm reload + עדכון selectSession ב-panel |
+
+branch: slice-sessions-inline (תוספת לאותו branch), base: 1a28601.
+דוח calev phase: reports/voice-acp/slice-fix-switch-session-warm-calev-phase.md
+
+#### מה השתנה
+
+- `AgentSession.switchSession()` — מתודה חדשה: קורא `#client.loadSession()` (ACP) על WS/bridge הקיים, ללא createAgent/detach/WS חדש. fallback ל-loadSession הכבד אם #client===null. זורק אם status!=="connected". לא קורא #cleanup בשגיאה (החיבור נשאר חי).
+- `SessionOptionsPanel.selectSession()` — הסרת `session.detach()` + החלפת `session.loadSession()` ב-`session.switchSession()`.
+
+#### חריגות
+
+- typecheck: 2 שגיאות קדם-קיימות ב-narrate.test.ts (לא שלנו)
+- 409 ב-notifySessionAttached: pre-existing, best-effort catch מטפל
+
+## 2026-06-02 — slice sessions-inline-transcribe-resilience הושלם — calev GO (17/17)
+
+### מה בוצע?
+
+Slice `sessions-inline-transcribe-resilience` הושלם ב-5 commits. calev light: GO, 17/17 DoD, finding יחיד קדם-קיים (2 שגיאות TS ב-narrate.test.ts — לא שלנו).
+
+| commit | hash | תוכן |
+|---|---|---|
+| C0 | d7d6519 | with-retry helper ב-core (TDD, 6 טסטים) |
+| C1 | c18dc8e | transcribe timeout 30s + withRetry (3 נסיונות, backoff 800ms) |
+| C2 | f1029db | mic #lastBlob + retryTranscribe + canRetry + כפתור "נסה שוב" ב-MicLarge |
+| C3 | acee79d | AgentSession.listSessions() inline דרך #client + cache |
+| C4 | 164a191 | SessionOptionsPanel inline + מחיקת SessionsDialog + modals cleanup |
+
+branch: slice-sessions-inline, base: dev (9eb3ea2).
+דוח calev phase Commit 2: reports/voice-acp/slice-sessions-inline-commit2-calev.md
+דוח calev light slice: reports/voice-acp/slice-sessions-inline-transcribe-resilience-calev.md
+
+#### חריגות
+
+- typecheck: 2 שגיאות ב-narrate.test.ts קדם-קיימות מ-dev (לא שלנו)
+- הkicker flaky bridge-manager.idle test4 — ידוע מ-slice-26, לא קשור
+
 ## 2026-06-02 — slice review-fixes-2 הושלם — calev GO (13/13)
 
 ### מה בוצע?

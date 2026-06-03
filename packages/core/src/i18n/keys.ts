@@ -47,6 +47,8 @@ export type MessageKey =
   | "mic.error.notFound"
   | "mic.error.transcribe"
   | "mic.error.generic"
+  // ─── mic retry ─── (slice sessions-inline)
+  | "mic.retry"
   // ─── voice-mode ─── (slice 3)
   | "voiceMode.status.idle"
   | "voiceMode.status.recording"
