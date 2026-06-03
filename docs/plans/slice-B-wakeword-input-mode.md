@@ -2,13 +2,15 @@
 
 > סטטוס: brief מוכן לאימות (אביגיל) → executor. complexity: 7/10.
 > verifier: calev light.
-> **depends_on: [slice-A-status-bubble]** — B מבוסס על A (הבועה החליפה את חיווי-המודל
-> בכל שיטות-הקלט; ה-wake-word pane מסתמך על כך שה-footer כבר לא מציג thinking/speaking).
+> **depends_on: [slice-model-status-control-replay]** — ⚠️ slice A אוחד לתוך ה-slice
+> המאוחד `slice-model-status-control-replay` (refactor turnState + StatusBubble +
+> cancelTurn + הקלטות + נגן-בודד). B מבוסס עליו (הבועה החליפה את חיווי-המודל בכל
+> שיטות-הקלט; ה-wake-word pane מסתמך על כך שה-footer כבר לא מציג thinking/speaking).
 > base: **תלוי בסדר הביצוע**:
-> - אם A כבר בוצע ומוזג ל-dev → `base=dev`.
-> - אם A בוצע ויש branch `slice-A-status-bubble` → `base=slice-A-status-bubble` (שרשור).
-> - אם A **טרם בוצע** (קיים רק ה-brief) → **אל תתחיל את B** — B חייב את A קודם.
->   ⚠️ נכון לכתיבה, branch `slice-A-status-bubble` לא קיים — B ממתין ל-A.
+> - אם המאוחד כבר בוצע ומוזג ל-dev → `base=dev`.
+> - אם המאוחד בוצע ויש branch `slice-model-status-control-replay` → `base=slice-model-status-control-replay` (שרשור).
+> - אם המאוחד **טרם בוצע** → **אל תתחיל את B** — B חייב את המאוחד קודם (turnState/StatusBubble).
+>   ⚠️ נכון לעדכון, branch `slice-model-status-control-replay` טרם נוצר — B ממתין לו.
 
 ## 0. הקשר וסביבה
 
@@ -22,9 +24,9 @@ wake-word / hidden), עם ה-VoiceOrb כ-pane, ולחבר את זיהוי ה-wak
 
 **שם package FE:** `@drive-coding/frontend-v2`.
 
-**worktree (שרשור על A):**
+**worktree (שרשור על המאוחד):**
 ```bash
-git worktree add .worktrees/slice-B-wakeword-input -b slice-B-wakeword-input slice-A-status-bubble
+git worktree add .worktrees/slice-B-wakeword-input -b slice-B-wakeword-input slice-model-status-control-replay
 cd .worktrees/slice-B-wakeword-input && pnpm install && pnpm hooks:install
 ```
 
@@ -51,7 +53,7 @@ RecordFooter toggle:
 
 WakeWordVM detect#2 → capture.stop() → transcribe(blob) → session.sendPrompt
                                          (אותה לוגיקה כמו Mic#runTranscribe, בתוך ה-VM)
-חיווי-מודל אחרי השליחה → בועת-הסטטוס (מ-slice A), זהה לכל שיטת-קלט.
+חיווי-מודל אחרי השליחה → בועת-הסטטוס (מהמאוחד), זהה לכל שיטת-קלט.
 ```
 
 ## 2. Commits
@@ -153,14 +155,14 @@ WakeWordVM detect#2 → capture.stop() → transcribe(blob) → session.sendProm
 2. הטסטים הקיימים עוברים (Mic **לא נגעו** — אין refactor; אותה התנהגות).
 3. RecordFooter: 4 tabs. בחירת wake-word → טעינת מודלים (חיווי loading) → VoiceOrb אפור→כחול.
 4. אמירת wake word → אדום + cue → דיבור → wake word שוב → cue → **הטקסט נשלח לסוכן**
-   (sendPrompt), בועת-הסטטוס (slice A) מציגה thinking→responding→speaking.
+   (sendPrompt), בועת-הסטטוס (מהמאוחד) מציגה thinking→responding→speaking.
 5. מעבר ל-tab אחר בזמן wake-word → המיקרופון נכבה (לא נשאר מאזין ברקע).
 6. `/wake-word-test` (route בדיקה) עדיין עובד (לא נשבר).
 7. `git diff --stat`: wake-word VM (flow), context, +layout,
    RecordFooter, VoiceOrb (אם loading), i18n.
 
 ## 6. out of scope
-- בועת-סטטוס (slice A — תלות).
+- בועת-סטטוס (מהמאוחד slice-model-status-control-replay — תלות).
 - אימון מילה חדשה.
 - CarMode / Settings ל-wake-word.
 - wasm CDN→local (known issue נפרד — reference: todo-wake-word-wasm-cdn-vs-local).
