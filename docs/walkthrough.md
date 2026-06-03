@@ -1,3 +1,19 @@
+## 2026-06-03 16:53 — slice ws-reconnect-infra — Commit 0: תשתית state + cliKind + visibility
+
+### מה בוצע?
+
+Commit 0 של slice `ws-reconnect-infra` — תשתית state פסיבית לתמיכה ב-reconnect. אפס לוגיקת reconnect בשלב זה.
+
+| קובץ | שינוי |
+|---|---|
+| `agent-session.svelte.ts` | הוסף `"disconnected"` ל-`AgentSessionStatus` union; שדות `reconnectAttempt` ($state), `#cliKind`, `#pageHidden`, `#reconnectTimer`, `#reconnecting`; visibilitychange listener בconstructor; שמירת `#cliKind` ב-attach+loadSession |
+| `agent-session.reconnect.test.svelte.ts` | קובץ טסט חדש — 5 unit tests לתשתית state (TDD) |
+
+**בדיקות**: 607 tests ✓, typecheck FE ✓, typecheck global ✓, lint:i18n ✓.
+**חריגות**: אין.
+
+---
+
 ## 2026-06-03 — slice fix-409-replace-flag הושלם — 602 tests ✓
 
 ### מה בוצע?

@@ -37,11 +37,12 @@ import type {
 import { type SessionInfo, normalizeSessionInfo } from "$lib/adapters/sessions"
 
 export type AgentSessionStatus =
-  | "idle"        // טרם נוצר סוכן
-  | "connecting"  // יוצר סוכן + לחיצת יד של ACP
-  | "connected"   // מוכן לקבל פרומפטים
-  | "thinking"    // נשלח פרומפט, ממתין לתגובת הסוכן
+  | "idle"          // טרם נוצר סוכן
+  | "connecting"    // יוצר סוכן + לחיצת יד של ACP
+  | "connected"     // מוכן לקבל פרומפטים
+  | "thinking"      // נשלח פרומפט, ממתין לתגובת הסוכן
   | "error"
+  | "disconnected"  // WS נפל, ממתין ל-reconnect (ידני/אוטו) — slice ws-reconnect-infra
 
 /**
  * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
@@ -59,6 +60,13 @@ export class AgentSession {
 
   constructor(opts?: { cues?: CuesEngine }) {
     this.#cues = opts?.cues
+    // ─── slice ws-reconnect-infra: visibility tracking ───
+    if (typeof document !== "undefined") {
+      this.#pageHidden = document.hidden
+      document.addEventListener("visibilitychange", () => {
+        this.#pageHidden = document.hidden
+      })
+    }
   }
 
   // ─── state ─── (פולשני לעריכה — תאם מול Tama)
@@ -67,6 +75,9 @@ export class AgentSession {
   bubbles = $state<Bubble[]>([])
   agentId = $state<string | null>(null)
   cwd = $state<string | null>(null)
+  // ─── slice ws-reconnect-infra: reconnect state ─── (INVASIVE — מאושר)
+  /** 0 = לא מנסה reconnect; >0 = ניסיון נוכחי (1-indexed לחיווי UI). */
+  reconnectAttempt = $state<number>(0)
   // ─── slice 4: replay guard + narration context ─── (תוספתי)
   /** True בזמן ש-loadSession() מנגן היסטוריה מחדש. ה-Speaker קורא את זה (תחת מעקב) כדי להשתיק TTS. */
   isLoadingHistory = $state(false)
@@ -97,6 +108,19 @@ export class AgentSession {
    * התנתק באופן מפורש.
    */
   #detached = false
+  // ─── slice ws-reconnect-infra: reconnect internals ───
+  /** ה-cliKind של ה-attach/loadSession האחרון — נדרש ל-cold reconnect. */
+  #cliKind: CliKind | null = null
+  /** True כשה-document.hidden (הדף ברקע). */
+  #pageHidden = false
+  /** טיימר לניסיון reconnect הבא. */
+  #reconnectTimer: ReturnType<typeof setTimeout> | undefined
+  /** Guard למניעת שתי לולאות reconnect מקבילות. */
+  #reconnecting = false
+
+  // ─── DEV-only test helpers (tree-shaken from prod) ───
+  /** @internal */ _setStatusForTest(s: AgentSessionStatus): void { this.#setStatus(s) }
+  /** @internal */ _setReconnectAttemptForTest(n: number): void { this.reconnectAttempt = n }
 
   // ─── מחזור חיי חיבור (connection lifecycle) ─────────────────────────
 
@@ -118,6 +142,7 @@ export class AgentSession {
       const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
       this.agentId = agentId
       this.cwd = input.cwd
+      this.#cliKind = input.cliKind   // slice ws-reconnect-infra: שמור ל-cold reconnect
 
       // 2. פתח תעבורת WS
       const proto = location.protocol === "https:" ? "wss:" : "ws:"
@@ -235,6 +260,7 @@ export class AgentSession {
       const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
       this.agentId = agentId
       this.cwd = input.cwd
+      this.#cliKind = input.cliKind   // slice ws-reconnect-infra: שמור ל-cold reconnect
 
       // 2. פתח תעבורת WS + הוסף מאזין onClose (זהה ל-attach)
       const proto = location.protocol === "https:" ? "wss:" : "ws:"
