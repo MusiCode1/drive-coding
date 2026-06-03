@@ -95,11 +95,18 @@ export class Speaker {
     return this.#player.state === "playing" ? "speaking" : "idle"
   }
 
+  /** האם יש job TTS ממתין/בתהליך (reactive — מעודכן ע"י #pendingCount $state). §4.4 */
+  get hasPendingNarration(): boolean {
+    return this.#pendingCount > 0
+  }
+
   #bubbleStates: Map<string, BubbleState> = new Map()
   #jobs: TtsJob[] = []
   #activeFetches = 0
   #prevStatus: AgentSessionStatus = "idle"
   #prevTurnState: TurnState = "idle"
+  /** ספירה reactive של jobs ממתינים/fetching — לhasPendingNarration (§4.4) */
+  #pendingCount = $state(0)
   /** Slice 4: עוקב כמה מקטעים של כל ThoughtBubble תורגמו. */
   #translatedSegByBubble: Map<string, number> = new Map()
   // slice 22: #narratingCallIds הוסר — #processedNarrationCallIds הוא ה-guard
@@ -317,6 +324,7 @@ export class Speaker {
       bubbleId,
       orderKey,
     })
+    this.#pendingCount += 1
   }
 
   #pumpFetchLoop(): void {
@@ -334,6 +342,7 @@ export class Speaker {
 
   async #fetchJob(job: TtsJob): Promise<void> {
     try {
+      // #pendingCount ירד תמיד (גם בהצלחה גם בכישלון) — ב-finally
       let text = job.text
 
       if (job.kind === "thought") {
@@ -385,6 +394,9 @@ export class Speaker {
         id: job.segmentId,
         err: e instanceof Error ? e.message : String(e),
       })
+    } finally {
+      // הורד ספירה — reactive → hasPendingNarration יתעדכן
+      if (this.#pendingCount > 0) this.#pendingCount -= 1
     }
   }
 
@@ -435,6 +447,7 @@ export class Speaker {
         toolCallId: tc.toolCallId,
         orderKey,
       })
+      this.#pendingCount += 1
       this.#pumpFetchLoop()
     }
   }
@@ -529,6 +542,7 @@ export class Speaker {
       }
     }
     this.#jobs = []
+    this.#pendingCount = 0
     this.#player.stop()
     this.#audioStream.clear()
     // slice 22: נקה את ה-allocator (seq גלובלי לא מתאפס — מונוטוני בין שיחות)

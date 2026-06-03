@@ -15,7 +15,7 @@
  * ─── redesign-2 ───
  */
 import { tick } from "svelte"
-import { getResponsive, getSession, getI18n } from "$lib/context"
+import { getResponsive, getSession, getI18n, getModelStatus } from "$lib/context"
 import AppHeader from "./AppHeader.svelte"
 import Sidebar from "./Sidebar.svelte"
 import BottomSheet from "./BottomSheet.svelte"
@@ -32,6 +32,8 @@ let { children, footer }: {
 const responsive = getResponsive()
 const session = getSession()
 const t = getI18n().t
+// ─── model-status ─── (§8.6: הופעת StatusBubble לא ב-bubbles → צריך תלות מפורשת)
+const modelStatus = getModelStatus()
 
 // scroll node — ה-AppShell הוא owner (חוק זהב #4)
 let scrollEl = $state<HTMLElement | null>(null)
@@ -63,6 +65,9 @@ function jumpToBottom() {
  * רק אם המשתמש בתחתית → נצמד. אחרת → hasNewBelow=true.
  */
 $effect(() => {
+  // §8.6: StatusBubble לא ב-session.bubbles → הופעתה/היעלמותה לא מזהה ה-effect.
+  // קריאת phase כאן מוסיפה אותה לתלויות → scroll יוצמד גם כשהבועה מופיעה.
+  void modelStatus.phase
   const _bubbleCount = session.bubbles.length
   const last = session.bubbles[session.bubbles.length - 1]
   const _segCount =

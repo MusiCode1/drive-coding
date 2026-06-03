@@ -123,6 +123,13 @@ export const en: Catalog = {
   "settings.toggle.carMode": "Car mode (Play on Bluetooth = record)",
   "settings.reset": "Reset",
   "settings.saveOpen": "Save & Open",
+  // ─── model-status ─── (slice model-status-control-replay)
+  "modelStatus.waiting": "Waiting for response…",
+  "modelStatus.thinking": "Thinking…",
+  "modelStatus.responding": "Responding…",
+  "modelStatus.callingTool": "Calling tool…",
+  "modelStatus.pendingTts": "Preparing audio…",
+  "modelStatus.speaking": "Speaking…",
   // ─── layout/header ─── (redesign-2)
   "header.menu": "Menu",
   "header.settings": "Settings",

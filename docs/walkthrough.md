@@ -1,3 +1,23 @@
+## 2026-06-03 — slice-model-status-control-replay — Commit 2 (בועת-סטטוס)
+
+### מה בוצע?
+
+**Commit 2**: בועת-סטטוס — ModelStatus VM, StatusBubble component, i18n, auto-scroll.
+
+- `speaker.svelte.ts`: הוסף `#pendingCount $state` + getter `hasPendingNarration` reactive (§4.4). עדכון `#enqueue/tool push/fetchJob-finally/#stopAndClear`.
+- `view-models/derived/model-status.svelte.ts` (חדש): `ModelPhase` type + `ModelStatus` class עם `phase = $derived.by(...)`.
+- `context.ts`: הוסף `getModelStatus/setModelStatus`.
+- `+layout.svelte`: הוסף `new ModelStatus(...)` + `setModelStatus`.
+- `components/chat/StatusBubble.svelte` (חדש): בועה transient עם dot-wave + i18n.
+- `ChatBubbles.svelte`: הוסף `<StatusBubble />` אחרי ה-`{#each}`.
+- `AppShell.svelte`: הוסף `getModelStatus()` + `void modelStatus.phase` לתלויות auto-scroll.
+- `core/i18n/keys.ts + he.ts + en.ts`: 6 מפתחות `modelStatus.*`.
+
+**חריגות**: אין.
+**בדיקות**: 602 tests ✓, typecheck ✓, lint:i18n ✓.
+
+---
+
 ## 2026-06-03 — slice-model-status-control-replay — Commit 1 (הפרדת status/turnState)
 
 ### מה בוצע?

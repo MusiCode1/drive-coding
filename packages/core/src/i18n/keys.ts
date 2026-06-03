@@ -129,6 +129,13 @@ export type MessageKey =
   | "settings.toggle.carMode"
   | "settings.reset"
   | "settings.saveOpen"
+  // ─── model-status ─── (slice model-status-control-replay)
+  | "modelStatus.waiting"
+  | "modelStatus.thinking"
+  | "modelStatus.responding"
+  | "modelStatus.callingTool"
+  | "modelStatus.pendingTts"
+  | "modelStatus.speaking"
   // ─── layout/header ─── (redesign-2)
   | "header.menu"
   | "header.settings"

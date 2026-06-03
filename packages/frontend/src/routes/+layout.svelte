@@ -14,7 +14,7 @@
  * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
  */
 import "../app.css"
-import { setCues, setI18n, setMic, setModals, setResponsive, setSession, setSettings, setSpeaker, setTheme, setUiShell, setVoiceMode } from "$lib/context"
+import { setCues, setI18n, setMic, setModelStatus, setModals, setResponsive, setSession, setSettings, setSpeaker, setTheme, setUiShell, setVoiceMode } from "$lib/context"
 import { CuesEngine } from "$lib/engines/cues"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
@@ -26,6 +26,7 @@ import { ThemeVM } from "$lib/view-models/theme.svelte"
 import { UiShellVM } from "$lib/view-models/ui-shell.svelte"
 import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
+import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
 
 let { children } = $props()
 
@@ -64,6 +65,9 @@ const uiShell = new UiShellVM()
 // ─── modals ─── (redesign-6)
 const modals = new ModalsVM()
 
+// ─── model-status ─── (slice model-status-control-replay — תלוי ב-session + speaker)
+const modelStatus = new ModelStatus({ session, speaker })
+
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
@@ -76,6 +80,7 @@ setTheme(theme)
 setResponsive(responsive)
 setUiShell(uiShell)
 setModals(modals)
+setModelStatus(modelStatus)
 
 // ─── DEV-only: חשיפת ה-session ל-window לצורך חילוץ fixtures ודיבוג עיצוב ───
 if (import.meta.env.DEV && typeof window !== "undefined") {

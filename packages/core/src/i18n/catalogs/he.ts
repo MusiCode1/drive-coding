@@ -118,6 +118,13 @@ export const he: Catalog = {
   "settings.toggle.carMode": "מצב רכב (Play בבלוטוס = הקלטה)",
   "settings.reset": "איפוס",
   "settings.saveOpen": "שמור ופתח",
+  // ─── model-status ─── (slice model-status-control-replay)
+  "modelStatus.waiting": "ממתין לתגובה…",
+  "modelStatus.thinking": "חושב…",
+  "modelStatus.responding": "כותב תשובה…",
+  "modelStatus.callingTool": "קורא לכלי…",
+  "modelStatus.pendingTts": "ממתין להקראה…",
+  "modelStatus.speaking": "מקריא…",
   // ─── layout/header ─── (redesign-2)
   "header.menu": "תפריט",
   "header.settings": "הגדרות",
