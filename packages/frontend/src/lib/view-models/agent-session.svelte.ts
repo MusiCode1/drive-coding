@@ -322,8 +322,9 @@ export class AgentSession {
       this.cwd = input.cwd
 
       // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים)
+      // replace:true — warm switch מכוון, מאפשר דריסת sessionId קיים (עוקף guard MED-9)
       if (this.agentId) {
-        await notifySessionAttached(this.agentId, input.sessionId).catch(() => {})
+        await notifySessionAttached(this.agentId, input.sessionId, { replace: true }).catch(() => {})
       }
 
       this.#setStatus("connected")

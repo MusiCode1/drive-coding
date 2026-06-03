@@ -1,5 +1,85 @@
 # Decisions — voice-acp
 
+## 2026-06-03 — slice fix-409-replace-flag: דגל replace ל-warm switch
+
+### רציונל
+‏ב-warm switch (מעבר בין סשנים על אותו agent) `notifySessionAttached` קיבל 409 כי
+‏guard MED-9 (`http-agents.ts`) חוסם update של `acpSessionId` כש-agent כבר "ready" עם
+‏sessionId אחר. ה-`.catch(()=>{})` בלע את השגיאה — המשתמשת לא ראתה, אבל ה-registry
+‏של ה-BE נשאר עם sessionId **ישן**, סיכון ל-reconnect/recovery עתידי (slice 10/recovery)
+‏שישחזר לסשן הלא-נכון.
+
+### ההכרעה — דגל מפורש, לא ביטול ה-guard
+‏הוספנו `replace?: boolean` ל-`notifySessionAttached`. ה-guard מדלג **רק** כש-`replace===true`
+‏(strict — לא `!replace`, כדי שערך לא-בוליאני ייחשב false). `switchSession` שולח `replace:true`;
+‏`attach`/`loadSession` (חיבור ראשון) נשארים בלי הדגל → ה-guard MED-9 עדיין מגן עליהם מפני
+‏"agent in use by another tab". כלומר: שמרנו על ההגנה לחיבור ראשון, התרנו same-agent update
+‏מפורש בלבד. אדיטיבי לחלוטין — אין שינוי התנהגות למסלולים קיימים.
+
+### ממצאי אביגיל
+‏Verdict READY מהסבב הראשון. כל ה-API ומספרי השורות אומתו ב-tip האמיתי (ה-Base ב-brief היה
+‏stale ב-commit אחד של docs בלבד — אישרה שזה ancestor ושכל מספרי השורות תקפים). אישרה שה-body
+‏המצורף-לסשן הוא raw cast (אין ArkType schema לעדכן), ושיש כבר טסט 409 קיים שמשמש תבנית.
+
+### אימות + merge
+‏calev GO, 0 findings, 11/11 DoD. אומת e2e דרך tunnel ע"י המשתמשת ("זה עובד"). מוזג ל-dev
+‏ב-`1fbab1c` (merge commit).
+
+### באג שהתגלה בבדיקה (לא חלק מה-slice) — קריינות כלים במצב מושתק
+‏בבדיקה הידנית התגלה: כש-Speaker מושתק כללית (`enabled=false`), קריינות **כלים** עדיין
+‏מושמעת. הסיבה: `Speaker.#processToolBubbles` בודק רק את `narrateTools` ולא את `enabled`
+‏(בניגוד ל-`#processBubbles` שכן בודק `enabled` ב-`speaker.svelte.ts:246`). תועד כ-known bug
+‏לתכנון slice נפרד (`docs/future-features.md`). לא תוקן כאן — מחוץ ל-scope.
+
+## 2026-06-03 — slice ws-reconnect-infra: שחזור WS עצמי-מרפא (תשתית בלבד, cold-path)
+
+### רציונל
+‏נפילת WS השאירה את המשתמש תקוע — `status="error"`, "WS closed (...)" אדום, והדרך
+‏היחידה חזרה הייתה רענון מלא של הדף ואיבוד כל השיחה. זה החסם שהמשתמשת דיווחה עליו.
+‏ה-slice מוסיף ל-`AgentSession` יכולת **לשחזר את עצמו**: ב-`onClose` לא-מכוון, אם הדף
+‏בפוקוס → לולאת backoff (1+2+4+8+16s≈31s, 5 ניסיונות); אם ברקע → מצב `disconnected`
+‏שממתין ל-`reconnect()` יזום. מתודה ציבורית `reconnect()` נחשפת ל-UI עתידי.
+
+### ההכרעה הארכיטקטונית המרכזית — cold-path בלבד
+‏reconnect מבצע **`loadSession({sessionId, cwd, cliKind})` מאפס** — תמיד יוצר agent חדש.
+‏זו בחירת המשתמשת המפורשת: "גם אם החיבור או הפרוסס נהרגו בצד השרת, אם אנחנו יודעים
+‏שזה קרה — פשוט ניצור חדש. יש לנו את כל מה שצריך." היתרונות: (1) עובד זהה בין אם
+‏ה-bridge חי (warm) ובין אם מת/נוקה ע"י ה-reaper (cold) — אין branching; (2) `loadSession`
+‏כבר מושך את **כל** ההיסטוריה מהמקור-אמת (הסוכן עצמו) — אין צורך ב-buffer צד-שרת
+‏ולא ב-"diff" ידני, כפי ששקלנו תחילה; (3) **עוקף את ה-MED-8 race**: agentId חדש →
+‏אין התנגשות "agent in use by another tab" על הישן. warm-path (WS חדש לאותו agentId)
+‏נדחה — הוא דווקא *פותח* את ה-MED-8 race ולא מוסיף ערך מול ה-cold.
+
+### הפרדה infra/UI לפי בקשת המשתמשת
+‏המשתמשת ביקשה לפצל: **כל תשתית ה-VM קודם, אפס נגיעה ב-UI**. הרציונל שלה — "ככה נוכל
+‏בשלב הבא להחליט איך זה בדיוק ייראה, לא חייבים עכשיו". זה גם הופך את ה-slice ל-pure
+‏VM-logic שנבדק כולו דרך `window.__session` ב-console (DoD #16: `git diff --stat` חייב
+‏רק `agent-session.svelte.ts`+טסט+docs). ה-UI (כפתור + חיווי) הוא `slice-ws-reconnect-ui`
+‏עוקב, JIT, `depends_on: [ws-reconnect-infra]` — ייכתב אחרי שהתשתית מאומתת.
+
+### הקשר ל-decisions ההיסטוריות (גישה A/B)
+‏ב-slice 25/26 הפרדנו: **גישה B** (עצירת דימום + reaper, merged) מול **גישה A**
+‏(reconnect אמיתי + agents-ברקע + ממשק ניהול, נדחתה). slice זה הוא **החלק של reconnect
+‏מתוך A** — בלי agents-ברקע / multi-agent / "ממשיכים לרוץ אחרי סגירת חלון". התשתית
+‏שהושארה בכוונה ל-A (`ws-agent.ts:127` — child שורד WS close; reaper 5 דק' כחלון
+‏reconnect) **עובדת בדיוק בשבילנו** — לא נגענו בה. סך ה-backoff (~31s) << חלון ה-reaper.
+
+### ממצאי אביגיל
+‏Verdict: **READY** מהסבב הראשון — "אחד ה-briefs המדויקים ביותר שבדקתי", כל מספר שורה
+‏וכל guard אומת מדויק (במיוחד ה-guard הקריטי ב-`loadSession:217` שכל מנגנון ה-`#doReconnect`
+‏נבנה סביבו). אישרה גם שתשתית טסטי-VM קיימת (`vi.stubGlobal` ב-wake-word.test). 3 מינורים
+‏תוקנו: (1) שם קובץ הטסט → `.test.svelte.ts` (חובה ל-svelte preprocessor); (2) הבהרה
+‏ש-`environment:node` חסר `document` → כיסוי visibility-path דורש `vi.stubGlobal`;
+‏(3) הערת-קוד: `clearTimeout` ב-detach מקפיא את ה-`await` בלולאה ומשאיר את ה-bail-check
+‏לא-נגיש (לא מזיק — `#detached`/`#reconnecting=false` כבר מנעו המשך).
+
+### רעיונות שנדחו
+- ‏**warm-reconnect (אותו agentId דרך `existingSessionId`)** — נדחה. פותח MED-8 race,
+  ‏לא מוסיף ערך מול cold (`loadSession` תמיד עובד). זה חלק מ-A המלא לעתיד.
+- ‏**buffer של updates ב-BE / diff ידני** — מיותר. `loadSession` מושך הכל מהסוכן.
+- ‏**reconnect אוטומטי בחזרה-לפוקוס** — ברירת-מחדל "לא" (פחות הפתעות). ה-listener קיים;
+  ‏הפעלה = שורה אחת. נשאר פתוח להחלטת המשתמשת (§9 Q1).
+
 ## 2026-06-02 — slice fix-idle-flaky: ייצוב flaky test ב-bridge-manager.idle.test.ts
 
 ### רציונל

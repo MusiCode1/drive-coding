@@ -260,5 +260,42 @@ describe("HTTP /api/agents", () => {
       })
       expect(res.status).toBe(200)
     })
+
+    it("409 without replace flag: guard MED-9 stays active, registry unchanged", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      await registry.update(agent.id, { status: "ready", acpSessionId: "session-A" })
+
+      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: "session-B" }), // no replace flag
+      })
+      expect(res.status).toBe(409)
+
+      // Registry must remain unchanged — staleness guard worked
+      const unchanged = await registry.get(agent.id)
+      expect(unchanged?.acpSessionId).toBe("session-A")
+    })
+
+    it("200 with replace:true: warm switch overwrites sessionId in registry", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      await registry.update(agent.id, { status: "ready", acpSessionId: "session-A" })
+
+      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: "session-B", replace: true }),
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body).toEqual({ ok: true })
+
+      // Registry must be updated to the new sessionId
+      const updated = await registry.get(agent.id)
+      expect(updated?.acpSessionId).toBe("session-B")
+      expect(updated?.status).toBe("ready")
+    })
   })
 })
