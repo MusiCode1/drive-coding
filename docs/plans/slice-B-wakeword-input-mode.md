@@ -38,7 +38,9 @@ cd .worktrees/slice-B-wakeword-input && pnpm install && pnpm hooks:install
   ב-screen — חוק זהב #2). + context זוג `getWakeWord/setWakeWord`.
 - **RecordFooter** מקבל tab רביעי. `mode` נשאר `$state` מקומי ב-component (UI state, §3).
 - **חיבור ל-flow**: WakeWordVM, על detect#2 (סוף הקלטה), קורא transcribe→sendPrompt
-  במקום auto-play. דרך **action משותף** (ראה §2.3) שגם Mic יכול להשתמש בו (מונע כפילות).
+  במקום auto-play. הלוגיקה (transcribe→sendPrompt) **בתוך WakeWordVM** עצמו (אותו דפוס
+  כמו Mic#runTranscribe — VM מייבא adapter transcribe + קורא session.sendPrompt). אין
+  helper משותף (ראה הערת §2 — הפרת שכבות).
 
 ```
 RecordFooter toggle:
@@ -148,13 +150,13 @@ WakeWordVM detect#2 → capture.stop() → transcribe(blob) → session.sendProm
 
 ## 5. DoD (calev light)
 1. core + frontend-v2 typecheck + build + lint:i18n — נקי.
-2. הטסטים הקיימים עוברים (Mic refactor ב-commit 1 לא משנה התנהגות).
+2. הטסטים הקיימים עוברים (Mic **לא נגעו** — אין refactor; אותה התנהגות).
 3. RecordFooter: 4 tabs. בחירת wake-word → טעינת מודלים (חיווי loading) → VoiceOrb אפור→כחול.
 4. אמירת wake word → אדום + cue → דיבור → wake word שוב → cue → **הטקסט נשלח לסוכן**
    (sendPrompt), בועת-הסטטוס (slice A) מציגה thinking→responding→speaking.
 5. מעבר ל-tab אחר בזמן wake-word → המיקרופון נכבה (לא נשאר מאזין ברקע).
 6. `/wake-word-test` (route בדיקה) עדיין עובד (לא נשבר).
-7. `git diff --stat`: submit-voice-input (new), mic, wake-word VM, context, +layout,
+7. `git diff --stat`: wake-word VM (flow), context, +layout,
    RecordFooter, VoiceOrb (אם loading), i18n.
 
 ## 6. out of scope
