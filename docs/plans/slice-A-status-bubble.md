@@ -1,6 +1,12 @@
 # Brief: slice A — בועת-סטטוס-מודל + הפרדת חיבור/פעילות
 
-> סטטוס: brief מוכן לאימות (אביגיל) → executor. complexity: 7/10.
+> ⚠️⚠️ **SUPERSEDED (2026-06-03)** — אוחד לתוך `slice-model-status-control-replay.md`
+> (refactor state + בועה + cancelTurn + הקלטות + נגן-בודד, slice אחד 6 commits).
+> **אל תבצע את ה-brief הזה.** הוא נשמר לתיעוד בלבד (כולל ה-round-2 של אביגיל).
+> ה-Commit 1-2 כאן = Commit 1-2 ב-brief המאוחד; ה-brief המאוחד מוסיף עליהם cancelTurn
+> (שמשלים את תיקון ה-X-מהבהב) + הקלטות + נגן בועה בודדת.
+
+> סטטוס: ‏~~brief מוכן לאימות (אביגיל) → executor~~. **SUPERSEDED.** complexity: 7/10.
 > verifier: calev light. depends_on: [] (קוד wake-word כבר ב-dev, לא נדרש כאן).
 > base: dev (tip עדכני — אמת `git -C dev log --oneline -1` לפני worktree).
 > ⚠️ זה refactor invasive ב-state model + תוספת UI. שני commits.
