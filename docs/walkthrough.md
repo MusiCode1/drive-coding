@@ -1,3 +1,19 @@
+## 2026-06-03 17:04 — slice ws-reconnect-infra — Commit 4: Docs + סטטוס + build ✓
+
+### מה בוצע?
+
+Commit 4 של slice `ws-reconnect-infra` — תיעוד ועדכוני סטטוס.
+
+| קובץ | שינוי |
+|---|---|
+| `packages/frontend/docs/slices.md` | הוסף שורות ws-r-infra (✅) ו-ws-r-ui (💭 JIT) לטבלה |
+| `docs/future-features.md` | תועד buffer/historyBuffer כ-future feature (§9 Q3 מה-brief) |
+| `docs/plans/slice-ws-reconnect-infra.md` | סטטוס → הושלם + סטיות מהתכנון |
+
+**בדיקות**: 634 tests ✓, typecheck ✓, lint:i18n ✓, build ✓.
+
+---
+
 ## 2026-06-03 17:02 — slice ws-reconnect-infra — Commit 3: חיבור attach/loadSession ל-auto-reconnect
 
 ### מה בוצע?
