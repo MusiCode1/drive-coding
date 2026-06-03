@@ -183,10 +183,14 @@ async function onSubmit(e: SubmitEvent) {
 <FolderPickerDialog />
 
 <style>
+  /* גובה מלא + גלילה פנימית: ה-body הוא overflow:hidden (app.css), ודף החיבור
+     אינו עטוף ב-AppShell, לכן הוא חייב לגלול בעצמו — אחרת התוכן נחתך במסכים נמוכים. */
   .connect {
     max-width: 420px;
-    margin: 4rem auto;
-    padding: 0 1rem;
+    height: 100dvh;
+    overflow-y: auto;
+    margin: 0 auto;
+    padding: 4rem 1rem;
   }
 
   h1 {
