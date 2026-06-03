@@ -9,7 +9,7 @@
  *   GET /api/sessions
  */
 
-import { rm } from "node:fs/promises"
+import { mkdir, rm } from "node:fs/promises"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
@@ -155,5 +155,47 @@ describe("GET /api/fs/browse", () => {
     const { app } = makeApp()
     const res = await app.request("/api/fs/browse")
     expect(res.status).toBe(400)
+  })
+
+  it("hides hidden folders by default (no showHidden param)", async () => {
+    const base = join(tmpdir(), `dc-hidden-test-${crypto.randomUUID()}`)
+    await mkdir(base, { recursive: true })
+    await mkdir(join(base, "visible"))
+    await mkdir(join(base, "node_modules"))
+    await mkdir(join(base, ".git"))
+    try {
+      const { app } = makeApp(base)
+      const res = await app.request(`/api/fs/browse?path=${encodeURIComponent(base)}`)
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      const names: string[] = body.entries.map((e: { name: string }) => e.name)
+      expect(names).toContain("visible")
+      expect(names).not.toContain("node_modules")
+      expect(names).not.toContain(".git")
+    } finally {
+      await rm(base, { recursive: true, force: true })
+    }
+  })
+
+  it("shows hidden folders when showHidden=true", async () => {
+    const base = join(tmpdir(), `dc-hidden-test-${crypto.randomUUID()}`)
+    await mkdir(base, { recursive: true })
+    await mkdir(join(base, "visible"))
+    await mkdir(join(base, "node_modules"))
+    await mkdir(join(base, ".git"))
+    try {
+      const { app } = makeApp(base)
+      const res = await app.request(
+        `/api/fs/browse?path=${encodeURIComponent(base)}&showHidden=true`,
+      )
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      const names: string[] = body.entries.map((e: { name: string }) => e.name)
+      expect(names).toContain("visible")
+      expect(names).toContain("node_modules")
+      expect(names).toContain(".git")
+    } finally {
+      await rm(base, { recursive: true, force: true })
+    }
   })
 })
