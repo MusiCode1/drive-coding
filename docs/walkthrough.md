@@ -1,3 +1,17 @@
+## 2026-06-03 — slice-model-status-control-replay — Commit 4 (חיבור הקלטות ל-BE)
+
+### מה בוצע?
+
+**Commit 4**: חיבור הקלטות משתמש ל-BE.
+
+- `adapters/voice/recordings.ts` (חדש): `saveRecording(blob, opts?)` + `recordingUrl(id)`. POST JSON `{audioBase64, mimeType}` → `{id}`.
+- `adapters/voice/transcribe.ts`: הסרת stub `Promise.resolve({id:""})`, קריאת `saveRecording(blob).catch(()=>({id:""}))` במקביל לתמלול (best-effort). שגיאת שמירה לא מפילה תמלול.
+
+**חריגות**: אין.
+**בדיקות**: 602 tests ✓, typecheck ✓.
+
+---
+
 ## 2026-06-03 — slice-model-status-control-replay — Commit 3 (cancelTurn + תיקון X-מהבהב)
 
 ### מה בוצע?

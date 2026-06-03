@@ -8,21 +8,20 @@
  * מלכודת תעתיק (transliteration) בעברית (learnings 2026-05-16): מודל Gemini מחזיר אותיות לטיניות
  * כברירת מחדל. חייבים לבקש במפורש כתב עברי בפרומפט.
  *
- * הפונקציה saveRecording הוסרה (slice 10 יוסיף את ה-endpoint ב-BE). מחזיר
- * כרגע recordingId: "" כפלייסיהולדר — slice 10 יחליף בקריאה האמיתית.
- *
  * הועתק מתוך main/packages/frontend/src/lib/voice/stt-client.ts (slice 3).
  * שינויים:
  *   (a) הוסר `import { saveRecording } from "./recordings-client"`
  *   (b) קריאת saveRecording הוחלפה ב-Promise.resolve({ id: "" })
  *   (c) ייבוא של googleGenAi מתוך "./sdks" נשאר ללא שינוי (sdks.ts קיים החל מ-slice 2)
  *   (d) slice sessions-inline: timeout 15s→30s, עטוף withRetry (3 נסיונות, backoff 800ms)
+ *   (e) slice model-status-control-replay: הסרת stub; קריאת saveRecording אמיתית (best-effort)
  */
 
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
 import { withRetry } from "@drive-coding/core/async/with-retry"
 import { bytesToBase64 } from "./base64"
 import { googleGenAi } from "./sdks"
+import { saveRecording } from "./recordings"
 
 const TRANSCRIBE_TIMEOUT_MS = 30000 // הוגדל מ-15s: תמלול ארוך + thinking model
 
@@ -36,8 +35,9 @@ export async function transcribe(
   const audioBytes = new Uint8Array(await blob.arrayBuffer())
   const mimeType = blob.type || "audio/webm"
 
-  // פלייסיהולדר (Stub): slice 10 יחליף את זה בקריאה האמיתית ל-saveRecording
-  const recordingPromise = Promise.resolve({ id: "" })
+  // שמירת הקלטה ל-BE (best-effort) — כושל לא מפיל את התמלול.
+  // רץ במקביל לתמלול (Promise.race לא — רק await בסוף).
+  const recordingPromise = saveRecording(blob, { signal: opts.signal }).catch(() => ({ id: "" }))
 
   // תיקון תעתיק לעברית: הוראה מפורשת להוציא כתב עברי
   const hebrewRule =
