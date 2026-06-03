@@ -26,17 +26,27 @@ type Persisted = {
   lastCwd: string
   voiceId: string
   beUrl: string
+  // ─── דיבור ─── (redesign-3 / 9a)
+  speakThoughts: boolean
+  narrateTools: boolean
+  translateThoughts: boolean
+  // ─── רכב ─── (redesign-3, חיווט מלא: slice 7)
+  carMode: boolean
 }
 
 const DEFAULTS: Persisted = {
   cliKind: "opencode",
-  // TODO: לבקש את ה-home dir מהשרת במקום לקבע אותו. ה-endpoint GET /api/options
-  // כבר קיים (packages/backend/src/delivery/http-options.ts) ומשתמש ב-os.homedir()
-  // פנימית — רק להוסיף לו שדה `homeDir` בתגובה ולמשוך אותו ב-FE כ-default ל-lastCwd
-  // (כש-localStorage ריק). הקיבוע הזה ספציפי-למכונה; ה-endpoint יהפוך אותו לנייד.
-  lastCwd: "/home/user",
+  // Slice 24: lastCwd נשלף מ-GET /api/options.homeDir ב-+page.svelte (async, אחרי init).
+  // ריק עד אז — המשתמש ימלא ידנית אם ה-fetch נכשל.
+  lastCwd: "",
   voiceId: DEFAULT_VOICE_ID,
   beUrl: "",
+  // ─── דיבור ─── (redesign-3 / 9a)
+  speakThoughts: true,
+  narrateTools: true,
+  translateThoughts: true,
+  // ─── רכב ───
+  carMode: false,
 }
 
 function load(): Persisted {
@@ -70,9 +80,21 @@ export class Settings {
   availableVoices = $state<Voice[]>([])
   voicesLoading = $state<boolean>(false)
   voicesError = $state<string | null>(null)
+  /** מונה נסיונות כושלים רצופים — מזין את ה-backoff. מתאפס בהצלחה / force. */
+  #voicesRetries = 0
+  /** ה-timer של הנסיון החוזר המתוזמן (null = אין retry ממתין). */
+  #voicesRetryTimer: ReturnType<typeof setTimeout> | null = null
 
   // ─── שרת ───
   beUrl = $state<string>(DEFAULTS.beUrl)
+
+  // ─── דיבור ─── (redesign-3 / 9a)
+  speakThoughts = $state<boolean>(DEFAULTS.speakThoughts)
+  narrateTools = $state<boolean>(DEFAULTS.narrateTools)
+  translateThoughts = $state<boolean>(DEFAULTS.translateThoughts)
+
+  // ─── רכב ─── (redesign-3; חיווט מלא: slice 7)
+  carMode = $state<boolean>(DEFAULTS.carMode)
 
   constructor() {
     const loaded = load()
@@ -81,6 +103,12 @@ export class Settings {
     this.voiceId = loaded.voiceId
     this.beUrl = loaded.beUrl
     setBeUrlBase(this.beUrl)
+    // ─── דיבור ───
+    this.speakThoughts = loaded.speakThoughts
+    this.narrateTools = loaded.narrateTools
+    this.translateThoughts = loaded.translateThoughts
+    // ─── רכב ───
+    this.carMode = loaded.carMode
   }
 
   // ─── טופס חיבור ───
@@ -104,21 +132,65 @@ export class Settings {
 
   /**
    * מביא את קטלוג הקולות מ-ElevenLabs (דרך פרוקסי BE + רכיב OneCLI).
-   * אידמפוטנטי (Idempotent): קריאות עוקבות עושות שימוש חוזר ב-`availableVoices` אם כבר נטען
-   * ואינו בטעינה כרגע (in-flight). שגיאות נשמרות ב-`voicesError`.
+   *
+   * retry עם exponential backoff: בכשל מתזמן נסיון חוזר (2s,4s,8s,16s,cap 30s)
+   * עד #VOICES_MAX_RETRIES, ואז עוצר. הצלחה / `force=true` מאפסים backoff ו-timer.
+   *
+   * חשוב: ה-retry מתוזמן כאן (setTimeout), **לא** מ-$effect של הקורא — אחרת
+   * הכתיבה ל-voicesError הייתה מפעילה את ה-$effect מחדש בקצב event-loop (DDoS).
+   * הקורא (VoicePicker) מפעיל פעם אחת ב-mount עטוף ב-untrack. שגיאות → voicesError.
    */
-  loadVoices = async (): Promise<void> => {
+  loadVoices = async (force = false): Promise<void> => {
     if (this.voicesLoading) return
+    // טעינה מוצלחת קיימת — אל תטען שוב.
     if (this.availableVoices.length > 0 && this.voicesError === null) return
+
+    if (force) {
+      // רענון מפורש (כפתור / beUrl השתנה) — בטל retry ממתין ואפס backoff.
+      this.#clearVoicesRetry()
+      this.#voicesRetries = 0
+    } else if (this.#voicesRetryTimer !== null) {
+      // כבר יש retry מתוזמן — אל תכפיל קריאות.
+      return
+    }
+
     this.voicesLoading = true
     this.voicesError = null
     try {
       const voices = await listVoices()
       this.availableVoices = voices
+      this.#voicesRetries = 0
     } catch (e) {
       this.voicesError = e instanceof Error ? e.message : String(e)
+      this.#scheduleVoicesRetry()
     } finally {
       this.voicesLoading = false
+    }
+  }
+
+  static #VOICES_MAX_RETRIES = 6
+  static #VOICES_BASE_DELAY_MS = 2000
+  static #VOICES_MAX_DELAY_MS = 30_000
+
+  /** מתזמן נסיון חוזר עם exponential backoff, עד תקרת הנסיונות. */
+  #scheduleVoicesRetry(): void {
+    if (this.#voicesRetries >= Settings.#VOICES_MAX_RETRIES) return
+    const delay = Math.min(
+      Settings.#VOICES_BASE_DELAY_MS * 2 ** this.#voicesRetries,
+      Settings.#VOICES_MAX_DELAY_MS,
+    )
+    this.#voicesRetries += 1
+    this.#clearVoicesRetry()
+    this.#voicesRetryTimer = setTimeout(() => {
+      this.#voicesRetryTimer = null
+      void this.loadVoices()
+    }, delay)
+  }
+
+  #clearVoicesRetry(): void {
+    if (this.#voicesRetryTimer !== null) {
+      clearTimeout(this.#voicesRetryTimer)
+      this.#voicesRetryTimer = null
     }
   }
 
@@ -151,6 +223,30 @@ export class Settings {
     }
   }
 
+  // ─── דיבור ─── (redesign-3 / 9a)
+
+  setSpeakThoughts = (v: boolean): void => {
+    this.speakThoughts = v
+    this.#persist()
+  }
+
+  setNarrateTools = (v: boolean): void => {
+    this.narrateTools = v
+    this.#persist()
+  }
+
+  setTranslateThoughts = (v: boolean): void => {
+    this.translateThoughts = v
+    this.#persist()
+  }
+
+  // ─── רכב ─── (redesign-3)
+
+  setCarMode = (v: boolean): void => {
+    this.carMode = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -159,6 +255,10 @@ export class Settings {
       lastCwd: this.lastCwd,
       voiceId: this.voiceId,
       beUrl: this.beUrl,
+      speakThoughts: this.speakThoughts,
+      narrateTools: this.narrateTools,
+      translateThoughts: this.translateThoughts,
+      carMode: this.carMode,
     })
   }
 }

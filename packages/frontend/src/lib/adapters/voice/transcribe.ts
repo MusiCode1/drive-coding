@@ -16,10 +16,15 @@
  *   (a) הוסר `import { saveRecording } from "./recordings-client"`
  *   (b) קריאת saveRecording הוחלפה ב-Promise.resolve({ id: "" })
  *   (c) ייבוא של googleGenAi מתוך "./sdks" נשאר ללא שינוי (sdks.ts קיים החל מ-slice 2)
+ *   (d) slice sessions-inline: timeout 15s→30s, עטוף withRetry (3 נסיונות, backoff 800ms)
  */
 
+import { withTimeout } from "@drive-coding/core/async/with-timeout"
+import { withRetry } from "@drive-coding/core/async/with-retry"
 import { bytesToBase64 } from "./base64"
 import { googleGenAi } from "./sdks"
+
+const TRANSCRIBE_TIMEOUT_MS = 30000 // הוגדל מ-15s: תמלול ארוך + thinking model
 
 export async function transcribe(
   blob: Blob,
@@ -44,17 +49,27 @@ export async function transcribe(
   // ביקורת MED-5: המרה ל-base64 במקטעים
   const base64 = bytesToBase64(audioBytes)
 
-  const response = await googleGenAi().models.generateContent({
-    model: "gemini-flash-latest",
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: prompt }, { inlineData: { mimeType, data: base64 } }],
-      },
-    ],
-    // העברת abortSignal דרך ה-config אם נתמך על ידי גרסת ה-SDK הזו
-    config: opts.signal ? ({ abortSignal: opts.signal } as Record<string, unknown>) : undefined,
-  })
+  // withRetry עוטף withTimeout: כל נסיון מקבל timeout 30s משלו.
+  // signal מועבר לשתי השכבות: withRetry (לביטול בין נסיונות) + withTimeout (לביטול בתוך נסיון).
+  const response = await withRetry(
+    () =>
+      withTimeout(
+        (signal) =>
+          googleGenAi().models.generateContent({
+            model: "gemini-flash-latest",
+            contents: [
+              {
+                role: "user",
+                parts: [{ text: prompt }, { inlineData: { mimeType, data: base64 } }],
+              },
+            ],
+            config: { abortSignal: signal } as Record<string, unknown>, // best-effort: @google/genai לא מובטח שמכבד abort
+          }),
+        TRANSCRIBE_TIMEOUT_MS,
+        { signal: opts.signal, label: "transcribe" },
+      ),
+    { retries: 3, baseDelayMs: 800, maxDelayMs: 4000, signal: opts.signal, label: "transcribe" },
+  )
 
   const { id: recordingId } = await recordingPromise
   const text = response.text ?? ""

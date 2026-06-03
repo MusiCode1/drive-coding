@@ -1,6 +1,6 @@
 # Brief: slice — תשתית wake-word ב-FE + route בדיקה
 
-> סטטוס: brief מוכן ל-executor (אליעזר). complexity: 6/10.
+> סטטוס: **הושלם** (2026-06-02). complexity: 6/10. 9 commits, tip 65ed38c. calev GO 9/9.
 > verifier: calev light. depends_on: [].
 > base: **`poc-wake-word`** (לא dev) — כדי שה-POC reference, מסמך התכנון וה-brief
 > יהיו זמינים בתוך ה-worktree. קוד ה-FE/core ב-poc-wake-word זהה ל-dev (ההפרש =

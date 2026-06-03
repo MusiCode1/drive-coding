@@ -1,12 +1,13 @@
 /**
  * proxy-cache.ts — הפשטת מטמון עבור פרוקסי ה-HTTP השקוף.
  *
- * Slice 10 Phase 1.
+ * Slice 10 Phase 1. עודכן ב-Slice 24 (client-keyed proxy cache).
  *
  * שומר תגובות הניתנות לשמירה במטמון (Gemini generateContent + ElevenLabs TTS stream)
  * על הדיסק. כל רשומה מורכבת מ:
  *   - קובץ body:    {baseDir}/proxy/{key}
  *   - קובץ headers: {baseDir}/proxy/{key}.headers (קובץ JSON נלווה)
+ *   - קובץ meta:    {baseDir}/proxy/{key}.meta (קובץ JSON אופציונלי — metadata מהלקוח)
  */
 
 import { createDiskCache } from "../voice/cache.js"
@@ -16,6 +17,7 @@ import { createDiskCache } from "../voice/cache.js"
 export type CachedEntry = {
   body: Uint8Array
   headers: { contentType: string }
+  meta?: Record<string, unknown> // metadata שהלקוח שלח ב-x-cache-meta (Slice 24)
 }
 
 // ─── כללי מטמון ──────────────────────────────────────────────────────────────
@@ -39,7 +41,7 @@ export function isCacheableRequest(method: string, path: string, body: Uint8Arra
 }
 
 /**
- * מחשב מפתח מטמון דטרמיניסטי עבור בקשה.
+ * מחשב מפתח מטמון דטרמיניסטי עבור בקשה (fallback כשאין x-cache-key).
  * key = sha256(method + "|" + path + "|" + body_as_string).hex
  */
 export async function computeCacheKey(
@@ -53,6 +55,17 @@ export async function computeCacheKey(
   return Buffer.from(hashBuffer).toString("hex")
 }
 
+/**
+ * מחטא מפתח קאש שמגיע מהלקוח כדי למנוע path traversal.
+ * הגישה: sha256(clientKey) — מבטל traversal לגמרי ושומר אורך-קובץ אחיד.
+ * ה-key הקריא נשמר ב-meta לצורך מחיקה סלקטיבית עתידית.
+ */
+export async function sanitizeCacheKey(clientKey: string): Promise<string> {
+  const buf = new TextEncoder().encode(clientKey)
+  const hash = await crypto.subtle.digest("SHA-256", buf)
+  return Buffer.from(hash).toString("hex")
+}
+
 // ─── Factory למטמון פרוקסי ──────────────────────────────────────────────────────
 
 /**
@@ -60,10 +73,11 @@ export async function computeCacheKey(
  * baseDir: ספריית השורש (למשל "data/cache/proxy").
  */
 export function createProxyCache(baseDir: string) {
-  // שני מטמונים לוגיים החולקים את אותו namespace: גוף (body) + תגיות נלוות (headers).
+  // שני מטמונים לוגיים החולקים את אותו namespace: גוף (body) + תגיות נלוות (headers + meta).
   // אנו משתמשים במופע אחד של createDiskCache עם שני סוגי מפתחות:
   //   key         → body (Uint8Array)
   //   key.headers → מטה-נתוני headers מקודדים ב-JSON
+  //   key.meta    → metadata מהלקוח מקודד ב-JSON (אופציונלי)
   const store = createDiskCache<Uint8Array>({
     namespace: "proxy",
     baseDir,
@@ -88,12 +102,26 @@ export function createProxyCache(baseDir: string) {
         }
       }
 
-      return { body, headers }
+      // טעינת meta אם קיים
+      const metaRaw = await store.get(`${key}.meta`)
+      let meta: Record<string, unknown> | undefined
+      if (metaRaw) {
+        try {
+          meta = JSON.parse(new TextDecoder().decode(metaRaw)) as Record<string, unknown>
+        } catch {
+          // meta פגום — התעלם
+        }
+      }
+
+      return { body, headers, meta }
     },
 
     async set(key: string, entry: CachedEntry): Promise<void> {
       await store.set(key, entry.body)
       await store.set(`${key}.headers`, new TextEncoder().encode(JSON.stringify(entry.headers)))
+      if (entry.meta !== undefined) {
+        await store.set(`${key}.meta`, new TextEncoder().encode(JSON.stringify(entry.meta)))
+      }
     },
   }
 }

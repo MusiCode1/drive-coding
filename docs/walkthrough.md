@@ -1,54 +1,308 @@
-## 2026-06-01 13:25 — slice 24: client-keyed proxy cache + homeDir default cwd
+## 2026-06-02 — slice fix-idle-flaky הושלם — 10/10 ריצות נקיות
 
 ### מה בוצע?
 
-4 commits על branch `slice-24-client-keyed-proxy-cache` (worktree `.worktrees/slice-24-client-keyed-proxy-cache/`).
-בסיס: `115419d`.
+Slice `fix-idle-flaky` — ייצוב flaky test ב-bridge-manager.idle.test.ts. 2 commits.
 
-#### Commit 0.5 — sha256Key ל-core (TDD)
+| commit | hash | תוכן |
+|---|---|---|
+| C1 | b9929ef | getter getCreatedAt ב-bridge-manager.ts — TEMPORARY (fix-idle-flaky) |
+| C2 | 0eaf4bc | תיקון test 4+5: Date.now() → bm.getCreatedAt(id)! |
 
-- הוספת `sha256Key(input: string): Promise<string>` ל-`packages/core/src/voice/cache-key.ts`
-  לצד `cacheKeyFor` הקיים. מיוצא דרך `core/index.ts:6`.
-- מחיקת `packages/backend/src/voice/cache-keys.ts` — לא היה בשימוש.
-- 5 טסטים חדשים (TDD: אדום→ירוק).
+**שורש הבעיה**: tests 4+5 קראו `Date.now()` *אחרי* `await spawnBridge`, אבל `e.createdAt` נקבע *בתוך* ה-spawn. drift של ms אחד מספיק כדי שtest 4 ייכשל.
+**הפתרון**: getter קריאה-בלבד `getCreatedAt` מחזיר את createdAt האמיתי מה-store. tests 4+5 מודדים מאותה נקודת-אמת כמו `listIdle`.
 
-#### Commit 1 — BE: x-cache-key + x-cache-meta + sanitizeCacheKey (integration)
+`listIdle` (206-218) לא שונה. tests 2/3/6 לא שונו.
+DoD: 10/10 ריצות `pnpm test` — 452 passed, 0 failed.
+typecheck: 0, lint:i18n: נקי.
 
-- `proxy-cache.ts`: הרחבת `CachedEntry` עם `meta?: Record<string,unknown>`.
-  `set()` כותב `{key}.meta`; `get()` קורא אותו.
-- `proxy-cache.ts`: `sanitizeCacheKey(clientKey)` — sha256(clientKey) למניעת path traversal.
-  key קריא נשמר ב-`meta._clientKey` לצורך מחיקה עתידית.
-- `http-proxy.ts`: קריאת `x-cache-key` + `x-cache-meta`, מחיקתם לפני forward ל-upstream,
-  שימוש ב-clientKey כמפתח (אחרי sanitize) כשנשלח + cacheable.
-  fallback: `computeCacheKey` (התנהגות ישנה — לא נשברה).
-- calev phase-verifier: GO.
+## 2026-06-03 — slice fix-switch-session-warm הושלם — calev GO (phase: GO)
 
-#### Commit 2 — FE: 3 adapters שולחים headers (integration)
+### מה בוצע?
 
-- `adapters/voice/cache-headers.ts` (חדש): `narrateCacheHeaders`, `translateCacheHeaders`, `ttsCacheHeaders`.
-  מפתחות: `narrate:<toolCallId>`, `translate:<sha256(text|lang)>`, `tts:<voiceId>:<sha256(text|model)>`.
-  `messageId` metadata בלבד (ACP UNSTABLE, לא במפתח).
-- `sdks.ts`: `googleAi()` מקבל `headers?: Record<string,string>` (additive).
-- `narrate.ts` / `translate.ts` / `tts.ts`: שולחים headers לכל קריאה.
-- `speaker.svelte.ts`: מעביר `job.messageId` ל-`translate()` ו-`synthesizeStreaming()`.
-- 20 integration tests ב-`cache-headers.test.ts`.
+תיקון-המשך ל-slice-sessions-inline: החלפת סשן ב-warm reload (ללא WS חדש).
+calev phase על Commit 1: GO, 1 finding קדם-קיים (409 ב-notifySessionAttached — מכוסה ב-catch).
 
-#### Commit 3 — BE-provided default cwd (integration)
+| commit | hash | תוכן |
+|---|---|---|
+| C1 | fb7c2d7 | AgentSession.switchSession() warm reload + עדכון selectSession ב-panel |
 
-- `http-options.ts`: `GET /api/options` מחזיר `homeDir: os.homedir()`.
-- `adapters/options.ts` (חדש): `fetchServerOptions()` → `{ models, projects, homeDir }`.
-- `settings.svelte.ts`: `DEFAULTS.lastCwd = ""` (הוסרת קיבוע `/home/user` + TODO).
-- `+page.svelte`: `onMount` קורא `fetchServerOptions()`, מציב `cwd = homeDir`
-  רק אם localStorage ריק ולא הוקלד. אם fetch נכשל → שקט.
+branch: slice-sessions-inline (תוספת לאותו branch), base: 1a28601.
+דוח calev phase: reports/voice-acp/slice-fix-switch-session-warm-calev-phase.md
 
-#### בדיקות
+#### מה השתנה
 
-- typecheck + lint:i18n נקיים.
-- `pnpm test`: 504 עוברים (12 skipped) — מ-441 בבסיס (+63 חדשים בסך הכל).
-- calev phase-verifier אחרי Commit 1: GO.
-- calev light-verifier בסוף הסליס: ממתין.
+- `AgentSession.switchSession()` — מתודה חדשה: קורא `#client.loadSession()` (ACP) על WS/bridge הקיים, ללא createAgent/detach/WS חדש. fallback ל-loadSession הכבד אם #client===null. זורק אם status!=="connected". לא קורא #cleanup בשגיאה (החיבור נשאר חי).
+- `SessionOptionsPanel.selectSession()` — הסרת `session.detach()` + החלפת `session.loadSession()` ב-`session.switchSession()`.
 
----
+#### חריגות
+
+- typecheck: 2 שגיאות קדם-קיימות ב-narrate.test.ts (לא שלנו)
+- 409 ב-notifySessionAttached: pre-existing, best-effort catch מטפל
+
+## 2026-06-02 — slice sessions-inline-transcribe-resilience הושלם — calev GO (17/17)
+
+### מה בוצע?
+
+Slice `sessions-inline-transcribe-resilience` הושלם ב-5 commits. calev light: GO, 17/17 DoD, finding יחיד קדם-קיים (2 שגיאות TS ב-narrate.test.ts — לא שלנו).
+
+| commit | hash | תוכן |
+|---|---|---|
+| C0 | d7d6519 | with-retry helper ב-core (TDD, 6 טסטים) |
+| C1 | c18dc8e | transcribe timeout 30s + withRetry (3 נסיונות, backoff 800ms) |
+| C2 | f1029db | mic #lastBlob + retryTranscribe + canRetry + כפתור "נסה שוב" ב-MicLarge |
+| C3 | acee79d | AgentSession.listSessions() inline דרך #client + cache |
+| C4 | 164a191 | SessionOptionsPanel inline + מחיקת SessionsDialog + modals cleanup |
+
+branch: slice-sessions-inline, base: dev (9eb3ea2).
+דוח calev phase Commit 2: reports/voice-acp/slice-sessions-inline-commit2-calev.md
+דוח calev light slice: reports/voice-acp/slice-sessions-inline-transcribe-resilience-calev.md
+
+#### חריגות
+
+- typecheck: 2 שגיאות ב-narrate.test.ts קדם-קיימות מ-dev (לא שלנו)
+- הkicker flaky bridge-manager.idle test4 — ידוע מ-slice-26, לא קשור
+
+## 2026-06-02 — slice review-fixes-2 הושלם — calev GO (13/13)
+
+### מה בוצע?
+
+Slice `review-fixes-2` הושלם ב-3 commits. calev light: GO, 13/13 DoD, 0 findings.
+
+| commit | hash | תוכן |
+|---|---|---|
+| C1 | 914c6f9 | agents-api timeout (createAgent/deleteAgent/notifySessionAttached) |
+| C2 | 47c0a0b | voices + tts timeout (listVoices + synthesizeStreaming connect-only) |
+| C3 | 6ec497e | narrate → withTimeout (הסרת AbortController ידני) |
+
+branch: slice-review-fixes-2, base: slice-review-fixes-1 (2a551d4).
+דוח calev: reports/voice-acp/slice-review-fixes-2-calev.md
+
+## 2026-06-02 — slice review-fixes-2 Commit 3: narrate → withTimeout (TDD)
+
+### מה בוצע?
+
+Commit 3 של `slice-review-fixes-2`.
+
+#### C3 — יישור narrate.ts ל-withTimeout
+- `narrate.ts`: הסר AbortController+setTimeout ידני (שורות 32-51). עטוף generateText ב-withTimeout(3000ms, "narrate"). try/catch סביב withTimeout → null בשגיאה/timeout. התנהגות שמורה לחלוטין.
+- `narrate.test.ts` (חדש): 5 טסטים — happy path / timeout→null / error→null / empty→null / signal. withTimeout mocked.
+- typecheck: 0, tests: 495, lint:i18n: נקי.
+
+## 2026-06-02 — slice review-fixes-2 Commit 2: voices + tts timeout (TDD)
+
+### מה בוצע?
+
+Commit 2 של `slice-review-fixes-2`.
+
+#### C2 — withTimeout ב-voices.ts + tts.ts
+- `voices.ts`: קבוע `VOICES_TIMEOUT_MS = 8000`. listVoices עוטף fetch ב-withTimeout. signal חיצוני מועבר.
+- `tts.ts`: קבוע `TTS_CONNECT_TIMEOUT_MS = 10000`. synthesizeStreaming עוטף **רק** את ה-fetch (connect). `return response.body` נשאר **מחוץ** ל-withTimeout — הזרמה לא נקטעת.
+- הנקודה הקריטית: withTimeout resolve ברגע שה-headers מגיעים, טיימר נוקה. ה-stream נצרך אחרי ה-withTimeout — אין race.
+- `voices.test.ts` (חדש): 5 טסטים — happy/empty/signal/timeout/http-error.
+- `tts.test.ts` (חדש): 6 טסטים — happy/streaming-safety/signal/timeout/http-error/no-body.
+- typecheck: 0, tests: 490, lint:i18n: נקי.
+
+## 2026-06-02 — slice review-fixes-2 Commit 1: agents-api timeout (TDD)
+
+### מה בוצע?
+
+Commit 1 של `slice-review-fixes-2`.
+
+#### C1 — withTimeout ב-agents-api.ts
+- `agents-api.ts`: ייבוא withTimeout מ-core. קבוע `AGENTS_API_TIMEOUT_MS = 10000`.
+- `createAgent`: הוסף param `signal?: AbortSignal` (additive). עוטף fetch ב-withTimeout.
+- `deleteAgent`: עוטף fetch ב-withTimeout(10000, "deleteAgent").
+- `notifySessionAttached`: עוטף fetch ב-withTimeout(10000, "notifySessionAttached"). fire-and-forget, אין external signal.
+- `getAgent`: לא שונה. נוספה הערת TODO(review-fixes-2) מעל הפונקציה.
+- `agents-api.test.ts` (חדש): 8 טסטים — createAgent happy/signal/timeout/http-error, deleteAgent happy/timeout, notifySessionAttached happy/timeout. withTimeout mocked.
+- typecheck: 0, tests: 462, lint:i18n: נקי.
+
+## 2026-06-02 — slice review-fixes-1 הושלם — calev GO (14/14)
+
+### מה בוצע?
+
+Slice `review-fixes-1` הושלם ב-4 commits. calev light: GO, 14/14 DoD, 0 findings.
+
+| commit | hash | תוכן |
+|---|---|---|
+| C0 | ecc6152 | withTimeout helper + 6 tests (core) |
+| C1 | 568bb6a | F3: transcribe timeout |
+| C2 | 67694fb | F1: showSaved timer |
+| C3 | 2a551d4 | translate → withTimeout |
+
+branch: slice-review-fixes-1, base: bd691ea.
+דוח calev: dev/reports/voice-acp/slice-review-fixes-1-calev.md
+
+## 2026-06-02 — slice review-fixes-1 Commit 3: translate → withTimeout (TDD)
+
+### מה בוצע?
+
+Commit 3 של `slice-review-fixes-1`.
+
+#### C3 — יישור translate ל-withTimeout
+- `translate.ts`: הסר AbortController+setTimeout ידני (שורות 75-105). עטוף generateObject ב-withTimeout(2500ms,'translate'). try/catch סביב withTimeout → null בשגיאה/timeout. התנהגות שמורה.
+- `translate.test.ts` (חדש): 5 טסטים — happy path / timeout→null / error→null / already_in_target / empty→null. withTimeout mocked.
+- typecheck: 0, tests: 471, lint:i18n: נקי.
+
+## 2026-06-02 — slice review-fixes-1 Commit 2: F1 settings "נשמר" נעלם (manual)
+
+### מה בוצע?
+
+Commit 2 של `slice-review-fixes-1`.
+
+#### C2 — F1: showSaved timer
+- `routes/settings/+page.svelte:23`: החלף `$derived(savedAt!==undefined && Date.now()-savedAt<3000)` ב-`$derived(savedAt!==undefined)` + `$effect` עם setTimeout(3000) שמאפס savedAt + clearTimeout ב-return.
+- `$derived` עם Date.now() לא reactive → לא מתחשב מחדש. `$effect` מגיב ל-savedAt.
+- typecheck: 0, build FE: ✓, lint:i18n: נקי.
+
+## 2026-06-02 — slice review-fixes-1 Commit 1: F3 transcribe timeout (TDD)
+
+### מה בוצע?
+
+Commit 1 של `slice-review-fixes-1`.
+
+#### C1 — F3: transcribe דרך withTimeout
+- `packages/frontend/src/lib/adapters/voice/transcribe.ts`: הוסף import withTimeout, TRANSCRIBE_TIMEOUT_MS=15000. עטף generateContent ב-withTimeout. הסיר AbortController ידני.
+- `packages/frontend/src/lib/adapters/voice/transcribe.test.ts` (חדש): 2 טסטים — happy path + timeout→throw. withTimeout מmocked (jsdom fake timers יוצרים PromiseRejectionHandledWarning ב-vitest@4.1.6; לוגיקת timeout מכוסה ב-core tests).
+- `packages/core/src/async/with-timeout.ts`: הפריד בין timeout Promise constructor ל-timer הפעלה — timeoutReject נשמר וה-timer נורה אחרי void timeout.catch(()=>{}).
+- typecheck: 0, tests: 466, lint:i18n: נקי.
+
+## 2026-06-02 — slice review-fixes-1 Commit 0: withTimeout helper
+
+### מה בוצע?
+
+Commit 0 של `slice-review-fixes-1` (worktree `.worktrees/slice-review-fixes-1/`).
+
+#### C0 — withTimeout helper ב-core (TDD)
+- קובץ חדש: `packages/core/src/async/with-timeout.ts` — helper שעוטף פעולה אסינכרונית ב-timeout. תומך ב-SDK שמכבד AbortSignal וגם ב-SDK שמתעלם ממנו (Promise.race).
+- קובץ חדש: `packages/core/tests/async/with-timeout.test.ts` — 6 טסטים: happy path, timeout/race, abort propagation, external signal, timer cleanup, no-unhandled-rejection.
+- `packages/core/package.json`: הוסף export `"./async/*": "./src/async/*.ts"`.
+- TDD: טסטים אדומים קודם, אז implementation ירוק.
+- 6/6 טסטים ירוקים, typecheck נקי, lint:i18n נקי.
+
+## 2026-06-02 — slice-wake-word-infra: תשתית wake-word ב-FE + route בדיקה
+
+### סיכום ביצוע
+
+8 commits על `slice-wake-word-infra` (base: `poc-wake-word`, tip: `58729ed`).
+typecheck 0, build נקי, 494 tests pass (50 test files), lint:i18n נקי.
+DoD #5 עמד: "/wake-word-test" נטען, status="ready — tap the orb to listen".
+
+**סטייה מה-brief:** onnxruntime-web wasm paths — ה-brief ציין שאם Vite wasm נשבר אחרי 2 גישות לדווח, אבל גישה 3 (CDN) הצליחה. זה אותה גישה שה-POC השתמש בה.
+
+## 2026-06-02 — redesign vNext שרשרת הושלמה (slices 3-7)
+
+### מה בוצע?
+
+Commits על branch `slice-wake-word-infra` (base: `poc-wake-word`).
+
+#### Commit 1 — core: lerp (TDD)
+
+- הוספת `lerp(current, target, factor)` ל-`packages/core/src/ui/math.ts`. טהור, ללא תלויות.
+- export additive ב-`packages/core/src/index.ts`.
+- 5 טסטים (TDD: אדום→ירוק): midpoint, same value, factor=0, factor=1, fractional.
+- typecheck: נקי. core tests: 403 pass.
+
+#### Commit 7b — onnxruntime-web wasm: CDN כפתרון
+
+**בעיה:** onnxruntime-web 1.22.x לא מוצא wasm files מ-node_modules ב-Vite dev.
+**פתרון:** `ort.env.wasm.wasmPaths = CDN` (זהה לגישת ה-POC).
+גישות שנוסו (2):
+1. ברירת מחדל — engine לא מוצא wasm.
+2. `static/ort-wasm/` + local wasmPaths — jsep.mjs MIME type שגוי (נכשל).
+3. CDN (cdnjs.cloudflare.com/onnxruntime-web/1.22.0/) — **עובד** ✅ ("ready" מוצג).
+- `wake-word-engine.ts`: הוספת `ort.env.wasm.wasmPaths = CDN_URL`.
+- typecheck: נקי. DoD #5 עמד — "/wake-word-test" נטען, status="ready — tap the orb to listen".
+
+#### Commit 7b — onnxruntime-web wasm paths (WIP, לא פתור)
+
+**בעיה פתוחה:** onnxruntime-web 1.22.x לא מוצא את קבצי ה-wasm בסביבת Vite/SvelteKit.
+שתי גישות נוסו ונכשלו (DoD #5 לא עמד):
+1. ברירת מחדל — engine לא מוצא wasm.
+2. `ort.env.wasm.wasmPaths = "/ort-wasm/"` + העתקת wasm files ל-static/ — נכשל עם jsep.mjs Dynamic import + MIME type שגוי.
+ממתין להחלטת מרדכי (CDN? Vite plugin? downgrade?)
+
+- `wake-word-engine.ts`: הוספת `ort.env.wasm.wasmPaths = "/ort-wasm/"` (לא עוזר עדיין).
+- `static/ort-wasm/`: onnxruntime-web wasm+mjs files (4 קבצים).
+
+#### Commit 7 — route + assets (manual)
+
+- `routes/wake-word-test/+page.svelte`: route בדיקה standalone. יוצר WakeWordVM ישירות (חריג מחוק זהב #1 — מתועד בהערה). מרנדר VoiceOrb + status + clips.
+- `static/wake-word/models/`: העתקת 7 קבצי .onnx מ-poc-wake-word worktree (mel/embed/vad + 4 keywords; לא timer/weather).
+- מקור ה-models: poc/wake-word/assets/models/ ב-worktree poc-wake-word (לא poc/wake-word-orb/assets כפי שנכתב בbrief — הנתיב בפועל שונה).
+- build: נקי (wake-word-test נכלל). typecheck: נקי. lint:i18n: נקי. 50 test files, 494 tests.
+
+#### Commit 6 — component: VoiceOrb.svelte (manual)
+
+- `components/VoiceOrb.svelte`: נורית קולית. props: vm. lerp ב-rAF loop (החלקה ויזואלית). צבע לפי vm.mode (grey/blue/red). flash ב-$effect על vm.flashCount. role=button + click/keydown → vm.toggle(). שתי timings CSS נפרדות (background-color 300ms, size/filter 80ms).
+- typecheck: נקי. 50 test files, 494 tests pass.
+
+#### Commit 5 — view-model: WakeWordVM (integration tests)
+
+- `view-models/wake-word.svelte.ts`: WakeWordVM — mode/level/flashCount/$state, toggle(), $effect (mode→engine.start/stop), detect→capture start/stop, cue tones (OscillatorNode).
+- `view-models/wake-word.test.svelte.ts`: 9 integration tests (mock engine): mode transitions, flashCount, detect #1/#2, level, error.
+- חריגה מחוק זהב #1 (VM לא ב-+layout): מתועד בהערה — route בדיקה standalone.
+- typecheck: נקי. 50 test files, 494 tests pass.
+
+#### Commit 4 — engine: WakeWordEngine + WakeWordCapture (IO + unit)
+
+- `engines/wake-word/wake-word-engine.ts`: WakeWordEngine (מקביל ל-WakeWordDetector ב-POC). load/start/stop, queue serialization, VAD+pipeline+level events. `ort.env.wasm.numThreads = 1` (single-thread).
+- `engines/wake-word/capture.ts`: WakeWordCapture (מקביל ל-createCapture). push/start/stop(trimFrames)/abort. מחזיר {wavBytes, frames} | null.
+- types.ts: הוספת DETECT_THRESHOLD/VAD_THRESHOLD exports (נדרשו ב-engine).
+- 9 unit tests ל-WakeWordCapture (buffer/trim/abort/wavBytes). IO של WakeWordEngine (getUserMedia) → manual ב-route.
+- typecheck: נקי. 49 test files, 485 tests pass.
+
+#### Commit 3 — engine: types.ts + vad.ts + pipeline.ts (TDD, mock ort)
+
+- `engines/wake-word/types.ts`: WakeWordConfig (ArkType), MODEL_FILE_MAP (4 keywords בלי timer/weather), DetectEvent/VadEndEvent/WakeWordEventMap.
+- `engines/wake-word/vad.ts`: createVadState + runVadStep (Silero VAD state, mutations in-place).
+- `engines/wake-word/pipeline.ts`: inferWindowSize (מסיק shape[1] ← inputMetadata) + createScorePipeline (mel-buffer=76, hop=8, embedding-history=max-window).
+- package.json: הוספת `onnxruntime-web ^1.22.0` + `arktype ^2.0.0` לdependencies (נדרש לtype imports בCommit 3).
+- 17 טסטים (TDD: RED→GREEN): inferWindowSize/fallbacks, pipeline null-until-76, scores-after-76, window-slicing, reset(), createVadState, runVadStep/mutates-state.
+- typecheck: נקי. כל 48 test files עוברים (476 tests).
+
+#### Commit 2 — engine: audio-math.ts + wav.ts (TDD)
+
+- `packages/frontend/src/lib/engines/wake-word/audio-math.ts`: `computeRms`, `transformMel` (inline POC→פונקציה טהורה), קבועים SAMPLE_RATE/FRAME_SIZE/VAD_THRESHOLD/DETECT_THRESHOLD.
+- `packages/frontend/src/lib/engines/wake-word/wav.ts`: `encodeWav(frames, sampleRate?) → Uint8Array | null`. ממיר Float32 PCM16 עם WAV header 44B.
+- 16 טסטים (TDD: אדום→ירוק): computeRms (sin/const), transformMel (in-place), encodeWav (RIFF/WAVE/data headers, null על ריק, PCM size, sample rate, clamping).
+- חריגה: `noUncheckedIndexedAccess` → שימוש ב-`?? 0` ו-DataView בטסטים.
+- typecheck: נקי (0 errors). כל 46 test files עוברים.
+
+## 2026-06-01 — slice 26: idle-bridge reaper BE (TEMPORARY — רשת ביטחון לדליפות)
+
+### מה בוצע?
+
+הוספת reaper תקופתי בצד שרת שמנקה bridges שדלפו בגלל reload/סגירת טאב — המקרים שslice 25 (FE cleanup) לא מכסה. **זמני** — יימחק עם "future A" (ניהול agents-ברקע).
+
+#### bridge-manager.ts (TDD — 6/6 טסטים)
+
+- הרחבת `Entry` בשלושה שדות (TEMPORARY): `hasActiveWs`, `lastDetachedAt`, `createdAt`
+- הוספת 3 מתודות: `markAttached` / `markDetached` / `listIdle(timeoutMs, now)`
+- לוגיקת `listIdle`: active WS לעולם לא נאסף; detached >= timeout נאסף; never-had-WS grace period = timeout×2
+- קובץ בדיקות: `bridge-manager.idle.test.ts` (6 תרחישים, injected `now`)
+
+#### ws-agent.ts
+
+- הרחבת deps type: `markAttached` + `markDetached` (TEMPORARY)
+- קריאת `markAttached(agentId)` אחרי WS connect
+- קריאת `markDetached(agentId)` לפני rl.close() ב-WS close
+
+#### server.ts
+
+- interval reaper: `BRIDGE_IDLE_TIMEOUT_MS` env (default 300,000ms), scan interval = min(timeout, 60s)
+- קורא `orchestrator.deleteAndKill` (לא bridgeManager.kill ישירות — כדי לנקות registry)
+- `reaper.unref()` — לא מחזיק event loop
+
+#### בדיקות calev
+
+- Phase verifier (Commit 2): GO — שני תרחישים הפוכים אומתו בpord 4004
+
+#### חריגות
+
+- בdist/tests: כשלון בtest #4 בריצה מ-dist בגלל mock env; תוקן בטסט src/ ע"י OPENCODE_BIN=/usr/bin/sleep
+- pre-existing failures: ws-agent-pipe (EventEmitter), bridge-failure-modes (vi.mocked), disk-cache (Promise.all) — לא שייכים לslice זה
 
 ## 2026-06-01 — refactor: מקור-אמת אחד ל-CLIs (שמות + פקודות)
 

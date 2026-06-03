@@ -1,85 +1,62 @@
 <script lang="ts">
 /**
- * ThoughtBubble — מציג את תהליך החשיבה הפנימי של הסוכן.
+ * ThoughtBubble — מחשבת הסוכן כ**טקסט רץ** (C1 FIX).
  *
- * Slice 4: כל מקטע (segment) יכול היה להיות מתורגם על ידי ה-Speaker.
- *   seg.text        = עברית (מתורגם, מובלט)
- *   seg.originalText = אנגלית (מקור, מוצג בקטן/מעומעם למטה)
+ * הבאג: div-per-segment + margin-bottom=0.4em → כל chunk = שורה.
+ * התיקון: rendering-only —
+ *   - אם **אין** תרגום (originalText=undefined בכולם): joinSegmentText → טקסט רץ אחד.
+ *   - אם **יש** תרגום: visibleThoughtSegments → מתורגם, per-segment (segment=משפט, תקין).
  *
- * כאשר originalText הוא undefined (התרגום טרם הגיע או שהמחשבה הייתה
- * כבר בעברית), מציג את seg.text כפי שהוא — התדרדרות עדינה (graceful fallback).
+ * data-model ב-segments לא שונה — Speaker ממשיך לצרוך כרגיל.
+ *
+ * עיצוב: מוקאפ 264-278. avatar thought. border-dashed, italic, fg-dim.
+ *
+ * ─── redesign-5 (C1 fix) ───
  */
 import type { ThoughtBubble } from "$lib/types/bubble"
 import { getI18n } from "$lib/context"
-import { visibleThoughtSegments } from "./bubble-rendering"
+import { joinSegmentText, visibleThoughtSegments } from "./bubble-rendering"
+import Avatar from "$lib/components/chat/Avatar.svelte"
 
 let { bubble }: { bubble: ThoughtBubble } = $props()
 const t = getI18n().t
+
+// visibleThoughtSegments: אם יש תרגום → מחזיר segments מתורגמים; אחרת → הכל
 const displaySegments = $derived(visibleThoughtSegments(bubble.segments))
+// האם כל ה-segments הם מקור (לא מתורגמים)?
+const isAllOriginal = $derived(displaySegments.every((seg) => seg.originalText === undefined))
+// join לטקסט רץ אחד כשהמקור (לא מתורגם)
+const runningText = $derived(isAllOriginal ? joinSegmentText(displaySegments) : null)
 </script>
 
-<div class="bubble bubble-thought">
-  <div class="kind-label">{t("chat.bubble.thought")}</div>
-  {#each displaySegments as seg (seg.id)}
-    <div class="segment">
-      <div class="translated" dir="auto">{seg.text}</div>
-      {#if seg.originalText !== undefined}
-        <div class="original" dir="ltr">{seg.originalText}</div>
-      {/if}
+<div class="flex gap-2 self-end max-w-[85%] min-w-0 items-end flex-row-reverse">
+  <Avatar kind="thought" />
+  <div
+    class="px-3.5 py-2.5 rounded-xl text-[13px] leading-relaxed italic border border-dashed min-w-0 break-words"
+    style="border-color:var(--border-str); color:var(--fg-dim)"
+  >
+    <div class="text-[11px] font-semibold not-italic opacity-70 mb-1">
+      {t("chat.bubble.thought")}
     </div>
-  {/each}
-  <!-- כופה ריאקטיביות של Svelte בעת .segments.push() או כשה-originalText מגיע -->
-  <span class="hidden">{bubble.segments.length}</span>
+
+    {#if runningText !== null}
+      <!-- C1 FIX: טקסט רץ (לא מתורגם) — ללא div-per-segment -->
+      <div dir="auto" class="whitespace-pre-wrap break-words">{runningText}</div>
+    {:else}
+      <!-- מתורגם: per-segment תקין (segment = יחידת-תרגום = משפט) -->
+      {#each displaySegments as seg (seg.id)}
+        <div class="mb-1 last:mb-0">
+          <div dir="auto" class="whitespace-pre-wrap break-words">{seg.text}</div>
+          {#if seg.originalText !== undefined}
+            <div dir="ltr" class="text-[0.82em] opacity-55 mt-0.5 not-italic whitespace-pre-wrap break-words">
+              {seg.originalText}
+            </div>
+          {/if}
+        </div>
+      {/each}
+    {/if}
+
+    <!-- כופה ריאקטיביות של Svelte בעת .segments.push() או כשה-originalText מגיע -->
+    <span class="hidden">{bubble.segments.length}</span>
+  </div>
 </div>
-
-<style>
-  .bubble {
-    max-width: 80%;
-    padding: 0.7rem 0.9rem;
-    border-radius: 12px;
-    line-height: 1.4;
-  }
-
-  .bubble-thought {
-    /* יישור RTL: הערך flex-end = צד שמאל (המחשבה היא מהסוכן, אותו צד) */
-    align-self: flex-end;
-    background: transparent;
-    border: 1px dashed var(--border);
-    color: var(--fg-dim);
-    font-style: italic;
-    opacity: 0.85;
-  }
-
-  .kind-label {
-    font-size: 0.7rem;
-    opacity: 0.7;
-    margin-bottom: 4px;
-    font-weight: 600;
-  }
-
-  .segment {
-    margin-bottom: 0.4em;
-  }
-
-  .segment:last-child {
-    margin-bottom: 0;
-  }
-
-  .translated {
-    white-space: pre-wrap;
-    word-wrap: break-word;
-  }
-
-  .original {
-    font-size: 0.82em;
-    opacity: 0.55;
-    margin-top: 2px;
-    font-style: normal;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-  }
-
-  .hidden {
-    display: none;
-  }
-</style>

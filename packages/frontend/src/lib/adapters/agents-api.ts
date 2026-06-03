@@ -6,7 +6,10 @@
  */
 
 import type { CliKind } from "@drive-coding/core"
+import { withTimeout } from "@drive-coding/core/async/with-timeout"
 import { beUrl } from "$lib/util/be-url"
+
+const AGENTS_API_TIMEOUT_MS = 10000 // קריאות API קצרות; BE מקומי בדר"כ < 1s
 
 export type CreateAgentInput = {
   cwd: string
@@ -21,12 +24,21 @@ export type CreateAgentResponse = {
   status: string
 }
 
-export async function createAgent(input: CreateAgentInput): Promise<CreateAgentResponse> {
-  const res = await fetch(beUrl("/api/agents"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  })
+export async function createAgent(
+  input: CreateAgentInput,
+  signal?: AbortSignal,
+): Promise<CreateAgentResponse> {
+  const res = await withTimeout(
+    (s) =>
+      fetch(beUrl("/api/agents"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+        signal: s,
+      }),
+    AGENTS_API_TIMEOUT_MS,
+    { signal, label: "createAgent" },
+  )
   if (!res.ok) {
     const body = await res.text().catch(() => "")
     throw new Error(`createAgent failed: ${res.status} ${body}`)
@@ -34,6 +46,8 @@ export async function createAgent(input: CreateAgentInput): Promise<CreateAgentR
   return (await res.json()) as CreateAgentResponse
 }
 
+// TODO(review-fixes-2): getAgent — אין צרכן בקוד כרגע (grep ב-2026-06-02). לבדוק אם
+// מישהו משתמש בזה לפני שמשקיעים בו timeout/error-handling (F4). אם dead — למחוק בסבב נפרד.
 export async function getAgent(
   agentId: string,
 ): Promise<{ agent: { cwd: string; status: string } }> {
@@ -45,15 +59,26 @@ export async function getAgent(
 }
 
 export async function notifySessionAttached(agentId: string, sessionId: string): Promise<void> {
-  await fetch(beUrl(`/api/agents/${agentId}/session-attached`), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId }),
-  })
+  await withTimeout(
+    (s) =>
+      fetch(beUrl(`/api/agents/${agentId}/session-attached`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+        signal: s,
+      }),
+    AGENTS_API_TIMEOUT_MS,
+    { label: "notifySessionAttached" },
+  )
 }
 
 export async function deleteAgent(agentId: string): Promise<void> {
-  const res = await fetch(beUrl(`/api/agents/${agentId}`), { method: "DELETE" })
+  const res = await withTimeout(
+    (s) =>
+      fetch(beUrl(`/api/agents/${agentId}`), { method: "DELETE", signal: s }),
+    AGENTS_API_TIMEOUT_MS,
+    { label: "deleteAgent" },
+  )
   if (!res.ok) {
     const body = await res.text().catch(() => "")
     throw new Error(`deleteAgent failed: ${res.status} ${body}`)

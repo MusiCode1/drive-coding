@@ -1,63 +1,228 @@
-/* Minimal dark theme — placeholder until proper design system */
-:root {
-  --bg: #0f1115;
-  --bg-elev: #181b22;
-  --fg: #e8e8ea;
-  --fg-dim: #a0a4ac;
-  --muted: #6a6f7a;
-  --border: #2a2f3a;
-  --accent: #4f8cff;
-  --accent-hi: #6fa3ff;
-  --recording: #ff4f4f;
-  --speaking: #4fff8a;
+@import "tailwindcss";
+
+/* ──────────────────────────────────────────────────────────────────
+   Design tokens — 4 palettes. נבחרים דרך [data-palette] על <html>.
+   מקור: redesign-vnext-mockup.html שורות 13–192
+   ────────────────────────────────────────────────────────────────── */
+@layer base {
+  :root {
+    color-scheme: dark;
+    --radius: 14px;
+    --font: "Heebo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+    /* alias -- מחרוזת --muted בשימוש ב-3 מקומות (ChatInput, ChatBubbles, +page.svelte)
+       --fg-muted מוגדר תחת כל [data-palette]; נפתר בזמן-שימוש = תקין. */
+    --muted: var(--fg-muted);
+  }
+
+  /* ── 1. EMBER — חם, אנושי, נחושת/טרקוטה ───────────────────────── */
+  [data-palette="ember"] {
+    --bg:          #16130f;
+    --bg-elev:     #211c16;
+    --bg-card:     #2a231b;
+    --fg:          #f0e9e1;
+    --fg-dim:      #b3a596;
+    --fg-muted:    #7d7064;
+    --border:      rgba(255,240,225,0.08);
+    --border-str:  rgba(255,240,225,0.16);
+    --accent:      #e8845c;
+    --accent-hi:   #f29b78;
+    --accent-soft: rgba(232,132,92,0.15);
+    --bubble-user: #2f2419;
+    --bubble-agent:#241d2a;
+    --recording:   #ff5a5a;
+    --thinking:    #c98bff;
+    --speaking:    #f0b65c;
+  }
+
+  /* ── 2. FOREST — רגוע, טבעי, sage ──────────────────────────────── */
+  [data-palette="forest"] {
+    --bg:          #0f1410;
+    --bg-elev:     #18201a;
+    --bg-card:     #1f2a21;
+    --fg:          #e6ede7;
+    --fg-dim:      #9fb0a3;
+    --fg-muted:    #6c7d70;
+    --border:      rgba(220,255,230,0.08);
+    --border-str:  rgba(220,255,230,0.16);
+    --accent:      #7fb685;
+    --accent-hi:   #9bcfa0;
+    --accent-soft: rgba(127,182,133,0.15);
+    --bubble-user: #1d2a20;
+    --bubble-agent:#19241e;
+    --recording:   #ef6b6b;
+    --thinking:    #d9b36b;
+    --speaking:    #a8d5a2;
+  }
+
+  /* ── 3. PLUM — ייחודי, יוקרתי, לבנדר/סגול ──────────────────────── */
+  [data-palette="plum"] {
+    --bg:          #141019;
+    --bg-elev:     #1d1726;
+    --bg-card:     #261d31;
+    --fg:          #ece6f2;
+    --fg-dim:      #a99fb6;
+    --fg-muted:    #756b82;
+    --border:      rgba(235,225,255,0.08);
+    --border-str:  rgba(235,225,255,0.16);
+    --accent:      #b794f6;
+    --accent-hi:   #c9aefc;
+    --accent-soft: rgba(183,148,246,0.16);
+    --bubble-user: #2a2138;
+    --bubble-agent:#211b2e;
+    --recording:   #ff5d8f;
+    --thinking:    #a78bfa;
+    --speaking:    #7fe0c8;
+  }
+
+  /* ── 4. TEAL — מודרני-טק, טורקיז ───────────────────────────────── */
+  [data-palette="teal"] {
+    --bg:          #0e1416;
+    --bg-elev:     #16201f;
+    --bg-card:     #1c2a29;
+    --fg:          #e3edeb;
+    --fg-dim:      #97aeac;
+    --fg-muted:    #647d7a;
+    --border:      rgba(220,255,250,0.08);
+    --border-str:  rgba(220,255,250,0.16);
+    --accent:      #2dd4bf;
+    --accent-hi:   #5eead4;
+    --accent-soft: rgba(45,212,191,0.15);
+    --bubble-user: #173330;
+    --bubble-agent:#152624;
+    --recording:   #ff5a5a;
+    --thinking:    #c98bff;
+    --speaking:    #5eead4;
+  }
 }
 
-* {
-  box-sizing: border-box;
+@theme {
+  --color-bg: var(--bg);
+  --color-bg-elev: var(--bg-elev);
+  --color-bg-card: var(--bg-card);
+  --color-fg: var(--fg);
+  --color-fg-dim: var(--fg-dim);
+  --color-fg-muted: var(--fg-muted);
+  --color-accent: var(--accent);
+  --color-accent-hi: var(--accent-hi);
+  --color-recording: var(--recording);
+  --color-thinking: var(--thinking);
+  --color-speaking: var(--speaking);
 }
 
-html,
-body {
-  margin: 0;
-  padding: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  height: 100%;
+@layer base {
+  html, body { height: 100dvh; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* global form element resets (מ-app.css הישן — parallel-safe) */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  button, input, select, textarea { font-family: inherit; font-size: 1rem; }
+  button { cursor: pointer; }
+
+  /* select styling (global — נדרש ל-SessionPicker, VoicePicker) */
+  select {
+    padding: 0.7rem 0.8rem;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.2);
+  }
+  select option { background: var(--bg-elev); color: var(--fg); }
+
+  .chat-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color .3s;
+  }
+  .chat-scroll:hover { scrollbar-color: var(--border-str) transparent; }
+  .chat-scroll::-webkit-scrollbar { width: 10px; }
+  .chat-scroll::-webkit-scrollbar-track { background: transparent; }
+  .chat-scroll::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+    transition: background .3s;
+  }
+  .chat-scroll:hover::-webkit-scrollbar-thumb { background: var(--border-str); background-clip: padding-box; }
+  .chat-scroll::-webkit-scrollbar-thumb:hover { background: var(--fg-muted); background-clip: padding-box; }
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--border-str); border-radius: 4px; }
+
+  @keyframes pulse-rec {
+    0%,100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+    50%     { box-shadow: 0 0 0 16px transparent; }
+  }
+  @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.35} }
+  @keyframes spin { to { transform: rotate(360deg); } }
 }
 
-button,
-input,
-select,
-textarea {
-  font-family: inherit;
-  font-size: 1rem;
-}
+@layer components {
+  .toggle {
+    width: 44px; height: 26px; border-radius: 13px; flex-shrink: 0;
+    background: var(--border-str); position: relative; transition: background .2s;
+  }
+  .toggle::after {
+    content: ""; position: absolute; top: 3px; right: 3px;
+    width: 20px; height: 20px; border-radius: 50%; background: var(--fg);
+    transition: right .2s;
+  }
+  .toggle.on { background: var(--accent); }
+  .toggle.on::after { right: calc(100% - 23px); }
+  .mic-rec { background: var(--recording) !important; animation: pulse-rec 1.2s infinite; }
+  .mic-speak { background: var(--speaking) !important; color: #111 !important; }
 
-button {
-  cursor: pointer;
-}
+  /* sheet: ברירת מחדל שקוף (רק ידית). פתוח — רקע+מסגרת+צל מופיעים. */
+  .app-sheet { background: transparent; border-top: 1px solid transparent; box-shadow: none; }
+  .app-sheet.sheet-open {
+    background: var(--bg-elev);
+    border-top-color: var(--border);
+    box-shadow: 0 -8px 24px rgba(0,0,0,.35);
+  }
+  .app-sheet .sheet-body { opacity: 0; transition: opacity .25s; pointer-events: none; }
+  .app-sheet.sheet-open .sheet-body { opacity: 1; pointer-events: auto; }
+  #sheet-grip:active { cursor: grabbing; }
 
-/* Global dark-theme select. Component-scoped CSS in +page.svelte only
-   reaches selects authored there (CLI dropdown); selects rendered inside
-   child components (SessionPicker, VoicePicker) fall back to native white
-   unless styled globally here. */
-select {
-  padding: 0.7rem 0.8rem;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--fg);
-  cursor: pointer;
-}
+  .mic-card {
+    border-start-start-radius: 28px; border-start-end-radius: 28px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-bottom: none;
+    box-shadow: 0 -10px 30px rgba(0,0,0,.28);
+    /* padding-block-end מתאנמט עם המעבר ל/מ-מצב hidden (ר' RecordFooter).
+       הקטנה (→record/typing) מיד; הגדלה (→hidden) עם delay (ר' .is-hidden). */
+    transition: background .3s, box-shadow .3s, border-color .3s,
+                padding-block-end .3s ease 0s;
+  }
 
-select:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.2);
-}
+  /* מובייל: ה-mic שטוח — בלי כרטיס. ה-fade הוא #chat-fade של אזור הגלילה
+     (ההודעות נמוגות לתוך המיקרופון). מוקאפ: .mic-plain. */
+  .mic-plain .mic-card {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+    max-width: 100%;
+  }
 
-select option {
-  background: var(--bg-elev);
-  color: var(--fg);
+  /* מצב hidden (מובייל): pb גדול כדי שה-toggle ירחף מעל ידית ה-BottomSheet (28px).
+     ה-delay 0.3s רק בהגדלה (→hidden) — אחרי שה-pane דהה וה-rows התכווץ; כך ה-footer
+     לא "מתרומם" לפני שמתכווץ. ההקטנה (→record) נשארת מיידית (מה-.mic-card הבסיסי). */
+  .is-hidden.mic-plain .mic-card {
+    padding-block-end: 2.25rem;
+    transition: background .3s, box-shadow .3s, border-color .3s,
+                padding-block-end .3s ease .3s;
+  }
 }

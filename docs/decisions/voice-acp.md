@@ -1,5 +1,327 @@
 # Decisions — voice-acp
 
+## 2026-06-02 — slice fix-idle-flaky: ייצוב flaky test ב-bridge-manager.idle.test.ts
+
+### רציונל
+‏אחרי merge של integration-all (dev `266322f`), `bridge-manager.idle.test.ts` test 4
+‏נכשל **אקראית** ב-`pnpm test` מלא (עומס scheduler) ועבר 12/12 לבד. שורש: הטסט קורא
+‏`createdAt = Date.now()` *אחרי* `await spawnBridge`, אבל ה-`e.createdAt` האמיתי נקבע
+‏*בתוך* spawn (bridge-manager.ts:143). ה-`await spawnBridge` היקר מכניס drift → `now`
+‏שהטסט בונה (`createdAt_test + timeout*2 - 1`) נמדד מול `e.createdAt` קטן יותר → delta
+‏בפועל ≥ `timeout*2` → ה-bridge מוחזר → `not.toContain` נכשל. **קוד הפרודקשן `listIdle`
+‏תקין** (אומת בלוג חי + 5 ריצות).
+
+### הכרעה — getter ולא hack
+‏חשיפת getter `getCreatedAt(id)` שמחזיר את ה-`createdAt` האמיתי מה-store, והטסטים 4+5
+‏מודדים ממנו (לא מ-`Date.now()`). נדחתה החלופה "ללכוד `Date.now()` לפני spawn + שוליים"
+‏— hack עם שוליים שרירותיים. ה-getter מסיר את כל אי-הוודאות: טסט וקוד מודדים מאותו ערך.
+‏**אסור לגעת ב-`listIdle` עצמו.** הקובץ + getter מסומנים TEMPORARY slice 26, יימחקו
+‏עם נחיתת background-agent management.
+
+### ממצאי אביגיל
+‏READY סבב 1. 2 findings לא-חוסמים: 🟡 ה-brief נימק שטסטים 2/3/6 לא-flaky כי "הטסט
+‏שולט בנקודת הזמן" — אביגיל הצביעה שזה לא מדויק מכניזמית (`lastDetachedAt` נקבע בקוד
+‏בדיוק כמו `createdAt`); הסיבה האמיתית = אין `await` יקר בין `markDetached` ל-`listIdle`
+‏בטסט (אותו tick, drift≈0). המסקנה זהה (לא צריך לתקן 2/3/6), רק הנימוח עודכן ב-§3.
+‏🟢 הערת `sleep 100` מיושנת בטסט — לא מה-brief.
+
+### שינויי-כיוון
+‏אין. תיקון נימוח-בלבד ב-§3 לפי finding 🟡. ה-verdict היה READY מלכתחילה.
+
+---
+
+## 2026-06-02 — slice review-fixes-2: timeout בכל ה-FE adapters (sequel ל-helper)
+
+### רציונל
+אחרי ש-review-fixes-1 הוסיף את `withTimeout`, סרקנו את כל הקוד למקומות שצריכים timeout.
+מצאנו: agents-api (createAgent/notifySessionAttached/deleteAgent — 0 timeout), voices+tts
+(F7 — picker/TTS נתקעים), narrate (timeout ידני — כפילות). מחילים את ה-helper על כולם.
+
+### היקף — מה בפנים ומה בחוץ
+**בחוץ במכוון**: (א) **BE proxy streaming** (`http-proxy.ts`) — timeout על stream הוא
+בעיה שונה (connect-vs-stream), סבב נפרד. (ב) **getAgent** — אין לו צרכן בקוד (grep);
+החלטת המשתמשת: לא לגעת, רק הערת TODO שמפנה תשומת לב. לא לתקן F4 כאן.
+
+### הנקודה העדינה — tts connect-timeout בלי לקטוע streaming
+`synthesizeStreaming` מחזיר ReadableStream. `fetch()` resolve על קבלת ה-headers (לפני
+צריכת הגוף), אז `withTimeout` עוטף רק את ה-connect+first-response; ה-stream שמוחזר נצרך
+אחרי שה-helper הסתיים והטיימר נוקה → הזרמת אודיו ארוכה לא נקטעת. אביגיל אישרה טכנית.
+
+### שרשור
+depends_on=[slice-review-fixes-1]. base = branch slice-review-fixes-1 (לא dev, ה-helper
+עוד לא merged). סדר merge: review-fixes-1 → dev, ואז review-fixes-2 → dev.
+
+### ממצאי אביגיל
+READY סבב 1 (נדיר). 2 minors 🟢: caller שלישי של createAgent (sessions.ts:42 — signal
+additive בטוח), narrate block 32-51 (לא 32-54). שניהם תוקנו.
+
+## 2026-06-02 — slice review-fixes-1: F1+F3 (לא T6), ו-Promise.race ל-transcribe
+
+### רציונל
+מתוך ה-code review (2026-06-01) בחרנו לאגד 3 באגים ל-slice "review-fixes" אחד.
+אחרי חקירה — **T6 (cache-key sanitization) ירד**: הוא כבר מומש ומחווט בתוך slice 24
+(`sanitizeCacheKey` = sha256 ב-proxy-cache.ts:63, נקרא ב-http-proxy.ts:97). ה-review
+נכתב על tip 115419d, לפני שהקוד הזה נכתב. נשארו F1+F3 — שניהם FE, קצרים, depends_on=[].
+
+### ההכרעה הקריטית — `withTimeout` helper ב-core (לא inline Promise.race)
+בתחילה תכננו Promise.race inline בתוך transcribe. המשתמשת שאלה אם עדיף helper משותף —
+ובדיקה הראתה 3+ צרכנים (F3 transcribe, F7 voices+tts, ו-translate שעושה ידנית) → abstraction
+מוצדק. נכתב `withTimeout(fn, ms, opts?)` ב-`core/src/async/with-timeout.ts` (export חדש `/async/*`).
+
+**הסמנטיקה**: ה-helper **תמיד** עושה `Promise.race` (משחרר את ה-await ללא תלות ב-SDK)
+**וגם** תמיד מספק `AbortSignal` (ביטול-רשת אמיתי כש-SDK תומך, כמו ה-`ai` SDK של translate).
+שני העולמות בפונקציה אחת — הקורא בוחר אם להעביר את ה-signal ל-SDK שלו.
+
+**שני מלכודות שה-helper מטפל בהן מפורשות** (המשתמשת זיהתה את הראשונה):
+- **unhandled rejection**: כשה-timeout מנצח, הצד המפסיד (ה-fn) עלול לדחות מאוחר (AbortError)
+  כשאף אחד כבר לא עושה לו await → `void work.catch(()=>{})` בולע (בלי לגזול מהקורא — ה-reference
+  המקורי עדיין ב-race).
+- **timer leak**: `clearTimeout` ב-finally לכל כיוון. כש-work מנצח → ה-timeout Promise נשאר
+  pending לנצח (לא reject) → GC, לא unhandled.
+
+**למה helper ולא 4 inline copies**: בדיוק 2 המלכודות האלה קל לשכוח בהעתקה ידנית (כמו שראינו
+ב-slice 26 עם mock לא מעודכן). פונקציה אחת מטופלת-היטב + טסטים = מקור-אמת יחיד.
+
+מבנה: Commit 0 helper (TDD, כולל טסט no-unhandled-rejection ו-timer-cleanup), Commit 1 F3,
+Commit 2 F1, Commit 3 יישור translate.ts ל-helper. T6 ירד (כבר ב-slice 24).
+
+### ממצאי אביגיל
+סבב 1: USABLE-AFTER-FIX, 4 findings. הקריטי (1+2): ה-brief נתן לאליעזר **שתי גישות
+סותרות** (abortSignal-only ב-§4/§6/DoD מול Promise.race ב-§9), וה-brief עצמו הודה
+ש-abortSignal-only עלול לא לתקן את הבאג. תוקן ע"י בחירת Promise.race וסנכרון כל הסעיפים.
+minors: line numbers של mic.svelte.ts הם reference (slice 6 עשוי להזיז), טענת "טסטים
+negative" ל-T6 לא אומתה (הוסרה). סבב 2: **READY** (1 minor — ASCII diagram stale, תוקן).
+
+### שינויי-כיוון
+F3 timeout שונה מהתקן-זהב translate.ts ב-2 דברים מתועדים: (א) Promise.race ולא
+abortSignal-only, (ב) זורק ולא מחזיר null (כי ה-Mic VM כבר תופס ב-catch).
+
+### רעיונות שנדחו
+abortSignal-only (כמו translate) — נדחה כי ה-SDK לא מבטיח שמכבד אותו → לא עמיד.
+
+## 2026-06-01 — redesign vNext: חלוקה ל-slices + foundation-first
+
+### רציונל החלוקה
+שיפוץ העיצוב (spec: `docs/plans/redesign-vnext.md`, anchor: `redesign-vnext-mockup.html`)
+מפורק לפי עיקרון מנחה: **הפרדה בין "custom UI" ל-"primitives"**. ה-foundation ראשון
+(תשתית בלבד), ואחריו ה-slices מסודרים כך שכל מה ש-headless component-lib *לא* נוגעת בו
+(layout shell, mic, bubbles, avatars, header) בא **לפני** מה שכן (Settings=Switch/Select,
+Modals=Dialog/Sheet). זה לא שרירותי — זה מתזמן את ההכרעה על ה-component-lib לרגע שבו
+יהיה הכי הרבה מידע (קוד אמיתי, RTL נבדק), בעלות-טעות מינימלית.
+
+הפירוק (JIT — רק foundation נכתב כ-brief מלא כעת; השאר כותרות):
+1. **redesign-1 foundation** (complexity 5, depends_on []) — Tailwind 4 + 4 themes + Lucide. תשתית שקופה, לא נוגע במסכים.
+2. **redesign-2 layout shell** (depends_on [1]) — AppShell/AppHeader/Sidebar+BottomSheet (A1/A2/A3/A4/A5/H). custom לגמרי. ה-BottomSheet drag → אולי vaul-svelte, נבדק שם.
+3. **redesign-3 settings** (depends_on [1,2]) — SettingsScreen (D1/D2). **כאן ההכרעה על component-lib** (Switch/Select). חופף ל-slice 9a (speech toggles) — לתאם, לא לכפול.
+4. **redesign-4 input+mic** (depends_on [1,2]) — RecordFooter, toggle הקלדה/הקלטה, mic 110px (B1/B2/B3/B4). custom.
+5. **redesign-5 bubbles** (depends_on [1,2]) — ToolBubble align (C2), avatars (C3), פלטה על בועות (C4). **כולל באג segments C1 — slice ייעודי עם plan-verify** (data-model).
+6. **redesign-6 modals** (depends_on [1,2,3]) — SessionsScreen (E1) + FolderPicker (E2) + Dialog. תלוי בהכרעת component-lib מ-3.
+7. **redesign-7 smart-scroll** (depends_on [1,2]) — G1 (jump-down) + A5. ♻️ מ-v1.
+
+C1 (באג segments) ו-C2 (tool align) הם תיקוני-באג שאפשר לשחרר מוקדם — אבל **לא לפני foundation**
+(שניהם נוגעים בקומפוננטות שייכתבו מחדש; פיצול מהקשר העיצובי = עבודה כפולה). לכן נשארים תחת redesign-5.
+
+### ההכרעה על component-lib — מתוזמנת, לא פתוחה-באוויר
+**Bits UI כמוביל; הכרעה סופית ב-redesign-3 (Settings).** רציונל: ה-foundation לא צריך ספרייה
+(Tailwind+themes+icons בלבד), אז המתנה חינמית; וה-primitives (Sheet/Select/Dialog/Switch)
+מרוכזים ב-2 slices בלבד (3+6) → עלות-אימוץ ועלות-החלפה נמוכות. הערך של headless lib הוא
+**ההתנהגות הבלתי-נראית** (a11y/aria, focus-trap+restore, ניהול-מקלדת, scroll-lock, click-outside,
+positioning) — לא העיצוב (שאנחנו עושים מצוין ב-Tailwind, כפי שהמוקאפ מוכיח). Bits מנצח על Melt
+כי הוא קומפוננטות-מוכנות runes-native (Melt = builders low-level; אנחנו בונים אפליקציה, לא ספרייה).
+**סייג**: אם Bits נלחם ב-RTL/עיצוב על Select — חזרה ל-native styled `<select>` היא תשובה לגיטימית.
+
+### redesign-2: multi-route + AppShell-as-component (לא single-page/route-group)
+המוקאפ הוא single-page (`data-view` שמתחלף ב-JS) — זה **artifact של HTML סטטי**, לא הוראת-מימוש.
+במוצר נשארים **multi-route** (`/`, `/chat`, `/settings`), וה-shell המשותף הוא **קומפוננטה עוטפת**
+(`AppShell` ב-lib/components/layout) עם `{@render children()}`, **לא** route-group (`(name)/`) ו**לא**
+nested `+layout`. רציונל: route-group = הזזת קבצים invasive; AppShell-component = אפס הזזה, שומר
+חוק-זהב #1 (לא route ענק), משותף ל-chat+settings. (אביגיל אישרה: תבנית Svelte 5 ישימה, אין מלכוד.)
+
+### redesign-2: scroll ownership עובר ל-AppShell (תיקון double-scroll)
+אביגיל תפסה: ChatBubbles **כבר** scroll-container (overflow-y:auto + auto-scroll $effect), וה-AppShell
+עוטף ב-scroll נוסף → double-scroll ששובר את הגלילה. **הכרעה**: ה-scroll עובר ל-AppShell; ChatBubbles
+מאבד את ה-overflow+bind:this+$effect (הופך ל-content בלבד). ה-auto-scroll $effect עובר ל-AppShell
+(חוק-זהב #4 — owner של ה-DOM node). redesign-7 (smart-scroll) יושב על אותו scroll-container.
+
+### redesign-2: disconnect + audio-master עוברים ל-AppHeader (מניעת רגרסיה)
+ChatHeader הנמחק החזיק `onDisconnect` (session.detach) + audio-toggle (speaker.enabled/toggle).
+ה-AppHeader של המוקאפ לא כולל אותם. כדי לא לאבד פונקציונליות: שניהם נשמרים ב-AppHeader כאייקונים
+(LogOut + Volume2/VolumeX). **ימוקמו מחדש ב-redesign-3**: disconnect→SessionOptionsPanel, audio-master→
+SettingsScreen ליד 3 ה-toggles המפורטים. (אביגיל #1.)
+
+### redesign-3: Bits UI Switch ✅, native Select (fallback) ✅ — מתועד
+
+בוחרים **Bits UI Switch** (Root+Thumb) עם ה-`.toggle` CSS helper מ-app.css — RTL-safe, a11y מובנה.
+**Native styled `<select>`** (לא Bits Select): Bits Select דורש Portal + JS overhead + RTL quirks שמסובכים לצרוך. ה-brief (§7) אישר: "fallback native styled select — לגיטימי". SelectOpts מוחזרים כ-props פשוטים. תועד ב-`components/ui/Select.svelte` (comment).
+
+### redesign-3: בולע את slice 9a (לא מבוצע בנפרד)
+slice 9a (speech toggles, plan-verified, base dev) נבלע ל-redesign-3 כדי לא לעצב toggles פעמיים
+(פעם CSS גלם ב-9a, פעם Bits/Tailwind ב-redesign-3). הלוגיקה זהה (Settings fields + Speaker getters,
+processedSegments מונע בליעה), העיצוב לפי המוקאפ. **9a מסומן superseded — לא יבוצע.**
+VoicePicker **לא נמחק** (connect route משתמש בו, +page.svelte:92) — reuse בתוך SettingsScreen.
+
+### redesign-5: C1 (segments bug) = rendering-only, לא data-model refactor
+ה-spec רמז "אולי slice עם data-model refactor". אחרי בדיקת קוד: **לא צריך.** ה-Speaker צורך
+`bubble.segments` כ-buffer ומריץ splitIntoSentences בעצמו (לא מסתמך על segment=משפט); MessageBubble
+כבר עושה join לטקסט רץ. רק **ThoughtBubble** עושה div-per-segment (זה הבאג). התיקון: ThoughtBubble
+מרנדר טקסט-רץ (מקור) / per-משפט (מתורגם). ה-data-model של segments **נשאר** — Speaker+thought-translation
+תלויים בו. (חוסך slice שלם של refactor מסוכן.)
+
+### foundation = תשתית שקופה (לא ממיר קומפוננטות)
+ה-foundation **לא** ממיר את 14 הקומפוננטות הקיימות ל-Tailwind ולא משנה אף מסך. הוא מגדיר את
+אותם שמות-tokens (`--bg`/`--fg`/`--accent`...) שהקומפוננטות כבר צורכות דרך `var()`, כך שהן
+ממשיכות לעבוד זהה. המיגרציה בפועל קורית slice-by-slice כשכל אזור נכתב-מחדש מהמוקאפ. זה מכבד
+חוק-זהב #5 (אסור backward-compat-in-place — או refactor מלא של אזור, או לא לגעת). DoD דורש
+ש-/chat ייראה **זהה** לפני/אחרי (regression check ויזואלי).
+
+### ממצאי אביגיל (foundation, 2 סבבים)
+- סבב 1: USABLE-AFTER-FIX. blocker #1: כל פקודות `pnpm --filter @drive-coding/frontend` נכשלות —
+  שם ה-package הוא `@drive-coding/frontend-v2` (התיקייה `frontend/` אך השם הפנימי נשאר -v2 מה-cutover).
+  +2 בלבולים: גרסת Lucide שגויה (`^0.500.0` — `@lucide/svelte@next`=1.3.x), נתיבי `var(--muted)` חסרי `chat/`.
+- spot-check מלא עבר: context.ts createContext, +layout additive, SPA-only, token-coverage, plugin-order, חוק-זהב #4.
+- סבב 2 אחרי תיקון: **READY**. findings #4 (Icon value-export — fallback מכסה) ו-#5 (Heebo לא נטען — regression-neutral) התקבלו כ-wontfix מתועדים.
+
+### רעיונות שנדחו
+- **מיגרציה הדרגתית של Tailwind** (page-by-page side-by-side): נדחה — המשתמשת הכריעה מיגרציה מלאה. אבל "מלאה" ≠ "במכה אחת": ה-foundation תשתית, ההמרה slice-by-slice.
+- **לכתוב את 5 ה-primitives ידנית** (בלי component-lib): נדחה כברירת-מחדל — a11y+focus-trap עבודה אמיתית עם סיכון-באגים. נשאר כ-fallback ל-Select אם Bits נלחם ב-RTL.
+- **לפצל C1/C2 ל-slices מוקדמים עצמאיים** (לפני foundation): נדחה — שניהם נוגעים בקומפוננטות שייכתבו מחדש; פיצול = עבודה כפולה.
+- **Skeleton UI**: נדחה (§1.2 spec) — opinionated, "look" גנרי, מתנגש בפלטה הייחודית.
+## 2026-06-02 — redesign debug: סטיות מהתוכנית בדיבוג ההרכבה המצטברת (worktree redesign-7)
+
+אחרי שכל 7 ה-slices של ה-redesign בוצעו (calev GO בבידוד) אך לא מוזגו, ההרכבה
+המצטברת (tip redesign-7) נבדקה במובייל אמיתי והתגלו באגים שאף slice לא תפס
+בבידוד. התיקונים בוצעו ישירות ב-worktree redesign-7 (לא brief/executor — באגי
+layout שאובחנו במדויק), בשיטת "מרדכי מבצע + verifier אחרי". להלן כל הסטיות מהתוכנית.
+
+### למה הבאגים נפלו בין הכיסאות
+calev בדק כל slice בבידוד — שם כל אחד תקין. הבאגים נולדו מ-**ההרכבה** + מ-**נתונים
+אמיתיים** (שיחה ארוכה עם בלוקי קוד), שלא נבדקו ב-isolation. זה חיזק את הצורך
+בכלי ה-mock (ר' למטה) ובבדיקה על נתונים אמיתיים, לא רק happy-path ריק.
+
+### B1 — RecordFooter: child בתוך scroll → footer slot כ-sibling shrink-0
+**תוכנית (redesign-4/7):** RecordFooter רונדר בתוך `children` של ה-scroll → נגלל וצף
+באמצע בסשן ריק. **תיקון:** AppShell חושף snippet slot נפרד `footer`, sibling של
+`.chat-scroll`, מעוגן `shrink-0` בתחתית (כמו ChatColumn במוקאפ). `chat/+page.svelte`
+מעביר RecordFooter דרך `{#snippet footer()}`. הוסר `onDisconnect` prop drilling.
+
+### B2 — disconnect+audio: חוב מ-redesign-2 שלא נפדה → הועברו ל-SessionOptionsPanel
+**שורש:** redesign-2 מחק את ChatHeader אך השאיר disconnect+audio ב-AppHeader זמנית
+(הערת "ימוקם מחדש ב-redesign-3"). redesign-3 לא קלט את ה-chit ל-DoD שלו → 4 פקדים
+ב-header → הכותרת הממורכזת (absolute) חופפת את הסטטוס במובייל צר. **תיקון:** הוסרו
+מ-AppHeader, הועברו ל-SessionOptionsPanel (disconnect = `session.detach()`+`goto("/")`
+ישירות, audio דרך `getSpeaker()` — לא prop drilling). header נקי = 2 פקדים כמו מוקאפ.
+**ביקורת חובות מלאה:** מתוך 6 chits בשרשרת — 5 נפדו (SessionOptionsPanel מחווט,
+AgentOptionsPanel מוזג+נמחק, FolderPicker מחווט, proof-Lucide הוסר, carMode placeholder
+מכוון). רק disconnect+audio נשאר — תוקן כאן.
+
+### B3 — mic-card גולש 682px: flexbox min-w-0 חסר
+**שורש:** ה-flex item של עמודת התוכן (AppShell) חסר `min-w-0` → התרחב ל-min-content
+(714) במקום להתכווץ ל-390 (flexbox gotcha). `overflow-hidden` חתך ויזואלית אבל המרכוז
+חושב לפי 714 → mic גלש שמאלה. **התגלה רק עם session אמיתי** (תוכן עברי ארוך מעלה את
+ה-min-content). **תיקון:** `min-w-0` על עמודת התוכן.
+
+### B4 — bubbles+בלוקי קוד גולשים: min-w-0 בשרשרת הבועות
+אותו שורש משפחתי כמו B3, בכל רמה. `truncate font-mono` (ToolBubble) ו-inline code
+(MessageBubble) דחפו את ה-min-content. **תיקון:** `min-w-0`+`break-words` על 4 הבועות
+(wrapper + inner container), `overflow-wrap:anywhere` ל-inline `code`.
+
+### B5 — vh במובייל אמיתי: BottomSheet height מ-vh ל-{sheetPx}px
+**שורש (נמדד על CPH2747 דרך Edge+CDP):** `vh`/`lvh`=752 (large viewport, כולל סרגלי
+דפדפן) אך `dvh`/`svh`/`innerHeight`=625. ה-sheet `height:80vh` חושב 601px (צריך 500) →
+הידית צפה על המיקרופון. **תיקון:** height מ-`{SHEET_VH*100}vh` ל-`{sheetPx}px` (JS
+`window.innerHeight` = dvh מדויק ב-Edge Android). `bottom:1098` נשאר מתחת למסך אך לא
+מזיק (רק top קובע את ה-peek הנראה).
+
+### UX-1 — RTL: physical → logical classes
+האפליקציה כבר RTL (`<html dir="rtl">` + dir attributes קיימים). רק 3 physical classes
+נותרו ולא התהפכו: UserBubble `rounded-bl-sm`→`rounded-es-sm`, MessageBubble
+`rounded-br-sm`→`rounded-ee-sm`, mic-card logical corners, Switch קיבל `dir="ltr"`
+(toggle ויזואלי — חריג שלא מתהפך). `left-1/2 -translate-x-1/2` (centering) נשאר — לא RTL.
+
+### UX-2 — מובייל: fade במקום כרטיס
+**מוקאפ:** במובייל אין mic-card — הרקע שטוח וההודעות נמוגות דרך chat-fade. **תיקון:**
+class `.mic-plain` (כש-`responsive.isMobile`) מאפס border/radius/shadow/bg של ה-mic-card,
+footer מקבל `background:var(--bg)`.
+
+### UX-3 — chat-fade: wrapper סביב הגלילה (תוצר-לוואי של B1)
+**שורש:** אחרי B1 (footer הפך sibling), ה-chat-fade (`absolute bottom-0` של העמודה)
+נתקע מתחת ל-footer האטום ונעלם → פס חד. **תיקון:** אזור הגלילה עטוף ב-wrapper
+`relative flex-1`, ה-fade `bottom-0` בתוכו → נצמד לגבול גלילה/footer (המוקאפ עושה זאת
+ב-JS עם `footer.offsetHeight`; אנחנו ב-CSS נקי). JumpDown הוזז `bottom-20`→`bottom-4`.
+
+### UX-4 — BottomSheet: גרירה רציפה + 3 detents
+**תוכנית:** sheet בינארי (peek↔open, snap ±30px). **בקשת משתמשת:** גרירה עם האצבע +
+לקבוע כמה ייפתח. **תיקון:** UiShellVM קיבל `sheetDetent` ("peek"|"half"|"full") +
+`sheetDragPx` (גובה רציף בזמן גרירה), `sheetOpen` הפך getter (peek=סגור, לתאימות
+openSheet/closeSheet). BottomSheet: pointermove רציף, pointerup snap ל-detent קרוב,
+רקע/opacity interpolated לפי הגובה הגלוי. peek=28px (רק הידית, היה 60px עם תוכן בולט),
+grip `w-12 h-1.5` `var(--border-str)` (היה `w-10 h-1` `var(--border)` — כמעט בלתי-נראה).
+
+### UX-5 — מעבר Type↔Record: opacity-crossfade מוערם + רגע ריק
+**תוכנית (redesign-4):** `{#if mode}` + `transition:fade` של Svelte → הוספה/הסרה של DOM,
+out+in במקביל, reflow → קפיצה. **תיקון (לפי מוקאפ 443-467 שמשתמש ב-`hidden` toggle לא
+`{#if}`):** שני panes תמיד ב-DOM, מוערמים באותו תא grid (`grid-row/column:1`), מעבר
+ב-opacity+visibility בלבד. **timing:** 0.3s לכל שלב + `transition-delay:0.3s` ל-pane
+הנכנס → היוצא דוהה לגמרי, רגע ריק ~300ms (שניהם opacity 0), אז הנכנס עולה. סה"כ ~600ms.
+
+### כלי DEV-only — Mock sessions (flow C, נאמן ל-ACP)
+**צורך:** לדבג עיצוב בלי לטעון שיחות אמיתיות (כל loadSession = bridge ~300MB דולף;
+ניקינו 11 bridges = 3.4GB). **החלטה — flow C (הכי נאמן, בחירת המשתמשת):** ה-fixtures
+הם **ACP updates גולמיים** (לא Bubble[]), וה-mock מזרים אותם דרך **אותו `#onSessionUpdate`**
+האמיתי → תופס גם באגי המרה/מיזוג chunks. נדחו flow A (ממלא bubbles ישירות) ו-B (route).
+- **חילוץ:** `/tmp/fixtures/extract-raw.py` — מדבר ACP stdio ישירות (`opencode acp`:
+  initialize → `session/load` עם **`mcpServers:[]`** חובה → אוסף `session/update`). תהליך
+  חד-פעמי, מת מיד — אפס bridges. (נדחו: חילוץ דרך DOM/browser, חילוץ דרך BE endpoint.)
+- **אחסון:** `static/fixtures/*.json` (fetch בזמן ריצה, מחוץ ל-bundle). 6 fixtures:
+  greeting(5u)/tool-spill/phone-tunnel/mitm(259u)/salary-prev/salary-attendance. tool
+  results ארוכים קוצצו ל-~2KB (`[truncated for fixture]`) — 41MB→512KB.
+- **הזרקה:** `loadSession` ב-`import.meta.env.DEV` מזהה `mock:<name>` → `#loadMockSession`
+  fetch+מזרים. **trigger:** URL `?mock=<name>` (+`&stream=<ms>` ל-delay) דרך `location.search`
+  (לא `$page` store — לא מוכן ב-init), או picker (`🧪 MOCK:` מוזרק ב-DEV). `window.__session`
+  חשוף ב-DEV. הכל tree-shaken מ-prod.
+- **באג שנחשף ותוקן (timing):** הלולאה הסינכרונית דחפה את כל ה-bubbles בבת אחת, וה-`$effect`
+  של ה-Speaker רץ רק אחרי שכבר `isLoadingHistory=false` → הקריא הכל ב-TTS. **תיקון:**
+  `await tick()` אחרי הלולאה (בעוד `isLoadingHistory=true`) מאלץ flush → replay-quiet עובד.
+  (ACP אמיתי לא סובל מזה — updates אסינכרוניים.)
+
+### סטטוס
+כל הבאגים תוקנו, typecheck 0, 49 tests, i18n נקי. עדיין **לא merged** — ממתין לאישור
+משתמשת. merge יחיד של redesign-7 מביא את כל 1-7 (שרשרת לינארית) + תיקוני הדיבוג.
+
+## 2026-06-02 — redesign-6: Modals — Bits Dialog ✅
+
+### הכרעת Dialog
+
+**Bits Dialog** (bits-ui@2.18.1 — כבר מותקן מ-redesign-3): focus-trap, Esc, click-outside, scroll-lock מובנים.
+- בדיקת RTL: Bits Dialog משתמש ב-Portal על `document.body` — עובד ב-RTL (dir לא חשוב ל-Dialog עצמו).
+- לא נוצר `ui/Dialog.svelte` wrapper (אין צורך — Bits Dialog משומש ישירות ב-modals).
+- אם RTL נשבר > 30 שורות hacks → custom modal (focus-trap ידני), בהתאם ל-§7.
+
+## 2026-06-02 — redesign-3: Settings — Bits Switch + native Select fallback
+
+### הכרעת component-lib
+
+**Switch → Bits UI** (`bits-ui Switch.Root + Switch.Thumb`):
+- תומך RTL + a11y מובנה (aria-checked, keyboard, focus-trap)
+- עובד עם `.toggle` CSS helper מ-app.css (RTL-safe: `right: 3px` / `right: calc(100% - 23px)`)
+- שלוש שכבות disabled: `pointer-events-none` על label, `aria-disabled`, `onCheckedChange={disabled ? undefined : handler}`
+
+**Select → native `<select>` מעוצב בTailwind** (fallback, לא Bits Select):
+- Bits Select דורש: Portal + JS overhead + Trigger/Content/Item composition + RTL quirks
+- native styled `<select>` — RTL-safe בדפדפן, מינימל, תואם לVoicePicker הקיים
+- אשר גם ב-§7 של ה-brief: "fallback native styled select — לגיטימי"
+- תועד גם ב-`components/ui/Select.svelte` (comment)
+
+### ממצאי אביגיל (redesign-3)
+
+ר' `reports/voice-acp/slice-redesign-3-settings-avigail.md` — USABLE-AFTER-FIX (2 סבבים). כל findings תוקנו לפני handoff לאליעזר.
+
+### ממצאי calev (redesign-3)
+
+calev light: PARTIAL→GO (2 findings, שניהם תוקנו):
+- F1: translateThoughts disabled לוגי — תוקן ב-SettingToggle (aria-disabled + onCheckedChange guard)
+- F2: decisions entry — entry זה
+
 ## 2026-06-01 — convention: הערות בקוד בעברית
 
 ### רציונל
@@ -260,3 +582,167 @@ deprecated ("use --acp instead"). הקוד היה נכון, הטסט מיושן 
 - ‏מחיקת ‏query layer / index ‏לפי messageId: ‏נדחה (YAGNI) — ‏ה-metadata ‏נשמר, ‏אבל ‏ה-query ‏יבוא ‏עם ‏פיצ'ר ‏אמיתי.
 - ‏"‏החזרת ‏קריאות ‏ל-BE" (‏במקום FE): ‏נשקל ‏ונדחה ‏לעת ‏עתה — ‏שובר ‏את slice 10, ‏מחזיר 600+ ‏שורות ‏ל-BE.
   ‏נשמר ‏כתוכנית-מגירה ‏אם `@ai-sdk/google` header passthrough ‏ייכשל ‏ב-Commit 0.
+
+## 2026-06-02 — slice-sessions-inline-transcribe-resilience: סשנים inline + עמידות תמלול
+
+### רציונל
+brief מאוחד, שני נושאים בלתי-תלויים שעלו מבדיקת UI ידנית + אבחון תשתית:
+
+**עמידות תמלול** — אבחון (סקר תשתית `infra-survey.sh`, 2026-06-02): התמלול נכשל
+לסירוגין עם `socket connection closed unexpectedly` → 502. **לא** billing ולא מודל
+(בקשה בודדת מצליחה; `gemini-flash-latest`=`gemini-3.5-flash` תקין). הסיבה: חוסר
+יציבות transport ל-Google דרך OneCLI תחת עומס. בנוסף: `flash-latest` איטי (5-10s
+ל-"hi" בגלל thinking) — קרוב ל-timeout 15s. הפתרון: timeout 15s→30s + retry עם
+exponential backoff (helper אחיד חדש `with-retry` ב-core) + שמירת blob + כפתור
+"נסה שוב" (כש-הכל נכשל, אפשר בעוד כמה דקות). **לא מחליפים מודל** (החלטת משתמשת).
+
+**סשנים inline** — היום רשימת הסשנים ב-SessionOptionsPanel ריקה, וטעינתה פותחת
+**סוכן חד-פעמי חדש** (spawn יקר ~300-700ms + סיכון bridge-leak כמו slice 25) גם
+כשכבר יש סשן פעיל עם ערוץ ACP פתוח. ההחלטה: כשיש חיבור פעיל, לטעון דרך
+`session.listSessions()` (החיבור הקיים, `AcpClient.listSessions` שכבר קיים) — **בלי
+spawn**. cache + רענון מפורש. ה-spawn (`listSessionsForCwd`) נשאר כ-fallback לדף
+החיבור (שם אין חיבור). SessionsDialog המיותר נמחק (הרשימה inline מחליפה אותו).
+
+### החלטות-מפתח
+- **base = dev** (`266322f`) ולא שרשור — סוכן אחר השלים merge של כל האינטגרציה
+  (redesign + BE + review-fixes) ל-dev, אז הכל זמין. depends_on=[].
+- **helper retry אחיד** ב-core (`with-retry`) — ממש את ה-TODO שנרשם אחרי תיקון
+  ה-DDoS של loadVoices. ישמש transcribe; איחוד voices.loadVoices אליו דחוי לסבב נפרד.
+- **INVASIVE state ב-2 VMs** (Mic: #lastBlob; AgentSession: sessions/cache) — אושר
+  ע"י משתמשת. תוספתי בלבד (שדות+מתודות, לא שינוי state קיים).
+- **$effect auto-load** בדסקטופ vs מובייל: `shouldLoad = isMobile ? sheetOpen : true`
+  + untrack (gotcha: $effect קורא+כותב state → DDoS). idempotent+cache מונע לולאה.
+
+### ממצאי אביגיל
+round 1: USABLE-AFTER-FIX, 4 findings (כולם 🟡): line numbers ב-Commit 4 (off ~50),
+detach שורה 150 לא 142, נתיב טסט core (tests/async/ לא src/async/), ו-$effect
+auto-load לא ירוץ בדסקטופ (sheet לא נפתח שם). round 2 (אחרי תיקון): READY, 0 findings.
+כל ה-APIs/return-types/i18n/DELETE-callers אומתו מדויק.
+
+### רעיונות שנדחו
+- החלפת מודל התמלול (flash-latest→2.5-flash/lite) — נדחה (משתמשת): נשארים flash-latest.
+- איחוד voices.loadVoices ל-with-retry בסבב הזה — נדחה (scope creep), סבב נפרד.
+- NotificationsVM (טיפול שגיאות מרכזי) — slice עתידי נפרד (כבר מתועד).
+
+## 2026-06-02 — ניקוי queue: fix-idle-flaky + slice-9a נזרקו, sessions-inline נשאר
+
+### רציונל
+מעבר על ה-briefs הפתוחים ב-`docs/plans/` מול מצב dev בפועל (tip 718be28). שלוש החלטות:
+
+1. **slice-fix-idle-flaky → DISCARDED (נסגר בינתיים)**. הטסט `bridge-manager.idle.test.ts`
+   test 4 היה flaky תחת עומס scheduler: קורא `Date.now()` *אחרי* `await spawnBridge`
+   ומניח שהוא שווה ל-`createdAt` שנקבע *בתוך* spawn → drift חורג מה-grace (ה-`-1`
+   מחדד את התנאי). הקוד (`listIdle`) תקין. במקום התיקון המלא (getter `getCreatedAt`),
+   סומן `it.skip` על test 4 בלבד עם הערה מפנה. עוצר את ההבהוב בלי לגעת בקוד הייצור.
+
+2. **slice-9a-speech-toggles → DISCARDED (מומש אחרת)**. ה-redesign כבר מימש את כל ה-slice:
+   3 ה-toggles (`speakThoughts`/`narrateTools`/`translateThoughts`) קיימים ב-Settings VM
+   (שורות 229-260, setters + persist), וה-UI ב-`SettingsScreen.svelte` (VoicePicker
+   שורה 72, toggles 78-90, לוגיקת `translateDisabled` כש-speakThoughts כבוי 26/30-31).
+   אפילו carMode נוסף. ה-brief מיותר — אומת מול dev.
+
+3. **slice-sessions-inline-transcribe-resilience → נשאר (טרם בוצע)**. אומת מול dev שאף
+   חלק לא קיים: `with-retry` חסר ב-core, `listSessions` חסר ב-AgentSession,
+   SessionOptionsPanel placeholder בלבד, SessionsDialog עדיין קיים, mic בלי
+   retryTranscribe/lastBlob. זה ה-slice הפתוח היחיד שצריך ביצוע. ה-base בכותרת
+   (`266322f`) ישן — dev התקדם ל-718be28, צריך אימות line-numbers/rebase לפני dispatch.
+
+### החלטות-מפתח
+- "לסגור flaky בינתיים" = `it.skip` ממוקד + הערה, **לא** מחיקת טסט ולא שינוי קוד ייצור.
+  שומר את הכוונה לתיקון עתידי (אם slice-A של background-agents ינחת ויחליף את כל הבלוק).
+- אימות מול dev בפועל (grep על קוד) לפני זריקת brief — לא להניח "כנראה מומש".
+
+### רעיונות שנדחו
+- ביצוע התיקון המלא של ה-flaky (getCreatedAt getter) — נדחה (משתמשת): לא שווה את ה-slice
+  על טסט TEMPORARY שעתיד להימחק. skip מספיק.
+
+## 2026-06-02 — slices AB + C: בקרת סוכן, חיווי, ופלייליסט replay
+
+### רקע
+המשתמשת ביקשה 3 יכולות אחרי שלא יכלה לעצור סוכן באמצע ריצה: (1) נגן/השמעה-חוזרת
+(שיחה מלאה + הודעה בודדת + התחל-מנקודה), (2) עצירת סוכן בריצה, (3) חיווי סטטוס בזמן אמת.
+
+### ממצאי סקר קוד (קובעים את התכנון)
+- **ACP cancel כבר קיים** (`AcpClient.cancel` core/acp/client.ts:161) — אף אחד לא קורא לו.
+- **הבאג "X מהבהב לנצח"**: `VoiceMode.cancel()` עוצר mic+speaker אבל לא את הסוכן →
+  status נשאר "thinking" → ה-$effect (voice-mode:55-64) לא מאפס isCancelling (תנאי
+  status!=="thinking" לא מתקיים) → FSM תקוע ב-cancelling, כפתור flash-state מהבהב.
+  בקשה 2a (עצירה) והבאג = **אותו תיקון** (cancelTurn→ACP cancel→status חוזר).
+- **חיווי סטטוס — i18n כבר קיים במלואו**: voiceMode.status.* (he.ts:40-45). חלק 3a ≈ UI בלבד.
+- **TTS cache קיים ועובד** (BE proxy-cache, data/cache/proxy מלא, hit ~0.004s) →
+  replay של בועת-סוכן = synthesizeStreaming מחדש = חינם+מהיר. **אין צורך לשמור אודיו TTS.**
+- **הקלטות משתמש — BE store מלא וקיים** (http-history POST/GET /api/recordings, דיסק),
+  אבל ה-FE **מנותק**: transcribe.ts מחזיר recordingId:"" קשיח (stub). data/recordings ריק.
+- **Player engine קיים** (engines/player.svelte.ts, jumpToSegment "שמור ל-slice 10").
+  הוא engine נמוך-רמה (segmentId+orderKey, streaming TTS). **אין VM שמתרגם "בועה"→"השמע".**
+
+### חלוקה: AB (מאוחד) + C (נפרד)
+המשתמשת ביקשה לאחד A+B כדי לחסוך תקורה. הוסכם: **slice AB** (A=commits 1-2 עצירה+חיווי,
+B=commits 3-5 הקלטות+בועה-בודדת) — brief אחד, סבב verify אחד, אבל A קודם כך שהבאג
+המיידי מתוקן ראשון גם אם B יסתבך. **slice C נפרד** (פלייליסט מלא) — הגדול, נשען על
+מקור-האודיו ש-B מוכיח.
+
+### החלטות-מפתח
+- **base AB = dev אחרי merge sessions-inline** (אופציית המשתמשת). שניהם נוגעים ב-transcribe.ts
+  → sessions-inline ראשון, אחרת merge conflict. depends_on מוצהר.
+- **השמעת בועה בודדת ב-`<audio>`** (blob/objectURL), **לא** Player/AudioStream engine.
+  סיבה: השמעה חד-פעמית; ה-Player בנוי ל-streaming חי עם orderKey — תקורה מיותרת.
+  C ממשיך באותו נתיב `<audio>` (native ended/pause/seek מתאים לפלייליסט).
+- **בועה בודדת = ללא לוגיקת הגדרות** — בחרת בועה → מתנגנת. speakThoughts/narrateTools
+  רלוונטיים רק לפלייליסט המלא (C, buildPlaylist מסנן).
+- **replay הוא VM חדש** (BubblePlayer, נולד ב-AB כ"בועה בודדת", מורחב ב-C לפלייליסט) —
+  לא הרחבת Speaker (ערבוב חי+replay) ולא הרחבת Player (engine נמוך-רמה). entity לפי חוק זהב #2.
+- **guard thinking**: replay חסום כשהסוכן עונה (החלטת משתמשת). לא באמצע ריצה, כן בכל זמן אחר.
+- **C INVASIVE על BubblePlayer** (שדות $state: isReplaying/loop/position) — אושר מראש.
+- **replay על snapshot** של רגע ה-playAll, לא חי (thinking חסום ממילא).
+
+### ממצאי verification
+- **AB**: אביגיל round 1 USABLE-AFTER-FIX, 5 findings. הקריטי (🔴): POST /api/recordings
+  דורש JSON `{audioBase64,mimeType}` (201), לא body גולמי — ה-skeleton המקורי היה גורם 400.
+  תוקן (bytesToBase64 קיים). round 2: READY, 0 findings.
+- **C**: נכתב לפני ש-B נחת. כל הפניה ל-BubblePlayer/play-bubble מסומנת ⏳ "לאמת אחרי B".
+  אביגיל תרוץ רק אחרי merge AB (אז המבנה האמיתי ידוע).
+
+### נדחו
+- שמירת אודיו TTS (זיכרון/IndexedDB) — מיותר, ה-BE cache מכסה.
+- ייצור TTS-מחדש כברירת מחדל לכל replay — לא, cache hit עושה את זה ממילא בחינם.
+- Player engine ל-replay — נדחה לטובת `<audio>` פשוט.
+- replay חי (מגיב ל-bubbles חדשים תוך כדי) — snapshot מספיק (thinking חסום).
+
+## 2026-06-03 — sessions-inline + switch-session warm: merged ל-dev + חקירת זהות-פרויקט
+
+### רקע
+slice-sessions-inline (חלק B transcribe-resilience + חלק A sessions-inline) בוצע (calev GO 17/17).
+באימות runtime ע"י המשתמשת התגלה באג: החלפת סשן הציגה "WS closed (1005): no reason".
+
+### שורש הבאג (chain מלא)
+`selectSession` עשה `detach()` + `loadSession()` כבד. ה-loadSession היה שכפול של attach:
+createAgent → WS חדש → ACP handshake. detach הרג את ה-bridge הקיים וסימן `#detached=true`;
+loadSession אִפֵּס `#detached=false` *לפני* שה-onClose האסינכרוני של ה-WS הישן הגיע →
+ה-guard `if (#detached) return` לא תפס → "WS closed (1005)" מזויף על הסשן החדש.
+
+### החקירה הארכיטקטונית (מה ש-המשתמשת הובילה אליו)
+שאלת המשתמשת "למה צריך לסגור WS? אפשר אותו אחד" הובילה לאימות אמפירי מול opencode acp חי:
+1. **`session/load` עובד על אותו bridge** (גם cross-cwd) — אין צורך ב-WS/agent חדש להחלפת סשן.
+2. **opencode מזהה פרויקט לפי root-commit hash של ה-git repo** (לא path/שם תיקייה).
+   טבלת `project` ב-opencode.db: `id=<root-commit>`, עוקבת אחרי נתיבים חלופיים ב-`sandboxes`.
+   לכן rename של תיקייה (anat→persona-lab) = אותו projectID; `session/list` מחזיר סשנים
+   משני הנתיבים (אותו פרויקט). זה הסביר למה ראינו רק persona-lab+anat (לא גלובלי) — הם
+   אותו repo. תועד ב-memory (global): 2026-06-03-fact-opencode-project-id-is-git-root-commit.
+
+### התיקון
+`AgentSession.switchSession(info)` — warm reload: `#client.loadSession()` על ה-WS/bridge הקיים,
+בלי createAgent/detach/WS חדש. fallback ל-loadSession הכבד אם `#client===null`. **אסור #cleanup
+בשגיאה** — החיבור נשאר חי. `selectSession` קורא לו במקום detach+loadSession.
+calev GO 12/12, אומת e2e דרך tunnel כולל cross-rename (סשן מ-salary-reports).
+
+### החלטות-מפתח
+- **לא לסנן רשימת סשנים לפי cwd** — opencode כבר מסנן per-project (root-commit). סינון נאיבי
+  לפי path אף יזיק (יסתיר היסטוריה מנתיב ישן אחרי rename).
+- warm switch על אותו bridge, לא bridge-per-cwd — מאומת ש-loadSession cross-cwd עובד.
+
+### known issue (slice נפרד מתוכנן)
+- **409 על notifySessionAttached ב-warm switch**: guard MED-9 (http-agents.ts:117) חוסם update
+  של acpSessionId כשהagent כבר "ready" עם sessionId אחר — בדיוק מה ש-warm switch עושה.
+  `.catch(()=>{})` בולע; המשתמש לא רואה. אבל ה-BE registry נשאר עם sessionId ישן → סיכון
+  ל-reconnect/recovery עתידי (slice 10) שישחזר לסשן הישן. תיקון: BE יתיר same-agent update.

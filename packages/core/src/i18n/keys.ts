@@ -47,6 +47,8 @@ export type MessageKey =
   | "mic.error.notFound"
   | "mic.error.transcribe"
   | "mic.error.generic"
+  // ─── mic retry ─── (slice sessions-inline)
+  | "mic.retry"
   // ─── voice-mode ─── (slice 3)
   | "voiceMode.status.idle"
   | "voiceMode.status.recording"
@@ -88,7 +90,58 @@ export type MessageKey =
 // ─── agent-options ─── (slice 23)
   | "agentOptions.title"
   | "agentOptions.model.label"
+  | "agentOptions.model.other"
   | "agentOptions.agent.label"
+  // ─── smart-scroll ─── (redesign-7)
+  | "chat.jumpDown"
+  // ─── modals ─── (redesign-6)
+  | "modal.sessions.title"
+  | "modal.sessions.refresh"
+  | "modal.sessions.new"
+  | "modal.sessions.loading"
+  | "modal.sessions.error"
+  | "modal.sessions.empty"
+  | "modal.folder.title"
+  | "modal.folder.pick"
+  | "modal.folder.up"
+  | "modal.folder.loading"
+  | "modal.folder.error"
+  | "modal.close"
+  // ─── record-footer ─── (redesign-4)
+  | "record.tab.record"
+  | "record.tab.type"
+  | "record.tab.hide"
+  | "record.status.idle"
+  | "record.send"
+  | "record.placeholder"
+  | "mic.stop"
+  // ─── settings-redesign ─── (redesign-3)
+  | "settings.connection"
+  | "settings.voiceSpeech"
+  | "settings.folder.label"
+  | "settings.folder.pick"
+  | "settings.model.label"
+  | "settings.session.label"
+  | "settings.voice.label"
+  | "settings.toggle.speakThoughts"
+  | "settings.toggle.narrateTools"
+  | "settings.toggle.translateThoughts"
+  | "settings.toggle.carMode"
+  | "settings.reset"
+  | "settings.saveOpen"
+  // ─── layout/header ─── (redesign-2)
+  | "header.menu"
+  | "header.settings"
+  | "header.connected"
+  | "header.disconnect"
+  | "header.audioOn"
+  | "header.audioOff"
+  | "sidebar.collapse"
+  | "sidebar.agentOptions"
+  | "sidebar.sessions"
+  | "sidebar.refresh"
+  | "sidebar.newSession"
+  | "sheet.handle"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

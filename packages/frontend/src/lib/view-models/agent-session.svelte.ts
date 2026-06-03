@@ -16,9 +16,11 @@ import type {
   SessionModeState,
   SessionModelState,
 } from "@agentclientprotocol/sdk"
+import { tick } from "svelte"
 import { createAcpClient, type AcpClient } from "@drive-coding/core/acp/client"
+import type { CuesEngine } from "$lib/engines/cues"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
-import { createAgent, notifySessionAttached } from "$lib/adapters/agents-api"
+import { createAgent, deleteAgent, notifySessionAttached } from "$lib/adapters/agents-api"
 import type { CliKind } from "@drive-coding/core"
 import type {
   Bubble,
@@ -31,6 +33,8 @@ import type {
   ToolLocation,
   UserBubble,
 } from "$lib/types/bubble"
+// ─── slice sessions-inline: ייבוא טיפוס + normalize ───
+import { type SessionInfo, normalizeSessionInfo } from "$lib/adapters/sessions"
 
 export type AgentSessionStatus =
   | "idle"        // טרם נוצר סוכן
@@ -50,6 +54,13 @@ export type AgentSessionStatus =
  *   - פונקציית עזר פרטית חדשה → תוספתי (ADDITIVE). מקם ב-`// ─── private ───`.
  */
 export class AgentSession {
+  // ─── slice 6: cues injection ─── (אופציונלי — slice 9 יקשר ל-Settings)
+  readonly #cues?: CuesEngine
+
+  constructor(opts?: { cues?: CuesEngine }) {
+    this.#cues = opts?.cues
+  }
+
   // ─── state ─── (פולשני לעריכה — תאם מול Tama)
   status = $state<AgentSessionStatus>("idle")
   error = $state<string | null>(null)
@@ -69,6 +80,12 @@ export class AgentSession {
   models = $state<SessionModelState | null>(null)
   /** מצב ה-modes הזמינים — null אם ה-agent לא חשף מידע mode. */
   modes = $state<SessionModeState | null>(null)
+
+  // ─── redesign-fix: רשימת סשנים inline ─── (תוספתי)
+  sessions = $state<SessionInfo[]>([])
+  sessionsLoading = $state<boolean>(false)
+  sessionsError = $state<string | null>(null)
+  #sessionsLoaded = false   // True אחרי טעינה מוצלחת אחת — cache; force=true מרענן
 
   #client: AcpClient | null = null
   #sessionId: string | null = null
@@ -91,7 +108,7 @@ export class AgentSession {
     if (this.status === "connecting" || this.status === "connected") {
       throw new Error(`cannot attach in status ${this.status}`)
     }
-    this.status = "connecting"
+    this.#setStatus("connecting")
     this.error = null
     this.bubbles = []
     this.#detached = false
@@ -112,7 +129,7 @@ export class AgentSession {
         if (this.#detached) return
         if (code !== 1000 && code !== 1001) {
           this.error = `WS closed (${code}): ${reason || "no reason"}`
-          this.status = "error"
+          this.#setStatus("error")
         }
       })
       await transport.waitForOpen()
@@ -129,11 +146,11 @@ export class AgentSession {
       // 4. תגיד ל-BE לאיזה sessionId התחברנו (מאמץ מיטבי - best-effort)
       await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
 
-      this.status = "connected"
+      this.#setStatus("connected")
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = msg
-      this.status = "error"
+      this.#setStatus("error")
       this.#cleanup()
     }
   }
@@ -141,9 +158,13 @@ export class AgentSession {
   detach = (): void => {
     this.#detached = true  // ‏לפני ה-cleanup — ‏ה-WS close fires async
     this.#cleanup()
-    this.status = "idle"
+    this.#setStatus("idle")
     this.error = null
     this.bubbles = []
+    // ─── slice sessions-inline: ניקוי cache סשנים ───
+    this.sessions = []
+    this.#sessionsLoaded = false
+    this.sessionsError = null
   }
 
   // ─── פרומפטים (prompting) ────────────────────────────────────
@@ -170,14 +191,14 @@ export class AgentSession {
       ...(opts?.recordingId !== undefined ? { recordingId: opts.recordingId } : {}),
     }
     this.bubbles.push(userBubble)
-    this.status = "thinking"
+    this.#setStatus("thinking")
 
     try {
       await this.#client.prompt(this.#sessionId, text)
-      if (this.status === "thinking") this.status = "connected"
+      if (this.status === "thinking") this.#setStatus("connected")
     } catch (err: unknown) {
       this.error = `prompt failed: ${err instanceof Error ? err.message : String(err)}`
-      this.status = "error"
+      this.#setStatus("error")
     }
   }
 
@@ -196,10 +217,18 @@ export class AgentSession {
     if (this.status === "connecting" || this.status === "connected") {
       throw new Error(`cannot loadSession in status ${this.status}`)
     }
-    this.status = "connecting"
+    this.#setStatus("connecting")
     this.error = null
     this.bubbles = []
     this.#detached = false
+
+    // ─── DEV-only: mock session (sessionId "mock:<name>") ───
+    // זורם updates גולמיים מ-fixture דרך אותו #onSessionUpdate כמו ACP חי —
+    // ללא createAgent/WS/ACP. כלי דיבוג עיצוב; tree-shaken מ-prod build.
+    if (import.meta.env.DEV && input.sessionId.startsWith("mock:")) {
+      await this.#loadMockSession(input.sessionId.slice("mock:".length), input.cwd)
+      return
+    }
 
     try {
       // 1. צור סוכן בצד השרת (זהה ל-attach)
@@ -214,7 +243,7 @@ export class AgentSession {
         if (this.#detached) return
         if (code !== 1000 && code !== 1001) {
           this.error = `WS closed (${code}): ${reason || "no reason"}`
-          this.status = "error"
+          this.#setStatus("error")
         }
       })
       await transport.waitForOpen()
@@ -236,12 +265,73 @@ export class AgentSession {
       // 4. הודע ל-BE (זהה ל-attach, מאמץ מיטבי)
       await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
 
-      this.status = "connected"
+      this.#setStatus("connected")
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = `loadSession failed: ${msg}`
-      this.status = "error"
+      this.#setStatus("error")
       this.#cleanup()
+    }
+  }
+
+  // ─── slice fix-switch-session-warm: החלפת סשן ב-warm reload ─── (תוספתי)
+
+  /**
+   * החלפת סשן על החיבור הקיים — warm reload.
+   * דורש #client פעיל. קורא ל-loadSession של ACP על אותו WS/bridge (ללא createAgent/WS חדש).
+   * אם אין #client — נופל ל-loadSession הכבד (יצירת agent חדש).
+   *
+   * למה לא detach+loadSession: detach הורג את ה-bridge וגורם ל-race של WS closed (1005)
+   * + spawn מיותר. כאן משתמשים בחיבור הקיים — מיידי, ללא race.
+   * (אומת: opencode session/load עובד cross-cwd על אותו bridge.)
+   */
+  switchSession = async (input: {
+    sessionId: string
+    cwd: string
+    cliKind: CliKind
+  }): Promise<void> => {
+    // אין חיבור פעיל → נתיב כבד (דפנסיבי; ה-panel מוצג רק עם חיבור)
+    if (this.#client === null) {
+      return this.loadSession(input)
+    }
+    // לא להחליף באמצע thinking/connecting
+    if (this.status !== "connected") {
+      throw new Error(`cannot switchSession in status ${this.status}`)
+    }
+    // DEV mock: עדיין דרך הנתיב הכבד (mock לא רץ על #client חי)
+    if (import.meta.env.DEV && input.sessionId.startsWith("mock:")) {
+      return this.loadSession(input)
+    }
+
+    this.#setStatus("connecting")
+    this.error = null
+    this.bubbles = []
+
+    try {
+      this.isLoadingHistory = true
+      try {
+        const loadResult = await this.#client.loadSession({
+          sessionId: input.sessionId,
+          cwd: input.cwd,
+        })
+        this.#captureSessionConfig(loadResult)
+      } finally {
+        this.isLoadingHistory = false
+      }
+      this.#sessionId = input.sessionId
+      this.cwd = input.cwd
+
+      // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים)
+      if (this.agentId) {
+        await notifySessionAttached(this.agentId, input.sessionId).catch(() => {})
+      }
+
+      this.#setStatus("connected")
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      this.error = `switchSession failed: ${msg}`
+      this.#setStatus("error")
+      // לא #cleanup — החיבור עדיין תקין; רק הטעינה נכשלה. השאר את ה-#client חי.
     }
   }
 
@@ -317,7 +407,53 @@ export class AgentSession {
     console.warn(`[AgentSession] configId "${configId}" not available — skipping`)
   }
 
+  // ─── redesign-fix: רשימת סשנים inline ─── (תוספתי)
+
+  /**
+   * מביא את רשימת הסשנים דרך החיבור ה-ACP הקיים (#client) — ללא spawn של סוכן.
+   * cache: טעינה מוצלחת אחת; force=true מרענן. no-op אם אין חיבור פעיל (#client===null)
+   * — אז דף החיבור משתמש ב-listSessionsForCwd (spawn) במקום.
+   */
+  listSessions = async (force = false): Promise<void> => {
+    if (this.#client === null) return          // אין חיבור — לא טוענים פה
+    if (this.sessionsLoading) return
+    if (this.#sessionsLoaded && !force) return
+    this.sessionsLoading = true
+    this.sessionsError = null
+    try {
+      const res = await this.#client.listSessions()
+      const raw = (res as { sessions?: unknown[] }).sessions ?? []
+      this.sessions = raw.map(normalizeSessionInfo)
+      this.#sessionsLoaded = true
+    } catch (e) {
+      // -32601 = ה-CLI לא תומך (Gemini) → רשימה ריקה, לא שגיאה
+      if ((e as { code?: number }).code === -32601) {
+        this.sessions = []
+        this.#sessionsLoaded = true
+      } else {
+        this.sessionsError = e instanceof Error ? e.message : String(e)
+      }
+    } finally {
+      this.sessionsLoading = false
+    }
+  }
+
   // ─── הקלטות (recordings) ─── (יתווסף ב-slice 10)
+
+  // ─── slice 6: setter מרכז ─── (additive — מנתב את כל ה-status writes)
+
+  /**
+   * נקודת-mutation יחידה ל-status. כל שינוי status עובר דרך כאן.
+   * מנגן audio cue ב-transitions רלוונטיים (slice 6). אין $effect — קריאה מפורשת.
+   * idempotent: אם next === prev — לא מנגן cue (אין transition).
+   */
+  #setStatus(next: AgentSessionStatus): void {
+    const prev = this.status
+    if (next === prev) return
+    this.status = next
+    if (next === "thinking") this.#cues?.play("thinking")
+    else if (next === "error") this.#cues?.play("error")
+  }
 
   // ─── פרטי ─────────────────────────────────────
 
@@ -333,6 +469,8 @@ export class AgentSession {
   }
 
   #cleanup(): void {
+    // לכוד את ה-agentId לפני האיפוס — צריך אותו ל-deleteAgent.
+    const agentId = this.agentId
     try {
       this.#client?.close()
     } catch {
@@ -341,6 +479,11 @@ export class AgentSession {
     this.#client = null
     this.#sessionId = null
     this.agentId = null
+    // הורג את ה-bridge בצד ה-BE. ה-BE לא הורג את ה-child בסגירת WS לבד
+    // (ws-agent.ts:126 — בכוונה, לאפשר reconnect עתידי), לכן ה-FE אחראי
+    // לבקש מחיקה מפורשת. fire-and-forget — לא חוסם, לא זורק (cleanup רץ גם
+    // ב-error path; ראה sessions.ts:71 לאותו דפוס).
+    if (agentId) void deleteAgent(agentId).catch(() => {})
   }
 
   #mapToolContent(raw: unknown): ToolContent[] {
@@ -394,6 +537,45 @@ export class AgentSession {
       }
     }
     return out
+  }
+
+  /**
+   * DEV-only: טוען fixture של updates גולמיים ומזרים אותם דרך #onSessionUpdate —
+   * בדיוק כמו loadSession אמיתי (אותו ממיר, אותו status flow). מקור: static/fixtures/<name>.json.
+   * delayMs > 0 → השהיה בין updates (לדמות streaming חי לדיבוג scroll/animations).
+   */
+  #loadMockSession = async (name: string, cwd: string): Promise<void> => {
+    try {
+      const res = await fetch(`/fixtures/${name}.json`)
+      if (!res.ok) throw new Error(`fixture "${name}" not found (${res.status})`)
+      const data = (await res.json()) as { updates: unknown[] }
+      this.cwd = cwd
+      this.#sessionId = `mock:${name}`
+
+      // delay אופציונלי דרך ?stream=<ms> (ללא תשתית — sleep צד-לקוח בלבד)
+      const params = new URLSearchParams(typeof location !== "undefined" ? location.search : "")
+      const delayMs = Number(params.get("stream") ?? "0") || 0
+
+      this.isLoadingHistory = true
+      try {
+        for (const update of data.updates) {
+          // עוטף בצורת SessionNotification ({ update }) כמו ב-ACP אמיתי
+          this.#onSessionUpdate({ update } as unknown as SessionNotification)
+          if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs))
+        }
+        // tick(): מאלץ flush של ה-$effect של ה-Speaker בעוד isLoadingHistory=true,
+        // כך שכל הבועות מסומנות כמעובדות (replay-quiet) לפני ההצבה ל-false.
+        // בלי זה הלולאה הסינכרונית מסתיימת לפני שה-effect רץ → ה-Speaker מקריא הכל.
+        await tick()
+      } finally {
+        this.isLoadingHistory = false
+      }
+      this.status = "connected"
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      this.error = `mock loadSession failed: ${msg}`
+      this.status = "error"
+    }
   }
 
   #onSessionUpdate = (notification: SessionNotification): void => {

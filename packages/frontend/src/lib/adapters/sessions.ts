@@ -53,7 +53,7 @@ export async function listSessionsForCwd(cwd: string, cliKind: CliKind): Promise
     try {
       const res = await acp.listSessions()
       const raw = (res as { sessions?: unknown[] }).sessions ?? []
-      return raw.map(normalizeSession)
+      return raw.map(normalizeSessionInfo)
     } catch (e) {
       // -32601 = מתודה לא נמצאה (למשל Gemini לא תומך ב-listSessions)
       if ((e as { code?: number }).code === -32601) return []
@@ -73,7 +73,8 @@ export async function listSessionsForCwd(cwd: string, cliKind: CliKind): Promise
   }
 }
 
-function normalizeSession(s: unknown): SessionInfo {
+/** ממיר נתוני session גולמיים מה-ACP לצורת SessionInfo. ─── slice sessions-inline: ייצוא ל-AgentSession ─── */
+export function normalizeSessionInfo(s: unknown): SessionInfo {
   const item = s as Record<string, unknown>
   return {
     sessionId: String(item["sessionId"] ?? ""),
