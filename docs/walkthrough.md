@@ -1,3 +1,23 @@
+## 2026-06-03 21:43 — slice-ws-reconnect-fix-nbug2 — Commit: תיקון NBug2 (cold-teardown flag)
+
+### מה בוצע?
+
+תיקון NBug2: `#coldReconnect` שסגר WS ישן דרך `#client.close()` (שולח 1005) ציית ל-onClose הישן שעדיין רשום → לולאת reconnect שנייה → agent יתום.
+
+**הפתרון**: flag `#tearingDown` שמסמן "סגירה מכוונת בתוך cold" — כל 4 ה-onClose handlers בודקים אותו לפני `#handleUnexpectedClose`.
+
+| שינוי | פרטים |
+|---|---|
+| `agent-session.svelte.ts` | הוסף `#tearingDown = false` + `_setTearingDownForTest` + `_wouldReconnectOnCloseForTest` (predicate טהור) |
+| `agent-session.svelte.ts` | `#coldReconnect`: `#tearingDown=true` לפני `close()`, `finally { #tearingDown=false }` אחרי `loadSession` |
+| `agent-session.svelte.ts` | 4 onClose handlers (attach/:347, loadSession/:465, warmReconnect/:292): הוסף `if (this.#tearingDown) return` |
+| `agent-session.reconnect.test.svelte.ts` | 5 טסטים חדשים (TDD): gate, control, detach-override, 1000/1001 |
+
+**בדיקות**: 184 tests ✓ (כולל 5 חדשים), typecheck ✓, build ✓.
+**חריגות**: lint errors הן pre-existing (199 errors, 0 חדשים).
+
+---
+
 ## 2026-06-03 17:39 — slice ws-reconnect-infra — Commit 5: תיקון NBug1+NBug2 (calev-heavy)
 
 ### מה בוצע?

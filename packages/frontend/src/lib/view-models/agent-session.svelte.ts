@@ -108,6 +108,12 @@ export class AgentSession {
    * התנתק באופן מפורש.
    */
   #detached = false
+  /**
+   * True בזמן סגירת WS מכוונת בתוך #coldReconnect. מונע מה-onClose הישן
+   * (שמקבל 1005 מ-#client.close()) להצית לולאת reconnect שנייה (NBug2).
+   * שונה מ-#detached: detach=סיום סופי; tearingDown=מעבר זמני בתוך cold.
+   */
+  #tearingDown = false
   // ─── slice ws-reconnect-infra: reconnect internals ───
   /** ה-cliKind של ה-attach/loadSession האחרון — נדרש ל-cold reconnect. */
   #cliKind: CliKind | null = null
@@ -121,6 +127,20 @@ export class AgentSession {
   // ─── DEV-only test helpers (tree-shaken from prod) ───
   /** @internal */ _setStatusForTest(s: AgentSessionStatus): void { this.#setStatus(s) }
   /** @internal */ _setReconnectAttemptForTest(n: number): void { this.reconnectAttempt = n }
+  /** @internal */ _setTearingDownForTest(v: boolean): void { this.#tearingDown = v }
+  /**
+   * @internal **predicate טהור** — מחזיר האם onClose עם ה-code הנתון *היה* מצית
+   * reconnect, לפי אותה שרשרת gate כמו ה-handlers האמיתיים (#detached → #tearingDown
+   * → 1000/1001). **אינו מריץ** את #handleUnexpectedClose/#scheduleReconnect — כדי
+   * שהטסט לא יצית #runReconnectLoop עם setTimeout תלוי / async מודלף. הטסט בודק רק
+   * את הערך המוחזר.
+   * ⚠️ חובה לשמור מסונכרן עם שרשרת התנאים ב-2.ג (onClose handlers).
+   */
+  _wouldReconnectOnCloseForTest(code: number): boolean {
+    if (this.#detached) return false
+    if (this.#tearingDown) return false
+    return code !== 1000 && code !== 1001
+  }
 
   // ─── slice ws-reconnect-infra: reconnect helpers ────────────────────────────
 
@@ -233,17 +253,22 @@ export class AgentSession {
   #coldReconnect = async (): Promise<void> => {
     // שמור agentId הקודם לפני שloadSession ידרוס אותו
     const prevAgentId = this.agentId
-    // סגור את ה-WS/client הישן (NBug2: מנע WS ו-agent תקועים ב-BE)
-    try { this.#client?.close() } catch { /* כבר סגור */ }
-    this.#client = null
-    if (this.status === "connecting" || this.status === "connected") {
-      this.#setStatus("disconnected")   // מאפס מצב שהשאיר warm-fail; עובר את guard 217
+    this.#tearingDown = true          // NBug2: השתק onClose ישן (1005) של ה-WS שאנו סוגרים
+    try {
+      // סגור את ה-WS/client הישן (NBug2: מנע WS ו-agent תקועים ב-BE)
+      try { this.#client?.close() } catch { /* כבר סגור */ }
+      this.#client = null
+      if (this.status === "connecting" || this.status === "connected") {
+        this.#setStatus("disconnected")   // מאפס מצב שהשאיר warm-fail; עובר את guard 217
+      }
+      await this.loadSession({
+        sessionId: this.#sessionId!,
+        cwd: this.cwd!,
+        cliKind: this.#cliKind!,
+      })
+    } finally {
+      this.#tearingDown = false       // שחרר אחרי שה-WS החדש פעיל
     }
-    await this.loadSession({
-      sessionId: this.#sessionId!,
-      cwd: this.cwd!,
-      cliKind: this.#cliKind!,
-    })
     // מחק את ה-agent הישן אחרי שloadSession הצליח לייצר חדש (NBug1: מנע agent leak)
     // רק אם ה-agentId השתנה (loadSession קובע agentId חדש; prevAgentId הוא הישן)
     if (prevAgentId && prevAgentId !== this.agentId) {
@@ -291,6 +316,7 @@ export class AgentSession {
       // ה-WS פתוח. רשום onClose "אמיתי" לנפילות עתידיות.
       transport.onClose((code, reason) => {
         if (this.#detached) return
+        if (this.#tearingDown) return        // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
         if (code !== 1000 && code !== 1001) this.#handleUnexpectedClose(code, reason)
       })
 
@@ -346,6 +372,7 @@ export class AgentSession {
       const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
       transport.onClose((code, reason) => {
         if (this.#detached) return
+        if (this.#tearingDown) return        // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
         if (code !== 1000 && code !== 1001) {
           this.#handleUnexpectedClose(code, reason)
         }
@@ -464,6 +491,7 @@ export class AgentSession {
       const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
       transport.onClose((code, reason) => {
         if (this.#detached) return
+        if (this.#tearingDown) return        // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
         if (code !== 1000 && code !== 1001) {
           this.#handleUnexpectedClose(code, reason)
         }
