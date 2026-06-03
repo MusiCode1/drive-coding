@@ -36,7 +36,7 @@ import {
 import { cacheKeyFor } from "@drive-coding/core/voice/cache-key"
 import { untrack } from "svelte"
 import type { CuesEngine } from "../engines/cues"
-import type { AgentSession, AgentSessionStatus } from "./agent-session.svelte"
+import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
 import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
 import { AudioStream } from "../engines/audio-stream"
@@ -99,6 +99,7 @@ export class Speaker {
   #jobs: TtsJob[] = []
   #activeFetches = 0
   #prevStatus: AgentSessionStatus = "idle"
+  #prevTurnState: TurnState = "idle"
   /** Slice 4: עוקב כמה מקטעים של כל ThoughtBubble תורגמו. */
   #translatedSegByBubble: Map<string, number> = new Map()
   // slice 22: #narratingCallIds הוסר — #processedNarrationCallIds הוא ה-guard
@@ -129,6 +130,7 @@ export class Speaker {
       $effect(() => {
         // ── קריאות (נעקבות) ────────────────────────────────────────────
         const status = this.#session.status
+        const turnState = this.#session.turnState
         const enabled = this.enabled
         // redesign-3 / slice 9a: העדפות הקראה (reactive — toggle מפעיל את ה-effect מחדש)
         const speakThoughts = this.#settings.speakThoughts
@@ -160,8 +162,9 @@ export class Speaker {
         untrack(() => {
           this.#processBubbles(bubbles, enabled, isLoadingHistory, speakThoughts)
           this.#processToolBubbles(bubbles, isLoadingHistory, narrateTools)
-          this.#handleStatusTransition(status, enabled, speakThoughts)
+          this.#handleStatusTransition(status, turnState, enabled, speakThoughts)
           this.#prevStatus = status
+          this.#prevTurnState = turnState
         })
       })
     })
@@ -263,17 +266,20 @@ export class Speaker {
     this.#pumpFetchLoop()
   }
 
-  #handleStatusTransition(status: AgentSessionStatus, enabled: boolean, speakThoughts: boolean): void {
-    // slice 6: תור דיבור חדש מתחיל כש-status עובר ל-thinking → אפס את ה-cue guard.
-    // reset כאן (turn-start) ולא ב-#stopAndClear (לא רץ בסוף תור רגיל).
-    if (status === "thinking" && this.#prevStatus !== "thinking") {
+  #handleStatusTransition(status: AgentSessionStatus, turnState: TurnState, enabled: boolean, speakThoughts: boolean): void {
+    // model-status-control-replay: תור דיבור חדש מתחיל כש-turnState עובר מ-idle → non-idle.
+    // reset cue guard כאן (turn-start) ולא ב-#stopAndClear (לא רץ בסוף תור רגיל).
+    if (turnState !== "idle" && this.#prevTurnState === "idle") {
       this.#spokeThisTurn = false
     }
 
-    // התור הסתיים? פלוש כל buffer פר-בועה כמקטע אחרון.
+    // התור הסתיים? = #prevTurnState היה active, turnState חזר ל-idle.
+    // §8.3: זה מנוע ה-cue speaking — mechanism שביר, #prevTurnState חייב לעקוב נכון.
     const justFinished =
-      this.#prevStatus === "thinking" && (status === "connected" || status === "error")
-    if (justFinished && enabled) {
+      this.#prevTurnState !== "idle" && turnState === "idle"
+    // error path: status === "error" גם מסיים את התור (status tracked ל-justFinished)
+    const justFinishedOrError = justFinished || (this.#prevStatus === "connected" && status === "error")
+    if (justFinishedOrError && enabled) {
       for (const [bubbleId, state] of this.#bubbleStates) {
         if (state.buffer.trim().length === 0) continue
         const bubble = this.#session.bubbles.find((b) => b.id === bubbleId)

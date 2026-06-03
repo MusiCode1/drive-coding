@@ -1,3 +1,20 @@
+## 2026-06-03 — slice-model-status-control-replay — Commit 1 (הפרדת status/turnState)
+
+### מה בוצע?
+
+**Commit 1**: refactor הפרדת status/turnState — הסרת `"thinking"` מ-`AgentSessionStatus`, הוספת `TurnState` חדש + `#setTurnState`.
+
+- `agent-session.svelte.ts`: הוסף `TurnState` type, שדה `turnState = $state("idle")`, מתודה פרטית `#setTurnState`. עדכון `sendPrompt` (מסיר thinking מ-guard + עבר ל-`#setTurnState`), `applyConfigOption`, `#onSessionUpdate` (agent_message_chunk→responding, agent_thought_chunk→thinking, tool_call/tool_call_update→calling-tool), הסרת cue thinking מ-`#setStatus`.
+- `voice-mode.svelte.ts`: `status !== "thinking"` → `turnState !== "idle"` בשני מקומות.
+- `speaker.svelte.ts`: הוסף `#prevTurnState`, העביר `#handleStatusTransition` לקבל `turnState`, עדכן logic חישוב `justFinished` ו-reset של `#spokeThisTurn`.
+- `TypeArea.svelte`: הסרת `thinking` מ-guard `isDisabled`.
+- `AppHeader.svelte`: הסרת `thinking` מתנאי ה-dot הירוק.
+
+**חריגות**: אין.
+**בדיקות**: 602 tests ✓, typecheck FE ✓, lint:i18n ✓.
+
+---
+
 ## 2026-06-03 — slice fix-409-replace-flag הושלם — 602 tests ✓
 
 ### מה בוצע?

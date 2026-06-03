@@ -16,7 +16,7 @@ const t = getI18n().t
 let promptText = $state("")
 
 const isDisabled = $derived(
-  session.status !== "connected" && session.status !== "thinking"
+  session.status !== "connected"
 )
 
 function onSubmit(e?: SubmitEvent) {

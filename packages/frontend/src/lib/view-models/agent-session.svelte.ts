@@ -40,8 +40,10 @@ export type AgentSessionStatus =
   | "idle"        // טרם נוצר סוכן
   | "connecting"  // יוצר סוכן + לחיצת יד של ACP
   | "connected"   // מוכן לקבל פרומפטים
-  | "thinking"    // נשלח פרומפט, ממתין לתגובת הסוכן
   | "error"
+
+/** מה המודל עושה בתור הנוכחי. מופרד מ-status (חיבור) — §1 ב-brief. */
+export type TurnState = "idle" | "waiting" | "thinking" | "responding" | "calling-tool"
 
 /**
  * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
@@ -63,6 +65,8 @@ export class AgentSession {
 
   // ─── state ─── (פולשני לעריכה — תאם מול Tama)
   status = $state<AgentSessionStatus>("idle")
+  /** מה המודל עושה בתור הנוכחי. idle = אין תור פעיל. */
+  turnState = $state<TurnState>("idle")
   error = $state<string | null>(null)
   bubbles = $state<Bubble[]>([])
   agentId = $state<string | null>(null)
@@ -174,7 +178,7 @@ export class AgentSession {
    * מחזיר Promise שמסתיים כשהתור מושלם (או נדחה בשגיאה).
    */
   sendPrompt = async (text: string, opts?: { recordingId?: string }): Promise<void> => {
-    if (this.status !== "connected" && this.status !== "thinking") return
+    if (this.status !== "connected") return
     if (!this.#client || !this.#sessionId) return
     if (!text.trim()) return
 
@@ -191,11 +195,11 @@ export class AgentSession {
       ...(opts?.recordingId !== undefined ? { recordingId: opts.recordingId } : {}),
     }
     this.bubbles.push(userBubble)
-    this.#setStatus("thinking")
+    this.#setTurnState("waiting")
 
     try {
       await this.#client.prompt(this.#sessionId, text)
-      if (this.status === "thinking") this.#setStatus("connected")
+      this.#setTurnState("idle")
     } catch (err: unknown) {
       this.error = `prompt failed: ${err instanceof Error ? err.message : String(err)}`
       this.#setStatus("error")
@@ -361,7 +365,7 @@ export class AgentSession {
    * מדלג בשקט אם הסשן לא מחובר.
    */
   applyConfigOption = async (configId: string, value: string | boolean): Promise<void> => {
-    if (this.status !== "connected" && this.status !== "thinking") return
+    if (this.status !== "connected") return
     if (!this.#client || !this.#sessionId) return
 
     // מסלול 1: option קיים ב-configOptions לפי id
@@ -452,8 +456,22 @@ export class AgentSession {
     const prev = this.status
     if (next === prev) return
     this.status = next
-    if (next === "thinking") this.#cues?.play("thinking")
-    else if (next === "error") this.#cues?.play("error")
+    if (next === "error") this.#cues?.play("error")
+  }
+
+  // ─── model-status-control-replay: setter ל-turnState ───
+
+  /**
+   * נקודת-mutation יחידה ל-turnState. אין $effect — קריאה מפורשת.
+   * מנגן cue "thinking" על מעבר idle→waiting (פעם אחת ביציאה מ-idle).
+   * idempotent: אם next === prev — לא מנגן cue.
+   */
+  #setTurnState(next: TurnState): void {
+    const prev = this.turnState
+    if (next === prev) return
+    this.turnState = next
+    // cue thinking: רק על מעבר idle→waiting (תחילת תור חדש)
+    if (prev === "idle" && next === "waiting") this.#cues?.play("thinking")
   }
 
   // ─── פרטי ─────────────────────────────────────
@@ -615,8 +633,10 @@ export class AgentSession {
     const messageId = update.messageId ?? null
 
     if (update.sessionUpdate === "agent_message_chunk") {
+      this.#setTurnState("responding")
       this.#appendChunk("message", text, messageId)
     } else if (update.sessionUpdate === "agent_thought_chunk") {
+      this.#setTurnState("thinking")
       this.#appendChunk("thought", text, messageId)
     } else if (update.sessionUpdate === "user_message_chunk") {
       // נשלח על ידי הסוכן במהלך ניגון מחדש של ההיסטוריה מ-loadSession (לפי מפרט ACP
@@ -639,6 +659,7 @@ export class AgentSession {
     locations?: unknown[] | null
   }): void {
     if (update.toolCallId === undefined) return
+    this.#setTurnState("calling-tool")
     // סכמת ACP: התראה tool_call דורשת toolCallId + title. ה-title עלול להיות undefined
     // בפועל אם הסוכן שולח התראה מינימלית, לכן יש לסגת בצורה עדינה.
     const bubble: ToolBubble = {
@@ -677,6 +698,10 @@ export class AgentSession {
     locations?: unknown[] | null
   }): void {
     if (update.toolCallId === undefined) return
+    // pending/in_progress → calling-tool (completed לא מעדכן — תור ממשיך)
+    if (update.status === "pending" || update.status === "in_progress") {
+      this.#setTurnState("calling-tool")
+    }
     const idx = this.bubbles.findIndex(
       (b) => b.kind === "tool" && b.toolCall.toolCallId === update.toolCallId,
     )
