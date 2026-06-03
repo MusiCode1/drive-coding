@@ -4,7 +4,11 @@
 > verifier: calev light.
 > **depends_on: [slice-A-status-bubble]** — B מבוסס על A (הבועה החליפה את חיווי-המודל
 > בכל שיטות-הקלט; ה-wake-word pane מסתמך על כך שה-footer כבר לא מציג thinking/speaking).
-> base: **branch של slice-A** (שרשור — לא dev), כי A טרם מוזג. אם A כבר מוזג ל-dev → base=dev.
+> base: **תלוי בסדר הביצוע**:
+> - אם A כבר בוצע ומוזג ל-dev → `base=dev`.
+> - אם A בוצע ויש branch `slice-A-status-bubble` → `base=slice-A-status-bubble` (שרשור).
+> - אם A **טרם בוצע** (קיים רק ה-brief) → **אל תתחיל את B** — B חייב את A קודם.
+>   ⚠️ נכון לכתיבה, branch `slice-A-status-bubble` לא קיים — B ממתין ל-A.
 
 ## 0. הקשר וסביבה
 
@@ -52,20 +56,27 @@ WakeWordVM detect#2 → capture.stop() → submitVoiceInput(blob) → session.se
 
 ### Commit 1 — action משותף submitVoiceInput (refactor Mic + שיתוף)
 **`actions/submit-voice-input.ts`** (חדש) — מחלץ את הלוגיקה המשותפת:
-- חתימה: `submitVoiceInput(blob: Blob, session: AgentSession, opts?: { previousAssistantText?: string }): Promise<{ ok: boolean; errorKey?: MessageKey }>`
-- גוף: `transcribe(blob, opts)` → אם text לא ריק → `session.sendPrompt(text, { recordingId })`.
+- חתימה: `submitVoiceInput(blob: Blob, session: AgentSession): Promise<{ ok: boolean; errorKey?: MessageKey }>`
+  (⚠️ **בלי** `previousAssistantText` — Mic היום קורא `transcribe(blob)` בלי opts
+  (mic.svelte.ts:139), אז אין מה לשמר. אם בעתיד נרצה context — תוספת נפרדת.)
+- גוף: `transcribe(blob)` → אם text לא ריק → `session.sendPrompt(text, { recordingId })`.
   מחזיר תוצאה (לא זורק) כדי שכל caller יטפל ב-error לפי דרכו.
-- **Mic** (`view-models/mic.svelte.ts` :128-153, `#transcribeAndSend`): שנה לקרוא
-  ל-`submitVoiceInput` במקום הלוגיקה הכפולה. שמור על אותה התנהגות (error → `this.error`,
-  state → idle). ⚠️ Mic מזריק `previousAssistantText`? בדוק את הקריאה המקורית ושמר.
+- **Mic** (`view-models/mic.svelte.ts` — `#runTranscribe` ב-**:135-156**, נקרא מ-:94
+  ו-:110): שנה לקרוא ל-`submitVoiceInput` במקום הלוגיקה (transcribe :139 + sendPrompt :153).
+  שמור על אותה התנהגות (error → `this.error`, state → idle).
 - testing: **integration** (Mic tests קיימים חייבים לעבור — אותה התנהגות).
 
 ### Commit 2 — WakeWordVM: session + flow אמיתי
 **`view-models/wake-word.svelte.ts`** — שינויים:
-- constructor: הוסף `session: AgentSession` ל-config/opts (מוזרק מ-layout).
+- constructor: הוסף `session?: AgentSession` **אופציונלי** ל-config/opts (מוזרק מ-layout).
+  ⚠️ **חובה אופציונלי** — ה-route בדיקה `routes/wake-word-test/+page.svelte:17` יוצר
+  `new WakeWordVM({...})` **בלי** session. constructor שדורש session ישבור את ה-route
+  ב-typecheck (DoD#6 — ה-route חייב להמשיך לעבוד). session אופציונלי:
+  - **עם** session (production, מ-layout) → detect#2 קורא submitVoiceInput→sendPrompt.
+  - **בלי** session (route בדיקה) → ההתנהגות הנוכחית נשמרת (auto-play של ה-clip).
 - ב-detect#2 (סוף הקלטה): היום בונה blob ו**משמיע אוטומטית** (auto-play setTimeout).
-  **החלף** ב: `submitVoiceInput(blob, session)` → ה-blob הולך לסוכן. **הסר** את ה-auto-play
-  (`new Audio(url).play()`). ה-currentClipUrl יכול להישאר (debugging) או להוסר — להחלטה.
+  **שנה ל-מותנה**: `if (this.#session) { submitVoiceInput(blob, this.#session) }
+  else { /* auto-play הקיים — מצב route בדיקה */ }`.
 - error: אם `submitVoiceInput` מחזיר errorKey → `this.lastError = errorKey`.
 - ⚠️ ה-cue end (440Hz) נשאר (חיווי "סיימתי להקליט"). חיווי-מודל (thinking…) מגיע מהבועה.
 - testing: **integration** (mock session + submitVoiceInput, בדוק שעל detect#2 נקרא
@@ -74,8 +85,9 @@ WakeWordVM detect#2 → capture.stop() → submitVoiceInput(blob) → session.se
 ### Commit 3 — context + layout: WakeWordVM singleton
 - **`context.ts`**: זוג חדש `// ─── wake-word ───` + `export const [getWakeWord, setWakeWord] = createContext<WakeWordVM>()` (additive — section חדש, parallel-safe).
 - **`+layout.svelte`**: צור `new WakeWordVM({ keywords, baseAssetUrl, session })` + `setWakeWord(...)`
-  (additive — אחרי שאר ה-VMs; session כבר נוצר שם). keywords = 4 (jarvis/alexa/mycroft/rhasspy),
-  baseAssetUrl = `/wake-word/models`.
+  (additive — אחרי שאר ה-VMs; session כבר נוצר שם). keywords = 4 **בדיוק כמפתחות
+  MODEL_FILE_MAP** (types.ts:30-34): `["hey_jarvis", "alexa", "hey_mycroft", "hey_rhasspy"]`
+  (עם `hey_` ל-jarvis/mycroft/rhasspy, בלי ל-alexa). baseAssetUrl = `/wake-word/models`.
   ⚠️ **lazy-load**: אל תקרא `load()` ב-layout (טוען ~10MB). ה-load יקרה כשבוחרים את ה-tab
   (§Commit 4). ה-VM נוצר אבל המודלים לא נטענים עד שצריך.
 - testing: **manual** (typecheck — ה-wiring).
@@ -87,6 +99,8 @@ WakeWordVM detect#2 → capture.stop() → submitVoiceInput(blob) → session.se
   + `{t("record.tab.wakeword")}`. אותו דפוס כמו הכפתורים הקיימים (:54-86).
 - pane רביעי ב-action-area (אחרי typing pane :102-109): `class:is-active={mode === "wake-word"}`
   עם `<VoiceOrb {vm} />` כאשר `const vm = getWakeWord()`.
+  ⚠️ ה-import: `import VoiceOrb from "$lib/components/VoiceOrb.svelte"` — הקובץ ב-
+  `components/VoiceOrb.svelte` (**לא** `components/chat/`).
 - **lazy-load**: כשנכנסים ל-mode wake-word פעם ראשונה → `vm.load()` (אם טרם נטען).
   `$effect` או onclick. ה-VoiceOrb מציג "loading" עד ready (ה-VM צריך לחשוף flag —
   ראה §4.1).
@@ -106,9 +120,14 @@ WakeWordVM detect#2 → capture.stop() → submitVoiceInput(blob) → session.se
    ⚠️ זה תוספת ל-WakeWordVM + VoiceOrb. בדוק מה ה-VM חושף היום (load() קיים אבל אין flag).
 2. **toggle בלעדי בין שיטות-קלט:** היום mode הוא $state מקומי שמחליף panes. עם wake-word,
    מעבר record→wake-word צריך להפעיל האזנה, ו-wake-word→record לכבות. הוסף `$effect` ב-
-   RecordFooter שמסנכרן `mode === "wake-word"` ↔ `vm` listening (לפי mode → vm.toggle).
-   ⚠️ זהירות מלולאה (gotcha Svelte $effect read+write) — ה-effect קורא mode וכותב ל-vm
-   (לא ל-mode), אז בטוח. אבל ודא ש-toggle idempotent.
+   RecordFooter שמסנכרן `mode === "wake-word"` ↔ `vm` listening.
+   ⚠️ ה-effect קורא mode וכותב ל-vm (לא ל-mode) → בטוח מלולאה.
+   ⚠️ **`vm.toggle()` אינו idempotent** (הוא off↔listening flip — קריאה כפולה מחזירה
+   למצב הקודם). אל תקרא toggle() ב-$effect ישירות (effect עלול לרוץ שוב). במקום זה:
+   קרא לפי היעד המפורש — אם `mode === "wake-word"` ו-`vm.mode === "off"` → toggle();
+   אם `mode !== "wake-word"` ו-`vm.mode !== "off"` → toggle(). כלומר guard שמשווה את
+   ה-mode הרצוי למצב ה-vm בפועל לפני flip. (או הוסף ל-VM methods מפורשים `startListening()`
+   / `stopListening()` idempotent — נקי יותר. להחלטת executor.)
 3. **submitVoiceInput previousAssistantText:** Mic מעביר אותו (להקשר transcribe). wake-word —
    האם יש גישה ל-last assistant text? (session.bubbles אחרון מסוג message). אם לא קריטי —
    אפשר להשמיט ב-wake-word (transcribe עובד גם בלי). להחלטה.
