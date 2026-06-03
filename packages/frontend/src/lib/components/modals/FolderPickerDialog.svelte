@@ -29,10 +29,11 @@ let showHidden = $state(false)
 
 // טעינה ב-$effect כשה-dialog נפתח (onOpenChange לא נורה בפתיחה programmatic ב-Bits controlled mode)
 // איפוס showHidden בכל פתיחה (לפי §2: מקומי, מתאפס)
-// untrack על currentPath: מונע re-run של ה-effect כש-loadFolder כותב currentPath (Svelte gotcha)
+// untrack: מונע re-run של ה-effect כש-loadFolder כותב currentPath/showHidden (Svelte gotcha)
+// הkתיבה ל-showHidden=false עטופה ב-untrack למניעת loop (Svelte 5 edge case: write בתוך effect)
 $effect(() => {
   if (modals.folderOpen) {
-    showHidden = false
+    untrack(() => { showHidden = false })
     void loadFolder(untrack(() => currentPath))
   }
 })
