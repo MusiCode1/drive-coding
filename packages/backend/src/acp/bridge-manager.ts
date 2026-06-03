@@ -20,6 +20,7 @@ export function createBridgeManager(): BridgeManager & {
   markAttached(bridgeId: string): void
   markDetached(bridgeId: string): void
   listIdle(timeoutMs: number, now: number): string[]
+  getCreatedAt(bridgeId: string): number | null   // TEMPORARY (fix-idle-flaky)
 } {
   type Entry = {
     handle: BridgeHandle
@@ -215,6 +216,10 @@ export function createBridgeManager(): BridgeManager & {
         }
       }
       return out
+    },
+
+    getCreatedAt(bridgeId: string): number | null {
+      return store.get(bridgeId)?.createdAt ?? null
     },
   }
 }

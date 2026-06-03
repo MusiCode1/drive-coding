@@ -1,3 +1,21 @@
+## 2026-06-02 — slice fix-idle-flaky הושלם — 10/10 ריצות נקיות
+
+### מה בוצע?
+
+Slice `fix-idle-flaky` — ייצוב flaky test ב-bridge-manager.idle.test.ts. 2 commits.
+
+| commit | hash | תוכן |
+|---|---|---|
+| C1 | b9929ef | getter getCreatedAt ב-bridge-manager.ts — TEMPORARY (fix-idle-flaky) |
+| C2 | 0eaf4bc | תיקון test 4+5: Date.now() → bm.getCreatedAt(id)! |
+
+**שורש הבעיה**: tests 4+5 קראו `Date.now()` *אחרי* `await spawnBridge`, אבל `e.createdAt` נקבע *בתוך* ה-spawn. drift של ms אחד מספיק כדי שtest 4 ייכשל.
+**הפתרון**: getter קריאה-בלבד `getCreatedAt` מחזיר את createdAt האמיתי מה-store. tests 4+5 מודדים מאותה נקודת-אמת כמו `listIdle`.
+
+`listIdle` (206-218) לא שונה. tests 2/3/6 לא שונו.
+DoD: 10/10 ריצות `pnpm test` — 452 passed, 0 failed.
+typecheck: 0, lint:i18n: נקי.
+
 ## 2026-06-02 — slice review-fixes-2 הושלם — calev GO (13/13)
 
 ### מה בוצע?
