@@ -2,7 +2,8 @@
 
 > סטטוס: **READY** (אביגיל round 2, 0 findings). complexity: **8/10** → verifier-slice-**heavy**.
 > verifier-phase אחרי Commit 1 (state refactor), Commit 3 (cancelTurn/FSM), Commit 4 (I/O recordings).
-> base: `dev` (tip `6e8b504` — אמת `git -C dev log --oneline -1` לפני worktree).
+> base: `poc-wake-word` (מוזג עם dev `6e8b504` — מכיל את כל קוד dev + ה-brief הזה).
+> ה-line numbers אומתו מול dev `6e8b504` = ה-merge-base, תקפים ב-poc-wake-word.
 > depends_on: [] (sessions-inline כבר ב-dev; wake-word infra כבר ב-dev).
 > ⚠️ מאחד את `slice-A-status-bubble.md` (refactor state + בועה) עם slice-AB
 > (cancelTurn + הקלטות + נגן-בודד). `slice-A-status-bubble.md` ו-`slice-AB-*` הם
@@ -23,10 +24,11 @@
 
 **שם package FE:** `@drive-coding/frontend-v2` (כל `pnpm --filter`).
 
-**worktree:**
+**worktree:** (נגזר מ-`poc-wake-word` — שם ה-brief; מכיל את כל קוד dev אחרי המיזוג)
 ```bash
-git worktree add .worktrees/slice-model-status-control-replay -b slice-model-status-control-replay dev
+git worktree add .worktrees/slice-model-status-control-replay -b slice-model-status-control-replay poc-wake-word
 cd .worktrees/slice-model-status-control-replay && pnpm install && pnpm hooks:install
+# ה-brief: docs/plans/slice-model-status-control-replay.md (נמצא ב-worktree אחרי הגזירה)
 ```
 
 **איך מריצים:**
