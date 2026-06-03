@@ -655,3 +655,94 @@ auto-load לא ירוץ בדסקטופ (sheet לא נפתח שם). round 2 (אח
 ### רעיונות שנדחו
 - ביצוע התיקון המלא של ה-flaky (getCreatedAt getter) — נדחה (משתמשת): לא שווה את ה-slice
   על טסט TEMPORARY שעתיד להימחק. skip מספיק.
+
+## 2026-06-02 — slices AB + C: בקרת סוכן, חיווי, ופלייליסט replay
+
+### רקע
+המשתמשת ביקשה 3 יכולות אחרי שלא יכלה לעצור סוכן באמצע ריצה: (1) נגן/השמעה-חוזרת
+(שיחה מלאה + הודעה בודדת + התחל-מנקודה), (2) עצירת סוכן בריצה, (3) חיווי סטטוס בזמן אמת.
+
+### ממצאי סקר קוד (קובעים את התכנון)
+- **ACP cancel כבר קיים** (`AcpClient.cancel` core/acp/client.ts:161) — אף אחד לא קורא לו.
+- **הבאג "X מהבהב לנצח"**: `VoiceMode.cancel()` עוצר mic+speaker אבל לא את הסוכן →
+  status נשאר "thinking" → ה-$effect (voice-mode:55-64) לא מאפס isCancelling (תנאי
+  status!=="thinking" לא מתקיים) → FSM תקוע ב-cancelling, כפתור flash-state מהבהב.
+  בקשה 2a (עצירה) והבאג = **אותו תיקון** (cancelTurn→ACP cancel→status חוזר).
+- **חיווי סטטוס — i18n כבר קיים במלואו**: voiceMode.status.* (he.ts:40-45). חלק 3a ≈ UI בלבד.
+- **TTS cache קיים ועובד** (BE proxy-cache, data/cache/proxy מלא, hit ~0.004s) →
+  replay של בועת-סוכן = synthesizeStreaming מחדש = חינם+מהיר. **אין צורך לשמור אודיו TTS.**
+- **הקלטות משתמש — BE store מלא וקיים** (http-history POST/GET /api/recordings, דיסק),
+  אבל ה-FE **מנותק**: transcribe.ts מחזיר recordingId:"" קשיח (stub). data/recordings ריק.
+- **Player engine קיים** (engines/player.svelte.ts, jumpToSegment "שמור ל-slice 10").
+  הוא engine נמוך-רמה (segmentId+orderKey, streaming TTS). **אין VM שמתרגם "בועה"→"השמע".**
+
+### חלוקה: AB (מאוחד) + C (נפרד)
+המשתמשת ביקשה לאחד A+B כדי לחסוך תקורה. הוסכם: **slice AB** (A=commits 1-2 עצירה+חיווי,
+B=commits 3-5 הקלטות+בועה-בודדת) — brief אחד, סבב verify אחד, אבל A קודם כך שהבאג
+המיידי מתוקן ראשון גם אם B יסתבך. **slice C נפרד** (פלייליסט מלא) — הגדול, נשען על
+מקור-האודיו ש-B מוכיח.
+
+### החלטות-מפתח
+- **base AB = dev אחרי merge sessions-inline** (אופציית המשתמשת). שניהם נוגעים ב-transcribe.ts
+  → sessions-inline ראשון, אחרת merge conflict. depends_on מוצהר.
+- **השמעת בועה בודדת ב-`<audio>`** (blob/objectURL), **לא** Player/AudioStream engine.
+  סיבה: השמעה חד-פעמית; ה-Player בנוי ל-streaming חי עם orderKey — תקורה מיותרת.
+  C ממשיך באותו נתיב `<audio>` (native ended/pause/seek מתאים לפלייליסט).
+- **בועה בודדת = ללא לוגיקת הגדרות** — בחרת בועה → מתנגנת. speakThoughts/narrateTools
+  רלוונטיים רק לפלייליסט המלא (C, buildPlaylist מסנן).
+- **replay הוא VM חדש** (BubblePlayer, נולד ב-AB כ"בועה בודדת", מורחב ב-C לפלייליסט) —
+  לא הרחבת Speaker (ערבוב חי+replay) ולא הרחבת Player (engine נמוך-רמה). entity לפי חוק זהב #2.
+- **guard thinking**: replay חסום כשהסוכן עונה (החלטת משתמשת). לא באמצע ריצה, כן בכל זמן אחר.
+- **C INVASIVE על BubblePlayer** (שדות $state: isReplaying/loop/position) — אושר מראש.
+- **replay על snapshot** של רגע ה-playAll, לא חי (thinking חסום ממילא).
+
+### ממצאי verification
+- **AB**: אביגיל round 1 USABLE-AFTER-FIX, 5 findings. הקריטי (🔴): POST /api/recordings
+  דורש JSON `{audioBase64,mimeType}` (201), לא body גולמי — ה-skeleton המקורי היה גורם 400.
+  תוקן (bytesToBase64 קיים). round 2: READY, 0 findings.
+- **C**: נכתב לפני ש-B נחת. כל הפניה ל-BubblePlayer/play-bubble מסומנת ⏳ "לאמת אחרי B".
+  אביגיל תרוץ רק אחרי merge AB (אז המבנה האמיתי ידוע).
+
+### נדחו
+- שמירת אודיו TTS (זיכרון/IndexedDB) — מיותר, ה-BE cache מכסה.
+- ייצור TTS-מחדש כברירת מחדל לכל replay — לא, cache hit עושה את זה ממילא בחינם.
+- Player engine ל-replay — נדחה לטובת `<audio>` פשוט.
+- replay חי (מגיב ל-bubbles חדשים תוך כדי) — snapshot מספיק (thinking חסום).
+
+## 2026-06-03 — sessions-inline + switch-session warm: merged ל-dev + חקירת זהות-פרויקט
+
+### רקע
+slice-sessions-inline (חלק B transcribe-resilience + חלק A sessions-inline) בוצע (calev GO 17/17).
+באימות runtime ע"י המשתמשת התגלה באג: החלפת סשן הציגה "WS closed (1005): no reason".
+
+### שורש הבאג (chain מלא)
+`selectSession` עשה `detach()` + `loadSession()` כבד. ה-loadSession היה שכפול של attach:
+createAgent → WS חדש → ACP handshake. detach הרג את ה-bridge הקיים וסימן `#detached=true`;
+loadSession אִפֵּס `#detached=false` *לפני* שה-onClose האסינכרוני של ה-WS הישן הגיע →
+ה-guard `if (#detached) return` לא תפס → "WS closed (1005)" מזויף על הסשן החדש.
+
+### החקירה הארכיטקטונית (מה ש-המשתמשת הובילה אליו)
+שאלת המשתמשת "למה צריך לסגור WS? אפשר אותו אחד" הובילה לאימות אמפירי מול opencode acp חי:
+1. **`session/load` עובד על אותו bridge** (גם cross-cwd) — אין צורך ב-WS/agent חדש להחלפת סשן.
+2. **opencode מזהה פרויקט לפי root-commit hash של ה-git repo** (לא path/שם תיקייה).
+   טבלת `project` ב-opencode.db: `id=<root-commit>`, עוקבת אחרי נתיבים חלופיים ב-`sandboxes`.
+   לכן rename של תיקייה (anat→persona-lab) = אותו projectID; `session/list` מחזיר סשנים
+   משני הנתיבים (אותו פרויקט). זה הסביר למה ראינו רק persona-lab+anat (לא גלובלי) — הם
+   אותו repo. תועד ב-memory (global): 2026-06-03-fact-opencode-project-id-is-git-root-commit.
+
+### התיקון
+`AgentSession.switchSession(info)` — warm reload: `#client.loadSession()` על ה-WS/bridge הקיים,
+בלי createAgent/detach/WS חדש. fallback ל-loadSession הכבד אם `#client===null`. **אסור #cleanup
+בשגיאה** — החיבור נשאר חי. `selectSession` קורא לו במקום detach+loadSession.
+calev GO 12/12, אומת e2e דרך tunnel כולל cross-rename (סשן מ-salary-reports).
+
+### החלטות-מפתח
+- **לא לסנן רשימת סשנים לפי cwd** — opencode כבר מסנן per-project (root-commit). סינון נאיבי
+  לפי path אף יזיק (יסתיר היסטוריה מנתיב ישן אחרי rename).
+- warm switch על אותו bridge, לא bridge-per-cwd — מאומת ש-loadSession cross-cwd עובד.
+
+### known issue (slice נפרד מתוכנן)
+- **409 על notifySessionAttached ב-warm switch**: guard MED-9 (http-agents.ts:117) חוסם update
+  של acpSessionId כשהagent כבר "ready" עם sessionId אחר — בדיוק מה ש-warm switch עושה.
+  `.catch(()=>{})` בולע; המשתמש לא רואה. אבל ה-BE registry נשאר עם sessionId ישן → סיכון
+  ל-reconnect/recovery עתידי (slice 10) שישחזר לסשן הישן. תיקון: BE יתיר same-agent update.
