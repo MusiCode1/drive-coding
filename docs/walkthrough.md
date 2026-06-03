@@ -1,3 +1,25 @@
+## 2026-06-03 16:58 — slice ws-reconnect-infra — Commit 2: reconnect() + warm/cold paths
+
+### מה בוצע?
+
+Commit 2 של slice `ws-reconnect-infra` — הלב של ה-reconnect: warm-first, cold fallback, MED-8 retry.
+
+| מה | פרטים |
+|---|---|
+| `reconnect()` ציבורי | warm-first, מאפס backoff, גובר על לולאה קיימת |
+| `#doReconnect` | warm → cold fallback אוטומטי |
+| `#warmReconnect` | WS חדש + MED-8 retry (×3, 250ms) + Promise.race (תיקון deadlock 1008) + loadSession ACP |
+| `#coldReconnect` | loadSession מאפס (spawn agent חדש), מאפס status לפני guard |
+| `#handleUnexpectedClose` | backoff בפוקוס, disconnected ברקע (מוגדר כאן כי warmReconnect משתמש בו) |
+| `#scheduleReconnect` / `#runReconnectLoop` | 5 ניסיונות, BACKOFF_MS [1000..16000] |
+| `#clearReconnectTimer` | ניקוי timer |
+| static constants | MAX_RECONNECT_ATTEMPTS=5, BACKOFF_MS, MED8_RETRY_MS=250, MED8_MAX_RETRIES=3 |
+
+**בדיקות**: 634 tests ✓, typecheck ✓.
+**חריגות**: `#handleUnexpectedClose` + `#scheduleReconnect` + `#runReconnectLoop` הוגדרו כאן (לא ב-Commit 3) כדי למנוע forward-reference (תיקון אביגיל #2). Commit 3 רק יחבר את onClose.
+
+---
+
 ## 2026-06-03 16:55 — slice ws-reconnect-infra — Commit 1: listAgents() adapter + #findReusableAgent
 
 ### מה בוצע?
