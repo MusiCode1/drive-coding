@@ -333,13 +333,9 @@ export class AgentSession {
       const proto = location.protocol === "https:" ? "wss:" : "ws:"
       const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
       transport.onClose((code, reason) => {
-        // השתק שגיאות כאשר הסגירה נגרמה על ידי קריאה מפורשת ל-detach().
-        // הדפדפן סוגר את ה-WS בצורה אסינכרונית, לכן onClose מופעל אחרי ש-detach
-        // כבר ניקה את המצב (state).
         if (this.#detached) return
         if (code !== 1000 && code !== 1001) {
-          this.error = `WS closed (${code}): ${reason || "no reason"}`
-          this.#setStatus("error")
+          this.#handleUnexpectedClose(code, reason)
         }
       })
       await transport.waitForOpen()
@@ -367,6 +363,10 @@ export class AgentSession {
 
   detach = (): void => {
     this.#detached = true  // ‏לפני ה-cleanup — ‏ה-WS close fires async
+    // ─── slice ws-reconnect-infra: ביטול לולאת reconnect ───
+    this.#clearReconnectTimer()
+    this.#reconnecting = false
+    this.reconnectAttempt = 0
     this.#cleanup()
     this.#setStatus("idle")
     this.error = null
@@ -453,8 +453,7 @@ export class AgentSession {
       transport.onClose((code, reason) => {
         if (this.#detached) return
         if (code !== 1000 && code !== 1001) {
-          this.error = `WS closed (${code}): ${reason || "no reason"}`
-          this.#setStatus("error")
+          this.#handleUnexpectedClose(code, reason)
         }
       })
       await transport.waitForOpen()

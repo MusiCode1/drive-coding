@@ -1,3 +1,20 @@
+## 2026-06-03 17:02 — slice ws-reconnect-infra — Commit 3: חיבור attach/loadSession ל-auto-reconnect
+
+### מה בוצע?
+
+Commit 3 של slice `ws-reconnect-infra` — חיבור ה-WS lifecycle הרגיל ל-reconnect.
+
+| שינוי | פרטים |
+|---|---|
+| `onClose` ב-`attach` | `error`+`#setStatus("error")` → `#handleUnexpectedClose` (מופיע פעם 1) |
+| `onClose` ב-`loadSession` | זהה — מופע שני |
+| `detach()` | הוסף ניקוי reconnect: `#clearReconnectTimer()`, `#reconnecting=false`, `reconnectAttempt=0` |
+
+**בדיקות**: 634 tests ✓, typecheck ✓.
+**חריגות**: אין.
+
+---
+
 ## 2026-06-03 16:58 — slice ws-reconnect-infra — Commit 2: reconnect() + warm/cold paths
 
 ### מה בוצע?
