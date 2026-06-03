@@ -47,37 +47,23 @@ RecordFooter toggle:
   wake-word → VoiceOrb {vm=wakeWord}   ← חדש
   hidden    → 0          (קיים)
 
-WakeWordVM detect#2 → capture.stop() → transcribeAndSend(blob) → session.sendPrompt
-                                         (transcribe + sendPrompt, אותו flow כמו Mic)
+WakeWordVM detect#2 → capture.stop() → transcribe(blob) → session.sendPrompt
+                                         (אותה לוגיקה כמו Mic#runTranscribe, בתוך ה-VM)
 חיווי-מודל אחרי השליחה → בועת-הסטטוס (מ-slice A), זהה לכל שיטת-קלט.
 ```
 
 ## 2. Commits
 
-### Commit 1 — helper משותף transcribeAndSend (refactor Mic + שיתוף)
-⚠️ **לא action!** חוקי import (AGENTS.md): `view-models → engines, adapters` בלבד.
-view-models **אסור** להם לקרוא ל-`actions/` (actions הם שכבה *מעל* view-models, נקראים
-מ-routes). מכיוון ש-Mic ו-WakeWord הם **view-models**, ה-helper המשותף חייב לחיות
-בשכבה ש-view-models מותר לייבא = **adapter** (או util). הוא קורא `transcribe` (adapter)
-ומקבל `session` כפרמטר וקורא `session.sendPrompt` — זה תקין (פונקציה, לא שכבה מעל).
+> ⚠️ **אין helper משותף / refactor של Mic.** חוקי import (AGENTS.md): `view-models →
+> engines, adapters`; `adapters → @drive-coding/core בלבד`. הלוגיקה `transcribe→sendPrompt`
+> מערבת adapter (`transcribe`) + view-model (`session.sendPrompt`) — **אף שכבה אחת לא
+> רשאית לראות את שתיהן חוץ מ-view-model עצמו**. adapter אסור לו לייבא AgentSession (גם
+> type — אין AgentSession ב-core, ואין תקדים). action אסור ל-VM לקרוא לו. לכן הלוגיקה
+> **חיה בתוך כל view-model**. Mic כבר מחזיק אותה (`#runTranscribe`) — **לא נוגעים ב-Mic**.
+> WakeWordVM מקבל לוגיקה זהה משלו (~6 שורות, כפילות מקובלת — זול מהפרת-שכבות).
+> (Commit 1 המקורי — refactor Mic + helper משותף — **בוטל**.)
 
-**`adapters/voice/transcribe-and-send.ts`** (חדש, ליד transcribe.ts):
-- חתימה: `transcribeAndSend(blob: Blob, session: AgentSession): Promise<{ ok: boolean; errorKey?: MessageKey }>`
-  (⚠️ **בלי** `previousAssistantText` — Mic היום קורא `transcribe(blob)` בלי opts
-  (mic.svelte.ts:139), אין מה לשמר.)
-- גוף: `transcribe(blob)` → אם text לא ריק → `session.sendPrompt(text, { recordingId })`.
-  מחזיר תוצאה (לא זורק) — כל caller מטפל ב-error לפי דרכו.
-- ⚠️ import: ה-adapter מייבא `type AgentSession` (type-only) + `transcribe`. קריאה ל-
-  `session.sendPrompt` דרך הפרמטר. זה לא שובר חד-כיווניות (adapter לא "מכיר" את ה-VM,
-  רק מקבל interface). אם זה מרגיש עקום — חלופה: util ב-`lib/util/` שמקבל גם
-  `transcribeFn` וגם `sendFn` כ-callbacks (טהור לגמרי). **להחלטת executor**; שתיהן
-  לא שוברות חוקי import. נטייה: adapter עם type-only import של AgentSession.
-- **Mic** (`view-models/mic.svelte.ts` — `#runTranscribe` ב-**:135-156**, נקרא מ-:94
-  ו-:110): שנה לקרוא ל-`transcribeAndSend(blob, this.#session)` במקום הלוגיקה (transcribe
-  :139 + sendPrompt :153). שמור על אותה התנהגות (error → `this.error`, state → idle).
-- testing: **integration** (Mic tests קיימים חייבים לעבור — אותה התנהגות).
-
-### Commit 2 — WakeWordVM: session + flow אמיתי
+### Commit 1 — WakeWordVM: session + flow אמיתי
 **`view-models/wake-word.svelte.ts`** — שינויים:
 - constructor: ⚠️ `WakeWordConfig` הוא **ArkType schema** (`typeof Schema.infer`,
   types.ts:21) — **אי אפשר** לשים בו `AgentSession` (class instance). שנה את חתימת
@@ -87,17 +73,20 @@ view-models **אסור** להם לקרוא ל-`actions/` (actions הם שכבה 
   ⚠️ **חובה אופציונלי** — ה-route בדיקה `routes/wake-word-test/+page.svelte:17` יוצר
   `new WakeWordVM({...})` (config בלבד, בלי opts). ctor שדורש session ישבור את ה-route
   ב-typecheck (DoD#6 — ה-route חייב להמשיך לעבוד). session אופציונלי:
-  - **עם** session (production, מ-layout) → detect#2 קורא transcribeAndSend→sendPrompt.
+  - **עם** session (production, מ-layout) → detect#2 קורא transcribe→sendPrompt.
   - **בלי** session (route בדיקה) → ההתנהגות הנוכחית נשמרת (auto-play של ה-clip).
 - ב-detect#2 (סוף הקלטה): היום בונה blob ו**משמיע אוטומטית** (auto-play setTimeout).
-  **שנה ל-מותנה**: `if (this.#session) { transcribeAndSend(blob, this.#session) }
-  else { /* auto-play הקיים — מצב route בדיקה */ }`.
-- error: אם `transcribeAndSend` מחזיר errorKey → `this.lastError = errorKey`.
+  **שנה ל-מותנה**:
+  - **עם** `#session`: `transcribe(blob)` (adapter, מיובא ל-VM כמו ב-Mic) → אם text לא
+    ריק → `this.#session.sendPrompt(text, { recordingId })`. אותה לוגיקה כמו
+    `Mic#runTranscribe:135-156` (העתק/חקה אותה — VM מותר לייבא adapter ולקרוא ל-VM אחר).
+    error → `this.lastError = "mic.error.transcribe"` (או key ייעודי).
+  - **בלי** `#session` (route בדיקה): auto-play הקיים נשמר.
 - ⚠️ ה-cue end (440Hz) נשאר (חיווי "סיימתי להקליט"). חיווי-מודל (thinking…) מגיע מהבועה.
-- testing: **integration** (mock session + transcribeAndSend, בדוק שעל detect#2 נקרא
-  sendPrompt דרך transcribeAndSend, לא auto-play).
+- testing: **integration** (mock session + transcribe, בדוק שעל detect#2 עם session
+  נקרא sendPrompt, ובלי session נשאר auto-play).
 
-### Commit 3 — context + layout: WakeWordVM singleton
+### Commit 2 — context + layout: WakeWordVM singleton
 - **`context.ts`**: זוג חדש `// ─── wake-word ───` + `export const [getWakeWord, setWakeWord] = createContext<WakeWordVM>()` (additive — section חדש, parallel-safe).
 - **`+layout.svelte`**: צור `new WakeWordVM({ keywords, baseAssetUrl }, { session })` + `setWakeWord(...)`
   (config ראשון, opts.session שני — ראה Commit 2)
@@ -105,11 +94,13 @@ view-models **אסור** להם לקרוא ל-`actions/` (actions הם שכבה 
   MODEL_FILE_MAP** (types.ts:30-34): `["hey_jarvis", "alexa", "hey_mycroft", "hey_rhasspy"]`
   (עם `hey_` ל-jarvis/mycroft/rhasspy, בלי ל-alexa). baseAssetUrl = `/wake-word/models`.
   ⚠️ **lazy-load**: אל תקרא `load()` ב-layout (טוען ~10MB). ה-load יקרה כשבוחרים את ה-tab
-  (§Commit 4). ה-VM נוצר אבל המודלים לא נטענים עד שצריך.
+  (§Commit 3). ה-VM נוצר אבל המודלים לא נטענים עד שצריך.
 - testing: **manual** (typecheck — ה-wiring).
 
-### Commit 4 — RecordFooter: tab רביעי + VoiceOrb pane
+### Commit 3 — RecordFooter: tab רביעי + VoiceOrb pane
 **`components/chat/RecordFooter.svelte`**:
+⚠️ **תלוי ב-Commit 2** — `getWakeWord()` נוצר ב-context.ts רק ב-Commit 2. בצע את
+ה-commits בסדר (1→2→3); RecordFooter (קורא getWakeWord) חייב את Commit 2 קודם.
 - `type Mode = "record" | "typing" | "wake-word" | "hidden"` (:33).
 - כפתור רביעי ב-toggle (אחרי typing, לפני hidden): אייקון (`ear` או `radio` מ-@lucide/svelte)
   + `{t("record.tab.wakeword")}`. אותו דפוס כמו הכפתורים הקיימים (:54-86).
@@ -149,7 +140,7 @@ view-models **אסור** להם לקרוא ל-`actions/` (actions הם שכבה 
    ה-mode הרצוי למצב ה-vm בפועל לפני flip. (או הוסף ל-VM methods מפורשים `startListening()`
    / `stopListening()` idempotent — נקי יותר. להחלטת executor.)
  3. **previousAssistantText — לא רלוונטי:** Mic היום קורא `transcribe(blob)` בלי opts
-    (mic.svelte.ts:139), אז `transcribeAndSend` גם בלי. אם בעתיד נרצה להעביר הקשר —
+    (mic.svelte.ts:139), אז גם ב-WakeWordVM בלי. אם בעתיד נרצה להעביר הקשר —
     תוספת נפרדת לשני ה-callers, לא חלק מ-B.
 4. **currentClipUrl/logs ב-WakeWordVM:** היו ל-route בדיקה. ב-production לא צריך אותם בהכרח.
    להשאיר (לא מזיק) או לנקות? נטייה: להשאיר את logs מאחורי DEV flag, להסיר auto-play.
