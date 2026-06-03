@@ -14,7 +14,7 @@
  * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
  */
 import "../app.css"
-import { setCues, setI18n, setMic, setModelStatus, setModals, setResponsive, setSession, setSettings, setSpeaker, setTheme, setUiShell, setVoiceMode } from "$lib/context"
+import { setBubblePlayer, setCues, setI18n, setMic, setModelStatus, setModals, setResponsive, setSession, setSettings, setSpeaker, setTheme, setUiShell, setVoiceMode } from "$lib/context"
 import { CuesEngine } from "$lib/engines/cues"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
@@ -27,6 +27,7 @@ import { UiShellVM } from "$lib/view-models/ui-shell.svelte"
 import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
 import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
+import { BubblePlayer } from "$lib/view-models/bubble-player.svelte"
 
 let { children } = $props()
 
@@ -68,6 +69,9 @@ const modals = new ModalsVM()
 // ─── model-status ─── (slice model-status-control-replay — תלוי ב-session + speaker)
 const modelStatus = new ModelStatus({ session, speaker })
 
+// ─── bubble-player ─── (slice model-status-control-replay — תלוי ב-session + settings)
+const bubblePlayer = new BubblePlayer({ session, settings })
+
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
@@ -81,6 +85,7 @@ setResponsive(responsive)
 setUiShell(uiShell)
 setModals(modals)
 setModelStatus(modelStatus)
+setBubblePlayer(bubblePlayer)
 
 // ─── DEV-only: חשיפת ה-session ל-window לצורך חילוץ fixtures ודיבוג עיצוב ───
 if (import.meta.env.DEV && typeof window !== "undefined") {

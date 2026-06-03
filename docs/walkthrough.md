@@ -1,3 +1,19 @@
+## 2026-06-03 — slice-model-status-control-replay — Commit 5 (adapter + VM להשמעת בועה)
+
+### מה בוצע?
+
+**Commit 5**: adapter + VM להשמעת בועה בודדת.
+
+- `adapters/voice/play-bubble.ts` (חדש): `playUserRecording(recordingId, audioEl)` + `playAgentText(text, voiceId, audioEl, opts?)`. stream→Blob→objectURL→play. URL.revokeObjectURL ב-finally (§4.7).
+- `view-models/bubble-player.svelte.ts` (חדש): `BubblePlayer` VM — `playingBubbleId $state`, `toggle(bubbleId)`, `stop()`. guard: turnState!=='idle' → no-op. user→playUserRecording, message/thought→playAgentText. tool→אין ▶. ללא $effect.
+- `context.ts`: `getBubblePlayer/setBubblePlayer` (additive).
+- `+layout.svelte`: `new BubblePlayer({ session, settings })` + `setBubblePlayer`.
+
+**חריגות**: אין.
+**בדיקות**: 602 tests ✓, typecheck ✓.
+
+---
+
 ## 2026-06-03 — slice-model-status-control-replay — Commit 4 (חיבור הקלטות ל-BE)
 
 ### מה בוצע?

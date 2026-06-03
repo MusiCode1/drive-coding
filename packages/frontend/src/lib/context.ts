@@ -22,6 +22,7 @@ import type { ThemeVM } from "./view-models/theme.svelte"
 import type { UiShellVM } from "./view-models/ui-shell.svelte"
 import type { VoiceMode } from "./view-models/derived/voice-mode.svelte"
 import type { ModelStatus } from "./view-models/derived/model-status.svelte"
+import type { BubblePlayer } from "./view-models/bubble-player.svelte"
 import type { CuesEngine } from "./engines/cues"
 import type { ModalsVM } from "./view-models/modals.svelte"
 
@@ -62,3 +63,6 @@ export const [getModals, setModals] = createContext<ModalsVM>()
 
 // ─── model-status ─── (slice model-status-control-replay)
 export const [getModelStatus, setModelStatus] = createContext<ModelStatus>()
+
+// ─── bubble-player ─── (slice model-status-control-replay)
+export const [getBubblePlayer, setBubblePlayer] = createContext<BubblePlayer>()
