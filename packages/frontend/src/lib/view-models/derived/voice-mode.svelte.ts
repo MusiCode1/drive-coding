@@ -74,5 +74,7 @@ export class VoiceMode {
     this.#mic.cancel()
     // Speaker.stop() היא מתודה תוספתית (additive) שנוספה בקומִיט הזה — ראה speaker.svelte.ts
     this.#speaker.stop()
+    // model-status-control-replay: עוצר את הסוכן → turnState=idle → effect משחרר isCancelling
+    void this.#session.cancelTurn()
   }
 }

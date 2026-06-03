@@ -1,3 +1,17 @@
+## 2026-06-03 — slice-model-status-control-replay — Commit 3 (cancelTurn + תיקון X-מהבהב)
+
+### מה בוצע?
+
+**Commit 3**: cancelTurn — עצירת סוכן אמיתית + תיקון X-מהבהב.
+
+- `agent-session.svelte.ts`: `cancelTurn()` ציבורי — ACP cancel best-effort + `#setTurnState("idle")` מיידי.
+- `voice-mode.svelte.ts`: `cancel()` מוסיף `void this.#session.cancelTurn()` — turnState→idle → effect משחרר isCancelling.
+
+**חריגות**: אין.
+**בדיקות**: 602 tests ✓, typecheck ✓.
+
+---
+
 ## 2026-06-03 — slice-model-status-control-replay — Commit 2 (בועת-סטטוס)
 
 ### מה בוצע?

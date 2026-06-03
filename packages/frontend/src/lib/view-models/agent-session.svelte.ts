@@ -445,6 +445,23 @@ export class AgentSession {
 
   // ─── הקלטות (recordings) ─── (יתווסף ב-slice 10)
 
+  // ─── model-status-control-replay: cancelTurn ─── (additive)
+
+  /**
+   * מבטל את התור הנוכחי דרך ACP cancel. הסוכן מפסיק לייצר.
+   * מאלץ turnState=idle מיידית (לא מחכה ל-sendPrompt resolved). no-op אם אין תור פעיל.
+   */
+  cancelTurn = async (): Promise<void> => {
+    if (this.turnState === "idle") return
+    if (!this.#client || !this.#sessionId) return
+    try {
+      await this.#client.cancel(this.#sessionId)   // core/acp/client.ts:161, מאומת
+    } catch {
+      // best-effort — בכל מקרה נאלץ idle מקומית
+    }
+    this.#setTurnState("idle")
+  }
+
   // ─── slice 6: setter מרכז ─── (additive — מנתב את כל ה-status writes)
 
   /**
