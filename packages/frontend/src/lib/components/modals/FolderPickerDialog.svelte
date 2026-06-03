@@ -59,6 +59,12 @@ function navigateTo(name: string) {
   void loadFolder(`${currentPath.replace(/\/$/, "")}/${name}`)
 }
 
+function navigateToDepth(index: number) {
+  // בונה נתיב אבסולוטי עד ה-crumb באינדקס index (כולל)
+  const path = "/" + breadcrumbs.slice(0, index + 1).join("/")
+  void loadFolder(path)
+}
+
 function navigateUp() {
   const parent = currentPath.replace(/\/[^/]+\/?$/, "") || "/"
   void loadFolder(parent)
@@ -103,9 +109,14 @@ function pickFolder() {
           dir="ltr"
         >
           {#each breadcrumbs as crumb, i}
-            <span style="color:var(--accent-hi)">{crumb}</span>
+            <button
+              type="button"
+              class="hover:underline inline"
+              style="color:var(--accent-hi)"
+              onclick={() => navigateToDepth(i)}
+            >{crumb}</button>
             {#if i < breadcrumbs.length - 1}
-              <span class="opacity-40">/</span>
+              <span class="opacity-40 mx-1">/</span>
             {/if}
           {/each}
         </div>
