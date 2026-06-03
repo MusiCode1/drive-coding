@@ -98,7 +98,8 @@
     font-size: 0.875rem;
     cursor: pointer;
     transition: background 0.15s;
-    align-self: flex-start;
+    width: 100%;
+    text-align: center;
   }
 
   .load-btn:hover:not(:disabled) {
