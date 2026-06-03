@@ -14,26 +14,41 @@
  * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
  */
 import "../app.css"
-import { setCues, setI18n, setMic, setModals, setResponsive, setSession, setSettings, setSpeaker, setTheme, setUiShell, setVoiceMode } from "$lib/context"
+import type { Locale } from "@drive-coding/core/i18n"
+import {
+  setCues,
+  setI18n,
+  setMic,
+  setModals,
+  setResponsive,
+  setSession,
+  setSettings,
+  setSpeaker,
+  setTheme,
+  setUiShell,
+  setVoiceMode,
+} from "$lib/context"
 import { CuesEngine } from "$lib/engines/cues"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
+import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
+import { ModalsVM } from "$lib/view-models/modals.svelte"
 import { ResponsiveVM } from "$lib/view-models/responsive.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
 import { Speaker } from "$lib/view-models/speaker.svelte"
 import { ThemeVM } from "$lib/view-models/theme.svelte"
 import { UiShellVM } from "$lib/view-models/ui-shell.svelte"
-import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
-import { ModalsVM } from "$lib/view-models/modals.svelte"
 
 let { children } = $props()
 
-// ─── i18n ──────────────────────────────────────────
-const i18n = new I18nVM()
-
 // ─── הגדרות ──────────────────────────────────────
+// (rtl-ltr-bidi) הועבר לפני i18n — I18nVM תלוי ב-Settings עכשיו
 const settings = new Settings()
+
+// ─── i18n ──────────────────────────────────────────
+// (rtl-ltr-bidi) locale נגזר מ-Settings — מקור-אמת persisted אחד
+const i18n = new I18nVM({ settings })
 
 // ─── cues ─── (slice 6 — אין תלויות חיצוניות, חייב להיות לפני session/speaker/mic)
 const cues = new CuesEngine()
@@ -63,6 +78,18 @@ const uiShell = new UiShellVM()
 
 // ─── modals ─── (redesign-6)
 const modals = new ModalsVM()
+
+// ─── dir/lang sync ─── (rtl-ltr-bidi)
+// סנכרון <html dir> ו-<html lang> ל-locale — הקסם של הדו-כיווניות.
+// ה-effect קורא $state (i18n.locale) וכותב ל-DOM (לא ל-$state) → אין infinite loop.
+// <html> אינו DOM-node של component ספציפי → layout הוא המקום הנכון (composition root).
+const RTL_LOCALES: Locale[] = ["he"]
+$effect(() => {
+  const loc = i18n.locale // קריאה ריאקטיבית
+  const dir = RTL_LOCALES.includes(loc) ? "rtl" : "ltr"
+  document.documentElement.dir = dir
+  document.documentElement.lang = loc
+})
 
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)

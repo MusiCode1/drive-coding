@@ -27,6 +27,28 @@
 
 ---
 
+## 2026-06-03 — slice rtl-ltr-bidi הושלם — 7 commits
+
+### מה בוצע?
+
+Slice `rtl-ltr-bidi` — תמיכה דו-כיוונית מלאה (he RTL / en LTR). 7 commits.
+
+| commit | hash | תוכן |
+|---|---|---|
+| C0 | 58a0db6 | locale כ-persisted field ב-Settings (detectLocale בטעינה ראשונה) |
+| C1 | d537f5d | I18nVM נגזר מ-Settings — locale getter + setLocale מאציל. +layout: settings לפני i18n |
+| C2 | a46fc00 | $effect ב-+layout: document.dir/lang ← i18n.locale (RTL_LOCALES=["he"]) |
+| C3 | 16f0c9c | LanguageSelect.svelte + settings.language.{label,he,en} + כרטיס ב-SettingsScreen |
+| C4 | 52da29b | scripts/lint-no-physical-classes.mjs + pnpm lint:rtl (הגנת רגרסיה) |
+| C5 | 1ddb4f7 | בורר שפה גם בטופס הכניסה (+page.svelte) — להחלפת שפה/כיוון לפני התחברות |
+| C6 | 8b84b91 | גלילה פנימית בטופס הכניסה (.connect: height:100dvh + overflow-y:auto) — מסכים נמוכים |
+
+**שינויים**: settings.svelte.ts, i18n.svelte.ts, +layout.svelte, +page.svelte, keys.ts, he.ts, en.ts, LanguageSelect.svelte, SettingsScreen.svelte, lint script חדש, package.json.
+**חריגות**: אין.
+**בדיקות**: typecheck ✓, lint:i18n ✓, lint:rtl ✓ (positive + negative). calev GO 12/12 DoD. אומת ידנית ב-tunnel (he↔en, persist, scroll).
+
+---
+
 ## 2026-06-03 — slice fix-409-replace-flag הושלם — 602 tests ✓
 
 ### מה בוצע?
