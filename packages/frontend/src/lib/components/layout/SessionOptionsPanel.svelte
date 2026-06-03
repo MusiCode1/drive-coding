@@ -102,12 +102,11 @@ async function onCheckboxChange(configId: string, e: Event) {
 // ─── slice sessions-inline: טעינת סשנים inline ───
 
 /**
- * בחירת סשן: detach + loadSession + ניווט ל-/chat.
- * חיקוי של selectSession ב-SessionsDialog (שורות 50-58 שנמחק).
+ * בחירת סשן: switchSession (warm reload על החיבור הקיים) + ניווט ל-/chat.
+ * אם אין חיבור (#client === null) — switchSession נופל ל-loadSession הכבד (דפנסיבי).
  */
 async function selectSession(info: { sessionId: string; cwd: string }) {
-  session.detach()
-  await session.loadSession({
+  await session.switchSession({
     sessionId: info.sessionId,
     cwd: info.cwd,
     cliKind: settings.cliKind,
