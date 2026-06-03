@@ -39,8 +39,14 @@ beforeEach(() => {
 })
 
 describe("narrate", () => {
-  const ctx = { agentName: "test" } as Parameters<typeof narrate>[0]
-  const tool = { name: "read_file", args: {} } as Parameters<typeof narrate>[1]
+  const ctx = {
+    userMessage: "test",
+    recentMessages: [],
+  } as Parameters<typeof narrate>[0]
+  const tool = {
+    toolCallId: "tc-1",
+    title: "read_file",
+  } as Parameters<typeof narrate>[1]
 
   it("happy path — מחזיר טקסט כאשר generateText מצליח", async () => {
     const { generateText } = await import("ai")
