@@ -1,7 +1,8 @@
 # Slice C — פלייליסט מלא (replay של שיחה: רצף, קדימה/אחורה, loop, התחל-מנקודה)
 
 > **תאריך**: 2026-06-02 (עודכן 2026-06-03 — עוגן מול skeletons של המאוחד)
-> **סטטוס**: טיוטה — מעוגן מול ה-skeletons המאומתים של `slice-model-status-control-replay`.
+> **סטטוס**: **READY** (אביגיל round 2) — מעוגן מול skeletons של `slice-model-status-control-replay`.
+> ⚠️ תלוי-מאוחד: כל מה שמרחיב BubblePlayer/turnState — לאמת מול המימוש בפועל אחרי שהמאוחד נחת.
 > **לא ל-dispatch לפני שהמאוחד מוזג ומאומת** (C מרחיב את ה-`BubblePlayer` שלו).
 > **base**: `dev` **אחרי** merge של `slice-model-status-control-replay` (המאוחד — בולע AB).
 > **depends_on**: `[slice-model-status-control-replay]`.
@@ -130,17 +131,36 @@ components/
     bubbles: PlaylistBubble[],
     opts: { speakThoughts: boolean; narrateTools: boolean },
   ): Track[]
+
+  /** טיפוס מינימלי — core בלי תלות ב-FE Bubble. */
+  export type PlaylistBubble =
+    | { kind: "user"; bubbleId: string; recordingId?: string }
+    | { kind: "message"; bubbleId: string; text: string }
+    | { kind: "thought"; bubbleId: string; text: string }
+    | { kind: "tool"; bubbleId: string; narration?: string }
   ```
-  > `PlaylistBubble` = טיפוס מינימלי (kind, id, recordingId?, segments?, narration?) כדי
-  > לא לייבא את טיפוס ה-FE Bubble ל-core (core אסור לו תלות ב-FE). הגדר אותו ב-core.
-- `packages/core/src/voice/playlist.test.ts` — TDD:
+  > ⚠️ **שלב מיפוי חובה ב-BubblePlayer** (Commit 2): `buildPlaylist` מקבל `PlaylistBubble[]`,
+  > **לא** את `session.bubbles` (שהם FE `Bubble[]`). ה-VM ממפה קודם:
+  > - user → `{kind:"user", bubbleId:b.id, recordingId:b.recordingId}`
+  > - message/thought → `{kind, bubbleId:b.id, text: b.segments.map(s=>s.text).join("")}`
+  > - tool → `{kind:"tool", bubbleId:b.id, narration: b.toolCall.narration}`
+  >   (⚠️ narration נמצא תחת **`b.toolCall.narration`** — bubble.ts:69 ב-ToolCall, **לא** top-level.)
+  > המיפוי הזה ב-VM (FE), לא ב-core. core מקבל רק את הצורה הנקייה.
+- `packages/core/tests/voice/playlist.test.ts` — TDD. ⚠️ הטסט ב-`tests/voice/`
+  (קונבניית core — כל 4 טסטי voice שם: tts-queue/sentence-boundary/cache-key/translation-prompt),
+  **לא** ליד src/voice/. דפוס לחיקוי: `packages/core/tests/voice/tts-queue.test.ts`.
   - user+message מתחלפים → רשימה לפי סדר.
   - thought כש-speakThoughts=false → מדולג; =true → נכלל.
   - tool בלי narration → מדולג תמיד.
   - user בלי recordingId → מדולג.
   - רשימה ריקה → [].
 
-**Verification**: `pnpm --filter @drive-coding/core test` → ירוק.
+**קבצים שמשתנים**:
+- `packages/core/src/index.ts` — הוסף `export * from "./voice/playlist"` (אחרי שורה 10,
+  ליד שאר מודולי voice :7-10). ⚠️ **חובה** — בלי זה ה-FE לא יוכל לייבא `buildPlaylist`
+  ו-typecheck יישבר ב-Commit 2.
+
+**Verification**: `pnpm --filter @drive-coding/core test` → ירוק. `pnpm --filter @drive-coding/core build` → ה-export זמין.
 
 ---
 
@@ -176,8 +196,11 @@ components/
     togglePlayPause(): void
   }
   ```
-  > **בניית הרשימה**: `playAll()`/`toggle(id)` קוראים `buildPlaylist(session.bubbles, {speakThoughts, narrateTools})`
-  > מ-Commit 1, שומרים ב-`#tracks`. הרצף: כל track נגמר (`<audio>` 'ended') → `next()` אוטומטי.
+  > **בניית הרשימה**: `playAll()`/`toggle(id)` ממפים `session.bubbles` ל-`PlaylistBubble[]`
+  > (ראה שלב המיפוי ב-Commit 1) ואז קוראים `buildPlaylist(mapped, {speakThoughts, narrateTools})`,
+  > שומרים ב-`#tracks`. הרצף: כל track נגמר (`<audio>` 'ended') → `next()` אוטומטי.
+  > **track agent → playAgentText צריך voiceId**: ה-BubblePlayer כבר מקבל `settings` בבנאי
+  > (מהמאוחד, ctor `{session, settings}`) → מעביר `settings.voiceId` ל-`playAgentText(text, settings.voiceId, audioEl)`.
   > `toggle(id)` (מהמאוחד) = בונה playlist + מתחיל מה-track של אותו bubbleId (התחל-מנקודה).
   > `playingBubbleId` מתעדכן לכל track → ההדגשה הקיימת מהמאוחד עוקבת אחרי הרצף.
   > **guard thinking**: כל playAll/toggle/next no-op אם `session.turnState !== "idle"`.
