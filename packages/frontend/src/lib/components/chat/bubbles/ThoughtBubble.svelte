@@ -14,12 +14,15 @@
  * ─── redesign-5 (C1 fix) ───
  */
 import type { ThoughtBubble } from "$lib/types/bubble"
-import { getI18n } from "$lib/context"
+import { getI18n, getBubblePlayer } from "$lib/context"
 import { joinSegmentText, visibleThoughtSegments } from "./bubble-rendering"
 import Avatar from "$lib/components/chat/Avatar.svelte"
 
 let { bubble }: { bubble: ThoughtBubble } = $props()
 const t = getI18n().t
+const bubblePlayer = getBubblePlayer()
+
+const isPlaying = $derived(bubblePlayer.playingBubbleId === bubble.id)
 
 // visibleThoughtSegments: אם יש תרגום → מחזיר segments מתורגמים; אחרת → הכל
 const displaySegments = $derived(visibleThoughtSegments(bubble.segments))
@@ -29,7 +32,11 @@ const isAllOriginal = $derived(displaySegments.every((seg) => seg.originalText =
 const runningText = $derived(isAllOriginal ? joinSegmentText(displaySegments) : null)
 </script>
 
-<div class="flex gap-2 self-end max-w-[85%] min-w-0 items-end flex-row-reverse">
+<div
+  class="flex gap-2 self-end max-w-[85%] min-w-0 items-end flex-row-reverse"
+  class:ring-2={isPlaying}
+  style={isPlaying ? "ring-color:var(--accent)" : ""}
+>
   <Avatar kind="thought" />
   <div
     class="px-3.5 py-2.5 rounded-xl text-[13px] leading-relaxed italic border border-dashed min-w-0 break-words"
@@ -59,4 +66,13 @@ const runningText = $derived(isAllOriginal ? joinSegmentText(displaySegments) : 
     <!-- כופה ריאקטיביות של Svelte בעת .segments.push() או כשה-originalText מגיע -->
     <span class="hidden">{bubble.segments.length}</span>
   </div>
+  <button
+    class="shrink-0 size-6 grid place-items-center rounded-full opacity-60 hover:opacity-100 transition-opacity"
+    style="background:var(--bg-card); border:1px solid var(--border); color:var(--fg)"
+    onclick={() => bubblePlayer.toggle(bubble.id)}
+    aria-label={isPlaying ? t("bubble.stop") : t("bubble.play")}
+    title={isPlaying ? t("bubble.stop") : t("bubble.play")}
+  >
+    {isPlaying ? "⏸" : "▶"}
+  </button>
 </div>

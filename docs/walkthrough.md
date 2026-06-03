@@ -1,3 +1,20 @@
+## 2026-06-03 — slice-model-status-control-replay — Commit 6 (כפתור ▶ על הבועות)
+
+### מה בוצע?
+
+**Commit 6**: כפתור ▶/⏸ על UserBubble, MessageBubble, ThoughtBubble.
+
+- `UserBubble.svelte`: כפתור ▶/⏸ אם `bubble.recordingId` קיים; `bubblePlayer.toggle(id)`.
+- `MessageBubble.svelte`: כפתור ▶/⏸ תמיד על בועת הסוכן.
+- `ThoughtBubble.svelte`: כפתור ▶/⏸ אופציונלי.
+- כל הבועות: `isPlaying = $derived(bubblePlayer.playingBubbleId === bubble.id)`; הבועה המתנגנת מודגשת (ring-2).
+- `i18n`: `bubble.play` / `bubble.stop` — keys + he + en.
+
+**חריגות**: אין.
+**בדיקות**: 602 tests ✓, typecheck ✓, lint:i18n ✓.
+
+---
+
 ## 2026-06-03 — slice-model-status-control-replay — Commit 5 (adapter + VM להשמעת בועה)
 
 ### מה בוצע?

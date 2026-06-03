@@ -129,6 +129,9 @@ export type MessageKey =
   | "settings.toggle.carMode"
   | "settings.reset"
   | "settings.saveOpen"
+  // ─── bubble-player ─── (slice model-status-control-replay)
+  | "bubble.play"
+  | "bubble.stop"
   // ─── model-status ─── (slice model-status-control-replay)
   | "modelStatus.waiting"
   | "modelStatus.thinking"

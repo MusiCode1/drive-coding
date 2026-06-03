@@ -123,6 +123,9 @@ export const en: Catalog = {
   "settings.toggle.carMode": "Car mode (Play on Bluetooth = record)",
   "settings.reset": "Reset",
   "settings.saveOpen": "Save & Open",
+  // ─── bubble-player ─── (slice model-status-control-replay)
+  "bubble.play": "Play",
+  "bubble.stop": "Stop",
   // ─── model-status ─── (slice model-status-control-replay)
   "modelStatus.waiting": "Waiting for response…",
   "modelStatus.thinking": "Thinking…",

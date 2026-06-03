@@ -118,6 +118,9 @@ export const he: Catalog = {
   "settings.toggle.carMode": "מצב רכב (Play בבלוטוס = הקלטה)",
   "settings.reset": "איפוס",
   "settings.saveOpen": "שמור ופתח",
+  // ─── bubble-player ─── (slice model-status-control-replay)
+  "bubble.play": "הפעל",
+  "bubble.stop": "עצור",
   // ─── model-status ─── (slice model-status-control-replay)
   "modelStatus.waiting": "ממתין לתגובה…",
   "modelStatus.thinking": "חושב…",
