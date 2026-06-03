@@ -134,13 +134,22 @@ export class ModelStatus {
 - `getModelStatus()` + `getI18n()`. props: אין (קורא context).
 - אם `phase === null` → לא מרנדר כלום (`{#if}`).
 - אחרת: בועה עם לוגו/אנימציה + טקסט i18n לפי phase.
-- מחרוזות i18n חדשות (core/i18n): `status.waiting`/`thinking`/`responding`/`callingTool`/`pendingTts`/`speaking`.
+- מחרוזות i18n חדשות (core/i18n) — **בעקבות המוסכמה הקיימת** (`voiceMode.status.*`,
+  `chat.tool.status.*`): השתמש בקידומת `modelStatus.*` (לא `status.*` שטוח):
+  `modelStatus.waiting` / `.thinking` / `.responding` / `.callingTool` / `.pendingTts` / `.speaking`.
+  (keys ב-keys.ts + ערכים ב-he.ts חובה + en.ts scaffold.)
 
 ### 3.4 רינדור ב-ChatBubbles (`components/chat/ChatBubbles.svelte`)
-- אחרי ה-`{#each session.bubbles}` (:19-21), הוסף `<StatusBubble />`.
+- אחרי ה-`{#each session.bubbles}` (:19-21) ולפני בלוק ה-`{#if session.bubbles.length === 0}`
+  (:22-24, empty-state) — הוסף `<StatusBubble />`. (שים לב: ה-empty-block קיים; מקם את
+  StatusBubble כך שלא ישבור אותו — StatusBubble מרנדר רק כש-phase≠null, בלי קשר ל-empty.)
 - הבועה **לא** ב-session.bubbles (transient, נגזרת) — מרונדרת בנפרד בסוף הרשימה.
-- ⚠️ auto-scroll: אם ChatBubbles עושה auto-scroll ל-bubble אחרון, ודא שהבועה
-  נכללת בגלילה (§4.6).
+- ⚠️ **auto-scroll נמצא ב-`components/layout/AppShell.svelte`** (לא ב-ChatBubbles —
+  הועבר ב-redesign-7, scroll node `.chat-scroll` + smart-scroll $effect שם, ~:62-80).
+  ה-$effect שם עוקב אחרי שינויי bubbles וגולל לתחתית אם המשתמש קרוב לתחתית. ⚠️ הבועה
+  הנגזרת (StatusBubble) **אינה** ב-session.bubbles → ה-$effect ב-AppShell לא יזוהה
+  כשינוי כשהיא מופיעה/משתנה. אם רוצים שהופעת הבועה תגרור scroll — צריך שה-$effect
+  ב-AppShell יעקוב גם אחרי `modelStatus.phase` (additive לתלות שלו). ראה §4.6.
 
 ### 3.5 DoD Commit 2
 - typecheck + build + lint:i18n נקי.
@@ -149,13 +158,19 @@ export class ModelStatus {
 
 ## 4. נקודות עדינות (קרא לפני קוד)
 
-1. **guards של sendPrompt (:177/:363):** היום מתירים שליחה ב-thinking (תור פעיל).
-   אחרי הפיצול — `status` תמיד `connected` בתור. אם הכוונה הייתה לחסום שליחה כפולה
-   בזמן תור פעיל, התנאי צריך `turnState !== "idle"`. **אבל** ייתכן שהמתירנות מכוונת
-   (queue). בדוק את ההתנהגות המקורית — אל תשנה סמנטיקה בלי לוודא. אם לא ברור → שאל מרדכי.
-2. **cue "thinking" (:454):** היום על מעבר status→thinking. אחרי: על מעבר turnState
-   idle→(waiting/thinking). ודא שלא מתנגן פעמיים (waiting→thinking הוא מעבר נוסף).
-   נגן רק על היציאה מ-idle.
+1. **guards :177 (sendPrompt) ו-:363 (applyConfigOption — אותו guard בדיוק):** היום
+   שניהם `status !== "connected" && status !== "thinking"` (מתירים גם ב-thinking = תור
+   פעיל). אחרי הפיצול — `status` תמיד `connected` בתור, אז התנאי הופך פשוט ל-`status !==
+   "connected"` ו**שומר על אותה סמנטיקה** (היום thinking⊂"מותר"; אחרי, connected מכסה
+   את שניהם כי thinking כבר לא נפרד). **תקן את שניהם זהה** (:177 ו-:363). אם המטרה
+   הייתה לחסום שליחה כפולה בזמן תור — זה דורש `turnState !== "idle"`, אבל ההתנהגות
+   המקורית **לא** חסמה (התירה ב-thinking) → אל תוסיף חסימה חדשה. אם לא ברור → שאל מרדכי.
+2. **cue "thinking" (:454):** היום ב-`#setStatus` (setter מרכזי), `if (next ===
+   "thinking") #cues.play("thinking")`. אחרי הפיצול turnState אינו עובר דרך `#setStatus`
+   → צור **`#setTurnState(next)`** (setter מקביל, נקודת-mutation יחידה ל-turnState, כמו
+   ש-#setStatus ל-status), ושים בו את ה-cue: נגן "thinking" על מעבר **idle→waiting**
+   (היציאה מ-idle, פעם אחת). waiting→thinking→responding לא מנגנים שוב. כל כתיבת
+   turnState עוברת דרך #setTurnState.
 3. **cue "speaking" ב-Speaker (:269/275):** הטריגר המקורי = מעבר status thinking→connected
    (סוף תור) מפעיל בדיקת השמעה. עכשיו = turnState→idle. ⚠️ זה ה-mechanism הכי שביר —
    ה-`#prevTurnState` חייב לעקוב נכון, אחרת cue speaking לא יתנגן. בדוק שה-effect
@@ -166,7 +181,12 @@ export class ModelStatus {
    קריטית — בלי reactivity הבועה "ממתין להקראה" לא תתעדכן. בדוק במקור.
 5. **+layout.svelte + context.ts** — קבצים משותפים (parallel-safe). הוספת ModelStatus
    = additive (section חדש). ModelStatus צריך את session+speaker שכבר נוצרים שם.
-6. **auto-scroll ב-ChatBubbles** — אם קיים, הבועה הנגזרת צריכה להיכלל.
+6. **auto-scroll — ב-`AppShell.svelte`** (לא ChatBubbles; הועבר ב-redesign-7).
+   ה-smart-scroll $effect (~:62-80) עוקב אחרי שינויי `session.bubbles` וגולל לתחתית
+   אם המשתמש קרוב. StatusBubble נגזרת ואינה ב-bubbles → להוסיף את `modelStatus.phase`
+   לתלויות ה-$effect (additive) כדי שהופעת/שינוי הבועה תגרור scroll. ⚠️ זה נוגע
+   ב-AppShell (קובץ משותף, additive). אם ה-$effect שם משתמש ב-helper — הוסף קריאה
+   ל-phase שתסומן כתלות.
 
 ## 5. DoD כולל (calev light)
 1. core typecheck + tests; frontend-v2 typecheck + build + lint:i18n — נקי.
