@@ -123,6 +123,10 @@ export const en: Catalog = {
   "settings.toggle.carMode": "Car mode (Play on Bluetooth = record)",
   "settings.reset": "Reset",
   "settings.saveOpen": "Save & Open",
+  // ─── language ─── (rtl-ltr-bidi)
+  "settings.language.label": "Interface language",
+  "settings.language.he": "Hebrew",
+  "settings.language.en": "English",
   // ─── layout/header ─── (redesign-2)
   "header.menu": "Menu",
   "header.settings": "Settings",

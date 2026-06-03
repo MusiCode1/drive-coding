@@ -86,8 +86,8 @@ export type MessageKey =
   | "settings.beUrl.invalid"
   | "settings.beUrl.saved"
   | "settings.back"
-// ─── recordings ─── (slice 10)
-// ─── agent-options ─── (slice 23)
+  // ─── recordings ─── (slice 10)
+  // ─── agent-options ─── (slice 23)
   | "agentOptions.title"
   | "agentOptions.model.label"
   | "agentOptions.model.other"
@@ -129,6 +129,10 @@ export type MessageKey =
   | "settings.toggle.carMode"
   | "settings.reset"
   | "settings.saveOpen"
+  // ─── language ─── (rtl-ltr-bidi)
+  | "settings.language.label"
+  | "settings.language.he"
+  | "settings.language.en"
   // ─── layout/header ─── (redesign-2)
   | "header.menu"
   | "header.settings"
