@@ -16,6 +16,7 @@ export const WakeWordConfigSchema = type({
   "cooldownMs?": "number",
   "vadHangoverFrames?": "number",
   "gain?": "number",
+  "deviceId?": "string | null",
 })
 
 export type WakeWordConfig = typeof WakeWordConfigSchema.infer

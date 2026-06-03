@@ -1,3 +1,32 @@
+## 2026-06-03 — שיפורי UI לעמוד /wake-word-test
+
+### מה בוצע?
+
+שיפורים לעמוד הבדיקה `/wake-word-test` (לא slice מלא — שינוי ישיר ב-dev):
+
+**1. בחירת מקור קלט**
+- הוספת `loadDevices()` ל-`WakeWordVM` — קורא `getUserMedia` לקבלת הרשאה ואז `enumerateDevices()`
+- הוספת `setDevice(id)` — עוצר ומפעיל מחדש את ה-engine עם המכשיר החדש
+- `WakeWordEngine.start(deviceId?)` מעביר `{ deviceId: { exact: id } }` ל-`getUserMedia`
+- UI: `<select>` עם רשימת מכשירי audioinput
+
+**2. Input Gain slider**
+- הוספת `gain = $state(1.0)` + `setGain(v)` ל-VM
+- UI: `<input type="range" min=0 max=3 step=0.05>` עם תצוגת אחוזים (0–300%)
+
+**3. השמעה דרך אלמנט `<audio>` גלוי**
+- הוסר `new Audio(url).play()` הנסתר מ-VM
+- Route מחזיק `bind:this={audioEl}` + `$effect` שמשמיע ~1s אחרי הגדרת URL
+
+**4. גלילת עמוד**
+- `app.css:114` מגדיר `html, body { overflow: hidden }` גלובלית
+- Route דורס: `:global(html), :global(body) { height: auto !important; overflow-y: auto !important }`
+
+**קבצים שהשתנו**: `types.ts`, `wake-word-engine.ts`, `wake-word.svelte.ts`, `wake-word-test/+page.svelte`.
+**בדיקות**: typecheck ✓, build ✓.
+
+---
+
 ## 2026-06-03 — slice fix-409-replace-flag הושלם — 602 tests ✓
 
 ### מה בוצע?
