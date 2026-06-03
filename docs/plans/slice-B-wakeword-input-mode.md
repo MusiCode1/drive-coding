@@ -91,7 +91,7 @@ WakeWordVM detect#2 → capture.stop() → transcribe(blob) → session.sendProm
 ### Commit 2 — context + layout: WakeWordVM singleton
 - **`context.ts`**: זוג חדש `// ─── wake-word ───` + `export const [getWakeWord, setWakeWord] = createContext<WakeWordVM>()` (additive — section חדש, parallel-safe).
 - **`+layout.svelte`**: צור `new WakeWordVM({ keywords, baseAssetUrl }, { session })` + `setWakeWord(...)`
-  (config ראשון, opts.session שני — ראה Commit 2)
+  (config ראשון, opts.session שני — ה-ctor מוגדר ב-Commit 1)
   (additive — אחרי שאר ה-VMs; session כבר נוצר שם). keywords = 4 **בדיוק כמפתחות
   MODEL_FILE_MAP** (types.ts:30-34): `["hey_jarvis", "alexa", "hey_mycroft", "hey_rhasspy"]`
   (עם `hey_` ל-jarvis/mycroft/rhasspy, בלי ל-alexa). baseAssetUrl = `/wake-word/models`.
