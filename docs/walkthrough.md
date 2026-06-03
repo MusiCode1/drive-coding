@@ -1,3 +1,20 @@
+## 2026-06-03 16:55 — slice ws-reconnect-infra — Commit 1: listAgents() adapter + #findReusableAgent
+
+### מה בוצע?
+
+Commit 1 של slice `ws-reconnect-infra` — יכולת שאילתת agents חיים מה-BE.
+
+| קובץ | שינוי |
+|---|---|
+| `agents-api.ts` | הוסף `listAgents(signal?)` — GET /api/agents → `AgentPublic[]`; ייבוא `AgentPublic` מ-`@drive-coding/core` |
+| `agents-api.test.ts` | 4 טסטים חדשים ל-`listAgents` (happy path, HTTP error, timeout, signal) |
+| `agent-session.svelte.ts` | הוסף `#findReusableAgent()` פרטי — סינון agents לפי acpSessionId+cwd+status חי |
+
+**בדיקות**: 634 tests ✓, typecheck FE ✓, lint:i18n ✓.
+**חריגות**: אין.
+
+---
+
 ## 2026-06-03 16:53 — slice ws-reconnect-infra — Commit 0: תשתית state + cliKind + visibility
 
 ### מה בוצע?

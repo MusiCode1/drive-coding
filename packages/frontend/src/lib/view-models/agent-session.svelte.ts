@@ -20,7 +20,7 @@ import { tick } from "svelte"
 import { createAcpClient, type AcpClient } from "@drive-coding/core/acp/client"
 import type { CuesEngine } from "$lib/engines/cues"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
-import { createAgent, deleteAgent, notifySessionAttached } from "$lib/adapters/agents-api"
+import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
 import type { CliKind } from "@drive-coding/core"
 import type {
   Bubble,
@@ -121,6 +121,30 @@ export class AgentSession {
   // ─── DEV-only test helpers (tree-shaken from prod) ───
   /** @internal */ _setStatusForTest(s: AgentSessionStatus): void { this.#setStatus(s) }
   /** @internal */ _setReconnectAttemptForTest(n: number): void { this.reconnectAttempt = n }
+
+  // ─── slice ws-reconnect-infra: reconnect helpers ────────────────────────────
+
+  /**
+   * מחפש agent חי בצד השרת שאפשר להתחבר אליו מחדש (warm) במקום spawn.
+   * תנאי: אותו acpSessionId (=#sessionId הנוכחי), אותו cwd, ו-status חי.
+   * מחזיר agentId או null. שגיאת רשת → null (נופלים ל-cold).
+   */
+  #findReusableAgent = async (): Promise<string | null> => {
+    if (this.#sessionId === null || this.cwd === null) return null
+    try {
+      const agents = await listAgents()
+      const match = agents.find(
+        (a) =>
+          a.acpSessionId === this.#sessionId &&
+          a.cwd === this.cwd &&
+          a.status !== "crashed" &&
+          a.status !== "closed",
+      )
+      return match?.id ?? null
+    } catch {
+      return null   // שגיאת רשת — cold יטפל
+    }
+  }
 
   // ─── מחזור חיי חיבור (connection lifecycle) ─────────────────────────
 
