@@ -1,6 +1,6 @@
 # Brief: slice — מצב-מודל + בקרת-סוכן + השמעה (מאוחד A+AB)
 
-> סטטוס: **READY** (אביגיל round 2, 0 findings). complexity: **8/10** → verifier-slice-**heavy**.
+> סטטוס: **הושלם** (אליעזר, 2026-06-03). complexity: **8/10** → verifier-slice-**heavy**.
 > verifier-phase אחרי Commit 1 (state refactor), Commit 3 (cancelTurn/FSM), Commit 4 (I/O recordings).
 > base: `poc-wake-word` (מוזג עם dev `6e8b504` — מכיל את כל קוד dev + ה-brief הזה).
 > ה-line numbers אומתו מול dev `6e8b504` = ה-merge-base, תקפים ב-poc-wake-word.
