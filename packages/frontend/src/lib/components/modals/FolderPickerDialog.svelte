@@ -7,6 +7,7 @@
  *
  * ─── redesign-6 ───
  */
+import { untrack } from "svelte"
 import { Dialog as BitsDialog } from "bits-ui"
 import FolderIcon from "@lucide/svelte/icons/folder"
 import ArrowUpIcon from "@lucide/svelte/icons/arrow-up"
@@ -28,10 +29,11 @@ let showHidden = $state(false)
 
 // טעינה ב-$effect כשה-dialog נפתח (onOpenChange לא נורה בפתיחה programmatic ב-Bits controlled mode)
 // איפוס showHidden בכל פתיחה (לפי §2: מקומי, מתאפס)
+// untrack על currentPath: מונע re-run של ה-effect כש-loadFolder כותב currentPath (Svelte gotcha)
 $effect(() => {
   if (modals.folderOpen) {
     showHidden = false
-    void loadFolder(currentPath)
+    void loadFolder(untrack(() => currentPath))
   }
 })
 
