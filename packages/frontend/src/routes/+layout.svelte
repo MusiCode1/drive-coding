@@ -14,6 +14,7 @@
  * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
  */
 import "../app.css"
+import type { Locale } from "@drive-coding/core/i18n"
 import {
   setCues,
   setI18n,
@@ -77,6 +78,18 @@ const uiShell = new UiShellVM()
 
 // ─── modals ─── (redesign-6)
 const modals = new ModalsVM()
+
+// ─── dir/lang sync ─── (rtl-ltr-bidi)
+// סנכרון <html dir> ו-<html lang> ל-locale — הקסם של הדו-כיווניות.
+// ה-effect קורא $state (i18n.locale) וכותב ל-DOM (לא ל-$state) → אין infinite loop.
+// <html> אינו DOM-node של component ספציפי → layout הוא המקום הנכון (composition root).
+const RTL_LOCALES: Locale[] = ["he"]
+$effect(() => {
+  const loc = i18n.locale // קריאה ריאקטיבית
+  const dir = RTL_LOCALES.includes(loc) ? "rtl" : "ltr"
+  document.documentElement.dir = dir
+  document.documentElement.lang = loc
+})
 
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
