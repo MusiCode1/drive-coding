@@ -11,8 +11,10 @@ import { beUrl } from "$lib/util/be-url"
 export type FsEntry = { name: string; isDir: boolean }
 export type FsBrowseResult = { path: string; entries: FsEntry[] }
 
-export async function browseFolder(path: string): Promise<FsBrowseResult> {
-  const res = await fetch(beUrl(`/api/fs/browse?path=${encodeURIComponent(path)}`))
+export async function browseFolder(path: string, showHidden = false): Promise<FsBrowseResult> {
+  const params = new URLSearchParams({ path })
+  if (showHidden) params.set("showHidden", "true")
+  const res = await fetch(beUrl(`/api/fs/browse?${params}`))
   if (!res.ok) throw new Error(`browse failed: ${res.status}`)
   return res.json() as Promise<FsBrowseResult>
 }
