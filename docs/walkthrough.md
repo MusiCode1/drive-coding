@@ -1,3 +1,21 @@
+## 2026-06-03 — slice fix-409-replace-flag הושלם — 602 tests ✓
+
+### מה בוצע?
+
+Slice `fix-409-replace-flag` — תיקון staleness של sessionId ב-registry בעת warm switch.
+דגל `replace:true` מאפשר ל-switchSession לדרוס sessionId קיים מבלי לזרוק את guard MED-9.
+
+| commit | hash | תוכן |
+|---|---|---|
+| C1 | cad822d | replace flag דרך 3 שכבות: BE guard + FE adapter + FE VM switchSession |
+| C2 | 70bf7ce | טסטי integration BE: replace=false→409 (registry נשאר), replace=true→200 (registry מתעדכן) |
+
+**שינויים**: 3 קבצים ב-C1 (http-agents.ts, agents-api.ts, agent-session.svelte.ts), 1 קובץ ב-C2 (http-agents.test.ts).
+**חריגות**: אין.
+**בדיקות**: 602 tests ✓, typecheck BE+FE ✓, lint:i18n ✓.
+
+---
+
 ## 2026-06-02 — slice fix-idle-flaky הושלם — 10/10 ריצות נקיות
 
 ### מה בוצע?
