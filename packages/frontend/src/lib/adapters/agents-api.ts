@@ -58,13 +58,17 @@ export async function getAgent(
   return (await res.json()) as { agent: { cwd: string; status: string } }
 }
 
-export async function notifySessionAttached(agentId: string, sessionId: string): Promise<void> {
+export async function notifySessionAttached(
+  agentId: string,
+  sessionId: string,
+  opts?: { replace?: boolean },
+): Promise<void> {
   await withTimeout(
     (s) =>
       fetch(beUrl(`/api/agents/${agentId}/session-attached`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({ sessionId, ...(opts?.replace ? { replace: true } : {}) }),
         signal: s,
       }),
     AGENTS_API_TIMEOUT_MS,
