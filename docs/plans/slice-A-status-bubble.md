@@ -182,11 +182,14 @@ export class ModelStatus {
 5. **+layout.svelte + context.ts** — קבצים משותפים (parallel-safe). הוספת ModelStatus
    = additive (section חדש). ModelStatus צריך את session+speaker שכבר נוצרים שם.
 6. **auto-scroll — ב-`AppShell.svelte`** (לא ChatBubbles; הועבר ב-redesign-7).
-   ה-smart-scroll $effect (~:62-80) עוקב אחרי שינויי `session.bubbles` וגולל לתחתית
+   ה-smart-scroll $effect (~:65-85) עוקב אחרי שינויי `session.bubbles` וגולל לתחתית
    אם המשתמש קרוב. StatusBubble נגזרת ואינה ב-bubbles → להוסיף את `modelStatus.phase`
-   לתלויות ה-$effect (additive) כדי שהופעת/שינוי הבועה תגרור scroll. ⚠️ זה נוגע
-   ב-AppShell (קובץ משותף, additive). אם ה-$effect שם משתמש ב-helper — הוסף קריאה
-   ל-phase שתסומן כתלות.
+   לתלויות ה-$effect (additive) כדי שהופעת/שינוי הבועה תגרור scroll.
+   ⚠️ **wiring נדרש**: AppShell היום מחווט רק `getResponsive()`/`getSession()`/`getI18n()`
+   — **אין** getModelStatus. כדי לקרוא `modelStatus.phase` ב-$effect צריך קודם להוסיף
+   `import { getModelStatus } from "$lib/context"` + `const modelStatus = getModelStatus()`
+   בראש ה-script (additive). רק אז אפשר לקרוא phase בתוך ה-$effect כתלות. זה נוגע
+   ב-AppShell (קובץ משותף, additive).
 
 ## 5. DoD כולל (calev light)
 1. core typecheck + tests; frontend-v2 typecheck + build + lint:i18n — נקי.
