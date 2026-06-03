@@ -101,6 +101,7 @@ export class WakeWordEngine {
       cooldownMs: 2000,
       vadHangoverFrames: 12,
       gain: 1.0,
+      deviceId: null,
       ...config,
       detectThreshold: config.thresholds?.detect ?? DETECT_THRESHOLD,
       vadThreshold: config.thresholds?.vad ?? VAD_THRESHOLD,
