@@ -1,126 +1,103 @@
 # Local Prod Service — Deploy Guide
 
-voice-acp running as a systemd user service: BE (Hono) serves the built
-static FE and the API/WS/proxy — single origin, no CORS for local access.
-Cloudflare Pages connect is also supported simultaneously (cross-origin CORS).
+voice-acp running as **two** systemd user services — one per branch. Each BE
+(Hono) serves its built static FE + API/WS/proxy on its own port (single origin,
+no CORS for local access). Both are exposed publicly via the central
+home-server Cloudflare tunnel.
 
 ---
 
-## Overview
+## Overview — two deployments
 
-Two access modes work simultaneously:
+| Deployment | Branch / worktree | Port | Public URL | systemd unit |
+|------------|-------------------|------|------------|--------------|
+| **main** (prod) | `/home/user/projects/voice-acp/main` | 4000 | `https://drive-coding.example.com` | `voice-acp-main.service` |
+| **dev** (staging) | `/home/user/projects/voice-acp/dev` | 4001 | `https://drive-coding-dev.example.com` | `voice-acp-dev.service` |
 
-| Mode | URL | How |
-|------|-----|-----|
-| Local | `http://<host>:4000/` | BE serves built `packages/frontend/build/` |
-| CF Pages | `https://drive-coding.pages.dev` | Static from CF; `Settings.beUrl` → BE; CORS allows CF origin |
+Each BE requires the OneCLI gateway (for ElevenLabs + Google proxy credentials);
+both units call `onecli run --agent voice-acp -- bun packages/backend/src/server.ts`.
 
-The BE requires the OneCLI gateway (for ElevenLabs + Google proxy credentials).
-`voice-acp-be.service` calls `onecli run --agent voice-acp -- bun server.ts`.
+> **Why two?** main is the stable prod branch; dev is the integration/staging
+> branch where merged slices land first. They run side-by-side on different ports
+> so you can preview dev before fast-forwarding main.
 
 ---
 
-## Build
+## Public access — Cloudflare tunnel (no local tunnel service)
 
-Build FE + BE (from the `dev` worktree):
+Both domains route through the **central** home-server token-based CF tunnel
+(`REDACTED-TUNNEL-ID`). There is **no local tunnel systemd unit**
+(the old `tuns.sh` tunnel was removed 2026-06-01).
 
-```bash
-cd /home/user/projects/voice-acp/dev
-pnpm build
-```
+Routing + DNS are managed **via the Cloudflare API** (token-based tunnel has no
+local `config.yml`). To change which port a domain hits:
 
-FE output: `packages/frontend/build/`
+- **Ingress** (hostname → service): `PUT /accounts/{ACCT}/cfd_tunnel/{TUN}/configurations`
+  with the FULL ingress list (catch-all `http_status:404` must stay last).
+- **DNS** (CNAME → tunnel): `POST/PATCH /zones/{ZONE}/dns_records`, content
+  `{TUN}.cfargotunnel.com`, proxied=true.
+
+IDs: ACCT `REDACTED-ACCOUNT-ID`, TUN `REDACTED-TUNNEL-ID`,
+ZONE (example.com) `REDACTED-ZONE-ID`. Both hosts point at
+`192.168.x.x` (this CT, `cli-agents`): main→`:4000`, dev→`:4001`.
+
+Access the CF API via `onecli run --agent voice-coda-cf -- curl ...` (the CF
+secret is configured in that OneCLI selective agent — NOT in `voice-acp`).
 
 ---
 
 ## Install (one-time)
 
-Copy the unit files from the repo to the systemd user directory:
-
 ```bash
 mkdir -p ~/.config/systemd/user
-cp deploy/systemd/voice-acp-be.service ~/.config/systemd/user/
-cp deploy/systemd/voice-acp-build.service ~/.config/systemd/user/
-cp deploy/systemd/voice-acp-tunnel.service ~/.config/systemd/user/
+cp deploy/systemd/voice-acp-main.service ~/.config/systemd/user/
+cp deploy/systemd/voice-acp-dev.service  ~/.config/systemd/user/
 systemctl --user daemon-reload
+systemctl --user enable --now voice-acp-main.service
+systemctl --user enable --now voice-acp-dev.service
 ```
 
-Enable and start the BE service (and the tunnel):
-
-```bash
-systemctl --user enable --now voice-acp-be.service
-systemctl --user enable --now voice-acp-tunnel.service
-```
+Each unit's `ExecStartPre` runs `pnpm install --frozen-lockfile && pnpm build`
+in its worktree, so a `restart` always brings the latest committed code to air.
 
 ---
 
-## Daily Use
+## Daily Use — deploy latest code
 
-After changing source code, trigger a build + restart:
+Each deployment builds from its own worktree on restart:
 
 ```bash
-systemctl --user start voice-acp-build
+# Deploy dev (after merging a slice into dev):
+systemctl --user restart voice-acp-dev.service
+
+# Deploy main (after fast-forwarding main from dev):
+cd /home/user/projects/voice-acp/main && git merge --ff-only dev
+systemctl --user restart voice-acp-main.service
 ```
 
-This runs `pnpm build` then restarts `voice-acp-be.service` automatically
-(via `ExecStartPost`).
+`restart` re-runs install+build via `ExecStartPre`. Build is incremental (~fast
+when unchanged); a fresh dependency after a merge is installed before the build.
 
 ---
 
 ## Local Access
 
-Open `http://localhost:4000/` (or `http://<host-ip>:4000/` on LAN).
+- main: `http://localhost:4000/` (or `http://192.168.x.x:4000/` on LAN)
+- dev:  `http://localhost:4001/` (or `http://192.168.x.x:4001/` on LAN)
 
-The BE listens on all interfaces by default (node-server). Restrict to
-localhost in the future if needed.
-
----
-
-## Public Tunnel (single-origin)
-
-`voice-acp-tunnel.service` exposes the BE (which serves FE + API + WS on :4000)
-through a pico/tuns.sh SSH tunnel — one origin, no CORS/proxy split.
-
-- URL: `https://your-app-build.nue.tuns.sh`
-- The service `Wants=voice-acp-be.service` (starts after the BE, stops with it).
-- SSH auto-recovery: `ServerAliveInterval=15` + `ServerAliveCountMax=3` detect a
-  dead link (~45s) and exit; `ExitOnForwardFailure=yes` exits on forward failure;
-  `Restart=always` + `RestartSec=5` brings it back on the same subdomain.
-
-```bash
-systemctl --user status voice-acp-tunnel       # active (running)
-journalctl --user -u voice-acp-tunnel -f       # tunnel log
-```
-
-Verified: killing the ssh process → systemd restarts it within ~5s, same subdomain.
-
----
-
-## CF Pages Access
-
-1. Open `https://drive-coding.pages.dev`
-2. In Settings, set **BE URL** to the local BE address (e.g. `http://192.168.x.x:4000`)
-   — or use a tunnel if accessing remotely (see slice 15d for PNA/mixed-content notes).
-3. CORS is pre-configured for `https://drive-coding.pages.dev` in the service env.
+Each BE listens on all interfaces (node-server).
 
 ---
 
 ## Logs
 
-Live log tail:
-
 ```bash
-journalctl --user -u voice-acp-be -f
+journalctl --user -u voice-acp-main -f    # prod log
+journalctl --user -u voice-acp-dev  -f    # staging log
 ```
 
-Wire-level traffic (if `LOG_WIRE=ws` is set in the service Environment):
-
-```bash
-# Add to ~/.config/systemd/user/voice-acp-be.service:
-# Environment=LOG_WIRE=ws
-systemctl --user daemon-reload && systemctl --user restart voice-acp-be
-journalctl --user -u voice-acp-be -f
-```
+Wire-level traffic: add `Environment=LOG_WIRE=ws` to the unit, then
+`systemctl --user daemon-reload && systemctl --user restart voice-acp-<main|dev>`.
 
 ---
 
@@ -128,9 +105,17 @@ journalctl --user -u voice-acp-be -f
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `AUTH_REQUIRED` / service exits immediately | `ONECLI_API_HOST` not set in systemd env (not inherited from shell) | Add `Environment=ONECLI_API_HOST=<gateway-url>` to the service file; `systemctl --user daemon-reload && systemctl --user restart voice-acp-be` |
-| 401 on `/proxy/*` | OneCLI not injecting credentials | Check `onecli` path in service; verify `ONECLI_API_HOST` is correct |
-| `voice-acp-build` fails with "pnpm not found" | PATH not initialized | Use `bash -lc 'which pnpm'` to diagnose; consider `corepack pnpm` as fallback |
-| Port 4000 already in use | Another process (e.g. dev mode) | Change `Environment=PORT=4001` in service; update `CORS_ORIGINS` accordingly |
-| Static files not served (404 on `/`) | `FE_STATIC_DIR` missing or wrong path | Verify path exists: `ls $FE_STATIC_DIR/index.html` |
-| SPA route returns 404 | Fallback route missing | Ensure slice 20 BE code is deployed (check `systemctl --user status voice-acp-be`) |
+| `AUTH_REQUIRED` / service exits immediately | `ONECLI_API_HOST` not set in systemd env | `shared-env.sh` (sourced in ExecStart) sets it; verify the source line exists in the unit |
+| 401 on `/proxy/*` | OneCLI not injecting credentials | Check `onecli` on PATH (via shared-env); verify `ONECLI_API_HOST` |
+| Port already in use | both units on same port | main=4000, dev=4001 must differ; check `Environment=PORT` |
+| Static files 404 on `/` | `FE_STATIC_DIR` missing/wrong | `ls $FE_STATIC_DIR/index.html`; run `pnpm build` in that worktree |
+| `frozen-lockfile` fails on restart | new dependency not installed in that worktree | run `pnpm install` once manually in the worktree, then restart |
+| public domain 502/404 | CF ingress points at wrong port, or BE down | verify `systemctl --user is-active voice-acp-<x>`; re-check ingress via CF API |
+
+---
+
+## CF Pages Access (legacy, still supported)
+
+`https://drive-coding.pages.dev` with `Settings.beUrl` → a BE address works too;
+CORS for the Pages origin is pre-configured in `voice-acp-main.service`. See
+`docs/deploy-cf-pages.md` for PNA/mixed-content notes.

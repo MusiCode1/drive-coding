@@ -1,0 +1,30 @@
+[Unit]
+Description=voice-acp MAIN (prod) — Hono + static FE on :4000, via OneCLI gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/user/projects/voice-acp/main
+Environment=PORT=4000
+Environment=FE_STATIC_DIR=/home/user/projects/voice-acp/main/packages/frontend/build
+# CORS: CF Pages (legacy) + localhost + ה-CF tunnel הציבורי של main (drive-coding).
+Environment=CORS_ORIGINS=https://drive-coding.pages.dev,http://localhost:4000,https://drive-coding.example.com
+# opencode has its own Anthropic OAuth — strip OneCLI's proxy/placeholder vars
+# that would otherwise break opencode's auth (see scripts/opencode-clean.sh).
+Environment=OPENCODE_BIN=/home/user/projects/voice-acp/main/scripts/opencode-clean.sh
+# ExecStartPre מסנכרן תלויות ובונה את ה-FE (+core) לפני שה-BE עולה — כך
+# `systemctl restart` (וגם boot) תמיד מעלה את הקוד העדכני לאוויר.
+ExecStartPre=/bin/bash -lc 'source /home/user/.config/shell/shared-env.sh && pnpm install --frozen-lockfile && pnpm build'
+# systemd gives a minimal PATH — source shared env for onecli/bun/node/fnm.
+ExecStart=/bin/bash -c 'source /home/user/.config/shell/shared-env.sh && exec onecli run --agent voice-acp -- bun packages/backend/src/server.ts'
+TimeoutStartSec=300
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+
+# הסביבה הציבורית: https://drive-coding.example.com (CF tunnel home-server,
+# token-based, id fed5a59e... → ingress drive-coding.example.com → 192.168.x.x:4000).
+# ה-routing מנוהל דרך CF API (PUT cfd_tunnel configurations), לא config מקומי.
