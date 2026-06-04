@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { getCliCommand } from "../src/acp/cli-config"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { getCliCommand, getCliSpec } from "../src/acp/cli-config"
 
 describe("getCliCommand", () => {
   const origEnv = process.env.OPENCODE_BIN
@@ -104,3 +104,128 @@ describe("getCliCommand", () => {
 
 // buildStdioToWsArgs was removed in Slice 10 F-1 fix — stdio-to-ws subprocess is gone.
 // Direct in-process spawn is used instead. No port wrapping needed.
+
+// ─── getCliCommand + getCliSpec עם override ───────────────────────────────────
+
+describe("getCliCommand with override", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    delete process.env.CLI_SPECS_FILE
+    delete process.env.OPENCODE_BIN
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    delete process.env.CLI_SPECS_FILE
+    delete process.env.OPENCODE_BIN
+  })
+
+  it("1. אין override → getCliCommand(gemini) זהה להיום", async () => {
+    // מוודא שאין קובץ override (קובץ לא קיים → {})
+    process.env.CLI_SPECS_FILE = "/tmp/no-such-file-cli-specs-99999.jsonc"
+    const { getCliCommand: cmd } = await import("../src/acp/cli-config.js")
+    const result = cmd("gemini")
+    expect(result.bin).toBe("gemini")
+    expect(result.args).toEqual(["--acp"])
+  })
+
+  it("2. override ל-gemini עם args → args דרוסים", async () => {
+    const fs = await import("node:fs")
+    const os = await import("node:os")
+    const path = await import("node:path")
+    const filePath = path.join(
+      os.tmpdir(),
+      `cli-override-test-${Date.now()}.jsonc`,
+    )
+    fs.writeFileSync(filePath, JSON.stringify({ gemini: { args: ["--acp", "--foo"] } }))
+    process.env.CLI_SPECS_FILE = filePath
+    try {
+      const { getCliCommand: cmd } = await import("../src/acp/cli-config.js")
+      const result = cmd("gemini")
+      expect(result.args).toEqual(["--acp", "--foo"])
+    } finally {
+      fs.unlinkSync(filePath)
+    }
+  })
+
+  it("3. override ל-gemini עם bin → bin דרוס", async () => {
+    const fs = await import("node:fs")
+    const os = await import("node:os")
+    const path = await import("node:path")
+    const filePath = path.join(
+      os.tmpdir(),
+      `cli-override-test-${Date.now()}.jsonc`,
+    )
+    fs.writeFileSync(filePath, JSON.stringify({ gemini: { bin: "/custom/gemini" } }))
+    process.env.CLI_SPECS_FILE = filePath
+    try {
+      const { getCliCommand: cmd } = await import("../src/acp/cli-config.js")
+      const result = cmd("gemini")
+      expect(result.bin).toBe("/custom/gemini")
+    } finally {
+      fs.unlinkSync(filePath)
+    }
+  })
+
+  it("4. override.bin גובר על OPENCODE_BIN", async () => {
+    const fs = await import("node:fs")
+    const os = await import("node:os")
+    const path = await import("node:path")
+    const filePath = path.join(
+      os.tmpdir(),
+      `cli-override-test-${Date.now()}.jsonc`,
+    )
+    fs.writeFileSync(filePath, JSON.stringify({ opencode: { bin: "/override/opencode" } }))
+    process.env.CLI_SPECS_FILE = filePath
+    process.env.OPENCODE_BIN = "/env/opencode"
+    try {
+      const { getCliCommand: cmd } = await import("../src/acp/cli-config.js")
+      const result = cmd("opencode")
+      // override.bin גובר על OPENCODE_BIN (הקובץ מפורש יותר מ-env כללי)
+      expect(result.bin).toBe("/override/opencode")
+    } finally {
+      fs.unlinkSync(filePath)
+    }
+  })
+
+  it("5. getCliSpec(gemini) עם override.unsetEnv → מחזיר spec עם unsetEnv", async () => {
+    const fs = await import("node:fs")
+    const os = await import("node:os")
+    const path = await import("node:path")
+    const filePath = path.join(
+      os.tmpdir(),
+      `cli-override-test-${Date.now()}.jsonc`,
+    )
+    const unsetEnvList = ["HTTP_PROXY", "HTTPS_PROXY", "NODE_EXTRA_CA_CERTS"]
+    fs.writeFileSync(filePath, JSON.stringify({ gemini: { unsetEnv: unsetEnvList } }))
+    process.env.CLI_SPECS_FILE = filePath
+    try {
+      const { getCliSpec: spec } = await import("../src/acp/cli-config.js")
+      const result = spec("gemini")
+      expect(result).toBeDefined()
+      expect(result?.unsetEnv).toEqual(unsetEnvList)
+    } finally {
+      fs.unlinkSync(filePath)
+    }
+  })
+
+  it("6. modelOverride + supportsModelFlag עדיין מוסיף --model אחרי args דרוסים", async () => {
+    const fs = await import("node:fs")
+    const os = await import("node:os")
+    const path = await import("node:path")
+    const filePath = path.join(
+      os.tmpdir(),
+      `cli-override-test-${Date.now()}.jsonc`,
+    )
+    fs.writeFileSync(filePath, JSON.stringify({ gemini: { args: ["--acp", "--foo"] } }))
+    process.env.CLI_SPECS_FILE = filePath
+    try {
+      const { getCliCommand: cmd } = await import("../src/acp/cli-config.js")
+      const result = cmd("gemini", "gemini-2.5-pro")
+      // args דרוסים + --model בסוף
+      expect(result.args).toEqual(["--acp", "--foo", "--model", "gemini-2.5-pro"])
+    } finally {
+      fs.unlinkSync(filePath)
+    }
+  })
+})

@@ -1,17 +1,42 @@
-import { type BridgeKind, CLI_SPECS } from "@drive-coding/core"
+import type { BridgeKind, CliSpec } from "@drive-coding/core"
+import { CLI_SPECS } from "@drive-coding/core"
+import { loadCliSpecsOverride } from "./cli-config-file.js"
 
 /**
  * cli-config.ts — resolution של פקודת ההרצה בזמן-ריצה.
  *
  * מקור-האמת ל-CLIs (שמות + bin/args/supportsModelFlag) חי ב-`@drive-coding/core`
- * (CLI_SPECS). כאן רק ה-resolution התלוי-סביבה:
- *   - opencode: דריסת ה-bin דרך `OPENCODE_BIN` (process.env, בזמן-ריצה).
- *   - שאר ה-CLIs: הוספת `--model <id>` כשיש modelOverride ו-supportsModelFlag.
+ * (CLI_SPECS). כאן ה-resolution התלוי-סביבה:
+ *   - opencode: דריסת ה-bin דרך override.bin (קובץ JSONC) ואחריו OPENCODE_BIN (env).
+ *     override.bin גובר על OPENCODE_BIN (הקובץ מפורש יותר מ-env כללי).
+ *   - שאר ה-CLIs: override של bin/args מהקובץ, ואז הוספת `--model <id>` לפי supportsModelFlag.
  */
 
 export type CliCommand = {
   readonly bin: string // נתיב הרצה או שם
   readonly args: ReadonlyArray<string>
+}
+
+/**
+ * מחזיר את ה-spec הממוזג (CLI_SPECS + override) לשם CLI נתון.
+ * משמש ל-env shaping ב-bridge-manager (unsetEnv/setEnv).
+ * מקבל kind כ-string (לא BridgeKind) — כי הקובץ יכול להגדיר override לכל מפתח.
+ */
+export function getCliSpec(kind: string, env?: NodeJS.ProcessEnv): CliSpec | undefined {
+  const base = CLI_SPECS[kind as BridgeKind]
+  const override = loadCliSpecsOverride(env)[kind]
+
+  // אם אין base ואין override — לא ידוע
+  if (base === undefined && override === undefined) return undefined
+
+  // מיזוג: override דורס כל שדה שהוא מגדיר
+  return {
+    bin: override?.bin ?? base?.bin ?? "",
+    args: override?.args ?? base?.args ?? [],
+    supportsModelFlag: override?.supportsModelFlag ?? base?.supportsModelFlag ?? false,
+    ...(override?.unsetEnv !== undefined ? { unsetEnv: override.unsetEnv } : {}),
+    ...(override?.setEnv !== undefined ? { setEnv: override.setEnv } : {}),
+  }
 }
 
 export function getCliCommand(kind: BridgeKind, modelOverride?: string | null): CliCommand {
@@ -20,13 +45,30 @@ export function getCliCommand(kind: BridgeKind, modelOverride?: string | null): 
     throw new Error(`Unsupported BridgeKind: ${kind}`)
   }
 
-  const model = modelOverride?.trim() || null
-  const args = model && spec.supportsModelFlag ? [...spec.args, "--model", model] : [...spec.args]
+  // טוען override מהקובץ (memoized)
+  const override = loadCliSpecsOverride()[kind]
 
-  // OPENCODE_BIN נפתר בזמן הקריאה (לא בזמן טעינת המודול) — מאפשר override
-  // דינמי דרך env, ותואם את התנהגות ה-service file (OPENCODE_BIN=opencode-clean.sh).
-  // D14 (Proxmox): אצל אבי ב-/home/user/.opencode/bin/opencode.
-  const bin = kind === "opencode" ? (process.env.OPENCODE_BIN ?? spec.bin) : spec.bin
+  // args: override.args גובר על spec.args
+  const baseArgs = override?.args ?? spec.args
+
+  const model = modelOverride?.trim() || null
+  const args =
+    model && spec.supportsModelFlag ? [...baseArgs, "--model", model] : [...baseArgs]
+
+  // bin resolution (סדר עדיפויות):
+  // 1. override.bin (קובץ JSONC — מפורש ביותר)
+  // 2. OPENCODE_BIN (env var — רק ל-opencode)
+  // 3. spec.bin (ברירת-מחדל מה-core)
+  let bin: string
+  if (override?.bin !== undefined) {
+    // override.bin גובר על הכל (§9 Q2)
+    bin = override.bin
+  } else if (kind === "opencode") {
+    // OPENCODE_BIN נפתר בזמן הקריאה — D14 (Proxmox)
+    bin = process.env.OPENCODE_BIN ?? spec.bin
+  } else {
+    bin = spec.bin
+  }
 
   return { bin, args }
 }
