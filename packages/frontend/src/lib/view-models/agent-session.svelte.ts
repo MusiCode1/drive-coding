@@ -711,13 +711,14 @@ export class AgentSession {
     messageId: string | null,
   ): void {
     const last = this.bubbles[this.bubbles.length - 1]
-    // קבץ יחד רק כאשר: (א) מאותו סוג, וגם (ב) מזהה הודעה (messageId) תואם ושאינו null.
-    // מזהה הודעה null או חסר תמיד מתחיל בועה חדשה (לפי כלל הקיבוץ של ACP).
+    // קבץ יחד רק כאשר: (א) מאותו סוג, וגם (ב) מזהה הודעה (messageId) תואם.
+    // אם messageId הוא null (Gemini ACP, שאינו שולח messageId) — קבץ לפי kind בלבד.
     const canGroup =
       last !== undefined &&
       last.kind === kind &&
-      messageId !== null &&
-      last.messageId === messageId
+      (messageId !== null
+        ? last.messageId === messageId     // יש messageId → קבץ לפי מזהה (Claude)
+        : last.messageId === null)         // אין messageId → קבץ לפי kind (Gemini)
 
     if (canGroup && last !== undefined) {
       const seg: Segment = { id: crypto.randomUUID(), text }

@@ -1,3 +1,20 @@
+## 2026-06-04 23:47 — slice fix-null-msgid-grouping — קיבוץ בועות Gemini (null messageId)
+
+### מה בוצע?
+
+**slice**: fix-null-msgid-grouping (branch: fix-null-msgid-grouping, base: dev@7c3885f)
+**commits**: 1
+
+**1. fix: שינוי `#appendChunk` grouping logic (Commit 0 — manual + test)**
+- שינוי `canGroup` ב-`agent-session.svelte.ts:716-720` — במקום לדרוש `messageId !== null`, תנאי ה-cangroup מאפשר קיבוץ גם כששני `messageId` הם `null` (כל עוד ה-kind זהה)
+- Gemimi ACP שולח chunks עם `messageId: null` — השינוי גורם ל-chunks עוקבים מאותו kind להתקבץ לבועה אחת
+- Claude (עם messageId) לא מושפע — ה-condition `last.messageId === messageId` נשמר
+- קובץ test חדש: `agent-session.test.ts` — 6 test scenarios (Claude grouping, Gemini grouping, kind alternation, user/message separation, existing behavior preserved)
+
+**בדיקות**: typecheck ✓ | lint:i18n ✓ | 171 טסטים ירוקים (6 חדשים) | calev light ✓
+
+---
+
 ## 2026-06-04 — slice cli-specs-override — קובץ JSONC חיצוני לדריסת CLI_SPECS
 
 ### מה בוצע?
