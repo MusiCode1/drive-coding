@@ -21,6 +21,10 @@ export type CliSpec = {
    * קורית בזמן session/new דרך ה-ACP SDK (לא דרך argv).
    */
   readonly supportsModelFlag: boolean
+  /** משתני-סביבה להסרה מה-child לפני spawn (למשל proxy/CA של OneCLI). */
+  readonly unsetEnv?: readonly string[]
+  /** משתני-סביבה להוספה/דריסה ב-child לפני spawn. */
+  readonly setEnv?: Readonly<Record<string, string>>
 }
 
 export const CLI_SPECS = {
