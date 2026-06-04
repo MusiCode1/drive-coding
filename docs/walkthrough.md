@@ -122,6 +122,80 @@ Commit 0 של slice `ws-reconnect-infra` — תשתית state פסיבית לת�
 
 ---
 
+## 2026-06-03 — slice ui-polish-1 הושלם — 4 commits
+
+### מה בוצע?
+
+ליטושי UI ב-4 קבצי `.svelte` (FE-only, ללא BE/state חדש):
+
+**C0 — TypeArea.svelte: כפתור שליחה אייקון בלבד**
+- הסרת `{t("record.send")}` מהטקסט הנראה בכפתור
+- הוספת `style="transform:scaleX(-1)"` ל-SendIcon — מצביע שמאלה (RTL)
+- `aria-label={t("record.send")}` נשמר לנגישות (key לא orphan)
+
+**C1 — SessionOptionsPanel.svelte: disconnect ימני ביותר**
+- שינוי סדר DOM בשורת הפעולות: disconnect ראשון → audio → הגדרות
+- ב-RTL הראשון בDOM = ימני ביותר. handlers/classes/aria לא שונו.
+
+**C2 — FolderPickerDialog.svelte: breadcrumb רווח + ניווט**
+- ספרטור `/` קיבל `mx-1` (margin סימטרי משני הצדדים)
+- `<span>` הפכו ל-`<button class="hover:underline inline">` עם `onclick={() => navigateToDepth(i)}`
+- נוספה `navigateToDepth(index)` — בונה נתיב אבסולוטי עד אינדקס (כולל)
+
+**C3 — SessionPicker.svelte: load-btn רוחב מלא**
+- הסרת `align-self:flex-start`, הוספת `width:100%` + `text-align:center`
+
+**בדיקות**: typecheck ✓, build ✓, lint:i18n ✓. Commits: 233889f..51034d6.
+
+---
+
+## 2026-06-03 — slice folder-hidden הושלם — 3 commits
+
+### מה בוצע?
+
+הוספת checkbox "הצג תיקיות מוסתרות" לבורר התיקיות (`FolderPickerDialog`).
+
+**Commit 0 — BE: param `showHidden` ב-`GET /api/fs/browse`**
+- `http-history.ts`: קורא `?showHidden=true` וכש-true מבטל את סינון `HIDDEN_PREFIXES`
+- אבטחת `allowedBase`/realpath לא נגעה — `showHidden` משפיע רק על filter שמות
+- 2 integration tests חדשים: הסתרה ברירת מחדל + חשיפה עם showHidden=true
+
+**Commit 1 — FE adapter: `browseFolder(path, showHidden?)`**
+- `fs-browse.ts`: חתימה חדשה עם `showHidden = false` (default false → קוראים קיימים לא נשברים)
+- מעבר מ-`encodeURIComponent` ידני ל-`URLSearchParams`
+
+**Commit 2 — FE: checkbox ב-`FolderPickerDialog`**
+- `$state showHidden = false` — מתאפס בכל פתיחת dialog
+- `onToggleHidden()` — toggle + reload מיידי
+- checkbox markup מתחת ל-breadcrumb
+- i18n key `modal.folder.showHidden` — he: "הצג תיקיות מוסתרות", en: "Show hidden folders"
+
+**תוצאות**:
+- typecheck BE+FE ✓, build FE ✓, lint:i18n ✓
+- 187 טסטים עוברים (כולל 2 חדשים), 11 skipped
+
+**חריגות**: ללא סטיות מה-brief.
+
+---
+
+## 2026-06-03 — slice sessions-autoload: טעינת סשנים אוטומטית בטופס connect
+
+### מה בוצע?
+
+**1. שינוי ב-`packages/frontend/src/routes/+page.svelte`** (onMount בלבד):
+- הוספת טריגר לטעינה אוטומטית של סשנים בתחילת ה-`onMount` — לפני קריאת `fetchServerOptions`.
+- תנאי: `settings.lastCwd && cwd.trim()` — טוען רק כשהמשתמש כבר עבד בעבר בתיקייה (לא משתמש חדש / cwd ריק).
+- `loadSessions()` מוגן ב-`onMount` שרץ פעם אחת per mount — guard טבעי, אין צורך בדגל נוסף.
+- הכפתור הידני "טען סשנים אחרונים" נשאר כ-fallback ורענון.
+
+**קבצים שהשתנו**: `packages/frontend/src/routes/+page.svelte` — 4 שורות נוספו ב-onMount.
+
+**בדיקות**: `pnpm lint:i18n` ✓, `pnpm --filter @drive-coding/frontend-v2 typecheck` ✓, `pnpm --filter @drive-coding/frontend-v2 build` ✓.
+
+**סטיות מה-brief**: אין.
+
+---
+
 ## 2026-06-03 — שיפורי UI לעמוד /wake-word-test
 
 ### מה בוצע?

@@ -138,8 +138,20 @@ $effect(() => {
 })
 </script>
 
-<!-- שורת פעולות עליונה: השתק · נתק · ⚙ — בראש בכל המצבים (redesign-fix) -->
+<!-- שורת פעולות עליונה: נתק · השתק · ⚙ — בראש בכל המצבים (redesign-fix) -->
+<!-- סדר DOM: disconnect ראשון = ימני ביותר ב-RTL -->
 <div class="flex items-center gap-2 shrink-0">
+  <!-- disconnect -->
+  <button
+    class="flex-1 flex items-center justify-center gap-2 px-2.5 py-2 rounded-lg text-[13px] border"
+    style="border-color:var(--border); color:var(--recording)"
+    onclick={onDisconnect}
+    aria-label={t("header.disconnect")}
+    title={t("header.disconnect")}
+  >
+    <LogOutIcon size={16} strokeWidth={1.75} />
+  </button>
+
   <!-- audio master toggle -->
   <button
     class="flex-1 flex items-center justify-center gap-2 px-2.5 py-2 rounded-lg text-[13px] border"
@@ -153,17 +165,6 @@ $effect(() => {
     {:else}
       <VolumeXIcon size={16} strokeWidth={1.75} />
     {/if}
-  </button>
-
-  <!-- disconnect -->
-  <button
-    class="flex-1 flex items-center justify-center gap-2 px-2.5 py-2 rounded-lg text-[13px] border"
-    style="border-color:var(--border); color:var(--recording)"
-    onclick={onDisconnect}
-    aria-label={t("header.disconnect")}
-    title={t("header.disconnect")}
-  >
-    <LogOutIcon size={16} strokeWidth={1.75} />
   </button>
 
   <!-- הגדרות — toggle, בראש הרשימה בכל המצבים (ירד מ-AppHeader) -->

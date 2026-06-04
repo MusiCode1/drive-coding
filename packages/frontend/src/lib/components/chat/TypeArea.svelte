@@ -30,7 +30,7 @@ function onSubmit(e?: SubmitEvent) {
 
 <form
   onsubmit={onSubmit}
-  class="flex gap-2 items-end w-full"
+  class="flex gap-2 items-stretch w-full"
 >
   <textarea
     bind:value={promptText}
@@ -54,7 +54,6 @@ function onSubmit(e?: SubmitEvent) {
     style="background:var(--accent); color:white"
     aria-label={t("record.send")}
   >
-    <SendIcon size={16} strokeWidth={2} />
-    {t("record.send")}
+    <SendIcon size={16} strokeWidth={2} style="transform:scaleX(-1)" />
   </button>
 </form>

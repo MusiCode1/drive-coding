@@ -27,6 +27,13 @@ let cwd = $state(settings.lastCwd)
 // fetch חוזר אחרי init → מעדכן cwd ישירות (לא מסתמך על re-init).
 // עדכן רק אם cwd עדיין ריק (המשתמש לא הקליד בינתיים).
 onMount(() => {
+  // sessions-autoload: טעינה אוטומטית של סשנים — רק אם יש cwd מוכר מ-lastCwd
+  // (לא משתמש חדש / cwd ריק). spawn יקר → רק כשסביר שהמשתמש יחזור לאותה תיקייה.
+  // onMount רץ פעם אחת per mount — guard טבעי, אין צורך בדגל נוסף.
+  if (settings.lastCwd && cwd.trim()) {
+    void loadSessions()
+  }
+
   fetchServerOptions()
     .then((opts) => {
       if (cwd === "" || cwd === settings.lastCwd) {
@@ -240,6 +247,11 @@ async function onSubmit(e: SubmitEvent) {
   .cwd-row {
     display: flex;
     gap: 0.5rem;
+    align-items: stretch;
+  }
+
+  .cwd-row .folder-btn {
+    align-self: stretch;
   }
 
   .cwd-row input {
@@ -249,6 +261,7 @@ async function onSubmit(e: SubmitEvent) {
 
   .folder-btn {
     flex-shrink: 0;
+    margin-top: 0; /* מאפס את ה-margin-top של כלל ה-button הגלובלי — מיישר עם ה-input */
     display: grid;
     place-items: center;
     padding: 0 0.8rem;

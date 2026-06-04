@@ -1,7 +1,7 @@
 # Slice sessions-autoload — טעינת סשנים אוטומטית בטופס connect (cwd מוכר) — ‏תוכנית
 
 > **‏תאריך**: 2026-06-03
-> **‏סטטוס**: טיוטה
+> **‏סטטוס**: הושלם
 > **Complexity**: 3/10 (verifier: light)
 > **‏תלויות (`depends_on`)**: []
 > **‏Base**: dev

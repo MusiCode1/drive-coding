@@ -95,6 +95,7 @@ export const he: Catalog = {
   "modal.folder.up": "עלה",
   "modal.folder.loading": "טוען…",
   "modal.folder.error": "שגיאה בטעינת תיקיות",
+  "modal.folder.showHidden": "הצג תיקיות מוסתרות",
   "modal.close": "סגור",
   // ─── record-footer ─── (redesign-4)
   "record.tab.record": "הקלטה",

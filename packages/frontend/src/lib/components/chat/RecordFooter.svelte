@@ -22,6 +22,7 @@
 import MicIcon from "@lucide/svelte/icons/mic"
 import KeyboardIcon from "@lucide/svelte/icons/keyboard"
 import EyeOffIcon from "@lucide/svelte/icons/eye-off"
+import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
 import MicLarge from "./MicLarge.svelte"
 import TypeArea from "./TypeArea.svelte"
 import { getI18n, getResponsive, getSession } from "$lib/context"
@@ -92,14 +93,15 @@ let mode = $state<Mode>("record")
     {#if session.status === "disconnected"}
       <button
         onclick={() => session.reconnect()}
-        class="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold"
+        class="inline-flex items-center justify-center size-10 rounded-full"
         style="background:var(--recording); color:#fff"
+        aria-label="reconnect"
       >
-        {#if session.reconnectAttempt > 0}
-          מתחבר מחדש… (ניסיון {session.reconnectAttempt})
-        {:else}
-          התחבר מחדש
-        {/if}
+        <RefreshCwIcon
+          size={18}
+          strokeWidth={2}
+          class={session.reconnectAttempt > 0 ? "animate-spin" : ""}
+        />
       </button>
     {/if}
     <!-- /TEMP-RECONNECT-BUTTON -->
