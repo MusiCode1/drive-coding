@@ -54,6 +54,24 @@
 
 ---
 
+## 2026-06-03 — slice sessions-autoload: טעינת סשנים אוטומטית בטופס connect
+
+### מה בוצע?
+
+**1. שינוי ב-`packages/frontend/src/routes/+page.svelte`** (onMount בלבד):
+- הוספת טריגר לטעינה אוטומטית של סשנים בתחילת ה-`onMount` — לפני קריאת `fetchServerOptions`.
+- תנאי: `settings.lastCwd && cwd.trim()` — טוען רק כשהמשתמש כבר עבד בעבר בתיקייה (לא משתמש חדש / cwd ריק).
+- `loadSessions()` מוגן ב-`onMount` שרץ פעם אחת per mount — guard טבעי, אין צורך בדגל נוסף.
+- הכפתור הידני "טען סשנים אחרונים" נשאר כ-fallback ורענון.
+
+**קבצים שהשתנו**: `packages/frontend/src/routes/+page.svelte` — 4 שורות נוספו ב-onMount.
+
+**בדיקות**: `pnpm lint:i18n` ✓, `pnpm --filter @drive-coding/frontend-v2 typecheck` ✓, `pnpm --filter @drive-coding/frontend-v2 build` ✓.
+
+**סטיות מה-brief**: אין.
+
+---
+
 ## 2026-06-03 — שיפורי UI לעמוד /wake-word-test
 
 ### מה בוצע?
