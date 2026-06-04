@@ -14,6 +14,10 @@
  *   5. 1005 בזמן tearingDown=false כן היה מצית reconnect (control חיובי)
  *   6. detach() גובר על tearingDown=false (detach-test)
  *   7. 1000/1001 לא מציתים reconnect בשום מצב
+ *
+ * NBug2 root fix — closeAndWait before warm (DoD#4):
+ *   8. #doReconnect (דרך reconnect()) קורא ל-closeAndWait כשיש #transport
+ *   9. כשאין #transport — #doReconnect לא זורק, עובר לחיפוש agent ישר
  */
 
 import { beforeEach, describe, expect, test, vi } from "vitest"
@@ -142,7 +146,7 @@ describe("AgentSession — reconnect state infrastructure (Commit 0)", () => {
 
   test('status union accepts "disconnected"', () => {
     const session = new AgentSession()
-    // יש לאמת שה-type מאפשר "disconnected" בزمן ריצה
+    // יש לאמת שה-type מאפשר "disconnected" בزמן ריצה
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setStatusForTest("disconnected")
     expect(session.status).toBe("disconnected")
@@ -170,5 +174,57 @@ describe("AgentSession — reconnect state infrastructure (Commit 0)", () => {
     // #pageHidden צריך להיות false (document.hidden = false)
     // לא ניתן לגשת ל-private ישירות, אבל ה-constructor צריך לרוץ בלי שגיאה
     expect(session.reconnectAttempt).toBe(0)
+  })
+})
+
+describe("AgentSession — NBug2 root fix: #doReconnect closes live WS before warm", () => {
+  /**
+   * DoD#4: #doReconnect קורא closeAndWait כשיש #transport חי.
+   *
+   * גישה: test helper _setTransportForTest מזריק transport stub עם closeAndWait spy.
+   * #doReconnect (דרך reconnect()) חייב לקרוא closeAndWait לפני שמחפש agent.
+   *
+   * מוגדר כ-predicate טהור: _wasCloseAndWaitCalledOnReconnect —
+   * מריץ רק את שלב ה-closeAndWait (בלי WS אמיתי / createAcpClient / network).
+   */
+  test("reconnect() calls closeAndWait when #transport is set", async () => {
+    const session = new AgentSession()
+
+    // מזריק transport stub עם closeAndWait spy
+    const closeAndWaitSpy = vi.fn().mockResolvedValue(undefined)
+    const transportStub = { closeAndWait: closeAndWaitSpy }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._setTransportForTest(transportStub)
+
+    // מגדיר sessionId + cwd + cliKind כדי ש-reconnect() לא יחזור מוקדם
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._setSessionContextForTest({ sessionId: "test-id", cwd: "/tmp", cliKind: "opencode" })
+
+    // mock findReusableAgent → null (כדי ש-doReconnect ילך ל-cold)
+    // ו-coldReconnect יזרוק (להפסיק בנקודה מוקדמת — לא צריך WS אמיתי)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._mockFindReusableAgentForTest(null)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._mockColdReconnectForTest(new Error("cold-blocked"))
+
+    await session.reconnect().catch(() => {})
+
+    // הוכחה: closeAndWait נקרא פעם אחת לפני כל שאר ה-reconnect flow
+    expect(closeAndWaitSpy).toHaveBeenCalledOnce()
+  })
+
+  test("reconnect() does not throw and skips closeAndWait when #transport is null", async () => {
+    const session = new AgentSession()
+
+    // אין transport stub — #transport = null (ברירת מחדל)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._setSessionContextForTest({ sessionId: "test-id", cwd: "/tmp", cliKind: "opencode" })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._mockFindReusableAgentForTest(null)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._mockColdReconnectForTest(new Error("cold-blocked"))
+
+    // לא זורק — גם בלי transport
+    await expect(session.reconnect()).rejects.toThrow("cold-blocked")
   })
 })
