@@ -1,3 +1,30 @@
+## 2026-06-03 — slice ui-polish-1 הושלם — 4 commits
+
+### מה בוצע?
+
+ליטושי UI ב-4 קבצי `.svelte` (FE-only, ללא BE/state חדש):
+
+**C0 — TypeArea.svelte: כפתור שליחה אייקון בלבד**
+- הסרת `{t("record.send")}` מהטקסט הנראה בכפתור
+- הוספת `style="transform:scaleX(-1)"` ל-SendIcon — מצביע שמאלה (RTL)
+- `aria-label={t("record.send")}` נשמר לנגישות (key לא orphan)
+
+**C1 — SessionOptionsPanel.svelte: disconnect ימני ביותר**
+- שינוי סדר DOM בשורת הפעולות: disconnect ראשון → audio → הגדרות
+- ב-RTL הראשון בDOM = ימני ביותר. handlers/classes/aria לא שונו.
+
+**C2 — FolderPickerDialog.svelte: breadcrumb רווח + ניווט**
+- ספרטור `/` קיבל `mx-1` (margin סימטרי משני הצדדים)
+- `<span>` הפכו ל-`<button class="hover:underline inline">` עם `onclick={() => navigateToDepth(i)}`
+- נוספה `navigateToDepth(index)` — בונה נתיב אבסולוטי עד אינדקס (כולל)
+
+**C3 — SessionPicker.svelte: load-btn רוחב מלא**
+- הסרת `align-self:flex-start`, הוספת `width:100%` + `text-align:center`
+
+**בדיקות**: typecheck ✓, build ✓, lint:i18n ✓. Commits: 233889f..51034d6.
+
+---
+
 ## 2026-06-03 — שיפורי UI לעמוד /wake-word-test
 
 ### מה בוצע?

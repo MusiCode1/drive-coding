@@ -54,7 +54,6 @@ function onSubmit(e?: SubmitEvent) {
     style="background:var(--accent); color:white"
     aria-label={t("record.send")}
   >
-    <SendIcon size={16} strokeWidth={2} />
-    {t("record.send")}
+    <SendIcon size={16} strokeWidth={2} style="transform:scaleX(-1)" />
   </button>
 </form>
