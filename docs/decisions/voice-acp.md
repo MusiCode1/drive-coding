@@ -1,5 +1,33 @@
 # Decisions — voice-acp
 
+## 2026-06-04 — slice pwa-installable: רמה A בלבד (installable), בלי service worker
+
+### רציונל — למה אין offline/SW
+‏האפליקציה חיה על חיבור חי (WS ל-agent, TTS/STT דרך רשת). offline חסר-משמעות —
+‏בלי רשת אין שיחה. הערך האמיתי של PWA כאן הוא **התקנה למסך-בית + standalone
+‏fullscreen** (בסיס ל-car mode על נייד, היעד שנדחה ב-archive/v1/future-features §14).
+‏SW מוסיף סיכון של stale-cache + versioning bugs בלי ערך מיידי, ובמיוחד עלול
+‏**להחמיר** debug של נפילות-WS (תועד ב-handoff "WS נופל לעיתים קרובות"). לכן: רמה A
+‏(manifest + icons + meta) עכשיו; SW = slice עתידי נפרד רק אם יוכח צורך.
+
+### החלטות-עיצוב
+‏- **theme_color יחיד = ember `#16130f`** (manifest תומך רק בצבע סטטי). dynamic
+‏  theme-color לפי palette נבחר = future.
+‏- **iOS meta tags** (`apple-mobile-web-app-capable` + `status-bar-style:black-translucent`)
+‏  נכללים — iOS Safari לא קורא display:standalone מלא מה-manifest. זו הסיבה שהפיצ'ר
+‏  נדחה ב-v1; כאן נפתר. בדיקת iOS אמיתית = follow-up (אין מכשיר זמין) — לא חוסם merge.
+‏- **לוגו placeholder** נוצר ב-PIL (equalizer קולי מעל נתיב-כביש בפרספקטיבה, פלטה ember).
+‏  החלפה עתידית בנכס מעוצב = drop-in (אותם שמות קבצים ב-static/icons/).
+
+### ממצאי אביגיל (USABLE-AFTER-FIX → תוקן → READY)
+‏blocker יחיד: ה-brief השתמש ב-`--filter @drive-coding/frontend` אך שם ה-package הוא
+‏`@drive-coding/frontend-v2` (התיקייה `frontend/` אך שם ה-package נשאר `-v2`). pnpm
+‏מחזיר exit 0 **בשקט** על filter שלא תואם → build+typecheck לא היו רצים כלל וה-DoD
+‏הקריטי לא נבדק. אותו דפוס תוקן ב-redesign-1 ו-wake-word-infra. תוקן ב-3 מקומות +
+‏הוספת הערת-אזהרה מפורשת ל-executor. כל שאר הניתוח הטכני (serveStatic order לא בולע
+‏את ה-manifest, MIME `application/manifest+json` נכון, adapter-static מעתיק `.webmanifest`,
+‏Vite dev מגיש static, lint:i18n לא סורק .webmanifest) — אומת אמפירית ע"י אביגיל.
+
 ## 2026-06-04 — slice cli-specs-override: קובץ קונפיג חיצוני ל-CLI_SPECS + env-shaping ל-child
 
 ### רקע — gemini נשבר תחת OneCLI
