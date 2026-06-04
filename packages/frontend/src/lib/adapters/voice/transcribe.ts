@@ -8,8 +8,8 @@
  * מלכודת תעתיק (transliteration) בעברית (learnings 2026-05-16): מודל Gemini מחזיר אותיות לטיניות
  * כברירת מחדל. חייבים לבקש במפורש כתב עברי בפרומפט.
  *
- * הפונקציה saveRecording הוסרה (slice 10 יוסיף את ה-endpoint ב-BE). מחזיר
- * כרגע recordingId: "" כפלייסיהולדר — slice 10 יחליף בקריאה האמיתית.
+ * שמירת הקלטה: ה-blob נשמר ל-BE דרך saveRecording (best-effort, עטוף withRetry).
+ * כשל סופי (אחרי כל הנסיונות) → recordingId: "" — התמלול חשוב יותר, לא נופל בגללו.
  *
  * הועתק מתוך main/packages/frontend/src/lib/voice/stt-client.ts (slice 3).
  * שינויים:
@@ -17,12 +17,15 @@
  *   (b) קריאת saveRecording הוחלפה ב-Promise.resolve({ id: "" })
  *   (c) ייבוא של googleGenAi מתוך "./sdks" נשאר ללא שינוי (sdks.ts קיים החל מ-slice 2)
  *   (d) slice sessions-inline: timeout 15s→30s, עטוף withRetry (3 נסיונות, backoff 800ms)
+ *   (e) חיבור הקלטות: saveRecording אמיתי, עטוף withRetry (5 נסיונות) — blip ברשת
+ *       לא זורק את ההקלטה. כשל סופי best-effort → recordingId: "".
  */
 
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
 import { withRetry } from "@drive-coding/core/async/with-retry"
 import { bytesToBase64 } from "./base64"
 import { googleGenAi } from "./sdks"
+import { saveRecording } from "./recordings"
 
 const TRANSCRIBE_TIMEOUT_MS = 30000 // הוגדל מ-15s: תמלול ארוך + thinking model
 
@@ -36,8 +39,16 @@ export async function transcribe(
   const audioBytes = new Uint8Array(await blob.arrayBuffer())
   const mimeType = blob.type || "audio/webm"
 
-  // פלייסיהולדר (Stub): slice 10 יחליף את זה בקריאה האמיתית ל-saveRecording
-  const recordingPromise = Promise.resolve({ id: "" })
+  // שמירת הקלטה ל-BE (best-effort) — רץ במקביל לתמלול.
+  // עטוף withRetry (5 נסיונות, backoff): blip ברשת לא זורק את ההקלטה.
+  // כשל סופי → recordingId: "" (התמלול חשוב יותר, לא נופל בגללו).
+  const recordingPromise = withRetry(() => saveRecording(blob, { signal: opts.signal }), {
+    retries: 5,
+    baseDelayMs: 800,
+    maxDelayMs: 4000,
+    signal: opts.signal,
+    label: "saveRecording",
+  }).catch(() => ({ id: "" }))
 
   // תיקון תעתיק לעברית: הוראה מפורשת להוציא כתב עברי
   const hebrewRule =

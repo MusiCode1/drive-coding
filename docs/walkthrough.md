@@ -1,3 +1,34 @@
+## 2026-06-04 — חיבור הקלטות משתמש ל-BE עם retry (recordings-save-retry)
+
+### מה בוצע?
+
+עד היום ה-FE שלח `recordingId: ""` קשיח — שום הקלטה לא נשמרה בשרת (stub
+ב-`transcribe.ts`). זה כמעט גרם לאובדן הקלטה. כעת ההקלטות נשמרות, עם 5 נסיונות
+retry כדי לעמוד מול blip חולף ברשת.
+
+**adapter חדש — `adapters/voice/recordings.ts`**
+- `saveRecording(blob, {signal?})` — POST JSON `{audioBase64, mimeType}` →
+  `/api/recordings`, מחזיר `{id}`. **זורק** על תגובת-שגיאה (כדי שה-retry יתפוס).
+- `recordingUrl(id)` — בונה URL ל-`GET /api/recordings/:id` (לניגון עתידי).
+- ה-endpoints + RecordingsStore כבר היו חיים ב-BE (slice 8a) — רק החיבור חסר.
+
+**`adapters/voice/transcribe.ts`**
+- הוסר ה-stub `Promise.resolve({ id: "" })`.
+- `saveRecording` עטוף ב-`withRetry` (5 נסיונות, backoff 800ms→4000ms),
+  רץ **במקביל** לתמלול. כשל סופי best-effort → `recordingId: ""` (התמלול
+  לא נופל בגלל כשל שמירה).
+
+**טסטים**: `recordings.test.ts` חדש (5 — חוזה JSON, throw-on-error לטובת retry,
+signal, fallback mimeType, recordingUrl). `transcribe.test.ts` עודכן (mock ל-
+`./recordings`, הבחנה לפי label בין שני ה-withRetry).
+
+**מה עדיין חסר** (slice נפרד): UI להשמעה (כפתור ▶), והצמדת recordingId
+לבועות בהיסטוריה אחרי reload. כרגע recordingId נשמר רק על הבועה החיה.
+
+**בדיקות**: typecheck ✓ (0), 170 tests ✓, lint:i18n ✓.
+
+---
+
 ## 2026-06-03 — slice ui-polish-1 הושלם — 4 commits
 
 ### מה בוצע?

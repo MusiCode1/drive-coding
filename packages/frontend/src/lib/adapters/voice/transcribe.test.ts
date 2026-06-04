@@ -35,6 +35,13 @@ vi.mock("$lib/util/be-url", () => ({
   setBeUrlBase: vi.fn(),
 }))
 
+// saveRecording רץ במקביל לתמלול; כאן הוא לא הנבדק → mock קבוע (מחזיר id ריק).
+// ההתנהגות שלו (retry/throw) נבדקת ב-recordings.test.ts.
+vi.mock("./recordings", () => ({
+  saveRecording: vi.fn().mockResolvedValue({ id: "" }),
+  recordingUrl: vi.fn(),
+}))
+
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
 import { withRetry } from "@drive-coding/core/async/with-retry"
 import { transcribe } from "./transcribe"
@@ -84,9 +91,15 @@ describe("transcribe", () => {
   // 2. retry — generateContent זורק פעם, ואז withRetry קורא ל-fn שוב ומצליח
   it("מנסה שוב כאשר generateContent זורק פעם אחת ואז מצליח", async () => {
     let callCount = 0
-    // withRetry: קורא ל-fn 2 פעמים — פעם ראשונה זורק, פעם שניה מחזיר
+    // withRetry נקרא גם ל-transcribe וגם ל-saveRecording. מבחינים לפי label:
+    // saveRecording → פשוט קורא fn(0) פעם אחת (ה-mock שלו מחזיר {id:''}).
+    // transcribe → מדמה זריקה ואז הצלחה.
     mockWithRetry.mockImplementation(
-      async (fn: (attempt: number) => Promise<unknown>) => {
+      async (
+        fn: (attempt: number) => Promise<unknown>,
+        opts?: { label?: string },
+      ) => {
+        if (opts?.label !== "transcribe") return fn(0)
         callCount++
         if (callCount === 1) {
           // סימולציה: זרוק פעם ראשונה, נסה שוב
