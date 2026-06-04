@@ -25,6 +25,35 @@
 
 ---
 
+## 2026-06-03 — slice folder-hidden הושלם — 3 commits
+
+### מה בוצע?
+
+הוספת checkbox "הצג תיקיות מוסתרות" לבורר התיקיות (`FolderPickerDialog`).
+
+**Commit 0 — BE: param `showHidden` ב-`GET /api/fs/browse`**
+- `http-history.ts`: קורא `?showHidden=true` וכש-true מבטל את סינון `HIDDEN_PREFIXES`
+- אבטחת `allowedBase`/realpath לא נגעה — `showHidden` משפיע רק על filter שמות
+- 2 integration tests חדשים: הסתרה ברירת מחדל + חשיפה עם showHidden=true
+
+**Commit 1 — FE adapter: `browseFolder(path, showHidden?)`**
+- `fs-browse.ts`: חתימה חדשה עם `showHidden = false` (default false → קוראים קיימים לא נשברים)
+- מעבר מ-`encodeURIComponent` ידני ל-`URLSearchParams`
+
+**Commit 2 — FE: checkbox ב-`FolderPickerDialog`**
+- `$state showHidden = false` — מתאפס בכל פתיחת dialog
+- `onToggleHidden()` — toggle + reload מיידי
+- checkbox markup מתחת ל-breadcrumb
+- i18n key `modal.folder.showHidden` — he: "הצג תיקיות מוסתרות", en: "Show hidden folders"
+
+**תוצאות**:
+- typecheck BE+FE ✓, build FE ✓, lint:i18n ✓
+- 187 טסטים עוברים (כולל 2 חדשים), 11 skipped
+
+**חריגות**: ללא סטיות מה-brief.
+
+---
+
 ## 2026-06-03 — שיפורי UI לעמוד /wake-word-test
 
 ### מה בוצע?

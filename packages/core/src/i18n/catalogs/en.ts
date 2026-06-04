@@ -100,6 +100,7 @@ export const en: Catalog = {
   "modal.folder.up": "Up",
   "modal.folder.loading": "Loading…",
   "modal.folder.error": "Failed to load folders",
+  "modal.folder.showHidden": "Show hidden folders",
   "modal.close": "Close",
   // ─── record-footer ─── (redesign-4)
   "record.tab.record": "Record",

@@ -117,6 +117,7 @@ export function registerFsBrowseHttp(
     if (!rawPath) {
       return c.json({ error: "path query param is required" }, 400)
     }
+    const showHidden = c.req.query("showHidden") === "true"
 
     // המרה לנתיב אבסולוטי ואז realpath למעקב אחר סימלינקים
     const normalized = resolve(rawPath)
@@ -141,7 +142,7 @@ export function registerFsBrowseHttp(
     }
 
     const entries = dirents
-      .filter((d) => !HIDDEN_PREFIXES.some((prefix) => d.name.startsWith(prefix)))
+      .filter((d) => showHidden || !HIDDEN_PREFIXES.some((prefix) => d.name.startsWith(prefix)))
       .map((d) => ({
         name: d.name,
         isDir: d.isDirectory() || d.isSymbolicLink(), // מתייחס לסימלינקים כניתנים לניווט
