@@ -22,6 +22,15 @@ export class WakeWordVM {
   flashCount = $state(0)  // מוגדל בכל detect → component מפעיל אנימציה
   lastError: string | null = $state(null)
 
+  // ─── קלט ──────────────────────────────────────────────────────────
+  /** רשימת מכשירי קלט — ממולא על-ידי loadDevices() */
+  devices: MediaDeviceInfo[] = $state([])
+  /** device ID שנבחר; null = ברירת מחדל */
+  selectedDeviceId: string | null = $state(null)
+  /** גיין נוכחי (0–3). מוצג ב-UI כ-percentage. */
+  gain = $state(1.0)
+
+  // ─── הקלטה ────────────────────────────────────────────────────────
   // ההקלטה הנוכחית בלבד (לא שומרים היסטוריה). url ל-<audio> controls.
   currentClipUrl: string | null = $state(null)
   currentClipLabel = $state("")
@@ -39,11 +48,12 @@ export class WakeWordVM {
     this.#capture = new WakeWordCapture()
     this.#setupListeners()
 
-    // $effect: mode → engine.start/stop (חוק זהב #4)
+    // $effect: mode + selectedDeviceId → engine.start/stop (חוק זהב #4)
     $effect(() => {
       const mode = this.mode
+      const deviceId = this.selectedDeviceId  // tracking dep — restart on device change
       if (mode === "listening" || mode === "recording") {
-        this.#engine.start().catch((err: unknown) => {
+        this.#engine.start(deviceId).catch((err: unknown) => {
           this.lastError =
             err instanceof Error ? err.message : String(err)
           this.mode = "off"
@@ -74,6 +84,47 @@ export class WakeWordVM {
       this.#capture.abort()
       this.mode = "off"
     }
+  }
+
+  /**
+   * מאכלס את devices[] מ-enumerateDevices.
+   * חובה לקרוא getUserMedia קודם כדי לקבל labels (דרישת דפדפן).
+   */
+  async loadDevices(): Promise<void> {
+    try {
+      // בקשת הרשאה קצרה כדי לאפשר labels בתוצאות enumerateDevices
+      const tmp = await navigator.mediaDevices.getUserMedia({ audio: true })
+      tmp.getTracks().forEach((t) => t.stop())
+    } catch {
+      // אם ה-getUserMedia נכשל — enumerateDevices עדיין יחזיר רשימה חלקית
+    }
+    const all = await navigator.mediaDevices.enumerateDevices()
+    this.devices = all.filter((d) => d.kind === "audioinput")
+  }
+
+  /** מגדיר מכשיר קלט. אם רצים — מאפס ומפעיל מחדש. */
+  setDevice(id: string | null): void {
+    if (id === this.selectedDeviceId) return
+    const wasActive = this.mode !== "off"
+    if (wasActive) {
+      this.#capture.abort()
+      this.#engine.stop().catch(() => {})
+      this.mode = "off"
+    }
+    this.selectedDeviceId = id
+    if (wasActive) {
+      // microtask — נותן ל-$effect להגיב ל-mode="off" לפני שמחזירים
+      queueMicrotask(() => {
+        this.lastError = null
+        this.mode = "listening"
+      })
+    }
+  }
+
+  /** עדכון גיין (0–3). */
+  setGain(v: number): void {
+    this.gain = v
+    this.#engine.setGain(v)
   }
 
   // ─── Cue tones ──────────────────────────────────────────────────────────────
@@ -168,11 +219,7 @@ export class WakeWordVM {
           this.currentClipUrl = url
           const secs = (result.frames * 1280) / 16000
           this.currentClipLabel = `${secs.toFixed(1)}s @ ${new Date().toLocaleTimeString()}`
-          // השמעה אוטומטית ~1s אחרי ה-cue
-          setTimeout(() => {
-            const audio = new Audio(url)
-            audio.play().catch(() => {})
-          }, 1000)
+          // השמעה אוטומטית מופעלת מה-route דרך אלמנט ה-<audio> הגלוי (לא כאן)
         }
       }
     })

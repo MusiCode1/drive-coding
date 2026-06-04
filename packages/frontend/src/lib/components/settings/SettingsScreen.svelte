@@ -14,10 +14,11 @@
  * ─── settings-redesign (redesign-3) · redesign-fix ───
  */
 import { goto } from "$app/navigation"
+import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import { getI18n, getSettings } from "$lib/context"
+import LanguageSelect from "./LanguageSelect.svelte"
 import SettingsCard from "./SettingsCard.svelte"
 import SettingToggle from "./SettingToggle.svelte"
-import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 
 const settings = getSettings()
 const t = getI18n().t
@@ -63,6 +64,11 @@ $effect(() => {
   class="flex flex-col flex-1 min-h-0 overflow-y-auto chat-scroll px-4 pt-20 pb-8 w-full max-w-2xl mx-auto"
 >
   <h1 class="text-xl font-semibold mb-1">{t("settings.title")}</h1>
+
+  <!-- כרטיס שפת ממשק — (rtl-ltr-bidi) -->
+  <SettingsCard title={t("settings.language.label")}>
+    <LanguageSelect />
+  </SettingsCard>
 
   <!-- כרטיס קול ודיבור -->
   <SettingsCard title={t("settings.voiceSpeech")}>

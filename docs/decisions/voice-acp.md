@@ -1,5 +1,86 @@
 # Decisions — voice-acp
 
+## 2026-06-03 — slice ws-reconnect-fix-nbug2: השתקת onClose ישן בזמן cold-teardown
+
+### רציונל
+‏calev-heavy החזיר NO-GO על `ws-reconnect-infra` בגלל NBug2: `#coldReconnect` סוגר את
+‏ה-WS הישן (`#client.close()`), ו-`WsAcpTransport.close()` קורא `ws.close()` **בלי code**
+‏→ הדפדפן שולח **1005**. ה-onClose listener הישן (שנרשם ב-`attach`/`loadSession`) בודק
+‏`code!==1000&&1001` → 1005 עובר → `#handleUnexpectedClose` → לולאת reconnect שנייה →
+‏`createAgent` שני → **agent יתום ששורד `detach()`** (עד reaper ~5 דק'). הדליפה קורית בכל
+‏מצב שבו ה-WS הישן עדיין חי כש-cold נכנס: `reconnect()` ידני על WS חי, **וגם warm-fail→cold
+‏ב-MED-8** (נתיב מתוכנן, לא פינה). NBug1 (auto-cold-after-crash) כן תוקן כי שם ה-WS כבר מת.
+
+### ההכרעה — flag `#tearingDown` (לא שינוי close הגלובלי, לא offClose)
+- ‏בחרנו flag פנימי `#tearingDown` בדפוס הקיים של `#detached`: true בתוך `#coldReconnect`
+  ‏(set לפני close, finally→false אחרי loadSession), וכל 4 ה-onClose handlers מכבדים אותו.
+  ‏ה-flag נשאר true לכל אורך `#coldReconnect` כי ה-`close` event נורה **אסינכרונית** —
+  ‏set/unset צמוד סביב `close()` לא היה מכסה את החלון.
+- ‏**נדחה** שינוי `WsAcpTransport.close()` לשלוח code 1000 — משנה התנהגות גלובלית ופוגע
+  ‏ב-`detach`/`switchSession`.
+- ‏**נדחה** הוספת `offClose` להסרת listener — דורש refactor רחב; ה-VM לא שומר ref ל-transport הישן.
+
+### ממצאי אביגיל (3 סבבים → READY)
+- ‏סבב 1: הארכיטקטורה (flag) נכונה, אבל **הטסט ב-DoD#1 לא ישים** — אין `WebSocket` global
+  ‏ב-node, `#client` private, `createAcpClient` לא mocked. (blocker, נסגר.)
+- ‏סבב 2: ה-test-helper הראשון (`_simulateStaleCloseForTest`) הריץ `#handleUnexpectedClose`
+  ‏→ `#runReconnectLoop` → `setTimeout` תלוי + async מודלף בטסט. (🟡, נסגר.)
+- ‏הפתרון: ה-helper הוחלף ב-**predicate טהור** `_wouldReconnectOnCloseForTest` שמחזיר boolean
+  ‏לבד (משכפל את שרשרת ה-gate, לא מצית כלום). 4 תת-טסטים (gate/control/detach/1000-1001).
+- ‏**אזהרת DRY מתועדת**: ה-predicate מכפיל את לוגיקת ה-onClose — חייבים להישאר מסונכרנים.
+
+### Complexity 3 → calev (light), אך re-verify ממוקד
+‏האמת ש-NBug2 נסגר באה מ-**calev בשטח** (BE חי): `reconnect()` על WS חי → n נשאר 1,
+‏detach אחרי reconnect → n→0, warm-fail→cold (MED-8) → n נשאר 1. הטסט הוא רק gate-check.
+
+---
+
+## 2026-06-03 — slice rtl-ltr-bidi: תמיכה דו-כיוונית מלאה (he/en ↔ rtl/ltr)
+
+### רציונל
+‏הבקשה הייתה "תמיכה מלאה ב-RTL/LTR, קלאסים לוגיים בכל הממשק". סריקת קוד גילתה שה-FE
+‏**‏כבר RTL-clean כמעט לחלוטין** — נבנה מאפס ב-redesign עם convention שאוסר physical
+‏classes: 0 physical Tailwind classes, CSS עם logical properties (`padding-inline-start`,
+‏`border-inline-start`, `border-start-start-radius`, `border-s`), ו-`dir` attributes נכונים
+‏(Switch=ltr, code/terminal=ltr, bubbles=auto). ה-BottomSheet משתמש ב-`translateY` (ציר
+‏אנכי, לא מושפע מ-RTL). **‏אין "המרה גדולה" לעשות — היא כבר נעשתה.**
+
+### הבעיה האמיתית — מוטה ל-RTL
+‏החור היחיד שמונע דו-כיווניות: `<html lang="he" dir="rtl">` **קבוע** ב-app.html ולא מגיב
+‏לשפה. יש כבר `I18nVM.locale` + `setLocale()` + קטלוג `en.ts` מלא — אבל החלפה ל-en
+‏מחליפה רק את המחרוזות, **‏לא את כיוון הפריסה**. הממשק נשאר RTL גם באנגלית.
+
+### ההכרעה — מקור-אמת אחד + effect גלובלי
+- **`locale` = persisted field ב-Settings** (לא ב-I18nVM). ‏היום I18nVM מחזיק locale עצמאי
+  ‏(detectLocale ב-init) — כפילות פוטנציאלית. ‏אחרי: Settings = מקור-אמת ששורד reload,
+  ‏I18nVM.locale **נגזר** ממנו (getter). ‏ברירת מחדל בטעינה ראשונה (localStorage ריק) =
+  ‏`detectLocale()` (שפת דפדפן), אחרת = הערך השמור.
+- **`$effect` ב-`+layout.svelte`** (composition root) מסנכרן `document.documentElement.dir`+`lang`
+  ‏ל-locale. ‏`RTL_LOCALES=["he"]`. ‏זה ה-side-effect שהופך את התמיכה לדו-כיוונית באמת.
+  ‏ה-`<html>` אינו DOM-node של component → layout הוא המקום הנכון (לפי FE golden rule 4).
+- **בורר שפה** ב-SettingsScreen דרך ה-`Select` הקיים (`onchange`, לא bind:value).
+- **lint protection** (`lint:rtl`, script נפרד) שמגן על הניקיון הקיים — נכשל אם מישהו יכניס
+  ‏physical class/property בעתיד. ‏**לא** ב-pre-commit hook (לא לשבור commits של סוכנים אחרים).
+
+### רעיונות שנדחו
+- **לתקן את `.toggle::after` (right physical)** — נדחה. ה-Switch נושא `dir="ltr"` אז ה-toggle
+  ‏לא מתהפך (visual-only). ‏שינוי מיותר. ‏ב-allow-list של ה-lint.
+- **inline script ב-app.html למניעת FOUC ב-en** — נדחה ל-slice עתידי. he ברירת מחדל, הפלאש מינורי.
+- **locale כמקור-אמת ב-I18nVM** — נדחה לטובת Settings (persisted, מקור-אמת אחד).
+
+### ממצאי אביגיל
+‏Verdict READY (סבב ראשון). ‏4 findings: 🟡 אחד אמיתי — ה-prop של `Select` הוא `onchange`
+‏ולא `onValueChange` (תוקן ב-skeleton של Commit 3, גם פישט את הקוד — ביטל bind:value+$effect).
+‏3 minors אינפורמטיביים: ה-lint script הקיים הוא `.mjs` ב-root scripts/ (תוקן הנתיב); I18nVM
+‏refactor zero-risk (אין קוראים חיצוניים ל-.locale/setLocale — escalation הוסר); אין parity
+‏test he/en (הוספת מפתחות לא תשבור טסט). ‏כל ה-line numbers + APIs + §0 אומתו ב-tip 8f59ec3.
+
+### Complexity / tier
+‏3/10 → calev light בלבד, ‏אין verifier-phase. ‏5 commits: (0) Settings.locale persisted ·
+‏(1) I18nVM נגזר · (2) $effect dir/lang ב-+layout [הליבה] · (3) LanguageSelect · (4) lint:rtl.
+
+---
+
 ## 2026-06-03 — slice fix-409-replace-flag: דגל replace ל-warm switch
 
 ### רציונל
@@ -31,7 +112,7 @@
 ‏(בניגוד ל-`#processBubbles` שכן בודק `enabled` ב-`speaker.svelte.ts:246`). תועד כ-known bug
 ‏לתכנון slice נפרד (`docs/future-features.md`). לא תוקן כאן — מחוץ ל-scope.
 
-## 2026-06-03 — slice ws-reconnect-infra: שחזור WS עצמי-מרפא (תשתית בלבד, cold-path)
+## 2026-06-03 — slice ws-reconnect-infra: שחזור WS עצמי-מרפא (warm-first, תשתית בלבד)
 
 ### רציונל
 ‏נפילת WS השאירה את המשתמש תקוע — `status="error"`, "WS closed (...)" אדום, והדרך
@@ -40,45 +121,59 @@
 ‏בפוקוס → לולאת backoff (1+2+4+8+16s≈31s, 5 ניסיונות); אם ברקע → מצב `disconnected`
 ‏שממתין ל-`reconnect()` יזום. מתודה ציבורית `reconnect()` נחשפת ל-UI עתידי.
 
-### ההכרעה הארכיטקטונית המרכזית — cold-path בלבד
-‏reconnect מבצע **`loadSession({sessionId, cwd, cliKind})` מאפס** — תמיד יוצר agent חדש.
-‏זו בחירת המשתמשת המפורשת: "גם אם החיבור או הפרוסס נהרגו בצד השרת, אם אנחנו יודעים
-‏שזה קרה — פשוט ניצור חדש. יש לנו את כל מה שצריך." היתרונות: (1) עובד זהה בין אם
-‏ה-bridge חי (warm) ובין אם מת/נוקה ע"י ה-reaper (cold) — אין branching; (2) `loadSession`
-‏כבר מושך את **כל** ההיסטוריה מהמקור-אמת (הסוכן עצמו) — אין צורך ב-buffer צד-שרת
-‏ולא ב-"diff" ידני, כפי ששקלנו תחילה; (3) **עוקף את ה-MED-8 race**: agentId חדש →
-‏אין התנגשות "agent in use by another tab" על הישן. warm-path (WS חדש לאותו agentId)
-‏נדחה — הוא דווקא *פותח* את ה-MED-8 race ולא מוסיף ערך מול ה-cold.
+### ההכרעה הארכיטקטונית המרכזית — warm-first עם cold fallback
+‏reconnect הוא **warm-first**: קודם `GET /api/agents` (`listAgents` adapter חדש) → אם יש
+‏agent חי עם אותו `acpSessionId`+`cwd` (status לא crashed/closed) → **warm**: WS חדש
+‏לאותו agentId + `loadSession` ACP (בלי `createAgent`/spawn, חוסך ~300-700ms). אם לא
+‏נמצא / warm נכשל → **cold**: `loadSession` מאפס (agent חדש). זו בחירת המשתמשת: "אם יש
+‏אחד קיים, עדיף להתחבר אליו — לא תמיד לפתוח חדש כי זה לוקח זמן". (בתחילה תכננתי cold-only;
+‏המשתמשת ביקשה במפורש להכניס את ה-warm ללב התכנון ולא להדביק אותו אח"כ.)
+
+‏**למה גם warm קורא `loadSession`**: ה-bubbles ב-FE אבדו עם ה-WS, אז גם warm חייב לטעון
+‏היסטוריה. החיסכון היחיד מ-cold = דילוג על spawn. ה-warm מחקה את הדגם של `switchSession`
+‏(שכבר עושה loadSession-on-existing-client), רק עם WS חדש לפניו.
+
+‏**אין buffer/diff צד-שרת** (שאלת המשתמשת): ה-BE הוא pure pipe — `historyBuffer` הוסר
+‏ב-slice 9 (`agent-orchestrator.ts:14`). המקור-אמת היחיד של השיחה הוא הסוכן עצמו, ו-`loadSession`
+‏מושך ממנו הכל. buffer אמיתי (לשחזר updates *תוך-כדי* נתק) = future slice נפרד, מתועד.
+
+### MED-8 race + ה-deadlock (תפיסת אביגיל)
+‏warm מתחבר לאותו agentId → אם ה-BE עוד לא עיבד את ה-`close` הישן, ה-WS נדחה ב-1008
+‏("agent in use by another tab"). הפתרון: retry קצר (250ms ×3) ואז fallback ל-cold.
+‏**אביגיל תפסה deadlock קריטי**: `WsAcpTransport.waitForOpen` מאזין רק `open`+`error`,
+‏**לא** `close` — וסגירת 1008 היא `close` event → `waitForOpen` נתקע לנצח. התיקון:
+‏`Promise.race([waitForOpen, closeOutcome])` כך שה-close זוכה במרוץ. **לא נגענו ב-BE**
+‏(הפתרון כולו ב-FE).
 
 ### הפרדה infra/UI לפי בקשת המשתמשת
-‏המשתמשת ביקשה לפצל: **כל תשתית ה-VM קודם, אפס נגיעה ב-UI**. הרציונל שלה — "ככה נוכל
-‏בשלב הבא להחליט איך זה בדיוק ייראה, לא חייבים עכשיו". זה גם הופך את ה-slice ל-pure
-‏VM-logic שנבדק כולו דרך `window.__session` ב-console (DoD #16: `git diff --stat` חייב
-‏רק `agent-session.svelte.ts`+טסט+docs). ה-UI (כפתור + חיווי) הוא `slice-ws-reconnect-ui`
-‏עוקב, JIT, `depends_on: [ws-reconnect-infra]` — ייכתב אחרי שהתשתית מאומתת.
+‏המשתמשת ביקשה לפצל: **כל תשתית ה-VM קודם, אפס נגיעה ב-UI** ("ככה נוכל בשלב הבא להחליט
+‏איך זה ייראה"). ה-slice הוא pure VM+adapter, נבדק דרך `window.__session` ב-console
+‏(DoD #17: `git diff --stat` רק `agent-session.svelte.ts`+`agents-api.ts`+טסט+docs).
+‏ה-UI (כפתור + חיווי) הוא `slice-ws-reconnect-ui` עוקב, JIT, `depends_on: [ws-reconnect-infra]`.
 
 ### הקשר ל-decisions ההיסטוריות (גישה A/B)
-‏ב-slice 25/26 הפרדנו: **גישה B** (עצירת דימום + reaper, merged) מול **גישה A**
-‏(reconnect אמיתי + agents-ברקע + ממשק ניהול, נדחתה). slice זה הוא **החלק של reconnect
-‏מתוך A** — בלי agents-ברקע / multi-agent / "ממשיכים לרוץ אחרי סגירת חלון". התשתית
-‏שהושארה בכוונה ל-A (`ws-agent.ts:127` — child שורד WS close; reaper 5 דק' כחלון
-‏reconnect) **עובדת בדיוק בשבילנו** — לא נגענו בה. סך ה-backoff (~31s) << חלון ה-reaper.
+‏ב-slice 25/26 הפרדנו: **גישה B** (עצירת דימום + reaper, merged) מול **גישה A** (reconnect
+‏אמיתי + agents-ברקע + ממשק ניהול, נדחתה). slice זה הוא **החלק של reconnect מתוך A** —
+‏בלי agents-ברקע / multi-agent. התשתית שהושארה בכוונה ל-A (`ws-agent.ts:127` — child שורד
+‏WS close; reaper 5 דק' כחלון reconnect) **עובדת בדיוק בשבילנו**. סך backoff (~31s) << reaper.
 
-### ממצאי אביגיל
-‏Verdict: **READY** מהסבב הראשון — "אחד ה-briefs המדויקים ביותר שבדקתי", כל מספר שורה
-‏וכל guard אומת מדויק (במיוחד ה-guard הקריטי ב-`loadSession:217` שכל מנגנון ה-`#doReconnect`
-‏נבנה סביבו). אישרה גם שתשתית טסטי-VM קיימת (`vi.stubGlobal` ב-wake-word.test). 3 מינורים
-‏תוקנו: (1) שם קובץ הטסט → `.test.svelte.ts` (חובה ל-svelte preprocessor); (2) הבהרה
-‏ש-`environment:node` חסר `document` → כיסוי visibility-path דורש `vi.stubGlobal`;
-‏(3) הערת-קוד: `clearTimeout` ב-detach מקפיא את ה-`await` בלולאה ומשאיר את ה-bail-check
-‏לא-נגיש (לא מזיק — `#detached`/`#reconnecting=false` כבר מנעו המשך).
+### ממצאי אביגיל (3 סבבים — דוגמה לערך plan-gate)
+- ‏**סבב 1 (cold-only)**: READY — אבל ה-base שלי היה מיושן (`6e8b504` במקום `8f59ec3`).
+- ‏**סבב 2 (warm-first)**: USABLE-AFTER-FIX. תפסה 5 בעיות אמיתיות: (1) ה-**deadlock** ב-`waitForOpen`
+  ‏(blocker — היה שובר את כל ה-warm-path); (2) forward-reference (`#handleUnexpectedClose`
+  ‏נקרא ב-Commit 2 אבל הוגדר ב-Commit 3 → typecheck שבור); (3) `notifySessionAttached` **כן**
+  ‏תומך ב-`replace` (ה-base המיושן שלי); (4) `switchSession` הוא דגם warm קיים שהתעלמתי ממנו;
+  ‏(5) מספרי שורות off-by-1-2.
+- ‏**סבב 3 (READY)**: התיקון של fix#1 (warm קובע `connecting`) יצר blocker חדש — warm-fail
+  ‏השאיר `connecting`, ואז `#coldReconnect`→`loadSession` guard:217 זורק → ה-fallback שבור.
+  ‏תוקן: `#coldReconnect` מאפס `connecting`→`disconnected` (עובר את ה-guard) לפני `loadSession`.
+  ‏finding יחיד נותר ירוק (pre-existing: `#client=null` בלי `.close()`, מחוץ ל-scope).
 
 ### רעיונות שנדחו
-- ‏**warm-reconnect (אותו agentId דרך `existingSessionId`)** — נדחה. פותח MED-8 race,
-  ‏לא מוסיף ערך מול cold (`loadSession` תמיד עובד). זה חלק מ-A המלא לעתיד.
-- ‏**buffer של updates ב-BE / diff ידני** — מיותר. `loadSession` מושך הכל מהסוכן.
-- ‏**reconnect אוטומטי בחזרה-לפוקוס** — ברירת-מחדל "לא" (פחות הפתעות). ה-listener קיים;
-  ‏הפעלה = שורה אחת. נשאר פתוח להחלטת המשתמשת (§9 Q1).
+- ‏**cold-only** (התכנון המקורי) — נדחה לבקשת המשתמשת לטובת warm-first (חיסכון spawn).
+- ‏**buffer/diff צד-שרת** — מיותר (`loadSession` מושך הכל מהסוכן). buffer-תוך-כדי-נתק = future.
+- ‏**שינוי BE ל-MED-8** (שחרור `activeFeWs` סינכרוני) — נדחה; retry+fallback ב-FE מספיק.
+- ‏**reconnect אוטומטי בחזרה-לפוקוס** — ברירת-מחדל "לא" (אושר). הפעלה = שורה אחת (§9 Q1).
 
 ## 2026-06-02 — slice fix-idle-flaky: ייצוב flaky test ב-bridge-manager.idle.test.ts
 

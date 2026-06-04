@@ -7,6 +7,7 @@ import { fetchServerOptions } from "$lib/adapters/options"
 import { listSessionsForCwd, type SessionInfo } from "$lib/adapters/sessions"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import SessionPicker from "$lib/components/connect/SessionPicker.svelte"
+import LanguageSelect from "$lib/components/settings/LanguageSelect.svelte"
 import Select from "$lib/components/ui/Select.svelte"
 import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
 import FolderIcon from "@lucide/svelte/icons/folder"
@@ -109,6 +110,11 @@ async function onSubmit(e: SubmitEvent) {
 
   <form onsubmit={onSubmit}>
     <label>
+      <span>{t("settings.language.label")}</span>
+      <LanguageSelect />
+    </label>
+
+    <label>
       <span>{t("connect.cli.label")}</span>
       <Select
         value={cliKind}
@@ -177,10 +183,14 @@ async function onSubmit(e: SubmitEvent) {
 <FolderPickerDialog />
 
 <style>
+  /* גובה מלא + גלילה פנימית: ה-body הוא overflow:hidden (app.css), ודף החיבור
+     אינו עטוף ב-AppShell, לכן הוא חייב לגלול בעצמו — אחרת התוכן נחתך במסכים נמוכים. */
   .connect {
     max-width: 420px;
-    margin: 4rem auto;
-    padding: 0 1rem;
+    height: 100dvh;
+    overflow-y: auto;
+    margin: 0 auto;
+    padding: 4rem 1rem;
   }
 
   h1 {

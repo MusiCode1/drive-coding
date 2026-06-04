@@ -14,6 +14,7 @@
  */
 
 import type { CliKind } from "@drive-coding/core"
+import { DEFAULT_LOCALE, detectLocale, type Locale } from "@drive-coding/core/i18n"
 import { listVoices, type Voice } from "../adapters/voice/voices"
 import { setBeUrlBase } from "../util/be-url"
 
@@ -32,6 +33,8 @@ type Persisted = {
   translateThoughts: boolean
   // ─── רכב ─── (redesign-3, חיווט מלא: slice 7)
   carMode: boolean
+  // ─── שפה ─── (rtl-ltr-bidi)
+  locale: Locale
 }
 
 const DEFAULTS: Persisted = {
@@ -47,16 +50,19 @@ const DEFAULTS: Persisted = {
   translateThoughts: true,
   // ─── רכב ───
   carMode: false,
+  // ─── שפה ─── (rtl-ltr-bidi) — DEFAULT_LOCALE="he"; detectLocale() רץ רק כש-localStorage ריק
+  locale: DEFAULT_LOCALE,
 }
 
 function load(): Persisted {
-  if (typeof localStorage === "undefined") return { ...DEFAULTS }
+  if (typeof localStorage === "undefined") return { ...DEFAULTS, locale: detectLocale() }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { ...DEFAULTS }
+    // ללא ערך שמור: locale נגזר מהדפדפן (detectLocale), שאר ה-DEFAULTS.
+    if (!raw) return { ...DEFAULTS, locale: detectLocale() }
     return { ...DEFAULTS, ...(JSON.parse(raw) as Partial<Persisted>) }
   } catch {
-    return { ...DEFAULTS }
+    return { ...DEFAULTS, locale: detectLocale() }
   }
 }
 
@@ -96,6 +102,9 @@ export class Settings {
   // ─── רכב ─── (redesign-3; חיווט מלא: slice 7)
   carMode = $state<boolean>(DEFAULTS.carMode)
 
+  // ─── שפה ─── (rtl-ltr-bidi)
+  locale = $state<Locale>(DEFAULTS.locale)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -109,6 +118,8 @@ export class Settings {
     this.translateThoughts = loaded.translateThoughts
     // ─── רכב ───
     this.carMode = loaded.carMode
+    // ─── שפה ───
+    this.locale = loaded.locale
   }
 
   // ─── טופס חיבור ───
@@ -247,6 +258,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── שפה ─── (rtl-ltr-bidi)
+
+  setLocale = (l: Locale): void => {
+    this.locale = l
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -259,6 +277,7 @@ export class Settings {
       narrateTools: this.narrateTools,
       translateThoughts: this.translateThoughts,
       carMode: this.carMode,
+      locale: this.locale,
     })
   }
 }

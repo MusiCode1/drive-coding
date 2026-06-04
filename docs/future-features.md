@@ -191,6 +191,91 @@ loadSession מכסה את הרוב. buffer = future slice מתועד.
 
 ---
 
+## 4. מחיקה ועריכת-שם של סשנים
+
+תאריך הרעיון: 2026-06-03
+
+תיאור: בטופס connect וברשימת הסשנים (sidebar) — אפשרות למחוק סשן ולערוך את שמו.
+
+מוטיבציה:
+- סשנים ישנים מצטברים ב-`session/list` (ראינו 100 בפועל) בלי דרך לנקות.
+- כותרות אוטומטיות של הסוכן ("New session - 2026-...") לא תמיד קריאות; המשתמש ירצה שם משלו.
+
+מורכבות: נמוכה (אם הפרוטוקול יתמוך) — capability-gated, slice קטן ונקי.
+
+### למה לא עכשיו — חסם פרוטוקול (חקירה מלאה: `docs/investigations/2026-06-03-session-delete-rename.md`)
+
+| פעולה | בספק ACP | ב-SDK שלנו `0.21.1` | ב-opencode `1.15.12` |
+|--------|----------|----------------------|----------------------|
+| **מחיקה** (`session/delete`) | ✅ Preview (מ-2026-06-02, RFD #1335) | ❌ לא חשוף | ❌ `-32601 Method not found` |
+| **עריכת-שם ע"י המשתמש** | ❌ לא קיים בספק כלל | ❌ | ❌ `-32601` |
+
+- **`session/close` ≠ מחיקה** — אומת אמפירית: מחזיר `{}` אבל הסשן נשאר ב-`session/list`.
+  הוא משחרר משאבים/תהליך בלבד.
+- **מחיקה** קיימת בספק כ-`session/delete` (capability-gated דרך
+  `agentCapabilities.sessionCapabilities.delete`), אבל ה-RFD עבר ל-Preview רק ב-2026-06-02 —
+  אחרי שגרסת ה-SDK שלנו (`0.21.1`) ננעלה, ו-opencode 1.15.12 עוד לא מימש.
+- **עריכת-שם ע"י המשתמש פשוט לא קיימת בפרוטוקול.** מה שיש (`SessionInfoUpdate`) הוא ההפך:
+  notification **מהסוכן ללקוח** (agent-initiated) — הסוכן קובע/מעדכן את הכותרת, הלקוח רק מציג.
+
+קווי מימוש (כשיתאפשר):
+- **מחיקה**: שדרג `@agentclientprotocol/sdk` לגרסה שחושפת `deleteSession` +
+  `sessionCapabilities.delete`, ושדרג opencode לגרסה שמכריזה על ה-capability. אז:
+  `initialize` → אם `sessionCapabilities.delete` קיים → הצג כפתור מחיקה ב-SessionCard →
+  `conn.deleteSession({ sessionId })` → refresh list. CLIs שלא תומכים פשוט לא יראו כפתור.
+- **עריכת-שם**: רק אם הספק יוסיף RFD ל-set-title ע"י הלקוח, או — החלטה מודעת לעקוף
+  ל-opencode HTTP API (`PATCH /session/:id`), מגודר ל-`cliKind === "opencode"`, מתועד
+  ב-decisions. **לא מומלץ** — שובר CLI-agnosticism.
+
+מתי כן לחזור:
+- **מחיקה**: כששדרוג SDK + opencode זמינים (לבדוק `sessionCapabilities.delete` ב-handshake).
+- **עריכת-שם**: כשהספק יוסיף תמיכה, או אם opencode-only עקיפה הופכת לדרישה קשיחה.
+
+החלטה שהתקבלה (2026-06-03): **מחיקה — דחייה עד שדרוג. עריכת-שם — ויתור** (לא קיים בפרוטוקול).
+
+---
+
+## 5. בורר מודל + סוכן בטופס connect
+
+תאריך הרעיון: 2026-06-03
+
+תיאור: בטופס החיבור (`/`), לצד בורר ה-CLI, להוסיף שני בוררים — **מודל** (claude-opus-4-8
+וכו') ו**סוכן/mode** (build / eliezer / mordechai...) — כדי שהמשתמש יבחר אותם **לפני**
+החיבור. היום בוחרים מודל/סוכן רק אחרי החיבור, ב-sidebar (`SessionOptionsPanel`).
+
+מוטיבציה:
+- לבחור מודל/סוכן מראש, בלי להתחבר ואז לשנות.
+- הבקשה המקורית: "שם מודל וסוכן בטופס connect, המידע ייטען יחד עם רשימת הסשנים".
+
+### מה בדקנו (handshake אמפירי, opencode 1.15.12)
+
+- `session/new` (וגם `loadSession`) **כן** מחזיר `configOptions` עם:
+  - קטגוריית `model` — ~80 מודלים + `currentValue`.
+  - קטגוריית `mode` — הסוכנים (`build`, `eliezer`, `mordechai`, `just-a-man`...) עם תיאורים.
+- **אבל `session/list` מחזיר רק** `sessionId, cwd, title, updatedAt` — **אין בו model/mode.**
+- לחיצת היד (`initialize`) מחזירה רק `agentCapabilities` + `agentInfo` — **אין מודלים שם.**
+
+כלומר: המודלים/modes זמינים רק אחרי שיש סשן פתוח (`session/new`/`loadSession`), לא ברשימה.
+
+### למה לא עכשיו (החלטה 2026-06-03)
+
+המשתמשת ביקשה לבטל. הנימוק: הבקשה נוסחה כ"ייטען יחד עם רשימת הסשנים", אבל הרשימה
+(`session/list`) לא מכילה model/mode. כדי לקבל אותם בטופס היה צריך spawn זמני נוסף
+(session/new) רק בשביל ה-configOptions — מורכבות שלא שווה כרגע.
+
+קווי מימוש (כשנחזור):
+- **רעיון של אבי (2026-06-03)**: לטעון את הסשן האחרון הזמין (`loadSession` על הראשון
+  ב-`session/list`) ולשאוב ממנו את רשימת המודלים וה-modes → להזין את הבוררים בטופס.
+  כך מקבלים את ה-options בלי spawn ייעודי (מנצלים טעינה שממילא תקרה).
+- חלופה: `listSessionsForCwd` כבר עושה spawn+handshake; להרחיב אותו שיחזיר גם את
+  ה-`configOptions` מתגובת `session/new` הזמנית → בוררים בטופס "בחינם".
+- בוררים: שימוש ב-`Select` הקיים (כמו ב-SessionOptionsPanel). הבחירה נשלחת ב-`attach`/
+  `connectAgent` → `session/new` עם ה-model/mode הנבחרים.
+
+החלטה שהתקבלה (2026-06-03): **לא לעכשיו** (בוטל ע"י המשתמשת). מתועד לעתיד.
+
+---
+
 ## הנחיות לעדכון הקובץ הזה
 
 - כשמשתמש זורק רעיון ואומר "לא עכשיו" — לתעד כאן במקום לאבד.

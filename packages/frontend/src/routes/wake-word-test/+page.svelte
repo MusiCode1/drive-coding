@@ -21,6 +21,7 @@
 
   let status = $state("loading models...")
   let logEl: HTMLDivElement | undefined = $state()
+  let audioEl: HTMLAudioElement | undefined = $state()
 
   // גלילה אוטומטית של תיבת הלוג לתחתית כשמגיעות שורות חדשות.
   $effect(() => {
@@ -28,13 +29,28 @@
     if (logEl) logEl.scrollTop = logEl.scrollHeight
   })
 
+  // השמעה אוטומטית דרך אלמנט ה-<audio> הגלוי (~1s אחרי ה-cue tone של ה-VM).
+  $effect(() => {
+    const url = vm.currentClipUrl
+    if (!url) return
+    const timer = setTimeout(() => {
+      audioEl?.play().catch(() => {})
+    }, 1000)
+    return () => clearTimeout(timer)
+  })
+
   onMount(async () => {
-    try {
-      await vm.load()
-      status = "ready — tap the orb to listen"
-    } catch (err) {
+    // טעינת מודלים ורשימת מכשירים במקביל
+    const [loadResult] = await Promise.allSettled([
+      vm.load(),
+      vm.loadDevices(),
+    ])
+    if (loadResult.status === "rejected") {
+      const err = loadResult.reason
       status = `model load failed: ${err instanceof Error ? err.message : String(err)}`
+      return
     }
+    status = "ready — tap the orb to listen"
   })
 
   // מעקב אחרי שינוי mode לעדכון status
@@ -66,13 +82,50 @@
     <VoiceOrb {vm} />
   </div>
 
+  <!-- בחירת מקור קלט -->
+  <section class="controls">
+    <div class="control-row">
+      <label class="control-label" for="device-select">Input source</label>
+      <select
+        id="device-select"
+        value={vm.selectedDeviceId ?? ""}
+        onchange={(e) => vm.setDevice(e.currentTarget.value || null)}
+        disabled={vm.devices.length === 0}
+      >
+        <option value="">Default microphone</option>
+        {#each vm.devices as d (d.deviceId)}
+          <option value={d.deviceId}>
+            {d.label || `Microphone (${d.deviceId.slice(0, 8)}…)`}
+          </option>
+        {/each}
+      </select>
+    </div>
+
+    <!-- Input Gain (0–300%) -->
+    <div class="control-row">
+      <label class="control-label" for="gain-slider">
+        Input Gain: <span class="gain-pct">{Math.round(vm.gain * 100)}%</span>
+      </label>
+      <input
+        id="gain-slider"
+        type="range"
+        min="0"
+        max="3"
+        step="0.05"
+        value={vm.gain}
+        oninput={(e) => vm.setGain(+e.currentTarget.value)}
+        class="gain-range"
+      />
+    </div>
+  </section>
+
   {#if vm.currentClipUrl}
     <section class="clips">
       <h3>Current recording</h3>
       <div class="clip">
         <p>{vm.currentClipLabel}</p>
         <!-- svelte-ignore a11y_media_has_caption -->
-        <audio controls src={vm.currentClipUrl}></audio>
+        <audio bind:this={audioEl} controls src={vm.currentClipUrl}></audio>
         <a href={vm.currentClipUrl} download="capture.wav">download</a>
       </div>
     </section>
@@ -91,6 +144,12 @@
 </main>
 
 <style>
+  /* מאפשר גלילה בעמוד הזה בלבד — דורס את app.css שמגדיר overflow:hidden על body */
+  :global(html), :global(body) {
+    height: auto !important;
+    overflow-y: auto !important;
+  }
+
   :global(body) {
     background: #0d1117;
     color: #e6edf3;
@@ -102,7 +161,7 @@
     flex-direction: column;
     align-items: center;
     gap: 1.5rem;
-    padding: 2rem 1rem;
+    padding: 2rem 1rem 3rem;
     min-height: 100vh;
   }
 
@@ -132,6 +191,63 @@
     justify-content: center;
   }
 
+  /* ─── Controls (device + gain) ─────────────────────────────────── */
+
+  .controls {
+    width: min(40rem, 92vw);
+    padding: 1rem 1.2rem;
+    border: 1px solid #30363d;
+    border-radius: 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+  }
+
+  .control-row {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+  }
+
+  .control-label {
+    font-size: 0.85rem;
+    opacity: 0.75;
+    min-width: 10rem;
+    white-space: nowrap;
+  }
+
+  .gain-pct {
+    opacity: 1;
+    color: #60a5fa;
+    font-weight: 600;
+  }
+
+  .controls select {
+    flex: 1;
+    min-width: 0;
+    padding: 0.4rem 0.6rem;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 0.4rem;
+    color: #e6edf3;
+    font-size: 0.85rem;
+  }
+
+  .controls select:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .gain-range {
+    flex: 1;
+    min-width: 8rem;
+    accent-color: #60a5fa;
+    cursor: pointer;
+  }
+
+  /* ─── Clips ──────────────────────────────────────────────────────── */
+
   .clips {
     width: min(40rem, 92vw);
     padding: 1rem;
@@ -157,11 +273,18 @@
     opacity: 0.7;
   }
 
+  .clip audio {
+    width: 100%;
+    margin-block: 0.4rem;
+  }
+
   .clip a {
     color: #60a5fa;
     margin-inline-start: 0.5rem;
     font-size: 0.8rem;
   }
+
+  /* ─── Log ────────────────────────────────────────────────────────── */
 
   .logbox {
     width: min(40rem, 92vw);

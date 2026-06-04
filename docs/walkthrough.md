@@ -122,6 +122,57 @@ Commit 0 של slice `ws-reconnect-infra` — תשתית state פסיבית לת�
 
 ---
 
+## 2026-06-03 — שיפורי UI לעמוד /wake-word-test
+
+### מה בוצע?
+
+שיפורים לעמוד הבדיקה `/wake-word-test` (לא slice מלא — שינוי ישיר ב-dev):
+
+**1. בחירת מקור קלט**
+- הוספת `loadDevices()` ל-`WakeWordVM` — קורא `getUserMedia` לקבלת הרשאה ואז `enumerateDevices()`
+- הוספת `setDevice(id)` — עוצר ומפעיל מחדש את ה-engine עם המכשיר החדש
+- `WakeWordEngine.start(deviceId?)` מעביר `{ deviceId: { exact: id } }` ל-`getUserMedia`
+- UI: `<select>` עם רשימת מכשירי audioinput
+
+**2. Input Gain slider**
+- הוספת `gain = $state(1.0)` + `setGain(v)` ל-VM
+- UI: `<input type="range" min=0 max=3 step=0.05>` עם תצוגת אחוזים (0–300%)
+
+**3. השמעה דרך אלמנט `<audio>` גלוי**
+- הוסר `new Audio(url).play()` הנסתר מ-VM
+- Route מחזיק `bind:this={audioEl}` + `$effect` שמשמיע ~1s אחרי הגדרת URL
+
+**4. גלילת עמוד**
+- `app.css:114` מגדיר `html, body { overflow: hidden }` גלובלית
+- Route דורס: `:global(html), :global(body) { height: auto !important; overflow-y: auto !important }`
+
+**קבצים שהשתנו**: `types.ts`, `wake-word-engine.ts`, `wake-word.svelte.ts`, `wake-word-test/+page.svelte`.
+**בדיקות**: typecheck ✓, build ✓.
+
+---
+
+## 2026-06-03 — slice rtl-ltr-bidi הושלם — 7 commits
+
+### מה בוצע?
+
+Slice `rtl-ltr-bidi` — תמיכה דו-כיוונית מלאה (he RTL / en LTR). 7 commits.
+
+| commit | hash | תוכן |
+|---|---|---|
+| C0 | 58a0db6 | locale כ-persisted field ב-Settings (detectLocale בטעינה ראשונה) |
+| C1 | d537f5d | I18nVM נגזר מ-Settings — locale getter + setLocale מאציל. +layout: settings לפני i18n |
+| C2 | a46fc00 | $effect ב-+layout: document.dir/lang ← i18n.locale (RTL_LOCALES=["he"]) |
+| C3 | 16f0c9c | LanguageSelect.svelte + settings.language.{label,he,en} + כרטיס ב-SettingsScreen |
+| C4 | 52da29b | scripts/lint-no-physical-classes.mjs + pnpm lint:rtl (הגנת רגרסיה) |
+| C5 | 1ddb4f7 | בורר שפה גם בטופס הכניסה (+page.svelte) — להחלפת שפה/כיוון לפני התחברות |
+| C6 | 8b84b91 | גלילה פנימית בטופס הכניסה (.connect: height:100dvh + overflow-y:auto) — מסכים נמוכים |
+
+**שינויים**: settings.svelte.ts, i18n.svelte.ts, +layout.svelte, +page.svelte, keys.ts, he.ts, en.ts, LanguageSelect.svelte, SettingsScreen.svelte, lint script חדש, package.json.
+**חריגות**: אין.
+**בדיקות**: typecheck ✓, lint:i18n ✓, lint:rtl ✓ (positive + negative). calev GO 12/12 DoD. אומת ידנית ב-tunnel (he↔en, persist, scroll).
+
+---
+
 ## 2026-06-03 — slice fix-409-replace-flag הושלם — 602 tests ✓
 
 ### מה בוצע?

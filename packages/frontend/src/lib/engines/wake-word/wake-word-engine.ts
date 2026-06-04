@@ -101,6 +101,7 @@ export class WakeWordEngine {
       cooldownMs: 2000,
       vadHangoverFrames: 12,
       gain: 1.0,
+      deviceId: null,
       ...config,
       detectThreshold: config.thresholds?.detect ?? DETECT_THRESHOLD,
       vadThreshold: config.thresholds?.vad ?? VAD_THRESHOLD,
@@ -156,11 +157,11 @@ export class WakeWordEngine {
     this.emitter.emit("ready", undefined as never)
   }
 
-  async start(): Promise<void> {
+  async start(deviceId?: string | null): Promise<void> {
     if (!this.loaded) throw new Error("call load() before start()")
     if (this.mic) return
     this.resetRuntime()
-    this.mic = await this.createMicStream()
+    this.mic = await this.createMicStream(deviceId)
   }
 
   async stop(): Promise<void> {
@@ -184,12 +185,12 @@ export class WakeWordEngine {
     if (this.loaded) this.vadState = createVadState(ort)
   }
 
-  private async createMicStream(): Promise<{
+  private async createMicStream(deviceId?: string | null): Promise<{
     setGain(v: number): void
     stop(): Promise<void>
   }> {
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
+      audio: deviceId ? { deviceId: { exact: deviceId } } : true,
     })
     const ctx = new AudioContext({ sampleRate: SAMPLE_RATE })
     const source = ctx.createMediaStreamSource(stream)
