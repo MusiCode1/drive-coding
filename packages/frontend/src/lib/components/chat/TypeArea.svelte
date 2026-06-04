@@ -30,7 +30,7 @@ function onSubmit(e?: SubmitEvent) {
 
 <form
   onsubmit={onSubmit}
-  class="flex gap-2 items-end w-full"
+  class="flex gap-2 items-stretch w-full"
 >
   <textarea
     bind:value={promptText}
