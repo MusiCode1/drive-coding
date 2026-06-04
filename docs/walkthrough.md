@@ -1,3 +1,35 @@
+## 2026-06-04 — slice cli-specs-override — קובץ JSONC חיצוני לדריסת CLI_SPECS
+
+### מה בוצע?
+
+**slice**: cli-specs-override (branch: cli-specs-override, base: dev@482483e)
+**commits**: 4 (b6a65c5, 9af6b79, d234906 + commit 3 — bridge-manager)
+
+**1. core: הרחבת CliSpec (Commit 0)**
+- הוספת שדות אופציונליים `unsetEnv?: readonly string[]` ו-`setEnv?: Readonly<Record<string,string>>` לטיפוס `CliSpec`
+- CLI_SPECS המובנה לא שונה (satisfies עדיין עובר)
+
+**2. backend: cli-config-file.ts (Commit 1 — TDD)**
+- קובץ חדש `packages/backend/src/acp/cli-config-file.ts`
+- `resolveCliSpecsPath`: נתיב ברירת-מחדל `~/.config/drive-coding/cli-specs.jsonc` (דריסה ב-`CLI_SPECS_FILE`)
+- `loadCliSpecsOverride`: טעינה + JSONC parsing (strip הערות שמרני) + ולידציה שדה-לשדה + memoized
+- קובץ לא קיים → {} | JSON שבור → {} + warning | שדה לא תקין → מדולג + warning
+- 8 טסטים TDD ב-`tests/cli-config-file.test.ts`
+
+**3. backend: getCliCommand + getCliSpec (Commit 2 — TDD)**
+- `getCliSpec(kind, env?)` חדש — מחזיר spec ממוזג (CLI_SPECS + override) כולל unsetEnv/setEnv
+- `getCliCommand` מוסיף תמיכה ב-override.bin/args; סדר עדיפויות: override.bin > OPENCODE_BIN > spec.bin
+- תאימות-לאחור: בלי קובץ override → זהה להיום בדיוק
+- 6 טסטים TDD נוספו ל-`tests/cli-config.test.ts`
+
+**4. backend: bridge-manager env shaping (Commit 3 — manual)**
+- `spawnInternal` מחיל unsetEnv/setEnv מ-spec הממוזג לפני spawn
+- הסדר: envWithPlugin → unsetEnv → setEnv (opencode שומר OPENCODE_CONFIG_CONTENT)
+
+**בדיקות**: typecheck ✓ | lint:i18n ✓ | 199 טסטים ירוקים (14 חדשים)
+
+---
+
 ## 2026-06-03 — שיפורי UI לעמוד /wake-word-test
 
 ### מה בוצע?
