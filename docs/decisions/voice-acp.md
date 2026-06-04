@@ -1,37 +1,75 @@
 # Decisions — voice-acp
 
-## 2026-06-03 — slice ws-reconnect-fix-nbug2: השתקת onClose ישן בזמן cold-teardown
+## 2026-06-04 — slice cli-specs-override: קובץ קונפיג חיצוני ל-CLI_SPECS + env-shaping ל-child
 
-### רציונל
-‏calev-heavy החזיר NO-GO על `ws-reconnect-infra` בגלל NBug2: `#coldReconnect` סוגר את
-‏ה-WS הישן (`#client.close()`), ו-`WsAcpTransport.close()` קורא `ws.close()` **בלי code**
-‏→ הדפדפן שולח **1005**. ה-onClose listener הישן (שנרשם ב-`attach`/`loadSession`) בודק
-‏`code!==1000&&1001` → 1005 עובר → `#handleUnexpectedClose` → לולאת reconnect שנייה →
-‏`createAgent` שני → **agent יתום ששורד `detach()`** (עד reaper ~5 דק'). הדליפה קורית בכל
-‏מצב שבו ה-WS הישן עדיין חי כש-cold נכנס: `reconnect()` ידני על WS חי, **וגם warm-fail→cold
-‏ב-MED-8** (נתיב מתוכנן, לא פינה). NBug1 (auto-cold-after-crash) כן תוקן כי שם ה-WS כבר מת.
+### רקע — gemini נשבר תחת OneCLI
+‏ה-BE רץ דרך `onecli run` (חובה — ל-proxy של ElevenLabs/TTS). OneCLI מזריק
+‏`HTTP(S)_PROXY` + `NODE_EXTRA_CA_CERTS` שמנתבים את **כל** תעבורת ה-child דרך ה-MITM
+‏gateway. gemini-cli (child של ה-BE) יורש את זה, מנסה OAuth refresh מול Google, נכשל,
+‏ונופל ל-login אינטראקטיבי שמדפיס escape-codes + OAuth URL ל-stdout ומזהם את ערוץ ה-ACP.
+‏הוכח חד-משמעית: `onecli run -- gemini --acp` נשבר; אותו דבר עם `env -u HTTP_PROXY ...`
+‏מחזיר ACP נקי. (opencode/claude/codex לא נפגעים — אין להם OAuth refresh כזה.)
 
-### ההכרעה — flag `#tearingDown` (לא שינוי close הגלובלי, לא offClose)
-- ‏בחרנו flag פנימי `#tearingDown` בדפוס הקיים של `#detached`: true בתוך `#coldReconnect`
-  ‏(set לפני close, finally→false אחרי loadSession), וכל 4 ה-onClose handlers מכבדים אותו.
-  ‏ה-flag נשאר true לכל אורך `#coldReconnect` כי ה-`close` event נורה **אסינכרונית** —
-  ‏set/unset צמוד סביב `close()` לא היה מכסה את החלון.
-- ‏**נדחה** שינוי `WsAcpTransport.close()` לשלוח code 1000 — משנה התנהגות גלובלית ופוגע
-  ‏ב-`detach`/`switchSession`.
-- ‏**נדחה** הוספת `offClose` להסרת listener — דורש refactor רחב; ה-VM לא שומר ref ל-transport הישן.
+### רציונל — למה קובץ קונפיג ולא hardcode
+‏שתי חלופות נדחו: (א) סינון non-JSON-RPC ב-ws-agent.ts — מטפל בתסמין, לא בשורש;
+‏(ב) hardcode של unsetEnv ל-gemini ב-CLI_SPECS — **נדחה במפורש ע"י המשתמשת**: "ישבש
+‏אנשים שלא יבינו למה". הפתרון: קובץ JSONC חיצוני (`~/.config/drive-coding/cli-specs.jsonc`,
+‏נתיב דריס דרך `CLI_SPECS_FILE`) שדורס/מרחיב את CLI_SPECS ומאפשר פר-CLI `unsetEnv`/`setEnv`.
+‏**בלי הקובץ — התנהגות זהה להיום בדיוק** (opt-in מפורש). הטיפוס (CliSpec) מורחב ב-core
+‏(טהור); הקריאה-מקובץ + מיזוג + env-shaping ב-backend (IO) — לפי AGENTS "no IO in core".
 
-### ממצאי אביגיל (3 סבבים → READY)
-- ‏סבב 1: הארכיטקטורה (flag) נכונה, אבל **הטסט ב-DoD#1 לא ישים** — אין `WebSocket` global
-  ‏ב-node, `#client` private, `createAcpClient` לא mocked. (blocker, נסגר.)
-- ‏סבב 2: ה-test-helper הראשון (`_simulateStaleCloseForTest`) הריץ `#handleUnexpectedClose`
-  ‏→ `#runReconnectLoop` → `setTimeout` תלוי + async מודלף בטסט. (🟡, נסגר.)
-- ‏הפתרון: ה-helper הוחלף ב-**predicate טהור** `_wouldReconnectOnCloseForTest` שמחזיר boolean
-  ‏לבד (משכפל את שרשרת ה-gate, לא מצית כלום). 4 תת-טסטים (gate/control/detach/1000-1001).
-- ‏**אזהרת DRY מתועדת**: ה-predicate מכפיל את לוגיקת ה-onClose — חייבים להישאר מסונכרנים.
+### ממצאי אביגיל (round 1 → USABLE-AFTER-FIX, round 2 → READY)
+- 🔴 **new-CLI-from-file לא runnable**: `POST /api/agents` מוודא cliKind דרך ArkType enum →
+  kind לא-ב-enum מקבל 400 לפני spawn. test#6 שדרש "getCliCommand מריץ CLI חדש" היה dead-code
+  שסותר את §2 scope. **תוקן**: הוסר test#6 + לוגיקת fallback-to-run; CLI-חדש נגיש רק דרך
+  getCliSpec ל-env-shaping (רלוונטי ל-CLIs שכבר ב-enum, כמו gemini). runnability עתידי = slice נפרד.
+- 🟡 קובץ הטסט: `tests/cli-config.test.ts` כבר קיים → טסטים נוספים לשם, לא קובץ חדש.
+- 🟢 risk lint:i18n מיותר (linter מתיר הערות).
 
-### Complexity 3 → calev (light), אך re-verify ממוקד
-‏האמת ש-NBug2 נסגר באה מ-**calev בשטח** (BE חי): `reconnect()` על WS חי → n נשאר 1,
-‏detach אחרי reconnect → n→0, warm-fail→cold (MED-8) → n נשאר 1. הטסט הוא רק gate-check.
+### רעיון שנדחה
+- **hardcode unsetEnv כברירת-מחדל מובנית** — נדחה (מבלבל משתמשים). הקובץ הוא ה-opt-in.
+
+---
+
+## 2026-06-03 — slice ws-reconnect-fix-nbug2: סגור-והמתן לפני warm (תיקון השורש)
+
+### רקע — סבב ראשון נכשל (flag #tearingDown)
+‏הניסיון הראשון תיקן את NBug2 כ"onClose ישן מקבל 1005 → לולאת reconnect שנייה", עם flag
+‏`#tearingDown` שמשתיק את ה-onClose. **calev החזיר NO-GO (n=3 agents)** — ה-flag טיפל בתסמין
+‏הלא-נכון. ה-`#tearingDown` נשאר בקוד (לא מזיק, מכסה 1005), אבל הוא לא השורש.
+
+### השורש האמיתי (אובחן בקוד + לוג BE)
+‏`reconnect()` על WS **חי** מדליף agent יתום **קבוע** (לא 5 דק'):
+1. ‏`reconnect()` (`:534`) לא סוגר את ה-`#client` החי לפני warm.
+2. ‏`#warmReconnect` עושה `this.#client = null` (`:289`) — **דורס את ה-handle ל-WS חי בלי
+   ‏לסגור**. ה-WS נשאר פתוח ב-BE, בלי reference.
+3. ‏warm פותח WS שני → ה-BE דוחה ב-**1008 "second tab"** (`ws-agent.ts:69`) → נופל ל-cold →
+   ‏`createAgent` חדש. n≥2.
+4. ‏ה-WS היתום לא נסגר → `feWs.on("close")` לא נורה → `markDetached` לא נקרא → `hasActiveWs`
+   ‏נשאר `true` → **ה-reaper לעולם לא מנקה** (`bridge-manager.ts:210`: `if hasActiveWs continue`).
+   ‏**יתום קבוע.**
+
+### למה זה לא נגיש בייצור היום
+‏רענון דף (הדפדפן סוגר WS → `idle` → `goto("/")`) ונפילת חיבור אמיתית (warm/cold נקיים) —
+‏**שניהם לא מדליפים**. רק `reconnect()` על WS חי מדליף, וזה נקרא היום רק דרך API שעוד לא
+‏מחובר לכפתור. אבל זה השער שכפתור ה-reconnect העתידי יפתח — לכן סוגרים עכשיו.
+
+### ההכרעה — סגור-והמתן לפני warm (`closeAndWait`)
+- ‏מוסיפים `closeAndWait(timeoutMs=1000)` ל-`WsAcpTransport`: סוגר את ה-WS וממתין ל-close
+  ‏event (או timeout fallback). ה-VM שומר `#transport` ref (3 מקומות יצירה, 4 מקומות ניקוי),
+  ‏ו-`#doReconnect` קורא `closeAndWait` לפני warm. כך ה-BE עיבד `markDetached` לפני שה-WS
+  ‏החדש מגיע → אין 1008 → אין יתום.
+- ‏**נדחה** רק-`close()` בלי await — מחזיר את ה-race (ה-close אסינכרוני).
+
+### race שיורי (הודאה כנה — finding אביגיל)
+‏ה-FE close וה-BE `markDetached` הם **שני צידי TCP** — לא קוֹזָליים. `closeAndWait` **מצמצם
+‏מאוד** את החלון אבל לא מאפס אותו מתמטית. רשת הביטחון: לולאת MED-8 (3×250ms) בולעת 1008
+‏בודד אם בכל זאת קורה. **הוודאות הסופית = calev בשטח (n=1).** שכבה שלישית אפשרית בעתיד:
+‏`expose-has-active-ws` (slice נפרד) יאפשר לוודא מול ה-BE ישירות לפני warm.
+
+### Complexity 4 → calev (light), re-verify ממוקד DoD#6/#7
+‏האמת ש-NBug2 נסגר = **calev בשטח**: reconnect() על WS חי → n=1, detach→0, warm-fail→cold → n=1,
+‏נפילה אמיתית עדיין נקייה (רגרסיה).
 
 ---
 

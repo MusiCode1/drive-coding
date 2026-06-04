@@ -1,7 +1,7 @@
 # Slice folder-hidden — checkbox "הצג תיקיות מוסתרות" בבורר התיקיות — ‏תוכנית
 
 > **‏תאריך**: 2026-06-03
-> **‏סטטוס**: טיוטה
+> **‏סטטוס**: הושלם (2026-06-03)
 > **Complexity**: 3/10 (verifier: light)
 > **‏תלויות (`depends_on`)**: []
 > **‏Base**: dev
@@ -301,4 +301,4 @@ pnpm --filter @drive-coding/frontend typecheck && pnpm --filter @drive-coding/fr
 
 > ‏ה-executor מתעד פה כל סטייה ‏מה-brief ‏ולמה.
 
-- ...
+- ללא סטיות מה-brief. טסט showHidden הראשוני השתמש ב-`.hidden` שלא ב-HIDDEN_PREFIXES — תוקן ל-`.git` (שכן ברשימה). ה-brief לא ציין סטייה זו כסיכון (וצדק — תיקון טריוויאלי).
