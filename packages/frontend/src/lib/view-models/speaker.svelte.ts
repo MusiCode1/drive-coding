@@ -159,7 +159,7 @@ export class Speaker {
         // ── כתיבות (לא-נעקבות) ─────────────────────────────────────────
         untrack(() => {
           this.#processBubbles(bubbles, enabled, isLoadingHistory, speakThoughts)
-          this.#processToolBubbles(bubbles, isLoadingHistory, narrateTools)
+          this.#processToolBubbles(bubbles, enabled, isLoadingHistory, narrateTools)
           this.#handleStatusTransition(status, enabled, speakThoughts)
           this.#prevStatus = status
         })
@@ -389,6 +389,7 @@ export class Speaker {
    */
   #processToolBubbles(
     bubbles: AgentSession["bubbles"],
+    enabled: boolean,
     isLoadingHistory: boolean,
     narrateTools: boolean,
   ): void {
@@ -405,6 +406,12 @@ export class Speaker {
         continue
       }
       if (this.#processedNarrationCallIds.has(tc.toolCallId)) continue
+      // fix-mute-tool-narration: ה-mute הראשי חוסם גם קריינות כלים.
+      // סמן processed ודלג כדי שהדלקה מחדש לא תשמיע narration ישן.
+      if (!enabled) {
+        this.#processedNarrationCallIds.add(tc.toolCallId)
+        continue
+      }
       // redesign-3 / slice 9a: קריינות כלים כבויה → סמן processed ודלג (בלי narrate/TTS).
       if (!narrateTools) {
         this.#processedNarrationCallIds.add(tc.toolCallId)
