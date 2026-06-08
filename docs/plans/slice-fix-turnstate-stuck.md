@@ -377,3 +377,20 @@ pnpm --filter @drive-coding/frontend-v2 test
 | 3 | CLI שלא שולח RESP בכלל (#turnEnded לעולם לא דלוק) → bubble נתקע? | gemini+claude+opencode כולם שולחים RESP (אומת). edge נדיר — calev יחליט אם צריך fallback timeout | ❌ |
 | 4 | מיזוג ה-slice המאוחד ל-dev אחרי ה-fix? | fix כ-commits על branch → calev re-verify → merge מרדכי | ❌ |
 | 5 | gemini/claude verification — חובה? | אופציונלי (התנהגות תקינה אומתה ב-probe). אם זמין — בונוס | ❌ |
+
+---
+
+## §10 — Merge-time notes (קריא למרדכי לפני מיזוג ל-dev)
+
+‏ה-branch הזה נחתך **לפני** ש-`fix-null-msgid-grouping` נכנס ל-dev (commit `47f9ad7`).
+‏לכן `agent-session.svelte.ts` יתנגש במיזוג ל-dev. אומת ב-trial-merge (2026-06-08):
+
+| אזור | מה קורה במיזוג | פעולת הפותר |
+|------|----------------|-------------|
+| **`#appendChunk` → `const canGroup`** | נפתר **אוטומטית** לגרסת dev (ה-branch לא נגע בבלוק; dev שינה אותו) | ✅ אין מה לעשות. **רק ודא** שלא חזר ל-`messageId !== null &&` (=הבאג הישן של Gemini). |
+| **`#onSessionUpdate`** (סביב `const messageId = update.messageId ?? null`) | **קונפליקט** — גם dev (null-msgid) וגם ה-branch (setTurnState) נגעו כאן | ⚠️ שמור את **שתי** ההתנהגויות: עיבוד null-msgid של dev **+** קריאות `#setTurnState` של ה-branch. |
+| `i18n` he/en/keys | קונפליקט — `modelStatus.*` (סלייס) מול `record.reconnect.*` (נכנס ל-dev ב-ws-reconnect) | שמור את שני סטי-המפתחות. |
+| `docs/walkthrough.md`, `docs/decisions/voice-acp.md` | קונפליקט changelog (ה-branch מאחורי dev) | שמור שני הבלוקים. |
+
+> **הסכנה היחידה ל-Gemini-regression**: פתרון-ידני שגוי של קונפליקט שמחזיר את
+> `messageId !== null &&` ב-canGroup. git לא יעשה זאת לבד — רק טעות אנוש תעשה. בדוק.
