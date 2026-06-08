@@ -24,10 +24,12 @@ import KeyboardIcon from "@lucide/svelte/icons/keyboard"
 import EyeOffIcon from "@lucide/svelte/icons/eye-off"
 import MicLarge from "./MicLarge.svelte"
 import TypeArea from "./TypeArea.svelte"
-import { getI18n, getResponsive } from "$lib/context"
+import { getI18n, getResponsive, getSession } from "$lib/context"
 
 const t = getI18n().t
 const responsive = getResponsive()
+// TEMP-RECONNECT (לבדיקה ידנית בלבד — להחזיר לאחור; אינו חלק מ-slice infra)
+const session = getSession()
 
 // mode מקומי — record (ברירת מחדל) / typing / hidden
 type Mode = "record" | "typing" | "hidden"
@@ -85,6 +87,22 @@ let mode = $state<Mode>("record")
         {t("record.tab.hide")}
       </button>
     </div>
+
+    <!-- TEMP-RECONNECT-BUTTON (לבדיקה ידנית בלבד — להחזיר לאחור; אינו חלק מ-slice infra) -->
+    {#if session.status === "disconnected"}
+      <button
+        onclick={() => session.reconnect()}
+        class="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold"
+        style="background:var(--recording); color:#fff"
+      >
+        {#if session.reconnectAttempt > 0}
+          {t("record.reconnecting")} ({t("record.reconnectAttempt")} {session.reconnectAttempt})
+        {:else}
+          {t("record.reconnect")}
+        {/if}
+      </button>
+    {/if}
+    <!-- /TEMP-RECONNECT-BUTTON -->
 
     <!-- אזור פעולה — גובה משתנה. 3 panes מוערמים (col 1), כל אחד עטוף ב-grid
          שגובהו 0fr (מוסתר) / 1fr (פעיל). הפוטר גדל/מתכווץ לפי ה-pane הפעיל.

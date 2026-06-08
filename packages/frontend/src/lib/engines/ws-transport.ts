@@ -90,6 +90,26 @@ export class WsAcpTransport implements AcpTransport {
     this.#closeListeners.push(cb)
   }
 
+  /**
+   * סוגר את ה-WS וממתין לאירוע close (או מתרצה מיד אם כבר סגור).
+   * משמש את ה-VM לסגירת WS חי לפני פתיחת WS חדש ב-warm reconnect —
+   * מונע race של 1008 "second tab" + agent יתום קבוע (NBug2 root fix).
+   *
+   * timeout fallback (ברירת מחדל: 1000ms) מונע hang אם close event לא מגיע.
+   * ⚠️ חובה לרשום listener לפני close() — מבטיח שלא מפספסים את האירוע.
+   */
+  async closeAndWait(timeoutMs = 1000): Promise<void> {
+    if (this.#ws.readyState === WebSocket.CLOSED) return
+    const closed = new Promise<void>((resolve) => {
+      this.#closeListeners.push(() => resolve())
+    })
+    this.close()   // קורא ws.close() — close event יגיע אסינכרונית
+    await Promise.race([
+      closed,
+      new Promise<void>((r) => setTimeout(r, timeoutMs)),
+    ])
+  }
+
   #startHeartbeat(): void {
     if (this.#heartbeatTimer !== undefined) return
     this.#heartbeatTimer = setInterval(() => {

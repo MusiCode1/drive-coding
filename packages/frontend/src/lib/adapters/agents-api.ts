@@ -5,7 +5,7 @@
  * ללא ניסיונות חוזרים, ללא וולידציית סכמה — נתיב מהיר ל-v2.
  */
 
-import type { CliKind } from "@drive-coding/core"
+import type { AgentPublic, CliKind } from "@drive-coding/core"
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
 import { beUrl } from "$lib/util/be-url"
 
@@ -44,6 +44,18 @@ export async function createAgent(
     throw new Error(`createAgent failed: ${res.status} ${body}`)
   }
   return (await res.json()) as CreateAgentResponse
+}
+
+/** מושך את רשימת הסוכנים הפעילים מה-BE (GET /api/agents). */
+export async function listAgents(signal?: AbortSignal): Promise<AgentPublic[]> {
+  const res = await withTimeout(
+    (s) => fetch(beUrl("/api/agents"), { signal: s }),
+    AGENTS_API_TIMEOUT_MS,
+    { signal, label: "listAgents" },
+  )
+  if (!res.ok) throw new Error(`listAgents failed: ${res.status}`)
+  const body = (await res.json()) as { agents: AgentPublic[] }
+  return body.agents
 }
 
 // TODO(review-fixes-2): getAgent — אין צרכן בקוד כרגע (grep ב-2026-06-02). לבדוק אם

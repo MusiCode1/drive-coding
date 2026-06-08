@@ -169,6 +169,33 @@ streaming דרך MediaSource Extensions.
 
 ---
 
+## WS reconnect — buffer של updates תוך-כדי-נתק (historyBuffer)
+
+תאריך הרעיון: 2026-06-03 (בזמן ws-reconnect-infra)
+
+תיאור: כיום ה-BE הוא pure pipe — אין buffer של updates ACP בצד השרת. כשה-WS נופל
+ברגע שהסוכן שולח תשובה, ה-updates שנשלחו **בדיוק בחלון הנתק** אינם נלכדים.
+`loadSession` מחזיר את ההיסטוריה ה-committed, אבל updates שנשלחו ב-stream בזמן
+הנתק עלולים לחסר.
+
+מוטיבציה:
+- חלון הנתק הוא קצר (<5s בד"כ) אבל האיפוס של bubbles נראה ל-UI כאילו
+  התשובה קוצצה באמצע.
+- historyBuffer הוסר ב-slice 9 (overhead + NN חפיפה). פתרון חדש צריך
+  חלון מוגבל (LIFO ring buffer, 60s), לא cache כולל.
+
+מורכבות: בינונית. דורש:
+- BE: ring buffer של N messages אחרונים לפי agentId, נוקה אחרי idle.
+- FE: `flushBuffer` call אחרי WS חדש לפני (או אחרי) loadSession.
+- החלטה על מיזוג: איך לאחד buffer עם loadSession היסטוריה בלי כפילות.
+
+קווי מימוש: slice BE נפרד + slice FE תואם. depends_on: [ws-reconnect-infra].
+
+החלטה שהתקבלה: **לא עכשיו** (אושר ע"י המשתמשת ב-slice ws-reconnect-infra §9 Q3).
+loadSession מכסה את הרוב. buffer = future slice מתועד.
+
+---
+
 ## 4. מחיקה ועריכת-שם של סשנים
 
 תאריך הרעיון: 2026-06-03

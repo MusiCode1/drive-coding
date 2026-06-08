@@ -104,6 +104,9 @@ export const he: Catalog = {
   "record.status.idle": "לחץ להקלטה",
   "record.send": "שלח",
   "record.placeholder": "כתוב prompt…",
+  "record.reconnect": "התחבר מחדש",
+  "record.reconnecting": "מתחבר מחדש…",
+  "record.reconnectAttempt": "ניסיון",
   "mic.stop": "עצור",
   // ─── settings-redesign ─── (redesign-3)
   "settings.connection": "חיבור",

@@ -20,7 +20,7 @@ vi.mock("$lib/util/be-url", () => ({
 }))
 
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
-import { createAgent, deleteAgent, notifySessionAttached } from "./agents-api"
+import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "./agents-api"
 
 const mockWithTimeout = withTimeout as ReturnType<typeof vi.fn>
 
@@ -129,6 +129,72 @@ describe("deleteAgent", () => {
     mockWithTimeout.mockRejectedValue(new Error("deleteAgent timeout 10000ms"))
 
     await expect(deleteAgent("agent-42")).rejects.toThrow("deleteAgent timeout 10000ms")
+  })
+})
+
+// ─── listAgents ────────────────────────────────────────────────────────────────
+
+describe("listAgents", () => {
+  it("happy path — GET /api/agents, returns agents array", async () => {
+    const fakeAgents = [
+      { id: "a1", cliKind: "opencode", cwd: "/tmp", status: "ready", createdAt: 1000 },
+    ]
+    mockWithTimeout.mockImplementation(passthroughWithTimeout)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ agents: fakeAgents }),
+      }),
+    )
+
+    const result = await listAgents()
+
+    expect(result).toEqual(fakeAgents)
+    expect(mockWithTimeout).toHaveBeenCalledWith(
+      expect.any(Function),
+      10000,
+      expect.objectContaining({ label: "listAgents" }),
+    )
+  })
+
+  it("HTTP שגיאה — ok=false → זורק עם status", async () => {
+    mockWithTimeout.mockImplementation(passthroughWithTimeout)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+      }),
+    )
+
+    await expect(listAgents()).rejects.toThrow("listAgents failed: 503")
+  })
+
+  it("timeout — withTimeout זורק → listAgents זורק", async () => {
+    mockWithTimeout.mockRejectedValue(new Error("listAgents timeout 10000ms"))
+
+    await expect(listAgents()).rejects.toThrow("listAgents timeout 10000ms")
+  })
+
+  it("מקבל signal חיצוני ומעביר אותו ל-withTimeout", async () => {
+    mockWithTimeout.mockImplementation(passthroughWithTimeout)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ agents: [] }),
+      }),
+    )
+
+    const ac = new AbortController()
+    await listAgents(ac.signal)
+
+    expect(mockWithTimeout).toHaveBeenCalledWith(
+      expect.any(Function),
+      10000,
+      expect.objectContaining({ signal: ac.signal }),
+    )
   })
 })
 

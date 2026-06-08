@@ -115,6 +115,9 @@ export type MessageKey =
   | "record.status.idle"
   | "record.send"
   | "record.placeholder"
+  | "record.reconnect"
+  | "record.reconnecting"
+  | "record.reconnectAttempt"
   | "mic.stop"
   // ─── settings-redesign ─── (redesign-3)
   | "settings.connection"

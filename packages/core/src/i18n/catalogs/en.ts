@@ -109,6 +109,9 @@ export const en: Catalog = {
   "record.status.idle": "Tap to record",
   "record.send": "Send",
   "record.placeholder": "Type a prompt…",
+  "record.reconnect": "Reconnect",
+  "record.reconnecting": "Reconnecting…",
+  "record.reconnectAttempt": "attempt",
   "mic.stop": "Stop",
   // ─── settings-redesign ─── (redesign-3)
   "settings.connection": "Connection",

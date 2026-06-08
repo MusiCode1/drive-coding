@@ -76,6 +76,8 @@ Slice 3+   💭 מתוכנן  ראה ‎טבלה ‎למטה
 | 24 | **Client-keyed proxy cache** | מפתח cache לפי clientId — מונע דליפת cache בין sessions | BE | ~חצי יום | ✅ (2026-06-01) |
 | 25 | **Bridge leak fix (FE cleanup)** | #cleanup שולח deleteAgent ב-3 מסלולי detach/attach-error/loadSession-error | FE | ~חצי יום | 💭 מאושר, ממתין dispatch |
 | 26 | **Idle-bridge reaper (BE)** ⚠️ זמני | setInterval reaper שמנקה bridges ללא WS פעיל — רשת ביטחון עד future A | BE | ~חצי יום | ✅ (2026-06-01) — **למחיקה ב-future A** |
+| ws-r-infra | **WS reconnect infra** | AgentSession: warm-first reconnect, cold fallback, MED-8 retry, backoff 5×, visibility tracking. VM + adapter בלבד — אפס UI | 26 | ~1 יום | ✅ (2026-06-03) — depends_on: [] |
+| ws-r-ui | **WS reconnect UI** ⏳ JIT | כפתור + חיווי reconnect, banner, i18n — slice עוקב בנפרד | ws-r-infra | ~חצי יום | 💭 JIT — כתיבה אחרי אימות infra |
 | 13 | Cutover | rename ‎`frontend-v2/` ‎→ ‎`frontend/` ‎(הישן ‎כבר נמחק ‎ב-2026-05-28) | כל ‎הקודמים | ~‎חצי יום | 💭 |
 
 **‎סה"כ ‎לcutover מלא: ‎~‎15-16 ‎ימי עבודה.**

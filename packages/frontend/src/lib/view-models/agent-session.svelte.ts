@@ -20,7 +20,7 @@ import { tick } from "svelte"
 import { createAcpClient, type AcpClient } from "@drive-coding/core/acp/client"
 import type { CuesEngine } from "$lib/engines/cues"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
-import { createAgent, deleteAgent, notifySessionAttached } from "$lib/adapters/agents-api"
+import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
 import type { CliKind } from "@drive-coding/core"
 import type {
   Bubble,
@@ -37,11 +37,12 @@ import type {
 import { type SessionInfo, normalizeSessionInfo } from "$lib/adapters/sessions"
 
 export type AgentSessionStatus =
-  | "idle"        // טרם נוצר סוכן
-  | "connecting"  // יוצר סוכן + לחיצת יד של ACP
-  | "connected"   // מוכן לקבל פרומפטים
-  | "thinking"    // נשלח פרומפט, ממתין לתגובת הסוכן
+  | "idle"          // טרם נוצר סוכן
+  | "connecting"    // יוצר סוכן + לחיצת יד של ACP
+  | "connected"     // מוכן לקבל פרומפטים
+  | "thinking"      // נשלח פרומפט, ממתין לתגובת הסוכן
   | "error"
+  | "disconnected"  // WS נפל, ממתין ל-reconnect (ידני/אוטו) — slice ws-reconnect-infra
 
 /**
  * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
@@ -59,6 +60,13 @@ export class AgentSession {
 
   constructor(opts?: { cues?: CuesEngine }) {
     this.#cues = opts?.cues
+    // ─── slice ws-reconnect-infra: visibility tracking ───
+    if (typeof document !== "undefined") {
+      this.#pageHidden = document.hidden
+      document.addEventListener("visibilitychange", () => {
+        this.#pageHidden = document.hidden
+      })
+    }
   }
 
   // ─── state ─── (פולשני לעריכה — תאם מול Tama)
@@ -67,6 +75,9 @@ export class AgentSession {
   bubbles = $state<Bubble[]>([])
   agentId = $state<string | null>(null)
   cwd = $state<string | null>(null)
+  // ─── slice ws-reconnect-infra: reconnect state ─── (INVASIVE — מאושר)
+  /** 0 = לא מנסה reconnect; >0 = ניסיון נוכחי (1-indexed לחיווי UI). */
+  reconnectAttempt = $state<number>(0)
   // ─── slice 4: replay guard + narration context ─── (תוספתי)
   /** True בזמן ש-loadSession() מנגן היסטוריה מחדש. ה-Speaker קורא את זה (תחת מעקב) כדי להשתיק TTS. */
   isLoadingHistory = $state(false)
@@ -88,6 +99,9 @@ export class AgentSession {
   #sessionsLoaded = false   // True אחרי טעינה מוצלחת אחת — cache; force=true מרענן
 
   #client: AcpClient | null = null
+  // ─── slice ws-reconnect-fix-nbug2: ref ל-transport החי (NBug2 root fix) ───
+  /** ref ל-transport הפעיל — נשמר בכל יצירת transport, מנוקה עם #client. */
+  #transport: WsAcpTransport | null = null
   #sessionId: string | null = null
   /** חיפוש בסיבוכיות O(1) עבור tool_call_update לפי toolCallId. מ-Slice 4. */
   #toolBubbleByCallId: Map<string, ToolBubble> = new Map()
@@ -97,6 +111,285 @@ export class AgentSession {
    * התנתק באופן מפורש.
    */
   #detached = false
+  /**
+   * True בזמן סגירת WS מכוונת בתוך #coldReconnect. מונע מה-onClose הישן
+   * (שמקבל 1005 מ-#client.close()) להצית לולאת reconnect שנייה (NBug2).
+   * שונה מ-#detached: detach=סיום סופי; tearingDown=מעבר זמני בתוך cold.
+   */
+  #tearingDown = false
+  // ─── slice ws-reconnect-infra: reconnect internals ───
+  /** ה-cliKind של ה-attach/loadSession האחרון — נדרש ל-cold reconnect. */
+  #cliKind: CliKind | null = null
+  /** True כשה-document.hidden (הדף ברקע). */
+  #pageHidden = false
+  /** טיימר לניסיון reconnect הבא. */
+  #reconnectTimer: ReturnType<typeof setTimeout> | undefined
+  /** Guard למניעת שתי לולאות reconnect מקבילות. */
+  #reconnecting = false
+
+  // ─── DEV-only test helpers (tree-shaken from prod) ───
+  /** @internal */ _setStatusForTest(s: AgentSessionStatus): void { this.#setStatus(s) }
+  /** @internal */ _setReconnectAttemptForTest(n: number): void { this.reconnectAttempt = n }
+  /** @internal */ _setTearingDownForTest(v: boolean): void { this.#tearingDown = v }
+  /**
+   * @internal **predicate טהור** — מחזיר האם onClose עם ה-code הנתון *היה* מצית
+   * reconnect, לפי אותה שרשרת gate כמו ה-handlers האמיתיים (#detached → #tearingDown
+   * → 1000/1001). **אינו מריץ** את #handleUnexpectedClose/#scheduleReconnect — כדי
+   * שהטסט לא יצית #runReconnectLoop עם setTimeout תלוי / async מודלף. הטסט בודק רק
+   * את הערך המוחזר.
+   * ⚠️ חובה לשמור מסונכרן עם שרשרת התנאים ב-2.ג (onClose handlers).
+   */
+  _wouldReconnectOnCloseForTest(code: number): boolean {
+    if (this.#detached) return false
+    if (this.#tearingDown) return false
+    return code !== 1000 && code !== 1001
+  }
+  /**
+   * @internal מזריק transport stub ל-#transport (לטסט DoD#4: closeAndWait נקרא ב-#doReconnect).
+   * stub: אובייקט עם closeAndWait spy בלבד — לא WsAcpTransport אמיתי.
+   */
+  _setTransportForTest(t: { closeAndWait: () => Promise<void> } | null): void {
+    this.#transport = t as WsAcpTransport | null
+  }
+  /**
+   * @internal מגדיר #sessionId + cwd + #cliKind ישירות — כדי ש-reconnect() לא יחזור מוקדם.
+   */
+  _setSessionContextForTest(ctx: { sessionId: string; cwd: string; cliKind: CliKind }): void {
+    this.#sessionId = ctx.sessionId
+    this.cwd = ctx.cwd
+    this.#cliKind = ctx.cliKind
+  }
+  /**
+   * @internal override ל-#findReusableAgent — מחזיר ערך קבוע לטסטים.
+   */
+  _mockFindReusableAgentForTest(returnValue: string | null): void {
+    this.#findReusableAgent = async () => returnValue
+  }
+  /**
+   * @internal override ל-#coldReconnect — זורק/מחזיר ערך קבוע לטסטים.
+   */
+  _mockColdReconnectForTest(error: Error): void {
+    this.#coldReconnect = async () => { throw error }
+  }
+
+  // ─── slice ws-reconnect-infra: reconnect helpers ────────────────────────────
+
+  /**
+   * מחפש agent חי בצד השרת שאפשר להתחבר אליו מחדש (warm) במקום spawn.
+   * תנאי: אותו acpSessionId (=#sessionId הנוכחי), אותו cwd, ו-status חי.
+   * מחזיר agentId או null. שגיאת רשת → null (נופלים ל-cold).
+   */
+  #findReusableAgent = async (): Promise<string | null> => {
+    if (this.#sessionId === null || this.cwd === null) return null
+    try {
+      const agents = await listAgents()
+      const match = agents.find(
+        (a) =>
+          a.acpSessionId === this.#sessionId &&
+          a.cwd === this.cwd &&
+          a.status !== "crashed" &&
+          a.status !== "closed",
+      )
+      return match?.id ?? null
+    } catch {
+      return null   // שגיאת רשת — cold יטפל
+    }
+  }
+
+  // statics ל-reconnect (מוגדרים כאן כדי שכל המתודות שמשתמשות בהן יהיו מוכנות)
+  static readonly #MAX_RECONNECT_ATTEMPTS = 5
+  /** backoff (ms) לפי ניסיון. סך ~31s << חלון reaper (5 דק'). */
+  static readonly #BACKOFF_MS = [1000, 2000, 4000, 8000, 16000]
+  static readonly #MED8_RETRY_MS = 250
+  static readonly #MED8_MAX_RETRIES = 3
+
+  /**
+   * מטפל בסגירת WS לא צפויה (לא detach, לא 1000/1001).
+   * רקע → disconnected (ממתין ל-reconnect ידני); פוקוס → backoff אוטומטי.
+   */
+  #handleUnexpectedClose(code: number, reason: string): void {
+    this.error = `WS closed (${code}): ${reason || "no reason"}`
+    if (this.#pageHidden) {
+      this.#setStatus("disconnected")   // רקע — לא אוטו
+      return
+    }
+    this.#scheduleReconnect()           // פוקוס — backoff
+  }
+
+  #scheduleReconnect(): void {
+    if (this.#reconnecting) return
+    this.#reconnecting = true
+    this.reconnectAttempt = 0
+    this.#setStatus("disconnected")
+    void this.#runReconnectLoop()
+  }
+
+  async #runReconnectLoop(): Promise<void> {
+    while (this.reconnectAttempt < AgentSession.#MAX_RECONNECT_ATTEMPTS) {
+      const attempt = this.reconnectAttempt           // 0-indexed לתוך BACKOFF_MS
+      const delay = AgentSession.#BACKOFF_MS[attempt] ?? 16000
+      this.reconnectAttempt = attempt + 1             // 1-indexed לחיווי
+      await new Promise<void>((resolve) => {
+        this.#reconnectTimer = setTimeout(resolve, delay)
+      })
+      if (this.#detached) { this.#reconnecting = false; return }
+      try {
+        await this.#doReconnect()
+      } catch {
+        // warm/cold כבר תפסו; נמשיך
+      }
+      if (this.status === "connected") {
+        this.#reconnecting = false
+        this.reconnectAttempt = 0
+        return
+      }
+    }
+    this.#reconnecting = false
+    this.#setStatus("disconnected")   // מיצינו — ממתין ל-reconnect ידני
+  }
+
+  #clearReconnectTimer(): void {
+    if (this.#reconnectTimer !== undefined) {
+      clearTimeout(this.#reconnectTimer)
+      this.#reconnectTimer = undefined
+    }
+  }
+
+  /**
+   * ניסיון reconnect יחיד: warm-first, נופל ל-cold בכל כשל.
+   *
+   * NBug2 root fix: אם יש WS חי (#transport לא null) — סגור אותו והמתן לאישור
+   * לפני warm. בלי זה: ה-WS החי נדרס ב-#warmReconnect:289 בלי להיסגר → agent
+   * יתום קבוע (reaper לא נוגע ב-hasActiveWs=true). ה-BE דוחה WS חדש ב-1008.
+   *
+   * כשה-WS כבר מת (auto-reconnect): closeAndWait מתרצה מיד (readyState===CLOSED).
+   */
+  #doReconnect = async (): Promise<void> => {
+    // NBug2 root: סגור WS חי והמתן לאישור לפני warm
+    if (this.#transport) {
+      await this.#transport.closeAndWait()
+      this.#client = null
+      this.#transport = null
+    }
+    const reuseId = await this.#findReusableAgent()
+    if (reuseId !== null) {
+      const ok = await this.#warmReconnect(reuseId)
+      if (ok) {
+        if (this.status === "connected") this.reconnectAttempt = 0
+        return
+      }
+      // warm נכשל (1008 אחרי retries / שגיאת WS/handshake) → נפילה ל-cold
+    }
+    await this.#coldReconnect()
+    if (this.status === "connected") this.reconnectAttempt = 0
+  }
+
+  /**
+   * cold: יוצר agent חדש דרך loadSession מאפס.
+   * guard 217 זורק אם status==="connecting"||"connected" — אם warm הכשיל ב-connecting,
+   * מאפסים ל-disconnected שעובר את ה-guard.
+   *
+   * ⚠️ NBug1+NBug2 fix: חובה לסגור את #client הישן (close WS) ולמחוק את ה-agentId הקודם
+   * לפני שloadSession יוצר agent חדש — אחרת agents מצטברים חיים ב-BE (DoD#16).
+   */
+  #coldReconnect = async (): Promise<void> => {
+    // שמור agentId הקודם לפני שloadSession ידרוס אותו
+    const prevAgentId = this.agentId
+    this.#tearingDown = true          // NBug2: השתק onClose ישן (1005) של ה-WS שאנו סוגרים
+    try {
+      // סגור את ה-WS/client הישן (NBug2: מנע WS ו-agent תקועים ב-BE)
+      try { this.#client?.close() } catch { /* כבר סגור */ }
+      this.#client = null
+      this.#transport = null   // slice ws-reconnect-fix-nbug2: נקה אחרי סגירה
+      if (this.status === "connecting" || this.status === "connected") {
+        this.#setStatus("disconnected")   // מאפס מצב שהשאיר warm-fail; עובר את guard 217
+      }
+      await this.loadSession({
+        sessionId: this.#sessionId!,
+        cwd: this.cwd!,
+        cliKind: this.#cliKind!,
+      })
+    } finally {
+      this.#tearingDown = false       // שחרר אחרי שה-WS החדש פעיל
+    }
+    // מחק את ה-agent הישן אחרי שloadSession הצליח לייצר חדש (NBug1: מנע agent leak)
+    // רק אם ה-agentId השתנה (loadSession קובע agentId חדש; prevAgentId הוא הישן)
+    if (prevAgentId && prevAgentId !== this.agentId) {
+      void deleteAgent(prevAgentId).catch(() => {})
+    }
+  }
+
+  /**
+   * warm: מתחבר ל-agent קיים (אותו agentId) דרך WS חדש, בלי createAgent.
+   * מחקה את הדגם של switchSession (288-336).
+   * מטפל ב-MED-8 (1008) עם retry. מחזיר true בהצלחה, false → fallback ל-cold.
+   */
+  #warmReconnect = async (agentId: string): Promise<boolean> => {
+    this.#detached = false
+    this.#setStatus("connecting")   // ל-warm מותר — לא עובר דרך loadSession של ה-VM
+
+    for (let attempt = 0; attempt <= AgentSession.#MED8_MAX_RETRIES; attempt++) {
+      this.#client = null
+      this.#transport = null   // slice ws-reconnect-fix-nbug2: איפוס iteration (WS החי כבר סגור ב-#doReconnect)
+      const proto = location.protocol === "https:" ? "wss:" : "ws:"
+      const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+      this.#transport = transport   // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
+
+      // ⚠️ תיקון אביגיל #1 — DEADLOCK: waitForOpen (ws-transport.ts:70-78) מאזין רק
+      // open+error, לא close. סגירת 1008 היא close event → waitForOpen נתקע לנצח.
+      // לכן race בין waitForOpen ל-Promise שנפתר ב-onClose.
+      const closeOutcome = new Promise<{ closed: true; code: number; reason: string }>((resolve) => {
+        transport.onClose((code, reason) => resolve({ closed: true, code, reason }))
+      })
+      let opened = false
+      const closeResult = await Promise.race([
+        transport.waitForOpen().then(() => { opened = true; return null }).catch(() => null),
+        closeOutcome,
+      ])
+
+      if (!opened) {
+        // ה-WS נסגר/נכשל לפני open. 1008 = MED-8 (retry); אחר = כשל warm → cold.
+        transport.close()
+        const code = closeResult && "closed" in closeResult ? closeResult.code : 0
+        if (code === 1008 && attempt < AgentSession.#MED8_MAX_RETRIES) {
+          await new Promise((r) => setTimeout(r, AgentSession.#MED8_RETRY_MS))
+          continue   // MED-8 — נסה שוב
+        }
+        return false   // לא-1008, או מיצינו retries → cold
+      }
+
+      // ה-WS פתוח. רשום onClose "אמיתי" לנפילות עתידיות.
+      transport.onClose((code, reason) => {
+        if (this.#detached) return
+        if (this.#tearingDown) return        // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
+        if (code !== 1000 && code !== 1001) this.#handleUnexpectedClose(code, reason)
+      })
+
+      try {
+        this.agentId = agentId
+        this.#client = await createAcpClient(transport, this.#onSessionUpdate)
+        this.bubbles = []
+        this.isLoadingHistory = true
+        try {
+          const loadResult = await this.#client.loadSession({ sessionId: this.#sessionId!, cwd: this.cwd! })
+          this.#captureSessionConfig(loadResult)
+        } finally {
+          this.isLoadingHistory = false
+        }
+        // replace:true — אותו דגם כמו switchSession:327 (fix-409 מוזג ב-8f59ec3)
+        await notifySessionAttached(agentId, this.#sessionId!, { replace: true }).catch(() => {})
+        this.#setStatus("connected")
+        return true
+      } catch {
+        // שגיאת handshake/loadSession — נקה ונפול ל-cold
+        this.#client = null
+        this.#transport = null   // slice ws-reconnect-fix-nbug2: נקה אחרי כשל warm
+        transport.close()
+        return false
+      }
+    }
+    return false
+  }
 
   // ─── מחזור חיי חיבור (connection lifecycle) ─────────────────────────
 
@@ -118,18 +411,17 @@ export class AgentSession {
       const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
       this.agentId = agentId
       this.cwd = input.cwd
+      this.#cliKind = input.cliKind   // slice ws-reconnect-infra: שמור ל-cold reconnect
 
       // 2. פתח תעבורת WS
       const proto = location.protocol === "https:" ? "wss:" : "ws:"
       const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+      this.#transport = transport   // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
       transport.onClose((code, reason) => {
-        // השתק שגיאות כאשר הסגירה נגרמה על ידי קריאה מפורשת ל-detach().
-        // הדפדפן סוגר את ה-WS בצורה אסינכרונית, לכן onClose מופעל אחרי ש-detach
-        // כבר ניקה את המצב (state).
         if (this.#detached) return
+        if (this.#tearingDown) return        // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
         if (code !== 1000 && code !== 1001) {
-          this.error = `WS closed (${code}): ${reason || "no reason"}`
-          this.#setStatus("error")
+          this.#handleUnexpectedClose(code, reason)
         }
       })
       await transport.waitForOpen()
@@ -157,6 +449,10 @@ export class AgentSession {
 
   detach = (): void => {
     this.#detached = true  // ‏לפני ה-cleanup — ‏ה-WS close fires async
+    // ─── slice ws-reconnect-infra: ביטול לולאת reconnect ───
+    this.#clearReconnectTimer()
+    this.#reconnecting = false
+    this.reconnectAttempt = 0
     this.#cleanup()
     this.#setStatus("idle")
     this.error = null
@@ -235,15 +531,17 @@ export class AgentSession {
       const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
       this.agentId = agentId
       this.cwd = input.cwd
+      this.#cliKind = input.cliKind   // slice ws-reconnect-infra: שמור ל-cold reconnect
 
       // 2. פתח תעבורת WS + הוסף מאזין onClose (זהה ל-attach)
       const proto = location.protocol === "https:" ? "wss:" : "ws:"
       const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+      this.#transport = transport   // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
       transport.onClose((code, reason) => {
         if (this.#detached) return
+        if (this.#tearingDown) return        // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
         if (code !== 1000 && code !== 1001) {
-          this.error = `WS closed (${code}): ${reason || "no reason"}`
-          this.#setStatus("error")
+          this.#handleUnexpectedClose(code, reason)
         }
       })
       await transport.waitForOpen()
@@ -272,6 +570,21 @@ export class AgentSession {
       this.#setStatus("error")
       this.#cleanup()
     }
+  }
+
+  // ─── slice ws-reconnect-infra: reconnect ציבורי ─── (תוספתי)
+
+  /**
+   * משחזר את החיבור לסשן הנוכחי. warm-first: אם הסוכן עוד חי בצד השרת —
+   * מתחבר אליו בלי spawn; אחרת יוצר חדש (cold). מאפס reconnectAttempt
+   * ועוצר לולאת backoff פעילה (קריאה ידנית גוברת).
+   */
+  reconnect = async (): Promise<void> => {
+    if (this.#sessionId === null || this.cwd === null || this.#cliKind === null) return
+    this.#clearReconnectTimer()
+    this.#reconnecting = false
+    this.reconnectAttempt = 0
+    await this.#doReconnect()
   }
 
   // ─── slice fix-switch-session-warm: החלפת סשן ב-warm reload ─── (תוספתי)
@@ -529,6 +842,7 @@ export class AgentSession {
       // כבר סגור
     }
     this.#client = null
+    this.#transport = null   // slice ws-reconnect-fix-nbug2: נקה ref
     this.#sessionId = null
     this.agentId = null
     // הורג את ה-bridge בצד ה-BE. ה-BE לא הורג את ה-child בסגירת WS לבד

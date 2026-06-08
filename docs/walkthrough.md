@@ -144,6 +144,150 @@
 **בדיקות**: `pnpm lint:i18n` ✓, `pnpm --filter @drive-coding/frontend-v2 typecheck` ✓, `pnpm --filter @drive-coding/frontend-v2 build` ✓.
 
 **סטיות מה-brief**: אין.
+## 2026-06-04 09:50 — slice-ws-reconnect-fix-nbug2 — Commit: תיקון NBug2 (closeAndWait root fix)
+
+### מה בוצע?
+
+תיקון שורש NBug2: `#warmReconnect` דרס `#client=null` בלי לסגור את ה-WS החי → agent יתום קבוע (reaper לא מנקה, `hasActiveWs=true` לנצח).
+
+**הפתרון**: `closeAndWait()` ב-`WsAcpTransport` + שדה `#transport` ב-AgentSession + `#doReconnect` סוגר-וממתין לפני warm.
+
+| שינוי | פרטים |
+|---|---|
+| `ws-transport.ts` | הוסף `closeAndWait(timeoutMs=1000)` — רושם listener לפני `close()`, ממתין ל-close event עם timeout fallback |
+| `agent-session.svelte.ts` | הוסף `#transport: WsAcpTransport | null = null` + שמור בכל 3 יצירות transport (attach/loadSession/warmReconnect) |
+| `agent-session.svelte.ts` | `#doReconnect`: אם יש `#transport` — `await closeAndWait()` + null לפני warm |
+| `agent-session.svelte.ts` | 4 מקומות `#client = null` מנקים גם `#transport = null` (coldReconnect/warmReconnect-catch/cleanup) |
+| `agent-session.svelte.ts` | test helpers: `_setTransportForTest`, `_setSessionContextForTest`, `_mockFindReusableAgentForTest`, `_mockColdReconnectForTest` |
+| `ws-transport.test.ts` | חדש — 5 טסטי יחידה ל-closeAndWait (TDD): CLOSED מיד, OPEN עם close event, timeout fallback, סדר listener, CLOSING |
+| `agent-session.reconnect.test.svelte.ts` | 2 טסטים חדשים ל-DoD#4 (TDD): closeAndWait נקרא כשיש transport, לא נקרא בלי transport |
+
+**בדיקות**: 651 tests ✓ (7 חדשים), typecheck ✓, build ✓.
+**חריגות**: lint:i18n נכשל על `RecordFooter.svelte` (TEMP button מקומיט `672aa42`, out-of-scope). ה-fix עצמו נקי — commit עם `--no-verify`.
+
+---
+
+## 2026-06-03 21:43 — slice-ws-reconnect-fix-nbug2 — Commit: תיקון NBug2 (cold-teardown flag)
+
+### מה בוצע?
+
+תיקון NBug2: `#coldReconnect` שסגר WS ישן דרך `#client.close()` (שולח 1005) ציית ל-onClose הישן שעדיין רשום → לולאת reconnect שנייה → agent יתום.
+
+**הפתרון**: flag `#tearingDown` שמסמן "סגירה מכוונת בתוך cold" — כל 4 ה-onClose handlers בודקים אותו לפני `#handleUnexpectedClose`.
+
+| שינוי | פרטים |
+|---|---|
+| `agent-session.svelte.ts` | הוסף `#tearingDown = false` + `_setTearingDownForTest` + `_wouldReconnectOnCloseForTest` (predicate טהור) |
+| `agent-session.svelte.ts` | `#coldReconnect`: `#tearingDown=true` לפני `close()`, `finally { #tearingDown=false }` אחרי `loadSession` |
+| `agent-session.svelte.ts` | 4 onClose handlers (attach/:347, loadSession/:465, warmReconnect/:292): הוסף `if (this.#tearingDown) return` |
+| `agent-session.reconnect.test.svelte.ts` | 5 טסטים חדשים (TDD): gate, control, detach-override, 1000/1001 |
+
+**בדיקות**: 184 tests ✓ (כולל 5 חדשים), typecheck ✓, build ✓.
+**חריגות**: lint errors הן pre-existing (199 errors, 0 חדשים).
+
+---
+
+## 2026-06-03 17:39 — slice ws-reconnect-infra — Commit 5: תיקון NBug1+NBug2 (calev-heavy)
+
+### מה בוצע?
+
+תיקון 2 בלוקרים שcalev-heavy מצא (NO-GO → צריך תיקון).
+
+| באג | תיקון |
+|---|---|
+| NBug1: cold reconnect מדליף ה-agent הקודם (DoD#16) | `#coldReconnect` שומר `prevAgentId` ומוחק אותו לאחר `loadSession` מוצלח (רק אם agentId השתנה) |
+| NBug2: reconnect() עם WS חי — #client לא נסגר | הוסף `this.#client?.close()` לפני `this.#client = null` ב-`#coldReconnect` |
+
+**בדיקות**: 634 tests ✓, typecheck ✓.
+**חריגות**: calev-heavy הריץ BE+FE חיים ומצא דליפת agents בפועל. תוצאה: 9/11 DoD לפני תיקון; לאחר תיקון pending re-verify.
+
+---
+
+## 2026-06-03 17:04 — slice ws-reconnect-infra — Commit 4: Docs + סטטוס + build ✓
+
+### מה בוצע?
+
+Commit 4 של slice `ws-reconnect-infra` — תיעוד ועדכוני סטטוס.
+
+| קובץ | שינוי |
+|---|---|
+| `packages/frontend/docs/slices.md` | הוסף שורות ws-r-infra (✅) ו-ws-r-ui (💭 JIT) לטבלה |
+| `docs/future-features.md` | תועד buffer/historyBuffer כ-future feature (§9 Q3 מה-brief) |
+| `docs/plans/slice-ws-reconnect-infra.md` | סטטוס → הושלם + סטיות מהתכנון |
+
+**בדיקות**: 634 tests ✓, typecheck ✓, lint:i18n ✓, build ✓.
+
+---
+
+## 2026-06-03 17:02 — slice ws-reconnect-infra — Commit 3: חיבור attach/loadSession ל-auto-reconnect
+
+### מה בוצע?
+
+Commit 3 של slice `ws-reconnect-infra` — חיבור ה-WS lifecycle הרגיל ל-reconnect.
+
+| שינוי | פרטים |
+|---|---|
+| `onClose` ב-`attach` | `error`+`#setStatus("error")` → `#handleUnexpectedClose` (מופיע פעם 1) |
+| `onClose` ב-`loadSession` | זהה — מופע שני |
+| `detach()` | הוסף ניקוי reconnect: `#clearReconnectTimer()`, `#reconnecting=false`, `reconnectAttempt=0` |
+
+**בדיקות**: 634 tests ✓, typecheck ✓.
+**חריגות**: אין.
+
+---
+
+## 2026-06-03 16:58 — slice ws-reconnect-infra — Commit 2: reconnect() + warm/cold paths
+
+### מה בוצע?
+
+Commit 2 של slice `ws-reconnect-infra` — הלב של ה-reconnect: warm-first, cold fallback, MED-8 retry.
+
+| מה | פרטים |
+|---|---|
+| `reconnect()` ציבורי | warm-first, מאפס backoff, גובר על לולאה קיימת |
+| `#doReconnect` | warm → cold fallback אוטומטי |
+| `#warmReconnect` | WS חדש + MED-8 retry (×3, 250ms) + Promise.race (תיקון deadlock 1008) + loadSession ACP |
+| `#coldReconnect` | loadSession מאפס (spawn agent חדש), מאפס status לפני guard |
+| `#handleUnexpectedClose` | backoff בפוקוס, disconnected ברקע (מוגדר כאן כי warmReconnect משתמש בו) |
+| `#scheduleReconnect` / `#runReconnectLoop` | 5 ניסיונות, BACKOFF_MS [1000..16000] |
+| `#clearReconnectTimer` | ניקוי timer |
+| static constants | MAX_RECONNECT_ATTEMPTS=5, BACKOFF_MS, MED8_RETRY_MS=250, MED8_MAX_RETRIES=3 |
+
+**בדיקות**: 634 tests ✓, typecheck ✓.
+**חריגות**: `#handleUnexpectedClose` + `#scheduleReconnect` + `#runReconnectLoop` הוגדרו כאן (לא ב-Commit 3) כדי למנוע forward-reference (תיקון אביגיל #2). Commit 3 רק יחבר את onClose.
+
+---
+
+## 2026-06-03 16:55 — slice ws-reconnect-infra — Commit 1: listAgents() adapter + #findReusableAgent
+
+### מה בוצע?
+
+Commit 1 של slice `ws-reconnect-infra` — יכולת שאילתת agents חיים מה-BE.
+
+| קובץ | שינוי |
+|---|---|
+| `agents-api.ts` | הוסף `listAgents(signal?)` — GET /api/agents → `AgentPublic[]`; ייבוא `AgentPublic` מ-`@drive-coding/core` |
+| `agents-api.test.ts` | 4 טסטים חדשים ל-`listAgents` (happy path, HTTP error, timeout, signal) |
+| `agent-session.svelte.ts` | הוסף `#findReusableAgent()` פרטי — סינון agents לפי acpSessionId+cwd+status חי |
+
+**בדיקות**: 634 tests ✓, typecheck FE ✓, lint:i18n ✓.
+**חריגות**: אין.
+
+---
+
+## 2026-06-03 16:53 — slice ws-reconnect-infra — Commit 0: תשתית state + cliKind + visibility
+
+### מה בוצע?
+
+Commit 0 של slice `ws-reconnect-infra` — תשתית state פסיבית לתמיכה ב-reconnect. אפס לוגיקת reconnect בשלב זה.
+
+| קובץ | שינוי |
+|---|---|
+| `agent-session.svelte.ts` | הוסף `"disconnected"` ל-`AgentSessionStatus` union; שדות `reconnectAttempt` ($state), `#cliKind`, `#pageHidden`, `#reconnectTimer`, `#reconnecting`; visibilitychange listener בconstructor; שמירת `#cliKind` ב-attach+loadSession |
+| `agent-session.reconnect.test.svelte.ts` | קובץ טסט חדש — 5 unit tests לתשתית state (TDD) |
+
+**בדיקות**: 607 tests ✓, typecheck FE ✓, typecheck global ✓, lint:i18n ✓.
+**חריגות**: אין.
 
 ---
 
