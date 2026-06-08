@@ -2,6 +2,7 @@
 
 > **תאריך**: 2026-06-08
 > **סטטוס**: מאומת — מוכן ל-dispatch (אביגיל 2026-06-08: USABLE-AFTER-FIX → 4 תיקונים הוחלו: guard ל-toolCallId, מקרה-בדיקה ל-content מערך, הבהרת mapToolContent ב-risk-3, תיקון צורת fixtures)
+> **עדכון 2026-06-08**: שם הטיפוס יושר ל-`ProviderEvent` (היה `SessionEvent`) בעקבות אימוץ שמות CodeNomad — ראה roadmap §G. ההחלטה אינה משנה את הלוגיקה שאביגיל אימתה.
 > **Complexity**: 7/10 (verifier: heavy)
 > **תלות / depends_on**: `[]` (base = `dev`)
 > **מרדכי → אליעזר**. Brief זה עוקב אחר `docs/plans/README.md`.
@@ -50,12 +51,12 @@ pnpm install && pnpm hooks:install
 ## §1 — מטרה
 
 `agent-session` יפסיק לפרק את צורת ה-`SessionNotification` של ACP ישירות, ויצרוך
-במקום זאת **מודל אירועים מנורמל ואגנוסטי-לפרוטוקול** (`SessionEvent`) שמגיע ממודול
+במקום זאת **מודל אירועים מנורמל ואגנוסטי-לפרוטוקול** (`ProviderEvent`) שמגיע ממודול
 מיפוי טהור ב-core. אחרי הסליס: כל לוגיקת פירוק ה-ACP של נתיב ה-streaming
 (הודעות + thoughts + tool calls) חיה במקום אחד טהור ו-TDD-able (`core/acp/acp-mapper.ts`),
 ו-`agent-session.svelte.ts` כבר לא מייבא את `SessionNotification`. **אין שום שינוי
 בהתנהגות הנראית למשתמש** — אותן בועות, אותו streaming, אותו mock-fixture flow.
-זהו ה-slice היסודי שעליו נבנה ה-`AgentProvider` interface (P2) והספקים הלא-ACP (P3+).
+זהו ה-slice היסודי שעליו נבנה ה-`ProviderSession` interface (P2) והספקים הלא-ACP (P3+).
 
 ---
 
@@ -65,12 +66,12 @@ pnpm install && pnpm hooks:install
 |-------|-------|-----|
 | נרמול נתיב streaming (message/thought/user chunk + tool_call/update) | ✅ | הסליס הזה |
 | נרמול **session config** (`SessionConfigOption`/`SessionModeState`/`SessionModelState`) | ❌ | **P2** — דורש כתיבה-מחדש של `SessionOptionsPanel.svelte`. `agent-session` ימשיך לייבא את 3 הטיפוסים האלה מ-ACP SDK בסוף הסליס הזה. |
-| `AgentProvider` interface / `createProvider` / שדה `protocol` | ❌ | **P2** |
+| `ProviderSession` interface / `createProvider` / שדה `type` | ❌ | **P2** |
 | מימוש ספק לא-ACP | ❌ | **P3+** |
 | שינוי ב-`createAcpClient` עצמו (חתימה/לוגיקה) | ❌ | P2 (שם הוא ייעטף ב-`createAcpProvider`). בסליס הזה הוא נשאר **זהה לחלוטין**. |
 | שינוי ב-`ports.ts` (re-export של `SessionNotification`/`PromptResponse`) | ❌ | שריד Slice 4, לא בשימוש ב-FE flow. לא נוגעים. |
 | שינוי ב-BE | ❌ | ה-BE אגנוסטי; לא נוגעים. |
-| הרחבת `SessionEvent` ל-plan/available_commands וכו' | ❌ | לפי הצורך ב-P3. מנרמלים רק מה ש-`#onSessionUpdate` מטפל בו היום. |
+| הרחבת `ProviderEvent` ל-plan/available_commands וכו' | ❌ | לפי הצורך ב-P3. מנרמלים רק מה ש-`#onSessionUpdate` מטפל בו היום. |
 
 > **הגנת scope**: נטייה טבעית תהיה "בזמן שאני פה, אנרמל גם את ה-config" — **אסור**.
 > ה-config דורש panel-rewrite והוא P2. נגיעה בו = הרחבת scope.
@@ -83,11 +84,11 @@ pnpm install && pnpm hooks:install
 core (טהור, ללא IO)                                  frontend (5 שכבות)
 ────────────────────────────────                     ─────────────────────────────
 protocol/events.ts            ← חדש                  view-models/
-  SessionEvent (union)                                 agent-session.svelte.ts   ← משתנה
-  ToolContent, ToolLocation (הוזזו לכאן)                 #onSessionEvent(e)  ← חדש (צורך SessionEvent)
+  ProviderEvent (union)                                 agent-session.svelte.ts   ← משתנה
+  ToolContent, ToolLocation (הוזזו לכאן)                 #onProviderEvent(e)  ← חדש (צורך ProviderEvent)
   ToolStatus                                            (מוחק #onSessionUpdate/#handleToolCall/
 acp/acp-mapper.ts             ← חדש                       #handleToolCallUpdate/#mapToolContent/#mapLocations)
-  mapAcpNotification(n): SessionEvent | null           types/bubble.ts          ← משתנה
+  mapAcpNotification(n): ProviderEvent | null           types/bubble.ts          ← משתנה
   (לוגיקת הפירוק שהייתה ב-#onSessionUpdate)               ToolContent/ToolLocation → re-export מ-core
 acp/acp-mapper.test.ts        ← חדש (TDD)
 acp/client.ts                  ← לא נוגעים             util/tool-format.ts       ← לא משתנה
@@ -98,15 +99,15 @@ package.json exports           ← מוסיפים "./protocol/*"
 זרימה אחרי הסליס:
 ```
 createAcpClient(transport, onUpdate) → onUpdate(SessionNotification)
-  → mapAcpNotification(n) : SessionEvent | null
-  → AgentSession.#onSessionEvent(SessionEvent) → bubbles[]   (ללא ידע על ACP)
+  → mapAcpNotification(n) : ProviderEvent | null
+  → AgentSession.#onProviderEvent(ProviderEvent) → bubbles[]   (ללא ידע על ACP)
 ```
 
 ---
 
 ## §4 — Commits בסדר
 
-### Commit 0 — core: SessionEvent + acp-mapper + TDD (approach: **TDD**)
+### Commit 0 — core: ProviderEvent + acp-mapper + TDD (approach: **TDD**)
 
 **קבצים חדשים**:
 - `packages/core/src/protocol/events.ts`
@@ -129,7 +130,7 @@ export type ToolContent = ToolContentText | ToolContentDiff | ToolContentTermina
 
 export type ToolLocation = { path: string; line?: number }
 
-export type SessionEvent =
+export type ProviderEvent =
   | { kind: "message_chunk"; role: "assistant" | "thought" | "user"; text: string; messageId: string | null }
   | {
       kind: "tool_call"
@@ -159,14 +160,14 @@ export type SessionEvent =
 **API skeleton** (`acp/acp-mapper.ts`):
 ```ts
 import type { SessionNotification } from "@agentclientprotocol/sdk"
-import type { SessionEvent, ToolContent, ToolLocation } from "../protocol/events.js"
+import type { ProviderEvent, ToolContent, ToolLocation } from "../protocol/events.js"
 
 /**
  * ממיר SessionNotification של ACP לאירוע מנורמל יחיד, או null אם אין מה לפלוט
  * (chunk טקסט ריק — תואם ל-`if (!text) return` הקיים).
  * זוהי לוגיקת הפירוק שהייתה ב-AgentSession.#onSessionUpdate (dev:582-628).
  */
-export function mapAcpNotification(n: SessionNotification): SessionEvent | null
+export function mapAcpNotification(n: SessionNotification): ProviderEvent | null
 
 // פנימיים (יכולים להיות מיוצאים לבדיקה ישירה אם נוח):
 // mapToolContent(raw: unknown): ToolContent[]   ← היה AgentSession.#mapToolContent (490)
@@ -174,7 +175,7 @@ export function mapAcpNotification(n: SessionNotification): SessionEvent | null
 ```
 
 **לוגיקת מיפוי — חובה לשמר 1:1 מ-`#onSessionUpdate`** (dev:582-628):
-0. **guard `toolCallId` (תיקון אביגיל #1)**: עבור `tool_call` ו-`tool_call_update`, אם `update.toolCallId === undefined` → `return null`. זהו ה-`if (update.toolCallId === undefined) return` שקיים היום בתחילת `#handleToolCall` (dev:641) ו-`#handleToolCallUpdate` (dev:679). ה-guard **עובר ל-mapper** (שדה `toolCallId: string` באירוע הוא חובה — לא אופציונלי), ולכן ה-VM ב-`#onSessionEvent` כבר מקבל `toolCallId` ודאי ולא צריך לבדוק שוב.
+0. **guard `toolCallId` (תיקון אביגיל #1)**: עבור `tool_call` ו-`tool_call_update`, אם `update.toolCallId === undefined` → `return null`. זהו ה-`if (update.toolCallId === undefined) return` שקיים היום בתחילת `#handleToolCall` (dev:641) ו-`#handleToolCallUpdate` (dev:679). ה-guard **עובר ל-mapper** (שדה `toolCallId: string` באירוע הוא חובה — לא אופציונלי), ולכן ה-VM ב-`#onProviderEvent` כבר מקבל `toolCallId` ודאי ולא צריך לבדוק שוב.
 1. `update.sessionUpdate === "tool_call"` → `{ kind: "tool_call", toolCallId, ... }`. `content`/`locations`: **אם `update.content/locations != null`** → `mapToolContent(update.content)` / `mapLocations(update.locations)` (כמו dev:660-661); **אחרת** השמט את השדה (`undefined`).
 2. `update.sessionUpdate === "tool_call_update"` → `{ kind: "tool_call_update", toolCallId, ... }`. עבור `content` (ואותו דין ל-`locations`) — **שלושה מצבים** (תיקון אביגיל #3, תואם dev:695-701):
    - שדה **לא קיים** ב-update (`update.content === undefined`) → השמט מהאירוע (`undefined` = "לא עודכן").
@@ -230,7 +231,7 @@ pnpm --filter @drive-coding/frontend typecheck   # אין שגיאות — הש�
 
 ---
 
-### Commit 2 — FE: agent-session צורך SessionEvent (approach: **manual + regression**)
+### Commit 2 — FE: agent-session צורך ProviderEvent (approach: **manual + regression**)
 
 **קבצים שמשתנים**: `packages/frontend/src/lib/view-models/agent-session.svelte.ts`
 
@@ -239,8 +240,8 @@ pnpm --filter @drive-coding/frontend typecheck   # אין שגיאות — הש�
 - המתודות: `#onSessionUpdate` (582), `#handleToolCall` (631), `#handleToolCallUpdate` (669), `#mapToolContent` (490), `#mapLocations` (530) — **נמחקות**.
 
 **מה נוסף**:
-- ייבוא: `import { mapAcpNotification } from "@drive-coding/core/acp/acp-mapper"` ו-`import type { SessionEvent } from "@drive-coding/core/protocol/events"`.
-- מתודה פרטית `#onSessionEvent = (e: SessionEvent): void => { ... }` (ב-`// ─── פרטי ───`):
+- ייבוא: `import { mapAcpNotification } from "@drive-coding/core/acp/acp-mapper"` ו-`import type { ProviderEvent } from "@drive-coding/core/protocol/events"`.
+- מתודה פרטית `#onProviderEvent = (e: ProviderEvent): void => { ... }` (ב-`// ─── פרטי ───`):
   - `e.kind === "message_chunk"` → `this.#appendChunk(roleToKind(e.role), e.text, e.messageId)` כאשר `role:"assistant"→"message"`, `"thought"→"thought"`, `"user"→"user"`.
   - `e.kind === "tool_call"` → בנה `ToolBubble` (כמו 631-666 היום), עם ברירות-המחדל של ה-bubble נשמרות כאן: `name: e.toolKind ?? e.title ?? "tool"`, `kind: e.toolKind`, `args: e.rawInput ?? {}`, `status: e.status ?? "pending"`, `title: e.title`, `result: e.rawOutput`, `content: e.content`, `locations: e.locations`. push + `#toolBubbleByCallId.set`.
   - `e.kind === "tool_call_update"` → אותו merge כמו 669-705 היום, על בסיס שדות האירוע (כולל הבחנת `content===null → undefined` בבועה).
@@ -248,14 +249,14 @@ pnpm --filter @drive-coding/frontend typecheck   # אין שגיאות — הש�
   ```ts
   this.#client = await createAcpClient(transport, (n) => {
     const e = mapAcpNotification(n)
-    if (e) this.#onSessionEvent(e)
+    if (e) this.#onProviderEvent(e)
   })
   ```
   בשני האתרים (dev:138 ו-dev:252). `n` מקבל את טיפוסו מחתימת `createAcpClient` (אין צורך לייבא `SessionNotification`).
 - **mock path** (`#loadMockSession`, dev:564): החלף `this.#onSessionUpdate({ update } as ... SessionNotification)` ב:
   ```ts
   const e = mapAcpNotification({ update } as Parameters<typeof mapAcpNotification>[0])
-  if (e) this.#onSessionEvent(e)
+  if (e) this.#onProviderEvent(e)
   ```
 
 **מה נשאר ללא שינוי**: `#appendChunk` (708), `#captureSessionConfig` (462 — config, P2), `configOptions/models/modes` state (78-82), `applyConfigOption` (363), `#toolBubbleByCallId`, כל ה-lifecycle (attach/loadSession/detach/sendPrompt).
@@ -290,9 +291,9 @@ grep -n "SessionNotification" packages/frontend/src/lib/view-models/agent-sessio
 
 | # | סיכון | מקור | מיטיגציה |
 |---|-------|------|----------|
-| 1 | שבירת `agent-session.test.ts` — הוא תופס את ה-callback שמועבר ל-`createAcpClient` (mocked) ומריץ אותו עם `SessionNotification` סינתטיים | קריאת הטסט (dev:20-33) | הטסט **לא** מ-mock-ים את `acp-mapper` → ה-mapper האמיתי רץ. ה-callback החדש (`n → mapAcpNotification → #onSessionEvent`) שקוף לטסט. **אסור** להוסיף `vi.mock("@drive-coding/core/acp/acp-mapper")`. אם הטסט נשבר — סימן שהמיפוי לא 1:1; תקן את ה-mapper, לא את הטסט. |
-| 2 | Svelte 5 reactivity על `bubbles` array | learnings (README §6) | לא משנים את אופן ה-push/replace הקיים — `#onSessionEvent` משכפל בדיוק את ה-push וה-`this.bubbles[idx] = {...}` של ה-handlers הישנים. |
-| 3 | אובדן הבחנת `null` / מערך / חסר ב-`content`/`locations` ב-tool_call_update | dev:695-701 — שלושה מצבים שונים, ראה §4 commit 0 כלל 2 | ב-`SessionEvent` שמר `content?: ToolContent[] \| null`. ה-mapper: **מערך → `mapToolContent(...)`** (המסלול הדומיננטי, לא רק "type only"!); **`null` → `null`** (לא משמיט); **חסר → מושמט**. ה-VM ב-`#onSessionEvent` ממיר `null → undefined` בבועה בדיוק כמו dev:697,700 היום. כוסה ב-2 מקרי-בדיקה ייעודיים (commit 0). |
+| 1 | שבירת `agent-session.test.ts` — הוא תופס את ה-callback שמועבר ל-`createAcpClient` (mocked) ומריץ אותו עם `SessionNotification` סינתטיים | קריאת הטסט (dev:20-33) | הטסט **לא** מ-mock-ים את `acp-mapper` → ה-mapper האמיתי רץ. ה-callback החדש (`n → mapAcpNotification → #onProviderEvent`) שקוף לטסט. **אסור** להוסיף `vi.mock("@drive-coding/core/acp/acp-mapper")`. אם הטסט נשבר — סימן שהמיפוי לא 1:1; תקן את ה-mapper, לא את הטסט. |
+| 2 | Svelte 5 reactivity על `bubbles` array | learnings (README §6) | לא משנים את אופן ה-push/replace הקיים — `#onProviderEvent` משכפל בדיוק את ה-push וה-`this.bubbles[idx] = {...}` של ה-handlers הישנים. |
+| 3 | אובדן הבחנת `null` / מערך / חסר ב-`content`/`locations` ב-tool_call_update | dev:695-701 — שלושה מצבים שונים, ראה §4 commit 0 כלל 2 | ב-`ProviderEvent` שמר `content?: ToolContent[] \| null`. ה-mapper: **מערך → `mapToolContent(...)`** (המסלול הדומיננטי, לא רק "type only"!); **`null` → `null`** (לא משמיט); **חסר → מושמט**. ה-VM ב-`#onProviderEvent` ממיר `null → undefined` בבועה בדיוק כמו dev:697,700 היום. כוסה ב-2 מקרי-בדיקה ייעודיים (commit 0). |
 | 4 | i18n hook חוסם commit אם נכנסה מחרוזת עברית בקוד | learnings | אין מחרוזות UI חדשות בסליס; ה-`console.warn` הקיים (dev:409) לא נגענו בו. הרץ `pnpm lint:i18n` לפני commit. |
 | 5 | קובץ משותף `agent-session.svelte.ts` — שינוי `$state` types | `parallel-safe-code.md` | בסליס הזה **לא** משנים שום `$state` (bubbles נשאר `Bubble[]`, config נשאר ACP types). רק מתודות פרטיות נמחקות/נוספות = ADDITIVE/refactor פנימי. אין צורך לתאם מעבר ל-brief זה. |
 | 6 | `import.meta.env.DEV` במסלול mock — `mapAcpNotification` חייב להיתמך גם ב-build prod (tree-shake לא יסיר את ה-mapper כי הוא בשימוש גם ב-callback החי) | dev:545 | ה-mapper בשימוש בשני המסלולים (חי + mock), אז הוא תמיד נכלל. אין בעיית tree-shaking. |
