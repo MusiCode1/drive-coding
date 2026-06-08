@@ -1,5 +1,156 @@
 # Decisions — voice-acp
 
+## 2026-06-03 — slice-fix-turnstate-stuck: החזרת turnState ל-idle (NBug1/2/3 מ-calev NO-GO)
+
+### רציונל
+‏ה-slice `model-status-control-replay` קיבל **calev-heavy NO-GO** עם 3 blockers שכולם
+‏שורש משותף: `turnState` לא חוזר ל-`idle`. ה-StatusBubble וכפתור ה-▶ (BubblePlayer)
+‏תלויים ישירות ב-`turnState==="idle"`, אז כשהוא נתקע — שני הפיצ'רים הראשיים של הסליס
+‏מתים. חקירת-קוד (מרדכי, static) + הראיה מ-fixtures אמיתיים + הבדיקה החיה של calev
+‏מתכנסות לאותה מסקנה, אבל מפרידות בין **שני מנגנונים שונים** עם רמת-ודאות שונה:
+
+**NBug3 (history phantom) — ודאי, דטרמיניסטי, שורש ברור.**
+‏`loadSession`/`switchSession`/`#loadMockSession` מזרימים את ההיסטוריה דרך
+‏`#onSessionUpdate`. ה-`agent_message_chunk` האחרון קובע `turnState="responding"`,
+‏וה-`finally` מאפס רק את `isLoadingHistory` — **לא** את `turnState`. אין `prompt()`
+‏שיעשה resolve (לא נשלח prompt). התוצאה: **כל** טעינת סשן שמסתיים בתשובת-סוכן (כמעט
+‏תמיד) משאירה בועת "Responding" פנטום + ▶ no-op. מאומת מקריאת fixture (`greeting.json`:
+‏רצף `user→thought→message→available_commands→usage`; ה-update האחרון שנוגע ב-turnState
+‏הוא `agent_message_chunk`→responding; `available_commands_update`+`usage_update` נופלים
+‏על `if(!text)return` ולא מאפסים).
+
+**NBug1 (live turn stuck) — race דטרמיניסטי ב-FE (אומת ב-stdio probe חי, 2026-06-03).**
+‏הריצה הזו הכריעה את השורש (probe ישיר מול `opencode acp` על stdio — ראה זיכרון גלובלי
+‏`2026-06-03-fact-acp-stdio-probe-how-to`). הממצא **הפך את ההשערה הראשונית**:
+- ✅ opencode **כן** מחזיר response ל-`session/prompt` עם `stopReason:"end_turn"`. כלומר
+  ‏`conn.prompt()` של ה-SDK **כן** עושה resolve, ו-`#setTurnState("idle")` (שורה 202)
+  ‏**כן** רץ. **לא** "Promise תקוע", **לא** בעיית bridge.
+- ❌ אבל opencode מחזיר את ה-response **באמצע** הזרם, **לפני** שסיים לשלוח את ה-chunks.
+  ‏נצפה: response חזר, ואז עוד ~15 `agent_thought_chunk` + **ה-`agent_message_chunk`
+  ‏עם התשובה האמיתית ("ok")** הגיעו **אחריו**. ה-flow בפועל:
+  ```
+  await prompt() → resolves → #setTurnState("idle")            ✓ idle
+  [chunk מאוחר] → #onSessionUpdate → #setTurnState("responding") ✗ דורס בחזרה
+  ```
+  ‏ה-idle נקרא נכון, אבל chunk מאוחר דורס אותו ל-`responding`. **race דטרמיניסטי** —
+  ‏לא "אולי", זה קורה בכל תור כי opencode תמיד שולח response לפני סוף-הזרם.
+- ❗ **אסור להתעלם מ-chunks שאחרי ה-response** — הם נושאים את התשובה עצמה (התוכן "ok"
+  ‏הגיע אחרי ה-`end_turn`). כל גישת "ignore-after-resolve" הייתה **מוחקת את התשובה**.
+- ‏זנב: ה-Speaker מזהה סיום-תור דרך `responding→idle` (`speaker.svelte.ts:285`), אז
+  ‏ה-race **גם שובר את ה-TTS** (אין מעבר נקי לסיום) — לא רק את הבועה.
+
+### ההכרעה — NBug3 ב-reset ודאי; NBug1 ב-quiet-period (debounce) שמכבד תוכן
+1. **NBug3 (חובה, מיידי, in-scope)**: reset `turnState="idle"` בסוף שלושת מסלולי הטעינה,
+   ‏ב-`finally` ליד `isLoadingHistory=false`. replay אינו תור פעיל. תיקון זעיר, ודאי.
+2. **NBug1 (חוסם — race, התיקון התחלף לאור ה-probe)**: ה-`finally` ב-`sendPrompt` **לבדו
+   ‏לא מספיק** — הוא רץ באותו tick כמו שורה 202, **לפני** ה-chunk המאוחר, אז יידרס.
+   ‏הפתרון: **quiet-period debounce** — `#onSessionUpdate` מתזמן `turnState=idle` אחרי
+   ‏שקט קצר (~150-300ms) מ-chunks; כל chunk חדש מבטל ומתזמן מחדש. כך התוכן של chunks
+   ‏מאוחרים **כן** נכנס (לא מתעלמים), ו-idle נקבע אחרי שהזרם **באמת** נרגע → מעבר נקי
+   ‏אחד `responding→idle` שגם ה-Speaker מקבל. ה-`stopReason` מה-response יכול לשמש כ-gate
+   ‏("רק אחרי ש-prompt resolved מתחילים לספור שקט") כדי לא לקטוע תור חי באמצע.
+   ‏ה-`finally` ב-sendPrompt **נשאר** כהגנה למסלול ה-throw בלבד (catch בלי reset → פנטום).
+3. **NBug2 (▶ no-op)**: נגזרת מ-NBug1/3. אין תיקון נפרד; integration-test בלבד.
+
+### למה debounce עכשיו כן (היפוך מההכרעה הקודמת)
+‏בגרסה הקודמת דחיתי debounce כ"תיקון-תסמין שמסתיר באג bridge". ה-probe הוכיח שאין
+‏באג bridge — opencode פועל כשורה, פשוט שולח response באמצע הזרם. במצב כזה debounce
+‏הוא **לא** תסמין אלא **הפתרון הנכון**: הוא הדרך היחידה לקבוע "הזרם נרגע" כשה-signal
+‏הרשמי (stopReason) מגיע מוקדם מדי. הסיכון של "קטיעת תור חי" שדאגתי לו מנוטרל ע"י
+‏gate על stopReason (סופרים שקט רק אחרי resolve) + סף קטן (chunk חדש מאפס).
+
+### רעיונות שנדחו
+- **ignore chunks אחרי resolve** (אפשרות #1 ששקלתי): **שגוי** — מוחק את התשובה
+  ‏(ה-`agent_message_chunk` מגיע אחרי ה-response). ה-probe מנע את הבאג הזה.
+- **timeout על `prompt()`**: לא רלוונטי — `prompt()` עושה resolve מהר; הבעיה הפוכה
+  ‏(resolve מוקדם מדי, לא מאוחר).
+- **`usage_update` כאות סיום**: לא אמין (טלמטריה, מגיע גם הוא לפני ה-chunks האחרונים —
+  ‏נצפה ב-probe שהגיע לפני ה-RESP, וה-message chunk עוד אחריו). נדחה.
+
+### עדכון 2026-06-03 (post-probe)
+‏ה-wire-trace שהיה מתוכנן כ-DoD#5 בידי אליעזר — **בוצע ע"י מרדכי ישירות על stdio**
+‏(בלי BE/WS/OneCLI). התוצאה למעלה. ה-brief עודכן: DoD#5 ירד (הבדיקה נעשתה), Commit 2
+‏הורחב מ-"finally" ל-"finally (throw) + quiet-period debounce (race)".
+
+### עדכון 2026-06-03 (probes נוספים — עיצוב מחדש מלא, post-avigail-6)
+‏אחרי 6 סבבי אביגיל (שהובילו ל-debounce-על-כל-chunk), הרצתי 3 probes נוספים שחשפו
+‏שהעיצוב הזה שגוי, והכריעו עיצוב חדש. הממצאים (כולם מ-stdio probe חי):
+
+**A. ה-RESP מגיע באמצע הזרם, חצי התשובה אחריו (לא רק tail קצר).**
+‏probe "400-word answer": ה-RESP הגיע אחרי 523 פיסות, ועוד **512 פיסות (≈חצי התשובה)**
+‏הגיעו **אחריו**. משך ה-tail: **5632ms**. → טיימר קבוע מ-RESP לא עובד (יורה באמצע
+‏ה-tail). ה-tail פרופורציוני לאורך התשובה — אין סף קבוע שמתאים לכל אורך.
+
+**B. ה-GAP המקסימלי בתוך תור (לפני RESP) = 3177ms** (probe tool+answer, לפני
+‏agent_thought_chunk סביב קריאת tool). כלי איטי יכול לעשות פאוזות גדולות בהרבה
+‏(אין גבול עליון). → debounce-על-כל-chunk עם סף קבוע **שובר** — תור עם פאוזה ארוכה
+‏מהסף → false-idle באמצע תור. זה פוסל את עיצוב 6-הסבבים.
+
+**C. cancel באמצע זרם פעיל → stopReason עדיין `end_turn`** (לא `cancelled`), והזרם
+‏ממשיך ~1.5ש' אחרי ה-cancel. → אי-אפשר להבחין cancel מ-סיום דרך stopReason.
+
+**D. ★ ההשוואה המכריעה — opencode הוא היחיד החריג:**
+| CLI | RESP מגיע | tail | |
+|-----|-----------|------|-|
+| opencode | באמצע (חצי תשובה אחריו) | עד 5.6ש', 512 פיסות | ❌ באג |
+| gemini   | אחרי הפיסה האחרונה | 0 | ✅ תקין |
+| claude   | אחרי הפיסה האחרונה | 0 | ✅ תקין |
+‏→ **NBug1 הוא באג ספציפי ל-opencode.** ב-gemini/claude הקוד המקורי
+‏(`await prompt()`→`idle`) עובד מושלם — RESP אחרי הפיסה האחרונה, אין פיסה שתדרוס.
+
+### ההכרעה הסופית — idle-on-RESP + debounce-net רק על tail-שאחרי-RESP
+‏עיצוב שמפעיל את עצמו **רק כשיש את הבאג** (opencode), ולא פוגע ב-CLIs תקינים:
+1. **`prompt()` resolve → קבע `idle` מיד** (כמו הקוד המקורי — נכון ל-gemini/claude;
+   ‏ב-opencode ה-tail עוד יבוא ויטופל ב-2). + הדלק `#turnEnded` flag.
+2. **פיסה ב-`#onSessionUpdate` כש-`#turnEnded` דלוק** (= אחרי RESP = tail של opencode):
+   ‏התוכן נכנס כרגיל (**לא מאבדים** את חצי התשובה!), turnState→responding, **debounce
+   ‏קצר 1.5ש'** מתאפס על כל tail-chunk → idle כשה-tail נרגע. פיסה כש-`#turnEnded`
+   ‏**כבוי** (תור חי רגיל / gemini / claude / opencode-לפני-RESP) → התנהגות רגילה,
+   ‏**בלי debounce**. → CLI תקין: 0 פיסות-אחרי-RESP → ה-debounce-net לעולם לא מופעל →
+   ‏**0 השהיה מיותרת**. opencode: ה-net בולע את ה-tail.
+3. **`#turnEnded` מתאפס** בתחילת תור חדש (sendPrompt) ובניקוי.
+4. **NBug3 (history)**: reset idle בסוף הטעינה (finally פנימי + catch חיצוני) — לא קשור
+   ‏ל-flag (replay לא שולח RESP).
+5. **תיעוד-מעקף בקוד** (דרישת המשתמשת): כל מקום נושא הערה מפורשת —
+   ‏`// מעקף לבאג opencode: RESP של session/prompt מגיע באמצע הזרם (≈חצי התשובה אחריו,
+   ‏tail עד 5.6ש'). gemini/claude תקינים. ראה decisions 2026-06-03.`
+
+### למה זה עדיף על עיצוב 6-הסבבים (debounce-על-כל-chunk)
+- **לא שובר פאוזה-ארוכה-בתוך-תור** (ממצא B): לפני RESP אין debounce בכלל, אז כלי
+  ‏שרץ דקה לא גורם false-idle. ה-debounce פעיל **רק** אחרי RESP (כשבטוח שהתור נגמר).
+- **לא פוגע ב-gemini/claude** (ממצא D): אין פיסות-אחרי-RESP → ה-net לא מופעל.
+- **פותר את ה-flicker** (אין `#scheduleIdle` ב-waiting → אין idle מוקדם).
+- **מבטל את כל סיבוך 5-המקומות + idempotency guard** — debounce רק בנתיב ה-tail.
+
+### רעיונות שנדחו (עדכון)
+- **debounce-על-כל-chunk סף קבוע** (עיצוב 6-הסבבים): שובר תור עם פאוזה > סף (ממצא B).
+- **טיימר קבוע מ-RESP**: ה-tail פרופורציוני (5.6ש' ל-400 מילים, יותר לארוך) — אין סף קבוע (A).
+- **gate על stopReason / usage_update / RESP כ"סוף"**: ה-RESP מגיע באמצע (A,D); stopReason
+  ‏תמיד end_turn גם ב-cancel (C). אף אחד לא מסמן את הפיסה האחרונה.
+
+### הבאג כבר ידוע ב-opencode — לא לפתוח issue חדש
+‏חיפוש ב-issues העלה שהבאג מתועד היטב (אין צורך ב-issue חדש):
+- **#17505** `session/update notifications sent after session/prompt response (end_turn)`
+  ‏— **הבאג הראשי שלנו בדיוק**. OPEN מ-2026-03-14, 11 תגובות. מצטט את ה-ACP spec
+  ‏שמחייב **כל** ה-notifications לפני ה-response → opencode מפר. אותו תסמין ("UI stuck
+  ‏in thinking"), אותו evidence (RESP אחרי thought+usage_update).
+- **#25683 / #29120** — PRs פתוחים שמנסים לתקן (drain/reconcile chunks לפני end_turn).
+- **#25899 / #25977** — `stopReason: end_turn` על cancel (הבאג השני שלנו, ממצא C).
+
+‏→ ה-workaround שלנו נחוץ עד שאחד ה-PRs ינחת. **הערות-הקוד נושאות `#17505`** כדי שאפשר
+‏יהיה להסיר את ה-workaround כשהבאג ייסגר. ראיה השוואתית שלנו (gemini+claude תקינים,
+‏tail 5.6ש') יכולה לחזק את #17505 אם נוסיף תגובה (טרם — דורש אישור משתמשת).
+‏מדריך probe: זיכרון גלובלי `2026-06-03-fact-acp-stdio-probe-how-to`.
+
+### ממצאי calev (תמצית מדוח ה-NO-GO)
+‏3 blockers (NBug1 turnState stuck, NBug2 ▶ no-op, NBug3 history phantom) + 2 minor
+‏סביבתיים (NBug4 ElevenLabs quota 401, NBug5 locale=en — שניהם לא קוד, לא חוסמים).
+‏מה ש**עבר**: cancel/X-blink (DoD#5 ✅), recordings save/transcribe (DoD#6 ✅), מבנה
+‏ה-VMs (StatusBubble/ModelStatus/BubblePlayer — נאמנים ל-brief). דוח מלא:
+‏`reports/voice-acp/slice-model-status-control-replay-calev.md`.
+
+---
+
 ## 2026-06-03 — slice fix-409-replace-flag: דגל replace ל-warm switch
 
 ### רציונל
