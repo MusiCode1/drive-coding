@@ -187,3 +187,62 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     expect(bubble.segments.map((s) => s.text).join("")).toBe("first second")
   })
 })
+
+// ─── Integration: newSession (warm new-session) ────────────────────────────────
+
+describe("AgentSession.newSession", () => {
+  let session: AgentSession
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    onSessionUpdate = null
+    vi.stubGlobal("location", { protocol: "http:", host: "localhost:4000" })
+    session = new AgentSession()
+    await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+  })
+
+  it("warm path: calls #client.newSession, clears bubbles, updates sessionId via ACP response", async () => {
+    const { createAcpClient } = await import("@drive-coding/core/acp/client")
+    const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<typeof createAcpClient>)
+    // הוסף בועה קיימת כדי לאמת שהיא נמחקת
+    session.bubbles = [{ id: "old", kind: "user", messageId: null, createdAt: 0, segments: [] }]
+
+    await session.newSession({ cliKind: "opencode" })
+
+    expect(mockClient.newSession).toHaveBeenCalledWith({ cwd: "/tmp" })
+    expect(session.bubbles).toHaveLength(0)
+    expect(session.status).toBe("connected")
+  })
+
+  it("calls notifySessionAttached with replace:true", async () => {
+    const { notifySessionAttached } = await import("$lib/adapters/agents-api")
+
+    await session.newSession({ cliKind: "opencode" })
+
+    expect(notifySessionAttached).toHaveBeenCalledWith(
+      "test-agent",
+      "test-session",
+      { replace: true },
+    )
+  })
+
+  it("fallback: #client===null (no prior attach) → calls attach", async () => {
+    const freshSession = new AgentSession()
+    // לא עשינו attach — #client===null
+    const attachSpy = vi.spyOn(freshSession, "attach")
+    vi.stubGlobal("location", { protocol: "http:", host: "localhost:4000" })
+
+    await freshSession.newSession({ cwd: "/fallback", cliKind: "opencode" })
+
+    expect(attachSpy).toHaveBeenCalledWith({ cwd: "/fallback", cliKind: "opencode" })
+  })
+
+  it("throws when status !== connected (guard backstop)", async () => {
+    // סמלץ status thinking — בלי לשלוח פרומפט אמיתי
+    session.status = "thinking" as typeof session.status
+
+    await expect(session.newSession({ cliKind: "opencode" })).rejects.toThrow(
+      "cannot newSession in status thinking",
+    )
+  })
+})

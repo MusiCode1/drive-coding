@@ -336,6 +336,57 @@ export class AgentSession {
     }
   }
 
+  // ─── slice new-session-warm: פתיחת סשן חדש warm ─── (תוספתי)
+
+  /**
+   * פתיחת סשן ACP חדש **על החיבור הקיים** — warm new-session.
+   * דורש #client פעיל. קורא ל-newSession של ACP על אותו WS/bridge (ללא createAgent/WS חדש).
+   * אם אין #client — נופל ל-attach הכבד (יצירת agent חדש) עם ה-cwd/cliKind שהועברו.
+   *
+   * שונה מ-switchSession: זה newSession (סשן ריק) ולא loadSession (היסטוריה קיימת).
+   * אותה לוגיקת warm: אותו #client, אותו agentId, ללא detach/respawn.
+   * למה לא detach+attach: detach הורג bridge + גורם ל-race "WS closed (1005)" + spawn מיותר.
+   */
+  newSession = async (input: { cwd?: string; cliKind: CliKind }): Promise<void> => {
+    const cwd = input.cwd ?? this.cwd
+    // אין חיבור פעיל → נתיב כבד (דפנסיבי; ה-panel מוצג רק עם חיבור)
+    if (this.#client === null) {
+      if (!cwd) throw new Error("newSession: no cwd available for fallback attach")
+      return this.attach({ cwd, cliKind: input.cliKind })
+    }
+    // לא לפתוח סשן חדש באמצע thinking/connecting
+    if (this.status !== "connected") {
+      throw new Error(`cannot newSession in status ${this.status}`)
+    }
+    if (!cwd) throw new Error("newSession: no cwd")
+
+    this.#setStatus("connecting")
+    this.error = null
+    this.bubbles = []
+
+    try {
+      const result = await this.#client.newSession({ cwd })
+      const newId = (result as { sessionId?: string }).sessionId ?? null
+      if (!newId) throw new Error("newSession returned no sessionId")
+      this.#sessionId = newId
+      this.cwd = cwd
+      this.#captureSessionConfig(result)
+
+      // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים).
+      // replace:true — מעבר מכוון לסשן אחר על אותו agent, עוקף guard MED-9.
+      if (this.agentId) {
+        await notifySessionAttached(this.agentId, newId, { replace: true }).catch(() => {})
+      }
+
+      this.#setStatus("connected")
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      this.error = `newSession failed: ${msg}`
+      this.#setStatus("error")
+      // לא #cleanup — החיבור עדיין תקין; רק יצירת הסשן נכשלה. השאר את ה-#client חי.
+    }
+  }
+
   // ─── slice 4: עזרי הקשר לקריינות ─── (תוספתי)
 
   /**
