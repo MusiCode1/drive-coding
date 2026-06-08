@@ -1,3 +1,29 @@
+## 2026-06-08 — slice new-session-warm — "סשן חדש" warm על החיבור הקיים (ללא respawn)
+
+### מה בוצע?
+
+**slice**: new-session-warm (branch: slice-new-session-warm, base: dev@d512d92)
+**commits**: 1 (a4d252c)
+
+**1. feat: `AgentSession.newSession` + חיווט הכפתור (Commit 1 — integration)**
+- מתודה חדשה `newSession` ב-`agent-session.svelte.ts` — תאום מבני של `switchSession`.
+  קורא `#client.newSession({ cwd })` על החיבור הקיים, מנקה bubbles, מעדכן `#sessionId`
+  מתגובת ACP, קורא `notifySessionAttached` עם `replace:true` (עוקף guard MED-9).
+  לא קורא `#cleanup` ב-catch — החיבור נשאר חי אחרי כשל ביצירת הסשן.
+  fallback דפנסיבי: אם `#client===null` → `attach({ cwd, cliKind })`.
+- `onNewSession` ב-`SessionOptionsPanel.svelte`: `session.newSession() + goto("/chat")`
+  במקום `session.detach() + goto("/")` — נשאר ב-/chat עם בועות ריקות.
+- כפתור "סשן חדש" `disabled={session.status !== "connected"}` — מונע throw לא-מטופל
+  בלחיצה באמצע תגובה (§4.ב.1: אופציה (ב) — חסימה ויזואלית, לא try/catch→console).
+- 4 integration tests חדשים: warm path, replace:true, fallback, guard backstop.
+
+**בדיקות**: typecheck ✓ | lint:i18n ✓ | 175 טסטים ירוקים (4 חדשים) | build ✓
+**אימות runtime**: ממתין לאימות כלב (DoD §13: BE log אין createAndSpawn/deleteAndKill).
+
+**חריגות**: אין — slice פשוט, ADDITIVE בלבד, ללא שינוי state machine.
+
+---
+
 ## 2026-06-04 23:47 — slice fix-null-msgid-grouping — קיבוץ בועות Gemini (null messageId)
 
 ### מה בוצע?
