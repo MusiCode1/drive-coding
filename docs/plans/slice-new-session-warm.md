@@ -1,11 +1,11 @@
 # Slice new-session-warm — "סשן חדש" על החיבור הקיים (ללא respawn) — תוכנית
 
 > **תאריך**: 2026-06-08
-> **סטטוס**: brief-ready (ממתין לאביגיל)
+> **סטטוס**: plan-verified — אביגיל verdict=READY (אחרי תיקון 2 ממצאים: נתיב i18n + טיפול throw ב-onNewSession). מוכן ל-dispatch.
 > **Complexity**: 3/10 (verifier: calev light + phase על Commit 1)
 > **תלויות (`depends_on`)**: [] — אין. בנוי על קוד שכבר ב-`dev` (switchSession + replace-flag כבר merged).
-> **Base**: `dev` (tip `17a8d17`) — branch חדש `slice-new-session-warm`.
-> **Dev tip**: `17a8d17`
+> **Base**: `dev` (tip `d512d92`) — branch חדש `slice-new-session-warm`.
+> **Dev tip**: `d512d92`
 
 ---
 
@@ -17,10 +17,10 @@
 ### Worktree (חדש)
 
 ```bash
-cd /home/user/projects/voice-acp/dev
+cd /home/user/projects/drive-coding/dev
 git worktree add .worktrees/slice-new-session-warm -b slice-new-session-warm dev
 cd .worktrees/slice-new-session-warm
-git log --oneline -1   # ודא tip == 17a8d17
+git log --oneline -1   # ודא tip == d512d92
 ```
 
 ### איך להריץ
@@ -242,7 +242,46 @@ async function onNewSession() {
 - `closeSheet()` (מובייל) + `goto("/chat")` — להתיישר עם `selectSession`.
 - עדכן את הערת ה-JSDoc מעל `onNewSession` (שורות 118-121) שמתארת detach+goto("/") — כבר לא נכון.
 
-> **i18n**: המפתח `sidebar.newSession` כבר קיים (`he.ts:137`, `en.ts:142`) — אין מפתח חדש.
+**4.ב.1 — טיפול ב-throw מתוך `newSession` (החלטה מפורשת — לא משאירים לאליעזר):**
+
+`newSession` זורק כש-`status !== "connected"` (אותו guard כמו `switchSession`). `onNewSession`
+הוא `async` שמחווט ל-`onclick` **בלי await** → rejection לא-מטופל אם לוחצים באמצע תגובה.
+
+> **ההחלטה: אופציה (ב) — חסימה ויזואלית של הכפתור כש-status ≠ "connected".**
+> **לא** אופציה (א) (try/catch→console). נימוק: (1) זה הדפוס הקיים בקודבייס —
+> `disabled={...}` מונע מ-reactive state קיים ב-`SessionPicker`/`TypeArea`/`MicLarge`;
+> `grep` לא מצא **שום** דפוס `catch`→`console` ב-components, כך שאופציה (א) הייתה
+> מציגה דפוס חדש בלי תקדים. (2) חסימה מונעת את ה-throw מראש במקום לבלוע אותו בשקט —
+> UX טוב יותר (המשתמש רואה שהכפתור לא זמין). (3) ה-guard הזורק ב-`newSession` נשאר
+> כ-backstop דפנסיבי (זהה ל-`switchSession`), אבל ההגנה העיקרית היא מניעת הלחיצה.
+
+חווט את הכפתור (שורות 306-312) עם `disabled`:
+```svelte
+<button
+  class="shrink-0 text-start rounded-lg p-2.5 text-[13px] font-medium border border-dashed disabled:opacity-40 disabled:cursor-not-allowed"
+  style="border-color:var(--border); color:var(--accent)"
+  disabled={session.status !== "connected"}
+  onclick={onNewSession}
+>
+  ＋ {t("sidebar.newSession")}
+</button>
+```
+- `session.status` הוא שדה `$state` ציבורי (`agent-session.svelte.ts:65`) → reactive בפאנל.
+- כשמחובר (`connected`) הכפתור פעיל; באמצע `thinking`/`connecting`/`idle`/`error` הוא disabled.
+- ה-guard הזורק בתוך `newSession` נשאר ללא שינוי — backstop בלבד.
+
+> **הערה (מחוץ ל-scope, לא לתקן עכשיו)**: ל-`selectSession` באותו קובץ יש בדיוק אותו latent
+> risk (`switchSession` זורק על אותו guard, ו-`selectSession` async ללא wrap). לא נוגעים בו
+> ב-slice הזה — מצוין כ-known gap כדי שלא יישכח.
+
+> **i18n**: המפתח `sidebar.newSession` כבר קיים — **אין מפתח חדש**. הקטלוגים הם קבצי
+> key-flat תחת `packages/core/src/i18n/catalogs/`:
+> - `packages/core/src/i18n/catalogs/he.ts:137` → `"sidebar.newSession": "סשן חדש"`
+> - `packages/core/src/i18n/catalogs/en.ts:142` → `"sidebar.newSession": "New session"`
+> - הטיפוס מוכרז ב-`packages/core/src/i18n/keys.ts:148`.
+>
+> ⚠️ אל תחפש `he.ts`/`en.ts` בלי הנתיב המלא — קיימים עותקים זהים במספר worktrees/main.
+> הקבצים הרלוונטיים הם **רק** אלה שתחת `packages/core/src/i18n/catalogs/` ב-worktree הנוכחי.
 
 **Verification (Commit 1)**:
 ```bash
@@ -272,14 +311,18 @@ pnpm --filter @drive-coding/frontend-v2 build   # כדי שה-tunnel יציג א
 9. `newSession` מעדכן `#sessionId` מתגובת ה-ACP (לא מ-input), ורק בהצלחה.
 10. `newSession` קורא `notifySessionAttached(..., { replace: true })` (לא בלי replace).
 11. `onNewSession` ב-panel קורא `session.newSession(...)` + `goto("/chat")` — **לא** `detach()` ו-**לא** `goto("/")`.
-12. **אימות runtime (calev)**: לחיצה על "סשן חדש" דרך ה-UI (tunnel) →
+12. **כפתור "סשן חדש" disabled כש-`session.status !== "connected"`** (`disabled={session.status !== "connected"}`)
+    — מונע את ה-throw-הלא-מטופל בלחיצה באמצע תגובה. (אופציית try/catch→console נדחתה; ראה §4.ב.1.)
+    ה-guard הזורק בתוך `newSession` נשאר כ-backstop ולא מוסר.
+13. **אימות runtime (calev)**: לחיצה על "סשן חדש" דרך ה-UI (tunnel) →
     א. ה-UI נשאר ב-`/chat` (לא חוזר ל-`/`).
     ב. הבועות מתרוקנות; אפשר לשלוח פרומפט מיד והוא נענה.
     ג. ה-BE log מראה **שלא נוצר createAgent חדש ולא נהרג bridge** בעת הלחיצה —
        calev יגרפ **היעדר** של `createAndSpawn` **וגם** `deleteAndKill`; אמור להופיע
        **רק** `session/new` על ה-bridge הקיים.
     ד. אין "WS closed (1005)".
-13. רגרסיה: התחברות ראשונה מדף-החיבור (`attach`) ו-`switchSession` (בחירת סשן קיים) עדיין עובדים.
+    ה. באמצע תגובה (status `thinking`) הכפתור "סשן חדש" **disabled** (לא ניתן ללחיצה) — אין throw ב-console.
+14. רגרסיה: התחברות ראשונה מדף-החיבור (`attach`) ו-`switchSession` (בחירת סשן קיים) עדיין עובדים.
 
 ---
 
@@ -292,10 +335,13 @@ pnpm --filter @drive-coding/frontend-v2 build   # כדי שה-tunnel יציג א
 - **guard MED-9 (409)**: אם שוכחים `replace:true` → ה-BE מחזיר 409 וה-`acpSessionId` ב-registry
   לא מתעדכן (אך הקריאה היא best-effort/catch, אז ה-UI לא קורס — רק ה-registry מתפספס). חובה `replace:true`.
 - **bubbles**: `bubbles = []` לפני ה-`newSession`. אין history replay (סשן ריק) → אין סיכון כפילות.
-- **status guard באמצע thinking**: אם המשתמש לוחץ "סשן חדש" באמצע תגובה — נזרק (status!=="connected").
-  לא בscope לחסום את הכפתור ויזואלית — רק לוודא שלא קורס (ה-throw נתפס? לא — `onNewSession`
-  הוא async ללא try; **דרישה**: ודא שה-throw לא מפיל את ה-UI. אם צריך — עטוף ב-try/catch ב-panel
-  שמדפיס ל-console, כמו דפוסים קיימים. ציין החלטה ב-walkthrough.)
+- **status guard באמצע thinking** (החלטה סגורה — ראה §4.ב.1): אם המשתמש לוחץ "סשן חדש"
+  באמצע תגובה, `newSession` זורק (`status!=="connected"`) ו-`onNewSession` async-ללא-await
+  → rejection לא-מטופל. **הפתרון שנקבע**: לחסום את הכפתור ויזואלית
+  (`disabled={session.status !== "connected"}`) כך שהלחיצה כלל לא מתבצעת במצב busy. זה
+  הדפוס הקיים בקודבייס (`SessionPicker`/`TypeArea`/`MicLarge`); אופציית try/catch→console
+  **נדחתה** (אין לה תקדים ב-components). ה-guard הזורק בתוך `newSession` נשאר כ-backstop בלבד.
+  **זו כבר לא דרישה פתוחה — זו הוראה ל-Commit 1.**
 - **DEV mock**: בניגוד ל-`switchSession`, אין כאן ענף `mock:` — `newSession` תמיד דורש `#client`
   אמיתי. אם המשתמש על mock-session (אין `#client`) → ה-fallback ל-`attach` ייצור agent אמיתי.
   זה התנהגות מקובלת (יציאה מ-mock לחיבור אמיתי). לא צריך טיפול מיוחד.
@@ -310,7 +356,8 @@ pnpm --filter @drive-coding/frontend-v2 build   # כדי שה-tunnel יציג א
 4. **נשאר ב-`/chat`** (לא חוזר למסך החיבור), הבועות נעלמו.
 5. בדוק BE log: **אין** `createAndSpawn` / `deleteAndKill` בעת הלחיצה (רק `session/new` על ה-bridge הקיים).
 6. שלח פרומפט בסשן החדש → עובד (החיבור חי, סשן טרי).
-7. רגרסיה: Sessions → בחר סשן קיים (`switchSession`) → עדיין עובד; Disconnect → עדיין עובד.
+7. שלח פרומפט וכשהסוכן עדיין עונה (status `thinking`) → כפתור "סשן חדש" **disabled** (אפור, לא לחיץ); אין שגיאה ב-console.
+8. רגרסיה: Sessions → בחר סשן קיים (`switchSession`) → עדיין עובד; Disconnect → עדיין עובד.
 
 ---
 
@@ -323,15 +370,15 @@ pnpm --filter @drive-coding/frontend-v2 build   # כדי שה-tunnel יציג א
 
 **verifier = `calev` (light) + phase על Commit 1.** לא heavy — אין edge-case-hunting,
 אין שינוי חוצה-שכבות. האמת היחידה שצריך לאמת היא ב-runtime (BE log: אין respawn), וזה
-מה ש-DoD §12 מכוון אליו.
+מה ש-DoD §13 מכוון אליו.
 
 ### Testing strategy פר commit
 
 | Commit | approach | מה נבדק |
 |--------|----------|---------|
-| 1 — newSession + חיווט | integration (+ runtime calev) | ה-unit הקלאסי ל-`newSession` חסום: `$effect`/`#client` לא רצים תחת vitest SSR (ראה memory: vitest-effects-ssr-limitation). לכן: (א) typecheck + build כ-gate סטטי; (ב) אם קיים test שמוקק את `#client` ב-`agent-session.test.ts` — הוסף case ל-fallback ול-`replace:true`; (ג) **האמת העיקרית = runtime calev** (DoD §12) — log אין-respawn. |
+| 1 — newSession + חיווט | integration (+ runtime calev) | ה-unit הקלאסי ל-`newSession` חסום: `$effect`/`#client` לא רצים תחת vitest SSR (ראה memory: vitest-effects-ssr-limitation). לכן: (א) typecheck + build כ-gate סטטי; (ב) אם קיים test שמוקק את `#client` ב-`agent-session.test.ts` — הוסף case ל-fallback ול-`replace:true`; (ג) **האמת העיקרית = runtime calev** (DoD §13) — log אין-respawn. |
 | 2 — walkthrough | none (docs) | קריאה ידנית |
 
-> **הערה ל-calev**: ה-DoD החשוב הוא §12.ג — גריפ ב-BE log שאין `createAndSpawn`/`deleteAndKill`
+> **הערה ל-calev**: ה-DoD החשוב הוא §13.ג — גריפ ב-BE log שאין `createAndSpawn`/`deleteAndKill`
 > בעת לחיצת "סשן חדש". זה ההוכחה לממצא הארכיטקטוני (אין respawn). אם המרקרים האלה כן מופיעים —
 > זה NO-GO ודיווח למרדכי.
