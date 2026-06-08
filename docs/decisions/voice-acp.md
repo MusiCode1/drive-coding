@@ -1,5 +1,49 @@
 # Decisions — voice-acp
 
+## 2026-06-08 — active-agents: ווידג'ט תהליכים פעילים + נעיצה (Pin) — תכנון 2 slices
+
+### רציונל
+המשתמש ביקש ווידג'ט בטופס החיבור שמציג את כל ה-agents החיים בצד-השרת (CLI, תיקייה,
+סשן, סטטוס, גיל, pid), כדי "לא לדאוג מתהליכים דולפים" ולהשאיר תהליכים רצים גם כשה-UI סגור.
+רוב התשתית כבר קיימת (`GET /api/agents`, `bridge-manager`, נתיב warm-reconnect מ-slice
+ws-reconnect). החסם היחיד: ה-idle-reaper (slice 26) הורג תהליך מנותק אחרי 5 דק'.
+
+**הכרעות-מוצר (אושרו ע"י המשתמש):**
+- **Pin פר-תהליך** (לא toggle גלובלי ולא הסרת reaper): ה-reaper ממשיך לנקות דליפות
+  מקריות (reload/טאב שנסגר), אבל תהליך עם `persistent=true` שורד ללא הגבלה. שילוב של
+  ניקוי-אוטומטי-בטוח + שליטה ידנית. זה **כן** ה-"future slice A" שהערות ה-TEMPORARY צופות —
+  אבל הוא **מאלף** את ה-reaper (מחריג נעוצים), לא מוחק אותו.
+- **פעולות לכל שורה**: חיבור-מחדש (דרך `session.loadSession` הקיים — warm-first, אפס קוד
+  reconnect חדש) + הריגה (`deleteAgent` קיים) + Pin.
+
+**חיתוך**: 2 slices משורשרים — `active-agents-backend` (שדה persistent, endpoint,
+reaper-respects-pin, העשרת pid/attached) ואז `active-agents-widget` (VM+רכיב+חיווט).
+ה-backend ניתן לאימות יחידתי ועומד בפני עצמו; הווידג'ט נשען עליו.
+
+### ממצאי אביגיל (2 סבבים → READY)
+- **backend** (סבב 1: 3 findings, אפס blockers): `bridgeManager` כשדה-חובה ב-deps של
+  `registerAgentsHttp` היה שובר 2 call-sites בטסט (`http-agents.test.ts:34,150`) →
+  **הוכרע: אופציונלי + guard `?.`**. גם: `persistent` חייב להיות **אופציונלי** בסכמה
+  (אחרת `agent-schema.test.ts:88 toEqual` ו-`Agent({...})` בלי persistent נשברים) —
+  אומץ דפוס conditional-copy כמו `crashReason`/`acpSessionId`.
+- **widget** (סבב 1: 6 findings, אפס blockers): הטענה "lint:i18n אוכף שלמות קטלוגים"
+  שגויה — **typecheck** אוכף (`Catalog = Record<MessageKey,string>`); lint:i18n אוכף רק
+  עברית-קשיחה. בנוסף: `+page.svelte` כבר **316 שורות** (מעל ספיק ה-150) → הוכרע **לקבל
+  כ-debt קיים, לא לחלץ בסלייס הזה**.
+
+### שינויי-כיוון
+- `bridgeManager` ב-deps: חובה → אופציונלי (לשמירת טסטים קיימים ירוקים).
+- ספיק ה-150 ל-route ירד מקריטריון-dispatch להבהרה ("אין לוגיקה כבדה **חדשה**") לאור
+  ה-debt הקיים של 316 שורות.
+
+### רעיונות שנדחו
+- **toggle גלובלי / הסרת reaper מלאה**: נדחו לטובת Pin פר-תהליך (לא מבחין בין תהליך
+  שרצינו להשאיר לבין דליפה / מודל מנטלי גס מדי).
+- **שמות-סשן אנושיים בווידג'ט**: דורש `listSessions` יקר (spawn) → מציגים sessionId קצר.
+- **polling אוטומטי**: refresh ב-mount + כפתור ידני מספיק ל-v1.
+- **הישרדות חוצת-restart של ה-BE** (daemon אמיתי): מחוץ ל-scope — registry בזיכרון,
+  children מתים עם ה-BE (D8). "UI סגור" (דפדפן) כבר נתמך.
+
 ## 2026-06-08 — merge slice-ws-reconnect-infra → dev (תשתית auto-reconnect)
 
 ### רציונל
