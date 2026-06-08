@@ -1,5 +1,34 @@
 # Decisions — voice-acp
 
+## 2026-06-08 — merge slice-ws-reconnect-infra → dev (תשתית auto-reconnect)
+
+### רציונל
+‏ה-slice עבר runtime-gate: כלב **GO** + calev-heavy ל-infra, ו-fix-nbug2 כלב **GO (7/8)**.
+‏מוזג ל-dev עם `git merge --no-ff` (merge commit `f5b50ba`, base `f060fd3`). אישור מיזוג
+‏מפורש מהמשתמשת.
+
+### ממצאי אימות
+‏NBug1+NBug2 (onClose תקוע ב-cold teardown; WS חי שלא נסגר לפני warm) — תוקנו ואומתו.
+‏טסטים אחרי merge: typecheck ✓ | 677 passed / 12 skipped | lint:i18n ✓.
+
+### שינויי-כיוון בזמן ה-merge
+‏- **קונפליקט יחיד** ב-`docs/walkthrough.md` (changelog) — נפתר ע"י שמירת שני הבלוקים
+‏  (ערכי dev החדשים + ערכי ws-reconnect). `agent-session.svelte.ts` (הקובץ המרכזי)
+‏  התמזג אוטומטית למרות שינוי דו-צדדי (dev:new-session-warm + branch:reconnect).
+‏- **i18n gate** חסם את הקומיט: כפתור ה-TEMP החזיק 2 מחרוזות עברית מקודדות-קשיח.
+‏  הוחלט (משתמשת) ל-i18n כמו שצריך → מפתחות `record.reconnect/reconnecting/reconnectAttempt`
+‏  (he+en), במקום לעקוף עם `--no-verify`.
+
+### Known-debt (להסרה בסליס הבא)
+‏- **כפתור reconnect ידני TEMP** ב-`RecordFooter.svelte` (commit `23e4a57`, מסומן
+‏  `<!-- TEMP-RECONNECT-BUTTON -->`) — נשאר זמנית בהחלטת המשתמשת לצורך בדיקה ידנית.
+‏  ה-UI הקבוע = `slice-ws-reconnect-ui` עוקב (`depends_on: [ws-reconnect-infra]`).
+‏  **לא לשכוח להסיר** את הכפתור + 3 מפתחות ה-i18n כשה-UI הקבוע נכנס.
+
+### נ"ב — fix-null-msgid-grouping
+‏ה-branch `fix-null-msgid-grouping` **אינו** ממתין למיזוג: תיקון הקוד כבר ב-dev
+‏(commit `47f9ad7`); ה-branch סוחב רק דוח calev ישן. מועמד למחיקת worktree.
+
 ## 2026-06-04 — slice pwa-installable: רמה A בלבד (installable), בלי service worker
 
 ### רציונל — למה אין offline/SW
