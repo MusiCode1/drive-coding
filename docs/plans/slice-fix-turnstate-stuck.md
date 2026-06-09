@@ -1,7 +1,7 @@
 # Slice fix — turnState stuck → idle (NBug1/2/3 מ-calev NO-GO) — תוכנית
 
 > **תאריך**: 2026-06-03
-> **סטטוס**: טיוטה (עיצוב מחדש אחרי 4 probes — ראה decisions)
+> **סטטוס**: הושלם (2026-06-09)
 > **Complexity**: 3/10 (verifier: light + verifier-phase אחרי Commit 2)
 > **תלות**: fix-up **על** branch `slice-model-status-control-replay` (לא מוזג ל-dev).
 >           depends_on: [] (לא תלוי בסליס אחר; נכתב על אותו worktree).
