@@ -1,3 +1,27 @@
+## 2026-06-09 — slice-fix-turnstate-stuck — Commits 1-3 (תיקון NBug1/2/3)
+
+### מה בוצע?
+
+**Commit 2 (idle-on-RESP + debounce-net, NBug1)**: מעקף לבאג opencode #17505.
+- שדות חדשים ב-`agent-session.svelte.ts`: `#turnEnded`, `#idleTimer`, `#TAIL_MS=1500`.
+- `#scheduleIdle()`: debounce שמתאפס על כל tail-chunk, מפעיל idle אחרי 1.5ש' שקט.
+- `#resetTurnTracking()`: מאפס `#turnEnded` + מנקה timer יתום.
+- `sendPrompt`: `#resetTurnTracking()` לפני await; `#turnEnded=true` + `#setTurnState("idle")` אחרי resolve/catch.
+- `#onSessionUpdate` (message_chunk, thought_chunk): `if(#turnEnded) #scheduleIdle()` — רק על tail אחרי RESP.
+- `#handleToolCall` + `#handleToolCallUpdate`: `if(#turnEnded) #scheduleIdle()`.
+- `#cleanup()`: `clearTimeout(#idleTimer)` — מניעת דליפה.
+
+**Commit 1 (reset turnState=idle אחרי replay, NBug3)**: history phantom fix.
+- `loadSession`, `switchSession`, `#loadMockSession`: `#resetTurnTracking()` בתחילה + `#setTurnState("idle")` ב-finally + ב-catch.
+
+**Commit 3 (integration tests, NBug2)**: `agent-session.test.svelte.ts` (co-located, 5 tests).
+- resolve→idle, tail simulation (advancing fake timers), before-RESP→no-debounce, replay→idle, stale-timer-cleared.
+
+**חריגות**: הtest 4b משתמש ב-`switchSession` (לא `loadSession`) כי status="connected" חוסם loadSession — זה behavior נכון.
+**בדיקות**: 170 tests (20 files) ✓, typecheck ✓, lint:i18n ✓.
+
+---
+
 ## 2026-06-03 — slice-model-status-control-replay — Commit 6 (כפתור ▶ על הבועות)
 
 ### מה בוצע?
