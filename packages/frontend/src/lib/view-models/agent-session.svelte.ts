@@ -95,6 +95,33 @@ export class AgentSession {
   #sessionId: string | null = null
   /** חיפוש בסיבוכיות O(1) עבור tool_call_update לפי toolCallId. מ-Slice 4. */
   #toolBubbleByCallId: Map<string, ToolBubble> = new Map()
+
+  // ─── מעקף לבאג opencode #17505 (ראה decisions 2026-06-03) ───
+  // opencode מחזיר RESP של session/prompt באמצע הזרם — ≈חצי התשובה (tail עד ~5.6ש')
+  // מגיעה אחרי ה-RESP, ודורסת turnState ל-responding אחרי שכבר נקבע idle.
+  // מפר את ה-ACP spec (כל notifications לפני response). gemini/claude תקינים →
+  // ה-net הזה לא מופעל אצלם. כשהבאג ייסגר (github.com/sst/opencode/issues/17505)
+  // אפשר להסיר את #turnEnded/#scheduleIdle/#TAIL_MS.
+  #turnEnded = false                                               // דלוק בין RESP לתחילת תור הבא
+  #idleTimer: ReturnType<typeof setTimeout> | null = null          // | null כמו settings.svelte.ts:86
+  #TAIL_MS = 1500                                                  // debounce לבליעת tail (אחרי RESP בלבד)
+
+  /** מתזמן idle אחרי שקט מ-tail. נקרא רק כש-#turnEnded דלוק. כל tail-chunk מאפס. */
+  #scheduleIdle(): void {
+    if (this.#idleTimer !== null) clearTimeout(this.#idleTimer)
+    this.#idleTimer = setTimeout(() => {
+      this.#idleTimer = null
+      this.#setTurnState("idle")
+    }, this.#TAIL_MS)
+  }
+
+  /** מאפס את מעקב-התור. חובה בתחילת תור (sendPrompt) ובכל טעינה (replay אינו תור).
+   *  בלי זה: #turnEnded דלוק מתור קודם + #idleTimer יתום → tail-debounce יורה על
+   *  chunk של replay / false-idle באמצע התור הבא (אביגיל סבב 7 — blocker). */
+  #resetTurnTracking(): void {
+    this.#turnEnded = false
+    if (this.#idleTimer !== null) { clearTimeout(this.#idleTimer); this.#idleTimer = null }
+  }
   /**
    * הערך הוא True בין detach() ל-attach() הבא. משתיק
    * שגיאות `WS closed (1005)` מזויפות מאירועי onClose שמופעלים לאחר שהמשתמש
@@ -196,13 +223,17 @@ export class AgentSession {
     }
     this.bubbles.push(userBubble)
     this.#setTurnState("waiting")
+    this.#resetTurnTracking()             // תחילת תור — #turnEnded=false + נקה טיימר יתום
 
     try {
       await this.#client.prompt(this.#sessionId, text)
-      this.#setTurnState("idle")
+      this.#turnEnded = true              // RESP הגיע — opencode: tail עוד יבוא; gemini/claude: סוף
+      this.#setTurnState("idle")          // נכון ל-gemini/claude (אין tail). opencode: tail יטופל ב-#onSessionUpdate
     } catch (err: unknown) {
       this.error = `prompt failed: ${err instanceof Error ? err.message : String(err)}`
       this.#setStatus("error")
+      this.#turnEnded = true
+      this.#setTurnState("idle")
     }
   }
 
@@ -507,6 +538,8 @@ export class AgentSession {
   #cleanup(): void {
     // לכוד את ה-agentId לפני האיפוס — צריך אותו ל-deleteAgent.
     const agentId = this.agentId
+    // נקה timer של tail-debounce (מעקף opencode #17505) — דפוס #stopHeartbeat (ws-transport.ts:106)
+    if (this.#idleTimer !== null) { clearTimeout(this.#idleTimer); this.#idleTimer = null }
     try {
       this.#client?.close()
     } catch {
@@ -651,9 +684,12 @@ export class AgentSession {
 
     if (update.sessionUpdate === "agent_message_chunk") {
       this.#setTurnState("responding")
+      // מעקף opencode #17505: tail אחרי RESP → תזמן idle מחדש. gemini/claude: #turnEnded=false → לא פועל.
+      if (this.#turnEnded) this.#scheduleIdle()
       this.#appendChunk("message", text, messageId)
     } else if (update.sessionUpdate === "agent_thought_chunk") {
       this.#setTurnState("thinking")
+      if (this.#turnEnded) this.#scheduleIdle()
       this.#appendChunk("thought", text, messageId)
     } else if (update.sessionUpdate === "user_message_chunk") {
       // נשלח על ידי הסוכן במהלך ניגון מחדש של ההיסטוריה מ-loadSession (לפי מפרט ACP
@@ -677,6 +713,7 @@ export class AgentSession {
   }): void {
     if (update.toolCallId === undefined) return
     this.#setTurnState("calling-tool")
+    if (this.#turnEnded) this.#scheduleIdle()
     // סכמת ACP: התראה tool_call דורשת toolCallId + title. ה-title עלול להיות undefined
     // בפועל אם הסוכן שולח התראה מינימלית, לכן יש לסגת בצורה עדינה.
     const bubble: ToolBubble = {
@@ -719,6 +756,8 @@ export class AgentSession {
     if (update.status === "pending" || update.status === "in_progress") {
       this.#setTurnState("calling-tool")
     }
+    // מחוץ ל-if: גם completed/failed = tail → תזמן idle (אם #turnEnded דלוק)
+    if (this.#turnEnded) this.#scheduleIdle()
     const idx = this.bubbles.findIndex(
       (b) => b.kind === "tool" && b.toolCall.toolCallId === update.toolCallId,
     )
