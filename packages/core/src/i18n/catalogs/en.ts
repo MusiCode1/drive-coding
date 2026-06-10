@@ -144,4 +144,14 @@ export const en: Catalog = {
   "sidebar.refresh": "Refresh",
   "sidebar.newSession": "New session",
   "sheet.handle": "Drag to open",
+  // ─── theme ─── (palettes-expansion)
+  "settings.theme.label": "Theme",
+  "settings.theme.ember": "Ember",
+  "settings.theme.forest": "Forest",
+  "settings.theme.plum": "Plum",
+  "settings.theme.teal": "Teal",
+  "settings.theme.midnight": "Midnight",
+  "settings.theme.rose": "Rose",
+  "settings.theme.slate": "Slate",
+  "settings.theme.daylight": "Daylight",
 }

@@ -139,4 +139,14 @@ export const he: Catalog = {
   "sidebar.refresh": "רענן",
   "sidebar.newSession": "סשן חדש",
   "sheet.handle": "גרור לפתיחה",
+  // ─── theme ─── (palettes-expansion)
+  "settings.theme.label": "ערכת נושא",
+  "settings.theme.ember": "גחלת",
+  "settings.theme.forest": "יער",
+  "settings.theme.plum": "שזיף",
+  "settings.theme.teal": "טורקיז",
+  "settings.theme.midnight": "חצות",
+  "settings.theme.rose": "ורד",
+  "settings.theme.slate": "צפחה",
+  "settings.theme.daylight": "אור יום",
 }

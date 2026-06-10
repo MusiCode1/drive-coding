@@ -150,6 +150,16 @@ export type MessageKey =
   | "sidebar.refresh"
   | "sidebar.newSession"
   | "sheet.handle"
+  // ─── theme ─── (palettes-expansion)
+  | "settings.theme.label"
+  | "settings.theme.ember"
+  | "settings.theme.forest"
+  | "settings.theme.plum"
+  | "settings.theme.teal"
+  | "settings.theme.midnight"
+  | "settings.theme.rose"
+  | "settings.theme.slate"
+  | "settings.theme.daylight"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
