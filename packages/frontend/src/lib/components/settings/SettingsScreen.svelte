@@ -17,6 +17,7 @@ import { goto } from "$app/navigation"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import { getI18n, getSettings } from "$lib/context"
 import LanguageSelect from "./LanguageSelect.svelte"
+import PalettePicker from "./PalettePicker.svelte"
 import SettingsCard from "./SettingsCard.svelte"
 import SettingToggle from "./SettingToggle.svelte"
 
@@ -68,6 +69,11 @@ $effect(() => {
   <!-- כרטיס שפת ממשק — (rtl-ltr-bidi) -->
   <SettingsCard title={t("settings.language.label")}>
     <LanguageSelect />
+  </SettingsCard>
+
+  <!-- כרטיס ערכת נושא — (palettes-expansion) -->
+  <SettingsCard title={t("settings.theme.label")}>
+    <PalettePicker />
   </SettingsCard>
 
   <!-- כרטיס קול ודיבור -->
