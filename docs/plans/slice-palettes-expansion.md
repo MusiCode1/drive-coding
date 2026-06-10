@@ -3,7 +3,7 @@
 > **‏תאריך**: 2026-06-10
 > **‏סטטוס**: ‏טיוטה
 > **Complexity**: 2/10 (verifier: light)
-> **‏תלויות (`depends_on`)**: [] ‏— ‏בנוי ישירות על dev. ‏מסתמך על תשתית ה-theme מ-redesign-1 ‏שכבר merged ב-dev (ThemeVM + `@theme` ב-app.css).
+> **‏תלויות (`depends_on`)**: [] ‏— ‏בנוי ישירות על dev. ‏מסתמך על תשתית ה-theme מ-redesign-4 ‏שכבר merged ב-dev (ThemeVM + `@theme` ב-app.css).
 > **‏Base**: dev
 > **‏Dev tip**: `e5ad302`
 
@@ -14,7 +14,7 @@
 ### ‏תלויות (‏חובה!)
 
 ‏slice זה **‏אין לו תלויות לא-merged**:
-- ‏תשתית ה-theme (‏`ThemeVM`, ‏`[data-palette]`, ‏`@theme` mapping) ‏כבר ב-dev — ‏הוטמעה ב-redesign-1 (merged).
+- ‏תשתית ה-theme (‏`ThemeVM`, ‏`[data-palette]`, ‏`@theme` mapping) ‏כבר ב-dev — ‏הוטמעה ב-redesign-4 (‏קומיט `ed7ad76`, merged).
 - ‏ה-slice כולו **additive**: ‏מוסיף 4 בלוקי `[data-palette]`, ‏מרחיב union, ‏מוסיף קומפוננטת בורר + כרטיס ב-Settings. ‏לא משנה התנהגות קיימת.
 
 > ‏ברירת המחדל נשארת `ember` (‏`app.html` ‏ו-`DEFAULT_PALETTE`) — ‏ללא שינוי.
@@ -47,7 +47,7 @@ pnpm install && pnpm hooks:install
 
 **must-read** ‏(לפני שמתחילים):
 - `docs/conventions/parallel-safe-code.md` — ‏ה-slice נוגע ב-`packages/core/src/i18n/keys.ts` (shared file). ‏כל התוספות **‏additive בלבד**.
-- `packages/frontend/src/app.css` ‏שורות 18–111 — ‏מבנה בלוק פלטה (17 ‏tokens) + ‏ה-`@theme` mapping. ‏הבלוקים החדשים מועתקים מהמבנה הזה.
+- `packages/frontend/src/app.css` ‏שורות 18–111 — ‏מבנה בלוק פלטה (16 ‏tokens) + ‏ה-`@theme` mapping (‏ממפה 11 ‏מתוכם; ‏5 ‏הנותרים — border/border-str/accent-soft/bubble-user/bubble-agent — ‏בשימוש כ-`var(--...)` ‏ישיר). ‏הבלוקים החדשים מועתקים מהמבנה הזה.
 - `packages/frontend/src/lib/view-models/theme.svelte.ts` — ‏ה-`Palette` union + ‏מערך `PALETTES` + ‏persistence.
 
 **reference** (‏בזמן עבודה):
@@ -127,7 +127,7 @@ pnpm install && pnpm hooks:install
 - `packages/frontend/src/app.css` — ‏מוסיף 4 ‏בלוקי `[data-palette]` ‏מיד אחרי בלוק `teal` (‏אחרי שורה 96, ‏לפני `}` ‏של `@layer base`). ‏לא נוגע ב-`@theme` mapping (‏ה-tokens זהים בשם). `daylight` ‏כולל `color-scheme: light;` ‏כשורה ראשונה בבלוק (‏override ל-`dark` ‏ב-`:root`).
 - `packages/frontend/src/lib/view-models/theme.svelte.ts` — ‏מרחיב את `Palette` union ‏ואת `PALETTES` ‏array. ‏לא נוגע ב-`DEFAULT_PALETTE` (‏נשאר `ember`).
 
-**‏ערכי ה-tokens** (‏מבנה זהה ל-ember — ‏17 ‏משתנים):
+**‏ערכי ה-tokens** (‏מבנה זהה ל-ember — ‏16 ‏משתנים):
 
 ```css
 [data-palette="midnight"] {
@@ -261,6 +261,8 @@ const EMOJI: Record<Palette, string> = {
 ```
 
 > ‏הכפתור הפעיל מסומן דרך `theme.palette === p` (‏רקע `var(--accent-soft)` + ‏border `var(--accent)`); ‏השאר `var(--bg-card)` + `var(--border)`. ‏הריאקטיביות עובדת כי `theme.palette` ‏הוא `$state` ‏ב-ThemeVM.
+>
+> ‏**‏הערה ל-executor (i18n pattern)**: ‏השתמש ב-`const t = $derived(getI18n().t)` ‏כפי שב-`LanguageSelect.svelte` ‏(leaf component) — ‏**‏לא** ‏ב-`const t = getI18n().t` ‏של `SettingsScreen.svelte`. ‏שני הדפוסים תקינים בקודבייס; ‏ל-PalettePicker ‏בחר את דפוס LanguageSelect ‏(leaf עקבי). ‏אל "‏תתקן" ‏את ה-`$derived` ‏כדי להתאים ל-SettingsScreen.
 
 **Verification**:
 
@@ -311,7 +313,7 @@ pnpm --filter @drive-coding/frontend dev
 > ‏אם X — ‏עצור ושאל את מרדכי (‏planner) ‏ב-parent task:
 
 - ‏בדיקת `daylight` ‏חושפת **‏יותר מ-2** ‏מקומות עם צבע קשיח (‏`#fff`/`text-white`/`#111`) ‏שנשברים על רקע בהיר → ‏ייתכן שצריך slice נפרד ל-light-mode audit, ‏לא תיקון נקודתי.
-- ‏ה-`@theme` mapping ‏ב-app.css ‏(שורות 99–111) ‏מתגלה כחסר token ‏שהפלטות החדשות צריכות (‏לא צפוי — ‏כולן משתמשות באותם 17).
+- ‏ה-`@theme` mapping ‏ב-app.css ‏(שורות 99–111) ‏מתגלה כחסר token ‏שהפלטות החדשות צריכות (‏לא צפוי — ‏כולן משתמשות באותם 16).
 - ‏מבנה ה-i18n catalogs ‏שונה ‏ממה שה-brief מניח (‏object literal עם keys) — ‏עצור.
 - ‏אתה רוצה לסטות מ-testing strategy ‏(‏כל ה-commits manual — ‏אין core logic ‏ל-TDD).
 
