@@ -21,6 +21,8 @@ export function createBridgeManager(): BridgeManager & {
   markDetached(bridgeId: string): void
   listIdle(timeoutMs: number, now: number): string[]
   getCreatedAt(bridgeId: string): number | null   // TEMPORARY (fix-idle-flaky)
+  // slice active-agents: runtime enrichment for GET /api/agents
+  getRuntimeInfo(bridgeId: string): { pid: number; attached: boolean } | null
 } {
   type Entry = {
     handle: BridgeHandle
@@ -233,6 +235,13 @@ export function createBridgeManager(): BridgeManager & {
 
     getCreatedAt(bridgeId: string): number | null {
       return store.get(bridgeId)?.createdAt ?? null
+    },
+
+    // slice active-agents: returns { pid, attached } for a live bridge, or null
+    getRuntimeInfo(bridgeId: string): { pid: number; attached: boolean } | null {
+      const e = store.get(bridgeId)
+      if (!e) return null
+      return { pid: e.handle.pid, attached: e.hasActiveWs }
     },
   }
 }
