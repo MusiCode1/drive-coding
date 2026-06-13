@@ -2,7 +2,7 @@
 
 > **‏תאריך**: 2026-06-08
 > **‏סוג מסמך**: ‏בריף ביצועי לסלייס
-> **‏סטטוס**: ‏טיוטה
+> **‏סטטוס**: ‏הושלם (2026-06-13)
 > **‏אימות אביגיל**: ‏לא מאומת (‏דוח: `reports/drive-coding/slice-active-agents-backend-avigail.md`)
 > **Dispatch**: ‏מותר לאליעזר רק אם `אימות אביגיל = READY`.
 > **Complexity**: 5/10 (verifier: light + phase על commit 3)
@@ -406,4 +406,6 @@ pnpm --filter @drive-coding/backend typecheck && pnpm --filter @drive-coding/bac
 
 ## ‏סטיות מהתכנון (‏מתעדכן ע"י executor ‏תוך כדי)
 
-- ...
+- **ports.ts לא בscope**: נדרשה הרחבת `AgentRegistry.update` Pick להכיל "persistent" — לא צוין בbrief, הוסף בcommit 2.
+- **cwd="/tmp" בטסט reaper-pin**: validateCwd דורש Unix absolute path; os.tmpdir() מחזיר Windows path. הטסט משתמש ב-`/tmp` כ-cwd לregistry (בעוד spawn עצמו רץ מ-os.tmpdir()).
+- **cross-platform spawnBridge**: bridge-manager.idle.test.ts שכבר היה על dev היה תלוי ב-/usr/bin/sleep (Windows-broken). הוחלף ב-process.execPath + acp script — תיקון שנדרש לפי §0 של dispatch.

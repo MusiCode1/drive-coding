@@ -1,3 +1,41 @@
+## 2026-06-13 — slice active-agents-backend — תשתית שרת לווידג'ט תהליכים פעילים
+
+### מה בוצע?
+
+**slice**: active-agents-backend (branch: slice-active-agents-backend, base: dev@e25912c)
+**commits**: 4 (25f7819..85ef09f)
+**approach**: TDD (commits 0,1) + Integration (commits 2,3)
+
+**Commit 0 — שדה persistent ב-schema + default ב-registry (TDD)**
+- `agent.ts`: Agent + AgentPublic מקבלים `"persistent?": "boolean"` (אופציונלי, כמו crashReason)
+- AgentPublic מוסיף גם `"pid?"` ו-`"attached?"` (runtime enrichment לGET handler)
+- `toAgentPublic`: העתקת `persistent` בתנאי (אותו דפוס כמו crashReason/acpSessionId)
+- `registry.ts`: `create()` מאתחל `persistent: false`
+- `agent-schema.test.ts`: 4 טסטים חדשים (כולל שמירה על toEqual ב-88 ללא persistent)
+
+**Commit 1 — getRuntimeInfo ב-bridge-manager (TDD)**
+- `bridge-manager.ts`: הוסף `getRuntimeInfo(id) → {pid, attached} | null` (e.handle.pid + e.hasActiveWs)
+- `bridge-manager.idle.test.ts`: החלפת spawnBridge ל-cross-platform helper (process.execPath + acp script ב-os.tmpdir(); afterEach async לWindows EPERM)
+- `bridge-manager.runtime.test.ts`: 4 טסטים חדשים ל-getRuntimeInfo
+
+**Commit 2 — endpoint POST /persistent + העשרת GET (Integration)**
+- `http-agents.ts`: bridgeManager? אופציונלי ב-deps; GET /api/agents מועשר ב-pid+attached; POST /api/agents/:id/persistent חדש
+- `server.ts`: מעביר bridgeManager ל-registerAgentsHttp (call-site פרודקשן)
+- `ports.ts`: הוסף "persistent" לרשימת Pick של AgentRegistry.update
+- `http-agents.test.ts`: 8 טסטי integration (persistent endpoint + GET enrichment)
+
+**Commit 3 — reaper מדלג על נעוצים (Integration) ⚠️ verifier-phase**
+- `reap-idle.ts`: פונקציה testable `reapIdleBridges({bm,registry,orch,timeoutMs}, now)` — דולגת על `agent?.persistent=true`
+- `server.ts`: מחליף inline reaper בקריאה ל-reapIdleBridges (בלוק TEMPORARY נשאר)
+- `reaper-pin.test.ts`: 2 טסטי integration — unpinned נקצר, pinned שורד
+
+**בדיקות**: typecheck ✓ (core+backend) | lint:i18n ✓ | 210/227 טסטים ירוקים (3 pre-existing failures ב-http-options/http-history — Windows paths, לא קשור לsliice)
+**חריגות**:
+- cwd="/tmp" בטסט reaper-pin (validateCwd דורש Unix path; os.tmpdir() מחזיר Windows path)
+- גם ports.ts נדרש לשינוי (לא צוין ב-brief) — הוספת "persistent" ל-Pick של update
+
+---
+
 ## 2026-06-08 — slice new-session-warm — "סשן חדש" warm על החיבור הקיים (ללא respawn)
 
 ### מה בוצע?
