@@ -1,3 +1,42 @@
+## 2026-06-13 — slice P1b — ACP Provider adapter (core-only)
+
+### מה בוצע?
+
+**slice**: slice-P1b-acp-adapter (base: branch slice-P1a-provider-abstraction@9d053f3 — worktree משורשר על P1a, טרם merged ל-dev)
+**commits**: 4 (d617501, ad9b6ee, c7ffabf, 0a91f44)
+
+**Commit 0 — exports + שלד (d617501, typecheck)**
+- `core/index.ts`: ייצוא `classifyToolKind`, `mapAcpNotification`, `AcpProviderSession`,
+  `mapAcpCapabilities`. verbatimModuleSyntax → events נשאר `export type *`, הקבצים החדשים
+  `export *` (ערכים). שלד `provider/acp-provider.ts` + `provider/map-acp-notification.ts`.
+
+**Commit 1 — `mapAcpNotification` + helpers (ad9b6ee, TDD)**
+- מיפוי טהור `SessionNotification → ProviderEvent`, shapes 1:1 מ-agent-session.svelte.ts.
+- helpers: `mapStatus` (undefined→pending), `mapContent` (מ-`update.content`; ACP `{type:content}`
+  → קנוני `{kind:text}`; diff/terminal; MVP text-only), `mapLocations`, `mapUsage`, `mapPlanEntries`
+  (content→title), `textOf`. variants: tool_call(+update)→tool_call, message/thought chunks,
+  plan→plan.update, usage_update→usage; available_commands/user_message/unknown→raw.
+- 14 טסטים (fixtures אמיתיים עטופים `{update}` + מקרי-קצה).
+
+**Commit 2 — `AcpProviderSession` + `mapAcpCapabilities` (c7ffabf, TDD)**
+- עוטף `AcpClient`: start→session.ready, sendPrompt לא-חוסם (PromptAck מיד, turn.end on resolve
+  עם isError), cancel/stop/onEvent, tier2 (listSessions/resumeSession).
+- `mapAcpCapabilities`: resume/list מ-`client.capabilities` (AgentCapabilities), permissions/tools=true.
+- 11 טסטים מול MockAcpTransport.
+
+**Commit 3 — טסטים ל-`mapAcpCapabilities` (0a91f44, TDD)**
+- 8 טסטים פר-נגזרת (DoD #8 — המקור הוא AgentCapabilities).
+
+**בדיקות**: `pnpm -F @drive-coding/core typecheck` ✓ | `build` ✓ | vitest core: 24 files / 289 tests ירוקים (33 חדשים) ✓
+**אימות runtime**: ממתין לאימות כלב (מרדכי יפעיל; merge מאוחד P1a+P1b).
+
+**חריגות**: `mapAcpCapabilities` מומש כבר ב-Commit 2 (ה-session תלוי בו) ולא ב-Commit 3 — Commit 3
+הוסיף את הטסטים הייעודיים בלבד. שדות capabilities שלא נצפו ב-flow (diff/terminal/fs/mcpEmbedded/
+revert/delete) → false שמרני. `isErrorStop` = `stopReason==="refusal"` (limits/cancelled = סיום תקין).
+לא נגעתי ב-frontend (P1d).
+
+---
+
 ## 2026-06-08 — slice new-session-warm — "סשן חדש" warm על החיבור הקיים (ללא respawn)
 
 ### מה בוצע?
