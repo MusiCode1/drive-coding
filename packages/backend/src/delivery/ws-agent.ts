@@ -104,6 +104,16 @@ export function createAgentWsHandler(deps: {
     feWs.on("message", (data) => {
       try {
         const text = data.toString()
+
+        // keepalive ספציפי ל-WS (ר' ws-transport.ts) — עונים $/pong ולא מעבירים
+        // ל-child. ה-$/ping הוא עניין transport-NAT שלא חל על stdio של סוכן ה-ACP,
+        // ואסור שידלוף ל-stdin שלו.
+        if (text.includes('"$/ping"')) {
+          feWs.send(`${JSON.stringify({ jsonrpc: "2.0", method: "$/pong" })}\n`)
+          logWire("out", "$/ping → $/pong")
+          return
+        }
+
         const line = text.endsWith("\n") ? text : `${text}\n`
         child.stdin.write(line)
         logWire("out", text.trim()) // האזנה (אחרי הכתיבה; trim מסיר \n סופי עבור פענוח)
