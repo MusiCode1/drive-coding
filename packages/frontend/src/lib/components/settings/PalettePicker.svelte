@@ -1,15 +1,16 @@
 <script lang="ts">
 /**
- * PalettePicker — בורר ערכת צבעים (chips).
+ * PalettePicker — בורר ערכת צבעים (Select).
  *
- * leaf component: קורא getTheme() מהקונטקסט, מציג chip לכל פלטה מ-PALETTES.
- * onclick מאציל ל-theme.setPalette (שמחיל data-palette על <html> + שומר ב-localStorage).
- * ריאקטיביות: theme.palette הוא $state ב-ThemeVM → ה-chip הפעיל מתעדכן אוטומטית.
+ * leaf component: קורא getTheme() מהקונטקסט, עוטף את Select עם פריט לכל פלטה מ-PALETTES.
+ * onchange מאציל ל-theme.setPalette (שמחיל data-palette על <html> + שומר ב-localStorage).
+ * ריאקטיביות: theme.palette הוא $state ב-ThemeVM → value מתעדכן אוטומטית.
  *
- * ─── palettes-expansion ───
+ * ─── palettes-expansion · palette-select ───
  */
 import { getTheme, getI18n } from "$lib/context"
 import { PALETTES, type Palette } from "$lib/view-models/theme.svelte"
+import Select from "$lib/components/ui/Select.svelte"
 
 const theme = getTheme()
 const t = $derived(getI18n().t)
@@ -19,19 +20,15 @@ const EMOJI: Record<Palette, string> = {
   ember: "🔥", forest: "🌲", plum: "🍇", teal: "🪸",
   midnight: "🌙", rose: "🌹", slate: "🪨", daylight: "☀️",
 }
+
+const options = $derived(
+  PALETTES.map((p) => ({ value: p, label: `${EMOJI[p]} ${t(`settings.theme.${p}`)}` })),
+)
 </script>
 
-<div class="flex flex-wrap gap-2">
-  {#each PALETTES as p (p)}
-    <button
-      onclick={() => theme.setPalette(p)}
-      aria-pressed={theme.palette === p}
-      class="px-3 py-1.5 rounded-full text-[13px] font-semibold border"
-      style={theme.palette === p
-        ? "background:var(--accent-soft); border-color:var(--accent); color:var(--fg)"
-        : "background:var(--bg-card); border-color:var(--border); color:var(--fg-dim)"}
-    >
-      {EMOJI[p]} {t(`settings.theme.${p}`)}
-    </button>
-  {/each}
-</div>
+<Select
+  value={theme.palette}
+  options={options}
+  title={t("settings.theme.label")}
+  onchange={(v) => theme.setPalette(v as Palette)}
+/>
