@@ -1,3 +1,41 @@
+## 2026-06-14 — slice active-agents-widget — ווידג'ט תהליכים פעילים בטופס החיבור
+
+### מה בוצע?
+
+**slice**: active-agents-widget (branch: slice-active-agents-widget, base: slice-active-agents-backend@871447a)
+**commits**: 4 (a95532b..6533ccb)
+**approach**: none (commit 0) + tdd (commit 1) + manual (commits 2,3)
+
+**Commit 0 — i18n keys + adapter setAgentPersistent (none)**
+- `keys.ts`: 9 מפתחות חדשים בבלוק `// ─── active-agents ───` (title, empty, refresh, reconnect, kill, killConfirm, pin, unpin, inUse)
+- `he.ts` + `en.ts`: תרגומים לכל המפתחות
+- `agents-api.ts`: `setAgentPersistent(agentId, persistent)` → POST /api/agents/:id/persistent
+
+**Commit 1 — VM ActiveAgents + context + layout חיווט (TDD)**
+- `active-agents.svelte.ts`: class ActiveAgents עם $state (agents/loading/error), מתודות arrow-field: refresh/setPersistent/kill
+- `active-agents.svelte.test.ts`: 8 טסטים (Red-Green-Refactor) — כיסוי refresh/error/setPersistent/kill
+- `context.ts`: [getActiveAgents, setActiveAgents] בסוף (additive)
+- `+layout.svelte`: import + new ActiveAgents() + setActiveAgents()
+
+**Commit 2 — רכיב ActiveProcessesPanel (manual)**
+- `ActiveProcessesPanel.svelte`: רכיב leaf (getContext בלבד)
+  * כותרת + כפתור רענון (disabled בזמן loading)
+  * empty state: t("connect.agents.empty")
+  * לכל agent: status-dot / cli-badge / cwd (truncate, dir:ltr) / sessionId 8 תווים / createdAt toLocaleString he-IL / pid מותנה
+  * Pin: toggle persistent עם חיווי ויזואלי
+  * Reconnect: disabled אם !acpSessionId || attached===true
+  * Kill: דו-לחיצה inline (confirmingId + 3s timeout)
+  * עיצוב: design tokens, מחקה SessionCard
+
+**Commit 3 — חיווט ב-+page.svelte + handleReconnect (manual)**
+- `+page.svelte`: import הרכיב + VM + AgentPublic, getActiveAgents, void activeAgents.refresh() ב-onMount, <ActiveProcessesPanel>, handleReconnect מחקה onSubmit existing-session
+
+**בדיקות**: typecheck ✓ (core+frontend) | build ✓ | lint:i18n ✓ | 208 טסטים ירוקים (23 קבצים)
+**חריגות / blocked**:
+- בדיקת agent חי end-to-end על Windows: blocked-on-cwd-fix (validateCwd חוסם נתיבי Windows ב-400). DoD items 4-8 מחכים לfix-cwd-validate-windows (940d222). כלב יצרף ב-verification.
+
+---
+
 ## 2026-06-13 — slice active-agents-backend — תשתית שרת לווידג'ט תהליכים פעילים
 
 ### מה בוצע?
