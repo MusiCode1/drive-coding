@@ -13,6 +13,10 @@
     /* alias -- מחרוזת --muted בשימוש ב-3 מקומות (ChatInput, ChatBubbles, +page.svelte)
        --fg-muted מוגדר תחת כל [data-palette]; נפתר בזמן-שימוש = תקין. */
     --muted: var(--fg-muted);
+
+    /* צל ה-mic-card — ברירת מחדל לפלטות הכהות (שחור-על-כהה = בלתי נראה).
+       daylight דורסת בערך רך, אחרת הצל השחור נחשף כפס "חתוך" על רקע בהיר. */
+    --card-shadow: 0 -10px 30px rgba(0,0,0,.28);
   }
 
   /* ── 1. EMBER — חם, אנושי, נחושת/טרקוטה ───────────────────────── */
@@ -134,6 +138,7 @@
     --accent:#d2693f; --accent-hi:#b9572f; --accent-soft:rgba(210,105,63,0.14);
     --bubble-user:#efe7dd; --bubble-agent:#f1ece6;
     --recording:#e0453f; --thinking:#8b5cf6; --speaking:#c2772e;
+    --card-shadow: 0 -6px 24px rgba(40,28,15,.10);
   }
 }
 
@@ -241,7 +246,7 @@
     background: var(--bg-elev);
     border: 1px solid var(--border);
     border-bottom: none;
-    box-shadow: 0 -10px 30px rgba(0,0,0,.28);
+    box-shadow: var(--card-shadow);
     /* padding-block-end מתאנמט עם המעבר ל/מ-מצב hidden (ר' RecordFooter).
        הקטנה (→record/typing) מיד; הגדלה (→hidden) עם delay (ר' .is-hidden). */
     transition: background .3s, box-shadow .3s, border-color .3s,
