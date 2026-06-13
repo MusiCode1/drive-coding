@@ -149,4 +149,14 @@ export const he: Catalog = {
   "settings.theme.rose": "ורד",
   "settings.theme.slate": "צפחה",
   "settings.theme.daylight": "אור יום",
+  // ─── active-agents ─── (slice active-agents-widget)
+  "connect.agents.title": "תהליכים פעילים",
+  "connect.agents.empty": "אין תהליכים פעילים",
+  "connect.agents.refresh": "רענן",
+  "connect.agents.reconnect": "התחבר מחדש",
+  "connect.agents.kill": "הרוג",
+  "connect.agents.killConfirm": "בטוח?",
+  "connect.agents.pin": "השאר חי",
+  "connect.agents.unpin": "בטל נעיצה",
+  "connect.agents.inUse": "פעיל בכרטיסייה אחרת",
 }
