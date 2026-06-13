@@ -1,6 +1,7 @@
 # Brief: slice — מצב-מודל + בקרת-סוכן + השמעה (מאוחד A+AB)
 
-> סטטוס: **הושלם** (אליעזר, 2026-06-03). complexity: **8/10** → verifier-slice-**heavy**.
+> סטטוס: **הושלם + מאומת** (אליעזר 2026-06-03; turnstate-fix; **כלב-heavy r2 GO 2026-06-13** — 3 ה-blockers סגורים, 0 regression). complexity: **8/10** → verifier-slice-**heavy**.
+> ⚠️ טרם מוזג ל-dev: ה-branch 90 commits מאחורי dev; אינטגרציה = סליס נפרד (קונפליקט צפוי ב-agent-session.svelte.ts מול ws-reconnect). 2 env-blocks תיעוד: תור-opencode-חי (WS-over-tunnel) + TTS-▶ (ElevenLabs quota=0).
 > verifier-phase אחרי Commit 1 (state refactor), Commit 3 (cancelTurn/FSM), Commit 4 (I/O recordings).
 > base: `poc-wake-word` (מוזג עם dev `6e8b504` — מכיל את כל קוד dev + ה-brief הזה).
 > ה-line numbers אומתו מול dev `6e8b504` = ה-merge-base, תקפים ב-poc-wake-word.
