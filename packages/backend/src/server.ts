@@ -66,7 +66,7 @@ const orchestrator = createAgentOrchestrator({
 registerHttp(app)
 registerHttpOptions(app)
 registerClientLogHttp(app)
-registerAgentsHttp(app, { registry, orchestrator, projectsRegistry })
+registerAgentsHttp(app, { registry, orchestrator, projectsRegistry, bridgeManager })
 registerProjectsHttp(app, { projectsRegistry })
 registerRecordingsHttp(app, { recordingsStore })
 registerRecordingsPostHttp(app, { recordingsStore })

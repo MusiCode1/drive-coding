@@ -298,4 +298,136 @@ describe("HTTP /api/agents", () => {
       expect(updated?.status).toBe("ready")
     })
   })
+
+  // slice active-agents: POST /api/agents/:id/persistent
+  describe("POST /api/agents/:id/persistent", () => {
+    it("sets persistent: true → 200 { ok: true } and updates registry", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}/persistent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ persistent: true }),
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body).toEqual({ ok: true })
+
+      const updated = await registry.get(agent.id)
+      expect(updated?.persistent).toBe(true)
+    })
+
+    it("sets persistent: false → 200 { ok: true } and updates registry", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      await registry.update(agent.id, { persistent: true })
+
+      const res = await app.request(`/api/agents/${agent.id}/persistent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ persistent: false }),
+      })
+      expect(res.status).toBe(200)
+      const updated = await registry.get(agent.id)
+      expect(updated?.persistent).toBe(false)
+    })
+
+    it("non-boolean body → 400", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}/persistent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ persistent: "yes" }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it("missing persistent field → 400", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}/persistent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it("invalid json → 400", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}/persistent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "not json",
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it("unknown agent → 404", async () => {
+      const { app } = makeApp()
+
+      const res = await app.request("/api/agents/ghost/persistent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ persistent: true }),
+      })
+      expect(res.status).toBe(404)
+    })
+  })
+
+  // slice active-agents: GET /api/agents enriched with pid + attached via bridgeManager mock
+  describe("GET /api/agents — runtime enrichment (bridgeManager mock)", () => {
+    it("returns pid and attached when bridgeManager provided", async () => {
+      const app = new Hono()
+      const registry = createInMemoryAgentRegistry()
+      const orchestrator: AgentOrchestrator = {
+        async createAndSpawn(input): Promise<CreateAndSpawnResult> {
+          const agent = await registry.create(input)
+          return {
+            agentId: agent.id,
+            cwd: agent.cwd,
+            cliKind: agent.cliKind,
+            wsUrl: "ws://127.0.0.1:7100/",
+            bridgePort: 7100,
+            status: "spawning",
+          }
+        },
+        async deleteAndKill(id) {
+          await registry.delete(id).catch(() => {})
+        },
+        getBridgePort: vi.fn(() => 7100),
+      }
+
+      const bridgeManager = {
+        getRuntimeInfo: vi.fn((_id: string) => ({ pid: 12345, attached: true })),
+      }
+
+      registerAgentsHttp(app, { registry, orchestrator, bridgeManager })
+
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      const res = await app.request("/api/agents")
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      const agentData = body.agents.find((a: { id: string }) => a.id === agent.id)
+      expect(agentData).toBeDefined()
+      expect(agentData.pid).toBe(12345)
+      expect(agentData.attached).toBe(true)
+    })
+
+    it("does not include pid/attached when bridgeManager not provided (existing call-sites)", async () => {
+      // The 2 existing makeApp() call-sites do not pass bridgeManager — guard ?. handles this
+      const { app, registry } = makeApp()
+      await registry.create({ cliKind: "opencode", cwd: "/x" })
+      const res = await app.request("/api/agents")
+      const body = await res.json()
+      expect(body.agents[0]).not.toHaveProperty("pid")
+      expect(body.agents[0]).not.toHaveProperty("attached")
+    })
+  })
 })

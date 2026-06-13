@@ -21,10 +21,10 @@ export interface AgentRegistry {
   /** רשימת כל הסוכנים (ללא סינון — אין זהות ב-MVP). */
   list(): Promise<ReadonlyArray<Agent>>
 
-  /** עדכון סטטוס / פרטי bridge / סיבת קריסה. זורק שגיאה אם id לא קיים. */
+  /** עדכון סטטוס / פרטי bridge / סיבת קריסה / נעיצה. זורק שגיאה אם id לא קיים. */
   update(
     id: string,
-    patch: Partial<Pick<Agent, "status" | "bridgePort" | "acpSessionId" | "crashReason">>,
+    patch: Partial<Pick<Agent, "status" | "bridgePort" | "acpSessionId" | "crashReason" | "persistent">>,
   ): Promise<Agent>
 
   /** הסרה. זורק שגיאה אם לא קיים. */
