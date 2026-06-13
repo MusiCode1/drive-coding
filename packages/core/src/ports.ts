@@ -1,6 +1,6 @@
 import type { PromptResponse, SessionNotification } from "@agentclientprotocol/sdk"
 import type { Result } from "neverthrow"
-import type { BridgeCrashInfo } from "./acp/describe-crash.js"
+import type { BridgeCrashInfo } from "provider-contract"
 import type { Agent, CliKind, CreateAgentInput } from "./schemas"
 
 export type { BridgeCrashInfo, PromptResponse, SessionNotification }

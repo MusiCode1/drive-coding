@@ -9,7 +9,6 @@
     ".": "./src/index.ts",
     "./schemas/*": "./src/schemas/*.ts",
     "./voice/*": "./src/voice/*.ts",
-    "./acp/*": "./src/acp/*.ts",
     "./ui/*": "./src/ui/*.ts",
     "./cache/*": "./src/cache/*.ts",
     "./i18n": "./src/i18n/index.ts",
