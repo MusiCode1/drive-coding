@@ -1,5 +1,5 @@
 <script lang="ts">
-import { CLI_KINDS, type CliKind } from "@drive-coding/core"
+import { CLI_KINDS, type CliKind, type AgentPublic } from "@drive-coding/core"
 import { goto } from "$app/navigation"
 import { onMount } from "svelte"
 import { connectAgent } from "$lib/actions/connect-agent"
@@ -7,17 +7,19 @@ import { fetchServerOptions } from "$lib/adapters/options"
 import { listSessionsForCwd, type SessionInfo } from "$lib/adapters/sessions"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import SessionPicker from "$lib/components/connect/SessionPicker.svelte"
+import ActiveProcessesPanel from "$lib/components/connect/ActiveProcessesPanel.svelte"
 import LanguageSelect from "$lib/components/settings/LanguageSelect.svelte"
 import Select from "$lib/components/ui/Select.svelte"
 import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
 import FolderIcon from "@lucide/svelte/icons/folder"
-import { getI18n, getSession, getSettings, getModals } from "$lib/context"
+import { getI18n, getSession, getSettings, getModals, getActiveAgents } from "$lib/context"
 
 const settings = getSettings()
 const session = getSession()
 const modals = getModals()
 const i18n = getI18n()
 const t = i18n.t
+const activeAgents = getActiveAgents()
 
 let cliKind = $state<CliKind>(settings.cliKind)
 let cwd = $state(settings.lastCwd)
@@ -27,6 +29,8 @@ let cwd = $state(settings.lastCwd)
 // fetch חוזר אחרי init → מעדכן cwd ישירות (לא מסתמך על re-init).
 // עדכן רק אם cwd עדיין ריק (המשתמש לא הקליד בינתיים).
 onMount(() => {
+  void activeAgents.refresh()
+
   // sessions-autoload: טעינה אוטומטית של סשנים — רק אם יש cwd מוכר מ-lastCwd
   // (לא משתמש חדש / cwd ריק). spawn יקר → רק כשסביר שהמשתמש יחזור לאותה תיקייה.
   // onMount רץ פעם אחת per mount — guard טבעי, אין צורך בדגל נוסף.
@@ -95,6 +99,20 @@ async function loadSessions() {
   }
 }
 
+async function handleReconnect(agent: AgentPublic) {
+  if (!agent.acpSessionId) return
+  settings.setCliKind(agent.cliKind)
+  settings.setLastCwd(agent.cwd)
+  await session.loadSession({
+    sessionId: agent.acpSessionId,
+    cwd: agent.cwd,
+    cliKind: agent.cliKind,
+  })
+  if (session.status === "connected") {
+    await goto("/chat")
+  }
+}
+
 async function onSubmit(e: SubmitEvent) {
   e.preventDefault()
   if (!cwd.trim()) return
@@ -114,6 +132,8 @@ async function onSubmit(e: SubmitEvent) {
 <main class="connect">
   <h1>{t("connect.title")}</h1>
   <p class="subtitle">{t("connect.subtitle")}</p>
+
+  <ActiveProcessesPanel onReconnect={handleReconnect} />
 
   <form onsubmit={onSubmit}>
     <label>
