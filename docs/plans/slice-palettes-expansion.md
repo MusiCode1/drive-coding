@@ -1,7 +1,7 @@
 # Slice palettes-expansion — ‏הרחבת ערכות נושא + בורר ב-Settings — ‏תוכנית
 
 > **‏תאריך**: 2026-06-10
-> **‏סטטוס**: ‏טיוטה
+> **‏סטטוס**: ‏הושלם (כלב GO 9/9, 2026-06-13)
 > **Complexity**: 2/10 (verifier: light)
 > **‏תלויות (`depends_on`)**: [] ‏— ‏בנוי ישירות על dev. ‏מסתמך על תשתית ה-theme מ-redesign-4 ‏שכבר merged ב-dev (ThemeVM + `@theme` ב-app.css).
 > **‏Base**: dev
@@ -352,4 +352,5 @@ pnpm --filter @drive-coding/frontend dev
 
 > ‏ה-executor מתעד פה כל סטייה ‏מה-brief ‏ולמה.
 
-- ‏(‏אין עדיין)
+- **‏שם package ל-build**: ‏ה-brief ‏ציין `pnpm --filter @drive-coding/frontend build`, ‏אבל ה-package ‏בפועל הוא `@drive-coding/frontend-v2` (`packages/frontend/package.json`). ‏הרצתי עם השם הנכון. ‏לא נגעתי בקוד — ‏סטייה בפקודת הרצה בלבד.
+- **DoD #3–#8 (browser smoke)**: ‏אין דפדפן/dev-server ‏זמין בסביבה. ‏כל הבדיקות האוטומטיות (typecheck/build/lint:i18n/test) ‏עברו ירוק; ‏פריטי ה-runtime ‏ממתינים לאימות ידני/כלב.

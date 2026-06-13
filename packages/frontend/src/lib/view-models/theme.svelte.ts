@@ -5,9 +5,14 @@
  * ה-FE כבר SPA-only (ssr=false) — constructor רץ בדפדפן בלבד.
  */
 
-export type Palette = "ember" | "forest" | "plum" | "teal"
+export type Palette =
+  | "ember" | "forest" | "plum" | "teal"
+  | "midnight" | "rose" | "slate" | "daylight"
 
-export const PALETTES: readonly Palette[] = ["ember", "forest", "plum", "teal"]
+export const PALETTES: readonly Palette[] = [
+  "ember", "forest", "plum", "teal",
+  "midnight", "rose", "slate", "daylight",
+]
 
 const STORAGE_KEY = "drive-coding.palette"
 const DEFAULT_PALETTE: Palette = "ember"
