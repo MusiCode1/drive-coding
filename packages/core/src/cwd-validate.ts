@@ -7,7 +7,10 @@
  *
  * חוקים נאכפים:
  *   - לא ריק
- *   - מוחלט (מתחיל ב-"/")
+ *   - מוחלט: Unix ("/…"), Windows drive ("C:\…" / "C:/…"), או UNC ("\\\\server\\…").
+ *     הזיהוי מפורש וחוצה-פלטפורמה — לא תלוי ב-process.platform — כדי לשמור על
+ *     טוהר ה-core (D5): אותו קלט → אותו פלט בכל מכונה ובכל CI. נתיב שאינו תקף
+ *     ל-OS שעליו רץ ה-BE ייתפס ממילא ב-spawn (IO), לא כאן.
  *   - ללא בתי NUL (יקצר C-string בקריאת מערכת spawn)
  *   - ללא תווי בקרה U+0001–U+001F (הזרקת לוג, השחתת נתיב)
  *   - ללא רצפי קידוד אחוזים %XX (תוצר לוואי של קידוד URL כפול)
@@ -43,6 +46,13 @@ const PERCENT_ENCODED_RE = /%[0-9a-fA-F]{2}/
 // biome-ignore lint/suspicious/noControlCharactersInRegex: intentionally matching control chars
 const CONTROL_CHAR_RE = /[\u0001-\u001f]/
 
+/** נתיב Windows מבוסס-כונן: אות, נקודתיים, ואז "\" או "/" (למשל C:\ או D:/).
+ *  דורש separator אחרי הנקודתיים — "C:foo" הוא drive-relative, לא מוחלט. */
+const WINDOWS_DRIVE_RE = /^[a-zA-Z]:[\\/]/
+
+/** שורש כונן Windows בלבד (C:\ או C:/) — לדילוג על נרמול ה-separator הסופי. */
+const WINDOWS_DRIVE_ROOT_RE = /^[a-zA-Z]:[\\/]$/
+
 // ─── מאמת (Validator) ────────────────────────────────────────────────────────────────
 
 /**
@@ -62,8 +72,11 @@ export function validateCwd(cwd: string): Result<string, CwdValidationError> {
     return err({ kind: "too_long", length: cwd.length })
   }
 
-  // 3. נתיב מוחלט נדרש
-  if (!cwd.startsWith("/")) {
+  // 3. נתיב מוחלט נדרש — Unix ("/…"), Windows drive ("C:\…"/"C:/…"), או UNC ("\\…")
+  const isUnixAbsolute = cwd.startsWith("/")
+  const isWindowsDrive = WINDOWS_DRIVE_RE.test(cwd)
+  const isWindowsUnc = cwd.startsWith("\\\\")
+  if (!isUnixAbsolute && !isWindowsDrive && !isWindowsUnc) {
     return err({ kind: "not_absolute", got: cwd })
   }
 
@@ -87,8 +100,11 @@ export function validateCwd(cwd: string): Result<string, CwdValidationError> {
     })
   }
 
-  // 7. נרמול: הסרת אלכסון סופי, למעט שורש "/"
-  const normalised = cwd.length > 1 && cwd.endsWith("/") ? cwd.slice(0, -1) : cwd
+  // 7. נרמול: הסרת separator סופי ("/" או "\"), למעט שורשים:
+  //    שורש Unix "/", או שורש כונן Windows ("C:\" / "C:/").
+  const isRoot = cwd === "/" || WINDOWS_DRIVE_ROOT_RE.test(cwd)
+  const hasTrailingSep = cwd.endsWith("/") || cwd.endsWith("\\")
+  const normalised = !isRoot && hasTrailingSep ? cwd.slice(0, -1) : cwd
 
   return ok(normalised)
 }
