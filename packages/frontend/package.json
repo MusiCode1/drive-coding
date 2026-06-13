@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "provider-contract": "git+https://github.com/MusiCode1/provider-abstraction.git#main",
     "@agentclientprotocol/sdk": "^0.21.1",
     "@ai-sdk/google": "^3.0.75",
     "@drive-coding/core": "workspace:*",
