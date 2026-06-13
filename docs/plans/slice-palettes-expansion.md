@@ -1,7 +1,7 @@
 # Slice palettes-expansion — ‏הרחבת ערכות נושא + בורר ב-Settings — ‏תוכנית
 
 > **‏תאריך**: 2026-06-10
-> **‏סטטוס**: ‏בעבודה
+> **‏סטטוס**: ‏הושלם (כלב GO 9/9, 2026-06-13)
 > **Complexity**: 2/10 (verifier: light)
 > **‏תלויות (`depends_on`)**: [] ‏— ‏בנוי ישירות על dev. ‏מסתמך על תשתית ה-theme מ-redesign-4 ‏שכבר merged ב-dev (ThemeVM + `@theme` ב-app.css).
 > **‏Base**: dev

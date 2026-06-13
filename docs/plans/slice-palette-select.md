@@ -1,7 +1,7 @@
 # Slice palette-select — בורר ערכת נושא כ-Select במקום chips — תוכנית
 
 > **תאריך**: 2026-06-13
-> **סטטוס**: טיוטה
+> **סטטוס**: הושלם (כלב GO 9/9 על palettes כולו, 2026-06-13)
 > **Complexity**: 1/10 (verifier: light — מתאחד עם אימות palettes-expansion)
 > **תלויות (`depends_on`)**: `slice-palettes-expansion` (אותו worktree, לא ממוזג עדיין). מהווה commit-המשך עליו.
 > **Base**: `slice-palettes-expansion` tip `f6cf34e`
