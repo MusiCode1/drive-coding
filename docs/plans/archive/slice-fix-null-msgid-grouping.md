@@ -1,7 +1,7 @@
 # Slice fix-null-msgid-grouping — קיבוץ בועות כשאין messageId (Gemini)
 
 > **תאריך**: 2026-06-04
-> **סטטוס**: טיוטה (ממתין לאביגיל)
+> **סטטוס**: הושלם (commit `47f9ad7`, 2026-06-04 — בוצע ישירות ל-dev, 171/171 טסטים, 6 חדשים)
 > **Complexity**: 2/10 (verifier: calev light)
 > **תלויות (`depends_on`)**: [] — ישירות על dev
 > **Base**: dev
