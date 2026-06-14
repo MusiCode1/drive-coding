@@ -144,6 +144,9 @@ export const en: Catalog = {
   "sidebar.refresh": "Refresh",
   "sidebar.newSession": "New session",
   "sheet.handle": "Drag to open",
+  // ─── bubble-play ─── (msr-v2)
+  "bubble.play": "Play",
+  "bubble.stop": "Stop playback",
   // ─── model-status ─── (msr-v2)
   "modelStatus.waiting": "Waiting…",
   "modelStatus.thinking": "Thinking…",
