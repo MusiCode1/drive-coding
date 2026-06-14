@@ -36,7 +36,7 @@ import {
 import { cacheKeyFor } from "@drive-coding/core/voice/cache-key"
 import { untrack } from "svelte"
 import type { CuesEngine } from "../engines/cues"
-import type { AgentSession, AgentSessionStatus } from "./agent-session.svelte"
+import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
 import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
 import { AudioStream } from "../engines/audio-stream"
@@ -99,6 +99,7 @@ export class Speaker {
   #jobs: TtsJob[] = []
   #activeFetches = 0
   #prevStatus: AgentSessionStatus = "idle"
+  #prevTurnState: TurnState = "idle"
   /** Slice 4: עוקב כמה מקטעים של כל ThoughtBubble תורגמו. */
   #translatedSegByBubble: Map<string, number> = new Map()
   // slice 22: #narratingCallIds הוסר — #processedNarrationCallIds הוא ה-guard
@@ -129,6 +130,7 @@ export class Speaker {
       $effect(() => {
         // ── קריאות (נעקבות) ────────────────────────────────────────────
         const status = this.#session.status
+        const turnState = this.#session.turnState
         const enabled = this.enabled
         // redesign-3 / slice 9a: העדפות הקראה (reactive — toggle מפעיל את ה-effect מחדש)
         const speakThoughts = this.#settings.speakThoughts
@@ -160,8 +162,9 @@ export class Speaker {
         untrack(() => {
           this.#processBubbles(bubbles, enabled, isLoadingHistory, speakThoughts)
           this.#processToolBubbles(bubbles, enabled, isLoadingHistory, narrateTools)
-          this.#handleStatusTransition(status, enabled, speakThoughts)
+          this.#handleStatusTransition(status, turnState, enabled, speakThoughts)
           this.#prevStatus = status
+          this.#prevTurnState = turnState
         })
       })
     })
@@ -263,16 +266,17 @@ export class Speaker {
     this.#pumpFetchLoop()
   }
 
-  #handleStatusTransition(status: AgentSessionStatus, enabled: boolean, speakThoughts: boolean): void {
-    // slice 6: תור דיבור חדש מתחיל כש-status עובר ל-thinking → אפס את ה-cue guard.
+  #handleStatusTransition(status: AgentSessionStatus, turnState: TurnState, enabled: boolean, speakThoughts: boolean): void {
+    // msr-v2: תור דיבור חדש מתחיל כש-turnState עובר מ-idle → אפס את ה-cue guard.
     // reset כאן (turn-start) ולא ב-#stopAndClear (לא רץ בסוף תור רגיל).
-    if (status === "thinking" && this.#prevStatus !== "thinking") {
+    if (turnState !== "idle" && this.#prevTurnState === "idle") {
       this.#spokeThisTurn = false
     }
 
     // התור הסתיים? פלוש כל buffer פר-בועה כמקטע אחרון.
+    // msr-v2: טריגר = #prevTurnState !== "idle" && turnState === "idle"
     const justFinished =
-      this.#prevStatus === "thinking" && (status === "connected" || status === "error")
+      this.#prevTurnState !== "idle" && turnState === "idle"
     if (justFinished && enabled) {
       for (const [bubbleId, state] of this.#bubbleStates) {
         if (state.buffer.trim().length === 0) continue

@@ -40,9 +40,11 @@ export type AgentSessionStatus =
   | "idle"          // טרם נוצר סוכן
   | "connecting"    // יוצר סוכן + לחיצת יד של ACP
   | "connected"     // מוכן לקבל פרומפטים
-  | "thinking"      // נשלח פרומפט, ממתין לתגובת הסוכן
   | "error"
   | "disconnected"  // WS נפל, ממתין ל-reconnect (ידני/אוטו) — slice ws-reconnect-infra
+
+/** מה המודל עושה בתור הנוכחי. מופרד מ-status (חיבור) — §1 ב-brief. */
+export type TurnState = "idle" | "waiting" | "thinking" | "responding" | "calling-tool"
 
 /**
  * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
@@ -71,6 +73,8 @@ export class AgentSession {
 
   // ─── state ─── (פולשני לעריכה — תאם מול Tama)
   status = $state<AgentSessionStatus>("idle")
+  /** מה המודל עושה בתור הנוכחי. idle = אין תור פעיל. */
+  turnState = $state<TurnState>("idle")
   error = $state<string | null>(null)
   bubbles = $state<Bubble[]>([])
   agentId = $state<string | null>(null)
@@ -97,6 +101,30 @@ export class AgentSession {
   sessionsLoading = $state<boolean>(false)
   sessionsError = $state<string | null>(null)
   #sessionsLoaded = false   // True אחרי טעינה מוצלחת אחת — cache; force=true מרענן
+
+  // ─── msr-v2: מעקף opencode #17505 (tail-debounce) ───
+  // opencode מחזיר RESP של session/prompt באמצע הזרם — ≈חצי התשובה (tail עד ~5.6ש')
+  // מגיעה אחרי ה-RESP, ודורסת turnState ל-responding אחרי שכבר נקבע idle.
+  // מפר את ה-ACP spec (כל notifications לפני response). gemini/claude תקינים →
+  // ה-net הזה לא מופעל אצלם. כשהבאג ייסגר אפשר להסיר #turnEnded/#scheduleIdle/#TAIL_MS.
+  #turnEnded = false                                               // דלוק בין RESP לתחילת תור הבא
+  #idleTimer: ReturnType<typeof setTimeout> | null = null          // | null כמו settings.svelte.ts
+  #TAIL_MS = 1500                                                  // debounce לבליעת tail (אחרי RESP בלבד)
+
+  /** מתזמן idle אחרי שקט מ-tail. נקרא רק כש-#turnEnded דלוק. כל tail-chunk מאפס. */
+  #scheduleIdle(): void {
+    if (this.#idleTimer !== null) clearTimeout(this.#idleTimer)
+    this.#idleTimer = setTimeout(() => {
+      this.#idleTimer = null
+      this.#setTurnState("idle")
+    }, this.#TAIL_MS)
+  }
+
+  /** מאפס את מעקב-התור. חובה בתחילת תור (sendPrompt) ובכל טעינה (replay אינו תור). */
+  #resetTurnTracking(): void {
+    this.#turnEnded = false
+    if (this.#idleTimer !== null) { clearTimeout(this.#idleTimer); this.#idleTimer = null }
+  }
 
   #client: AcpClient | null = null
   // ─── slice ws-reconnect-fix-nbug2: ref ל-transport החי (NBug2 root fix) ───
@@ -470,7 +498,7 @@ export class AgentSession {
    * מחזיר Promise שמסתיים כשהתור מושלם (או נדחה בשגיאה).
    */
   sendPrompt = async (text: string, opts?: { recordingId?: string }): Promise<void> => {
-    if (this.status !== "connected" && this.status !== "thinking") return
+    if (this.status !== "connected") return
     if (!this.#client || !this.#sessionId) return
     if (!text.trim()) return
 
@@ -487,12 +515,17 @@ export class AgentSession {
       ...(opts?.recordingId !== undefined ? { recordingId: opts.recordingId } : {}),
     }
     this.bubbles.push(userBubble)
-    this.#setStatus("thinking")
+    this.#setTurnState("waiting")
+    this.#resetTurnTracking()   // תחילת תור — #turnEnded=false + נקה טיימר יתום
 
     try {
       await this.#client.prompt(this.#sessionId, text)
-      if (this.status === "thinking") this.#setStatus("connected")
+      // RESP הגיע — opencode: tail עוד יבוא; gemini/claude: סוף
+      this.#turnEnded = true
+      this.#setTurnState("idle")   // נכון ל-gemini/claude. opencode: tail יטופל ב-#onSessionUpdate
     } catch (err: unknown) {
+      this.#turnEnded = true
+      this.#setTurnState("idle")
       this.error = `prompt failed: ${err instanceof Error ? err.message : String(err)}`
       this.#setStatus("error")
     }
@@ -725,7 +758,7 @@ export class AgentSession {
    * מדלג בשקט אם הסשן לא מחובר.
    */
   applyConfigOption = async (configId: string, value: string | boolean): Promise<void> => {
-    if (this.status !== "connected" && this.status !== "thinking") return
+    if (this.status !== "connected") return
     if (!this.#client || !this.#sessionId) return
 
     // מסלול 1: option קיים ב-configOptions לפי id
@@ -816,8 +849,22 @@ export class AgentSession {
     const prev = this.status
     if (next === prev) return
     this.status = next
-    if (next === "thinking") this.#cues?.play("thinking")
-    else if (next === "error") this.#cues?.play("error")
+    if (next === "error") this.#cues?.play("error")
+  }
+
+  // ─── msr-v2: setter ל-turnState ───
+
+  /**
+   * נקודת-mutation יחידה ל-turnState. אין $effect — קריאה מפורשת.
+   * מנגן cue "thinking" על מעבר idle→waiting (פעם אחת ביציאה מ-idle).
+   * idempotent: אם next === prev — לא מנגן cue.
+   */
+  #setTurnState(next: TurnState): void {
+    const prev = this.turnState
+    if (next === prev) return
+    this.turnState = next
+    // cue thinking: רק על מעבר idle→waiting (תחילת תור חדש)
+    if (prev === "idle" && next === "waiting") this.#cues?.play("thinking")
   }
 
   // ─── פרטי ─────────────────────────────────────
@@ -836,6 +883,8 @@ export class AgentSession {
   #cleanup(): void {
     // לכוד את ה-agentId לפני האיפוס — צריך אותו ל-deleteAgent.
     const agentId = this.agentId
+    // נקה timer של tail-debounce (msr-v2 — NBug1 opencode)
+    if (this.#idleTimer !== null) { clearTimeout(this.#idleTimer); this.#idleTimer = null }
     try {
       this.#client?.close()
     } catch {
@@ -980,8 +1029,13 @@ export class AgentSession {
     const messageId = update.messageId ?? null
 
     if (update.sessionUpdate === "agent_message_chunk") {
+      this.#setTurnState("responding")
+      // מעקף opencode #17505: tail אחרי RESP → תזמן idle מחדש. gemini/claude: #turnEnded=false → לא פועל.
+      if (this.#turnEnded) this.#scheduleIdle()
       this.#appendChunk("message", text, messageId)
     } else if (update.sessionUpdate === "agent_thought_chunk") {
+      this.#setTurnState("thinking")
+      if (this.#turnEnded) this.#scheduleIdle()
       this.#appendChunk("thought", text, messageId)
     } else if (update.sessionUpdate === "user_message_chunk") {
       // נשלח על ידי הסוכן במהלך ניגון מחדש של ההיסטוריה מ-loadSession (לפי מפרט ACP
@@ -1029,6 +1083,9 @@ export class AgentSession {
     }
     this.bubbles.push(bubble)
     this.#toolBubbleByCallId.set(update.toolCallId, bubble)
+    // msr-v2: עדכן turnState
+    this.#setTurnState("calling-tool")
+    if (this.#turnEnded) this.#scheduleIdle()
   }
 
   #handleToolCallUpdate(update: {
@@ -1042,6 +1099,11 @@ export class AgentSession {
     locations?: unknown[] | null
   }): void {
     if (update.toolCallId === undefined) return
+    // msr-v2: pending/in_progress → calling-tool
+    if (update.status === "pending" || update.status === "in_progress") {
+      this.#setTurnState("calling-tool")
+      if (this.#turnEnded) this.#scheduleIdle()
+    }
     const idx = this.bubbles.findIndex(
       (b) => b.kind === "tool" && b.toolCall.toolCallId === update.toolCallId,
     )

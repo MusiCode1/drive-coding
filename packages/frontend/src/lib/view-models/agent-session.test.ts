@@ -238,11 +238,11 @@ describe("AgentSession.newSession", () => {
   })
 
   it("throws when status !== connected (guard backstop)", async () => {
-    // סמלץ status thinking — בלי לשלוח פרומפט אמיתי
-    session.status = "thinking" as typeof session.status
+    // סמלץ status connecting — בלי לשלוח פרומפט אמיתי (thinking הוסר מ-AgentSessionStatus ב-msr-v2)
+    session.status = "connecting" as typeof session.status
 
     await expect(session.newSession({ cliKind: "opencode" })).rejects.toThrow(
-      "cannot newSession in status thinking",
+      "cannot newSession in status connecting",
     )
   })
 })

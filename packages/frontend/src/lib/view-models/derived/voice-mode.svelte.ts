@@ -42,7 +42,7 @@ export class VoiceMode {
     if (this.#mic.state === "recording") return "recording"
     if (this.#mic.state === "transcribing") return "transcribing"
     if (this.#speaker.state === "speaking") return "speaking"
-    if (this.#session.status === "thinking") return "thinking"
+    if (this.#session.turnState !== "idle") return "thinking"
     return "idle"
   })
 
@@ -56,7 +56,7 @@ export class VoiceMode {
       if (
         this.isCancelling &&
         this.#mic.state === "idle" &&
-        this.#session.status !== "thinking" &&
+        this.#session.turnState === "idle" &&
         this.#speaker.state === "idle"
       ) {
         this.isCancelling = false
