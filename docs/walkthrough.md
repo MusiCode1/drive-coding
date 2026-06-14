@@ -1,3 +1,30 @@
+## 2026-06-14 — slice windows-adaptation — סיכום סופי
+
+**slice**: windows-adaptation | **branch**: slice-windows-adaptation | **base**: fix-cwd-validate-windows@940d222
+**commits**: dac3f54..c0a567f (5 commits: Commit 0 הקיים + 4 commits חדשים)
+
+**מה הושלם (5 commits)**:
+- Commit 0 (dac3f54) — fs/browse cross-platform separator + allowedBase allow-all (TDD) — בוצע לפני dispatch
+- Commit 1 (9767618) — FolderPickerDialog cross-platform path handling (manual)
+- Commit 2 (587a427) — listProjectDirs: os.tmpdir() + validateCwd filter (TDD)
+- Commit 3 (b93e07a) — opencode plugin tuple→string compat / PROMPT_INJECTOR_TEXT env (integration)
+- Commit 4 (c0a567f) — tests cross-platform: idle-reaper + OPENCODE_ARGS (TDD)
+
+**תוצאות**:
+- `pnpm test`: 702 passed | 14 skipped | 1 pre-existing failure (lint-no-hebrew-in-code.test.mjs — SyntaxError ב-vitest, קיים מ-base 940d222)
+- typecheck (backend + core + frontend-v2) ✓
+- lint:i18n ✓
+- opencode: לא קורס עם code 9 (tuple→string fix) — exit 0 + ACP initialize מגיב ✓
+- fs/browse: Windows paths עובדים ✓
+- FolderPickerDialog: cross-platform breadcrumbs/navigation ✓
+
+**חריגות מה-brief**:
+- pre-existing failure: `lint-no-hebrew-in-code.test.mjs` — לא ב-scope (קיים ב-940d222)
+- status:ready אומת דרך `POST session-attached` ידני (FE לא הופעל) — הblocker הקריטי (code 9) תוקן
+- `OPENCODE_ARGS` env var הוסף ל-cli-config.ts כדי לאפשר cross-platform idle tests
+
+---
+
 ## 2026-06-14 — slice windows-adaptation — Commit 4: tests cross-platform
 
 **slice**: windows-adaptation (base: fix-cwd-validate-windows@940d222)
