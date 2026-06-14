@@ -103,14 +103,14 @@ async function handleReconnect(agent: AgentPublic) {
   if (!agent.acpSessionId) return
   settings.setCliKind(agent.cliKind)
   settings.setLastCwd(agent.cwd)
-  await session.loadSession({
+  await session.attachToLiveAgent({
+    agentId: agent.id,
     sessionId: agent.acpSessionId,
     cwd: agent.cwd,
     cliKind: agent.cliKind,
   })
-  if (session.status === "connected") {
-    await goto("/chat")
-  }
+  if (session.status === "connected") { await goto("/chat") }
+  // if status==="error" — stay on /, VM set this.error
 }
 
 async function onSubmit(e: SubmitEvent) {
