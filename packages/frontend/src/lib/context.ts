@@ -21,6 +21,7 @@ import type { Speaker } from "./view-models/speaker.svelte"
 import type { ThemeVM } from "./view-models/theme.svelte"
 import type { UiShellVM } from "./view-models/ui-shell.svelte"
 import type { VoiceMode } from "./view-models/derived/voice-mode.svelte"
+import type { ModelStatus } from "./view-models/derived/model-status.svelte"
 import type { CuesEngine } from "./engines/cues"
 import type { ModalsVM } from "./view-models/modals.svelte"
 
@@ -58,3 +59,6 @@ export const [getUiShell, setUiShell] = createContext<UiShellVM>()
 
 // ─── modals ─── (redesign-6)
 export const [getModals, setModals] = createContext<ModalsVM>()
+
+// ─── model-status ─── (msr-v2)
+export const [getModelStatus, setModelStatus] = createContext<ModelStatus>()

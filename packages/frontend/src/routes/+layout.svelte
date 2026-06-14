@@ -20,6 +20,7 @@ import {
   setI18n,
   setMic,
   setModals,
+  setModelStatus,
   setResponsive,
   setSession,
   setSettings,
@@ -30,6 +31,7 @@ import {
 } from "$lib/context"
 import { CuesEngine } from "$lib/engines/cues"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
+import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
 import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
@@ -65,6 +67,9 @@ const mic = new Mic({ session, cues })
 // ─── voice-mode ─── (slice 3 — תלוי ב-mic + session + speaker)
 const voiceMode = new VoiceMode({ mic, session, speaker })
 
+// ─── model-status ─── (msr-v2 — תלוי ב-session + speaker)
+const modelStatus = new ModelStatus({ session, speaker })
+
 // ─── car-mode ─── (slice 7)
 
 // ─── theme ─── (redesign-1)
@@ -99,6 +104,7 @@ setSession(session)
 setSpeaker(speaker)
 setMic(mic)
 setVoiceMode(voiceMode)
+setModelStatus(modelStatus)
 setTheme(theme)
 setResponsive(responsive)
 setUiShell(uiShell)
