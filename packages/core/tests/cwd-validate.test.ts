@@ -41,6 +41,48 @@ describe("validateCwd — happy path", () => {
   })
 })
 
+describe("validateCwd — Windows paths (cross-platform, גישה A)", () => {
+  it("accepts a drive-letter path with backslashes", () => {
+    const result = validateCwd("C:\\Users\\aviad\\projects")
+    expect(result.isOk()).toBe(true)
+    expect(result._unsafeUnwrap()).toBe("C:\\Users\\aviad\\projects")
+  })
+
+  it("accepts a drive-letter path with forward slashes", () => {
+    expect(validateCwd("D:/UserProjects/AI/drive-coding").isOk()).toBe(true)
+  })
+
+  it("accepts lowercase drive letter", () => {
+    expect(validateCwd("c:\\temp").isOk()).toBe(true)
+  })
+
+  it("accepts a UNC path", () => {
+    expect(validateCwd("\\\\server\\share\\folder").isOk()).toBe(true)
+  })
+
+  it("keeps a drive root as-is (C:\\)", () => {
+    const result = validateCwd("C:\\")
+    expect(result.isOk()).toBe(true)
+    expect(result._unsafeUnwrap()).toBe("C:\\")
+  })
+
+  it("strips trailing backslash (except drive root)", () => {
+    const result = validateCwd("C:\\Users\\aviad\\")
+    expect(result.isOk()).toBe(true)
+    expect(result._unsafeUnwrap()).toBe("C:\\Users\\aviad")
+  })
+
+  it("rejects a drive-relative path (C:foo — no separator)", () => {
+    const result = validateCwd("C:foo")
+    expect(result.isErr()).toBe(true)
+    expect(result._unsafeUnwrapErr().kind).toBe("not_absolute")
+  })
+
+  it("accepts a Windows path with Hebrew and spaces", () => {
+    expect(validateCwd("C:\\Users\\פרויקט שלי").isOk()).toBe(true)
+  })
+})
+
 describe("validateCwd — error cases", () => {
   it("rejects empty string", () => {
     const result = validateCwd("")
