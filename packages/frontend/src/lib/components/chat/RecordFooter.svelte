@@ -22,7 +22,6 @@
 import MicIcon from "@lucide/svelte/icons/mic"
 import KeyboardIcon from "@lucide/svelte/icons/keyboard"
 import EyeOffIcon from "@lucide/svelte/icons/eye-off"
-import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
 import MicLarge from "./MicLarge.svelte"
 import TypeArea from "./TypeArea.svelte"
 import { getI18n, getResponsive, getSession } from "$lib/context"
@@ -93,15 +92,14 @@ let mode = $state<Mode>("record")
     {#if session.status === "disconnected"}
       <button
         onclick={() => session.reconnect()}
-        class="inline-flex items-center justify-center size-10 rounded-full"
+        class="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold"
         style="background:var(--recording); color:#fff"
-        aria-label="reconnect"
       >
-        <RefreshCwIcon
-          size={18}
-          strokeWidth={2}
-          class={session.reconnectAttempt > 0 ? "animate-spin" : ""}
-        />
+        {#if session.reconnectAttempt > 0}
+          {t("record.reconnecting")} ({t("record.reconnectAttempt")} {session.reconnectAttempt})
+        {:else}
+          {t("record.reconnect")}
+        {/if}
       </button>
     {/if}
     <!-- /TEMP-RECONNECT-BUTTON -->

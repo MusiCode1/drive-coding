@@ -116,12 +116,13 @@ async function selectSession(info: { sessionId: string; cwd: string }) {
 }
 
 /**
- * סשן חדש: detach + חזרה לדף החיבור (שם בוחרים cwd/cliKind).
- * detach קודם כדי לשחרר את ה-bridge הנוכחי.
+ * סשן חדש: warm new-session על החיבור הקיים — ללא detach/respawn.
+ * נשאר ב-/chat עם בועות ריקות, מוכן לפרומפט.
  */
-function onNewSession() {
-  session.detach()
-  goto("/")
+async function onNewSession() {
+  await session.newSession({ cliKind: settings.cliKind })
+  uiShell.closeSheet()
+  await goto("/chat")
 }
 
 /**
@@ -302,10 +303,11 @@ $effect(() => {
     </button>
   </div>
 
-  <!-- סשן חדש — detach + goto("/") -->
+  <!-- סשן חדש — warm new-session על החיבור הקיים; disabled כשלא connected -->
   <button
-    class="shrink-0 text-start rounded-lg p-2.5 text-[13px] font-medium border border-dashed"
+    class="shrink-0 text-start rounded-lg p-2.5 text-[13px] font-medium border border-dashed disabled:opacity-40 disabled:cursor-not-allowed"
     style="border-color:var(--border); color:var(--accent)"
+    disabled={session.status !== "connected"}
     onclick={onNewSession}
   >
     ＋ {t("sidebar.newSession")}

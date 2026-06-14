@@ -115,6 +115,9 @@ export type MessageKey =
   | "record.status.idle"
   | "record.send"
   | "record.placeholder"
+  | "record.reconnect"
+  | "record.reconnecting"
+  | "record.reconnectAttempt"
   | "mic.stop"
   // ─── settings-redesign ─── (redesign-3)
   | "settings.connection"
@@ -147,6 +150,26 @@ export type MessageKey =
   | "sidebar.refresh"
   | "sidebar.newSession"
   | "sheet.handle"
+  // ─── bubble-play ─── (msr-v2)
+  | "bubble.play"
+  | "bubble.stop"
+  // ─── model-status ─── (msr-v2)
+  | "modelStatus.waiting"
+  | "modelStatus.thinking"
+  | "modelStatus.responding"
+  | "modelStatus.callingTool"
+  | "modelStatus.pendingTts"
+  | "modelStatus.speaking"
+  // ─── theme ─── (palettes-expansion)
+  | "settings.theme.label"
+  | "settings.theme.ember"
+  | "settings.theme.forest"
+  | "settings.theme.plum"
+  | "settings.theme.teal"
+  | "settings.theme.midnight"
+  | "settings.theme.rose"
+  | "settings.theme.slate"
+  | "settings.theme.daylight"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

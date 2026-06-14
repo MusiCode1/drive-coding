@@ -14,6 +14,67 @@ import {
   ToolCallMessage,
 } from "../src/schemas/ws-messages"
 
+// P1a regression: ToolLocation schema (decision 9) ───────────────────────────
+describe("ToolCallMessage.locations — P1a drift fix (decision 9)", () => {
+  it("accepts locations as array of {path, line} objects", () => {
+    const result = ToolCallMessage({
+      type: "tool_call",
+      toolCallId: "tc-1",
+      title: "Read file",
+      locations: [{ path: "/src/index.ts", line: 42 }],
+    })
+    expect(result instanceof type.errors).toBe(false)
+    if (!(result instanceof type.errors)) {
+      expect(result.locations).toEqual([{ path: "/src/index.ts", line: 42 }])
+    }
+  })
+
+  it("accepts locations with path only (line is optional)", () => {
+    const result = ToolCallMessage({
+      type: "tool_call",
+      toolCallId: "tc-2",
+      title: "Edit file",
+      locations: [{ path: "/src/foo.ts" }],
+    })
+    expect(result instanceof type.errors).toBe(false)
+    if (!(result instanceof type.errors)) {
+      expect(result.locations).toEqual([{ path: "/src/foo.ts" }])
+    }
+  })
+
+  it("accepts multiple locations", () => {
+    const result = ToolCallMessage({
+      type: "tool_call",
+      toolCallId: "tc-3",
+      title: "Search",
+      locations: [
+        { path: "/a.ts", line: 1 },
+        { path: "/b.ts" },
+      ],
+    })
+    expect(result instanceof type.errors).toBe(false)
+  })
+
+  it("rejects locations as plain string array (old drift format)", () => {
+    const result = ToolCallMessage({
+      type: "tool_call",
+      toolCallId: "tc-4",
+      title: "Bad format",
+      locations: ["/src/index.ts"],
+    })
+    expect(result instanceof type.errors).toBe(true)
+  })
+
+  it("accepts tool_call without locations (optional)", () => {
+    const result = ToolCallMessage({
+      type: "tool_call",
+      toolCallId: "tc-5",
+      title: "No locations",
+    })
+    expect(result instanceof type.errors).toBe(false)
+  })
+})
+
 describe("ClientMessage schemas (Slice 4)", () => {
   describe("PingMessage", () => {
     it("parses valid ping", () => {

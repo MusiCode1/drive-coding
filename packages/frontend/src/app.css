@@ -13,6 +13,10 @@
     /* alias -- מחרוזת --muted בשימוש ב-3 מקומות (ChatInput, ChatBubbles, +page.svelte)
        --fg-muted מוגדר תחת כל [data-palette]; נפתר בזמן-שימוש = תקין. */
     --muted: var(--fg-muted);
+
+    /* צל ה-mic-card — ברירת מחדל לפלטות הכהות (שחור-על-כהה = בלתי נראה).
+       daylight דורסת בערך רך, אחרת הצל השחור נחשף כפס "חתוך" על רקע בהיר. */
+    --card-shadow: 0 -10px 30px rgba(0,0,0,.28);
   }
 
   /* ── 1. EMBER — חם, אנושי, נחושת/טרקוטה ───────────────────────── */
@@ -93,6 +97,48 @@
     --recording:   #ff5a5a;
     --thinking:    #c98bff;
     --speaking:    #5eead4;
+  }
+
+  /* ── 5. MIDNIGHT — כחול-דֶּב, עמוק ──────────────────────────────── */
+  [data-palette="midnight"] {
+    --bg:#0e1118; --bg-elev:#161b26; --bg-card:#1d2433;
+    --fg:#e4e9f2; --fg-dim:#9aa6bf; --fg-muted:#65718a;
+    --border:rgba(225,235,255,0.08); --border-str:rgba(225,235,255,0.16);
+    --accent:#6b8afd; --accent-hi:#8aa3ff; --accent-soft:rgba(107,138,253,0.15);
+    --bubble-user:#1b2440; --bubble-agent:#181f33;
+    --recording:#ff5a5a; --thinking:#c98bff; --speaking:#5eead4;
+  }
+
+  /* ── 6. ROSE — ורוד-בלאש ───────────────────────────────────────── */
+  [data-palette="rose"] {
+    --bg:#171015; --bg-elev:#221820; --bg-card:#2c1f29;
+    --fg:#f3e7ee; --fg-dim:#c0a6b3; --fg-muted:#856b78;
+    --border:rgba(255,225,240,0.08); --border-str:rgba(255,225,240,0.16);
+    --accent:#f472b6; --accent-hi:#fb8fc8; --accent-soft:rgba(244,114,182,0.15);
+    --bubble-user:#2e1f2a; --bubble-agent:#261a2a;
+    --recording:#ff5a5a; --thinking:#c98bff; --speaking:#f9a8d4;
+  }
+
+  /* ── 7. SLATE — אפור-מינימלי ────────────────────────────────────── */
+  [data-palette="slate"] {
+    --bg:#101216; --bg-elev:#181b21; --bg-card:#20242c;
+    --fg:#e6e9ee; --fg-dim:#a2a9b5; --fg-muted:#6b7280;
+    --border:rgba(235,240,250,0.08); --border-str:rgba(235,240,250,0.16);
+    --accent:#8aa0bd; --accent-hi:#a6b8d1; --accent-soft:rgba(138,160,189,0.15);
+    --bubble-user:#232830; --bubble-agent:#1c2028;
+    --recording:#ef6b6b; --thinking:#b0b8c4; --speaking:#8aa0bd;
+  }
+
+  /* ── 8. DAYLIGHT — ערכה בהירה ───────────────────────────────────── */
+  [data-palette="daylight"] {
+    color-scheme: light;
+    --bg:#f6f4f0; --bg-elev:#fbfaf7; --bg-card:#ffffff;
+    --fg:#1f1b16; --fg-dim:#5b554c; --fg-muted:#8a8276;
+    --border:rgba(20,15,10,0.10); --border-str:rgba(20,15,10,0.18);
+    --accent:#d2693f; --accent-hi:#b9572f; --accent-soft:rgba(210,105,63,0.14);
+    --bubble-user:#efe7dd; --bubble-agent:#f1ece6;
+    --recording:#e0453f; --thinking:#8b5cf6; --speaking:#c2772e;
+    --card-shadow: 0 -6px 24px rgba(40,28,15,.10);
   }
 }
 
@@ -200,7 +246,7 @@
     background: var(--bg-elev);
     border: 1px solid var(--border);
     border-bottom: none;
-    box-shadow: 0 -10px 30px rgba(0,0,0,.28);
+    box-shadow: var(--card-shadow);
     /* padding-block-end מתאנמט עם המעבר ל/מ-מצב hidden (ר' RecordFooter).
        הקטנה (→record/typing) מיד; הגדלה (→hidden) עם delay (ר' .is-hidden). */
     transition: background .3s, box-shadow .3s, border-color .3s,

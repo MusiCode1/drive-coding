@@ -109,6 +109,9 @@ export const en: Catalog = {
   "record.status.idle": "Tap to record",
   "record.send": "Send",
   "record.placeholder": "Type a prompt…",
+  "record.reconnect": "Reconnect",
+  "record.reconnecting": "Reconnecting…",
+  "record.reconnectAttempt": "attempt",
   "mic.stop": "Stop",
   // ─── settings-redesign ─── (redesign-3)
   "settings.connection": "Connection",
@@ -141,4 +144,24 @@ export const en: Catalog = {
   "sidebar.refresh": "Refresh",
   "sidebar.newSession": "New session",
   "sheet.handle": "Drag to open",
+  // ─── bubble-play ─── (msr-v2)
+  "bubble.play": "Play",
+  "bubble.stop": "Stop playback",
+  // ─── model-status ─── (msr-v2)
+  "modelStatus.waiting": "Waiting…",
+  "modelStatus.thinking": "Thinking…",
+  "modelStatus.responding": "Responding…",
+  "modelStatus.callingTool": "Running tool…",
+  "modelStatus.pendingTts": "Preparing audio…",
+  "modelStatus.speaking": "Speaking…",
+  // ─── theme ─── (palettes-expansion)
+  "settings.theme.label": "Theme",
+  "settings.theme.ember": "Ember",
+  "settings.theme.forest": "Forest",
+  "settings.theme.plum": "Plum",
+  "settings.theme.teal": "Teal",
+  "settings.theme.midnight": "Midnight",
+  "settings.theme.rose": "Rose",
+  "settings.theme.slate": "Slate",
+  "settings.theme.daylight": "Daylight",
 }

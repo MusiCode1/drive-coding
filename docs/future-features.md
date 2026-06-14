@@ -141,7 +141,7 @@ streaming דרך MediaSource Extensions.
 
 ---
 
-## BUG — קריינות כלים מושמעת גם כש-Speaker מושתק
+## BUG — קריינות כלים מושמעת גם כש-Speaker מושתק ✅ תוקן (2026-06-07, slice-fix-mute-tool-narration)
 
 תאריך הרעיון: 2026-06-03 (התגלה בבדיקה הידנית של slice fix-409)
 
@@ -161,6 +161,11 @@ streaming דרך MediaSource Extensions.
 קווי מימוש: slice קטן נפרד (`slice-fix-mute-tool-narration`). depends_on: []. base: dev.
 
 החלטה שהתקבלה: known bug, מתוכנן ל-slice נפרד. **לא תוקן ב-slice fix-409** (מחוץ ל-scope).
+
+תוקן ב-`slice-fix-mute-tool-narration` (2026-06-07): `enabled` מועבר ל-`#processToolBubbles`,
+ו-guard `if (!enabled)` מסמן `processedNarrationCallIds` ומדלג — לפני בדיקת `narrateTools`.
+הערה: טסט-VM אינו אפשרי כאן — ה-vitest של הפרויקט מקמפל SSR (`environment: node`) ולכן
+`$effect` לא רץ; אומת static (typecheck) + קריאת קוד, מסלול תואם ל-guard הקיים של `!narrateTools`.
 
 ---
 

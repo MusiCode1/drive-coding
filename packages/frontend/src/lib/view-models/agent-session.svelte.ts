@@ -40,9 +40,11 @@ export type AgentSessionStatus =
   | "idle"          // טרם נוצר סוכן
   | "connecting"    // יוצר סוכן + לחיצת יד של ACP
   | "connected"     // מוכן לקבל פרומפטים
-  | "thinking"      // נשלח פרומפט, ממתין לתגובת הסוכן
   | "error"
   | "disconnected"  // WS נפל, ממתין ל-reconnect (ידני/אוטו) — slice ws-reconnect-infra
+
+/** מה המודל עושה בתור הנוכחי. מופרד מ-status (חיבור) — §1 ב-brief. */
+export type TurnState = "idle" | "waiting" | "thinking" | "responding" | "calling-tool"
 
 /**
  * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
@@ -71,6 +73,8 @@ export class AgentSession {
 
   // ─── state ─── (פולשני לעריכה — תאם מול Tama)
   status = $state<AgentSessionStatus>("idle")
+  /** מה המודל עושה בתור הנוכחי. idle = אין תור פעיל. */
+  turnState = $state<TurnState>("idle")
   error = $state<string | null>(null)
   bubbles = $state<Bubble[]>([])
   agentId = $state<string | null>(null)
@@ -98,7 +102,34 @@ export class AgentSession {
   sessionsError = $state<string | null>(null)
   #sessionsLoaded = false   // True אחרי טעינה מוצלחת אחת — cache; force=true מרענן
 
+  // ─── msr-v2: מעקף opencode #17505 (tail-debounce) ───
+  // opencode מחזיר RESP של session/prompt באמצע הזרם — ≈חצי התשובה (tail עד ~5.6ש')
+  // מגיעה אחרי ה-RESP, ודורסת turnState ל-responding אחרי שכבר נקבע idle.
+  // מפר את ה-ACP spec (כל notifications לפני response). gemini/claude תקינים →
+  // ה-net הזה לא מופעל אצלם. כשהבאג ייסגר אפשר להסיר #turnEnded/#scheduleIdle/#TAIL_MS.
+  #turnEnded = false                                               // דלוק בין RESP לתחילת תור הבא
+  #idleTimer: ReturnType<typeof setTimeout> | null = null          // | null כמו settings.svelte.ts
+  #TAIL_MS = 1500                                                  // debounce לבליעת tail (אחרי RESP בלבד)
+
+  /** מתזמן idle אחרי שקט מ-tail. נקרא רק כש-#turnEnded דלוק. כל tail-chunk מאפס. */
+  #scheduleIdle(): void {
+    if (this.#idleTimer !== null) clearTimeout(this.#idleTimer)
+    this.#idleTimer = setTimeout(() => {
+      this.#idleTimer = null
+      this.#setTurnState("idle")
+    }, this.#TAIL_MS)
+  }
+
+  /** מאפס את מעקב-התור. חובה בתחילת תור (sendPrompt) ובכל טעינה (replay אינו תור). */
+  #resetTurnTracking(): void {
+    this.#turnEnded = false
+    if (this.#idleTimer !== null) { clearTimeout(this.#idleTimer); this.#idleTimer = null }
+  }
+
   #client: AcpClient | null = null
+  // ─── slice ws-reconnect-fix-nbug2: ref ל-transport החי (NBug2 root fix) ───
+  /** ref ל-transport הפעיל — נשמר בכל יצירת transport, מנוקה עם #client. */
+  #transport: WsAcpTransport | null = null
   #sessionId: string | null = null
   /** חיפוש בסיבוכיות O(1) עבור tool_call_update לפי toolCallId. מ-Slice 4. */
   #toolBubbleByCallId: Map<string, ToolBubble> = new Map()
@@ -140,6 +171,33 @@ export class AgentSession {
     if (this.#detached) return false
     if (this.#tearingDown) return false
     return code !== 1000 && code !== 1001
+  }
+  /**
+   * @internal מזריק transport stub ל-#transport (לטסט DoD#4: closeAndWait נקרא ב-#doReconnect).
+   * stub: אובייקט עם closeAndWait spy בלבד — לא WsAcpTransport אמיתי.
+   */
+  _setTransportForTest(t: { closeAndWait: () => Promise<void> } | null): void {
+    this.#transport = t as WsAcpTransport | null
+  }
+  /**
+   * @internal מגדיר #sessionId + cwd + #cliKind ישירות — כדי ש-reconnect() לא יחזור מוקדם.
+   */
+  _setSessionContextForTest(ctx: { sessionId: string; cwd: string; cliKind: CliKind }): void {
+    this.#sessionId = ctx.sessionId
+    this.cwd = ctx.cwd
+    this.#cliKind = ctx.cliKind
+  }
+  /**
+   * @internal override ל-#findReusableAgent — מחזיר ערך קבוע לטסטים.
+   */
+  _mockFindReusableAgentForTest(returnValue: string | null): void {
+    this.#findReusableAgent = async () => returnValue
+  }
+  /**
+   * @internal override ל-#coldReconnect — זורק/מחזיר ערך קבוע לטסטים.
+   */
+  _mockColdReconnectForTest(error: Error): void {
+    this.#coldReconnect = async () => { throw error }
   }
 
   // ─── slice ws-reconnect-infra: reconnect helpers ────────────────────────────
@@ -227,8 +285,20 @@ export class AgentSession {
 
   /**
    * ניסיון reconnect יחיד: warm-first, נופל ל-cold בכל כשל.
+   *
+   * NBug2 root fix: אם יש WS חי (#transport לא null) — סגור אותו והמתן לאישור
+   * לפני warm. בלי זה: ה-WS החי נדרס ב-#warmReconnect:289 בלי להיסגר → agent
+   * יתום קבוע (reaper לא נוגע ב-hasActiveWs=true). ה-BE דוחה WS חדש ב-1008.
+   *
+   * כשה-WS כבר מת (auto-reconnect): closeAndWait מתרצה מיד (readyState===CLOSED).
    */
   #doReconnect = async (): Promise<void> => {
+    // NBug2 root: סגור WS חי והמתן לאישור לפני warm
+    if (this.#transport) {
+      await this.#transport.closeAndWait()
+      this.#client = null
+      this.#transport = null
+    }
     const reuseId = await this.#findReusableAgent()
     if (reuseId !== null) {
       const ok = await this.#warmReconnect(reuseId)
@@ -258,6 +328,7 @@ export class AgentSession {
       // סגור את ה-WS/client הישן (NBug2: מנע WS ו-agent תקועים ב-BE)
       try { this.#client?.close() } catch { /* כבר סגור */ }
       this.#client = null
+      this.#transport = null   // slice ws-reconnect-fix-nbug2: נקה אחרי סגירה
       if (this.status === "connecting" || this.status === "connected") {
         this.#setStatus("disconnected")   // מאפס מצב שהשאיר warm-fail; עובר את guard 217
       }
@@ -287,8 +358,10 @@ export class AgentSession {
 
     for (let attempt = 0; attempt <= AgentSession.#MED8_MAX_RETRIES; attempt++) {
       this.#client = null
+      this.#transport = null   // slice ws-reconnect-fix-nbug2: איפוס iteration (WS החי כבר סגור ב-#doReconnect)
       const proto = location.protocol === "https:" ? "wss:" : "ws:"
       const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+      this.#transport = transport   // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
 
       // ⚠️ תיקון אביגיל #1 — DEADLOCK: waitForOpen (ws-transport.ts:70-78) מאזין רק
       // open+error, לא close. סגירת 1008 היא close event → waitForOpen נתקע לנצח.
@@ -338,6 +411,7 @@ export class AgentSession {
       } catch {
         // שגיאת handshake/loadSession — נקה ונפול ל-cold
         this.#client = null
+        this.#transport = null   // slice ws-reconnect-fix-nbug2: נקה אחרי כשל warm
         transport.close()
         return false
       }
@@ -370,6 +444,7 @@ export class AgentSession {
       // 2. פתח תעבורת WS
       const proto = location.protocol === "https:" ? "wss:" : "ws:"
       const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+      this.#transport = transport   // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
       transport.onClose((code, reason) => {
         if (this.#detached) return
         if (this.#tearingDown) return        // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
@@ -423,7 +498,7 @@ export class AgentSession {
    * מחזיר Promise שמסתיים כשהתור מושלם (או נדחה בשגיאה).
    */
   sendPrompt = async (text: string, opts?: { recordingId?: string }): Promise<void> => {
-    if (this.status !== "connected" && this.status !== "thinking") return
+    if (this.status !== "connected") return
     if (!this.#client || !this.#sessionId) return
     if (!text.trim()) return
 
@@ -440,12 +515,17 @@ export class AgentSession {
       ...(opts?.recordingId !== undefined ? { recordingId: opts.recordingId } : {}),
     }
     this.bubbles.push(userBubble)
-    this.#setStatus("thinking")
+    this.#setTurnState("waiting")
+    this.#resetTurnTracking()   // תחילת תור — #turnEnded=false + נקה טיימר יתום
 
     try {
       await this.#client.prompt(this.#sessionId, text)
-      if (this.status === "thinking") this.#setStatus("connected")
+      // RESP הגיע — opencode: tail עוד יבוא; gemini/claude: סוף
+      this.#turnEnded = true
+      this.#setTurnState("idle")   // נכון ל-gemini/claude. opencode: tail יטופל ב-#onSessionUpdate
     } catch (err: unknown) {
+      this.#turnEnded = true
+      this.#setTurnState("idle")
       this.error = `prompt failed: ${err instanceof Error ? err.message : String(err)}`
       this.#setStatus("error")
     }
@@ -479,6 +559,8 @@ export class AgentSession {
       return
     }
 
+    this.#resetTurnTracking()   // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
+
     try {
       // 1. צור סוכן בצד השרת (זהה ל-attach)
       const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
@@ -489,6 +571,7 @@ export class AgentSession {
       // 2. פתח תעבורת WS + הוסף מאזין onClose (זהה ל-attach)
       const proto = location.protocol === "https:" ? "wss:" : "ws:"
       const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+      this.#transport = transport   // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
       transport.onClose((code, reason) => {
         if (this.#detached) return
         if (this.#tearingDown) return        // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
@@ -509,6 +592,7 @@ export class AgentSession {
         this.#captureSessionConfig(loadResult)   // slice 23: לכוד config (sessionId מ-input, לא מ-response)
       } finally {
         this.isLoadingHistory = false
+        this.#setTurnState("idle")   // NBug3: replay מסתיים — reset turnState (replay אינו תור)
       }
       this.#sessionId = input.sessionId
 
@@ -519,6 +603,7 @@ export class AgentSession {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = `loadSession failed: ${msg}`
+      this.#setTurnState("idle")   // NBug3: throw מוקדם (createAgent/waitForOpen) — ה-finally הפנימי לא רץ
       this.#setStatus("error")
       this.#cleanup()
     }
@@ -568,6 +653,7 @@ export class AgentSession {
       return this.loadSession(input)
     }
 
+    this.#resetTurnTracking()   // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
     this.#setStatus("connecting")
     this.error = null
     this.bubbles = []
@@ -582,6 +668,7 @@ export class AgentSession {
         this.#captureSessionConfig(loadResult)
       } finally {
         this.isLoadingHistory = false
+        this.#setTurnState("idle")   // NBug3: replay מסתיים — reset turnState
       }
       this.#sessionId = input.sessionId
       this.cwd = input.cwd
@@ -596,8 +683,60 @@ export class AgentSession {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = `switchSession failed: ${msg}`
+      this.#setTurnState("idle")   // NBug3: throw מוקדם — ה-finally הפנימי אולי לא רץ
       this.#setStatus("error")
       // לא #cleanup — החיבור עדיין תקין; רק הטעינה נכשלה. השאר את ה-#client חי.
+    }
+  }
+
+  // ─── slice new-session-warm: פתיחת סשן חדש warm ─── (תוספתי)
+
+  /**
+   * פתיחת סשן ACP חדש **על החיבור הקיים** — warm new-session.
+   * דורש #client פעיל. קורא ל-newSession של ACP על אותו WS/bridge (ללא createAgent/WS חדש).
+   * אם אין #client — נופל ל-attach הכבד (יצירת agent חדש) עם ה-cwd/cliKind שהועברו.
+   *
+   * שונה מ-switchSession: זה newSession (סשן ריק) ולא loadSession (היסטוריה קיימת).
+   * אותה לוגיקת warm: אותו #client, אותו agentId, ללא detach/respawn.
+   * למה לא detach+attach: detach הורג bridge + גורם ל-race "WS closed (1005)" + spawn מיותר.
+   */
+  newSession = async (input: { cwd?: string; cliKind: CliKind }): Promise<void> => {
+    const cwd = input.cwd ?? this.cwd
+    // אין חיבור פעיל → נתיב כבד (דפנסיבי; ה-panel מוצג רק עם חיבור)
+    if (this.#client === null) {
+      if (!cwd) throw new Error("newSession: no cwd available for fallback attach")
+      return this.attach({ cwd, cliKind: input.cliKind })
+    }
+    // לא לפתוח סשן חדש באמצע thinking/connecting
+    if (this.status !== "connected") {
+      throw new Error(`cannot newSession in status ${this.status}`)
+    }
+    if (!cwd) throw new Error("newSession: no cwd")
+
+    this.#setStatus("connecting")
+    this.error = null
+    this.bubbles = []
+
+    try {
+      const result = await this.#client.newSession({ cwd })
+      const newId = (result as { sessionId?: string }).sessionId ?? null
+      if (!newId) throw new Error("newSession returned no sessionId")
+      this.#sessionId = newId
+      this.cwd = cwd
+      this.#captureSessionConfig(result)
+
+      // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים).
+      // replace:true — מעבר מכוון לסשן אחר על אותו agent, עוקף guard MED-9.
+      if (this.agentId) {
+        await notifySessionAttached(this.agentId, newId, { replace: true }).catch(() => {})
+      }
+
+      this.#setStatus("connected")
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      this.error = `newSession failed: ${msg}`
+      this.#setStatus("error")
+      // לא #cleanup — החיבור עדיין תקין; רק יצירת הסשן נכשלה. השאר את ה-#client חי.
     }
   }
 
@@ -626,7 +765,7 @@ export class AgentSession {
    * מדלג בשקט אם הסשן לא מחובר.
    */
   applyConfigOption = async (configId: string, value: string | boolean): Promise<void> => {
-    if (this.status !== "connected" && this.status !== "thinking") return
+    if (this.status !== "connected") return
     if (!this.#client || !this.#sessionId) return
 
     // מסלול 1: option קיים ב-configOptions לפי id
@@ -706,6 +845,23 @@ export class AgentSession {
 
   // ─── הקלטות (recordings) ─── (יתווסף ב-slice 10)
 
+  // ─── msr-v2: cancelTurn ─── (additive)
+
+  /**
+   * מבטל את התור הנוכחי דרך ACP cancel. הסוכן מפסיק לייצר.
+   * מאלץ turnState=idle מיידית (לא מחכה ל-sendPrompt resolved). no-op אם אין תור פעיל.
+   */
+  cancelTurn = async (): Promise<void> => {
+    if (this.turnState === "idle") return
+    if (!this.#client || !this.#sessionId) return
+    try {
+      await this.#client.cancel(this.#sessionId)
+    } catch {
+      // best-effort — בכל מקרה נאלץ idle מקומית
+    }
+    this.#setTurnState("idle")
+  }
+
   // ─── slice 6: setter מרכז ─── (additive — מנתב את כל ה-status writes)
 
   /**
@@ -717,8 +873,22 @@ export class AgentSession {
     const prev = this.status
     if (next === prev) return
     this.status = next
-    if (next === "thinking") this.#cues?.play("thinking")
-    else if (next === "error") this.#cues?.play("error")
+    if (next === "error") this.#cues?.play("error")
+  }
+
+  // ─── msr-v2: setter ל-turnState ───
+
+  /**
+   * נקודת-mutation יחידה ל-turnState. אין $effect — קריאה מפורשת.
+   * מנגן cue "thinking" על מעבר idle→waiting (פעם אחת ביציאה מ-idle).
+   * idempotent: אם next === prev — לא מנגן cue.
+   */
+  #setTurnState(next: TurnState): void {
+    const prev = this.turnState
+    if (next === prev) return
+    this.turnState = next
+    // cue thinking: רק על מעבר idle→waiting (תחילת תור חדש)
+    if (prev === "idle" && next === "waiting") this.#cues?.play("thinking")
   }
 
   // ─── פרטי ─────────────────────────────────────
@@ -737,12 +907,15 @@ export class AgentSession {
   #cleanup(): void {
     // לכוד את ה-agentId לפני האיפוס — צריך אותו ל-deleteAgent.
     const agentId = this.agentId
+    // נקה timer של tail-debounce (msr-v2 — NBug1 opencode)
+    if (this.#idleTimer !== null) { clearTimeout(this.#idleTimer); this.#idleTimer = null }
     try {
       this.#client?.close()
     } catch {
       // כבר סגור
     }
     this.#client = null
+    this.#transport = null   // slice ws-reconnect-fix-nbug2: נקה ref
     this.#sessionId = null
     this.agentId = null
     // הורג את ה-bridge בצד ה-BE. ה-BE לא הורג את ה-child בסגירת WS לבד
@@ -822,6 +995,7 @@ export class AgentSession {
       const params = new URLSearchParams(typeof location !== "undefined" ? location.search : "")
       const delayMs = Number(params.get("stream") ?? "0") || 0
 
+      this.#resetTurnTracking()   // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
       this.isLoadingHistory = true
       try {
         for (const update of data.updates) {
@@ -835,11 +1009,13 @@ export class AgentSession {
         await tick()
       } finally {
         this.isLoadingHistory = false
+        this.#setTurnState("idle")   // NBug3: replay מסתיים — reset turnState
       }
       this.status = "connected"
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = `mock loadSession failed: ${msg}`
+      this.#setTurnState("idle")   // NBug3: throw מוקדם — ה-finally הפנימי אולי לא רץ
       this.status = "error"
     }
   }
@@ -880,8 +1056,13 @@ export class AgentSession {
     const messageId = update.messageId ?? null
 
     if (update.sessionUpdate === "agent_message_chunk") {
+      this.#setTurnState("responding")
+      // מעקף opencode #17505: tail אחרי RESP → תזמן idle מחדש. gemini/claude: #turnEnded=false → לא פועל.
+      if (this.#turnEnded) this.#scheduleIdle()
       this.#appendChunk("message", text, messageId)
     } else if (update.sessionUpdate === "agent_thought_chunk") {
+      this.#setTurnState("thinking")
+      if (this.#turnEnded) this.#scheduleIdle()
       this.#appendChunk("thought", text, messageId)
     } else if (update.sessionUpdate === "user_message_chunk") {
       // נשלח על ידי הסוכן במהלך ניגון מחדש של ההיסטוריה מ-loadSession (לפי מפרט ACP
@@ -929,6 +1110,9 @@ export class AgentSession {
     }
     this.bubbles.push(bubble)
     this.#toolBubbleByCallId.set(update.toolCallId, bubble)
+    // msr-v2: עדכן turnState
+    this.#setTurnState("calling-tool")
+    if (this.#turnEnded) this.#scheduleIdle()
   }
 
   #handleToolCallUpdate(update: {
@@ -942,6 +1126,11 @@ export class AgentSession {
     locations?: unknown[] | null
   }): void {
     if (update.toolCallId === undefined) return
+    // msr-v2: pending/in_progress → calling-tool
+    if (update.status === "pending" || update.status === "in_progress") {
+      this.#setTurnState("calling-tool")
+      if (this.#turnEnded) this.#scheduleIdle()
+    }
     const idx = this.bubbles.findIndex(
       (b) => b.kind === "tool" && b.toolCall.toolCallId === update.toolCallId,
     )
@@ -976,13 +1165,14 @@ export class AgentSession {
     messageId: string | null,
   ): void {
     const last = this.bubbles[this.bubbles.length - 1]
-    // קבץ יחד רק כאשר: (א) מאותו סוג, וגם (ב) מזהה הודעה (messageId) תואם ושאינו null.
-    // מזהה הודעה null או חסר תמיד מתחיל בועה חדשה (לפי כלל הקיבוץ של ACP).
+    // קבץ יחד רק כאשר: (א) מאותו סוג, וגם (ב) מזהה הודעה (messageId) תואם.
+    // אם messageId הוא null (Gemini ACP, שאינו שולח messageId) — קבץ לפי kind בלבד.
     const canGroup =
       last !== undefined &&
       last.kind === kind &&
-      messageId !== null &&
-      last.messageId === messageId
+      (messageId !== null
+        ? last.messageId === messageId     // יש messageId → קבץ לפי מזהה (Claude)
+        : last.messageId === null)         // אין messageId → קבץ לפי kind (Gemini)
 
     if (canGroup && last !== undefined) {
       const seg: Segment = { id: crypto.randomUUID(), text }

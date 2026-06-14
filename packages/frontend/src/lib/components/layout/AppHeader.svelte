@@ -74,7 +74,7 @@ const cwdLabel = $derived(
   >
     <span
       class="size-2.5 rounded-full transition-colors duration-300"
-      style="background:{session.status === 'connected' || session.status === 'thinking'
+      style="background:{session.status === 'connected'
         ? 'var(--speaking)'
         : 'var(--fg-dim)'}; {session.status === 'connected' ? 'box-shadow:0 0 8px var(--speaking)' : ''}"
     ></span>

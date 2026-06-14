@@ -2,7 +2,7 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import type { BridgeCrashInfo, BridgeHandle, BridgeManager, SpawnBridgeInput } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
-import { getCliCommand } from "./cli-config.js"
+import { getCliCommand, getCliSpec } from "./cli-config.js"
 
 const log = createLogger("backend.bridge.manager")
 const STDERR_MAX_LINES = 200
@@ -68,13 +68,26 @@ export function createBridgeManager(): BridgeManager & {
               process.env.OPENCODE_CONFIG_CONTENT,
             ),
           }
-        : process.env
+        : { ...process.env }
+
+    // env shaping לפי קובץ override (cli-specs.jsonc):
+    // unsetEnv מסיר משתני proxy/CA (למשל עבור gemini תחת OneCLI).
+    // setEnv מוסיף/דורס משתנים נוספים.
+    // הסדר: envWithPlugin (כולל OPENCODE_CONFIG_CONTENT) → unsetEnv → setEnv.
+    const spec = getCliSpec(input.cliKind, process.env)
+    const childEnv: NodeJS.ProcessEnv = { ...envWithPlugin }
+    for (const key of spec?.unsetEnv ?? []) {
+      delete childEnv[key]
+    }
+    if (spec?.setEnv) {
+      Object.assign(childEnv, spec.setEnv)
+    }
 
     let child: ChildProcessWithoutNullStreams
     try {
       child = spawn(cli.bin, [...cli.args], {
         cwd: input.cwd,
-        env: envWithPlugin,
+        env: childEnv,
         stdio: ["pipe", "pipe", "pipe"],
       })
     } catch (err) {

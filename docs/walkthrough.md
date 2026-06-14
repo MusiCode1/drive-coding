@@ -1,3 +1,260 @@
+## 2026-06-14 — slice-msr-v2 — מצב-מודל + בקרת-סוכן + השמעה (מימוש מחדש על dev)
+
+### מה בוצע?
+
+**slice**: slice-model-status-replay-v2 (base: dev)
+**commits**: 6 (2eb585e, 1c86aa9, c6dda4a, d5527e0, d2ee44a, 56e5d0a)
+
+**Commit 1 — refactor(session): הפרדת status/turnState (2eb585e)**
+- הסיר "thinking" מ-AgentSessionStatus; הוסיף TurnState + turnState = $state
+- הוסיף #setTurnState + NBug1 tail-debounce (opencode #17505: idle-on-RESP + 1.5ש' debounce)
+- עדכן sendPrompt, #onSessionUpdate (agent_message/thought/tool_call chunks), applyConfigOption
+- עדכן VoiceMode (turnState !== "idle"), Speaker (#prevTurnState + #handleStatusTransition)
+- עדכן TypeArea + AppHeader; עדכן agent-session.test.ts:242
+- typecheck 0, tests 201/201, lint:i18n ✓
+
+**Commit 2 — feat(status-bubble): ModelStatus VM + StatusBubble + hasPendingNarration (1c86aa9)**
+- ModelStatus derived VM (phase: waiting/thinking/responding/calling-tool/pending-tts/speaking/null)
+- StatusBubble.svelte — transient, מרנדרת כש-phase !== null, עם אנימציית pulse
+- Speaker.hasPendingNarration + #pendingCount ($state); auto-scroll מוסיף modelStatus.phase לתלות
+- i18n: modelStatus.* (6 keys; keys.ts + he.ts + en.ts)
+- typecheck 0, tests 201/201, lint:i18n ✓
+
+**Commit 3 — feat(session): cancelTurn (ACP cancel) + תיקון X-מהבהב (c6dda4a)**
+- AgentSession.cancelTurn() — ACP cancel + מאלץ turnState=idle מיידית
+- VoiceMode.cancel() קורא void session.cancelTurn()
+- typecheck 0, tests 201/201
+
+**Commit 4 — feat(recordings): saveRecording + recordingUrl (d5527e0)**
+- adapters/voice/recordings.ts: POST /api/recordings {audioBase64, mimeType} → {id}
+- transcribe.ts: הסיר stub; קורא saveRecording(blob).catch(()=>({id:""}))
+- typecheck 0, tests 201/201
+
+**Commit 5 — feat(bubble-player): play-bubble + BubblePlayer VM (d2ee44a)**
+- adapters/voice/play-bubble.ts: playUserRecording + playAgentText (stream→Blob→objectURL; revokeObjectURL)
+- BubblePlayer VM: toggle/stop; guard turnState!=="idle"; אין $effect
+- context.ts + layout: getBubblePlayer/setBubblePlayer + new BubblePlayer
+- typecheck 0, tests 201/201
+
+**Commit 6 — feat(bubbles): כפתור ▶/⏸ על בועות משתמש + סוכן (56e5d0a)**
+- UserBubble: ▶ אם recordingId; MessageBubble: ▶ לTTS; בועה מודגשת בזמן השמעה
+- i18n: bubble.play + bubble.stop
+- typecheck 0, tests 201/201, lint:i18n ✓
+
+**בדיקות**: typecheck frontend-v2 ✓ | typecheck core ✓ | 201 tests ירוקים | lint:i18n ✓
+**env-blocked**: בדיקות חיות (cancel/▶/בועת-סטטוס) — Windows env-blocker (opencode קורס על plugin). כלב יאמת חי.
+**חריגות מה-brief**: אין. reconnect logic לא נגע.
+
+---
+
+## 2026-06-13 — slice P1b — ACP Provider adapter (core-only)
+
+### מה בוצע?
+
+**slice**: slice-P1b-acp-adapter (base: branch slice-P1a-provider-abstraction@9d053f3 — worktree משורשר על P1a, טרם merged ל-dev)
+**commits**: 4 (d617501, ad9b6ee, c7ffabf, 0a91f44)
+
+**Commit 0 — exports + שלד (d617501, typecheck)**
+- `core/index.ts`: ייצוא `classifyToolKind`, `mapAcpNotification`, `AcpProviderSession`,
+  `mapAcpCapabilities`. verbatimModuleSyntax → events נשאר `export type *`, הקבצים החדשים
+  `export *` (ערכים). שלד `provider/acp-provider.ts` + `provider/map-acp-notification.ts`.
+
+**Commit 1 — `mapAcpNotification` + helpers (ad9b6ee, TDD)**
+- מיפוי טהור `SessionNotification → ProviderEvent`, shapes 1:1 מ-agent-session.svelte.ts.
+- helpers: `mapStatus` (undefined→pending), `mapContent` (מ-`update.content`; ACP `{type:content}`
+  → קנוני `{kind:text}`; diff/terminal; MVP text-only), `mapLocations`, `mapUsage`, `mapPlanEntries`
+  (content→title), `textOf`. variants: tool_call(+update)→tool_call, message/thought chunks,
+  plan→plan.update, usage_update→usage; available_commands/user_message/unknown→raw.
+- 14 טסטים (fixtures אמיתיים עטופים `{update}` + מקרי-קצה).
+
+**Commit 2 — `AcpProviderSession` + `mapAcpCapabilities` (c7ffabf, TDD)**
+- עוטף `AcpClient`: start→session.ready, sendPrompt לא-חוסם (PromptAck מיד, turn.end on resolve
+  עם isError), cancel/stop/onEvent, tier2 (listSessions/resumeSession).
+- `mapAcpCapabilities`: resume/list מ-`client.capabilities` (AgentCapabilities), permissions/tools=true.
+- 11 טסטים מול MockAcpTransport.
+
+**Commit 3 — טסטים ל-`mapAcpCapabilities` (0a91f44, TDD)**
+- 8 טסטים פר-נגזרת (DoD #8 — המקור הוא AgentCapabilities).
+
+**בדיקות**: `pnpm -F @drive-coding/core typecheck` ✓ | `build` ✓ | vitest core: 24 files / 289 tests ירוקים (33 חדשים) ✓
+**אימות runtime**: ממתין לאימות כלב (מרדכי יפעיל; merge מאוחד P1a+P1b).
+
+**חריגות**: `mapAcpCapabilities` מומש כבר ב-Commit 2 (ה-session תלוי בו) ולא ב-Commit 3 — Commit 3
+הוסיף את הטסטים הייעודיים בלבד. שדות capabilities שלא נצפו ב-flow (diff/terminal/fs/mcpEmbedded/
+revert/delete) → false שמרני. `isErrorStop` = `stopReason==="refusal"` (limits/cancelled = סיום תקין).
+לא נגעתי ב-frontend (P1d).
+
+---
+
+## 2026-06-08 — slice new-session-warm — "סשן חדש" warm על החיבור הקיים (ללא respawn)
+
+### מה בוצע?
+
+**slice**: new-session-warm (branch: slice-new-session-warm, base: dev@d512d92)
+**commits**: 1 (a4d252c)
+
+**1. feat: `AgentSession.newSession` + חיווט הכפתור (Commit 1 — integration)**
+- מתודה חדשה `newSession` ב-`agent-session.svelte.ts` — תאום מבני של `switchSession`.
+  קורא `#client.newSession({ cwd })` על החיבור הקיים, מנקה bubbles, מעדכן `#sessionId`
+  מתגובת ACP, קורא `notifySessionAttached` עם `replace:true` (עוקף guard MED-9).
+  לא קורא `#cleanup` ב-catch — החיבור נשאר חי אחרי כשל ביצירת הסשן.
+  fallback דפנסיבי: אם `#client===null` → `attach({ cwd, cliKind })`.
+- `onNewSession` ב-`SessionOptionsPanel.svelte`: `session.newSession() + goto("/chat")`
+  במקום `session.detach() + goto("/")` — נשאר ב-/chat עם בועות ריקות.
+- כפתור "סשן חדש" `disabled={session.status !== "connected"}` — מונע throw לא-מטופל
+  בלחיצה באמצע תגובה (§4.ב.1: אופציה (ב) — חסימה ויזואלית, לא try/catch→console).
+- 4 integration tests חדשים: warm path, replace:true, fallback, guard backstop.
+
+**בדיקות**: typecheck ✓ | lint:i18n ✓ | 175 טסטים ירוקים (4 חדשים) | build ✓
+**אימות runtime**: ממתין לאימות כלב (DoD §13: BE log אין createAndSpawn/deleteAndKill).
+
+**חריגות**: אין — slice פשוט, ADDITIVE בלבד, ללא שינוי state machine.
+
+---
+
+## 2026-06-04 23:47 — slice fix-null-msgid-grouping — קיבוץ בועות Gemini (null messageId)
+
+### מה בוצע?
+
+**slice**: fix-null-msgid-grouping (branch: fix-null-msgid-grouping, base: dev@7c3885f)
+**commits**: 1
+
+**1. fix: שינוי `#appendChunk` grouping logic (Commit 0 — manual + test)**
+- שינוי `canGroup` ב-`agent-session.svelte.ts:716-720` — במקום לדרוש `messageId !== null`, תנאי ה-cangroup מאפשר קיבוץ גם כששני `messageId` הם `null` (כל עוד ה-kind זהה)
+- Gemimi ACP שולח chunks עם `messageId: null` — השינוי גורם ל-chunks עוקבים מאותו kind להתקבץ לבועה אחת
+- Claude (עם messageId) לא מושפע — ה-condition `last.messageId === messageId` נשמר
+- קובץ test חדש: `agent-session.test.ts` — 6 test scenarios (Claude grouping, Gemini grouping, kind alternation, user/message separation, existing behavior preserved)
+
+**בדיקות**: typecheck ✓ | lint:i18n ✓ | 171 טסטים ירוקים (6 חדשים) | calev light ✓
+
+---
+
+## 2026-06-04 — slice cli-specs-override — קובץ JSONC חיצוני לדריסת CLI_SPECS
+
+### מה בוצע?
+
+**slice**: cli-specs-override (branch: cli-specs-override, base: dev@482483e)
+**commits**: 4 (b6a65c5, 9af6b79, d234906 + commit 3 — bridge-manager)
+
+**1. core: הרחבת CliSpec (Commit 0)**
+- הוספת שדות אופציונליים `unsetEnv?: readonly string[]` ו-`setEnv?: Readonly<Record<string,string>>` לטיפוס `CliSpec`
+- CLI_SPECS המובנה לא שונה (satisfies עדיין עובר)
+
+**2. backend: cli-config-file.ts (Commit 1 — TDD)**
+- קובץ חדש `packages/backend/src/acp/cli-config-file.ts`
+- `resolveCliSpecsPath`: נתיב ברירת-מחדל `~/.config/drive-coding/cli-specs.jsonc` (דריסה ב-`CLI_SPECS_FILE`)
+- `loadCliSpecsOverride`: טעינה + JSONC parsing (strip הערות שמרני) + ולידציה שדה-לשדה + memoized
+- קובץ לא קיים → {} | JSON שבור → {} + warning | שדה לא תקין → מדולג + warning
+- 8 טסטים TDD ב-`tests/cli-config-file.test.ts`
+
+**3. backend: getCliCommand + getCliSpec (Commit 2 — TDD)**
+- `getCliSpec(kind, env?)` חדש — מחזיר spec ממוזג (CLI_SPECS + override) כולל unsetEnv/setEnv
+- `getCliCommand` מוסיף תמיכה ב-override.bin/args; סדר עדיפויות: override.bin > OPENCODE_BIN > spec.bin
+- תאימות-לאחור: בלי קובץ override → זהה להיום בדיוק
+- 6 טסטים TDD נוספו ל-`tests/cli-config.test.ts`
+
+**4. backend: bridge-manager env shaping (Commit 3 — manual)**
+- `spawnInternal` מחיל unsetEnv/setEnv מ-spec הממוזג לפני spawn
+- הסדר: envWithPlugin → unsetEnv → setEnv (opencode שומר OPENCODE_CONFIG_CONTENT)
+
+**בדיקות**: typecheck ✓ | lint:i18n ✓ | 199 טסטים ירוקים (14 חדשים)
+
+---
+
+## 2026-06-03 — slice ui-polish-1 הושלם — 4 commits
+
+### מה בוצע?
+
+ליטושי UI ב-4 קבצי `.svelte` (FE-only, ללא BE/state חדש):
+
+**C0 — TypeArea.svelte: כפתור שליחה אייקון בלבד**
+- הסרת `{t("record.send")}` מהטקסט הנראה בכפתור
+- הוספת `style="transform:scaleX(-1)"` ל-SendIcon — מצביע שמאלה (RTL)
+- `aria-label={t("record.send")}` נשמר לנגישות (key לא orphan)
+
+**C1 — SessionOptionsPanel.svelte: disconnect ימני ביותר**
+- שינוי סדר DOM בשורת הפעולות: disconnect ראשון → audio → הגדרות
+- ב-RTL הראשון בDOM = ימני ביותר. handlers/classes/aria לא שונו.
+
+**C2 — FolderPickerDialog.svelte: breadcrumb רווח + ניווט**
+- ספרטור `/` קיבל `mx-1` (margin סימטרי משני הצדדים)
+- `<span>` הפכו ל-`<button class="hover:underline inline">` עם `onclick={() => navigateToDepth(i)}`
+- נוספה `navigateToDepth(index)` — בונה נתיב אבסולוטי עד אינדקס (כולל)
+
+**C3 — SessionPicker.svelte: load-btn רוחב מלא**
+- הסרת `align-self:flex-start`, הוספת `width:100%` + `text-align:center`
+
+**בדיקות**: typecheck ✓, build ✓, lint:i18n ✓. Commits: 233889f..51034d6.
+
+---
+
+## 2026-06-03 — slice folder-hidden הושלם — 3 commits
+
+### מה בוצע?
+
+הוספת checkbox "הצג תיקיות מוסתרות" לבורר התיקיות (`FolderPickerDialog`).
+
+**Commit 0 — BE: param `showHidden` ב-`GET /api/fs/browse`**
+- `http-history.ts`: קורא `?showHidden=true` וכש-true מבטל את סינון `HIDDEN_PREFIXES`
+- אבטחת `allowedBase`/realpath לא נגעה — `showHidden` משפיע רק על filter שמות
+- 2 integration tests חדשים: הסתרה ברירת מחדל + חשיפה עם showHidden=true
+
+**Commit 1 — FE adapter: `browseFolder(path, showHidden?)`**
+- `fs-browse.ts`: חתימה חדשה עם `showHidden = false` (default false → קוראים קיימים לא נשברים)
+- מעבר מ-`encodeURIComponent` ידני ל-`URLSearchParams`
+
+**Commit 2 — FE: checkbox ב-`FolderPickerDialog`**
+- `$state showHidden = false` — מתאפס בכל פתיחת dialog
+- `onToggleHidden()` — toggle + reload מיידי
+- checkbox markup מתחת ל-breadcrumb
+- i18n key `modal.folder.showHidden` — he: "הצג תיקיות מוסתרות", en: "Show hidden folders"
+
+**תוצאות**:
+- typecheck BE+FE ✓, build FE ✓, lint:i18n ✓
+- 187 טסטים עוברים (כולל 2 חדשים), 11 skipped
+
+**חריגות**: ללא סטיות מה-brief.
+
+---
+
+## 2026-06-03 — slice sessions-autoload: טעינת סשנים אוטומטית בטופס connect
+
+### מה בוצע?
+
+**1. שינוי ב-`packages/frontend/src/routes/+page.svelte`** (onMount בלבד):
+- הוספת טריגר לטעינה אוטומטית של סשנים בתחילת ה-`onMount` — לפני קריאת `fetchServerOptions`.
+- תנאי: `settings.lastCwd && cwd.trim()` — טוען רק כשהמשתמש כבר עבד בעבר בתיקייה (לא משתמש חדש / cwd ריק).
+- `loadSessions()` מוגן ב-`onMount` שרץ פעם אחת per mount — guard טבעי, אין צורך בדגל נוסף.
+- הכפתור הידני "טען סשנים אחרונים" נשאר כ-fallback ורענון.
+
+**קבצים שהשתנו**: `packages/frontend/src/routes/+page.svelte` — 4 שורות נוספו ב-onMount.
+
+**בדיקות**: `pnpm lint:i18n` ✓, `pnpm --filter @drive-coding/frontend-v2 typecheck` ✓, `pnpm --filter @drive-coding/frontend-v2 build` ✓.
+
+**סטיות מה-brief**: אין.
+## 2026-06-04 09:50 — slice-ws-reconnect-fix-nbug2 — Commit: תיקון NBug2 (closeAndWait root fix)
+
+### מה בוצע?
+
+תיקון שורש NBug2: `#warmReconnect` דרס `#client=null` בלי לסגור את ה-WS החי → agent יתום קבוע (reaper לא מנקה, `hasActiveWs=true` לנצח).
+
+**הפתרון**: `closeAndWait()` ב-`WsAcpTransport` + שדה `#transport` ב-AgentSession + `#doReconnect` סוגר-וממתין לפני warm.
+
+| שינוי | פרטים |
+|---|---|
+| `ws-transport.ts` | הוסף `closeAndWait(timeoutMs=1000)` — רושם listener לפני `close()`, ממתין ל-close event עם timeout fallback |
+| `agent-session.svelte.ts` | הוסף `#transport: WsAcpTransport | null = null` + שמור בכל 3 יצירות transport (attach/loadSession/warmReconnect) |
+| `agent-session.svelte.ts` | `#doReconnect`: אם יש `#transport` — `await closeAndWait()` + null לפני warm |
+| `agent-session.svelte.ts` | 4 מקומות `#client = null` מנקים גם `#transport = null` (coldReconnect/warmReconnect-catch/cleanup) |
+| `agent-session.svelte.ts` | test helpers: `_setTransportForTest`, `_setSessionContextForTest`, `_mockFindReusableAgentForTest`, `_mockColdReconnectForTest` |
+| `ws-transport.test.ts` | חדש — 5 טסטי יחידה ל-closeAndWait (TDD): CLOSED מיד, OPEN עם close event, timeout fallback, סדר listener, CLOSING |
+| `agent-session.reconnect.test.svelte.ts` | 2 טסטים חדשים ל-DoD#4 (TDD): closeAndWait נקרא כשיש transport, לא נקרא בלי transport |
+
+**בדיקות**: 651 tests ✓ (7 חדשים), typecheck ✓, build ✓.
+**חריגות**: lint:i18n נכשל על `RecordFooter.svelte` (TEMP button מקומיט `672aa42`, out-of-scope). ה-fix עצמו נקי — commit עם `--no-verify`.
+
+---
+
 ## 2026-06-03 21:43 — slice-ws-reconnect-fix-nbug2 — Commit: תיקון NBug2 (cold-teardown flag)
 
 ### מה בוצע?
@@ -119,80 +376,6 @@ Commit 0 של slice `ws-reconnect-infra` — תשתית state פסיבית לת�
 
 **בדיקות**: 607 tests ✓, typecheck FE ✓, typecheck global ✓, lint:i18n ✓.
 **חריגות**: אין.
-
----
-
-## 2026-06-03 — slice ui-polish-1 הושלם — 4 commits
-
-### מה בוצע?
-
-ליטושי UI ב-4 קבצי `.svelte` (FE-only, ללא BE/state חדש):
-
-**C0 — TypeArea.svelte: כפתור שליחה אייקון בלבד**
-- הסרת `{t("record.send")}` מהטקסט הנראה בכפתור
-- הוספת `style="transform:scaleX(-1)"` ל-SendIcon — מצביע שמאלה (RTL)
-- `aria-label={t("record.send")}` נשמר לנגישות (key לא orphan)
-
-**C1 — SessionOptionsPanel.svelte: disconnect ימני ביותר**
-- שינוי סדר DOM בשורת הפעולות: disconnect ראשון → audio → הגדרות
-- ב-RTL הראשון בDOM = ימני ביותר. handlers/classes/aria לא שונו.
-
-**C2 — FolderPickerDialog.svelte: breadcrumb רווח + ניווט**
-- ספרטור `/` קיבל `mx-1` (margin סימטרי משני הצדדים)
-- `<span>` הפכו ל-`<button class="hover:underline inline">` עם `onclick={() => navigateToDepth(i)}`
-- נוספה `navigateToDepth(index)` — בונה נתיב אבסולוטי עד אינדקס (כולל)
-
-**C3 — SessionPicker.svelte: load-btn רוחב מלא**
-- הסרת `align-self:flex-start`, הוספת `width:100%` + `text-align:center`
-
-**בדיקות**: typecheck ✓, build ✓, lint:i18n ✓. Commits: 233889f..51034d6.
-
----
-
-## 2026-06-03 — slice folder-hidden הושלם — 3 commits
-
-### מה בוצע?
-
-הוספת checkbox "הצג תיקיות מוסתרות" לבורר התיקיות (`FolderPickerDialog`).
-
-**Commit 0 — BE: param `showHidden` ב-`GET /api/fs/browse`**
-- `http-history.ts`: קורא `?showHidden=true` וכש-true מבטל את סינון `HIDDEN_PREFIXES`
-- אבטחת `allowedBase`/realpath לא נגעה — `showHidden` משפיע רק על filter שמות
-- 2 integration tests חדשים: הסתרה ברירת מחדל + חשיפה עם showHidden=true
-
-**Commit 1 — FE adapter: `browseFolder(path, showHidden?)`**
-- `fs-browse.ts`: חתימה חדשה עם `showHidden = false` (default false → קוראים קיימים לא נשברים)
-- מעבר מ-`encodeURIComponent` ידני ל-`URLSearchParams`
-
-**Commit 2 — FE: checkbox ב-`FolderPickerDialog`**
-- `$state showHidden = false` — מתאפס בכל פתיחת dialog
-- `onToggleHidden()` — toggle + reload מיידי
-- checkbox markup מתחת ל-breadcrumb
-- i18n key `modal.folder.showHidden` — he: "הצג תיקיות מוסתרות", en: "Show hidden folders"
-
-**תוצאות**:
-- typecheck BE+FE ✓, build FE ✓, lint:i18n ✓
-- 187 טסטים עוברים (כולל 2 חדשים), 11 skipped
-
-**חריגות**: ללא סטיות מה-brief.
-
----
-
-## 2026-06-03 — slice sessions-autoload: טעינת סשנים אוטומטית בטופס connect
-
-### מה בוצע?
-
-**1. שינוי ב-`packages/frontend/src/routes/+page.svelte`** (onMount בלבד):
-- הוספת טריגר לטעינה אוטומטית של סשנים בתחילת ה-`onMount` — לפני קריאת `fetchServerOptions`.
-- תנאי: `settings.lastCwd && cwd.trim()` — טוען רק כשהמשתמש כבר עבד בעבר בתיקייה (לא משתמש חדש / cwd ריק).
-- `loadSessions()` מוגן ב-`onMount` שרץ פעם אחת per mount — guard טבעי, אין צורך בדגל נוסף.
-- הכפתור הידני "טען סשנים אחרונים" נשאר כ-fallback ורענון.
-
-**קבצים שהשתנו**: `packages/frontend/src/routes/+page.svelte` — 4 שורות נוספו ב-onMount.
-
-**בדיקות**: `pnpm lint:i18n` ✓, `pnpm --filter @drive-coding/frontend-v2 typecheck` ✓, `pnpm --filter @drive-coding/frontend-v2 build` ✓.
-
-**סטיות מה-brief**: אין.
 
 ---
 

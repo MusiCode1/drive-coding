@@ -1,5 +1,106 @@
 # Decisions — voice-acp
 
+## 2026-06-08 — active-agents: ווידג'ט תהליכים פעילים + נעיצה (Pin) — תכנון 2 slices
+
+### רציונל
+המשתמש ביקש ווידג'ט בטופס החיבור שמציג את כל ה-agents החיים בצד-השרת (CLI, תיקייה,
+סשן, סטטוס, גיל, pid), כדי "לא לדאוג מתהליכים דולפים" ולהשאיר תהליכים רצים גם כשה-UI סגור.
+רוב התשתית כבר קיימת (`GET /api/agents`, `bridge-manager`, נתיב warm-reconnect מ-slice
+ws-reconnect). החסם היחיד: ה-idle-reaper (slice 26) הורג תהליך מנותק אחרי 5 דק'.
+
+**הכרעות-מוצר (אושרו ע"י המשתמש):**
+- **Pin פר-תהליך** (לא toggle גלובלי ולא הסרת reaper): ה-reaper ממשיך לנקות דליפות
+  מקריות (reload/טאב שנסגר), אבל תהליך עם `persistent=true` שורד ללא הגבלה. שילוב של
+  ניקוי-אוטומטי-בטוח + שליטה ידנית. זה **כן** ה-"future slice A" שהערות ה-TEMPORARY צופות —
+  אבל הוא **מאלף** את ה-reaper (מחריג נעוצים), לא מוחק אותו.
+- **פעולות לכל שורה**: חיבור-מחדש (דרך `session.loadSession` הקיים — warm-first, אפס קוד
+  reconnect חדש) + הריגה (`deleteAgent` קיים) + Pin.
+
+**חיתוך**: 2 slices משורשרים — `active-agents-backend` (שדה persistent, endpoint,
+reaper-respects-pin, העשרת pid/attached) ואז `active-agents-widget` (VM+רכיב+חיווט).
+ה-backend ניתן לאימות יחידתי ועומד בפני עצמו; הווידג'ט נשען עליו.
+
+### ממצאי אביגיל (2 סבבים → READY)
+- **backend** (סבב 1: 3 findings, אפס blockers): `bridgeManager` כשדה-חובה ב-deps של
+  `registerAgentsHttp` היה שובר 2 call-sites בטסט (`http-agents.test.ts:34,150`) →
+  **הוכרע: אופציונלי + guard `?.`**. גם: `persistent` חייב להיות **אופציונלי** בסכמה
+  (אחרת `agent-schema.test.ts:88 toEqual` ו-`Agent({...})` בלי persistent נשברים) —
+  אומץ דפוס conditional-copy כמו `crashReason`/`acpSessionId`.
+- **widget** (סבב 1: 6 findings, אפס blockers): הטענה "lint:i18n אוכף שלמות קטלוגים"
+  שגויה — **typecheck** אוכף (`Catalog = Record<MessageKey,string>`); lint:i18n אוכף רק
+  עברית-קשיחה. בנוסף: `+page.svelte` כבר **316 שורות** (מעל ספיק ה-150) → הוכרע **לקבל
+  כ-debt קיים, לא לחלץ בסלייס הזה**.
+
+### שינויי-כיוון
+- `bridgeManager` ב-deps: חובה → אופציונלי (לשמירת טסטים קיימים ירוקים).
+- ספיק ה-150 ל-route ירד מקריטריון-dispatch להבהרה ("אין לוגיקה כבדה **חדשה**") לאור
+  ה-debt הקיים של 316 שורות.
+
+### רעיונות שנדחו
+- **toggle גלובלי / הסרת reaper מלאה**: נדחו לטובת Pin פר-תהליך (לא מבחין בין תהליך
+  שרצינו להשאיר לבין דליפה / מודל מנטלי גס מדי).
+- **שמות-סשן אנושיים בווידג'ט**: דורש `listSessions` יקר (spawn) → מציגים sessionId קצר.
+- **polling אוטומטי**: refresh ב-mount + כפתור ידני מספיק ל-v1.
+- **הישרדות חוצת-restart של ה-BE** (daemon אמיתי): מחוץ ל-scope — registry בזיכרון,
+  children מתים עם ה-BE (D8). "UI סגור" (דפדפן) כבר נתמך.
+
+## 2026-06-08 — merge slice-ws-reconnect-infra → dev (תשתית auto-reconnect)
+
+### רציונל
+‏ה-slice עבר runtime-gate: כלב **GO** + calev-heavy ל-infra, ו-fix-nbug2 כלב **GO (7/8)**.
+‏מוזג ל-dev עם `git merge --no-ff` (merge commit `f5b50ba`, base `f060fd3`). אישור מיזוג
+‏מפורש מהמשתמשת.
+
+### ממצאי אימות
+‏NBug1+NBug2 (onClose תקוע ב-cold teardown; WS חי שלא נסגר לפני warm) — תוקנו ואומתו.
+‏טסטים אחרי merge: typecheck ✓ | 677 passed / 12 skipped | lint:i18n ✓.
+
+### שינויי-כיוון בזמן ה-merge
+‏- **קונפליקט יחיד** ב-`docs/walkthrough.md` (changelog) — נפתר ע"י שמירת שני הבלוקים
+‏  (ערכי dev החדשים + ערכי ws-reconnect). `agent-session.svelte.ts` (הקובץ המרכזי)
+‏  התמזג אוטומטית למרות שינוי דו-צדדי (dev:new-session-warm + branch:reconnect).
+‏- **i18n gate** חסם את הקומיט: כפתור ה-TEMP החזיק 2 מחרוזות עברית מקודדות-קשיח.
+‏  הוחלט (משתמשת) ל-i18n כמו שצריך → מפתחות `record.reconnect/reconnecting/reconnectAttempt`
+‏  (he+en), במקום לעקוף עם `--no-verify`.
+
+### Known-debt (להסרה בסליס הבא)
+‏- **כפתור reconnect ידני TEMP** ב-`RecordFooter.svelte` (commit `23e4a57`, מסומן
+‏  `<!-- TEMP-RECONNECT-BUTTON -->`) — נשאר זמנית בהחלטת המשתמשת לצורך בדיקה ידנית.
+‏  ה-UI הקבוע = `slice-ws-reconnect-ui` עוקב (`depends_on: [ws-reconnect-infra]`).
+‏  **לא לשכוח להסיר** את הכפתור + 3 מפתחות ה-i18n כשה-UI הקבוע נכנס.
+
+### נ"ב — fix-null-msgid-grouping
+‏ה-branch `fix-null-msgid-grouping` **אינו** ממתין למיזוג: תיקון הקוד כבר ב-dev
+‏(commit `47f9ad7`); ה-branch סוחב רק דוח calev ישן. מועמד למחיקת worktree.
+
+## 2026-06-04 — slice pwa-installable: רמה A בלבד (installable), בלי service worker
+
+### רציונל — למה אין offline/SW
+‏האפליקציה חיה על חיבור חי (WS ל-agent, TTS/STT דרך רשת). offline חסר-משמעות —
+‏בלי רשת אין שיחה. הערך האמיתי של PWA כאן הוא **התקנה למסך-בית + standalone
+‏fullscreen** (בסיס ל-car mode על נייד, היעד שנדחה ב-archive/v1/future-features §14).
+‏SW מוסיף סיכון של stale-cache + versioning bugs בלי ערך מיידי, ובמיוחד עלול
+‏**להחמיר** debug של נפילות-WS (תועד ב-handoff "WS נופל לעיתים קרובות"). לכן: רמה A
+‏(manifest + icons + meta) עכשיו; SW = slice עתידי נפרד רק אם יוכח צורך.
+
+### החלטות-עיצוב
+‏- **theme_color יחיד = ember `#16130f`** (manifest תומך רק בצבע סטטי). dynamic
+‏  theme-color לפי palette נבחר = future.
+‏- **iOS meta tags** (`apple-mobile-web-app-capable` + `status-bar-style:black-translucent`)
+‏  נכללים — iOS Safari לא קורא display:standalone מלא מה-manifest. זו הסיבה שהפיצ'ר
+‏  נדחה ב-v1; כאן נפתר. בדיקת iOS אמיתית = follow-up (אין מכשיר זמין) — לא חוסם merge.
+‏- **לוגו placeholder** נוצר ב-PIL (equalizer קולי מעל נתיב-כביש בפרספקטיבה, פלטה ember).
+‏  החלפה עתידית בנכס מעוצב = drop-in (אותם שמות קבצים ב-static/icons/).
+
+### ממצאי אביגיל (USABLE-AFTER-FIX → תוקן → READY)
+‏blocker יחיד: ה-brief השתמש ב-`--filter @drive-coding/frontend` אך שם ה-package הוא
+‏`@drive-coding/frontend-v2` (התיקייה `frontend/` אך שם ה-package נשאר `-v2`). pnpm
+‏מחזיר exit 0 **בשקט** על filter שלא תואם → build+typecheck לא היו רצים כלל וה-DoD
+‏הקריטי לא נבדק. אותו דפוס תוקן ב-redesign-1 ו-wake-word-infra. תוקן ב-3 מקומות +
+‏הוספת הערת-אזהרה מפורשת ל-executor. כל שאר הניתוח הטכני (serveStatic order לא בולע
+‏את ה-manifest, MIME `application/manifest+json` נכון, adapter-static מעתיק `.webmanifest`,
+‏Vite dev מגיש static, lint:i18n לא סורק .webmanifest) — אומת אמפירית ע"י אביגיל.
+
 ## 2026-06-04 — slice cli-specs-override: קובץ קונפיג חיצוני ל-CLI_SPECS + env-shaping ל-child
 
 ### רקע — gemini נשבר תחת OneCLI

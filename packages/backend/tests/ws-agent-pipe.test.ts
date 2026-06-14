@@ -101,6 +101,30 @@ describe("ws-agent in-process pipe", () => {
     expect(stdinChunks.join("")).toContain(msg)
   })
 
+  it("$/ping keepalive → replies $/pong and does NOT forward to child.stdin", async () => {
+    const child = makeMockChild()
+    const orchestrator = { getBridgePort: vi.fn(() => null) } as never
+    const bridgeManager = { getChild: vi.fn(() => child), markAttached: vi.fn(), markDetached: vi.fn() }
+
+    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
+    const { ws, sent } = makeMockFeWs()
+
+    onConnect(ws, "ping-agent")
+
+    const stdinChunks: string[] = []
+    child.stdin.on("data", (chunk) => stdinChunks.push(chunk.toString()))
+
+    // FE heartbeat (ws-transport.ts) — WS-specific NAT keepalive
+    ws.emit("message", JSON.stringify({ jsonrpc: "2.0", method: "$/ping" }))
+
+    await new Promise((r) => setTimeout(r, 20))
+
+    // pong returned to FE
+    expect(sent).toContain(`${JSON.stringify({ jsonrpc: "2.0", method: "$/pong" })}\n`)
+    // ping must NOT leak into the ACP agent's stdin
+    expect(stdinChunks.join("")).not.toContain("$/ping")
+  })
+
   it("child.stdout line forwarded to FE with \\n preserved (NDJSON delimiter)", async () => {
     // The FE consumes the WS stream via ndJsonStream which parses on \n boundary.
     // If BE strips \n (readline does that), the SDK waits forever for completion.
