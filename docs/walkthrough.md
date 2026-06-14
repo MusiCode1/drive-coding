@@ -1,3 +1,52 @@
+## 2026-06-14 — slice-msr-v2 — מצב-מודל + בקרת-סוכן + השמעה (מימוש מחדש על dev)
+
+### מה בוצע?
+
+**slice**: slice-model-status-replay-v2 (base: dev)
+**commits**: 6 (2eb585e, 1c86aa9, c6dda4a, d5527e0, d2ee44a, 56e5d0a)
+
+**Commit 1 — refactor(session): הפרדת status/turnState (2eb585e)**
+- הסיר "thinking" מ-AgentSessionStatus; הוסיף TurnState + turnState = $state
+- הוסיף #setTurnState + NBug1 tail-debounce (opencode #17505: idle-on-RESP + 1.5ש' debounce)
+- עדכן sendPrompt, #onSessionUpdate (agent_message/thought/tool_call chunks), applyConfigOption
+- עדכן VoiceMode (turnState !== "idle"), Speaker (#prevTurnState + #handleStatusTransition)
+- עדכן TypeArea + AppHeader; עדכן agent-session.test.ts:242
+- typecheck 0, tests 201/201, lint:i18n ✓
+
+**Commit 2 — feat(status-bubble): ModelStatus VM + StatusBubble + hasPendingNarration (1c86aa9)**
+- ModelStatus derived VM (phase: waiting/thinking/responding/calling-tool/pending-tts/speaking/null)
+- StatusBubble.svelte — transient, מרנדרת כש-phase !== null, עם אנימציית pulse
+- Speaker.hasPendingNarration + #pendingCount ($state); auto-scroll מוסיף modelStatus.phase לתלות
+- i18n: modelStatus.* (6 keys; keys.ts + he.ts + en.ts)
+- typecheck 0, tests 201/201, lint:i18n ✓
+
+**Commit 3 — feat(session): cancelTurn (ACP cancel) + תיקון X-מהבהב (c6dda4a)**
+- AgentSession.cancelTurn() — ACP cancel + מאלץ turnState=idle מיידית
+- VoiceMode.cancel() קורא void session.cancelTurn()
+- typecheck 0, tests 201/201
+
+**Commit 4 — feat(recordings): saveRecording + recordingUrl (d5527e0)**
+- adapters/voice/recordings.ts: POST /api/recordings {audioBase64, mimeType} → {id}
+- transcribe.ts: הסיר stub; קורא saveRecording(blob).catch(()=>({id:""}))
+- typecheck 0, tests 201/201
+
+**Commit 5 — feat(bubble-player): play-bubble + BubblePlayer VM (d2ee44a)**
+- adapters/voice/play-bubble.ts: playUserRecording + playAgentText (stream→Blob→objectURL; revokeObjectURL)
+- BubblePlayer VM: toggle/stop; guard turnState!=="idle"; אין $effect
+- context.ts + layout: getBubblePlayer/setBubblePlayer + new BubblePlayer
+- typecheck 0, tests 201/201
+
+**Commit 6 — feat(bubbles): כפתור ▶/⏸ על בועות משתמש + סוכן (56e5d0a)**
+- UserBubble: ▶ אם recordingId; MessageBubble: ▶ לTTS; בועה מודגשת בזמן השמעה
+- i18n: bubble.play + bubble.stop
+- typecheck 0, tests 201/201, lint:i18n ✓
+
+**בדיקות**: typecheck frontend-v2 ✓ | typecheck core ✓ | 201 tests ירוקים | lint:i18n ✓
+**env-blocked**: בדיקות חיות (cancel/▶/בועת-סטטוס) — Windows env-blocker (opencode קורס על plugin). כלב יאמת חי.
+**חריגות מה-brief**: אין. reconnect logic לא נגע.
+
+---
+
 ## 2026-06-13 — slice P1b — ACP Provider adapter (core-only)
 
 ### מה בוצע?

@@ -1,6 +1,6 @@
 # Brief: slice — מצב-מודל + בקרת-סוכן + השמעה (מימוש מחדש על dev)
 
-> סטטוס: **טיוטה — ממתין plan-gate (אביגיל)**. complexity: **8/10** → verifier-slice-**heavy**.
+> סטטוס: **הושלם** (2026-06-14). complexity: **8/10** → verifier-slice-**heavy**.
 > base: **`dev`** (tip בזמן כתיבה — אביגיל תאמת line numbers מול ה-tip בזמן dispatch).
 > depends_on: [] — כל התלויות כבר ב-dev (sessions-inline, wake-word infra, ws-reconnect-infra).
 > verifier-phase אחרי Commit 1 (state refactor), Commit 3 (cancelTurn), Commit 4 (I/O recordings).
