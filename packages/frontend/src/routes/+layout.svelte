@@ -16,6 +16,7 @@
 import "../app.css"
 import type { Locale } from "@drive-coding/core/i18n"
 import {
+  setBubblePlayer,
   setCues,
   setI18n,
   setMic,
@@ -31,6 +32,7 @@ import {
 } from "$lib/context"
 import { CuesEngine } from "$lib/engines/cues"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
+import { BubblePlayer } from "$lib/view-models/bubble-player.svelte"
 import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
 import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
@@ -70,6 +72,9 @@ const voiceMode = new VoiceMode({ mic, session, speaker })
 // ─── model-status ─── (msr-v2 — תלוי ב-session + speaker)
 const modelStatus = new ModelStatus({ session, speaker })
 
+// ─── bubble-player ─── (msr-v2 — תלוי ב-session + settings)
+const bubblePlayer = new BubblePlayer({ session, settings })
+
 // ─── car-mode ─── (slice 7)
 
 // ─── theme ─── (redesign-1)
@@ -105,6 +110,7 @@ setSpeaker(speaker)
 setMic(mic)
 setVoiceMode(voiceMode)
 setModelStatus(modelStatus)
+setBubblePlayer(bubblePlayer)
 setTheme(theme)
 setResponsive(responsive)
 setUiShell(uiShell)

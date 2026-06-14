@@ -24,6 +24,7 @@ import type { VoiceMode } from "./view-models/derived/voice-mode.svelte"
 import type { ModelStatus } from "./view-models/derived/model-status.svelte"
 import type { CuesEngine } from "./engines/cues"
 import type { ModalsVM } from "./view-models/modals.svelte"
+import type { BubblePlayer } from "./view-models/bubble-player.svelte"
 
 // ─── i18n ──────────────────────────────────────────
 export const [getI18n, setI18n] = createContext<I18nVM>()
@@ -62,3 +63,6 @@ export const [getModals, setModals] = createContext<ModalsVM>()
 
 // ─── model-status ─── (msr-v2)
 export const [getModelStatus, setModelStatus] = createContext<ModelStatus>()
+
+// ─── bubble-player ─── (msr-v2)
+export const [getBubblePlayer, setBubblePlayer] = createContext<BubblePlayer>()
