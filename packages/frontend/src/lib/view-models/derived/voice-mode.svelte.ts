@@ -74,5 +74,7 @@ export class VoiceMode {
     this.#mic.cancel()
     // Speaker.stop() היא מתודה תוספתית (additive) שנוספה בקומִיט הזה — ראה speaker.svelte.ts
     this.#speaker.stop()
+    // msr-v2: ACP cancel — עוצר את הסוכן ומחזיר turnState=idle (תיקון X-מהבהב)
+    void this.#session.cancelTurn()
   }
 }
