@@ -59,14 +59,18 @@ const mockClient = {
   close: vi.fn(),
 }
 
-vi.mock("@drive-coding/core/acp/client", () => ({
-  createAcpClient: vi.fn().mockImplementation(
-    (_transport: unknown, listener: (n: SessionNotification) => void) => {
-      capturedListener = listener
-      return Promise.resolve(mockClient)
-    },
-  ),
-}))
+vi.mock("provider-contract", async (importActual) => {
+  const actual = await importActual<typeof import("provider-contract")>()
+  return {
+    ...actual,
+    createAcpClient: vi.fn().mockImplementation(
+      (_transport: unknown, listener: (n: SessionNotification) => void) => {
+        capturedListener = listener
+        return Promise.resolve(mockClient)
+      },
+    ),
+  }
+})
 
 // 5. fetch global — לfixtures (NBug3/replay test)
 const mockFixture = {
