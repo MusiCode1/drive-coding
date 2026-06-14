@@ -14,8 +14,7 @@
  */
 
 import { readdir, realpath } from "node:fs/promises"
-import { homedir } from "node:os"
-import { resolve } from "node:path"
+import { relative, resolve } from "node:path"
 import type { Hono } from "hono"
 import type { ProjectsRegistry } from "../app/projects-registry.js"
 import type { RecordingsStore } from "../app/recordings-store.js"
@@ -103,14 +102,31 @@ export function registerRecordingsPostHttp(
 
 const HIDDEN_PREFIXES = [".git", ".opencode", ".svelte-kit", "node_modules", ".pnpm"]
 
+/**
+ * בודק אם נתיב הוא absolute — cross-platform.
+ * ב-Unix: מתחיל ב-"/"
+ * ב-Windows: כונן (C:\) או UNC (\\)
+ * משמש לבדיקת containment עם path.relative.
+ */
+function isAbsolutePath(p: string): boolean {
+  return p.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(p) || p.startsWith("\\\\")
+}
+
 export function registerFsBrowseHttp(
   app: Hono,
   opts: {
-    /** שומר אבטחה: נתיבים מחוץ לבסיס זה מחזירים 403. ברירת מחדל: os.homedir(). */
+    /**
+     * שומר אבטחה opt-in: כשמוגדר, נתיבים מחוץ לבסיס זה מחזירים 403.
+     * ניתן להגדיר גם דרך env FS_BROWSE_ALLOWED_BASE.
+     * ברירת מחדל: undefined — מאפשר דפדוף בכל ה-filesystem (Q1 decision).
+     * realpath נשמר תמיד (הגנת symlink).
+     */
     allowedBase?: string
   } = {},
 ): void {
-  const allowedBase = opts.allowedBase ?? homedir()
+  // opt-in restriction: opts.allowedBase או env FS_BROWSE_ALLOWED_BASE.
+  // undefined = allow-all (Q1 decision: ברירת מחדל מאפשרת הכל).
+  const allowedBase = opts.allowedBase ?? process.env.FS_BROWSE_ALLOWED_BASE
 
   app.get("/api/fs/browse", async (c) => {
     const rawPath = c.req.query("path")
@@ -119,7 +135,7 @@ export function registerFsBrowseHttp(
     }
     const showHidden = c.req.query("showHidden") === "true"
 
-    // המרה לנתיב אבסולוטי ואז realpath למעקב אחר סימלינקים
+    // המרה לנתיב אבסולוטי ואז realpath למעקב אחר סימלינקים (הגנת symlink — תמיד)
     const normalized = resolve(rawPath)
     let real: string
     try {
@@ -128,10 +144,18 @@ export function registerFsBrowseHttp(
       return c.json({ error: "path not found" }, 404)
     }
 
-    // אבטחה: חייב להיות בתוך allowedBase
-    const safeBase = await realpath(allowedBase).catch(() => allowedBase)
-    if (!real.startsWith(`${safeBase}/`) && real !== safeBase) {
-      return c.json({ error: "access denied" }, 403)
+    // אבטחה opt-in: בדיקת הכלה רק כש-allowedBase מוגדר.
+    // שימוש ב-path.relative (cross-platform): בתוך הבסיס ⟺ relative אינו מתחיל ב-".."
+    // ואינו absolute (מטפל ב-"\" וב-"/").
+    if (allowedBase !== undefined) {
+      const safeBase = await realpath(allowedBase).catch(() => allowedBase)
+      if (real !== safeBase) {
+        const rel = relative(safeBase, real)
+        const isOutside = rel.startsWith("..") || isAbsolutePath(rel)
+        if (isOutside) {
+          return c.json({ error: "access denied" }, 403)
+        }
+      }
     }
 
     let dirents: import("node:fs").Dirent<string>[]

@@ -1,3 +1,5 @@
+import * as os from "node:os"
+import * as path from "node:path"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 // Mock child_process to avoid invoking the real `opencode models` command
@@ -75,7 +77,9 @@ describe("HTTP GET /api/options", () => {
 
     expect(Array.isArray(body.projects)).toBe(true)
     for (const p of body.projects) {
-      expect(p.startsWith("/")).toBe(true)
+      // cross-platform: נתיב אבסולוטי — Unix מתחיל ב-"/", Windows מתחיל ב-drive (C:\) או UNC (\\)
+      const isAbsolute = p.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(p) || p.startsWith("\\\\")
+      expect(isAbsolute).toBe(true)
       expect(p.includes("user-files")).toBe(false)
       expect(p.includes("node_modules")).toBe(false)
     }
@@ -97,7 +101,47 @@ describe("HTTP GET /api/options", () => {
 
     expect(typeof body.homeDir).toBe("string")
     expect(body.homeDir.length).toBeGreaterThan(0)
-    expect(body.homeDir.startsWith("/")).toBe(true)
+    // cross-platform: homeDir מנורמל מ-os.homedir() — absolute, אך לא בהכרח Unix "/"
+    const isAbsolute =
+      body.homeDir.startsWith("/") ||
+      /^[a-zA-Z]:[\\/]/.test(body.homeDir) ||
+      body.homeDir.startsWith("\\\\")
+    expect(isAbsolute).toBe(true)
+  })
+
+  // Commit 2: listProjectDirs — cross-platform + validateCwd filter
+  it("Commit 2: projects list uses os.tmpdir() (cross-platform) — no hardcoded /tmp", async () => {
+    execFileSyncMock.mockReturnValue("")
+    const app = makeApp()
+    const res = await app.request("/api/options")
+    const body = (await res.json()) as { projects: string[] }
+
+    // ודא שאין נתיב שמתחיל ב-/tmp בדיוק (hardcoded linux)
+    // בפועל on Windows os.tmpdir() = C:\Users\...\AppData\Local\Temp
+    const hasHardcodedTmp = body.projects.some((p) => p === "/tmp" || p.startsWith("/tmp/"))
+    expect(hasHardcodedTmp).toBe(false)
+  })
+
+  it("Commit 2: projects do not contain paths that fail validateCwd (e.g. relative paths)", async () => {
+    execFileSyncMock.mockReturnValue("")
+    const app = makeApp()
+    const res = await app.request("/api/options")
+    const body = (await res.json()) as { projects: string[] }
+
+    // כל נתיב ברשימה חייב לעבור בדיקת absolute (validateCwd מסנן כל מה שלא absolute)
+    for (const p of body.projects) {
+      const isAbsolute = p.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(p) || p.startsWith("\\\\")
+      expect(isAbsolute, `expected "${p}" to be absolute`).toBe(true)
+    }
+  })
+
+  it("Commit 2: homeDir is the actual os.homedir() value (cross-platform)", async () => {
+    execFileSyncMock.mockReturnValue("")
+    const app = makeApp()
+    const res = await app.request("/api/options")
+    const body = (await res.json()) as { homeDir: string }
+
+    expect(body.homeDir).toBe(os.homedir())
   })
 
   it("opencode list prefers known anthropic/openai/google prefixes (preferred picks first)", async () => {

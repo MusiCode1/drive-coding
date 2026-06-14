@@ -1,5 +1,9 @@
 import { type } from "arktype"
 
+// P1a: מיקום tool call — { path, line? } — תואם ל-ToolCallLocation הקנוני (decision 9)
+const ToolLocation = type({ path: "string", "line?": "number" })
+export type ToolLocation = typeof ToolLocation.infer
+
 // ─── לקוח → שרת ─────────────────────────────────────────
 
 export const PingMessage = type({ type: "'ping'" })
@@ -74,7 +78,7 @@ export type TextChunkMessage = typeof TextChunkMessage.infer
  * `kind`: סוג ה-ACP ToolKind = "read" | "edit" | "delete" | "move" | "search" |
  *   "execute" | "think" | "fetch" | "switch_mode" | "other"
  * `status`: סטטוס ה-ACP ToolCallStatus = "pending" | "in_progress" | "completed" | "failed"
- * `locations`: מערך של נתיבי קבצים (עבור מעקב UI "follow-along")
+ * `locations`: מערך `{ path, line? }` (עבור מעקב UI "follow-along"; P1a — decision 9)
  * `content`: תצוגה מקדימה קריאה למשתמש של פלט ה-tool (טקסט בלבד — diff/terminal
  *   מסוכמים לשורה בודדת ב-Slice 5.5; רינדור עשיר יותר ב-Slice 7)
  *
@@ -88,7 +92,7 @@ export const ToolCallMessage = type({
   title: "string",
   "kind?": "string",
   "status?": "string",
-  "locations?": "string[]",
+  "locations?": ToolLocation.array(),
   "content?": "string",
   "narration?": "string",
 })

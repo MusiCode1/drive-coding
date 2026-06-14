@@ -2,6 +2,7 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import type { BridgeCrashInfo, BridgeHandle, BridgeManager, SpawnBridgeInput } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
+import { AUDIO_FRIENDLY_PROMPT } from "../prompts/index.js"
 import { getCliCommand, getCliSpec } from "./cli-config.js"
 
 const log = createLogger("backend.bridge.manager")
@@ -59,9 +60,10 @@ export function createBridgeManager(): BridgeManager & {
     const stderrLines: string[] = []
     let stderrPartial = ""
 
-    // מזריק את הפלאגין prompt-injector (נושא את ה-audio-friendly prompt
-    // דרך אפשרויות הפלאגין) רק עבור הפעלות של opencode. עבור cliKinds אחרים
-    // (claude, gemini, codex) — ה-env עובר ללא שינוי.
+    // מזריק את הפלאגין prompt-injector רק עבור הפעלות של opencode.
+    // Commit 3 (windows-adaptation): plugin רשום כ-string-URL (opencode 1.2.27 compat).
+    // הטקסט מועבר דרך PROMPT_INJECTOR_TEXT — prompt-injector.ts קורא אותו כ-fallback.
+    // עבור cliKinds אחרים (claude, gemini, codex) — ה-env עובר ללא שינוי.
     const envWithPlugin =
       input.cliKind === "opencode"
         ? {
@@ -69,6 +71,8 @@ export function createBridgeManager(): BridgeManager & {
             OPENCODE_CONFIG_CONTENT: buildOpencodeConfigContent(
               process.env.OPENCODE_CONFIG_CONTENT,
             ),
+            // העברת הטקסט לפלאגין דרך env (במקום options — opencode 1.2.27 לא מקבל tuple).
+            PROMPT_INJECTOR_TEXT: AUDIO_FRIENDLY_PROMPT,
           }
         : { ...process.env }
 
