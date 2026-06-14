@@ -1,3 +1,37 @@
+## 2026-06-15 — slice reconnect-warm-attach — חיבור-מחדש ל-agent חי (warm-attach)
+
+### מה בוצע?
+
+**slice**: reconnect-warm-attach (branch: slice-reconnect-warm-attach, base: slice-active-agents-widget@ebe3d54)
+**commits**: 2 (b1562c4..1a87cb2)
+**approach**: tdd (commit 0) + manual (commit 1)
+
+**Commit 0 — attachToLiveAgent ב-AgentSession VM (TDD)**
+- `agent-session.svelte.ts`: מתודה ציבורית `attachToLiveAgent({agentId, sessionId, cwd, cliKind})` — מנקה error, סוגר transport קיים דפנסיבית, מזריק state, קורא `#warmReconnect`.
+- warm נכשל → `status=error` + `error` message (לא cold-spawn).
+- test helpers נוספו: `_mockWarmReconnectForTest`, `_mockWarmReconnectCapturingStateForTest`, `_getSessionIdForTest`.
+- `agent-session.reconnect.test.svelte.ts`: 6 טסטים חדשים (214 סה"כ ירוקים).
+
+**Commit 1 — חיווט handleReconnect ב-+page.svelte (manual)**
+- `+page.svelte`: `handleReconnect` קורא `session.attachToLiveAgent` במקום `session.loadSession`.
+- warm מצליח → `goto("/chat")`; warm נכשל → נשארים ב-`/`, error מוצג.
+- `agent.id` = agentId (מ-`AgentPublic.id`); `acpSessionId` מובטח לא-null (guard).
+
+### חריגות
+
+- **בדיקה חית מקצה-לקצה (reconnect אמיתי) חסומה**: ה-base `slice-active-agents-widget` אינו כולל `cwd-fix-validate-windows` + `slice-windows-adaptation` (opencode plugin). יצירת agent חי ב-Windows נכשלת (validateCwd חוסם נתיב Windows ב-400). תועד כ-**blocked-on-base** — ייבדק ב-integration כשהslices ימוזגו.
+- ה-fix עצמו אומת מראש חי (WS ישיר על process חי — session/load הצליח; תועד ב-§0 של ה-brief).
+
+### בדיקות
+
+- unit tests: 214 passed (6 חדשים לslice הזה) — `pnpm --filter @drive-coding/frontend-v2 test`
+- typecheck: 0 errors — `pnpm --filter @drive-coding/frontend-v2 typecheck`
+- build: clean — `pnpm --filter @drive-coding/frontend-v2 build`
+- lint:i18n: clean — `bash scripts/lint-no-hebrew-in-code.sh`
+- בדיקה חית: blocked-on-base (ראה חריגות)
+
+---
+
 ## 2026-06-14 — slice active-agents-widget — ווידג'ט תהליכים פעילים בטופס החיבור
 
 ### מה בוצע?
