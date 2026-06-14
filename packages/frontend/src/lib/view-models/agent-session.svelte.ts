@@ -559,6 +559,8 @@ export class AgentSession {
       return
     }
 
+    this.#resetTurnTracking()   // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
+
     try {
       // 1. צור סוכן בצד השרת (זהה ל-attach)
       const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
@@ -590,6 +592,7 @@ export class AgentSession {
         this.#captureSessionConfig(loadResult)   // slice 23: לכוד config (sessionId מ-input, לא מ-response)
       } finally {
         this.isLoadingHistory = false
+        this.#setTurnState("idle")   // NBug3: replay מסתיים — reset turnState (replay אינו תור)
       }
       this.#sessionId = input.sessionId
 
@@ -600,6 +603,7 @@ export class AgentSession {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = `loadSession failed: ${msg}`
+      this.#setTurnState("idle")   // NBug3: throw מוקדם (createAgent/waitForOpen) — ה-finally הפנימי לא רץ
       this.#setStatus("error")
       this.#cleanup()
     }
@@ -649,6 +653,7 @@ export class AgentSession {
       return this.loadSession(input)
     }
 
+    this.#resetTurnTracking()   // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
     this.#setStatus("connecting")
     this.error = null
     this.bubbles = []
@@ -663,6 +668,7 @@ export class AgentSession {
         this.#captureSessionConfig(loadResult)
       } finally {
         this.isLoadingHistory = false
+        this.#setTurnState("idle")   // NBug3: replay מסתיים — reset turnState
       }
       this.#sessionId = input.sessionId
       this.cwd = input.cwd
@@ -677,6 +683,7 @@ export class AgentSession {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = `switchSession failed: ${msg}`
+      this.#setTurnState("idle")   // NBug3: throw מוקדם — ה-finally הפנימי אולי לא רץ
       this.#setStatus("error")
       // לא #cleanup — החיבור עדיין תקין; רק הטעינה נכשלה. השאר את ה-#client חי.
     }
@@ -988,6 +995,7 @@ export class AgentSession {
       const params = new URLSearchParams(typeof location !== "undefined" ? location.search : "")
       const delayMs = Number(params.get("stream") ?? "0") || 0
 
+      this.#resetTurnTracking()   // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
       this.isLoadingHistory = true
       try {
         for (const update of data.updates) {
@@ -1001,11 +1009,13 @@ export class AgentSession {
         await tick()
       } finally {
         this.isLoadingHistory = false
+        this.#setTurnState("idle")   // NBug3: replay מסתיים — reset turnState
       }
       this.status = "connected"
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = `mock loadSession failed: ${msg}`
+      this.#setTurnState("idle")   // NBug3: throw מוקדם — ה-finally הפנימי אולי לא רץ
       this.status = "error"
     }
   }
