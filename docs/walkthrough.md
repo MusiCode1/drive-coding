@@ -1,3 +1,25 @@
+## 2026-06-14 — slice windows-adaptation — Commit 1: FolderPickerDialog cross-platform
+
+**slice**: windows-adaptation (base: fix-cwd-validate-windows@940d222, worktree: .worktrees/slice-windows-adaptation)
+**commit**: Commit 1 — FolderPickerDialog cross-platform path handling
+
+**מה בוצע?**
+- `default path`: מ-hardcoded `"/home/user"` לsettings.lastCwd (homeDir מהserver); אין fallback לנתיב Unix קשיח.
+- `breadcrumbs`: פיצול על `[\\/]` (גם `\` וגם `/`); Windows drive-letter ("D:") נשמר כcrumb ראשון.
+- `getSeparator()`: helper — זיהוי separator לפי תוכן הנתיב (backslash → Windows).
+- `isRoot()`: בדיקת root cross-platform — Unix "/" + Windows drive-root `/^[a-zA-Z]:[\\/]?$/`.
+- `navigateTo()`: בנייה עם separator נכון (לא `/` קשיח).
+- `navigateToDepth()`: Windows drive → `D:\rest`, Unix → `/rest`.
+- `navigateUp()`: split על הseparator הגדול מבין `/` ו-`\`; Windows drive-root: `D:` → `D:\`.
+- `loadFolder()`: guard לנתיב ריק (אל תנסה לטעון).
+
+**approach**: manual (לפי brief — אין tests אוטומטיים לFolderPicker).
+**בדיקות**: `pnpm --filter @drive-coding/frontend-v2 typecheck` ✓ | `lint:i18n` ✓
+
+**חריגות**: אין.
+
+---
+
 ## 2026-06-13 — slice P1b — ACP Provider adapter (core-only)
 
 ### מה בוצע?

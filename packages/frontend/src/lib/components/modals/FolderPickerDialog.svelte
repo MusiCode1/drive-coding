@@ -5,7 +5,8 @@
  * Bits Dialog עם: breadcrumb, רשימת תיקיות, ניווט up, "בחר תיקייה זו".
  * מוקאפ: 699-733.
  *
- * ─── redesign-6 ───
+ * ─── redesign-6 / windows-adaptation ───
+ * cross-platform: breadcrumbs פיצול על [\\/], ניווט עם separator נכון.
  */
 import { untrack } from "svelte"
 import { Dialog as BitsDialog } from "bits-ui"
@@ -21,7 +22,9 @@ const settings = getSettings()
 const modals = getModals()
 
 // מצב מקומי
-let currentPath = $state(settings.lastCwd || "/home/user")
+// default: settings.lastCwd (שהוא homeDir מה-server אחרי load).
+// אין fallback לנתיב Unix קשיח — BE מחזיר path מנורמל בlectFolder.
+let currentPath = $state(settings.lastCwd || "")
 let entries = $state<FsEntry[]>([])
 let loading = $state(false)
 let error = $state<string | null>(null)
@@ -35,22 +38,42 @@ $effect(() => {
   untrack(() => {
     if (isOpen) {
       showHidden = false
-      void loadFolder(currentPath)
+      // עדכן currentPath מ-settings בכל פתיחה (ה-page מאכלס settings.lastCwd אחרי fetch)
+      if (!currentPath && settings.lastCwd) {
+        currentPath = settings.lastCwd
+      }
+      void loadFolder(currentPath || settings.lastCwd || "")
     }
   })
 })
 
-// breadcrumb — פיצול הנתיב לחלקים
+// breadcrumb — פיצול הנתיב לחלקים cross-platform (גם / וגם \).
+// Windows drive-letter: "D:\Users\User" → ["D:", "Users", "User"]
 const breadcrumbs = $derived(
-  currentPath.split("/").filter(Boolean)
+  currentPath.split(/[\\/]/).filter(Boolean)
 )
 
+// זיהוי separator: אם הנתיב מכיל "\" → Windows, אחרת Unix.
+// BE מחזיר realpath מנורמל, כך שהseparator עקבי.
+function getSeparator(path: string): string {
+  return path.includes("\\") ? "\\" : "/"
+}
+
+// בדיקת root cross-platform: Unix "/" או Windows drive-root "C:\" / "C:/"
+function isRoot(path: string): boolean {
+  return path === "/" || /^[a-zA-Z]:[\\/]?$/.test(path)
+}
+
 async function loadFolder(path: string) {
+  if (!path) {
+    // נתיב ריק — אל תנסה לטעון; המשתמש יצטרך להקליד
+    return
+  }
   loading = true
   error = null
   try {
     const result = await browseFolder(path, showHidden)
-    currentPath = result.path
+    currentPath = result.path  // BE מחזיר realpath מנורמל
     entries = result.entries.filter((e) => e.isDir)
   } catch (err) {
     error = err instanceof Error ? err.message : String(err)
@@ -71,17 +94,43 @@ function onOpenChange(open: boolean) {
 }
 
 function navigateTo(name: string) {
-  void loadFolder(`${currentPath.replace(/\/$/, "")}/${name}`)
+  const sep = getSeparator(currentPath)
+  const base = currentPath.replace(/[\\/]+$/, "")  // הסרת separator סופי
+  void loadFolder(`${base}${sep}${name}`)
 }
 
 function navigateToDepth(index: number) {
   // בונה נתיב אבסולוטי עד ה-crumb באינדקס index (כולל)
-  const path = "/" + breadcrumbs.slice(0, index + 1).join("/")
+  // Windows drive: ["D:", "Users"] → "D:\Users"; Unix: ["home", "user"] → "/home/user"
+  const crumbs = breadcrumbs.slice(0, index + 1)
+  const sep = getSeparator(currentPath)
+  let path: string
+  if (crumbs.length > 0 && crumbs[0] !== undefined && /^[a-zA-Z]:$/.test(crumbs[0])) {
+    // Windows drive: D: + \ + rest
+    path = crumbs[0] + sep + crumbs.slice(1).join(sep)
+  } else {
+    // Unix: / + parts joined
+    path = "/" + crumbs.join("/")
+  }
   void loadFolder(path)
 }
 
 function navigateUp() {
-  const parent = currentPath.replace(/\/[^/]+\/?$/, "") || "/"
+  const sep = getSeparator(currentPath)
+  // הסרת החלק האחרון — cross-platform
+  const trimmed = currentPath.replace(/[\\/]+$/, "")  // ללא trailing separator
+  const lastSep = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"))
+  if (lastSep <= 0) {
+    // Unix root
+    void loadFolder("/")
+    return
+  }
+  const parent = trimmed.slice(0, lastSep)
+  // Windows drive-root: "D:" → "D:\"
+  if (/^[a-zA-Z]:$/.test(parent)) {
+    void loadFolder(parent + sep)
+    return
+  }
   void loadFolder(parent)
 }
 
@@ -149,8 +198,8 @@ function pickFolder() {
           {:else if error}
             <div class="text-center py-4 text-sm" style="color:var(--recording)">{t("modal.folder.error")}: {error}</div>
           {:else}
-            <!-- up button -->
-            {#if currentPath !== "/" && currentPath !== ""}
+            <!-- up button — מוצג כל עוד לא ב-root (cross-platform: "/" או "D:\") -->
+            {#if !isRoot(currentPath) && currentPath !== ""}
               <button
                 class="flex items-center gap-3 px-3 py-3.5 rounded-xl text-sm text-start"
                 style="background:var(--bg-card); color:var(--fg-muted)"
