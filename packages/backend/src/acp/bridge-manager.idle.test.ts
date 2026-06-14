@@ -6,17 +6,26 @@
  * when background-agent management (future "slice A") lands.
  * See docs/plans/slice-26-bridge-idle-reaper.md §7.
  *
- * Implementation note: we use `sleep 100` as the bridge binary to get a
- * long-lived process that doesn't exit during the test. This avoids the
- * bridge-manager cleaning up the entry on child exit before we can test
- * the listIdle logic against it. afterEach kills all spawned processes.
+ * Implementation note: we use a long-lived process as the bridge binary.
+ * Cross-platform (windows-adaptation Commit 4):
+ *   - Windows: bun -e "process.stdin.resume()" (bun כ-sleep)
+ *   - Unix: /usr/bin/sleep 100
+ * afterEach kills all spawned processes.
  */
 
+import { tmpdir } from "node:os"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { createBridgeManager } from "./bridge-manager.js"
 
-const SLEEP_BIN = "/usr/bin/sleep"
+// cross-platform: bun ב-Windows, sleep ב-Unix
+const IS_WINDOWS = process.platform === "win32"
+const SLEEP_BIN = IS_WINDOWS
+  ? (process.env.BUN_PATH ?? "bun")  // bun חייב להיות ב-PATH
+  : "/usr/bin/sleep"
+const SLEEP_ARGS = IS_WINDOWS
+  ? JSON.stringify(["-e", "process.stdin.resume()"])
+  : JSON.stringify(["100"])
 
 // Long-lived child processes spawned during tests — killed in afterEach
 let spawnedChildren: ChildProcessWithoutNullStreams[] = []
@@ -51,20 +60,28 @@ describe("bridge-manager listIdle (TEMPORARY slice 26)", () => {
    * set OPENCODE_BIN to /usr/bin/sleep via process.env before spawn.
    */
   async function spawnBridge(id: string): Promise<void> {
-    // Temporarily override OPENCODE_BIN so bridge-manager spawns `sleep 100`
-    const original = process.env.OPENCODE_BIN
+    // Temporarily override OPENCODE_BIN + OPENCODE_ARGS so bridge-manager spawns
+    // a long-lived process cross-platform (bun on Windows, sleep on Unix).
+    const origBin = process.env.OPENCODE_BIN
+    const origArgs = process.env.OPENCODE_ARGS
     process.env.OPENCODE_BIN = SLEEP_BIN
+    process.env.OPENCODE_ARGS = SLEEP_ARGS
     try {
       await bm.spawnWithStderr(id, {
         cliKind: "opencode",
-        cwd: "/tmp",
+        cwd: tmpdir(),   // cross-platform: os.tmpdir() במקום "/tmp" קשיח
         modelOverride: null,
       })
     } finally {
-      if (original === undefined) {
+      if (origBin === undefined) {
         delete process.env.OPENCODE_BIN
       } else {
-        process.env.OPENCODE_BIN = original
+        process.env.OPENCODE_BIN = origBin
+      }
+      if (origArgs === undefined) {
+        delete process.env.OPENCODE_ARGS
+      } else {
+        process.env.OPENCODE_ARGS = origArgs
       }
     }
     const child = bm.getChild(id)

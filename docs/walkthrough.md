@@ -1,3 +1,27 @@
+## 2026-06-14 — slice windows-adaptation — Commit 4: tests cross-platform
+
+**slice**: windows-adaptation (base: fix-cwd-validate-windows@940d222)
+**commit**: Commit 4 — השלמת tests cross-platform (TDD)
+
+**מה בוצע?**
+- `bridge-manager.idle.test.ts`:
+  - `SLEEP_BIN`: cross-platform — `bun` ב-Windows, `/usr/bin/sleep` ב-Unix.
+  - `SLEEP_ARGS`: cross-platform — `["-e","process.stdin.resume()"]` ב-Windows, `["100"]` ב-Unix.
+  - `cwd: "/tmp"` → `cwd: tmpdir()` (cross-platform).
+  - restore `OPENCODE_ARGS` ב-finally (כמו `OPENCODE_BIN`).
+- `cli-config.ts` — `getCliCommand`:
+  - תמיכה ב-`OPENCODE_ARGS` env var (JSON array) — override ל-args ב-opencode cliKind.
+  - נחוץ ל-tests cross-platform (sleep-binary ב-Windows דורש args שונים מ-`acp`).
+
+**approach**: tdd (tests היו אדומים → ירוקים ✓).
+
+**בדיקות**: `pnpm test` — 702 passed | 14 skipped | 1 pre-existing failure (lint-no-hebrew-in-code.test.mjs — SyntaxError ב-vitest runner, קיים מ-940d222, לא קשור ל-slice).
+`pnpm --filter @drive-coding/backend typecheck` ✓ | lint:i18n ✓
+
+**חריגות**: `lint-no-hebrew-in-code.test.mjs` — pre-existing failure ב-base (940d222). לא ב-scope של slice.
+
+---
+
 ## 2026-06-14 — slice windows-adaptation — Commit 3: opencode plugin tuple→string compat
 
 **slice**: windows-adaptation (base: fix-cwd-validate-windows@940d222)
