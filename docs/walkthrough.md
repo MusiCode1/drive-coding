@@ -1,3 +1,26 @@
+## 2026-06-14 — slice windows-adaptation — Commit 2: listProjectDirs cross-platform + validateCwd filter
+
+**slice**: windows-adaptation (base: fix-cwd-validate-windows@940d222)
+**commit**: Commit 2 — listProjectDirs cross-platform + validateCwd filter (TDD)
+
+**מה בוצע?**
+- `http-options.ts` — `listProjectDirs`:
+  - החלפת `"/tmp"` ב-`os.tmpdir()` (cross-platform).
+  - הוספת `validateCwd(full).isErr() → continue` — סינון נתיבים פסולים לפני `dirs.push`.
+  - import `validateCwd` מ-`@drive-coding/core`.
+- `http-options.test.ts`:
+  - הוספת import `os`, `path`.
+  - תיקון assertion "projects is array of absolute paths" — cross-platform (לא רק `startsWith("/")`).
+  - תיקון assertion "homeDir is absolute path" — cross-platform.
+  - 4 tests חדשים: no-hardcoded-tmp, all-projects-pass-validateCwd, homeDir=os.homedir(), Commit2-validateCwd-filter.
+
+**approach**: tdd (red → green ✓).
+**בדיקות**: `pnpm exec vitest run packages/backend/tests/` — 11 passed (http-options) | 195 total ✓ | `pnpm --filter @drive-coding/backend typecheck` ✓ | `lint:i18n` ✓
+
+**חריגות**: נתיבים עם שמות `%userprofile%` / `~` הם absolute תקפים בWindows → נשארים ברשימה (כצפוי לפי brief §2 Commit 2).
+
+---
+
 ## 2026-06-14 — slice windows-adaptation — Commit 1: FolderPickerDialog cross-platform
 
 **slice**: windows-adaptation (base: fix-cwd-validate-windows@940d222, worktree: .worktrees/slice-windows-adaptation)
