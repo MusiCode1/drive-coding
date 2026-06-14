@@ -16,6 +16,7 @@ import XIcon from "@lucide/svelte/icons/x"
 import { getI18n, getSettings, getModals } from "$lib/context"
 import { browseFolder } from "$lib/adapters/fs-browse"
 import type { FsEntry } from "$lib/adapters/fs-browse"
+import { fetchServerOptions } from "$lib/adapters/options"
 
 const t = getI18n().t
 const settings = getSettings()
@@ -38,14 +39,26 @@ $effect(() => {
   untrack(() => {
     if (isOpen) {
       showHidden = false
-      // עדכן currentPath מ-settings בכל פתיחה (ה-page מאכלס settings.lastCwd אחרי fetch)
-      if (!currentPath && settings.lastCwd) {
-        currentPath = settings.lastCwd
-      }
-      void loadFolder(currentPath || settings.lastCwd || "")
+      void openAtStart()
     }
   })
 })
+
+// מחשב נקודת-פתיחה ופותח. סדר עדיפויות: currentPath קיים → settings.lastCwd →
+// homeDir מהשרת (F1: משתמש חדש עם localStorage ריק — fallback ל-homeDir, brief Commit 1).
+async function openAtStart() {
+  let start = currentPath || settings.lastCwd
+  if (!start) {
+    try {
+      const opts = await fetchServerOptions()
+      start = opts.homeDir
+    } catch {
+      // אם /api/options נכשל — נשאר ריק; loadFolder יציג error ולא יקרוס.
+    }
+  }
+  currentPath = start || ""
+  await loadFolder(currentPath)
+}
 
 // breadcrumb — פיצול הנתיב לחלקים cross-platform (גם / וגם \).
 // Windows drive-letter: "D:\Users\User" → ["D:", "Users", "User"]
