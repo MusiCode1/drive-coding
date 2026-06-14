@@ -9,7 +9,7 @@
  */
 
 import type { CliKind } from "@drive-coding/core"
-import { createAcpClient } from "provider-contract"
+import { createAcpClient } from "provider-contract/acp"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
 import { createAgent, deleteAgent } from "$lib/adapters/agents-api"
 import { beWsUrl } from "$lib/util/be-url"

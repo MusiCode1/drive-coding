@@ -59,8 +59,8 @@ const mockClient = {
   close: vi.fn(),
 }
 
-vi.mock("provider-contract", async (importActual) => {
-  const actual = await importActual<typeof import("provider-contract")>()
+vi.mock("provider-contract/acp", async (importActual) => {
+  const actual = await importActual<typeof import("provider-contract/acp")>()
   return {
     ...actual,
     createAcpClient: vi.fn().mockImplementation(

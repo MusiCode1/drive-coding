@@ -17,7 +17,7 @@ import type {
   SessionModelState,
 } from "@agentclientprotocol/sdk"
 import { tick } from "svelte"
-import { createAcpClient, type AcpClient } from "provider-contract"
+import { createAcpClient, type AcpClient } from "provider-contract/acp"
 import type { CuesEngine } from "$lib/engines/cues"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
 import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
