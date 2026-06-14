@@ -14,7 +14,7 @@
  *   - user with messageId="x" × 2 → 1 bubble with 2 segments (existing behavior preserved)
  */
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import type { AcpClient } from "@drive-coding/core/acp/client"
+import type { AcpClient } from "provider-contract"
 import type { Bubble, MessageBubble, ThoughtBubble, UserBubble } from "$lib/types/bubble"
 
 // ─── Module-level mocks ───────────────────────────────────────────────────────
@@ -22,25 +22,29 @@ import type { Bubble, MessageBubble, ThoughtBubble, UserBubble } from "$lib/type
 /** Captured callback from createAcpClient — invoked in tests to simulate updates. */
 let onSessionUpdate: ((notification: unknown) => void) | null = null
 
-vi.mock("@drive-coding/core/acp/client", () => ({
-  createAcpClient: vi.fn(function mockCreateClient(
-    _transport: unknown,
-    callback: (notification: unknown) => void,
-  ): Promise<AcpClient> {
-    onSessionUpdate = callback
-    return Promise.resolve({
-      newSession: vi.fn().mockResolvedValue({ sessionId: "test-session" }),
-      prompt: vi.fn().mockResolvedValue(undefined),
-      loadSession: vi.fn().mockResolvedValue({}),
-      cancel: vi.fn(),
-      listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
-      close: vi.fn(),
-      setSessionConfigOption: vi.fn(),
-      setSessionModel: vi.fn(),
-      setSessionMode: vi.fn(),
-    } as unknown as AcpClient)
-  }),
-}))
+vi.mock("provider-contract", async (importActual) => {
+  const actual = await importActual<typeof import("provider-contract")>()
+  return {
+    ...actual,
+    createAcpClient: vi.fn(function mockCreateClient(
+      _transport: unknown,
+      callback: (notification: unknown) => void,
+    ): Promise<AcpClient> {
+      onSessionUpdate = callback
+      return Promise.resolve({
+        newSession: vi.fn().mockResolvedValue({ sessionId: "test-session" }),
+        prompt: vi.fn().mockResolvedValue(undefined),
+        loadSession: vi.fn().mockResolvedValue({}),
+        cancel: vi.fn(),
+        listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
+        close: vi.fn(),
+        setSessionConfigOption: vi.fn(),
+        setSessionModel: vi.fn(),
+        setSessionMode: vi.fn(),
+      } as unknown as AcpClient)
+    }),
+  }
+})
 
 vi.mock("$lib/engines/ws-transport", () => ({
   WsAcpTransport: vi.fn(function mockWsTransport() {
@@ -202,7 +206,7 @@ describe("AgentSession.newSession", () => {
   })
 
   it("warm path: calls #client.newSession, clears bubbles, updates sessionId via ACP response", async () => {
-    const { createAcpClient } = await import("@drive-coding/core/acp/client")
+    const { createAcpClient } = await import("provider-contract")
     const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<typeof createAcpClient>)
     // הוסף בועה קיימת כדי לאמת שהיא נמחקת
     session.bubbles = [{ id: "old", kind: "user", messageId: null, createdAt: 0, segments: [] }]

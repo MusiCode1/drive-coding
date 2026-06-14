@@ -23,7 +23,7 @@ import type {
   BridgeManager,
   CreateAgentInput,
 } from "@drive-coding/core"
-import { describeCrash } from "@drive-coding/core/acp/describe-crash"
+import { describeCrash } from "provider-contract"
 import { createLogger } from "@drive-coding/core/log"
 import type { BridgeHandleWithStderr } from "../acp/bridge-manager.js"
 import type { ProjectsRegistry } from "./projects-registry.js"
