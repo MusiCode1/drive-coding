@@ -1,3 +1,29 @@
+## 2026-06-14 — slice windows-adaptation — Commit 3: opencode plugin tuple→string compat
+
+**slice**: windows-adaptation (base: fix-cwd-validate-windows@940d222)
+**commit**: Commit 3 — opencode plugin tuple→string compat (integration)
+
+**הבאג הקריטי שתוקן**: opencode 1.2.27 דורש `plugin: string[]`, לא tuple `[url, opts]`.
+שגיאה שהייתה: `"Invalid input: expected string, received array plugin.0"` → exit code 9.
+
+**מה בוצע?**
+- `plugin-config.ts`: PluginEntry = string (לא `string | [string, Record]`); `ourEntry = pluginUrl` (string בלבד). dedup ל-string-only. backward compat: tuple בקונפיג ישן → מחלץ URL (string).
+- `bridge-manager.ts`: import `AUDIO_FRIENDLY_PROMPT`; הוספת `PROMPT_INJECTOR_TEXT: AUDIO_FRIENDLY_PROMPT` ל-childEnv (נשלח ל-opencode child process).
+- `prompt-injector.ts`: fallback ל-env — `options?.text ?? process.env.PROMPT_INJECTOR_TEXT ?? ""`; debugWritePath: `options?.debugWritePath ?? process.env.PROMPT_INJECTOR_DEBUG_PATH ?? null`.
+
+**approach**: integration (אין unit tests ייעודיים).
+
+**אימות חי**:
+- `opencode acp` עם config חדש + stdin initialize → exit 0, לא exit 9.
+- `buildOpencodeConfigContent(undefined)` → `plugin: ["file:///...prompt-injector.ts"]` (string, לא tuple).
+- `POST /api/agents` → spawning → starting → `POST session-attached` → `status:ready + acpSessionId`.
+
+**חריגות**: `status:ready` ב-BE מגיע דרך `POST /api/agents/:id/session-attached` (FE עושה ACP handshake). opencode process ייצא ללא FE client — זה נורמלי, לא crash.
+
+**בדיקות**: typecheck ✓ | lint:i18n ✓ | pnpm exec vitest run packages/backend/tests/ — 181 passed ✓
+
+---
+
 ## 2026-06-14 — slice windows-adaptation — Commit 2: listProjectDirs cross-platform + validateCwd filter
 
 **slice**: windows-adaptation (base: fix-cwd-validate-windows@940d222)

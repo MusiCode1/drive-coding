@@ -30,11 +30,17 @@ const plugin: PluginModule = {
     _input: PluginInput,
     options?: Record<string, unknown>,
   ): Promise<Hooks> {
-    const text = typeof options?.text === "string" ? options.text : ""
+    // Commit 3 (windows-adaptation): fallback לenv כשopencode טוען את הפלאגין כ-string-URL
+    // ללא options (opencode 1.2.27 — plugin: string[], לא tuple).
+    // options.text גובר על env (backwards compat למי שעדיין משתמש ב-tuple בקונפיג ישן).
+    const text =
+      typeof options?.text === "string"
+        ? options.text
+        : (process.env.PROMPT_INJECTOR_TEXT ?? "")
     const debugWritePath =
       typeof options?.debugWritePath === "string"
         ? options.debugWritePath
-        : null
+        : (process.env.PROMPT_INJECTOR_DEBUG_PATH ?? null)
 
     return {
       "experimental.chat.system.transform": async (_hookInput, output) => {
