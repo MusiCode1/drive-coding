@@ -46,7 +46,7 @@ const phaseKey: Record<NonNullable<ModelPhase>, Parameters<typeof t>[0]> = {
     color: var(--fg-dim);
     background: var(--bg-card);
     border: 1px solid var(--border);
-    align-self: flex-start;
+    align-self: flex-end; /* בצד הסוכן (כמו MessageBubble self-end) — הסטטוס מייצג את המודל */
   }
 
   .dot {
