@@ -5,29 +5,48 @@
  * עיצוב מוקאפ 256-262: self-end, avatar agent, bubble-agent token.
  * Markdown נשמר: joinSegmentText + renderMarkdown + DOMPurify.
  *
+ * msr-v2: כפתור ▶ להשמעת TTS.
+ *
  * ─── redesign-5 (C4) ───
  */
 import type { MessageBubble } from "$lib/types/bubble"
-import { getI18n } from "$lib/context"
+import { getBubblePlayer, getI18n } from "$lib/context"
 import { renderMarkdown } from "$lib/util/markdown"
 import { joinSegmentText } from "./bubble-rendering"
 import Avatar from "$lib/components/chat/Avatar.svelte"
+import PlayIcon from "@lucide/svelte/icons/play"
+import SquareIcon from "@lucide/svelte/icons/square"
 
 let { bubble }: { bubble: MessageBubble } = $props()
 const t = getI18n().t
+const bubblePlayer = getBubblePlayer()
+
+const isPlaying = $derived(bubblePlayer.playingBubbleId === bubble.id)
 </script>
 
 <div class="flex gap-2 self-end max-w-[85%] min-w-0 items-end flex-row-reverse">
   <Avatar kind="agent" />
   <div
     class="px-3.5 py-2.5 rounded-2xl rounded-ee-sm text-sm leading-relaxed min-w-0 break-words"
-    style="background:var(--bubble-agent)"
+    style="background:var(--bubble-agent); {isPlaying ? 'outline:2px solid var(--accent); outline-offset:1px' : ''}"
     dir="auto"
   >
     {@html renderMarkdown(joinSegmentText(bubble.segments))}
     <!-- כופה ריאקטיביות של Svelte בעת .segments.push() -->
     <span class="hidden">{bubble.segments.length}</span>
   </div>
+  <button
+    class="play-btn"
+    onclick={() => bubblePlayer.toggle(bubble.id)}
+    aria-label={isPlaying ? t("bubble.stop") : t("bubble.play")}
+    title={isPlaying ? t("bubble.stop") : t("bubble.play")}
+  >
+    {#if isPlaying}
+      <SquareIcon size={12} strokeWidth={2} />
+    {:else}
+      <PlayIcon size={12} strokeWidth={2} />
+    {/if}
+  </button>
 </div>
 
 <style>
@@ -69,4 +88,20 @@ const t = getI18n().t
   div :global(a) { color: var(--accent); text-decoration: underline; }
   div :global(hr) { border: none; border-top: 1px solid var(--border); margin: 0.5em 0; }
   .hidden { display: none; }
+  .play-btn {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--fg-dim);
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+    padding: 0;
+  }
+  .play-btn:hover { opacity: 1; }
 </style>

@@ -37,7 +37,7 @@ const ALLOW_PATTERNS = [
   /packages\/core\/src\/i18n\/catalogs\//,
   /\/voice\/.*-prompt\.ts$/,
   /packages\/backend\/src\/prompts\//, // LLM system prompts (slice 14)
-  /\.test\.ts$/,
+  /\.test(\.\w+)*\.ts$/,  // *.test.ts, *.test.svelte.ts וכו'
   /\/tests\//,
   /\/fixtures\//,
   /\/node_modules\//,

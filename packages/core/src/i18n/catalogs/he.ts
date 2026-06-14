@@ -139,6 +139,16 @@ export const he: Catalog = {
   "sidebar.refresh": "רענן",
   "sidebar.newSession": "סשן חדש",
   "sheet.handle": "גרור לפתיחה",
+  // ─── bubble-play ─── (msr-v2)
+  "bubble.play": "השמע",
+  "bubble.stop": "עצור השמעה",
+  // ─── model-status ─── (msr-v2)
+  "modelStatus.waiting": "ממתין…",
+  "modelStatus.thinking": "חושב…",
+  "modelStatus.responding": "מגיב…",
+  "modelStatus.callingTool": "מריץ כלי…",
+  "modelStatus.pendingTts": "מכין השמעה…",
+  "modelStatus.speaking": "מדבר…",
   // ─── theme ─── (palettes-expansion)
   "settings.theme.label": "ערכת נושא",
   "settings.theme.ember": "גחלת",
