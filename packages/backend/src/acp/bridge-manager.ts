@@ -85,7 +85,7 @@ export function createBridgeManager(): BridgeManager & {
 
     let child: ChildProcessWithoutNullStreams
     try {
-      child = spawn(cli.bin, [...cli.args], {
+      child = spawn(cli.bin, [...cli.args, ...(input.flags ?? [])], {
         cwd: input.cwd,
         env: childEnv,
         stdio: ["pipe", "pipe", "pipe"],

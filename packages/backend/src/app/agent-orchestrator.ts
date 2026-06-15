@@ -151,6 +151,7 @@ export function createAgentOrchestrator(deps: {
             cliKind: input.cliKind,
             cwd: input.cwd,
             modelOverride: input.modelOverride ?? null,
+            flags: input.flags,
           })
           stderrGetters.set(agent.id, (handle as BridgeHandleWithStderr).getStderr)
         } else {
@@ -158,6 +159,7 @@ export function createAgentOrchestrator(deps: {
             cliKind: input.cliKind,
             cwd: input.cwd,
             modelOverride: input.modelOverride ?? null,
+            flags: input.flags,
           })
         }
 
