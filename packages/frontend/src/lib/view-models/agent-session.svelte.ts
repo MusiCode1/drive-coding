@@ -6,7 +6,7 @@
  *   - הצטברות בועות (bubble accumulation) מהתראות session/update
  *   - מתודות ציבוריות: attach/detach/sendPrompt
  *
- * משתמש ב-AcpClient האגנוסטי לתעבורה מתוך @drive-coding/core/acp,
+ * משתמש ב-AcpClient האגנוסטי לתעבורה מתוך provider-contract/acp,
  * עטוף עם ה-WsAcpTransport מצד ה-FE.
  */
 
