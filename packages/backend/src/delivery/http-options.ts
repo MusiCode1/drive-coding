@@ -67,8 +67,17 @@ function listOpencodeModels(): string[] {
   }
 }
 
+/**
+ * תיקיית הבית: env (HOME/USERPROFILE) קודם, ואז os.homedir() כ-fallback.
+ * מאפשר override ע"י הסביבה (git-bash/onecli מגדירים HOME). `||` (לא `??`) —
+ * כך HOME="" ריק נופל ל-fallback ולא מוחזר כמחרוזת ריקה.
+ */
+export function getHomeDir(): string {
+  return process.env.HOME || process.env.USERPROFILE || os.homedir()
+}
+
 function listProjectDirs(): string[] {
-  const home = os.homedir()
+  const home = getHomeDir()
   // Commit 2: os.tmpdir() במקום "/tmp" (cross-platform — על Windows: C:\Users\...\AppData\Local\Temp)
   const candidates = [path.join(home, "projects"), home, os.tmpdir()]
   const dirs: string[] = []
@@ -110,7 +119,7 @@ export function registerHttpOptions(app: Hono): void {
     }
     const projects = listProjectDirs()
     // Slice 24: homeDir מאפשר ל-FE לאכלס את שדה ה-cwd ברירת מחדל (נייד, לא מקובע)
-    const homeDir = os.homedir()
+    const homeDir = getHomeDir()
     return c.json({ models, projects, homeDir })
   })
 }
