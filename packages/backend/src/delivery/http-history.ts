@@ -112,6 +112,16 @@ function isAbsolutePath(p: string): boolean {
   return p.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(p) || p.startsWith("\\\\")
 }
 
+/**
+ * מנרמל פלט realpath של drive-root על Windows.
+ * bun async `realpath("D:\\")` מחזיר "D:" (בלי separator), ואז readdir("D:") נכשל
+ * ENOENT (drive-relative, לא root). מחזיר את ה-backslash לזיהוי drive-root.
+ * anchor $ → רק "X:" מדויק (לא "D:\\Users"). Unix ("/home") ושאר נתיבים — ללא שינוי.
+ */
+export function normalizeRealpath(real: string): string {
+  return /^[a-zA-Z]:$/.test(real) ? `${real}\\` : real
+}
+
 export function registerFsBrowseHttp(
   app: Hono,
   opts: {
@@ -139,7 +149,7 @@ export function registerFsBrowseHttp(
     const normalized = resolve(rawPath)
     let real: string
     try {
-      real = await realpath(normalized)
+      real = normalizeRealpath(await realpath(normalized))
     } catch {
       return c.json({ error: "path not found" }, 404)
     }

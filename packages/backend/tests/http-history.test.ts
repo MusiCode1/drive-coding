@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createProjectsRegistry } from "../src/app/projects-registry.js"
 import { createRecordingsStore } from "../src/app/recordings-store.js"
 import {
+  normalizeRealpath,
   registerFsBrowseHttp,
   registerProjectsHttp,
   registerRecordingsHttp,
@@ -245,5 +246,22 @@ describe("GET /api/fs/browse", () => {
     } finally {
       await rm(base, { recursive: true, force: true })
     }
+  })
+})
+
+describe("normalizeRealpath", () => {
+  it("adds backslash to bare drive-root (bun async realpath returns 'D:')", () => {
+    expect(normalizeRealpath("D:")).toBe("D:\\")
+    expect(normalizeRealpath("c:")).toBe("c:\\")
+  })
+
+  it("leaves drive paths with subdirs unchanged", () => {
+    expect(normalizeRealpath("D:\\Users")).toBe("D:\\Users")
+    expect(normalizeRealpath("D:\\")).toBe("D:\\")
+  })
+
+  it("leaves Unix paths unchanged", () => {
+    expect(normalizeRealpath("/home/user")).toBe("/home/user")
+    expect(normalizeRealpath("/")).toBe("/")
   })
 })

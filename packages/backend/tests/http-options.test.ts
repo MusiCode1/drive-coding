@@ -10,7 +10,7 @@ vi.mock("node:child_process", () => ({
 }))
 
 const { Hono } = await import("hono")
-const { registerHttpOptions } = await import("../src/delivery/http-options")
+const { registerHttpOptions, getHomeDir } = await import("../src/delivery/http-options")
 
 function makeApp() {
   const app = new Hono()
@@ -162,4 +162,22 @@ describe("HTTP GET /api/options", () => {
     expect(body.models.opencode?.[0]).toBe("anthropic/claude-opus-4-7")
     expect(body.models.opencode?.includes("openai/gpt-5")).toBe(true)
   })
+})
+
+describe("getHomeDir", () => {
+  it("prefers HOME env", () => {
+    vi.stubEnv("HOME", "/custom/home")
+    expect(getHomeDir()).toBe("/custom/home")
+    vi.unstubAllEnvs()
+  })
+
+  it("falls back to USERPROFILE when HOME is empty/unset", () => {
+    vi.stubEnv("HOME", "")
+    vi.stubEnv("USERPROFILE", "D:\\Users\\Bob")
+    expect(getHomeDir()).toBe("D:\\Users\\Bob")
+    vi.unstubAllEnvs()
+  })
+
+  // הערה: לא בודקים "both empty → os.homedir()" — על Windows os.homedir() עצמו
+  // קורא USERPROFILE, אז stub שלו ל-"" משבש את ה-fallback. ה-`|| os.homedir()` טריוויאלי.
 })
