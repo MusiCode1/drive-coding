@@ -41,6 +41,8 @@ export type SpawnBridgeInput = {
   readonly cliKind: BridgeKind
   readonly cwd: string
   readonly modelOverride: string | null
+  /** vnext-B2: flags שרירותיים שיוספו לסוף ה-argv של ה-CLI */
+  readonly flags?: readonly string[]
 }
 
 export type BridgeHandle = {

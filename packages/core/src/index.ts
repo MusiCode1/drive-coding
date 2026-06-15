@@ -1,5 +1,6 @@
 export * from "./cwd-hash"
 export * from "./cwd-validate"
+export * from "./flags-validate"
 export type * from "./ports"
 export * from "./schemas"
 export * from "./ui/markdown"
