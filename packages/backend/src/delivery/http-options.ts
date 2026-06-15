@@ -3,6 +3,7 @@ import { existsSync, readdirSync, statSync } from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import type { Hono } from "hono"
+import { validateCwd } from "@drive-coding/core"
 
 /**
  * מחזיר רשימה מנופה של מודלים לכל CLI, בתוספת רשימת ספריות פרויקטים
@@ -66,9 +67,19 @@ function listOpencodeModels(): string[] {
   }
 }
 
+/**
+ * תיקיית הבית: env (HOME/USERPROFILE) קודם, ואז os.homedir() כ-fallback.
+ * מאפשר override ע"י הסביבה (git-bash/onecli מגדירים HOME). `||` (לא `??`) —
+ * כך HOME="" ריק נופל ל-fallback ולא מוחזר כמחרוזת ריקה.
+ */
+export function getHomeDir(): string {
+  return process.env.HOME || process.env.USERPROFILE || os.homedir()
+}
+
 function listProjectDirs(): string[] {
-  const home = os.homedir()
-  const candidates = [path.join(home, "projects"), home, "/tmp"]
+  const home = getHomeDir()
+  // Commit 2: os.tmpdir() במקום "/tmp" (cross-platform — על Windows: C:\Users\...\AppData\Local\Temp)
+  const candidates = [path.join(home, "projects"), home, os.tmpdir()]
   const dirs: string[] = []
   for (const root of candidates) {
     if (!existsSync(root)) continue
@@ -82,6 +93,9 @@ function listProjectDirs(): string[] {
         if (e.name === "user-files" || e.name === "node_modules") continue
         try {
           statSync(full)
+          // Commit 2: סינון נתיבים פסולים (למשל \tmp\x על Windows — לא absolute תקף)
+          // validateCwd מ-core מוודא שהנתיב absolute + תקף cross-platform.
+          if (validateCwd(full).isErr()) continue
           dirs.push(full)
         } catch {
           // דלג
@@ -105,7 +119,7 @@ export function registerHttpOptions(app: Hono): void {
     }
     const projects = listProjectDirs()
     // Slice 24: homeDir מאפשר ל-FE לאכלס את שדה ה-cwd ברירת מחדל (נייד, לא מקובע)
-    const homeDir = os.homedir()
+    const homeDir = getHomeDir()
     return c.json({ models, projects, homeDir })
   })
 }

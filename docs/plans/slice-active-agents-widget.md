@@ -2,13 +2,14 @@
 
 > **‏תאריך**: 2026-06-08
 > **‏סוג מסמך**: ‏בריף ביצועי לסלייס
-> **‏סטטוס**: ‏טיוטה
-> **‏אימות אביגיל**: ‏לא מאומת (‏דוח: `reports/drive-coding/slice-active-agents-widget-avigail.md`)
-> **Dispatch**: ‏מותר לאליעזר רק אם `אימות אביגיל = READY`.
+> **‏סטטוס**: ‏הושלם — 4 commits (a95532b..6533ccb) על branch slice-active-agents-widget
+> **‏אימות אביגיל**: ✅ **READY** (round 2, 2026-06-14). round 1 = USABLE-AFTER-FIX (6 findings, ‏תוקנו: ‏סביבת Windows, `formatDate`→`toLocaleString`, render מותנה ל-pid, base branch); round 2 ‏אימת את ה-API shape מול ה-backend החי (persistent/pid/attached + endpoint) → READY (2 findings cosmetic בלבד). ‏דוח: `reports/drive-coding/slice-active-agents-widget-avigail.md`
+> **Dispatch**: ✅ ‏מותר לאליעזר (אביגיל READY).
 > **Complexity**: 6/10 (verifier: light + phase על commit 3)
 > **‏תלויות (`depends_on`)**: [slice-active-agents-backend]
-> **‏Base**: ‏branch `slice-active-agents-backend` (‏שרשור — ‏לא ב-dev עדיין)
-> **‏Dev tip**: `62ca5bf` (‏dev HEAD; ‏ה-base בפועל הוא ה-tip של branch `slice-active-agents-backend`)
+> **‏Base**: ‏branch `slice-active-agents-backend` @ `871447a` (‏שרשור — backend ‏טרם מוזג ל-dev; ‏GO 9/9)
+> **‏Dev tip**: `224743e` (dev HEAD 2026-06-14)
+> **‏תלות-בדיקה-חיה**: ‏לבדיקת reconnect חי על Windows נדרש גם `fix-cwd-validate-windows` (940d222) — ‏אחרת יצירת agent נכשלת ב-400. ‏כלב יצרף אותו בשלב האימות (‏לא נדרש לקומפילציה/טסטים).
 
 ---
 
@@ -26,30 +27,36 @@
 - ‏משתמש ב-`POST /api/agents/:id/persistent` (‏נוסף שם).
 - ‏מסתמך שה-reaper לא הורג נעוצים (‏אחרת הנעיצה חסרת-משמעות).
 
-> ⚠️ ‏אם backend עדיין לא merged ל-dev → **‏Base = branch `slice-active-agents-backend`** (שרשור),
-> ‏לא dev. ‏אביגיל בודקת עקביות עם `depends_on` ‏ו-`base` ‏ב-state.json.
+> ⚠️ ‏**‏חוסם dispatch**: ‏branch `slice-active-agents-backend` ‏**‏עדיין לא קיים** (‏לא local, ‏לא remote
+> ‏— ‏אומת ע"י אביגיל 2026-06-13). ‏ה-base בפועל הוא ה-branch הזה (שרשור), ‏לא dev. ‏**‏אין לפתוח
+> ‏worktree ל-widget עד שה-backend slice בוצע** (‏ה-branch נוצר ב-dispatch של ה-backend) ‏או מוזג ל-dev.
+> ‏לפי JIT — ‏ה-widget מאומת/נכתב סופית **‏אחרי** ‏שה-backend חזר GO. ‏אביגיל בודקת עקביות `depends_on`/`base`.
+
+### ‏סביבה: **Windows-native** (‏החלטה 2026-06-13)
+
+> ‏הפרויקט עבר ל-Windows. ‏השל הראשי PowerShell; ‏Git-Bash (MINGW64) ‏זמין ל-bash scripts.
 
 ### Worktree
 
-```bash
-cd /home/user/projects/drive-coding
-# שרשור: base הוא branch התלות, לא dev
-git worktree add /home/user/projects/drive-coding/.worktrees/slice-active-agents-widget -b slice-active-agents-widget slice-active-agents-backend
-cd /home/user/projects/drive-coding/.worktrees/slice-active-agents-widget
-pnpm install && pnpm hooks:install
+```powershell
+# מהשורש d:\UserProjects\AI\drive-coding — שרשור: base הוא branch התלות, לא dev
+cd d:\UserProjects\AI\drive-coding
+git worktree add .worktrees\slice-active-agents-widget -b slice-active-agents-widget slice-active-agents-backend
+cd .worktrees\slice-active-agents-widget
+pnpm install ; pnpm hooks:install
 ```
 
 ### ‏איך להריץ
 
-- BE: `cd packages/backend && onecli run --agent voice-acp -- bun --watch src/server.ts` (port 4000). ‏**‏נדרש BE חי** — ‏הווידג'ט מושך agents אמיתיים.
+- BE: `pnpm --filter @drive-coding/backend dev` (port 4000). ‏**‏נדרש BE חי** — ‏הווידג'ט מושך agents אמיתיים. ‏(‏onecli wrapper הוא לינוקס — ‏על Windows מריצים ישירות.)
 - FE: `pnpm --filter @drive-coding/frontend dev` (port: OS-assigned).
 - Typecheck: `pnpm --filter @drive-coding/frontend typecheck`.
-- ‏lint:i18n: `pnpm lint:i18n`.
+- ‏lint:i18n: `pnpm lint:i18n` ‏(על Windows דרך Git-Bash; ‏fallback: `bash ./scripts/lint-no-hebrew-in-code.sh`).
 - Tests: `pnpm --filter @drive-coding/frontend test`.
 
 ### Browser
 
-‏linux-gui Chrome :9222 profile voice-acp: `playwright-cli -s=vacp attach --cdp=http://localhost:9222`. ‏תמיד `-s=vacp`.
+‏Windows: ‏Chrome עם `--remote-debugging-port=9222` (‏פרופיל ייעודי), ‏ו-`playwright-cli attach --cdp=http://localhost:9222`. ‏(‏ה-skill `playwright-cli` ‏זמין; ‏אם anti-detection נדרש — `pw-clean`.)
 ‏בדיקה: ‏(1) ‏צור 2-3 ‏agents (התחבר לכמה תיקיות, ‏חזור ל-`/`). ‏(2) ‏הווידג'ט מראה אותם. ‏(3) ‏Pin → ‏נשאר; ‏reconnect → ‏עובר ל-/chat; ‏kill → ‏נעלם.
 
 ### Reading list
@@ -60,7 +67,7 @@ pnpm install && pnpm hooks:install
 - `packages/frontend/src/routes/+layout.svelte` — composition root. ‏דפוס הוספת VM (1-3 ‏בתיעוד למעלה). ‏ה-VM החדש בלתי-תלוי → ‏אפשר בכל מקום.
 - `packages/frontend/src/routes/+page.svelte` — ‏טופס החיבור. `onMount` (29-49), `onSubmit` ‏ענף ה-existing-session (101-107) — ‏**‏זה בדיוק נתיב ה-reconnect שנחקה**.
 - `packages/frontend/src/lib/adapters/agents-api.ts` — `listAgents` (50-59), `deleteAgent` (91-102). ‏מוסיף `setAgentPersistent`.
-- `packages/frontend/src/lib/view-models/agent-session.svelte.ts` — `loadSession` ‏(public; ‏ה-reconnect קורא לו), `#findReusableAgent` (182-197 — ‏matches לפי `acpSessionId + cwd`). **‏לא משנים את הקובץ הזה** — ‏רק קוראים ל-`loadSession`.
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts` — `loadSession` ‏(public, `:508`; ‏ה-reconnect קורא לו. ⚠️ ‏זורק אם `status` ‏הוא connecting/connected — ‏עקבי עם onSubmit שמחקים), `#findReusableAgent` (‏matches לפי `acpSessionId + cwd`). **‏לא משנים את הקובץ הזה** — ‏רק קוראים ל-`loadSession`.
 - `packages/frontend/src/lib/components/modals/SessionCard.svelte` — ‏דפוס ויזואלי לשורה (Tailwind + design tokens). ‏לחיקוי.
 - `packages/core/src/i18n/keys.ts` — ‏דפוס הוספת מפתח (1-9) + ‏בלוק connect (24+). `catalogs/he.ts`, `catalogs/en.ts`.
 
@@ -288,14 +295,14 @@ interface Props {
 - ‏כותרת `t("connect.agents.title")` + ‏כפתור רענון (`activeAgents.refresh()`, ‏אייקון, ‏disabled בזמן loading).
 - ‏ריק → `t("connect.agents.empty")`.
 - ‏לכל agent (‏`{#each activeAgents.agents as a (a.id)}` — ‏**‏key לפי id** ‏לריאקטיביות נכונה):
-  - ‏שורה בסגנון SessionCard: badge `a.cliKind` · `a.cwd` (truncate) · `a.acpSessionId?.slice(0,8)` · ‏נקודת-סטטוס לפי `a.status` · ‏גיל מ-`a.createdAt` · `pid: a.pid`.
+  - ‏שורה בסגנון SessionCard: badge `a.cliKind` · `a.cwd` (truncate) · `a.acpSessionId?.slice(0,8)` · ‏נקודת-סטטוס לפי `a.status` · ‏גיל מ-`a.createdAt` · `pid` ‏**‏בתצוגה מותנית** (`{#if a.pid}pid: {a.pid}{/if}` — ‏השדה אופציונלי, ‏לא מאוכלס אם ה-BE לא העשיר; ‏אל תרנדר `undefined`).
   - **Pin**: ‏כפתור toggle. `a.persistent` ? `unpin` : `pin`. onclick → `activeAgents.setPersistent(a.id, !a.persistent)`. ‏חיווי ויזואלי לנעוץ (אייקון מלא/accent).
   - **Reconnect**: ‏כפתור. **‏disabled** ‏אם `!a.acpSessionId` ‏(אין סשן לטעון) ‏**‏או** `a.attached === true` (‏פתוח בטאב אחר — ‏ה-BE ידחה WS שני ב-1008). ‏tooltip `inUse` ‏כשמושבת. onclick → `onReconnect(a)`.
   - **Kill**: ‏אישור-קצר דו-לחיצה — local `$state` ל-`confirmingId`. ‏לחיצה ראשונה: ‏הכפתור הופך ל-`t("connect.agents.killConfirm")`; ‏לחיצה שנייה (‏או על אותו id) → `activeAgents.kill(a.id)`; ‏לחיצה על שורה אחרת / ‏טיים-אאוט קצר → ‏איפוס. (‏**‏לא** ‏native `confirm()` — ‏חוסם; ‏לא ModalsVM — ‏scope creep.)
 
 **‏עיצוב**: Tailwind + design tokens (`var(--bg-elev)`, `var(--border)`, `var(--accent)`, `var(--fg-dim)`, `var(--recording)` ‏ל-kill). ‏חקה את SessionCard. ‏נקודת-סטטוס (‏כסה את **‏כל** 5 ‏ערכי `AgentStatus`): ‏`ready`=accent, `busy`=accent (‏או amber/warn), `starting`=muted, `crashed`/`closed`=recording.
 
-**‏גיל**: ‏פונקציה מקומית `formatAge(createdAtIso)` → "5 ‏דק'" וכד'. ‏(‏אם יש util קיים — ‏השתמש; ‏אחרת inline פשוט; ‏**‏בלי מחרוזות עברית קשיחות** — ‏יחידות זמן דרך i18n אם צריך מילים. ‏אלטרנטיבה ללא-i18n: ‏הצג שעה מ-`toLocaleTimeString("he-IL")` ‏כמו SessionCard:20.) **‏העדפה**: ‏חקה את `formatDate` ‏של SessionCard (שעה:דקה) — ‏אפס מחרוזות חדשות.
+**‏גיל**: ‏**‏העדפה — ‏חקה את `formatDate` ‏של `SessionCard.svelte:17-25`** (`new Date(iso).toLocaleString("he-IL", { day, month, hour, minute })` → ‏תאריך+שעה, ‏לא רק שעה) — ‏אפס מחרוזות חדשות, ‏אפס תלות ב-i18n. ‏(‏אם בכל זאת רוצים relative "5 ‏דק'" — ‏יחידות הזמן **‏חייבות** ‏לעבור דרך `t()`, ‏אחרת `lint:i18n` ‏חוסם. ‏ברירת המחדל: ‏העתק את `formatDate` ‏כמו שהוא.)
 
 > ⚠️ **‏אין מחרוזת עברית קשיחה בקוד** — ‏הכל דרך `t()`. `pnpm lint:i18n` ‏חוסם. ‏ראה §6.
 
@@ -437,4 +444,5 @@ pnpm --filter @drive-coding/frontend typecheck && pnpm --filter @drive-coding/fr
 
 ## ‏סטיות מהתכנון (‏מתעדכן ע"י executor ‏תוך כדי)
 
-- ...
+- **blocked-on-cwd-fix**: בדיקת agent חי end-to-end על Windows (DoD items 4-8: ווידג'ט מציג, Pin, reconnect, kill, refresh) — חסומה על `fix-cwd-validate-windows` (940d222). validateCwd חוסם נתיבי Windows ב-400, יצירת agent נכשלת. כלב יצרף את ה-fix בשלב האימות כמתועד ב-brief header.
+- **fakeAgent.modelOverride**: בטסט TDD הוספתי `modelOverride: null` לאובייקט הבדיקה — שדה חובה ב-AgentPublic שה-brief לא ציין מפורשות. תיקון טריוויאלי שנדרש ל-typecheck.

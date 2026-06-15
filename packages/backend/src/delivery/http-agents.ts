@@ -21,12 +21,19 @@ export function registerAgentsHttp(
     registry: AgentRegistry
     orchestrator: AgentOrchestrator
     projectsRegistry?: ProjectsRegistry
+    // אופציונלי בכוונה — call-sites קיימים בטסט לא מעבירים אותו (slice active-agents)
+    bridgeManager?: { getRuntimeInfo(id: string): { pid: number; attached: boolean } | null }
   },
 ): void {
-  // GET /api/agents — רשימה
+  // GET /api/agents — רשימה (מועשרת ב-pid+attached אם bridgeManager זמין)
   app.get("/api/agents", async (c) => {
     const all = await deps.registry.list()
-    return c.json({ agents: all.map(toAgentPublic) })
+    return c.json({
+      agents: all.map((a) => {
+        const rt = deps.bridgeManager?.getRuntimeInfo(a.id)
+        return { ...toAgentPublic(a), ...(rt ?? {}) }
+      }),
+    })
   })
 
   // POST /api/agents — יצירה דרך orchestrator
@@ -130,6 +137,25 @@ export function registerAgentsHttp(
       await deps.projectsRegistry.recordSession(agent.cwd, sessionId)
     }
 
+    return c.json({ ok: true })
+  })
+
+  // POST /api/agents/:id/persistent — נעיצה: { persistent: boolean }
+  app.post("/api/agents/:id/persistent", async (c) => {
+    const id = c.req.param("id")
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ error: "invalid json" }, 400)
+    }
+    const { persistent } = body as Record<string, unknown>
+    if (typeof persistent !== "boolean") {
+      return c.json({ error: "persistent (boolean) is required" }, 400)
+    }
+    const agent = await deps.registry.get(id)
+    if (!agent) return c.json({ error: "agent not found" }, 404)
+    await deps.registry.update(id, { persistent })
     return c.json({ ok: true })
   })
 }

@@ -24,6 +24,7 @@ import type { VoiceMode } from "./view-models/derived/voice-mode.svelte"
 import type { ModelStatus } from "./view-models/derived/model-status.svelte"
 import type { CuesEngine } from "./engines/cues"
 import type { ModalsVM } from "./view-models/modals.svelte"
+import type { ActiveAgents } from "./view-models/active-agents.svelte"
 import type { BubblePlayer } from "./view-models/bubble-player.svelte"
 
 // ─── i18n ──────────────────────────────────────────
@@ -60,6 +61,9 @@ export const [getUiShell, setUiShell] = createContext<UiShellVM>()
 
 // ─── modals ─── (redesign-6)
 export const [getModals, setModals] = createContext<ModalsVM>()
+
+// ─── active-agents ─── (slice active-agents-widget)
+export const [getActiveAgents, setActiveAgents] = createContext<ActiveAgents>()
 
 // ─── model-status ─── (msr-v2)
 export const [getModelStatus, setModelStatus] = createContext<ModelStatus>()

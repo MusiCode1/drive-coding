@@ -164,4 +164,14 @@ export const en: Catalog = {
   "settings.theme.rose": "Rose",
   "settings.theme.slate": "Slate",
   "settings.theme.daylight": "Daylight",
+  // ─── active-agents ─── (slice active-agents-widget)
+  "connect.agents.title": "Active processes",
+  "connect.agents.empty": "No active processes",
+  "connect.agents.refresh": "Refresh",
+  "connect.agents.reconnect": "Reconnect",
+  "connect.agents.kill": "Kill",
+  "connect.agents.killConfirm": "Sure?",
+  "connect.agents.pin": "Keep alive",
+  "connect.agents.unpin": "Unpin",
+  "connect.agents.inUse": "Open in another tab",
 }

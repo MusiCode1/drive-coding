@@ -100,3 +100,25 @@ export async function deleteAgent(agentId: string): Promise<void> {
     throw new Error(`deleteAgent failed: ${res.status} ${body}`)
   }
 }
+
+/** משנה את דגל הנעיצה (persistent) של agent. */
+export async function setAgentPersistent(
+  agentId: string,
+  persistent: boolean,
+): Promise<void> {
+  const res = await withTimeout(
+    (s) =>
+      fetch(beUrl(`/api/agents/${agentId}/persistent`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ persistent }),
+        signal: s,
+      }),
+    AGENTS_API_TIMEOUT_MS,
+    { label: "setAgentPersistent" },
+  )
+  if (!res.ok) {
+    const body = await res.text().catch(() => "")
+    throw new Error(`setAgentPersistent failed: ${res.status} ${body}`)
+  }
+}

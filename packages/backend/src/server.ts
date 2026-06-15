@@ -45,6 +45,7 @@ import { registerProxyHttp } from "./delivery/http-proxy.js"
 // הערה: createSessionsCache הוסר — רשימת הסשנים עכשיו מונעת מצד ה-FE דרך ACP WS
 import { createAgentWsHandler } from "./delivery/ws-agent.js"
 import { createEchoWsHandler } from "./delivery/ws-echo.js"
+import { reapIdleBridges } from "./acp/reap-idle.js"
 
 const app = new Hono()
 
@@ -66,7 +67,7 @@ const orchestrator = createAgentOrchestrator({
 registerHttp(app)
 registerHttpOptions(app)
 registerClientLogHttp(app)
-registerAgentsHttp(app, { registry, orchestrator, projectsRegistry })
+registerAgentsHttp(app, { registry, orchestrator, projectsRegistry, bridgeManager })
 registerProjectsHttp(app, { projectsRegistry })
 registerRecordingsHttp(app, { recordingsStore })
 registerRecordingsPostHttp(app, { recordingsStore })
@@ -135,23 +136,17 @@ httpServer.on("upgrade", (req, socket, head) => {
 
 log.info({ port }, "listening")
 
-// ─── TEMPORARY (slice 26): idle-bridge reaper ───
+// ─── TEMPORARY (slice 26, מאולף ב-active-agents): idle-bridge reaper ───
 // Safety net for bridges leaked by a plain reload / closed tab (cases that
 // slice 25's FE cleanup does NOT cover). DELETE THIS BLOCK when background-agent
 // management (future "slice A") lands. See docs/plans/slice-26-bridge-idle-reaper.md §7.
+// כעת מחריג agents נעוצים (persistent=true) — לא מוחק את הבלוק, משנה התנהגות.
 const BRIDGE_IDLE_TIMEOUT_MS = Number(process.env.BRIDGE_IDLE_TIMEOUT_MS ?? 300_000)
 const REAP_INTERVAL_MS = Math.min(BRIDGE_IDLE_TIMEOUT_MS, 60_000)
-const reaperLog = createLogger("backend.reaper")
-const reaper = setInterval(() => {
-  const now = Date.now()
-  const idle = bridgeManager.listIdle(BRIDGE_IDLE_TIMEOUT_MS, now)
-  for (const id of idle) {
-    reaperLog.info({ agentId: id }, "reaping idle bridge")
-    orchestrator.deleteAndKill(id).catch((e) =>
-      reaperLog.warn({ err: e, agentId: id }, "reap failed"),
-    )
-  }
-}, REAP_INTERVAL_MS)
+const reaper = setInterval(
+  () => { void reapIdleBridges({ bridgeManager, registry, orchestrator, timeoutMs: BRIDGE_IDLE_TIMEOUT_MS }, Date.now()) },
+  REAP_INTERVAL_MS,
+)
 reaper.unref() // do not keep the event loop alive just for the reaper
 
 /**

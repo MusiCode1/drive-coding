@@ -6,20 +6,54 @@
  * when background-agent management (future "slice A") lands.
  * See docs/plans/slice-26-bridge-idle-reaper.md §7.
  *
- * Implementation note: we use `sleep 100` as the bridge binary to get a
- * long-lived process that doesn't exit during the test. This avoids the
- * bridge-manager cleaning up the entry on child exit before we can test
- * the listIdle logic against it. afterEach kills all spawned processes.
+ * Implementation note: cross-platform spawnBridge helper — uses process.execPath
+ * (node/bun) as the binary and a temporary JS script that calls setInterval to
+ * stay alive. Compatible with Windows + Linux (no /usr/bin/sleep dependency).
+ * afterEach is async and waits for child exit before cleanup to avoid EPERM on Windows.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { createBridgeManager } from "./bridge-manager.js"
 
-const SLEEP_BIN = "/usr/bin/sleep"
-
 // Long-lived child processes spawned during tests — killed in afterEach
 let spawnedChildren: ChildProcessWithoutNullStreams[] = []
+let acpScriptPath: string | null = null
+
+/**
+ * Cross-platform spawnBridge helper.
+ * Uses process.execPath (node/bun) as OPENCODE_BIN.
+ * The "acp" script (placed in os.tmpdir()) keeps the process alive via setInterval.
+ */
+async function spawnBridge(bm: ReturnType<typeof createBridgeManager>, id: string): Promise<void> {
+  // Create a long-lived JS script in tmpdir named "acp" (matches opencode args: ["acp"])
+  if (!acpScriptPath) {
+    const tmpDir = os.tmpdir()
+    acpScriptPath = path.join(tmpDir, "acp")
+    fs.writeFileSync(acpScriptPath, "setInterval(() => {}, 99999)\n", "utf8")
+  }
+
+  const original = process.env.OPENCODE_BIN
+  process.env.OPENCODE_BIN = process.execPath  // node or bun binary
+  try {
+    await bm.spawnWithStderr(id, {
+      cliKind: "opencode",
+      cwd: os.tmpdir(),
+      modelOverride: null,
+    })
+  } finally {
+    if (original === undefined) {
+      delete process.env.OPENCODE_BIN
+    } else {
+      process.env.OPENCODE_BIN = original
+    }
+  }
+  const child = bm.getChild(id)
+  if (child) spawnedChildren.push(child)
+}
 
 describe("bridge-manager listIdle (TEMPORARY slice 26)", () => {
   let bm: ReturnType<typeof createBridgeManager>
@@ -29,51 +63,30 @@ describe("bridge-manager listIdle (TEMPORARY slice 26)", () => {
     spawnedChildren = []
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    const waiting: Promise<void>[] = []
     for (const p of spawnedChildren) {
-      try {
-        p.kill("SIGKILL")
-      } catch {
-        // already dead
+      if (!p.killed && p.exitCode === null) {
+        const exitPromise = new Promise<void>((resolve) => {
+          p.once("exit", () => resolve())
+          p.once("error", () => resolve())
+        })
+        try {
+          p.kill("SIGKILL")
+        } catch {
+          // already dead
+        }
+        waiting.push(exitPromise)
       }
     }
+    // Wait for all children to exit (avoids EPERM on Windows when cleanup runs)
+    await Promise.all(waiting)
     spawnedChildren = []
   })
 
-  /**
-   * Spawn a bridge backed by `sleep 100` — a real, long-lived process.
-   * Using the opencode cliKind but overriding via OPENCODE_BIN env trick
-   * is not available; instead we rely on a fallback: if `opencode` is not
-   * found bun test would fail. We directly use the `bm` internal spawn
-   * by working around cliKind. Since the test environment may not have
-   * opencode, we use `sleep` via the `gemini` cliKind which maps to `gemini`
-   * binary — also absent. The safest approach: use cliKind "opencode" and
-   * set OPENCODE_BIN to /usr/bin/sleep via process.env before spawn.
-   */
-  async function spawnBridge(id: string): Promise<void> {
-    // Temporarily override OPENCODE_BIN so bridge-manager spawns `sleep 100`
-    const original = process.env.OPENCODE_BIN
-    process.env.OPENCODE_BIN = SLEEP_BIN
-    try {
-      await bm.spawnWithStderr(id, {
-        cliKind: "opencode",
-        cwd: "/tmp",
-        modelOverride: null,
-      })
-    } finally {
-      if (original === undefined) {
-        delete process.env.OPENCODE_BIN
-      } else {
-        process.env.OPENCODE_BIN = original
-      }
-    }
-    const child = bm.getChild(id)
-    if (child) spawnedChildren.push(child)
-  }
-
   // Test 1: active WS (hasActiveWs=true) — never in idle list
   it("1: bridge with active WS is never returned by listIdle", async () => {
-    await spawnBridge("agent-1")
+    await spawnBridge(bm, "agent-1")
     bm.markAttached("agent-1")
 
     const now = Date.now()
@@ -86,7 +99,7 @@ describe("bridge-manager listIdle (TEMPORARY slice 26)", () => {
 
   // Test 2: detached but not yet timed out
   it("2: detached bridge not returned before timeout", async () => {
-    await spawnBridge("agent-2")
+    await spawnBridge(bm, "agent-2")
     bm.markAttached("agent-2")
     bm.markDetached("agent-2")
 
@@ -100,7 +113,7 @@ describe("bridge-manager listIdle (TEMPORARY slice 26)", () => {
 
   // Test 3: detached and timed out
   it("3: detached bridge returned after timeout", async () => {
-    await spawnBridge("agent-3")
+    await spawnBridge(bm, "agent-3")
     bm.markAttached("agent-3")
     bm.markDetached("agent-3")
 
@@ -114,9 +127,9 @@ describe("bridge-manager listIdle (TEMPORARY slice 26)", () => {
 
   // Test 4: never had WS, within grace period (< timeout*2)
   it("4: never-attached bridge not returned within grace period", async () => {
-    await spawnBridge("agent-4")
+    await spawnBridge(bm, "agent-4")
 
-    const createdAt = bm.getCreatedAt("agent-4")!   // נקודת-האמת האמיתית מה-store
+    const createdAt = bm.getCreatedAt("agent-4")!
     const timeout = 10_000
 
     // now - createdAt < timeout * 2
@@ -126,9 +139,9 @@ describe("bridge-manager listIdle (TEMPORARY slice 26)", () => {
 
   // Test 5: never had WS, grace period expired (>= timeout*2)
   it("5: never-attached bridge returned after grace period expires", async () => {
-    await spawnBridge("agent-5")
+    await spawnBridge(bm, "agent-5")
 
-    const createdAt = bm.getCreatedAt("agent-5")!   // נקודת-האמת האמיתית מה-store
+    const createdAt = bm.getCreatedAt("agent-5")!
     const timeout = 10_000
 
     // now - createdAt >= timeout * 2
@@ -138,7 +151,7 @@ describe("bridge-manager listIdle (TEMPORARY slice 26)", () => {
 
   // Test 6: markAttached after detach removes from idle list (reconnect resets)
   it("6: markAttached after detach removes bridge from idle list", async () => {
-    await spawnBridge("agent-6")
+    await spawnBridge(bm, "agent-6")
     bm.markAttached("agent-6")
     bm.markDetached("agent-6")
 
