@@ -150,6 +150,16 @@ export type MessageKey =
   | "sidebar.refresh"
   | "sidebar.newSession"
   | "sheet.handle"
+  // ─── bubble-play ─── (msr-v2)
+  | "bubble.play"
+  | "bubble.stop"
+  // ─── model-status ─── (msr-v2)
+  | "modelStatus.waiting"
+  | "modelStatus.thinking"
+  | "modelStatus.responding"
+  | "modelStatus.callingTool"
+  | "modelStatus.pendingTts"
+  | "modelStatus.speaking"
   // ─── theme ─── (palettes-expansion)
   | "settings.theme.label"
   | "settings.theme.ember"

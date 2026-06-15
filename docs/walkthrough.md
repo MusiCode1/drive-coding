@@ -1,110 +1,88 @@
-## 2026-06-15 — slice reconnect-warm-attach — חיבור-מחדש ל-agent חי (warm-attach)
+## 2026-06-14 — slice-msr-v2 — מצב-מודל + בקרת-סוכן + השמעה (מימוש מחדש על dev)
 
 ### מה בוצע?
 
-**slice**: reconnect-warm-attach (branch: slice-reconnect-warm-attach, base: slice-active-agents-widget@ebe3d54)
-**commits**: 2 (b1562c4..1a87cb2)
-**approach**: tdd (commit 0) + manual (commit 1)
+**slice**: slice-model-status-replay-v2 (base: dev)
+**commits**: 6 (2eb585e, 1c86aa9, c6dda4a, d5527e0, d2ee44a, 56e5d0a)
 
-**Commit 0 — attachToLiveAgent ב-AgentSession VM (TDD)**
-- `agent-session.svelte.ts`: מתודה ציבורית `attachToLiveAgent({agentId, sessionId, cwd, cliKind})` — מנקה error, סוגר transport קיים דפנסיבית, מזריק state, קורא `#warmReconnect`.
-- warm נכשל → `status=error` + `error` message (לא cold-spawn).
-- test helpers נוספו: `_mockWarmReconnectForTest`, `_mockWarmReconnectCapturingStateForTest`, `_getSessionIdForTest`.
-- `agent-session.reconnect.test.svelte.ts`: 6 טסטים חדשים (214 סה"כ ירוקים).
+**Commit 1 — refactor(session): הפרדת status/turnState (2eb585e)**
+- הסיר "thinking" מ-AgentSessionStatus; הוסיף TurnState + turnState = $state
+- הוסיף #setTurnState + NBug1 tail-debounce (opencode #17505: idle-on-RESP + 1.5ש' debounce)
+- עדכן sendPrompt, #onSessionUpdate (agent_message/thought/tool_call chunks), applyConfigOption
+- עדכן VoiceMode (turnState !== "idle"), Speaker (#prevTurnState + #handleStatusTransition)
+- עדכן TypeArea + AppHeader; עדכן agent-session.test.ts:242
+- typecheck 0, tests 201/201, lint:i18n ✓
 
-**Commit 1 — חיווט handleReconnect ב-+page.svelte (manual)**
-- `+page.svelte`: `handleReconnect` קורא `session.attachToLiveAgent` במקום `session.loadSession`.
-- warm מצליח → `goto("/chat")`; warm נכשל → נשארים ב-`/`, error מוצג.
-- `agent.id` = agentId (מ-`AgentPublic.id`); `acpSessionId` מובטח לא-null (guard).
+**Commit 2 — feat(status-bubble): ModelStatus VM + StatusBubble + hasPendingNarration (1c86aa9)**
+- ModelStatus derived VM (phase: waiting/thinking/responding/calling-tool/pending-tts/speaking/null)
+- StatusBubble.svelte — transient, מרנדרת כש-phase !== null, עם אנימציית pulse
+- Speaker.hasPendingNarration + #pendingCount ($state); auto-scroll מוסיף modelStatus.phase לתלות
+- i18n: modelStatus.* (6 keys; keys.ts + he.ts + en.ts)
+- typecheck 0, tests 201/201, lint:i18n ✓
 
-### חריגות
+**Commit 3 — feat(session): cancelTurn (ACP cancel) + תיקון X-מהבהב (c6dda4a)**
+- AgentSession.cancelTurn() — ACP cancel + מאלץ turnState=idle מיידית
+- VoiceMode.cancel() קורא void session.cancelTurn()
+- typecheck 0, tests 201/201
 
-- **בדיקה חית מקצה-לקצה (reconnect אמיתי) חסומה**: ה-base `slice-active-agents-widget` אינו כולל `cwd-fix-validate-windows` + `slice-windows-adaptation` (opencode plugin). יצירת agent חי ב-Windows נכשלת (validateCwd חוסם נתיב Windows ב-400). תועד כ-**blocked-on-base** — ייבדק ב-integration כשהslices ימוזגו.
-- ה-fix עצמו אומת מראש חי (WS ישיר על process חי — session/load הצליח; תועד ב-§0 של ה-brief).
+**Commit 4 — feat(recordings): saveRecording + recordingUrl (d5527e0)**
+- adapters/voice/recordings.ts: POST /api/recordings {audioBase64, mimeType} → {id}
+- transcribe.ts: הסיר stub; קורא saveRecording(blob).catch(()=>({id:""}))
+- typecheck 0, tests 201/201
 
-### בדיקות
+**Commit 5 — feat(bubble-player): play-bubble + BubblePlayer VM (d2ee44a)**
+- adapters/voice/play-bubble.ts: playUserRecording + playAgentText (stream→Blob→objectURL; revokeObjectURL)
+- BubblePlayer VM: toggle/stop; guard turnState!=="idle"; אין $effect
+- context.ts + layout: getBubblePlayer/setBubblePlayer + new BubblePlayer
+- typecheck 0, tests 201/201
 
-- unit tests: 214 passed (6 חדשים לslice הזה) — `pnpm --filter @drive-coding/frontend-v2 test`
-- typecheck: 0 errors — `pnpm --filter @drive-coding/frontend-v2 typecheck`
-- build: clean — `pnpm --filter @drive-coding/frontend-v2 build`
-- lint:i18n: clean — `bash scripts/lint-no-hebrew-in-code.sh`
-- בדיקה חית: blocked-on-base (ראה חריגות)
+**Commit 6 — feat(bubbles): כפתור ▶/⏸ על בועות משתמש + סוכן (56e5d0a)**
+- UserBubble: ▶ אם recordingId; MessageBubble: ▶ לTTS; בועה מודגשת בזמן השמעה
+- i18n: bubble.play + bubble.stop
+- typecheck 0, tests 201/201, lint:i18n ✓
+
+**בדיקות**: typecheck frontend-v2 ✓ | typecheck core ✓ | 201 tests ירוקים | lint:i18n ✓
+**env-blocked**: בדיקות חיות (cancel/▶/בועת-סטטוס) — Windows env-blocker (opencode קורס על plugin). כלב יאמת חי.
+**חריגות מה-brief**: אין. reconnect logic לא נגע.
 
 ---
 
-## 2026-06-14 — slice active-agents-widget — ווידג'ט תהליכים פעילים בטופס החיבור
+## 2026-06-13 — slice P1b — ACP Provider adapter (core-only)
 
 ### מה בוצע?
 
-**slice**: active-agents-widget (branch: slice-active-agents-widget, base: slice-active-agents-backend@871447a)
-**commits**: 4 (a95532b..6533ccb)
-**approach**: none (commit 0) + tdd (commit 1) + manual (commits 2,3)
+**slice**: slice-P1b-acp-adapter (base: branch slice-P1a-provider-abstraction@9d053f3 — worktree משורשר על P1a, טרם merged ל-dev)
+**commits**: 4 (d617501, ad9b6ee, c7ffabf, 0a91f44)
 
-**Commit 0 — i18n keys + adapter setAgentPersistent (none)**
-- `keys.ts`: 9 מפתחות חדשים בבלוק `// ─── active-agents ───` (title, empty, refresh, reconnect, kill, killConfirm, pin, unpin, inUse)
-- `he.ts` + `en.ts`: תרגומים לכל המפתחות
-- `agents-api.ts`: `setAgentPersistent(agentId, persistent)` → POST /api/agents/:id/persistent
+**Commit 0 — exports + שלד (d617501, typecheck)**
+- `core/index.ts`: ייצוא `classifyToolKind`, `mapAcpNotification`, `AcpProviderSession`,
+  `mapAcpCapabilities`. verbatimModuleSyntax → events נשאר `export type *`, הקבצים החדשים
+  `export *` (ערכים). שלד `provider/acp-provider.ts` + `provider/map-acp-notification.ts`.
 
-**Commit 1 — VM ActiveAgents + context + layout חיווט (TDD)**
-- `active-agents.svelte.ts`: class ActiveAgents עם $state (agents/loading/error), מתודות arrow-field: refresh/setPersistent/kill
-- `active-agents.svelte.test.ts`: 8 טסטים (Red-Green-Refactor) — כיסוי refresh/error/setPersistent/kill
-- `context.ts`: [getActiveAgents, setActiveAgents] בסוף (additive)
-- `+layout.svelte`: import + new ActiveAgents() + setActiveAgents()
+**Commit 1 — `mapAcpNotification` + helpers (ad9b6ee, TDD)**
+- מיפוי טהור `SessionNotification → ProviderEvent`, shapes 1:1 מ-agent-session.svelte.ts.
+- helpers: `mapStatus` (undefined→pending), `mapContent` (מ-`update.content`; ACP `{type:content}`
+  → קנוני `{kind:text}`; diff/terminal; MVP text-only), `mapLocations`, `mapUsage`, `mapPlanEntries`
+  (content→title), `textOf`. variants: tool_call(+update)→tool_call, message/thought chunks,
+  plan→plan.update, usage_update→usage; available_commands/user_message/unknown→raw.
+- 14 טסטים (fixtures אמיתיים עטופים `{update}` + מקרי-קצה).
 
-**Commit 2 — רכיב ActiveProcessesPanel (manual)**
-- `ActiveProcessesPanel.svelte`: רכיב leaf (getContext בלבד)
-  * כותרת + כפתור רענון (disabled בזמן loading)
-  * empty state: t("connect.agents.empty")
-  * לכל agent: status-dot / cli-badge / cwd (truncate, dir:ltr) / sessionId 8 תווים / createdAt toLocaleString he-IL / pid מותנה
-  * Pin: toggle persistent עם חיווי ויזואלי
-  * Reconnect: disabled אם !acpSessionId || attached===true
-  * Kill: דו-לחיצה inline (confirmingId + 3s timeout)
-  * עיצוב: design tokens, מחקה SessionCard
+**Commit 2 — `AcpProviderSession` + `mapAcpCapabilities` (c7ffabf, TDD)**
+- עוטף `AcpClient`: start→session.ready, sendPrompt לא-חוסם (PromptAck מיד, turn.end on resolve
+  עם isError), cancel/stop/onEvent, tier2 (listSessions/resumeSession).
+- `mapAcpCapabilities`: resume/list מ-`client.capabilities` (AgentCapabilities), permissions/tools=true.
+- 11 טסטים מול MockAcpTransport.
 
-**Commit 3 — חיווט ב-+page.svelte + handleReconnect (manual)**
-- `+page.svelte`: import הרכיב + VM + AgentPublic, getActiveAgents, void activeAgents.refresh() ב-onMount, <ActiveProcessesPanel>, handleReconnect מחקה onSubmit existing-session
+**Commit 3 — טסטים ל-`mapAcpCapabilities` (0a91f44, TDD)**
+- 8 טסטים פר-נגזרת (DoD #8 — המקור הוא AgentCapabilities).
 
-**בדיקות**: typecheck ✓ (core+frontend) | build ✓ | lint:i18n ✓ | 208 טסטים ירוקים (23 קבצים)
-**חריגות / blocked**:
-- בדיקת agent חי end-to-end על Windows: blocked-on-cwd-fix (validateCwd חוסם נתיבי Windows ב-400). DoD items 4-8 מחכים לfix-cwd-validate-windows (940d222). כלב יצרף ב-verification.
+**בדיקות**: `pnpm -F @drive-coding/core typecheck` ✓ | `build` ✓ | vitest core: 24 files / 289 tests ירוקים (33 חדשים) ✓
+**אימות runtime**: ממתין לאימות כלב (מרדכי יפעיל; merge מאוחד P1a+P1b).
 
----
-
-## 2026-06-13 — slice active-agents-backend — תשתית שרת לווידג'ט תהליכים פעילים
-
-### מה בוצע?
-
-**slice**: active-agents-backend (branch: slice-active-agents-backend, base: dev@e25912c)
-**commits**: 4 (25f7819..85ef09f)
-**approach**: TDD (commits 0,1) + Integration (commits 2,3)
-
-**Commit 0 — שדה persistent ב-schema + default ב-registry (TDD)**
-- `agent.ts`: Agent + AgentPublic מקבלים `"persistent?": "boolean"` (אופציונלי, כמו crashReason)
-- AgentPublic מוסיף גם `"pid?"` ו-`"attached?"` (runtime enrichment לGET handler)
-- `toAgentPublic`: העתקת `persistent` בתנאי (אותו דפוס כמו crashReason/acpSessionId)
-- `registry.ts`: `create()` מאתחל `persistent: false`
-- `agent-schema.test.ts`: 4 טסטים חדשים (כולל שמירה על toEqual ב-88 ללא persistent)
-
-**Commit 1 — getRuntimeInfo ב-bridge-manager (TDD)**
-- `bridge-manager.ts`: הוסף `getRuntimeInfo(id) → {pid, attached} | null` (e.handle.pid + e.hasActiveWs)
-- `bridge-manager.idle.test.ts`: החלפת spawnBridge ל-cross-platform helper (process.execPath + acp script ב-os.tmpdir(); afterEach async לWindows EPERM)
-- `bridge-manager.runtime.test.ts`: 4 טסטים חדשים ל-getRuntimeInfo
-
-**Commit 2 — endpoint POST /persistent + העשרת GET (Integration)**
-- `http-agents.ts`: bridgeManager? אופציונלי ב-deps; GET /api/agents מועשר ב-pid+attached; POST /api/agents/:id/persistent חדש
-- `server.ts`: מעביר bridgeManager ל-registerAgentsHttp (call-site פרודקשן)
-- `ports.ts`: הוסף "persistent" לרשימת Pick של AgentRegistry.update
-- `http-agents.test.ts`: 8 טסטי integration (persistent endpoint + GET enrichment)
-
-**Commit 3 — reaper מדלג על נעוצים (Integration) ⚠️ verifier-phase**
-- `reap-idle.ts`: פונקציה testable `reapIdleBridges({bm,registry,orch,timeoutMs}, now)` — דולגת על `agent?.persistent=true`
-- `server.ts`: מחליף inline reaper בקריאה ל-reapIdleBridges (בלוק TEMPORARY נשאר)
-- `reaper-pin.test.ts`: 2 טסטי integration — unpinned נקצר, pinned שורד
-
-**בדיקות**: typecheck ✓ (core+backend) | lint:i18n ✓ | 210/227 טסטים ירוקים (3 pre-existing failures ב-http-options/http-history — Windows paths, לא קשור לsliice)
-**חריגות**:
-- cwd="/tmp" בטסט reaper-pin (validateCwd דורש Unix path; os.tmpdir() מחזיר Windows path)
-- גם ports.ts נדרש לשינוי (לא צוין ב-brief) — הוספת "persistent" ל-Pick של update
+**חריגות**: `mapAcpCapabilities` מומש כבר ב-Commit 2 (ה-session תלוי בו) ולא ב-Commit 3 — Commit 3
+הוסיף את הטסטים הייעודיים בלבד. שדות capabilities שלא נצפו ב-flow (diff/terminal/fs/mcpEmbedded/
+revert/delete) → false שמרני. `isErrorStop` = `stopReason==="refusal"` (limits/cancelled = סיום תקין).
+לא נגעתי ב-frontend (P1d).
 
 ---
 

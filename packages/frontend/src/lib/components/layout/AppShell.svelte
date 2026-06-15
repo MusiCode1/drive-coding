@@ -15,7 +15,7 @@
  * ─── redesign-2 ───
  */
 import { tick } from "svelte"
-import { getResponsive, getSession, getI18n } from "$lib/context"
+import { getModelStatus, getResponsive, getSession, getI18n } from "$lib/context"
 import AppHeader from "./AppHeader.svelte"
 import Sidebar from "./Sidebar.svelte"
 import BottomSheet from "./BottomSheet.svelte"
@@ -31,6 +31,7 @@ let { children, footer }: {
 
 const responsive = getResponsive()
 const session = getSession()
+const modelStatus = getModelStatus()
 const t = getI18n().t
 
 // scroll node — ה-AppShell הוא owner (חוק זהב #4)
@@ -71,9 +72,12 @@ $effect(() => {
     last !== undefined && last.kind !== "tool"
       ? (last.segments[last.segments.length - 1]?.text.length ?? 0)
       : 0
+  // msr-v2: גרור scroll כאשר StatusBubble מופיעה/נעלמת
+  const _statusPhase = modelStatus.phase
   void _bubbleCount
   void _segCount
   void _lastSegLen
+  void _statusPhase
   tick().then(() => {
     if (!scrollEl) return
     if (isAtBottom) {

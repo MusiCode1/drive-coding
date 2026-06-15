@@ -42,7 +42,7 @@ export class VoiceMode {
     if (this.#mic.state === "recording") return "recording"
     if (this.#mic.state === "transcribing") return "transcribing"
     if (this.#speaker.state === "speaking") return "speaking"
-    if (this.#session.status === "thinking") return "thinking"
+    if (this.#session.turnState !== "idle") return "thinking"
     return "idle"
   })
 
@@ -56,7 +56,7 @@ export class VoiceMode {
       if (
         this.isCancelling &&
         this.#mic.state === "idle" &&
-        this.#session.status !== "thinking" &&
+        this.#session.turnState === "idle" &&
         this.#speaker.state === "idle"
       ) {
         this.isCancelling = false
@@ -74,5 +74,7 @@ export class VoiceMode {
     this.#mic.cancel()
     // Speaker.stop() היא מתודה תוספתית (additive) שנוספה בקומִיט הזה — ראה speaker.svelte.ts
     this.#speaker.stop()
+    // msr-v2: ACP cancel — עוצר את הסוכן ומחזיר turnState=idle (תיקון X-מהבהב)
+    void this.#session.cancelTurn()
   }
 }

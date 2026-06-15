@@ -11,6 +11,7 @@
  */
 import { getI18n, getSession } from "$lib/context"
 import BubbleRenderer from "./BubbleRenderer.svelte"
+import StatusBubble from "./StatusBubble.svelte"
 
 const session = getSession()
 const t = getI18n().t
@@ -19,6 +20,7 @@ const t = getI18n().t
 {#each session.bubbles as bubble (bubble.id)}
   <BubbleRenderer {bubble} />
 {/each}
+<StatusBubble />
 {#if session.bubbles.length === 0}
   <div class="empty">{t("chat.empty")}</div>
 {/if}
