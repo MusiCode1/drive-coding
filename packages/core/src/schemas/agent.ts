@@ -99,6 +99,8 @@ export const CreateAgentInput = type({
   "modelOverride?": "string | null",
   // Slice 8a: טעינת session ACP קיים דרך session/load במקום newSession
   "existingSessionId?": "string",
+  // vnext-B2: flags שרירותיים לשורת פקודה (shape validation ב-http-agents.ts)
+  "flags?": "string[]",
 })
 export type CreateAgentInput = typeof CreateAgentInput.infer
 

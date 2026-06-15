@@ -1,3 +1,32 @@
+## 2026-06-16 — slice-vnext-B2 — flags שרירותיים ל-CLI spawn
+
+### מה בוצע?
+
+**slice**: vnext-B2 (base: integration-vnext @ 161bd94)
+**commits**: 3 (666cc73, e65b087, f88ddba)
+
+**Phase 0 — core: flags-validate.ts + schema (666cc73)**
+- צור `packages/core/src/flags-validate.ts`: validateFlags(flags): Result<string[], FlagsValidationError>
+  דוחה NUL bytes (U+0000), תווי בקרה U+0001-U+001F, flag ריק, flag ארוך מ-256 תווים
+- הוסף export ב-`core/src/index.ts`
+- הוסף `"flags?": "string[]"` ל-CreateAgentInput (schemas/agent.ts)
+- הוסף `flags?: readonly string[]` ל-SpawnBridgeInput (ports.ts)
+- TDD: 12 טסטים ירוקים; core typecheck נקי; 214 טסטי core עוברים
+
+**Phase 1 — backend: spawn args + validateFlags ב-HTTP (e65b087)**
+- bridge-manager.ts: spawn(cli.bin, [...cli.args, ...(input.flags ?? [])], ...)
+- agent-orchestrator.ts: שני call-sites (spawnWithStderr + fallback spawn) מעבירים flags
+- http-agents.ts: הוסף "flags?" ל-CreateAgentInputFull (schema כפול); validateFlags קודם ל-try → Err→400
+- backend typecheck נקי
+
+**Phase 2 — integration tests (f88ddba)**
+- הוסף 6 טסטים ל-tests/http-agents.test.ts: flags תקפים→201, backward compat, NUL→400, control→400, empty→400, spy pass-through
+- core: 214 ירוקים; backend: 196 ירוקים (9 pre-existing failures: bridge-manager.idle/Windows, http-options, http-history)
+
+**חריגות**: 9 backend test failures הם pre-existing (bridge-manager.idle משתמש ב-/usr/bin/sleep שלא קיים ב-Windows; http-options ו-http-history failures קיימים ב-baseline לפני שינויים). לא קשורים ל-vnext-B2.
+
+---
+
 ## 2026-06-14 — slice-msr-v2 — מצב-מודל + בקרת-סוכן + השמעה (מימוש מחדש על dev)
 
 ### מה בוצע?

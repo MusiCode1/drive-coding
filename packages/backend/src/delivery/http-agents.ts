@@ -1,4 +1,4 @@
-import { type AgentRegistry, CliKind, toAgentPublic, validateCwd } from "@drive-coding/core"
+import { type AgentRegistry, CliKind, toAgentPublic, validateCwd, validateFlags } from "@drive-coding/core"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import type { AgentOrchestrator } from "../app/agent-orchestrator"
@@ -7,12 +7,14 @@ import type { ProjectsRegistry } from "../app/projects-registry"
 /**
  * הרחבת צד-שרת בלבד של CreateAgentInput — כולל existingSessionId
  * עבור טעינת סשן ב-Slice 8a. מוגדר כאן כי זה מרחיב את סכימת הליבה.
+ * vnext-B2: הוסף flags? — חייב להיות גם כאן (schema כפול) כדי שלא יפול בשקט.
  */
 const CreateAgentInputFull = type({
   cliKind: CliKind,
   cwd: "string >= 1",
   "modelOverride?": "string | null",
   "existingSessionId?": "string | null",
+  "flags?": "string[]",
 })
 
 export function registerAgentsHttp(
@@ -49,6 +51,16 @@ export function registerAgentsHttp(
     if (cwdResult.isErr()) {
       const e = cwdResult.error
       return c.json({ error: `invalid cwd: ${e.kind}`, detail: e }, 400)
+    }
+
+    // מאמת flags — דוחה NUL bytes, תווי בקרה, flag ריק (vnext-B2).
+    // validation כאן (HTTP layer) ולא ב-orchestrator: רק כאן מוחזר 400 — orchestrator זורק→500.
+    if (parsed.flags !== undefined) {
+      const flagsResult = validateFlags(parsed.flags)
+      if (flagsResult.isErr()) {
+        const e = flagsResult.error
+        return c.json({ error: `invalid flags: ${e.kind}`, detail: e }, 400)
+      }
     }
 
     try {
