@@ -228,3 +228,35 @@ describe("AgentSession — NBug2 root fix: #doReconnect closes live WS before wa
     await expect(session.reconnect()).rejects.toThrow("cold-blocked")
   })
 })
+
+describe("AgentSession — #doReconnect guard against null sessionId (fix-phone-reconnect-pwa)", () => {
+  test("#doReconnect bails when #sessionId is null — no cold loadSession, status disconnected", async () => {
+    const session = new AgentSession()
+    // #sessionId === null (ברירת מחדל) — מדמה WS שנפל לפני שנקבע sessionId (טלפון: סגירה 1006).
+    // אם ה-guard נכשל, #doReconnect ימשיך ל-warm(false)→cold שיזרוק:
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._mockFindReusableAgentForTest("agent-x")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._mockWarmReconnectForTest(false)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._mockColdReconnectForTest(new Error("cold-should-not-run"))
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect((session as any)._doReconnectForTest()).resolves.toBeUndefined()
+    expect(session.status).toBe("disconnected")
+  })
+
+  test("#doReconnect proceeds past guard when session context is set (no over-block)", async () => {
+    const session = new AgentSession()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._setSessionContextForTest({ sessionId: "sess-1", cwd: "/tmp", cliKind: "opencode" })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._mockFindReusableAgentForTest("agent-1")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._mockWarmReconnectForTest(true) // warm מצליח → status connected
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (session as any)._doReconnectForTest()
+    expect(session.status).toBe("connected")
+  })
+})

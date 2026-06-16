@@ -6,7 +6,9 @@
     <title>drive-coding v2</title>
 
     <!-- PWA -->
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- crossorigin=use-credentials: שולח את ה-Access cookie בעת משיכת ה-manifest;
+         בלעדיו Cloudflare Access מחזיר redirect ל-login (manifest נמשך אנונימית כברירת מחדל). -->
+    <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
     <meta name="theme-color" content="#16130f" />
     <link rel="icon" href="/icons/favicon-64.png" sizes="64x64" type="image/png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
