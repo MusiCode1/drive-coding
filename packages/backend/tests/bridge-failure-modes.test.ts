@@ -28,6 +28,7 @@
  */
 
 import { EventEmitter } from "node:events"
+import { PassThrough } from "node:stream"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 // ─── Mock spawn ────────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ let spawnBehavior: SpawnBehavior = { kind: "success", port: 7100 }
 
 type MockChild = EventEmitter & {
   pid: number | undefined
-  stdout: EventEmitter & { setEncoding?: ReturnType<typeof vi.fn> }
+  stdout: PassThrough
   stderr: EventEmitter
   stdin: { write: ReturnType<typeof vi.fn> }
   kill: ReturnType<typeof vi.fn>
@@ -61,7 +62,8 @@ vi.mock("node:child_process", () => {
         case "no-pid": {
           const child = new EventEmitter() as MockChild
           child.pid = undefined
-          child.stdout = Object.assign(new EventEmitter(), { setEncoding: vi.fn() })
+          // PassThrough נדרש ל-createInterface ב-bridge-manager (resume/pause)
+          child.stdout = new PassThrough()
           child.stderr = new EventEmitter()
           child.stdin = { write: vi.fn() }
           child.kill = vi.fn()
@@ -70,7 +72,7 @@ vi.mock("node:child_process", () => {
         case "async-error": {
           const child = new EventEmitter() as MockChild
           child.pid = 12345
-          child.stdout = Object.assign(new EventEmitter(), { setEncoding: vi.fn() })
+          child.stdout = new PassThrough()
           child.stderr = new EventEmitter()
           child.stdin = { write: vi.fn() }
           child.kill = vi.fn()
@@ -85,7 +87,7 @@ vi.mock("node:child_process", () => {
         case "exit-before-port": {
           const child = new EventEmitter() as MockChild
           child.pid = 12345
-          child.stdout = Object.assign(new EventEmitter(), { setEncoding: vi.fn() })
+          child.stdout = new PassThrough()
           child.stderr = new EventEmitter()
           child.stdin = { write: vi.fn() }
           child.kill = vi.fn()
@@ -103,7 +105,7 @@ vi.mock("node:child_process", () => {
         case "success": {
           const child = new EventEmitter() as MockChild
           child.pid = 12345
-          child.stdout = Object.assign(new EventEmitter(), { setEncoding: vi.fn() })
+          child.stdout = new PassThrough()
           child.stderr = new EventEmitter()
           child.stdin = { write: vi.fn() }
           child.kill = vi.fn((_sig?: string) => {

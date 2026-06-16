@@ -1,4 +1,5 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
+import { createInterface } from "node:readline"
 import type { BridgeCrashInfo, BridgeHandle, BridgeManager, SpawnBridgeInput } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
@@ -22,6 +23,8 @@ export function createBridgeManager(): BridgeManager & {
   markDetached(bridgeId: string): void
   // slice active-agents: runtime enrichment for GET /api/agents
   getRuntimeInfo(bridgeId: string): { pid: number; attached: boolean } | null
+  // slice agent-busy-indicator: subscription לשורות stdout (reader קבוע ב-bridge-manager)
+  onLine(bridgeId: string, cb: (line: string) => void): () => void
 } {
   type Entry = {
     handle: BridgeHandle
@@ -29,6 +32,8 @@ export function createBridgeManager(): BridgeManager & {
     stderrLines: string[]
     // ─── תצוגת active-agents (attached) — משרת getRuntimeInfo ───
     hasActiveWs: boolean
+    // ─── slice agent-busy-indicator: subscribers לשורות stdout ───
+    lineSubscribers: Set<(line: string) => void>
   }
   const store = new Map<string, Entry>()
   const crashHandlers = new Set<(bridgeId: string, info: BridgeCrashInfo) => void>()
@@ -134,6 +139,22 @@ export function createBridgeManager(): BridgeManager & {
       }
     })
 
+    // ─── reader קבוע ל-stdout (slice agent-busy-indicator) ─────────────────────
+    // bridge-manager הוא הבעלים היחיד של child.stdout. ws-agent נרשם ל-onLine
+    // ומקבל את השורות דרך callback — לא קורא את ה-stream ישירות.
+    // סדר חובה: subscribers (→ feWs.send) לפני decode/observe.
+    child.stdout.setEncoding("utf8")
+    const stdoutRl = createInterface({ input: child.stdout, crlfDelay: Infinity })
+    stdoutRl.on("line", (line) => {
+      const entry = store.get(bridgeId)
+      if (!entry) return
+      // (1) שלח לכל ה-subscribers (ws-agent → feWs.send) לפני כל דבר אחר
+      for (const cb of entry.lineSubscribers) {
+        try { cb(line) } catch { /* subscriber לא יכול לשבור את הpipe */ }
+      }
+      // (2) decode + observe יבוא ב-Commit 3 (turn-tracker)
+    })
+
     if (!child.pid) {
       // אירוע Error יטפל בניקוי בנפרד. מחזיר שגיאה לקורא.
       throw new Error(`spawn returned no pid (bin=${cli.bin})`)
@@ -155,6 +176,8 @@ export function createBridgeManager(): BridgeManager & {
       stderrLines,
       // ─── תצוגת active-agents (attached) — משרת getRuntimeInfo ───
       hasActiveWs: false,
+      // ─── slice agent-busy-indicator: subscribers לשורות stdout ───
+      lineSubscribers: new Set(),
     })
     childLog.info({ pid: child.pid }, "spawn ok")
     return { ...handle, getStderr: () => [...stderrLines], child }
@@ -219,6 +242,14 @@ export function createBridgeManager(): BridgeManager & {
       const e = store.get(bridgeId)
       if (!e) return null
       return { pid: e.handle.pid, attached: e.hasActiveWs }
+    },
+
+    // slice agent-busy-indicator: subscribe לשורות stdout (reader קבוע ב-bridge-manager)
+    onLine(bridgeId: string, cb: (line: string) => void): () => void {
+      const e = store.get(bridgeId)
+      if (!e) return () => {}
+      e.lineSubscribers.add(cb)
+      return () => { e.lineSubscribers.delete(cb) }
     },
   }
 }

@@ -1,10 +1,11 @@
 import { type ChildProcessWithoutNullStreams } from "node:child_process"
 import { EventEmitter } from "node:events"
+import { PassThrough } from "node:stream"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 type MockChild = EventEmitter & {
   pid: number | undefined
-  stdout: EventEmitter & { setEncoding?: ReturnType<typeof vi.fn> }
+  stdout: PassThrough
   stderr: EventEmitter
   stdin: { write: ReturnType<typeof vi.fn> }
   kill: ReturnType<typeof vi.fn>
@@ -22,9 +23,8 @@ vi.mock("node:child_process", () => {
 function makeSuccessChild(pid = 12345): MockChild {
   const child = new EventEmitter() as MockChild
   child.pid = pid
-  child.stdout = Object.assign(new EventEmitter(), {
-    setEncoding: vi.fn(),
-  })
+  // PassThrough מממש resume()/pause() — נדרש ל-createInterface ב-bridge-manager
+  child.stdout = new PassThrough()
   child.stderr = new EventEmitter()
   child.stdin = { write: vi.fn() }
   child.kill = vi.fn((_signal?: string) => {
@@ -36,9 +36,8 @@ function makeSuccessChild(pid = 12345): MockChild {
 function makeNoPidChild(): MockChild {
   const child = new EventEmitter() as MockChild
   child.pid = undefined
-  child.stdout = Object.assign(new EventEmitter(), {
-    setEncoding: vi.fn(),
-  })
+  // PassThrough מממש resume()/pause() — נדרש ל-createInterface ב-bridge-manager
+  child.stdout = new PassThrough()
   child.stderr = new EventEmitter()
   child.stdin = { write: vi.fn() }
   child.kill = vi.fn()
