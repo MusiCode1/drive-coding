@@ -228,6 +228,13 @@ export class AgentSession {
   _getSessionIdForTest(): string | null {
     return this.#sessionId
   }
+  /**
+   * @internal קורא ישירות ל-#doReconnect (נתיב ה-auto-reconnect). נדרש כי reconnect()
+   * הציבורי חוזר מוקדם כש-#sessionId===null, אז אין נתיב ציבורי לבדוק את ה-guard של #doReconnect.
+   */
+  _doReconnectForTest(): Promise<void> {
+    return this.#doReconnect()
+  }
 
   // ─── slice ws-reconnect-infra: reconnect helpers ────────────────────────────
 
@@ -322,6 +329,14 @@ export class AgentSession {
    * כשה-WS כבר מת (auto-reconnect): closeAndWait מתרצה מיד (readyState===CLOSED).
    */
   #doReconnect = async (): Promise<void> => {
+    // אין סשן/cwd/cliKind → אין מה לשחזר (מראה את guard של reconnect():649). מונע
+    // session/load: null בלולאת auto-reconnect — קורה בטלפון כש-WS נסגר ב-1006 לפני
+    // ש-#sessionId נקבע (attach:489 / loadSession:626 קובעים אותו רק בהצלחה).
+    if (this.#sessionId === null || this.cwd === null || this.#cliKind === null) {
+      this.#reconnecting = false
+      this.#setStatus("disconnected")
+      return
+    }
     // NBug2 root: סגור WS חי והמתן לאישור לפני warm
     if (this.#transport) {
       await this.#transport.closeAndWait()
@@ -361,11 +376,11 @@ export class AgentSession {
       if (this.status === "connecting" || this.status === "connected") {
         this.#setStatus("disconnected")   // מאפס מצב שהשאיר warm-fail; עובר את guard 217
       }
-      await this.loadSession({
-        sessionId: this.#sessionId!,
-        cwd: this.cwd!,
-        cliKind: this.#cliKind!,
-      })
+      // defensive: ה-guard ב-#doReconnect כבר מבטיח שאלה לא null, אך לא נשען על ! בלבד
+      // (assertion של TS, ללא בדיקת runtime) — אחרת session/load: null ידחה ע"י ה-agent.
+      const sid = this.#sessionId, cwd = this.cwd, cliKind = this.#cliKind
+      if (sid === null || cwd === null || cliKind === null) return
+      await this.loadSession({ sessionId: sid, cwd, cliKind })
     } finally {
       this.#tearingDown = false       // שחרר אחרי שה-WS החדש פעיל
     }
