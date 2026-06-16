@@ -22,7 +22,7 @@ export function registerAgentsHttp(
     orchestrator: AgentOrchestrator
     projectsRegistry?: ProjectsRegistry
     // אופציונלי בכוונה — call-sites קיימים בטסט לא מעבירים אותו (slice active-agents)
-    bridgeManager?: { getRuntimeInfo(id: string): { pid: number; attached: boolean } | null }
+    bridgeManager?: { getRuntimeInfo(id: string): { pid: number; attached: boolean; busy: boolean } | null }
   },
 ): void {
   // GET /api/agents — רשימה (מועשרת ב-pid+attached אם bridgeManager זמין)

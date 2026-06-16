@@ -4,6 +4,8 @@ import type { BridgeCrashInfo, BridgeHandle, BridgeManager, SpawnBridgeInput } f
 import { createLogger } from "@drive-coding/core/log"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
 import { AUDIO_FRIENDLY_PROMPT } from "../prompts/index.js"
+import { decodeWireLine } from "../delivery/wire-decode.js"
+import { type TurnTracker, createTurnTracker } from "./turn-tracker.js"
 import { getCliCommand, getCliSpec } from "./cli-config.js"
 
 const log = createLogger("backend.bridge.manager")
@@ -21,8 +23,8 @@ export function createBridgeManager(): BridgeManager & {
   // ─── תצוגת active-agents (attached) ───
   markAttached(bridgeId: string): void
   markDetached(bridgeId: string): void
-  // slice active-agents: runtime enrichment for GET /api/agents
-  getRuntimeInfo(bridgeId: string): { pid: number; attached: boolean } | null
+  // slice active-agents + agent-busy-indicator: runtime enrichment for GET /api/agents
+  getRuntimeInfo(bridgeId: string): { pid: number; attached: boolean; busy: boolean } | null
   // slice agent-busy-indicator: subscription לשורות stdout (reader קבוע ב-bridge-manager)
   onLine(bridgeId: string, cb: (line: string) => void): () => void
 } {
@@ -32,7 +34,8 @@ export function createBridgeManager(): BridgeManager & {
     stderrLines: string[]
     // ─── תצוגת active-agents (attached) — משרת getRuntimeInfo ───
     hasActiveWs: boolean
-    // ─── slice agent-busy-indicator: subscribers לשורות stdout ───
+    // ─── slice agent-busy-indicator: tracker + subscribers לשורות stdout ───
+    tracker: TurnTracker
     lineSubscribers: Set<(line: string) => void>
   }
   const store = new Map<string, Entry>()
@@ -152,7 +155,9 @@ export function createBridgeManager(): BridgeManager & {
       for (const cb of entry.lineSubscribers) {
         try { cb(line) } catch { /* subscriber לא יכול לשבור את הpipe */ }
       }
-      // (2) decode + observe יבוא ב-Commit 3 (turn-tracker)
+      // (2) decode + observe (Commit 3 — turn-tracker)
+      // הפענוח בנתיב non-critical, מבודד ב-try/catch — לעולם לא יעכב/ישבור את ה-pipe
+      try { entry.tracker.observe(decodeWireLine(line), Date.now()) } catch { /* silent */ }
     })
 
     if (!child.pid) {
@@ -176,7 +181,8 @@ export function createBridgeManager(): BridgeManager & {
       stderrLines,
       // ─── תצוגת active-agents (attached) — משרת getRuntimeInfo ───
       hasActiveWs: false,
-      // ─── slice agent-busy-indicator: subscribers לשורות stdout ───
+      // ─── slice agent-busy-indicator: tracker + subscribers לשורות stdout ───
+      tracker: createTurnTracker(),
       lineSubscribers: new Set(),
     })
     childLog.info({ pid: child.pid }, "spawn ok")
@@ -237,11 +243,11 @@ export function createBridgeManager(): BridgeManager & {
       if (e) e.hasActiveWs = false
     },
 
-    // slice active-agents: returns { pid, attached } for a live bridge, or null
-    getRuntimeInfo(bridgeId: string): { pid: number; attached: boolean } | null {
+    // slice active-agents + agent-busy-indicator: returns { pid, attached, busy } for a live bridge, or null
+    getRuntimeInfo(bridgeId: string): { pid: number; attached: boolean; busy: boolean } | null {
       const e = store.get(bridgeId)
       if (!e) return null
-      return { pid: e.handle.pid, attached: e.hasActiveWs }
+      return { pid: e.handle.pid, attached: e.hasActiveWs, busy: e.tracker.isBusy(Date.now()) }
     },
 
     // slice agent-busy-indicator: subscribe לשורות stdout (reader קבוע ב-bridge-manager)

@@ -96,6 +96,8 @@ export const AgentPublic = type({
   // runtime enrichment (מאוכלס ב-GET /api/agents handler, לא ב-toAgentPublic):
   "pid?": "number",
   "attached?": "boolean",
+  // slice agent-busy-indicator: true כשיש turn פעיל (debounce-שקט)
+  "busy?": "boolean",
 })
 export type AgentPublic = typeof AgentPublic.infer
 
