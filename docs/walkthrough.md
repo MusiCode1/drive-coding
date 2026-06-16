@@ -38,6 +38,27 @@
 
 ---
 
+## 2026-06-16 — slice-active-processes-layout — layout דו-שורתי לפאנל תהליכים פעילים
+
+### מה בוצע?
+
+**slice**: slice-active-processes-layout (base: dev b2c2349)
+**commits**: 1
+
+**Commit 1 — feat(active-panel): layout דו-שורתי — meta שורה נפרדת**
+- עטף `.agent-info` + `.agent-actions` ב-`.agent-top` (flex אופקי)
+- הוציא session-id / created-at / pid ל-`.agent-meta` (שורה 2, קטנה ומעומעמת)
+- `.agent-row` → column, `align-items: stretch`, `gap: 0.35rem`
+- `.agent-meta`: flex-wrap, `font-size: 0.72rem`, `color: var(--fg-dim)`, מפריד `·`
+- `.session-id/.created-at/.pid` → `direction: ltr` (ב-meta; אין overlap עם RTL כי wrap נפרד)
+- אין שינוי ב-`<script>`, handlers, או נתונים
+- typecheck ✓ | lint:i18n ✓ | lint:rtl ✓ | 218/218 tests ירוקים
+
+**בדיקות**: typecheck ✓ | lint:i18n ✓ | lint:rtl ✓ | 218 tests ירוקים
+**חריגות מה-brief**: אין. אימות ויזואלי נותר ל-runtime-gate (BE + agent חי נדרש).
+
+---
+
 ## 2026-06-14 — slice-msr-v2 — מצב-מודל + בקרת-סוכן + השמעה (מימוש מחדש על dev)
 
 ### מה בוצע?
