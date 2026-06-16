@@ -262,7 +262,7 @@ export class AgentSession {
 
   // statics ל-reconnect (מוגדרים כאן כדי שכל המתודות שמשתמשות בהן יהיו מוכנות)
   static readonly #MAX_RECONNECT_ATTEMPTS = 5
-  /** backoff (ms) לפי ניסיון. סך ~31s << חלון reaper (5 דק'). */
+  /** backoff (ms) לפי ניסיון. סך ~31s — חסר מהסף המומלץ לניסיון reconnect ידני. */
   static readonly #BACKOFF_MS = [1000, 2000, 4000, 8000, 16000]
   static readonly #MED8_RETRY_MS = 250
   static readonly #MED8_MAX_RETRIES = 3
@@ -324,7 +324,7 @@ export class AgentSession {
    *
    * NBug2 root fix: אם יש WS חי (#transport לא null) — סגור אותו והמתן לאישור
    * לפני warm. בלי זה: ה-WS החי נדרס ב-#warmReconnect:289 בלי להיסגר → agent
-   * יתום קבוע (reaper לא נוגע ב-hasActiveWs=true). ה-BE דוחה WS חדש ב-1008.
+   * יתום קבוע (BE דוחה WS כפול ב-1008 כש-hasActiveWs=true). ה-BE דוחה WS חדש ב-1008.
    *
    * כשה-WS כבר מת (auto-reconnect): closeAndWait מתרצה מיד (readyState===CLOSED).
    */

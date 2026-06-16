@@ -70,8 +70,7 @@ export function getCliCommand(kind: BridgeKind, modelOverride?: string | null): 
     bin = spec.bin
   }
 
-  // Commit 4 (windows-adaptation): OPENCODE_ARGS env override — נחוץ ל-tests cross-platform
-  // (ל-idle-reaper tests שמשתמשים ב-bun כ-"sleep binary").
+  // Commit 4 (windows-adaptation): OPENCODE_ARGS env override — נחוץ ל-tests cross-platform.
   // JSON array, למשל: OPENCODE_ARGS='["-e","process.stdin.resume()"]'
   const finalArgs: ReadonlyArray<string> =
     kind === "opencode" && process.env.OPENCODE_ARGS

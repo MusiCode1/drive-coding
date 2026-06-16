@@ -17,11 +17,9 @@ export type BridgeHandleWithStderr = BridgeHandle & {
 export function createBridgeManager(): BridgeManager & {
   spawnWithStderr(bridgeId: string, input: SpawnBridgeInput): Promise<BridgeHandleWithStderr>
   getChild(bridgeId: string): ChildProcessWithoutNullStreams | null
-  // ─── TEMPORARY (slice 26) ───
+  // ─── תצוגת active-agents (attached) ───
   markAttached(bridgeId: string): void
   markDetached(bridgeId: string): void
-  listIdle(timeoutMs: number, now: number): string[]
-  getCreatedAt(bridgeId: string): number | null   // TEMPORARY (fix-idle-flaky)
   // slice active-agents: runtime enrichment for GET /api/agents
   getRuntimeInfo(bridgeId: string): { pid: number; attached: boolean } | null
 } {
@@ -29,10 +27,8 @@ export function createBridgeManager(): BridgeManager & {
     handle: BridgeHandle
     child: ChildProcessWithoutNullStreams
     stderrLines: string[]
-    // ─── TEMPORARY (slice 26) — idle-reaper tracking ───
+    // ─── תצוגת active-agents (attached) — משרת getRuntimeInfo ───
     hasActiveWs: boolean
-    lastDetachedAt: number | null
-    createdAt: number
   }
   const store = new Map<string, Entry>()
   const crashHandlers = new Set<(bridgeId: string, info: BridgeCrashInfo) => void>()
@@ -157,10 +153,8 @@ export function createBridgeManager(): BridgeManager & {
       handle,
       child,
       stderrLines,
-      // ─── TEMPORARY (slice 26) — idle-reaper tracking ───
+      // ─── תצוגת active-agents (attached) — משרת getRuntimeInfo ───
       hasActiveWs: false,
-      lastDetachedAt: null,
-      createdAt: Date.now(),
     })
     childLog.info({ pid: child.pid }, "spawn ok")
     return { ...handle, getStderr: () => [...stderrLines], child }
@@ -207,9 +201,9 @@ export function createBridgeManager(): BridgeManager & {
       }
     },
 
-    // ─── TEMPORARY (slice 26): idle-reaper support ───
-    // Remove together with this whole block when background-agent management
-    // (future "slice A") lands. See docs/plans/slice-26-bridge-idle-reaper.md §7.
+    // ─── תצוגת active-agents (attached) ───
+    // markAttached/markDetached משרתים את getRuntimeInfo (שדה attached) בתצוגת פאנל active-agents.
+    // אינם זמניים — נחוצים לתצוגה השוטפת.
     markAttached(bridgeId: string) {
       const e = store.get(bridgeId)
       if (e) e.hasActiveWs = true
@@ -217,28 +211,7 @@ export function createBridgeManager(): BridgeManager & {
 
     markDetached(bridgeId: string) {
       const e = store.get(bridgeId)
-      if (e) {
-        e.hasActiveWs = false
-        e.lastDetachedAt = Date.now()
-      }
-    },
-
-    listIdle(timeoutMs: number, now: number): string[] {
-      const out: string[] = []
-      for (const [id, e] of store) {
-        if (e.hasActiveWs) continue // active WS — never reap
-        if (e.lastDetachedAt !== null) {
-          if (now - e.lastDetachedAt >= timeoutMs) out.push(id)
-        } else {
-          // Never had a WS — grace period: 2x timeout before reaping
-          if (now - e.createdAt >= timeoutMs * 2) out.push(id)
-        }
-      }
-      return out
-    },
-
-    getCreatedAt(bridgeId: string): number | null {
-      return store.get(bridgeId)?.createdAt ?? null
+      if (e) e.hasActiveWs = false
     },
 
     // slice active-agents: returns { pid, attached } for a live bridge, or null

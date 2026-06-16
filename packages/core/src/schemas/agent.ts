@@ -72,7 +72,7 @@ export const Agent = type({
   "acpSessionId?": "string",
   // סיבת שגיאת ספק (Slice 5.6 — D47)
   "crashReason?": "string",
-  // נעיצה (slice active-agents): true = ה-reaper לא יהרוג גם כשמנותק. ברירת מחדל false.
+  // נעיצה (slice active-agents): נשמר לתאימות; ה-reaper הוסר — כרגע ללא אפקט (no-op). ברירת מחדל false.
   "persistent?": "boolean",
 })
 export type Agent = typeof Agent.infer
