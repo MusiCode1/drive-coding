@@ -1,7 +1,7 @@
 # Slice — אינדיקטור busy/idle לתהליכים (קליינט-פענוח עצמאי ב-BE) — תוכנית
 
 > **תאריך**: 2026-06-16
-> **סטטוס**: ✅ הושלם (אליעזר 2026-06-16) — 4 commits, 674 tests ירוקים
+> **סטטוס**: ✅ הושלם + מוזג ל-dev (calev-heavy GO 10/11; אומת ויזואלית 2026-06-16)
 > **Complexity**: 7/10 (verifier: heavy / phase)
 > **תלויות (`depends_on`)**: [slice-remove-idle-reaper, slice-active-processes-layout]
 > **Base**: dev (`a52344f`) — active-agents + שני ה-slices לעיל כבר מוזגו
