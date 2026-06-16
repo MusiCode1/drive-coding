@@ -180,6 +180,8 @@ export type MessageKey =
   | "connect.agents.pin"
   | "connect.agents.unpin"
   | "connect.agents.inUse"
+  // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
+  | "connect.agents.working"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

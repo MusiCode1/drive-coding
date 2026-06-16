@@ -151,6 +151,13 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
           </div>
 
           <div class="agent-meta">
+            {#if agent.busy}
+              <span class="busy-indicator" aria-label={t("connect.agents.working")}>
+                <span class="busy-dot"></span>
+                <span class="busy-label">{t("connect.agents.working")}</span>
+              </span>
+              <span class="meta-sep">·</span>
+            {/if}
             {#if agent.acpSessionId}
               <span class="session-id">{agent.acpSessionId.slice(0, 8)}</span>
               <span class="meta-sep">·</span>
@@ -358,5 +365,32 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     border-color: var(--recording);
     color: var(--recording);
     font-weight: 600;
+  }
+
+  /* ─── busy indicator ─── (slice agent-busy-indicator) */
+  .busy-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--accent);
+  }
+
+  .busy-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: busy-pulse 1s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+
+  .busy-label {
+    font-size: 0.72rem;
+    font-weight: 500;
+  }
+
+  @keyframes busy-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.75); }
   }
 </style>

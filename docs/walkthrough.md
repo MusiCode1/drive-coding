@@ -1,3 +1,47 @@
+## 2026-06-16 — slice-agent-busy-indicator — אינדיקטור busy/idle לתהליכים
+
+### מה בוצע?
+
+**slice**: slice-agent-busy-indicator (base: dev a52344f/c7463c5)
+**commits**: 4 (7123c2d, a0193cb, b74643e, 443e525)
+
+**Commit 1 — refactor(backend): bridge-manager בעלים יחיד של child.stdout (integration)**
+- bridge-manager.ts: הוסף reader קבוע (createInterface) ב-spawnInternal. הוסף lineSubscribers (Set) לכל Entry. הוסף מתודה onLine(bridgeId, cb) → () => void.
+- ws-agent.ts: הסרת createInterface ישיר, שימוש ב-deps.bridgeManager.onLine. הרחבת deps type. ב-close: unsub() במקום rl.close().
+- עדכון mock ב-ws-agent-pipe.test.ts (makeMockBridgeManager עם onLine, pushLine helper).
+- עדכון bridge-manager.test.ts + bridge-failure-modes.test.ts: stdout שונה ל-PassThrough (נדרש ל-createInterface).
+
+**Commit 2 — feat(backend): turn-tracker.ts module טהור (TDD, 6 תרחישים)**
+- turn-tracker.ts + turn-tracker.test.ts (קבצים חדשים).
+- TurnTracker: observe(WireSummary, now), isBusy(now). idleDebounceMs=1500.
+- sessionUpdate → busy=true; result לא מאפס busy; שקט > debounce → idle.
+- אפס תלות ב-FE (wire-decode.ts בלבד).
+- 6/6 תרחישים ירוקים: Red-Green-Refactor.
+
+**Commit 3 — feat(backend/core): חיווט turn-tracker → getRuntimeInfo.busy → AgentPublic.busy (integration)**
+- bridge-manager.ts: הוסף TurnTracker לכל Entry. Reader: decode+observe ב-try/catch אחרי subscribers. getRuntimeInfo מחזיר { pid, attached, busy }.
+- agent.ts (core): הוסף "busy?": "boolean" ל-AgentPublic.
+- http-agents.ts: עדכון deps type. לוגיקת spread לא שונה.
+- http-agents.test.ts: הוסף busy:false ל-mock.
+
+**Commit 4 — feat(frontend): אינדיקטור busy + i18n (manual)**
+- keys.ts + he.ts + en.ts: הוסף "connect.agents.working" (he: "עובד…", en: "working…").
+- ActiveProcessesPanel.svelte: .busy-indicator, .busy-dot (animation busy-pulse 1s), .busy-label.
+
+### חריגות
+- lint-no-hebrew-in-code.test.mjs — כשל קיים לפני ה-slice (SyntaxError סביבתי ב-Windows), לא קשור לשינויים.
+- bridge-failure-modes.test.ts ו-bridge-manager.test.ts: mock stdout שודרג ל-PassThrough (נדרש בגלל Commit 1 — createInterface דורש resume()/pause()).
+
+### בדיקות
+- typecheck: ירוק (4 commits)
+- lint:i18n: ירוק
+- lint:rtl: ירוק
+- tests: 674 passed, 14 skipped (1 failed = lint-no-hebrew pre-existing)
+- turn-tracker: 6/6 תרחישים (TDD)
+- ws-agent-pipe.test.ts: 7/7 ירוקים — pipe regression מאושר
+
+---
+
 ## 2026-06-16 — slice-remove-idle-reaper — ביטול idle-reaper (תנאי §7 של slice-26)
 
 ### מה בוצע?
