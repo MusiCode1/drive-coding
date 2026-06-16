@@ -42,7 +42,7 @@ export function createAgentWsHandler(deps: {
   orchestrator: AgentOrchestrator
   bridgeManager: {
     getChild(bridgeId: string): ChildProcessWithoutNullStreams | null
-    // ─── TEMPORARY (slice 26) ───
+    // ─── תצוגת active-agents (attached) ───
     markAttached(bridgeId: string): void
     markDetached(bridgeId: string): void
   }
@@ -80,7 +80,7 @@ export function createAgentWsHandler(deps: {
     }
 
     activeFeWs.set(agentId, feWs)
-    deps.bridgeManager.markAttached(agentId) // ← TEMPORARY (slice 26)
+    deps.bridgeManager.markAttached(agentId) // ← תצוגת active-agents (attached)
     childLog.info({ pid: child.pid }, "WS connect → pipe attached")
 
     // ── pipeChild — ניתוב ──────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ export function createAgentWsHandler(deps: {
     feWs.on("close", () => {
       childLog.info({}, "WS disconnect — detaching pipe")
       activeFeWs.delete(agentId)
-      deps.bridgeManager.markDetached(agentId) // ← TEMPORARY (slice 26)
+      deps.bridgeManager.markDetached(agentId) // ← תצוגת active-agents (attached)
       rl.close()
       child.off("exit", onChildExit)
       // חשוב: אל תקרא ל-child.kill() — ה-child שורד התנתקות של ה-FE
