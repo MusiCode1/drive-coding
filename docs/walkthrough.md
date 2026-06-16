@@ -1,3 +1,43 @@
+## 2026-06-16 — slice-remove-idle-reaper — ביטול idle-reaper (תנאי §7 של slice-26)
+
+### מה בוצע?
+
+**slice**: slice-remove-idle-reaper (base: dev b2c2349)
+**commits**: 3 (06c8294, 3a6501a, + commit 3 הנוכחי)
+
+**Commit 1 — מחיקת ה-reaper מ-server.ts + reap-idle.ts + reaper-pin.test.ts**
+- נמחקו: `reap-idle.ts`, `tests/reaper-pin.test.ts`
+- הוסרו מ-server.ts: import של reapIdleBridges, כל בלוק ה-setInterval (BRIDGE_IDLE_TIMEOUT_MS, REAP_INTERVAL_MS, reaper, הערת TEMPORARY)
+- typecheck ירוק; BE tests: 247 passed (1 failed סביבתי ב-Windows — bridge-failure-modes timeout, pre-existing)
+
+**Commit 2 — ניקוי כירורגי ב-bridge-manager**
+- הוסרו מ-Entry: `lastDetachedAt`, `createdAt` (hasActiveWs נשאר)
+- הוסרו מה-API: `listIdle`, `getCreatedAt`
+- markDetached: הוסרה `lastDetachedAt = Date.now()` — נשאר רק `hasActiveWs = false`
+- עודכנו הערות TEMPORARY (slice 26) → תצוגת active-agents (attached) בbridge-manager.ts וws-agent.ts (3 מופעים)
+- נמחק: `bridge-manager.idle.test.ts`
+- typecheck ירוק; BE tests: 236 passed (all pass; 14 skipped)
+
+**Commit 3 — docs + הערות stale**
+- agent-session.svelte.ts: הוסרו 2 הפניות ל-"reaper" בהערות (~258, ~320)
+- agent.ts schema ~75: persistent עודכן ל-"no-op, reaper הוסר"
+- cli-config.ts ~74: הוסרה הפניה ל-"idle-reaper tests" (נמחקו)
+- slices.md ~78: slice 26 עודכן ל-"הוסר ב-slice-remove-idle-reaper"
+- slice-26-bridge-idle-reaper.md: עודכן סטטוס ל-"הוסר"
+
+### חריגות
+- כשל סביבתי ב-Windows ב-bridge-failure-modes.test.ts (ENOENT timeout) — pre-existing, לא קשור לשינויים
+- dist/acp/bridge-manager.idle.test.js היה stale אחרי מחיקת המקור — נמחק ידנית מ-dist
+
+### בדיקות
+- typecheck: ירוק (3 commits)
+- lint:i18n: ירוק
+- BE tests: 236 passed, 14 skipped (אחרי commit 2)
+- DoD #4: grep reapIdle|listIdle|getCreatedAt|reap-idle ב-src = אפס
+- DoD #5: grep TEMPORARY (slice 26) ב-packages = אפס
+
+---
+
 ## 2026-06-14 — slice-msr-v2 — מצב-מודל + בקרת-סוכן + השמעה (מימוש מחדש על dev)
 
 ### מה בוצע?
