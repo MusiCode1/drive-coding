@@ -45,7 +45,6 @@ import { registerProxyHttp } from "./delivery/http-proxy.js"
 // הערה: createSessionsCache הוסר — רשימת הסשנים עכשיו מונעת מצד ה-FE דרך ACP WS
 import { createAgentWsHandler } from "./delivery/ws-agent.js"
 import { createEchoWsHandler } from "./delivery/ws-echo.js"
-import { reapIdleBridges } from "./acp/reap-idle.js"
 
 const app = new Hono()
 
@@ -135,19 +134,6 @@ httpServer.on("upgrade", (req, socket, head) => {
 })
 
 log.info({ port }, "listening")
-
-// ─── TEMPORARY (slice 26, מאולף ב-active-agents): idle-bridge reaper ───
-// Safety net for bridges leaked by a plain reload / closed tab (cases that
-// slice 25's FE cleanup does NOT cover). DELETE THIS BLOCK when background-agent
-// management (future "slice A") lands. See docs/plans/slice-26-bridge-idle-reaper.md §7.
-// כעת מחריג agents נעוצים (persistent=true) — לא מוחק את הבלוק, משנה התנהגות.
-const BRIDGE_IDLE_TIMEOUT_MS = Number(process.env.BRIDGE_IDLE_TIMEOUT_MS ?? 300_000)
-const REAP_INTERVAL_MS = Math.min(BRIDGE_IDLE_TIMEOUT_MS, 60_000)
-const reaper = setInterval(
-  () => { void reapIdleBridges({ bridgeManager, registry, orchestrator, timeoutMs: BRIDGE_IDLE_TIMEOUT_MS }, Date.now()) },
-  REAP_INTERVAL_MS,
-)
-reaper.unref() // do not keep the event loop alive just for the reaper
 
 /**
  * הרצה ידנית (dev/debug) — BE על פורט נפרד, משרת FE סטטי, דרך OneCLI:
