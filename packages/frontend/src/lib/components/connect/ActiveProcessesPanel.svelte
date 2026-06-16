@@ -102,20 +102,14 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     <ul class="agent-list">
       {#each activeAgents.agents as agent (agent.id)}
         <li class="agent-row">
-          <div class="agent-info">
-            <span class="status-dot" style="background:{statusColor(agent.status)}"></span>
-            <span class="cli-badge">{agent.cliKind}</span>
-            <span class="cwd" title={agent.cwd}>{agent.cwd}</span>
-            {#if agent.acpSessionId}
-              <span class="session-id">{agent.acpSessionId.slice(0, 8)}</span>
-            {/if}
-            <span class="created-at">{formatDate(agent.createdAt)}</span>
-            {#if agent.pid}
-              <span class="pid">pid: {agent.pid}</span>
-            {/if}
-          </div>
+          <div class="agent-top">
+            <div class="agent-info">
+              <span class="status-dot" style="background:{statusColor(agent.status)}"></span>
+              <span class="cli-badge">{agent.cliKind}</span>
+              <span class="cwd" title={agent.cwd}>{agent.cwd}</span>
+            </div>
 
-          <div class="agent-actions">
+            <div class="agent-actions">
             <!-- Pin / Unpin -->
             <button
               type="button"
@@ -153,6 +147,19 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
                 ? t("connect.agents.killConfirm")
                 : t("connect.agents.kill")}
             </button>
+            </div>
+          </div>
+
+          <div class="agent-meta">
+            {#if agent.acpSessionId}
+              <span class="session-id">{agent.acpSessionId.slice(0, 8)}</span>
+              <span class="meta-sep">·</span>
+            {/if}
+            <span class="created-at">{formatDate(agent.createdAt)}</span>
+            {#if agent.pid}
+              <span class="meta-sep">·</span>
+              <span class="pid">pid: {agent.pid}</span>
+            {/if}
           </div>
         </li>
       {/each}
@@ -222,14 +229,21 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
 
   .agent-row {
     display: flex;
-    align-items: center;
-    gap: 0.5rem;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
     padding: 0.55rem 0.9rem;
     border-bottom: 1px solid var(--border);
   }
 
   .agent-row:last-child {
     border-bottom: none;
+  }
+
+  .agent-top {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .agent-info {
@@ -239,6 +253,19 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     flex: 1;
     min-width: 0;
     font-size: 0.82rem;
+  }
+
+  .agent-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    color: var(--fg-dim);
+  }
+
+  .meta-sep {
+    color: var(--fg-dim);
+    opacity: 0.5;
   }
 
   .status-dot {
@@ -269,22 +296,16 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
   }
 
   .session-id {
-    color: var(--fg-dim);
     font-family: monospace;
-    font-size: 0.75rem;
-    flex-shrink: 0;
+    direction: ltr;
   }
 
   .created-at {
-    color: var(--fg-dim);
-    font-size: 0.75rem;
-    flex-shrink: 0;
+    direction: ltr;
   }
 
   .pid {
-    color: var(--fg-dim);
-    font-size: 0.72rem;
-    flex-shrink: 0;
+    direction: ltr;
   }
 
   .agent-actions {
