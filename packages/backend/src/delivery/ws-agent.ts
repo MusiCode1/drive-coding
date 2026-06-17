@@ -21,6 +21,7 @@ import { createLogger } from "@drive-coding/core/log"
 import type { WebSocket } from "ws"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import { decodeWireLine } from "./wire-decode.js"
+import type { WireRecorder } from "./wire-recorder.js"
 
 const log = createLogger("backend.ws.agent")
 const wireLog = createLogger("backend.ws.wire")
@@ -47,6 +48,7 @@ export function createAgentWsHandler(deps: {
     // ─── slice agent-busy-indicator: subscription לשורות stdout ───
     onLine(bridgeId: string, cb: (line: string) => void): () => void
   }
+  wireRecorder: WireRecorder
 }): (ws: WebSocket, agentId: string) => void {
   // MED-8: חיבור FE WS פעיל אחד לכל agentId — מונע התנגשות מצב ACP בטאב שני
   const activeFeWs = new Map<string, WebSocket>()
@@ -84,6 +86,9 @@ export function createAgentWsHandler(deps: {
     deps.bridgeManager.markAttached(agentId) // ← תצוגת active-agents (attached)
     childLog.info({ pid: child.pid }, "WS connect → pipe attached")
 
+    // פתיחת session הקלטה (no-op כש-WIRE_RECORD כבוי)
+    const rec = deps.wireRecorder.open(agentId)
+
     // ── pipeChild — ניתוב ──────────────────────────────────────────────────────
     // bridge-manager הוא הבעלים היחיד של child.stdout (reader קבוע ב-spawnInternal).
     // אנחנו נרשמים ל-onLine ומקבלים שורות כ-callback — לא קוראים את ה-stream ישירות.
@@ -97,6 +102,7 @@ export function createAgentWsHandler(deps: {
         // feWs נסגר
       }
       logWire("in", line) // האזנה (אחרי השליחה; מבודד מתקלות)
+      rec.record("in", line) // הקלטה פסיבית (אחרי logWire)
     })
 
     // הודעת feWs ל-child.stdin (הוסף שורה חדשה אם חסר)
@@ -110,12 +116,14 @@ export function createAgentWsHandler(deps: {
         if (text.includes('"$/ping"')) {
           feWs.send(`${JSON.stringify({ jsonrpc: "2.0", method: "$/pong" })}\n`)
           logWire("out", "$/ping → $/pong")
+          rec.record("out", text) // מקליט את ה-$/ping הגולמי (לא ה-summary של logWire)
           return
         }
 
         const line = text.endsWith("\n") ? text : `${text}\n`
         child.stdin.write(line)
         logWire("out", text.trim()) // האזנה (אחרי הכתיבה; trim מסיר \n סופי עבור פענוח)
+        rec.record("out", text.trim()) // הקלטה פסיבית (אחרי logWire)
       } catch (err) {
         childLog.warn({ err }, "stdin write failed")
       }
@@ -138,6 +146,7 @@ export function createAgentWsHandler(deps: {
       activeFeWs.delete(agentId)
       deps.bridgeManager.markDetached(agentId) // ← תצוגת active-agents (attached)
       unsub() // ← slice agent-busy-indicator: ביטול subscription ל-stdout
+      rec.close() // סגירת stream הקלטה (no-op כש-WIRE_RECORD כבוי)
       child.off("exit", onChildExit)
       // חשוב: אל תקרא ל-child.kill() — ה-child שורד התנתקות של ה-FE
     })

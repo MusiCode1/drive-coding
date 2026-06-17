@@ -45,6 +45,7 @@ import { registerProxyHttp } from "./delivery/http-proxy.js"
 // הערה: createSessionsCache הוסר — רשימת הסשנים עכשיו מונעת מצד ה-FE דרך ACP WS
 import { createAgentWsHandler } from "./delivery/ws-agent.js"
 import { createEchoWsHandler } from "./delivery/ws-echo.js"
+import { createWireRecorder } from "./delivery/wire-recorder.js"
 
 const app = new Hono()
 
@@ -60,6 +61,11 @@ const orchestrator = createAgentOrchestrator({
   registry,
   bridgeManager,
   projectsRegistry,
+})
+
+// wire-recorder: פעיל כש-WIRE_RECORD=1; אחרת no-op (אפס IO, אפס overhead)
+const wireRecorder = createWireRecorder({
+  dir: process.env.WIRE_RECORD ? path.resolve("data/wire-recordings") : null,
 })
 
 // נתיבי HTTP
@@ -93,7 +99,7 @@ const echoWss = new WebSocketServer({ noServer: true })
 const agentWss = new WebSocketServer({ noServer: true })
 
 const echoHandler = createEchoWsHandler()
-const onAgentConnect = createAgentWsHandler({ orchestrator, bridgeManager })
+const onAgentConnect = createAgentWsHandler({ orchestrator, bridgeManager, wireRecorder })
 
 echoWss.on("connection", (ws) => {
   echoHandler(ws)
