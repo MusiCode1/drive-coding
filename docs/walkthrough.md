@@ -5283,3 +5283,58 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 #### צעדים הבאים
 
 הסשן הבא: פתיחת הפרויקט והתחלת בנייה לפי סדר ה-13 ב-spec (התקנה → backend skeleton → STT/TTS → ACP bridge → frontend).
+
+---
+
+## slice-bunx-single-command — Commit 0: bin entry + bin field
+
+**תאריך**: 2026-06-17
+**Branch**: slice-bunx-single-command
+
+### מה בוצע
+- נוצר `packages/backend/src/bin/drive-coding.ts` — bin entry שמגדיר `FE_STATIC_DIR` ו-`PORT` דרך `??=` ואז מבצע `await import("../server.js")`.
+- נוסף שדה `"bin": { "drive-coding": "./src/bin/drive-coding.ts" }` ל-`packages/backend/package.json`.
+- ה-entry ממוקם ב-`src/bin/` (בתוך `include: ["src/**/*"]`) — מכוסה ע"י typecheck.
+- `path.resolve(import.meta.dirname, "../../../frontend/build")` — path מוחלט cross-platform.
+
+### בדיקות
+- `pnpm typecheck` — ירוק
+- `pnpm lint:i18n` — ירוק (אין מחרוזות עברית בקוד חדש)
+- `pnpm lint` — כשל pre-existing (לא נגרם ע"י שינויי ה-slice)
+- server הורם ב-`PORT=4099`: `/` החזיר 200 + `<!doctype html>`, `/api/agents` החזיר JSON (לא HTML)
+
+### חריגות
+- `pnpm lint` כשל ב-pre-existing code (223 errors) — לא קשור ל-slice זה. אומת שהקובץ החדש נקי.
+
+## slice-bunx-single-command — Commit 1: launcher script + root start
+
+**תאריך**: 2026-06-17
+
+### מה בוצע
+- נוצר `scripts/dc-launch.mjs` — בודק אם `packages/frontend/build/index.html` קיים; אם לא — מריץ `pnpm --filter @drive-coding/frontend-v2 build`; ואז spawn של bin entry.
+- נוסף `"start": "node scripts/dc-launch.mjs"` ל-root `package.json`. שונה מ-backend `start` הקיים (BE-only).
+
+### בדיקות
+- `pnpm typecheck` — ירוק
+- `pnpm lint:i18n` — ירוק
+- הרצה ידנית: הסרת build → `PORT=4099 node scripts/dc-launch.mjs` → בנה FE אוטומטית → server עלה → `/` 200 HTML, `/api/agents` JSON
+
+## slice-bunx-single-command — Commit 2: preflight UX
+
+**תאריך**: 2026-06-17
+
+### מה בוצע
+- עדכון `packages/backend/src/bin/drive-coding.ts`:
+  1. בדיקת זמינות agent: `OPENCODE_BIN ?? "opencode"` דרך `which`/`where` (cross-platform)
+  2. אם חסר — `console.warn` עם הודעת הכוונה (לא חוסם)
+  3. `console.log` עם ה-URL לפני ה-import
+
+### בדיקות
+- `pnpm typecheck` — ירוק
+- `pnpm lint:i18n` — ירוק
+- הרצה רגילה: מדפיס `[drive-coding] Starting — http://localhost:PORT`
+- עם `OPENCODE_BIN=/nonexistent/opencode`: מדפיס warning ועולה עדיין
+
+### הערה — DoD #7 (Windows paths)
+- `import.meta.dirname` + `path.resolve` cross-platform — אומת על Linux.
+- אימות בפועל על Windows נשאר ל-Tama (כפי שצוין בהנחיות).

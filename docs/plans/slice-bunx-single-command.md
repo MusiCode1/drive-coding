@@ -1,7 +1,7 @@
 # Slice — bunx single-command launch — ‏תוכנית
 
 > **‏תאריך**: 2026-06-16
-> **‏סטטוס**: ‏מאושר (‏אביגיל r2 = READY, 0 findings — ‏plan_verified) — ‏מוכן ל-dispatch
+> **‏סטטוס**: הושלם (commits: 848cf44..0d28e00)
 > **Complexity**: 3/10 (verifier: light)
 > **‏תלויות (`depends_on`)**: [] ‏— ‏בנוי ישירות על dev
 > **‏Base**: dev

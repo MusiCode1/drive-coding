@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "drive-coding": "./src/bin/drive-coding.ts"
+  },
   "scripts": {
     "dev": "bun --watch src/server.ts",
     "build": "tsc --build",
