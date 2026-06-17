@@ -5,6 +5,15 @@
 Voice-first hands-free interface for ACP-compatible CLI agents.
 See the documentation map below. Start with `docs/design-principles.md`.
 
+## Long-term planning
+
+`docs/roadmap.md` is the **master long-term roadmap** — vision, work tracks, and
+milestones — and the single source of truth above the specific roadmaps
+(provider / voice / frontend). **Any non-immediate planning belongs there:** before
+proposing or starting work that is not an immediate task, check it against
+`docs/roadmap.md`, and record new long-term plans inside it (or in a sub-roadmap it
+links to).
+
 ## Stack
 
 - TypeScript (ESM only, no CommonJS)
