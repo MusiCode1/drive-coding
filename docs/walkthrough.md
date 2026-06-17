@@ -1,3 +1,22 @@
+## 2026-06-18 — feat(frontend): slice-ui-polish-batch — Phase 2: Muted consistency (C7-C10)
+
+### מה בוצע?
+
+**C7** — `settings.svelte.ts`: הוסף `muted: boolean` ל-`Persisted` + DEFAULTS + `$state` + `setMuted()` → `#persist()`. TDD: 5 טסטים ירוקים (round-trip, backward-compat).
+**C8** — `speaker.svelte.ts`: constructor מאותחל `enabled = !settings.muted`, `toggle()` קורא `settings.setMuted(!enabled)` + מסנכרן `cues.enabled`.
+**C9** — תוצאה של C8: `cues.enabled = false` כשמושתק → `CuesEngine.play()` מחזיר מיד (חסום).
+**C10** — `MessageBubble` + `UserBubble`: `getSpeaker()` + `{#if speaker.enabled}` על כפתור ▶ (UserBubble: תנאי כפול `recordingId && speaker.enabled`).
+
+### חריגות
+אין.
+
+### בדיקות
+- typecheck frontend: נקי
+- tests: 239/239 ירוקים (27 test files; +5 טסטי muted)
+- lint:i18n: ירוק
+
+---
+
 ## 2026-06-18 — feat(frontend): slice-ui-polish-batch — Phase 1: Message polish (C1-C6)
 
 ### מה בוצע?

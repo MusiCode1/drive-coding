@@ -74,6 +74,7 @@ type BubbleState = {
 }
 
 export class Speaker {
+  // ui-polish-batch C8: מאותחל מ-settings.muted (false = מופעל, true = מושתק)
   enabled: boolean = $state(true)
 
   readonly #session: AgentSession
@@ -121,6 +122,9 @@ export class Speaker {
     this.#session = opts.session
     this.#settings = opts.settings
     this.#cues = opts.cues
+    // ui-polish-batch C8: אתחל enabled מ-settings.muted + סנכרן cues
+    this.enabled = !opts.settings.muted
+    if (opts.cues) opts.cues.enabled = !opts.settings.muted
     this.#audioStream = new AudioStream()
     // slice 6: onPlaybackStart callback — נקרא פעם אחת כש-Player עובר idle→playing.
     // guard #spokeThisTurn מונע re-entry סדרתי בתוך אותו תור (LOOKAHEAD=2 + async fetches).
@@ -179,9 +183,15 @@ export class Speaker {
   /**
    * מחליף הפעלת קול. כיבוי מנקה את התור ועוצר הפעלה.
    * הפעלה מחדש **אינה** משחזרת היסטוריה — רק מקטעים חדשים שמגיעים מושמעים.
+   *
+   * ui-polish-batch C8: מסנכרן settings.muted + cues.enabled.
    */
   toggle(): void {
     this.enabled = !this.enabled
+    // C8: שמור מצב muted ב-settings (round-trip persist)
+    this.#settings.setMuted(!this.enabled)
+    // C8: סנכרן CuesEngine
+    if (this.#cues) this.#cues.enabled = this.enabled
     if (!this.enabled) this.#stopAndClear()
   }
 

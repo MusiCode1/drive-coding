@@ -14,7 +14,7 @@
  * ─── redesign-5 (C4) ───
  */
 import type { UserBubble } from "$lib/types/bubble"
-import { getBubblePlayer, getI18n } from "$lib/context"
+import { getBubblePlayer, getI18n, getSpeaker } from "$lib/context"
 import Avatar from "$lib/components/chat/Avatar.svelte"
 import { joinSegmentText } from "./bubble-rendering"
 import { renderMarkdown } from "$lib/util/markdown"
@@ -28,6 +28,8 @@ import CheckIcon from "@lucide/svelte/icons/check"
 let { bubble }: { bubble: UserBubble } = $props()
 const t = getI18n().t
 const bubblePlayer = getBubblePlayer()
+// C10: גייט על speaker.enabled — מסתיר כפתור ▶ כשמושתק
+const speaker = getSpeaker()
 
 const isPlaying = $derived(bubblePlayer.playingBubbleId === bubble.id)
 
@@ -78,7 +80,7 @@ async function handleCopy() {
         <CopyIcon size={12} strokeWidth={2} />
       {/if}
     </button>
-    {#if bubble.recordingId}
+    {#if bubble.recordingId && speaker.enabled}
       <button
         class="action-btn play-btn"
         onclick={() => bubblePlayer.toggle(bubble.id)}

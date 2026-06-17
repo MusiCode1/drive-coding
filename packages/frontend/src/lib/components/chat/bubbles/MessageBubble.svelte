@@ -13,7 +13,7 @@
  * ─── redesign-5 (C4) ───
  */
 import type { MessageBubble } from "$lib/types/bubble"
-import { getBubblePlayer, getI18n } from "$lib/context"
+import { getBubblePlayer, getI18n, getSpeaker } from "$lib/context"
 import { renderMarkdown } from "$lib/util/markdown"
 import { joinSegmentText } from "./bubble-rendering"
 import { copyToClipboard } from "$lib/util/clipboard"
@@ -27,6 +27,8 @@ import CheckIcon from "@lucide/svelte/icons/check"
 let { bubble }: { bubble: MessageBubble } = $props()
 const t = getI18n().t
 const bubblePlayer = getBubblePlayer()
+// C10: גייט על speaker.enabled — מסתיר כפתור ▶ כשמושתק
+const speaker = getSpeaker()
 
 const isPlaying = $derived(bubblePlayer.playingBubbleId === bubble.id)
 
@@ -77,18 +79,20 @@ async function handleCopy() {
         <CopyIcon size={12} strokeWidth={2} />
       {/if}
     </button>
-    <button
-      class="action-btn play-btn"
-      onclick={() => bubblePlayer.toggle(bubble.id)}
-      aria-label={isPlaying ? t("bubble.stop") : t("bubble.play")}
-      title={isPlaying ? t("bubble.stop") : t("bubble.play")}
-    >
-      {#if isPlaying}
-        <SquareIcon size={12} strokeWidth={2} />
-      {:else}
-        <PlayIcon size={12} strokeWidth={2} />
-      {/if}
-    </button>
+    {#if speaker.enabled}
+      <button
+        class="action-btn play-btn"
+        onclick={() => bubblePlayer.toggle(bubble.id)}
+        aria-label={isPlaying ? t("bubble.stop") : t("bubble.play")}
+        title={isPlaying ? t("bubble.stop") : t("bubble.play")}
+      >
+        {#if isPlaying}
+          <SquareIcon size={12} strokeWidth={2} />
+        {:else}
+          <PlayIcon size={12} strokeWidth={2} />
+        {/if}
+      </button>
+    {/if}
   </div>
 </div>
 
