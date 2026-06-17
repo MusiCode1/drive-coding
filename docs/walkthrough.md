@@ -5283,3 +5283,25 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 #### צעדים הבאים
 
 הסשן הבא: פתיחת הפרויקט והתחלת בנייה לפי סדר ה-13 ב-spec (התקנה → backend skeleton → STT/TTS → ACP bridge → frontend).
+
+---
+
+## slice-bunx-single-command — Commit 0: bin entry + bin field
+
+**תאריך**: 2026-06-17
+**Branch**: slice-bunx-single-command
+
+### מה בוצע
+- נוצר `packages/backend/src/bin/drive-coding.ts` — bin entry שמגדיר `FE_STATIC_DIR` ו-`PORT` דרך `??=` ואז מבצע `await import("../server.js")`.
+- נוסף שדה `"bin": { "drive-coding": "./src/bin/drive-coding.ts" }` ל-`packages/backend/package.json`.
+- ה-entry ממוקם ב-`src/bin/` (בתוך `include: ["src/**/*"]`) — מכוסה ע"י typecheck.
+- `path.resolve(import.meta.dirname, "../../../frontend/build")` — path מוחלט cross-platform.
+
+### בדיקות
+- `pnpm typecheck` — ירוק
+- `pnpm lint:i18n` — ירוק (אין מחרוזות עברית בקוד חדש)
+- `pnpm lint` — כשל pre-existing (לא נגרם ע"י שינויי ה-slice)
+- server הורם ב-`PORT=4099`: `/` החזיר 200 + `<!doctype html>`, `/api/agents` החזיר JSON (לא HTML)
+
+### חריגות
+- `pnpm lint` כשל ב-pre-existing code (223 errors) — לא קשור ל-slice זה. אומת שהקובץ החדש נקי.
