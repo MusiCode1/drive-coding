@@ -1,7 +1,7 @@
 # Slice — release package (bundled, bunx-compatible) — ‏תוכנית
 
 > **‏תאריך**: 2026-06-17
-> **‏סטטוס**: **READY** (‏אביגיל r2 — 0 findings). ‏ממתין לאישור dispatch.
+> **‏סטטוס**: **הושלם** (3 commits; calev light ← ממתין לאחר commit זה)
 > **Complexity**: 5/10 (verifier: light + phase על Commit 1)
 > **‏תלויות (`depends_on`)**: [] — ‏בנוי על dev (‏ה-bin מ-slice-bunx-single-command ‏כבר merged)
 > **‏Base**: `dev` @ `870ea02`
@@ -278,4 +278,5 @@ curl -fsS http://localhost:4003/api/agents; echo                             # {
 
 ## ‏סטיות מהתכנון (‏מתעדכן ע"י executor ‏תוך כדי)
 
-- (‏אין עדיין)
+- **--sourcemap=linked הושמט**: bun@1.3.14 עם `--outfile` + `--sourcemap=linked` לא כותב קבצים כשstdio מנותב (pipe mode). ה-brief ציין sourcemap כ-optional (§9 Q3: "זול ל-debug"). הוחלט להוריד. bundle עובד תקין ללא sourcemap.
+- **npm pack 2>&1 הוסר מ-verify-pack.sh**: bun build subprocess לא כותב קבצים כש-stdout מנותב לpipe. script מיועד להרצה ידנית בterminal (TTY). הבדיקה ידנית בוצעה ואומתה בsteps.
