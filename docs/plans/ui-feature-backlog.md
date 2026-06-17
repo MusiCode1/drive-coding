@@ -23,6 +23,7 @@
 | --- | --- | --- | --- | --- |
 | 2a | יציאה בלי הריגה | "צא" = detach (חוזר לרשימה, ה-process חי); "סגור/הרוג" = משני/מאחורי אישור. UX ברור שלא יבלבל | **הפער שזוהה** (future-features) | ⭐🟡 — ה-backend כבר תומך (`bridge-manager.markDetached/markAttached`); בעיקר UI+חיווט |
 | 2b | Deep links | קישור → folder + sessionId; attach אם ה-process פעיל, אחרת פתח חדש על אותם folder+session | **כבר ב-Track E** (מחדד אותו) | 🟡 — תלוי registry של sessions |
+| 2c | כותרת הסשן הנוכחי | להציג את כותרת/שם הסשן הפעיל ב-UI — כרגע לא מוצג כלל. ל-Claude יש `generate_session_title` בפרוטוקול | חדש | 💚 |
 
 ## 3. תיבת הפרומפט
 
@@ -93,6 +94,7 @@ message timeline/x-ray · web-preview browser frame · image-preview popover · 
 4. **Thinking/reasoning display** — לקראת opus/o1.
 5. **TTS per-message speak button** — ליבת voice-first.
 6. **thinking-effort** מתחבר ישירות ל-config-options (`thought_level`) — לא feature נפרד.
+7. **תצוגת TODO / plan list** 🔴 — כש-ה-agent מייצר תוכנית/משימות (Claude `TodoWrite`, opencode todos), להציג כצ'ק-ליסט מתקדם (done/pending) ולא ככלי גנרי. **תלוי-ספק** (רק CLIs שתומכים). מתחבר ל-`plan.update` בחוזה — **דלת 3 ב-`canonical-mapping-gaps`, עדיין לא ממופה** (TodoWrite נופל כיום ל-`kind:"other"`). כלומר דורש גם הרחבת-מיפוי בחוזה וגם renderer ב-UI.
 
 ## תעדוף מוצע (ראשוני)
 
