@@ -1,9 +1,9 @@
 # Slice cache-headers-version — Cache-Control לרענון אמין בטלפון + מספר גרסה בתחתית ההגדרות — ‏בריף
 
 > **‏תאריך**: 2026-06-17
-> **‏סוג**: ‏feature קטן (2 חלקים עצמאיים — A: ‏headers ב-BE, B: ‏version ב-FE)
-> **‏סטטוס**: ‏READY — ‏אומת ע"י אביגיל (USABLE-AFTER-FIX, 4 findings, ‏כולם תוקנו ב-brief)
-> **Complexity**: 3/10 (verifier: **calev light** + ‏בדיקת משתמש בטלפון)
+> **‏סוג**: ‏feature קטן (3 חלקים — A: ‏headers ב-BE, B: ‏version ב-FE, C: ‏bump של semver במיזוג)
+> **‏סטטוס**: ‏READY — ‏אומת ע"י אביגיל (USABLE-AFTER-FIX, 4 findings תוקנו). ‏חלק C ‏נוסף אחרי האימות — ‏ראוי לסבב אימות נוסף קצר.
+> **Complexity**: 4/10 (verifier: **calev light** + ‏בדיקת משתמש בטלפון)
 > **‏מבצע**: ‏להחלטת המשתמש (‏אחרי READY של אביגיל)
 > **Base**: ‏branch `dev` (tip `cceb66f`) — ‏הסביבה הפרוסה ב-staging (`drive-coding-dev` :4001)
 > **depends_on**: ‏אין
@@ -36,8 +36,10 @@
 
 A. ‏רענון אמין: ‏הדפדפן בטלפון תמיד יקבל את ה-`index.html` ‏העדכני (revalidate), ‏בעוד נכסי
    `/_app/immutable/*` ‏(‏עם hash בשם) ‏ייהנו מ-cache ארוך. ‏בלי service worker.
-B. ‏מספר גרסה גלוי בתחתית מסך ההגדרות — git short SHA + build timestamp — ‏כדי לדעת ‏על איזו
+B. ‏מספר גרסה גלוי בתחתית מסך ההגדרות — `v{semver} ({git SHA})` — ‏כדי לדעת ‏על איזו
    ‏גרסה הלקוח באמת יושב (‏visibility ל-debug).
+C. ‏ה-semver ‏ב-`package.json` ‏ישקף את המצב בפועל: ‏כל מיזוג PR ‏ל-dev ‏מעלה את הגרסה לפי סוג
+   ‏השינוי (patch / minor / major), ‏כדי שמספר הגרסה המוצג ב-B ‏יהיה משמעותי ‏ולא תקוע על `0.0.0`.
 
 ---
 
@@ -47,9 +49,12 @@ B. ‏מספר גרסה גלוי בתחתית מסך ההגדרות — git shor
 |------|------|
 | A: middleware ב-`server.ts` ‏שמגדיר `Cache-Control` ‏לנכסים סטטיים בלבד | ✅ |
 | A: `index.html` + ‏שאר ה-HTML/manifest → `no-cache`; ‏`/_app/immutable/*` → `immutable` ‏שנה | ✅ |
-| B: ‏הזרקת version (SHA + buildTime) ‏ב-build | ✅ |
+| B: ‏הזרקת version (`v{semver} ({SHA})`) ‏ב-build דרך SvelteKit `version.name` | ✅ |
 | B: ‏הצגת version בתחתית `SettingsScreen.svelte` | ✅ |
 | B: ‏מפתח i18n ל-label "‏גרסה"/"Version" | ✅ |
+| C: ‏script `bump-version.mjs` ‏+ ‏מקור אמת יחיד (root `package.json`) | ✅ |
+| C: ‏תיעוד טקס ה-bump ‏כחלק ממיזוג מרדכי ל-dev | ✅ |
+| C: ‏היסק אוטומטי מלא של רמת ה-bump (semantic-release/conventional) | ❌ (‏שדרוג עתידי — ‏ראה §3.C + §7) |
 | ‏הוספת service worker / ‏שינוי תוכן manifest | ❌ |
 | ‏שינוי policy ב-Cloudflare Access / ‏ה-tunnel | ❌ |
 | ‏נגיעה ב-headers של `/api`, `/proxy`, `/ws` | ❌ (‏חובה לא לגעת — ‏ראה §3.A) |
@@ -119,19 +124,40 @@ if (feStaticDir) {
 
 ### B. ‏מספר גרסה — ‏הזרקה ב-build + ‏הצגה בהגדרות
 
-**‏הזרקה** (‏נקודת החלטה — ‏בחר את הנקי יותר בסטאק):
-- ‏אופציה 1 (‏מועדף, SvelteKit-native): ‏ב-`packages/frontend/svelte.config.js` ‏הגדר
-  `kit.version.name` ‏ל-**‏SHA בלבד** (`git rev-parse --short HEAD`, `try/catch` → fallback `"dev"`).
-  ‏קריאה ב-component: `import { version } from "$app/environment"`.
-  > **‏תיקון אחרי אביגיל (🟢)**: ‏SvelteKit מצפה ש-`version.name` ‏יהיה **‏דטרמיניסטי** (‏אותו commit →
-  > ‏אותו ערך), ‏אז ‏**‏אסור** ‏לשים בו `new Date().toISOString()`. ‏אם רוצים גם buildTime בתצוגה —
-  > ‏הזרק אותו בנפרד כ-Vite `define` (`__BUILD_TIME__`), ‏ושלב בתצוגה: `{version} · {__BUILD_TIME__}`.
-  > ‏לחלופין ‏ויתור על buildTime ‏(SHA לבד מספיק ל-debug).
-- ‏אופציה 2 (Vite define): ‏ב-`vite.config.ts` ‏הוסף `define: { __APP_VERSION__: JSON.stringify(...) }`
-  ‏+ ‏declare ‏ב-`app.d.ts`. ‏פחות native מ-SvelteKit version.
+**‏החלטת המשתמש: ‏לשלב את שניהם** — semver מ-`package.json` + git SHA. ‏פורמט: `v0.0.0 (44f8f47)`.
 
-‏שתי האופציות מחושבות ב-**build time**. ‏ה-build רץ ב-`ExecStartPre` ‏של systemd (`pnpm build`)
-‏בתוך ריפו git → `git rev-parse` ‏זמין. ‏ה-fallback מכסה מקרה שאין git.
+**‏מימוש (‏מועדף, SvelteKit-native — ‏מקור יחיד):** ‏ב-`packages/frontend/svelte.config.js`, ‏הרכב
+‏את שני הערכים ל-`kit.version.name` ‏אחד:
+```js
+import { execSync } from "node:child_process"
+// מקור אמת יחיד לגרסה = root package.json (זה מה ש-bump-version.mjs מעדכן, §3.C).
+import pkg from "../../package.json" with { type: "json" }
+
+let sha = "nogit"
+try { sha = execSync("git rev-parse --short HEAD").toString().trim() } catch {}
+const appVersion = `v${pkg.version} (${sha})`   // למשל "v0.0.0 (44f8f47)"
+
+const config = {
+  // ...
+  kit: {
+    adapter: adapter({ /* ... */ }),
+    version: { name: appVersion },
+  },
+}
+```
+‏קריאה ב-component: `import { version } from "$app/environment"` → ‏מחזיר `"v0.0.0 (44f8f47)"`.
+
+> **‏הערה — determinism (‏אביגיל 🟢)**: ‏שני הרכיבים דטרמיניסטיים (‏package.json + ‏SHA של ה-commit),
+> ‏אז ‏**‏אין** ‏הפרה של דרישת SvelteKit. ‏**‏אל תוסיף** ‏`new Date()` ‏ל-`version.name`. ‏אם בעתיד תרצה
+> ‏buildTime — ‏הזרק בנפרד כ-Vite `define` (`__BUILD_TIME__`) ‏ושלב בתצוגה, ‏לא ב-version.name.
+
+> **‏פתק ל-executor**: ‏שים לב ל-`package.json` ‏שכרגע `"version": "0.0.0"` ‏בשני המקומות (root + frontend).
+> ‏ה-SHA הוא מה שייתן הבחנה אמיתית בין builds; ‏ה-semver יתחיל להיות שימושי כשתתחיל להעלות אותו ידנית.
+> ‏ה-`import ... with { type: "json" }` ‏דורש Node מודרני — ‏אם ה-build נכשל על זה, ‏חלופה:
+> `JSON.parse(readFileSync("./package.json","utf8")).version`.
+
+‏הערך מחושב ב-**build time**. ‏ה-build רץ ב-`ExecStartPre` ‏של systemd (`pnpm build`) ‏בתוך ריפו git
+‏→ `git rev-parse` ‏זמין; ‏ה-`try/catch` ‏מכסה מקרה שאין git (fallback `nogit`).
 
 **‏הצגה** — `packages/frontend/src/lib/components/settings/SettingsScreen.svelte`:
 ‏בתחתית ה-`<section>`, ‏**‏אחרי** ‏ה-`<div>` ‏של כפתורי איפוס/שמור (‏סוף הקובץ, ‏שורה ~163):
@@ -141,7 +167,7 @@ if (feStaticDir) {
 </p>
 ```
 - `t` ‏כבר זמין (`const t = getI18n().t`, ‏שורה 25). ‏הוסף `import { version } from "$app/environment"`.
-- `dir="ltr"` ‏כי ה-SHA/timestamp לועזי; ‏הטקסט ממורכז ‏ועדין (`--fg-muted`).
+- `version` ‏מכיל כבר את המחרוזת המלאה `v0.0.0 (44f8f47)`. `dir="ltr"` ‏כי הוא לועזי; ‏ממורכז ‏ועדין (`--fg-muted`).
 
 **i18n** — ‏הוסף מפתח `settings.version` ‏ב-3 ‏מקומות (‏מאומת מבנה):
 - `packages/core/src/i18n/keys.ts` — ‏הוסף `| "settings.version"` ‏ל-union (‏ליד `"settings.saveOpen"`:135).
@@ -151,6 +177,51 @@ if (feStaticDir) {
 > **‏פתק ל-Avigail**: ‏אמת ש-`SettingsScreen.svelte` ‏הוא ה-bottom האמיתי (‏ה-route `settings/+page.svelte`
 > ‏רק עוטף ב-`AppShell`); ‏ש-`t` ‏מ-`getI18n().t`; ‏שמילון ה-i18n ‏ב-`@drive-coding/core`
 > ‏עם 3 ‏הקבצים keys/he/en; ‏ש-`$app/environment` ‏חושף `version` (‏SvelteKit סטנדרטי).
+
+### C. ‏עדכון semver במיזוג ל-dev
+
+**‏מקור אמת יחיד**: ‏root `package.json` `version` (‏כרגע `0.0.0`). ‏זה הערך ש-B ‏מציג (‏svelte.config
+‏קורא `../../package.json`), ‏וזה הערך שמתעדכן בכל מיזוג. ‏ה-`version` ‏ב-`packages/frontend/package.json`
+‏נשאר `0.0.0` ‏ולא בשימוש לתצוגה (‏אפשר להשאיר או לסנכרן — ‏לא קריטי).
+
+**‏מנגנון bump** — `scripts/bump-version.mjs` (‏ללא תלויות, Node מובנה):
+```js
+// usage: node scripts/bump-version.mjs <patch|minor|major>
+import { readFileSync, writeFileSync } from "node:fs"
+const level = process.argv[2]
+if (!["patch", "minor", "major"].includes(level)) { console.error("level required: patch|minor|major"); process.exit(1) }
+const p = new URL("../package.json", import.meta.url)
+const pkg = JSON.parse(readFileSync(p, "utf8"))
+const [maj, min, pat] = pkg.version.split(".").map(Number)
+pkg.version = level === "major" ? `${maj + 1}.0.0` : level === "minor" ? `${maj}.${min + 1}.0` : `${maj}.${min}.${pat + 1}`
+writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n")
+console.log(`version → ${pkg.version}`)
+```
+
+**‏רמת ה-bump לפי סוג ה-PR** (semver סטנדרטי):
+| ‏סוג שינוי | ‏רמה |
+|----------|-----|
+| ‏bug fix, ‏בלי שינוי התנהגות/API | `patch` |
+| ‏feature חדש, ‏backward-compatible | `minor` |
+| ‏breaking change (‏שינוי API/חוזה/התנהגות שמחייב התאמה) | `major` |
+
+**‏מתי רץ — ‏שולב בטקס המיזוג של מרדכי** (‏ה-merge ‏ל-dev ‏הוא human-gated, ‏אחרי GO ‏ואישור משתמש):
+```
+‏אחרי merge ל-dev (‏לפני push):
+  node scripts/bump-version.mjs <patch|minor|major>   # מרדכי בוחר לפי אופי ה-PR
+  git commit -am "chore(release): vX.Y.Z"
+  git push origin dev
+```
+‏מרדכי קובע את הרמה מתוך אופי ה-PR שמוזג. ‏זה הופך את מספר הגרסה המוצג ל-meaningful: ‏כל deploy
+‏נושא גרסה שמשקפת את סוג השינוי המצטבר.
+
+> **‏החלטה פתוחה (§7 #5)**: ‏ברירת המחדל היא **explicit** — ‏מרדכי מעביר את הרמה ידנית בזמן merge.
+> ‏שדרוג עתידי אופציונלי: ‏היסק אוטומטי מ-conventional-commit prefixes (`fix:`→patch, `feat:`→minor,
+> ‏`feat!:`/`BREAKING CHANGE`→major) ‏בטווח ה-merge, ‏או כלי כמו `commit-and-tag-version`. ‏לא בסלייס הזה.
+
+> **‏פתק ל-Avigail**: ‏אמת ש-root `package.json` ‏קיים ‏ושדה `version` ‏בו `"0.0.0"`; ‏שאין כבר
+> ‏מנגנון release/bump קיים (‏grep ל-`standard-version`/`changeset`/`semantic-release` ‏ב-devDeps);
+> ‏שתיקיית `scripts/` ‏קיימת ב-root (‏ראינו `scripts/opencode-clean.sh`).
 
 ---
 
@@ -171,9 +242,19 @@ if (feStaticDir) {
 > **‏תיקון אחרי אביגיל (🟢)**: ‏**‏אין צורך** ‏ב-`pnpm --filter core build` — ‏ה-FE ‏צורך את `@drive-coding/core`
 > ‏מ-`src` ‏דרך ה-exports map (‏לא מ-`dist/`), ‏אז שינוי i18n נכנס מיד ל-typecheck/build של ה-FE.
 
+### Commit 4 — C: ‏script bump-version + ‏מקור אמת
+‏צור `scripts/bump-version.mjs` (§3.C). ‏ודא ש-`svelte.config.js` (Commit 2) ‏קורא root `package.json`
+‏(`../../package.json`), ‏כך שהתצוגה וה-bump חולקים מקור יחיד.
+**Verification**: `node scripts/bump-version.mjs patch` ‏מריץ נקי ‏ומעלה `0.0.0`→`0.0.1` (‏ואז `git checkout`
+‏להחזרה — ‏זה רק smoke; ‏ה-bump האמיתי קורה במיזוג, ‏לא בסלייס). `node scripts/bump-version.mjs` ‏בלי
+‏ארגומנט → ‏exit 1.
+
 ### ‏פריסה (‏אחרי calev GO + ‏אישור משתמש)
 ‏commit ל-dev → `git push origin dev` → ‏על cli-agents: `git -C dev pull --ff-only` →
 `systemctl --user restart voice-acp-dev.service` (‏ה-`ExecStartPre` ‏בונה מחדש) → ‏בדיקת משתמש בטלפון.
+
+> **‏הערה — ‏מהסלייס הזה והלאה**: ‏טקס המיזוג של מרדכי ל-dev ‏כולל מעתה צעד `bump-version.mjs`
+> ‏(§3.C). ‏המיזוג של *‏הסלייס הזה עצמו* ‏יקבל `minor` (‏feature חדש) → `0.1.0`.
 
 > **‏הערה ל-executor**: ‏אם עובדים ב-worktree (`.worktrees/cache-headers-version/`, base dev),
 > ‏ה-build/deploy מתבצע על העץ של dev ‏אחרי merge — ‏לא מתוך ה-worktree.
@@ -190,6 +271,8 @@ if (feStaticDir) {
   - WS (`/ws`) ‏עדיין מתחבר (‏smoke — ‏חיבור agent עובד).
 - **‏בדיקת משתמש בטלפון**: ‏אחרי deploy — ‏רענון מראה את הגרסה החדשה; ‏מספר הגרסה מופיע בתחתית
   ‏ההגדרות ‏ותואם ל-SHA שנפרס. ‏בדיקה חוזרת: ‏push קטן → restart → ‏הטלפון מתעדכן בלי מחיקת PWA.
+- **C (smoke)**: `node scripts/bump-version.mjs minor` ‏מעלה `0.0.0`→`0.1.0`; ‏בלי ארגומנט → exit 1.
+  ‏אחרי בדיקה — ‏`git checkout package.json` (‏ה-bump האמיתי קורה במיזוג, ‏לא בריצת הבדיקה).
 
 ---
 
@@ -209,10 +292,12 @@ if (feStaticDir) {
 
 | # | ‏שאלה | ‏ברירת מחדל |
 |---|------|----------|
-| 1 | ‏הזרקת version: SvelteKit `version.name` ‏או Vite `define`? | ‏SvelteKit `version` (‏native, ‏פחות boilerplate) |
-| 2 | ‏פורמט התצוגה: ‏רק SHA, ‏או SHA + ‏תאריך? | ‏SHA לבד ב-`version.name` (‏דטרמיניסטי); ‏buildTime אופציונלי דרך Vite `define` נפרד (‏ראה §3.B) |
+| 1 | ‏הזרקת version: SvelteKit `version.name` ‏או Vite `define`? | ✅ ‏הוכרע — SvelteKit `version` (‏native, ‏מקור יחיד) |
+| 2 | ‏פורמט התצוגה? | ✅ ‏הוכרע ע"י המשתמש — **‏שניהם**: `v{package.json} ({git SHA})` ‏= `v0.0.0 (44f8f47)` |
 | 3 | ‏להחיל גם על prod (`main` :4000)? | ‏לא בסלייס הזה — ‏רק dev; main ‏אחרי אימות בטלפון |
 | 4 | ‏ה-`settings.version` label — ‏להציג גם בעמוד chat? | ‏לא — ‏רק תחתית ההגדרות, ‏כבקשת המשתמש |
+| 5 | ‏רמת ה-bump (C): ‏explicit במיזוג ‏או היסק אוטומטי מ-conventional-commits? | **‏explicit** ‏בסלייס הזה (‏מרדכי בוחר); ‏אוטומציה = ‏שדרוג עתידי |
+| 6 | ‏לסנכרן גם `packages/frontend/package.json` ‏ל-root, ‏או רק root? | ‏רק root ‏(‏מקור אמת יחיד); ‏frontend נשאר `0.0.0` ‏ולא בשימוש |
 
 ---
 
@@ -220,4 +305,9 @@ if (feStaticDir) {
 
 - 2026-06-17 — ‏תיקוני אביגיל (‏4 findings) ‏הוחלו על ה-brief לפני handoff:
   ‏(1) ‏שורות בלוק static 82-89; (2) ‏נימוק /ws ‏תוקן (httpServer upgrade, ‏לא chain-stop) + ‏guard מפורש;
-  ‏(3) ‏אין core build ‏ב-Commit 3 (exports map מ-src); (4) ‏`version.name` ‏דטרמיניסטי — SHA לבד.
+  ‏(3) ‏אין core build ‏ב-Commit 3 (exports map מ-src); (4) ‏`version.name` ‏דטרמיניסטי — ‏בלי Date().
+- 2026-06-17 — ‏החלטת משתמש: ‏מספר הגרסה משלב **‏שניהם** — `v{package.json version} ({git SHA})`,
+  ‏מורכב למחרוזת אחת ב-`version.name` (§3.B).
+- 2026-06-17 — ‏החלטת משתמש: ‏נוסף **‏חלק C** — ‏bump של semver (root `package.json`) ‏בכל מיזוג PR
+  ‏ל-dev לפי סוג השינוי (patch/minor/major), ‏כדי שהגרסה תשקף את המצב בפועל. ‏מנגנון: `scripts/bump-version.mjs`
+  ‏בטקס המיזוג של מרדכי; ‏רמה explicit (§7 #5). ‏ה-slice הזה עצמו → `minor` (0.1.0).
