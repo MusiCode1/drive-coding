@@ -52,6 +52,16 @@ pnpm format
 pnpm hooks:install    # one-time: set core.hooksPath=.githooks (runs pre-commit lint)
 ```
 
+## Running & serving locally
+
+⚠️ **HTTPS is mandatory** — the FE uses secure-context-only Web APIs
+(`getUserMedia`, `AudioWorklet`). It works on `http://localhost` but NOT over plain
+`http://` from any external host — use an HTTPS tunnel.
+
+For the full build/serve flow (dev vs. production-like single-origin via
+`FE_STATIC_DIR`), HTTPS tunneling, and Windows blockers/workarounds (onecli/bun,
+opencode → use CLI=claude), see [`docs/running-locally.md`](docs/running-locally.md).
+
 ## Git hooks
 
 After clone, run `pnpm hooks:install` once. It sets `core.hooksPath=.githooks/`
