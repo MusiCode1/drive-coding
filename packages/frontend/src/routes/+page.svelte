@@ -1,7 +1,7 @@
 <script lang="ts">
 import { CLI_KINDS, type CliKind, type AgentPublic } from "@drive-coding/core"
 import { goto } from "$app/navigation"
-import { onMount } from "svelte"
+import { onMount, untrack } from "svelte"
 import { connectAgent } from "$lib/actions/connect-agent"
 import { fetchServerOptions } from "$lib/adapters/options"
 import { listSessionsForCwd, type SessionInfo } from "$lib/adapters/sessions"
@@ -60,14 +60,16 @@ $effect(() => {
   folderWasOpen = modals.folderOpen
 })
 
-// C14: ניקוי שגיאה reactive — כשה-cwd משתנה (המשתמש תיקן) מנקה את השגיאה
-// כך שה-error לא יישאר sticky לאחר תיקון הנתיב או reconnect.
-// session.error מנוקה גם ע"י ה-VM לפני כל ניסיון התחברות חדש (connect/attach).
+// C14: ניקוי שגיאה reactive — כשה-cwd או cliKind משתנים (המשתמש תיקן) מנקה את השגיאה.
+// untrack: session.error נקרא ונכתב בתוך untrack() כדי שהוא לא יהיה dependency של ה-effect.
+// כך השגיאה נשארת מוצגת כל עוד המשתמש לא ערך את הטופס — ורק שינוי cwd/cliKind מנקה.
 $effect(() => {
-  // track cwd + cliKind — כל שינוי מנקה שגיאה ישנה
+  // track רק cwd + cliKind — שינוי בהם מנקה שגיאה ישנה
   void cwd
   void cliKind
-  if (session.error !== null) session.error = null
+  untrack(() => {
+    if (session.error !== null) session.error = null
+  })
 })
 
 // C15: סדר כפתור תיקייה לפי locale — RTL (עברית): כפתור ב-order:-1 (ימין visual)
