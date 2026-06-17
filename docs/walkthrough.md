@@ -1,3 +1,36 @@
+## 2026-06-17 — feat(backend): slice-wire-recorder-jsonl — הקלטת תעבורת WS ל-NDJSON
+
+### מה בוצע?
+
+3 commits ב-branch `slice-wire-recorder-jsonl`:
+
+**Commit 1 (TDD)** — מודול `wire-recorder.ts`:
+- `serializeWireRecord(ts, dir, raw)` — pure, שורת NDJSON + \\n
+- `createWireRecorder({ dir, now? })` — factory; dir=null → NOOP_SESSION (אפס IO)
+- `wire-recorder.test.ts` — 9 tests ירוקים (serialize, no-op, write path, close, two sessions)
+
+**Commit 2 (integration)** — חיווט ב-pipe:
+- `ws-agent.ts`: הוסף `wireRecorder: WireRecorder` ל-deps; `rec = wireRecorder.open(agentId)` ב-onConnect; `rec.record(dir, raw)` אחרי כל `logWire`; `rec.close()` ב-feWs.on("close")
+- `server.ts`: import + `createWireRecorder({ dir: WIRE_RECORD ? path.resolve("data/wire-recordings") : null })` + הזרקה ל-createAgentWsHandler
+- `tests/ws-agent-pipe.test.ts`: עדכון קריאות קיימות עם noopWireRecorder
+
+**Commit 3 (none)** — walkthrough + status
+
+### חריגות
+
+- core dist חסר (worktree חדש) → `pnpm --filter @drive-coding/core build`. תועד בגוטשה.
+- בדיקה ידנית חיה (DoD §5 #4-6: קובץ .jsonl נוצר בפועל עם WIRE_RECORD=1) — לא אומת ב-Windows (onecli נדרש); ממתין ל-verifier/Tama.
+
+### בדיקות
+
+- typecheck backend: נקי
+- lint:i18n: ירוק
+- wire-recorder tests: 9/9 ירוקים
+- ws-agent-pipe tests: ירוקים (עם noopWireRecorder)
+- כשלות סביבתיות (bridge-manager/Windows/sleep, frontend/svelte-kit): לא קשורות לסלייס
+
+---
+
 ## 2026-06-17 21:25 — build(frontend): source maps ב-build של פריסת dev
 
 ### מה בוצע?
