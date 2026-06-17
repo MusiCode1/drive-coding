@@ -147,6 +147,9 @@ export const en: Catalog = {
   // ─── bubble-play ─── (msr-v2)
   "bubble.play": "Play",
   "bubble.stop": "Stop playback",
+  // ─── bubble-copy ─── (ui-polish-batch · C3)
+  "bubble.copy": "Copy",
+  "bubble.copied": "Copied!",
   // ─── model-status ─── (msr-v2)
   "modelStatus.waiting": "Waiting…",
   "modelStatus.thinking": "Thinking…",

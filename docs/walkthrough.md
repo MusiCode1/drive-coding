@@ -1,3 +1,25 @@
+## 2026-06-18 — feat(frontend): slice-ui-polish-batch — Phase 1: Message polish (C1-C6)
+
+### מה בוצע?
+
+**C1** — `lib/util/clipboard.ts`: `copyToClipboard(text): Promise<boolean>` (TDD, 3 טסטים ירוקים).
+**C2** — `lib/util/formatting.ts`: `formatTime(ts: number): string` → HH:MM (Intl.DateTimeFormat) (TDD, 3 טסטים ירוקים).
+**C3** — `MessageBubble.svelte` + `UserBubble.svelte`: כפתור העתקה (hover-desktop/גלוי-נייד, feedback 2s) + timestamp קטן תחת הבועה.
+**C4** — `UserBubble.svelte`: `{@html renderMarkdown(...)}` במקום plain text.
+**C5** — שני הקבצים: `:global(pre),:global(code){direction:ltr;text-align:left}` — תיקון RTL בבלוקי קוד.
+**C6** — `ToolBubble.svelte`: `c.type === "text"` עכשיו `{@html renderMarkdown(c.text)}` בתוך `<div dir="ltr">` + עיצוב markdown מותאם.
+**i18n** — מפתחות `bubble.copy` / `bubble.copied` ב-keys.ts + he.ts + en.ts.
+
+### חריגות
+אין.
+
+### בדיקות
+- typecheck frontend: נקי
+- tests: 234/234 ירוקים (27 test files)
+- lint:i18n: ירוק
+
+---
+
 ## 2026-06-17 — feat(backend): slice-wire-recorder-jsonl — הקלטת תעבורת WS ל-NDJSON
 
 ### מה בוצע?

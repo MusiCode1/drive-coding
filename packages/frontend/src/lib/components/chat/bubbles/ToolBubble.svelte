@@ -14,6 +14,7 @@
 import type { ToolBubble, ToolCall } from "$lib/types/bubble"
 import { getI18n } from "$lib/context"
 import { formatToolInput, prettyJson, formatLocation } from "$lib/util/tool-format"
+import { renderMarkdown } from "$lib/util/markdown"
 import Avatar from "$lib/components/chat/Avatar.svelte"
 
 let { bubble }: { bubble: ToolBubble } = $props()
@@ -87,7 +88,8 @@ const input = $derived(formatToolInput(tc.args))
             <div class="section-label">{t("chat.tool.content")}</div>
             {#each tc.content as c}
               {#if c.type === "text"}
-                <pre>{c.text}</pre>
+                <!-- C6: renderMarkdown על פלט טקסטואלי; pre נשאר dir=ltr -->
+                <div class="tool-text-output" dir="ltr">{@html renderMarkdown(c.text)}</div>
               {:else if c.type === "diff"}
                 <div class="diff">
                   <div class="diff-path">{c.path}</div>
@@ -160,6 +162,35 @@ const input = $derived(formatToolInput(tc.args))
   .diff .added { background: rgba(34,197,94,0.15); color: #4ade80; }
 
   .terminal-ref { font-family: ui-monospace, monospace; font-size: 0.75rem; }
+
+  /* C6: markdown בפלט טקסטואלי של כלי */
+  .tool-text-output {
+    font-size: 0.78rem;
+    line-height: 1.5;
+  }
+  .tool-text-output :global(p) { margin: 0.2em 0; }
+  .tool-text-output :global(p:first-child) { margin-top: 0; }
+  .tool-text-output :global(p:last-child) { margin-bottom: 0; }
+  .tool-text-output :global(code) {
+    font-family: ui-monospace, monospace;
+    font-size: 0.88em;
+    background: rgba(0,0,0,0.25);
+    padding: 0.1em 0.3em;
+    border-radius: 3px;
+  }
+  .tool-text-output :global(pre) {
+    background: var(--bg);
+    padding: 0.4rem 0.5rem;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 0.78rem;
+    direction: ltr;
+    text-align: left;
+  }
+  .tool-text-output :global(pre code) { background: none; padding: 0; }
+  .tool-text-output :global(ul), .tool-text-output :global(ol) { padding-inline-start: 1.2em; margin: 0.2em 0; }
+  .tool-text-output :global(strong) { font-weight: 700; }
+  .tool-text-output :global(em) { font-style: italic; }
 
   .raw-output summary { list-style: none; }
   .raw-output[open] summary { margin-bottom: 4px; }

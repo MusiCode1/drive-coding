@@ -153,6 +153,9 @@ export type MessageKey =
   // ─── bubble-play ─── (msr-v2)
   | "bubble.play"
   | "bubble.stop"
+  // ─── bubble-copy ─── (ui-polish-batch · C3)
+  | "bubble.copy"
+  | "bubble.copied"
   // ─── model-status ─── (msr-v2)
   | "modelStatus.waiting"
   | "modelStatus.thinking"

@@ -142,6 +142,9 @@ export const he: Catalog = {
   // ─── bubble-play ─── (msr-v2)
   "bubble.play": "השמע",
   "bubble.stop": "עצור השמעה",
+  // ─── bubble-copy ─── (ui-polish-batch · C3)
+  "bubble.copy": "העתק",
+  "bubble.copied": "הועתק!",
   // ─── model-status ─── (msr-v2)
   "modelStatus.waiting": "ממתין…",
   "modelStatus.thinking": "חושב…",
