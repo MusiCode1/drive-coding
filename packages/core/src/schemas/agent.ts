@@ -72,6 +72,8 @@ export const Agent = type({
   "acpSessionId?": "string",
   // סיבת שגיאת ספק (Slice 5.6 — D47)
   "crashReason?": "string",
+  // נעיצה (slice active-agents): נשמר לתאימות; ה-reaper הוסר — כרגע ללא אפקט (no-op). ברירת מחדל false.
+  "persistent?": "boolean",
 })
 export type Agent = typeof Agent.infer
 
@@ -89,6 +91,13 @@ export const AgentPublic = type({
   // ה-FE משתמש בזה בעת רענון כדי לקרוא ל-loadSession() במקום newSession() — מונע
   // התנגשות 409 ומשחזר את היסטוריית ה-session.
   "acpSessionId?": "string",
+  // נעיצה — ה-FE מציג/משנה. אופציונלי: literals בטסטים לא חייבים לכלול אותו.
+  "persistent?": "boolean",
+  // runtime enrichment (מאוכלס ב-GET /api/agents handler, לא ב-toAgentPublic):
+  "pid?": "number",
+  "attached?": "boolean",
+  // slice agent-busy-indicator: true כשיש turn פעיל (debounce-שקט)
+  "busy?": "boolean",
 })
 export type AgentPublic = typeof AgentPublic.infer
 
@@ -123,6 +132,9 @@ export function toAgentPublic(agent: Agent): AgentPublic {
   }
   if (agent.acpSessionId !== undefined) {
     pub.acpSessionId = agent.acpSessionId
+  }
+  if (agent.persistent !== undefined) {
+    pub.persistent = agent.persistent
   }
   return pub
 }

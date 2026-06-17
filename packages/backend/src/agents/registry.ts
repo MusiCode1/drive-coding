@@ -27,6 +27,7 @@ export function createInMemoryAgentRegistry(): AgentRegistry {
         modelOverride: input.modelOverride ?? null,
         status: "ready", // Slice 2 stub. ב-Slice 3 ומעלה: starting → ready
         createdAt: new Date().toISOString(),
+        persistent: false,   // ← agent נוצר לא-נעוץ (slice active-agents)
       }
       store.set(id, agent)
       return agent

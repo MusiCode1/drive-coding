@@ -6,7 +6,7 @@
  *   - הצטברות בועות (bubble accumulation) מהתראות session/update
  *   - מתודות ציבוריות: attach/detach/sendPrompt
  *
- * משתמש ב-AcpClient האגנוסטי לתעבורה מתוך @drive-coding/core/acp,
+ * משתמש ב-AcpClient האגנוסטי לתעבורה מתוך provider-contract/acp,
  * עטוף עם ה-WsAcpTransport מצד ה-FE.
  */
 
@@ -17,7 +17,7 @@ import type {
   SessionModelState,
 } from "@agentclientprotocol/sdk"
 import { tick } from "svelte"
-import { createAcpClient, type AcpClient } from "@drive-coding/core/acp/client"
+import { createAcpClient, type AcpClient } from "provider-contract/acp"
 import type { CuesEngine } from "$lib/engines/cues"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
 import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
@@ -201,13 +201,32 @@ export class AgentSession {
   }
   /**
    * @internal override ל-#warmReconnect — מחזיר ערך קבוע לטסטים.
-   * אם returnValue=true, גם מקבע status="connected".
+   * אם returnValue=true, גם מקבע status="connected" (כמו #warmReconnect האמיתי).
+   * אם returnValue=false, לא מגדיר status (attachToLiveAgent יגדיר "error").
    */
   _mockWarmReconnectForTest(returnValue: boolean): void {
     this.#warmReconnect = async (_agentId: string) => {
       if (returnValue) this.#setStatus("connected")
       return returnValue
     }
+  }
+  /**
+   * @internal override ל-#warmReconnect — מחזיר ערך מ-callback שמקבל את ה-instance.
+   * מאפשר לצלם state (#sessionId, cwd) בזמן הקריאה.
+   * callback מחזיר true → גם מקבע status="connected".
+   */
+  _mockWarmReconnectCapturingStateForTest(cb: (session: AgentSession) => boolean): void {
+    this.#warmReconnect = async (_agentId: string) => {
+      const ok = cb(this)
+      if (ok) this.#setStatus("connected")
+      return ok
+    }
+  }
+  /**
+   * @internal חושף #sessionId לטסטים (לבדיקת הזרקת state).
+   */
+  _getSessionIdForTest(): string | null {
+    return this.#sessionId
   }
   /**
    * @internal קורא ישירות ל-#doReconnect (נתיב ה-auto-reconnect). נדרש כי reconnect()
@@ -243,7 +262,7 @@ export class AgentSession {
 
   // statics ל-reconnect (מוגדרים כאן כדי שכל המתודות שמשתמשות בהן יהיו מוכנות)
   static readonly #MAX_RECONNECT_ATTEMPTS = 5
-  /** backoff (ms) לפי ניסיון. סך ~31s << חלון reaper (5 דק'). */
+  /** backoff (ms) לפי ניסיון. סך ~31s — חסר מהסף המומלץ לניסיון reconnect ידני. */
   static readonly #BACKOFF_MS = [1000, 2000, 4000, 8000, 16000]
   static readonly #MED8_RETRY_MS = 250
   static readonly #MED8_MAX_RETRIES = 3
@@ -305,14 +324,14 @@ export class AgentSession {
    *
    * NBug2 root fix: אם יש WS חי (#transport לא null) — סגור אותו והמתן לאישור
    * לפני warm. בלי זה: ה-WS החי נדרס ב-#warmReconnect:289 בלי להיסגר → agent
-   * יתום קבוע (reaper לא נוגע ב-hasActiveWs=true). ה-BE דוחה WS חדש ב-1008.
+   * יתום קבוע (BE דוחה WS כפול ב-1008 כש-hasActiveWs=true). ה-BE דוחה WS חדש ב-1008.
    *
    * כשה-WS כבר מת (auto-reconnect): closeAndWait מתרצה מיד (readyState===CLOSED).
    */
   #doReconnect = async (): Promise<void> => {
-    // אין סשן/cwd/cliKind → אין מה לשחזר (מראה את guard של reconnect():620). מונע
+    // אין סשן/cwd/cliKind → אין מה לשחזר (מראה את guard של reconnect():649). מונע
     // session/load: null בלולאת auto-reconnect — קורה בטלפון כש-WS נסגר ב-1006 לפני
-    // ש-#sessionId נקבע (attach / loadSession קובעים אותו רק בהצלחה).
+    // ש-#sessionId נקבע (attach:489 / loadSession:626 קובעים אותו רק בהצלחה).
     if (this.#sessionId === null || this.cwd === null || this.#cliKind === null) {
       this.#reconnecting = false
       this.#setStatus("disconnected")
@@ -647,6 +666,39 @@ export class AgentSession {
     this.#reconnecting = false
     this.reconnectAttempt = 0
     await this.#doReconnect()
+  }
+
+  // ─── slice reconnect-warm-attach: חיבור מחדש ל-agent חי מהווידג'ט ─── (תוספתי)
+
+  /**
+   * חיבור-מחדש ל-agent חי קיים בצד-השרת (warm-attach), מ-state נקי (מהווידג'ט).
+   * שונה מ-reconnect(): מקבל את ה-agentId/sessionId/cwd/cliKind מבחוץ (ה-VM לא מחזיק
+   * אותם אחרי refresh). מזריק אותם וקורא ל-#warmReconnect הקיים (WS לאותו agentId +
+   * session/load על ה-process החי + MED-8). אם warm נכשל — שגיאה (לא cold-spawn, כי
+   * cold ייכשל על session שה-CLI לא persisted).
+   */
+  attachToLiveAgent = async (input: {
+    agentId: string
+    sessionId: string
+    cwd: string
+    cliKind: CliKind
+  }): Promise<void> => {
+    this.error = null   // אביגיל: #warmReconnect מאפס bubbles אך לא error — נקה כדי
+                        // שלא יישאר error ישן אחרי re-attach מוצלח.
+    // דפנסיבי: סגור חיבור קיים (אם המשתמש כבר מחובר ל-agent אחר)
+    if (this.#transport) {
+      await this.#transport.closeAndWait()
+      this.#client = null
+      this.#transport = null
+    }
+    this.#sessionId = input.sessionId
+    this.cwd = input.cwd
+    this.#cliKind = input.cliKind
+    const ok = await this.#warmReconnect(input.agentId)
+    if (!ok) {
+      this.error = "reconnect failed: agent no longer available"
+      this.#setStatus("error")
+    }
   }
 
   // ─── slice fix-switch-session-warm: החלפת סשן ב-warm reload ─── (תוספתי)

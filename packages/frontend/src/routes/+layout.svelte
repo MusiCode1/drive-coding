@@ -29,6 +29,7 @@ import {
   setTheme,
   setUiShell,
   setVoiceMode,
+  setActiveAgents,
 } from "$lib/context"
 import { CuesEngine } from "$lib/engines/cues"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
@@ -38,6 +39,7 @@ import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
+import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
 import { ResponsiveVM } from "$lib/view-models/responsive.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
 import { Speaker } from "$lib/view-models/speaker.svelte"
@@ -89,6 +91,9 @@ const uiShell = new UiShellVM()
 // ─── modals ─── (redesign-6)
 const modals = new ModalsVM()
 
+// ─── active-agents ─── (slice active-agents-widget — בלתי-תלוי)
+const activeAgents = new ActiveAgents()
+
 // ─── dir/lang sync ─── (rtl-ltr-bidi)
 // סנכרון <html dir> ו-<html lang> ל-locale — הקסם של הדו-כיווניות.
 // ה-effect קורא $state (i18n.locale) וכותב ל-DOM (לא ל-$state) → אין infinite loop.
@@ -115,6 +120,7 @@ setTheme(theme)
 setResponsive(responsive)
 setUiShell(uiShell)
 setModals(modals)
+setActiveAgents(activeAgents)
 
 // ─── DEV-only: חשיפת ה-session ל-window לצורך חילוץ fixtures ודיבוג עיצוב ───
 if (import.meta.env.DEV && typeof window !== "undefined") {

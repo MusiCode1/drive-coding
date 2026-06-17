@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createProjectsRegistry } from "../src/app/projects-registry.js"
 import { createRecordingsStore } from "../src/app/recordings-store.js"
 import {
+  normalizeRealpath,
   registerFsBrowseHttp,
   registerProjectsHttp,
   registerRecordingsHttp,
@@ -119,23 +120,30 @@ describe("GET /api/recordings/:id", () => {
 // ─── /api/fs/browse ───────────────────────────────────────────────────────────
 
 describe("GET /api/fs/browse", () => {
+  // default: no allowedBase → allow-all (Q1 decision)
   function makeApp(allowedBase?: string) {
     const app = new Hono()
-    registerFsBrowseHttp(app, { allowedBase: allowedBase ?? homedir() })
+    registerFsBrowseHttp(app, allowedBase !== undefined ? { allowedBase } : {})
+    return { app }
+  }
+
+  // makeAppRestricted: opt-in restriction via explicit allowedBase
+  function makeAppRestricted(allowedBase: string) {
+    const app = new Hono()
+    registerFsBrowseHttp(app, { allowedBase })
     return { app }
   }
 
   it("returns directory entries for a valid path", async () => {
-    const { app } = makeApp(tmpdir())
+    const { app } = makeApp()
     const res = await app.request(`/api/fs/browse?path=${encodeURIComponent(tmpdir())}`)
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.path).toBe(tmpdir())
     expect(Array.isArray(body.entries)).toBe(true)
   })
 
   it("each entry has name and isDir fields", async () => {
-    const { app } = makeApp(tmpdir())
+    const { app } = makeApp()
     const res = await app.request(`/api/fs/browse?path=${encodeURIComponent(tmpdir())}`)
     const body = await res.json()
     if (body.entries.length > 0) {
@@ -145,10 +153,51 @@ describe("GET /api/fs/browse", () => {
     }
   })
 
-  it("returns 403 when path resolves outside allowedBase (path traversal)", async () => {
-    const { app } = makeApp(tmpdir())
-    const res = await app.request("/api/fs/browse?path=/etc")
-    expect(res.status).toBe(403)
+  // Q1 decision: default is allow-all (no allowedBase) — any path is accessible
+  it("default allow-all: navigates into subdirectory without 403", async () => {
+    const base = join(tmpdir(), `dc-browse-test-${crypto.randomUUID()}`)
+    await mkdir(base, { recursive: true })
+    const sub = join(base, "subdir")
+    await mkdir(sub)
+    try {
+      const { app } = makeApp() // no allowedBase → allow-all
+      const res = await app.request(`/api/fs/browse?path=${encodeURIComponent(sub)}`)
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.path).toBeTruthy()
+    } finally {
+      await rm(base, { recursive: true, force: true })
+    }
+  })
+
+  // opt-in restriction: returns 403 when path resolves outside explicit allowedBase
+  it("opt-in restriction: returns 403 for path outside allowedBase", async () => {
+    const base = join(tmpdir(), `dc-browse-restricted-${crypto.randomUUID()}`)
+    await mkdir(base, { recursive: true })
+    const sibling = join(tmpdir(), `dc-browse-sibling-${crypto.randomUUID()}`)
+    await mkdir(sibling, { recursive: true })
+    try {
+      const { app } = makeAppRestricted(base)
+      const res = await app.request(`/api/fs/browse?path=${encodeURIComponent(sibling)}`)
+      expect(res.status).toBe(403)
+    } finally {
+      await rm(base, { recursive: true, force: true }).catch(() => undefined)
+      await rm(sibling, { recursive: true, force: true }).catch(() => undefined)
+    }
+  })
+
+  // path.relative-based containment: subdir inside allowedBase succeeds
+  it("opt-in restriction: subdir inside allowedBase succeeds (cross-platform separator)", async () => {
+    const base = join(tmpdir(), `dc-browse-allowed-${crypto.randomUUID()}`)
+    const sub = join(base, "inner")
+    await mkdir(sub, { recursive: true })
+    try {
+      const { app } = makeAppRestricted(base)
+      const res = await app.request(`/api/fs/browse?path=${encodeURIComponent(sub)}`)
+      expect(res.status).toBe(200)
+    } finally {
+      await rm(base, { recursive: true, force: true })
+    }
   })
 
   it("returns 400 when path query param is missing", async () => {
@@ -164,7 +213,7 @@ describe("GET /api/fs/browse", () => {
     await mkdir(join(base, "node_modules"))
     await mkdir(join(base, ".git"))
     try {
-      const { app } = makeApp(base)
+      const { app } = makeAppRestricted(base)
       const res = await app.request(`/api/fs/browse?path=${encodeURIComponent(base)}`)
       expect(res.status).toBe(200)
       const body = await res.json()
@@ -184,7 +233,7 @@ describe("GET /api/fs/browse", () => {
     await mkdir(join(base, "node_modules"))
     await mkdir(join(base, ".git"))
     try {
-      const { app } = makeApp(base)
+      const { app } = makeAppRestricted(base)
       const res = await app.request(
         `/api/fs/browse?path=${encodeURIComponent(base)}&showHidden=true`,
       )
@@ -197,5 +246,22 @@ describe("GET /api/fs/browse", () => {
     } finally {
       await rm(base, { recursive: true, force: true })
     }
+  })
+})
+
+describe("normalizeRealpath", () => {
+  it("adds backslash to bare drive-root (bun async realpath returns 'D:')", () => {
+    expect(normalizeRealpath("D:")).toBe("D:\\")
+    expect(normalizeRealpath("c:")).toBe("c:\\")
+  })
+
+  it("leaves drive paths with subdirs unchanged", () => {
+    expect(normalizeRealpath("D:\\Users")).toBe("D:\\Users")
+    expect(normalizeRealpath("D:\\")).toBe("D:\\")
+  })
+
+  it("leaves Unix paths unchanged", () => {
+    expect(normalizeRealpath("/home/user")).toBe("/home/user")
+    expect(normalizeRealpath("/")).toBe("/")
   })
 })

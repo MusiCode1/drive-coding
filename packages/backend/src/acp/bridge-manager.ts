@@ -1,7 +1,11 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
+import { createInterface } from "node:readline"
 import type { BridgeCrashInfo, BridgeHandle, BridgeManager, SpawnBridgeInput } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
+import { AUDIO_FRIENDLY_PROMPT } from "../prompts/index.js"
+import { decodeWireLine } from "../delivery/wire-decode.js"
+import { type TurnTracker, createTurnTracker } from "./turn-tracker.js"
 import { getCliCommand, getCliSpec } from "./cli-config.js"
 
 const log = createLogger("backend.bridge.manager")
@@ -16,20 +20,23 @@ export type BridgeHandleWithStderr = BridgeHandle & {
 export function createBridgeManager(): BridgeManager & {
   spawnWithStderr(bridgeId: string, input: SpawnBridgeInput): Promise<BridgeHandleWithStderr>
   getChild(bridgeId: string): ChildProcessWithoutNullStreams | null
-  // ─── TEMPORARY (slice 26) ───
+  // ─── תצוגת active-agents (attached) ───
   markAttached(bridgeId: string): void
   markDetached(bridgeId: string): void
-  listIdle(timeoutMs: number, now: number): string[]
-  getCreatedAt(bridgeId: string): number | null   // TEMPORARY (fix-idle-flaky)
+  // slice active-agents + agent-busy-indicator: runtime enrichment for GET /api/agents
+  getRuntimeInfo(bridgeId: string): { pid: number; attached: boolean; busy: boolean } | null
+  // slice agent-busy-indicator: subscription לשורות stdout (reader קבוע ב-bridge-manager)
+  onLine(bridgeId: string, cb: (line: string) => void): () => void
 } {
   type Entry = {
     handle: BridgeHandle
     child: ChildProcessWithoutNullStreams
     stderrLines: string[]
-    // ─── TEMPORARY (slice 26) — idle-reaper tracking ───
+    // ─── תצוגת active-agents (attached) — משרת getRuntimeInfo ───
     hasActiveWs: boolean
-    lastDetachedAt: number | null
-    createdAt: number
+    // ─── slice agent-busy-indicator: tracker + subscribers לשורות stdout ───
+    tracker: TurnTracker
+    lineSubscribers: Set<(line: string) => void>
   }
   const store = new Map<string, Entry>()
   const crashHandlers = new Set<(bridgeId: string, info: BridgeCrashInfo) => void>()
@@ -57,9 +64,10 @@ export function createBridgeManager(): BridgeManager & {
     const stderrLines: string[] = []
     let stderrPartial = ""
 
-    // מזריק את הפלאגין prompt-injector (נושא את ה-audio-friendly prompt
-    // דרך אפשרויות הפלאגין) רק עבור הפעלות של opencode. עבור cliKinds אחרים
-    // (claude, gemini, codex) — ה-env עובר ללא שינוי.
+    // מזריק את הפלאגין prompt-injector רק עבור הפעלות של opencode.
+    // Commit 3 (windows-adaptation): plugin רשום כ-string-URL (opencode 1.2.27 compat).
+    // הטקסט מועבר דרך PROMPT_INJECTOR_TEXT — prompt-injector.ts קורא אותו כ-fallback.
+    // עבור cliKinds אחרים (claude, gemini, codex) — ה-env עובר ללא שינוי.
     const envWithPlugin =
       input.cliKind === "opencode"
         ? {
@@ -67,6 +75,8 @@ export function createBridgeManager(): BridgeManager & {
             OPENCODE_CONFIG_CONTENT: buildOpencodeConfigContent(
               process.env.OPENCODE_CONFIG_CONTENT,
             ),
+            // העברת הטקסט לפלאגין דרך env (במקום options — opencode 1.2.27 לא מקבל tuple).
+            PROMPT_INJECTOR_TEXT: AUDIO_FRIENDLY_PROMPT,
           }
         : { ...process.env }
 
@@ -132,6 +142,24 @@ export function createBridgeManager(): BridgeManager & {
       }
     })
 
+    // ─── reader קבוע ל-stdout (slice agent-busy-indicator) ─────────────────────
+    // bridge-manager הוא הבעלים היחיד של child.stdout. ws-agent נרשם ל-onLine
+    // ומקבל את השורות דרך callback — לא קורא את ה-stream ישירות.
+    // סדר חובה: subscribers (→ feWs.send) לפני decode/observe.
+    child.stdout.setEncoding("utf8")
+    const stdoutRl = createInterface({ input: child.stdout, crlfDelay: Infinity })
+    stdoutRl.on("line", (line) => {
+      const entry = store.get(bridgeId)
+      if (!entry) return
+      // (1) שלח לכל ה-subscribers (ws-agent → feWs.send) לפני כל דבר אחר
+      for (const cb of entry.lineSubscribers) {
+        try { cb(line) } catch { /* subscriber לא יכול לשבור את הpipe */ }
+      }
+      // (2) decode + observe (Commit 3 — turn-tracker)
+      // הפענוח בנתיב non-critical, מבודד ב-try/catch — לעולם לא יעכב/ישבור את ה-pipe
+      try { entry.tracker.observe(decodeWireLine(line), Date.now()) } catch { /* silent */ }
+    })
+
     if (!child.pid) {
       // אירוע Error יטפל בניקוי בנפרד. מחזיר שגיאה לקורא.
       throw new Error(`spawn returned no pid (bin=${cli.bin})`)
@@ -151,10 +179,11 @@ export function createBridgeManager(): BridgeManager & {
       handle,
       child,
       stderrLines,
-      // ─── TEMPORARY (slice 26) — idle-reaper tracking ───
+      // ─── תצוגת active-agents (attached) — משרת getRuntimeInfo ───
       hasActiveWs: false,
-      lastDetachedAt: null,
-      createdAt: Date.now(),
+      // ─── slice agent-busy-indicator: tracker + subscribers לשורות stdout ───
+      tracker: createTurnTracker(),
+      lineSubscribers: new Set(),
     })
     childLog.info({ pid: child.pid }, "spawn ok")
     return { ...handle, getStderr: () => [...stderrLines], child }
@@ -201,9 +230,9 @@ export function createBridgeManager(): BridgeManager & {
       }
     },
 
-    // ─── TEMPORARY (slice 26): idle-reaper support ───
-    // Remove together with this whole block when background-agent management
-    // (future "slice A") lands. See docs/plans/slice-26-bridge-idle-reaper.md §7.
+    // ─── תצוגת active-agents (attached) ───
+    // markAttached/markDetached משרתים את getRuntimeInfo (שדה attached) בתצוגת פאנל active-agents.
+    // אינם זמניים — נחוצים לתצוגה השוטפת.
     markAttached(bridgeId: string) {
       const e = store.get(bridgeId)
       if (e) e.hasActiveWs = true
@@ -211,28 +240,22 @@ export function createBridgeManager(): BridgeManager & {
 
     markDetached(bridgeId: string) {
       const e = store.get(bridgeId)
-      if (e) {
-        e.hasActiveWs = false
-        e.lastDetachedAt = Date.now()
-      }
+      if (e) e.hasActiveWs = false
     },
 
-    listIdle(timeoutMs: number, now: number): string[] {
-      const out: string[] = []
-      for (const [id, e] of store) {
-        if (e.hasActiveWs) continue // active WS — never reap
-        if (e.lastDetachedAt !== null) {
-          if (now - e.lastDetachedAt >= timeoutMs) out.push(id)
-        } else {
-          // Never had a WS — grace period: 2x timeout before reaping
-          if (now - e.createdAt >= timeoutMs * 2) out.push(id)
-        }
-      }
-      return out
+    // slice active-agents + agent-busy-indicator: returns { pid, attached, busy } for a live bridge, or null
+    getRuntimeInfo(bridgeId: string): { pid: number; attached: boolean; busy: boolean } | null {
+      const e = store.get(bridgeId)
+      if (!e) return null
+      return { pid: e.handle.pid, attached: e.hasActiveWs, busy: e.tracker.isBusy(Date.now()) }
     },
 
-    getCreatedAt(bridgeId: string): number | null {
-      return store.get(bridgeId)?.createdAt ?? null
+    // slice agent-busy-indicator: subscribe לשורות stdout (reader קבוע ב-bridge-manager)
+    onLine(bridgeId: string, cb: (line: string) => void): () => void {
+      const e = store.get(bridgeId)
+      if (!e) return () => {}
+      e.lineSubscribers.add(cb)
+      return () => { e.lineSubscribers.delete(cb) }
     },
   }
 }

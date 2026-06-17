@@ -16,7 +16,7 @@
  * close() / ה-WS נסגר מהצד השני → ה-heartbeat נעצר, ה-onClose listeners מופעלים.
  */
 
-import type { AcpTransport } from "@drive-coding/core/acp/transport"
+import type { AcpTransport } from "provider-contract/acp"
 import { wsToWebStreams } from "./ws-to-streams.js"
 
 const HEARTBEAT_INTERVAL_MS = 25_000

@@ -1,6 +1,6 @@
 import type { PromptResponse, SessionNotification } from "@agentclientprotocol/sdk"
 import type { Result } from "neverthrow"
-import type { BridgeCrashInfo } from "./acp/describe-crash.js"
+import type { BridgeCrashInfo } from "provider-contract/acp"
 import type { Agent, CliKind, CreateAgentInput } from "./schemas"
 
 export type { BridgeCrashInfo, PromptResponse, SessionNotification }
@@ -21,10 +21,10 @@ export interface AgentRegistry {
   /** רשימת כל הסוכנים (ללא סינון — אין זהות ב-MVP). */
   list(): Promise<ReadonlyArray<Agent>>
 
-  /** עדכון סטטוס / פרטי bridge / סיבת קריסה. זורק שגיאה אם id לא קיים. */
+  /** עדכון סטטוס / פרטי bridge / סיבת קריסה / נעיצה. זורק שגיאה אם id לא קיים. */
   update(
     id: string,
-    patch: Partial<Pick<Agent, "status" | "bridgePort" | "acpSessionId" | "crashReason">>,
+    patch: Partial<Pick<Agent, "status" | "bridgePort" | "acpSessionId" | "crashReason" | "persistent">>,
   ): Promise<Agent>
 
   /** הסרה. זורק שגיאה אם לא קיים. */

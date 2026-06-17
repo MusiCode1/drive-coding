@@ -1,3 +1,5 @@
+import * as os from "node:os"
+import * as path from "node:path"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 // Mock child_process to avoid invoking the real `opencode models` command
@@ -8,7 +10,7 @@ vi.mock("node:child_process", () => ({
 }))
 
 const { Hono } = await import("hono")
-const { registerHttpOptions } = await import("../src/delivery/http-options")
+const { registerHttpOptions, getHomeDir } = await import("../src/delivery/http-options")
 
 function makeApp() {
   const app = new Hono()
@@ -75,7 +77,9 @@ describe("HTTP GET /api/options", () => {
 
     expect(Array.isArray(body.projects)).toBe(true)
     for (const p of body.projects) {
-      expect(p.startsWith("/")).toBe(true)
+      // cross-platform: נתיב אבסולוטי — Unix מתחיל ב-"/", Windows מתחיל ב-drive (C:\) או UNC (\\)
+      const isAbsolute = p.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(p) || p.startsWith("\\\\")
+      expect(isAbsolute).toBe(true)
       expect(p.includes("user-files")).toBe(false)
       expect(p.includes("node_modules")).toBe(false)
     }
@@ -97,7 +101,47 @@ describe("HTTP GET /api/options", () => {
 
     expect(typeof body.homeDir).toBe("string")
     expect(body.homeDir.length).toBeGreaterThan(0)
-    expect(body.homeDir.startsWith("/")).toBe(true)
+    // cross-platform: homeDir מנורמל מ-os.homedir() — absolute, אך לא בהכרח Unix "/"
+    const isAbsolute =
+      body.homeDir.startsWith("/") ||
+      /^[a-zA-Z]:[\\/]/.test(body.homeDir) ||
+      body.homeDir.startsWith("\\\\")
+    expect(isAbsolute).toBe(true)
+  })
+
+  // Commit 2: listProjectDirs — cross-platform + validateCwd filter
+  it("Commit 2: projects list uses os.tmpdir() (cross-platform) — no hardcoded /tmp", async () => {
+    execFileSyncMock.mockReturnValue("")
+    const app = makeApp()
+    const res = await app.request("/api/options")
+    const body = (await res.json()) as { projects: string[] }
+
+    // ודא שאין נתיב שמתחיל ב-/tmp בדיוק (hardcoded linux)
+    // בפועל on Windows os.tmpdir() = C:\Users\...\AppData\Local\Temp
+    const hasHardcodedTmp = body.projects.some((p) => p === "/tmp" || p.startsWith("/tmp/"))
+    expect(hasHardcodedTmp).toBe(false)
+  })
+
+  it("Commit 2: projects do not contain paths that fail validateCwd (e.g. relative paths)", async () => {
+    execFileSyncMock.mockReturnValue("")
+    const app = makeApp()
+    const res = await app.request("/api/options")
+    const body = (await res.json()) as { projects: string[] }
+
+    // כל נתיב ברשימה חייב לעבור בדיקת absolute (validateCwd מסנן כל מה שלא absolute)
+    for (const p of body.projects) {
+      const isAbsolute = p.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(p) || p.startsWith("\\\\")
+      expect(isAbsolute, `expected "${p}" to be absolute`).toBe(true)
+    }
+  })
+
+  it("Commit 2: homeDir is the actual os.homedir() value (cross-platform)", async () => {
+    execFileSyncMock.mockReturnValue("")
+    const app = makeApp()
+    const res = await app.request("/api/options")
+    const body = (await res.json()) as { homeDir: string }
+
+    expect(body.homeDir).toBe(os.homedir())
   })
 
   it("opencode list prefers known anthropic/openai/google prefixes (preferred picks first)", async () => {
@@ -118,4 +162,22 @@ describe("HTTP GET /api/options", () => {
     expect(body.models.opencode?.[0]).toBe("anthropic/claude-opus-4-7")
     expect(body.models.opencode?.includes("openai/gpt-5")).toBe(true)
   })
+})
+
+describe("getHomeDir", () => {
+  it("prefers HOME env", () => {
+    vi.stubEnv("HOME", "/custom/home")
+    expect(getHomeDir()).toBe("/custom/home")
+    vi.unstubAllEnvs()
+  })
+
+  it("falls back to USERPROFILE when HOME is empty/unset", () => {
+    vi.stubEnv("HOME", "")
+    vi.stubEnv("USERPROFILE", "D:\\Users\\Bob")
+    expect(getHomeDir()).toBe("D:\\Users\\Bob")
+    vi.unstubAllEnvs()
+  })
+
+  // הערה: לא בודקים "both empty → os.homedir()" — על Windows os.homedir() עצמו
+  // קורא USERPROFILE, אז stub שלו ל-"" משבש את ה-fallback. ה-`|| os.homedir()` טריוויאלי.
 })

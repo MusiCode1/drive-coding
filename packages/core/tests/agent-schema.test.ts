@@ -113,4 +113,61 @@ describe("Agent schema", () => {
     })
     expect(result).toHaveProperty("summary")
   })
+
+  // slice active-agents: persistent field
+  it("accepts agent with persistent: true", () => {
+    const result = Agent({
+      id: "550e8400-e29b-41d4-a716-446655440002",
+      cliKind: "opencode",
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready",
+      createdAt: "2026-05-16T05:00:00.000Z",
+      persistent: true,
+    })
+    expect(result).not.toHaveProperty("summary")
+  })
+
+  it("accepts agent without persistent (optional)", () => {
+    const result = Agent({
+      id: "550e8400-e29b-41d4-a716-446655440003",
+      cliKind: "opencode",
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready",
+      createdAt: "2026-05-16T05:00:00.000Z",
+    })
+    expect(result).not.toHaveProperty("summary")
+  })
+})
+
+describe("toAgentPublic — persistent field (slice active-agents)", () => {
+  it("copies persistent: true from agent to pub", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440004",
+      cliKind: "opencode" as const,
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T05:00:00.000Z",
+      persistent: true,
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub.persistent).toBe(true)
+  })
+
+  it("omits persistent from pub when not set on agent", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440005",
+      cliKind: "gemini" as const,
+      cwd: "/project",
+      modelOverride: "gemini-pro",
+      status: "busy" as const,
+      createdAt: "2026-05-16T10:00:00.000Z",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub).not.toHaveProperty("persistent")
+    // existing test: toEqual still passes (no extra fields)
+    expect(pub).toEqual(agent)
+  })
 })

@@ -1,3 +1,108 @@
+## 2026-06-16 — slice-agent-busy-indicator — אינדיקטור busy/idle לתהליכים
+
+### מה בוצע?
+
+**slice**: slice-agent-busy-indicator (base: dev a52344f/c7463c5)
+**commits**: 4 (7123c2d, a0193cb, b74643e, 443e525)
+
+**Commit 1 — refactor(backend): bridge-manager בעלים יחיד של child.stdout (integration)**
+- bridge-manager.ts: הוסף reader קבוע (createInterface) ב-spawnInternal. הוסף lineSubscribers (Set) לכל Entry. הוסף מתודה onLine(bridgeId, cb) → () => void.
+- ws-agent.ts: הסרת createInterface ישיר, שימוש ב-deps.bridgeManager.onLine. הרחבת deps type. ב-close: unsub() במקום rl.close().
+- עדכון mock ב-ws-agent-pipe.test.ts (makeMockBridgeManager עם onLine, pushLine helper).
+- עדכון bridge-manager.test.ts + bridge-failure-modes.test.ts: stdout שונה ל-PassThrough (נדרש ל-createInterface).
+
+**Commit 2 — feat(backend): turn-tracker.ts module טהור (TDD, 6 תרחישים)**
+- turn-tracker.ts + turn-tracker.test.ts (קבצים חדשים).
+- TurnTracker: observe(WireSummary, now), isBusy(now). idleDebounceMs=1500.
+- sessionUpdate → busy=true; result לא מאפס busy; שקט > debounce → idle.
+- אפס תלות ב-FE (wire-decode.ts בלבד).
+- 6/6 תרחישים ירוקים: Red-Green-Refactor.
+
+**Commit 3 — feat(backend/core): חיווט turn-tracker → getRuntimeInfo.busy → AgentPublic.busy (integration)**
+- bridge-manager.ts: הוסף TurnTracker לכל Entry. Reader: decode+observe ב-try/catch אחרי subscribers. getRuntimeInfo מחזיר { pid, attached, busy }.
+- agent.ts (core): הוסף "busy?": "boolean" ל-AgentPublic.
+- http-agents.ts: עדכון deps type. לוגיקת spread לא שונה.
+- http-agents.test.ts: הוסף busy:false ל-mock.
+
+**Commit 4 — feat(frontend): אינדיקטור busy + i18n (manual)**
+- keys.ts + he.ts + en.ts: הוסף "connect.agents.working" (he: "עובד…", en: "working…").
+- ActiveProcessesPanel.svelte: .busy-indicator, .busy-dot (animation busy-pulse 1s), .busy-label.
+
+### חריגות
+- lint-no-hebrew-in-code.test.mjs — כשל קיים לפני ה-slice (SyntaxError סביבתי ב-Windows), לא קשור לשינויים.
+- bridge-failure-modes.test.ts ו-bridge-manager.test.ts: mock stdout שודרג ל-PassThrough (נדרש בגלל Commit 1 — createInterface דורש resume()/pause()).
+
+### בדיקות
+- typecheck: ירוק (4 commits)
+- lint:i18n: ירוק
+- lint:rtl: ירוק
+- tests: 674 passed, 14 skipped (1 failed = lint-no-hebrew pre-existing)
+- turn-tracker: 6/6 תרחישים (TDD)
+- ws-agent-pipe.test.ts: 7/7 ירוקים — pipe regression מאושר
+
+---
+
+## 2026-06-16 — slice-remove-idle-reaper — ביטול idle-reaper (תנאי §7 של slice-26)
+
+### מה בוצע?
+
+**slice**: slice-remove-idle-reaper (base: dev b2c2349)
+**commits**: 3 (06c8294, 3a6501a, + commit 3 הנוכחי)
+
+**Commit 1 — מחיקת ה-reaper מ-server.ts + reap-idle.ts + reaper-pin.test.ts**
+- נמחקו: `reap-idle.ts`, `tests/reaper-pin.test.ts`
+- הוסרו מ-server.ts: import של reapIdleBridges, כל בלוק ה-setInterval (BRIDGE_IDLE_TIMEOUT_MS, REAP_INTERVAL_MS, reaper, הערת TEMPORARY)
+- typecheck ירוק; BE tests: 247 passed (1 failed סביבתי ב-Windows — bridge-failure-modes timeout, pre-existing)
+
+**Commit 2 — ניקוי כירורגי ב-bridge-manager**
+- הוסרו מ-Entry: `lastDetachedAt`, `createdAt` (hasActiveWs נשאר)
+- הוסרו מה-API: `listIdle`, `getCreatedAt`
+- markDetached: הוסרה `lastDetachedAt = Date.now()` — נשאר רק `hasActiveWs = false`
+- עודכנו הערות TEMPORARY (slice 26) → תצוגת active-agents (attached) בbridge-manager.ts וws-agent.ts (3 מופעים)
+- נמחק: `bridge-manager.idle.test.ts`
+- typecheck ירוק; BE tests: 236 passed (all pass; 14 skipped)
+
+**Commit 3 — docs + הערות stale**
+- agent-session.svelte.ts: הוסרו 2 הפניות ל-"reaper" בהערות (~258, ~320)
+- agent.ts schema ~75: persistent עודכן ל-"no-op, reaper הוסר"
+- cli-config.ts ~74: הוסרה הפניה ל-"idle-reaper tests" (נמחקו)
+- slices.md ~78: slice 26 עודכן ל-"הוסר ב-slice-remove-idle-reaper"
+- slice-26-bridge-idle-reaper.md: עודכן סטטוס ל-"הוסר"
+
+### חריגות
+- כשל סביבתי ב-Windows ב-bridge-failure-modes.test.ts (ENOENT timeout) — pre-existing, לא קשור לשינויים
+- dist/acp/bridge-manager.idle.test.js היה stale אחרי מחיקת המקור — נמחק ידנית מ-dist
+
+### בדיקות
+- typecheck: ירוק (3 commits)
+- lint:i18n: ירוק
+- BE tests: 236 passed, 14 skipped (אחרי commit 2)
+- DoD #4: grep reapIdle|listIdle|getCreatedAt|reap-idle ב-src = אפס
+- DoD #5: grep TEMPORARY (slice 26) ב-packages = אפס
+
+---
+
+## 2026-06-16 — slice-active-processes-layout — layout דו-שורתי לפאנל תהליכים פעילים
+
+### מה בוצע?
+
+**slice**: slice-active-processes-layout (base: dev b2c2349)
+**commits**: 1
+
+**Commit 1 — feat(active-panel): layout דו-שורתי — meta שורה נפרדת**
+- עטף `.agent-info` + `.agent-actions` ב-`.agent-top` (flex אופקי)
+- הוציא session-id / created-at / pid ל-`.agent-meta` (שורה 2, קטנה ומעומעמת)
+- `.agent-row` → column, `align-items: stretch`, `gap: 0.35rem`
+- `.agent-meta`: flex-wrap, `font-size: 0.72rem`, `color: var(--fg-dim)`, מפריד `·`
+- `.session-id/.created-at/.pid` → `direction: ltr` (ב-meta; אין overlap עם RTL כי wrap נפרד)
+- אין שינוי ב-`<script>`, handlers, או נתונים
+- typecheck ✓ | lint:i18n ✓ | lint:rtl ✓ | 218/218 tests ירוקים
+
+**בדיקות**: typecheck ✓ | lint:i18n ✓ | lint:rtl ✓ | 218 tests ירוקים
+**חריגות מה-brief**: אין. אימות ויזואלי נותר ל-runtime-gate (BE + agent חי נדרש).
+
+---
+
 ## 2026-06-14 — slice-msr-v2 — מצב-מודל + בקרת-סוכן + השמעה (מימוש מחדש על dev)
 
 ### מה בוצע?

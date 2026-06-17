@@ -9,7 +9,6 @@
     ".": "./src/index.ts",
     "./schemas/*": "./src/schemas/*.ts",
     "./voice/*": "./src/voice/*.ts",
-    "./acp/*": "./src/acp/*.ts",
     "./ui/*": "./src/ui/*.ts",
     "./cache/*": "./src/cache/*.ts",
     "./i18n": "./src/i18n/index.ts",
@@ -26,6 +25,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "provider-contract": "git+https://github.com/MusiCode1/provider-abstraction.git#main",
     "@agentclientprotocol/sdk": "^0.21.1",
     "arktype": "^2.0.0",
     "marked": "^18.0.3",

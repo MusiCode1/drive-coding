@@ -8,9 +8,13 @@
  *   - Agent not found → close(1008, "agent not found")
  *   - MED-8: second tab connects to same agentId → close(1008, "agent in use by another tab")
  *   - FE message forwarded to child.stdin
- *   - child.stdout line → forwarded to FE via feWs.send
+ *   - child.stdout line → forwarded to FE via feWs.send (via onLine callback)
  *   - child exit → feWs.close(1011, "bridge closed")
- *   - feWs close → cleanup (rl detached), child NOT killed
+ *   - feWs close → cleanup (unsub called), child NOT killed
+ *
+ * Commit 1 (stream-ownership): bridge-manager הוא הבעלים היחיד של child.stdout.
+ * ws-agent נרשם ל-onLine במקום לקרוא את ה-stream ישירות.
+ * הzרקת שורות בטסטים: דרך ה-callback הרשום ב-onLine (לא child.stdout.write).
  */
 
 import { EventEmitter, PassThrough } from "node:stream"
@@ -60,12 +64,38 @@ function makeMockFeWs(): { ws: WebSocket; sent: string[]; closeArgs: Array<[numb
   return { ws: emitter as unknown as WebSocket, sent, closeArgs }
 }
 
+// ─── Mock BridgeManager ───────────────────────────────────────────────────────
+// Commit 1: mock כולל onLine — מאפשר לטסטים לדחוף שורות דרך ה-callback הרשום.
+
+function makeMockBridgeManager(child: MockChild | null) {
+  // שמר את ה-callback הרשום כדי שהטסט יוכל לדחוף שורות
+  let registeredLineCallback: ((line: string) => void) | null = null
+
+  const bridgeManager = {
+    getChild: vi.fn(() => child),
+    markAttached: vi.fn(),
+    markDetached: vi.fn(),
+    onLine: vi.fn((_id: string, cb: (line: string) => void) => {
+      registeredLineCallback = cb
+      // מחזיר unsubscribe
+      return () => { registeredLineCallback = null }
+    }),
+  }
+
+  // helper: דחוף שורה לכל ה-subscribers הרשומים
+  function pushLine(line: string): void {
+    registeredLineCallback?.(line)
+  }
+
+  return { bridgeManager, pushLine }
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("ws-agent in-process pipe", () => {
   it("unknown agentId → close(1008, 'agent not found')", () => {
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
-    const bridgeManager = { getChild: vi.fn(() => null), markAttached: vi.fn(), markDetached: vi.fn() }
+    const { bridgeManager } = makeMockBridgeManager(null)
 
     const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
     const { ws, closeArgs } = makeMockFeWs()
@@ -82,7 +112,7 @@ describe("ws-agent in-process pipe", () => {
   it("FE message forwarded to child.stdin", async () => {
     const child = makeMockChild()
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
-    const bridgeManager = { getChild: vi.fn(() => child), markAttached: vi.fn(), markDetached: vi.fn() }
+    const { bridgeManager } = makeMockBridgeManager(child)
 
     const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
     const { ws } = makeMockFeWs()
@@ -104,7 +134,7 @@ describe("ws-agent in-process pipe", () => {
   it("$/ping keepalive → replies $/pong and does NOT forward to child.stdin", async () => {
     const child = makeMockChild()
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
-    const bridgeManager = { getChild: vi.fn(() => child), markAttached: vi.fn(), markDetached: vi.fn() }
+    const { bridgeManager } = makeMockBridgeManager(child)
 
     const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
     const { ws, sent } = makeMockFeWs()
@@ -129,18 +159,19 @@ describe("ws-agent in-process pipe", () => {
     // The FE consumes the WS stream via ndJsonStream which parses on \n boundary.
     // If BE strips \n (readline does that), the SDK waits forever for completion.
     // Therefore BE must re-append \n before sending each line.
+    // Commit 1: שורות מגיעות דרך onLine callback (לא child.stdout.write ישיר).
     const child = makeMockChild()
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
-    const bridgeManager = { getChild: vi.fn(() => child), markAttached: vi.fn(), markDetached: vi.fn() }
+    const { bridgeManager, pushLine } = makeMockBridgeManager(child)
 
     const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
     const { ws, sent } = makeMockFeWs()
 
     onConnect(ws, "agent-2")
 
-    // Send a line from child stdout (with \n as opencode emits NDJSON)
+    // דחוף שורה דרך ה-onLine callback (כמו bridge-manager reader קבוע)
     const line = JSON.stringify({ jsonrpc: "2.0", result: { sessionId: "s1" }, id: 1 })
-    child.stdout.write(`${line}\n`)
+    pushLine(line) // ← הזרקה דרך callback, לא child.stdout.write
 
     await new Promise((r) => setTimeout(r, 20))
     expect(sent).toContain(`${line}\n`)
@@ -149,7 +180,7 @@ describe("ws-agent in-process pipe", () => {
   it("MED-8: second tab same agentId → close(1008, 'agent in use by another tab')", () => {
     const child = makeMockChild()
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
-    const bridgeManager = { getChild: vi.fn(() => child), markAttached: vi.fn(), markDetached: vi.fn() }
+    const { bridgeManager } = makeMockBridgeManager(child)
 
     const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
     const { ws: ws1 } = makeMockFeWs()
@@ -171,7 +202,7 @@ describe("ws-agent in-process pipe", () => {
   it("child exit → feWs.close(1011, 'bridge closed')", async () => {
     const child = makeMockChild()
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
-    const bridgeManager = { getChild: vi.fn(() => child), markAttached: vi.fn(), markDetached: vi.fn() }
+    const { bridgeManager } = makeMockBridgeManager(child)
 
     const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
     const { ws, closeArgs } = makeMockFeWs()
@@ -186,10 +217,10 @@ describe("ws-agent in-process pipe", () => {
     expect(closeArgs.some(([, reason]) => reason === "bridge closed")).toBe(true)
   })
 
-  it("feWs close → cleanup, child NOT killed", async () => {
+  it("feWs close → cleanup (unsub called), child NOT killed", async () => {
     const child = makeMockChild()
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
-    const bridgeManager = { getChild: vi.fn(() => child), markAttached: vi.fn(), markDetached: vi.fn() }
+    const { bridgeManager } = makeMockBridgeManager(child)
 
     const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
     const { ws } = makeMockFeWs()
@@ -203,5 +234,7 @@ describe("ws-agent in-process pipe", () => {
 
     // Child should NOT be killed
     expect(child.kill).not.toHaveBeenCalled()
+    // onLine should have been called to register subscriber
+    expect(bridgeManager.onLine).toHaveBeenCalledWith("close-agent", expect.any(Function))
   })
 })

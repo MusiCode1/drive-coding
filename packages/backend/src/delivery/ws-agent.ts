@@ -17,7 +17,6 @@
  */
 
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
-import { createInterface } from "node:readline"
 import { createLogger } from "@drive-coding/core/log"
 import type { WebSocket } from "ws"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
@@ -42,9 +41,11 @@ export function createAgentWsHandler(deps: {
   orchestrator: AgentOrchestrator
   bridgeManager: {
     getChild(bridgeId: string): ChildProcessWithoutNullStreams | null
-    // ─── TEMPORARY (slice 26) ───
+    // ─── תצוגת active-agents (attached) ───
     markAttached(bridgeId: string): void
     markDetached(bridgeId: string): void
+    // ─── slice agent-busy-indicator: subscription לשורות stdout ───
+    onLine(bridgeId: string, cb: (line: string) => void): () => void
   }
 }): (ws: WebSocket, agentId: string) => void {
   // MED-8: חיבור FE WS פעיל אחד לכל agentId — מונע התנגשות מצב ACP בטאב שני
@@ -80,17 +81,15 @@ export function createAgentWsHandler(deps: {
     }
 
     activeFeWs.set(agentId, feWs)
-    deps.bridgeManager.markAttached(agentId) // ← TEMPORARY (slice 26)
+    deps.bridgeManager.markAttached(agentId) // ← תצוגת active-agents (attached)
     childLog.info({ pid: child.pid }, "WS connect → pipe attached")
 
     // ── pipeChild — ניתוב ──────────────────────────────────────────────────────
-    // מ-child.stdout (שורות NDJSON) ל-feWs.send
-    // readline מסיר את ה-\n בסוף; אנחנו חייבים להוסיף אותו מחדש כי המפענח
-    // ndJsonStream של ה-FE משתמש ב-\n כגבול הודעה (בלעדיו ה-SDK שומר
-    // בחוצץ פריים חלקי ולעולם לא מסיים את הבקשה הממתינה).
-    child.stdout.setEncoding("utf8")
-    const rl = createInterface({ input: child.stdout, crlfDelay: Infinity })
-    rl.on("line", (line) => {
+    // bridge-manager הוא הבעלים היחיד של child.stdout (reader קבוע ב-spawnInternal).
+    // אנחנו נרשמים ל-onLine ומקבלים שורות כ-callback — לא קוראים את ה-stream ישירות.
+    // readline מסיר את ה-\n בסוף; bridge-manager מעביר שורות נקיות — אנחנו מוסיפים \n
+    // כי המפענח ndJsonStream של ה-FE משתמש ב-\n כגבול הודעה.
+    const unsub = deps.bridgeManager.onLine(agentId, (line) => {
       if (line.length === 0) return
       try {
         feWs.send(`${line}\n`)
@@ -137,8 +136,8 @@ export function createAgentWsHandler(deps: {
     feWs.on("close", () => {
       childLog.info({}, "WS disconnect — detaching pipe")
       activeFeWs.delete(agentId)
-      deps.bridgeManager.markDetached(agentId) // ← TEMPORARY (slice 26)
-      rl.close()
+      deps.bridgeManager.markDetached(agentId) // ← תצוגת active-agents (attached)
+      unsub() // ← slice agent-busy-indicator: ביטול subscription ל-stdout
       child.off("exit", onChildExit)
       // חשוב: אל תקרא ל-child.kill() — ה-child שורד התנתקות של ה-FE
     })

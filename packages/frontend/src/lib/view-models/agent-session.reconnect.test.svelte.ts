@@ -177,6 +177,132 @@ describe("AgentSession — reconnect state infrastructure (Commit 0)", () => {
   })
 })
 
+describe("AgentSession — attachToLiveAgent (slice-reconnect-warm-attach Commit 0)", () => {
+  /**
+   * TDD Red tests — נכשלים לפני הוספת attachToLiveAgent ל-AgentSession.
+   *
+   * 1. הצלחה: warm מצליח → status=connected, error=null
+   * 2. כשל warm: warm מחזיר false → status=error, error מאוכלס (לא cold)
+   * 3. ניקוי error קודם: this.error=null בשורה ראשונה (אביגיל 🔴)
+   * 4. הזרקת state: #sessionId/cwd/#cliKind מוגדרים לפני קריאת warmReconnect
+   * 5. סגירת transport קיים (דפנסיבי): closeAndWait נקרא אם יש #transport
+   */
+
+  test("attachToLiveAgent exists as public method", () => {
+    const session = new AgentSession()
+    expect(typeof session.attachToLiveAgent).toBe("function")
+  })
+
+  test("attachToLiveAgent: warm success → status=connected, error=null", async () => {
+    const session = new AgentSession()
+
+    // mock #warmReconnect → true (הצלחה)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._mockWarmReconnectForTest(true)
+
+    await session.attachToLiveAgent({
+      agentId: "agent-1",
+      sessionId: "sess-1",
+      cwd: "/tmp/test",
+      cliKind: "opencode",
+    })
+
+    expect(session.status).toBe("connected")
+    expect(session.error).toBeNull()
+  })
+
+  test("attachToLiveAgent: warm failure → status=error, error non-null (no cold fallback)", async () => {
+    const session = new AgentSession()
+
+    // mock #warmReconnect → false (כשל)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._mockWarmReconnectForTest(false)
+
+    await session.attachToLiveAgent({
+      agentId: "agent-1",
+      sessionId: "sess-1",
+      cwd: "/tmp/test",
+      cliKind: "opencode",
+    })
+
+    expect(session.status).toBe("error")
+    expect(session.error).toBeTruthy()
+    // מוודא שהשגיאה לא כוללת "cold" (לא נפל ל-cold-spawn)
+    expect(session.error).not.toContain("cold-blocked")
+  })
+
+  test("attachToLiveAgent: clears previous error at start (required by design)", async () => {
+    const session = new AgentSession()
+
+    // הגדר error קודם
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._setStatusForTest("error")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any).error = "previous error"
+
+    // warm מצליח
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._mockWarmReconnectForTest(true)
+
+    await session.attachToLiveAgent({
+      agentId: "agent-1",
+      sessionId: "sess-1",
+      cwd: "/tmp/test",
+      cliKind: "opencode",
+    })
+
+    // error נוקה אפילו לפני warm (ה-mock של warmReconnect רואה אותו נוקה)
+    expect(session.error).toBeNull()
+    expect(session.status).toBe("connected")
+  })
+
+  test("attachToLiveAgent: injects sessionId/cwd/cliKind before warm call", async () => {
+    const session = new AgentSession()
+
+    let capturedSessionId: string | null = null
+    let capturedCwd: string | null = null
+
+    // mock warmReconnect שמצלם את ה-state בזמן הקריאה
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._mockWarmReconnectCapturingStateForTest((s: AgentSession) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      capturedSessionId = (s as any)._getSessionIdForTest()
+      capturedCwd = s.cwd
+      return true
+    })
+
+    await session.attachToLiveAgent({
+      agentId: "agent-1",
+      sessionId: "sess-abc",
+      cwd: "/home/user/project",
+      cliKind: "claude",
+    })
+
+    expect(capturedSessionId).toBe("sess-abc")
+    expect(capturedCwd).toBe("/home/user/project")
+  })
+
+  test("attachToLiveAgent: calls closeAndWait if existing transport (defensive)", async () => {
+    const session = new AgentSession()
+
+    const closeAndWaitSpy = vi.fn().mockResolvedValue(undefined)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._setTransportForTest({ closeAndWait: closeAndWaitSpy })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._mockWarmReconnectForTest(true)
+
+    await session.attachToLiveAgent({
+      agentId: "agent-1",
+      sessionId: "sess-1",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+
+    expect(closeAndWaitSpy).toHaveBeenCalledOnce()
+  })
+})
+
 describe("AgentSession — NBug2 root fix: #doReconnect closes live WS before warm", () => {
   /**
    * DoD#4: #doReconnect קורא closeAndWait כשיש #transport חי.

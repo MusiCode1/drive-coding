@@ -170,6 +170,18 @@ export type MessageKey =
   | "settings.theme.rose"
   | "settings.theme.slate"
   | "settings.theme.daylight"
+  // ─── active-agents ─── (slice active-agents-widget)
+  | "connect.agents.title"
+  | "connect.agents.empty"
+  | "connect.agents.refresh"
+  | "connect.agents.reconnect"
+  | "connect.agents.kill"
+  | "connect.agents.killConfirm"
+  | "connect.agents.pin"
+  | "connect.agents.unpin"
+  | "connect.agents.inUse"
+  // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
+  | "connect.agents.working"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
