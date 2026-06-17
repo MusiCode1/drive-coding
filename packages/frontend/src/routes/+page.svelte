@@ -72,8 +72,10 @@ $effect(() => {
   })
 })
 
-// C15: סדר כפתור תיקייה לפי locale — RTL (עברית): כפתור ב-order:-1 (ימין visual)
-// LTR (אנגלית): כפתור ב-order:1 (ימין visual, אחרי ה-input)
+// C15: dir מפורש לפי locale — כפתור תיקייה ב-order:-1 תמיד (ראשון בflex).
+// RTL (dir="rtl"): flex מימין לשמאל → ראשון=ימין ויזואלי. ✓
+// LTR (dir="ltr"): flex משמאל לימין → ראשון=שמאל ויזואלי. ✓
+// dir="auto" הוסר: היה מושפע מתוכן הנתיב (LTR) ולא מה-locale.
 const isRtl = $derived(settings.locale === "he")
 
 // ─── state עבור תפריט בחירת סשן (session picker) ───
@@ -171,8 +173,11 @@ async function onSubmit(e: SubmitEvent) {
 
     <label>
       <span>{t("connect.cwd.label")}</span>
-      <!-- C15: dir="auto" + margin-inline-start:auto על הכפתור → תמיד ב-inline-end -->
-      <div class="cwd-row" dir="auto">
+      <!-- C15: dir מפורש לפי locale (לא dir="auto" — שמושפע מתוכן הנתיב).
+           כפתור תיקייה עם order:-1 תמיד = ראשון בflex.
+           RTL (עברית): flex מימין לשמאל → ראשון=ימין ויזואלי. ✓
+           LTR (אנגלית): flex משמאל לימין → ראשון=שמאל ויזואלי. ✓ -->
+      <div class="cwd-row" dir={isRtl ? "rtl" : "ltr"}>
         <input
           type="text"
           bind:value={cwd}
@@ -180,13 +185,11 @@ async function onSubmit(e: SubmitEvent) {
           dir="ltr"
           disabled={session.status === "connecting"}
         />
-        <!-- C15: כפתור תיקייה — order דינמי לפי locale
-             RTL (עברית): order=-1 → מופיע לפני ה-input ב-flex = visual-right
-             LTR (אנגלית): order=1 → מופיע אחרי ה-input = visual-right -->
+        <!-- C15: order:-1 → תמיד ראשון בflex: LTR=שמאל, RTL=ימין -->
         <button
           type="button"
           class="folder-btn"
-          style="order: {isRtl ? -1 : 1}"
+          style="order: -1"
           onclick={() => modals.openFolder()}
           disabled={session.status === "connecting"}
           aria-label={t("settings.folder.pick")}
