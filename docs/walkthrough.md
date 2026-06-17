@@ -5318,3 +5318,23 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 - `pnpm typecheck` — ירוק
 - `pnpm lint:i18n` — ירוק
 - הרצה ידנית: הסרת build → `PORT=4099 node scripts/dc-launch.mjs` → בנה FE אוטומטית → server עלה → `/` 200 HTML, `/api/agents` JSON
+
+## slice-bunx-single-command — Commit 2: preflight UX
+
+**תאריך**: 2026-06-17
+
+### מה בוצע
+- עדכון `packages/backend/src/bin/drive-coding.ts`:
+  1. בדיקת זמינות agent: `OPENCODE_BIN ?? "opencode"` דרך `which`/`where` (cross-platform)
+  2. אם חסר — `console.warn` עם הודעת הכוונה (לא חוסם)
+  3. `console.log` עם ה-URL לפני ה-import
+
+### בדיקות
+- `pnpm typecheck` — ירוק
+- `pnpm lint:i18n` — ירוק
+- הרצה רגילה: מדפיס `[drive-coding] Starting — http://localhost:PORT`
+- עם `OPENCODE_BIN=/nonexistent/opencode`: מדפיס warning ועולה עדיין
+
+### הערה — DoD #7 (Windows paths)
+- `import.meta.dirname` + `path.resolve` cross-platform — אומת על Linux.
+- אימות בפועל על Windows נשאר ל-Tama (כפי שצוין בהנחיות).
