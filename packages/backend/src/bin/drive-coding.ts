@@ -1,12 +1,18 @@
 #!/usr/bin/env bun
 // packages/backend/src/bin/drive-coding.ts
 import { execFileSync } from "node:child_process"
+import { existsSync } from "node:fs"
 import path from "node:path"
 
-// FE build sits at packages/frontend/build.
-// This file is at packages/backend/src/bin → go up three levels (bin→src→backend→packages),
-// then into frontend/build.
-const feBuildDir = path.resolve(import.meta.dirname, "../../../frontend/build")
+// FE static directory — two candidates, whichever exists first wins:
+//   1. Bundled release layout: <pkg>/dist/drive-coding.js → ../frontend-dist = <pkg>/frontend-dist
+//   2. Dev/src layout:         packages/backend/src/bin  → ../../../frontend/build
+// Fallback (neither exists yet — first-run before FE build): dev path, consistent with old behavior.
+const feBuildDir =
+  [
+    path.resolve(import.meta.dirname, "../frontend-dist"),        // bundled: dist/ → frontend-dist/
+    path.resolve(import.meta.dirname, "../../../frontend/build"), // dev: src/bin → packages/frontend/build
+  ].find(existsSync) ?? path.resolve(import.meta.dirname, "../../../frontend/build")
 
 // Do not override values the user set explicitly (env > default).
 process.env.FE_STATIC_DIR ??= feBuildDir
