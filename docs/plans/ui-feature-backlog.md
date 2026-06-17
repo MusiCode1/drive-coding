@@ -96,6 +96,26 @@ message timeline/x-ray · web-preview browser frame · image-preview popover · 
 6. **thinking-effort** מתחבר ישירות ל-config-options (`thought_level`) — לא feature נפרד.
 7. **תצוגת TODO / plan list** 🔴 — כש-ה-agent מייצר תוכנית/משימות (Claude `TodoWrite`, opencode todos), להציג כצ'ק-ליסט מתקדם (done/pending) ולא ככלי גנרי. **תלוי-ספק** (רק CLIs שתומכים). מתחבר ל-`plan.update` בחוזה — **דלת 3 ב-`canonical-mapping-gaps`, עדיין לא ממופה** (TodoWrite נופל כיום ל-`kind:"other"`). כלומר דורש גם הרחבת-מיפוי בחוזה וגם renderer ב-UI.
 
+## 7. תוספות מהתנסות בממשק (2026-06-18)
+
+### Tool rendering
+
++ 🔴 **Markdown ב-tool output** — פלט כלי לא מרונדר כ-markdown (מוצג עם ```` ``` ```` גולמיים). כמו בבועת ההודעה. מתחבר ל-batch message-polish (markdown+code-block). `ToolBubble.svelte`
++ 🟢 **תצוגת subagent/task** — פרמטרים מוצגים כ-JSON גולמי; לסדר ל-renderer קריא. reference: task renderer ב-CodeNomad. `ToolBubble.svelte`
++ 🟢 **זהות כלי** — לוגו/תווית לכל כלי (Bash, Read, …). **צריך דיון** על העיצוב.
+
+### Audio / מצב מושתק (חשוב לעקביות)
+
++ 🔴 **muted → אין צלילים** — במצב מושתק לא להשמיע audio cues. עקביות.
++ 🔴 **muted → להסתיר כפתורי replay/speak** — אין טעם בכפתור השמעה-מחדש כשמושתק.
+
+### מסך כניסה / connect
+
++ 🟢 **auto-refresh processes** — לרענן מדי פעם את רשימת ה-processes בטופס הכניסה. `ActiveProcessesPanel.svelte`
++ 🟢 **כפתור רענון לסשנים** — אייקון refresh בתחילת שורת הסשנים. `SessionPicker.svelte`
++ 🟢 **שורת סשנים תמיד מוצגת** — אם אין סשנים, מצב Disabled (לא מוסתרת). `SessionPicker.svelte`
++ 🐛 **מיקום כפתור התיקייה לפי שפה** — עברית→ימין, אנגלית→שמאל (logical positioning; skill `rtl-adaptation`). `FolderPickerDialog`/connect
+
 ## תעדוף מוצע (ראשוני)
 
 1. **Message polish** (1a–1d) — מהיר, גלוי, עצמאי.
