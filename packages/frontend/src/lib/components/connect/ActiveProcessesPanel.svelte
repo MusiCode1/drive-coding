@@ -24,6 +24,15 @@ const t = i18n.t
 let confirmingId = $state<string | null>(null)
 let confirmTimer = $state<ReturnType<typeof setTimeout> | null>(null)
 
+// C12: auto-refresh כל ~12s; לא מרענן אם הפאנל מוסתר (document.hidden)
+$effect(() => {
+  const interval = setInterval(() => {
+    if (typeof document !== "undefined" && document.hidden) return
+    void activeAgents.refresh()
+  }, 12_000)
+  return () => clearInterval(interval)
+})
+
 function formatDate(iso: string): string {
   if (!iso) return ""
   try {

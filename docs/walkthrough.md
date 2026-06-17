@@ -1,3 +1,23 @@
+## 2026-06-18 — feat(frontend): slice-ui-polish-batch — Phase 3: Connect screen (C11,C12,C14,C15)
+
+### מה בוצע?
+
+**C11** — `SessionPicker.svelte`: label+select תמיד מוצגים; disabled כשאין sessions/loading. כפתור ↺ refresh לפני ה-select (קורא `onload`, disabled ב-loading). i18n: `sessions.refresh`.
+**C12** — `ActiveProcessesPanel.svelte`: `$effect` עם interval 12s → `activeAgents.refresh()`; ניקוי ב-cleanup; skip אם `document.hidden`.
+**C13** — נדחה (out-of-scope) — לא בוצע.
+**C14** — `routes/+page.svelte`: `$effect` שעוקב אחרי cwd+cliKind ומנקה `session.error` כשהמשתמש תיקן (שגיאה לא sticky).
+**C15** — `routes/+page.svelte`: כפתור תיקייה עם `order` דינמי לפי locale — RTL (עברית): `order:-1` → visual-right; LTR (אנגלית): `order:1` → visual-right.
+
+### חריגות
+C13 נדחה כפי שצוין בבריף (נוגע ב-agent-session VM — אזור P1d).
+
+### בדיקות
+- typecheck frontend: נקי
+- tests: 239/239 ירוקים (27 test files)
+- lint:i18n: ירוק
+
+---
+
 ## 2026-06-18 — feat(frontend): slice-ui-polish-batch — Phase 2: Muted consistency (C7-C10)
 
 ### מה בוצע?

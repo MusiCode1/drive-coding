@@ -68,6 +68,8 @@ export const he: Catalog = {
   "sessions.label": "סשן קיים",
   "sessions.startNew": "חדש",
   "sessions.error": "שגיאה בטעינה",
+  // ─── sessions-refresh ─── (ui-polish-batch · C11)
+  "sessions.refresh": "רענן",
   // ─── settings ─── (slice 9)
   "settings.title": "הגדרות",
   "settings.beUrl.label": "כתובת השרת (BE URL)",

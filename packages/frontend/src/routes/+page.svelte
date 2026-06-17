@@ -60,6 +60,20 @@ $effect(() => {
   folderWasOpen = modals.folderOpen
 })
 
+// C14: ניקוי שגיאה reactive — כשה-cwd משתנה (המשתמש תיקן) מנקה את השגיאה
+// כך שה-error לא יישאר sticky לאחר תיקון הנתיב או reconnect.
+// session.error מנוקה גם ע"י ה-VM לפני כל ניסיון התחברות חדש (connect/attach).
+$effect(() => {
+  // track cwd + cliKind — כל שינוי מנקה שגיאה ישנה
+  void cwd
+  void cliKind
+  if (session.error !== null) session.error = null
+})
+
+// C15: סדר כפתור תיקייה לפי locale — RTL (עברית): כפתור ב-order:-1 (ימין visual)
+// LTR (אנגלית): כפתור ב-order:1 (ימין visual, אחרי ה-input)
+const isRtl = $derived(settings.locale === "he")
+
 // ─── state עבור תפריט בחירת סשן (session picker) ───
 let sessions = $state<SessionInfo[]>([])
 let sessionsLoading = $state(false)
@@ -155,7 +169,8 @@ async function onSubmit(e: SubmitEvent) {
 
     <label>
       <span>{t("connect.cwd.label")}</span>
-      <div class="cwd-row">
+      <!-- C15: dir="auto" + margin-inline-start:auto על הכפתור → תמיד ב-inline-end -->
+      <div class="cwd-row" dir="auto">
         <input
           type="text"
           bind:value={cwd}
@@ -163,10 +178,13 @@ async function onSubmit(e: SubmitEvent) {
           dir="ltr"
           disabled={session.status === "connecting"}
         />
-        <!-- C10: פותח את בורר התיקיות (FolderPickerDialog) -->
+        <!-- C15: כפתור תיקייה — order דינמי לפי locale
+             RTL (עברית): order=-1 → מופיע לפני ה-input ב-flex = visual-right
+             LTR (אנגלית): order=1 → מופיע אחרי ה-input = visual-right -->
         <button
           type="button"
           class="folder-btn"
+          style="order: {isRtl ? -1 : 1}"
           onclick={() => modals.openFolder()}
           disabled={session.status === "connecting"}
           aria-label={t("settings.folder.pick")}
@@ -263,7 +281,7 @@ async function onSubmit(e: SubmitEvent) {
     box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.2);
   }
 
-  /* C10: שורת cwd — input גמיש + כפתור תיקייה */
+  /* C10+C15: שורת cwd — input גמיש + כפתור תיקייה */
   .cwd-row {
     display: flex;
     gap: 0.5rem;

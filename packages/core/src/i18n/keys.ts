@@ -79,6 +79,8 @@ export type MessageKey =
   | "sessions.label"
   | "sessions.startNew"
   | "sessions.error"
+  // ─── sessions-refresh ─── (ui-polish-batch · C11)
+  | "sessions.refresh"
   // ─── settings ─── (slice 9)
   | "settings.title"
   | "settings.beUrl.label"

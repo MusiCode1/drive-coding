@@ -72,6 +72,8 @@ export const en: Catalog = {
   "sessions.label": "Existing session",
   "sessions.startNew": "New",
   "sessions.error": "Failed to load",
+  // ─── sessions-refresh ─── (ui-polish-batch · C11)
+  "sessions.refresh": "Refresh",
   // ─── settings ─── (slice 9)
   "settings.title": "Settings",
   "settings.beUrl.label": "Backend URL",
