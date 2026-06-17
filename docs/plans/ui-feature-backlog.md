@@ -42,7 +42,57 @@
 
 ## 5. ממצאי סריקה — CodeNomad / opencode
 
-> טרם בוצע. הסריקה תוסיף פיצ'רים סטנדרטיים שעדיין לא ברשימה (לדוגמה צפויה: edit/resend, retry, scroll-to-bottom, attachments, file mentions, message actions menu, וכו'). יעודכן לאחר הסריקה.
+נסרק 2026-06-18. מקורות: `CodeNomad/packages/ui/src/components/`, `openwork/packages/app/src/`.
+סימון: 🔴 חדש-וחשוב · 🟢 nice-to-have · ✅ כבר-קיים/ב-roadmap · ⬜ skip ל-MVP.
+
+### תיבת קלט
++ 🔴 **attachments מלא** — drag-drop + paste + דחיסה אוטומטית (≤8MB, JPEG/2048px). מרחיב את 3a. `composer.tsx`
++ 🟢 draft persistence (טיוטה+attachments בין sessions). `instance-shell2.tsx`
++ 🟢 prompt history ↑/↓ (מחזור הודעות קודמות, per-mode). `prompt-input.tsx` / `composer.tsx`
++ 🟢 `@` mentions (agents + files) — dropdown עם chips. `composer.tsx`
++ 🟢 shell mode (`!` בתחילת קלט → shell, Esc לחזור). `composer.tsx`
++ ✅ thinking-effort picker (None/Low/Med/High/X-High) — **= category `thought_level`** של config-options (Slice vnext-C). `thinking-selector.tsx`
+
+### הודעות
++ 🔴 **streaming/typing indicator** — feedback חיוני (בעיקר ל-voice). `message-item.tsx`
++ 🔴 **message error display** inline (auth / output-length / abort). `message-item.tsx`
++ 🔴 **reasoning/thinking** expandable block (opus/o1). `message-part.tsx` / `thinking-block.tsx`
++ 🟢 revert/edit user message · fork session at message. `message-item.tsx`
++ 🟢 delete-messages-up-to (ניהול context). `message-item.tsx`
++ 🟢 agent/model metadata per message.
+
+### Sessions
++ 🔴 **context usage** — token + cost meter / progress bar. `context-usage-panel.tsx` · `context-meter.tsx`
++ 🟢 session rename. `session-rename-dialog.tsx`
++ ✅ retry/busy status — כבר קיים (busy indicator).
+
+### Tools (drive-coding כבר עם slice 16 tool-rendering)
++ 🔴 **permission/question inline blocks** — agent מבקש אישור להרצת כלי. **החוזה כבר תומך** (`respondToPermission`). בטיחות. `tool-call/permission-block.tsx`
++ 🔴 tool status indicator (pending/running/done). `tool-call.tsx`
++ 🟢 diff renderer (split/unified) · ANSI terminal · 18 tool-specific renderers (bash/read/write/edit/patch/task/todo/webfetch). richness מעבר לקיים. `tool-call/renderers/`
+
+### Layout / Voice
++ ✅ auto-scroll + jump-to-bottom = Track C slice 5 (smart scroll). `virtual-follow-list.tsx`
++ ✅ model/agent selector = slice 23 (done). `model-selector.tsx`
++ 🔴 **TTS per-message speak button** (ליבת voice-first). `speech-action-button.tsx`
++ 🔴 provider-auth modal (ל-multi-provider). `provider-auth/`
++ 🟢 command palette (Cmd+K) · keyboard shortcuts. `command-palette.tsx`
+
+### opencode-ספציפי
++ slash commands עם sources (`command`/`mcp`/`skill`) + fuzzy search + chips + kbd-nav — **מחדד את 3b**. `composer.tsx`
++ progress dots (todos) · context panel (files/plugins/mcp/skills).
+
+### ⬜ Skip ל-MVP
+message timeline/x-ray · web-preview browser frame · image-preview popover · session idle-fade.
+
+## 6. פריטים בולטים שצצו מהסריקה (לא היו ברשימה — לתעדף)
+
+1. **Permission/question inline blocks** — בטיחות; החוזה כבר תומך (`respondToPermission`).
+2. **Feedback indicators** — streaming/typing + error display + tool-status (שלושתם בסיסיים).
+3. **Context usage** (tokens/cost) — חשוב למשתמש שמשלם.
+4. **Thinking/reasoning display** — לקראת opus/o1.
+5. **TTS per-message speak button** — ליבת voice-first.
+6. **thinking-effort** מתחבר ישירות ל-config-options (`thought_level`) — לא feature נפרד.
 
 ## תעדוף מוצע (ראשוני)
 
