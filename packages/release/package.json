@@ -1,0 +1,17 @@
+{
+  "name": "drive-coding",
+  "version": "0.1.0",
+  "description": "AI-powered coding assistant — single-command server + CLI",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "drive-coding": "./dist/drive-coding.js" },
+  "files": ["dist", "plugins", "frontend-dist"],
+  "scripts": {
+    "bundle": "node scripts/build.mjs",
+    "prepack": "node scripts/build.mjs"
+  },
+  "dependencies": {
+    "pino": "^10.3.1",
+    "pino-pretty": "^13.1.3"
+  }
+}

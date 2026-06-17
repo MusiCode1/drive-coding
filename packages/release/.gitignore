@@ -1,0 +1,4 @@
+dist/
+frontend-dist/
+plugins/
+*.tgz
