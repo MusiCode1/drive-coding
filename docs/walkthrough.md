@@ -1,3 +1,52 @@
+## 2026-06-17 21:25 — build(frontend): source maps ב-build של פריסת dev
+
+### מה בוצע?
+
+כדי לחקור את אזהרות ה-`[Violation] 'message' handler took ~170ms` (ה-chunks מוקטנים ו-hashed, `DFDqgTZT.js`, ולא ניתן למפות חזרה למקור) — הופעלו source maps ב-build של פריסת ה-dev בלבד.
+
+- `vite.config.ts`: נוסף `build.sourcemap: process.env.FE_SOURCEMAP === "true"`.
+- `deploy/systemd/voice-acp-dev.service`: נוסף `Environment=FE_SOURCEMAP=true` — ה-`ExecStartPre` (`pnpm build`) ירש אותו. `voice-acp-main.service` **לא** מגדיר אותו → ב-prod source maps כבויים (לא לחשוף מקור, לא לנפח build).
+- `docs/running-locally.md`: סעיף על בנייה עם `FE_SOURCEMAP=true` לדיבוג מקומי.
+
+### החלטות ארכיטקטורה
+- **env-gated, לא always-on**: source maps רק ב-dev/staging. נבחר env var (`FE_SOURCEMAP`) בעקבות הדפוס הקיים ב-units (`FE_STATIC_DIR`, `CORS_ORIGINS`) — main ו-dev רצים אותו `pnpm build`, וההבדל היחיד הוא ה-env שה-unit מזריק.
+
+---
+
+## 2026-06-17 20:03 — fix(frontend): סינון control-frames של keepalive ($/pong) לפני ספריית ה-ACP
+
+### מה בוצע?
+
+תיקון נקודתי: ספריית הלקוח החיצונית של ה-ACP (`@agentclientprotocol/sdk`) זרקה `Error handling notification ... Method not found: $/pong (-32601)`. המקור — ה-heartbeat של ה-WS: ה-FE שולח `$/ping` כל 25 שניות (ws-transport.ts), ה-BE מיירט ומחזיר `$/pong` כ-frame עצמאי (ws-agent.ts), וה-`$/pong` דלף לתוך זרם ה-JSON-RPC של ספריית ה-ACP שאינה מכירה method כזה.
+
+**1. סינון בצד הצרכן (ws-to-streams.ts)**
+- נוספה פונקציה `isAcpControlFrame(text)` — true עבור frame שמנתח ל-JSON object עם `method` שמתחיל ב-`"$/"` ו-`id === undefined` (notification בקרה בלבד).
+- ב-`readable` (message listener), לפני `controller.enqueue`, נוסף `if (isAcpControlFrame(text)) return` — ה-frame מסונן ולא מגיע לספריית ה-ACP.
+- עודכנו ה-docstring העליון וההערות הפנימיות (במקום "ללא סינון").
+
+**2. fast-path ביצועים (ws-to-streams.ts)**
+- `isAcpControlFrame` פותח ב-`if (!text.includes("$/")) return false` — בדיקת substring זולה לפני `trim()`+`JSON.parse`. מונע double-parse (שלי + של ה-SDK) על כל frame נכנס, כולל chunks גדולים של תשובות agent (שלא מכילים `"$/"`). תוקן בעקבות אזהרות `[Violation] 'message' handler took ~170ms` שנצפו חי — ה-parse הכפול העמיס את ה-message handler של ה-WS.
+
+**3. טסטים (ws-to-streams.test.ts — קובץ חדש)**
+- 8 טסטים: `$/pong`/`$/ping` מסוננים, `$/pong` כ-ArrayBuffer מסונן (נתיב production `binaryType="arraybuffer"`), `session/update` עובר, request עם `id` עובר, frame חלקי נשמר, ערבוב, והודעה אמיתית שמכילה `"$/"` בתוכן עוברת (fast-path לא over-filtering).
+
+### החלטות ארכיטקטורה
+- **סינון ב-FE ולא ביטול ה-`$/pong` ב-BE**: נבחר לסנן בצד הצרכן (גישה A) במקום להסיר את ייצור ה-pong ב-ws-agent.ts (גישה B), לפי בקשת המשתמש. יתרון: מגן באופן כללי מפני כל control-frame עתידי שעלול לדלוף לזרם ה-ACP.
+- **סינון גורף של כל `$/...` notification (לא רק `$/pong`)**: אומת ע"י אביגיל מול הספרייה בפועל — ה-schema של `@agentclientprotocol/sdk@0.21.1` לא מגדיר אף method עם prefix `$/`, וה-client לא רושם `extNotification` handler, כך שכל `$/` frame היה ממילא קורס ב-`-32601`. הסינון אפוא בטוח יותר מהמצב הקודם.
+
+### מעקפים ופתרונות
+- **התנאי `id === undefined`**: דרוש כדי לא לסנן בטעות requests לגיטימיים עם method `$/...` (למשל `$/cancelRequest`) — רק notifications מסוננים.
+- **`JSON.parse` נכשל → `false` → מעביר הלאה**: שומר על ה-buffering של ה-SDK על גבולות `\n`. הודעת ACP יחידה יכולה להתפצל על פני כמה frames של WS; frame חלקי לא ינותח כ-JSON תקין ויעבור ללא שינוי, במקום להישבר.
+
+### בדיקות
+- typecheck: ירוק (`tsc --build`)
+- ws-to-streams.test.ts: 8/8 ירוקים
+- ws-transport.test.ts (קיים): 5/5 ירוקים
+- **אימות חי E2E** (build → BE מגיש static עם `FE_STATIC_DIR`, same-origin, CLI=claude, playwright): session ששרד 110+ שניות (4+ מחזורי heartbeat) — **0 מופעי `$/pong`/`Method not found`** בקונסול. השגיאות היחידות: 401 על `/proxy/elevenlabs` (TTS ללא OneCLI, צפוי).
+- lint: ה-380 שגיאות CRLF הן baseline ידוע של הפרויקט (biome מול core.autocrlf=true ב-Windows) — לא רגרסיה. ב-repo כל הקבצים נשמרים LF (אומת ב-`git ls-files --eol`).
+
+---
+
 ## 2026-06-16 — slice-agent-busy-indicator — אינדיקטור busy/idle לתהליכים
 
 ### מה בוצע?
