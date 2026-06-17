@@ -5305,3 +5305,16 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 
 ### חריגות
 - `pnpm lint` כשל ב-pre-existing code (223 errors) — לא קשור ל-slice זה. אומת שהקובץ החדש נקי.
+
+## slice-bunx-single-command — Commit 1: launcher script + root start
+
+**תאריך**: 2026-06-17
+
+### מה בוצע
+- נוצר `scripts/dc-launch.mjs` — בודק אם `packages/frontend/build/index.html` קיים; אם לא — מריץ `pnpm --filter @drive-coding/frontend-v2 build`; ואז spawn של bin entry.
+- נוסף `"start": "node scripts/dc-launch.mjs"` ל-root `package.json`. שונה מ-backend `start` הקיים (BE-only).
+
+### בדיקות
+- `pnpm typecheck` — ירוק
+- `pnpm lint:i18n` — ירוק
+- הרצה ידנית: הסרת build → `PORT=4099 node scripts/dc-launch.mjs` → בנה FE אוטומטית → server עלה → `/` 200 HTML, `/api/agents` JSON
