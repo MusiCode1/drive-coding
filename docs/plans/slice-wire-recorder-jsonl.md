@@ -1,7 +1,7 @@
 # Slice wire-recorder-jsonl — WS Wire Recorder (NDJSON file tap) — תוכנית
 
 > **תאריך**: 2026-06-17
-> **סטטוס**: מאושר (אביגיל: READY, 2 סבבים)
+> **סטטוס**: הושלם (branch: slice-wire-recorder-jsonl, 3 commits, ממתין למזוג)
 > **Complexity**: 4/10 (verifier: light)
 > **תלויות (`depends_on`)**: [] — בנוי ישירות על dev (נקודות ה-tap כבר קיימות מ-Phase 3 + slice-18)
 > **Base**: dev
@@ -449,4 +449,6 @@ GO / PARTIAL / NO-GO.
 
 > ה-executor מתעד פה כל סטייה מה-brief ולמה.
 
-- (אין עדיין)
+- **core dist חסר בworktree חדש** — פתרון: `pnpm --filter @drive-coding/core build` (gotcha מתועד).
+- **בדיקה ידנית חיה** (DoD §5 #4-6) — לא אומתה ב-Windows (onecli נדרש); תועד ב-commit message ובwalkthrough כ"ממתין ל-verifier/Tama".
+- **tests/ws-agent-pipe.test.ts עודכן** — הטסטים הקיימים לא כללו wireRecorder ב-deps. הוספת noopWireRecorder לכל הקריאות. זה חלק מ-approach integration (Commit 2) ולא סטייה מה-brief.

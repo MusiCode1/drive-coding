@@ -158,6 +158,31 @@ How to tell if the BE is missing OneCLI: the FE shows `TTS failed: 401`
 and the BE log shows `proxy upstream non-2xx` warnings (since the
 observability commit `a76e7c1`).
 
+## Wire tracing & recording (debug)
+
+Two passive taps on the WS pipe (`packages/backend/src/delivery/ws-agent.ts`), both
+**off by default**, neither alters the stream (each runs *after* the send/write):
+
+- **`LOG_WIRE=ws`** — live wire summary to the BE stdout via pino (slice-18).
+  `debug` → `{dir,type,id}`; `trace` → full decoded frame. Best for watching traffic
+  inline with the rest of the BE log timeline.
+- **`WIRE_RECORD=1`** — records **every raw frame** to
+  `data/wire-recordings/<agentId>-<ts>.jsonl` — one `{ts,dir,raw}` line per frame,
+  a clean file per agent session (slice wire-recorder-jsonl). Best for offline
+  analysis of anomalies (empty chunks, duplicate ids) with `jq`. Works live too:
+  `tail -f data/wire-recordings/*.jsonl | jq`.
+
+```bash
+# record a session — Windows: bun direct (onecli can't spawn bun; TTS proxy unneeded here)
+cd packages/backend
+WIRE_RECORD=1 PORT=4000 bun src/server.ts
+# ...connect an agent + prompt, then analyze. e.g. every thought-chunk text
+# (we found claude sends them ALL empty — an upstream ACP-adapter issue, BE is transparent):
+jq -r 'select(.raw|fromjson|.params.update.sessionUpdate=="agent_thought_chunk") | (.raw|fromjson|.params.update.content.text)' data/wire-recordings/*.jsonl
+```
+
+`data/` is gitignored — recordings never enter git.
+
 ## What NOT to do
 
 - No secrets in code (`.env` is gitignored)
