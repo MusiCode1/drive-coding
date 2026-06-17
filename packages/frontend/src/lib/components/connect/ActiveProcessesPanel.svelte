@@ -106,7 +106,7 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
             <div class="agent-info">
               <span class="status-dot" style="background:{statusColor(agent.status)}"></span>
               <span class="cli-badge">{agent.cliKind}</span>
-              <span class="cwd" title={agent.cwd}>{agent.cwd}</span>
+              <span class="cwd" title={agent.cwd}><bdi>{agent.cwd}</bdi></span>
             </div>
 
             <div class="agent-actions">
@@ -299,6 +299,14 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     white-space: nowrap;
     flex: 1;
     min-width: 0;
+    /* קיצוץ מתחילת הנתיב: בסיס rtl ממקם את ה-ellipsis בהתחלה
+       כך שזנב הנתיב (שם התיקייה בפועל) תמיד נראה. ה-<bdi> שומר
+       על סדר ה-LTR התקין של הנתיב עצמו. */
+    direction: rtl;
+    text-align: left;
+  }
+
+  .cwd > :global(bdi) {
     direction: ltr;
   }
 
