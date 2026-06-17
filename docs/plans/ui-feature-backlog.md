@@ -108,6 +108,7 @@ message timeline/x-ray · web-preview browser frame · image-preview popover · 
 
 + 🔴 **muted → אין צלילים** — במצב מושתק לא להשמיע audio cues. עקביות.
 + 🔴 **muted → להסתיר כפתורי replay/speak** — אין טעם בכפתור השמעה-מחדש כשמושתק.
++ 🔴 **שמירת מצב ההשתקה** — ה-mute הראשי הוא `speaker.enabled` (`$state` in-memory, מתחיל `true`); **לא נשמר** ל-localStorage → מתאפס לקול-פעיל בכל רענון/כרטיסייה חדשה (לא עקבי עם שאר ההעדפות שכן נשמרות). להוסיף שדה ל-`Persisted` ב-`settings.svelte.ts` (יש שם הוראות הוספת-שדה) ולחווט את `speaker.enabled`. `speaker.svelte.ts:77,184`
 
 ### מסך כניסה / connect
 
