@@ -116,6 +116,10 @@ message timeline/x-ray · web-preview browser frame · image-preview popover · 
 + 🟢 **שורת סשנים תמיד מוצגת** — אם אין סשנים, מצב Disabled (לא מוסתרת). `SessionPicker.svelte`
 + 🐛 **מיקום כפתור התיקייה לפי שפה** — עברית→ימין, אנגלית→שמאל (logical positioning; skill `rtl-adaptation`). `FolderPickerDialog`/connect
 
+### מצב שגיאה (error state) — רוחבי
+
++ 🔴 **ניקוי שגיאות אוטומטי** — שגיאות (חיבור / `ACP initialize timeout` / טעינת קולות) נשארות sticky **לנצח**. צריך: השגיאה מופיעה בניתוק/כשל, ו**נעלמת אוטומטית** ברגע שהמצב מתוקן (חיבור מחדש / טעינה מוצלחת). כלומר השגיאה reactive ל-state הנוכחי, לא הודעה קבועה שנשארת.
+
 ## תעדוף מוצע (ראשוני)
 
 1. **Message polish** (1a–1d) — מהיר, גלוי, עצמאי.
