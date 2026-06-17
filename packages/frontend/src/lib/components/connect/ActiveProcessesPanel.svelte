@@ -38,6 +38,13 @@ function formatDate(iso: string): string {
   }
 }
 
+/** שם התיקייה האחרונה בנתיב (basename) — להצגה בולטת בשורה העליונה. */
+function folderName(cwd: string): string {
+  const trimmed = cwd.replace(/\/+$/, "")
+  const name = trimmed.split("/").pop()
+  return name || cwd
+}
+
 function statusColor(status: AgentPublic["status"]): string {
   switch (status) {
     case "ready":
@@ -106,7 +113,7 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
             <div class="agent-info">
               <span class="status-dot" style="background:{statusColor(agent.status)}"></span>
               <span class="cli-badge">{agent.cliKind}</span>
-              <span class="cwd" title={agent.cwd}><bdi>{agent.cwd}</bdi></span>
+              <span class="folder-name" title={agent.cwd}><bdi>{folderName(agent.cwd)}</bdi></span>
             </div>
 
             <div class="agent-actions">
@@ -151,6 +158,8 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
           </div>
 
           <div class="agent-meta">
+            <span class="cwd-full" title={agent.cwd}><bdi>{agent.cwd}</bdi></span>
+            <span class="meta-sep">·</span>
             {#if agent.busy}
               <span class="busy-indicator" aria-label={t("connect.agents.working")}>
                 <span class="busy-dot"></span>
@@ -264,10 +273,17 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
 
   .agent-meta {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    align-items: center;
     gap: 0.4rem;
     font-size: 0.72rem;
     color: var(--fg-dim);
+  }
+
+  /* הנתיב (.cwd-full) הוא היחיד שמתקצר; שאר המטא (תאריך/pid/סשן)
+     נשארים בגודלם באותה שורה. */
+  .agent-meta > :not(.cwd-full) {
+    flex-shrink: 0;
   }
 
   .meta-sep {
@@ -292,21 +308,32 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     flex-shrink: 0;
   }
 
-  .cwd {
+  /* שם התיקייה (basename) — בולט בשורה העליונה */
+  .folder-name {
     color: var(--fg);
+    font-weight: 600;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
-    /* קיצוץ מתחילת הנתיב: בסיס rtl ממקם את ה-ellipsis בהתחלה
-       כך שזנב הנתיב (שם התיקייה בפועל) תמיד נראה. ה-<bdi> שומר
-       על סדר ה-LTR התקין של הנתיב עצמו. */
+  }
+
+  /* הנתיב המלא — בשורת המטא התחתונה. קיצוץ מתחילת הנתיב: בסיס rtl
+     ממקם את ה-ellipsis בהתחלה כך שזנב הנתיב תמיד נראה; ה-<bdi> שומר
+     על סדר ה-LTR התקין של הנתיב עצמו. */
+  .cwd-full {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1 1 auto;
+    min-width: 0;
     direction: rtl;
     text-align: left;
   }
 
-  .cwd > :global(bdi) {
+  .folder-name > :global(bdi),
+  .cwd-full > :global(bdi) {
     direction: ltr;
   }
 
