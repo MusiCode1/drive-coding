@@ -1,3 +1,40 @@
+## 2026-06-17 — slice-release-package — release package מבונדל (bunx-compatible)
+
+### מה בוצע?
+
+**slice**: slice-release-package (base: dev 870ea02)
+**commits**: 3 (287a2c7, 1e09ded, 2390aeb)
+
+**Commit 0 — feat(release): scaffold packages/release (integration)**
+- packages/release/package.json: name=drive-coding, v0.1.0, bin→dist/drive-coding.js, deps={pino^10.3.1,pino-pretty^13.1.3}, script=bundle (לא build כדי לא להיכלל ב-pnpm -r run build), prepack=node scripts/build.mjs.
+- packages/release/.gitignore: dist/ frontend-dist/ plugins/ *.tgz.
+- pnpm install הוסיף pino/pino-pretty ל-lockfile.
+
+**Commit 1 — feat(release): build.mjs + 2-candidate FE cascade ב-bin (integration; verifier-phase ✓)**
+- packages/release/scripts/build.mjs: שלב 1 pnpm FE build, שלב 2 cpSync frontend-dist, שלב 3 cpSync plugins, שלב 4 bun build --external pino --external pino-pretty.
+- packages/backend/src/bin/drive-coding.ts: הוסף existsSync import; cascade דו-מועמדי: ["../frontend-dist","../../../frontend/build"].find(existsSync) — מועמד 1=release layout, מועמד 2=dev layout.
+- verifier-phase: GO, 0 findings.
+
+**Commit 2 — feat(release): verify-pack.sh — end-to-end bunx smoke test (manual)**
+- packages/release/scripts/verify-pack.sh: npm pack → tarball checks → bun add <tgz> → bunx drive-coding → GET / 200 + /api/agents.
+- בדיקה ידנית: cascade בחר node_modules/drive-coding/frontend-dist ✓, GET / 200 ✓, /api/agents {"agents":[]} ✓.
+
+### חריגות
+- --sourcemap=linked הושמט מ-bun build: bun@1.3.14 עם --outfile + sourcemap=linked לא כותב קבצים כשstdio מנותב (pipe mode). ללא sourcemap הbundle עובד. תועד ב-commit message.
+- npm pack 2>&1 ב-verify script הוסר: bun build subprocess לא כותב קבצים כשstdout מנותב; script מיועד להרצה ב-terminal עם TTY.
+- bridge-failure-integration.test.ts: כשל pre-existing ב-dev לפני ה-slice (GET /api/agents מחזיר 201 במקום 4xx) — לא regression.
+
+### בדיקות
+- typecheck: ירוק (3 commits)
+- lint:i18n: ירוק
+- bun add <tgz>: exit 0 ✓
+- bunx drive-coding → feStaticDir=.../frontend-dist (cascade ✓), GET /=200 ✓, /api/agents ✓
+- dev path cascade: packages/frontend/build → GET /=200 ✓
+- tarball: dist/ + frontend-dist/ + plugins/ ✓, אין leak node_modules/.pnpm ✓
+- backend/core package.json: לא נגעו ✓
+
+---
+
 ## 2026-06-16 — slice-agent-busy-indicator — אינדיקטור busy/idle לתהליכים
 
 ### מה בוצע?
