@@ -250,3 +250,63 @@ describe("AgentSession.newSession", () => {
     )
   })
 })
+
+// ─── TDD: claude-thinking-meta — #sessionMeta + _meta injection ──────────────
+
+const EXPECTED_META = {
+  claudeCode: { options: { thinking: { type: "adaptive", display: "summarized" } } },
+}
+
+describe("AgentSession._meta injection (claude-thinking-meta)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal("location", { protocol: "http:", host: "localhost:4000" })
+  })
+
+  // ── attach (newSession) with claude → _meta injected ──
+  it("attach with cliKind=claude → newSession called with _meta.claudeCode.options.thinking", async () => {
+    const { createAcpClient } = await import("provider-contract/acp")
+    const session = new AgentSession()
+    await session.attach({ cwd: "/proj", cliKind: "claude" })
+
+    const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<typeof createAcpClient>)
+    expect(mockClient.newSession).toHaveBeenCalledWith({
+      cwd: "/proj",
+      _meta: EXPECTED_META,
+    })
+  })
+
+  // ── attach with opencode → NO _meta (backward-compat) ──
+  it("attach with cliKind=opencode → newSession called WITHOUT _meta", async () => {
+    const { createAcpClient } = await import("provider-contract/acp")
+    const session = new AgentSession()
+    await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+
+    const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<typeof createAcpClient>)
+    expect(mockClient.newSession).toHaveBeenCalledWith({ cwd: "/tmp" })
+  })
+
+  // ── loadSession (cold) with claude → _meta injected ──
+  it("loadSession with claude → loadSession called with _meta", async () => {
+    const { createAcpClient } = await import("provider-contract/acp")
+    const session = new AgentSession()
+    await session.loadSession({ sessionId: "sess-1", cwd: "/proj", cliKind: "claude" })
+
+    const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<typeof createAcpClient>)
+    expect(mockClient.loadSession).toHaveBeenCalledWith({
+      sessionId: "sess-1",
+      cwd: "/proj",
+      _meta: EXPECTED_META,
+    })
+  })
+
+  // ── loadSession with opencode → NO _meta ──
+  it("loadSession with opencode → loadSession called WITHOUT _meta", async () => {
+    const { createAcpClient } = await import("provider-contract/acp")
+    const session = new AgentSession()
+    await session.loadSession({ sessionId: "sess-2", cwd: "/tmp", cliKind: "opencode" })
+
+    const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<typeof createAcpClient>)
+    expect(mockClient.loadSession).toHaveBeenCalledWith({ sessionId: "sess-2", cwd: "/tmp" })
+  })
+})
