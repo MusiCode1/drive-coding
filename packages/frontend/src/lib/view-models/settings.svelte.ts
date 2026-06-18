@@ -35,6 +35,8 @@ type Persisted = {
   carMode: boolean
   // ─── שפה ─── (rtl-ltr-bidi)
   locale: Locale
+  // ─── השתקה ─── (ui-polish-batch · C7)
+  muted: boolean
 }
 
 const DEFAULTS: Persisted = {
@@ -52,6 +54,8 @@ const DEFAULTS: Persisted = {
   carMode: false,
   // ─── שפה ─── (rtl-ltr-bidi) — DEFAULT_LOCALE="he"; detectLocale() רץ רק כש-localStorage ריק
   locale: DEFAULT_LOCALE,
+  // ─── השתקה ─── (ui-polish-batch · C7)
+  muted: false,
 }
 
 function load(): Persisted {
@@ -105,6 +109,9 @@ export class Settings {
   // ─── שפה ─── (rtl-ltr-bidi)
   locale = $state<Locale>(DEFAULTS.locale)
 
+  // ─── השתקה ─── (ui-polish-batch · C7)
+  muted = $state<boolean>(DEFAULTS.muted)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -120,6 +127,8 @@ export class Settings {
     this.carMode = loaded.carMode
     // ─── שפה ───
     this.locale = loaded.locale
+    // ─── השתקה ───
+    this.muted = loaded.muted
   }
 
   // ─── טופס חיבור ───
@@ -265,6 +274,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── השתקה ─── (ui-polish-batch · C7)
+
+  setMuted = (v: boolean): void => {
+    this.muted = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -278,6 +294,7 @@ export class Settings {
       translateThoughts: this.translateThoughts,
       carMode: this.carMode,
       locale: this.locale,
+      muted: this.muted,
     })
   }
 }

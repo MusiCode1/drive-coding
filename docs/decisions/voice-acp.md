@@ -1,5 +1,43 @@
 # Decisions — voice-acp
 
+## 2026-06-17 — wire-recorder-jsonl: הקלטת תעבורת WS לקובץ NDJSON — תכנון slice יחיד
+
+### רציונל
+המשתמש דיווח שתשובות ה-agent מגיעות ריקות — frame `agent_thought_chunk` עם
+`content.text:""`. אבחנה ראשונית (מרדכי): ה-BE הוא **byte-pipe שקוף** (`ws-agent.ts`
+מעביר כל שורה כפי שהיא), אז ה-`text` הריק מגיע ככה מה-CLI child עצמו (claude), לא נוצר
+אצלנו; ובנוסף ה-FE כבר מסנן chunks ריקים (`agent-session.svelte.ts:1131 — if (!text) return`).
+המסקנה: צריך **הקלטה גולמית של החוט** כדי לאמת אם ה-`text:""` כבר מגיע ריק מ-claude
+(סביר — רגרסיה upstream) או נוצר אצלנו, וכדי לאתר כפילויות/ריקים שיטתית.
+
+**הכרעות-מוצר (אושרו ע"י המשתמש דרך AskUserQuestion):**
+- **Recorder ייעודי ל-JSONL** (ולא הפעלת ה-wire-logger הקיים): קובץ `.jsonl` נקי
+  פר-session, ניתן-לניתוח טריוויאלי ב-`jq`/`grep`, במקום frames מעורבבים ב-stdout של pino.
+- **"רק ההקלטה"**: בלי סקריפט ניתוח ובלי אימות-גרסה בסלייס הזה — תשתית בלבד.
+
+**חיתוך**: slice יחיד, 3 commits — מודול `wire-recorder.ts` (factory + serialize טהור,
+TDD) → חיווט ב-`ws-agent.ts` + הזרקה ב-`server.ts` עם env flag `WIRE_RECORD` → docs.
+ה-tap נוסף **אחרי** ה-send/write/logWire הקיימים, try/catch סביב כל IO, no-op מוחלט
+כש-`WIRE_RECORD` לא מוגדר — אפס השפעה על הזרם (אותו עיקרון פסיבי כמו slice-18 wire-logger).
+
+### ממצאי אביגיל (2 סבבים → READY)
+- **סבב 1 (USABLE-AFTER-FIX, 4 findings, אפס blockers)**: brief מדויק חריג — כל ה-symbols,
+  נקודות החיווט (`ws-agent.ts:54/99/112/118/140`), ה-deps ב-`server.ts:96`, ו-`data/`
+  ב-`.gitignore` אומתו. הבעיות cosmetic: (1) dev tip מיושן `848cf44`→`fb8c522` (2 commits
+  קדימה, אף אחד לא נוגע בקבצי הסלייס); (2) line 113→112 לענף ה-$/ping; (3) אי-עקביות
+  ב-arg של ה-$/ping record; (4) `noUncheckedIndexedAccess` יצריך guard בטסטים שאליעזר יכתוב.
+- **סבב 2 (READY, 0 findings)**: כל 4 התיקונים אומתו מול הקוד.
+
+### שינויי-כיוון
+- אין שינוי סקופ/ארכיטקטורה — רק תיקוני דיוק טקסטואליים מסבב אביגיל.
+- הובהר: בענף ה-$/ping ה-recorder מקליט את ה-`text` הגולמי (נאמן לחוט), לא את summary
+  ה-`logWire` (`"$/ping → $/pong"`).
+
+### רעיונות שנדחו
+- **הפעלת ה-wire-logger הקיים (`LOG_WIRE=ws`) במקום recorder**: נדחה — הפלט מעורבב
+  בשאר לוגי pino וקשה יותר לניתוח אוטומטי של כפילויות/ריקים. (עדיין זמין לאבחון מהיר.)
+- **סקריפט ניתוח / אימות-גרסת-claude בסלייס**: נדחו ל-future לפי בחירת "רק ההקלטה".
+
 ## 2026-06-08 — active-agents: ווידג'ט תהליכים פעילים + נעיצה (Pin) — תכנון 2 slices
 
 ### רציונל

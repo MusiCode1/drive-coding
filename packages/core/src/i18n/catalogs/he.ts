@@ -65,9 +65,11 @@ export const he: Catalog = {
   // ─── sessions ─── (slice 8)
   "sessions.loadButton": "טען סשנים אחרונים",
   "sessions.loading": "טוען…",
-  "sessions.label": "סשן קיים",
+  "sessions.label": "בחירת סשן",
   "sessions.startNew": "חדש",
   "sessions.error": "שגיאה בטעינה",
+  // ─── sessions-refresh ─── (ui-polish-batch · C11)
+  "sessions.refresh": "רענן",
   // ─── settings ─── (slice 9)
   "settings.title": "הגדרות",
   "settings.beUrl.label": "כתובת השרת (BE URL)",
@@ -142,6 +144,9 @@ export const he: Catalog = {
   // ─── bubble-play ─── (msr-v2)
   "bubble.play": "השמע",
   "bubble.stop": "עצור השמעה",
+  // ─── bubble-copy ─── (ui-polish-batch · C3)
+  "bubble.copy": "העתק",
+  "bubble.copied": "הועתק!",
   // ─── model-status ─── (msr-v2)
   "modelStatus.waiting": "ממתין…",
   "modelStatus.thinking": "חושב…",

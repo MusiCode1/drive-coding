@@ -5,6 +5,15 @@
 Voice-first hands-free interface for ACP-compatible CLI agents.
 See the documentation map below. Start with `docs/design-principles.md`.
 
+## Long-term planning
+
+`docs/roadmap.md` is the **master long-term roadmap** — vision, work tracks, and
+milestones — and the single source of truth above the specific roadmaps
+(provider / voice / frontend). **Any non-immediate planning belongs there:** before
+proposing or starting work that is not an immediate task, check it against
+`docs/roadmap.md`, and record new long-term plans inside it (or in a sub-roadmap it
+links to).
+
 ## Stack
 
 - TypeScript (ESM only, no CommonJS)
@@ -51,6 +60,16 @@ pnpm lint:i18n        # scripts/lint-no-hebrew-in-code.sh — blocks Hebrew in c
 pnpm format
 pnpm hooks:install    # one-time: set core.hooksPath=.githooks (runs pre-commit lint)
 ```
+
+## Running & serving locally
+
+⚠️ **HTTPS is mandatory** — the FE uses secure-context-only Web APIs
+(`getUserMedia`, `AudioWorklet`). It works on `http://localhost` but NOT over plain
+`http://` from any external host — use an HTTPS tunnel.
+
+For the full build/serve flow (dev vs. production-like single-origin via
+`FE_STATIC_DIR`), HTTPS tunneling, and Windows blockers/workarounds (onecli/bun,
+opencode → use CLI=claude), see [`docs/running-locally.md`](docs/running-locally.md).
 
 ## Git hooks
 
@@ -138,6 +157,31 @@ inject Anthropic credentials (intentional — see `~/.config/opencode/learnings.
 How to tell if the BE is missing OneCLI: the FE shows `TTS failed: 401`
 and the BE log shows `proxy upstream non-2xx` warnings (since the
 observability commit `a76e7c1`).
+
+## Wire tracing & recording (debug)
+
+Two passive taps on the WS pipe (`packages/backend/src/delivery/ws-agent.ts`), both
+**off by default**, neither alters the stream (each runs *after* the send/write):
+
+- **`LOG_WIRE=ws`** — live wire summary to the BE stdout via pino (slice-18).
+  `debug` → `{dir,type,id}`; `trace` → full decoded frame. Best for watching traffic
+  inline with the rest of the BE log timeline.
+- **`WIRE_RECORD=1`** — records **every raw frame** to
+  `data/wire-recordings/<agentId>-<ts>.jsonl` — one `{ts,dir,raw}` line per frame,
+  a clean file per agent session (slice wire-recorder-jsonl). Best for offline
+  analysis of anomalies (empty chunks, duplicate ids) with `jq`. Works live too:
+  `tail -f data/wire-recordings/*.jsonl | jq`.
+
+```bash
+# record a session — Windows: bun direct (onecli can't spawn bun; TTS proxy unneeded here)
+cd packages/backend
+WIRE_RECORD=1 PORT=4000 bun src/server.ts
+# ...connect an agent + prompt, then analyze. e.g. every thought-chunk text
+# (we found claude sends them ALL empty — an upstream ACP-adapter issue, BE is transparent):
+jq -r 'select(.raw|fromjson|.params.update.sessionUpdate=="agent_thought_chunk") | (.raw|fromjson|.params.update.content.text)' data/wire-recordings/*.jsonl
+```
+
+`data/` is gitignored — recordings never enter git.
 
 ## What NOT to do
 

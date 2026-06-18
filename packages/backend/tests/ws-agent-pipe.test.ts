@@ -21,6 +21,10 @@ import { EventEmitter, PassThrough } from "node:stream"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { WebSocket } from "ws"
 import { createAgentWsHandler } from "../src/delivery/ws-agent.js"
+import { createWireRecorder } from "../src/delivery/wire-recorder.js"
+
+// no-op wireRecorder לשימוש בכל הטסטים (אין IO)
+const noopWireRecorder = createWireRecorder({ dir: null })
 
 // ─── Mock ChildProcess ────────────────────────────────────────────────────────
 
@@ -97,7 +101,7 @@ describe("ws-agent in-process pipe", () => {
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
     const { bridgeManager } = makeMockBridgeManager(null)
 
-    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
+    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager, wireRecorder: noopWireRecorder })
     const { ws, closeArgs } = makeMockFeWs()
 
     onConnect(ws, "ghost-agent")
@@ -114,7 +118,7 @@ describe("ws-agent in-process pipe", () => {
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
     const { bridgeManager } = makeMockBridgeManager(child)
 
-    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
+    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager, wireRecorder: noopWireRecorder })
     const { ws } = makeMockFeWs()
 
     onConnect(ws, "agent-1")
@@ -136,7 +140,7 @@ describe("ws-agent in-process pipe", () => {
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
     const { bridgeManager } = makeMockBridgeManager(child)
 
-    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
+    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager, wireRecorder: noopWireRecorder })
     const { ws, sent } = makeMockFeWs()
 
     onConnect(ws, "ping-agent")
@@ -164,7 +168,7 @@ describe("ws-agent in-process pipe", () => {
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
     const { bridgeManager, pushLine } = makeMockBridgeManager(child)
 
-    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
+    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager, wireRecorder: noopWireRecorder })
     const { ws, sent } = makeMockFeWs()
 
     onConnect(ws, "agent-2")
@@ -182,7 +186,7 @@ describe("ws-agent in-process pipe", () => {
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
     const { bridgeManager } = makeMockBridgeManager(child)
 
-    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
+    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager, wireRecorder: noopWireRecorder })
     const { ws: ws1 } = makeMockFeWs()
     const { ws: ws2, closeArgs: close2 } = makeMockFeWs()
 
@@ -204,7 +208,7 @@ describe("ws-agent in-process pipe", () => {
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
     const { bridgeManager } = makeMockBridgeManager(child)
 
-    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
+    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager, wireRecorder: noopWireRecorder })
     const { ws, closeArgs } = makeMockFeWs()
 
     onConnect(ws, "exit-agent")
@@ -222,7 +226,7 @@ describe("ws-agent in-process pipe", () => {
     const orchestrator = { getBridgePort: vi.fn(() => null) } as never
     const { bridgeManager } = makeMockBridgeManager(child)
 
-    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager })
+    const onConnect = createAgentWsHandler({ orchestrator, bridgeManager, wireRecorder: noopWireRecorder })
     const { ws } = makeMockFeWs()
 
     onConnect(ws, "close-agent")
