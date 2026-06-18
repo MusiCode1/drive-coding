@@ -101,6 +101,7 @@ message timeline/x-ray · web-preview browser frame · image-preview popover · 
 ### Tool rendering
 
 + 🔴 **Markdown ב-tool output** — פלט כלי לא מרונדר כ-markdown (מוצג עם ```` ``` ```` גולמיים). כמו בבועת ההודעה. מתחבר ל-batch message-polish (markdown+code-block). `ToolBubble.svelte`
++ 🐛 **code fence גולמי בבועת סוכן ב-stream חי** — בבועת **משתמש** ה-markdown מרונדר תקין, אבל בתגובת **סוכן חי** ה-```` ```js ```` מוצג גולמי. נבדק (2026-06-18): `renderMarkdown`/marked תקינים, ו-fixture `mitm` מרונדר נכון (fences בתחילת שורה) — לכן זה **bug ספציפי ל-stream החי**, כנראה chunks שמגיעים בלי `\n` במקום הנכון (ה-fence לא בתחילת שורה). לבדוק את ה-mapping של `agent_message_chunk`→segments מול agent חי (claude/opencode). לא נתפס ב-fixture כי הוא מהקלטה תקינה.
 + 🟢 **תצוגת subagent/task** — פרמטרים מוצגים כ-JSON גולמי; לסדר ל-renderer קריא. reference: task renderer ב-CodeNomad. `ToolBubble.svelte`
 + 🟢 **זהות כלי** — לוגו/תווית לכל כלי (Bash, Read, …). **צריך דיון** על העיצוב.
 
