@@ -1,3 +1,23 @@
+## 2026-06-18 — fix(ws): slice-ws-error-survival Commit 2 — isTransientSocketError + ריכוך uncaughtException
+
+### מה בוצע?
+
+**Commit 2 (TDD)** — הגנה בעומק: הפנייה גלובלית לשגיאות socket חולפות:
+- `packages/backend/src/delivery/transient-socket-error.ts` (קובץ חדש): `isTransientSocketError(err)` פונקציה טהורה, TRANSIENT_CODES = Set של 5 codes
+- `packages/backend/src/server.ts`: ריכוך `uncaughtException` + `unhandledRejection` — transient → warn+return; אחר → exit(1) כמו קודם
+
+**TDD**:
+- test אדום קודם (import שנכשל כי מודול לא קיים)
+- מימוש → ירוק: 11/11 טסטים עוברים
+
+### בדיקות
+
+- typecheck: נקי
+- lint:i18n: ירוק
+- transient-socket-error: 11/11 ירוקים
+
+---
+
 ## 2026-06-18 — fix(ws): slice-ws-error-survival Commit 1 — error listeners על שרתי WS + echo
 
 ### מה בוצע?

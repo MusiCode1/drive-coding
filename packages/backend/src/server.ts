@@ -5,13 +5,23 @@ import { serve } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { Hono } from "hono"
 import { WebSocketServer } from "ws"
+import { isTransientSocketError } from "./delivery/transient-socket-error.js"
 
 const log = createLogger("backend.server")
 const procLog = createLogger("backend.process")
 
 // רשתות ביטחון — אם שגיאה שלא נתפסה חומקת, תעד ללוג וצא בצורה מסודרת.
 // זהו קו ההגנה האחרון; קוד ייצור לעולם לא אמור להגיע לכאן.
+// ריכוך: שגיאות socket חולפות (ECONNRESET, EPIPE וכו') — warn + return, לא exit.
+// שגיאות אמיתיות — process.exit(1) כמו קודם (שומר על קו ההגנה לבאגים).
 process.on("uncaughtException", (err) => {
+  if (isTransientSocketError(err)) {
+    procLog.warn(
+      { err: { name: err.name, message: err.message, code: (err as NodeJS.ErrnoException).code } },
+      "uncaughtException — transient socket error, ignoring",
+    )
+    return
+  }
   procLog.error(
     { err: { name: err.name, message: err.message, stack: err.stack } },
     "uncaughtException — exiting",
@@ -20,6 +30,13 @@ process.on("uncaughtException", (err) => {
 })
 
 process.on("unhandledRejection", (reason) => {
+  if (isTransientSocketError(reason)) {
+    procLog.warn(
+      { reason: String(reason) },
+      "unhandledRejection — transient socket error, ignoring",
+    )
+    return
+  }
   procLog.error({ reason: String(reason) }, "unhandledRejection — exiting")
   process.exit(1)
 })
