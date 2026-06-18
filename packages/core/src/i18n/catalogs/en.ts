@@ -69,7 +69,7 @@ export const en: Catalog = {
   // ─── sessions ─── (slice 8)
   "sessions.loadButton": "Load recent sessions",
   "sessions.loading": "Loading…",
-  "sessions.label": "Existing session",
+  "sessions.label": "Select session",
   "sessions.startNew": "New",
   "sessions.error": "Failed to load",
   // ─── sessions-refresh ─── (ui-polish-batch · C11)

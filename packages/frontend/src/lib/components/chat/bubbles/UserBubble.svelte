@@ -54,7 +54,7 @@ async function handleCopy() {
   <Avatar kind="user" />
   <div class="bubble-wrapper min-w-0 flex-1">
     <div
-      class="px-3.5 py-2.5 rounded-2xl rounded-es-sm text-sm leading-relaxed min-w-0 break-words"
+      class="px-3.5 py-2.5 rounded-2xl rounded-es-sm text-sm leading-relaxed min-w-0 max-w-full overflow-hidden break-words"
       style="background:var(--bubble-user); {isPlaying ? 'outline:2px solid var(--accent); outline-offset:1px' : ''}"
       dir="auto"
     >
@@ -144,6 +144,25 @@ async function handleCopy() {
 
   /* C5: code blocks כיוון LTR */
   :global(pre), :global(code) { direction: ltr; text-align: left; }
+  /* markdown — code ארוך נשבר במקום לגלוש מהבועה */
+  div :global(code) {
+    font-family: ui-monospace, monospace;
+    font-size: 0.88em;
+    background: rgba(0,0,0,0.2);
+    padding: 0.1em 0.3em;
+    border-radius: 3px;
+    overflow-wrap: anywhere;
+  }
+  div :global(pre) {
+    background: rgba(0,0,0,0.28);
+    padding: 0.6rem 0.8rem;
+    border-radius: 6px;
+    margin: 0.4em 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    overflow-x: auto;
+  }
+  div :global(pre code) { background: none; padding: 0; font-size: 0.85em; }
 
   .hidden { display: none; }
   .action-btn {

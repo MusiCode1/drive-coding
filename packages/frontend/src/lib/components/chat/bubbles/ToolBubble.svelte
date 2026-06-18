@@ -182,6 +182,8 @@ const input = $derived(formatToolInput(tc.args))
     background: var(--bg);
     padding: 0.4rem 0.5rem;
     border-radius: 4px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
     overflow-x: auto;
     font-size: 0.78rem;
     direction: ltr;

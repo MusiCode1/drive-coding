@@ -3,6 +3,7 @@
   import type { SessionInfo } from "$lib/adapters/sessions"
   import { getI18n } from "$lib/context"
   import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
+  import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
 
   const i18n = getI18n()
   const t = i18n.t
@@ -47,52 +48,47 @@
   // אפשרות "סשן חדש" (value="") + הסשנים הקיימים.
   const sessionOptions = $derived<SelectOption[]>([
     { value: "", label: t("sessions.startNew") },
-    ...sessions.map((s) => ({
-      value: s.sessionId,
-      label: `${s.title || s.sessionId.slice(0, 8)} — ${formatDate(s.updatedAt)}`,
-    })),
+    ...sessions.map((s) => {
+      // חיתוך ה-title אחרי 45 תווים כדי שהוא + התאריך ייכנסו ב-2 שורות
+      const raw = s.title || s.sessionId.slice(0, 8)
+      const title = raw.length > 45 ? `${raw.slice(0, 45)}…` : raw
+      return { value: s.sessionId, label: `${title} — ${formatDate(s.updatedAt)}` }
+    }),
   ])
 
   // C11: disabled כשאין sessions (אבל תמיד מוצג)
   const selectDisabled = $derived(sessions.length === 0 || loading)
 </script>
 
-<!-- C11: כפתור refresh (↺) + label+select תמיד מוצגים -->
+<!-- C11: כפתור refresh + label+select תמיד מוצגים -->
 <div class="session-picker">
-  <!-- שורת טעינה ראשונה: כפתור טעינה ראשוני -->
-  <button
-    type="button"
-    class="load-btn"
-    disabled={!cwd.trim() || loading}
-    onclick={onload}
-  >
-    {loading ? t("sessions.loading") : t("sessions.loadButton")}
-  </button>
-
   <!-- label+select תמיד מוצגים; disabled כשאין sessions -->
   <div class="session-row">
-    <!-- ↺ refresh — בתחילת השורה (inline-start) -->
-    <button
-      type="button"
-      class="refresh-btn"
-      disabled={loading}
-      onclick={onload}
-      aria-label={t("sessions.refresh")}
-      title={t("sessions.refresh")}
-    >
-      ↺
-    </button>
-    <label class="session-label">
-      <span>{t("sessions.label")}</span>
-      <Select
-        value={selectedSessionId ?? ""}
-        options={sessionOptions}
-        title={t("sessions.label")}
-        ariaLabel={t("sessions.label")}
-        disabled={selectDisabled}
-        onchange={(v) => onselect(v === "" ? null : v)}
-      />
-    </label>
+    <span class="session-label-text">{t("sessions.label")}</span>
+    <!-- ↺ refresh + select באותה שורה, בגובה זהה (align-items:stretch) -->
+    <div class="select-row">
+      <!-- ↺ refresh — בתחילת השורה (inline-start) -->
+      <button
+        type="button"
+        class="refresh-btn"
+        disabled={loading || !cwd.trim()}
+        onclick={onload}
+        aria-label={t("sessions.refresh")}
+        title={t("sessions.refresh")}
+      >
+        <RefreshCwIcon size={18} strokeWidth={1.75} />
+      </button>
+      <div class="select-wrap">
+        <Select
+          value={selectedSessionId ?? ""}
+          options={sessionOptions}
+          title={t("sessions.label")}
+          ariaLabel={t("sessions.label")}
+          disabled={selectDisabled}
+          onchange={(v) => onselect(v === "" ? null : v)}
+        />
+      </div>
+    </div>
   </div>
 
   {#if error !== null}
@@ -109,48 +105,40 @@
     gap: 0.6rem;
   }
 
-  .load-btn {
-    padding: 0.55rem 0.9rem;
-    background: var(--bg-elev);
-    color: var(--fg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    font-size: 0.875rem;
-    cursor: pointer;
-    transition: background 0.15s;
-    width: 100%;
-    text-align: center;
-  }
-
-  .load-btn:hover:not(:disabled) {
-    background: var(--border);
-  }
-
-  .load-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   .session-row {
     display: flex;
-    align-items: flex-end;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .session-label-text {
+    font-size: 0.85rem;
+    color: var(--fg-dim);
+  }
+
+  .select-row {
+    display: flex;
+    align-items: stretch;
     gap: 0.5rem;
   }
 
+  .select-wrap {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* refresh-btn — זהה ל-folder-btn ב-+page.svelte (אחידות 2 הלחצנים) */
   .refresh-btn {
     flex-shrink: 0;
-    padding: 0.3rem 0.5rem;
+    display: grid;
+    place-items: center;
+    padding-inline: 0.7rem;
     background: var(--bg-elev);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 0.75rem;
     color: var(--fg-dim);
-    font-size: 1rem;
     cursor: pointer;
-    line-height: 1;
     transition: color 0.15s, border-color 0.15s;
-    align-self: flex-end;
-    /* מיישר עם תחתית ה-select */
-    padding-block: 0.45rem;
   }
 
   .refresh-btn:hover:not(:disabled) {
@@ -161,19 +149,6 @@
   .refresh-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
-  }
-
-  .session-label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .session-label > span {
-    font-size: 0.85rem;
-    color: var(--fg-dim);
   }
 
   .session-error {

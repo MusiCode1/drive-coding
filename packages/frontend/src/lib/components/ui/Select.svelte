@@ -91,7 +91,7 @@ const triggerClass = $derived(
 <!-- ───────── snippets משותפים ───────── -->
 
 {#snippet triggerInner()}
-  <span class="truncate min-w-0">{selectedLabel}</span>
+  <span class="truncate min-w-0" dir="auto">{selectedLabel}</span>
   <ChevronDownIcon size={15} style="color:var(--fg-dim)" class="shrink-0" />
 {/snippet}
 
@@ -113,12 +113,12 @@ const triggerClass = $derived(
         <button
           type="button"
           disabled={item.disabled}
-          class="rounded-lg px-3 py-3 text-sm flex items-center justify-between text-start disabled:opacity-40"
+          class="rounded-lg px-3 py-3 text-sm flex items-center justify-between text-start hover:bg-white/5 disabled:opacity-40"
           style="color:var(--fg)"
           class:is-selected={item.value === value}
           onclick={() => pick(item.value)}
         >
-          <span class="truncate min-w-0">{item.label}</span>
+          <span class="line-clamp-2 min-w-0 text-start" dir="auto">{item.label}</span>
           {#if item.value === value}
             <CheckIcon size={18} style="color:var(--accent)" class="shrink-0" />
           {/if}
@@ -178,7 +178,7 @@ const triggerClass = $derived(
       <Popover.Content
         sideOffset={6}
         align="start"
-        class="z-50 max-h-[60dvh] min-w-[var(--bits-floating-anchor-width)] flex flex-col rounded-xl border shadow-xl overflow-hidden"
+        class="z-50 max-h-[60dvh] w-(--bits-floating-anchor-width) max-w-[92vw] flex flex-col rounded-xl border shadow-xl overflow-hidden"
         style="background:var(--bg-elev); border-color:var(--border)"
       >
         {@render list(false)}

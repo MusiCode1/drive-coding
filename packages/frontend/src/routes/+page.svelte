@@ -272,11 +272,13 @@ async function onSubmit(e: SubmitEvent) {
     color: var(--fg-dim);
   }
 
+  /* יישור לגובה ה-Select (px-3 py-2.5 text-sm rounded-xl) — אחידות שורות */
   input {
-    padding: 0.7rem 0.8rem;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.875rem;
     background: var(--bg-elev);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 0.75rem;
     color: var(--fg);
   }
 
@@ -302,15 +304,16 @@ async function onSubmit(e: SubmitEvent) {
     min-width: 0;
   }
 
+  /* folder-btn — זהה ל-refresh-btn ב-SessionPicker (אחידות 2 הלחצנים) */
   .folder-btn {
     flex-shrink: 0;
     margin-top: 0; /* מאפס את ה-margin-top של כלל ה-button הגלובלי — מיישר עם ה-input */
     display: grid;
     place-items: center;
-    padding: 0 0.8rem;
+    padding: 0 0.7rem;
     background: var(--bg-elev);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 0.75rem;
     color: var(--fg-dim);
     cursor: pointer;
   }

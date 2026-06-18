@@ -65,7 +65,7 @@ export const he: Catalog = {
   // ─── sessions ─── (slice 8)
   "sessions.loadButton": "טען סשנים אחרונים",
   "sessions.loading": "טוען…",
-  "sessions.label": "סשן קיים",
+  "sessions.label": "בחירת סשן",
   "sessions.startNew": "חדש",
   "sessions.error": "שגיאה בטעינה",
   // ─── sessions-refresh ─── (ui-polish-batch · C11)

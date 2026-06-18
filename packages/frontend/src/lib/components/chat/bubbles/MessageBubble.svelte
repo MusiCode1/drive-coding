@@ -53,7 +53,7 @@ async function handleCopy() {
   <Avatar kind="agent" />
   <div class="bubble-wrapper min-w-0 flex-1">
     <div
-      class="px-3.5 py-2.5 rounded-2xl rounded-ee-sm text-sm leading-relaxed min-w-0 break-words"
+      class="px-3.5 py-2.5 rounded-2xl rounded-ee-sm text-sm leading-relaxed min-w-0 max-w-full overflow-hidden break-words"
       style="background:var(--bubble-agent); {isPlaying ? 'outline:2px solid var(--accent); outline-offset:1px' : ''}"
       dir="auto"
     >
@@ -155,14 +155,15 @@ async function handleCopy() {
     border-radius: 3px;
     overflow-wrap: anywhere;
   }
-  /* code בתוך pre לא נשבר (יש ל-pre overflow-x:auto) */
-  div :global(pre code) { overflow-wrap: normal; }
   div :global(pre) {
     background: rgba(0,0,0,0.35);
     padding: 0.6rem 0.8rem;
     border-radius: 6px;
-    overflow-x: auto;
     margin: 0.4em 0;
+    /* code ארוך נשבר לשורות במקום לגלוש מהבועה */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    overflow-x: auto;
   }
   div :global(pre code) { background: none; padding: 0; font-size: 0.85em; }
   div :global(ul), div :global(ol) { padding-inline-start: 1.4em; margin: 0.3em 0; }
