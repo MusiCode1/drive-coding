@@ -116,6 +116,7 @@ message timeline/x-ray · web-preview browser frame · image-preview popover · 
 + 🟢 **כפתור רענון לסשנים** — אייקון refresh בתחילת שורת הסשנים. `SessionPicker.svelte`
 + 🟢 **שורת סשנים תמיד מוצגת** — אם אין סשנים, מצב Disabled (לא מוסתרת). `SessionPicker.svelte`
 + 🐛 **מיקום כפתור התיקייה לפי שפה** — עברית→ימין, אנגלית→שמאל (logical positioning; skill `rtl-adaptation`). `FolderPickerDialog`/connect
++ 🐛 **relative-time מקודד-קשיח לעברית** — `formatDate` ב-`SessionPicker.svelte` משתמש ב-`new Intl.RelativeTimeFormat("he", …)` קבוע, אז "לפני X ימים" מוצג בעברית גם כשהממשק באנגלית. צריך לפי `settings.locale`. `SessionPicker.svelte:37`
 
 ### מצב שגיאה (error state) — רוחבי
 
