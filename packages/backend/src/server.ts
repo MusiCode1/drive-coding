@@ -15,29 +15,32 @@ const procLog = createLogger("backend.process")
 // ריכוך: שגיאות socket חולפות (ECONNRESET, EPIPE וכו') — warn + return, לא exit.
 // שגיאות אמיתיות — process.exit(1) כמו קודם (שומר על קו ההגנה לבאגים).
 process.on("uncaughtException", (err) => {
-  if (isTransientSocketError(err)) {
+  const transient = isTransientSocketError(err)
+  const code = (err as NodeJS.ErrnoException).code
+  if (transient) {
     procLog.warn(
-      { err: { name: err.name, message: err.message, code: (err as NodeJS.ErrnoException).code } },
+      { err: { name: err.name, message: err.message, code }, transient: true },
       "uncaughtException — transient socket error, ignoring",
     )
     return
   }
   procLog.error(
-    { err: { name: err.name, message: err.message, stack: err.stack } },
+    { err: { name: err.name, message: err.message, stack: err.stack, code }, transient: false },
     "uncaughtException — exiting",
   )
   process.exit(1)
 })
 
 process.on("unhandledRejection", (reason) => {
-  if (isTransientSocketError(reason)) {
+  const transient = isTransientSocketError(reason)
+  if (transient) {
     procLog.warn(
-      { reason: String(reason) },
+      { reason: String(reason), transient: true },
       "unhandledRejection — transient socket error, ignoring",
     )
     return
   }
-  procLog.error({ reason: String(reason) }, "unhandledRejection — exiting")
+  procLog.error({ reason: String(reason), transient: false }, "unhandledRejection — exiting")
   process.exit(1)
 })
 

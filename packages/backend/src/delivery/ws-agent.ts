@@ -148,7 +148,11 @@ export function createAgentWsHandler(deps: {
     function detach(reason: "close" | "error", err?: unknown): void {
       if (detached) return
       detached = true
-      if (reason === "error") childLog.warn({ err }, "WS error — detaching pipe")
+      if (reason === "error")
+        childLog.warn(
+          { err: { code: (err as NodeJS.ErrnoException)?.code, message: String(err) } },
+          "WS error — detaching pipe",
+        )
       else childLog.info({}, "WS disconnect — detaching pipe")
       activeFeWs.delete(agentId)
       deps.bridgeManager.markDetached(agentId) // ← תצוגת active-agents (attached)

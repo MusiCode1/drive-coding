@@ -1,3 +1,24 @@
+## 2026-06-18 — fix(ws): slice-ws-error-survival Commit 3 — observability logs
+
+### מה בוצע?
+
+**Commit 3 (additive logs)** — שיפורי observability ללא שינוי לוגיקה:
+- `ws-agent.ts detach("error")`: payload עשיר — `{ err: { code, message } }` (code=best-effort; ws Error לרוב ללא code)
+- `server.ts uncaughtException/unhandledRejection`: `transient: true/false` + `code` בפייload — כל שורה-לוג מצהירה מפורשות אם זו שגיאה חולפת
+- `echoWss`/`agentWss` error listeners (Commit 1): כבר כוללים `src: "echoWss"|"agentWss"` ✅
+
+### Manual verification
+
+`feWs.emit("error", new Error("boom"))` → שורת warn `"WS error — detaching pipe"` מופיעה עם `{ code: undefined, message: "Error: boom" }`, ה-process חי. בדיקה ידנית — הלוג מתועד בממצאי ניסוי §11.
+
+### בדיקות
+
+- typecheck: נקי
+- lint:i18n: ירוק
+- (אין טסטים אוטומטיים ללוגים — נבדק ידנית + phase verify Commit 2 כיסה)
+
+---
+
 ## 2026-06-18 — fix(ws): slice-ws-error-survival Commit 2 — isTransientSocketError + ריכוך uncaughtException
 
 ### מה בוצע?
