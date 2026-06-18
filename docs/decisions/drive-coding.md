@@ -1,5 +1,46 @@
 # Decisions — drive-coding
 
+## 2026-06-18 — slice-ws-error-survival: ניתוק דפדפן לא יפיל את ה-BE
+
+### רציונל
+
+המשתמשת דיווחה שכשחיבור הדפדפן משתבש/מתנתק, גם ה-CLI agent (claude-code/opencode)
+מפסיק לרוץ — התנהגות לא-צפויה, שכן ה-backend הוא בעל התהליך. החקירה גילתה ש-`ws-agent.ts`
+דווקא **נכון** בניתוק נקי (`feWs.on("close")` מבצע detach בלי `child.kill`). הבאג הוא
+בניתוק **לא-נקי**: ה-socket פולט אירוע `'error'`, אין לו listener בשום מקום → ב-Node זה
+throw → `uncaughtException` → ה-handler הגלובלי ב-`server.ts:14-20` עושה `process.exit(1)`
+→ כל ה-backend נופל, וה-child (spawn ללא `detached`) מת כ-collateral.
+
+**ההכרעה: שלוש שכבות.** (0) `feWs.on("error")` שמטפל כמו close (detach idempotent,
+בלי kill) — חוסם במקור. (1) error listeners על `echoWss`/`agentWss`/ws-echo — סותם
+מקורות WS error נוספים. (2) הגנה בעומק — `uncaughtException` מסנן transient socket
+errors (`isTransientSocketError` טהור: ECONNRESET/EPIPE/ENOTCONN/ECONNABORTED/ETIMEDOUT)
+ולא יוצא עליהם, אבל **שומר** `process.exit` לשגיאות אמיתיות (קו-הגנה אחרון לגיטימי).
+
+### ממצאי אביגיל
+
+r1 = USABLE-AFTER-FIX (2 findings, שניהם בתיאור הטסט/הבהרות — לא בקוד הייצור): (#1)
+mock WS כ-EventEmitter לא מספק structurally את חתימת `ws.WebSocket` תחת strict → דרוש
+`as unknown as WebSocket` (הבריף השמיט); (#2) `lint:i18n` חוסם רק string literals,
+לא הערות — הבריף רמז על כלל מחמיר מדי. תוקנו. r2 = READY (1 finding 🟢 קוסמטי: ציטוט
+מספר שורה :9→:6, עלות אפס — תוקן). כל ה-claims העובדתיים (שורות, symbols, paths)
+אומתו 1:1, כולל אישור ש-ה-child לא detached ולכן מת עם ה-backend.
+
+### שינויי-כיוון
+
+- **שני באגים נפרדים זוהו, slice אחד מתקן רק את הקריסה.** ה-thrashing של אותו session
+  בשני טאבים (MED-8 livelock) הופרד ל-slice עתידי (תועד ב-`roadmap.md` Track F) — בעיה
+  של connection-arbitration, לא error-handling. לא מערבבים scope/verification.
+
+### רעיונות שנדחו
+
+- **ריכוך uncaughtException בלבד (בלי שכבה 0):** היה מסתיר את הבאג במקום לתקנו, ומסכן
+  בליעת שגיאות אמיתיות. נדחה — שכבה 0 (טיפול במקור) היא התיקון הנכון; שכבה 2 רק
+  belt-and-suspenders, מוגבלת לרשימת codes סגורה.
+- **Backend-managed session ownership (HTTP/SSE transport):** פתרון-שורש לכל משפחת
+  בעיות ה-WS, אבל refactor ארכיטקטוני גדול. נשאר ב-Future (roadmap) — לא נדרש כדי
+  לעצור את הקריסה.
+
 ## 2026-06-16 — slice-npm-publish: אריזה ל-npm כ-tarball self-contained
 
 ### רציונל

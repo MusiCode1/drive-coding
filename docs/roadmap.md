@@ -82,6 +82,8 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 | --- | --- |
 | `bunx drive-coding` · npm-publish | ✅ READY |
 | Windows adaptation · cli-agents deploy (systemd) | ✅ |
+| **WS robustness — ניתוק דפדפן לא יפיל את ה-BE** — ניתוק WS "מלוכלך" פולט `error` ללא listener → `uncaughtException` → `process.exit` → כל ה-BE + ה-agent child מתים. תיקון: `feWs.on("error")` + ריכוך ה-handler הגלובלי | 🔄 brief בתכנון |
+| **WS thrashing — אותו session בשני טאבים** — MED-8 (חיבור FE יחיד ל-agentId) + auto-reconnect → ping-pong אינסופי על הסוקט. נדיר (אין דרך רשמית לפתוח אותו session בשני טאבים) אבל livelock כשקורה | 💭 **לבדוק** — takeover semantics / לעצור reconnect בטאב המפסיד |
 
 ---
 
