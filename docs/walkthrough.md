@@ -1,3 +1,227 @@
+## 2026-06-18 — feat(frontend): slice-claude-thinking-meta — הזרקת thinking-display ל-claude דרך _meta
+
+### מה בוצע?
+
+3 commits ב-branch `slice-claude-thinking-meta`:
+
+**Commit 1 (none)** — עדכון git-dep:
+- `pnpm update provider-contract` → `edb562e` (slice-acp-session-meta merged ל-main)
+- `AcpClient.newSession/loadSession` כולל כעת `_meta?: AcpRequestMeta`
+- נדרש ניקוי pnpm store cache (tarball ישן שמר dist ללא _meta)
+- typecheck נקי
+
+**Commit 2 (TDD)** — helper + הזרקה + טסטים:
+- `CLAUDE_SESSION_META` (module-level const): `{ claudeCode: { options: { thinking: { type:"adaptive", display:"summarized" } } } }`
+- `#sessionMeta()` private method: claude → CLAUDE_SESSION_META, אחר → undefined
+- 5 call sites מעבירים `_meta`: attach/newSession(warm)/loadSession(cold)/switchSession/#warmReconnect — conditional spread `...(m && { _meta: m })`
+- 4 טסטים חדשים: claude→_meta, opencode→ללא _meta (no-regression)
+- 232 טסטים ירוקים
+
+**Commit 3 (none)** — walkthrough + status
+
+### חריגות
+
+- pnpm cache החזיק tarball ישן של provider-contract שנבנה לפני slice-acp-session-meta. נדרש מחיקת cache entry + node_modules entry + reinstall → tarball חדש נוריד.
+
+### בדיקות
+
+- typecheck frontend: נקי (0 שגיאות)
+- lint:i18n: ירוק
+- tests agent-session: 232/232 ירוקים (כולל 4 חדשים)
+- e2e claude thinking: לא אומת ידנית ב-Windows (ממתין ל-verifier/Tama)
+---
+## 2026-06-18 — feat(frontend): slice-ui-polish-batch — Phase 3: Connect screen (C11,C12,C14,C15)
+
+### מה בוצע?
+
+**C11** — `SessionPicker.svelte`: label+select תמיד מוצגים; disabled כשאין sessions/loading. כפתור ↺ refresh לפני ה-select (קורא `onload`, disabled ב-loading). i18n: `sessions.refresh`.
+**C12** — `ActiveProcessesPanel.svelte`: `$effect` עם interval 12s → `activeAgents.refresh()`; ניקוי ב-cleanup; skip אם `document.hidden`.
+**C13** — נדחה (out-of-scope) — לא בוצע.
+**C14** — `routes/+page.svelte`: `$effect` שעוקב אחרי cwd+cliKind ומנקה `session.error` כשהמשתמש תיקן (שגיאה לא sticky).
+**C15** — `routes/+page.svelte`: כפתור תיקייה עם `order` דינמי לפי locale — RTL (עברית): `order:-1` → visual-right; LTR (אנגלית): `order:1` → visual-right.
+
+### חריגות
+C13 נדחה כפי שצוין בבריף (נוגע ב-agent-session VM — אזור P1d).
+
+### בדיקות
+- typecheck frontend: נקי
+- tests: 239/239 ירוקים (27 test files)
+- lint:i18n: ירוק
+
+---
+
+## 2026-06-18 — feat(frontend): slice-ui-polish-batch — Phase 2: Muted consistency (C7-C10)
+
+### מה בוצע?
+
+**C7** — `settings.svelte.ts`: הוסף `muted: boolean` ל-`Persisted` + DEFAULTS + `$state` + `setMuted()` → `#persist()`. TDD: 5 טסטים ירוקים (round-trip, backward-compat).
+**C8** — `speaker.svelte.ts`: constructor מאותחל `enabled = !settings.muted`, `toggle()` קורא `settings.setMuted(!enabled)` + מסנכרן `cues.enabled`.
+**C9** — תוצאה של C8: `cues.enabled = false` כשמושתק → `CuesEngine.play()` מחזיר מיד (חסום).
+**C10** — `MessageBubble` + `UserBubble`: `getSpeaker()` + `{#if speaker.enabled}` על כפתור ▶ (UserBubble: תנאי כפול `recordingId && speaker.enabled`).
+
+### חריגות
+אין.
+
+### בדיקות
+- typecheck frontend: נקי
+- tests: 239/239 ירוקים (27 test files; +5 טסטי muted)
+- lint:i18n: ירוק
+
+---
+
+## 2026-06-18 — feat(frontend): slice-ui-polish-batch — Phase 1: Message polish (C1-C6)
+
+### מה בוצע?
+
+**C1** — `lib/util/clipboard.ts`: `copyToClipboard(text): Promise<boolean>` (TDD, 3 טסטים ירוקים).
+**C2** — `lib/util/formatting.ts`: `formatTime(ts: number): string` → HH:MM (Intl.DateTimeFormat) (TDD, 3 טסטים ירוקים).
+**C3** — `MessageBubble.svelte` + `UserBubble.svelte`: כפתור העתקה (hover-desktop/גלוי-נייד, feedback 2s) + timestamp קטן תחת הבועה.
+**C4** — `UserBubble.svelte`: `{@html renderMarkdown(...)}` במקום plain text.
+**C5** — שני הקבצים: `:global(pre),:global(code){direction:ltr;text-align:left}` — תיקון RTL בבלוקי קוד.
+**C6** — `ToolBubble.svelte`: `c.type === "text"` עכשיו `{@html renderMarkdown(c.text)}` בתוך `<div dir="ltr">` + עיצוב markdown מותאם.
+**i18n** — מפתחות `bubble.copy` / `bubble.copied` ב-keys.ts + he.ts + en.ts.
+
+### חריגות
+אין.
+
+### בדיקות
+- typecheck frontend: נקי
+- tests: 234/234 ירוקים (27 test files)
+- lint:i18n: ירוק
+
+---
+
+## 2026-06-17 — slice-release-package — release package מבונדל (bunx-compatible)
+
+### מה בוצע?
+
+**slice**: slice-release-package (base: dev 870ea02)
+**commits**: 3 (287a2c7, 1e09ded, 2390aeb)
+
+**Commit 0 — feat(release): scaffold packages/release (integration)**
+- packages/release/package.json: name=drive-coding, v0.1.0, bin→dist/drive-coding.js, deps={pino^10.3.1,pino-pretty^13.1.3}, script=bundle (לא build כדי לא להיכלל ב-pnpm -r run build), prepack=node scripts/build.mjs.
+- packages/release/.gitignore: dist/ frontend-dist/ plugins/ *.tgz.
+- pnpm install הוסיף pino/pino-pretty ל-lockfile.
+
+**Commit 1 — feat(release): build.mjs + 2-candidate FE cascade ב-bin (integration; verifier-phase ✓)**
+- packages/release/scripts/build.mjs: שלב 1 pnpm FE build, שלב 2 cpSync frontend-dist, שלב 3 cpSync plugins, שלב 4 bun build --external pino --external pino-pretty.
+- packages/backend/src/bin/drive-coding.ts: הוסף existsSync import; cascade דו-מועמדי: ["../frontend-dist","../../../frontend/build"].find(existsSync) — מועמד 1=release layout, מועמד 2=dev layout.
+- verifier-phase: GO, 0 findings.
+
+**Commit 2 — feat(release): verify-pack.sh — end-to-end bunx smoke test (manual)**
+- packages/release/scripts/verify-pack.sh: npm pack → tarball checks → bun add <tgz> → bunx drive-coding → GET / 200 + /api/agents.
+- בדיקה ידנית: cascade בחר node_modules/drive-coding/frontend-dist ✓, GET / 200 ✓, /api/agents {"agents":[]} ✓.
+
+### חריגות
+- --sourcemap=linked הושמט מ-bun build: bun@1.3.14 עם --outfile + sourcemap=linked לא כותב קבצים כשstdio מנותב (pipe mode). ללא sourcemap הbundle עובד. תועד ב-commit message.
+- npm pack 2>&1 ב-verify script הוסר: bun build subprocess לא כותב קבצים כשstdout מנותב; script מיועד להרצה ב-terminal עם TTY.
+- bridge-failure-integration.test.ts: כשל pre-existing ב-dev לפני ה-slice (GET /api/agents מחזיר 201 במקום 4xx) — לא regression.
+
+### בדיקות
+- typecheck: ירוק (3 commits)
+- lint:i18n: ירוק
+- bun add <tgz>: exit 0 ✓
+- bunx drive-coding → feStaticDir=.../frontend-dist (cascade ✓), GET /=200 ✓, /api/agents ✓
+- dev path cascade: packages/frontend/build → GET /=200 ✓
+- tarball: dist/ + frontend-dist/ + plugins/ ✓, אין leak node_modules/.pnpm ✓
+- backend/core package.json: לא נגעו ✓
+
+---
+
+## 2026-06-17 — feat(backend): slice-wire-recorder-jsonl — הקלטת תעבורת WS ל-NDJSON
+
+### מה בוצע?
+
+3 commits ב-branch `slice-wire-recorder-jsonl`:
+
+**Commit 1 (TDD)** — מודול `wire-recorder.ts`:
+- `serializeWireRecord(ts, dir, raw)` — pure, שורת NDJSON + \\n
+- `createWireRecorder({ dir, now? })` — factory; dir=null → NOOP_SESSION (אפס IO)
+- `wire-recorder.test.ts` — 8 tests ירוקים (serialize, no-op, write path, close, two sessions)
+
+**Commit 2 (integration)** — חיווט ב-pipe:
+- `ws-agent.ts`: הוסף `wireRecorder: WireRecorder` ל-deps; `rec = wireRecorder.open(agentId)` ב-onConnect; `rec.record(dir, raw)` אחרי כל `logWire`; `rec.close()` ב-feWs.on("close")
+- `server.ts`: import + `createWireRecorder({ dir: WIRE_RECORD ? path.resolve("data/wire-recordings") : null })` + הזרקה ל-createAgentWsHandler
+- `tests/ws-agent-pipe.test.ts`: עדכון קריאות קיימות עם noopWireRecorder
+
+**Commit 3 (none)** — walkthrough + status
+
+### חריגות
+
+- core dist חסר (worktree חדש) → `pnpm --filter @drive-coding/core build`. תועד בגוטשה.
+
+### בדיקות
+
+- typecheck backend: נקי
+- lint:i18n: ירוק
+- wire-recorder tests: 8/8 ירוקים
+- ws-agent-pipe tests: ירוקים (עם noopWireRecorder)
+- כשלות סביבתיות (bridge-manager/Windows/sleep, frontend/svelte-kit): לא קשורות לסלייס
+
+### אימות חי (2026-06-18, מרדכי, Windows + tunnel)
+
+הורם BE (`WIRE_RECORD=1`, bun ישיר — עוקף את חסם onecli/bun ב-Windows) + FE + tunnel
+ציבורי; המשתמש חיבר agent claude ושלח כמה prompts. **ה-recorder עבד תחת bun** — נוצרו
+3 קבצי `.jsonl`, הגדול 518 frames משני הכיוונים (`out:23`, `in:495`), `raw` מלא. סוגר
+את DoD §5 #4-6 → **runtime-gate: GO**.
+
+**Payoff — אבחנת בעיית "התשובות הריקות"**: ניתוח ה-`.jsonl` חשף ש**כל** ה-
+`agent_thought_chunk` (139/139) מגיעים עם `content.text:""` (messageId שונים, ה-frame
+ריק לגמרי — אין signature/thinking field), בעוד ה-`agent_message_chunk` (התשובות
+בפועל) **מלאים** (126/130). מסקנה: ה-BE שלנו שקוף (אישור) — ה-`text:""` מגיע ריק
+מ-claude code (ה-ACP adapter, upstream). הכיוון הבא: חקירת ממשק ה-ACP מול claude.
+
+---
+
+## 2026-06-17 21:25 — build(frontend): source maps ב-build של פריסת dev
+
+### מה בוצע?
+
+כדי לחקור את אזהרות ה-`[Violation] 'message' handler took ~170ms` (ה-chunks מוקטנים ו-hashed, `DFDqgTZT.js`, ולא ניתן למפות חזרה למקור) — הופעלו source maps ב-build של פריסת ה-dev בלבד.
+
+- `vite.config.ts`: נוסף `build.sourcemap: process.env.FE_SOURCEMAP === "true"`.
+- `deploy/systemd/voice-acp-dev.service`: נוסף `Environment=FE_SOURCEMAP=true` — ה-`ExecStartPre` (`pnpm build`) ירש אותו. `voice-acp-main.service` **לא** מגדיר אותו → ב-prod source maps כבויים (לא לחשוף מקור, לא לנפח build).
+- `docs/running-locally.md`: סעיף על בנייה עם `FE_SOURCEMAP=true` לדיבוג מקומי.
+
+### החלטות ארכיטקטורה
+- **env-gated, לא always-on**: source maps רק ב-dev/staging. נבחר env var (`FE_SOURCEMAP`) בעקבות הדפוס הקיים ב-units (`FE_STATIC_DIR`, `CORS_ORIGINS`) — main ו-dev רצים אותו `pnpm build`, וההבדל היחיד הוא ה-env שה-unit מזריק.
+
+---
+
+## 2026-06-17 20:03 — fix(frontend): סינון control-frames של keepalive ($/pong) לפני ספריית ה-ACP
+
+### מה בוצע?
+
+תיקון נקודתי: ספריית הלקוח החיצונית של ה-ACP (`@agentclientprotocol/sdk`) זרקה `Error handling notification ... Method not found: $/pong (-32601)`. המקור — ה-heartbeat של ה-WS: ה-FE שולח `$/ping` כל 25 שניות (ws-transport.ts), ה-BE מיירט ומחזיר `$/pong` כ-frame עצמאי (ws-agent.ts), וה-`$/pong` דלף לתוך זרם ה-JSON-RPC של ספריית ה-ACP שאינה מכירה method כזה.
+
+**1. סינון בצד הצרכן (ws-to-streams.ts)**
+- נוספה פונקציה `isAcpControlFrame(text)` — true עבור frame שמנתח ל-JSON object עם `method` שמתחיל ב-`"$/"` ו-`id === undefined` (notification בקרה בלבד).
+- ב-`readable` (message listener), לפני `controller.enqueue`, נוסף `if (isAcpControlFrame(text)) return` — ה-frame מסונן ולא מגיע לספריית ה-ACP.
+- עודכנו ה-docstring העליון וההערות הפנימיות (במקום "ללא סינון").
+
+**2. fast-path ביצועים (ws-to-streams.ts)**
+- `isAcpControlFrame` פותח ב-`if (!text.includes("$/")) return false` — בדיקת substring זולה לפני `trim()`+`JSON.parse`. מונע double-parse (שלי + של ה-SDK) על כל frame נכנס, כולל chunks גדולים של תשובות agent (שלא מכילים `"$/"`). תוקן בעקבות אזהרות `[Violation] 'message' handler took ~170ms` שנצפו חי — ה-parse הכפול העמיס את ה-message handler של ה-WS.
+
+**3. טסטים (ws-to-streams.test.ts — קובץ חדש)**
+- 8 טסטים: `$/pong`/`$/ping` מסוננים, `$/pong` כ-ArrayBuffer מסונן (נתיב production `binaryType="arraybuffer"`), `session/update` עובר, request עם `id` עובר, frame חלקי נשמר, ערבוב, והודעה אמיתית שמכילה `"$/"` בתוכן עוברת (fast-path לא over-filtering).
+
+### החלטות ארכיטקטורה
+- **סינון ב-FE ולא ביטול ה-`$/pong` ב-BE**: נבחר לסנן בצד הצרכן (גישה A) במקום להסיר את ייצור ה-pong ב-ws-agent.ts (גישה B), לפי בקשת המשתמש. יתרון: מגן באופן כללי מפני כל control-frame עתידי שעלול לדלוף לזרם ה-ACP.
+- **סינון גורף של כל `$/...` notification (לא רק `$/pong`)**: אומת ע"י אביגיל מול הספרייה בפועל — ה-schema של `@agentclientprotocol/sdk@0.21.1` לא מגדיר אף method עם prefix `$/`, וה-client לא רושם `extNotification` handler, כך שכל `$/` frame היה ממילא קורס ב-`-32601`. הסינון אפוא בטוח יותר מהמצב הקודם.
+
+### מעקפים ופתרונות
+- **התנאי `id === undefined`**: דרוש כדי לא לסנן בטעות requests לגיטימיים עם method `$/...` (למשל `$/cancelRequest`) — רק notifications מסוננים.
+- **`JSON.parse` נכשל → `false` → מעביר הלאה**: שומר על ה-buffering של ה-SDK על גבולות `\n`. הודעת ACP יחידה יכולה להתפצל על פני כמה frames של WS; frame חלקי לא ינותח כ-JSON תקין ויעבור ללא שינוי, במקום להישבר.
+
+### בדיקות
+- typecheck: ירוק (`tsc --build`)
+- ws-to-streams.test.ts: 8/8 ירוקים
+- ws-transport.test.ts (קיים): 5/5 ירוקים
+- **אימות חי E2E** (build → BE מגיש static עם `FE_STATIC_DIR`, same-origin, CLI=claude, playwright): session ששרד 110+ שניות (4+ מחזורי heartbeat) — **0 מופעי `$/pong`/`Method not found`** בקונסול. השגיאות היחידות: 401 על `/proxy/elevenlabs` (TTS ללא OneCLI, צפוי).
+- lint: ה-380 שגיאות CRLF הן baseline ידוע של הפרויקט (biome מול core.autocrlf=true ב-Windows) — לא רגרסיה. ב-repo כל הקבצים נשמרים LF (אומת ב-`git ls-files --eol`).
+
+---
+
 ## 2026-06-16 — slice-agent-busy-indicator — אינדיקטור busy/idle לתהליכים
 
 ### מה בוצע?
@@ -5283,3 +5507,58 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 #### צעדים הבאים
 
 הסשן הבא: פתיחת הפרויקט והתחלת בנייה לפי סדר ה-13 ב-spec (התקנה → backend skeleton → STT/TTS → ACP bridge → frontend).
+
+---
+
+## slice-bunx-single-command — Commit 0: bin entry + bin field
+
+**תאריך**: 2026-06-17
+**Branch**: slice-bunx-single-command
+
+### מה בוצע
+- נוצר `packages/backend/src/bin/drive-coding.ts` — bin entry שמגדיר `FE_STATIC_DIR` ו-`PORT` דרך `??=` ואז מבצע `await import("../server.js")`.
+- נוסף שדה `"bin": { "drive-coding": "./src/bin/drive-coding.ts" }` ל-`packages/backend/package.json`.
+- ה-entry ממוקם ב-`src/bin/` (בתוך `include: ["src/**/*"]`) — מכוסה ע"י typecheck.
+- `path.resolve(import.meta.dirname, "../../../frontend/build")` — path מוחלט cross-platform.
+
+### בדיקות
+- `pnpm typecheck` — ירוק
+- `pnpm lint:i18n` — ירוק (אין מחרוזות עברית בקוד חדש)
+- `pnpm lint` — כשל pre-existing (לא נגרם ע"י שינויי ה-slice)
+- server הורם ב-`PORT=4099`: `/` החזיר 200 + `<!doctype html>`, `/api/agents` החזיר JSON (לא HTML)
+
+### חריגות
+- `pnpm lint` כשל ב-pre-existing code (223 errors) — לא קשור ל-slice זה. אומת שהקובץ החדש נקי.
+
+## slice-bunx-single-command — Commit 1: launcher script + root start
+
+**תאריך**: 2026-06-17
+
+### מה בוצע
+- נוצר `scripts/dc-launch.mjs` — בודק אם `packages/frontend/build/index.html` קיים; אם לא — מריץ `pnpm --filter @drive-coding/frontend-v2 build`; ואז spawn של bin entry.
+- נוסף `"start": "node scripts/dc-launch.mjs"` ל-root `package.json`. שונה מ-backend `start` הקיים (BE-only).
+
+### בדיקות
+- `pnpm typecheck` — ירוק
+- `pnpm lint:i18n` — ירוק
+- הרצה ידנית: הסרת build → `PORT=4099 node scripts/dc-launch.mjs` → בנה FE אוטומטית → server עלה → `/` 200 HTML, `/api/agents` JSON
+
+## slice-bunx-single-command — Commit 2: preflight UX
+
+**תאריך**: 2026-06-17
+
+### מה בוצע
+- עדכון `packages/backend/src/bin/drive-coding.ts`:
+  1. בדיקת זמינות agent: `OPENCODE_BIN ?? "opencode"` דרך `which`/`where` (cross-platform)
+  2. אם חסר — `console.warn` עם הודעת הכוונה (לא חוסם)
+  3. `console.log` עם ה-URL לפני ה-import
+
+### בדיקות
+- `pnpm typecheck` — ירוק
+- `pnpm lint:i18n` — ירוק
+- הרצה רגילה: מדפיס `[drive-coding] Starting — http://localhost:PORT`
+- עם `OPENCODE_BIN=/nonexistent/opencode`: מדפיס warning ועולה עדיין
+
+### הערה — DoD #7 (Windows paths)
+- `import.meta.dirname` + `path.resolve` cross-platform — אומת על Linux.
+- אימות בפועל על Windows נשאר ל-Tama (כפי שצוין בהנחיות).

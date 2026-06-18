@@ -36,6 +36,15 @@ import type {
 // ─── slice sessions-inline: ייבוא טיפוס + normalize ───
 import { type SessionInfo, normalizeSessionInfo } from "$lib/adapters/sessions"
 
+/**
+ * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries.
+ * Opus 4.7+ שינה default ל-display:"omitted"; זה מבקש "summarized" מפורשות.
+ * provider-agnostic: ה-key claudeCode מתעלם ע"י ספקים אחרים. ר' decisions/voice-acp.md.
+ */
+const CLAUDE_SESSION_META = {
+  claudeCode: { options: { thinking: { type: "adaptive", display: "summarized" } } },
+} as const
+
 export type AgentSessionStatus =
   | "idle"          // טרם נוצר סוכן
   | "connecting"    // יוצר סוכן + לחיצת יד של ACP
@@ -443,7 +452,8 @@ export class AgentSession {
         this.bubbles = []
         this.isLoadingHistory = true
         try {
-          const loadResult = await this.#client.loadSession({ sessionId: this.#sessionId!, cwd: this.cwd! })
+          const m = this.#sessionMeta()
+          const loadResult = await this.#client.loadSession({ sessionId: this.#sessionId!, cwd: this.cwd!, ...(m && { _meta: m }) })
           this.#captureSessionConfig(loadResult)
         } finally {
           this.isLoadingHistory = false
@@ -500,7 +510,8 @@ export class AgentSession {
 
       // 3. לחיצת יד של ACP + סשן חדש
       this.#client = await createAcpClient(transport, this.#onSessionUpdate)
-      const sessionResult = await this.#client.newSession({ cwd: input.cwd })
+      const m = this.#sessionMeta()
+      const sessionResult = await this.#client.newSession({ cwd: input.cwd, ...(m && { _meta: m }) })
       this.#sessionId = (sessionResult as { sessionId?: string }).sessionId ?? null
       if (!this.#sessionId) {
         throw new Error("newSession returned no sessionId")
@@ -632,7 +643,8 @@ export class AgentSession {
       // השתק את ה-TTS של ה-Speaker במהלך ניגון מחדש של ההיסטוריה (slice 4: replay-quiet).
       this.isLoadingHistory = true
       try {
-        const loadResult = await this.#client.loadSession({ sessionId: input.sessionId, cwd: input.cwd })
+        const m = this.#sessionMeta()
+        const loadResult = await this.#client.loadSession({ sessionId: input.sessionId, cwd: input.cwd, ...(m && { _meta: m }) })
         this.#captureSessionConfig(loadResult)   // slice 23: לכוד config (sessionId מ-input, לא מ-response)
       } finally {
         this.isLoadingHistory = false
@@ -738,9 +750,11 @@ export class AgentSession {
     try {
       this.isLoadingHistory = true
       try {
+        const m = this.#sessionMeta()
         const loadResult = await this.#client.loadSession({
           sessionId: input.sessionId,
           cwd: input.cwd,
+          ...(m && { _meta: m }),
         })
         this.#captureSessionConfig(loadResult)
       } finally {
@@ -795,7 +809,8 @@ export class AgentSession {
     this.bubbles = []
 
     try {
-      const result = await this.#client.newSession({ cwd })
+      const m = this.#sessionMeta()
+      const result = await this.#client.newSession({ cwd, ...(m && { _meta: m }) })
       const newId = (result as { sessionId?: string }).sessionId ?? null
       if (!newId) throw new Error("newSession returned no sessionId")
       this.#sessionId = newId
@@ -937,6 +952,13 @@ export class AgentSession {
       // best-effort — בכל מקרה נאלץ idle מקומית
     }
     this.#setTurnState("idle")
+  }
+
+  // ─── slice claude-thinking-meta: _meta helper ───
+
+  /** _meta לפי ה-CLI הנוכחי. claude → thinking-display; אחר → undefined (אגנוסטי). */
+  #sessionMeta(): Record<string, unknown> | undefined {
+    return this.#cliKind === "claude" ? CLAUDE_SESSION_META : undefined
   }
 
   // ─── slice 6: setter מרכז ─── (additive — מנתב את כל ה-status writes)

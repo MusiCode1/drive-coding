@@ -43,6 +43,8 @@
 
 ## §B — הארכיטקטורה היעד
 
+> ⚠️ **SUPERSEDED (2026-06-17):** המודל המנורמל (`ProviderEvent`/`SessionConfig`/`ProviderSession`) **אינו** נבנה מקומית ב-`packages/core/src/protocol`. הוא חי ב-package **`provider-contract`** (repo `provider-abstraction`), ו-drive-coding **צורך** אותו כ-git-dep — **drive-coding = צרכן בלבד**. החלטה: `provider-abstraction/docs/decisions/session-config-options.md`. תכנון: `provider-abstraction/docs/design/session-control-redesign/`. הקטעים הבאים על מבני-types מקומיים נשמרים כ-reference היסטורי בלבד.
+
 שני חצאים משלימים של אותה הפשטה, ב-`packages/core/src/protocol/` (חדש):
 
 ### חצי 1 — מודל אירועים מנורמל (נתיב קריאה / inbound)
