@@ -98,6 +98,10 @@ if (feStaticDir) {
 const echoWss = new WebSocketServer({ noServer: true })
 const agentWss = new WebSocketServer({ noServer: true })
 
+// error listeners על שרתי WS — מונעים throw (unhandled EventEmitter error) על שגיאות רמת-שרת
+echoWss.on("error", (err) => procLog.warn({ src: "echoWss", err }, "wss error"))
+agentWss.on("error", (err) => procLog.warn({ src: "agentWss", err }, "wss error"))
+
 const echoHandler = createEchoWsHandler()
 const onAgentConnect = createAgentWsHandler({ orchestrator, bridgeManager, wireRecorder })
 

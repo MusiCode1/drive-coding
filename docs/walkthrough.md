@@ -1,3 +1,27 @@
+## 2026-06-18 — fix(ws): slice-ws-error-survival Commit 1 — error listeners על שרתי WS + echo
+
+### מה בוצע?
+
+**Commit 1 (manual)** — הגנות נוספות נגד error ללא listener ממקורות WS נוספים:
+- `packages/backend/src/server.ts`: `echoWss.on("error", ...)` + `agentWss.on("error", ...)` — warn ל-procLog, לא קריסה
+- `packages/backend/src/delivery/ws-echo.ts`: `ws.on("error", ...)` ל-socket ה-echo — warn ל-log
+
+### Manual verification
+
+אין error event ללא listener על אף WS source:
+- `echoWss` (WebSocketServer) — listener ✅
+- `agentWss` (WebSocketServer) — listener ✅
+- `ws` בתוך ws-echo handler — listener ✅
+- `feWs` בתוך ws-agent handler — מכוסה ב-Commit 0 ✅
+
+### בדיקות
+
+- typecheck: נקי
+- lint:i18n: ירוק
+- (manual: אין tests אוטומטיים לפי brief)
+
+---
+
 ## 2026-06-18 — fix(ws): slice-ws-error-survival Commit 0 — feWs error handler + idempotent detach
 
 ### מה בוצע?
