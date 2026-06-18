@@ -352,6 +352,16 @@ bunx vitest run src/delivery/transient-socket-error.test.ts
 
 ---
 
+## סטטוס
+
+**הושלם** — 4 commits על branch `slice-ws-error-survival`:
+- `132e8ab` — Commit 0: feWs error handler + idempotent detach
+- `9f7bfcc` — Commit 1: error listeners על שרתי WS + echo
+- `5f23bf3` — Commit 2: isTransientSocketError + ריכוך uncaughtException
+- `4b9fe3e` — Commit 3: observability logs
+
 ## סטיות מהתכנון (מתעדכן ע"י executor תוך כדי)
 
-- ...
+- **spawn child בטסט**: `OPENCODE_ARGS='["-e","setInterval(...)"]'` נדרש כדי שה-child יישאר חי (OPENCODE_BIN=node + args של opencode רגיל גורם ל-exit מהיר). תועד בטסט עצמו.
+- **מיקום קובץ הטסט**: הtbriefאמר `src/delivery/ws-agent.test.ts` אבל הפרויקט שם טסטים ב-`tests/`. יצרתי `tests/ws-agent-error-survival.test.ts` לפי הקונבנציה.
+- **TypeScript narrowing**: `childOrNull` → `const child = childOrNull` נדרש בגלל closure + strict (TypeScript מאבד narrowing בתוך closure).
