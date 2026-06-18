@@ -8,7 +8,7 @@
 //
 // Run via: node scripts/build.mjs  (or triggered automatically by prepack/npm pack)
 
-import { cpSync, mkdirSync, rmSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import path from "node:path"
@@ -75,5 +75,25 @@ execFileSync(
   ],
   { stdio: "inherit" },
 )
+
+// Guard: the bundle must exist, and NO sourcemap may leak into dist/.
+// bun 1.3.14 has a bug where `bun build --sourcemap --outfile <p>` ignores
+// --outfile and writes to the ENTRY dir instead — so a stray --sourcemap would
+// (a) leave dist/drive-coding.js missing, and (b) drop a .map next to the source.
+// This assertion fails the build loudly so a sourcemap can NEVER ship to npm.
+if (!existsSync(releaseBinOut)) {
+  throw new Error(
+    `[build] FATAL: ${releaseBinOut} was not produced. A --sourcemap flag may have ` +
+      "misrouted the output to the entry dir (bun 1.3.14 ignores --outfile when --sourcemap is set). " +
+      "Remove --sourcemap from the bun build args.",
+  )
+}
+const mapLeak = readdirSync(releaseDist).filter((f) => f.endsWith(".map"))
+if (mapLeak.length > 0) {
+  throw new Error(
+    `[build] FATAL: sourcemap(s) found in dist/ — these would ship to npm: ${mapLeak.join(", ")}. ` +
+      "Do not pass --sourcemap to the bun build above (see comment).",
+  )
+}
 
 console.log(`[build] Done. Bundle: ${releaseBinOut}`)

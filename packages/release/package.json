@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "bin": { "drive-coding": "./dist/drive-coding.js" },
-  "files": ["dist", "plugins", "frontend-dist"],
+  "files": ["dist/drive-coding.js", "plugins", "frontend-dist"],
   "scripts": {
     "bundle": "node scripts/build.mjs",
     "prepack": "node scripts/build.mjs"
