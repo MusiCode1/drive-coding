@@ -1,3 +1,37 @@
+## 2026-06-18 — feat(frontend): slice-claude-thinking-meta — הזרקת thinking-display ל-claude דרך _meta
+
+### מה בוצע?
+
+3 commits ב-branch `slice-claude-thinking-meta`:
+
+**Commit 1 (none)** — עדכון git-dep:
+- `pnpm update provider-contract` → `edb562e` (slice-acp-session-meta merged ל-main)
+- `AcpClient.newSession/loadSession` כולל כעת `_meta?: AcpRequestMeta`
+- נדרש ניקוי pnpm store cache (tarball ישן שמר dist ללא _meta)
+- typecheck נקי
+
+**Commit 2 (TDD)** — helper + הזרקה + טסטים:
+- `CLAUDE_SESSION_META` (module-level const): `{ claudeCode: { options: { thinking: { type:"adaptive", display:"summarized" } } } }`
+- `#sessionMeta()` private method: claude → CLAUDE_SESSION_META, אחר → undefined
+- 5 call sites מעבירים `_meta`: attach/newSession(warm)/loadSession(cold)/switchSession/#warmReconnect — conditional spread `...(m && { _meta: m })`
+- 4 טסטים חדשים: claude→_meta, opencode→ללא _meta (no-regression)
+- 232 טסטים ירוקים
+
+**Commit 3 (none)** — walkthrough + status
+
+### חריגות
+
+- pnpm cache החזיק tarball ישן של provider-contract שנבנה לפני slice-acp-session-meta. נדרש מחיקת cache entry + node_modules entry + reinstall → tarball חדש נוריד.
+
+### בדיקות
+
+- typecheck frontend: נקי (0 שגיאות)
+- lint:i18n: ירוק
+- tests agent-session: 232/232 ירוקים (כולל 4 חדשים)
+- e2e claude thinking: לא אומת ידנית ב-Windows (ממתין ל-verifier/Tama)
+
+---
+
 ## 2026-06-17 — feat(backend): slice-wire-recorder-jsonl — הקלטת תעבורת WS ל-NDJSON
 
 ### מה בוצע?
