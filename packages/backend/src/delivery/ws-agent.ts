@@ -75,12 +75,14 @@ export function createAgentWsHandler(deps: {
       return
     }
 
-    const child = deps.bridgeManager.getChild(agentId)
-    if (!child) {
+    const childOrNull = deps.bridgeManager.getChild(agentId)
+    if (!childOrNull) {
       childLog.warn({}, "agent not found")
       feWs.close(1008, "agent not found")
       return
     }
+    // non-null בוודאות — guard למעלה כבר הכריח return אם null
+    const child = childOrNull
 
     activeFeWs.set(agentId, feWs)
     deps.bridgeManager.markAttached(agentId) // ← תצוגת active-agents (attached)
@@ -141,14 +143,22 @@ export function createAgentWsHandler(deps: {
     child.once("exit", onChildExit)
 
     // סגירת feWs לניקוי, אבל אל תהרוג את ה-child
-    feWs.on("close", () => {
-      childLog.info({}, "WS disconnect — detaching pipe")
+    // detach() היא idempotent — גם אם error+close נורים ברצף, הניקוי מתבצע פעם אחת בלבד
+    let detached = false
+    function detach(reason: "close" | "error", err?: unknown): void {
+      if (detached) return
+      detached = true
+      if (reason === "error") childLog.warn({ err }, "WS error — detaching pipe")
+      else childLog.info({}, "WS disconnect — detaching pipe")
       activeFeWs.delete(agentId)
       deps.bridgeManager.markDetached(agentId) // ← תצוגת active-agents (attached)
       unsub() // ← slice agent-busy-indicator: ביטול subscription ל-stdout
       rec.close() // סגירת stream הקלטה (no-op כש-WIRE_RECORD כבוי)
       child.off("exit", onChildExit)
-      // חשוב: אל תקרא ל-child.kill() — ה-child שורד התנתקות של ה-FE
-    })
+      // חשוב: לעולם לא child.kill() — ה-child שורד התנתקות של ה-FE
+    }
+
+    feWs.on("error", (err) => detach("error", err))
+    feWs.on("close", () => detach("close"))
   }
 }

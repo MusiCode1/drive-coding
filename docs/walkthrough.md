@@ -1,3 +1,33 @@
+## 2026-06-18 — fix(ws): slice-ws-error-survival Commit 0 — feWs error handler + idempotent detach
+
+### מה בוצע?
+
+**Commit 0 (integration)** — `packages/backend/src/delivery/ws-agent.ts`:
+- חולצה פונקציה `detach(reason, err?)` idempotent (guard flag `detached`) מגוף ה-`close` handler הקיים
+- נוסף `feWs.on("error", (err) => detach("error", err))` — חוסם ניתוק לא-נקי מ-throw
+- `feWs.on("close")` קורא ל-`detach("close")` — ניקוי זהה (ל-child שורד)
+- עקיפת בעיית TypeScript narrowing ב-closure: `childOrNull` + `const child = childOrNull`
+
+**טסט חדש** `packages/backend/tests/ws-agent-error-survival.test.ts` (4 טסטים):
+- child שורד dirty disconnect (`feWs.emit("error", ECONNRESET)`)
+- detach idempotent: `error+close` → `markDetached` קרוי פעם אחת בלבד
+- אחרי error-detach, חיבור שני לאותו agentId מצליח (activeFeWs פנוי)
+- clean close גם שומר על ה-child חי (regression DoD #5)
+
+### חריגות
+
+- `OPENCODE_ARGS='["-e","setInterval(...)"]'` נדרש ב-spawn הטסט (node כ-bin, args של opencode גורמים ל-exit מהיר ב-OPENCODE_BIN=node בלבד)
+- frontend tests נכשלות pre-existing (`.svelte-kit/tsconfig.json` חסר ב-worktree שלא בנה FE)
+- `bridge-failure-integration.test.ts` — כישלון אחד pre-existing
+
+### בדיקות
+
+- typecheck: נקי
+- lint:i18n: ירוק
+- ws-agent-error-survival: 4/4 ירוקים
+
+---
+
 ## 2026-06-18 — feat(frontend): slice-claude-thinking-meta — הזרקת thinking-display ל-claude דרך _meta
 
 ### מה בוצע?
