@@ -1,3 +1,23 @@
+## 2026-06-18 — feat(frontend): slice-ui-polish-batch-2 — Enter במובייל + briefs (תמונות/slash)
+
+### מה בוצע?
+
+**Enter (קוד)** — Enter שולח **רק בדסקטופ**; במובייל Enter = שורה חדשה והשליחה דרך כפתור ה-send בלבד (כדי לא להילחם במקלדת הווירטואלית):
+- `responsive.svelte.ts`: getter `isMobileDevice` = `navigator.userAgentData.mobile` ‖ רוחב חלון `<768px`. קריאה בטוחה ל-`userAgentData` (לא בטיפוסי lib.dom) דרך helper `readUaMobile()`.
+- `TypeArea.svelte`: תנאי ה-keydown הורחב — `e.key==="Enter" && !e.shiftKey && !e.isComposing && !responsive.isMobileDevice`. ה-`!isComposing` מונע שליחה באמצע הקלדת IME/ניקוד. ניקוי format pre-existing של `isDisabled`.
+
+**תיעוד (briefs — ללא קוד):**
+- `docs/plans/slice-prompt-images.md` — brief מלא ל-3a (הדבקת/גרירת תמונות). ממצא מכריע: **FE-only** דרך `this.#client.conn.prompt({ sessionId, prompt: ContentBlock[] })` של ה-ACP SDK (`AcpClient` חושף את `conn`); ה-contract שקוף, ה-`PromptMessage` ב-core הוא legacy. אפס שינוי core/BE/contract.
+- `docs/plans/slice-slash-commands.md` — 3b **חסום**: `available_commands_update` מגיע אבל ה-contract מחזיר אותו כ-`raw` (לא ממופה). דורש עבודת `provider-abstraction`. מומלץ לדחות (כמו C13).
+- `docs/plans/ui-feature-backlog.md` — עדכון סטטוסים (3a→brief, 3b→חסום, Enter→בוצע) + הפניות.
+
+### בדיקות
+- typecheck frontend: נקי (0 שגיאות)
+- tests: 243/243 ירוקים (27 test files)
+- lint:i18n: ירוק
+- Enter במובייל מול דסקטופ: **ממתין לאימות ידני** (תלוי-מכשיר — אי אפשר לאמת אוטומטית)
+
+---
 ## 2026-06-18 — feat(frontend): slice-claude-thinking-meta — הזרקת thinking-display ל-claude דרך _meta
 
 ### מה בוצע?

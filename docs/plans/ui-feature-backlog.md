@@ -29,8 +29,9 @@
 
 | # | פריט | תיאור | מול roadmap | הערכה |
 | --- | --- | --- | --- | --- |
-| 3a | הדבקת תמונות | paste image לתיבה + preview; תמיכה בנייד (`input capture`/file picker) | חדש | 🟡 — ה-`PromptContent` הקנוני כבר מולטימודלי (text+image) |
-| 3b | פקודות סלאש (/) | autocomplete dropdown לפקודות | חדש | 🟡 — ל-Claude יש `commands_changed` בפרוטוקול; תלוי חשיפה דרך ה-contract |
+| 3a | הדבקת תמונות | paste image לתיבה + preview; תמיכה בנייד (`input capture`/file picker) | חדש | 🟡 → **brief: `slice-prompt-images.md`**. מאומת FE-only (דרך `conn.prompt` של ACP SDK; ה-contract שקוף) |
+| 3b | פקודות סלאש (/) | autocomplete dropdown לפקודות | חדש | 🟡 → 🚫 **חסום: `slice-slash-commands.md`**. `available_commands_update` לא ממופה בחוזה (מחזיר `raw`) — דורש עבודת `provider-abstraction` |
+| Enter | אנטר במובייל | Enter=שלח בדסקטופ בלבד; במובייל שורה חדשה + שליחה בכפתור | חדש (בקשת משתמש) | ✅ **בוצע** 2026-06-18 — `responsive.isMobileDevice` (userAgentData.mobile ‖ width<768) ב-TypeArea |
 
 ## 4. כבר ב-roadmap (הצלבה — לא לתכנן מחדש)
 
