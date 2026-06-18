@@ -143,6 +143,47 @@ describe("Settings — speech toggles (redesign-3 / 9a)", () => {
   })
 })
 
+describe("Settings — muted (ui-polish-batch · C7)", () => {
+  test("default muted = false when localStorage empty", () => {
+    installLocalStorage()
+    const s = new Settings()
+    expect(s.muted).toBe(false)
+  })
+
+  test("setMuted(true) writes to localStorage", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setMuted(true)
+    expect(s.muted).toBe(true)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.muted).toBe(true)
+  })
+
+  test("setMuted(false) writes false to localStorage", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setMuted(true)
+    s.setMuted(false)
+    expect(s.muted).toBe(false)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.muted).toBe(false)
+  })
+
+  test("new Settings() reads persisted muted=true from localStorage", () => {
+    const store = installLocalStorage()
+    store.set(STORAGE_KEY, JSON.stringify({ muted: true }))
+    const s = new Settings()
+    expect(s.muted).toBe(true)
+  })
+
+  test("backward-compat: localStorage without muted → defaults to false", () => {
+    const store = installLocalStorage()
+    store.set(STORAGE_KEY, JSON.stringify({ cliKind: "opencode", voiceId: "v1" }))
+    const s = new Settings()
+    expect(s.muted).toBe(false)
+  })
+})
+
 describe("Settings — loadVoices", () => {
   test("populates availableVoices and drives loading/error", async () => {
     installLocalStorage()

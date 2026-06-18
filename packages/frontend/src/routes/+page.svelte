@@ -1,7 +1,7 @@
 <script lang="ts">
 import { CLI_KINDS, type CliKind, type AgentPublic } from "@drive-coding/core"
 import { goto } from "$app/navigation"
-import { onMount } from "svelte"
+import { onMount, untrack } from "svelte"
 import { connectAgent } from "$lib/actions/connect-agent"
 import { fetchServerOptions } from "$lib/adapters/options"
 import { listSessionsForCwd, type SessionInfo } from "$lib/adapters/sessions"
@@ -59,6 +59,24 @@ $effect(() => {
   if (folderWasOpen && !modals.folderOpen) cwd = settings.lastCwd
   folderWasOpen = modals.folderOpen
 })
+
+// C14: ניקוי שגיאה reactive — כשה-cwd או cliKind משתנים (המשתמש תיקן) מנקה את השגיאה.
+// untrack: session.error נקרא ונכתב בתוך untrack() כדי שהוא לא יהיה dependency של ה-effect.
+// כך השגיאה נשארת מוצגת כל עוד המשתמש לא ערך את הטופס — ורק שינוי cwd/cliKind מנקה.
+$effect(() => {
+  // track רק cwd + cliKind — שינוי בהם מנקה שגיאה ישנה
+  void cwd
+  void cliKind
+  untrack(() => {
+    if (session.error !== null) session.error = null
+  })
+})
+
+// C15: dir מפורש לפי locale — כפתור תיקייה ב-order:-1 תמיד (ראשון בflex).
+// RTL (dir="rtl"): flex מימין לשמאל → ראשון=ימין ויזואלי. ✓
+// LTR (dir="ltr"): flex משמאל לימין → ראשון=שמאל ויזואלי. ✓
+// dir="auto" הוסר: היה מושפע מתוכן הנתיב (LTR) ולא מה-locale.
+const isRtl = $derived(settings.locale === "he")
 
 // ─── state עבור תפריט בחירת סשן (session picker) ───
 let sessions = $state<SessionInfo[]>([])
@@ -155,7 +173,11 @@ async function onSubmit(e: SubmitEvent) {
 
     <label>
       <span>{t("connect.cwd.label")}</span>
-      <div class="cwd-row">
+      <!-- C15: dir מפורש לפי locale (לא dir="auto" — שמושפע מתוכן הנתיב).
+           כפתור תיקייה עם order:-1 תמיד = ראשון בflex.
+           RTL (עברית): flex מימין לשמאל → ראשון=ימין ויזואלי. ✓
+           LTR (אנגלית): flex משמאל לימין → ראשון=שמאל ויזואלי. ✓ -->
+      <div class="cwd-row" dir={isRtl ? "rtl" : "ltr"}>
         <input
           type="text"
           bind:value={cwd}
@@ -163,10 +185,11 @@ async function onSubmit(e: SubmitEvent) {
           dir="ltr"
           disabled={session.status === "connecting"}
         />
-        <!-- C10: פותח את בורר התיקיות (FolderPickerDialog) -->
+        <!-- C15: order:-1 → תמיד ראשון בflex: LTR=שמאל, RTL=ימין -->
         <button
           type="button"
           class="folder-btn"
+          style="order: -1"
           onclick={() => modals.openFolder()}
           disabled={session.status === "connecting"}
           aria-label={t("settings.folder.pick")}
@@ -249,11 +272,13 @@ async function onSubmit(e: SubmitEvent) {
     color: var(--fg-dim);
   }
 
+  /* יישור לגובה ה-Select (px-3 py-2.5 text-sm rounded-xl) — אחידות שורות */
   input {
-    padding: 0.7rem 0.8rem;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.875rem;
     background: var(--bg-elev);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 0.75rem;
     color: var(--fg);
   }
 
@@ -263,7 +288,7 @@ async function onSubmit(e: SubmitEvent) {
     box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.2);
   }
 
-  /* C10: שורת cwd — input גמיש + כפתור תיקייה */
+  /* C10+C15: שורת cwd — input גמיש + כפתור תיקייה */
   .cwd-row {
     display: flex;
     gap: 0.5rem;
@@ -279,15 +304,16 @@ async function onSubmit(e: SubmitEvent) {
     min-width: 0;
   }
 
+  /* folder-btn — זהה ל-refresh-btn ב-SessionPicker (אחידות 2 הלחצנים) */
   .folder-btn {
     flex-shrink: 0;
     margin-top: 0; /* מאפס את ה-margin-top של כלל ה-button הגלובלי — מיישר עם ה-input */
     display: grid;
     place-items: center;
-    padding: 0 0.8rem;
+    padding: 0 0.7rem;
     background: var(--bg-elev);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 0.75rem;
     color: var(--fg-dim);
     cursor: pointer;
   }

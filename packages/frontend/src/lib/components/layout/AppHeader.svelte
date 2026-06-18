@@ -23,9 +23,9 @@ const t = getI18n().t
 // שם הסוכן — placeholder קבוע; redesign-3 יחבר לאפשרויות הסוכן
 const agentName = "drive-coding"
 
-// cwd — רק שם התיקייה האחרון
+// cwd — רק שם התיקייה האחרון. split על / וגם \ (Windows path separator).
 const cwdLabel = $derived(
-  session.cwd ? session.cwd.split("/").filter(Boolean).at(-1) ?? session.cwd : ""
+  session.cwd ? session.cwd.split(/[/\\]/).filter(Boolean).at(-1) ?? session.cwd : ""
 )
 </script>
 

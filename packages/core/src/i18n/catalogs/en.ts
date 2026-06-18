@@ -69,9 +69,11 @@ export const en: Catalog = {
   // ─── sessions ─── (slice 8)
   "sessions.loadButton": "Load recent sessions",
   "sessions.loading": "Loading…",
-  "sessions.label": "Existing session",
+  "sessions.label": "Select session",
   "sessions.startNew": "New",
   "sessions.error": "Failed to load",
+  // ─── sessions-refresh ─── (ui-polish-batch · C11)
+  "sessions.refresh": "Refresh",
   // ─── settings ─── (slice 9)
   "settings.title": "Settings",
   "settings.beUrl.label": "Backend URL",
@@ -147,6 +149,9 @@ export const en: Catalog = {
   // ─── bubble-play ─── (msr-v2)
   "bubble.play": "Play",
   "bubble.stop": "Stop playback",
+  // ─── bubble-copy ─── (ui-polish-batch · C3)
+  "bubble.copy": "Copy",
+  "bubble.copied": "Copied!",
   // ─── model-status ─── (msr-v2)
   "modelStatus.waiting": "Waiting…",
   "modelStatus.thinking": "Thinking…",
