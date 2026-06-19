@@ -82,8 +82,9 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 | --- | --- |
 | `bunx drive-coding` · npm-publish | ✅ READY |
 | Windows adaptation · cli-agents deploy (systemd) | ✅ |
-| **WS robustness — ניתוק דפדפן לא יפיל את ה-BE** — ניתוק WS "מלוכלך" פולט `error` ללא listener → `uncaughtException` → `process.exit` → כל ה-BE + ה-agent child מתים. תיקון: `feWs.on("error")` + ריכוך ה-handler הגלובלי | 🔄 brief בתכנון |
+| **WS robustness — ניתוק דפדפן לא יפיל את ה-BE** — ניתוק WS "מלוכלך" פולט `error` ללא listener → `uncaughtException` → `process.exit` → כל ה-BE + ה-agent child מתים. תיקון: `feWs.on("error")` + ריכוך ה-handler הגלובלי | ✅ מוזג ל-dev (`slice-ws-error-survival`, 3 שכבות + observability; אביגיל ×2 READY) |
 | **WS thrashing — אותו session בשני טאבים** — MED-8 (חיבור FE יחיד ל-agentId) + auto-reconnect → ping-pong אינסופי על הסוקט. נדיר (אין דרך רשמית לפתוח אותו session בשני טאבים) אבל livelock כשקורה | 💭 **לבדוק** — takeover semantics / לעצור reconnect בטאב המפסיד |
+| **spawn ENOENT → 201 (known bug)** — `POST /api/agents` כש-CLI לא נמצא מחזיר `201` (optimistic) במקום error; ה-BE שורד אבל ה-client לא יודע מיד שה-spawn נכשל. הטסט F-1 (`bridge-failure-integration`) אדום מ-slice 10 (חלק ה-status-code מעולם לא היה ירוק). **נפרד מ-WS disconnect.** | 💭 slice נפרד — fail-fast (להמתין רגע ל-child) או עדכון הטסט ל-design ה-async |
 
 ---
 
