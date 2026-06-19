@@ -5,10 +5,12 @@ import { createLogger } from "@drive-coding/core/log"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
 import { AUDIO_FRIENDLY_PROMPT } from "../prompts/index.js"
 import { decodeWireLine } from "../delivery/wire-decode.js"
+import type { WireRecorder, WireSession } from "../delivery/wire-recorder.js"
 import { type TurnTracker, createTurnTracker } from "./turn-tracker.js"
 import { getCliCommand, getCliSpec } from "./cli-config.js"
 
 const log = createLogger("backend.bridge.manager")
+const wireLog = createLogger("backend.acp.wire")
 const STDERR_MAX_LINES = 200
 
 /** Handle מורחב עם גישה ל-stderr ו-child ישיר — משמש פנימית את ה-orchestrator. */
@@ -17,7 +19,7 @@ export type BridgeHandleWithStderr = BridgeHandle & {
   readonly child: ChildProcessWithoutNullStreams
 }
 
-export function createBridgeManager(): BridgeManager & {
+export function createBridgeManager(opts?: { wireRecorder?: WireRecorder }): BridgeManager & {
   spawnWithStderr(bridgeId: string, input: SpawnBridgeInput): Promise<BridgeHandleWithStderr>
   getChild(bridgeId: string): ChildProcessWithoutNullStreams | null
   // ─── תצוגת active-agents (attached) ───
@@ -27,7 +29,11 @@ export function createBridgeManager(): BridgeManager & {
   getRuntimeInfo(bridgeId: string): { pid: number; attached: boolean; busy: boolean } | null
   // slice agent-busy-indicator: subscription לשורות stdout (reader קבוע ב-bridge-manager)
   onLine(bridgeId: string, cb: (line: string) => void): () => void
+  /** כותב שורה ל-child.stdin ומתעד את כיוון ה-out. מחזיר false אם ה-bridge לא קיים. */
+  writeStdin(bridgeId: string, line: string): boolean
 } {
+  const wireRecorder = opts?.wireRecorder
+
   type Entry = {
     handle: BridgeHandle
     child: ChildProcessWithoutNullStreams
@@ -37,6 +43,8 @@ export function createBridgeManager(): BridgeManager & {
     // ─── slice agent-busy-indicator: tracker + subscribers לשורות stdout ───
     tracker: TurnTracker
     lineSubscribers: Set<(line: string) => void>
+    // ─── wire observability: recording session לכל חיי ה-child ───
+    rec: WireSession
   }
   const store = new Map<string, Entry>()
   const crashHandlers = new Set<(bridgeId: string, info: BridgeCrashInfo) => void>()
@@ -137,6 +145,7 @@ export function createBridgeManager(): BridgeManager & {
     child.on("exit", (code, signal) => {
       childLog.info({ code, signal }, "child exit")
       if (store.has(bridgeId)) {
+        store.get(bridgeId)?.rec.close()
         store.delete(bridgeId)
         notifyCrash(bridgeId, { exitCode: code, signal: signal ?? null })
       }
@@ -155,9 +164,16 @@ export function createBridgeManager(): BridgeManager & {
       for (const cb of entry.lineSubscribers) {
         try { cb(line) } catch { /* subscriber לא יכול לשבור את הpipe */ }
       }
-      // (2) decode + observe (Commit 3 — turn-tracker)
-      // הפענוח בנתיב non-critical, מבודד ב-try/catch — לעולם לא יעכב/ישבור את ה-pipe
-      try { entry.tracker.observe(decodeWireLine(line), Date.now()) } catch { /* silent */ }
+      // (2) wire observability (in) + decode + observe — non-critical, מבודד ב-try/catch
+      // decode פעם אחת משמש גם את wireLog וגם את tracker.observe
+      try {
+        const s = decodeWireLine(line)
+        const type = s.sessionUpdate ?? s.method ?? s.responseKind ?? (s.unparsed ? "unparsed" : "unknown")
+        wireLog.debug({ bridgeId, dir: "in", type, id: s.id }, "wire")
+        if (!s.unparsed) wireLog.trace({ bridgeId, dir: "in", frame: s.parsed }, "wire-full")
+        entry.tracker.observe(s, Date.now())
+      } catch { /* silent */ }
+      entry.rec.record("in", line)
     })
 
     if (!child.pid) {
@@ -175,6 +191,9 @@ export function createBridgeManager(): BridgeManager & {
       startedAt: new Date(),
     }
 
+    // wire recording: קובץ רציף לכל חיי ה-child (no-op כש-WIRE_RECORD כבוי)
+    const rec = wireRecorder?.open(bridgeId) ?? { record() {}, close() {} }
+
     store.set(bridgeId, {
       handle,
       child,
@@ -184,6 +203,8 @@ export function createBridgeManager(): BridgeManager & {
       // ─── slice agent-busy-indicator: tracker + subscribers לשורות stdout ───
       tracker: createTurnTracker(),
       lineSubscribers: new Set(),
+      // ─── wire observability ───
+      rec,
     })
     childLog.info({ pid: child.pid }, "spawn ok")
     return { ...handle, getStderr: () => [...stderrLines], child }
@@ -214,6 +235,8 @@ export function createBridgeManager(): BridgeManager & {
       const entry = store.get(bridgeId)
       if (!entry) return false
       log.info({ bridgeId }, "kill")
+      // סגירת recording session לפני הסרה מהstore (idempotent)
+      entry.rec.close()
       // הסרה לפני שאירוע ה-exit נורה — מונע notifyCrash בהריגה מכוונת
       store.delete(bridgeId)
       return new Promise<boolean>((resolve) => {
@@ -256,6 +279,22 @@ export function createBridgeManager(): BridgeManager & {
       if (!e) return () => {}
       e.lineSubscribers.add(cb)
       return () => { e.lineSubscribers.delete(cb) }
+    },
+
+    // כותב שורה ל-child.stdin ומתעד את כיוון ה-out. מחזיר false אם ה-bridge לא קיים.
+    writeStdin(bridgeId: string, line: string): boolean {
+      const entry = store.get(bridgeId)
+      if (!entry) return false
+      entry.child.stdin.write(line)
+      try {
+        const raw = line.endsWith("\n") ? line.slice(0, -1) : line
+        const s = decodeWireLine(raw)
+        const type = s.sessionUpdate ?? s.method ?? s.responseKind ?? (s.unparsed ? "unparsed" : "unknown")
+        wireLog.debug({ bridgeId, dir: "out", type, id: s.id }, "wire")
+        if (!s.unparsed) wireLog.trace({ bridgeId, dir: "out", frame: s.parsed }, "wire-full")
+      } catch { /* silent */ }
+      entry.rec.record("out", line.endsWith("\n") ? line.slice(0, -1) : line)
+      return true
     },
   }
 }
