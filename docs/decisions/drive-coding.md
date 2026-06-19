@@ -1,5 +1,55 @@
 # Decisions — drive-coding
 
+## 2026-06-19 — slice-wire-observability-bridge: העברת תצפית ה-wire לשכבת הגשר
+
+### רציונל
+
+המשך-ישיר ל-`slice-ws-error-survival`. אותו slice תיקן שה-child **שורד** ניתוק דפדפן, אבל
+דיבוג חי (19/6) חשף שהתסמין האמיתי שונה ממה ש-§11 הניח: ברוב המקרים **התהליך לא מת — אבל
+הריצה נעצרת**. כדי לאבחן את זה צריך לראות את זרם ה-wire של ה-agent **גם כשאין דפדפן** — וכאן
+התגלה ה-gap: כל ה-wire observability (live log של `LOG_WIRE` ב-ns `backend.ws.wire`, וגם
+`WIRE_RECORD`) חי **בתוך `ws-agent.ts`**, ב-`onLine` callback וב-message handler — שניהם
+מתבטלים ב-`detach()` (`unsub()` + `rec.close()`). כלומר ברגע הניתוק אנחנו עיוורים בדיוק
+כשצריך לראות. זה מה ש-Commit 3 (observability) של ה-slice הקודם לא כיסה — הוא הוסיף לוג ל-error
+path, לא לזרם ה-stdout/stdin עצמו.
+
+**ההכרעה: להוריד את נקודת-התצפית מהשכבה שמתנתקת (`ws-agent`) לשכבה שמחזיקה את ה-child ושורדת
+(`bridge-manager`).** ה-reader הקבוע `stdoutRl` הוא כבר הבעלים של `child.stdout` ורץ כל חיי
+ה-child → שם נכנס תיעוד כיוון ה-"in". כיוון ה-"out" עובר דרך method חדש `bridgeManager.writeStdin()`
+(במקום `child.stdin.write` ישיר ב-ws-agent), שמתעד גם הוא. כך התצפית **סימטרית, רציפה דרך
+disconnect→reconnect, ובלי פערים עיוורים**. ה-recording session הופך per-child-lifetime (לא
+per-WS-connection). ה-ns עובר מ-`backend.ws.wire` ל-`backend.acp.wire` — סמנטי נכון (זה ה-CLI↔BE
+wire, לא BE↔FE), וכבר ממופה ל-`LOG_WIRE=acp` ב-`core/log/config.ts`.
+
+> **גבול scope מפורש**: הבריף **נותן את העיניים** לאבחן את "הריצה נעצרת" — הוא לא מתקן את
+> התקיעה. ההשערה החזקה (FE הוא ה-ACP client → בקשת-קליינט שלא נענית כשאין דפדפן) תיבדק
+> ב-slice נפרד, עם התצפית החדשה ביד.
+
+### ממצאי אביגיל
+
+r1 = USABLE-AFTER-FIX (5 findings). ה-blocker (🔴 #1+#2): פספסתי call-site שלם —
+`ws-agent-pipe.test.ts` עם 7 קריאות ל-`createAgentWsHandler` ו-mock `bridgeManager` בלי
+`writeStdin`; הסרת `wireRecorder` מה-deps הייתה מפילה typecheck ב-7 מקומות, והמעבר ל-`writeStdin`
+היה שובר את הטסט "FE message forwarded to child.stdin" **ב-runtime** (ה-mock לא כותב ל-stdin).
+תוקן: §4.ד מפרט הסרת `wireRecorder` + הוספת `writeStdin` ל-mock. עוד: (#3) ה-return type הוא
+inline object, אין שינוי ב-`core/ports.ts`; (#4) אין rec-leak ב-spawn-fail path (rec.open אחרי
+pid-guard); (#5) `LOG_WIRE=ws` ב-`docs/deploy-local-service.md:99`, לא ב-systemd units. r2 = READY
+(2 findings 🟢 קוסמטיים: off-by-one בציטוט שורות, walkthrough היסטורי out-of-scope).
+
+### שינויי-כיוון
+
+ה-blocker של אביגיל חידד שזה refactor שנוגע ב-**3 קבצי טסט** (לא אחד) — מה שהצדיק commit אטומי
+אחד (in+out+recorder יחד) במקום פיצול, כדי להימנע מ-double-logging זמני.
+
+### רעיונות שנדחו
+
+- **לתעד `$/ping`/`$/pong` ב-wire** — נדחה: זה transport keepalive (BE↔FE, ענייני NAT), לא עובר
+  ל-child ולא חלק מ-ACP wire. יורד מהתיעוד.
+- **לפצל ל-2 commits (הוסף ל-bridge → הסר מ-ws-agent)** — נדחה: יוצר double-logging/recording זמני
+  כי שתי השכבות היו מתעדות את אותו frame. commit אטומי במקום.
+- **להשאיר `backend.ws.wire` כ-alias ל-backward-compat** — נדחה: אין צרכן קוד חי אחרי השינוי
+  (אומת ב-grep), `LOG_WIRE=acp` מכסה. פחות בלבול.
+
 ## 2026-06-18 — slice-ws-error-survival: ניתוק דפדפן לא יפיל את ה-BE
 
 ### רציונל
