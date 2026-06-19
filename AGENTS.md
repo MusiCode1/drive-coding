@@ -160,16 +160,19 @@ observability commit `a76e7c1`).
 
 ## Wire tracing & recording (debug)
 
-Two passive taps on the WS pipe (`packages/backend/src/delivery/ws-agent.ts`), both
-**off by default**, neither alters the stream (each runs *after* the send/write):
+Two passive taps on the ACP pipe (`packages/backend/src/acp/bridge-manager.ts`), both
+**off by default**, neither alters the stream (each runs *after* the send/write).
+Both live in `bridge-manager` — **always-active for the full child lifetime**, surviving
+FE disconnect/reconnect cycles (unlike the previous `ws-agent` location).
 
-- **`LOG_WIRE=ws`** — live wire summary to the BE stdout via pino (slice-18).
+- **`LOG_WIRE=acp`** — live wire summary to the BE stdout via pino (slice-wire-observability-bridge).
+  Namespace: `backend.acp.wire.*` (CLI↔BE layer).
   `debug` → `{dir,type,id}`; `trace` → full decoded frame. Best for watching traffic
   inline with the rest of the BE log timeline.
 - **`WIRE_RECORD=1`** — records **every raw frame** to
   `data/wire-recordings/<agentId>-<ts>.jsonl` — one `{ts,dir,raw}` line per frame,
-  a clean file per agent session (slice wire-recorder-jsonl). Best for offline
-  analysis of anomalies (empty chunks, duplicate ids) with `jq`. Works live too:
+  a clean file per child lifetime (not per WS connection — slice wire-observability-bridge).
+  Best for offline analysis of anomalies (empty chunks, duplicate ids) with `jq`. Works live too:
   `tail -f data/wire-recordings/*.jsonl | jq`.
 
 ```bash

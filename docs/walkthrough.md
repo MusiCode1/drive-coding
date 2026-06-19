@@ -1,3 +1,22 @@
+## 2026-06-19 — docs(wire): slice-wire-observability-bridge Commit 1 — עדכון docs ל-ns החדש backend.acp.wire
+
+### מה בוצע?
+
+**Commit 1 (manual)** — עדכון תיעוד ל-namespace החדש:
+- `docs/deploy-local-service.md:99`: `LOG_WIRE=ws` → `LOG_WIRE=acp` + הסבר שה-ns שורד detach
+- `AGENTS.md` סעיף Wire tracing: עדכון לשכבת `bridge-manager`, `LOG_WIRE=acp`, `backend.acp.wire.*`, per-child-lifetime (לא per-WS-connection)
+
+### בדיקות
+
+- typecheck: נקי (אין שינוי קוד)
+- Manual reasoning: `LOG_WIRE=acp` → `backend.acp.wire.*` (ממופה ב-`core/log/config.ts`)
+
+### סטיות
+
+ה-brief ציין לבדוק `deploy/systemd/voice-acp-dev.service` + `voice-acp-main.service` אך אביגיל #5 אישרה שאין בהם `LOG_WIRE` — לא שונה (כמצוין ב-brief).
+
+---
+
 ## 2026-06-19 — refactor(wire): slice-wire-observability-bridge Commit 0 — wire observability עובר ל-bridge-manager
 
 ### מה בוצע?
