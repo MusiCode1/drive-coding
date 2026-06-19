@@ -73,7 +73,14 @@ app.use("*", cors({ origin: parseCorsOrigins(process.env.CORS_ORIGINS), credenti
 
 // תלויות הפעלה (Boot dependencies)
 const registry = createInMemoryAgentRegistry()
-const bridgeManager = createBridgeManager()
+
+// wire-recorder: פעיל כש-WIRE_RECORD=1; אחרת no-op (אפס IO, אפס overhead)
+// מוגדר לפני createBridgeManager כדי שיועבר כ-opts.wireRecorder
+const wireRecorder = createWireRecorder({
+  dir: process.env.WIRE_RECORD ? path.resolve("data/wire-recordings") : null,
+})
+
+const bridgeManager = createBridgeManager({ wireRecorder })
 const projectsRegistry = createProjectsRegistry(path.resolve("data/cache"))
 const recordingsStore = createRecordingsStore(path.resolve("data/recordings"))
 
@@ -81,11 +88,6 @@ const orchestrator = createAgentOrchestrator({
   registry,
   bridgeManager,
   projectsRegistry,
-})
-
-// wire-recorder: פעיל כש-WIRE_RECORD=1; אחרת no-op (אפס IO, אפס overhead)
-const wireRecorder = createWireRecorder({
-  dir: process.env.WIRE_RECORD ? path.resolve("data/wire-recordings") : null,
 })
 
 // נתיבי HTTP
@@ -123,7 +125,7 @@ echoWss.on("error", (err) => procLog.warn({ src: "echoWss", err }, "wss error"))
 agentWss.on("error", (err) => procLog.warn({ src: "agentWss", err }, "wss error"))
 
 const echoHandler = createEchoWsHandler()
-const onAgentConnect = createAgentWsHandler({ orchestrator, bridgeManager, wireRecorder })
+const onAgentConnect = createAgentWsHandler({ orchestrator, bridgeManager })
 
 echoWss.on("connection", (ws) => {
   echoHandler(ws)

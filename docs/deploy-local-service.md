@@ -96,8 +96,9 @@ journalctl --user -u voice-acp-main -f    # prod log
 journalctl --user -u voice-acp-dev  -f    # staging log
 ```
 
-Wire-level traffic: add `Environment=LOG_WIRE=ws` to the unit, then
+Wire-level traffic: add `Environment=LOG_WIRE=acp` to the unit, then
 `systemctl --user daemon-reload && systemctl --user restart voice-acp-<main|dev>`.
+The namespace is `backend.acp.wire.*` (CLI↔BE layer) — survives FE disconnect, always-active for the full child lifetime.
 
 ---
 

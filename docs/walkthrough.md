@@ -1,3 +1,48 @@
+## 2026-06-19 — docs(wire): slice-wire-observability-bridge Commit 1 — עדכון docs ל-ns החדש backend.acp.wire
+
+### מה בוצע?
+
+**Commit 1 (manual)** — עדכון תיעוד ל-namespace החדש:
+- `docs/deploy-local-service.md:99`: `LOG_WIRE=ws` → `LOG_WIRE=acp` + הסבר שה-ns שורד detach
+- `AGENTS.md` סעיף Wire tracing: עדכון לשכבת `bridge-manager`, `LOG_WIRE=acp`, `backend.acp.wire.*`, per-child-lifetime (לא per-WS-connection)
+
+### בדיקות
+
+- typecheck: נקי (אין שינוי קוד)
+- Manual reasoning: `LOG_WIRE=acp` → `backend.acp.wire.*` (ממופה ב-`core/log/config.ts`)
+
+### סטיות
+
+ה-brief ציין לבדוק `deploy/systemd/voice-acp-dev.service` + `voice-acp-main.service` אך אביגיל #5 אישרה שאין בהם `LOG_WIRE` — לא שונה (כמצוין ב-brief).
+
+---
+
+## 2026-06-19 — refactor(wire): slice-wire-observability-bridge Commit 0 — wire observability עובר ל-bridge-manager
+
+### מה בוצע?
+
+**Commit 0 (integration)** — refactor אטומי: wire observability עובר מ-`ws-agent.ts` ל-`bridge-manager.ts`:
+- `bridge-manager.ts`: מקבל `opts?: { wireRecorder? }`, `wireLog = createLogger("backend.acp.wire")`, `rec: WireSession` ב-Entry, תיעוד "in" ב-`stdoutRl.on("line")`, שיטה חדשה `writeStdin()`, `rec.close()` ב-`kill()` וב-`child.on("exit")`.
+- `ws-agent.ts`: הוסר `wireLog`, `childWireLog`, `logWire`, `rec`, `wireRecorder` מכל ה-deps. `writeStdin` נקרא דרך `bridgeManager.writeStdin`.
+- `server.ts`: `wireRecorder` מוגדר לפני `createBridgeManager`, מועבר כ-`{ wireRecorder }`.
+- `ws-agent-pipe.test.ts`: הוסר `noopWireRecorder` + import, הוסף `writeStdin` ל-mock.
+- `ws-agent-error-survival.test.ts`: הוסר `noopWireRecorder` + import.
+- `bridge-writestdin.test.ts` (חדש): integration test — round-trip דרך child echo אמיתי, ו-false ל-nonexistent.
+
+### בדיקות
+
+- typecheck: נקי
+- lint:i18n: ירוק
+- `ws-agent-pipe.test.ts` (7): ירוקים — כולל "FE message forwarded to child.stdin" ו-"$/ping does NOT forward"
+- `ws-agent-error-survival.test.ts` (4): ירוקים — child שורד disconnect
+- `bridge-writestdin.test.ts` (2 חדשים): ירוקים — round-trip + false ל-nonexistent
+
+### סטיות
+
+ללא סטיות מה-brief.
+
+---
+
 ## 2026-06-18 — fix(ws): slice-ws-error-survival Commit 3 — observability logs
 
 ### מה בוצע?

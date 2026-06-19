@@ -22,11 +22,9 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { WebSocket } from "ws"
 import { createBridgeManager } from "../src/acp/bridge-manager.js"
 import { createAgentWsHandler } from "../src/delivery/ws-agent.js"
-import { createWireRecorder } from "../src/delivery/wire-recorder.js"
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-const noopWireRecorder = createWireRecorder({ dir: null })
 let acpScriptPath: string | null = null
 let spawnedChildren: ChildProcessWithoutNullStreams[] = []
 
@@ -121,7 +119,6 @@ describe("ws-agent — feWs error handler + idempotent detach (Commit 0)", () =>
     const handler = createAgentWsHandler({
       orchestrator: { getAgent: () => null } as never,
       bridgeManager: bm,
-      wireRecorder: noopWireRecorder,
     })
 
     const mockWs = createMockWs()
@@ -147,7 +144,6 @@ describe("ws-agent — feWs error handler + idempotent detach (Commit 0)", () =>
     const handler = createAgentWsHandler({
       orchestrator: { getAgent: () => null } as never,
       bridgeManager: bm,
-      wireRecorder: noopWireRecorder,
     })
 
     const mockWs = createMockWs()
@@ -171,7 +167,6 @@ describe("ws-agent — feWs error handler + idempotent detach (Commit 0)", () =>
     const handler = createAgentWsHandler({
       orchestrator: { getAgent: () => null } as never,
       bridgeManager: bm,
-      wireRecorder: noopWireRecorder,
     })
 
     // First connection
@@ -207,7 +202,6 @@ describe("ws-agent — feWs error handler + idempotent detach (Commit 0)", () =>
     const handler = createAgentWsHandler({
       orchestrator: { getAgent: () => null } as never,
       bridgeManager: bm,
-      wireRecorder: noopWireRecorder,
     })
 
     const mockWs = createMockWs()
