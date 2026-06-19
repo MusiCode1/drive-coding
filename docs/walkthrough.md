@@ -1,3 +1,98 @@
+## 2026-06-18 — fix(ws): slice-ws-error-survival Commit 3 — observability logs
+
+### מה בוצע?
+
+**Commit 3 (additive logs)** — שיפורי observability ללא שינוי לוגיקה:
+- `ws-agent.ts detach("error")`: payload עשיר — `{ err: { code, message } }` (code=best-effort; ws Error לרוב ללא code)
+- `server.ts uncaughtException/unhandledRejection`: `transient: true/false` + `code` בפייload — כל שורה-לוג מצהירה מפורשות אם זו שגיאה חולפת
+- `echoWss`/`agentWss` error listeners (Commit 1): כבר כוללים `src: "echoWss"|"agentWss"` ✅
+
+### Manual verification
+
+`feWs.emit("error", new Error("boom"))` → שורת warn `"WS error — detaching pipe"` מופיעה עם `{ code: undefined, message: "Error: boom" }`, ה-process חי. בדיקה ידנית — הלוג מתועד בממצאי ניסוי §11.
+
+### בדיקות
+
+- typecheck: נקי
+- lint:i18n: ירוק
+- (אין טסטים אוטומטיים ללוגים — נבדק ידנית + phase verify Commit 2 כיסה)
+
+---
+
+## 2026-06-18 — fix(ws): slice-ws-error-survival Commit 2 — isTransientSocketError + ריכוך uncaughtException
+
+### מה בוצע?
+
+**Commit 2 (TDD)** — הגנה בעומק: הפנייה גלובלית לשגיאות socket חולפות:
+- `packages/backend/src/delivery/transient-socket-error.ts` (קובץ חדש): `isTransientSocketError(err)` פונקציה טהורה, TRANSIENT_CODES = Set של 5 codes
+- `packages/backend/src/server.ts`: ריכוך `uncaughtException` + `unhandledRejection` — transient → warn+return; אחר → exit(1) כמו קודם
+
+**TDD**:
+- test אדום קודם (import שנכשל כי מודול לא קיים)
+- מימוש → ירוק: 11/11 טסטים עוברים
+
+### בדיקות
+
+- typecheck: נקי
+- lint:i18n: ירוק
+- transient-socket-error: 11/11 ירוקים
+
+---
+
+## 2026-06-18 — fix(ws): slice-ws-error-survival Commit 1 — error listeners על שרתי WS + echo
+
+### מה בוצע?
+
+**Commit 1 (manual)** — הגנות נוספות נגד error ללא listener ממקורות WS נוספים:
+- `packages/backend/src/server.ts`: `echoWss.on("error", ...)` + `agentWss.on("error", ...)` — warn ל-procLog, לא קריסה
+- `packages/backend/src/delivery/ws-echo.ts`: `ws.on("error", ...)` ל-socket ה-echo — warn ל-log
+
+### Manual verification
+
+אין error event ללא listener על אף WS source:
+- `echoWss` (WebSocketServer) — listener ✅
+- `agentWss` (WebSocketServer) — listener ✅
+- `ws` בתוך ws-echo handler — listener ✅
+- `feWs` בתוך ws-agent handler — מכוסה ב-Commit 0 ✅
+
+### בדיקות
+
+- typecheck: נקי
+- lint:i18n: ירוק
+- (manual: אין tests אוטומטיים לפי brief)
+
+---
+
+## 2026-06-18 — fix(ws): slice-ws-error-survival Commit 0 — feWs error handler + idempotent detach
+
+### מה בוצע?
+
+**Commit 0 (integration)** — `packages/backend/src/delivery/ws-agent.ts`:
+- חולצה פונקציה `detach(reason, err?)` idempotent (guard flag `detached`) מגוף ה-`close` handler הקיים
+- נוסף `feWs.on("error", (err) => detach("error", err))` — חוסם ניתוק לא-נקי מ-throw
+- `feWs.on("close")` קורא ל-`detach("close")` — ניקוי זהה (ל-child שורד)
+- עקיפת בעיית TypeScript narrowing ב-closure: `childOrNull` + `const child = childOrNull`
+
+**טסט חדש** `packages/backend/tests/ws-agent-error-survival.test.ts` (4 טסטים):
+- child שורד dirty disconnect (`feWs.emit("error", ECONNRESET)`)
+- detach idempotent: `error+close` → `markDetached` קרוי פעם אחת בלבד
+- אחרי error-detach, חיבור שני לאותו agentId מצליח (activeFeWs פנוי)
+- clean close גם שומר על ה-child חי (regression DoD #5)
+
+### חריגות
+
+- `OPENCODE_ARGS='["-e","setInterval(...)"]'` נדרש ב-spawn הטסט (node כ-bin, args של opencode גורמים ל-exit מהיר ב-OPENCODE_BIN=node בלבד)
+- frontend tests נכשלות pre-existing (`.svelte-kit/tsconfig.json` חסר ב-worktree שלא בנה FE)
+- `bridge-failure-integration.test.ts` — כישלון אחד pre-existing
+
+### בדיקות
+
+- typecheck: נקי
+- lint:i18n: ירוק
+- ws-agent-error-survival: 4/4 ירוקים
+
+---
+
 ## 2026-06-18 — feat(frontend): slice-claude-thinking-meta — הזרקת thinking-display ל-claude דרך _meta
 
 ### מה בוצע?

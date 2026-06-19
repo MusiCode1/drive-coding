@@ -5,22 +5,42 @@ import { serve } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { Hono } from "hono"
 import { WebSocketServer } from "ws"
+import { isTransientSocketError } from "./delivery/transient-socket-error.js"
 
 const log = createLogger("backend.server")
 const procLog = createLogger("backend.process")
 
 // רשתות ביטחון — אם שגיאה שלא נתפסה חומקת, תעד ללוג וצא בצורה מסודרת.
 // זהו קו ההגנה האחרון; קוד ייצור לעולם לא אמור להגיע לכאן.
+// ריכוך: שגיאות socket חולפות (ECONNRESET, EPIPE וכו') — warn + return, לא exit.
+// שגיאות אמיתיות — process.exit(1) כמו קודם (שומר על קו ההגנה לבאגים).
 process.on("uncaughtException", (err) => {
+  const transient = isTransientSocketError(err)
+  const code = (err as NodeJS.ErrnoException).code
+  if (transient) {
+    procLog.warn(
+      { err: { name: err.name, message: err.message, code }, transient: true },
+      "uncaughtException — transient socket error, ignoring",
+    )
+    return
+  }
   procLog.error(
-    { err: { name: err.name, message: err.message, stack: err.stack } },
+    { err: { name: err.name, message: err.message, stack: err.stack, code }, transient: false },
     "uncaughtException — exiting",
   )
   process.exit(1)
 })
 
 process.on("unhandledRejection", (reason) => {
-  procLog.error({ reason: String(reason) }, "unhandledRejection — exiting")
+  const transient = isTransientSocketError(reason)
+  if (transient) {
+    procLog.warn(
+      { reason: String(reason), transient: true },
+      "unhandledRejection — transient socket error, ignoring",
+    )
+    return
+  }
+  procLog.error({ reason: String(reason), transient: false }, "unhandledRejection — exiting")
   process.exit(1)
 })
 
@@ -97,6 +117,10 @@ if (feStaticDir) {
 // מטפלי WS
 const echoWss = new WebSocketServer({ noServer: true })
 const agentWss = new WebSocketServer({ noServer: true })
+
+// error listeners על שרתי WS — מונעים throw (unhandled EventEmitter error) על שגיאות רמת-שרת
+echoWss.on("error", (err) => procLog.warn({ src: "echoWss", err }, "wss error"))
+agentWss.on("error", (err) => procLog.warn({ src: "agentWss", err }, "wss error"))
 
 const echoHandler = createEchoWsHandler()
 const onAgentConnect = createAgentWsHandler({ orchestrator, bridgeManager, wireRecorder })

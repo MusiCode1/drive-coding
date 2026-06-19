@@ -1,6 +1,9 @@
 import { ClientMessage, type ServerMessage } from "@drive-coding/core"
+import { createLogger } from "@drive-coding/core/log"
 import { type } from "arktype"
 import type { WebSocket } from "ws"
+
+const log = createLogger("backend.ws.echo")
 
 export type WsData = { id: string }
 
@@ -10,6 +13,9 @@ function send(ws: WebSocket, msg: ServerMessage): void {
 
 export function createEchoWsHandler(): (ws: WebSocket) => void {
   return function onConnect(ws: WebSocket): void {
+    // error listener — מונע throw על ניתוק לא-נקי של socket ה-echo
+    ws.on("error", (err) => log.warn({ err }, "echo ws error"))
+
     send(ws, { type: "hello", version: "0.0.0" })
 
     ws.on("message", (raw) => {
