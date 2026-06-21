@@ -181,4 +181,7 @@ export const en: Catalog = {
   "connect.agents.inUse": "Open in another tab",
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   "connect.agents.working": "working…",
+  // ─── מסך / wake-lock ─── (slice-wake-lock)
+  "settings.screen.label": "Screen",
+  "settings.toggle.keepScreenOn": "Keep screen on",
 }

@@ -16,6 +16,7 @@
 import "../app.css"
 import type { Locale } from "@drive-coding/core/i18n"
 import {
+  setActiveAgents,
   setBubblePlayer,
   setCues,
   setI18n,
@@ -29,9 +30,10 @@ import {
   setTheme,
   setUiShell,
   setVoiceMode,
-  setActiveAgents,
 } from "$lib/context"
 import { CuesEngine } from "$lib/engines/cues"
+import { WakeLockEngine } from "$lib/engines/wake-lock"
+import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { BubblePlayer } from "$lib/view-models/bubble-player.svelte"
 import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
@@ -39,7 +41,6 @@ import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
-import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
 import { ResponsiveVM } from "$lib/view-models/responsive.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
 import { Speaker } from "$lib/view-models/speaker.svelte"
@@ -93,6 +94,13 @@ const modals = new ModalsVM()
 
 // ─── active-agents ─── (slice active-agents-widget — בלתי-תלוי)
 const activeAgents = new ActiveAgents()
+
+// ─── wake-lock ─── (Track C — drive-first chrome)
+const wakeLock = new WakeLockEngine()
+$effect(() => {
+  wakeLock.setEnabled(settings.screenWakeLock) // קריאה ריאקטיבית של $state
+  return () => wakeLock.dispose()
+})
 
 // ─── dir/lang sync ─── (rtl-ltr-bidi)
 // סנכרון <html dir> ו-<html lang> ל-locale — הקסם של הדו-כיווניות.
