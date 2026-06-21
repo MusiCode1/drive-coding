@@ -47,6 +47,14 @@ console.log("[build] Step 2: copying frontend-dist…")
 rmSync(releaseFrontendDist, { recursive: true, force: true })
 cpSync(frontendBuild, releaseFrontendDist, { recursive: true })
 
+// Step 2b: strip DEV-only fixtures from the release copy (privacy + ~2MB bloat).
+// MOCK_FIXTURES is gated behind import.meta.env.DEV (+page.svelte) → prod never fetches them.
+const releaseFixtures = path.join(releaseFrontendDist, "fixtures")
+if (existsSync(releaseFixtures)) {
+  rmSync(releaseFixtures, { recursive: true, force: true })
+  console.log("[build] Step 2b: stripped DEV fixtures from release frontend-dist")
+}
+
 // Step 3: Copy backend/plugins → release/plugins
 console.log("[build] Step 3: copying plugins…")
 rmSync(releasePlugins, { recursive: true, force: true })
