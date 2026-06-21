@@ -35,16 +35,40 @@ drive-coding
 
 ## הגדרה
 
-כל ההגדרה דרך משתני סביבה (ערך מפורש תמיד גובר על ברירת המחדל):
+ניתן להגדיר דרך **flags של CLI** או **משתני סביבה**.
+‏Flags גוברים על משתני סביבה; משתני סביבה גוברים על ברירות המחדל.
+
+### ‏CLI flags
+
+```
+drive-coding [options]
+
+  -p, --port <n>            Port to listen on            (env: PORT, default: 4000)
+      --opencode-bin <bin>  Agent binary to look for     (env: OPENCODE_BIN, default: opencode)
+      --fe-static-dir <dir> Override served web-UI dir   (env: FE_STATIC_DIR)
+      --cors-origins <list> Comma-separated CORS origins  (env: CORS_ORIGINS)
+  -h, --help                Show this help and exit
+  -V, --version             Show version and exit
+```
+
+```bash
+drive-coding --port 4100
+drive-coding --opencode-bin /opt/opencode/bin/opencode
+drive-coding --help
+drive-coding --version
+```
+
+### משתני סביבה
 
 | משתנה | מה | ברירת מחדל |
 |-------|-----|------------|
 | `PORT` | הפורט שעליו השרת מאזין | `4000` |
 | `OPENCODE_BIN` | נתיב/שם ה-agent binary לחיפוש | `opencode` |
 | `FE_STATIC_DIR` | override לתיקיית ממשק הווב (נדיר) | ה-`frontend-dist` המבונדל |
+| `CORS_ORIGINS` | רשימת origins מופרדים בפסיקים לאפשר | אותו origin בלבד |
 
 ```bash
-PORT=4100 drive-coding                 # פורט מותאם
+PORT=4100 drive-coding                 # פורט מותאם (משתנה סביבה)
 OPENCODE_BIN=/opt/opencode/bin/opencode drive-coding
 ```
 

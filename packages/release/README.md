@@ -34,17 +34,41 @@ drive-coding
 
 ## Configuration
 
-All configuration is via environment variables (explicit values always win over
-defaults):
+Configuration can be passed as **CLI flags** or **environment variables**.
+Flags take precedence over environment variables; environment variables take
+precedence over defaults.
+
+### CLI flags
+
+```
+drive-coding [options]
+
+  -p, --port <n>            Port to listen on            (env: PORT, default: 4000)
+      --opencode-bin <bin>  Agent binary to look for     (env: OPENCODE_BIN, default: opencode)
+      --fe-static-dir <dir> Override served web-UI dir   (env: FE_STATIC_DIR)
+      --cors-origins <list> Comma-separated CORS origins  (env: CORS_ORIGINS)
+  -h, --help                Show this help and exit
+  -V, --version             Show version and exit
+```
+
+```bash
+drive-coding --port 4100
+drive-coding --opencode-bin /opt/opencode/bin/opencode
+drive-coding --help
+drive-coding --version
+```
+
+### Environment variables
 
 | Variable | What | Default |
 |----------|------|---------|
 | `PORT` | Port the server listens on | `4000` |
 | `OPENCODE_BIN` | Path/name of the agent binary to look for | `opencode` |
 | `FE_STATIC_DIR` | Override the served web-UI directory (rarely needed) | bundled `frontend-dist` |
+| `CORS_ORIGINS` | Comma-separated list of allowed CORS origins | same origin only |
 
 ```bash
-PORT=4100 drive-coding                 # custom port
+PORT=4100 drive-coding                 # custom port (env var)
 OPENCODE_BIN=/opt/opencode/bin/opencode drive-coding
 ```
 
