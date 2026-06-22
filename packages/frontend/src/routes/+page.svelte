@@ -85,8 +85,10 @@ let sessionsError = $state<string | null>(null)
 let selectedSessionId = $state<string | null>(null)
 
 // ─── DEV-only: mock fixtures (static/fixtures/*.json) — דיבוג עיצוב ללא ACP ───
-const MOCK_FIXTURES: SessionInfo[] = import.meta.env.DEV
+// MODE !== "production" → פעיל גם ב-dev build, חסום+tree-shaken ב-production.
+const MOCK_FIXTURES: SessionInfo[] = import.meta.env.MODE !== "production"
   ? [
+      ["claude-demo", "config + descriptions (claude)"],
       ["greeting", "שיחה קצרה (3 בועות)"],
       ["tool-spill", "בינוני — הרבה הודעות (25)"],
       ["phone-tunnel", "בינוני מאוזן (39)"],

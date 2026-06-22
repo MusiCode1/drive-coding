@@ -609,7 +609,7 @@ export class AgentSession {
     // ─── DEV-only: mock session (sessionId "mock:<name>") ───
     // זורם updates גולמיים מ-fixture דרך אותו #onSessionUpdate כמו ACP חי —
     // ללא createAgent/WS/ACP. כלי דיבוג עיצוב; tree-shaken מ-prod build.
-    if (import.meta.env.DEV && input.sessionId.startsWith("mock:")) {
+    if (import.meta.env.MODE !== "production" && input.sessionId.startsWith("mock:")) {
       await this.#loadMockSession(input.sessionId.slice("mock:".length), input.cwd)
       return
     }
@@ -738,7 +738,7 @@ export class AgentSession {
       throw new Error(`cannot switchSession in status ${this.status}`)
     }
     // DEV mock: עדיין דרך הנתיב הכבד (mock לא רץ על #client חי)
-    if (import.meta.env.DEV && input.sessionId.startsWith("mock:")) {
+    if (import.meta.env.MODE !== "production" && input.sessionId.startsWith("mock:")) {
       return this.loadSession(input)
     }
 
@@ -1086,9 +1086,19 @@ export class AgentSession {
     try {
       const res = await fetch(`/fixtures/${name}.json`)
       if (!res.ok) throw new Error(`fixture "${name}" not found (${res.status})`)
-      const data = (await res.json()) as { updates: unknown[] }
+      const data = (await res.json()) as {
+        updates: unknown[]
+        loadResult?: {
+          configOptions?: SessionConfigOption[] | null
+          models?: SessionModelState | null
+          modes?: SessionModeState | null
+        }
+      }
       this.cwd = cwd
       this.#sessionId = `mock:${name}`
+      // DEV: לכוד configOptions/modes/models מ-loadResult של ה-fixture (אם קיים) —
+      // מאפשר mockup של בוררי ה-config (mode/model/agent/effort) + descriptions ללא ACP חי.
+      if (data.loadResult) this.#captureSessionConfig(data.loadResult)
 
       // delay אופציונלי דרך ?stream=<ms> (ללא תשתית — sleep צד-לקוח בלבד)
       const params = new URLSearchParams(typeof location !== "undefined" ? location.search : "")

@@ -83,6 +83,15 @@ export const he: Catalog = {
   "agentOptions.model.label": "מודל",
   "agentOptions.model.other": "אחר",
   "agentOptions.agent.label": "סוכן",
+  "agentOptions.mode.label": "מצב",
+  // תרגום שמות config-options שמגיעים מה-CLI (אנגלית) → עברית. name לא-מוכר נשאר כפי שהוא.
+  "configName.agent": "סוכן",
+  "configName.mode": "מצב",
+  "configName.sessionMode": "מצב סשן",
+  "configName.approvalPreset": "רמת אישורים",
+  "configName.model": "מודל",
+  "configName.effort": "מאמץ",
+  "configName.reasoningEffort": "מאמץ חשיבה",
   // ─── smart-scroll ─── (redesign-7)
   "chat.jumpDown": "הודעות חדשות",
   // ─── modals ─── (redesign-6)
@@ -176,4 +185,7 @@ export const he: Catalog = {
   "connect.agents.inUse": "פעיל בכרטיסייה אחרת",
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   "connect.agents.working": "עובד…",
+  // ─── מסך / wake-lock ─── (slice-wake-lock)
+  "settings.screen.label": "מסך",
+  "settings.toggle.keepScreenOn": "השאר מסך דלוק",
 }

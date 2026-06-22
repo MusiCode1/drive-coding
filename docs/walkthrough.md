@@ -1,3 +1,30 @@
+## 2026-06-22 — feat(wake-lock): slice-wake-lock — מתג "השאר מסך דלוק" + WakeLockEngine
+
+### מה בוצע?
+
+**Commit 0 (tdd + manual)** — engine + persisted setting + UI:
+- `packages/frontend/src/lib/engines/wake-lock.ts` (חדש): `WakeLockEngine` עם 7 דרישות התנהגות — SSR guard, idempotent acquire, race-guard אחרי await, release event listener, visibilitychange reconcile, setEnabled/dispose.
+- `packages/frontend/src/lib/view-models/settings.svelte.ts`: הוספת `screenWakeLock: boolean` ל-`Persisted`, `DEFAULTS` (false), `$state`, `setScreenWakeLock`, `#persist()`.
+- `packages/frontend/src/lib/view-models/settings.test.svelte.ts`: describe block `Settings — screenWakeLock` עם 5 טסטים (round-trip, default, backward-compat) — TDD.
+- `packages/core/src/i18n/keys.ts`: 2 keys חדשים: `settings.screen.label`, `settings.toggle.keepScreenOn`.
+- `packages/core/src/i18n/catalogs/he.ts` + `en.ts`: ערכים עברית ואנגלית.
+- `packages/frontend/src/routes/+layout.svelte`: import + instance + `$effect` (section `// ─── wake-lock ───`).
+- `packages/frontend/src/lib/components/settings/SettingsScreen.svelte`: `SettingsCard` חדש "מסך" עם `SettingToggle` בודד.
+
+### בדיקות
+
+- TDD: 5 טסטים אדומים → ירוקים על `Settings — screenWakeLock`
+- 248/248 טסטים ירוקים
+- typecheck: נקי
+- lint:i18n: נקי (אין עברית בקוד)
+- Manual (runtime): engine — ר' calev
+
+### סטיות
+
+אין סטיות מה-brief. הוספת `settings.screen.label` ו-`settings.toggle.keepScreenOn` לסוף הuinion בkeys.ts ולסוף הcatalogs — לפי דפוס append-only.
+
+---
+
 ## 2026-06-21 — slice-release-cli-hardening — הושלם (2 commits)
 
 ### מה בוצע?

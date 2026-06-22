@@ -184,6 +184,47 @@ describe("Settings — muted (ui-polish-batch · C7)", () => {
   })
 })
 
+describe("Settings — screenWakeLock (slice-wake-lock)", () => {
+  test("default screenWakeLock = false when localStorage empty", () => {
+    installLocalStorage()
+    const s = new Settings()
+    expect(s.screenWakeLock).toBe(false)
+  })
+
+  test("setScreenWakeLock(true) writes to localStorage", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setScreenWakeLock(true)
+    expect(s.screenWakeLock).toBe(true)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.screenWakeLock).toBe(true)
+  })
+
+  test("setScreenWakeLock(false) writes false to localStorage", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setScreenWakeLock(true)
+    s.setScreenWakeLock(false)
+    expect(s.screenWakeLock).toBe(false)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.screenWakeLock).toBe(false)
+  })
+
+  test("new Settings() reads persisted screenWakeLock=true from localStorage", () => {
+    const store = installLocalStorage()
+    store.set(STORAGE_KEY, JSON.stringify({ screenWakeLock: true }))
+    const s = new Settings()
+    expect(s.screenWakeLock).toBe(true)
+  })
+
+  test("backward-compat: localStorage without screenWakeLock → defaults to false", () => {
+    const store = installLocalStorage()
+    store.set(STORAGE_KEY, JSON.stringify({ cliKind: "opencode", voiceId: "v1" }))
+    const s = new Settings()
+    expect(s.screenWakeLock).toBe(false)
+  })
+})
+
 describe("Settings — loadVoices", () => {
   test("populates availableVoices and drives loading/error", async () => {
     installLocalStorage()

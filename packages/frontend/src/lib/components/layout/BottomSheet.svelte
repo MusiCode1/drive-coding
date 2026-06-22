@@ -137,9 +137,10 @@ function onPointerUp() {
     <div class="w-12 h-1.5 rounded-full" style="background:var(--border-str)"></div>
   </div>
 
-  <!-- תוכן — דוהה לפי openness, ללא אינטראקציה כשכמעט-סגור -->
+  <!-- תוכן — דוהה לפי openness, ללא אינטראקציה כשכמעט-סגור.
+       overflow-hidden: הגלילה מנוהלת בתוך SessionOptionsPanel (אזור גלילה מאוחד), לא כאן — מונע scroll כפול. -->
   <div
-    class="flex flex-col gap-4 px-4 pt-2 pb-6 flex-1 min-h-0 overflow-y-auto"
+    class="flex flex-col gap-4 px-4 pt-2 pb-6 flex-1 min-h-0 overflow-hidden"
     style="opacity:{fill}; pointer-events:{fill > 0.1 ? 'auto' : 'none'}"
   >
     <SessionOptionsPanel />
