@@ -94,6 +94,14 @@ export type MessageKey =
   | "agentOptions.model.label"
   | "agentOptions.model.other"
   | "agentOptions.agent.label"
+  | "agentOptions.mode.label"
+  | "configName.agent"
+  | "configName.mode"
+  | "configName.sessionMode"
+  | "configName.approvalPreset"
+  | "configName.model"
+  | "configName.effort"
+  | "configName.reasoningEffort"
   // ─── smart-scroll ─── (redesign-7)
   | "chat.jumpDown"
   // ─── modals ─── (redesign-6)

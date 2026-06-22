@@ -21,6 +21,7 @@ import { getI18n, getSession, getSpeaker, getResponsive, getUiShell, getSettings
 import Select, { type SelectOption, type SelectGroup } from "$lib/components/ui/Select.svelte"
 import SessionCard from "$lib/components/modals/SessionCard.svelte"
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
+import type { MessageKey } from "@drive-coding/core/i18n"
 
 const t = getI18n().t
 const session = getSession()
@@ -57,8 +58,9 @@ function flattenSelectOptions(option: SessionConfigOption): SelectOpt[] {
   return sel.options.flatMap((item) => ("options" in item ? item.options : [item]))
 }
 
-const toSelectOptions = (items: { value: string; name: string }[]): SelectOption[] =>
-  items.map((o) => ({ value: o.value, label: o.name }))
+const toSelectOptions = (
+  items: { value: string; name: string; description?: string | null }[],
+): SelectOption[] => items.map((o) => ({ value: o.value, label: o.name, description: o.description }))
 
 // מודלים: אם ה-modelId מכיל "/" (למשל "anthropic/claude-..") → קבץ לפי החלק
 // שלפני ה-slash (הספק). אם אף אחד לא מכיל "/" → רשימה שטוחה (בלי קיבוץ).
@@ -83,6 +85,37 @@ const modelGroups = $derived.by<SelectGroup[] | undefined>(() => {
 const extraOptions = $derived(
   session.configOptions.filter((o) => o.category !== "model" && o.category !== "mode")
 )
+
+/**
+ * מילון תרגום: שם config-option שמגיע מה-CLI (אנגלית) → מפתח i18n.
+ * הוספת מילה = שורה אחת כאן + ערך מקביל ב-catalogs (he/en). name לא-מוכר נשאר כמות שהוא.
+ */
+const CONFIG_NAME_KEYS: Record<string, MessageKey> = {
+  agent: "configName.agent",
+  mode: "configName.mode",
+  "session mode": "configName.sessionMode",
+  "approval preset": "configName.approvalPreset",
+  model: "configName.model",
+  effort: "configName.effort",
+  "reasoning effort": "configName.reasoningEffort",
+}
+
+/** מתרגם שם config-option לעברית אם הוא מוכר; אחרת מחזיר את השם המקורי מה-CLI. */
+function localizeConfigName(name: string): string {
+  const key = CONFIG_NAME_KEYS[name.trim().toLowerCase()]
+  return key ? t(key) : name
+}
+
+/**
+ * תווית בורר ה-mode — מתורגמת מה-name שה-CLI נותן ל-config-option בקטגוריית mode
+ * (opencode="Session Mode", claude="Mode", codex="Approval Preset") דרך localizeConfigName,
+ * עם fallback ל-i18n "מצב". מדויק פר-ספק ומונע התנגשות-שם עם config-option "agent"
+ * (category=null, נופל ל-extraOptions עם שמו "Agent").
+ */
+const modeLabel = $derived.by(() => {
+  const name = session.configOptions.find((o) => o.category === "mode")?.name
+  return name ? localizeConfigName(name) : t("agentOptions.mode.label")
+})
 
 /** האם יש אפשרויות סוכן/מודל להציג */
 const hasAgentOptions = $derived(
@@ -181,8 +214,12 @@ $effect(() => {
   </button>
 </div>
 
+<!-- אזור גלילה מאוחד: אפשרויות סוכן + סשנים. הגלילה מתחילה מכאן (מסקשן אפשרויות סוכן),
+     כך שכשהגובה קטן ראש הרשימה לא נחתך אלא נגלל. שורת הפעולות מעל נשארת קבועה (shrink-0). -->
+<div class="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto chat-scroll -mx-1 px-1">
+
 <!-- אפשרויות סוכן — מחווט מ-redesign-3 -->
-<div class="flex flex-col gap-2.5">
+<div class="flex flex-col gap-2.5 shrink-0">
   <div class="text-[11px] font-semibold uppercase tracking-wider px-1" style="color:var(--fg-dim)">
     {t("sidebar.agentOptions")}
   </div>
@@ -193,12 +230,12 @@ $effect(() => {
       <!-- סוכן/Mode dropdown -->
       {#if (session.modes?.availableModes?.length ?? 0) > 0}
       <label class="flex flex-col gap-1 min-w-0">
-        <span class="text-[11px] px-1" style="color:var(--fg-dim)">{t("agentOptions.agent.label")}</span>
+        <span class="text-[11px] px-1" style="color:var(--fg-dim)">{modeLabel}</span>
         <Select
           value={session.modes?.currentModeId ?? ""}
-          options={toSelectOptions(session.modes!.availableModes.map((m) => ({ value: m.id, name: m.name })))}
-          title={t("agentOptions.agent.label")}
-          ariaLabel={t("agentOptions.agent.label")}
+          options={toSelectOptions(session.modes!.availableModes.map((m) => ({ value: m.id, name: m.name, description: m.description })))}
+          title={modeLabel}
+          ariaLabel={modeLabel}
           onchange={(v) => session.applyConfigOption("mode", v)}
         />
       </label>
@@ -207,12 +244,12 @@ $effect(() => {
         {@const modeChoices = flattenSelectOptions(modeOpt)}
         {#if modeChoices.length > 0}
         <label class="flex flex-col gap-1 min-w-0">
-          <span class="text-[11px] px-1" style="color:var(--fg-dim)">{t("agentOptions.agent.label")}</span>
+          <span class="text-[11px] px-1" style="color:var(--fg-dim)">{modeLabel}</span>
           <Select
             value={(modeOpt as Extract<typeof modeOpt, { type: "select" }>).currentValue ?? ""}
             options={toSelectOptions(modeChoices)}
-            title={t("agentOptions.agent.label")}
-            ariaLabel={t("agentOptions.agent.label")}
+            title={modeLabel}
+            ariaLabel={modeLabel}
             onchange={(v) => session.applyConfigOption(modeOpt.id, v)}
           />
         </label>
@@ -256,12 +293,12 @@ $effect(() => {
         {@const choices = flattenSelectOptions(opt)}
         {#if choices.length > 0}
         <label class="flex flex-col gap-1">
-          <span class="text-[11px] px-1" style="color:var(--fg-dim)">{opt.name}</span>
+          <span class="text-[11px] px-1" style="color:var(--fg-dim)">{localizeConfigName(opt.name)}</span>
           <Select
             value={(opt as Extract<typeof opt, { type: "select" }>).currentValue ?? ""}
             options={toSelectOptions(choices)}
-            title={opt.name}
-            ariaLabel={opt.name}
+            title={localizeConfigName(opt.name)}
+            ariaLabel={localizeConfigName(opt.name)}
             onchange={(v) => session.applyConfigOption(opt.id, v)}
           />
         </label>
@@ -274,19 +311,19 @@ $effect(() => {
             checked={(opt as Extract<typeof opt, { type: "boolean" }>).currentValue}
             onchange={(e) => onCheckboxChange(opt.id, e)}
           />
-          <span class="text-[13px]" style="color:var(--fg-dim)">{opt.name}</span>
+          <span class="text-[13px]" style="color:var(--fg-dim)">{localizeConfigName(opt.name)}</span>
         </label>
       {/if}
     {/each}
 
   {:else}
     <!-- placeholder כשאין חיבור פעיל -->
-    <div class="text-[12px] opacity-40 px-1">{t("agentOptions.agent.label")}: —</div>
+    <div class="text-[12px] opacity-40 px-1">{modeLabel}: —</div>
   {/if}
 </div>
 
 <!-- סשנים — inline (slice sessions-inline: מחליף SessionsDialog) -->
-<div class="flex flex-col gap-2 flex-1 min-h-0">
+<div class="flex flex-col gap-2 shrink-0">
   <div class="flex items-center justify-between px-1 shrink-0">
     <span class="text-[11px] font-semibold uppercase tracking-wider" style="color:var(--fg-dim)">
       {t("sidebar.sessions")}
@@ -313,8 +350,8 @@ $effect(() => {
     ＋ {t("sidebar.newSession")}
   </button>
 
-  <!-- רשימת סשנים inline -->
-  <div class="flex flex-col gap-2 overflow-y-auto chat-scroll flex-1 min-h-0 -mx-1 px-1">
+  <!-- רשימת סשנים inline — בלי scroll/flex-1 פנימי: גוללת יחד עם אזור הגלילה המאוחד -->
+  <div class="flex flex-col gap-2">
     {#if session.sessionsLoading}
       <div class="text-[12px] opacity-50 px-1">{t("modal.sessions.loading")}</div>
     {:else if session.sessionsError}
@@ -325,4 +362,6 @@ $effect(() => {
       {/each}
     {/if}
   </div>
+</div>
+<!-- /אזור גלילה מאוחד -->
 </div>

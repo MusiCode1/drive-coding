@@ -13,8 +13,10 @@ const session = getSession()
 // ─── DEV-only: טעינה ישירה דרך URL — /chat?mock=<name> (חוסך את ה-picker) ───
 // עובר דרך אותו loadSession (flow C), כך שאין נתיב טעינה שונה.
 // location.search ישירות (זמין מיד ב-SPA — בלי תלות ב-$page store timing).
+// MODE !== "production": פעיל גם ב-dev server וגם ב-dev build (vite build --mode development),
+// אך עדיין tree-shaken ב-production build. import.meta.env.DEV לבדו היה false בכל build.
 const mockName =
-  import.meta.env.DEV && typeof location !== "undefined"
+  import.meta.env.MODE !== "production" && typeof location !== "undefined"
     ? new URLSearchParams(location.search).get("mock")
     : null
 

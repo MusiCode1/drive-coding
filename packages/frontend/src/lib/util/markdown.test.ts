@@ -65,6 +65,12 @@ describe("renderMarkdown", () => {
     expect(out).toContain('href="https://example.com"')
   })
 
+  it("opens links in a new tab with safe rel", () => {
+    const out = renderMarkdown("[example](https://example.com)")
+    expect(out).toContain('target="_blank"')
+    expect(out).toContain('rel="noopener noreferrer"')
+  })
+
   it("renders heading", () => {
     const out = renderMarkdown("# Hello")
     expect(out).toContain("<h1>")

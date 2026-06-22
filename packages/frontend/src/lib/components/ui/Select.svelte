@@ -2,6 +2,8 @@
 export interface SelectOption {
   value: string
   label: string
+  /** תיאור אופציונלי — מוצג מתחת ל-label ברשימה, ומתחת ל-trigger לבחירה הנוכחית. */
+  description?: string | null
   disabled?: boolean
 }
 export interface SelectGroup {
@@ -74,6 +76,34 @@ const selectedLabel = $derived(
   allItems.find((i) => i.value === value)?.label ?? placeholder,
 )
 
+// תקציר: השורה הראשונה בלבד של ה-description (התיאורים מה-CLI רב-שורתיים — השורה
+// הראשונה היא התקציר). חיתוך נוסף ל-2 שורות נעשה ב-CSS (line-clamp).
+function firstLine(d?: string | null): string {
+  if (!d) return ""
+  const line = d.split("\n")[0]
+  return line ? line.trim() : ""
+}
+
+// תיאור הבחירה הנוכחית — מוצג מתחת ל-trigger (ריק → לא מוצג, no-op לבוררים בלי תיאור).
+const selectedDescription = $derived(
+  firstLine(allItems.find((i) => i.value === value)?.description),
+)
+// התיאור המלא (כל השורות) — נחשף ב-hover (title) וב-expand (לחיצה).
+const selectedDescriptionFull = $derived(
+  (allItems.find((i) => i.value === value)?.description ?? "").trim(),
+)
+// יש מה לפרוס: יותר משורה אחת (רב-שורתי), או שורה ראשונה ארוכה (כנראה נחתכת ב-clamp).
+const canExpandDesc = $derived(
+  selectedDescriptionFull !== selectedDescription || selectedDescription.length > 45,
+)
+// מצב פריסת התיאור (מחוץ ל-dropdown). לחיצה = toggle.
+let descExpanded = $state(false)
+// איפוס הפריסה כשמחליפים בחירה — אחרת נשאר פרוס על תיאור שכבר לא רלוונטי.
+$effect(() => {
+  void value
+  descExpanded = false
+})
+
 function pick(v: string) {
   value = v
   onchange?.(v)
@@ -113,20 +143,28 @@ const triggerClass = $derived(
         <button
           type="button"
           disabled={item.disabled}
-          class="rounded-lg px-3 py-3 text-sm flex items-center justify-between text-start hover:bg-white/5 disabled:opacity-40"
+          class="rounded-lg px-3 py-3 text-sm flex items-start justify-between gap-2 text-start hover:bg-white/5 disabled:opacity-40"
           style="color:var(--fg)"
           class:is-selected={item.value === value}
           onclick={() => pick(item.value)}
         >
-          <span class="line-clamp-2 min-w-0 text-start" dir="auto">{item.label}</span>
+          <span class="flex flex-col min-w-0 gap-0.5">
+            <span class="line-clamp-2 text-start" dir="auto">{item.label}</span>
+            {#if firstLine(item.description)}
+              <span class="line-clamp-2 text-[11px] leading-snug text-start" style="color:var(--fg-dim)" dir="auto">{firstLine(item.description)}</span>
+            {/if}
+          </span>
           {#if item.value === value}
-            <CheckIcon size={18} style="color:var(--accent)" class="shrink-0" />
+            <CheckIcon size={18} style="color:var(--accent)" class="shrink-0 mt-0.5" />
           {/if}
         </button>
       {/each}
     {/each}
   </div>
 {/snippet}
+
+<!-- עטיפה: trigger + תיאור הבחירה הנוכחית מתחתיו (description לכל בורר) -->
+<div class="flex flex-col gap-1 min-w-0">
 
 <!-- ───────── מובייל: Dialog ממורכז ───────── -->
 {#if responsive.isMobile}
@@ -186,6 +224,32 @@ const triggerClass = $derived(
     </Popover.Portal>
   </Popover.Root>
 {/if}
+
+  <!-- תיאור הבחירה הנוכחית — פונט קטן. כשהתיאור חתוך: לחיצה פורסת/מקפלת (toggle),
+       ובדסקטופ hover מציג tooltip (title) עם המלא. תיאור קצר → span רגיל ללא אפשרות פריסה. -->
+  {#if selectedDescription}
+    {#if canExpandDesc}
+      <button
+        type="button"
+        class="px-1 text-[11px] leading-snug text-start flex items-start gap-1 cursor-pointer outline-none"
+        style="color:var(--fg-dim)"
+        aria-expanded={descExpanded}
+        title={descExpanded ? undefined : selectedDescriptionFull}
+        onclick={() => (descExpanded = !descExpanded)}
+      >
+        <span class="min-w-0 {descExpanded ? 'whitespace-pre-wrap' : 'line-clamp-2'}" dir="auto"
+          >{descExpanded ? selectedDescriptionFull : selectedDescription}</span>
+        <ChevronDownIcon
+          size={12}
+          class="shrink-0 mt-0.5 transition-transform"
+          style="transform:rotate({descExpanded ? 180 : 0}deg)"
+        />
+      </button>
+    {:else}
+      <span class="px-1 text-[11px] leading-snug line-clamp-2" style="color:var(--fg-dim)" dir="auto">{selectedDescription}</span>
+    {/if}
+  {/if}
+</div>
 
 <style>
   .is-selected {

@@ -38,7 +38,19 @@ const ALLOWED_TAGS = [
   "a",
   "hr",
 ]
-const ALLOWED_ATTR = ["href", "title", "lang", "dir"]
+const ALLOWED_ATTR = ["href", "title", "lang", "dir", "target", "rel"]
+
+// כל קישור בתוכן (markdown) נפתח בלשונית חדשה — לחיצה לא מנווטת את ה-SPA מחוץ לשיחה.
+// rel="noopener noreferrer": מונע tabnabbing ולא מדליף referrer. ה-hook גלובלי על
+// ה-singleton של DOMPurify, נרשם פעם אחת בצד-לקוח (ב-SSR אין document וגם אין sanitize).
+if (typeof document !== "undefined") {
+  DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    if (node.tagName === "A" && node.hasAttribute("href")) {
+      node.setAttribute("target", "_blank")
+      node.setAttribute("rel", "noopener noreferrer")
+    }
+  })
+}
 
 /**
  * מרנדר (Render) Markdown ל-HTML מחוטא.
