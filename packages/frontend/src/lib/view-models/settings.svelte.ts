@@ -37,6 +37,8 @@ type Persisted = {
   locale: Locale
   // ─── השתקה ─── (ui-polish-batch · C7)
   muted: boolean
+  // ─── מסך ─── (slice-wake-lock)
+  screenWakeLock: boolean
 }
 
 const DEFAULTS: Persisted = {
@@ -56,6 +58,8 @@ const DEFAULTS: Persisted = {
   locale: DEFAULT_LOCALE,
   // ─── השתקה ─── (ui-polish-batch · C7)
   muted: false,
+  // ─── מסך ─── (slice-wake-lock)
+  screenWakeLock: false,
 }
 
 function load(): Persisted {
@@ -112,6 +116,9 @@ export class Settings {
   // ─── השתקה ─── (ui-polish-batch · C7)
   muted = $state<boolean>(DEFAULTS.muted)
 
+  // ─── מסך ─── (slice-wake-lock)
+  screenWakeLock = $state<boolean>(DEFAULTS.screenWakeLock)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -129,6 +136,8 @@ export class Settings {
     this.locale = loaded.locale
     // ─── השתקה ───
     this.muted = loaded.muted
+    // ─── מסך ───
+    this.screenWakeLock = loaded.screenWakeLock
   }
 
   // ─── טופס חיבור ───
@@ -281,6 +290,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── מסך ─── (slice-wake-lock)
+
+  setScreenWakeLock = (v: boolean): void => {
+    this.screenWakeLock = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -295,6 +311,7 @@ export class Settings {
       carMode: this.carMode,
       locale: this.locale,
       muted: this.muted,
+      screenWakeLock: this.screenWakeLock,
     })
   }
 }

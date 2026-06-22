@@ -112,6 +112,15 @@ $effect(() => {
     </div>
   </SettingsCard>
 
+  <!-- כרטיס מסך — wake-lock (slice-wake-lock) -->
+  <SettingsCard title={t("settings.screen.label")}>
+    <SettingToggle
+      label={t("settings.toggle.keepScreenOn")}
+      checked={settings.screenWakeLock}
+      onCheckedChange={(v) => settings.setScreenWakeLock(v)}
+    />
+  </SettingsCard>
+
   <!-- כרטיס שרת — beUrl. נשמר על blur/Enter; ריק = same-origin / פרוקסי Vite -->
   <SettingsCard title={t("settings.beUrl.label")}>
     <label class="flex flex-col gap-1.5">

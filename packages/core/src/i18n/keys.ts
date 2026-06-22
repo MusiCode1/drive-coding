@@ -187,6 +187,9 @@ export type MessageKey =
   | "connect.agents.inUse"
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   | "connect.agents.working"
+  // ─── מסך / wake-lock ─── (slice-wake-lock)
+  | "settings.screen.label"
+  | "settings.toggle.keepScreenOn"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
