@@ -1,5 +1,140 @@
 # Decisions — drive-coding
 
+## 2026-06-22 — slice-wake-lock: מתג "השאר מסך דלוק" + WakeLockEngine
+
+### רציונל
+
+באג שמטריד בעיקר בנייד: המסך נכבה באמצע שהסוכן עובד / בזמן האזנה לתשובה. ה-Web
+**Screen Wake Lock API** פותר בדיוק את זה. בקשת המשתמשת: שזו תהיה **הגדרה** שניתן
+להדליק/לכבות, לא התנהגות כפויה. הפיצ'ר כבר ברודמ"פ — Track C, "drive-first chrome
+(car mode, Media Session, **wake lock**)".
+
+**הכרעת סמנטיקה: נעילה כל-עוד-הטאב-גלוי, לא רק-בזמן-turn-פעיל.** מתג שהמשתמשת מדליקה
+במפורש צריך להיות צפוי — מסך שנכבה באמצע קריאת תשובה ארוכה (כי ה-turn הסתיים) הוא
+הפתעה גרועה. בהקשר hands-free/נהיגה רוצים את המסך דלוק לאורך כל ה-session כדי להעיף
+מבט. הסוללה היא tradeoff שהמשתמשת בוחרת מדעת (opt-in, default `false`). עידון עתידי
+"רק בזמן פעילות" (חיסכון סוללה) אפשרי בסלייס שיגדיר "פעילות" (turn/mic/speaker).
+
+**הכרעת ארכיטקטורה: `WakeLockEngine` (engines/) owner של ה-`WakeLockSentinel`, מחווט
+דרך `$effect` יחיד ב-`+layout.svelte`** — לא ב-VM. זו סטייה **מודעת** מחוק-הזהב 4 של
+ה-FE (`AGENTS.md:70`), שנותן דוגמה "`Mic.state === recording` צריך wake-lock? → ב-Mic"
+— כלומר מחברי ה-design דמיינו wake-lock בתוך VM. ההצדקה: כאן הנעילה גלובלית-לאפליקציה
+ולא נגזרת מ-state של entity יחיד, אלא ממתג גלובלי (`settings.screenWakeLock`). זה בדיוק
+המקרה של ה-`$effect` הקיים של dir/lang sync, שכבר חי ב-`+layout` כי `<html>` הוא
+app-global. ה-engine **לא** ב-`context.ts` — אף component/VM לא צורך אותו (רק +layout
+מזין), אז context pair היה dead code.
+
+ה-gotcha המרכזי של ה-API מעוגן ב-DoD (#6): הדפדפן משחרר את הנעילה אוטומטית בכל הסתרת
+טאב, ולא מחזיר אותה לבד — לכן ה-engine מאזין ל-`visibilitychange` ותופס-מחדש.
+
+### ממצאי אביגיל
+
+r1 = **READY** בסבב ראשון (נדיר — track record היה 100% briefs-with-issues עד כה). 3
+findings, כולן 0-min: (#1 🟡) חוק-זהב 1 מונה 'wakelock' מפורשות כ-side-effect אסור
+ב-`$effect` — ה-brief מפרש כ-routes-only, עקבי עם precedent של dir/lang (לא חוסם,
+ומתועד מראש ב-brief); (#2 🟢) אין precedent ל-`dispose()` ב-engines (cues חושף
+`close()`); (#3 🟢) snippet UI בלי wrapper `divide-y`. כל 8 ה-spot-checks אומתו factual
+(דפוס muted, `$effect` של dir/lang, חתימת `SettingToggle`, `WakeLockSentinel` ב-DOM lib).
+
+### שינויי-כיוון
+
+קלים בלבד — קיפלתי את שתי ה-🟢 לתוך ה-brief כהבהרות (dispose סינכרוני במכוון ≠ close
+אסינכרוני; toggle בודד לא צריך wrapper) כדי לאטום אותו. הסמנטיקה והארכיטקטורה לא השתנו.
+
+### רעיונות שנדחו
+
+- **נעילה רק בזמן turn פעיל** — חיסכון סוללה אבל כיבוי מפתיע באמצע קריאה. נדחה ל-v1,
+  אופציה לעידון עתידי.
+- **wake-lock בתוך VM (Mic/AgentSession)** — מה שחוק-זהב 4 מרמז עליו. נדחה כי הנעילה
+  גלובלית-לאפליקציה, לא נגזרת מ-entity יחיד; +layout הוא ה-owner הנכון (כמו dir/lang).
+- **`WakeLockEngine` ב-`context.ts`** — dead code (אין צרכן מלבד +layout).
+
+## 2026-06-21 — slice-session-prefs-per-cwd: שמירת state של סשן פר-פרויקט בצד שרת
+
+### רציונל
+
+המשך-ישיר לאבחון של "הריצה נעצרת": גילינו ש-`bypassPermissions` פותר את התקיעה (האדפטר עושה
+short-circuit ולא שולח `request_permission` — אומת חי על agent `920d6c43`), אבל הבחירה במצב
+**לא נשמרת** — היא runtime-only (`session/set_config_option`) לאותו סשן. בכל סשן חדש המשתמשת
+נאלצת לבחור מחדש.
+
+**ההכרעה: לשמור את ה-state של הסשן (mode/model/agent/config) פר-`(cwd, cliKind)` בצד שרת, לא ב-localStorage.**
+הנימוק המכריע — drive-coding הוא **multi-device מעצם הגדרתו** (voice/car/mobile): בוחרים
+`bypassPermissions` במחשב בבית, נכנסים לרכב ומתחברים מהטלפון לאותו BE — וצריך שייזכר.
+localStorage שובר את זה כי הוא per-device. אחסון ב-BE מסתנכרן בין כל המכשירים המחוברים לאותו
+שרת, וה-`cwd` ממילא שייך לוגית ל-BE (זה ה-filesystem שלו). זה גם צעד ראשון עקבי לכיוון
+backend-managed (state נודד ל-BE).
+
+**ההחלטה על הנתיב**: כל ה-stores עוברים מ-`<worktree>/data/` (מעורבב בקוד, נפרד בין dev/main)
+ל-`~/.drive-coding/` — תיקיית בית יציבה, משותפת בין deployments, עם `DRIVE_CODING_DATA_DIR`
+override קריטי כדי שבדיקות/worktrees לא יזהמו data חי. migration של recordings/cache קיימים
+= פעולה תפעולית-ידנית (`cp -n`), **לא** קוד-startup, כדי לא לסכן data חי ב-race.
+
+### ממצאי אביגיל
+
+3 סבבים עד READY. r1 = USABLE-AFTER-FIX (6 findings, 2×🔴): (#1) הנחתי מסלול `newSession` יחיד
+אך יש **שניים** fresh (`attach()` ו-`newSession()` ציבורי) מול שלושה load/warm — תוקן עם helper
+`#captureSessionConfigFresh`; (#2) Commit 3 (voice) הסתמך על `applyRuntimeMuted` שלא קיים — voice
+דורש runtime-tier ב-`Settings`. r2 = USABLE-AFTER-FIX (4 findings, 0×🔴): `applyConfigOption` יש
+בו **5** success-returns לא 3 (תוקן עם wrapper boolean); `SavedSessionState` חייב לשבת ב-core ולא
+ב-backend (אחרת coupling FE→backend שלא קיים היום); `buildAvailableModes` הוא בקוד האדפטר החיצוני
+לא ב-drive-coding. r3 = READY (2×🟢 cosmetic). track record נמשך: 100% briefs עם בעיה אמיתית.
+
+### שינויי-כיוון
+
+תוכנן תחילה client-side (localStorage) — המשתמשת עצרה ושאלה "צד שרת או לקוח?", מה שחשף שה-multi-device
+שובר את גישת ה-localStorage. שונה ל-BE. בעקבות ממצא אביגיל r1, **voice/muted נדחה ל-slice נפרד**
+(`slice-voice-prefs-per-project`) — tier שונה (UI-prefs ב-localStorage מול ACP session-config),
+דורש runtime-override layer ב-`Settings`. הסלייס הזה התמקד ב-session-config בלבד.
+
+### רעיונות שנדחו
+
+- ‏**localStorage (per-device)** — נדחה בגלל multi-device (הליבה של drive-coding).
+- ‏**migration אוטומטי ב-startup** — נדחה (סיכון race/partial-copy על recordings חיים); ידני במקום.
+- ‏**voice override-on-top באותו slice** — נדחה (mechanism `applyRuntimeMuted` לא קיים, tier נפרד) → slice ייעודי.
+- ‏**`permissions.defaultMode` ב-claude settings** (חלופה ללא קוד) — נדחה כפתרון ראשי: גלובלי לכל ה-CLIs, לא מבודד ל-drive-coding, ולא נותן את חוויית ה-UI.
+
+## 2026-06-21 — slice-release-cli-hardening: fixtures strip + CLI flags + --help
+
+### רציונל
+
+קידום ה-NPM package `drive-coding` (packages/release/) לקראת publish. שתי מטרות אמיתיות:
+(1) הסרת דליפה — `frontend-dist/fixtures/` (~2MB sessions מוקלטים, כולל `salary-*.json`
+שנשמעים אישיים) נכנס ל-tarball הציבורי. הם DEV-only (`MOCK_FIXTURES` מאחורי
+`import.meta.env.DEV`), לכן מוחרגים מהעותק של ה-release ב-build.mjs בלבד — dev לא נפגע.
+(2) בקשת המשתמשת — config דרך flags (לא רק env vars) + `--help`. נוסף `parseArgs`
+(`node:util`, בלי dependency), flags `--port/--opencode-bin/--fe-static-dir/--cors-origins`,
+`--help`, `--version`, עם קדימות flag > env > default (flag דורס env דרך הצבה לפני ה-`??=`).
+
+### ממצאי אביגיל
+
+r1 = USABLE-AFTER-FIX, **תפסה 🔴 קריטי**: ה-brief המקורי כלל "Commit 0 — תיקון FE path
+resolution" בטענה שה-package שבור (404 מהתקנה נקייה). **הטענה הופרכה.** אומת עד הסוף:
+`import.meta.dirname` בבאנדל נפתר נכון ל-`dist/`, ו-candidate `../frontend-dist` נבחר.
+r2 = READY (1×🟢: `--port` לא-מספרי → NaN → bind שקט; קופל פנימה כולידציה).
+
+### שינויי-כיוון
+
+ה-FE-path "blocker" כולו נמחק מה-brief. ה-package **עובד ומוכן לפרסום כמו שהוא** —
+ה-slice הוא שיפורים בלבד, לא תיקון.
+
+### רעיונות שנדחו
+
+- **תיקון FE path resolution (process.argv[1] במקום import.meta.dirname):** נדחה — אין באג.
+- **config-file ממשי (JSON/TOML):** נדחה — flags מספיקים; env-vars נשארים מקור-האמת ש-flags דורסים.
+- **חשיפת debug envs (LOG_WIRE/WIRE_RECORD) כ-flags:** נדחה — נשארים env-only (לא user-facing).
+
+### לקח מתודולוגי (false-blocker)
+
+ה-404 שהוליד את ה"blocker" המדומה נבע **אך ורק** מכך שה-session של מרדכי מייצא
+`FE_STATIC_DIR=.../dev/packages/frontend/build` (מסקריפט הרצת dev) — זה דלף לכל בדיקת
+install-נקי, וה-`??=` ב-bin היה no-op. עם `env -u FE_STATIC_DIR` + עץ dev מוסתר → 200
+מה-`frontend-dist` הארוז. **כלל חדש שנכנס ל-brief**: כל בדיקת install חייבת `env -u
+FE_STATIC_DIR -u CORS_ORIGINS -u OPENCODE_BIN`. ערך אביגיל כאן היה למנוע dispatch של
+תיקון מיותר לבאג שלא קיים.
+
+---
+
 ## 2026-06-19 — slice-wire-observability-bridge: העברת תצפית ה-wire לשכבת הגשר
 
 ### רציונל
