@@ -1,20 +1,106 @@
 #!/usr/bin/env bun
 // packages/backend/src/bin/drive-coding.ts
 import { execFileSync } from "node:child_process"
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
+import { parseArgs } from "node:util"
 import path from "node:path"
 
+// ---------------------------------------------------------------------------
+// Help text (English only — i18n hook blocks Hebrew in code)
+// ---------------------------------------------------------------------------
+const HELP = `drive-coding — single-command server + web UI for ACP coding agents
+
+Usage:
+  drive-coding [options]
+
+Options:
+  -p, --port <n>            Port to listen on            (env: PORT, default: 4000)
+      --opencode-bin <bin>  Agent binary to look for     (env: OPENCODE_BIN, default: opencode)
+      --fe-static-dir <dir> Override served web-UI dir   (env: FE_STATIC_DIR)
+      --cors-origins <list> Comma-separated CORS origins  (env: CORS_ORIGINS)
+  -h, --help                Show this help and exit
+  -V, --version             Show version and exit
+
+Precedence: flag > environment variable > default.
+
+Examples:
+  drive-coding --port 4100
+  drive-coding --opencode-bin /opt/opencode/bin/opencode`
+
+// ---------------------------------------------------------------------------
+// Parse CLI args
+// ---------------------------------------------------------------------------
+let values: Record<string, string | boolean | undefined>
+try {
+  ;({ values } = parseArgs({
+    options: {
+      port: { type: "string", short: "p" },
+      "opencode-bin": { type: "string" },
+      "fe-static-dir": { type: "string" },
+      "cors-origins": { type: "string" },
+      help: { type: "boolean", short: "h" },
+      version: { type: "boolean", short: "V" },
+    },
+    allowPositionals: false,
+  }))
+} catch (err) {
+  console.error(`[drive-coding] ${(err as Error).message}\n`)
+  console.error(HELP)
+  process.exit(1)
+}
+
+// --help
+if (values.help) {
+  console.log(HELP)
+  process.exit(0)
+}
+
+// --version: read from package.json relative to import.meta.dirname
+// release: dist/ → ../package.json (release package, 0.1.0)
+// dev:     src/bin → ../../package.json (backend, 0.0.0 — acceptable)
+if (values.version) {
+  const pkgCandidates = [
+    path.resolve(import.meta.dirname, "../package.json"),
+    path.resolve(import.meta.dirname, "../../package.json"),
+  ]
+  const pkgPath = pkgCandidates.find(existsSync)
+  const version = pkgPath
+    ? ((JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: string }).version ?? "unknown")
+    : "unknown"
+  console.log(version)
+  process.exit(0)
+}
+
+// --port validation: parseArgs returns string; non-numeric value would silently
+// bind to a random port via Number() → NaN in server.ts:143. Reject early.
+if (values.port !== undefined && !/^\d+$/.test(values.port as string)) {
+  console.error(`[drive-coding] invalid --port "${values.port as string}" (expected a number)\n`)
+  console.error(HELP)
+  process.exit(1)
+}
+
+// ---------------------------------------------------------------------------
+// Map flags → env vars (flag wins over existing env; must happen BEFORE ??= below)
+// ---------------------------------------------------------------------------
+if (values.port) process.env.PORT = values.port as string
+if (values["opencode-bin"]) process.env.OPENCODE_BIN = values["opencode-bin"] as string
+if (values["fe-static-dir"]) process.env.FE_STATIC_DIR = values["fe-static-dir"] as string
+if (values["cors-origins"]) process.env.CORS_ORIGINS = values["cors-origins"] as string
+
+// ---------------------------------------------------------------------------
 // FE static directory — two candidates, whichever exists first wins:
 //   1. Bundled release layout: <pkg>/dist/drive-coding.js → ../frontend-dist = <pkg>/frontend-dist
 //   2. Dev/src layout:         packages/backend/src/bin  → ../../../frontend/build
 // Fallback (neither exists yet — first-run before FE build): dev path, consistent with old behavior.
+// ??= honours a flag or env value already set above.
+// ---------------------------------------------------------------------------
 const feBuildDir =
   [
-    path.resolve(import.meta.dirname, "../frontend-dist"),        // bundled: dist/ → frontend-dist/
+    path.resolve(import.meta.dirname, "../frontend-dist"), // bundled: dist/ → frontend-dist/
     path.resolve(import.meta.dirname, "../../../frontend/build"), // dev: src/bin → packages/frontend/build
   ].find(existsSync) ?? path.resolve(import.meta.dirname, "../../../frontend/build")
 
-// Do not override values the user set explicitly (env > default).
+// Do not override values the user set explicitly (env or flag > default).
 process.env.FE_STATIC_DIR ??= feBuildDir
 process.env.PORT ??= "4000"
 

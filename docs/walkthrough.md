@@ -25,6 +25,32 @@
 
 ---
 
+## 2026-06-21 — slice-release-cli-hardening — הושלם (2 commits)
+
+### מה בוצע?
+
+**Commit 0 (integration)** — `build.mjs` Step 2b: החרגת fixtures/ מה-release frontend-dist.
+- `packages/release/scripts/build.mjs`: הוספת `rmSync(releaseFrontendDist/fixtures)` אחרי cpSync.
+- fixtures (~2MB, salary-*.json) לא נכנסים לtarball; dev fixtures נשמרות.
+
+**Commit 1 (manual)** — `drive-coding.ts`: parseArgs flags + --help + --version + --port validation.
+- `packages/backend/src/bin/drive-coding.ts`: הוספת parseArgs (node:util), HELP constant, --help/--version/--bogus/--port abc.
+- `packages/release/README.md` + `README.he.md`: סעיף CLI flags עם טבלה.
+- קדימות: flag > env > default (מיפוי flags לפני ??=).
+
+### בדיקות
+
+- typecheck: נקי (שני commits)
+- lint:i18n: נקי (help text באנגלית בלבד)
+- manual (dev path): --help exit 0, --version → 0.0.0 exit 0, --bogus → exit 1, --port abc → exit 1
+- fixtures: test ! -d frontend-dist/fixtures → OK; npm pack --dry-run | grep -c fixtures/ → 0
+
+### סטיות
+
+אין סטיות מה-brief. pnpm lint נכשל ב-237 errors pre-existing (nested config) — לא שינויים שלנו.
+
+---
+
 ## 2026-06-19 — docs(wire): slice-wire-observability-bridge Commit 1 — עדכון docs ל-ns החדש backend.acp.wire
 
 ### מה בוצע?
