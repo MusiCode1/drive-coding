@@ -88,6 +88,15 @@ export const en: Catalog = {
   "agentOptions.model.label": "Model",
   "agentOptions.model.other": "Other",
   "agentOptions.agent.label": "Agent",
+  "agentOptions.mode.label": "Mode",
+  // CLI-provided config-option name translations (identity in English).
+  "configName.agent": "Agent",
+  "configName.mode": "Mode",
+  "configName.sessionMode": "Session Mode",
+  "configName.approvalPreset": "Approval Preset",
+  "configName.model": "Model",
+  "configName.effort": "Effort",
+  "configName.reasoningEffort": "Reasoning Effort",
   // ─── smart-scroll ─── (redesign-7)
   "chat.jumpDown": "New messages",
   // ─── modals ─── (redesign-6)
