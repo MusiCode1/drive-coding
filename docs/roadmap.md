@@ -57,6 +57,7 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 | settings page · smart scroll · audio cues | 💭 |
 | **drive-first chrome** (car mode, Media Session, wake lock) | 💭 |
 | recordings + replay | 💭 |
+| **ידית BottomSheet מתנגשת ב-OS gesture bar (מובייל)** — ה-handle יושב ב-28px התחתונים (detent `peek`), בדיוק על ה-gesture bar של הטלפון → גרירת ה-sheet מתנגשת במחוות ה-OS. פתרון מוצע: לנתק את ה-handle מה-sheet ולמקמו **מעל ה-toggle של RecordFooter**; ב"סגור" ה-sheet נעלם לגמרי (`peek 28px`→`hidden 0px`). ההתנהגות (משיכה→sheet עולה ומכסה) נשמרת. דורש: decoupling handle↔sheet + שינוי detent-model + drag-ownership (`BottomSheet`/`RecordFooter`/`ui-shell`) + z-index. כבר יש workaround חלקי (RecordFooter `pb` במצב hidden). **מצריך brief — regression בליבת ה-gesture, לא נתפס ב-typecheck.** | 💭 brief |
 | cutover frontend-v2 → frontend | 💭 סוף |
 
 ### D — Assistant capabilities  ·  *חדש (עוזר אישי)*
