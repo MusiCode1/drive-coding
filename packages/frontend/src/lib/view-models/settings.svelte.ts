@@ -39,6 +39,9 @@ type Persisted = {
   muted: boolean
   // ─── מסך ─── (slice-wake-lock)
   screenWakeLock: boolean
+  // ─── תצוגת צ'אט ─── (chat-render-polish)
+  collapseThoughts: boolean
+  expandTools: boolean
 }
 
 const DEFAULTS: Persisted = {
@@ -60,6 +63,9 @@ const DEFAULTS: Persisted = {
   muted: false,
   // ─── מסך ─── (slice-wake-lock)
   screenWakeLock: false,
+  // ─── תצוגת צ'אט ─── (chat-render-polish) — ברירות מחדל = התנהגות נוכחית (מחשבות פתוחות, כלים סגורים)
+  collapseThoughts: false,
+  expandTools: false,
 }
 
 function load(): Persisted {
@@ -119,6 +125,10 @@ export class Settings {
   // ─── מסך ─── (slice-wake-lock)
   screenWakeLock = $state<boolean>(DEFAULTS.screenWakeLock)
 
+  // ─── תצוגת צ'אט ─── (chat-render-polish)
+  collapseThoughts = $state<boolean>(DEFAULTS.collapseThoughts)
+  expandTools = $state<boolean>(DEFAULTS.expandTools)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -138,6 +148,9 @@ export class Settings {
     this.muted = loaded.muted
     // ─── מסך ───
     this.screenWakeLock = loaded.screenWakeLock
+    // ─── תצוגת צ'אט ───
+    this.collapseThoughts = loaded.collapseThoughts
+    this.expandTools = loaded.expandTools
   }
 
   // ─── טופס חיבור ───
@@ -297,6 +310,18 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── תצוגת צ'אט ─── (chat-render-polish)
+
+  setCollapseThoughts = (v: boolean): void => {
+    this.collapseThoughts = v
+    this.#persist()
+  }
+
+  setExpandTools = (v: boolean): void => {
+    this.expandTools = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -312,6 +337,8 @@ export class Settings {
       locale: this.locale,
       muted: this.muted,
       screenWakeLock: this.screenWakeLock,
+      collapseThoughts: this.collapseThoughts,
+      expandTools: this.expandTools,
     })
   }
 }

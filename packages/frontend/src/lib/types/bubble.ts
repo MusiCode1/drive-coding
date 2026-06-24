@@ -53,8 +53,11 @@ export type ThoughtBubble = BubbleBase & {
 export type ToolContentText = { type: "text"; text: string }
 export type ToolContentDiff = { type: "diff"; path: string; oldText?: string; newText: string }
 export type ToolContentTerminal = { type: "terminal"; terminalId: string }
-export type ToolContentOther = { type: "other"; raw: unknown } // image/audio/resource/unknown
-export type ToolContent = ToolContentText | ToolContentDiff | ToolContentTerminal | ToolContentOther
+// chat-render-polish: תמונה מה-agent (ACP ImageContent או EmbeddedResource עם blob image/*)
+// data = base64 גולמי (ללא "data:" prefix) — הרינדור בונה את ה-data-URI
+export type ToolContentImage = { type: "image"; data: string; mimeType: string }
+export type ToolContentOther = { type: "other"; raw: unknown } // audio/resource/unknown
+export type ToolContent = ToolContentText | ToolContentDiff | ToolContentTerminal | ToolContentImage | ToolContentOther
 
 export type ToolLocation = { path: string; line?: number }
 

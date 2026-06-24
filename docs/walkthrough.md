@@ -1,3 +1,96 @@
+## 2026-06-24 — slice-chat-render-polish — Commit 3 fix: snap-back local open state
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/components/chat/bubbles/ToolBubble.svelte`: הוסף `let open = $state(settings.expandTools)` + שינוי `<details bind:open>` (במקום `open={settings.expandTools}`).
+- `packages/frontend/src/lib/components/chat/bubbles/ThoughtBubble.svelte`: אותו תיקון — `let open = $state(!settings.collapseThoughts)` + `<details bind:open>`.
+- `open` הוא local `$state` שמאותחל פעם אחת מה-setting; לא נגזר ממנו reactively. כך status updates ו-streaming chunks לא מבטלים קיפול ידני של המשתמש.
+
+### בדיקות
+
+- typecheck: נקי (0 errors, 0 warnings)
+- 251/251 טסטים ירוקים
+- calev snap-back: הופעל לאמת בקוד המקומפל
+
+### סטיות
+
+אין סטיות מה-brief.
+
+---
+
+## 2026-06-24 — slice-chat-render-polish — Commit 2: display-prefs
+
+### מה בוצע?
+
+- `packages/core/src/i18n/keys.ts`: הוסף 3 keys: `settings.chatDisplay`, `settings.toggle.collapseThoughts`, `settings.toggle.expandTools`.
+- `packages/core/src/i18n/catalogs/he.ts` + `en.ts`: ערכים לכל 3 keys.
+- `packages/frontend/src/lib/view-models/settings.svelte.ts`: הוסף `collapseThoughts`+`expandTools` ל-`Persisted`, `DEFAULTS` (false), `$state`, constructor, setters, `#persist()`.
+- `packages/frontend/src/lib/components/chat/bubbles/ThoughtBubble.svelte`: עוטף ב-`<details open={!settings.collapseThoughts}>`, label הופך ל-`<summary>`, CSS `.thought-summary` לנסתר marker.
+- `packages/frontend/src/lib/components/chat/bubbles/ToolBubble.svelte`: הוסף `getSettings` + `open={settings.expandTools}` ל-details.
+- `packages/frontend/src/lib/components/settings/SettingsScreen.svelte`: כרטיס "תצוגת צ'אט" עם 2 toggles + כפתור reset מאפס גם את 2 הshדות החדשים.
+
+### בדיקות
+
+- approach: manual (כנדרש בbrief)
+- typecheck: נקי (0 errors)
+- lint:i18n: נקי
+- lint:rtl: נקי
+- 251/251 טסטים ירוקים
+- ידני: דורש FE חי — תיועד בדוח כלב
+- snap-back risk (§6): `open={}` (לא `bind:open`) — לא כפיה הפוכה. אם snap-back יתגלה → local $state per-bubble (תועד בdoח כלב)
+
+### סטיות
+
+אין סטיות מה-brief.
+
+---
+
+## 2026-06-24 — slice-chat-render-polish — Commit 1: tool-image render
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/types/bubble.ts`: הוסף `ToolContentImage = { type:"image"; data:string; mimeType:string }` ועדכן ה-union `ToolContent`.
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts` (שורות 1036-1052): הרחיב `#mapToolContent` לטיפול ב-`image` content ו-`resource` blob עם `image/*`.
+- `packages/frontend/src/lib/components/chat/bubbles/ToolBubble.svelte`: הוסף ענף `{:else if c.type === "image"}` עם `<img>` + הערת invariant אבטחה + CSS `.tool-image`.
+
+### בדיקות
+
+- approach: manual (כנדרש בbrief)
+- typecheck: נקי (0 errors) — union ToolContent exhaustive
+- 251/251 טסטים ירוקים
+- ידני: דורש BE + agent חי — תיועד בדוח כלב
+
+### סטיות
+
+אין סטיות מה-brief.
+
+---
+
+## 2026-06-24 — slice-chat-render-polish — Commit 0: md-tables
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/util/markdown.ts`: הוסף תגי טבלה ל-`ALLOWED_TAGS` (`table`,`thead`,`tbody`,`tfoot`,`tr`,`th`,`td`,`caption`,`colgroup`,`col`) ו-`align` ל-`ALLOWED_ATTR`.
+- `packages/frontend/src/lib/util/markdown.test.ts`: הוסף 2 טסטים TDD (`renders GFM table`, `preserves Hebrew inside table cells`).
+- `packages/frontend/src/lib/components/chat/bubbles/MessageBubble.svelte`: הוסף CSS לטבלאות (`:global(table/th/td)`) — RTL-safe (`text-align: start`).
+- `packages/frontend/src/lib/components/chat/bubbles/UserBubble.svelte`: אותם selectors.
+- `packages/frontend/src/lib/components/chat/bubbles/ToolBubble.svelte`: CSS בקידומת `.tool-text-output :global(...)` עם `font-size: 0.78rem`.
+
+### בדיקות
+
+- TDD: 2 טסטים אדומים → ירוקים
+- 251/251 טסטים ירוקים
+- typecheck: נקי (0 errors)
+- lint:rtl: נקי (`text-align: start`, לא `left`)
+- lint:i18n: נקי
+- build: עבר ✓
+
+### סטיות
+
+אין סטיות מה-brief.
+
+---
+
 ## 2026-06-22 — feat(wake-lock): slice-wake-lock — מתג "השאר מסך דלוק" + WakeLockEngine
 
 ### מה בוצע?

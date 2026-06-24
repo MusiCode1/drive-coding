@@ -37,8 +37,20 @@ const ALLOWED_TAGS = [
   "h6",
   "a",
   "hr",
+  // ─── GFM tables (chat-render-polish) ───
+  // ⚠️ אל תוסיף "style" — marked v18 מייצר align attr, לא style. style = vector ל-CSS injection.
+  "table",
+  "thead",
+  "tbody",
+  "tfoot",
+  "tr",
+  "th",
+  "td",
+  "caption",
+  "colgroup",
+  "col",
 ]
-const ALLOWED_ATTR = ["href", "title", "lang", "dir", "target", "rel"]
+const ALLOWED_ATTR = ["href", "title", "lang", "dir", "target", "rel", "align"]
 
 // כל קישור בתוכן (markdown) נפתח בלשונית חדשה — לחיצה לא מנווטת את ה-SPA מחוץ לשיחה.
 // rel="noopener noreferrer": מונע tabnabbing ולא מדליף referrer. ה-hook גלובלי על

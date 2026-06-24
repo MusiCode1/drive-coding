@@ -12,17 +12,22 @@
  * ─── redesign-5 (C2) ───
  */
 import type { ToolBubble, ToolCall } from "$lib/types/bubble"
-import { getI18n } from "$lib/context"
+import { getI18n, getSettings } from "$lib/context"
 import { formatToolInput, prettyJson, formatLocation } from "$lib/util/tool-format"
 import { renderMarkdown } from "$lib/util/markdown"
 import Avatar from "$lib/components/chat/Avatar.svelte"
 
 let { bubble }: { bubble: ToolBubble } = $props()
 const t = getI18n().t
+const settings = getSettings()
 
 const tc = $derived(bubble.toolCall)
 const showNarration = $derived(tc.narration !== undefined && tc.narration.length > 0)
 const input = $derived(formatToolInput(tc.args))
+
+// local state — מאותחל פעם אחת מה-setting, לא נגזר ממנו reactively.
+// מונע snap-back כשה-effect של tc.status/tc.narration רץ מחדש.
+let open = $state(settings.expandTools)
 </script>
 
 <div class="flex gap-2 self-end max-w-[78%] min-w-0 items-end flex-row-reverse">
@@ -33,7 +38,7 @@ const input = $derived(formatToolInput(tc.args))
     style="background:var(--bg-card); border-color:var(--border)"
   >
     <!-- summary שורה: status dot + narration/title -->
-    <details class="group">
+    <details class="group" bind:open>
       <summary class="flex items-center gap-2 px-3 py-2 cursor-pointer list-none select-none">
         <!-- status dot -->
         <span
@@ -100,6 +105,18 @@ const input = $derived(formatToolInput(tc.args))
                 <div class="terminal-ref font-mono text-[11px] opacity-70 italic">
                   {t("chat.tool.terminal")}: {c.terminalId}
                 </div>
+              {:else if c.type === "image"}
+                <!--
+                  Invariant אבטחה: תמונות מוצגות **רק** דרך <img>.
+                  SVG מותר כי ב-<img> הדפדפן מריץ scripting/external-fetch ב-secure-static-mode (מנוטרל).
+                  אם אי-פעם עוברים לרינדור inline ({@html} / <object>) — חובה לחסום image/svg+xml.
+                -->
+                <img
+                  class="tool-image"
+                  src={`data:${c.mimeType};base64,${c.data}`}
+                  alt={t("chat.tool.content")}
+                  loading="lazy"
+                />
               {:else}
                 <pre>{prettyJson(c.raw)}</pre>
               {/if}
@@ -193,9 +210,25 @@ const input = $derived(formatToolInput(tc.args))
   .tool-text-output :global(ul), .tool-text-output :global(ol) { padding-inline-start: 1.2em; margin: 0.2em 0; }
   .tool-text-output :global(strong) { font-weight: 700; }
   .tool-text-output :global(em) { font-style: italic; }
+  /* chat-render-polish: GFM tables בפלט כלי */
+  .tool-text-output :global(table) {
+    border-collapse: collapse; margin: 0.4em 0; font-size: 0.78rem;
+    display: block; overflow-x: auto; max-width: 100%;
+  }
+  .tool-text-output :global(th), .tool-text-output :global(td) {
+    border: 1px solid var(--border); padding: 0.3em 0.55em; text-align: start;
+  }
+  .tool-text-output :global(th) { background: rgba(0,0,0,0.18); font-weight: 700; }
 
   .raw-output summary { list-style: none; }
   .raw-output[open] summary { margin-bottom: 4px; }
+
+  /* chat-render-polish: תמונת כלי */
+  .tool-image {
+    max-width: 100%; max-height: 320px; height: auto;
+    object-fit: contain; border-radius: 6px;
+    border: 1px solid var(--border); display: block; margin: 0.2em 0;
+  }
 
   .hidden { display: none; }
 </style>
