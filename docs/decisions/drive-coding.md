@@ -1,5 +1,68 @@
 # Decisions — drive-coding
 
+## 2026-06-25 — slice-latex-math: רינדור LaTeX/KaTeX עם allowlist פר-מקור
+
+### רציונל
+רינדור נוסחאות (KaTeX) בכל 4 הסגנונות (`$`,`$$`,`\(`,`\[`). ההכרעה המרכזית — **אבטחה**:
+KaTeX מייצר HTML עם inline `style` (positioning), שמנוגד ל-policy שאסר `style` ב-DOMPurify
+(vector ל-CSS-injection). הפתרון הסופי: **allowlist פר-מקור (two-pass)**, לא רשימה כללית אחת.
+
+- **המנגנון**: extension פנימי (`marked.use`) שמזהה math (מכבד code blocks דרך ה-pipeline,
+  לא regex) ומפיק **placeholder**; `renderMarkdown` עושה two-pass: ה-markdown עובר
+  `MARKDOWN_ALLOW` (שמרני, **בלי span/style**), וכל KaTeX עובר `KATEX_ALLOW` (נדיב: span/style/
+  MathML/SVG) **בנפרד**, ואז מוזרק. ה-`span`+`style` קיימים אך-ורק במסלול KaTeX (input מהימן:
+  generated, `trust:false`). span גולמי של מודל-מתחזה (prompt-injection) → נמחק.
+- **secure by construction, לא by filtering**: לא "מסננים" CSS מסוכן (ומקווים שה-allowlist מושלם)
+  — פשוט לא יוצרים את ההרשאה במסלול הלא-מהימן.
+
+### ממצאי אביגיל (3 סבבים — אומת אמפירית, לא בהנחה)
+- **r1 = NEEDS-REWORK**: ההכרעה המקורית ("התר `style` גלובלי כי DOMPurify מסנן `url()`/`javascript:`")
+  הייתה **שגויה עובדתית** — אביגיל הריצה DOMPurify ואימתה ש-style עובר verbatim. **טעות של מרדכי**;
+  אביגיל תפסה לפני קוד. (הסיכון האמיתי: overlay-phishing/exfiltration דרך prompt-injection, **לא** RCE — מת ב-2026.)
+- **r2 = USABLE-AFTER-FIX**: ה-two-pass אומת אמפירית — כל 5 ההנחות (בידוד span-strip, re-inject ≠ modify-after,
+  PUA sentinel שורד, marked-extension API, map per-call). נותרו 3 דיוקים.
+- **r3 = USABLE-AFTER-FIX + אישור-מותנה**: KATEX_ALLOW הושלם (mtable/sum/vector...), אומת שאין tag מסוכן.
+  4 ערכי-MathML שוליים (`mpadded`/`linethickness`/...) נוספו → READY.
+
+### שינויי-כיוון
+- מ"התר style גלובלי + סנן" (r1) → "allowlist פר-מקור, style מבודד ל-KaTeX" (r2+). תובנת המשתמשת:
+  ה-CSS המסוכן מגיע מ-HTML-גולמי-של-מודל, לא מ-KaTeX/LaTeX → לבנות כך שלא קיים, לא לסנן.
+- `marked-katex-extension` הוסר — extension פנימי שולט בכל ה-delimiters (פותר גם `\(`/`\[`).
+
+### רעיונות שנדחו
+- **`style` גלובלי + DOMPurify** — שגוי (style עובר verbatim).
+- **placeholder re-inject בלי sanitize נפרד** — מפר אזהרת DOMPurify "modify-after".
+- **MathML-only** — בטוח-מבנית ופשוט יותר, אך KaTeX-HTML מלוטש יותר; נבחר two-pass לטובת ה-rendering.
+- **CSS-sanitizer hook (uponSanitizeAttribute)** — תקף (המלצת DOMPurify), אך per-input בטוח-מבנית יותר (לא תלוי בשלמות allowlist של CSS-properties).
+
+## 2026-06-24 — slice-enter-toggle: ביטול שליחה ב-Enter (toggle)
+
+### רציונל
+ראשון ב-"Message & Input UX backlog" (Track C, נקלט מהתנסות המשתמשת). נבחר כ-quick-win
+ראשון כי כל התשתית קיימת: ה-handler ב-`TypeArea` כבר מבחין Enter/Shift+Enter, ותשתית
+ה-settings (Persisted + reset) קיימת מ-chat-render-polish. השדה `enterToSend` ברירת-מחדל
+`true` → **התנהגות נוכחית נשמרת**, אין הפתעה למשתמש קיים. כש-off: Enter=שורה-חדשה, שליחה
+בכפתור (תמיד קיים — ידידותי-נייד) או Cmd/Ctrl+Enter. Cmd/Ctrl+Enter שולח בשני המצבים
+(power-user עקבי).
+
+**הכרעת depends_on**: התבסס על `chat-render-polish` (לא dev הנקי) — הוא מוסיף את כרטיס
+"תצוגת צ'אט" ב-SettingsScreen + דפוס Persisted ל-toggles, וה-toggle החדש נכנס לאותו כרטיס.
+base = dev אחרי merge של chat-render-polish. **חוסם dispatch**: chat-render-polish חייב
+להתמזג ל-dev ראשון.
+
+### ממצאי אביגיל
+verdict=**READY** (0 חוסמים, 2 findings ירוקים). #1: הפניה קוסמטית — `en.ts:196` היא
+שורת-הערה (expandTools ב-197-199); הוראת-ההוספה עצמה נכונה — תוקן ה-ref. #2: ל-keydown
+החדש אין guard ל-`e.isComposing`/IME — אבל גם ל-baseline אין, אז זו **לא רגרסיה** שה-brief
+מכניס (קיים-מראש, מחוץ ל-scope). אומת שקריאת `settings.enterToSend` בתוך event-handler
+אינה בעיית reactivity של Svelte 5 (קריאת-ערך, לא render). דוח: `reports/drive-coding/slice-enter-toggle-avigail.md`.
+
+### רעיונות שנדחו
+- **כרטיס "קלט" נפרד ב-settings** — נדחה; ה-toggle שייך-לוגית לתצוגת-הצ'אט, חוסך כרטיס.
+- **לשנות Enter ל-newline ללא הגדרה (swap קשיח)** — נדחה; שובר ציפייה של משתמשים קיימים.
+  toggle עם default=current שומר תאימות-לאחור.
+- **IME isComposing guard** — לא נכלל בסבב (out-of-scope, pre-existing); מועמד ל-polish עתידי.
+
 ## 2026-06-24 — slice-chat-render-polish: טבלאות MD + תמונות בכלים + העדפות-תצוגה
 
 ### רציונל
