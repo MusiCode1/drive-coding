@@ -1,5 +1,41 @@
 # Decisions — drive-coding
 
+## 2026-06-24 — slice-chat-render-polish: טבלאות MD + תמונות בכלים + העדפות-תצוגה
+
+### רציונל
+שלושה שיפורי-רינדור בצ'אט אוחדו ל-**brief אחד עם 3 commits עצמאיים** (לא 3 slices נפרדים).
+הסיבה: שלושתם נוגעים ב-`ToolBubble.svelte`. בתחילה תוכננה שרשרת A→B→C כדי להימנע מ-merge
+conflicts בין branches — אבל ב-worktree יחיד אין conflicts כלל, כך שהנימוק לפיצול ביטל את
+עצמו. הנושאים קטנים, קוהרנטיים ("שיפורי רינדור"), ועצמאיים-לוגית, אז commit-per-נושא מאפשר
+merge חלקי אם אחד מסתבך — בלי overhead של 3 dispatch/אביגיל/כלב/merge.
+
+- **טבלאות MD**: השורש — `markdown.ts` ALLOWED_TAGS חסר תגי טבלה, DOMPurify מוחק את מה
+  ש-marked כבר מייצר (`gfm:true`). תיקון: allowlist + `align` (marked מייצר attr, **לא** style)
+  + CSS. אומת ש-marked v18 פולט `<th align="left">`.
+- **תמונות**: ACP `image` content (`{data:base64, mimeType}`) מופה היום ל-`{type:"other"}`
+  ומודפס כ-JSON. הוספת `ToolContentImage` + רינדור `<img>`. גם `resource` blob עם `image/*`
+  (אותו רינדור). **SVG מתירני** — `<img>` מנטרל scripting ב-secure-static-mode, עם invariant
+  מתועד "רק `<img>`, לעולם לא inline".
+- **העדפות-תצוגה**: ברירות-מחדל שומרות התנהגות נוכחית (`collapseThoughts:false`,
+  `expandTools:false`); רק ה-default נשמר ב-settings, override ידני per-bubble הוא per-render.
+
+### ממצאי אביגיל
+verdict=**READY** (0 חוסמים, 2 findings ירוקים). #1: כפתור reset סלקטיבי ולא גלובלי —
+ניסוח "עקביות" תוקן. #2 (משמעותי): `ToolBubble:121` כופה reactivity על `tc.status`; חשש
+ל-snap-back שיכפה `open` מחדש ויבטל קיפול ידני באמצע turn. ב-Svelte 5 fine-grained כנראה
+לא קורה, אך חוזק ב-§6 כ-risk עם הנחיית בדיקה-בפועל + פתרון נפילה (local `$state` per-bubble).
+(הערה: אביגיל לא כתבה קובץ report פיזי — ה-verdict+findings תועדו כאן מהתמצית.)
+
+### שינויי-כיוון
+- מ-3 briefs בשרשרת → brief אחד / 3 commits (בקשת המשתמשת; הנימוק לשרשור קרס תחת worktree יחיד).
+- `resource_link` (`file://`) **הוצא מ-scope** — דורש BE proxy לקבצים מקומיים (LFI/path-traversal),
+  נרשם ב-roadmap כ-slice **local-file-proxy** נפרד (Track C, תלוי ב-slice זה).
+
+### רעיונות שנדחו
+- **שמרני ל-SVG** (raster בלבד): נדחה — `<img>` בטוח, ו-SVG נפוץ בפרויקטי קוד.
+- **persist של מצב פתוח/סגור per-bubble**: נדחה — רק ה-default נשמר, override ידני per-render.
+- **audio / resource-text content**: future (סוגי מדיה אחרים, fallback ל-JSON נשמר).
+
 ## 2026-06-22 — slice-wake-lock: מתג "השאר מסך דלוק" + WakeLockEngine
 
 ### רציונל

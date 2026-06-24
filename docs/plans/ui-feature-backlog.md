@@ -1,7 +1,8 @@
 # UI Feature Backlog — drive-coding
 
-+ **תאריך:** 2026-06-18 · **סטטוס:** backlog (לתעדוף; טרם הומר ל-slices)
++ **תאריך:** 2026-06-18 · **עודכן:** 2026-06-24 · **סטטוס:** backlog (חלקו הומר ל-roadmap Track C — ראה למטה)
 + **שייך ל-roadmap:** `docs/roadmap.md` — Tracks **C** (Frontend/UX), **E** (Access & Entry), ו-Voice **V4**.
++ **2026-06-24 — נקלט ל-roadmap:** ששת הפריטים שהמשתמשת העלתה (תצוגת sub-agent · virtualization/ביצועים · enter-toggle · כותרת-סשן בהדר · slash · paste) קובצו תחת **"Message & Input UX backlog"** ב-Track C עם המצב-האמיתי-בקוד, מורכבות ותלות. תעדוף: גל-ראשון = enter-toggle + session-title (quick wins); גל-שני = virtualization; גל-שלישי = sub-agent (spike) + slash/paste (תלויי-חוזה).
 + **מקור השראה:** UI של CodeNomad (`CodeNomad/packages/ui/src/components/`) ו-opencode — הרבה מהפריטים כבר פתורים שם ומוכנים להעתקה. **ממצאי סריקה — §5 (יתמלא).**
 
 הערכת מורכבות: 💚 קל/עצמאי · 🟡 בינוני · ⭐ high-value.

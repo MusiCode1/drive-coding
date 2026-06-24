@@ -55,6 +55,21 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 | --- | --- |
 | בסיס: connect/chat/voice-mode/bubbles/sessions/tool-rendering | ✅ |
 | settings page · smart scroll · audio cues | 🔶 חלקי — **smart scroll מוזג** (slice-mode-label-scroll: גלילה מאוחדת ב-SessionOptionsPanel + תווית mode פר-ספק + תיאורי אפשרויות + קישורי markdown ב-tab חדש). settings page · audio cues עדיין 💭 |
+| **chat-render polish** (שרשרת A→B→C) — **A:** טבלאות Markdown (allowlist DOMPurify חסר tags של טבלה) · **B:** רינדור תמונות בכלים (`image` raster+SVG + `resource` blob image, היום base64 גולמי) · **C:** העדפות-תצוגה (collapse מחשבות / expand כלים ב-settings) | ✅ **כלב GO** (2026-06-24, 10/10 DoD, 251 טסטים, build נקי) — **ממתין merge ל-dev** (`slice-chat-render-polish`, HEAD d6f5585). מנקה את הבסיס ל-message/input backlog שמתחתיו |
+
+#### Message & Input UX backlog — נקלט 2026-06-24 (מהתנסות המשתמשת)
+
+> מקור-פירוט: `docs/plans/ui-feature-backlog.md`. כל הסלייסים האלה בונים מעל chat-render-polish (ToolBubble/ThoughtBubble/settings). **אפשר אימות ACP חי מול שני ספקים** (opencode + claude-code) — רלוונטי במיוחד ל-spike של סוכן-המשנה.
+
+| פריט | סטטוס |
+| --- | --- |
+| **תצוגת סוכן-משנה (sub-agent / Task)** — היום מגיע כ-`tool_call` רגיל עם `kind`, מרונדר כ-`ToolBubble` גנרי עם args כ-JSON גולמי. **חסר:** (א) זיהוי task/subagent כסוג נפרד; (ב) רינדור מקונן עם הפרדה בין ההודעות/הכלים/המחשבות של תת-הסוכן; (ג) הצגת שם תת-הסוכן ופרטיו. **לא ידוע מה claude/opencode בכלל שולחים על ה-wire עבור Task — האם ה-updates המקוננים מגיעים בנפרד או רק tool_call אחד עם תוצאה.** קבצים: `agent-session.svelte.ts#handleToolCall`, `bubble.ts` (ToolCall union), `ToolBubble.svelte`. אולי דורש הרחבת משטח-החוזה (nested agent updates). | ⭐💭 **spike ראשון** (`WIRE_RECORD=1` על Task חי בכל ספק) → אז brief renderer. complexity 8+ → calev-heavy |
+| **virtualization / ביצועי גלילה** — `ChatBubbles.svelte` עושה `{#each bubbles}` ללא windowing → כל הבועות ב-DOM בו-זמנית → איטיות בשיחה ארוכה. smart-scroll כבר מוזג (`slice-mode-label-scroll`) אבל windowing לא. צריך virtual list עם שימור anchoring + auto-follow + jump-to-bottom (reference: CodeNomad `virtual-follow-list.tsx`). עצמאי לחלוטין. | 🟡💭 brief (גל שני) |
+| **ביטול שליחה ב-Enter (toggle)** — היום `TypeArea.svelte:42-47` קבוע: Enter שולח, Shift+Enter שורה. צריך setting שמאפשר Enter=שורה-חדשה ושליחה בכפתור/Cmd+Enter. נשען על תשתית settings של chat-render-polish. | 💚💭 brief (גל ראשון — quick win) |
+| **כותרת הסשן בהדר הצ'אט** — ה-`title` כבר במודל (`SessionInfo`) ומוצג ב-`SessionCard`/`SessionPicker`, אבל **לא בהדר של הצ'אט הפעיל**. auto-generate (`generate_session_title`) הוא future נפרד. | 💚💭 brief (גל ראשון — quick win) |
+| **פקודות Slash (/)** — 0% תשתית. החוזה לא חושף `commands` (Claude שולח `commands_changed`, לא מחווט ל-FE). דורש: חשיפת `commands` במשטח-החוזה/BE + view-model + dropdown autocomplete + parsing ב-TypeArea. | 🟡💭 תלוי Track A (משטח-חוזה) |
+| **הדבקת תמונות (paste→preview→send)** — 0%. `sendPrompt(text)` טקסט-בלבד; צריך multimodal `PromptContent[]` + `onpaste` handler + preview + הרחבת חוזה `/session/prompt`. ה-`PromptContent` הקנוני כבר מולטימודלי. | 🟡💭 תלוי Track A (משטח-חוזה) |
+| **local-file-proxy** — BE proxy שקורא `file://` מקומי-לסביבת-ה-agent ומגיש ל-FE, כדי להציג `resource_link` עם `file://`+`image/*` כתמונה אמיתית (היום נופל ל-JSON; הדפדפן ב-https לא יכול לטעון `file://`). **כבד-אבטחה: LFI/path-traversal** — ההכרעה המרכזית תהיה sandbox (allowlist דינמי של uris שהוזכרו ב-session **או** sandbox ל-cwd עם `realpath`). תלוי ב-slice B (משתמש ברינדור ה-`<img>`). יש תקדים proxy ב-BE (`/proxy/elevenlabs`, `/proxy/google`). | 💭 brief (אחרי B) |
 | **drive-first chrome** (car mode, Media Session, wake lock) | 💭 |
 | recordings + replay | 💭 |
 | **ידית BottomSheet מתנגשת ב-OS gesture bar (מובייל)** — ה-handle יושב ב-28px התחתונים (detent `peek`), בדיוק על ה-gesture bar של הטלפון → גרירת ה-sheet מתנגשת במחוות ה-OS. פתרון מוצע: לנתק את ה-handle מה-sheet ולמקמו **מעל ה-toggle של RecordFooter**; ב"סגור" ה-sheet נעלם לגמרי (`peek 28px`→`hidden 0px`). ההתנהגות (משיכה→sheet עולה ומכסה) נשמרת. דורש: decoupling handle↔sheet + שינוי detent-model + drag-ownership (`BottomSheet`/`RecordFooter`/`ui-shell`) + z-index. כבר יש workaround חלקי (RecordFooter `pb` במצב hidden). **מצריך brief — regression בליבת ה-gesture, לא נתפס ב-typecheck.** | 💭 brief |
@@ -94,7 +109,7 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 ## Milestones (אבני-דרך)
 
 + **M0 — בסיס יומיומי** ✅ — chat+voice+sessions מול ACP/opencode. *קיים.*
-+ **M1 — כותב-קוד מלא ויציב** — vnext-C + P1d (config-options מקצה-לקצה) · Voice V1–V3 · frontend polish (settings/scroll/cues/car-mode/recordings). *הליבה הטכנית מתבססת.*
++ **M1 — כותב-קוד מלא ויציב** — vnext-C + P1d (config-options מקצה-לקצה) · Voice V1–V3 · frontend polish (settings/scroll/cues/car-mode/recordings) + **message & input UX** (sub-agent rendering · virtualization · enter-toggle · session-title · slash · paste — ראה Track C). *הליבה הטכנית מתבססת.*
 + **M2 — עוזר אישי v1** — Track D (memory + MCP general + scheduling) + Track E (deep links) + spike Google. *המעבר ל"עוזר".*
 + **M3 — רב-ספקי מלא** — claude-code native + codex (Track A). *לא נעולים לספק יחיד.*
 
