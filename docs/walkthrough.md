@@ -1,3 +1,29 @@
+## 2026-06-25 — slice-latex-math — Commit 1: tests (TDD) — 13 טסטים חדשים
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/util/markdown.test.ts`: נוספו 13 טסטים חדשים של KaTeX:
+  - 4 טסטי rendering (כל 4 הסגנונות: $, $$, \(, \[)
+  - טסט מטריצה עם mtable (finding #1 avigail r2)
+  - 2 טסטי בידוד code block/inline code
+  - **טסט הקריטי**: `strips raw model <span style> (overlay vector)` — הלב האבטחתי
+  - `keeps KaTeX positioning style` (KATEX_ALLOW)
+  - `existing XSS guards pass after KaTeX addition` (רגרסיה)
+  - `multiple math expressions in one message`
+  - `map resets between calls — no index leak`
+
+### בדיקות
+
+- 263/263 טסטים ירוקים (27 test files)
+- typecheck: נקי
+- lint (biome markdown.test.ts): נקי
+
+### סטיות
+
+אין סטיות.
+
+---
+
 ## 2026-06-25 — slice-latex-math — Commit 0: two-pass KaTeX + extension פנימי
 
 ### מה בוצע?
