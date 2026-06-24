@@ -42,6 +42,8 @@ type Persisted = {
   // ─── תצוגת צ'אט ─── (chat-render-polish)
   collapseThoughts: boolean
   expandTools: boolean
+  // ─── Enter toggle ─── (slice-enter-toggle)
+  enterToSend: boolean
 }
 
 const DEFAULTS: Persisted = {
@@ -66,6 +68,8 @@ const DEFAULTS: Persisted = {
   // ─── תצוגת צ'אט ─── (chat-render-polish) — ברירות מחדל = התנהגות נוכחית (מחשבות פתוחות, כלים סגורים)
   collapseThoughts: false,
   expandTools: false,
+  // ─── Enter toggle ─── (slice-enter-toggle) — ברירת מחדל = התנהגות נוכחית (Enter שולח)
+  enterToSend: true,
 }
 
 function load(): Persisted {
@@ -129,6 +133,9 @@ export class Settings {
   collapseThoughts = $state<boolean>(DEFAULTS.collapseThoughts)
   expandTools = $state<boolean>(DEFAULTS.expandTools)
 
+  // ─── Enter toggle ─── (slice-enter-toggle)
+  enterToSend = $state<boolean>(DEFAULTS.enterToSend)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -151,6 +158,8 @@ export class Settings {
     // ─── תצוגת צ'אט ───
     this.collapseThoughts = loaded.collapseThoughts
     this.expandTools = loaded.expandTools
+    // ─── Enter toggle ───
+    this.enterToSend = loaded.enterToSend
   }
 
   // ─── טופס חיבור ───
@@ -322,6 +331,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── Enter toggle ─── (slice-enter-toggle)
+
+  setEnterToSend = (v: boolean): void => {
+    this.enterToSend = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -339,6 +355,7 @@ export class Settings {
       screenWakeLock: this.screenWakeLock,
       collapseThoughts: this.collapseThoughts,
       expandTools: this.expandTools,
+      enterToSend: this.enterToSend,
     })
   }
 }

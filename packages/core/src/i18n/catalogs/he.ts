@@ -192,4 +192,6 @@ export const he: Catalog = {
   "settings.chatDisplay": "תצוגת צ'אט",
   "settings.toggle.collapseThoughts": "מחשבות מצומצמות כברירת מחדל",
   "settings.toggle.expandTools": "כלים מורחבים כברירת מחדל",
+  // ─── Enter toggle ─── (slice-enter-toggle)
+  "settings.toggle.enterToSend": "Enter שולח הודעה",
 }
