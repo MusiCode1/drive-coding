@@ -1,3 +1,31 @@
+## 2026-06-25 — slice-latex-math — Commit 0: two-pass KaTeX + extension פנימי
+
+### מה בוצע?
+
+- `packages/frontend/package.json` + `pnpm-lock.yaml`: נוסף `katex` כdependency (v0.17.0, dep בלבד — לא `marked-katex-extension`).
+- `packages/frontend/src/app.css`: נוסף `@import "katex/dist/katex.min.css"` לfonts.
+- `packages/frontend/src/lib/util/markdown.ts`: שכתוב מלא ל-two-pass:
+  - MARKDOWN_TAGS/ATTR: זהה לpost-tables, ללא span/style.
+  - KATEX_TAGS/ATTR: allowlist נדיב (MathML/SVG/span/style), אומת אמפירית ב-r2+r3 — כולל `mpadded/linethickness/lspace/minsize` (finding r3).
+  - extension פנימי נרשם פעם אחת ברמת מודול (block לפני inline): `mathBlock`($$), `mathBlockBracket`(\[]), `mathInline`($), `mathInlineParen`(\()).
+  - `currentMap` = module-level ref, מתאפס per-call ב-renderMarkdown.
+  - sentinels U+E000/U+E001 (PUA) ששורדים marked+DOMPurify.
+  - four-pass: marked.parse → sanitize(MARKDOWN_ALLOW) → sanitize per KaTeX (KATEX_ALLOW) → replace sentinels.
+
+### בדיקות
+
+- typecheck: נקי
+- lint (biome markdown.ts): נקי
+- lint:i18n: נקי
+- build: pre-existing failure בworktree (provider-contract stdio not bundled) — לא regression, עובד ב-dev main worktree.
+- ידני: ראה Commit 1 טסטים.
+
+### סטיות
+
+- build בworktree נכשל pre-existing — לא מהשינויים של ה-slice.
+
+---
+
 ## 2026-06-24 — slice-chat-render-polish — Commit 3 fix: snap-back local open state
 
 ### מה בוצע?
