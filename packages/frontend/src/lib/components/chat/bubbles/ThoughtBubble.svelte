@@ -28,6 +28,10 @@ const displaySegments = $derived(visibleThoughtSegments(bubble.segments))
 const isAllOriginal = $derived(displaySegments.every((seg) => seg.originalText === undefined))
 // join לטקסט רץ אחד כשהמקור (לא מתורגם)
 const runningText = $derived(isAllOriginal ? joinSegmentText(displaySegments) : null)
+
+// local state — מאותחל פעם אחת מה-setting, לא נגזר ממנו reactively.
+// מונע snap-back כשה-effect של bubble.segments.length רץ מחדש.
+let open = $state(!settings.collapseThoughts)
 </script>
 
 <div class="flex gap-2 self-end max-w-[85%] min-w-0 items-end flex-row-reverse">
@@ -36,7 +40,7 @@ const runningText = $derived(isAllOriginal ? joinSegmentText(displaySegments) : 
     class="px-3.5 py-2.5 rounded-xl text-[13px] leading-relaxed italic border border-dashed min-w-0 break-words"
     style="border-color:var(--border-str); color:var(--fg-dim)"
   >
-    <details open={!settings.collapseThoughts}>
+    <details bind:open>
       <summary class="text-[11px] font-semibold not-italic opacity-70 mb-1 cursor-pointer thought-summary">
         {t("chat.bubble.thought")}
       </summary>

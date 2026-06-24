@@ -1,3 +1,23 @@
+## 2026-06-24 — slice-chat-render-polish — Commit 3 fix: snap-back local open state
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/components/chat/bubbles/ToolBubble.svelte`: הוסף `let open = $state(settings.expandTools)` + שינוי `<details bind:open>` (במקום `open={settings.expandTools}`).
+- `packages/frontend/src/lib/components/chat/bubbles/ThoughtBubble.svelte`: אותו תיקון — `let open = $state(!settings.collapseThoughts)` + `<details bind:open>`.
+- `open` הוא local `$state` שמאותחל פעם אחת מה-setting; לא נגזר ממנו reactively. כך status updates ו-streaming chunks לא מבטלים קיפול ידני של המשתמש.
+
+### בדיקות
+
+- typecheck: נקי (0 errors, 0 warnings)
+- 251/251 טסטים ירוקים
+- calev snap-back: הופעל לאמת בקוד המקומפל
+
+### סטיות
+
+אין סטיות מה-brief.
+
+---
+
 ## 2026-06-24 — slice-chat-render-polish — Commit 2: display-prefs
 
 ### מה בוצע?

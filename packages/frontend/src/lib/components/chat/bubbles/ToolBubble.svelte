@@ -24,6 +24,10 @@ const settings = getSettings()
 const tc = $derived(bubble.toolCall)
 const showNarration = $derived(tc.narration !== undefined && tc.narration.length > 0)
 const input = $derived(formatToolInput(tc.args))
+
+// local state — מאותחל פעם אחת מה-setting, לא נגזר ממנו reactively.
+// מונע snap-back כשה-effect של tc.status/tc.narration רץ מחדש.
+let open = $state(settings.expandTools)
 </script>
 
 <div class="flex gap-2 self-end max-w-[78%] min-w-0 items-end flex-row-reverse">
@@ -34,7 +38,7 @@ const input = $derived(formatToolInput(tc.args))
     style="background:var(--bg-card); border-color:var(--border)"
   >
     <!-- summary שורה: status dot + narration/title -->
-    <details class="group" open={settings.expandTools}>
+    <details class="group" bind:open>
       <summary class="flex items-center gap-2 px-3 py-2 cursor-pointer list-none select-none">
         <!-- status dot -->
         <span
