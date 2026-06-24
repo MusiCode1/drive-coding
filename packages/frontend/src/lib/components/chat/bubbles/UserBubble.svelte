@@ -144,6 +144,15 @@ async function handleCopy() {
 
   /* C5: code blocks כיוון LTR */
   :global(pre), :global(code) { direction: ltr; text-align: left; }
+  /* chat-render-polish: GFM tables */
+  div :global(table) {
+    border-collapse: collapse; margin: 0.4em 0; font-size: 0.92em;
+    display: block; overflow-x: auto; max-width: 100%;
+  }
+  div :global(th), div :global(td) {
+    border: 1px solid var(--border); padding: 0.3em 0.55em; text-align: start;
+  }
+  div :global(th) { background: rgba(0,0,0,0.18); font-weight: 700; }
   /* markdown — code ארוך נשבר במקום לגלוש מהבועה */
   div :global(code) {
     font-family: ui-monospace, monospace;

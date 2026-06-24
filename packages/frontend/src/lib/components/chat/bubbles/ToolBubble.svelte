@@ -193,6 +193,15 @@ const input = $derived(formatToolInput(tc.args))
   .tool-text-output :global(ul), .tool-text-output :global(ol) { padding-inline-start: 1.2em; margin: 0.2em 0; }
   .tool-text-output :global(strong) { font-weight: 700; }
   .tool-text-output :global(em) { font-style: italic; }
+  /* chat-render-polish: GFM tables בפלט כלי */
+  .tool-text-output :global(table) {
+    border-collapse: collapse; margin: 0.4em 0; font-size: 0.78rem;
+    display: block; overflow-x: auto; max-width: 100%;
+  }
+  .tool-text-output :global(th), .tool-text-output :global(td) {
+    border: 1px solid var(--border); padding: 0.3em 0.55em; text-align: start;
+  }
+  .tool-text-output :global(th) { background: rgba(0,0,0,0.18); font-weight: 700; }
 
   .raw-output summary { list-style: none; }
   .raw-output[open] summary { margin-bottom: 4px; }

@@ -1,3 +1,28 @@
+## 2026-06-24 — slice-chat-render-polish — Commit 0: md-tables
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/util/markdown.ts`: הוסף תגי טבלה ל-`ALLOWED_TAGS` (`table`,`thead`,`tbody`,`tfoot`,`tr`,`th`,`td`,`caption`,`colgroup`,`col`) ו-`align` ל-`ALLOWED_ATTR`.
+- `packages/frontend/src/lib/util/markdown.test.ts`: הוסף 2 טסטים TDD (`renders GFM table`, `preserves Hebrew inside table cells`).
+- `packages/frontend/src/lib/components/chat/bubbles/MessageBubble.svelte`: הוסף CSS לטבלאות (`:global(table/th/td)`) — RTL-safe (`text-align: start`).
+- `packages/frontend/src/lib/components/chat/bubbles/UserBubble.svelte`: אותם selectors.
+- `packages/frontend/src/lib/components/chat/bubbles/ToolBubble.svelte`: CSS בקידומת `.tool-text-output :global(...)` עם `font-size: 0.78rem`.
+
+### בדיקות
+
+- TDD: 2 טסטים אדומים → ירוקים
+- 251/251 טסטים ירוקים
+- typecheck: נקי (0 errors)
+- lint:rtl: נקי (`text-align: start`, לא `left`)
+- lint:i18n: נקי
+- build: עבר ✓
+
+### סטיות
+
+אין סטיות מה-brief.
+
+---
+
 ## 2026-06-22 — feat(wake-lock): slice-wake-lock — מתג "השאר מסך דלוק" + WakeLockEngine
 
 ### מה בוצע?

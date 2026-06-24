@@ -76,4 +76,19 @@ describe("renderMarkdown", () => {
     expect(out).toContain("<h1>")
     expect(out).toContain("Hello")
   })
+
+  it("renders GFM table", () => {
+    const out = renderMarkdown("| a | b |\n|:--|--:|\n| 1 | 2 |")
+    expect(out).toContain("<table>")
+    expect(out).toContain("<th")
+    expect(out).toContain("<td")
+    expect(out).toContain('align="left"')
+    expect(out).toContain('align="right"')
+  })
+
+  it("preserves Hebrew inside table cells", () => {
+    const out = renderMarkdown("| שם | גיל |\n|---|---|\n| דני | 30 |")
+    expect(out).toContain("שם")
+    expect(out).toContain("דני")
+  })
 })

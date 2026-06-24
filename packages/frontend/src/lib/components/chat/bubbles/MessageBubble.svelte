@@ -181,6 +181,15 @@ async function handleCopy() {
   div :global(hr) { border: none; border-top: 1px solid var(--border); margin: 0.5em 0; }
   /* C5: code blocks כיוון LTR — מניעת ערבוב RTL בקוד */
   :global(pre), :global(code) { direction: ltr; text-align: left; }
+  /* chat-render-polish: GFM tables */
+  div :global(table) {
+    border-collapse: collapse; margin: 0.4em 0; font-size: 0.92em;
+    display: block; overflow-x: auto; max-width: 100%;
+  }
+  div :global(th), div :global(td) {
+    border: 1px solid var(--border); padding: 0.3em 0.55em; text-align: start;
+  }
+  div :global(th) { background: rgba(0,0,0,0.18); font-weight: 700; }
   .hidden { display: none; }
   .action-btn {
     flex-shrink: 0;
