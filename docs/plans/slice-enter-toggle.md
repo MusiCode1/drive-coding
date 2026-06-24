@@ -1,7 +1,7 @@
 # Slice enter-toggle — ביטול שליחה ב-Enter (toggle) — תוכנית
 
 > **תאריך**: 2026-06-24
-> **סטטוס**: מאושר (אביגיל READY — `reports/drive-coding/slice-enter-toggle-avigail.md`)
+> **סטטוס**: הושלם (2026-06-25 — 2 commits: 1a32be7..8931413, calev light בתהליך)
 > **Complexity**: 2/10 (verifier: light)
 > **תלות (depends_on)**: `[chat-render-polish]` — מבוסס על תשתית ה-settings שלו (כרטיס "תצוגת צ'אט", דפוס `Persisted` עם `collapseThoughts`/`expandTools`, כפתור reset). **base = `dev` אחרי merge של chat-render-polish.**
 
