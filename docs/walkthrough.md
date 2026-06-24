@@ -1,3 +1,24 @@
+## 2026-06-25 — slice-latex-math — Commit 2: fix TS errors (typecheck)
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/util/markdown.ts`:
+  - תיקון TS2532 (x4): `match[1]` → `(match[1] ?? "")` (noUncheckedIndexedAccess)
+  - תיקון TS2322 (x4): `renderer(token: { text: string })` → `renderer(token: Tokens.Generic)` (RendererExtensionFunction expects Generic)
+  - import: `{ marked, type Tokens }` (סדר biome)
+
+### בדיקות
+
+- typecheck (tsc --noEmit): נקי
+- lint (biome markdown.ts): נקי
+- 263/263 טסטים ירוקים
+
+### סטיות
+
+calev (light) גילה 8 שגיאות TS שה-pnpm typecheck הראשוני לא הראה (cache). תוקן.
+
+---
+
 ## 2026-06-25 — slice-latex-math — Commit 1: tests (TDD) — 13 טסטים חדשים
 
 ### מה בוצע?

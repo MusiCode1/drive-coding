@@ -32,7 +32,7 @@
 
 import DOMPurify from "dompurify"
 import katex from "katex"
-import { marked } from "marked"
+import { marked, type Tokens } from "marked"
 
 // ─── Allowlists ─────────────────────────────────────────────────────────────
 
@@ -194,13 +194,13 @@ marked.use({
           return {
             type: "mathBlock",
             raw: match[0],
-            text: match[1].trim(),
+            text: (match[1] ?? "").trim(),
           }
         }
         return undefined
       },
-      renderer(token: { text: string }) {
-        return storePlaceholder(renderKatex(token.text, true))
+      renderer(token: Tokens.Generic) {
+        return storePlaceholder(renderKatex(String(token.text ?? ""), true))
       },
     },
     // ── Block: \[...\] ────────────────────────────────────────────────────
@@ -217,13 +217,13 @@ marked.use({
           return {
             type: "mathBlockBracket",
             raw: match[0],
-            text: match[1].trim(),
+            text: (match[1] ?? "").trim(),
           }
         }
         return undefined
       },
-      renderer(token: { text: string }) {
-        return storePlaceholder(renderKatex(token.text, true))
+      renderer(token: Tokens.Generic) {
+        return storePlaceholder(renderKatex(String(token.text ?? ""), true))
       },
     },
     // ── Inline: $...$ ─────────────────────────────────────────────────────
@@ -240,13 +240,13 @@ marked.use({
           return {
             type: "mathInline",
             raw: match[0],
-            text: match[1].trim(),
+            text: (match[1] ?? "").trim(),
           }
         }
         return undefined
       },
-      renderer(token: { text: string }) {
-        return storeInlinePlaceholder(renderKatex(token.text, false))
+      renderer(token: Tokens.Generic) {
+        return storeInlinePlaceholder(renderKatex(String(token.text ?? ""), false))
       },
     },
     // ── Inline: \(...\) ───────────────────────────────────────────────────
@@ -263,13 +263,13 @@ marked.use({
           return {
             type: "mathInlineParen",
             raw: match[0],
-            text: match[1].trim(),
+            text: (match[1] ?? "").trim(),
           }
         }
         return undefined
       },
-      renderer(token: { text: string }) {
-        return storeInlinePlaceholder(renderKatex(token.text, false))
+      renderer(token: Tokens.Generic) {
+        return storeInlinePlaceholder(renderKatex(String(token.text ?? ""), false))
       },
     },
   ],
