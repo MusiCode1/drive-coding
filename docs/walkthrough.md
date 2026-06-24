@@ -1,3 +1,24 @@
+## 2026-06-24 — slice-chat-render-polish — Commit 1: tool-image render
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/types/bubble.ts`: הוסף `ToolContentImage = { type:"image"; data:string; mimeType:string }` ועדכן ה-union `ToolContent`.
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts` (שורות 1036-1052): הרחיב `#mapToolContent` לטיפול ב-`image` content ו-`resource` blob עם `image/*`.
+- `packages/frontend/src/lib/components/chat/bubbles/ToolBubble.svelte`: הוסף ענף `{:else if c.type === "image"}` עם `<img>` + הערת invariant אבטחה + CSS `.tool-image`.
+
+### בדיקות
+
+- approach: manual (כנדרש בbrief)
+- typecheck: נקי (0 errors) — union ToolContent exhaustive
+- 251/251 טסטים ירוקים
+- ידני: דורש BE + agent חי — תיועד בדוח כלב
+
+### סטיות
+
+אין סטיות מה-brief.
+
+---
+
 ## 2026-06-24 — slice-chat-render-polish — Commit 0: md-tables
 
 ### מה בוצע?

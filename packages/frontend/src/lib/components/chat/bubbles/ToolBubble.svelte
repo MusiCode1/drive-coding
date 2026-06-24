@@ -100,6 +100,18 @@ const input = $derived(formatToolInput(tc.args))
                 <div class="terminal-ref font-mono text-[11px] opacity-70 italic">
                   {t("chat.tool.terminal")}: {c.terminalId}
                 </div>
+              {:else if c.type === "image"}
+                <!--
+                  Invariant אבטחה: תמונות מוצגות **רק** דרך <img>.
+                  SVG מותר כי ב-<img> הדפדפן מריץ scripting/external-fetch ב-secure-static-mode (מנוטרל).
+                  אם אי-פעם עוברים לרינדור inline ({@html} / <object>) — חובה לחסום image/svg+xml.
+                -->
+                <img
+                  class="tool-image"
+                  src={`data:${c.mimeType};base64,${c.data}`}
+                  alt={t("chat.tool.content")}
+                  loading="lazy"
+                />
               {:else}
                 <pre>{prettyJson(c.raw)}</pre>
               {/if}
@@ -205,6 +217,13 @@ const input = $derived(formatToolInput(tc.args))
 
   .raw-output summary { list-style: none; }
   .raw-output[open] summary { margin-bottom: 4px; }
+
+  /* chat-render-polish: תמונת כלי */
+  .tool-image {
+    max-width: 100%; max-height: 320px; height: auto;
+    object-fit: contain; border-radius: 6px;
+    border: 1px solid var(--border); display: block; margin: 0.2em 0;
+  }
 
   .hidden { display: none; }
 </style>

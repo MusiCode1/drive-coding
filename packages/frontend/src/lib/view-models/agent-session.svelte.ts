@@ -1035,8 +1035,25 @@ export class AgentSession {
         const cb = (item as { content?: { type?: string; text?: string } }).content
         if (cb?.type === "text" && typeof cb.text === "string") {
           out.push({ type: "text", text: cb.text })
+        } else if (
+          // chat-render-polish: ACP ImageContent — { type:"image", data:base64, mimeType }
+          cb?.type === "image" &&
+          typeof (cb as { data?: unknown }).data === "string" &&
+          typeof (cb as { mimeType?: unknown }).mimeType === "string" &&
+          (cb as { mimeType: string }).mimeType.startsWith("image/")
+        ) {
+          const img = cb as { data: string; mimeType: string }
+          out.push({ type: "image", data: img.data, mimeType: img.mimeType })
+        } else if (cb?.type === "resource") {
+          // chat-render-polish: EmbeddedResource { resource: { blob, mimeType, uri } } — רק blob עם image/*
+          const r = (cb as { resource?: { blob?: unknown; mimeType?: unknown } }).resource
+          if (typeof r?.blob === "string" && typeof r.mimeType === "string" && r.mimeType.startsWith("image/")) {
+            out.push({ type: "image", data: r.blob, mimeType: r.mimeType })
+          } else {
+            out.push({ type: "other", raw: item })
+          }
         } else {
-          out.push({ type: "other", raw: item }) // image/audio/resource — future
+          out.push({ type: "other", raw: item })
         }
       } else if (t === "diff") {
         const d = item as { path?: string; oldText?: string | null; newText?: string }
