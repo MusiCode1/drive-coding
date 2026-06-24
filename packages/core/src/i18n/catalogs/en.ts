@@ -193,4 +193,8 @@ export const en: Catalog = {
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   "settings.screen.label": "Screen",
   "settings.toggle.keepScreenOn": "Keep screen on",
+  // ─── chat display prefs ─── (chat-render-polish)
+  "settings.chatDisplay": "Chat display",
+  "settings.toggle.collapseThoughts": "Collapse thoughts by default",
+  "settings.toggle.expandTools": "Expand tools by default",
 }

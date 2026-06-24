@@ -198,6 +198,10 @@ export type MessageKey =
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   | "settings.screen.label"
   | "settings.toggle.keepScreenOn"
+  // ─── תצוגת צ'אט ─── (chat-render-polish)
+  | "settings.chatDisplay"
+  | "settings.toggle.collapseThoughts"
+  | "settings.toggle.expandTools"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

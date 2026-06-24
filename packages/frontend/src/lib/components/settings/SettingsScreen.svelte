@@ -121,6 +121,22 @@ $effect(() => {
     />
   </SettingsCard>
 
+  <!-- כרטיס תצוגת צ'אט — chat-render-polish -->
+  <SettingsCard title={t("settings.chatDisplay")}>
+    <div class="flex flex-col">
+      <SettingToggle
+        label={t("settings.toggle.collapseThoughts")}
+        checked={settings.collapseThoughts}
+        onCheckedChange={(v) => settings.setCollapseThoughts(v)}
+      />
+      <SettingToggle
+        label={t("settings.toggle.expandTools")}
+        checked={settings.expandTools}
+        onCheckedChange={(v) => settings.setExpandTools(v)}
+      />
+    </div>
+  </SettingsCard>
+
   <!-- כרטיס שרת — beUrl. נשמר על blur/Enter; ריק = same-origin / פרוקסי Vite -->
   <SettingsCard title={t("settings.beUrl.label")}>
     <label class="flex flex-col gap-1.5">
@@ -159,6 +175,8 @@ $effect(() => {
         settings.setNarrateTools(true)
         settings.setTranslateThoughts(true)
         settings.setCarMode(false)
+        settings.setCollapseThoughts(false)
+        settings.setExpandTools(false)
       }}
     >
       {t("settings.reset")}

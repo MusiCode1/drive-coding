@@ -1,3 +1,30 @@
+## 2026-06-24 — slice-chat-render-polish — Commit 2: display-prefs
+
+### מה בוצע?
+
+- `packages/core/src/i18n/keys.ts`: הוסף 3 keys: `settings.chatDisplay`, `settings.toggle.collapseThoughts`, `settings.toggle.expandTools`.
+- `packages/core/src/i18n/catalogs/he.ts` + `en.ts`: ערכים לכל 3 keys.
+- `packages/frontend/src/lib/view-models/settings.svelte.ts`: הוסף `collapseThoughts`+`expandTools` ל-`Persisted`, `DEFAULTS` (false), `$state`, constructor, setters, `#persist()`.
+- `packages/frontend/src/lib/components/chat/bubbles/ThoughtBubble.svelte`: עוטף ב-`<details open={!settings.collapseThoughts}>`, label הופך ל-`<summary>`, CSS `.thought-summary` לנסתר marker.
+- `packages/frontend/src/lib/components/chat/bubbles/ToolBubble.svelte`: הוסף `getSettings` + `open={settings.expandTools}` ל-details.
+- `packages/frontend/src/lib/components/settings/SettingsScreen.svelte`: כרטיס "תצוגת צ'אט" עם 2 toggles + כפתור reset מאפס גם את 2 הshדות החדשים.
+
+### בדיקות
+
+- approach: manual (כנדרש בbrief)
+- typecheck: נקי (0 errors)
+- lint:i18n: נקי
+- lint:rtl: נקי
+- 251/251 טסטים ירוקים
+- ידני: דורש FE חי — תיועד בדוח כלב
+- snap-back risk (§6): `open={}` (לא `bind:open`) — לא כפיה הפוכה. אם snap-back יתגלה → local $state per-bubble (תועד בdoח כלב)
+
+### סטיות
+
+אין סטיות מה-brief.
+
+---
+
 ## 2026-06-24 — slice-chat-render-polish — Commit 1: tool-image render
 
 ### מה בוצע?

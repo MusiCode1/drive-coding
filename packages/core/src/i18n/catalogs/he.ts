@@ -188,4 +188,8 @@ export const he: Catalog = {
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   "settings.screen.label": "מסך",
   "settings.toggle.keepScreenOn": "השאר מסך דלוק",
+  // ─── תצוגת צ'אט ─── (chat-render-polish)
+  "settings.chatDisplay": "תצוגת צ'אט",
+  "settings.toggle.collapseThoughts": "מחשבות מצומצמות כברירת מחדל",
+  "settings.toggle.expandTools": "כלים מורחבים כברירת מחדל",
 }

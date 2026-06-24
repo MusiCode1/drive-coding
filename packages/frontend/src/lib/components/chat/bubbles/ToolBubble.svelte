@@ -12,13 +12,14 @@
  * ─── redesign-5 (C2) ───
  */
 import type { ToolBubble, ToolCall } from "$lib/types/bubble"
-import { getI18n } from "$lib/context"
+import { getI18n, getSettings } from "$lib/context"
 import { formatToolInput, prettyJson, formatLocation } from "$lib/util/tool-format"
 import { renderMarkdown } from "$lib/util/markdown"
 import Avatar from "$lib/components/chat/Avatar.svelte"
 
 let { bubble }: { bubble: ToolBubble } = $props()
 const t = getI18n().t
+const settings = getSettings()
 
 const tc = $derived(bubble.toolCall)
 const showNarration = $derived(tc.narration !== undefined && tc.narration.length > 0)
@@ -33,7 +34,7 @@ const input = $derived(formatToolInput(tc.args))
     style="background:var(--bg-card); border-color:var(--border)"
   >
     <!-- summary שורה: status dot + narration/title -->
-    <details class="group">
+    <details class="group" open={settings.expandTools}>
       <summary class="flex items-center gap-2 px-3 py-2 cursor-pointer list-none select-none">
         <!-- status dot -->
         <span
