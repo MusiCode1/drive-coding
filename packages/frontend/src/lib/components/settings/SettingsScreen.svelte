@@ -134,6 +134,11 @@ $effect(() => {
         checked={settings.expandTools}
         onCheckedChange={(v) => settings.setExpandTools(v)}
       />
+      <SettingToggle
+        label={t("settings.toggle.enterToSend")}
+        checked={settings.enterToSend}
+        onCheckedChange={(v) => settings.setEnterToSend(v)}
+      />
     </div>
   </SettingsCard>
 
@@ -177,6 +182,7 @@ $effect(() => {
         settings.setCarMode(false)
         settings.setCollapseThoughts(false)
         settings.setExpandTools(false)
+        settings.setEnterToSend(true)
       }}
     >
       {t("settings.reset")}

@@ -1,3 +1,49 @@
+## 2026-06-25 — slice-enter-toggle — Commit 2: חיווט UI (SettingsScreen + TypeArea)
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/components/chat/TypeArea.svelte`: הוסף `getSettings` ל-import + `const settings = getSettings()`. שינוי `onkeydown`: Cmd/Ctrl+Enter תמיד שולח; Enter רגיל שולח רק כש-`settings.enterToSend === true`; Shift+Enter תמיד שורה חדשה.
+- `packages/frontend/src/lib/components/settings/SettingsScreen.svelte`: הוסף `<SettingToggle label={t("settings.toggle.enterToSend")} ...>` בכרטיס "תצוגת צ'אט" (אחרי expandTools). הוסף `settings.setEnterToSend(true)` לכפתור reset.
+
+### בדיקות
+
+- typecheck: נקי (0 errors, 0 warnings)
+- lint:i18n: ✓
+- browser smoke (5 שלבים, כולם עברו):
+  1. toggle "Enter שולח הודעה" מוצג בכרטיס "תצוגת צ'אט", דלוק כברירת מחדל
+  2. Enter שולח כשהtoggle דלוק
+  3. כיבוי toggle בsettings
+  4. Enter לא שולח (שורה חדשה); Ctrl+Enter שולח
+  5. Reset מחזיר toggle לדלוק
+
+### סטיות
+
+אין סטיות מה-brief.
+
+---
+
+## 2026-06-25 — slice-enter-toggle — Commit 1: שדה enterToSend + i18n + unit tests
+
+### מה בוצע?
+
+- `packages/core/src/i18n/keys.ts`: הוסף `"settings.toggle.enterToSend"`.
+- `packages/core/src/i18n/catalogs/he.ts`: `"settings.toggle.enterToSend": "Enter שולח הודעה"`.
+- `packages/core/src/i18n/catalogs/en.ts`: `"settings.toggle.enterToSend": "Enter sends message"`.
+- `packages/frontend/src/lib/view-models/settings.svelte.ts`: הוסף `enterToSend: boolean` ל-6 נקודות (Persisted, DEFAULTS=true, $state, constructor, setEnterToSend setter, #persist() object).
+- `packages/frontend/src/lib/view-models/settings.test.svelte.ts`: הוסף describe "enterToSend" עם 4 טסטים (default, write, round-trip, backward-compat).
+
+### בדיקות
+
+- typecheck: נקי
+- 255/255 טסטים ירוקים
+- lint:i18n: ✓
+
+### סטיות
+
+אין סטיות מה-brief.
+
+---
+
 ## 2026-06-24 — slice-chat-render-polish — Commit 3 fix: snap-back local open state
 
 ### מה בוצע?

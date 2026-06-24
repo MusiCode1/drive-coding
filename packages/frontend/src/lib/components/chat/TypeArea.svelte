@@ -8,9 +8,10 @@
  * ─── record-footer (redesign-4) ───
  */
 import SendIcon from "@lucide/svelte/icons/send"
-import { getI18n, getSession } from "$lib/context"
+import { getI18n, getSession, getSettings } from "$lib/context"
 
 const session = getSession()
+const settings = getSettings()
 const t = getI18n().t
 
 let promptText = $state("")
@@ -40,7 +41,14 @@ function onSubmit(e?: SubmitEvent) {
     class="flex-1 rounded-xl px-3 py-2.5 text-sm resize-none outline-none border"
     style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
     onkeydown={(e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
+      // Cmd/Ctrl+Enter תמיד שולח (power-user, ללא תלות בהגדרה)
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault()
+        onSubmit()
+        return
+      }
+      // Enter רגיל שולח רק כש-enterToSend פעיל; Shift+Enter תמיד שורה חדשה
+      if (e.key === "Enter" && !e.shiftKey && settings.enterToSend) {
         e.preventDefault()
         onSubmit()
       }
