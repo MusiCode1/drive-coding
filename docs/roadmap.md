@@ -55,7 +55,7 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 | --- | --- |
 | בסיס: connect/chat/voice-mode/bubbles/sessions/tool-rendering | ✅ |
 | settings page · smart scroll · audio cues | 🔶 חלקי — **smart scroll מוזג** (slice-mode-label-scroll: גלילה מאוחדת ב-SessionOptionsPanel + תווית mode פר-ספק + תיאורי אפשרויות + קישורי markdown ב-tab חדש). settings page · audio cues עדיין 💭 |
-| **chat-render polish** (שרשרת A→B→C) — **A:** טבלאות Markdown (allowlist DOMPurify חסר tags של טבלה) · **B:** רינדור תמונות בכלים (`image` raster+SVG + `resource` blob image, היום base64 גולמי) · **C:** העדפות-תצוגה (collapse מחשבות / expand כלים ב-settings) | ✅ **כלב GO** (2026-06-24, 10/10 DoD, 251 טסטים, build נקי) — **ממתין merge ל-dev** (`slice-chat-render-polish`, HEAD d6f5585). מנקה את הבסיס ל-message/input backlog שמתחתיו |
+| **chat-render polish** (שרשרת A→B→C) — **A:** טבלאות Markdown (allowlist DOMPurify חסר tags של טבלה) · **B:** רינדור תמונות בכלים (`image` raster+SVG + `resource` blob image, היום base64 גולמי) · **C:** העדפות-תצוגה (collapse מחשבות / expand כלים ב-settings) | ✅ **מוזג ל-dev** (2026-06-25, merge cc5ff66; 4 commits כולל snap-back fix; כלב GO, אביגיל READY, אומת חי בנייד). פותח את message/input backlog שמתחתיו |
 
 #### Message & Input UX backlog — נקלט 2026-06-24 (מהתנסות המשתמשת)
 
