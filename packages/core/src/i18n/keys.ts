@@ -202,6 +202,8 @@ export type MessageKey =
   | "settings.chatDisplay"
   | "settings.toggle.collapseThoughts"
   | "settings.toggle.expandTools"
+  // ─── Enter toggle ─── (slice-enter-toggle)
+  | "settings.toggle.enterToSend"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

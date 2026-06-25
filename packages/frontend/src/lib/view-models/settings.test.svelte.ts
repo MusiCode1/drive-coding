@@ -225,6 +225,41 @@ describe("Settings — screenWakeLock (slice-wake-lock)", () => {
   })
 })
 
+describe("Settings — enterToSend (slice-enter-toggle)", () => {
+  test("default enterToSend = true when localStorage empty", () => {
+    installLocalStorage()
+    const s = new Settings()
+    expect(s.enterToSend).toBe(true)
+  })
+
+  test("setEnterToSend(false) writes false to localStorage", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setEnterToSend(false)
+    expect(s.enterToSend).toBe(false)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.enterToSend).toBe(false)
+  })
+
+  test("new Settings() reads persisted enterToSend=false from localStorage (round-trip)", () => {
+    const store = installLocalStorage()
+    const s1 = new Settings()
+    s1.setEnterToSend(false)
+    // instance חדש — טוען מה-localStorage
+    const s2 = new Settings()
+    expect(s2.enterToSend).toBe(false)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.enterToSend).toBe(false)
+  })
+
+  test("backward-compat: localStorage without enterToSend → defaults to true", () => {
+    const store = installLocalStorage()
+    store.set(STORAGE_KEY, JSON.stringify({ cliKind: "opencode", voiceId: "v1" }))
+    const s = new Settings()
+    expect(s.enterToSend).toBe(true)
+  })
+})
+
 describe("Settings — loadVoices", () => {
   test("populates availableVoices and drives loading/error", async () => {
     installLocalStorage()

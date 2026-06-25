@@ -197,4 +197,6 @@ export const en: Catalog = {
   "settings.chatDisplay": "Chat display",
   "settings.toggle.collapseThoughts": "Collapse thoughts by default",
   "settings.toggle.expandTools": "Expand tools by default",
+  // ─── Enter toggle ─── (slice-enter-toggle)
+  "settings.toggle.enterToSend": "Enter sends message",
 }
