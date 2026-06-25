@@ -144,6 +144,9 @@ importers:
       provider-contract:
         specifier: git+https://github.com/MusiCode1/provider-abstraction.git#main
         version: git+https://github.com/MusiCode1/provider-abstraction.git#4bcc0d850fe99bbd048fe814a847baa41b91d1a2(zod@4.4.3)
+      virtua:
+        specifier: ^0.49.1
+        version: 0.49.1(svelte@5.55.7)
     devDependencies:
       '@sveltejs/adapter-static':
         specifier: ^3.0.0
@@ -1697,6 +1700,26 @@ packages:
     resolution: {integrity: sha512-vzi9uRZ926x4XV73S/4qQaTwPXM2JBj6/6lI/byHH1jOpCzb0zDbfytgA9LcN/hzb2l7WQSQnxITOVx5un/wGw==}
     hasBin: true
 
+  virtua@0.49.1:
+    resolution: {integrity: sha512-6f79msqg3jzNFdqJiS0FSzhRN1EHlDhR7EvW7emp6z5qQ22VdsReiDHflkpMEMhoAyUuYr69nwT0aagiM7NrUg==}
+    peerDependencies:
+      react: '>=16.14.0'
+      react-dom: '>=16.14.0'
+      solid-js: '>=1.0'
+      svelte: '>=5.0'
+      vue: '>=3.2'
+    peerDependenciesMeta:
+      react:
+        optional: true
+      react-dom:
+        optional: true
+      solid-js:
+        optional: true
+      svelte:
+        optional: true
+      vue:
+        optional: true
+
   vite@6.4.2:
     resolution: {integrity: sha512-2N/55r4JDJ4gdrCvGgINMy+HH3iRpNIz8K6SFwVsA+JbQScLiC+clmAxBgwiSPgcG9U15QmvqCGWzMbqda5zGQ==}
     engines: {node: ^18.0.0 || ^20.0.0 || >=22.0.0}
@@ -3230,6 +3253,10 @@ snapshots:
   undici@7.26.0: {}
 
   uuid@13.0.2: {}
+
+  virtua@0.49.1(svelte@5.55.7):
+    optionalDependencies:
+      svelte: 5.55.7
 
   vite@6.4.2(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0):
     dependencies:

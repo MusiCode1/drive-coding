@@ -35,6 +35,44 @@
 
 אין. הטסט `keep-on-undefined` השתמש ב-`session.status = "disconnected"` כדי לאפשר קריאה שנייה ל-`loadSession` (guard לא מאפשר `connecting/connected`) — זה דיוק באמת של מה ש-`#coldReconnect` עושה (reconnect מ-`disconnected`).
 
+## 2026-06-25 — slice-chat-virtualization — 4 commits: windowing + batched follow + user-intent + turn-boundary
+
+### מה בוצע?
+
+**Commit 0 (TDD):** `packages/frontend/src/lib/util/scroll-follow.ts` + `scroll-follow.test.ts`.
+- `computeScrollEdges`: גאומטריה טהורה — atTop/atBottom לפי מדדי handle.
+- `shouldFollowJump`: החלטת batched — following + distance>=3*lineHeight + floor>=300ms.
+- `FOLLOW_DISTANCE_LINES=3`, `FOLLOW_FLOOR_MS=300`. 18/18 טסטים עוברים.
+- תלות virtua הוספה ל-packages/frontend.
+
+**Commit 1 (manual):** virtua Virtualizer + ChatScrollBridge.
+- `packages/frontend/src/lib/types/chat-scroll.ts`: ChatScrollBridge type (scrollEl, handle, noteUserIntent).
+- `context.ts`: בלוק chat-scroll bridge additive בסוף (getChatScroll/setChatScroll).
+- `+layout.svelte`: `$state<ChatScrollBridge>` + setChatScroll.
+- `ChatBubbles.svelte`: {#each} → <Virtualizer scrollRef={bridge.scrollEl} data={bubbles} getKey={b=>b.id} startMargin=80>.
+- `AppShell.svelte`: getChatScroll() + $effect לכתיבת scrollEl ל-bridge; הסרת gap-5 (עבר ל-pb-5 פר-item).
+
+**Commit 2 (manual):** batched follow למדדי virtua + ResizeObserver.
+- `AppShell.svelte`: שכתוב מלא — checkEdges ממדדי handle, jumpToBottom ב-scrollToIndex, maybeJump + shouldFollowJump, ResizeObserver + $effect+setTimeout(320) לfloor-tail.
+
+**Commit 3 (manual):** user-intent window + toggle-intent + turn-boundary.
+- `AppShell.svelte`: user-intent (wheel/touchstart/keydown 600ms), noteUserIntent, turn-boundary $effect.
+- `ToolBubble.svelte` + `ThoughtBubble.svelte`: ontoggle={onUserToggle} + guard ready (rAF אחרי onMount).
+
+### בדיקות
+
+- typecheck: 0 errors (כל 4 commits).
+- lint:i18n: ✓ (כל 4 commits).
+- pnpm vitest: 18/18 ירוקים (scroll-follow.ts).
+- windowing: 4 בועות DOM מתוך 209 (salary-attendance) — ממוסד.
+- init-fire guard: טעינה ראשונית נוחתת בתחתית עם ThoughtBubble פתוח.
+- settings: אין regression.
+- phase-check (calev-heavy אחרי Commit 1): PARTIAL 5/6 — follow ה-raw עבד, טעינה-ראשונית-ארוכה נכשלה (נפתרה ב-Commit 2 עם scrollToIndex).
+
+### סטיות
+
+- לא היו סטיות מהbrief. phase-check PARTIAL היה צפוי (תוקן בCommit 2).
+
 ## 2026-06-25 — slice-display-toggle-consistency — Commit 1: rename + migration + UI + tests
 
 ### מה בוצע?
@@ -55,7 +93,29 @@
 - lint:i18n: ✓.
 - grep collapseThoughts/expandTools בקוד ראשי: 0 (נשאר רק ב-migration ובטסטים).
 
+**Commit 4 (fix):** תיקון `getChatScroll()` lifecycle_outside_component ב-ToolBubble + ThoughtBubble.
+- היה: `getChatScroll()` בתוך `onUserToggle` callback — lifecycle error.
+- עכשיו: `const chatScroll = getChatScroll()` ב-init → callback רק קורא `chatScroll.noteUserIntent?.()`.
+- 0 console errors לאחר toggle. DoD 7+13 מאומתים.
+
+**calev-heavy v2:** GO — 15/16 DoD. Finding צהוב אחד: JumpDown לא מופיע בנתיב toggle=hold (הקפאה עצמה עובדת — רק affordance חזותי). לא חוסם.
+
+### בדיקות
+
+- typecheck: 0 errors (כל commits).
+- lint:i18n: ✓.
+- pnpm vitest: 18/18 ירוקים (scroll-follow.ts).
+- windowing: 4-7 בועות DOM מתוך 209 (salary-attendance).
+- init-fire guard: נוחת בתחתית עם ThoughtBubble פתוח, 0 errors.
+- toggle=hold: קפאת גלילה מאומתת, 0 lifecycle errors.
+- calev-heavy: GO 15/16.
+
 ### סטיות
+
+- Finding קריטי (lifecycle_outside_component) תוקן בcommit fix לאחר NO-GO ראשון.
+- JumpDown בנתיב toggle=hold: לא מופיע כ-affordance חזותי (finding צהוב, לא חוסם).
+
+---
 
 שתי commits מה-brief אוחדו לאחד — ה-briefing ציין typecheck ירוק לפני כל commit, וה-components לא יכולים להיות ירוקים אחרי שינוי ה-VM בלי שינוי ה-components. commit אחד עם כל השינויים — approach mixed (unit tests + קוד + UI).
 

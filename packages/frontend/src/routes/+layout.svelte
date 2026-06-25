@@ -18,6 +18,7 @@ import type { Locale } from "@drive-coding/core/i18n"
 import {
   setActiveAgents,
   setBubblePlayer,
+  setChatScroll,
   setCues,
   setI18n,
   setMic,
@@ -31,6 +32,7 @@ import {
   setUiShell,
   setVoiceMode,
 } from "$lib/context"
+import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { CuesEngine } from "$lib/engines/cues"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
@@ -129,6 +131,10 @@ setResponsive(responsive)
 setUiShell(uiShell)
 setModals(modals)
 setActiveAgents(activeAgents)
+
+// ─── chat-scroll bridge ─── (slice chat-virtualization)
+const chatScroll = $state<ChatScrollBridge>({ scrollEl: null, handle: null })
+setChatScroll(chatScroll)
 
 // ─── DEV-only: חשיפת ה-session ל-window לצורך חילוץ fixtures ודיבוג עיצוב ───
 if (import.meta.env.DEV && typeof window !== "undefined") {

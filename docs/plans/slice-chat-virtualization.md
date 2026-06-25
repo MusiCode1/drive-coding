@@ -1,7 +1,7 @@
 # Slice chat-virtualization — windowing + follow/hold לרשימת הבועות — תוכנית
 
 > **תאריך**: 2026-06-25 · **עודכן**: 2026-06-25 (batched auto-scroll — דיון `623c749f`)
-> **סטטוס**: ✅ **READY — מאומת (אביגיל r8, 0 findings, מול dev d15b5cf)** · plan_verified=true · dispatch_ready (אחרי אישור). מנגנון ה-follow שונה מ-re-pin רציף ל-**batched** לפי החלטת המשתמשת; היסטוריית אימות: r4→r5=USABLE-AFTER-FIX (hook→`ontoggle`, init-fire) → r6=READY → r7=USABLE-AFTER-FIX (drift אחרי merge של display-toggle+session-title) → **r8=READY**. דוח אחרון: `brief-driven-slices/reports/drive-coding/slice-chat-virtualization-avigail-r8.md`
+> **סטטוס**: ✅ **הושלם** — 4 commits על branch `slice-chat-virtualization` (17253b3..f60168c). verifier-slice-heavy בביצוע. (מקורי: READY r8 מ-אביגיל, 0 findings.)
 > **Complexity**: 8/10 (קצה עליון אחרי תוספת batched+toggle-intent+turn-boundary; verifier: **calev-heavy** + phase-check אחרי Commit 1)
 > **תלות (depends_on)**: [] — עצמאי. base = `dev` (d15b5cf — אחרי merge של display-toggle-consistency `96ed28e` ו-session-title-header). לא חופף ל-session-title (AppHeader/VM) או latex (markdown.ts) — נוגע ב-scroll/AppShell/ChatBubbles + toggle של ToolBubble/ThoughtBubble.
 

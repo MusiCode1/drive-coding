@@ -12,10 +12,11 @@
  * ─── redesign-5 (C2) ───
  */
 import type { ToolBubble, ToolCall } from "$lib/types/bubble"
-import { getI18n, getSettings } from "$lib/context"
+import { getI18n, getSettings, getChatScroll } from "$lib/context"
 import { formatToolInput, prettyJson, formatLocation } from "$lib/util/tool-format"
 import { renderMarkdown } from "$lib/util/markdown"
 import Avatar from "$lib/components/chat/Avatar.svelte"
+import { onMount } from "svelte"
 
 let { bubble }: { bubble: ToolBubble } = $props()
 const t = getI18n().t
@@ -28,6 +29,15 @@ const input = $derived(formatToolInput(tc.args))
 // local state — מאותחל פעם אחת מה-setting, לא נגזר ממנו reactively.
 // מונע snap-back כשה-effect של tc.status/tc.narration רץ מחדש.
 let open = $state(settings.showTools)
+
+// ─── toggle-intent (slice chat-virtualization, Commit 3 / fix) ───
+// chatScroll נקרא ב-component init (חוקי) — לא בתוך ה-callback.
+// guard ל-init-fire: <details bind:open=$state> תחת CSR מתזמן toggle event ב-mount.
+// rAF אחרי mount מסנן את ה-fire הראשון (task-from-mount קודם ל-rAF).
+const chatScroll = getChatScroll()
+let ready = false
+onMount(() => requestAnimationFrame(() => { ready = true }))
+const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
 </script>
 
 <div class="flex gap-2 self-end max-w-[78%] min-w-0 items-end flex-row-reverse">
@@ -38,7 +48,7 @@ let open = $state(settings.showTools)
     style="background:var(--bg-card); border-color:var(--border)"
   >
     <!-- summary שורה: status dot + narration/title -->
-    <details class="group" bind:open>
+    <details class="group" bind:open ontoggle={onUserToggle}>
       <summary class="flex items-center gap-2 px-3 py-2 cursor-pointer list-none select-none">
         <!-- status dot -->
         <span

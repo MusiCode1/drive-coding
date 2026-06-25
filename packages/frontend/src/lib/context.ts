@@ -13,6 +13,7 @@
 
 import { createContext } from "svelte"
 import type { AgentSession } from "./view-models/agent-session.svelte"
+import type { ChatScrollBridge } from "./types/chat-scroll"
 import type { I18nVM } from "./view-models/i18n.svelte"
 import type { Mic } from "./view-models/mic.svelte"
 import type { ResponsiveVM } from "./view-models/responsive.svelte"
@@ -70,3 +71,6 @@ export const [getModelStatus, setModelStatus] = createContext<ModelStatus>()
 
 // ─── bubble-player ─── (msr-v2)
 export const [getBubblePlayer, setBubblePlayer] = createContext<BubblePlayer>()
+
+// ─── chat-scroll bridge ─── (slice chat-virtualization)
+export const [getChatScroll, setChatScroll] = createContext<ChatScrollBridge>()
