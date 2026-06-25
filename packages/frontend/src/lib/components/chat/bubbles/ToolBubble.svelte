@@ -27,7 +27,7 @@ const input = $derived(formatToolInput(tc.args))
 
 // local state — מאותחל פעם אחת מה-setting, לא נגזר ממנו reactively.
 // מונע snap-back כשה-effect של tc.status/tc.narration רץ מחדש.
-let open = $state(settings.expandTools)
+let open = $state(settings.showTools)
 </script>
 
 <div class="flex gap-2 self-end max-w-[78%] min-w-0 items-end flex-row-reverse">

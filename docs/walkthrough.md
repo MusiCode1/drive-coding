@@ -1,3 +1,38 @@
+## 2026-06-25 — slice-display-toggle-consistency — Commit 1: rename + migration + UI + tests
+
+### מה בוצע?
+
+- `packages/core/src/i18n/keys.ts`: `collapseThoughts`→`showThoughts`, `expandTools`→`showTools`.
+- `packages/core/src/i18n/catalogs/en.ts`: תוויות חדשות "Show thoughts by default" / "Show tools by default".
+- `packages/core/src/i18n/catalogs/he.ts`: "הצג מחשבות כברירת מחדל" / "הצג כלים כברירת מחדל".
+- `packages/frontend/src/lib/view-models/settings.svelte.ts`: rename שדות + ברירות מחדל (showThoughts:true, showTools:false) + migration ב-`load()` (collapseThoughts → !showThoughts; expandTools → showTools) + setters.
+- `packages/frontend/src/lib/components/chat/bubbles/ThoughtBubble.svelte`: `let open = $state(settings.showThoughts)` (היה `!settings.collapseThoughts`). $state מקומי — snap-back נשמר.
+- `packages/frontend/src/lib/components/chat/bubbles/ToolBubble.svelte`: `let open = $state(settings.showTools)` (היה `settings.expandTools`). $state מקומי — snap-back נשמר.
+- `packages/frontend/src/lib/components/settings/SettingsScreen.svelte`: labels + checked + onCheckedChange → showThoughts/showTools; reset → setShowThoughts(true)/setShowTools(false).
+- `packages/frontend/src/lib/view-models/settings.test.svelte.ts`: 9 טסטים חדשים (defaults, round-trip, migration 4 כיוונים, new-key-wins).
+
+### בדיקות
+
+- typecheck: 0 errors, 0 warnings.
+- tests: 298/298 ירוקים (9 חדשים).
+- lint:i18n: ✓.
+- grep collapseThoughts/expandTools בקוד ראשי: 0 (נשאר רק ב-migration ובטסטים).
+
+### סטיות
+
+שתי commits מה-brief אוחדו לאחד — ה-briefing ציין typecheck ירוק לפני כל commit, וה-components לא יכולים להיות ירוקים אחרי שינוי ה-VM בלי שינוי ה-components. commit אחד עם כל השינויים — approach mixed (unit tests + קוד + UI).
+
+### Browser smoke (אומת ב-playwright-cli)
+
+1. /settings — כרטיס "תצוגת צ'אט" מציג "הצג מחשבות" (ON) + "הצג כלים" (OFF) + "Enter שולח" (ON). תוויות חדשות, פולריות אחידה.
+2. כיבוי "הצג מחשבות" → מתג מתכבה.
+3. Reset → "הצג מחשבות" חוזר ON, "הצג כלים" נשאר OFF.
+4. migration: localStorage עם `{"collapseThoughts":true}` + reload → "הצג מחשבות" OFF (כצפוי).
+5. /chat?mock=greeting — ThoughtBubble פתוחה כברירת מחדל (showThoughts:true); ToolBubble לא רלוונטית ב-mock=greeting.
+6. typecheck 0 errors, lint:i18n ✓.
+
+---
+
 ## 2026-06-25 — slice-enter-toggle — Commit 2: חיווט UI (SettingsScreen + TypeArea)
 
 ### מה בוצע?

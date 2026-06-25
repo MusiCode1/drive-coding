@@ -39,9 +39,9 @@ type Persisted = {
   muted: boolean
   // ─── מסך ─── (slice-wake-lock)
   screenWakeLock: boolean
-  // ─── תצוגת צ'אט ─── (chat-render-polish)
-  collapseThoughts: boolean
-  expandTools: boolean
+  // ─── תצוגת צ'אט ─── (display-toggle-consistency — פולריות חיובית: ON=מציג)
+  showThoughts: boolean
+  showTools: boolean
   // ─── Enter toggle ─── (slice-enter-toggle)
   enterToSend: boolean
 }
@@ -65,9 +65,9 @@ const DEFAULTS: Persisted = {
   muted: false,
   // ─── מסך ─── (slice-wake-lock)
   screenWakeLock: false,
-  // ─── תצוגת צ'אט ─── (chat-render-polish) — ברירות מחדל = התנהגות נוכחית (מחשבות פתוחות, כלים סגורים)
-  collapseThoughts: false,
-  expandTools: false,
+  // ─── תצוגת צ'אט ─── (display-toggle-consistency) — ברירות מחדל = התנהגות נוכחית (מחשבות פתוחות, כלים סגורים)
+  showThoughts: true,
+  showTools: false,
   // ─── Enter toggle ─── (slice-enter-toggle) — ברירת מחדל = התנהגות נוכחית (Enter שולח)
   enterToSend: true,
 }
@@ -78,7 +78,19 @@ function load(): Persisted {
     const raw = localStorage.getItem(STORAGE_KEY)
     // ללא ערך שמור: locale נגזר מהדפדפן (detectLocale), שאר ה-DEFAULTS.
     if (!raw) return { ...DEFAULTS, locale: detectLocale() }
-    return { ...DEFAULTS, ...(JSON.parse(raw) as Partial<Persisted>) }
+    const parsed = JSON.parse(raw) as Partial<Persisted> & {
+      collapseThoughts?: boolean
+      expandTools?: boolean
+    }
+    // migration (display-toggle-consistency): מפתחות ישנים → פולריות חיובית.
+    // נשמר רק אם המפתח החדש עדיין לא קיים (לא לדרוס בחירה חדשה).
+    if (parsed.showThoughts === undefined && parsed.collapseThoughts !== undefined) {
+      parsed.showThoughts = !parsed.collapseThoughts
+    }
+    if (parsed.showTools === undefined && parsed.expandTools !== undefined) {
+      parsed.showTools = parsed.expandTools
+    }
+    return { ...DEFAULTS, ...parsed }
   } catch {
     return { ...DEFAULTS, locale: detectLocale() }
   }
@@ -129,9 +141,9 @@ export class Settings {
   // ─── מסך ─── (slice-wake-lock)
   screenWakeLock = $state<boolean>(DEFAULTS.screenWakeLock)
 
-  // ─── תצוגת צ'אט ─── (chat-render-polish)
-  collapseThoughts = $state<boolean>(DEFAULTS.collapseThoughts)
-  expandTools = $state<boolean>(DEFAULTS.expandTools)
+  // ─── תצוגת צ'אט ─── (display-toggle-consistency — פולריות חיובית: ON=מציג)
+  showThoughts = $state<boolean>(DEFAULTS.showThoughts)
+  showTools = $state<boolean>(DEFAULTS.showTools)
 
   // ─── Enter toggle ─── (slice-enter-toggle)
   enterToSend = $state<boolean>(DEFAULTS.enterToSend)
@@ -156,8 +168,8 @@ export class Settings {
     // ─── מסך ───
     this.screenWakeLock = loaded.screenWakeLock
     // ─── תצוגת צ'אט ───
-    this.collapseThoughts = loaded.collapseThoughts
-    this.expandTools = loaded.expandTools
+    this.showThoughts = loaded.showThoughts
+    this.showTools = loaded.showTools
     // ─── Enter toggle ───
     this.enterToSend = loaded.enterToSend
   }
@@ -319,15 +331,15 @@ export class Settings {
     this.#persist()
   }
 
-  // ─── תצוגת צ'אט ─── (chat-render-polish)
+  // ─── תצוגת צ'אט ─── (display-toggle-consistency — פולריות חיובית: ON=מציג)
 
-  setCollapseThoughts = (v: boolean): void => {
-    this.collapseThoughts = v
+  setShowThoughts = (v: boolean): void => {
+    this.showThoughts = v
     this.#persist()
   }
 
-  setExpandTools = (v: boolean): void => {
-    this.expandTools = v
+  setShowTools = (v: boolean): void => {
+    this.showTools = v
     this.#persist()
   }
 
@@ -353,8 +365,8 @@ export class Settings {
       locale: this.locale,
       muted: this.muted,
       screenWakeLock: this.screenWakeLock,
-      collapseThoughts: this.collapseThoughts,
-      expandTools: this.expandTools,
+      showThoughts: this.showThoughts,
+      showTools: this.showTools,
       enterToSend: this.enterToSend,
     })
   }

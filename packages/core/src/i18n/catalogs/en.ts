@@ -193,10 +193,10 @@ export const en: Catalog = {
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   "settings.screen.label": "Screen",
   "settings.toggle.keepScreenOn": "Keep screen on",
-  // ─── chat display prefs ─── (chat-render-polish)
+  // ─── chat display prefs ─── (display-toggle-consistency)
   "settings.chatDisplay": "Chat display",
-  "settings.toggle.collapseThoughts": "Collapse thoughts by default",
-  "settings.toggle.expandTools": "Expand tools by default",
+  "settings.toggle.showThoughts": "Show thoughts by default",
+  "settings.toggle.showTools": "Show tools by default",
   // ─── Enter toggle ─── (slice-enter-toggle)
   "settings.toggle.enterToSend": "Enter sends message",
 }

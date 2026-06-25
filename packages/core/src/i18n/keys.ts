@@ -198,10 +198,10 @@ export type MessageKey =
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   | "settings.screen.label"
   | "settings.toggle.keepScreenOn"
-  // ─── תצוגת צ'אט ─── (chat-render-polish)
+  // ─── תצוגת צ'אט ─── (chat-render-polish → display-toggle-consistency)
   | "settings.chatDisplay"
-  | "settings.toggle.collapseThoughts"
-  | "settings.toggle.expandTools"
+  | "settings.toggle.showThoughts"
+  | "settings.toggle.showTools"
   // ─── Enter toggle ─── (slice-enter-toggle)
   | "settings.toggle.enterToSend"
 
