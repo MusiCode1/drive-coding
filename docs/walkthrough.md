@@ -56,7 +56,29 @@
 - lint:i18n: ✓.
 - grep collapseThoughts/expandTools בקוד ראשי: 0 (נשאר רק ב-migration ובטסטים).
 
+**Commit 4 (fix):** תיקון `getChatScroll()` lifecycle_outside_component ב-ToolBubble + ThoughtBubble.
+- היה: `getChatScroll()` בתוך `onUserToggle` callback — lifecycle error.
+- עכשיו: `const chatScroll = getChatScroll()` ב-init → callback רק קורא `chatScroll.noteUserIntent?.()`.
+- 0 console errors לאחר toggle. DoD 7+13 מאומתים.
+
+**calev-heavy v2:** GO — 15/16 DoD. Finding צהוב אחד: JumpDown לא מופיע בנתיב toggle=hold (הקפאה עצמה עובדת — רק affordance חזותי). לא חוסם.
+
+### בדיקות
+
+- typecheck: 0 errors (כל commits).
+- lint:i18n: ✓.
+- pnpm vitest: 18/18 ירוקים (scroll-follow.ts).
+- windowing: 4-7 בועות DOM מתוך 209 (salary-attendance).
+- init-fire guard: נוחת בתחתית עם ThoughtBubble פתוח, 0 errors.
+- toggle=hold: קפאת גלילה מאומתת, 0 lifecycle errors.
+- calev-heavy: GO 15/16.
+
 ### סטיות
+
+- Finding קריטי (lifecycle_outside_component) תוקן בcommit fix לאחר NO-GO ראשון.
+- JumpDown בנתיב toggle=hold: לא מופיע כ-affordance חזותי (finding צהוב, לא חוסם).
+
+---
 
 שתי commits מה-brief אוחדו לאחד — ה-briefing ציין typecheck ירוק לפני כל commit, וה-components לא יכולים להיות ירוקים אחרי שינוי ה-VM בלי שינוי ה-components. commit אחד עם כל השינויים — approach mixed (unit tests + קוד + UI).
 
