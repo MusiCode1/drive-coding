@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "katex/dist/katex.min.css";
 
 /* ──────────────────────────────────────────────────────────────────
    Design tokens — 4 palettes. נבחרים דרך [data-palette] על <html>.

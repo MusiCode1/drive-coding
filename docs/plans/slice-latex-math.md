@@ -1,7 +1,7 @@
 # Slice latex-math — תוכנית (rework r2)
 
 > **תאריך**: 2026-06-24
-> **סטטוס**: מאושר — READY (r1=NEEDS-REWORK → r2=USABLE-AFTER-FIX → r3=USABLE-AFTER-FIX + אישור-מותנה "מוסיפה 4 → READY"; 4 הערכים נוספו). אומת אמפירית ע"י אביגיל ×3. **dispatch חסום עד merge של chat-render-polish.**
+> **סטטוס**: הושלם — 2026-06-25. commits: 43441da..f203e7e (2 commits). 263/263 טסטים ירוקים.
 > **Complexity**: 7/10 (verifier: light, אבל בדיקת ה-XSS/בידוד דורשת תשומת-לב — אם אביגיל חוששת → heavy)
 > **תלות**: `chat-render-polish` (נוגע ב-`markdown.ts`). **base = dev אחרי merge של chat-render-polish.** חוסם dispatch.
 

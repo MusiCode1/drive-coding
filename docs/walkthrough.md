@@ -31,6 +31,127 @@
 - `packages/core/src/i18n/catalogs/en.ts`: `"settings.toggle.enterToSend": "Enter sends message"`.
 - `packages/frontend/src/lib/view-models/settings.svelte.ts`: הוסף `enterToSend: boolean` ל-6 נקודות (Persisted, DEFAULTS=true, $state, constructor, setEnterToSend setter, #persist() object).
 - `packages/frontend/src/lib/view-models/settings.test.svelte.ts`: הוסף describe "enterToSend" עם 4 טסטים (default, write, round-trip, backward-compat).
+## 2026-06-25 — slice-latex-math-invisibles — סיום slice (2 commits)
+
+### מה בוצע?
+
+**Commit 0 (fea86d8)** — failing tests (TDD RED):
+- הוספת מטריצת invisibles ל-`markdown-bidi.test.ts` (14 טסטים חדשים)
+- תסמין חי: separator עם RLM → שבירת טבלה
+- ייבוא `normalizeInvisibles` מ-`markdown-parse` (לפני שהפונקציה קיימת) → אדום
+
+**Commit 1 (05cb8f9)** — normalizeInvisibles (TDD GREEN):
+- החלפת `normalizeLineLeadingBidi` ב-`normalizeInvisibles` ב-`markdown-parse.ts`
+- טיפול בכל משפחת הבלתי-נראים (bidi-control + zero-width + soft-hyphen + NBSP) בכל המיקומים
+- strip בטהורי-תחביר (separator + math spans block/paren בלבד — לא inline `$...$`)
+- relocate אחרי block-marker; שמירה בתוכן
+- עדכון re-export ב-`markdown.ts`; מחיקה מלאה של `normalizeLineLeadingBidi`
+
+### בדיקות
+
+- 77/77 טסטים ירוקים (63 קיימים + 14 invisibles חדשים)
+- typecheck: 0 errors, 0 warnings
+- grep normalizeLineLeadingBidi → 0 תוצאות
+- calev light: GO, 11/11 DoD items, 0 findings
+
+### סטיות
+
+ללא סטיות. finding #2 (inline $..$ מחיר) מכוסה ע"י regex מוגבל ל-$$, \[, \( בלבד.
+
+---
+
+## 2026-06-25 — slice-latex-math-bidi-fix — סיום slice (3 commits)
+
+### מה בוצע?
+
+**Commit 0 (9de7869)** — failing tests (TDD RED):
+- קובץ חדש: `packages/frontend/src/lib/util/markdown-bidi.test.ts` (jsdom, 8 טסטים)
+- 6 טסטים אדומים מתעדים את הבאג: RLM בתחילת שורה חוסם block-tokenizer של marked
+
+**Commit 1 (91daefd)** — normalizeLineLeadingBidi + חיווט (TDD GREEN):
+- `packages/frontend/src/lib/util/markdown.ts`: נוספה `normalizeLineLeadingBidi()` טהורה
+- נקראת ב-`renderMarkdown` לפני `marked.parse`
+- היוריסטיקה: math→מחיקה, block-marker→דחיפה, טקסט→שמירה
+- כל 8 טסטי commit 0 ירוקים + 26 הקיימים שמורים
+
+**Commit 2 (2882006)** — refactor: פיצול markdown-parse.ts (manual):
+- קובץ חדש: `packages/frontend/src/lib/util/markdown-parse.ts` — שכבת parse טהורה
+- הזזת קוד בלבד: sentinels, currentMap, extensions, normalizeLineLeadingBidi, parseToHtml
+- `markdown.ts` ייבא מ-`markdown-parse.ts` — ללא שינוי לוגי בסניטיזציה
+
+### בדיקות
+
+- 63/63 טסטים ירוקים (26 קיימים + 8 bidi + 29 אחרים)
+- typecheck: 0 errors, 0 warnings
+- lint:i18n: ניקי (אין מחרוזות עברית בקוד)
+- הבידוד האבטחתי (strips raw model <span style>) לא נפגע
+
+### סטיות
+
+ה-pipe marker (|) לא היה ב-regex הראשוני של commit 1 — נוסף לאחר ריצת הטסטים.
+
+---
+
+## 2026-06-25 — slice-latex-math — Commit 2: fix TS errors (typecheck)
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/util/markdown.ts`:
+  - תיקון TS2532 (x4): `match[1]` → `(match[1] ?? "")` (noUncheckedIndexedAccess)
+  - תיקון TS2322 (x4): `renderer(token: { text: string })` → `renderer(token: Tokens.Generic)` (RendererExtensionFunction expects Generic)
+  - import: `{ marked, type Tokens }` (סדר biome)
+
+### בדיקות
+
+- typecheck (tsc --noEmit): נקי
+- lint (biome markdown.ts): נקי
+- 263/263 טסטים ירוקים
+
+### סטיות
+
+calev (light) גילה 8 שגיאות TS שה-pnpm typecheck הראשוני לא הראה (cache). תוקן.
+
+---
+
+## 2026-06-25 — slice-latex-math — Commit 1: tests (TDD) — 13 טסטים חדשים
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/util/markdown.test.ts`: נוספו 13 טסטים חדשים של KaTeX:
+  - 4 טסטי rendering (כל 4 הסגנונות: $, $$, \(, \[)
+  - טסט מטריצה עם mtable (finding #1 avigail r2)
+  - 2 טסטי בידוד code block/inline code
+  - **טסט הקריטי**: `strips raw model <span style> (overlay vector)` — הלב האבטחתי
+  - `keeps KaTeX positioning style` (KATEX_ALLOW)
+  - `existing XSS guards pass after KaTeX addition` (רגרסיה)
+  - `multiple math expressions in one message`
+  - `map resets between calls — no index leak`
+
+### בדיקות
+
+- 263/263 טסטים ירוקים (27 test files)
+- typecheck: נקי
+- lint (biome markdown.test.ts): נקי
+
+### סטיות
+
+אין סטיות.
+
+---
+
+## 2026-06-25 — slice-latex-math — Commit 0: two-pass KaTeX + extension פנימי
+
+### מה בוצע?
+
+- `packages/frontend/package.json` + `pnpm-lock.yaml`: נוסף `katex` כdependency (v0.17.0, dep בלבד — לא `marked-katex-extension`).
+- `packages/frontend/src/app.css`: נוסף `@import "katex/dist/katex.min.css"` לfonts.
+- `packages/frontend/src/lib/util/markdown.ts`: שכתוב מלא ל-two-pass:
+  - MARKDOWN_TAGS/ATTR: זהה לpost-tables, ללא span/style.
+  - KATEX_TAGS/ATTR: allowlist נדיב (MathML/SVG/span/style), אומת אמפירית ב-r2+r3 — כולל `mpadded/linethickness/lspace/minsize` (finding r3).
+  - extension פנימי נרשם פעם אחת ברמת מודול (block לפני inline): `mathBlock`($$), `mathBlockBracket`(\[]), `mathInline`($), `mathInlineParen`(\()).
+  - `currentMap` = module-level ref, מתאפס per-call ב-renderMarkdown.
+  - sentinels U+E000/U+E001 (PUA) ששורדים marked+DOMPurify.
+  - four-pass: marked.parse → sanitize(MARKDOWN_ALLOW) → sanitize per KaTeX (KATEX_ALLOW) → replace sentinels.
 
 ### בדיקות
 
@@ -41,6 +162,14 @@
 ### סטיות
 
 אין סטיות מה-brief.
+- lint (biome markdown.ts): נקי
+- lint:i18n: נקי
+- build: pre-existing failure בworktree (provider-contract stdio not bundled) — לא regression, עובד ב-dev main worktree.
+- ידני: ראה Commit 1 טסטים.
+
+### סטיות
+
+- build בworktree נכשל pre-existing — לא מהשינויים של ה-slice.
 
 ---
 

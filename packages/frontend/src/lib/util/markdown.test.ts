@@ -6,7 +6,7 @@
  * DOM פעיל. jsdom מספק window + document כדי ש-DOMPurify.sanitize() יעבוד.
  */
 
-import { describe, it, expect } from "vitest"
+import { describe, expect, it } from "vitest"
 import { renderMarkdown } from "./markdown"
 
 describe("renderMarkdown", () => {
@@ -44,19 +44,19 @@ describe("renderMarkdown", () => {
   })
 
   it("strips script tags (XSS)", () => {
-    const out = renderMarkdown('<script>alert(1)</script>')
+    const out = renderMarkdown("<script>alert(1)</script>")
     expect(out).not.toContain("<script>")
     expect(out).not.toContain("alert(1)")
   })
 
   it("strips onerror attributes (XSS)", () => {
-    const out = renderMarkdown('<img src=x onerror=alert(1)>')
+    const out = renderMarkdown("<img src=x onerror=alert(1)>")
     expect(out).not.toContain("onerror")
     expect(out).not.toContain("alert(1)")
   })
 
   it("strips javascript: href (XSS)", () => {
-    const out = renderMarkdown('[click](javascript:alert(1))')
+    const out = renderMarkdown("[click](javascript:alert(1))")
     expect(out).not.toContain("javascript:")
   })
 
@@ -90,5 +90,81 @@ describe("renderMarkdown", () => {
     const out = renderMarkdown("| שם | גיל |\n|---|---|\n| דני | 30 |")
     expect(out).toContain("שם")
     expect(out).toContain("דני")
+  })
+
+  // ─── KaTeX math rendering (slice-latex-math) ──────────────────────────────
+
+  it("renders $...$ inline math", () => {
+    const out = renderMarkdown("$a^2$")
+    expect(out).toContain("katex")
+  })
+
+  it("renders $$...$$ block math", () => {
+    const out = renderMarkdown("$$\\int x$$")
+    expect(out).toContain("katex")
+  })
+
+  it("renders \\(...\\) inline math", () => {
+    const out = renderMarkdown("\\(b^2\\)")
+    expect(out).toContain("katex")
+  })
+
+  it("renders \\[...\\] block math", () => {
+    const out = renderMarkdown("\\[c^2\\]")
+    expect(out).toContain("katex")
+  })
+
+  it("renders a matrix without dropping MathML structure", () => {
+    // finding #1 (avigail r2): mtable חייב להיות ב-KATEX_ALLOW — אחרת MathML מנוקה בשקט
+    const out = renderMarkdown("$$\\begin{matrix} a & b \\\\ c & d \\end{matrix}$$")
+    expect(out).toContain("katex")
+    expect(out).toContain("mtable")
+  })
+
+  it("does NOT render math inside inline code", () => {
+    // ה-tokenizer של marked מכבד code spans — $ בתוך `code` לא נתפס
+    const out = renderMarkdown("`$x$`")
+    expect(out).not.toContain("katex")
+  })
+
+  it("does NOT render math inside fenced code block", () => {
+    const out = renderMarkdown("```\n$$math$$\n```")
+    expect(out).not.toContain("katex")
+  })
+
+  // ★ הטסט הקריטי: מוכיח שה-two-pass מבודד (לב האבטחה של ה-slice)
+  it("strips raw model <span style> (overlay vector)", () => {
+    // span+style גולמי של מודל — MARKDOWN_ALLOW בלי span/style → נמחק
+    const out = renderMarkdown('<span style="position:fixed;inset:0">x</span>')
+    expect(out).not.toContain("position:fixed")
+    expect(out).not.toContain("<span")
+  })
+
+  it("keeps KaTeX positioning style (KATEX_ALLOW)", () => {
+    // KaTeX span+style עובר מסלול KATEX_ALLOW → מותר
+    const out = renderMarkdown("$a^2$")
+    expect(out).toMatch(/style=|class="katex/)
+  })
+
+  it("existing XSS guards pass after KaTeX addition", () => {
+    // רגרסיה: XSS הקיימים לא נפגעו
+    const out = renderMarkdown("<script>alert(1)</script>")
+    expect(out).not.toContain("<script>")
+  })
+
+  it("multiple math expressions in one message render correctly", () => {
+    // map reset per-call — כמה נוסחאות באותה הודעה
+    const out = renderMarkdown("$a$ and $b$ and $c$")
+    const katexCount = (out.match(/class="katex/g) ?? []).length
+    expect(katexCount).toBeGreaterThanOrEqual(3)
+  })
+
+  it("map resets between calls — no index leak between messages", () => {
+    // module-level ref reset per-call — ריצות נפרדות לא דולפות
+    const out1 = renderMarkdown("$x^2$")
+    const out2 = renderMarkdown("$y^2$")
+    // שתי קריאות עצמאיות — שתיהן מרנדרות
+    expect(out1).toContain("katex")
+    expect(out2).toContain("katex")
   })
 })

@@ -11,7 +11,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "provider-contract": "git+https://github.com/MusiCode1/provider-abstraction.git#main",
     "@agentclientprotocol/sdk": "^0.21.1",
     "@ai-sdk/google": "^3.0.75",
     "@drive-coding/core": "workspace:*",
@@ -21,8 +20,10 @@
     "arktype": "^2.0.0",
     "bits-ui": "^2.18.1",
     "dompurify": "^3.4.7",
+    "katex": "^0.17.0",
     "marked": "^18.0.3",
-    "onnxruntime-web": "^1.22.0"
+    "onnxruntime-web": "^1.22.0",
+    "provider-contract": "git+https://github.com/MusiCode1/provider-abstraction.git#main"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.0",
