@@ -1,3 +1,40 @@
+## 2026-06-25 — slice-session-title-header — 3 commits
+
+### מה בוצע?
+
+**Commit 0 (TDD):** `sessionTitle = $state<string>("")` ב-`AgentSession` + חיווט 3 נתיבים:
+- `loadSession(title?)`: keep-on-undefined — `sessionTitle = input.title ?? sessionTitle`
+- `switchSession(title?)`: אותה סמנטיקה בנתיב warm
+- `newSession`: מאפס ל-`""`
+- `attachToLiveAgent`: מאפס ל-`""` (process חי בלי title)
+- `#loadMockSession`: `sessionTitle = \`🧪 ${name}\``
+
+**Commit 1 (manual):** חיווט title משני נתיבי-כניסה:
+- `+page.svelte` (connect route): `sessions.find()` → `loadSession({ ..., title })`
+- `SessionOptionsPanel.svelte`: `selectSession(info)` מקבל `title?` → `switchSession({ ..., title })`
+
+**Commit 2 (manual+smoke):** `AppHeader.svelte`:
+- `headerLabel = sessionTitle?.trim() ? sessionTitle : agentName`
+- כותרת ממורכזת אבסולוטית (`start-1/2`, לוגי) עם `truncate` + `title` tooltip
+- cwd chip עבר מהמרכז ל-קבוצת-סטטוס ב-inline-end (ליד נקודת-החיבור)
+- קלאסים לוגיים בלבד (start/end, gap/px/py סימטריים)
+
+### בדיקות
+
+- TDD: 3 טסטים חדשים (sessionTitle set / keep-on-undefined / newSession=""); 301/301 ירוקים
+- typecheck: 0 errors, 0 warnings (כל 3 commits)
+- lint:i18n: ✓ (אין מחרוזת עברית בקוד)
+- production build: ✓ (17.91s, 0 errors)
+- Browser smoke (playwright-cli, 1280px + 360px):
+  - `/chat?mock=greeting`: כותרת "🧪 greeting" במרכז (x=603, viewport-center=640)
+  - inline-end (cwd+dot) ב-x=1161; RTL → שמאל אוטומטית
+  - 360px narrow: gap 23px בין כותרת לחבורת-סטטוס, ללא חפיפה
+  - Screenshots: /tmp/slice-session-title-header/phase2-mock.png, phase2-narrow.png
+
+### סטיות
+
+אין. הטסט `keep-on-undefined` השתמש ב-`session.status = "disconnected"` כדי לאפשר קריאה שנייה ל-`loadSession` (guard לא מאפשר `connecting/connected`) — זה דיוק באמת של מה ש-`#coldReconnect` עושה (reconnect מ-`disconnected`).
+
 ## 2026-06-25 — slice-display-toggle-consistency — Commit 1: rename + migration + UI + tests
 
 ### מה בוצע?
