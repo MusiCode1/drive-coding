@@ -1,7 +1,7 @@
 # Slice input-autogrow — textarea שגדל עם הטקסט עד תקרה — תוכנית
 
 > **תאריך**: 2026-06-25
-> **סטטוס**: טיוטה (אביגיל טרם)
+> **סטטוס**: הושלם (commit 77e939f, branch slice-input-autogrow)
 > **Complexity**: 2/10 (verifier: light)
 > **תלות (depends_on)**: `[]` — נוגע רק ב-`TypeArea.svelte` (קומפוננטה עצמאית). enter-toggle כבר מוזג ל-dev (ה-handler הקיים), ואין חפיפה עם שרשרת latex/chat-render-polish.
 > **Base**: `dev` HEAD (tip בעת הכתיבה `4a28952`; ה-delta מ-tip קודם הוא docs-only/ancestor — גזור מ-`dev` עדכני).
