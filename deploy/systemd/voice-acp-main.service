@@ -5,17 +5,18 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/user/projects/voice-acp/main
+WorkingDirectory=/home/user/projects/drive-coding/main
 Environment=PORT=4000
-Environment=FE_STATIC_DIR=/home/user/projects/voice-acp/main/packages/frontend/build
+Environment=FE_STATIC_DIR=/home/user/projects/drive-coding/main/packages/frontend/build
 # CORS: CF Pages (legacy) + localhost + ה-CF tunnel הציבורי של main (drive-coding).
 Environment=CORS_ORIGINS=https://drive-coding.pages.dev,http://localhost:4000,https://drive-coding.example.com
 # opencode has its own Anthropic OAuth — strip OneCLI's proxy/placeholder vars
 # that would otherwise break opencode's auth (see scripts/opencode-clean.sh).
-Environment=OPENCODE_BIN=/home/user/projects/voice-acp/main/scripts/opencode-clean.sh
-# ExecStartPre מסנכרן תלויות ובונה את ה-FE (+core) לפני שה-BE עולה — כך
-# `systemctl restart` (וגם boot) תמיד מעלה את הקוד העדכני לאוויר.
-ExecStartPre=/bin/bash -lc 'source /home/user/.config/shell/shared-env.sh && pnpm install --frozen-lockfile && pnpm build'
+Environment=OPENCODE_BIN=/home/user/projects/drive-coding/main/scripts/opencode-clean.sh
+# ExecStartPre מסנכרן תלויות ובונה את ה-FE רק אם חסר (build-if-missing).
+# רענון FE שוטף: השתמש ב-`pnpm fe:build` בלי restart — הסוכנים החיים שורדים.
+# restart שמור לשינויי BE בלבד.
+ExecStartPre=/bin/bash -lc 'source /home/user/.config/shell/shared-env.sh && pnpm install --frozen-lockfile && node scripts/dc-build-fe.mjs --if-missing'
 # systemd gives a minimal PATH — source shared env for onecli/bun/node/fnm.
 ExecStart=/bin/bash -c 'source /home/user/.config/shell/shared-env.sh && exec onecli run --agent voice-acp -- bun packages/backend/src/server.ts'
 TimeoutStartSec=300
