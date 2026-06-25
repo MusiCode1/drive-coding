@@ -1,5 +1,35 @@
 # Decisions — drive-coding
 
+## 2026-06-25 — slice-session-title-header: כותרת הסשן בהדר הצ'אט
+
+### רציונל
+פריט "גל ראשון quick-win" מה-Message&Input UX backlog. ה-`title` כבר קיים ב-`SessionInfo`
+(מ-`listSessionsForCwd`) ומוצג ב-`SessionPicker`/`SessionCard`, אבל **לא** חווט ל-`AgentSession`
+הפעיל → לא נראה בהדר ה-`/chat` (שמציג placeholder קבוע `"drive-coding"`). תיקון: שדה
+`$state sessionTitle` חדש ב-VM, חיווט מ-connect, ו-`AppHeader` מציג עם fallback ל-placeholder
+הקיים (אפס regression לסשן חדש). **auto-generate (`generate_session_title`) מחוץ ל-scope** —
+future נפרד; הכותרת היא snapshot מרגע הטעינה, ללא תלות ב-wire (זה מה שהפך אותו מ-spike לסלייס קטן).
+
+### שינויי-כיוון — אביגיל הצילה מ-regression שקט
+ה-brief הראשון חיווט **רק** את `loadSession`, עם סמנטיקת `sessionTitle = input.title ?? ""`.
+אביגיל (r1, USABLE-AFTER-FIX) תפסה שזה משאיר שני נתיבי-כניסה חיים שמאפסים את הכותרת בשקט
+(לא נתפס ב-typecheck, כנראה גם לא ב-calev light):
+1. **`switchSession`** — הנתיב ה**ראשי** להחלפת סשן בצ'אט (מ-`SessionOptionsPanel`), לא חווט כלל.
+2. **`#coldReconnect`** — קורא `loadSession` בלי title → כל WS-reconnect היה מוחק את הכותרת.
+
+ההכרעה המתקנת: **keep-on-undefined** — `sessionTitle = input.title ?? this.sessionTitle`.
+קורא שלא יודע title (reconnect) **שומר** במקום למחוק (תיקון אוטומטי, אפס שינוי ב-`#coldReconnect`);
+רק נתיבים שיודעים title-חדש (connect/switch) מעבירים `string` מפורש (גם `""` כדי לנקות כראוי
+בהחלפה לסשן חסר-כותרת); רק `newSession` מאפס. r2=READY.
+
+### רעיונות שנדחו
+- **שדה פרטי `#sessionTitle` שמשוחזר ב-reconnect** (הצעת אביגיל א'): מיותר — keep-on-undefined
+  על השדה הציבורי מספיק ופשוט יותר (אין כפילות state).
+- **צמצום scope ("warm-switch+reconnect לא בסבב")** (הצעת אביגיל ב'): נדחה — warm-switch הוא
+  הנתיב הנפוץ; כותרת שנעלמת בהחלפת-סשן = בדיוק החוויה השבורה שהפריט בא לתקן.
+- **fallback ל-"סשן חדש"**: ברירת-המחדל היא שימור ה-placeholder הקיים (`"drive-coding"`) — אפס
+  regression, אפס i18n חדש. נשאר כשאלה פתוחה לא-חוסמת (§9) למשתמשת.
+
 ## 2026-06-25 — slice-display-toggle-consistency: פולריות אחידה למחווני "תצוגת צ'אט"
 
 ### רציונל
