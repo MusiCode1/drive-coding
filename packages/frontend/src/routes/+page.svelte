@@ -139,7 +139,8 @@ async function onSubmit(e: SubmitEvent) {
   if (selectedSessionId !== null) {
     settings.setCliKind(cliKind)
     settings.setLastCwd(cwd.trim())
-    await session.loadSession({ sessionId: selectedSessionId, cwd: cwd.trim(), cliKind })
+    const selected = sessions.find((s) => s.sessionId === selectedSessionId)
+    await session.loadSession({ sessionId: selectedSessionId, cwd: cwd.trim(), cliKind, title: selected?.title ?? "" })
     if (session.status === "connected") {
       await goto("/chat")
     }

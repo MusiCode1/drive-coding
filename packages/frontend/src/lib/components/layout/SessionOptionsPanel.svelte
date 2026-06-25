@@ -138,11 +138,12 @@ async function onCheckboxChange(configId: string, e: Event) {
  * בחירת סשן: switchSession (warm reload על החיבור הקיים) + ניווט ל-/chat.
  * אם אין חיבור (#client === null) — switchSession נופל ל-loadSession הכבד (דפנסיבי).
  */
-async function selectSession(info: { sessionId: string; cwd: string }) {
+async function selectSession(info: { sessionId: string; cwd: string; title?: string }) {
   await session.switchSession({
     sessionId: info.sessionId,
     cwd: info.cwd,
     cliKind: settings.cliKind,
+    title: info.title ?? "",   // ← slice session-title: העבר title ל-switchSession
   })
   uiShell.closeSheet()
   await goto("/chat")
