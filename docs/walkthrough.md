@@ -6185,3 +6185,34 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 ### הערה — DoD #7 (Windows paths)
 - `import.meta.dirname` + `path.resolve` cross-platform — אומת על Linux.
 - אימות בפועל על Windows נשאר ל-Tama (כפי שצוין בהנחיות).
+
+## 2026-06-26 — slice-header-title-responsive — 1 commit
+
+### מה בוצע?
+
+**Commit 0 (manual+smoke):** `AppHeader.svelte` — מעבר מ-absolute-center ל-3 עמודות flex:
+- `<header>` — `items-start` → `items-center` (יישור אנכי עם כותרת שעשויה להיות 2 שורות)
+- בלוק-הכותרת ה-absolute (`start-1/2 -translate-x-1/2 ... max-w-[60%]`) + spacer (`flex-1`) — **הוסרו** לחלוטין
+- עמודת-כותרת in-flow חדשה: `flex-1 min-w-0 flex items-center justify-center`
+- span הכותרת: `{responsive.isMobile ? 'text-[13px]' : 'text-[15px]'} font-semibold text-center leading-tight line-clamp-2`
+- עדכון הערת-מבנה בראש הקובץ
+
+### בדיקות
+
+- typecheck: 0 errors, 0 warnings
+- lint:i18n: ✓ אין מחרוזת עברית בקוד
+- production build: ✓ (vite build — 0 errors)
+- development build: ✓ (vite build --mode development — mock פעיל)
+- Browser smoke (calev, linux-gui Chrome, 360px + 1280px):
+  - אין חפיפה: cluster נשאר ב-inline-end ללא חפיפה עם כותרת ארוכה ✓
+  - line-clamp-2 + ellipsis: כותרת ארוכה מאוד → 2 שורות עם ... ✓
+  - פונט 13px מובייל (computed style) ✓
+  - פונט 15px דסקטופ (computed style) ✓
+  - כותרת קצרה שורה אחת ממורכזת ✓
+  - cluster ב-inline-end (שמאל ב-RTL), לא נדחק ✓
+  - /settings אין regression ✓
+  - Screenshots: /tmp/slice-header/
+
+### סטיות
+
+אין. layout בלבד — קובץ יחיד, ללא שינוי VM/לוגיקה.
