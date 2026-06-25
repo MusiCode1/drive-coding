@@ -284,6 +284,36 @@
 
 ---
 
+## 2026-06-18 — fix: slice-fix-claude-duplicate-bubbles — fork claude-agent-acp + תיקון-שורש (חלקי — E2E blocked)
+
+### מה בוצע?
+
+2 commits ב-fork `MusiCode1/claude-agent-acp` branch `fix-dup-currentstreamid`:
+
+**Commit 0 (RED)** — טסטים המשחזרים את הכפילות:
+- טסט מוק דטרמיניסטי: `injectSessionEchoAt` עם ECHO לפני textDelta ראשון → RED
+- הרחבת `TestClient` (integration): שדה `messageIds` לתיעוד messageId פר chunk
+- טסט חי (integration): marker `ACPDUP-7Q2X`, assertion על פעם אחת + messageId per chunk
+
+**Commit 1 (GREEN)** — תיקון-שורש שורה אחת:
+- הסרת `currentStreamMessageId = undefined` מ-`resetTurnScratch()` ב-`src/acp-agent.ts`
+- build עובר, mock test → `["hello ", "world"]` (ללא assembled כפול)
+- integration test → GREEN בריצה אחת, suite מלא 376/376 ירוקים
+
+### חריגות
+
+- **E2E blocked**: ה-bridge-manager spawn מועבר cwd=POSIX מה-FE (`/d/UserProjects/...`), אבל libuv ב-Windows (Git Bash/MINGW64) לא מקבל POSIX cwd לWindows binaries. גם ה-default `npx @latest` spec לא עובד בסביבה הנוכחית. DoD #6 לא אומת.
+- `cli-specs.jsonc` נוצר ב-`~/.config/drive-coding/` אבל לא הצליח לחווט בגלל הבעיה לעיל.
+
+### בדיקות
+
+- mock test GREEN: `["hello ", "world"]` ← אומת לפני ואחרי תיקון
+- integration test GREEN: ACPDUP-7Q2X × 1 + messageId on all chunks
+- suite מלא: 376 passed / 17 skipped (2 Windows path separator — pre-existing)
+- drive-coding source: נקי לחלוטין (אפס שינויי src)
+
+---
+
 ## 2026-06-18 — feat(frontend): slice-claude-thinking-meta — הזרקת thinking-display ל-claude דרך _meta
 
 ### מה בוצע?
