@@ -1,3 +1,35 @@
+## 2026-06-25 — slice-latex-math-bidi-fix — סיום slice (3 commits)
+
+### מה בוצע?
+
+**Commit 0 (9de7869)** — failing tests (TDD RED):
+- קובץ חדש: `packages/frontend/src/lib/util/markdown-bidi.test.ts` (jsdom, 8 טסטים)
+- 6 טסטים אדומים מתעדים את הבאג: RLM בתחילת שורה חוסם block-tokenizer של marked
+
+**Commit 1 (91daefd)** — normalizeLineLeadingBidi + חיווט (TDD GREEN):
+- `packages/frontend/src/lib/util/markdown.ts`: נוספה `normalizeLineLeadingBidi()` טהורה
+- נקראת ב-`renderMarkdown` לפני `marked.parse`
+- היוריסטיקה: math→מחיקה, block-marker→דחיפה, טקסט→שמירה
+- כל 8 טסטי commit 0 ירוקים + 26 הקיימים שמורים
+
+**Commit 2 (2882006)** — refactor: פיצול markdown-parse.ts (manual):
+- קובץ חדש: `packages/frontend/src/lib/util/markdown-parse.ts` — שכבת parse טהורה
+- הזזת קוד בלבד: sentinels, currentMap, extensions, normalizeLineLeadingBidi, parseToHtml
+- `markdown.ts` ייבא מ-`markdown-parse.ts` — ללא שינוי לוגי בסניטיזציה
+
+### בדיקות
+
+- 63/63 טסטים ירוקים (26 קיימים + 8 bidi + 29 אחרים)
+- typecheck: 0 errors, 0 warnings
+- lint:i18n: ניקי (אין מחרוזות עברית בקוד)
+- הבידוד האבטחתי (strips raw model <span style>) לא נפגע
+
+### סטיות
+
+ה-pipe marker (|) לא היה ב-regex הראשוני של commit 1 — נוסף לאחר ריצת הטסטים.
+
+---
+
 ## 2026-06-25 — slice-latex-math — Commit 2: fix TS errors (typecheck)
 
 ### מה בוצע?
