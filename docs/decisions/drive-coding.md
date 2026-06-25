@@ -1,5 +1,33 @@
 # Decisions — drive-coding
 
+## 2026-06-25 — slice-input-autogrow: textarea שגדל עם הטקסט עד תקרה
+
+### רציונל
+ה-composer (`TypeArea.svelte`) היה `rows={2}` קבוע עם scroll פנימי — בהכתבה קולית/נייד
+רב-שורתית לא רואים את כל מה שנכתב. הסלייס הופך אותו ל-auto-grow: גדל שורה-שורה עד תקרה
+(`MAX_ROWS=6`) ואז scroll. מימוש מינימלי: `bind:this` + `$effect` תלוי-`promptText`
+(לא `oninput` — כי מחיקה פרוגרמטית אחרי שליחה לא פולטת `input` event), + `max-height`/
+`overflow-y:auto` ב-inline style. commit אחד, קובץ אחד, `depends_on: []`. Complexity 2.
+
+### ממצאי אביגיל
+3 סבבים עד READY. r1: (#1 🔴) ה-`<form>` היה `items-stretch` → כפתור ה-Send היה נמתח
+ל-6 שורות יחד עם ה-textarea (רגרסיה ויזואלית שלא כוסתה); (#2 base-hash מיושן). r2: שני
+הראשונים תוקנו; צצו 2 מינוריים — הטרייד-אוף ההפוך של `items-end` (~6px בראש הכפתור בשורה-
+אחת) ו-base-drift נוסף. r3: READY. כל דפוסי ה-Svelte 5 (`$state` ל-ref, `$effect` timing,
+interpolation ב-`style`) אומתו תקינים מול הקוד.
+
+### שינויי-כיוון
+- ה-fix לרגרסיית כפתור-הענק: `<form>` מ-`items-stretch` ל-**`items-end`** — הכפתור מיושר-
+  לתחתית ושומר על גובהו הטבעי, יושב בקו התחתית של ה-textarea הגדל. זה גם דפוס ה-composer
+  הסטנדרטי (ChatGPT/Claude) כשהקלט גדל כלפי מעלה.
+
+### רעיונות שנדחו
+- **`oninput` handler** במקום `$effect`: נדחה — לא מכווץ אחרי שליחה (מחיקה פרוגרמטית של
+  `promptText` לא פולטת `input`).
+- **`min-h` תואם על הכפתור** כדי לסגור את ה-6px בשורה-אחת: נדחה לבסבב הזה — הטרייד-אוף
+  מקובל (יישור-לתחתית מכוון), והחלופה `items-stretch` מחזירה את רגרסיית כפתור-הענק.
+- **תקרה כהגדרה ב-Settings**: נדחה — `MAX_ROWS` קבוע hardcoded; slice עתידי אם יידרש.
+
 ## 2026-06-25 — slice-fe-build-decouple: ניתוק בילד-FE מ-restart של הסרוויס
 
 ### רציונל
