@@ -14,3 +14,5 @@ scripts/node_modules
 .specstory/
 data
 tsconfig.tsbuildinfo
+packages/frontend/.build-staging/
+packages/frontend/.build-old/
