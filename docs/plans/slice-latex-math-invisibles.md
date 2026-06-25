@@ -1,7 +1,7 @@
 # Slice latex-math-invisibles — תוכנית
 
 > **תאריך**: 2026-06-25
-> **סטטוס**: מאושר — אביגיל READY (2026-06-25, סבב 2; findings: re-export, math-strip false-positive, import source — תוקנו)
+> **סטטוס**: הושלם — 2 commits, calev GO (2026-06-25)
 > **Complexity**: 5/10 (verifier: light)
 > **תלות (depends_on)**: `slice-latex-math` (לא מוזג; כולל את slice-latex-math-bidi-fix). **base = branch `slice-latex-math`** (שרשור).
 

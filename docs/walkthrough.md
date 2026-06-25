@@ -1,3 +1,32 @@
+## 2026-06-25 — slice-latex-math-invisibles — סיום slice (2 commits)
+
+### מה בוצע?
+
+**Commit 0 (fea86d8)** — failing tests (TDD RED):
+- הוספת מטריצת invisibles ל-`markdown-bidi.test.ts` (14 טסטים חדשים)
+- תסמין חי: separator עם RLM → שבירת טבלה
+- ייבוא `normalizeInvisibles` מ-`markdown-parse` (לפני שהפונקציה קיימת) → אדום
+
+**Commit 1 (05cb8f9)** — normalizeInvisibles (TDD GREEN):
+- החלפת `normalizeLineLeadingBidi` ב-`normalizeInvisibles` ב-`markdown-parse.ts`
+- טיפול בכל משפחת הבלתי-נראים (bidi-control + zero-width + soft-hyphen + NBSP) בכל המיקומים
+- strip בטהורי-תחביר (separator + math spans block/paren בלבד — לא inline `$...$`)
+- relocate אחרי block-marker; שמירה בתוכן
+- עדכון re-export ב-`markdown.ts`; מחיקה מלאה של `normalizeLineLeadingBidi`
+
+### בדיקות
+
+- 77/77 טסטים ירוקים (63 קיימים + 14 invisibles חדשים)
+- typecheck: 0 errors, 0 warnings
+- grep normalizeLineLeadingBidi → 0 תוצאות
+- calev light: GO, 11/11 DoD items, 0 findings
+
+### סטיות
+
+ללא סטיות. finding #2 (inline $..$ מחיר) מכוסה ע"י regex מוגבל ל-$$, \[, \( בלבד.
+
+---
+
 ## 2026-06-25 — slice-latex-math-bidi-fix — סיום slice (3 commits)
 
 ### מה בוצע?
