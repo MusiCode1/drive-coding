@@ -75,6 +75,29 @@ regression על ה-Speaker (קורא `session.bubbles` VM, לא DOM). r2 תפס�
 - **היפוך scroll-ownership ל-ChatBubbles**: היה מבטל את redesign-2; Option B מונע זאת.
 - **hold-target**: נדחה ל-future (ראה לעיל).
 
+### עדכון 2026-06-25 (אחרי READY) — auto-scroll במנות (batched), לא רציף (דיון `623c749f`)
+ה-brief היה READY עם follow **רציף** (re-pin בכל גדילה דרך ResizeObserver). בדיון עם המשתמשת
+התברר שזה בדיוק הבאג שמרגיז: הטקסט "בורח" כלפי מעלה תוך כדי קריאה (ה-default הנאיבי של
+ChatGPT/Claude). ההחלטה החדשה:
+1. **batched by distance + floor** — קופצים לתחתית **המלאה** רק כש (א) הקצה החי נפל ≥ ~3 שורות
+   (`3 × lineHeight`) **וגם** (ב) עברו ≥ ~300ms מהקפיצה הקודמת. בין הקפיצות — אפס תזוזה.
+   const-ים ב-`scroll-follow.ts` (פונקציה טהורה `shouldFollowJump`, TDD) → calev מכוונן חי.
+2. **distance על-פני throttle** — המשתמשת בחרה מרחק (מסתגל למהירות הזרם) על-פני שעון.
+3. **קפיצה תמיד מלאה לסוף — page-cap נדחה מפורשות.** המשתמשת לא רוצה הליכת-מסך; בלוק-כלי גדול →
+   קפיצה אחת לסוף (לקרוא אותו = לגלול למעלה = hold). snap-to-line מיותר בגרנולריות בועה.
+4. **toggle ידני של בועה = user-intent = hold** — פתיחה/קיפול tool/thought הוא קליק (לא scroll
+   event) → ה-handler מאותת `chatScroll.noteUserIntent?.()`; המוטציה ב-AppShell (חוק זהב #4).
+   בלי זה, פתיחת כלי במצב follow הייתה מקפיצה לסוף במקום לתת לקרוא.
+5. **turn-boundary = force-follow** — prompt חדש מדליק follow + קופץ לקצה, גם אם היית ב-hold.
+
+**מה זה שינה ב-brief**: Commit 0 קיבל פונקציה טהורה שנייה (`shouldFollowJump`); Commit 2 שוכתב
+מ-re-pin רציף ל-batched-tick; Commit 3 קיבל toggle-intent (נוגע ב-ToolBubble/ThoughtBubble) +
+turn-boundary. complexity נשאר 8 (קצה עליון). plan_verified→false עד אביגיל READY מחדש.
+
+**רעיונות שנדחו בדיון הזה**: continuous re-pin (קופצני — הבעיה המקורית); throttle-by-time
+(distance עדיף); page-walk/page-cap (המשתמשת רצתה קפיצה מלאה); snap-to-line (מיותר); hold-target
+(נשאר future); split לסלייס נפרד (אותו משטח קוד בדיוק — לא לשגר-ואז-להחליף).
+
 ## 2026-06-25 — roadmap-reconciliation: קיפול הצעות-סשנים שלא תועדו ל-roadmap
 
 ### רציונל
