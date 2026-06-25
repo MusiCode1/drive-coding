@@ -1,5 +1,75 @@
 # Decisions — drive-coding
 
+## 2026-06-25 — slice-latex-math-invisibles: נרמול range של תווים בלתי-נראים (relocate-or-delete)
+
+### רציונל
+ה-fix הקודם (slice-latex-math-bidi-fix) תיקן RLM בתחילת שורה אבל התגלה **חלקי** באימות חי:
+טבלאות נשברו מ-RLM ש**אחרי** ה-`|` בשורת ה-separator (`|‏---|`) — מיקום שהנרמול לא כיסה.
+אבחון אמפירי שיטתי (מטריצת **10 תווים בלתי-נראים × 6 מיקומים**) הראה ש**כל משפחת התווים**
+(bidi-control, zero-width, soft-hyphen, NBSP) שוברת את **כל** המיקומים התחביריים — לא רק RLM,
+לא רק תחילת שורה. תיקון-מונחה-תסמינים כשל פעמיים → עברנו לאסטרטגיה כללית.
+
+ההכרעה: עיקרון אחיד — *"הצמד את התו הבלתי-נראה לטקסט אמיתי; מחק רק באזורי-תחביר-טהור."*
+מומש כ-`normalizeInvisibles` (מחליף את `normalizeLineLeadingBidi`): char-class של **range** (לא רשימה),
++ NBSP→רווח, + strip בשורות separator ובתוך math-spans, + relocate בתחילת שורה, + שמירה בתוכן.
+הורץ אמפירית: **16/16** (כל המטריצה + שמירת RLM בתוכן).
+
+### ממצאי אביגיל (2 סבבים)
+- **r1 = USABLE-AFTER-FIX** (3 findings): (🔴) `markdown.ts:41` עושה re-export של `normalizeLineLeadingBidi`
+  — מחיקת הסמל בלי עדכון ה-re-export שוברת typecheck (`verbatimModuleSyntax`). (🟡 **המהותי**) ה-inline
+  `$..$` strip תופס **מחירים** (`$5 .. $10`) ומוחק מהם invis = content-mutation שקט שלא נתפס בטסטים.
+  (🟡) מקור ה-import של ה-unit test לא צוין. אביגיל אימתה את ה-reference 16/16 עצמאית.
+- **r2 = READY** (0 חוסם) — שלושת התיקונים אושרו.
+
+### שינויי-כיוון
+- מ"נרמול RLM בתחילת שורה" → **range של כל הבלתי-נראים, בכל מיקום** (אבחון המטריצה).
+- math-span strip **הוגבל ל-`$$`/`\[`/`\(`** (הוסר `$..$` inline) — בעקבות finding #2 (מחירים). invis בתוך
+  `$x$` inline math נדיר נשאר → רעש `unknownSymbol` קל ב-KaTeX, מחיר מקובל מול הגנה על מחירים/קוד.
+
+### רעיונות שנדחו
+- **strip גורף של כל הבלתי-נראים** (אסטרטגיה B) — נדחה לטובת relocate-or-delete של המשתמשת: שומר את ה-RLM
+  בתוכן אמיתי (מועיל ל-`dir="auto"` ב-block שמתחיל בלטינית), מוחק רק היכן שאין טקסט.
+- **טלאי per-{תו×מיקום}** (אסטרטגיה A) — gap-prone; כשל פעמיים. range + עיקרון אחיד מחליף.
+
+## 2026-06-25 — slice-latex-math-bidi-fix: נרמול bidi-marks בתחילת שורה (heuristic היברידי)
+
+### רציונל
+אחרי merge-ready של `slice-latex-math`, אימות חי בדפדפן (linux-gui) חשף ש**טבלאות ונוסחאות display
+לא רונדרו** — נשארו markdown גולמי. אבחון אמפירי (marked+katex ישירות, ואז `renderMarkdown` ב-jsdom)
+הוכיח ש**`marked` ו-`DOMPurify` תקינים לחלוטין** — ה-root-cause הוא **תווי bidi-control (RLM, U+200F)
+שמרדכי/המודל מזריקים בתחילת שורות עבריות** (כללי ה-RTL של ה-CLI). marked עוגן block-tokenizers ל-`^`
+(`^#`/`^|`/`^>`/`^-`); RLM יושב שם וחוסם → הבלוק הופך לפסקה גולמית. אירוניה: כללי-ה-RTL שברו את הרינדור.
+
+ההכרעה: **heuristic היברידי** של נרמול-bidi בתחילת שורה (לא מחיקה גורפת):
+- לפני **block-marker נושא-טקסט** (`#`/`-`/`>`/`|`/`1.`) → **דחוף** את ה-RLM אל אחרי ה-marker.
+  כך marked מזהה את הבלוק, וה-RLM נוחת בתחילת התוכן → `dir="auto"` של ה-element בוחר RTL נכון
+  (heading שמתחיל במילה לטינית עדיין מיושר ימין).
+- לפני **math-marker** (`$$`/`\[`) → **מחק** את ה-RLM (נוסחה היא LTR; RLM בתוך LaTeX = `unknownSymbol` ב-KaTeX).
+- לפני **טקסט רגיל / באמצע שורה** → **השאר** (RLM שם ניטרלי/מועיל — לא נוגעים בכוונת המשתמש).
+
+בנוסף: **פיצול `markdown-parse.ts` (טהור, בר-בדיקה ללא DOM) / `markdown.ts` (עוטף-סניטיזציה)** — internal
+boundary בתוך FE, ה-export הציבורי היחיד נשאר `renderMarkdown`, האבטחה (two-pass) לא משתנה.
+
+### ממצאי אביגיל (2 סבבים)
+- **r1 = USABLE-AFTER-FIX** (3 findings, אין blocker): (#1) פקודת typecheck השתמשה ב-`@drive-coding/frontend`
+  במקום `-v2` → "No projects matched"+exit-0 = **typecheck פאנטום** (קריטי כי Commit 2 הוא refactor רגיש-אבטחה).
+  (#2) בעלות `replacePlaceholders`/sentinels ב-Commit 2 הייתה דו-משמעית. (#3) framing: `$$`/`\[` כבר עובדים
+  עם RLM (start()=indexOf) — החסימה רק ל-block-markers. אביגיל אימתה אמפירית את ה-regex (9 תרחישים) ואת
+  ה-edge-cases (RLM כפול, marker בלי רווח, `|` בטבלה) — כולם נכונים.
+- **r2 = READY** (0 findings) — שלושת התיקונים אושרו.
+
+### שינויי-כיוון
+- מהשערה ראשונית "הבאג ב-`breaks:true` / ב-DOMPurify allowlist" → אחרי אבחון אמפירי: **הקלט (bidi-marks), לא הקוד**.
+  marked+DOMPurify חפים. תובנת המשתמשת ("אולי קשור לסניטיזציה") כיוונה לפסילת ה-allowlist כחשוד, מה שמיקד את האבחון.
+- מ"מחיקה גורפת של bidi בתחילת שורה" (הצעת מרדכי הראשונה, A) → **heuristic היברידי** (דחיפה/מחיקה/השארה).
+  תובנת המשתמשת: "אי אפשר לדחוף RLM אל הטקסט במקום למחוק?" — אומת ש-`dir="auto"` הופך דחיפה לעדיפה (משמרת RTL).
+
+### רעיונות שנדחו
+- **העברת הרינדור ל-`core`** — נדחה: DOMPurify דורש DOM (אסור ב-core); זה view-concern; אין צרכן מחוץ ל-FE.
+- **מחיקה גורפת (A)** — over-reach: מסיר RLM לגיטימי מטקסט רגיל.
+- **strip רק לפני רשימת-markers קשיחה (C)** — שביר (מתיישן בהוספת תחביר); ההיברידי משתמש ב"דחיפה" שלא דורשת זאת.
+- **דחיפת RLM גם לתוך math** — נדחה: KaTeX פולט `unknownSymbol` (אומת אמפירית).
+
 ## 2026-06-25 — slice-latex-math: רינדור LaTeX/KaTeX עם allowlist פר-מקור
 
 ### רציונל
