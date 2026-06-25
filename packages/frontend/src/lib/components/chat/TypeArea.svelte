@@ -15,6 +15,17 @@ const settings = getSettings()
 const t = getI18n().t
 
 let promptText = $state("")
+let taEl = $state<HTMLTextAreaElement>()
+const MAX_ROWS = 6
+
+// גדל עם התוכן עד תקרה; ה-effect רץ גם בהקלדה וגם בכיווץ פרוגרמטי (promptText="")
+$effect(() => {
+  promptText // dependency — re-run on every value change
+  const el = taEl
+  if (!el) return
+  el.style.height = "auto"            // קודם מאפסים כדי שה-scrollHeight ישקף את התוכן הנוכחי
+  el.style.height = `${el.scrollHeight}px`
+})
 
 const isDisabled = $derived(
   session.status !== "connected"
@@ -31,15 +42,16 @@ function onSubmit(e?: SubmitEvent) {
 
 <form
   onsubmit={onSubmit}
-  class="flex gap-2 items-stretch w-full"
+  class="flex gap-2 items-end w-full"
 >
   <textarea
+    bind:this={taEl}
     bind:value={promptText}
     placeholder={t("record.placeholder")}
-    rows={2}
+    rows={1}
     disabled={isDisabled}
     class="flex-1 rounded-xl px-3 py-2.5 text-sm resize-none outline-none border"
-    style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
+    style="background:var(--bg-card); border-color:var(--border); color:var(--fg); max-height:calc({MAX_ROWS} * 1.5em + 1.25rem); overflow-y:auto"
     onkeydown={(e) => {
       // Cmd/Ctrl+Enter תמיד שולח (power-user, ללא תלות בהגדרה)
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {

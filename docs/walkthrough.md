@@ -1,3 +1,29 @@
+## 2026-06-25 — slice-input-autogrow — Commit 1: textarea auto-grow ב-TypeArea
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/components/chat/TypeArea.svelte`: קובץ יחיד, שלושה שינויים:
+  1. `<form>` שונה מ-`items-stretch` ל-`items-end` — כפתור Send מיושר לתחתית ולא נמתח עם ה-textarea.
+  2. נוסף `bind:this={taEl}` + `let taEl = $state<HTMLTextAreaElement>()` + `const MAX_ROWS = 6`.
+  3. נוסף `$effect` שתלוי ב-`promptText` — מאפס גובה ל-auto ואז מציב scrollHeight; מופעל גם בהקלדה וגם בכיווץ פרוגרמטי אחרי שליחה.
+  4. `rows={2}` → `rows={1}` (גובה בסיס = שורה אחת).
+  5. `max-height: calc(6 * 1.5em + 1.25rem)` + `overflow-y:auto` ב-inline style.
+
+### בדיקות
+
+- typecheck: 0 errors.
+- build: נקי (adapter-static).
+- lint:i18n: ✓ (אין מחרוזות חדשות).
+- browser smoke (playwright-cli, linux-gui :9222):
+  - textarea ריק = 40px (שורה אחת).
+  - 3 שורות = 80px (גדל).
+  - 7 שורות: offsetHeight=146px (חסום), scrollHeight=160px (overflow-y scroll) — max-height פועל.
+  - כפתור Send נשאר בגובה טבעי ומיושר לתחתית (לא נמתח ל-6 שורות).
+
+### סטיות
+
+ללא סטיות מה-brief. approach: manual (browser smoke), כפי שנקבע ב-brief §4.
+
 ## 2026-06-25 — slice-display-toggle-consistency — Commit 1: rename + migration + UI + tests
 
 ### מה בוצע?
