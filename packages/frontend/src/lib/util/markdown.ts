@@ -287,6 +287,36 @@ if (typeof document !== "undefined") {
   })
 }
 
+// ─── Bidi normalization ──────────────────────────────────────────────────────
+// תווי bidi-control: U+200E (LRM), U+200F (RLM), U+202A-U+202E, U+2066-U+2069
+const BIDI = "‎‏‪-‮⁦-⁩"
+
+/**
+ * מנרמל תווי bidi-control בתחילת שורה (heuristic היברידי — אושר ע"י המשתמשת).
+ *
+ * לכל שורה שמתחילה ברצף bidi-control:
+ * - לפני math marker ($$ או \[): מוחק את ה-bidi-marks (RLM בנוסחה → unknownSymbol ב-KaTeX).
+ * - לפני block marker (# > - * + | ספרה.): דוחף אחרי ה-marker (marked מזהה, RLM נוחת בתוכן).
+ * - לפני טקסט רגיל: משאיר — RLM שם ניטרלי/מועיל.
+ *
+ * לא נוגע ב-bidi באמצע שורה.
+ */
+export function normalizeLineLeadingBidi(text: string): string {
+  // סדר חשוב: math-delete לפני push
+  // שלב 1: מחק bidi-marks לפני math markers ($$, \[)
+  let result = text.replace(
+    new RegExp(`^[${BIDI}]+(?=\\$\\$|\\\\\\[)`, "gmu"),
+    "",
+  )
+  // שלב 2: דחוף bidi-marks אחרי block marker (כולל הרווח שאחרי)
+  // \\| = table marker (pipe בתחילת שורת טבלה)
+  result = result.replace(
+    new RegExp(`^([${BIDI}]+)(#{1,6} |>+ |[-*+] |\\d+[.)] |\\| ?)`, "gmu"),
+    "$2$1",
+  )
+  return result
+}
+
 /**
  * מרנדר Markdown ל-HTML מחוטא, עם תמיכה ב-KaTeX LaTeX.
  * בטוח לשימוש עם {@html} בתוך קומפוננטות Svelte.
@@ -300,8 +330,11 @@ export function renderMarkdown(text: string): string {
   // אפס את ה-map לפני כל קריאה (module-level ref, reset per-call)
   currentMap = []
 
+  // נרמול bidi-control בתחילת שורה — לפני marked.parse
+  const normalized = normalizeLineLeadingBidi(text)
+
   // Pass 1: marked.parse + extension פנימי → placeholders במקום KaTeX HTML
-  const markdownHtml = marked.parse(text, {
+  const markdownHtml = marked.parse(normalized, {
     async: false,
     breaks: true,
     gfm: true,
