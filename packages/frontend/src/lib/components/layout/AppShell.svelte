@@ -5,17 +5,25 @@
  * מחזיק:
  *   - AppHeader (header צף)
  *   - Sidebar (דסקטופ) | BottomSheet (מובייל) לפי ResponsiveVM
- *   - scroll node (.chat-scroll) + auto-scroll $effect (חוק זהב #4 — הועבר מ-ChatBubbles)
+ *   - scroll node (.chat-scroll) + batched follow (slice chat-virtualization)
  *   - chat-fade overlay (gradient בתחתית)
  *   - content slot (max-w-2xl ממורכז)
  *
  * scroll ownership (אביגיל #2): overflow-y-auto + bind:this **כאן בלבד**.
- * ChatBubbles מאבד את ה-scroll שלו ב-Commit 4.
  *
  * ─── redesign-2 ───
+ * ─── slice chat-virtualization: batched follow ─── (Commit 2+3)
+ *
+ * follow logic:
+ *   - isAtBottom ממדדי virtua handle (לא scrollEl.scrollHeight — לא מהימן תחת windowing)
+ *   - jumpToBottom: handle.scrollToIndex(last, {align:'end'}) — virtua מחשב נכון גם לitems לא-מדודים
+ *   - ResizeObserver על wrapper → shouldFollowJump → קפיצה batched (לא רציפה)
+ *   - following=true בברירת מחדל; שינוי scroll ידני (Commit 3) → following=false
+ *   - force-follow על תור חדש (Commit 3)
  */
-import { tick } from "svelte"
+import { onMount } from "svelte"
 import { getModelStatus, getResponsive, getSession, getI18n, getChatScroll } from "$lib/context"
+import { computeScrollEdges, shouldFollowJump } from "$lib/util/scroll-follow"
 import AppHeader from "./AppHeader.svelte"
 import Sidebar from "./Sidebar.svelte"
 import BottomSheet from "./BottomSheet.svelte"
@@ -37,38 +45,135 @@ const t = getI18n().t
 // scroll node — ה-AppShell הוא owner (חוק זהב #4)
 let scrollEl = $state<HTMLElement | null>(null)
 
-// chat-scroll bridge — כתיבת scrollEl ו-noteUserIntent (slice chat-virtualization)
+// chat-scroll bridge — כתיבת scrollEl ו-noteUserIntent (Commit 3)
 const chatScroll = getChatScroll()
 $effect(() => {
   chatScroll.scrollEl = scrollEl
 })
 
-// ─── redesign-7: smart-scroll state ───
-const SCROLL_THRESHOLD = 50 // px מהתחתית = "בתחתית"
+// ─── batched follow state (slice chat-virtualization) ───
+let following = $state(true)   // true = עוקב אחרי תחתית; false = hold
+let lastJumpAt = 0             // timestamp הקפיצה התוכניתית האחרונה
+
+// isAtBottom — נגזר ממדדי virtua handle (לא DOM גולמי)
 let isAtBottom = $state(true)
+// hasNewBelow — מופיע כשיש תוכן חדש מתחת ואנחנו לא בתחתית
 let hasNewBelow = $state(false)
 
-function checkIsAtBottom(): boolean {
-  if (!scrollEl) return true
-  return scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < SCROLL_THRESHOLD
+// lineHeight — נמדד פעם אחת מה-scrollEl (fallback 24px אם "normal")
+let lineHeight = 24
+
+function getLineHeight(): number {
+  if (!scrollEl) return 24
+  const computed = getComputedStyle(scrollEl).lineHeight
+  if (computed === "normal") return 24
+  const parsed = parseFloat(computed)
+  return isNaN(parsed) ? 24 : parsed
 }
 
-function onScroll() {
-  isAtBottom = checkIsAtBottom()
-  if (isAtBottom) hasNewBelow = false
+/**
+ * checkEdges — קורא מדדים מ-handle ומעדכן isAtBottom.
+ * handle ממדדי virtua (getScrollOffset/Size/ViewportSize) — מהימן תחת windowing.
+ */
+function checkEdges(): void {
+  const handle = chatScroll.handle
+  if (!handle) {
+    // fallback אם handle עדיין לא מחובר
+    if (scrollEl) {
+      const dist = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight
+      isAtBottom = dist < 50
+    }
+    return
+  }
+  const edges = computeScrollEdges({
+    scrollOffset: handle.getScrollOffset(),
+    scrollSize: handle.getScrollSize(),
+    viewportSize: handle.getViewportSize(),
+  })
+  isAtBottom = edges.atBottom
 }
 
-function jumpToBottom() {
-  if (!scrollEl) return
-  scrollEl.scrollTop = scrollEl.scrollHeight
+/**
+ * jumpToBottom — קופץ לתחתית המוחלטת.
+ * שימוש ב-scrollToIndex(last, {align:'end'}) של virtua — לא scrollTop=scrollHeight.
+ * virtua מחשב נכון גם לitems שטרם נמדדו (anti-jump בזמן stream).
+ */
+function jumpToBottom(): void {
+  const handle = chatScroll.handle
+  const len = session.bubbles.length
+  if (handle && len > 0) {
+    handle.scrollToIndex(len - 1, { align: "end" })
+  } else if (scrollEl) {
+    // fallback אם handle עדיין null
+    scrollEl.scrollTop = scrollEl.scrollHeight
+  }
+  lastJumpAt = performance.now()
   isAtBottom = true
   hasNewBelow = false
 }
 
 /**
- * Smart auto-scroll (redesign-7) — מחליף את ה-auto-scroll הבלתי-מותנה.
- * רק אם המשתמש בתחתית → נצמד. אחרת → hasNewBelow=true.
+ * maybeJump — בודק batched conditions ומקפיץ אם צריך.
+ * נקרא מ-ResizeObserver ומ-$effect על bubbles.
+ * לא מקפיץ ישירות — שואל shouldFollowJump (פונקציה טהורה).
  */
+function maybeJump(): void {
+  const handle = chatScroll.handle
+  if (!handle) return
+
+  const scrollSize = handle.getScrollSize()
+  const scrollOffset = handle.getScrollOffset()
+  const viewportSize = handle.getViewportSize()
+  const distanceBelow = scrollSize - (scrollOffset + viewportSize)
+
+  checkEdges()
+
+  if (
+    shouldFollowJump({
+      following,
+      distanceBelow,
+      lineHeight,
+      now: performance.now(),
+      lastJumpAt,
+    })
+  ) {
+    jumpToBottom()
+  } else if (!isAtBottom && following) {
+    // עדיין ב-follow אבל floor לא עבר / מרחק קטן → mark hasNewBelow
+    hasNewBelow = true
+  }
+}
+
+function onScroll(): void {
+  checkEdges()
+  if (isAtBottom) hasNewBelow = false
+}
+
+// ResizeObserver על wrapper — מזין את לולאת ה-batched
+let resizeObs: ResizeObserver | null = null
+
+$effect(() => {
+  const el = scrollEl
+  if (!el) return
+
+  lineHeight = getLineHeight()
+
+  // ResizeObserver על ה-scrollEl עצמו (הגבהו משתנה כשהתוכן גדל)
+  resizeObs = new ResizeObserver(() => {
+    maybeJump()
+  })
+  // observe על ה-child (div max-w-2xl) שמחזיק את ה-Virtualizer
+  const contentEl = el.firstElementChild as HTMLElement | null
+  if (contentEl) resizeObs.observe(contentEl)
+
+  return () => {
+    resizeObs?.disconnect()
+    resizeObs = null
+  }
+})
+
+// $effect על session.bubbles — floor-tail edge: מבטיח שאחרי שהzרם שוקט
+// (ResizeObserver יורה שוב), הקפיצה האחרונה תסתיים
 $effect(() => {
   const _bubbleCount = session.bubbles.length
   const last = session.bubbles[session.bubbles.length - 1]
@@ -78,20 +183,19 @@ $effect(() => {
     last !== undefined && last.kind !== "tool"
       ? (last.segments[last.segments.length - 1]?.text.length ?? 0)
       : 0
-  // msr-v2: גרור scroll כאשר StatusBubble מופיעה/נעלמת
   const _statusPhase = modelStatus.phase
   void _bubbleCount
   void _segCount
   void _lastSegLen
   void _statusPhase
-  tick().then(() => {
-    if (!scrollEl) return
-    if (isAtBottom) {
-      scrollEl.scrollTop = scrollEl.scrollHeight
-    } else {
-      hasNewBelow = true
-    }
-  })
+
+  // setTimeout של floor — מבטיח שאם האירוע האחרון נחסם ב-floor,
+  // קריאה מאוחרת (אחרי floor עבר) תשלים את הקפיצה
+  const timer = setTimeout(() => {
+    maybeJump()
+  }, 320) // מעט מעל FOLLOW_FLOOR_MS (300ms) כדי לתפוס floor-tail
+
+  return () => clearTimeout(timer)
 })
 </script>
 
