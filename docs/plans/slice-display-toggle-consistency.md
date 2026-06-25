@@ -1,10 +1,11 @@
 # Slice display-toggle-consistency — עקביות מחווני "תצוגת צ'אט" — תוכנית
 
-> **תאריך**: 2026-06-25
-> **סטטוס**: מאושר — READY (אביגיל, `reports/drive-coding/slice-display-toggle-consistency-avigail.md`). **dispatch אחרי הכרעת base (§9 Q1).**
+> **תאריך**: 2026-06-25 · **dispatch-ready**: 2026-06-25 (מרדכי)
+> **סטטוס**: ✅ **READY — מאושר ל-dispatch** (אביגיל, `reports/drive-coding/slice-display-toggle-consistency-avigail.md`). base=`dev` (916dc49).
 > **Complexity**: 3/10 (verifier: light)
-> **תלות (depends_on)**: `[chat-render-polish]` (מקור שני השדות). **base = `dev`.**
-> ⚠️ **merge-ordering עם `enter-toggle`** (GO, טרם מוזג): שני ה-slices נוגעים באותו כרטיס "Chat display" + reset. ראה §6 R1.
+> **תלות (depends_on)**: `[chat-render-polish]` — ✅ **מוזג ל-dev** (`cc5ff66`). base = `dev`.
+> ✅ **Q1/R1 נפתרו**: `enter-toggle` **כבר מוזג ל-dev** (`160736b`, `enterToSend` בקוד) → base=dev מכיל אותו, אין conflict, לינארי. (ה-§9 Q1 וה-§6 R1 התיישנו — ראה הערות שם.)
+> ⚠️ **collision עם `chat-virtualization`**: שניהם נוגעים ב-`ToolBubble`/`ThoughtBubble`. **slice זה רץ ראשון** → merge → אז chat-virtualization מעליו.
 
 ---
 
@@ -165,7 +166,7 @@ pnpm --filter @drive-coding/frontend-v2 typecheck && pnpm lint:i18n
 
 | סיכון | מקור | מיטיגציה |
 |---|---|---|
-| **R1 — conflict עם `enter-toggle`** (לא-מוזג, GO) | שניהם עורכים את כרטיס "Chat display" + בלוק reset ב-`SettingsScreen.svelte` | **merge-ordering**: מזג קודם `enter-toggle` ל-dev, ואז מזג slice זה — ה-conflict הוא 1-2 שורות סמוכות (toggle נוסף + שורת reset), טריוויאלי. `enterToSend` כבר חיובי — לא נוגעים בלוגיקה שלו, רק דואגים שהמתג נשאר בכרטיס. **חלופה**: לבסס slice זה על branch `enter-toggle` (chained) במקום dev — אם המשתמשת מעדיפה לא למזג קודם. |
+| **R1 — conflict עם `enter-toggle`** ✅ **נפתר — enter-toggle מוזג (`160736b`)** | שניהם עורכים את כרטיס "Chat display" + בלוק reset ב-`SettingsScreen.svelte` | ~~merge-ordering~~ **לא רלוונטי יותר**: `enter-toggle` כבר ב-dev, base=dev מכיל אותו. `enterToSend` חיובי — לא נוגעים בלוגיקה שלו, רק דואגים שהמתג נשאר בכרטיס. (עדיין שים לב בעת עריכת `SettingsScreen.svelte`: ה-toggle של enterToSend קיים שם — additive בלבד סביבו.) |
 | **R2 — snap-back** | chat-render-polish (commit 3 fix `0adfb17`) | ה-`open` חייב להישאר `let open = $state(...)` (אתחול חד-פעמי) + `bind:open`. **אסור** `open={settings.showX}` reactive — יחזיר את ה-snap-back (קיפול ידני מתאפס באמצע turn). |
 | migration שלא רץ → משתמש מאבד העדפה | — | migration ב-`load()` ממופה רק כש-המפתח החדש `undefined` (לא דורס בחירה חדשה); unit test מאמת שני הכיוונים |
 | מחרוזת עברית קשיחה | pre-commit hook | התוויות דרך `t(...)`; שני מפתחים ב-he+en |
@@ -187,6 +188,6 @@ pnpm --filter @drive-coding/frontend-v2 typecheck && pnpm lint:i18n
 
 | # | שאלה | ברירת מחדל מוצעת | חוסם? |
 |---|---|---|---|
-| 1 | למזג `enter-toggle` קודם, או לשרשר slice זה עליו? | למזג enter-toggle קודם (לינארי, נקי) — החלטת המשתמשת/מרדכי | ⚠️ משפיע על base — **לאשר לפני dispatch** |
+| 1 | למזג `enter-toggle` קודם, או לשרשר slice זה עליו? | ✅ **הוכרע — enter-toggle כבר מוזג (`160736b`)**. base=dev (לינארי, נקי). | ❌ נפתר |
 | 2 | שמות מפתחי i18n — `showThoughts`/`showTools`? | כן (תואם פולריות חיובית) | ❌ |
 | 3 | להשאיר migration לנצח או להסיר אחרי כמה גרסאות? | להשאיר (זול, בלי תאריך תפוגה) | ❌ |
