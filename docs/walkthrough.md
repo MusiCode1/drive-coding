@@ -1,3 +1,45 @@
+## 2026-06-26 — slice-fe-build-decouple — 4 commits
+
+### מה בוצע?
+
+**Commit 1 (manual):** `scripts/dc-build-fe.mjs` + aliases ב-`package.json`:
+- סקריפט builds FE אטומית: vite build → .build-staging → swap אטומי → build/
+- `--if-missing`: דולג אם build/index.html קיים (רשת-ביטחון לקלון טרי)
+- `package.json`: aliases `fe:build` ו-`fe:build:if-missing`
+
+**Commit 2 (manual):** `packages/frontend/svelte.config.js` + `.gitignore`:
+- FE_BUILD_OUT env-driven; ברירת-מחדל "build" (אפס שינוי התנהגות)
+- .gitignore: הוסף .build-staging/ ו-.build-old/
+
+**Commit 3 (manual):** `deploy/systemd/voice-acp-dev.service` + `voice-acp-main.service`:
+- ExecStartPre: `pnpm build` → `node scripts/dc-build-fe.mjs --if-missing`
+- תיקון נתיבים: `voice-acp/{dev,main}` → `drive-coding/{dev,main}`
+- הוספת הערות: רענון FE דרך `pnpm fe:build`; restart שמור ל-BE
+
+**Commit 4 (none):** `docs/deploy-local-service.md`:
+- Daily Use: הפרד FE-refresh (pnpm fe:build) מ-BE-restart (systemctl)
+- Install: עדכן תיאור ExecStartPre ל-build-if-missing
+- Troubleshooting: החלף `pnpm build` ב-`pnpm fe:build`
+- תיקון נתיבים: voice-acp/ → drive-coding/ בטבלת Overview ובDaily Use
+- הוסף סעיף "Apply unit changes (post-merge)"
+
+### בדיקות
+
+- `node scripts/dc-build-fe.mjs` → build/index.html קיים, .build-staging/ נוקה
+- `--if-missing` עם build קיים → "skipping (--if-missing)"
+- `rm -rf build && --if-missing` → בונה, staging נוקה
+- `FE_BUILD_OUT=.build-staging pnpm --filter @drive-coding/frontend-v2 build` → OK
+- `systemd-analyze --user verify` על שני ה-service files → ללא שגיאות
+- `grep -c "pnpm build" deploy/systemd/*.service` → 0
+- `grep -c "voice-acp/" docs/deploy-local-service.md` → 0
+- typecheck: 0 errors; lint:i18n: ✓
+
+### סטיות
+
+קבצי ה-service כללו גם תיקון נתיבים (voice-acp → drive-coding) שמבחינה טכנית מיותס ל-Commit 4 ב-brief, אך הוכנס ב-Commit 3 כיוון שהנתיבים הישנים היו שגויים גם שם.
+
+---
+
 ## 2026-06-25 — slice-session-title-header — 3 commits
 
 ### מה בוצע?
