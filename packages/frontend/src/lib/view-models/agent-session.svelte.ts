@@ -105,6 +105,10 @@ export class AgentSession {
   /** מצב ה-modes הזמינים — null אם ה-agent לא חשף מידע mode. */
   modes = $state<SessionModeState | null>(null)
 
+  // ─── slice session-title: כותרת הסשן הפעיל ─── (תוספתי)
+  /** כותרת הסשן הפעיל. snapshot מרגע הטעינה/החלפה. "" = אין כותרת (סשן חדש). */
+  sessionTitle = $state<string>("")
+
   // ─── redesign-fix: רשימת סשנים inline ─── (תוספתי)
   sessions = $state<SessionInfo[]>([])
   sessionsLoading = $state<boolean>(false)
@@ -597,6 +601,7 @@ export class AgentSession {
     sessionId: string
     cwd: string
     cliKind: CliKind
+    title?: string   // ← slice session-title: תוספתי (קוראים קיימים לא נשברים)
   }): Promise<void> => {
     if (this.status === "connecting" || this.status === "connected") {
       throw new Error(`cannot loadSession in status ${this.status}`)
@@ -651,6 +656,7 @@ export class AgentSession {
         this.#setTurnState("idle")   // NBug3: replay מסתיים — reset turnState (replay אינו תור)
       }
       this.#sessionId = input.sessionId
+      this.sessionTitle = input.title ?? this.sessionTitle   // keep-on-undefined: reconnect לא מאפס
 
       // 4. הודע ל-BE (זהה ל-attach, מאמץ מיטבי)
       await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
@@ -706,6 +712,7 @@ export class AgentSession {
     this.#sessionId = input.sessionId
     this.cwd = input.cwd
     this.#cliKind = input.cliKind
+    this.sessionTitle = ""   // slice session-title: process חי בלי title → fallback ל-"drive-coding"
     const ok = await this.#warmReconnect(input.agentId)
     if (!ok) {
       this.error = "reconnect failed: agent no longer available"
@@ -728,6 +735,7 @@ export class AgentSession {
     sessionId: string
     cwd: string
     cliKind: CliKind
+    title?: string   // ← slice session-title: תוספתי
   }): Promise<void> => {
     // אין חיבור פעיל → נתיב כבד (דפנסיבי; ה-panel מוצג רק עם חיבור)
     if (this.#client === null) {
@@ -763,6 +771,7 @@ export class AgentSession {
       }
       this.#sessionId = input.sessionId
       this.cwd = input.cwd
+      this.sessionTitle = input.title ?? this.sessionTitle   // keep-on-undefined
 
       // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים)
       // replace:true — warm switch מכוון, מאפשר דריסת sessionId קיים (עוקף guard MED-9)
@@ -807,6 +816,7 @@ export class AgentSession {
     this.#setStatus("connecting")
     this.error = null
     this.bubbles = []
+    this.sessionTitle = ""   // slice session-title: סשן חדש = אין כותרת
 
     try {
       const m = this.#sessionMeta()
@@ -1113,6 +1123,7 @@ export class AgentSession {
       }
       this.cwd = cwd
       this.#sessionId = `mock:${name}`
+      this.sessionTitle = `🧪 ${name}`   // slice session-title: כותרת-דמו לharness הוויזואלי
       // DEV: לכוד configOptions/modes/models מ-loadResult של ה-fixture (אם קיים) —
       // מאפשר mockup של בוררי ה-config (mode/model/agent/effort) + descriptions ללא ACP חי.
       if (data.loadResult) this.#captureSessionConfig(data.loadResult)

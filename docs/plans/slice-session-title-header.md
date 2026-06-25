@@ -1,7 +1,7 @@
 # Slice session-title-header — כותרת הסשן בהדר הצ'אט — תוכנית
 
 > **תאריך**: 2026-06-25 · **עודכן**: 2026-06-25 (הוספת ארגון-מחדש של ההדר — תיקייה ליד נקודת-החיבור)
-> **סטטוס**: ✅ **READY — מאושר ל-dispatch** (אביגיל r4; הוספת ארגון-מחדש של ההדר אומתה מול הקוד, fallback="drive-coding", קלאסים לוגיים, RTL feasible)
+> **סטטוס**: ✅ **הושלם** — 3 commits על branch `slice-session-title-header` (bfaa7ee..9ac0e81). ממתין ל-merge ע"י מרדכי.
 > **Complexity**: 4/10 (היה 3; +1 על ארגון-מחדש של ההדר + RTL/logical-classes; verifier: light)
 > **תלות (depends_on)**: [] — עצמאי. base = `dev` (aab70ce; כולל chat-render-polish + enter-toggle + display-toggle-consistency)
 > **החלטות UX שננעלו** (דיון 2026-06-25): (א) fallback כשאין title = **"drive-coding"** הקיים (אפס i18n, §9 Q1 הוכרע). (ב) **התיקייה (cwd) עוברת מהמרכז ל-`inline-end` ליד נקודת-החיבור**; המרכז מציג רק את הכותרת. בעברית (RTL) ה-`inline-end` = **שמאל** → הנקודה+התיקייה משמאל. (ג) **קלאסים לוגיים בלבד** (`start/end`, `ms/me`) — לא פיזיים.
