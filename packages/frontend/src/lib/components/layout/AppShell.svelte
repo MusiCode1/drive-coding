@@ -15,7 +15,7 @@
  * ─── redesign-2 ───
  */
 import { tick } from "svelte"
-import { getModelStatus, getResponsive, getSession, getI18n } from "$lib/context"
+import { getModelStatus, getResponsive, getSession, getI18n, getChatScroll } from "$lib/context"
 import AppHeader from "./AppHeader.svelte"
 import Sidebar from "./Sidebar.svelte"
 import BottomSheet from "./BottomSheet.svelte"
@@ -36,6 +36,12 @@ const t = getI18n().t
 
 // scroll node — ה-AppShell הוא owner (חוק זהב #4)
 let scrollEl = $state<HTMLElement | null>(null)
+
+// chat-scroll bridge — כתיבת scrollEl ו-noteUserIntent (slice chat-virtualization)
+const chatScroll = getChatScroll()
+$effect(() => {
+  chatScroll.scrollEl = scrollEl
+})
 
 // ─── redesign-7: smart-scroll state ───
 const SCROLL_THRESHOLD = 50 // px מהתחתית = "בתחתית"
@@ -113,7 +119,8 @@ $effect(() => {
           onscroll={onScroll}
         >
           <!-- max-w-2xl: בועות צרות ממורכזות (fix A2a — קריאות בדסקטופ) -->
-          <div class="flex flex-col gap-5 max-w-2xl mx-auto w-full">
+          <!-- gap-5 הוסר — spacing עבר ל-pb-5 פר-item (נמדד כחלק מגובה virtua item) -->
+          <div class="flex flex-col max-w-2xl mx-auto w-full">
             {@render children()}
           </div>
         </div>
