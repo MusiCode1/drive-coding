@@ -1,3 +1,29 @@
+## 2026-06-25 — slice-display-toggle-consistency — Commit 1: rename + migration + UI + tests
+
+### מה בוצע?
+
+- `packages/core/src/i18n/keys.ts`: `collapseThoughts`→`showThoughts`, `expandTools`→`showTools`.
+- `packages/core/src/i18n/catalogs/en.ts`: תוויות חדשות "Show thoughts by default" / "Show tools by default".
+- `packages/core/src/i18n/catalogs/he.ts`: "הצג מחשבות כברירת מחדל" / "הצג כלים כברירת מחדל".
+- `packages/frontend/src/lib/view-models/settings.svelte.ts`: rename שדות + ברירות מחדל (showThoughts:true, showTools:false) + migration ב-`load()` (collapseThoughts → !showThoughts; expandTools → showTools) + setters.
+- `packages/frontend/src/lib/components/chat/bubbles/ThoughtBubble.svelte`: `let open = $state(settings.showThoughts)` (היה `!settings.collapseThoughts`). $state מקומי — snap-back נשמר.
+- `packages/frontend/src/lib/components/chat/bubbles/ToolBubble.svelte`: `let open = $state(settings.showTools)` (היה `settings.expandTools`). $state מקומי — snap-back נשמר.
+- `packages/frontend/src/lib/components/settings/SettingsScreen.svelte`: labels + checked + onCheckedChange → showThoughts/showTools; reset → setShowThoughts(true)/setShowTools(false).
+- `packages/frontend/src/lib/view-models/settings.test.svelte.ts`: 9 טסטים חדשים (defaults, round-trip, migration 4 כיוונים, new-key-wins).
+
+### בדיקות
+
+- typecheck: 0 errors, 0 warnings.
+- tests: 298/298 ירוקים (9 חדשים).
+- lint:i18n: ✓.
+- grep collapseThoughts/expandTools בקוד ראשי: 0 (נשאר רק ב-migration ובטסטים).
+
+### סטיות
+
+שתי commits מה-brief אוחדו לאחד — ה-briefing ציין typecheck ירוק לפני כל commit, וה-components לא יכולים להיות ירוקים אחרי שינוי ה-VM בלי שינוי ה-components. commit אחד עם כל השינויים — approach mixed (unit tests + קוד + UI) + browser smoke יאומת בנפרד.
+
+---
+
 ## 2026-06-25 — slice-enter-toggle — Commit 2: חיווט UI (SettingsScreen + TypeArea)
 
 ### מה בוצע?

@@ -121,18 +121,18 @@ $effect(() => {
     />
   </SettingsCard>
 
-  <!-- כרטיס תצוגת צ'אט — chat-render-polish -->
+  <!-- כרטיס תצוגת צ'אט — display-toggle-consistency -->
   <SettingsCard title={t("settings.chatDisplay")}>
     <div class="flex flex-col">
       <SettingToggle
-        label={t("settings.toggle.collapseThoughts")}
-        checked={settings.collapseThoughts}
-        onCheckedChange={(v) => settings.setCollapseThoughts(v)}
+        label={t("settings.toggle.showThoughts")}
+        checked={settings.showThoughts}
+        onCheckedChange={(v) => settings.setShowThoughts(v)}
       />
       <SettingToggle
-        label={t("settings.toggle.expandTools")}
-        checked={settings.expandTools}
-        onCheckedChange={(v) => settings.setExpandTools(v)}
+        label={t("settings.toggle.showTools")}
+        checked={settings.showTools}
+        onCheckedChange={(v) => settings.setShowTools(v)}
       />
       <SettingToggle
         label={t("settings.toggle.enterToSend")}
@@ -180,8 +180,8 @@ $effect(() => {
         settings.setNarrateTools(true)
         settings.setTranslateThoughts(true)
         settings.setCarMode(false)
-        settings.setCollapseThoughts(false)
-        settings.setExpandTools(false)
+        settings.setShowThoughts(true)
+        settings.setShowTools(false)
         settings.setEnterToSend(true)
       }}
     >

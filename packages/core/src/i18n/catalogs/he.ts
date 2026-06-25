@@ -188,10 +188,10 @@ export const he: Catalog = {
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   "settings.screen.label": "מסך",
   "settings.toggle.keepScreenOn": "השאר מסך דלוק",
-  // ─── תצוגת צ'אט ─── (chat-render-polish)
+  // ─── תצוגת צ'אט ─── (display-toggle-consistency)
   "settings.chatDisplay": "תצוגת צ'אט",
-  "settings.toggle.collapseThoughts": "מחשבות מצומצמות כברירת מחדל",
-  "settings.toggle.expandTools": "כלים מורחבים כברירת מחדל",
+  "settings.toggle.showThoughts": "הצג מחשבות כברירת מחדל",
+  "settings.toggle.showTools": "הצג כלים כברירת מחדל",
   // ─── Enter toggle ─── (slice-enter-toggle)
   "settings.toggle.enterToSend": "Enter שולח הודעה",
 }

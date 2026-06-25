@@ -31,7 +31,7 @@ const runningText = $derived(isAllOriginal ? joinSegmentText(displaySegments) : 
 
 // local state — מאותחל פעם אחת מה-setting, לא נגזר ממנו reactively.
 // מונע snap-back כשה-effect של bubble.segments.length רץ מחדש.
-let open = $state(!settings.collapseThoughts)
+let open = $state(settings.showThoughts)
 </script>
 
 <div class="flex gap-2 self-end max-w-[85%] min-w-0 items-end flex-row-reverse">

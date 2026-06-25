@@ -260,6 +260,78 @@ describe("Settings — enterToSend (slice-enter-toggle)", () => {
   })
 })
 
+describe("Settings — showThoughts / showTools (display-toggle-consistency)", () => {
+  test("default showThoughts = true when localStorage empty", () => {
+    installLocalStorage()
+    const s = new Settings()
+    expect(s.showThoughts).toBe(true)
+  })
+
+  test("default showTools = false when localStorage empty", () => {
+    installLocalStorage()
+    const s = new Settings()
+    expect(s.showTools).toBe(false)
+  })
+
+  test("setShowThoughts(false) round-trip via localStorage", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setShowThoughts(false)
+    expect(s.showThoughts).toBe(false)
+    const s2 = new Settings()
+    expect(s2.showThoughts).toBe(false)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.showThoughts).toBe(false)
+  })
+
+  test("setShowTools(true) round-trip via localStorage", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setShowTools(true)
+    expect(s.showTools).toBe(true)
+    const s2 = new Settings()
+    expect(s2.showTools).toBe(true)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.showTools).toBe(true)
+  })
+
+  test("migration: collapseThoughts:true → showThoughts:false", () => {
+    const store = installLocalStorage()
+    store.set(STORAGE_KEY, JSON.stringify({ collapseThoughts: true }))
+    const s = new Settings()
+    expect(s.showThoughts).toBe(false)
+  })
+
+  test("migration: collapseThoughts:false → showThoughts:true", () => {
+    const store = installLocalStorage()
+    store.set(STORAGE_KEY, JSON.stringify({ collapseThoughts: false }))
+    const s = new Settings()
+    expect(s.showThoughts).toBe(true)
+  })
+
+  test("migration: expandTools:true → showTools:true", () => {
+    const store = installLocalStorage()
+    store.set(STORAGE_KEY, JSON.stringify({ expandTools: true }))
+    const s = new Settings()
+    expect(s.showTools).toBe(true)
+  })
+
+  test("migration: expandTools:false → showTools:false", () => {
+    const store = installLocalStorage()
+    store.set(STORAGE_KEY, JSON.stringify({ expandTools: false }))
+    const s = new Settings()
+    expect(s.showTools).toBe(false)
+  })
+
+  test("migration: new key wins over old key when both present", () => {
+    const store = installLocalStorage()
+    // showThoughts מוגדר — לא אמור להידרס ע"י collapseThoughts
+    store.set(STORAGE_KEY, JSON.stringify({ showThoughts: true, collapseThoughts: true }))
+    const s = new Settings()
+    expect(s.showThoughts).toBe(true)
+  })
+})
+
 describe("Settings — loadVoices", () => {
   test("populates availableVoices and drives loading/error", async () => {
     installLocalStorage()
