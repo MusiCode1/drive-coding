@@ -1,5 +1,41 @@
 # Decisions — drive-coding
 
+## 2026-06-25 — slice-display-toggle-consistency: פולריות אחידה למחווני "תצוגת צ'אט"
+
+### רציונל
+המשתמשת תפסה חוסר-עקביות: בכרטיס "Chat display" (מ-chat-render-polish) מחוון אחד
+("Collapse thoughts" — ON מסתיר) ואחר ("Expand tools" — ON מציג) בעלי **פולריות הפוכה**.
+באותו כרטיס, הפעלת מתג אחד מסתירה ואחרת מציגה — מודל מנטלי שבור. אומת בקוד:
+`ThoughtBubble:34` = `open = !collapseThoughts` (שלילי); `ToolBubble:30` = `open = expandTools`
+(חיובי). השורש: ב-chat-render-polish כל מתג נוסח כ-"opt-in לשינוי מברירת-המחדל" (מחשבות
+פתוחות, כלים סגורים) → פולריות לא-עקבית כתוצר-לוואי.
+
+**ההכרעה**: לאחד לפולריות חיובית אחת — `showThoughts`/`showTools`, **ON תמיד מציג**.
+ההתנהגות-בפועל של ברירות-המחדל נשמרת (`showThoughts:true`=מחשבות מוצגות,
+`showTools:false`=כלים מצומצמים) — רק המודל המנטלי נעשה עקבי. **migration ב-`load()`**
+ממפה מפתחות ישנים (`!collapseThoughts`→`showThoughts`, `expandTools`→`showTools`) כדי
+שמשתמשים קיימים לא יאבדו העדפה.
+
+### ממצאי אביגיל
+verdict=**READY** (0 חוסמים, 2 findings). 🟡: מספרי שורות ה-reset (178-179) נכונים
+ל-dev הנוכחי, אך אם enter-toggle מוזג קודם — שורת `setEnterToSend` נכנסת ביניהן והמספרים
+זזים; חודד ב-§4 (אתר ע"י grep, לא מספרים). 🟢: ה-spread ב-`load()` נושא מפתחות-ישנים
+ל-runtime — מאושר ב-brief (נופלים בשמירה הבאה). אומת: ה-rename מלא (grep=0), לוגיקת
+migration נכונה, snap-back נשמר (`$state` מקומי, לא reactive). דוח:
+`reports/drive-coding/slice-display-toggle-consistency-avigail.md`.
+
+### שינויי-כיוון / merge-ordering
+- **תלות-מיזוג ב-enter-toggle** (GO, טרם מוזג): שני ה-slices נוגעים בכרטיס + reset.
+  הכרעה פתוחה (§9 Q1): למזג enter-toggle קודם (לינארי, נקי) **או** לשרשר slice זה עליו.
+  ממתין להכרעת המשתמשת לפני dispatch.
+
+### רעיונות שנדחו
+- **לא לגעת (known issue בלבד)** — נדחה; המשתמשת ביקשה עקביות מפורשות, וזה מחמיר עם
+  המתג השלישי (enterToSend) שנכנס לאותו כרטיס.
+- **להפוך את `expandTools` לשלילי** (כדי "להתאים" ל-collapse) — נדחה; חיובי ("Show")
+  הוא המודל הברור; הפכנו את `collapseThoughts` אליו, לא להפך.
+- **בלי migration** (ערך ישן נופל ל-default) — נדחה; זול לשמר העדפה (2 תנאים ב-load).
+
 ## 2026-06-25 — slice-latex-math: רינדור LaTeX/KaTeX עם allowlist פר-מקור
 
 ### רציונל
