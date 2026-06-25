@@ -2,7 +2,7 @@
 /**
  * AppHeader — header צף עם fade gradient.
  *
- * כולל: [☰ דסקטופ בלבד] [כותרת-סשן ממורכזת] ··· [cwd chip + status dot]
+ * כולל: [☰ דסקטופ בלבד] [כותרת-סשן flex-1, עד 2 שורות] ··· [cwd chip + status dot]
  *
  * redesign-fix: disconnect + audio master + ⚙ הגדרות הועברו ל-SessionOptionsPanel
  * (ה-⚙ ירד מה-header בכל המצבים — בראש רשימת הפעולות בפאנל/sheet).
@@ -34,7 +34,7 @@ const cwdLabel = $derived(
 const headerLabel = $derived(session.sessionTitle?.trim() ? session.sessionTitle : agentName)
 </script>
 
-<header class="absolute top-0 inset-x-0 z-20 flex items-start gap-3 px-4 pt-3 pb-8 pointer-events-none">
+<header class="absolute top-0 inset-x-0 z-20 flex items-center gap-3 px-4 pt-3 pb-8 pointer-events-none">
   <!-- fade layer -->
   <div
     class="absolute inset-0 -z-10 backdrop-blur-sm"
@@ -53,17 +53,13 @@ const headerLabel = $derived(session.sessionTitle?.trim() ? session.sessionTitle
     </button>
   {/if}
 
-  <!-- כותרת ממורכזת אבסולוטית: כותרת-הסשן בלבד (ה-cwd עבר ל-inline-end) -->
-  <!-- start-1/2 (לוגי); -translate-x-1/2 = מרכוז גאומטרי (a-directional, תקין) -->
-  <div class="absolute start-1/2 -translate-x-1/2 top-3 h-9 flex items-center justify-center pointer-events-none max-w-[60%]">
+  <!-- center: עמודת הכותרת — תופסת את המקום שנשאר, נשברת עד 2 שורות -->
+  <div class="flex-1 min-w-0 flex items-center justify-center pointer-events-none">
     <span
-      class="text-[15px] font-semibold shrink-0 truncate max-w-[min(60vw,22rem)]"
+      class="{responsive.isMobile ? 'text-[13px]' : 'text-[15px]'} font-semibold text-center leading-tight line-clamp-2"
       title={headerLabel}
     >{headerLabel}</span>
   </div>
-
-  <!-- spacer — דוחק את קבוצת-הסטטוס ל-inline-end -->
-  <div class="flex-1"></div>
 
   <!-- קבוצת-סטטוס (inline-end): cwd chip + נקודת-חיבור. בעברית inline-end = שמאל. -->
   <!-- קלאסים לוגיים בלבד: gap/px/py סימטריים (תקין). אסור ml/mr/pl/pr/left/right חדשים. -->
