@@ -3,14 +3,14 @@
  *
  * ── Pipeline (two-pass) ──────────────────────────────────────────────────────
  * renderMarkdown(text):
- *   1. marked.parse(text) — עם extension פנימי (נרשם פעם אחת ברמת מודול):
+ *   1. parseToHtml(text) [markdown-parse.ts] — מנרמל bidi, marked.parse עם 4 extensions:
  *        tokenizer מזהה $$..$$  \[..\]  $.$  \(..\)  (block לפני inline)
  *        renderer קורא katex.renderToString → שומר HTML ב-currentMap → מחזיר placeholder
  *        placeholder = sentinels PUA (U+E000/E001) — שורדים marked+DOMPurify כטקסט.
- *      → markdownHtml עם placeholders (ה-KaTeX HTML עדיין לא נמצא כאן)
+ *      → { html: markdownHtml, katexFragments } (ה-KaTeX HTML עדיין לא מוחלף)
  *   2. DOMPurify.sanitize(markdownHtml, MARKDOWN_ALLOW) — allowlist שמרני, ללא span/style.
  *      ה-sentinels = טקסט → שורדים. <span style> גולמי של מודל → נמחק. ← הלב האבטחתי.
- *   3. כל KaTeX HTML ב-currentMap: DOMPurify.sanitize(katexHtml, KATEX_ALLOW) — allowlist נדיב
+ *   3. כל KaTeX HTML ב-katexFragments: DOMPurify.sanitize(katexHtml, KATEX_ALLOW) — allowlist נדיב
  *      (span/style/MathML/SVG). כל אחד מסונן בנפרד.
  *   4. החלף sentinels ב-katexClean[i] → תוצאה סופית.
  *
@@ -25,14 +25,20 @@
  *  katex.renderToString עובד ב-node (ללא DOM) — אומת אמפירית.
  *
  * ── Extension registration ───────────────────────────────────────────────────
- *  marked.use({ extensions }) נרשם פעם אחת ברמת מודול.
- *  currentMap הוא module-level ref ש-renderMarkdown מאפס per-call.
+ *  marked.use({ extensions }) נרשם פעם אחת ברמת מודול (ב-markdown-parse.ts).
+ *  currentMap הוא module-level ref ש-parseToHtml מאפס per-call.
  *  אסור marked.use בתוך renderMarkdown — היה רושם extension מצטבר בכל קריאה.
  */
 
 import DOMPurify from "dompurify"
-import katex from "katex"
-import { marked, type Tokens } from "marked"
+import {
+  BLOCK_SENTINEL,
+  INLINE_SENTINEL,
+  parseToHtml,
+} from "./markdown-parse"
+
+// ─── Re-export normalizeLineLeadingBidi לנוחות הטסטים ────────────────────────
+export { normalizeLineLeadingBidi } from "./markdown-parse"
 
 // ─── Allowlists ─────────────────────────────────────────────────────────────
 
@@ -142,139 +148,6 @@ const KATEX_ATTR = [
   "preserveAspectRatio",
 ]
 
-// ─── Sentinel (Private-Use Area) ─────────────────────────────────────────────
-// U+E000 = block math placeholder prefix, U+E001 = inline math placeholder prefix.
-// שורדים marked.parse ו-DOMPurify.sanitize כטקסט. Collision-resistant ולא מתפרשים כ-markdown.
-const BLOCK_SENTINEL = ""
-const INLINE_SENTINEL = ""
-
-// ─── Module-level KaTeX map ───────────────────────────────────────────────────
-// נרשם ברמת מודול, מתאפס בכל קריאה ל-renderMarkdown.
-// אסור להזיז את marked.use לתוך renderMarkdown (יירשום extension מצטבר per-call).
-let currentMap: string[] = []
-
-function renderKatex(tex: string, displayMode: boolean): string {
-  return katex.renderToString(tex, {
-    displayMode,
-    throwOnError: false,
-    output: "htmlAndMathml",
-    maxSize: 50,
-    maxExpand: 1000,
-    trust: false,
-  })
-}
-
-function storePlaceholder(html: string): string {
-  const idx = currentMap.length
-  currentMap.push(html)
-  return `${BLOCK_SENTINEL}${idx}${BLOCK_SENTINEL}`
-}
-
-function storeInlinePlaceholder(html: string): string {
-  const idx = currentMap.length
-  currentMap.push(html)
-  return `${INLINE_SENTINEL}${idx}${INLINE_SENTINEL}`
-}
-
-// ─── marked extension (נרשם פעם אחת ברמת מודול) ──────────────────────────────
-// ⚠️ block לפני inline — $$...$$ ו-\[..\] חייבים להיות ראשונים ברשימה,
-// אחרת $$ עלול להיתפס כ-2× $..$ (finding #3, אמות ע"י אביגיל).
-marked.use({
-  extensions: [
-    // ── Block: $$...$$ ────────────────────────────────────────────────────
-    {
-      name: "mathBlock",
-      level: "block",
-      start(src: string) {
-        return src.indexOf("$$")
-      },
-      tokenizer(src: string) {
-        const match = /^\$\$([\s\S]+?)\$\$/.exec(src)
-        if (match) {
-          return {
-            type: "mathBlock",
-            raw: match[0],
-            text: (match[1] ?? "").trim(),
-          }
-        }
-        return undefined
-      },
-      renderer(token: Tokens.Generic) {
-        return storePlaceholder(renderKatex(String(token.text ?? ""), true))
-      },
-    },
-    // ── Block: \[...\] ────────────────────────────────────────────────────
-    // ⚠️ הבחנה מ-\( — prefix משותף \. ה-tokenizer מחפש \[ ספציפית.
-    {
-      name: "mathBlockBracket",
-      level: "block",
-      start(src: string) {
-        return src.indexOf("\\[")
-      },
-      tokenizer(src: string) {
-        const match = /^\\\[([\s\S]+?)\\\]/.exec(src)
-        if (match) {
-          return {
-            type: "mathBlockBracket",
-            raw: match[0],
-            text: (match[1] ?? "").trim(),
-          }
-        }
-        return undefined
-      },
-      renderer(token: Tokens.Generic) {
-        return storePlaceholder(renderKatex(String(token.text ?? ""), true))
-      },
-    },
-    // ── Inline: $...$ ─────────────────────────────────────────────────────
-    {
-      name: "mathInline",
-      level: "inline",
-      start(src: string) {
-        return src.indexOf("$")
-      },
-      tokenizer(src: string) {
-        // ה-tokenizer של marked מכבד code spans — אם $ נמצא בתוך `code`, marked לא יקרא לנו
-        const match = /^\$([^$\n]+?)\$/.exec(src)
-        if (match) {
-          return {
-            type: "mathInline",
-            raw: match[0],
-            text: (match[1] ?? "").trim(),
-          }
-        }
-        return undefined
-      },
-      renderer(token: Tokens.Generic) {
-        return storeInlinePlaceholder(renderKatex(String(token.text ?? ""), false))
-      },
-    },
-    // ── Inline: \(...\) ───────────────────────────────────────────────────
-    // ⚠️ הבחנה מ-\[ — ה-tokenizer מחפש \( ספציפית.
-    {
-      name: "mathInlineParen",
-      level: "inline",
-      start(src: string) {
-        return src.indexOf("\\(")
-      },
-      tokenizer(src: string) {
-        const match = /^\\\(([\s\S]+?)\\\)/.exec(src)
-        if (match) {
-          return {
-            type: "mathInlineParen",
-            raw: match[0],
-            text: (match[1] ?? "").trim(),
-          }
-        }
-        return undefined
-      },
-      renderer(token: Tokens.Generic) {
-        return storeInlinePlaceholder(renderKatex(String(token.text ?? ""), false))
-      },
-    },
-  ],
-})
-
 // ─── DOMPurify hook (נרשם פעם אחת ברמת מודול) ────────────────────────────────
 // כל קישור בתוכן (markdown) נפתח בלשונית חדשה — לחיצה לא מנווטת את ה-SPA מחוץ לשיחה.
 // rel="noopener noreferrer": מונע tabnabbing ולא מדליף referrer.
@@ -287,36 +160,6 @@ if (typeof document !== "undefined") {
   })
 }
 
-// ─── Bidi normalization ──────────────────────────────────────────────────────
-// תווי bidi-control: U+200E (LRM), U+200F (RLM), U+202A-U+202E, U+2066-U+2069
-const BIDI = "‎‏‪-‮⁦-⁩"
-
-/**
- * מנרמל תווי bidi-control בתחילת שורה (heuristic היברידי — אושר ע"י המשתמשת).
- *
- * לכל שורה שמתחילה ברצף bidi-control:
- * - לפני math marker ($$ או \[): מוחק את ה-bidi-marks (RLM בנוסחה → unknownSymbol ב-KaTeX).
- * - לפני block marker (# > - * + | ספרה.): דוחף אחרי ה-marker (marked מזהה, RLM נוחת בתוכן).
- * - לפני טקסט רגיל: משאיר — RLM שם ניטרלי/מועיל.
- *
- * לא נוגע ב-bidi באמצע שורה.
- */
-export function normalizeLineLeadingBidi(text: string): string {
-  // סדר חשוב: math-delete לפני push
-  // שלב 1: מחק bidi-marks לפני math markers ($$, \[)
-  let result = text.replace(
-    new RegExp(`^[${BIDI}]+(?=\\$\\$|\\\\\\[)`, "gmu"),
-    "",
-  )
-  // שלב 2: דחוף bidi-marks אחרי block marker (כולל הרווח שאחרי)
-  // \\| = table marker (pipe בתחילת שורת טבלה)
-  result = result.replace(
-    new RegExp(`^([${BIDI}]+)(#{1,6} |>+ |[-*+] |\\d+[.)] |\\| ?)`, "gmu"),
-    "$2$1",
-  )
-  return result
-}
-
 /**
  * מרנדר Markdown ל-HTML מחוטא, עם תמיכה ב-KaTeX LaTeX.
  * בטוח לשימוש עם {@html} בתוך קומפוננטות Svelte.
@@ -327,25 +170,14 @@ export function normalizeLineLeadingBidi(text: string): string {
 export function renderMarkdown(text: string): string {
   if (text.length === 0) return ""
 
-  // אפס את ה-map לפני כל קריאה (module-level ref, reset per-call)
-  currentMap = []
-
-  // נרמול bidi-control בתחילת שורה — לפני marked.parse
-  const normalized = normalizeLineLeadingBidi(text)
-
-  // Pass 1: marked.parse + extension פנימי → placeholders במקום KaTeX HTML
-  const markdownHtml = marked.parse(normalized, {
-    async: false,
-    breaks: true,
-    gfm: true,
-  }) as string
+  // Pass 1: parseToHtml — normalizeLineLeadingBidi + marked.parse + extensions → { html, katexFragments }
+  const { html: markdownHtml, katexFragments } = parseToHtml(text)
 
   // SSR: DOMPurify דורש DOM — דלג בסביבות ללא document
   if (typeof document === "undefined") {
     // ב-SSR — החזר HTML גולמי עם placeholders (יוחלפו ב-KaTeX HTML raw)
     // הסריאליזציה של Svelte מטפלת בזה בבטחה
-    const snapshot = [...currentMap]
-    return replacePlaceholders(markdownHtml, snapshot)
+    return replacePlaceholders(markdownHtml, katexFragments)
   }
 
   // Pass 2: sanitize markdown HTML — ללא span/style (מוחק <span style> גולמי של מודל)
@@ -356,7 +188,7 @@ export function renderMarkdown(text: string): string {
   })
 
   // Pass 3: sanitize כל KaTeX HTML בנפרד — עם span/style (מסלול מהימן)
-  const cleanKatex = currentMap.map((katexHtml) =>
+  const cleanKatex = katexFragments.map((katexHtml) =>
     DOMPurify.sanitize(katexHtml, {
       ALLOWED_TAGS: KATEX_TAGS,
       ALLOWED_ATTR: KATEX_ATTR,
