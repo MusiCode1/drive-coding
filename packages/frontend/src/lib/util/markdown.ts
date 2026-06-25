@@ -37,8 +37,8 @@ import {
   parseToHtml,
 } from "./markdown-parse"
 
-// ─── Re-export normalizeLineLeadingBidi לנוחות הטסטים ────────────────────────
-export { normalizeLineLeadingBidi } from "./markdown-parse"
+// ─── Re-export normalizeInvisibles לנוחות הטסטים ────────────────────────────
+export { normalizeInvisibles } from "./markdown-parse"
 
 // ─── Allowlists ─────────────────────────────────────────────────────────────
 
@@ -170,7 +170,7 @@ if (typeof document !== "undefined") {
 export function renderMarkdown(text: string): string {
   if (text.length === 0) return ""
 
-  // Pass 1: parseToHtml — normalizeLineLeadingBidi + marked.parse + extensions → { html, katexFragments }
+  // Pass 1: parseToHtml — normalizeInvisibles + marked.parse + extensions → { html, katexFragments }
   const { html: markdownHtml, katexFragments } = parseToHtml(text)
 
   // SSR: DOMPurify דורש DOM — דלג בסביבות ללא document

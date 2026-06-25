@@ -2,7 +2,7 @@
 /**
  * markdown-bidi.test.ts — failing tests עבור slice-latex-math-bidi-fix.
  *
- * Commit 0 (TDD — RED): מתעד את ההתנהגות הרצויה לפני שנוסיף normalizeLineLeadingBidi.
+ * Commit 0 (TDD — RED): מתעד את ההתנהגות הרצויה לפני שנוסיף normalizeInvisibles (בוצע ב-slice-latex-math-bidi-fix).
  * RLM/LRM בתחילת שורה מונע זיהוי block markers ע"י marked (^ עוגן).
  * math markers ($$) כבר מרונדרים אך RLM דולף לנוסחה → unknownSymbol ב-KaTeX.
  */

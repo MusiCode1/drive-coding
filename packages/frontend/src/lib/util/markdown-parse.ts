@@ -2,8 +2,8 @@
  * markdown-parse.ts — שכבת parse טהורה (ללא DOMPurify), בר-בדיקה ב-environment:node.
  *
  * מייצא:
- *  - normalizeLineLeadingBidi(text) — מנרמל bidi-control בתחילת שורה
- *  - parseToHtml(text) — מנרמל bidi, מריץ marked.parse עם 4 extensions, מחזיר { html, katexFragments }
+ *  - normalizeInvisibles(text) — מנרמל תווי bidi-control + zero-width + soft-hyphen בכל המיקומים
+ *  - parseToHtml(text) — מנרמל invisibles, מריץ marked.parse עם 4 extensions, מחזיר { html, katexFragments }
  *  - BLOCK_SENTINEL, INLINE_SENTINEL — sentinels משותפים (מיובאים ע"י markdown.ts)
  *
  * ⚠️ @internal — parseToHtml לא מסנן (DOMPurify). אסור לחשוף HTML שמוחזר מכאן ישירות ל-{@html}.
@@ -147,34 +147,50 @@ marked.use({
   ],
 })
 
-// ─── Bidi normalization ──────────────────────────────────────────────────────
-// תווי bidi-control: U+200E (LRM), U+200F (RLM), U+202A-U+202E, U+2066-U+2069
-const BIDI = "‎‏‪-‮⁦-⁩"
+// ─── Invisibles normalization ────────────────────────────────────────────────
+// char-class: INVIS = bidi-control + zero-width + soft-hyphen + BOM + arabic-letter-mark
+// NBSP = non-breaking space variants (ממופה לרווח, לא נמחק)
+const INVIS = "\\u200B-\\u200F\\u202A-\\u202E\\u2060\\u2066-\\u2069\\uFEFF\\u00AD\\u061C"
+const NBSP = "\\u00A0\\u202F"
+const reInvis = new RegExp(`[${INVIS}]`, "gu")
 
 /**
- * מנרמל תווי bidi-control בתחילת שורה (heuristic היברידי — אושר ע"י המשתמשת).
+ * מנרמל תווי bidi-control, zero-width, soft-hyphen ו-BOM בכל המיקומים.
  *
- * לכל שורה שמתחילה ברצף bidi-control:
- * - לפני math marker ($$ או \[): מוחק את ה-bidi-marks (RLM בנוסחה → unknownSymbol ב-KaTeX).
- * - לפני block marker (# > - * + | ספרה.): דוחף אחרי ה-marker (marked מזהה, RLM נוחת בתוכן).
- * - לפני טקסט רגיל: משאיר — RLM שם ניטרלי/מועיל.
+ * עקרון: "הצמד את התו הבלתי-נראה לטקסט אמיתי; מחק רק באזורי-תחביר-טהור (separator, math)."
  *
- * לא נוגע ב-bidi באמצע שורה.
+ * 1. NBSP-like → רווח רגיל (משמר semantics אחרי #, מתקן bold)
+ * 2. שורת separator → strip INVIS (שורה שכולה [|:\-\s+INVIS] ובה מקף ויש בה |)
+ * 3. math spans → strip INVIS ($$..$$, \[..\], \(..\) — NOT $..$ inline, finding #2: מחיר $5..$10)
+ * 4a. INVIS לפני math-marker בתחילת שורה → מחק
+ * 4b. INVIS לפני block-marker בתחילת שורה → הזז אחרי ה-marker
+ * 5. השאר (INVIS צמוד לטקסט) → נשמר
+ *
+ * ⚠️ finding #2: inline $..$ אינו מנורמל — "costs $5 ‏x $10" שומר invis. נדיר להיות math שם.
  */
-export function normalizeLineLeadingBidi(text: string): string {
-  // סדר חשוב: math-delete לפני push
-  // שלב 1: מחק bidi-marks לפני math markers ($$, \[)
-  let result = text.replace(
-    new RegExp(`^[${BIDI}]+(?=\\$\\$|\\\\\\[)`, "gmu"),
-    "",
+export function normalizeInvisibles(text: string): string {
+  // 1. NBSP-like → space
+  let t = text.replace(new RegExp(`[${NBSP}]`, "gu"), " ")
+  // 2. separator rows: strip INVIS
+  t = t.replace(/^.*$/gm, (line) => {
+    const s = line.replace(reInvis, "")
+    return /\|/.test(s) && /^[\s|:-]*-[\s|:-]*$/.test(s) ? s : line
+  })
+  // 3. math spans: strip — block+paren only.
+  // NOT inline $..$ (finding #2): "$5 ... $10" (מחיר) ייתפס כ-span ויאבד invis = content-mutation.
+  // invis בתוך $x$ inline math (נדיר) → נשאר → רעש unknownSymbol קל ב-KaTeX, לא שבירה.
+  t = t.replace(
+    /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)/g,
+    (m) => m.replace(reInvis, ""),
   )
-  // שלב 2: דחוף bidi-marks אחרי block marker (כולל הרווח שאחרי)
-  // \\| = table marker (pipe בתחילת שורת טבלה)
-  result = result.replace(
-    new RegExp(`^([${BIDI}]+)(#{1,6} |>+ |[-*+] |\\d+[.)] |\\| ?)`, "gmu"),
+  // 4a. line-start before math-marker: delete
+  t = t.replace(new RegExp(`^[${INVIS}]+(?=\\$\\$|\\\\\\[)`, "gmu"), "")
+  // 4b. line-start before block-marker: relocate after marker
+  t = t.replace(
+    new RegExp(`^([${INVIS}]+)(#{1,6} |>+ |[-*+] |\\d+[.)] |\\| ?)`, "gmu"),
     "$2$1",
   )
-  return result
+  return t
 }
 
 /**
@@ -187,7 +203,7 @@ export function normalizeLineLeadingBidi(text: string): string {
  */
 export function parseToHtml(text: string): { html: string; katexFragments: string[] } {
   currentMap = []
-  const normalized = normalizeLineLeadingBidi(text)
+  const normalized = normalizeInvisibles(text)
   const html = marked.parse(normalized, {
     async: false,
     breaks: true,
