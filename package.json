@@ -19,7 +19,9 @@
     "lint:i18n": "./scripts/lint-no-hebrew-in-code.sh",
     "lint:rtl": "node scripts/lint-no-physical-classes.mjs",
     "format": "biome format --write .",
-    "hooks:install": "git config core.hooksPath .githooks"
+    "hooks:install": "git config core.hooksPath .githooks",
+    "fe:build": "node scripts/dc-build-fe.mjs",
+    "fe:build:if-missing": "node scripts/dc-build-fe.mjs --if-missing"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",
