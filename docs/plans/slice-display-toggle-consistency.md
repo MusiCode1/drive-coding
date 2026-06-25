@@ -1,7 +1,7 @@
 # Slice display-toggle-consistency — עקביות מחווני "תצוגת צ'אט" — תוכנית
 
 > **תאריך**: 2026-06-25 · **dispatch-ready**: 2026-06-25 (מרדכי)
-> **סטטוס**: ✅ **READY — מאושר ל-dispatch** (אביגיל, `reports/drive-coding/slice-display-toggle-consistency-avigail.md`). base=`dev` (916dc49).
+> **סטטוס**: ✅ **הושלם** — commit `cf4cb86`, branch `slice-display-toggle-consistency`. ממתין ל-merge ע"י מרדכי.
 > **Complexity**: 3/10 (verifier: light)
 > **תלות (depends_on)**: `[chat-render-polish]` — ✅ **מוזג ל-dev** (`cc5ff66`). base = `dev`.
 > ✅ **Q1/R1 נפתרו**: `enter-toggle` **כבר מוזג ל-dev** (`160736b`, `enterToSend` בקוד) → base=dev מכיל אותו, אין conflict, לינארי. (ה-§9 Q1 וה-§6 R1 התיישנו — ראה הערות שם.)

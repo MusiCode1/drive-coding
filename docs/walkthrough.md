@@ -20,7 +20,16 @@
 
 ### סטיות
 
-שתי commits מה-brief אוחדו לאחד — ה-briefing ציין typecheck ירוק לפני כל commit, וה-components לא יכולים להיות ירוקים אחרי שינוי ה-VM בלי שינוי ה-components. commit אחד עם כל השינויים — approach mixed (unit tests + קוד + UI) + browser smoke יאומת בנפרד.
+שתי commits מה-brief אוחדו לאחד — ה-briefing ציין typecheck ירוק לפני כל commit, וה-components לא יכולים להיות ירוקים אחרי שינוי ה-VM בלי שינוי ה-components. commit אחד עם כל השינויים — approach mixed (unit tests + קוד + UI).
+
+### Browser smoke (אומת ב-playwright-cli)
+
+1. /settings — כרטיס "תצוגת צ'אט" מציג "הצג מחשבות" (ON) + "הצג כלים" (OFF) + "Enter שולח" (ON). תוויות חדשות, פולריות אחידה.
+2. כיבוי "הצג מחשבות" → מתג מתכבה.
+3. Reset → "הצג מחשבות" חוזר ON, "הצג כלים" נשאר OFF.
+4. migration: localStorage עם `{"collapseThoughts":true}` + reload → "הצג מחשבות" OFF (כצפוי).
+5. /chat?mock=greeting — ThoughtBubble פתוחה כברירת מחדל (showThoughts:true); ToolBubble לא רלוונטית ב-mock=greeting.
+6. typecheck 0 errors, lint:i18n ✓.
 
 ---
 
