@@ -1,5 +1,39 @@
 # Decisions — drive-coding
 
+## 2026-06-25 — slice-fe-build-decouple: ניתוק בילד-FE מ-restart של הסרוויס
+
+### רציונל
+רענון FE בפריסה המקומית דרש `systemctl restart`, שמריץ `pnpm build` מלא **וגם** מפיל את
+תהליך ה-bun → כל סוכני ה-ACP (children של ה-BE) נהרגים. זה כפה הרג-סוכנים + בילד איטי על כל
+שינוי FE קוסמטי. העובדה המאפשרת: ה-BE מגיש את ה-FE דרך Hono `serveStatic` שקורא מהדיסק
+**per-request** (אין קאש בזיכרון) → בילד לתוך אותה תיקייה תוך-כדי ריצה מתפרסם ב-request הבא,
+בלי restart.
+
+### החלטות
+1. **בילד היחיד שנחוץ בריצה = FE.** core/backend רצים מ-src עם bun (exports→src), ה-`tsc --build`
+   שלהם הם artifacts לטייפצ'ק בלבד. לכן ExecStartPre עובר מ-`pnpm build` מלא ל-FE-only
+   `build-if-missing` (תקדים: `dc-launch.mjs`).
+2. **swap אטומי בשני `mv`** (build→old, staging→build) ולא symlink — החלון הלא-אטומי תת-מילישנייה
+   (metadata-only), עלות נמוכה מול ניהול-גרסאות/symlink. בילד ה-vite האיטי רץ ל-`.build-staging`
+   בלי לגעת ב-`build/` החי.
+3. **outDir פרמטרי דרך `FE_BUILD_OUT`** ב-svelte.config.js (ברירת-מחדל `"build"` → אפס שינוי
+   התנהגות). הוכח שה-cwd של `pnpm --filter` הוא package-dir, אז נתיב יחסי נפתר נכון.
+4. **restart שמור ל-BE בלבד** — מודע ובכוונה. הטייפצ'ק כשער-פריסה נזנח (ה-BE רץ untyped מ-src
+   ממילא); נשאר באחריות לולאת-הפיתוח.
+5. **התקנת ה-units החיים = צעד post-merge נפרד** הדורש אישור מפורש (שינוי שירות-חי, SOUL.md).
+   הסבר עצמו נוגע רק בקבצי-מקור ב-`deploy/systemd/`.
+
+### ממצאי אביגיל
+verdict=READY בסבב ראשון (נדיר). כל הטענות הארכיטקטוניות אומתו אמפירית: serveStatic per-request
+(createReadStream, ללא קאש), cwd של pnpm filter = package-dir, אין service-worker,
+`.gitignore build/` לא תופס `.build-staging`. שני findings minor בלבד (drop-in `.service.d`
+לא-בתחום + תבנית grep path-only) — הוטמעו כהערות ב-brief.
+
+### רעיונות שנדחו
+- **symlink-based atomic deploy** — אטומי-לחלוטין אבל overkill לפריסה אישית (ניהול גרסאות + ניקוי).
+- **`bun --watch` ל-BE** — היה מחזיר את הרג-ה-children בכל שינוי. נדחה.
+- **השארת `pnpm build` מלא כשער-טייפצ'ק** — סותר את מטרת הרענון-המהיר.
+
 ## 2026-06-25 — slice-chat-virtualization: windowing לרשימת הבועות (virtua + Option B)
 
 ### רציונל
