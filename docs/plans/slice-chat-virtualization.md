@@ -1,9 +1,9 @@
 # Slice chat-virtualization — windowing + follow/hold לרשימת הבועות — תוכנית
 
 > **תאריך**: 2026-06-25 · **עודכן**: 2026-06-25 (batched auto-scroll — דיון `623c749f`)
-> **סטטוס**: 🔄 **עודכן — ממתין לאימות אביגיל מחדש** (היה READY r3; מנגנון ה-follow שונה מ-re-pin רציף ל-**batched** לפי החלטת המשתמשת. plan_verified חוזר ל-false עד verdict=READY)
+> **סטטוס**: ✅ **READY — מאומת (אביגיל r8, 0 findings, מול dev d15b5cf)** · plan_verified=true · dispatch_ready (אחרי אישור). מנגנון ה-follow שונה מ-re-pin רציף ל-**batched** לפי החלטת המשתמשת; היסטוריית אימות: r4→r5=USABLE-AFTER-FIX (hook→`ontoggle`, init-fire) → r6=READY → r7=USABLE-AFTER-FIX (drift אחרי merge של display-toggle+session-title) → **r8=READY**. דוח אחרון: `brief-driven-slices/reports/drive-coding/slice-chat-virtualization-avigail-r8.md`
 > **Complexity**: 8/10 (קצה עליון אחרי תוספת batched+toggle-intent+turn-boundary; verifier: **calev-heavy** + phase-check אחרי Commit 1)
-> **תלות (depends_on)**: [] — עצמאי. base = `dev` (1ac055d — אחרי merge של latex chain `cb66b8a`). לא חופף ל-session-title (AppHeader/VM) או latex (markdown.ts) — נוגע ב-scroll/AppShell/ChatBubbles + toggle של ToolBubble/ThoughtBubble.
+> **תלות (depends_on)**: [] — עצמאי. base = `dev` (d15b5cf — אחרי merge של display-toggle-consistency `96ed28e` ו-session-title-header). לא חופף ל-session-title (AppHeader/VM) או latex (markdown.ts) — נוגע ב-scroll/AppShell/ChatBubbles + toggle של ToolBubble/ThoughtBubble.
 
 > **רקע-מחקר** (נעשה ב-2026-06-25, מתועד ב-decisions): נבחרה הספרייה **`virtua`** (לא TanStack-headless ולא ידני) בזכות zero-config dynamic measurement + `Virtualizer` עם `scrollRef` חיצוני. נבחר **Option B** — AppShell **נשאר owner ה-scroll** (חוק זהב #4 / redesign-2 לא מתהפך), virtua עושה windowing בתוך ה-scroll node הקיים. רמת חסינות **MVP+**: windowing + **batched follow** + user-intent window. **hold-target (בועה גבוהה-מ-viewport) נדחה ל-future.**
 
@@ -11,7 +11,7 @@
 
 ## §0 — Pre-flight
 
-> ⚠️ **סדר dispatch (collision):** ה-slice הזה נוגע ב-`ToolBubble.svelte`/`ThoughtBubble.svelte` (toggle-intent), ו-`slice-display-toggle-consistency` משכתב את **אותם** קבצים (polarity של `expandTools`/`collapseThoughts` + migration). **אסור להריץ את שניהם במקביל.** סדר מועדף: **display-toggle-consistency ראשון → merge ל-dev → אז chat-virtualization על dev המעודכן** (ה-`<details bind:open>` כבר יציב, וה-`ontoggle` נוסף מעליו). אם הסדר יתהפך — rebase + פתרון collision ידני על 2 הקבצים.
+> ✅ **collision נפתר:** ה-slice נוגע ב-`ToolBubble.svelte`/`ThoughtBubble.svelte` (toggle-intent). `slice-display-toggle-consistency` (שמשכתב את אותם קבצים — polarity חיובית `showThoughts`/`showTools` + migration) **כבר מוזג ל-dev** (`96ed28e`), וכך גם `session-title-header`. dev tip = `d15b5cf`. אין עוד התנגשות-סדר — ה-`<details bind:open>` יציב על dev, וה-`ontoggle` נוסף מעליו. dispatch ישירות על dev.
 
 ### Worktree
 ```bash
@@ -103,7 +103,7 @@ type ChatScrollBridge = {
 3. **`{#if bridge.scrollEl}` עוטף את ה-Virtualizer** — מונע מ-virtua ליפול ל-fallback "parent element כ-scroller" אם ה-bind טרם רץ (אחרת ה-`max-w-2xl` wrapper הופך לקונטיינר-גלילה שגוי).
 4. **batched, לא רציף** — ה-`ResizeObserver`/onScroll **לא** קוראים `scrollToIndex` ישירות בכל אירוע. הם רק מעדכנים מדדים; פונקציה טהורה `shouldFollowJump` (Commit 0) מחליטה אם **עכשיו** מותר לקפוץ (distance ≥ סף **וגם** floor עבר). הקפיצה עצמה (`scrollToIndex(last,{align:'end'})`) — תחתית מלאה, **בלי page-cap**. זה מה שהופך "follow" ל"קריא" במקום "קופצני".
 5. **toggle ידני = user-intent (לא scroll event)** — פתיחה/קיפול בועה משנה את `open`, אבל **אין handler** — שני הקבצים משתמשים ב-`<details bind:open>` (two-way binding נטיב). ⚠️ **ה-hook הוא ה-event `ontoggle` על אלמנט ה-`<details>`** (לא `onclick`, לא עטיפת `open` ב-getter/setter — זה מסבך מיותר): `<details bind:open ontoggle={onUserToggle}>`. `ontoggle` יורה בפתיחה ובסגירה — שתיהן user-intent → תקין.
-   ⚠️ **init-fire — חובה guard**: הקוד הוא `<details bind:open>` כש-`open=$state(...)` (לא `<details open>` סטטי). תחת `ssr=false` (CSR-only) Svelte קובע `open` **פרוגרמטית** ב-mount — ולפי HTML spec מעבר `open` null→true פרוגרמטית **כן מתזמן `toggle` event**. `ThoughtBubble` ברירת-מחדל `open=true` (`collapseThoughts=false`) → `ontoggle` **יורה ב-init** → היה מכבה `following` בטעינה ראשונית (regression ל-DoD "נוחת בתחתית"). **fix**: guard `ready` שמסונן את ה-fire הראשון —
+   ⚠️ **init-fire — חובה guard**: הקוד הוא `<details bind:open>` כש-`open=$state(...)` (לא `<details open>` סטטי). תחת `ssr=false` (CSR-only) Svelte קובע `open` **פרוגרמטית** ב-mount — ולפי HTML spec מעבר `open` null→true פרוגרמטית **כן מתזמן `toggle` event**. `ThoughtBubble` ברירת-מחדל `open=true` (`showThoughts=true` — הפולריות החיובית מ-display-toggle-consistency שמוזג ל-dev; `collapseThoughts` קיים רק בבלוק ה-migration) → `ontoggle` **יורה ב-init** → היה מכבה `following` בטעינה ראשונית (regression ל-DoD "נוחת בתחתית"). **fix**: guard `ready` שמסונן את ה-fire הראשון —
    ```ts
    let ready = false
    onMount(() => requestAnimationFrame(() => { ready = true }))   // ה-init-toggle (task בזמן mount) קודם ל-rAF → מסונן
@@ -292,7 +292,7 @@ cd packages/frontend && pnpm --filter @drive-coding/frontend typecheck && pnpm -
 | ה-handle של virtua ב-Svelte לא נקשר כצפוי | אי-ודאות מנגנון bind | אחרי `pnpm add virtua` — אמת את מנגנון ה-`bind:this` + שמות ה-handle מול `node_modules/virtua/dist/svelte`. אם שונה מ-§4 → עדכן + דווח (escalation). |
 | **batched "נתקע" בסוף stream** (אירוע-זנב נחסם ע"י floor) | לוגיקת throttle-floor | `$effect`/observer יורה שוב אחרי השקט + `setTimeout(floorMs)` משלים. DoD-row "נוחת בתחתית מלאה" מאמת חי |
 | **toggle-intent נוגע ב-2 leaf components** (ToolBubble/ThoughtBubble) | parallel-safe-code | additive `ontoggle` one-liner על ה-`<details bind:open>` הקיים + optional-chaining; **הבועה מאותתת בלבד**, המוטציה ב-AppShell (חוק זהב #4 נשמר). |
-| **collision עם `slice-display-toggle-consistency`** — משכתב את **אותם** `expandTools`/`collapseThoughts` ב-ToolBubble/ThoughtBubble (polarity + migration) | roadmap: display-toggle = "dispatch מיידי" | ⚠️ **תיאום-סדר אקטיבי, לא בדיקה חד-פעמית**: אסור להריץ את שני ה-slices במקביל על אותם 2 קבצים. **סדר מועדף: display-toggle-consistency ראשון → merge → אז chat-virtualization** (ה-toggle כבר יציב). מתועד ב-§dispatch ordering למטה |
+| **collision עם `slice-display-toggle-consistency`** — שכתב את אותם `showThoughts`/`showTools` (לשעבר `expandTools`/`collapseThoughts`) ב-ToolBubble/ThoughtBubble (polarity + migration) | roadmap: display-toggle מוזג ל-dev | ✅ **נפתר**: display-toggle-consistency כבר מוזג ל-dev (`96ed28e`). ה-toggle יציב, אין עוד התנגשות-סדר. dispatch ישירות על dev (`d15b5cf`) |
 | **lineHeight = "normal"** (לא מספר) מ-getComputedStyle | CSS computed value | fallback ~24px; אמת ש-distance-trigger לא שבור (אחרת קופץ על כל פיקסל או לעולם לא) |
 | **init-fire של `ontoggle`** — `<details bind:open>` מ-`$state` תחת CSR מתזמן `toggle` ב-mount → ThoughtBubble (פתוח כברירת-מחדל) מכבה follow בטעינה | HTML spec (programmatic open → queue toggle) + `ssr=false` | guard `ready` (rAF אחרי onMount) מסנן את ה-fire הראשון (§3 dec.5). **calev מאמת חי**: DoD "טעינה ראשונית נוחתת בתחתית" עם mock שיש בו ThoughtBubble פתוח |
 
