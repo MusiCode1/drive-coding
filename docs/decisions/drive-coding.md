@@ -1,5 +1,46 @@
 # Decisions — drive-coding
 
+## 2026-06-25 — slice-chat-virtualization: windowing לרשימת הבועות (virtua + Option B)
+
+### רציונל
+`ChatBubbles` עושה `{#each session.bubbles}` ללא windowing → כל הבועות ב-DOM בו-זמנית →
+גלילה איטית בשיחה ארוכה (180+ בועות), בעיקר בנייד. גל שני של ה-Message&Input UX backlog.
+
+### החלטות (אחרי מחקר ספריות — מתועד למטה)
+1. **ספרייה: `virtua`** (לא TanStack-headless, לא windowing ידני). שלוש סיבות: zero-config
+   dynamic measurement (החלק הקשה — גובה משתנה ב-markdown/קוד/כלים/תמונות); `Virtualizer`
+   חושף `scrollRef?: HTMLElement` חיצוני; peer `svelte >=5.0` native. TanStack headless דורש
+   רינדור absolute + measureElement ידני + anchoring עצמי = הרבה boilerplate על משטח רגיש.
+   זו גם בחירת CodeNomad (`virtual-follow-list.tsx`, battle-tested).
+2. **Option B — AppShell נשאר owner ה-scroll** (חוק זהב #4 / redesign-2 **לא** מתהפך).
+   `virtua` עושה windowing בתוך ה-scroll node הקיים דרך `scrollRef`. נמנעת היפוך-ארכיטקטורה.
+3. **isAtBottom ממדדי virtua handle**, לא `scrollEl.scrollHeight` גולמי — תחת windowing אסור
+   להניח ש-scrollHeight מהימן. פונקציה טהורה `computeScrollEdges` (TDD) ניזונה מ-handle.
+4. **auto-follow דרך `handle.scrollToIndex(last,{align:'end'})`**, לא `scrollTop=scrollHeight` —
+   virtua מחשב נכון גם עבור items שטרם נמדדו (anti-jump בזמן stream).
+5. **גשר context דו-כיווני** (`ChatScrollBridge` $state ב-+layout): AppShell↔ChatBubbles הם
+   אחאים דרך `{@render children()}` (לא parent→prop). AppShell כותב scrollEl, ChatBubbles
+   כותב handle. coupling מינימלי, additive.
+
+### רמת חסינות: MVP+
+windowing + follow-via-handle + `ResizeObserver` (re-pin בזמן streaming) + user-intent window
+(להבדיל scroll-משתמש מ-scroll-תוכניתי). **hold-target** (בועה גבוהה-מ-viewport מחזיקה follow,
+כמו CodeNomad) **נדחה ל-future** — over-engineering ל-MVP.
+
+### ממצאי אביגיל (r1→r3)
+r1=USABLE-AFTER-FIX, 4 findings — **כולם מינוריים** (אין blocker). אביגיל אימתה אמפירית
+את אי-הוודאות המרכזית שדגלתי (§6): מנגנון ה-`bind:this` ל-handle ב-virtua/svelte = Svelte 5
+instance-exports → `bind:this={handle}` מחזיר את המתודות ישירות, כפי שהונח. גם הפריכה השערת
+regression על ה-Speaker (קורא `session.bubbles` VM, לא DOM). r2 תפסה שאריות typo (`?stream=`→
+`&stream=` + DoD hardcoded 209). r3=READY. complexity 8 → **calev-heavy** + phase-check אחרי Commit 1.
+
+### רעיונות שנדחו
+- **TanStack svelte-virtual (headless)**: שליטה מלאה ב-DOM אבל boilerplate כבד (absolute +
+  measureElement + anchoring ידני); ה-Svelte adapter היסטורית מפגר אחרי React. נדחה.
+- **windowing ידני (IntersectionObserver)**: מדידת-גובה-משתנה היא בדיוק החלק הקשה — לא להמציא מחדש.
+- **היפוך scroll-ownership ל-ChatBubbles**: היה מבטל את redesign-2; Option B מונע זאת.
+- **hold-target**: נדחה ל-future (ראה לעיל).
+
 ## 2026-06-25 — roadmap-reconciliation: קיפול הצעות-סשנים שלא תועדו ל-roadmap
 
 ### רציונל
