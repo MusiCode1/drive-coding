@@ -12,16 +12,16 @@
  * scroll ownership (אביגיל #2): overflow-y-auto + bind:this **כאן בלבד**.
  *
  * ─── redesign-2 ───
- * ─── slice chat-virtualization: batched follow ─── (Commit 2+3)
+ * ─── slice chat-virtualization: batched follow + user-intent + turn-boundary ─── (Commits 2+3)
  *
  * follow logic:
  *   - isAtBottom ממדדי virtua handle (לא scrollEl.scrollHeight — לא מהימן תחת windowing)
- *   - jumpToBottom: handle.scrollToIndex(last, {align:'end'}) — virtua מחשב נכון גם לitems לא-מדודים
+ *   - jumpToBottom: handle.scrollToIndex(last, {align:'end'}) — virtua-native, anti-jump
  *   - ResizeObserver על wrapper → shouldFollowJump → קפיצה batched (לא רציפה)
- *   - following=true בברירת מחדל; שינוי scroll ידני (Commit 3) → following=false
- *   - force-follow על תור חדש (Commit 3)
+ *   - following=false כשמשתמש גולל למעלה (wheel/touchstart/keydown); true כשחוזר לתחתית
+ *   - noteUserIntent: מסופק ל-bridge → ToolBubble/ThoughtBubble קוראים על toggle
+ *   - turn-boundary: בועת user חדשה → following=true + קפיצה (גובר על hold)
  */
-import { onMount } from "svelte"
 import { getModelStatus, getResponsive, getSession, getI18n, getChatScroll } from "$lib/context"
 import { computeScrollEdges, shouldFollowJump } from "$lib/util/scroll-follow"
 import AppHeader from "./AppHeader.svelte"
@@ -45,7 +45,7 @@ const t = getI18n().t
 // scroll node — ה-AppShell הוא owner (חוק זהב #4)
 let scrollEl = $state<HTMLElement | null>(null)
 
-// chat-scroll bridge — כתיבת scrollEl ו-noteUserIntent (Commit 3)
+// chat-scroll bridge — כתיבת scrollEl + noteUserIntent
 const chatScroll = getChatScroll()
 $effect(() => {
   chatScroll.scrollEl = scrollEl
@@ -54,6 +54,36 @@ $effect(() => {
 // ─── batched follow state (slice chat-virtualization) ───
 let following = $state(true)   // true = עוקב אחרי תחתית; false = hold
 let lastJumpAt = 0             // timestamp הקפיצה התוכניתית האחרונה
+
+// ─── user-intent window (Commit 3) ───
+// userIntentUntil: timestamp עד מתי scroll ידני תקף (600ms אחרי אחרון)
+let userIntentUntil = 0
+
+function hasUserIntent(): boolean {
+  return performance.now() < userIntentUntil
+}
+
+function markUserIntent(): void {
+  userIntentUntil = performance.now() + 600
+}
+
+/**
+ * noteUserIntent — מסופק ל-bridge → ToolBubble/ThoughtBubble קוראים על toggle.
+ * פתיחת/קיפול בועה = user-intent = hold (user רוצה לקרוא, לא לעקוב).
+ * מוטציה של following נשארת כאן (חוק זהב #4).
+ */
+function noteUserIntent(): void {
+  markUserIntent()
+  following = false
+}
+
+// חשיפה ל-bridge (additive — noteUserIntent?: () => void)
+$effect(() => {
+  chatScroll.noteUserIntent = noteUserIntent
+  return () => {
+    chatScroll.noteUserIntent = undefined
+  }
+})
 
 // isAtBottom — נגזר ממדדי virtua handle (לא DOM גולמי)
 let isAtBottom = $state(true)
@@ -104,12 +134,12 @@ function jumpToBottom(): void {
   if (handle && len > 0) {
     handle.scrollToIndex(len - 1, { align: "end" })
   } else if (scrollEl) {
-    // fallback אם handle עדיין null
     scrollEl.scrollTop = scrollEl.scrollHeight
   }
   lastJumpAt = performance.now()
   isAtBottom = true
   hasNewBelow = false
+  following = true
 }
 
 /**
@@ -139,14 +169,28 @@ function maybeJump(): void {
   ) {
     jumpToBottom()
   } else if (!isAtBottom && following) {
-    // עדיין ב-follow אבל floor לא עבר / מרחק קטן → mark hasNewBelow
     hasNewBelow = true
   }
 }
 
+/**
+ * onScroll — handler ל-scroll event.
+ * scroll תוכניתי (scrollToIndex) לא שובר follow — מסוננת לפי userIntent.
+ * scroll ידני מכבה following; חזרה לתחתית ידנית מדליקה.
+ */
 function onScroll(): void {
   checkEdges()
-  if (isAtBottom) hasNewBelow = false
+  if (isAtBottom) {
+    hasNewBelow = false
+    // חזרה לתחתית ידנית → הפעל follow מחדש
+    if (!following) following = true
+  } else {
+    // scroll ידני (יש user intent window) → כבה follow
+    if (hasUserIntent()) {
+      following = false
+      hasNewBelow = true
+    }
+  }
 }
 
 // ResizeObserver על wrapper — מזין את לולאת ה-batched
@@ -158,21 +202,35 @@ $effect(() => {
 
   lineHeight = getLineHeight()
 
-  // ResizeObserver על ה-scrollEl עצמו (הגבהו משתנה כשהתוכן גדל)
   resizeObs = new ResizeObserver(() => {
     maybeJump()
   })
-  // observe על ה-child (div max-w-2xl) שמחזיק את ה-Virtualizer
   const contentEl = el.firstElementChild as HTMLElement | null
   if (contentEl) resizeObs.observe(contentEl)
+
+  // ─── user-intent listeners (Commit 3) ───
+  // wheel/touchstart/keydown → markUserIntent → scroll ידני מזוהה
+  const onWheel = () => markUserIntent()
+  const onTouchStart = () => markUserIntent()
+  const onKeyDown = (e: KeyboardEvent) => {
+    const intentKeys = ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "]
+    if (intentKeys.includes(e.key)) markUserIntent()
+  }
+
+  el.addEventListener("wheel", onWheel, { passive: true })
+  el.addEventListener("touchstart", onTouchStart, { passive: true })
+  el.addEventListener("keydown", onKeyDown, { passive: true })
 
   return () => {
     resizeObs?.disconnect()
     resizeObs = null
+    el.removeEventListener("wheel", onWheel)
+    el.removeEventListener("touchstart", onTouchStart)
+    el.removeEventListener("keydown", onKeyDown)
   }
 })
 
-// $effect על session.bubbles — floor-tail edge: מבטיח שאחרי שהzרם שוקט
+// $effect על session.bubbles — floor-tail edge: מבטיח שאחרי שה-stream שוקט
 // (ResizeObserver יורה שוב), הקפיצה האחרונה תסתיים
 $effect(() => {
   const _bubbleCount = session.bubbles.length
@@ -189,13 +247,33 @@ $effect(() => {
   void _lastSegLen
   void _statusPhase
 
-  // setTimeout של floor — מבטיח שאם האירוע האחרון נחסם ב-floor,
-  // קריאה מאוחרת (אחרי floor עבר) תשלים את הקפיצה
   const timer = setTimeout(() => {
     maybeJump()
-  }, 320) // מעט מעל FOLLOW_FLOOR_MS (300ms) כדי לתפוס floor-tail
+  }, 320)
 
   return () => clearTimeout(timer)
+})
+
+// ─── turn-boundary (Commit 3) ───
+// בועת user חדשה → force-follow ON + קפיצה (גובר על hold)
+let lastSeenUserBubbleId = ""
+$effect(() => {
+  // מצא את הbועה האחרונה עם kind==="user"
+  let lastUserBubble: { id: string; kind: string } | undefined
+  for (let i = session.bubbles.length - 1; i >= 0; i--) {
+    const b = session.bubbles[i]
+    if (b !== undefined && b.kind === "user") {
+      lastUserBubble = b
+      break
+    }
+  }
+  if (!lastUserBubble) return
+  if (lastUserBubble.id === lastSeenUserBubbleId) return
+
+  // בועת user חדשה — force-follow
+  lastSeenUserBubbleId = lastUserBubble.id
+  following = true
+  jumpToBottom()
 })
 </script>
 

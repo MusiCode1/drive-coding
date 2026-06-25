@@ -14,9 +14,10 @@
  * ─── redesign-5 (C1 fix) ───
  */
 import type { ThoughtBubble } from "$lib/types/bubble"
-import { getI18n, getSettings } from "$lib/context"
+import { getI18n, getSettings, getChatScroll } from "$lib/context"
 import { joinSegmentText, visibleThoughtSegments } from "./bubble-rendering"
 import Avatar from "$lib/components/chat/Avatar.svelte"
+import { onMount } from "svelte"
 
 let { bubble }: { bubble: ThoughtBubble } = $props()
 const t = getI18n().t
@@ -32,6 +33,14 @@ const runningText = $derived(isAllOriginal ? joinSegmentText(displaySegments) : 
 // local state — מאותחל פעם אחת מה-setting, לא נגזר ממנו reactively.
 // מונע snap-back כשה-effect של bubble.segments.length רץ מחדש.
 let open = $state(settings.showThoughts)
+
+// ─── toggle-intent (slice chat-virtualization, Commit 3) ───
+// guard ל-init-fire: ThoughtBubble פתוח כברירת-מחדל (showThoughts=true).
+// <details bind:open=$state(true)> תחת CSR מתזמן toggle event ב-mount → init-fire.
+// rAF אחרי mount מסנן את ה-fire הראשון (task-from-mount קודם ל-rAF).
+let ready = false
+onMount(() => requestAnimationFrame(() => { ready = true }))
+const onUserToggle = () => { if (ready) getChatScroll().noteUserIntent?.() }
 </script>
 
 <div class="flex gap-2 self-end max-w-[85%] min-w-0 items-end flex-row-reverse">
@@ -40,7 +49,7 @@ let open = $state(settings.showThoughts)
     class="px-3.5 py-2.5 rounded-xl text-[13px] leading-relaxed italic border border-dashed min-w-0 break-words"
     style="border-color:var(--border-str); color:var(--fg-dim)"
   >
-    <details bind:open>
+    <details bind:open ontoggle={onUserToggle}>
       <summary class="text-[11px] font-semibold not-italic opacity-70 mb-1 cursor-pointer thought-summary">
         {t("chat.bubble.thought")}
       </summary>
