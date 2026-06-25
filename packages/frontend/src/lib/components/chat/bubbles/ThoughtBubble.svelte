@@ -34,13 +34,15 @@ const runningText = $derived(isAllOriginal ? joinSegmentText(displaySegments) : 
 // מונע snap-back כשה-effect של bubble.segments.length רץ מחדש.
 let open = $state(settings.showThoughts)
 
-// ─── toggle-intent (slice chat-virtualization, Commit 3) ───
+// ─── toggle-intent (slice chat-virtualization, Commit 3 / fix) ───
+// chatScroll נקרא ב-component init (חוקי) — לא בתוך ה-callback.
 // guard ל-init-fire: ThoughtBubble פתוח כברירת-מחדל (showThoughts=true).
 // <details bind:open=$state(true)> תחת CSR מתזמן toggle event ב-mount → init-fire.
 // rAF אחרי mount מסנן את ה-fire הראשון (task-from-mount קודם ל-rAF).
+const chatScroll = getChatScroll()
 let ready = false
 onMount(() => requestAnimationFrame(() => { ready = true }))
-const onUserToggle = () => { if (ready) getChatScroll().noteUserIntent?.() }
+const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
 </script>
 
 <div class="flex gap-2 self-end max-w-[85%] min-w-0 items-end flex-row-reverse">

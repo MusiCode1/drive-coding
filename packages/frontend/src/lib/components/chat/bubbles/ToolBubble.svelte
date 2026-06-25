@@ -30,12 +30,14 @@ const input = $derived(formatToolInput(tc.args))
 // מונע snap-back כשה-effect של tc.status/tc.narration רץ מחדש.
 let open = $state(settings.showTools)
 
-// ─── toggle-intent (slice chat-virtualization, Commit 3) ───
+// ─── toggle-intent (slice chat-virtualization, Commit 3 / fix) ───
+// chatScroll נקרא ב-component init (חוקי) — לא בתוך ה-callback.
 // guard ל-init-fire: <details bind:open=$state> תחת CSR מתזמן toggle event ב-mount.
 // rAF אחרי mount מסנן את ה-fire הראשון (task-from-mount קודם ל-rAF).
+const chatScroll = getChatScroll()
 let ready = false
 onMount(() => requestAnimationFrame(() => { ready = true }))
-const onUserToggle = () => { if (ready) getChatScroll().noteUserIntent?.() }
+const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
 </script>
 
 <div class="flex gap-2 self-end max-w-[78%] min-w-0 items-end flex-row-reverse">
