@@ -1,5 +1,67 @@
 # Decisions — voice-acp
 
+## 2026-06-18 — fix-claude-duplicate-bubbles: בועת-תשובה כפולה של claude — fork + תיקון-שורש (תכנון slice יחיד)
+
+### רציונל
+תופעה: בכל session של claude כל תשובת ה-agent מוצגת **פעמיים** — שתי בועות `message`
+זהות. אובחן ב-`WIRE_RECORD=1` (ר' `AGENTS.md` §Wire tracing).
+
+**ראיית-חוט:** התשובה מגיעה פעמיים — (1) **deltas** של streaming **בלי** `messageId`;
+(2) **assembled** — chunk יחיד **עם** `messageId` (msg_xxx), טקסט **זהה-בייט** (אומת:
+concat=403B === assembled=403B). ה-FE `#appendChunk` מקבץ לפי messageId: deltas(null)→בועה
+אחת, assembled(msg_xxx)→בועה שנייה. ה-FE **נכון** — ה-adapter שובר את החוזה "הודעה=id יחיד".
+
+**השורש המדויק (מאומת מקוד ה-fork `src/acp-agent.ts@v0.47.0`, לא השערה):**
+`resetTurnScratch()` (≈975) מכיל `currentStreamMessageId = undefined`. הוא נקרא מ-`activateTurn`
+כש-ה-SDK משחזר את ה-user-echo — וזה קורה **באמצע ה-stream** (ה-SDK פולט stream-events *לפני*
+ה-echo; מתועד ב-#785 עצמו). רצף בהודעה הראשונה של תור: `message_start(msg_X)` קובע id →
+ה-echo→`resetTurnScratch()` מאפס ל-undefined → ה-text deltas שאחריו יוצאים בלי id **וגם** לא
+נכנסים ל-`streamedTextIds` → ב-consolidation `streamedTextIds.has(msg_X)=false` → ה-assembled
+לא מסונן ונשלח ככפילות.
+
+- **מסביר הכול:** רק ההודעה ה**ראשונה** של תור נשברת (ה-reset פעם אחת/תור; הבאות מקבלות
+  message_start חדש); thinking נשא id ו-text לא (ה-reset נפל ביניהם); "לסירוגין" = תלוי
+  אם ה-echo נחת לפני/אחרי שה-text התחיל.
+- **#785 = חצי תיקון:** PR `12d34e6` תיקן case אחר ב**אותה** פונקציה (הוציא את איפוס ה-`Set`ים)
+  אבל **השאיר** את `currentStreamMessageId = undefined`. **0.47.0** (האחרון ב-npm, מה שאנחנו
+  מריצים דרך `npx @latest`) כבר מכיל את #785 — ועדיין משכפל (הקלטות 06-17/06-18, *אחרי* שחרור 0.47.0).
+- **pre-existing**, עצמאי מ-slice-claude-thinking-meta. קשור ל-[[wire-recorder-debug-mode]].
+
+### ההכרעה — fork מקומי + תיקון-שורש שורה-אחת (לא FE, לא BE, לא PR-כרגע)
+**fork** של `claude-agent-acp` (GitHub fork מלא, אישור משתמש), מ-`v0.47.0`, עם **הסרת השורה
+היחידה** `currentStreamMessageId = undefined` מ-`resetTurnScratch()`. build → `dist/`, וחיווט
+ל-drive-coding דרך קובץ override מקומי `~/.config/drive-coding/cli-specs.jsonc`
+(`claude → {bin:node, args:[fork/dist/index.js]}`) — **אפס שינוי בקוד drive-coding**.
+
+- **למה fork ולא shim ב-FE:** אילוץ המשתמש — לא לגעת בקוד שלנו; ה-fork גם **מוכיח** את
+  השורש (TDD חי: red→fix→green). זה תיקון-שורש אמיתי, לא הסתרת-סימפטום.
+- **למה הסרה ולא תיקון אחר:** `currentStreamMessageId` נקבע מחדש בכל `message_start`, אז
+  איפוסו ב-turn-activation מיותר ומזיק (נופל mid-stream). המשך ישיר של #785.
+- **claude-only:** opencode/gemini משתמשים ב-adapters אחרים → לא מושפעים. ה-fork תחום-בזמן
+  (claude עובר ל-native), אבל ACP נשאר חי לשאר ה-CLIs.
+- **TDD חי:** ל-upstream יש harness לטסט חי (`RUN_INTEGRATION_TESTS` → `"ACP subprocess
+  integration"`, spawn אמיתי + prompt מול claude); ה-`TestClient` כבר צובר את כל
+  ה-`agent_message_chunk` → בגרסה הבאגית `receivedText` כפול. נרחיב אותו + נוסיף mock
+  דטרמיניסטי (ECHO לפני ה-textDelta הראשון).
+
+### רעיונות שנדחו
+- **FE de-dup shim** (הגרסה הקודמת של ה-brief) — נדחה לטובת תיקון-שורש; אילוץ "לא לגעת בקוד שלנו".
+- **לחכות ל-0.48.0 / git-npx** — נדחה: 0.47.0 הוא האחרון ו-main==release שלו (אין קוד חדש
+  למשוך); git-install בכלל לא בונה (`prepare:null` → אין dist).
+- **PR upstream עכשיו** — נדחה ("לעת עתה רק מקומי"); אפשרי אחר-כך (GitHub fork כבר מאפשר).
+
+### ממצאי אביגיל
+**סבב 1 (USABLE-AFTER-FIX, 3 findings, אפס blockers):** אביגיל אימתה דרך `gh` את **כל**
+טענות-המפתח על ה-fork (קיום `resetTurnScratch`+השורה, ש-#785 השאיר אותה ב-0.47.0, ה-harness
+החי + ה-helpers) ואת מנגנון ה-override שלנו (`override.bin/args` גוברים עבור claude). 3 הממצאים
+היו שוליים: 🟡 Dev tip מיושן (→`3812e4f`), 🟡 ניסוח `npm run dev`=`build && start`, 🟢 שם
+ה-bin key. **סבב 2 (READY, 0 findings)** — תוקנו ואומתו מול המקור. הלוגיקה (הסרת השורה →
+green) אושרה.
+
+> **היסטוריית-אימות הגרסה הקודמת (FE-shim, נזנחה):** אביגיל אימתה את ה-brief של ה-FE-shim
+> עד READY ב-3 סבבים (findings על שמות-package/פקודות, לא על הלוגיקה). הפיבוט ל-fork קרה
+> אחרי דיון עם המשתמש שחשף שהבאג ב-adapter (לא אצלנו) ושעדיף תיקון-שורש בלי לגעת בקוד שלנו.
+
 ## 2026-06-17 — wire-recorder-jsonl: הקלטת תעבורת WS לקובץ NDJSON — תכנון slice יחיד
 
 ### רציונל

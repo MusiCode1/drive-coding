@@ -3,6 +3,14 @@
 + **תאריך:** 2026-06-17 · **סטטוס:** חי (master — מאחד את כל ה-roadmaps)
 + זהו מקור-האמת לטווח-ארוך. ה-roadmaps הספציפיים (provider/voice/frontend) הם sub-documents תחתיו — ראה §מקורות.
 
+> ⚠️ **סיכון חיוב (2026-06-20):** Anthropic הכריזו (14/5/2026, תוקף מתוכנן 15/6, אכיפה כרגע
+> **מושהית**) על פיצול חיוב-מנוי: שימוש ב-claude **דרך ACP / `claude -p` / SDK** יוצא מ-pool
+> המנוי ל-**Agent SDK credits נפרדים** ($20 Pro / $100–200 Max). drive-coding מריץ claude
+> דרך ה-ACP adapter → נופל ב-pool ה-third-party. ה"עובד על המנוי" עובד היום רק כי האכיפה
+> מושהית; "subprocess מול library" **לא** פותר (שתיהן ACP/SDK). first-party = רק ה-CLI `claude`
+> בטרמינל (אין לו ACP server mode). משפיע על Track A ועל productization. מקור: Zed blog
+> "anthropic-subscription-changes". ר' memory `anthropic-acp-subscription-billing-change`.
+
 ## חזון
 
 עוזר **voice-first** אחד — שמשמש **גם ככותב קוד וגם כעוזר אישי** — מעל מנוע רב-ספקי.
