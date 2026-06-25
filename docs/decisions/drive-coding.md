@@ -1,5 +1,35 @@
 # Decisions — drive-coding
 
+## 2026-06-25 — roadmap-reconciliation: קיפול הצעות-סשנים שלא תועדו ל-roadmap
+
+### רציונל
+ביקורת-כיסוי: סריקת 22 סשנים אחרונים (21–25/6) מול `docs/roadmap.md` (grep + git) חשפה
+שהצעות מהותיות שנדונו — חלקן עם **brief מאושר** — מעולם לא נכנסו ל-roadmap. זה בדיוק מה
+שהמשתמשת ביקשה למנוע ("תתעד הכל ב-Roadmap, שאם לא נספיק — לפחות יישאר כתוב", session b1f98c82).
+
+### מה נוסף ל-roadmap
+**Track C (Message & Input UX backlog) — 7 פריטים:**
+- `session-prefs-per-cwd` — 🟢 brief READY (r3, Complexity 7), היה **חסר לגמרי** מה-roadmap למרות brief מלא.
+- `display-toggle-consistency` — 🟢 brief READY (Complexity 3).
+- `fix-claude-duplicate-bubbles` — 🟡 brief טיוטה (Complexity 6, fork ל-adapter).
+- `RLM / תווים משבשי-markdown` — 🔄 בעבודה כעת ע"י סוכן (נדון+שוגר ב-5f8fcb92); לאמת branch/commit בסיום.
+- `permission UI` (אישור-בקשות) — 💭 טרם brief.
+- `ID יציב לכלי` (שורש snap-back) — 💭 טרם brief.
+- `עקביות themes` — 💭 רעיון.
+
+**Track A — 1 פריט:** הזרקת prompt-מערכת מותאם-אודיו פר-CLI (claude flag / opencode plugin / codex app-server).
+
+**עדכוני-מסגור (לא פריטים חדשים):**
+- הערת-סיכון Anthropic: נוספה דרך-מיטיגציה לחקירה (פרוטוקול ה-VSCode extension מול Claude Code, לשמירה על pool-המנוי).
+- Future "Backend-managed transport": עודכן לשקף כוונה אקטיבית יותר — להפוך את ספריית-הספקים לגשר הדרגתי (frames↔WS/SSE/HTTP/ACP, שלב ראשון רק אישור-בקשות).
+
+### תיקוני-מצב (stale)
+- `latex-math`: ההערה "dispatch אחרי merge chat-render-polish" הוסרה — chat-render-polish **מוזג** (`cc5ff66`), הסלייס unblocked.
+- אומת ב-git ש-`enter-toggle` ו-`chat-render-polish` מוזגו ל-dev; הסתירה לכאורה ב-brief של display-toggle ("enter-toggle טרם מוזג") היא הערה מיושנת בלבד — חשש merge-ordering נפתר.
+
+### רעיונות שנדחו / מחוץ ל-scope כעת
+local-file-proxy (כבר ב-roadmap, נדחה ע"י המשתמשת ל"אחרי B"). לא בוצע merge/push — שינוי docs בלבד.
+
 ## 2026-06-25 — slice-session-title-header: כותרת הסשן בהדר הצ'אט
 
 ### רציונל

@@ -10,6 +10,8 @@
 > מושהית; "subprocess מול library" **לא** פותר (שתיהן ACP/SDK). first-party = רק ה-CLI `claude`
 > בטרמינל (אין לו ACP server mode). משפיע על Track A ועל productization. מקור: Zed blog
 > "anthropic-subscription-changes". ר' memory `anthropic-acp-subscription-billing-change`.
+> **מיטיגציה לחקירה (נדון ב-e7a6f5c1):** ה-VSCode extension מדבר עם Claude Code (שכן תומך-מנוי)
+> בפרוטוקול כלשהו — לבדוק האם אפשר לאמץ אותו כדי להישאר על ה-pool של המנוי, במקום SDK/ACP.
 
 ## חזון
 
@@ -45,6 +47,7 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 | P1d — drive-coding cutover ל-ProviderSession (+יישור shape `kind`/`type`) | 💭 מתפצל ל-P1d-1/P1d-2 |
 | claude-code native — ספק שני (דלת 5: tool lifecycle) | 💭 |
 | codex app-server — ספק שלישי | 💭 |
+| **הזרקת prompt-מערכת מותאם-אודיו פר-CLI** — הנחיות לעוזר voice-first מוזרקות לכל ספק בדרכו (claude=CLI flag, opencode=plugin, codex=app-server prompt). תשתית להתאמת התנהגות-קול פר-מנוע. | 💭 חדש — נדון ב-83d1e6e4 (sessions), טרם brief |
 
 ### B — Voice  ·  `voice-provider-abstraction`
 כל ספק לכל שירות קול (TTS/STT/תרגום/נרייט).
@@ -74,12 +77,19 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 | **תצוגת סוכן-משנה (sub-agent / Task)** — היום מגיע כ-`tool_call` רגיל עם `kind`, מרונדר כ-`ToolBubble` גנרי עם args כ-JSON גולמי. **חסר:** (א) זיהוי task/subagent כסוג נפרד; (ב) רינדור מקונן עם הפרדה בין ההודעות/הכלים/המחשבות של תת-הסוכן; (ג) הצגת שם תת-הסוכן ופרטיו. **לא ידוע מה claude/opencode בכלל שולחים על ה-wire עבור Task — האם ה-updates המקוננים מגיעים בנפרד או רק tool_call אחד עם תוצאה.** קבצים: `agent-session.svelte.ts#handleToolCall`, `bubble.ts` (ToolCall union), `ToolBubble.svelte`. אולי דורש הרחבת משטח-החוזה (nested agent updates). | ⭐💭 **spike ראשון** (`WIRE_RECORD=1` על Task חי בכל ספק) → אז brief renderer. complexity 8+ → calev-heavy |
 | **virtualization / ביצועי גלילה** — `ChatBubbles.svelte` עושה `{#each bubbles}` ללא windowing → כל הבועות ב-DOM בו-זמנית → איטיות בשיחה ארוכה. smart-scroll כבר מוזג (`slice-mode-label-scroll`) אבל windowing לא. צריך virtual list עם שימור anchoring + auto-follow + jump-to-bottom (reference: CodeNomad `virtual-follow-list.tsx`). עצמאי לחלוטין. | 🟡💭 brief (גל שני) |
 | **ביטול שליחה ב-Enter (toggle)** — setting `enterToSend` (default true=התנהגות נוכחית); כש-off: Enter=שורה-חדשה, שליחה בכפתור/Cmd+Ctrl+Enter. | ✅ **מוזג ל-dev** (2026-06-25, merge 160736b; אביגיל READY, כלב GO 10/10, אומת חי) |
-| **latex-math** — רינדור KaTeX בכל 4 הסגנונות (`$`/`$$`/`\(`/`\[`). הכרעת-מפתח: **allowlist פר-מקור (two-pass)** — `style`/`span` מבודדים למסלול KaTeX (trusted), ה-markdown של המודל בלי span/style (secure-by-construction נגד overlay-phishing מ-prompt-injection). extension פנימי (`marked.use`), dep=`katex` בלבד. נוגע ב-`markdown.ts` → תלוי chat-render-polish. | ✅ **brief READY** (`slice-latex-math.md`, אביגיל ×3 — אומת אמפירית; dispatch אחרי merge chat-render-polish) |
+| **latex-math** — רינדור KaTeX בכל 4 הסגנונות (`$`/`$$`/`\(`/`\[`). הכרעת-מפתח: **allowlist פר-מקור (two-pass)** — `style`/`span` מבודדים למסלול KaTeX (trusted), ה-markdown של המודל בלי span/style (secure-by-construction נגד overlay-phishing מ-prompt-injection). extension פנימי (`marked.use`), dep=`katex` בלבד. נוגע ב-`markdown.ts` → תלוי chat-render-polish. | ✅ **brief READY** (`slice-latex-math.md`, אביגיל ×3 — אומת אמפירית; **chat-render-polish מוזג `cc5ff66` → unblocked, dispatch מיידי** — ייתכן rebase קל על dev שהתקדם עם enter-toggle) |
 | **content-viewer** — viewer fullscreen גנרי (bits-ui `Dialog`) פר content-type. MVP: **תמונה + PDF + Markdown-מרונדר** (לסוכן להציג brief/plan לאישור). lightbox משרת גם את תמונות-הכלים (chat-render-polish). תשתית גנרית, מימוש הדרגתי. | 💭 brief (בכתיבה — מרדכי) |
 | **כותרת הסשן בהדר הצ'אט** — ה-`title` כבר במודל (`SessionInfo`) ומוצג ב-`SessionCard`/`SessionPicker`, אבל **לא בהדר של הצ'אט הפעיל**. auto-generate (`generate_session_title`) הוא future נפרד. | ✅ **brief READY** (`slice-session-title-header.md`; אביגיל r1→r2; חיווט 3 נתיבים: loadSession/switchSession/reconnect + keep-on-undefined). dispatch אחרי אישור |
 | **פקודות Slash (/)** — 0% תשתית. החוזה לא חושף `commands` (Claude שולח `commands_changed`, לא מחווט ל-FE). דורש: חשיפת `commands` במשטח-החוזה/BE + view-model + dropdown autocomplete + parsing ב-TypeArea. | 🟡💭 תלוי Track A (משטח-חוזה) |
 | **הדבקת תמונות (paste→preview→send)** — 0%. `sendPrompt(text)` טקסט-בלבד; צריך multimodal `PromptContent[]` + `onpaste` handler + preview + הרחבת חוזה `/session/prompt`. ה-`PromptContent` הקנוני כבר מולטימודלי. | 🟡💭 תלוי Track A (משטח-חוזה) |
 | **local-file-proxy** — BE proxy שקורא `file://` מקומי-לסביבת-ה-agent ומגיש ל-FE, כדי להציג `resource_link` עם `file://`+`image/*` כתמונה אמיתית (היום נופל ל-JSON; הדפדפן ב-https לא יכול לטעון `file://`). **כבד-אבטחה: LFI/path-traversal** — ההכרעה המרכזית תהיה sandbox (allowlist דינמי של uris שהוזכרו ב-session **או** sandbox ל-cwd עם `realpath`). תלוי ב-slice B (משתמש ברינדור ה-`<img>`). יש תקדים proxy ב-BE (`/proxy/elevenlabs`, `/proxy/google`). | 💭 brief (אחרי B) |
+| **session-prefs פר-פרויקט (CWD)** — שמירת agent/mode/model + מצב-קול (mute) פר-פרויקט ב-BE, **מסונכרן בין מכשירים** (תיקיית `.drive-coding` בנתיב). אופציה לבטל סנכרון בהגדרות. | 🟢 **brief READY** (`slice-session-prefs-per-cwd.md`, Complexity 7, אביגיל r3). base=dev — dispatch מותר |
+| **עקביות מחווני "Chat display"** — שני המתגים מ-chat-render-polish C בפולריות הפוכה (Collapse thoughts ON=מסתיר; Expand tools ON=מציג) → מבלבל. איחוד לפולריות חיובית ("Show X by default") + migration למשתמשים קיימים. | 🟢 **brief READY** (`slice-display-toggle-consistency.md`, Complexity 3). base=dev — dispatch מיידי |
+| **claude — בועות כפולות** — כל תשובת claude מופיעה פעמיים. שורש מאומת: `resetTurnScratch()` ב-`claude-agent-acp` מאפס `currentStreamMessageId` באמצע ה-stream → deltas בלי messageId → לא מסוננים. תיקון: **fork של ה-adapter + שורת-שורש** (TDD red→green), בלי לגעת בקוד drive-coding (wiring דרך config). | 🟡💭 **brief טיוטה** (`slice-fix-claude-duplicate-bubbles.md`, Complexity 6). base=fork נפרד |
+| **RLM / תווים משבשי-markdown** — תווי כיווניות (RLM `‏`) ותווים אחרים צמודים לסימוני-MD שוברים רינדור. הכרעות פתוחות: דחיפת RLM לתוך הטקסט במקום מחיקה; **הפרדת קוד-sanitize מקוד-render** (כיום מעורבבים). | 🔄 **בעבודה כעת ע"י סוכן** — נדון ב-5f8fcb92 (אושר + שוגר אליעזר); כיוון: דחיפת RLM לטקסט במקום מחיקה + הפרדת sanitize/render (TDD). לאמת branch/commit בסיום |
+| **ממשק אישור-בקשות (permission UI)** — כיום `session/request_permission` מאושר אוטומטית כברירת-מחדל, אין UI להחליט. צריך: UI אישור/דחייה לכלי + מיפוי אילו modes (bypass) בכלל לא שולחים בקשה. קשור ל-F "הריצה נעצרת". | 💭 **טרם brief** — נדון ב-fdf80659/e038a47a |
+| **ID יציב לכלי (שורש snap-back)** — לכל tool-call ID יציב לשימור מצב קיפול פר-בועה (כיום snap-back בכל status update; chat-render-polish תיקן מקומית בלבד). | 💭 **טרם brief** — נדון ב-9a6999e2 |
+| **עקביות ערכות-עיצוב (themes)** — יש כמה ערכות-עיצוב; פיצ'רים חדשים חייבים להתאים לכולן (קונטרסט/צבעי-בועות). | 💭 רעיון — נדון ב-fdf80659 |
 | **drive-first chrome** (car mode, Media Session, wake lock) | 💭 |
 | recordings + replay | 💭 |
 | **ידית BottomSheet מתנגשת ב-OS gesture bar (מובייל)** — ה-handle יושב ב-28px התחתונים (detent `peek`), בדיוק על ה-gesture bar של הטלפון → גרירת ה-sheet מתנגשת במחוות ה-OS. פתרון מוצע: לנתק את ה-handle מה-sheet ולמקמו **מעל ה-toggle של RecordFooter**; ב"סגור" ה-sheet נעלם לגמרי (`peek 28px`→`hidden 0px`). ההתנהגות (משיכה→sheet עולה ומכסה) נשמרת. דורש: decoupling handle↔sheet + שינוי detent-model + drag-ownership (`BottomSheet`/`RecordFooter`/`ui-shell`) + z-index. כבר יש workaround חלקי (RecordFooter `pb` במצב hidden). **מצריך brief — regression בליבת ה-gesture, לא נתפס ב-typecheck.** | 💭 brief |
@@ -125,7 +135,7 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 
 ## Future / רעיונות לא-מחייבים
 
-+ **Backend-managed (HTTP/SSE transport)** — session-owner ב-backend, client דק, כמו טופולוגיית CodeNomad. מתועד ב-`provider-abstraction/docs/design/ideas/backend-managed-http-transport.md`. **רעיון אופציונלי** — לא ב-roadmap המחייב; לחזור אליו אם יציבות WS / איבוד-state יהפכו לכאב.
++ **Backend-managed (HTTP/SSE transport)** — session-owner ב-backend, client דק, כמו טופולוגיית CodeNomad. מתועד ב-`provider-abstraction/docs/design/ideas/backend-managed-http-transport.md`. **רעיון אופציונלי** — לא ב-roadmap המחייב; לחזור אליו אם יציבות WS / איבוד-state יהפכו לכאב. **עדכון (sessions 848d3296/e7a6f5c1/e038a47a):** עלתה כוונה אקטיבית יותר — **להפוך את ספריית-הספקים עצמה לגשר** שמדבר frames מצד אחד ו-WS/SSE/HTTP/ACP מהשני, **הדרגתית** (שלב ראשון: רק לאשר בקשות; התשתית כבר תהיה שם). טרם הוכרע אם נכלל ב-M-מחייב.
 + פיצ'רים שנדחו — ראה `docs/future-features.md`.
 
 ## מקורות (sub-roadmaps)
