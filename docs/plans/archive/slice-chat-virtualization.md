@@ -1,5 +1,7 @@
 # Slice chat-virtualization — windowing + follow/hold לרשימת הבועות — תוכנית
 
+> ✅ **בוצע · אומת · מוזג ל-dev.** אורכב ב-2026-06-27 (הסטטוס אומת מול היסטוריית git/roadmap; פרטי הביצוע והאימות בהמשך הקובץ).
+
 > **תאריך**: 2026-06-25 · **עודכן**: 2026-06-25 (batched auto-scroll — דיון `623c749f`)
 > **סטטוס**: ✅ **הושלם** — 4 commits על branch `slice-chat-virtualization` (17253b3..f60168c). verifier-slice-heavy בביצוע. (מקורי: READY r8 מ-אביגיל, 0 findings.)
 > **Complexity**: 8/10 (קצה עליון אחרי תוספת batched+toggle-intent+turn-boundary; verifier: **calev-heavy** + phase-check אחרי Commit 1)

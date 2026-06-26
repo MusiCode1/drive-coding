@@ -1,5 +1,7 @@
 # Slice P1 — Canonical Provider abstraction + ACP/ClaudeCode adapters
 
+> ✅ **בוצע · אומת · מוזג ל-dev.** אורכב ב-2026-06-27 (הסטטוס אומת מול היסטוריית git/roadmap; פרטי הביצוע והאימות בהמשך הקובץ).
+
 > **תאריך**: 2026-06-13
 > **סטטוס**: ✅ **plan-verified / READY** (אביגיל סבב 3, 2026-06-13 — 0 blocker/major, מוכן ל-dispatch). 3 סבבי אימות: סבב 1 (2 blocker+1 major+2 minor) → סבב 2 (3 textual) → סבב 3 **READY**. 8 findings מצטברים תוקנו: מקור-אמת inline §3 (חוזה v1.2), arktype `.array()`, `classifyToolKind` switch, pnpm 10, `pnpm test`=root vitest, טסטים ב-`tests/`, DoD/§6 ללא שריד events.ts.
 > **Base**: `dev` HEAD (הענף הראשי של drive-coding — לא main). עבודה ב-clone המקומי `D:\UserProjects\AI\drive-coding`.

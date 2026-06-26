@@ -1,5 +1,7 @@
 # Slice: mode-label-scroll (brief רטרוספקטיבי)
 
+> ✅ **בוצע · אומת · מוזג ל-dev.** אורכב ב-2026-06-27 (הסטטוס אומת מול היסטוריית git/roadmap; פרטי הביצוע והאימות בהמשך הקובץ).
+
 > ‏**סטטוס:** העבודה כבר בוצעה ב-working tree (uncommitted, 0 commits מעל `dev`).
 > ‏brief זה נכתב **אחרי** המימוש כדי לאפשר אימות ע"י אביגיל (plan-verifier) וכלב
 > ‏(runtime-verifier). depends_on: אין (יושב ישירות על קצה `dev` @ `7444c85`).

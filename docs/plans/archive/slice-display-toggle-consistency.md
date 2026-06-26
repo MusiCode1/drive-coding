@@ -1,5 +1,7 @@
 # Slice display-toggle-consistency — עקביות מחווני "תצוגת צ'אט" — תוכנית
 
+> ✅ **בוצע · אומת · מוזג ל-dev.** אורכב ב-2026-06-27 (הסטטוס אומת מול היסטוריית git/roadmap; פרטי הביצוע והאימות בהמשך הקובץ).
+
 > **תאריך**: 2026-06-25 · **dispatch-ready**: 2026-06-25 (מרדכי)
 > **סטטוס**: ✅ **הושלם** — commit `cf4cb86`, branch `slice-display-toggle-consistency`. ממתין ל-merge ע"י מרדכי.
 > **Complexity**: 3/10 (verifier: light)

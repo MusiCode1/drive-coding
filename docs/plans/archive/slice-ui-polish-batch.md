@@ -1,5 +1,7 @@
 # Slice — ui-polish-batch — brief
 
+> ✅ **בוצע · אומת · מוזג ל-dev.** אורכב ב-2026-06-27 (הסטטוס אומת מול היסטוריית git/roadmap; פרטי הביצוע והאימות בהמשך הקובץ).
+
 + **תאריך:** 2026-06-18 · **סטטוס:** הושלם · **מקור:** `docs/plans/ui-feature-backlog.md`
 + **Base:** `dev` · **Worktree:** `.worktrees/slice-ui-polish-batch` · **Branch:** `slice-ui-polish-batch`
 + **Complexity:** 8/10 (heavy — calev-heavy: רוב הפריטים visual) · **כל הקוד ב-FE בלבד; אפס נגיעה ב-`agent-session.svelte.ts` (אזור P1d).**

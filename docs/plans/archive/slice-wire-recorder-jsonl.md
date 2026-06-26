@@ -1,5 +1,7 @@
 # Slice wire-recorder-jsonl — WS Wire Recorder (NDJSON file tap) — תוכנית
 
+> ✅ **בוצע · אומת · מוזג ל-dev.** אורכב ב-2026-06-27 (הסטטוס אומת מול היסטוריית git/roadmap; פרטי הביצוע והאימות בהמשך הקובץ).
+
 > **תאריך**: 2026-06-17
 > **סטטוס**: הושלם (branch: slice-wire-recorder-jsonl, 3 commits, ממתין למזוג)
 > **Complexity**: 4/10 (verifier: light)

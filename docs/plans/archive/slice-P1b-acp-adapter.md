@@ -1,5 +1,7 @@
 # Slice P1b — ACP Provider adapter
 
+> ✅ **בוצע · אומת · מוזג ל-dev.** אורכב ב-2026-06-27 (הסטטוס אומת מול היסטוריית git/roadmap; פרטי הביצוע והאימות בהמשך הקובץ).
+
 > **תאריך**: 2026-06-13
 > **סטטוס**: ✅ **plan-verified / READY** (אביגיל סבב 5, 2026-06-13 — 0 blocker/major, מוכן ל-dispatch אחרי merge P1a). **5 סבבי אימות**: 7→2→3→3→0 findings (כל ה-shape-mismatches מול fixtures תוקנו; ההנחיה "shapes 1:1 מהמקור הקיים" שברה את הלולאה).
 > **Base**: `dev` HEAD **אחרי merge של P1a**. ⚠️ **חסום עד merge**: כיום ה-types של P1a ב-worktree `slice-P1a-provider-abstraction` בלבד (טרם merged ל-dev). clone מקומי bare `D:\UserProjects\AI\drive-coding`.

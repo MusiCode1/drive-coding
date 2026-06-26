@@ -1,5 +1,7 @@
 # Slice claude-thinking-meta — הזרקת thinking-display ל-claude דרך `_meta` (consumer) — תוכנית
 
+> ✅ **בוצע · אומת · מוזג ל-dev.** אורכב ב-2026-06-27 (הסטטוס אומת מול היסטוריית git/roadmap; פרטי הביצוע והאימות בהמשך הקובץ).
+
 > **תאריך**: 2026-06-18
 > **סטטוס**: הושלם (מוזג ל-dev 35c9755, אומת חי e2e: thought full:3/empty:1)
 > **Complexity**: 3/10 (verifier: light)

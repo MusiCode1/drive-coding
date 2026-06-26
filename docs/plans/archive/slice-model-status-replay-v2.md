@@ -1,5 +1,7 @@
 # Brief: slice — מצב-מודל + בקרת-סוכן + השמעה (מימוש מחדש על dev)
 
+> ✅ **בוצע · אומת · מוזג ל-dev.** אורכב ב-2026-06-27 (הסטטוס אומת מול היסטוריית git/roadmap; פרטי הביצוע והאימות בהמשך הקובץ).
+
 > סטטוס: **הושלם** (2026-06-14). complexity: **8/10** → verifier-slice-**heavy**.
 > base: **`dev`** (tip בזמן כתיבה — אביגיל תאמת line numbers מול ה-tip בזמן dispatch).
 > depends_on: [] — כל התלויות כבר ב-dev (sessions-inline, wake-word infra, ws-reconnect-infra).

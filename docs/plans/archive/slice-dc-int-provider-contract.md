@@ -1,5 +1,7 @@
 # Slice dc-int — drive-coding צורך provider-contract (Direct, בלי מתווך)
 
+> ✅ **בוצע · אומת · מוזג ל-dev.** אורכב ב-2026-06-27 (הסטטוס אומת מול היסטוריית git/roadmap; פרטי הביצוע והאימות בהמשך הקובץ).
+
 > **תאריך**: 2026-06-14
 > **סטטוס**: ✅ **plan-verified / READY** (גרסת **Direct** — אביגיל USABLE-AFTER-FIX → 3 findings קוסמטיים תוקנו, 2026-06-14). הליבה אומתה: 5 הסימבולים נפתרים מ-provider-contract, AcpTransport/AcpClient זהים בין הריפו, ports.ts הוא ה-hub היחיד של BridgeCrashInfo (root-consumers לא משתנים), אין צרכן פנימי נוסף ב-core. תיקונים: §0.2 describeCrash=subpath, §0.4 prepare:tsc חובה (dist gitignored), §6 transitive resolution דרך core. **ממתין ל-go לביצוע.**
 > **Base**: `dev` (drive-coding, אחרי P1a+P1b merged — `224743e`)

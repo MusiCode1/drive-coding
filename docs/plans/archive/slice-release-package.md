@@ -1,5 +1,7 @@
 # Slice — release package (bundled, bunx-compatible) — ‏תוכנית
 
+> ✅ **בוצע · אומת · מוזג ל-dev.** אורכב ב-2026-06-27 (הסטטוס אומת מול היסטוריית git/roadmap; פרטי הביצוע והאימות בהמשך הקובץ).
+
 > **‏תאריך**: 2026-06-17
 > **‏סטטוס**: **הושלם** (3 commits; calev light ← ממתין לאחר commit זה)
 > **Complexity**: 5/10 (verifier: light + phase על Commit 1)
