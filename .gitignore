@@ -14,3 +14,10 @@ scripts/node_modules
 .specstory/
 data
 tsconfig.tsbuildinfo
+
+# Verification reports live in the SEPARATE private reports repo
+# (~/projects/brief-driven-slices/main/reports/<project>/), NOT here.
+# Agents write there; this guard keeps stray copies out of the project repo.
+reports/
+docs/reports/
+docs/*-verification-report.md
