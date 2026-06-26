@@ -1,5 +1,34 @@
 # Decisions — drive-coding
 
+## 2026-06-25 — slice-frontend-rename-cutover: `@drive-coding/frontend-v2` → `@drive-coding/frontend`
+
+### רציונל
+סגירת ה-cutover ההיסטורי frontend-v2→frontend. הדירקטוריה כבר `packages/frontend/` (שונתה
+2026-05 עם מחיקת ה-legacy); נשאר רק **שם החבילה** ב-`package.json` שעדיין `-v2`. החקירה
+הראתה שהמשטח הפונקציונלי **זעיר**: 3 קבצי-קוד (package.json name + `--filter` ב-build.mjs
+וב-dc-launch.mjs) + 2 הערות. 92 מתוך 97 ההפניות הן docs היסטוריים.
+
+### ממצאי אביגיל
+3 סבבים עד READY. הליבה הפונקציונלית אומתה מילה-במילה כבר ב-r1 (כולל: pnpm-lock ממופתח
+לפי **נתיב** לא שם → rename לא נוגע ב-lockfile; build paths דירקטוריוניים; אין CI/turbo/nx;
+אף package אחר לא תלוי בשם). כל ה-findings (r1×4, r2×1) היו בשכבת ה-docs-sweep: exclude-pattern
+שדולף ל-`docs/reports/`, קבצי-גבול לא-מסווגים (redesign-chain-dispatch, walkthrough, voice-acp,
+.html mockup), ו-24 merged briefs ב-`docs/plans/*.md` שנספרו ב-grep גלובלי.
+
+### שינויי-כיוון
+- **rename גורף → גורף-מתוחם**: לא `sed -i` עיוור. Commit 1 = 4 קבצי-קוד נקובים; Commit 2 =
+  רשימת 11 docs-חיים מפורשת. ה-DoD בודק את הרשימה המתוחמת (`git grep` על 11 קבצים), לא
+  "grep גלובלי ריק" — כי זה מתנגש עם ה-briefs ההיסטוריים.
+- **brief = ארטיפקט היסטורי כשמוזג**: ~24 merged briefs ב-`docs/plans/*.md` מזכירים `-v2`
+  ונשארים (כמו reports/archives). ד-dispatch עתידי מקבל את השם הנכון מ-prompt של מרדכי, אז
+  stale `--filter` ב-brief לא-מורץ אינו סיכון.
+
+### רעיונות שנדחו
+- **`sed -i` גורף על כל הריפו** (כולל archives/reports/merged-briefs): נדחה — שכתוב רשומה
+  היסטורית מטעה ("אז זה היה frontend-v2") + diff ענק. אם תתבקש בכל זאת — Commit 3 טריוויאלי.
+- **שכתוב `docs/decisions/voice-acp.md` הישן**: נדחה — ה-rename נכנס כ-entry חדש (זה), לא
+  בעריכת entries מתוארכים ישנים.
+
 ## 2026-06-25 — slice-input-autogrow: textarea שגדל עם הטקסט עד תקרה
 
 ### רציונל

@@ -323,6 +323,10 @@ function buildOpencodeConfigContent(existing: string | undefined, pluginUrl: str
 
 ## 8. היקף ה-CLIs
 
+> **עדכון 2026-06-19:** הטבלה למטה ("טרם נחקר") **נחקרה ומאומתת-במקור** —
+> ראה `docs/investigations/2026-06-19-cli-prompt-injection-mechanisms.md` (מנגנון
+> append פר-CLI, סדר העדפה, spikes, ואבסטרקציית `InjectionPlan`).
+
 הפלאגין הזה **רלוונטי רק ל-OpenCode**. בכל אחד מה-CLIs האחרים נצטרך מנגנון מקביל:
 
 | CLI                | מנגנון אפשרי                                                                                                          | סטטוס מחקרי                     |
