@@ -27,12 +27,13 @@
 
 ## 1. ‏Worktree
 
-‏כל ‏slice ‏מקבל worktree ‏משלו ב-`.worktrees/<slice-name>/`. ‏הbrief ‏אומר ‏איזה ‏שם.
+‏כל ‏slice ‏מקבל worktree ‏משלו ב-`.worktrees/<name>/`. ‏הbrief ‏אומר ‏איזה ‏שם.
+‏מוסכמה: **branch = `slice/<name>`**, **dir = `.worktrees/<name>`** (בלי הקידומת `slice/`).
 
 ```bash
-cd /home/user/projects/voice-acp
-git worktree add .worktrees/<slice-name> -b <slice-name> dev
-cd .worktrees/<slice-name>
+cd /home/user/projects/drive-coding
+git worktree add .worktrees/<name> -b slice/<name> dev
+cd .worktrees/<name>
 pnpm install
 pnpm hooks:install   # ‏חובה — ‏מפעיל pre-commit hook ל-Hebrew lint
 ```
