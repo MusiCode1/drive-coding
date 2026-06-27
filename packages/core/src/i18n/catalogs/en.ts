@@ -185,8 +185,6 @@ export const en: Catalog = {
   "connect.agents.reconnect": "Reconnect",
   "connect.agents.kill": "Kill",
   "connect.agents.killConfirm": "Sure?",
-  "connect.agents.pin": "Keep alive",
-  "connect.agents.unpin": "Unpin",
   "connect.agents.inUse": "Open in another tab",
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   "connect.agents.working": "working…",

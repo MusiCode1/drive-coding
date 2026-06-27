@@ -180,8 +180,6 @@ export const he: Catalog = {
   "connect.agents.reconnect": "התחבר מחדש",
   "connect.agents.kill": "הרוג",
   "connect.agents.killConfirm": "בטוח?",
-  "connect.agents.pin": "השאר חי",
-  "connect.agents.unpin": "בטל נעיצה",
   "connect.agents.inUse": "פעיל בכרטיסייה אחרת",
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   "connect.agents.working": "עובד…",
