@@ -28,6 +28,9 @@ vi.mock("@drive-coding/core/voice/narration-prompt", () => ({
 
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
 import { narrate } from "./narrate"
+import type { VoiceModelRef } from "@drive-coding/core/voice/capabilities"
+
+const TEST_REF: VoiceModelRef = { provider: "google", model: "gemini-flash-lite-latest" }
 
 const mockWithTimeout = withTimeout as ReturnType<typeof vi.fn>
 
@@ -53,7 +56,7 @@ describe("narrate", () => {
     mockWithTimeout.mockImplementation(passthroughWithTimeout)
     ;(generateText as ReturnType<typeof vi.fn>).mockResolvedValue({ text: "קורא קובץ..." })
 
-    const result = await narrate(ctx, tool)
+    const result = await narrate(ctx, tool, TEST_REF)
 
     expect(result).toBe("קורא קובץ...")
     expect(mockWithTimeout).toHaveBeenCalledWith(
@@ -66,7 +69,7 @@ describe("narrate", () => {
   it("timeout — withTimeout זורק → narrate מחזיר null (התנהגות שמורה)", async () => {
     mockWithTimeout.mockRejectedValue(new Error("narrate timeout 3000ms"))
 
-    const result = await narrate(ctx, tool)
+    const result = await narrate(ctx, tool, TEST_REF)
 
     expect(result).toBeNull()
   })
@@ -74,7 +77,7 @@ describe("narrate", () => {
   it("שגיאה כלשהי → narrate מחזיר null", async () => {
     mockWithTimeout.mockRejectedValue(new Error("network error"))
 
-    const result = await narrate(ctx, tool)
+    const result = await narrate(ctx, tool, TEST_REF)
 
     expect(result).toBeNull()
   })
@@ -84,7 +87,7 @@ describe("narrate", () => {
     mockWithTimeout.mockImplementation(passthroughWithTimeout)
     ;(generateText as ReturnType<typeof vi.fn>).mockResolvedValue({ text: "   " })
 
-    const result = await narrate(ctx, tool)
+    const result = await narrate(ctx, tool, TEST_REF)
 
     expect(result).toBeNull()
   })
@@ -95,7 +98,7 @@ describe("narrate", () => {
     ;(generateText as ReturnType<typeof vi.fn>).mockResolvedValue({ text: "מריץ פקודה" })
 
     const ac = new AbortController()
-    await narrate(ctx, tool, ac.signal)
+    await narrate(ctx, tool, TEST_REF, ac.signal)
 
     expect(mockWithTimeout).toHaveBeenCalledWith(
       expect.any(Function),

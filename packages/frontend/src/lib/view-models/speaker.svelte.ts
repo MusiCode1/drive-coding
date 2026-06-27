@@ -34,6 +34,8 @@ import {
   type OrderKey,
 } from "@drive-coding/core/voice/tts-queue"
 import { cacheKeyFor } from "@drive-coding/core/voice/cache-key"
+import { select } from "@drive-coding/core/voice/select"
+import { DEFAULT_VOICE_CONFIG } from "@drive-coding/core/voice/capabilities"
 import { untrack } from "svelte"
 import type { CuesEngine } from "../engines/cues"
 import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
@@ -356,7 +358,7 @@ export class Speaker {
         // כבוי → הקרא טקסט מקורי (אנגלית). נקרא ברגע ה-fetch (לא tracked).
         if (this.#settings.translateThoughts) {
           // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)
-          const result = await translate(text, TARGET_LANG, job.abort.signal, job.messageId)
+          const result = await translate(text, TARGET_LANG, select("translate", DEFAULT_VOICE_CONFIG), job.abort.signal, job.messageId)
           if (result !== null && result.status === "translated") {
             // Slice 4: כתיבה חזרה למקטע כדי ש-ThoughtBubble יוכל להציג HE+EN.
             if (job.bubbleId !== undefined) {
@@ -486,7 +488,7 @@ export class Speaker {
       kind: tc.kind,
       title: tc.title ?? tc.name,
     }
-    const text = await narrate(ctx, tool, job.abort.signal)
+    const text = await narrate(ctx, tool, select("narrate", DEFAULT_VOICE_CONFIG), job.abort.signal)
     if (text === null) return null
 
     // כתוב narration חזרה לבועה (תצוגה) — Svelte 5: החלף בועה שלמה.

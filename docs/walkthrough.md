@@ -169,6 +169,68 @@
 
 - `join` מ-`node:path` נשאר ב-cli-config-file.ts (brief אמר להסיר, אבל משמש ב-`resolveCliSpecsPath` לביצוע `join(getStateDir(), "cli-specs.jsonc")` — cross-platform)
 - cli-config-file.ts נתקן גם מ-CRLF (biome safe fix, לא חלק מה-brief — side effect מינורי)
+## 2026-06-27 — slice/V1-voice-config-core — Commit 2: speaker.svelte.ts חיווט select() (manual)
+
+### מה בוצע?
+
+שינויים ב-`packages/frontend/src/lib/view-models/speaker.svelte.ts`:
+- imports: `select` מ-`@drive-coding/core/voice/select` + `DEFAULT_VOICE_CONFIG` מ-`@drive-coding/core/voice/capabilities`
+- שורה ~359: `translate(text, TARGET_LANG, select("translate", DEFAULT_VOICE_CONFIG), job.abort.signal, job.messageId)`
+- שורה ~489: `narrate(ctx, tool, select("narrate", DEFAULT_VOICE_CONFIG), job.abort.signal)`
+
+### בדיקות
+
+- `pnpm --filter @drive-coding/frontend-v2 typecheck` (svelte-check): 0 errors, 0 warnings
+- `pnpm typecheck` (root, core+backend): exit 0
+- `pnpm --filter @drive-coding/frontend-v2 test`: 319 ירוקים
+- `pnpm lint` (קבצים שלנו): ✓ ללא errors חדשים
+- `pnpm --filter @drive-coding/frontend-v2 build` (vite build): ✓ built in 18.59s
+
+### סטיות
+
+אין. zero-behavior-change: DEFAULT_VOICE_CONFIG.translate/narrate = "gemini-flash-lite-latest" (זהה למחרוזת הקשיחה שהוסרה).
+
+---
+
+## 2026-06-27 — slice/V1-voice-config-core — Commit 1: adapters translate.ts + narrate.ts מקבלים VoiceModelRef (manual)
+
+### מה בוצע?
+
+שינויים ב-`packages/frontend/src/lib/adapters/voice/`:
+- `translate.ts`: הוסף פרמטר `ref: VoiceModelRef` (לפני `signal`). המחרוזת הקשיחה `"gemini-flash-lite-latest"` הוחלפה ב-`ref.model`. הערה `// V2: switch on ref.provider`.
+- `narrate.ts`: כנ"ל.
+- `translate.test.ts`: עדכון 5 קריאות — `translate(text, lang, TEST_REF)` (ref לפני signal).
+- `narrate.test.ts`: עדכון 5 קריאות — `narrate(ctx, tool, TEST_REF)` + `narrate(ctx, tool, TEST_REF, ac.signal)` (שורה ~98 — ac.signal עכשיו ב-4th arg).
+
+### בדיקות
+
+- `pnpm --filter @drive-coding/frontend-v2 test`: 319 tests ירוקים (כולל translate.test + narrate.test)
+- `pnpm --filter @drive-coding/frontend-v2 typecheck`: 2 errors ב-speaker.svelte.ts:359,489 — **צפוי**, speaker לא חוּוט עד Commit 2
+
+### סטיות
+
+אין. ה-2 errors ב-svelte-check צפויים ומתועדים ב-brief §4 Commit 1.
+
+---
+
+## 2026-06-27 — slice/V1-voice-config-core — Commit 0: core VoiceConfig + select() (TDD)
+
+### מה בוצע?
+
+קבצים חדשים ב-`packages/core/src/voice/`:
+- `capabilities.ts`: ArkType schemas — `voiceProvider`, `voiceModelRef`, `voiceService`, `voiceConfig` + `DEFAULT_VOICE_CONFIG` (zero-behavior-change)
+- `select.ts`: פונקציה טהורה `select(service, config) → VoiceModelRef`
+- `select.test.ts`: 6 טסטים TDD (red→green) — כל 4 services + config מותאם + ArkType validation
+
+### בדיקות
+
+- TDD red→green: 6 tests חדשים ב-select.test.ts — ירוקים
+- `pnpm typecheck` (core+backend): ✓ (exit 0)
+- `pnpm lint` (קבצים חדשים): ✓ ללא errors חדשים (258 pre-existing errors לא שייכים לסלייס)
+
+### סטיות
+
+אין. pre-existing lint errors (258) וכשלון backend integration test (`bridge-failure-integration`) קדמו לסלייס זה ואינם חלק ממנו.
 
 ---
 
