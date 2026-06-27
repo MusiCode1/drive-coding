@@ -6360,3 +6360,20 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 - `Speaker`: `#audioStream: AudioSink`, ייבוא AudioSink.
 
 **בדיקות:** typecheck 0 errors. אפס regression על נתיב MP3 (pre-existing test failures — known bug).
+
+### Commit 4 — engine: PcmAudioStream (manual + runtime-verify)
+
+**קבצים:** `pcm-audio-stream.ts` (חדש)
+
+**בוצע:**
+- `PcmAudioStream implements AudioSink` — WebAudio בסיס עם AudioContext אחד למופע.
+- `prepareSegment`: צריכת stream ברקע → splitInt16LE → pcmToFloat32 → AudioBuffer[].
+  carry טיפול בגבולות אי-זוגיים. copyToChannel עם Float32Array מפורש (ArrayBuffer).
+- `play`: gap-less scheduling — #nextStartTime cursor, onended → scheduleNext.
+  resume() אם AudioContext suspended (gesture-gated, voice-mode מספק).
+- `cancel/clear`: source.stop() לכל הפעילים.
+- אין unit test (WebAudio לא רץ ב-happy-dom) — calev phase מאמת.
+
+**חריגות TS:** `(seg.state as string) === "cancelled"` — TypeScript narrow false-positive על async state מחוץ ל-loop.
+
+**בדיקות:** typecheck 0 errors. Runtime-verify: calev phase (להמשיך).
