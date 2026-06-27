@@ -167,6 +167,15 @@ importers:
         specifier: ^6.0.0
         version: 6.4.2(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0)
 
+  packages/provider:
+    dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: ^0.21.1
+        version: 0.21.1(zod@4.4.3)
+      '@drive-coding/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/release:
     dependencies:
       pino:

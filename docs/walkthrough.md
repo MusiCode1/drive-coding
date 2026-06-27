@@ -1,3 +1,19 @@
+## 2026-06-27 — slice-R2-provider-package-consolidate — בתהליך
+
+### Commit 0 — יצירת packages/provider (manual)
+
+**מה בוצע:** יצירת `packages/provider` עם מבנה מלא:
+- `package.json` + `tsconfig.json` (lib: ES2023+DOM)
+- `src/client/client.ts` + `client-impl.ts` + `index.ts` — העתקה מ-core/src/acp/client
+- `src/transport/types.ts` — AcpTransport byte-transport (מ-core/src/acp/transport.ts)
+- `src/transport/ws.ts` + `ws-to-streams.ts` — WsAcpTransport + helper (מ-frontend/engines)
+- `src/spawn/describe-crash.ts` + `acp-provider-error.ts` + `types.ts` + `index.ts`
+- `src/config/cli-config.ts` + `cli-config-file.ts` + `index.ts` — מ-backend/src/acp
+
+**בדיקות:** `pnpm --filter @drive-coding/provider typecheck` — ירוק. `pnpm typecheck` (כולל) — ירוק. `pnpm lint:i18n` — ירוק.
+
+---
+
 ## 2026-06-27 — slice-R1-inline-acp-slice — 2 commits
 
 ### מה בוצע?

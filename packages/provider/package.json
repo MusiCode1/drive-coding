@@ -1,0 +1,20 @@
+{
+  "name": "@drive-coding/provider",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./client": "./src/client/index.ts",
+    "./transport": "./src/transport/types.ts",
+    "./transport/ws": "./src/transport/ws.ts",
+    "./config": "./src/config/index.ts",
+    "./spawn": "./src/spawn/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^0.21.1",
+    "@drive-coding/core": "workspace:*"
+  }
+}
