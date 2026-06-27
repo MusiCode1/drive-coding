@@ -32,9 +32,9 @@ pnpm install && pnpm hooks:install
 ### ‏איך להריץ
 
 - BE: ‏מתוך `packages/backend` — Windows ‏ישיר (‏אין צורך ב-TTS proxy לבדיקה הזו): `PORT=4010 bun src/server.ts`. ‏(‏ל-onecli ‏אין צורך כאן.)
-- FE: ‏מהשורש — `pnpm --filter @drive-coding/frontend dev` (‏Vite port OS-assigned; ‏proxy ל-BE ‏דרך `BE_PORT=4010 pnpm --filter @drive-coding/frontend dev` ‏אם ה-BE ‏לא על 4000).
+- FE: ‏מהשורש — `BE_PORT=4010 pnpm --filter @drive-coding/frontend-v2 dev` (‏Vite port OS-assigned; ‏proxy ל-BE 4010). **‏שם ה-package: `frontend-v2`** (‏ממצא אביגיל 🟢).
 - Tests: ‏מהשורש — `pnpm test packages/frontend/src/lib/util/formatting.test.ts`
-- typecheck: `pnpm --filter @drive-coding/frontend run typecheck` (+ `@drive-coding/core` ‏אם נגעת ב-keys).
+- typecheck: `pnpm --filter @drive-coding/frontend-v2 run typecheck` (+ `@drive-coding/core` ‏אם נגעת ב-keys).
 
 ### Browser
 
@@ -73,6 +73,10 @@ pnpm install && pnpm hooks:install
 | ‏החלפת `createdAt` ‏המוחלט בזמן יחסי | ❌ | ‏מחוץ ל-scope (createdAt ‏נשאר כפי שהוא) |
 | ‏refactor ‏של `SessionPicker.formatDate` ‏לשימוש ב-util ‏המשותף | ❌ | ‏slice עתידי (‏ר' §9 ‏ש"פ 2 — ‏להימנע מ-regression ‏ב-SessionPicker) |
 | ‏locale-aware ‏(‏לא hardcode "he") | ✅ | ‏בslice הזה — ‏locale ‏מ-i18n |
+| **‏נתיב בשורה נפרדת** בפאנל (‏שורת מטא הייתה צפופה) | ✅ | ‏בslice הזה — Commit 3 (‏בוצע בסבב fix פוסט-כלב) |
+| **`basename(path)` util ‏טהור משותף** (TDD) — ‏מאחד `ActiveProcessesPanel.folderName` + `AppHeader.cwdLabel` | ✅ | ‏בslice הזה — Commit 4 |
+| ‏ספריית-path חיצונית (path-browserify ‏וכו') | ❌ | ‏מיותר — one-liner; dependency+bundle ‏ללא צורך. util ‏טהור מספיק |
+| ‏איחוד `FolderPickerDialog` ‏לאותו util | ❌ | ‏שם צריך את **‏כל** ‏הרכיבים (breadcrumbs), ‏לא basename בלבד — ‏לא רלוונטי |
 
 ---
 
@@ -144,7 +148,7 @@ export function formatRelativeTime(epochMs: number, locale: string, now?: number
 **Verification**:
 ```bash
 pnpm test packages/frontend/src/lib/util/formatting.test.ts
-pnpm --filter @drive-coding/frontend run typecheck
+pnpm --filter @drive-coding/frontend-v2 run typecheck
 ```
 
 ### Commit 1 — i18n key ‏ל-label (approach: **none** — ‏טקסט בלבד)
@@ -181,10 +185,58 @@ pnpm --filter @drive-coding/core run typecheck   # מוודא שכל הקטלו�
 
 **Verification**:
 ```bash
-pnpm --filter @drive-coding/frontend run typecheck
+pnpm --filter @drive-coding/frontend-v2 run typecheck
 pnpm lint:i18n        # אסור מחרוזת עברית קשיחה בקוד — הכל דרך t() / Intl
 # manual: BE על 4010 + agent חי שפולט; פתח הפאנל; ודא "לפני X" מופיע ומתקדם
 ```
+
+### Commit 3 — ‏נתיב בשורה נפרדת + ‏תיקון folderName ל-Windows (approach: **manual** — ‏visual) · **‏בוצע בסבב fix פוסט-כלב**
+
+> ‏סבב fix ‏אחרי הרצה חיה (‏המשתמשת ראתה צפיפות + ‏כפילות-נתיב). ‏מתועד כאן בדיעבד.
+
+**‏קבצים שמשתנים**: `packages/frontend/src/lib/components/connect/ActiveProcessesPanel.svelte`
+- ‏הוצאת ה-`cwd-full` ‏ל-`<div class="agent-cwd">` ‏נפרד מעל שורת ה-meta (‏שורת ה-meta הייתה צפופה: `flex-wrap:nowrap`, ‏רק ה-cwd ‏מתכווץ; ‏הזמן `flex-shrink:0` ‏דחק את הנתיב). `.cwd-full` → `display:block` + ellipsis-מההתחלה.
+- **‏תיקון Windows path** ‏ב-`folderName`: ‏היה `split("/")` → ‏על Windows (`D:\…\proj`) ‏חזר הנתיב **‏השלם** → ‏הוצג פעמיים (‏header + ‏שורת cwd). ‏תוקן ל-`split(/[/\\]/).filter(Boolean).at(-1)` (‏עקבי עם `AppHeader.cwdLabel`).
+
+‏(`9b0b770` ‏כבר מכיל את הוצאת-הנתיב; ‏תיקון folderName ‏בסבב הנוכחי.)
+
+### Commit 4 — `basename` util ‏טהור משותף (approach: **tdd**)
+
+> ‏השורש ש-Commit 3 ‏חשף: ‏לוגיקת basename משוכפלת (`folderName` + `AppHeader.cwdLabel` + ‏inline ב-`FolderPickerDialog`). ‏מחלצים ל-util ‏טהור אחד.
+
+**‏קבצים חדשים**:
+- `packages/frontend/src/lib/util/path.ts`
+- `packages/frontend/src/lib/util/path.test.ts`
+
+**API skeleton** (‏החתימה המדויקת — executor ‏אסור לשנות):
+```ts
+/** שם הרכיב האחרון בנתיב (basename), חוצה-פלטפורמה: מפצל על / וגם \.
+ *  מסיר לוכסנים סוגרים. נתיב ללא מפריד → מוחזר כמו שהוא. ריק → "". */
+export function basename(path: string): string
+```
+
+**‏לוגיקה מחייבת**: `path.split(/[/\\]/).filter(Boolean).at(-1) ?? path` — ‏מפצל על `/` ‏ו-`\`, `filter(Boolean)` ‏מסיר ריקים (‏לוכסן סוגר), `at(-1)` ‏האחרון, fallback ל-path ‏המלא.
+
+**‏מקרי-טסט מחייבים**:
+1. unix: `"/home/u/proj"` → `"proj"`
+2. windows: `"D:\\Users\\u\\proj"` → `"proj"`
+3. ‏לוכסן סוגר: `"/a/b/"` ‏ו-`"C:\\a\\b\\"` → `"b"`
+4. ‏שם בלבד (‏ללא מפריד): `"proj"` → `"proj"`
+5. ‏ריק: `""` → `""`
+6. ‏מעורב `/` ‏ו-`\`: `"C:\\a/b\\c"` → `"c"`
+7. **‏root / ‏דרייב חשוף** (‏ממצא אביגיל 🟢): `"/"` → `"/"` · `"C:\\"` → `"C:"`. ‏ה-`filter(Boolean)` ‏מרוקן את החלקים הריקים; ל-`"/"` ‏הכל ריק → `at(-1)` ‏`undefined` → fallback ‏ל-path (`"/"`). ל-`"C:\\"` ‏נשאר `"C:"`. ‏root **‏מחוץ ל-contract ‏הרגיל** (‏ה-call-sites ‏הם תמיד cwd ‏אמיתי, ‏לא root ‏חשוף) — ‏המקרה כאן **‏נועל את ההתנהגות**, ‏לא מבטיח `""`.
+
+**‏קבצים שמשתנים (‏החלפת call-sites)**:
+- `packages/frontend/src/lib/components/connect/ActiveProcessesPanel.svelte` — ‏מחק את ה-local `folderName`, ‏ייבא `basename`, ‏החלף `folderName(agent.cwd)` → `basename(agent.cwd)`. (‏תלוי ב-Commit 3 — ‏מחליף את ה-fix ‏המקומי ב-util.)
+- `packages/frontend/src/lib/components/layout/AppHeader.svelte` — `cwdLabel` ‏הופך ל-`session.cwd ? basename(session.cwd) : ""`. ⚠️ **shared file** (‏ר' parallel-safe-code) — ‏שינוי additive, ‏החלפת ביטוי שקול בלבד, ‏ללא שינוי התנהגות.
+
+**Verification**:
+```bash
+pnpm test packages/frontend/src/lib/util/path.test.ts
+pnpm --filter @drive-coding/frontend-v2 run typecheck   # שם ה-package: frontend-v2
+```
+
+> ‏**‏הערת דיוק**: ‏שם ה-pnpm package ‏הוא `@drive-coding/frontend-v2` (‏לא `frontend`). ‏ה-DoD/Verification ‏לעיל ‏בפקודות אחרות עדיין כותב `frontend` — ‏השתמש ב-`frontend-v2`. ‏ו-`pnpm lint:i18n` ‏לא רץ ‏ב-Windows ‏(`'.' is not recognized`) → ‏הרץ `bash scripts/lint-no-hebrew-in-code.sh`.
 
 ---
 
@@ -193,7 +245,7 @@ pnpm lint:i18n        # אסור מחרוזת עברית קשיחה בקוד —
 | # | ‏בדיקה | ‏איך |
 |---|------|------|
 | 1 | util ‏עובר טסטים | `pnpm test .../formatting.test.ts` — ‏כל 7 ‏המקרים ירוקים |
-| 2 | typecheck + build (core+frontend) | `pnpm --filter @drive-coding/core run build && pnpm --filter @drive-coding/frontend run typecheck` |
+| 2 | typecheck + build (core+frontend) | `pnpm --filter @drive-coding/core run build && pnpm --filter @drive-coding/frontend-v2 run typecheck` |
 | 3 | lint:i18n ‏נקי | `pnpm lint:i18n` — ‏אין מחרוזת עברית קשיחה |
 | 4 | ‏זמן יחסי מוצג | ‏BE+agent ‏חי, ‏פאנל פתוח: ‏סוכן שפלט מציג "‏לפני X" (‏לא ריק, ‏לא epoch גולמי) |
 | 5 | ‏מתעדכן עם הזמן | ‏המתן >1 ‏דקה (≤12s refresh): "‏לפני 2 ‏דק'" → "‏לפני 3 ‏דק'" ‏בלי reload |
