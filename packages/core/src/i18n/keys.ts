@@ -190,8 +190,6 @@ export type MessageKey =
   | "connect.agents.reconnect"
   | "connect.agents.kill"
   | "connect.agents.killConfirm"
-  | "connect.agents.pin"
-  | "connect.agents.unpin"
   | "connect.agents.inUse"
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   | "connect.agents.working"
