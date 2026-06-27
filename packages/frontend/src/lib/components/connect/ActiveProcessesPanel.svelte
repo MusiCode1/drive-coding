@@ -162,20 +162,19 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
             </div>
           </div>
 
-          <div class="agent-cwd">
-            <span class="cwd-full" title={agent.cwd}><bdi>{agent.cwd}</bdi></span>
-          </div>
-
           <div class="agent-meta">
-            {#if agent.acpSessionId}
-              <span class="session-id">{agent.acpSessionId.slice(0, 8)}</span>
-              <span class="meta-sep">·</span>
-            {/if}
-            <span class="created-at">{formatDate(agent.createdAt)}</span>
-            {#if agent.pid}
-              <span class="meta-sep">·</span>
-              <span class="pid">pid: {agent.pid}</span>
-            {/if}
+            <span class="cwd-full" title={agent.cwd}><bdi>{agent.cwd}</bdi></span>
+            <span class="meta-right">
+              {#if agent.acpSessionId}
+                <span class="session-id">{agent.acpSessionId.slice(0, 8)}</span>
+                <span class="meta-sep">·</span>
+              {/if}
+              <span class="created-at">{formatDate(agent.createdAt)}</span>
+              {#if agent.pid}
+                <span class="meta-sep">·</span>
+                <span class="pid">pid: {agent.pid}</span>
+              {/if}
+            </span>
           </div>
         </li>
       {/each}
@@ -274,17 +273,19 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
 
   .agent-meta {
     display: flex;
-    flex-wrap: nowrap;
+    flex-direction: row;
     align-items: center;
     gap: 0.4rem;
     font-size: 0.72rem;
     color: var(--fg-dim);
+    min-width: 0;
   }
 
-  /* הנתיב (.cwd-full) הוא היחיד שמתקצר; שאר המטא (תאריך/pid/סשן)
-     נשארים בגודלם באותה שורה. */
-  .agent-meta > :not(.cwd-full) {
+  .meta-right {
+    display: flex;
     flex-shrink: 0;
+    align-items: center;
+    gap: 0.4rem;
   }
 
   .meta-sep {
@@ -320,15 +321,13 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     min-width: 0;
   }
 
-  /* הנתיב המלא — בשורה נפרדת מעל שורת המטא, רוחב מלא. קיצוץ מתחילת
+  /* הנתיב המלא — בתוך שורת המטא, בצד שמאל (flex:1). קיצוץ מתחילת
      הנתיב: בסיס rtl ממקם את ה-ellipsis בהתחלה כך שזנב הנתיב תמיד נראה;
      ה-<bdi> שומר על סדר ה-LTR התקין של הנתיב עצמו. */
-  .agent-cwd {
-    min-width: 0;
-    margin-block-start: 0.15rem;
-  }
   .cwd-full {
     display: block;
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

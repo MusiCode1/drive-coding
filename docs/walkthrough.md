@@ -1,3 +1,27 @@
+## 2026-06-28 — active-processes-icon-actions — Commit 4: שורת הנתיב מוזגת לשורת ה-meta
+
+### מה בוצע?
+
+- מחק `<div class="agent-cwd">` הנפרד מ-`ActiveProcessesPanel.svelte`.
+- העביר `<span class="cwd-full">` לתוך `<div class="agent-meta">` כאלמנט ראשון (בצד שמאל ב-RTL).
+- קבוצת session/created/pid עטופה ב-`<span class="meta-right">` עם `flex-shrink:0` (נשאר בצד ימין).
+- `.agent-meta` הפך ל-flex row: `.cwd-full` עם `flex:1; min-width:0` ממלא שמאל; `.meta-right` נשאר ימין.
+- `.cwd-full` שומר על `direction:rtl; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap` — ellipsis בהתחלה, זנב הנתיב נראה.
+- CSS: הסרת `.agent-cwd`; הוספת `.meta-right`; עדכון `.agent-meta` ל-flex-direction:row.
+
+### בדיקות
+
+- typecheck: 0 errors (pnpm typecheck).
+- lint:i18n: ✓ (bash scripts/lint-no-hebrew-in-code.sh).
+- build: ✓ (pnpm build מ-packages/frontend, 60s).
+- אימות ויזואלי: בידי המשתמשת על :4010.
+
+### סטיות
+
+אין. הקיצוץ מהסוף ו-ellipsis בהתחלה נשמרו כמו בשורה הנפרדת הקודמת.
+
+---
+
 ## 2026-06-25 — slice-session-title-header — 3 commits
 
 ### מה בוצע?
