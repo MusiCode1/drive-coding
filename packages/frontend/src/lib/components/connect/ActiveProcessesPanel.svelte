@@ -48,11 +48,11 @@ function formatDate(iso: string): string {
   }
 }
 
-/** שם התיקייה האחרונה בנתיב (basename) — להצגה בולטת בשורה העליונה. */
+/** שם התיקייה האחרונה בנתיב (basename) — להצגה בולטת בשורה העליונה.
+ *  מפצל על / וגם על \ (נתיבי Windows) — עקבי עם AppHeader.cwdLabel.
+ *  בלי זה, נתיב Windows (D:\...\proj) חוזר שלם → כפילות מול שורת הנתיב. */
 function folderName(cwd: string): string {
-  const trimmed = cwd.replace(/\/+$/, "")
-  const name = trimmed.split("/").pop()
-  return name || cwd
+  return cwd.split(/[/\\]/).filter(Boolean).at(-1) ?? cwd
 }
 
 function statusColor(status: AgentPublic["status"]): string {
