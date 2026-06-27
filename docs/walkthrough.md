@@ -42,6 +42,35 @@
 
 ---
 
+## 2026-06-27 — slice-binary-core — תיקון DoD#7 (NO-GO calev-heavy)
+
+### מה בוצע?
+
+**תיקון plugin extraction (Commit 5 — fix):** שינוי מ-asset import (`import ... with {type:"file"}`) ל-inline source string (codegen).
+
+**שורש הבעיה:** `import "../plugins/prompt-injector.ts" with {type:"file"}` — קובץ `.ts` מעל ה-entry (`../`) מקבל `$bunfs` name עם `../` שיוצא מחוץ ל-root → `readFileSync` זורק ENOENT בבינארי (ספייק 5, §0 ב-brief).
+
+**3 קבצים שונו:**
+
+1. **`backend/src/plugin-src.gen.ts`** (חדש) — stub committed: `export const PROMPT_INJECTOR_SRC = ""`. Codegen ב-build-binary.mjs דורס עם תוכן אמיתי לפני bun --compile, stub משוחזר אחרי.
+
+2. **`backend/src/plugin-extract.ts`** — הוסר `import _pluginSrcRaw from "../plugins/prompt-injector.ts" with {type:"file"}` + `@ts-expect-error` + cast. הוחלף ב-`import { PROMPT_INJECTOR_SRC } from "./plugin-src.gen.js"`. בענף `isBinary()`: `writeFileSync(destPath, PROMPT_INJECTOR_SRC, "utf8")` במקום `copyFileSync(pluginSrc, destPath)`. Hash check על `PROMPT_INJECTOR_SRC` (string).
+
+3. **`build-binary.mjs`** — הוסף Step 2b: `readFileSync(plugins/prompt-injector.ts)` → כתוב `plugin-src.gen.ts` עם `export const PROMPT_INJECTOR_SRC = ${JSON.stringify(content)}` לפני bun --compile. Step 4b: שחזור stub של plugin-src.gen.ts אחרי.
+
+### בדיקות
+
+- `pnpm typecheck` — ירוק (stub `""` + import תקין).
+- `pnpm build` — `node packages/release/scripts/build-binary.mjs` הצליח: Step 2b כתב 3286 chars, Step 4b שחזר stub.
+- **אימות ידני DoD#7:** הרצת הבינארי מ-/tmp (PORT=4010), POST /api/agents {cliKind:"opencode"} — `~/.config/drive-coding/plugins/prompt-injector.ts` **נוצר עם תוכן** (3351 bytes, import type + plugin logic) — **אין ENOENT**.
+- `git status` נקי (stub משוחזר, dist/ ב-gitignore).
+
+### סטיות
+
+- opencode spawn נשאר "starting" (לא ירוק) ב-Windows — כצפוי (opencode חסום ב-Windows per memory), אבל שגיאת השורש **שינתה** מ-ENOENT prompt-injector ל-בעיה אחרת בcalev-heavy (spawn outcome). החילוץ עצמו עובד.
+
+---
+
 ## 2026-06-27 — slice-state-dir — Commit 0 (TDD): getStateDir + ensureStateSubdir
 
 ### מה בוצע?
