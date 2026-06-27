@@ -14,6 +14,8 @@ export interface TtsRequest {
 }
 
 export interface TtsProvider {
-  /** טקסט → זרם בייטים של אודיו (היום: MP3 מ-ElevenLabs). */
+  /** פורמט הפלט: "mp3" (ElevenLabs) או "pcm" (Gemini TTS, l16 24kHz). */
+  format: "mp3" | "pcm"
+  /** טקסט → זרם בייטים של אודיו. */
   synthesize(req: TtsRequest): Promise<ReadableStream<Uint8Array>>
 }

@@ -12,7 +12,8 @@
  * טסטים שבודקים את המחלקה הזו חייבים לעשות mock ל-MediaSource או לדלג.
  */
 
-export type AudioSegmentState = "loading" | "ready" | "playing" | "ended" | "cancelled"
+import type { AudioSink, AudioSegmentState, SegmentOpts } from "./audio-sink"
+export type { AudioSegmentState } from "./audio-sink"
 
 export type AudioSegment = {
   segmentId: string
@@ -28,7 +29,7 @@ export type AudioSegment = {
 
 const SOURCEOPEN_TIMEOUT_MS = 5000
 
-export class AudioStream {
+export class AudioStream implements AudioSink {
   #segments = new Map<string, AudioSegment>()
   #current: AudioSegment | null = null
 
@@ -42,7 +43,7 @@ export class AudioStream {
     segmentId: string,
     stream: ReadableStream<Uint8Array>,
     ac: AbortController,
-    provenance?: { messageId: string | null; textHash: string },  // slice 22: provenance
+    opts?: SegmentOpts, // slice 22: provenance; V4a: הוסף format (לא בשימוש כאן)
   ): Promise<void> {
     const audio = new Audio()
     const mediaSource = new MediaSource()
@@ -55,8 +56,8 @@ export class AudioStream {
       sourceBuffer: null,
       abortController: ac,
       state: "loading",
-      messageId: provenance?.messageId,
-      textHash: provenance?.textHash,
+      messageId: opts?.messageId,
+      textHash: opts?.textHash,
     }
     this.#segments.set(segmentId, seg)
 

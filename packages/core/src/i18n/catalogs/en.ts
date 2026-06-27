@@ -203,4 +203,8 @@ export const en: Catalog = {
   "contentViewer.title": "View",
   "contentViewer.expand": "Expand",
   "contentViewer.close": "Close",
+  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
+  "settings.ttsProvider.label": "TTS provider",
+  "settings.ttsProvider.elevenlabs": "ElevenLabs",
+  "settings.ttsProvider.gemini": "Gemini",
 }

@@ -44,6 +44,8 @@ type Persisted = {
   showTools: boolean
   // ─── Enter toggle ─── (slice-enter-toggle)
   enterToSend: boolean
+  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
+  ttsProvider: "elevenlabs" | "google"
 }
 
 const DEFAULTS: Persisted = {
@@ -70,6 +72,8 @@ const DEFAULTS: Persisted = {
   showTools: false,
   // ─── Enter toggle ─── (slice-enter-toggle) — ברירת מחדל = התנהגות נוכחית (Enter שולח)
   enterToSend: true,
+  // ─── TTS provider ─── (V4a) — ברירת מחדל = ElevenLabs (Q1=לא flip)
+  ttsProvider: "elevenlabs" as const,
 }
 
 function load(): Persisted {
@@ -148,6 +152,9 @@ export class Settings {
   // ─── Enter toggle ─── (slice-enter-toggle)
   enterToSend = $state<boolean>(DEFAULTS.enterToSend)
 
+  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
+  ttsProvider = $state<"elevenlabs" | "google">(DEFAULTS.ttsProvider)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -172,6 +179,8 @@ export class Settings {
     this.showTools = loaded.showTools
     // ─── Enter toggle ───
     this.enterToSend = loaded.enterToSend
+    // ─── TTS provider ───
+    this.ttsProvider = loaded.ttsProvider
   }
 
   // ─── טופס חיבור ───
@@ -350,6 +359,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
+
+  setTtsProvider = (v: "elevenlabs" | "google"): void => {
+    this.ttsProvider = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -368,6 +384,7 @@ export class Settings {
       showThoughts: this.showThoughts,
       showTools: this.showTools,
       enterToSend: this.enterToSend,
+      ttsProvider: this.ttsProvider,
     })
   }
 }

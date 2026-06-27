@@ -198,4 +198,8 @@ export const he: Catalog = {
   "contentViewer.title": "תצוגה",
   "contentViewer.expand": "הרחב",
   "contentViewer.close": "סגור",
+  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
+  "settings.ttsProvider.label": "ספק TTS",
+  "settings.ttsProvider.elevenlabs": "ElevenLabs",
+  "settings.ttsProvider.gemini": "Gemini",
 }

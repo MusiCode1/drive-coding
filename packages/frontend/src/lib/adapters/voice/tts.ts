@@ -22,6 +22,7 @@ import { ttsCacheHeaders } from "./cache-headers"
 const TTS_CONNECT_TIMEOUT_MS = 10000
 
 export const elevenLabsTts: TtsProvider = {
+  format: "mp3",
   async synthesize(req: TtsRequest): Promise<ReadableStream<Uint8Array>> {
     // eleven_v3 הוא מודל ה-ElevenLabs היחיד שתומך בעברית (learnings 2026-05-13)
     const modelId = req.modelId ?? "eleven_v3"
