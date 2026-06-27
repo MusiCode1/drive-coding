@@ -1,3 +1,22 @@
+## 2026-06-27 — slice/V4a-unify — Commit 1: Speaker → resolveTts (zero-behavior-change)
+
+### מה בוצע?
+
+**`packages/frontend/src/lib/view-models/speaker.svelte.ts`**: החלפת 3 שורות inline ב-`resolveTts(this.#settings.ttsProvider, this.#settings.voiceId)`. הוסרו imports ישירים של `elevenLabsTts` ו-`geminiTts`. שאר הקוד (textHash, synthesize, prepareSegment עם format) ללא שינוי.
+
+### בדיקות
+
+- `pnpm --filter frontend-v2 typecheck`: ✅ 0 errors
+- `pnpm lint:i18n`: ✅ No Hebrew in code
+- `npx vitest run`: 807/808 ✅ (pre-existing failure: bridge-failure-integration)
+- DoD: `grep 'ttsProvider === "google"' packages/frontend/src/` → **רק** ב-tts-resolve.ts ✅
+
+### סטיות
+
+אין. zero-behavior-change מאומת.
+
+---
+
 ## 2026-06-27 — slice/V4a-unify — Commit 0: adapter resolveTts (TDD)
 
 ### מה בוצע?
