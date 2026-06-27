@@ -199,4 +199,8 @@ export const en: Catalog = {
   "settings.toggle.showTools": "Show tools by default",
   // ─── Enter toggle ─── (slice-enter-toggle)
   "settings.toggle.enterToSend": "Enter sends message",
+  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
+  "settings.ttsProvider.label": "TTS provider",
+  "settings.ttsProvider.elevenlabs": "ElevenLabs",
+  "settings.ttsProvider.gemini": "Gemini",
 }

@@ -194,4 +194,8 @@ export const he: Catalog = {
   "settings.toggle.showTools": "הצג כלים כברירת מחדל",
   // ─── Enter toggle ─── (slice-enter-toggle)
   "settings.toggle.enterToSend": "Enter שולח הודעה",
+  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
+  "settings.ttsProvider.label": "ספק TTS",
+  "settings.ttsProvider.elevenlabs": "ElevenLabs",
+  "settings.ttsProvider.gemini": "Gemini",
 }

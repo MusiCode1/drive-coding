@@ -3,7 +3,7 @@
  * SettingsScreen — מסך הגדרות.
  *
  * כרטיסים:
- *  1. "קול ודיבור" — VoicePicker + toggles (speakThoughts/narrateTools/translateThoughts/carMode)
+ *  1. "קול ודיבור" — VoicePicker + TTS provider Select + toggles
  *  2. "שרת" — beUrl
  *
  * הוסר (redesign-fix): כרטיס "חיבור" (תיקייה/מודל/session) — כל הבוררים האלה
@@ -11,11 +11,12 @@
  *
  * כפתורי איפוס ושמור.
  *
- * ─── settings-redesign (redesign-3) · redesign-fix ───
+ * ─── settings-redesign (redesign-3) · redesign-fix · V4a (TTS provider) ───
  */
 import { goto } from "$app/navigation"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import { getI18n, getSettings } from "$lib/context"
+import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
 import LanguageSelect from "./LanguageSelect.svelte"
 import PalettePicker from "./PalettePicker.svelte"
 import SettingsCard from "./SettingsCard.svelte"
@@ -26,6 +27,12 @@ const t = getI18n().t
 
 // translateThoughts disabled כש-speakThoughts כבוי
 const translateDisabled = $derived(!settings.speakThoughts)
+
+// ─── TTS provider ─── (V4a)
+const ttsProviderOptions = $derived<SelectOption[]>([
+  { value: "elevenlabs", label: t("settings.ttsProvider.elevenlabs") },
+  { value: "google", label: t("settings.ttsProvider.gemini") },
+])
 
 // כיבוי הקראת מחשבות מכבה גם את תרגום המחשבות (לא נשאר דלוק-לא-זמין)
 function onSpeakThoughtsChange(v: boolean) {
@@ -82,6 +89,17 @@ $effect(() => {
     <label class="flex flex-col gap-1.5">
       <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.voice.label")}</span>
       <VoicePicker />
+    </label>
+
+    <!-- TTS provider selector — (V4a) -->
+    <label class="flex flex-col gap-1.5">
+      <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.ttsProvider.label")}</span>
+      <Select
+        options={ttsProviderOptions}
+        value={settings.ttsProvider}
+        title={t("settings.ttsProvider.label")}
+        onchange={(v) => settings.setTtsProvider(v as "elevenlabs" | "google")}
+      />
     </label>
 
     <!-- toggles — מוקאפ שורות 626-643 -->

@@ -6377,3 +6377,17 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 **חריגות TS:** `(seg.state as string) === "cancelled"` — TypeScript narrow false-positive על async state מחוץ ל-loop.
 
 **בדיקות:** typecheck 0 errors. Runtime-verify: calev phase (להמשיך).
+
+### Commit 5 — Settings: בורר ספק-TTS (manual)
+
+**קבצים:**
+- `settings.svelte.ts` — הוסף `ttsProvider: "elevenlabs"|"google"` + setter + persist. default = "elevenlabs".
+- `keys.ts` — 3 מפתחות חדשים ב-MessageKey union (settings.ttsProvider.*).
+- `catalogs/he.ts` + `en.ts` — ערכים לכל 3 מפתחות.
+- `SettingsScreen.svelte` — `<Select>` בורר TTS provider ליד VoicePicker.
+
+**בדיקות:**
+- typecheck 0 errors.
+- lint:i18n — אין עברית בקוד.
+- `select.test.ts` 6/6 ירוק (Q1 = default לא שונה).
+- בדיקה ידנית: בורר נשמר ל-localStorage, reload → ערך נשמר, default=elevenlabs.

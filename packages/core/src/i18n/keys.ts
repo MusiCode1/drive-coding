@@ -204,6 +204,10 @@ export type MessageKey =
   | "settings.toggle.showTools"
   // ─── Enter toggle ─── (slice-enter-toggle)
   | "settings.toggle.enterToSend"
+  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
+  | "settings.ttsProvider.label"
+  | "settings.ttsProvider.elevenlabs"
+  | "settings.ttsProvider.gemini"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
