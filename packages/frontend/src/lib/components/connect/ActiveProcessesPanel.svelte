@@ -10,6 +10,7 @@
 import type { AgentPublic } from "@drive-coding/core"
 import { getActiveAgents, getI18n } from "$lib/context"
 import { formatRelativeTime } from "$lib/util/formatting"
+import { basename } from "$lib/util/path"
 
 interface Props {
   onReconnect: (agent: AgentPublic) => void
@@ -46,13 +47,6 @@ function formatDate(iso: string): string {
   } catch {
     return iso
   }
-}
-
-/** שם התיקייה האחרונה בנתיב (basename) — להצגה בולטת בשורה העליונה.
- *  מפצל על / וגם על \ (נתיבי Windows) — עקבי עם AppHeader.cwdLabel.
- *  בלי זה, נתיב Windows (D:\...\proj) חוזר שלם → כפילות מול שורת הנתיב. */
-function folderName(cwd: string): string {
-  return cwd.split(/[/\\]/).filter(Boolean).at(-1) ?? cwd
 }
 
 function statusColor(status: AgentPublic["status"]): string {
@@ -123,7 +117,7 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
             <div class="agent-info">
               <span class="status-dot" style="background:{statusColor(agent.status)}"></span>
               <span class="cli-badge">{agent.cliKind}</span>
-              <span class="folder-name" title={agent.cwd}><bdi>{folderName(agent.cwd)}</bdi></span>
+              <span class="folder-name" title={agent.cwd}><bdi>{basename(agent.cwd)}</bdi></span>
             </div>
 
             <div class="agent-actions">
