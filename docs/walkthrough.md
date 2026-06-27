@@ -6216,3 +6216,29 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 ### סטיות
 
 אין. layout בלבד — קובץ יחיד, ללא שינוי VM/לוגיקה.
+
+---
+
+## slice-restore-last-config — Commit 1: persist
+
+**בוצע:** 2026-06-27
+
+### מה בוצע
+
+- הוספת שדה `lastConfig: Record<string, Record<string, string | boolean>>` לטיפוס `Persisted` ב-`settings.svelte.ts`.
+- הוספת ברירת-מחדל `{}` ב-`DEFAULTS`, `$state` + טעינה ב-constructor, setter `setLastConfig(cliKind, configId, value)` שממזג ושומר.
+- הוספת `lastConfig` ל-`#persist()` — חובה כדי שייישמר.
+- הזרקת `settings` אופציונלי לקונסטרקטור של `AgentSession` (`#settings`).
+- שינוי `+layout.svelte:66`: `new AgentSession({ cues, settings })`.
+- `applyConfigOption` הפך ל-wrapper דק: גוף הלוגיקה עבר ל-`#applyConfigToClient` (מחזיר boolean), persist נקרא אחרי apply מוצלח בלבד.
+- TDD: `settings.lastconfig.test.svelte.ts` — 8 טסטים (RED → GREEN).
+
+### בדיקות
+
+- typecheck: 0 errors, 0 warnings
+- tests: 327/327 ✓
+- lint:i18n: ✓ אין עברית בקוד
+
+### סטיות
+
+אין. הכל לפי ה-brief.

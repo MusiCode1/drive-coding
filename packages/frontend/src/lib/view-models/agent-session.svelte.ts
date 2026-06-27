@@ -22,6 +22,7 @@ import type { CuesEngine } from "$lib/engines/cues"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
 import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
 import type { CliKind } from "@drive-coding/core"
+import type { Settings } from "$lib/view-models/settings.svelte"
 import type {
   Bubble,
   MessageBubble,
@@ -68,9 +69,12 @@ export type TurnState = "idle" | "waiting" | "thinking" | "responding" | "callin
 export class AgentSession {
   // ─── slice 6: cues injection ─── (אופציונלי — slice 9 יקשר ל-Settings)
   readonly #cues?: CuesEngine
+  // ─── slice-restore-last-config: settings injection (אופציונלי — no-op אם נעדר) ───
+  readonly #settings?: Settings
 
-  constructor(opts?: { cues?: CuesEngine }) {
+  constructor(opts?: { cues?: CuesEngine; settings?: Settings }) {
     this.#cues = opts?.cues
+    this.#settings = opts?.settings
     // ─── slice ws-reconnect-infra: visibility tracking ───
     if (typeof document !== "undefined") {
       this.#pageHidden = document.hidden
@@ -865,53 +869,70 @@ export class AgentSession {
    * מחיל שינוי config על הסשן הפתוח. קורא ל-setSessionConfigOption עם
    * discriminated fallback ל-setSessionModel/setSessionMode.
    * מדלג בשקט אם הסשן לא מחובר.
+   *
+   * ─── slice-restore-last-config: wrapper ───
+   * הגוף האמיתי הועבר ל-#applyConfigToClient שמחזיר boolean (הצליח/לא נמצא).
+   * guard של status/client+sessionId נשאר כאן.
+   * persist נקרא רק אם applied===true — כיסוי כל 5 מסלולי-ההצלחה.
    */
   applyConfigOption = async (configId: string, value: string | boolean): Promise<void> => {
     if (this.status !== "connected") return
     if (!this.#client || !this.#sessionId) return
+    const applied = await this.#applyConfigToClient(configId, value)
+    const cli = this.#cliKind
+    if (applied && this.#settings && cli) {
+      this.#settings.setLastConfig(cli, configId, value)
+    }
+  }
 
+  /**
+   * הגוף הפנימי של apply. מחזיר true בכל מסלול-הצלחה, false אם configId לא נמצא.
+   * מניח ש-guard (status, #client, #sessionId) כבר עבר בקורא.
+   */
+  #applyConfigToClient = async (configId: string, value: string | boolean): Promise<boolean> => {
     // מסלול 1: option קיים ב-configOptions לפי id
     const optById = this.configOptions.find((o) => o.id === configId)
     if (optById) {
-      const res = await this.#client.setSessionConfigOption({
-        sessionId: this.#sessionId, configId, value,
+      const res = await this.#client!.setSessionConfigOption({
+        sessionId: this.#sessionId!, configId, value,
       })
       this.configOptions = res.configOptions
-      return
+      return true
     }
 
     // מסלול 2: fallback key "model"/"mode" — חפש לפי category
     if (configId === "model" && typeof value === "string") {
       const byCat = this.configOptions.find((o) => o.category === "model")
       if (byCat) {
-        const res = await this.#client.setSessionConfigOption({
-          sessionId: this.#sessionId, configId: byCat.id, value,
+        const res = await this.#client!.setSessionConfigOption({
+          sessionId: this.#sessionId!, configId: byCat.id, value,
         })
         this.configOptions = res.configOptions
-        return
+        return true
       }
       // fallback — setSessionModel ישיר; עדכן models ידנית למניעת UI desync
-      await this.#client.setSessionModel({ sessionId: this.#sessionId, modelId: value })
+      await this.#client!.setSessionModel({ sessionId: this.#sessionId!, modelId: value })
       if (this.models) this.models = { ...this.models, currentModelId: value }
-      return
+      return true
     }
     if (configId === "mode" && typeof value === "string") {
       const byCat = this.configOptions.find((o) => o.category === "mode")
       if (byCat) {
-        const res = await this.#client.setSessionConfigOption({
-          sessionId: this.#sessionId, configId: byCat.id, value,
+        const res = await this.#client!.setSessionConfigOption({
+          sessionId: this.#sessionId!, configId: byCat.id, value,
         })
         this.configOptions = res.configOptions
-        return
+        return true
       }
       // fallback — setSessionMode ישיר; עדכן modes ידנית
-      await this.#client.setSessionMode({ sessionId: this.#sessionId, modeId: value })
+      await this.#client!.setSessionMode({ sessionId: this.#sessionId!, modeId: value })
       if (this.modes) this.modes = { ...this.modes, currentModeId: value }
-      return
+      return true
     }
 
     // מסלול 3: לא נמצא — skip בשקט
     console.warn(`[AgentSession] configId "${configId}" not available — skipping`)
+    return false
   }
 
   // ─── redesign-fix: רשימת סשנים inline ─── (תוספתי)
