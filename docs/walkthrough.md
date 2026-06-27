@@ -31,6 +31,17 @@
 
 **בדיקות:** typecheck ירוק; provider tests: 40/40 ירוקים; total: 821 ירוקים, 12 skipped, 1 כשלון pre-existing (bridge-failure-integration F-1 — known bug מ-slice 10)
 
+### Commit 2 — build verification (none)
+
+**מה בוצע:** הרצת בדיקות build כ-DoD סופי:
+- `pnpm test` — 821 passed, 12 skipped, 1 pre-existing fail (F-1, unchanged)
+- `pnpm --filter @drive-coding/frontend-v2 build` — ירוק (22s client + 38s server; אין node-only imports בצד הדפדפן)
+- `pnpm lint:i18n` — ירוק
+
+**הערה:** warning על chunk size (>500kB) — pre-existing, לא קשור ל-R2
+
+**סטטוס:** הושלם
+
 ---
 
 ## 2026-06-27 — slice-R1-inline-acp-slice — 2 commits
