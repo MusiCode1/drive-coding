@@ -23,7 +23,11 @@ if (!existsSync(feIndexHtml)) {
 
 const binEntry = path.join(repoRoot, "packages/backend/src/bin/drive-coding.ts")
 
-const child = spawn("bun", [binEntry], {
+// Forward any CLI flags to the bin (e.g. `pnpm start -- --https --config app.jsonc`).
+// process.argv: [node, dc-launch.mjs, ...userFlags] → slice(2) keeps the user flags.
+const forwardedArgs = process.argv.slice(2)
+
+const child = spawn("bun", [binEntry, ...forwardedArgs], {
   stdio: "inherit",
   cwd: repoRoot,
   env: process.env,
