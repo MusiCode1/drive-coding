@@ -6336,3 +6336,15 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 - `elevenLabsTts.format = "mp3"` (ElevenLabs מחזיר MP3).
 
 **בדיקות:** `pnpm --filter frontend-v2 typecheck` — 0 errors.
+
+### Commit 2 — adapter: geminiTts provider (manual + runtime-verify)
+
+**קבצים:** `base64.ts` (שינוי — הוספת `base64ToBytes`) + `tts-gemini.ts` (חדש)
+
+**בוצע:**
+- `base64ToBytes(b64)` נוסף ל-base64.ts (בלי spread, loop-based).
+- `geminiTts: TtsProvider` — googleGenAi().models.generateContentStream → ReadableStream<Uint8Array> של PCM.
+- `config.abortSignal` מועבר ל-SDK (מאומת מ-genai.d.ts).
+- noUncheckedIndexedAccess: optional-chain מלא בגישה ל-candidates/parts.
+
+**בדיקות:** typecheck ירוק. Runtime-verify: calev phase אחרי Commit 4.

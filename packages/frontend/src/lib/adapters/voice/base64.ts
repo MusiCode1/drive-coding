@@ -10,6 +10,21 @@
  * הועתק כפי שהוא מ-main/packages/frontend/src/lib/voice/base64.ts (slice 3).
  */
 
+/**
+ * base64ToBytes — המרת מחרוזת base64 ל-Uint8Array.
+ *
+ * בלי spread — אותה זהירות כמו bytesToBase64 (ר' MED-5 למעלה).
+ * משמש ל-decode של inlineData.data מ-Gemini TTS SSE stream.
+ */
+export function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
+}
+
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = ""
   const chunkSize = 8192
