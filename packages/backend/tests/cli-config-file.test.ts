@@ -184,4 +184,52 @@ describe("loadCliSpecsOverride", () => {
 
     expect(result["opencode"]?.bin).toBe("/custom/opencode")
   })
+
+  // --- CLI_SPECS_JSON integration tests (Commit 3) ---
+
+  it("7. CLI_SPECS_JSON only → applied as override", async () => {
+    process.env.CLI_SPECS_JSON = JSON.stringify({ claude: { bin: "/inline/claude" } })
+    // No CLI_SPECS_FILE set — default path won't exist in tmp.
+    process.env.CLI_SPECS_FILE = "/tmp/does-not-exist-specs-99999.jsonc"
+
+    const { loadCliSpecsOverride } = await import("../src/acp/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+
+    expect(result["claude"]?.bin).toBe("/inline/claude")
+  })
+
+  it("8. CLI_SPECS_JSON merged over file: inline wins per-key", async () => {
+    // File has opencode + gemini; inline overrides opencode only.
+    const fileContent = JSON.stringify({
+      opencode: { bin: "/file/opencode" },
+      gemini: { bin: "/file/gemini" },
+    })
+    const filePath = writeTmpFile(fileContent)
+    process.env.CLI_SPECS_FILE = filePath
+    process.env.CLI_SPECS_JSON = JSON.stringify({ opencode: { bin: "/inline/opencode" } })
+
+    const { loadCliSpecsOverride } = await import("../src/acp/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+
+    // Inline wins for opencode
+    expect(result["opencode"]?.bin).toBe("/inline/opencode")
+    // File gemini survives
+    expect(result["gemini"]?.bin).toBe("/file/gemini")
+  })
+
+  it("9. CLI_SPECS_JSON broken JSON → ignored + warning, file still applies", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const fileContent = JSON.stringify({ opencode: { bin: "/file/opencode" } })
+    const filePath = writeTmpFile(fileContent)
+    process.env.CLI_SPECS_FILE = filePath
+    process.env.CLI_SPECS_JSON = "{ not valid json }"
+
+    const { loadCliSpecsOverride } = await import("../src/acp/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+
+    // Broken inline JSON is ignored — file still applies
+    expect(result["opencode"]?.bin).toBe("/file/opencode")
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
 })
