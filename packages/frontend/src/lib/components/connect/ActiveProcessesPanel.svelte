@@ -9,6 +9,8 @@
  */
 import type { AgentPublic } from "@drive-coding/core"
 import { getActiveAgents, getI18n } from "$lib/context"
+import { formatRelativeTime } from "$lib/util/formatting"
+import { basename } from "$lib/util/path"
 
 interface Props {
   onReconnect: (agent: AgentPublic) => void
@@ -45,13 +47,6 @@ function formatDate(iso: string): string {
   } catch {
     return iso
   }
-}
-
-/** שם התיקייה האחרונה בנתיב (basename) — להצגה בולטת בשורה העליונה. */
-function folderName(cwd: string): string {
-  const trimmed = cwd.replace(/\/+$/, "")
-  const name = trimmed.split("/").pop()
-  return name || cwd
 }
 
 function statusColor(status: AgentPublic["status"]): string {
@@ -122,7 +117,7 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
             <div class="agent-info">
               <span class="status-dot" style="background:{statusColor(agent.status)}"></span>
               <span class="cli-badge">{agent.cliKind}</span>
-              <span class="folder-name" title={agent.cwd}><bdi>{folderName(agent.cwd)}</bdi></span>
+              <span class="folder-name" title={agent.cwd}><bdi>{basename(agent.cwd)}</bdi></span>
             </div>
 
             <div class="agent-actions">
@@ -166,13 +161,21 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
             </div>
           </div>
 
-          <div class="agent-meta">
+          <div class="agent-cwd">
             <span class="cwd-full" title={agent.cwd}><bdi>{agent.cwd}</bdi></span>
-            <span class="meta-sep">·</span>
+          </div>
+
+          <div class="agent-meta">
             {#if agent.busy}
               <span class="busy-indicator" aria-label={t("connect.agents.working")}>
                 <span class="busy-dot"></span>
                 <span class="busy-label">{t("connect.agents.working")}</span>
+              </span>
+              <span class="meta-sep">·</span>
+            {/if}
+            {#if agent.lastMessageAt != null}
+              <span class="last-msg" title={t("connect.agents.lastMessage")}>
+                {formatRelativeTime(agent.lastMessageAt, i18n.locale)}
               </span>
               <span class="meta-sep">·</span>
             {/if}
@@ -328,17 +331,22 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     min-width: 0;
   }
 
-  /* הנתיב המלא — בשורת המטא התחתונה. קיצוץ מתחילת הנתיב: בסיס rtl
-     ממקם את ה-ellipsis בהתחלה כך שזנב הנתיב תמיד נראה; ה-<bdi> שומר
-     על סדר ה-LTR התקין של הנתיב עצמו. */
+  /* הנתיב המלא — בשורה נפרדת מעל שורת המטא, רוחב מלא. קיצוץ מתחילת
+     הנתיב: בסיס rtl ממקם את ה-ellipsis בהתחלה כך שזנב הנתיב תמיד נראה;
+     ה-<bdi> שומר על סדר ה-LTR התקין של הנתיב עצמו. */
+  .agent-cwd {
+    min-width: 0;
+    margin-block-start: 0.15rem;
+  }
   .cwd-full {
+    display: block;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    flex: 1 1 auto;
-    min-width: 0;
     direction: rtl;
     text-align: left;
+    font-size: 0.72rem;
+    color: var(--fg-dim);
   }
 
   .folder-name > :global(bdi),
@@ -349,6 +357,11 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
   .session-id {
     font-family: monospace;
     direction: ltr;
+  }
+
+  .last-msg {
+    direction: ltr;
+    flex-shrink: 0;
   }
 
   .created-at {

@@ -104,3 +104,33 @@ describe("TurnTracker — debounce-שקט", () => {
     expect(tracker.isBusy(t0 + 4400)).toBe(false)
   })
 })
+
+describe("TurnTracker — getLastActivityAt", () => {
+  it("טרם פלט → null", () => {
+    const tracker = createTurnTracker()
+    expect(tracker.getLastActivityAt()).toBeNull()
+  })
+
+  it("sessionUpdate → epoch-ms של אותו frame", () => {
+    const tracker = createTurnTracker()
+    tracker.observe({ unparsed: false, sessionUpdate: "agent_message_chunk" }, 1000)
+    expect(tracker.getLastActivityAt()).toBe(1000)
+  })
+
+  it("מתעדכן לפלט האחרון; frame לא רלוונטי לא מזיז אותו", () => {
+    const tracker = createTurnTracker()
+    tracker.observe({ unparsed: false, sessionUpdate: "agent_message_chunk" }, 1000)
+    tracker.observe({ unparsed: false, sessionUpdate: "tool_call" }, 2000)
+    expect(tracker.getLastActivityAt()).toBe(2000)
+    // $/ping אינו פלט → הזמן נשאר על 2000
+    tracker.observe({ unparsed: false, method: "$/ping" }, 3000)
+    expect(tracker.getLastActivityAt()).toBe(2000)
+  })
+
+  it("נשאר על הפלט האחרון גם אחרי ש-debounce הוריד ל-idle (לא תלוי busy)", () => {
+    const tracker = createTurnTracker({ idleDebounceMs: DEFAULT_DEBOUNCE })
+    tracker.observe({ unparsed: false, sessionUpdate: "agent_message_chunk" }, 1000)
+    expect(tracker.isBusy(1000 + 5000)).toBe(false) // חלף debounce
+    expect(tracker.getLastActivityAt()).toBe(1000) // עדיין זמין
+  })
+})

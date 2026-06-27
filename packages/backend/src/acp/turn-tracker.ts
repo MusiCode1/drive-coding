@@ -22,6 +22,8 @@ export type TurnTracker = {
   observe(summary: WireSummary, now: number): void
   /** האם יש turn פעיל (פלט לאחרונה ולא הסתיים/לא חלף debounce). */
   isBusy(now: number): boolean
+  /** epoch-ms של הפלט האחרון שהסוכן שלח (כל sessionUpdate); null אם טרם שלח. */
+  getLastActivityAt(): number | null
 }
 
 export function createTurnTracker(opts?: { idleDebounceMs?: number }): TurnTracker {
@@ -46,6 +48,12 @@ export function createTurnTracker(opts?: { idleDebounceMs?: number }): TurnTrack
     isBusy(now: number): boolean {
       if (!busy) return false
       return (now - lastActivityAt) < idleDebounceMs
+    },
+
+    getLastActivityAt(): number | null {
+      // lastActivityAt נשאר על הפלט האחרון גם אחרי ש-debounce הוריד ל-idle —
+      // לכן זה "מתי שלח הודעה אחרונה", לא תלוי ב-busy. 0 → טרם פלט.
+      return lastActivityAt === 0 ? null : lastActivityAt
     },
   }
 }

@@ -26,7 +26,9 @@ export function createBridgeManager(opts?: { wireRecorder?: WireRecorder }): Bri
   markAttached(bridgeId: string): void
   markDetached(bridgeId: string): void
   // slice active-agents + agent-busy-indicator: runtime enrichment for GET /api/agents
-  getRuntimeInfo(bridgeId: string): { pid: number; attached: boolean; busy: boolean } | null
+  getRuntimeInfo(
+    bridgeId: string,
+  ): { pid: number; attached: boolean; busy: boolean; lastMessageAt: number | null } | null
   // slice agent-busy-indicator: subscription לשורות stdout (reader קבוע ב-bridge-manager)
   onLine(bridgeId: string, cb: (line: string) => void): () => void
   /** כותב שורה ל-child.stdin ומתעד את כיוון ה-out. מחזיר false אם ה-bridge לא קיים. */
@@ -266,11 +268,18 @@ export function createBridgeManager(opts?: { wireRecorder?: WireRecorder }): Bri
       if (e) e.hasActiveWs = false
     },
 
-    // slice active-agents + agent-busy-indicator: returns { pid, attached, busy } for a live bridge, or null
-    getRuntimeInfo(bridgeId: string): { pid: number; attached: boolean; busy: boolean } | null {
+    // slice active-agents + agent-busy-indicator: returns { pid, attached, busy, lastMessageAt } for a live bridge, or null
+    getRuntimeInfo(
+      bridgeId: string,
+    ): { pid: number; attached: boolean; busy: boolean; lastMessageAt: number | null } | null {
       const e = store.get(bridgeId)
       if (!e) return null
-      return { pid: e.handle.pid, attached: e.hasActiveWs, busy: e.tracker.isBusy(Date.now()) }
+      return {
+        pid: e.handle.pid,
+        attached: e.hasActiveWs,
+        busy: e.tracker.isBusy(Date.now()),
+        lastMessageAt: e.tracker.getLastActivityAt(),
+      }
     },
 
     // slice agent-busy-indicator: subscribe לשורות stdout (reader קבוע ב-bridge-manager)
