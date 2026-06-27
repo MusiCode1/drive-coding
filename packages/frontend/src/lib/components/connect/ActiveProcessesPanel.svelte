@@ -9,6 +9,7 @@
  */
 import type { AgentPublic } from "@drive-coding/core"
 import { getActiveAgents, getI18n } from "$lib/context"
+import { formatRelativeTime } from "$lib/util/formatting"
 
 interface Props {
   onReconnect: (agent: AgentPublic) => void
@@ -173,6 +174,12 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
               <span class="busy-indicator" aria-label={t("connect.agents.working")}>
                 <span class="busy-dot"></span>
                 <span class="busy-label">{t("connect.agents.working")}</span>
+              </span>
+              <span class="meta-sep">·</span>
+            {/if}
+            {#if agent.lastMessageAt != null}
+              <span class="last-msg" title={t("connect.agents.lastMessage")}>
+                {formatRelativeTime(agent.lastMessageAt, i18n.locale)}
               </span>
               <span class="meta-sep">·</span>
             {/if}
@@ -349,6 +356,11 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
   .session-id {
     font-family: monospace;
     direction: ltr;
+  }
+
+  .last-msg {
+    direction: ltr;
+    flex-shrink: 0;
   }
 
   .created-at {
