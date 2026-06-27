@@ -1,7 +1,7 @@
 # Slice — https-local — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: טיוטה (טרם אביגיל)
+> **סטטוס**: הושלם
 > **Complexity**: 5/10 (verifier: light + phase על commit ה-serve)
 > **תלויות (`depends_on`)**: [config-unified]
 > **Base**: `slice/config-unified` @ `8db1b47` (טרם מוזג ל-dev)
@@ -222,4 +222,6 @@ curl -k https://localhost:4012/api/agents  # → {"agents":[]}
 
 ## סטיות מהתכנון (מתעדכן ע"י executor)
 
-- (אין עדיין)
+- bun path: `D:\ProgramsAndApps\Bun\bin\bun.exe` (לא `Bun\bun.exe` ישיר) — השפיע על integration test בלבד.
+- log message "Starting — http://localhost:PORT" לא עודכן ל-https (לא בscope; DoD לא ציין זאת).
+- integration test בדק `/api/agents` (200) במקום `/` (שמחזיר 404 ללא static files) — minor test adjustment.
