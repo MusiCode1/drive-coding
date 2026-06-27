@@ -176,4 +176,11 @@ export function ensureStateSubdir(...segments: string[]): string {
 ---
 
 ## סטיות מהתכנון (executor ממלא)
-- (אין עדיין)
+
+1. **Commit 0 — paths.test.ts: import סטטי במקום dynamic**: `vi.stubEnv` מספיק כי `getHomeDir()` קורא `process.env` בזמן ריצה. mock `node:child_process` הוסף (http-options מריץ execFileSync בimport).
+
+2. **Commit 1 — `join` נשאר ב-cli-config-file.ts**: ה-brief אמר להסיר, אבל `join` משמש ב-`resolveCliSpecsPath` לביצוע `join(getStateDir(), "cli-specs.jsonc")` — cross-platform. הסרתו תשבור typecheck.
+
+3. **Commit 1 — cli-config-file.ts CRLF**: biome `--write` תיקן CRLF→LF (safe fix, side effect מינורי).
+
+4. **cli-config-file.test.ts — mock node:child_process**: נדרש כי paths.ts → http-options.ts → execFileSync בimport-time.
