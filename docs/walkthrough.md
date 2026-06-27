@@ -1,3 +1,34 @@
+## 2026-06-27 — slice/V4a-unify — Commit 2: BubblePlayer → sink + resolveTts; מחיקת playAgentText
+
+### מה בוצע?
+
+**`packages/frontend/src/lib/view-models/bubble-player.svelte.ts`**:
+- הוסף sink משלו: `readonly #sink = new RoutingAudioSink(...)` + `#segId: string | null = null`
+- ענף TTS (message/thought): מחליף `playAgentText` ב-`resolveTts` + `#sink.prepareSegment` + `#sink.play`
+- `<audio>` (`audioEl`) נשאר — נשמר לענף user-recording (`playUserRecording` אין לו signal)
+- `cleanup()`: הוסף `this.#segId = null` בנוסף לאיפוסים הקיימים
+- `stop()`: שני מנגנוני-עצירה — `#sink.cancel(#segId)` לTTS + `#audioEl.pause()` לrecording (אין לו signal)
+
+**`packages/frontend/src/lib/adapters/voice/play-bubble.ts`**:
+- נמחקה `playAgentText` (צרכן יחיד = BubblePlayer, כלל #5)
+- נמחק import של `elevenLabsTts` (לא נדרש עוד)
+- עודכן docstring: מתאר נתיב `<audio>` לrecording בלבד, TTS עבר ל-BubblePlayer→sink
+
+### בדיקות
+
+- `pnpm --filter frontend-v2 typecheck`: ✅ 0 errors
+- `pnpm lint:i18n`: ✅ No Hebrew in code
+- `npx vitest run`: 807/808 ✅ (pre-existing failure: bridge-failure-integration)
+- `pnpm --filter @drive-coding/frontend-v2 build`: ✅ built in ~19s
+- DoD: `grep -rn "playAgentText" packages/frontend/src` → **0** ✅
+- DoD: `grep -rn 'ttsProvider === "google"' packages/frontend/src` → **רק** tts-resolve.ts ✅
+
+### סטיות
+
+אין. runtime verification מתבצע ע"י calev בסיום.
+
+---
+
 ## 2026-06-27 — slice/V4a-unify — Commit 1: Speaker → resolveTts (zero-behavior-change)
 
 ### מה בוצע?
