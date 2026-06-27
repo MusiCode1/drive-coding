@@ -1,3 +1,31 @@
+## 2026-06-28 — slice-P1-additive-package — 2 commits
+
+### מה בוצע?
+
+**Commit 0 (manual):** העתקת `packages/provider/` מ-R3-spawn-core-untangle.
+- 23 קבצים: src/{client,transport,config,spawn,host}/** + cli-config.test.ts + cli-config-file.test.ts ברמת-השורש + package.json + tsconfig.json + vitest.config.ts.
+- ללא tsconfig.tsbuildinfo, ללא node_modules.
+- `pnpm install` זיהה את החבילה החדשה (`@drive-coding/provider`).
+
+**Commit 1 (none):** biome format+lint fix על קבצי ה-provider (FIXABLE issues בלבד).
+- `cli-config-file.test.ts`: useLiteralKeys; `cli-config.test.ts`: noUnusedImports + format; `ws-transport.test.ts`: format; `client.ts`/`index.ts`: organizeImports + format; `ws.ts`: format.
+- לא נגעו בקובץ חי אחד.
+
+### בדיקות
+
+- typecheck (`pnpm --filter @drive-coding/provider typecheck`): ✓ exit 0
+- tests (`pnpm --filter @drive-coding/provider test`): 54/54 ירוקים (5 test files: ws-transport, ws-to-streams, spawn-core, cli-config, cli-config-file)
+- root typecheck (`pnpm typecheck`): ✓ (dev לא נשבר)
+- i18n lint: ✓ (אין עברית בקוד)
+- `git diff dev..HEAD --name-only | grep -vE "packages/provider/|pnpm-lock"`: ריק (אפס קובץ חי)
+- `grep "@drive-coding/provider" core/backend/frontend src`: ריק (לא נצרכת ע"י החי)
+
+### חריגות
+
+אין. additive נקי.
+
+---
+
 ## 2026-06-27 — slice-content-viewer — 4 commits
 
 ### מה בוצע?
