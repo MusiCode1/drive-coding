@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "provider-contract": "git+https://github.com/MusiCode1/provider-abstraction.git#main",
+    "selfsigned": "^2",
     "@agentclientprotocol/sdk": "^0.21.1",
     "@ai-sdk/elevenlabs": "^2.0.33",
     "@ai-sdk/google": "^3.0.75",
