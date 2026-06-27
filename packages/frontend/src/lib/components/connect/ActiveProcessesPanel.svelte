@@ -167,9 +167,11 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
             </div>
           </div>
 
-          <div class="agent-meta">
+          <div class="agent-cwd">
             <span class="cwd-full" title={agent.cwd}><bdi>{agent.cwd}</bdi></span>
-            <span class="meta-sep">·</span>
+          </div>
+
+          <div class="agent-meta">
             {#if agent.busy}
               <span class="busy-indicator" aria-label={t("connect.agents.working")}>
                 <span class="busy-dot"></span>
@@ -335,17 +337,22 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     min-width: 0;
   }
 
-  /* הנתיב המלא — בשורת המטא התחתונה. קיצוץ מתחילת הנתיב: בסיס rtl
-     ממקם את ה-ellipsis בהתחלה כך שזנב הנתיב תמיד נראה; ה-<bdi> שומר
-     על סדר ה-LTR התקין של הנתיב עצמו. */
+  /* הנתיב המלא — בשורה נפרדת מעל שורת המטא, רוחב מלא. קיצוץ מתחילת
+     הנתיב: בסיס rtl ממקם את ה-ellipsis בהתחלה כך שזנב הנתיב תמיד נראה;
+     ה-<bdi> שומר על סדר ה-LTR התקין של הנתיב עצמו. */
+  .agent-cwd {
+    min-width: 0;
+    margin-block-start: 0.15rem;
+  }
   .cwd-full {
+    display: block;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    flex: 1 1 auto;
-    min-width: 0;
     direction: rtl;
     text-align: left;
+    font-size: 0.72rem;
+    color: var(--fg-dim);
   }
 
   .folder-name > :global(bdi),
