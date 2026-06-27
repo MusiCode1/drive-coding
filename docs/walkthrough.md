@@ -1,3 +1,26 @@
+## 2026-06-28 — active-processes-icon-actions — Commit 5: בועת-אישור "בטוח?" על כפתור ה-פח
+
+### מה בוצע?
+
+- עטף את כפתור ה-Kill ב-`<div class="kill-wrap">`.
+- הוסיף `{#if confirmingId === agent.id}<span class="kill-confirm-tip" role="status">...` — בועה מותנית שמופיעה בלחיצה ראשונה.
+- מנצל את `t("connect.agents.killConfirm")` הקיים ("בטוח?") — אין מפתח i18n חדש.
+- CSS: `.kill-wrap { position:relative }`; `.kill-confirm-tip` = absolute מעל הכפתור (bottom:calc(100%+5px), inset-inline-end:0), רקע אדום-עמום, `white-space:nowrap`, `z-index:20`, אנימציית `tip-pop` (scale/opacity, 0.12s).
+- `handleKill`/timeout/`confirmingId` ללא שינוי.
+
+### בדיקות
+
+- typecheck: 0 errors.
+- lint:i18n: ✓ (אין עברית בקוד).
+- build: ✓ (52.95s).
+- אימות ויזואלי: בידי המשתמשת על :4010.
+
+### סטיות
+
+אין. מפתח i18n קיים בלבד, flow קיים לא נגע.
+
+---
+
 ## 2026-06-28 — active-processes-icon-actions — Commit 4: שורת הנתיב מוזגת לשורת ה-meta
 
 ### מה בוצע?

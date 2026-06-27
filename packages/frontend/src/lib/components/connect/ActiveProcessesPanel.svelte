@@ -149,16 +149,21 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
             </button>
 
             <!-- Kill -->
-            <button
-              type="button"
-              class="action-btn icon-btn kill-btn"
-              class:confirming={confirmingId === agent.id}
-              onclick={() => handleKill(agent.id)}
-              title={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
-              aria-label={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
-            >
-              <Trash2Icon size={16} strokeWidth={1.75} />
-            </button>
+            <div class="kill-wrap">
+              <button
+                type="button"
+                class="action-btn icon-btn kill-btn"
+                class:confirming={confirmingId === agent.id}
+                onclick={() => handleKill(agent.id)}
+                title={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
+                aria-label={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
+              >
+                <Trash2Icon size={16} strokeWidth={1.75} />
+              </button>
+              {#if confirmingId === agent.id}
+                <span class="kill-confirm-tip" role="status">{t("connect.agents.killConfirm")}</span>
+              {/if}
+            </div>
             </div>
           </div>
 
@@ -396,6 +401,10 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     padding: 0.3rem;
   }
 
+  .kill-wrap {
+    position: relative;
+  }
+
   .kill-btn {
     color: var(--recording);
     border-color: rgba(255, 79, 79, 0.3);
@@ -412,6 +421,27 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     border-color: var(--recording);
     color: var(--recording);
     font-weight: 600;
+  }
+
+  .kill-confirm-tip {
+    position: absolute;
+    bottom: calc(100% + 5px);
+    inset-inline-end: 0;
+    background: rgba(200, 40, 40, 0.88);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    padding: 0.2rem 0.45rem;
+    border-radius: 5px;
+    pointer-events: none;
+    z-index: 20;
+    animation: tip-pop 0.12s ease-out both;
+  }
+
+  @keyframes tip-pop {
+    from { opacity: 0; transform: scale(0.85) translateY(3px); }
+    to   { opacity: 1; transform: scale(1)    translateY(0);   }
   }
 
   /* ─── busy indicator ─── (slice agent-busy-indicator) */
