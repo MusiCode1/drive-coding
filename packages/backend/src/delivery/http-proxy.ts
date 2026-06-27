@@ -31,6 +31,7 @@ import {
   isCacheableRequest,
   sanitizeCacheKey,
 } from "./proxy-cache.js"
+import { resolveProviderAuth } from "./proxy-auth.js"
 
 const log = createLogger("backend.proxy")
 
@@ -114,6 +115,13 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
         })
       }
     }
+
+    // ── הזרקת auth header (voice-keys-direct) ────────────────────────────
+    // אם הוגדר מפתח ב-env (ELEVENLABS_API_KEY / GEMINI_API_KEY) — מזריק ל-upstream.
+    // אין מפתח → null → placeholder עובר כמו שהוא (OneCLI ממשיך לעבוד כרגיל).
+    // לעולם לא ללוגג את הערך — הוא מפתח סודי.
+    const auth = resolveProviderAuth(provider, process.env)
+    if (auth) headers.set(auth.name, auth.value)
 
     // ── העברה ל-upstream ──────────────────────────────────────────────────
     log.info(

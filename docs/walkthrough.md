@@ -6696,3 +6696,36 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 - lint:i18n — אין עברית בקוד.
 - `select.test.ts` 6/6 ירוק (Q1 = default לא שונה).
 - בדיקה ידנית: בורר נשמר ל-localStorage, reload → ערך נשמר, default=elevenlabs.
+
+---
+
+## 2026-06-28 — slice-voice-keys-direct — 2 commits
+
+### מה בוצע?
+
+**Commit 0 (TDD):** `packages/backend/src/delivery/proxy-auth.ts` + `packages/backend/tests/proxy-auth.test.ts`.
+- `resolveProviderAuth(provider, env)` — פונקציה טהורה (env מוזרק, ללא קריאה גלובלית).
+- elevenlabs → `xi-api-key` מ-`ELEVENLABS_API_KEY`; google → `x-goog-api-key` מ-`GEMINI_API_KEY`.
+- אין מפתח / ריק / provider לא-מוכר → null (passthrough, OneCLI ממשיך לעבוד).
+- 7 טסטים ירוקים (TDD Red-Green).
+
+**Commit 1 (integration):** `packages/backend/src/delivery/http-proxy.ts` + `packages/backend/tests/http-proxy-auth.test.ts`.
+- import של `resolveProviderAuth` ב-http-proxy.ts.
+- הזרקה לפני ה-fetch (אחרי cache-hit early-return): `const auth = resolveProviderAuth(provider, process.env); if (auth) headers.set(auth.name, auth.value)`.
+- harness חדש: `vi.stubGlobal("fetch")` + mount Hono + `app.request()`.
+- 5 טסטים integration ירוקים (DoD #3/#4/#5/#7).
+
+### בדיקות
+
+- TDD (Commit 0): 7 טסטים — ירוקים.
+- Integration (Commit 1): 5 טסטים integration — ירוקים.
+- `npx vitest run packages/backend/tests/http-proxy.test.ts packages/backend/tests/proxy-auth.test.ts packages/backend/tests/http-proxy-auth.test.ts` → 32 tests passed.
+- Typecheck: ירוק. Lint (no-hebrew): ירוק.
+
+### חריגות
+
+- `wire-recorder.test.ts` מציג כשל flaky ב-full run (timing issue בטסט ENOENT) — קיים ב-base branch, לא קשור ל-slice.
+
+### סטיות
+
+אין. הוספת `resolveProviderAuth` כ-helper טהור + call-site יחיד ב-http-proxy. לא שינוי ארכיטקטוני.
