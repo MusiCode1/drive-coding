@@ -13,7 +13,7 @@
  * ─── redesign-5 (C4) ───
  */
 import type { MessageBubble } from "$lib/types/bubble"
-import { getBubblePlayer, getI18n, getSpeaker } from "$lib/context"
+import { getBubblePlayer, getContentViewer, getI18n, getSpeaker } from "$lib/context"
 import { renderMarkdown } from "$lib/util/markdown"
 import { joinSegmentText } from "./bubble-rendering"
 import { copyToClipboard } from "$lib/util/clipboard"
@@ -23,12 +23,15 @@ import PlayIcon from "@lucide/svelte/icons/play"
 import SquareIcon from "@lucide/svelte/icons/square"
 import CopyIcon from "@lucide/svelte/icons/copy"
 import CheckIcon from "@lucide/svelte/icons/check"
+import Maximize2Icon from "@lucide/svelte/icons/maximize-2"
 
 let { bubble }: { bubble: MessageBubble } = $props()
 const t = getI18n().t
 const bubblePlayer = getBubblePlayer()
 // C10: גייט על speaker.enabled — מסתיר כפתור ▶ כשמושתק
 const speaker = getSpeaker()
+// content-viewer: כפתור expand לפתיחת הבועה fullscreen
+const viewer = getContentViewer()
 
 const isPlaying = $derived(bubblePlayer.playingBubbleId === bubble.id)
 
@@ -65,8 +68,17 @@ async function handleCopy() {
       <span class="timestamp">{formatTime(bubble.createdAt)}</span>
     </div>
   </div>
-  <!-- כפתורי פעולה: copy + play -->
+  <!-- כפתורי פעולה: expand + copy + play -->
   <div class="bubble-actions">
+    <!-- content-viewer: כפתור expand → פתיחת הבועה fullscreen -->
+    <button
+      class="action-btn"
+      onclick={() => viewer.show({ kind: "markdown", text: joinSegmentText(bubble.segments) })}
+      aria-label={t("contentViewer.expand")}
+      title={t("contentViewer.expand")}
+    >
+      <Maximize2Icon size={12} strokeWidth={2} />
+    </button>
     <button
       class="action-btn"
       onclick={handleCopy}

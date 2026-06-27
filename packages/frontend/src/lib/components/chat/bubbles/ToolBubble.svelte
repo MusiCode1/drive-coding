@@ -12,15 +12,18 @@
  * ─── redesign-5 (C2) ───
  */
 import type { ToolBubble, ToolCall } from "$lib/types/bubble"
-import { getI18n, getSettings, getChatScroll } from "$lib/context"
+import { getContentViewer, getI18n, getSettings, getChatScroll } from "$lib/context"
 import { formatToolInput, prettyJson, formatLocation } from "$lib/util/tool-format"
 import { renderMarkdown } from "$lib/util/markdown"
 import Avatar from "$lib/components/chat/Avatar.svelte"
+import Maximize2Icon from "@lucide/svelte/icons/maximize-2"
 import { onMount } from "svelte"
 
 let { bubble }: { bubble: ToolBubble } = $props()
 const t = getI18n().t
 const settings = getSettings()
+// content-viewer: כפתור expand על text + click על image → lightbox
+const viewer = getContentViewer()
 
 const tc = $derived(bubble.toolCall)
 const showNarration = $derived(tc.narration !== undefined && tc.narration.length > 0)
@@ -104,7 +107,18 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
             {#each tc.content as c}
               {#if c.type === "text"}
                 <!-- C6: renderMarkdown על פלט טקסטואלי; pre נשאר dir=ltr -->
-                <div class="tool-text-output" dir="ltr">{@html renderMarkdown(c.text)}</div>
+                <!-- content-viewer: כפתור expand לפתיחת הטקסט fullscreen -->
+                <div class="tool-text-wrapper">
+                  <div class="tool-text-output" dir="ltr">{@html renderMarkdown(c.text)}</div>
+                  <button
+                    class="tool-expand-btn"
+                    onclick={() => viewer.show({ kind: "markdown", text: c.text })}
+                    aria-label={t("contentViewer.expand")}
+                    title={t("contentViewer.expand")}
+                  >
+                    <Maximize2Icon size={11} strokeWidth={2} />
+                  </button>
+                </div>
               {:else if c.type === "diff"}
                 <div class="diff">
                   <div class="diff-path">{c.path}</div>
@@ -120,13 +134,21 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
                   Invariant אבטחה: תמונות מוצגות **רק** דרך <img>.
                   SVG מותר כי ב-<img> הדפדפן מריץ scripting/external-fetch ב-secure-static-mode (מנוטרל).
                   אם אי-פעם עוברים לרינדור inline ({@html} / <object>) — חובה לחסום image/svg+xml.
+                  content-viewer: לחיצה על התמונה פותחת lightbox fullscreen.
                 -->
-                <img
-                  class="tool-image"
-                  src={`data:${c.mimeType};base64,${c.data}`}
-                  alt={t("chat.tool.content")}
-                  loading="lazy"
-                />
+                <button
+                  class="tool-image-btn"
+                  onclick={() => viewer.show({ kind: "image", src: `data:${c.mimeType};base64,${c.data}`, alt: t("chat.tool.content") })}
+                  aria-label={t("contentViewer.expand")}
+                  title={t("contentViewer.expand")}
+                >
+                  <img
+                    class="tool-image"
+                    src={`data:${c.mimeType};base64,${c.data}`}
+                    alt={t("chat.tool.content")}
+                    loading="lazy"
+                  />
+                </button>
               {:else}
                 <pre>{prettyJson(c.raw)}</pre>
               {/if}
@@ -239,6 +261,51 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
     object-fit: contain; border-radius: 6px;
     border: 1px solid var(--border); display: block; margin: 0.2em 0;
   }
+
+  /* content-viewer: wrapper לטקסט כלי עם כפתור expand */
+  .tool-text-wrapper {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+  .tool-text-wrapper .tool-text-output {
+    flex: 1;
+    min-width: 0;
+  }
+  .tool-expand-btn {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    display: grid;
+    place-items: center;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--fg-dim);
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+    padding: 0;
+    margin-top: 2px;
+  }
+  .tool-expand-btn:hover { opacity: 1; }
+
+  /* content-viewer: עטיפת תמונה ב-button לlightbox */
+  .tool-image-btn {
+    display: block;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: zoom-in;
+    border-radius: 6px;
+    margin: 0.2em 0;
+  }
+  .tool-image-btn .tool-image {
+    margin: 0;
+    transition: opacity 0.15s;
+  }
+  .tool-image-btn:hover .tool-image { opacity: 0.85; }
 
   .hidden { display: none; }
 </style>
