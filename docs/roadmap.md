@@ -54,10 +54,12 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 
 | פריט | סטטוס |
 | --- | --- |
-| V1 — voice-config-core (בחירת ספק טהורה) | 💭 מוכן ל-dispatch |
-| V2 — voice-openai-text (תרגום/STT/נרייט) | 💭 |
-| V3 — TtsProvider interface (ElevenLabs מאחוריו) | 💭 |
-| V4 — ספק TTS שני (⭐ `gemini-3.1-flash-tts` HTTP-streaming / Gemini-Live / OpenAI / TBD) | 💭 הכרעה פתוחה — 3.1 מועמד מוביל (2026-06-27, ר' decisions) |
+| V1 — voice-config-core (בחירת ספק טהורה) | ✅ **מוזג ל-dev** (2026-06-27, merge `ff016e6`; `VoiceConfig`+`select()` טהור TDD; אביגיל READY 3 סבבים, calev GO 6/6) |
+| V3 — TtsProvider interface (ElevenLabs מאחוריו) | ✅ **מוזג ל-dev** (2026-06-27, merge `3c4e9b3`; אביגיל READY r1, calev GO 7/7) |
+| **V4a — Gemini-TTS ✅ (PCM→WebAudio)** — ספק שני אומת חי (`gemini-3.1-flash-tts-preview`, SSE streaming, ~1s first-audio, verbatim עברי). `geminiTts` (SDK `@google/genai`) + `PcmAudioStream` (WebAudio, BufferSource queue) לצד נתיב MP3/MediaSource + `RoutingAudioSink` (לפי format) + **בורר ספק-TTS בהגדרות** (default ElevenLabs). **V4a-unify** — איחוד שני צרכני-TTS (Speaker+BubblePlayer) תחת `resolveTts()`+`RoutingAudioSink` (תיקון bug Gemini-בבועה שנתפס ב-runtime-gate חי). | ✅ **מוזג ל-dev** (2026-06-27, merges `5abe5f1`+`38f929c`; אביגיל READY; build-gates ירוקים, 324/324; אומת חי ב-preview. ר' `decisions/voice-acp.md` + `v4-gemini-tts-pre-brief.md`) |
+| **V4b — בורר-קול Gemini פר-ספק** — היום קול Gemini מקובע ל-`"Kore"` (מרוכז ב-`resolveTts()` — נקודת-שינוי יחידה). צריך: **לשלוף את רשימת הקולות של Google** (prebuilt voices: Kore/Puck/Charon/Fenrir/Aoede/Leda/Zephyr/Orus...) + שדה `geminiVoice` בהגדרות + `<Select>` (כמו VoicePicker) + העברתו דרך `resolveTts`. + voice-config מלא פר-ספק (ElevenLabs voiceId vs Gemini voiceName). | 💭 **טרם brief** — נדון 2026-06-27 |
+| **חיתוך-סגמנטים חותך באמצע מילה** — ה-pipeline מפצל את הטקסט לסגמנטים (משפטים) ל-streaming TTS דרך `core/voice/sentence-boundary.ts`; **פעמים רבות החיתוך נופל באמצע מילה** → קול קטוע/לא-טבעי. צריך לתקן את לוגיקת גבול-המשפט/הסגמנט (לכבד גבולות-מילה; אולי גם punctuation/אורך-מינימלי). נתפס חי 2026-06-27 ב-preview. | 💭 **טרם brief** — באג |
+| V2 — voice-openai-text (תרגום/STT/נרייט) — ספק טקסטואלי שני, מקבילי (לא בנתיב Gemini-TTS) | 💭 |
 
 ### C — Frontend / UX
 ממשק קולי, hands-free, web-first.
