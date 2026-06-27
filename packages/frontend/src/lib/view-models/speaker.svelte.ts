@@ -43,7 +43,7 @@ import type { Settings } from "./settings.svelte"
 import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
 import { AudioStream } from "../engines/audio-stream"
 import { Player } from "../engines/player.svelte"
-import { synthesizeStreaming } from "../adapters/voice/tts"
+import { elevenLabsTts } from "../adapters/voice/tts"
 import { translate } from "../adapters/voice/translate"
 import { narrate } from "../adapters/voice/narrate"
 import type { NarrateContext, ToolCallForNarrate } from "@drive-coding/core/voice/narration-prompt"
@@ -383,7 +383,7 @@ export class Speaker {
       // slice 22: חשב textHash על הטקסט שמסונתז (provenance)
       const textHash = await cacheKeyFor(text, this.#settings.voiceId, "eleven_v3")
       // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)
-      const stream = await synthesizeStreaming({
+      const stream = await elevenLabsTts.synthesize({
         text,
         voiceId: this.#settings.voiceId,
         messageId: job.messageId,
