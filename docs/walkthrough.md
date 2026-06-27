@@ -1,3 +1,24 @@
+## 2026-06-27 — slice/V1-voice-config-core — Commit 0: core VoiceConfig + select() (TDD)
+
+### מה בוצע?
+
+קבצים חדשים ב-`packages/core/src/voice/`:
+- `capabilities.ts`: ArkType schemas — `voiceProvider`, `voiceModelRef`, `voiceService`, `voiceConfig` + `DEFAULT_VOICE_CONFIG` (zero-behavior-change)
+- `select.ts`: פונקציה טהורה `select(service, config) → VoiceModelRef`
+- `select.test.ts`: 6 טסטים TDD (red→green) — כל 4 services + config מותאם + ArkType validation
+
+### בדיקות
+
+- TDD red→green: 6 tests חדשים ב-select.test.ts — ירוקים
+- `pnpm typecheck` (core+backend): ✓ (exit 0)
+- `pnpm lint` (קבצים חדשים): ✓ ללא errors חדשים (258 pre-existing errors לא שייכים לסלייס)
+
+### סטיות
+
+אין. pre-existing lint errors (258) וכשלון backend integration test (`bridge-failure-integration`) קדמו לסלייס זה ואינם חלק ממנו.
+
+---
+
 ## 2026-06-25 — slice-session-title-header — 3 commits
 
 ### מה בוצע?
