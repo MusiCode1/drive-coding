@@ -4,7 +4,7 @@
 //   1. Builds the frontend (pnpm --filter @drive-coding/frontend-v2 build)
 //   2. Copies frontend/build → release/frontend-dist/
 //   3. Copies backend/plugins  → release/plugins/
-//   4. Bundles the backend bin with bun build (core+provider-contract inline)
+//   4. Bundles the backend bin with bun build (core inline)
 //
 // Run via: node scripts/build.mjs  (or triggered automatically by prepack/npm pack)
 
@@ -60,7 +60,7 @@ console.log("[build] Step 3: copying plugins…")
 rmSync(releasePlugins, { recursive: true, force: true })
 cpSync(backendPlugins, releasePlugins, { recursive: true })
 
-// Step 4: Bundle backend bin with bun build (core + provider-contract inline)
+// Step 4: Bundle backend bin with bun build (core inline)
 console.log("[build] Step 4: bundling with bun build…")
 rmSync(releaseDist, { recursive: true, force: true })
 mkdirSync(releaseDist, { recursive: true })
