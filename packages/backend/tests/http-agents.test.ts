@@ -406,7 +406,7 @@ describe("HTTP /api/agents", () => {
 
       const bridgeManager = {
         // slice agent-busy-indicator: busy נוסף ל-return type
-        getRuntimeInfo: vi.fn((_id: string) => ({ pid: 12345, attached: true, busy: false })),
+        getRuntimeInfo: vi.fn((_id: string) => ({ pid: 12345, attached: true, busy: false, lastMessageAt: null })),
       }
 
       registerAgentsHttp(app, { registry, orchestrator, bridgeManager })
