@@ -1,4 +1,4 @@
-## 2026-06-28 — slice-https-local — Commit 0 (TDD)
+## 2026-06-28 — slice-https-local — 2 commits
 
 ### מה בוצע?
 
@@ -8,15 +8,27 @@
 - self-signed: CN=localhost, 825 days, SAN: DNS:localhost + IP:127.0.0.1, 2048-bit RSA, sha256.
 - 7 טסטים ירוקים (TDD: RED → GREEN).
 
+**Commit 1 (integration):** `packages/backend/src/server.ts` — conditional HTTPS serve.
+- הוסף `import { createServer as httpsCreateServer } from "node:https"` + `import { resolveTls }`.
+- conditional: `tls ? serve({..., createServer: httpsCreateServer, serverOptions: tls}) : serve({..., port})`.
+- typing: `httpServer: ServerType` (מ-`@hono/node-server`) — TS resolved ללא cast.
+- `httpServer.on("upgrade", ...)` נשמר ללא שינוי (עובד על https.Server).
+- integration tests: HTTP 4090 + HTTPS 4091 — 3 טסטים ירוקים.
+- DoD #9: בינארי נבנה, HTTPS status 200 (selfsigned עובד ב-bun --compile).
+- phase-check ע"י calev בוצע.
+
 ### בדיקות
 
 - TDD: 7 טסטים — ירוקים.
-- Typecheck: ירוק.
+- Integration: 3 טסטים — ירוקים.
+- Typecheck: ירוק לאורך כל ה-commits.
 - lint:i18n: ✓.
+- DoD #9 (בינארי HTTPS): ✓ STATUS: 200.
 
 ### סטיות
 
-- אין.
+- ה-log message "Starting — http://localhost:PORT" לא עודכן ל-https (לא בscope של הבריף).
+- bun path: `D:\ProgramsAndApps\Bun\bin\bun.exe` (לא `Bun\bun.exe`).
 
 ---
 

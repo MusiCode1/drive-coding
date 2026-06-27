@@ -1,11 +1,13 @@
 import "./log-setup.js" // חייב להיות ראשון — מאתחל לוגר לפני כל יבוא אחר
 import { createLogger } from "@drive-coding/core/log"
-import { serve } from "@hono/node-server"
+import { serve, type ServerType } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
+import { createServer as httpsCreateServer } from "node:https"
 import { Hono } from "hono"
 import { WebSocketServer } from "ws"
 import { isBinary } from "./binary.js"
 import { isTransientSocketError } from "./delivery/transient-socket-error.js"
+import { resolveTls } from "./tls.js"
 
 const log = createLogger("backend.server")
 const procLog = createLogger("backend.process")
@@ -161,7 +163,10 @@ agentWss.on("connection", (ws, req) => {
 
 const port = Number(process.env.PORT ?? 4000)
 
-const httpServer = serve({ fetch: app.fetch, port })
+const tls = resolveTls(process.env)
+const httpServer: ServerType = tls
+  ? serve({ fetch: app.fetch, port, createServer: httpsCreateServer, serverOptions: tls })
+  : serve({ fetch: app.fetch, port })
 
 httpServer.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url ?? "", `http://localhost`)
