@@ -1,3 +1,46 @@
+## 2026-06-27 — slice-R3-spawn-core-untangle — 3 commits
+
+### Commit 0 — provider/host/spawn-core גנרי (integration)
+
+**מה בוצע:**
+- `packages/provider/src/host/spawn-core.ts`: spawn lifecycle גנרי — 2 hooks: `shapeEnv` + `onFrame`. אפס ידע על opencode/audio/wire/turn/decode.
+- `packages/provider/src/host/index.ts`: barrel
+- `packages/provider/package.json`: הוסף `"./host": "./src/host/index.ts"`
+- חוזה newline: dir:"in" ללא `\n` (readline), dir:"out" verbatim; נרמול — באחריות ה-wrapper
+- שני מסלולים (spawn + spawnWithStderr) דרך `spawnInternal` משותף
+- 12 unit tests (spawn-core.test.ts) כולל shapeEnv/onFrame דרך שני המסלולים, onLine לפני onFrame, crash, kill
+
+**חריגות:** אין.
+
+**בדיקות:** 54 provider tests ירוקים; typecheck + lint:i18n ירוקים.
+
+---
+
+### Commit 1 — bridge-manager wrapper דק + טסט-רגרסיה (integration)
+
+**מה בוצע:**
+- `packages/backend/src/acp/bridge-manager.ts`: שוכתב ל-wrapper — מייבא `createSpawnCore` מ-`@drive-coding/provider/host`, מזריק 4 פיצ'רים דרך 2 hooks (shapeEnv: prompt-injection+opencode-config; onFrame: wire-log+record+turn-tracking)
+- שני מסלולי spawn קוראים `initBridge` — spawn() AND spawnWithStderr() (מסלול הייצור!)
+- `core.onCrash(cleanupBridge)` מחווט — מניעת דליפת trackers/recs/attached ב-crash
+- kill מנקה לפני האצלה
+- `bridge-manager.runtime.test.ts`: טסט-רגרסיה חדש — busy=true דרך spawnWithStderr עם frame אמיתי (poll בחלון debounce)
+
+**phase-gate calev-heavy: GO (9/9 DoD).**
+
+**חריגות:** 1 known pre-existing failure (bridge-failure-integration F-1 — ENOENT→201, מ-slice 10, לא קשור).
+
+**בדיקות:** 222 backend tests ירוקים; typecheck + lint:i18n ירוקים; FE vite build ירוק.
+
+---
+
+### Commit 2 — אימות DoD סופי (manual + calev-heavy)
+
+ראה §5 DoD — calev-heavy מאמת 4 פיצ'רים חיים.
+
+**סטטוס:** בתהליך
+
+---
+
 ## 2026-06-27 — slice-R2-provider-package-consolidate — בתהליך
 
 ### Commit 0 — יצירת packages/provider (manual)
