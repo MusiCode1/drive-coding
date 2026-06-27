@@ -1,3 +1,24 @@
+## 2026-06-27 — slice/V1-voice-config-core — Commit 1: adapters translate.ts + narrate.ts מקבלים VoiceModelRef (manual)
+
+### מה בוצע?
+
+שינויים ב-`packages/frontend/src/lib/adapters/voice/`:
+- `translate.ts`: הוסף פרמטר `ref: VoiceModelRef` (לפני `signal`). המחרוזת הקשיחה `"gemini-flash-lite-latest"` הוחלפה ב-`ref.model`. הערה `// V2: switch on ref.provider`.
+- `narrate.ts`: כנ"ל.
+- `translate.test.ts`: עדכון 5 קריאות — `translate(text, lang, TEST_REF)` (ref לפני signal).
+- `narrate.test.ts`: עדכון 5 קריאות — `narrate(ctx, tool, TEST_REF)` + `narrate(ctx, tool, TEST_REF, ac.signal)` (שורה ~98 — ac.signal עכשיו ב-4th arg).
+
+### בדיקות
+
+- `pnpm --filter @drive-coding/frontend-v2 test`: 319 tests ירוקים (כולל translate.test + narrate.test)
+- `pnpm --filter @drive-coding/frontend-v2 typecheck`: 2 errors ב-speaker.svelte.ts:359,489 — **צפוי**, speaker לא חוּוט עד Commit 2
+
+### סטיות
+
+אין. ה-2 errors ב-svelte-check צפויים ומתועדים ב-brief §4 Commit 1.
+
+---
+
 ## 2026-06-27 — slice/V1-voice-config-core — Commit 0: core VoiceConfig + select() (TDD)
 
 ### מה בוצע?
