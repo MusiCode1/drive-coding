@@ -1,3 +1,30 @@
+## 2026-06-28 — slice-C3-spike-inprocess-host — 2 commits
+
+### מה בוצע?
+
+**Commit 0 (integration) — POC host:**
+- הוסף devDeps ל-`packages/provider/package.json`: `@agentclientprotocol/claude-agent-acp@^0.52.0` + alias `acp-sdk-v1: npm:@agentclientprotocol/sdk@1.0.0`.
+- נוצר `packages/provider/src/host/in-process/spike.ts` — POC מלא.
+- נתיב 1 (`AgentApp.connect(ClientApp)`, sdk@1.0.0 in-process): הצליח מיד.
+- `makeAcpClientFromCtx(connection.client)` — adapter של 20 שורות, מגשר `AgentContext` → `AcpClient`.
+- `ClaudeAcpAgent.initialize()` הוחזר תוך מיקרושניות, אפס auth/tokens.
+- ext POC: `ext/spike/ping` עבד, אפס -32601.
+
+**Commit 1 (none) — findings:**
+- נוצר `docs/research/c3-host-spike-findings.md` — GO, נתיב 1, frames מגובים, המלצות ל-C3.
+
+### חריגות
+- ה-lint הכולל כבר אדום ב-P1-base (259 errors) — לא נגרמו ע"י spike.
+- ה-spike.ts נקי ב-biome lint (0 errors).
+
+### בדיקות
+- `pnpm --filter @drive-coding/provider typecheck` — 0 errors.
+- `pnpm --filter @drive-coding/provider exec bun src/host/in-process/spike.ts` — הדפיס initialize result + ext/spike/ping.
+- `pnpm lint:i18n` — 0 errors.
+- additive verified: רק `packages/provider/` + `docs/` + `pnpm-lock.yaml` שונו.
+
+---
+
 ## 2026-06-28 — slice-P1-additive-package — 2 commits
 
 ### מה בוצע?
