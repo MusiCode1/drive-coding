@@ -5,6 +5,7 @@
  * תעבורה כפולה: stderr (pretty) + stdout (JSON) נשלט על ידי config.format.
  */
 import pino from "pino"
+import pretty from "pino-pretty"
 import { isEnabledForNs } from "./namespace.js"
 import type { Fields, Level, LogConfig, LogEntry, Logger } from "./types.js"
 
@@ -28,21 +29,19 @@ const _sinks: Array<(entry: LogEntry) => void> = []
 let _pinoJson: pino.Logger | null = null
 let _pinoPretty: pino.Logger | null = null
 
-function createPino(destination: NodeJS.WritableStream, pretty: boolean): pino.Logger {
-  if (pretty) {
+function createPino(destination: NodeJS.WritableStream, isPretty: boolean): pino.Logger {
+  if (isPretty) {
+    // pino-pretty stream ישיר in-process (לא transport/worker) —
+    // עובד גם בבינארי bun --compile (thread-stream/worker קורס בבינארי).
+    // destination מוכנס ל-pretty() ולא ל-pino() ישירות.
     return pino(
-      {
-        level: "trace",
-        transport: {
-          target: "pino-pretty",
-          options: {
-            colorize: true,
-            ignore: "pid,hostname",
-            translateTime: "HH:MM:ss.l",
-          },
-        },
-      },
-      destination,
+      { level: "trace" },
+      pretty({
+        colorize: true,
+        ignore: "pid,hostname",
+        translateTime: "HH:MM:ss.l",
+        destination,
+      }),
     )
   }
   return pino({ level: "trace" }, destination)
