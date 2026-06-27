@@ -38,8 +38,7 @@ import { untrack } from "svelte"
 import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
 import { narrate } from "../adapters/voice/narrate"
 import { translate } from "../adapters/voice/translate"
-import { elevenLabsTts } from "../adapters/voice/tts"
-import { geminiTts } from "../adapters/voice/tts-gemini"
+import { resolveTts } from "../adapters/voice/tts-resolve"
 import type { AudioSink } from "../engines/audio-sink"
 import { AudioStream } from "../engines/audio-stream"
 import type { CuesEngine } from "../engines/cues"
@@ -396,11 +395,11 @@ export class Speaker {
         return
       }
 
-      // V4a: בחר ספק לפי הגדרת המשתמש
-      const isGemini = this.#settings.ttsProvider === "google"
-      const provider = isGemini ? geminiTts : elevenLabsTts
-      const voiceId = isGemini ? "Kore" : this.#settings.voiceId
-      const modelId = isGemini ? "gemini-3.1-flash-tts-preview" : "eleven_v3"
+      // V4a-unify: בחר ספק דרך resolveTts (מקור-אמת יחיד)
+      const { provider, voiceId, modelId } = resolveTts(
+        this.#settings.ttsProvider,
+        this.#settings.voiceId,
+      )
       // slice 22: חשב textHash על הטקסט שמסונתז (provenance)
       const textHash = await cacheKeyFor(text, voiceId, modelId)
       // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)

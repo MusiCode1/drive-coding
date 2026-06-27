@@ -169,6 +169,77 @@
 
 - `join` מ-`node:path` נשאר ב-cli-config-file.ts (brief אמר להסיר, אבל משמש ב-`resolveCliSpecsPath` לביצוע `join(getStateDir(), "cli-specs.jsonc")` — cross-platform)
 - cli-config-file.ts נתקן גם מ-CRLF (biome safe fix, לא חלק מה-brief — side effect מינורי)
+## 2026-06-27 — slice/V4a-unify — Commit 2: BubblePlayer → sink + resolveTts; מחיקת playAgentText
+
+### מה בוצע?
+
+**`packages/frontend/src/lib/view-models/bubble-player.svelte.ts`**:
+- הוסף sink משלו: `readonly #sink = new RoutingAudioSink(...)` + `#segId: string | null = null`
+- ענף TTS (message/thought): מחליף `playAgentText` ב-`resolveTts` + `#sink.prepareSegment` + `#sink.play`
+- `<audio>` (`audioEl`) נשאר — נשמר לענף user-recording (`playUserRecording` אין לו signal)
+- `cleanup()`: הוסף `this.#segId = null` בנוסף לאיפוסים הקיימים
+- `stop()`: שני מנגנוני-עצירה — `#sink.cancel(#segId)` לTTS + `#audioEl.pause()` לrecording (אין לו signal)
+
+**`packages/frontend/src/lib/adapters/voice/play-bubble.ts`**:
+- נמחקה `playAgentText` (צרכן יחיד = BubblePlayer, כלל #5)
+- נמחק import של `elevenLabsTts` (לא נדרש עוד)
+- עודכן docstring: מתאר נתיב `<audio>` לrecording בלבד, TTS עבר ל-BubblePlayer→sink
+
+### בדיקות
+
+- `pnpm --filter frontend-v2 typecheck`: ✅ 0 errors
+- `pnpm lint:i18n`: ✅ No Hebrew in code
+- `npx vitest run`: 807/808 ✅ (pre-existing failure: bridge-failure-integration)
+- `pnpm --filter @drive-coding/frontend-v2 build`: ✅ built in ~19s
+- DoD: `grep -rn "playAgentText" packages/frontend/src` → **0** ✅
+- DoD: `grep -rn 'ttsProvider === "google"' packages/frontend/src` → **רק** tts-resolve.ts ✅
+
+### סטיות
+
+אין. runtime verification מתבצע ע"י calev בסיום.
+
+---
+
+## 2026-06-27 — slice/V4a-unify — Commit 1: Speaker → resolveTts (zero-behavior-change)
+
+### מה בוצע?
+
+**`packages/frontend/src/lib/view-models/speaker.svelte.ts`**: החלפת 3 שורות inline ב-`resolveTts(this.#settings.ttsProvider, this.#settings.voiceId)`. הוסרו imports ישירים של `elevenLabsTts` ו-`geminiTts`. שאר הקוד (textHash, synthesize, prepareSegment עם format) ללא שינוי.
+
+### בדיקות
+
+- `pnpm --filter frontend-v2 typecheck`: ✅ 0 errors
+- `pnpm lint:i18n`: ✅ No Hebrew in code
+- `npx vitest run`: 807/808 ✅ (pre-existing failure: bridge-failure-integration)
+- DoD: `grep 'ttsProvider === "google"' packages/frontend/src/` → **רק** ב-tts-resolve.ts ✅
+
+### סטיות
+
+אין. zero-behavior-change מאומת.
+
+---
+
+## 2026-06-27 — slice/V4a-unify — Commit 0: adapter resolveTts (TDD)
+
+### מה בוצע?
+
+**`packages/frontend/src/lib/adapters/voice/tts-resolve.ts`** (חדש): `resolveTts(ttsProvider, elevenVoiceId) → ResolvedTts` — מקור-אמת יחיד לבחירת ספק TTS. "google" → geminiTts + "Kore" + "gemini-3.1-flash-tts-preview"; "elevenlabs" → elevenLabsTts + voiceId מועבר + "eleven_v3". מקבל primitives בלבד (לא Settings VM).
+
+**`packages/frontend/src/lib/adapters/voice/tts-resolve.test.ts`** (חדש): 5 בדיקות TDD (Red→Green): google→geminiTts+Kore+modelId, google→format=pcm, elevenlabs→elevenLabsTts+voiceId+eleven_v3, elevenlabs→format=mp3, voiceId מועבר בדיוק.
+
+### בדיקות
+
+- TDD: 5/5 ✅ (`npx vitest run tts-resolve`)
+- `pnpm --filter frontend-v2 typecheck`: ✅ 0 errors
+- `pnpm lint:i18n`: ✅ No Hebrew in code
+- `npx vitest run`: 807/808 ✅ (הכשלון 1 הוא bridge-failure-integration pre-existing מ-slice 10)
+
+### סטיות
+
+אין. biome lint errors הם pre-existing (259 errors לפני ה-commit).
+
+---
+
 ## 2026-06-27 — slice/V4a-gemini-tts-pcm-playback — Commit 6: RoutingAudioSink + speaker wiring (integration)
 
 ### מה בוצע?
