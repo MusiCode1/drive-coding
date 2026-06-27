@@ -15,6 +15,7 @@
  */
 
 import { ClaudeAcpAgent } from "@agentclientprotocol/claude-agent-acp"
+import type { ClientContext } from "acp-sdk-v1"
 import { agent, client, methods } from "acp-sdk-v1"
 import type { AdapterHost, NormalizedCapabilities } from "../types.js"
 import { mapClaudeCapabilities } from "./claude/capabilities.js"
@@ -24,19 +25,31 @@ import { makeAcpClientFromCtx } from "./client-bridge.js"
 export type InProcessHost = AdapterHost
 
 /**
+ * Optional ext request handlers registered on the AgentApp before any connection.
+ * Key = ACP method name (e.g. "ext/ping"), value = handler receiving params.
+ * The handler must return a Record<string, unknown> (JSON-serializable).
+ */
+export type ExtHandlers = Record<
+  string,
+  (params: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>
+>
+
+/**
  * Creates an in-process host that runs ClaudeAcpAgent without spawning a child process.
  *
  * Lifecycle:
- *   const host = createClaudeInProcessHost()
+ *   const host = createClaudeInProcessHost({ extHandlers: { "ext/ping": (p) => ({ pong: true }) } })
  *   const { capabilities } = await host.start({ cwd: "/path" })
- *   const result = await host.callExt("ext/my-method", { ... })
+ *   const result = await host.callExt("ext/ping", { msg: "hello" })
  *   await host.close()
  */
-export function createClaudeInProcessHost(): InProcessHost {
+export function createClaudeInProcessHost(options?: { extHandlers?: ExtHandlers }): InProcessHost {
   // sdk@1.0.0 objects — all internal, never exported
   let claudeAgent: ClaudeAcpAgent | undefined
   let agentConnClose: (() => void) | undefined
   let clientConnClose: (() => void) | undefined
+  // clientCtx saved from start(), used by callExt (ClientContext from sdk@1.0.0)
+  let clientCtx: ClientContext | undefined
 
   // ext notification callbacks registered via onExtNotification()
   const extNotificationListeners = new Set<
@@ -44,7 +57,7 @@ export function createClaudeInProcessHost(): InProcessHost {
   >()
 
   // Build AgentApp — handles agent-side ACP requests
-  const agentApp = agent({ name: "drive-coding-inprocess-host" })
+  let agentApp = agent({ name: "drive-coding-inprocess-host" })
     .onRequest(methods.agent.initialize, (ctx) => {
       if (!claudeAgent) throw new Error("claudeAgent not set before initialize")
       return claudeAgent.initialize(ctx.params)
@@ -53,6 +66,15 @@ export function createClaudeInProcessHost(): InProcessHost {
       if (!claudeAgent) throw new Error("claudeAgent not set before session/new")
       return claudeAgent.newSession(ctx.params)
     })
+
+  // Register ext handlers (ext registry — additive, zero-config by default)
+  for (const [method, handler] of Object.entries(options?.extHandlers ?? {})) {
+    agentApp = agentApp.onRequest(
+      method,
+      { parse: (p: unknown) => p as Record<string, unknown> },
+      (ctx) => handler(ctx.params),
+    )
+  }
 
   // Build ClientApp — handles client-side ACP requests from the agent
   const clientApp = client({ name: "drive-coding-inprocess-client" })
@@ -84,6 +106,8 @@ export function createClaudeInProcessHost(): InProcessHost {
       // clientConn.agent is ClientContext — used for initialize + callExt
       const clientConn = clientApp.connect(agentApp)
       clientConnClose = () => clientConn.close()
+      // Save ClientContext for callExt (used after start() returns)
+      clientCtx = clientConn.agent
 
       // Call initialize via clientConn.agent (ClientContext)
       const initResult = await clientConn.agent.request(methods.agent.initialize, {
@@ -100,14 +124,8 @@ export function createClaudeInProcessHost(): InProcessHost {
       method: string,
       params: Record<string, unknown>,
     ): Promise<Record<string, unknown>> {
-      // clientConn is set by start(); callExt must be called after start()
-      const clientConn = clientApp.connect(agentApp)
-      try {
-        const result = await clientConn.agent.request<Record<string, unknown>>(method, params)
-        return result
-      } finally {
-        clientConn.close()
-      }
+      if (!clientCtx) throw new Error("callExt called before start()")
+      return clientCtx.request<Record<string, unknown>>(method, params)
     },
 
     onExtNotification(cb: (method: string, params: Record<string, unknown>) => void): () => void {
