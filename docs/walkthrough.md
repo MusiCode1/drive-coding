@@ -1,3 +1,28 @@
+## 2026-06-27 — slice/V3-voice-tts-interface — סיכום slice (Commits 0+1+2)
+
+### מה בוצע?
+
+Slice V3 — TtsProvider interface. 3 commits. zero-behavior-change.
+
+**Commit 0** (`7f23aeb`): `packages/core/src/voice/tts-types.ts` (חדש) — TtsRequest + TtsProvider.
+**Commit 1** (`bfa7729`): `packages/frontend/src/lib/adapters/voice/tts.ts` — TtsOptions מחוק, TtsRequest מיובא, elevenLabsTts: TtsProvider נחשף. synthesizeStreaming הוסר. `tts.test.ts` — 10 refs ל-synthesizeStreaming הומרו ל-elevenLabsTts.synthesize, 6/6 ירוק.
+**Commit 2** (`7719b68`): `speaker.svelte.ts` + `play-bubble.ts` — 2 call-sites הומרו ל-elevenLabsTts.synthesize.
+
+### בדיקות
+
+- `pnpm typecheck` (core+backend): ✅ exit 0
+- `pnpm --filter @drive-coding/frontend-v2 typecheck`: ✅ 0 errors
+- `pnpm --filter @drive-coding/frontend-v2 test`: ✅ 319/319
+- `pnpm lint:i18n`: ✅ No hardcoded Hebrew in code
+- `pnpm --filter @drive-coding/frontend-v2 build`: ✅ built
+- `grep synthesizeStreaming packages/frontend/src`: 0 call-sites (רק comment תיעוד) ✅
+
+### סטיות
+
+אין. אותו ElevenLabs, אותו MP3, אותו streaming — רק חוצה interface.
+
+---
+
 ## 2026-06-27 — slice/V1-voice-config-core — Commit 2: speaker.svelte.ts חיווט select() (manual)
 
 ### מה בוצע?
