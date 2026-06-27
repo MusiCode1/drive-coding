@@ -1,5 +1,5 @@
 /**
- * tts.test.ts — TDD עבור Commit 2: withTimeout ב-synthesizeStreaming.
+ * tts.test.ts — TDD עבור Commit 2: withTimeout ב-elevenLabsTts.synthesize.
  *
  * הנקודה הקריטית: withTimeout עוטף רק את ה-fetch (connect/headers).
  * ה-stream (response.body) מוחזר **אחרי** שה-withTimeout resolve — לא נקטע.
@@ -21,7 +21,7 @@ vi.mock("$lib/util/be-url", () => ({
 }))
 
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
-import { synthesizeStreaming } from "./tts"
+import { elevenLabsTts } from "./tts"
 
 const mockWithTimeout = withTimeout as ReturnType<typeof vi.fn>
 
@@ -32,7 +32,7 @@ beforeEach(() => {
   vi.resetAllMocks()
 })
 
-describe("synthesizeStreaming", () => {
+describe("elevenLabsTts.synthesize", () => {
   it("happy path — מחזיר ReadableStream מה-response.body", async () => {
     // יצירת stream מדומה
     const fakeStream = new ReadableStream()
@@ -45,7 +45,7 @@ describe("synthesizeStreaming", () => {
     mockWithTimeout.mockImplementation(passthroughWithTimeout)
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(fakeResponse))
 
-    const result = await synthesizeStreaming({
+    const result = await elevenLabsTts.synthesize({
       text: "שלום עולם",
       voiceId: "voice-1",
     })
@@ -67,7 +67,7 @@ describe("synthesizeStreaming", () => {
       vi.fn().mockResolvedValue({ ok: true, body: fakeStream }),
     )
 
-    const result = await synthesizeStreaming({ text: "test", voiceId: "v1" })
+    const result = await elevenLabsTts.synthesize({ text: "test", voiceId: "v1" })
 
     // ה-withTimeout קיבל פונקציה (ה-fetch) — לא את ה-stream ישירות
     const [fn, ms] = mockWithTimeout.mock.calls[0] as [unknown, number]
@@ -86,7 +86,7 @@ describe("synthesizeStreaming", () => {
     )
 
     const ac = new AbortController()
-    await synthesizeStreaming({ text: "test", voiceId: "v1", signal: ac.signal })
+    await elevenLabsTts.synthesize({ text: "test", voiceId: "v1", signal: ac.signal })
 
     expect(mockWithTimeout).toHaveBeenCalledWith(
       expect.any(Function),
@@ -95,11 +95,11 @@ describe("synthesizeStreaming", () => {
     )
   })
 
-  it("timeout — withTimeout זורק → synthesizeStreaming זורק", async () => {
+  it("timeout — withTimeout זורק → synthesize זורק", async () => {
     mockWithTimeout.mockRejectedValue(new Error("tts-connect timeout 10000ms"))
 
     await expect(
-      synthesizeStreaming({ text: "שלום", voiceId: "v1" }),
+      elevenLabsTts.synthesize({ text: "שלום", voiceId: "v1" }),
     ).rejects.toThrow("tts-connect timeout 10000ms")
   })
 
@@ -115,7 +115,7 @@ describe("synthesizeStreaming", () => {
     )
 
     await expect(
-      synthesizeStreaming({ text: "שלום", voiceId: "v1" }),
+      elevenLabsTts.synthesize({ text: "שלום", voiceId: "v1" }),
     ).rejects.toThrow("TTS failed: 429 rate limited")
   })
 
@@ -127,7 +127,7 @@ describe("synthesizeStreaming", () => {
     )
 
     await expect(
-      synthesizeStreaming({ text: "שלום", voiceId: "v1" }),
+      elevenLabsTts.synthesize({ text: "שלום", voiceId: "v1" }),
     ).rejects.toThrow("TTS: no body in response")
   })
 })

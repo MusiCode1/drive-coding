@@ -7,7 +7,7 @@
  */
 
 import { recordingUrl } from "./recordings"
-import { synthesizeStreaming } from "./tts"
+import { elevenLabsTts } from "./tts"
 
 /**
  * מנגן הקלטת-משתמש דרך <audio>. resolves כשנגמר/בוטל.
@@ -41,7 +41,7 @@ export async function playAgentText(
   audioEl: HTMLAudioElement,
   opts?: { signal?: AbortSignal },
 ): Promise<void> {
-  const stream = await synthesizeStreaming({ text, voiceId, signal: opts?.signal })
+  const stream = await elevenLabsTts.synthesize({ text, voiceId, signal: opts?.signal })
   const blob = await new Response(stream).blob()
   const url = URL.createObjectURL(blob)
   try {
