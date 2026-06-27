@@ -28,23 +28,26 @@
  *     עוברות דרך `untrack` בזהירות (learnings 2026-05-16).
  */
 
+import { cacheKeyFor } from "@drive-coding/core/voice/cache-key"
+import { DEFAULT_VOICE_CONFIG } from "@drive-coding/core/voice/capabilities"
+import type { NarrateContext, ToolCallForNarrate } from "@drive-coding/core/voice/narration-prompt"
+import { select } from "@drive-coding/core/voice/select"
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
 import { OrderAllocator, type OrderKey } from "@drive-coding/core/voice/tts-queue"
-import { cacheKeyFor } from "@drive-coding/core/voice/cache-key"
-import { select } from "@drive-coding/core/voice/select"
-import { DEFAULT_VOICE_CONFIG } from "@drive-coding/core/voice/capabilities"
 import { untrack } from "svelte"
-import type { CuesEngine } from "../engines/cues"
-import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
-import type { Settings } from "./settings.svelte"
 import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
+import { narrate } from "../adapters/voice/narrate"
+import { translate } from "../adapters/voice/translate"
+import { elevenLabsTts } from "../adapters/voice/tts"
+import { geminiTts } from "../adapters/voice/tts-gemini"
 import type { AudioSink } from "../engines/audio-sink"
 import { AudioStream } from "../engines/audio-stream"
+import type { CuesEngine } from "../engines/cues"
+import { PcmAudioStream } from "../engines/pcm-audio-stream"
 import { Player } from "../engines/player.svelte"
-import { elevenLabsTts } from "../adapters/voice/tts"
-import { translate } from "../adapters/voice/translate"
-import { narrate } from "../adapters/voice/narrate"
-import type { NarrateContext, ToolCallForNarrate } from "@drive-coding/core/voice/narration-prompt"
+import { RoutingAudioSink } from "../engines/routing-audio-sink"
+import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
+import type { Settings } from "./settings.svelte"
 
 const TARGET_LANG = "he" as const
 const MIN_CHARS = 20
@@ -127,7 +130,7 @@ export class Speaker {
     // ui-polish-batch C8: אתחל enabled מ-settings.muted + סנכרן cues
     this.enabled = !opts.settings.muted
     if (opts.cues) opts.cues.enabled = !opts.settings.muted
-    this.#audioStream = new AudioStream()
+    this.#audioStream = new RoutingAudioSink(new AudioStream(), new PcmAudioStream())
     // slice 6: onPlaybackStart callback — נקרא פעם אחת כש-Player עובר idle→playing.
     // guard #spokeThisTurn מונע re-entry סדרתי בתוך אותו תור (LOOKAHEAD=2 + async fetches).
     this.#player = new Player(this.#audioStream, () => {
@@ -393,18 +396,25 @@ export class Speaker {
         return
       }
 
+      // V4a: בחר ספק לפי הגדרת המשתמש
+      const isGemini = this.#settings.ttsProvider === "google"
+      const provider = isGemini ? geminiTts : elevenLabsTts
+      const voiceId = isGemini ? "Kore" : this.#settings.voiceId
+      const modelId = isGemini ? "gemini-3.1-flash-tts-preview" : "eleven_v3"
       // slice 22: חשב textHash על הטקסט שמסונתז (provenance)
-      const textHash = await cacheKeyFor(text, this.#settings.voiceId, "eleven_v3")
+      const textHash = await cacheKeyFor(text, voiceId, modelId)
       // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)
-      const stream = await elevenLabsTts.synthesize({
+      const stream = await provider.synthesize({
         text,
-        voiceId: this.#settings.voiceId,
+        voiceId,
+        modelId,
         messageId: job.messageId,
         signal: job.abort.signal,
       })
       await this.#audioStream.prepareSegment(job.segmentId, stream, job.abort, {
         messageId: job.messageId,
         textHash,
+        format: provider.format,
       })
       this.#player.addSegment(job.segmentId, job.orderKey)
       job.status = "ready"

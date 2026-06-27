@@ -1,3 +1,26 @@
+## 2026-06-27 — slice/V4a-gemini-tts-pcm-playback — Commit 6: RoutingAudioSink + speaker wiring (integration)
+
+### מה בוצע?
+
+**`packages/frontend/src/lib/engines/routing-audio-sink.ts`** (חדש): `RoutingAudioSink implements AudioSink` — מנתב per-segment ל-`AudioStream` (mp3) או `PcmAudioStream` (pcm) לפי `opts.format`. `#byId` Map שומר את ה-sink שנבחר לכל id, `cancel` מנקה מה-map, `clear` מנקה את שני ה-sinks.
+
+**`packages/frontend/src/lib/view-models/speaker.svelte.ts`**:
+- imports: הוסף `PcmAudioStream`, `RoutingAudioSink`, `geminiTts`
+- ב-constructor: `this.#audioStream = new RoutingAudioSink(new AudioStream(), new PcmAudioStream())`
+- ב-`#fetchJob` (~line 400): בחירת ספק לפי `this.#settings.ttsProvider` — `isGemini` בוחר `geminiTts` עם voiceId="Kore" ו-modelId="gemini-3.1-flash-tts-preview"; ElevenLabs נשאר כברירת מחדל. `cacheKeyFor` מחושב עם voiceId/modelId האמיתיים. `prepareSegment` מקבל `format: provider.format`.
+
+### בדיקות
+
+- `pnpm --filter @drive-coding/frontend-v2 typecheck` (svelte-check): ✅ 0 errors, 0 warnings
+- `pnpm biome check` (קבצים שנגענו): ✅ 0 errors (2 pre-existing warnings בלבד)
+- `pnpm --filter @drive-coding/frontend-v2 build` (vite build): ✅ built in 29.84s
+
+### סטיות
+
+2 biome warnings ב-speaker.svelte.ts הן pre-existing: `#prevStatus` unused + `status` param prefix. אינן חלק מה-slice.
+
+---
+
 ## 2026-06-27 — slice/V3-voice-tts-interface — סיכום slice (Commits 0+1+2)
 
 ### מה בוצע?
