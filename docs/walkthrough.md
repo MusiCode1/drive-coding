@@ -1,3 +1,26 @@
+## 2026-06-27 — slice/V1-voice-config-core — Commit 2: speaker.svelte.ts חיווט select() (manual)
+
+### מה בוצע?
+
+שינויים ב-`packages/frontend/src/lib/view-models/speaker.svelte.ts`:
+- imports: `select` מ-`@drive-coding/core/voice/select` + `DEFAULT_VOICE_CONFIG` מ-`@drive-coding/core/voice/capabilities`
+- שורה ~359: `translate(text, TARGET_LANG, select("translate", DEFAULT_VOICE_CONFIG), job.abort.signal, job.messageId)`
+- שורה ~489: `narrate(ctx, tool, select("narrate", DEFAULT_VOICE_CONFIG), job.abort.signal)`
+
+### בדיקות
+
+- `pnpm --filter @drive-coding/frontend-v2 typecheck` (svelte-check): 0 errors, 0 warnings
+- `pnpm typecheck` (root, core+backend): exit 0
+- `pnpm --filter @drive-coding/frontend-v2 test`: 319 ירוקים
+- `pnpm lint` (קבצים שלנו): ✓ ללא errors חדשים
+- `pnpm --filter @drive-coding/frontend-v2 build` (vite build): ✓ built in 18.59s
+
+### סטיות
+
+אין. zero-behavior-change: DEFAULT_VOICE_CONFIG.translate/narrate = "gemini-flash-lite-latest" (זהה למחרוזת הקשיחה שהוסרה).
+
+---
+
 ## 2026-06-27 — slice/V1-voice-config-core — Commit 1: adapters translate.ts + narrate.ts מקבלים VoiceModelRef (manual)
 
 ### מה בוצע?
