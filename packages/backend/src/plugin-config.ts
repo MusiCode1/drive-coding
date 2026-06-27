@@ -1,5 +1,7 @@
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import { isBinary } from "./binary.js"
+import { ensurePluginExtracted } from "./plugin-extract.js"
 
 /**
  * רשומת פלאגין בקונפיגורציה של opencode.
@@ -17,23 +19,20 @@ type PluginEntry = string
  * ראה `docs/audio-friendly-prompt-plan.md` §7 וה-brief של slice-14.
  * Commit 3 של windows-adaptation: tuple → string-plugin (opencode 1.2.27 compat).
  */
-export function buildOpencodeConfigContent(
-  existingEnv: string | undefined,
-): string {
+export function buildOpencodeConfigContent(existingEnv: string | undefined): string {
   // קובץ הפלאגין נמצא במיקום קבוע ביחס לקובץ מקור זה.
   // פיתוח: packages/backend/plugins/prompt-injector.ts
   // import.meta.dirname = packages/backend/src → עלה רמה אחת לשורש ה-backend,
   // ואז לתוך plugins/.
-  const pluginPath = path.resolve(
-    import.meta.dirname,
-    "../plugins/prompt-injector.ts",
-  )
+  // Binary: extract embedded plugin from $bunfs to ~/.config/drive-coding/plugins/.
+  // Dev: use local plugins/ path (unchanged behaviour).
+  const pluginPath = isBinary()
+    ? ensurePluginExtracted()
+    : path.resolve(import.meta.dirname, "../plugins/prompt-injector.ts")
   const pluginUrl = pathToFileURL(pluginPath).href
 
   // ממזג עם קונפיגורציה קיימת אם קיימת (משמר פלאגינים/הגדרות של המשתמש).
-  const config = existingEnv?.trim()
-    ? (JSON.parse(existingEnv) as Record<string, unknown>)
-    : {}
+  const config = existingEnv?.trim() ? (JSON.parse(existingEnv) as Record<string, unknown>) : {}
 
   // `plugin` יכול להיות: undefined, מחרוזת יחידה (קיצור דרך לפלאגין יחיד),
   // או מערך של מחרוזות (string-only — opencode 1.2.27 לא מקבל tuple).
@@ -57,9 +56,7 @@ export function buildOpencodeConfigContent(
 
   return JSON.stringify({
     ...config,
-    $schema:
-      (config.$schema as string | undefined) ??
-      "https://opencode.ai/config.json",
+    $schema: (config.$schema as string | undefined) ?? "https://opencode.ai/config.json",
     plugin: filtered,
   })
 }
