@@ -162,6 +162,22 @@ frontend/.../view-models/settings.svelte.ts
 קיים `gemini-3.5-live-translate-preview` (Live **translate**) — כיוון עתידי אפשרי לאיחוד
 translate+TTS ב-session קולי אחד. מחוץ ל-scope הנוכחי.
 
+### עדכון 2026-06-27 — מועמד חדש **מאומת חי**: `gemini-3.1-flash-tts-preview` (SSE streaming)
+ה-spike לעיל בדק רק מודלי TTS של **2.5** (`*-preview-tts`), שהיו buffer-only. מאז שוחרר
+**`gemini-3.1-flash-tts-preview`** עם streaming אמיתי. **ספייק חי (2026-06-27, דרך onecli
+`voice-acp` + BE proxy)** אימת את כל הנתיב:
+
+| נתיב | transport | streaming | first-audio | הזרקת key | נגיש מה-FE? |
+|------|-----------|:---:|:---:|-----------|:---:|
+| **`gemini-3.1-flash-tts-preview:streamGenerateContent?alt=sse`** | **HTTP/SSE** | ✅ (107 events) | **~0.7–1.0s (נמדד)** | **`x-goog-api-key` — מוזרק כיום** | ✅ **דרך `/proxy/google/*` — אומת end-to-end** |
+
+- ✅ **verbatim עברי** — STT round-trip החזיר בדיוק את הקלט. ✅ **אין preamble** (audio-only).
+- ✅ פלט PCM 16-bit 24kHz (`audio/l16; rate=24000`). caveat PCM→WebAudio (§F caveat 3) עדיין חל; caveat verbatim (§F caveat 1) **נופל** (מודל TTS טהור).
+- ⚠️ **תיקון:** ה-endpoint הוא `streamGenerateContent?alt=sse` (לא `/v1beta/interactions` כפי שטען סיכום-docs מוקדם). `supportedGenerationMethods` ב-metadata לא מפרט streaming אבל הוא עובד אמפירית.
+
+**המסקנה:** עוקף את שני החסרונות הכבדים של Gemini-Live בבת אחת (transport=HTTP+proxy קיים;
+TTS טהור=בלי סיכון verbatim) **ובאותו latency**. ר' `docs/decisions/voice-acp.md` (2026-06-27) לפירוט מלא.
+
 > **מקורות**: ai.google.dev/gemini-api/docs/speech-generation · cloud.google.com/text-to-speech/docs/gemini-tts ·
 > GoogleCloudPlatform/generative-ai#2480 · spikes חיים (REST synthesize, Vertex generateContent, WS BidiGenerateContent).
 
@@ -185,8 +201,13 @@ translate+TTS ב-session קולי אחד. מחוץ ל-scope הנוכחי.
 
 ## §H — החלטות פתוחות (לפני dispatch)
 
-1. **ספק-TTS-שני** — שלושה מועמדים:
-   - **Gemini-Live (WS)** — streaming ~1s, מהדפדפן; אך dialog-model + נתיב-WS + PCM. **הכי קרוב ל-streaming, הכי הרבה עבודה (V4 גדול).**
+1. **ספק-TTS-שני** — ארבעה מועמדים:
+   - **`gemini-3.1-flash-tts-preview` (SSE-streaming)** ⭐ **— נבחר, אומת חי 2026-06-27** —
+     streaming על `streamGenerateContent?alt=sse` דרך ה-proxy `/proxy/google/*` הקיים
+     (`x-goog-api-key` מוזרק כיום), מודל TTS טהור, verbatim עברי מאומת, TTFB ~0.7–1.0s. **המועמד
+     המוביל.** ידע-הספייק + צורת-אינטגרציה + שאלות פתוחות מרוכזים ב-**`docs/plans/v4-gemini-tts-pre-brief.md`**.
+     ה-brief המלא ייכתב אחרי GO על V3 (תלוי ב-`TtsProvider`).
+   - **Gemini-Live (WS)** — streaming ~1s, מהדפדפן; אך dialog-model + נתיב-WS + PCM. הרבה עבודה (V4 גדול).
    - **OpenAI `gpt-4o-mini-tts`** — buffer, MP3, מובנה ב-`@ai-sdk/openai` (כבר ב-V2). פשוט; latency לא נמדד (לאמת כשיהיה key).
    - **ElevenLabs-only** — לדחות ספק-שני, להוכיח את ה-`TtsProvider` interface בלי ספק נוסף.
 2. **התחלת V1** — V1 (שכבה טהורה + translate/narrate) **לא תלוי** בהכרעת-TTS → ניתן לכתוב brief ולהריץ אביגיל מיד.
