@@ -6326,3 +6326,13 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 **בדיקות:** `npx vitest run pcm` — 10/10 ירוקים.
 
 **חריגות:** ביקשנו `??` במקום `!` עקב noUncheckedIndexedAccess, שונה מה-brief (שהראה `!`) — תוצאה זהה מבחינת נכונות.
+
+### Commit 1 — core: format על TtsProvider (manual)
+
+**קבצים:** `tts-types.ts` (שינוי) + `tts.ts` (שינוי)
+
+**בוצע:**
+- הוספת שדה `format: "mp3" | "pcm"` ל-`TtsProvider` interface.
+- `elevenLabsTts.format = "mp3"` (ElevenLabs מחזיר MP3).
+
+**בדיקות:** `pnpm --filter frontend-v2 typecheck` — 0 errors.
