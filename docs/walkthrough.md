@@ -1,3 +1,25 @@
+## 2026-06-28 — slice-https-local — Commit 0 (TDD)
+
+### מה בוצע?
+
+**Commit 0 (TDD):** `packages/backend/src/tls.ts` + `tests/tls.test.ts` + `selfsigned@^2` dependency.
+- `resolveTls(env)`: מפענח `DRIVE_CODING_HTTPS` (JSON ב-env) → `TlsMaterial | null`.
+- branches: undefined/false → null; JSON שבור → null+warn; `{key,cert}` paths → readFileSync; `true` → self-signed idempotent (state-dir/tls/).
+- self-signed: CN=localhost, 825 days, SAN: DNS:localhost + IP:127.0.0.1, 2048-bit RSA, sha256.
+- 7 טסטים ירוקים (TDD: RED → GREEN).
+
+### בדיקות
+
+- TDD: 7 טסטים — ירוקים.
+- Typecheck: ירוק.
+- lint:i18n: ✓.
+
+### סטיות
+
+- אין.
+
+---
+
 ## 2026-06-27 — slice-config-unified — 4 commits
 
 ### מה בוצע?
