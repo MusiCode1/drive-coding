@@ -1,3 +1,40 @@
+## 2026-06-28 — slice-C3-host — 3 commits
+
+### מה בוצע?
+
+**Commit 0 — InProcessHost + types + client-bridge:**
+- `host/types.ts`: `AdapterHost` + `NormalizedCapabilities` — ממשקים provider-agnostic.
+- `host/in-process/client-bridge.ts`: `makeAcpClientFromCtx` — קידום מה-spike.
+- `host/in-process/claude/capabilities.ts`: `mapClaudeCapabilities` — מיפוי מ-frame אמיתי.
+- `host/in-process/host.ts`: `createClaudeInProcessHost` — שני connects עצמאיים:
+  - `agentConn = agentApp.connect(clientApp)` → `ClaudeAcpAgent(makeAcpClientFromCtx(agentConn.client))`
+  - `clientConn = clientApp.connect(agentApp)` → `clientCtx = clientConn.agent` (ClientContext ל-start/callExt)
+- `start()` = initialize דרך `clientCtx`, `callExt()` = ext request דרך אותו `clientCtx`.
+- `close()` = סגירת שני ה-connections.
+- two-SDK containment: `acp-sdk-v1`/`claude-agent-acp` כלואים ב-`in-process/`, אפס דליפה ב-`types.ts`/`index.ts`.
+
+**Commit 1 — טסטי-host (integration):**
+- 5 טסטים חדשים ב-`host.test.ts`: capabilities, ext round-trip, close, onExtNotification, full lifecycle.
+- `ExtHandlers` option ל-`createClaudeInProcessHost` — רישום ext handlers לפני connect.
+- אפס session/prompt בכל הטסטים.
+
+**Commit 2 — barrel + מחיקת spike:**
+- `host/index.ts` מייצא `createClaudeInProcessHost`, `InProcessHost`, `ExtHandlers`, `NormalizedCapabilities`, `AdapterHost`.
+- `spike.ts` נמחק — הקוד הוטמע.
+
+### חריגות
+- `callExt` נשתנה מ"connection חדש לכל קריאה" ל"שימוש ב-clientCtx שנשמר ב-start()" — יותר נכון ארכיטקטונית.
+- `ExtHandlers` option הוסף ל-factory כדי לאפשר רישום ext handlers בטסטים (הבריף לא ציין מפורשות).
+
+### בדיקות
+- `pnpm --filter @drive-coding/provider typecheck` — 0 errors.
+- `pnpm --filter @drive-coding/provider test` — 59/59 PASS.
+- DoD 5 (אפס דליפת sdk@1.0.0): grep על types.ts+index.ts — ריק.
+- DoD 6 (additive): git diff ea4f420..HEAD | grep -vE provider/docs/pnpm-lock — ריק.
+- DoD 7 (אפס session/prompt): grep על host.test.ts — רק comments.
+
+---
+
 ## 2026-06-28 — slice-C3-spike-inprocess-host — 2 commits
 
 ### מה בוצע?
