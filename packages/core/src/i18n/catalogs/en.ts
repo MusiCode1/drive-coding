@@ -190,6 +190,8 @@ export const en: Catalog = {
   "connect.agents.inUse": "Open in another tab",
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   "connect.agents.working": "working…",
+  // ─── agent-last-message-ui ─── (slice agent-last-message-ui)
+  "connect.agents.lastMessage": "Last activity",
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   "settings.screen.label": "Screen",
   "settings.toggle.keepScreenOn": "Keep screen on",

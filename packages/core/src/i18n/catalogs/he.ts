@@ -185,6 +185,8 @@ export const he: Catalog = {
   "connect.agents.inUse": "פעיל בכרטיסייה אחרת",
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   "connect.agents.working": "עובד…",
+  // ─── agent-last-message-ui ─── (slice agent-last-message-ui)
+  "connect.agents.lastMessage": "פעילות אחרונה",
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   "settings.screen.label": "מסך",
   "settings.toggle.keepScreenOn": "השאר מסך דלוק",
