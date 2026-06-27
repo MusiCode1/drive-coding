@@ -1,7 +1,7 @@
 # Slice — voice-keys-direct — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: טיוטה (טרם אביגיל)
+> **סטטוס**: הושלם
 > **Complexity**: 4/10 (verifier: light)
 > **תלויות (`depends_on`)**: [config-unified]
 > **Base**: `slice/config-unified` @ `8db1b47` (טרם מוזג ל-dev)
@@ -203,4 +203,5 @@ bash ./scripts/lint-no-hebrew-in-code.sh
 
 ## סטיות מהתכנון (מתעדכן ע"י executor)
 
-- (אין עדיין)
+- קובץ harness integration נוצר בשם `http-proxy-auth.test.ts` (לא `http-proxy.test.ts` כנדרש בבריף) כדי לא לשבש את הטסטים הקיימים של ה-cache בקובץ הנוכחי. הבריף הורה לבנות harness חדש — הקובץ נוצר כחדש.
+- wire-recorder.test.ts מציג flaky failure ב-full run (timing) — קיים ב-base, לא קשור לשינויים.
