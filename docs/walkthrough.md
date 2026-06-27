@@ -6306,3 +6306,23 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 ### סטיות
 
 אין. layout בלבד — קובץ יחיד, ללא שינוי VM/לוגיקה.
+
+---
+
+## slice-V4a-gemini-tts-pcm-playback
+
+**תאריך:** 2026-06-27
+**branch:** slice/V4a-gemini-tts-pcm-playback
+
+### Commit 0 — core: PCM parsing (TDD)
+
+**קבצים:** `packages/core/src/voice/pcm.ts` (חדש) + `pcm.test.ts` (חדש)
+
+**בוצע:**
+- `splitInt16LE(carry, chunk)` — מצרף carry+chunk, מפענח Int16 LE, מחזיר rest.
+- `pcmToFloat32(samples)` — ממיר Int16 [-32768,32767] → Float32 [-1,1).
+- אין spread, אין non-null assertions (noUncheckedIndexedAccess — `?? 0`).
+
+**בדיקות:** `npx vitest run pcm` — 10/10 ירוקים.
+
+**חריגות:** ביקשנו `??` במקום `!` עקב noUncheckedIndexedAccess, שונה מה-brief (שהראה `!`) — תוצאה זהה מבחינת נכונות.
