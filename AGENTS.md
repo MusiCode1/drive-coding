@@ -79,11 +79,15 @@ specific commit (rare): `git commit --no-verify`.
 
 ## Worktrees
 
-All worktrees live under `.worktrees/<branch-name>/`. Create a new one with:
+All worktrees live under `.worktrees/<name>/`. Branch names use the `slice/` prefix;
+the worktree **directory omits it** (a slash would nest a subdir). Create one with:
 
 ```bash
-git worktree add .worktrees/<name> -b <name> dev
+git worktree add .worktrees/<name> -b slice/<name> dev   # branch: slice/<name> | dir: .worktrees/<name>
 ```
+
+Cleanup after merge (worktrees pile up otherwise): `git worktree remove .worktrees/<name>`,
+`git branch -d slice/<name>`, `git worktree prune`.
 
 Don't pollute the project root with worktree directories. The two long-lived
 worktrees `dev/` and `main/` (at the project root) are the exception, not the rule.
