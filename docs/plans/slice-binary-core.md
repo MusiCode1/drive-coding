@@ -1,6 +1,6 @@
 # Slice — binary-core: בינארי `--compile` עולה ומגיש מקומית — תוכנית
 
-> **תאריך:** 2026-06-27 · **סטטוס:** brief (טרם אביגיל)
+> **תאריך:** 2026-06-27 · **סטטוס:** הושלם (5 commits, 2026-06-27)
 > **Complexity:** 8/10 (calev-heavy)
 > **depends_on:** [state-dir] — משתמש ב-`getStateDir()` לחילוץ ה-plugin
 > **Base:** `slice/state-dir` (שרשור — state-dir טרם מוזג ל-dev)

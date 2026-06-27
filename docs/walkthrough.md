@@ -1,3 +1,47 @@
+## 2026-06-27 — slice-binary-core — 5 commits
+
+### מה בוצע?
+
+**Commit 0 (TDD):** `packages/backend/src/binary.ts` — `isBinary()` gate.
+- `declare const __IS_BINARY__: boolean | undefined` + `typeof` guard.
+- `packages/backend/tests/binary.test.ts` — TDD: מאמת isBinary()=false בdev/test.
+
+**Commit 1 (integration):** `packages/core/src/log/index.ts` — pino-pretty stream ישיר.
+- `transport:{target:"pino-pretty"}` הוחלף ב-`import pretty from "pino-pretty"` + `pino({level}, pretty({..., destination}))`.
+- ללא worker/thread-stream — עובד בבינארי. אחיד dev+binary.
+
+**Commit 2 (integration):** plugin extraction.
+- `backend/src/plugin-extract.ts`: `ensurePluginExtracted()` — בינארי מחלץ `.ts` asset מ-$bunfs ל-getStateDir()/plugins/ (hash check).
+- `backend/src/plugin-config.ts`: pluginPath = isBinary() ? ensurePluginExtracted() : path.resolve(...).
+- `@ts-expect-error` על `import with {type:"file"}` (Bun asset — TS לא מבין, runtime OK).
+- `.gitignore`: מסתיר tsc output של backend/plugins/.
+
+**Commit 3 (integration):** codegen + serve-from-memory + bin gate.
+- `backend/src/fe-manifest.gen.ts`: stub ריק committed (FE={}) — typecheck עובד בdev.
+- `backend/src/server.ts`: isBinary() && !FE_STATIC_DIR → dynamic import manifest → Bun.file(p). SPA fallback עם guard ל-noUncheckedIndexedAccess.
+- `backend/src/bin/drive-coding.ts`: FE cascade מוגן ב-!isBinary().
+- `release/scripts/build-binary.mjs`: Step 1 FE build, Step 2 codegen (116 assets), Step 3 bun --compile, Step 4 שחזור stub.
+
+**Commit 4 (manual):** build-binary.mjs — תיקון trailing commas + Step 4 restore stub + אימות ידני.
+- Binary נבנה: dist/drive-coding.exe (~220MB עם assets).
+- Manual: GET /=200+HTML, /_app/env.js=200, /api/agents=200, WS echo=OK, FE_STATIC_DIR override=OK.
+
+### בדיקות
+
+- TDD: 1 טסט (binary.test.ts) — ירוק.
+- Integration: 216/231 טסטים ב-backend (2 pre-existing: cli-config Windows/npx, lint-no-hebrew-test).
+- Typecheck: ירוק לאורך כל ה-commits.
+- lint:i18n: ✓.
+- Manual verification: בינארי רץ מ-$TEMP, FE/API/WS עובדים.
+
+### סטיות
+
+- Plugin extraction: `ensurePluginExtracted()` נקראת רק ב-spawn opencode — לא אומתה ב-manual כי opencode חסום ב-Windows. DoD #7 יאומת ע"י calev-heavy.
+- `@ts-expect-error` על `import with {type:"file"}` — Bun-specific, TS לא תומך. runtime OK (אומת בspike).
+- build-binary.mjs: `walkDir` function parameter `base` לא בשימוש (biome info, לא error).
+
+---
+
 ## 2026-06-27 — slice-state-dir — Commit 0 (TDD): getStateDir + ensureStateSubdir
 
 ### מה בוצע?
