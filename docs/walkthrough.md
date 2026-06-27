@@ -1,3 +1,34 @@
+## 2026-06-27 — slice-R1-inline-acp-slice — 2 commits
+
+### מה בוצע?
+
+**Commit 0 (manual):** העתקת פרוסת ACP ל-`packages/core/src/acp/`:
+- 5 קבצים: `client/client.ts`, `client/client-impl.ts`, `transport.ts`, `describe-crash.ts`, `acp-provider-error.ts`
+- `index.ts` — barrel חדש עם 5 exports בלבד (ללא `contract/`/registry/claude-code)
+- `packages/core/package.json` — הוסף `"./acp": "./src/acp/index.ts"` ל-exports
+
+**Commit 1 (manual):** repoint כל specifiers + מחיקת git-dep מ-3 חבילות:
+- core: `ports.ts:3` — `provider-contract/acp` → `./acp/index.js`
+- backend: `agent-orchestrator.ts:26` + `package.json` — git-dep הוסר
+- frontend: `sessions.ts`, `ws-transport.ts`, `agent-session.svelte.ts` + `package.json` — git-dep הוסר
+- FE tests: `agent-session.test.ts` (8 מקומות) + `agent-session.turnstate.test.svelte.ts` (2 מקומות) — vi.mock + dynamic imports עודכנו
+- release: `build.mjs:7,63` — הערות stale עודכנו
+- `pnpm install` — lockfile מעודכן, provider-contract יצא מהגרף
+
+### בדיקות
+
+- typecheck: 0 errors (שני commits)
+- vite prod build: ירוק (15.60s client + 25.49s server) — ה-gotcha המתועד לא קרה (5 קבצים browser-safe)
+- tests: 821 ירוקים, 12 skipped. כישלון 1 pre-existing (F-1 bridge-failure-integration — known bug מ-slice 10, מתועד ב-roadmap "spawn ENOENT → 201", זהה ל-dev)
+- grep clean: `grep -rn provider-contract packages/` — ריק לחלוטין (כולל הערות mjs)
+- lint:i18n: ✓
+
+### חריגות
+
+- אין. move+repoint טהור, אפס שינוי התנהגות.
+
+---
+
 ## 2026-06-25 — slice-session-title-header — 3 commits
 
 ### מה בוצע?
