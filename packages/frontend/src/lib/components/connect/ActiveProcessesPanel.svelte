@@ -2,15 +2,17 @@
 /**
  * ActiveProcessesPanel — ווידג'ט "תהליכים פעילים" בטופס החיבור.
  *
- * מציג את כל ה-agents החיים בצד-השרת עם 3 פעולות לכל שורה:
- * Pin (נעיצה), Reconnect (חיבור מחדש), Kill (הריגה עם אישור).
+ * מציג את כל ה-agents החיים בצד-השרת עם 2 פעולות לכל שורה:
+ * Reconnect (חיבור מחדש עם אייקון תקע), Kill (הריגה עם אייקון פח + אישור 2-לחיצות).
  *
- * slice: active-agents-widget
+ * slice: active-processes-icons
  */
 import type { AgentPublic } from "@drive-coding/core"
 import { getActiveAgents, getI18n } from "$lib/context"
 import { formatRelativeTime } from "$lib/util/formatting"
 import { basename } from "$lib/util/path"
+import Trash2Icon from "@lucide/svelte/icons/trash-2"
+import PlugIcon from "@lucide/svelte/icons/plug"
 
 interface Props {
   onReconnect: (agent: AgentPublic) => void
@@ -121,42 +123,28 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
             </div>
 
             <div class="agent-actions">
-            <!-- Pin / Unpin -->
-            <button
-              type="button"
-              class="action-btn pin-btn"
-              class:pinned={agent.persistent}
-              onclick={() => void activeAgents.setPersistent(agent.id, !agent.persistent)}
-              title={agent.persistent ? t("connect.agents.unpin") : t("connect.agents.pin")}
-              aria-label={agent.persistent ? t("connect.agents.unpin") : t("connect.agents.pin")}
-            >
-              {agent.persistent ? "📌" : "📎"}
-            </button>
-
             <!-- Reconnect -->
             <button
               type="button"
-              class="action-btn reconnect-btn"
+              class="action-btn icon-btn reconnect-btn"
               disabled={isReconnectDisabled(agent)}
               onclick={() => onReconnect(agent)}
               title={isReconnectDisabled(agent) ? t("connect.agents.inUse") : t("connect.agents.reconnect")}
               aria-label={t("connect.agents.reconnect")}
             >
-              {t("connect.agents.reconnect")}
+              <PlugIcon size={16} strokeWidth={1.75} />
             </button>
 
             <!-- Kill -->
             <button
               type="button"
-              class="action-btn kill-btn"
+              class="action-btn icon-btn kill-btn"
               class:confirming={confirmingId === agent.id}
               onclick={() => handleKill(agent.id)}
-              title={t("connect.agents.kill")}
-              aria-label={t("connect.agents.kill")}
+              title={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
+              aria-label={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
             >
-              {confirmingId === agent.id
-                ? t("connect.agents.killConfirm")
-                : t("connect.agents.kill")}
+              <Trash2Icon size={16} strokeWidth={1.75} />
             </button>
             </div>
           </div>
@@ -401,9 +389,11 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     cursor: not-allowed;
   }
 
-  .pin-btn.pinned {
-    color: var(--accent);
-    border-color: var(--accent);
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.3rem;
   }
 
   .kill-btn {
