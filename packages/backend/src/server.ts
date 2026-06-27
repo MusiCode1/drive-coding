@@ -1,5 +1,4 @@
 import "./log-setup.js" // חייב להיות ראשון — מאתחל לוגר לפני כל יבוא אחר
-import * as path from "node:path"
 import { createLogger } from "@drive-coding/core/log"
 import { serve } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
@@ -66,6 +65,7 @@ import { registerProxyHttp } from "./delivery/http-proxy.js"
 import { createAgentWsHandler } from "./delivery/ws-agent.js"
 import { createEchoWsHandler } from "./delivery/ws-echo.js"
 import { createWireRecorder } from "./delivery/wire-recorder.js"
+import { ensureStateSubdir } from "./paths.js"
 
 const app = new Hono()
 
@@ -77,12 +77,12 @@ const registry = createInMemoryAgentRegistry()
 // wire-recorder: פעיל כש-WIRE_RECORD=1; אחרת no-op (אפס IO, אפס overhead)
 // מוגדר לפני createBridgeManager כדי שיועבר כ-opts.wireRecorder
 const wireRecorder = createWireRecorder({
-  dir: process.env.WIRE_RECORD ? path.resolve("data/wire-recordings") : null,
+  dir: process.env.WIRE_RECORD ? ensureStateSubdir("wire-recordings") : null,
 })
 
 const bridgeManager = createBridgeManager({ wireRecorder })
-const projectsRegistry = createProjectsRegistry(path.resolve("data/cache"))
-const recordingsStore = createRecordingsStore(path.resolve("data/recordings"))
+const projectsRegistry = createProjectsRegistry(ensureStateSubdir("cache"))
+const recordingsStore = createRecordingsStore(ensureStateSubdir("recordings"))
 
 const orchestrator = createAgentOrchestrator({
   registry,
@@ -101,7 +101,7 @@ registerRecordingsPostHttp(app, { recordingsStore })
 registerFsBrowseHttp(app)
 
 // Slice 10: פרוקסי שקוף עבור Google + ElevenLabs
-registerProxyHttp(app, { cacheBaseDir: path.resolve("data/cache/proxy") })
+registerProxyHttp(app, { cacheBaseDir: ensureStateSubdir("cache", "proxy") })
 
 // Slice 20: serve the built static FE (single-origin local prod).
 // Guarded by FE_STATIC_DIR — when unset (dev mode), Vite serves the FE

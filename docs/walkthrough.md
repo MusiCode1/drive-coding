@@ -23,6 +23,40 @@
 
 - הטסטים כתובים עם import סטטי (לא dynamic + resetModules) כי `getHomeDir` קורא `process.env` בזמן ריצה — `vi.stubEnv` מספיק. mock של `node:child_process` הוסף (http-options מפעיל execFileSync בimport).
 
+## 2026-06-27 — slice-state-dir — Commit 1 (integration): חיווט server.ts + cli-config-file
+
+### מה בוצע?
+
+**server.ts:** 4 החלפות `path.resolve("data/...")` → `ensureStateSubdir(...)`:
+- wire-recordings, cache, recordings, cache/proxy
+- הוסר `import * as path` (לא בשימוש יותר)
+- הוסף `import { ensureStateSubdir } from "./paths.js"`
+
+**cli-config-file.ts:** finding avigail #1 + #2:
+- הוסר `import { homedir } from "node:os"` (finding #1)
+- `join(homedir(), ".config", "drive-coding", "cli-specs.jsonc")` → `join(getStateDir(), "cli-specs.jsonc")` (finding #1+#2)
+- נשאר `import { join } from "node:path"` (משמש ב-resolveCliSpecsPath)
+- הוסף `import { getStateDir } from "../paths.js"`
+- biome auto-fix: תיקון CRLF בקובץ (safe fix)
+
+**cli-config-file.test.ts — עדכון finding avigail #2:**
+- הוסף `vi.mock("node:child_process")` (http-options מפעיל execFileSync דרך paths.ts)
+- שינוי ייבוא: `resolveCliSpecsPath` סטטי (לא dynamic; הפונקציה לא memoized)
+- הטסט ה"ברירת-מחדל" עודכן: `resolveCliSpecsPath({})` עם `vi.stubEnv("HOME", actualHome)` במקום השוואה ל-`os.homedir()` ישירות
+
+### בדיקות
+
+- typecheck: 0 errors
+- lint:i18n: ✓
+- pnpm test (backend): 489 pass, 3 fail (pre-existing: bridge-manager, bridge-failure-modes, cli-config.test)
+- paths.test.ts: 5/5 ירוקים
+- cli-config-file.test.ts: 8/8 ירוקים
+
+### סטיות
+
+- `join` מ-`node:path` נשאר ב-cli-config-file.ts (brief אמר להסיר, אבל משמש ב-`resolveCliSpecsPath` לביצוע `join(getStateDir(), "cli-specs.jsonc")` — cross-platform)
+- cli-config-file.ts נתקן גם מ-CRLF (biome safe fix, לא חלק מה-brief — side effect מינורי)
+
 ---
 
 ## 2026-06-25 — slice-session-title-header — 3 commits
