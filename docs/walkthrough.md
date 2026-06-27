@@ -6348,3 +6348,15 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 - noUncheckedIndexedAccess: optional-chain מלא בגישה ל-candidates/parts.
 
 **בדיקות:** typecheck ירוק. Runtime-verify: calev phase אחרי Commit 4.
+
+### Commit 3 — engine: AudioSink interface (manual)
+
+**קבצים:** `audio-sink.ts` (חדש) + `audio-stream.ts` (שינוי) + `player.svelte.ts` (שינוי) + `speaker.svelte.ts` (שינוי)
+
+**בוצע:**
+- `audio-sink.ts`: הגדרת `AudioSink` interface + `SegmentOpts` (messageId+textHash+format?) + `AudioSegmentState` (מקור-האמת).
+- `AudioStream implements AudioSink`: ייבוא AudioSegmentState מ-audio-sink, prepareSegment מקבל `SegmentOpts` (תואם לחלוטין).
+- `Player`: `#audioStream: AudioSink` (במקום `AudioStream`), constructor `sink: AudioSink`.
+- `Speaker`: `#audioStream: AudioSink`, ייבוא AudioSink.
+
+**בדיקות:** typecheck 0 errors. אפס regression על נתיב MP3 (pre-existing test failures — known bug).
