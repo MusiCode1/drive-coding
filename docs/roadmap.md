@@ -118,6 +118,7 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 | פריט | סטטוס |
 | --- | --- |
 | `bunx drive-coding` · npm-publish | ✅ READY |
+| **בינארי יחיד עצמאי (`bun build --compile`)** — executable שלא דורש Bun/Node מותקן (מחליף את "מעבר ל-Node target"). **הטמעת ה-FE נחקרה ונפתרה** (spike מאומת 27/06): glob מבנדל `.js` כ-source → חייב **codegen של `import … with {type:"file"}`** פר-קובץ + `Bun.file()` serve-from-memory (content-type אוטומטי, אפס חילוץ לדיסק); gate=`--define __IS_BINARY__` (כי `isStandaloneExecutable` מחזיר `undefined` ב-1.3.12). | 🟡💭 **קדם-brief** (`slice-single-binary-prebrief.md`) — עיצוב ה-FE מאומת; פתוח: pino-pretty worker · plugin opencode (נדחה) · `DATA_DIR` · cross-compile |
 | **בילד FE בלי ריסטארט (decouple)** — לבנות מחדש את הפרונט בלי לעצור את הסוכנים הרצים; ריסטארט רק על שינויי-BE (היום ריסטארט עוצר את כל הסוכנים). | 🟢 **brief READY** (`slice-fe-build-decouple.md`, נדחף origin/dev `773e6f0`; טרם בוצע) |
 | Windows adaptation · cli-agents deploy (systemd) | ✅ |
 | **WS robustness — ניתוק דפדפן לא יפיל את ה-BE** — ניתוק WS "מלוכלך" פולט `error` ללא listener → `uncaughtException` → `process.exit` → כל ה-BE + ה-agent child מתים. תיקון: `feWs.on("error")` + ריכוך ה-handler הגלובלי | ✅ מוזג ל-dev (`slice-ws-error-survival`, 3 שכבות + observability; אביגיל ×2 READY) |
