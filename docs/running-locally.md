@@ -55,6 +55,22 @@ cloudflared tunnel --url http://localhost:4000
 # → https://<random>.trycloudflare.com
 ```
 
+#### tunnel עם subdomain קבוע (tuns.sh) — לבדיקת Mic/mobile
+
+כשצריך URL יציב (לא random) לבדיקת Mic (HTTPS חובה) או ממכשיר נייד:
+
+```bash
+ssh -i ~/.ssh/pico \
+  -o StrictHostKeyChecking=accept-new \
+  -o ServerAliveInterval=15 \
+  -R drive-coding:80:localhost:<vite-port> tuns.sh http
+```
+
+URL: `https://your-app.tuns.sh`
+
+⚠️ **אל תהרוג tunnel שמרדכי הפעילה** — היא משתמשת בו לבדיקות. אם צריך tunnel נפרד
+ל-slice, השתמש בשם אחר → subdomain נפרד: `-R drive-coding-<slice>:80:...`.
+
 ב-mode הזה `/api`, `/proxy`, `/ws` וה-FE כולם על origin אחד (4000) — בדיוק כמו
 הפריסה הקבועה. זה הנתיב המועדף לבדוק התנהגות WS (כולל ה-heartbeat `$/ping`/`$/pong`).
 
