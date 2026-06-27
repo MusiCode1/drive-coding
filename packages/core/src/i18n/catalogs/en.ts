@@ -199,4 +199,8 @@ export const en: Catalog = {
   "settings.toggle.showTools": "Show tools by default",
   // ─── Enter toggle ─── (slice-enter-toggle)
   "settings.toggle.enterToSend": "Enter sends message",
+  // ─── content-viewer ─── (slice content-viewer)
+  "contentViewer.title": "View",
+  "contentViewer.expand": "Expand",
+  "contentViewer.close": "Close",
 }

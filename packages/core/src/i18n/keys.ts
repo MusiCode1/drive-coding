@@ -204,6 +204,10 @@ export type MessageKey =
   | "settings.toggle.showTools"
   // ─── Enter toggle ─── (slice-enter-toggle)
   | "settings.toggle.enterToSend"
+  // ─── content-viewer ─── (slice content-viewer)
+  | "contentViewer.title"
+  | "contentViewer.expand"
+  | "contentViewer.close"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
