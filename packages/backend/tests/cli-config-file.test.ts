@@ -15,32 +15,38 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+// Mock child_process — http-options (ייובא דרך paths.ts) מפעיל execFileSync
+const execFileSyncMock = vi.fn().mockReturnValue("")
+vi.mock("node:child_process", () => ({
+  execFileSync: (...args: unknown[]) => execFileSyncMock(...args),
+}))
+
+// ייבוא סטטי ל-resolveCliSpecsPath — הפונקציה לא memoized, process.env נקרא בזמן ריצה.
+// (loadCliSpecsOverride מחייב dynamic import בגלל memoization ברמת מודול)
+import { resolveCliSpecsPath } from "../src/acp/cli-config-file.js"
+
 // ── ייבוא מעוכב — נייבא בתוך כל טסט כדי שה-memoization יאופס בין ריצות ──
 // מאחר ש-loadCliSpecsOverride מנוהל ב-memoization ברמת המודול,
 // נייבא מחדש בכל טסט (resetModules בין בדיקות).
 
 describe("resolveCliSpecsPath", () => {
-  const originalEnv = { ...process.env }
-
   afterEach(() => {
-    // שחזור env
-    for (const key of Object.keys(process.env)) {
-      if (!(key in originalEnv)) delete process.env[key]
-    }
-    Object.assign(process.env, originalEnv)
+    vi.unstubAllEnvs()
   })
 
-  it("ברירת-מחדל: ~/.config/drive-coding/cli-specs.jsonc", async () => {
-    delete process.env.CLI_SPECS_FILE
-    const { resolveCliSpecsPath } = await import("../src/acp/cli-config-file.js")
-    const result = resolveCliSpecsPath()
-    const expected = path.join(os.homedir(), ".config", "drive-coding", "cli-specs.jsonc")
+  it("ברירת-מחדל: ~/.config/drive-coding/cli-specs.jsonc", () => {
+    // finding avigail #2: getStateDir() מעדיף HOME/USERPROFILE על פני os.homedir().
+    // שמירת homedir לפני ה-stub (os.homedir() ב-Windows תלוי ב-USERPROFILE).
+    const actualHome = os.homedir()
+    vi.stubEnv("HOME", actualHome)
+    vi.stubEnv("USERPROFILE", "")
+    // העבר env ללא CLI_SPECS_FILE כדי לקבל ברירת-מחדל
+    const result = resolveCliSpecsPath({})
+    const expected = path.join(actualHome, ".config", "drive-coding", "cli-specs.jsonc")
     expect(result).toBe(expected)
   })
 
-  it("CLI_SPECS_FILE env דורס את ברירת-המחדל", async () => {
-    process.env.CLI_SPECS_FILE = "/tmp/custom-cli-specs.jsonc"
-    const { resolveCliSpecsPath } = await import("../src/acp/cli-config-file.js")
+  it("CLI_SPECS_FILE env דורס את ברירת-המחדל", () => {
     const result = resolveCliSpecsPath({ CLI_SPECS_FILE: "/tmp/custom-cli-specs.jsonc" })
     expect(result).toBe("/tmp/custom-cli-specs.jsonc")
   })
