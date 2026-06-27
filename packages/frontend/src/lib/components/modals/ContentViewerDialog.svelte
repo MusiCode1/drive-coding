@@ -12,8 +12,8 @@
  * - Markdown: רינדור דרך renderMarkdown (DOMPurify two-pass + KaTeX) — אסור DOMPurify ידני חדש.
  * - תמונה: רק דרך <img src> — אסור {@html}/<object> (SVG ב-<img> = secure-static-mode).
  */
-import { Dialog as BitsDialog } from "bits-ui"
 import XIcon from "@lucide/svelte/icons/x"
+import { Dialog as BitsDialog } from "bits-ui"
 import { getContentViewer, getI18n } from "$lib/context"
 import { renderMarkdown } from "$lib/util/markdown"
 
@@ -30,8 +30,10 @@ function onOpenChange(open: boolean) {
     <BitsDialog.Overlay
       class="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
     />
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
     <BitsDialog.Content
       class="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onclick={(e) => { if (e.target === e.currentTarget) viewer.close() }}
     >
       <div
         class="w-full max-w-3xl mx-auto flex flex-col overflow-hidden rounded-2xl"
