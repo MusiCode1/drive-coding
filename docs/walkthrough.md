@@ -1,3 +1,24 @@
+## 2026-06-27 — slice/V4a-unify — Commit 0: adapter resolveTts (TDD)
+
+### מה בוצע?
+
+**`packages/frontend/src/lib/adapters/voice/tts-resolve.ts`** (חדש): `resolveTts(ttsProvider, elevenVoiceId) → ResolvedTts` — מקור-אמת יחיד לבחירת ספק TTS. "google" → geminiTts + "Kore" + "gemini-3.1-flash-tts-preview"; "elevenlabs" → elevenLabsTts + voiceId מועבר + "eleven_v3". מקבל primitives בלבד (לא Settings VM).
+
+**`packages/frontend/src/lib/adapters/voice/tts-resolve.test.ts`** (חדש): 5 בדיקות TDD (Red→Green): google→geminiTts+Kore+modelId, google→format=pcm, elevenlabs→elevenLabsTts+voiceId+eleven_v3, elevenlabs→format=mp3, voiceId מועבר בדיוק.
+
+### בדיקות
+
+- TDD: 5/5 ✅ (`npx vitest run tts-resolve`)
+- `pnpm --filter frontend-v2 typecheck`: ✅ 0 errors
+- `pnpm lint:i18n`: ✅ No Hebrew in code
+- `npx vitest run`: 807/808 ✅ (הכשלון 1 הוא bridge-failure-integration pre-existing מ-slice 10)
+
+### סטיות
+
+אין. biome lint errors הם pre-existing (259 errors לפני ה-commit).
+
+---
+
 ## 2026-06-27 — slice/V4a-gemini-tts-pcm-playback — Commit 6: RoutingAudioSink + speaker wiring (integration)
 
 ### מה בוצע?
