@@ -12,6 +12,7 @@
 
 import { generateText } from "ai"
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
+import type { VoiceModelRef } from "@drive-coding/core/voice/capabilities"
 import { googleAi } from "./sdks"
 import { narrateCacheHeaders } from "./cache-headers"
 import {
@@ -30,6 +31,7 @@ const TIMEOUT_MS = 3000
 export async function narrate(
   ctx: NarrateContext,
   tool: ToolCallForNarrate,
+  ref: VoiceModelRef,
   signal?: AbortSignal,
 ): Promise<string | null> {
   const prompt = buildNarratePrompt(ctx, tool)
@@ -39,7 +41,7 @@ export async function narrate(
     const result = await withTimeout(
       (s) =>
         generateText({
-          model: googleAi("gemini-flash-lite-latest", cacheHeaders),
+          model: googleAi(ref.model, cacheHeaders), // V2: switch on ref.provider (google|openai)
           prompt,
           abortSignal: s,
         }),

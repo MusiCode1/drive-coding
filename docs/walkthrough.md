@@ -1,3 +1,43 @@
+## 2026-06-27 — slice-content-viewer — 4 commits
+
+### מה בוצע?
+
+**Commit 0 (manual):** i18n keys — 3 מפתחות חדשים (`contentViewer.title/expand/close`) ב-`keys.ts`, `he.ts`, `en.ts` — בבלוקים תוספתיים בסוף כל קובץ.
+
+**Commit 1 (manual):** `ContentViewerVM` + context wiring.
+- קובץ חדש `view-models/content-viewer.svelte.ts`: `ViewerPayload` (discriminated union: markdown|image) + `ContentViewerVM` class ($state payload, get open, show/close).
+- `context.ts`: ייבוא type + בלוק תוספתי `getContentViewer/setContentViewer` בסוף.
+- `+layout.svelte`: import `ContentViewerVM` + instance חדש + `setContentViewer(contentViewer)` ליד `setModals`.
+
+**Commit 2 (manual):** `ContentViewerDialog.svelte` — רכיב leaf חדש.
+- bits-ui Dialog fullscreen (max-w-3xl, max-height:100dvh).
+- Header: כותרת דינמית (payload.title || contentViewer.title) + XIcon close.
+- Body: branch markdown → `{@html renderMarkdown(text)}` / image → `<img src>`.
+- Security: renderMarkdown (DOMPurify two-pass). תמונה רק דרך `<img>` (לא {@html}).
+
+**Commit 3 (manual+browser smoke):** mount + triggers wiring.
+- `AppShell.svelte`: import + `<ContentViewerDialog />` ליד FolderPickerDialog.
+- `+page.svelte` (connect): אותו pattern (לא עטוף ב-AppShell).
+- `MessageBubble.svelte`: כפתור expand (Maximize2Icon) → `viewer.show({kind:"markdown",...})`.
+- `ToolBubble.svelte`: (א) text → expand ב-tool-text-wrapper; (ב) image → עטיפת `<img>` ב-button → lightbox.
+- CSS: `tool-text-wrapper / tool-expand-btn / tool-image-btn`.
+
+### בדיקות
+
+- typecheck: 0 errors (כל 4 commits)
+- lint:i18n: ✓ (אין עברית בקוד)
+- frontend tests: 319/319 ירוקים
+- browser smoke (port 5199, mock=tool-spill, mock=salary-attendance):
+  - MessageBubble: כפתור Expand מופיע → dialog "View" נפתח עם markdown מרונדר
+  - ESC + X + backdrop → סוגרים dialog
+  - 0 console errors לאורך כל הבדיקה
+
+### סטיות
+
+אין. ToolBubble image lightbox לא נבדק חי (אין fixture עם tool image) — נתיב קוד קיים, browser smoke הוגבל ל-markdown.
+
+---
+
 ## 2026-06-27 — slice-binary-core — 5 commits
 
 ### מה בוצע?
@@ -129,6 +169,187 @@
 
 - `join` מ-`node:path` נשאר ב-cli-config-file.ts (brief אמר להסיר, אבל משמש ב-`resolveCliSpecsPath` לביצוע `join(getStateDir(), "cli-specs.jsonc")` — cross-platform)
 - cli-config-file.ts נתקן גם מ-CRLF (biome safe fix, לא חלק מה-brief — side effect מינורי)
+## 2026-06-27 — slice/V4a-unify — Commit 2: BubblePlayer → sink + resolveTts; מחיקת playAgentText
+
+### מה בוצע?
+
+**`packages/frontend/src/lib/view-models/bubble-player.svelte.ts`**:
+- הוסף sink משלו: `readonly #sink = new RoutingAudioSink(...)` + `#segId: string | null = null`
+- ענף TTS (message/thought): מחליף `playAgentText` ב-`resolveTts` + `#sink.prepareSegment` + `#sink.play`
+- `<audio>` (`audioEl`) נשאר — נשמר לענף user-recording (`playUserRecording` אין לו signal)
+- `cleanup()`: הוסף `this.#segId = null` בנוסף לאיפוסים הקיימים
+- `stop()`: שני מנגנוני-עצירה — `#sink.cancel(#segId)` לTTS + `#audioEl.pause()` לrecording (אין לו signal)
+
+**`packages/frontend/src/lib/adapters/voice/play-bubble.ts`**:
+- נמחקה `playAgentText` (צרכן יחיד = BubblePlayer, כלל #5)
+- נמחק import של `elevenLabsTts` (לא נדרש עוד)
+- עודכן docstring: מתאר נתיב `<audio>` לrecording בלבד, TTS עבר ל-BubblePlayer→sink
+
+### בדיקות
+
+- `pnpm --filter frontend-v2 typecheck`: ✅ 0 errors
+- `pnpm lint:i18n`: ✅ No Hebrew in code
+- `npx vitest run`: 807/808 ✅ (pre-existing failure: bridge-failure-integration)
+- `pnpm --filter @drive-coding/frontend-v2 build`: ✅ built in ~19s
+- DoD: `grep -rn "playAgentText" packages/frontend/src` → **0** ✅
+- DoD: `grep -rn 'ttsProvider === "google"' packages/frontend/src` → **רק** tts-resolve.ts ✅
+
+### סטיות
+
+אין. runtime verification מתבצע ע"י calev בסיום.
+
+---
+
+## 2026-06-27 — slice/V4a-unify — Commit 1: Speaker → resolveTts (zero-behavior-change)
+
+### מה בוצע?
+
+**`packages/frontend/src/lib/view-models/speaker.svelte.ts`**: החלפת 3 שורות inline ב-`resolveTts(this.#settings.ttsProvider, this.#settings.voiceId)`. הוסרו imports ישירים של `elevenLabsTts` ו-`geminiTts`. שאר הקוד (textHash, synthesize, prepareSegment עם format) ללא שינוי.
+
+### בדיקות
+
+- `pnpm --filter frontend-v2 typecheck`: ✅ 0 errors
+- `pnpm lint:i18n`: ✅ No Hebrew in code
+- `npx vitest run`: 807/808 ✅ (pre-existing failure: bridge-failure-integration)
+- DoD: `grep 'ttsProvider === "google"' packages/frontend/src/` → **רק** ב-tts-resolve.ts ✅
+
+### סטיות
+
+אין. zero-behavior-change מאומת.
+
+---
+
+## 2026-06-27 — slice/V4a-unify — Commit 0: adapter resolveTts (TDD)
+
+### מה בוצע?
+
+**`packages/frontend/src/lib/adapters/voice/tts-resolve.ts`** (חדש): `resolveTts(ttsProvider, elevenVoiceId) → ResolvedTts` — מקור-אמת יחיד לבחירת ספק TTS. "google" → geminiTts + "Kore" + "gemini-3.1-flash-tts-preview"; "elevenlabs" → elevenLabsTts + voiceId מועבר + "eleven_v3". מקבל primitives בלבד (לא Settings VM).
+
+**`packages/frontend/src/lib/adapters/voice/tts-resolve.test.ts`** (חדש): 5 בדיקות TDD (Red→Green): google→geminiTts+Kore+modelId, google→format=pcm, elevenlabs→elevenLabsTts+voiceId+eleven_v3, elevenlabs→format=mp3, voiceId מועבר בדיוק.
+
+### בדיקות
+
+- TDD: 5/5 ✅ (`npx vitest run tts-resolve`)
+- `pnpm --filter frontend-v2 typecheck`: ✅ 0 errors
+- `pnpm lint:i18n`: ✅ No Hebrew in code
+- `npx vitest run`: 807/808 ✅ (הכשלון 1 הוא bridge-failure-integration pre-existing מ-slice 10)
+
+### סטיות
+
+אין. biome lint errors הם pre-existing (259 errors לפני ה-commit).
+
+---
+
+## 2026-06-27 — slice/V4a-gemini-tts-pcm-playback — Commit 6: RoutingAudioSink + speaker wiring (integration)
+
+### מה בוצע?
+
+**`packages/frontend/src/lib/engines/routing-audio-sink.ts`** (חדש): `RoutingAudioSink implements AudioSink` — מנתב per-segment ל-`AudioStream` (mp3) או `PcmAudioStream` (pcm) לפי `opts.format`. `#byId` Map שומר את ה-sink שנבחר לכל id, `cancel` מנקה מה-map, `clear` מנקה את שני ה-sinks.
+
+**`packages/frontend/src/lib/view-models/speaker.svelte.ts`**:
+- imports: הוסף `PcmAudioStream`, `RoutingAudioSink`, `geminiTts`
+- ב-constructor: `this.#audioStream = new RoutingAudioSink(new AudioStream(), new PcmAudioStream())`
+- ב-`#fetchJob` (~line 400): בחירת ספק לפי `this.#settings.ttsProvider` — `isGemini` בוחר `geminiTts` עם voiceId="Kore" ו-modelId="gemini-3.1-flash-tts-preview"; ElevenLabs נשאר כברירת מחדל. `cacheKeyFor` מחושב עם voiceId/modelId האמיתיים. `prepareSegment` מקבל `format: provider.format`.
+
+### בדיקות
+
+- `pnpm --filter @drive-coding/frontend-v2 typecheck` (svelte-check): ✅ 0 errors, 0 warnings
+- `pnpm biome check` (קבצים שנגענו): ✅ 0 errors (2 pre-existing warnings בלבד)
+- `pnpm --filter @drive-coding/frontend-v2 build` (vite build): ✅ built in 29.84s
+
+### סטיות
+
+2 biome warnings ב-speaker.svelte.ts הן pre-existing: `#prevStatus` unused + `status` param prefix. אינן חלק מה-slice.
+
+---
+
+## 2026-06-27 — slice/V3-voice-tts-interface — סיכום slice (Commits 0+1+2)
+
+### מה בוצע?
+
+Slice V3 — TtsProvider interface. 3 commits. zero-behavior-change.
+
+**Commit 0** (`7f23aeb`): `packages/core/src/voice/tts-types.ts` (חדש) — TtsRequest + TtsProvider.
+**Commit 1** (`bfa7729`): `packages/frontend/src/lib/adapters/voice/tts.ts` — TtsOptions מחוק, TtsRequest מיובא, elevenLabsTts: TtsProvider נחשף. synthesizeStreaming הוסר. `tts.test.ts` — 10 refs ל-synthesizeStreaming הומרו ל-elevenLabsTts.synthesize, 6/6 ירוק.
+**Commit 2** (`7719b68`): `speaker.svelte.ts` + `play-bubble.ts` — 2 call-sites הומרו ל-elevenLabsTts.synthesize.
+
+### בדיקות
+
+- `pnpm typecheck` (core+backend): ✅ exit 0
+- `pnpm --filter @drive-coding/frontend-v2 typecheck`: ✅ 0 errors
+- `pnpm --filter @drive-coding/frontend-v2 test`: ✅ 319/319
+- `pnpm lint:i18n`: ✅ No hardcoded Hebrew in code
+- `pnpm --filter @drive-coding/frontend-v2 build`: ✅ built
+- `grep synthesizeStreaming packages/frontend/src`: 0 call-sites (רק comment תיעוד) ✅
+
+### סטיות
+
+אין. אותו ElevenLabs, אותו MP3, אותו streaming — רק חוצה interface.
+
+---
+
+## 2026-06-27 — slice/V1-voice-config-core — Commit 2: speaker.svelte.ts חיווט select() (manual)
+
+### מה בוצע?
+
+שינויים ב-`packages/frontend/src/lib/view-models/speaker.svelte.ts`:
+- imports: `select` מ-`@drive-coding/core/voice/select` + `DEFAULT_VOICE_CONFIG` מ-`@drive-coding/core/voice/capabilities`
+- שורה ~359: `translate(text, TARGET_LANG, select("translate", DEFAULT_VOICE_CONFIG), job.abort.signal, job.messageId)`
+- שורה ~489: `narrate(ctx, tool, select("narrate", DEFAULT_VOICE_CONFIG), job.abort.signal)`
+
+### בדיקות
+
+- `pnpm --filter @drive-coding/frontend-v2 typecheck` (svelte-check): 0 errors, 0 warnings
+- `pnpm typecheck` (root, core+backend): exit 0
+- `pnpm --filter @drive-coding/frontend-v2 test`: 319 ירוקים
+- `pnpm lint` (קבצים שלנו): ✓ ללא errors חדשים
+- `pnpm --filter @drive-coding/frontend-v2 build` (vite build): ✓ built in 18.59s
+
+### סטיות
+
+אין. zero-behavior-change: DEFAULT_VOICE_CONFIG.translate/narrate = "gemini-flash-lite-latest" (זהה למחרוזת הקשיחה שהוסרה).
+
+---
+
+## 2026-06-27 — slice/V1-voice-config-core — Commit 1: adapters translate.ts + narrate.ts מקבלים VoiceModelRef (manual)
+
+### מה בוצע?
+
+שינויים ב-`packages/frontend/src/lib/adapters/voice/`:
+- `translate.ts`: הוסף פרמטר `ref: VoiceModelRef` (לפני `signal`). המחרוזת הקשיחה `"gemini-flash-lite-latest"` הוחלפה ב-`ref.model`. הערה `// V2: switch on ref.provider`.
+- `narrate.ts`: כנ"ל.
+- `translate.test.ts`: עדכון 5 קריאות — `translate(text, lang, TEST_REF)` (ref לפני signal).
+- `narrate.test.ts`: עדכון 5 קריאות — `narrate(ctx, tool, TEST_REF)` + `narrate(ctx, tool, TEST_REF, ac.signal)` (שורה ~98 — ac.signal עכשיו ב-4th arg).
+
+### בדיקות
+
+- `pnpm --filter @drive-coding/frontend-v2 test`: 319 tests ירוקים (כולל translate.test + narrate.test)
+- `pnpm --filter @drive-coding/frontend-v2 typecheck`: 2 errors ב-speaker.svelte.ts:359,489 — **צפוי**, speaker לא חוּוט עד Commit 2
+
+### סטיות
+
+אין. ה-2 errors ב-svelte-check צפויים ומתועדים ב-brief §4 Commit 1.
+
+---
+
+## 2026-06-27 — slice/V1-voice-config-core — Commit 0: core VoiceConfig + select() (TDD)
+
+### מה בוצע?
+
+קבצים חדשים ב-`packages/core/src/voice/`:
+- `capabilities.ts`: ArkType schemas — `voiceProvider`, `voiceModelRef`, `voiceService`, `voiceConfig` + `DEFAULT_VOICE_CONFIG` (zero-behavior-change)
+- `select.ts`: פונקציה טהורה `select(service, config) → VoiceModelRef`
+- `select.test.ts`: 6 טסטים TDD (red→green) — כל 4 services + config מותאם + ArkType validation
+
+### בדיקות
+
+- TDD red→green: 6 tests חדשים ב-select.test.ts — ירוקים
+- `pnpm typecheck` (core+backend): ✓ (exit 0)
+- `pnpm lint` (קבצים חדשים): ✓ ללא errors חדשים (258 pre-existing errors לא שייכים לסלייס)
+
+### סטיות
+
+אין. pre-existing lint errors (258) וכשלון backend integration test (`bridge-failure-integration`) קדמו לסלייס זה ואינם חלק ממנו.
 
 ---
 
@@ -6350,3 +6571,88 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 ### סטיות
 
 אין. layout בלבד — קובץ יחיד, ללא שינוי VM/לוגיקה.
+
+---
+
+## slice-V4a-gemini-tts-pcm-playback
+
+**תאריך:** 2026-06-27
+**branch:** slice/V4a-gemini-tts-pcm-playback
+
+### Commit 0 — core: PCM parsing (TDD)
+
+**קבצים:** `packages/core/src/voice/pcm.ts` (חדש) + `pcm.test.ts` (חדש)
+
+**בוצע:**
+- `splitInt16LE(carry, chunk)` — מצרף carry+chunk, מפענח Int16 LE, מחזיר rest.
+- `pcmToFloat32(samples)` — ממיר Int16 [-32768,32767] → Float32 [-1,1).
+- אין spread, אין non-null assertions (noUncheckedIndexedAccess — `?? 0`).
+
+**בדיקות:** `npx vitest run pcm` — 10/10 ירוקים.
+
+**חריגות:** ביקשנו `??` במקום `!` עקב noUncheckedIndexedAccess, שונה מה-brief (שהראה `!`) — תוצאה זהה מבחינת נכונות.
+
+### Commit 1 — core: format על TtsProvider (manual)
+
+**קבצים:** `tts-types.ts` (שינוי) + `tts.ts` (שינוי)
+
+**בוצע:**
+- הוספת שדה `format: "mp3" | "pcm"` ל-`TtsProvider` interface.
+- `elevenLabsTts.format = "mp3"` (ElevenLabs מחזיר MP3).
+
+**בדיקות:** `pnpm --filter frontend-v2 typecheck` — 0 errors.
+
+### Commit 2 — adapter: geminiTts provider (manual + runtime-verify)
+
+**קבצים:** `base64.ts` (שינוי — הוספת `base64ToBytes`) + `tts-gemini.ts` (חדש)
+
+**בוצע:**
+- `base64ToBytes(b64)` נוסף ל-base64.ts (בלי spread, loop-based).
+- `geminiTts: TtsProvider` — googleGenAi().models.generateContentStream → ReadableStream<Uint8Array> של PCM.
+- `config.abortSignal` מועבר ל-SDK (מאומת מ-genai.d.ts).
+- noUncheckedIndexedAccess: optional-chain מלא בגישה ל-candidates/parts.
+
+**בדיקות:** typecheck ירוק. Runtime-verify: calev phase אחרי Commit 4.
+
+### Commit 3 — engine: AudioSink interface (manual)
+
+**קבצים:** `audio-sink.ts` (חדש) + `audio-stream.ts` (שינוי) + `player.svelte.ts` (שינוי) + `speaker.svelte.ts` (שינוי)
+
+**בוצע:**
+- `audio-sink.ts`: הגדרת `AudioSink` interface + `SegmentOpts` (messageId+textHash+format?) + `AudioSegmentState` (מקור-האמת).
+- `AudioStream implements AudioSink`: ייבוא AudioSegmentState מ-audio-sink, prepareSegment מקבל `SegmentOpts` (תואם לחלוטין).
+- `Player`: `#audioStream: AudioSink` (במקום `AudioStream`), constructor `sink: AudioSink`.
+- `Speaker`: `#audioStream: AudioSink`, ייבוא AudioSink.
+
+**בדיקות:** typecheck 0 errors. אפס regression על נתיב MP3 (pre-existing test failures — known bug).
+
+### Commit 4 — engine: PcmAudioStream (manual + runtime-verify)
+
+**קבצים:** `pcm-audio-stream.ts` (חדש)
+
+**בוצע:**
+- `PcmAudioStream implements AudioSink` — WebAudio בסיס עם AudioContext אחד למופע.
+- `prepareSegment`: צריכת stream ברקע → splitInt16LE → pcmToFloat32 → AudioBuffer[].
+  carry טיפול בגבולות אי-זוגיים. copyToChannel עם Float32Array מפורש (ArrayBuffer).
+- `play`: gap-less scheduling — #nextStartTime cursor, onended → scheduleNext.
+  resume() אם AudioContext suspended (gesture-gated, voice-mode מספק).
+- `cancel/clear`: source.stop() לכל הפעילים.
+- אין unit test (WebAudio לא רץ ב-happy-dom) — calev phase מאמת.
+
+**חריגות TS:** `(seg.state as string) === "cancelled"` — TypeScript narrow false-positive על async state מחוץ ל-loop.
+
+**בדיקות:** typecheck 0 errors. Runtime-verify: calev phase (להמשיך).
+
+### Commit 5 — Settings: בורר ספק-TTS (manual)
+
+**קבצים:**
+- `settings.svelte.ts` — הוסף `ttsProvider: "elevenlabs"|"google"` + setter + persist. default = "elevenlabs".
+- `keys.ts` — 3 מפתחות חדשים ב-MessageKey union (settings.ttsProvider.*).
+- `catalogs/he.ts` + `en.ts` — ערכים לכל 3 מפתחות.
+- `SettingsScreen.svelte` — `<Select>` בורר TTS provider ליד VoicePicker.
+
+**בדיקות:**
+- typecheck 0 errors.
+- lint:i18n — אין עברית בקוד.
+- `select.test.ts` 6/6 ירוק (Q1 = default לא שונה).
+- בדיקה ידנית: בורר נשמר ל-localStorage, reload → ערך נשמר, default=elevenlabs.

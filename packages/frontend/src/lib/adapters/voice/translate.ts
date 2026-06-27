@@ -19,6 +19,7 @@
 
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
 import { buildTranslationPrompt } from "@drive-coding/core/voice/translation-prompt"
+import type { VoiceModelRef } from "@drive-coding/core/voice/capabilities"
 import { generateObject, jsonSchema } from "ai"
 import { googleAi } from "./sdks"
 import { translateCacheHeaders } from "./cache-headers"
@@ -68,6 +69,7 @@ const translateSchema = jsonSchema<TranslateResult>({
 export async function translate(
   text: string,
   targetLang: "he" | "en",
+  ref: VoiceModelRef,
   signal?: AbortSignal,
   messageId?: string | null,
 ): Promise<TranslateResult | null> {
@@ -86,7 +88,7 @@ Respond as JSON matching the schema:
     const result = await withTimeout(
       (signal) =>
         generateObject({
-          model: googleAi("gemini-flash-lite-latest", cacheHeaders),
+          model: googleAi(ref.model, cacheHeaders), // V2: switch on ref.provider (google|openai)
           schema: translateSchema,
           prompt,
           abortSignal: signal,

@@ -10,7 +10,7 @@
  */
 
 import { OrderedQueue, type OrderKey } from "@drive-coding/core/voice/tts-queue"
-import type { AudioStream } from "./audio-stream"
+import type { AudioSink } from "./audio-sink"
 
 export type PlayerState = "idle" | "playing"
 
@@ -18,13 +18,13 @@ export class Player {
   state: PlayerState = $state("idle")
   currentSegmentId: string | null = $state(null)
 
-  #audioStream: AudioStream
-  #queue = new OrderedQueue<string>()  // slice 22: היה string[]
+  #audioStream: AudioSink
+  #queue = new OrderedQueue<string>() // slice 22: היה string[]
   #playing = false // שומר כניסה-מחדש (re-entrancy guard) עבור #playLoop
   // slice 6: callback גנרי (לא יודע על cues — Speaker מספק)
   #onPlaybackStart?: () => void
 
-  constructor(audioStream: AudioStream, onPlaybackStart?: () => void) {
+  constructor(audioStream: AudioSink, onPlaybackStart?: () => void) {
     this.#audioStream = audioStream
     this.#onPlaybackStart = onPlaybackStart
   }
@@ -58,7 +58,10 @@ export class Player {
   stop(): void {
     const ids: string[] = []
     let n = this.#queue.takeNext()
-    while (n !== undefined) { ids.push(n.value); n = this.#queue.takeNext() }
+    while (n !== undefined) {
+      ids.push(n.value)
+      n = this.#queue.takeNext()
+    }
     if (this.currentSegmentId !== null) ids.push(this.currentSegmentId)
     this.#queue.clear()
     for (const id of ids) this.#audioStream.cancel(id)

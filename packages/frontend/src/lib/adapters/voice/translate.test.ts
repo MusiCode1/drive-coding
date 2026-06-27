@@ -31,6 +31,9 @@ vi.mock("ai", () => ({
 
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
 import { translate } from "./translate"
+import type { VoiceModelRef } from "@drive-coding/core/voice/capabilities"
+
+const TEST_REF: VoiceModelRef = { provider: "google", model: "gemini-flash-lite-latest" }
 
 const mockWithTimeout = withTimeout as ReturnType<typeof vi.fn>
 
@@ -41,7 +44,7 @@ describe("translate", () => {
       object: { status: "translated", text: "שלום" },
     })
 
-    const result = await translate("hello", "he")
+    const result = await translate("hello", "he", TEST_REF)
     expect(result).toEqual({ status: "translated", text: "שלום" })
   })
 
@@ -49,7 +52,7 @@ describe("translate", () => {
   it("מחזיר null כאשר withTimeout זורק שגיאת timeout", async () => {
     mockWithTimeout.mockRejectedValue(new Error("translate timeout 2500ms"))
 
-    const result = await translate("hello", "he")
+    const result = await translate("hello", "he", TEST_REF)
     expect(result).toBeNull()
   })
 
@@ -57,7 +60,7 @@ describe("translate", () => {
   it("מחזיר null כאשר withTimeout זורק שגיאה גנרית", async () => {
     mockWithTimeout.mockRejectedValue(new Error("network error"))
 
-    const result = await translate("hello", "he")
+    const result = await translate("hello", "he", TEST_REF)
     expect(result).toBeNull()
   })
 
@@ -67,7 +70,7 @@ describe("translate", () => {
       object: { status: "already_in_target" },
     })
 
-    const result = await translate("שלום", "he")
+    const result = await translate("שלום", "he", TEST_REF)
     expect(result).toEqual({ status: "already_in_target" })
   })
 
@@ -77,7 +80,7 @@ describe("translate", () => {
       object: { status: "translated", text: "   " },
     })
 
-    const result = await translate("hello", "he")
+    const result = await translate("hello", "he", TEST_REF)
     expect(result).toBeNull()
   })
 })
