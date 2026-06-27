@@ -1,3 +1,30 @@
+## 2026-06-27 — slice-state-dir — Commit 0 (TDD): getStateDir + ensureStateSubdir
+
+### מה בוצע?
+
+**קובץ חדש:** `packages/backend/src/paths.ts` עם `getStateDir()` ו-`ensureStateSubdir()`.
+- `getStateDir()`: מחזיר `<getHomeDir()>/.config/drive-coding` — מאוחד עם `cli-config-file.ts`.
+- `ensureStateSubdir(...segments)`: `mkdirSync(recursive)` + מחזיר נתיב. idempotent.
+- ייבוא `getHomeDir` מ-`delivery/http-options.js` (מינימלי, לא מזיז קוד קיים).
+
+**קובץ חדש:** `packages/backend/tests/paths.test.ts` — 5 טסטי TDD:
+- getStateDir עם mock HOME (POSIX), עם mock USERPROFILE (Windows)
+- ensureStateSubdir: יצירה + נתיב נכון, idempotent, nested segments
+
+### בדיקות
+
+- TDD: 5 טסטים חדשים — ירוקים
+- typecheck: 0 errors
+- lint (biome על קבצים חדשים): נקי
+- lint:i18n: ✓
+- pre-existing failures בbackend (bridge-manager, cli-config): לא נגרמו על ידנו
+
+### סטיות
+
+- הטסטים כתובים עם import סטטי (לא dynamic + resetModules) כי `getHomeDir` קורא `process.env` בזמן ריצה — `vi.stubEnv` מספיק. mock של `node:child_process` הוסף (http-options מפעיל execFileSync בimport).
+
+---
+
 ## 2026-06-25 — slice-session-title-header — 3 commits
 
 ### מה בוצע?
