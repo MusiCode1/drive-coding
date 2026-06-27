@@ -19,6 +19,7 @@ import {
   setActiveAgents,
   setBubblePlayer,
   setChatScroll,
+  setContentViewer,
   setCues,
   setI18n,
   setMic,
@@ -42,6 +43,7 @@ import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
 import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
+import { ContentViewerVM } from "$lib/view-models/content-viewer.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
 import { ResponsiveVM } from "$lib/view-models/responsive.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
@@ -94,6 +96,9 @@ const uiShell = new UiShellVM()
 // ─── modals ─── (redesign-6)
 const modals = new ModalsVM()
 
+// ─── content-viewer ─── (slice content-viewer — בלתי-תלוי)
+const contentViewer = new ContentViewerVM()
+
 // ─── active-agents ─── (slice active-agents-widget — בלתי-תלוי)
 const activeAgents = new ActiveAgents()
 
@@ -130,6 +135,7 @@ setTheme(theme)
 setResponsive(responsive)
 setUiShell(uiShell)
 setModals(modals)
+setContentViewer(contentViewer)
 setActiveAgents(activeAgents)
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)

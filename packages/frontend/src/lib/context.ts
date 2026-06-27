@@ -27,6 +27,7 @@ import type { CuesEngine } from "./engines/cues"
 import type { ModalsVM } from "./view-models/modals.svelte"
 import type { ActiveAgents } from "./view-models/active-agents.svelte"
 import type { BubblePlayer } from "./view-models/bubble-player.svelte"
+import type { ContentViewerVM } from "./view-models/content-viewer.svelte"
 
 // ─── i18n ──────────────────────────────────────────
 export const [getI18n, setI18n] = createContext<I18nVM>()
@@ -74,3 +75,6 @@ export const [getBubblePlayer, setBubblePlayer] = createContext<BubblePlayer>()
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)
 export const [getChatScroll, setChatScroll] = createContext<ChatScrollBridge>()
+
+// ─── content-viewer ─── (slice content-viewer)
+export const [getContentViewer, setContentViewer] = createContext<ContentViewerVM>()
