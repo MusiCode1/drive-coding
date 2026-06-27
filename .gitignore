@@ -14,6 +14,11 @@ scripts/node_modules
 .specstory/
 data
 tsconfig.tsbuildinfo
+# tsc build output for backend/plugins (source is .ts, compiled output is gitignored)
+packages/backend/plugins/*.js
+packages/backend/plugins/*.js.map
+packages/backend/plugins/*.d.ts
+packages/backend/plugins/*.d.ts.map
 packages/frontend/build__hidden_test/**
 
 # Verification reports live in the SEPARATE private reports repo
