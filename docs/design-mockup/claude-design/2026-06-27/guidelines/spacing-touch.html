@@ -1,0 +1,22 @@
+<!-- @dsCard group="Spacing" viewport="700x180" name="Touch Targets" subtitle="Drive-first: the mic is 110px; minimum tap is 44px" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 20px; background: var(--bg); }
+  .row { display: flex; gap: 20px; align-items: flex-end; }
+  .sw { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .circ { border-radius: 50%; background: var(--accent); }
+  .lbl { font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-dim); text-align: center; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="sw"><div class="circ" style="width:36px;height:36px"></div><div class="lbl">side · 36</div></div>
+    <div class="sw"><div class="circ" style="width:44px;height:44px"></div><div class="lbl">tap-min · 44</div></div>
+    <div class="sw"><div class="circ" style="width:110px;height:110px;box-shadow:var(--shadow-mic)"></div><div class="lbl">tap-mic · 110</div></div>
+  </div>
+</body>
+</html>

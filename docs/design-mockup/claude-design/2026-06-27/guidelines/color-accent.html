@@ -1,0 +1,23 @@
+<!-- @dsCard group="Colors" viewport="700x160" name="Accent — Ember" subtitle="The default brand color: warm copper/terracotta" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 20px; background: var(--bg); }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .sw { display: flex; flex-direction: column; gap: 8px; }
+  .chip { width: 150px; height: 64px; border-radius: var(--radius-md); border: 1px solid var(--border); }
+  .lbl { font-family: var(--font-mono); font-size: 11px; color: var(--fg-dim); }
+  .nm { font-family: var(--font); font-size: 12px; color: var(--fg); font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:var(--accent)"></div><div class="nm">accent</div><div class="lbl">#e8845c</div></div>
+    <div class="sw"><div class="chip" style="background:var(--accent-hi)"></div><div class="nm">accent-hi</div><div class="lbl">#f29b78</div></div>
+    <div class="sw"><div class="chip" style="background:var(--accent-soft)"></div><div class="nm">accent-soft</div><div class="lbl">15% wash</div></div>
+  </div>
+</body>
+</html>

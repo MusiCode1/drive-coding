@@ -1,0 +1,41 @@
+/* ──────────────────────────────────────────────────────────────────
+   Typography — DriveCoding type system.
+
+   Primary: Heebo — a clean Hebrew + Latin geometric sans. The UI is
+   Hebrew-first (RTL) so the typeface must carry both scripts at every
+   weight. Monospace is used for paths, code, tool args, terminal output.
+   ──────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* families */
+  --font: "Heebo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans: var(--font);
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+
+  /* weights */
+  --fw-light: 300;      /* @kind font */
+  --fw-regular: 400;    /* @kind font */
+  --fw-medium: 500;     /* @kind font */
+  --fw-semibold: 600;   /* @kind font */
+  --fw-bold: 700;       /* @kind font */
+  --fw-extrabold: 800;  /* @kind font */
+
+  /* fluid-ish scale (rem) — UI is dense, voice-first; body sits at 14px */
+  --text-xs:   0.7rem;    /* 11.2px — timestamps, meta, labels */
+  --text-sm:   0.8125rem; /* 13px   — tool text, secondary */
+  --text-base: 0.875rem;  /* 14px   — bubbles, body */
+  --text-md:   0.95rem;   /* 15.2px — buttons, inputs */
+  --text-lg:   1.1rem;    /* 17.6px — card titles */
+  --text-xl:   1.35rem;   /* 21.6px — section heads */
+  --text-2xl:  1.6rem;    /* 25.6px — page titles (connect) */
+  --text-3xl:  2.25rem;   /* 36px   — hero */
+
+  /* line-heights */
+  --leading-tight: 1.2;
+  --leading-snug: 1.4;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.6;
+
+  /* tracking */
+  --tracking-label: 0.05em; /* uppercase micro-labels (tool sections) */
+}

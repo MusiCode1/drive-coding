@@ -1,0 +1,30 @@
+<!-- @dsCard group="Colors" viewport="700x220" name="The 8 Themes" subtitle="Runtime palettes switched via [data-palette] on <html>" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 20px; background: var(--bg); }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .theme { border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); }
+  .bar { height: 44px; display: flex; }
+  .bar span { flex: 1; }
+  .foot { padding: 8px 10px; display: flex; align-items: center; gap: 8px; }
+  .accent-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+  .nm { font-family: var(--font); font-size: 12px; font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="grid">
+    <div class="theme" data-palette="ember"    style="background:var(--bg-elev)"><div class="bar"><span style="background:var(--bg)"></span><span style="background:var(--accent)"></span><span style="background:var(--bubble-user)"></span></div><div class="foot"><span class="accent-dot" style="background:var(--accent)"></span><span class="nm" style="color:var(--fg)">ember</span></div></div>
+    <div class="theme" data-palette="forest"   style="background:var(--bg-elev)"><div class="bar"><span style="background:var(--bg)"></span><span style="background:var(--accent)"></span><span style="background:var(--bubble-user)"></span></div><div class="foot"><span class="accent-dot" style="background:var(--accent)"></span><span class="nm" style="color:var(--fg)">forest</span></div></div>
+    <div class="theme" data-palette="plum"     style="background:var(--bg-elev)"><div class="bar"><span style="background:var(--bg)"></span><span style="background:var(--accent)"></span><span style="background:var(--bubble-user)"></span></div><div class="foot"><span class="accent-dot" style="background:var(--accent)"></span><span class="nm" style="color:var(--fg)">plum</span></div></div>
+    <div class="theme" data-palette="teal"     style="background:var(--bg-elev)"><div class="bar"><span style="background:var(--bg)"></span><span style="background:var(--accent)"></span><span style="background:var(--bubble-user)"></span></div><div class="foot"><span class="accent-dot" style="background:var(--accent)"></span><span class="nm" style="color:var(--fg)">teal</span></div></div>
+    <div class="theme" data-palette="midnight" style="background:var(--bg-elev)"><div class="bar"><span style="background:var(--bg)"></span><span style="background:var(--accent)"></span><span style="background:var(--bubble-user)"></span></div><div class="foot"><span class="accent-dot" style="background:var(--accent)"></span><span class="nm" style="color:var(--fg)">midnight</span></div></div>
+    <div class="theme" data-palette="rose"     style="background:var(--bg-elev)"><div class="bar"><span style="background:var(--bg)"></span><span style="background:var(--accent)"></span><span style="background:var(--bubble-user)"></span></div><div class="foot"><span class="accent-dot" style="background:var(--accent)"></span><span class="nm" style="color:var(--fg)">rose</span></div></div>
+    <div class="theme" data-palette="slate"    style="background:var(--bg-elev)"><div class="bar"><span style="background:var(--bg)"></span><span style="background:var(--accent)"></span><span style="background:var(--bubble-user)"></span></div><div class="foot"><span class="accent-dot" style="background:var(--accent)"></span><span class="nm" style="color:var(--fg)">slate</span></div></div>
+    <div class="theme" data-palette="daylight" style="background:var(--bg-elev)"><div class="bar"><span style="background:var(--bg)"></span><span style="background:var(--accent)"></span><span style="background:var(--bubble-user)"></span></div><div class="foot"><span class="accent-dot" style="background:var(--accent)"></span><span class="nm" style="color:var(--fg)">daylight</span></div></div>
+  </div>
+</body>
+</html>

@@ -19,3 +19,10 @@
 
 זה **נגזרת** של `docs/frontend-spec.md` (וה-tokens מתוך `+layout.svelte`). אם ה-spec
 משתנה — המוקאפ הזה לא מתעדכן אוטומטית; הוא snapshot ידני להמחשה.
+
+## claude-design/ — תוצרי claude.ai/design
+
+תת-התיקייה [`claude-design/`](claude-design/) מחזיקה snapshots של ה-project
+**"DriveCoding Design System"** מ-claude.ai/design (React + tokens), נשמרים כ-**reference
+ויזואלי בלבד** לעיצוב קומפוננטות ה-Svelte. claude.ai/design תומך רק ב-React, ולכן אלה
+מוקאפים-מטרה — לא קוד רץ ולא חלק מה-build. ראה את ה-README שם לפירוט המבנה ומה שנמשך.

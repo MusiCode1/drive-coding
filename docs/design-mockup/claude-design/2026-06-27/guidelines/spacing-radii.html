@@ -1,0 +1,26 @@
+<!-- @dsCard group="Spacing" viewport="700x160" name="Corner Radii" subtitle="Rounded but purposeful — bubbles flatten one corner" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 20px; background: var(--bg); }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; }
+  .sw { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .box { width: 70px; height: 56px; background: var(--accent-soft); border: 1px solid var(--accent); }
+  .lbl { font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-dim); text-align: center; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="sw"><div class="box" style="border-radius:var(--radius-sm)"></div><div class="lbl">sm · 4</div></div>
+    <div class="sw"><div class="box" style="border-radius:var(--radius-md)"></div><div class="lbl">md · 8</div></div>
+    <div class="sw"><div class="box" style="border-radius:var(--radius-lg)"></div><div class="lbl">lg · 12</div></div>
+    <div class="sw"><div class="box" style="border-radius:var(--radius)"></div><div class="lbl">base · 14</div></div>
+    <div class="sw"><div class="box" style="border-radius:var(--radius-xl)"></div><div class="lbl">xl · 16</div></div>
+    <div class="sw"><div class="box" style="border-radius:var(--radius-card)"></div><div class="lbl">card · 28</div></div>
+    <div class="sw"><div class="box" style="border-radius:var(--radius-full)"></div><div class="lbl">full</div></div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,47 @@
+/* ──────────────────────────────────────────────────────────────────
+   Base resets — applied globally by the product (from app.css).
+   Dark-mode-first, RTL-first, no document scroll (the app owns layout).
+   ──────────────────────────────────────────────────────────────────── */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: 1rem;
+}
+
+button { cursor: pointer; }
+
+a { color: var(--accent); }
+
+/* Code blocks always read LTR even inside RTL bubbles */
+pre, code { direction: ltr; text-align: left; }
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+/* Thin, ghosted scrollbar that reveals on hover (chat area) */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-str);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--fg-muted); }

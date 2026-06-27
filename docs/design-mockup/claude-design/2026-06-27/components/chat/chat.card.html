@@ -1,0 +1,47 @@
+<!-- @dsCard group="Components" viewport="700x600" name="Chat" subtitle="Bubbles, tool calls, model status, and the mic state machine" -->
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  body { margin: 0; padding: 22px; background: var(--bg); font-family: var(--font); }
+  .h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-muted); margin: 0 0 12px; }
+  .chat { display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: 26px; }
+  .mics { display: flex; gap: 26px; flex-wrap: wrap; justify-content: center; padding-top: 6px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script type="text/babel">
+const { ChatBubble, ToolCall, StatusPill, MicButton } = window.DriveCodingDesignSystem_a6504a;
+const STATES = ["idle", "recording", "thinking", "speaking", "cancelling"];
+
+function Demo() {
+  return (
+    <React.Fragment>
+      <p className="h">Conversation</p>
+      <div className="chat">
+        <ChatBubble kind="user" text="תקני את הבאג בהתחברות — המשתמשים לא מצליחים להיכנס." time="14:22" />
+        <ChatBubble kind="thought" text="בודק את handler האימות ומחפש איפה ה-session נכשל…" />
+        <ToolCall status="completed" narration="קראתי את src/auth/login.ts" command="cat src/auth/login.ts" result="export function login(creds) {\n  // missing await on verifySession\n}" />
+        <ChatBubble kind="agent" text="מצאתי את הבעיה: חסר await על verifySession. תיקנתי והוספתי בדיקה." time="14:23"
+          actions={[{icon:"copy",label:"העתק"},{icon:"play",label:"השמע"}]} />
+        <StatusPill phase="calling-tool" />
+      </div>
+
+      <p className="h">MicButton — state machine</p>
+      <div className="mics">
+        {STATES.map(s => <MicButton key={s} state={s} size={88} />)}
+      </div>
+    </React.Fragment>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+</script>
+</body>
+</html>

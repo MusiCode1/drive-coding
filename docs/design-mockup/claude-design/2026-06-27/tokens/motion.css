@@ -1,0 +1,33 @@
+/* ──────────────────────────────────────────────────────────────────
+   Keyframes — DriveCoding voice/agent motion vocabulary.
+   Used by the mic state machine, status dots, and tool spinners.
+   ──────────────────────────────────────────────────────────────────── */
+
+/* recording — soft accent halo that expands and fades */
+@keyframes pulse-rec {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+  50%      { box-shadow: 0 0 0 16px transparent; }
+}
+
+/* in-progress dots / status — gentle opacity throb */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+/* thinking / transcribing — continuous rotation */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* cancelling — fast attention flash */
+@keyframes flash-fast {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
+/* wake-word orb fire ring */
+@keyframes orb-flash {
+  0%   { opacity: 0.9; transform: scale(1);   box-shadow: 0 0 0 0 rgba(255,255,255,0.9); }
+  100% { opacity: 0;   transform: scale(2.4); box-shadow: 0 0 0 40px rgba(255,255,255,0); }
+}

@@ -1,0 +1,100 @@
+<!-- @dsCard group="Components" viewport="700x560" name="Core" subtitle="Buttons, inputs, badges, toggles, avatars, status dots, icons" -->
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  body { margin: 0; padding: 22px; background: var(--bg); font-family: var(--font); }
+  .sec { margin-bottom: 22px; }
+  .h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-muted); margin: 0 0 10px; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .iconwrap { display: flex; gap: 14px; flex-wrap: wrap; color: var(--fg-dim); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script type="text/babel">
+const { Button, IconButton, Badge, Toggle, Select, Avatar, StatusDot, TextInput, Icon, ICON_NAMES } = window.DriveCodingDesignSystem_a6504a;
+
+function Demo() {
+  const [on, setOn] = React.useState(true);
+  const [cli, setCli] = React.useState("claude");
+  return (
+    <React.Fragment>
+      <div className="sec">
+        <p className="h">Button</p>
+        <div className="row">
+          <Button>התחבר</Button>
+          <Button variant="secondary" icon="folder">בחר תיקייה</Button>
+          <Button variant="ghost" icon="mic">הקלטה</Button>
+          <Button variant="danger" icon="refresh-cw">התחבר מחדש</Button>
+          <Button disabled>מנותק</Button>
+        </div>
+      </div>
+      <div className="sec">
+        <p className="h">Button · sizes & pill</p>
+        <div className="row">
+          <Button size="sm" icon="plus">חדש</Button>
+          <Button size="md">רגיל</Button>
+          <Button size="lg">גדול</Button>
+          <Button pill variant="secondary" icon="keyboard">הקלדה</Button>
+        </div>
+      </div>
+      <div className="sec">
+        <p className="h">IconButton</p>
+        <div className="row">
+          <IconButton icon="copy" size="xs" ariaLabel="העתק" />
+          <IconButton icon="play" size="sm" ariaLabel="השמע" />
+          <IconButton icon="folder" size="md" ariaLabel="תיקייה" />
+          <IconButton icon="square" size="lg" variant="muted" ariaLabel="עצור" />
+          <IconButton icon="settings" size="md" variant="solid" ariaLabel="הגדרות" />
+        </div>
+      </div>
+      <div className="sec">
+        <p className="h">Badge</p>
+        <div className="row">
+          <Badge tone="connected" dot>מחובר</Badge>
+          <Badge tone="connecting" dot>מתחבר…</Badge>
+          <Badge tone="error" dot>שגיאה</Badge>
+          <Badge tone="accent">claude</Badge>
+          <Badge>189 הודעות</Badge>
+        </div>
+      </div>
+      <div className="sec">
+        <p className="h">Avatar · StatusDot</p>
+        <div className="row">
+          <Avatar kind="user" /><Avatar kind="agent" /><Avatar kind="thought" /><Avatar kind="tool" />
+          <span style={{ width: 18 }} />
+          <StatusDot status="pending" /><StatusDot status="in_progress" /><StatusDot status="completed" /><StatusDot status="failed" />
+        </div>
+      </div>
+      <div className="sec">
+        <p className="h">Toggle · Select · TextInput</p>
+        <div className="row">
+          <Toggle checked={on} onChange={setOn} ariaLabel="קול" />
+          <div style={{ width: 180 }}>
+            <Select value={cli} onChange={setCli} options={[{value:"claude",label:"claude"},{value:"opencode",label:"opencode"},{value:"gemini",label:"gemini"}]} ariaLabel="CLI" />
+          </div>
+          <div style={{ width: 220 }}>
+            <TextInput value="/home/user/project" dir="ltr" />
+          </div>
+        </div>
+      </div>
+      <div className="sec" style={{ marginBottom: 0 }}>
+        <p className="h">Icon — curated Lucide set</p>
+        <div className="iconwrap">
+          {ICON_NAMES.filter(n => n !== "ICON_NAMES").map(n => <Icon key={n} name={n} size={22} />)}
+        </div>
+      </div>
+    </React.Fragment>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+</script>
+</body>
+</html>

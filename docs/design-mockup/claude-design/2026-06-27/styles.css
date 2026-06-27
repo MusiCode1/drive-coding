@@ -1,0 +1,18 @@
+/* ═══════════════════════════════════════════════════════════════════
+   DriveCoding — global stylesheet entry point.
+
+   Consumers link THIS file. It is nothing but @import lines: tokens,
+   fonts, and base resets. Everything reachable from here ships to
+   consumers, and every @font-face in the closure declares a webfont.
+
+   Default theme is EMBER (values live on :root in colors.css). To switch,
+   set [data-palette="forest|plum|teal|midnight|rose|slate|daylight"]
+   on <html>.
+   ═══════════════════════════════════════════════════════════════════ */
+
+@import "./tokens/fonts.css";
+@import "./tokens/colors.css";
+@import "./tokens/typography.css";
+@import "./tokens/spacing.css";
+@import "./tokens/motion.css";
+@import "./tokens/base.css";

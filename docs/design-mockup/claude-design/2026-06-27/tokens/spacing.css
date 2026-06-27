@@ -1,0 +1,45 @@
+/* ──────────────────────────────────────────────────────────────────
+   Spacing, radius, shadow, motion — DriveCoding.
+
+   The product is drive-first: large touch targets (≥80px hero controls),
+   generous gaps, soft elevation. Radii are rounded but not pill-everything
+   — bubbles use one flattened corner to point at their speaker.
+   ──────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* spacing scale (4px base) */
+  --space-1: 0.25rem;  /*  4px */
+  --space-2: 0.5rem;   /*  8px */
+  --space-3: 0.75rem;  /* 12px — default bubble/chat gap */
+  --space-4: 1rem;     /* 16px */
+  --space-5: 1.25rem;  /* 20px */
+  --space-6: 1.5rem;   /* 24px */
+  --space-8: 2rem;     /* 32px */
+  --space-12: 3rem;    /* 48px */
+
+  /* radii */
+  --radius-sm: 4px;    /* flattened bubble corner, code chips */
+  --radius-md: 8px;    /* selects, primary buttons */
+  --radius-lg: 12px;   /* inputs, tool cards (rounded-xl) */
+  --radius: 14px;      /* default card radius */
+  --radius-xl: 16px;   /* bubbles (rounded-2xl) */
+  --radius-card: 28px; /* mic-card top corners (sheet lip) */
+  --radius-full: 9999px;
+
+  /* touch targets (drive-first) */
+  --tap-min: 44px;     /* minimum interactive size */
+  --tap-mic: 110px;    /* the one big mic button */
+  --tap-side: 36px;    /* secondary round controls */
+
+  /* shadows */
+  --shadow-card: 0 -10px 30px rgba(0, 0, 0, 0.28);  /* mic-card lip (dark) */
+  --shadow-sheet: 0 -8px 24px rgba(0, 0, 0, 0.35);  /* open bottom sheet */
+  --shadow-mic: 0 4px 18px var(--accent-soft);      /* mic button glow */
+  --shadow-pop: 0 6px 20px rgba(0, 0, 0, 0.32);     /* popovers, menus */
+
+  /* motion — short, eased; no bounce. State color crossfades ~0.3s */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1); /* @kind other */
+  --dur-fast: 0.15s;   /* @kind other */ /* press, hover */
+  --dur-base: 0.2s;    /* @kind other */ /* color / background */
+  --dur-slow: 0.3s;    /* @kind other */ /* state crossfade, layout */
+}

@@ -1,0 +1,25 @@
+/* ──────────────────────────────────────────────────────────────────
+   DriveCoding — Keyframes & live-state utility classes
+   These drive the voice-state feedback (the heart of the UI). All motion
+   is functional: it communicates recording / processing / speaking, never
+   decoration. Reduced-motion users get the static end-state.
+   ────────────────────────────────────────────────────────────────── */
+
+@keyframes dc-pulse-rec {
+  0%,100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+  50%     { box-shadow: 0 0 0 16px transparent; }
+}
+@keyframes dc-pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes dc-spin { to { transform: rotate(360deg); } }
+@keyframes dc-flash { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* Mic state helpers — apply on top of the base 110px round button. */
+.dc-mic-rec   { background: var(--recording) !important; animation: dc-pulse-rec 1.2s infinite; }
+.dc-mic-think { background: var(--thinking)  !important; }
+.dc-mic-speak { background: var(--speaking)  !important; color: #111 !important; }
+.dc-mic-cancel{ animation: dc-flash 0.3s infinite; }
+.dc-spin      { animation: dc-spin 1s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dc-mic-rec, .dc-mic-cancel, .dc-spin { animation: none; }
+}

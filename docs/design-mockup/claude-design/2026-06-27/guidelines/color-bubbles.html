@@ -1,0 +1,18 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Chat Bubble Surfaces" subtitle="Distinct user / agent bubble fills (Ember)" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 20px; background: var(--bg); display: flex; flex-direction: column; gap: 12px; }
+  .b { padding: 12px 16px; font-family: var(--font); font-size: 14px; color: var(--fg); max-width: 70%; border-radius: var(--radius-xl); }
+  .user { background: var(--bubble-user); align-self: flex-start; border-end-start-radius: var(--radius-sm); }
+  .agent { background: var(--bubble-agent); align-self: flex-end; border-end-end-radius: var(--radius-sm); }
+</style>
+</head>
+<body>
+  <div class="b user">bubble-user — #2f2419 · flattened start corner</div>
+  <div class="b agent">bubble-agent — #241d2a · flattened end corner</div>
+</body>
+</html>

@@ -1,0 +1,30 @@
+<!-- @dsCard group="Colors" viewport="700x170" name="Surfaces & Text" subtitle="Ember surfaces (darkest→lightest) and text (strongest→faintest)" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 20px; background: var(--bg); }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .sw { display: flex; flex-direction: column; gap: 6px; }
+  .chip { height: 52px; border-radius: var(--radius-md); border: 1px solid var(--border); }
+  .nm { font-family: var(--font); font-size: 12px; color: var(--fg); font-weight: 600; }
+  .lbl { font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-dim); }
+  .text-row { display: flex; gap: 18px; margin-top: 16px; align-items: baseline; }
+  .text-row span { font-family: var(--font); font-size: 15px; }
+</style>
+</head>
+<body>
+  <div class="grid">
+    <div class="sw"><div class="chip" style="background:var(--bg)"></div><div class="nm">bg</div><div class="lbl">#16130f</div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg-elev)"></div><div class="nm">bg-elev</div><div class="lbl">#211c16</div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg-card)"></div><div class="nm">bg-card</div><div class="lbl">#2a231b</div></div>
+  </div>
+  <div class="text-row">
+    <span style="color:var(--fg)">fg — strong</span>
+    <span style="color:var(--fg-dim)">fg-dim — secondary</span>
+    <span style="color:var(--fg-muted)">fg-muted — faint</span>
+  </div>
+</body>
+</html>

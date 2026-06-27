@@ -1,0 +1,123 @@
+/* ──────────────────────────────────────────────────────────────────
+   Colors — DriveCoding palette system.
+
+   The product ships EIGHT themes, switched at runtime via [data-palette]
+   on <html>. EMBER (warm copper/terracotta on near-black) is the default
+   and matches the app icon — so its values live directly on :root, and
+   every other theme is an override block.
+
+   Token groups (every palette defines all of them):
+     --bg / --bg-elev / --bg-card  surfaces, darkest → lightest
+     --fg / --fg-dim / --fg-muted  text, strongest → faintest
+     --border / --border-str       hairlines (translucent)
+     --accent / --accent-hi        brand action color + hover
+     --accent-soft                 ~15% accent wash (chips, avatars)
+     --bubble-user / --bubble-agent chat surfaces
+     --recording / --thinking / --speaking   voice state-machine colors
+   ──────────────────────────────────────────────────────────────────── */
+
+:root {
+  color-scheme: dark;
+
+  /* ── EMBER (default) — warm, human, copper/terracotta ── */
+  --bg:          #16130f;
+  --bg-elev:     #211c16;
+  --bg-card:     #2a231b;
+  --fg:          #f0e9e1;
+  --fg-dim:      #b3a596;
+  --fg-muted:    #7d7064;
+  --border:      rgba(255, 240, 225, 0.08);
+  --border-str:  rgba(255, 240, 225, 0.16);
+  --accent:      #e8845c;
+  --accent-hi:   #f29b78;
+  --accent-soft: rgba(232, 132, 92, 0.15);
+  --bubble-user: #2f2419;
+  --bubble-agent:#241d2a;
+  --recording:   #ff5a5a;
+  --thinking:    #c98bff;
+  --speaking:    #f0b65c;
+
+  /* alias used across the app (ChatInput, ChatBubbles, +page) */
+  --muted: var(--fg-muted);
+}
+
+/* ── 1. EMBER — explicit selector (same as :root default) ── */
+[data-palette="ember"] {
+  --bg:#16130f; --bg-elev:#211c16; --bg-card:#2a231b;
+  --fg:#f0e9e1; --fg-dim:#b3a596; --fg-muted:#7d7064;
+  --border:rgba(255,240,225,0.08); --border-str:rgba(255,240,225,0.16);
+  --accent:#e8845c; --accent-hi:#f29b78; --accent-soft:rgba(232,132,92,0.15);
+  --bubble-user:#2f2419; --bubble-agent:#241d2a;
+  --recording:#ff5a5a; --thinking:#c98bff; --speaking:#f0b65c;
+}
+
+/* ── 2. FOREST — calm, natural, sage ── */
+[data-palette="forest"] {
+  --bg:#0f1410; --bg-elev:#18201a; --bg-card:#1f2a21;
+  --fg:#e6ede7; --fg-dim:#9fb0a3; --fg-muted:#6c7d70;
+  --border:rgba(220,255,230,0.08); --border-str:rgba(220,255,230,0.16);
+  --accent:#7fb685; --accent-hi:#9bcfa0; --accent-soft:rgba(127,182,133,0.15);
+  --bubble-user:#1d2a20; --bubble-agent:#19241e;
+  --recording:#ef6b6b; --thinking:#d9b36b; --speaking:#a8d5a2;
+}
+
+/* ── 3. PLUM — distinctive, premium, lavender/purple ── */
+[data-palette="plum"] {
+  --bg:#141019; --bg-elev:#1d1726; --bg-card:#261d31;
+  --fg:#ece6f2; --fg-dim:#a99fb6; --fg-muted:#756b82;
+  --border:rgba(235,225,255,0.08); --border-str:rgba(235,225,255,0.16);
+  --accent:#b794f6; --accent-hi:#c9aefc; --accent-soft:rgba(183,148,246,0.16);
+  --bubble-user:#2a2138; --bubble-agent:#211b2e;
+  --recording:#ff5d8f; --thinking:#a78bfa; --speaking:#7fe0c8;
+}
+
+/* ── 4. TEAL — modern-tech, turquoise ── */
+[data-palette="teal"] {
+  --bg:#0e1416; --bg-elev:#16201f; --bg-card:#1c2a29;
+  --fg:#e3edeb; --fg-dim:#97aeac; --fg-muted:#647d7a;
+  --border:rgba(220,255,250,0.08); --border-str:rgba(220,255,250,0.16);
+  --accent:#2dd4bf; --accent-hi:#5eead4; --accent-soft:rgba(45,212,191,0.15);
+  --bubble-user:#173330; --bubble-agent:#152624;
+  --recording:#ff5a5a; --thinking:#c98bff; --speaking:#5eead4;
+}
+
+/* ── 5. MIDNIGHT — deep dev-blue ── */
+[data-palette="midnight"] {
+  --bg:#0e1118; --bg-elev:#161b26; --bg-card:#1d2433;
+  --fg:#e4e9f2; --fg-dim:#9aa6bf; --fg-muted:#65718a;
+  --border:rgba(225,235,255,0.08); --border-str:rgba(225,235,255,0.16);
+  --accent:#6b8afd; --accent-hi:#8aa3ff; --accent-soft:rgba(107,138,253,0.15);
+  --bubble-user:#1b2440; --bubble-agent:#181f33;
+  --recording:#ff5a5a; --thinking:#c98bff; --speaking:#5eead4;
+}
+
+/* ── 6. ROSE — pink blush ── */
+[data-palette="rose"] {
+  --bg:#171015; --bg-elev:#221820; --bg-card:#2c1f29;
+  --fg:#f3e7ee; --fg-dim:#c0a6b3; --fg-muted:#856b78;
+  --border:rgba(255,225,240,0.08); --border-str:rgba(255,225,240,0.16);
+  --accent:#f472b6; --accent-hi:#fb8fc8; --accent-soft:rgba(244,114,182,0.15);
+  --bubble-user:#2e1f2a; --bubble-agent:#261a2a;
+  --recording:#ff5a5a; --thinking:#c98bff; --speaking:#f9a8d4;
+}
+
+/* ── 7. SLATE — minimal grey ── */
+[data-palette="slate"] {
+  --bg:#101216; --bg-elev:#181b21; --bg-card:#20242c;
+  --fg:#e6e9ee; --fg-dim:#a2a9b5; --fg-muted:#6b7280;
+  --border:rgba(235,240,250,0.08); --border-str:rgba(235,240,250,0.16);
+  --accent:#8aa0bd; --accent-hi:#a6b8d1; --accent-soft:rgba(138,160,189,0.15);
+  --bubble-user:#232830; --bubble-agent:#1c2028;
+  --recording:#ef6b6b; --thinking:#b0b8c4; --speaking:#8aa0bd;
+}
+
+/* ── 8. DAYLIGHT — light theme ── */
+[data-palette="daylight"] {
+  color-scheme: light;
+  --bg:#f6f4f0; --bg-elev:#fbfaf7; --bg-card:#ffffff;
+  --fg:#1f1b16; --fg-dim:#5b554c; --fg-muted:#8a8276;
+  --border:rgba(20,15,10,0.10); --border-str:rgba(20,15,10,0.18);
+  --accent:#d2693f; --accent-hi:#b9572f; --accent-soft:rgba(210,105,63,0.14);
+  --bubble-user:#efe7dd; --bubble-agent:#f1ece6;
+  --recording:#e0453f; --thinking:#8b5cf6; --speaking:#c2772e;
+}

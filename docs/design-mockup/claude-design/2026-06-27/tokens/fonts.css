@@ -1,0 +1,6 @@
+/* ──────────────────────────────────────────────────────────────────
+   Fonts — Heebo (Hebrew + Latin), the product's primary typeface.
+   Source: Google Fonts. The product uses --font: "Heebo".
+   Served from Google's CDN; consumers need network at first paint.
+   ──────────────────────────────────────────────────────────────────── */
+@import url("https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap");

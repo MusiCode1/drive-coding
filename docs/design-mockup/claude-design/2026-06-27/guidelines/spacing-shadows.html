@@ -1,0 +1,23 @@
+<!-- @dsCard group="Spacing" viewport="700x180" name="Shadows & Elevation" subtitle="Soft, mostly upward — the mic-card lip rises from the footer" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 28px; background: var(--bg); }
+  .row { display: flex; gap: 26px; flex-wrap: wrap; }
+  .sw { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  .box { width: 130px; height: 64px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); }
+  .lbl { font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-dim); text-align: center; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="sw"><div class="box" style="box-shadow:var(--shadow-pop)"></div><div class="lbl">shadow-pop</div></div>
+    <div class="sw"><div class="box" style="box-shadow:var(--shadow-card)"></div><div class="lbl">shadow-card</div></div>
+    <div class="sw"><div class="box" style="box-shadow:var(--shadow-sheet)"></div><div class="lbl">shadow-sheet</div></div>
+    <div class="sw"><div class="box" style="border-color:var(--accent);box-shadow:var(--shadow-mic)"></div><div class="lbl">shadow-mic</div></div>
+  </div>
+</body>
+</html>

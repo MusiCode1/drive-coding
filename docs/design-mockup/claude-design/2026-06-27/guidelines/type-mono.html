@@ -1,0 +1,19 @@
+<!-- @dsCard group="Type" viewport="700x150" name="Monospace" subtitle="Paths, code, tool args, terminal output — always LTR" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 22px; background: var(--bg); }
+  pre { font-family: var(--font-mono); font-size: 13px; color: var(--fg); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; margin: 0; direction: ltr; }
+  .grn { color: #4ade80; }
+  .lbl { font-family: var(--font-mono); font-size: 11px; color: var(--fg-dim); margin-top: 10px; }
+</style>
+</head>
+<body>
+  <pre><span class="grn">$ </span>pnpm --filter @drive-coding/backend dev
+src/auth/login.ts:42  →  export function login()</pre>
+  <div class="lbl">var(--font-mono) — JetBrains Mono, ui-monospace, SF Mono, Consolas</div>
+</body>
+</html>
