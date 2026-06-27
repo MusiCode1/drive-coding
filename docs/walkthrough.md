@@ -1,3 +1,41 @@
+## 2026-06-27 — slice-content-viewer — 4 commits
+
+### מה בוצע?
+
+**Commit 0 (manual):** i18n keys — 3 מפתחות חדשים (`contentViewer.title/expand/close`) ב-`keys.ts`, `he.ts`, `en.ts` — בבלוקים תוספתיים בסוף כל קובץ.
+
+**Commit 1 (manual):** `ContentViewerVM` + context wiring.
+- קובץ חדש `view-models/content-viewer.svelte.ts`: `ViewerPayload` (discriminated union: markdown|image) + `ContentViewerVM` class ($state payload, get open, show/close).
+- `context.ts`: ייבוא type + בלוק תוספתי `getContentViewer/setContentViewer` בסוף.
+- `+layout.svelte`: import `ContentViewerVM` + instance חדש + `setContentViewer(contentViewer)` ליד `setModals`.
+
+**Commit 2 (manual):** `ContentViewerDialog.svelte` — רכיב leaf חדש.
+- bits-ui Dialog fullscreen (max-w-3xl, max-height:100dvh).
+- Header: כותרת דינמית (payload.title || contentViewer.title) + XIcon close.
+- Body: branch markdown → `{@html renderMarkdown(text)}` / image → `<img src>`.
+- Security: renderMarkdown (DOMPurify two-pass). תמונה רק דרך `<img>` (לא {@html}).
+
+**Commit 3 (manual+browser smoke):** mount + triggers wiring.
+- `AppShell.svelte`: import + `<ContentViewerDialog />` ליד FolderPickerDialog.
+- `+page.svelte` (connect): אותו pattern (לא עטוף ב-AppShell).
+- `MessageBubble.svelte`: כפתור expand (Maximize2Icon) → `viewer.show({kind:"markdown",...})`.
+- `ToolBubble.svelte`: (א) text → expand ב-tool-text-wrapper; (ב) image → עטיפת `<img>` ב-button → lightbox.
+- CSS: `tool-text-wrapper / tool-expand-btn / tool-image-btn`.
+
+### בדיקות
+
+- typecheck: 0 errors (כל 4 commits)
+- lint:i18n: ✓ (אין עברית בקוד)
+- frontend tests: 319/319 ירוקים
+- browser smoke (port 5199, mock=tool-spill, mock=salary-attendance):
+  - MessageBubble: כפתור Expand מופיע → dialog "View" נפתח עם markdown מרונדר
+  - ESC + X + backdrop → סוגרים dialog
+  - 0 console errors לאורך כל הבדיקה
+
+### סטיות
+
+אין. ToolBubble image lightbox לא נבדק חי (אין fixture עם tool image) — נתיב קוד קיים, browser smoke הוגבל ל-markdown.
+
 ## 2026-06-25 — slice-session-title-header — 3 commits
 
 ### מה בוצע?
