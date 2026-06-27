@@ -120,6 +120,19 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
               <span class="status-dot" style="background:{statusColor(agent.status)}"></span>
               <span class="cli-badge">{agent.cliKind}</span>
               <span class="folder-name" title={agent.cwd}><bdi>{basename(agent.cwd)}</bdi></span>
+              {#if agent.busy}
+                <span class="meta-sep">·</span>
+                <span class="busy-indicator" aria-label={t("connect.agents.working")}>
+                  <span class="busy-dot"></span>
+                  <span class="busy-label">{t("connect.agents.working")}</span>
+                </span>
+              {/if}
+              {#if agent.lastMessageAt != null}
+                <span class="meta-sep">·</span>
+                <span class="last-msg" title={t("connect.agents.lastMessage")}>
+                  {formatRelativeTime(agent.lastMessageAt, i18n.locale)}
+                </span>
+              {/if}
             </div>
 
             <div class="agent-actions">
@@ -154,19 +167,6 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
           </div>
 
           <div class="agent-meta">
-            {#if agent.busy}
-              <span class="busy-indicator" aria-label={t("connect.agents.working")}>
-                <span class="busy-dot"></span>
-                <span class="busy-label">{t("connect.agents.working")}</span>
-              </span>
-              <span class="meta-sep">·</span>
-            {/if}
-            {#if agent.lastMessageAt != null}
-              <span class="last-msg" title={t("connect.agents.lastMessage")}>
-                {formatRelativeTime(agent.lastMessageAt, i18n.locale)}
-              </span>
-              <span class="meta-sep">·</span>
-            {/if}
             {#if agent.acpSessionId}
               <span class="session-id">{agent.acpSessionId.slice(0, 8)}</span>
               <span class="meta-sep">·</span>
@@ -265,6 +265,7 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
   .agent-info {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.4rem;
     flex: 1;
     min-width: 0;
