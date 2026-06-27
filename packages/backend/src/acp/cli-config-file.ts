@@ -10,9 +10,9 @@
  */
 
 import * as fs from "node:fs"
-import { homedir } from "node:os"
 import { join } from "node:path"
 import type { CliSpec } from "@drive-coding/core"
+import { getStateDir } from "../paths.js"
 
 /** ערך override — כל השדות אופציונליים (merge חלקי לתוך spec קיים). */
 export type CliSpecOverride = Partial<CliSpec>
@@ -26,7 +26,7 @@ export type CliSpecsOverride = Record<string, CliSpecOverride>
  */
 export function resolveCliSpecsPath(env?: NodeJS.ProcessEnv): string {
   const e = env ?? process.env
-  return e.CLI_SPECS_FILE ?? join(homedir(), ".config", "drive-coding", "cli-specs.jsonc")
+  return e.CLI_SPECS_FILE ?? join(getStateDir(), "cli-specs.jsonc")
 }
 
 /**
@@ -85,9 +85,7 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
     if (Array.isArray(args) && args.every((a) => typeof a === "string")) {
       result.args = args as string[]
     } else {
-      console.warn(
-        `[cli-config-file] override["${kind}"].args must be string[] — skipping field`,
-      )
+      console.warn(`[cli-config-file] override["${kind}"].args must be string[] — skipping field`)
     }
   }
 

@@ -1,5 +1,56 @@
 # Decisions — drive-coding
 
+## 2026-06-27 — slice-release-publish (בוצע ישיר): תיקון `bin` ל-npm publish
+אימות חי של החבילה (npm publish --dry-run, npm 11.11) חשף ש-`bin: "./dist/drive-coding.js"` עם
+`./` prefix **נדחה בפרסום** (`invalid and removed`) → ה-CLI `drive-coding` לא היה עולה אחרי install.
+תוקן ל-`"dist/drive-coding.js"` (אומת ע"י `npm pkg fix`). נוסף `publishConfig: {access:"public"}` +
+metadata (keywords/repository/homepage/bugs). ה-bundle נבנה ורץ על Windows (אימות ראשון על Windows —
+GET / + /api/agents + _app asset = 200). branch `slice/release-publish` @ `b349d63`. **slice קטן
+מדי ל-executor/verifier — בוצע ישירות ע"י מרדכי**; `npm publish` עצמו = צעד אנושי.
+
+## 2026-06-27 — slice-binary-core: בינארי `--compile` עולה ומגיש מקומית
+### רציונל
+ה-slice המרכזי בשרשרת הבינארי — מטמיע FE+BE ב-executable יחיד (`bun build --compile`) שרץ בלי Bun
+מותקן. מבוסס על 5 ספייקים מאומתים (FE embed דרך `import…with{type:"file"}`; `--asset-naming="[dir]…"`
+משמר נתיב; `__IS_BINARY__` דרך `--define` עובד cross-module; pino-pretty stream ישיר in-process;
+`.ts` מוטמע כ-asset כמו `.js`). base=`slice/state-dir` (משתמש ב-`getStateDir()` לחילוץ ה-plugin).
+### ממצאי אביגיל
+r1 USABLE-AFTER-FIX (5) → r2 READY (0). findings: SPA-fallback typecheck (`noUncheckedIndexedAccess`),
+stub annotation `Record<string,string>`, plugin extraction → `ensureStateSubdir("plugins")`, dev-tip
+התיישן `0e23b0f`→`88d447b`, `.ts` embedding לא-מאומת (נסגר בספייק 27/06).
+### שינויי-כיוון
+ה-gate הוא **build-constant** (`--define`), לא env var ולא `Bun.isStandaloneExecutable` (שמחזיר
+`undefined` ב-1.3.12). plugin extraction דרך `ensureStateSubdir` (mkdir מובטח).
+### רעיונות שנדחו
+- serve-from-memory דרך `Bun.embeddedFiles` loop: לא ישים (מסנן `.js`, `name` משוטח) → codegen manifest.
+- `bun-plugin-pino` / תיקון ה-worker: מיותר — pino-pretty stream ישיר פשוט יותר ומבטל את ה-worker.
+- extract-to-temp ל-FE: נדחה — embedded + `Bun.file()` serve-from-memory, אפס חילוץ.
+
+## 2026-06-27 — slice-state-dir: תיקיית state מאוחדת `~/.config/drive-coding/`
+
+### רציונל
+Foundation לסלייס הבינארי (`docs/plans/slice-single-binary-prebrief.md`). היום נתיבי ה-state
+(recordings/cache/wire-recordings/proxy) נוצרים `path.resolve("data/...")` יחסית ל-cwd → בינארי/bunx
+שרצים מ-cwd אקראי מזהמים אותו. ה-slice מאחד ל-`~/.config/drive-coding/` (מרחיב את `cli-specs.jsonc`
+שכבר שם), דרך helper יחיד `getStateDir()`. הוכרע 27/06 שלא נדרש migration — אין recordings חיים,
+cache ייבנה מחדש → ה-slice פשוט (complexity 4, calev light). ראשון בשרשרת state-dir→binary-core→binary-dist.
+
+### ממצאי אביגיל
+r1 USABLE-AFTER-FIX (3 findings) → r2 READY (0). 6 spot-checks עברו מילה-במילה (`getHomeDir`
+http-options:75-77, 4 נתיבי `data/` ב-server.ts:80/84/85/104, חתימות store/registry, אין circular
+import). findings: (1) imports יתומים (`homedir`/`join`) אחרי swap; (2) הנתיב **כן** משתנה
+`os.homedir`→`getHomeDir` (DoD#6 טען בטעות "לא השתנה") → טסט `cli-config-file:33-38` צריך עדכון;
+(3) הנחה שגויה שטסטי recordings/projects מניחים `data/`-cwd (הם מזריקים `tmpdir()`).
+
+### שינויי-כיוון
+DoD#6 תוקן: ההתנהגות משתנה (env `HOME`/`USERPROFILE` > `os.homedir`) — הטסט שמשווה ל-`os.homedir`
+ישירות יישבר במכונה שבה `HOME≠os.homedir` (git-bash/onecli); עודכן ל-`getStateDir()` או mock env.
+
+### רעיונות שנדחו
+- **extract-to-temp** ל-state: נדחה לטובת dir קבוע (יציב, נגיש למשתמש, חילוץ plugin חד-פעמי).
+- **OS-native (env-paths)**: נדחה לטובת `~/.config/drive-coding/` אחיד פר-OS — פשטות > OS-purity.
+- **migration אוטומטי**: לא נדרש (אין data חי).
+
 ## 2026-06-25 — slice-frontend-rename-cutover: `@drive-coding/frontend-v2` → `@drive-coding/frontend`
 
 ### רציונל

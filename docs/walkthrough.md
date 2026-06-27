@@ -36,6 +36,142 @@
 
 אין. ToolBubble image lightbox לא נבדק חי (אין fixture עם tool image) — נתיב קוד קיים, browser smoke הוגבל ל-markdown.
 
+---
+
+## 2026-06-27 — slice-binary-core — 5 commits
+
+### מה בוצע?
+
+**Commit 0 (TDD):** `packages/backend/src/binary.ts` — `isBinary()` gate.
+- `declare const __IS_BINARY__: boolean | undefined` + `typeof` guard.
+- `packages/backend/tests/binary.test.ts` — TDD: מאמת isBinary()=false בdev/test.
+
+**Commit 1 (integration):** `packages/core/src/log/index.ts` — pino-pretty stream ישיר.
+- `transport:{target:"pino-pretty"}` הוחלף ב-`import pretty from "pino-pretty"` + `pino({level}, pretty({..., destination}))`.
+- ללא worker/thread-stream — עובד בבינארי. אחיד dev+binary.
+
+**Commit 2 (integration):** plugin extraction.
+- `backend/src/plugin-extract.ts`: `ensurePluginExtracted()` — בינארי מחלץ `.ts` asset מ-$bunfs ל-getStateDir()/plugins/ (hash check).
+- `backend/src/plugin-config.ts`: pluginPath = isBinary() ? ensurePluginExtracted() : path.resolve(...).
+- `@ts-expect-error` על `import with {type:"file"}` (Bun asset — TS לא מבין, runtime OK).
+- `.gitignore`: מסתיר tsc output של backend/plugins/.
+
+**Commit 3 (integration):** codegen + serve-from-memory + bin gate.
+- `backend/src/fe-manifest.gen.ts`: stub ריק committed (FE={}) — typecheck עובד בdev.
+- `backend/src/server.ts`: isBinary() && !FE_STATIC_DIR → dynamic import manifest → Bun.file(p). SPA fallback עם guard ל-noUncheckedIndexedAccess.
+- `backend/src/bin/drive-coding.ts`: FE cascade מוגן ב-!isBinary().
+- `release/scripts/build-binary.mjs`: Step 1 FE build, Step 2 codegen (116 assets), Step 3 bun --compile, Step 4 שחזור stub.
+
+**Commit 4 (manual):** build-binary.mjs — תיקון trailing commas + Step 4 restore stub + אימות ידני.
+- Binary נבנה: dist/drive-coding.exe (~220MB עם assets).
+- Manual: GET /=200+HTML, /_app/env.js=200, /api/agents=200, WS echo=OK, FE_STATIC_DIR override=OK.
+
+### בדיקות
+
+- TDD: 1 טסט (binary.test.ts) — ירוק.
+- Integration: 216/231 טסטים ב-backend (2 pre-existing: cli-config Windows/npx, lint-no-hebrew-test).
+- Typecheck: ירוק לאורך כל ה-commits.
+- lint:i18n: ✓.
+- Manual verification: בינארי רץ מ-$TEMP, FE/API/WS עובדים.
+
+### סטיות
+
+- Plugin extraction: `ensurePluginExtracted()` נקראת רק ב-spawn opencode — לא אומתה ב-manual כי opencode חסום ב-Windows. DoD #7 יאומת ע"י calev-heavy.
+- `@ts-expect-error` על `import with {type:"file"}` — Bun-specific, TS לא תומך. runtime OK (אומת בspike).
+- build-binary.mjs: `walkDir` function parameter `base` לא בשימוש (biome info, לא error).
+
+---
+
+## 2026-06-27 — slice-binary-core — תיקון DoD#7 (NO-GO calev-heavy)
+
+### מה בוצע?
+
+**תיקון plugin extraction (Commit 5 — fix):** שינוי מ-asset import (`import ... with {type:"file"}`) ל-inline source string (codegen).
+
+**שורש הבעיה:** `import "../plugins/prompt-injector.ts" with {type:"file"}` — קובץ `.ts` מעל ה-entry (`../`) מקבל `$bunfs` name עם `../` שיוצא מחוץ ל-root → `readFileSync` זורק ENOENT בבינארי (ספייק 5, §0 ב-brief).
+
+**3 קבצים שונו:**
+
+1. **`backend/src/plugin-src.gen.ts`** (חדש) — stub committed: `export const PROMPT_INJECTOR_SRC = ""`. Codegen ב-build-binary.mjs דורס עם תוכן אמיתי לפני bun --compile, stub משוחזר אחרי.
+
+2. **`backend/src/plugin-extract.ts`** — הוסר `import _pluginSrcRaw from "../plugins/prompt-injector.ts" with {type:"file"}` + `@ts-expect-error` + cast. הוחלף ב-`import { PROMPT_INJECTOR_SRC } from "./plugin-src.gen.js"`. בענף `isBinary()`: `writeFileSync(destPath, PROMPT_INJECTOR_SRC, "utf8")` במקום `copyFileSync(pluginSrc, destPath)`. Hash check על `PROMPT_INJECTOR_SRC` (string).
+
+3. **`build-binary.mjs`** — הוסף Step 2b: `readFileSync(plugins/prompt-injector.ts)` → כתוב `plugin-src.gen.ts` עם `export const PROMPT_INJECTOR_SRC = ${JSON.stringify(content)}` לפני bun --compile. Step 4b: שחזור stub של plugin-src.gen.ts אחרי.
+
+### בדיקות
+
+- `pnpm typecheck` — ירוק (stub `""` + import תקין).
+- `pnpm build` — `node packages/release/scripts/build-binary.mjs` הצליח: Step 2b כתב 3286 chars, Step 4b שחזר stub.
+- **אימות ידני DoD#7:** הרצת הבינארי מ-/tmp (PORT=4010), POST /api/agents {cliKind:"opencode"} — `~/.config/drive-coding/plugins/prompt-injector.ts` **נוצר עם תוכן** (3351 bytes, import type + plugin logic) — **אין ENOENT**.
+- `git status` נקי (stub משוחזר, dist/ ב-gitignore).
+
+### סטיות
+
+- opencode spawn נשאר "starting" (לא ירוק) ב-Windows — כצפוי (opencode חסום ב-Windows per memory), אבל שגיאת השורש **שינתה** מ-ENOENT prompt-injector ל-בעיה אחרת בcalev-heavy (spawn outcome). החילוץ עצמו עובד.
+
+---
+
+## 2026-06-27 — slice-state-dir — Commit 0 (TDD): getStateDir + ensureStateSubdir
+
+### מה בוצע?
+
+**קובץ חדש:** `packages/backend/src/paths.ts` עם `getStateDir()` ו-`ensureStateSubdir()`.
+- `getStateDir()`: מחזיר `<getHomeDir()>/.config/drive-coding` — מאוחד עם `cli-config-file.ts`.
+- `ensureStateSubdir(...segments)`: `mkdirSync(recursive)` + מחזיר נתיב. idempotent.
+- ייבוא `getHomeDir` מ-`delivery/http-options.js` (מינימלי, לא מזיז קוד קיים).
+
+**קובץ חדש:** `packages/backend/tests/paths.test.ts` — 5 טסטי TDD:
+- getStateDir עם mock HOME (POSIX), עם mock USERPROFILE (Windows)
+- ensureStateSubdir: יצירה + נתיב נכון, idempotent, nested segments
+
+### בדיקות
+
+- TDD: 5 טסטים חדשים — ירוקים
+- typecheck: 0 errors
+- lint (biome על קבצים חדשים): נקי
+- lint:i18n: ✓
+- pre-existing failures בbackend (bridge-manager, cli-config): לא נגרמו על ידנו
+
+### סטיות
+
+- הטסטים כתובים עם import סטטי (לא dynamic + resetModules) כי `getHomeDir` קורא `process.env` בזמן ריצה — `vi.stubEnv` מספיק. mock של `node:child_process` הוסף (http-options מפעיל execFileSync בimport).
+
+## 2026-06-27 — slice-state-dir — Commit 1 (integration): חיווט server.ts + cli-config-file
+
+### מה בוצע?
+
+**server.ts:** 4 החלפות `path.resolve("data/...")` → `ensureStateSubdir(...)`:
+- wire-recordings, cache, recordings, cache/proxy
+- הוסר `import * as path` (לא בשימוש יותר)
+- הוסף `import { ensureStateSubdir } from "./paths.js"`
+
+**cli-config-file.ts:** finding avigail #1 + #2:
+- הוסר `import { homedir } from "node:os"` (finding #1)
+- `join(homedir(), ".config", "drive-coding", "cli-specs.jsonc")` → `join(getStateDir(), "cli-specs.jsonc")` (finding #1+#2)
+- נשאר `import { join } from "node:path"` (משמש ב-resolveCliSpecsPath)
+- הוסף `import { getStateDir } from "../paths.js"`
+- biome auto-fix: תיקון CRLF בקובץ (safe fix)
+
+**cli-config-file.test.ts — עדכון finding avigail #2:**
+- הוסף `vi.mock("node:child_process")` (http-options מפעיל execFileSync דרך paths.ts)
+- שינוי ייבוא: `resolveCliSpecsPath` סטטי (לא dynamic; הפונקציה לא memoized)
+- הטסט ה"ברירת-מחדל" עודכן: `resolveCliSpecsPath({})` עם `vi.stubEnv("HOME", actualHome)` במקום השוואה ל-`os.homedir()` ישירות
+
+### בדיקות
+
+- typecheck: 0 errors
+- lint:i18n: ✓
+- pnpm test (backend): 489 pass, 3 fail (pre-existing: bridge-manager, bridge-failure-modes, cli-config.test)
+- paths.test.ts: 5/5 ירוקים
+- cli-config-file.test.ts: 8/8 ירוקים
+
+### סטיות
+
+- `join` מ-`node:path` נשאר ב-cli-config-file.ts (brief אמר להסיר, אבל משמש ב-`resolveCliSpecsPath` לביצוע `join(getStateDir(), "cli-specs.jsonc")` — cross-platform)
+- cli-config-file.ts נתקן גם מ-CRLF (biome safe fix, לא חלק מה-brief — side effect מינורי)
+
+---
+
 ## 2026-06-25 — slice-session-title-header — 3 commits
 
 ### מה בוצע?

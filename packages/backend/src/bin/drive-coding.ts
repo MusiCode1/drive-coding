@@ -2,8 +2,9 @@
 // packages/backend/src/bin/drive-coding.ts
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
-import { parseArgs } from "node:util"
 import path from "node:path"
+import { parseArgs } from "node:util"
+import { isBinary } from "../binary.js"
 
 // ---------------------------------------------------------------------------
 // Help text (English only — i18n hook blocks Hebrew in code)
@@ -88,20 +89,24 @@ if (values["fe-static-dir"]) process.env.FE_STATIC_DIR = values["fe-static-dir"]
 if (values["cors-origins"]) process.env.CORS_ORIGINS = values["cors-origins"] as string
 
 // ---------------------------------------------------------------------------
-// FE static directory — two candidates, whichever exists first wins:
-//   1. Bundled release layout: <pkg>/dist/drive-coding.js → ../frontend-dist = <pkg>/frontend-dist
-//   2. Dev/src layout:         packages/backend/src/bin  → ../../../frontend/build
-// Fallback (neither exists yet — first-run before FE build): dev path, consistent with old behavior.
+// FE static directory cascade.
+// Binary mode with no explicit FE_STATIC_DIR: skip the cascade — FE is served
+//   from the embedded manifest (server.ts handles it when isBinary() && !FE_STATIC_DIR).
+//   An explicit FE_STATIC_DIR flag/env still overrides the embedded FE (debug/override).
+// Dev / npm-bundle mode: resolve from candidate directories as before.
 // ??= honours a flag or env value already set above.
 // ---------------------------------------------------------------------------
-const feBuildDir =
-  [
-    path.resolve(import.meta.dirname, "../frontend-dist"), // bundled: dist/ → frontend-dist/
-    path.resolve(import.meta.dirname, "../../../frontend/build"), // dev: src/bin → packages/frontend/build
-  ].find(existsSync) ?? path.resolve(import.meta.dirname, "../../../frontend/build")
+if (!isBinary()) {
+  const feBuildDir =
+    [
+      path.resolve(import.meta.dirname, "../frontend-dist"), // bundled: dist/ → frontend-dist/
+      path.resolve(import.meta.dirname, "../../../frontend/build"), // dev: src/bin → packages/frontend/build
+    ].find(existsSync) ?? path.resolve(import.meta.dirname, "../../../frontend/build")
 
-// Do not override values the user set explicitly (env or flag > default).
-process.env.FE_STATIC_DIR ??= feBuildDir
+  // Do not override values the user set explicitly (env or flag > default).
+  process.env.FE_STATIC_DIR ??= feBuildDir
+}
+// Binary + explicit FE_STATIC_DIR (flag/env already set above) — no further action needed.
 process.env.PORT ??= "4000"
 
 const port = process.env.PORT
