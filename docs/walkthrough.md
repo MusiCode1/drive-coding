@@ -6242,3 +6242,26 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 ### סטיות
 
 אין. הכל לפי ה-brief.
+
+---
+
+## slice-restore-last-config — Commit 2: apply
+
+**בוצע:** 2026-06-27
+
+### מה בוצע
+
+- הוספת `#isValidChoice(key, value)` ל-`AgentSession` — בודק שהערך תקף מול ה-options הנוכחיים של ה-CLI (modes.availableModes/models.availableModels/.modelId, select flat, boolean type). ערך stale נדלג בשקט.
+- הוספת `#applyRememberedConfig()` — קורא ל-`#settings?.lastConfig[cliKind]`, לולאת `for...of`, ומחיל רק ערכים תקפים דרך `applyConfigOption`.
+- קריאה ל-`#applyRememberedConfig()` אחרי `#setStatus("connected")` ב-attach (L534) וב-newSession (L844) — שני נתיבי סשן-חדש. loadSession/switchSession/warm-reconnect: לא נגעו (resume של סשן קיים, לא דורסים).
+- TDD: `agent-session.restore-config.test.svelte.ts` — 7 טסטים: attach/newSession/no-settings/cross-cliKind/boolean/stale-mode/loadSession-no-apply.
+
+### בדיקות
+
+- typecheck: 0 errors, 0 warnings
+- tests: 334/334 ✓ (כולל 7 חדשים)
+- lint:i18n: ✓ אין עברית בקוד
+
+### סטיות
+
+אין. הכל לפי ה-brief.

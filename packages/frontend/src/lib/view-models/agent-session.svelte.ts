@@ -530,6 +530,8 @@ export class AgentSession {
       await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
 
       this.#setStatus("connected")
+      // ─── slice-restore-last-config: החל בחירות אחרונות (אחרי connected — חובה) ───
+      await this.#applyRememberedConfig()
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = msg
@@ -838,6 +840,8 @@ export class AgentSession {
       }
 
       this.#setStatus("connected")
+      // ─── slice-restore-last-config: החל בחירות אחרונות (אחרי connected — חובה) ───
+      await this.#applyRememberedConfig()
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = `newSession failed: ${msg}`
@@ -933,6 +937,57 @@ export class AgentSession {
     // מסלול 3: לא נמצא — skip בשקט
     console.warn(`[AgentSession] configId "${configId}" not available — skipping`)
     return false
+  }
+
+  // ─── slice-restore-last-config: apply remembered config ─── (תוספתי)
+
+  /**
+   * האם value עדיין תקף מול ה-options שה-CLI מחזיר כרגע?
+   * בודק ערך (לא רק קיום option) — ערך stale שה-CLI הסיר נדלג בשקט.
+   *
+   * מבנים מאומתים מול dev:
+   *   modes.availableModes[].id
+   *   models.availableModels[].modelId (לא .id!)
+   *   SessionConfigOption = discriminated union { type:"select"|"boolean" }
+   */
+  #isValidChoice(key: string, value: string | boolean): boolean {
+    if (key === "mode" && this.modes) {
+      return typeof value === "string" && this.modes.availableModes.some((m) => m.id === value)
+    }
+    if (key === "model" && this.models) {
+      return typeof value === "string" && this.models.availableModels.some((m) => m.modelId === value)
+    }
+    const opt = this.configOptions.find((o) => o.id === key || o.category === key)
+    if (!opt) return false
+    if (opt.type === "select" && typeof value === "string") {
+      // flatten זהה ללוגיקה של flattenSelectOptions (SessionOptionsPanel) — inline ב-VM
+      const flat = (opt.options as Array<{ value?: string; options?: Array<{ value: string }> }>)
+        .flatMap((i) => ("options" in i && i.options ? i.options : [i as { value: string }]))
+      return flat.some((c) => c.value === value)
+    }
+    if (opt.type === "boolean") return typeof value === "boolean"
+    return true
+  }
+
+  /**
+   * מחיל את הבחירות האחרונות של המשתמשת (מ-#settings.lastConfig) על הסשן החדש.
+   *
+   * ⚠️ חובה לקרוא **אחרי** this.#setStatus("connected") —
+   * applyConfigOption חוסם כש-status≠connected (no-op שקט אחרת).
+   *
+   * ⚠️ applyConfigOption קורא ל-setLastConfig (persist) — idempotent (כותב את אותו ערך).
+   *
+   * נקרא רק מ-attach ו-newSession (סשן חדש). loadSession/switchSession (resume) — לא.
+   */
+  async #applyRememberedConfig(): Promise<void> {
+    const cli = this.#cliKind
+    const remembered = cli ? this.#settings?.lastConfig[cli] : undefined
+    if (!remembered) return
+    for (const [key, value] of Object.entries(remembered)) {
+      if (this.#isValidChoice(key, value)) {
+        await this.applyConfigOption(key, value)
+      }
+    }
   }
 
   // ─── redesign-fix: רשימת סשנים inline ─── (תוספתי)
