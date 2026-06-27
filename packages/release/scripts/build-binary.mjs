@@ -34,10 +34,22 @@ const isWindows = process.platform === "win32"
 const binaryName = isWindows ? "drive-coding.exe" : "drive-coding"
 const releaseBinOut = path.join(releaseDist, binaryName)
 
-// Resolve bun from common locations if not in PATH
-const bunBin =
-  process.env.BUN_BIN ??
-  (isWindows ? path.join(process.env.USERPROFILE ?? "", ".bun", "bin", "bun.exe") : "bun")
+// Resolve the bun executable: explicit override → search PATH → default install dir.
+// Don't hardcode ~/.bun/bin — bun may live elsewhere (e.g. D:\ProgramsAndApps\Bun\bin).
+function resolveBun() {
+  if (process.env.BUN_BIN) return process.env.BUN_BIN
+  const exe = isWindows ? "bun.exe" : "bun"
+  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
+    if (!dir) continue
+    const candidate = path.join(dir, exe)
+    if (existsSync(candidate)) return candidate
+  }
+  const home = process.env.USERPROFILE ?? process.env.HOME ?? ""
+  const fallback = path.join(home, ".bun", "bin", exe)
+  if (existsSync(fallback)) return fallback
+  throw new Error("[build-binary] bun executable not found. Set BUN_BIN or add bun to PATH.")
+}
+const bunBin = resolveBun()
 
 // Step 1: Build frontend
 console.log("[build-binary] Step 1: building frontend…")
