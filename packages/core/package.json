@@ -7,7 +7,6 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./acp": "./src/acp/index.ts",
     "./schemas/*": "./src/schemas/*.ts",
     "./voice/*": "./src/voice/*.ts",
     "./ui/*": "./src/ui/*.ts",

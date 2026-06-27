@@ -12,6 +12,25 @@
 
 **בדיקות:** `pnpm --filter @drive-coding/provider typecheck` — ירוק. `pnpm typecheck` (כולל) — ירוק. `pnpm lint:i18n` — ירוק.
 
+### Commit 1 — repoint כל consumers + מחיקת core/acp + frontend/engines (integration)
+
+**מה בוצע:**
+- `packages/core/src/acp/` — מחיקת כל 6 הקבצים (client, transport, describe-crash, acp-provider-error, index)
+- `packages/core/package.json` — הסרת `./acp` מה-exports map
+- `packages/core/src/ports.ts` — הסרת BridgeKind, SpawnBridgeInput, BridgeHandle, BridgeManager, SpawnError + re-export של BridgeCrashInfo
+- `packages/backend/src/acp/bridge-manager.ts`, `agent-orchestrator.ts`, `projects-registry.ts`, `http-agents.ts` — repoint ל-`@drive-coding/provider/spawn` ו-`/config`
+- `packages/backend/tests/agent-orchestrator.test.ts`, `agent-orchestrator-history.test.ts` — repoint ל-provider/spawn
+- `packages/backend/tests/cli-config.test.ts` + `cli-config-file.test.ts` — נמחקו (עברו ל-provider)
+- `packages/backend/src/acp/cli-config.ts` + `cli-config-file.ts` — נמחקו
+- `packages/frontend/src/lib/engines/ws-transport.ts` + `ws-to-streams.ts` + tests — נמחקו
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts` + `sessions.ts` — repoint ל-provider/client + provider/transport/ws
+- `packages/frontend/src/lib/view-models/agent-session.test.ts` + `agent-session.turnstate.test.svelte.ts` — vi.mock + dynamic imports עודכנו
+- `vitest.config.ts` (root) — הוספת provider לprojections array
+
+**חריגות:** אין — pure repoint, אפס שינוי-התנהגות
+
+**בדיקות:** typecheck ירוק; provider tests: 40/40 ירוקים; total: 821 ירוקים, 12 skipped, 1 כשלון pre-existing (bridge-failure-integration F-1 — known bug מ-slice 10)
+
 ---
 
 ## 2026-06-27 — slice-R1-inline-acp-slice — 2 commits

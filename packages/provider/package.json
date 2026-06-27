@@ -11,10 +11,15 @@
     "./spawn": "./src/spawn/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.21.1",
     "@drive-coding/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "vitest": "^4.0.0"
   }
 }

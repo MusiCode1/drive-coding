@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { WsAcpTransport } from "./ws-transport"
+import { WsAcpTransport } from "./ws.js"
 
 // ─── WebSocket constants (כמו בדפדפן) ────────────────────────────────────────
 

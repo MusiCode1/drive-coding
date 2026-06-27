@@ -18,12 +18,10 @@
 import type {
   Agent,
   AgentRegistry,
-  BridgeCrashInfo,
-  BridgeKind,
-  BridgeManager,
   CreateAgentInput,
 } from "@drive-coding/core"
-import { describeCrash } from "@drive-coding/core/acp"
+import type { BridgeCrashInfo, BridgeKind, BridgeManager } from "@drive-coding/provider/spawn"
+import { describeCrash } from "@drive-coding/provider/spawn"
 import { createLogger } from "@drive-coding/core/log"
 import type { BridgeHandleWithStderr } from "../acp/bridge-manager.js"
 import type { ProjectsRegistry } from "./projects-registry.js"

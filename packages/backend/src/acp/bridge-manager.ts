@@ -1,13 +1,13 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import { createInterface } from "node:readline"
-import type { BridgeCrashInfo, BridgeHandle, BridgeManager, SpawnBridgeInput } from "@drive-coding/core"
+import type { BridgeCrashInfo, BridgeHandle, BridgeManager, SpawnBridgeInput } from "@drive-coding/provider/spawn"
 import { createLogger } from "@drive-coding/core/log"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
 import { AUDIO_FRIENDLY_PROMPT } from "../prompts/index.js"
 import { decodeWireLine } from "../delivery/wire-decode.js"
 import type { WireRecorder, WireSession } from "../delivery/wire-recorder.js"
 import { type TurnTracker, createTurnTracker } from "./turn-tracker.js"
-import { getCliCommand, getCliSpec } from "./cli-config.js"
+import { getCliCommand, getCliSpec } from "@drive-coding/provider/config"
 
 const log = createLogger("backend.bridge.manager")
 const wireLog = createLogger("backend.acp.wire")

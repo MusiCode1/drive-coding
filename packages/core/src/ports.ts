@@ -1,9 +1,8 @@
 import type { PromptResponse, SessionNotification } from "@agentclientprotocol/sdk"
 import type { Result } from "neverthrow"
-import type { BridgeCrashInfo } from "./acp/index.js"
 import type { Agent, CliKind, CreateAgentInput } from "./schemas"
 
-export type { BridgeCrashInfo, PromptResponse, SessionNotification }
+export type { PromptResponse, SessionNotification }
 
 /**
  * AgentRegistry — אחסון מופשט לאוסף של סוכנים.
@@ -31,41 +30,8 @@ export interface AgentRegistry {
   delete(id: string): Promise<void>
 }
 
-// ─── חדש ב-Slice 3 ──────────────────────────────
-
-// BridgeKind = alias ל-CliKind. שם היסטורי (Slice 3) — נשמר לתאימות,
-// אבל מקור-האמת היחיד הוא CLI_KINDS ב-schemas/agent.ts.
-export type BridgeKind = CliKind
-
-export type SpawnBridgeInput = {
-  readonly cliKind: BridgeKind
-  readonly cwd: string
-  readonly modelOverride: string | null
-}
-
-export type BridgeHandle = {
-  readonly bridgeId: string // UUID, זהה ל-agent id השייך לו
-  readonly cliKind: BridgeKind
-  readonly cwd: string
-  readonly port: number // הוקצה על ידי מערכת ההפעלה, פוענח מ-stdout
-  readonly pid: number // PID של תהליך ה-bridge
-  readonly wsUrl: string // ws://127.0.0.1:<port>/
-  readonly startedAt: Date
-}
-
-export type SpawnError =
-  | { readonly kind: "cli_not_found"; readonly message: string }
-  | { readonly kind: "spawn_failed"; readonly message: string }
-  | { readonly kind: "port_parse_timeout"; readonly message: string }
-  | { readonly kind: "unknown"; readonly message: string }
-
-/**
- * BridgeManager — מנהל stdio-to-ws bridges לכל סוכן.
- * כל bridge עוטף CLI agent (opencode/claude/...) וחושף WS.
- * Bridges שורדים נפילת backend (--persist).
- * ה-registry בזיכרון — נאבד ב-backend restart (D8).
- */
 // ─── ACP Transport (Slice 4) ──────────────────────────────────
+// הערה: BridgeKind, SpawnBridgeInput, BridgeHandle, BridgeManager עברו ל-@drive-coding/provider/spawn (R2)
 
 export type AcpCapabilities = {
   readonly loadSession: boolean
@@ -94,23 +60,6 @@ export interface AcpTransport {
 
   /** ניתוק WS, השארת ה-bridge חי. */
   shutdown(): Promise<void>
-}
-
-export interface BridgeManager {
-  /** יוצר (spawn) תהליך `@rebornix/stdio-to-ws "<cli> acp" --port 0 --persist --grace-period -1`. */
-  spawn(bridgeId: string, input: SpawnBridgeInput): Promise<BridgeHandle>
-
-  /** מקבל handle. null אם לא קיים. */
-  get(bridgeId: string): BridgeHandle | null
-
-  /** רשימה של bridges חיים. */
-  list(): ReadonlyArray<BridgeHandle>
-
-  /** חיסול עדין (kill graceful) — SIGTERM ל-stdio-to-ws (שיהרוג את ה-CLI). מחזיר true אם נהרג, false אם לא קיים. */
-  kill(bridgeId: string): Promise<boolean>
-
-  /** מנוי (subscribe) לאירועי קריסה. callback נקרא כש-bridge מת לבד. */
-  onCrash(handler: (bridgeId: string, info: BridgeCrashInfo) => void): () => void
 }
 
 // ─── Voice ports (Slice 5) ────────────────────────────────────

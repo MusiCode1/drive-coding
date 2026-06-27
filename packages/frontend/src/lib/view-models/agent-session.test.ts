@@ -14,7 +14,7 @@
  *   - user with messageId="x" × 2 → 1 bubble with 2 segments (existing behavior preserved)
  */
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import type { AcpClient } from "@drive-coding/core/acp"
+import type { AcpClient } from "@drive-coding/provider/client"
 import type { Bubble, MessageBubble, ThoughtBubble, UserBubble } from "$lib/types/bubble"
 
 // ─── Module-level mocks ───────────────────────────────────────────────────────
@@ -22,8 +22,8 @@ import type { Bubble, MessageBubble, ThoughtBubble, UserBubble } from "$lib/type
 /** Captured callback from createAcpClient — invoked in tests to simulate updates. */
 let onSessionUpdate: ((notification: unknown) => void) | null = null
 
-vi.mock("@drive-coding/core/acp", async (importActual) => {
-  const actual = await importActual<typeof import("@drive-coding/core/acp")>()
+vi.mock("@drive-coding/provider/client", async (importActual) => {
+  const actual = await importActual<typeof import("@drive-coding/provider/client")>()
   return {
     ...actual,
     createAcpClient: vi.fn(function mockCreateClient(
@@ -46,7 +46,7 @@ vi.mock("@drive-coding/core/acp", async (importActual) => {
   }
 })
 
-vi.mock("$lib/engines/ws-transport", () => ({
+vi.mock("@drive-coding/provider/transport/ws", () => ({
   WsAcpTransport: vi.fn(function mockWsTransport() {
     return {
       onClose: vi.fn(),
@@ -206,7 +206,7 @@ describe("AgentSession.newSession", () => {
   })
 
   it("warm path: calls #client.newSession, clears bubbles, updates sessionId via ACP response", async () => {
-    const { createAcpClient } = await import("@drive-coding/core/acp")
+    const { createAcpClient } = await import("@drive-coding/provider/client")
     const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<typeof createAcpClient>)
     // הוסף בועה קיימת כדי לאמת שהיא נמחקת
     session.bubbles = [{ id: "old", kind: "user", messageId: null, createdAt: 0, segments: [] }]
@@ -265,7 +265,7 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
 
   // ── attach (newSession) with claude → _meta injected ──
   it("attach with cliKind=claude → newSession called with _meta.claudeCode.options.thinking", async () => {
-    const { createAcpClient } = await import("@drive-coding/core/acp")
+    const { createAcpClient } = await import("@drive-coding/provider/client")
     const session = new AgentSession()
     await session.attach({ cwd: "/proj", cliKind: "claude" })
 
@@ -278,7 +278,7 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
 
   // ── attach with opencode → NO _meta (backward-compat) ──
   it("attach with cliKind=opencode → newSession called WITHOUT _meta", async () => {
-    const { createAcpClient } = await import("@drive-coding/core/acp")
+    const { createAcpClient } = await import("@drive-coding/provider/client")
     const session = new AgentSession()
     await session.attach({ cwd: "/tmp", cliKind: "opencode" })
 
@@ -288,7 +288,7 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
 
   // ── loadSession (cold) with claude → _meta injected ──
   it("loadSession with claude → loadSession called with _meta", async () => {
-    const { createAcpClient } = await import("@drive-coding/core/acp")
+    const { createAcpClient } = await import("@drive-coding/provider/client")
     const session = new AgentSession()
     await session.loadSession({ sessionId: "sess-1", cwd: "/proj", cliKind: "claude" })
 
@@ -302,7 +302,7 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
 
   // ── loadSession with opencode → NO _meta ──
   it("loadSession with opencode → loadSession called WITHOUT _meta", async () => {
-    const { createAcpClient } = await import("@drive-coding/core/acp")
+    const { createAcpClient } = await import("@drive-coding/provider/client")
     const session = new AgentSession()
     await session.loadSession({ sessionId: "sess-2", cwd: "/tmp", cliKind: "opencode" })
 

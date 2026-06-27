@@ -8,7 +8,7 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import type { BridgeKind } from "@drive-coding/core"
+import type { BridgeKind } from "@drive-coding/provider/spawn"
 
 export type ProjectEntry = {
   readonly cwd: string

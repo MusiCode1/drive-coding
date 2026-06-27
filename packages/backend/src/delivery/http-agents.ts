@@ -132,7 +132,7 @@ export function registerAgentsHttp(
     if (deps.projectsRegistry) {
       await deps.projectsRegistry.recordCwd(
         agent.cwd,
-        agent.cliKind as import("@drive-coding/core").BridgeKind,
+        agent.cliKind as import("@drive-coding/provider/spawn").BridgeKind,
       )
       await deps.projectsRegistry.recordSession(agent.cwd, sessionId)
     }

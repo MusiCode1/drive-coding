@@ -14,10 +14,9 @@ import type {
   AcpTransport,
   Agent,
   AgentRegistry,
-  BridgeHandle,
-  BridgeManager,
   CreateAgentInput,
 } from "@drive-coding/core"
+import type { BridgeHandle, BridgeManager } from "@drive-coding/provider/spawn"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────

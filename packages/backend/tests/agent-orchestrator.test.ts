@@ -15,10 +15,9 @@
 import type {
   Agent,
   AgentRegistry,
-  BridgeHandle,
-  BridgeManager,
   CreateAgentInput,
 } from "@drive-coding/core"
+import type { BridgeHandle, BridgeManager } from "@drive-coding/provider/spawn"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 // Import after module (no mocks needed since ACP transport is removed from orchestrator)
@@ -51,7 +50,7 @@ function makeBridgeHandle(overrides?: Partial<BridgeHandle>): BridgeHandle {
   }
 }
 
-import type { BridgeCrashInfo } from "@drive-coding/core"
+import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
 
 type ExtendedBridgeManager = BridgeManager & {
   spawnWithStderr?: (

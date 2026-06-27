@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, test } from "vitest"
-import { wsToWebStreams } from "./ws-to-streams"
+import { wsToWebStreams } from "./ws-to-streams.js"
 
 // ─── WebSocket stub מינימלי (message/close/error בלבד) ───────────────────────
 

@@ -32,7 +32,7 @@ describe("resolveCliSpecsPath", () => {
 
   it("ברירת-מחדל: ~/.config/drive-coding/cli-specs.jsonc", async () => {
     delete process.env.CLI_SPECS_FILE
-    const { resolveCliSpecsPath } = await import("../src/acp/cli-config-file.js")
+    const { resolveCliSpecsPath } = await import("./src/config/cli-config-file.js")
     const result = resolveCliSpecsPath()
     const expected = path.join(os.homedir(), ".config", "drive-coding", "cli-specs.jsonc")
     expect(result).toBe(expected)
@@ -40,7 +40,7 @@ describe("resolveCliSpecsPath", () => {
 
   it("CLI_SPECS_FILE env דורס את ברירת-המחדל", async () => {
     process.env.CLI_SPECS_FILE = "/tmp/custom-cli-specs.jsonc"
-    const { resolveCliSpecsPath } = await import("../src/acp/cli-config-file.js")
+    const { resolveCliSpecsPath } = await import("./src/config/cli-config-file.js")
     const result = resolveCliSpecsPath({ CLI_SPECS_FILE: "/tmp/custom-cli-specs.jsonc" })
     expect(result).toBe("/tmp/custom-cli-specs.jsonc")
   })
@@ -84,7 +84,7 @@ describe("loadCliSpecsOverride", () => {
     const nonExistent = "/tmp/does-not-exist-cli-specs-12345.jsonc"
     process.env.CLI_SPECS_FILE = nonExistent
 
-    const { loadCliSpecsOverride } = await import("../src/acp/cli-config-file.js")
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
     expect(result).toEqual({})
@@ -103,7 +103,7 @@ describe("loadCliSpecsOverride", () => {
     const filePath = writeTmpFile(content)
     process.env.CLI_SPECS_FILE = filePath
 
-    const { loadCliSpecsOverride } = await import("../src/acp/cli-config-file.js")
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
     expect(result).toHaveProperty("gemini")
@@ -117,7 +117,7 @@ describe("loadCliSpecsOverride", () => {
     const filePath = writeTmpFile("{ this is not valid json }")
     process.env.CLI_SPECS_FILE = filePath
 
-    const { loadCliSpecsOverride } = await import("../src/acp/cli-config-file.js")
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
     expect(result).toEqual({})
@@ -137,7 +137,7 @@ describe("loadCliSpecsOverride", () => {
     const filePath = writeTmpFile(content)
     process.env.CLI_SPECS_FILE = filePath
 
-    const { loadCliSpecsOverride } = await import("../src/acp/cli-config-file.js")
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
     expect(result["gemini"]).toBeDefined()
@@ -159,7 +159,7 @@ describe("loadCliSpecsOverride", () => {
     const filePath = writeTmpFile(content)
     process.env.CLI_SPECS_FILE = filePath
 
-    const { loadCliSpecsOverride } = await import("../src/acp/cli-config-file.js")
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
     expect(result["mycli"]).toBeDefined()
@@ -173,7 +173,7 @@ describe("loadCliSpecsOverride", () => {
     const filePath = writeTmpFile(content)
     process.env.CLI_SPECS_FILE = filePath
 
-    const { loadCliSpecsOverride } = await import("../src/acp/cli-config-file.js")
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
     expect(result["opencode"]?.bin).toBe("/custom/opencode")
