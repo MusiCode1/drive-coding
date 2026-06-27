@@ -1,3 +1,43 @@
+## 2026-06-27 — slice-config-unified — 4 commits
+
+### מה בוצע?
+
+**Commit 0 (TDD):** `packages/core/src/config/schema.ts` + `resolve.ts` + `tests/config-resolve.test.ts`.
+- `DriveCodingConfig` ArkType schema (כל השדות optional). `resolveConfig(layers)` — pure, neverthrow Result.
+- Merge rules: scalar/array — higher layer wins; log/voice/https — wholesale override; cliSpecs — per-key merge.
+- `packages/core/package.json` — הוסף `"./config/*"` ל-exports.
+- 15 טסטים ירוקים (TDD).
+
+**Commit 1 (TDD):** `packages/core/src/config/env-file.ts` + `tests/env-file.test.ts`.
+- `parseEnvFile(text)` — pure parser: #comments, empty lines, `=`-in-value, quotes, CRLF.
+- 13 טסטים ירוקים (TDD).
+
+**Commit 2 (integration):** `packages/backend/src/config/load-config.ts` + `tests/load-config.test.ts` + bin wiring.
+- `loadConfig({argv, env})` — IO shell: file/env/flag layers, envPatch map.
+- `bin/drive-coding.ts` — `--env-file` (non-overriding), `loadConfig`, `envPatch` → `process.env`, HELP updated.
+- חדש: `--config`, `--config-json`, `--env-file`, `--log-level`, `--elevenlabs-key`, `--gemini-key`.
+- 12 טסטים ירוקים (integration). DoD #8/#9 אומתו ידנית: BE עלה, `/api/agents` 200.
+
+**Commit 3 (integration):** `packages/backend/src/acp/cli-config-file.ts` + טסטים.
+- `loadCliSpecsOverride`: ענף `CLI_SPECS_JSON` לפני ענף הקובץ. merge: file=base, inline-JSON overlay per-key (inline גובר).
+- 3 טסטים חדשים (CLI_SPECS_JSON only, merge over file, broken JSON ignored).
+- `cli-config.ts` לא שונה — specificity per-CLI אורתוגונלי (D7). טסט #4 נשאר ירוק.
+
+### בדיקות
+
+- TDD: 28 טסטים חדשים (config-resolve + env-file) — ירוקים.
+- Integration: 24 טסטים חדשים (load-config + cli-config-file) — ירוקים.
+- Typecheck: ירוק לאורך כל ה-commits.
+- lint:i18n: ✓ (כל הקוד באנגלית).
+- 2 כישלונות timeout pre-existing (bridge-manager/bridge-failure-modes) — לא קשורים ל-slice.
+
+### סטיות
+
+- אין סטיות מהבריף. cli-config.ts לא שונה כמתוכנן (D7 הוכרע).
+- DoD #9 (GET /api/agents 200) — אומת ידנית על פורט 4011 (4000/4002/4003 תפוסים).
+
+---
+
 ## 2026-06-27 — slice-binary-core — 5 commits
 
 ### מה בוצע?

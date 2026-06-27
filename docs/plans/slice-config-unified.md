@@ -1,7 +1,7 @@
 # Slice — config-unified — תוכנית
 
 > **תאריך**: 2026-06-27
-> **סטטוס**: טיוטה (טרם אביגיל)
+> **סטטוס**: הושלם
 > **Complexity**: 7/10 (verifier: heavy)
 > **תלויות (`depends_on`)**: []
 > **Base**: dev
@@ -331,4 +331,7 @@ bash ./scripts/lint-no-hebrew-in-code.sh
 
 ## סטיות מהתכנון (מתעדכן ע"י executor)
 
-- (אין עדיין)
+- אין סטיות מהותיות. הבריף בוצע כמתוכנן.
+- Commits: ed52fc4 (C0), 2273a43 (C1), 25d3473 (C2), e22f509 (C3).
+- Tests baseline: 2 כישלונות timeout pre-existing (bridge-manager/bridge-failure-modes) לא קשורים ל-slice.
+- DoD #8/#9 אומתו ידנית: BE עלה על פורט 4011, /api/agents החזיר 200.
