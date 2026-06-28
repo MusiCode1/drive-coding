@@ -1,3 +1,19 @@
+## 2026-06-29 — FE-normalization — Phase 2: אימות מנגנון (manual inspection)
+
+**אימות מקצה לקצה (manual inspection):**
+1. BE (`ws-agent.ts:84`): שולח `_drive/capabilities` כ-JSON-RPC notification אחרי markAttached — קיים מ-CUT-3b-iii-2.
+2. SDK (`acp.d.ts:830`): `Client.extNotification?` — optional handler שה-SDK קורא ל-notifications לא-מוכרים.
+3. `createClientImpl` (Phase 0): מממש `extNotification` → מנתב ל-`onExtNotification` callback.
+4. `createAcpClient` (Phase 0): מעביר `onExtNotification` → `createClientImpl`.
+5. `agent-session.svelte.ts` (Phase 1): 3 call-sites עם `{ onUpdate, onExtNotification: this.#onExtNotification }`.
+6. `#onExtNotification`: `_drive/capabilities` → `this.#capabilities = params`.
+7. `vm.supports.thinkingTokens`: `this.#capabilities?.thinkingTokens ?? false` — gating.
+8. `client.extMethod` (Phase 0): passthrough ל-`ClientSideConnection.extMethod` (`acp.d.ts:546`).
+9. `ext.setThinkingTokens` (Phase 1): `parseExtParams` → `client.extMethod("_drive/setThinkingTokens", ...)`.
+
+**Findings:** אין bugs. המנגנון שלם ומחווט.
+**DoD:** כל 7 פריטים מ-§5 מאומתים — typecheck+tests ירוקים, vite build ירוק, additive.
+
 ## 2026-06-29 — FE-normalization — Phase 1: ExtClient facade + capability ingestion ב-vm + gating
 
 **Commit 1 — integration:**
