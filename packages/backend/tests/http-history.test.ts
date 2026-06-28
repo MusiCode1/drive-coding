@@ -80,6 +80,52 @@ describe("GET /api/projects", () => {
   })
 })
 
+// ─── DELETE /api/projects ────────────────────────────────────────────────────
+
+describe("DELETE /api/projects", () => {
+  beforeEach(async () => {
+    tmpDir = await makeTmpDir()
+  })
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true })
+  })
+
+  function makeApp() {
+    const app = new Hono()
+    const projectsRegistry = createProjectsRegistry(tmpDir)
+    registerProjectsHttp(app, { projectsRegistry })
+    return { app, projectsRegistry }
+  }
+
+  it("hides a project (204) and GET no longer returns it", async () => {
+    const { app, projectsRegistry } = makeApp()
+    await projectsRegistry.recordCwd("/home/user/proj", "opencode")
+
+    const delRes = await app.request("/api/projects", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cwd: "/home/user/proj" }),
+    })
+    expect(delRes.status).toBe(204)
+
+    const getRes = await app.request("/api/projects")
+    const body = await getRes.json()
+    expect(body.projects).toHaveLength(0)
+  })
+
+  it("returns 400 when cwd is missing from body", async () => {
+    const { app } = makeApp()
+
+    const res = await app.request("/api/projects", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    })
+    expect(res.status).toBe(400)
+  })
+})
+
 // ─── /api/recordings/:id ─────────────────────────────────────────────────────
 
 describe("GET /api/recordings/:id", () => {
