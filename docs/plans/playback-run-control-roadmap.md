@@ -21,15 +21,17 @@
 | 4 | בקרת השמעה עצמאית | **pause** (זמני, resume) ו‑**stop** (סופי) — נפרדים זה מזה ומ‑cancel‑run |
 | 5 | פיצול worktrees | תשתית ב‑worktree ראשי; UI ב‑worktree נפרד שמבוסס עליו (merge תשתית בלי UI) |
 | 6 | timeout בתור | בעיקרון **מחכים** (הסדר קדוש). safety‑net: סגמנט שלא התחיל לזרום תוך ~20ש' → skip |
-| 7 | חיתוך‑מילים | שורש = `justFinished` flush מוקדם (tail‑debounce). מתוקן ב‑A1, לא slice נפרד |
+| 7 | חיתוך‑מילים | ⚠️ **בודד מהשרשרת** — האבחון הראשון (A1) הופרך (קורה גם ב‑claude; אין סיגנל סוף‑הודעה אמין). עבר לחקירה: `docs/investigations/2026-06-28-sentence-cutting-mid-word.md` |
 
 ## אבחון השורש (מאומת מהקוד, 2026-06-28)
 
-שלושה תסמינים, שורש אחד — `turnState` לא‑יציב כסמן סוף‑תור (`Speaker` + `agent-session`):
+שני תסמינים בשרשרת הנקייה. (התסמין השלישי — **חיתוך‑מילים — בודד לחקירה**, ר' למטה.)
 
-- **חיתוך‑מילים:** `Speaker.#handleStatusTransition` עושה flush של `state.buffer` בכל מעבר
-  ל‑idle. ב‑opencode ה‑RESP מגיע באמצע הזרם (`agent-session.ts:590` → idle מיידי) בעוד
-  ה‑tail בדרך → flush של שאריות חלקיות (חצאי מילים).
+- **חיתוך‑מילים (בודד):** האבחון הראשון (flush מוקדם בגלל opencode‑tail) **הופרך** —
+  הבאג קורה גם ב‑claude (שאין לו tail), והתיקון המוצע (`onTurnSettled`=debounce) נשען על
+  "סוף‑הודעה" שאין לו סיגנל אמין. → חקירה נפרדת מול cache/wire של שני הספקים:
+  `docs/investigations/2026-06-28-sentence-cutting-mid-word.md`. הניחוש המוביל: תווי‑כיווניות
+  (RLM)/ניקוד משבשים את `Intl.Segmenter`. **לא חוסם את הפלייליסט.**
 - **בועה תקועה:** `turnState` חוזר ל‑idle רק כש‑RESP חוזר. אין watchdog — אם RESP אובד
   (detach/reconnect/`request_permission`), `#turnEnded` נשאר false, `#scheduleIdle` לא רץ,
   הבועה נתקעת על המצב האחרון.
@@ -56,23 +58,27 @@ AudioPlaylist (engine)
 
 ## הפירוק לשרשרת
 
+> **A1 (turnState‑stability/flush) הוצא מהשרשרת** — חיתוך‑המילים עבר לחקירה. השרשרת הנקייה
+> מתחילה ב‑A2 על `dev`. A5 (watchdog) נותק מ‑A1 והוא עצמאי על `dev` (מאלץ idle; ה‑flush
+> הקיים נשאר כפי שהוא — לא נוגעים בו עד שהחקירה תכריע).
+
 ### 🔧 worktree A — תשתית (branch `slice/playback-core-*`)
 
 | slice | תוכן | depends_on | base |
 |---|---|---|---|
-| **A1** — turnState‑stability | flush רק ב‑idle יציב (אחרי tail‑debounce) + sentence‑split fix + סף‑מינימום/סוף‑ודאי | [] | `dev` |
-| **A2** — audio‑playlist | `AudioPlaylist` + reserve‑on‑enqueue + cursor + ממתין לסגמנט‑בתור (timeout=skip) | [A1] | A1 |
+| ~~A1~~ | **בודד לחקירה** — `docs/investigations/2026-06-28-sentence-cutting-mid-word.md` | — | — |
+| **A2** — audio‑playlist | `AudioPlaylist` + reserve‑on‑enqueue + cursor + ממתין לסגמנט‑בתור (timeout=skip) | [] | `dev` |
 | **A3** — transport | `pause/resume/stop` בשני ה‑AudioSinks + ב‑AudioPlaylist + הפרדת `cancel()`→`stopPlayback()`/`cancelRun()` | [A2] | A2 |
 | **A4** — navigation | prev/next/jump בין משפטים + איחוד `BubblePlayer`→playlist (היסטוריה מלאה) | [A3] | A3 |
-| **A5** — watchdog | timeout ל‑turnState אם אין RESP/activity → אילוץ idle | [A1] (נבנה על A4 בשרשרת) | A4 |
+| **A5** — watchdog | timeout ל‑turnState אם אין RESP/activity → אילוץ idle (עצמאי — לא נשען על A1) | [] | `dev` |
 
-### 🎨 worktree B — UI (branch `slice/playback-ui-*`, base על A5)
+### 🎨 worktree B — UI (branch `slice/playback-ui-*`, base על A4)
 
 | slice | תוכן | depends_on | base |
 |---|---|---|---|
-| **B1** — controls‑ui | control‑bar/StatusBubble: כפתורי ⏹/⏸▶/⏮/⏭ (phase=speaking) + עצור‑ריצה (thinking/responding/calling‑tool) + wiring | [A5] | A5 |
+| **B1** — controls‑ui | control‑bar/StatusBubble: כפתורי ⏹/⏸▶/⏮/⏭ (phase=speaking) + עצור‑ריצה (thinking/responding/calling‑tool) + wiring | [A4, A5] | A4 (מוזג עם A5) |
 
-**סדר merge בסוף:** A1→A2→A3→A4→A5 (`--no-ff` שרשרת), ואז החלטה אם למזג גם B1.
+**סדר merge בסוף:** A2→A3→A4 (`--no-ff` שרשרת) + A5 (עצמאי), ואז החלטה אם למזג גם B1.
 
 ## מיפוי דרישות → slice
 
@@ -85,7 +91,8 @@ AudioPlaylist (engine)
 | המשך קדימה | A4 | `playlist.next()` |
 | עצור חשיבה/פעולה | A3+B1 | `cancelRun()` (= cancelTurn + stop), טקסט לפי phase |
 | סדר נכון | A2 | reserve‑on‑enqueue |
-| חיתוך‑מילים + בועה‑תקועה | A1 (+A5) | flush יציב + watchdog |
+| בועה תקועה | A5 | watchdog (אילוץ idle) |
+| חיתוך‑מילים | — | **חקירה** (`investigations/2026-06-28-sentence-cutting-mid-word.md`) |
 
 ## Decisions קשורות
 

@@ -1,3 +1,25 @@
+## 2026-06-28 — תכנון: בקרת השמעה+ריצה + פלייליסט (briefs בלבד — טרם בוצע קוד)
+
+> סשן **תכנון** (מרדכי), לא ביצוע. אין שינוי קוד. תיעוד מלא: `decisions/voice-acp.md` (2026-06-28)
+> + `docs/plans/playback-run-control-roadmap.md` + roadmap הראשי (Track C).
+
+### מה תוכנן
+- **גילוי:** רוב מה שביקשה המשתמשת כבר קיים (msr-v2 מוזג 15/6): StatusBubble, cancelTurn,
+  speaker.stop, BubblePlayer, ו-`Player`/`OrderedQueue`/`jumpToSegment` (slice-22) כבסיס-פלייליסט.
+- **נכתבו briefs מלאים** (§0-§9): A2 (audio-playlist+reserve-on-enqueue), A3 (transport
+  pause/resume/stop+פיצול cancel), A4 (navigation prev/next+איחוד BubblePlayer), A5 (watchdog),
+  B1 (UI — worktree נפרד). שרשרת A2→A3→A4; A5 עצמאי; B1 על A4.
+- **בודד לחקירה:** חיתוך-מילים ב-TTS (היה A1). האבחון הראשון הופרך (קורה גם ב-claude; אין סיגנל
+  סוף-הודעה אמין). → `docs/investigations/2026-06-28-sentence-cutting-mid-word.md`.
+
+### מה לא נעשה
+- ❌ אין קוד · ❌ לא הורץ אביגיל (דולג לבקשת המשתמשת) · ❌ אין worktrees/dispatch · ❌ אין merge.
+
+### הצעד הבא
+ביצוע השרשרת הנקייה (להתחיל A2). פתוח: אביגיל על A2 לפני dispatch? כאן או בסשן נפרד/יתרו?
+
+---
+
 ## 2026-06-28 — slice-image-paste — Commits 0–3 (פיגום רדום, IMAGE_INPUT_ENABLED=false)
 
 ### מה בוצע?

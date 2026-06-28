@@ -1,5 +1,46 @@
 # Decisions — voice-acp
 
+## 2026-06-28 — playback-run-control: תוכנית בקרת השמעה+ריצה+פלייליסט (briefs, טרם בוצע)
+
+> תכנון מרדכי. מסמך-אב: `docs/plans/playback-run-control-roadmap.md`. **אין קוד עדיין.**
+
+### רציונל
+המשתמשת ביקשה שלושה דברים (עצור-ריצה, prev/next בפלייליסט, עצור-השמעה-בלי-לעצור-ריצה).
+חיפוש בקוד (לא רק במסמכים) גילה ש**רובם כבר קיימים** מ-`slice-msr-v2` (מוזג 15/6): StatusBubble,
+`cancelTurn`, `speaker.stop`, BubblePlayer, ו-`Player`/`OrderedQueue`/`jumpToSegment` (slice-22)
+כבסיס-פלייליסט. החסר: prev/next ממשי, pause/resume, ו-UI מאוחד.
+
+**העיקרון המאחד (תובנת המשתמשת): reserve-on-enqueue.** היום `Player.addSegment` נקרא רק *אחרי*
+שה-fetch מסתיים → תור שמתרוקן, בלי סדר מובטח ובלי היסטוריה. השינוי: הסגמנט נכנס לתור **בזמן
+ה-enqueue** (עם orderKey דטרמיניסטי), במצב `reserved`, וה-cursor ממתין לסגמנט המוקדם עד שה-stream
+שלו מתחיל (timeout→skip). זה פותר **שלושה** דברים במכה: סדר-השמעה נכון (Gemini), prev/next (cursor
+לא מוחק), ו-pause/resume (suspend/resume).
+
+### הכרעות (נעולות עם המשתמשת)
+- ניווט **בין משפטים** (סגמנטים), לא בועות.
+- פלייליסט = **כל היסטוריית השיחה** (איחוד BubblePlayer). הקלטות-משתמש = hook בלבד, future.
+- עצור-ריצה = `session/cancel` (טקסט/אייקון לפי phase) **+ עוצר גם השמעה**. pause ו-stop נפרדים.
+- **worktrees מפוצלים:** תשתית (A2-A5) ב-`playback-core-*`; UI ב-`playback-ui` נפרד → אפשר למזג
+  תשתית בלי UI. הרצה אחת רצופה, merge יחיד בסוף.
+- timeout בתור: מחכים בעיקרון (הסדר קדוש); safety-net ~20ש'→skip.
+
+### שינויי-כיוון — חיתוך-המילים בודד (A1 בוטל)
+האבחון הראשון (A1): השורש = `justFinished` flush מוקדם בגלל opencode-tail, תיקון ב-`onTurnSettled`
+(debounce). **המשתמשת הפריכה בשתי נקודות:** (1) החיתוך קורה **גם ב-claude** (אין לו tail) → ה-flush
+אינו השורש; (2) **אין סיגנל אמין של "סוף הודעה"** → debounce הוא ניחוש שיורה גם באמצע תשובה איטית.
+→ A1 הפך tombstone; חיתוך-המילים עבר ל**חקירה** (`investigations/2026-06-28-sentence-cutting-mid-word.md`,
+ניחוש מוביל: RLM/ניקוד משבשים את `Intl.Segmenter`). השרשרת נותקה ממנו: A2/A5 base=`dev`, A5 עצמאי.
+
+### רעיונות שנדחו
+- **לחכות לסוף ההודעה כדי להקריא** — נדחה מפורשות (המתנה ענקית). ההקראה תוך-כדי-streaming נשמרת.
+- **לתקן את הסדר בלי reserve** (רק OrderedQueue) — לא מספיק; הוא ממיין רק מה שכבר בתור.
+
+### ממצאי אביגיל
+לא הורץ — דולג לבקשת המשתמשת בשלב כתיבת ה-briefs. **המלצה פתוחה:** אביגיל על A2 (8/10, לב
+השרשרת) לפני dispatch.
+
+---
+
 ## 2026-06-28 — code-syntax-highlight (slice D): highlight.js ב-pass-שלישי-מבודד (לא Shiki)
 
 ### רציונל
