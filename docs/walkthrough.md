@@ -1,3 +1,54 @@
+## 2026-06-28 — recent-projects-controls — 6 commits: מחיקה + כיווץ panel תיקיות אחרונות
+
+### מה בוצע?
+
+slice: recent-projects-controls (6 commits)
+
+**Commit 1** (BE registry TDD): `projects-registry.ts` + `storage-layer.test.ts`
+- ProjectEntry: הוסף `hidden?: boolean`
+- hideCwd(cwd): טוענת, מוצאת, מסמנת hidden=true; no-op על cwd לא-קיים
+- getProjects: מסנן `p.hidden !== true` לפני המיון (recordCwd לא שונה — ה-spread כבר משמר hidden)
+- 3 טסטים TDD ירוקים: hideCwd hides, hidden survives recordCwd, hideCwd no-op
+
+**Commit 2** (BE endpoint integration): `http-history.ts` + `http-history.test.ts`
+- DELETE /api/projects עם body {cwd} → 204; cwd חסר → 400
+- עיצוב body (לא path-param): cwd מכיל תווים מיוחדים (: ב-Windows, /)
+- 2 integration tests ירוקים: hide+GET=empty, missing-cwd→400
+
+**Commit 3** (FE adapter): `recent-projects.ts`
+- hideRecentProject(cwd): DELETE /api/projects {cwd}; זורק שגיאה על status לא-ok
+
+**Commit 4** (FE VM): `recent-projects.svelte.ts`
+- import hideRecentProject + action hide(cwd): optimistic remove + rollback בכשל
+
+**Commit 5** (FE settings): `settings.svelte.ts`
+- Persisted + DEFAULTS + $state + setRecentCollapsed + constructor + #persist
+- recentCollapsed: boolean (ברירת-מחדל false = פתוח)
+
+**Commit 6** (FE component + i18n): `RecentProjectsPanel.svelte` + i18n files
+- i18n: connect.recent.hide/collapse/expand
+- chevron כיווץ ב-header ({#if !settings.recentCollapsed} עוטף את גוף ה-panel)
+- delete-btn: sibling של project-btn (לא ילד — nested button אסור)
+  .project-row { display:flex } | .project-btn { flex:1 } | .delete-btn { flex-shrink:0 }
+- delete-btn נראה ב-hover/focus-within; לחיצה → recent.hide(project.cwd) ישיר (ללא confirm)
+
+### בדיקות
+
+- typecheck: 0 errors (כל 6 commits)
+- vitest BE storage-layer: 15/15
+- vitest BE http-history: 18/18
+- vitest FE: 354/354
+- lint:i18n: ✓ (bash ישיר — Windows)
+- vite build: ✓
+
+### סטיות
+
+- DELETE עם JSON body אומת ישירות ב-integration test (לא בדפדפן) — calev יאמת חי
+- getSettings() ב-RecentProjectsPanel מיובא מ-context (כבר זמין — אין שינוי ב-context.ts)
+- nested-button: delete-btn שורה 92 = sibling ל-project-btn שורה 73, לא ילד
+
+---
+
 ## 2026-06-25 — slice-input-autogrow — Commit 1: textarea auto-grow ב-TypeArea
 
 ### מה בוצע?
