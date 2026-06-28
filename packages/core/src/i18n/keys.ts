@@ -212,6 +212,10 @@ export type MessageKey =
   | "settings.ttsProvider.label"
   | "settings.ttsProvider.elevenlabs"
   | "settings.ttsProvider.gemini"
+  // ─── recent-projects ─── (slice connect-recent-projects)
+  | "connect.recent.title"
+  | "connect.recent.empty"
+  | "connect.recent.refresh"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

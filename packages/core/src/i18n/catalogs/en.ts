@@ -207,4 +207,8 @@ export const en: Catalog = {
   "settings.ttsProvider.label": "TTS provider",
   "settings.ttsProvider.elevenlabs": "ElevenLabs",
   "settings.ttsProvider.gemini": "Gemini",
+  // ─── recent-projects ─── (slice connect-recent-projects)
+  "connect.recent.title": "Recent folders",
+  "connect.recent.empty": "No recent folders",
+  "connect.recent.refresh": "Refresh",
 }

@@ -202,4 +202,8 @@ export const he: Catalog = {
   "settings.ttsProvider.label": "ספק TTS",
   "settings.ttsProvider.elevenlabs": "ElevenLabs",
   "settings.ttsProvider.gemini": "Gemini",
+  // ─── recent-projects ─── (slice connect-recent-projects)
+  "connect.recent.title": "תיקיות אחרונות",
+  "connect.recent.empty": "אין תיקיות אחרונות",
+  "connect.recent.refresh": "רענן",
 }
