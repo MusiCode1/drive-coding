@@ -1,3 +1,14 @@
+## 2026-06-28 — CUT-3b-ii-be-rewire — סיכום slice (commits 0–2 + calev-heavy)
+
+**Commits:**
+- `cf689d6` — Commit 0: connection-registry.ts + tests + modelOverride ב-ConnectOpts
+- `fd81118` — Commit 1: rewire orchestrator + ws-agent + server (phase-gate calev GO/0 findings)
+- `8e5b693` — Commit 2: DELETE bridge-manager + F-1 regression tests עודכנו
+
+**סטטוס:** ממתין ל-calev-heavy slice verdict.
+
+---
+
 ## 2026-06-28 — CUT-3b-ii-be-rewire — Commit 2 (DELETE bridge-manager + F-1 regression update)
 
 ### מה בוצע?
