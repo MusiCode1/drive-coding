@@ -6852,3 +6852,23 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 ### סטיות
 
 אין. הוספת `resolveProviderAuth` כ-helper טהור + call-site יחיד ב-http-proxy. לא שינוי ארכיטקטוני.
+
+## 2026-06-28 — slice-code-syntax-highlight — Commit 0 (TDD)
+
+### מה בוצע?
+
+**Commit 0 (TDD):** `packages/frontend/src/lib/util/code-highlight.ts` + `code-highlight.test.ts`.
+- `highlightCode(code, lang)` — רישום סלקטיבי של 16 שפות (ts/js/json/bash/py/xml/html/css/md/diff/yaml/sql/rust/go/c/java + aliases).
+- שפה מוכרת → hljs.highlight עם ignoreIllegals:true → HTML עם span.hljs-* בלבד (ללא style).
+- שפה לא-מוכרת / חסרה / ריקה → escapeHtml בלבד (plain), ללא throw.
+- אמות אמפירית: פלט מכיל class= ולא style= (ליבת האבטחה).
+
+### בדיקות
+
+- TDD (Red-Green): 9 טסטים ירוקים בסביבת node.
+- Typecheck: ירוק (0 errors, 0 warnings).
+- Lint (קבצים חדשים): ירוק.
+
+### חריגות
+
+- אין. הוספת dep highlight.js לחבילה.
