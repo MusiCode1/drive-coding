@@ -1,3 +1,31 @@
+## 2026-06-28 — slice-C3-ext-thinking — Phase 2 (live tests + מיגרציה)
+
+### מה בוצע?
+
+**Commit 2 — חבילת בדיקות-חי קבועה + מחיקת smokes:**
+- `host/in-process/live/host.live.test.ts`: 4 cases gated מאחורי `RUN_LIVE=1`:
+  1. capabilities — thinkingTokens=true + rename=true + mcp=true
+  2. deterministic round-trip — claude מחזיר DRIVE_OK_4242 (פלט דטרמיניסטי מאושר)
+  3. setThinkingTokens ext — callExt מחזיר {ok:true} + prompt עוקב מצליח (query לא שבור)
+  4. rename — DC-TEST מופיע ב-listSessions
+- `package.json`: `"test:live": "RUN_LIVE=1 vitest run --dir src/host/in-process/live"` script.
+- מחיקת `rename-smoke.ts` ו-`session-smoke.ts` (כפילות — לוגיקתם חיה בchבילה הקבועה).
+- top-level code lazy (כל setup ב-beforeAll).
+
+### חריגות
+- Case 3 ו-4 רצות על אותו session (מ-case 2) — חוסכות initialize נוסף.
+
+### בדיקות
+- typecheck — 0 errors.
+- `pnpm --filter @drive-coding/provider test` (regular) — 71 passed, 4 skipped (live skipped). ✓
+- `RUN_LIVE=1 pnpm test:live` — 4/4 PASS. ✓
+- DoD 6 (getQuery נקודה יחידה): grep `.sessions[` מחוץ ל-query-access.ts — ריק. ✓
+- DoD 7 (additive): `git diff slice/C3-rename..HEAD --name-only | grep -vE ...` — ריק. ✓
+- DoD 8 (אין SDK leak): grep imports ב-types.ts/index.ts — ריק. ✓
+- DoD 8 (smokes נמחקו): rename-smoke.ts + session-smoke.ts — נמחקו. ✓
+
+---
+
 ## 2026-06-28 — slice-C3-ext-thinking — Phase 1 (handler פנימי)
 
 ### מה בוצע?
