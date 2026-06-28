@@ -1,3 +1,28 @@
+## 2026-06-28 — leave-running-background — Commit 0: isBypassMode helper + i18n keys (TDD)
+
+### מה בוצע?
+
+**קבצים חדשים:**
+- `packages/frontend/src/lib/util/permission-mode.ts` — `isBypassMode(cliKind, currentModeId): boolean` + `BYPASS_MODE_ID` (claude בלבד, עם הערת-קוד לאיחוד עתידי)
+- `packages/frontend/src/lib/util/permission-mode.test.ts` — 7 טסטי TDD (red→green): claude+bypass→true, claude+default→false, opencode+כל→false, null→false, undefined→false
+
+**שינויים בקיים:**
+- `packages/core/src/i18n/keys.ts` — בלוק חדש בסוף: `session.leaveRunning` + `session.leaveWarning.{title,body,confirm,cancel}`
+- `packages/core/src/i18n/catalogs/he.ts` — תרגומים עבריים לבלוק החדש
+- `packages/core/src/i18n/catalogs/en.ts` — תרגומים אנגליים לבלוק החדש
+
+### בדיקות
+
+- TDD: 7/7 טסטים ירוקים (`pnpm test -- permission-mode`)
+- typecheck: 0 שגיאות
+- lint:i18n: ✓ (אין מחרוזות עבריות בקוד)
+
+### סטיות
+
+ללא סטיות מה-brief. approach: TDD, כפי שנקבע ב-§4 commit 0.
+
+---
+
 ## 2026-06-25 — slice-input-autogrow — Commit 1: textarea auto-grow ב-TypeArea
 
 ### מה בוצע?

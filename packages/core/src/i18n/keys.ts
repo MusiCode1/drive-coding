@@ -216,6 +216,12 @@ export type MessageKey =
   | "connect.recent.title"
   | "connect.recent.empty"
   | "connect.recent.refresh"
+  // ─── leave-running (slice leave-running-background) ───
+  | "session.leaveRunning"          // תווית כפתור "צא — השאר רץ" (חדש)
+  | "session.leaveWarning.title"
+  | "session.leaveWarning.body"     // "הריצה תיעצר ברגע שתגיע בקשת-הרשאה..."
+  | "session.leaveWarning.confirm"
+  | "session.leaveWarning.cancel"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
