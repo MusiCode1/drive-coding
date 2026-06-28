@@ -36,7 +36,8 @@ describe("renderMarkdown", () => {
   it("renders unordered list", () => {
     const out = renderMarkdown("- item one\n- item two")
     expect(out).toContain("<ul>")
-    expect(out).toContain("<li>")
+    // <li> מקבל dir="auto" מ-slice-B hook — בודקים נוכחות ה-tag בכל צורה
+    expect(out).toContain("<li")
   })
 
   it("preserves Hebrew text", () => {
@@ -74,7 +75,8 @@ describe("renderMarkdown", () => {
 
   it("renders heading", () => {
     const out = renderMarkdown("# Hello")
-    expect(out).toContain("<h1>")
+    // <h1> מקבל dir="auto" מ-slice-B hook — בודקים נוכחות ה-tag בכל צורה
+    expect(out).toContain("<h1")
     expect(out).toContain("Hello")
   })
 
@@ -249,5 +251,63 @@ describe("renderMarkdown", () => {
     expect(preCount).toBe(2)
     const katexCount = (out.match(/class="katex/g) ?? []).length
     expect(katexCount).toBeGreaterThanOrEqual(2)
+  })
+
+  // ─── Slice B: dir="auto" פר block-element (TDD) ──────────────────────────────
+
+  it("B-1: paragraph gets dir=auto", () => {
+    // פסקה רגילה — <p> חייב לקבל dir="auto"
+    const out = renderMarkdown("שלום עולם")
+    expect(out).toContain('<p dir="auto">')
+  })
+
+  it("B-2: list items get dir=auto", () => {
+    // כל <li> חייב לקבל dir="auto"
+    const out = renderMarkdown("- פריט\n- item")
+    const liWithDir = (out.match(/<li dir="auto">/g) ?? []).length
+    expect(liWithDir).toBeGreaterThanOrEqual(2)
+  })
+
+  it("B-3: heading gets dir=auto", () => {
+    // כותרת <h1> חייבת לקבל dir="auto"
+    const out = renderMarkdown("# כותרת")
+    expect(out).toContain('<h1 dir="auto">')
+  })
+
+  it("B-4: blockquote gets dir=auto", () => {
+    // ציטוט <blockquote> חייב לקבל dir="auto"
+    const out = renderMarkdown("> ציטוט")
+    expect(out).toContain('<blockquote dir="auto">')
+  })
+
+  it("B-5: pre and code do NOT get dir=auto", () => {
+    // בלוק-קוד — <pre> ו-<code> לא אמורים לקבל dir (קוד נשאר LTR)
+    const out = renderMarkdown("```ts\nconst x = 1\n```")
+    expect(out).not.toContain('<pre dir=')
+    expect(out).not.toContain('<code dir=')
+    // ה-<pre> עצמו כן קיים (רגרסיה: לא נשבר)
+    expect(out).toContain('<pre>')
+  })
+
+  it("B-6: <a> still gets target=_blank (no regression in hook)", () => {
+    // הענף ה-<a> הקיים לא נפגע
+    const out = renderMarkdown("[link](https://example.com)")
+    expect(out).toContain('target="_blank"')
+    expect(out).toContain('rel="noopener noreferrer"')
+  })
+
+  it("B-6b: KaTeX still renders after dir hook addition", () => {
+    // KaTeX לא מושפע — ה-hook גלובלי אך span/math לא ב-set
+    const out = renderMarkdown("$x^2$")
+    expect(out).toContain("katex")
+  })
+
+  it("B-7: explicit dir attribute is NOT overridden (guard)", () => {
+    // guard: dir מפורש מהמודל לא נדרס ע"י dir="auto" האוטומטי
+    // MARKDOWN_ATTR כולל "dir" → שורד sanitize, ה-hook לא ידרוס
+    const out = renderMarkdown('<p dir="rtl">טקסט RTL מפורש</p>')
+    // dir="rtl" חייב לשרוד — לא להיות dir="auto"
+    expect(out).toContain('dir="rtl"')
+    expect(out).not.toContain('<p dir="auto">')
   })
 })

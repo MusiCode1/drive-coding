@@ -1,3 +1,30 @@
+## 2026-06-29 — slice-B (markdown-dir-per-paragraph) — Commit 0
+
+### מה בוצע?
+
+**Commit 0 (TDD)** — `packages/frontend/src/lib/util/markdown.ts` + `markdown.test.ts`:
+- נוסף `const BIDI_BLOCK_TAGS = new Set([...])` ברמת-מודול (P/LI/H1-H6/BLOCKQUOTE/TD/TH).
+- הורחב ה-`DOMPurify.addHook("afterSanitizeAttributes")` הקיים — ענף נוסף בתוך אותו callback:
+  `if (BIDI_BLOCK_TAGS.has(node.tagName) && !node.hasAttribute("dir")) node.setAttribute("dir","auto")`.
+- guard `!node.hasAttribute("dir")` מונע דריסת dir מפורש (finding אביגיל 🟢).
+- ה-hook הקיים (`<a>` → target/rel) לא נגע.
+- נוספו 7 טסטי jsdom (B-1 עד B-7): paragraph/li/h1/blockquote מקבלים dir="auto"; pre/code לא; `<a>` ← target=_blank (regression); KaTeX עובד; guard dir מפורש לא נדרס.
+- עודכנו 2 טסטים ישנים שציפו ל-`<li>` / `<h1>` ללא dir — עדכון לבדיקת `<li` / `<h1` (לא שינוי semantics).
+
+### תוצאות
+- typecheck: ירוק (0 שגיאות).
+- 67/67 טסטים ירוקים (59 קיימים + 8 חדשים, כולל עדכון 2 ישנים).
+- i18n lint: ירוק.
+- lint (Biome): שגיאות baseline קיימות (CRLF ב-biome.json) — לא נגרמו ע"י ה-slice.
+
+### חריגות
+- lint baseline שבור ב-Windows (CRLF) — קיים לפני ה-slice, אינו שלנו.
+
+### הצעד הבא
+calev light (מרדכי מריץ).
+
+---
+
 ## 2026-06-28 — slice-A5-watchdog — Commits 0+1 (watchdog ל-turnState)
 
 ### מה בוצע?

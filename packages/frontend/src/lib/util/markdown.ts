@@ -40,6 +40,11 @@ import { BLOCK_SENTINEL, INLINE_SENTINEL, parseToHtml } from "./markdown-parse"
 // ─── Re-export normalizeInvisibles לנוחות הטסטים ────────────────────────────
 export { normalizeInvisibles } from "./markdown-parse"
 
+// ─── BIDI block tags — מקבלים dir="auto" דרך ה-DOMPurify hook ──────────────
+// pre/code/span מוחרגים בכוונה — קוד נשאר LTR (CSS כופה direction:ltr).
+// guard (!node.hasAttribute("dir")) מונע דריסת dir מפורש שהמודל פלט.
+const BIDI_BLOCK_TAGS = new Set(["P", "LI", "H1", "H2", "H3", "H4", "H5", "H6", "BLOCKQUOTE", "TD", "TH"])
+
 // ─── Allowlists ─────────────────────────────────────────────────────────────
 
 // MARKDOWN_ALLOW: post-tables (chat-render-polish) — ללא span/style/class
@@ -155,9 +160,15 @@ const CODE_ATTR = ["class"]
 // ─── DOMPurify hook (נרשם פעם אחת ברמת מודול) ────────────────────────────────
 if (typeof document !== "undefined") {
   DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    // ── קיים (לא נוגעים): <a href> → target/rel ──
     if (node.tagName === "A" && node.hasAttribute("href")) {
       node.setAttribute("target", "_blank")
       node.setAttribute("rel", "noopener noreferrer")
+    }
+    // ── חדש (slice-B): block elements → dir="auto" (יישור עצמאי פר-פסקה) ──
+    // guard: לא לדרוס dir מפורש שהמודל פלט (dir ב-MARKDOWN_ATTR → שורד sanitize)
+    if (BIDI_BLOCK_TAGS.has(node.tagName) && !node.hasAttribute("dir")) {
+      node.setAttribute("dir", "auto")
     }
   })
 }
