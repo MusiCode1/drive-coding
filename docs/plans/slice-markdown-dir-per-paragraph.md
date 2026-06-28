@@ -1,7 +1,7 @@
 # Slice B — markdown-dir-per-paragraph — תוכנית
 
-> **תאריך**: 2026-06-28
-> **סטטוס**: מאושר (אביגיל READY — סבב 2, 0 findings)
+> **תאריך**: 2026-06-28 · **עודכן**: 2026-06-29
+> **סטטוס**: ✅ **הושלם** — commit `0fe7b87` על branch `slice/markdown-dir-per-paragraph`. 67/67 טסטים ירוקים. ממתין ל-calev light + אישור מרדכי למיזוג.
 > **Complexity**: 4/10 (verifier: light)
 > **תלות**: אין קונפליקט-קבצים עם A (B נוגע רק ב-`markdown.ts`; A נוגע רק ב-components). **base=dev**, depends_on: []. ⚠️ merge-order: **B לפני D** (שניהם נוגעים ב-`markdown.ts`).
 
