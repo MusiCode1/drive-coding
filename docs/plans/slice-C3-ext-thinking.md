@@ -1,6 +1,6 @@
 # Slice C3-ext-thinking — runtime-control דרך ext channel (בלי patch) + חבילת בדיקות-חי קבועה — בריף
 
-> **תאריך**: 2026-06-28 · **סטטוס**: brief · **branch**: slice/C3-ext-thinking
+> **תאריך**: 2026-06-28 · **סטטוס**: הושלם · **branch**: slice/C3-ext-thinking
 > **Complexity**: 7/10 (verifier: light — אימות חי מול CLI) · **depends_on**: [C3-rename] · **Base**: `slice/C3-rename` (HEAD)
 > **מנגנון**: inbound `extMethod` handler **שלנו** (לא patch) → `getQuery(sessionId)` → `query.setMaxThinkingTokens(n)`
 
