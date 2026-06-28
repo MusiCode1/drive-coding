@@ -162,6 +162,29 @@ detection ייכנס בעתיד בלי לגעת בלולאת-הסינון. המ�
   שונה: "תהליכים פעילים" = reconnect warm (שומר state); "תיקיות אחרונות" = spawn חדש. לא באג.
 - **endpoint BE חדש** — מיותר; `GET /api/projects` כבר קיים ומאוכלס.
 
+### ביצוע + runtime-gate (2026-06-28)
+
+שני הסלייסים בוצעו ע"י אליעזר **בשרשור על מכונה אחת** (לא merge ביניים — merge דורש אישור משתמשת).
+
+- **OVERRIDE על §0 של slice-2**: ה-brief הניח base=dev *לאחר* merge של slice-1. בפועל לא מיזגנו
+  ביניהם; ה-base של slice-2 הוא ה-**branch** `slice/folder-picker-fixes` (chained worktree), והכלל
+  `Pre-flight grep startPath` עבר בזכות השרשור (`+page.svelte:238`). שום merge לא נעשה ללא אישור.
+- **slice-folder-picker-fixes** — branch `slice/folder-picker-fixes` @ `3fdfd86` (commits `ed7718f`
+  BE async `isHiddenEntry` TDD red→green, `b86e078` FE `startPath` prop). **כלב GO, 8/8 DoD, 0
+  findings** — אומת **חי בדפדפן** (playwright): dot-folders מוסתרים, הופיעו עם showHidden, בורר נפתח
+  בנתיב שהוקלד, ניווט up/breadcrumb/בחירה ללא רגרסיה. typecheck 0 שגיאות, vitest 16/16.
+- **slice-connect-recent-projects** — branch `slice/connect-recent-projects` @ `fb1f9ea` (5 commits:
+  adapter/VM/panel/page-rewire/cleanup). **כלב GO, 14/14 DoD, 0 findings.** ⚠️ **אזהרה כנה**: ה-DoD
+  אומת **סטטית בלבד** (typecheck 0, vite build, vitest 339/339, grep-residuals 0, אימות חיווט
+  end-to-end ב-code) — **happy-path runtime חי לא הורץ** (אין BE בסביבת כלב). פריטי-ה-DoD הידניים מ-§5
+  של ה-brief (לחיצה על תיקייה אחרונה → /chat, מצב-ריק, רשימה נטענת) **לא אומתו חי**. סיכון מרוסן (glue
+  בלבד, חיקוי מדויק של דפוס ActiveAgents קיים) אך לא אפס — מומלץ smoke-test חי לפני/אחרי merge.
+- **typecheck משולב** (slice-1+slice-2 chained): 0 שגיאות (backend+frontend, 5024 קבצים) — אומת
+  ע"י מרדכי עצמאית.
+- **סטייה מינורית**: ב-slice-2 ה-i18n keys נוספו ב-commit 3 (לא 5 כ-brief) — הכרח לוגי (ה-component
+  השתמש בהם ועבר typecheck). הבדל שיוך-commit בלבד, לא תוכן.
+- **merge**: ⛔ **טרם** — ממתין לאישור מפורש של המשתמשת (סדר A→B, `--no-ff` חובה בשרשרת).
+
 ---
 
 ## 2026-06-27 — היפוך-כיוון: ACP כמשטח קנוני + ספק-כגשר + reabsorption (מחליף את החוזה הקנוני)
