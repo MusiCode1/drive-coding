@@ -139,9 +139,9 @@ describe("InProcessHost — session wiring (structural checks, no inference)", (
   it("prompt rejects before start() — guard is wired", async () => {
     const host = createClaudeInProcessHost()
     // start() not called — prompt should throw "called before start"
-    await expect(
-      host.prompt({ sessionId: "fake-id", text: "hello" }, () => {}),
-    ).rejects.toThrow("before start")
+    await expect(host.prompt({ sessionId: "fake-id", text: "hello" }, () => {})).rejects.toThrow(
+      "before start",
+    )
     await host.close()
   })
 

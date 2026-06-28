@@ -221,9 +221,7 @@ export function createClaudeInProcessHost(options?: { extHandlers?: ExtHandlers 
       // mcpServers:[] is required by NewSessionRequest schema (🔴#3)
       // clientCtx is from the same connection as ClaudeAcpAgent's AgentContext,
       // so session/update notifications will be routed to this ActiveSession correctly.
-      const activeSession = await clientCtx
-        .buildSession({ cwd: opts.cwd, mcpServers: [] })
-        .start()
+      const activeSession = await clientCtx.buildSession({ cwd: opts.cwd, mcpServers: [] }).start()
 
       const sessionId = activeSession.sessionId as string
       // Store the ActiveSession for use in prompt()
