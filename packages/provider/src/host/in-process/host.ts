@@ -38,6 +38,7 @@ import type { ActiveSession, AgentConnection, ClientContext } from "acp-sdk-v1"
 import { agent, client, methods } from "acp-sdk-v1"
 import type { NormalizedCapabilities } from "../types.js"
 import { mapClaudeCapabilities } from "./claude/capabilities.js"
+import { getQuery } from "./claude/query-access.js"
 import { claudeRenameSession } from "./claude/rename.js"
 import { makeAcpClientFromCtx } from "./client-bridge.js"
 
@@ -183,6 +184,21 @@ export function createClaudeInProcessHost(options?: { extHandlers?: ExtHandlers 
       (ctx) => handler(ctx.params),
     )
   }
+
+  // Internal handler: _drive/setThinkingTokens
+  // Closes over claudeAgent (set in onConnect). Must NOT go through options.extHandlers —
+  // that signature receives only params and cannot close over claudeAgent.
+  // Runs only after newSession (onConnect fires first → claudeAgent guaranteed), but we guard anyway.
+  agentApp = agentApp.onRequest(
+    "_drive/setThinkingTokens",
+    { parse: (p: unknown) => p as Record<string, unknown> },
+    async (ctx) => {
+      if (!claudeAgent) throw new Error("_drive/setThinkingTokens called before start()")
+      const { sessionId, n } = ctx.params as { sessionId: string; n: number | null }
+      await getQuery(claudeAgent, sessionId).setMaxThinkingTokens(n)
+      return { ok: true }
+    },
+  )
 
   // Build ClientApp — handles client-side ACP requests from the agent.
   // The ClientApp constructor installs a SessionUpdateRouter middleware (withHandler)

@@ -1,3 +1,21 @@
+## 2026-06-28 — slice-C3-ext-thinking — Phase 1 (handler פנימי)
+
+### מה בוצע?
+
+**Commit 1 — handler פנימי `_drive/setThinkingTokens`:**
+- `host/in-process/host.ts`: הוסף import `getQuery` מ-query-access.js.
+- `host/in-process/host.ts`: רשם `onRequest("_drive/setThinkingTokens", ...)` על agentApp — handler **פנימי** שסוגר על `claudeAgent` (לא דרך `options.extHandlers`). מוציא `{sessionId, n}` מה-params, קורא `getQuery(claudeAgent, sessionId).setMaxThinkingTokens(n)`, מחזיר `{ok: true}`. משמר guard אם claudeAgent undefined.
+- `host.test.ts`: 2 unit tests: (1) handler מנותב (לא -32601); (2) זורק שגיאה לפני start().
+
+### חריגות
+- ה-SDK עוטף את throw של getQuery ב-"Internal error" (לא חושף את הודעת השגיאה הפנימית). ה-assert עודכן בהתאם — בודק "לא -32601".
+
+### בדיקות
+- typecheck — 0 errors.
+- `pnpm --filter @drive-coding/provider test` — 71/71 PASS.
+
+---
+
 ## 2026-06-28 — slice-C3-ext-thinking — Phase 0 (TDD)
 
 ### מה בוצע?

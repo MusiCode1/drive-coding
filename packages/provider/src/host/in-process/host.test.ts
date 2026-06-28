@@ -114,6 +114,46 @@ describe("InProcessHost — initialize only (no session/prompt)", () => {
   })
 })
 
+describe("InProcessHost — _drive/setThinkingTokens handler (unit, no inference)", () => {
+  let host: InProcessHost | undefined
+
+  afterEach(async () => {
+    if (host) {
+      await host.close()
+      host = undefined
+    }
+  })
+
+  it("_drive/setThinkingTokens is routed — not -32601 (handler registered)", async () => {
+    host = createClaudeInProcessHost()
+    await host.start({ cwd: process.cwd() })
+
+    // Handler is registered — should throw "Internal error" (SDK wraps our throw), NOT "Method not found" (-32601).
+    // This proves the route exists and getQuery is reached (session doesn't exist → getQuery throws → SDK wraps).
+    await expect(
+      host.callExt("_drive/setThinkingTokens", { sessionId: "nonexistent-session", n: 8000 }),
+    ).rejects.toThrow("Internal error")
+
+    // Ensure it's NOT a -32601 method-not-found
+    let err: Error | undefined
+    try {
+      await host.callExt("_drive/setThinkingTokens", { sessionId: "x", n: 0 })
+    } catch (e) {
+      err = e as Error
+    }
+    expect(err?.message).not.toContain("Method not found")
+  })
+
+  it("_drive/setThinkingTokens throws descriptive error when claudeAgent not set", async () => {
+    host = createClaudeInProcessHost()
+    // Do NOT call start() — claudeAgent will be undefined
+    // Handler should throw "claudeAgent not initialized" before reaching getQuery
+    await expect(
+      host.callExt("_drive/setThinkingTokens", { sessionId: "any", n: 8000 }),
+    ).rejects.toThrow("before start")
+  })
+})
+
 describe("InProcessHost — session wiring (structural checks, no inference)", () => {
   /**
    * These tests verify that newSession and prompt are properly wired
