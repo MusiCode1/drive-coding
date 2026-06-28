@@ -51,8 +51,9 @@ pnpm lint:i18n
 ## §1 — מטרה
 
 A. `scripts/bump-version.mjs` — כלי ללא-תלויות שמעלה את `version` ב-root `package.json` לפי
-   רמה (patch/minor/major) **ומסנכרן** את `packages/release/package.json` לאותו ערך. ארגומנט
-   חסר/לא-חוקי → exit 1. (מקור-אמת = root; release מסונכרן כי הוא החבילה המפורסמת ל-npm.)
+   רמה (patch/minor/major), **מסנכרן** את `packages/release/package.json` לאותו ערך, **ומעלה
+   עצמאית כל חבילה שנמסרה ב-`[pkg...]`** (core/frontend/backend) — בדיוק כפי ש-`AGENTS.md:64` מגדיר.
+   ארגומנט-רמה חסר/לא-חוקי → exit 1. (מקור-אמת = root; release מסונכרן כי הוא החבילה המפורסמת ל-npm.)
 B. הצגת מספר-גרסה בתחתית מסך ההגדרות — `v{semver} ({git SHA})` (למשל `v0.1.0 (2cdb85a)`) —
    visibility ל-debug: על איזו גרסה הלקוח באמת יושב.
 
@@ -62,7 +63,7 @@ B. הצגת מספר-גרסה בתחתית מסך ההגדרות — `v{semver} 
 
 | פעולה | כן/לא | לאן |
 |------|------|-----|
-| C: `scripts/bump-version.mjs` (root + release sync, exit-1 על arg חסר) | ✅ | הסבב הזה |
+| C: `scripts/bump-version.mjs` (root + release sync + `[pkg...]` עצמאי, exit-1 על arg חסר) | ✅ | הסבב הזה |
 | C: root `package.json` כמקור-אמת יחיד לגרסה | ✅ | הסבב הזה |
 | B: הזרקת `v{semver} ({SHA})` ב-build דרך SvelteKit `kit.version.name` | ✅ | הסבב הזה |
 | B: הצגת הגרסה בתחתית `SettingsScreen.svelte` | ✅ | הסבב הזה |
@@ -81,37 +82,54 @@ B. הצגת מספר-גרסה בתחתית מסך ההגדרות — `v{semver} 
 
 ### C. `scripts/bump-version.mjs`
 
-קובץ חדש ב-`scripts/`, ESM (כל ה-scripts שם `.mjs`), ללא תלויות (Node מובנה):
+קובץ חדש ב-`scripts/`, ESM (כל ה-scripts שם `.mjs`), ללא תלויות (Node מובנה).
+
+> **🔑 חובת-חוזה (finding אביגיל #1)**: `AGENTS.md:64` מגדיר את הטקס כ-`bump-version.mjs <level> [pkg...]`,
+> והגוף מפרט: root+release מקבלים `<level>`, וכל `pkg` שנמסר ב-`[pkg...]` (core/frontend/backend) מקבל
+> bump **עצמאי** ב-`<level>` (מונה משלו). **הכרעת מרדכי (2026-06-28): מממשים את `[pkg...]`** (לא מחלישים
+> את AGENTS). ה-script חייב לטפל ב-`process.argv.slice(3)`, אחרת AGENTS.md L64 משקר.
 ```js
-// usage: node scripts/bump-version.mjs <patch|minor|major>
+// usage: node scripts/bump-version.mjs <patch|minor|major> [pkg...]
+//   <level>   — root package.json + packages/release (release מסונכרן ל-root, החבילה המפורסמת).
+//   [pkg...]  — שמות חבילות תחת packages/ שנגעו במיזוג (core|frontend|backend) — bump עצמאי לכל אחת.
 import { readFileSync, writeFileSync } from "node:fs"
 
 const level = process.argv[2]
 if (!["patch", "minor", "major"].includes(level)) {
-  console.error("level required: patch|minor|major")
+  console.error("usage: node scripts/bump-version.mjs <patch|minor|major> [pkg...]")
   process.exit(1)
 }
 
-const rootUrl = new URL("../package.json", import.meta.url)
+function nextVersion(version, lvl) {
+  const [maj, min, pat] = version.split(".").map(Number)
+  return lvl === "major" ? `${maj + 1}.0.0` : lvl === "minor" ? `${maj}.${min + 1}.0` : `${maj}.${min}.${pat + 1}`
+}
+function bumpFile(url, lvl) {
+  const pkg = JSON.parse(readFileSync(url, "utf8"))
+  pkg.version = nextVersion(pkg.version, lvl)
+  writeFileSync(url, JSON.stringify(pkg, null, 2) + "\n")
+  return pkg.version
+}
+
+// root — מקור-האמת לתצוגה (B).
+const rootNext = bumpFile(new URL("../package.json", import.meta.url), level)
+
+// release — מסונכרן ל-root (לא bump עצמאי): החבילה המפורסמת ל-npm חייבת == root.
 const relUrl = new URL("../packages/release/package.json", import.meta.url)
-
-const root = JSON.parse(readFileSync(rootUrl, "utf8"))
-const [maj, min, pat] = root.version.split(".").map(Number)
-const next =
-  level === "major" ? `${maj + 1}.0.0`
-  : level === "minor" ? `${maj}.${min + 1}.0`
-  : `${maj}.${min}.${pat + 1}`
-
-root.version = next
-writeFileSync(rootUrl, JSON.stringify(root, null, 2) + "\n")
-
-// release = החבילה המפורסמת ל-npm; מסונכרן ל-root כדי שב-git יהיו תמיד זהים.
 const rel = JSON.parse(readFileSync(relUrl, "utf8"))
-rel.version = next
+rel.version = rootNext
 writeFileSync(relUrl, JSON.stringify(rel, null, 2) + "\n")
 
-console.log(`version → ${next} (root + packages/release)`)
+// [pkg...] — כל חבילה שנגעה: bump עצמאי מהמונה שלה.
+const bumped = process.argv.slice(3).map((name) => {
+  const url = new URL(`../packages/${name}/package.json`, import.meta.url)
+  return `${name}→${bumpFile(url, level)}`   // package.json חסר → קריאה תיזרק (fail-loud, רצוי)
+})
+
+console.log(`version → root+release ${rootNext}${bumped.length ? "; " + bumped.join(", ") : ""}`)
 ```
+> **הערה**: שם-חבילה לא-קיים ב-`[pkg...]` → `readFileSync` זורק → ה-script נכשל בקול (טוב — מונע bump חלקי שקט).
+> אם רוצים סלחנות — אפשר guard `existsSync` שמדלג עם warn, אבל fail-loud עדיף בטקס-מיזוג.
 > **⚠️ פורמט-כתיבה**: אמת את ה-indent הקיים של שני ה-package.json (2-space סטנדרטי) — `JSON.stringify(_, null, 2)`
 > תואם. אם קובץ קיים משתמש ב-trailing-newline (רוב כן), ה-`+ "\n"` שומר על כך → diff מינימלי.
 > בדוק את שני הקבצים לפני, וודא שאין שדות שהסדר שלהם משתנה ב-round-trip (JSON.parse→stringify שומר סדר-הכנסה).
@@ -182,19 +200,22 @@ export default config;
 צור את הקובץ (§3.C). **אל תריץ אותו לשינוי-קבע** — רק smoke ואז החזרה.
 **Verification**:
 ```bash
-node scripts/bump-version.mjs            # → exit 1, "level required"
-node scripts/bump-version.mjs minor      # root+release: 0.1.0 → 0.2.0, stdout "version → 0.2.0 ..."
-git diff --stat package.json packages/release/package.json   # שניהם שונו, רק שדה version
-git checkout package.json packages/release/package.json      # החזרה — ה-bump האמיתי קורה רק במיזוג
+node scripts/bump-version.mjs                  # → exit 1, "usage: ..."
+node scripts/bump-version.mjs minor            # root+release: 0.1.0 → 0.2.0
+node scripts/bump-version.mjs minor frontend core   # +bump עצמאי ל-packages/frontend ו-core
+git diff --stat package.json packages/release/package.json packages/frontend/package.json packages/core/package.json
+git checkout package.json packages/release/package.json packages/frontend/package.json packages/core/package.json   # החזרה — bump אמיתי רק במיזוג
 ```
-**DoD**: ה-script רץ; arg חסר→exit1; minor מעלה את שניהם זהה; אחרי `git checkout` אין שארית.
+**DoD**: arg-רמה חסר→exit1; `minor` מעלה root+release זהה; `minor frontend core` מעלה גם את שתי החבילות (עצמאי, מהמונה שלהן); אחרי `git checkout` אין שארית.
 
 ### Commit 2 — B: הזרקת version ב-build (testing: manual)
 עדכן `svelte.config.js` (§3.B). **Verification**:
 ```bash
 pnpm --filter @drive-coding/frontend-v2 build
-grep -rl "v0.1.0 (" packages/frontend/build/_app 2>/dev/null | head   # ה-version מוטמע ב-bundle (לא ריק/undefined)
+grep -rl "v0.1.0" packages/frontend/build 2>/dev/null | head   # ה-version מוטמע ב-bundle (לא תחת _app בהכרח; בלי הסוגר — שביר ב-grep)
 ```
+> **finding אביגיל #2**: SvelteKit כותב `export const version = "v0.1.0 (sha)"`; אחרי minify הליטרל שורד אבל
+> ה-environment module עלול להתמזג ל-chunk כללי (לא דווקא `_app/`). grep רחב (`build`, בלי `(`) אמין יותר.
 **DoD**: build נקי; המחרוזת `v{version} ({sha})` מופיעה ב-`build/` (לא `undefined`).
 
 ### Commit 3 — B: i18n + הצגה בהגדרות (testing: manual + browser)
@@ -216,7 +237,7 @@ pnpm lint:i18n                                        # אין עברית קשי
 
 | בדיקה | איך | Commit |
 |------|-----|--------|
-| `bump-version.mjs`: arg חסר→exit1, minor מעלה root+release זהה | smoke + git checkout | 1 |
+| `bump-version.mjs`: arg חסר→exit1; `minor` מעלה root+release זהה; `minor <pkg>` מעלה גם חבילה עצמאית | smoke + git checkout | 1 |
 | `version.name` מוטמע ב-build (לא undefined) | grep build/ | 2 |
 | typecheck + build + lint:i18n ירוקים | פקודות §0 | כל commit |
 | הגרסה מוצגת חי בתחתית ההגדרות (he+en) | browser | 3 |
@@ -238,6 +259,9 @@ pnpm lint:i18n                                        # אין עברית קשי
 
 - **Q: רמת bump של ה-slice הזה?** A: **לא מוכרע כאן.** ה-bump קורה בטקס-המיזוג; הרמה נקבעת בזמן merge.
 - **Q: root או release כמקור-אמת?** A: **root**. release מסונכרן מ-root ב-bump (החבילה המפורסמת).
+- **Q: למה ה-script מטפל ב-`[pkg...]` ולא רק root?** A: הכרעת מרדכי (finding אביגיל #1) — `AGENTS.md:64`
+  מתעד `<level> [pkg...]` עם bump עצמאי פר-חבילה. כשהמימוש זול והחוזה מתועד — מממשים אותו, לא מחלישים את
+  התיעוד. release מסונכרן ל-root; `[pkg...]` (core/frontend/backend) עולות עצמאית.
 - **Q: למה לא לגעת בשם החבילה (frontend-v2)?** A: ה-rename הוא `slice-frontend-rename-cutover` נפרד — חפיפה=קונפליקט.
 - **Q: אילוץ npm (release פורסם ב-0.1.0)?** A: root כבר 0.1.0; bump הבא ≥0.2.0 > הקיים → תקין.
 
