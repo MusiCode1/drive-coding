@@ -64,8 +64,17 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
   return {
     ...actual,
     createAcpClient: vi.fn().mockImplementation(
-      (_transport: unknown, listener: (n: SessionNotification) => void) => {
-        capturedListener = listener
+      (
+        _transport: unknown,
+        callbackOrCallbacks:
+          | ((n: SessionNotification) => void)
+          | { onUpdate: (n: SessionNotification) => void; onExtNotification?: unknown },
+      ) => {
+        // ─── slice FE-normalization: תמיכה בשתי חתימות ───
+        capturedListener =
+          typeof callbackOrCallbacks === "function"
+            ? callbackOrCallbacks
+            : callbackOrCallbacks.onUpdate
         return Promise.resolve(mockClient)
       },
     ),

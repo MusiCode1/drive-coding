@@ -32,9 +32,15 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
     ...actual,
     createAcpClient: vi.fn(function mockCreateClient(
       _transport: unknown,
-      callback: (notification: unknown) => void,
+      callbackOrCallbacks:
+        | ((notification: unknown) => void)
+        | { onUpdate: (n: unknown) => void; onExtNotification?: unknown },
     ): Promise<AcpClient> {
-      capturedOnSessionUpdate = callback
+      // ─── slice FE-normalization: תמיכה בשתי חתימות ───
+      capturedOnSessionUpdate =
+        typeof callbackOrCallbacks === "function"
+          ? callbackOrCallbacks
+          : callbackOrCallbacks.onUpdate
       return Promise.resolve({
         newSession: mockNewSession,
         prompt: vi.fn().mockResolvedValue(undefined),

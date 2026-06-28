@@ -1,3 +1,19 @@
+## 2026-06-29 — FE-normalization — Phase 1: ExtClient facade + capability ingestion ב-vm + gating
+
+**Commit 1 — integration:**
+- `packages/frontend/src/lib/adapters/ext.ts`: ExtClient facade — `createExtClient(client)` מחזיר `{ setThinkingTokens(sessionId, n) }`. מאמת params דרך `parseExtParams` (ArkType), אחר כך `client.extMethod("_drive/setThinkingTokens", ...)`.
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+  - import type NormalizedCapabilities מ-subpath `./types` (pure, ללא spawn-core).
+  - הוספת fields: `#capabilities: NormalizedCapabilities | null = null`, `#ext: ExtClient | null = null`.
+  - getters ציבוריים: `capabilities`, `supports` (all-false כשאין caps), `ext`.
+  - `#onExtNotification` handler: על `_drive/capabilities` → `#capabilities = params`.
+  - עדכון 3 call-sites של `createAcpClient` → `{ onUpdate, onExtNotification }` + `createExtClient(client)`.
+  - `#cleanup`: ניקוי `#ext` ו-`#capabilities`.
+- עדכון 4 test mocks לתמיכה בשתי חתימות (backward-compat).
+- `packages/frontend/src/lib/adapters/ext.test.ts`: 3 integration tests (valid, null, invalid→throw).
+- `packages/frontend/src/lib/view-models/agent-session.capabilities.test.svelte.ts`: 6 tests (null before attach, all-false supports, caps loaded from extNotification, thinkingTokens gating, cleanup clears caps).
+- typecheck: 0 errors. lint: נקי על קבצים חדשים. tests: 380/380 passed. vite build: ירוק (subpath ./types מנתק spawn-core בהצלחה).
+
 ## 2026-06-29 — FE-normalization — Phase 0: AcpClient.extMethod + extNotification + ./types subpath
 
 **Commit 0 — logic:**
