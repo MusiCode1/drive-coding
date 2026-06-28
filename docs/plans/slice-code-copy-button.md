@@ -1,7 +1,7 @@
 # Slice C — code-copy-button — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: מאושר (אביגיל READY — סבב 2, 0 findings); gated על merge של A
+> **סטטוס**: **הושלם** — 2 commits על `slice/code-copy-button` (`f14ec41` + `8957af3`); typecheck+371 tests ירוקים; ממתין ל-calev GO + merge מרדכי
 > **Complexity**: 6/10 (verifier: light — אך **גוטשת streaming** דורשת בדיקה חיה)
 > **תלות**: slice A (`MarkdownContent.svelte`). depends_on: [A]. base=**dev לאחר מיזוג A**. ⚠️ gated על A.
 
