@@ -1,3 +1,25 @@
+## 2026-06-28 — CUT-3b-ii-be-rewire — Commit 2 (DELETE bridge-manager + F-1 regression update)
+
+### מה בוצע?
+
+**Phase 2 — מחיקת bridge-manager.ts + עדכון F-1 regression tests:**
+
+- `packages/backend/src/acp/bridge-manager.ts` — נמחק (הלוגיקה כולה ב-connectSpawn/connection-registry).
+- `packages/backend/src/acp/bridge-manager.runtime.test.ts` — נמחק (getRuntimeInfo tests כבר ב-connection-registry.test.ts).
+- `packages/backend/tests/bridge-manager.test.ts` — נמחק (ייבא createBridgeManager שנמחק).
+- `packages/backend/tests/bridge-writestdin.test.ts` — נמחק (ייבא createBridgeManager שנמחק).
+- `packages/backend/tests/bridge-failure-modes.test.ts` — עודכן: "at bridge-manager layer" הומר ל-"at connection-registry layer (CUT-3b-ii)"; אותם cases (ENOENT/no-pid/async-error/exit) עכשיו דרך registry.connect + registry.close.
+
+### חריגות
+- http-agents.ts: לא שונה — duck-typing עם `bridgeManager?: { getRuntimeInfo }` ממשיך לעבוד; connectionRegistry מספק getRuntimeInfo.
+- bridge-failure-integration.test.ts: failure pre-existing (status-code bug, documented בroadmap track F).
+
+### בדיקות
+- typecheck: ירוק (0 errors)
+- tests: 1003 pass, 15 skipped, 3 failures — כולן pre-existing
+
+---
+
 ## 2026-06-28 — CUT-3b-ii-be-rewire — Commit 1 (orchestrator + ws-agent + server rewire)
 
 ### מה בוצע?
