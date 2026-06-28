@@ -1,3 +1,38 @@
+## 2026-06-28 — CUT-1-dep-repoint — 3 Commits (dependency repoint: provider-contract → @drive-coding/provider)
+
+### מה בוצע?
+
+**Commit 1 (b98321f)** — package.json ×3 (core/backend/frontend):
+- הסרת `provider-contract: git+https://...#main`
+- הוספת `@drive-coding/provider: workspace:*`
+- `pnpm install` רץ, workspace resolution תקין.
+
+**Commit 2 (5ebe669)** — repoint 4 שימושים + טסטי FE:
+- `backend/agent-orchestrator.ts:26` describeCrash → `@drive-coding/provider/spawn`
+- `core/ports.ts:3` BridgeCrashInfo → `@drive-coding/provider/spawn`
+- `frontend/agent-session.svelte.ts:20` createAcpClient+AcpClient → `@drive-coding/provider/client`
+- `frontend/ws-transport.ts:19` AcpTransport → `@drive-coding/provider/transport`
+- טסטי FE: vi.mock + type + dynamic import ×3 קבצים → `/client`
+- Comments עודכנו (agent-session.svelte.ts:9, restore-config.test.svelte.ts:13)
+
+**Commit 3 (build-gate)** — אימות vite build (DoD#3):
+- `pnpm --filter @drive-coding/frontend-v2 build` — ירוק (1192 modules, 11.57s)
+- הסיכון ההיסטורי (barrel-break) לא התממש — subpaths מנועלים כמו שצריך
+
+### בדיקות
+
+- DoD#1: `grep provider-contract packages/*/src packages/*/package.json` = 0 תוצאות
+- DoD#2: `pnpm typecheck` ירוק
+- DoD#3: `pnpm --filter @drive-coding/frontend-v2 build` ירוק (vite, 1192 modules)
+- DoD#4: `pnpm test` — 980/996 passed (2 pre-existing: bridge-failure[known-ENOENT-201], https-serve[bun-windows-path])
+- DoD#6: `@drive-coding/provider: workspace:*` ב-3 package.json, אין git+
+- DoD#7: diff — imports/package.json/test-mocks בלבד
+
+### חריגות
+
+- `svelte-kit sync` נדרש לפני הרצת FE tests (יוצר `.svelte-kit/tsconfig.json`). רץ אוטומטית ב-`pnpm test` דרך pre-build hook.
+- 2 pre-existing test failures לא קשורים ל-CUT-1: bridge-failure-integration (known, roadmap) + https-serve (bun.exe Windows path).
+
 ## 2026-06-28 — slice-image-paste — Commits 0–3 (פיגום רדום, IMAGE_INPUT_ENABLED=false)
 
 ### מה בוצע?
