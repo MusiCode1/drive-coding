@@ -1,5 +1,41 @@
 # Decisions — voice-acp
 
+## 2026-06-28 — code-syntax-highlight (D): צביעת-קוד ב-pass-3b מבודד + merge (v0.5.0)
+
+> Slice D מתוך Markdown-UX batch (req #7). merge `05fe3b6`. brief: `docs/plans/slice-code-syntax-highlight.md`.
+
+### רציונל
+צביעת בלוקי-קוד **בלי לשבור את מודל-האבטחה**. `MARKDOWN_ALLOW` נקי בכוונה מ-`span`/`style`/`class`
+(הגנה מ-overlay-phishing דרך prompt-injection). כל highlighter מוסיף markup → חייב מסלול מבודד.
+הדפוס כבר מוכח עבור KaTeX (sentinels → allowlist נדיב מבודד); הוספנו **pass-3b** צר יותר לקוד:
+`CODE_ALLOW = pre/code/span + class בלבד` (בלי style). הבלוק **כולו** נכנס ל-fragment המבודד (לא רק
+ה-spans) כי `MARKDOWN_ATTR` לא כולל `class` — אילו העוטף נשאר בנתיב-המרקדאון, pass-2 היה מוחק את
+ה-`class="hljs"` וה-theme היה נשבר.
+
+### הכרעות
+- **highlight.js** (class-only, סינכרוני, SSR-safe) — נבחר. **Shiki נדחה** (inline-style מתנגש במודל,
+  async, WASM כבד). Prism נדחה (hljs נקי יותר ב-node).
+- **bundle control**: `highlight.js/lib/core` + רישום ידני של 16 שפות (לא ה-full bundle ~מאות KB).
+- שפה לא-מוכרת/חסרה → **plain** (אין auto-detect אגרסיבי). inline code נשאר מונוכרום.
+- theme פר-פלטה: `.hljs-*` → CSS vars (`--hl-*`), מוגדר תחת כל 8 הפלטות.
+
+### ממצאי כלב (calev-heavy) + שינויי-כיוון
+- **F1 [BLOCKING]** — סבב ראשון NO-GO: בלוק-קוד **לפני** KaTeX איבד את עוטף `<pre><code class="hljs">`.
+  שורש: סיווג fragments לפי **boundary-by-index** (`slice(katexCount)`) — `storeCodePlaceholder` לא עדכן
+  `katexCount`, אז code-before-math סווג בטעות כ-katex-fragment ועבר `KATEX_ALLOW` (בלי pre/code).
+  **תוקן ב-`fragmentKinds: ("katex"|"code")[]`** מקביל ל-`currentMap` (סיווג לפי kind בפועל, לא הנחת-סדר)
+  + 3 טסטי-רגרסיה שבודקים `<pre>` שורד (הטסט הישן תת-אימת — בדק spans+katex בלבד). זה גם ייתר את F2.
+- **calev-heavy re-run → GO 10/10**. אבטחה ללא רגרסיה (injection ב-code יוצא escaped גם בנתיב-הכשל).
+- **F3** (cosmetic, לא חוסם): בלוק-בלי-שפה מקבל `class="hljs"` ריק — לא מזיק (אין CSS על `.hljs` ריק).
+- **residual**: קריאות-צבעים-חיה פר-פלטה אומתה ע"י המשתמשת בדפדפן (preview build, 2 פלטות) — סגור.
+
+### שינוי-סדר merge (B-לפני-D → D-ראשון)
+ה-brief המקורי קבע "B לפני D" (שניהם נוגעים `markdown.ts`) כשהיו **שניהם לא-מבוצעים**. בפועל D היה
+**גמור-ואומת** ו-B/C לא התחילו. בנוסף התגלה ש-**C גם נוגע ב-`MarkdownContent.svelte`** (כמו D), לא רק
+B ב-`markdown.ts`. לכן הפכתי: **D מוזג ראשון**, ו-B+C ירוצו כ-executors טריים מול dev+D הסופי
+(B=`markdown.ts`, C=`MarkdownContent.svelte`+קובץ-חדש; לא חולקים קובץ זה-עם-זה → parallel-safe). זה מזעֵר
+פתרון-קונפליקטים ומונע re-resolution של השכתוב-הכבד של D מול תוספת זעירה של B.
+
 ## 2026-06-28 — playback-run-control: תוכנית בקרת השמעה+ריצה+פלייליסט (briefs, טרם בוצע)
 
 > תכנון מרדכי. מסמך-אב: `docs/plans/playback-run-control-roadmap.md`. **אין קוד עדיין.**

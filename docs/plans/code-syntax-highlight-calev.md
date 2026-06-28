@@ -2,19 +2,30 @@
 slice: code-syntax-highlight
 verifier: calev-heavy
 model: opus
-verdict: NO-GO
+verdict: GO
 findings_total: 3
-findings_blocking: 1
-dod_pass: 8
+findings_blocking: 0
+dod_pass: 10
 dod_total: 10
 date: 2026-06-28
 branch: slice/code-syntax-highlight
-head: 0f22d5c
-base: slice/markdown-content-unify @ de91ac6
-env: Windows dev box — runtime verified via headless jsdom render (pipeline is pure/SSR-safe); no linux-gui browser available
+head: f83869a
+base: dev (merged a20fbda)
+env: Windows dev box — runtime verified via headless jsdom render (pipeline is pure/SSR-safe); live per-palette colors confirmed by user in preview build
+re_run: true
+prior_verdict: NO-GO (head 0f22d5c) — F1 blocking
 ---
 
-# כלב-heavy — code-syntax-highlight
+> **⚠️ RE-RUN (head `f83869a`) → GO 10/10.** הסבב הראשון (head `0f22d5c`) החזיר NO-GO על F1
+> (בלוק-קוד לפני KaTeX איבד את עוטף `<pre><code>`). F1 תוקן ב-`b01cfd1` (`fragmentKinds[]` +
+> 3 טסטי-רגרסיה); calev-heavy רץ שוב על `f83869a` → **GO**: טבלת-ההוכחה האמפירית של F1 כולה ירוקה
+> (כל בלוק שומר `<pre><code class="hljs">` בכל סדר), אבטחה ללא רגרסיה, 359/359 טסטים, typecheck 0,
+> SSR build עובר. residual (צבעים-חיים פר-פלטה) אומת ע"י המשתמשת בדפדפן. F3 (class="hljs" ריק) cosmetic נשאר.
+> מוזג ל-dev ב-`05fe3b6` (release v0.5.0). הסעיף שלהלן הוא **הדוח המקורי (NO-GO)** — נשמר כהיסטוריה.
+
+---
+
+# כלב-heavy — code-syntax-highlight (סבב 1 — היסטוריה)
 
 ## Verdict: NO-GO — 1 blocking finding (regression), 2 minor
 
