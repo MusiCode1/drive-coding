@@ -24,6 +24,601 @@
 
 ללא סטיות מה-brief. approach: manual (browser smoke), כפי שנקבע ב-brief §4.
 
+---
+
+## 2026-06-28 — active-processes-icon-actions — Commit 5: בועת-אישור "בטוח?" על כפתור ה-פח
+
+### מה בוצע?
+
+- עטף את כפתור ה-Kill ב-`<div class="kill-wrap">`.
+- הוסיף `{#if confirmingId === agent.id}<span class="kill-confirm-tip" role="status">...` — בועה מותנית שמופיעה בלחיצה ראשונה.
+- מנצל את `t("connect.agents.killConfirm")` הקיים ("בטוח?") — אין מפתח i18n חדש.
+- CSS: `.kill-wrap { position:relative }`; `.kill-confirm-tip` = absolute מעל הכפתור (bottom:calc(100%+5px), inset-inline-end:0), רקע אדום-עמום, `white-space:nowrap`, `z-index:20`, אנימציית `tip-pop` (scale/opacity, 0.12s).
+- `handleKill`/timeout/`confirmingId` ללא שינוי.
+
+### בדיקות
+
+- typecheck: 0 errors.
+- lint:i18n: ✓ (אין עברית בקוד).
+- build: ✓ (52.95s).
+- אימות ויזואלי: בידי המשתמשת על :4010.
+
+### סטיות
+
+אין. מפתח i18n קיים בלבד, flow קיים לא נגע.
+
+---
+
+## 2026-06-28 — active-processes-icon-actions — Commit 4: שורת הנתיב מוזגת לשורת ה-meta
+
+### מה בוצע?
+
+- מחק `<div class="agent-cwd">` הנפרד מ-`ActiveProcessesPanel.svelte`.
+- העביר `<span class="cwd-full">` לתוך `<div class="agent-meta">` כאלמנט ראשון (בצד שמאל ב-RTL).
+- קבוצת session/created/pid עטופה ב-`<span class="meta-right">` עם `flex-shrink:0` (נשאר בצד ימין).
+- `.agent-meta` הפך ל-flex row: `.cwd-full` עם `flex:1; min-width:0` ממלא שמאל; `.meta-right` נשאר ימין.
+- `.cwd-full` שומר על `direction:rtl; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap` — ellipsis בהתחלה, זנב הנתיב נראה.
+- CSS: הסרת `.agent-cwd`; הוספת `.meta-right`; עדכון `.agent-meta` ל-flex-direction:row.
+
+### בדיקות
+
+- typecheck: 0 errors (pnpm typecheck).
+- lint:i18n: ✓ (bash scripts/lint-no-hebrew-in-code.sh).
+- build: ✓ (pnpm build מ-packages/frontend, 60s).
+- אימות ויזואלי: בידי המשתמשת על :4010.
+
+### סטיות
+
+אין. הקיצוץ מהסוף ו-ellipsis בהתחלה נשמרו כמו בשורה הנפרדת הקודמת.
+
+---
+
+## 2026-06-27 — slice-content-viewer — 4 commits
+
+### מה בוצע?
+
+**Commit 0 (manual):** i18n keys — 3 מפתחות חדשים (`contentViewer.title/expand/close`) ב-`keys.ts`, `he.ts`, `en.ts` — בבלוקים תוספתיים בסוף כל קובץ.
+
+**Commit 1 (manual):** `ContentViewerVM` + context wiring.
+- קובץ חדש `view-models/content-viewer.svelte.ts`: `ViewerPayload` (discriminated union: markdown|image) + `ContentViewerVM` class ($state payload, get open, show/close).
+- `context.ts`: ייבוא type + בלוק תוספתי `getContentViewer/setContentViewer` בסוף.
+- `+layout.svelte`: import `ContentViewerVM` + instance חדש + `setContentViewer(contentViewer)` ליד `setModals`.
+
+**Commit 2 (manual):** `ContentViewerDialog.svelte` — רכיב leaf חדש.
+- bits-ui Dialog fullscreen (max-w-3xl, max-height:100dvh).
+- Header: כותרת דינמית (payload.title || contentViewer.title) + XIcon close.
+- Body: branch markdown → `{@html renderMarkdown(text)}` / image → `<img src>`.
+- Security: renderMarkdown (DOMPurify two-pass). תמונה רק דרך `<img>` (לא {@html}).
+
+**Commit 3 (manual+browser smoke):** mount + triggers wiring.
+- `AppShell.svelte`: import + `<ContentViewerDialog />` ליד FolderPickerDialog.
+- `+page.svelte` (connect): אותו pattern (לא עטוף ב-AppShell).
+- `MessageBubble.svelte`: כפתור expand (Maximize2Icon) → `viewer.show({kind:"markdown",...})`.
+- `ToolBubble.svelte`: (א) text → expand ב-tool-text-wrapper; (ב) image → עטיפת `<img>` ב-button → lightbox.
+- CSS: `tool-text-wrapper / tool-expand-btn / tool-image-btn`.
+
+### בדיקות
+
+- typecheck: 0 errors (כל 4 commits)
+- lint:i18n: ✓ (אין עברית בקוד)
+- frontend tests: 319/319 ירוקים
+- browser smoke (port 5199, mock=tool-spill, mock=salary-attendance):
+  - MessageBubble: כפתור Expand מופיע → dialog "View" נפתח עם markdown מרונדר
+  - ESC + X + backdrop → סוגרים dialog
+  - 0 console errors לאורך כל הבדיקה
+
+### סטיות
+
+אין. ToolBubble image lightbox לא נבדק חי (אין fixture עם tool image) — נתיב קוד קיים, browser smoke הוגבל ל-markdown.
+
+---
+
+## 2026-06-28 — slice-https-local — 2 commits
+
+### מה בוצע?
+
+**Commit 0 (TDD):** `packages/backend/src/tls.ts` + `tests/tls.test.ts` + `selfsigned@^2` dependency.
+- `resolveTls(env)`: מפענח `DRIVE_CODING_HTTPS` (JSON ב-env) → `TlsMaterial | null`.
+- branches: undefined/false → null; JSON שבור → null+warn; `{key,cert}` paths → readFileSync; `true` → self-signed idempotent (state-dir/tls/).
+- self-signed: CN=localhost, 825 days, SAN: DNS:localhost + IP:127.0.0.1, 2048-bit RSA, sha256.
+- 7 טסטים ירוקים (TDD: RED → GREEN).
+
+**Commit 1 (integration):** `packages/backend/src/server.ts` — conditional HTTPS serve.
+- הוסף `import { createServer as httpsCreateServer } from "node:https"` + `import { resolveTls }`.
+- conditional: `tls ? serve({..., createServer: httpsCreateServer, serverOptions: tls}) : serve({..., port})`.
+- typing: `httpServer: ServerType` (מ-`@hono/node-server`) — TS resolved ללא cast.
+- `httpServer.on("upgrade", ...)` נשמר ללא שינוי (עובד על https.Server).
+- integration tests: HTTP 4090 + HTTPS 4091 — 3 טסטים ירוקים.
+- DoD #9: בינארי נבנה, HTTPS status 200 (selfsigned עובד ב-bun --compile).
+- phase-check ע"י calev בוצע.
+
+### בדיקות
+
+- TDD: 7 טסטים — ירוקים.
+- Integration: 3 טסטים — ירוקים.
+- Typecheck: ירוק לאורך כל ה-commits.
+- lint:i18n: ✓.
+- DoD #9 (בינארי HTTPS): ✓ STATUS: 200.
+
+### סטיות
+
+- ה-log message "Starting — http://localhost:PORT" לא עודכן ל-https (לא בscope של הבריף).
+- bun path: `D:\ProgramsAndApps\Bun\bin\bun.exe` (לא `Bun\bun.exe`).
+
+---
+
+## 2026-06-27 — slice-config-unified — 4 commits
+
+### מה בוצע?
+
+**Commit 0 (TDD):** `packages/core/src/config/schema.ts` + `resolve.ts` + `tests/config-resolve.test.ts`.
+- `DriveCodingConfig` ArkType schema (כל השדות optional). `resolveConfig(layers)` — pure, neverthrow Result.
+- Merge rules: scalar/array — higher layer wins; log/voice/https — wholesale override; cliSpecs — per-key merge.
+- `packages/core/package.json` — הוסף `"./config/*"` ל-exports.
+- 15 טסטים ירוקים (TDD).
+
+**Commit 1 (TDD):** `packages/core/src/config/env-file.ts` + `tests/env-file.test.ts`.
+- `parseEnvFile(text)` — pure parser: #comments, empty lines, `=`-in-value, quotes, CRLF.
+- 13 טסטים ירוקים (TDD).
+
+**Commit 2 (integration):** `packages/backend/src/config/load-config.ts` + `tests/load-config.test.ts` + bin wiring.
+- `loadConfig({argv, env})` — IO shell: file/env/flag layers, envPatch map.
+- `bin/drive-coding.ts` — `--env-file` (non-overriding), `loadConfig`, `envPatch` → `process.env`, HELP updated.
+- חדש: `--config`, `--config-json`, `--env-file`, `--log-level`, `--elevenlabs-key`, `--gemini-key`.
+- 12 טסטים ירוקים (integration). DoD #8/#9 אומתו ידנית: BE עלה, `/api/agents` 200.
+
+**Commit 3 (integration):** `packages/backend/src/acp/cli-config-file.ts` + טסטים.
+- `loadCliSpecsOverride`: ענף `CLI_SPECS_JSON` לפני ענף הקובץ. merge: file=base, inline-JSON overlay per-key (inline גובר).
+- 3 טסטים חדשים (CLI_SPECS_JSON only, merge over file, broken JSON ignored).
+- `cli-config.ts` לא שונה — specificity per-CLI אורתוגונלי (D7). טסט #4 נשאר ירוק.
+
+### בדיקות
+
+- TDD: 28 טסטים חדשים (config-resolve + env-file) — ירוקים.
+- Integration: 24 טסטים חדשים (load-config + cli-config-file) — ירוקים.
+- Typecheck: ירוק לאורך כל ה-commits.
+- lint:i18n: ✓ (כל הקוד באנגלית).
+- 2 כישלונות timeout pre-existing (bridge-manager/bridge-failure-modes) — לא קשורים ל-slice.
+
+### סטיות
+
+- אין סטיות מהבריף. cli-config.ts לא שונה כמתוכנן (D7 הוכרע).
+- DoD #9 (GET /api/agents 200) — אומת ידנית על פורט 4011 (4000/4002/4003 תפוסים).
+
+---
+
+## 2026-06-27 — slice-binary-core — 5 commits
+
+### מה בוצע?
+
+**Commit 0 (TDD):** `packages/backend/src/binary.ts` — `isBinary()` gate.
+- `declare const __IS_BINARY__: boolean | undefined` + `typeof` guard.
+- `packages/backend/tests/binary.test.ts` — TDD: מאמת isBinary()=false בdev/test.
+
+**Commit 1 (integration):** `packages/core/src/log/index.ts` — pino-pretty stream ישיר.
+- `transport:{target:"pino-pretty"}` הוחלף ב-`import pretty from "pino-pretty"` + `pino({level}, pretty({..., destination}))`.
+- ללא worker/thread-stream — עובד בבינארי. אחיד dev+binary.
+
+**Commit 2 (integration):** plugin extraction.
+- `backend/src/plugin-extract.ts`: `ensurePluginExtracted()` — בינארי מחלץ `.ts` asset מ-$bunfs ל-getStateDir()/plugins/ (hash check).
+- `backend/src/plugin-config.ts`: pluginPath = isBinary() ? ensurePluginExtracted() : path.resolve(...).
+- `@ts-expect-error` על `import with {type:"file"}` (Bun asset — TS לא מבין, runtime OK).
+- `.gitignore`: מסתיר tsc output של backend/plugins/.
+
+**Commit 3 (integration):** codegen + serve-from-memory + bin gate.
+- `backend/src/fe-manifest.gen.ts`: stub ריק committed (FE={}) — typecheck עובד בdev.
+- `backend/src/server.ts`: isBinary() && !FE_STATIC_DIR → dynamic import manifest → Bun.file(p). SPA fallback עם guard ל-noUncheckedIndexedAccess.
+- `backend/src/bin/drive-coding.ts`: FE cascade מוגן ב-!isBinary().
+- `release/scripts/build-binary.mjs`: Step 1 FE build, Step 2 codegen (116 assets), Step 3 bun --compile, Step 4 שחזור stub.
+
+**Commit 4 (manual):** build-binary.mjs — תיקון trailing commas + Step 4 restore stub + אימות ידני.
+- Binary נבנה: dist/drive-coding.exe (~220MB עם assets).
+- Manual: GET /=200+HTML, /_app/env.js=200, /api/agents=200, WS echo=OK, FE_STATIC_DIR override=OK.
+
+### בדיקות
+
+- TDD: 1 טסט (binary.test.ts) — ירוק.
+- Integration: 216/231 טסטים ב-backend (2 pre-existing: cli-config Windows/npx, lint-no-hebrew-test).
+- Typecheck: ירוק לאורך כל ה-commits.
+- lint:i18n: ✓.
+- Manual verification: בינארי רץ מ-$TEMP, FE/API/WS עובדים.
+
+### סטיות
+
+- Plugin extraction: `ensurePluginExtracted()` נקראת רק ב-spawn opencode — לא אומתה ב-manual כי opencode חסום ב-Windows. DoD #7 יאומת ע"י calev-heavy.
+- `@ts-expect-error` על `import with {type:"file"}` — Bun-specific, TS לא תומך. runtime OK (אומת בspike).
+- build-binary.mjs: `walkDir` function parameter `base` לא בשימוש (biome info, לא error).
+
+---
+
+## 2026-06-27 — slice-binary-core — תיקון DoD#7 (NO-GO calev-heavy)
+
+### מה בוצע?
+
+**תיקון plugin extraction (Commit 5 — fix):** שינוי מ-asset import (`import ... with {type:"file"}`) ל-inline source string (codegen).
+
+**שורש הבעיה:** `import "../plugins/prompt-injector.ts" with {type:"file"}` — קובץ `.ts` מעל ה-entry (`../`) מקבל `$bunfs` name עם `../` שיוצא מחוץ ל-root → `readFileSync` זורק ENOENT בבינארי (ספייק 5, §0 ב-brief).
+
+**3 קבצים שונו:**
+
+1. **`backend/src/plugin-src.gen.ts`** (חדש) — stub committed: `export const PROMPT_INJECTOR_SRC = ""`. Codegen ב-build-binary.mjs דורס עם תוכן אמיתי לפני bun --compile, stub משוחזר אחרי.
+
+2. **`backend/src/plugin-extract.ts`** — הוסר `import _pluginSrcRaw from "../plugins/prompt-injector.ts" with {type:"file"}` + `@ts-expect-error` + cast. הוחלף ב-`import { PROMPT_INJECTOR_SRC } from "./plugin-src.gen.js"`. בענף `isBinary()`: `writeFileSync(destPath, PROMPT_INJECTOR_SRC, "utf8")` במקום `copyFileSync(pluginSrc, destPath)`. Hash check על `PROMPT_INJECTOR_SRC` (string).
+
+3. **`build-binary.mjs`** — הוסף Step 2b: `readFileSync(plugins/prompt-injector.ts)` → כתוב `plugin-src.gen.ts` עם `export const PROMPT_INJECTOR_SRC = ${JSON.stringify(content)}` לפני bun --compile. Step 4b: שחזור stub של plugin-src.gen.ts אחרי.
+
+### בדיקות
+
+- `pnpm typecheck` — ירוק (stub `""` + import תקין).
+- `pnpm build` — `node packages/release/scripts/build-binary.mjs` הצליח: Step 2b כתב 3286 chars, Step 4b שחזר stub.
+- **אימות ידני DoD#7:** הרצת הבינארי מ-/tmp (PORT=4010), POST /api/agents {cliKind:"opencode"} — `~/.config/drive-coding/plugins/prompt-injector.ts` **נוצר עם תוכן** (3351 bytes, import type + plugin logic) — **אין ENOENT**.
+- `git status` נקי (stub משוחזר, dist/ ב-gitignore).
+
+### סטיות
+
+- opencode spawn נשאר "starting" (לא ירוק) ב-Windows — כצפוי (opencode חסום ב-Windows per memory), אבל שגיאת השורש **שינתה** מ-ENOENT prompt-injector ל-בעיה אחרת בcalev-heavy (spawn outcome). החילוץ עצמו עובד.
+
+---
+
+## 2026-06-27 — slice-state-dir — Commit 0 (TDD): getStateDir + ensureStateSubdir
+
+### מה בוצע?
+
+**קובץ חדש:** `packages/backend/src/paths.ts` עם `getStateDir()` ו-`ensureStateSubdir()`.
+- `getStateDir()`: מחזיר `<getHomeDir()>/.config/drive-coding` — מאוחד עם `cli-config-file.ts`.
+- `ensureStateSubdir(...segments)`: `mkdirSync(recursive)` + מחזיר נתיב. idempotent.
+- ייבוא `getHomeDir` מ-`delivery/http-options.js` (מינימלי, לא מזיז קוד קיים).
+
+**קובץ חדש:** `packages/backend/tests/paths.test.ts` — 5 טסטי TDD:
+- getStateDir עם mock HOME (POSIX), עם mock USERPROFILE (Windows)
+- ensureStateSubdir: יצירה + נתיב נכון, idempotent, nested segments
+
+### בדיקות
+
+- TDD: 5 טסטים חדשים — ירוקים
+- typecheck: 0 errors
+- lint (biome על קבצים חדשים): נקי
+- lint:i18n: ✓
+- pre-existing failures בbackend (bridge-manager, cli-config): לא נגרמו על ידנו
+
+### סטיות
+
+- הטסטים כתובים עם import סטטי (לא dynamic + resetModules) כי `getHomeDir` קורא `process.env` בזמן ריצה — `vi.stubEnv` מספיק. mock של `node:child_process` הוסף (http-options מפעיל execFileSync בimport).
+
+## 2026-06-27 — slice-state-dir — Commit 1 (integration): חיווט server.ts + cli-config-file
+
+### מה בוצע?
+
+**server.ts:** 4 החלפות `path.resolve("data/...")` → `ensureStateSubdir(...)`:
+- wire-recordings, cache, recordings, cache/proxy
+- הוסר `import * as path` (לא בשימוש יותר)
+- הוסף `import { ensureStateSubdir } from "./paths.js"`
+
+**cli-config-file.ts:** finding avigail #1 + #2:
+- הוסר `import { homedir } from "node:os"` (finding #1)
+- `join(homedir(), ".config", "drive-coding", "cli-specs.jsonc")` → `join(getStateDir(), "cli-specs.jsonc")` (finding #1+#2)
+- נשאר `import { join } from "node:path"` (משמש ב-resolveCliSpecsPath)
+- הוסף `import { getStateDir } from "../paths.js"`
+- biome auto-fix: תיקון CRLF בקובץ (safe fix)
+
+**cli-config-file.test.ts — עדכון finding avigail #2:**
+- הוסף `vi.mock("node:child_process")` (http-options מפעיל execFileSync דרך paths.ts)
+- שינוי ייבוא: `resolveCliSpecsPath` סטטי (לא dynamic; הפונקציה לא memoized)
+- הטסט ה"ברירת-מחדל" עודכן: `resolveCliSpecsPath({})` עם `vi.stubEnv("HOME", actualHome)` במקום השוואה ל-`os.homedir()` ישירות
+
+### בדיקות
+
+- typecheck: 0 errors
+- lint:i18n: ✓
+- pnpm test (backend): 489 pass, 3 fail (pre-existing: bridge-manager, bridge-failure-modes, cli-config.test)
+- paths.test.ts: 5/5 ירוקים
+- cli-config-file.test.ts: 8/8 ירוקים
+
+### סטיות
+
+- `join` מ-`node:path` נשאר ב-cli-config-file.ts (brief אמר להסיר, אבל משמש ב-`resolveCliSpecsPath` לביצוע `join(getStateDir(), "cli-specs.jsonc")` — cross-platform)
+- cli-config-file.ts נתקן גם מ-CRLF (biome safe fix, לא חלק מה-brief — side effect מינורי)
+## 2026-06-27 — slice/V4a-unify — Commit 2: BubblePlayer → sink + resolveTts; מחיקת playAgentText
+
+### מה בוצע?
+
+**`packages/frontend/src/lib/view-models/bubble-player.svelte.ts`**:
+- הוסף sink משלו: `readonly #sink = new RoutingAudioSink(...)` + `#segId: string | null = null`
+- ענף TTS (message/thought): מחליף `playAgentText` ב-`resolveTts` + `#sink.prepareSegment` + `#sink.play`
+- `<audio>` (`audioEl`) נשאר — נשמר לענף user-recording (`playUserRecording` אין לו signal)
+- `cleanup()`: הוסף `this.#segId = null` בנוסף לאיפוסים הקיימים
+- `stop()`: שני מנגנוני-עצירה — `#sink.cancel(#segId)` לTTS + `#audioEl.pause()` לrecording (אין לו signal)
+
+**`packages/frontend/src/lib/adapters/voice/play-bubble.ts`**:
+- נמחקה `playAgentText` (צרכן יחיד = BubblePlayer, כלל #5)
+- נמחק import של `elevenLabsTts` (לא נדרש עוד)
+- עודכן docstring: מתאר נתיב `<audio>` לrecording בלבד, TTS עבר ל-BubblePlayer→sink
+
+### בדיקות
+
+- `pnpm --filter frontend-v2 typecheck`: ✅ 0 errors
+- `pnpm lint:i18n`: ✅ No Hebrew in code
+- `npx vitest run`: 807/808 ✅ (pre-existing failure: bridge-failure-integration)
+- `pnpm --filter @drive-coding/frontend-v2 build`: ✅ built in ~19s
+- DoD: `grep -rn "playAgentText" packages/frontend/src` → **0** ✅
+- DoD: `grep -rn 'ttsProvider === "google"' packages/frontend/src` → **רק** tts-resolve.ts ✅
+
+### סטיות
+
+אין. runtime verification מתבצע ע"י calev בסיום.
+
+---
+
+## 2026-06-27 — slice/V4a-unify — Commit 1: Speaker → resolveTts (zero-behavior-change)
+
+### מה בוצע?
+
+**`packages/frontend/src/lib/view-models/speaker.svelte.ts`**: החלפת 3 שורות inline ב-`resolveTts(this.#settings.ttsProvider, this.#settings.voiceId)`. הוסרו imports ישירים של `elevenLabsTts` ו-`geminiTts`. שאר הקוד (textHash, synthesize, prepareSegment עם format) ללא שינוי.
+
+### בדיקות
+
+- `pnpm --filter frontend-v2 typecheck`: ✅ 0 errors
+- `pnpm lint:i18n`: ✅ No Hebrew in code
+- `npx vitest run`: 807/808 ✅ (pre-existing failure: bridge-failure-integration)
+- DoD: `grep 'ttsProvider === "google"' packages/frontend/src/` → **רק** ב-tts-resolve.ts ✅
+
+### סטיות
+
+אין. zero-behavior-change מאומת.
+
+---
+
+## 2026-06-27 — slice/V4a-unify — Commit 0: adapter resolveTts (TDD)
+
+### מה בוצע?
+
+**`packages/frontend/src/lib/adapters/voice/tts-resolve.ts`** (חדש): `resolveTts(ttsProvider, elevenVoiceId) → ResolvedTts` — מקור-אמת יחיד לבחירת ספק TTS. "google" → geminiTts + "Kore" + "gemini-3.1-flash-tts-preview"; "elevenlabs" → elevenLabsTts + voiceId מועבר + "eleven_v3". מקבל primitives בלבד (לא Settings VM).
+
+**`packages/frontend/src/lib/adapters/voice/tts-resolve.test.ts`** (חדש): 5 בדיקות TDD (Red→Green): google→geminiTts+Kore+modelId, google→format=pcm, elevenlabs→elevenLabsTts+voiceId+eleven_v3, elevenlabs→format=mp3, voiceId מועבר בדיוק.
+
+### בדיקות
+
+- TDD: 5/5 ✅ (`npx vitest run tts-resolve`)
+- `pnpm --filter frontend-v2 typecheck`: ✅ 0 errors
+- `pnpm lint:i18n`: ✅ No Hebrew in code
+- `npx vitest run`: 807/808 ✅ (הכשלון 1 הוא bridge-failure-integration pre-existing מ-slice 10)
+
+### סטיות
+
+אין. biome lint errors הם pre-existing (259 errors לפני ה-commit).
+
+---
+
+## 2026-06-27 — slice/V4a-gemini-tts-pcm-playback — Commit 6: RoutingAudioSink + speaker wiring (integration)
+
+### מה בוצע?
+
+**`packages/frontend/src/lib/engines/routing-audio-sink.ts`** (חדש): `RoutingAudioSink implements AudioSink` — מנתב per-segment ל-`AudioStream` (mp3) או `PcmAudioStream` (pcm) לפי `opts.format`. `#byId` Map שומר את ה-sink שנבחר לכל id, `cancel` מנקה מה-map, `clear` מנקה את שני ה-sinks.
+
+**`packages/frontend/src/lib/view-models/speaker.svelte.ts`**:
+- imports: הוסף `PcmAudioStream`, `RoutingAudioSink`, `geminiTts`
+- ב-constructor: `this.#audioStream = new RoutingAudioSink(new AudioStream(), new PcmAudioStream())`
+- ב-`#fetchJob` (~line 400): בחירת ספק לפי `this.#settings.ttsProvider` — `isGemini` בוחר `geminiTts` עם voiceId="Kore" ו-modelId="gemini-3.1-flash-tts-preview"; ElevenLabs נשאר כברירת מחדל. `cacheKeyFor` מחושב עם voiceId/modelId האמיתיים. `prepareSegment` מקבל `format: provider.format`.
+
+### בדיקות
+
+- `pnpm --filter @drive-coding/frontend-v2 typecheck` (svelte-check): ✅ 0 errors, 0 warnings
+- `pnpm biome check` (קבצים שנגענו): ✅ 0 errors (2 pre-existing warnings בלבד)
+- `pnpm --filter @drive-coding/frontend-v2 build` (vite build): ✅ built in 29.84s
+
+### סטיות
+
+2 biome warnings ב-speaker.svelte.ts הן pre-existing: `#prevStatus` unused + `status` param prefix. אינן חלק מה-slice.
+
+---
+
+## 2026-06-27 — slice/V3-voice-tts-interface — סיכום slice (Commits 0+1+2)
+
+### מה בוצע?
+
+Slice V3 — TtsProvider interface. 3 commits. zero-behavior-change.
+
+**Commit 0** (`7f23aeb`): `packages/core/src/voice/tts-types.ts` (חדש) — TtsRequest + TtsProvider.
+**Commit 1** (`bfa7729`): `packages/frontend/src/lib/adapters/voice/tts.ts` — TtsOptions מחוק, TtsRequest מיובא, elevenLabsTts: TtsProvider נחשף. synthesizeStreaming הוסר. `tts.test.ts` — 10 refs ל-synthesizeStreaming הומרו ל-elevenLabsTts.synthesize, 6/6 ירוק.
+**Commit 2** (`7719b68`): `speaker.svelte.ts` + `play-bubble.ts` — 2 call-sites הומרו ל-elevenLabsTts.synthesize.
+
+### בדיקות
+
+- `pnpm typecheck` (core+backend): ✅ exit 0
+- `pnpm --filter @drive-coding/frontend-v2 typecheck`: ✅ 0 errors
+- `pnpm --filter @drive-coding/frontend-v2 test`: ✅ 319/319
+- `pnpm lint:i18n`: ✅ No hardcoded Hebrew in code
+- `pnpm --filter @drive-coding/frontend-v2 build`: ✅ built
+- `grep synthesizeStreaming packages/frontend/src`: 0 call-sites (רק comment תיעוד) ✅
+
+### סטיות
+
+אין. אותו ElevenLabs, אותו MP3, אותו streaming — רק חוצה interface.
+
+---
+
+## 2026-06-27 — slice/V1-voice-config-core — Commit 2: speaker.svelte.ts חיווט select() (manual)
+
+### מה בוצע?
+
+שינויים ב-`packages/frontend/src/lib/view-models/speaker.svelte.ts`:
+- imports: `select` מ-`@drive-coding/core/voice/select` + `DEFAULT_VOICE_CONFIG` מ-`@drive-coding/core/voice/capabilities`
+- שורה ~359: `translate(text, TARGET_LANG, select("translate", DEFAULT_VOICE_CONFIG), job.abort.signal, job.messageId)`
+- שורה ~489: `narrate(ctx, tool, select("narrate", DEFAULT_VOICE_CONFIG), job.abort.signal)`
+
+### בדיקות
+
+- `pnpm --filter @drive-coding/frontend-v2 typecheck` (svelte-check): 0 errors, 0 warnings
+- `pnpm typecheck` (root, core+backend): exit 0
+- `pnpm --filter @drive-coding/frontend-v2 test`: 319 ירוקים
+- `pnpm lint` (קבצים שלנו): ✓ ללא errors חדשים
+- `pnpm --filter @drive-coding/frontend-v2 build` (vite build): ✓ built in 18.59s
+
+### סטיות
+
+אין. zero-behavior-change: DEFAULT_VOICE_CONFIG.translate/narrate = "gemini-flash-lite-latest" (זהה למחרוזת הקשיחה שהוסרה).
+
+---
+
+## 2026-06-27 — slice/V1-voice-config-core — Commit 1: adapters translate.ts + narrate.ts מקבלים VoiceModelRef (manual)
+
+### מה בוצע?
+
+שינויים ב-`packages/frontend/src/lib/adapters/voice/`:
+- `translate.ts`: הוסף פרמטר `ref: VoiceModelRef` (לפני `signal`). המחרוזת הקשיחה `"gemini-flash-lite-latest"` הוחלפה ב-`ref.model`. הערה `// V2: switch on ref.provider`.
+- `narrate.ts`: כנ"ל.
+- `translate.test.ts`: עדכון 5 קריאות — `translate(text, lang, TEST_REF)` (ref לפני signal).
+- `narrate.test.ts`: עדכון 5 קריאות — `narrate(ctx, tool, TEST_REF)` + `narrate(ctx, tool, TEST_REF, ac.signal)` (שורה ~98 — ac.signal עכשיו ב-4th arg).
+
+### בדיקות
+
+- `pnpm --filter @drive-coding/frontend-v2 test`: 319 tests ירוקים (כולל translate.test + narrate.test)
+- `pnpm --filter @drive-coding/frontend-v2 typecheck`: 2 errors ב-speaker.svelte.ts:359,489 — **צפוי**, speaker לא חוּוט עד Commit 2
+
+### סטיות
+
+אין. ה-2 errors ב-svelte-check צפויים ומתועדים ב-brief §4 Commit 1.
+
+---
+
+## 2026-06-27 — slice/V1-voice-config-core — Commit 0: core VoiceConfig + select() (TDD)
+
+### מה בוצע?
+
+קבצים חדשים ב-`packages/core/src/voice/`:
+- `capabilities.ts`: ArkType schemas — `voiceProvider`, `voiceModelRef`, `voiceService`, `voiceConfig` + `DEFAULT_VOICE_CONFIG` (zero-behavior-change)
+- `select.ts`: פונקציה טהורה `select(service, config) → VoiceModelRef`
+- `select.test.ts`: 6 טסטים TDD (red→green) — כל 4 services + config מותאם + ArkType validation
+
+### בדיקות
+
+- TDD red→green: 6 tests חדשים ב-select.test.ts — ירוקים
+- `pnpm typecheck` (core+backend): ✓ (exit 0)
+- `pnpm lint` (קבצים חדשים): ✓ ללא errors חדשים (258 pre-existing errors לא שייכים לסלייס)
+
+### סטיות
+
+אין. pre-existing lint errors (258) וכשלון backend integration test (`bridge-failure-integration`) קדמו לסלייס זה ואינם חלק ממנו.
+
+---
+
+## 2026-06-26 — slice-fe-build-decouple — 4 commits
+
+### מה בוצע?
+
+**Commit 1 (manual):** `scripts/dc-build-fe.mjs` + aliases ב-`package.json`:
+- סקריפט builds FE אטומית: vite build → .build-staging → swap אטומי → build/
+- `--if-missing`: דולג אם build/index.html קיים (רשת-ביטחון לקלון טרי)
+- `package.json`: aliases `fe:build` ו-`fe:build:if-missing`
+
+**Commit 2 (manual):** `packages/frontend/svelte.config.js` + `.gitignore`:
+- FE_BUILD_OUT env-driven; ברירת-מחדל "build" (אפס שינוי התנהגות)
+- .gitignore: הוסף .build-staging/ ו-.build-old/
+
+**Commit 3 (manual):** `deploy/systemd/voice-acp-dev.service` + `voice-acp-main.service`:
+- ExecStartPre: `pnpm build` → `node scripts/dc-build-fe.mjs --if-missing`
+- תיקון נתיבים: `voice-acp/{dev,main}` → `drive-coding/{dev,main}`
+- הוספת הערות: רענון FE דרך `pnpm fe:build`; restart שמור ל-BE
+
+**Commit 4 (none):** `docs/deploy-local-service.md`:
+- Daily Use: הפרד FE-refresh (pnpm fe:build) מ-BE-restart (systemctl)
+- Install: עדכן תיאור ExecStartPre ל-build-if-missing
+- Troubleshooting: החלף `pnpm build` ב-`pnpm fe:build`
+- תיקון נתיבים: voice-acp/ → drive-coding/ בטבלת Overview ובDaily Use
+- הוסף סעיף "Apply unit changes (post-merge)"
+
+### בדיקות
+
+- `node scripts/dc-build-fe.mjs` → build/index.html קיים, .build-staging/ נוקה
+- `--if-missing` עם build קיים → "skipping (--if-missing)"
+- `rm -rf build && --if-missing` → בונה, staging נוקה
+- `FE_BUILD_OUT=.build-staging pnpm --filter @drive-coding/frontend-v2 build` → OK
+- `systemd-analyze --user verify` על שני ה-service files → ללא שגיאות
+- `grep -c "pnpm build" deploy/systemd/*.service` → 0
+- `grep -c "voice-acp/" docs/deploy-local-service.md` → 0
+- typecheck: 0 errors; lint:i18n: ✓
+
+### סטיות
+
+קבצי ה-service כללו גם תיקון נתיבים (voice-acp → drive-coding) שמבחינה טכנית מיותס ל-Commit 4 ב-brief, אך הוכנס ב-Commit 3 כיוון שהנתיבים הישנים היו שגויים גם שם.
+
+---
+
+## 2026-06-25 — slice-session-title-header — 3 commits
+
+### מה בוצע?
+
+**Commit 0 (TDD):** `sessionTitle = $state<string>("")` ב-`AgentSession` + חיווט 3 נתיבים:
+- `loadSession(title?)`: keep-on-undefined — `sessionTitle = input.title ?? sessionTitle`
+- `switchSession(title?)`: אותה סמנטיקה בנתיב warm
+- `newSession`: מאפס ל-`""`
+- `attachToLiveAgent`: מאפס ל-`""` (process חי בלי title)
+- `#loadMockSession`: `sessionTitle = \`🧪 ${name}\``
+
+**Commit 1 (manual):** חיווט title משני נתיבי-כניסה:
+- `+page.svelte` (connect route): `sessions.find()` → `loadSession({ ..., title })`
+- `SessionOptionsPanel.svelte`: `selectSession(info)` מקבל `title?` → `switchSession({ ..., title })`
+
+**Commit 2 (manual+smoke):** `AppHeader.svelte`:
+- `headerLabel = sessionTitle?.trim() ? sessionTitle : agentName`
+- כותרת ממורכזת אבסולוטית (`start-1/2`, לוגי) עם `truncate` + `title` tooltip
+- cwd chip עבר מהמרכז ל-קבוצת-סטטוס ב-inline-end (ליד נקודת-החיבור)
+- קלאסים לוגיים בלבד (start/end, gap/px/py סימטריים)
+
+### בדיקות
+
+- TDD: 3 טסטים חדשים (sessionTitle set / keep-on-undefined / newSession=""); 301/301 ירוקים
+- typecheck: 0 errors, 0 warnings (כל 3 commits)
+- lint:i18n: ✓ (אין מחרוזת עברית בקוד)
+- production build: ✓ (17.91s, 0 errors)
+- Browser smoke (playwright-cli, 1280px + 360px):
+  - `/chat?mock=greeting`: כותרת "🧪 greeting" במרכז (x=603, viewport-center=640)
+  - inline-end (cwd+dot) ב-x=1161; RTL → שמאל אוטומטית
+  - 360px narrow: gap 23px בין כותרת לחבורת-סטטוס, ללא חפיפה
+  - Screenshots: /tmp/slice-session-title-header/phase2-mock.png, phase2-narrow.png
+
+### סטיות
+
+אין. הטסט `keep-on-undefined` השתמש ב-`session.status = "disconnected"` כדי לאפשר קריאה שנייה ל-`loadSession` (guard לא מאפשר `connecting/connected`) — זה דיוק באמת של מה ש-`#coldReconnect` עושה (reconnect מ-`disconnected`).
+
+## 2026-06-25 — slice-chat-virtualization — 4 commits: windowing + batched follow + user-intent + turn-boundary
+
+### מה בוצע?
+
+**Commit 0 (TDD):** `packages/frontend/src/lib/util/scroll-follow.ts` + `scroll-follow.test.ts`.
+- `computeScrollEdges`: גאומטריה טהורה — atTop/atBottom לפי מדדי handle.
+- `shouldFollowJump`: החלטת batched — following + distance>=3*lineHeight + floor>=300ms.
+- `FOLLOW_DISTANCE_LINES=3`, `FOLLOW_FLOOR_MS=300`. 18/18 טסטים עוברים.
+- תלות virtua הוספה ל-packages/frontend.
+
+**Commit 1 (manual):** virtua Virtualizer + ChatScrollBridge.
+- `packages/frontend/src/lib/types/chat-scroll.ts`: ChatScrollBridge type (scrollEl, handle, noteUserIntent).
+- `context.ts`: בלוק chat-scroll bridge additive בסוף (getChatScroll/setChatScroll).
+- `+layout.svelte`: `$state<ChatScrollBridge>` + setChatScroll.
+- `ChatBubbles.svelte`: {#each} → <Virtualizer scrollRef={bridge.scrollEl} data={bubbles} getKey={b=>b.id} startMargin=80>.
+- `AppShell.svelte`: getChatScroll() + $effect לכתיבת scrollEl ל-bridge; הסרת gap-5 (עבר ל-pb-5 פר-item).
+
+**Commit 2 (manual):** batched follow למדדי virtua + ResizeObserver.
+- `AppShell.svelte`: שכתוב מלא — checkEdges ממדדי handle, jumpToBottom ב-scrollToIndex, maybeJump + shouldFollowJump, ResizeObserver + $effect+setTimeout(320) לfloor-tail.
+
+**Commit 3 (manual):** user-intent window + toggle-intent + turn-boundary.
+- `AppShell.svelte`: user-intent (wheel/touchstart/keydown 600ms), noteUserIntent, turn-boundary $effect.
+- `ToolBubble.svelte` + `ThoughtBubble.svelte`: ontoggle={onUserToggle} + guard ready (rAF אחרי onMount).
+
+### בדיקות
+
+- typecheck: 0 errors (כל 4 commits).
+- lint:i18n: ✓ (כל 4 commits).
+- pnpm vitest: 18/18 ירוקים (scroll-follow.ts).
+- windowing: 4 בועות DOM מתוך 209 (salary-attendance) — ממוסד.
+- init-fire guard: טעינה ראשונית נוחתת בתחתית עם ThoughtBubble פתוח.
+- settings: אין regression.
+- phase-check (calev-heavy אחרי Commit 1): PARTIAL 5/6 — follow ה-raw עבד, טעינה-ראשונית-ארוכה נכשלה (נפתרה ב-Commit 2 עם scrollToIndex).
+
+### סטיות
+
+- לא היו סטיות מהbrief. phase-check PARTIAL היה צפוי (תוקן בCommit 2).
+
 ## 2026-06-25 — slice-display-toggle-consistency — Commit 1: rename + migration + UI + tests
 
 ### מה בוצע?
@@ -44,7 +639,29 @@
 - lint:i18n: ✓.
 - grep collapseThoughts/expandTools בקוד ראשי: 0 (נשאר רק ב-migration ובטסטים).
 
+**Commit 4 (fix):** תיקון `getChatScroll()` lifecycle_outside_component ב-ToolBubble + ThoughtBubble.
+- היה: `getChatScroll()` בתוך `onUserToggle` callback — lifecycle error.
+- עכשיו: `const chatScroll = getChatScroll()` ב-init → callback רק קורא `chatScroll.noteUserIntent?.()`.
+- 0 console errors לאחר toggle. DoD 7+13 מאומתים.
+
+**calev-heavy v2:** GO — 15/16 DoD. Finding צהוב אחד: JumpDown לא מופיע בנתיב toggle=hold (הקפאה עצמה עובדת — רק affordance חזותי). לא חוסם.
+
+### בדיקות
+
+- typecheck: 0 errors (כל commits).
+- lint:i18n: ✓.
+- pnpm vitest: 18/18 ירוקים (scroll-follow.ts).
+- windowing: 4-7 בועות DOM מתוך 209 (salary-attendance).
+- init-fire guard: נוחת בתחתית עם ThoughtBubble פתוח, 0 errors.
+- toggle=hold: קפאת גלילה מאומתת, 0 lifecycle errors.
+- calev-heavy: GO 15/16.
+
 ### סטיות
+
+- Finding קריטי (lifecycle_outside_component) תוקן בcommit fix לאחר NO-GO ראשון.
+- JumpDown בנתיב toggle=hold: לא מופיע כ-affordance חזותי (finding צהוב, לא חוסם).
+
+---
 
 שתי commits מה-brief אוחדו לאחד — ה-briefing ציין typecheck ירוק לפני כל commit, וה-components לא יכולים להיות ירוקים אחרי שינוי ה-VM בלי שינוי ה-components. commit אחד עם כל השינויים — approach mixed (unit tests + קוד + UI).
 
@@ -6114,3 +6731,201 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 ### הערה — DoD #7 (Windows paths)
 - `import.meta.dirname` + `path.resolve` cross-platform — אומת על Linux.
 - אימות בפועל על Windows נשאר ל-Tama (כפי שצוין בהנחיות).
+
+## 2026-06-26 — slice-header-title-responsive — 1 commit
+
+### מה בוצע?
+
+**Commit 0 (manual+smoke):** `AppHeader.svelte` — מעבר מ-absolute-center ל-3 עמודות flex:
+- `<header>` — `items-start` → `items-center` (יישור אנכי עם כותרת שעשויה להיות 2 שורות)
+- בלוק-הכותרת ה-absolute (`start-1/2 -translate-x-1/2 ... max-w-[60%]`) + spacer (`flex-1`) — **הוסרו** לחלוטין
+- עמודת-כותרת in-flow חדשה: `flex-1 min-w-0 flex items-center justify-center`
+- span הכותרת: `{responsive.isMobile ? 'text-[13px]' : 'text-[15px]'} font-semibold text-center leading-tight line-clamp-2`
+- עדכון הערת-מבנה בראש הקובץ
+
+### בדיקות
+
+- typecheck: 0 errors, 0 warnings
+- lint:i18n: ✓ אין מחרוזת עברית בקוד
+- production build: ✓ (vite build — 0 errors)
+- development build: ✓ (vite build --mode development — mock פעיל)
+- Browser smoke (calev, linux-gui Chrome, 360px + 1280px):
+  - אין חפיפה: cluster נשאר ב-inline-end ללא חפיפה עם כותרת ארוכה ✓
+  - line-clamp-2 + ellipsis: כותרת ארוכה מאוד → 2 שורות עם ... ✓
+  - פונט 13px מובייל (computed style) ✓
+  - פונט 15px דסקטופ (computed style) ✓
+  - כותרת קצרה שורה אחת ממורכזת ✓
+  - cluster ב-inline-end (שמאל ב-RTL), לא נדחק ✓
+  - /settings אין regression ✓
+  - Screenshots: /tmp/slice-header/
+
+### סטיות
+
+אין. layout בלבד — קובץ יחיד, ללא שינוי VM/לוגיקה.
+
+---
+
+## slice-restore-last-config — Commit 1: persist
+
+**בוצע:** 2026-06-27
+
+### מה בוצע
+
+- הוספת שדה `lastConfig: Record<string, Record<string, string | boolean>>` לטיפוס `Persisted` ב-`settings.svelte.ts`.
+- הוספת ברירת-מחדל `{}` ב-`DEFAULTS`, `$state` + טעינה ב-constructor, setter `setLastConfig(cliKind, configId, value)` שממזג ושומר.
+- הוספת `lastConfig` ל-`#persist()` — חובה כדי שייישמר.
+- הזרקת `settings` אופציונלי לקונסטרקטור של `AgentSession` (`#settings`).
+- שינוי `+layout.svelte:66`: `new AgentSession({ cues, settings })`.
+- `applyConfigOption` הפך ל-wrapper דק: גוף הלוגיקה עבר ל-`#applyConfigToClient` (מחזיר boolean), persist נקרא אחרי apply מוצלח בלבד.
+- TDD: `settings.lastconfig.test.svelte.ts` — 8 טסטים (RED → GREEN).
+
+### בדיקות
+
+- typecheck: 0 errors, 0 warnings
+- tests: 327/327 ✓
+- lint:i18n: ✓ אין עברית בקוד
+
+### סטיות
+
+אין. הכל לפי ה-brief.
+
+---
+
+## slice-restore-last-config — Commit 2: apply
+
+**בוצע:** 2026-06-27
+
+### מה בוצע
+
+- הוספת `#isValidChoice(key, value)` ל-`AgentSession` — בודק שהערך תקף מול ה-options הנוכחיים של ה-CLI (modes.availableModes/models.availableModels/.modelId, select flat, boolean type). ערך stale נדלג בשקט.
+- הוספת `#applyRememberedConfig()` — קורא ל-`#settings?.lastConfig[cliKind]`, לולאת `for...of`, ומחיל רק ערכים תקפים דרך `applyConfigOption`.
+- קריאה ל-`#applyRememberedConfig()` אחרי `#setStatus("connected")` ב-attach (L534) וב-newSession (L844) — שני נתיבי סשן-חדש. loadSession/switchSession/warm-reconnect: לא נגעו (resume של סשן קיים, לא דורסים).
+- TDD: `agent-session.restore-config.test.svelte.ts` — 7 טסטים: attach/newSession/no-settings/cross-cliKind/boolean/stale-mode/loadSession-no-apply.
+
+### בדיקות
+
+- typecheck: 0 errors, 0 warnings
+- tests: 334/334 ✓ (כולל 7 חדשים)
+- lint:i18n: ✓ אין עברית בקוד
+
+### סטיות
+
+אין. הכל לפי ה-brief.
+
+---
+
+## slice-V4a-gemini-tts-pcm-playback
+
+**תאריך:** 2026-06-27
+**branch:** slice/V4a-gemini-tts-pcm-playback
+
+### Commit 0 — core: PCM parsing (TDD)
+
+**קבצים:** `packages/core/src/voice/pcm.ts` (חדש) + `pcm.test.ts` (חדש)
+
+**בוצע:**
+- `splitInt16LE(carry, chunk)` — מצרף carry+chunk, מפענח Int16 LE, מחזיר rest.
+- `pcmToFloat32(samples)` — ממיר Int16 [-32768,32767] → Float32 [-1,1).
+- אין spread, אין non-null assertions (noUncheckedIndexedAccess — `?? 0`).
+
+**בדיקות:** `npx vitest run pcm` — 10/10 ירוקים.
+
+**חריגות:** ביקשנו `??` במקום `!` עקב noUncheckedIndexedAccess, שונה מה-brief (שהראה `!`) — תוצאה זהה מבחינת נכונות.
+
+### Commit 1 — core: format על TtsProvider (manual)
+
+**קבצים:** `tts-types.ts` (שינוי) + `tts.ts` (שינוי)
+
+**בוצע:**
+- הוספת שדה `format: "mp3" | "pcm"` ל-`TtsProvider` interface.
+- `elevenLabsTts.format = "mp3"` (ElevenLabs מחזיר MP3).
+
+**בדיקות:** `pnpm --filter frontend-v2 typecheck` — 0 errors.
+
+### Commit 2 — adapter: geminiTts provider (manual + runtime-verify)
+
+**קבצים:** `base64.ts` (שינוי — הוספת `base64ToBytes`) + `tts-gemini.ts` (חדש)
+
+**בוצע:**
+- `base64ToBytes(b64)` נוסף ל-base64.ts (בלי spread, loop-based).
+- `geminiTts: TtsProvider` — googleGenAi().models.generateContentStream → ReadableStream<Uint8Array> של PCM.
+- `config.abortSignal` מועבר ל-SDK (מאומת מ-genai.d.ts).
+- noUncheckedIndexedAccess: optional-chain מלא בגישה ל-candidates/parts.
+
+**בדיקות:** typecheck ירוק. Runtime-verify: calev phase אחרי Commit 4.
+
+### Commit 3 — engine: AudioSink interface (manual)
+
+**קבצים:** `audio-sink.ts` (חדש) + `audio-stream.ts` (שינוי) + `player.svelte.ts` (שינוי) + `speaker.svelte.ts` (שינוי)
+
+**בוצע:**
+- `audio-sink.ts`: הגדרת `AudioSink` interface + `SegmentOpts` (messageId+textHash+format?) + `AudioSegmentState` (מקור-האמת).
+- `AudioStream implements AudioSink`: ייבוא AudioSegmentState מ-audio-sink, prepareSegment מקבל `SegmentOpts` (תואם לחלוטין).
+- `Player`: `#audioStream: AudioSink` (במקום `AudioStream`), constructor `sink: AudioSink`.
+- `Speaker`: `#audioStream: AudioSink`, ייבוא AudioSink.
+
+**בדיקות:** typecheck 0 errors. אפס regression על נתיב MP3 (pre-existing test failures — known bug).
+
+### Commit 4 — engine: PcmAudioStream (manual + runtime-verify)
+
+**קבצים:** `pcm-audio-stream.ts` (חדש)
+
+**בוצע:**
+- `PcmAudioStream implements AudioSink` — WebAudio בסיס עם AudioContext אחד למופע.
+- `prepareSegment`: צריכת stream ברקע → splitInt16LE → pcmToFloat32 → AudioBuffer[].
+  carry טיפול בגבולות אי-זוגיים. copyToChannel עם Float32Array מפורש (ArrayBuffer).
+- `play`: gap-less scheduling — #nextStartTime cursor, onended → scheduleNext.
+  resume() אם AudioContext suspended (gesture-gated, voice-mode מספק).
+- `cancel/clear`: source.stop() לכל הפעילים.
+- אין unit test (WebAudio לא רץ ב-happy-dom) — calev phase מאמת.
+
+**חריגות TS:** `(seg.state as string) === "cancelled"` — TypeScript narrow false-positive על async state מחוץ ל-loop.
+
+**בדיקות:** typecheck 0 errors. Runtime-verify: calev phase (להמשיך).
+
+### Commit 5 — Settings: בורר ספק-TTS (manual)
+
+**קבצים:**
+- `settings.svelte.ts` — הוסף `ttsProvider: "elevenlabs"|"google"` + setter + persist. default = "elevenlabs".
+- `keys.ts` — 3 מפתחות חדשים ב-MessageKey union (settings.ttsProvider.*).
+- `catalogs/he.ts` + `en.ts` — ערכים לכל 3 מפתחות.
+- `SettingsScreen.svelte` — `<Select>` בורר TTS provider ליד VoicePicker.
+
+**בדיקות:**
+- typecheck 0 errors.
+- lint:i18n — אין עברית בקוד.
+- `select.test.ts` 6/6 ירוק (Q1 = default לא שונה).
+- בדיקה ידנית: בורר נשמר ל-localStorage, reload → ערך נשמר, default=elevenlabs.
+
+---
+
+## 2026-06-28 — slice-voice-keys-direct — 2 commits
+
+### מה בוצע?
+
+**Commit 0 (TDD):** `packages/backend/src/delivery/proxy-auth.ts` + `packages/backend/tests/proxy-auth.test.ts`.
+- `resolveProviderAuth(provider, env)` — פונקציה טהורה (env מוזרק, ללא קריאה גלובלית).
+- elevenlabs → `xi-api-key` מ-`ELEVENLABS_API_KEY`; google → `x-goog-api-key` מ-`GEMINI_API_KEY`.
+- אין מפתח / ריק / provider לא-מוכר → null (passthrough, OneCLI ממשיך לעבוד).
+- 7 טסטים ירוקים (TDD Red-Green).
+
+**Commit 1 (integration):** `packages/backend/src/delivery/http-proxy.ts` + `packages/backend/tests/http-proxy-auth.test.ts`.
+- import של `resolveProviderAuth` ב-http-proxy.ts.
+- הזרקה לפני ה-fetch (אחרי cache-hit early-return): `const auth = resolveProviderAuth(provider, process.env); if (auth) headers.set(auth.name, auth.value)`.
+- harness חדש: `vi.stubGlobal("fetch")` + mount Hono + `app.request()`.
+- 5 טסטים integration ירוקים (DoD #3/#4/#5/#7).
+
+### בדיקות
+
+- TDD (Commit 0): 7 טסטים — ירוקים.
+- Integration (Commit 1): 5 טסטים integration — ירוקים.
+- `npx vitest run packages/backend/tests/http-proxy.test.ts packages/backend/tests/proxy-auth.test.ts packages/backend/tests/http-proxy-auth.test.ts` → 32 tests passed.
+- Typecheck: ירוק. Lint (no-hebrew): ירוק.
+
+### חריגות
+
+- `wire-recorder.test.ts` מציג כשל flaky ב-full run (timing issue בטסט ENOENT) — קיים ב-base branch, לא קשור ל-slice.
+
+### סטיות
+
+אין. הוספת `resolveProviderAuth` כ-helper טהור + call-site יחיד ב-http-proxy. לא שינוי ארכיטקטוני.

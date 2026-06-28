@@ -98,6 +98,9 @@ export const AgentPublic = type({
   "attached?": "boolean",
   // slice agent-busy-indicator: true כשיש turn פעיל (debounce-שקט)
   "busy?": "boolean",
+  // slice agent-last-message-at: epoch-ms של הפלט האחרון שהסוכן שלח (כל sessionUpdate).
+  // שים לב: epoch-ms (number), בשונה מ-createdAt שהוא ISO string. runtime-only — נאבד ב-restart.
+  "lastMessageAt?": "number | null",
 })
 export type AgentPublic = typeof AgentPublic.infer
 

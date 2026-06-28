@@ -310,3 +310,40 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
     expect(mockClient.loadSession).toHaveBeenCalledWith({ sessionId: "sess-2", cwd: "/tmp" })
   })
 })
+
+// ─── TDD: slice-session-title-header — sessionTitle state ────────────────────
+
+describe("AgentSession.sessionTitle (slice-session-title-header)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal("location", { protocol: "http:", host: "localhost:4000" })
+  })
+
+  it("loadSession with title sets sessionTitle", async () => {
+    const session = new AgentSession()
+    await session.loadSession({ sessionId: "sess-1", cwd: "/proj", cliKind: "opencode", title: "פיקדון" })
+
+    expect(session.sessionTitle).toBe("פיקדון")
+  })
+
+  it("keep-on-undefined: loadSession without title preserves existing sessionTitle", async () => {
+    const session = new AgentSession()
+    // קודם: קבע title
+    await session.loadSession({ sessionId: "sess-1", cwd: "/proj", cliKind: "opencode", title: "פיקדון" })
+    expect(session.sessionTitle).toBe("פיקדון")
+
+    // סמלץ #coldReconnect — מאפס status ל-disconnected ומריץ loadSession בלי title
+    session.status = "disconnected" as typeof session.status
+    await session.loadSession({ sessionId: "sess-1", cwd: "/proj", cliKind: "opencode" })
+    expect(session.sessionTitle).toBe("פיקדון")
+  })
+
+  it("newSession resets sessionTitle to empty string", async () => {
+    const session = new AgentSession()
+    await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+    // סמלץ title קיים
+    session.sessionTitle = "ישן"
+    await session.newSession({ cliKind: "opencode" })
+    expect(session.sessionTitle).toBe("")
+  })
+})

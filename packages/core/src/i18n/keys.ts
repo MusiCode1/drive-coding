@@ -190,11 +190,11 @@ export type MessageKey =
   | "connect.agents.reconnect"
   | "connect.agents.kill"
   | "connect.agents.killConfirm"
-  | "connect.agents.pin"
-  | "connect.agents.unpin"
   | "connect.agents.inUse"
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   | "connect.agents.working"
+  // ─── agent-last-message-ui ─── (slice agent-last-message-ui)
+  | "connect.agents.lastMessage"
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   | "settings.screen.label"
   | "settings.toggle.keepScreenOn"
@@ -204,6 +204,14 @@ export type MessageKey =
   | "settings.toggle.showTools"
   // ─── Enter toggle ─── (slice-enter-toggle)
   | "settings.toggle.enterToSend"
+  // ─── content-viewer ─── (slice content-viewer)
+  | "contentViewer.title"
+  | "contentViewer.expand"
+  | "contentViewer.close"
+  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
+  | "settings.ttsProvider.label"
+  | "settings.ttsProvider.elevenlabs"
+  | "settings.ttsProvider.gemini"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

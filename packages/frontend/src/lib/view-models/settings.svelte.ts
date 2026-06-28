@@ -44,6 +44,11 @@ type Persisted = {
   showTools: boolean
   // ─── Enter toggle ─── (slice-enter-toggle)
   enterToSend: boolean
+  // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
+  // מפה: cliKind → { configId/category → value }
+  lastConfig: Record<string, Record<string, string | boolean>>
+  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
+  ttsProvider: "elevenlabs" | "google"
 }
 
 const DEFAULTS: Persisted = {
@@ -70,6 +75,10 @@ const DEFAULTS: Persisted = {
   showTools: false,
   // ─── Enter toggle ─── (slice-enter-toggle) — ברירת מחדל = התנהגות נוכחית (Enter שולח)
   enterToSend: true,
+  // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
+  lastConfig: {},
+  // ─── TTS provider ─── (V4a) — ברירת מחדל = ElevenLabs (Q1=לא flip)
+  ttsProvider: "elevenlabs" as const,
 }
 
 function load(): Persisted {
@@ -148,6 +157,12 @@ export class Settings {
   // ─── Enter toggle ─── (slice-enter-toggle)
   enterToSend = $state<boolean>(DEFAULTS.enterToSend)
 
+  // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
+  lastConfig = $state<Record<string, Record<string, string | boolean>>>(DEFAULTS.lastConfig)
+
+  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
+  ttsProvider = $state<"elevenlabs" | "google">(DEFAULTS.ttsProvider)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -172,6 +187,10 @@ export class Settings {
     this.showTools = loaded.showTools
     // ─── Enter toggle ───
     this.enterToSend = loaded.enterToSend
+    // ─── config אחרון פר-CLI ───
+    this.lastConfig = loaded.lastConfig
+    // ─── TTS provider ───
+    this.ttsProvider = loaded.ttsProvider
   }
 
   // ─── טופס חיבור ───
@@ -350,6 +369,30 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
+
+  /**
+   * שומר את הערך האחרון שהמשתמשת בחרה עבור configId, per-cliKind.
+   * ממזג עם ה-map הקיים (לא מחליף).
+   */
+  setLastConfig = (cliKind: string, configId: string, value: string | boolean): void => {
+    this.lastConfig = {
+      ...this.lastConfig,
+      [cliKind]: {
+        ...(this.lastConfig[cliKind] ?? {}),
+        [configId]: value,
+      },
+    }
+    this.#persist()
+  }
+
+  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
+
+  setTtsProvider = (v: "elevenlabs" | "google"): void => {
+    this.ttsProvider = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -368,6 +411,8 @@ export class Settings {
       showThoughts: this.showThoughts,
       showTools: this.showTools,
       enterToSend: this.enterToSend,
+      lastConfig: this.lastConfig,
+      ttsProvider: this.ttsProvider,
     })
   }
 }

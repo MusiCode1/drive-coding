@@ -10,9 +10,9 @@
  */
 
 import * as fs from "node:fs"
-import { homedir } from "node:os"
 import { join } from "node:path"
 import type { CliSpec } from "@drive-coding/core"
+import { getStateDir } from "../paths.js"
 
 /** ערך override — כל השדות אופציונליים (merge חלקי לתוך spec קיים). */
 export type CliSpecOverride = Partial<CliSpec>
@@ -26,7 +26,7 @@ export type CliSpecsOverride = Record<string, CliSpecOverride>
  */
 export function resolveCliSpecsPath(env?: NodeJS.ProcessEnv): string {
   const e = env ?? process.env
-  return e.CLI_SPECS_FILE ?? join(homedir(), ".config", "drive-coding", "cli-specs.jsonc")
+  return e.CLI_SPECS_FILE ?? join(getStateDir(), "cli-specs.jsonc")
 }
 
 /**
@@ -85,9 +85,7 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
     if (Array.isArray(args) && args.every((a) => typeof a === "string")) {
       result.args = args as string[]
     } else {
-      console.warn(
-        `[cli-config-file] override["${kind}"].args must be string[] — skipping field`,
-      )
+      console.warn(`[cli-config-file] override["${kind}"].args must be string[] — skipping field`)
     }
   }
 
@@ -139,6 +137,7 @@ let _cached: CliSpecsOverride | null = null
 
 /**
  * טוען ומפענח את קובץ ה-override.
+ * - CLI_SPECS_JSON env: inline JSON, ממוזג מעל קובץ cli-specs.jsonc (per-key; inline-JSON גובר).
  * - קובץ לא קיים → {} (אין override, התנהגות היום). בלי warning.
  * - JSON/JSONC שבור → {} + warning (לא קורס).
  * - תקין → מחזיר את ה-map.
@@ -148,45 +147,75 @@ export function loadCliSpecsOverride(env?: NodeJS.ProcessEnv): CliSpecsOverride 
   // אפשר לדרוס את ה-cache בטסטים דרך vi.resetModules()
   if (_cached !== null) return _cached
 
+  const e = env ?? process.env
+
+  // --- Branch 1: CLI_SPECS_JSON (inline — net-new, from unified config) ---
+  // Parse first (lower priority); will be overridden per-key by any file spec if absent.
+  // Actually: inline-JSON is higher priority — it comes from the flag/env layer which wins.
+  // So: start with file layer, then overlay inline-JSON per-key (inline wins).
+  let inlineSpecs: CliSpecsOverride = {}
+  const cliSpecsJson = e.CLI_SPECS_JSON
+  if (cliSpecsJson) {
+    let inlineParsed: unknown
+    try {
+      inlineParsed = JSON.parse(cliSpecsJson)
+    } catch {
+      console.warn("[cli-config-file] CLI_SPECS_JSON is not valid JSON — ignoring")
+      inlineParsed = null
+    }
+    if (
+      inlineParsed !== null &&
+      typeof inlineParsed === "object" &&
+      !Array.isArray(inlineParsed)
+    ) {
+      const map = inlineParsed as Record<string, unknown>
+      for (const [kind, value] of Object.entries(map)) {
+        inlineSpecs[kind] = validateOverride(kind, value)
+      }
+    } else if (inlineParsed !== null) {
+      console.warn("[cli-config-file] CLI_SPECS_JSON must be a JSON object — ignoring")
+    }
+  }
+
+  // --- Branch 2: cli-specs.jsonc file (existing behaviour) ---
   const filePath = resolveCliSpecsPath(env)
 
-  // קובץ לא קיים — תקין, אין override
-  if (!fs.existsSync(filePath)) {
-    _cached = {}
-    return _cached
+  let fileSpecs: CliSpecsOverride = {}
+
+  if (fs.existsSync(filePath)) {
+    let raw: string
+    try {
+      raw = fs.readFileSync(filePath, "utf8")
+    } catch (err) {
+      console.warn(`[cli-config-file] failed to read ${filePath}:`, err)
+      raw = ""
+    }
+
+    if (raw) {
+      let parsed: unknown
+      try {
+        const stripped = stripJsoncComments(raw)
+        parsed = JSON.parse(stripped)
+      } catch (err) {
+        console.warn(`[cli-config-file] parse error in ${filePath}:`, err)
+        parsed = null
+      }
+
+      if (parsed !== null) {
+        if (typeof parsed !== "object" || Array.isArray(parsed)) {
+          console.warn(`[cli-config-file] ${filePath} must be a JSON object at top level`)
+        } else {
+          const map = parsed as Record<string, unknown>
+          for (const [kind, value] of Object.entries(map)) {
+            fileSpecs[kind] = validateOverride(kind, value)
+          }
+        }
+      }
+    }
   }
 
-  let raw: string
-  try {
-    raw = fs.readFileSync(filePath, "utf8")
-  } catch (err) {
-    console.warn(`[cli-config-file] failed to read ${filePath}:`, err)
-    _cached = {}
-    return _cached
-  }
-
-  let parsed: unknown
-  try {
-    const stripped = stripJsoncComments(raw)
-    parsed = JSON.parse(stripped)
-  } catch (err) {
-    console.warn(`[cli-config-file] parse error in ${filePath}:`, err)
-    _cached = {}
-    return _cached
-  }
-
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    console.warn(`[cli-config-file] ${filePath} must be a JSON object at top level`)
-    _cached = {}
-    return _cached
-  }
-
-  const map = parsed as Record<string, unknown>
-  const result: CliSpecsOverride = {}
-
-  for (const [kind, value] of Object.entries(map)) {
-    result[kind] = validateOverride(kind, value)
-  }
+  // --- Merge: file layer first, then inline-JSON overlay (inline wins per-key) ---
+  const result: CliSpecsOverride = { ...fileSpecs, ...inlineSpecs }
 
   _cached = result
   return _cached

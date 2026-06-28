@@ -237,8 +237,8 @@ class Speaker {
 ## §0 — Pre-flight
 
 ### Worktree
-git worktree add .worktrees/slice-N-name -b slice-N-name dev
-cd .worktrees/slice-N-name
+git worktree add .worktrees/N-name -b slice/N-name dev   # branch: slice/<name> | dir: .worktrees/<name> (בלי קידומת)
+cd .worktrees/N-name
 pnpm install && pnpm hooks:install
 
 ### Run

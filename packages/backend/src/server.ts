@@ -1,11 +1,13 @@
 import "./log-setup.js" // חייב להיות ראשון — מאתחל לוגר לפני כל יבוא אחר
-import * as path from "node:path"
 import { createLogger } from "@drive-coding/core/log"
-import { serve } from "@hono/node-server"
+import { serve, type ServerType } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
+import { createServer as httpsCreateServer } from "node:https"
 import { Hono } from "hono"
 import { WebSocketServer } from "ws"
+import { isBinary } from "./binary.js"
 import { isTransientSocketError } from "./delivery/transient-socket-error.js"
+import { resolveTls } from "./tls.js"
 
 const log = createLogger("backend.server")
 const procLog = createLogger("backend.process")
@@ -62,10 +64,11 @@ import {
 } from "./delivery/http-history.js"
 import { registerHttpOptions } from "./delivery/http-options.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
+import { createWireRecorder } from "./delivery/wire-recorder.js"
 // הערה: createSessionsCache הוסר — רשימת הסשנים עכשיו מונעת מצד ה-FE דרך ACP WS
 import { createAgentWsHandler } from "./delivery/ws-agent.js"
 import { createEchoWsHandler } from "./delivery/ws-echo.js"
-import { createWireRecorder } from "./delivery/wire-recorder.js"
+import { ensureStateSubdir } from "./paths.js"
 
 const app = new Hono()
 
@@ -77,12 +80,12 @@ const registry = createInMemoryAgentRegistry()
 // wire-recorder: פעיל כש-WIRE_RECORD=1; אחרת no-op (אפס IO, אפס overhead)
 // מוגדר לפני createBridgeManager כדי שיועבר כ-opts.wireRecorder
 const wireRecorder = createWireRecorder({
-  dir: process.env.WIRE_RECORD ? path.resolve("data/wire-recordings") : null,
+  dir: process.env.WIRE_RECORD ? ensureStateSubdir("wire-recordings") : null,
 })
 
 const bridgeManager = createBridgeManager({ wireRecorder })
-const projectsRegistry = createProjectsRegistry(path.resolve("data/cache"))
-const recordingsStore = createRecordingsStore(path.resolve("data/recordings"))
+const projectsRegistry = createProjectsRegistry(ensureStateSubdir("cache"))
+const recordingsStore = createRecordingsStore(ensureStateSubdir("recordings"))
 
 const orchestrator = createAgentOrchestrator({
   registry,
@@ -101,13 +104,31 @@ registerRecordingsPostHttp(app, { recordingsStore })
 registerFsBrowseHttp(app)
 
 // Slice 10: פרוקסי שקוף עבור Google + ElevenLabs
-registerProxyHttp(app, { cacheBaseDir: path.resolve("data/cache/proxy") })
+registerProxyHttp(app, { cacheBaseDir: ensureStateSubdir("cache", "proxy") })
 
 // Slice 20: serve the built static FE (single-origin local prod).
-// Guarded by FE_STATIC_DIR — when unset (dev mode), Vite serves the FE
-// and this block is skipped, so the BE stays API/WS/proxy-only.
+// Binary mode: serve from embedded FE manifest (assets in $bunfs, no disk reads).
+// Dev mode / explicit FE_STATIC_DIR: serve from filesystem via serveStatic.
 const feStaticDir = process.env.FE_STATIC_DIR
-if (feStaticDir) {
+if (isBinary() && !feStaticDir) {
+  // Binary mode with no explicit FE_STATIC_DIR override — serve from embedded manifest.
+  // Dynamic import so the stub compiles cleanly in dev (never executes in dev).
+  const { FE } = await import("./fe-manifest.gen.js")
+  // noUncheckedIndexedAccess: FE[key] is string | undefined — guard required.
+  const indexPath: string | undefined = FE["/index.html"]
+  // Assets: serve any path found in the manifest.
+  app.use("/*", async (c, next) => {
+    const p: string | undefined = FE[c.req.path]
+    if (p) return new Response(Bun.file(p))
+    return next()
+  })
+  // SPA fallback: any unmatched GET → index.html (client-side routing).
+  if (indexPath) {
+    app.get("/*", () => new Response(Bun.file(indexPath)))
+  }
+  log.info({}, "serving embedded FE from binary manifest")
+} else if (feStaticDir) {
+  // Dev / explicit override: serve from filesystem.
   // Assets first (js/css/etc), then SPA fallback to index.html for any
   // unmatched path (client-side routing). Registered AFTER all /api,/proxy
   // routes so it never shadows them.
@@ -142,7 +163,10 @@ agentWss.on("connection", (ws, req) => {
 
 const port = Number(process.env.PORT ?? 4000)
 
-const httpServer = serve({ fetch: app.fetch, port })
+const tls = resolveTls(process.env)
+const httpServer: ServerType = tls
+  ? serve({ fetch: app.fetch, port, createServer: httpsCreateServer, serverOptions: tls })
+  : serve({ fetch: app.fetch, port })
 
 httpServer.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url ?? "", `http://localhost`)

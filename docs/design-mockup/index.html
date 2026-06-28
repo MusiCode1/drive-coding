@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>drive-coding — Design Mockup</title>
+<style>
+  /* === Design Tokens (frontend-spec.md §3 — current in +layout.svelte) === */
+  :root {
+    color-scheme: dark;
+    --bg: #0f1115;
+    --bg-elev: #161922;
+    --fg: #e6e6e6;
+    --fg-dim: #a0a0a0;
+    --muted: #6a6a6a;
+    --accent: #4f8cff;
+    --accent-hi: #6ba1ff;
+    --recording: #ff4f4f;
+    --thinking: #ffaa33;
+    --speaking: #4fff8a;
+    --bubble-user: #2a3550;
+    --bubble-agent: #1d2230;
+    --border: #2a2f3a;
+    --tool-bg: #1a1f2a;
+    --processing: #8855ff;
+    --cancelling: #ff9933;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+  }
+
+  .page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+  }
+
+  .page > header.doc-header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 16px;
+    margin-bottom: 8px;
+  }
+  .doc-header h1 { margin: 0 0 4px; font-size: 26px; }
+  .doc-header p { margin: 0; color: var(--fg-dim); font-size: 14px; }
+  .doc-header .src { color: var(--muted); font-size: 12px; margin-top: 6px; font-family: ui-monospace, "SF Mono", Consolas, monospace; direction: ltr; text-align: right; }
+
+  section.block { margin-top: 48px; }
+  section.block > h2 {
+    font-size: 18px;
+    margin: 0 0 4px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  section.block > h2 .tag {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: ui-monospace, monospace;
+    direction: ltr;
+  }
+  section.block > .desc { color: var(--fg-dim); font-size: 13px; margin: 0 0 18px; }
+
+  /* === Token swatches === */
+  .swatches {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+  }
+  .swatch {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .swatch .chip { height: 56px; }
+  .swatch .info { padding: 8px 10px; }
+  .swatch .name { font-size: 12px; font-weight: 600; }
+  .swatch .hex { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; direction: ltr; text-align: right; }
+
+  /* === Mic button (frontend-spec.md §5) === */
+  .mic-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 18px;
+    text-align: center;
+  }
+  .mic-cell {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 12px 18px;
+  }
+  .mic-btn {
+    width: 110px;
+    height: 110px;
+    border-radius: 50%;
+    border: none;
+    font-size: 44px;
+    color: white;
+    box-shadow: 0 4px 18px rgba(79, 140, 255, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 14px;
+    transition: transform 0.15s, box-shadow 0.2s, background 0.2s;
+  }
+  .mic-btn.idle       { background: var(--accent); }
+  .mic-btn.recording  { background: var(--recording); animation: pulse 1.2s infinite; }
+  .mic-btn.processing { background: var(--processing); animation: rotate-slow 2s linear infinite; }
+  .mic-btn.speaking   { background: var(--speaking); animation: glow 1.6s ease-in-out infinite; }
+  .mic-btn.cancelling { background: var(--cancelling); animation: flash-fast 0.3s infinite; }
+
+  .mic-cell .state-name { font-size: 13px; font-weight: 600; }
+  .mic-cell .status-text { font-size: 12px; margin-top: 4px; }
+  .status-text.idle       { color: var(--fg-dim); }
+  .status-text.recording  { color: var(--recording); }
+  .status-text.processing { color: var(--thinking); }
+  .status-text.speaking   { color: var(--speaking); }
+  .status-text.cancelling { color: var(--cancelling); }
+
+  @keyframes pulse {
+    0%   { box-shadow: 0 4px 18px rgba(255, 79, 79, 0.4), 0 0 0 0 rgba(255, 79, 79, 0.5); }
+    70%  { box-shadow: 0 4px 18px rgba(255, 79, 79, 0.4), 0 0 0 22px rgba(255, 79, 79, 0); }
+    100% { box-shadow: 0 4px 18px rgba(255, 79, 79, 0.4), 0 0 0 0 rgba(255, 79, 79, 0); }
+  }
+  @keyframes rotate-slow { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+  @keyframes glow {
+    0%, 100% { box-shadow: 0 4px 18px rgba(79, 255, 138, 0.3); }
+    50%      { box-shadow: 0 4px 28px rgba(79, 255, 138, 0.75); }
+  }
+  @keyframes flash-fast { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  /* === Phone frame (agent live + dashboard) === */
+  .frames { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+  .phone {
+    width: 360px;
+    height: 720px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 28px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  .phone .caption {
+    text-align: center;
+    color: var(--fg-dim);
+    font-size: 12px;
+    margin-top: 8px;
+  }
+  .phone-wrap { display: flex; flex-direction: column; }
+
+  /* header (§13) */
+  .app-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .app-header .back-link, .app-header .settings-link {
+    color: var(--fg-dim);
+    text-decoration: none;
+    font-size: 20px;
+  }
+  .app-header .title { margin: 0; font-size: 15px; font-weight: 600; }
+  .app-header .meta {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: ui-monospace, monospace;
+    direction: ltr;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 38%;
+    margin-inline-start: auto;
+  }
+  .badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .badge-running { color: var(--speaking); border-color: rgba(79,255,138,0.4); background: rgba(79,255,138,0.08); }
+  .badge-idle { color: var(--fg-dim); }
+  .badge-crashed { color: var(--recording); border-color: rgba(255,79,79,0.4); background: rgba(255,79,79,0.08); }
+
+  /* chat area (§4, §7) */
+  .chat {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    list-style: none;
+    margin: 0;
+    position: relative;
+  }
+  .bubble {
+    padding: 10px 14px;
+    border-radius: 14px;
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-width: 85%;
+  }
+  .msg-user   { align-self: flex-start; }
+  .msg-agent  { align-self: flex-end; }
+  .msg-thought { align-self: flex-end; opacity: 0.85; }
+  .msg-tool   { align-self: stretch; }
+
+  .bubble-user {
+    background: var(--bubble-user);
+    border-bottom-right-radius: 4px;
+  }
+  .bubble-agent {
+    background: var(--bubble-agent);
+    border-bottom-left-radius: 4px;
+  }
+  .bubble-agent p { margin: 0 0 0.5em; }
+  .bubble-agent p:last-child { margin-bottom: 0; }
+  .bubble-agent code {
+    background: rgba(255,255,255,0.07);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 0.92em;
+  }
+  .bubble-agent pre {
+    background: rgba(0,0,0,0.3);
+    padding: 8px 10px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 0.4em 0;
+    direction: ltr;
+    text-align: left;
+  }
+  .bubble-agent pre code { background: none; padding: 0; }
+  .bubble-agent ul { margin: 0.3em 0; padding-inline-start: 1.5em; }
+
+  .msg-thought .bubble {
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--fg-dim);
+    font-style: italic;
+    font-size: 12.5px;
+  }
+  .msg-thought .bubble::before { content: "💭 "; opacity: 0.6; }
+
+  /* tools sub-bubble (§7) */
+  .tools {
+    background: var(--tool-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-size: 13px;
+    overflow: hidden;
+  }
+  .tools-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+  }
+  .tools-header .arrow { margin-inline-start: auto; transition: transform 0.2s; color: var(--muted); }
+  .tools-header .arrow.open { transform: rotate(90deg); }
+  .tools-header .summary { color: var(--speaking); font-size: 11px; }
+  .tool-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    direction: ltr;
+    border-top: 1px solid var(--border);
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .dot.pending     { background: var(--muted); }
+  .dot.in_progress { background: var(--thinking); animation: pulse-dot 1s infinite; }
+  .dot.completed   { background: var(--speaking); }
+  .dot.failed      { background: var(--recording); }
+
+  .error-banner {
+    color: var(--recording);
+    background: rgba(255, 79, 79, 0.1);
+    border: 1px solid rgba(255, 79, 79, 0.3);
+    padding: 10px 14px;
+    border-radius: 14px;
+    font-size: 13px;
+    align-self: center;
+    max-width: 85%;
+    text-align: center;
+  }
+
+  /* footer (§4) */
+  .app-footer {
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+    padding: 12px 16px 16px;
+    text-align: center;
+  }
+  .app-footer .status-text { font-size: 13px; margin-bottom: 12px; }
+  .controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+  }
+  .side-btn {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--bg-elev);
+    color: var(--fg);
+    font-size: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .side-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .footer-mic {
+    width: 110px; height: 110px; border-radius: 50%; border: none;
+    font-size: 44px; color: white;
+    box-shadow: 0 4px 18px rgba(79, 140, 255, 0.4);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .text-input {
+    margin-top: 12px;
+    width: 100%;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 12px;
+    color: var(--fg);
+    font: inherit;
+    font-size: 13px;
+  }
+  .car-badge {
+    margin-top: 10px;
+    display: inline-block;
+    font-size: 12px;
+    color: var(--accent-hi);
+    background: rgba(79,140,255,0.1);
+    border: 1px solid rgba(79,140,255,0.3);
+    border-radius: 999px;
+    padding: 4px 12px;
+  }
+
+  .jump-down {
+    position: absolute;
+    bottom: 14px;
+    inset-inline-end: 14px;
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    cursor: pointer;
+  }
+
+  /* dashboard cards (§14) */
+  .dash { padding: 14px; overflow-y: auto; flex: 1; }
+  .dash h2 { font-size: 16px; margin: 4px 4px 14px; }
+  .agent-card {
+    position: relative;
+    min-height: 100px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 12px;
+    cursor: pointer;
+  }
+  .agent-card .cli { font-size: 16px; font-weight: 600; }
+  .agent-card .cwd {
+    font-size: 11px; color: var(--muted);
+    font-family: ui-monospace, monospace; direction: ltr; text-align: left;
+    margin-top: 4px;
+  }
+  .agent-card .badge { position: static; margin-top: 10px; display: inline-block; }
+  .agent-card .delete {
+    position: absolute;
+    inset-inline-end: 12px;
+    top: 12px;
+    background: none; border: none;
+    color: var(--muted); font-size: 20px; cursor: pointer;
+  }
+  .new-agent-btn {
+    width: 100%;
+    min-height: 80px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 16px;
+    font-size: 17px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .empty-state {
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 40px 20px;
+  }
+
+  /* legend table */
+  table.legend { border-collapse: collapse; font-size: 13px; width: 100%; }
+  table.legend th, table.legend td { border: 1px solid var(--border); padding: 6px 10px; text-align: right; }
+  table.legend th { background: var(--bg-elev); }
+  table.legend td.ltr { direction: ltr; text-align: left; font-family: ui-monospace, monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="doc-header">
+    <h1>drive-coding — Design Mockup</h1>
+    <p>מוקאפ סטטי של שפת-העיצוב. drive-first, dark, RTL, hands-free. לא קוד רץ — תצוגה ויזואלית בלבד.</p>
+    <div class="src">source of truth: docs/frontend-spec.md · tokens = +layout.svelte</div>
+  </header>
+
+  <!-- ============ TOKENS ============ -->
+  <section class="block">
+    <h2>Design Tokens <span class="tag">§3 — Dark Mode</span></h2>
+    <p class="desc">הפלטה היחידה. כל מצב mic, כל בועה וכל badge נגזרים מכאן.</p>
+    <div class="swatches" id="swatches"></div>
+  </section>
+
+  <!-- ============ MIC STATES ============ -->
+  <section class="block">
+    <h2>Mic Button — State Machine <span class="tag">§5 — 110px, 5 states</span></h2>
+    <p class="desc">כפתור אחד גדול במרכז. צבע + אנימציה + status-text משתנים לפי state. (האנימציות חיות במוקאפ הזה.)</p>
+    <div class="mic-grid">
+      <div class="mic-cell">
+        <div class="mic-btn idle">🎙</div>
+        <div class="state-name">idle</div>
+        <div class="status-text idle">לחצי על הכפתור כדי לדבר</div>
+      </div>
+      <div class="mic-cell">
+        <div class="mic-btn recording">⏺</div>
+        <div class="state-name">recording</div>
+        <div class="status-text recording">מקליט...</div>
+      </div>
+      <div class="mic-cell">
+        <div class="mic-btn processing">🌀</div>
+        <div class="state-name">processing</div>
+        <div class="status-text processing">מעבד...</div>
+      </div>
+      <div class="mic-cell">
+        <div class="mic-btn speaking">🔊</div>
+        <div class="state-name">speaking</div>
+        <div class="status-text speaking">מקריא תשובה</div>
+      </div>
+      <div class="mic-cell">
+        <div class="mic-btn cancelling">✕</div>
+        <div class="state-name">cancelling</div>
+        <div class="status-text cancelling">מבטל...</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCREENS ============ -->
+  <section class="block">
+    <h2>Screens <span class="tag">§4 agent live · §14 dashboard</span></h2>
+    <p class="desc">פריסת flex: header (shrink) · chat (flex 1, scroll) · footer (shrink). touch targets ≥ 80px, בלי modals.</p>
+    <div class="frames">
+
+      <!-- Agent live -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <header class="app-header">
+            <a class="back-link" href="#">←</a>
+            <h1 class="title">claude</h1>
+            <span class="badge badge-running">running</span>
+            <div class="meta">~/projects/drive-coding</div>
+            <a class="settings-link" href="#">⚙</a>
+          </header>
+          <ul class="chat">
+            <li class="msg-user"><div class="bubble bubble-user" dir="auto">תוסיף בדיקה ל-deriveMicState למצב cancelling</div></li>
+            <li class="msg-thought"><div class="bubble" dir="auto">המשתמשת רוצה כיסוי למצב cancelling. אבדוק את הקובץ הקיים קודם.</div></li>
+            <li class="msg-tool">
+              <div class="tools">
+                <div class="tools-header" onclick="this.querySelector('.arrow').classList.toggle('open'); this.parentElement.querySelectorAll('.tool-item').forEach(e=>e.style.display = e.style.display==='none'?'flex':'none')">
+                  <span class="dot completed"></span>
+                  <span>3 tools</span>
+                  <span class="summary">completed</span>
+                  <span class="arrow open">▸</span>
+                </div>
+                <div class="tool-item"><span class="dot completed"></span> read mic-state.svelte.ts ✅</div>
+                <div class="tool-item"><span class="dot completed"></span> edit mic-state.test.ts ✅</div>
+                <div class="tool-item"><span class="dot in_progress"></span> bash pnpm test ⏳</div>
+              </div>
+            </li>
+            <li class="msg-agent">
+              <div class="bubble bubble-agent" dir="auto">
+                <p>הוספתי את הבדיקה. <code>cancelling</code> מקבל עכשיו עדיפות עליונה:</p>
+                <pre><code>if (input.isCancelling) return "cancelling"</code></pre>
+                <p>כל 8 הבדיקות עוברות ✅</p>
+              </div>
+            </li>
+            <li class="msg-user"><div class="bubble bubble-user" dir="auto">מעולה, תודה</div></li>
+            <button class="jump-down" title="גלילה לתחתית">↓</button>
+          </ul>
+          <footer class="app-footer">
+            <div class="status-text speaking">מקריא תשובה</div>
+            <div class="controls">
+              <button class="side-btn" title="השמע שוב">🔊</button>
+              <button class="footer-mic" style="background: var(--speaking); animation: glow 1.6s ease-in-out infinite;">🔊</button>
+              <button class="side-btn" title="עצור">⏹</button>
+            </div>
+            <input class="text-input" placeholder="או הקלדה..." />
+          </footer>
+        </div>
+        <div class="caption">/agent/:id — speaking state</div>
+      </div>
+
+      <!-- Agent live — car mode + idle -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <header class="app-header">
+            <a class="back-link" href="#">←</a>
+            <h1 class="title">claude</h1>
+            <span class="badge badge-idle">idle</span>
+            <div class="meta">~/projects/drive-coding</div>
+            <a class="settings-link" href="#">⚙</a>
+          </header>
+          <ul class="chat">
+            <li class="error-banner">הסוכן קרס — מתחבר מחדש... (ניסיון 2)</li>
+            <li class="msg-agent">
+              <div class="bubble bubble-agent" dir="auto">
+                <p>הנה רשימת הקבצים ששיניתי:</p>
+                <ul><li>mic-state.svelte.ts</li><li>mic-state.test.ts</li></ul>
+              </div>
+            </li>
+          </ul>
+          <footer class="app-footer">
+            <div class="status-text idle">לחצי על הכפתור כדי לדבר</div>
+            <div class="controls">
+              <button class="side-btn" disabled title="השמע שוב">🔊</button>
+              <button class="footer-mic" style="background: var(--accent);">🎙</button>
+              <button class="side-btn" disabled title="עצור">⏹</button>
+            </div>
+            <span class="car-badge">🚗 בקרת רכב פעילה</span>
+          </footer>
+        </div>
+        <div class="caption">/agent/:id?car=1 — idle + error banner</div>
+      </div>
+
+      <!-- Dashboard -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <header class="app-header">
+            <h1 class="title">drive-coding</h1>
+            <a class="settings-link" href="#" style="margin-inline-start:auto">⚙</a>
+          </header>
+          <div class="dash">
+            <h2>סוכנים פעילים</h2>
+            <div class="agent-card">
+              <button class="delete" title="מחק">×</button>
+              <div class="cli">claude</div>
+              <div class="cwd">~/projects/drive-coding</div>
+              <span class="badge badge-running">running</span>
+            </div>
+            <div class="agent-card">
+              <button class="delete" title="מחק">×</button>
+              <div class="cli">opencode</div>
+              <div class="cwd">~/projects/aac-board</div>
+              <span class="badge badge-idle">idle</span>
+            </div>
+            <div class="agent-card">
+              <button class="delete" title="מחק">×</button>
+              <div class="cli">claude</div>
+              <div class="cwd">~/projects/cboard</div>
+              <span class="badge badge-crashed">crashed</span>
+            </div>
+            <button class="new-agent-btn">+ סוכן חדש</button>
+          </div>
+        </div>
+        <div class="caption">/ — dashboard</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ BUBBLES LEGEND ============ -->
+  <section class="block">
+    <h2>Chat Bubbles <span class="tag">§7 — alignment & kinds</span></h2>
+    <p class="desc">יישור RTL: user מימין (flex-start), assistant/thought משמאל (flex-end), tool full-width (stretch).</p>
+    <table class="legend">
+      <thead><tr><th>Kind</th><th>צד (RTL)</th><th>רקע</th><th class="ltr">token</th></tr></thead>
+      <tbody>
+        <tr><td>user</td><td>ימין</td><td>כחלחל כהה</td><td class="ltr">--bubble-user #2a3550</td></tr>
+        <tr><td>assistant</td><td>שמאל</td><td>אפור-כחול</td><td class="ltr">--bubble-agent #1d2230</td></tr>
+        <tr><td>thought</td><td>שמאל</td><td>שקוף + מסגרת מקווקוות 💭</td><td class="ltr">--border dashed</td></tr>
+        <tr><td>tool_call</td><td>רוחב מלא</td><td>collapsible + status dots</td><td class="ltr">--tool-bg #1a1f2a</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ============ TOOL DOTS ============ -->
+  <section class="block">
+    <h2>Tool Status Dots <span class="tag">§7</span></h2>
+    <p class="desc">נקודת-מצב צבעונית לכל קריאת כלי.</p>
+    <div style="display:flex; gap:24px; flex-wrap:wrap; font-size:13px;">
+      <span><span class="dot pending" style="display:inline-block;vertical-align:middle"></span> pending</span>
+      <span><span class="dot in_progress" style="display:inline-block;vertical-align:middle"></span> in_progress</span>
+      <span><span class="dot completed" style="display:inline-block;vertical-align:middle"></span> completed</span>
+      <span><span class="dot failed" style="display:inline-block;vertical-align:middle"></span> failed</span>
+    </div>
+  </section>
+</div>
+
+<script>
+  // Render token swatches from the CSS variables themselves (single source).
+  const TOKENS = [
+    ["--bg","background"],["--bg-elev","surface elevated"],["--fg","foreground"],
+    ["--fg-dim","fg dim"],["--muted","muted"],["--accent","accent / idle"],
+    ["--accent-hi","accent hi"],["--recording","recording"],["--thinking","thinking"],
+    ["--speaking","speaking"],["--processing","processing"],["--cancelling","cancelling"],
+    ["--bubble-user","bubble user"],["--bubble-agent","bubble agent"],
+    ["--border","border"],["--tool-bg","tool bg"],
+  ];
+  const root = getComputedStyle(document.documentElement);
+  const wrap = document.getElementById("swatches");
+  for (const [v, label] of TOKENS) {
+    const hex = root.getPropertyValue(v).trim();
+    const el = document.createElement("div");
+    el.className = "swatch";
+    el.innerHTML =
+      `<div class="chip" style="background:${hex}"></div>` +
+      `<div class="info"><div class="name">${label}</div>` +
+      `<div class="hex">${v}: ${hex}</div></div>`;
+    wrap.appendChild(el);
+  }
+</script>
+</body>
+</html>

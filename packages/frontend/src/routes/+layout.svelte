@@ -18,6 +18,8 @@ import type { Locale } from "@drive-coding/core/i18n"
 import {
   setActiveAgents,
   setBubblePlayer,
+  setChatScroll,
+  setContentViewer,
   setCues,
   setI18n,
   setMic,
@@ -31,6 +33,7 @@ import {
   setUiShell,
   setVoiceMode,
 } from "$lib/context"
+import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { CuesEngine } from "$lib/engines/cues"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
@@ -40,6 +43,7 @@ import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
 import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
+import { ContentViewerVM } from "$lib/view-models/content-viewer.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
 import { ResponsiveVM } from "$lib/view-models/responsive.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
@@ -61,7 +65,8 @@ const i18n = new I18nVM({ settings })
 const cues = new CuesEngine()
 
 // ─── סשן ───────────────────────────────────────
-const session = new AgentSession({ cues })
+// slice-restore-last-config: settings מוזרק לסשן כדי לשמור config פר-CLI
+const session = new AgentSession({ cues, settings })
 
 // ─── speaker ─── (תלוי ב-session + settings + cues)
 const speaker = new Speaker({ session, settings, cues })
@@ -91,6 +96,9 @@ const uiShell = new UiShellVM()
 
 // ─── modals ─── (redesign-6)
 const modals = new ModalsVM()
+
+// ─── content-viewer ─── (slice content-viewer — בלתי-תלוי)
+const contentViewer = new ContentViewerVM()
 
 // ─── active-agents ─── (slice active-agents-widget — בלתי-תלוי)
 const activeAgents = new ActiveAgents()
@@ -128,7 +136,12 @@ setTheme(theme)
 setResponsive(responsive)
 setUiShell(uiShell)
 setModals(modals)
+setContentViewer(contentViewer)
 setActiveAgents(activeAgents)
+
+// ─── chat-scroll bridge ─── (slice chat-virtualization)
+const chatScroll = $state<ChatScrollBridge>({ scrollEl: null, handle: null })
+setChatScroll(chatScroll)
 
 // ─── DEV-only: חשיפת ה-session ל-window לצורך חילוץ fixtures ודיבוג עיצוב ───
 if (import.meta.env.DEV && typeof window !== "undefined") {

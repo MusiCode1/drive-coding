@@ -1,5 +1,190 @@
 # Decisions — voice-acp
 
+## 2026-06-27 — V4a-unify / tts-playback-unification: שתי שכבות יחידות במקום שלושה מנגנונים
+
+### רציונל
+V4a בנה את נתיב ה-Speaker נכון (RoutingAudioSink), אבל ה-**BubblePlayer** (הקשה על בועה) נשאר
+על `playAgentText` → `<audio>` blob **מקובע ל-ElevenLabs** → ב-Gemini נשבר (PCM גולמי לא מתנגן
+ב-`<audio>`, והבורר לא נכבד). **התגלה חי** ב-preview ע"י המשתמשת (runtime-gate בפעולה): הגדירה
+Gemini אך הבקשה הלכה ל-elevenlabs.
+
+המשתמשת עצרה תיקון-במקום (WAV-wrap ב-play-bubble) כי **הוא היה יוצר מנגנון רביעי**. הדרישה:
+**מנגנון אחיד**, לא שלושה נפרדים. הפתרון — **שתי שכבות יחידות** ששני הצרכנים נשענים עליהן:
+1. `resolveTts(ttsProvider, voiceId) → {provider, voiceId, modelId}` — מקור-אמת יחיד לבחירת-ספק
+   (adapter; מקבל primitives, לא את Settings VM — שכבות). **"Kore" מתרכז כאן** (נקודת-שינוי יחידה ל-V4b).
+2. `RoutingAudioSink` (קיים מ-V4a) — שכבת-הנגינה היחידה לפי `format`. גם BubblePlayer עובר דרכה
+   (one-shot, segment יחיד) → PCM עובד אצלו **אוטומטית**, בלי WAV-wrap, בלי קוד חדש.
+
+ה-`Player`/OrderedQueue הוא תוספת-תזמור של ה-Speaker בלבד (ריבוי segments), לא חלק מהנגינה.
+`playUserRecording` (קובץ-מדיה אמיתי) **נשאר על `<audio>`** — לא TTS. `playAgentText` נמחק (כלל #5).
+
+### ממצאי אביגיל (2 סבבים → READY)
+ר1 (4): 🔴 `stop()` חייב לשמר **שני** מנגנוני-עצירה (`#audioEl.pause()` ל-recording שאין-לו-signal +
+`#sink.cancel` ל-TTS) — קל לשבור בשקט · line 78→77 · docstrings מיושנים (bubble-player:6, play-bubble:4-6) ·
+cleanup חייב לאפס #segId+#audioEl. ר2: 0 — נקי.
+
+### לקח-שיטה
+תיקון שיוצר מנגנון מקביל = ריח. כשהמשתמשת תפסה את ה-WAV-wrap כ"מנגנון רביעי" — זו הייתה הקריאה
+הנכונה. עצירה + רידזיין לשכבה משותפת > תיקון-נקודתי. (ה-bug עצמו הוא גם פער-תכנון של brief V4a:
+לא כללתי את ה-BubblePlayer בבחירת-הספק — נקלט רק ב-runtime-gate החי.)
+
+### Complexity
+5/10, verifier light. 3 commits (resolveTts TDD · Speaker zero-change · BubblePlayer→sink).
+
+
+## 2026-06-27 — V4a / gemini-tts-pcm-playback: נתיב Gemini-TTS חי (PCM→WebAudio) + ElevenLabs מת על קרדיטים
+
+### רציונל
+מימוש הנתיב המלא של Gemini-TTS שספייקנו: ספק `geminiTts` (SDK `@google/genai generateContentStream`,
+מאומת חי מחזיר l16/24kHz, 0 preamble) מאחורי `TtsProvider` (V3), + נתיב-השמעה חדש `PcmAudioStream`
+(WebAudio, BufferSource queue) לצד נתיב ה-MP3/MediaSource הקיים (sibling, לא תחליף), + בחירת sink לפי
+`format`. ה-PCM-parsing (`splitInt16LE`) טהור ב-core (TDD).
+
+**טריגר מכריע — ElevenLabs מת**: אומת חי (2026-06-27) ש-ElevenLabs מחזיר `quota_exceeded` (0 credits;
+`/v1/user/subscription`=200 active → האינטגרציה תקינה, רק החיוב מת). פלט-הקול **מת** עד Gemini.
+זה מעלה את V4a מ"ספק שני" ל**נתיב-הקול העובד**.
+
+### אימותים חיים (לפני כתיבת ה-brief — לא הנחות)
+- `@google/genai generateContentStream` ל-`gemini-3.1-flash-tts-preview` → 72 chunks PCM, first-audio 1.66s, mime `audio/l16; rate=24000`, 0 text parts. דרך onecli (key injection). ⚠️ **לא** אומת דרך `googleGenAi()` proxy-baseUrl בדפדפן → צעד ראשון של Commit 2.
+- ElevenLabs: 200 על subscription, 401 `quota_exceeded` על synth → אינטגרציה תקינה, חיוב מת.
+
+### החלטות-תכנון
+- **sink נבחר לפי `format` של הספק** (`"mp3"|"pcm"`), לא לפי שם — הספק מצהיר על פלטו, ה-Speaker ממפה.
+- **תור AudioBufferSourceNode** (לא AudioWorklet) — sample-accurate דרך `nextStartTime` cursor; Worklet=fallback אם jank.
+- **קליטה דרך SDK קיים** (`@google/genai`, כבר dependency) — אפס SSE parsing ידני, אפס dep חדשה.
+- Gemini=`"google"` ב-`voiceProvider` (אין literal "gemini"); voice="Kore" קבוע ב-V4a (פר-ספק → V4b).
+- **base = ענף V3** (שרשור V1→V3→V4a).
+
+### Q1 — הוכרע (המשתמשת, 2026-06-27): **אין flip של ברירת-מחדל**
+ברירת-המחדל נשארת ElevenLabs. במקום זה — **בורר ספק-TTS בהגדרות** (`Settings.ttsProvider`, default
+elevenlabs; `<Select>` ב-`SettingsScreen.svelte`) שהמשתמשת מדליקה ידנית כדי לנסות Gemini. אפס
+regression, `DEFAULT_VOICE_CONFIG`/`select.test` לא נגעים. בחירת-sink בלי לגעת ב-Player: **`RoutingAudioSink`**
+(מנתב פר-segment לפי `format`). אימות לאחר build → preview דרך pico tunnel (המשתמשת תבדוק ותחליף בבורר).
+
+### ממצאי אביגיל (3 סבבים → READY טכני; 8 findings)
+ר1 (6): Q1 שובר `select.test.ts` (לא ב-DoD) · "gemini" לא ב-voiceProvider union (provider="google") · core אין test script · must-read docs uncommitted לא יגיעו ל-worktree · optional-chain מקוצר · for-await ב-pull במקום start.
+ר2 (2): **`base64ToBytes` לא קיים** (תיקון ר1 שלי הכניס טענה שגויה — base64.ts רק encode) → הוסף decode · `cacheKeyFor` מקובע ל-eleven_v3 בנתיב Gemini.
+ר3: 0 — נקי.
+
+### Complexity
+8/10, calev-heavy, phase-verify אחרי Commit 4 (PcmAudioStream).
+
+## 2026-06-27 — V3 / voice-tts-interface: TtsProvider interface (ElevenLabs מאחוריו, seam ל-V4)
+
+### רציונל
+הוצאת ElevenLabs מאחורי interface `TtsProvider` טהור ב-core (`tts-types.ts`), כך שהצרכנים
+(speaker + play-bubble) קוראים דרך ה-interface ולא דרך הפונקציה הקונקרטית `synthesizeStreaming`.
+zero-behavior-change (אותו ElevenLabs/MP3/streaming). זה ה-seam ש-V4 (Gemini-TTS, שספייקנו)
+מתחבר אליו כספק שני.
+
+**החלטות-תכנון (§9 ב-brief, כולן non-blocking):**
+- **בחירת-ספק (`tts/index.ts` selector + `select("tts")`) נדחית ל-V4** — יש ספק אחד עכשיו; selector
+  בלי בחירה הוא ceremony. V3 = הצרכנים מפנים ל-`elevenLabsTts` קונקרטי; V4 מחליף ל-selector.
+- `TtsRequest` נושא `voiceId`+`modelId` (לא `VoiceModelRef` מ-V1) — שומר zero-change; מיפוי ref→voiceId הוא של V4.
+- `TtsChunk` נדחה ל-V4 (נדרש רק ל-PCM chunking של Gemini; היום הצרכנים מקבלים `ReadableStream<Uint8Array>`).
+- **base = ענף `slice/V1-voice-config-core`** (שרשור) — צימוד-קוד ל-V1 אפסי, אבל שומר שרשרת לינארית
+  V1→V3→V4 ל-merge מסודר בסוף (החלטת המשתמשת: "ממשיכים לבצע, אבדוק בסוף" → אין merge עד הסקירה).
+
+### ממצאי אביגיל (סבב 1 → READY)
+**READY מהסבב הראשון** — שיפור מובהק מול V1 (3 סבבים). הלקחים מ-V1 הוטמעו מראש ב-brief:
+שמות `@drive-coding/frontend-v2` (לא `frontend`), `--filter frontend-v2 typecheck`=svelte-check,
+DoD מריץ frontend test, והמרת 10 ה-call-sites ב-`tts.test.ts` נכנסה כמשימת-חובה ב-Commit 1.
+2 findings יחידים — שניהם 🟢 cosmetic (הסטת שורות של ~2 שV1 יצר ב-speaker.svelte.ts; תוקנו ל-~386/~46).
+
+### Complexity
+5/10 (verifier: light). 3 commits, 0 שכבות חדשות, refactor טהור zero-change.
+
+## 2026-06-27 — V1 / voice-config-core: שכבת בחירת-ספק טהורה ב-core (seam ל-V2/V3/V4)
+
+### רציונל
+הסלייס הראשון של מסלול B. במקום מחרוזת-מודל קשיחה בכל adapter (`googleAi("gemini-flash-lite-latest")`),
+בחירת המודל פר-שירות עוברת ל**פונקציה טהורה אחת** `select(service, config) → VoiceModelRef` ב-core
+(D5 functional-core). V1 מחווט רק את הטקסטואליים (translate+narrate), עם **zero-behavior-change**
+(אותם מודלים בדיוק). זה ה-seam ש-V2 (OpenAI, provider-branch) ו-V3/V4 (TTS) ייתלו בו בלי reshape.
+
+**החלטות-תכנון (כולן non-blocking, נרשמו ב-§9 של ה-brief):**
+- `VoiceConfig` מגדיר את כל 4 השירותים (translate/narrate/stt/tts) כבר עכשיו — type יציב קדימה;
+  V2/V3 מוסיפים wiring בלבד. (stt/tts מוגדרים אך לא-נצרכים ב-V1.)
+- translate/narrate מקבלים `VoiceModelRef` **מלא** (לא רק model:string) — V2 צריך `provider` ל-branch → אפס reshape.
+- מקור ה-config ב-V1 = קבוע `DEFAULT_VOICE_CONFIG`; שדה-Settings + persistence + UI נדחים ל-slice Settings-UI.
+
+### ממצאי אביגיל (3 סבבים → READY)
+track record ממשיך (100%): 5 בעיות אמיתיות נתפסו לפני dispatch —
+1. 🔴 10 call-sites בטסטים (`translate.test`/`narrate.test`) שיישברו כש-`ref` נעשה חובה — ה-brief לא עדכן אותם.
+2. 🟡 root `pnpm typecheck` = `tsc --build` על core+backend בלבד; **frontend לא בגרף** → צריך `--filter frontend-v2 typecheck` (svelte-check).
+3. 🟡 §5 DoD הריץ רק core test → ה-regression בטסטי frontend היה עובר silent.
+4. 🟢 תיאור הקריאה הוצג כ-bare `googleAi(...)` במקום `model: googleAi(...)` בתוך object literal.
+5. 🔴 (סבב 2) שם החבילה הוא **`@drive-coding/frontend-v2`**, לא `frontend` — `--filter @drive-coding/frontend` היה no-op שקט (exit 0) → כל פקודות-האימות שתיקנו את #1–#3 לא היו תופסות כלום.
+
+### שינויי-כיוון
+ה-brief תוקן: עדכון הטסטים נכנס כמשימת-חובה ב-Commit 1; כל פקודות typecheck/test/build הוסבו
+ל-`@drive-coding/frontend-v2` (svelte-check ל-typecheck, vitest ל-test). בלי תיקון #5, שני התיקונים
+הקודמים היו אשליה — בדיוק סוג ה-silent-gap שה-runtime/build gates נועדו למנוע.
+
+### Complexity
+4/10 (verifier: light / calev mode:light). 3 commits, 0 שכבות חדשות, אין streaming/protocol/state-refactor.
+
+
+## 2026-06-27 — V4 / voice-tts-provider-2: Gemini-TTS חוזר למרוץ — `gemini-3.1-flash-tts-preview` עם HTTP-streaming
+
+### רציונל
+ה-spike של §F (`voice-provider-abstraction-roadmap.md`, 2026-06-16) **פסל את Gemini-TTS**
+כמועמד streaming — אבל הדחייה כיסתה רק את מודלי **2.5** (`*-preview-tts`): buffer בלבד,
+3.5–5.7s שתיקה למשפט, generation איטי מה-playback. הדחייה הייתה נכונה לזמנה.
+
+מאז שוחרר מודל חדש — **`gemini-3.1-flash-tts-preview`** — שתומך **streaming אמיתי**
+(2.5 עדיין לא; אומת מול docs Google 2026-06-27). הוא לא היה קיים בזמן ה-spike, אז §F
+מעולם לא בדק אותו. זה משנה את הנחת-היסוד של ההכרעה הפתוחה ב-§H (ספק-TTS-שני ל-V4).
+
+**הממצא הקריטי — ה-transport מתאים לארכיטקטורה הקיימת:** הסטרימינג של 3.1 רץ דרך
+**HTTP POST chunked** (`generativelanguage.googleapis.com`, header `x-goog-api-key`,
+תגובה `--no-buffer`) — **לא gRPC** (סיבת הפסילה של Cloud-TTS ב-§F) ו**לא WebSocket**
+(שדורש הזרקת-key ל-WS שאין כיום). זה בדיוק מה ש-OneCLI כבר מזריק ל-host הזה, ונגיש
+מה-FE דרך ה-proxy הקיים `/proxy/google/*`.
+
+### השוואה למועמד הקיים (Gemini-Live)
+3.1 עוקף את **שני** החסרונות הכבדים של Gemini-Live בבת אחת:
+
+| ממד | Gemini-Live (WS) | **3.1-flash-tts streaming** |
+|------|------------------|------------------------------|
+| transport | WebSocket (חיווט חדש) | **HTTP POST chunked (proxy קיים)** |
+| הזרקת key | צריך WS injection (אין) | **`x-goog-api-key` — מוזרק כיום** |
+| verbatim | ⚠️ dialog-model, לא מובטח | ✅ מודל TTS טהור |
+| פלט | PCM 24kHz | PCM (נתיב PCM→WebAudio משותף לשניהם) |
+
+### שינויי-כיוון
+§H מקבל **מועמד רביעי** ל-V4 (`gemini-3.1-flash-tts-preview`) — כנראה המוביל, כי הכי
+זול-לחיווט *וגם* בלי סיכון verbatim. §F עודכן עם הממצא. master roadmap (Track B / V4)
+עודכן אף הוא.
+
+### ✅ אומת חי בספייק ידני (2026-06-27, דרך onecli `voice-acp` + BE proxy)
+ספייק חי מלא **בלי brief** (לבקשת המשתמשת), דרך הזרקת-ה-key של onecli `voice-acp` —
+**נתיב הפרודקשן עצמו**. כל הממצאים אומתו מול ה-API החי:
+
+| מה | תוצאה (חי) |
+|----|------------|
+| **קיום המודל** | ✅ `gemini-3.1-flash-tts-preview` ב-list models החי |
+| **streaming endpoint** | ✅ `…:streamGenerateContent?alt=sse` → HTTP 200, **SSE** (לא gRPC, לא WS) |
+| **first-audio (TTFB)** | ✅ **~0.7–1.0s** (נמדד; ישיר 0.98s, דרך ה-proxy 0.70s) — סדר-גודל כמו Gemini-Live |
+| **פלט** | PCM 16-bit 24kHz (`audio/l16; rate=24000; channels=1`), 106 chunks ל-~4.2s אודיו |
+| **preamble/thinking** | ✅ אין — זרם audio-only, ה-`text` part ריק (אף שה-metadata מסמן `thinking:true`) |
+| **verbatim עברי** | ✅ STT round-trip החזיר **בדיוק** את הקלט ("שלום, מה שלומך…") — אפס סטייה |
+| **דרך ה-BE proxy `/proxy/google/*`** | ✅ HTTP 200, TTFB 0.70s, SSE זורם — **end-to-end production path עובד** |
+| **proxy מזרים שקוף** | ✅ code-read (`http-proxy.ts`: `new Response(res.body)`/`tee()`) — לא מבאפר |
+
+**תיקון לטענת ה-docs:** WebFetch טען streaming דרך `/v1beta/interactions`+`stream:true` —
+**שגוי**. המשטח האמיתי הוא ה-`streamGenerateContent?alt=sse` הסטנדרטי. בנוסף,
+`supportedGenerationMethods` ב-metadata **לא** מפרט `streamGenerateContent`, אבל הוא עובד
+אמפירית — ה-metadata לא-שלם. **הספייק ניצח את ה-docs ואת ה-metadata — בדיוק הסיבה שמאמתים חי.**
+
+### מסקנה
+`gemini-3.1-flash-tts-preview` הוא **המועמד המוביל ל-V4** — אומת end-to-end דרך נתיב הפרודקשן:
+streaming אמיתי, ~1s first-audio, verbatim עברי, דרך ה-proxy הקיים בלי תשתית חדשה. caveat
+יחיד שנותר: נתיב PCM→WebAudio (משותף לכל מועמד Gemini, לא חדש). **ה-brief של V4 ייכתב על
+בסיס מאומת.** ⚠️ JIT: V4 תלוי ב-V1→V3 (TtsProvider interface) שטרם נבנו — ר' §E ב-roadmap.
+
+---
+
 ## 2026-06-18 — fix-claude-duplicate-bubbles: בועת-תשובה כפולה של claude — fork + תיקון-שורש (תכנון slice יחיד)
 
 ### רציונל
@@ -1160,3 +1345,44 @@ calev GO 12/12, אומת e2e דרך tunnel כולל cross-rename (סשן מ-sala
   של acpSessionId כשהagent כבר "ready" עם sessionId אחר — בדיוק מה ש-warm switch עושה.
   `.catch(()=>{})` בולע; המשתמש לא רואה. אבל ה-BE registry נשאר עם sessionId ישן → סיכון
   ל-reconnect/recovery עתידי (slice 10) שישחזר לסשן הישן. תיקון: BE יתיר same-agent update.
+
+## 2026-06-28 — slice-image-paste: הדבקת/גרירת/בחירת תמונות בתיבת הפרומפט (brief READY, merge מוקפא)
+
+### רציונל
+המשתמשת ביקשה לאפשר בצד הלקוח הדבקת תמונות, במקביל לסוכן שעובד על תמיכת ACP מלאה ב-`provider-contract`.
+מיפוי הקוד הראה ש-drive-coding ה-FE מדבר ACP **ישירות** דרך `AcpClient.prompt(sessionId, text: string)` —
+טקסט-בלבד (client.d.ts:45). ה-BE הוא dumb-pipe שקוף → אפס שינוי. החוזה המנורמל כבר חושף
+`PromptContent = string | PromptContentPart[]` (events.d.ts:160), אך השכבה ש-drive-coding משתמש בה
+(`AcpClient`) עדיין טקסט-בלבד. לכן הפיצ'ר מתחלק לשני חלקים: לכידה/preview/דחיסה/gating (FE-טהור, זמין
+היום) מול שליחה מולטימודלית (תלוי bump של `AcpClient.prompt` → blocks).
+
+### ההכרעה: brief אחד, 4 commits, merge-gate ממוקד
+החלטת המשתמשת: לכתוב brief ואולי לבצע, **אך לא למזג לפני שצד ה-ACP יתמוך**. במקום פיצול ל-2 slices
+(שמטרתו מקביליות-merge — לא רלוונטית כשלא ממזגים), נבחר brief יחיד עם commits מסודרים:
+Commit 0 (core/TDD: `resize-plan` טהור) → Commit 1 (FE engine: דחיסת canvas) → Commit 2 (TypeArea:
+paste/drop/picker + tray + gating) → Commit 3 (UserBubble image render) — **כולם בְּני-ביצוע עכשיו** —
+ו-Commit 4 (שליחה מולטימודלית) **GATED** על ה-contract bump. כך "אולי נבצע" מתקדם על 0–3 בלי להיחסם.
+
+### חובת-spec: capability gating
+ACP spec: *"Clients MUST restrict content per Prompt Capabilities"*. `AcpClient.capabilities` (=agentCapabilities
+מ-initialize) כבר נחשף → gating דרך getter `supportsImageInput` (`promptCapabilities.image`). בלי image-cap
+על ה-agent הנוכחי — הלכידה מושבתת.
+
+### חלוקת core/engine (No browser globals in core)
+החלטת ה-resize (scale-to-fit) טהורה → `packages/core/src/image/resize-plan.ts` (TDD). קידוד canvas בפועל
+(`createImageBitmap`/`OffscreenCanvas`) → FE engine `image-attachment.ts`. שמירה על כלל AGENTS.md.
+
+### ממצאי אביגיל
+- **r1 (USABLE-AFTER-FIX, 3)**: (א) i18n חי ב-`packages/core/src/i18n/` ולא ב-frontend — תוקן; (ב) tip
+  התיישן 3208427→3bb36a9 + sendPrompt §559 — תוקן; (ג) שתי גרסאות `provider-contract` ב-.pnpm — חודד
+  לגרסה ש-ה-FE פותר (`f034...`).
+- **r2 (READY, 1×🟢)**: ה-guard `if (!text.trim()) return` (שורה 562) יזרוק בשקט שליחת **תמונה-בלבד** —
+  שולב ב-Commit 4 (`!text.trim() && !attachments.length`) + DoD ייעודי.
+
+### רעיונות שנדחו (Scope)
+קבצים לא-תמונה (PDF/resource), draft-persistence, `@`mentions/slash/shell-mode, ו-`local-file-proxy`
+(רינדור `file://`) — כולם slices נפרדים. ה-MVP: תמונות בלבד, paste+drop+picker, דחיסה ≤2048px/JPEG/8MB.
+
+### מצב
+brief READY (אביגיל r2). **merge מוקפא** עד ש-`AcpClient.prompt` יקבל `PromptContent`/blocks (Track A,
+הסוכן השני). Commits 0–3 ניתנים ל-dispatch מיידי; runtime-gate (calev-heavy) רק אחרי Commit 4 חי.
