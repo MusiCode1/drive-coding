@@ -11,10 +11,12 @@
  */
 import { untrack } from "svelte"
 import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
-import LogOutIcon from "@lucide/svelte/icons/log-out"
+import PowerIcon from "@lucide/svelte/icons/power"
+import Minimize2Icon from "@lucide/svelte/icons/minimize-2"
 import Volume2Icon from "@lucide/svelte/icons/volume-2"
 import VolumeXIcon from "@lucide/svelte/icons/volume-x"
 import SettingsIcon from "@lucide/svelte/icons/settings"
+import { Dialog as BitsDialog } from "bits-ui"
 import { goto } from "$app/navigation"
 import { page } from "$app/state"
 import { getI18n, getSession, getSpeaker, getResponsive, getUiShell, getSettings } from "$lib/context"
@@ -36,6 +38,23 @@ const onSettings = $derived(page.url.pathname === "/settings")
 
 function onDisconnect() {
   session.detach()
+  goto("/")
+}
+
+// ─── slice leave-running-background: יציאה בלי להרוג ───
+let leaveConfirmOpen = $state(false)
+
+function onLeaveRunning() {
+  if (session.bypassActive) {
+    doLeaveRunning()   // bypass → אין stall → צא ישר
+  } else {
+    leaveConfirmOpen = true  // לא-bypass → אזהר קודם
+  }
+}
+
+function doLeaveRunning() {
+  leaveConfirmOpen = false
+  session.leaveRunning()
   goto("/")
 }
 
@@ -173,10 +192,10 @@ $effect(() => {
 })
 </script>
 
-<!-- שורת פעולות עליונה: נתק · השתק · ⚙ — בראש בכל המצבים (redesign-fix) -->
-<!-- סדר DOM: disconnect ראשון = ימני ביותר ב-RTL -->
+<!-- שורת פעולות עליונה: נתק · השאר-רץ · השתק · ⚙ — בראש בכל המצבים (redesign-fix) -->
+<!-- סדר DOM ב-RTL: disconnect=ימני-קיצוני, leave-running משמאלו, audio, settings -->
 <div class="flex items-center gap-2 shrink-0">
-  <!-- disconnect -->
+  <!-- disconnect (הורג) — אדום, ימני-קיצוני ב-RTL -->
   <button
     class="flex-1 flex items-center justify-center gap-2 px-2.5 py-2 rounded-lg text-[13px] border"
     style="border-color:var(--border); color:var(--recording)"
@@ -184,7 +203,19 @@ $effect(() => {
     aria-label={t("header.disconnect")}
     title={t("header.disconnect")}
   >
-    <LogOutIcon size={16} strokeWidth={1.75} />
+    <PowerIcon size={16} strokeWidth={1.75} />
+  </button>
+
+  <!-- leave-running (לא הורג) — ניטרלי, עם תווית-טקסט -->
+  <button
+    class="flex-1 flex items-center justify-center gap-2 px-2.5 py-2 rounded-lg text-[13px] border min-w-0"
+    style="border-color:var(--border); color:var(--fg-dim)"
+    onclick={onLeaveRunning}
+    aria-label={t("session.leaveRunning")}
+    title={t("session.leaveRunning")}
+  >
+    <Minimize2Icon size={16} strokeWidth={1.75} />
+    <span class="truncate">{t("session.leaveRunning")}</span>
   </button>
 
   <!-- audio master toggle -->
@@ -214,6 +245,41 @@ $effect(() => {
     <SettingsIcon size={16} strokeWidth={1.75} />
   </button>
 </div>
+
+<!-- ─── modal אזהרה: leaveRunning כשלא-bypass ─── -->
+<BitsDialog.Root bind:open={leaveConfirmOpen}>
+  <BitsDialog.Portal>
+    <BitsDialog.Overlay
+      class="fixed inset-0 z-50 bg-black/60"
+    />
+    <BitsDialog.Content
+      class="fixed left-1/2 top-1/2 z-50 w-[90vw] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl p-5 shadow-xl flex flex-col gap-4"
+      style="background:var(--surface); border:1px solid var(--border)"
+    >
+      <BitsDialog.Title class="text-base font-semibold" style="color:var(--fg)">
+        {t("session.leaveWarning.title")}
+      </BitsDialog.Title>
+      <p class="text-[13px] leading-relaxed" style="color:var(--fg-dim)">
+        {t("session.leaveWarning.body")}
+      </p>
+      <div class="flex gap-2 justify-end">
+        <BitsDialog.Close
+          class="px-3 py-2 rounded-lg text-[13px] border"
+          style="border-color:var(--border); color:var(--fg-dim)"
+        >
+          {t("session.leaveWarning.cancel")}
+        </BitsDialog.Close>
+        <button
+          class="px-3 py-2 rounded-lg text-[13px]"
+          style="background:var(--accent); color:var(--bg)"
+          onclick={doLeaveRunning}
+        >
+          {t("session.leaveWarning.confirm")}
+        </button>
+      </div>
+    </BitsDialog.Content>
+  </BitsDialog.Portal>
+</BitsDialog.Root>
 
 <!-- אזור גלילה מאוחד: אפשרויות סוכן + סשנים. הגלילה מתחילה מכאן (מסקשן אפשרויות סוכן),
      כך שכשהגובה קטן ראש הרשימה לא נחתך אלא נגלל. שורת הפעולות מעל נשארת קבועה (shrink-0). -->

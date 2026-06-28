@@ -1,3 +1,26 @@
+## 2026-06-28 — leave-running-background — Commit 2: כפתור UI + modal אזהרה (manual)
+
+### מה בוצע?
+
+`packages/frontend/src/lib/components/layout/SessionOptionsPanel.svelte`:
+- imports: `PowerIcon` + `Minimize2Icon` מ-`@lucide/svelte/icons/`; `Dialog as BitsDialog` מ-`bits-ui`.
+- כפתור disconnect: `LogOutIcon` → `PowerIcon` (אדום, ימני-קיצוני).
+- כפתור חדש "צא — השאר רץ": `Minimize2Icon` + תווית-טקסט, `onclick={onLeaveRunning}`, ניטרלי (`--fg-dim`).
+- `leaveConfirmOpen: $state(false)` + `onLeaveRunning()` (bypass → ישיר; לא-bypass → modal) + `doLeaveRunning()`.
+- `<BitsDialog.Root>` modal עם כותרת+גוף+2 כפתורים (ביטול/אישור), כל טקסט דרך `t()`.
+
+### בדיקות
+
+- typecheck: 0 שגיאות
+- lint:i18n: ✓
+- approach: manual (browser smoke — לבדיקה חיה עם BE)
+
+### סטיות
+
+ללא סטיות. השתמשנו ב-bits-ui Dialog (primitive קיים) במקום inline >50 שורות.
+
+---
+
 ## 2026-06-28 — leave-running-background — Commit 1: leaveRunning() + bypassActive ב-VM (manual)
 
 ### מה בוצע?
