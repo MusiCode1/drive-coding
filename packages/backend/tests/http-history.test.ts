@@ -212,6 +212,7 @@ describe("GET /api/fs/browse", () => {
     await mkdir(join(base, "visible"))
     await mkdir(join(base, "node_modules"))
     await mkdir(join(base, ".git"))
+    await mkdir(join(base, ".config"))
     try {
       const { app } = makeAppRestricted(base)
       const res = await app.request(`/api/fs/browse?path=${encodeURIComponent(base)}`)
@@ -221,6 +222,7 @@ describe("GET /api/fs/browse", () => {
       expect(names).toContain("visible")
       expect(names).not.toContain("node_modules")
       expect(names).not.toContain(".git")
+      expect(names).not.toContain(".config")
     } finally {
       await rm(base, { recursive: true, force: true })
     }
@@ -232,6 +234,7 @@ describe("GET /api/fs/browse", () => {
     await mkdir(join(base, "visible"))
     await mkdir(join(base, "node_modules"))
     await mkdir(join(base, ".git"))
+    await mkdir(join(base, ".config"))
     try {
       const { app } = makeAppRestricted(base)
       const res = await app.request(
@@ -243,6 +246,7 @@ describe("GET /api/fs/browse", () => {
       expect(names).toContain("visible")
       expect(names).toContain("node_modules")
       expect(names).toContain(".git")
+      expect(names).toContain(".config")
     } finally {
       await rm(base, { recursive: true, force: true })
     }

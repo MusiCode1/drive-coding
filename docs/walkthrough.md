@@ -26,6 +26,53 @@
 
 ---
 
+## 2026-06-28 — folder-picker-fixes — Commit 2 (FE): בורר נפתח בנתיב שהוזן ידנית (manual)
+
+### מה בוצע?
+
+- הוספת `let { startPath = "" }: { startPath?: string } = $props()` ל-`FolderPickerDialog.svelte`.
+- עדכון `openAtStart`: עדיפות-ראשונה = `startPath.trim()` → `settings.lastCwd` → `homeDir`.
+- `startPath` נקרא בתוך `untrack(...)` → לא הופך ל-dependency של ה-`$effect` (effect עוקב רק אחרי `modals.folderOpen`).
+- `+page.svelte:237`: `<FolderPickerDialog startPath={cwd} />` — מעביר את הקלט החי.
+- AppShell.svelte:347 נשאר ללא שינוי (`<FolderPickerDialog />` עם default `""`).
+
+### בדיקות
+
+- Manual (approach=manual): בדפדפן — הבורר נפתח בנתיב שהוזן בשדה cwd.
+- `pnpm -r typecheck` — 0 errors.
+- `lint:i18n` — ✓.
+
+### סטיות
+
+אין. prop אופציונלי עם default `""` — mount של AppShell ממשיך לעבוד ללא שינוי.
+
+---
+
+## 2026-06-28 — folder-picker-fixes — Commit 1 (BE): הסתרת כל dot-folders + NOISE_DIRS (TDD)
+
+### מה בוצע?
+
+- הסרת `HIDDEN_PREFIXES` (allowlist קשיח של 5 קידומות) מ-`packages/backend/src/delivery/http-history.ts`.
+- הוספת `NOISE_DIRS = new Set(["node_modules"])` לשמות-רעש שאינם dot.
+- הוספת `isHiddenEntry(dirent, fullPath): Promise<boolean>` — async, מסתיר כל שם שמתחיל ב-`.` (Unix convention) או שב-`NOISE_DIRS`. נקודת-הרחבה מתועדת ל-`slice-windows-hidden-attr`.
+- עדכון הפילטר ל-async: `showHidden=true` → דילוג מיידי; `showHidden=false` → `Promise.all` + filter.
+- הוספת `import { join }` (נדרש ל-`join(real, d.name)`).
+- הוספת `.config` לשני הטסטים (`hides hidden...` ו-`shows hidden...`).
+
+### בדיקות
+
+- TDD: RED (`.config` מוצג בקוד הישן) → GREEN (מוסתר בקוד החדש).
+- `pnpm vitest run packages/backend/tests/http-history.test.ts` — 16/16 ירוק.
+- `pnpm -r typecheck` — 0 errors.
+- `lint:i18n` — ✓ (הערות בעברית מותרות, אין מחרוזות UI).
+- כישלונות קדם-קיימים ב-`https-serve.test.ts`/`bridge-*` (bun ENOENT) — מאומתים כ-pre-existing ב-dev.
+
+### סטיות
+
+אין. הגדרה חדשה = על-קבוצה של הישנה (`.git`, `.pnpm`, `.svelte-kit`, `.opencode` נשארים מוסתרים ע"י כלל ה-dot; `node_modules` ב-NOISE_DIRS). `showHidden=true` fast-path שמור.
+
+---
+
 ## 2026-06-28 — active-processes-icon-actions — Commit 5: בועת-אישור "בטוח?" על כפתור ה-פח
 
 ### מה בוצע?

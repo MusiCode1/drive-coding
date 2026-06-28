@@ -234,7 +234,8 @@ async function onSubmit(e: SubmitEvent) {
 </main>
 
 <!-- C10: בורר תיקיות (מרונדר כאן כי דף החיבור אינו עטוף ב-AppShell) -->
-<FolderPickerDialog />
+<!-- folder-picker-fixes: startPath={cwd} → הבורר נפתח בנתיב שהוזן ידנית -->
+<FolderPickerDialog startPath={cwd} />
 <!-- content-viewer (slice content-viewer — כמו FolderPickerDialog: מסך connect אינו עטוף ב-AppShell) -->
 <ContentViewerDialog />
 
