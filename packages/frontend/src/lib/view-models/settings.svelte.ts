@@ -51,6 +51,8 @@ type Persisted = {
   ttsProvider: "elevenlabs" | "google"
   // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
   recentCollapsed: boolean
+  // ─── leave-running (runtime-gate fixes) ───
+  suppressLeaveWarning: boolean
 }
 
 const DEFAULTS: Persisted = {
@@ -83,6 +85,8 @@ const DEFAULTS: Persisted = {
   ttsProvider: "elevenlabs" as const,
   // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
   recentCollapsed: false,
+  // ─── leave-running (runtime-gate fixes) ───
+  suppressLeaveWarning: false,
 }
 
 function load(): Persisted {
@@ -169,6 +173,8 @@ export class Settings {
 
   // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
   recentCollapsed = $state<boolean>(DEFAULTS.recentCollapsed)
+  // ─── leave-running (runtime-gate fixes) ───
+  suppressLeaveWarning = $state<boolean>(DEFAULTS.suppressLeaveWarning)
 
   constructor() {
     const loaded = load()
@@ -200,6 +206,8 @@ export class Settings {
     this.ttsProvider = loaded.ttsProvider
     // ─── תיקיות אחרונות ───
     this.recentCollapsed = loaded.recentCollapsed
+    // ─── leave-running ───
+    this.suppressLeaveWarning = loaded.suppressLeaveWarning
   }
 
   // ─── טופס חיבור ───
@@ -409,6 +417,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── leave-running (runtime-gate fixes) ───
+
+  setSuppressLeaveWarning = (v: boolean): void => {
+    this.suppressLeaveWarning = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -430,6 +445,7 @@ export class Settings {
       lastConfig: this.lastConfig,
       ttsProvider: this.ttsProvider,
       recentCollapsed: this.recentCollapsed,
+      suppressLeaveWarning: this.suppressLeaveWarning,
     })
   }
 }

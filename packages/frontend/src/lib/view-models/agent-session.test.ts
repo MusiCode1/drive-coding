@@ -347,3 +347,70 @@ describe("AgentSession.sessionTitle (slice-session-title-header)", () => {
     expect(session.sessionTitle).toBe("")
   })
 })
+
+// ─── bypassActive — קריאה משני מקורות (תיקון runtime-gate) ───────────────────
+
+describe("AgentSession.bypassActive — reads configOptions first, falls back to modes", () => {
+  let session: AgentSession
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    onSessionUpdate = null
+    vi.stubGlobal("location", { protocol: "http:", host: "localhost:4000" })
+    session = new AgentSession()
+    await session.attach({ cwd: "/tmp", cliKind: "claude" })
+  })
+
+  it("returns true when configOptions has mode=select with currentValue=bypassPermissions", () => {
+    session.configOptions = [
+      {
+        id: "mode",
+        name: "Mode",
+        type: "select",
+        category: "mode",
+        currentValue: "bypassPermissions",
+        options: [],
+      } as unknown as import("@agentclientprotocol/sdk").SessionConfigOption,
+    ]
+    expect(session.bypassActive).toBe(true)
+  })
+
+  it("returns false when configOptions has mode=select with currentValue=default", () => {
+    session.configOptions = [
+      {
+        id: "mode",
+        name: "Mode",
+        type: "select",
+        category: "mode",
+        currentValue: "default",
+        options: [],
+      } as unknown as import("@agentclientprotocol/sdk").SessionConfigOption,
+    ]
+    expect(session.bypassActive).toBe(false)
+  })
+
+  it("falls back to modes.currentModeId when no mode configOption exists", () => {
+    session.configOptions = []
+    session.modes = {
+      currentModeId: "bypassPermissions",
+      availableModes: [],
+    }
+    expect(session.bypassActive).toBe(true)
+  })
+
+  it("returns false for non-claude cliKind even with bypassPermissions in configOptions", async () => {
+    const openCodeSession = new AgentSession()
+    await openCodeSession.attach({ cwd: "/tmp", cliKind: "opencode" })
+    openCodeSession.configOptions = [
+      {
+        id: "mode",
+        name: "Mode",
+        type: "select",
+        category: "mode",
+        currentValue: "bypassPermissions",
+        options: [],
+      } as unknown as import("@agentclientprotocol/sdk").SessionConfigOption,
+    ]
+    expect(openCodeSession.bypassActive).toBe(false)
+  })
+})

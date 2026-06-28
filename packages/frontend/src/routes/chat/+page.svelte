@@ -2,6 +2,7 @@
 /**
  * /chat — route דק. redesign-4: RecordFooter מחליף ChatInput.
  */
+import { onMount } from "svelte"
 import { goto } from "$app/navigation"
 import { getSession } from "$lib/context"
 import AppShell from "$lib/components/layout/AppShell.svelte"
@@ -29,6 +30,21 @@ if (session.status === "idle") {
   }
 }
 // redesign-fix: disconnect עבר ל-SessionOptionsPanel (אין יותר onDisconnect prop)
+
+// ─── slice leave-running-background: beforeunload guard ───
+// מזהיר כשמחובר ולא ב-bypass — הריצה עלולה להיתקע בלי FE (ACP client).
+// onMount: רץ רק בדפדפן → בטוח מ-SSR (window/beforeunload לא קיימים ב-SSR).
+// scope: /chat בלבד — רענון בדף-הבית/רשימה לא מזהיר.
+onMount(() => {
+  function onBeforeUnload(e: BeforeUnloadEvent) {
+    if (session.status === "connected" && !session.bypassActive) {
+      e.preventDefault()   // מפעיל dialog גנרי של הדפדפן
+      e.returnValue = ""   // נדרש לדפדפנים ישנים
+    }
+  }
+  window.addEventListener("beforeunload", onBeforeUnload)
+  return () => window.removeEventListener("beforeunload", onBeforeUnload)
+})
 </script>
 
 {#if session.status !== "idle"}

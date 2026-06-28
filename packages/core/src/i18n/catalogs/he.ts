@@ -214,4 +214,12 @@ export const he: Catalog = {
   "connect.recent.remove": "הסר מהרשימה",
   "connect.recent.collapse": "כווץ",
   "connect.recent.expand": "הרחב",
+  // ─── leave-running (slice leave-running-background) ───
+  "session.leaveRunning": "צא — השאר רץ",
+  "session.closeSession": "כבה לגמרי את התהליך",
+  "session.leaveWarning.title": "הסוכן ימשיך לרוץ",
+  "session.leaveWarning.body": "הריצה תיעצר ברגע שתגיע בקשת-הרשאה, כי הדפדפן הוא ה-ACP client. למנוע תקיעה: עבור למצב עקיפת-הרשאות לפני שתצא.",
+  "session.leaveWarning.confirm": "צא בכל זאת",
+  "session.leaveWarning.cancel": "ביטול",
+  "session.leaveWarning.dontShowAgain": "אל תציג הודעה זו שוב",
 }

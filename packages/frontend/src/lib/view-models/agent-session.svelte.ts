@@ -36,6 +36,8 @@ import type {
 } from "$lib/types/bubble"
 // ─── slice sessions-inline: ייבוא טיפוס + normalize ───
 import { type SessionInfo, normalizeSessionInfo } from "$lib/adapters/sessions"
+// ─── slice leave-running-background ───
+import { isBypassMode } from "$lib/util/permission-mode"
 
 // ─── image-attach kill-switch ─── (slice-image-paste Commit 2)
 // נשאר false עד ש-Commit 4 (שליחה מולטימודלית) + track-A מוכנים.
@@ -572,6 +574,38 @@ export class AgentSession {
     this.sessionsError = null
   }
 
+  /** יציאה מהסשן בלי להרוג את הסוכן ב-BE — ה-child שורד (ws-agent.ts:126),
+   *  ה-WS נסגר, ה-VM מתאפס ל-idle. מאפשר reconnect/חזרה דרך רשימת-התהליכים.
+   *  ⚠️ סנכרן גוף זה מול detach() אם detach() משתנה — ההבדל היחיד: cleanup({keepAgent:true}). */
+  leaveRunning = (): void => {
+    this.#detached = true
+    this.#clearReconnectTimer()
+    this.#reconnecting = false
+    this.reconnectAttempt = 0
+    this.#cleanup({ keepAgent: true })   // ← ההבדל היחיד מ-detach
+    this.#setStatus("idle")
+    this.error = null
+    this.bubbles = []
+    // ─── slice sessions-inline: ניקוי cache סשנים ───
+    this.sessions = []
+    this.#sessionsLoaded = false
+    this.sessionsError = null
+  }
+
+  /** האם הסשן הנוכחי במצב עקיפת-הרשאות (claude בלבד כרגע — ראה permission-mode.ts).
+   * קורא משני מקורות: configOptions (מתעדכן חי דרך config_option_update) ואז
+   * fallback ל-modes.currentModeId (מתעדכן רק ב-mode_update, שלא תמיד מגיע מ-claude).
+   */
+  get bypassActive(): boolean {
+    // configOptions מתעדכן חי ב-claude — נעדיף אותו כמקור ראשון.
+    const modeOpt = this.configOptions.find((o) => o.category === "mode")
+    const liveModeId =
+      modeOpt && modeOpt.type === "select"
+        ? (modeOpt as Extract<SessionConfigOption, { type: "select" }>).currentValue
+        : undefined
+    return isBypassMode(this.#cliKind, liveModeId ?? this.modes?.currentModeId)
+  }
+
   // ─── פרומפטים (prompting) ────────────────────────────────────
 
   /**
@@ -1106,7 +1140,7 @@ export class AgentSession {
     this.modes = result.modes ?? null
   }
 
-  #cleanup(): void {
+  #cleanup(opts?: { keepAgent?: boolean }): void {
     // לכוד את ה-agentId לפני האיפוס — צריך אותו ל-deleteAgent.
     const agentId = this.agentId
     // נקה timer של tail-debounce (msr-v2 — NBug1 opencode)
@@ -1124,7 +1158,8 @@ export class AgentSession {
     // (ws-agent.ts:126 — בכוונה, לאפשר reconnect עתידי), לכן ה-FE אחראי
     // לבקש מחיקה מפורשת. fire-and-forget — לא חוסם, לא זורק (cleanup רץ גם
     // ב-error path; ראה sessions.ts:71 לאותו דפוס).
-    if (agentId) void deleteAgent(agentId).catch(() => {})
+    // ─── slice leave-running-background: keepAgent=true → לא הורג (ה-child שורד) ───
+    if (!opts?.keepAgent && agentId) void deleteAgent(agentId).catch(() => {})
   }
 
   #mapToolContent(raw: unknown): ToolContent[] {

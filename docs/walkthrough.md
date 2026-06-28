@@ -229,6 +229,156 @@ slice: recent-projects-controls (6 commits)
 
 ---
 
+## 2026-06-28 — leave-running-background — runtime-gate fixes (commit 5)
+
+### מה בוצע?
+
+3 תיקונים לאחר בדיקת המשתמשת בסביבת preview:
+
+**תיקון 1 — אייקון כפתור leave-running:**
+- `SessionOptionsPanel.svelte`: החלפת `Minimize2Icon` ב-`LogOutIcon` (import עודכן).
+- הכפתור הפך ל-icon-only (הוסרה `<span>` עם תווית), `min-w-0` הוסר. שאר הכפתורים (disconnect/audio/settings) לא שונו.
+
+**תיקון 2 — צ'קבוקס "אל תציג שוב" במודל:**
+- `core/src/i18n/keys.ts`: נוסף מפתח `session.leaveWarning.dontShowAgain`.
+- `he.ts`: "אל תציג הודעה זו שוב"; `en.ts`: "Don't show this message again".
+- `settings.svelte.ts`: שדה `suppressLeaveWarning` (Persisted/DEFAULTS/`$state`/setter/`#persist`).
+- `SessionOptionsPanel.svelte`: `let dontShowAgain = $state(false)` + checkbox במודל. `onLeaveRunning` בודק `settings.suppressLeaveWarning`. `doLeaveRunning` קורא `settings.setSuppressLeaveWarning(true)` אם `dontShowAgain`.
+
+**תיקון 3 — bypassActive מ-configOptions:**
+- `agent-session.svelte.ts:bypassActive`: קורא קודם `configOptions.find(category==="mode")` וגוזר `liveModeId` מ-`currentValue`; fallback ל-`modes.currentModeId`.
+- `agent-session.test.ts`: `describe` חדש עם 4 טסטים (configOptions=bypassPermissions→true, default→false, fallback ל-modes, opencode→false).
+
+### בדיקות
+
+- typecheck: 0 שגיאות
+- vitest frontend: 365/365 ירוקים (נוספו 4 טסטים חדשים)
+- lint:i18n: ✓ No hardcoded Hebrew in code
+- approach: integration (bypassActive TDD new tests) + manual (UI checkbox)
+
+### סטיות
+
+ללא סטיות מה-brief.
+
+---
+
+## 2026-06-28 — leave-running-background — סיכום סליס (4 commits)
+
+### מה בוצע?
+
+Slice `leave-running-background` הושלם ב-4 commits על branch `slice/leave-running-background`:
+- `b55930b` — Commit 0: isBypassMode helper + i18n keys (TDD, 7/7 tests)
+- `29660ec` — Commit 1: leaveRunning() + bypassActive ב-VM
+- `176a78a` — Commit 2: כפתור UI + modal bits-ui Dialog
+- `7ed4f2b` — Commit 3: beforeunload guard ב-/chat
+
+### בדיקות מצטברות
+
+- typecheck: 0 שגיאות בכל commit
+- vitest: 361/361 ירוקים לאורך כל הסליס
+- lint:i18n: ✓ בכל commit
+- approach per commit: TDD / manual / manual / manual
+
+### סטיות
+
+- כפתור "נתק" (הורג): הוחלף `LogOutIcon` → `PowerIcon` (שינוי ויזואלי בלבד, מפתח `header.disconnect` נשאר).
+- Modal: השתמשנו ב-bits-ui Dialog (primitive קיים) במקום inline — תוצאה: < 50 שורות נוספות בקומפוננטה.
+
+---
+
+## 2026-06-28 — leave-running-background — Commit 3: beforeunload guard ב-chat/+page.svelte (manual)
+
+### מה בוצע?
+
+`packages/frontend/src/routes/chat/+page.svelte`:
+- import `{ onMount } from "svelte"` — חדש לחלוטין (הקובץ לא הכיל onMount).
+- `onMount(() => { ... return cleanup })`: מוסיף `beforeunload` listener; ב-cleanup מסיר.
+- handler `onBeforeUnload`: כשמחובר (`status==="connected"`) ולא ב-bypass → `e.preventDefault()` + `e.returnValue=""` → dialog גנרי של הדפדפן.
+- SSR-safe: `onMount` רץ רק בדפדפן, אין `window` ב-module-scope.
+
+### בדיקות
+
+- typecheck: 0 שגיאות
+- 361/361 tests ירוקים
+- lint:i18n: ✓
+- approach: manual (browser smoke — לבדיקה חיה עם BE)
+
+### סטיות
+
+ללא סטיות. הקובץ נשאר דק (~65 שורות — מתחת לגבול 150 שורות routes).
+
+---
+
+## 2026-06-28 — leave-running-background — Commit 2: כפתור UI + modal אזהרה (manual)
+
+### מה בוצע?
+
+`packages/frontend/src/lib/components/layout/SessionOptionsPanel.svelte`:
+- imports: `PowerIcon` + `Minimize2Icon` מ-`@lucide/svelte/icons/`; `Dialog as BitsDialog` מ-`bits-ui`.
+- כפתור disconnect: `LogOutIcon` → `PowerIcon` (אדום, ימני-קיצוני).
+- כפתור חדש "צא — השאר רץ": `Minimize2Icon` + תווית-טקסט, `onclick={onLeaveRunning}`, ניטרלי (`--fg-dim`).
+- `leaveConfirmOpen: $state(false)` + `onLeaveRunning()` (bypass → ישיר; לא-bypass → modal) + `doLeaveRunning()`.
+- `<BitsDialog.Root>` modal עם כותרת+גוף+2 כפתורים (ביטול/אישור), כל טקסט דרך `t()`.
+
+### בדיקות
+
+- typecheck: 0 שגיאות
+- lint:i18n: ✓
+- approach: manual (browser smoke — לבדיקה חיה עם BE)
+
+### סטיות
+
+ללא סטיות. השתמשנו ב-bits-ui Dialog (primitive קיים) במקום inline >50 שורות.
+
+---
+
+## 2026-06-28 — leave-running-background — Commit 1: leaveRunning() + bypassActive ב-VM (manual)
+
+### מה בוצע?
+
+`packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+- `#cleanup()` → `#cleanup(opts?: { keepAgent?: boolean })`: כל קריאות קיימות (שורות 539/549/676) ללא ארגומנט → ברירת מחדל הורג. keepAgent=true → מדלג על `deleteAgent`.
+- `leaveRunning()`: עותק 1:1 של `detach()` פרט ל-`#cleanup({keepAgent:true})`.
+- `get bypassActive()`: קורא ל-`isBypassMode(this.#cliKind, this.modes?.currentModeId)`.
+- import `isBypassMode` מ-`$lib/util/permission-mode`.
+
+### בדיקות
+
+- typecheck: 0 שגיאות
+- agent-session tests: 361/361 ירוקים (הטסטים הקיימים נשארו ירוקים)
+- lint:i18n: ✓
+
+### סטיות
+
+ללא סטיות. approach: manual.
+
+---
+
+## 2026-06-28 — leave-running-background — Commit 0: isBypassMode helper + i18n keys (TDD)
+
+### מה בוצע?
+
+**קבצים חדשים:**
+- `packages/frontend/src/lib/util/permission-mode.ts` — `isBypassMode(cliKind, currentModeId): boolean` + `BYPASS_MODE_ID` (claude בלבד, עם הערת-קוד לאיחוד עתידי)
+- `packages/frontend/src/lib/util/permission-mode.test.ts` — 7 טסטי TDD (red→green): claude+bypass→true, claude+default→false, opencode+כל→false, null→false, undefined→false
+
+**שינויים בקיים:**
+- `packages/core/src/i18n/keys.ts` — בלוק חדש בסוף: `session.leaveRunning` + `session.leaveWarning.{title,body,confirm,cancel}`
+- `packages/core/src/i18n/catalogs/he.ts` — תרגומים עבריים לבלוק החדש
+- `packages/core/src/i18n/catalogs/en.ts` — תרגומים אנגליים לבלוק החדש
+
+### בדיקות
+
+- TDD: 7/7 טסטים ירוקים (`pnpm test -- permission-mode`)
+- typecheck: 0 שגיאות
+- lint:i18n: ✓ (אין מחרוזות עבריות בקוד)
+
+### סטיות
+
+ללא סטיות מה-brief. approach: TDD, כפי שנקבע ב-§4 commit 0.
+
+---
+
 ## 2026-06-25 — slice-input-autogrow — Commit 1: textarea auto-grow ב-TypeArea
 
 ### מה בוצע?
