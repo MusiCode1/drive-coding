@@ -42,6 +42,23 @@ export class RoutingAudioSink implements AudioSink {
     }
   }
 
+  /**
+   * A3: מאציל pause לשני ה-sinks (מי שלא פעיל — no-op).
+   * §9 Q2: שניהם (לא רק הפעיל) — הבחירה הפשוטה והבטוחה.
+   */
+  pause(): void {
+    this.mp3.pause()
+    this.pcm.pause()
+  }
+
+  /**
+   * A3: מאציל resume לשני ה-sinks (מי שלא פעיל — no-op).
+   */
+  resume(): void {
+    this.mp3.resume()
+    this.pcm.resume()
+  }
+
   clear(): void {
     this.mp3.clear()
     this.pcm.clear()

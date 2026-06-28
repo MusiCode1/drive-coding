@@ -158,6 +158,23 @@ export class AudioStream implements AudioSink {
     })
   }
 
+  /**
+   * A3: משהה את אלמנט האודיו הנוכחי.
+   * #current עשוי null אחרי ended/cancel — ה-?. מגן.
+   */
+  pause(): void {
+    this.#current?.audio.pause()
+  }
+
+  /**
+   * A3: ממשיך את אלמנט האודיו הנוכחי אחרי pause.
+   * #current עשוי null אחרי ended/cancel — ה-?. מגן.
+   * MediaSource שומר currentTime → ממשיך מאותה נקודה.
+   */
+  resume(): void {
+    void this.#current?.audio.play()
+  }
+
   /** ביטול מקטע — מבטל את ה-fetch, משהה את האודיו ומנקה. */
   cancel(segmentId: string): void {
     const seg = this.#segments.get(segmentId)

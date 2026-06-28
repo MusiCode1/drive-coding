@@ -30,4 +30,8 @@ export interface AudioSink {
   play(segmentId: string): Promise<void>
   cancel(segmentId: string): void
   clear(): void
+  /** A3: משהה את הניגון הנוכחי. */
+  pause(): void
+  /** A3: ממשיך ניגון אחרי pause. */
+  resume(): void
 }

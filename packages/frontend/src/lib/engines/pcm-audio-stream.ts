@@ -260,6 +260,27 @@ export class PcmAudioStream implements AudioSink {
     this.#segments.delete(segmentId)
   }
 
+  /**
+   * A3: משהה את ה-AudioContext. ה-#nextStartTime cursor "קופא" אוטומטית
+   * כי שעון ה-AudioContext עוצר — אין gap/drift בעת resume.
+   * (⚠️ לאמת חי שאין gap/drift — WebAudio לא ב-JSDOM)
+   */
+  pause(): void {
+    if (this.#ctx?.state === "running") {
+      void this.#ctx.suspend()
+    }
+  }
+
+  /**
+   * A3: ממשיך את ה-AudioContext אחרי pause.
+   * ה-cursor ממשיך מאותה נקודה (AudioContext clock חידש).
+   */
+  resume(): void {
+    if (this.#ctx?.state === "suspended") {
+      void this.#ctx.resume()
+    }
+  }
+
   /** ביטול כל ה-segments */
   clear(): void {
     for (const segmentId of [...this.#segments.keys()]) {
