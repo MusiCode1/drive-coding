@@ -1682,3 +1682,38 @@ diff core ריק). **כלב GO 8/8 DoD, 0 findings** — כולל אימות ח�
 ### מצב
 branch `slice/code-copy-button` — **GO, ממתין אישור-merge מהמשתמשת** (לא מוזג). worktree
 `.worktrees/code-copy-button` חי עד מיזוג.
+
+> **עדכון 2026-06-29**: מוזג ל-dev (`02ff12f`, v0.6.0). קונפליקט CSS מול D ב-`MarkdownContent.svelte`
+> נפתר additive (כפתור-העתקה + syntax-tokens — בלוקים משלימים). אומת חי ב-preview.
+
+---
+
+## 2026-06-29 — markdown-dir-per-paragraph (slice B): אימות-מחדש מול dev+D + dispatch
+
+### רציונל
+B (req #6 — `dir="auto"` פר block-element) הוא ה-slice האחרון ב-batch Markdown-UX (A✅ C✅ D✅).
+ה-brief אושר READY (אביגיל r2) **לפני** ש-D (code-syntax-highlight) מוזג. מכיוון ש-B ו-D שניהם
+נוגעים ב-`markdown.ts`, וה-merge-order ההיסטורי היה "B לפני D" — אבל D מוזג קודם — נדרש
+**אימות-מחדש** של ה-brief מול ה-base החדש (dev+D).
+
+### הכרעה
+**ה-merge-order ההיסטורי בטל; B נבנה מעל dev+D.** הסיכון המרכזי: D הוסיף ל-`markdown.ts`
+שלושה passים של sanitize (Pass 2=markdown, 3a=KaTeX, 3b=code), וה-hook `afterSanitizeAttributes`
+**גלובלי** → רץ על כל השלושה. אביגיל אימתה (6/6 claims) שה-set של B (`P/LI/H1-6/BLOCKQUOTE/TD/TH`)
+**אינו** כולל `pre/code/span`, ולכן code-fragments של Pass 3b לא יקבלו `dir` — הקוד נשאר LTR.
+D אינו מבטל אף הנחה של B.
+
+### שינוי לפי finding אביגיל (🟢)
+ה-pseudo-code המקורי עשה `setAttribute("dir","auto")` ללא-תנאי → היה דורס `dir` מפורש שהמודל
+אולי פולט (`dir` ב-`MARKDOWN_ATTR`). שולב guard `!node.hasAttribute("dir")` — כוונה מפורשת
+מנצחת את ה-auto. זול, נכון סמנטית, ומונע finding עתידי של כלב.
+
+### ביצוע + runtime-gate
+אליעזר: commit אחד (`0fe7b87`) — `BIDI_BLOCK_TAGS` + הרחבת ה-hook הקיים (ענף נוסף, לא hook חדש,
+עם guard). TDD: 7 טסטי jsdom חדשים (block→dir; pre/code→בלי; `<a>`/KaTeX regression; dir-guard),
+67/67 ירוק, typecheck 0, lint i18n נקי. **כלב light GO 8/8**. ⚠️ דוח כלב לא נשמר לקובץ
+(פער — תמצית בלבד); מאומת חי ב-preview (build מלא) לפני merge כ-runtime-gate משלים (B ויזואלי).
+
+### מצב
+branch `slice/markdown-dir-per-paragraph` — GO, **ממתין smoke חי + אישור-merge**. base=dev (`f1763d4`,
+descendant נקי — merge ישיר ללא איחוד).
