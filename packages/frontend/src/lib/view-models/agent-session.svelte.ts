@@ -1264,6 +1264,19 @@ export class AgentSession {
       return
     }
 
+    // ─── slice acp-mode-config-sync: handler ל-mode event ───────────────────
+    // חובה לפני `if (!text) return` — event זה לא נושא content.text.
+    if (update.sessionUpdate === "current_mode_update") {
+      const modeId = (update as { currentModeId?: unknown }).currentModeId
+      if (typeof modeId === "string") {
+        this.modes = {
+          availableModes: this.modes?.availableModes ?? [],
+          currentModeId: modeId,
+        }
+      }
+      return
+    }
+
     const text = update.content?.type === "text" ? (update.content.text ?? "") : ""
     if (!text) return
 
