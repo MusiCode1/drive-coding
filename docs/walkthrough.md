@@ -1,3 +1,10 @@
+## 2026-06-28 — CUT-3b-iii-1 — connectInProcess (Phase 0: stream-bridge)
+
+**Commit 0 (tdd) — stream-bridge + test:**
+- `connection/stream-bridge.ts` (חדש): `createStreamBridge()` — adapter Stream↔wire. ממיר `write(line)→JSON.parse→writable` ו-`readable→JSON.stringify→onLine`. שני channels (inbound/outbound) דרך `TransformStream<AnyMessage>`.
+- `connection/stream-bridge.test.ts` (חדש): 7 טסטים — FE→agent, agent→FE, multi-subscriber, unsubscribe, malformed JSON, close, round-trip.
+- typecheck: 0 errors. tests: 7/7 ירוקים.
+
 ## 2026-06-28 — CUT-3b-ii-be-rewire — סיכום slice (commits 0–2 + calev-heavy)
 
 **Commits:**
