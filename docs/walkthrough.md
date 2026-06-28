@@ -1,3 +1,55 @@
+## 2026-06-28 — recent-projects-controls — תיקון-במקום: סמנטיקת מחיקה אמיתית (7 commits)
+
+### מה בוצע? (commit 7 — תיקון סמנטיקה)
+
+**תיקון-במקום**: שינוי סמנטיקה מהסתרה-קבועה (hidden flag) למחיקה-אמיתית (filter).
+
+**BE — projects-registry.ts**:
+- הסרת שדה `hidden?: boolean` מ-`ProjectEntry`
+- החלפת `hideCwd` ב-`removeCwd`: filter שמסיר רשומה לגמרי
+- הסרת filter `p.hidden !== true` מ-`getProjects`
+- recordCwd לא שונה — חיבור חוזר יוצר רשומה חדשה (הרשומה חוזרת)
+
+**BE — tests/storage-layer.test.ts** (TDD red→green):
+- "hideCwd hides..." → "removeCwd removes a project from getProjects"
+- "hidden survives recordCwd" → "a removed project returns after a subsequent recordCwd" (הפוך לגמרי: עכשיו מצפים שיחזור)
+- "hideCwd no-op" → "removeCwd on unknown cwd is a no-op"
+
+**BE — http-history.ts**:
+- DELETE /api/projects: hideCwd → removeCwd
+
+**BE — tests/http-history.test.ts**:
+- "hides a project (204)" → "removes a project (204)"
+- הוסף טסט "removed project returns after recordCwd (new-entry semantics)"
+
+**FE — adapters/recent-projects.ts**:
+- `hideRecentProject` → `removeRecentProject`
+
+**FE — view-models/recent-projects.svelte.ts**:
+- `hide(cwd)` → `remove(cwd)`
+
+**FE — components/connect/RecentProjectsPanel.svelte**:
+- `recent.hide` → `recent.remove`
+- i18n key: `connect.recent.hide` → `connect.recent.remove`
+
+**core — i18n/keys.ts + he.ts + en.ts**:
+- rename `connect.recent.hide` → `connect.recent.remove` (value ללא שינוי: "הסר מהרשימה")
+
+### בדיקות (commit 7)
+
+- typecheck: 0 errors
+- vitest BE (storage-layer + http-history): 34/34 ירוק (כולל טסטי החזרה-אחרי-recordCwd)
+- vitest FE: 354/354
+- lint:i18n: ✓ (bash ישיר — Windows)
+- vite build: ✓
+
+### סטיות
+
+- ה-value של `connect.recent.remove` זהה ל-`connect.recent.hide` שהיה ("הסר מהרשימה") — שינוי שם key בלבד
+- calev יאמת את הזרימה המלאה: מחק → נעלם → חבר מחדש → חוזר
+
+---
+
 ## 2026-06-28 — recent-projects-controls — 6 commits: מחיקה + כיווץ panel תיקיות אחרונות
 
 ### מה בוצע?

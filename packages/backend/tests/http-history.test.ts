@@ -98,7 +98,7 @@ describe("DELETE /api/projects", () => {
     return { app, projectsRegistry }
   }
 
-  it("hides a project (204) and GET no longer returns it", async () => {
+  it("removes a project (204) and GET no longer returns it", async () => {
     const { app, projectsRegistry } = makeApp()
     await projectsRegistry.recordCwd("/home/user/proj", "opencode")
 
@@ -112,6 +112,26 @@ describe("DELETE /api/projects", () => {
     const getRes = await app.request("/api/projects")
     const body = await getRes.json()
     expect(body.projects).toHaveLength(0)
+  })
+
+  it("removed project returns after recordCwd (new-entry semantics)", async () => {
+    const { app, projectsRegistry } = makeApp()
+    await projectsRegistry.recordCwd("/home/user/proj", "opencode")
+
+    // מחק את הרשומה
+    await app.request("/api/projects", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cwd: "/home/user/proj" }),
+    })
+
+    // חיבור מחדש → רשומה חדשה
+    await projectsRegistry.recordCwd("/home/user/proj", "opencode")
+
+    const getRes = await app.request("/api/projects")
+    const body = await getRes.json()
+    expect(body.projects).toHaveLength(1)
+    expect(body.projects[0].cwd).toBe("/home/user/proj")
   })
 
   it("returns 400 when cwd is missing from body", async () => {

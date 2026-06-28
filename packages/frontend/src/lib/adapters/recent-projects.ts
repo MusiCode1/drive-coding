@@ -19,16 +19,17 @@ export type RecentProject = {
 }
 
 /**
- * מסתיר תיקייה מרשימת התיקיות האחרונות (קבוע — DELETE /api/projects).
+ * מוחק תיקייה מרשימת התיקיות האחרונות (DELETE /api/projects).
+ * חיבור חוזר לאחר מכן ידרך recordCwd ויוצר רשומה חדשה.
  * slice: recent-projects-controls
  */
-export async function hideRecentProject(cwd: string): Promise<void> {
+export async function removeRecentProject(cwd: string): Promise<void> {
   const res = await fetch(beUrl("/api/projects"), {
     method: "DELETE",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ cwd }),
   })
-  if (!res.ok) throw new Error(`hide project failed: ${res.status}`)
+  if (!res.ok) throw new Error(`remove project failed: ${res.status}`)
 }
 
 /** מחזיר את התיקיות האחרונות (ממוין lastSeen יורד — ה-BE כבר ממיין). */

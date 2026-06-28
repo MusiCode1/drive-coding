@@ -33,14 +33,14 @@ export function registerProjectsHttp(
     return c.json({ projects })
   })
 
-  // DELETE /api/projects  { cwd }  → מסתיר את התיקייה (hidden=true)
+  // DELETE /api/projects  { cwd }  → מוחק את הרשומה לגמרי
   // slice: recent-projects-controls
   // עיצוב: cwd מכיל תווים מיוחדים (: ב-Windows, \, /) → body במקום path-param
   app.delete("/api/projects", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as { cwd?: unknown }
     const cwd = typeof body.cwd === "string" ? body.cwd : ""
     if (!cwd) return c.json({ error: "cwd required" }, 400)
-    await deps.projectsRegistry.hideCwd(cwd)
+    await deps.projectsRegistry.removeCwd(cwd)
     return c.body(null, 204)
   })
 }

@@ -15,7 +15,6 @@ export type ProjectEntry = {
   readonly kind: BridgeKind
   readonly lastSeen: string // ISO 8601
   readonly lastSessionId?: string
-  readonly hidden?: boolean // הסתרה קבועה (לא מוחזר ב-getProjects) — slice recent-projects-controls
 }
 
 type RegistryFile = {
@@ -69,25 +68,24 @@ export function createProjectsRegistry(baseDir: string) {
     },
 
     /**
-     * מסתיר תיקייה מרשימת הפרויקטים (hidden=true).
-     * אם ה-cwd אינו קיים — no-op (כמו recordSession).
+     * מוחק תיקייה מרשימת הפרויקטים לגמרי.
+     * אם ה-cwd אינו קיים — no-op (filter פשוט לא משנה כלום).
+     * חיבור חוזר לאחר מכן דרך recordCwd יוצר רשומה חדשה וה-cwd חוזר לרשימה.
      * slice: recent-projects-controls
      */
-    async hideCwd(cwd: string): Promise<void> {
+    async removeCwd(cwd: string): Promise<void> {
       const projects = await load()
-      const idx = projects.findIndex((p) => p.cwd === cwd)
-      if (idx < 0) return // unknown cwd → no-op
-      const updated = [...projects]
-      updated[idx] = { ...projects[idx]!, hidden: true }
+      const updated = projects.filter((p) => p.cwd !== cwd)
+      if (updated.length === projects.length) return // לא היה שינוי — no-op
       await persist(updated)
     },
 
-    /** מחזיר את כל הפרויקטים המוכרים (לא מוסתרים), ממוינים לפי lastSeen יורד (הכי חדש ראשון). */
+    /** מחזיר את כל הפרויקטים המוכרים, ממוינים לפי lastSeen יורד (הכי חדש ראשון). */
     async getProjects(): Promise<readonly ProjectEntry[]> {
       const projects = await load()
-      return [...projects]
-        .filter((p) => p.hidden !== true) // מסנן מוסתרות — slice recent-projects-controls
-        .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
+      return [...projects].sort(
+        (a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime(),
+      )
     },
   }
 }

@@ -90,9 +90,9 @@ onMount(() => {
             <button
               type="button"
               class="delete-btn"
-              onclick={() => void recent.hide(project.cwd)}
-              title={t("connect.recent.hide")}
-              aria-label={t("connect.recent.hide")}
+              onclick={() => void recent.remove(project.cwd)}
+              title={t("connect.recent.remove")}
+              aria-label={t("connect.recent.remove")}
             >✕</button>
           </li>
         {/each}

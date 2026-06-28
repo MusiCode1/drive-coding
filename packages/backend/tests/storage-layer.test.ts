@@ -90,36 +90,37 @@ describe("createProjectsRegistry", () => {
     expect(projects[0]?.lastSessionId).toBe("sess-abc-123")
   })
 
-  // ─── hideCwd (slice recent-projects-controls) ────────────────────────────────
+  // ─── removeCwd (slice recent-projects-controls) ──────────────────────────────
 
-  it("hideCwd hides a project from getProjects", async () => {
+  it("removeCwd removes a project from getProjects", async () => {
     const reg = createProjectsRegistry(tmpDir)
     await reg.recordCwd("/proj/secret", "opencode")
 
-    await reg.hideCwd("/proj/secret")
+    await reg.removeCwd("/proj/secret")
 
     const projects = await reg.getProjects()
     expect(projects).toHaveLength(0)
   })
 
-  it("hidden survives a subsequent recordCwd", async () => {
+  it("a removed project returns after a subsequent recordCwd", async () => {
     const reg = createProjectsRegistry(tmpDir)
     await reg.recordCwd("/proj/secret", "opencode")
-    await reg.hideCwd("/proj/secret")
+    await reg.removeCwd("/proj/secret")
 
-    // חיבור חוזר לאותו cwd — ה-hidden צריך לשרוד
+    // חיבור חוזר לאותו cwd — הרשומה נוצרת מחדש ומוחזרת
     await reg.recordCwd("/proj/secret", "opencode")
 
     const projects = await reg.getProjects()
-    expect(projects).toHaveLength(0)
+    expect(projects).toHaveLength(1)
+    expect(projects[0]?.cwd).toBe("/proj/secret")
   })
 
-  it("hideCwd on unknown cwd is a no-op", async () => {
+  it("removeCwd on unknown cwd is a no-op", async () => {
     const reg = createProjectsRegistry(tmpDir)
     await reg.recordCwd("/proj/known", "opencode")
 
     // לא אמור לזרוק ולא לשנות שום דבר
-    await expect(reg.hideCwd("/proj/unknown")).resolves.toBeUndefined()
+    await expect(reg.removeCwd("/proj/unknown")).resolves.toBeUndefined()
 
     const projects = await reg.getProjects()
     expect(projects).toHaveLength(1)
