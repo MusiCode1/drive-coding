@@ -1,3 +1,44 @@
+## 2026-06-28 — slice-image-paste — Commits 0–3 (פיגום רדום, IMAGE_INPUT_ENABLED=false)
+
+### מה בוצע?
+
+**Commit 0 (ad696fa)** — `packages/core/src/image/resize-plan.ts` + test (TDD):
+- `planResize(src, limits?)` → `ResizePlan { targetWidth, targetHeight, shouldReencode }`
+- scale-to-fit: maxDim=2048, maxBytes=8MB. עיגול ל-int.
+- 8/8 טסטים TDD ירוקים.
+
+**Commit 1 (6d17696)** — `packages/frontend/src/lib/engines/image-attachment.ts`:
+- `fileToImageAttachment(file)`: OffscreenCanvas → JPEG + base64 גולמי + previewUrl
+- `revokeAttachment(a)`: URL.revokeObjectURL
+- זורק שגיאה על מימד לא-image/*.
+
+**Commit 2 (20f0b6c)** — TypeArea + VM + i18n:
+- `IMAGE_INPUT_ENABLED = false` (kill-switch module-level ב-agent-session.svelte.ts)
+- `get supportsImageInput()` — נגזר + gated בדגל
+- tray thumbnails מעל ה-`<form>` (container div אנכי — autogrow נשמר)
+- onpaste/ondrop/file-picker עם early-return אם !supportsImageInput
+- i18n: `attach.addImage`, `attach.remove`
+
+**Commit 3 (e4845f9)** — UserBubble + bubble.ts:
+- `UserBubble.attachments?: { mimeType, dataBase64 }[]` (additive, optional)
+- renders `<img data:mimeType;base64,...>` מעל text bubble
+
+### בדיקות
+
+- TDD: 8/8 ירוק (resize-plan).
+- typecheck: 0 errors.
+- build: נקי (adapter-static).
+- lint:i18n: ✓.
+- Commit 4 (שליחה מולטימודלית): **לא בוצע — GATED על Track A** (`AcpClient.prompt` עדיין text-only).
+
+### חריגות
+
+- ה-tray נמצא מחוץ ל-`<form>` כנדרש (autogrow נשמר).
+- `IMAGE_INPUT_ENABLED=false` בcommit הסופי — כל הלכידה רדומה.
+- Commit 4 לא בוצע; דגל נשאר false.
+
+---
+
 ## 2026-06-25 — slice-input-autogrow — Commit 1: textarea auto-grow ב-TypeArea
 
 ### מה בוצע?
