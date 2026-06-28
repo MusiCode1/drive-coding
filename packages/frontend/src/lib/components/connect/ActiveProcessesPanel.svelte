@@ -2,13 +2,17 @@
 /**
  * ActiveProcessesPanel — ווידג'ט "תהליכים פעילים" בטופס החיבור.
  *
- * מציג את כל ה-agents החיים בצד-השרת עם 3 פעולות לכל שורה:
- * Pin (נעיצה), Reconnect (חיבור מחדש), Kill (הריגה עם אישור).
+ * מציג את כל ה-agents החיים בצד-השרת עם 2 פעולות לכל שורה:
+ * Reconnect (חיבור מחדש עם אייקון תקע), Kill (הריגה עם אייקון פח + אישור 2-לחיצות).
  *
- * slice: active-agents-widget
+ * slice: active-processes-icons
  */
 import type { AgentPublic } from "@drive-coding/core"
 import { getActiveAgents, getI18n } from "$lib/context"
+import { formatRelativeTime } from "$lib/util/formatting"
+import { basename } from "$lib/util/path"
+import Trash2Icon from "@lucide/svelte/icons/trash-2"
+import PlugIcon from "@lucide/svelte/icons/plug"
 
 interface Props {
   onReconnect: (agent: AgentPublic) => void
@@ -45,13 +49,6 @@ function formatDate(iso: string): string {
   } catch {
     return iso
   }
-}
-
-/** שם התיקייה האחרונה בנתיב (basename) — להצגה בולטת בשורה העליונה. */
-function folderName(cwd: string): string {
-  const trimmed = cwd.replace(/\/+$/, "")
-  const name = trimmed.split("/").pop()
-  return name || cwd
 }
 
 function statusColor(status: AgentPublic["status"]): string {
@@ -122,69 +119,67 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
             <div class="agent-info">
               <span class="status-dot" style="background:{statusColor(agent.status)}"></span>
               <span class="cli-badge">{agent.cliKind}</span>
-              <span class="folder-name" title={agent.cwd}><bdi>{folderName(agent.cwd)}</bdi></span>
+              <span class="folder-name" title={agent.cwd}><bdi>{basename(agent.cwd)}</bdi></span>
+              {#if agent.busy}
+                <span class="meta-sep">·</span>
+                <span class="busy-indicator" aria-label={t("connect.agents.working")}>
+                  <span class="busy-dot"></span>
+                  <span class="busy-label">{t("connect.agents.working")}</span>
+                </span>
+              {/if}
+              {#if agent.lastMessageAt != null}
+                <span class="meta-sep">·</span>
+                <span class="last-msg" title={t("connect.agents.lastMessage")}>
+                  {formatRelativeTime(agent.lastMessageAt, i18n.locale)}
+                </span>
+              {/if}
             </div>
 
             <div class="agent-actions">
-            <!-- Pin / Unpin -->
-            <button
-              type="button"
-              class="action-btn pin-btn"
-              class:pinned={agent.persistent}
-              onclick={() => void activeAgents.setPersistent(agent.id, !agent.persistent)}
-              title={agent.persistent ? t("connect.agents.unpin") : t("connect.agents.pin")}
-              aria-label={agent.persistent ? t("connect.agents.unpin") : t("connect.agents.pin")}
-            >
-              {agent.persistent ? "📌" : "📎"}
-            </button>
-
             <!-- Reconnect -->
             <button
               type="button"
-              class="action-btn reconnect-btn"
+              class="action-btn icon-btn reconnect-btn"
               disabled={isReconnectDisabled(agent)}
               onclick={() => onReconnect(agent)}
               title={isReconnectDisabled(agent) ? t("connect.agents.inUse") : t("connect.agents.reconnect")}
               aria-label={t("connect.agents.reconnect")}
             >
-              {t("connect.agents.reconnect")}
+              <PlugIcon size={16} strokeWidth={1.75} />
             </button>
 
             <!-- Kill -->
-            <button
-              type="button"
-              class="action-btn kill-btn"
-              class:confirming={confirmingId === agent.id}
-              onclick={() => handleKill(agent.id)}
-              title={t("connect.agents.kill")}
-              aria-label={t("connect.agents.kill")}
-            >
-              {confirmingId === agent.id
-                ? t("connect.agents.killConfirm")
-                : t("connect.agents.kill")}
-            </button>
+            <div class="kill-wrap">
+              <button
+                type="button"
+                class="action-btn icon-btn kill-btn"
+                class:confirming={confirmingId === agent.id}
+                onclick={() => handleKill(agent.id)}
+                title={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
+                aria-label={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
+              >
+                <Trash2Icon size={16} strokeWidth={1.75} />
+              </button>
+              {#if confirmingId === agent.id}
+                <span class="kill-confirm-tip" role="status">{t("connect.agents.killConfirm")}</span>
+              {/if}
+            </div>
             </div>
           </div>
 
           <div class="agent-meta">
             <span class="cwd-full" title={agent.cwd}><bdi>{agent.cwd}</bdi></span>
-            <span class="meta-sep">·</span>
-            {#if agent.busy}
-              <span class="busy-indicator" aria-label={t("connect.agents.working")}>
-                <span class="busy-dot"></span>
-                <span class="busy-label">{t("connect.agents.working")}</span>
-              </span>
-              <span class="meta-sep">·</span>
-            {/if}
-            {#if agent.acpSessionId}
-              <span class="session-id">{agent.acpSessionId.slice(0, 8)}</span>
-              <span class="meta-sep">·</span>
-            {/if}
-            <span class="created-at">{formatDate(agent.createdAt)}</span>
-            {#if agent.pid}
-              <span class="meta-sep">·</span>
-              <span class="pid">pid: {agent.pid}</span>
-            {/if}
+            <span class="meta-right">
+              {#if agent.acpSessionId}
+                <span class="session-id">{agent.acpSessionId.slice(0, 8)}</span>
+                <span class="meta-sep">·</span>
+              {/if}
+              <span class="created-at">{formatDate(agent.createdAt)}</span>
+              {#if agent.pid}
+                <span class="meta-sep">·</span>
+                <span class="pid">pid: {agent.pid}</span>
+              {/if}
+            </span>
           </div>
         </li>
       {/each}
@@ -274,6 +269,7 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
   .agent-info {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.4rem;
     flex: 1;
     min-width: 0;
@@ -282,17 +278,19 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
 
   .agent-meta {
     display: flex;
-    flex-wrap: nowrap;
+    flex-direction: row;
     align-items: center;
     gap: 0.4rem;
     font-size: 0.72rem;
     color: var(--fg-dim);
+    min-width: 0;
   }
 
-  /* הנתיב (.cwd-full) הוא היחיד שמתקצר; שאר המטא (תאריך/pid/סשן)
-     נשארים בגודלם באותה שורה. */
-  .agent-meta > :not(.cwd-full) {
+  .meta-right {
+    display: flex;
     flex-shrink: 0;
+    align-items: center;
+    gap: 0.4rem;
   }
 
   .meta-sep {
@@ -328,17 +326,20 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     min-width: 0;
   }
 
-  /* הנתיב המלא — בשורת המטא התחתונה. קיצוץ מתחילת הנתיב: בסיס rtl
-     ממקם את ה-ellipsis בהתחלה כך שזנב הנתיב תמיד נראה; ה-<bdi> שומר
-     על סדר ה-LTR התקין של הנתיב עצמו. */
+  /* הנתיב המלא — בתוך שורת המטא, בצד שמאל (flex:1). קיצוץ מתחילת
+     הנתיב: בסיס rtl ממקם את ה-ellipsis בהתחלה כך שזנב הנתיב תמיד נראה;
+     ה-<bdi> שומר על סדר ה-LTR התקין של הנתיב עצמו. */
   .cwd-full {
+    display: block;
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    flex: 1 1 auto;
-    min-width: 0;
     direction: rtl;
     text-align: left;
+    font-size: 0.72rem;
+    color: var(--fg-dim);
   }
 
   .folder-name > :global(bdi),
@@ -349,6 +350,11 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
   .session-id {
     font-family: monospace;
     direction: ltr;
+  }
+
+  .last-msg {
+    direction: ltr;
+    flex-shrink: 0;
   }
 
   .created-at {
@@ -388,9 +394,15 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     cursor: not-allowed;
   }
 
-  .pin-btn.pinned {
-    color: var(--accent);
-    border-color: var(--accent);
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.3rem;
+  }
+
+  .kill-wrap {
+    position: relative;
   }
 
   .kill-btn {
@@ -409,6 +421,27 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     border-color: var(--recording);
     color: var(--recording);
     font-weight: 600;
+  }
+
+  .kill-confirm-tip {
+    position: absolute;
+    bottom: calc(100% + 5px);
+    inset-inline-end: 0;
+    background: rgba(200, 40, 40, 0.88);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    padding: 0.2rem 0.45rem;
+    border-radius: 5px;
+    pointer-events: none;
+    z-index: 20;
+    animation: tip-pop 0.12s ease-out both;
+  }
+
+  @keyframes tip-pop {
+    from { opacity: 0; transform: scale(0.85) translateY(3px); }
+    to   { opacity: 1; transform: scale(1)    translateY(0);   }
   }
 
   /* ─── busy indicator ─── (slice agent-busy-indicator) */

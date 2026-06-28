@@ -185,11 +185,11 @@ export const en: Catalog = {
   "connect.agents.reconnect": "Reconnect",
   "connect.agents.kill": "Kill",
   "connect.agents.killConfirm": "Sure?",
-  "connect.agents.pin": "Keep alive",
-  "connect.agents.unpin": "Unpin",
   "connect.agents.inUse": "Open in another tab",
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   "connect.agents.working": "working…",
+  // ─── agent-last-message-ui ─── (slice agent-last-message-ui)
+  "connect.agents.lastMessage": "Last activity",
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   "settings.screen.label": "Screen",
   "settings.toggle.keepScreenOn": "Keep screen on",
@@ -199,4 +199,12 @@ export const en: Catalog = {
   "settings.toggle.showTools": "Show tools by default",
   // ─── Enter toggle ─── (slice-enter-toggle)
   "settings.toggle.enterToSend": "Enter sends message",
+  // ─── content-viewer ─── (slice content-viewer)
+  "contentViewer.title": "View",
+  "contentViewer.expand": "Expand",
+  "contentViewer.close": "Close",
+  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
+  "settings.ttsProvider.label": "TTS provider",
+  "settings.ttsProvider.elevenlabs": "ElevenLabs",
+  "settings.ttsProvider.gemini": "Gemini",
 }

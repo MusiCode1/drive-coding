@@ -29,6 +29,8 @@ import Sidebar from "./Sidebar.svelte"
 import BottomSheet from "./BottomSheet.svelte"
 // ─── redesign-6: modals (SessionsDialog הוסר ב-slice sessions-inline — סשנים עכשיו inline) ───
 import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
+// ─── content-viewer ─── (slice content-viewer)
+import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
 // ─── redesign-7: smart-scroll ───
 import ArrowDownIcon from "@lucide/svelte/icons/arrow-down"
 
@@ -343,4 +345,6 @@ $effect(() => {
 
   <!-- redesign-6: modals (SessionsDialog הוסר ב-slice sessions-inline) -->
   <FolderPickerDialog />
+  <!-- content-viewer (slice content-viewer) -->
+  <ContentViewerDialog />
 </div>

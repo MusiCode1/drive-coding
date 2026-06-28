@@ -2,8 +2,10 @@
 // packages/backend/src/bin/drive-coding.ts
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
-import { parseArgs } from "node:util"
 import path from "node:path"
+import { parseArgs } from "node:util"
+import { isBinary } from "../binary.js"
+import { loadConfig, parseEnvFile } from "../config/load-config.js"
 
 // ---------------------------------------------------------------------------
 // Help text (English only — i18n hook blocks Hebrew in code)
@@ -14,17 +16,27 @@ Usage:
   drive-coding [options]
 
 Options:
-  -p, --port <n>            Port to listen on            (env: PORT, default: 4000)
-      --opencode-bin <bin>  Agent binary to look for     (env: OPENCODE_BIN, default: opencode)
-      --fe-static-dir <dir> Override served web-UI dir   (env: FE_STATIC_DIR)
-      --cors-origins <list> Comma-separated CORS origins  (env: CORS_ORIGINS)
-  -h, --help                Show this help and exit
-  -V, --version             Show version and exit
+  -p, --port <n>                Port to listen on              (env: PORT, default: 4000)
+      --opencode-bin <bin>      Agent binary to look for       (env: OPENCODE_BIN, default: opencode)
+      --fe-static-dir <dir>     Override served web-UI dir     (env: FE_STATIC_DIR)
+      --cors-origins <list>     Comma-separated CORS origins   (env: CORS_ORIGINS)
+      --config <path>           Config file (JSONC)            (default: ~/.config/drive-coding/config.jsonc)
+      --config-json <json>      Inline JSON config (overrides --config file)
+      --env-file <path>         Load secrets from KEY=VALUE file (non-overriding)
+      --log-level <level>       Log level (debug|info|warn|error) (env: LOG_LEVEL)
+      --elevenlabs-key <key>    ElevenLabs API key             (env: ELEVENLABS_API_KEY)
+      --gemini-key <key>        Gemini API key                 (env: GEMINI_API_KEY)
+  -h, --help                    Show this help and exit
+  -V, --version                 Show version and exit
 
-Precedence: flag > environment variable > default.
+Precedence: flag > environment variable > config file > default.
+Secret flags (--elevenlabs-key, --gemini-key) are visible in the process list —
+prefer --env-file or environment variables for secrets.
 
 Examples:
   drive-coding --port 4100
+  drive-coding --config /etc/drive-coding/config.jsonc
+  drive-coding --env-file ~/.secrets/drive-coding.env
   drive-coding --opencode-bin /opt/opencode/bin/opencode`
 
 // ---------------------------------------------------------------------------
@@ -38,6 +50,12 @@ try {
       "opencode-bin": { type: "string" },
       "fe-static-dir": { type: "string" },
       "cors-origins": { type: "string" },
+      config: { type: "string" },
+      "config-json": { type: "string" },
+      "env-file": { type: "string" },
+      "log-level": { type: "string" },
+      "elevenlabs-key": { type: "string" },
+      "gemini-key": { type: "string" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "V" },
     },
@@ -80,28 +98,66 @@ if (values.port !== undefined && !/^\d+$/.test(values.port as string)) {
 }
 
 // ---------------------------------------------------------------------------
-// Map flags → env vars (flag wins over existing env; must happen BEFORE ??= below)
+// Step 1: --env-file (non-overriding: only keys not already in process.env)
 // ---------------------------------------------------------------------------
-if (values.port) process.env.PORT = values.port as string
-if (values["opencode-bin"]) process.env.OPENCODE_BIN = values["opencode-bin"] as string
-if (values["fe-static-dir"]) process.env.FE_STATIC_DIR = values["fe-static-dir"] as string
-if (values["cors-origins"]) process.env.CORS_ORIGINS = values["cors-origins"] as string
+const envFilePath = values["env-file"] as string | undefined
+if (envFilePath !== undefined) {
+  if (!existsSync(envFilePath)) {
+    console.warn(`[drive-coding] --env-file "${envFilePath}" not found — skipping`)
+  } else {
+    let envFileText: string
+    try {
+      envFileText = readFileSync(envFilePath, "utf8")
+    } catch (e) {
+      console.warn(`[drive-coding] failed to read --env-file "${envFilePath}":`, e)
+      envFileText = ""
+    }
+    const envFileVars = parseEnvFile(envFileText)
+    for (const [k, v] of Object.entries(envFileVars)) {
+      // Non-overriding: real env wins over env-file.
+      if (process.env[k] === undefined) {
+        process.env[k] = v
+      }
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
-// FE static directory — two candidates, whichever exists first wins:
-//   1. Bundled release layout: <pkg>/dist/drive-coding.js → ../frontend-dist = <pkg>/frontend-dist
-//   2. Dev/src layout:         packages/backend/src/bin  → ../../../frontend/build
-// Fallback (neither exists yet — first-run before FE build): dev path, consistent with old behavior.
-// ??= honours a flag or env value already set above.
+// Step 2: loadConfig — resolve all layers, get envPatch
 // ---------------------------------------------------------------------------
-const feBuildDir =
-  [
-    path.resolve(import.meta.dirname, "../frontend-dist"), // bundled: dist/ → frontend-dist/
-    path.resolve(import.meta.dirname, "../../../frontend/build"), // dev: src/bin → packages/frontend/build
-  ].find(existsSync) ?? path.resolve(import.meta.dirname, "../../../frontend/build")
+const { envPatch, warnings } = loadConfig({ argv: values, env: process.env })
 
-// Do not override values the user set explicitly (env or flag > default).
-process.env.FE_STATIC_DIR ??= feBuildDir
+// Print warnings (visible in logs, but not fatal).
+for (const w of warnings) {
+  console.warn(w)
+}
+
+// ---------------------------------------------------------------------------
+// Step 3: Write envPatch to process.env (these are the winning values)
+// ---------------------------------------------------------------------------
+for (const [k, v] of Object.entries(envPatch)) {
+  process.env[k] = v
+}
+
+// ---------------------------------------------------------------------------
+// FE static directory cascade.
+// Binary mode with no explicit FE_STATIC_DIR: skip the cascade — FE is served
+//   from the embedded manifest (server.ts handles it when isBinary() && !FE_STATIC_DIR).
+//   An explicit FE_STATIC_DIR flag/env still overrides the embedded FE (debug/override).
+// Dev / npm-bundle mode: resolve from candidate directories as before.
+// ??= honours a value already set above (from envPatch or original env).
+// ---------------------------------------------------------------------------
+if (!isBinary()) {
+  const feBuildDir =
+    [
+      path.resolve(import.meta.dirname, "../frontend-dist"), // bundled: dist/ → frontend-dist/
+      path.resolve(import.meta.dirname, "../../../frontend/build"), // dev: src/bin → packages/frontend/build
+    ].find(existsSync) ?? path.resolve(import.meta.dirname, "../../../frontend/build")
+
+  // Do not override values the user set explicitly (env or flag > default).
+  process.env.FE_STATIC_DIR ??= feBuildDir
+}
+// Binary + explicit FE_STATIC_DIR (flag/env already set above) — no further action needed.
 process.env.PORT ??= "4000"
 
 const port = process.env.PORT

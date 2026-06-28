@@ -1,5 +1,230 @@
 # Decisions — drive-coding
 
+## 2026-06-27 — slice-release-publish (בוצע ישיר): תיקון `bin` ל-npm publish
+אימות חי של החבילה (npm publish --dry-run, npm 11.11) חשף ש-`bin: "./dist/drive-coding.js"` עם
+`./` prefix **נדחה בפרסום** (`invalid and removed`) → ה-CLI `drive-coding` לא היה עולה אחרי install.
+תוקן ל-`"dist/drive-coding.js"` (אומת ע"י `npm pkg fix`). נוסף `publishConfig: {access:"public"}` +
+metadata (keywords/repository/homepage/bugs). ה-bundle נבנה ורץ על Windows (אימות ראשון על Windows —
+GET / + /api/agents + _app asset = 200). branch `slice/release-publish` @ `b349d63`. **slice קטן
+מדי ל-executor/verifier — בוצע ישירות ע"י מרדכי**; `npm publish` עצמו = צעד אנושי.
+
+## 2026-06-27 — slice-binary-core: בינארי `--compile` עולה ומגיש מקומית
+### רציונל
+ה-slice המרכזי בשרשרת הבינארי — מטמיע FE+BE ב-executable יחיד (`bun build --compile`) שרץ בלי Bun
+מותקן. מבוסס על 5 ספייקים מאומתים (FE embed דרך `import…with{type:"file"}`; `--asset-naming="[dir]…"`
+משמר נתיב; `__IS_BINARY__` דרך `--define` עובד cross-module; pino-pretty stream ישיר in-process;
+`.ts` מוטמע כ-asset כמו `.js`). base=`slice/state-dir` (משתמש ב-`getStateDir()` לחילוץ ה-plugin).
+### ממצאי אביגיל
+r1 USABLE-AFTER-FIX (5) → r2 READY (0). findings: SPA-fallback typecheck (`noUncheckedIndexedAccess`),
+stub annotation `Record<string,string>`, plugin extraction → `ensureStateSubdir("plugins")`, dev-tip
+התיישן `0e23b0f`→`88d447b`, `.ts` embedding לא-מאומת (נסגר בספייק 27/06).
+### שינויי-כיוון
+ה-gate הוא **build-constant** (`--define`), לא env var ולא `Bun.isStandaloneExecutable` (שמחזיר
+`undefined` ב-1.3.12). plugin extraction דרך `ensureStateSubdir` (mkdir מובטח).
+### רעיונות שנדחו
+- serve-from-memory דרך `Bun.embeddedFiles` loop: לא ישים (מסנן `.js`, `name` משוטח) → codegen manifest.
+- `bun-plugin-pino` / תיקון ה-worker: מיותר — pino-pretty stream ישיר פשוט יותר ומבטל את ה-worker.
+- extract-to-temp ל-FE: נדחה — embedded + `Bun.file()` serve-from-memory, אפס חילוץ.
+
+## 2026-06-27 — slice-state-dir: תיקיית state מאוחדת `~/.config/drive-coding/`
+
+### רציונל
+Foundation לסלייס הבינארי (`docs/plans/slice-single-binary-prebrief.md`). היום נתיבי ה-state
+(recordings/cache/wire-recordings/proxy) נוצרים `path.resolve("data/...")` יחסית ל-cwd → בינארי/bunx
+שרצים מ-cwd אקראי מזהמים אותו. ה-slice מאחד ל-`~/.config/drive-coding/` (מרחיב את `cli-specs.jsonc`
+שכבר שם), דרך helper יחיד `getStateDir()`. הוכרע 27/06 שלא נדרש migration — אין recordings חיים,
+cache ייבנה מחדש → ה-slice פשוט (complexity 4, calev light). ראשון בשרשרת state-dir→binary-core→binary-dist.
+
+### ממצאי אביגיל
+r1 USABLE-AFTER-FIX (3 findings) → r2 READY (0). 6 spot-checks עברו מילה-במילה (`getHomeDir`
+http-options:75-77, 4 נתיבי `data/` ב-server.ts:80/84/85/104, חתימות store/registry, אין circular
+import). findings: (1) imports יתומים (`homedir`/`join`) אחרי swap; (2) הנתיב **כן** משתנה
+`os.homedir`→`getHomeDir` (DoD#6 טען בטעות "לא השתנה") → טסט `cli-config-file:33-38` צריך עדכון;
+(3) הנחה שגויה שטסטי recordings/projects מניחים `data/`-cwd (הם מזריקים `tmpdir()`).
+
+### שינויי-כיוון
+DoD#6 תוקן: ההתנהגות משתנה (env `HOME`/`USERPROFILE` > `os.homedir`) — הטסט שמשווה ל-`os.homedir`
+ישירות יישבר במכונה שבה `HOME≠os.homedir` (git-bash/onecli); עודכן ל-`getStateDir()` או mock env.
+
+### רעיונות שנדחו
+- **extract-to-temp** ל-state: נדחה לטובת dir קבוע (יציב, נגיש למשתמש, חילוץ plugin חד-פעמי).
+- **OS-native (env-paths)**: נדחה לטובת `~/.config/drive-coding/` אחיד פר-OS — פשטות > OS-purity.
+- **migration אוטומטי**: לא נדרש (אין data חי).
+
+## 2026-06-27 — content-viewer: viewer fullscreen גנרי (MVP: Markdown + תמונה, FE-טהור)
+
+> brief: `docs/plans/slice-content-viewer.md`. אביגיל **READY** (r2/0-findings; r1 היו 3
+> path/line findings, אין blocker). דוח: `reports/drive-coding/content-viewer-avigail.md`.
+> Complexity 4/10 → verifier light. base=dev, `depends_on: []`.
+
+### רציונל
+
+המשתמשת ביקשה viewer להצגת **בריפים מוכנים** בנוחות. בריף מגיע מהסוכן כ-message markdown
+ארוך → בבועת-צ'אט הוא צפוף. ה-viewer פותח אותו fullscreen (bits-ui Dialog, בחיקוי מדויק
+של `FolderPickerDialog`). משתמש מחדש ב-`renderMarkdown` הקיים (DOMPurify two-pass + KaTeX) —
+אפס שכפול-sanitize. משמש מיד גם כ-lightbox לתמונות-הכלים.
+
+ההכרעה המכריעה — **מקור התוכן קובע את הסקופ**: בדיקת ה-bubble model הראתה שלמרות ש-roadmap
+מנה "Markdown + תמונה + PDF" יחד, רק markdown (כ-`Segment.text`) ותמונה (כ-`ToolContentImage.data`
+base64) מגיעים **inline ב-ACP stream** וכבר נמצאים ב-FE. PDF ו-`file://` מהדיסק נופלים
+ל-`ToolContentOther` ודורשים BE proxy עם הכרעת-אבטחה כבדה (LFI/path-traversal). לכן ה-MVP
+**FE-טהור** (`depends_on: []`) ו-PDF נדחה לגל שני gated על `local-file-proxy`. זה מנתק את
+הפיצ'ר מכל תלות-תשתית — אפשר לשגר מיד.
+
+### ממצאי אביגיל
+
+r1: 3 findings, כולן path/line (אין blocker, אין regression). (1) `ToolContent` union ב-
+`lib/types/bubble.ts` ולא ב-`chat/bubbles/`; (2) `joinSegmentText` ב-`chat/bubbles/bubble-rendering.ts`
+ולא ב-util/; (3) cosmetic — נימוק double-mount. תוקנו, r2 נקי. אביגיל אישרה במפורש את שלוש
+ה-concerns: (א) expand ידני מספיק ל-use case הבריפים, (ב) אין double-overlay (connect ו-chat
+מסכים בלעדיים — +page לא עטוף ב-AppShell), (ג) `viewer.open` getter-מעל-`$state` ריאקטיבי כ-prop
+ל-bits-ui `open` (תקדים `uiShell.sheetOpen`).
+
+### רעיונות שנדחו
+
+- **agent-triggered auto-open** (הסוכן פותח את ה-viewer מיוזמתו לדחוף brief לאישור) — נדחה
+  ל-MVP: דורש הרחבת חוזה ACP (content-type/tool ייעודי), וצריך קודם spike של מה claude/opencode
+  שולחים על ה-wire. ה-default = expand ידני, שמספק את ה-use case במלואו. (§9.1 בבריף, לא חוסם)
+- **הרחבת `ModalsVM`** במקום VM נפרד — נדחה: content-viewer נושא payload לא-טריוויאלי
+  (discriminated union markdown|image) + שמירה על תוספתיות (אפס נגיעה ב-modals.svelte.ts).
+
+## 2026-06-27 — מסך-פתיחה: החלפת בורר-הסשן ברשימת תיקיות-אחרונות + 2 תיקוני folder-picker
+
+> שני briefs (שרשרת סדרתית): `slice-folder-picker-fixes` → `slice-connect-recent-projects`.
+> שניהם אומתו ע"י אביגיל ל-**READY** (folder-picker-fixes r3/0-findings; connect-recent-projects
+> r2/3-cosmetic). דוחות: `reports/drive-coding/slice-*-avigail.md` (ריפו השיטה).
+
+### רציונל
+
+המשתמשת ביקשה להסיר את בורר-הסשן ממסך הפתיחה. המנגנון הנוכחי (`SessionPicker` + `listSessionsForCwd`)
+**מריץ תהליך-סוכן חד-פעמי** (spawn → ACP handshake → listSessions → delete, ~300-700ms) רק כדי
+להציג רשימת סשנים *לפני* שמתחברים. זה יקר ומיותר: בחירת סשן כבר אפשרית **בתוך** הסשן הפעיל
+(`SessionOptionsPanel` → `switchSession`/`newSession`, warm ACP call ~20-50ms על אותו חיבור). אז
+מסך-הפתיחה צריך רק *לחבר לתיקייה*, והבחירה העדינה קורית בפנים.
+
+במקום הבורר — **רשימת תיקיות אחרונות**. הגילוי המכריע בתכנון: התשתית **כבר קיימת במלואה ב-BE** —
+`ProjectsRegistry` (`projects-registry.json`) שמתעד כל `cwd` ב-`session-attached`, ו-endpoint
+`GET /api/projects` שמחזיר אותן ממוינות lastSeen — **רק שאף אחד ב-FE לא צורך אותן**. כלומר הפיצ'ר
+הוא FE-only (adapter + VM + panel בחיקוי מדויק של דפוס `ActiveAgents` הקיים) + הסרה. אין צורך
+ב-endpoint חדש או שינוי BE.
+
+שני תיקוני ה-folder-picker שורבבו כ-slice נפרד (ראשון בשרשרת) כי הם low-risk ועצמאיים-לוגית, אבל
+**שניהם נוגעים ב-`+page.svelte`** — לכן שרשרת סדרתית (slice 1 ממוזג ל-dev, slice 2 נגזר מ-dev
+המעודכן) במקום שני dev-based מקבילים שיתנגשו ב-merge.
+
+**שורשי הבאגים (מאומתים בקוד, לא משוערים):**
+- *folder-picker לא נפתח בנתיב שהוזן*: `FolderPickerDialog.openAtStart` קורא נקודת-פתיחה מ-`currentPath`/
+  `settings.lastCwd` בלבד — **לא** רואה את ערך-הקלט החי (`cwd` ב-`+page.svelte`). תיקון: prop `startPath`.
+- *תיקיות מוסתרות לא מוסתרות*: הפילטר ב-`http-history.ts:179` הוא **prefix-match מול 5 קידומות בלבד**
+  (`.git`/`.opencode`/`.svelte-kit`/`node_modules`/`.pnpm`). כל dot-folder אחר (`.config`/`.cache`/
+  `.ssh`/`.vscode`...) עובר ומוצג. תיקון: "מוסתר" = `startsWith(".")` || שם-רעש (`node_modules`).
+
+### ממצאי אביגיל
+
+- **folder-picker-fixes** (3 סבבים): r1 — mount כפול של `FolderPickerDialog` (גם `AppShell.svelte:345`,
+  chat/settings) שלא הוזכר → הובהר כמחוץ-לסקופ. r2 — **blocker אמיתי**: `pnpm --filter
+  @drive-coding/backend test` הוא **no-op** (אין script `test` ב-package; ה-runner היחיד הוא root
+  vitest) → תוקן ל-`pnpm vitest run packages/backend` (אומת חי: 16 טסטים עוברים). r3 — READY/0.
+- **connect-recent-projects** (2 סבבים): r1 — 2 blockers בשכבת-התלות: ה-base `slice/folder-picker-fixes`
+  לא קיים/לא-מוזג, וההנחה `startPath={cwd}` לא מתקיימת ב-dev הנוכחי. r2 — READY אחרי מסגור-מחדש
+  כשרשרת-סדרתית עם **Gate** מפורש + Pre-flight `grep startPath`. אומת ש-`beUrl` הוא ה-helper הנכון,
+  ושמחיקת כל `sessions.ts` הייתה שוברת build (`SessionInfo`/`normalizeSessionInfo` בשימוש חי).
+
+### שינויי-כיוון
+
+- **לא מוחקים את `sessions.ts`** — רק את `listSessionsForCwd`. הקובץ מייצא גם `SessionInfo` +
+  `normalizeSessionInfo` בשימוש ב-`agent-session.svelte.ts` (in-session listing) וב-`SessionCard`.
+- **שרשרת סדרתית במקום שני slices מקבילים** — שניהם נוגעים ב-`+page.svelte` → merge מקביל = קונפליקט.
+- **build-gate (`vite build`) ב-DoD של slice 2** — לא בגלל ה-adapter החדש (fetch בלבד, בטוח), אלא
+  כשער-כללי; ה-acp barrel כבר ב-bundle ממילא (`agent-session.svelte.ts:20`).
+
+### Windows hidden — נקודת-הרחבה מוכנה, מימוש בנפרד (עדכון 2026-06-27, בקשת המשתמשת)
+
+המשתמשת שאלה אם "מוסתר" יכול לקרוא מה-OS כדי לכלול גם תיקיות מוסתרות-ב-Windows. הבחנה: ב-Windows
+"מוסתר" = תכונת-קובץ (`FILE_ATTRIBUTE_HIDDEN`), **לא** נקודה — הכלל `startsWith(".")` יפספס תיקיות
+כמו `AppData`. אבל **Node לא חושף את התכונה הזו** ב-`readdir`/`stat`; קריאתה דורשת מודול native
+(`winattr`/`fswin`) או shell-out ל-`attrib`, **per-entry** (IO על כל פתיחת תיקייה → רגרסיית-latency
+בבורר אינטראקטיבי).
+
+**הכרעה**: לא לאגד עם תיקון-הבאג (שמשנה את פרופיל-הסיכון מ-trivial ל-native-dep/IO). במקום —
+`isHiddenEntry` נכתב כ-**async שמקבל `(dirent, fullPath)`**, נקודת-ההרחבה היחידה שאליה ה-Windows-
+detection ייכנס בעתיד בלי לגעת בלולאת-הסינון. המימוש בפועל = `slice-windows-hidden-attr` נפרד
+(יכריע native vs `attrib`). עלות-עכשיו: מעט קוד async ללא-IO; תועלת: ה-Windows-slice = שינוי נקודתי
+בתוך פונקציה אחת.
+
+### רעיונות שנדחו
+
+- **מימוש Windows-hidden כחלק מתיקון-הבאג** — נדחה (ראה למעלה): native-dep / IO per-entry ⊥ פרופיל
+  של תיקון-trivial. רק נקודת-ההרחבה הוכנה.
+- **טעינת `lastSessionId` של תיקייה-אחרונה בלחיצה** — נדחה ל-MVP. לחיצה = חיבור (סשן חדש); בחירת
+  סשן ספציפי נעשית מתוך הסשן (בדיוק העיקרון שהמשתמשת ביקשה). אפשר להוסיף בעתיד.
+- **סינון חופפים מול `ActiveProcessesPanel`** — נדחה. תיקייה עם agent חי תופיע בשניהם, אבל הסמנטיקה
+  שונה: "תהליכים פעילים" = reconnect warm (שומר state); "תיקיות אחרונות" = spawn חדש. לא באג.
+- **endpoint BE חדש** — מיותר; `GET /api/projects` כבר קיים ומאוכלס.
+
+---
+
+## 2026-06-27 — היפוך-כיוון: ACP כמשטח קנוני + ספק-כגשר + reabsorption (מחליף את החוזה הקנוני)
+
+### רציונל
+
+החלטה ארכיטקטונית מכוננת שמהפכת את כיוון שכבת-הספק. עד כה הכיוון (ננעל 2026-06-08..17)
+היה **חוזה קנוני מומצא** (`provider-abstraction/docs/design/canonical-contract-proposal.md`
+LOCKED v1.2): consumer מדבר `ProviderSession` מנורמל, drive-coding = צרכן-בלבד דרך git-dep על
+repo פרטי `provider-abstraction`. הכיוון הזה ייצר כאב מתמשך (git-dep על repo פרטי → 404 ל-bun;
+`pnpm update -r` מוחק `#main`; ה-acp barrel שבר את ה-vite build) **בתמורה לתועלת שלא מומשה** —
+ה-cutover ל-ProviderSession (P1d) מעולם לא הושלם (חסום).
+
+ההיפוך (התקבל ע"י המשתמש 2026-06-26, פורמלי 2026-06-27): **ACP הוא ה-API הקנוני.** אין סיבה
+לכתוב מודל מנורמל מקביל כש-`@agentclientprotocol/sdk` מכסה את רוב המשטח. צורכים את הספרייה
+הרשמית כספרייה (לא כפקודות), ומרחיבים את מה שאינו מכוסה דרך 3 שכבות ההרחבה
+(`provider-abstraction/docs/design/acp-extension-mechanisms.md`: `_meta` / `ext` / `unstable_`).
+נשארים עם פרוביידור אחד שמתקנן את כל ה-CLIs ומייצא משטח אחיד — רק שהמשטח הוא ACP-רשמי+הרחבות,
+לא חוזה מומצא.
+
+### ההחלטה — 8 עוגנים
+
+1. **ACP = המשטח הקנוני** (`ClientSideConnection`), לא `ProviderSession` מומצא.
+2. **מתאם אחד, כמה CLIs, משטח אחד** — opencode/gemini/codex/claude-acp, כולם ACP-over-stdio.
+3. **ייחוד-פר-ספק = הרחבות** (`_meta`/`ext`/`unstable_`), בלי לזהם את הליבה.
+4. **החוזה הקנוני יורד לרציף** — `canonical-contract-proposal.md` → superseded; שני ה-P1d מתבטלים.
+5. **Reabsorption** — הפרוסה הנצרכת (`provider-contract/acp`: client+transport+describe-crash, בלי
+   `contract/`) חוזרת ל-`packages/core` כמודול מקומי; git-dep נמחק; הריפו `provider-abstraction`
+   נשאר כארכיב-ידע, נוציא שוב כשבשל לשימוש חוצה-פרויקטים.
+6. **מודול-הספק מחזיק את כל מחסנית ה-CLI** — spawn (`bridge-manager`) + מפרטים (`cli-config`) +
+   פרוטוקול (ACP client) + טרנספורט — "הספרייה = גשר" (`roadmap.md` Future,
+   `backend-managed-http-transport.md`).
+7. **session-owner עובר ל-BE** (HTTP/SSE ללקוח) — פותר את ה-stall (Track F: ה-FE כקליינט
+   → `request_permission` ללא מענה אחרי ניתוק) ומייתר את כל warm-attach/reconnect.
+8. **שער-אימות אמפירי פר-CLI לפני התחייבות** — להריץ בפועל מול claude/codex/gemini/opencode
+   (+antigravity desk-check) ולוודא שכל פיצ'ר ניתן-לביטוי על ACP+הרחבה, לא להסיק מהמסמכים.
+
+### מה מוחלף (superseded)
+
+- `canonical-contract-proposal.md` (LOCKED v1.2) — מודל ProviderSession מומצא.
+- `provider-contract-framework.md` + `session-control-redesign/02-prescription.md` (17/06) —
+  מסגור "provider-contract בעלים, drive-coding צרכן git-dep".
+- `slice-P1d-provider-session-cutover.md` (🔴 NEEDS-REWORK) + `slice-P1d-frontend-cutover.md` (DRAFT) —
+  אין יעד-cutover; ACP הוא היעד.
+- `provider-abstraction-roadmap.md` — כבר SUPERSEDED (17/06), נשאר היסטורי.
+
+### רעיונות שנדחו / מאוזנים
+
+- **התפיסה ש-reabsorption = "5 קבצים וגמרנו"** — נדחתה. ה*חזון* המלא (עוגנים 6+7) הוא שינוי-טופולוגיה
+  (FE-client → BE-session-owner), גדול בהרבה מ-5 קבצים → roadmap קצר (V→R→B), לא slice בודד שמסיים הכול.
+  הגישה ההדרגתית ("שלב ראשון רק לאשר בקשות, התשתית כבר שם") היא הדרך.
+  **‏הבהרה (נדחתה התפיסה, לא הצעד):** מהלך ה-5-קבצים עצמו **כן מבוצע** — כצעד הראשון של גל R
+  (`slice-R1-inline-acp-slice`): interim פרגמטי שמסיר את כאב ה-git-dep **מיד**, מנותק מעוגנים 6+7.
+  R1 הוא הצעד הראשון של הדרך ההדרגתית, לא סתירה לה.
+- **לדלג על שער-האימות (עוגן 8)** — נדחה. הדירוגים 🟡/🟠/🔴 ב-`acp-extension-mechanisms.md` הם
+  הסקה מתיעוד, לא הרצה. 🔴 אמיתי (antigravity ללא ACP, custom-agent בזמן-ריצה) יכול לשנות את התכנון —
+  לכן האימות קודם לכל קוד.
+
+### תוצרים
+
+- roadmap: `docs/plans/acp-bridge-roadmap.md` (V → R → B).
+- brief ראשון: `docs/plans/slice-V1-acp-feature-probe.md` (שער-האימות).
+
 ## 2026-06-25 — slice-frontend-rename-cutover: `@drive-coding/frontend-v2` → `@drive-coding/frontend`
 
 ### רציונל

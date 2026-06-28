@@ -16,6 +16,7 @@
 import MenuIcon from "@lucide/svelte/icons/menu"
 import FolderIcon from "@lucide/svelte/icons/folder"
 import { getI18n, getResponsive, getSession, getUiShell } from "$lib/context"
+import { basename } from "$lib/util/path"
 
 const responsive = getResponsive()
 const uiShell = getUiShell()
@@ -25,10 +26,8 @@ const t = getI18n().t
 // שם הסוכן — placeholder קבוע; redesign-3 יחבר לאפשרויות הסוכן
 const agentName = "drive-coding"
 
-// cwd — רק שם התיקייה האחרון. split על / וגם \ (Windows path separator).
-const cwdLabel = $derived(
-  session.cwd ? session.cwd.split(/[/\\]/).filter(Boolean).at(-1) ?? session.cwd : ""
-)
+// cwd — רק שם התיקייה האחרון.
+const cwdLabel = $derived(session.cwd ? basename(session.cwd) : "")
 
 // slice session-title: כותרת הסשן אם קיימת, fallback ל-agentName ("drive-coding")
 const headerLabel = $derived(session.sessionTitle?.trim() ? session.sessionTitle : agentName)

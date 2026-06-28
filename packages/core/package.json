@@ -18,7 +18,8 @@
     },
     "./cwd-hash": "./src/cwd-hash.ts",
     "./cwd-validate": "./src/cwd-validate.ts",
-    "./async/*": "./src/async/*.ts"
+    "./async/*": "./src/async/*.ts",
+    "./config/*": "./src/config/*.ts"
   },
   "scripts": {
     "build": "tsc --build",

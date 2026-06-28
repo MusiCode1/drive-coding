@@ -28,23 +28,25 @@
  *     עוברות דרך `untrack` בזהירות (learnings 2026-05-16).
  */
 
-import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
-import {
-  OrderAllocator,
-  type OrderKey,
-} from "@drive-coding/core/voice/tts-queue"
 import { cacheKeyFor } from "@drive-coding/core/voice/cache-key"
+import { DEFAULT_VOICE_CONFIG } from "@drive-coding/core/voice/capabilities"
+import type { NarrateContext, ToolCallForNarrate } from "@drive-coding/core/voice/narration-prompt"
+import { select } from "@drive-coding/core/voice/select"
+import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
+import { OrderAllocator, type OrderKey } from "@drive-coding/core/voice/tts-queue"
 import { untrack } from "svelte"
+import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
+import { narrate } from "../adapters/voice/narrate"
+import { translate } from "../adapters/voice/translate"
+import { resolveTts } from "../adapters/voice/tts-resolve"
+import type { AudioSink } from "../engines/audio-sink"
+import { AudioStream } from "../engines/audio-stream"
 import type { CuesEngine } from "../engines/cues"
+import { PcmAudioStream } from "../engines/pcm-audio-stream"
+import { Player } from "../engines/player.svelte"
+import { RoutingAudioSink } from "../engines/routing-audio-sink"
 import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
-import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
-import { AudioStream } from "../engines/audio-stream"
-import { Player } from "../engines/player.svelte"
-import { synthesizeStreaming } from "../adapters/voice/tts"
-import { translate } from "../adapters/voice/translate"
-import { narrate } from "../adapters/voice/narrate"
-import type { NarrateContext, ToolCallForNarrate } from "@drive-coding/core/voice/narration-prompt"
 
 const TARGET_LANG = "he" as const
 const MIN_CHARS = 20
@@ -55,7 +57,7 @@ export type TtsJobStatus = "pending" | "fetching" | "ready" | "error"
 
 export type TtsJob = {
   segmentId: string
-  kind: "message" | "thought" | "tool"   // slice 22: הוסף "tool"
+  kind: "message" | "thought" | "tool" // slice 22: הוסף "tool"
   messageId: string | null
   text: string
   status: TtsJobStatus
@@ -63,7 +65,7 @@ export type TtsJob = {
   /** Slice 4: מזהה בועה, בשימוש jobs של מחשבות לכתיבת טקסט מתורגם חזרה. */
   bubbleId?: string
   // ─── slice 22 ───
-  orderKey: OrderKey            // (seq, segmentIndex)
+  orderKey: OrderKey // (seq, segmentIndex)
   /** ל-tool: toolCallId לכתיבת narration חזרה לבועה אחרי ה-fetch. */
   toolCallId?: string
 }
@@ -79,7 +81,7 @@ export class Speaker {
 
   readonly #session: AgentSession
   readonly #settings: Settings
-  readonly #audioStream: AudioStream
+  readonly #audioStream: AudioSink
   readonly #player: Player
   readonly #cues?: CuesEngine
   // slice 6: guard — מונע ניגון חוזר של cue "speaking" באותו תור (re-entry סדרתי)
@@ -103,7 +105,9 @@ export class Speaker {
   #pendingCount = $state(0)
 
   /** msr-v2: האם יש TTS jobs בתהליך. משמש את ModelStatus לשלב pending-tts. */
-  get hasPendingNarration(): boolean { return this.#pendingCount > 0 }
+  get hasPendingNarration(): boolean {
+    return this.#pendingCount > 0
+  }
 
   #prevStatus: AgentSessionStatus = "idle"
   #prevTurnState: TurnState = "idle"
@@ -125,7 +129,7 @@ export class Speaker {
     // ui-polish-batch C8: אתחל enabled מ-settings.muted + סנכרן cues
     this.enabled = !opts.settings.muted
     if (opts.cues) opts.cues.enabled = !opts.settings.muted
-    this.#audioStream = new AudioStream()
+    this.#audioStream = new RoutingAudioSink(new AudioStream(), new PcmAudioStream())
     // slice 6: onPlaybackStart callback — נקרא פעם אחת כש-Player עובר idle→playing.
     // guard #spokeThisTurn מונע re-entry סדרתי בתוך אותו תור (LOOKAHEAD=2 + async fetches).
     this.#player = new Player(this.#audioStream, () => {
@@ -282,7 +286,12 @@ export class Speaker {
     this.#pumpFetchLoop()
   }
 
-  #handleStatusTransition(status: AgentSessionStatus, turnState: TurnState, enabled: boolean, speakThoughts: boolean): void {
+  #handleStatusTransition(
+    status: AgentSessionStatus,
+    turnState: TurnState,
+    enabled: boolean,
+    speakThoughts: boolean,
+  ): void {
     // msr-v2: תור דיבור חדש מתחיל כש-turnState עובר מ-idle → אפס את ה-cue guard.
     // reset כאן (turn-start) ולא ב-#stopAndClear (לא רץ בסוף תור רגיל).
     if (turnState !== "idle" && this.#prevTurnState === "idle") {
@@ -291,8 +300,7 @@ export class Speaker {
 
     // התור הסתיים? פלוש כל buffer פר-בועה כמקטע אחרון.
     // msr-v2: טריגר = #prevTurnState !== "idle" && turnState === "idle"
-    const justFinished =
-      this.#prevTurnState !== "idle" && turnState === "idle"
+    const justFinished = this.#prevTurnState !== "idle" && turnState === "idle"
     if (justFinished && enabled) {
       for (const [bubbleId, state] of this.#bubbleStates) {
         if (state.buffer.trim().length === 0) continue
@@ -356,7 +364,13 @@ export class Speaker {
         // כבוי → הקרא טקסט מקורי (אנגלית). נקרא ברגע ה-fetch (לא tracked).
         if (this.#settings.translateThoughts) {
           // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)
-          const result = await translate(text, TARGET_LANG, job.abort.signal, job.messageId)
+          const result = await translate(
+            text,
+            TARGET_LANG,
+            select("translate", DEFAULT_VOICE_CONFIG),
+            job.abort.signal,
+            job.messageId,
+          )
           if (result !== null && result.status === "translated") {
             // Slice 4: כתיבה חזרה למקטע כדי ש-ThoughtBubble יוכל להציג HE+EN.
             if (job.bubbleId !== undefined) {
@@ -369,7 +383,10 @@ export class Speaker {
       } else if (job.kind === "tool") {
         // slice 22: narration נוצר כאן (best-effort). null → דלג על ה-job.
         const narrationText = await this.#narrateForJob(job)
-        if (narrationText === null) { job.status = "error"; return }
+        if (narrationText === null) {
+          job.status = "error"
+          return
+        }
         text = narrationText
       }
 
@@ -378,18 +395,25 @@ export class Speaker {
         return
       }
 
+      // V4a-unify: בחר ספק דרך resolveTts (מקור-אמת יחיד)
+      const { provider, voiceId, modelId } = resolveTts(
+        this.#settings.ttsProvider,
+        this.#settings.voiceId,
+      )
       // slice 22: חשב textHash על הטקסט שמסונתז (provenance)
-      const textHash = await cacheKeyFor(text, this.#settings.voiceId, "eleven_v3")
+      const textHash = await cacheKeyFor(text, voiceId, modelId)
       // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)
-      const stream = await synthesizeStreaming({
+      const stream = await provider.synthesize({
         text,
-        voiceId: this.#settings.voiceId,
+        voiceId,
+        modelId,
         messageId: job.messageId,
         signal: job.abort.signal,
       })
       await this.#audioStream.prepareSegment(job.segmentId, stream, job.abort, {
         messageId: job.messageId,
         textHash,
+        format: provider.format,
       })
       this.#player.addSegment(job.segmentId, job.orderKey)
       job.status = "ready"
@@ -453,7 +477,7 @@ export class Speaker {
         segmentId: crypto.randomUUID(),
         kind: "tool",
         messageId: null,
-        text: "",            // יתמלא ב-#narrateForJob
+        text: "", // יתמלא ב-#narrateForJob
         status: "pending",
         abort: new AbortController(),
         bubbleId: bid,
@@ -486,7 +510,7 @@ export class Speaker {
       kind: tc.kind,
       title: tc.title ?? tc.name,
     }
-    const text = await narrate(ctx, tool, job.abort.signal)
+    const text = await narrate(ctx, tool, select("narrate", DEFAULT_VOICE_CONFIG), job.abort.signal)
     if (text === null) return null
 
     // כתוב narration חזרה לבועה (תצוגה) — Svelte 5: החלף בועה שלמה.
@@ -533,9 +557,7 @@ export class Speaker {
 
     // החלף את המקטע ב-segIdx: החלף text → עברית, originalText → אנגלית.
     const updatedSegments: ThoughtBubble["segments"] = bubble.segments.map((seg, i) =>
-      i === segIdx
-        ? { ...seg, text: translatedHebrew, originalText: originalEnglish }
-        : seg,
+      i === segIdx ? { ...seg, text: translatedHebrew, originalText: originalEnglish } : seg,
     )
     // החלף בועה שלמה (ריאקטיביות Svelte 5 — השמת index מפעילה עדכון).
     this.#session.bubbles[idx] = { ...bubble, segments: updatedSegments }
@@ -555,7 +577,7 @@ export class Speaker {
       }
     }
     this.#jobs = []
-    this.#pendingCount = 0   // msr-v2: אפס ספירה (jobs בוטלו)
+    this.#pendingCount = 0 // msr-v2: אפס ספירה (jobs בוטלו)
     this.#player.stop()
     this.#audioStream.clear()
     // slice 22: נקה את ה-allocator (seq גלובלי לא מתאפס — מונוטוני בין שיחות)

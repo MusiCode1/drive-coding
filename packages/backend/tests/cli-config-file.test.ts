@@ -15,32 +15,38 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+// Mock child_process — http-options (ייובא דרך paths.ts) מפעיל execFileSync
+const execFileSyncMock = vi.fn().mockReturnValue("")
+vi.mock("node:child_process", () => ({
+  execFileSync: (...args: unknown[]) => execFileSyncMock(...args),
+}))
+
+// ייבוא סטטי ל-resolveCliSpecsPath — הפונקציה לא memoized, process.env נקרא בזמן ריצה.
+// (loadCliSpecsOverride מחייב dynamic import בגלל memoization ברמת מודול)
+import { resolveCliSpecsPath } from "../src/acp/cli-config-file.js"
+
 // ── ייבוא מעוכב — נייבא בתוך כל טסט כדי שה-memoization יאופס בין ריצות ──
 // מאחר ש-loadCliSpecsOverride מנוהל ב-memoization ברמת המודול,
 // נייבא מחדש בכל טסט (resetModules בין בדיקות).
 
 describe("resolveCliSpecsPath", () => {
-  const originalEnv = { ...process.env }
-
   afterEach(() => {
-    // שחזור env
-    for (const key of Object.keys(process.env)) {
-      if (!(key in originalEnv)) delete process.env[key]
-    }
-    Object.assign(process.env, originalEnv)
+    vi.unstubAllEnvs()
   })
 
-  it("ברירת-מחדל: ~/.config/drive-coding/cli-specs.jsonc", async () => {
-    delete process.env.CLI_SPECS_FILE
-    const { resolveCliSpecsPath } = await import("../src/acp/cli-config-file.js")
-    const result = resolveCliSpecsPath()
-    const expected = path.join(os.homedir(), ".config", "drive-coding", "cli-specs.jsonc")
+  it("ברירת-מחדל: ~/.config/drive-coding/cli-specs.jsonc", () => {
+    // finding avigail #2: getStateDir() מעדיף HOME/USERPROFILE על פני os.homedir().
+    // שמירת homedir לפני ה-stub (os.homedir() ב-Windows תלוי ב-USERPROFILE).
+    const actualHome = os.homedir()
+    vi.stubEnv("HOME", actualHome)
+    vi.stubEnv("USERPROFILE", "")
+    // העבר env ללא CLI_SPECS_FILE כדי לקבל ברירת-מחדל
+    const result = resolveCliSpecsPath({})
+    const expected = path.join(actualHome, ".config", "drive-coding", "cli-specs.jsonc")
     expect(result).toBe(expected)
   })
 
-  it("CLI_SPECS_FILE env דורס את ברירת-המחדל", async () => {
-    process.env.CLI_SPECS_FILE = "/tmp/custom-cli-specs.jsonc"
-    const { resolveCliSpecsPath } = await import("../src/acp/cli-config-file.js")
+  it("CLI_SPECS_FILE env דורס את ברירת-המחדל", () => {
     const result = resolveCliSpecsPath({ CLI_SPECS_FILE: "/tmp/custom-cli-specs.jsonc" })
     expect(result).toBe("/tmp/custom-cli-specs.jsonc")
   })
@@ -177,5 +183,53 @@ describe("loadCliSpecsOverride", () => {
     const result = loadCliSpecsOverride()
 
     expect(result["opencode"]?.bin).toBe("/custom/opencode")
+  })
+
+  // --- CLI_SPECS_JSON integration tests (Commit 3) ---
+
+  it("7. CLI_SPECS_JSON only → applied as override", async () => {
+    process.env.CLI_SPECS_JSON = JSON.stringify({ claude: { bin: "/inline/claude" } })
+    // No CLI_SPECS_FILE set — default path won't exist in tmp.
+    process.env.CLI_SPECS_FILE = "/tmp/does-not-exist-specs-99999.jsonc"
+
+    const { loadCliSpecsOverride } = await import("../src/acp/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+
+    expect(result["claude"]?.bin).toBe("/inline/claude")
+  })
+
+  it("8. CLI_SPECS_JSON merged over file: inline wins per-key", async () => {
+    // File has opencode + gemini; inline overrides opencode only.
+    const fileContent = JSON.stringify({
+      opencode: { bin: "/file/opencode" },
+      gemini: { bin: "/file/gemini" },
+    })
+    const filePath = writeTmpFile(fileContent)
+    process.env.CLI_SPECS_FILE = filePath
+    process.env.CLI_SPECS_JSON = JSON.stringify({ opencode: { bin: "/inline/opencode" } })
+
+    const { loadCliSpecsOverride } = await import("../src/acp/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+
+    // Inline wins for opencode
+    expect(result["opencode"]?.bin).toBe("/inline/opencode")
+    // File gemini survives
+    expect(result["gemini"]?.bin).toBe("/file/gemini")
+  })
+
+  it("9. CLI_SPECS_JSON broken JSON → ignored + warning, file still applies", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const fileContent = JSON.stringify({ opencode: { bin: "/file/opencode" } })
+    const filePath = writeTmpFile(fileContent)
+    process.env.CLI_SPECS_FILE = filePath
+    process.env.CLI_SPECS_JSON = "{ not valid json }"
+
+    const { loadCliSpecsOverride } = await import("../src/acp/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+
+    // Broken inline JSON is ignored — file still applies
+    expect(result["opencode"]?.bin).toBe("/file/opencode")
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
   })
 })

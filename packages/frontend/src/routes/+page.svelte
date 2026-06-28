@@ -11,6 +11,7 @@ import ActiveProcessesPanel from "$lib/components/connect/ActiveProcessesPanel.s
 import LanguageSelect from "$lib/components/settings/LanguageSelect.svelte"
 import Select from "$lib/components/ui/Select.svelte"
 import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
+import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
 import FolderIcon from "@lucide/svelte/icons/folder"
 import { getI18n, getSession, getSettings, getModals, getActiveAgents } from "$lib/context"
 
@@ -234,6 +235,8 @@ async function onSubmit(e: SubmitEvent) {
 
 <!-- C10: בורר תיקיות (מרונדר כאן כי דף החיבור אינו עטוף ב-AppShell) -->
 <FolderPickerDialog />
+<!-- content-viewer (slice content-viewer — כמו FolderPickerDialog: מסך connect אינו עטוף ב-AppShell) -->
+<ContentViewerDialog />
 
 <style>
   /* גובה מלא + גלילה פנימית: ה-body הוא overflow:hidden (app.css), ודף החיבור

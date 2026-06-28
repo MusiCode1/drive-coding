@@ -3,18 +3,27 @@
  *
  * toggle(bubbleId) — לחיצה שנייה על אותה בועה עוצרת.
  * guard: no-op אם session.turnState !== "idle" (לא להשמיע בזמן שהסוכן עונה).
- * user bubble → playUserRecording. message/thought → playAgentText.
+ * user bubble → playUserRecording (דרך <audio>).
+ * message/thought → TTS דרך RoutingAudioSink + resolveTts.
  * tool bubble → אין ▶.
+ *
+ * stop() משמר שני מנגנוני-עצירה:
+ *   - #audioEl.pause() → עצירת הקלטת-משתמש (playUserRecording אין לו signal)
+ *   - #sink.cancel(#segId) → עצירת TTS (sink + WebAudio)
  *
  * אין $effect — toggle הוא method ישיר (§8.10).
  *
- * ─── msr-v2 (Commit 5) ───
+ * ─── V4a-unify (Commit 2) ───
  */
 
 import type { AgentSession } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
 import type { Bubble } from "$lib/types/bubble"
-import { playUserRecording, playAgentText } from "$lib/adapters/voice/play-bubble"
+import { playUserRecording } from "$lib/adapters/voice/play-bubble"
+import { resolveTts } from "$lib/adapters/voice/tts-resolve"
+import { AudioStream } from "$lib/engines/audio-stream"
+import { PcmAudioStream } from "$lib/engines/pcm-audio-stream"
+import { RoutingAudioSink } from "$lib/engines/routing-audio-sink"
 
 export class BubblePlayer {
   playingBubbleId: string | null = $state(null)
@@ -23,6 +32,8 @@ export class BubblePlayer {
   readonly #settings: Settings
   #audioEl: HTMLAudioElement | null = null
   #abortCtrl: AbortController | null = null
+  readonly #sink = new RoutingAudioSink(new AudioStream(), new PcmAudioStream())
+  #segId: string | null = null
 
   constructor(opts: { session: AgentSession; settings: Settings }) {
     this.#session = opts.session
@@ -57,7 +68,7 @@ export class BubblePlayer {
     this.#abortCtrl = new AbortController()
     const abortCtrl = this.#abortCtrl
 
-    // צור <audio> חד-פעמי
+    // צור <audio> חד-פעמי — נשאר לענף user-recording
     const audioEl = new Audio()
     this.#audioEl = audioEl
 
@@ -65,6 +76,7 @@ export class BubblePlayer {
       this.playingBubbleId = null
       this.#audioEl = null
       this.#abortCtrl = null
+      this.#segId = null
     }
 
     if (bubble.kind === "user") {
@@ -75,24 +87,38 @@ export class BubblePlayer {
       }
       void playUserRecording(recordingId, audioEl).then(cleanup).catch(cleanup)
     } else {
-      // message / thought — TTS
+      // message / thought — TTS דרך RoutingAudioSink + resolveTts
       const text = bubble.segments.map((s) => s.text).join("")
       if (!text.trim()) {
         cleanup()
         return
       }
-      void playAgentText(text, this.#settings.voiceId, audioEl, { signal: abortCtrl.signal })
-        .then(cleanup)
-        .catch(cleanup)
+      const { provider, voiceId, modelId } = resolveTts(
+        this.#settings.ttsProvider,
+        this.#settings.voiceId,
+      )
+      this.#segId = bubbleId
+      const run = async () => {
+        const stream = await provider.synthesize({ text, voiceId, modelId, signal: abortCtrl.signal })
+        await this.#sink.prepareSegment(bubbleId, stream, abortCtrl, { format: provider.format })
+        await this.#sink.play(bubbleId)
+      }
+      void run().then(cleanup).catch(cleanup)
     }
   }
 
-  /** עוצר כל ניגון פעיל. */
+  /** עוצר כל ניגון פעיל. משמר שני מנגנוני-עצירה: abort + audioEl.pause() + sink.cancel(). */
   stop(): void {
     if (this.#abortCtrl) {
       this.#abortCtrl.abort()
       this.#abortCtrl = null
     }
+    // ענף TTS: עצור דרך sink (WebAudio + PCM)
+    if (this.#segId) {
+      this.#sink.cancel(this.#segId)
+      this.#segId = null
+    }
+    // ענף user-recording: <audio>.pause() — playUserRecording אין לו signal
     if (this.#audioEl) {
       try {
         this.#audioEl.pause()

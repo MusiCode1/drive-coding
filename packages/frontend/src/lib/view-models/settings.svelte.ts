@@ -47,6 +47,8 @@ type Persisted = {
   // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
   // מפה: cliKind → { configId/category → value }
   lastConfig: Record<string, Record<string, string | boolean>>
+  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
+  ttsProvider: "elevenlabs" | "google"
 }
 
 const DEFAULTS: Persisted = {
@@ -75,6 +77,8 @@ const DEFAULTS: Persisted = {
   enterToSend: true,
   // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
   lastConfig: {},
+  // ─── TTS provider ─── (V4a) — ברירת מחדל = ElevenLabs (Q1=לא flip)
+  ttsProvider: "elevenlabs" as const,
 }
 
 function load(): Persisted {
@@ -156,6 +160,9 @@ export class Settings {
   // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
   lastConfig = $state<Record<string, Record<string, string | boolean>>>(DEFAULTS.lastConfig)
 
+  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
+  ttsProvider = $state<"elevenlabs" | "google">(DEFAULTS.ttsProvider)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -182,6 +189,8 @@ export class Settings {
     this.enterToSend = loaded.enterToSend
     // ─── config אחרון פר-CLI ───
     this.lastConfig = loaded.lastConfig
+    // ─── TTS provider ───
+    this.ttsProvider = loaded.ttsProvider
   }
 
   // ─── טופס חיבור ───
@@ -377,6 +386,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
+
+  setTtsProvider = (v: "elevenlabs" | "google"): void => {
+    this.ttsProvider = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -396,6 +412,7 @@ export class Settings {
       showTools: this.showTools,
       enterToSend: this.enterToSend,
       lastConfig: this.lastConfig,
+      ttsProvider: this.ttsProvider,
     })
   }
 }
