@@ -1,3 +1,19 @@
+## 2026-06-28 — EXT-SCHEMA-uniform-contract — Commit 1 (ולידציית params בגבול ה-host)
+
+### מה בוצע?
+
+**Commit 1 (integration)** — ולידציית params ב-`_drive/setThinkingTokens` handler:
+- `packages/provider/src/host/in-process/host.ts`: ייבוא `RequestError` מ-`acp-sdk-v1`. ה-handler עוטף את `parseExtParams` ב-try/catch וממיר שגיאת-ולידציה ל-`RequestError.invalidParams()` כדי שה-SDK לא יעטוף אותה כ-"Internal error".
+- `packages/provider/src/host/in-process/host.test.ts`: נוספו 5 טסטים (3 invalid params → not "Internal error", 2 valid params → "Internal error" כי session לא קיים).
+
+### חריגות
+- lint pre-existing (291 errors, לא הוספו שגיאות חדשות). ב-`host.ts` עצמו biome תיקן imports-order אוטומטית.
+
+### בדיקות
+- 89 טסטים ירוקים (85 pass + 4 skipped). typecheck: 0 errors.
+
+---
+
 ## 2026-06-28 — EXT-SCHEMA-uniform-contract — Commit 0 (schema + types + barrel + dep)
 
 ### מה בוצע?

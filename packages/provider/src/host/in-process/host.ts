@@ -35,7 +35,8 @@
 
 import { ClaudeAcpAgent } from "@agentclientprotocol/claude-agent-acp"
 import type { ActiveSession, AgentConnection, ClientContext } from "acp-sdk-v1"
-import { agent, client, methods } from "acp-sdk-v1"
+import { agent, client, methods, RequestError } from "acp-sdk-v1"
+import { parseExtParams } from "../../extensions/index.js"
 import type { NormalizedCapabilities } from "../types.js"
 import { mapClaudeCapabilities } from "./claude/capabilities.js"
 import { getQuery } from "./claude/query-access.js"
@@ -194,7 +195,17 @@ export function createClaudeInProcessHost(options?: { extHandlers?: ExtHandlers 
     { parse: (p: unknown) => p as Record<string, unknown> },
     async (ctx) => {
       if (!claudeAgent) throw new Error("_drive/setThinkingTokens called before start()")
-      const { sessionId, n } = ctx.params as { sessionId: string; n: number | null }
+      // Validate at the host boundary — invalid params must surface as RequestError.invalidParams
+      // (not internalError). The SDK wraps any plain Error as internalError, so we catch here.
+      // n=null is valid (no-limit); SDK setMaxThinkingTokens accepts null.
+      let parsed: ReturnType<typeof parseExtParams<"_drive/setThinkingTokens">>
+      try {
+        parsed = parseExtParams("_drive/setThinkingTokens", ctx.params)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        throw RequestError.invalidParams({}, msg)
+      }
+      const { sessionId, n } = parsed
       await getQuery(claudeAgent, sessionId).setMaxThinkingTokens(n)
       return { ok: true }
     },

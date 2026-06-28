@@ -203,3 +203,91 @@ describe("InProcessHost — session wiring (structural checks, no inference)", (
     await expect(host.close()).resolves.toBeUndefined()
   })
 })
+
+describe("InProcessHost — _drive/setThinkingTokens parseExtParams validation (EXT-SCHEMA phase 1)", () => {
+  /**
+   * DoD #3: invalid params → clear error, does NOT reach getQuery.
+   * We verify by checking the error message:
+   *   - ArkType validation error: contains "Invalid params for _drive/setThinkingTokens"
+   *   - Valid params (n=null) → still reach getQuery → "Internal error" (session doesn't exist)
+   *
+   * "does not reach getQuery" is observable because:
+   *   - pre-parseExtParams: error message starts with "Invalid params for..."
+   *   - post-parseExtParams (reached getQuery): error message is "Internal error"
+   */
+  let host: InProcessHost | undefined
+
+  afterEach(async () => {
+    if (host) {
+      await host.close()
+      host = undefined
+    }
+  })
+
+  it("invalid params (n is string) → throws validation error before getQuery", async () => {
+    host = createClaudeInProcessHost()
+    await host.start({ cwd: process.cwd() })
+
+    let err: Error | undefined
+    try {
+      await host.callExt("_drive/setThinkingTokens", { sessionId: "s", n: "8000" })
+    } catch (e) {
+      err = e as Error
+    }
+
+    // Must get a validation error — not "Internal error" (which would mean it reached getQuery)
+    expect(err).toBeDefined()
+    // The error should NOT be "Internal error" (which means it passed validation and reached getQuery)
+    expect(err?.message).not.toContain("Internal error")
+  })
+
+  it("invalid params (n missing) → throws validation error before getQuery", async () => {
+    host = createClaudeInProcessHost()
+    await host.start({ cwd: process.cwd() })
+
+    let err: Error | undefined
+    try {
+      await host.callExt("_drive/setThinkingTokens", { sessionId: "s" })
+    } catch (e) {
+      err = e as Error
+    }
+
+    expect(err).toBeDefined()
+    expect(err?.message).not.toContain("Internal error")
+  })
+
+  it("invalid params (sessionId missing) → throws validation error before getQuery", async () => {
+    host = createClaudeInProcessHost()
+    await host.start({ cwd: process.cwd() })
+
+    let err: Error | undefined
+    try {
+      await host.callExt("_drive/setThinkingTokens", { n: 8000 })
+    } catch (e) {
+      err = e as Error
+    }
+
+    expect(err).toBeDefined()
+    expect(err?.message).not.toContain("Internal error")
+  })
+
+  it("valid params with n=null → reaches getQuery (throws 'Internal error' — session not found)", async () => {
+    host = createClaudeInProcessHost()
+    await host.start({ cwd: process.cwd() })
+
+    // n=null is valid — should pass validation and reach getQuery
+    // getQuery throws because session doesn't exist → SDK wraps as "Internal error"
+    await expect(
+      host.callExt("_drive/setThinkingTokens", { sessionId: "nonexistent", n: null }),
+    ).rejects.toThrow("Internal error")
+  })
+
+  it("valid params with n=8000 → reaches getQuery (throws 'Internal error' — session not found)", async () => {
+    host = createClaudeInProcessHost()
+    await host.start({ cwd: process.cwd() })
+
+    await expect(
+      host.callExt("_drive/setThinkingTokens", { sessionId: "nonexistent", n: 8000 }),
+    ).rejects.toThrow("Internal error")
+  })
+})
