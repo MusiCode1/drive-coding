@@ -7036,3 +7036,29 @@ B2 (הצגה): הוספת `import { version } from "$app/environment"` ל-Settin
 ### חריגות
 
 אין.
+
+---
+
+## slice-cache-version — Commit 4 (C: bump-version.mjs)
+
+**תאריך**: 2026-06-28
+
+### בוצע
+
+יצירת `scripts/bump-version.mjs` — script להעלאת גרסה ב-monorepo:
+- ארגומנט `<patch|minor|major>` חובה; exit 1 בלי ארגומנט.
+- מעלה root `package.json` ב-level.
+- מסנכרן `packages/release` ל-root (תמיד זהה).
+- מעלה כל pkg נוסף שנמסר (`backend`/`core`/`frontend`) באותו level — עצמאי.
+- `release` בארגומנטי pkg מדולג (כבר מסונכרן).
+
+### בדיקות (smoke)
+
+- `node scripts/bump-version.mjs patch` → `root+release → 0.1.1` (ואז git checkout משחזר).
+- `node scripts/bump-version.mjs minor frontend` → `root+release → 0.2.0 | bumped: frontend` (ואז git checkout).
+- `node scripts/bump-version.mjs` (בלי ארגומנט) → exit 1 + הודעת שגיאה.
+- root נשאר 0.1.0 לאחר כל הsmoke.
+
+### חריגות
+
+אין.
