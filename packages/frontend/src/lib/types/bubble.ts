@@ -38,6 +38,12 @@ export type UserBubble = BubbleBase & {
   segments: Segment[]
   /** Slice 10 — מזהה בתוך ה-BE RecordingsStore עבור ניגון מחדש (replay). */
   recordingId?: string
+  /**
+   * slice-image-paste (Commit 3) — תמונות שנשלחו עם הפרומפט.
+   * optional ו-additive: בועות קיימות (ללא תמונות) לא מושפעות.
+   * Commit 4 מאכלס את השדה; Commit 3 רק מרנדר (mock).
+   */
+  attachments?: { mimeType: string; dataBase64: string }[]
 }
 
 export type MessageBubble = BubbleBase & {

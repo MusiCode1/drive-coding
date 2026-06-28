@@ -53,6 +53,19 @@ async function handleCopy() {
 <div class="flex gap-2 self-start max-w-[85%] min-w-0 items-end group">
   <Avatar kind="user" />
   <div class="bubble-wrapper min-w-0 flex-1">
+    <!-- תמונות מצורפות (slice-image-paste Commit 3) -->
+    {#if bubble.attachments && bubble.attachments.length > 0}
+      <div class="flex flex-wrap gap-1.5 mb-1">
+        {#each bubble.attachments as att, i (i)}
+          <img
+            src="data:{att.mimeType};base64,{att.dataBase64}"
+            alt=""
+            class="max-h-40 max-w-[12rem] rounded-xl object-contain border"
+            style="border-color:var(--border)"
+          />
+        {/each}
+      </div>
+    {/if}
     <div
       class="px-3.5 py-2.5 rounded-2xl rounded-es-sm text-sm leading-relaxed min-w-0 max-w-full overflow-hidden break-words"
       style="background:var(--bubble-user); {isPlaying ? 'outline:2px solid var(--accent); outline-offset:1px' : ''}"
