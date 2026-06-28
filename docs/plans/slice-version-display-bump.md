@@ -1,7 +1,7 @@
 # Slice version-display-bump — תצוגת-גרסה ב-FE + script ל-bump (B+C) — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: טיוטה (אביגיל טרם)
+> **סטטוס**: **plan-verified / READY** (אביגיל r2, 2026-06-28 — r1 USABLE-AFTER-FIX → תוקן → r2 READY/0-findings). dispatch-ready.
 > **מקור**: חולץ מ-`slice-cache-headers-version` (המפלצת בת 8 ה-commits) — רק חלקים B+C.
 >   A (cache-headers) ו-D1-D5/publish נשארים שם / מנותבים מחדש (D1 ⊂ frontend-rename-cutover).
 > **Complexity**: 3/10 (verifier: **calev light**)

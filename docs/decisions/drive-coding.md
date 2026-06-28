@@ -1,5 +1,58 @@
 # Decisions — drive-coding
 
+## 2026-06-28 — version-display-bump: חילוץ מ-cache-headers-version המפלצת + מימוש [pkg...]
+
+### רציונל
+טקס-הגרסאות ב-`AGENTS.md` מפנה ל-`scripts/bump-version.mjs` שלא קיים — ה-slice שאמור היה
+לבנותו (`cache-headers-version`, חלק C) מעולם לא בוצע. כשניגשנו לסגור את הפער התגלה שה-brief
+הישן תפח ל-**8 commits בשלושה אשכולות לא-קשורים** (A=cache headers, B+C=versioning, D1-D5=מיתוג/פרסום)
+והתיישן (כתוב סביב `0.0.0`, אבל root כבר `0.1.0`).
+
+### שינוי-כיוון (פיצול)
+במקום להחיות מפלצת מיושנת עם קונפליקט מובנה — **חילצנו slice ממוקד** `slice-version-display-bump`
+(רק B+C, FE+root, complexity 3) שנכתב מחדש מול dev הנוכחי. הניתוב של השאר:
+- **D1** (rename `frontend-v2`→`frontend`) — מנותב ל-`slice-frontend-rename-cutover` (חפיפה=קונפליקט; אי-אפשר לרוץ בשניהם).
+- **A** (Cache-Control) + **D2-D5/publish** — נשארים כ-slices נפרדים אם נחזור אליהם.
+- `cache-headers-version` סומן SUPERSEDED-חלקית.
+
+### החלטה: bump-version.mjs מממש את [pkg...] (לא מחליש את AGENTS)
+אביגיל תפסה ש-`AGENTS.md:64` מתעד `bump-version.mjs <level> [pkg...]` (root+release מקבלים level,
+release מסונכרן ל-root, וכל pkg ב-[pkg...] עולה עצמאית) — אבל הניסוח הראשון של ה-script שלי התעלם
+מ-`[pkg...]`. הכרעה: **לממש את [pkg...]**, לא לפשט את AGENTS. כשהחוזה מתועד ומימושו זול — מממשים
+אותו במקום להשאיר את התיעוד משקר.
+
+### תזכורת-תהליך (המשתמשת, 2026-06-28)
+ה-bump עצמו אינו חלק מה-slice — ה-script **נוצר** כאן, אבל **רץ רק בטקס-המיזוג** של מרדכי, ורמתו
+(patch/minor/major) נקבעת בזמן ה-merge לפי אופי ה-PR. לא מוכרע ב-brief.
+
+## 2026-06-28 — runtime-controls בלי patch: ext channel שלנו + גישת-query דרך `sessions`
+
+### רציונל
+ההחלטה הקודמת (extension-layer §1.5, 2026-06-28) הייתה ש-control_requests של claude (mcp/thinking
+mid-session) "נעולים" ולכן צריך `pnpm patch` ל-claude-agent-acp שמוסיף inbound extMethod. בדיקה חוזרת
+של `acp-agent.js` המקומפל הוכיחה שזה מיותר. שלושה ממצאים מתחברים:
+1. **ה-`ext` channel ברמת הפרוטוקול** — `Agent.extMethod?(method, params)` מקבל **כל** method חופשי
+   תוך כדי סשן (`acp-extension-mechanisms.md`; קיים ב-0.21 וב-1.0). אין רשימה סגורה.
+2. **אנחנו הבעלים של צד-הקבלה** — ב-in-process host הקוד שלנו מספק את ה-`Agent`. מאצילים standard
+   methods ל-`ClaudeAcpAgent`, ומממשים `extMethod` הנכנס **בעצמנו**. (ClaudeAcpAgent לא מממש extMethod —
+   לא רלוונטי, אנחנו תופסים את ה-ext לפניו.)
+3. **ה-query נגיש ב-runtime** — `ClaudeAcpAgent.sessions` שדה **ציבורי** (`this.sessions = {}`), כל רשומת-סשן
+   מחזיקה את ה-query החי שחושף `setMaxThinkingTokens`/`setMcpServers`/`setModel`/... ה-`private` שהנחנו
+   קודם היה TS-בלבד.
+
+### שינויי-כיוון
+ה-patch **יורד מהשולחן**. כל ה-runtime-controls (thinking/mcp) מתאחדים לאותו דפוס של C3-rename —
+slice פשוט (`host/in-process/claude/<x>.ts` + capability + smoke חי), בלי modification ל-node_modules.
+
+### רעיונות שנדחו
+- **patch ל-claude-agent-acp** — נדחה: מיותר (ה-query נגיש), ויקר-תחזוקה (רץ על כל `pnpm install`).
+- **fork** — נדחה עוד קודם (תחזוקה).
+
+### הסתייגות מתועדת
+הגישה ל-`sessions[id].query` היא ל-internal **לא-מתועד** (public טכנית, לא API יציב). מיטיגציה:
+(א) גרסה נעולה ממילא; (ב) accessor מטופס **יחיד** (`getQuery(sessionId)`) כך ששבירה עתידית = קובץ אחד;
+(ג) smoke-test פר control מאמת שהשרשרת קיימת. צימוד-רך, לא modification.
+
 ## 2026-06-28 — פיצול slice-cache-headers-version לדק (A+B+C) + D נפרד
 
 ### רציונל
