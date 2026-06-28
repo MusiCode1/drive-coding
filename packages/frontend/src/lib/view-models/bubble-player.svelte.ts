@@ -93,9 +93,11 @@ export class BubblePlayer {
         cleanup()
         return
       }
+      // V4b: העברת geminiVoice לresolveTts
       const { provider, voiceId, modelId } = resolveTts(
         this.#settings.ttsProvider,
         this.#settings.voiceId,
+        this.#settings.geminiVoice,
       )
       this.#segId = bubbleId
       const run = async () => {
