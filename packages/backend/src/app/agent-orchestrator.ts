@@ -1,18 +1,21 @@
 /**
- * agent-orchestrator.ts — אורקסטרטור רזה עבור Slice 10.
+ * agent-orchestrator.ts — אורקסטרטור רזה (CUT-3b-ii rewire).
  *
  * תחומי אחריות:
- *   1. createAndSpawn: קורא ל-registry.create + bridgeManager.spawn → מחזיר { agentId, wsUrl, bridgePort }
+ *   1. createAndSpawn: קורא ל-registry.create + connectionRegistry.connect
+ *      → מחזיר { agentId, wsUrl:"", bridgePort:0 } (in-process pipe, אין WS-bridge).
  *      הסטטוס נשאר "spawning" — ה-FE מסמן "ready" דרך POST /api/agents/:id/session-attached.
- *   2. deleteAndKill: קורא ל-registry.update(closed) + bridgeManager.kill + registry.delete
- *   3. getBridgePort: בשימוש של ws-agent עבור ניתוב פרוקסי
- *   4. טיפול בהתרסקויות: bridgeManager.onCrash → מבצע registry.update(status=crashed, crashReason)
+ *   2. deleteAndKill: registry.update(closed) + connectionRegistry.close + registry.delete
+ *   3. getBridgePort: תמיד 0 (in-process — אין WS-bridge אמיתי). נשמר לתאימות.
+ *   4. התרסקויות: connectionRegistry.onCrash → registry.update(status=crashed).
  *
- * הוסר מ-Slice 9:
- *   - createAcpWsTransport / createAcpWsLoadTransport (ה-FE מבצע ACP handshake)
- *   - createAgentSession / sessions Map (אין סשן ACP בצד השרת)
- *   - historyBuffer / שידור היסטוריה
- *   - projectsRegistry.recordSession (הועבר אל POST /api/agents/:id/session-attached)
+ * CUT-3b-ii — שינויים מ-bridge-manager:
+ *   - connectSpawn (דרך connectionRegistry.connect) במקום bridgeManager.spawn
+ *   - shapeEnv (opencode-only): verbatim מ-bridge-manager:71-83
+ *   - modelOverride מועבר (avigail 🔴): ConnectOpts.modelOverride
+ *   - bridgePort=0/wsUrl="" קבוע (avigail 🟡): in-process pipe, אין WS-bridge אמיתי
+ *   - dead dedup path (if duplicate?.bridgePort) — נשמר כ-no-op (avigail 🟢):
+ *     bridgePort תמיד 0, אז if(0) לעולם לא ייכנס — שינוי = שינוי התנהגות
  */
 
 import type {
@@ -20,12 +23,13 @@ import type {
   AgentRegistry,
   BridgeCrashInfo,
   BridgeKind,
-  BridgeManager,
   CreateAgentInput,
 } from "@drive-coding/core"
-import { describeCrash } from "@drive-coding/provider/spawn"
 import { createLogger } from "@drive-coding/core/log"
-import type { BridgeHandleWithStderr } from "../acp/bridge-manager.js"
+import { describeCrash } from "@drive-coding/provider/spawn"
+import type { ConnectionRegistry } from "../acp/connection-registry.js"
+import { buildOpencodeConfigContent } from "../plugin-config.js"
+import { AUDIO_FRIENDLY_PROMPT } from "../prompts/index.js"
 import type { ProjectsRegistry } from "./projects-registry.js"
 
 const log = createLogger("backend.orchestrator")
@@ -42,6 +46,8 @@ export type CreateAndSpawnInput = CreateAgentInput & {
 
 /**
  * מבנה התגובה מ-createAndSpawn.
+ * wsUrl + bridgePort: נשמרים לתאימות shape עם ה-FE.
+ * ערכים: wsUrl="" bridgePort=0 — in-process pipe, אין WS-bridge אמיתי.
  */
 export type CreateAndSpawnResult = {
   agentId: string
@@ -54,57 +60,57 @@ export type CreateAndSpawnResult = {
 }
 
 export type AgentOrchestrator = {
-  /** יוצר (או מבצע דה-דופליקציה) לסוכן + מפעיל bridge. מחזיר מידע מינימלי; ה-FE מבצע ACP handshake. */
+  /** יוצר (או מבצע דה-דופליקציה) לסוכן + מפעיל connection. מחזיר מידע מינימלי; ה-FE מבצע ACP handshake. */
   createAndSpawn(input: CreateAndSpawnInput): Promise<CreateAndSpawnResult>
 
-  /** מוחק סוכן + הורג את ה-bridge. */
+  /** מוחק סוכן + סוגר את ה-connection. */
   deleteAndKill(id: string): Promise<void>
 
-  /** מחזיר את פורט ה-bridge עבור מזהה סוכן נתון (עבור ניתוב ב-ws-agent). */
+  /**
+   * מחזיר את פורט ה-bridge עבור מזהה סוכן נתון (עבור ניתוב ב-ws-agent).
+   * תמיד מחזיר 0 — in-process, אין WS-bridge אמיתי (נשמר לתאימות).
+   */
   getBridgePort(id: string): number | null
 
-  // נשמר לתאימות לאחור עם deleteAndKill (לא נחשף ל-FE)
+  // נשמר לתאימות לאחור
   _getAgent?: (id: string) => Agent | null
 }
 
-/** BridgeManager עם הרחבת spawnWithStderr אופציונלית. */
-type ExtendedBridgeManager = BridgeManager & {
-  spawnWithStderr?: (
-    bridgeId: string,
-    input: Parameters<BridgeManager["spawn"]>[1],
-  ) => Promise<BridgeHandleWithStderr>
+// ─── shapeEnv (verbatim מ-bridge-manager:71-83) ────────────────────────────────
+// opencode-only: הזרקת OPENCODE_CONFIG_CONTENT + PROMPT_INJECTOR_TEXT.
+// claude: ללא שינוי.
+function drivecodingShapeEnv(cliKind: string, baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (cliKind === "opencode") {
+    return {
+      ...baseEnv,
+      OPENCODE_CONFIG_CONTENT: buildOpencodeConfigContent(baseEnv.OPENCODE_CONFIG_CONTENT),
+      PROMPT_INJECTOR_TEXT: AUDIO_FRIENDLY_PROMPT,
+    }
+  }
+  return baseEnv
 }
 
 // ─── פקטורי ──────────────────────────────────────────────────────────────────
 
 export function createAgentOrchestrator(deps: {
   registry: AgentRegistry
-  bridgeManager: ExtendedBridgeManager
+  connectionRegistry: ConnectionRegistry
   projectsRegistry?: ProjectsRegistry
 }): AgentOrchestrator {
-  // שומר פונקציות getStderr מקוטלגות לפי מזהה סוכן, לחילוץ סיבת התרסקות
-  const stderrGetters = new Map<string, () => string[]>()
-
-  // חיפוש פורט bridge בזיכרון (agentId → port)
-  // מאוכלס ב-spawn, בשימוש ws-agent לניתוב ללא קריאה אסינכרונית ל-registry.
-  const bridgePorts = new Map<string, number>()
-
-  // מאזין התרסקויות: כש-bridge מת, סמן סוכן כ-crashed + עדכן registry.
-  // צינור ה-ws-agent יזהה bridgeWs.close וישלח feWs.close(1011, "bridge closed").
-  deps.bridgeManager.onCrash(async (bridgeId, info: BridgeCrashInfo) => {
+  // מאזין התרסקויות: כש-connection מת, סמן סוכן כ-crashed + עדכן registry.
+  deps.connectionRegistry.onCrash(async (agentId, info: BridgeCrashInfo) => {
     try {
-      const existing = await deps.registry.get(bridgeId)
+      const existing = await deps.registry.get(agentId)
       if (existing && existing.status !== "closed") {
-        const getStderr = stderrGetters.get(bridgeId)
-        const crashReason = describeCrash(info, getStderr ? getStderr() : [])
-        await deps.registry.update(bridgeId, { status: "crashed", crashReason })
-        log.warn({ bridgeId, exitCode: info.exitCode, signal: info.signal, crashReason }, "bridge crashed")
+        const crashReason = describeCrash(info, [])
+        await deps.registry.update(agentId, { status: "crashed", crashReason })
+        log.warn(
+          { agentId, exitCode: info.exitCode, signal: info.signal, crashReason },
+          "bridge crashed",
+        )
       }
     } catch (e) {
       log.error({ err: e }, "crash cleanup failed")
-    } finally {
-      stderrGetters.delete(bridgeId)
-      bridgePorts.delete(bridgeId)
     }
   })
 
@@ -115,7 +121,7 @@ export function createAgentOrchestrator(deps: {
 
       // ── בדיקת כפילויות ────────────────────────────────────────────────────────
       // אם סוכן פעיל כבר מחזיק את ה-(cwd, acpSessionId) הזה, החזר אותו
-      // ללא הפעלת bridge חדש.
+      // ללא הפעלת connection חדש.
       if (existingSessionId) {
         const allAgents = await deps.registry.list()
         const duplicate = allAgents.find(
@@ -124,6 +130,8 @@ export function createAgentOrchestrator(deps: {
             a.acpSessionId === existingSessionId &&
             (a.status === "ready" || a.status === "busy"),
         )
+        // ⚠️ dead dedup (🟢 avigail): bridgePort תמיד 0 → if(0) = false → no-op.
+        // נשמר כ-no-op לשמירת behavior (שינוי=רגרסיה).
         if (duplicate?.bridgePort) {
           log.info({ agentId: duplicate.id, existingSessionId }, "dedup — returning existing agent")
           return {
@@ -139,55 +147,42 @@ export function createAgentOrchestrator(deps: {
       }
 
       // ── יצירת רשומת registry ──────────────────────────────────────────────
-      // ה-registry משתמש ב-"starting" (בליבת AgentStatus); התגובה ל-FE משתמשת ב-"spawning"
       const agent = await deps.registry.create(input)
       await deps.registry.update(agent.id, { status: "starting" })
 
       try {
-        // ── הפעלת bridge ───────────────────────────────────────────────────────
-        let handle: BridgeHandleWithStderr | Awaited<ReturnType<BridgeManager["spawn"]>>
-        if (deps.bridgeManager.spawnWithStderr) {
-          handle = await deps.bridgeManager.spawnWithStderr(agent.id, {
-            cliKind: input.cliKind,
-            cwd: input.cwd,
-            modelOverride: input.modelOverride ?? null,
-          })
-          stderrGetters.set(agent.id, (handle as BridgeHandleWithStderr).getStderr)
-        } else {
-          handle = await deps.bridgeManager.spawn(agent.id, {
-            cliKind: input.cliKind,
-            cwd: input.cwd,
-            modelOverride: input.modelOverride ?? null,
-          })
-        }
+        // ── הפעלת connection (connectSpawn דרך connectionRegistry) ──────────────
+        // modelOverride (🔴 avigail): מועבר מ-input — לא מקובע null.
+        // shapeEnv (opencode-only): verbatim מ-bridge-manager:71-83.
+        await deps.connectionRegistry.connect(agent.id, input.cliKind, {
+          cwd: input.cwd,
+          modelOverride: input.modelOverride ?? null,
+          shapeEnv: drivecodingShapeEnv,
+        })
 
-        // מעדכן את ה-registry עם פורט ה-bridge; הסטטוס נשאר "starting" (ה-FE יעדכן ל-"ready")
-        await deps.registry.update(agent.id, { bridgePort: handle.port })
-        bridgePorts.set(agent.id, handle.port)
+        // ⚠️ port/wsUrl stub (🟡 avigail): in-process pipe — אין WS-bridge אמיתי.
+        // bridgePort=0, wsUrl="" — נשמרים ב-registry לתאימות shape.
+        const bridgePort = 0
+        const wsUrl = ""
+        await deps.registry.update(agent.id, { bridgePort })
 
         const result: CreateAndSpawnResult = {
           agentId: agent.id,
           cwd: agent.cwd,
           cliKind: agent.cliKind as BridgeKind,
-          wsUrl: handle.wsUrl,
-          bridgePort: handle.port,
-          // "spawning" הוא המונח מול ה-FE; ה-registry משתמש ב-"starting" (בליבת AgentStatus)
+          wsUrl,
+          bridgePort,
           status: "spawning",
         }
 
-        log.info({ agentId: agent.id, port: handle.port }, "createAndSpawn done — status=spawning")
+        log.info({ agentId: agent.id }, "createAndSpawn done — status=spawning (in-process)")
         return result
       } catch (e) {
-        const getStderr = stderrGetters.get(agent.id)
-        const spawnError = e instanceof Error
-          ? { code: (e as NodeJS.ErrnoException).code, message: e.message }
-          : { message: String(e) }
-        const crashReason = describeCrash(
-          { exitCode: null, signal: null, spawnError },
-          getStderr ? getStderr() : [],
-        )
-        stderrGetters.delete(agent.id)
-        bridgePorts.delete(agent.id)
+        const spawnError =
+          e instanceof Error
+            ? { code: (e as NodeJS.ErrnoException).code, message: e.message }
+            : { message: String(e) }
+        const crashReason = describeCrash({ exitCode: null, signal: null, spawnError }, [])
 
         await deps.registry.update(agent.id, { status: "crashed", crashReason }).catch(() => {})
         throw new Error(
@@ -205,12 +200,7 @@ export function createAgentOrchestrator(deps: {
         // התעלם
       }
 
-      // הרוג את תהליך ה-bridge
-      await deps.bridgeManager.kill(id)
-
-      // נקה מצב מקומי
-      stderrGetters.delete(id)
-      bridgePorts.delete(id)
+      await deps.connectionRegistry.close(id)
 
       try {
         await deps.registry.delete(id)
@@ -219,8 +209,10 @@ export function createAgentOrchestrator(deps: {
       }
     },
 
-    getBridgePort(id: string): number | null {
-      return bridgePorts.get(id) ?? null
+    getBridgePort(_id: string): number | null {
+      // in-process pipe — אין WS-bridge אמיתי; תמיד 0.
+      // ws-agent משתמש ב-connectionRegistry.get() לבדיקת presence, לא ב-port.
+      return 0
     },
   }
 }

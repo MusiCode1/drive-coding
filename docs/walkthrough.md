@@ -1,3 +1,28 @@
+## 2026-06-28 — CUT-3b-ii-be-rewire — Commit 1 (orchestrator + ws-agent + server rewire)
+
+### מה בוצע?
+
+**Phase 1 — rewire agent-orchestrator, ws-agent, server.ts + עדכון tests:**
+
+- `packages/backend/src/app/agent-orchestrator.ts`: שכתוב מלא — מקבל `connectionRegistry: ConnectionRegistry` במקום `bridgeManager`. `createAndSpawn` קורא ל-`connectionRegistry.connect()` עם `modelOverride` ו-`shapeEnv: drivecodingShapeEnv`. `getBridgePort` תמיד 0. `onCrash` דרך `connectionRegistry.onCrash`. Dead dedup path נשמר as-is (bridgePort=0 → never enters).
+- `packages/backend/src/delivery/ws-agent.ts`: שכתוב מלא — מקבל `connectionRegistry` (לא bridgeManager). Presence check: `connectionRegistry.get(agentId)`. Wire: `conn.wire.onLine` + `conn.wire.write`. Crash: `conn.onCrash`. markAttached/markDetached דרך registry. conn.close לעולם לא נקרא מ-ws-agent.
+- `packages/backend/src/server.ts`: `createBridgeManager` הוחלף ב-`createConnectionRegistry`; wired ל-orchestrator + ws-agent.
+- `packages/backend/tests/agent-orchestrator.test.ts`: שכתוב ל-connectionRegistry mock.
+- `packages/backend/tests/ws-agent-pipe.test.ts`: שכתוב ל-makeMockConn + makeMockConnectionRegistry.
+- `packages/backend/tests/ws-agent-error-survival.test.ts`: שכתוב ל-createConnectionRegistry (real) עם real child processes.
+- `packages/backend/tests/bridge-failure-modes.test.ts`: תיקון "at orchestrator layer" test לשימוש ב-connectionRegistry mock שזורק בקריאה ל-connect().
+
+### חריגות
+- bridge-manager.ts עדיין קיים — נמחק ב-Phase 2 (commit 2).
+- http-agents.ts משתמש ב-duck typing (bridgeManager param = connectionRegistry — שניהם חושפים getRuntimeInfo).
+- lint errors הם pre-existing (292 errors ב-baseline לפני כל שינוי).
+
+### בדיקות
+- typecheck: ירוק (0 errors)
+- tests: 1024 pass, 15 skipped, 3 failures — כולן pre-existing (https-serve×2, bridge-failure-integration×1)
+
+---
+
 ## 2026-06-28 — CUT-3b-i-provider-connection — Commit 2 (connectSpawn + tests)
 
 ### מה בוצע?

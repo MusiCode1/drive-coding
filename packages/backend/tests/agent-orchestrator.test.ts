@@ -1,27 +1,20 @@
 /**
- * agent-orchestrator.test.ts — Slice 10 Phase 1.
+ * agent-orchestrator.test.ts — CUT-3b-ii rewire.
  *
- * Tests the slimmed-down orchestrator:
- *   - createAndSpawn → returns CreateAndSpawnResult with status="spawning"
- *   - deleteAndKill → kills bridge + removes from registry
- *   - getBridgePort → returns port
- *   - crash handler → marks agent crashed
- *
- * The old tests for getSession/createAgentSession/ACP transport are removed in
- * Slice 10 Phase 4. Tests that tested ACP attach (session creation) are
- * skipped here with comment "removed in slice 10 phase 4".
+ * Tests the orchestrator after CUT-3b-ii: uses connectionRegistry instead of bridgeManager.
+ * Key behavioral changes:
+ *   - bridgePort=0, wsUrl="" (in-process, no WS bridge)
+ *   - getBridgePort always returns 0 (not port from handle)
+ *   - connectionRegistry.connect replaces bridgeManager.spawn
+ *   - crash handler via connectionRegistry.onCrash (not bridgeManager.onCrash)
+ *   - modelOverride flows through ConnectOpts (not SpawnBridgeInput directly)
  */
 
-import type {
-  Agent,
-  AgentRegistry,
-  BridgeHandle,
-  BridgeManager,
-  CreateAgentInput,
-} from "@drive-coding/core"
+import type { Agent, AgentRegistry, BridgeCrashInfo, CreateAgentInput } from "@drive-coding/core"
+import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import type { ConnectionRegistry } from "../src/acp/connection-registry.js"
 
-// Import after module (no mocks needed since ACP transport is removed from orchestrator)
 const { createAgentOrchestrator } = await import("../src/app/agent-orchestrator.js")
 
 // ─── Mock helpers ─────────────────────────────────────────────────────
@@ -36,28 +29,6 @@ function makeAgent(overrides?: Partial<Agent>): Agent {
     createdAt: new Date().toISOString(),
     ...overrides,
   } as Agent
-}
-
-function makeBridgeHandle(overrides?: Partial<BridgeHandle>): BridgeHandle {
-  return {
-    bridgeId: "00000000-0000-0000-0000-000000000001",
-    cliKind: "opencode",
-    cwd: "/tmp",
-    port: 45678,
-    pid: 12345,
-    wsUrl: "ws://127.0.0.1:45678/",
-    startedAt: new Date(),
-    ...overrides,
-  }
-}
-
-import type { BridgeCrashInfo } from "@drive-coding/core"
-
-type ExtendedBridgeManager = BridgeManager & {
-  spawnWithStderr?: (
-    bridgeId: string,
-    input: Parameters<BridgeManager["spawn"]>[1],
-  ) => Promise<BridgeHandle & { getStderr: () => string[] }>
 }
 
 function makeRegistry(): {
@@ -95,34 +66,64 @@ function makeRegistry(): {
   return { registry, state }
 }
 
-function makeBridgeManager(
+/** Make a minimal mock ProviderConnection */
+function makeConn(pid = 12345): ProviderConnection {
+  return {
+    wire: { onLine: vi.fn(() => () => {}), write: vi.fn(() => true) },
+    capabilities: {
+      supportsModelFlag: false,
+      supportsSessionResume: false,
+      supportsConfigOptions: false,
+    },
+    onFrame: vi.fn(() => () => {}),
+    turn: {
+      isBusy: vi.fn(() => false),
+      lastActivityAt: vi.fn(() => null),
+      onChange: vi.fn(() => () => {}),
+    },
+    onCrash: vi.fn(() => () => {}),
+    close: vi.fn(async () => {}),
+    ext: undefined,
+    get pid() {
+      return pid
+    },
+  } as ProviderConnection
+}
+
+function makeConnectionRegistry(
   opts: {
-    onSpawnError?: () => Error
-    stderrLines?: string[]
+    onConnectError?: () => Error
     onCrashCapture?: (handler: (id: string, info: BridgeCrashInfo) => void) => void
   } = {},
-): { mgr: ExtendedBridgeManager; kill: ReturnType<typeof vi.fn> } {
+): {
+  reg: ConnectionRegistry
+  closeMock: ReturnType<typeof vi.fn>
+  connectMock: ReturnType<typeof vi.fn>
+  lastConnectOpts: { cwd?: string; modelOverride?: string | null } | null
+} {
   let crashHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
-  const kill = vi.fn(async (_id: string) => true)
-  const mgr: ExtendedBridgeManager = {
-    async spawn(bridgeId) {
-      if (opts.onSpawnError) throw opts.onSpawnError()
-      return makeBridgeHandle({ bridgeId })
+  let lastConnectOpts: { cwd?: string; modelOverride?: string | null } | null = null
+  const closeMock = vi.fn(async (_id: string) => {})
+  const connectMock = vi.fn(
+    async (
+      _agentId: string,
+      _cliKind: string,
+      connectOpts: { cwd: string; modelOverride?: string | null },
+    ) => {
+      lastConnectOpts = connectOpts
+      if (opts.onConnectError) throw opts.onConnectError()
+      return makeConn()
     },
-    async spawnWithStderr(bridgeId) {
-      if (opts.onSpawnError) throw opts.onSpawnError()
-      return Object.assign(makeBridgeHandle({ bridgeId }), {
-        getStderr: () => opts.stderrLines ?? [],
-      })
-    },
-    get() {
-      return null
-    },
-    list() {
-      return []
-    },
-    kill,
-    onCrash(handler: (id: string, info: BridgeCrashInfo) => void) {
+  )
+
+  const reg: ConnectionRegistry = {
+    connect: connectMock,
+    get: vi.fn(() => undefined),
+    markAttached: vi.fn(),
+    markDetached: vi.fn(),
+    getRuntimeInfo: vi.fn(() => null),
+    close: closeMock,
+    onCrash(handler) {
       crashHandler = handler
       opts.onCrashCapture?.(handler)
       return () => {
@@ -130,16 +131,23 @@ function makeBridgeManager(
       }
     },
   }
-  // expose for tests
-  ;(mgr as ExtendedBridgeManager & { _trigger: typeof crashHandler }).onCrash((id, info) =>
-    crashHandler?.(id, info),
-  )
-  return { mgr, kill }
+
+  // expose crash trigger for tests
+  void crashHandler
+
+  return {
+    reg,
+    closeMock,
+    connectMock,
+    get lastConnectOpts() {
+      return lastConnectOpts
+    },
+  }
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────
 
-describe("AgentOrchestrator (Slice 10 — slim)", () => {
+describe("AgentOrchestrator (CUT-3b-ii)", () => {
   beforeEach(() => {
     vi.spyOn(console, "warn").mockImplementation(() => {})
     vi.spyOn(console, "error").mockImplementation(() => {})
@@ -149,10 +157,10 @@ describe("AgentOrchestrator (Slice 10 — slim)", () => {
     vi.restoreAllMocks()
   })
 
-  it("createAndSpawn success → returns CreateAndSpawnResult with status=spawning + bridgePort", async () => {
+  it("createAndSpawn success → returns CreateAndSpawnResult with status=spawning + bridgePort=0", async () => {
     const { registry, state } = makeRegistry()
-    const { mgr } = makeBridgeManager()
-    const orch = createAgentOrchestrator({ registry, bridgeManager: mgr })
+    const { reg } = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
 
     const result = await orch.createAndSpawn({
       cliKind: "opencode",
@@ -160,21 +168,20 @@ describe("AgentOrchestrator (Slice 10 — slim)", () => {
       modelOverride: null,
     })
 
-    // Slice 10: status is "spawning" (FE-facing term), registry uses "starting"
     expect(result.status).toBe("spawning")
-    expect(result.bridgePort).toBe(45678)
+    // CUT-3b-ii: bridgePort=0, wsUrl="" (in-process pipe — no real WS bridge)
+    expect(result.bridgePort).toBe(0)
+    expect(result.wsUrl).toBe("")
     expect(result.agentId).toBeTruthy()
-    expect(result.wsUrl).toContain("45678")
 
-    // Registry should have agent with port set, status="starting"
     const agent = state.get(result.agentId)
-    expect(agent?.bridgePort).toBe(45678)
+    expect(agent?.bridgePort).toBe(0)
   })
 
-  it("getBridgePort → returns port for known agent", async () => {
+  it("getBridgePort → returns 0 for known agent (in-process, no real bridge)", async () => {
     const { registry } = makeRegistry()
-    const { mgr } = makeBridgeManager()
-    const orch = createAgentOrchestrator({ registry, bridgeManager: mgr })
+    const { reg } = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
 
     const result = await orch.createAndSpawn({
       cliKind: "opencode",
@@ -182,23 +189,25 @@ describe("AgentOrchestrator (Slice 10 — slim)", () => {
       modelOverride: null,
     })
 
-    expect(orch.getBridgePort(result.agentId)).toBe(45678)
+    // CUT-3b-ii: getBridgePort always 0 (in-process)
+    expect(orch.getBridgePort(result.agentId)).toBe(0)
   })
 
-  it("getBridgePort → null for unknown agent", async () => {
+  it("getBridgePort → 0 for unknown agent (consistent with in-process stub)", async () => {
     const { registry } = makeRegistry()
-    const { mgr } = makeBridgeManager()
-    const orch = createAgentOrchestrator({ registry, bridgeManager: mgr })
+    const { reg } = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
 
-    expect(orch.getBridgePort("not-here")).toBeNull()
+    // CUT-3b-ii: getBridgePort returns 0 always (no bridgePorts Map)
+    expect(orch.getBridgePort("not-here")).toBe(0)
   })
 
-  it("createAndSpawn bridge spawn failure → agent status=crashed, throws", async () => {
+  it("createAndSpawn connection spawn failure → agent status=crashed, throws", async () => {
     const { registry, state } = makeRegistry()
-    const { mgr } = makeBridgeManager({
-      onSpawnError: () => new Error("ENOENT: opencode not found"),
+    const { reg } = makeConnectionRegistry({
+      onConnectError: () => new Error("ENOENT: opencode not found"),
     })
-    const orch = createAgentOrchestrator({ registry, bridgeManager: mgr })
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
 
     await expect(
       orch.createAndSpawn({ cliKind: "opencode", cwd: "/tmp", modelOverride: null }),
@@ -210,10 +219,10 @@ describe("AgentOrchestrator (Slice 10 — slim)", () => {
     expect(failed?.status).toBe("crashed")
   })
 
-  it("deleteAndKill → bridge killed, agent removed from registry", async () => {
+  it("deleteAndKill → connection closed, agent removed from registry", async () => {
     const { registry, state } = makeRegistry()
-    const { mgr, kill } = makeBridgeManager()
-    const orch = createAgentOrchestrator({ registry, bridgeManager: mgr })
+    const { reg, closeMock } = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
 
     const result = await orch.createAndSpawn({
       cliKind: "opencode",
@@ -223,30 +232,27 @@ describe("AgentOrchestrator (Slice 10 — slim)", () => {
 
     await orch.deleteAndKill(result.agentId)
 
-    expect(kill).toHaveBeenCalledWith(result.agentId)
+    expect(closeMock).toHaveBeenCalledWith(result.agentId)
     expect(state.has(result.agentId)).toBe(false)
-    // getBridgePort also cleaned up
-    expect(orch.getBridgePort(result.agentId)).toBeNull()
   })
 
-  it("deleteAndKill on non-existent id → no throw, kill still attempted", async () => {
+  it("deleteAndKill on non-existent id → no throw, close still attempted", async () => {
     const { registry } = makeRegistry()
-    const { mgr } = makeBridgeManager()
-    const orch = createAgentOrchestrator({ registry, bridgeManager: mgr })
+    const { reg } = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
 
-    // Should not throw even for unknown id
     await expect(orch.deleteAndKill("ghost-id")).resolves.toBeUndefined()
   })
 
-  it("crash listener: when bridge dies, agent.status → crashed", async () => {
+  it("crash listener: when connection crashes, agent.status → crashed", async () => {
     let capturedHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
     const { registry, state } = makeRegistry()
-    const { mgr } = makeBridgeManager({
+    const { reg } = makeConnectionRegistry({
       onCrashCapture: (h) => {
         capturedHandler = h
       },
     })
-    const orch = createAgentOrchestrator({ registry, bridgeManager: mgr })
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
 
     const result = await orch.createAndSpawn({
       cliKind: "opencode",
@@ -254,27 +260,23 @@ describe("AgentOrchestrator (Slice 10 — slim)", () => {
       modelOverride: null,
     })
 
-    // Simulate bridge crash
     expect(capturedHandler).not.toBeNull()
     capturedHandler?.(result.agentId, { exitCode: 1, signal: null })
-    // Crash handler is async — wait for microtasks
     await new Promise((r) => setImmediate(r))
     await new Promise((r) => setImmediate(r))
 
     expect(state.get(result.agentId)?.status).toBe("crashed")
-    // getBridgePort also cleaned up after crash
-    expect(orch.getBridgePort(result.agentId)).toBeNull()
   })
 
   it("crash listener: closed agents are not re-marked crashed", async () => {
     let capturedHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
     const { registry, state } = makeRegistry()
-    const { mgr } = makeBridgeManager({
+    const { reg } = makeConnectionRegistry({
       onCrashCapture: (h) => {
         capturedHandler = h
       },
     })
-    const orch = createAgentOrchestrator({ registry, bridgeManager: mgr })
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
 
     const result = await orch.createAndSpawn({
       cliKind: "opencode",
@@ -282,10 +284,8 @@ describe("AgentOrchestrator (Slice 10 — slim)", () => {
       modelOverride: null,
     })
 
-    // Mark as closed (e.g. user deleted)
     await registry.update(result.agentId, { status: "closed" })
 
-    // Bridge dies (normal exit after kill) — should NOT flip back to crashed
     capturedHandler?.(result.agentId, { exitCode: 0, signal: null })
     await new Promise((r) => setImmediate(r))
 
@@ -295,12 +295,12 @@ describe("AgentOrchestrator (Slice 10 — slim)", () => {
   it("crash listener: SIGKILL → agent.crashReason = 'Killed by signal SIGKILL'", async () => {
     let capturedHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
     const { registry, state } = makeRegistry()
-    const { mgr } = makeBridgeManager({
+    const { reg } = makeConnectionRegistry({
       onCrashCapture: (h) => {
         capturedHandler = h
       },
     })
-    const orch = createAgentOrchestrator({ registry, bridgeManager: mgr })
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
 
     const result = await orch.createAndSpawn({
       cliKind: "opencode",
@@ -320,12 +320,12 @@ describe("AgentOrchestrator (Slice 10 — slim)", () => {
   it("crash listener: ENOENT spawn error → agent.crashReason contains ENOENT", async () => {
     let capturedHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
     const { registry, state } = makeRegistry()
-    const { mgr } = makeBridgeManager({
+    const { reg } = makeConnectionRegistry({
       onCrashCapture: (h) => {
         capturedHandler = h
       },
     })
-    const orch = createAgentOrchestrator({ registry, bridgeManager: mgr })
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
 
     const result = await orch.createAndSpawn({
       cliKind: "opencode",
@@ -349,16 +349,13 @@ describe("AgentOrchestrator (Slice 10 — slim)", () => {
   it("crash listener: clean exit (code 0) → no crashReason", async () => {
     let capturedHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
     const { registry, state } = makeRegistry()
-    const { mgr } = makeBridgeManager({
+    const { reg } = makeConnectionRegistry({
       onCrashCapture: (h) => {
         capturedHandler = h
       },
     })
-    // Override status guard so we can observe crashReason even on code=0
-    const agent0 = makeAgent({ status: "ready" })
-    state.set(agent0.id, agent0)
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
 
-    const orch = createAgentOrchestrator({ registry, bridgeManager: mgr })
     const result = await orch.createAndSpawn({
       cliKind: "opencode",
       cwd: "/tmp",
@@ -374,11 +371,10 @@ describe("AgentOrchestrator (Slice 10 — slim)", () => {
     expect(agent?.crashReason).toBeUndefined()
   })
 
-  it("createAndSpawn passes modelOverride to bridgeManager.spawnWithStderr", async () => {
+  it("createAndSpawn passes modelOverride to connectionRegistry.connect via ConnectOpts", async () => {
     const { registry } = makeRegistry()
-    const { mgr } = makeBridgeManager()
-    const spy = vi.spyOn(mgr, "spawnWithStderr")
-    const orch = createAgentOrchestrator({ registry, bridgeManager: mgr })
+    const { reg, connectMock } = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
 
     await orch.createAndSpawn({
       cliKind: "claude",
@@ -386,11 +382,12 @@ describe("AgentOrchestrator (Slice 10 — slim)", () => {
       modelOverride: "model-z",
     })
 
-    expect(spy).toHaveBeenCalledWith(expect.any(String), {
-      cliKind: "claude",
-      cwd: "/proj",
-      modelOverride: "model-z",
-    })
+    // CUT-3b-ii: modelOverride flows through ConnectOpts (not SpawnBridgeInput directly)
+    expect(connectMock).toHaveBeenCalledWith(
+      expect.any(String),
+      "claude",
+      expect.objectContaining({ modelOverride: "model-z" }),
+    )
   })
 
   // removed in slice 10 phase 4 — old tests for getSession, ACP session creation

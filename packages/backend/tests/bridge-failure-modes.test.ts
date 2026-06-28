@@ -348,13 +348,27 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
       const monitor = withUncaughtMonitor()
       monitor.start()
 
-      const enoent = Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" })
-      spawnBehavior = { kind: "throw-sync", error: enoent }
-
-      const { createBridgeManager } = await import("../src/acp/bridge-manager")
       const { createAgentOrchestrator } = await import("../src/app/agent-orchestrator")
+      // biome-ignore lint/suspicious/noExplicitAny: test stub
+      type CrashCb = (agentId: string, info: any) => void
+      const crashListeners: CrashCb[] = []
 
-      const mgr = createBridgeManager()
+      // connectionRegistry mock: connect() always throws (simulates spawn failure)
+      // biome-ignore lint/suspicious/noExplicitAny: test stub
+      const connectionRegistry: any = {
+        connect: vi.fn(async (_agentId: string) => {
+          throw Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" })
+        }),
+        get: vi.fn(() => undefined),
+        markAttached: vi.fn(),
+        markDetached: vi.fn(),
+        getRuntimeInfo: vi.fn(() => null),
+        close: vi.fn(async () => {}),
+        onCrash: vi.fn((cb: CrashCb) => {
+          crashListeners.push(cb)
+          return () => {}
+        }),
+      }
 
       // Minimal registry stub
       const agents = new Map<string, { id: string; status: string; cwd: string; cliKind: string }>()
@@ -386,7 +400,7 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
       }
 
       // biome-ignore lint/suspicious/noExplicitAny: test stub
-      const orch = createAgentOrchestrator({ registry: registry as any, bridgeManager: mgr })
+      const orch = createAgentOrchestrator({ registry: registry as any, connectionRegistry })
 
       await expect(
         orch.createAndSpawn({ cliKind: "opencode", cwd: "/tmp", modelOverride: null }),
