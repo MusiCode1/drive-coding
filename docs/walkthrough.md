@@ -1,3 +1,26 @@
+## 2026-06-28 — leave-running-background — Commit 3: beforeunload guard ב-chat/+page.svelte (manual)
+
+### מה בוצע?
+
+`packages/frontend/src/routes/chat/+page.svelte`:
+- import `{ onMount } from "svelte"` — חדש לחלוטין (הקובץ לא הכיל onMount).
+- `onMount(() => { ... return cleanup })`: מוסיף `beforeunload` listener; ב-cleanup מסיר.
+- handler `onBeforeUnload`: כשמחובר (`status==="connected"`) ולא ב-bypass → `e.preventDefault()` + `e.returnValue=""` → dialog גנרי של הדפדפן.
+- SSR-safe: `onMount` רץ רק בדפדפן, אין `window` ב-module-scope.
+
+### בדיקות
+
+- typecheck: 0 שגיאות
+- 361/361 tests ירוקים
+- lint:i18n: ✓
+- approach: manual (browser smoke — לבדיקה חיה עם BE)
+
+### סטיות
+
+ללא סטיות. הקובץ נשאר דק (~65 שורות — מתחת לגבול 150 שורות routes).
+
+---
+
 ## 2026-06-28 — leave-running-background — Commit 2: כפתור UI + modal אזהרה (manual)
 
 ### מה בוצע?
