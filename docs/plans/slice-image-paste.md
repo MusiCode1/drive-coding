@@ -1,10 +1,12 @@
 # Slice image-paste — הדבקת/גרירת/בחירת תמונות בתיבת הפרומפט — תוכנית
 
-> **תאריך**: 2026-06-28
-> **סטטוס**: טיוטה (אביגיל טרם)
+> **תאריך**: 2026-06-28 (עודכן 2026-06-28 אחרי merge של slice-input-autogrow)
+> **סטטוס**: רוענן אחרי autogrow — אביגיל re-verify נדרשת לפני dispatch
 > **Complexity**: 8/10 (verifier: **calev-heavy**)
-> **תלות (depends_on)**: `[track-A: provider-contract — AcpClient.prompt(blocks)]` — **רק ל-Commit 4 ול-merge**. Commits 0–3 עצמאיים ובְּני-ביצוע על dev הנוכחי.
-> **Base**: `dev` HEAD (tip בעת הכתיבה `3bb36a9`)
+> **תלות (depends_on)**: `[slice-input-autogrow (מוזג b3b5140 — TypeArea שונה), track-A: provider-contract — AcpClient.prompt(blocks)]`.
+>   - `input-autogrow` — **תלות-קוד**: שינה את `TypeArea.svelte` (autogrow $effect + form layout). ה-slice הזה בונה מעליו. ראה §"שינוי TypeArea אחרי autogrow" למטה.
+>   - `track-A` — **רק ל-Commit 4 ול-merge**. Commits 0–3 עצמאיים ובְּני-ביצוע על dev הנוכחי.
+> **Base**: `dev` HEAD (tip בעת הרענון `b3b5140` — כולל autogrow; הקודם `3bb36a9` היה לפני)
 > **⚠️ MERGE-GATE**: **אין למזג** לפני שצד ה-ACP (`provider-contract`) חושף `AcpClient.prompt` שמקבל `PromptContent`/ContentBlock[] מולטימודלי. החלטת המשתמשת (2026-06-28): כותבים + מבצעים את החלקים הלא-חסומים, ממתינים עם merge עד שהחוזה תומך.
 
 ---
@@ -44,7 +46,7 @@ pnpm install && pnpm hooks:install
 **must-read לפני**:
 - `packages/frontend/AGENTS.md` — חמשת חוקי הזהב (במיוחד #4 effect-ownership, #5 אין-תאימות-לאחור).
 - `docs/design-principles.md` §1-2 — מה זה "engine" מול "view-model" (הדחיסה = engine; ה-tray = state ב-VM/component).
-- `packages/frontend/src/lib/components/chat/TypeArea.svelte` — **כל הקובץ** (67 שורות). הקובץ המרכזי שמשתנה.
+- `packages/frontend/src/lib/components/chat/TypeArea.svelte` — **כל הקובץ** (**79 שורות, אחרי merge של slice-input-autogrow** — לא 67). הקובץ המרכזי שמשתנה. ⚠️ הוא כבר מכיל לוגיקת autogrow (`$effect` L21-28, `taEl` binding, `rows={1}`+`max-height`, `items-end`) — ראה §"שינוי TypeArea אחרי autogrow".
 - `packages/frontend/src/lib/view-models/agent-session.svelte.ts` §559-591 (`sendPrompt`, מתחיל בשורה 559) + הגדרת `#client`/`capabilities`.
 - `packages/frontend/src/lib/types/bubble.ts` §30-41 (`UserBubble`).
 
@@ -100,6 +102,31 @@ pnpm install && pnpm hooks:install
 └───────────────────────────────────────────────────────────────┘
 BE: אפס שינוי (bridge-manager dumb-pipe שקוף).
 ```
+
+## §3.5 — שינוי TypeArea אחרי autogrow (קרא לפני Commit 2)
+
+> **למה הסעיף הזה קיים**: ה-brief המקורי נכתב מול TypeArea בן 67 שורות. בינתיים מוזג
+> `slice-input-autogrow` (`b3b5140`) ששינה את אותו קובץ. ה-brief רוענן, אבל ה-executor
+> חייב לראות את המצב הנוכחי לפני שהוא "משכתב את כל הקובץ".
+
+**מה autogrow הוסיף ל-`TypeArea.svelte` (79 שורות עכשיו):**
+| מה | היכן | למה אסור לדרוס |
+|----|------|----------------|
+| `let taEl = $state<HTMLTextAreaElement>()` + `bind:this={taEl}` | L18, L48 | ה-handle שה-$effect צריך |
+| `const MAX_ROWS = 6` | L19 | תקרת-גובה |
+| `$effect` (מאפס height→auto, מציב scrollHeight) | L21-28 | **לב ה-autogrow** — תלוי ב-`promptText` |
+| `rows={1}` (היה `rows={2}`) | L51 | גובה בסיס |
+| `max-height: calc(MAX_ROWS*1.5em+1.25rem)` + `overflow-y:auto` | L54 (inline style) | התקרה + scroll |
+| `<form class="… items-end …">` (היה `items-stretch`) | L45 | Send בגובה טבעי |
+
+**ההשלכה ל-Commit 2:**
+1. **ה-tray חי מחוץ ל-`<form>`** — עטוף את ה-`<form>` הקיים ב-container אנכי ושים את ה-tray
+   מעליו (ראה הערת §Commit 2 ד). אל תכניס thumbnails כ-sibling של ה-textarea בתוך ה-form
+   (ישבור `items-end` + גדילת-הגובה).
+2. **`promptText = ""` ב-`onSubmit`** (L39) הוא מה שמכווץ את ה-textarea חזרה דרך ה-$effect.
+   Commit 4 שמרחיב את `onSubmit` (ניקוי tray) — **להוסיף** אחרי, לא להחליף את ניקוי ה-`promptText`.
+3. **onpaste של תמונה** לא אמור לשנות `promptText` → לא יגרום לגדילה (טוב). onpaste של **טקסט**
+   ממשיך כרגיל (Verification §5) ומפעיל autogrow — זה תקין.
 
 ## §4 — Commits
 
@@ -179,9 +206,14 @@ let fileInputEl = $state<HTMLInputElement>()
 
 **(ג) handlers**: `onpaste` (קורא `e.clipboardData.items`, מסנן `kind==="file" && type.startsWith("image/")`), `ondrop`+`ondragover.preventDefault`, ו-`onchange` ל-`<input type="file" accept="image/*" capture>`. כולם → `fileToImageAttachment` → push ל-`attachments`. כפתור הוספה (אייקון `Paperclip`/`ImagePlus`) פותח את ה-input. **gating**: כל הלכידה enabled רק כש-`session.supportsImageInput` (אחרת אייקון מוסתר/disabled + tooltip).
 
-**(ד) tray UI**: שורת thumbnails מעל ה-textarea, כל אחד עם כפתור-הסרה (`revokeAttachment` + filter). i18n לכל מחרוזת.
+**(ד) tray UI**: שורת thumbnails **מעל** ה-textarea, כל אחד עם כפתור-הסרה (`revokeAttachment` + filter). i18n לכל מחרוזת.
+> ⚠️ **אינטראקציה עם autogrow** (ראה §ייעודי): ה-textarea **גדל אנכית** עד 6 שורות. ה-tray חייב לשבת מחוץ ל-`<form class="flex items-end">` הקיים — עטוף את `<form>` ב-container אנכי (`<div class="flex flex-col gap-1">` או דומה) ושים את ה-tray מעל ה-form, כדי שגדילת ה-textarea לא תזיז/תמחץ את ה-thumbnails ולא תשבור את `items-end`. **אל תכניס את ה-tray כ-sibling של ה-textarea בתוך ה-form** — זה ישבור את ה-layout של autogrow.
 
-**אסור לשנות**: את `onkeydown` (enter-toggle, L43-55), את `onSubmit` הקיים (Commit 4 ירחיב אותו), את לוגיקת ה-`isDisabled`.
+**אסור לשנות** (כולל מה ש-slice-input-autogrow הוסיף):
+- `onkeydown` (enter-toggle, **L55-67** אחרי autogrow — לא L43-55) — את לוגיקת ה-Enter/Shift/Cmd.
+- `onSubmit` הקיים (L34-40; Commit 4 ירחיב אותו, לא משכתב). ⚠️ הוא מסתיים ב-`promptText = ""` — זה מה שמפעיל את ה-autogrow $effect לכווץ חזרה. אל תסיר.
+- לוגיקת ה-`isDisabled` (L30-32).
+- **autogrow** (slice-input-autogrow): ה-`$effect` (L21-28), `taEl` + `bind:this={taEl}` (L18,L48), `MAX_ROWS` (L19), `rows={1}` (L51), ו-`max-height`/`overflow-y` ב-style (L54), ו-`items-end` ב-`<form>` (L45). אלה חיים — **לא לדרוס בעת השכתוב של "כל הקובץ".**
 
 **Verification**:
 ```bash
