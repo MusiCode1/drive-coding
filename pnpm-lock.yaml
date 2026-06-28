@@ -41,6 +41,9 @@ importers:
       '@drive-coding/core':
         specifier: workspace:*
         version: link:../core
+      '@drive-coding/provider':
+        specifier: workspace:*
+        version: link:../provider
       '@google/genai':
         specifier: ^2.3.0
         version: 2.3.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))
@@ -62,9 +65,9 @@ importers:
       neverthrow:
         specifier: ^8.0.0
         version: 8.2.0
-      provider-contract:
-        specifier: git+https://github.com/MusiCode1/provider-abstraction.git#main
-        version: git+https://github.com/MusiCode1/provider-abstraction.git#4bcc0d850fe99bbd048fe814a847baa41b91d1a2(zod@4.4.3)
+      selfsigned:
+        specifier: ^2
+        version: 2.4.1
       ws:
         specifier: ^8.20.1
         version: 8.20.1
@@ -84,6 +87,9 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: ^0.21.1
         version: 0.21.1(zod@4.4.3)
+      '@drive-coding/provider':
+        specifier: workspace:*
+        version: link:../provider
       arktype:
         specifier: ^2.0.0
         version: 2.2.0
@@ -99,9 +105,6 @@ importers:
       pino-pretty:
         specifier: ^13.1.3
         version: 13.1.3
-      provider-contract:
-        specifier: git+https://github.com/MusiCode1/provider-abstraction.git#main
-        version: git+https://github.com/MusiCode1/provider-abstraction.git#4bcc0d850fe99bbd048fe814a847baa41b91d1a2(zod@4.4.3)
 
   packages/frontend:
     dependencies:
@@ -114,6 +117,9 @@ importers:
       '@drive-coding/core':
         specifier: workspace:*
         version: link:../core
+      '@drive-coding/provider':
+        specifier: workspace:*
+        version: link:../provider
       '@google/genai':
         specifier: ^2.3.0
         version: 2.3.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))
@@ -141,9 +147,6 @@ importers:
       onnxruntime-web:
         specifier: ^1.22.0
         version: 1.26.0
-      provider-contract:
-        specifier: git+https://github.com/MusiCode1/provider-abstraction.git#main
-        version: git+https://github.com/MusiCode1/provider-abstraction.git#4bcc0d850fe99bbd048fe814a847baa41b91d1a2(zod@4.4.3)
       virtua:
         specifier: ^0.49.1
         version: 0.49.1(svelte@5.55.7)
@@ -1033,6 +1036,9 @@ packages:
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
+  '@types/node-forge@1.3.14':
+    resolution: {integrity: sha512-mhVF2BnD4BO+jtOp7z1CdzaK4mbuK0LLQYAvdOLqHTavxFNq4zA1EmYkpnFjP8HOUzedfQkRnp0E2ulSAYSzAw==}
+
   '@types/node@22.19.19':
     resolution: {integrity: sha512-dyh/xO2Fh5bYrfWaaqGrRQQGkNdmYw6AmaAUvYeUMNTWQtvb796ikLdmTchRmOlOiIJ1TDXfWgVx1QkUlQ6Hew==}
 
@@ -1750,6 +1756,10 @@ packages:
     resolution: {integrity: sha512-dRB78srN/l6gqWulah9SrxeYnxeddIG30+GOqK/9OlLVyLg3HPnr6SqOWTWOXKRwC2eGYCkZ59NNuSgvSrpgOA==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
+  node-forge@1.4.0:
+    resolution: {integrity: sha512-LarFH0+6VfriEhqMMcLX2F7SwSXeWwnEAJEsYm5QKWchiVYVvJyV9v7UDvUv+w5HO23ZpQTXDv/GxdDdMyOuoQ==}
+    engines: {node: '>= 6.13.0'}
+
   node-gyp-build-optional-packages@5.2.2:
     resolution: {integrity: sha512-s+w+rBWnpTMwSFbaE0UXsRlg7hU4FjekKU4eyAih5T8nJuNZT1nNsskXpxmeqSK9UzkBl6UgRlnKc8hz8IEqOw==}
     hasBin: true
@@ -1842,10 +1852,6 @@ packages:
     resolution: {integrity: sha512-dvpCIeLPbXZS/Ete7yLaO7RenOdken2NHKykBXbsaGxZT0UTltcarBciw+A78SRQs9iMAAVpsYA+l8b1hTePIA==}
     engines: {node: '>=12.0.0'}
 
-  provider-contract@git+https://github.com/MusiCode1/provider-abstraction.git#4bcc0d850fe99bbd048fe814a847baa41b91d1a2:
-    resolution: {commit: 4bcc0d850fe99bbd048fe814a847baa41b91d1a2, repo: https://github.com/MusiCode1/provider-abstraction.git, type: git}
-    version: 0.1.0
-
   proxy-addr@2.0.7:
     resolution: {integrity: sha512-llQsMLSUDUPT44jdrU/O37qlnifitDP+ZwrmmZcoSKyLKvtZxpyV0n2/bD/N4tBAAZ/gJEdZU7KMraoK1+XYAg==}
     engines: {node: '>= 0.10'}
@@ -1932,6 +1938,10 @@ packages:
 
   secure-json-parse@4.1.0:
     resolution: {integrity: sha512-l4KnYfEyqYJxDwlNVyRfO2E4NTHfMKAWdUuA8J0yve2Dz/E/PdBepY03RvyJpssIpRFwJoCD55wA+mEDs6ByWA==}
+
+  selfsigned@2.4.1:
+    resolution: {integrity: sha512-th5B4L2U+eGLq1TVh7zNRGBapioSORUeymIydxgFpwww9d2qyKvtuPU2jJuHvYAwwqi2Y596QBL3eEqcPEYL8Q==}
+    engines: {node: '>=10'}
 
   send@1.2.1:
     resolution: {integrity: sha512-1gnZf7DFcoIcajTjTwjwuDjzuz4PPcY2StKPlsGAQ1+YH20IRVrBaXSWmdjowTJ6u8Rc01PoYOGHXfP1mYcZNQ==}
@@ -2943,6 +2953,10 @@ snapshots:
 
   '@types/estree@1.0.9': {}
 
+  '@types/node-forge@1.3.14':
+    dependencies:
+      '@types/node': 22.20.0
+
   '@types/node@22.19.19':
     dependencies:
       undici-types: 6.21.0
@@ -3684,6 +3698,8 @@ snapshots:
       fetch-blob: 3.2.0
       formdata-polyfill: 4.0.10
 
+  node-forge@1.4.0: {}
+
   node-gyp-build-optional-packages@5.2.2:
     dependencies:
       detect-libc: 2.1.2
@@ -3800,12 +3816,6 @@ snapshots:
       '@types/node': 22.20.0
       long: 5.3.2
 
-  provider-contract@git+https://github.com/MusiCode1/provider-abstraction.git#4bcc0d850fe99bbd048fe814a847baa41b91d1a2(zod@4.4.3):
-    dependencies:
-      '@agentclientprotocol/sdk': 0.21.1(zod@4.4.3)
-    transitivePeerDependencies:
-      - zod
-
   proxy-addr@2.0.7:
     dependencies:
       forwarded: 0.2.0
@@ -3911,6 +3921,11 @@ snapshots:
       xmlchars: 2.2.0
 
   secure-json-parse@4.1.0: {}
+
+  selfsigned@2.4.1:
+    dependencies:
+      '@types/node-forge': 1.3.14
+      node-forge: 1.4.0
 
   send@1.2.1:
     dependencies:
