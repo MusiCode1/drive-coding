@@ -9,7 +9,7 @@
  * דפוס: חיקוי ActiveProcessesPanel (אחידות ויזואלית).
  */
 import type { RecentProject } from "$lib/adapters/recent-projects"
-import { getRecentProjects, getI18n } from "$lib/context"
+import { getRecentProjects, getI18n, getSettings } from "$lib/context"
 import { formatRelativeTime } from "$lib/util/formatting"
 import { basename } from "$lib/util/path"
 import { onMount } from "svelte"
@@ -23,6 +23,7 @@ const { onSelect }: Props = $props()
 const recent = getRecentProjects()
 const i18n = getI18n()
 const t = i18n.t
+const settings = getSettings()
 
 onMount(() => {
   void recent.refresh()
@@ -32,48 +33,71 @@ onMount(() => {
 <section class="recent-panel">
   <div class="panel-header">
     <span class="panel-title">{t("connect.recent.title")}</span>
-    <button
-      type="button"
-      class="refresh-btn"
-      disabled={recent.loading}
-      onclick={() => void recent.refresh()}
-      title={t("connect.recent.refresh")}
-      aria-label={t("connect.recent.refresh")}
-    >
-      ↺
-    </button>
+    <div class="header-actions">
+      {#if !settings.recentCollapsed}
+        <button
+          type="button"
+          class="refresh-btn"
+          disabled={recent.loading}
+          onclick={() => void recent.refresh()}
+          title={t("connect.recent.refresh")}
+          aria-label={t("connect.recent.refresh")}
+        >
+          ↺
+        </button>
+      {/if}
+      <button
+        type="button"
+        class="collapse-btn"
+        onclick={() => settings.setRecentCollapsed(!settings.recentCollapsed)}
+        title={settings.recentCollapsed ? t("connect.recent.expand") : t("connect.recent.collapse")}
+        aria-label={settings.recentCollapsed ? t("connect.recent.expand") : t("connect.recent.collapse")}
+        aria-expanded={!settings.recentCollapsed}
+      >
+        {settings.recentCollapsed ? "▶" : "▼"}
+      </button>
+    </div>
   </div>
 
-  {#if recent.projects.length === 0}
-    <div class="empty-state">
-      {recent.loading ? "…" : t("connect.recent.empty")}
-    </div>
-  {:else}
-    <ul class="project-list">
-      {#each recent.projects as project (project.cwd)}
-        <li class="project-row">
-          <button
-            type="button"
-            class="project-btn"
-            onclick={() => onSelect(project)}
-          >
-            <div class="project-top">
-              <span class="cli-badge">{project.kind}</span>
-              <span class="folder-name" title={project.cwd}><bdi>{basename(project.cwd)}</bdi></span>
-              {#if project.lastSeen}
-                <span class="meta-sep">·</span>
-                <span class="last-seen">
-                  {formatRelativeTime(new Date(project.lastSeen).getTime(), i18n.locale)}
-                </span>
-              {/if}
-            </div>
-            <div class="project-meta">
-              <span class="cwd-full" title={project.cwd}><bdi>{project.cwd}</bdi></span>
-            </div>
-          </button>
-        </li>
-      {/each}
-    </ul>
+  {#if !settings.recentCollapsed}
+    {#if recent.projects.length === 0}
+      <div class="empty-state">
+        {recent.loading ? "…" : t("connect.recent.empty")}
+      </div>
+    {:else}
+      <ul class="project-list">
+        {#each recent.projects as project (project.cwd)}
+          <li class="project-row">
+            <button
+              type="button"
+              class="project-btn"
+              onclick={() => onSelect(project)}
+            >
+              <div class="project-top">
+                <span class="cli-badge">{project.kind}</span>
+                <span class="folder-name" title={project.cwd}><bdi>{basename(project.cwd)}</bdi></span>
+                {#if project.lastSeen}
+                  <span class="meta-sep">·</span>
+                  <span class="last-seen">
+                    {formatRelativeTime(new Date(project.lastSeen).getTime(), i18n.locale)}
+                  </span>
+                {/if}
+              </div>
+              <div class="project-meta">
+                <span class="cwd-full" title={project.cwd}><bdi>{project.cwd}</bdi></span>
+              </div>
+            </button>
+            <button
+              type="button"
+              class="delete-btn"
+              onclick={() => void recent.hide(project.cwd)}
+              title={t("connect.recent.hide")}
+              aria-label={t("connect.recent.hide")}
+            >✕</button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
   {/if}
 </section>
 
@@ -92,6 +116,29 @@ onMount(() => {
     justify-content: space-between;
     padding: 0.6rem 0.9rem;
     border-bottom: 1px solid var(--border);
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+
+  .collapse-btn {
+    padding: 0.2rem 0.5rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--fg-dim);
+    font-size: 0.7rem;
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .collapse-btn:hover {
+    color: var(--fg);
+    border-color: var(--accent);
   }
 
   .panel-title {
@@ -138,6 +185,8 @@ onMount(() => {
   }
 
   .project-row {
+    display: flex;
+    align-items: stretch;
     border-bottom: 1px solid var(--border);
   }
 
@@ -145,8 +194,37 @@ onMount(() => {
     border-bottom: none;
   }
 
+  /* כפתור מחיקה — sibling של project-btn (לא ילד; nested button אסור) */
+  .delete-btn {
+    flex-shrink: 0;
+    padding: 0 0.6rem;
+    background: transparent;
+    border: none;
+    border-inline-start: 1px solid var(--border);
+    border-radius: 0;
+    color: var(--fg-dim);
+    font-size: 0.8rem;
+    cursor: pointer;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, background 0.15s;
+    display: flex;
+    align-items: center;
+  }
+
+  .project-row:hover .delete-btn,
+  .project-row:focus-within .delete-btn {
+    opacity: 1;
+  }
+
+  .delete-btn:hover {
+    color: var(--fg);
+    background: var(--bg-hover, rgba(127, 127, 127, 0.08));
+  }
+
   .project-btn {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: stretch;
@@ -155,7 +233,6 @@ onMount(() => {
     background: transparent;
     border: none;
     border-radius: 0;
-    margin-top: 0;
     cursor: pointer;
     text-align: start;
     transition: background 0.1s;

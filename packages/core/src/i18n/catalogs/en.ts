@@ -211,4 +211,8 @@ export const en: Catalog = {
   "connect.recent.title": "Recent folders",
   "connect.recent.empty": "No recent folders",
   "connect.recent.refresh": "Refresh",
+  // ─── recent-projects controls ─── (slice recent-projects-controls)
+  "connect.recent.hide": "Remove from list",
+  "connect.recent.collapse": "Collapse",
+  "connect.recent.expand": "Expand",
 }
