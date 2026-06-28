@@ -1,7 +1,7 @@
 # Slice A3 — transport (pause/resume/stop) + הפרדת cancel — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: ✅ READY (אביגיל r2 — 4×🟡 מ-r1 נסגרו; `reports/drive-coding/A3-avigail.md`)
+> **סטטוס**: ✅ **calev-heavy GO** (r2, אחרי fix `0d63a2c`). r1 NO-GO על build-gate אדום (svelte-check לא רץ ע"י executor!) → תוקן F1+F2 +3 טסטי-transport. נותר env-gap (קול-חי) → smoke משתמשת ב-preview. (אביגיל READY r2; tip 0d63a2c)
 > **Complexity**: 7/10 (verifier: heavy — נוגע ב‑WebAudio/MediaSource חי)
 > **תלות**: [A2] · **base**: branch `slice/playback-core-a2`
 > **שייך ל**: `docs/plans/playback-run-control-roadmap.md` (slice 3/6)

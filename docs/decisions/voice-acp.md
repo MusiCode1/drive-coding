@@ -1,5 +1,20 @@
 # Decisions — voice-acp
 
+## 2026-06-29 — gate: build-gate ל-frontend = `svelte-check`, לא root `tsc --build`
+
+> נחשף ב-A3 (calev-heavy r1 NO-GO): executor דיווח "typecheck 0" אבל ה-frontend היה אדום.
+
+**השורש:** ה-root `tsconfig.json` references כולל **רק** `packages/core` + `packages/backend`.
+`pnpm typecheck` (= `tsc --build`) **לא בודק את frontend בכלל**. הטסטים (vitest/esbuild) הם
+transpile-only ומתעלמים משגיאות-טיפוס. כך ש"שני ירוקים" (root-tsc + vitest) הסתירו gate שלישי
+אדום: `svelte-check`, שהוא **היחיד** שמכסה את קבצי ה-frontend.
+
+**ההכרעה (חובה לכל slice שנוגע ב-frontend):** ה-build-gate הסמכותי ל-frontend הוא
+`pnpm --filter @drive-coding/frontend-v2 typecheck` (= svelte-check). **כל dispatch של
+executor/calev ל-slice-frontend חייב לדרוש אותו במפורש** (לא רק root `tsc`). מוטמע מ-A3 ואילך.
+
+---
+
 ## 2026-06-29 — playback A2: BUG-1 (late-early ordering) — דחייה מאושרת, אפס שינוי-קוד
 
 > runtime-gate: calev-heavy על A2 = NO-GO. הוסב ל-**GO-עם-דחייה-מתועדת+מאושרת**. ר' `reports/drive-coding/A2-calev.md`.
