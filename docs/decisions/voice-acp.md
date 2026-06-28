@@ -1460,3 +1460,75 @@ ACP spec: *"Clients MUST restrict content per Prompt Capabilities"*. `AcpClient.
 ### מצב
 brief READY (אביגיל r2). **merge מוקפא** עד ש-`AcpClient.prompt` יקבל `PromptContent`/blocks (Track A,
 הסוכן השני). Commits 0–3 ניתנים ל-dispatch מיידי; runtime-gate (calev-heavy) רק אחרי Commit 4 חי.
+
+---
+
+## 2026-06-28 — leave-running-background: יציאה-מסשן בלי הריגה + אזהרת-stall
+
+### רציונל
+היום היחידה דרך לצאת מסשן בלי להרוג את הסוכן ב-BE היא מצב `bypassPermissions` + רענון-דפדפן.
+השורש: כפתור ה"ניתוק" הקיים קורא `detach()`→`#cleanup()`→`deleteAgent` (agent-session.svelte.ts:1111)
+שמוחק את ה-child; רענון-דפדפן רק מפיל WS וה-BE שומר את ה-child חי בכוונה (ws-agent.ts:126). הסלייס
+מוסיף `leaveRunning()` — תאום של `detach()` בלי ה-`deleteAgent` (דרך `#cleanup({keepAgent:true})`) —
+וכפתור ייעודי, כך שאין צורך ברענון.
+
+### הכרעות-עיצוב
+- **זיהוי bypass = claude בלבד כרגע.** ה-mode `bypassPermissions` קיים רק ב-claude; opencode/codex
+  משתמשים ב-IDs אחרים. ריכזנו ב-`BYPASS_MODE_ID` (permission-mode.ts) עם הערת-קוד: כשיושלם תכנון
+  מנגנון-ה-ACP המאוחד (roadmap Track C "ממשק אישור-בקשות") נאחד את זיהוי-המצבים לכל הספקים. עד אז:
+  ספק שאינו claude → אזהרה תמיד (fail-safe).
+- **הבחנה חזותית סגור↔צא.** הכפתור ההורס נשאר אדום (`--recording`) אך מחליף אייקון מ-`LogOut` ל-`Power`
+  (כיבוי קורא ככיבוי); הכפתור החדש ניטרלי (`--fg-dim`) + `Minimize2` + תווית-טקסט. שניהם עם תווית כדי
+  שבמבט-נהיגה ההבדל בין "אי-חזרה" ל"בטוח" יהיה חד.
+- **beforeunload כלול.** מגן גם ברענון/סגירת-טאב כשלא-bypass — אך הדפדפן נותן dialog גנרי בלבד (אין
+  טקסט מותאם). מקובל; נכנס בכל-זאת לבקשת המשתמשת.
+
+### ממצאי אביגיל
+- **r1 (USABLE-AFTER-FIX, 3)**: (א) מספרי-שורות detach/cleanup/deleteAgent דורשים דיוק — חודדו ל-543/1093/1111;
+  (ב) `chat/+page.svelte` route דק בלי `onMount`/import svelte — commit-3 קיבל אזהרה להוסיף מאפס;
+  (ג) key יתום `session.closeSession` — הוסר, כפתור-הסגירה נשאר עם `header.disconnect` הקיים.
+- **r2 (READY, 0)**: כל השלוש נסגרו ואומתו מול הקוד החי (tip 3a23195); spot-check מורחב נקי
+  (CliKind/SessionModeState/strict-TS/lucide icons).
+
+### רעיונות שנדחו (Scope)
+permission-UI מלא (אישור/דחייה), auto-answer ב-BE כשאין FE, ו-persist של ה-mode — כולם slices נפרדים
+ב-Track F/C. שינוי טקסט מותאם ב-beforeunload נדחה (חסם דפדפן).
+
+### מצב
+brief **READY** → ניתן ל-dispatch לאליעזר. Complexity 5 → verifier light (calev). base=dev (3a23195),
+depends_on: []. ⚠️ verification חי פתוח: ערך ה-mode `bypassPermissions` לא אומת live בסלייס — escalation
+trigger רשום ל-executor.
+
+---
+
+## 2026-06-28 — acp-mode-config-sync: טיפול ב-current_mode_update + config_option_update
+
+### רציונל
+חקירה (שעלתה מבאג ב-`leave-running-background`) חשפה ש-`#onSessionUpdate` מטפל ב-5 events
+בלבד ומתעלם מ-`current_mode_update` ו-`config_option_update` — שני events **סטנדרטיים ב-ACP
+SessionUpdate union** (אומת ב-`@agentclientprotocol/sdk` types.gen.d.ts: SessionModeState +
+current_mode_update **יציבים** עם עמוד-פרוטוקול; SessionModelState לבדו UNSTABLE). התוצאה:
+כששינוי-mode עובר במסלול config-option (claude חושף mode גם ב-`modes` וגם ב-`configOptions`),
+מתעדכן רק `configOptions` ו-`modes.currentModeId` נשאר תקוע עד reconnect → ה-dropdown
+(`SessionOptionsPanel:236`) מציג ערך-ישן, ו-`bypassActive` (נוחת עם leave-running) רואה stale.
+
+### הכרעה
+**זו הפרת-conformance של ה-ACP client שלנו — לא באג ספציפי-claude.** הפרוטוקול הגדיר את ה-events
+האלה כדי שהלקוח יישאר מסונכרן. הטיפול בהם (השמה-מחדש של `this.modes`/`this.configoptions`)
+מחזיר את הסוכן לתפקיד מקור-האמת ומתקן את **כל המחלקה** — ה-dropdown, bypassActive, ושינויים
+יזומי-סוכן — **לכל ספק תואם-ACP** (opencode/codex/gemini), לא רק claude. הוצא ל-slice נפרד
+(לא פלסטר ב-leave-running) כי הערך רוחבי.
+
+### יחס ל-leave-running-background
+ב-leave-running נכנס **patch מקומי** ל-`bypassActive` (קורא configOptions.currentValue קודם,
+fallback modes) כ-belt-and-suspenders, כדי שיהיה נכון עצמאית. acp-mode-config-sync הוא התיקון
+השורשי. **סדר-merge מומלץ: acp-mode-config-sync לפני leave-running** (אם כי שניהם עצמאיים).
+
+### ממצאי אביגיל
+- **r1 (USABLE-AFTER-FIX, 4×🟡)**: הגרעין הטכני אומת 5/6; תיקוני-הכוונה: (1) bypassActive לא קיים
+  על dev — מוסגר מחדש סביב ה-dropdown; (2) מנגנון-טסט → captured-listener+inject() (לא #onSessionUpdate
+  פרטי); (3) מיקום-handler לפני text-guard (mode/config בלי content.text); (4) line numbers.
+- **r2 (READY, 1×🟢)**: כל ה-4 נסגרו; נותר אי-דיוק שורות בשאלה-פתוחה מחוץ ל-scope.
+
+### מצב
+brief **READY** → ניתן ל-dispatch. Complexity 3 → calev light. base=dev, depends_on: [].
