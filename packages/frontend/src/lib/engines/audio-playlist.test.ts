@@ -1,0 +1,281 @@
+/**
+ * audio-playlist.test.ts — integration tests for AudioPlaylist.
+ *
+ * מאמת:
+ *   1. סדר-ניגון הפוך: markReady(s1) לפני markReady(s0) → s0 מתנגן קודם
+ *   2. timeout → item skipped, המשך לבא
+ *   3. error → item מדולג, המשך לבא
+ *   4. stop() באמצע → לא ממשיך
+ *   5. onPlaybackStart callback
+ *   6. sorted-insert
+ *   7. re-entrancy guard
+ *
+ * mock AudioSink: play() מחזיר Promise שמתממש רק כשקוראים לו resolvePlay(segmentId).
+ * WebAudio לא נגעת — בדיקה טהורה של לוגיקת ה-playlist.
+ */
+
+import type { OrderKey } from "@drive-coding/core/voice/tts-queue"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { AudioPlaylist } from "./audio-playlist.svelte"
+import type { AudioSink } from "./audio-sink"
+
+// ─── Mock AudioSink ──────────────────────────────────────────────────────────
+
+type MockSink = AudioSink & {
+  playOrder: string[]
+  resolvePlay: (segmentId: string) => void
+}
+
+function makeMockSink(): MockSink {
+  const playOrder: string[] = []
+  const playResolvers = new Map<string, () => void>()
+
+  const resolvePlay = (segmentId: string) => {
+    const r = playResolvers.get(segmentId)
+    if (r !== undefined) {
+      r()
+      playResolvers.delete(segmentId)
+    }
+  }
+
+  const sink: MockSink = {
+    playOrder,
+    resolvePlay,
+    prepareSegment: async () => {
+      // no-op — ב-A2 prepareSegment נקרא מ-Speaker, לא מ-AudioPlaylist
+    },
+    play: (segmentId) => {
+      playOrder.push(segmentId)
+      return new Promise<void>((resolve) => {
+        playResolvers.set(segmentId, resolve)
+      })
+    },
+    cancel: (segmentId) => {
+      // פתור play promise אם תקוע, כדי שלא ינעל את הטסט
+      resolvePlay(segmentId)
+    },
+    clear: () => {
+      playResolvers.clear()
+    },
+  }
+
+  return sink
+}
+
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+const key = (seq: number, segmentIndex = 0): OrderKey => ({ seq, segmentIndex })
+
+/** מאפשר micro/macrotask queue לרוץ — אחרי setTimeout/Promise */
+const _tick = () => new Promise<void>((r) => setTimeout(r, 0))
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+describe("AudioPlaylist", () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  // ── Test 1: סדר הפוך ─────────────────────────────────────────────────────
+
+  it("markReady(s1) לפני markReady(s0) → s0 מתנגן קודם (race-reversal)", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    playlist.reserve("s0", key(0))
+    playlist.reserve("s1", key(1))
+
+    // s1 מגיע מוכן לפני s0 — כמו Gemini fetch שחוזר בסדר הפוך
+    playlist.markReady("s1")
+
+    // נאפשר מהלך: #playLoop התחיל ומחכה ל-s0
+    await vi.advanceTimersByTimeAsync(0)
+
+    // s0 עדיין לא התנגן (ממתין ל-markReady)
+    expect(sink.playOrder).toEqual([])
+
+    // עכשיו s0 מגיע
+    playlist.markReady("s0")
+    await vi.advanceTimersByTimeAsync(0)
+
+    // s0 אמור להיות ראשון בתור ניגון
+    expect(sink.playOrder.length).toBeGreaterThanOrEqual(1)
+    expect(sink.playOrder[0]).toBe("s0")
+
+    // פתור play של s0 ואפשר s1 לנגן
+    sink.resolvePlay("s0")
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(sink.playOrder.length).toBeGreaterThanOrEqual(2)
+    expect(sink.playOrder[1]).toBe("s1")
+
+    sink.resolvePlay("s1")
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(playlist.state).toBe("idle")
+  })
+
+  // ── Test 2: timeout → skipped ─────────────────────────────────────────────
+
+  it("timeout על s0 → s0 skipped, s1 מתנגן", async () => {
+    const sink = makeMockSink()
+    const TIMEOUT = 500
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: TIMEOUT })
+
+    playlist.reserve("s0", key(0))
+    playlist.reserve("s1", key(1))
+
+    // s1 מוכן מיד, s0 לא יגיע אף פעם (timeout)
+    playlist.markReady("s1")
+
+    // ממתינים ל-s0 עוד לא הגיע
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sink.playOrder).toEqual([]) // עדיין מחכה ל-s0
+
+    // מקדמים את הזמן מעבר ל-timeout
+    await vi.advanceTimersByTimeAsync(TIMEOUT + 1)
+
+    // s0 אמור להיות skipped, s1 צריך לנגן
+    const s0Item = playlist.items.find((it) => it.segmentId === "s0")
+    expect(s0Item?.state).toBe("skipped")
+
+    expect(sink.playOrder.length).toBeGreaterThanOrEqual(1)
+    expect(sink.playOrder[0]).toBe("s1")
+
+    sink.resolvePlay("s1")
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(playlist.state).toBe("idle")
+  })
+
+  // ── Test 3: error → skip ──────────────────────────────────────────────────
+
+  it("markError(s0) → s0 מדולג, s1 מתנגן", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    playlist.reserve("s0", key(0))
+    playlist.reserve("s1", key(1))
+
+    playlist.markReady("s1")
+
+    // s0 נכשל
+    playlist.markError("s0")
+    await vi.advanceTimersByTimeAsync(0)
+
+    // s0 לא ניגן (error)
+    expect(sink.playOrder).not.toContain("s0")
+
+    // s1 אמור לנגן
+    expect(sink.playOrder.length).toBeGreaterThanOrEqual(1)
+    expect(sink.playOrder[0]).toBe("s1")
+
+    const s0Item = playlist.items.find((it) => it.segmentId === "s0")
+    expect(s0Item?.state).toBe("error")
+
+    sink.resolvePlay("s1")
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(playlist.state).toBe("idle")
+  })
+
+  // ── Test 4: stop() באמצע ──────────────────────────────────────────────────
+
+  it("stop() תוך כדי המתנה → playlist עוצר ולא ממשיך", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    playlist.reserve("s0", key(0))
+    playlist.reserve("s1", key(1))
+
+    // ממתין ל-s0 שלא יגיע
+    await vi.advanceTimersByTimeAsync(0)
+
+    // עוצר את ה-playlist
+    playlist.stop()
+    await vi.advanceTimersByTimeAsync(0)
+
+    // אחרי stop — items ריק, state=idle
+    expect(playlist.items).toEqual([])
+    expect(playlist.state).toBe("idle")
+
+    // s0 ו-s1 לא ניגנו
+    expect(sink.playOrder).toEqual([])
+  })
+
+  // ── Test 5: onPlaybackStart callback ─────────────────────────────────────
+
+  it("onPlaybackStart נקרא פעם אחת כש-idle→playing", async () => {
+    const sink = makeMockSink()
+    const onStart = vi.fn()
+    const playlist = new AudioPlaylist(sink, onStart, { reserveTimeoutMs: 1000 })
+
+    playlist.reserve("s0", key(0))
+    playlist.markReady("s0")
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onStart).toHaveBeenCalledTimes(1)
+    sink.resolvePlay("s0")
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(playlist.state).toBe("idle")
+
+    // שני reserve נוסף — onStart נקרא שוב (idle→playing חדש)
+    playlist.reserve("s1", key(1))
+    playlist.markReady("s1")
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onStart).toHaveBeenCalledTimes(2)
+    sink.resolvePlay("s1")
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  // ── Test 6: sorted-insert — reserve מחוץ לסדר ───────────────────────────
+
+  it("reserve מחוץ לסדר כרונולוגי → items ממוינים לפי orderKey", () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 1000 })
+
+    // הכנסה בסדר הפוך
+    playlist.reserve("s2", key(2))
+    playlist.reserve("s0", key(0))
+    playlist.reserve("s1", key(1))
+
+    expect(playlist.items.map((it) => it.segmentId)).toEqual(["s0", "s1", "s2"])
+    playlist.stop()
+  })
+
+  // ── Test 7: re-entrancy guard — reserve כשכבר playing ───────────────────
+
+  it("reserve כשכבר playing — לא מתחיל #playLoop שנייה", async () => {
+    const sink = makeMockSink()
+    const onStart = vi.fn()
+    const playlist = new AudioPlaylist(sink, onStart, { reserveTimeoutMs: 1000 })
+
+    playlist.reserve("s0", key(0))
+    playlist.markReady("s0")
+    await vi.advanceTimersByTimeAsync(0)
+
+    // s0 בניגון — הוסף s1 תוך כדי
+    playlist.reserve("s1", key(1))
+    playlist.markReady("s1")
+    await vi.advanceTimersByTimeAsync(0)
+
+    // onPlaybackStart נקרא פעם אחת בלבד (re-entrancy guard)
+    expect(onStart).toHaveBeenCalledTimes(1)
+
+    // פתור s0 → s1 ינגן
+    sink.resolvePlay("s0")
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(sink.playOrder).toContain("s1")
+    sink.resolvePlay("s1")
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(playlist.state).toBe("idle")
+  })
+})
