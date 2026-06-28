@@ -37,11 +37,11 @@ import { ClaudeAcpAgent } from "@agentclientprotocol/claude-agent-acp"
 import type { ActiveSession, AgentConnection, ClientContext } from "acp-sdk-v1"
 import { agent, client, methods, RequestError } from "acp-sdk-v1"
 import { parseExtParams } from "../../extensions/index.js"
-import type { NormalizedCapabilities } from "../types.js"
-import { mapClaudeCapabilities } from "./claude/capabilities.js"
-import { getQuery } from "./claude/query-access.js"
-import { claudeRenameSession } from "./claude/rename.js"
+import type { NormalizedCapabilities } from "../../types.js"
+import { mapClaudeCapabilities } from "./capabilities.js"
 import { makeAcpClientFromCtx } from "./client-bridge.js"
+import { getQuery } from "./query-access.js"
+import { claudeRenameSession } from "./rename.js"
 
 /**
  * Public interface — no sdk@1.0.0 types leak here.

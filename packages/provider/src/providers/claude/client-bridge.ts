@@ -14,7 +14,7 @@ import { methods } from "acp-sdk-v1"
  * Creates an AcpClient-compatible object over an sdk@1.0.0 AgentContext.
  * Mirrors the unexported ClientConnection class in acp-agent.js:255.
  *
- * @internal — only used inside host/in-process/
+ * @internal — only used inside providers/claude/
  */
 export function makeAcpClientFromCtx(ctx: AgentContext) {
   return {

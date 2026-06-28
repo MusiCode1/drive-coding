@@ -15,7 +15,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:live": "RUN_LIVE=1 vitest run --dir src/host/in-process/live"
+    "test:live": "RUN_LIVE=1 vitest run --dir src/providers/claude/live"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.21.1",

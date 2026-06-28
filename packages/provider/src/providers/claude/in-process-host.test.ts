@@ -16,8 +16,8 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest"
-import type { InProcessHost } from "./host.js"
-import { createClaudeInProcessHost } from "./host.js"
+import type { InProcessHost } from "./in-process-host.js"
+import { createClaudeInProcessHost } from "./in-process-host.js"
 
 describe("InProcessHost — initialize only (no session/prompt)", () => {
   let host: InProcessHost | undefined

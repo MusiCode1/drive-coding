@@ -19,8 +19,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { listSessions } from "@anthropic-ai/claude-agent-sdk"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import type { InProcessHost } from "../host.js"
-import { createClaudeInProcessHost } from "../host.js"
+import type { InProcessHost } from "../in-process-host.js"
+import { createClaudeInProcessHost } from "../in-process-host.js"
 
 const RUN = process.env.RUN_LIVE === "1"
 

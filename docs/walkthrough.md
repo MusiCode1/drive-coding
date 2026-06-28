@@ -1,3 +1,28 @@
+## 2026-06-28 — CUT-3a-provider-reorg — Commit 1 (reorg + barrel re-exports + imports תוקנו)
+
+### מה בוצע?
+
+**Commit 1 (none — rename+import-path בלבד)** — העברת 11 קבצים מ-`host/` למבנה per-provider:
+- `git mv host/spawn-core.ts` + `.test.ts` → `shared/`
+- `git mv host/in-process/host.ts` + `.test.ts` → `providers/claude/in-process-host.ts` + `.test.ts`
+- `git mv host/in-process/client-bridge.ts` → `providers/claude/`
+- `git mv host/in-process/claude/{capabilities,rename,query-access}.ts` + `.test.ts` → `providers/claude/`
+- `git mv host/in-process/live/host.live.test.ts` → `providers/claude/live/`
+- `git mv host/types.ts` → `types.ts` (top-level)
+- `host/index.ts` נשאר — re-export מהמיקומים החדשים (`../providers/claude/in-process-host.js`, `../shared/spawn-core.js`, `../types.js`)
+- תוקנו imports פנימיים: `in-process-host.ts` (חמישה ייבואים), `in-process-host.test.ts`, `host.live.test.ts`
+- עודכן `package.json test:live` → `--dir src/providers/claude/live`
+- `client-bridge.ts` תיעוד עודכן
+
+### חריגות
+- lint pre-existing (291 errors לאחר הreorg, 290 לפניו — הפרש של שגיאת imports-order ב-`in-process-host.ts` שתוקנה). ה-3 שגיאות ב-provider package הן pre-existing (`extensions/`).
+- `bridge-manager.ts` לא שונה — ממשיך לייבא מ-`@drive-coding/provider/host`
+
+### בדיקות
+- typecheck: 0 errors. tests: 85 passed, 4 skipped (live). lint:i18n: clean.
+
+---
+
 ## 2026-06-28 — EXT-SCHEMA-uniform-contract — Commit 1 (ולידציית params בגבול ה-host)
 
 ### מה בוצע?
