@@ -6853,6 +6853,37 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 
 אין. הוספת `resolveProviderAuth` כ-helper טהור + call-site יחיד ב-http-proxy. לא שינוי ארכיטקטוני.
 
+## 2026-06-28 — slice-code-syntax-highlight — Commit 2 (manual — theme-CSS)
+
+### מה בוצע?
+
+**Commit 2 (manual):** theme-CSS — `.hljs-*` → CSS vars, הגדרת `--hl-*` פר-פלטה.
+
+**MarkdownContent.svelte:**
+- הוסיף 30+ CSS rules: `.md-content :global(.hljs-keyword)`, `.hljs-string`, `.hljs-comment`, `.hljs-number`, `.hljs-title`, `.hljs-type`, `.hljs-attr`, `.hljs-name`/`.hljs-tag`, `.hljs-meta`, `.hljs-variable`, `.hljs-selector-*`, `.hljs-addition`/`.hljs-deletion` (diff).
+- כל rule → `color: var(--hl-*)` בלבד (אסור style inline — class-only).
+- `.hljs-comment` גם `font-style: italic`.
+
+**app.css:**
+- 9 CSS vars חדשים לכל אחת מ-8 הפלטות: `--hl-keyword`, `--hl-string`, `--hl-comment`, `--hl-number`, `--hl-func`, `--hl-type`, `--hl-attr`, `--hl-tag`, `--hl-meta`.
+- פלטות כהות (1-7): github-dark inspired, צבעים מותאמים לאקסנט הפלטה.
+- daylight (בהיר): github-light inspired (אדום/ירוק-עמוק/סגול/כחול על רקע בהיר).
+
+### בדיקות
+
+- typecheck: ירוק (0 errors).
+- tests: 356/356 (אין שינוי).
+- biome (Svelte): ירוק.
+- build: ירוק (33s). bundle delta: 0 bytes JS (CSS בלבד, <5KB); CSS total: 79KB.
+- ⚠️ בדיקה ויזואלית בדפדפן — נדרשת על ידי כלב (FE עם BE חי: ```ts```, ```python```, ```bash``` בשתי פלטות).
+
+### חריגות
+
+- `pnpm lint` מדווח CRLF errors מרובות על כל הפרויקט — זו סוגיה pre-existing ב-Windows (git.core.autocrlf), לא הוכנסה ע"י ה-slice.
+- app.css מכיל `@theme` (Tailwind v4 rule) שביומי מסמן כ-error — pre-existing, לא שונה.
+
+---
+
 ## 2026-06-28 — slice-code-syntax-highlight — Commit 1 (TDD)
 
 ### מה בוצע?
