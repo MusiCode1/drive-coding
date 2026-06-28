@@ -42,6 +42,7 @@ export class AudioPlaylist {
   readonly #onPlaybackStart?: () => void
   readonly #reserveTimeoutMs: number
   #playing = false // re-entrancy guard
+  #stopped = false // אמת כש-stop() נקרא — #playLoop בודק אחרי כל await
   // לכל item ממתין — פונקציה שמפעילה אותו (נקראת כש-markReady/markError)
   #itemResolvers: Map<string, () => void> = new Map()
 
@@ -104,6 +105,7 @@ export class AudioPlaylist {
    * A3 ירחיב ל-pause/resume.
    */
   stop(): void {
+    this.#stopped = true
     // בטל סגמנטים שכבר ב-AudioSink (playing/ready/reserved)
     for (const item of this.items) {
       if (item.state !== "done" && item.state !== "error" && item.state !== "skipped") {
@@ -114,13 +116,14 @@ export class AudioPlaylist {
         }
       }
     }
-    // פתור את כל ה-resolvers כדי לשחרר המתנות תקועות
+    // פתור את כל ה-resolvers כדי לשחרר המתנות תקועות (#playLoop יבדוק #stopped)
     for (const resolve of this.#itemResolvers.values()) {
       resolve()
     }
     this.#itemResolvers.clear()
     this.items = []
     this.#playing = false
+    this.#stopped = false // אפס כדי לאפשר reserve() עתידי
     this.state = "idle"
     this.currentSegmentId = null
   }
@@ -138,6 +141,9 @@ export class AudioPlaylist {
     try {
       let cursor = 0
       while (cursor < this.items.length) {
+        // בדוק stop() שנקרא תוך כדי await
+        if (this.#stopped) break
+
         const item = this.items[cursor]
         if (item === undefined) {
           cursor++
@@ -147,13 +153,14 @@ export class AudioPlaylist {
         if (item.state === "reserved" || item.state === "loading") {
           // המתן עד שה-item ישתנה (markReady/markError) או timeout
           const resolved = await this.#waitForItem(item.segmentId)
+          if (this.#stopped) break // stop() נקרא תוך כדי המתנה
           if (!resolved) {
             // timeout
             item.state = "skipped"
             cursor++
             continue
           }
-          // לאחר המתנה — בדוק מחדש (stop עשוי לאפס)
+          // לאחר המתנה — בדוק מחדש
         }
 
         // re-read state אחרי await (TypeScript לא מצר את ה-state אחרי await)
@@ -171,6 +178,7 @@ export class AudioPlaylist {
           } catch {
             // MIN-5: בוטל / שגיאה → דלג, המשך לבא בתור (best-effort)
           }
+          if (this.#stopped) break // stop() נקרא תוך כדי play
           item.state = "done"
           this.currentSegmentId = null
           cursor++
