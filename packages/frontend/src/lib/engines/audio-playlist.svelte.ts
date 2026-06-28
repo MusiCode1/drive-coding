@@ -11,6 +11,10 @@
  *
  * מה לא משתנה: AudioSink ממשק (play/prepareSegment/cancel/clear) נשאר זהה.
  * dead-code שלא הועבר: jumpToSegment (אביגיל #1 — 0 צרכנים).
+ *
+ * A3: הוסף transport (pause/resume/stop). ⚠️ state ("idle"|"playing") לא נוגעים —
+ * Speaker.get state קורא #player.state==="playing" (speaker.svelte.ts:98).
+ * transport הוא שדה נוסף ונפרד.
  */
 
 import { compareOrderKey, type OrderKey } from "@drive-coding/core/voice/tts-queue"
@@ -33,8 +37,16 @@ export type PlaylistItem = {
 
 export type AudioPlaylistState = "idle" | "playing"
 
+/** A3: מצב transport — לצד state, לא במקומו (ראה הערה בראש הקובץ). */
+export type AudioPlaylistTransport = "playing" | "paused" | "stopped"
+
 export class AudioPlaylist {
-  state: AudioPlaylistState = $state("idle") // transport מלא ב-A3
+  // ⚠️ A3: state ("idle"|"playing") מ-A2 — **נשאר כפי שהוא!**
+  // Speaker.get state קורא #player.state==="playing" (speaker.svelte.ts:98).
+  // ב-paused: state נשאר "playing" (יש תוכן פעיל), transport="paused".
+  state: AudioPlaylistState = $state("idle")
+  /** A3: transport — שדה נוסף. default "playing" (ניגון מיידי ברוב המקרים). */
+  transport: AudioPlaylistTransport = $state("playing")
   currentSegmentId: string | null = $state(null)
   items: PlaylistItem[] = $state([]) // ממוין לפי orderKey; reactive לתצוגה עתידית
 
@@ -45,6 +57,8 @@ export class AudioPlaylist {
   #stopped = false // אמת כש-stop() נקרא — #playLoop בודק אחרי כל await
   // לכל item ממתין — פונקציה שמפעילה אותו (נקראת כש-markReady/markError)
   #itemResolvers: Map<string, () => void> = new Map()
+  // A3: resolver לשחרור pause — נקרא ע"י resume()
+  #pauseResolve: (() => void) | null = null
 
   constructor(
     audioStream: AudioSink,
@@ -59,8 +73,14 @@ export class AudioPlaylist {
   /**
    * מכניס item ממוין לפי orderKey, state=reserved.
    * מתחיל #playLoop אם idle.
+   * A3: אם transport==="stopped" → אפס ל-"playing" (תור חדש אחרי stop ינוגן).
    */
   reserve(segmentId: string, orderKey: OrderKey): void {
+    // A3: תור חדש אחרי stop — חזור למצב ניגון
+    if (this.transport === "stopped") {
+      this.transport = "playing"
+    }
+
     const newItem: PlaylistItem = { orderKey, segmentId, state: "reserved" }
     // sorted-insert לפי compareOrderKey
     let i = this.items.length
@@ -101,11 +121,40 @@ export class AudioPlaylist {
   }
 
   /**
+   * A3: השהיית ניגון. transport=paused; מאציל ל-AudioSink; #playLoop ממתין.
+   * state נשאר "playing" (יש תוכן פעיל — Speaker.get state לא משתנה).
+   * ⚠️ לאמת חי: pause לא גורם ל-ended/error שמדלג.
+   */
+  pause(): void {
+    if (this.transport !== "playing") return
+    this.transport = "paused"
+    this.#audioStream.pause()
+  }
+
+  /**
+   * A3: המשך ניגון אחרי pause. transport=playing; מאציל ל-AudioSink; משחרר #playLoop.
+   */
+  resume(): void {
+    if (this.transport !== "paused") return
+    this.transport = "playing"
+    this.#audioStream.resume()
+    // שחרר את ה-#playLoop שממתין על pause
+    const resolve = this.#pauseResolve
+    this.#pauseResolve = null
+    resolve?.()
+  }
+
+  /**
    * עצירה: מבטל את כל ה-items הממתינים, מנקה items + cursor.
-   * A3 ירחיב ל-pause/resume.
+   * A3: מוסיף transport="stopped".
    */
   stop(): void {
     this.#stopped = true
+    this.transport = "stopped"
+    // שחרר pause אם תקוע
+    const pauseResolve = this.#pauseResolve
+    this.#pauseResolve = null
+    pauseResolve?.()
     // בטל סגמנטים שכבר ב-AudioSink (playing/ready/reserved)
     for (const item of this.items) {
       if (item.state !== "done" && item.state !== "error" && item.state !== "skipped") {
@@ -126,6 +175,7 @@ export class AudioPlaylist {
     this.#stopped = false // אפס כדי לאפשר reserve() עתידי
     this.state = "idle"
     this.currentSegmentId = null
+    // transport נשאר "stopped" — reserve() יאפס ל-"playing" בתור הבא
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -143,6 +193,14 @@ export class AudioPlaylist {
       while (cursor < this.items.length) {
         // בדוק stop() שנקרא תוך כדי await
         if (this.#stopped) break
+
+        // A3: אם paused — ממתין עד resume() או stop()
+        if (this.transport === "paused") {
+          await this.#waitForResume()
+          if (this.#stopped) break
+        }
+        // A3: אם stopped (stop() נקרא בזמן pause) — יציאה
+        if (this.transport === "stopped" || this.#stopped) break
 
         const item = this.items[cursor]
         if (item === undefined) {
@@ -171,6 +229,13 @@ export class AudioPlaylist {
         }
 
         if (currentState === "ready") {
+          // A3: בדוק pause שוב לפני play (ייתכן שהגיע בזמן ה-await של waitForItem)
+          if (this.transport === "paused") {
+            await this.#waitForResume()
+            if (this.#stopped) break
+          }
+          if (this.transport === "stopped" || this.#stopped) break
+
           item.state = "playing"
           this.currentSegmentId = item.segmentId
           try {
@@ -192,7 +257,19 @@ export class AudioPlaylist {
       this.#playing = false
       this.state = "idle"
       this.currentSegmentId = null
+      // A3: אפס pause resolver אם נשאר (לא צפוי — הגנה)
+      this.#pauseResolve = null
     }
+  }
+
+  /**
+   * A3: ממתין עד ש-transport יצא מ-paused (ע"י resume() או stop()).
+   * resume() — פותר; stop() — שחרר ויציאה.
+   */
+  #waitForResume(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      this.#pauseResolve = resolve
+    })
   }
 
   /**
