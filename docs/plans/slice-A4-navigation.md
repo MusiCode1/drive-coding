@@ -1,7 +1,7 @@
 # Slice A4 — ניווט prev/next/jump + איחוד BubblePlayer — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: 🔧 תוקן לפי אביגיל r1 (4×🟡 — cursor→שדה+signal, jumpTo תוספת-נטו, re-fetch הנתיב היחיד) → ממתין re-verify
+> **סטטוס**: ✅ READY (אביגיל r2 — 4×🟡 מ-r1 נסגרו; `reports/drive-coding/A4-avigail.md`)
 > **Complexity**: 8/10 (verifier: heavy — refactor בעלות + streaming)
 > **תלות**: [A3] · **base**: branch `slice/playback-core-a3`
 > **שייך ל**: `docs/plans/playback-run-control-roadmap.md` (slice 4/6)
