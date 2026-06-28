@@ -14,7 +14,7 @@
  */
 
 import type { SessionNotification } from "@agentclientprotocol/sdk"
-import type { AcpClient } from "provider-contract/acp"
+import type { AcpClient } from "@drive-coding/provider/client"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 // ─── Module-level mocks ───────────────────────────────────────────────────────
@@ -38,15 +38,21 @@ const mockClient = {
   close: vi.fn(),
 }
 
-vi.mock("provider-contract/acp", async (importActual) => {
-  const actual = await importActual<typeof import("provider-contract/acp")>()
+vi.mock("@drive-coding/provider/client", async (importActual) => {
+  const actual = await importActual<typeof import("@drive-coding/provider/client")>()
   return {
     ...actual,
     createAcpClient: vi.fn(function mockCreateClient(
       _transport: unknown,
-      listener: (n: SessionNotification) => void,
+      callbackOrCallbacks:
+        | ((n: SessionNotification) => void)
+        | { onUpdate: (n: SessionNotification) => void; onExtNotification?: unknown },
     ): Promise<AcpClient> {
-      capturedListener = listener
+      // ─── slice FE-normalization: תמיכה בשתי חתימות ───
+      capturedListener =
+        typeof callbackOrCallbacks === "function"
+          ? callbackOrCallbacks
+          : callbackOrCallbacks.onUpdate
       return Promise.resolve(mockClient as unknown as AcpClient)
     }),
   }

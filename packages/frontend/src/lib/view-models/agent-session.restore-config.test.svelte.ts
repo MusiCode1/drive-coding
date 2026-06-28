@@ -10,11 +10,11 @@
  *   5. loadSession לא מחיל (resume — לא דורסים).
  *   6. applyConfigOption נקרא רק אחרי status="connected" (לא לפני).
  *
- * דפוס: agent-session.test.ts (מוק provider-contract/acp + ws-transport + agents-api).
+ * דפוס: agent-session.test.ts (מוק @drive-coding/provider/client + ws-transport + agents-api).
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import type { AcpClient } from "provider-contract/acp"
+import type { AcpClient } from "@drive-coding/provider/client"
 import type { SessionConfigOption, SessionModeState } from "@agentclientprotocol/sdk"
 
 // ─── Module-level mocks ───────────────────────────────────────────────────────
@@ -26,15 +26,21 @@ let mockSetSessionMode: ReturnType<typeof vi.fn>
 let mockSetSessionConfigOption: ReturnType<typeof vi.fn>
 let mockNewSession: ReturnType<typeof vi.fn>
 
-vi.mock("provider-contract/acp", async (importActual) => {
-  const actual = await importActual<typeof import("provider-contract/acp")>()
+vi.mock("@drive-coding/provider/client", async (importActual) => {
+  const actual = await importActual<typeof import("@drive-coding/provider/client")>()
   return {
     ...actual,
     createAcpClient: vi.fn(function mockCreateClient(
       _transport: unknown,
-      callback: (notification: unknown) => void,
+      callbackOrCallbacks:
+        | ((notification: unknown) => void)
+        | { onUpdate: (n: unknown) => void; onExtNotification?: unknown },
     ): Promise<AcpClient> {
-      capturedOnSessionUpdate = callback
+      // ─── slice FE-normalization: תמיכה בשתי חתימות ───
+      capturedOnSessionUpdate =
+        typeof callbackOrCallbacks === "function"
+          ? callbackOrCallbacks
+          : callbackOrCallbacks.onUpdate
       return Promise.resolve({
         newSession: mockNewSession,
         prompt: vi.fn().mockResolvedValue(undefined),
