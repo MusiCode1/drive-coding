@@ -18,6 +18,7 @@
  */
 
 import { ClaudeAcpAgent } from "@agentclientprotocol/claude-agent-acp"
+import type { NewSessionRequest } from "@agentclientprotocol/sdk"
 import { agent, methods, RequestError } from "acp-sdk-v1"
 import { parseExtParams } from "../extensions/index.js"
 import { mapClaudeCapabilities } from "../providers/claude/capabilities.js"
@@ -148,7 +149,9 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
       if (!claudeAgent) throw new Error("claudeAgent not set before session/new")
       // modelOverride: inject into _meta.claudeCode.options.model if provided (brief §3).
       // This allows the FE model-picker to influence the claude session model.
-      const params = injectModelOverride(ctx.params, opts.modelOverride)
+      // Cast: injectModelOverride returns Record<string,unknown> but only adds _meta;
+      // ctx.params is NewSessionRequest so the cast is safe structurally.
+      const params = injectModelOverride(ctx.params, opts.modelOverride) as NewSessionRequest
       return claudeAgent.newSession(params)
     })
     .onRequest(methods.agent.session.prompt, (ctx) => {

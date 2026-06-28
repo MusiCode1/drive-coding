@@ -22,10 +22,14 @@ export function registerAgentsHttp(
     orchestrator: AgentOrchestrator
     projectsRegistry?: ProjectsRegistry
     // אופציונלי בכוונה — call-sites קיימים בטסט לא מעבירים אותו (slice active-agents)
+    // pid: number | null — in-process connections (claude) have no child process (CUT-3b-iii-2).
     bridgeManager?: {
-      getRuntimeInfo(
-        id: string,
-      ): { pid: number; attached: boolean; busy: boolean; lastMessageAt: number | null } | null
+      getRuntimeInfo(id: string): {
+        pid: number | null
+        attached: boolean
+        busy: boolean
+        lastMessageAt: number | null
+      } | null
     }
   },
 ): void {
@@ -126,7 +130,12 @@ export function registerAgentsHttp(
     if (!agent) return c.json({ error: "agent not found" }, 404)
 
     // שומר MED-9: חוסם דריסה לא-מכוונת. warm switch מצהיר replace:true ועוקף ביודעין.
-    if (replace !== true && agent.status === "ready" && agent.acpSessionId && agent.acpSessionId !== sessionId) {
+    if (
+      replace !== true &&
+      agent.status === "ready" &&
+      agent.acpSessionId &&
+      agent.acpSessionId !== sessionId
+    ) {
       return c.json({ error: "agent already attached to a different session" }, 409)
     }
 

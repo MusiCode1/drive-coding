@@ -1,3 +1,26 @@
+## 2026-06-28 — CUT-3b-iii-2 — live routing: claude → connectInProcess (Commit 0)
+
+**Commit 0 (integration) — routing + getRuntimeInfo fix + typecheck fix:**
+- `packages/backend/src/acp/connection-registry.ts`:
+  - Import `connectInProcess` מ-`@drive-coding/provider/connection`.
+  - `connect()`: routing לפי `cliKind` — `"claude"` → `connectInProcess(connectOpts)`, כל השאר → `connectSpawn(cliKind, connectOpts)`.
+  - `getRuntimeInfo` return type: `pid: number | null` (הרחבה לtypecheck).
+  - `getRuntimeInfo` impl: הסרת ה-short-circuit `if (pid === null) return null` — כעת מחזיר `{ pid: e.conn.pid, ... }` גם לin-process.
+- `packages/backend/src/delivery/http-agents.ts`:
+  - `bridgeManager.getRuntimeInfo` type: `pid: number | null` (הרחבה).
+  - biome format: פיצול type לשורות נפרדות.
+- `packages/provider/src/connection/connect-in-process.ts`:
+  - Import `NewSessionRequest` מ-`@agentclientprotocol/sdk`.
+  - `session/new` handler: cast `params as NewSessionRequest` לפתרון שגיאת TS pre-existing (iii-1).
+  - biome: sort imports.
+
+### חריגות
+- שגיאת TS `connect-in-process.ts:152` מ-iii-1 (injectModelOverride returns Record<string,unknown>, newSession expects NewSessionRequest) — תוקנה בcast בטוח.
+- lint errors pre-existing לא השתנו (ירדו מ-283 ל-282 אחרי format fix).
+
+### בדיקות
+- typecheck: 0 errors. lint על הקבצים שלנו: נקי. tests: 2 pre-existing failures ללא שינוי.
+
 ## 2026-06-28 — CUT-3b-iii-1 — connectInProcess (Commits 0–2)
 
 **Commit 0 (tdd) — stream-bridge + test:**

@@ -12,11 +12,13 @@
  *     and http-agents reads it (§9#2 from brief).
  *   - wireRecorder session opened in connect, closed in close/onCrash cleanup.
  *   - onFrame registered once per connection in connect (in+out) — not duplicated.
+ *   - Routing (CUT-3b-iii-2): cliKind==="claude" → connectInProcess; else → connectSpawn.
+ *     pid may be null for in-process connections; getRuntimeInfo handles this gracefully.
  */
 
 import { createLogger } from "@drive-coding/core/log"
 import type { ConnectOpts, ProviderConnection } from "@drive-coding/provider/connection"
-import { connectSpawn, decodeWireLine } from "@drive-coding/provider/connection"
+import { connectInProcess, connectSpawn, decodeWireLine } from "@drive-coding/provider/connection"
 import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
 import type { WireRecorder, WireSession } from "../delivery/wire-recorder.js"
 
@@ -48,10 +50,11 @@ export type ConnectionRegistry = {
   /**
    * getRuntimeInfo — composes conn.turn + conn.pid + attached-state.
    * Returns null if agentId not in registry.
+   * pid may be null for in-process connections (e.g. claude in-process, CUT-3b-iii-2).
    */
   getRuntimeInfo(
     agentId: string,
-  ): { pid: number; attached: boolean; busy: boolean; lastMessageAt: number | null } | null
+  ): { pid: number | null; attached: boolean; busy: boolean; lastMessageAt: number | null } | null
 
   /**
    * close — kill child + remove from Map + close wireRecorder session.
@@ -100,7 +103,13 @@ export function createConnectionRegistry(opts?: {
 
       const rec = wireRecorder?.open(agentId) ?? { record() {}, close() {} }
 
-      const conn = await connectSpawn(cliKind, connectOpts)
+      // ── Routing (CUT-3b-iii-2): claude → connectInProcess; all others → connectSpawn ──
+      // cliKinds: opencode/claude/gemini/codex/qoder (core/src/schemas/agent.ts:30).
+      // connectInProcess does not accept cliKind (always claude by definition).
+      const conn =
+        cliKind === "claude"
+          ? await connectInProcess(connectOpts)
+          : await connectSpawn(cliKind, connectOpts)
 
       // Register onFrame once (in+out) for wire-observability.
       // Must NOT decode in wire.write separately — this is the single decode point.
@@ -156,10 +165,10 @@ export function createConnectionRegistry(opts?: {
     getRuntimeInfo(agentId) {
       const e = map.get(agentId)
       if (!e) return null
-      const pid = e.conn.pid
-      if (pid === null) return null
+      // pid may be null for in-process connections (claude in-process, CUT-3b-iii-2).
+      // We must NOT short-circuit on null — attached/busy/lastMessageAt are still valid.
       return {
-        pid,
+        pid: e.conn.pid,
         attached: e.attached,
         busy: e.conn.turn.isBusy(),
         lastMessageAt: e.conn.turn.lastActivityAt(),
