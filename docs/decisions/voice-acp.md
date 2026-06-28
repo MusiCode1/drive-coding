@@ -1345,3 +1345,44 @@ calev GO 12/12, אומת e2e דרך tunnel כולל cross-rename (סשן מ-sala
   של acpSessionId כשהagent כבר "ready" עם sessionId אחר — בדיוק מה ש-warm switch עושה.
   `.catch(()=>{})` בולע; המשתמש לא רואה. אבל ה-BE registry נשאר עם sessionId ישן → סיכון
   ל-reconnect/recovery עתידי (slice 10) שישחזר לסשן הישן. תיקון: BE יתיר same-agent update.
+
+## 2026-06-28 — slice-image-paste: הדבקת/גרירת/בחירת תמונות בתיבת הפרומפט (brief READY, merge מוקפא)
+
+### רציונל
+המשתמשת ביקשה לאפשר בצד הלקוח הדבקת תמונות, במקביל לסוכן שעובד על תמיכת ACP מלאה ב-`provider-contract`.
+מיפוי הקוד הראה ש-drive-coding ה-FE מדבר ACP **ישירות** דרך `AcpClient.prompt(sessionId, text: string)` —
+טקסט-בלבד (client.d.ts:45). ה-BE הוא dumb-pipe שקוף → אפס שינוי. החוזה המנורמל כבר חושף
+`PromptContent = string | PromptContentPart[]` (events.d.ts:160), אך השכבה ש-drive-coding משתמש בה
+(`AcpClient`) עדיין טקסט-בלבד. לכן הפיצ'ר מתחלק לשני חלקים: לכידה/preview/דחיסה/gating (FE-טהור, זמין
+היום) מול שליחה מולטימודלית (תלוי bump של `AcpClient.prompt` → blocks).
+
+### ההכרעה: brief אחד, 4 commits, merge-gate ממוקד
+החלטת המשתמשת: לכתוב brief ואולי לבצע, **אך לא למזג לפני שצד ה-ACP יתמוך**. במקום פיצול ל-2 slices
+(שמטרתו מקביליות-merge — לא רלוונטית כשלא ממזגים), נבחר brief יחיד עם commits מסודרים:
+Commit 0 (core/TDD: `resize-plan` טהור) → Commit 1 (FE engine: דחיסת canvas) → Commit 2 (TypeArea:
+paste/drop/picker + tray + gating) → Commit 3 (UserBubble image render) — **כולם בְּני-ביצוע עכשיו** —
+ו-Commit 4 (שליחה מולטימודלית) **GATED** על ה-contract bump. כך "אולי נבצע" מתקדם על 0–3 בלי להיחסם.
+
+### חובת-spec: capability gating
+ACP spec: *"Clients MUST restrict content per Prompt Capabilities"*. `AcpClient.capabilities` (=agentCapabilities
+מ-initialize) כבר נחשף → gating דרך getter `supportsImageInput` (`promptCapabilities.image`). בלי image-cap
+על ה-agent הנוכחי — הלכידה מושבתת.
+
+### חלוקת core/engine (No browser globals in core)
+החלטת ה-resize (scale-to-fit) טהורה → `packages/core/src/image/resize-plan.ts` (TDD). קידוד canvas בפועל
+(`createImageBitmap`/`OffscreenCanvas`) → FE engine `image-attachment.ts`. שמירה על כלל AGENTS.md.
+
+### ממצאי אביגיל
+- **r1 (USABLE-AFTER-FIX, 3)**: (א) i18n חי ב-`packages/core/src/i18n/` ולא ב-frontend — תוקן; (ב) tip
+  התיישן 3208427→3bb36a9 + sendPrompt §559 — תוקן; (ג) שתי גרסאות `provider-contract` ב-.pnpm — חודד
+  לגרסה ש-ה-FE פותר (`f034...`).
+- **r2 (READY, 1×🟢)**: ה-guard `if (!text.trim()) return` (שורה 562) יזרוק בשקט שליחת **תמונה-בלבד** —
+  שולב ב-Commit 4 (`!text.trim() && !attachments.length`) + DoD ייעודי.
+
+### רעיונות שנדחו (Scope)
+קבצים לא-תמונה (PDF/resource), draft-persistence, `@`mentions/slash/shell-mode, ו-`local-file-proxy`
+(רינדור `file://`) — כולם slices נפרדים. ה-MVP: תמונות בלבד, paste+drop+picker, דחיסה ≤2048px/JPEG/8MB.
+
+### מצב
+brief READY (אביגיל r2). **merge מוקפא** עד ש-`AcpClient.prompt` יקבל `PromptContent`/blocks (Track A,
+הסוכן השני). Commits 0–3 ניתנים ל-dispatch מיידי; runtime-gate (calev-heavy) רק אחרי Commit 4 חי.
