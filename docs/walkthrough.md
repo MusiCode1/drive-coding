@@ -1,3 +1,24 @@
+## 2026-06-28 — CUT-2-spawn-core-wrapper — 1 Commit (bridge-manager → wrapper over createSpawnCore)
+
+### מה בוצע?
+
+**Commit 1 (integration)** — bridge-manager.ts עבר מ-monolith ל-wrapper דק מעל `createSpawnCore`:
+- `bridge-manager.ts`: מחלה spawn/lifecycle/stdio ל-core. wrapper שומר: markAttached/markDetached, getRuntimeInfo (עם lastMessageAt מ-tracker), turn-tracking, recs Map.
+- hooks: shapeEnv (opencode בלבד — OPENCODE_CONFIG_CONTENT + PROMPT_INJECTOR_TEXT). onFrame (decodeWireLine log + wireRecorder; observe על in בלבד).
+- cleanup: onCrash מ-core מנקה wrapperState (tracker + rec.close). kill מנקה לפני קריאה ל-core.kill.
+- `bridge-manager.runtime.test.ts`: נוסף describe "Map-leak regression (CUT-2)" — 2 טסטים: kill ו-crash מנקים את getRuntimeInfo לאחריהם.
+
+### חריגות
+- known-equivalent: סדר env-shaping הפוך (shapeEnv רץ אחרון ב-core לעומת live). שקול לקונפיג ברירת-מחדל; smoke יאשר.
+- onCrash לניקוי wrapper רשום דרך core.onCrash — נורה גם על exit רגיל (ה-core מפעיל notifyCrash בשניהם).
+
+### בדיקות
+- typecheck: 0 errors. tests: 982 passed (2 pre-existing: bridge-failure + https-serve). lint:i18n: ירוק.
+- API surface: grep לפני/אחרי — כל 8 ה-methods נשמרו. consumers (server/ws-agent/agent-orchestrator) ללא שינוי.
+- Map-leak regression: 2 טסטים חדשים ירוקים.
+
+---
+
 ## 2026-06-28 — CUT-1-dep-repoint — 3 Commits (dependency repoint: provider-contract → @drive-coding/provider)
 
 ### מה בוצע?

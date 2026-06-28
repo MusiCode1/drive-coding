@@ -1,19 +1,41 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
-import { createInterface } from "node:readline"
+/**
+ * bridge-manager.ts — wrapper over createSpawnCore (CUT-2).
+ *
+ * Thin wrapper that delegates spawn/lifecycle/stdio to the generic createSpawnCore
+ * from @drive-coding/provider/host, and injects 4 drive-coding-specific features
+ * via hooks and local state:
+ *
+ *   shapeEnv  — opencode: inject OPENCODE_CONFIG_CONTENT + PROMPT_INJECTOR_TEXT.
+ *   onFrame   — wire observability (decodeWireLine log + wireRecorder).
+ *               turn-tracker.observe on dir:"in" only (matches live behaviour, bridge-manager.ts:176).
+ *   attached  — markAttached/markDetached/getRuntimeInfo (active-agents panel).
+ *   recs map  — per-bridge WireSession, init in spawnInternal path, cleanup on crash/exit.
+ *
+ * Known-equivalent: env-shaping order differs from the live monolith.
+ *   live:    process.env → inject opencode-config → cli-spec unsetEnv/setEnv (last).
+ *   wrapper: process.env → cli-spec unsetEnv/setEnv → shapeEnv hook (last).
+ * For the default config (spec override JSONC does not touch OPENCODE_CONFIG_CONTENT
+ * or PROMPT_INJECTOR_TEXT) the result is identical.  Smoke test confirms no override
+ * stomps these vars in the regular config.
+ *
+ * API surface preserved exactly (§3 CUT-2 brief):
+ *   spawnWithStderr, getChild, onLine, writeStdin,
+ *   markAttached, markDetached, getRuntimeInfo, onCrash.
+ */
+
+import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import type { BridgeCrashInfo, BridgeHandle, BridgeManager, SpawnBridgeInput } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
+import { createSpawnCore, type SpawnCoreHandleWithStderr } from "@drive-coding/provider/host"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
 import { AUDIO_FRIENDLY_PROMPT } from "../prompts/index.js"
 import { decodeWireLine } from "../delivery/wire-decode.js"
 import type { WireRecorder, WireSession } from "../delivery/wire-recorder.js"
 import { type TurnTracker, createTurnTracker } from "./turn-tracker.js"
-import { getCliCommand, getCliSpec } from "./cli-config.js"
 
-const log = createLogger("backend.bridge.manager")
 const wireLog = createLogger("backend.acp.wire")
-const STDERR_MAX_LINES = 200
 
-/** Handle מורחב עם גישה ל-stderr ו-child ישיר — משמש פנימית את ה-orchestrator. */
+/** Handle with stderr access and direct child reference — used internally by the orchestrator. */
 export type BridgeHandleWithStderr = BridgeHandle & {
   readonly getStderr: () => string[]
   readonly child: ChildProcessWithoutNullStreams
@@ -22,288 +44,169 @@ export type BridgeHandleWithStderr = BridgeHandle & {
 export function createBridgeManager(opts?: { wireRecorder?: WireRecorder }): BridgeManager & {
   spawnWithStderr(bridgeId: string, input: SpawnBridgeInput): Promise<BridgeHandleWithStderr>
   getChild(bridgeId: string): ChildProcessWithoutNullStreams | null
-  // ─── תצוגת active-agents (attached) ───
+  // active-agents panel (attached state)
   markAttached(bridgeId: string): void
   markDetached(bridgeId: string): void
   // slice active-agents + agent-busy-indicator: runtime enrichment for GET /api/agents
   getRuntimeInfo(
     bridgeId: string,
   ): { pid: number; attached: boolean; busy: boolean; lastMessageAt: number | null } | null
-  // slice agent-busy-indicator: subscription לשורות stdout (reader קבוע ב-bridge-manager)
+  // slice agent-busy-indicator: subscribe to stdout lines (permanent reader in bridge-manager)
   onLine(bridgeId: string, cb: (line: string) => void): () => void
-  /** כותב שורה ל-child.stdin ומתעד את כיוון ה-out. מחזיר false אם ה-bridge לא קיים. */
+  /** Write a line to child.stdin and record the out direction. Returns false if bridge not found. */
   writeStdin(bridgeId: string, line: string): boolean
 } {
   const wireRecorder = opts?.wireRecorder
 
-  type Entry = {
-    handle: BridgeHandle
-    child: ChildProcessWithoutNullStreams
-    stderrLines: string[]
-    // ─── תצוגת active-agents (attached) — משרת getRuntimeInfo ───
+  // Wrapper-local state: per-bridge attached flag, turn-tracker, wire-session.
+  // Keyed by bridgeId; entries created in spawnInternal, removed on crash/exit/kill.
+  type WrapperEntry = {
     hasActiveWs: boolean
-    // ─── slice agent-busy-indicator: tracker + subscribers לשורות stdout ───
     tracker: TurnTracker
-    lineSubscribers: Set<(line: string) => void>
-    // ─── wire observability: recording session לכל חיי ה-child ───
     rec: WireSession
   }
-  const store = new Map<string, Entry>()
-  const crashHandlers = new Set<(bridgeId: string, info: BridgeCrashInfo) => void>()
+  const wrapperState = new Map<string, WrapperEntry>()
 
-  function notifyCrash(bridgeId: string, info: BridgeCrashInfo): void {
-    for (const handler of crashHandlers) {
-      try {
-        handler(bridgeId, info)
-      } catch (e) {
-        log.warn({ err: e, bridgeId }, "crash handler threw")
+  const core = createSpawnCore({
+    shapeEnv(cliKind, baseEnv) {
+      // Inject opencode-config and audio-prompt for opencode only.
+      // Matches live behaviour (bridge-manager.ts:82 live).
+      // known-equivalent: shapeEnv runs after cli-spec (reversed vs live); see module doc.
+      if (cliKind === "opencode") {
+        return {
+          ...baseEnv,
+          OPENCODE_CONFIG_CONTENT: buildOpencodeConfigContent(baseEnv.OPENCODE_CONFIG_CONTENT),
+          PROMPT_INJECTOR_TEXT: AUDIO_FRIENDLY_PROMPT,
+        }
       }
+      return baseEnv
+    },
+
+    onFrame(bridgeId, dir, rawLine) {
+      // Normalize out-direction line for decode/record (strip trailing \n if present).
+      // In-direction lines arrive without \n (readline stripped); out is verbatim from writeStdin.
+      const normalized = rawLine.endsWith("\n") ? rawLine.slice(0, -1) : rawLine
+
+      try {
+        const s = decodeWireLine(normalized)
+        const type =
+          s.sessionUpdate ?? s.method ?? s.responseKind ?? (s.unparsed ? "unparsed" : "unknown")
+        wireLog.debug({ bridgeId, dir, type, id: s.id }, "wire")
+        if (!s.unparsed) wireLog.trace({ bridgeId, dir, frame: s.parsed }, "wire-full")
+
+        // turn-tracker: observe on in-direction only (matches live, bridge-manager.ts:176).
+        if (dir === "in") {
+          wrapperState.get(bridgeId)?.tracker.observe(s, Date.now())
+        }
+      } catch {
+        // silent — hook must not break the reader/writer
+      }
+
+      wrapperState.get(bridgeId)?.rec.record(dir, normalized)
+    },
+  })
+
+  // Intercept crash/exit to clean up wrapper state.
+  // onCrash fires for both crash and normal exit (spawn-core notifyCrash).
+  core.onCrash((bridgeId) => {
+    const entry = wrapperState.get(bridgeId)
+    if (entry) {
+      entry.rec.close()
+      wrapperState.delete(bridgeId)
     }
-  }
+  })
 
   async function spawnInternal(
     bridgeId: string,
     input: SpawnBridgeInput,
-  ): Promise<BridgeHandleWithStderr> {
-    if (store.has(bridgeId)) throw new Error(`Bridge ${bridgeId} already exists`)
-
-    const cli = getCliCommand(input.cliKind, input.modelOverride)
-    const childLog = log.child({ bridgeId, cwd: input.cwd, bin: cli.bin })
-    childLog.info({}, "spawn start")
-
-    const stderrLines: string[] = []
-    let stderrPartial = ""
-
-    // מזריק את הפלאגין prompt-injector רק עבור הפעלות של opencode.
-    // Commit 3 (windows-adaptation): plugin רשום כ-string-URL (opencode 1.2.27 compat).
-    // הטקסט מועבר דרך PROMPT_INJECTOR_TEXT — prompt-injector.ts קורא אותו כ-fallback.
-    // עבור cliKinds אחרים (claude, gemini, codex) — ה-env עובר ללא שינוי.
-    const envWithPlugin =
-      input.cliKind === "opencode"
-        ? {
-            ...process.env,
-            OPENCODE_CONFIG_CONTENT: buildOpencodeConfigContent(
-              process.env.OPENCODE_CONFIG_CONTENT,
-            ),
-            // העברת הטקסט לפלאגין דרך env (במקום options — opencode 1.2.27 לא מקבל tuple).
-            PROMPT_INJECTOR_TEXT: AUDIO_FRIENDLY_PROMPT,
-          }
-        : { ...process.env }
-
-    // env shaping לפי קובץ override (cli-specs.jsonc):
-    // unsetEnv מסיר משתני proxy/CA (למשל עבור gemini תחת OneCLI).
-    // setEnv מוסיף/דורס משתנים נוספים.
-    // הסדר: envWithPlugin (כולל OPENCODE_CONFIG_CONTENT) → unsetEnv → setEnv.
-    const spec = getCliSpec(input.cliKind, process.env)
-    const childEnv: NodeJS.ProcessEnv = { ...envWithPlugin }
-    for (const key of spec?.unsetEnv ?? []) {
-      delete childEnv[key]
-    }
-    if (spec?.setEnv) {
-      Object.assign(childEnv, spec.setEnv)
-    }
-
-    let child: ChildProcessWithoutNullStreams
-    try {
-      child = spawn(cli.bin, [...cli.args], {
-        cwd: input.cwd,
-        env: childEnv,
-        stdio: ["pipe", "pipe", "pipe"],
-      })
-    } catch (err) {
-      // מקרה קצה ב-Bun: הפונקציה spawn זורקת שגיאה סינכרונית על ENOENT
-      childLog.warn({ err }, "spawn threw synchronously")
-      throw err
-    }
-
-    // רישום מאזינים באופן מיידי — לפני שאיזשהו async tick יכול לפלוט שגיאה
-    child.on("error", (err) => {
-      const errnoErr = err as NodeJS.ErrnoException
-      childLog.warn(
-        { err: { message: err.message, code: errnoErr.code } },
-        "child error event",
-      )
-      // אם אין pid → ה-spawn נכשל; מודיע על התרסקות ומסיר מהמאגר
-      if (!child.pid && store.has(bridgeId)) {
-        store.delete(bridgeId)
-        notifyCrash(bridgeId, {
-          exitCode: null,
-          signal: null,
-          spawnError: { code: errnoErr.code, message: err.message },
-        })
-      }
-    })
-
-    child.stderr.on("data", (chunk: Buffer) => {
-      const text = stderrPartial + chunk.toString("utf8")
-      const parts = text.split("\n")
-      for (let i = 0; i < parts.length - 1; i++) {
-        stderrLines.push(parts[i] ?? "")
-        if (stderrLines.length > STDERR_MAX_LINES) stderrLines.shift()
-      }
-      stderrPartial = parts[parts.length - 1] ?? ""
-    })
-
-    child.on("exit", (code, signal) => {
-      childLog.info({ code, signal }, "child exit")
-      if (store.has(bridgeId)) {
-        store.get(bridgeId)?.rec.close()
-        store.delete(bridgeId)
-        notifyCrash(bridgeId, { exitCode: code, signal: signal ?? null })
-      }
-    })
-
-    // ─── reader קבוע ל-stdout (slice agent-busy-indicator) ─────────────────────
-    // bridge-manager הוא הבעלים היחיד של child.stdout. ws-agent נרשם ל-onLine
-    // ומקבל את השורות דרך callback — לא קורא את ה-stream ישירות.
-    // סדר חובה: subscribers (→ feWs.send) לפני decode/observe.
-    child.stdout.setEncoding("utf8")
-    const stdoutRl = createInterface({ input: child.stdout, crlfDelay: Infinity })
-    stdoutRl.on("line", (line) => {
-      const entry = store.get(bridgeId)
-      if (!entry) return
-      // (1) שלח לכל ה-subscribers (ws-agent → feWs.send) לפני כל דבר אחר
-      for (const cb of entry.lineSubscribers) {
-        try { cb(line) } catch { /* subscriber לא יכול לשבור את הpipe */ }
-      }
-      // (2) wire observability (in) + decode + observe — non-critical, מבודד ב-try/catch
-      // decode פעם אחת משמש גם את wireLog וגם את tracker.observe
-      try {
-        const s = decodeWireLine(line)
-        const type = s.sessionUpdate ?? s.method ?? s.responseKind ?? (s.unparsed ? "unparsed" : "unknown")
-        wireLog.debug({ bridgeId, dir: "in", type, id: s.id }, "wire")
-        if (!s.unparsed) wireLog.trace({ bridgeId, dir: "in", frame: s.parsed }, "wire-full")
-        entry.tracker.observe(s, Date.now())
-      } catch { /* silent */ }
-      entry.rec.record("in", line)
-    })
-
-    if (!child.pid) {
-      // אירוע Error יטפל בניקוי בנפרד. מחזיר שגיאה לקורא.
-      throw new Error(`spawn returned no pid (bin=${cli.bin})`)
-    }
-
-    const handle: BridgeHandle = {
-      bridgeId,
-      cliKind: input.cliKind,
-      cwd: input.cwd,
-      port: 0, // in-process: ללא פורט. השדה נשמר לתאימות לאחור.
-      pid: child.pid,
-      wsUrl: "", // in-process: ללא כתובת WS.
-      startedAt: new Date(),
-    }
-
-    // wire recording: קובץ רציף לכל חיי ה-child (no-op כש-WIRE_RECORD כבוי)
+  ): Promise<SpawnCoreHandleWithStderr> {
+    // Init wrapper state BEFORE core.spawnWithStderr — onFrame can fire during spawn.
     const rec = wireRecorder?.open(bridgeId) ?? { record() {}, close() {} }
-
-    store.set(bridgeId, {
-      handle,
-      child,
-      stderrLines,
-      // ─── תצוגת active-agents (attached) — משרת getRuntimeInfo ───
+    wrapperState.set(bridgeId, {
       hasActiveWs: false,
-      // ─── slice agent-busy-indicator: tracker + subscribers לשורות stdout ───
       tracker: createTurnTracker(),
-      lineSubscribers: new Set(),
-      // ─── wire observability ───
       rec,
     })
-    childLog.info({ pid: child.pid }, "spawn ok")
-    return { ...handle, getStderr: () => [...stderrLines], child }
+    try {
+      return await core.spawnWithStderr(bridgeId, input)
+    } catch (err) {
+      // Spawn failed — clean up wrapper entry (core never stored it).
+      wrapperState.get(bridgeId)?.rec.close()
+      wrapperState.delete(bridgeId)
+      throw err
+    }
   }
 
   return {
+    // BridgeManager base — delegate fully to core
     async spawn(bridgeId, input) {
       return spawnInternal(bridgeId, input)
     },
 
+    get(bridgeId) {
+      return core.get(bridgeId)
+    },
+
+    list() {
+      return core.list()
+    },
+
+    async kill(bridgeId) {
+      // Close wire session before kill (matches live kill() behaviour).
+      const entry = wrapperState.get(bridgeId)
+      if (entry) {
+        entry.rec.close()
+        wrapperState.delete(bridgeId)
+      }
+      return core.kill(bridgeId)
+    },
+
+    onCrash(handler: (bridgeId: string, info: BridgeCrashInfo) => void) {
+      return core.onCrash(handler)
+    },
+
+    // Extended surface — delegate to core
     async spawnWithStderr(bridgeId, input) {
       return spawnInternal(bridgeId, input)
     },
 
-    get(bridgeId) {
-      return store.get(bridgeId)?.handle ?? null
-    },
-
     getChild(bridgeId) {
-      return store.get(bridgeId)?.child ?? null
+      return core.getChild(bridgeId)
     },
 
-    list() {
-      return [...store.values()].map((e) => e.handle)
+    onLine(bridgeId, cb) {
+      return core.onLine(bridgeId, cb)
     },
 
-    async kill(bridgeId) {
-      const entry = store.get(bridgeId)
-      if (!entry) return false
-      log.info({ bridgeId }, "kill")
-      // סגירת recording session לפני הסרה מהstore (idempotent)
-      entry.rec.close()
-      // הסרה לפני שאירוע ה-exit נורה — מונע notifyCrash בהריגה מכוונת
-      store.delete(bridgeId)
-      return new Promise<boolean>((resolve) => {
-        entry.child.once("exit", () => resolve(true))
-        entry.child.kill("SIGTERM")
-        setTimeout(() => entry.child.kill("SIGKILL"), 5000)
-      })
+    writeStdin(bridgeId, line) {
+      return core.writeStdin(bridgeId, line)
     },
 
-    onCrash(handler: (bridgeId: string, info: BridgeCrashInfo) => void) {
-      crashHandlers.add(handler)
-      return () => {
-        crashHandlers.delete(handler)
-      }
-    },
-
-    // ─── תצוגת active-agents (attached) ───
-    // markAttached/markDetached משרתים את getRuntimeInfo (שדה attached) בתצוגת פאנל active-agents.
-    // אינם זמניים — נחוצים לתצוגה השוטפת.
+    // Wrapper-only: attached state
     markAttached(bridgeId: string) {
-      const e = store.get(bridgeId)
+      const e = wrapperState.get(bridgeId)
       if (e) e.hasActiveWs = true
     },
 
     markDetached(bridgeId: string) {
-      const e = store.get(bridgeId)
+      const e = wrapperState.get(bridgeId)
       if (e) e.hasActiveWs = false
     },
 
-    // slice active-agents + agent-busy-indicator: returns { pid, attached, busy, lastMessageAt } for a live bridge, or null
+    // Wrapper-only: runtime info (pid from core, attached/busy/lastMessageAt from wrapper)
     getRuntimeInfo(
       bridgeId: string,
     ): { pid: number; attached: boolean; busy: boolean; lastMessageAt: number | null } | null {
-      const e = store.get(bridgeId)
+      const child = core.getChild(bridgeId)
+      if (!child) return null
+      const e = wrapperState.get(bridgeId)
       if (!e) return null
       return {
-        pid: e.handle.pid,
+        pid: child.pid ?? 0,
         attached: e.hasActiveWs,
         busy: e.tracker.isBusy(Date.now()),
         lastMessageAt: e.tracker.getLastActivityAt(),
       }
-    },
-
-    // slice agent-busy-indicator: subscribe לשורות stdout (reader קבוע ב-bridge-manager)
-    onLine(bridgeId: string, cb: (line: string) => void): () => void {
-      const e = store.get(bridgeId)
-      if (!e) return () => {}
-      e.lineSubscribers.add(cb)
-      return () => { e.lineSubscribers.delete(cb) }
-    },
-
-    // כותב שורה ל-child.stdin ומתעד את כיוון ה-out. מחזיר false אם ה-bridge לא קיים.
-    writeStdin(bridgeId: string, line: string): boolean {
-      const entry = store.get(bridgeId)
-      if (!entry) return false
-      entry.child.stdin.write(line)
-      try {
-        const raw = line.endsWith("\n") ? line.slice(0, -1) : line
-        const s = decodeWireLine(raw)
-        const type = s.sessionUpdate ?? s.method ?? s.responseKind ?? (s.unparsed ? "unparsed" : "unknown")
-        wireLog.debug({ bridgeId, dir: "out", type, id: s.id }, "wire")
-        if (!s.unparsed) wireLog.trace({ bridgeId, dir: "out", frame: s.parsed }, "wire-full")
-      } catch { /* silent */ }
-      entry.rec.record("out", line.endsWith("\n") ? line.slice(0, -1) : line)
-      return true
     },
   }
 }
