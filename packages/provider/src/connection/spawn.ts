@@ -15,11 +15,11 @@
 
 import { randomUUID } from "node:crypto"
 import { createSpawnCore } from "../shared/spawn-core.js"
-import { decodeWireLine } from "../shared/wire-decode.js"
 import { createTurnTracker } from "../shared/turn-tracker.js"
+import { decodeWireLine } from "../shared/wire-decode.js"
+import type { SpawnBridgeInput } from "../spawn/index.js"
 import { staticCapsFor } from "./capabilities-static.js"
 import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
-import type { SpawnBridgeInput } from "../spawn/index.js"
 
 /**
  * connectSpawn — creates a ProviderConnection using spawn-core.
@@ -105,7 +105,7 @@ export async function connectSpawn(
   const input: SpawnBridgeInput = {
     cliKind,
     cwd: opts.cwd,
-    modelOverride: null,
+    modelOverride: opts.modelOverride ?? null,
   }
   await core.spawnWithStderr(bridgeId, input)
 

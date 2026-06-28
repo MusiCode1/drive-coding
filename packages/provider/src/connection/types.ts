@@ -31,14 +31,17 @@ export interface WireFrame {
 export interface ConnectOpts {
   cwd: string
   /**
+   * modelOverride — model flag to pass to the CLI (e.g. "--model claude-opus-4-5").
+   * null or undefined = use CLI default.
+   * Without this field, the FE model-picker silently breaks (🔴 avigail finding).
+   */
+  modelOverride?: string | null
+  /**
    * shapeEnv — hook להזרקת env variables ספציפיות לצרכן (למשל opencode-config).
    * מקבל (cliKind, baseEnv) ומחזיר env סופי.
    * אותו חתימה כמו SpawnCoreHooks.shapeEnv — תואם ישיר.
    */
-  shapeEnv?: (
-    cliKind: SpawnBridgeInput["cliKind"],
-    base: NodeJS.ProcessEnv,
-  ) => NodeJS.ProcessEnv
+  shapeEnv?: (cliKind: SpawnBridgeInput["cliKind"], base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
 }
 
 /**
