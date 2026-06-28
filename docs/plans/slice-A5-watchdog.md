@@ -1,7 +1,7 @@
 # Slice A5 — watchdog ל‑turnState — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: מאושר (אביגיל דולגה לבקשת המשתמשת)
+> **סטטוס**: ✅ READY (אביגיל r2 — 3×🟡 מ-r1 נסגרו; `reports/drive-coding/A5-avigail.md`)
 > **Complexity**: 4/10 (verifier: light)
 > **תלות**: [] · **base**: `dev` @ `3a23195` (עצמאי — A1 בוטל, ר' roadmap)
 > **שייך ל**: `docs/plans/playback-run-control-roadmap.md` (עצמאי, לא בשרשרת הפלייליסט)
@@ -18,8 +18,11 @@ pnpm install && pnpm hooks:install
 ### Reading list
 **must-read**:
 - `packages/frontend/src/lib/view-models/agent-session.svelte.ts` — §`#scheduleIdle`/`#turnEnded`
-  (122‑144), `sendPrompt` (583‑596), `#onSessionUpdate` (1252‑1287), `cancelTurn` (1031‑1042),
-  `onTurnSettled`/`#scheduleSettle` (מ‑A1).
+  (145‑160), `sendPrompt` (615‑647), `#onSessionUpdate` (1288‑1357), `cancelTurn` (1083‑1092),
+  `#setTurnState("idle")` (1122), `#resetTurnTracking` (159‑161).
+  > ⚠️ (אביגיל #1) **A1 בוטל** — אין `onTurnSettled`/`#scheduleSettle` בקוד. המנגנון האמיתי:
+  > `#scheduleIdle`/`#turnEnded` (msr‑v2, קיים) + flush דרך `justFinished` ב‑Speaker
+  > (`speaker.svelte.ts:303‑318`, מופעל ע"י ה‑`$effect` בשורות 144‑183 שקורא `turnState` ריאקטיבית).
 - `docs/roadmap.md` — Track F "הריצה נעצרת" + "ממשק אישור‑בקשות" (ההקשר: RESP אבוד).
 - `docs/plans/playback-run-control-roadmap.md` — §אבחון השורש (בועה תקועה).
 
@@ -28,7 +31,8 @@ pnpm install && pnpm hooks:install
 אחרי הסבב: אם הסוכן מפסיק לפלוט וה‑RESP של `session/prompt` **לא חוזר** (detach,
 reconnect, `request_permission` ללא מענה), הבועה כבר לא נתקעת לנצח על "חושב…/עונה…".
 watchdog מזהה היעדר‑פעילות ממושך ומאלץ `turnState=idle` — כך ה‑StatusBubble נעלמת
-וההשמעה משוחררת. זו רשת‑ביטחון מעל A1 (שמטפל ב‑opencode tail התקין).
+וההשמעה משוחררת. זו רשת‑ביטחון **עצמאית**: היא לא מחליפה את ה‑flush התקין של סוף‑תור,
+רק תופסת את המקרה שבו ה‑RESP אובד (A1 שהיה אמור לטפל ב‑tail — בוטל; ר' אביגיל #1).
 
 ## §2 — Scope
 
@@ -45,7 +49,7 @@ watchdog מזהה היעדר‑פעילות ממושך ומאלץ `turnState=idl
 ```
 agent-session.svelte.ts
   + #watchdogTimer
-  + #kickWatchdog()   ← נקרא בכל #onSessionUpdate + sendPrompt start
+  + #kickWatchdog()   ← נקרא בראש #onSessionUpdate (לפני ה-returns המוקדמים!) + sendPrompt start
   כש פג WATCHDOG_MS בלי kick ו-turnState ≠ idle:
      #setTurnState("idle") + (אופציונלי) turnInterrupted=true
      → המעבר ל-idle מפעיל את ה-justFinished flush הקיים ב-Speaker (לא נוגעים בו)
@@ -67,10 +71,14 @@ class AgentSession {
 
   #kickWatchdog(): void   // reset timer; נקרא בכל update/chunk + תחילת sendPrompt
   #clearWatchdog(): void  // RESP / cancelTurn / sendPrompt חדש / destroy
-  // on fire: if turnState!=="idle" → setTurnState("idle") + trigger settle(flush) + turnInterrupted=true
+  // on fire: if turnState!=="idle" → #setTurnState("idle") [מפעיל justFinished flush ב-Speaker] + turnInterrupted=true
 }
 ```
-- `#kickWatchdog` נקרא מ‑`#onSessionUpdate` (כל ענף) ומתחילת `sendPrompt`.
+- `#kickWatchdog` נקרא **בראש `#onSessionUpdate`** — **לפני** ה‑`return` המוקדמים (אביגיל #3):
+  `tool_call`@1309, `tool_call_update`@1313, `current_mode_update`@1320, `config_option_update`@1330,
+  ו‑`if (!text) return`@1339. **קריטי:** kick רק בענפי‑הטקסט (message/thought/user chunk) יחמיץ
+  **כלי‑שקט ארוך** (tool שרץ דקות בלי text‑chunk) → קטיעה שגויה. וגם מתחילת `sendPrompt`
+  (סביב `#resetTurnTracking`@159‑161, שנקרא מ‑`sendPrompt`@634).
 - בעת ירי: `#setTurnState("idle")` — המעבר ל‑idle מפעיל את ה‑`justFinished` flush הקיים
   ב‑Speaker (לא משנים אותו). `turnInterrupted=true` (B1 יציג; reset בתחילת תור הבא).
 - `cancelTurn` ו‑`sendPrompt` החדש קוראים `#clearWatchdog` + מאפסים `turnInterrupted`.
@@ -103,7 +111,7 @@ class AgentSession {
 
 | סיכון | מקור | מיטיגציה |
 |---|---|---|
-| WATCHDOG_MS קצר → קוטע תור חי איטי (LLM שחושב הרבה) | — | 45s נדיב; chunk מאפס. thinking ארוך עדיין פולט chunks→kick. |
+| WATCHDOG_MS קצר → קוטע תור חי איטי (LLM שחושב הרבה / **כלי‑שקט ארוך**) | אביגיל #3 | 45s נדיב; **כל update מאפס** (kick בראש `#onSessionUpdate` לפני ה‑returns → מכסה גם `tool_call` שלא פולט text). thinking ארוך פולט chunks→kick. |
 | flush כפול (watchdog idle + justFinished) | — | המעבר ל‑idle הוא היחיד שמפעיל flush; idempotent (buffer מתרוקן). |
 | timer דולף | learnings | `#clearWatchdog` ב‑destroy + cancel + sendPrompt. |
 | reconnect מצליח אחרי watchdog ירה | ws‑reconnect | אם chunks חוזרים אחרי idle כפוי → תור חדש מתחיל נקי (kick). |
@@ -124,4 +132,4 @@ class AgentSession {
 |---|---|---|---|
 | 1 | `WATCHDOG_MS` | 45_000 | ❌ |
 | 2 | `turnInterrupted` — להציג ב‑B1 או שקט? | דגל קיים; B1 יחליט תצוגה | ❌ |
-| 3 | watchdog פעיל גם בזמן `responding` ארוך (thinking) | כן — chunks מאפסים, אז בטוח | ❌ |
+| 3 | watchdog פעיל גם בזמן `responding` ארוך (thinking) | כן — **כל update** (כולל `tool_call` שקט) מאפס, אז בטוח | ❌ |

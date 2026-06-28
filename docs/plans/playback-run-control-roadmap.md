@@ -3,7 +3,8 @@
 > **תאריך:** 2026-06-28 · **סטטוס:** מאושר (תכנון נעול) · **planner:** מרדכי
 > **base:** `dev` @ `3a23195`
 > **אופן ביצוע:** שרשרת אחת, **merge יחיד בסוף** (החלטת המשתמשת). הרצה רצופה ללא אישורי‑ביניים.
-> **אימות:** אביגיל **דולגה לבקשת המשתמשת** (אפשר להריץ לפני dispatch). כלב כרגיל בסוף.
+> **אימות:** אביגיל הורצה על שני ה-roots לפני dispatch (2026-06-28): **A2 ✅ READY** (r1, 2×🟢 הוטמעו) ·
+> **A5 ✅ READY** (r2, 3×🟡 תוקנו). A3/A4/B1 — אביגיל JIT אחרי שה-base שלהם ינחת. כלב כרגיל בסוף.
 
 ## חזון
 
@@ -67,10 +68,10 @@ AudioPlaylist (engine)
 | slice | תוכן | depends_on | base |
 |---|---|---|---|
 | ~~A1~~ | **בודד לחקירה** — `docs/investigations/2026-06-28-sentence-cutting-mid-word.md` | — | — |
-| **A2** — audio‑playlist | `AudioPlaylist` + reserve‑on‑enqueue + cursor + ממתין לסגמנט‑בתור (timeout=skip) | [] | `dev` |
+| **A2** ✅READY — audio‑playlist | `AudioPlaylist` + reserve‑on‑enqueue + cursor + ממתין לסגמנט‑בתור (timeout=skip) | [] | `dev` |
 | **A3** — transport | `pause/resume/stop` בשני ה‑AudioSinks + ב‑AudioPlaylist + הפרדת `cancel()`→`stopPlayback()`/`cancelRun()` | [A2] | A2 |
 | **A4** — navigation | prev/next/jump בין משפטים + איחוד `BubblePlayer`→playlist (היסטוריה מלאה) | [A3] | A3 |
-| **A5** — watchdog | timeout ל‑turnState אם אין RESP/activity → אילוץ idle (עצמאי — לא נשען על A1) | [] | `dev` |
+| **A5** ✅READY — watchdog | timeout ל‑turnState אם אין RESP/activity → אילוץ idle (עצמאי — לא נשען על A1) | [] | `dev` |
 
 ### 🎨 worktree B — UI (branch `slice/playback-ui-*`, base על A4)
 

@@ -36,8 +36,15 @@
 - **לתקן את הסדר בלי reserve** (רק OrderedQueue) — לא מספיק; הוא ממיין רק מה שכבר בתור.
 
 ### ממצאי אביגיל
-לא הורץ — דולג לבקשת המשתמשת בשלב כתיבת ה-briefs. **המלצה פתוחה:** אביגיל על A2 (8/10, לב
-השרשרת) לפני dispatch.
+הורצה על שני ה-roots (base=dev) לפני dispatch, 2026-06-28:
+- **A2** ✅ READY r1 — "מדויק עובדתית באופן חריג". 2×🟢 הוטמעו: `jumpToSegment` = dead-code (0 צרכנים)
+  שלא מועבר ב-rename; `segmentId` נוצר inline (`speaker:333`) → extract-to-var לפני reserve. בונוס:
+  escalation-trigger "BubblePlayer תלוי ב-Player" **הופרך** (BubblePlayer עצמאי, RoutingAudioSink ישירות) → פחות סיכון.
+- **A5** ✅ READY r2 — הציר המרכזי **אומת**: `#setTurnState("idle")` מפעיל את ה-`justFinished` flush
+  ב-Speaker (ה-`$effect` קורא turnState ריאקטיבית). 3×🟡 תוקנו: (1) הפניות ל-A1-שבוטל
+  (`onTurnSettled`/`#scheduleSettle` לא קיימים בקוד); (2) line-drift (90+ commits מאז base);
+  (3) **kick חייב בראש `#onSessionUpdate` לפני ה-returns המוקדמים** — אחרת כלי-שקט-ארוך לא יאפס → קטיעה שגויה.
+- **A3/A4/B1** — אביגיל JIT אחרי שה-base שלהם (A2/A3/A4) ינחת.
 
 ---
 

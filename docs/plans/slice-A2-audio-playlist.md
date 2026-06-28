@@ -1,7 +1,7 @@
 # Slice A2 — AudioPlaylist + reserve‑on‑enqueue — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: מאושר (אביגיל דולגה לבקשת המשתמשת)
+> **סטטוס**: ✅ READY (אביגיל r1 — 2 ממצאים 🟢 הוטמעו; `reports/drive-coding/A2-avigail.md`)
 > **Complexity**: 8/10 (verifier: **heavy** — state‑model refactor + streaming)
 > **תלות**: [] · **base**: `dev` @ `3a23195` (A1 בוטל — ר' roadmap §הפירוק)
 > **שייך ל**: `docs/plans/playback-run-control-roadmap.md` (ראש השרשרת הנקייה)
@@ -75,6 +75,7 @@ view-models/speaker.svelte.ts
 
 **קבצים חדשים**: `packages/frontend/src/lib/engines/audio-playlist.svelte.ts`
 **קבצים שמוסרים**: `player.svelte.ts` (תוכן עובר ל‑audio‑playlist; rename לוגי)
+**dead code שלא מועבר** (אביגיל #1): `jumpToSegment` (public method ב‑`player.svelte.ts:48`, **0 צרכנים** בכל ה‑codebase) — נמחק, לא מועתק. ה‑cursor + `jumpTo` (A4) מחליפים אותו.
 
 **API skeleton**:
 ```ts
@@ -146,6 +147,7 @@ export class AudioPlaylist {
 - ב‑constructor: `new AudioPlaylist(...)` במקום `new Player(...)`.
 - `#enqueue` (וה‑enqueue של tool ב‑`#processToolBubbles`): אחרי הקצאת `orderKey` →
   `this.#player.reserve(segmentId, orderKey)`. **שמור על אותו `segmentId`** שנשמר ב‑job.
+  ⚠️ (אביגיל #2) ה‑`segmentId` נוצר היום inline ב‑push (`segmentId: crypto.randomUUID()`, `speaker.svelte.ts:333`) → extract‑to‑var לפני ה‑reserve. ה‑`orderKey` כבר משתנה (331), אז חצי מהדרישה עומדת.
 - `#fetchJob`: אחרי `await this.#audioStream.prepareSegment(...)` → `markReady(segmentId)`
   (במקום `addSegment`). ב‑`catch` (MIN‑5) → `markError(segmentId)`.
 - `#stopAndClear`: `player.stop()` כבר קיים — ודא שהוא מנקה items+cursor.
