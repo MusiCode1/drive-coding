@@ -1,3 +1,23 @@
+## 2026-06-28 — EXT-SCHEMA-uniform-contract — Commit 0 (schema + types + barrel + dep)
+
+### מה בוצע?
+
+**Commit 0 (TDD)** — חוזה-הרחבות ArkType, Phase 0:
+- `packages/provider/src/extensions/schema.ts`: `extMethods` registry (`as const`) עם רשומה `_drive/setThinkingTokens` — `params: type({ sessionId: "string", n: "number | null" })`, `result: type({ ok: "true" })`. `ExtMethodName` union.
+- `packages/provider/src/extensions/types.ts`: `ExtParams<M>`, `ExtResult<M>` (`.infer`), `parseExtParams(method, raw)` — מאמת דרך ArkType, זורק עם `out.summary` על כשל.
+- `packages/provider/src/extensions/index.ts`: barrel.
+- `packages/provider/package.json`: dep `arktype@^2.0.0` + export `"./extensions"`.
+- `pnpm install` רץ.
+
+### חריגות
+- lint pre-existing (290 errors, אין שורה מקבצי extensions); typecheck 0 errors.
+
+### בדיקות
+- 9 טסטים TDD ירוקים: מאשרים params תקין (n=number/null/0); דוחים n חסר / n מחרוזת / sessionId לא-string / sessionId מספר / params לא-object / params=null.
+- typecheck: 0 errors. lint:i18n: ירוק. 1011 passed (2 pre-existing).
+
+---
+
 ## 2026-06-28 — CUT-2-spawn-core-wrapper — 1 Commit (bridge-manager → wrapper over createSpawnCore)
 
 ### מה בוצע?

@@ -190,6 +190,9 @@ importers:
       '@drive-coding/core':
         specifier: workspace:*
         version: link:../core
+      arktype:
+        specifier: ^2.0.0
+        version: 2.2.0
     devDependencies:
       '@agentclientprotocol/claude-agent-acp':
         specifier: ^0.52.0
