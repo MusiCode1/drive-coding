@@ -1,7 +1,7 @@
 # Slice B — markdown-dir-per-paragraph — תוכנית
 
 > **תאריך**: 2026-06-28 · **עודכן**: 2026-06-29 (base=dev הכולל את D — D מוזג `05fe3b6`)
-> **סטטוס**: ✅ **READY — אביגיל אימתה-מחדש מול dev+D** (`f1763d4`, 6/6 claims, 0 חוסם; finding 🟢 `dir`-guard שולב). מוכן ל-dispatch.
+> **סטטוס**: ✅ **מוזג ל-dev** — אביגיל אימתה-מחדש מול dev+D (`f1763d4`, 6/6 claims, finding 🟢 `dir`-guard שולב); commit `0fe7b87`, 67/67 טסטים; כלב GO 8/8; אומת חי ב-preview. סוגר את batch Markdown-UX.
 > **Complexity**: 4/10 (verifier: light)
 > **תלות**: depends_on: []. **base=dev** (כולל את A+C+D שכבר מוזגו). B נוגע רק ב-`markdown.ts`. ⚠️ **merge-order ההיסטורי "B לפני D" בטל — D כבר על dev**; B נבנה עכשיו **מעל** D (ראה §0 + Reading list).
 
