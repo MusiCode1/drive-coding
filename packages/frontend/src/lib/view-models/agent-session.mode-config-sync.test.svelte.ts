@@ -204,4 +204,51 @@ describe("AgentSession — current_mode_update handler", () => {
   })
 })
 
-// ─── Tests — Commit 1: config_option_update (יתווסף ב-commit הבא) ────────────
+// ─── Tests — Commit 1: config_option_update ───────────────────────────────────
+
+describe("AgentSession — config_option_update handler", () => {
+  const makeOption = (id: string) =>
+    ({
+      id,
+      type: "boolean",
+      category: "other",
+      name: id,
+      value: false,
+    }) as unknown as import("@agentclientprotocol/sdk").SessionConfigOption
+
+  it("מחליף configOptions בסט מלא כשמגיע config_option_update", async () => {
+    mockClient.newSession.mockResolvedValue({
+      sessionId: "s-mode-test",
+      configOptions: [makeOption("opt-initial")],
+      models: null,
+      modes: null,
+    })
+
+    const session = await buildConnectedSession()
+    expect(session.configOptions).toHaveLength(1)
+
+    const newOptions = [makeOption("opt-new-1"), makeOption("opt-new-2")]
+    inject({ sessionUpdate: "config_option_update", configOptions: newOptions })
+
+    expect(session.configOptions).toEqual(newOptions)
+    expect(session.configOptions).toHaveLength(2)
+  })
+
+  it("מתעלם מ-config_option_update כש-configOptions לא-array", async () => {
+    mockClient.newSession.mockResolvedValue({
+      sessionId: "s-mode-test",
+      configOptions: [makeOption("opt-stable")],
+      models: null,
+      modes: null,
+    })
+
+    const session = await buildConnectedSession()
+
+    expect(() => {
+      inject({ sessionUpdate: "config_option_update", configOptions: "not-an-array" })
+    }).not.toThrow()
+
+    // לא שינה את configOptions
+    expect(session.configOptions).toHaveLength(1)
+  })
+})

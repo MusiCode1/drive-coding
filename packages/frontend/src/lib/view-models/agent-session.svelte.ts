@@ -1264,8 +1264,8 @@ export class AgentSession {
       return
     }
 
-    // ─── slice acp-mode-config-sync: handler ל-mode event ───────────────────
-    // חובה לפני `if (!text) return` — event זה לא נושא content.text.
+    // ─── slice acp-mode-config-sync: handlers ל-mode/config events ──────────
+    // חובה לפני `if (!text) return` — events אלה לא נושאים content.text.
     if (update.sessionUpdate === "current_mode_update") {
       const modeId = (update as { currentModeId?: unknown }).currentModeId
       if (typeof modeId === "string") {
@@ -1273,6 +1273,13 @@ export class AgentSession {
           availableModes: this.modes?.availableModes ?? [],
           currentModeId: modeId,
         }
+      }
+      return
+    }
+    if (update.sessionUpdate === "config_option_update") {
+      const opts = (update as { configOptions?: unknown }).configOptions
+      if (Array.isArray(opts)) {
+        this.configOptions = opts as SessionConfigOption[]
       }
       return
     }
