@@ -212,6 +212,9 @@ export type MessageKey =
   | "settings.ttsProvider.label"
   | "settings.ttsProvider.elevenlabs"
   | "settings.ttsProvider.gemini"
+  // ─── image-attach tray ─── (slice-image-paste)
+  | "attach.addImage"
+  | "attach.remove"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
