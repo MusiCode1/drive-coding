@@ -31,6 +31,40 @@ additive יחיד בקוד (`settings.ttsProvider` של V4a לצד `lastConfig` 
 ### רעיונות שנדחו
 per-cwd/BE/sync (= ה-roadmap-item הנפרד session-prefs-per-cwd) — נדחה לעכשיו.
 
+## 2026-06-27 — slice-context-window-meter: מד טוקנים ביחס לחלון-הקשר
+
+### רציונל
+
+המשתמשת ביקשה להציג כמה מחלון-ההקשר של המודל בשימוש. ACP מספק את הנתון ישירות דרך
+התראת `session/update` מסוג `usage_update` = `{ used, size, cost }` — בדיוק `used/size`.
+ה-bridge ב-BE הוא passthrough גנרי (`bridge-manager.ts:165` `cb(line)` → `ws-agent.ts:88`,
+ללא allowlist), כך שההתראה כבר מגיעה ל-FE; הפער היחיד הוא ש-`#onSessionUpdate` לא מטפל
+בה והנתון נזרק. לכן הפיצ'ר הוא plumbing קצר (ענף early-return) + רכיב UI קטן — לא שינוי
+פרוטוקול. בחרתי ב-`usage_update` ולא ב-`PromptResponse.usage` (פר-turn) כי הראשון נותן
+used-מול-size ישירות, והשני נזרק היום ב-acp-provider וממילא מצטבר-פר-turn.
+
+### ממצאי אביגיל
+
+r1 = USABLE-AFTER-FIX (4 findings). 🔴 הבולט: ה-pseudo-code מיקם את ענף ה-usage_update
+בשרשרת ה-else-if **אחרי** ה-guard `if (!text) return` (L1191) — ושם הוא לעולם לא יורה,
+כי usage_update לא נושא `content.text` (silent bug שהיה עולה לאליעזר 20-40 דק' debug).
+תוקן ל-early-return לפני ה-guard. עוד: שם-המתודה האמיתי `#onSessionUpdate` (לא
+`#applyUpdate`), ו-`cost` הוא `Cost={amount,currency}` ולא מספר (→ `u.cost?.amount`).
+r2 = שלושת אלה אומתו כמתוקנים; נותרו 2 🟢 קוסמטיים בלבד שתוקנו ידנית. 0 ממצאים פתוחים.
+
+### שינויי-כיוון
+
+- **Commit 0 = spike fail-fast**: הסיכון אינו טכני אלא ריצתי — לא אומת סטטית שה-CLI
+  (opencode/claude) בכלל *פולט* `usage_update`. במקום לבנות UI על הנחה, השלב הראשון לוכד
+  turn אמיתי ומאשר פליטה; אם אף CLI לא פולט — עצירה והחלטה ארכיטקטונית מחדש.
+
+### רעיונות שנדחו
+
+- **`PromptResponse.usage` פר-turn** כמקור — נדחה לטובת `usage_update` (used/size ישיר).
+  נשמר כתוכנית-מגירה אם ה-spike יגלה שאין `usage_update`.
+
+---
+
 ## 2026-06-27 — slice-release-publish (בוצע ישיר): תיקון `bin` ל-npm publish
 אימות חי של החבילה (npm publish --dry-run, npm 11.11) חשף ש-`bin: "./dist/drive-coding.js"` עם
 `./` prefix **נדחה בפרסום** (`invalid and removed`) → ה-CLI `drive-coding` לא היה עולה אחרי install.
