@@ -4,19 +4,22 @@
  *
  * הבאג: div-per-segment + margin-bottom=0.4em → כל chunk = שורה.
  * התיקון: rendering-only —
- *   - אם **אין** תרגום (originalText=undefined בכולם): joinSegmentText → טקסט רץ אחד.
- *   - אם **יש** תרגום: visibleThoughtSegments → מתורגם, per-segment (segment=משפט, תקין).
+ *   - אם **אין** תרגום (originalText=undefined בכולם): joinSegmentText → MarkdownContent.
+ *   - אם **יש** תרגום: visibleThoughtSegments → מתורגם, per-segment + MarkdownContent לטקסט.
+ *   - originalText (raw source) נשאר טקסט גולמי dir=ltr — אינו מרקדאון.
  *
  * data-model ב-segments לא שונה — Speaker ממשיך לצרוך כרגיל.
  *
  * עיצוב: מוקאפ 264-278. avatar thought. border-dashed, italic, fg-dim.
+ * MarkdownContent יורש italic/color מההורה; code/pre כופים direction:ltr.
  *
- * ─── redesign-5 (C1 fix) ───
+ * ─── slice/markdown-content-unify (Commit 2) — מרקדאון מלא בבועת-מחשבה ───
  */
 import type { ThoughtBubble } from "$lib/types/bubble"
 import { getI18n, getSettings, getChatScroll } from "$lib/context"
 import { joinSegmentText, visibleThoughtSegments } from "./bubble-rendering"
 import Avatar from "$lib/components/chat/Avatar.svelte"
+import MarkdownContent from "./MarkdownContent.svelte"
 import { onMount } from "svelte"
 
 let { bubble }: { bubble: ThoughtBubble } = $props()
@@ -57,14 +60,15 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
       </summary>
 
       {#if runningText !== null}
-        <!-- C1 FIX: טקסט רץ (לא מתורגם) — ללא div-per-segment -->
-        <div dir="auto" class="whitespace-pre-wrap break-words">{runningText}</div>
+        <!-- C1 FIX: טקסט רץ (לא מתורגם) — MarkdownContent (ללא whitespace-pre-wrap; markdown מטפל) -->
+        <MarkdownContent text={runningText} />
       {:else}
         <!-- מתורגם: per-segment תקין (segment = יחידת-תרגום = משפט) -->
         {#each displaySegments as seg (seg.id)}
           <div class="mb-1 last:mb-0">
-            <div dir="auto" class="whitespace-pre-wrap break-words">{seg.text}</div>
+            <MarkdownContent text={seg.text} />
             {#if seg.originalText !== undefined}
+              <!-- originalText = raw source, לא מרקדאון — נשאר טקסט גולמי dir=ltr -->
               <div dir="ltr" class="text-[0.82em] opacity-55 mt-0.5 not-italic whitespace-pre-wrap break-words">
                 {seg.originalText}
               </div>
