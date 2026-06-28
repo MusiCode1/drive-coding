@@ -7,6 +7,10 @@
  *
  * ─── redesign-6 / windows-adaptation ───
  * cross-platform: breadcrumbs פיצול על [\\/], ניווט עם separator נכון.
+ *
+ * ─── folder-picker-fixes ───
+ * prop startPath: נקודת-פתיחה מה-parent (cwd שהוזן ידנית). עדיפות-ראשונה ב-openAtStart.
+ * נקרא בתוך untrack → לא הופך ל-dependency של ה-$effect.
  */
 import { untrack } from "svelte"
 import { Dialog as BitsDialog } from "bits-ui"
@@ -17,6 +21,8 @@ import { getI18n, getSettings, getModals } from "$lib/context"
 import { browseFolder } from "$lib/adapters/fs-browse"
 import type { FsEntry } from "$lib/adapters/fs-browse"
 import { fetchServerOptions } from "$lib/adapters/options"
+
+let { startPath = "" }: { startPath?: string } = $props()
 
 const t = getI18n().t
 const settings = getSettings()
@@ -44,10 +50,11 @@ $effect(() => {
   })
 })
 
-// מחשב נקודת-פתיחה ופותח. סדר עדיפויות: currentPath קיים → settings.lastCwd →
-// homeDir מהשרת (F1: משתמש חדש עם localStorage ריק — fallback ל-homeDir, brief Commit 1).
+// מחשב נקודת-פתיחה ופותח.
+// סדר עדיפויות: startPath (קלט חי מה-parent) → settings.lastCwd → homeDir מהשרת.
+// startPath נקרא כאן בתוך untrack → לא הופך ל-dependency של ה-$effect.
 async function openAtStart() {
-  let start = currentPath || settings.lastCwd
+  let start = startPath.trim() || settings.lastCwd
   if (!start) {
     try {
       const opts = await fetchServerOptions()

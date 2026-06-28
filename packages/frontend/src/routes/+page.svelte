@@ -4,10 +4,10 @@ import { goto } from "$app/navigation"
 import { onMount, untrack } from "svelte"
 import { connectAgent } from "$lib/actions/connect-agent"
 import { fetchServerOptions } from "$lib/adapters/options"
-import { listSessionsForCwd, type SessionInfo } from "$lib/adapters/sessions"
+import type { RecentProject } from "$lib/adapters/recent-projects"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
-import SessionPicker from "$lib/components/connect/SessionPicker.svelte"
 import ActiveProcessesPanel from "$lib/components/connect/ActiveProcessesPanel.svelte"
+import RecentProjectsPanel from "$lib/components/connect/RecentProjectsPanel.svelte"
 import LanguageSelect from "$lib/components/settings/LanguageSelect.svelte"
 import Select from "$lib/components/ui/Select.svelte"
 import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
@@ -31,13 +31,6 @@ let cwd = $state(settings.lastCwd)
 // עדכן רק אם cwd עדיין ריק (המשתמש לא הקליד בינתיים).
 onMount(() => {
   void activeAgents.refresh()
-
-  // sessions-autoload: טעינה אוטומטית של סשנים — רק אם יש cwd מוכר מ-lastCwd
-  // (לא משתמש חדש / cwd ריק). spawn יקר → רק כשסביר שהמשתמש יחזור לאותה תיקייה.
-  // onMount רץ פעם אחת per mount — guard טבעי, אין צורך בדגל נוסף.
-  if (settings.lastCwd && cwd.trim()) {
-    void loadSessions()
-  }
 
   fetchServerOptions()
     .then((opts) => {
@@ -79,47 +72,6 @@ $effect(() => {
 // dir="auto" הוסר: היה מושפע מתוכן הנתיב (LTR) ולא מה-locale.
 const isRtl = $derived(settings.locale === "he")
 
-// ─── state עבור תפריט בחירת סשן (session picker) ───
-let sessions = $state<SessionInfo[]>([])
-let sessionsLoading = $state(false)
-let sessionsError = $state<string | null>(null)
-let selectedSessionId = $state<string | null>(null)
-
-// ─── DEV-only: mock fixtures (static/fixtures/*.json) — דיבוג עיצוב ללא ACP ───
-// MODE !== "production" → פעיל גם ב-dev build, חסום+tree-shaken ב-production.
-const MOCK_FIXTURES: SessionInfo[] = import.meta.env.MODE !== "production"
-  ? [
-      ["claude-demo", "config + descriptions (claude)"],
-      ["greeting", "שיחה קצרה (3 בועות)"],
-      ["tool-spill", "בינוני — הרבה הודעות (25)"],
-      ["phone-tunnel", "בינוני מאוזן (39)"],
-      ["mitm", "ארוך — בלוקי קוד (180)"],
-      ["salary-prev", "ארוך — הרבה כלים (189)"],
-      ["salary-attendance", "ארוך מאוד (209)"],
-    ].map(([name, label]) => ({
-      sessionId: `mock:${name}`,
-      cwd: "/mock",
-      title: `🧪 MOCK: ${label}`,
-      updatedAt: "",
-    }))
-  : []
-
-async function loadSessions() {
-  sessionsLoading = true
-  sessionsError = null
-  sessions = []
-  selectedSessionId = null
-  try {
-    sessions = await listSessionsForCwd(cwd.trim(), cliKind)
-  } catch (e) {
-    sessionsError = e instanceof Error ? e.message : String(e)
-  } finally {
-    // ב-dev: הצג את ה-mock fixtures בראש הרשימה (גם אם הטעינה האמיתית נכשלה)
-    sessions = [...MOCK_FIXTURES, ...sessions]
-    sessionsLoading = false
-  }
-}
-
 async function handleReconnect(agent: AgentPublic) {
   if (!agent.acpSessionId) return
   settings.setCliKind(agent.cliKind)
@@ -137,17 +89,15 @@ async function handleReconnect(agent: AgentPublic) {
 async function onSubmit(e: SubmitEvent) {
   e.preventDefault()
   if (!cwd.trim()) return
-  if (selectedSessionId !== null) {
-    settings.setCliKind(cliKind)
-    settings.setLastCwd(cwd.trim())
-    const selected = sessions.find((s) => s.sessionId === selectedSessionId)
-    await session.loadSession({ sessionId: selectedSessionId, cwd: cwd.trim(), cliKind, title: selected?.title ?? "" })
-    if (session.status === "connected") {
-      await goto("/chat")
-    }
-  } else {
-    await connectAgent({ cliKind, cwd: cwd.trim(), session, settings })
-  }
+  await connectAgent({ cliKind, cwd: cwd.trim(), session, settings })
+}
+
+// connect-recent-projects: לחיצה על תיקייה אחרונה → חיבור ישיר (סשן חדש).
+// connectAgent מבצע setCliKind/setLastCwd ו-goto("/chat") פנימית.
+async function handleRecentSelect(project: RecentProject) {
+  cliKind = project.kind
+  cwd = project.cwd
+  await connectAgent({ cliKind: project.kind, cwd: project.cwd, session, settings })
 }
 </script>
 
@@ -156,6 +106,9 @@ async function onSubmit(e: SubmitEvent) {
   <p class="subtitle">{t("connect.subtitle")}</p>
 
   <ActiveProcessesPanel onReconnect={handleReconnect} />
+
+  <!-- connect-recent-projects: רשימת תיקיות אחרונות — מ-GET /api/projects (registry) -->
+  <RecentProjectsPanel onSelect={handleRecentSelect} />
 
   <form onsubmit={onSubmit}>
     <label>
@@ -204,17 +157,6 @@ async function onSubmit(e: SubmitEvent) {
       </div>
     </label>
 
-    <SessionPicker
-      {cwd}
-      {cliKind}
-      {sessions}
-      loading={sessionsLoading}
-      error={sessionsError}
-      {selectedSessionId}
-      onload={loadSessions}
-      onselect={(id) => { selectedSessionId = id }}
-    />
-
     <label>
       <span>{t("chat.voicePicker.label")}</span>
       <VoicePicker />
@@ -234,7 +176,8 @@ async function onSubmit(e: SubmitEvent) {
 </main>
 
 <!-- C10: בורר תיקיות (מרונדר כאן כי דף החיבור אינו עטוף ב-AppShell) -->
-<FolderPickerDialog />
+<!-- folder-picker-fixes: startPath={cwd} → הבורר נפתח בנתיב שהוזן ידנית -->
+<FolderPickerDialog startPath={cwd} />
 <!-- content-viewer (slice content-viewer — כמו FolderPickerDialog: מסך connect אינו עטוף ב-AppShell) -->
 <ContentViewerDialog />
 

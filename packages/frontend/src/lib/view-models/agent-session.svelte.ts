@@ -1010,8 +1010,9 @@ export class AgentSession {
 
   /**
    * מביא את רשימת הסשנים דרך החיבור ה-ACP הקיים (#client) — ללא spawn של סוכן.
-   * cache: טעינה מוצלחת אחת; force=true מרענן. no-op אם אין חיבור פעיל (#client===null)
-   * — אז דף החיבור משתמש ב-listSessionsForCwd (spawn) במקום.
+   * cache: טעינה מוצלחת אחת; force=true מרענן. no-op אם אין חיבור פעיל (#client===null).
+   * (slice connect-recent-projects: דף החיבור כבר לא משתמש ב-spawn — הוסר listSessionsForCwd.
+   *  בחירת סשן נעשית מתוך הסשן הפעיל דרך SessionOptionsPanel.)
    */
   listSessions = async (force = false): Promise<void> => {
     if (this.#client === null) return          // אין חיבור — לא טוענים פה

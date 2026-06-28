@@ -211,4 +211,8 @@ export const en: Catalog = {
   // ─── image-attach tray ─── (slice-image-paste)
   "attach.addImage": "Add image",
   "attach.remove": "Remove",
+  // ─── recent-projects ─── (slice connect-recent-projects)
+  "connect.recent.title": "Recent folders",
+  "connect.recent.empty": "No recent folders",
+  "connect.recent.refresh": "Refresh",
 }

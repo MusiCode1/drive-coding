@@ -216,6 +216,10 @@ export type MessageKey =
   // ─── image-attach tray ─── (slice-image-paste)
   | "attach.addImage"
   | "attach.remove"
+  // ─── recent-projects ─── (slice connect-recent-projects)
+  | "connect.recent.title"
+  | "connect.recent.empty"
+  | "connect.recent.refresh"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

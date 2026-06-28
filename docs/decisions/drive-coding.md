@@ -90,6 +90,50 @@ UserBubble render) **dispatch-ready**. Commit 4 (שליחה מולטימודלי
 בשורה אחת יחד עם חיווט השליחה. אביגיל r5 הוסיפה: gating גם ברמת-handler (early-return
 ב-paste/drop/picker), לא רק הסתרת אייקון. זה מהפך את "בצע ולא תמזג" מכורח לבחירה.
 
+## 2026-06-28 — recent-projects-controls: מחיקה (הסתרה קבועה) + כיווץ-panel נשמר
+
+> brief: `docs/plans/slice-recent-projects-controls.md` · base dev `ebf50ae` · Complexity 6 · calev light.
+> אביגיל: **READY** (r1, 3 findings 🟢 cosmetic). report: `reports/drive-coding/recent-projects-controls-avigail.md`.
+
+### רציונל
+
+המשך ל-connect-recent-projects (מוזג `726f9f3`). המשתמשת ביקשה שני פקדים על ה-panel: (1) כפתור
+למחוק תיקייה מהרשימה; (2) אפשרות לכווץ את ה-panel, **ולשמור** את מצב-הכיווץ לכניסה הבאה.
+
+**הכרעה מרכזית — מחיקה = הסתרה קבועה, לא הסרה זמנית** (בחירת המשתמשת): ה-registry מתמלא *אוטומטית*
+בכל `recordCwd` (session-attached). הסרה פשוטה הייתה חוזרת בחיבור הבא. לכן הוספנו דגל `hidden`
+לרשומה — `getProjects` מסנן אותו, ו-`recordCwd` **כבר** עושה spread של הרשומה הקיימת
+(`{ ...projects[idx]!, cwd, kind, lastSeen }`) → ה-`hidden` שורד אוטומטית בלי לגעת ב-recordCwd. זו
+תוספת CRUD חלקית ל-`ProjectsRegistry` (כפי שהמשתמשת זיהתה נכון) — `hideCwd` + endpoint `DELETE /api/projects`.
+
+**הבחנת-persist**: `hidden` נשמר **בשרת** (`projects-registry.json` — עקבי בין מכשירים, כי הסתרה היא
+החלטה על הפרויקט). מצב-הכיווץ `recentCollapsed` נשמר ב-**localStorage** (העדפת-תצוגה מקומית, דפוס
+`showThoughts` ב-Settings). הבחנה מכוונת: מה ששייך לפרויקט → שרת; מה ששייך לתצוגה → מקומי.
+
+### ממצאי אביגיל
+
+READY בסבב ראשון. 3 findings cosmetic (0-min): off-by-one בספירת-שורות (registry 80 לא 81),
+`registerProjectsHttp` בשורה 24 לא 22, וחידוד שהתקדים `app.delete` (`http-agents.ts:89`) הוא
+path-param ולא DELETE-with-body. ה-spot-check אישר **מילולית** את הטענה הקריטית: spread ב-`recordCwd`
+משמר `hidden`. אזהרת ה-**nested-button** (כפתור מחיקה חייב sibling, לא ילד — HTML תקין + מניעת
+bubbling ל-connect) אומתה כנכונה ופרואקטיבית.
+
+### שינויי-כיוון
+
+- **slice אחד מאוחד** (לא 2 מקבילים) — שלושת הפקדים נוגעים ב-`RecentProjectsPanel.svelte` → פיצול
+  היה יוצר merge-conflict/שרשור מיותר.
+- **בלי confirm על מחיקה** ל-MVP — ההסתרה הפיכה (לא הורסת קוד/סשנים; un-hide ידני בקובץ אפשרי).
+- **DELETE עם JSON body** (`{cwd}`) ולא path-param — ה-cwd מכיל `:`/`\`. fallback מתועד ל-`POST /api/projects/hide`
+  אם DELETE-with-body ייחסם ברשת/proxy.
+
+### רעיונות שנדחו
+
+- **un-hide UI** — נדחה ל-future (הסתרה חד-כיוונית מה-UI ב-MVP).
+- **סנכרון מצב-הכיווץ בין מכשירים** — נדחה; כיווץ הוא העדפת-תצוגה מקומית (localStorage), לא server-state.
+- **מחיקה אמיתית של הרשומה** — נדחה; מסתירים (`hidden:true`) כדי לשמר lastSessionId/lastSeen אם תילקח חזרה.
+
+---
+
 ## 2026-06-28 — slice-restore-last-config: שחזור agent+mode מהסשן האחרון (מוזג)
 
 ### רציונל
@@ -316,6 +360,29 @@ detection ייכנס בעתיד בלי לגעת בלולאת-הסינון. המ�
 - **סינון חופפים מול `ActiveProcessesPanel`** — נדחה. תיקייה עם agent חי תופיע בשניהם, אבל הסמנטיקה
   שונה: "תהליכים פעילים" = reconnect warm (שומר state); "תיקיות אחרונות" = spawn חדש. לא באג.
 - **endpoint BE חדש** — מיותר; `GET /api/projects` כבר קיים ומאוכלס.
+
+### ביצוע + runtime-gate (2026-06-28)
+
+שני הסלייסים בוצעו ע"י אליעזר **בשרשור על מכונה אחת** (לא merge ביניים — merge דורש אישור משתמשת).
+
+- **OVERRIDE על §0 של slice-2**: ה-brief הניח base=dev *לאחר* merge של slice-1. בפועל לא מיזגנו
+  ביניהם; ה-base של slice-2 הוא ה-**branch** `slice/folder-picker-fixes` (chained worktree), והכלל
+  `Pre-flight grep startPath` עבר בזכות השרשור (`+page.svelte:238`). שום merge לא נעשה ללא אישור.
+- **slice-folder-picker-fixes** — branch `slice/folder-picker-fixes` @ `3fdfd86` (commits `ed7718f`
+  BE async `isHiddenEntry` TDD red→green, `b86e078` FE `startPath` prop). **כלב GO, 8/8 DoD, 0
+  findings** — אומת **חי בדפדפן** (playwright): dot-folders מוסתרים, הופיעו עם showHidden, בורר נפתח
+  בנתיב שהוקלד, ניווט up/breadcrumb/בחירה ללא רגרסיה. typecheck 0 שגיאות, vitest 16/16.
+- **slice-connect-recent-projects** — branch `slice/connect-recent-projects` @ `fb1f9ea` (5 commits:
+  adapter/VM/panel/page-rewire/cleanup). **כלב GO, 14/14 DoD, 0 findings.** ⚠️ **אזהרה כנה**: ה-DoD
+  אומת **סטטית בלבד** (typecheck 0, vite build, vitest 339/339, grep-residuals 0, אימות חיווט
+  end-to-end ב-code) — **happy-path runtime חי לא הורץ** (אין BE בסביבת כלב). פריטי-ה-DoD הידניים מ-§5
+  של ה-brief (לחיצה על תיקייה אחרונה → /chat, מצב-ריק, רשימה נטענת) **לא אומתו חי**. סיכון מרוסן (glue
+  בלבד, חיקוי מדויק של דפוס ActiveAgents קיים) אך לא אפס — מומלץ smoke-test חי לפני/אחרי merge.
+- **typecheck משולב** (slice-1+slice-2 chained): 0 שגיאות (backend+frontend, 5024 קבצים) — אומת
+  ע"י מרדכי עצמאית.
+- **סטייה מינורית**: ב-slice-2 ה-i18n keys נוספו ב-commit 3 (לא 5 כ-brief) — הכרח לוגי (ה-component
+  השתמש בהם ועבר typecheck). הבדל שיוך-commit בלבד, לא תוכן.
+- **merge**: ⛔ **טרם** — ממתין לאישור מפורש של המשתמשת (סדר A→B, `--no-ff` חובה בשרשרת).
 
 ---
 

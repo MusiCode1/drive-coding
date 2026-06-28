@@ -206,4 +206,8 @@ export const he: Catalog = {
   // ─── image-attach tray ─── (slice-image-paste)
   "attach.addImage": "הוסף תמונה",
   "attach.remove": "הסר",
+  // ─── recent-projects ─── (slice connect-recent-projects)
+  "connect.recent.title": "תיקיות אחרונות",
+  "connect.recent.empty": "אין תיקיות אחרונות",
+  "connect.recent.refresh": "רענן",
 }
