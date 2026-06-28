@@ -1,7 +1,7 @@
 # Slice D — code-syntax-highlight — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: מאושר-מותנה — אביגיל אימתה את **כל** הטענות הטכניות (READY טכנית); **gated על merge של slice A**.
+> **סטטוס**: הושלם — 3 commits (ffd902a, b3ab9e1, da82552) על branch slice/code-syntax-highlight. ממתין לאימות כלב-heavy ומיזוג ע"י מרדכי.
 > **Complexity**: 8/10 (verifier: **heavy** — `calev-heavy`)
 > **תלות**: slice A (`markdown-content-unify`). **depends_on: [A]**. base=**dev לאחר מיזוג A**.
 
