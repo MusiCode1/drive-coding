@@ -7,8 +7,9 @@
  * connectSpawn and ProviderConnection types are added in CUT-3b-i commits 1 & 2.
  */
 
-// ProviderConnection types
+// ProviderConnection types + factory
 export type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
+export { connectSpawn } from "./spawn.js"
 
 // Shared wire utilities (moved from backend in CUT-3b-i commit 0)
 export { decodeWireLine } from "../shared/wire-decode.js"

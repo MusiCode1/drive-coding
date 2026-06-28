@@ -1,3 +1,29 @@
+## 2026-06-28 — CUT-3b-i-provider-connection — Commit 2 (connectSpawn + tests)
+
+### מה בוצע?
+
+**Commit 2 (integration)** — מימוש `connectSpawn` + טסטים:
+- `packages/provider/src/connection/capabilities-static.ts`: static capabilities map per cliKind (MVP: כולם false, מלא ב-CUT-3b-iii+)
+- `packages/provider/src/connection/spawn.ts`: `connectSpawn(cliKind, opts)` → `ProviderConnection`
+  - `createSpawnCore` עם hooks `onFrame` + `shapeEnv`
+  - onFrame: decode → turn-tracker (dir==="in" בלבד) → frameListeners → emitBusyChange
+  - type נגזר: `sessionUpdate ?? method ?? responseKind ?? (unparsed?"unparsed":"unknown")`
+  - onCrash: global core.onCrash עם filter `if (bId===bridgeId)`
+  - turn.onChange: derived מ-onFrame (emit כשbusy-state משתנה)
+  - ext: undefined
+- `packages/provider/src/connection/index.ts`: הוספת `connectSpawn` ל-barrel
+- `packages/provider/src/connection/spawn.test.ts`: 6 integration tests
+  - ext=undefined; pid מאוכלס; onFrame מחזיר WireFrame מפוענח (type/id/dir); turn.isBusy=true אחרי sessionUpdate; onCrash נורה; wire.write+onLine round-trip; turn.onChange
+
+### חריגות
+- capabilities-static: כל הערכים false (MVP שלד) — מלא ב-CUT-3b-iii+.
+- connectSpawn מוסיף modelOverride=null (לא בחתימה — פנימי לSpawnBridgeInput).
+
+### בדיקות
+- typecheck: 0 errors. provider tests: 111 passed, 4 skipped. lint:i18n: ירוק.
+
+---
+
 ## 2026-06-28 — CUT-3b-i-provider-connection — Commit 1 (connection/types.ts — ProviderConnection/WireFrame/ConnectOpts + exports)
 
 ### מה בוצע?
