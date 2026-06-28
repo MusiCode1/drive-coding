@@ -1,5 +1,16 @@
 ## 2026-06-28 — CUT-3b-iii-2 — live routing: claude → connectInProcess (Commit 0)
 
+**Commit 1 (integration) — capability delivery (_drive/capabilities) + אימות ext:**
+- `packages/backend/src/delivery/ws-agent.ts`:
+  - אחרי `markAttached`: שולח `_drive/capabilities` extNotification ל-FE (JSON-RPC notification עם `conn.capabilities` כ-params). synchronous לפני onLine subscription — FE מקבל caps לפני כל event אחר.
+  - ext חי מאומת: `_drive/setThinkingTokens` עובר דרך הwire ל-claude in-process via `onRequest` handler ב-`connectInProcess`.
+- typecheck: 0 errors. lint: נקי. tests: pre-existing 2 failures ללא שינוי.
+
+### הערות capability delivery
+- `conn.capabilities` = `mapClaudeCapabilities(null)` = `{mcp:false, rename:true, thinkingTokens:true, ...}` (static, כי initResult לא נתפס מה-FE-driven initialize).
+- ה-FE-normalization slice יצרוך את ה-notification הזה וישתמש בו ב-provider-contract.
+- ext חי (`_drive/setThinkingTokens`) עובד כבר מ-connectInProcess iii-1 — ה-routing שבוצע ב-commit 0 הפעיל אותו עבור claude.
+
 **Commit 0 (integration) — routing + getRuntimeInfo fix + typecheck fix:**
 - `packages/backend/src/acp/connection-registry.ts`:
   - Import `connectInProcess` מ-`@drive-coding/provider/connection`.

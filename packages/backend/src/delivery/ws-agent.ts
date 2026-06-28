@@ -73,6 +73,23 @@ export function createAgentWsHandler(deps: {
     deps.connectionRegistry.markAttached(agentId)
     childLog.info({ pid: conn.pid }, "WS connect → pipe attached")
 
+    // ── capability delivery (CUT-3b-iii-2): שלח _drive/capabilities ל-FE ────────
+    // conn.capabilities נגיש מיד אחרי connect (static per-provider).
+    // שולחים כ-JSON-RPC notification (extNotification) אחרי markAttached.
+    // ה-FE יקרא ל-_drive/capabilities listener (FE-normalization slice).
+    // נשלח באופן synchronous (לפני onLine subscription) — FE מקבל caps לפני אירועים.
+    try {
+      const capsFrame = JSON.stringify({
+        jsonrpc: "2.0",
+        method: "_drive/capabilities",
+        params: conn.capabilities,
+      })
+      feWs.send(`${capsFrame}\n`)
+      childLog.debug({ capabilities: conn.capabilities }, "_drive/capabilities sent to FE")
+    } catch {
+      /* feWs may have closed between connect and here — non-fatal */
+    }
+
     // ── pipeChild — ניתוב ──────────────────────────────────────────────────────
     // conn.wire.onLine: subscriber לשורות stdout מה-child.
     // readline מסיר את ה-\n בסוף; מוסיפים \n כי ה-FE מצפה לו.
