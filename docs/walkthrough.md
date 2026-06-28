@@ -6994,3 +6994,23 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 ### חריגות
 
 - אין.
+
+---
+
+## slice-cache-version — Commit 2 (B1: הזרקת version ב-build)
+
+**תאריך**: 2026-06-28
+
+### בוצע
+
+עדכון `packages/frontend/svelte.config.js`: הוספת import של `execSync` מ-`node:child_process` ו-`pkg` מ-`../../package.json` (import with assertion), קריאה ל-`git rev-parse --short HEAD`, והגדרת `version: { name: appVersion }` בתוך `kit`. הקובץ הקיים שמר על `FE_BUILD_OUT`/`out`/`vitePlugin`.
+
+### בדיקות
+
+- `pnpm typecheck` ירוק.
+- `pnpm fe:build` ירוק — הגרסה `v0.1.0 (3892d82)` מופיעה ב-`build/_app/version.json` ובחבילות ה-JS.
+- `$app/environment`.`version` מחזיר את המחרוזת המלאה לרכיבים.
+
+### חריגות
+
+אין.
