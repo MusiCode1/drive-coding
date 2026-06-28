@@ -47,13 +47,13 @@ pnpm install && pnpm hooks:install
 - `packages/frontend/AGENTS.md` — חמשת חוקי הזהב (במיוחד #4 effect-ownership, #5 אין-תאימות-לאחור).
 - `docs/design-principles.md` §1-2 — מה זה "engine" מול "view-model" (הדחיסה = engine; ה-tray = state ב-VM/component).
 - `packages/frontend/src/lib/components/chat/TypeArea.svelte` — **כל הקובץ** (**79 שורות, אחרי merge של slice-input-autogrow** — לא 67). הקובץ המרכזי שמשתנה. ⚠️ הוא כבר מכיל לוגיקת autogrow (`$effect` L21-28, `taEl` binding, `rows={1}`+`max-height`, `items-end`) — ראה §"שינוי TypeArea אחרי autogrow".
-- `packages/frontend/src/lib/view-models/agent-session.svelte.ts` §559-591 (`sendPrompt`, מתחיל בשורה 559) + הגדרת `#client`/`capabilities`.
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts` §565-597 (`sendPrompt`, מתחיל בשורה 565 — drift +6 אחרי 131-commit sync) + הגדרת `#client`/`capabilities`.
 - `packages/frontend/src/lib/types/bubble.ts` §30-41 (`UserBubble`).
 
 **reference בזמן עבודה**:
 - `docs/plans/ui-feature-backlog.md` §3a + §5 ("attachments מלא" — reference CodeNomad `composer.tsx`: drag-drop+paste+דחיסה ≤8MB/JPEG/2048px).
 - `docs/conventions/parallel-safe-code.md` — **רק אם** נוגעים ב-`packages/core/src/i18n/keys.ts` / `catalogs/*` (מחרוזות tray).
-- Contract types — **הגרסה ש-ה-FE פותר אליה** (`packages/frontend/node_modules/provider-contract` → symlink ל-`node_modules/.pnpm/provider-contract@git+https_f03460478b9f19a4a0f949e446254e90/node_modules/provider-contract`): `dist/adapters/acp/client/client.d.ts:45` (`AcpClient.prompt` — היום `text: string`), `dist/contract/events.d.ts:160` (`PromptContent = string | PromptContentPart[]`). ⚠️ קיימות **שתי** גרסאות ב-`.pnpm` (גם `4f3a...`) — תמיד לאמת מול זו ש-ה-FE פותר (`f034...`).
+- Contract types — **הגרסה ש-ה-FE פותר אליה** (`packages/frontend/node_modules/provider-contract` → symlink ל-`node_modules/.pnpm/provider-contract@git+https_f03460478b9f19a4a0f949e446254e90/node_modules/provider-contract`): `dist/adapters/acp/client/client.d.ts:45` (`AcpClient.prompt` — היום `text: string`), `dist/contract/events.d.ts:160` (`PromptContent = string | PromptContentPart[]`). ⚠️ קיימות **שתי** גרסאות ב-`.pnpm` (השנייה `b745...` = ה-ancestor הישן) — תמיד לאמת מול זו ש-ה-FE פותר (`f034...`).
 
 ---
 
@@ -245,7 +245,7 @@ pnpm --filter @drive-coding/frontend typecheck && pnpm --filter @drive-coding/fr
 
 **קבצים שמשתנים**:
 - `agent-session.svelte.ts` — `sendPrompt(text, { attachments }?)`: בונה `PromptContent` = `[...(text.trim() ? [{type:"text",text}] : []), ...attachments.map(a => ({type:"image", mimeType:a.mimeType, data:a.dataBase64}))]`, מאכלס `userBubble.attachments`, קורא `this.#client.prompt(this.#sessionId, content)`.
-  > ⚠️ **finding אביגיל r2** — ה-guard הקיים `if (!text.trim()) return` (שורה 562) **יזרוק בשקט שליחת תמונה-בלבד**. שנה את התנאי ל: `if (!text.trim() && !(opts?.attachments?.length)) return` — כלומר חוסם רק כשגם הטקסט ריק וגם אין attachments. בלוק-טקסט נכלל ב-`PromptContent` רק אם אינו ריק (תמונה-בלבד = מערך עם image-block בלבד).
+  > ⚠️ **finding אביגיל r2** — ה-guard הקיים `if (!text.trim()) return` (שורה 568 — drift +6 מ-562) **יזרוק בשקט שליחת תמונה-בלבד**. שנה את התנאי ל: `if (!text.trim() && !(opts?.attachments?.length)) return` — כלומר חוסם רק כשגם הטקסט ריק וגם אין attachments. בלוק-טקסט נכלל ב-`PromptContent` רק אם אינו ריק (תמונה-בלבד = מערך עם image-block בלבד).
 - `TypeArea.svelte` — `onSubmit` מעביר `{ attachments }`, מנקה את ה-tray (+`revokeAttachment` לכולם) אחרי שליחה.
 
 **API skeleton** (הרחבת החתימה הקיימת — backward-compatible):
