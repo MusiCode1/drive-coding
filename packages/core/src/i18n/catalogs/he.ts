@@ -133,6 +133,7 @@ export const he: Catalog = {
   "settings.toggle.carMode": "מצב רכב (Play בבלוטוס = הקלטה)",
   "settings.reset": "איפוס",
   "settings.saveOpen": "שמור ופתח",
+  "settings.version": "גרסה:",
   // ─── language ─── (rtl-ltr-bidi)
   "settings.language.label": "שפת ממשק",
   "settings.language.he": "עברית",

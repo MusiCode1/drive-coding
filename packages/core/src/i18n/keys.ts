@@ -143,6 +143,7 @@ export type MessageKey =
   | "settings.toggle.carMode"
   | "settings.reset"
   | "settings.saveOpen"
+  | "settings.version"
   // ─── language ─── (rtl-ltr-bidi)
   | "settings.language.label"
   | "settings.language.he"

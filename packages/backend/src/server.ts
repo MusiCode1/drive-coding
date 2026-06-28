@@ -132,8 +132,36 @@ if (isBinary() && !feStaticDir) {
   // Assets first (js/css/etc), then SPA fallback to index.html for any
   // unmatched path (client-side routing). Registered AFTER all /api,/proxy
   // routes so it never shadows them.
-  app.use("/*", serveStatic({ root: feStaticDir }))
-  app.get("/*", serveStatic({ path: `${feStaticDir}/index.html` }))
+  //
+  // Cache-Control (cache-version slice): onFound נקרא רק כשקובץ נמצא —
+  // נקי יותר ממiddleware (אין צורך ב-await next() + guard). ה-/api,/proxy
+  // רשומים לפני הבלוק הזה ו-terminal, כך שלעולם לא מגיעים לכאן. /ws
+  // מטופל ב-httpServer.on("upgrade") לפני Hono — גם לא מגיע לכאן.
+  // guard מפורש לבטחון נוסף.
+  app.use(
+    "/*",
+    serveStatic({
+      root: feStaticDir,
+      onFound: (_path, c) => {
+        const reqPath = c.req.path
+        if (reqPath.startsWith("/api") || reqPath.startsWith("/proxy")) return
+        if (reqPath.startsWith("/_app/immutable/")) {
+          c.header("Cache-Control", "public, max-age=31536000, immutable")
+        } else {
+          c.header("Cache-Control", "no-cache")
+        }
+      },
+    }),
+  )
+  app.get(
+    "/*",
+    serveStatic({
+      path: `${feStaticDir}/index.html`,
+      onFound: (_path, c) => {
+        c.header("Cache-Control", "no-cache")
+      },
+    }),
+  )
   log.info({ feStaticDir }, "serving static FE")
 }
 

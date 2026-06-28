@@ -13,6 +13,7 @@
  *
  * ─── settings-redesign (redesign-3) · redesign-fix · V4a (TTS provider) ───
  */
+import { version } from "$app/environment"
 import { goto } from "$app/navigation"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import { getI18n, getSettings } from "$lib/context"
@@ -187,6 +188,11 @@ $effect(() => {
       {/if}
     </label>
   </SettingsCard>
+
+  <!-- גרסה — (cache-version slice) -->
+  <p class="text-center text-[11px] mt-4" style="color:var(--fg-muted)" dir="ltr">
+    {t("settings.version")} {version}
+  </p>
 
   <!-- כפתורי איפוס + שמור -->
   <div class="flex gap-3 mt-2">

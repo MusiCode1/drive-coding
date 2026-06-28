@@ -6970,3 +6970,95 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 ### סטיות
 
 אין. הוספת `resolveProviderAuth` כ-helper טהור + call-site יחיד ב-http-proxy. לא שינוי ארכיטקטוני.
+
+---
+
+## slice-cache-version — Commit 1 (A: Cache-Control)
+
+**תאריך**: 2026-06-28
+
+### בוצע
+
+הוספת Cache-Control headers לנכסים סטטיים ב-`packages/backend/src/server.ts`, בענף `else if (feStaticDir)`.
+
+שימוש ב-`onFound` callback של `@hono/node-server@2.0.3` (נתמך) במקום middleware נפרד — נקי יותר (header נוסף רק כשקובץ נמצא). שתי קריאות `serveStatic` עודכנו:
+- נכסים (`root: feStaticDir`): `/_app/immutable/*` → `public, max-age=31536000, immutable`; שאר נכסים → `no-cache`. guard מפורש על `/api`,`/proxy`.
+- fallback (`index.html`): תמיד `no-cache`.
+
+### בדיקות
+
+- `pnpm typecheck` ירוק.
+- `pnpm lint` (biome) — שגיאת `organizeImports` pre-existing ב-server.ts (לא קשורה לשינוי), ללא שגיאות lint חדשות.
+- בדיקת curl תתבצע ב-Commit 4 (C) לאחר build FE.
+
+### חריגות
+
+- אין.
+
+---
+
+## slice-cache-version — Commit 2 (B1: הזרקת version ב-build)
+
+**תאריך**: 2026-06-28
+
+### בוצע
+
+עדכון `packages/frontend/svelte.config.js`: הוספת import של `execSync` מ-`node:child_process` ו-`pkg` מ-`../../package.json` (import with assertion), קריאה ל-`git rev-parse --short HEAD`, והגדרת `version: { name: appVersion }` בתוך `kit`. הקובץ הקיים שמר על `FE_BUILD_OUT`/`out`/`vitePlugin`.
+
+### בדיקות
+
+- `pnpm typecheck` ירוק.
+- `pnpm fe:build` ירוק — הגרסה `v0.1.0 (3892d82)` מופיעה ב-`build/_app/version.json` ובחבילות ה-JS.
+- `$app/environment`.`version` מחזיר את המחרוזת המלאה לרכיבים.
+
+### חריגות
+
+אין.
+
+---
+
+## slice-cache-version — Commit 3 (B2+B3: i18n + הצגה)
+
+**תאריך**: 2026-06-28
+
+### בוצע
+
+B3 (i18n): הוספת `"settings.version"` ל-keys.ts, `"גרסה:"` ל-he.ts, `"Version:"` ל-en.ts — ליד `settings.saveOpen`.
+
+B2 (הצגה): הוספת `import { version } from "$app/environment"` ל-SettingsScreen.svelte + `<p>` עם `{t("settings.version")} {version}` לפני כפתורי reset/saveOpen, עם `dir="ltr"` (מחרוזת לועזית) ו-`color:var(--fg-muted)`.
+
+### בדיקות
+
+- `pnpm --filter @drive-coding/frontend-v2 typecheck` ירוק (0 errors, 0 warnings).
+- `pnpm lint:i18n` ירוק.
+- `pnpm typecheck` ירוק.
+
+### חריגות
+
+אין.
+
+---
+
+## slice-cache-version — Commit 4 (C: bump-version.mjs)
+
+**תאריך**: 2026-06-28
+
+### בוצע
+
+יצירת `scripts/bump-version.mjs` — script להעלאת גרסה ב-monorepo:
+- ארגומנט `<patch|minor|major>` חובה; exit 1 בלי ארגומנט.
+- מעלה root `package.json` ב-level.
+- מסנכרן `packages/release` ל-root (תמיד זהה).
+- מעלה כל pkg נוסף שנמסר (`backend`/`core`/`frontend`) באותו level — עצמאי.
+- `release` בארגומנטי pkg מדולג (כבר מסונכרן).
+
+### בדיקות (smoke)
+
+- `node scripts/bump-version.mjs patch` → `root+release → 0.1.1` (ואז git checkout משחזר).
+- `node scripts/bump-version.mjs minor frontend` → `root+release → 0.2.0 | bumped: frontend` (ואז git checkout).
+- `node scripts/bump-version.mjs` (בלי ארגומנט) → exit 1 + הודעת שגיאה.
+- root נשאר 0.1.0 לאחר כל הsmoke.
+
+### חריגות
+
+אין.
