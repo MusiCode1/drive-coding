@@ -1,7 +1,7 @@
 # Slice A2 — AudioPlaylist + reserve‑on‑enqueue — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: ✅ READY (אביגיל r1 — 2 ממצאים 🟢 הוטמעו; `reports/drive-coding/A2-avigail.md`)
+> **סטטוס**: 🔴 **calev-heavy NO-GO** — BUG-1 (סדר-השמעה, לב ה-DoD): סגמנט נשמט כש-reserve נופל מאחורי cursor רץ. דורש fix-in-place + re-verify. (אביגיל r1 READY; build ירוק 378/378; `reports/drive-coding/A2-calev.md`)
 > **Complexity**: 8/10 (verifier: **heavy** — state‑model refactor + streaming)
 > **תלות**: [] · **base**: `dev` @ `3a23195` (A1 בוטל — ר' roadmap §הפירוק)
 > **שייך ל**: `docs/plans/playback-run-control-roadmap.md` (ראש השרשרת הנקייה)
