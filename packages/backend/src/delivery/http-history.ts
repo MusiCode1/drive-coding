@@ -32,6 +32,17 @@ export function registerProjectsHttp(
     const projects = await deps.projectsRegistry.getProjects()
     return c.json({ projects })
   })
+
+  // DELETE /api/projects  { cwd }  → מוחק את הרשומה לגמרי
+  // slice: recent-projects-controls
+  // עיצוב: cwd מכיל תווים מיוחדים (: ב-Windows, \, /) → body במקום path-param
+  app.delete("/api/projects", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { cwd?: unknown }
+    const cwd = typeof body.cwd === "string" ? body.cwd : ""
+    if (!cwd) return c.json({ error: "cwd required" }, 400)
+    await deps.projectsRegistry.removeCwd(cwd)
+    return c.body(null, 204)
+  })
 }
 
 // ─── /api/recordings/:id ─────────────────────────────────────────────────────

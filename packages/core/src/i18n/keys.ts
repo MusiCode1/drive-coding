@@ -220,6 +220,10 @@ export type MessageKey =
   | "connect.recent.title"
   | "connect.recent.empty"
   | "connect.recent.refresh"
+  // ─── recent-projects controls ─── (slice recent-projects-controls)
+  | "connect.recent.remove"
+  | "connect.recent.collapse"
+  | "connect.recent.expand"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

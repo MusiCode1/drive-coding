@@ -210,4 +210,8 @@ export const he: Catalog = {
   "connect.recent.title": "תיקיות אחרונות",
   "connect.recent.empty": "אין תיקיות אחרונות",
   "connect.recent.refresh": "רענן",
+  // ─── recent-projects controls ─── (slice recent-projects-controls)
+  "connect.recent.remove": "הסר מהרשימה",
+  "connect.recent.collapse": "כווץ",
+  "connect.recent.expand": "הרחב",
 }
