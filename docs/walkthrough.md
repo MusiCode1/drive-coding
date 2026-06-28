@@ -1,3 +1,392 @@
+## 2026-06-29 — FEAT-thinking-live — Phase 1: אימות חי (manual)
+
+**אימות wire מקצה-לקצה:**
+- `_drive/setThinkingTokens` נשלח על ה-wire ב-id=3 (low→4000), id=4 (off→null), id=5 (high→16000) — כולם קיבלו `result` (לא -32601)
+- capabilities: `thinkingTokens: true` מ-BE → פקד מוצג בsidebar ✅
+- off→null אומת (DoD#5) ✅
+- אפקט thinking: לא ניתן לאמת prompt עוקב בסביבת linux-gui — pre-existing bug `crypto.randomUUID` בChrome הישן; ext הצליח = הוכחת שרשרת מספקת (DoD#4 best-effort)
+- Evidence: /tmp/FEAT-thinking-live/phase-1-sidebar.png (פקד מוצג), phase-1-thinking-low.png (Low נבחר)
+
+## 2026-06-29 — FEAT-thinking-live — Phase 0: UI control + vm.setThinkingTokens + i18n
+
+**Phase 0 — commit 0:**
+- i18n: 5 מפתחות חדשים (`agentOptions.thinking.{label,off,low,medium,high}`) ב-keys.ts + he.ts + en.ts
+- vm: מתודה ציבורית `setThinkingTokens(n: number|null)` ב-AgentSession — קוראת ל-`this.#ext.setThinkingTokens(this.#sessionId, n)`, guard על `status===connected` ו-ext זמין
+- UI: `<Select>` thinking ב-SessionOptionsPanel, gated `{#if session.supports.thinkingTokens}`, mapping off→null, low→4000, medium→8000, high→16000
+- typecheck: ירוק | lint:i18n: ירוק | biome (קבצים נגועים): ירוק
+- test: 1012 passed (2 pre-existing failures: https-serve bun.exe Windows)
+
+## 2026-06-29 — FE-normalization — סיכום slice
+
+**Commits:** bdc88c1..085438d (4 commits: Phase 0 + Phase 1 + Phase 2 docs + slice status)
+**Tests:** provider 133/133 | frontend 380/380
+**typecheck:** 0 errors | vite build: ירוק
+**calev verdict:** GO — 7/7 DoD, 0 findings
+**דוח calev:** /home/user/projects/drive-coding/.worktrees/cutover-migration/docs/FE-normalization-calev.md
+**הסטיות:** אין. Phase 2 בוצע כ-manual inspection (ללא דפדפן חי) — מנגנון אומת statically ב-9 חוליות.
+
+## 2026-06-29 — FE-normalization — Phase 2: אימות מנגנון (manual inspection)
+
+**אימות מקצה לקצה (manual inspection):**
+1. BE (`ws-agent.ts:84`): שולח `_drive/capabilities` כ-JSON-RPC notification אחרי markAttached — קיים מ-CUT-3b-iii-2.
+2. SDK (`acp.d.ts:830`): `Client.extNotification?` — optional handler שה-SDK קורא ל-notifications לא-מוכרים.
+3. `createClientImpl` (Phase 0): מממש `extNotification` → מנתב ל-`onExtNotification` callback.
+4. `createAcpClient` (Phase 0): מעביר `onExtNotification` → `createClientImpl`.
+5. `agent-session.svelte.ts` (Phase 1): 3 call-sites עם `{ onUpdate, onExtNotification: this.#onExtNotification }`.
+6. `#onExtNotification`: `_drive/capabilities` → `this.#capabilities = params`.
+7. `vm.supports.thinkingTokens`: `this.#capabilities?.thinkingTokens ?? false` — gating.
+8. `client.extMethod` (Phase 0): passthrough ל-`ClientSideConnection.extMethod` (`acp.d.ts:546`).
+9. `ext.setThinkingTokens` (Phase 1): `parseExtParams` → `client.extMethod("_drive/setThinkingTokens", ...)`.
+
+**Findings:** אין bugs. המנגנון שלם ומחווט.
+**DoD:** כל 7 פריטים מ-§5 מאומתים — typecheck+tests ירוקים, vite build ירוק, additive.
+
+## 2026-06-29 — FE-normalization — Phase 1: ExtClient facade + capability ingestion ב-vm + gating
+
+**Commit 1 — integration:**
+- `packages/frontend/src/lib/adapters/ext.ts`: ExtClient facade — `createExtClient(client)` מחזיר `{ setThinkingTokens(sessionId, n) }`. מאמת params דרך `parseExtParams` (ArkType), אחר כך `client.extMethod("_drive/setThinkingTokens", ...)`.
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+  - import type NormalizedCapabilities מ-subpath `./types` (pure, ללא spawn-core).
+  - הוספת fields: `#capabilities: NormalizedCapabilities | null = null`, `#ext: ExtClient | null = null`.
+  - getters ציבוריים: `capabilities`, `supports` (all-false כשאין caps), `ext`.
+  - `#onExtNotification` handler: על `_drive/capabilities` → `#capabilities = params`.
+  - עדכון 3 call-sites של `createAcpClient` → `{ onUpdate, onExtNotification }` + `createExtClient(client)`.
+  - `#cleanup`: ניקוי `#ext` ו-`#capabilities`.
+- עדכון 4 test mocks לתמיכה בשתי חתימות (backward-compat).
+- `packages/frontend/src/lib/adapters/ext.test.ts`: 3 integration tests (valid, null, invalid→throw).
+- `packages/frontend/src/lib/view-models/agent-session.capabilities.test.svelte.ts`: 6 tests (null before attach, all-false supports, caps loaded from extNotification, thinkingTokens gating, cleanup clears caps).
+- typecheck: 0 errors. lint: נקי על קבצים חדשים. tests: 380/380 passed. vite build: ירוק (subpath ./types מנתק spawn-core בהצלחה).
+
+## 2026-06-29 — FE-normalization — Phase 0: AcpClient.extMethod + extNotification + ./types subpath
+
+**Commit 0 — logic:**
+- `packages/provider/src/client/client-impl.ts`: הוספת `extNotification` handler ל-`createClientImpl` — מנתב ל-`onExtNotification` callback (אופציונלי). כך `_drive/capabilities` מתקבל מה-SDK default-route.
+- `packages/provider/src/client/client.ts`: הוספת `extMethod` ל-`AcpClient` type + impl (passthrough ל-`conn.extMethod`). שינוי חתימת `createAcpClient` ל-`onUpdateOrCallbacks` (backward-compat — תומך גם ב-function ישן וגם ב-`{ onUpdate, onExtNotification }` object).
+- `packages/provider/package.json`: subpath `"./types": "./src/types.ts"` — types-only (NormalizedCapabilities), ללא spawn-core → FE יכול לייבא `import type { NormalizedCapabilities }` בלי vite crash.
+- `packages/provider/src/client/client.extmethod.test.ts`: 4 tests TDD — extNotification routes correctly, no-op when absent, sessionUpdate no-regression, backward-compat.
+- typecheck: 0 errors חדשים (שגיאת connect-in-process.test.ts:111 קדם-קיימת ולא נגענו בה). lint: נקי על קבצים שהשתנו. tests: 133/133 passed.
+
+## 2026-06-28 — CUT-3b-iii-2 — live routing: claude → connectInProcess (Commits 0–2)
+
+**סיכום slice:**
+- Commit 0: routing ב-connection-registry (claude→connectInProcess) + getRuntimeInfo fix (pid:null) + TS fix (NewSessionRequest cast).
+- Commit 1: capability delivery (_drive/capabilities notification ב-ws-agent) + ext חי מאומת.
+- Commit 2: walkthrough + slice status update + calev-heavy (pending).
+
+**קבצים שהשתנו:**
+- `packages/backend/src/acp/connection-registry.ts` — routing + getRuntimeInfo + import
+- `packages/backend/src/delivery/http-agents.ts` — pid: number | null type
+- `packages/backend/src/delivery/ws-agent.ts` — _drive/capabilities notification
+- `packages/provider/src/connection/connect-in-process.ts` — TS fix (NewSessionRequest cast)
+
+**calev-heavy verdict: GO — 7/7 DoD, 0 רגרסיות, 1 finding (minor/in-scope)**
+- DoD#2: claude in-process ענה prompt חי (initialize→session/new→prompt, ללא spawn).
+- DoD#3: opencode+gemini קיבלו pid אמיתי, claude pid=null — ניתוב חד.
+- DoD#4: `_drive/setThinkingTokens` על claude in-process החזיר {ok:true} (לא -32601).
+- DoD#5: getRuntimeInfo מחזיר {pid:null, lastMessageAt:...} — תיקון short-circuit עובד.
+- DoD#6: modelOverride="claude-sonnet-4-5" עבר ל-session/new.
+- Finding יחיד (🟢 minor, in-scope): `_drive/capabilities` reports `mcp:false` תמיד — `mapClaudeCapabilities(null)` לא מצותת לinit response; מתועד בקוד כ-future improvement.
+- דוח: docs/CUT-3b-iii-2-calev.md
+
+## 2026-06-28 — CUT-3b-iii-2 — live routing: claude → connectInProcess (Commit 0)
+
+**Commit 1 (integration) — capability delivery (_drive/capabilities) + אימות ext:**
+- `packages/backend/src/delivery/ws-agent.ts`:
+  - אחרי `markAttached`: שולח `_drive/capabilities` extNotification ל-FE (JSON-RPC notification עם `conn.capabilities` כ-params). synchronous לפני onLine subscription — FE מקבל caps לפני כל event אחר.
+  - ext חי מאומת: `_drive/setThinkingTokens` עובר דרך הwire ל-claude in-process via `onRequest` handler ב-`connectInProcess`.
+- typecheck: 0 errors. lint: נקי. tests: pre-existing 2 failures ללא שינוי.
+
+### הערות capability delivery
+- `conn.capabilities` = `mapClaudeCapabilities(null)` = `{mcp:false, rename:true, thinkingTokens:true, ...}` (static, כי initResult לא נתפס מה-FE-driven initialize).
+- ה-FE-normalization slice יצרוך את ה-notification הזה וישתמש בו ב-provider-contract.
+- ext חי (`_drive/setThinkingTokens`) עובד כבר מ-connectInProcess iii-1 — ה-routing שבוצע ב-commit 0 הפעיל אותו עבור claude.
+
+**Commit 0 (integration) — routing + getRuntimeInfo fix + typecheck fix:**
+- `packages/backend/src/acp/connection-registry.ts`:
+  - Import `connectInProcess` מ-`@drive-coding/provider/connection`.
+  - `connect()`: routing לפי `cliKind` — `"claude"` → `connectInProcess(connectOpts)`, כל השאר → `connectSpawn(cliKind, connectOpts)`.
+  - `getRuntimeInfo` return type: `pid: number | null` (הרחבה לtypecheck).
+  - `getRuntimeInfo` impl: הסרת ה-short-circuit `if (pid === null) return null` — כעת מחזיר `{ pid: e.conn.pid, ... }` גם לin-process.
+- `packages/backend/src/delivery/http-agents.ts`:
+  - `bridgeManager.getRuntimeInfo` type: `pid: number | null` (הרחבה).
+  - biome format: פיצול type לשורות נפרדות.
+- `packages/provider/src/connection/connect-in-process.ts`:
+  - Import `NewSessionRequest` מ-`@agentclientprotocol/sdk`.
+  - `session/new` handler: cast `params as NewSessionRequest` לפתרון שגיאת TS pre-existing (iii-1).
+  - biome: sort imports.
+
+### חריגות
+- שגיאת TS `connect-in-process.ts:152` מ-iii-1 (injectModelOverride returns Record<string,unknown>, newSession expects NewSessionRequest) — תוקנה בcast בטוח.
+- lint errors pre-existing לא השתנו (ירדו מ-283 ל-282 אחרי format fix).
+
+### בדיקות
+- typecheck: 0 errors. lint על הקבצים שלנו: נקי. tests: 2 pre-existing failures ללא שינוי.
+
+## 2026-06-28 — CUT-3b-iii-1 — connectInProcess (Commits 0–2)
+
+**Commit 0 (tdd) — stream-bridge + test:**
+- `connection/stream-bridge.ts` (חדש): `createStreamBridge()` — adapter Stream↔wire. ממיר `write(line)→JSON.parse→writable` ו-`readable→JSON.stringify→onLine`. שני channels (inbound/outbound) דרך `TransformStream<AnyMessage>`.
+- `connection/stream-bridge.test.ts` (חדש): 7 טסטים — FE→agent, agent→FE, multi-subscriber, unsubscribe, malformed JSON, close, round-trip.
+- typecheck: 0 errors. tests: 7/7 ירוקים.
+
+**Commit 1 (integration) — connectInProcess + test:**
+- `connection/connect-in-process.ts` (חדש): `connectInProcess(opts)→ProviderConnection`. agentApp עם כל ה-handlers (מראה in-process-host) + `_drive/setThinkingTokens`. `agentApp.connect(bridge.agentEnd)` (Model 2). onFrame tap דו-כיווני. turn-tracker. `mapClaudeCapabilities(null)` (static claude caps). modelOverride → `injectModelOverride()` → session/new `_meta.claudeCode.options.model`. pid=null (in-process). close: bridge.close() + agentConn.closed await.
+- `connection/connect-in-process.test.ts` (חדש): 11 טסטים structural — shape, capabilities, ext=undefined, pid=null, onFrame (in+out), onLine, turn, close, onCrash.
+
+**Commit 2 (none) — export + live test + walkthrough:**
+- `connection/index.ts`: `connectInProcess` מיוצא מ-`@drive-coding/provider/connection` (DoD 2).
+- `live/connect-in-process.live.test.ts`: 4 live tests (RUN_LIVE=1) — שרשרת חיה, caps, _drive/setThinkingTokens, turn.
+- live: 8/8 PASS — DoD 3 (שרשרת חיה) ✓, DoD 4 (onFrame+turn+caps) ✓, DoD 5 (_drive/setThinkingTokens) ✓.
+- `docs/walkthrough.md`: עדכון.
+
+### חריגות
+- `pid=null` (in-process — אין child process, documented per brief §3).
+- `mcp=false` ב-capabilities: `mapClaudeCapabilities(null)` מחזיר mcp=false כי initResult לא נתפס (FE שולח initialize over wire). ניתן לשפר בעתיד ע"י tap ה-initialize response.
+- `agentConn.close()` נופל בשגיאה כשה-stream כבר סגור — תוקן ע"י await + catch ב-close().
+
+### בדיקות
+- typecheck: 0 errors. tests: 129/129. live: 8/8. DoD 2 ✓ (export). DoD 3 ✓ (שרשרת חיה). DoD 4 ✓ (onFrame+turn+caps). DoD 5 ✓. DoD 6 ✓ (additive, provider/** בלבד).
+- **calev light verdict: GO — 6/6 DoD, 0 findings.** דוח: reports/drive-coding/CUT-3b-iii-1-connect-inprocess-calev.md
+
+## 2026-06-28 — CUT-3b-ii-be-rewire — סיכום slice (commits 0–2 + calev-heavy)
+
+**Commits:**
+- `cf689d6` — Commit 0: connection-registry.ts + tests + modelOverride ב-ConnectOpts
+- `fd81118` — Commit 1: rewire orchestrator + ws-agent + server (phase-gate calev GO/0 findings)
+- `8e5b693` — Commit 2: DELETE bridge-manager + F-1 regression tests עודכנו
+
+**Calev-heavy verdict: GO — 12/12 DoD, 0 findings.**
+דוח: /home/user/projects/drive-coding/.worktrees/cutover-migration/docs/CUT-3b-ii-calev-heavy.md
+
+---
+
+## 2026-06-28 — CUT-3b-ii-be-rewire — Commit 2 (DELETE bridge-manager + F-1 regression update)
+
+### מה בוצע?
+
+**Phase 2 — מחיקת bridge-manager.ts + עדכון F-1 regression tests:**
+
+- `packages/backend/src/acp/bridge-manager.ts` — נמחק (הלוגיקה כולה ב-connectSpawn/connection-registry).
+- `packages/backend/src/acp/bridge-manager.runtime.test.ts` — נמחק (getRuntimeInfo tests כבר ב-connection-registry.test.ts).
+- `packages/backend/tests/bridge-manager.test.ts` — נמחק (ייבא createBridgeManager שנמחק).
+- `packages/backend/tests/bridge-writestdin.test.ts` — נמחק (ייבא createBridgeManager שנמחק).
+- `packages/backend/tests/bridge-failure-modes.test.ts` — עודכן: "at bridge-manager layer" הומר ל-"at connection-registry layer (CUT-3b-ii)"; אותם cases (ENOENT/no-pid/async-error/exit) עכשיו דרך registry.connect + registry.close.
+
+### חריגות
+- http-agents.ts: לא שונה — duck-typing עם `bridgeManager?: { getRuntimeInfo }` ממשיך לעבוד; connectionRegistry מספק getRuntimeInfo.
+- bridge-failure-integration.test.ts: failure pre-existing (status-code bug, documented בroadmap track F).
+
+### בדיקות
+- typecheck: ירוק (0 errors)
+- tests: 1003 pass, 15 skipped, 3 failures — כולן pre-existing
+
+---
+
+## 2026-06-28 — CUT-3b-ii-be-rewire — Commit 1 (orchestrator + ws-agent + server rewire)
+
+### מה בוצע?
+
+**Phase 1 — rewire agent-orchestrator, ws-agent, server.ts + עדכון tests:**
+
+- `packages/backend/src/app/agent-orchestrator.ts`: שכתוב מלא — מקבל `connectionRegistry: ConnectionRegistry` במקום `bridgeManager`. `createAndSpawn` קורא ל-`connectionRegistry.connect()` עם `modelOverride` ו-`shapeEnv: drivecodingShapeEnv`. `getBridgePort` תמיד 0. `onCrash` דרך `connectionRegistry.onCrash`. Dead dedup path נשמר as-is (bridgePort=0 → never enters).
+- `packages/backend/src/delivery/ws-agent.ts`: שכתוב מלא — מקבל `connectionRegistry` (לא bridgeManager). Presence check: `connectionRegistry.get(agentId)`. Wire: `conn.wire.onLine` + `conn.wire.write`. Crash: `conn.onCrash`. markAttached/markDetached דרך registry. conn.close לעולם לא נקרא מ-ws-agent.
+- `packages/backend/src/server.ts`: `createBridgeManager` הוחלף ב-`createConnectionRegistry`; wired ל-orchestrator + ws-agent.
+- `packages/backend/tests/agent-orchestrator.test.ts`: שכתוב ל-connectionRegistry mock.
+- `packages/backend/tests/ws-agent-pipe.test.ts`: שכתוב ל-makeMockConn + makeMockConnectionRegistry.
+- `packages/backend/tests/ws-agent-error-survival.test.ts`: שכתוב ל-createConnectionRegistry (real) עם real child processes.
+- `packages/backend/tests/bridge-failure-modes.test.ts`: תיקון "at orchestrator layer" test לשימוש ב-connectionRegistry mock שזורק בקריאה ל-connect().
+
+### חריגות
+- bridge-manager.ts עדיין קיים — נמחק ב-Phase 2 (commit 2).
+- http-agents.ts משתמש ב-duck typing (bridgeManager param = connectionRegistry — שניהם חושפים getRuntimeInfo).
+- lint errors הם pre-existing (292 errors ב-baseline לפני כל שינוי).
+
+### בדיקות
+- typecheck: ירוק (0 errors)
+- tests: 1024 pass, 15 skipped, 3 failures — כולן pre-existing (https-serve×2, bridge-failure-integration×1)
+
+---
+
+## 2026-06-28 — CUT-3b-i-provider-connection — Commit 2 (connectSpawn + tests)
+
+### מה בוצע?
+
+**Commit 2 (integration)** — מימוש `connectSpawn` + טסטים:
+- `packages/provider/src/connection/capabilities-static.ts`: static capabilities map per cliKind (MVP: כולם false, מלא ב-CUT-3b-iii+)
+- `packages/provider/src/connection/spawn.ts`: `connectSpawn(cliKind, opts)` → `ProviderConnection`
+  - `createSpawnCore` עם hooks `onFrame` + `shapeEnv`
+  - onFrame: decode → turn-tracker (dir==="in" בלבד) → frameListeners → emitBusyChange
+  - type נגזר: `sessionUpdate ?? method ?? responseKind ?? (unparsed?"unparsed":"unknown")`
+  - onCrash: global core.onCrash עם filter `if (bId===bridgeId)`
+  - turn.onChange: derived מ-onFrame (emit כשbusy-state משתנה)
+  - ext: undefined
+- `packages/provider/src/connection/index.ts`: הוספת `connectSpawn` ל-barrel
+- `packages/provider/src/connection/spawn.test.ts`: 6 integration tests
+  - ext=undefined; pid מאוכלס; onFrame מחזיר WireFrame מפוענח (type/id/dir); turn.isBusy=true אחרי sessionUpdate; onCrash נורה; wire.write+onLine round-trip; turn.onChange
+
+### חריגות
+- capabilities-static: כל הערכים false (MVP שלד) — מלא ב-CUT-3b-iii+.
+- connectSpawn מוסיף modelOverride=null (לא בחתימה — פנימי לSpawnBridgeInput).
+
+### בדיקות
+- typecheck: 0 errors. provider tests: 111 passed, 4 skipped. lint:i18n: ירוק.
+
+---
+
+## 2026-06-28 — CUT-3b-i-provider-connection — Commit 1 (connection/types.ts — ProviderConnection/WireFrame/ConnectOpts + exports)
+
+### מה בוצע?
+
+**Commit 1 (none — types + barrel update)** — הוספת types לפרימיטיב:
+- `packages/provider/src/connection/types.ts`: `WireFrame`, `ConnectOpts`, `ProviderConnection` (wire=onLine-style, turn pull-based, ext=undefined לspawn, pid)
+- `packages/provider/src/connection/index.ts`: הוספת re-export של types: `ConnectOpts`, `ProviderConnection`, `WireFrame`
+
+### חריגות
+ללא.
+
+### בדיקות
+- typecheck: 0 errors.
+
+---
+
+## 2026-06-28 — CUT-3b-i-provider-connection — Commit 0 (git mv wire-decode+turn-tracker → provider/shared + barrel ./connection + repoint bridge-manager)
+
+### מה בוצע?
+
+**Commit 0 (integration — git mv + repoint)** — העברת wire-decode + turn-tracker מ-BE ל-provider:
+- `git mv packages/backend/src/delivery/wire-decode.ts` + `.test.ts` → `packages/provider/src/shared/`
+- `git mv packages/backend/src/acp/turn-tracker.ts` + `.test.ts` → `packages/provider/src/shared/`
+- תוקן import ב-`turn-tracker.ts`: `../delivery/wire-decode.js` → `./wire-decode.js`
+- נוצר `packages/provider/src/connection/index.ts` — barrel ראשוני: re-export `decodeWireLine`, `WireSummary`, `createTurnTracker`, `TurnTracker` מ-`../shared/`
+- נוסף subpath `"./connection": "./src/connection/index.ts"` ל-`packages/provider/package.json`
+- `packages/backend/src/acp/bridge-manager.ts`: repoint imports של `decodeWireLine`/`createTurnTracker` מ-local paths ל-`@drive-coding/provider/connection` (import-path בלבד, לוגיקה ללא שינוי)
+
+### חריגות
+- sourcemap warnings ל-dist ישן של BE (dist מפנה לקבצים שנזזו) — warnings בלבד, לא שגיאות.
+- 3 כשלים pre-existing: `https-serve.test.ts` (×2, Windows bun path) + `bridge-failure-integration.test.ts` F-1 (מוזכר ב-roadmap).
+
+### בדיקות
+- typecheck: 0 errors. provider tests: 104 passed, 4 skipped. wire-decode + turn-tracker עוברים במיקום החדש. lint:i18n: ירוק.
+
+---
+
+## 2026-06-28 — CUT-3a-provider-reorg — Commit 1 (reorg + barrel re-exports + imports תוקנו)
+
+### מה בוצע?
+
+**Commit 1 (none — rename+import-path בלבד)** — העברת 11 קבצים מ-`host/` למבנה per-provider:
+- `git mv host/spawn-core.ts` + `.test.ts` → `shared/`
+- `git mv host/in-process/host.ts` + `.test.ts` → `providers/claude/in-process-host.ts` + `.test.ts`
+- `git mv host/in-process/client-bridge.ts` → `providers/claude/`
+- `git mv host/in-process/claude/{capabilities,rename,query-access}.ts` + `.test.ts` → `providers/claude/`
+- `git mv host/in-process/live/host.live.test.ts` → `providers/claude/live/`
+- `git mv host/types.ts` → `types.ts` (top-level)
+- `host/index.ts` נשאר — re-export מהמיקומים החדשים (`../providers/claude/in-process-host.js`, `../shared/spawn-core.js`, `../types.js`)
+- תוקנו imports פנימיים: `in-process-host.ts` (חמישה ייבואים), `in-process-host.test.ts`, `host.live.test.ts`
+- עודכן `package.json test:live` → `--dir src/providers/claude/live`
+- `client-bridge.ts` תיעוד עודכן
+
+### חריגות
+- lint pre-existing (291 errors לאחר הreorg, 290 לפניו — הפרש של שגיאת imports-order ב-`in-process-host.ts` שתוקנה). ה-3 שגיאות ב-provider package הן pre-existing (`extensions/`).
+- `bridge-manager.ts` לא שונה — ממשיך לייבא מ-`@drive-coding/provider/host`
+
+### בדיקות
+- typecheck: 0 errors. tests: 85 passed, 4 skipped (live). lint:i18n: clean.
+
+---
+
+## 2026-06-28 — EXT-SCHEMA-uniform-contract — Commit 1 (ולידציית params בגבול ה-host)
+
+### מה בוצע?
+
+**Commit 1 (integration)** — ולידציית params ב-`_drive/setThinkingTokens` handler:
+- `packages/provider/src/host/in-process/host.ts`: ייבוא `RequestError` מ-`acp-sdk-v1`. ה-handler עוטף את `parseExtParams` ב-try/catch וממיר שגיאת-ולידציה ל-`RequestError.invalidParams()` כדי שה-SDK לא יעטוף אותה כ-"Internal error".
+- `packages/provider/src/host/in-process/host.test.ts`: נוספו 5 טסטים (3 invalid params → not "Internal error", 2 valid params → "Internal error" כי session לא קיים).
+
+### חריגות
+- lint pre-existing (291 errors, לא הוספו שגיאות חדשות). ב-`host.ts` עצמו biome תיקן imports-order אוטומטית.
+
+### בדיקות
+- 89 טסטים ירוקים (85 pass + 4 skipped). typecheck: 0 errors.
+
+---
+
+## 2026-06-28 — EXT-SCHEMA-uniform-contract — Commit 0 (schema + types + barrel + dep)
+
+### מה בוצע?
+
+**Commit 0 (TDD)** — חוזה-הרחבות ArkType, Phase 0:
+- `packages/provider/src/extensions/schema.ts`: `extMethods` registry (`as const`) עם רשומה `_drive/setThinkingTokens` — `params: type({ sessionId: "string", n: "number | null" })`, `result: type({ ok: "true" })`. `ExtMethodName` union.
+- `packages/provider/src/extensions/types.ts`: `ExtParams<M>`, `ExtResult<M>` (`.infer`), `parseExtParams(method, raw)` — מאמת דרך ArkType, זורק עם `out.summary` על כשל.
+- `packages/provider/src/extensions/index.ts`: barrel.
+- `packages/provider/package.json`: dep `arktype@^2.0.0` + export `"./extensions"`.
+- `pnpm install` רץ.
+
+### חריגות
+- lint pre-existing (290 errors, אין שורה מקבצי extensions); typecheck 0 errors.
+
+### בדיקות
+- 9 טסטים TDD ירוקים: מאשרים params תקין (n=number/null/0); דוחים n חסר / n מחרוזת / sessionId לא-string / sessionId מספר / params לא-object / params=null.
+- typecheck: 0 errors. lint:i18n: ירוק. 1011 passed (2 pre-existing).
+
+---
+
+## 2026-06-28 — CUT-2-spawn-core-wrapper — 1 Commit (bridge-manager → wrapper over createSpawnCore)
+
+### מה בוצע?
+
+**Commit 1 (integration)** — bridge-manager.ts עבר מ-monolith ל-wrapper דק מעל `createSpawnCore`:
+- `bridge-manager.ts`: מחלה spawn/lifecycle/stdio ל-core. wrapper שומר: markAttached/markDetached, getRuntimeInfo (עם lastMessageAt מ-tracker), turn-tracking, recs Map.
+- hooks: shapeEnv (opencode בלבד — OPENCODE_CONFIG_CONTENT + PROMPT_INJECTOR_TEXT). onFrame (decodeWireLine log + wireRecorder; observe על in בלבד).
+- cleanup: onCrash מ-core מנקה wrapperState (tracker + rec.close). kill מנקה לפני קריאה ל-core.kill.
+- `bridge-manager.runtime.test.ts`: נוסף describe "Map-leak regression (CUT-2)" — 2 טסטים: kill ו-crash מנקים את getRuntimeInfo לאחריהם.
+
+### חריגות
+- known-equivalent: סדר env-shaping הפוך (shapeEnv רץ אחרון ב-core לעומת live). שקול לקונפיג ברירת-מחדל; smoke יאשר.
+- onCrash לניקוי wrapper רשום דרך core.onCrash — נורה גם על exit רגיל (ה-core מפעיל notifyCrash בשניהם).
+
+### בדיקות
+- typecheck: 0 errors. tests: 982 passed (2 pre-existing: bridge-failure + https-serve). lint:i18n: ירוק.
+- API surface: grep לפני/אחרי — כל 8 ה-methods נשמרו. consumers (server/ws-agent/agent-orchestrator) ללא שינוי.
+- Map-leak regression: 2 טסטים חדשים ירוקים.
+
+---
+
+## 2026-06-28 — CUT-1-dep-repoint — 3 Commits (dependency repoint: provider-contract → @drive-coding/provider)
+
+### מה בוצע?
+
+**Commit 1 (b98321f)** — package.json ×3 (core/backend/frontend):
+- הסרת `provider-contract: git+https://...#main`
+- הוספת `@drive-coding/provider: workspace:*`
+- `pnpm install` רץ, workspace resolution תקין.
+
+**Commit 2 (5ebe669)** — repoint 4 שימושים + טסטי FE:
+- `backend/agent-orchestrator.ts:26` describeCrash → `@drive-coding/provider/spawn`
+- `core/ports.ts:3` BridgeCrashInfo → `@drive-coding/provider/spawn`
+- `frontend/agent-session.svelte.ts:20` createAcpClient+AcpClient → `@drive-coding/provider/client`
+- `frontend/ws-transport.ts:19` AcpTransport → `@drive-coding/provider/transport`
+- טסטי FE: vi.mock + type + dynamic import ×3 קבצים → `/client`
+- Comments עודכנו (agent-session.svelte.ts:9, restore-config.test.svelte.ts:13)
+
+**Commit 3 (build-gate)** — אימות vite build (DoD#3):
+- `pnpm --filter @drive-coding/frontend-v2 build` — ירוק (1192 modules, 11.57s)
+- הסיכון ההיסטורי (barrel-break) לא התממש — subpaths מנועלים כמו שצריך
+
+### בדיקות
+
+- DoD#1: `grep provider-contract packages/*/src packages/*/package.json` = 0 תוצאות
+- DoD#2: `pnpm typecheck` ירוק
+- DoD#3: `pnpm --filter @drive-coding/frontend-v2 build` ירוק (vite, 1192 modules)
+- DoD#4: `pnpm test` — 980/996 passed (2 pre-existing: bridge-failure[known-ENOENT-201], https-serve[bun-windows-path])
+- DoD#6: `@drive-coding/provider: workspace:*` ב-3 package.json, אין git+
+- DoD#7: diff — imports/package.json/test-mocks בלבד
+
+### חריגות
+
+- `svelte-kit sync` נדרש לפני הרצת FE tests (יוצר `.svelte-kit/tsconfig.json`). רץ אוטומטית ב-`pnpm test` דרך pre-build hook.
+- 2 pre-existing test failures לא קשורים ל-CUT-1: bridge-failure-integration (known, roadmap) + https-serve (bun.exe Windows path).
+
 ## 2026-06-29 — slice V4b: בורר-קול Gemini פר-ספק
 
 ### מה בוצע
@@ -686,6 +1075,191 @@ slice: connect-recent-projects (5 commits)
 ### סטיות
 
 אין. הקיצוץ מהסוף ו-ellipsis בהתחלה נשמרו כמו בשורה הנפרדת הקודמת.
+## 2026-06-28 — slice-C3-ext-thinking — Phase 2 (live tests + מיגרציה)
+
+### מה בוצע?
+
+**Commit 2 — חבילת בדיקות-חי קבועה + מחיקת smokes:**
+- `host/in-process/live/host.live.test.ts`: 4 cases gated מאחורי `RUN_LIVE=1`:
+  1. capabilities — thinkingTokens=true + rename=true + mcp=true
+  2. deterministic round-trip — claude מחזיר DRIVE_OK_4242 (פלט דטרמיניסטי מאושר)
+  3. setThinkingTokens ext — callExt מחזיר {ok:true} + prompt עוקב מצליח (query לא שבור)
+  4. rename — DC-TEST מופיע ב-listSessions
+- `package.json`: `"test:live": "RUN_LIVE=1 vitest run --dir src/host/in-process/live"` script.
+- מחיקת `rename-smoke.ts` ו-`session-smoke.ts` (כפילות — לוגיקתם חיה בchבילה הקבועה).
+- top-level code lazy (כל setup ב-beforeAll).
+
+### חריגות
+- Case 3 ו-4 רצות על אותו session (מ-case 2) — חוסכות initialize נוסף.
+
+### בדיקות
+- typecheck — 0 errors.
+- `pnpm --filter @drive-coding/provider test` (regular) — 71 passed, 4 skipped (live skipped). ✓
+- `RUN_LIVE=1 pnpm test:live` — 4/4 PASS. ✓
+- DoD 6 (getQuery נקודה יחידה): grep `.sessions[` מחוץ ל-query-access.ts — ריק. ✓
+- DoD 7 (additive): `git diff slice/C3-rename..HEAD --name-only | grep -vE ...` — ריק. ✓
+- DoD 8 (אין SDK leak): grep imports ב-types.ts/index.ts — ריק. ✓
+- DoD 8 (smokes נמחקו): rename-smoke.ts + session-smoke.ts — נמחקו. ✓
+
+---
+
+## 2026-06-28 — slice-C3-ext-thinking — Phase 1 (handler פנימי)
+
+### מה בוצע?
+
+**Commit 1 — handler פנימי `_drive/setThinkingTokens`:**
+- `host/in-process/host.ts`: הוסף import `getQuery` מ-query-access.js.
+- `host/in-process/host.ts`: רשם `onRequest("_drive/setThinkingTokens", ...)` על agentApp — handler **פנימי** שסוגר על `claudeAgent` (לא דרך `options.extHandlers`). מוציא `{sessionId, n}` מה-params, קורא `getQuery(claudeAgent, sessionId).setMaxThinkingTokens(n)`, מחזיר `{ok: true}`. משמר guard אם claudeAgent undefined.
+- `host.test.ts`: 2 unit tests: (1) handler מנותב (לא -32601); (2) זורק שגיאה לפני start().
+
+### חריגות
+- ה-SDK עוטף את throw של getQuery ב-"Internal error" (לא חושף את הודעת השגיאה הפנימית). ה-assert עודכן בהתאם — בודק "לא -32601".
+
+### בדיקות
+- typecheck — 0 errors.
+- `pnpm --filter @drive-coding/provider test` — 71/71 PASS.
+
+---
+
+## 2026-06-28 — slice-C3-ext-thinking — Phase 0 (TDD)
+
+### מה בוצע?
+
+**Commit 0 — getQuery accessor + NormalizedCapabilities.thinkingTokens + capability:**
+- `host/in-process/claude/query-access.ts`: `getQuery(agent, sessionId)` — נקודת-צימוד יחידה ל-`(agent as ...).sessions[id].query`. interface מקומי `SessionRecord` (לא ייבוא SDK). זורק שגיאה ברורה אם אין session.
+- `host/types.ts`: הוסף `thinkingTokens: boolean` ל-`NormalizedCapabilities`.
+- `host/in-process/claude/capabilities.ts`: `thinkingTokens: true` (claude תומך — query חושף `setMaxThinkingTokens`).
+- `host/in-process/claude/query-access.test.ts`: 5 unit tests (TDD): returns query, throws unknown/empty/no-query, delegates call.
+
+### חריגות
+- אין.
+
+### בדיקות
+- typecheck — 0 errors.
+- `pnpm --filter @drive-coding/provider test` — 69/69 PASS.
+- formatting biome --write על הקבצים החדשים.
+
+---
+
+## 2026-06-28 — slice-C3-host-session — 3 commits
+
+### מה בוצע?
+
+**Commit 0+1 (integration) — newSession + prompt + streaming + smoke חי:**
+- `host.ts`: הוסף `newSession({cwd, mcpServers:[]})` דרך `clientCtx.buildSession().start()` → שמירת `ActiveSession` ב-map.
+- `host.ts`: הוסף `prompt({sessionId, text}, onUpdate)` — loop על `activeSession.nextUpdate()` עד `kind=stop`, forward updates דרך `onUpdate`.
+- `host.ts`: רשם כל session methods על ה-agentApp: `session.new`, `session.prompt`, `session.load`, `session.setConfigOption`, `session.cancel`, `session.fork`, `session.list`, `session.delete`, `session.resume`, `session.close`, `session.setMode`, `authenticate` — mirror של `runAcp` ב-acp-agent.js.
+- `host.test.ts`: 8 טסטים סטרוקטורליים נוספו (wiring checks, guards לפני start).
+- `session-smoke.ts`: smoke חי — start → newSession → prompt("Reply with exactly the word: hello") → אוסף updates → מדפיס טקסט. **Claude החזיר "hello", 8 updates, stopReason=end_turn.**
+- format fixes (biome) על host.ts + host.test.ts.
+
+**Commit 2 (none) — findings + walkthrough:**
+- `docs/research/c3-host-session-findings.md` — תוצאות smoke חי, key findings ארכיטקטוניים (single-connection requirement, onConnect timing, forkSession naming).
+
+### חריגות
+- ה-commit המקורי (babd858) היה commit 0+1 מאוחד (לפי ה-worktree שכבר היה מוכן). format fixes נוספו בcommit נפרד.
+- streaming מאומת ב-smoke החי בלבד (TestAgent חסום ע"י exports-map של ה-SDK).
+
+### בדיקות
+- `pnpm --filter @drive-coding/provider typecheck` — 0 errors.
+- `pnpm --filter @drive-coding/provider test` — 63/63 PASS.
+- `session-smoke.ts` חי — PASS: "hello", 8 updates, end_turn.
+- additive check: `git diff slice/C3-host..HEAD --name-only | grep -vE "packages/provider/|docs/|pnpm-lock"` — ריק.
+- DoD 5 (אפס דליפת sdk@1.0.0): InProcessHost interface ב-string/Record בלבד.
+- DoD 6 (additive): אפס קבצים חיים.
+- DoD 7 (close אחרי session): smoke סוגר נקי.
+
+---
+
+## 2026-06-28 — slice-C3-host — 3 commits
+
+### מה בוצע?
+
+**Commit 0 — InProcessHost + types + client-bridge:**
+- `host/types.ts`: `AdapterHost` + `NormalizedCapabilities` — ממשקים provider-agnostic.
+- `host/in-process/client-bridge.ts`: `makeAcpClientFromCtx` — קידום מה-spike.
+- `host/in-process/claude/capabilities.ts`: `mapClaudeCapabilities` — מיפוי מ-frame אמיתי.
+- `host/in-process/host.ts`: `createClaudeInProcessHost` — שני connects עצמאיים:
+  - `agentConn = agentApp.connect(clientApp)` → `ClaudeAcpAgent(makeAcpClientFromCtx(agentConn.client))`
+  - `clientConn = clientApp.connect(agentApp)` → `clientCtx = clientConn.agent` (ClientContext ל-start/callExt)
+- `start()` = initialize דרך `clientCtx`, `callExt()` = ext request דרך אותו `clientCtx`.
+- `close()` = סגירת שני ה-connections.
+- two-SDK containment: `acp-sdk-v1`/`claude-agent-acp` כלואים ב-`in-process/`, אפס דליפה ב-`types.ts`/`index.ts`.
+
+**Commit 1 — טסטי-host (integration):**
+- 5 טסטים חדשים ב-`host.test.ts`: capabilities, ext round-trip, close, onExtNotification, full lifecycle.
+- `ExtHandlers` option ל-`createClaudeInProcessHost` — רישום ext handlers לפני connect.
+- אפס session/prompt בכל הטסטים.
+
+**Commit 2 — barrel + מחיקת spike:**
+- `host/index.ts` מייצא `createClaudeInProcessHost`, `InProcessHost`, `ExtHandlers`, `NormalizedCapabilities`, `AdapterHost`.
+- `spike.ts` נמחק — הקוד הוטמע.
+
+### חריגות
+- `callExt` נשתנה מ"connection חדש לכל קריאה" ל"שימוש ב-clientCtx שנשמר ב-start()" — יותר נכון ארכיטקטונית.
+- `ExtHandlers` option הוסף ל-factory כדי לאפשר רישום ext handlers בטסטים (הבריף לא ציין מפורשות).
+
+### בדיקות
+- `pnpm --filter @drive-coding/provider typecheck` — 0 errors.
+- `pnpm --filter @drive-coding/provider test` — 59/59 PASS.
+- DoD 5 (אפס דליפת sdk@1.0.0): grep על types.ts+index.ts — ריק.
+- DoD 6 (additive): git diff ea4f420..HEAD | grep -vE provider/docs/pnpm-lock — ריק.
+- DoD 7 (אפס session/prompt): grep על host.test.ts — רק comments.
+
+---
+
+## 2026-06-28 — slice-C3-spike-inprocess-host — 2 commits
+
+### מה בוצע?
+
+**Commit 0 (integration) — POC host:**
+- הוסף devDeps ל-`packages/provider/package.json`: `@agentclientprotocol/claude-agent-acp@^0.52.0` + alias `acp-sdk-v1: npm:@agentclientprotocol/sdk@1.0.0`.
+- נוצר `packages/provider/src/host/in-process/spike.ts` — POC מלא.
+- נתיב 1 (`AgentApp.connect(ClientApp)`, sdk@1.0.0 in-process): הצליח מיד.
+- `makeAcpClientFromCtx(connection.client)` — adapter של 20 שורות, מגשר `AgentContext` → `AcpClient`.
+- `ClaudeAcpAgent.initialize()` הוחזר תוך מיקרושניות, אפס auth/tokens.
+- ext POC: `ext/spike/ping` עבד, אפס -32601.
+
+**Commit 1 (none) — findings:**
+- נוצר `docs/research/c3-host-spike-findings.md` — GO, נתיב 1, frames מגובים, המלצות ל-C3.
+
+### חריגות
+- ה-lint הכולל כבר אדום ב-P1-base (259 errors) — לא נגרמו ע"י spike.
+- ה-spike.ts נקי ב-biome lint (0 errors).
+
+### בדיקות
+- `pnpm --filter @drive-coding/provider typecheck` — 0 errors.
+- `pnpm --filter @drive-coding/provider exec bun src/host/in-process/spike.ts` — הדפיס initialize result + ext/spike/ping.
+- `pnpm lint:i18n` — 0 errors.
+- additive verified: רק `packages/provider/` + `docs/` + `pnpm-lock.yaml` שונו.
+
+---
+
+## 2026-06-28 — slice-P1-additive-package — 2 commits
+
+### מה בוצע?
+
+**Commit 0 (manual):** העתקת `packages/provider/` מ-R3-spawn-core-untangle.
+- 23 קבצים: src/{client,transport,config,spawn,host}/** + cli-config.test.ts + cli-config-file.test.ts ברמת-השורש + package.json + tsconfig.json + vitest.config.ts.
+- ללא tsconfig.tsbuildinfo, ללא node_modules.
+- `pnpm install` זיהה את החבילה החדשה (`@drive-coding/provider`).
+
+**Commit 1 (none):** biome format+lint fix על קבצי ה-provider (FIXABLE issues בלבד).
+- `cli-config-file.test.ts`: useLiteralKeys; `cli-config.test.ts`: noUnusedImports + format; `ws-transport.test.ts`: format; `client.ts`/`index.ts`: organizeImports + format; `ws.ts`: format.
+- לא נגעו בקובץ חי אחד.
+
+### בדיקות
+
+- typecheck (`pnpm --filter @drive-coding/provider typecheck`): ✓ exit 0
+- tests (`pnpm --filter @drive-coding/provider test`): 54/54 ירוקים (5 test files: ws-transport, ws-to-streams, spawn-core, cli-config, cli-config-file)
+- root typecheck (`pnpm typecheck`): ✓ (dev לא נשבר)
+- i18n lint: ✓ (אין עברית בקוד)
+- `git diff dev..HEAD --name-only | grep -vE "packages/provider/|pnpm-lock"`: ריק (אפס קובץ חי)
+- `grep "@drive-coding/provider" core/backend/frontend src`: ריק (לא נצרכת ע"י החי)
+
+### חריגות
+
+אין. additive נקי.
 
 ---
 
@@ -7637,6 +8211,32 @@ B2 (הצגה): הוספת `import { version } from "$app/environment"` ל-Settin
 ### חריגות
 
 אין.
+## 2026-06-28 — slice-C3-rename — 3 commits
+
+### מה בוצע?
+
+**Commit 0 (none) — תלות ישירה @anthropic-ai/claude-agent-sdk@0.3.191:**
+- `packages/provider/package.json`: הוסף @anthropic-ai/claude-agent-sdk: 0.3.191 ל-dependencies (גרסה נעולה, תואמת claude-agent-acp@0.52.0).
+- `pnpm-lock.yaml`: עודכן אוטומטית.
+
+**Commit 1 (tdd) — host.rename + NormalizedCapabilities.rename + capability:**
+- `host/types.ts`: הוסף rename:boolean ל-NormalizedCapabilities (additive).
+- `claude/capabilities.ts`: rename=true (store-level, SDK תמיד זמין לclaude).
+- `claude/rename.ts` (חדש): claudeRenameSession(sessionId, title, cwd?) — wrapper עם dir-fallback. ייבוא SDK מוגבל לקובץ זה בלבד (two-SDK containment, DoD 4).
+- `host.ts`: sessionCwd Map מאוכלס ב-newSession; host.rename(string,string)→void.
+- `host.test.ts`: 2 טסטים חדשים — capabilities.rename=true + typeof host.rename==="function".
+
+**Commit 2 (manual) — rename-smoke חי:**
+- `rename-smoke.ts` (חדש): start → newSession → prompt(INIT_PROMPT) → rename("DC-TEST") → listSessions → אמת customTitle.
+- PASS חי: claude שינה שם ל-"DC-TEST", listSessions אישרה customTitle: "DC-TEST".
+
+### חריגות
+- ה-smoke מריץ prompt קצר לפני rename כי claude לא כותב JSONL לפני התור הראשון.
+- ייבוא @anthropic-ai/claude-agent-sdk מוגבל ל-claude/rename.ts בלבד.
+
+### בדיקות
+- typecheck: 0 errors. tests: 64/64. rename-smoke חי: PASS. lint:i18n: ירוק.
+- DoD 4: grep — SDK import רק ב-claude/rename.ts. DoD 5: additive (provider/docs בלבד).
 
 ---
 

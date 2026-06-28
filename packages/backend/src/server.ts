@@ -1,8 +1,8 @@
 import "./log-setup.js" // חייב להיות ראשון — מאתחל לוגר לפני כל יבוא אחר
-import { createLogger } from "@drive-coding/core/log"
-import { serve, type ServerType } from "@hono/node-server"
-import { serveStatic } from "@hono/node-server/serve-static"
 import { createServer as httpsCreateServer } from "node:https"
+import { createLogger } from "@drive-coding/core/log"
+import { type ServerType, serve } from "@hono/node-server"
+import { serveStatic } from "@hono/node-server/serve-static"
 import { Hono } from "hono"
 import { WebSocketServer } from "ws"
 import { isBinary } from "./binary.js"
@@ -47,7 +47,7 @@ process.on("unhandledRejection", (reason) => {
 })
 
 import { cors } from "hono/cors"
-import { createBridgeManager } from "./acp/bridge-manager.js"
+import { createConnectionRegistry } from "./acp/connection-registry.js"
 import { createInMemoryAgentRegistry } from "./agents/registry.js"
 import { createAgentOrchestrator } from "./app/agent-orchestrator.js"
 import { createProjectsRegistry } from "./app/projects-registry.js"
@@ -78,18 +78,19 @@ app.use("*", cors({ origin: parseCorsOrigins(process.env.CORS_ORIGINS), credenti
 const registry = createInMemoryAgentRegistry()
 
 // wire-recorder: פעיל כש-WIRE_RECORD=1; אחרת no-op (אפס IO, אפס overhead)
-// מוגדר לפני createBridgeManager כדי שיועבר כ-opts.wireRecorder
 const wireRecorder = createWireRecorder({
   dir: process.env.WIRE_RECORD ? ensureStateSubdir("wire-recordings") : null,
 })
 
-const bridgeManager = createBridgeManager({ wireRecorder })
+// CUT-3b-ii: connection-registry מחליף את bridge-manager singleton.
+// wireRecorder מוזרם ל-registry (server יוצר, registry מחבר ל-conn.onFrame פר-agent).
+const connectionRegistry = createConnectionRegistry({ wireRecorder })
 const projectsRegistry = createProjectsRegistry(ensureStateSubdir("cache"))
 const recordingsStore = createRecordingsStore(ensureStateSubdir("recordings"))
 
 const orchestrator = createAgentOrchestrator({
   registry,
-  bridgeManager,
+  connectionRegistry,
   projectsRegistry,
 })
 
@@ -97,7 +98,13 @@ const orchestrator = createAgentOrchestrator({
 registerHttp(app)
 registerHttpOptions(app)
 registerClientLogHttp(app)
-registerAgentsHttp(app, { registry, orchestrator, projectsRegistry, bridgeManager })
+// CUT-3b-ii: connectionRegistry מספק getRuntimeInfo (מחליף bridgeManager)
+registerAgentsHttp(app, {
+  registry,
+  orchestrator,
+  projectsRegistry,
+  bridgeManager: connectionRegistry,
+})
 registerProjectsHttp(app, { projectsRegistry })
 registerRecordingsHttp(app, { recordingsStore })
 registerRecordingsPostHttp(app, { recordingsStore })
@@ -174,7 +181,8 @@ echoWss.on("error", (err) => procLog.warn({ src: "echoWss", err }, "wss error"))
 agentWss.on("error", (err) => procLog.warn({ src: "agentWss", err }, "wss error"))
 
 const echoHandler = createEchoWsHandler()
-const onAgentConnect = createAgentWsHandler({ orchestrator, bridgeManager })
+// CUT-3b-ii: connectionRegistry מחליף bridgeManager ב-ws-agent
+const onAgentConnect = createAgentWsHandler({ orchestrator, connectionRegistry })
 
 echoWss.on("connection", (ws) => {
   echoHandler(ws)

@@ -59,13 +59,22 @@ const mockClient = {
   close: vi.fn(),
 }
 
-vi.mock("provider-contract/acp", async (importActual) => {
-  const actual = await importActual<typeof import("provider-contract/acp")>()
+vi.mock("@drive-coding/provider/client", async (importActual) => {
+  const actual = await importActual<typeof import("@drive-coding/provider/client")>()
   return {
     ...actual,
     createAcpClient: vi.fn().mockImplementation(
-      (_transport: unknown, listener: (n: SessionNotification) => void) => {
-        capturedListener = listener
+      (
+        _transport: unknown,
+        callbackOrCallbacks:
+          | ((n: SessionNotification) => void)
+          | { onUpdate: (n: SessionNotification) => void; onExtNotification?: unknown },
+      ) => {
+        // ─── slice FE-normalization: תמיכה בשתי חתימות ───
+        capturedListener =
+          typeof callbackOrCallbacks === "function"
+            ? callbackOrCallbacks
+            : callbackOrCallbacks.onUpdate
         return Promise.resolve(mockClient)
       },
     ),

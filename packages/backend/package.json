@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "provider-contract": "git+https://github.com/MusiCode1/provider-abstraction.git#main",
+    "@drive-coding/provider": "workspace:*",
     "selfsigned": "^2",
     "@agentclientprotocol/sdk": "^0.21.1",
     "@ai-sdk/elevenlabs": "^2.0.33",

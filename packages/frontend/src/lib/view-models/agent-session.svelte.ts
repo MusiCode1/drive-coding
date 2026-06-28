@@ -6,7 +6,7 @@
  *   - הצטברות בועות (bubble accumulation) מהתראות session/update
  *   - מתודות ציבוריות: attach/detach/sendPrompt
  *
- * משתמש ב-AcpClient האגנוסטי לתעבורה מתוך provider-contract/acp,
+ * משתמש ב-AcpClient האגנוסטי לתעבורה מתוך @drive-coding/provider/client,
  * עטוף עם ה-WsAcpTransport מצד ה-FE.
  */
 
@@ -17,7 +17,7 @@ import type {
   SessionModelState,
 } from "@agentclientprotocol/sdk"
 import { tick } from "svelte"
-import { createAcpClient, type AcpClient } from "provider-contract/acp"
+import { createAcpClient, type AcpClient } from "@drive-coding/provider/client"
 import type { CuesEngine } from "$lib/engines/cues"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
 import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
@@ -44,6 +44,12 @@ import { isBypassMode } from "$lib/util/permission-mode"
 // כל עוד false: supportsImageInput=false תמיד → לכידת-התמונה רדומה לחלוטין,
 // ללא תלות במה שהספק מדווח. Commit 4 הופך ל-true. (module-level const)
 const IMAGE_INPUT_ENABLED = false
+
+// ─── slice FE-normalization: ייבוא ─── (additive)
+// import type בלבד — NormalizedCapabilities מ-subpath ./types (pure, ללא spawn-core).
+// ⚠️ אל תייבא value מ-@drive-coding/provider/host → יגרור spawn-core → vite crash.
+import type { NormalizedCapabilities } from "@drive-coding/provider/types"
+import { createExtClient, type ExtClient } from "$lib/adapters/ext"
 
 /**
  * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries.
@@ -131,6 +137,42 @@ export class AgentSession {
     return IMAGE_INPUT_ENABLED && this.#client?.capabilities?.promptCapabilities?.image === true
   }
 
+  // ─── slice FE-normalization: capabilities + gating ─── (additive)
+
+  /**
+   * NormalizedCapabilities שהתקבלו מ-_drive/capabilities ext notification.
+   * null = טרם התקבל (ה-BE שלח אבל FE עדיין לא קיבל, או לא in-process session).
+   */
+  get capabilities(): NormalizedCapabilities | null {
+    return this.#capabilities
+  }
+
+  /**
+   * Helper gating — מחזיר אובייקט עם כל ה-caps (all false אם עדיין null).
+   * UI: `{#if vm.supports.thinkingTokens}`.
+   */
+  get supports(): NormalizedCapabilities {
+    return (
+      this.#capabilities ?? {
+        mcp: false,
+        compact: false,
+        commands: false,
+        usage: false,
+        configOptions: false,
+        rename: false,
+        thinkingTokens: false,
+      }
+    )
+  }
+
+  /**
+   * ExtClient facade — גישה לשליחת _drive/* ext requests.
+   * null = אין חיבור פעיל. ה-vm קורא לzה דרך שיטות ציבוריות (לא ישירות).
+   */
+  get ext(): ExtClient | null {
+    return this.#ext
+  }
+
   // ─── redesign-fix: רשימת סשנים inline ─── (תוספתי)
   sessions = $state<SessionInfo[]>([])
   sessionsLoading = $state<boolean>(false)
@@ -162,6 +204,12 @@ export class AgentSession {
   }
 
   #client: AcpClient | null = null
+  // ─── slice FE-normalization: ext facade ─── (additive)
+  /** facade מטופס לשליחת _drive/* ext requests. נוצר/מנוקה עם #client. */
+  #ext: ExtClient | null = null
+  // ─── slice FE-normalization: capabilities ─── (additive)
+  /** NormalizedCapabilities שהתקבלו מ-_drive/capabilities ext notification. null = טרם התקבל. */
+  #capabilities: NormalizedCapabilities | null = null
   // ─── slice ws-reconnect-fix-nbug2: ref ל-transport החי (NBug2 root fix) ───
   /** ref ל-transport הפעיל — נשמר בכל יצירת transport, מנוקה עם #client. */
   #transport: WsAcpTransport | null = null
@@ -474,7 +522,11 @@ export class AgentSession {
 
       try {
         this.agentId = agentId
-        this.#client = await createAcpClient(transport, this.#onSessionUpdate)
+        this.#client = await createAcpClient(transport, {
+          onUpdate: this.#onSessionUpdate,
+          onExtNotification: this.#onExtNotification,
+        })
+        this.#ext = createExtClient(this.#client)
         this.bubbles = []
         this.isLoadingHistory = true
         try {
@@ -535,7 +587,11 @@ export class AgentSession {
       await transport.waitForOpen()
 
       // 3. לחיצת יד של ACP + סשן חדש
-      this.#client = await createAcpClient(transport, this.#onSessionUpdate)
+      this.#client = await createAcpClient(transport, {
+        onUpdate: this.#onSessionUpdate,
+        onExtNotification: this.#onExtNotification,
+      })
+      this.#ext = createExtClient(this.#client)
       const m = this.#sessionMeta()
       const sessionResult = await this.#client.newSession({ cwd: input.cwd, ...(m && { _meta: m }) })
       this.#sessionId = (sessionResult as { sessionId?: string }).sessionId ?? null
@@ -698,7 +754,11 @@ export class AgentSession {
       await transport.waitForOpen()
 
       // 3. לחיצת יד של ACP (זהה ל-attach)
-      this.#client = await createAcpClient(transport, this.#onSessionUpdate)
+      this.#client = await createAcpClient(transport, {
+        onUpdate: this.#onSessionUpdate,
+        onExtNotification: this.#onExtNotification,
+      })
+      this.#ext = createExtClient(this.#client)
 
       // ── קריאה ל-loadSession במקום ל-newSession ──
       // השתק את ה-TTS של ה-Speaker במהלך ניגון מחדש של ההיסטוריה (slice 4: replay-quiet).
@@ -989,6 +1049,19 @@ export class AgentSession {
     return false
   }
 
+  // ─── slice FEAT-thinking-live: setThinkingTokens ─── (תוספתי)
+
+  /**
+   * מגדיר את מגבלת ה-thinking tokens דרך ה-ext facade.
+   * n=null → כבוי (no-limit). מדלג בשקט אם אין חיבור פעיל או ה-ext לא זמין.
+   * נפרד מ-applyConfigOption — זהו ext (_drive/*), לא configOption ACP סטנדרטי.
+   */
+  setThinkingTokens = async (n: number | null): Promise<void> => {
+    if (this.status !== "connected") return
+    if (!this.#ext || !this.#sessionId) return
+    await this.#ext.setThinkingTokens(this.#sessionId, n)
+  }
+
   // ─── slice-restore-last-config: apply remembered config ─── (תוספתי)
 
   /**
@@ -1151,7 +1224,9 @@ export class AgentSession {
       // כבר סגור
     }
     this.#client = null
-    this.#transport = null   // slice ws-reconnect-fix-nbug2: נקה ref
+    this.#ext = null          // slice FE-normalization: נקה facade
+    this.#capabilities = null // slice FE-normalization: נקה capabilities (חיבור חדש = caps חדשים)
+    this.#transport = null    // slice ws-reconnect-fix-nbug2: נקה ref
     this.#sessionId = null
     this.agentId = null
     // הורג את ה-bridge בצד ה-BE. ה-BE לא הורג את ה-child בסגירת WS לבד
@@ -1282,6 +1357,18 @@ export class AgentSession {
       this.error = `mock loadSession failed: ${msg}`
       this.#setTurnState("idle")   // NBug3: throw מוקדם — ה-finally הפנימי אולי לא רץ
       this.status = "error"
+    }
+  }
+
+  // ─── slice FE-normalization: ext notification handler ─── (additive)
+  /**
+   * מקבל ext notifications מה-SDK (default-routed).
+   * `_drive/capabilities` → מאחסן ב-#capabilities (reactive via getter).
+   * לא ב-#onSessionUpdate — capabilities מגיע כ-extNotification, לא כ-session/update.
+   */
+  #onExtNotification = (method: string, params: Record<string, unknown>): void => {
+    if (method === "_drive/capabilities") {
+      this.#capabilities = params as unknown as NormalizedCapabilities
     }
   }
 

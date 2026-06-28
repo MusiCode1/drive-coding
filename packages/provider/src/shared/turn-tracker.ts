@@ -15,7 +15,7 @@
  * now מוזרק לכל המתודות (דטרמיניזם בטסט).
  */
 
-import type { WireSummary } from "../delivery/wire-decode.js"
+import type { WireSummary } from "./wire-decode.js"
 
 export type TurnTracker = {
   /** עדכן מצב מ-frame נכנס (stdout). now מוזרק לדטרמיניזם בטסט. */
