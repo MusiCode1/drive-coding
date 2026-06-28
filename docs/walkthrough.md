@@ -29,6 +29,34 @@ calev light (מרדכי מריץ).
 
 ---
 
+## 2026-06-28 — slice/code-copy-button — Commits 0+1: כפתור-העתקה לבלוקי-קוד
+
+### מה בוצע?
+
+**Commit 0** — `enhance-code-blocks.ts` (action חדש):
+- Svelte use:-action co-located ב-bubbles/ (presentation-DOM בלבד)
+- event delegation: מאזין click אחד על ה-node (שורד re-render של innerHTML)
+- enhance(): מזריק כפתור לכל `<pre>` חדש עם data-copy-ready flag
+- update(): נורה אחרי עדכון-ה-DOM (streaming) → enhance() מחדש
+- SVG inline של lucide copy/check (12x12); משוב "הועתק" 2 שניות
+
+**Commit 1** — `MarkdownContent.svelte` (חיווט + CSS):
+- ייבוא `enhanceCodeBlocks` + `getI18n`, שימוש ב-`t("bubble.copy"/"bubble.copied")` (ללא מפתח חדש)
+- `use:enhanceCodeBlocks={{ text, labelCopy, labelCopied }}` על `.md-content`
+- CSS: `pre { position:relative }` + `.code-copy-btn { position:absolute; inset-inline-end:0.3rem; ... }`
+- desktop: opacity:0 + מופיע ב-hover על `pre`; mobile: opacity:0.7 תמיד
+
+### בדיקות
+- typecheck: נקי (שניהם)
+- lint i18n: נקי (אין עברית קשיחה)
+- git diff packages/core: ריק (FE-only, ללא מפתח i18n חדש)
+- בדיקה חיה: נדרשת — ראה DoD ב-brief §5
+
+### חריגות
+- אין
+
+---
+
 ## 2026-06-28 — תכנון: בקרת השמעה+ריצה + פלייליסט (briefs בלבד — טרם בוצע קוד)
 
 > סשן **תכנון** (מרדכי), לא ביצוע. אין שינוי קוד. תיעוד מלא: `decisions/voice-acp.md` (2026-06-28)

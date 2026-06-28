@@ -1,7 +1,7 @@
 # Slice C — code-copy-button — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: מאושר (אביגיל READY — סבב 2, 0 findings); **gate נפתח — A מוזג ל-dev (`a20fbda`)**
+> **סטטוס**: **בוצע + כלב GO 8/8** (`f14ec41` + `8957af3`); אביגיל READY r2. **base אוחד עם dev הכולל את D** (קונפליקט CSS ב-`MarkdownContent.svelte` נפתר additive). ממתין ל-smoke חי ב-preview + merge מרדכי
 > **Complexity**: 6/10 (verifier: light — אך **גוטשת streaming** דורשת בדיקה חיה)
 > **תלות**: depends_on: [A] — **מומשה**: A (`MarkdownContent.svelte`) כבר על dev. base=**dev** (ישיר, לא שרשור). עצמאי-קבצים מ-B ומ-D.
 
