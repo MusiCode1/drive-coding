@@ -57,6 +57,12 @@ function makeMockSink(): MockSink {
     clear: () => {
       playResolvers.clear()
     },
+    pause: () => {
+      // no-op — בדיקה ב-JSDOM; התנהגות אמיתית (AudioContext.suspend) לא נבדקת כאן
+    },
+    resume: () => {
+      // no-op
+    },
   }
 
   return sink
@@ -270,6 +276,99 @@ describe("AudioPlaylist", () => {
 
     // פתור s0 → s1 ינגן
     sink.resolvePlay("s0")
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(sink.playOrder).toContain("s1")
+    sink.resolvePlay("s1")
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(playlist.state).toBe("idle")
+  })
+
+  // ── Test 8: pause() → #playLoop ממתין, resume() → ממשיך מאותו cursor ──────
+
+  it("pause() במהלך ניגון → #playLoop מקפיא; resume() → ממשיך מאותו cursor", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    playlist.reserve("s0", key(0))
+    playlist.reserve("s1", key(1))
+    playlist.markReady("s0")
+    playlist.markReady("s1")
+
+    // אפשר ל-playLoop להתחיל ולהגיע ל-play(s0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sink.playOrder).toContain("s0")
+
+    // סיים s0 — loop מתקדם ל-s1
+    sink.resolvePlay("s0")
+    await vi.advanceTimersByTimeAsync(0)
+
+    // pause לפני שs1 מתחיל (s1 עדיין "ready" — עשוי כבר להתחיל, תלוי ב-tick)
+    // הבדיקה: אחרי pause, transport=paused
+    playlist.pause()
+    expect(playlist.transport).toBe("paused")
+
+    // resume — transport=playing, loop ממשיך
+    playlist.resume()
+    expect(playlist.transport).toBe("playing")
+
+    // s1 אמור לנגן
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sink.playOrder).toContain("s1")
+
+    sink.resolvePlay("s1")
+    await vi.advanceTimersByTimeAsync(0)
+    expect(playlist.state).toBe("idle")
+  })
+
+  // ── Test 9: stop() בזמן paused → loop יוצא, transport="stopped" ─────────
+
+  it("stop() בזמן paused → #playLoop יוצא, transport=stopped, state=idle", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    playlist.reserve("s0", key(0))
+    playlist.reserve("s1", key(1))
+    playlist.markReady("s0")
+    playlist.markReady("s1")
+    await vi.advanceTimersByTimeAsync(0)
+
+    // pause כשs0 מתנגן
+    playlist.pause()
+    expect(playlist.transport).toBe("paused")
+
+    // stop בזמן pause — שחרר waitForResume ויצא
+    playlist.stop()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(playlist.transport).toBe("stopped")
+    expect(playlist.state).toBe("idle")
+    expect(playlist.items).toEqual([])
+  })
+
+  // ── Test 10: reserve() אחרי stop() → transport מתאפס ל-"playing" ──────────
+
+  it("reserve() אחרי stop() → transport מתאפס ל-playing, תור חדש מנוגן", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    // ריצה ראשונה
+    playlist.reserve("s0", key(0))
+    playlist.markReady("s0")
+    await vi.advanceTimersByTimeAsync(0)
+    sink.resolvePlay("s0")
+    await vi.advanceTimersByTimeAsync(0)
+
+    // עצור
+    playlist.stop()
+    expect(playlist.transport).toBe("stopped")
+
+    // תור חדש אחרי stop
+    playlist.reserve("s1", key(1))
+    expect(playlist.transport).toBe("playing") // אופס ע"י reserve()
+
+    playlist.markReady("s1")
     await vi.advanceTimersByTimeAsync(0)
 
     expect(sink.playOrder).toContain("s1")

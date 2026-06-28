@@ -234,7 +234,10 @@ export class AudioPlaylist {
             await this.#waitForResume()
             if (this.#stopped) break
           }
-          if (this.transport === "stopped" || this.#stopped) break
+          // re-read אחרי await — TS מצר transport ל-"playing"|"paused" מתוך הענף; cast מפורש
+          // מאפשר לבדוק "stopped" (stop() נקרא בזמן pause → שחרר ה-waitForResume)
+          const transportAfterResume = this.transport as AudioPlaylistTransport
+          if (transportAfterResume === "stopped" || this.#stopped) break
 
           item.state = "playing"
           this.currentSegmentId = item.segmentId
