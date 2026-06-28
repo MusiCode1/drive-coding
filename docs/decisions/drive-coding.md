@@ -1,5 +1,68 @@
 # Decisions — drive-coding
 
+## 2026-06-28 — V4b: בורר-קול Gemini (רשימה סטטית, אין endpoint)
+
+### רציונל
+‏אחרי ש-V4a (Gemini TTS) מוזג, הקול נשאר מקובע ל-`"Kore"` ב-`resolveTts()`. V4b מוסיף
+‏בחירת-קול. ההכרעה המרכזית: **מאיפה רשימת הקולות**. בדקנו אם קיים endpoint חי (העדפת
+‏המשתמשת) — ‏ו**אין כזה**: תיעוד Gemini speech-generation מגדיר 30 קולות prebuilt בלי REST
+‏endpoint; `GET /v1beta/voices` → 404; `models.list` מחזיר metadata בלי שדה קולות; ו-SDK
+‏`@google/genai@2.3.0` (המותקן) חסר כל method לרשימת קולות. לכן הגישה: **רשימה סטטית בקוד**
+‏(`voices-gemini.ts`, 30 קולות + תיאורי-אופי). זה גם מפשט את ה-slice משמעותית — אין fetch,
+‏retry/backoff או מצבי-טעינה (בניגוד ל-`loadVoices` של ElevenLabs).
+
+‏הכרעות-משתמשת: (1) להציג תיאורי-אופי בבורר — דרך `SelectOption.description` שכבר קיים
+‏ב-`Select.svelte`; (2) ברירת-מחדל = `Kore` (זהה למקובע היום, שינוי מינימלי); (3) התיאורים
+‏**דו-לשוניים** (אנגלית+עברית). מבנה: `resolveTts` מקבל פרמטר שלישי אופציונלי `geminiVoice`
+‏(backward-compatible), `Settings.geminiVoice` שטוח (לא voice-config מקונן), בורר UI
+‏conditional על `provider==="google"`.
+
+‏**הכרעת ה-i18n הדו-לשוני** (נגזרת מבקשת המשתמשת + אילוץ ה-lint): ה-lint חוסם עברית בכל
+‏קובץ פרט ל-`i18n/catalogs/*` + טסטים. לכן העברית **לא** יכולה להיות data ב-`voices-gemini.ts`.
+‏הפתרון: מפתח i18n פר-קול (`settings.geminiVoice.desc.<Id>`, ×30), ב-`he.ts`="`Firm · תקיף`"
+‏(גם-וגם), ב-`en.ts`="`Firm`". הקובץ הסטטי מחזיק `{ id, descKey: MessageKey }` — ה-`descKey`
+‏literal עובר typecheck (מפתח דינמי `t(\`...${id}\`)` היה נשבר מול ה-union). אביגיל אימתה את
+‏כל שרשרת ה-i18n (allowlist, MessageKey type, `Catalog`-completeness, append-only).
+
+### ‏ממצאי אביגיל
+‏r1 = **READY** (נדיר): אימתה symbols + שהטענה "אין endpoint" לא הופרכה. אחרי שינוי
+‏הדו-לשוני — r2 = **READY** שוב: אימתה את שרשרת ה-i18n (allowlist `lint-no-hebrew`,
+‏`MessageKey` union + יצוא מ-`core/i18n`, `Catalog`-completeness, append-only קטלוגים).
+‏סה"כ findings ירוקים בלבד (provider=`"google"` מול מפתחות `gemini`, ה-brief מודע;
+‏`Select` חותך description אך "`Firm · תקיף`" שורה-אחת → מלא).
+
+### ‏שינויי-כיוון (אחרי ביצוע)
+- ‏**בורר-קול מותנה-ספק** (תיקון `c9edd64`): ה-brief המקורי הוסיף בורר-Gemini conditional אך
+  ‏השאיר את בורר-ElevenLabs **תמיד-גלוי** → במצב Google הופיעו שניהם (מבלבל; השמטה ב-brief).
+  ‏המשתמשת תפסה ב-preview. תוקן-במקום: בורר-הספק קודם, ואז **רק** הבורר של הספק הפעיל
+  ‏(`{#if elevenlabs}…{:else if google}…`). typecheck+i18n נקיים.
+
+### ‏רעיונות שנדחו
+- ‏**endpoint חי** — נבדק לבקשת המשתמשת, לא קיים (ראה רציונל).
+- ‏**Cloud Text-to-Speech `voices.list`** — endpoint שכן קיים, אך API אחר (`texttospeech.googleapis.com`),
+  ‏קולות אחרים (Chirp/WaveNet — לא ה-prebuilt של Gemini), host שלא מוזרק ע"י OneCLI. לא חלופה.
+- ‏**voice-config מקונן פר-ספק** — מיותר; שני שדות שטוחים (`voiceId`/`geminiVoice`) מספיקים.
+- ‏**תיאורים אנגלית-בלבד** — נשקל בתחילה (פשוט יותר), נדחה לבקשת המשתמשת לטובת דו-לשוני.
+
+## 2026-06-28 21:52 — permission-ui נשאר brief חסום עד hook הרשאות ב-provider-contract
+
+### רציונל
+נכתב brief ל-`slice-permission-ui` שמחזיר את פיצ'ר ממשק אישור ההרשאות למסלול: UI inline בצ'אט,
+state ב-`AgentSession`, bridge מבוסס Promise, ו-DoD חי מול ספק non-bypass. הבדיקה מול אביגיל חשפה
+שאי אפשר לשגר את הסלייס לפני שינוי מקדים ב-`provider-abstraction`: ה-adapter הנוכחי עדיין מאשר
+אוטומטית `requestPermission`, ולכן ל-drive-coding אין hook אמיתי להצגת UI.
+
+### שינויי-כיוון
+ה-brief סומן במפורש `BLOCKED / pre-dispatch` במקום READY חלקי. הוספתי Dispatch gate שמחייב:
+השלמת P0 ב-`provider-abstraction`, נעילת commit חדש ב-`pnpm-lock.yaml`, עדכון ה-header, והרצת אביגיל
+חוזרת לפני `plan_verified=true`. תיקוני אביגיל הפנימיים הוטמעו: שימוש ב-`option.name` במקום `label`,
+implementations מלאים ב-skeleton של `permission.ts`, ושם טיפוס `RequestPermissionHandler` במקום
+`PermissionDecision` לא קיים.
+
+### מצב
+אין finding פנימי ידוע שנשאר בבריף. החסם היחיד הידוע הוא חיצוני: `provider-contract` צריך לחשוף
+`onRequestPermission` דרך `createAcpClient` ולשמר fallback legacy כשאין callback.
+
 ## 2026-06-28 — runtime-controls בלי patch: ext channel שלנו + גישת-query דרך `sessions`
 
 ### רציונל

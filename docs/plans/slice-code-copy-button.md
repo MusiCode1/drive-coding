@@ -1,19 +1,19 @@
 # Slice C — code-copy-button — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: מאושר (אביגיל READY — סבב 2, 0 findings); gated על merge של A
+> **סטטוס**: **בוצע + כלב GO 8/8** (`f14ec41` + `8957af3`); אביגיל READY r2. **base אוחד עם dev הכולל את D** (קונפליקט CSS ב-`MarkdownContent.svelte` נפתר additive). ממתין ל-smoke חי ב-preview + merge מרדכי
 > **Complexity**: 6/10 (verifier: light — אך **גוטשת streaming** דורשת בדיקה חיה)
-> **תלות**: slice A (`MarkdownContent.svelte`). depends_on: [A]. base=**dev לאחר מיזוג A**. ⚠️ gated על A.
+> **תלות**: depends_on: [A] — **מומשה**: A (`MarkdownContent.svelte`) כבר על dev. base=**dev** (ישיר, לא שרשור). עצמאי-קבצים מ-B ומ-D.
 
 ## §0 — Pre-flight
 
-### ⛔ Dispatch gate
-**אסור ליצור worktree לפני ש-A מוזג ל-dev** — C מוסיף את כפתור-ההעתקה ל-`MarkdownContent.svelte`
-(נוצר ב-A). מרדכי מדאספטצ'ת C רק אחרי ש-A על dev. C עצמאי-קבצים מ-B ומ-D (קובץ אחר) → אפשר במקביל להם.
+### ✅ Dispatch gate — נפתח
+A (`markdown-content-unify`) **מוזג ל-dev** (merge `a20fbda`); `MarkdownContent.svelte` קיים על dev.
+התלות היחידה של C מומשה → C משוגר ישירות על base=dev. C עצמאי-קבצים מ-B ומ-D (קובץ אחר) → אפשר במקביל להם.
 
 ### Worktree
 ```bash
-# רק אחרי ש-A מוזג ל-dev. MarkdownContent.svelte כבר על dev.
+# A כבר על dev — MarkdownContent.svelte קיים. base=dev ישיר.
 git worktree add .worktrees/code-copy-button -b slice/code-copy-button dev
 cd .worktrees/code-copy-button
 pnpm install && pnpm hooks:install
@@ -164,4 +164,4 @@ export const enhanceCodeBlocks: Action<HTMLElement, Params> = (node, params) => 
 |---|---|---|---|
 | 1 | אייקון — SVG inline או תו-יוניקוד (📋)? | SVG inline (lucide copy) — עקבי עם שאר האייקונים | ❌ |
 | 2 | להעתיק עם או בלי ה-trailing newline של הבלוק? | בלי trailing newline מיותר (`.trimEnd()`) | ❌ |
-| 3 | base — A מוזג בזמן dispatch? | base=dev, gated על merge של A (ראה §0) | ✅ נסגר |
+| 3 | base — A מוזג בזמן dispatch? | base=dev. **A מוזג בפועל (`a20fbda`)** → gate נפתח, base=dev ישיר | ✅ נסגר |

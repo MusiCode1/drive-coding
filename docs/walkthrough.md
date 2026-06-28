@@ -387,6 +387,150 @@
 - `svelte-kit sync` נדרש לפני הרצת FE tests (יוצר `.svelte-kit/tsconfig.json`). רץ אוטומטית ב-`pnpm test` דרך pre-build hook.
 - 2 pre-existing test failures לא קשורים ל-CUT-1: bridge-failure-integration (known, roadmap) + https-serve (bun.exe Windows path).
 
+## 2026-06-29 — slice V4b: בורר-קול Gemini פר-ספק
+
+### מה בוצע
+
+**Commit 0 (5929452)** — `voices-gemini.ts` + עדכון `resolveTts` — TDD:
+- `GEMINI_VOICES`: 30 קולות prebuilt (מאומתים מ-ai.google.dev 2026-06-29)
+- `GeminiVoice { id, descKey: MessageKey }` — descKey literal type-safe
+- `DEFAULT_GEMINI_VOICE = "Kore"` (ברירת מחדל, זהה לקבוע שהיה)
+- `resolveTts(ttsProvider, elevenVoiceId, geminiVoice?)` — פרמטר שלישי אופציונלי; ברירת מחדל DEFAULT_GEMINI_VOICE
+- 31 מפתחות i18n (label + 30 × desc.<Id>) ב-keys.ts + he.ts + en.ts (placeholder EN)
+- TDD: 4 טסטים חדשים (א–ד) → 395/395 ירוק
+
+**Commit 1 (89b4a1c)** — `geminiVoice` ב-Settings:
+- `Persisted.geminiVoice: string` (בסוף, parallel-safe)
+- `DEFAULTS.geminiVoice = DEFAULT_GEMINI_VOICE`
+- `$state geminiVoice` + `setGeminiVoice` + constructor load + `#persist`
+
+**Commit 2 (b886850)** — UI + חיווט + i18n דו-לשוני:
+- `GeminiVoicePicker.svelte`: <Select> סטטי, 30 קולות+description=t(descKey), leaf דק (אין async/effect)
+- `SettingsScreen.svelte`: `{#if settings.ttsProvider === "google"}` → GeminiVoicePicker
+- `speaker.svelte.ts:~399` + `bubble-player.svelte.ts:~96`: העברת `settings.geminiVoice` ל-resolveTts
+- `he.ts`: 30 תיאורים דו-לשוניים "<En> · <תרגום-עברי>" + label="קול Gemini"
+
+**Commit 3 (c9edd64)** — תיקון UX (תפיסת המשתמשת בעת preview):
+- בורר-הקול הופך מותנה-ספק: בורר ElevenLabs היה תמיד-גלוי, Gemini conditional → במצב Google הופיעו שניהם. עכשיו בורר-הספק קודם, ואז `{#if elevenlabs}…{:else if google}…` — רק הבורר של הספק הפעיל.
+
+### חריגות מהתכנון
+- keys.ts + he.ts + en.ts נוספו כבר ב-Commit 0 (placeholder EN) ועודכנו ב-Commit 2 (he: דו-לשוני).
+- Commit 3 = שינוי-כיוון אחרי preview (השמטה ב-brief המקורי; ר' decisions/drive-coding.md).
+
+### בדיקות
+- typecheck ✓ · lint:i18n ✓ · 395/395 טסטים (4 חדשים TDD)
+- calev light GO 10/10; אומת חי ע"י המשתמשת (UI מותנה, persist, קול ראשי+חוזר)
+
+---
+
+## 2026-06-29 — slice-B (markdown-dir-per-paragraph) — Commit 0
+
+### מה בוצע?
+
+**Commit 0 (TDD)** — `packages/frontend/src/lib/util/markdown.ts` + `markdown.test.ts`:
+- נוסף `const BIDI_BLOCK_TAGS = new Set([...])` ברמת-מודול (P/LI/H1-H6/BLOCKQUOTE/TD/TH).
+- הורחב ה-`DOMPurify.addHook("afterSanitizeAttributes")` הקיים — ענף נוסף בתוך אותו callback:
+  `if (BIDI_BLOCK_TAGS.has(node.tagName) && !node.hasAttribute("dir")) node.setAttribute("dir","auto")`.
+- guard `!node.hasAttribute("dir")` מונע דריסת dir מפורש (finding אביגיל 🟢).
+- ה-hook הקיים (`<a>` → target/rel) לא נגע.
+- נוספו 7 טסטי jsdom (B-1 עד B-7): paragraph/li/h1/blockquote מקבלים dir="auto"; pre/code לא; `<a>` ← target=_blank (regression); KaTeX עובד; guard dir מפורש לא נדרס.
+- עודכנו 2 טסטים ישנים שציפו ל-`<li>` / `<h1>` ללא dir — עדכון לבדיקת `<li` / `<h1` (לא שינוי semantics).
+
+### תוצאות
+- typecheck: ירוק (0 שגיאות).
+- 67/67 טסטים ירוקים (59 קיימים + 8 חדשים, כולל עדכון 2 ישנים).
+- i18n lint: ירוק.
+- lint (Biome): שגיאות baseline קיימות (CRLF ב-biome.json) — לא נגרמו ע"י ה-slice.
+
+### חריגות
+- lint baseline שבור ב-Windows (CRLF) — קיים לפני ה-slice, אינו שלנו.
+
+### הצעד הבא
+calev light (מרדכי מריץ).
+
+---
+
+## 2026-06-28 — slice-A5-watchdog — Commits 0+1 (watchdog ל-turnState)
+
+### מה בוצע?
+
+**Commit 0 (40ab622)** — `packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+- נוספו `#watchdogTimer`, `#WATCHDOG_MS=45_000`, `turnInterrupted=$state(false)`.
+- `#kickWatchdog()`: מאפס timer; נקרא בראש `#onSessionUpdate` (לפני כל returns מוקדמים, כולל tool_call/mode/config) ובתחילת `sendPrompt`. אם פג ב-non-idle: `turnInterrupted=true` + `#setTurnState("idle")`.
+- `#clearWatchdog()`: נקרא ב-RESP תקין (sendPrompt resolve/catch), `cancelTurn`, `#cleanup` (destroy).
+- `cancelTurn` מנקה גם `turnInterrupted=false` (cancel מכוון לא "נקטע").
+- `sendPrompt` מאפס `turnInterrupted=false` בתחילת תור חדש.
+
+**Commit 1 (57d7425)** — `agent-session.watchdog.test.svelte.ts` (חדש, 6 טסטי integration):
+- שתיקה >45s → idle כפוי + turnInterrupted=true.
+- activity (chunk/tool_call) מאפסת watchdog — לא נורה.
+- RESP תקין → watchdog מנוקה, turnInterrupted=false.
+- cancelTurn → watchdog מנוקה, turnInterrupted=false.
+- תור חדש מאפס turnInterrupted.
+
+### תוצאות
+- typecheck: ירוק (0 שגיאות).
+- 377/377 טסטים ירוקים (כולל 6 חדשים).
+- i18n lint: ירוק.
+
+### חריגות
+- לא נתפסו חריגות — הכל לפי ה-brief.
+
+### הצעד הבא
+calev light (מרדכי מריץ).
+
+---
+
+## 2026-06-28 — slice/code-copy-button — Commits 0+1: כפתור-העתקה לבלוקי-קוד
+
+### מה בוצע?
+
+**Commit 0** — `enhance-code-blocks.ts` (action חדש):
+- Svelte use:-action co-located ב-bubbles/ (presentation-DOM בלבד)
+- event delegation: מאזין click אחד על ה-node (שורד re-render של innerHTML)
+- enhance(): מזריק כפתור לכל `<pre>` חדש עם data-copy-ready flag
+- update(): נורה אחרי עדכון-ה-DOM (streaming) → enhance() מחדש
+- SVG inline של lucide copy/check (12x12); משוב "הועתק" 2 שניות
+
+**Commit 1** — `MarkdownContent.svelte` (חיווט + CSS):
+- ייבוא `enhanceCodeBlocks` + `getI18n`, שימוש ב-`t("bubble.copy"/"bubble.copied")` (ללא מפתח חדש)
+- `use:enhanceCodeBlocks={{ text, labelCopy, labelCopied }}` על `.md-content`
+- CSS: `pre { position:relative }` + `.code-copy-btn { position:absolute; inset-inline-end:0.3rem; ... }`
+- desktop: opacity:0 + מופיע ב-hover על `pre`; mobile: opacity:0.7 תמיד
+
+### בדיקות
+- typecheck: נקי (שניהם)
+- lint i18n: נקי (אין עברית קשיחה)
+- git diff packages/core: ריק (FE-only, ללא מפתח i18n חדש)
+- בדיקה חיה: נדרשת — ראה DoD ב-brief §5
+
+### חריגות
+- אין
+
+---
+
+## 2026-06-28 — תכנון: בקרת השמעה+ריצה + פלייליסט (briefs בלבד — טרם בוצע קוד)
+
+> סשן **תכנון** (מרדכי), לא ביצוע. אין שינוי קוד. תיעוד מלא: `decisions/voice-acp.md` (2026-06-28)
+> + `docs/plans/playback-run-control-roadmap.md` + roadmap הראשי (Track C).
+
+### מה תוכנן
+- **גילוי:** רוב מה שביקשה המשתמשת כבר קיים (msr-v2 מוזג 15/6): StatusBubble, cancelTurn,
+  speaker.stop, BubblePlayer, ו-`Player`/`OrderedQueue`/`jumpToSegment` (slice-22) כבסיס-פלייליסט.
+- **נכתבו briefs מלאים** (§0-§9): A2 (audio-playlist+reserve-on-enqueue), A3 (transport
+  pause/resume/stop+פיצול cancel), A4 (navigation prev/next+איחוד BubblePlayer), A5 (watchdog),
+  B1 (UI — worktree נפרד). שרשרת A2→A3→A4; A5 עצמאי; B1 על A4.
+- **בודד לחקירה:** חיתוך-מילים ב-TTS (היה A1). האבחון הראשון הופרך (קורה גם ב-claude; אין סיגנל
+  סוף-הודעה אמין). → `docs/investigations/2026-06-28-sentence-cutting-mid-word.md`.
+
+### מה לא נעשה
+- ❌ אין קוד · ❌ לא הורץ אביגיל (דולג לבקשת המשתמשת) · ❌ אין worktrees/dispatch · ❌ אין merge.
+
+### הצעד הבא
+ביצוע השרשרת הנקייה (להתחיל A2). פתוח: אביגיל על A2 לפני dispatch? כאן או בסשן נפרד/יתרו?
+
+---
+
 ## 2026-06-28 — slice-image-paste — Commits 0–3 (פיגום רדום, IMAGE_INPUT_ENABLED=false)
 
 ### מה בוצע?
@@ -8093,3 +8237,125 @@ B2 (הצגה): הוספת `import { version } from "$app/environment"` ל-Settin
 ### בדיקות
 - typecheck: 0 errors. tests: 64/64. rename-smoke חי: PASS. lint:i18n: ירוק.
 - DoD 4: grep — SDK import רק ב-claude/rename.ts. DoD 5: additive (provider/docs בלבד).
+
+---
+
+## 2026-06-28 — slice-code-syntax-highlight — F1 fix: code-before-KaTeX pre-stripping
+
+### מה בוצע?
+
+תיקון F1 שתפסה כלב-heavy: בלוק-קוד שמופיע **לפני** ביטוי KaTeX באותה הודעה איבד את עוטף `<pre><code class="hljs">`.
+
+**שורש**: `storeCodePlaceholder` דחף ל-`currentMap` בלי לעדכן `katexCount`. כשקוד הגיע לפני KaTeX, הוא נחת ב-`currentMap[0]`, ואז KaTeX העלה `katexCount=1` — כך `katexFragments = currentMap.slice(0,1)` לקח את ה-code fragment, והוא עבר KATEX_ALLOW (שלא כולל `<pre>/<code>`) → עוטף נמחק.
+
+**פתרון (fragmentKinds[]):**
+- הוחלף `katexCount` ב-`fragmentKinds: ("katex"|"code")[]` מקביל ל-`currentMap`.
+- `storePlaceholder`/`storeInlinePlaceholder` → `fragmentKinds.push("katex")`.
+- `storeCodePlaceholder` → `fragmentKinds.push("code")`.
+- `parseToHtml` → `katexFragments/codeFragments` נגזרים ע"י `filter` לפי kind (לא `slice(katexCount)`).
+- `markdown.ts`: `allClean` נבנה ע"י `fragmentKinds.map((kind) => ...)` → global index תמיד מדויק.
+
+**markdown.test.ts:**
+- תיקון הטסט המעורב הקיים ("mixed code + math") — הוסיף `expect(out).toContain("<pre>")`.
+- 3 טסטים חדשים: code-before-math/<pre> שורד, multiple code blocks, mixed ordering.
+
+### בדיקות
+
+- 3 regression tests חדשים: ירוקים (F1 אמות).
+- suite כולל: 359/359 ירוקים.
+- typecheck: ירוק.
+- biome: ירוק.
+
+### חריגות
+
+אין. תיקון נקי — interface חיצוני (`parseToHtml`) מורחב ב-`fragmentKinds` field שלא שובר callers.
+
+---
+
+## 2026-06-28 — slice-code-syntax-highlight — Commit 2 (manual — theme-CSS)
+
+### מה בוצע?
+
+**Commit 2 (manual):** theme-CSS — `.hljs-*` → CSS vars, הגדרת `--hl-*` פר-פלטה.
+
+**MarkdownContent.svelte:**
+- הוסיף 30+ CSS rules: `.md-content :global(.hljs-keyword)`, `.hljs-string`, `.hljs-comment`, `.hljs-number`, `.hljs-title`, `.hljs-type`, `.hljs-attr`, `.hljs-name`/`.hljs-tag`, `.hljs-meta`, `.hljs-variable`, `.hljs-selector-*`, `.hljs-addition`/`.hljs-deletion` (diff).
+- כל rule → `color: var(--hl-*)` בלבד (אסור style inline — class-only).
+- `.hljs-comment` גם `font-style: italic`.
+
+**app.css:**
+- 9 CSS vars חדשים לכל אחת מ-8 הפלטות: `--hl-keyword`, `--hl-string`, `--hl-comment`, `--hl-number`, `--hl-func`, `--hl-type`, `--hl-attr`, `--hl-tag`, `--hl-meta`.
+- פלטות כהות (1-7): github-dark inspired, צבעים מותאמים לאקסנט הפלטה.
+- daylight (בהיר): github-light inspired (אדום/ירוק-עמוק/סגול/כחול על רקע בהיר).
+
+### בדיקות
+
+- typecheck: ירוק (0 errors).
+- tests: 356/356 (אין שינוי).
+- biome (Svelte): ירוק.
+- build: ירוק (33s). bundle delta: 0 bytes JS (CSS בלבד, <5KB); CSS total: 79KB.
+- ⚠️ בדיקה ויזואלית בדפדפן — נדרשת על ידי כלב (FE עם BE חי: ```ts```, ```python```, ```bash``` בשתי פלטות).
+
+### חריגות
+
+- `pnpm lint` מדווח CRLF errors מרובות על כל הפרויקט — זו סוגיה pre-existing ב-Windows (git.core.autocrlf), לא הוכנסה ע"י ה-slice.
+- app.css מכיל `@theme` (Tailwind v4 rule) שביומי מסמן כ-error — pre-existing, לא שונה.
+
+---
+
+## 2026-06-28 — slice-code-syntax-highlight — Commit 1 (TDD)
+
+### מה בוצע?
+
+**Commit 1 (TDD):** pipeline + pass-שלישי-מבודד בקבצים `markdown-parse.ts`, `markdown.ts`, `markdown.test.ts`.
+
+**markdown-parse.ts:**
+- הוסף `renderer.code(token: Tokens.Code)` בתוך `marked.use()` — מפעיל `highlightCode`, בונה `<pre><code class="hljs language-X">...</code></pre>`, שומר ב-`currentMap[katexCount++]` דרך `storeCodePlaceholder`, מחזיר `BLOCK_SENTINEL`.
+- `storeCodePlaceholder(html)` — כותב לאינדקס `katexCount` ב-`currentMap`, ואז מעלה את `katexCount` (code fragments נשמרים אחרי ה-KaTeX fragments).
+- `SAFE_LANG_RE = /^[a-z0-9+#-]+$/i` — sanitization בטוחה של שם-שפה (מניעת class injection).
+- `parseToHtml` מחזיר כעת `{ html, katexFragments, codeFragments }` (חתוך לפי `katexCount`).
+- ⚠️ PUA U+E002 נמחק ע"י DOMPurify (אומת אמפירית) — לכן code fragments משתמשים ב-BLOCK_SENTINEL (U+E000, שורד DOMPurify).
+
+**markdown.ts:**
+- `CODE_TAGS = ["pre","code","span"]`, `CODE_ATTR = ["class"]` (ללא style).
+- Pass 3b: כל code fragment עובר `DOMPurify.sanitize(codeHtml, { ALLOWED_TAGS:CODE_TAGS, ALLOWED_ATTR:CODE_ATTR })`.
+- `allClean = [...cleanKatex, ...cleanCode]` → `replacePlaceholders(cleanMarkdown, allClean)` — החלפה אחת לכל sentinels (KaTeX + code).
+- SSR path: `replacePlaceholders(markdownHtml, [...katexFragments, ...codeFragments])`.
+
+**markdown.test.ts:**
+- 9 טסטים TDD חדשים: syntax highlighting, security (injected style stripped, script escaped), KaTeX regression, tables regression, no-lang, unknown-lang, mixed code+math.
+- תיקון 2 טסטים קיימים: `<code>` → `<code` (כי עכשיו יש `class="hljs"` תמיד).
+
+### בדיקות
+
+- TDD (Red-Green): 9 טסטים חדשים ירוקים; 356/356 כולל regression.
+- Typecheck: ירוק (0 errors).
+- Lint (biome): ירוק.
+- דיבוג אמפירי: U+E000/E001 שורדים DOMPurify; U+E002–E004 נמחקים (sentinel-debug.test.ts — נמחק לפני commit).
+
+### חריגות
+
+- ניסיון ראשון להשתמש ב-U+E002 כ-CODE_SENTINEL — נכשל (DOMPurify מוחק אותו). פתרון: code fragments ב-currentMap לאחר KaTeX, עם offset-based indexing.
+- PUA chars נכתבים דרך Node.js (Write tool לא שומר תווים בלתי-נראים).
+
+---
+
+## 2026-06-28 — slice-code-syntax-highlight — Commit 0 (TDD)
+
+### מה בוצע?
+
+**Commit 0 (TDD):** `packages/frontend/src/lib/util/code-highlight.ts` + `code-highlight.test.ts`.
+- `highlightCode(code, lang)` — רישום סלקטיבי של 16 שפות (ts/js/json/bash/py/xml/html/css/md/diff/yaml/sql/rust/go/c/java + aliases).
+- שפה מוכרת → hljs.highlight עם ignoreIllegals:true → HTML עם span.hljs-* בלבד (ללא style).
+- שפה לא-מוכרת / חסרה / ריקה → escapeHtml בלבד (plain), ללא throw.
+- אמות אמפירית: פלט מכיל class= ולא style= (ליבת האבטחה).
+
+### בדיקות
+
+- TDD (Red-Green): 9 טסטים ירוקים בסביבת node.
+- Typecheck: ירוק (0 errors, 0 warnings).
+- Lint (קבצים חדשים): ירוק.
+
+### חריגות
+
+- אין. הוספת dep highlight.js לחבילה.

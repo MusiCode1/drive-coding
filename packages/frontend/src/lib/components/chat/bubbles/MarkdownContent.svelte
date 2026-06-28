@@ -15,13 +15,23 @@
  * המנגנון: ה-:global של Svelte הוא unlayered → מנצח את preflight ב-@layer base.
  *
  * ─── slice/markdown-content-unify (Commit 0) ───
+ * ─── slice/code-copy-button (Commit 1) — הוספת use:enhanceCodeBlocks ───
  */
 import { renderMarkdown } from "$lib/util/markdown"
+import { getI18n } from "$lib/context"
+import { enhanceCodeBlocks } from "./enhance-code-blocks"
 
 let { text, variant = "bubble" }: { text: string; variant?: "bubble" | "viewer" } = $props()
+
+const t = getI18n().t
 </script>
 
-<div class="md-content" class:viewer={variant === "viewer"} dir="auto">{@html renderMarkdown(text)}</div>
+<div
+  class="md-content"
+  class:viewer={variant === "viewer"}
+  dir="auto"
+  use:enhanceCodeBlocks={{ text, labelCopy: t("bubble.copy"), labelCopied: t("bubble.copied") }}
+>{@html renderMarkdown(text)}</div>
 
 <style>
   .md-content :global(p) { margin: 0.25em 0; }
@@ -78,4 +88,88 @@ let { text, variant = "bubble" }: { text: string; variant?: "bubble" | "viewer" 
     border: 1px solid var(--border); padding: 0.3em 0.55em; text-align: start;
   }
   .md-content :global(th) { background: rgba(0,0,0,0.18); font-weight: 700; }
+
+  /* ── slice/code-copy-button: כפתור-העתקה פר בלוק-קוד ── */
+  .md-content :global(pre) { position: relative; }
+
+  .md-content :global(.code-copy-btn) {
+    position: absolute;
+    top: 0.3rem;
+    inset-inline-end: 0.3rem;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--fg-dim);
+    cursor: pointer;
+    padding: 0;
+    /* desktop: מוסתר עד hover על ה-pre */
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+  }
+
+  /* desktop: hover על ה-pre מציג את הכפתור */
+  @media (hover: hover) {
+    .md-content :global(pre:hover .code-copy-btn) {
+      opacity: 0.7;
+    }
+    .md-content :global(.code-copy-btn:hover) {
+      opacity: 1;
+      color: var(--fg);
+    }
+  }
+
+  /* mobile: כפתור תמיד גלוי קצת */
+  @media (hover: none) {
+    .md-content :global(.code-copy-btn) {
+      opacity: 0.7;
+    }
+  }
+
+  /* מצב "הועתק" */
+  .md-content :global(.code-copy-btn[data-copied]) {
+    color: var(--accent);
+    opacity: 1;
+  }
+
+  /* ── syntax highlight tokens (slice-code-syntax-highlight, Commit 2) ──────
+   * hljs פולט <span class="hljs-*"> — מיופה כאן דרך CSS vars פר-פלטה (app.css).
+   * אסור style= על ה-spans — אבטחה. CSS vars מאפשרים שינוי-ערכה בלי JS.
+   * ── */
+  .md-content :global(.hljs-keyword),
+  .md-content :global(.hljs-built_in)         { color: var(--hl-keyword); }
+  .md-content :global(.hljs-string),
+  .md-content :global(.hljs-template-string),
+  .md-content :global(.hljs-template-tag),
+  .md-content :global(.hljs-regexp)            { color: var(--hl-string); }
+  .md-content :global(.hljs-comment),
+  .md-content :global(.hljs-quote)             { color: var(--hl-comment); font-style: italic; }
+  .md-content :global(.hljs-number),
+  .md-content :global(.hljs-literal)           { color: var(--hl-number); }
+  .md-content :global(.hljs-title),
+  .md-content :global(.hljs-title\.class_),
+  .md-content :global(.hljs-title\.function_) { color: var(--hl-func); }
+  .md-content :global(.hljs-type)             { color: var(--hl-type); }
+  .md-content :global(.hljs-attr),
+  .md-content :global(.hljs-attribute),
+  .md-content :global(.hljs-property)          { color: var(--hl-attr); }
+  .md-content :global(.hljs-name),
+  .md-content :global(.hljs-tag),
+  .md-content :global(.hljs-selector-tag)      { color: var(--hl-tag); }
+  .md-content :global(.hljs-meta),
+  .md-content :global(.hljs-meta\.string),
+  .md-content :global(.hljs-operator),
+  .md-content :global(.hljs-punctuation)       { color: var(--hl-meta); }
+  .md-content :global(.hljs-variable),
+  .md-content :global(.hljs-params),
+  .md-content :global(.hljs-symbol)            { color: var(--hl-attr); }
+  /* selector-class / selector-id (CSS) */
+  .md-content :global(.hljs-selector-class),
+  .md-content :global(.hljs-selector-id)       { color: var(--hl-func); }
+  /* addition / deletion (diff) */
+  .md-content :global(.hljs-addition)          { color: var(--hl-string); }
+  .md-content :global(.hljs-deletion)          { color: var(--hl-keyword); }
 </style>
