@@ -1,5 +1,33 @@
 # Decisions — drive-coding
 
+## 2026-06-28 — פיצול slice-cache-headers-version לדק (A+B+C) + D נפרד
+
+### רציונל
+
+ה-brief הישן `slice-cache-headers-version.md` גדל לנפח-יתר: A (Cache-Control headers) + B (הצגת
+גרסה+SHA) + C (bump semver) + D (מיתוג: rename, FE_ENV, title, localStorage, publish). A+B קטנים
+ובעלי-ערך מיידי (רענון-טלפון אמין + visibility ל-debug) אבל נתקעו כי D (מיתוג/publish) נגרר איתם
+ודרש סבב אביגיל חוזר. פיצלתי ל-`slice-cache-version.md` הדק = A+B+C בלבד, שעבר אביגיל **READY ב-r2**
+(0 findings; r1 = 3 קוסמטיים בלבד — אחד מה-briefs המדויקים שעברו כאן). depends_on=[] כי
+slice-fe-build-decouple כבר מוזג (זרימת build מנותקת + dc-build-fe + alias fe:build זמינים).
+
+### שינויי-כיוון
+
+- **D מתפצל בעצמו**: D2+D3+D4 (כותרת בלי v2, איחוד `FE_ENV` ב-vite.config, מיגרציית localStorage-key)
+  עצמאיים מהשם → slice מיתוג נפרד (depends_on=[]). D5+D-publish (metadata + guards ב-build.mjs)
+  מצמדים לשם החבילה (`--filter @drive-coding/frontend`) ולסוכן-הפרסום → slice publish-prep שתלוי
+  ב-`slice-frontend-rename-cutover` (הקנוני ל-rename). כך אין סבך-תלויות.
+- **ממצא חי שהפיצול חשף**: `FE_ENV=dev` שכבר הוגדר ב-units (sync 21/06) **לא עושה כלום** — `vite.config.ts`
+  עדיין קורא `FE_SOURCEMAP`, לא `FE_ENV`. D3(a) (איחוד ב-vite.config) הוא הפער שסוגר את זה.
+
+### רעיונות שנדחו
+
+- **לשגר את ה-brief הגדול כמו שהוא** — נדחה. הנפח החזיק את A+B (ערך מיידי) כבני-ערובה של D
+  (מיתוג, פחות דחוף, מצמד-לפרסום). thin-slicing מחזיר את A+B למסלול מהיר.
+- **§D1 (rename חבילה) בתוך D** — נדחה לטובת `slice-frontend-rename-cutover` כמקור-אמת יחיד (כפילות).
+
+---
+
 ## 2026-06-28 — סדר slice-input-autogrow ↔ slice-image-paste: autogrow ראשון, brief מרוענן
 
 ### רציונל
