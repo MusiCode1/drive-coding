@@ -1,3 +1,33 @@
+## 2026-06-28 — slice-C3-host-session — 3 commits
+
+### מה בוצע?
+
+**Commit 0+1 (integration) — newSession + prompt + streaming + smoke חי:**
+- `host.ts`: הוסף `newSession({cwd, mcpServers:[]})` דרך `clientCtx.buildSession().start()` → שמירת `ActiveSession` ב-map.
+- `host.ts`: הוסף `prompt({sessionId, text}, onUpdate)` — loop על `activeSession.nextUpdate()` עד `kind=stop`, forward updates דרך `onUpdate`.
+- `host.ts`: רשם כל session methods על ה-agentApp: `session.new`, `session.prompt`, `session.load`, `session.setConfigOption`, `session.cancel`, `session.fork`, `session.list`, `session.delete`, `session.resume`, `session.close`, `session.setMode`, `authenticate` — mirror של `runAcp` ב-acp-agent.js.
+- `host.test.ts`: 8 טסטים סטרוקטורליים נוספו (wiring checks, guards לפני start).
+- `session-smoke.ts`: smoke חי — start → newSession → prompt("Reply with exactly the word: hello") → אוסף updates → מדפיס טקסט. **Claude החזיר "hello", 8 updates, stopReason=end_turn.**
+- format fixes (biome) על host.ts + host.test.ts.
+
+**Commit 2 (none) — findings + walkthrough:**
+- `docs/research/c3-host-session-findings.md` — תוצאות smoke חי, key findings ארכיטקטוניים (single-connection requirement, onConnect timing, forkSession naming).
+
+### חריגות
+- ה-commit המקורי (babd858) היה commit 0+1 מאוחד (לפי ה-worktree שכבר היה מוכן). format fixes נוספו בcommit נפרד.
+- streaming מאומת ב-smoke החי בלבד (TestAgent חסום ע"י exports-map של ה-SDK).
+
+### בדיקות
+- `pnpm --filter @drive-coding/provider typecheck` — 0 errors.
+- `pnpm --filter @drive-coding/provider test` — 63/63 PASS.
+- `session-smoke.ts` חי — PASS: "hello", 8 updates, end_turn.
+- additive check: `git diff slice/C3-host..HEAD --name-only | grep -vE "packages/provider/|docs/|pnpm-lock"` — ריק.
+- DoD 5 (אפס דליפת sdk@1.0.0): InProcessHost interface ב-string/Record בלבד.
+- DoD 6 (additive): אפס קבצים חיים.
+- DoD 7 (close אחרי session): smoke סוגר נקי.
+
+---
+
 ## 2026-06-28 — slice-C3-host — 3 commits
 
 ### מה בוצע?
