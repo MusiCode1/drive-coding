@@ -121,18 +121,27 @@ export function createBridgeManager(opts?: { wireRecorder?: WireRecorder }): Bri
     input: SpawnBridgeInput,
   ): Promise<SpawnCoreHandleWithStderr> {
     // Init wrapper state BEFORE core.spawnWithStderr — onFrame can fire during spawn.
-    const rec = wireRecorder?.open(bridgeId) ?? { record() {}, close() {} }
-    wrapperState.set(bridgeId, {
-      hasActiveWs: false,
-      tracker: createTurnTracker(),
-      rec,
-    })
+    // Track whether THIS call created the entry: if a live bridge already owns the id,
+    // a double-spawn must not clobber (or on failure delete) the existing entry.
+    const created = !wrapperState.has(bridgeId)
+    if (created) {
+      const rec = wireRecorder?.open(bridgeId) ?? { record() {}, close() {} }
+      wrapperState.set(bridgeId, {
+        hasActiveWs: false,
+        tracker: createTurnTracker(),
+        rec,
+      })
+    }
     try {
       return await core.spawnWithStderr(bridgeId, input)
     } catch (err) {
-      // Spawn failed — clean up wrapper entry (core never stored it).
-      wrapperState.get(bridgeId)?.rec.close()
-      wrapperState.delete(bridgeId)
+      // Spawn failed — clean up wrapper entry only if THIS call created it.
+      // Double-spawn on a live bridge: core throws "already exists", but the
+      // existing wrapperState entry belongs to the first (live) bridge — do not touch it.
+      if (created) {
+        wrapperState.get(bridgeId)?.rec.close()
+        wrapperState.delete(bridgeId)
+      }
       throw err
     }
   }
