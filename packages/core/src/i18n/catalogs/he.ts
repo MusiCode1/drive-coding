@@ -202,4 +202,7 @@ export const he: Catalog = {
   "settings.ttsProvider.label": "ספק TTS",
   "settings.ttsProvider.elevenlabs": "ElevenLabs",
   "settings.ttsProvider.gemini": "Gemini",
+  // ─── image-attach tray ─── (slice-image-paste)
+  "attach.addImage": "הוסף תמונה",
+  "attach.remove": "הסר",
 }

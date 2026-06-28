@@ -37,6 +37,12 @@ import type {
 // ─── slice sessions-inline: ייבוא טיפוס + normalize ───
 import { type SessionInfo, normalizeSessionInfo } from "$lib/adapters/sessions"
 
+// ─── image-attach kill-switch ─── (slice-image-paste Commit 2)
+// נשאר false עד ש-Commit 4 (שליחה מולטימודלית) + track-A מוכנים.
+// כל עוד false: supportsImageInput=false תמיד → לכידת-התמונה רדומה לחלוטין,
+// ללא תלות במה שהספק מדווח. Commit 4 הופך ל-true. (module-level const)
+const IMAGE_INPUT_ENABLED = false
+
 /**
  * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries.
  * Opus 4.7+ שינה default ל-display:"omitted"; זה מבקש "summarized" מפורשות.
@@ -112,6 +118,16 @@ export class AgentSession {
   // ─── slice session-title: כותרת הסשן הפעיל ─── (תוספתי)
   /** כותרת הסשן הפעיל. snapshot מרגע הטעינה/החלפה. "" = אין כותרת (סשן חדש). */
   sessionTitle = $state<string>("")
+
+  // ─── image-attach: capability gating ─── (slice-image-paste, additive)
+  /**
+   * האם הסשן הנוכחי תומך בקלט תמונה.
+   * IMAGE_INPUT_ENABLED=false → תמיד false (פיגום רדום).
+   * Commit 4 הופך ל-true ובודק promptCapabilities.image מהספק.
+   */
+  get supportsImageInput(): boolean {
+    return IMAGE_INPUT_ENABLED && this.#client?.capabilities?.promptCapabilities?.image === true
+  }
 
   // ─── redesign-fix: רשימת סשנים inline ─── (תוספתי)
   sessions = $state<SessionInfo[]>([])
