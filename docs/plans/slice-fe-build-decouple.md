@@ -3,6 +3,7 @@
 > ‏**סוג**: infra / ops (לא פיצ'ר UI — חמש-השכבות לא רלוונטיות)
 > ‏**base**: `dev` (`c28f4e3`) · **depends_on**: `[]` · **Complexity**: 4 → `calev` (mode: light)
 > ‏**Planner**: מרדכי · **תאריך**: 2026-06-25
+> ‏**Status**: הושלם — 4 commits (283bd07..eda3fb0) · branch: slice-fe-build-decouple
 
 ---
 
