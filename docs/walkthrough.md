@@ -7515,3 +7515,125 @@ B2 (הצגה): הוספת `import { version } from "$app/environment"` ל-Settin
 ### חריגות
 
 אין.
+
+---
+
+## 2026-06-28 — slice-code-syntax-highlight — F1 fix: code-before-KaTeX pre-stripping
+
+### מה בוצע?
+
+תיקון F1 שתפסה כלב-heavy: בלוק-קוד שמופיע **לפני** ביטוי KaTeX באותה הודעה איבד את עוטף `<pre><code class="hljs">`.
+
+**שורש**: `storeCodePlaceholder` דחף ל-`currentMap` בלי לעדכן `katexCount`. כשקוד הגיע לפני KaTeX, הוא נחת ב-`currentMap[0]`, ואז KaTeX העלה `katexCount=1` — כך `katexFragments = currentMap.slice(0,1)` לקח את ה-code fragment, והוא עבר KATEX_ALLOW (שלא כולל `<pre>/<code>`) → עוטף נמחק.
+
+**פתרון (fragmentKinds[]):**
+- הוחלף `katexCount` ב-`fragmentKinds: ("katex"|"code")[]` מקביל ל-`currentMap`.
+- `storePlaceholder`/`storeInlinePlaceholder` → `fragmentKinds.push("katex")`.
+- `storeCodePlaceholder` → `fragmentKinds.push("code")`.
+- `parseToHtml` → `katexFragments/codeFragments` נגזרים ע"י `filter` לפי kind (לא `slice(katexCount)`).
+- `markdown.ts`: `allClean` נבנה ע"י `fragmentKinds.map((kind) => ...)` → global index תמיד מדויק.
+
+**markdown.test.ts:**
+- תיקון הטסט המעורב הקיים ("mixed code + math") — הוסיף `expect(out).toContain("<pre>")`.
+- 3 טסטים חדשים: code-before-math/<pre> שורד, multiple code blocks, mixed ordering.
+
+### בדיקות
+
+- 3 regression tests חדשים: ירוקים (F1 אמות).
+- suite כולל: 359/359 ירוקים.
+- typecheck: ירוק.
+- biome: ירוק.
+
+### חריגות
+
+אין. תיקון נקי — interface חיצוני (`parseToHtml`) מורחב ב-`fragmentKinds` field שלא שובר callers.
+
+---
+
+## 2026-06-28 — slice-code-syntax-highlight — Commit 2 (manual — theme-CSS)
+
+### מה בוצע?
+
+**Commit 2 (manual):** theme-CSS — `.hljs-*` → CSS vars, הגדרת `--hl-*` פר-פלטה.
+
+**MarkdownContent.svelte:**
+- הוסיף 30+ CSS rules: `.md-content :global(.hljs-keyword)`, `.hljs-string`, `.hljs-comment`, `.hljs-number`, `.hljs-title`, `.hljs-type`, `.hljs-attr`, `.hljs-name`/`.hljs-tag`, `.hljs-meta`, `.hljs-variable`, `.hljs-selector-*`, `.hljs-addition`/`.hljs-deletion` (diff).
+- כל rule → `color: var(--hl-*)` בלבד (אסור style inline — class-only).
+- `.hljs-comment` גם `font-style: italic`.
+
+**app.css:**
+- 9 CSS vars חדשים לכל אחת מ-8 הפלטות: `--hl-keyword`, `--hl-string`, `--hl-comment`, `--hl-number`, `--hl-func`, `--hl-type`, `--hl-attr`, `--hl-tag`, `--hl-meta`.
+- פלטות כהות (1-7): github-dark inspired, צבעים מותאמים לאקסנט הפלטה.
+- daylight (בהיר): github-light inspired (אדום/ירוק-עמוק/סגול/כחול על רקע בהיר).
+
+### בדיקות
+
+- typecheck: ירוק (0 errors).
+- tests: 356/356 (אין שינוי).
+- biome (Svelte): ירוק.
+- build: ירוק (33s). bundle delta: 0 bytes JS (CSS בלבד, <5KB); CSS total: 79KB.
+- ⚠️ בדיקה ויזואלית בדפדפן — נדרשת על ידי כלב (FE עם BE חי: ```ts```, ```python```, ```bash``` בשתי פלטות).
+
+### חריגות
+
+- `pnpm lint` מדווח CRLF errors מרובות על כל הפרויקט — זו סוגיה pre-existing ב-Windows (git.core.autocrlf), לא הוכנסה ע"י ה-slice.
+- app.css מכיל `@theme` (Tailwind v4 rule) שביומי מסמן כ-error — pre-existing, לא שונה.
+
+---
+
+## 2026-06-28 — slice-code-syntax-highlight — Commit 1 (TDD)
+
+### מה בוצע?
+
+**Commit 1 (TDD):** pipeline + pass-שלישי-מבודד בקבצים `markdown-parse.ts`, `markdown.ts`, `markdown.test.ts`.
+
+**markdown-parse.ts:**
+- הוסף `renderer.code(token: Tokens.Code)` בתוך `marked.use()` — מפעיל `highlightCode`, בונה `<pre><code class="hljs language-X">...</code></pre>`, שומר ב-`currentMap[katexCount++]` דרך `storeCodePlaceholder`, מחזיר `BLOCK_SENTINEL`.
+- `storeCodePlaceholder(html)` — כותב לאינדקס `katexCount` ב-`currentMap`, ואז מעלה את `katexCount` (code fragments נשמרים אחרי ה-KaTeX fragments).
+- `SAFE_LANG_RE = /^[a-z0-9+#-]+$/i` — sanitization בטוחה של שם-שפה (מניעת class injection).
+- `parseToHtml` מחזיר כעת `{ html, katexFragments, codeFragments }` (חתוך לפי `katexCount`).
+- ⚠️ PUA U+E002 נמחק ע"י DOMPurify (אומת אמפירית) — לכן code fragments משתמשים ב-BLOCK_SENTINEL (U+E000, שורד DOMPurify).
+
+**markdown.ts:**
+- `CODE_TAGS = ["pre","code","span"]`, `CODE_ATTR = ["class"]` (ללא style).
+- Pass 3b: כל code fragment עובר `DOMPurify.sanitize(codeHtml, { ALLOWED_TAGS:CODE_TAGS, ALLOWED_ATTR:CODE_ATTR })`.
+- `allClean = [...cleanKatex, ...cleanCode]` → `replacePlaceholders(cleanMarkdown, allClean)` — החלפה אחת לכל sentinels (KaTeX + code).
+- SSR path: `replacePlaceholders(markdownHtml, [...katexFragments, ...codeFragments])`.
+
+**markdown.test.ts:**
+- 9 טסטים TDD חדשים: syntax highlighting, security (injected style stripped, script escaped), KaTeX regression, tables regression, no-lang, unknown-lang, mixed code+math.
+- תיקון 2 טסטים קיימים: `<code>` → `<code` (כי עכשיו יש `class="hljs"` תמיד).
+
+### בדיקות
+
+- TDD (Red-Green): 9 טסטים חדשים ירוקים; 356/356 כולל regression.
+- Typecheck: ירוק (0 errors).
+- Lint (biome): ירוק.
+- דיבוג אמפירי: U+E000/E001 שורדים DOMPurify; U+E002–E004 נמחקים (sentinel-debug.test.ts — נמחק לפני commit).
+
+### חריגות
+
+- ניסיון ראשון להשתמש ב-U+E002 כ-CODE_SENTINEL — נכשל (DOMPurify מוחק אותו). פתרון: code fragments ב-currentMap לאחר KaTeX, עם offset-based indexing.
+- PUA chars נכתבים דרך Node.js (Write tool לא שומר תווים בלתי-נראים).
+
+---
+
+## 2026-06-28 — slice-code-syntax-highlight — Commit 0 (TDD)
+
+### מה בוצע?
+
+**Commit 0 (TDD):** `packages/frontend/src/lib/util/code-highlight.ts` + `code-highlight.test.ts`.
+- `highlightCode(code, lang)` — רישום סלקטיבי של 16 שפות (ts/js/json/bash/py/xml/html/css/md/diff/yaml/sql/rust/go/c/java + aliases).
+- שפה מוכרת → hljs.highlight עם ignoreIllegals:true → HTML עם span.hljs-* בלבד (ללא style).
+- שפה לא-מוכרת / חסרה / ריקה → escapeHtml בלבד (plain), ללא throw.
+- אמות אמפירית: פלט מכיל class= ולא style= (ליבת האבטחה).
+
+### בדיקות
+
+- TDD (Red-Green): 9 טסטים ירוקים בסביבת node.
+- Typecheck: ירוק (0 errors, 0 warnings).
+- Lint (קבצים חדשים): ירוק.
+
+### חריגות
+
+- אין. הוספת dep highlight.js לחבילה.
