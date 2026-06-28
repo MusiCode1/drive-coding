@@ -1,3 +1,21 @@
+## 2026-06-28 — slice/code-copy-button — Commit 0: action enhanceCodeBlocks
+
+### מה בוצע?
+- נוצר `packages/frontend/src/lib/components/chat/bubbles/enhance-code-blocks.ts`
+- Svelte use:-action לבועות-קוד: event delegation על ה-node + enhance() לכל `<pre>` חדש
+- SVG inline של lucide `copy` ו-`check` (12x12px)
+- מנגנון streaming: update() מזריק-מחדש אחרי שה-`{@html}` מתעדכן
+
+### בדיקות
+- typecheck: נקי
+- lint i18n: נקי (אין עברית קשיחה)
+- בדיקה חיה: בשלב הבא (Commit 1)
+
+### חריגות
+- אין
+
+---
+
 ## 2026-06-28 — תכנון: בקרת השמעה+ריצה + פלייליסט (briefs בלבד — טרם בוצע קוד)
 
 > סשן **תכנון** (מרדכי), לא ביצוע. אין שינוי קוד. תיעוד מלא: `decisions/voice-acp.md` (2026-06-28)
