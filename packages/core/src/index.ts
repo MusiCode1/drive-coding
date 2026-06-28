@@ -8,3 +8,5 @@ export * from "./voice/cache-key"
 export * from "./voice/narration-prompt"
 export * from "./voice/sentence-boundary"
 export * from "./voice/translation-prompt"
+// ─── image ─── (slice-image-paste)
+export * from "./image/resize-plan"
