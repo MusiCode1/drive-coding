@@ -29,6 +29,7 @@ import type { ActiveAgents } from "./view-models/active-agents.svelte"
 import type { BubblePlayer } from "./view-models/bubble-player.svelte"
 import type { ContentViewerVM } from "./view-models/content-viewer.svelte"
 import type { RecentProjects } from "./view-models/recent-projects.svelte"
+import type { AudioPlaylist } from "./engines/audio-playlist.svelte"
 
 // ─── i18n ──────────────────────────────────────────
 export const [getI18n, setI18n] = createContext<I18nVM>()
@@ -82,3 +83,6 @@ export const [getContentViewer, setContentViewer] = createContext<ContentViewerV
 
 // ─── recent-projects ─── (slice connect-recent-projects)
 export const [getRecentProjects, setRecentProjects] = createContext<RecentProjects>()
+
+// ─── audio-playlist ─── (slice A4 — shared between Speaker + BubblePlayer)
+export const [getAudioPlaylist, setAudioPlaylist] = createContext<AudioPlaylist>()

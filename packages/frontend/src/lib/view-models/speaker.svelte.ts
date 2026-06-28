@@ -41,7 +41,7 @@ import { translate } from "../adapters/voice/translate"
 import { resolveTts } from "../adapters/voice/tts-resolve"
 import type { AudioSink } from "../engines/audio-sink"
 import { AudioStream } from "../engines/audio-stream"
-import { AudioPlaylist } from "../engines/audio-playlist.svelte"
+import type { AudioPlaylist } from "../engines/audio-playlist.svelte"
 import type { CuesEngine } from "../engines/cues"
 import { PcmAudioStream } from "../engines/pcm-audio-stream"
 import { RoutingAudioSink } from "../engines/routing-audio-sink"
@@ -122,17 +122,30 @@ export class Speaker {
   // מוגדר על ידי הבנאי — נשמר כדי שה-destroy() יוכל לעצור את ה-effect.
   #disposeEffect: (() => void) | null = null
 
-  constructor(opts: { session: AgentSession; settings: Settings; cues?: CuesEngine }) {
+  constructor(opts: {
+    session: AgentSession
+    settings: Settings
+    cues?: CuesEngine
+    /**
+     * A4: פלייליסט משותף + sink — יוצרים ב-+layout ומוזרקים גם לBubblePlayer.
+     * ה-Speaker עוד מחזיק ref ל-audioStream (לצרכי prepareSegment + clear).
+     */
+    playlist: AudioPlaylist
+    audioStream: AudioSink
+  }) {
     this.#session = opts.session
     this.#settings = opts.settings
     this.#cues = opts.cues
     // ui-polish-batch C8: אתחל enabled מ-settings.muted + סנכרן cues
     this.enabled = !opts.settings.muted
     if (opts.cues) opts.cues.enabled = !opts.settings.muted
-    this.#audioStream = new RoutingAudioSink(new AudioStream(), new PcmAudioStream())
-    // A2: onPlaybackStart callback — נקרא פעם אחת כש-AudioPlaylist עובר idle→playing.
-    // guard #spokeThisTurn מונע re-entry סדרתי בתוך אותו תור (LOOKAHEAD=2 + async fetches).
-    this.#player = new AudioPlaylist(this.#audioStream, () => {
+    // A4: audioStream + playlist מוזרקים מ-+layout (לא נוצרים כאן)
+    this.#audioStream = opts.audioStream
+    this.#player = opts.playlist
+    // A4: רשום callback onPlaybackStart (cue "speaking") —
+    // dependency order ב-+layout מחייב שה-playlist נוצר לפני Speaker,
+    // אז Speaker מרשם את ה-callback בעצמו אחרי init.
+    this.#player.setOnPlaybackStart(() => {
       if (this.#spokeThisTurn) return
       this.#spokeThisTurn = true
       this.#cues?.play("speaking")

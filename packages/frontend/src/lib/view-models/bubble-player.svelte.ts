@@ -18,6 +18,7 @@
 
 import type { AgentSession } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
+import type { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { Bubble } from "$lib/types/bubble"
 import { playUserRecording } from "$lib/adapters/voice/play-bubble"
 import { resolveTts } from "$lib/adapters/voice/tts-resolve"
@@ -30,14 +31,18 @@ export class BubblePlayer {
 
   readonly #session: AgentSession
   readonly #settings: Settings
+  /** A4: פלייליסט משותף עם Speaker (Commit 2). toggle יאוחד ב-Commit 3. */
+  readonly #playlist: AudioPlaylist
   #audioEl: HTMLAudioElement | null = null
   #abortCtrl: AbortController | null = null
+  // A4 Commit 2: #sink נשאר עד Commit 3 (toggle עדיין משתמש בו)
   readonly #sink = new RoutingAudioSink(new AudioStream(), new PcmAudioStream())
   #segId: string | null = null
 
-  constructor(opts: { session: AgentSession; settings: Settings }) {
+  constructor(opts: { session: AgentSession; settings: Settings; playlist: AudioPlaylist }) {
     this.#session = opts.session
     this.#settings = opts.settings
+    this.#playlist = opts.playlist
   }
 
   /**

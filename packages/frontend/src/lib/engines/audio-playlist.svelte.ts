@@ -58,7 +58,8 @@ export class AudioPlaylist {
   items: PlaylistItem[] = $state([]) // ממוין לפי orderKey; reactive לתצוגה עתידית
 
   readonly #audioStream: AudioSink
-  readonly #onPlaybackStart?: () => void
+  // A4: לא-readonly — מאפשר ל-Speaker לרשום callback אחרי init (בגלל dependency order ב-+layout)
+  #onPlaybackStart?: () => void
   readonly #reserveTimeoutMs: number
   #playing = false // re-entrancy guard
   #stopped = false // אמת כש-stop() נקרא — #playLoop בודק אחרי כל await
@@ -79,6 +80,14 @@ export class AudioPlaylist {
     this.#audioStream = audioStream
     this.#onPlaybackStart = onPlaybackStart
     this.#reserveTimeoutMs = opts?.reserveTimeoutMs ?? 20_000
+  }
+
+  /**
+   * A4: מאפשר ל-Speaker לרשום callback אחרי יצירת ה-playlist (dependency order ב-+layout).
+   * נקרא פעם אחת מ-Speaker constructor כשה-playlist הגיע מבחוץ.
+   */
+  setOnPlaybackStart(cb: () => void): void {
+    this.#onPlaybackStart = cb
   }
 
   /**

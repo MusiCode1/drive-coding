@@ -10,10 +10,24 @@
 - `stop()` מאפס #cursor=0, שחרר #navResolve
 - svelte-check: 0 errors | טסטים: 381/381
 
-### מה עוד יגיע (Commits 1-3 + נ)
-- Commit 1: bubbleId פר-item + jumpToBubble
-- Commit 2: AudioPlaylist ל-context משותף
-- Commit 3: איחוד BubblePlayer.toggle + reserveFromText
+### Commit 1 — bubbleId פר-item + jumpToBubble (audio-playlist.svelte.ts, speaker.svelte.ts)
+- `PlaylistItem.bubbleId: string` — שדה חדש לכל item
+- `reserve(segmentId, orderKey, bubbleId)` — signature מורחב
+- `jumpToBubble(bubbleId)` — קפוץ ל-item הראשון של הבועה
+- Speaker.#enqueue + #processToolBubbles: מעבירים `bid` ל-reserve
+- audio-playlist.test.ts: עדכון קריאות reserve() לכלול bubbleId mock
+- svelte-check: 0 errors | טסטים: 381/381
+
+### Commit 2 — AudioPlaylist ל-context משותף (context.ts, +layout, Speaker, BubblePlayer)
+- `context.ts`: הוסף זוג `getAudioPlaylist/setAudioPlaylist` (additive — section חדש בסוף)
+- `+layout.svelte`: יוצר `sharedAudioStream` (RoutingAudioSink) + `audioPlaylist` (AudioPlaylist) לפני Speaker
+  `AudioPlaylist.setOnPlaybackStart()` — method חדשה שמאפשרת ל-Speaker לרשום callback אחרי init
+- `speaker.svelte.ts`: constructor מקבל `{playlist, audioStream}` מבחוץ; קורא `playlist.setOnPlaybackStart()`
+- `bubble-player.svelte.ts`: constructor מקבל `{playlist}` מבחוץ; `#sink` נשאר עד Commit 3
+- svelte-check: 0 errors | טסטים: 381/381
+
+### מה עוד יגיע (Commits 3 + נ)
+- Commit 3: איחוד BubblePlayer.toggle + reserveFromText + הסרת #sink הפרטי
 - Commit נ: integration tests audio-playlist.nav.test.ts
 
 ---
