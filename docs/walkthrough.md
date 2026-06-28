@@ -1,3 +1,43 @@
+## 2026-06-29 — slice A3 (playback-core-a3) — transport (pause/resume/stop) + פיצול cancel
+
+### מה בוצע
+
+**Commit 0 (d33b57a)** — pause/resume ב-AudioSink interface + sinks:
+- `AudioSink` interface: הוסף `pause(): void` + `resume(): void`
+- `PcmAudioStream.pause()`: `ctx.suspend()` (אם running); `resume()`: `ctx.resume()` (אם suspended)
+- `AudioStream.pause()`: `#current?.audio.pause()`; `resume()`: `void #current?.audio.play()`
+- `RoutingAudioSink.pause()/resume()`: מאציל לשני ה-sinks (מי שלא פעיל — no-op)
+
+**Commit 1 (5d982fe)** — transport ב-AudioPlaylist:
+- `transport: AudioPlaylistTransport = $state("playing")` — שדה חדש לצד `state` (לא מחליפו)
+- `pause()`: transport=paused + audioStream.pause() + #playLoop ממתין על `#waitForResume`
+- `resume()`: transport=playing + audioStream.resume() + מפעיל `#pauseResolve`
+- `stop()`: transport=stopped + שחרור pauseResolve + ניקוי כרגיל
+- `reserve()`: אם transport==="stopped" → אפס ל-"playing" (תור חדש אחרי stop)
+- `#playLoop`: בודק transport===paused לפני ובין play(); בודק stopped אחרי resume
+
+**Commit 2 (35a453e)** — פיצול cancel ב-VoiceMode:
+- `stopPlayback()`: speaker.stop() בלבד — לא נוגע בריצה/mic
+- `cancelRun()`: isCancelling=true + mic.cancel() + speaker.stop() + session.cancelTurn()
+- `cancel()`: alias ל-cancelRun() — נשאר עד B1 מחווט (MicLarge.svelte ×2, שורות 45/89)
+
+### מה לא בוצע (נדרש קול חי — calev-heavy/המשתמשת)
+- pause עוצר אודיו, resume ממשיך מאותה נקודה (PCM/Gemini)
+- pause/resume ב-ElevenLabs (MP3)
+- stopPlayback עוצר קול אבל הריצה ממשיכה (הבועה ממשיכה thinking)
+- cancelRun עוצר גם קול וגם ריצה
+- בדיקת gap/drift אחרי resume (PCM cursor)
+
+### בדיקות
+- typecheck 0 errors, FE tests 378/378 ירוקים (כל 3 commits)
+- i18n lint: אין עברית בקוד
+
+### חריגות
+- state ("idle"|"playing") מ-A2 לא נגע — Speaker.get state (speaker.svelte.ts:98) שמור
+- ה-lint (Biome) ל-pre-existing failures ב-backend (לא נגוע בשינויים שלנו)
+
+---
+
 ## 2026-06-29 — slice A2 (playback-core-a2) — AudioPlaylist + reserve-on-enqueue
 
 ### מה בוצע

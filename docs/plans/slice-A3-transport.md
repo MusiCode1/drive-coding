@@ -1,7 +1,7 @@
 # Slice A3 — transport (pause/resume/stop) + הפרדת cancel — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: מאושר (אביגיל דולגה לבקשת המשתמשת)
+> **סטטוס**: ✅ הושלם (3 commits: d33b57a → 5d982fe → 35a453e; typecheck ירוק, 378/378 FE tests; אימות חי — calev-heavy)
 > **Complexity**: 7/10 (verifier: heavy — נוגע ב‑WebAudio/MediaSource חי)
 > **תלות**: [A2] · **base**: branch `slice/playback-core-a2`
 > **שייך ל**: `docs/plans/playback-run-control-roadmap.md` (slice 3/6)
