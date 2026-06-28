@@ -60,8 +60,10 @@ let { text, variant = "bubble" }: { text: string; variant?: "bubble" | "viewer" 
   .md-content.viewer :global(h2) { font-size: 1.2em; margin: 0.45em 0 0.2em; }
   .md-content.viewer :global(h3) { font-size: 1.1em; }
   .md-content :global(blockquote) {
-    border-inline-start: 3px solid var(--border); padding-inline-start: 0.7rem;
-    margin: 0.3em 0; opacity: 0.8;
+    border-inline-start: 3px solid var(--fg-muted);
+    background: rgba(127,127,127,0.12);
+    padding: 0.25em 0.7rem; border-radius: 0 4px 4px 0;
+    margin: 0.4em 0; opacity: 0.9;
   }
   .md-content :global(a) { color: var(--accent); text-decoration: underline; }
   .md-content :global(hr) { border: none; border-top: 1px solid var(--border); margin: 0.5em 0; }
