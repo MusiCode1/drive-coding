@@ -31,6 +31,12 @@
 ‏סה"כ findings ירוקים בלבד (provider=`"google"` מול מפתחות `gemini`, ה-brief מודע;
 ‏`Select` חותך description אך "`Firm · תקיף`" שורה-אחת → מלא).
 
+### ‏שינויי-כיוון (אחרי ביצוע)
+- ‏**בורר-קול מותנה-ספק** (תיקון `c9edd64`): ה-brief המקורי הוסיף בורר-Gemini conditional אך
+  ‏השאיר את בורר-ElevenLabs **תמיד-גלוי** → במצב Google הופיעו שניהם (מבלבל; השמטה ב-brief).
+  ‏המשתמשת תפסה ב-preview. תוקן-במקום: בורר-הספק קודם, ואז **רק** הבורר של הספק הפעיל
+  ‏(`{#if elevenlabs}…{:else if google}…`). typecheck+i18n נקיים.
+
 ### ‏רעיונות שנדחו
 - ‏**endpoint חי** — נבדק לבקשת המשתמשת, לא קיים (ראה רציונל).
 - ‏**Cloud Text-to-Speech `voices.list`** — endpoint שכן קיים, אך API אחר (`texttospeech.googleapis.com`),
