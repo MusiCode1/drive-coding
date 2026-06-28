@@ -6970,3 +6970,27 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 ### סטיות
 
 אין. הוספת `resolveProviderAuth` כ-helper טהור + call-site יחיד ב-http-proxy. לא שינוי ארכיטקטוני.
+
+---
+
+## slice-cache-version — Commit 1 (A: Cache-Control)
+
+**תאריך**: 2026-06-28
+
+### בוצע
+
+הוספת Cache-Control headers לנכסים סטטיים ב-`packages/backend/src/server.ts`, בענף `else if (feStaticDir)`.
+
+שימוש ב-`onFound` callback של `@hono/node-server@2.0.3` (נתמך) במקום middleware נפרד — נקי יותר (header נוסף רק כשקובץ נמצא). שתי קריאות `serveStatic` עודכנו:
+- נכסים (`root: feStaticDir`): `/_app/immutable/*` → `public, max-age=31536000, immutable`; שאר נכסים → `no-cache`. guard מפורש על `/api`,`/proxy`.
+- fallback (`index.html`): תמיד `no-cache`.
+
+### בדיקות
+
+- `pnpm typecheck` ירוק.
+- `pnpm lint` (biome) — שגיאת `organizeImports` pre-existing ב-server.ts (לא קשורה לשינוי), ללא שגיאות lint חדשות.
+- בדיקת curl תתבצע ב-Commit 4 (C) לאחר build FE.
+
+### חריגות
+
+- אין.
