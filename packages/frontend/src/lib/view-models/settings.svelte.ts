@@ -49,6 +49,10 @@ type Persisted = {
   lastConfig: Record<string, Record<string, string | boolean>>
   // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
   ttsProvider: "elevenlabs" | "google"
+  // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
+  recentCollapsed: boolean
+  // ─── leave-running (runtime-gate fixes) ───
+  suppressLeaveWarning: boolean
 }
 
 const DEFAULTS: Persisted = {
@@ -79,6 +83,10 @@ const DEFAULTS: Persisted = {
   lastConfig: {},
   // ─── TTS provider ─── (V4a) — ברירת מחדל = ElevenLabs (Q1=לא flip)
   ttsProvider: "elevenlabs" as const,
+  // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
+  recentCollapsed: false,
+  // ─── leave-running (runtime-gate fixes) ───
+  suppressLeaveWarning: false,
 }
 
 function load(): Persisted {
@@ -163,6 +171,11 @@ export class Settings {
   // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
   ttsProvider = $state<"elevenlabs" | "google">(DEFAULTS.ttsProvider)
 
+  // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
+  recentCollapsed = $state<boolean>(DEFAULTS.recentCollapsed)
+  // ─── leave-running (runtime-gate fixes) ───
+  suppressLeaveWarning = $state<boolean>(DEFAULTS.suppressLeaveWarning)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -191,6 +204,10 @@ export class Settings {
     this.lastConfig = loaded.lastConfig
     // ─── TTS provider ───
     this.ttsProvider = loaded.ttsProvider
+    // ─── תיקיות אחרונות ───
+    this.recentCollapsed = loaded.recentCollapsed
+    // ─── leave-running ───
+    this.suppressLeaveWarning = loaded.suppressLeaveWarning
   }
 
   // ─── טופס חיבור ───
@@ -393,6 +410,20 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
+
+  setRecentCollapsed = (v: boolean): void => {
+    this.recentCollapsed = v
+    this.#persist()
+  }
+
+  // ─── leave-running (runtime-gate fixes) ───
+
+  setSuppressLeaveWarning = (v: boolean): void => {
+    this.suppressLeaveWarning = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -413,6 +444,8 @@ export class Settings {
       enterToSend: this.enterToSend,
       lastConfig: this.lastConfig,
       ttsProvider: this.ttsProvider,
+      recentCollapsed: this.recentCollapsed,
+      suppressLeaveWarning: this.suppressLeaveWarning,
     })
   }
 }

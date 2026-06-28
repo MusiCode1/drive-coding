@@ -1,7 +1,7 @@
 # Slice A — markdown-content-unify — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: מאושר (אביגיל READY — סבב 2, 0 findings חוסמים)
+> **סטטוס**: הושלם (אליעזר — 4 commits b87c398..e8b99fa, branch slice/markdown-content-unify)
 > **Complexity**: 6/10 (verifier: light)
 > **תלות**: אין (base=dev). פותח את שרשרת C-frontend: B (dir-per-paragraph), C (code-copy-button), D (syntax-highlight) ייבנו מעל ה-slice הזה.
 

@@ -8,18 +8,17 @@
  * msr-v2: כפתור ▶ אם recordingId קיים.
  *
  * ui-polish-batch C3: כפתור העתקה + timestamp.
- * ui-polish-batch C4: markdown ל-joinSegmentText.
- * ui-polish-batch C5: :global(pre),:global(code){direction:ltr;text-align:left}
+ * ui-polish-batch C4: markdown ל-joinSegmentText → MarkdownContent.
  *
- * ─── redesign-5 (C4) ───
+ * ─── slice/markdown-content-unify (Commit 1) — CSS עבר ל-MarkdownContent ───
  */
 import type { UserBubble } from "$lib/types/bubble"
 import { getBubblePlayer, getI18n, getSpeaker } from "$lib/context"
 import Avatar from "$lib/components/chat/Avatar.svelte"
 import { joinSegmentText } from "./bubble-rendering"
-import { renderMarkdown } from "$lib/util/markdown"
 import { copyToClipboard } from "$lib/util/clipboard"
 import { formatTime } from "$lib/util/formatting"
+import MarkdownContent from "./MarkdownContent.svelte"
 import PlayIcon from "@lucide/svelte/icons/play"
 import SquareIcon from "@lucide/svelte/icons/square"
 import CopyIcon from "@lucide/svelte/icons/copy"
@@ -71,7 +70,7 @@ async function handleCopy() {
       style="background:var(--bubble-user); {isPlaying ? 'outline:2px solid var(--accent); outline-offset:1px' : ''}"
       dir="auto"
     >
-      {@html renderMarkdown(joinSegmentText(bubble.segments))}
+      <MarkdownContent text={joinSegmentText(bubble.segments)} />
       <!-- כופה ריאקטיביות -->
       <span class="hidden">{bubble.segments.length}</span>
     </div>
@@ -154,37 +153,6 @@ async function handleCopy() {
       opacity: 1;
     }
   }
-
-  /* C5: code blocks כיוון LTR */
-  :global(pre), :global(code) { direction: ltr; text-align: left; }
-  /* chat-render-polish: GFM tables */
-  div :global(table) {
-    border-collapse: collapse; margin: 0.4em 0; font-size: 0.92em;
-    display: block; overflow-x: auto; max-width: 100%;
-  }
-  div :global(th), div :global(td) {
-    border: 1px solid var(--border); padding: 0.3em 0.55em; text-align: start;
-  }
-  div :global(th) { background: rgba(0,0,0,0.18); font-weight: 700; }
-  /* markdown — code ארוך נשבר במקום לגלוש מהבועה */
-  div :global(code) {
-    font-family: ui-monospace, monospace;
-    font-size: 0.88em;
-    background: rgba(0,0,0,0.2);
-    padding: 0.1em 0.3em;
-    border-radius: 3px;
-    overflow-wrap: anywhere;
-  }
-  div :global(pre) {
-    background: rgba(0,0,0,0.28);
-    padding: 0.6rem 0.8rem;
-    border-radius: 6px;
-    margin: 0.4em 0;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    overflow-x: auto;
-  }
-  div :global(pre code) { background: none; padding: 0; font-size: 0.85em; }
 
   .hidden { display: none; }
   .action-btn {

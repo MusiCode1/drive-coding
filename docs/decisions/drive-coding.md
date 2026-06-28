@@ -90,10 +90,17 @@ UserBubble render) **dispatch-ready**. Commit 4 (שליחה מולטימודלי
 בשורה אחת יחד עם חיווט השליחה. אביגיל r5 הוסיפה: gating גם ברמת-handler (early-return
 ב-paste/drop/picker), לא רק הסתרת אייקון. זה מהפך את "בצע ולא תמזג" מכורח לבחירה.
 
-## 2026-06-28 — recent-projects-controls: מחיקה (הסתרה קבועה) + כיווץ-panel נשמר
+## 2026-06-28 — recent-projects-controls: מחיקה מהרשימה + כיווץ-panel נשמר
 
 > brief: `docs/plans/slice-recent-projects-controls.md` · base dev `ebf50ae` · Complexity 6 · calev light.
 > אביגיל: **READY** (r1, 3 findings 🟢 cosmetic). report: `reports/drive-coding/recent-projects-controls-avigail.md`.
+
+> ⚠️ **שינוי-כיוון אחרי preview חי (2026-06-28)**: ההכרעה המקורית הייתה "הסתרה קבועה"
+> (`hidden:true` ששורד `recordCwd`). **בוטלה** אחרי שהמשתמשת ראתה את ההשלכה ב-preview: תיקייה
+> שמוסתרת ואז עובדים בה שוב הייתה נשארת מוסתרת לנצח — לא-אינטואיטיבי לרשימת-recency. **ההחלטה
+> החדשה: מחיקה-אמיתית** — ✕ **מוחק את הרשומה** (`removeCwd`, לא דגל). אם המשתמשת תתחבר לתיקייה
+> שוב → `recordCwd` ייצור רשומה חדשה והיא **תחזור** (התנהגות-recency טבעית). ראה "שינוי-כיוון 2"
+> בסוף ה-entry. הסעיפים על `hidden`/`hideCwd` למטה משקפים את הגרסה המקורית (היסטוריה).
 
 ### רציונל
 
@@ -126,11 +133,23 @@ bubbling ל-connect) אומתה כנכונה ופרואקטיבית.
 - **DELETE עם JSON body** (`{cwd}`) ולא path-param — ה-cwd מכיל `:`/`\`. fallback מתועד ל-`POST /api/projects/hide`
   אם DELETE-with-body ייחסם ברשת/proxy.
 
+### שינוי-כיוון 2 — מחיקה-אמיתית במקום הסתרה-קבועה (2026-06-28, אחרי preview)
+
+המשתמשת ראתה ב-preview שהסתרה-קבועה לא-אינטואיטיבית: רשימת "תיקיות אחרונות" צריכה לשקף נוכחות-
+אחרונה, ותיקייה שמוסתרת ואז עובדים בה שוב צריכה לחזור. **ההחלטה הפכה ל"מחיקה-אמיתית"**:
+- `hideCwd(cwd)` → **`removeCwd(cwd)`**: `projects.filter(p => p.cwd !== cwd)` + persist.
+- שדה `hidden?` ב-`ProjectEntry` **הוסר**; ה-filter ב-`getProjects` הוסר (חזרה ל-sort בלבד).
+- `recordCwd` ללא שינוי — כשמתחברים לתיקייה שנמחקה, הוא יוצר רשומה חדשה → התיקייה **חוזרת** (recency).
+- הטסטים התהפכו: "hidden survives recordCwd" → "removed project returns after recordCwd".
+- **הארכיטקטורה לא השתנתה**: ה-endpoint `DELETE /api/projects` + ה-optimistic-remove ב-FE נשארים
+  זהים — רק *מה שה-endpoint עושה בשרת* השתנה (מחיקה במקום סימון). (הובהר למשתמשת: הרשימה חיה בשרת,
+  לכן מחיקה חייבת endpoint; ה-FE רק מסיר אופטימית מהמסך + שולח DELETE.)
+
 ### רעיונות שנדחו
 
-- **un-hide UI** — נדחה ל-future (הסתרה חד-כיוונית מה-UI ב-MVP).
+- **un-hide UI** — לא רלוונטי יותר (אין hidden; מחיקה הפיכה דרך חיבור-חוזר).
 - **סנכרון מצב-הכיווץ בין מכשירים** — נדחה; כיווץ הוא העדפת-תצוגה מקומית (localStorage), לא server-state.
-- **מחיקה אמיתית של הרשומה** — נדחה; מסתירים (`hidden:true`) כדי לשמר lastSessionId/lastSeen אם תילקח חזרה.
+- **הסתרה-קבועה (`hidden:true`)** — נדחה אחרי preview (ראה שינוי-כיוון 2); מחיקה-אמיתית אינטואיטיבית יותר לרשימת-recency.
 
 ---
 

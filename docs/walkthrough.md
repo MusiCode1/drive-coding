@@ -95,6 +95,346 @@
 
 ---
 
+## 2026-06-28 — slice/markdown-content-unify — 4 commits (Commit 0–3)
+
+### מה בוצע?
+
+**Commit 0**: יצירת `MarkdownContent.svelte` — קומפוננטת-מרקדאון משותפת
+- קובץ חדש: `packages/frontend/src/lib/components/chat/bubbles/MarkdownContent.svelte`
+- API: `text: string` + `variant?: "bubble" | "viewer"` — מעביר ל-`renderMarkdown` בלבד
+- CSS מאוחד מ-MessageBubble+UserBubble: p/strong/em/code/pre/ul/ol/li/h1-h6/blockquote/a/hr/table
+- req #1: `pre { white-space:pre; overflow-x:auto }` (תיקון גלילה אופקית ב-code block)
+- req #5: `ul { list-style:disc outside }`, `ol { list-style:decimal outside }` (שחזור מ-Tailwind preflight)
+- variant="viewer": h1=1.4em, h2=1.2em, h3=1.1em (ל-ContentViewerDialog fullscreen)
+
+**Commit 1**: חיווט MessageBubble + UserBubble
+- `{@html renderMarkdown(...)}` → `<MarkdownContent text={joinSegmentText(bubble.segments)} />`
+- הוסרו import renderMarkdown + כל CSS markdown משוכפל (90 שורות net-)
+- נשמרו: span.hidden (ריאקטיביות), bubble styling, play/copy buttons
+
+**Commit 2**: חיווט ThoughtBubble — מרקדאון מלא (req #4)
+- running-text: `div.whitespace-pre-wrap` → `<MarkdownContent text={runningText} />`
+- per-segment: `div.whitespace-pre-wrap` → `<MarkdownContent text={seg.text} />`
+- originalText (raw source) נשאר טקסט גולמי dir=ltr
+- span.hidden (ריאקטיביות) נשאר מחוץ ל-MarkdownContent
+
+**Commit 3**: חיווט ContentViewerDialog — variant="viewer" (finding אביגיל #1)
+- `<div class="markdown-body">{@html renderMarkdown(...)}` → `<MarkdownContent text={...} variant="viewer" />`
+- הוסר כל CSS .markdown-body (50 שורות) + import renderMarkdown
+- נשמרו: viewer-image CSS, מסלול image, invariant אבטחה
+
+### בדיקות
+
+- typecheck: 0 errors בכל 4 commits.
+- tests: 339/339 passed בכל 4 commits.
+- lint:i18n: ✓ (אין מחרוזות חדשות — CSS+composition בלבד).
+- DoD: grep ":global(p)" → 0 בכל 4 המשטחים; grep MarkdownContent → 4/4.
+
+### סטיות
+
+ללא סטיות מה-brief. approach: manual (browser smoke לאמת חי), כפי שנקבע ב-brief §4.
+Browser smoke — יש לבצע על FE שרץ עם BE: רשימות, code block, blockquote, expand→fullscreen.
+
+---
+
+## 2026-06-28 — recent-projects-controls — תיקון-במקום: סמנטיקת מחיקה אמיתית (7 commits)
+
+### מה בוצע? (commit 7 — תיקון סמנטיקה)
+
+**תיקון-במקום**: שינוי סמנטיקה מהסתרה-קבועה (hidden flag) למחיקה-אמיתית (filter).
+
+**BE — projects-registry.ts**:
+- הסרת שדה `hidden?: boolean` מ-`ProjectEntry`
+- החלפת `hideCwd` ב-`removeCwd`: filter שמסיר רשומה לגמרי
+- הסרת filter `p.hidden !== true` מ-`getProjects`
+- recordCwd לא שונה — חיבור חוזר יוצר רשומה חדשה (הרשומה חוזרת)
+
+**BE — tests/storage-layer.test.ts** (TDD red→green):
+- "hideCwd hides..." → "removeCwd removes a project from getProjects"
+- "hidden survives recordCwd" → "a removed project returns after a subsequent recordCwd" (הפוך לגמרי: עכשיו מצפים שיחזור)
+- "hideCwd no-op" → "removeCwd on unknown cwd is a no-op"
+
+**BE — http-history.ts**:
+- DELETE /api/projects: hideCwd → removeCwd
+
+**BE — tests/http-history.test.ts**:
+- "hides a project (204)" → "removes a project (204)"
+- הוסף טסט "removed project returns after recordCwd (new-entry semantics)"
+
+**FE — adapters/recent-projects.ts**:
+- `hideRecentProject` → `removeRecentProject`
+
+**FE — view-models/recent-projects.svelte.ts**:
+- `hide(cwd)` → `remove(cwd)`
+
+**FE — components/connect/RecentProjectsPanel.svelte**:
+- `recent.hide` → `recent.remove`
+- i18n key: `connect.recent.hide` → `connect.recent.remove`
+
+**core — i18n/keys.ts + he.ts + en.ts**:
+- rename `connect.recent.hide` → `connect.recent.remove` (value ללא שינוי: "הסר מהרשימה")
+
+### בדיקות (commit 7)
+
+- typecheck: 0 errors
+- vitest BE (storage-layer + http-history): 34/34 ירוק (כולל טסטי החזרה-אחרי-recordCwd)
+- vitest FE: 354/354
+- lint:i18n: ✓ (bash ישיר — Windows)
+- vite build: ✓
+
+### סטיות
+
+- ה-value של `connect.recent.remove` זהה ל-`connect.recent.hide` שהיה ("הסר מהרשימה") — שינוי שם key בלבד
+- calev יאמת את הזרימה המלאה: מחק → נעלם → חבר מחדש → חוזר
+
+---
+
+## 2026-06-28 — recent-projects-controls — 6 commits: מחיקה + כיווץ panel תיקיות אחרונות
+
+### מה בוצע?
+
+slice: recent-projects-controls (6 commits)
+
+**Commit 1** (BE registry TDD): `projects-registry.ts` + `storage-layer.test.ts`
+- ProjectEntry: הוסף `hidden?: boolean`
+- hideCwd(cwd): טוענת, מוצאת, מסמנת hidden=true; no-op על cwd לא-קיים
+- getProjects: מסנן `p.hidden !== true` לפני המיון (recordCwd לא שונה — ה-spread כבר משמר hidden)
+- 3 טסטים TDD ירוקים: hideCwd hides, hidden survives recordCwd, hideCwd no-op
+
+**Commit 2** (BE endpoint integration): `http-history.ts` + `http-history.test.ts`
+- DELETE /api/projects עם body {cwd} → 204; cwd חסר → 400
+- עיצוב body (לא path-param): cwd מכיל תווים מיוחדים (: ב-Windows, /)
+- 2 integration tests ירוקים: hide+GET=empty, missing-cwd→400
+
+**Commit 3** (FE adapter): `recent-projects.ts`
+- hideRecentProject(cwd): DELETE /api/projects {cwd}; זורק שגיאה על status לא-ok
+
+**Commit 4** (FE VM): `recent-projects.svelte.ts`
+- import hideRecentProject + action hide(cwd): optimistic remove + rollback בכשל
+
+**Commit 5** (FE settings): `settings.svelte.ts`
+- Persisted + DEFAULTS + $state + setRecentCollapsed + constructor + #persist
+- recentCollapsed: boolean (ברירת-מחדל false = פתוח)
+
+**Commit 6** (FE component + i18n): `RecentProjectsPanel.svelte` + i18n files
+- i18n: connect.recent.hide/collapse/expand
+- chevron כיווץ ב-header ({#if !settings.recentCollapsed} עוטף את גוף ה-panel)
+- delete-btn: sibling של project-btn (לא ילד — nested button אסור)
+  .project-row { display:flex } | .project-btn { flex:1 } | .delete-btn { flex-shrink:0 }
+- delete-btn נראה ב-hover/focus-within; לחיצה → recent.hide(project.cwd) ישיר (ללא confirm)
+
+### בדיקות
+
+- typecheck: 0 errors (כל 6 commits)
+- vitest BE storage-layer: 15/15
+- vitest BE http-history: 18/18
+- vitest FE: 354/354
+- lint:i18n: ✓ (bash ישיר — Windows)
+- vite build: ✓
+
+### סטיות
+
+- DELETE עם JSON body אומת ישירות ב-integration test (לא בדפדפן) — calev יאמת חי
+- getSettings() ב-RecentProjectsPanel מיובא מ-context (כבר זמין — אין שינוי ב-context.ts)
+- nested-button: delete-btn שורה 92 = sibling ל-project-btn שורה 73, לא ילד
+
+---
+
+## 2026-06-28 — acp-mode-config-sync — Commit 1: handler ל-config_option_update
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`: הוסף handler ל-`config_option_update` ב-`#onSessionUpdate`, מיד אחרי handler ה-`current_mode_update`, לפני `if (!text) return`.
+- כשמגיע `config_option_update`: מחלץ `configOptions` (type-guard: `Array.isArray`), ומשים `this.configOptions = opts as SessionConfigOption[]`.
+- `packages/frontend/src/lib/view-models/agent-session.mode-config-sync.test.svelte.ts`: הוסף 2 טסטים TDD עבור `config_option_update`.
+
+### בדיקות
+
+- TDD: RED (handler לא קיים) → GREEN (handler נוסף).
+- `pnpm test -- agent-session`: 360/360 ירוק.
+- `pnpm typecheck`: 0 errors.
+- lint (biome) על קבצים שנגעו: 0 errors חדשים (errors קיימים ב-agent-session.svelte.ts הם pre-existing).
+- `lint:i18n`: ✓.
+
+### סטיות
+
+אין. מיקום לפי §3 + §4 Commit 1. הסט המלא מוחלף (לא מוגדל) לפי §1 ב-brief.
+
+---
+
+## 2026-06-28 — acp-mode-config-sync — Commit 0: handler ל-current_mode_update
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`: הוסף handler ל-`current_mode_update` ב-`#onSessionUpdate`, מיד אחרי בלוק `tool_call_update`, לפני `if (!text) return`.
+- כשמגיע `current_mode_update`: מחלץ `currentModeId` (type-guard: `typeof === "string"`), ומשים `this.modes = { availableModes: this.modes?.availableModes ?? [], currentModeId }`.
+- `this.modes` יכול להיות `null` → שמירת `?.` + `?? []` מונעת קריסה.
+- `packages/frontend/src/lib/view-models/agent-session.mode-config-sync.test.svelte.ts`: קובץ טסט חדש (TDD) — 4 טסטים עבור `current_mode_update`.
+
+### בדיקות
+
+- TDD: RED (handler לא קיים) → GREEN (handler נוסף).
+- `pnpm test -- agent-session`: 358/358 ירוק.
+- `pnpm typecheck`: 0 errors.
+- lint (biome) על קבצים שנגעו: 0 errors חדשים.
+- `lint:i18n`: ✓.
+
+### סטיות
+
+אין. מיקום בדיוק לפי §3 + §4 Commit 0 של ה-brief. type-guards לפי §6 risks.
+
+---
+
+## 2026-06-28 — leave-running-background — runtime-gate fixes (commit 5)
+
+### מה בוצע?
+
+3 תיקונים לאחר בדיקת המשתמשת בסביבת preview:
+
+**תיקון 1 — אייקון כפתור leave-running:**
+- `SessionOptionsPanel.svelte`: החלפת `Minimize2Icon` ב-`LogOutIcon` (import עודכן).
+- הכפתור הפך ל-icon-only (הוסרה `<span>` עם תווית), `min-w-0` הוסר. שאר הכפתורים (disconnect/audio/settings) לא שונו.
+
+**תיקון 2 — צ'קבוקס "אל תציג שוב" במודל:**
+- `core/src/i18n/keys.ts`: נוסף מפתח `session.leaveWarning.dontShowAgain`.
+- `he.ts`: "אל תציג הודעה זו שוב"; `en.ts`: "Don't show this message again".
+- `settings.svelte.ts`: שדה `suppressLeaveWarning` (Persisted/DEFAULTS/`$state`/setter/`#persist`).
+- `SessionOptionsPanel.svelte`: `let dontShowAgain = $state(false)` + checkbox במודל. `onLeaveRunning` בודק `settings.suppressLeaveWarning`. `doLeaveRunning` קורא `settings.setSuppressLeaveWarning(true)` אם `dontShowAgain`.
+
+**תיקון 3 — bypassActive מ-configOptions:**
+- `agent-session.svelte.ts:bypassActive`: קורא קודם `configOptions.find(category==="mode")` וגוזר `liveModeId` מ-`currentValue`; fallback ל-`modes.currentModeId`.
+- `agent-session.test.ts`: `describe` חדש עם 4 טסטים (configOptions=bypassPermissions→true, default→false, fallback ל-modes, opencode→false).
+
+### בדיקות
+
+- typecheck: 0 שגיאות
+- vitest frontend: 365/365 ירוקים (נוספו 4 טסטים חדשים)
+- lint:i18n: ✓ No hardcoded Hebrew in code
+- approach: integration (bypassActive TDD new tests) + manual (UI checkbox)
+
+### סטיות
+
+ללא סטיות מה-brief.
+
+---
+
+## 2026-06-28 — leave-running-background — סיכום סליס (4 commits)
+
+### מה בוצע?
+
+Slice `leave-running-background` הושלם ב-4 commits על branch `slice/leave-running-background`:
+- `b55930b` — Commit 0: isBypassMode helper + i18n keys (TDD, 7/7 tests)
+- `29660ec` — Commit 1: leaveRunning() + bypassActive ב-VM
+- `176a78a` — Commit 2: כפתור UI + modal bits-ui Dialog
+- `7ed4f2b` — Commit 3: beforeunload guard ב-/chat
+
+### בדיקות מצטברות
+
+- typecheck: 0 שגיאות בכל commit
+- vitest: 361/361 ירוקים לאורך כל הסליס
+- lint:i18n: ✓ בכל commit
+- approach per commit: TDD / manual / manual / manual
+
+### סטיות
+
+- כפתור "נתק" (הורג): הוחלף `LogOutIcon` → `PowerIcon` (שינוי ויזואלי בלבד, מפתח `header.disconnect` נשאר).
+- Modal: השתמשנו ב-bits-ui Dialog (primitive קיים) במקום inline — תוצאה: < 50 שורות נוספות בקומפוננטה.
+
+---
+
+## 2026-06-28 — leave-running-background — Commit 3: beforeunload guard ב-chat/+page.svelte (manual)
+
+### מה בוצע?
+
+`packages/frontend/src/routes/chat/+page.svelte`:
+- import `{ onMount } from "svelte"` — חדש לחלוטין (הקובץ לא הכיל onMount).
+- `onMount(() => { ... return cleanup })`: מוסיף `beforeunload` listener; ב-cleanup מסיר.
+- handler `onBeforeUnload`: כשמחובר (`status==="connected"`) ולא ב-bypass → `e.preventDefault()` + `e.returnValue=""` → dialog גנרי של הדפדפן.
+- SSR-safe: `onMount` רץ רק בדפדפן, אין `window` ב-module-scope.
+
+### בדיקות
+
+- typecheck: 0 שגיאות
+- 361/361 tests ירוקים
+- lint:i18n: ✓
+- approach: manual (browser smoke — לבדיקה חיה עם BE)
+
+### סטיות
+
+ללא סטיות. הקובץ נשאר דק (~65 שורות — מתחת לגבול 150 שורות routes).
+
+---
+
+## 2026-06-28 — leave-running-background — Commit 2: כפתור UI + modal אזהרה (manual)
+
+### מה בוצע?
+
+`packages/frontend/src/lib/components/layout/SessionOptionsPanel.svelte`:
+- imports: `PowerIcon` + `Minimize2Icon` מ-`@lucide/svelte/icons/`; `Dialog as BitsDialog` מ-`bits-ui`.
+- כפתור disconnect: `LogOutIcon` → `PowerIcon` (אדום, ימני-קיצוני).
+- כפתור חדש "צא — השאר רץ": `Minimize2Icon` + תווית-טקסט, `onclick={onLeaveRunning}`, ניטרלי (`--fg-dim`).
+- `leaveConfirmOpen: $state(false)` + `onLeaveRunning()` (bypass → ישיר; לא-bypass → modal) + `doLeaveRunning()`.
+- `<BitsDialog.Root>` modal עם כותרת+גוף+2 כפתורים (ביטול/אישור), כל טקסט דרך `t()`.
+
+### בדיקות
+
+- typecheck: 0 שגיאות
+- lint:i18n: ✓
+- approach: manual (browser smoke — לבדיקה חיה עם BE)
+
+### סטיות
+
+ללא סטיות. השתמשנו ב-bits-ui Dialog (primitive קיים) במקום inline >50 שורות.
+
+---
+
+## 2026-06-28 — leave-running-background — Commit 1: leaveRunning() + bypassActive ב-VM (manual)
+
+### מה בוצע?
+
+`packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+- `#cleanup()` → `#cleanup(opts?: { keepAgent?: boolean })`: כל קריאות קיימות (שורות 539/549/676) ללא ארגומנט → ברירת מחדל הורג. keepAgent=true → מדלג על `deleteAgent`.
+- `leaveRunning()`: עותק 1:1 של `detach()` פרט ל-`#cleanup({keepAgent:true})`.
+- `get bypassActive()`: קורא ל-`isBypassMode(this.#cliKind, this.modes?.currentModeId)`.
+- import `isBypassMode` מ-`$lib/util/permission-mode`.
+
+### בדיקות
+
+- typecheck: 0 שגיאות
+- agent-session tests: 361/361 ירוקים (הטסטים הקיימים נשארו ירוקים)
+- lint:i18n: ✓
+
+### סטיות
+
+ללא סטיות. approach: manual.
+
+---
+
+## 2026-06-28 — leave-running-background — Commit 0: isBypassMode helper + i18n keys (TDD)
+
+### מה בוצע?
+
+**קבצים חדשים:**
+- `packages/frontend/src/lib/util/permission-mode.ts` — `isBypassMode(cliKind, currentModeId): boolean` + `BYPASS_MODE_ID` (claude בלבד, עם הערת-קוד לאיחוד עתידי)
+- `packages/frontend/src/lib/util/permission-mode.test.ts` — 7 טסטי TDD (red→green): claude+bypass→true, claude+default→false, opencode+כל→false, null→false, undefined→false
+
+**שינויים בקיים:**
+- `packages/core/src/i18n/keys.ts` — בלוק חדש בסוף: `session.leaveRunning` + `session.leaveWarning.{title,body,confirm,cancel}`
+- `packages/core/src/i18n/catalogs/he.ts` — תרגומים עבריים לבלוק החדש
+- `packages/core/src/i18n/catalogs/en.ts` — תרגומים אנגליים לבלוק החדש
+
+### בדיקות
+
+- TDD: 7/7 טסטים ירוקים (`pnpm test -- permission-mode`)
+- typecheck: 0 שגיאות
+- lint:i18n: ✓ (אין מחרוזות עבריות בקוד)
+
+### סטיות
+
+ללא סטיות מה-brief. approach: TDD, כפי שנקבע ב-§4 commit 0.
+
+---
+
 ## 2026-06-25 — slice-input-autogrow — Commit 1: textarea auto-grow ב-TypeArea
 
 ### מה בוצע?

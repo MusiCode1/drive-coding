@@ -220,6 +220,18 @@ export type MessageKey =
   | "connect.recent.title"
   | "connect.recent.empty"
   | "connect.recent.refresh"
+  // ─── recent-projects controls ─── (slice recent-projects-controls)
+  | "connect.recent.remove"
+  | "connect.recent.collapse"
+  | "connect.recent.expand"
+  // ─── leave-running (slice leave-running-background) ───
+  | "session.leaveRunning"          // תווית כפתור "צא — השאר רץ" (חדש)
+  | "session.closeSession"          // title כפתור הכיבוי-המלא (Power) — מבדיל מ-leaveRunning
+  | "session.leaveWarning.title"
+  | "session.leaveWarning.body"     // "הריצה תיעצר ברגע שתגיע בקשת-הרשאה..."
+  | "session.leaveWarning.confirm"
+  | "session.leaveWarning.cancel"
+  | "session.leaveWarning.dontShowAgain"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
