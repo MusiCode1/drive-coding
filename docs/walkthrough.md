@@ -1,3 +1,25 @@
+## 2026-06-28 — leave-running-background — Commit 1: leaveRunning() + bypassActive ב-VM (manual)
+
+### מה בוצע?
+
+`packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+- `#cleanup()` → `#cleanup(opts?: { keepAgent?: boolean })`: כל קריאות קיימות (שורות 539/549/676) ללא ארגומנט → ברירת מחדל הורג. keepAgent=true → מדלג על `deleteAgent`.
+- `leaveRunning()`: עותק 1:1 של `detach()` פרט ל-`#cleanup({keepAgent:true})`.
+- `get bypassActive()`: קורא ל-`isBypassMode(this.#cliKind, this.modes?.currentModeId)`.
+- import `isBypassMode` מ-`$lib/util/permission-mode`.
+
+### בדיקות
+
+- typecheck: 0 שגיאות
+- agent-session tests: 361/361 ירוקים (הטסטים הקיימים נשארו ירוקים)
+- lint:i18n: ✓
+
+### סטיות
+
+ללא סטיות. approach: manual.
+
+---
+
 ## 2026-06-28 — leave-running-background — Commit 0: isBypassMode helper + i18n keys (TDD)
 
 ### מה בוצע?
