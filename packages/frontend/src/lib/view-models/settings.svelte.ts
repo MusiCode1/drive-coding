@@ -17,6 +17,7 @@ import type { CliKind } from "@drive-coding/core"
 import { DEFAULT_LOCALE, detectLocale, type Locale } from "@drive-coding/core/i18n"
 import { listVoices, type Voice } from "../adapters/voice/voices"
 import { setBeUrlBase } from "../util/be-url"
+import { DEFAULT_GEMINI_VOICE } from "../adapters/voice/voices-gemini"
 
 const STORAGE_KEY = "drive-coding-v2-settings"
 
@@ -53,6 +54,8 @@ type Persisted = {
   recentCollapsed: boolean
   // ─── leave-running (runtime-gate fixes) ───
   suppressLeaveWarning: boolean
+  // ─── קול Gemini ─── (V4b-gemini-voice-picker)
+  geminiVoice: string
 }
 
 const DEFAULTS: Persisted = {
@@ -87,6 +90,8 @@ const DEFAULTS: Persisted = {
   recentCollapsed: false,
   // ─── leave-running (runtime-gate fixes) ───
   suppressLeaveWarning: false,
+  // ─── קול Gemini ─── (V4b-gemini-voice-picker)
+  geminiVoice: DEFAULT_GEMINI_VOICE,
 }
 
 function load(): Persisted {
@@ -176,6 +181,9 @@ export class Settings {
   // ─── leave-running (runtime-gate fixes) ───
   suppressLeaveWarning = $state<boolean>(DEFAULTS.suppressLeaveWarning)
 
+  // ─── קול Gemini ─── (V4b-gemini-voice-picker)
+  geminiVoice = $state<string>(DEFAULTS.geminiVoice)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -208,6 +216,8 @@ export class Settings {
     this.recentCollapsed = loaded.recentCollapsed
     // ─── leave-running ───
     this.suppressLeaveWarning = loaded.suppressLeaveWarning
+    // ─── קול Gemini ───
+    this.geminiVoice = loaded.geminiVoice
   }
 
   // ─── טופס חיבור ───
@@ -424,6 +434,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── קול Gemini ─── (V4b-gemini-voice-picker)
+
+  setGeminiVoice = (v: string): void => {
+    this.geminiVoice = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -446,6 +463,7 @@ export class Settings {
       ttsProvider: this.ttsProvider,
       recentCollapsed: this.recentCollapsed,
       suppressLeaveWarning: this.suppressLeaveWarning,
+      geminiVoice: this.geminiVoice,
     })
   }
 }
