@@ -1,7 +1,7 @@
 # Slice A2 — AudioPlaylist + reserve‑on‑enqueue — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: ✅ READY (אביגיל r1 — 2 ממצאים 🟢 הוטמעו; `reports/drive-coding/A2-avigail.md`)
+> **סטטוס**: ✅ הושלם (אליעזר, 2026-06-29; 4 commits 9f44577..6234963; calev-heavy pending מרדכי)
 > **Complexity**: 8/10 (verifier: **heavy** — state‑model refactor + streaming)
 > **תלות**: [] · **base**: `dev` @ `3a23195` (A1 בוטל — ר' roadmap §הפירוק)
 > **שייך ל**: `docs/plans/playback-run-control-roadmap.md` (ראש השרשרת הנקייה)

@@ -1,3 +1,43 @@
+## 2026-06-29 — slice A2 (playback-core-a2) — AudioPlaylist + reserve-on-enqueue
+
+### מה בוצע
+
+**Commit 0 (9f44577)** — `audio-playlist.svelte.ts` skeleton:
+- `PlaylistItem`, `PlaylistItemState`, `AudioPlaylist` class (export)
+- `reserve(segmentId, orderKey)` — sorted-insert לפי `compareOrderKey`, state=reserved
+- `markReady(segmentId)` / `markError(segmentId)` — signal #playLoop דרך resolver map
+- `stop()` — מנקה items + מבטל resolvers
+- dead-code שלא הועבר: `jumpToSegment` (0 צרכנים, אביגיל A2 #1)
+
+**Commit 1 (85772ef)** — `#playLoop` + stop-guard:
+- cursor-based loop (לא takeNext) — מאפשר prev/next ב-A4
+- `#waitForItem` — Promise עם timeout (`reserveTimeoutMs=20s`) ו-resolver map
+- `#stopped` flag — נבדק אחרי כל await כדי לבטל ריצה ב-stop()
+
+**Commit 2 (85bed89)** — integration tests:
+- 7 טסטים: race-reversal, timeout→skip, error→skip, stop, onPlaybackStart, sorted-insert, re-entrancy
+- mock AudioSink עם resolvePlay(). fake timers (vi.advanceTimersByTimeAsync).
+- 378/378 ירוקים
+
+**Commit 3 (6234963)** — חיווט Speaker:
+- `import { AudioPlaylist }` במקום `Player`
+- `#enqueue` + `#processToolBubbles`: extract segmentId + reserve-on-enqueue
+- `#fetchJob`: `addSegment` → `markReady`; catch → `markError`
+- `player.svelte.ts` נמחק (0 צרכנים חיצוניים)
+
+### מה לא בוצע
+- אימות חי (Gemini TTS + 4 משפטים ארוכים) — נדרש calev-heavy (מרדכי ירוץ)
+- ElevenLabs regression — נדרש calev-heavy
+
+### בדיקות
+- typecheck 0 errors, FE tests 378/378 ירוקים
+- backend tests: 6 כישלונות קיימות (Bun ENOENT ב-Windows worktree, bridge-manager spawn) — regression מ-dev, לא שינוי שלנו
+
+### חריגות
+- `#playLoop` נכלל כבר ב-Commit 0 (לא שינוי ב-Commit 1 בנפרד); Commit 1 הוסיף stop-guard בלבד — הגיוני מבחינת atomicity
+
+---
+
 ## 2026-06-28 — תכנון: בקרת השמעה+ריצה + פלייליסט (briefs בלבד — טרם בוצע קוד)
 
 > סשן **תכנון** (מרדכי), לא ביצוע. אין שינוי קוד. תיעוד מלא: `decisions/voice-acp.md` (2026-06-28)
