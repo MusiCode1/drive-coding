@@ -184,6 +184,51 @@ slice: recent-projects-controls (6 commits)
 
 ---
 
+## 2026-06-28 — acp-mode-config-sync — Commit 1: handler ל-config_option_update
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`: הוסף handler ל-`config_option_update` ב-`#onSessionUpdate`, מיד אחרי handler ה-`current_mode_update`, לפני `if (!text) return`.
+- כשמגיע `config_option_update`: מחלץ `configOptions` (type-guard: `Array.isArray`), ומשים `this.configOptions = opts as SessionConfigOption[]`.
+- `packages/frontend/src/lib/view-models/agent-session.mode-config-sync.test.svelte.ts`: הוסף 2 טסטים TDD עבור `config_option_update`.
+
+### בדיקות
+
+- TDD: RED (handler לא קיים) → GREEN (handler נוסף).
+- `pnpm test -- agent-session`: 360/360 ירוק.
+- `pnpm typecheck`: 0 errors.
+- lint (biome) על קבצים שנגעו: 0 errors חדשים (errors קיימים ב-agent-session.svelte.ts הם pre-existing).
+- `lint:i18n`: ✓.
+
+### סטיות
+
+אין. מיקום לפי §3 + §4 Commit 1. הסט המלא מוחלף (לא מוגדל) לפי §1 ב-brief.
+
+---
+
+## 2026-06-28 — acp-mode-config-sync — Commit 0: handler ל-current_mode_update
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`: הוסף handler ל-`current_mode_update` ב-`#onSessionUpdate`, מיד אחרי בלוק `tool_call_update`, לפני `if (!text) return`.
+- כשמגיע `current_mode_update`: מחלץ `currentModeId` (type-guard: `typeof === "string"`), ומשים `this.modes = { availableModes: this.modes?.availableModes ?? [], currentModeId }`.
+- `this.modes` יכול להיות `null` → שמירת `?.` + `?? []` מונעת קריסה.
+- `packages/frontend/src/lib/view-models/agent-session.mode-config-sync.test.svelte.ts`: קובץ טסט חדש (TDD) — 4 טסטים עבור `current_mode_update`.
+
+### בדיקות
+
+- TDD: RED (handler לא קיים) → GREEN (handler נוסף).
+- `pnpm test -- agent-session`: 358/358 ירוק.
+- `pnpm typecheck`: 0 errors.
+- lint (biome) על קבצים שנגעו: 0 errors חדשים.
+- `lint:i18n`: ✓.
+
+### סטיות
+
+אין. מיקום בדיוק לפי §3 + §4 Commit 0 של ה-brief. type-guards לפי §6 risks.
+
+---
+
 ## 2026-06-25 — slice-input-autogrow — Commit 1: textarea auto-grow ב-TypeArea
 
 ### מה בוצע?
