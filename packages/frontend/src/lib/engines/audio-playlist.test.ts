@@ -92,8 +92,8 @@ describe("AudioPlaylist", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
-    playlist.reserve("s0", key(0))
-    playlist.reserve("s1", key(1))
+    playlist.reserve("s0", key(0), "bubble-0")
+    playlist.reserve("s1", key(1), "bubble-1")
 
     // s1 מגיע מוכן לפני s0 — כמו Gemini fetch שחוזר בסדר הפוך
     playlist.markReady("s1")
@@ -132,8 +132,8 @@ describe("AudioPlaylist", () => {
     const TIMEOUT = 500
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: TIMEOUT })
 
-    playlist.reserve("s0", key(0))
-    playlist.reserve("s1", key(1))
+    playlist.reserve("s0", key(0), "bubble-0")
+    playlist.reserve("s1", key(1), "bubble-1")
 
     // s1 מוכן מיד, s0 לא יגיע אף פעם (timeout)
     playlist.markReady("s1")
@@ -164,8 +164,8 @@ describe("AudioPlaylist", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
-    playlist.reserve("s0", key(0))
-    playlist.reserve("s1", key(1))
+    playlist.reserve("s0", key(0), "bubble-0")
+    playlist.reserve("s1", key(1), "bubble-1")
 
     playlist.markReady("s1")
 
@@ -195,8 +195,8 @@ describe("AudioPlaylist", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
-    playlist.reserve("s0", key(0))
-    playlist.reserve("s1", key(1))
+    playlist.reserve("s0", key(0), "bubble-0")
+    playlist.reserve("s1", key(1), "bubble-1")
 
     // ממתין ל-s0 שלא יגיע
     await vi.advanceTimersByTimeAsync(0)
@@ -220,7 +220,7 @@ describe("AudioPlaylist", () => {
     const onStart = vi.fn()
     const playlist = new AudioPlaylist(sink, onStart, { reserveTimeoutMs: 1000 })
 
-    playlist.reserve("s0", key(0))
+    playlist.reserve("s0", key(0), "bubble-0")
     playlist.markReady("s0")
     await vi.advanceTimersByTimeAsync(0)
 
@@ -231,7 +231,7 @@ describe("AudioPlaylist", () => {
     expect(playlist.state).toBe("idle")
 
     // שני reserve נוסף — onStart נקרא שוב (idle→playing חדש)
-    playlist.reserve("s1", key(1))
+    playlist.reserve("s1", key(1), "bubble-1")
     playlist.markReady("s1")
     await vi.advanceTimersByTimeAsync(0)
 
@@ -247,9 +247,9 @@ describe("AudioPlaylist", () => {
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 1000 })
 
     // הכנסה בסדר הפוך
-    playlist.reserve("s2", key(2))
-    playlist.reserve("s0", key(0))
-    playlist.reserve("s1", key(1))
+    playlist.reserve("s2", key(2), "bubble-2")
+    playlist.reserve("s0", key(0), "bubble-0")
+    playlist.reserve("s1", key(1), "bubble-1")
 
     expect(playlist.items.map((it) => it.segmentId)).toEqual(["s0", "s1", "s2"])
     playlist.stop()
@@ -262,12 +262,12 @@ describe("AudioPlaylist", () => {
     const onStart = vi.fn()
     const playlist = new AudioPlaylist(sink, onStart, { reserveTimeoutMs: 1000 })
 
-    playlist.reserve("s0", key(0))
+    playlist.reserve("s0", key(0), "bubble-0")
     playlist.markReady("s0")
     await vi.advanceTimersByTimeAsync(0)
 
     // s0 בניגון — הוסף s1 תוך כדי
-    playlist.reserve("s1", key(1))
+    playlist.reserve("s1", key(1), "bubble-1")
     playlist.markReady("s1")
     await vi.advanceTimersByTimeAsync(0)
 
@@ -291,8 +291,8 @@ describe("AudioPlaylist", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
-    playlist.reserve("s0", key(0))
-    playlist.reserve("s1", key(1))
+    playlist.reserve("s0", key(0), "bubble-0")
+    playlist.reserve("s1", key(1), "bubble-1")
     playlist.markReady("s0")
     playlist.markReady("s1")
 
@@ -328,8 +328,8 @@ describe("AudioPlaylist", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
-    playlist.reserve("s0", key(0))
-    playlist.reserve("s1", key(1))
+    playlist.reserve("s0", key(0), "bubble-0")
+    playlist.reserve("s1", key(1), "bubble-1")
     playlist.markReady("s0")
     playlist.markReady("s1")
     await vi.advanceTimersByTimeAsync(0)
@@ -354,7 +354,7 @@ describe("AudioPlaylist", () => {
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
     // ריצה ראשונה
-    playlist.reserve("s0", key(0))
+    playlist.reserve("s0", key(0), "bubble-0")
     playlist.markReady("s0")
     await vi.advanceTimersByTimeAsync(0)
     sink.resolvePlay("s0")
@@ -365,7 +365,7 @@ describe("AudioPlaylist", () => {
     expect(playlist.transport).toBe("stopped")
 
     // תור חדש אחרי stop
-    playlist.reserve("s1", key(1))
+    playlist.reserve("s1", key(1), "bubble-1")
     expect(playlist.transport).toBe("playing") // אופס ע"י reserve()
 
     playlist.markReady("s1")

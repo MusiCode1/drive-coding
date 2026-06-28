@@ -342,7 +342,8 @@ export class Speaker {
       orderKey,
     })
     // A2: reserve-on-enqueue — הסגמנט נכנס לפלייליסט מיד (לפני fetch)
-    this.#player.reserve(segmentId, orderKey)
+    // A4: העבר bubbleId (bid) כדי ש-PlaylistItem יכיל אותו לניווט jumpToBubble
+    this.#player.reserve(segmentId, orderKey, bid)
     this.#pendingCount += 1
   }
 
@@ -494,7 +495,8 @@ export class Speaker {
         orderKey,
       })
       // A2: reserve-on-enqueue
-      this.#player.reserve(segmentId, orderKey)
+      // A4: העבר bubbleId כדי ש-PlaylistItem יכיל אותו לניווט jumpToBubble
+      this.#player.reserve(segmentId, orderKey, bid)
       this.#pendingCount += 1
       this.#pumpFetchLoop()
     }

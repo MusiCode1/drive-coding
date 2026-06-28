@@ -38,6 +38,8 @@ export type PlaylistItem = {
   orderKey: OrderKey
   segmentId: string
   state: PlaylistItemState
+  /** A4: מזהה הבועה שממנה נגזר הסגמנט. מאפשר jumpToBubble + on-demand TTS. */
+  bubbleId: string
 }
 
 export type AudioPlaylistState = "idle" | "playing"
@@ -83,14 +85,15 @@ export class AudioPlaylist {
    * מכניס item ממוין לפי orderKey, state=reserved.
    * מתחיל #playLoop אם idle.
    * A3: אם transport==="stopped" → אפס ל-"playing" (תור חדש אחרי stop ינוגן).
+   * A4: bubbleId — מזהה הבועה שממנה נגזר הסגמנט (לניווט jumpToBubble).
    */
-  reserve(segmentId: string, orderKey: OrderKey): void {
+  reserve(segmentId: string, orderKey: OrderKey, bubbleId: string): void {
     // A3: תור חדש אחרי stop — חזור למצב ניגון
     if (this.transport === "stopped") {
       this.transport = "playing"
     }
 
-    const newItem: PlaylistItem = { orderKey, segmentId, state: "reserved" }
+    const newItem: PlaylistItem = { orderKey, segmentId, state: "reserved", bubbleId }
     // sorted-insert לפי compareOrderKey
     let i = this.items.length
     while (i > 0) {
@@ -193,6 +196,17 @@ export class AudioPlaylist {
     if (!this.#playing) return
     if (index < 0 || index >= this.items.length) return
     this.#navigate(index)
+  }
+
+  /**
+   * A4: קפוץ ל-item הראשון של הבועה עם bubbleId נתון.
+   * אם הבועה לא בפלייליסט — no-op (BubblePlayer יוסיף אותה דרך reserveFromText).
+   */
+  jumpToBubble(bubbleId: string): void {
+    if (!this.#playing) return
+    const idx = this.items.findIndex((it) => it.bubbleId === bubbleId)
+    if (idx === -1) return
+    this.#navigate(idx)
   }
 
   /**
