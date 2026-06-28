@@ -6778,3 +6778,30 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 - lint:i18n — אין עברית בקוד.
 - `select.test.ts` 6/6 ירוק (Q1 = default לא שונה).
 - בדיקה ידנית: בורר נשמר ל-localStorage, reload → ערך נשמר, default=elevenlabs.
+
+## 2026-06-28 — slice-C3-rename — 3 commits
+
+### מה בוצע?
+
+**Commit 0 (none) — תלות ישירה @anthropic-ai/claude-agent-sdk@0.3.191:**
+- `packages/provider/package.json`: הוסף @anthropic-ai/claude-agent-sdk: 0.3.191 ל-dependencies (גרסה נעולה, תואמת claude-agent-acp@0.52.0).
+- `pnpm-lock.yaml`: עודכן אוטומטית.
+
+**Commit 1 (tdd) — host.rename + NormalizedCapabilities.rename + capability:**
+- `host/types.ts`: הוסף rename:boolean ל-NormalizedCapabilities (additive).
+- `claude/capabilities.ts`: rename=true (store-level, SDK תמיד זמין לclaude).
+- `claude/rename.ts` (חדש): claudeRenameSession(sessionId, title, cwd?) — wrapper עם dir-fallback. ייבוא SDK מוגבל לקובץ זה בלבד (two-SDK containment, DoD 4).
+- `host.ts`: sessionCwd Map מאוכלס ב-newSession; host.rename(string,string)→void.
+- `host.test.ts`: 2 טסטים חדשים — capabilities.rename=true + typeof host.rename==="function".
+
+**Commit 2 (manual) — rename-smoke חי:**
+- `rename-smoke.ts` (חדש): start → newSession → prompt(INIT_PROMPT) → rename("DC-TEST") → listSessions → אמת customTitle.
+- PASS חי: claude שינה שם ל-"DC-TEST", listSessions אישרה customTitle: "DC-TEST".
+
+### חריגות
+- ה-smoke מריץ prompt קצר לפני rename כי claude לא כותב JSONL לפני התור הראשון.
+- ייבוא @anthropic-ai/claude-agent-sdk מוגבל ל-claude/rename.ts בלבד.
+
+### בדיקות
+- typecheck: 0 errors. tests: 64/64. rename-smoke חי: PASS. lint:i18n: ירוק.
+- DoD 4: grep — SDK import רק ב-claude/rename.ts. DoD 5: additive (provider/docs בלבד).
