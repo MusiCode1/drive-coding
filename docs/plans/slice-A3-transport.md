@@ -1,7 +1,7 @@
 # Slice A3 — transport (pause/resume/stop) + הפרדת cancel — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: מאושר (אביגיל דולגה לבקשת המשתמשת)
+> **סטטוס**: 🔧 תוקן לפי אביגיל r1 (4×🟡 — transport-לצד-state, line-drift, MicLarge, AudioStream-method) → ממתין re-verify
 > **Complexity**: 7/10 (verifier: heavy — נוגע ב‑WebAudio/MediaSource חי)
 > **תלות**: [A2] · **base**: branch `slice/playback-core-a2`
 > **שייך ל**: `docs/plans/playback-run-control-roadmap.md` (slice 3/6)
@@ -27,7 +27,7 @@ pnpm install && pnpm hooks:install
 - `packages/frontend/src/lib/engines/audio-playlist.svelte.ts` — מ‑A2.
 - `packages/frontend/src/lib/view-models/derived/voice-mode.svelte.ts` — `cancel()` המאוחד.
 - `packages/frontend/src/lib/view-models/speaker.svelte.ts` — `stop()`/`#stopAndClear`.
-- `packages/frontend/src/lib/view-models/agent-session.svelte.ts` — `cancelTurn()` (1031‑1042).
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts` — `cancelTurn()` (1083‑1092 — drift תוקן, אביגיל #2).
 
 ## §1 — מטרה
 
@@ -60,9 +60,11 @@ audio-stream.ts       → pause: #current?.audio.pause() ; resume: #current?.aud
 routing-audio-sink.ts → מאציל לשני ה-sinks (שניהם, או רק הפעיל)
 
 audio-playlist.svelte.ts
-  transport: "playing" | "paused" | "stopped"  (מרחיב את state מ-A2)
-  + pause() / resume()   ← מאציל ל-AudioSink + מקפיא את #playLoop
-  stop()                  ← קיים, מוודא transport=stopped
+  state: "idle" | "playing"  ← קיים מ-A2, **לא נוגעים בו!** (Speaker.get state קורא #player.state==="playing", speaker:98)
+  transport: "playing" | "paused" | "stopped"  ← **שדה חדש, לצד state (לא מחליף!)**, default "playing"
+  + pause() / resume()   ← רק transport + מאציל ל-AudioSink + מקפיא את #playLoop (state נשאר "playing" ב-paused)
+  stop()                  ← קיים (state="idle"+מנקה); A3 מוסיף transport="stopped"
+  reserve()               ← קיים; A3 מוסיף: אם transport==="stopped" → "playing" (תור חדש אחרי stop)
 
 view-models/derived/voice-mode.svelte.ts
   cancel()  ── מתפצל ל:
@@ -90,7 +92,7 @@ interface AudioSink {
 - **PcmAudioStream**: `pause` → `if (#ctx?.state==="running") void #ctx.suspend()`;
   `resume` → `if (#ctx?.state==="suspended") void #ctx.resume()`. (ה‑`#nextStartTime`
   cursor "קופא" אוטומטית כי ה‑AudioContext clock עוצר — ⚠️ לאמת חי שאין gap/דריפט.)
-- **AudioStream**: `pause` → `#current?.audio.pause()`; `resume` → `void #current?.audio.play()`.
+- **AudioStream**: גוף המתודות הציבוריות החדשות (אביגיל #4 — `#current` פרטי): `pause()` → `#current?.audio.pause()`; `resume()` → `void #current?.audio.play()`. (`#current` עשוי `null` אחרי ended/cancel → ה-`?.` מגן.)
 - **RoutingAudioSink**: `pause`/`resume` → קרא לשני ה‑sinks (תמים — מי שלא פעיל no‑op).
 
 **Verification**: typecheck. (התנהגות → DoD חי.)
@@ -101,10 +103,14 @@ interface AudioSink {
 
 ```ts
 class AudioPlaylist {
-  transport: "playing" | "paused" | "stopped" = $state("stopped")
-  pause(): void    // transport=paused ; audioStream.pause() ; #playLoop רואה paused וממתין
+  // ⚠️ אביגיל #1: state ("idle"|"playing") מ-A2 — **נשאר כפי שהוא!** Speaker.get state קורא
+  //    #player.state==="playing" (speaker.svelte.ts:98). transport הוא שדה **נוסף ונפרד**, לא מחליף.
+  //    ב-paused: state נשאר "playing" (יש תוכן פעיל), transport="paused". אל תיגע ב-getter של Speaker.
+  transport: "playing" | "paused" | "stopped" = $state("playing")
+  pause(): void    // transport=paused ; audioStream.pause() ; #playLoop רואה paused וממתין. state ללא שינוי
   resume(): void   // transport=playing ; audioStream.resume() ; משחרר את #playLoop
-  stop(): void     // קיים — transport=stopped ; מנקה (A2)
+  stop(): void     // קיים (state="idle"+מנקה, A2) ; A3 מוסיף: transport="stopped"
+  // reserve() קיים (A2): A3 מוסיף — אם transport==="stopped" אפס ל-"playing" (כדי שתור-חדש-אחרי-stop ינוגן)
 }
 ```
 - `#playLoop`: לפני/בין `play(id)` בודק `transport`. אם `paused` → ממתין (poll/signal) עד
@@ -129,7 +135,7 @@ class VoiceMode {
   cancel(): void             // = cancelRun()
 }
 ```
-- ה‑`cancel()` הקיים נשאר כ‑alias (לא לשבור קוראים קיימים — MicButton). B1 יחליף קריאות.
+- ה‑`cancel()` הקיים נשאר כ‑alias (לא לשבור קוראים קיימים — **MicLarge.svelte**, ×2 ב-45/89; אין MicButton, אביגיל #3). B1 יחליף קריאות.
 - `isCancelling` reset ($effect) נשאר כפי שהוא.
 
 **Verification**: typecheck + `pnpm --filter frontend test` (אם יש טסט ל‑VoiceMode).
@@ -152,7 +158,7 @@ class VoiceMode {
 | AudioContext.suspend משאיר `#nextStartTime` לא‑מסונכרן | pcm‑audio‑stream.ts §play | האזנה חיה ל‑gap; אם דריפט → להוון את ה‑cursor ב‑resume (`#nextStartTime = ctx.currentTime`). escalate אם מורכב. |
 | `audio.pause()` ואז `play()` קופץ/מאפס | MediaSource quirk | לאמת חי; MediaSource שומר currentTime — אמור להמשיך. |
 | pause באמצע `await play` → loop מדלג | streaming | ודא ש‑pause לא פולט `ended`/reject; ה‑promise תלוי. integration אם אפשר. |
-| שבירת MicButton (cancel alias) | learnings — refactor | השאר `cancel()` כ‑alias עד B1. |
+| שבירת קוראי `cancel()` (MicLarge ×2) | learnings — refactor | השאר `cancel()` כ‑alias ל-cancelRun עד B1. |
 | WebAudio לא ב‑JSDOM | README §1 | אימות חי בלבד ל‑Commit 0/1. |
 
 ## §7 — Escalation triggers
