@@ -1,5 +1,24 @@
 # Decisions — drive-coding
 
+## 2026-06-28 21:52 — permission-ui נשאר brief חסום עד hook הרשאות ב-provider-contract
+
+### רציונל
+נכתב brief ל-`slice-permission-ui` שמחזיר את פיצ'ר ממשק אישור ההרשאות למסלול: UI inline בצ'אט,
+state ב-`AgentSession`, bridge מבוסס Promise, ו-DoD חי מול ספק non-bypass. הבדיקה מול אביגיל חשפה
+שאי אפשר לשגר את הסלייס לפני שינוי מקדים ב-`provider-abstraction`: ה-adapter הנוכחי עדיין מאשר
+אוטומטית `requestPermission`, ולכן ל-drive-coding אין hook אמיתי להצגת UI.
+
+### שינויי-כיוון
+ה-brief סומן במפורש `BLOCKED / pre-dispatch` במקום READY חלקי. הוספתי Dispatch gate שמחייב:
+השלמת P0 ב-`provider-abstraction`, נעילת commit חדש ב-`pnpm-lock.yaml`, עדכון ה-header, והרצת אביגיל
+חוזרת לפני `plan_verified=true`. תיקוני אביגיל הפנימיים הוטמעו: שימוש ב-`option.name` במקום `label`,
+implementations מלאים ב-skeleton של `permission.ts`, ושם טיפוס `RequestPermissionHandler` במקום
+`PermissionDecision` לא קיים.
+
+### מצב
+אין finding פנימי ידוע שנשאר בבריף. החסם היחיד הידוע הוא חיצוני: `provider-contract` צריך לחשוף
+`onRequestPermission` דרך `createAcpClient` ולשמר fallback legacy כשאין callback.
+
 ## 2026-06-28 — runtime-controls בלי patch: ext channel שלנו + גישת-query דרך `sessions`
 
 ### רציונל
