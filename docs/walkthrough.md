@@ -7014,3 +7014,25 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 ### חריגות
 
 אין.
+
+---
+
+## slice-cache-version — Commit 3 (B2+B3: i18n + הצגה)
+
+**תאריך**: 2026-06-28
+
+### בוצע
+
+B3 (i18n): הוספת `"settings.version"` ל-keys.ts, `"גרסה:"` ל-he.ts, `"Version:"` ל-en.ts — ליד `settings.saveOpen`.
+
+B2 (הצגה): הוספת `import { version } from "$app/environment"` ל-SettingsScreen.svelte + `<p>` עם `{t("settings.version")} {version}` לפני כפתורי reset/saveOpen, עם `dir="ltr"` (מחרוזת לועזית) ו-`color:var(--fg-muted)`.
+
+### בדיקות
+
+- `pnpm --filter @drive-coding/frontend-v2 typecheck` ירוק (0 errors, 0 warnings).
+- `pnpm lint:i18n` ירוק.
+- `pnpm typecheck` ירוק.
+
+### חריגות
+
+אין.
