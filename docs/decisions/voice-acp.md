@@ -1616,3 +1616,35 @@ fallback modes) כ-belt-and-suspenders, כדי שיהיה נכון עצמאית.
 
 ### מצב
 brief **READY** → ניתן ל-dispatch. Complexity 3 → calev light. base=dev, depends_on: [].
+
+---
+
+## 2026-06-29 — code-copy-button (slice C): הפרדה מ-batch Markdown-UX + dispatch
+
+### רציונל
+slice C (כפתור-העתקה פר code-block, req #2) תוכנן כחלק מ-batch Markdown-UX (A→B→C→D), עם
+`depends_on: [A]` ו-dispatch-gate "אסור worktree לפני מיזוג A". בבדיקה התברר שה-gate **כבר
+התקיים**: A (`markdown-content-unify`) מוזג ל-dev (`a20fbda`, נמצא ב-ancestry של HEAD),
+ו-`MarkdownContent.svelte` קיים על dev. התלות היחידה של C מומשה.
+
+### הכרעה
+**C הופרד מהשרשרת ושוגר עצמאית.** C עצמאי-קבצים מ-B ומ-D (שניהם נוגעים ב-`markdown.ts`;
+C נוגע רק ב-`MarkdownContent.svelte` + קובץ-action חדש `enhance-code-blocks.ts`). היחס היחיד
+ל-D הוא integration רך שכבר טופל ב-brief (§6: `textContent` מתעלם מ-`<span>` של highlight →
+C עובד עם וגם בלי D). לכן base=**dev ישיר** (לא שרשור), ואין צורך להמתין ל-B/D.
+
+### שינויי-כיוון (לעומת ה-brief המקורי)
+- §0 dispatch-gate: ⛔ "אסור worktree לפני A" → ✅ "gate נפתח — A מוזג `a20fbda`".
+- כותרת/תלות: `base=dev לאחר מיזוג A` (gated) → `base=dev ישיר`, depends_on:[A] **מומשה**.
+- שאלה-פתוחה #3: עודכנה לציין שה-A מוזג בפועל.
+
+### ביצוע + runtime-gate
+אליעזר ביצע 2 commits: `f14ec41` (action `enhanceCodeBlocks` — Svelte use:-action co-located
+ב-`bubbles/`, event-delegation על ה-node ששורד re-render של `{@html}`, re-inject ב-`update()`)
++ `8957af3` (חיווט ל-`MarkdownContent.svelte` + CSS). FE-only (שימוש-חוזר `bubble.copy/copied`,
+diff core ריק). **כלב GO 8/8 DoD, 0 findings** — כולל אימות חי של גוטשת-streaming (הכפתור עובד
+אחרי שה-`{@html}` מתעדכן) ו-4 המשטחים. typecheck 0, 371/371 ירוק, lint i18n נקי.
+
+### מצב
+branch `slice/code-copy-button` — **GO, ממתין אישור-merge מהמשתמשת** (לא מוזג). worktree
+`.worktrees/code-copy-button` חי עד מיזוג.
