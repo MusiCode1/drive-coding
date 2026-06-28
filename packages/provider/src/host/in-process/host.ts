@@ -38,6 +38,7 @@ import type { ActiveSession, AgentConnection, ClientContext } from "acp-sdk-v1"
 import { agent, client, methods } from "acp-sdk-v1"
 import type { NormalizedCapabilities } from "../types.js"
 import { mapClaudeCapabilities } from "./claude/capabilities.js"
+import { claudeRenameSession } from "./claude/rename.js"
 import { makeAcpClientFromCtx } from "./client-bridge.js"
 
 /**
@@ -51,6 +52,12 @@ export interface InProcessHost {
     opts: { sessionId: string; text: string },
     onUpdate: (u: Record<string, unknown>) => void,
   ): Promise<{ stopReason: string }>
+  /**
+   * Rename a session by sessionId.
+   * Two-SDK containment: only strings in the signature — no SDK types leak.
+   * Tries { dir: cwd-from-newSession } first; falls back to search-all on error.
+   */
+  rename(sessionId: string, title: string): Promise<void>
   callExt(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>>
   onExtNotification(cb: (method: string, params: Record<string, unknown>) => void): () => void
   close(): Promise<void>
@@ -92,6 +99,10 @@ export function createClaudeInProcessHost(options?: { extHandlers?: ExtHandlers 
 
   // Active sessions keyed by sessionId — sdk@1.0.0 ActiveSession objects (internal, not exported)
   const activeSessions = new Map<string, ActiveSession>()
+
+  // sessionId → cwd map: populated in newSession() so rename() can scope the lookup.
+  // Additive — no existing code modified (brief §3 avigail #3).
+  const sessionCwd = new Map<string, string>()
 
   // ext notification callbacks registered via onExtNotification()
   const extNotificationListeners = new Set<
@@ -226,6 +237,8 @@ export function createClaudeInProcessHost(options?: { extHandlers?: ExtHandlers 
       const sessionId = activeSession.sessionId as string
       // Store the ActiveSession for use in prompt()
       activeSessions.set(sessionId, activeSession)
+      // Store the cwd so rename() can scope its lookup to this project directory
+      sessionCwd.set(sessionId, opts.cwd)
 
       return { sessionId }
     },
@@ -267,6 +280,13 @@ export function createClaudeInProcessHost(options?: { extHandlers?: ExtHandlers 
       return { stopReason: response.stopReason as string }
     },
 
+    async rename(sessionId: string, title: string): Promise<void> {
+      // Look up the cwd for this session (populated in newSession).
+      // Pass it to claudeRenameSession for a scoped lookup; falls back to search-all.
+      const cwd = sessionCwd.get(sessionId)
+      await claudeRenameSession(sessionId, title, cwd)
+    },
+
     async callExt(
       method: string,
       params: Record<string, unknown>,
@@ -288,6 +308,7 @@ export function createClaudeInProcessHost(options?: { extHandlers?: ExtHandlers 
         activeSession.dispose()
       }
       activeSessions.clear()
+      sessionCwd.clear()
 
       // Close the AgentConnection (which closes the underlying memory stream pair)
       agentConn?.close()

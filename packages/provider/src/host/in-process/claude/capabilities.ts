@@ -24,6 +24,7 @@ interface RawAgentCapabilities {
  * - mcp: mcpCapabilities present → true
  * - compact/usage/commands: not declared in initialize → false (runtime features)
  * - configOptions: from session/new only; must not be hardcoded true → false here
+ * - rename: true — renameSession() is available via @anthropic-ai/claude-agent-sdk (store-level)
  */
 export function mapClaudeCapabilities(raw: unknown): NormalizedCapabilities {
   const caps = (raw as { agentCapabilities?: RawAgentCapabilities } | null)?.agentCapabilities
@@ -34,5 +35,6 @@ export function mapClaudeCapabilities(raw: unknown): NormalizedCapabilities {
     commands: false,
     usage: false,
     configOptions: false,
+    rename: true,
   }
 }

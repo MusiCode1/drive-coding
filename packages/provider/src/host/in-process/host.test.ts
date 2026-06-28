@@ -11,6 +11,8 @@
  * - DoD 2 (session): newSession + prompt handlers wired (no -32601 from agentApp side)
  * - DoD 4 (streaming): session/update notification handler registered on clientApp
  * - DoD 7: close() after session — activeSessions.dispose() called (no hang)
+ * - DoD 3 (rename): capabilities.rename=true after start()
+ * - DoD 4 (rename): host.rename is a function (no SDK types in signature)
  */
 
 import { afterEach, describe, expect, it } from "vitest"
@@ -43,6 +45,14 @@ describe("InProcessHost — initialize only (no session/prompt)", () => {
 
     // configOptions from session/new only, not hardcoded
     expect(capabilities.configOptions).toBe(false)
+  })
+
+  it("start() returns capabilities.rename=true (C3-rename DoD 3)", async () => {
+    host = createClaudeInProcessHost()
+    const { capabilities } = await host.start({ cwd: process.cwd() })
+
+    // rename is a store-level operation backed by @anthropic-ai/claude-agent-sdk → always true for claude
+    expect(capabilities.rename).toBe(true)
   })
 
   it("callExt round-trip — registered ext handler returns response (no -32601)", async () => {
@@ -116,11 +126,13 @@ describe("InProcessHost — session wiring (structural checks, no inference)", (
    * TestAgent is NOT imported (exports-map blocks it — brief §4 Commit 1).
    */
 
-  it("InProcessHost interface has newSession + prompt methods", () => {
+  it("InProcessHost interface has newSession + prompt + rename methods", () => {
     const host = createClaudeInProcessHost()
-    // Structural check — both methods exist and are functions
+    // Structural check — methods exist and are functions
     expect(typeof host.newSession).toBe("function")
     expect(typeof host.prompt).toBe("function")
+    // rename — C3-rename DoD 4 (no SDK types in signature)
+    expect(typeof host.rename).toBe("function")
     // Existing methods still present
     expect(typeof host.start).toBe("function")
     expect(typeof host.callExt).toBe("function")

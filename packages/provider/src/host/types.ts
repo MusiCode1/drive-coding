@@ -22,6 +22,11 @@ export interface NormalizedCapabilities {
    * NOT hardcoded true — must be discovered at runtime.
    */
   configOptions: boolean
+  /**
+   * renameSession() available in @anthropic-ai/claude-agent-sdk → true for claude.
+   * Store-level operation (no patch required). Consumer calls host.rename(id, title).
+   */
+  rename: boolean
 }
 
 /**
