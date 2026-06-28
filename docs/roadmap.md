@@ -58,7 +58,7 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 | V3 — TtsProvider interface (ElevenLabs מאחוריו) | ✅ **מוזג ל-dev** (2026-06-27, merge `3c4e9b3`; אביגיל READY r1, calev GO 7/7) |
 | **V4a — Gemini-TTS ✅ (PCM→WebAudio)** — ספק שני אומת חי (`gemini-3.1-flash-tts-preview`, SSE streaming, ~1s first-audio, verbatim עברי). `geminiTts` (SDK `@google/genai`) + `PcmAudioStream` (WebAudio, BufferSource queue) לצד נתיב MP3/MediaSource + `RoutingAudioSink` (לפי format) + **בורר ספק-TTS בהגדרות** (default ElevenLabs). **V4a-unify** — איחוד שני צרכני-TTS (Speaker+BubblePlayer) תחת `resolveTts()`+`RoutingAudioSink` (תיקון bug Gemini-בבועה שנתפס ב-runtime-gate חי). | ✅ **מוזג ל-dev** (2026-06-27, merges `5abe5f1`+`38f929c`; אביגיל READY; build-gates ירוקים, 324/324; אומת חי ב-preview. ר' `decisions/voice-acp.md` + `v4-gemini-tts-pre-brief.md`) |
 | **V4b — בורר-קול Gemini פר-ספק** — היום קול Gemini מקובע ל-`"Kore"` (מרוכז ב-`resolveTts()` — נקודת-שינוי יחידה). צריך: **לשלוף את רשימת הקולות של Google** (prebuilt voices: Kore/Puck/Charon/Fenrir/Aoede/Leda/Zephyr/Orus...) + שדה `geminiVoice` בהגדרות + `<Select>` (כמו VoicePicker) + העברתו דרך `resolveTts`. + voice-config מלא פר-ספק (ElevenLabs voiceId vs Gemini voiceName). | 💭 **טרם brief** — נדון 2026-06-27 |
-| **חיתוך-סגמנטים חותך באמצע מילה** — ה-pipeline מפצל את הטקסט לסגמנטים (משפטים) ל-streaming TTS דרך `core/voice/sentence-boundary.ts`; **פעמים רבות החיתוך נופל באמצע מילה** → קול קטוע/לא-טבעי. צריך לתקן את לוגיקת גבול-המשפט/הסגמנט (לכבד גבולות-מילה; אולי גם punctuation/אורך-מינימלי). נתפס חי 2026-06-27 ב-preview. | 💭 **טרם brief** — באג |
+| **חיתוך-סגמנטים חותך באמצע מילה** — ה-pipeline מפצל את הטקסט לסגמנטים (משפטים) ל-streaming TTS דרך `core/voice/sentence-boundary.ts`; **פעמים רבות החיתוך נופל באמצע מילה** → קול קטוע/לא-טבעי. נתפס חי 2026-06-27 ב-preview, **וקורה בשני הספקים (גם claude וגם opencode)**. | 🔬 **חקירה פתוחה** (2026-06-28) — `docs/investigations/2026-06-28-sentence-cutting-mid-word.md`. האבחון הראשון (flush מוקדם בגלל opencode-tail) **הופרך** (קורה גם ב-claude; אין סיגנל סוף-הודעה אמין). 5 השערות; **המובילה: תווי-כיווניות (RLM)/ניקוד משבשים את `Intl.Segmenter`** (מתחבר ל-"RLM/תווים משבשי-markdown" ב-Track C). דורש נתונים חיים (cache/wire של שני הספקים) לפני brief-ביצוע. בודד מתוכנית-הפלייליסט (Track C). |
 | V2 — voice-openai-text (תרגום/STT/נרייט) — ספק טקסטואלי שני, מקבילי (לא בנתיב Gemini-TTS) | 💭 |
 
 ### C — Frontend / UX
@@ -69,11 +69,33 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 | בסיס: connect/chat/voice-mode/bubbles/sessions/tool-rendering | ✅ |
 | **מסך-פתיחה: הסרת בורר-סשן → רשימת תיקיות-אחרונות + 2 תיקוני folder-picker** — מסירים את ה-`SessionPicker`+`listSessionsForCwd` (spawn יקר רק כדי לאסוף סשנים); בחירת-סשן עוברת ל*תוך* הסשן (קיים). במקום: רשימת תיקיות-אחרונות מ-`GET /api/projects` (תשתית `ProjectsRegistry` קיימת ב-BE, FE-only). + תיקון folder-picker: נפתח בנתיב שהוזן (`startPath` prop) + מסתיר *כל* dot-folder (היום prefix-match על 5 בלבד). | ✅ **מוזג ל-dev** (2026-06-28, merges `83bd874` A → `726f9f3` B, `--no-ff` שרשרת; כלב GO: A 8/8 אומת חי בדפדפן, B 14/14 [סטטי + smoke-test חי ב-preview שאומת ע"י המשתמשת]; typecheck 0; push origin). **המשך — 3 שיפורים → slice אחד מאוחד `recent-projects-controls`:** מחיקה (BE: `removeCwd` + `DELETE /api/projects`) · כיווץ panel · persist מצב-כיווץ (localStorage) · ✕ אדום ב-hover. ✅ **מוזג ל-dev** (2026-06-28, merge `ca76a95`, release **v0.3.0**; אביגיל r1 READY; כלב GO 12/12 אומת חי; typecheck 0, BE 34, FE 354; push origin). **שינוי-כיוון אחרי preview**: מהסתרה-קבועה ל**מחיקה-אמיתית** (✕ מוחק רשומה; תיקייה חוזרת אם מתחברים אליה שוב — recency). |
 | settings page · smart scroll · audio cues | 🔶 חלקי — **smart scroll מוזג** (slice-mode-label-scroll: גלילה מאוחדת ב-SessionOptionsPanel + תווית mode פר-ספק + תיאורי אפשרויות + קישורי markdown ב-tab חדש). settings page · audio cues עדיין 💭 |
+| **בקרת השמעה+ריצה + פלייליסט** — עצור/השהה(pause)/המשך(resume) השמעה · **prev/next בין משפטים** · פלייליסט=**כל היסטוריית השיחה** (איחוד `BubblePlayer`) · עצור-ריצה (cancel + עוצר גם השמעה) · watchdog ל-turnState (בועה שנתקעת אחרי סיום). **התובנה המאחדת: reserve-on-enqueue** — סגמנט נכנס לתור מיד (לא אחרי fetch) → פותר גם סדר-השמעה-הפוך (Gemini), גם prev/next, גם pause. הרבה כבר קיים מ-msr-v2/slice-22 (`Player`/`OrderedQueue`/`jumpToSegment`). | 🟢 **briefs מוכנים — טרם בוצע/אומת** (2026-06-28). תוכנית: `docs/plans/playback-run-control-roadmap.md`. שרשרת **A2→A3→A4** (פלייליסט) · **A5** עצמאי (watchdog) · **B1** UI (worktree נפרד — merge תשתית בלי UI). base A2/A5=`dev`. **לא עבר אביגיל** (דולג בכתיבה). חיתוך-המילים (היה A1) **בודד לחקירה**. ר' `decisions/voice-acp.md` 2026-06-28. |
 | **chat-render polish** (שרשרת A→B→C) — **A:** טבלאות Markdown (allowlist DOMPurify חסר tags של טבלה) · **B:** רינדור תמונות בכלים (`image` raster+SVG + `resource` blob image, היום base64 גולמי) · **C:** העדפות-תצוגה (collapse מחשבות / expand כלים ב-settings) | ✅ **מוזג ל-dev** (2026-06-25, merge cc5ff66; 4 commits כולל snap-back fix; כלב GO, אביגיל READY, אומת חי בנייד). פותח את message/input backlog שמתחתיו |
 
 #### Message & Input UX backlog — נקלט 2026-06-24 (מהתנסות המשתמשת)
 
 > מקור-פירוט: `docs/plans/ui-feature-backlog.md`. כל הסלייסים האלה בונים מעל chat-render-polish (ToolBubble/ThoughtBubble/settings). **אפשר אימות ACP חי מול שני ספקים** (opencode + claude-code) — רלוונטי במיוחד ל-spike של סוכן-המשנה.
+
+##### 📦 Markdown-UX batch (2026-06-28) — 7 בקשות-משתמשת לרינדור-צד-לקוח
+
+> מקור: התנסות-המשתמשת 28/06. נחתך ל-4 slices. **A מוזג; B/C/D טרם.** briefs ב-`docs/plans/`, decisions ב-`decisions/voice-acp.md`.
+
+| Slice | מכסה (req) | סטטוס |
+| --- | --- | --- |
+| **A — `markdown-content-unify`** | #1 קוד no-wrap+hscroll · #3 מרקדאון בהודעות-משתמש (UserBubble היה חסר CSS — ציטוט/רשימות/כותרות) · #4 מחשבות→מרקדאון מלא · #5 רשימות-סמן (Tailwind preflight) | ✅ **מוזג ל-dev** (merge `a20fbda`). איחוד 4 משטחים ל-`MarkdownContent.svelte` (+`ContentViewerDialog`). אביגיל READY ×2, כלב GO 10/10, **+ תיקון blockquote-נראה** (`var(--border)` 8% היה בלתי-נראה → `--fg-muted`+רקע; נתפס חי בpreview). אומת חי ע"י המשתמשת. |
+| **B — `markdown-dir-per-paragraph`** | #6 `dir="auto"` פר block-element | 🟢 **brief READY** (אביגיל ×2, 0 findings). base=dev, depends_on:[] (עצמאי-קבצים מ-A). ⚠️ merge **לפני D** (שניהם `markdown.ts`). **טרם בוצע.** |
+| **C — `code-copy-button`** | #2 כפתור-העתקה פר code-block | 🟢 **brief READY** (אביגיל ×2, 0 findings). Svelte action על `MarkdownContent` + event-delegation לגוטשת-streaming. שימוש-חוזר `bubble.copy/copied` (FE-only). **טרם בוצע.** |
+| **D — `code-syntax-highlight`** | #7 צביעת-קוד | 🟡 **בוצע — חסום למיזוג.** highlight.js ב-**pass-3b מבודד** (`CODE_ALLOW=pre/code/span+class`, בלי style; דפוס KaTeX). 16 שפות, theme פר-פלטה. branch `slice/code-syntax-highlight` (typecheck נקי). **חוסמים: (1) אין כלב** (executor נקטע לפני runtime-gate; נתיב קריטי-לאבטחה → calev-heavy חובה); **(2) קונפליקט-מיזוג** (נבנה על A טרם-מיזוג). decision נרשם, Shiki נדחה. |
+
+##### 🐛 virtua scroll — 3 באגים (pre-brief למרדכי, סשן נפרד)
+
+> `docs/plans/scroll-virtua-flicker-prebrief.md` — אבחנה חיה משותפת עם המשתמשת (Playwright harness `scripts/debug-virtua-flicker.cjs`). **בגלילה-הווירטואלית הקיימת, לא רגרסיה.**
+
+| באג | שורש | מצב |
+| --- | --- | --- |
+| **ריצוד** — בועה נראית נעלמת-וחוזרת מתזוזת-2px | **מאומת בקוד-virtua**: viewport נמדד דרך `ResizeObserver.contentRect` (מחריג padding); `pt-20/pb-10` של `.chat-scroll` → viewport 524 במקום 644 → under-render | תיקון-חלקי נבדק חי (הסרת padding: 120→80px gap, **לא נסגר**; שארית ≈ `startMargin`+חוסר `itemSize`). דורש slice ייעודי |
+| **קפיצה-לתחתית** | follow re-engage רגיש (48px) + חלון-כוונה 600ms | כיוון: sticky-hold (re-engage רק בגלילה-מכוונת/כפתור/שליחה) |
+| **אובדן-הרחבה** ב-remount | `open` מקומי ב-Thought/ToolBubble נאבד | = שורש **"ID יציב לכלי / snap-back"** (כבר ב-roadmap). תיקון: מאגר-fold לפי id |
 
 | פריט | סטטוס |
 | --- | --- |
