@@ -225,13 +225,19 @@ export type MessageKey =
   | "connect.recent.collapse"
   | "connect.recent.expand"
   // ─── leave-running (slice leave-running-background) ───
-  | "session.leaveRunning"          // תווית כפתור "צא — השאר רץ" (חדש)
-  | "session.closeSession"          // title כפתור הכיבוי-המלא (Power) — מבדיל מ-leaveRunning
+  | "session.leaveRunning" // תווית כפתור "צא — השאר רץ" (חדש)
+  | "session.closeSession" // title כפתור הכיבוי-המלא (Power) — מבדיל מ-leaveRunning
   | "session.leaveWarning.title"
-  | "session.leaveWarning.body"     // "הריצה תיעצר ברגע שתגיע בקשת-הרשאה..."
+  | "session.leaveWarning.body" // "הריצה תיעצר ברגע שתגיע בקשת-הרשאה..."
   | "session.leaveWarning.confirm"
   | "session.leaveWarning.cancel"
   | "session.leaveWarning.dontShowAgain"
+  // ─── thinking-tokens ─── (slice FEAT-thinking-live)
+  | "agentOptions.thinking.label" // תווית הפקד "חשיבה" / "Thinking"
+  | "agentOptions.thinking.off" // ערך כבוי
+  | "agentOptions.thinking.low" // ערך נמוך (4000)
+  | "agentOptions.thinking.medium" // ערך בינוני (8000)
+  | "agentOptions.thinking.high" // ערך גבוה (16000)
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

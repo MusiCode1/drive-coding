@@ -1049,6 +1049,19 @@ export class AgentSession {
     return false
   }
 
+  // ─── slice FEAT-thinking-live: setThinkingTokens ─── (תוספתי)
+
+  /**
+   * מגדיר את מגבלת ה-thinking tokens דרך ה-ext facade.
+   * n=null → כבוי (no-limit). מדלג בשקט אם אין חיבור פעיל או ה-ext לא זמין.
+   * נפרד מ-applyConfigOption — זהו ext (_drive/*), לא configOption ACP סטנדרטי.
+   */
+  setThinkingTokens = async (n: number | null): Promise<void> => {
+    if (this.status !== "connected") return
+    if (!this.#ext || !this.#sessionId) return
+    await this.#ext.setThinkingTokens(this.#sessionId, n)
+  }
+
   // ─── slice-restore-last-config: apply remembered config ─── (תוספתי)
 
   /**

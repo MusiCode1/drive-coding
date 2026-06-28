@@ -223,8 +223,15 @@ export const en: Catalog = {
   "session.leaveRunning": "Leave — keep running",
   "session.closeSession": "Shut the process down completely",
   "session.leaveWarning.title": "Agent will keep running",
-  "session.leaveWarning.body": "The run will stall when a permission request arrives, because the browser is the ACP client. To prevent stalling: switch to bypass-permissions mode before leaving.",
+  "session.leaveWarning.body":
+    "The run will stall when a permission request arrives, because the browser is the ACP client. To prevent stalling: switch to bypass-permissions mode before leaving.",
   "session.leaveWarning.confirm": "Leave anyway",
   "session.leaveWarning.cancel": "Cancel",
   "session.leaveWarning.dontShowAgain": "Don't show this message again",
+  // ─── thinking-tokens ─── (slice FEAT-thinking-live)
+  "agentOptions.thinking.label": "Thinking",
+  "agentOptions.thinking.off": "Off",
+  "agentOptions.thinking.low": "Low",
+  "agentOptions.thinking.medium": "Medium",
+  "agentOptions.thinking.high": "High",
 }

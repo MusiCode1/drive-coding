@@ -1,3 +1,12 @@
+## 2026-06-29 — FEAT-thinking-live — Phase 0: UI control + vm.setThinkingTokens + i18n
+
+**Phase 0 — commit 0:**
+- i18n: 5 מפתחות חדשים (`agentOptions.thinking.{label,off,low,medium,high}`) ב-keys.ts + he.ts + en.ts
+- vm: מתודה ציבורית `setThinkingTokens(n: number|null)` ב-AgentSession — קוראת ל-`this.#ext.setThinkingTokens(this.#sessionId, n)`, guard על `status===connected` ו-ext זמין
+- UI: `<Select>` thinking ב-SessionOptionsPanel, gated `{#if session.supports.thinkingTokens}`, mapping off→null, low→4000, medium→8000, high→16000
+- typecheck: ירוק | lint:i18n: ירוק | biome (קבצים נגועים): ירוק
+- test: 1012 passed (2 pre-existing failures: https-serve bun.exe Windows)
+
 ## 2026-06-29 — FE-normalization — סיכום slice
 
 **Commits:** bdc88c1..085438d (4 commits: Phase 0 + Phase 1 + Phase 2 docs + slice status)
