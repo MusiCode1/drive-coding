@@ -9,9 +9,19 @@
 - `connection/connect-in-process.ts` (חדש): `connectInProcess(opts)→ProviderConnection`. agentApp עם כל ה-handlers (מראה in-process-host) + `_drive/setThinkingTokens`. `agentApp.connect(bridge.agentEnd)` (Model 2). onFrame tap דו-כיווני. turn-tracker. `mapClaudeCapabilities(null)` (static claude caps). modelOverride → `injectModelOverride()` → session/new `_meta.claudeCode.options.model`. pid=null (in-process). close: bridge.close() + agentConn.closed await.
 - `connection/connect-in-process.test.ts` (חדש): 11 טסטים structural — shape, capabilities, ext=undefined, pid=null, onFrame (in+out), onLine, turn, close, onCrash.
 
-**Commit 2 (none) — export + walkthrough:**
-- `connection/index.ts`: `connectInProcess` מיוצא מ-`@drive-coding/provider/connection`.
+**Commit 2 (none) — export + live test + walkthrough:**
+- `connection/index.ts`: `connectInProcess` מיוצא מ-`@drive-coding/provider/connection` (DoD 2).
+- `live/connect-in-process.live.test.ts`: 4 live tests (RUN_LIVE=1) — שרשרת חיה, caps, _drive/setThinkingTokens, turn.
+- live: 8/8 PASS — DoD 3 (שרשרת חיה) ✓, DoD 4 (onFrame+turn+caps) ✓, DoD 5 (_drive/setThinkingTokens) ✓.
 - `docs/walkthrough.md`: עדכון.
+
+### חריגות
+- `pid=null` (in-process — אין child process, documented per brief §3).
+- `mcp=false` ב-capabilities: `mapClaudeCapabilities(null)` מחזיר mcp=false כי initResult לא נתפס (FE שולח initialize over wire). ניתן לשפר בעתיד ע"י tap ה-initialize response.
+- `agentConn.close()` נופל בשגיאה כשה-stream כבר סגור — תוקן ע"י await + catch ב-close().
+
+### בדיקות
+- typecheck: 0 errors. tests: 129/129. live: 8/8. DoD 2 ✓ (export). DoD 3 ✓ (שרשרת חיה). DoD 4 ✓ (onFrame+turn+caps). DoD 5 ✓. DoD 6 ✓ (additive, provider/** בלבד).
 
 ## 2026-06-28 — CUT-3b-ii-be-rewire — סיכום slice (commits 0–2 + calev-heavy)
 
