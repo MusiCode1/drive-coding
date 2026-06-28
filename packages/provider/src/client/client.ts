@@ -68,18 +68,40 @@ export type AcpClient = {
   setSessionMode(opts: { sessionId: string; modeId: string }): Promise<SetSessionModeResponse>
 
   setSessionModel(opts: { sessionId: string; modelId: string }): Promise<SetSessionModelResponse>
+
+  // ─── slice FE-normalization: ext channel ───
+  /**
+   * שולח ext request ל-`_drive/*` דרך ClientSideConnection.extMethod (acp.d.ts:546).
+   * passthrough ישיר — ה-ExtClient facade (adapters) מאמת params לפני קריאה לכאן.
+   */
+  extMethod(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>>
+}
+
+export type AcpClientCallbacks = {
+  onUpdate: (n: SessionNotification) => void
+  /** ─── slice FE-normalization: קבלת ext notifications (כולל _drive/capabilities) ─── */
+  onExtNotification?: (method: string, params: Record<string, unknown>) => void
 }
 
 export async function createAcpClient(
   transport: AcpTransport,
-  onUpdate: (n: SessionNotification) => void,
+  onUpdateOrCallbacks: ((n: SessionNotification) => void) | AcpClientCallbacks,
   options: AcpClientOptions = {},
 ): Promise<AcpClient> {
   const initTimeoutMs = options.initTimeoutMs ?? DEFAULT_INIT_TIMEOUT_MS
 
+  // תמיכה בשתי חתימות: callback ישיר (backward-compat) + object
+  const callbacks: AcpClientCallbacks =
+    typeof onUpdateOrCallbacks === "function"
+      ? { onUpdate: onUpdateOrCallbacks }
+      : onUpdateOrCallbacks
+
   // בניית streams + connection — ה-SDK מתחיל לקרוא מהצינור מיד.
   const stream = ndJsonStream(transport.writable, transport.readable)
-  const client = createClientImpl({ onUpdate })
+  const client = createClientImpl({
+    onUpdate: callbacks.onUpdate,
+    onExtNotification: callbacks.onExtNotification,
+  })
   const conn = new ClientSideConnection((_agent) => client, stream)
 
   // initialize עם fs caps = false — עטוף ב-Promise.race עם timeout.
@@ -176,6 +198,16 @@ export async function createAcpClient(
     /** סוגר את התעבורה הבסיסית */
     close() {
       transport.close()
+    },
+
+    // ─── slice FE-normalization: ext channel ───
+
+    /** passthrough ל-ClientSideConnection.extMethod — ה-facade (adapters) מאמת לפני. */
+    async extMethod(
+      method: string,
+      params: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> {
+      return conn.extMethod(method, params) as Promise<Record<string, unknown>>
     },
 
     // ─── session config (slice 23) ───

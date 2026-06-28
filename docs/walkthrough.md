@@ -1,3 +1,12 @@
+## 2026-06-29 — FE-normalization — Phase 0: AcpClient.extMethod + extNotification + ./types subpath
+
+**Commit 0 — logic:**
+- `packages/provider/src/client/client-impl.ts`: הוספת `extNotification` handler ל-`createClientImpl` — מנתב ל-`onExtNotification` callback (אופציונלי). כך `_drive/capabilities` מתקבל מה-SDK default-route.
+- `packages/provider/src/client/client.ts`: הוספת `extMethod` ל-`AcpClient` type + impl (passthrough ל-`conn.extMethod`). שינוי חתימת `createAcpClient` ל-`onUpdateOrCallbacks` (backward-compat — תומך גם ב-function ישן וגם ב-`{ onUpdate, onExtNotification }` object).
+- `packages/provider/package.json`: subpath `"./types": "./src/types.ts"` — types-only (NormalizedCapabilities), ללא spawn-core → FE יכול לייבא `import type { NormalizedCapabilities }` בלי vite crash.
+- `packages/provider/src/client/client.extmethod.test.ts`: 4 tests TDD — extNotification routes correctly, no-op when absent, sessionUpdate no-regression, backward-compat.
+- typecheck: 0 errors חדשים (שגיאת connect-in-process.test.ts:111 קדם-קיימת ולא נגענו בה). lint: נקי על קבצים שהשתנו. tests: 133/133 passed.
+
 ## 2026-06-28 — CUT-3b-iii-2 — live routing: claude → connectInProcess (Commits 0–2)
 
 **סיכום slice:**

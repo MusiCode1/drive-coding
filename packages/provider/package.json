@@ -11,7 +11,8 @@
     "./spawn": "./src/spawn/index.ts",
     "./host": "./src/host/index.ts",
     "./extensions": "./src/extensions/index.ts",
-    "./connection": "./src/connection/index.ts"
+    "./connection": "./src/connection/index.ts",
+    "./types": "./src/types.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
