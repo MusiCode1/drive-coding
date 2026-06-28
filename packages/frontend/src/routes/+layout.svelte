@@ -25,6 +25,7 @@ import {
   setMic,
   setModals,
   setModelStatus,
+  setRecentProjects,
   setResponsive,
   setSession,
   setSettings,
@@ -37,6 +38,7 @@ import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { CuesEngine } from "$lib/engines/cues"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
+import { RecentProjects } from "$lib/view-models/recent-projects.svelte"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { BubblePlayer } from "$lib/view-models/bubble-player.svelte"
 import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
@@ -102,6 +104,9 @@ const contentViewer = new ContentViewerVM()
 // ─── active-agents ─── (slice active-agents-widget — בלתי-תלוי)
 const activeAgents = new ActiveAgents()
 
+// ─── recent-projects ─── (slice connect-recent-projects — בלתי-תלוי)
+const recentProjects = new RecentProjects()
+
 // ─── wake-lock ─── (Track C — drive-first chrome)
 const wakeLock = new WakeLockEngine()
 $effect(() => {
@@ -137,6 +142,7 @@ setUiShell(uiShell)
 setModals(modals)
 setContentViewer(contentViewer)
 setActiveAgents(activeAgents)
+setRecentProjects(recentProjects)
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)
 const chatScroll = $state<ChatScrollBridge>({ scrollEl: null, handle: null })
