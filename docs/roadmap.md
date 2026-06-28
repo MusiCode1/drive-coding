@@ -41,6 +41,7 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 
 | פריט | סטטוס |
 | --- | --- |
+| **provider cutover — `@drive-coding/provider` reabsorbed + claude in-process + ext channel חי** — חבילת-workspace additive (client/transport/config/spawn/host/connection/extensions); `bridge-manager`→`ProviderConnection` (BE מרכיב פרימיטיבים); claude in-process (Model 2, ext channel), opencode/codex spawn; `_drive/setThinkingTokens` חי מ-FE→claude; FE capability-gating+facade. | ✅ **מוזג ל-dev v0.8.0** (2026-06-29, merge `fac76c2`; 11 slices, כל אחת אביגיל READY→calev GO; אומת ב-preview חי claude/opencode/codex+thinking; ר' `decisions/drive-coding.md`). הסתייגויות: `mcp:false` (future), חיוב third-party (פתוח-במודע). |
 | P0 — contract + ACP + claude-code adapters + registry | ✅ מוזג ל-main |
 | vnext-A/B — transport split + ProviderLaunchConfig | ✅ ב-integration-vnext |
 | **vnext-C — config-options** (SessionConfig + setConfigOption) | 🔄 brief אושר (READY), בביצוע |
