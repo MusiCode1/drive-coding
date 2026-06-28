@@ -68,10 +68,10 @@ AudioPlaylist (engine)
 | slice | תוכן | depends_on | base |
 |---|---|---|---|
 | ~~A1~~ | **בודד לחקירה** — `docs/investigations/2026-06-28-sentence-cutting-mid-word.md` | — | — |
-| **A2** ✅READY — audio‑playlist | `AudioPlaylist` + reserve‑on‑enqueue + cursor + ממתין לסגמנט‑בתור (timeout=skip) | [] | `dev` |
+| **A2** ✅GO* — audio‑playlist | `AudioPlaylist` + reserve‑on‑enqueue + cursor + ממתין לסגמנט‑בתור (timeout=skip). *GO-עם-דחייה: BUG-1 (late-early) הוסגר כעיצוב→A4; ר' decisions 06-29 | [] | `dev` |
 | **A3** — transport | `pause/resume/stop` בשני ה‑AudioSinks + ב‑AudioPlaylist + הפרדת `cancel()`→`stopPlayback()`/`cancelRun()` | [A2] | A2 |
 | **A4** — navigation | prev/next/jump בין משפטים + איחוד `BubblePlayer`→playlist (היסטוריה מלאה) | [A3] | A3 |
-| **A5** ✅READY — watchdog | timeout ל‑turnState אם אין RESP/activity → אילוץ idle (עצמאי — לא נשען על A1) | [] | `dev` |
+| **A5** ✅GO — watchdog | timeout ל‑turnState אם אין RESP/activity → אילוץ idle (עצמאי — לא נשען על A1). calev light 5/5 | [] | `dev` |
 
 ### 🎨 worktree B — UI (branch `slice/playback-ui-*`, base על A4)
 

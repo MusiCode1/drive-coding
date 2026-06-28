@@ -5,6 +5,13 @@
 > **Complexity**: 8/10 (verifier: heavy — refactor בעלות + streaming)
 > **תלות**: [A3] · **base**: branch `slice/playback-core-a3`
 > **שייך ל**: `docs/plans/playback-run-control-roadmap.md` (slice 4/6)
+>
+> ⚠️ **carry מ-A2 (known-bug BUG-1, דחייה מאושרת):** סגמנט **late-early** — שנפלט ב-flush של
+> turn-end אחרי שה-cursor החי כבר עבר (זנב-מחשבה טיפוסי) — נשאר בפלייליסט sorted+`ready` ו**לא
+> נוגן חי**. **A4 חייב:** (1) שהניווט (`prev`/`jumpTo`/`jumpToBubble`) יחשוף ויקריא גם פריט
+> `ready`-שלא-נוגן-חי (לא להתעלם ממנו ולא להניח שכל פריט מאחורי cursor=`done`); (2) להחליט
+> אסטרטגיית-buffer עבורו (כמו §9 Q2 — לשמר או re-fetch ב-jumpTo). זה **לא** `skipped` — יש לו
+> ערך-ניווט. ר' `decisions/voice-acp.md` 2026-06-29.
 
 ## §0 — Pre-flight
 

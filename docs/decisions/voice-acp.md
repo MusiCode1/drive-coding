@@ -1,5 +1,39 @@
 # Decisions — voice-acp
 
+## 2026-06-29 — playback A2: BUG-1 (late-early ordering) — דחייה מאושרת, אפס שינוי-קוד
+
+> runtime-gate: calev-heavy על A2 = NO-GO. הוסב ל-**GO-עם-דחייה-מתועדת+מאושרת**. ר' `reports/drive-coding/A2-calev.md`.
+
+### הבעיה שכלב תפס
+`reserve` עושה sorted-insert לפי orderKey, אבל ה-`#playLoop` מחזיק `cursor` כאינדקס-מספרי.
+סגמנט שה-slot שלו נוצר **אחרי** שה-cursor החי עבר את מיקומו-הממוין → לא מנוגן חי, ונשאר `ready`.
+**השורש (אובחן מהקוד):** זה לא race-בזרימה — `#appendChunk` אוטם בועה ברגע שבועה חדשה נוצרת,
+אז ערבוב-chunks לא קורה. ה-trigger היחיד הוא **ברז-2 (flush של turn-end)**: זנב-מחשבה בלי
+טרמינטור נפלט ב-flush עם orderKey נמוך מהודעה שכבר נוגנה. צר (דורש שההשמעה הדביקה), אבל אמיתי.
+
+### ההכרעה (דיון עם המשתמשת)
+1. **השורש הוא turn-end, לא הפלייליסט.** "תמיד יש חשש שלא הסתיים — עוד טקסט בדרך" → אין סיגנל-אמין
+   של סוף-הודעה. לתקן בפלייליסט = לטפל בתסמין. **דוחים לחקירת turn-end** (אותו שורש כמו חיתוך-מילים
+   → אוחד ב-`investigations/2026-06-28-sentence-cutting-mid-word.md`, לדבג עם `WIRE_RECORD`).
+2. **לא `skipped`.** תובנת המשתמשת: לסגמנט late-loaded **יש ערך** — בפלייליסט-היסטוריה (A4) המשתמש
+   יכול לעשות reverse ולהקריא אותו. `skipped` היה משמיד תוכן בר-השמעה. אז: נשאר sorted+`ready`+נָוויגבילי.
+   `skipped` שמור **רק** ל-no-audio (timeout/error).
+3. **"רפאים" = עיצוב, לא דליפה.** במודל-הניווט, `ready`-מאחורי-cursor הוא מצב-מנוחה לגיטימי של
+   פריט-היסטוריה. **אין צורך בשינוי-קוד ב-A2** (הקוד כבר משאיר אותו sorted+ready).
+
+### תנאי הדחייה (runtime-gate)
+- מתועד (כאן + חקירה + DoD של A2 עודכן).
+- אישור מפורש מהמשתמשת (ניתן 2026-06-29).
+- **נישא כ-known-bug ל-A4** (`slice-A4-navigation.md` §ראש): הניווט **חייב** לחשוף+להקריא פריט
+  `ready`-שלא-נוגן-חי + להכריע buffer-strategy.
+
+### מה שנדחה (גישות שנשקלו)
+- **guard `skipped` נגד "רפאים"** — נשקל, **בוטל** אחרי תובנת-הניווט (הורס ערך-reverse).
+- **cursor→earliest-unplayed-scan (להקריא late-early מחוץ-לסדר)** — נדחה (לא פותר את השורש; מוסיף
+  אי-סדר ומורכבות; ובכל מקרה turn-end הוא הבעיה).
+
+---
+
 ## 2026-06-28 — code-syntax-highlight (D): צביעת-קוד ב-pass-3b מבודד + merge (v0.5.0)
 
 > Slice D מתוך Markdown-UX batch (req #7). merge `05fe3b6`. brief: `docs/plans/slice-code-syntax-highlight.md`.
