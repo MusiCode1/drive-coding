@@ -1,3 +1,18 @@
+## 2026-06-28 — CUT-3b-iii-2 — live routing: claude → connectInProcess (Commits 0–2)
+
+**סיכום slice:**
+- Commit 0: routing ב-connection-registry (claude→connectInProcess) + getRuntimeInfo fix (pid:null) + TS fix (NewSessionRequest cast).
+- Commit 1: capability delivery (_drive/capabilities notification ב-ws-agent) + ext חי מאומת.
+- Commit 2: walkthrough + slice status update + calev-heavy (pending).
+
+**קבצים שהשתנו:**
+- `packages/backend/src/acp/connection-registry.ts` — routing + getRuntimeInfo + import
+- `packages/backend/src/delivery/http-agents.ts` — pid: number | null type
+- `packages/backend/src/delivery/ws-agent.ts` — _drive/capabilities notification
+- `packages/provider/src/connection/connect-in-process.ts` — TS fix (NewSessionRequest cast)
+
+**calev-heavy: pending** (behavioral verification — claude in-process + ext חי)
+
 ## 2026-06-28 — CUT-3b-iii-2 — live routing: claude → connectInProcess (Commit 0)
 
 **Commit 1 (integration) — capability delivery (_drive/capabilities) + אימות ext:**
