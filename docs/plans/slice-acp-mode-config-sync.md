@@ -1,7 +1,7 @@
 # Slice — acp-mode-config-sync — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: מאושר (אביגיל READY r2, 1×🟢 non-blocking — 2026-06-28)
+> **סטטוס**: מוזג ל-dev v0.4.0 (2026-06-28 — 2 commits TDD: 0703a98, 3e51cf1; calev GO 6/6; merge 3f96354)
 > **Complexity**: 3/10 (verifier: light — calev)
 > **תלות**: אין (base=dev). depends_on: []. **קשור**: `slice-leave-running-background` (חשף את הבאג; bypassActive נשען על מצב-mode טרי). מומלץ למזג **לפני** leave-running.
 

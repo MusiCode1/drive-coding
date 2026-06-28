@@ -1,7 +1,7 @@
 # Slice — leave-running-background — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: הושלם (אליעזר, 2026-06-28 — 4 commits: b55930b..7ed4f2b על slice/leave-running-background)
+> **סטטוס**: מוזג ל-dev v0.4.0 (2026-06-28 — commits b55930b..9f675ed כולל 3 תיקוני runtime-gate; calev GO; merge fac196d)
 > **Complexity**: 5/10 (verifier: light — calev)
 > **תלות**: אין (FE-טהור; base=dev). depends_on: []
 
