@@ -48,6 +48,27 @@ The current slice roadmap is `packages/frontend/docs/slices.md`.
 - No `any` — use `unknown` + ArkType to refine.
 - No deep `null` — `T | undefined` or Option pattern.
 
+## Versioning — מספור גרסאות (טקס מיזוג)
+
+> ה-bump קורה **בכל מיזוג ל-dev** (לא בכל commit) — חלק מטקס-המיזוג של מרדכי, אחרי calev GO + אישור משתמשת.
+
+**מודל הגרסאות:**
+- **`package.json` (root) = המספר הראשי** — הגרסה המוצגת ב-FE (`v{semver} ({git SHA})` בהגדרות). מקור-אמת יחיד לתצוגה.
+- **`packages/release` = זהה ל-root תמיד** — זו החבילה המפורסמת ל-npm (`drive-coding`); מסונכרנת ל-root בכל bump.
+- **`packages/{backend,core,frontend}` = גרסאות עצמאיות** — לכל אחת מונה משלה; עולה **רק כשהחבילה נגעה** במיזוג.
+
+**בכל מיזוג, מרדכי מריץ** (אחרי ה-merge, לפני push):
+```bash
+# <level> לפי אופי ה-PR: patch (fix) · minor (feature) · major (breaking)
+# [pkg...] = שמות החבילות תחת packages/ שנגעו במיזוג (backend/core/frontend)
+node scripts/bump-version.mjs <level> [pkg...]
+git commit -am "chore(release): vX.Y.Z"
+git push origin dev
+```
+- ה-script מעלה את **root** ב-`<level>`, **מסנכרן `packages/release`** = root, **ומעלה כל `pkg` שנמסר** ב-`<level>`.
+- רמת ה-bump: bug→`patch` · feature backward-compatible→`minor` · breaking (API/חוזה/התנהגות)→`major`.
+- (`scripts/bump-version.mjs` נוצר ב-slice `cache-version`. עד שיוטמע — bump ידני באותו עיקרון.)
+
 ## Commands
 
 ```bash
