@@ -25,6 +25,15 @@ Commits 0–3 (resize-plan TDD + image-attachment engine + TypeArea capture/tray
 UserBubble render) **dispatch-ready**. Commit 4 (שליחה מולטימודלית) + merge **מוקפאים**
 עד ש-track-A יחשוף `AcpClient.prompt(PromptContent[])` (היום text-only, client.d.ts:45).
 
+### kill-switch (החלטת המשתמשת, 2026-06-28) — Commits 0–3 בטוחים ל-merge רדומים
+במקום להסתמך על מה שהספק מדווח ב-`promptCapabilities.image` (שעלול להיות `true` בטעות בעוד
+`AcpClient.prompt` text-only → כשל-שקט: משתמש שולח תמונה לחלל), הוספנו **דגל קשיח
+`IMAGE_INPUT_ENABLED = false`** (module-const ב-`agent-session.svelte.ts`) שכופה
+`supportsImageInput=false`. כל עוד false → כל הלכידה רדומה, אפס שינוי-התנהגות → **Commits 0–3
+בטוחים ל-merge מיד** בלי בדיקת-runtime ובלי להחזיק branch שמתיישן. Commit 4 הופך ל-`true`
+בשורה אחת יחד עם חיווט השליחה. אביגיל r5 הוסיפה: gating גם ברמת-handler (early-return
+ב-paste/drop/picker), לא רק הסתרת אייקון. זה מהפך את "בצע ולא תמזג" מכורח לבחירה.
+
 ## 2026-06-28 — slice-restore-last-config: שחזור agent+mode מהסשן האחרון (מוזג)
 
 ### רציונל

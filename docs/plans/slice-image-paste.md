@@ -1,7 +1,7 @@
 # Slice image-paste — הדבקת/גרירת/בחירת תמונות בתיבת הפרומפט — תוכנית
 
 > **תאריך**: 2026-06-28 (עודכן 2026-06-28 אחרי merge של slice-input-autogrow)
-> **סטטוס**: **plan-verified / READY** (אביגיל r4, 2026-06-28 — אחרי merge של autogrow; r3 USABLE-AFTER-FIX → תוקן → r4 READY). Commits 0–3 dispatch-ready; Commit 4 + merge GATED על track-A.
+> **סטטוס**: **plan-verified / READY** (אביגיל r5, 2026-06-28 — אחרי kill-switch; r3 USABLE-AFTER-FIX → r4 READY → r5 READY עם kill-switch). **Commits 0–3 dispatch-ready ובטוחים ל-merge רדומים** (דגל `IMAGE_INPUT_ENABLED=false`); Commit 4 (flip + שליחה) GATED על track-A.
 > **Complexity**: 8/10 (verifier: **calev-heavy**)
 > **תלות (depends_on)**: `[slice-input-autogrow (מוזג b3b5140 — TypeArea שונה), track-A: provider-contract — AcpClient.prompt(blocks)]`.
 >   - `input-autogrow` — **תלות-קוד**: שינה את `TypeArea.svelte` (autogrow $effect + form layout). ה-slice הזה בונה מעליו. ראה §"שינוי TypeArea אחרי autogrow" למטה.
@@ -214,7 +214,7 @@ let fileInputEl = $state<HTMLInputElement>()
 ```
 ⚠️ **Svelte 5 reactivity על array** (learnings): שינוי דרך השמה (`attachments = [...attachments, a]` / `.filter`), לא mutation, ו-`{#each attachments as a (a.id)}` עם key.
 
-**(ג) handlers**: `onpaste` (קורא `e.clipboardData.items`, מסנן `kind==="file" && type.startsWith("image/")`), `ondrop`+`ondragover.preventDefault`, ו-`onchange` ל-`<input type="file" accept="image/*" capture>`. כולם → `fileToImageAttachment` → push ל-`attachments`. כפתור הוספה (אייקון `Paperclip`/`ImagePlus`) פותח את ה-input. **gating**: כל הלכידה enabled רק כש-`session.supportsImageInput` (אחרת אייקון מוסתר/disabled + tooltip).
+**(ג) handlers**: `onpaste` (קורא `e.clipboardData.items`, מסנן `kind==="file" && type.startsWith("image/")`), `ondrop`+`ondragover.preventDefault`, ו-`onchange` ל-`<input type="file" accept="image/*" capture>`. כולם → `fileToImageAttachment` → push ל-`attachments`. כפתור הוספה (אייקון `Paperclip`/`ImagePlus`) פותח את ה-input. **gating — ברמת-handler, לא רק אייקון** (finding אביגיל r5): **כל** handler (`onpaste`/`ondrop`/`onchange`) פותח ב-`if (!session.supportsImageInput) return` — early-return **לפני** עיבוד ה-items. כך גם אם הדגל יידלק בעתיד וספק ספציפי חסר capability, הלכידה חסומה בכל הנתיבים, לא רק שהאייקון מוסתר. ⚠️ `onpaste` של תמונה כשהגטר false → return מוקדם → ה-paste הטקסטואלי הדיפולטי של ה-textarea ממשיך כרגיל (לא לעשות `preventDefault` בנתיב ה-return).
 
 **(ד) tray UI**: שורת thumbnails **מעל** ה-textarea, כל אחד עם כפתור-הסרה (`revokeAttachment` + filter). i18n לכל מחרוזת.
 > ⚠️ **אינטראקציה עם autogrow** (ראה §ייעודי): ה-textarea **גדל אנכית** עד 6 שורות. ה-tray חייב לשבת מחוץ ל-`<form class="flex items-end">` הקיים — עטוף את `<form>` ב-container אנכי (`<div class="flex flex-col gap-1">` או דומה) ושים את ה-tray מעל ה-form, כדי שגדילת ה-textarea לא תזיז/תמחץ את ה-thumbnails ולא תשבור את `items-end`. **אל תכניס את ה-tray כ-sibling של ה-textarea בתוך ה-form** — זה ישבור את ה-layout של autogrow.
