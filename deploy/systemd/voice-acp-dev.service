@@ -5,16 +5,19 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/user/projects/voice-acp/dev
+WorkingDirectory=/home/user/projects/drive-coding/dev
 Environment=PORT=4001
-Environment=FE_STATIC_DIR=/home/user/projects/voice-acp/dev/packages/frontend/build
-# Staging-only: emit source maps in the prod build so DevTools can map minified
-# chunks back to source when profiling. NOT set in main (prod) — see vite.config.ts.
-Environment=FE_SOURCEMAP=true
+Environment=FE_STATIC_DIR=/home/user/projects/drive-coding/dev/packages/frontend/build
+# Deployment profile. vite.config.ts derives from FE_ENV: page title gets a "dev"
+# suffix ("drive-coding dev") and the prod build emits source maps. Per-setting
+# overrides win if set (FE_SOURCEMAP=false / FE_TITLE=...). main leaves FE_ENV
+# unset → defaults to prod (clean title, no source maps). See slice cache-headers-version §D.
+Environment=FE_ENV=dev
+Environment=LOG_WIRE=ws
 # CORS: localhost (dev port) + ה-CF tunnel הציבורי של dev (drive-coding-dev).
 Environment=CORS_ORIGINS=http://localhost:4001,https://drive-coding-dev.example.com
 # opencode has its own Anthropic OAuth — strip OneCLI's proxy/placeholder vars.
-Environment=OPENCODE_BIN=/home/user/projects/voice-acp/dev/scripts/opencode-clean.sh
+Environment=OPENCODE_BIN=/home/user/projects/drive-coding/dev/scripts/opencode-clean.sh
 # ExecStartPre מסנכרן תלויות ובונה את ה-FE (+core) לפני שה-BE עולה.
 ExecStartPre=/bin/bash -lc 'source /home/user/.config/shell/shared-env.sh && pnpm install --frozen-lockfile && pnpm build'
 # systemd gives a minimal PATH — source shared env for onecli/bun/node/fnm.
@@ -29,3 +32,6 @@ WantedBy=default.target
 # הסביבה הציבורית: https://drive-coding-dev.example.com (CF tunnel home-server,
 # token-based, id fed5a59e... → ingress drive-coding-dev.example.com → 192.168.x.x:4001).
 # ה-routing מנוהל דרך CF API (PUT cfd_tunnel configurations), לא config מקומי.
+#
+# Drop-in: deploy/systemd/voice-acp-dev.service.d/10-logging.conf widens logging
+# (clears LOG_WIRE, opens backend.* at debug) to capture the next WS-disconnect crash.
