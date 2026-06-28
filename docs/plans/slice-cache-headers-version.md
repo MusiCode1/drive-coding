@@ -2,7 +2,7 @@
 
 > **‏תאריך**: 2026-06-17
 > **‏סוג**: ‏feature קטן (3 חלקים — A: ‏headers ב-BE, B: ‏version ב-FE, C: ‏bump של semver במיזוג)
-> **‏סטטוס**: ‏4/4 findings טופלו + ‏הכרעות פרסום הוטמעו (2026-06-21). ‏היקף גדל (C+D1-D5+publish) → **‏נדרש סבב אביגיל אחרון** לפני READY/dispatch.
+> **‏סטטוס**: ⚠️ **SUPERSEDED חלקית (2026-06-28)** — ה-brief תפח ל-8 commits בשלושה אשכולות לא-קשורים והתיישן (root כבר 0.1.0, לא 0.0.0). **חלקים B+C (תצוגת-גרסה + bump) חולצו ל-`slice-version-display-bump.md`** (brief רענן, READY-track). **D1 (rename) מנותב ל-`slice-frontend-rename-cutover`** (חפיפה=קונפליקט). מה שנשאר רלוונטי כאן: **A (Cache-Control)** + D2-D5/publish — ירוצו כ-slices נפרדים אם/כשנחזור אליהם. **אל תבצע את ה-brief הזה כמכלול.**
 > **Complexity**: 4/10 (verifier: **calev light** + ‏בדיקת משתמש בטלפון)
 > **‏מבצע**: ‏להחלטת המשתמש (‏אחרי READY של אביגיל)
 > **Base**: ‏branch `dev` (tip `cceb66f`) — ‏הסביבה הפרוסה ב-staging (`drive-coding-dev` :4001)
