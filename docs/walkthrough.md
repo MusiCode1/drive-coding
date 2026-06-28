@@ -202,6 +202,191 @@ slice: connect-recent-projects (5 commits)
 ### סטיות
 
 אין. הקיצוץ מהסוף ו-ellipsis בהתחלה נשמרו כמו בשורה הנפרדת הקודמת.
+## 2026-06-28 — slice-C3-ext-thinking — Phase 2 (live tests + מיגרציה)
+
+### מה בוצע?
+
+**Commit 2 — חבילת בדיקות-חי קבועה + מחיקת smokes:**
+- `host/in-process/live/host.live.test.ts`: 4 cases gated מאחורי `RUN_LIVE=1`:
+  1. capabilities — thinkingTokens=true + rename=true + mcp=true
+  2. deterministic round-trip — claude מחזיר DRIVE_OK_4242 (פלט דטרמיניסטי מאושר)
+  3. setThinkingTokens ext — callExt מחזיר {ok:true} + prompt עוקב מצליח (query לא שבור)
+  4. rename — DC-TEST מופיע ב-listSessions
+- `package.json`: `"test:live": "RUN_LIVE=1 vitest run --dir src/host/in-process/live"` script.
+- מחיקת `rename-smoke.ts` ו-`session-smoke.ts` (כפילות — לוגיקתם חיה בchבילה הקבועה).
+- top-level code lazy (כל setup ב-beforeAll).
+
+### חריגות
+- Case 3 ו-4 רצות על אותו session (מ-case 2) — חוסכות initialize נוסף.
+
+### בדיקות
+- typecheck — 0 errors.
+- `pnpm --filter @drive-coding/provider test` (regular) — 71 passed, 4 skipped (live skipped). ✓
+- `RUN_LIVE=1 pnpm test:live` — 4/4 PASS. ✓
+- DoD 6 (getQuery נקודה יחידה): grep `.sessions[` מחוץ ל-query-access.ts — ריק. ✓
+- DoD 7 (additive): `git diff slice/C3-rename..HEAD --name-only | grep -vE ...` — ריק. ✓
+- DoD 8 (אין SDK leak): grep imports ב-types.ts/index.ts — ריק. ✓
+- DoD 8 (smokes נמחקו): rename-smoke.ts + session-smoke.ts — נמחקו. ✓
+
+---
+
+## 2026-06-28 — slice-C3-ext-thinking — Phase 1 (handler פנימי)
+
+### מה בוצע?
+
+**Commit 1 — handler פנימי `_drive/setThinkingTokens`:**
+- `host/in-process/host.ts`: הוסף import `getQuery` מ-query-access.js.
+- `host/in-process/host.ts`: רשם `onRequest("_drive/setThinkingTokens", ...)` על agentApp — handler **פנימי** שסוגר על `claudeAgent` (לא דרך `options.extHandlers`). מוציא `{sessionId, n}` מה-params, קורא `getQuery(claudeAgent, sessionId).setMaxThinkingTokens(n)`, מחזיר `{ok: true}`. משמר guard אם claudeAgent undefined.
+- `host.test.ts`: 2 unit tests: (1) handler מנותב (לא -32601); (2) זורק שגיאה לפני start().
+
+### חריגות
+- ה-SDK עוטף את throw של getQuery ב-"Internal error" (לא חושף את הודעת השגיאה הפנימית). ה-assert עודכן בהתאם — בודק "לא -32601".
+
+### בדיקות
+- typecheck — 0 errors.
+- `pnpm --filter @drive-coding/provider test` — 71/71 PASS.
+
+---
+
+## 2026-06-28 — slice-C3-ext-thinking — Phase 0 (TDD)
+
+### מה בוצע?
+
+**Commit 0 — getQuery accessor + NormalizedCapabilities.thinkingTokens + capability:**
+- `host/in-process/claude/query-access.ts`: `getQuery(agent, sessionId)` — נקודת-צימוד יחידה ל-`(agent as ...).sessions[id].query`. interface מקומי `SessionRecord` (לא ייבוא SDK). זורק שגיאה ברורה אם אין session.
+- `host/types.ts`: הוסף `thinkingTokens: boolean` ל-`NormalizedCapabilities`.
+- `host/in-process/claude/capabilities.ts`: `thinkingTokens: true` (claude תומך — query חושף `setMaxThinkingTokens`).
+- `host/in-process/claude/query-access.test.ts`: 5 unit tests (TDD): returns query, throws unknown/empty/no-query, delegates call.
+
+### חריגות
+- אין.
+
+### בדיקות
+- typecheck — 0 errors.
+- `pnpm --filter @drive-coding/provider test` — 69/69 PASS.
+- formatting biome --write על הקבצים החדשים.
+
+---
+
+## 2026-06-28 — slice-C3-host-session — 3 commits
+
+### מה בוצע?
+
+**Commit 0+1 (integration) — newSession + prompt + streaming + smoke חי:**
+- `host.ts`: הוסף `newSession({cwd, mcpServers:[]})` דרך `clientCtx.buildSession().start()` → שמירת `ActiveSession` ב-map.
+- `host.ts`: הוסף `prompt({sessionId, text}, onUpdate)` — loop על `activeSession.nextUpdate()` עד `kind=stop`, forward updates דרך `onUpdate`.
+- `host.ts`: רשם כל session methods על ה-agentApp: `session.new`, `session.prompt`, `session.load`, `session.setConfigOption`, `session.cancel`, `session.fork`, `session.list`, `session.delete`, `session.resume`, `session.close`, `session.setMode`, `authenticate` — mirror של `runAcp` ב-acp-agent.js.
+- `host.test.ts`: 8 טסטים סטרוקטורליים נוספו (wiring checks, guards לפני start).
+- `session-smoke.ts`: smoke חי — start → newSession → prompt("Reply with exactly the word: hello") → אוסף updates → מדפיס טקסט. **Claude החזיר "hello", 8 updates, stopReason=end_turn.**
+- format fixes (biome) על host.ts + host.test.ts.
+
+**Commit 2 (none) — findings + walkthrough:**
+- `docs/research/c3-host-session-findings.md` — תוצאות smoke חי, key findings ארכיטקטוניים (single-connection requirement, onConnect timing, forkSession naming).
+
+### חריגות
+- ה-commit המקורי (babd858) היה commit 0+1 מאוחד (לפי ה-worktree שכבר היה מוכן). format fixes נוספו בcommit נפרד.
+- streaming מאומת ב-smoke החי בלבד (TestAgent חסום ע"י exports-map של ה-SDK).
+
+### בדיקות
+- `pnpm --filter @drive-coding/provider typecheck` — 0 errors.
+- `pnpm --filter @drive-coding/provider test` — 63/63 PASS.
+- `session-smoke.ts` חי — PASS: "hello", 8 updates, end_turn.
+- additive check: `git diff slice/C3-host..HEAD --name-only | grep -vE "packages/provider/|docs/|pnpm-lock"` — ריק.
+- DoD 5 (אפס דליפת sdk@1.0.0): InProcessHost interface ב-string/Record בלבד.
+- DoD 6 (additive): אפס קבצים חיים.
+- DoD 7 (close אחרי session): smoke סוגר נקי.
+
+---
+
+## 2026-06-28 — slice-C3-host — 3 commits
+
+### מה בוצע?
+
+**Commit 0 — InProcessHost + types + client-bridge:**
+- `host/types.ts`: `AdapterHost` + `NormalizedCapabilities` — ממשקים provider-agnostic.
+- `host/in-process/client-bridge.ts`: `makeAcpClientFromCtx` — קידום מה-spike.
+- `host/in-process/claude/capabilities.ts`: `mapClaudeCapabilities` — מיפוי מ-frame אמיתי.
+- `host/in-process/host.ts`: `createClaudeInProcessHost` — שני connects עצמאיים:
+  - `agentConn = agentApp.connect(clientApp)` → `ClaudeAcpAgent(makeAcpClientFromCtx(agentConn.client))`
+  - `clientConn = clientApp.connect(agentApp)` → `clientCtx = clientConn.agent` (ClientContext ל-start/callExt)
+- `start()` = initialize דרך `clientCtx`, `callExt()` = ext request דרך אותו `clientCtx`.
+- `close()` = סגירת שני ה-connections.
+- two-SDK containment: `acp-sdk-v1`/`claude-agent-acp` כלואים ב-`in-process/`, אפס דליפה ב-`types.ts`/`index.ts`.
+
+**Commit 1 — טסטי-host (integration):**
+- 5 טסטים חדשים ב-`host.test.ts`: capabilities, ext round-trip, close, onExtNotification, full lifecycle.
+- `ExtHandlers` option ל-`createClaudeInProcessHost` — רישום ext handlers לפני connect.
+- אפס session/prompt בכל הטסטים.
+
+**Commit 2 — barrel + מחיקת spike:**
+- `host/index.ts` מייצא `createClaudeInProcessHost`, `InProcessHost`, `ExtHandlers`, `NormalizedCapabilities`, `AdapterHost`.
+- `spike.ts` נמחק — הקוד הוטמע.
+
+### חריגות
+- `callExt` נשתנה מ"connection חדש לכל קריאה" ל"שימוש ב-clientCtx שנשמר ב-start()" — יותר נכון ארכיטקטונית.
+- `ExtHandlers` option הוסף ל-factory כדי לאפשר רישום ext handlers בטסטים (הבריף לא ציין מפורשות).
+
+### בדיקות
+- `pnpm --filter @drive-coding/provider typecheck` — 0 errors.
+- `pnpm --filter @drive-coding/provider test` — 59/59 PASS.
+- DoD 5 (אפס דליפת sdk@1.0.0): grep על types.ts+index.ts — ריק.
+- DoD 6 (additive): git diff ea4f420..HEAD | grep -vE provider/docs/pnpm-lock — ריק.
+- DoD 7 (אפס session/prompt): grep על host.test.ts — רק comments.
+
+---
+
+## 2026-06-28 — slice-C3-spike-inprocess-host — 2 commits
+
+### מה בוצע?
+
+**Commit 0 (integration) — POC host:**
+- הוסף devDeps ל-`packages/provider/package.json`: `@agentclientprotocol/claude-agent-acp@^0.52.0` + alias `acp-sdk-v1: npm:@agentclientprotocol/sdk@1.0.0`.
+- נוצר `packages/provider/src/host/in-process/spike.ts` — POC מלא.
+- נתיב 1 (`AgentApp.connect(ClientApp)`, sdk@1.0.0 in-process): הצליח מיד.
+- `makeAcpClientFromCtx(connection.client)` — adapter של 20 שורות, מגשר `AgentContext` → `AcpClient`.
+- `ClaudeAcpAgent.initialize()` הוחזר תוך מיקרושניות, אפס auth/tokens.
+- ext POC: `ext/spike/ping` עבד, אפס -32601.
+
+**Commit 1 (none) — findings:**
+- נוצר `docs/research/c3-host-spike-findings.md` — GO, נתיב 1, frames מגובים, המלצות ל-C3.
+
+### חריגות
+- ה-lint הכולל כבר אדום ב-P1-base (259 errors) — לא נגרמו ע"י spike.
+- ה-spike.ts נקי ב-biome lint (0 errors).
+
+### בדיקות
+- `pnpm --filter @drive-coding/provider typecheck` — 0 errors.
+- `pnpm --filter @drive-coding/provider exec bun src/host/in-process/spike.ts` — הדפיס initialize result + ext/spike/ping.
+- `pnpm lint:i18n` — 0 errors.
+- additive verified: רק `packages/provider/` + `docs/` + `pnpm-lock.yaml` שונו.
+
+---
+
+## 2026-06-28 — slice-P1-additive-package — 2 commits
+
+### מה בוצע?
+
+**Commit 0 (manual):** העתקת `packages/provider/` מ-R3-spawn-core-untangle.
+- 23 קבצים: src/{client,transport,config,spawn,host}/** + cli-config.test.ts + cli-config-file.test.ts ברמת-השורש + package.json + tsconfig.json + vitest.config.ts.
+- ללא tsconfig.tsbuildinfo, ללא node_modules.
+- `pnpm install` זיהה את החבילה החדשה (`@drive-coding/provider`).
+
+**Commit 1 (none):** biome format+lint fix על קבצי ה-provider (FIXABLE issues בלבד).
+- `cli-config-file.test.ts`: useLiteralKeys; `cli-config.test.ts`: noUnusedImports + format; `ws-transport.test.ts`: format; `client.ts`/`index.ts`: organizeImports + format; `ws.ts`: format.
+- לא נגעו בקובץ חי אחד.
+
+### בדיקות
+
+- typecheck (`pnpm --filter @drive-coding/provider typecheck`): ✓ exit 0
+- tests (`pnpm --filter @drive-coding/provider test`): 54/54 ירוקים (5 test files: ws-transport, ws-to-streams, spawn-core, cli-config, cli-config-file)
+- root typecheck (`pnpm typecheck`): ✓ (dev לא נשבר)
+- i18n lint: ✓ (אין עברית בקוד)
+- `git diff dev..HEAD --name-only | grep -vE "packages/provider/|pnpm-lock"`: ריק (אפס קובץ חי)
+- `grep "@drive-coding/provider" core/backend/frontend src`: ריק (לא נצרכת ע"י החי)
+
+### חריגות
+
+אין. additive נקי.
 
 ---
 
@@ -7153,3 +7338,29 @@ B2 (הצגה): הוספת `import { version } from "$app/environment"` ל-Settin
 ### חריגות
 
 אין.
+## 2026-06-28 — slice-C3-rename — 3 commits
+
+### מה בוצע?
+
+**Commit 0 (none) — תלות ישירה @anthropic-ai/claude-agent-sdk@0.3.191:**
+- `packages/provider/package.json`: הוסף @anthropic-ai/claude-agent-sdk: 0.3.191 ל-dependencies (גרסה נעולה, תואמת claude-agent-acp@0.52.0).
+- `pnpm-lock.yaml`: עודכן אוטומטית.
+
+**Commit 1 (tdd) — host.rename + NormalizedCapabilities.rename + capability:**
+- `host/types.ts`: הוסף rename:boolean ל-NormalizedCapabilities (additive).
+- `claude/capabilities.ts`: rename=true (store-level, SDK תמיד זמין לclaude).
+- `claude/rename.ts` (חדש): claudeRenameSession(sessionId, title, cwd?) — wrapper עם dir-fallback. ייבוא SDK מוגבל לקובץ זה בלבד (two-SDK containment, DoD 4).
+- `host.ts`: sessionCwd Map מאוכלס ב-newSession; host.rename(string,string)→void.
+- `host.test.ts`: 2 טסטים חדשים — capabilities.rename=true + typeof host.rename==="function".
+
+**Commit 2 (manual) — rename-smoke חי:**
+- `rename-smoke.ts` (חדש): start → newSession → prompt(INIT_PROMPT) → rename("DC-TEST") → listSessions → אמת customTitle.
+- PASS חי: claude שינה שם ל-"DC-TEST", listSessions אישרה customTitle: "DC-TEST".
+
+### חריגות
+- ה-smoke מריץ prompt קצר לפני rename כי claude לא כותב JSONL לפני התור הראשון.
+- ייבוא @anthropic-ai/claude-agent-sdk מוגבל ל-claude/rename.ts בלבד.
+
+### בדיקות
+- typecheck: 0 errors. tests: 64/64. rename-smoke חי: PASS. lint:i18n: ירוק.
+- DoD 4: grep — SDK import רק ב-claude/rename.ts. DoD 5: additive (provider/docs בלבד).
