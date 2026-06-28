@@ -18,6 +18,19 @@ export type RecentProject = {
   lastSessionId?: string
 }
 
+/**
+ * מסתיר תיקייה מרשימת התיקיות האחרונות (קבוע — DELETE /api/projects).
+ * slice: recent-projects-controls
+ */
+export async function hideRecentProject(cwd: string): Promise<void> {
+  const res = await fetch(beUrl("/api/projects"), {
+    method: "DELETE",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cwd }),
+  })
+  if (!res.ok) throw new Error(`hide project failed: ${res.status}`)
+}
+
 /** מחזיר את התיקיות האחרונות (ממוין lastSeen יורד — ה-BE כבר ממיין). */
 export async function listRecentProjects(signal?: AbortSignal): Promise<RecentProject[]> {
   const res = await fetch(beUrl("/api/projects"), { signal })
