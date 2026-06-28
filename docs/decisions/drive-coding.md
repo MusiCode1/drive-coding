@@ -1,5 +1,36 @@
 # Decisions — drive-coding
 
+## 2026-06-28 — slice-restore-last-config: שחזור agent+mode מהסשן האחרון (מוזג)
+
+### רציונל
+הבקשה: "סשן חדש יטען את ה-agent וה-mode שהיו בסשן האחרון." בחרנו פתרון **FE-טהור,
+per-cliKind**: mode/model/agent הם תכונות של ה-CLI, לא של התיקייה — לכן Settings (FE)
+ולא ה-BE registry (שמחזיק per-cwd lastSessionId; לא מערבבים). מנגנון גנרי יחיד
+`setLastConfig(cliKind, configId, value)` שמכסה **כל** ציר-קונפיג. apply נקרא אחרי
+`status==="connected"` בשני נתיבי סשן-חדש (`attach` + `newSession`) — **לא** ב-resume
+(loadSession/switchSession שומרים את ה-mode של הסשן הקיים).
+
+זה **נפרד** מ-`session-prefs-per-cwd` (BE, multi-device sync) — בכוונה לא עשינו את זה כאן.
+
+### החלטת-תכנון מרכזית
+הזרקת `settings` ל-constructor של `AgentSession` (לא singleton import) — ה-VM הוא הבעלים
+של persist+apply. `settings` אופציונלי → טסטים קיימים (`new AgentSession({ cues })`)
+ממשיכים לעבור כ-no-op חינני.
+
+### ממצאי אביגיל (r3, READY)
+2 findings זניחים בלבד (מספר-שורה L163 vs L159, הערת-נתיב view-models/) — 0 מהותיים.
+התפיסות החשובות היו בסבבים מוקדמים: (א) `applyConfigOption` עם 5 מסלולי-return → persist
+חייב wrapper, לא "בסוף המתודה"; (ב) תזמון — apply חייב לרוץ אחרי `connected` אחרת no-op
+שקט; (ג) כיסוי — `attach` (החיבור הראשון) הוא הנתיב השכיח, לא רק `newSession`.
+
+### merge (2026-06-28)
+INVASIVE-but-additive במכוון (אישור המשתמשת 27/06). מול 90 commits drift ב-dev: קונפליקט
+additive יחיד בקוד (`settings.ttsProvider` של V4a לצד `lastConfig` — keep-both). build-gate
+ירוק (typecheck 0, 354/354, i18n נקי), כלב GO (light, 6/6 DoD). merge `350e60d`.
+
+### רעיונות שנדחו
+per-cwd/BE/sync (= ה-roadmap-item הנפרד session-prefs-per-cwd) — נדחה לעכשיו.
+
 ## 2026-06-27 — slice-release-publish (בוצע ישיר): תיקון `bin` ל-npm publish
 אימות חי של החבילה (npm publish --dry-run, npm 11.11) חשף ש-`bin: "./dist/drive-coding.js"` עם
 `./` prefix **נדחה בפרסום** (`invalid and removed`) → ה-CLI `drive-coding` לא היה עולה אחרי install.
