@@ -1,5 +1,30 @@
 # Decisions — drive-coding
 
+## 2026-06-28 — סדר slice-input-autogrow ↔ slice-image-paste: autogrow ראשון, brief מרוענן
+
+### רציונל
+שני ה-slices נוגעים ב-`TypeArea.svelte` (היחיד). `input-autogrow` היה בוצע+אומת (כלב GO 9/9);
+`image-paste` הוא complexity-8, טרם התחיל, וחלקו (Commit 4) gated על track-A. ההכרעה:
+**מזגנו את autogrow ראשון** (b3b5140) ולא הפכנו את הסדר — להחזיק slice מאומת כבן-ערובה
+ל-slice שטרם התחיל זה אחורה.
+
+### שינוי-כיוון (תלות שהתגלתה)
+ה-brief המקורי של image-paste הצהיר `depends_on: [track-A]` בלבד — **לא הכיר ב-autogrow**.
+זו הייתה תלות-קוד חבויה: autogrow שינה את אותו קובץ ש-image-paste "משכתב במלואו".
+התיקון: הוספת `input-autogrow` ל-depends_on, רענון כל הפניות-השורה (TypeArea 67→79,
+onkeydown L43-55→L55-67), §3.5 חדש (טבלת מה-autogrow-הוסיף + מה אסור לדרוס), והערת-layout
+ל-tray (חייב לשבת **מחוץ** ל-`<form items-end>` כדי לא לשבור את גדילת-הגובה).
+
+### ממצאי אביגיל
+r3 USABLE-AFTER-FIX: הרענון מול autogrow היה **מדויק לחלוטין** (כל 9 הפניות TypeArea בול);
+2 findings קלים בלבד — drift +6 בהפניות `sendPrompt` (559→565, 562→568, שריד מ-131-commit
+sync, לא קשור ל-autogrow) ו-hash contract קוסמטי (4f3a→b745). תוקנו → r4 **READY**.
+
+### מצב
+Commits 0–3 (resize-plan TDD + image-attachment engine + TypeArea capture/tray/gating +
+UserBubble render) **dispatch-ready**. Commit 4 (שליחה מולטימודלית) + merge **מוקפאים**
+עד ש-track-A יחשוף `AcpClient.prompt(PromptContent[])` (היום text-only, client.d.ts:45).
+
 ## 2026-06-28 — slice-restore-last-config: שחזור agent+mode מהסשן האחרון (מוזג)
 
 ### רציונל

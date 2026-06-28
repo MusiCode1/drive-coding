@@ -1,7 +1,7 @@
 # Slice image-paste — הדבקת/גרירת/בחירת תמונות בתיבת הפרומפט — תוכנית
 
 > **תאריך**: 2026-06-28 (עודכן 2026-06-28 אחרי merge של slice-input-autogrow)
-> **סטטוס**: רוענן אחרי autogrow — אביגיל re-verify נדרשת לפני dispatch
+> **סטטוס**: **plan-verified / READY** (אביגיל r4, 2026-06-28 — אחרי merge של autogrow; r3 USABLE-AFTER-FIX → תוקן → r4 READY). Commits 0–3 dispatch-ready; Commit 4 + merge GATED על track-A.
 > **Complexity**: 8/10 (verifier: **calev-heavy**)
 > **תלות (depends_on)**: `[slice-input-autogrow (מוזג b3b5140 — TypeArea שונה), track-A: provider-contract — AcpClient.prompt(blocks)]`.
 >   - `input-autogrow` — **תלות-קוד**: שינה את `TypeArea.svelte` (autogrow $effect + form layout). ה-slice הזה בונה מעליו. ראה §"שינוי TypeArea אחרי autogrow" למטה.
