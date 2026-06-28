@@ -7,7 +7,10 @@
 >   - `input-autogrow` — **תלות-קוד**: שינה את `TypeArea.svelte` (autogrow $effect + form layout). ה-slice הזה בונה מעליו. ראה §"שינוי TypeArea אחרי autogrow" למטה.
 >   - `track-A` — **רק ל-Commit 4 ול-merge**. Commits 0–3 עצמאיים ובְּני-ביצוע על dev הנוכחי.
 > **Base**: `dev` HEAD (tip בעת הרענון `b3b5140` — כולל autogrow; הקודם `3bb36a9` היה לפני)
-> **⚠️ MERGE-GATE**: **אין למזג** לפני שצד ה-ACP (`provider-contract`) חושף `AcpClient.prompt` שמקבל `PromptContent`/ContentBlock[] מולטימודלי. החלטת המשתמשת (2026-06-28): כותבים + מבצעים את החלקים הלא-חסומים, ממתינים עם merge עד שהחוזה תומך.
+> **⚠️ MERGE-GATE (עודכן 2026-06-28 — kill-switch)**: ה-feature מוגן ב-**דגל קשיח `IMAGE_INPUT_ENABLED = false`** (Commit 2). כל עוד הוא `false`, `supportsImageInput` מחזיר `false` **תמיד** — ללא תלות במה שהספק מדווח → כל הלכידה רדומה לחלוטין, אפס שינוי-התנהגות. לכן:
+>   - **Commits 0–3 בטוחים ל-merge מיד** (פיגום רדום; הדגל false). אין צורך בבדיקת-runtime של capability — הדגל כופה.
+>   - **Commit 4** (שליחה מולטימודלית) הופך את הדגל ל-`true` ומחווט ל-`AcpClient.prompt(blocks)`. **חסום על track-A** — לא לבצע/למזג עד שהחוזה מולטימודלי.
+>   - ההחלטה (המשתמשת, 2026-06-28): כופים `false` במקום לבדוק מה הספק מדווח. flip ל-`true` = שורה אחת, יחד עם Commit 4.
 
 ---
 
@@ -189,13 +192,20 @@ export function revokeAttachment(a: ImageAttachment): void
 - `packages/frontend/src/lib/view-models/agent-session.svelte.ts` — getter `supportsImageInput` בלבד (additive).
 - **i18n ב-`packages/core/`** (לא ב-frontend — אין שם תיקיית i18n): `packages/core/src/i18n/keys.ts` (הצהרת מפתחות) + `packages/core/src/i18n/catalogs/he.ts` + `packages/core/src/i18n/catalogs/en.ts` (תרגומים) — מחרוזות חדשות (additive, ר' parallel-safe-code).
 
-**(א) VM — getter נגזר** (ב-`AgentSession`, additive):
+**(א) VM — getter נגזר + kill-switch** (ב-`AgentSession`, additive):
 ```ts
+// 🔒 kill-switch — נשאר false עד ש-Commit 4 (שליחה מולטימודלית) + track-A מוכנים.
+// כל עוד false: supportsImageInput=false תמיד → לכידת-התמונה רדומה לחלוטין,
+// ללא תלות במה שהספק מדווח. Commit 4 הופך ל-true. (module-level const בראש הקובץ.)
+const IMAGE_INPUT_ENABLED = false
+
+// בתוך class AgentSession:
 get supportsImageInput(): boolean {
-  return this.#client?.capabilities?.promptCapabilities?.image === true
+  return IMAGE_INPUT_ENABLED && this.#client?.capabilities?.promptCapabilities?.image === true
 }
 ```
 > `#client.capabilities` = `agentCapabilities` מ-`initialize()` (כבר נחשף ב-`AcpClient`, client.d.ts). **חובת-spec**: בלי image-capability — אין לכידה.
+> **למה הדגל**: הופך את merge של Commits 0–3 מ"מותנה בבדיקת-runtime" ל"בטוח בוודאות". גם אם ספק מדווח `image:true` בטעות בעוד `AcpClient.prompt` text-only — הדגל כופה `false` ומונע כשל-שקט (משתמש מצרף תמונה ושולח לחלל). הדגל הוא `const` module-level (לא env/build-flag — פשטות; flip ידני ב-Commit 4).
 
 **(ב) TypeArea — state מקומי** (`$state`):
 ```ts
@@ -226,6 +236,11 @@ pnpm --filter @drive-coding/frontend typecheck && pnpm --filter @drive-coding/fr
 #  5. paste של טקסט רגיל → נכנס ל-textarea כרגיל (לא נשבר)
 #  6. mock ללא image-capability → אייקון הלכידה מוסתר/disabled
 ```
+> ⚠️ **בדיקת Commit 2 עם ה-kill-switch**: כל עוד `IMAGE_INPUT_ENABLED = false`, הלכידה
+> **מוסתרת תמיד** — אי-אפשר לראות tray/paste. כדי לבדוק חי את צעדים 1-5, **הפוך זמנית
+> את הדגל ל-`true` מקומית** (+mock עם `promptCapabilities.image:true`), בדוק, ו**החזר
+> ל-`false` לפני ה-commit**. צעד 6 (גטינג) נבדק עם הדגל true + mock **בלי** capability.
+> ⚠️ **DoD חובה**: ה-commit של Commit 2 חייב להישמר עם `IMAGE_INPUT_ENABLED = false`.
 
 ---
 
@@ -244,7 +259,7 @@ pnpm --filter @drive-coding/frontend typecheck && pnpm --filter @drive-coding/fr
 > **לא לבצע** עד ש-`provider-contract` המותקן חושף `AcpClient.prompt(sessionId, content: PromptContent)` (היום: `text: string` בלבד, client.d.ts:45). **escalation מיידי למרדכי** אם הבסיס עדיין טקסט-בלבד (ר' §7).
 
 **קבצים שמשתנים**:
-- `agent-session.svelte.ts` — `sendPrompt(text, { attachments }?)`: בונה `PromptContent` = `[...(text.trim() ? [{type:"text",text}] : []), ...attachments.map(a => ({type:"image", mimeType:a.mimeType, data:a.dataBase64}))]`, מאכלס `userBubble.attachments`, קורא `this.#client.prompt(this.#sessionId, content)`.
+- `agent-session.svelte.ts` — **(0) הפוך `IMAGE_INPUT_ENABLED = false` → `true`** (kill-switch מ-Commit 2 — מדליק את כל הלכידה). **(1)** `sendPrompt(text, { attachments }?)`: בונה `PromptContent` = `[...(text.trim() ? [{type:"text",text}] : []), ...attachments.map(a => ({type:"image", mimeType:a.mimeType, data:a.dataBase64}))]`, מאכלס `userBubble.attachments`, קורא `this.#client.prompt(this.#sessionId, content)`.
   > ⚠️ **finding אביגיל r2** — ה-guard הקיים `if (!text.trim()) return` (שורה 568 — drift +6 מ-562) **יזרוק בשקט שליחת תמונה-בלבד**. שנה את התנאי ל: `if (!text.trim() && !(opts?.attachments?.length)) return` — כלומר חוסם רק כשגם הטקסט ריק וגם אין attachments. בלוק-טקסט נכלל ב-`PromptContent` רק אם אינו ריק (תמונה-בלבד = מערך עם image-block בלבד).
 - `TypeArea.svelte` — `onSubmit` מעביר `{ attachments }`, מנקה את ה-tray (+`revokeAttachment` לכולם) אחרי שליחה.
 
@@ -274,7 +289,9 @@ sendPrompt = async (
 | paste/drop/picker → thumbnail ב-tray | ידני /chat | 2 |
 | הסרה משחררת object URL | ידני + devtools | 2 |
 | paste-טקסט לא נשבר | ידני | 2 |
-| ללא image-capability → לכידה מושבתת | mock | 2 |
+| ללא image-capability → לכידה מושבתת | mock (דגל true זמני) | 2 |
+| **`IMAGE_INPUT_ENABLED = false` ב-commit הסופי של 0–3** | grep בקוד | 2 |
+| **עם דגל false: לכידה מוסתרת תמיד, אפס שינוי-התנהגות** (פיגום רדום — בטוח ל-merge) | ידני /chat | 2 |
 | בועת-משתמש מרנדרת תמונה | ידני (mock) | 3 |
 | **שליחה מולטימודלית מגיעה ל-agent (חי)** | BE+agent + WIRE_RECORD | 4 (gated) |
 | **שליחת תמונה-בלבד (בלי טקסט) לא נחסמת** | ידני — הוסף תמונה, השאר textarea ריק, שלח | 4 |
