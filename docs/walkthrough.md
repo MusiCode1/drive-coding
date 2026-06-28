@@ -1,3 +1,27 @@
+## 2026-06-28 — leave-running-background — סיכום סליס (4 commits)
+
+### מה בוצע?
+
+Slice `leave-running-background` הושלם ב-4 commits על branch `slice/leave-running-background`:
+- `b55930b` — Commit 0: isBypassMode helper + i18n keys (TDD, 7/7 tests)
+- `29660ec` — Commit 1: leaveRunning() + bypassActive ב-VM
+- `176a78a` — Commit 2: כפתור UI + modal bits-ui Dialog
+- `7ed4f2b` — Commit 3: beforeunload guard ב-/chat
+
+### בדיקות מצטברות
+
+- typecheck: 0 שגיאות בכל commit
+- vitest: 361/361 ירוקים לאורך כל הסליס
+- lint:i18n: ✓ בכל commit
+- approach per commit: TDD / manual / manual / manual
+
+### סטיות
+
+- כפתור "נתק" (הורג): הוחלף `LogOutIcon` → `PowerIcon` (שינוי ויזואלי בלבד, מפתח `header.disconnect` נשאר).
+- Modal: השתמשנו ב-bits-ui Dialog (primitive קיים) במקום inline — תוצאה: < 50 שורות נוספות בקומפוננטה.
+
+---
+
 ## 2026-06-28 — leave-running-background — Commit 3: beforeunload guard ב-chat/+page.svelte (manual)
 
 ### מה בוצע?
