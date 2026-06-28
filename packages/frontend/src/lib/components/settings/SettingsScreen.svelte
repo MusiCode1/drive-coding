@@ -16,6 +16,7 @@
 import { version } from "$app/environment"
 import { goto } from "$app/navigation"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
+import GeminiVoicePicker from "$lib/components/chat/GeminiVoicePicker.svelte"
 import { getI18n, getSettings } from "$lib/context"
 import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
 import LanguageSelect from "./LanguageSelect.svelte"
@@ -86,12 +87,6 @@ $effect(() => {
 
   <!-- כרטיס קול ודיבור -->
   <SettingsCard title={t("settings.voiceSpeech")}>
-    <!-- Voice picker -->
-    <label class="flex flex-col gap-1.5">
-      <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.voice.label")}</span>
-      <VoicePicker />
-    </label>
-
     <!-- TTS provider selector — (V4a) -->
     <label class="flex flex-col gap-1.5">
       <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.ttsProvider.label")}</span>
@@ -102,6 +97,19 @@ $effect(() => {
         onchange={(v) => settings.setTtsProvider(v as "elevenlabs" | "google")}
       />
     </label>
+
+    <!-- בורר קול — conditional לפי הספק הפעיל (V4b) -->
+    {#if settings.ttsProvider === "elevenlabs"}
+      <label class="flex flex-col gap-1.5">
+        <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.voice.label")}</span>
+        <VoicePicker />
+      </label>
+    {:else if settings.ttsProvider === "google"}
+      <label class="flex flex-col gap-1.5">
+        <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.geminiVoice.label")}</span>
+        <GeminiVoicePicker />
+      </label>
+    {/if}
 
     <!-- toggles — מוקאפ שורות 626-643 -->
     <div class="flex flex-col divide-y" style="border-color:var(--border)">

@@ -395,10 +395,11 @@ export class Speaker {
         return
       }
 
-      // V4a-unify: בחר ספק דרך resolveTts (מקור-אמת יחיד)
+      // V4a-unify: בחר ספק דרך resolveTts (מקור-אמת יחיד); V4b: העברת geminiVoice
       const { provider, voiceId, modelId } = resolveTts(
         this.#settings.ttsProvider,
         this.#settings.voiceId,
+        this.#settings.geminiVoice,
       )
       // slice 22: חשב textHash על הטקסט שמסונתז (provenance)
       const textHash = await cacheKeyFor(text, voiceId, modelId)

@@ -1,3 +1,39 @@
+## 2026-06-29 — slice V4b: בורר-קול Gemini פר-ספק
+
+### מה בוצע
+
+**Commit 0 (5929452)** — `voices-gemini.ts` + עדכון `resolveTts` — TDD:
+- `GEMINI_VOICES`: 30 קולות prebuilt (מאומתים מ-ai.google.dev 2026-06-29)
+- `GeminiVoice { id, descKey: MessageKey }` — descKey literal type-safe
+- `DEFAULT_GEMINI_VOICE = "Kore"` (ברירת מחדל, זהה לקבוע שהיה)
+- `resolveTts(ttsProvider, elevenVoiceId, geminiVoice?)` — פרמטר שלישי אופציונלי; ברירת מחדל DEFAULT_GEMINI_VOICE
+- 31 מפתחות i18n (label + 30 × desc.<Id>) ב-keys.ts + he.ts + en.ts (placeholder EN)
+- TDD: 4 טסטים חדשים (א–ד) → 395/395 ירוק
+
+**Commit 1 (89b4a1c)** — `geminiVoice` ב-Settings:
+- `Persisted.geminiVoice: string` (בסוף, parallel-safe)
+- `DEFAULTS.geminiVoice = DEFAULT_GEMINI_VOICE`
+- `$state geminiVoice` + `setGeminiVoice` + constructor load + `#persist`
+
+**Commit 2 (b886850)** — UI + חיווט + i18n דו-לשוני:
+- `GeminiVoicePicker.svelte`: <Select> סטטי, 30 קולות+description=t(descKey), leaf דק (אין async/effect)
+- `SettingsScreen.svelte`: `{#if settings.ttsProvider === "google"}` → GeminiVoicePicker
+- `speaker.svelte.ts:~399` + `bubble-player.svelte.ts:~96`: העברת `settings.geminiVoice` ל-resolveTts
+- `he.ts`: 30 תיאורים דו-לשוניים "<En> · <תרגום-עברי>" + label="קול Gemini"
+
+**Commit 3 (c9edd64)** — תיקון UX (תפיסת המשתמשת בעת preview):
+- בורר-הקול הופך מותנה-ספק: בורר ElevenLabs היה תמיד-גלוי, Gemini conditional → במצב Google הופיעו שניהם. עכשיו בורר-הספק קודם, ואז `{#if elevenlabs}…{:else if google}…` — רק הבורר של הספק הפעיל.
+
+### חריגות מהתכנון
+- keys.ts + he.ts + en.ts נוספו כבר ב-Commit 0 (placeholder EN) ועודכנו ב-Commit 2 (he: דו-לשוני).
+- Commit 3 = שינוי-כיוון אחרי preview (השמטה ב-brief המקורי; ר' decisions/drive-coding.md).
+
+### בדיקות
+- typecheck ✓ · lint:i18n ✓ · 395/395 טסטים (4 חדשים TDD)
+- calev light GO 10/10; אומת חי ע"י המשתמשת (UI מותנה, persist, קול ראשי+חוזר)
+
+---
+
 ## 2026-06-28 — slice-A5-watchdog — Commits 0+1 (watchdog ל-turnState)
 
 ### מה בוצע?
