@@ -1,11 +1,17 @@
 {
   "name": "drive-coding",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AI-powered coding assistant — single-command server + web UI for ACP coding agents",
   "license": "MIT",
   "type": "module",
-  "bin": { "drive-coding": "dist/drive-coding.js" },
-  "files": ["dist/drive-coding.js", "plugins", "frontend-dist"],
+  "bin": {
+    "drive-coding": "dist/drive-coding.js"
+  },
+  "files": [
+    "dist/drive-coding.js",
+    "plugins",
+    "frontend-dist"
+  ],
   "keywords": [
     "acp",
     "ai",
@@ -22,7 +28,9 @@
   },
   "homepage": "https://github.com/MusiCode1/drive-coding#readme",
   "bugs": "https://github.com/MusiCode1/drive-coding/issues",
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "bundle": "node scripts/build.mjs",
     "prepack": "node scripts/build.mjs"
