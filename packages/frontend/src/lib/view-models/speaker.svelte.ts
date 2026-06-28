@@ -41,9 +41,9 @@ import { translate } from "../adapters/voice/translate"
 import { resolveTts } from "../adapters/voice/tts-resolve"
 import type { AudioSink } from "../engines/audio-sink"
 import { AudioStream } from "../engines/audio-stream"
+import { AudioPlaylist } from "../engines/audio-playlist.svelte"
 import type { CuesEngine } from "../engines/cues"
 import { PcmAudioStream } from "../engines/pcm-audio-stream"
-import { Player } from "../engines/player.svelte"
 import { RoutingAudioSink } from "../engines/routing-audio-sink"
 import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
@@ -83,7 +83,7 @@ export class Speaker {
   readonly #session: AgentSession
   readonly #settings: Settings
   readonly #audioStream: AudioSink
-  readonly #player: Player
+  readonly #player: AudioPlaylist
   readonly #cues?: CuesEngine
   // slice 6: guard — מונע ניגון חוזר של cue "speaking" באותו תור (re-entry סדרתי)
   #spokeThisTurn = false
@@ -131,9 +131,9 @@ export class Speaker {
     this.enabled = !opts.settings.muted
     if (opts.cues) opts.cues.enabled = !opts.settings.muted
     this.#audioStream = new RoutingAudioSink(new AudioStream(), new PcmAudioStream())
-    // slice 6: onPlaybackStart callback — נקרא פעם אחת כש-Player עובר idle→playing.
+    // A2: onPlaybackStart callback — נקרא פעם אחת כש-AudioPlaylist עובר idle→playing.
     // guard #spokeThisTurn מונע re-entry סדרתי בתוך אותו תור (LOOKAHEAD=2 + async fetches).
-    this.#player = new Player(this.#audioStream, () => {
+    this.#player = new AudioPlaylist(this.#audioStream, () => {
       if (this.#spokeThisTurn) return
       this.#spokeThisTurn = true
       this.#cues?.play("speaking")
@@ -330,8 +330,10 @@ export class Speaker {
     const bid = bubbleId ?? messageId ?? crypto.randomUUID()
     // slice 22: הקצה orderKey דטרמיניסטי — seq יציב פר-bubble, segmentIndex עולה
     const orderKey = this.#orderAlloc.next(bid)
+    // A2 (אביגיל #2): extract segmentId לפני push כדי להעביר ל-reserve
+    const segmentId = crypto.randomUUID()
     this.#jobs.push({
-      segmentId: crypto.randomUUID(),
+      segmentId,
       kind,
       messageId,
       text,
@@ -340,6 +342,8 @@ export class Speaker {
       bubbleId,
       orderKey,
     })
+    // A2: reserve-on-enqueue — הסגמנט נכנס לפלייליסט מיד (לפני fetch)
+    this.#player.reserve(segmentId, orderKey)
     this.#pendingCount += 1
   }
 
@@ -427,11 +431,14 @@ export class Speaker {
         textHash,
         format: provider.format,
       })
-      this.#player.addSegment(job.segmentId, job.orderKey)
+      // A2: markReady — הסגמנט מוכן ב-AudioSink; #playLoop יתחיל לנגן
+      this.#player.markReady(job.segmentId)
       job.status = "ready"
     } catch (e) {
       // MIN-5: דלג + המשך, אל תזרוק.
       job.status = "error"
+      // A2: markError — הסגמנט נכשל; #playLoop ידלג
+      this.#player.markError(job.segmentId)
       console.warn("TTS job failed, skipping segment", {
         id: job.segmentId,
         err: e instanceof Error ? e.message : String(e),
@@ -484,9 +491,11 @@ export class Speaker {
       // דרך אותו OrderAllocator — לכן ה-seq של ה-tool נכון יחסית למשפטים סביבו.
       const bid = bubble.id
       const orderKey = this.#orderAlloc.next(bid)
+      // A2 (אביגיל #2): extract segmentId לפני push כדי להעביר ל-reserve
+      const segmentId = crypto.randomUUID()
 
       this.#jobs.push({
-        segmentId: crypto.randomUUID(),
+        segmentId,
         kind: "tool",
         messageId: null,
         text: "", // יתמלא ב-#narrateForJob
@@ -496,6 +505,8 @@ export class Speaker {
         toolCallId: tc.toolCallId,
         orderKey,
       })
+      // A2: reserve-on-enqueue
+      this.#player.reserve(segmentId, orderKey)
       this.#pendingCount += 1
       this.#pumpFetchLoop()
     }
