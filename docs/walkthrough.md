@@ -1,3 +1,36 @@
+## 2026-06-28 — leave-running-background — runtime-gate fixes (commit 5)
+
+### מה בוצע?
+
+3 תיקונים לאחר בדיקת המשתמשת בסביבת preview:
+
+**תיקון 1 — אייקון כפתור leave-running:**
+- `SessionOptionsPanel.svelte`: החלפת `Minimize2Icon` ב-`LogOutIcon` (import עודכן).
+- הכפתור הפך ל-icon-only (הוסרה `<span>` עם תווית), `min-w-0` הוסר. שאר הכפתורים (disconnect/audio/settings) לא שונו.
+
+**תיקון 2 — צ'קבוקס "אל תציג שוב" במודל:**
+- `core/src/i18n/keys.ts`: נוסף מפתח `session.leaveWarning.dontShowAgain`.
+- `he.ts`: "אל תציג הודעה זו שוב"; `en.ts`: "Don't show this message again".
+- `settings.svelte.ts`: שדה `suppressLeaveWarning` (Persisted/DEFAULTS/`$state`/setter/`#persist`).
+- `SessionOptionsPanel.svelte`: `let dontShowAgain = $state(false)` + checkbox במודל. `onLeaveRunning` בודק `settings.suppressLeaveWarning`. `doLeaveRunning` קורא `settings.setSuppressLeaveWarning(true)` אם `dontShowAgain`.
+
+**תיקון 3 — bypassActive מ-configOptions:**
+- `agent-session.svelte.ts:bypassActive`: קורא קודם `configOptions.find(category==="mode")` וגוזר `liveModeId` מ-`currentValue`; fallback ל-`modes.currentModeId`.
+- `agent-session.test.ts`: `describe` חדש עם 4 טסטים (configOptions=bypassPermissions→true, default→false, fallback ל-modes, opencode→false).
+
+### בדיקות
+
+- typecheck: 0 שגיאות
+- vitest frontend: 365/365 ירוקים (נוספו 4 טסטים חדשים)
+- lint:i18n: ✓ No hardcoded Hebrew in code
+- approach: integration (bypassActive TDD new tests) + manual (UI checkbox)
+
+### סטיות
+
+ללא סטיות מה-brief.
+
+---
+
 ## 2026-06-28 — leave-running-background — סיכום סליס (4 commits)
 
 ### מה בוצע?

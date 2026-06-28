@@ -222,6 +222,7 @@ export type MessageKey =
   | "session.leaveWarning.body"     // "הריצה תיעצר ברגע שתגיע בקשת-הרשאה..."
   | "session.leaveWarning.confirm"
   | "session.leaveWarning.cancel"
+  | "session.leaveWarning.dontShowAgain"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

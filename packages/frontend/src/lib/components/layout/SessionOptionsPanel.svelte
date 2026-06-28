@@ -12,7 +12,7 @@
 import { untrack } from "svelte"
 import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
 import PowerIcon from "@lucide/svelte/icons/power"
-import Minimize2Icon from "@lucide/svelte/icons/minimize-2"
+import LogOutIcon from "@lucide/svelte/icons/log-out"
 import Volume2Icon from "@lucide/svelte/icons/volume-2"
 import VolumeXIcon from "@lucide/svelte/icons/volume-x"
 import SettingsIcon from "@lucide/svelte/icons/settings"
@@ -43,16 +43,20 @@ function onDisconnect() {
 
 // ─── slice leave-running-background: יציאה בלי להרוג ───
 let leaveConfirmOpen = $state(false)
+let dontShowAgain = $state(false)
 
 function onLeaveRunning() {
-  if (session.bypassActive) {
-    doLeaveRunning()   // bypass → אין stall → צא ישר
+  if (session.bypassActive || settings.suppressLeaveWarning) {
+    doLeaveRunning()   // bypass / suppressed → צא ישר
   } else {
     leaveConfirmOpen = true  // לא-bypass → אזהר קודם
   }
 }
 
 function doLeaveRunning() {
+  if (dontShowAgain) {
+    settings.setSuppressLeaveWarning(true)
+  }
   leaveConfirmOpen = false
   session.leaveRunning()
   goto("/")
@@ -206,16 +210,15 @@ $effect(() => {
     <PowerIcon size={16} strokeWidth={1.75} />
   </button>
 
-  <!-- leave-running (לא הורג) — ניטרלי, עם תווית-טקסט -->
+  <!-- leave-running (לא הורג) — ניטרלי, icon-only -->
   <button
-    class="flex-1 flex items-center justify-center gap-2 px-2.5 py-2 rounded-lg text-[13px] border min-w-0"
+    class="flex-1 flex items-center justify-center gap-2 px-2.5 py-2 rounded-lg text-[13px] border"
     style="border-color:var(--border); color:var(--fg-dim)"
     onclick={onLeaveRunning}
     aria-label={t("session.leaveRunning")}
     title={t("session.leaveRunning")}
   >
-    <Minimize2Icon size={16} strokeWidth={1.75} />
-    <span class="truncate">{t("session.leaveRunning")}</span>
+    <LogOutIcon size={16} strokeWidth={1.75} />
   </button>
 
   <!-- audio master toggle -->
@@ -262,6 +265,10 @@ $effect(() => {
       <p class="text-[13px] leading-relaxed" style="color:var(--fg-dim)">
         {t("session.leaveWarning.body")}
       </p>
+      <label class="flex items-center gap-2 text-[13px]" style="color:var(--fg-dim)">
+        <input type="checkbox" class="cursor-pointer" bind:checked={dontShowAgain} />
+        {t("session.leaveWarning.dontShowAgain")}
+      </label>
       <div class="flex gap-2 justify-end">
         <BitsDialog.Close
           class="px-3 py-2 rounded-lg text-[13px] border"

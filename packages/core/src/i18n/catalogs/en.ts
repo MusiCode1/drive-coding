@@ -217,4 +217,5 @@ export const en: Catalog = {
   "session.leaveWarning.body": "The run will stall when a permission request arrives, because the browser is the ACP client. To prevent stalling: switch to bypass-permissions mode before leaving.",
   "session.leaveWarning.confirm": "Leave anyway",
   "session.leaveWarning.cancel": "Cancel",
+  "session.leaveWarning.dontShowAgain": "Don't show this message again",
 }

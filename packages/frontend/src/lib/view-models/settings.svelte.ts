@@ -49,6 +49,8 @@ type Persisted = {
   lastConfig: Record<string, Record<string, string | boolean>>
   // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
   ttsProvider: "elevenlabs" | "google"
+  // ─── leave-running (runtime-gate fixes) ───
+  suppressLeaveWarning: boolean
 }
 
 const DEFAULTS: Persisted = {
@@ -79,6 +81,8 @@ const DEFAULTS: Persisted = {
   lastConfig: {},
   // ─── TTS provider ─── (V4a) — ברירת מחדל = ElevenLabs (Q1=לא flip)
   ttsProvider: "elevenlabs" as const,
+  // ─── leave-running (runtime-gate fixes) ───
+  suppressLeaveWarning: false,
 }
 
 function load(): Persisted {
@@ -163,6 +167,9 @@ export class Settings {
   // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
   ttsProvider = $state<"elevenlabs" | "google">(DEFAULTS.ttsProvider)
 
+  // ─── leave-running (runtime-gate fixes) ───
+  suppressLeaveWarning = $state<boolean>(DEFAULTS.suppressLeaveWarning)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -191,6 +198,8 @@ export class Settings {
     this.lastConfig = loaded.lastConfig
     // ─── TTS provider ───
     this.ttsProvider = loaded.ttsProvider
+    // ─── leave-running ───
+    this.suppressLeaveWarning = loaded.suppressLeaveWarning
   }
 
   // ─── טופס חיבור ───
@@ -393,6 +402,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── leave-running (runtime-gate fixes) ───
+
+  setSuppressLeaveWarning = (v: boolean): void => {
+    this.suppressLeaveWarning = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -413,6 +429,7 @@ export class Settings {
       enterToSend: this.enterToSend,
       lastConfig: this.lastConfig,
       ttsProvider: this.ttsProvider,
+      suppressLeaveWarning: this.suppressLeaveWarning,
     })
   }
 }

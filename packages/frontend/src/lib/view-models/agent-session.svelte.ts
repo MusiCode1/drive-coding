@@ -576,9 +576,18 @@ export class AgentSession {
     this.sessionsError = null
   }
 
-  /** האם הסשן הנוכחי במצב עקיפת-הרשאות (claude בלבד כרגע — ראה permission-mode.ts). */
+  /** האם הסשן הנוכחי במצב עקיפת-הרשאות (claude בלבד כרגע — ראה permission-mode.ts).
+   * קורא משני מקורות: configOptions (מתעדכן חי דרך config_option_update) ואז
+   * fallback ל-modes.currentModeId (מתעדכן רק ב-mode_update, שלא תמיד מגיע מ-claude).
+   */
   get bypassActive(): boolean {
-    return isBypassMode(this.#cliKind, this.modes?.currentModeId)
+    // configOptions מתעדכן חי ב-claude — נעדיף אותו כמקור ראשון.
+    const modeOpt = this.configOptions.find((o) => o.category === "mode")
+    const liveModeId =
+      modeOpt && modeOpt.type === "select"
+        ? (modeOpt as Extract<SessionConfigOption, { type: "select" }>).currentValue
+        : undefined
+    return isBypassMode(this.#cliKind, liveModeId ?? this.modes?.currentModeId)
   }
 
   // ─── פרומפטים (prompting) ────────────────────────────────────
