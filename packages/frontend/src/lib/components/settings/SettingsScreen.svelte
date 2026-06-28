@@ -87,12 +87,6 @@ $effect(() => {
 
   <!-- כרטיס קול ודיבור -->
   <SettingsCard title={t("settings.voiceSpeech")}>
-    <!-- Voice picker -->
-    <label class="flex flex-col gap-1.5">
-      <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.voice.label")}</span>
-      <VoicePicker />
-    </label>
-
     <!-- TTS provider selector — (V4a) -->
     <label class="flex flex-col gap-1.5">
       <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.ttsProvider.label")}</span>
@@ -104,8 +98,13 @@ $effect(() => {
       />
     </label>
 
-    <!-- בורר קול Gemini — conditional (V4b) -->
-    {#if settings.ttsProvider === "google"}
+    <!-- בורר קול — conditional לפי הספק הפעיל (V4b) -->
+    {#if settings.ttsProvider === "elevenlabs"}
+      <label class="flex flex-col gap-1.5">
+        <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.voice.label")}</span>
+        <VoicePicker />
+      </label>
+    {:else if settings.ttsProvider === "google"}
       <label class="flex flex-col gap-1.5">
         <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.geminiVoice.label")}</span>
         <GeminiVoicePicker />
