@@ -6,7 +6,7 @@
  *   - הצטברות בועות (bubble accumulation) מהתראות session/update
  *   - מתודות ציבוריות: attach/detach/sendPrompt
  *
- * משתמש ב-AcpClient האגנוסטי לתעבורה מתוך provider-contract/acp,
+ * משתמש ב-AcpClient האגנוסטי לתעבורה מתוך @drive-coding/provider/client,
  * עטוף עם ה-WsAcpTransport מצד ה-FE.
  */
 
@@ -17,7 +17,7 @@ import type {
   SessionModelState,
 } from "@agentclientprotocol/sdk"
 import { tick } from "svelte"
-import { createAcpClient, type AcpClient } from "provider-contract/acp"
+import { createAcpClient, type AcpClient } from "@drive-coding/provider/client"
 import type { CuesEngine } from "$lib/engines/cues"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
 import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
