@@ -218,6 +218,7 @@ export type MessageKey =
   | "connect.recent.refresh"
   // ─── leave-running (slice leave-running-background) ───
   | "session.leaveRunning"          // תווית כפתור "צא — השאר רץ" (חדש)
+  | "session.closeSession"          // title כפתור הכיבוי-המלא (Power) — מבדיל מ-leaveRunning
   | "session.leaveWarning.title"
   | "session.leaveWarning.body"     // "הריצה תיעצר ברגע שתגיע בקשת-הרשאה..."
   | "session.leaveWarning.confirm"

@@ -213,6 +213,7 @@ export const en: Catalog = {
   "connect.recent.refresh": "Refresh",
   // ─── leave-running (slice leave-running-background) ───
   "session.leaveRunning": "Leave — keep running",
+  "session.closeSession": "Shut the process down completely",
   "session.leaveWarning.title": "Agent will keep running",
   "session.leaveWarning.body": "The run will stall when a permission request arrives, because the browser is the ACP client. To prevent stalling: switch to bypass-permissions mode before leaving.",
   "session.leaveWarning.confirm": "Leave anyway",

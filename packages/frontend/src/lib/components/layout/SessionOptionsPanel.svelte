@@ -204,8 +204,8 @@ $effect(() => {
     class="flex-1 flex items-center justify-center gap-2 px-2.5 py-2 rounded-lg text-[13px] border"
     style="border-color:var(--border); color:var(--recording)"
     onclick={onDisconnect}
-    aria-label={t("header.disconnect")}
-    title={t("header.disconnect")}
+    aria-label={t("session.closeSession")}
+    title={t("session.closeSession")}
   >
     <PowerIcon size={16} strokeWidth={1.75} />
   </button>
