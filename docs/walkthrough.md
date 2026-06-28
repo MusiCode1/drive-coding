@@ -5,7 +5,8 @@
 - `fd81118` — Commit 1: rewire orchestrator + ws-agent + server (phase-gate calev GO/0 findings)
 - `8e5b693` — Commit 2: DELETE bridge-manager + F-1 regression tests עודכנו
 
-**סטטוס:** ממתין ל-calev-heavy slice verdict.
+**Calev-heavy verdict: GO — 12/12 DoD, 0 findings.**
+דוח: /home/user/projects/drive-coding/.worktrees/cutover-migration/docs/CUT-3b-ii-calev-heavy.md
 
 ---
 
