@@ -1,3 +1,19 @@
+## 2026-06-28 — CUT-3b-i-provider-connection — Commit 1 (connection/types.ts — ProviderConnection/WireFrame/ConnectOpts + exports)
+
+### מה בוצע?
+
+**Commit 1 (none — types + barrel update)** — הוספת types לפרימיטיב:
+- `packages/provider/src/connection/types.ts`: `WireFrame`, `ConnectOpts`, `ProviderConnection` (wire=onLine-style, turn pull-based, ext=undefined לspawn, pid)
+- `packages/provider/src/connection/index.ts`: הוספת re-export של types: `ConnectOpts`, `ProviderConnection`, `WireFrame`
+
+### חריגות
+ללא.
+
+### בדיקות
+- typecheck: 0 errors.
+
+---
+
 ## 2026-06-28 — CUT-3b-i-provider-connection — Commit 0 (git mv wire-decode+turn-tracker → provider/shared + barrel ./connection + repoint bridge-manager)
 
 ### מה בוצע?
