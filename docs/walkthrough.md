@@ -1,3 +1,31 @@
+## 2026-06-25 — slice-input-autogrow — Commit 1: textarea auto-grow ב-TypeArea
+
+### מה בוצע?
+
+- `packages/frontend/src/lib/components/chat/TypeArea.svelte`: קובץ יחיד, שלושה שינויים:
+  1. `<form>` שונה מ-`items-stretch` ל-`items-end` — כפתור Send מיושר לתחתית ולא נמתח עם ה-textarea.
+  2. נוסף `bind:this={taEl}` + `let taEl = $state<HTMLTextAreaElement>()` + `const MAX_ROWS = 6`.
+  3. נוסף `$effect` שתלוי ב-`promptText` — מאפס גובה ל-auto ואז מציב scrollHeight; מופעל גם בהקלדה וגם בכיווץ פרוגרמטי אחרי שליחה.
+  4. `rows={2}` → `rows={1}` (גובה בסיס = שורה אחת).
+  5. `max-height: calc(6 * 1.5em + 1.25rem)` + `overflow-y:auto` ב-inline style.
+
+### בדיקות
+
+- typecheck: 0 errors.
+- build: נקי (adapter-static).
+- lint:i18n: ✓ (אין מחרוזות חדשות).
+- browser smoke (playwright-cli, linux-gui :9222):
+  - textarea ריק = 40px (שורה אחת).
+  - 3 שורות = 80px (גדל).
+  - 7 שורות: offsetHeight=146px (חסום), scrollHeight=160px (overflow-y scroll) — max-height פועל.
+  - כפתור Send נשאר בגובה טבעי ומיושר לתחתית (לא נמתח ל-6 שורות).
+
+### סטיות
+
+ללא סטיות מה-brief. approach: manual (browser smoke), כפי שנקבע ב-brief §4.
+
+---
+
 ## 2026-06-28 — active-processes-icon-actions — Commit 5: בועת-אישור "בטוח?" על כפתור ה-פח
 
 ### מה בוצע?
@@ -471,6 +499,48 @@ Slice V3 — TtsProvider interface. 3 commits. zero-behavior-change.
 ### סטיות
 
 אין. pre-existing lint errors (258) וכשלון backend integration test (`bridge-failure-integration`) קדמו לסלייס זה ואינם חלק ממנו.
+
+---
+
+## 2026-06-26 — slice-fe-build-decouple — 4 commits
+
+### מה בוצע?
+
+**Commit 1 (manual):** `scripts/dc-build-fe.mjs` + aliases ב-`package.json`:
+- סקריפט builds FE אטומית: vite build → .build-staging → swap אטומי → build/
+- `--if-missing`: דולג אם build/index.html קיים (רשת-ביטחון לקלון טרי)
+- `package.json`: aliases `fe:build` ו-`fe:build:if-missing`
+
+**Commit 2 (manual):** `packages/frontend/svelte.config.js` + `.gitignore`:
+- FE_BUILD_OUT env-driven; ברירת-מחדל "build" (אפס שינוי התנהגות)
+- .gitignore: הוסף .build-staging/ ו-.build-old/
+
+**Commit 3 (manual):** `deploy/systemd/voice-acp-dev.service` + `voice-acp-main.service`:
+- ExecStartPre: `pnpm build` → `node scripts/dc-build-fe.mjs --if-missing`
+- תיקון נתיבים: `voice-acp/{dev,main}` → `drive-coding/{dev,main}`
+- הוספת הערות: רענון FE דרך `pnpm fe:build`; restart שמור ל-BE
+
+**Commit 4 (none):** `docs/deploy-local-service.md`:
+- Daily Use: הפרד FE-refresh (pnpm fe:build) מ-BE-restart (systemctl)
+- Install: עדכן תיאור ExecStartPre ל-build-if-missing
+- Troubleshooting: החלף `pnpm build` ב-`pnpm fe:build`
+- תיקון נתיבים: voice-acp/ → drive-coding/ בטבלת Overview ובDaily Use
+- הוסף סעיף "Apply unit changes (post-merge)"
+
+### בדיקות
+
+- `node scripts/dc-build-fe.mjs` → build/index.html קיים, .build-staging/ נוקה
+- `--if-missing` עם build קיים → "skipping (--if-missing)"
+- `rm -rf build && --if-missing` → בונה, staging נוקה
+- `FE_BUILD_OUT=.build-staging pnpm --filter @drive-coding/frontend-v2 build` → OK
+- `systemd-analyze --user verify` על שני ה-service files → ללא שגיאות
+- `grep -c "pnpm build" deploy/systemd/*.service` → 0
+- `grep -c "voice-acp/" docs/deploy-local-service.md` → 0
+- typecheck: 0 errors; lint:i18n: ✓
+
+### סטיות
+
+קבצי ה-service כללו גם תיקון נתיבים (voice-acp → drive-coding) שמבחינה טכנית מיותס ל-Commit 4 ב-brief, אך הוכנס ב-Commit 3 כיוון שהנתיבים הישנים היו שגויים גם שם.
 
 ---
 
@@ -6692,6 +6762,55 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 ### סטיות
 
 אין. layout בלבד — קובץ יחיד, ללא שינוי VM/לוגיקה.
+
+---
+
+## slice-restore-last-config — Commit 1: persist
+
+**בוצע:** 2026-06-27
+
+### מה בוצע
+
+- הוספת שדה `lastConfig: Record<string, Record<string, string | boolean>>` לטיפוס `Persisted` ב-`settings.svelte.ts`.
+- הוספת ברירת-מחדל `{}` ב-`DEFAULTS`, `$state` + טעינה ב-constructor, setter `setLastConfig(cliKind, configId, value)` שממזג ושומר.
+- הוספת `lastConfig` ל-`#persist()` — חובה כדי שייישמר.
+- הזרקת `settings` אופציונלי לקונסטרקטור של `AgentSession` (`#settings`).
+- שינוי `+layout.svelte:66`: `new AgentSession({ cues, settings })`.
+- `applyConfigOption` הפך ל-wrapper דק: גוף הלוגיקה עבר ל-`#applyConfigToClient` (מחזיר boolean), persist נקרא אחרי apply מוצלח בלבד.
+- TDD: `settings.lastconfig.test.svelte.ts` — 8 טסטים (RED → GREEN).
+
+### בדיקות
+
+- typecheck: 0 errors, 0 warnings
+- tests: 327/327 ✓
+- lint:i18n: ✓ אין עברית בקוד
+
+### סטיות
+
+אין. הכל לפי ה-brief.
+
+---
+
+## slice-restore-last-config — Commit 2: apply
+
+**בוצע:** 2026-06-27
+
+### מה בוצע
+
+- הוספת `#isValidChoice(key, value)` ל-`AgentSession` — בודק שהערך תקף מול ה-options הנוכחיים של ה-CLI (modes.availableModes/models.availableModels/.modelId, select flat, boolean type). ערך stale נדלג בשקט.
+- הוספת `#applyRememberedConfig()` — קורא ל-`#settings?.lastConfig[cliKind]`, לולאת `for...of`, ומחיל רק ערכים תקפים דרך `applyConfigOption`.
+- קריאה ל-`#applyRememberedConfig()` אחרי `#setStatus("connected")` ב-attach (L534) וב-newSession (L844) — שני נתיבי סשן-חדש. loadSession/switchSession/warm-reconnect: לא נגעו (resume של סשן קיים, לא דורסים).
+- TDD: `agent-session.restore-config.test.svelte.ts` — 7 טסטים: attach/newSession/no-settings/cross-cliKind/boolean/stale-mode/loadSession-no-apply.
+
+### בדיקות
+
+- typecheck: 0 errors, 0 warnings
+- tests: 334/334 ✓ (כולל 7 חדשים)
+- lint:i18n: ✓ אין עברית בקוד
+
+### סטיות
+
+אין. הכל לפי ה-brief.
 
 ---
 

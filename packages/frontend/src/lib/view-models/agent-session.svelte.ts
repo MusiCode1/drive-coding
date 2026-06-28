@@ -22,6 +22,7 @@ import type { CuesEngine } from "$lib/engines/cues"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
 import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
 import type { CliKind } from "@drive-coding/core"
+import type { Settings } from "$lib/view-models/settings.svelte"
 import type {
   Bubble,
   MessageBubble,
@@ -68,9 +69,12 @@ export type TurnState = "idle" | "waiting" | "thinking" | "responding" | "callin
 export class AgentSession {
   // ─── slice 6: cues injection ─── (אופציונלי — slice 9 יקשר ל-Settings)
   readonly #cues?: CuesEngine
+  // ─── slice-restore-last-config: settings injection (אופציונלי — no-op אם נעדר) ───
+  readonly #settings?: Settings
 
-  constructor(opts?: { cues?: CuesEngine }) {
+  constructor(opts?: { cues?: CuesEngine; settings?: Settings }) {
     this.#cues = opts?.cues
+    this.#settings = opts?.settings
     // ─── slice ws-reconnect-infra: visibility tracking ───
     if (typeof document !== "undefined") {
       this.#pageHidden = document.hidden
@@ -526,6 +530,8 @@ export class AgentSession {
       await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
 
       this.#setStatus("connected")
+      // ─── slice-restore-last-config: החל בחירות אחרונות (אחרי connected — חובה) ───
+      await this.#applyRememberedConfig()
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = msg
@@ -834,6 +840,8 @@ export class AgentSession {
       }
 
       this.#setStatus("connected")
+      // ─── slice-restore-last-config: החל בחירות אחרונות (אחרי connected — חובה) ───
+      await this.#applyRememberedConfig()
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = `newSession failed: ${msg}`
@@ -865,53 +873,121 @@ export class AgentSession {
    * מחיל שינוי config על הסשן הפתוח. קורא ל-setSessionConfigOption עם
    * discriminated fallback ל-setSessionModel/setSessionMode.
    * מדלג בשקט אם הסשן לא מחובר.
+   *
+   * ─── slice-restore-last-config: wrapper ───
+   * הגוף האמיתי הועבר ל-#applyConfigToClient שמחזיר boolean (הצליח/לא נמצא).
+   * guard של status/client+sessionId נשאר כאן.
+   * persist נקרא רק אם applied===true — כיסוי כל 5 מסלולי-ההצלחה.
    */
   applyConfigOption = async (configId: string, value: string | boolean): Promise<void> => {
     if (this.status !== "connected") return
     if (!this.#client || !this.#sessionId) return
+    const applied = await this.#applyConfigToClient(configId, value)
+    const cli = this.#cliKind
+    if (applied && this.#settings && cli) {
+      this.#settings.setLastConfig(cli, configId, value)
+    }
+  }
 
+  /**
+   * הגוף הפנימי של apply. מחזיר true בכל מסלול-הצלחה, false אם configId לא נמצא.
+   * מניח ש-guard (status, #client, #sessionId) כבר עבר בקורא.
+   */
+  #applyConfigToClient = async (configId: string, value: string | boolean): Promise<boolean> => {
     // מסלול 1: option קיים ב-configOptions לפי id
     const optById = this.configOptions.find((o) => o.id === configId)
     if (optById) {
-      const res = await this.#client.setSessionConfigOption({
-        sessionId: this.#sessionId, configId, value,
+      const res = await this.#client!.setSessionConfigOption({
+        sessionId: this.#sessionId!, configId, value,
       })
       this.configOptions = res.configOptions
-      return
+      return true
     }
 
     // מסלול 2: fallback key "model"/"mode" — חפש לפי category
     if (configId === "model" && typeof value === "string") {
       const byCat = this.configOptions.find((o) => o.category === "model")
       if (byCat) {
-        const res = await this.#client.setSessionConfigOption({
-          sessionId: this.#sessionId, configId: byCat.id, value,
+        const res = await this.#client!.setSessionConfigOption({
+          sessionId: this.#sessionId!, configId: byCat.id, value,
         })
         this.configOptions = res.configOptions
-        return
+        return true
       }
       // fallback — setSessionModel ישיר; עדכן models ידנית למניעת UI desync
-      await this.#client.setSessionModel({ sessionId: this.#sessionId, modelId: value })
+      await this.#client!.setSessionModel({ sessionId: this.#sessionId!, modelId: value })
       if (this.models) this.models = { ...this.models, currentModelId: value }
-      return
+      return true
     }
     if (configId === "mode" && typeof value === "string") {
       const byCat = this.configOptions.find((o) => o.category === "mode")
       if (byCat) {
-        const res = await this.#client.setSessionConfigOption({
-          sessionId: this.#sessionId, configId: byCat.id, value,
+        const res = await this.#client!.setSessionConfigOption({
+          sessionId: this.#sessionId!, configId: byCat.id, value,
         })
         this.configOptions = res.configOptions
-        return
+        return true
       }
       // fallback — setSessionMode ישיר; עדכן modes ידנית
-      await this.#client.setSessionMode({ sessionId: this.#sessionId, modeId: value })
+      await this.#client!.setSessionMode({ sessionId: this.#sessionId!, modeId: value })
       if (this.modes) this.modes = { ...this.modes, currentModeId: value }
-      return
+      return true
     }
 
     // מסלול 3: לא נמצא — skip בשקט
     console.warn(`[AgentSession] configId "${configId}" not available — skipping`)
+    return false
+  }
+
+  // ─── slice-restore-last-config: apply remembered config ─── (תוספתי)
+
+  /**
+   * האם value עדיין תקף מול ה-options שה-CLI מחזיר כרגע?
+   * בודק ערך (לא רק קיום option) — ערך stale שה-CLI הסיר נדלג בשקט.
+   *
+   * מבנים מאומתים מול dev:
+   *   modes.availableModes[].id
+   *   models.availableModels[].modelId (לא .id!)
+   *   SessionConfigOption = discriminated union { type:"select"|"boolean" }
+   */
+  #isValidChoice(key: string, value: string | boolean): boolean {
+    if (key === "mode" && this.modes) {
+      return typeof value === "string" && this.modes.availableModes.some((m) => m.id === value)
+    }
+    if (key === "model" && this.models) {
+      return typeof value === "string" && this.models.availableModels.some((m) => m.modelId === value)
+    }
+    const opt = this.configOptions.find((o) => o.id === key || o.category === key)
+    if (!opt) return false
+    if (opt.type === "select" && typeof value === "string") {
+      // flatten זהה ללוגיקה של flattenSelectOptions (SessionOptionsPanel) — inline ב-VM
+      const flat = (opt.options as Array<{ value?: string; options?: Array<{ value: string }> }>)
+        .flatMap((i) => ("options" in i && i.options ? i.options : [i as { value: string }]))
+      return flat.some((c) => c.value === value)
+    }
+    if (opt.type === "boolean") return typeof value === "boolean"
+    return true
+  }
+
+  /**
+   * מחיל את הבחירות האחרונות של המשתמשת (מ-#settings.lastConfig) על הסשן החדש.
+   *
+   * ⚠️ חובה לקרוא **אחרי** this.#setStatus("connected") —
+   * applyConfigOption חוסם כש-status≠connected (no-op שקט אחרת).
+   *
+   * ⚠️ applyConfigOption קורא ל-setLastConfig (persist) — idempotent (כותב את אותו ערך).
+   *
+   * נקרא רק מ-attach ו-newSession (סשן חדש). loadSession/switchSession (resume) — לא.
+   */
+  async #applyRememberedConfig(): Promise<void> {
+    const cli = this.#cliKind
+    const remembered = cli ? this.#settings?.lastConfig[cli] : undefined
+    if (!remembered) return
+    for (const [key, value] of Object.entries(remembered)) {
+      if (this.#isValidChoice(key, value)) {
+        await this.applyConfigOption(key, value)
+      }
+    }
   }
 
   // ─── redesign-fix: רשימת סשנים inline ─── (תוספתי)
