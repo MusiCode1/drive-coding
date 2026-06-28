@@ -1,5 +1,49 @@
 # Decisions — drive-coding
 
+## 2026-06-28 — recent-projects-controls: מחיקה (הסתרה קבועה) + כיווץ-panel נשמר
+
+> brief: `docs/plans/slice-recent-projects-controls.md` · base dev `ebf50ae` · Complexity 6 · calev light.
+> אביגיל: **READY** (r1, 3 findings 🟢 cosmetic). report: `reports/drive-coding/recent-projects-controls-avigail.md`.
+
+### רציונל
+
+המשך ל-connect-recent-projects (מוזג `726f9f3`). המשתמשת ביקשה שני פקדים על ה-panel: (1) כפתור
+למחוק תיקייה מהרשימה; (2) אפשרות לכווץ את ה-panel, **ולשמור** את מצב-הכיווץ לכניסה הבאה.
+
+**הכרעה מרכזית — מחיקה = הסתרה קבועה, לא הסרה זמנית** (בחירת המשתמשת): ה-registry מתמלא *אוטומטית*
+בכל `recordCwd` (session-attached). הסרה פשוטה הייתה חוזרת בחיבור הבא. לכן הוספנו דגל `hidden`
+לרשומה — `getProjects` מסנן אותו, ו-`recordCwd` **כבר** עושה spread של הרשומה הקיימת
+(`{ ...projects[idx]!, cwd, kind, lastSeen }`) → ה-`hidden` שורד אוטומטית בלי לגעת ב-recordCwd. זו
+תוספת CRUD חלקית ל-`ProjectsRegistry` (כפי שהמשתמשת זיהתה נכון) — `hideCwd` + endpoint `DELETE /api/projects`.
+
+**הבחנת-persist**: `hidden` נשמר **בשרת** (`projects-registry.json` — עקבי בין מכשירים, כי הסתרה היא
+החלטה על הפרויקט). מצב-הכיווץ `recentCollapsed` נשמר ב-**localStorage** (העדפת-תצוגה מקומית, דפוס
+`showThoughts` ב-Settings). הבחנה מכוונת: מה ששייך לפרויקט → שרת; מה ששייך לתצוגה → מקומי.
+
+### ממצאי אביגיל
+
+READY בסבב ראשון. 3 findings cosmetic (0-min): off-by-one בספירת-שורות (registry 80 לא 81),
+`registerProjectsHttp` בשורה 24 לא 22, וחידוד שהתקדים `app.delete` (`http-agents.ts:89`) הוא
+path-param ולא DELETE-with-body. ה-spot-check אישר **מילולית** את הטענה הקריטית: spread ב-`recordCwd`
+משמר `hidden`. אזהרת ה-**nested-button** (כפתור מחיקה חייב sibling, לא ילד — HTML תקין + מניעת
+bubbling ל-connect) אומתה כנכונה ופרואקטיבית.
+
+### שינויי-כיוון
+
+- **slice אחד מאוחד** (לא 2 מקבילים) — שלושת הפקדים נוגעים ב-`RecentProjectsPanel.svelte` → פיצול
+  היה יוצר merge-conflict/שרשור מיותר.
+- **בלי confirm על מחיקה** ל-MVP — ההסתרה הפיכה (לא הורסת קוד/סשנים; un-hide ידני בקובץ אפשרי).
+- **DELETE עם JSON body** (`{cwd}`) ולא path-param — ה-cwd מכיל `:`/`\`. fallback מתועד ל-`POST /api/projects/hide`
+  אם DELETE-with-body ייחסם ברשת/proxy.
+
+### רעיונות שנדחו
+
+- **un-hide UI** — נדחה ל-future (הסתרה חד-כיוונית מה-UI ב-MVP).
+- **סנכרון מצב-הכיווץ בין מכשירים** — נדחה; כיווץ הוא העדפת-תצוגה מקומית (localStorage), לא server-state.
+- **מחיקה אמיתית של הרשומה** — נדחה; מסתירים (`hidden:true`) כדי לשמר lastSessionId/lastSeen אם תילקח חזרה.
+
+---
+
 ## 2026-06-28 — slice-restore-last-config: שחזור agent+mode מהסשן האחרון (מוזג)
 
 ### רציונל
