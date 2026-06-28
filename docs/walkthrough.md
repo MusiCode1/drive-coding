@@ -1,3 +1,23 @@
+## 2026-06-28 — slice-C3-ext-thinking — Phase 0 (TDD)
+
+### מה בוצע?
+
+**Commit 0 — getQuery accessor + NormalizedCapabilities.thinkingTokens + capability:**
+- `host/in-process/claude/query-access.ts`: `getQuery(agent, sessionId)` — נקודת-צימוד יחידה ל-`(agent as ...).sessions[id].query`. interface מקומי `SessionRecord` (לא ייבוא SDK). זורק שגיאה ברורה אם אין session.
+- `host/types.ts`: הוסף `thinkingTokens: boolean` ל-`NormalizedCapabilities`.
+- `host/in-process/claude/capabilities.ts`: `thinkingTokens: true` (claude תומך — query חושף `setMaxThinkingTokens`).
+- `host/in-process/claude/query-access.test.ts`: 5 unit tests (TDD): returns query, throws unknown/empty/no-query, delegates call.
+
+### חריגות
+- אין.
+
+### בדיקות
+- typecheck — 0 errors.
+- `pnpm --filter @drive-coding/provider test` — 69/69 PASS.
+- formatting biome --write על הקבצים החדשים.
+
+---
+
 ## 2026-06-28 — slice-C3-host-session — 3 commits
 
 ### מה בוצע?

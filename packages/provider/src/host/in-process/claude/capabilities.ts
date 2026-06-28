@@ -36,5 +36,6 @@ export function mapClaudeCapabilities(raw: unknown): NormalizedCapabilities {
     usage: false,
     configOptions: false,
     rename: true,
+    thinkingTokens: true,
   }
 }

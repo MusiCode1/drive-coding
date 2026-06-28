@@ -27,6 +27,11 @@ export interface NormalizedCapabilities {
    * Store-level operation (no patch required). Consumer calls host.rename(id, title).
    */
   rename: boolean
+  /**
+   * query.setMaxThinkingTokens() available via live query object (ClaudeAcpAgent.sessions).
+   * Runtime control — no patch required. Controlled via ext channel (_drive/setThinkingTokens).
+   */
+  thinkingTokens: boolean
 }
 
 /**
