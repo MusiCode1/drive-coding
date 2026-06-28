@@ -1,3 +1,12 @@
+## 2026-06-29 — FE-normalization — סיכום slice
+
+**Commits:** bdc88c1..085438d (4 commits: Phase 0 + Phase 1 + Phase 2 docs + slice status)
+**Tests:** provider 133/133 | frontend 380/380
+**typecheck:** 0 errors | vite build: ירוק
+**calev verdict:** GO — 7/7 DoD, 0 findings
+**דוח calev:** /home/user/projects/drive-coding/.worktrees/cutover-migration/docs/FE-normalization-calev.md
+**הסטיות:** אין. Phase 2 בוצע כ-manual inspection (ללא דפדפן חי) — מנגנון אומת statically ב-9 חוליות.
+
 ## 2026-06-29 — FE-normalization — Phase 2: אימות מנגנון (manual inspection)
 
 **אימות מקצה לקצה (manual inspection):**
