@@ -22,6 +22,7 @@
 
 ### בדיקות
 - typecheck: 0 errors. tests: 129/129. live: 8/8. DoD 2 ✓ (export). DoD 3 ✓ (שרשרת חיה). DoD 4 ✓ (onFrame+turn+caps). DoD 5 ✓. DoD 6 ✓ (additive, provider/** בלבד).
+- **calev light verdict: GO — 6/6 DoD, 0 findings.** דוח: reports/drive-coding/CUT-3b-iii-1-connect-inprocess-calev.md
 
 ## 2026-06-28 — CUT-3b-ii-be-rewire — סיכום slice (commits 0–2 + calev-heavy)
 
