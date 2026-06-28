@@ -17,8 +17,8 @@
  *   4. החלף sentinels ב-cleanKatex[i] + cleanCode[i] → תוצאה סופית.
  *
  * ── Storage architecture ─────────────────────────────────────────────────────
- * currentMap[0..katexCount-1] = KaTeX fragments (BLOCK_SENTINEL + INLINE_SENTINEL)
- * currentMap[katexCount..] = code fragments (BLOCK_SENTINEL, indexes offset by katexCount)
+ * currentMap[i] = כל ה-fragments (KaTeX + code) בסדר גלובלי (לפי סדר הופעה בטקסט).
+ * fragmentKinds[i] = "katex" | "code" — מסווג כל index; עמיד לסדר (code-first-then-katex).
  * ⚠️ U+E002 נמחק ע"י DOMPurify — לכן code fragments משתמשים ב-BLOCK_SENTINEL (U+E000).
  *
  * ── Security invariant ──────────────────────────────────────────────────────
@@ -169,14 +169,18 @@ if (typeof document !== "undefined") {
 export function renderMarkdown(text: string): string {
   if (text.length === 0) return ""
 
-  // Pass 1: parseToHtml → { html, katexFragments, codeFragments }
-  // katexFragments = currentMap[0..n], codeFragments = currentMap[n+1..]
-  const { html: markdownHtml, katexFragments, codeFragments } = parseToHtml(text)
+  // Pass 1: parseToHtml → { html, katexFragments, codeFragments, fragmentKinds }
+  // fragmentKinds[] מסווג כל global index כ-"katex" או "code" — עמיד לסדר.
+  const { html: markdownHtml, katexFragments, codeFragments, fragmentKinds } = parseToHtml(text)
 
-  // SSR path — החזר raw HTML (sentinels → raw fragments)
+  // SSR path — שחזר fragments לפי global index (לא מחייב DOMPurify)
   if (typeof document === "undefined") {
-    // כולל code fragments: replace by index offset
-    const allFragments = [...katexFragments, ...codeFragments]
+    // בנה allFragments לפי global index בעזרת fragmentKinds
+    let ki = 0
+    let ci = 0
+    const allFragments = fragmentKinds.map((kind) =>
+      kind === "katex" ? (katexFragments[ki++] ?? "") : (codeFragments[ci++] ?? ""),
+    )
     return replacePlaceholders(markdownHtml, allFragments)
   }
 
@@ -206,9 +210,13 @@ export function renderMarkdown(text: string): string {
   )
 
   // Pass 4: replace sentinels
-  // code fragments indexes = katexFragments.length + codeIdx
-  // allClean[0..n] = KaTeX, allClean[n+1..] = code
-  const allClean = [...cleanKatex, ...cleanCode]
+  // allClean[] נבנה לפי global index בעזרת fragmentKinds — עמיד לסדר (F1 fix).
+  // code-first-then-katex ו-katex-first-then-code מיופו נכון לפי sentinel index.
+  let ki = 0
+  let ci = 0
+  const allClean = fragmentKinds.map((kind) =>
+    kind === "katex" ? (cleanKatex[ki++] ?? "") : (cleanCode[ci++] ?? ""),
+  )
   return replacePlaceholders(cleanMarkdown, allClean)
 }
 

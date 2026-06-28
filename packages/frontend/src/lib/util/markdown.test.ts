@@ -223,4 +223,31 @@ describe("renderMarkdown", () => {
     expect(out).toContain('<span class="hljs-keyword">const</span>')
     expect(out).toContain("katex")
   })
+
+  // ─── F1 regression tests: code-first-then-math (calev-heavy finding) ──────
+
+  it("code-before-math: <pre> survives when code block precedes KaTeX (F1 fix)", () => {
+    // F1 bug: code block before KaTeX had its <pre><code> stripped by KATEX_ALLOW.
+    // Fixed by fragmentKinds[] type-based splitting (order-invariant).
+    const out = renderMarkdown("```ts\nconst x = 1\n```\n\n$x^2$")
+    // ה-<pre> חייב לשרוד — בלעדיו הקוד מרונדר כ-spans ערומים בלי monospace/padding
+    expect(out).toContain("<pre>")
+    expect(out).toContain('<span class="hljs-keyword">const</span>')
+    expect(out).toContain("katex")
+  })
+
+  it("code-before-math: multiple code blocks before KaTeX all get <pre>", () => {
+    const out = renderMarkdown("```ts\nconst a = 1\n```\n\n```py\ndef f():\n    pass\n```\n\n$x^2$")
+    const preCount = (out.match(/<pre>/g) ?? []).length
+    expect(preCount).toBe(2)
+    expect(out).toContain("katex")
+  })
+
+  it("math-then-code-then-math-then-code: all <pre> survive", () => {
+    const out = renderMarkdown("$a$ code:\n\n```ts\nconst x=1\n```\n\n$b$ and:\n\n```py\npass\n```")
+    const preCount = (out.match(/<pre>/g) ?? []).length
+    expect(preCount).toBe(2)
+    const katexCount = (out.match(/class="katex/g) ?? []).length
+    expect(katexCount).toBeGreaterThanOrEqual(2)
+  })
 })

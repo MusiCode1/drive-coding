@@ -6853,6 +6853,38 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 
 אין. הוספת `resolveProviderAuth` כ-helper טהור + call-site יחיד ב-http-proxy. לא שינוי ארכיטקטוני.
 
+## 2026-06-28 — slice-code-syntax-highlight — F1 fix: code-before-KaTeX pre-stripping
+
+### מה בוצע?
+
+תיקון F1 שתפסה כלב-heavy: בלוק-קוד שמופיע **לפני** ביטוי KaTeX באותה הודעה איבד את עוטף `<pre><code class="hljs">`.
+
+**שורש**: `storeCodePlaceholder` דחף ל-`currentMap` בלי לעדכן `katexCount`. כשקוד הגיע לפני KaTeX, הוא נחת ב-`currentMap[0]`, ואז KaTeX העלה `katexCount=1` — כך `katexFragments = currentMap.slice(0,1)` לקח את ה-code fragment, והוא עבר KATEX_ALLOW (שלא כולל `<pre>/<code>`) → עוטף נמחק.
+
+**פתרון (fragmentKinds[]):**
+- הוחלף `katexCount` ב-`fragmentKinds: ("katex"|"code")[]` מקביל ל-`currentMap`.
+- `storePlaceholder`/`storeInlinePlaceholder` → `fragmentKinds.push("katex")`.
+- `storeCodePlaceholder` → `fragmentKinds.push("code")`.
+- `parseToHtml` → `katexFragments/codeFragments` נגזרים ע"י `filter` לפי kind (לא `slice(katexCount)`).
+- `markdown.ts`: `allClean` נבנה ע"י `fragmentKinds.map((kind) => ...)` → global index תמיד מדויק.
+
+**markdown.test.ts:**
+- תיקון הטסט המעורב הקיים ("mixed code + math") — הוסיף `expect(out).toContain("<pre>")`.
+- 3 טסטים חדשים: code-before-math/<pre> שורד, multiple code blocks, mixed ordering.
+
+### בדיקות
+
+- 3 regression tests חדשים: ירוקים (F1 אמות).
+- suite כולל: 359/359 ירוקים.
+- typecheck: ירוק.
+- biome: ירוק.
+
+### חריגות
+
+אין. תיקון נקי — interface חיצוני (`parseToHtml`) מורחב ב-`fragmentKinds` field שלא שובר callers.
+
+---
+
 ## 2026-06-28 — slice-code-syntax-highlight — Commit 2 (manual — theme-CSS)
 
 ### מה בוצע?

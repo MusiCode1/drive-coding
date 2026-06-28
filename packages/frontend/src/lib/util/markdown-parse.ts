@@ -9,11 +9,13 @@
  *
  * ── code fragment storage ─────────────────────────────────────────────────────
  * Code fragments משתמשים ב-BLOCK_SENTINEL (כמו KaTeX blocks) — U+E000 שורד DOMPurify.
- * הם נשמרים ב-currentMap **אחרי** ה-KaTeX fragments:
- *   currentMap[0..katexCount-1] = KaTeX fragments
- *   currentMap[katexCount..] = code fragments
- * parseToHtml מחזיר katexFragments ו-codeFragments כ-snapshots נפרדים.
+ * הם נשמרים ב-currentMap עם index גלובלי, לצד KaTeX fragments.
+ * fragmentKinds[] מקביל ל-currentMap — מסווג כל fragment כ-"katex" או "code".
+ * בסוף parseToHtml, מחלצים katexFragments ו-codeFragments לפי הסוג (לא לפי קשר).
+ * זה עמיד לסדר: code-first-then-math ו-math-first-then-code מסווגים נכון.
+ *
  * renderMarkdown (markdown.ts) מחיל KATEX_ALLOW על katexFragments ו-CODE_ALLOW על codeFragments.
+ * allClean[] בנוי כ-sparse array לפי global index — replacePlaceholders מתאים מ-allClean[idx].
  *
  * ── למה לא CODE_SENTINEL נפרד ──────────────────────────────────────────────
  * U+E002 נמחק ע"י DOMPurify (אמות אמפירית בסביבת jsdom). BLOCK_SENTINEL (U+E000) שורד.
@@ -40,8 +42,9 @@ export const INLINE_SENTINEL = ""
 // נרשם ברמת מודול, מתאפס בכל קריאה ל-parseToHtml.
 // אסור להזיז את marked.use לתוך parseToHtml (יירשום extension מצטבר per-call).
 let currentMap: string[] = []
-// מספר KaTeX fragments שנשמרו עד כה — קובע את ה-offset לcode fragments.
-let katexCount = 0
+// fragmentKinds — מקביל ל-currentMap, מסווג כל index כ-"katex" או "code".
+// עמיד לסדר: code-before-katex מסווג נכון (לא תלוי offset).
+let fragmentKinds: ("katex" | "code")[] = []
 
 // ─── allowlist לשמות שפות ב-class (אבטחה: injection ל-class="language-X") ───
 // רק תווים בטוחים: אותיות, מספרים, מקף, פלוס, hash
@@ -61,24 +64,25 @@ function renderKatex(tex: string, displayMode: boolean): string {
 function storePlaceholder(html: string): string {
   const idx = currentMap.length
   currentMap.push(html)
-  katexCount = currentMap.length // KaTeX index הגבוה ביותר + 1
+  fragmentKinds.push("katex")
   return `${BLOCK_SENTINEL}${idx}${BLOCK_SENTINEL}`
 }
 
 function storeInlinePlaceholder(html: string): string {
   const idx = currentMap.length
   currentMap.push(html)
-  katexCount = currentMap.length // עדכן offset
+  fragmentKinds.push("katex")
   return `${INLINE_SENTINEL}${idx}${INLINE_SENTINEL}`
 }
 
 /**
- * מאחסן code block ב-currentMap אחרי ה-KaTeX fragments.
- * משתמש ב-BLOCK_SENTINEL (שורד DOMPurify), לא ב-sentinel נפרד.
+ * מאחסן code block ב-currentMap (בכל index, לא מחייב אחרי KaTeX).
+ * fragmentKinds[idx]="code" מבטיח שהסיווג עמיד לסדר (code-before-katex).
  */
 function storeCodePlaceholder(html: string): string {
   const idx = currentMap.length
   currentMap.push(html)
+  fragmentKinds.push("code")
   return `${BLOCK_SENTINEL}${idx}${BLOCK_SENTINEL}`
 }
 
@@ -245,8 +249,8 @@ export function normalizeInvisibles(text: string): string {
 /**
  * @internal — טהור (ללא DOMPurify). בר-בדיקה ב-environment:node.
  *
- * מאפס currentMap + katexCount, מנרמל bidi, מריץ marked.parse עם 4 extensions + renderer.code,
- * ומחזיר snapshots נפרדים: katexFragments (indexes 0..n-1) ו-codeFragments (indexes n..).
+ * מאפס currentMap + fragmentKinds, מנרמל bidi, מריץ marked.parse עם 4 extensions + renderer.code,
+ * ומחזיר snapshots נפרדים: katexFragments ו-codeFragments לפי fragmentKinds[] (עמיד לסדר).
  *
  * ⚠️ אסור להשתמש ב-html שמוחזר ישירות ב-{@html} — חייב לעבור sanitize ב-renderMarkdown.
  */
@@ -254,18 +258,18 @@ export function parseToHtml(text: string): {
   html: string
   katexFragments: string[]
   codeFragments: string[]
+  fragmentKinds: ("katex" | "code")[]
 } {
   currentMap = []
-  katexCount = 0
+  fragmentKinds = []
   const normalized = normalizeInvisibles(text)
   const html = marked.parse(normalized, {
     async: false,
     breaks: true,
     gfm: true,
   }) as string
-  // katexFragments = currentMap[0..katexCount-1]
-  // codeFragments = currentMap[katexCount..]
-  const katexFragments = currentMap.slice(0, katexCount)
-  const codeFragments = currentMap.slice(katexCount)
-  return { html, katexFragments, codeFragments }
+  // סיווג לפי fragmentKinds — עמיד לסדר (code-before-katex נשמר נכון)
+  const katexFragments = currentMap.filter((_, i) => fragmentKinds[i] === "katex")
+  const codeFragments = currentMap.filter((_, i) => fragmentKinds[i] === "code")
+  return { html, katexFragments, codeFragments, fragmentKinds }
 }
