@@ -65,7 +65,8 @@ const i18n = new I18nVM({ settings })
 const cues = new CuesEngine()
 
 // ─── סשן ───────────────────────────────────────
-const session = new AgentSession({ cues })
+// slice-restore-last-config: settings מוזרק לסשן כדי לשמור config פר-CLI
+const session = new AgentSession({ cues, settings })
 
 // ─── speaker ─── (תלוי ב-session + settings + cues)
 const speaker = new Speaker({ session, settings, cues })
