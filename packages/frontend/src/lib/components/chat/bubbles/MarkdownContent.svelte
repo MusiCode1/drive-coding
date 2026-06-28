@@ -15,13 +15,23 @@
  * המנגנון: ה-:global של Svelte הוא unlayered → מנצח את preflight ב-@layer base.
  *
  * ─── slice/markdown-content-unify (Commit 0) ───
+ * ─── slice/code-copy-button (Commit 1) — הוספת use:enhanceCodeBlocks ───
  */
 import { renderMarkdown } from "$lib/util/markdown"
+import { getI18n } from "$lib/context"
+import { enhanceCodeBlocks } from "./enhance-code-blocks"
 
 let { text, variant = "bubble" }: { text: string; variant?: "bubble" | "viewer" } = $props()
+
+const t = getI18n().t
 </script>
 
-<div class="md-content" class:viewer={variant === "viewer"} dir="auto">{@html renderMarkdown(text)}</div>
+<div
+  class="md-content"
+  class:viewer={variant === "viewer"}
+  dir="auto"
+  use:enhanceCodeBlocks={{ text, labelCopy: t("bubble.copy"), labelCopied: t("bubble.copied") }}
+>{@html renderMarkdown(text)}</div>
 
 <style>
   .md-content :global(p) { margin: 0.25em 0; }
@@ -78,4 +88,50 @@ let { text, variant = "bubble" }: { text: string; variant?: "bubble" | "viewer" 
     border: 1px solid var(--border); padding: 0.3em 0.55em; text-align: start;
   }
   .md-content :global(th) { background: rgba(0,0,0,0.18); font-weight: 700; }
+
+  /* ── slice/code-copy-button: כפתור-העתקה פר בלוק-קוד ── */
+  .md-content :global(pre) { position: relative; }
+
+  .md-content :global(.code-copy-btn) {
+    position: absolute;
+    top: 0.3rem;
+    inset-inline-end: 0.3rem;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--fg-dim);
+    cursor: pointer;
+    padding: 0;
+    /* desktop: מוסתר עד hover על ה-pre */
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+  }
+
+  /* desktop: hover על ה-pre מציג את הכפתור */
+  @media (hover: hover) {
+    .md-content :global(pre:hover .code-copy-btn) {
+      opacity: 0.7;
+    }
+    .md-content :global(.code-copy-btn:hover) {
+      opacity: 1;
+      color: var(--fg);
+    }
+  }
+
+  /* mobile: כפתור תמיד גלוי קצת */
+  @media (hover: none) {
+    .md-content :global(.code-copy-btn) {
+      opacity: 0.7;
+    }
+  }
+
+  /* מצב "הועתק" */
+  .md-content :global(.code-copy-btn[data-copied]) {
+    color: var(--accent);
+    opacity: 1;
+  }
 </style>
