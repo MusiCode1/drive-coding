@@ -1,6 +1,6 @@
 # Slice CUT-3b-iii-2 — live routing: claude → connectInProcess (ext חי) — בריף
 
-> **תאריך**: 2026-06-28 · **סטטוס**: בביצוע — calev-heavy pending · **branch**: slice/cutover-migration
+> **תאריך**: 2026-06-28 · **סטטוס**: הושלם · **calev-heavy verdict: GO 7/7** · **branch**: slice/cutover-migration
 > **Complexity**: 8/10 (verifier: **calev-heavy** — behavioral, נתיב חי) + phase-gate · **depends_on**: [CUT-3b-iii-1] · **Base**: HEAD אחרי iii-1
 > **batch-mode. לא ממזגים.**
 

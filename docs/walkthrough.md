@@ -11,7 +11,14 @@
 - `packages/backend/src/delivery/ws-agent.ts` — _drive/capabilities notification
 - `packages/provider/src/connection/connect-in-process.ts` — TS fix (NewSessionRequest cast)
 
-**calev-heavy: pending** (behavioral verification — claude in-process + ext חי)
+**calev-heavy verdict: GO — 7/7 DoD, 0 רגרסיות, 1 finding (minor/in-scope)**
+- DoD#2: claude in-process ענה prompt חי (initialize→session/new→prompt, ללא spawn).
+- DoD#3: opencode+gemini קיבלו pid אמיתי, claude pid=null — ניתוב חד.
+- DoD#4: `_drive/setThinkingTokens` על claude in-process החזיר {ok:true} (לא -32601).
+- DoD#5: getRuntimeInfo מחזיר {pid:null, lastMessageAt:...} — תיקון short-circuit עובד.
+- DoD#6: modelOverride="claude-sonnet-4-5" עבר ל-session/new.
+- Finding יחיד (🟢 minor, in-scope): `_drive/capabilities` reports `mcp:false` תמיד — `mapClaudeCapabilities(null)` לא מצותת לinit response; מתועד בקוד כ-future improvement.
+- דוח: docs/CUT-3b-iii-2-calev.md
 
 ## 2026-06-28 — CUT-3b-iii-2 — live routing: claude → connectInProcess (Commit 0)
 
