@@ -3,8 +3,21 @@
  *
  * מייצא:
  *  - normalizeInvisibles(text) — מנרמל תווי bidi-control + zero-width + soft-hyphen בכל המיקומים
- *  - parseToHtml(text) — מנרמל invisibles, מריץ marked.parse עם 4 extensions, מחזיר { html, katexFragments }
+ *  - parseToHtml(text) — מנרמל invisibles, מריץ marked.parse עם 4 extensions + renderer.code,
+ *    מחזיר { html, katexFragments, codeFragments }
  *  - BLOCK_SENTINEL, INLINE_SENTINEL — sentinels משותפים (מיובאים ע"י markdown.ts)
+ *
+ * ── code fragment storage ─────────────────────────────────────────────────────
+ * Code fragments משתמשים ב-BLOCK_SENTINEL (כמו KaTeX blocks) — U+E000 שורד DOMPurify.
+ * הם נשמרים ב-currentMap **אחרי** ה-KaTeX fragments:
+ *   currentMap[0..katexCount-1] = KaTeX fragments
+ *   currentMap[katexCount..] = code fragments
+ * parseToHtml מחזיר katexFragments ו-codeFragments כ-snapshots נפרדים.
+ * renderMarkdown (markdown.ts) מחיל KATEX_ALLOW על katexFragments ו-CODE_ALLOW על codeFragments.
+ *
+ * ── למה לא CODE_SENTINEL נפרד ──────────────────────────────────────────────
+ * U+E002 נמחק ע"י DOMPurify (אמות אמפירית בסביבת jsdom). BLOCK_SENTINEL (U+E000) שורד.
+ * לכן code fragments מאוחסנים ב-currentMap עם BLOCK_SENTINEL ו-index גלובלי.
  *
  * ⚠️ @internal — parseToHtml לא מסנן (DOMPurify). אסור לחשוף HTML שמוחזר מכאן ישירות ל-{@html}.
  * ה-sanitize מבוצע ב-markdown.ts על ידי renderMarkdown.
@@ -12,18 +25,27 @@
 
 import katex from "katex"
 import { marked, type Tokens } from "marked"
+import { highlightCode } from "./code-highlight"
 
 // ─── Sentinel (Private-Use Area) ─────────────────────────────────────────────
-// U+E000 = block math placeholder prefix, U+E001 = inline math placeholder prefix.
-// שורדים marked.parse ו-DOMPurify.sanitize כטקסט. Collision-resistant ולא מתפרשים כ-markdown.
+// U+E000 = block placeholder (KaTeX block + code blocks). שורד DOMPurify.
+// U+E001 = inline placeholder (KaTeX inline). שורד DOMPurify.
+// ⚠️ U+E002 נמחק ע"י DOMPurify בסביבת jsdom — לא בשימוש.
 // מוגדר כאן (ב-parse layer) ומיובא ע"י markdown.ts — הסכם משותף שלא מחייב circular import.
 export const BLOCK_SENTINEL = ""
 export const INLINE_SENTINEL = ""
 
-// ─── Module-level KaTeX map ───────────────────────────────────────────────────
+// ─── Module-level maps ───────────────────────────────────────────────────────
+// currentMap — storage של כל ה-fragments (KaTeX + code) ברמת מודול.
 // נרשם ברמת מודול, מתאפס בכל קריאה ל-parseToHtml.
 // אסור להזיז את marked.use לתוך parseToHtml (יירשום extension מצטבר per-call).
 let currentMap: string[] = []
+// מספר KaTeX fragments שנשמרו עד כה — קובע את ה-offset לcode fragments.
+let katexCount = 0
+
+// ─── allowlist לשמות שפות ב-class (אבטחה: injection ל-class="language-X") ───
+// רק תווים בטוחים: אותיות, מספרים, מקף, פלוס, hash
+const SAFE_LANG_RE = /^[a-z0-9+#-]+$/i
 
 function renderKatex(tex: string, displayMode: boolean): string {
   return katex.renderToString(tex, {
@@ -39,19 +61,50 @@ function renderKatex(tex: string, displayMode: boolean): string {
 function storePlaceholder(html: string): string {
   const idx = currentMap.length
   currentMap.push(html)
+  katexCount = currentMap.length // KaTeX index הגבוה ביותר + 1
   return `${BLOCK_SENTINEL}${idx}${BLOCK_SENTINEL}`
 }
 
 function storeInlinePlaceholder(html: string): string {
   const idx = currentMap.length
   currentMap.push(html)
+  katexCount = currentMap.length // עדכן offset
   return `${INLINE_SENTINEL}${idx}${INLINE_SENTINEL}`
+}
+
+/**
+ * מאחסן code block ב-currentMap אחרי ה-KaTeX fragments.
+ * משתמש ב-BLOCK_SENTINEL (שורד DOMPurify), לא ב-sentinel נפרד.
+ */
+function storeCodePlaceholder(html: string): string {
+  const idx = currentMap.length
+  currentMap.push(html)
+  return `${BLOCK_SENTINEL}${idx}${BLOCK_SENTINEL}`
 }
 
 // ─── marked extension (נרשם פעם אחת ברמת מודול) ──────────────────────────────
 // ⚠️ block לפני inline — $$...$$ ו-\[..\] חייבים להיות ראשונים ברשימה,
 // אחרת $$ עלול להיתפס כ-2× $..$ (finding #3, אמות ע"י אביגיל).
 marked.use({
+  renderer: {
+    // ── Code block renderer — pass-שלישי-מבודד ────────────────────────────
+    // כל הבלוק (pre+code+spans) נשמר ב-currentMap (אחרי KaTeX) ועובר CODE_ALLOW נפרד.
+    // הסיבה: MARKDOWN_ALLOW לא כולל class → pass-2 היה מוחק class="hljs language-*".
+    // ⚠️ token.lang חייב escape/allowlist לפני שילובו ב-class (injection vector).
+    code(token: Tokens.Code): string {
+      const code = token.text
+      const rawLang = token.lang ?? ""
+      // אבטחה: רק תווים בטוחים ב-lang class
+      const safeLang = SAFE_LANG_RE.test(rawLang) ? rawLang.toLowerCase() : ""
+      const langClass = safeLang ? ` language-${safeLang}` : ""
+
+      const highlighted = highlightCode(code, safeLang || undefined)
+      const fullBlock = `<pre><code class="hljs${langClass}">${highlighted}</code></pre>`
+
+      // ה-sentinel עצמאי (block-level) — pre+code+spans כולם בתוך ה-fragment
+      return storeCodePlaceholder(fullBlock)
+    },
+  },
   extensions: [
     // ── Block: $$...$$ ────────────────────────────────────────────────────
     {
@@ -179,35 +232,40 @@ export function normalizeInvisibles(text: string): string {
   // 3. math spans: strip — block+paren only.
   // NOT inline $..$ (finding #2): "$5 ... $10" (מחיר) ייתפס כ-span ויאבד invis = content-mutation.
   // invis בתוך $x$ inline math (נדיר) → נשאר → רעש unknownSymbol קל ב-KaTeX, לא שבירה.
-  t = t.replace(
-    /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)/g,
-    (m) => m.replace(reInvis, ""),
+  t = t.replace(/\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)/g, (m) =>
+    m.replace(reInvis, ""),
   )
   // 4a. line-start before math-marker: delete
   t = t.replace(new RegExp(`^[${INVIS}]+(?=\\$\\$|\\\\\\[)`, "gmu"), "")
   // 4b. line-start before block-marker: relocate after marker
-  t = t.replace(
-    new RegExp(`^([${INVIS}]+)(#{1,6} |>+ |[-*+] |\\d+[.)] |\\| ?)`, "gmu"),
-    "$2$1",
-  )
+  t = t.replace(new RegExp(`^([${INVIS}]+)(#{1,6} |>+ |[-*+] |\\d+[.)] |\\| ?)`, "gmu"), "$2$1")
   return t
 }
 
 /**
  * @internal — טהור (ללא DOMPurify). בר-בדיקה ב-environment:node.
  *
- * מאפס currentMap, מנרמל bidi, מריץ marked.parse עם 4 extensions,
- * ומחזיר snapshot של currentMap כ-katexFragments.
+ * מאפס currentMap + katexCount, מנרמל bidi, מריץ marked.parse עם 4 extensions + renderer.code,
+ * ומחזיר snapshots נפרדים: katexFragments (indexes 0..n-1) ו-codeFragments (indexes n..).
  *
  * ⚠️ אסור להשתמש ב-html שמוחזר ישירות ב-{@html} — חייב לעבור sanitize ב-renderMarkdown.
  */
-export function parseToHtml(text: string): { html: string; katexFragments: string[] } {
+export function parseToHtml(text: string): {
+  html: string
+  katexFragments: string[]
+  codeFragments: string[]
+} {
   currentMap = []
+  katexCount = 0
   const normalized = normalizeInvisibles(text)
   const html = marked.parse(normalized, {
     async: false,
     breaks: true,
     gfm: true,
   }) as string
-  return { html, katexFragments: [...currentMap] }
+  // katexFragments = currentMap[0..katexCount-1]
+  // codeFragments = currentMap[katexCount..]
+  const katexFragments = currentMap.slice(0, katexCount)
+  const codeFragments = currentMap.slice(katexCount)
+  return { html, katexFragments, codeFragments }
 }

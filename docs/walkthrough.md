@@ -6853,6 +6853,43 @@ Sanity: בדיקת syntax של ה-JS המוטמע עברה (`new Function(combin
 
 אין. הוספת `resolveProviderAuth` כ-helper טהור + call-site יחיד ב-http-proxy. לא שינוי ארכיטקטוני.
 
+## 2026-06-28 — slice-code-syntax-highlight — Commit 1 (TDD)
+
+### מה בוצע?
+
+**Commit 1 (TDD):** pipeline + pass-שלישי-מבודד בקבצים `markdown-parse.ts`, `markdown.ts`, `markdown.test.ts`.
+
+**markdown-parse.ts:**
+- הוסף `renderer.code(token: Tokens.Code)` בתוך `marked.use()` — מפעיל `highlightCode`, בונה `<pre><code class="hljs language-X">...</code></pre>`, שומר ב-`currentMap[katexCount++]` דרך `storeCodePlaceholder`, מחזיר `BLOCK_SENTINEL`.
+- `storeCodePlaceholder(html)` — כותב לאינדקס `katexCount` ב-`currentMap`, ואז מעלה את `katexCount` (code fragments נשמרים אחרי ה-KaTeX fragments).
+- `SAFE_LANG_RE = /^[a-z0-9+#-]+$/i` — sanitization בטוחה של שם-שפה (מניעת class injection).
+- `parseToHtml` מחזיר כעת `{ html, katexFragments, codeFragments }` (חתוך לפי `katexCount`).
+- ⚠️ PUA U+E002 נמחק ע"י DOMPurify (אומת אמפירית) — לכן code fragments משתמשים ב-BLOCK_SENTINEL (U+E000, שורד DOMPurify).
+
+**markdown.ts:**
+- `CODE_TAGS = ["pre","code","span"]`, `CODE_ATTR = ["class"]` (ללא style).
+- Pass 3b: כל code fragment עובר `DOMPurify.sanitize(codeHtml, { ALLOWED_TAGS:CODE_TAGS, ALLOWED_ATTR:CODE_ATTR })`.
+- `allClean = [...cleanKatex, ...cleanCode]` → `replacePlaceholders(cleanMarkdown, allClean)` — החלפה אחת לכל sentinels (KaTeX + code).
+- SSR path: `replacePlaceholders(markdownHtml, [...katexFragments, ...codeFragments])`.
+
+**markdown.test.ts:**
+- 9 טסטים TDD חדשים: syntax highlighting, security (injected style stripped, script escaped), KaTeX regression, tables regression, no-lang, unknown-lang, mixed code+math.
+- תיקון 2 טסטים קיימים: `<code>` → `<code` (כי עכשיו יש `class="hljs"` תמיד).
+
+### בדיקות
+
+- TDD (Red-Green): 9 טסטים חדשים ירוקים; 356/356 כולל regression.
+- Typecheck: ירוק (0 errors).
+- Lint (biome): ירוק.
+- דיבוג אמפירי: U+E000/E001 שורדים DOMPurify; U+E002–E004 נמחקים (sentinel-debug.test.ts — נמחק לפני commit).
+
+### חריגות
+
+- ניסיון ראשון להשתמש ב-U+E002 כ-CODE_SENTINEL — נכשל (DOMPurify מוחק אותו). פתרון: code fragments ב-currentMap לאחר KaTeX, עם offset-based indexing.
+- PUA chars נכתבים דרך Node.js (Write tool לא שומר תווים בלתי-נראים).
+
+---
+
 ## 2026-06-28 — slice-code-syntax-highlight — Commit 0 (TDD)
 
 ### מה בוצע?

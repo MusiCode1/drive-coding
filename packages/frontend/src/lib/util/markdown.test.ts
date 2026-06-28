@@ -28,7 +28,8 @@ describe("renderMarkdown", () => {
   it("renders fenced code block", () => {
     const out = renderMarkdown("```\nhello world\n```")
     expect(out).toContain("<pre>")
-    expect(out).toContain("<code>")
+    // code element עם class hljs (מ-code-highlight) — לא <code> plain
+    expect(out).toContain("<code")
     expect(out).toContain("hello world")
   })
 
@@ -166,5 +167,60 @@ describe("renderMarkdown", () => {
     // שתי קריאות עצמאיות — שתיהן מרנדרות
     expect(out1).toContain("katex")
     expect(out2).toContain("katex")
+  })
+
+  // ─── Code syntax highlighting (slice-code-syntax-highlight) ───────────────
+
+  it("renders code block with syntax highlighting (ts)", () => {
+    const out = renderMarkdown("```ts\nconst x = 1\n```")
+    // בלוק עם שפה מוכרת → spans עם class hljs-keyword
+    expect(out).toContain('<span class="hljs-keyword">const</span>')
+    expect(out).toContain('class="hljs')
+  })
+
+  it("security: code block with injected style= is stripped as attribute", () => {
+    // בלוק-קוד שמכיל span style זדוני — CODE_ALLOW מסיר style כ-attribute HTML
+    // hljs מעבד את ה-text ומחלץ < > ל-&lt;&gt;, אז ה-style מופיע כ-escaped text בלבד (לא CSS)
+    const out = renderMarkdown('```ts\n</code><span style="position:fixed">x\n```')
+    // ה-style גולמי של מודל (כ-HTML attribute) לא אמור להופיע — רק כ-escaped text
+    // בדיקה: אין <span style= כ-HTML attribute (לא escaped)
+    expect(out).not.toContain("<span style=")
+    // style כ-escaped text (&lt;span style=...) מותר — לא מבצע CSS
+  })
+
+  it("security: code block with <script> → no <script in output", () => {
+    // <script> בתוך בלוק-קוד → escaped (hljs מחלץ ל-&lt; + spans)
+    const out = renderMarkdown("```html\n<script>alert(1)</script>\n```")
+    expect(out).not.toContain("<script>")
+  })
+
+  it("KaTeX still works after code highlight addition (no regression)", () => {
+    const out = renderMarkdown("$x^2$")
+    expect(out).toContain("katex")
+  })
+
+  it("tables still work after code highlight addition (no regression)", () => {
+    const out = renderMarkdown("| a | b |\n|---|---|\n| 1 | 2 |")
+    expect(out).toContain("<table>")
+  })
+
+  it("code block without lang → plain pre>code, no spans", () => {
+    const out = renderMarkdown("```\nplain text\n```")
+    expect(out).toContain("<pre>")
+    expect(out).toContain("<code") // code element עם class="hljs" (ללא language)
+    expect(out).not.toContain('<span class="hljs') // אין spans (אין שפה → escapeHtml בלבד)
+    expect(out).toContain("plain text")
+  })
+
+  it("code block with unknown lang → plain (no throw)", () => {
+    const out = renderMarkdown("```foobar\nsome code\n```")
+    expect(out).toContain("<pre>")
+    expect(out).not.toContain('<span class="hljs')
+  })
+
+  it("mixed code + math in same message → both render correctly", () => {
+    const out = renderMarkdown("```ts\nconst x = 1\n```\n\n$x^2$")
+    expect(out).toContain('<span class="hljs-keyword">const</span>')
+    expect(out).toContain("katex")
   })
 })
