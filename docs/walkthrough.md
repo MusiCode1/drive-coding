@@ -26,6 +26,50 @@
 
 ---
 
+## 2026-06-28 — connect-recent-projects — 5 commits: הסרת SessionPicker + RecentProjectsPanel
+
+### מה בוצע?
+
+slice: connect-recent-projects (5 commits)
+
+**Commit 1** (adapter): `packages/frontend/src/lib/adapters/recent-projects.ts`
+- RecentProject type + listRecentProjects(signal?) → GET /api/projects → RecentProject[]
+- normalizeRecentProject — defensive cast מ-unknown + fallback kind="claude"
+
+**Commit 2** (VM + wiring): `recent-projects.svelte.ts` + `context.ts` + `+layout.svelte`
+- class RecentProjects: projects/$state, loading/$state, error/$state, refresh()
+- [getRecentProjects, setRecentProjects] = createContext (additive — parallel-safe)
+- new RecentProjects() + setRecentProjects(recentProjects) ב-layout
+
+**Commit 3** (component + i18n): `RecentProjectsPanel.svelte` + 3 i18n files
+- panel עם כותרת, כפתור refresh, empty-state, רשימת שורות לחיצות
+- כל שורה: cli-badge, basename (bold), last-seen (formatRelativeTime), cwd-full (RTL ellipsis bdi)
+- i18n keys: connect.recent.{title,empty,refresh} ב-keys.ts + he.ts + en.ts
+
+**Commit 4** (+page.svelte refactor):
+- הוסר: import SessionPicker+listSessionsForCwd+SessionInfo, state sessions/sessionsLoading/sessionsError/selectedSessionId, MOCK_FIXTURES, loadSessions, בלוק sessions-autoload ב-onMount, ענף selectedSessionId ב-onSubmit
+- הוסף: import RecentProject + RecentProjectsPanel, handleRecentSelect, <RecentProjectsPanel onSelect={handleRecentSelect} />
+- נשמר: <FolderPickerDialog startPath={cwd} />, handleReconnect, <ActiveProcessesPanel>
+
+**Commit 5** (ניקוי):
+- sessions.ts: הוסרה listSessionsForCwd + imports יתומים; נשמרו SessionInfo + normalizeSessionInfo
+- SessionPicker.svelte: נמחק
+- agent-session.svelte.ts:922: הערה עודכנה (דף החיבור כבר לא משתמש ב-spawn)
+
+### בדיקות
+
+- typecheck: 0 שגיאות (5025 קבצים) — כל 5 commits
+- vitest: 339/339 — commits 4+5
+- lint:i18n: ירוק
+- vite build: passed (built in 44.60s)
+- grep שאריות-קוד (מסונן הערות): 0 matches
+
+### סטיות
+
+- i18n keys נוספו ב-commit 3 (לא commit 5) — נדרש typecheck לפני component. ב-brief הם מיועדים ל-commit 5, אבל חלוקה לוגית מחייבת אחרת.
+
+---
+
 ## 2026-06-28 — folder-picker-fixes — Commit 2 (FE): בורר נפתח בנתיב שהוזן ידנית (manual)
 
 ### מה בוצע?

@@ -28,6 +28,7 @@ import type { ModalsVM } from "./view-models/modals.svelte"
 import type { ActiveAgents } from "./view-models/active-agents.svelte"
 import type { BubblePlayer } from "./view-models/bubble-player.svelte"
 import type { ContentViewerVM } from "./view-models/content-viewer.svelte"
+import type { RecentProjects } from "./view-models/recent-projects.svelte"
 
 // ─── i18n ──────────────────────────────────────────
 export const [getI18n, setI18n] = createContext<I18nVM>()
@@ -78,3 +79,6 @@ export const [getChatScroll, setChatScroll] = createContext<ChatScrollBridge>()
 
 // ─── content-viewer ─── (slice content-viewer)
 export const [getContentViewer, setContentViewer] = createContext<ContentViewerVM>()
+
+// ─── recent-projects ─── (slice connect-recent-projects)
+export const [getRecentProjects, setRecentProjects] = createContext<RecentProjects>()
