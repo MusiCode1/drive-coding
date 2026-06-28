@@ -1,3 +1,45 @@
+## 2026-06-28 — slice/markdown-content-unify — 4 commits (Commit 0–3)
+
+### מה בוצע?
+
+**Commit 0**: יצירת `MarkdownContent.svelte` — קומפוננטת-מרקדאון משותפת
+- קובץ חדש: `packages/frontend/src/lib/components/chat/bubbles/MarkdownContent.svelte`
+- API: `text: string` + `variant?: "bubble" | "viewer"` — מעביר ל-`renderMarkdown` בלבד
+- CSS מאוחד מ-MessageBubble+UserBubble: p/strong/em/code/pre/ul/ol/li/h1-h6/blockquote/a/hr/table
+- req #1: `pre { white-space:pre; overflow-x:auto }` (תיקון גלילה אופקית ב-code block)
+- req #5: `ul { list-style:disc outside }`, `ol { list-style:decimal outside }` (שחזור מ-Tailwind preflight)
+- variant="viewer": h1=1.4em, h2=1.2em, h3=1.1em (ל-ContentViewerDialog fullscreen)
+
+**Commit 1**: חיווט MessageBubble + UserBubble
+- `{@html renderMarkdown(...)}` → `<MarkdownContent text={joinSegmentText(bubble.segments)} />`
+- הוסרו import renderMarkdown + כל CSS markdown משוכפל (90 שורות net-)
+- נשמרו: span.hidden (ריאקטיביות), bubble styling, play/copy buttons
+
+**Commit 2**: חיווט ThoughtBubble — מרקדאון מלא (req #4)
+- running-text: `div.whitespace-pre-wrap` → `<MarkdownContent text={runningText} />`
+- per-segment: `div.whitespace-pre-wrap` → `<MarkdownContent text={seg.text} />`
+- originalText (raw source) נשאר טקסט גולמי dir=ltr
+- span.hidden (ריאקטיביות) נשאר מחוץ ל-MarkdownContent
+
+**Commit 3**: חיווט ContentViewerDialog — variant="viewer" (finding אביגיל #1)
+- `<div class="markdown-body">{@html renderMarkdown(...)}` → `<MarkdownContent text={...} variant="viewer" />`
+- הוסר כל CSS .markdown-body (50 שורות) + import renderMarkdown
+- נשמרו: viewer-image CSS, מסלול image, invariant אבטחה
+
+### בדיקות
+
+- typecheck: 0 errors בכל 4 commits.
+- tests: 339/339 passed בכל 4 commits.
+- lint:i18n: ✓ (אין מחרוזות חדשות — CSS+composition בלבד).
+- DoD: grep ":global(p)" → 0 בכל 4 המשטחים; grep MarkdownContent → 4/4.
+
+### סטיות
+
+ללא סטיות מה-brief. approach: manual (browser smoke לאמת חי), כפי שנקבע ב-brief §4.
+Browser smoke — יש לבצע על FE שרץ עם BE: רשימות, code block, blockquote, expand→fullscreen.
+
+---
+
 ## 2026-06-28 — active-processes-icon-actions — Commit 5: בועת-אישור "בטוח?" על כפתור ה-פח
 
 ### מה בוצע?
