@@ -1,5 +1,79 @@
 # Decisions — voice-acp
 
+## 2026-06-28 — code-syntax-highlight (slice D): highlight.js ב-pass-שלישי-מבודד (לא Shiki)
+
+### רציונל
+המשתמשת ביקשה צביעת-קוד צבעונית (req #7). האילוץ שמכריע הכל: מודל-האבטחה הוא
+secure-by-construction — `MARKDOWN_ALLOW` בלי `span`/`style`/`class` (הגנה מ-overlay-phishing
+דרך prompt-injection). כל highlighter מוסיף markup בתוך הקוד → מתנגש. הפתרון: **pass-שלישי-מבודד**
+— בדיוק התקדים שכבר עובד ל-KaTeX. בלוק-הקוד כולו מרונדר ל-fragment, מאוחסן עם sentinel נפרד
+(`U+E002`), ומסונן ב-allowlist צר משלו (`CODE_ALLOW = {pre,code,span} + {class}`, **בלי style**).
+`MARKDOWN_ALLOW` נשאר נקי לחלוטין.
+
+### החלטה: highlight.js, לא Shiki
+- **highlight.js** — פלט class-בלבד (`<span class="hljs-*">`), **סינכרוני**, ללא WASM, רץ ב-node
+  (SSR-safe כמו `katex.renderToString`). מתלבש 1:1 על המסלול-המבודד. `core` + רישום ~15 שפות ידני
+  (tree-shaking) → bundle נשלט. **נבחר.**
+- **Shiki נדחה** — פלט inline-`style` (הוקטור שאנחנו מוציאים), async, ו-WASM/grammars כבדים.
+  איכות-VSCode לא שווה את עלות-האבטחה/bundle/async לאפליקציית-צ'אט voice-first.
+- **Prism נדחה** — class-based כמו hljs, אך hljs נקי יותר ב-node ובזיהוי-שפה.
+- theme = `.hljs-*` → CSS vars (`--hl-*`) פר-פלטה, מתחלף עם ערכת-העיצוב.
+
+### גוטשה שנתפסה בתכנון (לפני אביגיל)
+`MARKDOWN_ATTR` לא כולל `class`. אם רק ה-spans נכנסים ל-fragment וה-עוטף `<pre><code class="hljs">`
+נשאר בנתיב-המרקדאון — pass-2 ימחק את ה-class מהעוטף → theme שבור. תוקן: **הבלוק כולו** (pre+code+spans)
+נכנס ל-fragment המבודד. זה גם מדויק יותר לתקדים KaTeX (שמאחסן בלוק שלם).
+
+### ממצאי אביגיל (סבב 1 → מאושר-מותנה)
+- **כל 6 הטענות הטכניות + 5 מוקדי-הסיכון אומתו נכונים** מול הקוד: two-pass, currentMap/sentinels,
+  marked v18 `renderer.code({lang,text})`, ש-`marked.use({renderer})` **לא** שובר את ה-extensions של
+  ה-math (שדות נפרדים ב-MarkedExtension), ש-`class` באמת לא ב-MARKDOWN_ATTR, ש-`U+E002` לא מתנגש,
+  ש-`ignoreIllegals` קיים ב-hljs, ו-SSR/tree-shaking תקינים. **אפס findings טכניים.**
+- 3 ה-findings כולם שורש אחד: **base/dependency על A** (branch של A לא קיים עדיין; Commit 2 מכוון
+  ל-MarkdownContent שנוצר ב-A). הוכרע: **base=dev, gated על merge של A** (D לא מדאספטצ'ת לפני A).
+
+### שינויי-כיוון
+ה-base הוכרע מ"שרשור על branch של A" ל-**dev-לאחר-מיזוג-A** — מבטל מורכבות chain-merge ומבטיח
+שיעדי Commit 2 (MarkdownContent) קיימים. D נשאר gated עד ש-A על dev.
+
+## 2026-06-28 — markdown-content-unify (slice A): קומפוננטת-מרקדאון יחידה במקום 4 משטחים משוכפלים
+
+### רציונל
+המשתמשת ביקשה 7 שיפורי-מרקדאון בצד-לקוח (קוד no-wrap+copy+syntax-highlight, מרקדאון בהודעות-משתמש
+ובמחשבות, באג רשימות-ממוספרות, `dir=auto` פר-פסקה). החקירה גילתה ש-4 משטחים מרנדרים מרקדאון
+בנפרד: `MessageBubble`+`UserBubble` (משכפלים ~40 שורות CSS זהות), `ThoughtBubble` (טקסט גולמי,
+**בלי** מרקדאון בכלל), ו-`ContentViewerDialog` (עותק רביעי של אותו CSS). במקום לתקן 4 פעמים,
+מחלצים **`MarkdownContent.svelte`** יחיד שכולם מאצילים אליו → כל 7 הדרישות נוחתות במקום אחד עקבי.
+זו slice A — הבסיס; B (dir פר-פסקה), C (כפתור copy), D (syntax-highlight) נבנות מעליה.
+
+**שני באגים ששורשם אומת בחקירה:**
+- **רשימות (#5)**: marked מפיק `<ol><li>` תקין; השובר הוא Tailwind v4 preflight (`@layer base`)
+  שמאפס `list-style:none`, וה-CSS הקיים שחזר `padding` אך לא `list-style-type`. התיקון מנצח
+  לא ב-specificity אלא ב-**cascade-layer order** (Svelte `:global` unlayered גובר על `@layer`).
+- **קוד (#1)**: `pre` היה `white-space:pre-wrap` → שבירת-שורות; שונה ל-`pre`+`overflow-x:auto`.
+
+### החלטה ארכיטקטונית
+A הוא **CSS+composition בלבד** — לא נוגעים ב-`markdown.ts`/`markdown-parse.ts` (ה-pipeline).
+שינויי-pipeline (dir פר-פסקה, syntax-highlight) שמורים ל-B/D. זה שומר על blast-radius קטן
+ועל מודל-האבטחה (two-pass DOMPurify) ללא שינוי. `variant="bubble"|"viewer"` ב-MarkdownContent
+משמר את הכותרות-הגדולות של ה-fullscreen.
+
+### ממצאי אביגיל (2 סבבים → READY)
+- **r1 USABLE-AFTER-FIX (3)**: (א) `ContentViewerDialog` הוא משטח-מרקדאון **רביעי** עם אותם 2
+  באגים — וכפתור expand ב-MessageBubble פותח אותו → הבאג שורד קליק; (ב) רציונל ה-list-fix ייחס
+  ניצחון ל-specificity, אך המנגנון האמיתי הוא cascade-layer order; (ג) חסר §0 Pre-flight.
+- **r2 READY (1×🟢)**: viewer h4-h6 איבדו `1em` מפורש אך יורשים אותו — שקול. נוסף note.
+
+### שינויי-כיוון לפי אביגיל
+ה-scope הורחב ממ-3 משטחים ל-**4** (נוסף `ContentViewerDialog`, Commit 3) — בלי finding #1 היו
+שני באגים שורדים את כפתור ה-expand. דוגמה לערך ה-plan-gate: התרחבות-scope מדויקת לפני ביצוע.
+
+### רעיונות שנדחו
+- **Shiki ל-syntax-highlight (#7)**: פולט inline-`style` שמתנגש ב-allowlist secure-by-construction
+  (אין span/style ב-MARKDOWN_ALLOW). הכיוון המומלץ ל-slice D: highlight.js (class-based) ב-pass
+  שלישי מבודד — אותו דפוס כמו KaTeX. נשמר ל-decision של D.
+- **תיקון-במקום ב-4 בועות בלי refactor**: היה מנציח את השכפול ומוסיף נקודת-באג חמישית בעתיד.
+
 ## 2026-06-27 — V4a-unify / tts-playback-unification: שתי שכבות יחידות במקום שלושה מנגנונים
 
 ### רציונל
