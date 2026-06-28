@@ -1,3 +1,34 @@
+## 2026-06-28 — slice-A5-watchdog — Commits 0+1 (watchdog ל-turnState)
+
+### מה בוצע?
+
+**Commit 0 (40ab622)** — `packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+- נוספו `#watchdogTimer`, `#WATCHDOG_MS=45_000`, `turnInterrupted=$state(false)`.
+- `#kickWatchdog()`: מאפס timer; נקרא בראש `#onSessionUpdate` (לפני כל returns מוקדמים, כולל tool_call/mode/config) ובתחילת `sendPrompt`. אם פג ב-non-idle: `turnInterrupted=true` + `#setTurnState("idle")`.
+- `#clearWatchdog()`: נקרא ב-RESP תקין (sendPrompt resolve/catch), `cancelTurn`, `#cleanup` (destroy).
+- `cancelTurn` מנקה גם `turnInterrupted=false` (cancel מכוון לא "נקטע").
+- `sendPrompt` מאפס `turnInterrupted=false` בתחילת תור חדש.
+
+**Commit 1 (57d7425)** — `agent-session.watchdog.test.svelte.ts` (חדש, 6 טסטי integration):
+- שתיקה >45s → idle כפוי + turnInterrupted=true.
+- activity (chunk/tool_call) מאפסת watchdog — לא נורה.
+- RESP תקין → watchdog מנוקה, turnInterrupted=false.
+- cancelTurn → watchdog מנוקה, turnInterrupted=false.
+- תור חדש מאפס turnInterrupted.
+
+### תוצאות
+- typecheck: ירוק (0 שגיאות).
+- 377/377 טסטים ירוקים (כולל 6 חדשים).
+- i18n lint: ירוק.
+
+### חריגות
+- לא נתפסו חריגות — הכל לפי ה-brief.
+
+### הצעד הבא
+calev light (מרדכי מריץ).
+
+---
+
 ## 2026-06-28 — תכנון: בקרת השמעה+ריצה + פלייליסט (briefs בלבד — טרם בוצע קוד)
 
 > סשן **תכנון** (מרדכי), לא ביצוע. אין שינוי קוד. תיעוד מלא: `decisions/voice-acp.md` (2026-06-28)
