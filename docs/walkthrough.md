@@ -1,3 +1,25 @@
+## 2026-06-28 — folder-picker-fixes — Commit 2 (FE): בורר נפתח בנתיב שהוזן ידנית (manual)
+
+### מה בוצע?
+
+- הוספת `let { startPath = "" }: { startPath?: string } = $props()` ל-`FolderPickerDialog.svelte`.
+- עדכון `openAtStart`: עדיפות-ראשונה = `startPath.trim()` → `settings.lastCwd` → `homeDir`.
+- `startPath` נקרא בתוך `untrack(...)` → לא הופך ל-dependency של ה-`$effect` (effect עוקב רק אחרי `modals.folderOpen`).
+- `+page.svelte:237`: `<FolderPickerDialog startPath={cwd} />` — מעביר את הקלט החי.
+- AppShell.svelte:347 נשאר ללא שינוי (`<FolderPickerDialog />` עם default `""`).
+
+### בדיקות
+
+- Manual (approach=manual): בדפדפן — הבורר נפתח בנתיב שהוזן בשדה cwd.
+- `pnpm -r typecheck` — 0 errors.
+- `lint:i18n` — ✓.
+
+### סטיות
+
+אין. prop אופציונלי עם default `""` — mount של AppShell ממשיך לעבוד ללא שינוי.
+
+---
+
 ## 2026-06-28 — folder-picker-fixes — Commit 1 (BE): הסתרת כל dot-folders + NOISE_DIRS (TDD)
 
 ### מה בוצע?
