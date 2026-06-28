@@ -1,3 +1,12 @@
+## 2026-06-29 — FEAT-thinking-live — Phase 1: אימות חי (manual)
+
+**אימות wire מקצה-לקצה:**
+- `_drive/setThinkingTokens` נשלח על ה-wire ב-id=3 (low→4000), id=4 (off→null), id=5 (high→16000) — כולם קיבלו `result` (לא -32601)
+- capabilities: `thinkingTokens: true` מ-BE → פקד מוצג בsidebar ✅
+- off→null אומת (DoD#5) ✅
+- אפקט thinking: לא ניתן לאמת prompt עוקב בסביבת linux-gui — pre-existing bug `crypto.randomUUID` בChrome הישן; ext הצליח = הוכחת שרשרת מספקת (DoD#4 best-effort)
+- Evidence: /tmp/FEAT-thinking-live/phase-1-sidebar.png (פקד מוצג), phase-1-thinking-low.png (Low נבחר)
+
 ## 2026-06-29 — FEAT-thinking-live — Phase 0: UI control + vm.setThinkingTokens + i18n
 
 **Phase 0 — commit 0:**
