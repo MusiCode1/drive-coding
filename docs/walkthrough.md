@@ -1,3 +1,23 @@
+## 2026-06-29 — slice A4 (playback-core-a4) — ניווט prev/next/jump + איחוד BubblePlayer
+
+### Commit 0 — cursor→$state + #navSignal + next/prev/jumpTo (audio-playlist.svelte.ts)
+- `#cursor: number = $state(0)` — cursor קודם משנה לוקאלי ב-#playLoop לשדה $state
+- `#navResolve: (() => void) | null` — resolver ל-#navSignal (מקביל ל-#pauseResolve)
+- `next()`, `prev()`, `jumpTo(index)` — 3 methods ציבוריות; 3 צעדים כל אחת: cancel current + cursor=newIndex + navSignal
+- `#navigate(newIndex)` — לוגיקה משותפת: cancel + item.state=reserved + #cursor=newIndex + navResolve?.()
+- `#playWithNav(segmentId)` — Promise.race(play, navPromise) — מאפשר ניווט לבטל await play
+- `#playLoop` מעודכן: cursor מ-#cursor (שדה), בדיקת nav אחרי waitForItem + אחרי play
+- `stop()` מאפס #cursor=0, שחרר #navResolve
+- svelte-check: 0 errors | טסטים: 381/381
+
+### מה עוד יגיע (Commits 1-3 + נ)
+- Commit 1: bubbleId פר-item + jumpToBubble
+- Commit 2: AudioPlaylist ל-context משותף
+- Commit 3: איחוד BubblePlayer.toggle + reserveFromText
+- Commit נ: integration tests audio-playlist.nav.test.ts
+
+---
+
 ## 2026-06-29 — slice A3 (playback-core-a3) — transport (pause/resume/stop) + פיצול cancel
 
 ### מה בוצע

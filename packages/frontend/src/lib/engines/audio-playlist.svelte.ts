@@ -6,7 +6,7 @@
  *   markReady(segmentId)          ← Speaker.#fetchJob (אחרי prepareSegment)
  *   markError(segmentId)          ← Speaker.#fetchJob (catch)
  *
- * ה-#playLoop נע על cursor; ממתין על item עד ready/error/timeout → play(id)
+ * ה-#playLoop נע על cursor ($state); ממתין על item עד ready/error/timeout → play(id)
  * דרך AudioSink. cursor-based (לא takeNext) — מאפשר prev/next ב-A4.
  *
  * מה לא משתנה: AudioSink ממשק (play/prepareSegment/cancel/clear) נשאר זהה.
@@ -15,6 +15,11 @@
  * A3: הוסף transport (pause/resume/stop). ⚠️ state ("idle"|"playing") לא נוגעים —
  * Speaker.get state קורא #player.state==="playing" (speaker.svelte.ts:98).
  * transport הוא שדה נוסף ונפרד.
+ *
+ * A4: cursor קודם לשדה $state (היה local variable ב-#playLoop) + #navSignal/resolver
+ * לקטיעת ה-await play הנוכחי בעת ניווט.
+ * next()/prev()/jumpTo(index): 3 צעדים — cancel current + cursor=newIndex + navSignal.
+ * prev/jump תמיד דורשים re-fetch (cancel() מוחק מה-sink — §9 Q2 נעול).
  */
 
 import { compareOrderKey, type OrderKey } from "@drive-coding/core/voice/tts-queue"
@@ -59,6 +64,10 @@ export class AudioPlaylist {
   #itemResolvers: Map<string, () => void> = new Map()
   // A3: resolver לשחרור pause — נקרא ע"י resume()
   #pauseResolve: (() => void) | null = null
+  // A4: cursor כשדה $state — מאפשר next/prev/jumpTo לשנות אותו מחוץ ל-#playLoop.
+  // #navSignal/resolver — מעיר את ה-#playLoop מה-await play הנוכחי בעת ניווט.
+  #cursor: number = $state(0)
+  #navResolve: (() => void) | null = null
 
   constructor(
     audioStream: AudioSink,
@@ -144,6 +153,79 @@ export class AudioPlaylist {
     resolve?.()
   }
 
+  // ──────────────────────────────────────────────────────────────────────
+  // A4 — ניווט: next / prev / jumpTo
+  // ──────────────────────────────────────────────────────────────────────
+
+  /** A4: cursor (קריאה בלבד). #playLoop מסתנכרן עם שדה זה. */
+  get cursor(): number {
+    return this.#cursor
+  }
+
+  /**
+   * A4: דלג למשפט הבא. אם אין הבא — no-op.
+   * 3 צעדים: cancel current → cursor++ → navSignal (מעיר את ה-#playLoop).
+   * שומר transport: אם paused — לא מתחיל אוטומטית (pause נשאר).
+   */
+  next(): void {
+    if (!this.#playing) return
+    const nextIdx = this.#cursor + 1
+    if (nextIdx >= this.items.length) return
+    this.#navigate(nextIdx)
+  }
+
+  /**
+   * A4: חזור למשפט הקודם (≥ 0). re-fetch חובה (cancel מוחק מה-sink).
+   * 3 צעדים: cancel current → cursor-- → navSignal.
+   */
+  prev(): void {
+    if (!this.#playing) return
+    const prevIdx = this.#cursor - 1
+    if (prevIdx < 0) return
+    this.#navigate(prevIdx)
+  }
+
+  /**
+   * A4: קפוץ ל-index מסוים. תוספת-נטו (jumpToSegment נמחק ב-A2).
+   * 3 צעדים: cancel current → cursor=index → navSignal.
+   */
+  jumpTo(index: number): void {
+    if (!this.#playing) return
+    if (index < 0 || index >= this.items.length) return
+    this.#navigate(index)
+  }
+
+  /**
+   * A4: לוגיקת-ניווט משותפת ל-next/prev/jumpTo.
+   * (1) cancel ה-item הנוכחי (מוחק מה-sink; prev/jump תמיד re-fetch).
+   * (2) cursor = newIndex.
+   * (3) navSignal — מעיר את ה-#playLoop מה-await play.
+   * item שמדלגים עליו (הנוכחי) חוזר ל-"reserved" כדי שה-#playLoop יבצע re-fetch.
+   */
+  #navigate(newIndex: number): void {
+    const currentItem = this.items[this.#cursor]
+    if (currentItem !== undefined) {
+      const cancelId = currentItem.segmentId
+      try {
+        this.#audioStream.cancel(cancelId)
+      } catch {
+        // כבר בוטל
+      }
+      // item חוזר ל-reserved — #playLoop יבצע re-fetch (markReady/markError חדש נדרש)
+      if (currentItem.state === "playing" || currentItem.state === "ready") {
+        currentItem.state = "reserved"
+      }
+    }
+
+    // הגדר cursor חדש — #playLoop יקרא אותו אחרי שיתעורר
+    this.#cursor = newIndex
+
+    // פתור את ה-#navSignal כדי לשחרר את ה-await play ב-#playLoop
+    const resolve = this.#navResolve
+    this.#navResolve = null
+    resolve?.()
+  }
+
   /**
    * עצירה: מבטל את כל ה-items הממתינים, מנקה items + cursor.
    * A3: מוסיף transport="stopped".
@@ -155,6 +237,10 @@ export class AudioPlaylist {
     const pauseResolve = this.#pauseResolve
     this.#pauseResolve = null
     pauseResolve?.()
+    // A4: שחרר nav signal אם תקוע
+    const navResolve = this.#navResolve
+    this.#navResolve = null
+    navResolve?.()
     // בטל סגמנטים שכבר ב-AudioSink (playing/ready/reserved)
     for (const item of this.items) {
       if (item.state !== "done" && item.state !== "error" && item.state !== "skipped") {
@@ -175,6 +261,7 @@ export class AudioPlaylist {
     this.#stopped = false // אפס כדי לאפשר reserve() עתידי
     this.state = "idle"
     this.currentSegmentId = null
+    this.#cursor = 0 // A4: אפס cursor
     // transport נשאר "stopped" — reserve() יאפס ל-"playing" בתור הבא
   }
 
@@ -189,8 +276,10 @@ export class AudioPlaylist {
     this.#onPlaybackStart?.()
 
     try {
-      let cursor = 0
-      while (cursor < this.items.length) {
+      // A4: cursor הוא עכשיו שדה $state (#cursor) — לא local variable.
+      // אתחל ל-0 בהתחלת loop חדש (stop() מאפס, reserve() מחדש מתחיל מ-0).
+      this.#cursor = 0
+      while (this.#cursor < this.items.length) {
         // בדוק stop() שנקרא תוך כדי await
         if (this.#stopped) break
 
@@ -202,9 +291,9 @@ export class AudioPlaylist {
         // A3: אם stopped (stop() נקרא בזמן pause) — יציאה
         if (this.transport === "stopped" || this.#stopped) break
 
-        const item = this.items[cursor]
+        const item = this.items[this.#cursor]
         if (item === undefined) {
-          cursor++
+          this.#cursor++
           continue
         }
 
@@ -212,10 +301,15 @@ export class AudioPlaylist {
           // המתן עד שה-item ישתנה (markReady/markError) או timeout
           const resolved = await this.#waitForItem(item.segmentId)
           if (this.#stopped) break // stop() נקרא תוך כדי המתנה
+          // A4: בדוק אם ניווט שינה את ה-cursor בזמן ה-await
+          // אם כן, items[#cursor] מצביע על item אחר — חזור ל-while
+          if (this.items[this.#cursor]?.segmentId !== item.segmentId) {
+            continue
+          }
           if (!resolved) {
             // timeout
             item.state = "skipped"
-            cursor++
+            this.#cursor++
             continue
           }
           // לאחר המתנה — בדוק מחדש
@@ -224,7 +318,7 @@ export class AudioPlaylist {
         // re-read state אחרי await (TypeScript לא מצר את ה-state אחרי await)
         const currentState = item.state
         if (currentState === "error" || currentState === "skipped") {
-          cursor++
+          this.#cursor++
           continue
         }
 
@@ -242,19 +336,28 @@ export class AudioPlaylist {
           item.state = "playing"
           this.currentSegmentId = item.segmentId
           try {
-            await this.#audioStream.play(item.segmentId)
+            // A4: עטוף play ב-#playWithNav — מאפשר ניווט לבטל את ה-await
+            await this.#playWithNav(item.segmentId)
           } catch {
             // MIN-5: בוטל / שגיאה → דלג, המשך לבא בתור (best-effort)
           }
           if (this.#stopped) break // stop() נקרא תוך כדי play
-          item.state = "done"
-          this.currentSegmentId = null
-          cursor++
+          // A4: בדוק אם ניווט שינה את ה-cursor בזמן ה-play
+          // אם #cursor שונה — #navigate שינה אותו, item.state=reserved (re-fetch)
+          const navigated = this.items[this.#cursor]?.segmentId !== item.segmentId
+          if (!navigated) {
+            item.state = "done"
+            this.currentSegmentId = null
+            this.#cursor++
+          } else {
+            // ניווט קרה — cursor כבר מצביע על item החדש, item הנוכחי ב-reserved
+            this.currentSegmentId = null
+          }
           continue
         }
 
         // done או כל state אחר — המשך
-        cursor++
+        this.#cursor++
       }
     } finally {
       this.#playing = false
@@ -262,6 +365,8 @@ export class AudioPlaylist {
       this.currentSegmentId = null
       // A3: אפס pause resolver אם נשאר (לא צפוי — הגנה)
       this.#pauseResolve = null
+      // A4: אפס nav resolver אם נשאר (הגנה)
+      this.#navResolve = null
     }
   }
 
@@ -273,6 +378,26 @@ export class AudioPlaylist {
     return new Promise<void>((resolve) => {
       this.#pauseResolve = resolve
     })
+  }
+
+  /**
+   * A4: עוטף את audioStream.play() כדי שניווט (next/prev/jumpTo) יוכל לבטלו.
+   * מחזיר Promise שמתממש כש:
+   *   (א) play הסתיים רגיל, OR
+   *   (б) #navSignal הופעל (ניווט קרה — play() בוטל ע"י cancel בתוך #navigate).
+   * ה-play ממשיך לרוץ ב-sink (cancel נשלח ב-#navigate לפני resolve) — race race OK
+   * כי cancel() יגרום ל-play() לזרוק/לחזור מוקדם.
+   */
+  async #playWithNav(segmentId: string): Promise<void> {
+    // Promise שנפתרת ע"י #navSignal
+    const navPromise = new Promise<void>((resolve) => {
+      this.#navResolve = resolve
+    })
+    // race: play vs nav
+    await Promise.race([this.#audioStream.play(segmentId), navPromise])
+    // נקה nav resolver — play הסתיים לפני ניווט (הסתיים רגיל)
+    // (אם ניווט קרה ראשון, resolver כבר נוקה ב-#navigate)
+    this.#navResolve = null
   }
 
   /**
