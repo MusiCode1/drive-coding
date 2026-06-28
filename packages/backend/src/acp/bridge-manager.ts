@@ -29,9 +29,9 @@ import { createLogger } from "@drive-coding/core/log"
 import { createSpawnCore, type SpawnCoreHandleWithStderr } from "@drive-coding/provider/host"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
 import { AUDIO_FRIENDLY_PROMPT } from "../prompts/index.js"
-import { decodeWireLine } from "../delivery/wire-decode.js"
+import { decodeWireLine } from "@drive-coding/provider/connection"
 import type { WireRecorder, WireSession } from "../delivery/wire-recorder.js"
-import { type TurnTracker, createTurnTracker } from "./turn-tracker.js"
+import { type TurnTracker, createTurnTracker } from "@drive-coding/provider/connection"
 
 const wireLog = createLogger("backend.acp.wire")
 

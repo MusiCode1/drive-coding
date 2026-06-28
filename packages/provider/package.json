@@ -10,7 +10,8 @@
     "./config": "./src/config/index.ts",
     "./spawn": "./src/spawn/index.ts",
     "./host": "./src/host/index.ts",
-    "./extensions": "./src/extensions/index.ts"
+    "./extensions": "./src/extensions/index.ts",
+    "./connection": "./src/connection/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

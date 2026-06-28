@@ -1,3 +1,24 @@
+## 2026-06-28 — CUT-3b-i-provider-connection — Commit 0 (git mv wire-decode+turn-tracker → provider/shared + barrel ./connection + repoint bridge-manager)
+
+### מה בוצע?
+
+**Commit 0 (integration — git mv + repoint)** — העברת wire-decode + turn-tracker מ-BE ל-provider:
+- `git mv packages/backend/src/delivery/wire-decode.ts` + `.test.ts` → `packages/provider/src/shared/`
+- `git mv packages/backend/src/acp/turn-tracker.ts` + `.test.ts` → `packages/provider/src/shared/`
+- תוקן import ב-`turn-tracker.ts`: `../delivery/wire-decode.js` → `./wire-decode.js`
+- נוצר `packages/provider/src/connection/index.ts` — barrel ראשוני: re-export `decodeWireLine`, `WireSummary`, `createTurnTracker`, `TurnTracker` מ-`../shared/`
+- נוסף subpath `"./connection": "./src/connection/index.ts"` ל-`packages/provider/package.json`
+- `packages/backend/src/acp/bridge-manager.ts`: repoint imports של `decodeWireLine`/`createTurnTracker` מ-local paths ל-`@drive-coding/provider/connection` (import-path בלבד, לוגיקה ללא שינוי)
+
+### חריגות
+- sourcemap warnings ל-dist ישן של BE (dist מפנה לקבצים שנזזו) — warnings בלבד, לא שגיאות.
+- 3 כשלים pre-existing: `https-serve.test.ts` (×2, Windows bun path) + `bridge-failure-integration.test.ts` F-1 (מוזכר ב-roadmap).
+
+### בדיקות
+- typecheck: 0 errors. provider tests: 104 passed, 4 skipped. wire-decode + turn-tracker עוברים במיקום החדש. lint:i18n: ירוק.
+
+---
+
 ## 2026-06-28 — CUT-3a-provider-reorg — Commit 1 (reorg + barrel re-exports + imports תוקנו)
 
 ### מה בוצע?
