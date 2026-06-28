@@ -91,6 +91,19 @@ export class AudioPlaylist {
   }
 
   /**
+   * A4: wrapper ל-#audioStream.prepareSegment — מאפשר ל-BubblePlayer לעשות TTS
+   * דרך ה-audioStream המשותף בלי להחזיק ref ישיר אליו.
+   * (BubblePlayer לא יודע מה סוג ה-sink — RoutingAudioSink, AudioStream, וכו')
+   */
+  prepareSegmentForBubble(
+    segmentId: string,
+    stream: ReadableStream<Uint8Array>,
+    ac: AbortController,
+  ): Promise<void> {
+    return this.#audioStream.prepareSegment(segmentId, stream, ac)
+  }
+
+  /**
    * מכניס item ממוין לפי orderKey, state=reserved.
    * מתחיל #playLoop אם idle.
    * A3: אם transport==="stopped" → אפס ל-"playing" (תור חדש אחרי stop ינוגן).

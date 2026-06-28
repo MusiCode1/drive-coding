@@ -2,42 +2,48 @@
  * BubblePlayer — VM (entity) להשמעת בועה בודדת.
  *
  * toggle(bubbleId) — לחיצה שנייה על אותה בועה עוצרת.
- * guard: no-op אם session.turnState !== "idle" (לא להשמיע בזמן שהסוכן עונה).
+ * guard: no-op אם session.turnState !== "idle" (לא להשמיע בזמן שהסוכן עונה) — §9 Q3.
  * user bubble → playUserRecording (דרך <audio>).
- * message/thought → TTS דרך RoutingAudioSink + resolveTts.
+ * message/thought → אם הבועה כבר בפלייליסט → jumpToBubble;
+ *                   אחרת (היסטוריה) → split + reserveFromText לכל משפט → jumpToBubble.
  * tool bubble → אין ▶.
  *
- * stop() משמר שני מנגנוני-עצירה:
- *   - #audioEl.pause() → עצירת הקלטת-משתמש (playUserRecording אין לו signal)
- *   - #sink.cancel(#segId) → עצירת TTS (sink + WebAudio)
+ * ─── A4 Commit 3 ───
+ * איחוד עם AudioPlaylist המשותף (מ-Commit 2):
+ *   - #sink הפרטי הוסר — TTS דרך playlist.#audioStream (sharedAudioStream מ-+layout)
+ *   - reserveFromText: reserve→prepareSegment→markReady ב-playlist
+ *   - stop() מאצילה ל-playlist.stop() במקום #sink.cancel()
+ *
+ * BUG-1 carry: bubbles ready-שלא-נוגנו-חי (state=ready/reserved) חשופות לניווט
+ *   (jumpToBubble) — לא מניחים שכל פריט מאחורי cursor=done.
  *
  * אין $effect — toggle הוא method ישיר (§8.10).
- *
- * ─── V4a-unify (Commit 2) ───
  */
 
+import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
+import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import type { AgentSession } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
 import type { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { Bubble } from "$lib/types/bubble"
 import { playUserRecording } from "$lib/adapters/voice/play-bubble"
 import { resolveTts } from "$lib/adapters/voice/tts-resolve"
-import { AudioStream } from "$lib/engines/audio-stream"
-import { PcmAudioStream } from "$lib/engines/pcm-audio-stream"
-import { RoutingAudioSink } from "$lib/engines/routing-audio-sink"
+
+// ─── קבועים לחיתוך משפטים (זהה ל-Speaker) ──────────────────────────────────
+const MIN_CHARS = 20
+const MAX_CHARS = 200
 
 export class BubblePlayer {
   playingBubbleId: string | null = $state(null)
 
   readonly #session: AgentSession
   readonly #settings: Settings
-  /** A4: פלייליסט משותף עם Speaker (Commit 2). toggle יאוחד ב-Commit 3. */
+  /** A4: פלייליסט משותף עם Speaker. */
   readonly #playlist: AudioPlaylist
   #audioEl: HTMLAudioElement | null = null
   #abortCtrl: AbortController | null = null
-  // A4 Commit 2: #sink נשאר עד Commit 3 (toggle עדיין משתמש בו)
-  readonly #sink = new RoutingAudioSink(new AudioStream(), new PcmAudioStream())
-  #segId: string | null = null
+  /** A4: OrderAllocator לסגמנטים שלנו — seq נפרד מ-Speaker. */
+  readonly #orderAlloc = new OrderAllocator()
 
   constructor(opts: { session: AgentSession; settings: Settings; playlist: AudioPlaylist }) {
     this.#session = opts.session
@@ -47,10 +53,10 @@ export class BubblePlayer {
 
   /**
    * לחיצה שנייה על אותה בועה → עוצר. אחרת מנגן.
-   * no-op אם turnState !== "idle" או בועה מסוג tool.
+   * no-op אם turnState !== "idle" (§9 Q3 — שמור guard כמו היום).
    */
   toggle(bubbleId: string): void {
-    // no-op אם הסוכן עדיין עונה
+    // no-op אם הסוכן עדיין עונה (§9 Q3)
     if (this.#session.turnState !== "idle") return
 
     // לחיצה שנייה על אותה בועה → עצור
@@ -59,9 +65,6 @@ export class BubblePlayer {
       return
     }
 
-    // עצור ניגון קודם (אם יש)
-    this.stop()
-
     // מצא את הבועה
     const bubble = this.#session.bubbles.find((b: Bubble) => b.id === bubbleId)
     if (!bubble) return
@@ -69,61 +72,118 @@ export class BubblePlayer {
     // tool bubble — אין ▶
     if (bubble.kind === "tool") return
 
-    this.playingBubbleId = bubbleId
-    this.#abortCtrl = new AbortController()
-    const abortCtrl = this.#abortCtrl
-
-    // צור <audio> חד-פעמי — נשאר לענף user-recording
-    const audioEl = new Audio()
-    this.#audioEl = audioEl
-
-    const cleanup = () => {
-      this.playingBubbleId = null
-      this.#audioEl = null
-      this.#abortCtrl = null
-      this.#segId = null
-    }
-
     if (bubble.kind === "user") {
+      // ענף user-recording — לא נכנס לפלייליסט (§2 scope: future)
+      this.stop()
+      this.playingBubbleId = bubbleId
+      this.#abortCtrl = new AbortController()
+      const audioEl = new Audio()
+      this.#audioEl = audioEl
+      const cleanup = () => {
+        this.playingBubbleId = null
+        this.#audioEl = null
+        this.#abortCtrl = null
+      }
       const recordingId = bubble.recordingId
       if (!recordingId) {
         cleanup()
         return
       }
       void playUserRecording(recordingId, audioEl).then(cleanup).catch(cleanup)
+      return
+    }
+
+    // message / thought — TTS דרך AudioPlaylist המשותף
+    const text = bubble.segments.map((s) => s.text).join("")
+    if (!text.trim()) return
+
+    // בדוק אם הבועה כבר בפלייליסט (זרם חי / בועה שכבר נוספה)
+    const alreadyInPlaylist = this.#playlist.items.some((it) => it.bubbleId === bubbleId)
+
+    if (alreadyInPlaylist) {
+      // הבועה בפלייליסט — פשוט קפוץ אליה
+      // אם playlist לא playing (idle) — התחל מחדש דרך jumpToBubble
+      // jumpToBubble בודק #playing; אם לא playing — no-op.
+      // במקרה זה צריך להבטיח שהpaylist מנגן.
+      if (!this.#playlist.items.some(() => true)) return // safety
+      this.#playlist.jumpToBubble(bubbleId)
+      this.playingBubbleId = bubbleId
     } else {
-      // message / thought — TTS דרך RoutingAudioSink + resolveTts
-      const text = bubble.segments.map((s) => s.text).join("")
-      if (!text.trim()) {
-        cleanup()
-        return
-      }
-      const { provider, voiceId, modelId } = resolveTts(
-        this.#settings.ttsProvider,
-        this.#settings.voiceId,
-      )
-      this.#segId = bubbleId
-      const run = async () => {
-        const stream = await provider.synthesize({ text, voiceId, modelId, signal: abortCtrl.signal })
-        await this.#sink.prepareSegment(bubbleId, stream, abortCtrl, { format: provider.format })
-        await this.#sink.play(bubbleId)
-      }
-      void run().then(cleanup).catch(cleanup)
+      // בועה היסטורית — split + reserveFromText לכל משפט → jumpToBubble
+      this.stop()
+      this.playingBubbleId = bubbleId
+      this.#abortCtrl = new AbortController()
+      void this.#reserveAndPlay(bubbleId, text, this.#abortCtrl)
     }
   }
 
-  /** עוצר כל ניגון פעיל. משמר שני מנגנוני-עצירה: abort + audioEl.pause() + sink.cancel(). */
+  /**
+   * A4: on-demand TTS לבועה היסטורית.
+   * split → reserve → prepareSegment → markReady לכל משפט → jumpToBubble.
+   * §9 Q2 נעול: prev/jump תמיד re-fetch (cancel מוחק sink) — כאן כל הסגמנטים חדשים.
+   */
+  async #reserveAndPlay(bubbleId: string, text: string, abortCtrl: AbortController): Promise<void> {
+    const { sentences } = splitIntoSentences(text, { minChars: MIN_CHARS, maxChars: MAX_CHARS })
+    // אם אין משפטים (טקסט קצר) — השתמש בטקסט המלא כסגמנט אחד
+    const parts = sentences.length > 0 ? sentences : [text.trim()]
+
+    const { provider, voiceId, modelId } = resolveTts(
+      this.#settings.ttsProvider,
+      this.#settings.voiceId,
+    )
+
+    // שלב 1: reserve כל הסגמנטים לפלייליסט (reserve-on-enqueue)
+    const segmentIds: string[] = []
+    for (const _part of parts) {
+      const segmentId = crypto.randomUUID()
+      const orderKey = this.#orderAlloc.next(bubbleId)
+      this.#playlist.reserve(segmentId, orderKey, bubbleId)
+      segmentIds.push(segmentId)
+    }
+
+    // שלב 2: קפוץ לתחילת הבועה (הסגמנט הראשון שלה)
+    // playlist מתחיל לנגן אחרי #playLoop — jumpToBubble אם כבר playing
+    this.#playlist.jumpToBubble(bubbleId)
+
+    // שלב 3: fetch כל סגמנט ב-parallel (כמו Speaker.#pumpFetchLoop)
+    const fetchPromises = parts.map(async (part, i) => {
+      const segId = segmentIds[i]
+      if (segId === undefined) return
+      try {
+        if (abortCtrl.signal.aborted) {
+          this.#playlist.markError(segId)
+          return
+        }
+        const stream = await provider.synthesize({
+          text: part,
+          voiceId,
+          modelId,
+          signal: abortCtrl.signal,
+        })
+        // prepareSegment דרך ה-audioStream של ה-playlist (sharedAudioStream מ-+layout)
+        // BubblePlayer לא מחזיק ref ל-audioStream — #playlist מחזיק אותו פנימי.
+        // נעשה זאת דרך wrapper method חדש ב-AudioPlaylist.
+        await this.#playlist.prepareSegmentForBubble(segId, stream, abortCtrl)
+        this.#playlist.markReady(segId)
+      } catch {
+        this.#playlist.markError(segId)
+      }
+    })
+
+    await Promise.allSettled(fetchPromises)
+    // cleanup אחרי שכל הסגמנטים סיימו — playlist ממשיך בעצמו
+    if (!abortCtrl.signal.aborted) {
+      this.playingBubbleId = null
+    }
+  }
+
+  /** עוצר כל ניגון פעיל. */
   stop(): void {
     if (this.#abortCtrl) {
       this.#abortCtrl.abort()
       this.#abortCtrl = null
     }
-    // ענף TTS: עצור דרך sink (WebAudio + PCM)
-    if (this.#segId) {
-      this.#sink.cancel(this.#segId)
-      this.#segId = null
-    }
-    // ענף user-recording: <audio>.pause() — playUserRecording אין לו signal
+    // ענף user-recording: <audio>.pause()
     if (this.#audioEl) {
       try {
         this.#audioEl.pause()

@@ -26,8 +26,17 @@
 - `bubble-player.svelte.ts`: constructor מקבל `{playlist}` מבחוץ; `#sink` נשאר עד Commit 3
 - svelte-check: 0 errors | טסטים: 381/381
 
-### מה עוד יגיע (Commits 3 + נ)
-- Commit 3: איחוד BubblePlayer.toggle + reserveFromText + הסרת #sink הפרטי
+### Commit 3 — איחוד BubblePlayer.toggle + reserveFromText (bubble-player, audio-playlist)
+- `BubblePlayer.toggle`: message/thought → אם בפלייליסט → jumpToBubble; אחרת → #reserveAndPlay
+- `#reserveAndPlay(bubbleId, text, abortCtrl)`: split → reserve כל משפט → jumpToBubble → fetch parallel → markReady/markError
+- `AudioPlaylist.prepareSegmentForBubble()`: wrapper ל-#audioStream.prepareSegment (מסתיר sink מ-BubblePlayer)
+- `#sink` הפרטי ב-BubblePlayer הוסר (TTS דרך sharedAudioStream של playlist)
+- `#orderAlloc` נפרד ב-BubblePlayer (seq נפרד מ-Speaker)
+- BUG-1 carry: bubbles ready-שלא-נוגנו-חי חשופות לניווט (jumpToBubble → re-fetch אחרי cancel)
+- guard turnState !== "idle" נשמר (§9 Q3 — ניגון היסטוריה תוך-כדי תור blocked)
+- svelte-check: 0 errors | טסטים: 381/381
+
+### מה עוד יגיע (Commit נ)
 - Commit נ: integration tests audio-playlist.nav.test.ts
 
 ---
