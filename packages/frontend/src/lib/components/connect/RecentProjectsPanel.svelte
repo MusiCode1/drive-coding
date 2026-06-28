@@ -217,9 +217,10 @@ onMount(() => {
     opacity: 1;
   }
 
+  /* hover אדום — סימון ויזואלי שהפעולה הרסנית (עקבי עם כפתור ה-Kill ב-ActiveProcessesPanel) */
   .delete-btn:hover {
-    color: var(--fg);
-    background: var(--bg-hover, rgba(127, 127, 127, 0.08));
+    color: rgb(255, 79, 79);
+    background: rgba(255, 79, 79, 0.1);
   }
 
   .project-btn {
