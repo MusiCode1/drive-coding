@@ -1,7 +1,7 @@
 # Slice B1 — UI בקרת השמעה + ריצה — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: מאושר (אביגיל דולגה לבקשת המשתמשת)
+> **סטטוס**: ✅ הושלם (אליעזר 2026-06-29; 3 commits: ba6f496..a16893d; calev-heavy ממתין)
 > **Complexity**: 6/10 (verifier: heavy — UI חי + RTL + נייד)
 > **תלות**: [A4] (+ A5 אופציונלי ל‑turnInterrupted) · **base**: branch `slice/playback-core-a4`
 > **worktree נפרד** (UI) — מאפשר merge של התשתית (A2‑A5) בלי ה‑UI.

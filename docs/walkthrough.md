@@ -7651,3 +7651,30 @@ B2 (הצגה): הוספת `import { version } from "$app/environment"` ל-Settin
 ### חריגות
 
 אין.
+
+## 2026-06-29 — slice B1 (playback-ui) — UI בקרת השמעה+ריצה
+
+### Commit 0 — i18n keys playbackControls.* (core/i18n)
+- הוסף 11 מפתחות append-only ל-keys.ts + he.ts + en.ts
+- מפתחות: stopRun, stopRun.{thinking,responding,callingTool}, stopPlayback, pause, resume, prev, next, interrupted
+- svelte-check: 0 errors | lint:i18n: ✓
+
+### Commit 1 — קומפוננטת PlaybackControls + StatusBubble (FE)
+- PlaybackControls.svelte חדש: phase=thinking/responding/calling-tool → [עצור ריצה]; phase=speaking/pending-tts → ⏹/⏮/⏸▶/⏭
+- RTL: logical classes (margin-inline-start, padding inline)
+- hands-free: min-width/height 44px, lucide-svelte icons
+- StatusBubble.svelte: מרנדר <PlaybackControls /> לצד label; חיווי turnInterrupted (fade-out 4s)
+- svelte-check: 0 errors
+
+### Commit 2 — חיווט onclick + הסרת cancel() alias + תיקון 2 carry מ-A4
+- PlaybackControls: carry A4 #2 — isCurrentLoading (disable next/prev כשitem reserved/loading)
+- voice-mode.svelte.ts: הוסר cancel() @deprecated לחלוטין
+- MicLarge.svelte ×2: cancel() → cancelRun()
+- bubble-player.svelte.ts: carry A4 #1 — playlist.state=idle + בועה בפלייליסט → reserveAndPlay מחדש (לא jumpToBubble no-op)
+- svelte-check: 0 errors | lint:i18n: ✓
+
+### חריגות
+- אימות חי (RTL/נייד/קול) לא בוצע בסשן זה — Windows / onecli בלתי-זמין לשמע.
+  יבדק ע"י calev-heavy (browser + mobile).
+- disabled ל-⏸ pause כשplaylist idle נוסף, אבל disabled על ⏹ stopPlayback לא נוסף בכוונה
+  (עצור-השמעה נגיש תמיד ב-speaking/pending-tts).
