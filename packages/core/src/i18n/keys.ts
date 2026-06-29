@@ -232,6 +232,17 @@ export type MessageKey =
   | "session.leaveWarning.confirm"
   | "session.leaveWarning.cancel"
   | "session.leaveWarning.dontShowAgain"
+  // ─── playbackControls ─── (slice B1-controls-ui)
+  | "playbackControls.stopRun"
+  | "playbackControls.stopRun.thinking"
+  | "playbackControls.stopRun.responding"
+  | "playbackControls.stopRun.callingTool"
+  | "playbackControls.stopPlayback"
+  | "playbackControls.pause"
+  | "playbackControls.resume"
+  | "playbackControls.prev"
+  | "playbackControls.next"
+  | "playbackControls.interrupted"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
