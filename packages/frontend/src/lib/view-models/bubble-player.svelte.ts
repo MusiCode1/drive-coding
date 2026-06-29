@@ -101,13 +101,20 @@ export class BubblePlayer {
     const alreadyInPlaylist = this.#playlist.items.some((it) => it.bubbleId === bubbleId)
 
     if (alreadyInPlaylist) {
-      // הבועה בפלייליסט — פשוט קפוץ אליה
-      // אם playlist לא playing (idle) — התחל מחדש דרך jumpToBubble
-      // jumpToBubble בודק #playing; אם לא playing — no-op.
-      // במקרה זה צריך להבטיח שהpaylist מנגן.
-      if (!this.#playlist.items.some(() => true)) return // safety
-      this.#playlist.jumpToBubble(bubbleId)
-      this.playingBubbleId = bubbleId
+      // הבועה בפלייליסט — בדוק אם הפלייליסט מנגן כרגע
+      if (this.#playlist.state === "idle") {
+        // carry A4 #1: playlist.state=idle + בועה בפלייליסט → jumpToBubble no-op שקט
+        // אבל playingBubbleId היה מתעדכן → UI "מתנגן" בלי שמע.
+        // תיקון: התחל ניגון מחדש (reserveAndPlay מחדש).
+        this.stop()
+        this.playingBubbleId = bubbleId
+        this.#abortCtrl = new AbortController()
+        void this.#reserveAndPlay(bubbleId, text, this.#abortCtrl)
+      } else {
+        // פלייליסט פעיל — קפוץ לבועה
+        this.#playlist.jumpToBubble(bubbleId)
+        this.playingBubbleId = bubbleId
+      }
     } else {
       // בועה היסטורית — split + reserveFromText לכל משפט → jumpToBubble
       this.stop()

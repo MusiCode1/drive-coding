@@ -50,6 +50,18 @@ const isPaused = $derived(playlist.transport === "paused")
 
 /** כפתורי next/prev: disable כשה-playlist לא פעיל */
 const isPlaylistIdle = $derived(playlist.state === "idle")
+
+/**
+ * carry A4 #2: next/prev בזמן current=reserved (טוען) → latency-glitch.
+ * disable next/prev כשה-item הנוכחי עדיין reserved/loading.
+ */
+const isCurrentLoading = $derived.by(() => {
+  const cursor = playlist.cursor
+  const item = playlist.items[cursor]
+  return item !== undefined && (item.state === "reserved" || item.state === "loading")
+})
+
+const isNavDisabled = $derived(isPlaylistIdle || isCurrentLoading)
 </script>
 
 {#if showStopRun}
@@ -82,7 +94,7 @@ const isPlaylistIdle = $derived(playlist.state === "idle")
     <button
       class="ctrl-btn"
       onclick={() => playlist.prev()}
-      disabled={isPlaylistIdle}
+      disabled={isNavDisabled}
       aria-label={t("playbackControls.prev")}
       title={t("playbackControls.prev")}
     >
@@ -103,7 +115,7 @@ const isPlaylistIdle = $derived(playlist.state === "idle")
       <button
         class="ctrl-btn"
         onclick={() => playlist.pause()}
-        disabled={isPlaylistIdle}
+        disabled={isNavDisabled}
         aria-label={t("playbackControls.pause")}
         title={t("playbackControls.pause")}
       >
@@ -115,7 +127,7 @@ const isPlaylistIdle = $derived(playlist.state === "idle")
     <button
       class="ctrl-btn"
       onclick={() => playlist.next()}
-      disabled={isPlaylistIdle}
+      disabled={isNavDisabled}
       aria-label={t("playbackControls.next")}
       title={t("playbackControls.next")}
     >

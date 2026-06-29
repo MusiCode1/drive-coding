@@ -83,12 +83,4 @@ export class VoiceMode {
     void this.#session.cancelTurn()
   }
 
-  /**
-   * @deprecated — נשאר זמנית כ-alias ל-cancelRun עד B1 מחווט.
-   * קוראים קיימים: MicLarge.svelte ×2 (שורות 45 ו-89).
-   * B1 יחליף קריאות ל-cancelRun() / stopPlayback() לפי ההקשר.
-   */
-  cancel(): void {
-    this.cancelRun()
-  }
 }
