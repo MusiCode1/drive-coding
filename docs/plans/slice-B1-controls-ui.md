@@ -1,7 +1,7 @@
 # Slice B1 — UI בקרת השמעה + ריצה — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: 🔧 תוקן לפי אביגיל r1 (3🟡+1🟢 — נתיב engines, MicLarge, A5-כבר-מוזג, מיקום carry) → ממתין re-verify
+> **סטטוס**: ✅ READY (אביגיל r2 — 4 ממצאי r1 נסגרו; `reports/drive-coding/B1-avigail.md`). base=`slice/playback-ui` (A2-A5) @ 56c3a55
 > **Complexity**: 6/10 (verifier: heavy — UI חי + RTL + נייד)
 > **תלות**: [A4] (+ A5 אופציונלי ל‑turnInterrupted) · **base**: branch `slice/playback-core-a4`
 > **worktree נפרד** (UI) — מאפשר merge של התשתית (A2‑A5) בלי ה‑UI.
@@ -34,7 +34,7 @@ cd .worktrees/playback-ui   # קיים + install+hooks+svelte-kit-sync הורצ�
 - `packages/frontend/src/lib/components/chat/StatusBubble.svelte` — נקודת התצוגה הקיימת.
 - `packages/frontend/src/lib/view-models/derived/model-status.svelte.ts` — `phase`.
 - `packages/frontend/src/lib/view-models/derived/voice-mode.svelte.ts` — `stopPlayback`/`cancelRun` (A3).
-- `packages/frontend/src/lib/engines/audio-playlist.svelte.ts` — `pause`:162/`resume`:171/`next`:196/`prev`:207/`jumpTo`:220/`jumpToBubble`:229/`transport`:56 (A3/A4). ⚠️ engines/ לא view-models/ (אביגיל #1).
+- `packages/frontend/src/lib/engines/audio-playlist.svelte.ts` — `pause`:162/`resume`:171/`next`:196/`prev`:207/`jumpTo`:219/`jumpToBubble`:229/`transport`:56 (A3/A4). ⚠️ engines/ לא view-models/ (אביגיל #1).
 - `packages/frontend/src/lib/context.ts` — `getModelStatus`/`getAudioPlaylist`/`getVoiceMode`.
 - `packages/frontend/AGENTS.md` — חמשת חוקי הזהב.
 - `docs/frontend-spec.md` — drive‑first, car mode, גדלים hands‑free.
