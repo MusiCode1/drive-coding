@@ -1,7 +1,7 @@
 # Slice A4 — ניווט prev/next/jump + איחוד BubblePlayer — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: ✅ READY (אביגיל r2 — 4×🟡 מ-r1 נסגרו; `reports/drive-coding/A4-avigail.md`)
+> **סטטוס**: ✅ **calev-heavy GO** (2026-06-29, tip c2931d3; svelte-check 0, 388/388; 6 נקודות-הקוד תקינות; 2 הסתייגויות דרגה-נמוכה→carry ל-B1; env-gap קול-חי→smoke). `reports/drive-coding/A4-avigail.md`
 > **Complexity**: 8/10 (verifier: heavy — refactor בעלות + streaming)
 > **תלות**: [A3] · **base**: branch `slice/playback-core-a3`
 > **שייך ל**: `docs/plans/playback-run-control-roadmap.md` (slice 4/6)

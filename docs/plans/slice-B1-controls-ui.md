@@ -6,6 +6,13 @@
 > **תלות**: [A4] (+ A5 אופציונלי ל‑turnInterrupted) · **base**: branch `slice/playback-core-a4`
 > **worktree נפרד** (UI) — מאפשר merge של התשתית (A2‑A5) בלי ה‑UI.
 > **שייך ל**: `docs/plans/playback-run-control-roadmap.md` (UI, אחרי השרשרת)
+>
+> ⚠️ **carry מ-A4 (calev-heavy — 2 edge-cases דרגה-נמוכה שה-UI חושף):**
+> 1. **לחיצה על בועה-שכבר-בפלייליסט אחרי שהזרם החי הסתיים** → `jumpToBubble` הוא **no-op שקט**
+>    (`if(!#playing) return`), אבל `playingBubbleId` מתעדכן → ה-UI יראה "מתנגן" בלי שמע. B1 חייב:
+>    כשלוחצים בועה in-playlist+done ו-`#playing===false` → **להתחיל ניגון מחדש** (לא רק jump).
+> 2. **`next()`/`prev()` בזמן ש-current עדיין `reserved`** (טוען) → לא תקיעה, אבל latency-glitch
+>    אפשרי בלחיצות-מהירות-בזמן-טעינה. שקול debounce/disable על הכפתורים בזמן loading, או קבל את ה-glitch.
 
 ## §0 — Pre-flight
 
