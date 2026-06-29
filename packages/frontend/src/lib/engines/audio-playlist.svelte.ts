@@ -191,33 +191,35 @@ export class AudioPlaylist {
    * A4: דלג למשפט הבא. אם אין הבא — no-op.
    * 3 צעדים: cancel current → cursor++ → navSignal (מעיר את ה-#playLoop).
    * שומר transport: אם paused — לא מתחיל אוטומטית (pause נשאר).
+   * ⚠️ next לא מבצע cancel על item היעד — item הבא נשאר ב-sink (ניגון ישיר אם ready).
    */
   next(): void {
     if (!this.#playing) return
     const nextIdx = this.#cursor + 1
     if (nextIdx >= this.items.length) return
-    this.#navigate(nextIdx)
+    this.#navigate(nextIdx, false) // resetTarget=false: next לא cancel על target
   }
 
   /**
-   * A4: חזור למשפט הקודם (≥ 0). re-fetch חובה (cancel מוחק מה-sink).
+   * A4: חזור למשפט הקודם (≥ 0). re-fetch חובה אם done (cancel מוחק מה-sink).
    * 3 צעדים: cancel current → cursor-- → navSignal.
    */
   prev(): void {
     if (!this.#playing) return
     const prevIdx = this.#cursor - 1
     if (prevIdx < 0) return
-    this.#navigate(prevIdx)
+    this.#navigate(prevIdx, true) // resetTarget=true: prev מבצע cancel על target אם done/ready
   }
 
   /**
    * A4: קפוץ ל-index מסוים. תוספת-נטו (jumpToSegment נמחק ב-A2).
    * 3 צעדים: cancel current → cursor=index → navSignal.
+   * resetTarget=true: cancel על item היעד (§9 Q2 — re-fetch תמיד בקפיצה).
    */
   jumpTo(index: number): void {
     if (!this.#playing) return
     if (index < 0 || index >= this.items.length) return
-    this.#navigate(index)
+    this.#navigate(index, true) // resetTarget=true: jumpTo מבצע cancel על target
   }
 
   /**
@@ -228,7 +230,7 @@ export class AudioPlaylist {
     if (!this.#playing) return
     const idx = this.items.findIndex((it) => it.bubbleId === bubbleId)
     if (idx === -1) return
-    this.#navigate(idx)
+    this.#navigate(idx, true) // resetTarget=true: קפיצה לבועה = jumpTo
   }
 
   /**
@@ -238,12 +240,22 @@ export class AudioPlaylist {
    * (3) navSignal — מעיר את ה-#playLoop מה-await play.
    * item שמדלגים עליו (הנוכחי) חוזר ל-"reserved" כדי שה-#playLoop יבצע re-fetch.
    */
-  #navigate(newIndex: number): void {
+  /**
+   * A4: לוגיקת-ניווט משותפת ל-next/prev/jumpTo.
+   * (1) cancel ה-item הנוכחי (מוחק מה-sink; item חוזר ל-reserved לצורך re-fetch).
+   * (2) reset item היעד לפי resetTarget:
+   *     false (next): לא cancel על target — item הבא נשאר ב-sink (ניגון ישיר אם ready).
+   *     true (prev/jump): cancel+reserved על target אם done/ready/playing.
+   *     "done" תמיד מאופס ל-reserved (לא ב-sink בכל מקרה).
+   * (3) cursor = newIndex.
+   * (4) navSignal — מעיר את ה-#playLoop מה-await play.
+   */
+  #navigate(newIndex: number, resetTarget: boolean): void {
+    // (1) cancel ואיפוס ה-item הנוכחי (הנוגן כרגע)
     const currentItem = this.items[this.#cursor]
     if (currentItem !== undefined) {
-      const cancelId = currentItem.segmentId
       try {
-        this.#audioStream.cancel(cancelId)
+        this.#audioStream.cancel(currentItem.segmentId)
       } catch {
         // כבר בוטל
       }
@@ -253,10 +265,30 @@ export class AudioPlaylist {
       }
     }
 
-    // הגדר cursor חדש — #playLoop יקרא אותו אחרי שיתעורר
+    // (2) טיפול ב-item היעד
+    const targetItem = this.items[newIndex]
+    if (targetItem !== undefined && targetItem !== currentItem) {
+      if (targetItem.state === "done") {
+        // "done" = לא ב-sink בשום מקרה → אפס ל-reserved לצורך re-fetch
+        targetItem.state = "reserved"
+      } else if (resetTarget) {
+        // prev/jumpTo: cancel + reserved על ready/playing (§9 Q2 — re-fetch בקפיצה)
+        if (targetItem.state === "ready" || targetItem.state === "playing") {
+          try {
+            this.#audioStream.cancel(targetItem.segmentId)
+          } catch {
+            // כבר בוטל
+          }
+          targetItem.state = "reserved"
+        }
+      }
+      // next (resetTarget=false): ready/playing/reserved/loading → ללא שינוי (ניגון ישיר)
+    }
+
+    // (3) הגדר cursor חדש — #playLoop יקרא אותו אחרי שיתעורר
     this.#cursor = newIndex
 
-    // פתור את ה-#navSignal כדי לשחרר את ה-await play ב-#playLoop
+    // (4) פתור את ה-#navSignal כדי לשחרר את ה-await play ב-#playLoop
     const resolve = this.#navResolve
     this.#navResolve = null
     resolve?.()

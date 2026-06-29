@@ -36,8 +36,21 @@
 - guard turnState !== "idle" נשמר (§9 Q3 — ניגון היסטוריה תוך-כדי תור blocked)
 - svelte-check: 0 errors | טסטים: 381/381
 
-### מה עוד יגיע (Commit נ)
-- Commit נ: integration tests audio-playlist.nav.test.ts
+### Commit נ — integration tests ניווט (audio-playlist.nav.test.ts)
+- 7 integration tests ל-AudioPlaylist ניווט:
+  1. `next()` במהלך ניגון → s1 מתנגן ישירות (reset-target=false: target נשאר ב-sink)
+  2. `prev()` אחרי done → s0 חוזר ל-reserved (re-fetch); s0Plays.length ≥ 2
+  3. `jumpTo(2)` → s2 עובר cancel+reserved (resetTarget=true); markReady+ניגון
+  4. `jumpToBubble('bubble-B')` → cursor קופץ ל-index הנכון; s2 reserved→markReady→ניגון
+  5. `prepareSegmentForBubble` wrapper → preparedSegments.has; markReady→ניגון
+  6. BUG-1: prev ל-item ב-state=playing (late-early) → s0(done)→reserved → re-fetch
+  7. `cursor` getter מעודכן אחרי `next()`
+- תיקון `#navigate(newIndex, resetTarget)`:
+  - `resetTarget=false` (next): target נשאר ב-sink אם ready
+  - `resetTarget=true` (prev/jumpTo/jumpToBubble): cancel+reserved על target אם done/ready/playing
+  - "done" תמיד → reserved (לא ב-sink)
+- הבחנה BUG-1: item ב-state=ready (late-early) ניגש לניווט ישיר ב-next; re-fetch ב-prev/jump
+- svelte-check: 0 errors | טסטים: 17/17 nav + 10/10 base = 27 ירוקים
 
 ---
 
