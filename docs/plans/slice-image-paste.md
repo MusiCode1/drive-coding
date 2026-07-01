@@ -1,7 +1,7 @@
 # Slice image-paste — הדבקת/גרירת/בחירת תמונות בתיבת הפרומפט — תוכנית
 
-> **תאריך**: 2026-06-28 (עודכן 2026-07-01 — Commit 4 נעול, הכרעת-gating §10 סגורה)
-> **סטטוס**: 🟢 **plan-verified — READY ל-dispatch** (אביגיל r2 READY, 0 findings, 2026-07-01 — `reports/drive-coding/image-paste-avigail.md`). **Commits 0–3 מוזגו ל-dev** (merge `2cdb85a`; פיגום רדום, `IMAGE_INPUT_ENABLED=false`). **נותר: Commit 4a (provider) + 4b (FE).** הכרעת ה-gating (§10) **סגורה: נתיב (א) — raw**. ה-`AcpClient.prompt` text-only בבעלותנו (החבילה נספגה v0.8.0) → הרחבתו = חלק מ-Commit 4a (לא חסם חיצוני).
+> **תאריך**: 2026-06-28 (עודכן 2026-07-01 — Commits 4a+4b בוצעו ע"י אליעזר)
+> **סטטוס**: 🟡 **הושלם (ממתין לאימות calev-heavy)** — Commits 4a (provider TDD, 139/139) + 4b (FE flip+wiring, typecheck+build ירוקים). calev-heavy נדרש לאימות e2e חי. **branch**: `slice/image-paste` commits `68f2b76`+`fc3ceb3`.
 > **Complexity**: 8/10 (verifier: **calev-heavy**)
 > **תלות (depends_on)**: `[]` — כל התלויות מוזגו ל-dev. (`slice-input-autogrow` מוזג `b3b5140` — TypeArea שונה, ראה §3.5. Track-A נספג ל-`packages/provider/` בקוד שלנו.)
 >   - ⚠️ **תיאום merge (רך, לא depends_on)**: `slice-warm-reattach-skip-init` (סשן אחר) נוגע גם הוא ב-`packages/provider/src/client/client.ts` (מחלץ `buildAcpClientFacade`). שניהם מבוססים על dev ושניהם נוגעים במתודת `prompt`/ה-facade. מי שממזג שני — יְיַשם מחדש את שינויו ב-facade (אולי) המרוענן. ראה §6.
