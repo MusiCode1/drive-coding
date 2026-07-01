@@ -54,13 +54,21 @@ vi.mock("$lib/adapters/sessions", () => ({
   normalizeSessionInfo: vi.fn((x: unknown) => x),
 }))
 
-vi.mock("provider-contract/acp", async (importActual) => {
-  const actual = await importActual<typeof import("provider-contract/acp")>()
+// post-cutover (v0.8.0): המודול הוא @drive-coding/provider/client, ו-createAcpClient
+// מקבל callbacks כאובייקט { onUpdate } (לא listener פוזיציוני). ר' reconcile 2026-07-01.
+vi.mock("@drive-coding/provider/client", async (importActual) => {
+  const actual = await importActual<typeof import("@drive-coding/provider/client")>()
   return {
     ...actual,
     createAcpClient: vi.fn().mockImplementation(
-      (_transport: unknown, listener: (n: SessionNotification) => void) => {
-        capturedListener = listener
+      (
+        _transport: unknown,
+        callbacks:
+          | ((n: SessionNotification) => void)
+          | { onUpdate: (n: SessionNotification) => void },
+      ) => {
+        capturedListener =
+          typeof callbacks === "function" ? callbacks : callbacks.onUpdate
         return Promise.resolve(mockClient)
       },
     ),
