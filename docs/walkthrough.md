@@ -1,3 +1,19 @@
+## 2026-07-01 — slice-image-paste — Commit 4a + Commit 4b
+
+**Commit 4a (provider, TDD):**
+- `packages/provider/src/client/client.ts`: הוסף `PromptBlocks` (projection מ-SDK ContentBlock[]), `buildPromptParam(string|PromptBlocks)→PromptBlocks` (טהורה, מיוצאת), הרחבת `prompt()` ל-`string | PromptBlocks` (backward-compat)
+- `packages/provider/src/client/index.ts`: ייצוא additive ל-`PromptBlocks` + `buildPromptParam`
+- `packages/provider/src/client/client.prompt.test.ts`: 6 טסטים TDD (string regression + blocks passthrough + image-block)
+- טסטים: 139/139 passed. typecheck: שגיאה pre-existing ב-connect-in-process.test.ts:111 (WireFrame.method) — לא בקוד שלנו.
+
+**Commit 4b (FE, manual):**
+- `agent-session.svelte.ts`: flip `IMAGE_INPUT_ENABLED = true`, ייבוא `PromptBlocks`, `sendPrompt` מורחב (`opts.attachments?`), guard מורחב (תמונה-בלבד), בניית content (PromptBlocks), אכלוס `userBubble.attachments`
+- `TypeArea.svelte`: שלוש שכבות חסימה הוסרו — כפתור Send disabled מורחב (שכבה 1), `onSubmit` guard מורחב + ניקוי tray (שכבה 2), VM guard מורחב (שכבה 3)
+- typecheck: 0 errors | build: ירוק | lint:i18n: ירוק
+- אימות e2e חי: BLOCKED (ראה הערה — calev-heavy ינסה לאמת מול ספק עם promptCapabilities.image)
+
+**חריגות:** שגיאת typecheck pre-existing ב-connect-in-process.test.ts:111 קיימת ב-base ולא שינינו.
+
 ## 2026-06-29 — FEAT-thinking-live — Phase 1: אימות חי (manual)
 
 **אימות wire מקצה-לקצה:**

@@ -17,7 +17,7 @@ import type {
   SessionModelState,
 } from "@agentclientprotocol/sdk"
 import { tick } from "svelte"
-import { createAcpClient, type AcpClient } from "@drive-coding/provider/client"
+import { createAcpClient, type AcpClient, type PromptBlocks } from "@drive-coding/provider/client"
 import type { CuesEngine } from "$lib/engines/cues"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
 import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
@@ -40,10 +40,10 @@ import { type SessionInfo, normalizeSessionInfo } from "$lib/adapters/sessions"
 import { isBypassMode } from "$lib/util/permission-mode"
 
 // ─── image-attach kill-switch ─── (slice-image-paste Commit 2)
-// נשאר false עד ש-Commit 4 (שליחה מולטימודלית) + track-A מוכנים.
-// כל עוד false: supportsImageInput=false תמיד → לכידת-התמונה רדומה לחלוטין,
-// ללא תלות במה שהספק מדווח. Commit 4 הופך ל-true. (module-level const)
-const IMAGE_INPUT_ENABLED = false
+// Commit 4b הפך ל-true — שליחה מולטימודלית פעילה.
+// supportsImageInput קורא raw #client.capabilities.promptCapabilities.image
+// (§10 הכרעה א — raw, לא NormalizedCapabilities).
+const IMAGE_INPUT_ENABLED = true
 
 // ─── slice FE-normalization: ייבוא ─── (additive)
 // import type בלבד — NormalizedCapabilities מ-subpath ./types (pure, ללא spawn-core).
@@ -665,18 +665,34 @@ export class AgentSession {
   // ─── פרומפטים (prompting) ────────────────────────────────────
 
   /**
-   * שולח פרומפט של טקסט. `opts.recordingId` שמור עבור slice 10 (ניגון מחדש).
+   * שולח פרומפט (טקסט + אופציונלי attachments). `opts.recordingId` שמור עבור slice 10.
    * מחזיר Promise שמסתיים כשהתור מושלם (או נדחה בשגיאה).
+   *
+   * ─── slice-image-paste Commit 4b ───
+   * opts.attachments — תמונות שנדחסו (ImageAttachment[]) — נשלחות כ-image blocks.
+   * guard: if (!text.trim() && atts.length === 0) → לא שולח (finding אביגיל r2).
+   * תמונה-בלבד (בלי טקסט): content = [image-blocks בלבד] (ללא text-block ריק).
    */
-  sendPrompt = async (text: string, opts?: { recordingId?: string }): Promise<void> => {
+  sendPrompt = async (
+    text: string,
+    opts?: { recordingId?: string; attachments?: { mimeType: string; dataBase64: string }[] },
+  ): Promise<void> => {
     if (this.status !== "connected") return
     if (!this.#client || !this.#sessionId) return
-    if (!text.trim()) return
+    // ─── slice-image-paste Commit 4b: guard מורחב — תמונה-בלבד מותרת ───
+    const atts = opts?.attachments ?? []
+    if (!text.trim() && atts.length === 0) return
 
     // Slice 4: לכידה לטובת הקשר הקריינות
     this.lastUserMessage = text
 
-    // אופטימי (optimistic): הוסף בועת משתמש מיד (מקטע יחיד, ללא messageId)
+    // ─── slice-image-paste Commit 4b: בניית content (PromptBlocks) ───
+    const content: PromptBlocks = [
+      ...(text.trim() ? [{ type: "text" as const, text }] : []),
+      ...atts.map((a) => ({ type: "image" as const, mimeType: a.mimeType, data: a.dataBase64 })),
+    ]
+
+    // אופטימי (optimistic): הוסף בועת משתמש מיד
     const userBubble: UserBubble = {
       id: crypto.randomUUID(),
       kind: "user",
@@ -684,13 +700,17 @@ export class AgentSession {
       createdAt: Date.now(),
       segments: [{ id: crypto.randomUUID(), text }],
       ...(opts?.recordingId !== undefined ? { recordingId: opts.recordingId } : {}),
+      // ─── slice-image-paste Commit 4b: attachments לבועה אופטימית ───
+      ...(atts.length > 0
+        ? { attachments: atts.map((a) => ({ mimeType: a.mimeType, dataBase64: a.dataBase64 })) }
+        : {}),
     }
     this.bubbles.push(userBubble)
     this.#setTurnState("waiting")
     this.#resetTurnTracking()   // תחילת תור — #turnEnded=false + נקה טיימר יתום
 
     try {
-      await this.#client.prompt(this.#sessionId, text)
+      await this.#client.prompt(this.#sessionId, content)
       // RESP הגיע — opencode: tail עוד יבוא; gemini/claude: סוף
       this.#turnEnded = true
       this.#setTurnState("idle")   // נכון ל-gemini/claude. opencode: tail יטופל ב-#onSessionUpdate
