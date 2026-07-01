@@ -1,5 +1,77 @@
 # Decisions — drive-coding
 
+## 2026-07-01 — image-paste Commit 4: gating דרך raw, לא normalized
+
+### רציונל
+image-paste Commits 0–3 מוזגו (`2cdb85a`, פיגום רדום `IMAGE_INPUT_ENABLED=false`). נותר Commit 4
+(שליחה מולטימודלית). היה חסום על "Track A חיצוני" שירחיב `provider-contract` — אבל provider cutover
+v0.8.0 **ספג** את החבילה ל-`packages/provider/` (קוד שלנו). החסם נעלם, וההכרעה על ה-gating חזרה למרדכי.
+
+**ההכרעה: `supportsImageInput` נשאר קורא raw** — `#client.capabilities.promptCapabilities.image`
+(ערך אמיתי פר-סוכן מ-`initialize`), **לא** דרך `NormalizedCapabilities`. Commit 4 פוצל: 4a (provider —
+הרחבת `AcpClient.prompt` ל-`string | PromptBlocks`, backward-compat; ה-layer התחתון `conn.prompt` כבר
+מקבל `ContentBlock[]`) → 4b (FE — flip הדגל + wiring).
+
+### מה הכריע (נמדד מהקוד 2026-07-01)
+- **`staticCapsFor` (spawn: opencode/codex) hardcoded לגמרי** — "capabilities cannot be discovered at
+  runtime here". נתיב normalized היה כופה את `image` להיות **ניחוש קשיח** לספקי-spawn, מנותק ממה שהסוכן
+  מדווח → בדיוק סיכון הכשל-השקט שה-kill-switch נועד למנוע.
+- **raw = הערך האמיתי פר-סוכן לכל הספקים** (in-process claude *וגם* spawn, דרך initialize האמיתי).
+- **`promptCapabilities.image` הוא שדה ACP סטנדרטי** — כבר אחיד; `NormalizedCapabilities` נועד ל-host/_drive
+  features שהמשטח הגולמי לא חשף אחיד. image לא צריך את שכבת הנרמול. (audio/embeddedContext עתידיים ילכו
+  באותו מסלול raw — עקבי קטגורית.)
+
+### ממצאי אביגיל
+- **סבב 1 (🔴):** ה-brief תיאר את Commit 4b מול TypeArea הישן (79 שורות) — אבל **Commit 2 כבר מוזג**,
+  TypeArea עכשיו 229 שורות. שליחת תמונה-בלבד חסומה ב**שלוש** שכבות (כפתור Send `disabled`, `onSubmit`
+  early-return, VM guard), וה-brief טיפל רק באחת → DoD "תמונה-בלבד לא נחסמת" היה נכשל. + line-refs מיושנים.
+- **תיקון:** Commit 4b הורחב לכסות את שלוש השכבות עם refs מדויקים; §3.5+Commit 2 סומנו "היסטורי/מוזג"
+  (באנרים "אל תיצור מחדש"); טענות ה-SDK של 4a עוגנו מול `@agentclientprotocol/sdk@0.21.1`
+  (`PromptRequest.prompt: Array<ContentBlock>`, `ImageContent & {type:"image"}` עם data+mimeType).
+- **סבב 2:** READY, 0 findings.
+
+### תיאום (לא-חסם)
+`slice-warm-reattach-skip-init` (סשן אחר) מחלץ `buildAcpClientFacade` מ-`client.ts` ונוגע במתודת `prompt`
+— אותו אזור ש-4a עורך. חפיפת-קובץ רכה (שניהם base=dev, worktrees נפרדים). merge-order יטופל ע"י מרדכי;
+מי ששני מְיַשם מחדש את שינויו ב-facade המרוענן.
+
+### רעיונות שנדחו
+- **(ב) הוספת `image` ל-`NormalizedCapabilities`** — "נכון ארכיטקטונית" לכאורה, אך שובר על spawn (hardcoded),
+  יותר עבודה, ומערבב prompt-content caps עם host/_drive caps. נדחה.
+
+## 2026-07-01 — warm-reattach-skip-init: reconnect ל-agent חי בלי initialize חוזר
+
+### רציונל
+כפתור "Reconnect" ל-agent codex חי נכשל: `#warmReconnect` (FE) עבר דרך `createAcpClient()`
+ש**תמיד** שולח `initialize`. Codex ACP, על process שכבר אותחל, מחזיר `Already initialized`;
+הכשל הצית `transport.close()` → `#handleUnexpectedClose` → auto-reconnect → warm שוב → לולאה
+(המשתמשת ראתה "3 סוקטים ברצף"). ההכרעה: **נתיב יצירת-client נפרד `createAttachedAcpClient`**
+(ב-`packages/provider/src/client/client.ts`) שמדלג על `initialize` — `session/load` לבדו עובד
+על process חי (מאומת חי ב-wire). ה-facade משותף לשני הנתיבים (`buildAcpClientFacade`), כך
+שנתיב ה-cold נשאר זהה התנהגותית.
+
+### רעיונות שנדחו
+- **fork ל-`@agentclientprotocol/sdk`** — מיותר; ה-SDK כבר חושף `initialize`/`loadSession`
+  כפעולות נפרדות, החובה הייתה רק ב-wrapper שלנו.
+- **`skipInitialize` flag בתוך `createAcpClient`** — נדחה לטובת פונקציה נפרדת (הוכרע עם המשתמשת):
+  קריא יותר ולא מסכן את נתיב ה-cold שעובד.
+- **capabilities מנורמלות ל-warm** — לא נדרש: `NormalizedCapabilities` מגיע ממילא מ-`_drive/capabilities`
+  (ws-agent.ts:84); ה-raw `#client.capabilities` נצרך רק ב-`supportsImageInput` הרדום → fallback ריק בטוח.
+
+### ממצאי אביגיל
+3 סבבים (r1: USABLE-AFTER-FIX/4 findings → r2: 1 → r3: READY/0). אף 🔴. תפסה: (r1) מספרי-שורות
+`createAcpClient` הצביעו על שורת ה-`WsAcpTransport` ולא על הקריאה (תוקן: warm=525/attach=590/
+loadSession=757/coldReconnect→loadSession@466); export חסר ל-`AttachedAcpClientOptions`; היעדר
+תקדים ל-transport-double. (r2) ה-skeleton של ה-double סיפק 2 מ-4 חברי `AcpTransport` — חסרו
+`close`/`onClose` וה-facade קורא `transport.close()` → היה TypeError בזמן ריצה שמסווה כשל. כל תוקן ב-brief.
+
+### הערת המשך
+באג נפרד שנמצא אגב-אורחא ונשאר known-issue: ה-BE משתמש בקוד סגירה **1008** גם ל-"agent not found"
+וגם ל-"agent in use by another tab" (`ws-agent.ts:60,68`), וה-FE (`#warmReconnect:509`) עושה retry
+על כל 1008 — כך ש-not-found (לא-ניתן-לתיקון) מקבל 3 retries מיותרים. מחוץ לסקופ הסלייס; תיקון עתידי
+= קוד ייעודי ל-not-found. וכן: תיעוד ארגון חבילת provider ב-`docs/investigations/2026-07-01-provider-package-organization.md`
+(refactor אחרי הבאג).
+
 ## 2026-06-29 — provider cutover: claude in-process + ext channel חי (v0.8.0)
 
 ### רציונל
