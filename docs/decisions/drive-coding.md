@@ -1,5 +1,87 @@
 # Decisions — drive-coding
 
+## 2026-06-29 — provider cutover: claude in-process + ext channel חי (v0.8.0)
+
+### רציונל
+ההוצאה של provider-abstraction ל-git-dep נפרד הפכה לכאב. החזרנו אותה פנימה כחבילת-workspace
+`@drive-coding/provider`, **additive** (קוד-חדש שלא נוגע בנתיב החי), ואז cutover אחד מבוקר. המטרה:
+API = ACP-client רשמי **+ הרחבות מנורמלות**, כך שפקודות ייחודיות-לספק (rename/thinking/mcp) נקראות אחיד
+מצד-לקוח, והתרגום פר-ספק חי בשרת.
+
+### ההכרעות המרכזיות
+1. **ext ללא patch** (תיקון לכיוון קודם): runtime-controls של claude לא דורשים patch ל-claude-agent-acp.
+   ה-`ext` channel ברמת הפרוטוקול מקבל כל method; אנחנו מממשים את ה-`extMethod` הנכנס בעצמנו; וה-`query`
+   נגיש דרך `ClaudeAcpAgent.sessions` (שדה ציבורי ב-runtime). ראה entry "runtime-controls בלי patch".
+2. **Model 2 — BE-as-ACP-transport** (לא backend-managed מלא): ה-FE **נשאר ה-ACP client**; ה-BE מגשר את ה-WS
+   לחיבור-הספק. claude מתארח **in-process** (האדפטר בתהליך שלנו → בעלות על ה-ext channel; claude עצמו עדיין child
+   תחת ה-SDK). opencode/codex/gemini/qoder = spawn. הרווח: בעלות, לא ביצועים (in-process אף מקצר — תהליך אחד פחות).
+3. **ProviderConnection — פרימיטיבים ניטרליים**: החבילה חושפת `connect() → { wire(onLine/write), onFrame(decoded),
+   turn, onCrash, capabilities, ext?, pid }`; ה-BE **מרכיב** מהם orchestrator/registry/crash/wire-observability/
+   turn-tracking. `bridge-manager` נמחק — הלוגיקה הגנרית עברה לחבילה, וה-config הספציפי (audio-prompt) נשאר BE כ-`shapeEnv` opt.
+4. **ציר = ספק** (`providers/<x>/`), לא מנגנון-חיבור. spawn-core = כלי-עזר. registry מנתב cliKind→provider.
+5. **חוזה ext מטופס** (`extensions/schema.ts`, ArkType) משותף FE/BE; FE עושה capability-gating + facade מטופס; ה-FE
+   לא יודע מי הספק (capabilities+schema הם הקלטים).
+6. **stream-bridge** (iii-1): ה-`Stream` של sdk@1.0 נושא אובייקטי AnyMessage; ה-wire הוא string → שכבת-תרגום stringify/parse בגבול.
+
+### שרשרת הביצוע (11 slices, additive)
+C3-ext-thinking · EXT-SCHEMA · CUT-1(dep-repoint) · CUT-2(spawn-core-wrapper)+NBug1 · CUT-3a(reorg) ·
+CUT-3b-i(ProviderConnection) · CUT-3b-ii(BE-rewire) · CUT-3b-iii-1(connectInProcess) · CUT-3b-iii-2(routing חי) ·
+FE-normalization · FEAT-thinking-live. כל אחת: אביגיל READY → אליעזר → calev GO. אומת ב-preview חי.
+
+### רעיונות שנדחו
+- **patch/fork ל-claude-agent-acp** — מיותר (ה-query נגיש).
+- **backend-managed מלא (Model 1)** — שינוי גדול ב-FE↔BE; דחינו לטובת Model 2 (צעד-ביניים, ה-FE לא נשבר).
+- **reabsorption move+repoint (R1-R3)** — הוחלף במודל האדיטיבי; R1-R3 שימשו כמקור-קוד + cutover-preview מאומת.
+
+### הסתייגויות ידועות (פתוחות)
+- `mcp:false` תמיד ב-capabilities (initResult לא נתפס) — future; אין UI ל-mcp עדיין.
+- **חיוב**: claude in-process עדיין דרך SDK → pool third-party (פתוח-במודע; מיטיגציית VSCode-ext ב-roadmap).
+- אימות-אפקט thinking הוא best-effort (ה-ext מגיע ל-claude; שינוי-budget לא אומת דטרמיניסטית).
+
+## 2026-06-28 — V4b: בורר-קול Gemini (רשימה סטטית, אין endpoint)
+
+### רציונל
+‏אחרי ש-V4a (Gemini TTS) מוזג, הקול נשאר מקובע ל-`"Kore"` ב-`resolveTts()`. V4b מוסיף
+‏בחירת-קול. ההכרעה המרכזית: **מאיפה רשימת הקולות**. בדקנו אם קיים endpoint חי (העדפת
+‏המשתמשת) — ‏ו**אין כזה**: תיעוד Gemini speech-generation מגדיר 30 קולות prebuilt בלי REST
+‏endpoint; `GET /v1beta/voices` → 404; `models.list` מחזיר metadata בלי שדה קולות; ו-SDK
+‏`@google/genai@2.3.0` (המותקן) חסר כל method לרשימת קולות. לכן הגישה: **רשימה סטטית בקוד**
+‏(`voices-gemini.ts`, 30 קולות + תיאורי-אופי). זה גם מפשט את ה-slice משמעותית — אין fetch,
+‏retry/backoff או מצבי-טעינה (בניגוד ל-`loadVoices` של ElevenLabs).
+
+‏הכרעות-משתמשת: (1) להציג תיאורי-אופי בבורר — דרך `SelectOption.description` שכבר קיים
+‏ב-`Select.svelte`; (2) ברירת-מחדל = `Kore` (זהה למקובע היום, שינוי מינימלי); (3) התיאורים
+‏**דו-לשוניים** (אנגלית+עברית). מבנה: `resolveTts` מקבל פרמטר שלישי אופציונלי `geminiVoice`
+‏(backward-compatible), `Settings.geminiVoice` שטוח (לא voice-config מקונן), בורר UI
+‏conditional על `provider==="google"`.
+
+‏**הכרעת ה-i18n הדו-לשוני** (נגזרת מבקשת המשתמשת + אילוץ ה-lint): ה-lint חוסם עברית בכל
+‏קובץ פרט ל-`i18n/catalogs/*` + טסטים. לכן העברית **לא** יכולה להיות data ב-`voices-gemini.ts`.
+‏הפתרון: מפתח i18n פר-קול (`settings.geminiVoice.desc.<Id>`, ×30), ב-`he.ts`="`Firm · תקיף`"
+‏(גם-וגם), ב-`en.ts`="`Firm`". הקובץ הסטטי מחזיק `{ id, descKey: MessageKey }` — ה-`descKey`
+‏literal עובר typecheck (מפתח דינמי `t(\`...${id}\`)` היה נשבר מול ה-union). אביגיל אימתה את
+‏כל שרשרת ה-i18n (allowlist, MessageKey type, `Catalog`-completeness, append-only).
+
+### ‏ממצאי אביגיל
+‏r1 = **READY** (נדיר): אימתה symbols + שהטענה "אין endpoint" לא הופרכה. אחרי שינוי
+‏הדו-לשוני — r2 = **READY** שוב: אימתה את שרשרת ה-i18n (allowlist `lint-no-hebrew`,
+‏`MessageKey` union + יצוא מ-`core/i18n`, `Catalog`-completeness, append-only קטלוגים).
+‏סה"כ findings ירוקים בלבד (provider=`"google"` מול מפתחות `gemini`, ה-brief מודע;
+‏`Select` חותך description אך "`Firm · תקיף`" שורה-אחת → מלא).
+
+### ‏שינויי-כיוון (אחרי ביצוע)
+- ‏**בורר-קול מותנה-ספק** (תיקון `c9edd64`): ה-brief המקורי הוסיף בורר-Gemini conditional אך
+  ‏השאיר את בורר-ElevenLabs **תמיד-גלוי** → במצב Google הופיעו שניהם (מבלבל; השמטה ב-brief).
+  ‏המשתמשת תפסה ב-preview. תוקן-במקום: בורר-הספק קודם, ואז **רק** הבורר של הספק הפעיל
+  ‏(`{#if elevenlabs}…{:else if google}…`). typecheck+i18n נקיים.
+
+### ‏רעיונות שנדחו
+- ‏**endpoint חי** — נבדק לבקשת המשתמשת, לא קיים (ראה רציונל).
+- ‏**Cloud Text-to-Speech `voices.list`** — endpoint שכן קיים, אך API אחר (`texttospeech.googleapis.com`),
+  ‏קולות אחרים (Chirp/WaveNet — לא ה-prebuilt של Gemini), host שלא מוזרק ע"י OneCLI. לא חלופה.
+- ‏**voice-config מקונן פר-ספק** — מיותר; שני שדות שטוחים (`voiceId`/`geminiVoice`) מספיקים.
+- ‏**תיאורים אנגלית-בלבד** — נשקל בתחילה (פשוט יותר), נדחה לבקשת המשתמשת לטובת דו-לשוני.
+
 ## 2026-06-28 21:52 — permission-ui נשאר brief חסום עד hook הרשאות ב-provider-contract
 
 ### רציונל

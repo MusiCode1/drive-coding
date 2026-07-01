@@ -1,7 +1,7 @@
 # Slice A5 — watchdog ל‑turnState — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: ✅ READY (אביגיל r2 — 3×🟡 מ-r1 נסגרו; `reports/drive-coding/A5-avigail.md`)
+> **סטטוס**: ✅ **calev GO** (light, 5/5 DoD, 0 findings; commits c937952..57d7425). מוחזק ל-merge-בסוף (החלטת המשתמשת: merge יחיד).
 > **Complexity**: 4/10 (verifier: light)
 > **תלות**: [] · **base**: `dev` @ `3a23195` (עצמאי — A1 בוטל, ר' roadmap)
 > **שייך ל**: `docs/plans/playback-run-control-roadmap.md` (עצמאי, לא בשרשרת הפלייליסט)

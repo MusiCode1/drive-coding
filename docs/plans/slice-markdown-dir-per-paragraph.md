@@ -1,9 +1,9 @@
 # Slice B — markdown-dir-per-paragraph — תוכנית
 
-> **תאריך**: 2026-06-28
-> **סטטוס**: מאושר (אביגיל READY — סבב 2, 0 findings)
+> **תאריך**: 2026-06-28 · **עודכן**: 2026-06-29 (base=dev הכולל את D — D מוזג `05fe3b6`)
+> **סטטוס**: ✅ **מוזג ל-dev** — אביגיל אימתה-מחדש מול dev+D (`f1763d4`, 6/6 claims, finding 🟢 `dir`-guard שולב); commit `0fe7b87`, 67/67 טסטים; כלב GO 8/8; אומת חי ב-preview. סוגר את batch Markdown-UX.
 > **Complexity**: 4/10 (verifier: light)
-> **תלות**: אין קונפליקט-קבצים עם A (B נוגע רק ב-`markdown.ts`; A נוגע רק ב-components). **base=dev**, depends_on: []. ⚠️ merge-order: **B לפני D** (שניהם נוגעים ב-`markdown.ts`).
+> **תלות**: depends_on: []. **base=dev** (כולל את A+C+D שכבר מוזגו). B נוגע רק ב-`markdown.ts`. ⚠️ **merge-order ההיסטורי "B לפני D" בטל — D כבר על dev**; B נבנה עכשיו **מעל** D (ראה §0 + Reading list).
 
 ## §0 — Pre-flight
 
@@ -13,8 +13,16 @@ git worktree add .worktrees/markdown-dir-per-paragraph -b slice/markdown-dir-per
 cd .worktrees/markdown-dir-per-paragraph
 pnpm install && pnpm hooks:install
 ```
-> **base=dev** — B עצמאי-קבצים מ-A (קובץ שונה לגמרי). יכול לרוץ **במקביל** ל-A.
-> ⚠️ אבל **B ו-D שניהם נוגעים ב-`markdown.ts`** → אסור למזג D לפני B (או לרבייס). מרדכי שולט בסדר.
+> **base=dev** — A, C ו-D כבר מוזגו. B נבנה מעל המצב הנוכחי של `markdown.ts` (כולל pass-3b של D).
+>
+> ### ⚠️ אינטראקציה עם D (code-syntax-highlight) — מאומת מול הקוד הנוכחי
+> D הוסיף ל-`markdown.ts` שלושה passים נפרדים של sanitize (Pass 2=markdown, 3a=KaTeX, 3b=code).
+> ה-hook `afterSanitizeAttributes` נרשם **גלובלית** (שורה ~157) → **רץ על כל שלושת ה-passים**.
+> ההשלכה ל-B:
+> - ה-set של B (`P/LI/H1-6/BLOCKQUOTE/TD/TH`) **לא כולל** `pre`/`code`/`span` → code-fragments
+>   (Pass 3b) **לא** יקבלו `dir`. הקוד נשאר LTR. ✅ זה בדיוק הרצוי.
+> - block-elements של ה-markdown (Pass 2) יקבלו `dir="auto"` כמתוכנן.
+> - ה-hook רץ אחרי הניקוי → ה-`dir` שמוזרק שורד גם אם `dir` לא ב-`CODE_ATTR` (לא רלוונטי — code לא ב-set).
 
 ### Run
 - FE: `pnpm --filter @drive-coding/frontend-v2 dev`
@@ -28,13 +36,15 @@ pnpm install && pnpm hooks:install
 
 ### Reading list
 **must-read לפני**:
-- `src/lib/util/markdown.ts` — **במיוחד** ה-DOMPurify hook הקיים (`afterSanitizeAttributes`, שורות ~154-161)
-  שכבר מוסיף `target=_blank` ל-`<a>`. **B מרחיב את אותו hook** — לא יוצר חדש.
+- `src/lib/util/markdown.ts` — **במיוחד** ה-DOMPurify hook הקיים (`afterSanitizeAttributes`, שורות **156-163**
+  אחרי מיזוג D) שכבר מוסיף `target=_blank` ל-`<a>`. **B מרחיב את אותו hook** — לא יוצר חדש.
+  ⚠️ שים לב ל-`renderMarkdown` (שורות ~169-221): D הוסיף **Pass 3b** (`CODE_TAGS=pre/code/span`,
+  `CODE_ATTR=class`, שורות 150-153 + 203-210) — ה-hook הגלובלי רץ גם עליו, אך ה-set של B לא נוגע ב-code.
 - `src/lib/util/markdown-parse.ts` §normalizeInvisibles — להבין שה-bidi הקיים מטפל ב**תווים** (RLM/invisibles),
   ו-B משלים אותו ברמת ה**אלמנט** (`dir` attribute). הם משלימים, לא חופפים.
 
 **reference**:
-- `MARKDOWN_ATTR` ב-`markdown.ts:78` — `dir` **כבר** ב-allowlist (שורד sanitize).
+- `MARKDOWN_ATTR` ב-`markdown.ts:79` — `dir` **כבר** ב-allowlist (שורד sanitize).
 
 ## §1 — מטרה
 
@@ -72,11 +82,13 @@ util/
 ### Commit 0 — הרחבת ה-hook (approach: **TDD** — renderMarkdown ב-jsdom)
 
 **שינויים**: `src/lib/util/markdown.ts` — בתוך ה-`DOMPurify.addHook("afterSanitizeAttributes", ...)` הקיים,
-להוסיף: אם `node.tagName` הוא אחד מ-`P, LI, H1-H6, BLOCKQUOTE, TD, TH` → `node.setAttribute("dir","auto")`.
+להוסיף: אם `node.tagName` הוא אחד מ-`P, LI, H1-H6, BLOCKQUOTE, TD, TH` **ואין לו כבר `dir`** → `node.setAttribute("dir","auto")`.
 (ה-`<a>` logic הקיים נשאר כמו שהוא — מוסיפים ענף, לא מחליפים.)
+> **למה `if (!node.hasAttribute("dir"))`** (finding אביגיל 🟢): המודל יכול לפלוט `dir` מפורש
+> (`dir` ב-`MARKDOWN_ATTR` → שורד sanitize). כוונה מפורשת מנצחת `dir="auto"` האוטומטי — לא לדרוס.
 
 **API skeleton** — ⚠️ **מוסיפים ענף בתוך ה-callback הקיים, לא hook חדש.** ה-`DOMPurify.addHook`
-הקיים עטוף ב-`if (typeof document !== "undefined") { ... }` (שורות ~154-161). את ה-`Set` מגדירים
+הקיים עטוף ב-`if (typeof document !== "undefined") { ... }` (שורות **156-163** אחרי D). את ה-`Set` מגדירים
 ברמת-מודול; את הענף מוסיפים בתוך אותו callback אחד:
 ```ts
 // רמת-מודול (ליד ה-allowlists):
@@ -90,7 +102,10 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
     node.setAttribute("rel", "noopener noreferrer")
   }
   // ── חדש: block elements → dir="auto" (יישור עצמאי פר-פסקה) ──
-  if (BIDI_BLOCK_TAGS.has(node.tagName)) node.setAttribute("dir", "auto")
+  // guard: לא לדרוס dir מפורש שהמודל אולי פלט (finding אביגיל 🟢)
+  if (BIDI_BLOCK_TAGS.has(node.tagName) && !node.hasAttribute("dir")) {
+    node.setAttribute("dir", "auto")
+  }
 })
 ```
 > **אסור** ליצור `addHook` שני או להוציא את ה-callback מתוך עטיפת ה-`if (typeof document...)` —

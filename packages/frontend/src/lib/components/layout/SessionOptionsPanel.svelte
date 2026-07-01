@@ -9,21 +9,29 @@
  * ─── redesign-3 (חיווט dropdowns) ───
  * ─── slice sessions-inline: סשנים inline (מחליף SessionsDialog) ───
  */
-import { untrack } from "svelte"
-import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
-import PowerIcon from "@lucide/svelte/icons/power"
-import LogOutIcon from "@lucide/svelte/icons/log-out"
-import Volume2Icon from "@lucide/svelte/icons/volume-2"
-import VolumeXIcon from "@lucide/svelte/icons/volume-x"
-import SettingsIcon from "@lucide/svelte/icons/settings"
-import { Dialog as BitsDialog } from "bits-ui"
-import { goto } from "$app/navigation"
-import { page } from "$app/state"
-import { getI18n, getSession, getSpeaker, getResponsive, getUiShell, getSettings } from "$lib/context"
-import Select, { type SelectOption, type SelectGroup } from "$lib/components/ui/Select.svelte"
-import SessionCard from "$lib/components/modals/SessionCard.svelte"
+
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 import type { MessageKey } from "@drive-coding/core/i18n"
+import LogOutIcon from "@lucide/svelte/icons/log-out"
+import PowerIcon from "@lucide/svelte/icons/power"
+import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
+import SettingsIcon from "@lucide/svelte/icons/settings"
+import Volume2Icon from "@lucide/svelte/icons/volume-2"
+import VolumeXIcon from "@lucide/svelte/icons/volume-x"
+import { Dialog as BitsDialog } from "bits-ui"
+import { untrack } from "svelte"
+import { goto } from "$app/navigation"
+import { page } from "$app/state"
+import SessionCard from "$lib/components/modals/SessionCard.svelte"
+import Select, { type SelectGroup, type SelectOption } from "$lib/components/ui/Select.svelte"
+import {
+  getI18n,
+  getResponsive,
+  getSession,
+  getSettings,
+  getSpeaker,
+  getUiShell,
+} from "$lib/context"
 
 const t = getI18n().t
 const session = getSession()
@@ -47,9 +55,9 @@ let dontShowAgain = $state(false)
 
 function onLeaveRunning() {
   if (session.bypassActive || settings.suppressLeaveWarning) {
-    doLeaveRunning()   // bypass / suppressed → צא ישר
+    doLeaveRunning() // bypass / suppressed → צא ישר
   } else {
-    leaveConfirmOpen = true  // לא-bypass → אזהר קודם
+    leaveConfirmOpen = true // לא-bypass → אזהר קודם
   }
 }
 
@@ -72,6 +80,31 @@ function toggleSettings() {
   }
 }
 
+// ─── slice FEAT-thinking-live: thinking tokens control ───
+
+/** ערכי thinking: off=null, low=4000, medium=8000, high=16000 */
+const THINKING_VALUES: Record<string, number | null> = {
+  off: null,
+  low: 4000,
+  medium: 8000,
+  high: 16000,
+}
+
+let thinkingLevel = $state<string>("off")
+
+async function onThinkingChange(v: string) {
+  thinkingLevel = v
+  const n = THINKING_VALUES[v] ?? null
+  await session.setThinkingTokens(n)
+}
+
+const thinkingOptions = $derived([
+  { value: "off", label: t("agentOptions.thinking.off") },
+  { value: "low", label: t("agentOptions.thinking.low") },
+  { value: "medium", label: t("agentOptions.thinking.medium") },
+  { value: "high", label: t("agentOptions.thinking.high") },
+])
+
 // ─── helper — flatten select options (groups → flat list) ───
 type SelectOpt = { value: string; name: string; description?: string | null }
 
@@ -83,7 +116,8 @@ function flattenSelectOptions(option: SessionConfigOption): SelectOpt[] {
 
 const toSelectOptions = (
   items: { value: string; name: string; description?: string | null }[],
-): SelectOption[] => items.map((o) => ({ value: o.value, label: o.name, description: o.description }))
+): SelectOption[] =>
+  items.map((o) => ({ value: o.value, label: o.name, description: o.description }))
 
 // מודלים: אם ה-modelId מכיל "/" (למשל "anthropic/claude-..") → קבץ לפי החלק
 // שלפני ה-slash (הספק). אם אף אחד לא מכיל "/" → רשימה שטוחה (בלי קיבוץ).
@@ -106,7 +140,7 @@ const modelGroups = $derived.by<SelectGroup[] | undefined>(() => {
 
 /** configOptions שאינם model/mode */
 const extraOptions = $derived(
-  session.configOptions.filter((o) => o.category !== "model" && o.category !== "mode")
+  session.configOptions.filter((o) => o.category !== "model" && o.category !== "mode"),
 )
 
 /**
@@ -143,10 +177,10 @@ const modeLabel = $derived.by(() => {
 /** האם יש אפשרויות סוכן/מודל להציג */
 const hasAgentOptions = $derived(
   (session.models?.availableModels?.length ?? 0) > 0 ||
-  session.configOptions.some((o) => o.category === "model") ||
-  (session.modes?.availableModes?.length ?? 0) > 0 ||
-  session.configOptions.some((o) => o.category === "mode") ||
-  extraOptions.length > 0
+    session.configOptions.some((o) => o.category === "model") ||
+    (session.modes?.availableModes?.length ?? 0) > 0 ||
+    session.configOptions.some((o) => o.category === "mode") ||
+    extraOptions.length > 0,
 )
 
 // ─── event handlers ───
@@ -166,7 +200,7 @@ async function selectSession(info: { sessionId: string; cwd: string; title?: str
     sessionId: info.sessionId,
     cwd: info.cwd,
     cliKind: settings.cliKind,
-    title: info.title ?? "",   // ← slice session-title: העבר title ל-switchSession
+    title: info.title ?? "", // ← slice session-title: העבר title ל-switchSession
   })
   uiShell.closeSheet()
   await goto("/chat")
@@ -360,6 +394,20 @@ $effect(() => {
         {/if}
       {/if}
     </div>
+
+    <!-- thinking-tokens — gated על capabilities -->
+    {#if session.supports.thinkingTokens}
+    <label class="flex flex-col gap-1">
+      <span class="text-[11px] px-1" style="color:var(--fg-dim)">{t("agentOptions.thinking.label")}</span>
+      <Select
+        value={thinkingLevel}
+        options={thinkingOptions}
+        title={t("agentOptions.thinking.label")}
+        ariaLabel={t("agentOptions.thinking.label")}
+        onchange={onThinkingChange}
+      />
+    </label>
+    {/if}
 
     <!-- שאר configOptions (לא model/mode) -->
     {#each extraOptions as opt (opt.id)}

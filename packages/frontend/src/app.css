@@ -38,6 +38,16 @@
     --recording:   #ff5a5a;
     --thinking:    #c98bff;
     --speaking:    #f0b65c;
+    /* syntax highlight tokens (github-dark inspired, warmed for ember) */
+    --hl-keyword:  #f69d50;
+    --hl-string:   #a5d6a7;
+    --hl-comment:  #7d8e80;
+    --hl-number:   #79c0ff;
+    --hl-func:     #d2a679;
+    --hl-type:     #f0b864;
+    --hl-attr:     #7ec8e3;
+    --hl-tag:      #7ee787;
+    --hl-meta:     #8b949e;
   }
 
   /* ── 2. FOREST — רגוע, טבעי, sage ──────────────────────────────── */
@@ -58,6 +68,16 @@
     --recording:   #ef6b6b;
     --thinking:    #d9b36b;
     --speaking:    #a8d5a2;
+    /* syntax highlight tokens (github-dark inspired, greened for forest) */
+    --hl-keyword:  #79c0ff;
+    --hl-string:   #a5d6a7;
+    --hl-comment:  #6a7d6b;
+    --hl-number:   #f0b864;
+    --hl-func:     #d2fb9a;
+    --hl-type:     #7ee787;
+    --hl-attr:     #7ec8e3;
+    --hl-tag:      #9bcfa0;
+    --hl-meta:     #8b949e;
   }
 
   /* ── 3. PLUM — ייחודי, יוקרתי, לבנדר/סגול ──────────────────────── */
@@ -78,6 +98,16 @@
     --recording:   #ff5d8f;
     --thinking:    #a78bfa;
     --speaking:    #7fe0c8;
+    /* syntax highlight tokens (github-dark inspired, purpled for plum) */
+    --hl-keyword:  #c9aefc;
+    --hl-string:   #a5d6a7;
+    --hl-comment:  #7d6e8e;
+    --hl-number:   #79c0ff;
+    --hl-func:     #e6c9ff;
+    --hl-type:     #f0b864;
+    --hl-attr:     #7ec8e3;
+    --hl-tag:      #7ee787;
+    --hl-meta:     #8b949e;
   }
 
   /* ── 4. TEAL — מודרני-טק, טורקיז ───────────────────────────────── */
@@ -98,6 +128,16 @@
     --recording:   #ff5a5a;
     --thinking:    #c98bff;
     --speaking:    #5eead4;
+    /* syntax highlight tokens (github-dark inspired, tealed) */
+    --hl-keyword:  #5eead4;
+    --hl-string:   #a5d6a7;
+    --hl-comment:  #5a7d7a;
+    --hl-number:   #79c0ff;
+    --hl-func:     #d2fb9a;
+    --hl-type:     #f0b864;
+    --hl-attr:     #2dd4bf;
+    --hl-tag:      #7ee787;
+    --hl-meta:     #8b949e;
   }
 
   /* ── 5. MIDNIGHT — כחול-דֶּב, עמוק ──────────────────────────────── */
@@ -108,6 +148,16 @@
     --accent:#6b8afd; --accent-hi:#8aa3ff; --accent-soft:rgba(107,138,253,0.15);
     --bubble-user:#1b2440; --bubble-agent:#181f33;
     --recording:#ff5a5a; --thinking:#c98bff; --speaking:#5eead4;
+    /* syntax highlight tokens (github-dark — best match for midnight blue) */
+    --hl-keyword:  #ff7b72;
+    --hl-string:   #a5d6a7;
+    --hl-comment:  #5d6d87;
+    --hl-number:   #79c0ff;
+    --hl-func:     #d2a8ff;
+    --hl-type:     #ffa657;
+    --hl-attr:     #79c0ff;
+    --hl-tag:      #7ee787;
+    --hl-meta:     #8b949e;
   }
 
   /* ── 6. ROSE — ורוד-בלאש ───────────────────────────────────────── */
@@ -118,6 +168,16 @@
     --accent:#f472b6; --accent-hi:#fb8fc8; --accent-soft:rgba(244,114,182,0.15);
     --bubble-user:#2e1f2a; --bubble-agent:#261a2a;
     --recording:#ff5a5a; --thinking:#c98bff; --speaking:#f9a8d4;
+    /* syntax highlight tokens (github-dark inspired, rosened) */
+    --hl-keyword:  #fb8fc8;
+    --hl-string:   #a5d6a7;
+    --hl-comment:  #8b6072;
+    --hl-number:   #79c0ff;
+    --hl-func:     #f9c8e0;
+    --hl-type:     #ffa657;
+    --hl-attr:     #7ec8e3;
+    --hl-tag:      #7ee787;
+    --hl-meta:     #8b949e;
   }
 
   /* ── 7. SLATE — אפור-מינימלי ────────────────────────────────────── */
@@ -128,6 +188,16 @@
     --accent:#8aa0bd; --accent-hi:#a6b8d1; --accent-soft:rgba(138,160,189,0.15);
     --bubble-user:#232830; --bubble-agent:#1c2028;
     --recording:#ef6b6b; --thinking:#b0b8c4; --speaking:#8aa0bd;
+    /* syntax highlight tokens (github-dark — neutral fits slate perfectly) */
+    --hl-keyword:  #ff7b72;
+    --hl-string:   #a5d6a7;
+    --hl-comment:  #6b7280;
+    --hl-number:   #79c0ff;
+    --hl-func:     #d2a8ff;
+    --hl-type:     #ffa657;
+    --hl-attr:     #79c0ff;
+    --hl-tag:      #7ee787;
+    --hl-meta:     #8b949e;
   }
 
   /* ── 8. DAYLIGHT — ערכה בהירה ───────────────────────────────────── */
@@ -140,6 +210,16 @@
     --bubble-user:#efe7dd; --bubble-agent:#f1ece6;
     --recording:#e0453f; --thinking:#8b5cf6; --speaking:#c2772e;
     --card-shadow: 0 -6px 24px rgba(40,28,15,.10);
+    /* syntax highlight tokens (github-light — readable on light backgrounds) */
+    --hl-keyword:  #cf222e;
+    --hl-string:   #116329;
+    --hl-comment:  #6e7781;
+    --hl-number:   #0550ae;
+    --hl-func:     #8250df;
+    --hl-type:     #953800;
+    --hl-attr:     #0550ae;
+    --hl-tag:      #116329;
+    --hl-meta:     #6e7781;
   }
 }
 

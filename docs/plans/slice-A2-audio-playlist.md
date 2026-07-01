@@ -1,7 +1,7 @@
 # Slice A2 — AudioPlaylist + reserve‑on‑enqueue — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: ✅ הושלם (אליעזר, 2026-06-29; 4 commits 9f44577..6234963; calev-heavy pending מרדכי)
+> **סטטוס**: ✅ **GO-עם-דחייה-מאושרת** (2026-06-29). calev-heavy סימן BUG-1 (late-early ordering) → **הוסגר-מחדש כעיצוב**: סגמנט late-loaded נשאר sorted+`ready`+נָוויגבילי (לא bug, feed ל-A4); סדר-חי-מלא = שורש turn-end, נדחה לחקירה (דחייה מתועדת+מאושרת ע"י המשתמשת). **אפס שינוי-קוד.** build ירוק 378/378, core 282/282. (אביגיל r1 READY; `reports/drive-coding/A2-calev.md`; `decisions/voice-acp.md` 2026-06-29)
 > **Complexity**: 8/10 (verifier: **heavy** — state‑model refactor + streaming)
 > **תלות**: [] · **base**: `dev` @ `3a23195` (A1 בוטל — ר' roadmap §הפירוק)
 > **שייך ל**: `docs/plans/playback-run-control-roadmap.md` (ראש השרשרת הנקייה)
@@ -156,12 +156,19 @@ export class AudioPlaylist {
 
 ## §5 — DoD
 
+> **scope (מעודכן 2026-06-29 אחרי calev-heavy):** "סדר נכון" מובטח למקרה **up-front / reverse-fetch**
+> (סגמנט מוקצה-בזמן, ה-cursor ממתין לו). **late-early** — סגמנט שה-slot שלו נוצר אחרי שה-cursor
+> החי כבר עבר (זנב-מחשבה שנפלט ב-flush של turn-end אחרי שההודעה הבאה כבר נוגנה) — **לא מנוגן חי**,
+> אלא נשאר sorted+`ready` בפלייליסט **לניווט (A4)**. סדר-חי-מלא נדחה ל**חקירת turn-end** (BUG-1,
+> דחייה מאושרת — ר' `decisions/voice-acp.md` 2026-06-29 + `investigations/2026-06-28-sentence-cutting-mid-word.md`).
+
 | בדיקה | איך |
 |---|---|
-| סדר נכון תחת markReady הפוך | integration test (Commit 2) ירוק |
+| סדר נכון תחת markReady הפוך (up-front) | integration test (Commit 2) ירוק |
 | timeout → skip, ממשיך | integration test ירוק |
 | error → skip | integration test ירוק |
-| אימות חי Gemini: 4+ משפטים ארוכים → סדר נכון | האזנה ב‑preview (כלב heavy) |
+| late-early נשאר sorted+`ready` (לא `skipped`, לא תקוע-כבאג) → זמין ל-A4 | קריאת diff + carry ל-A4 |
+| אימות חי Gemini: 4+ משפטים ארוכים → סדר נכון | האזנה ב‑preview (כלב heavy) — Windows חסם onecli/bun; smoke ידני ב-preview אחרי merge |
 | אימות חי ElevenLabs: עדיין תקין (regression) | האזנה |
 | `#enqueue`/`#fetchJob` קוראים reserve/markReady | קריאת diff |
 | build‑gate | typecheck + core test + frontend test ירוקים |

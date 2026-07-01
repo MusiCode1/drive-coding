@@ -1,27 +1,33 @@
 /**
- * ws-agent.ts — צינור בתי WebSocket עבור /ws/agent/:id
+ * ws-agent.ts — צינור בתי WebSocket עבור /ws/agent/:id (CUT-3b-ii rewire)
  *
  * Phase 3: צינור ישיר in-process מ-feWs ל-child.stdin/stdout.
  * אין צורך בתהליך WS bridge מתווך.
  *
  * ארכיטקטורה:
  *   feWs (ws.WebSocket מדפדפן ה-FE)
- *     ↕ readline + stdin.write
- *   child (ChildProcess שהופעל על ידי bridge-manager)
+ *     ↕ conn.wire.onLine + conn.wire.write
+ *   ProviderConnection (connectSpawn — in-process pipe)
+ *
+ * CUT-3b-ii — שינויים מ-bridge-manager:
+ *   - bridgeManager.getChild → connectionRegistry.get(agentId) (presence check)
+ *   - markAttached/markDetached → connectionRegistry
+ *   - onLine → conn.wire.onLine
+ *   - writeStdin → conn.wire.write
+ *   - wire-observability: conn.onFrame נרשם פעם אחת ב-connect (registry level) —
+ *     לא כאן. ⚠️ לא מוסיפים decode כאן (מניעת כפל).
+ *   - child.once("exit") → conn.onCrash (close feWs כש-child מת)
  *
  * מקרי קצה:
  *   - סוכן לא נמצא → סוגר close(1008, "agent not found")
  *   - MED-8: טאב שני לאותו agentId → סוגר close(1008, "agent in use by another tab")
- *   - יציאת ה-child → סוגר feWs.close(1011, "bridge closed")
- *   - סגירת feWs → ניקוי (rl.close + detach), לא להרוג את ה-child (NO child.kill)
- *
- * wire observability: עבר ל-bridge-manager (slice-wire-observability-bridge).
- * ns: backend.acp.wire (שורד detach — תמיד-פעיל לכל חיי ה-child).
+ *   - crash → סוגר feWs.close(1011, "bridge closed")
+ *   - סגירת feWs → ניקוי (unsub + detach), לא להרוג את ה-child (conn.close לא נקרא)
  */
 
-import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { createLogger } from "@drive-coding/core/log"
 import type { WebSocket } from "ws"
+import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 
 const log = createLogger("backend.ws.agent")
@@ -40,16 +46,7 @@ export type AgentWsData = {
 
 export function createAgentWsHandler(deps: {
   orchestrator: AgentOrchestrator
-  bridgeManager: {
-    getChild(bridgeId: string): ChildProcessWithoutNullStreams | null
-    // ─── תצוגת active-agents (attached) ───
-    markAttached(bridgeId: string): void
-    markDetached(bridgeId: string): void
-    // ─── slice agent-busy-indicator: subscription לשורות stdout ───
-    onLine(bridgeId: string, cb: (line: string) => void): () => void
-    // ─── wire observability: כתיבה ל-stdin עם תיעוד (slice-wire-observability-bridge) ───
-    writeStdin(bridgeId: string, line: string): boolean
-  }
+  connectionRegistry: ConnectionRegistry
 }): (ws: WebSocket, agentId: string) => void {
   // MED-8: חיבור FE WS פעיל אחד לכל agentId — מונע התנגשות מצב ACP בטאב שני
   const activeFeWs = new Map<string, WebSocket>()
@@ -64,63 +61,78 @@ export function createAgentWsHandler(deps: {
       return
     }
 
-    const childOrNull = deps.bridgeManager.getChild(agentId)
-    if (!childOrNull) {
+    // presence check: האם agent קיים ב-connectionRegistry?
+    const conn = deps.connectionRegistry.get(agentId)
+    if (!conn) {
       childLog.warn({}, "agent not found")
       feWs.close(1008, "agent not found")
       return
     }
-    // non-null בוודאות — guard למעלה כבר הכריח return אם null
-    const child = childOrNull
 
     activeFeWs.set(agentId, feWs)
-    deps.bridgeManager.markAttached(agentId) // ← תצוגת active-agents (attached)
-    childLog.info({ pid: child.pid }, "WS connect → pipe attached")
+    deps.connectionRegistry.markAttached(agentId)
+    childLog.info({ pid: conn.pid }, "WS connect → pipe attached")
+
+    // ── capability delivery (CUT-3b-iii-2): שלח _drive/capabilities ל-FE ────────
+    // conn.capabilities נגיש מיד אחרי connect (static per-provider).
+    // שולחים כ-JSON-RPC notification (extNotification) אחרי markAttached.
+    // ה-FE יקרא ל-_drive/capabilities listener (FE-normalization slice).
+    // נשלח באופן synchronous (לפני onLine subscription) — FE מקבל caps לפני אירועים.
+    try {
+      const capsFrame = JSON.stringify({
+        jsonrpc: "2.0",
+        method: "_drive/capabilities",
+        params: conn.capabilities,
+      })
+      feWs.send(`${capsFrame}\n`)
+      childLog.debug({ capabilities: conn.capabilities }, "_drive/capabilities sent to FE")
+    } catch {
+      /* feWs may have closed between connect and here — non-fatal */
+    }
 
     // ── pipeChild — ניתוב ──────────────────────────────────────────────────────
-    // bridge-manager הוא הבעלים היחיד של child.stdout (reader קבוע ב-spawnInternal).
-    // אנחנו נרשמים ל-onLine ומקבלים שורות כ-callback — לא קוראים את ה-stream ישירות.
-    // readline מסיר את ה-\n בסוף; bridge-manager מעביר שורות נקיות — אנחנו מוסיפים \n
-    // כי המפענח ndJsonStream של ה-FE משתמש ב-\n כגבול הודעה.
-    // wire observability (in): מטופל ב-bridge-manager.stdoutRl — שורד detach.
-    const unsub = deps.bridgeManager.onLine(agentId, (line) => {
+    // conn.wire.onLine: subscriber לשורות stdout מה-child.
+    // readline מסיר את ה-\n בסוף; מוסיפים \n כי ה-FE מצפה לו.
+    // wire observability (in): מטופל ב-connectionRegistry (onFrame ב-connect) — שורד detach.
+    const unsub = conn.wire.onLine((line) => {
       if (line.length === 0) return
-      try { feWs.send(`${line}\n`) } catch { /* feWs נסגר */ }
+      try {
+        feWs.send(`${line}\n`)
+      } catch {
+        /* feWs נסגר */
+      }
     })
 
-    // הודעת feWs ל-child.stdin (הוסף שורה חדשה אם חסר)
-    // wire observability (out): מטופל ב-bridgeManager.writeStdin — שורד detach.
+    // הודעת feWs ל-child (conn.wire.write)
+    // wire observability (out): onFrame ב-connectionRegistry כבר מכסה — לא כופלים כאן.
     feWs.on("message", (data) => {
       try {
         const text = data.toString()
 
-        // keepalive ספציפי ל-WS (ר' ws-transport.ts) — עונים $/pong ולא מעבירים
-        // ל-child. ה-$/ping הוא עניין transport-NAT שלא חל על stdio של סוכן ה-ACP,
-        // ואסור שידלוף ל-stdin שלו.
+        // keepalive ספציפי ל-WS — עונים $/pong ולא מעבירים ל-child.
         if (text.includes('"$/ping"')) {
           feWs.send(`${JSON.stringify({ jsonrpc: "2.0", method: "$/pong" })}\n`)
-          return // keepalive transport — לא עובר ל-child, לא חלק מ-acp.wire
+          return
         }
 
         const line = text.endsWith("\n") ? text : `${text}\n`
-        deps.bridgeManager.writeStdin(agentId, line)
+        conn.wire.write(line)
       } catch (err) {
         childLog.warn({ err }, "stdin write failed")
       }
     })
 
-    // יציאת ה-child ל-close feWs
-    const onChildExit = (code: number | null) => {
-      childLog.info({ code }, "child exited — closing feWs")
+    // crash → close feWs
+    const unsubCrash = conn.onCrash(() => {
+      childLog.info({}, "child crashed — closing feWs")
       try {
         feWs.close(1011, "bridge closed")
       } catch {
         // כבר סגור
       }
-    }
-    child.once("exit", onChildExit)
+    })
 
-    // סגירת feWs לניקוי, אבל אל תהרוג את ה-child
+    // סגירת feWs לניקוי — אל תהרוג את ה-connection
     // detach() היא idempotent — גם אם error+close נורים ברצף, הניקוי מתבצע פעם אחת בלבד
     let detached = false
     function detach(reason: "close" | "error", err?: unknown): void {
@@ -133,10 +145,10 @@ export function createAgentWsHandler(deps: {
         )
       else childLog.info({}, "WS disconnect — detaching pipe")
       activeFeWs.delete(agentId)
-      deps.bridgeManager.markDetached(agentId) // ← תצוגת active-agents (attached)
-      unsub() // ← slice agent-busy-indicator: ביטול subscription ל-stdout
-      child.off("exit", onChildExit)
-      // חשוב: לעולם לא child.kill() — ה-child שורד התנתקות של ה-FE
+      deps.connectionRegistry.markDetached(agentId)
+      unsub()
+      unsubCrash()
+      // חשוב: לעולם לא conn.close() — ה-connection שורד התנתקות של ה-FE
     }
 
     feWs.on("error", (err) => detach("error", err))

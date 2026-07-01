@@ -1,21 +1,28 @@
 # Slice B1 — UI בקרת השמעה + ריצה — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: ✅ הושלם (אליעזר 2026-06-29; 3 commits: ba6f496..a16893d; calev-heavy ממתין)
+> **סטטוס**: ✅ READY (אביגיל r2 — 4 ממצאי r1 נסגרו; `reports/drive-coding/B1-avigail.md`). base=`slice/playback-ui` (A2-A5) @ 56c3a55
 > **Complexity**: 6/10 (verifier: heavy — UI חי + RTL + נייד)
 > **תלות**: [A4] (+ A5 אופציונלי ל‑turnInterrupted) · **base**: branch `slice/playback-core-a4`
 > **worktree נפרד** (UI) — מאפשר merge של התשתית (A2‑A5) בלי ה‑UI.
 > **שייך ל**: `docs/plans/playback-run-control-roadmap.md` (UI, אחרי השרשרת)
+>
+> ⚠️ **carry מ-A4 (calev-heavy — 2 edge-cases דרגה-נמוכה שה-UI חושף):**
+> 1. **לחיצה על בועה-שכבר-בפלייליסט אחרי שהזרם החי הסתיים** → `jumpToBubble` הוא **no-op שקט**
+>    (`if(!#playing) return`), אבל `playingBubbleId` (שדה ב-**`bubble-player.svelte.ts:37`**) מתעדכן ללא
+>    תנאי → ה-UI יראה "מתנגן" בלי שמע. **התיקון ב-`bubble-player.svelte.ts:103-110`** (לא ב-engine, אביגיל #4):
+>    כשלוחצים בועה in-playlist+done ו-`#playing===false` → **להתחיל ניגון מחדש** (לא רק jump).
+> 2. **`next()`/`prev()` בזמן ש-current עדיין `reserved`** (טוען) → לא תקיעה, אבל latency-glitch
+>    אפשרי בלחיצות-מהירות-בזמן-טעינה. שקול debounce/disable על הכפתורים בזמן loading, או קבל את ה-glitch.
 
 ## §0 — Pre-flight
 
 ### Worktree (נפרד — UI)
 ```bash
-git worktree add .worktrees/playback-ui -b slice/playback-ui slice/playback-core-a4
-cd .worktrees/playback-ui
-pnpm install && pnpm hooks:install
-# הערה: חיווי turnInterrupted (Commit 2) דורש ש-A5 מוזג ל-base. אם A5 לא מוזג עדיין —
-# השמט את החיווי (graceful) או base על מיזוג A4+A5.
+# ✅ ה-base כבר קיים (מרדכי הכין): worktree slice/playback-ui = A4 ממוזג עם A5 (tip 56c3a55).
+# turnInterrupted (agent-session:142) קיים ב-base → Commit 2 (חיווי) **אינו אופציונלי** (אביגיל #3).
+# (אם בכל זאת מקימים מחדש: git worktree add .worktrees/playback-ui -b slice/playback-ui slice/playback-core-a4 ; ואז merge --no-ff slice/playback-core-a5)
+cd .worktrees/playback-ui   # קיים + install+hooks+svelte-kit-sync הורצו
 ```
 
 ### Run / Browser
@@ -27,7 +34,7 @@ pnpm install && pnpm hooks:install
 - `packages/frontend/src/lib/components/chat/StatusBubble.svelte` — נקודת התצוגה הקיימת.
 - `packages/frontend/src/lib/view-models/derived/model-status.svelte.ts` — `phase`.
 - `packages/frontend/src/lib/view-models/derived/voice-mode.svelte.ts` — `stopPlayback`/`cancelRun` (A3).
-- `packages/frontend/src/lib/view-models/audio-playlist.svelte.ts` — `pause/resume/next/prev` (A3/A4).
+- `packages/frontend/src/lib/engines/audio-playlist.svelte.ts` — `pause`:162/`resume`:171/`next`:196/`prev`:207/`jumpTo`:219/`jumpToBubble`:229/`transport`:56 (A3/A4). ⚠️ engines/ לא view-models/ (אביגיל #1).
 - `packages/frontend/src/lib/context.ts` — `getModelStatus`/`getAudioPlaylist`/`getVoiceMode`.
 - `packages/frontend/AGENTS.md` — חמשת חוקי הזהב.
 - `docs/frontend-spec.md` — drive‑first, car mode, גדלים hands‑free.
@@ -96,7 +103,7 @@ i18n: core/src/i18n/keys.ts + catalogs/he.ts + en.ts  (playbackControls.*)
 
 - `onclick` → `voiceMode.cancelRun()` / `stopPlayback()` / `playlist.pause/resume/next/prev`.
 - אם `session.turnInterrupted` → חיווי קצר (`t("playbackControls.interrupted")`), נעלם בתור הבא.
-- החלף קריאות ישנות ל‑`voiceMode.cancel()` (אם MicButton קורא) → `cancelRun()` (הסר את ה‑alias).
+- החלף קריאות ישנות ל‑`voiceMode.cancel()` (ב‑`MicLarge.svelte` ×2: שורות 45/89 — **אין MicButton**, אביגיל #2) → `cancelRun()` (והסר את ה‑alias `@deprecated`).
 
 **Verification**: אימות חי מלא (DoD).
 

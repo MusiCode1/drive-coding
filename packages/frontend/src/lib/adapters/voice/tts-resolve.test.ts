@@ -5,9 +5,11 @@
  *  - "google" → geminiTts + "Kore" + "gemini-3.1-flash-tts-preview"
  *  - "elevenlabs" → elevenLabsTts + voiceId מועבר + "eleven_v3"
  *  - format מתאים לכל ספק ("pcm" / "mp3")
+ *  - V4b: פרמטר geminiVoice אופציונלי — ברירת מחדל "Kore", ניתן לשינוי
  */
 import { describe, expect, it, vi } from "vitest"
 import { resolveTts } from "./tts-resolve"
+import { GEMINI_VOICES } from "./voices-gemini"
 import { elevenLabsTts } from "./tts"
 import { geminiTts } from "./tts-gemini"
 
@@ -45,5 +47,28 @@ describe("resolveTts", () => {
   it("elevenlabs — voiceId מועבר כמו שהוא (לא מוחלף ב-Kore)", () => {
     const result = resolveTts("elevenlabs", "custom-voice-xyz")
     expect(result.voiceId).toBe("custom-voice-xyz")
+  })
+
+  // ─── V4b: geminiVoice parameter ───
+
+  it("(א) google ללא geminiVoice → voiceId=Kore (תאימות-לאחור)", () => {
+    const result = resolveTts("google", "ignored")
+    expect(result.voiceId).toBe("Kore")
+  })
+
+  it('(ב) google עם geminiVoice="Puck" → voiceId=Puck', () => {
+    const result = resolveTts("google", "ignored", "Puck")
+    expect(result.voiceId).toBe("Puck")
+  })
+
+  it("(ג) elevenlabs לא מושפע מ-geminiVoice", () => {
+    const result = resolveTts("elevenlabs", "rachel", "Puck")
+    expect(result.voiceId).toBe("rachel")
+    expect(result.provider).toBe(elevenLabsTts)
+  })
+
+  it("(ד) GEMINI_VOICES.length === 30 וכולל Kore", () => {
+    expect(GEMINI_VOICES).toHaveLength(30)
+    expect(GEMINI_VOICES.some((v) => v.id === "Kore")).toBe(true)
   })
 })

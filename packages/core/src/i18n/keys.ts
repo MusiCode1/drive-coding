@@ -225,10 +225,10 @@ export type MessageKey =
   | "connect.recent.collapse"
   | "connect.recent.expand"
   // ─── leave-running (slice leave-running-background) ───
-  | "session.leaveRunning"          // תווית כפתור "צא — השאר רץ" (חדש)
-  | "session.closeSession"          // title כפתור הכיבוי-המלא (Power) — מבדיל מ-leaveRunning
+  | "session.leaveRunning" // תווית כפתור "צא — השאר רץ" (חדש)
+  | "session.closeSession" // title כפתור הכיבוי-המלא (Power) — מבדיל מ-leaveRunning
   | "session.leaveWarning.title"
-  | "session.leaveWarning.body"     // "הריצה תיעצר ברגע שתגיע בקשת-הרשאה..."
+  | "session.leaveWarning.body" // "הריצה תיעצר ברגע שתגיע בקשת-הרשאה..."
   | "session.leaveWarning.confirm"
   | "session.leaveWarning.cancel"
   | "session.leaveWarning.dontShowAgain"
@@ -243,6 +243,44 @@ export type MessageKey =
   | "playbackControls.prev"
   | "playbackControls.next"
   | "playbackControls.interrupted"
+  // ─── thinking-tokens ─── (slice FEAT-thinking-live)
+  | "agentOptions.thinking.label" // תווית הפקד "חשיבה" / "Thinking"
+  | "agentOptions.thinking.off" // ערך כבוי
+  | "agentOptions.thinking.low" // ערך נמוך (4000)
+  | "agentOptions.thinking.medium" // ערך בינוני (8000)
+  | "agentOptions.thinking.high" // ערך גבוה (16000)
+  // ─── gemini voice picker ─── (V4b-gemini-voice-picker)
+  | "settings.geminiVoice.label"
+  | "settings.geminiVoice.desc.Zephyr"
+  | "settings.geminiVoice.desc.Puck"
+  | "settings.geminiVoice.desc.Charon"
+  | "settings.geminiVoice.desc.Kore"
+  | "settings.geminiVoice.desc.Fenrir"
+  | "settings.geminiVoice.desc.Leda"
+  | "settings.geminiVoice.desc.Orus"
+  | "settings.geminiVoice.desc.Aoede"
+  | "settings.geminiVoice.desc.Callirrhoe"
+  | "settings.geminiVoice.desc.Autonoe"
+  | "settings.geminiVoice.desc.Enceladus"
+  | "settings.geminiVoice.desc.Iapetus"
+  | "settings.geminiVoice.desc.Umbriel"
+  | "settings.geminiVoice.desc.Algieba"
+  | "settings.geminiVoice.desc.Despina"
+  | "settings.geminiVoice.desc.Erinome"
+  | "settings.geminiVoice.desc.Algenib"
+  | "settings.geminiVoice.desc.Rasalgethi"
+  | "settings.geminiVoice.desc.Laomedeia"
+  | "settings.geminiVoice.desc.Achernar"
+  | "settings.geminiVoice.desc.Alnilam"
+  | "settings.geminiVoice.desc.Schedar"
+  | "settings.geminiVoice.desc.Gacrux"
+  | "settings.geminiVoice.desc.Pulcherrima"
+  | "settings.geminiVoice.desc.Achird"
+  | "settings.geminiVoice.desc.Zubenelgenubi"
+  | "settings.geminiVoice.desc.Vindemiatrix"
+  | "settings.geminiVoice.desc.Sadachbia"
+  | "settings.geminiVoice.desc.Sadaltager"
+  | "settings.geminiVoice.desc.Sulafat"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

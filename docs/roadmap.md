@@ -41,6 +41,7 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 
 | פריט | סטטוס |
 | --- | --- |
+| **provider cutover — `@drive-coding/provider` reabsorbed + claude in-process + ext channel חי** — חבילת-workspace additive (client/transport/config/spawn/host/connection/extensions); `bridge-manager`→`ProviderConnection` (BE מרכיב פרימיטיבים); claude in-process (Model 2, ext channel), opencode/codex spawn; `_drive/setThinkingTokens` חי מ-FE→claude; FE capability-gating+facade. | ✅ **מוזג ל-dev v0.8.0** (2026-06-29, merge `fac76c2`; 11 slices, כל אחת אביגיל READY→calev GO; אומת ב-preview חי claude/opencode/codex+thinking; ר' `decisions/drive-coding.md`). הסתייגויות: `mcp:false` (future), חיוב third-party (פתוח-במודע). |
 | P0 — contract + ACP + claude-code adapters + registry | ✅ מוזג ל-main |
 | vnext-A/B — transport split + ProviderLaunchConfig | ✅ ב-integration-vnext |
 | **vnext-C — config-options** (SessionConfig + setConfigOption) | 🔄 brief אושר (READY), בביצוע |
@@ -78,14 +79,14 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 
 ##### 📦 Markdown-UX batch (2026-06-28) — 7 בקשות-משתמשת לרינדור-צד-לקוח
 
-> מקור: התנסות-המשתמשת 28/06. נחתך ל-4 slices. **A מוזג; B/C/D טרם.** briefs ב-`docs/plans/`, decisions ב-`decisions/voice-acp.md`.
+> מקור: התנסות-המשתמשת 28/06. נחתך ל-4 slices. **A+D מוזגים; B/C טרם.** briefs ב-`docs/plans/`, decisions ב-`decisions/voice-acp.md`.
 
 | Slice | מכסה (req) | סטטוס |
 | --- | --- | --- |
 | **A — `markdown-content-unify`** | #1 קוד no-wrap+hscroll · #3 מרקדאון בהודעות-משתמש (UserBubble היה חסר CSS — ציטוט/רשימות/כותרות) · #4 מחשבות→מרקדאון מלא · #5 רשימות-סמן (Tailwind preflight) | ✅ **מוזג ל-dev** (merge `a20fbda`). איחוד 4 משטחים ל-`MarkdownContent.svelte` (+`ContentViewerDialog`). אביגיל READY ×2, כלב GO 10/10, **+ תיקון blockquote-נראה** (`var(--border)` 8% היה בלתי-נראה → `--fg-muted`+רקע; נתפס חי בpreview). אומת חי ע"י המשתמשת. |
-| **B — `markdown-dir-per-paragraph`** | #6 `dir="auto"` פר block-element | 🟢 **brief READY** (אביגיל ×2, 0 findings). base=dev, depends_on:[] (עצמאי-קבצים מ-A). ⚠️ merge **לפני D** (שניהם `markdown.ts`). **טרם בוצע.** |
-| **C — `code-copy-button`** | #2 כפתור-העתקה פר code-block | 🟢 **brief READY** (אביגיל ×2, 0 findings). Svelte action על `MarkdownContent` + event-delegation לגוטשת-streaming. שימוש-חוזר `bubble.copy/copied` (FE-only). **טרם בוצע.** |
-| **D — `code-syntax-highlight`** | #7 צביעת-קוד | 🟡 **בוצע — חסום למיזוג.** highlight.js ב-**pass-3b מבודד** (`CODE_ALLOW=pre/code/span+class`, בלי style; דפוס KaTeX). 16 שפות, theme פר-פלטה. branch `slice/code-syntax-highlight` (typecheck נקי). **חוסמים: (1) אין כלב** (executor נקטע לפני runtime-gate; נתיב קריטי-לאבטחה → calev-heavy חובה); **(2) קונפליקט-מיזוג** (נבנה על A טרם-מיזוג). decision נרשם, Shiki נדחה. |
+| **B — `markdown-dir-per-paragraph`** | #6 `dir="auto"` פר block-element | ✅ **מוזג ל-dev** (2026-06-29, merge `f194357`, release **v0.7.1**; push `9988c74`). **🎉 סוגר את batch Markdown-UX (A+B+C+D ✅).** merge-order ההיסטורי "B לפני D" בטל (D מוזג קודם); אביגיל אימתה-מחדש מול dev+D (`f1763d4`, 6/6 claims, finding 🟢 `dir`-guard שולב). הרחבת DOMPurify hook: `BIDI_BLOCK_TAGS`→`dir="auto"` עם guard `!hasAttribute("dir")`; `pre/code` מודרים (LTR). 67/67 tests, כלב GO 8/8, אומת חי ב-preview. **known-limitation**: `<br>`-separated segments בפסקה דו-לשונית אחת חולקים כיוון (לא block-elements נפרדים) — מקרה-קצה bidi, לא רגרסיה. |
+| **C — `code-copy-button`** | #2 כפתור-העתקה פר code-block | ✅ **מוזג ל-dev** (2026-06-29, merge `02ff12f`, release **v0.6.0**; push origin `74e26a2`). **הופרד מהשרשרת**: depends_on:[A] מומשה (A מוזג `a20fbda`) → base=dev ישיר. Svelte action `enhanceCodeBlocks` co-located + event-delegation (גוטשת-streaming). FE-only (`bubble.copy/copied`), typecheck 0, 371/371. אביגיל r2 READY, כלב GO 8/8, **אומת חי ב-preview (build מלא, כולל integration עם D)**. קונפליקט CSS מול D ב-`MarkdownContent.svelte` נפתר additive. |
+| **D — `code-syntax-highlight`** | #7 צביעת-קוד | ✅ **מוזג ל-dev** (2026-06-28, merge `05fe3b6`, release **v0.5.0**). highlight.js ב-**pass-3b מבודד** (`CODE_ALLOW=pre/code/span+class`, בלי style; דפוס KaTeX). 16 שפות, theme פר-פלטה (8 פלטות × 9 `--hl-*`). **F1 שתפסה calev-heavy** (בלוק-קוד לפני KaTeX איבד את עוטף `<pre><code>` — סיווג fragment לפי boundary-by-index) **תוקן ב-`fragmentKinds[]`** + 3 טסטי-רגרסיה. **calev-heavy re-run GO 10/10**; אומת חי בדפדפן ע"י המשתמשת (צבעים ב-2 פלטות). F3 (class="hljs" ריק בבלוק-בלי-שפה) cosmetic נשאר. Shiki נדחה (inline-style מתנגש במודל). **שינוי-סדר**: מוזג **לפני** B (D היה גמור-ואומת; B/C מוחזקים ל-executor טרי מול dev+D — מזעור קונפליקטים ב-`markdown.ts`/`MarkdownContent.svelte`). |
 
 ##### 🐛 virtua scroll — 3 באגים (pre-brief למרדכי, סשן נפרד)
 

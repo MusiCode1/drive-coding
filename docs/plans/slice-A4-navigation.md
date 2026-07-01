@@ -1,10 +1,17 @@
 # Slice A4 — ניווט prev/next/jump + איחוד BubblePlayer — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: מאושר (אביגיל דולגה לבקשת המשתמשת)
+> **סטטוס**: ✅ **calev-heavy GO** (2026-06-29, tip c2931d3; svelte-check 0, 388/388; 6 נקודות-הקוד תקינות; 2 הסתייגויות דרגה-נמוכה→carry ל-B1; env-gap קול-חי→smoke). `reports/drive-coding/A4-avigail.md`
 > **Complexity**: 8/10 (verifier: heavy — refactor בעלות + streaming)
 > **תלות**: [A3] · **base**: branch `slice/playback-core-a3`
 > **שייך ל**: `docs/plans/playback-run-control-roadmap.md` (slice 4/6)
+>
+> ⚠️ **carry מ-A2 (known-bug BUG-1, דחייה מאושרת):** סגמנט **late-early** — שנפלט ב-flush של
+> turn-end אחרי שה-cursor החי כבר עבר (זנב-מחשבה טיפוסי) — נשאר בפלייליסט sorted+`ready` ו**לא
+> נוגן חי**. **A4 חייב:** (1) שהניווט (`prev`/`jumpTo`/`jumpToBubble`) יחשוף ויקריא גם פריט
+> `ready`-שלא-נוגן-חי (לא להתעלם ממנו ולא להניח שכל פריט מאחורי cursor=`done`); (2) להחליט
+> אסטרטגיית-buffer עבורו (כמו §9 Q2 — לשמר או re-fetch ב-jumpTo). זה **לא** `skipped` — יש לו
+> ערך-ניווט. ר' `decisions/voice-acp.md` 2026-06-29.
 
 ## §0 — Pre-flight
 
@@ -49,9 +56,10 @@ pnpm install && pnpm hooks:install
 ## §3 — Architecture diagram
 
 ```
-view-models/audio-playlist.svelte.ts  (עולה מ-engine ל-VM/entity? — ר' §9 Q1)
+view-models/audio-playlist.svelte.ts  (נשאר engine, מוחזק כ-entity ב-context — §9 Q1)
   items: PlaylistItem[]  (+ bubbleId, + sentenceText למקרה reserve-from-history)
-  cursor
+  cursor: number   ← ⚠️ אביגיל #1: היום `cursor` הוא **משתנה לוקאלי** ב-#playLoop (audio-playlist:192).
+                     Commit 0 חייב לקדם אותו ל-**שדה `$state`** + #navSignal (resolver לקטיעת await play).
   next() / prev() / jumpTo(index) / jumpToBubble(bubbleId)
   reserveFromText(bubbleId, segmentId, text)  ← ל-on-demand (BubblePlayer)
 
@@ -73,16 +81,20 @@ BubblePlayer ── toggle(bubbleId):
 
 ```ts
 class AudioPlaylist {
-  next(): void           // cursor→הבא; עוצר נוכחי; מתחיל ניגון מ-cursor
-  prev(): void           // cursor→הקודם (לפחות 0); השמעה מחדש מ-cursor
-  jumpTo(index: number): void   // cursor=index ; restart playback
-  // jumpToSegment הישן → jumpTo(indexOf(segmentId))
+  // ⚠️ קדם קודם: cursor משתנה-לוקאלי (192) → שדה $state; הוסף #navSignal/resolver
+  //    (כדפוס #pauseResolve/#waitForResume של A3) לקטיעת ה-await play הנוכחי.
+  next(): void           // cursor→הבא; קוטע current; #playLoop ממשיך מ-cursor החדש
+  prev(): void           // cursor→הקודם (≥0); קוטע current; re-fetch (ר' §6) + ניגון
+  jumpTo(index: number): void   // **תוספת-נטו** (jumpToSegment כבר נמחק ב-A2); cursor=index, קטיעה+ניגון
 }
 ```
-- ניווט = עצור current (`audioStream.cancel(currentSegmentId)`), הזז cursor, ה‑`#playLoop`
-  ממשיך מ‑cursor החדש. שמור transport (אם paused — לא להתחיל אוטומטית).
-- ⚠️ סגמנט שכבר `done` ומנווטים אליו אחורה: צריך **לנגן מחדש**. אם ה‑AudioSink כבר ניקה
-  אותו (PCM `cancel` מוחק) — צריך לשמר/לייצר מחדש. ר' §7.
+- **ניווט = 3 צעדים** (לא "רק הזזת cursor", אביגיל #2): (1) `audioStream.cancel(currentSegmentId)`
+  עוצר את הנוכחי; (2) `cursor = newIndex`; (3) **להעיר את ה-`#playLoop` מתוך ה-`await play`**
+  באמצעות ה-#navSignal/resolver — אחרת הלולאה תקועה ב-await של ה-play הקודם ולא תקרא את ה-cursor
+  החדש. שמור transport (אם paused — לא להתחיל אוטומטית). שמור על `#playing` re-entrancy guard.
+- ⚠️ **prev/jump תמיד דורשים re-fetch** (אביגיל #4): `cancel()` עצמו עושה `#segments.delete(id)`
+  (pcm-audio-stream:260, audio-stream:197) — אז ברגע שעוצרים את הנוכחי כדי לנווט, הסגמנט נמחק
+  מה-sink. לכן ניגון-מחדש של פריט `done`/`ready` **חייב** `reserveFromText`-מחדש (§9 Q2 = הנתיב היחיד).
 
 **Verification**: integration test (Commit 3).
 
@@ -147,7 +159,7 @@ class AudioPlaylist {
 
 | סיכון | מקור | מיטיגציה |
 |---|---|---|
-| סגמנט `done` שנוקה ב‑AudioSink → אי‑אפשר prev | pcm/audio‑stream `cancel` מוחק | **אל תמחק על done** — רק על stop/clear; או reserveFromText‑מחדש ב‑prev. להכריע §7. |
+| סגמנט שנוקה ב‑AudioSink → prev דורש re-fetch | `cancel()` עושה `#segments.delete` (לא תלוי-done!) | אביגיל #4: המחיקה ב-`cancel` עצמו, אז ניווט (שקורא cancel) **תמיד** מוחק את הנוכחי. הנתיב היחיד: `reserveFromText`-מחדש ב-prev/jump. ("אל תמחק על done" — **בוטל, שגוי**.) |
 | context.ts/+layout שינוי לא‑additive | parallel‑safe‑code.md | זוג getter/setter חדש בלבד; escalate אם יותר. |
 | Svelte 5 reactivity על items+cursor | learnings | `$state`, mutate בהחלפה; צרכנים קוראים `.length`. |
 | double‑ownership בזמן refactor (Commit 2) | — | להעביר בבת אחת; typecheck גייט. |
@@ -170,6 +182,6 @@ class AudioPlaylist {
 | # | שאלה | ברירת מחדל | חוסם? |
 |---|---|---|---|
 | 1 | AudioPlaylist נשאר engine או עולה ל‑VM? | engine שמוחזק כ‑entity ב‑context (יש בו `$state` כבר) | ❌ |
-| 2 | prev לסגמנט done — לשמר buffer או לייצר מחדש? | לייצר מחדש (reserveFromText) — פשוט יותר, פחות זיכרון | ❌ |
+| 2 | prev לסגמנט done — לשמר buffer או לייצר מחדש? | **נעול: לייצר מחדש (reserveFromText) — הנתיב היחיד** (cancel מוחק מה-sink, אביגיל #4). לא אופציה. | ❌ |
 | 3 | לנגן היסטוריה תוך‑כדי תור פעיל? | שמור guard (no‑op בתור) כמו היום | ❌ |
 | 4 | הקלטות‑משתמש בפלייליסט? | לא — future (החלטה #2) | ❌ |

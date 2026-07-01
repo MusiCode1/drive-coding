@@ -1,5 +1,90 @@
 # Decisions — voice-acp
 
+## 2026-06-29 — gate: build-gate ל-frontend = `svelte-check`, לא root `tsc --build`
+
+> נחשף ב-A3 (calev-heavy r1 NO-GO): executor דיווח "typecheck 0" אבל ה-frontend היה אדום.
+
+**השורש:** ה-root `tsconfig.json` references כולל **רק** `packages/core` + `packages/backend`.
+`pnpm typecheck` (= `tsc --build`) **לא בודק את frontend בכלל**. הטסטים (vitest/esbuild) הם
+transpile-only ומתעלמים משגיאות-טיפוס. כך ש"שני ירוקים" (root-tsc + vitest) הסתירו gate שלישי
+אדום: `svelte-check`, שהוא **היחיד** שמכסה את קבצי ה-frontend.
+
+**ההכרעה (חובה לכל slice שנוגע ב-frontend):** ה-build-gate הסמכותי ל-frontend הוא
+`pnpm --filter @drive-coding/frontend-v2 typecheck` (= svelte-check). **כל dispatch של
+executor/calev ל-slice-frontend חייב לדרוש אותו במפורש** (לא רק root `tsc`). מוטמע מ-A3 ואילך.
+
+---
+
+## 2026-06-29 — playback A2: BUG-1 (late-early ordering) — דחייה מאושרת, אפס שינוי-קוד
+
+> runtime-gate: calev-heavy על A2 = NO-GO. הוסב ל-**GO-עם-דחייה-מתועדת+מאושרת**. ר' `reports/drive-coding/A2-calev.md`.
+
+### הבעיה שכלב תפס
+`reserve` עושה sorted-insert לפי orderKey, אבל ה-`#playLoop` מחזיק `cursor` כאינדקס-מספרי.
+סגמנט שה-slot שלו נוצר **אחרי** שה-cursor החי עבר את מיקומו-הממוין → לא מנוגן חי, ונשאר `ready`.
+**השורש (אובחן מהקוד):** זה לא race-בזרימה — `#appendChunk` אוטם בועה ברגע שבועה חדשה נוצרת,
+אז ערבוב-chunks לא קורה. ה-trigger היחיד הוא **ברז-2 (flush של turn-end)**: זנב-מחשבה בלי
+טרמינטור נפלט ב-flush עם orderKey נמוך מהודעה שכבר נוגנה. צר (דורש שההשמעה הדביקה), אבל אמיתי.
+
+### ההכרעה (דיון עם המשתמשת)
+1. **השורש הוא turn-end, לא הפלייליסט.** "תמיד יש חשש שלא הסתיים — עוד טקסט בדרך" → אין סיגנל-אמין
+   של סוף-הודעה. לתקן בפלייליסט = לטפל בתסמין. **דוחים לחקירת turn-end** (אותו שורש כמו חיתוך-מילים
+   → אוחד ב-`investigations/2026-06-28-sentence-cutting-mid-word.md`, לדבג עם `WIRE_RECORD`).
+2. **לא `skipped`.** תובנת המשתמשת: לסגמנט late-loaded **יש ערך** — בפלייליסט-היסטוריה (A4) המשתמש
+   יכול לעשות reverse ולהקריא אותו. `skipped` היה משמיד תוכן בר-השמעה. אז: נשאר sorted+`ready`+נָוויגבילי.
+   `skipped` שמור **רק** ל-no-audio (timeout/error).
+3. **"רפאים" = עיצוב, לא דליפה.** במודל-הניווט, `ready`-מאחורי-cursor הוא מצב-מנוחה לגיטימי של
+   פריט-היסטוריה. **אין צורך בשינוי-קוד ב-A2** (הקוד כבר משאיר אותו sorted+ready).
+
+### תנאי הדחייה (runtime-gate)
+- מתועד (כאן + חקירה + DoD של A2 עודכן).
+- אישור מפורש מהמשתמשת (ניתן 2026-06-29).
+- **נישא כ-known-bug ל-A4** (`slice-A4-navigation.md` §ראש): הניווט **חייב** לחשוף+להקריא פריט
+  `ready`-שלא-נוגן-חי + להכריע buffer-strategy.
+
+### מה שנדחה (גישות שנשקלו)
+- **guard `skipped` נגד "רפאים"** — נשקל, **בוטל** אחרי תובנת-הניווט (הורס ערך-reverse).
+- **cursor→earliest-unplayed-scan (להקריא late-early מחוץ-לסדר)** — נדחה (לא פותר את השורש; מוסיף
+  אי-סדר ומורכבות; ובכל מקרה turn-end הוא הבעיה).
+
+---
+
+## 2026-06-28 — code-syntax-highlight (D): צביעת-קוד ב-pass-3b מבודד + merge (v0.5.0)
+
+> Slice D מתוך Markdown-UX batch (req #7). merge `05fe3b6`. brief: `docs/plans/slice-code-syntax-highlight.md`.
+
+### רציונל
+צביעת בלוקי-קוד **בלי לשבור את מודל-האבטחה**. `MARKDOWN_ALLOW` נקי בכוונה מ-`span`/`style`/`class`
+(הגנה מ-overlay-phishing דרך prompt-injection). כל highlighter מוסיף markup → חייב מסלול מבודד.
+הדפוס כבר מוכח עבור KaTeX (sentinels → allowlist נדיב מבודד); הוספנו **pass-3b** צר יותר לקוד:
+`CODE_ALLOW = pre/code/span + class בלבד` (בלי style). הבלוק **כולו** נכנס ל-fragment המבודד (לא רק
+ה-spans) כי `MARKDOWN_ATTR` לא כולל `class` — אילו העוטף נשאר בנתיב-המרקדאון, pass-2 היה מוחק את
+ה-`class="hljs"` וה-theme היה נשבר.
+
+### הכרעות
+- **highlight.js** (class-only, סינכרוני, SSR-safe) — נבחר. **Shiki נדחה** (inline-style מתנגש במודל,
+  async, WASM כבד). Prism נדחה (hljs נקי יותר ב-node).
+- **bundle control**: `highlight.js/lib/core` + רישום ידני של 16 שפות (לא ה-full bundle ~מאות KB).
+- שפה לא-מוכרת/חסרה → **plain** (אין auto-detect אגרסיבי). inline code נשאר מונוכרום.
+- theme פר-פלטה: `.hljs-*` → CSS vars (`--hl-*`), מוגדר תחת כל 8 הפלטות.
+
+### ממצאי כלב (calev-heavy) + שינויי-כיוון
+- **F1 [BLOCKING]** — סבב ראשון NO-GO: בלוק-קוד **לפני** KaTeX איבד את עוטף `<pre><code class="hljs">`.
+  שורש: סיווג fragments לפי **boundary-by-index** (`slice(katexCount)`) — `storeCodePlaceholder` לא עדכן
+  `katexCount`, אז code-before-math סווג בטעות כ-katex-fragment ועבר `KATEX_ALLOW` (בלי pre/code).
+  **תוקן ב-`fragmentKinds: ("katex"|"code")[]`** מקביל ל-`currentMap` (סיווג לפי kind בפועל, לא הנחת-סדר)
+  + 3 טסטי-רגרסיה שבודקים `<pre>` שורד (הטסט הישן תת-אימת — בדק spans+katex בלבד). זה גם ייתר את F2.
+- **calev-heavy re-run → GO 10/10**. אבטחה ללא רגרסיה (injection ב-code יוצא escaped גם בנתיב-הכשל).
+- **F3** (cosmetic, לא חוסם): בלוק-בלי-שפה מקבל `class="hljs"` ריק — לא מזיק (אין CSS על `.hljs` ריק).
+- **residual**: קריאות-צבעים-חיה פר-פלטה אומתה ע"י המשתמשת בדפדפן (preview build, 2 פלטות) — סגור.
+
+### שינוי-סדר merge (B-לפני-D → D-ראשון)
+ה-brief המקורי קבע "B לפני D" (שניהם נוגעים `markdown.ts`) כשהיו **שניהם לא-מבוצעים**. בפועל D היה
+**גמור-ואומת** ו-B/C לא התחילו. בנוסף התגלה ש-**C גם נוגע ב-`MarkdownContent.svelte`** (כמו D), לא רק
+B ב-`markdown.ts`. לכן הפכתי: **D מוזג ראשון**, ו-B+C ירוצו כ-executors טריים מול dev+D הסופי
+(B=`markdown.ts`, C=`MarkdownContent.svelte`+קובץ-חדש; לא חולקים קובץ זה-עם-זה → parallel-safe). זה מזעֵר
+פתרון-קונפליקטים ומונע re-resolution של השכתוב-הכבד של D מול תוספת זעירה של B.
+
 ## 2026-06-28 — playback-run-control: תוכנית בקרת השמעה+ריצה+פלייליסט (briefs, טרם בוצע)
 
 > תכנון מרדכי. מסמך-אב: `docs/plans/playback-run-control-roadmap.md`. **אין קוד עדיין.**
@@ -1580,3 +1665,70 @@ fallback modes) כ-belt-and-suspenders, כדי שיהיה נכון עצמאית.
 
 ### מצב
 brief **READY** → ניתן ל-dispatch. Complexity 3 → calev light. base=dev, depends_on: [].
+
+---
+
+## 2026-06-29 — code-copy-button (slice C): הפרדה מ-batch Markdown-UX + dispatch
+
+### רציונל
+slice C (כפתור-העתקה פר code-block, req #2) תוכנן כחלק מ-batch Markdown-UX (A→B→C→D), עם
+`depends_on: [A]` ו-dispatch-gate "אסור worktree לפני מיזוג A". בבדיקה התברר שה-gate **כבר
+התקיים**: A (`markdown-content-unify`) מוזג ל-dev (`a20fbda`, נמצא ב-ancestry של HEAD),
+ו-`MarkdownContent.svelte` קיים על dev. התלות היחידה של C מומשה.
+
+### הכרעה
+**C הופרד מהשרשרת ושוגר עצמאית.** C עצמאי-קבצים מ-B ומ-D (שניהם נוגעים ב-`markdown.ts`;
+C נוגע רק ב-`MarkdownContent.svelte` + קובץ-action חדש `enhance-code-blocks.ts`). היחס היחיד
+ל-D הוא integration רך שכבר טופל ב-brief (§6: `textContent` מתעלם מ-`<span>` של highlight →
+C עובד עם וגם בלי D). לכן base=**dev ישיר** (לא שרשור), ואין צורך להמתין ל-B/D.
+
+### שינויי-כיוון (לעומת ה-brief המקורי)
+- §0 dispatch-gate: ⛔ "אסור worktree לפני A" → ✅ "gate נפתח — A מוזג `a20fbda`".
+- כותרת/תלות: `base=dev לאחר מיזוג A` (gated) → `base=dev ישיר`, depends_on:[A] **מומשה**.
+- שאלה-פתוחה #3: עודכנה לציין שה-A מוזג בפועל.
+
+### ביצוע + runtime-gate
+אליעזר ביצע 2 commits: `f14ec41` (action `enhanceCodeBlocks` — Svelte use:-action co-located
+ב-`bubbles/`, event-delegation על ה-node ששורד re-render של `{@html}`, re-inject ב-`update()`)
++ `8957af3` (חיווט ל-`MarkdownContent.svelte` + CSS). FE-only (שימוש-חוזר `bubble.copy/copied`,
+diff core ריק). **כלב GO 8/8 DoD, 0 findings** — כולל אימות חי של גוטשת-streaming (הכפתור עובד
+אחרי שה-`{@html}` מתעדכן) ו-4 המשטחים. typecheck 0, 371/371 ירוק, lint i18n נקי.
+
+### מצב
+branch `slice/code-copy-button` — **GO, ממתין אישור-merge מהמשתמשת** (לא מוזג). worktree
+`.worktrees/code-copy-button` חי עד מיזוג.
+
+> **עדכון 2026-06-29**: מוזג ל-dev (`02ff12f`, v0.6.0). קונפליקט CSS מול D ב-`MarkdownContent.svelte`
+> נפתר additive (כפתור-העתקה + syntax-tokens — בלוקים משלימים). אומת חי ב-preview.
+
+---
+
+## 2026-06-29 — markdown-dir-per-paragraph (slice B): אימות-מחדש מול dev+D + dispatch
+
+### רציונל
+B (req #6 — `dir="auto"` פר block-element) הוא ה-slice האחרון ב-batch Markdown-UX (A✅ C✅ D✅).
+ה-brief אושר READY (אביגיל r2) **לפני** ש-D (code-syntax-highlight) מוזג. מכיוון ש-B ו-D שניהם
+נוגעים ב-`markdown.ts`, וה-merge-order ההיסטורי היה "B לפני D" — אבל D מוזג קודם — נדרש
+**אימות-מחדש** של ה-brief מול ה-base החדש (dev+D).
+
+### הכרעה
+**ה-merge-order ההיסטורי בטל; B נבנה מעל dev+D.** הסיכון המרכזי: D הוסיף ל-`markdown.ts`
+שלושה passים של sanitize (Pass 2=markdown, 3a=KaTeX, 3b=code), וה-hook `afterSanitizeAttributes`
+**גלובלי** → רץ על כל השלושה. אביגיל אימתה (6/6 claims) שה-set של B (`P/LI/H1-6/BLOCKQUOTE/TD/TH`)
+**אינו** כולל `pre/code/span`, ולכן code-fragments של Pass 3b לא יקבלו `dir` — הקוד נשאר LTR.
+D אינו מבטל אף הנחה של B.
+
+### שינוי לפי finding אביגיל (🟢)
+ה-pseudo-code המקורי עשה `setAttribute("dir","auto")` ללא-תנאי → היה דורס `dir` מפורש שהמודל
+אולי פולט (`dir` ב-`MARKDOWN_ATTR`). שולב guard `!node.hasAttribute("dir")` — כוונה מפורשת
+מנצחת את ה-auto. זול, נכון סמנטית, ומונע finding עתידי של כלב.
+
+### ביצוע + runtime-gate
+אליעזר: commit אחד (`0fe7b87`) — `BIDI_BLOCK_TAGS` + הרחבת ה-hook הקיים (ענף נוסף, לא hook חדש,
+עם guard). TDD: 7 טסטי jsdom חדשים (block→dir; pre/code→בלי; `<a>`/KaTeX regression; dir-guard),
+67/67 ירוק, typecheck 0, lint i18n נקי. **כלב light GO 8/8**. ⚠️ דוח כלב לא נשמר לקובץ
+(פער — תמצית בלבד); מאומת חי ב-preview (build מלא) לפני merge כ-runtime-gate משלים (B ויזואלי).
+
+### מצב
+branch `slice/markdown-dir-per-paragraph` — GO, **ממתין smoke חי + אישור-merge**. base=dev (`f1763d4`,
+descendant נקי — merge ישיר ללא איחוד).

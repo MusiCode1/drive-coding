@@ -134,9 +134,11 @@ export class BubblePlayer {
     // אם אין משפטים (טקסט קצר) — השתמש בטקסט המלא כסגמנט אחד
     const parts = sentences.length > 0 ? sentences : [text.trim()]
 
+    // V4b: העברת geminiVoice לresolveTts (נשמר מ-dev בזמן reconcile)
     const { provider, voiceId, modelId } = resolveTts(
       this.#settings.ttsProvider,
       this.#settings.voiceId,
+      this.#settings.geminiVoice,
     )
 
     // שלב 1: reserve כל הסגמנטים לפלייליסט (reserve-on-enqueue)
