@@ -1,3 +1,20 @@
+## 2026-07-01 — warm-reattach-skip-init — Commit 1: FE glue (#warmReconnect)
+
+**מה בוצע:**
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+  - import הורחב: `createAttachedAcpClient` נוסף לצד `createAcpClient`.
+  - קבוע `ATTACHED_CAPS_FALLBACK = {} as AcpClient["capabilities"]` נוסף ליד `IMAGE_INPUT_ENABLED`.
+  - `#warmReconnect` שורה ~525: החלפת `await createAcpClient(...)` ב-`createAttachedAcpClient(...)` (סינכרוני) — נתיבי cold (attach/loadSession/coldReconnect) לא נגעו.
+
+**תוצאות:**
+- `pnpm --filter @drive-coding/frontend-v2 typecheck` (svelte-check): 0 errors, 0 warnings
+- `pnpm typecheck` (root): ירוק
+- `pnpm --filter @drive-coding/frontend-v2 test`: 411 passed, 1 כשלון קיים-מראש (`formatting.test.ts > case 3` — `Intl.RelativeTimeFormat` locale difference, קדם לסליס)
+- `biome check` (קבצים נגועים): 0 errors (14 warnings קיימות-מראש)
+- lint:i18n: ירוק
+
+**נותר לאימות חי:** codex leave-running → reconnect → כניסה לצ'אט בלי "Already initialized" ובלי לולאת-סוקטים.
+
 ## 2026-07-01 — warm-reattach-skip-init — Commit 0: provider TDD (createAttachedAcpClient)
 
 **מה בוצע:**
