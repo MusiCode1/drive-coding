@@ -1,10 +1,18 @@
 # Roadmap — בקרת השמעה + בקרת ריצה (playback & run control)
 
-> **תאריך:** 2026-06-28 · **סטטוס:** מאושר (תכנון נעול) · **planner:** מרדכי
+> **תאריך:** 2026-06-28 · **עודכן:** 2026-07-01 · **planner:** מרדכי
 > **base:** `dev` @ `3a23195`
 > **אופן ביצוע:** שרשרת אחת, **merge יחיד בסוף** (החלטת המשתמשת). הרצה רצופה ללא אישורי‑ביניים.
-> **אימות:** אביגיל הורצה על שני ה-roots לפני dispatch (2026-06-28): **A2 ✅ READY** (r1, 2×🟢 הוטמעו) ·
-> **A5 ✅ READY** (r2, 3×🟡 תוקנו). A3/A4/B1 — אביגיל JIT אחרי שה-base שלהם ינחת. כלב כרגיל בסוף.
+>
+> ## 🟡 סטטוס נוכחי (2026-07-01) — קוד גמור, טרם מוזג. runtime-gate של B1 חסום חיצונית.
+> כל השרשרת בוצעה ואומתה ב-`slice/playback-ui` (worktree `dev/.worktrees/playback-ui`):
+> **A2 ✅GO\* · A3 ✅GO\* · A4 ✅GO\* · A5 ✅GO · B1 🟡 קוד-גמור+אביגיל-READY, runtime-gate פתוח.**
+> ה-branch מאגד A2→A3→A4 + A5 + B1 ו**עבר reconcile מול dev** (102 commits + provider cutover v0.8.0, `48b3403`).
+> **build-gate אחרי reconcile (07-01): ✅** typecheck=0, tests 962/985 (6 כשלים pre-existing: spawn-ENOENT known-bug + TLS-cert-Windows; **אפס בפלייליסט**).
+> **חסם ה-runtime-gate:** מפתח Gemini שרוף — הפרויקט `generative-code` חסום מנהלית ע"י Google (תשלום תקוע, `403 PERMISSION_DENIED`; ה-env הוזרק נכון, המפתח תקף). **חיצוני — לא בצד הקוד.**
+> **נקודת-המשך** (כשיהיה מפתח TTS תקין): הרם preview על 4002 (build קיים, בחר Gemini בהגדרות) → **כלב calev-heavy על B1** → merge יחיד A2→A3→A4 (`--no-ff`) + A5 + B1. פירוט מלא: `docs/decisions/voice-acp.md` entry 2026-07-01.
+>
+> **אימות-תכנון (היסטורי):** אביגיל הורצה על כל slice לפני dispatch. A2 READY r1 · A5 READY r2 · A3 READY r2 · A4 READY r2 · B1 READY r2.
 
 ## חזון
 
