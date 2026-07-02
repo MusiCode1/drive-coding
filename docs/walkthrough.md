@@ -27,6 +27,100 @@
 - `pnpm typecheck` (root): ירוק
 - `biome check` (קבצים נגועים): ירוק
 - הערה: `pnpm --filter @drive-coding/provider typecheck` חושף שגיאה קיימת-מראש ב-`connect-in-process.test.ts:111` (property 'method' לא קיים ב-WireFrame) — קדמה לסליס, לא נוגע לשינויים הנוכחיים.
+## 2026-07-02 — codex-inprocess — סבב-fix Commit B: codex משתמש ב-resolver + תיקון טסט
+
+**Fix Commit B:**
+- `connect-codex-in-process.ts`: `resolveCodexPath()` עכשיו קורא ל-`resolveCliBinary({ bin: "codex", envVar: "CODEX_PATH", knownPaths: [...] })`.
+  - ייבוא: `@drive-coding/core/cli-resolve` + `node:os` + `node:path`.
+  - knownPaths: מיקומים ידועים של codex על Windows (AppData/Programs/OpenAI/Codex, WinGet, Scoop, npm) ו-Unix (volta, nvm).
+- `connect-codex-in-process.test.ts`:
+  - טסט `done()` תוקן ל-`async/await + setTimeout Promise`.
+  - טסטי `resolveCodexPath` עודכנו: env-override נבדק מפורשות; "undefined כשאין CODEX_PATH" שונה לבדיקת type בלבד (ה-PATH-scan עשוי למצוא codex).
+- provider tests: 144/144 ירוק, אפס warnings. typecheck 0.
+
+## 2026-07-02 — codex-inprocess — סבב-fix Commit A: resolveCliBinary (TDD)
+
+**Fix Commit A — `resolveCliBinary` ב-`packages/core/src/cli-resolve.ts`:**
+- קובץ חדש `packages/core/src/cli-resolve.ts`: `CliResolveSpec` + `resolveCliBinary` — resolver סינכרוני לבינארי CLI.
+- שכבות: env-override → PATH scan (+PATHEXT) → pm-global-bins → knownPaths → undefined.
+- חיווט exports: `"./cli-resolve"` ב-`packages/core/package.json` + re-export ב-`index.ts`.
+- טסטים TDD: 12 tests ירוקים (env/PATH/PATHEXT/knownPaths/miss).
+- Typecheck 0, tests 294/294.
+
+---
+
+## 2026-07-02 — codex-inprocess — סיכום slice
+
+**Commits:** 0c568eb..1fdcc44 (4 commits על slice/codex-inprocess)
+**Tests:** provider 144/144 (8 skipped pre-existing)
+**typecheck:** 0 errors
+**calev verdict:** ממתין (אימות-חי codex נדרש — §0 בbrief)
+
+**מה בוצע:**
+- Commit 0: git-dep `@agentclientprotocol/codex-acp` (github:MusiCode1/codex-acp#inprocess-lib) + pnpm install + אימות lib ok: function
+- Commit 1: `connectCodexInProcess` — PassThrough↔startAcpServer, NDJSON line-splitting, turn-tracker, onFrame, close + unit tests
+- Commit 2: `case "codex"` ב-staticCapsFor (mcp:true), עדכון header, unit tests
+- Commit 3: ניתוב codex→connectCodexInProcess ב-connection-registry + vendor.d.ts ב-backend
+
+**חריגות:**
+- הפורק לא מייצר `.d.ts` (esbuild, לא tsc). נוסף `packages/backend/src/vendor.d.ts` עם ambient declare module — backend typecheck transitively מגיע ל-provider source. לא נדרש שינוי בפורק.
+- `resolveCodexPath()` מחזיר רק CODEX_PATH env — PATH-lookup לא מומש (מחוץ לסקופ מה שציין brief: "PATH-lookup ל-codex→נתיב מלא; אם אין→undefined"). לאימות-חי נדרש CODEX_PATH מוגדר.
+
+**מה נותר לאימות-חי (calev §0):**
+- codex connect דרך FE → initialize מהיר (~1ש')
+- session/new + chat עובד
+- אין `npx` בעץ-התהליכים
+- אחרי כיבוי agent — אין codex יתום
+- claude + opencode לא נפגעו (regression)
+
+## 2026-07-02 — codex-inprocess — Commit 3: routing ב-connection-registry
+
+**Commit 3 — routing + vendor.d.ts:**
+- `connection-registry.ts`:
+  - import `connectCodexInProcess` מ-provider/connection
+  - ניתוב: `cliKind==="codex" ? connectCodexInProcess : connectSpawn`
+  - עדכון comment (CUT-3b-iii-2 + codex-inprocess)
+- `packages/backend/src/vendor.d.ts`:
+  - ambient declare module `@agentclientprotocol/codex-acp/lib`
+  - נחוץ כי הפורק בנוי עם esbuild (ללא `tsc --declaration`)
+  - backend typecheck transitively מוצא את provider/connect-codex-in-process.ts
+- typecheck: 0 errors | tests: 144/144
+
+## 2026-07-02 — codex-inprocess — Commit 2: capabilities-static + header
+
+**Commit 2 — capabilities + resolveCodexPath:**
+- `capabilities-static.ts`:
+  - עודכן header: מכסה גם in-process connections (codex), לא רק spawn-based
+  - הוסף `case "codex"`: `mcp:true, thinkingTokens:false, rename:false, compact/commands/usage/configOptions:false`
+  - ערכים מבדיקה חיה: `mcpCapabilities.http:true → mcp:true`; thinking לא נתמך; fork/rename לא חשוף
+- unit tests (`capabilities-static.test.ts`):
+  - codex: mcp=true, thinkingTokens=false, rename=false, שאר false
+  - regression guards ל-opencode + claude
+- tests: 144/144 passed | typecheck: 0 errors
+
+## 2026-07-02 — codex-inprocess — Commit 1: connectCodexInProcess + unit tests
+
+**Commit 1 — connectCodexInProcess:**
+- קובץ חדש: `packages/provider/src/connection/connect-codex-in-process.ts`
+  - `connectCodexInProcess(opts)` → ProviderConnection עם PassThrough pair ↔ startAcpServer
+  - `resolveCodexPath()` — מחזיר `process.env.CODEX_PATH` (undefined אם לא מוגדר)
+  - wire bridge: NDJSON lines (לא Web Streams) — split-by-newline, handleLine, turn-tracker
+  - capabilities: `staticCapsFor("codex")` (commit 2 יוסיף את ה-case)
+  - modelOverride: מתעלם — model FE-driven דרך ה-wire
+  - close(): serverIn.end() → startAcpServer הורג codex אחרי 2ש' (built-in)
+- export: `connectCodexInProcess, resolveCodexPath` ב-connection/index.ts
+- unit tests (`connect-codex-in-process.test.ts`):
+  - resolveCodexPath: CODEX_PATH מוגדר/לא מוגדר
+  - NDJSON line-buffering: שורה אחת, partial line, מספר שורות ב-chunk, empty lines
+  - wire.write: מוסיף \n ל-serverIn
+- tests: 140/140 passed | typecheck: 0 errors
+
+## 2026-07-02 — codex-inprocess — Commit 0: git-dep הפורק
+
+**Commit 0 — git-dep:**
+- הוסף `"@agentclientprotocol/codex-acp": "github:MusiCode1/codex-acp#inprocess-lib"` ל-packages/provider/package.json (dependencies)
+- `pnpm install` הריץ `prepare` → `build` → `dist/lib.js` נוצר
+- אומת: `node -e "import('@agentclientprotocol/codex-acp/lib').then(m=>console.log('lib ok:', typeof m.startAcpServer))"` → `lib ok: function`
 
 ## 2026-06-29 — FEAT-thinking-live — Phase 1: אימות חי (manual)
 
