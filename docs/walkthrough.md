@@ -1,3 +1,33 @@
+## 2026-07-01 — warm-reattach-skip-init — Commit 1: FE glue (#warmReconnect)
+
+**מה בוצע:**
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+  - import הורחב: `createAttachedAcpClient` נוסף לצד `createAcpClient`.
+  - קבוע `ATTACHED_CAPS_FALLBACK = {} as AcpClient["capabilities"]` נוסף ליד `IMAGE_INPUT_ENABLED`.
+  - `#warmReconnect` שורה ~525: החלפת `await createAcpClient(...)` ב-`createAttachedAcpClient(...)` (סינכרוני) — נתיבי cold (attach/loadSession/coldReconnect) לא נגעו.
+
+**תוצאות:**
+- `pnpm --filter @drive-coding/frontend-v2 typecheck` (svelte-check): 0 errors, 0 warnings
+- `pnpm typecheck` (root): ירוק
+- `pnpm --filter @drive-coding/frontend-v2 test`: 411 passed, 1 כשלון קיים-מראש (`formatting.test.ts > case 3` — `Intl.RelativeTimeFormat` locale difference, קדם לסליס)
+- `biome check` (קבצים נגועים): 0 errors (14 warnings קיימות-מראש)
+- lint:i18n: ירוק
+
+**נותר לאימות חי:** codex leave-running → reconnect → כניסה לצ'אט בלי "Already initialized" ובלי לולאת-סוקטים.
+
+## 2026-07-01 — warm-reattach-skip-init — Commit 0: provider TDD (createAttachedAcpClient)
+
+**מה בוצע:**
+- `packages/provider/src/client/client.ts`: חילוץ ה-return-object של createAcpClient ל-helper פרטי `buildAcpClientFacade(conn, transport, capabilities)` — extraction מילולי, אין שינוי לוגי. הוספת `createAttachedAcpClient` (סינכרוני, ללא conn.initialize).
+- `packages/provider/src/client/index.ts`: הוספת ייצוא `AttachedAcpClientOptions` ו-`createAttachedAcpClient`.
+- `packages/provider/src/client/client.attached.test.ts` (חדש): 5 טסטים TDD — אין frame initialize, session/load נכתב, capabilities מהאפשרויות מוחזרות, ברירת-מחדל לא זורקת, regression ל-createAcpClient.
+
+**תוצאות:**
+- `pnpm --filter @drive-coding/provider test`: 138 passed (ירוק)
+- `pnpm typecheck` (root): ירוק
+- `biome check` (קבצים נגועים): ירוק
+- הערה: `pnpm --filter @drive-coding/provider typecheck` חושף שגיאה קיימת-מראש ב-`connect-in-process.test.ts:111` (property 'method' לא קיים ב-WireFrame) — קדמה לסליס, לא נוגע לשינויים הנוכחיים.
+
 ## 2026-06-29 — FEAT-thinking-live — Phase 1: אימות חי (manual)
 
 **אימות wire מקצה-לקצה:**
