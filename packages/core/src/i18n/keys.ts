@@ -270,6 +270,10 @@ export type MessageKey =
   | "settings.geminiVoice.desc.Sadachbia"
   | "settings.geminiVoice.desc.Sadaltager"
   | "settings.geminiVoice.desc.Sulafat"
+  // ─── tts-provider-availability ─── (slice tts-provider-availability)
+  | "settings.ttsProvider.unavailable"
+  | "settings.ttsProvider.fallbackNotice"
+  | "settings.ttsProvider.allUnavailable"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

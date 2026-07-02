@@ -266,4 +266,8 @@ export const en: Catalog = {
   "settings.geminiVoice.desc.Sadachbia": "Lively",
   "settings.geminiVoice.desc.Sadaltager": "Knowledgeable",
   "settings.geminiVoice.desc.Sulafat": "Warm",
+  // ─── tts-provider-availability ─── (slice tts-provider-availability)
+  "settings.ttsProvider.unavailable": "This provider is unavailable (missing or invalid key)",
+  "settings.ttsProvider.fallbackNotice": "Switched to the available provider",
+  "settings.ttsProvider.allUnavailable": "No TTS provider available — check your keys",
 }

@@ -262,4 +262,8 @@ export const he: Catalog = {
   "settings.geminiVoice.desc.Sadachbia": "Lively · חי",
   "settings.geminiVoice.desc.Sadaltager": "Knowledgeable · בקיא",
   "settings.geminiVoice.desc.Sulafat": "Warm · חם",
+  // ─── tts-provider-availability ─── (slice tts-provider-availability)
+  "settings.ttsProvider.unavailable": "ספק זה אינו זמין (חסר מפתח או מפתח לא תקף)",
+  "settings.ttsProvider.fallbackNotice": "עברנו לספק הזמין",
+  "settings.ttsProvider.allUnavailable": "אין ספק TTS זמין — בדוק מפתחות",
 }
