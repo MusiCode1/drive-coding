@@ -1,3 +1,10 @@
+## 2026-07-02 — codex-inprocess — Commit 0: git-dep הפורק
+
+**Commit 0 — git-dep:**
+- הוסף `"@agentclientprotocol/codex-acp": "github:MusiCode1/codex-acp#inprocess-lib"` ל-packages/provider/package.json (dependencies)
+- `pnpm install` הריץ `prepare` → `build` → `dist/lib.js` נוצר
+- אומת: `node -e "import('@agentclientprotocol/codex-acp/lib').then(m=>console.log('lib ok:', typeof m.startAcpServer))"` → `lib ok: function`
+
 ## 2026-06-29 — FEAT-thinking-live — Phase 1: אימות חי (manual)
 
 **אימות wire מקצה-לקצה:**
