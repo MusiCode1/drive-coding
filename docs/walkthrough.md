@@ -1,3 +1,16 @@
+## 2026-07-02 — codex-inprocess — Commit 3: routing ב-connection-registry
+
+**Commit 3 — routing + vendor.d.ts:**
+- `connection-registry.ts`:
+  - import `connectCodexInProcess` מ-provider/connection
+  - ניתוב: `cliKind==="codex" ? connectCodexInProcess : connectSpawn`
+  - עדכון comment (CUT-3b-iii-2 + codex-inprocess)
+- `packages/backend/src/vendor.d.ts`:
+  - ambient declare module `@agentclientprotocol/codex-acp/lib`
+  - נחוץ כי הפורק בנוי עם esbuild (ללא `tsc --declaration`)
+  - backend typecheck transitively מוצא את provider/connect-codex-in-process.ts
+- typecheck: 0 errors | tests: 144/144
+
 ## 2026-07-02 — codex-inprocess — Commit 2: capabilities-static + header
 
 **Commit 2 — capabilities + resolveCodexPath:**

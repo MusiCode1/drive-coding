@@ -18,7 +18,7 @@
 
 import { createLogger } from "@drive-coding/core/log"
 import type { ConnectOpts, ProviderConnection } from "@drive-coding/provider/connection"
-import { connectInProcess, connectSpawn, decodeWireLine } from "@drive-coding/provider/connection"
+import { connectCodexInProcess, connectInProcess, connectSpawn, decodeWireLine } from "@drive-coding/provider/connection"
 import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
 import type { WireRecorder, WireSession } from "../delivery/wire-recorder.js"
 
@@ -103,13 +103,17 @@ export function createConnectionRegistry(opts?: {
 
       const rec = wireRecorder?.open(agentId) ?? { record() {}, close() {} }
 
-      // ── Routing (CUT-3b-iii-2): claude → connectInProcess; all others → connectSpawn ──
+      // ── Routing (CUT-3b-iii-2 + codex-inprocess): ──
+      // claude → connectInProcess (acp-sdk Web Streams, Model 2)
+      // codex  → connectCodexInProcess (NDJSON PassThrough, startAcpServer fork)
+      // else   → connectSpawn (opencode/gemini/qoder)
       // cliKinds: opencode/claude/gemini/codex/qoder (core/src/schemas/agent.ts:30).
-      // connectInProcess does not accept cliKind (always claude by definition).
       const conn =
         cliKind === "claude"
           ? await connectInProcess(connectOpts)
-          : await connectSpawn(cliKind, connectOpts)
+          : cliKind === "codex"
+            ? await connectCodexInProcess(connectOpts)
+            : await connectSpawn(cliKind, connectOpts)
 
       // Register onFrame once (in+out) for wire-observability.
       // Must NOT decode in wire.write separately — this is the single decode point.
