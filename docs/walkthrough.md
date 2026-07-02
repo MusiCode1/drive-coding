@@ -1,3 +1,13 @@
+## 2026-07-02 — tts-usage-metering — Commit 1: core/usage/extract (TDD)
+
+**Commit 1 — RED→GREEN:**
+- קובץ חדש: `packages/core/src/usage/extract.ts` — `extractElevenLabsChars(body)` + `extractGeminiUsage(responseBytes)`
+- `extractElevenLabsChars`: מפרסר JSON body של ElevenLabs → אורך `.text`; 0 על כשל
+- `extractGeminiUsage`: מפרסר SSE של Gemini (גם JSON array); לוקח usageMetadata **האחרון**; audio = `candidatesTokensDetails[AUDIO].tokenCount` (עדיפות), fallback=`candidatesTokenCount`
+- קובץ חדש: `packages/core/src/usage/extract.test.ts` — 15 tests (TDD: RED→GREEN)
+- fixtures: SSE עם details, SSE בלי details (fallback), multi-chunk (last wins), JSON array, כשל-פרסור → 0
+- typecheck core: ירוק | biome: ירוק | 15/15 tests passed
+
 ## 2026-07-02 — tts-usage-metering — Commit 0: core/usage/pricing (TDD)
 
 **Commit 0 — RED→GREEN:**
