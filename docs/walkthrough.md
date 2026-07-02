@@ -1,3 +1,10 @@
+## 2026-07-02 — tts-usage-metering — Commit 0: core/usage/pricing (TDD)
+
+**Commit 0 — RED→GREEN:**
+- קובץ חדש: `packages/core/src/usage/pricing.ts` — `TTS_PRICING` (snapshot 2026-07-02: ElevenLabs $0.18/1k, Gemini $1/1M input + $20/1M audio), `elevenLabsCostUsd(chars)`, `geminiCostUsd(inputTokens, audioTokens)`
+- קובץ חדש: `packages/core/src/usage/pricing.test.ts` — 11 tests (TDD: RED→GREEN); כיסוי: ערכי pricing > 0, 0 chars/tokens → 0, חישוב ל-1000 chars, חישוב ל-1M tokens, שילוב input+audio, סקלה לינארית
+- typecheck core: ירוק | biome (קבצים חדשים): ירוק | 11/11 tests passed
+
 ## 2026-06-29 — FEAT-thinking-live — Phase 1: אימות חי (manual)
 
 **אימות wire מקצה-לקצה:**
