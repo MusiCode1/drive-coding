@@ -64,6 +64,7 @@ import {
 } from "./delivery/http-history.js"
 import { registerHttpOptions } from "./delivery/http-options.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
+import { registerTtsCapabilitiesHttp } from "./delivery/http-tts-capabilities.js"
 import { createWireRecorder } from "./delivery/wire-recorder.js"
 // הערה: createSessionsCache הוסר — רשימת הסשנים עכשיו מונעת מצד ה-FE דרך ACP WS
 import { createAgentWsHandler } from "./delivery/ws-agent.js"
@@ -97,6 +98,7 @@ const orchestrator = createAgentOrchestrator({
 // נתיבי HTTP
 registerHttp(app)
 registerHttpOptions(app)
+registerTtsCapabilitiesHttp(app)
 registerClientLogHttp(app)
 // CUT-3b-ii: connectionRegistry מספק getRuntimeInfo (מחליף bridgeManager)
 registerAgentsHttp(app, {

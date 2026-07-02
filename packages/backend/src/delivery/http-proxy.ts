@@ -37,7 +37,7 @@ const log = createLogger("backend.proxy")
 
 // ─── מיפוי ספקים ─────────────────────────────────────────────────────────────
 
-const PROXY_HOSTS: Record<string, string> = {
+export const PROXY_HOSTS: Record<string, string> = {
   google: "https://generativelanguage.googleapis.com",
   elevenlabs: "https://api.elevenlabs.io",
 }
