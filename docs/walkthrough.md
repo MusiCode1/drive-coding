@@ -1,3 +1,14 @@
+## 2026-07-02 — codex-inprocess — סבב-fix Commit A: resolveCliBinary (TDD)
+
+**Fix Commit A — `resolveCliBinary` ב-`packages/core/src/cli-resolve.ts`:**
+- קובץ חדש `packages/core/src/cli-resolve.ts`: `CliResolveSpec` + `resolveCliBinary` — resolver סינכרוני לבינארי CLI.
+- שכבות: env-override → PATH scan (+PATHEXT) → pm-global-bins → knownPaths → undefined.
+- חיווט exports: `"./cli-resolve"` ב-`packages/core/package.json` + re-export ב-`index.ts`.
+- טסטים TDD: 12 tests ירוקים (env/PATH/PATHEXT/knownPaths/miss).
+- Typecheck 0, tests 294/294.
+
+---
+
 ## 2026-07-02 — codex-inprocess — סיכום slice
 
 **Commits:** 0c568eb..1fdcc44 (4 commits על slice/codex-inprocess)

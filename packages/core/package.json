@@ -18,6 +18,7 @@
     },
     "./cwd-hash": "./src/cwd-hash.ts",
     "./cwd-validate": "./src/cwd-validate.ts",
+    "./cli-resolve": "./src/cli-resolve.ts",
     "./async/*": "./src/async/*.ts",
     "./config/*": "./src/config/*.ts"
   },
