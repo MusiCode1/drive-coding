@@ -1,3 +1,27 @@
+## 2026-07-02 — codex-inprocess — סיכום slice
+
+**Commits:** 0c568eb..1fdcc44 (4 commits על slice/codex-inprocess)
+**Tests:** provider 144/144 (8 skipped pre-existing)
+**typecheck:** 0 errors
+**calev verdict:** ממתין (אימות-חי codex נדרש — §0 בbrief)
+
+**מה בוצע:**
+- Commit 0: git-dep `@agentclientprotocol/codex-acp` (github:MusiCode1/codex-acp#inprocess-lib) + pnpm install + אימות lib ok: function
+- Commit 1: `connectCodexInProcess` — PassThrough↔startAcpServer, NDJSON line-splitting, turn-tracker, onFrame, close + unit tests
+- Commit 2: `case "codex"` ב-staticCapsFor (mcp:true), עדכון header, unit tests
+- Commit 3: ניתוב codex→connectCodexInProcess ב-connection-registry + vendor.d.ts ב-backend
+
+**חריגות:**
+- הפורק לא מייצר `.d.ts` (esbuild, לא tsc). נוסף `packages/backend/src/vendor.d.ts` עם ambient declare module — backend typecheck transitively מגיע ל-provider source. לא נדרש שינוי בפורק.
+- `resolveCodexPath()` מחזיר רק CODEX_PATH env — PATH-lookup לא מומש (מחוץ לסקופ מה שציין brief: "PATH-lookup ל-codex→נתיב מלא; אם אין→undefined"). לאימות-חי נדרש CODEX_PATH מוגדר.
+
+**מה נותר לאימות-חי (calev §0):**
+- codex connect דרך FE → initialize מהיר (~1ש')
+- session/new + chat עובד
+- אין `npx` בעץ-התהליכים
+- אחרי כיבוי agent — אין codex יתום
+- claude + opencode לא נפגעו (regression)
+
 ## 2026-07-02 — codex-inprocess — Commit 3: routing ב-connection-registry
 
 **Commit 3 — routing + vendor.d.ts:**
