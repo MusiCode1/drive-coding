@@ -1,3 +1,14 @@
+## 2026-07-02 — codex-inprocess — סבב-fix Commit B: codex משתמש ב-resolver + תיקון טסט
+
+**Fix Commit B:**
+- `connect-codex-in-process.ts`: `resolveCodexPath()` עכשיו קורא ל-`resolveCliBinary({ bin: "codex", envVar: "CODEX_PATH", knownPaths: [...] })`.
+  - ייבוא: `@drive-coding/core/cli-resolve` + `node:os` + `node:path`.
+  - knownPaths: מיקומים ידועים של codex על Windows (AppData/Programs/OpenAI/Codex, WinGet, Scoop, npm) ו-Unix (volta, nvm).
+- `connect-codex-in-process.test.ts`:
+  - טסט `done()` תוקן ל-`async/await + setTimeout Promise`.
+  - טסטי `resolveCodexPath` עודכנו: env-override נבדק מפורשות; "undefined כשאין CODEX_PATH" שונה לבדיקת type בלבד (ה-PATH-scan עשוי למצוא codex).
+- provider tests: 144/144 ירוק, אפס warnings. typecheck 0.
+
 ## 2026-07-02 — codex-inprocess — סבב-fix Commit A: resolveCliBinary (TDD)
 
 **Fix Commit A — `resolveCliBinary` ב-`packages/core/src/cli-resolve.ts`:**

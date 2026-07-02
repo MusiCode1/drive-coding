@@ -21,7 +21,10 @@
  */
 
 import { PassThrough } from "node:stream"
+import * as os from "node:os"
+import * as path from "node:path"
 import { startAcpServer } from "@agentclientprotocol/codex-acp/lib"
+import { resolveCliBinary } from "@drive-coding/core/cli-resolve"
 import { createTurnTracker } from "../shared/turn-tracker.js"
 import { decodeWireLine } from "../shared/wire-decode.js"
 import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
@@ -29,16 +32,36 @@ import { staticCapsFor } from "./capabilities-static.js"
 import type { BridgeCrashInfo } from "../spawn/index.js"
 
 /**
- * resolveCodexPath — finds the native codex binary.
+ * resolveCodexPath — finds the native codex binary using resolveCliBinary.
  *
- * Strategy:
- *   1. CODEX_PATH env var (explicit override, required on Windows).
- *   2. Otherwise: return undefined — startAcpServer falls back to process.env.CODEX_PATH.
- *      On Linux/Termux the bundled binary shipped with @openai/codex works;
- *      on Windows the bundled binary is broken (exit 1), so CODEX_PATH must be set.
+ * Resolution order (via resolveCliBinary):
+ *   1. CODEX_PATH env var (explicit override).
+ *   2. PATH scan (with PATHEXT on Windows).
+ *   3. pm-global-bins (~/.bun/bin, npm global, ~/.local/bin, /usr/local/bin, etc.).
+ *   4. Known codex install locations per platform.
+ *   5. undefined — startAcpServer will attempt its bundled binary (works on Linux/Termux,
+ *      broken on Windows; calev verifies the no-CODEX_PATH case out-of-box).
  */
 export function resolveCodexPath(): string | undefined {
-  return process.env["CODEX_PATH"]
+  const home = os.homedir()
+  return resolveCliBinary({
+    bin: "codex",
+    envVar: "CODEX_PATH",
+    knownPaths: [
+      // Windows: OpenAI Codex typical install locations
+      path.join(home, "AppData", "Local", "Programs", "OpenAI", "Codex", "bin"),
+      path.join(home, "AppData", "Local", "Programs", "OpenAI", "Codex"),
+      // WinGet links
+      path.join(home, "AppData", "Local", "Microsoft", "WinGet", "Links"),
+      // npm global bin (common on Windows with npm -g install)
+      path.join(home, "AppData", "Roaming", "npm"),
+      // Scoop
+      path.join(home, "scoop", "shims"),
+      // Linux/macOS: nvm / volta / asdf shims (often not in PATH in non-interactive shells)
+      path.join(home, ".volta", "bin"),
+      path.join(home, ".nvm", "bin"),
+    ],
+  })
 }
 
 export async function connectCodexInProcess(opts: ConnectOpts): Promise<ProviderConnection> {

@@ -5,7 +5,7 @@
  * startAcpServer (which requires a live codex binary — that is manual §0 territory).
  *
  * Tests:
- *   - resolveCodexPath: returns CODEX_PATH env var when set; undefined otherwise.
+ *   - resolveCodexPath: CODEX_PATH env var override takes precedence.
  *   - wire-adapter round-trip: lines written to serverOut are emitted via wire.onLine.
  *   - wire-adapter buffering: partial lines are buffered until '\n'.
  *   - wire-adapter multiple lines: multiple lines in one chunk are each emitted separately.
@@ -16,30 +16,31 @@
  */
 
 import { PassThrough } from "node:stream"
-import { describe, expect, it, vi, afterEach, beforeEach } from "vitest"
+import { describe, expect, it, vi, afterEach } from "vitest"
 import { resolveCodexPath } from "./connect-codex-in-process.js"
 
 // ─── resolveCodexPath tests ────────────────────────────────────────────────────
+//
+// resolveCodexPath now delegates to resolveCliBinary. We verify the contract:
+//   - CODEX_PATH env var takes highest precedence (env-override layer).
+//   - The full PATH-scan / knownPaths logic is tested in core/cli-resolve.test.ts.
 
 describe("resolveCodexPath", () => {
-  const originalEnv = process.env["CODEX_PATH"]
-
   afterEach(() => {
-    if (originalEnv === undefined) {
-      delete process.env["CODEX_PATH"]
-    } else {
-      process.env["CODEX_PATH"] = originalEnv
-    }
+    vi.unstubAllEnvs()
   })
 
-  it("returns CODEX_PATH env var when set", () => {
-    process.env["CODEX_PATH"] = "/usr/local/bin/codex"
+  it("returns CODEX_PATH env var when set (env-override takes precedence)", () => {
+    vi.stubEnv("CODEX_PATH", "/usr/local/bin/codex")
     expect(resolveCodexPath()).toBe("/usr/local/bin/codex")
   })
 
-  it("returns undefined when CODEX_PATH not set", () => {
-    delete process.env["CODEX_PATH"]
-    expect(resolveCodexPath()).toBeUndefined()
+  it("returns a string or undefined when CODEX_PATH not set (path-scan decides)", () => {
+    vi.stubEnv("CODEX_PATH", "")
+    // We cannot guarantee codex is or isn't in PATH on the test machine,
+    // so only verify the return type — not the exact value.
+    const result = resolveCodexPath()
+    expect(typeof result === "string" || result === undefined).toBe(true)
   })
 })
 
@@ -110,7 +111,7 @@ describe("codex wire-adapter: NDJSON line-buffering", () => {
 // ─── wire.write: appends '\n' to serverIn ──────────────────────────────────────
 
 describe("codex wire-adapter: wire.write appends newline to serverIn", () => {
-  it("writes line with newline terminator to serverIn", (done) => {
+  it("writes line with newline terminator to serverIn", async () => {
     const serverIn = new PassThrough()
     const chunks: string[] = []
 
@@ -126,9 +127,8 @@ describe("codex wire-adapter: wire.write appends newline to serverIn", () => {
 
     wireWrite('{"jsonrpc":"2.0","id":1,"method":"initialize"}')
 
-    setTimeout(() => {
-      expect(chunks.join("")).toBe('{"jsonrpc":"2.0","id":1,"method":"initialize"}\n')
-      done()
-    }, 10)
+    // Wait for data event to fire (next microtask tick is enough for PassThrough).
+    await new Promise<void>((resolve) => setTimeout(resolve, 10))
+    expect(chunks.join("")).toBe('{"jsonrpc":"2.0","id":1,"method":"initialize"}\n')
   })
 })
