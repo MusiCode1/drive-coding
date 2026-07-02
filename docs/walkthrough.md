@@ -1,3 +1,20 @@
+## 2026-07-02 — codex-inprocess — Commit 1: connectCodexInProcess + unit tests
+
+**Commit 1 — connectCodexInProcess:**
+- קובץ חדש: `packages/provider/src/connection/connect-codex-in-process.ts`
+  - `connectCodexInProcess(opts)` → ProviderConnection עם PassThrough pair ↔ startAcpServer
+  - `resolveCodexPath()` — מחזיר `process.env.CODEX_PATH` (undefined אם לא מוגדר)
+  - wire bridge: NDJSON lines (לא Web Streams) — split-by-newline, handleLine, turn-tracker
+  - capabilities: `staticCapsFor("codex")` (commit 2 יוסיף את ה-case)
+  - modelOverride: מתעלם — model FE-driven דרך ה-wire
+  - close(): serverIn.end() → startAcpServer הורג codex אחרי 2ש' (built-in)
+- export: `connectCodexInProcess, resolveCodexPath` ב-connection/index.ts
+- unit tests (`connect-codex-in-process.test.ts`):
+  - resolveCodexPath: CODEX_PATH מוגדר/לא מוגדר
+  - NDJSON line-buffering: שורה אחת, partial line, מספר שורות ב-chunk, empty lines
+  - wire.write: מוסיף \n ל-serverIn
+- tests: 140/140 passed | typecheck: 0 errors
+
 ## 2026-07-02 — codex-inprocess — Commit 0: git-dep הפורק
 
 **Commit 0 — git-dep:**
