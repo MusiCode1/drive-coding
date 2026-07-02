@@ -1,3 +1,14 @@
+## 2026-07-02 — tts-usage-metering — Commit 2: backend/usage/usage-store (mixed TDD+manual)
+
+**Commit 2 — TDD ל-aggregation, IO נבדק ידנית:**
+- קובץ חדש: `packages/backend/src/usage/usage-store.ts` — `createUsageStore(baseDir)` → `UsageStore`
+- sync in-memory counters (`ProviderTotals` פר ספק) + debounced flush (2s) ל-`totals.json` + append מיידי ל-`events.jsonl` (מטא בלבד)
+- load מ-`totals.json` ב-construct (שורד restart); פגום/חסר → אפסים
+- on-shutdown flush (SIGINT/SIGTERM/exit)
+- `UsageEvent`, `ProviderTotals`, `UsageSummary` types exported
+- קובץ חדש: `packages/backend/src/usage/usage-store.test.ts` — 8 TDD tests (initial zero, miss, hit, google, accumulation, snapshot immutability)
+- typecheck backend: ירוק | biome: ירוק | 8/8 tests passed
+
 ## 2026-07-02 — tts-usage-metering — Commit 1: core/usage/extract (TDD)
 
 **Commit 1 — RED→GREEN:**
