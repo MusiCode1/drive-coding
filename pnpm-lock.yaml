@@ -185,7 +185,7 @@ importers:
   packages/provider:
     dependencies:
       '@agentclientprotocol/codex-acp':
-        specifier: github:MusiCode1/codex-acp#inprocess-lib
+        specifier: github:MusiCode1/codex-acp#drive-coding
         version: https://codeload.github.com/MusiCode1/codex-acp/tar.gz/96048dc7aef1abe56cdaa946108206e81ed3228d
       '@agentclientprotocol/sdk':
         specifier: ^0.21.1
