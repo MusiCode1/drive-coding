@@ -1,3 +1,15 @@
+## 2026-07-02 — codex-inprocess — Commit 2: capabilities-static + header
+
+**Commit 2 — capabilities + resolveCodexPath:**
+- `capabilities-static.ts`:
+  - עודכן header: מכסה גם in-process connections (codex), לא רק spawn-based
+  - הוסף `case "codex"`: `mcp:true, thinkingTokens:false, rename:false, compact/commands/usage/configOptions:false`
+  - ערכים מבדיקה חיה: `mcpCapabilities.http:true → mcp:true`; thinking לא נתמך; fork/rename לא חשוף
+- unit tests (`capabilities-static.test.ts`):
+  - codex: mcp=true, thinkingTokens=false, rename=false, שאר false
+  - regression guards ל-opencode + claude
+- tests: 144/144 passed | typecheck: 0 errors
+
 ## 2026-07-02 — codex-inprocess — Commit 1: connectCodexInProcess + unit tests
 
 **Commit 1 — connectCodexInProcess:**
