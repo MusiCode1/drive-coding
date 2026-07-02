@@ -1,3 +1,17 @@
+## 2026-07-02 — tts-usage-metering — Commit 3: proxy hooks + /api/usage/summary endpoint (manual)
+
+**Commit 3 — proxy hook + endpoint:**
+- `http-proxy.ts`: `registerProxyHttp` מקבל `opts.usageStore?: UsageStore` (additive, no-op כשחסר)
+  - ElevenLabs cache-hit: `usageStore.record({provider:"elevenlabs", cached:true, costUsd:0})`
+  - ElevenLabs cache-miss (בבלוק tee): `extractElevenLabsChars(body)` → `elevenLabsCostUsd()` → record
+  - Gemini transparent-forward: **tee חדש** מותנה `provider==="google" && ":streamGenerateContent" ∈ pathSuffix`, branch ברקע → `extractGeminiUsage` → `geminiCostUsd` → record
+  - לקוח לא מושהה: branch ראשון (toClient) מיידי, tap ברקע בלבד
+- `http-usage.ts`: `registerUsageHttp` → `GET /api/usage/summary` → 200 UsageSummary (JSON)
+- `server.ts`: `createUsageStore(ensureStateSubdir("usage"))` + חיווט ל-registerProxyHttp ו-registerUsageHttp
+- `packages/core/package.json`: הוספת `./usage/*` export path
+- typecheck: ירוק | biome: ירוק | tests: 283/301 (2 pre-existing failures: spawn-ENOENT Windows + https-serve)
+- אימות ידני מתוכנן (DoD §5): ElevenLabs miss+hit, Gemini miss, persistence, no-latency
+
 ## 2026-07-02 — tts-usage-metering — Commit 2: backend/usage/usage-store (mixed TDD+manual)
 
 **Commit 2 — TDD ל-aggregation, IO נבדק ידנית:**

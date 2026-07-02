@@ -19,7 +19,8 @@
     "./cwd-hash": "./src/cwd-hash.ts",
     "./cwd-validate": "./src/cwd-validate.ts",
     "./async/*": "./src/async/*.ts",
-    "./config/*": "./src/config/*.ts"
+    "./config/*": "./src/config/*.ts",
+    "./usage/*": "./src/usage/*.ts"
   },
   "scripts": {
     "build": "tsc --build",
