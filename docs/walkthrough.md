@@ -1,3 +1,21 @@
+## 2026-07-02 — tts-provider-availability — סיכום slice (3 commits)
+
+**מה בוצע:**
+- Commit 0 (TDD): `core/tts/probe-status.ts` — `interpretProbeStatus()` (11 טסטים ירוקים, 304 total)
+- Commit 1 (manual): `be/delivery/http-tts-capabilities.ts` — `GET /api/tts/capabilities` עם probe + cache 60s + OneCLI placeholder
+- Commit 2 (manual): FE — `adapters/tts-capabilities.ts` + `view-models/capabilities.svelte.ts` + disable per-provider בבורר + fallback $effect + הודעות i18n (3 קבצי i18n)
+
+**בדיקות ידניות שבוצעו:**
+- env-mode (מפתח מזויף): `curl localhost:4005/api/tts/capabilities` → `{elevenlabs:{available:false,reason:"no-key"},google:{available:false,reason:"error"}}` ✅
+- אין דליפת-סוד בלוג ✅
+- typecheck 0 שגיאות ✅
+- lint:i18n נקי ✅
+
+**חריגות / הערות:**
+- OneCLI-mode (מפתחות תקפים) לא נבדק ישירות — probe רץ בתוך תהליך BE תחת OneCLI, אותו מסלול כמו proxy
+- FE disabled per-provider: `caps?.[opt.value]?.available === false` (לא קבוע ל-elevenlabs)
+- שגיאות טסטים pre-existing: https-serve (bun.exe Windows) + bridge-failure integration
+
 ## 2026-06-29 — FEAT-thinking-live — Phase 1: אימות חי (manual)
 
 **אימות wire מקצה-לקצה:**
