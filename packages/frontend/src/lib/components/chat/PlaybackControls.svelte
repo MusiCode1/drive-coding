@@ -31,10 +31,15 @@ const showStopRun = $derived(
   modelStatus.phase === "calling-tool"
 )
 
-/** האם אנחנו בשלב שמחייב כפתורי השמעה */
+/**
+ * האם אנחנו בשלב שמחייב כפתורי השמעה.
+ * nav-retain (Commit 3): גם כשהפלייליסט קיים (items>0) — כדי שניווט אחרי-סוף יעבוד.
+ * idle-park מחזיר state="idle" → phase אינו "speaking" — בלי תנאי השני הכפתורים היו נעלמים.
+ */
 const showPlaybackControls = $derived(
   modelStatus.phase === "speaking" ||
-  modelStatus.phase === "pending-tts"
+  modelStatus.phase === "pending-tts" ||
+  playlist.items.length > 0
 )
 
 /** תווית פר-phase לכפתור עצור-ריצה */
@@ -48,20 +53,14 @@ const stopRunLabel = $derived.by(() => {
 /** האם transport בהשהייה (לבחור ⏸ או ▶) */
 const isPaused = $derived(playlist.transport === "paused")
 
-/** כפתורי next/prev: disable כשה-playlist לא פעיל */
-const isPlaylistIdle = $derived(playlist.state === "idle")
-
 /**
- * carry A4 #2: next/prev בזמן current=reserved (טוען) → latency-glitch.
- * disable next/prev כשה-item הנוכחי עדיין reserved/loading.
+ * nav-retain (Commit 3): כפתורי next/prev — disable רק כשאין לאן לנווט.
+ * הband-aid הקודם (isCurrentLoading) הוסר: ניווט ל-item ממומש הוא מיָדי (אין latency-glitch).
+ * disabled על פי גבולות בלבד: אין items (<2), או אין prev/next ברור.
+ * isPlaylistIdle נשמר כ-guard כשאין פלייליסט כלל (stop() נוקה את items).
  */
-const isCurrentLoading = $derived.by(() => {
-  const cursor = playlist.cursor
-  const item = playlist.items[cursor]
-  return item !== undefined && (item.state === "reserved" || item.state === "loading")
-})
-
-const isNavDisabled = $derived(isPlaylistIdle || isCurrentLoading)
+const isPlaylistIdle = $derived(playlist.items.length === 0)
+const isNavDisabled = $derived(isPlaylistIdle || playlist.items.length < 2)
 </script>
 
 {#if showStopRun}

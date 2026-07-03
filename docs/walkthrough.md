@@ -50,6 +50,15 @@
 
 **בדיקות:** typecheck 0; 22/22 audio-playlist tests ירוקים
 
+### Commit 3 — PlaybackControls: שחרור band-aid + זמינות אחרי-סוף
+
+**PlaybackControls.svelte:**
+- `showPlaybackControls`: הרחב לכלול `playlist.items.length > 0` — פלייליסט navigable מציג כפתורים גם אחרי idle-park (finding #2)
+- `isCurrentLoading` band-aid הוסר (carry A4 #2) — ניווט ל-item ממומש מיידי, אין latency-glitch
+- `isNavDisabled`: כעת רק `items.length < 2` (אין לאן לנווט) — לא state של ה-item הנוכחי
+
+**בדיקות:** typecheck 0; 22/22 tests ירוקים; verification ידנית — calev-heavy
+
 ---
 
 ## 2026-06-29 — slice A4 (playback-core-a4) — ניווט prev/next/jump + איחוד BubblePlayer
