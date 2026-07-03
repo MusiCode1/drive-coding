@@ -1,7 +1,7 @@
 # Slice — playback-nav-retain — פלייליסט ממומש: sink מאוחד + retain-and-replay
 
 > **תאריך**: 2026-07-03
-> **סטטוס**: מאושר (אביגיל READY r2 — `reports/drive-coding/playback-nav-retain-avigail-r2.md`). ⚠️ dispatch/runtime-gate ממתין למפתח Gemini תקין (§9 Q3)
+> **סטטוס**: הושלם — 4 commits (2b2dcbf..827f95f). ⚠️ calev-heavy ממתין למפתח Gemini תקין לאימות נתיב PCM (§9 Q3)
 > **Complexity**: 9/10 (verifier: **calev-heavy**)
 > **base**: `slice/playback-ui` @ `48b3403` (לא dev — קוד הפלייליסט A2–A5 עדיין לא מוזג)
 > **depends_on**: `[playback-ui]` (השרשרת A2→A3→A4→A5→B1)
