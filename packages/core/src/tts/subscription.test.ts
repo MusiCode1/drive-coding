@@ -99,4 +99,65 @@ describe("interpretSubscription", () => {
     })
     expect(result).toEqual({ exhausted: true, reason: "quota" })
   })
+
+  // ─── effective-limit (tts-quota-refine) ────────────────────────────────────
+
+  it("canExtend+maxExtension: count between base and effective → NOT exhausted (overage allowed)", () => {
+    // base=100_000, extension=100_000 → effective=200_000
+    // count=150_000 is between base and effective → not exhausted
+    const result = interpretSubscription({
+      characterCount: 150_000,
+      characterLimit: 100_000,
+      status: "active",
+      canExtend: true,
+      maxExtension: 100_000,
+    })
+    expect(result).toEqual({ exhausted: false, reason: "ok" })
+  })
+
+  it("canExtend+maxExtension: count >= effective → exhausted", () => {
+    // base=100_000, extension=100_000 → effective=200_000; count=200_000 → exhausted
+    const result = interpretSubscription({
+      characterCount: 200_000,
+      characterLimit: 100_000,
+      status: "active",
+      canExtend: true,
+      maxExtension: 100_000,
+    })
+    expect(result).toEqual({ exhausted: true, reason: "quota" })
+  })
+
+  it("canExtend=false: count between base and notional extension → exhausted (falls back to base)", () => {
+    // canExtend=false → effective=base=100_000; count=150_000 >= base → exhausted
+    const result = interpretSubscription({
+      characterCount: 150_000,
+      characterLimit: 100_000,
+      status: "active",
+      canExtend: false,
+      maxExtension: 100_000,
+    })
+    expect(result).toEqual({ exhausted: true, reason: "quota" })
+  })
+
+  it("maxExtension=0: falls back to base limit", () => {
+    // maxExtension=0 → effective=base=100_000; count=100_000 → exhausted
+    const result = interpretSubscription({
+      characterCount: 100_000,
+      characterLimit: 100_000,
+      status: "active",
+      canExtend: true,
+      maxExtension: 0,
+    })
+    expect(result).toEqual({ exhausted: true, reason: "quota" })
+  })
+
+  it("canExtend+maxExtension absent (undefined): behaves as before (base limit)", () => {
+    // no extension fields → effective=base; count=100_000 → exhausted
+    const result = interpretSubscription({
+      characterCount: 100_000,
+      characterLimit: 100_000,
+      status: "active",
+    })
+    expect(result).toEqual({ exhausted: true, reason: "quota" })
+  })
 })

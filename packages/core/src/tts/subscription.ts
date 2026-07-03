@@ -21,6 +21,10 @@ export type SubscriptionInfo = {
   characterCount: number
   characterLimit: number
   status: SubscriptionStatus
+  /** max_character_limit_extension from ElevenLabs subscription (tts-quota-refine) */
+  maxExtension?: number
+  /** can_extend_character_limit from ElevenLabs subscription (tts-quota-refine) */
+  canExtend?: boolean
 }
 
 export type QuotaVerdict = { exhausted: boolean; reason: ProbeReason }
@@ -39,8 +43,15 @@ export function interpretSubscription(sub: SubscriptionInfo): QuotaVerdict {
     return { exhausted: true, reason: "quota" }
   }
 
+  // Effective limit: base + extension (when canExtend=true and maxExtension>0)
+  // falls back to base when extension fields are absent or canExtend=false or maxExtension=0
+  const effectiveLimit =
+    sub.canExtend === true && sub.maxExtension !== undefined && sub.maxExtension > 0
+      ? sub.characterLimit + sub.maxExtension
+      : sub.characterLimit
+
   // Count-based check: only when limit is meaningful (>0) and count is non-negative
-  if (sub.characterLimit > 0 && sub.characterCount >= 0 && sub.characterCount >= sub.characterLimit) {
+  if (effectiveLimit > 0 && sub.characterCount >= 0 && sub.characterCount >= effectiveLimit) {
     return { exhausted: true, reason: "quota" }
   }
 
