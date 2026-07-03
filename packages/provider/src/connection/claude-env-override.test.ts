@@ -7,8 +7,9 @@
  * Key invariant: unset is represented as key-with-undefined-value (Node drops it on spawn).
  * The "in" check (key in result) verifies presence without value, distinct from absence.
  */
-import { describe, expect, it } from "vitest"
+
 import type { CliSpec } from "@drive-coding/core"
+import { describe, expect, it } from "vitest"
 import { buildClaudeEnvOverride, injectEnvOverride } from "./claude-env-override.js"
 
 // ---------------------------------------------------------------------------
