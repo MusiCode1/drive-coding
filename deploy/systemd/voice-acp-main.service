@@ -8,8 +8,8 @@ Type=simple
 WorkingDirectory=/home/user/projects/drive-coding/main
 Environment=PORT=4000
 Environment=FE_STATIC_DIR=/home/user/projects/drive-coding/main/packages/frontend/build
-# No FE_ENV → defaults to prod in vite.config.ts: clean "drive-coding" title,
-# no source maps. See slice cache-headers-version §D.
+# No FE_ENV → defaults to prod in vite.config.ts (slice app-title-build-env):
+# title = "Drive Coding" (no badge), source maps OFF (clean public bundle).
 # CORS: CF Pages (legacy) + localhost + ה-CF tunnel הציבורי של main (drive-coding).
 Environment=CORS_ORIGINS=https://drive-coding.pages.dev,http://localhost:4000,https://drive-coding.example.com
 # opencode has its own Anthropic OAuth — strip OneCLI's proxy/placeholder vars
