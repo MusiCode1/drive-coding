@@ -133,13 +133,13 @@ the first worktree, 4001 for the second, etc.
 # Worktree A — BE on 4000, FE Vite proxies → 4000 (default)
 cd .worktrees/slice-X
 PORT=4000 onecli run --agent voice-acp -- bun --watch src/server.ts
-pnpm --filter @drive-coding/frontend-v2 dev
+pnpm --filter @drive-coding/frontend dev
 # (no env var needed — FE defaults to BE_PORT=4000)
 
 # Worktree B — BE on 4001, FE Vite proxies → 4001
 cd .worktrees/slice-Y
 PORT=4001 onecli run --agent voice-acp -- bun --watch src/server.ts
-BE_PORT=4001 pnpm --filter @drive-coding/frontend-v2 dev
+BE_PORT=4001 pnpm --filter @drive-coding/frontend dev
 ```
 
 Each worktree's FE will get a different OS-assigned Vite port — no conflict
