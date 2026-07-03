@@ -91,7 +91,9 @@ export class Mp3Segment implements PlayableSegment {
         const { value, done } = await reader.read()
         if (done) break
         if (!value) break
-        if (this.#state === "cancelled") break
+        // #state עשוי להשתנה ל-"cancelled" מ-dispose() בזמן ה-await (task אחר).
+        // cast שובר narrowing שגוי של TS שגורר את הבדיקה שלפני ה-await.
+        if ((this.#state as Mp3State) === "cancelled") break
         const sb = this.#sourceBuffer
         if (sb && value) {
           await this.#appendBuffer(sb, value)

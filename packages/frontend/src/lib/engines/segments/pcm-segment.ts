@@ -50,7 +50,9 @@ export class PcmSegment implements PlayableSegment {
         const { value, done } = await reader.read()
         if (done) break
         if (!value) break
-        if (this.#state === "cancelled") break
+        // #state עשוי להשתנה ל-"cancelled" מ-dispose() בזמן ה-await (task אחר).
+        // cast שובר narrowing שגוי של TS שגורר את הבדיקה שלפני ה-await.
+        if ((this.#state as PcmState) === "cancelled") break
 
         const { samples, rest } = splitInt16LE(carry, value)
         carry = rest.length > 0 ? new Uint8Array(rest) : new Uint8Array(0)
