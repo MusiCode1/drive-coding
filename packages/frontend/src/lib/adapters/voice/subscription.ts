@@ -20,6 +20,10 @@ export type ElevenLabsSubscription = {
   characterLimit: number
   status: string
   tier?: string
+  /** max_character_limit_extension — used with canExtend for effective-limit (tts-quota-refine) */
+  maxExtension?: number
+  /** can_extend_character_limit — true when ElevenLabs allows overage up to maxExtension (tts-quota-refine) */
+  canExtend?: boolean
 }
 
 // ArkType schema — snake_case from the API, only needed fields, tier optional
@@ -28,6 +32,8 @@ const subscriptionSchema = type({
   character_limit: "number",
   status: "string",
   "tier?": "string",
+  "max_character_limit_extension?": "number",
+  "can_extend_character_limit?": "boolean",
   "+": "ignore",
 })
 
@@ -64,5 +70,7 @@ export async function fetchElevenLabsSubscription(
     characterLimit: parsed.character_limit,
     status: parsed.status,
     tier: parsed.tier,
+    maxExtension: parsed.max_character_limit_extension,
+    canExtend: parsed.can_extend_character_limit,
   }
 }

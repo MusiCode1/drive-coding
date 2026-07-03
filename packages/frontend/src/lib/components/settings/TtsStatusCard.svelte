@@ -3,6 +3,7 @@
  * TtsStatusCard — displays TTS provider status, quota, and usage totals.
  *
  * Slice: tts-status-ui, Commit 1.
+ * Updated: tts-quota-refine, Commit 2 — effective-limit + clear quota labels + shared ttsReasonMessage.
  *
  * Data sources:
  *   - ttsCapabilities.caps  → reason (why a provider is unavailable)
@@ -15,25 +16,9 @@
 import { getI18n } from "$lib/context"
 import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { ttsStatus } from "$lib/view-models/tts-status.svelte"
-import type { ProbeReason } from "@drive-coding/core/tts/probe-status"
+import { ttsReasonMessage } from "$lib/util/tts-reason"
 
 const t = getI18n().t
-
-// Map a ProbeReason to an i18n key
-function reasonKey(reason: ProbeReason | undefined): string {
-  switch (reason) {
-    case "quota":
-      return t("settings.ttsStatus.reason.quota")
-    case "no-key":
-      return t("settings.ttsStatus.reason.noKey")
-    case "forbidden":
-      return t("settings.ttsStatus.reason.forbidden")
-    case "error":
-      return t("settings.ttsStatus.reason.error")
-    default:
-      return ""
-  }
-}
 
 // Format cost: $X.XXXX
 function formatCost(usd: number): string {
@@ -46,12 +31,30 @@ const goCaps = $derived(ttsCapabilities.caps?.google)
 
 // Derived: subscription quota
 const sub = $derived(ttsStatus.subscription)
-const quotaExhausted = $derived(
-  sub !== undefined && sub.characterLimit > 0 && sub.characterCount >= sub.characterLimit,
+
+// Effective limit = base + extension (when canExtend && maxExtension > 0)
+const effectiveLimit = $derived(
+  sub !== undefined
+    ? sub.canExtend === true && sub.maxExtension !== undefined && sub.maxExtension > 0
+      ? sub.characterLimit + sub.maxExtension
+      : sub.characterLimit
+    : 0,
 )
+
+// quotaExhausted: against effective limit
+const quotaExhausted = $derived(
+  sub !== undefined && effectiveLimit > 0 && sub.characterCount >= effectiveLimit,
+)
+
+// isOverage: count exceeded base but within effective limit
+const isOverage = $derived(
+  sub !== undefined && sub.characterCount > sub.characterLimit && !quotaExhausted,
+)
+
+// Progress bar: against effective limit (or base if no extension)
 const quotaPercent = $derived(
-  sub && sub.characterLimit > 0
-    ? Math.min((sub.characterCount / sub.characterLimit) * 100, 100)
+  sub && effectiveLimit > 0
+    ? Math.min((sub.characterCount / effectiveLimit) * 100, 100)
     : 0,
 )
 
@@ -80,7 +83,7 @@ const usageGo = $derived(ttsStatus.usage?.google)
         ElevenLabs
       </span>
       <span class="text-[12px]" style="color:var(--recording)">
-        {reasonKey(elCaps.reason)}
+        {ttsReasonMessage(elCaps.reason, t)}
       </span>
     </div>
   {/if}
@@ -90,7 +93,7 @@ const usageGo = $derived(ttsStatus.usage?.google)
         Gemini
       </span>
       <span class="text-[12px]" style="color:var(--recording)">
-        {reasonKey(goCaps.reason)}
+        {ttsReasonMessage(goCaps.reason, t)}
       </span>
     </div>
   {/if}
@@ -101,20 +104,28 @@ const usageGo = $derived(ttsStatus.usage?.google)
       {t("settings.ttsStatus.quota.label")}
     </span>
     {#if sub !== undefined}
-      <div class="flex items-center gap-2">
+      <!-- Clear labels: "נוצל: X · מכסה: Y · חריגה" format -->
+      <div class="flex items-center gap-2 flex-wrap">
         <span
           class="text-[13px] font-mono"
           style="color:{quotaExhausted ? 'var(--recording)' : 'var(--fg)'}"
+          dir="ltr"
         >
-          {sub.characterCount.toLocaleString()} / {sub.characterLimit.toLocaleString()}
+          {t("settings.ttsStatus.quota.used")}: {sub.characterCount.toLocaleString()}
+          &nbsp;·&nbsp;
+          {t("settings.ttsStatus.quota.limitLabel")}: {sub.characterLimit.toLocaleString()}
         </span>
         {#if quotaExhausted}
           <span class="text-[11px]" style="color:var(--recording)">
             {t("settings.ttsStatus.quota.exhausted")}
           </span>
+        {:else if isOverage}
+          <span class="text-[11px]" style="color:var(--accent)">
+            {t("settings.ttsStatus.quota.overage")}
+          </span>
         {/if}
       </div>
-      <!-- Progress bar -->
+      <!-- Progress bar (against effective limit) -->
       <div class="h-1.5 rounded-full overflow-hidden" style="background:var(--border)">
         <div
           class="h-full rounded-full transition-all"

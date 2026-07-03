@@ -22,6 +22,7 @@ import { getI18n, getSettings } from "$lib/context"
 import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
 import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { ttsStatus } from "$lib/view-models/tts-status.svelte"
+import { ttsReasonMessage } from "$lib/util/tts-reason"
 import LanguageSelect from "./LanguageSelect.svelte"
 import PalettePicker from "./PalettePicker.svelte"
 import SettingsCard from "./SettingsCard.svelte"
@@ -38,16 +39,25 @@ const translateDisabled = $derived(!settings.speakThoughts)
 const caps = $derived(ttsCapabilities.caps)
 
 // per-provider disabled: available===false → disabled. undefined (loading) → enabled (optimistic).
+// description on disabled options → reason message shown below the label in Select.
 const ttsProviderOptions = $derived<SelectOption[]>([
   {
     value: "elevenlabs",
     label: t("settings.ttsProvider.elevenlabs"),
     disabled: caps?.["elevenlabs"]?.available === false,
+    description:
+      caps?.["elevenlabs"]?.available === false
+        ? ttsReasonMessage(caps["elevenlabs"].reason, t)
+        : undefined,
   },
   {
     value: "google",
     label: t("settings.ttsProvider.gemini"),
     disabled: caps?.["google"]?.available === false,
+    description:
+      caps?.["google"]?.available === false
+        ? ttsReasonMessage(caps["google"].reason, t)
+        : undefined,
   },
 ])
 

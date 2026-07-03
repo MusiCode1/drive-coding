@@ -1,3 +1,30 @@
+## 2026-07-03 — tts-quota-refine — Commit 2: FE reason ב-Select + quota labels + adapter (manual)
+
+**מה בוצע:**
+- `packages/frontend/src/lib/util/tts-reason.ts` — util משותף `ttsReasonMessage(reason, t)` (הוצא מ-TtsStatusCard)
+- `packages/frontend/src/lib/components/settings/TtsStatusCard.svelte` — שימוש ב-ttsReasonMessage; effective-limit derived (`canExtend+maxExtension`); quotaExhausted מול effective; isOverage; labels ברורים: "נוצל: X · מכסה: Y · חריגה"
+- `packages/frontend/src/lib/components/settings/SettingsScreen.svelte` — import ttsReasonMessage; description פר-אופציה disabled ב-ttsProviderOptions
+- `packages/frontend/src/lib/adapters/voice/subscription.ts` — ElevenLabsSubscription: maxExtension? + canExtend?; schema: max_character_limit_extension? + can_extend_character_limit?; snake→camel
+- `packages/core/src/i18n/keys.ts` + `he.ts` + `en.ts` — 3 מפתחות: quota.used / quota.limitLabel / quota.overage
+
+**בדיקות:**
+- typecheck 0 שגיאות
+- lint:i18n נקי (0 hardcoded Hebrew)
+- אימות ידני: preview — reason ב-Select disabled, labels ברורים בכרטיס
+
+**חריגות:**
+- ה-adapter (FE) מוסיף maxExtension/canExtend לסוג ElevenLabsSubscription — VM מחזיק את הסוג; TtsStatusCard ניגש ישירות.
+
+## 2026-07-03 — tts-quota-refine — Commit 0: core effective-limit TDD
+
+**מה בוצע:**
+- `packages/core/src/tts/subscription.ts` — SubscriptionInfo: maxExtension? + canExtend?; interpretSubscription: effectiveLimit = base + extension; חסימה מול effective
+- `packages/core/src/tts/subscription.test.ts` — 5 טסטים חדשים: overage מותר בין base ל-effective, count>=effective חסום, canExtend=false→base, maxExtension=0→base, undefined→base
+
+**בדיקות:**
+- TDD red→green: 15/15 טסטים ירוקים
+- typecheck 0
+
 ## 2026-07-03 — tts-status-ui — Commit 1: VM + TtsStatusCard + i18n (manual)
 
 **מה בוצע:**
