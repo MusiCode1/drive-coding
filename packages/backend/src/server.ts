@@ -66,6 +66,7 @@ import { registerHttpOptions } from "./delivery/http-options.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
 import { registerTtsCapabilitiesHttp } from "./delivery/http-tts-capabilities.js"
 import { registerUsageHttp } from "./delivery/http-usage.js"
+import { createMemoryGuard } from "./delivery/memory-guard.js"
 import { createWireRecorder } from "./delivery/wire-recorder.js"
 // הערה: createSessionsCache הוסר — רשימת הסשנים עכשיו מונעת מצד ה-FE דרך ACP WS
 import { createAgentWsHandler } from "./delivery/ws-agent.js"
@@ -117,10 +118,16 @@ registerFsBrowseHttp(app)
 // Slice tts-usage-metering: usage metering store
 const usageStore = createUsageStore(ensureStateSubdir("usage"))
 
+// Slice proxy-tap-memory: RSS watchdog — defense-in-depth if TransformStream approach fails.
+// Polls RSS every 5s; returns 503 on /proxy/* when over budget (default: 1.5GB).
+// Override threshold with RSS_BUDGET_MB env var.
+const memoryGuard = createMemoryGuard()
+
 // Slice 10: פרוקסי שקוף עבור Google + ElevenLabs (+ usage tap)
 registerProxyHttp(app, {
   cacheBaseDir: ensureStateSubdir("cache", "proxy"),
   usageStore,
+  memoryGuard,
 })
 
 // Slice tts-usage-metering: usage summary endpoint

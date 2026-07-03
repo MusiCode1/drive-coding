@@ -34,6 +34,7 @@ import { elevenLabsCostUsd, geminiCostUsd } from "@drive-coding/core/usage/prici
 import type { Hono } from "hono"
 import type { UsageStore } from "../usage/usage-store.js"
 import { boundedCollector } from "./bounded-collect.js"
+import type { MemoryGuard } from "./memory-guard.js"
 import { resolveProviderAuth } from "./proxy-auth.js"
 import {
   computeCacheKey,
@@ -67,14 +68,21 @@ function getCache(cacheBaseDir: string) {
 
 export function registerProxyHttp(
   app: Hono,
-  opts: { cacheBaseDir?: string; usageStore?: UsageStore } = {},
+  opts: { cacheBaseDir?: string; usageStore?: UsageStore; memoryGuard?: MemoryGuard } = {},
 ): void {
   const cacheBaseDir = opts.cacheBaseDir ?? path.resolve("data/cache/proxy")
   const proxyCache = getCache(cacheBaseDir)
   // usageStore is optional — no-op when absent (existing tests unaffected)
   const usageStore = opts.usageStore
+  const { memoryGuard } = opts
 
   app.all("/proxy/:provider/*", async (c) => {
+    // Defense-in-depth: if RSS exceeds budget, shed load rather than OOM.
+    // The TransformStream approach (Commits 1+2) is the primary fix; this is a watchdog.
+    if (memoryGuard?.overBudget()) {
+      log.warn({}, "proxy: memory over budget, returning 503")
+      return c.json({ error: "server memory pressure, retry" }, 503)
+    }
     const provider = c.req.param("provider")
     const upstreamBase = PROXY_HOSTS[provider]
     if (!upstreamBase) {

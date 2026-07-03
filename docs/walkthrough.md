@@ -1,3 +1,25 @@
+## 2026-07-04 — proxy-tap-memory — Commit 3 (RSS watchdog)
+
+**מה בוצע:**
+
+- `packages/backend/src/delivery/memory-guard.ts` (חדש) — `createMemoryGuard()`: RSS watchdog עם `setInterval` (5s, `.unref()`). `overBudget()` מחזיר `true` כש-RSS > threshold (default 1.5GB, override עם `RSS_BUDGET_MB` env). `stop()` מבטל את ה-interval.
+- `packages/backend/src/delivery/http-proxy.ts` — הוספת `memoryGuard?: MemoryGuard` ל-opts; בתחילת handler: `if (memoryGuard?.overBudget()) return 503`.
+- `packages/backend/src/server.ts` — import `createMemoryGuard`, יצירת instance, הזרקה ל-`registerProxyHttp`.
+- `packages/backend/tests/http-proxy.test.ts` — 2 טסטים חדשים: (1) `overBudget=true` → 503 + fetch לא נקרא; (2) `overBudget=false` → 200 רגיל.
+
+**בדיקות:**
+
+- 24 טסטים ב-http-proxy.test.ts ירוקים (כולל 2 חדשים).
+- Backend total: 757 ירוקים / 775 (כשלים = known-bugs pre-existing: bun ENOENT + TLS Windows).
+- Typecheck: 0 שגיאות.
+- Lint (biome, קבצים שנגעו): נקי.
+
+**חריגות:**
+
+- אין. defense-in-depth טהורה — אין שינוי ב-business logic.
+
+---
+
 ## 2026-07-03 — claude-inprocess-cli-env — Slice הושלם (3 commits)
 
 **מה בוצע:**

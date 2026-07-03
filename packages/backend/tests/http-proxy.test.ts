@@ -349,6 +349,76 @@ describe("Gemini proxy tap (proxy-tap-memory)", () => {
     expect(recorded[0]?.audioTokens).toBe(45)
   })
 
+  it("MemoryGuard overBudget → proxy returns 503", async () => {
+    // Arrange: mock fetch (should NOT be called when over budget)
+    const mockFetch = vi.fn()
+    vi.stubGlobal("fetch", mockFetch)
+
+    // Build an app with a memoryGuard that always reports over budget
+    const overBudgetGuard = {
+      overBudget: () => true,
+      stop: () => {},
+    }
+
+    const { Hono } = await import("hono")
+    const app3 = new Hono()
+    const mod2 = await import("../src/delivery/http-proxy.js")
+    mod2.registerProxyHttp(app3, { cacheBaseDir: tmpDir, memoryGuard: overBudgetGuard })
+
+    const req3 = new Request(
+      "http://localhost/proxy/google/v1beta/models/gemini-flash:streamGenerateContent?alt=sse",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: "test" }] }] }),
+      },
+    )
+    const res3 = await app3.fetch(req3)
+
+    // Should return 503 without calling fetch
+    expect(res3.status).toBe(503)
+    const body3 = await res3.json()
+    expect((body3 as { error: string }).error).toContain("memory pressure")
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it("MemoryGuard not over budget → proxy proceeds normally", async () => {
+    // Arrange: not-over-budget guard + minimal SSE response
+    const notOverBudgetGuard = {
+      overBudget: () => false,
+      stop: () => {},
+    }
+
+    const ssePayload2 = `data: {"candidates":[],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1}}\r\n\r\ndata: [DONE]\r\n\r\n`
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(new TextEncoder().encode(ssePayload2), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }),
+      ),
+    )
+
+    const { Hono } = await import("hono")
+    const app4 = new Hono()
+    const mod3 = await import("../src/delivery/http-proxy.js")
+    mod3.registerProxyHttp(app4, { cacheBaseDir: tmpDir, memoryGuard: notOverBudgetGuard })
+
+    const req4 = new Request(
+      "http://localhost/proxy/google/v1beta/models/gemini-flash:streamGenerateContent?alt=sse",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ contents: [] }),
+      },
+    )
+    const res4 = await app4.fetch(req4)
+
+    // Should pass through (200), not 503
+    expect(res4.status).toBe(200)
+  })
+
   it("TransformStream tap does not buffer stream when client is slow — bounded RSS", async () => {
     // Regression guard for the OOM bug: with tee(), the unread branch buffered the full stream.
     // With TransformStream, the stream is client-paced → RSS delta should be small.
