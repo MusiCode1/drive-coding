@@ -47,6 +47,7 @@ import { Player } from "../engines/player.svelte"
 import { RoutingAudioSink } from "../engines/routing-audio-sink"
 import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
+import { ttsCapabilities } from "./capabilities.svelte"
 
 const TARGET_LANG = "he" as const
 const MIN_CHARS = 20
@@ -401,6 +402,16 @@ export class Speaker {
         this.#settings.voiceId,
         this.#settings.geminiVoice,
       )
+      // Commit 4 capability-gate: אל תנסה synthesize לספק לא-זמין.
+      // undefined caps → optimistic (true) → ממשיך (לא חוסם בהתחלה).
+      if (!ttsCapabilities.isAvailable(this.#settings.ttsProvider)) {
+        job.status = "error"
+        console.warn("[Speaker] TTS provider unavailable, skipping segment", {
+          provider: this.#settings.ttsProvider,
+          id: job.segmentId,
+        })
+        return
+      }
       // slice 22: חשב textHash על הטקסט שמסונתז (provenance)
       const textHash = await cacheKeyFor(text, voiceId, modelId)
       // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)
