@@ -8483,3 +8483,22 @@ B2 (הצגה): הוספת `import { version } from "$app/environment"` ל-Settin
 ### חריגות
 
 - אין. הוספת dep highlight.js לחבילה.
+
+---
+
+## slice-dc-launch-version-check (2026-07-03)
+
+**מבצע**: אליעזר החל (Commit 0), נותק על שגיאת-API; מרדכי השלים (C0 commit + C1 + C2) בהיעדר יכולת resume.
+
+3 commits על `slice/dc-launch-version-check` (base d74ff49):
+- `d777e63` — dc-build-fe: מצב `--if-stale` (computeExpectedVersion משכפל svelte.config; readBuiltVersion מ-build/ הסופי; --if-missing legacy נשמר).
+- `0ba6619` — dc-launch: האצלה ל-`node dc-build-fe.mjs --if-stale`, מחיקת ה-build ה-inline הלא-אטומי.
+- `db26e14` — systemd dev+main `ExecStartPre` --if-missing→--if-stale · package.json `fe:build:if-stale` · docs/deploy-local-service.md.
+
+**אימות שבוצע (מרדכי)**:
+- `--if-stale` skip-על-התאמה · stale-על-שוני · missing-על-חוסר — כולם נכונים (smoke).
+- `--if-missing` legacy ללא שינוי.
+- אינטגרציה: `node dc-launch.mjs` → dc-build-fe "up-to-date — skipping" → הבין עולה.
+- package.json JSON valid; biome נקי על dc-build-fe.mjs + dc-launch.mjs (LF).
+
+**⚠️ caveat ל-calev**: עץ-העבודה Windows עם `core.autocrlf=true` → `biome check .` מסמן CRLF format על **כל** קובץ checked-out (baseline, לא רגרסיה; הריפו שומר LF, CI על linux נקי). הקבצים החדשים שנכתבו ב-LF (dc-build-fe, dc-launch) נקיים לגמרי. אין להתייחס ל-CRLF כאל כשל-סלייס.

@@ -57,9 +57,11 @@ systemctl --user enable --now voice-acp-main.service
 systemctl --user enable --now voice-acp-dev.service
 ```
 
-Each unit's `ExecStartPre` runs `pnpm install --frozen-lockfile && node scripts/dc-build-fe.mjs --if-missing`
-in its worktree — installs dependencies and builds the FE only if missing (safety net for fresh
-clones / bots). The FE is **not** rebuilt on every restart; use `pnpm fe:build` for that (see Daily Use).
+Each unit's `ExecStartPre` runs `pnpm install --frozen-lockfile && node scripts/dc-build-fe.mjs --if-stale`
+in its worktree — installs dependencies and rebuilds the FE **if missing or stale** (compares the version
+baked into `build/_app/version.json` against `HEAD`; rebuilds when they differ). So a restart after a
+`git pull`/merge picks up the new FE automatically. For a live FE refresh without restart, use `pnpm fe:build`
+(see Daily Use).
 
 ---
 
@@ -96,9 +98,9 @@ systemctl --user restart voice-acp-main.service
 ```
 
 `restart` re-runs `pnpm install --frozen-lockfile` (picks up new BE deps) and
-`node scripts/dc-build-fe.mjs --if-missing` (builds FE only if missing). If you
-also want to refresh FE on restart, run `pnpm fe:build` before the restart, or
-delete `packages/frontend/build/` first (the `--if-missing` guard will then rebuild).
+`node scripts/dc-build-fe.mjs --if-stale` (rebuilds FE if missing **or** the built
+version differs from `HEAD`). So after a merge/pull, the restart refreshes the FE
+automatically — no need to delete `build/` or run `pnpm fe:build` first.
 
 ---
 
