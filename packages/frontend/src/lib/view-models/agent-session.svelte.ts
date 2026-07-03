@@ -247,8 +247,9 @@ export class AgentSession {
    */
   #tearingDown = false
   // ─── slice ws-reconnect-infra: reconnect internals ───
-  /** ה-cliKind של ה-attach/loadSession האחרון — נדרש ל-cold reconnect. */
-  #cliKind: CliKind | null = null
+  /** ה-cliKind של ה-attach/loadSession האחרון — נדרש ל-cold reconnect.
+   * $state כדי שה-getter הציבורי יהיה ריאקטיבי (slice cli-name-in-chat). */
+  #cliKind = $state<CliKind | null>(null)
   /** True כשה-document.hidden (הדף ברקע). */
   #pageHidden = false
   /** טיימר לניסיון reconnect הבא. */
@@ -716,6 +717,11 @@ export class AgentSession {
         ? (modeOpt as Extract<SessionConfigOption, { type: "select" }>).currentValue
         : undefined
     return isBypassMode(this.#cliKind, liveModeId ?? this.modes?.currentModeId)
+  }
+
+  /** ה-CLI של הסשן הפעיל (claude/opencode/codex), או null כשאין סשן. slice cli-name-in-chat. */
+  get cliKind(): CliKind | null {
+    return this.#cliKind
   }
 
   // ─── פרומפטים (prompting) ────────────────────────────────────

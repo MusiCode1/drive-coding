@@ -1,3 +1,16 @@
+## 2026-07-04 — cli-name-in-chat — Commit 1: $state + getter
+
+**מה בוצע:**
+- `agent-session.svelte.ts:251` — `#cliKind: CliKind | null = null` הפך ל-`#cliKind = $state<CliKind | null>(null)` (ריאקטיביות).
+- getter ציבורי `get cliKind(): CliKind | null` נוסף אחרי `bypassActive` getter.
+
+**בדיקות:**
+- typecheck: 0 errors (5065 files)
+- tests: 322/322 ירוקים (6 worker-crashes = known pre-existing: spawn ENOENT + TLS-cert-Windows)
+- lint:i18n: נקי
+
+---
+
 ## 2026-07-03 — claude-inprocess-cli-env — Slice הושלם (3 commits)
 
 **מה בוצע:**
