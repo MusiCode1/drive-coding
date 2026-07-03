@@ -21,10 +21,12 @@ import GeminiVoicePicker from "$lib/components/chat/GeminiVoicePicker.svelte"
 import { getI18n, getSettings } from "$lib/context"
 import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
 import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
+import { ttsStatus } from "$lib/view-models/tts-status.svelte"
 import LanguageSelect from "./LanguageSelect.svelte"
 import PalettePicker from "./PalettePicker.svelte"
 import SettingsCard from "./SettingsCard.svelte"
 import SettingToggle from "./SettingToggle.svelte"
+import TtsStatusCard from "./TtsStatusCard.svelte"
 
 const settings = getSettings()
 const t = getI18n().t
@@ -76,9 +78,10 @@ const allUnavailable = $derived(
     caps["google"]?.available === false,
 )
 
-// Refresh capabilities on mount (non-blocking)
+// Refresh capabilities + tts-status on mount (non-blocking)
 onMount(() => {
   void ttsCapabilities.refresh()
+  void ttsStatus.refresh()
 })
 
 // כיבוי הקראת מחשבות מכבה גם את תרגום המחשבות (לא נשאר דלוק-לא-זמין)
@@ -187,6 +190,11 @@ $effect(() => {
         disabled
       />
     </div>
+  </SettingsCard>
+
+  <!-- כרטיס מצב TTS — tts-status-ui -->
+  <SettingsCard title={t("settings.ttsStatus.title")}>
+    <TtsStatusCard />
   </SettingsCard>
 
   <!-- כרטיס מסך — wake-lock (slice-wake-lock) -->

@@ -1,3 +1,31 @@
+## 2026-07-03 — tts-status-ui — Commit 1: VM + TtsStatusCard + i18n (manual)
+
+**מה בוצע:**
+- `packages/frontend/src/lib/view-models/tts-status.svelte.ts` — VM singleton עם `$state`: subscription, usage, loading; `refresh()` מריץ שני ה-adapters במקביל עם `Promise.allSettled` — כשל adapter → undefined, לא קורס
+- `packages/frontend/src/lib/components/settings/TtsStatusCard.svelte` — כרטיס TTS: reason (אם available===false), מכסת ElevenLabs עם progress bar + הדגשה כשמוצה, usage תווים+tokens+עלות לכל ספק
+- `packages/frontend/src/lib/components/settings/SettingsScreen.svelte` — הוספת import + TtsStatusCard + onMount refresh
+- `packages/core/src/i18n/keys.ts` + `he.ts` + `en.ts` — 15 מפתחות additive (tts-status-ui block)
+
+**בדיקות:**
+- typecheck 0 שגיאות
+- lint:i18n נקי
+- אימות ידני: preview (DoD §5) — ראה הגדרות → כרטיס מצב TTS
+
+**חריגות / הערות:**
+- reason מוצג רק כש-available===false (לא מציג OK)
+- Gemini quota אינו זמין — מוצג "—" כפי שנקבע ב-brief §2
+- usage labels פשוטים (dir=ltr, font-mono) — לא requires i18n עבור יחידות (chars/tokens)
+
+## 2026-07-03 — tts-status-ui — Commit 0: FE adapters (manual)
+
+**מה בוצע:**
+- `packages/frontend/src/lib/adapters/voice/subscription.ts` — `fetchElevenLabsSubscription()`: קורא `/proxy/elevenlabs/v1/user/subscription`, ArkType parse עם `tier?` optional + `"+":"ignore"`, snake→camel
+- `packages/frontend/src/lib/adapters/usage.ts` — `fetchUsageSummary()`: קורא `/api/usage/summary`, ArkType parse עם `ProviderTotals`+`UsageSummary` schemas
+
+**בדיקות:**
+- typecheck 0 שגיאות
+- lint:i18n נקי
+
 ## 2026-07-03 — tts-quota-subscription — Commit 0 (TDD): interpretSubscription
 
 **מה בוצע:**
