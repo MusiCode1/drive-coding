@@ -28,7 +28,8 @@
 
 import * as path from "node:path"
 import { createLogger } from "@drive-coding/core/log"
-import { extractElevenLabsChars, extractGeminiUsage } from "@drive-coding/core/usage/extract"
+import { extractElevenLabsChars } from "@drive-coding/core/usage/extract"
+import { createGeminiUsageAccumulator } from "@drive-coding/core/usage/gemini-usage-accumulator"
 import { elevenLabsCostUsd, geminiCostUsd } from "@drive-coding/core/usage/pricing"
 import type { Hono } from "hono"
 import type { UsageStore } from "../usage/usage-store.js"
@@ -220,10 +221,14 @@ export function registerProxyHttp(
       })
     }
 
-    // ── Gemini streamGenerateContent: tee ברקע לצורך ספירת usage ──────────────
-    // Gemini TTS (:streamGenerateContent?alt=sse) אינו cacheable → מגיע לכאן.
-    // הוספת tee: branch אחד ל-client (מיידי), branch שני נקרא ברקע → extractGeminiUsage.
-    // הtap ברקע בלבד — לא מעכב את זרמת ה-client.
+    // ── Gemini streamGenerateContent: TransformStream peek for usage metering ──
+    // Gemini TTS (:streamGenerateContent?alt=sse) is not cacheable — arrives here.
+    // Replaces tee+readStreamInBackground: TransformStream is client-paced (no buffering
+    // of unread branch). The accumulator extracts usageMetadata inline on each chunk;
+    // flush() records usage after the last chunk. Zero audio retention.
+    //
+    // Note: flush() is NOT called on client abort — usage may not be recorded for
+    // cancelled requests. This is acceptable (fail-safe: miss a metric vs crash).
     if (
       usageStore &&
       provider === "google" &&
@@ -231,27 +236,36 @@ export function registerProxyHttp(
       res.ok &&
       res.body
     ) {
-      const [toClient, toTap] = res.body.tee()
+      const acc = createGeminiUsageAccumulator()
+      const capturedUsageStore = usageStore
+      const tap = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          try {
+            acc.push(chunk)
+          } catch {
+            // tap fail-safe: never break the client stream
+          }
+          controller.enqueue(chunk)
+        },
+        flush() {
+          try {
+            const u = acc.result()
+            const costUsd = geminiCostUsd(u.inputTokens, u.audioTokens)
+            capturedUsageStore.record({
+              ts: Date.now(),
+              provider: "google",
+              cached: false,
+              inputTokens: u.inputTokens,
+              audioTokens: u.audioTokens,
+              costUsd,
+            })
+          } catch {
+            // metering is non-critical — never break on record failure
+          }
+        },
+      })
 
-      // קריאת ה-branch השני ברקע — אסור לחסום את הזרמת ה-client
-      readStreamInBackground(toTap)
-        .then((bytes) => {
-          const usage = extractGeminiUsage(bytes)
-          const costUsd = geminiCostUsd(usage.inputTokens, usage.audioTokens)
-          usageStore.record({
-            ts: Date.now(),
-            provider: "google",
-            cached: false,
-            inputTokens: usage.inputTokens,
-            audioTokens: usage.audioTokens,
-            costUsd,
-          })
-        })
-        .catch(() => {
-          // tap failure is non-fatal — never break the proxy
-        })
-
-      return new Response(toClient, {
+      return new Response(res.body.pipeThrough(tap), {
         status: res.status,
         headers: sanitizedHeaders,
       })
@@ -296,29 +310,4 @@ async function cacheStreamInBackground(
   } catch {
     // תגובה חלקית — דלג על המטמון, אל תעשה כלום
   }
-}
-
-// ─── קריאת stream ברקע (ל-tap Gemini) ─────────────────────────────────────
-
-async function readStreamInBackground(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
-  const chunks: Uint8Array[] = []
-  const reader = stream.getReader()
-  try {
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
-      if (value) chunks.push(value)
-    }
-  } catch {
-    // partial read is acceptable — extractor handles incomplete data gracefully
-  }
-
-  const totalLength = chunks.reduce((s, c) => s + c.length, 0)
-  const merged = new Uint8Array(totalLength)
-  let offset = 0
-  for (const chunk of chunks) {
-    merged.set(chunk, offset)
-    offset += chunk.length
-  }
-  return merged
 }
