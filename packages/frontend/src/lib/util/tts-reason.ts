@@ -8,7 +8,7 @@
  */
 
 import type { ProbeReason } from "@drive-coding/core/tts/probe-status"
-import type { MessageKey } from "@drive-coding/core/i18n/keys"
+import type { MessageKey } from "@drive-coding/core/i18n"
 
 /**
  * Returns the i18n key for a given ProbeReason, or null when there is no reason
