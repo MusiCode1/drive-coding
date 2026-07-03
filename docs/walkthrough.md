@@ -1,3 +1,28 @@
+## 2026-07-03 — slice playback-nav-retain — פלייליסט ממומש: retain-and-replay + PlayableSink
+
+### Commit 0 — TDD: retain-and-replay + idle-park + refetch thunk (audio-playlist.svelte.ts + nav.test.ts)
+
+**שונה ב-audio-playlist.svelte.ts:**
+- `PlaylistItem.refetch?: () => void` — thunk לסינתזה מחדש, מאוחסן ב-item
+- `reserve(segmentId, orderKey, bubbleId, refetch?)` — signature מורחב
+- `#isComplete(segmentId)` — duck-typing על AudioSink לבדיקת retention
+- `#waitForNav()` — Promise ש-navResolve מחזיק
+- `#playLoop` שונה: `while(true)` + idle-park block (כשcursor≥length): state="idle", wait, ועם wake: state="playing" + onPlaybackStart
+- **retain-and-replay**: branch מוקדם ב-#playLoop כש-item.state=done/ready + isComplete → ניגון ישיר בלי markReady
+- **skip-cancel** ב-`#navigate()`: אם current/target בטיסה (isComplete=false) → sink.cancel + reserved
+- **refetch thunk**: בטיסה ראשונה של item ב-state=reserved עם refetch → refetch?.() לפני waitForItem
+- `reserve()` כשלא #playing: אם idle-park → navResolve?.(). (לא מריץ #playLoop חדש)
+
+**שונה ב-audio-playlist.nav.test.ts:**
+- MockSink מורחב: cancelledSegments, completedSegments, isComplete()
+- resolvePlay מסמן completedSegments לפני resolve
+- Tests 2,6 עודכנו לloגיקת retain (isComplete=true → לא reserved שוב)
+- 5 טסטים חדשים (8-12): retain-done, retain-prev, skip-cancel, idle-park, refetch
+
+**בדיקות:** 22/22 audio-playlist tests ירוקים; typecheck 0; lint pre-existing (555 ב-base→554 אחרי שינוי)
+
+---
+
 ## 2026-06-29 — slice A4 (playback-core-a4) — ניווט prev/next/jump + איחוד BubblePlayer
 
 ### Commit 0 — cursor→$state + #navSignal + next/prev/jumpTo (audio-playlist.svelte.ts)

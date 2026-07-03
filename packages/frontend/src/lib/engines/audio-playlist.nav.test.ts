@@ -1,15 +1,24 @@
 /**
- * audio-playlist.nav.test.ts — integration tests לניווט ב-AudioPlaylist (A4).
+ * audio-playlist.nav.test.ts — integration tests לניווט ב-AudioPlaylist.
  *
- * מאמת:
+ * מאמת (A4 — קיים):
  *   1. next() — cursor מתקדם; הסגמנט הבא מתנגן
  *   2. prev() — cursor חוזר; re-fetch (mock sink — markReady מחדש)
  *   3. jumpTo(index) — cursor קופץ לindex הנכון
  *   4. jumpToBubble(bubbleId) — cursor קופץ ל-item הראשון של הבועה
  *   5. reserveFromText flow — item נוסף עם bubbleId, מתנגן בתורו
  *   6. BUG-1 carry: ניווט לבועה ready-שלא-נוגן-חי (not done) — re-fetch + ניגון
+ *   7. cursor getter חשוף
+ *
+ * מאמת (nav-retain — RED tests לפני שינוי הקוד):
+ *   8. next ל-item done — מנגן מיידית (אין markReady חוזר)
+ *   9. item שנווט אליו (done) נשאר done (לא מאופס ל-reserved)
+ *  10. skip-cancel: skip על item ב-loading → sink.cancel נקרא
+ *  11. idle-park: ניווט אחרי שה-loop הגיע לסוף
+ *  12. refetch thunk: reserved-ללא-fetch → refetch() נקרא
  *
  * mock AudioSink: play() מחזיר Promise שמתממש רק כשקוראים לו resolvePlay(segmentId).
+ * isComplete() — mock: מחזיר true אחרי play הראשון (שדה preparedSegments).
  * WebAudio לא נגעת — בדיקה טהורה של לוגיקת ה-playlist.
  */
 
@@ -24,14 +33,21 @@ type MockSink = AudioSink & {
   playOrder: string[]
   resolvePlay: (segmentId: string) => void
   preparedSegments: Set<string>
+  cancelledSegments: string[]
+  /** nav-retain: מחקה isComplete — true אחרי שה-segment נוגן לפחות פעם אחת */
+  completedSegments: Set<string>
+  isComplete: (id: string) => boolean
 }
 
 function makeMockSink(): MockSink {
   const playOrder: string[] = []
   const playResolvers = new Map<string, () => void>()
   const preparedSegments = new Set<string>()
+  const cancelledSegments: string[] = []
+  const completedSegments = new Set<string>()
 
   const resolvePlay = (segmentId: string) => {
+    completedSegments.add(segmentId) // mark as complete when resolved
     const r = playResolvers.get(segmentId)
     if (r !== undefined) {
       r()
@@ -43,6 +59,9 @@ function makeMockSink(): MockSink {
     playOrder,
     resolvePlay,
     preparedSegments,
+    cancelledSegments,
+    completedSegments,
+    isComplete: (id: string) => completedSegments.has(id),
     prepareSegment: async (
       segmentId: string,
       _stream: ReadableStream<Uint8Array>,
@@ -58,8 +77,13 @@ function makeMockSink(): MockSink {
       })
     },
     cancel: (segmentId: string) => {
+      cancelledSegments.push(segmentId)
       // פתור play promise אם תקוע — cancel מסמן סיום מוקדם
-      resolvePlay(segmentId)
+      const r = playResolvers.get(segmentId)
+      if (r !== undefined) {
+        r()
+        playResolvers.delete(segmentId)
+      }
     },
     clear: () => {
       playResolvers.clear()
@@ -129,9 +153,9 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     expect(playlist.state).toBe("idle")
   })
 
-  // ── Test 2: prev() — חוזר לסגמנט קודם, re-fetch ────────────────────────────
+  // ── Test 2: prev() — חוזר לסגמנט קודם (nav-retain: replay מיידי אם isComplete) ──
 
-  it("prev() אחרי s0 סיים → cursor חוזר ל-s0 ב-reserved (re-fetch)", async () => {
+  it("prev() אחרי s0 סיים → s0 מנגן שוב מיידית (isComplete=true → retain-replay)", async () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
@@ -144,29 +168,28 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(sink.playOrder).toContain("s0")
 
-    // s1 מתחיל לנגן אחרי שs0 מסיים
+    // s0 סיים — isComplete=true (completedSegments.add("s0") ב-resolvePlay)
     sink.resolvePlay("s0")
     await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
     expect(sink.playOrder).toContain("s1")
 
-    // prev() בזמן s1 מנגן → cursor חוזר ל-s0 (reserved)
+    // prev() בזמן s1 מנגן → cursor חוזר ל-s0 (done, isComplete=true)
     playlist.prev()
     await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
 
-    // s0 חוזר ל-reserved — #playLoop ממתין ל-markReady
-    const s0Item = playlist.items.find((it) => it.segmentId === "s0")
-    expect(s0Item?.state).toBe("reserved")
-
-    // simulate re-fetch: markReady שוב
-    playlist.markReady("s0")
-    await vi.advanceTimersByTimeAsync(0)
-
-    // s0 מנגן שוב
+    // nav-retain: s0 הוא done + isComplete=true → replay מיידי (לא re-fetch!)
+    // s0 אמור לנגן שוב (ללא markReady)
     const s0Plays = sink.playOrder.filter((id) => id === "s0")
     expect(s0Plays.length).toBeGreaterThanOrEqual(2) // ניגן פעמיים (חי + אחרי prev)
 
     sink.resolvePlay("s0")
     await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
     sink.resolvePlay("s1")
     await vi.advanceTimersByTimeAsync(0)
   })
@@ -275,46 +298,45 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     expect(playlist.state).toBe("idle")
   })
 
-  // ── Test 6: BUG-1 carry — ניווט לבועה ready-שלא-נוגן-חי ──────────────────
+  // ── Test 6: nav-retain — ניווט לs0 done (isComplete=true) → replay מיידי ──────
 
-  it("BUG-1: ניווט prev ל-item ב-state=ready (לא done) → re-fetch + ניגון", async () => {
+  it("nav-retain: ניווט prev ל-item done (isComplete=true) → replay מיידי ללא re-fetch", async () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
-    // s0: done (כבר ניגן), s1: ready (late-early — ready אבל לא ניגן חי)
+    // s0: done (כבר ניגן ו-resolvePlay נקרא → isComplete=true)
+    // s1: נמצא ב-playing
     playlist.reserve("s0", key(0), "bubble-A")
-    playlist.reserve("s1", key(1), "bubble-A") // late-early segment
+    playlist.reserve("s1", key(1), "bubble-A")
 
     playlist.markReady("s0")
-    // s1 מסומן ready (flush late)
     playlist.markReady("s1")
 
     await vi.advanceTimersByTimeAsync(0)
     // s0 מנגן
     expect(sink.playOrder).toContain("s0")
+    // s0 מסיים — isComplete=true
     sink.resolvePlay("s0")
     await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
 
-    // s1 מנגן (late-early — ready, עכשיו מנגן בסדר רגיל)
+    // s1 מנגן
     expect(sink.playOrder).toContain("s1")
     // prev() לפני שs1 מסיים
     playlist.prev()
     await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
 
-    // s0 חוזר ל-reserved (re-fetch נדרש — cancel מחק מה-sink)
-    const s0Item = playlist.items.find((it) => it.segmentId === "s0")
-    expect(s0Item?.state).toBe("reserved")
-
-    // re-fetch s0
-    playlist.markReady("s0")
-    await vi.advanceTimersByTimeAsync(0)
-
-    // s0 ניגן שוב
+    // nav-retain: s0 הוא done + isComplete=true → replay מיידי (לא re-fetch)
     const s0Plays = sink.playOrder.filter((id) => id === "s0")
     expect(s0Plays.length).toBeGreaterThanOrEqual(2)
 
     sink.resolvePlay("s0")
     await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
     sink.resolvePlay("s1")
     await vi.advanceTimersByTimeAsync(0)
   })
@@ -346,5 +368,244 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     sink.resolvePlay("s1")
     await vi.advanceTimersByTimeAsync(0)
     expect(playlist.state).toBe("idle")
+  })
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tests 8-12: nav-retain RED tests (פלייליסט ממומש)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // ── Test 8: next ל-item done — ניגון מיידי (אין markReady חוזר) ────────────
+
+  it("(retain-8) next ל-item done → מנגן מיידית בלי markReady חוזר", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    playlist.reserve("s0", key(0), "bubble-A")
+    playlist.reserve("s1", key(1), "bubble-A")
+    playlist.reserve("s2", key(2), "bubble-A")
+
+    playlist.markReady("s0")
+    playlist.markReady("s1")
+    playlist.markReady("s2")
+
+    // הניגון מתחיל
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sink.playOrder).toContain("s0")
+
+    // ניגן s0 + s1 עד סיום
+    sink.resolvePlay("s0")
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    expect(sink.playOrder).toContain("s1")
+    sink.resolvePlay("s1")
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    // s2 מתנגן עכשיו
+    expect(sink.playOrder).toContain("s2")
+
+    // s1 עכשיו done (ניגן וסיים). נחזור אליו עם prev()
+    // prev() ל-s1 (done) — לפי ה-retain: צריך לנגן מיידית בלי markReady
+    playlist.prev()
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // בקוד החדש: s1 אמור להתנגן שוב (isComplete=true → replay, לא reset)
+    // בקוד הישן: s1 מאופס ל-reserved → #playLoop מחכה ל-markReady → 20 שניות timeout
+    const s1Plays = sink.playOrder.filter((id) => id === "s1")
+    expect(s1Plays.length).toBeGreaterThanOrEqual(2) // ניגן פעמיים
+
+    sink.resolvePlay("s1")
+    sink.resolvePlay("s2")
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  // ── Test 9: item שנווט אליו (done) → לא מאופס ל-reserved, מנגן מחדש ──────────
+
+  it("(retain-9) prev ל-done item — לא מאופס ל-reserved (retain-replay, לא re-fetch)", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    playlist.reserve("s0", key(0), "bubble-A")
+    playlist.reserve("s1", key(1), "bubble-A")
+    playlist.reserve("s2", key(2), "bubble-A")
+
+    playlist.markReady("s0")
+    playlist.markReady("s1")
+    playlist.markReady("s2")
+
+    await vi.advanceTimersByTimeAsync(0)
+    // ניגן s0 + s1 עד סיום
+    sink.resolvePlay("s0")
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    expect(sink.playOrder).toContain("s1")
+    sink.resolvePlay("s1")
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    // s2 מתנגן
+    expect(sink.playOrder).toContain("s2")
+
+    // s0, s1 הם done + isComplete=true
+    const s0Item = playlist.items.find((it) => it.segmentId === "s0")
+    const s1Item = playlist.items.find((it) => it.segmentId === "s1")
+    expect(s0Item?.state).toBe("done")
+    expect(s1Item?.state).toBe("done")
+
+    // prev() → s1. בקוד החדש: s1 isComplete=true → אל ישנה ל-reserved
+    playlist.prev()
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // nav-retain: s1 לא הוחזר ל-reserved — replay ישיר
+    // state עובר ל-playing בעת הניגון, ואחריו חזרה ל-done
+    // בכל מקרה — reserved אסור
+    expect(s1Item?.state).not.toBe("reserved")
+
+    // s1 אמור לנגן שוב (replay)
+    const s1Plays = sink.playOrder.filter((id) => id === "s1")
+    expect(s1Plays.length).toBeGreaterThanOrEqual(2)
+
+    sink.resolvePlay("s1")
+    sink.resolvePlay("s2")
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  // ── Test 10: skip-cancel — cancel נקרא על item ב-loading ──────────────────
+
+  it("(retain-10) skip (next) על item ב-loading → sink.cancel נקרא", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 30000 })
+
+    // s0: ready מיד. s1: loading (fetch ארוך בכוונה — reserveTimeoutMs גדול)
+    playlist.reserve("s0", key(0), "bubble-A")
+    playlist.reserve("s1", key(1), "bubble-A") // loading — לא נקרא markReady
+    playlist.reserve("s2", key(2), "bubble-A")
+    playlist.markReady("s2")
+
+    playlist.markReady("s0")
+    // s1 נשאר reserved/loading
+
+    await vi.advanceTimersByTimeAsync(0)
+    // s0 מתנגן
+    expect(sink.playOrder).toContain("s0")
+    sink.resolvePlay("s0")
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    // עכשיו #playLoop מחכה על s1 (loading/reserved) — timeout 30s
+
+    // next() → מדלג על s1 (שנמצא ב-reserved/loading)
+    // בקוד החדש: skip-cancel — isComplete(s1)=false → cancel נקרא
+    // בקוד הישן: cancel תמיד קורה על הנוכחי (s0, כבר done)
+    playlist.next()
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // sink.cancel צריך להיקרא על s1 (item שנמצא ב-loading)
+    expect(sink.cancelledSegments).toContain("s1")
+
+    // s1 חוזר ל-reserved (לצורך re-fetch בביקור עתידי)
+    const s1Item = playlist.items.find((it) => it.segmentId === "s1")
+    expect(s1Item?.state).toBe("reserved")
+
+    // s2 מתנגן (אחרי skip s1)
+    playlist.markReady("s2") // re-mark (בקוד הישן jump reset אותו)
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    sink.resolvePlay("s2")
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  // ── Test 11: idle-park — ניווט אחרי שה-loop הגיע לסוף ─────────────────────
+
+  it("(retain-11) ניווט prev אחרי סיום כל הפלייליסט — עדיין עובד", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    playlist.reserve("s0", key(0), "bubble-A")
+    playlist.reserve("s1", key(1), "bubble-A")
+
+    playlist.markReady("s0")
+    playlist.markReady("s1")
+
+    await vi.advanceTimersByTimeAsync(0)
+    sink.resolvePlay("s0")
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    sink.resolvePlay("s1")
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+
+    // #playLoop הגיע לסוף הפלייליסט
+    // בקוד הישן: state=idle, #playing=false → prev() no-op (if (!this.#playing) return)
+    // בקוד החדש: idle-park — #playing=true, state=idle, ממתין על #navResolve
+
+    // prev() אחרי סוף → s1 (done) צריך לנגן שוב
+    playlist.prev()
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // s1 צריך לנגן שוב (retain — isComplete=true → replay מיידי)
+    const s1Plays = sink.playOrder.filter((id) => id === "s1")
+    expect(s1Plays.length).toBeGreaterThanOrEqual(2)
+
+    sink.resolvePlay("s1")
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  // ── Test 12: refetch thunk נקרא על reserved-ללא-fetch ─────────────────────
+
+  it("(retain-12) ניווט ל-item reserved ללא fetch → refetch thunk נקרא", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    let refetchCalled = false
+    const refetchThunk = () => {
+      refetchCalled = true
+      // simulate re-fetch: markReady אחרי קצת זמן
+      setTimeout(() => {
+        playlist.markReady("s0")
+      }, 10)
+    }
+
+    // s0: reserved עם refetch thunk (נזרק ב-skip-cancel)
+    // s1: ready מיד
+    playlist.reserve("s0", key(0), "bubble-A", refetchThunk)
+    playlist.reserve("s1", key(1), "bubble-A")
+
+    playlist.markReady("s1")
+    // s0 נשאר reserved (לא נקרא markReady)
+
+    await vi.advanceTimersByTimeAsync(0)
+    // #playLoop ממתין על s0 (reserved) — 5s timeout
+    // לפי reserved-without-fetch logic: קורא refetch
+    // אבל כרגע עם הקוד הישן: #waitForItem תקוע
+
+    // בקוד החדש: #playLoop מבחין ש-s0 reserved ו-refetch קיים → קורא אותו
+    await vi.advanceTimersByTimeAsync(100) // מספיק לreset + timer refetch
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // refetch צריך להיקרא
+    expect(refetchCalled).toBe(true)
+
+    // s0 יתנגן אחרי refetch
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sink.playOrder).toContain("s0")
+    sink.resolvePlay("s0")
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    sink.resolvePlay("s1")
+    await vi.advanceTimersByTimeAsync(0)
   })
 })
