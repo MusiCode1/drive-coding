@@ -23,6 +23,10 @@ Environment=OPENCODE_BIN=/home/user/projects/drive-coding/dev/scripts/opencode-c
 # רענון FE שוטף: השתמש ב-`pnpm fe:build` בלי restart — הסוכנים החיים שורדים.
 # restart שמור לשינויי BE בלבד.
 ExecStartPre=/bin/bash -lc 'source /home/user/.config/shell/shared-env.sh && pnpm install --frozen-lockfile && node scripts/dc-build-fe.mjs --if-stale'
+# claude in-process authenticates via subscription OAuth (~/.claude), not via OneCLI gateway.
+# This file declares the exclusion of api.anthropic.com from OneCLI (proxy + key placeholder),
+# scoped to the claude child process only — BE process.env (TTS proxy) is untouched.
+Environment=CLI_SPECS_FILE=/home/user/projects/drive-coding/dev/deploy/cli-specs.jsonc
 # systemd gives a minimal PATH — source shared env for onecli/bun/node/fnm.
 ExecStart=/bin/bash -c 'source /home/user/.config/shell/shared-env.sh && exec onecli run --agent voice-acp -- bun packages/backend/src/server.ts'
 TimeoutStartSec=300

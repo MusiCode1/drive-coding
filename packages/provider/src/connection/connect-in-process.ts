@@ -21,11 +21,13 @@ import { ClaudeAcpAgent } from "@agentclientprotocol/claude-agent-acp"
 import type { NewSessionRequest } from "@agentclientprotocol/sdk"
 import { agent, methods, RequestError } from "acp-sdk-v1"
 import { parseExtParams } from "../extensions/index.js"
+import { getCliSpec } from "../config/index.js"
 import { mapClaudeCapabilities } from "../providers/claude/capabilities.js"
 import { makeAcpClientFromCtx } from "../providers/claude/client-bridge.js"
 import { getQuery } from "../providers/claude/query-access.js"
 import { createTurnTracker } from "../shared/turn-tracker.js"
 import { decodeWireLine } from "../shared/wire-decode.js"
+import { buildClaudeEnvOverride, injectEnvOverride } from "./claude-env-override.js"
 import { createStreamBridge } from "./stream-bridge.js"
 import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
 
@@ -135,6 +137,13 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
   // Internal claudeAgent reference (set inside onConnect).
   let claudeAgent: ClaudeAcpAgent | undefined
 
+  // Compute env override from cli-spec once per connection.
+  // _meta.claudeCode.options.env is the SDK channel: merged over process.env by createSession,
+  // then passed verbatim to spawn(claude, {env}). Node drops keys with value=undefined on spawn
+  // ⇒ unset semantics without mutating process.env globally (BE TTS proxy stays intact).
+  // loadCliSpecsOverride is memoized per-process — this call is cheap.
+  const envOverride = buildClaudeEnvOverride(getCliSpec("claude", process.env))
+
   // Build agentApp — mirrors in-process-host.ts but connects to stream instead of clientApp.
   // All ext handlers (_drive/*) are registered here.
   let agentApp = agent({ name: "drive-coding-inprocess-stream" })
@@ -148,10 +157,11 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
     .onRequest(methods.agent.session.new, (ctx) => {
       if (!claudeAgent) throw new Error("claudeAgent not set before session/new")
       // modelOverride: inject into _meta.claudeCode.options.model if provided (brief §3).
-      // This allows the FE model-picker to influence the claude session model.
-      // Cast: injectModelOverride returns Record<string,unknown> but only adds _meta;
-      // ctx.params is NewSessionRequest so the cast is safe structurally.
-      const params = injectModelOverride(ctx.params, opts.modelOverride) as NewSessionRequest
+      // envOverride: inject into _meta.claudeCode.options.env for unset/set env shaping.
+      // Both target _meta.claudeCode.options and compose additively (no overwrite).
+      // Cast: both functions return Record<string,unknown> with additive _meta only.
+      const withModel = injectModelOverride(ctx.params, opts.modelOverride)
+      const params = injectEnvOverride(withModel, envOverride) as NewSessionRequest
       return claudeAgent.newSession(params)
     })
     .onRequest(methods.agent.session.prompt, (ctx) => {
@@ -160,7 +170,7 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
     })
     .onRequest(methods.agent.session.load, (ctx) => {
       if (!claudeAgent) throw new Error("claudeAgent not set before session/load")
-      return claudeAgent.loadSession(ctx.params)
+      return claudeAgent.loadSession(injectEnvOverride(ctx.params, envOverride))
     })
     .onRequest(methods.agent.session.setConfigOption, (ctx) => {
       if (!claudeAgent) throw new Error("claudeAgent not set before session/set_config_option")
@@ -172,7 +182,7 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
     })
     .onRequest(methods.agent.session.fork, (ctx) => {
       if (!claudeAgent) throw new Error("claudeAgent not set before session/fork")
-      return claudeAgent.unstable_forkSession(ctx.params)
+      return claudeAgent.unstable_forkSession(injectEnvOverride(ctx.params, envOverride))
     })
     .onRequest(methods.agent.session.list, (ctx) => {
       if (!claudeAgent) throw new Error("claudeAgent not set before session/list")
@@ -184,7 +194,7 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
     })
     .onRequest(methods.agent.session.resume, (ctx) => {
       if (!claudeAgent) throw new Error("claudeAgent not set before session/resume")
-      return claudeAgent.resumeSession(ctx.params)
+      return claudeAgent.resumeSession(injectEnvOverride(ctx.params, envOverride))
     })
     .onRequest(methods.agent.session.close, (ctx) => {
       if (!claudeAgent) throw new Error("claudeAgent not set before session/close")
