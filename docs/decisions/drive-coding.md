@@ -1,5 +1,44 @@
 # Decisions — drive-coding
 
+## 2026-07-03 — batch chrome/identity: app-title-build-env + cli-name-in-chat + rename re-verify
+
+> באץ' של 4 בקשות-משתמשת "קוסמטיות למחצה": (1) כותרת `Drive Coding [Dev|Preview] • [סשן]` + 3 פרופילי-בילד; (2) סימן דורש-תשומת-לב בטאב כשמסיים (אופציונלי); (3) rename חבילת-FE; (4) שם ה-CLI במסך הצ'אט. נחתכו ל-4 slices (JIT), 3 מהם עברו אביגיל→READY בסשן זה; #2 (`tab-attention-notify`) נכתב אחרון (תלוי ב-app-title).
+
+### app-title-build-env (בקשה #1)
+
+**רציונל**: חצי מהתשתית כבר קיימת אך מנותקת — `FE_ENV` מוגדר ב-systemd (dev.service) אבל `vite.config.ts` קרא `FE_SOURCEMAP` ולא `FE_ENV` (הפער תועד ב-D3a, 2026-06-28). הסלייס סוגר את הפער ומרחיב מ-2 מצבים ל-3 (dev/preview/prod). המשתמשת חידדה: **שלושה בילדים אמיתיים** (גם dev), כותרת קשיחה ב-HTML שנטענת מיד עם ה-badge ואז מוחלפת בקוד לפי ההקשר (סשן/הגדרות/סשנים).
+
+**הכרעות**:
+1. **מיפוי**: dev+preview = source-maps + badge ("Dev"/"Preview"); prod = בלי source-maps + בלי badge. ה-staging unit עובר מ-`FE_ENV=dev` ל-`FE_ENV=preview` (ה-`vite dev` המקומי הוא ה-dev האמיתי; ה-tunnel הוא preview).
+2. **מקור-אמת יחיד לכותרת** = `PUBLIC_APP_TITLE` (נגזר מ-FE_ENV ב-vite.config); גם ה-HTML וגם ה-runtime קוראים אותו → לא סוטים.
+3. **overrides**: `FE_TITLE` (base) + `FE_SOURCEMAP` (source-maps) גוברים על FE_ENV.
+
+**ממצאי אביגיל** (r1 USABLE-AFTER-FIX → r2 READY): כל 8 הטענות העובדתיות אומתו נכונות; אין blocker. הממצא המהותי (r1 #4): ה-crux — הזרקת-כותרת דרך vite `transformIndexHtml` + `define` — **לא-מאומת תחת SvelteKit**.
+
+**שינוי-כיוון (המהותי בבאץ')**: בעקבות finding 4 בדקתי את קוד SvelteKit 2.60.1 המותקן ומצאתי ש-`transformIndexHtml` **אינו מובטח על `app.html`**, אבל `%sveltekit.env.PUBLIC_*%` **כן נתמך נייטיבית** (`@sveltejs/kit/src/core/config/index.js:33-35`). **המנגנון הוחלף** ל-placeholder נייטיבי (HTML) + `$env/dynamic/public` (runtime), כאשר vite.config מציב `process.env.PUBLIC_APP_TITLE`. Commit 1 מתחיל באימות-מנגנון מוקדם (TEST123) עם fallback (הצבה ב-build scripts).
+
+**רעיונות שנדחו**: (א) vite plugin `transformIndexHtml` — לא מובטח על app.html ב-SvelteKit; (ב) `define`+global `__APP_TITLE_BASE__` — מיותר, `$env/*/public` נייטיבי ובטוח; (ג) מיגרציית `STORAGE_KEY="drive-coding-v2-settings"` — מחוץ ל-scope (מסכן אובדן-הגדרות; לא נתבקש).
+
+### cli-name-in-chat (בקשה #4)
+
+**רציונל**: ה-CLI הפעיל יושב ב-`#cliKind` פרטי ב-`agent-session`; אין getter ציבורי → בתוך הצ'אט אין אינדיקציה באיזה CLI עובדים. מיקום (בקשת המשתמשת): מעל סקשן "אפשרויות סוכן" ב-`SessionOptionsPanel`.
+
+**ממצאי אביגיל** (r1 USABLE-AFTER-FIX → r2 READY): 🔴 `#cliKind` הוא שדה פרטי **לא-`$state`**, וה-VM הוא **singleton** (`+layout.svelte:72`) שהפאנל קורא בלי `{#key}` → getter רגיל לא-ריאקטיבי; ה-badge היה נתקע ב-CLI הראשון (רגרסיה שקטה — smoke יחיד היה ירוק, עלול לעבור calev).
+
+**הכרעה (מרדכי, כי אביגיל ביקשה)**: הופכים את `#cliKind` ל-`$state`. **בטוח**: `CliKind` primitive (string|null) → signal בלי proxy; הקריאות ב-reconnect guards סינכרוניות ולא מושפעות. נדחה: שדה-מראה ציבורי נפרד (כפילות + סיכון-סנכרון). ההנחה השגויה המקורית ("remount של הפאנל מרענן") הוסרה מ-§6.
+
+### frontend-rename-cutover — אימות-מחדש (בקשה #3)
+
+**רציונל**: ה-brief אושר READY ב-25/06, אבל dev נסחף. הרצתי אימות-מחדש לפני dispatch.
+
+**ממצאי אביגיל** (r2/r3 USABLE-AFTER-FIX → r4 READY): 🔴 **2 קבצים פונקציונליים חדשים** עם `--filter @drive-coding/frontend-v2` שלא היו ברשימת ה-4 המקורית: `packages/release/scripts/build-binary.mjs:56` (bun --compile) ו-`scripts/dc-build-fe.mjs:77` (build של systemd). בלי תיקון — ה-rename היה שובר את בניית-הבינארי ואת build-if-stale. בנוסף: `dc-launch.mjs` עבר refactor (אין בו יותר frontend-v2); רשימת docs-חיים 11→9.
+
+**שינוי-כיוון**: רשימת Commit 1 הורחבה ל-5 קבצי-קוד (7 מופעים), docs ל-9. אישוש עצמאי ב-`git grep`. **לקח**: brief מאושר-בעבר חייב אימות-מחדש כש-base נסחף — התשתית (`dc-build-fe`/`build-binary`) נוספה *אחרי* האימות המקורי.
+
+### tab-attention-notify (בקשה #2) — נדחה לסוף הבאץ'
+
+**החלטה**: נכתב אחרון, `depends_on: [app-title-build-env]` (שניהם נוגעים ב-`document.title`). המשתמשת סימנה "אם מסובך אז לא עכשיו" → גרסה **קלה**: prefix ● בכותרת + badge ב-favicon כשה-turn מסתיים ו-`document.hidden`, ניקוי ב-visibilitychange. **בלי** OS-Notification (ה"מסובך").
+
 ## 2026-07-03 — claude-inprocess-cli-env: claude in-process מכבד cli-spec env (החרגת-Anthropic הצהרתית)
 
 ### רציונל
@@ -39,6 +78,26 @@ r1 **READY** (3 findings, כולם 🟢, כולם שולבו): (א) `getOrCreate
 נמצאה טיוטה מוקדמת של ה-brief שהשאירה את מנגנון-ההזרקה כ"לחקור בביצוע" (§9 Q1 🟡). החקירה בוצעה
 **לפני** dispatch (מיפוי SDK מלא: createSession→query→spawn + בדיקת Node-undefined אמפירית) → כל השאלות
 הפתוחות הוכרעו, ה-executor מקבל brief de-risked ללא חקירת-SDK תוך-כדי.
+
+**✅ אימות end-to-end מלא על הקוד המוממש (טלפון/termux, 2026-07-03):** אחרי המימוש (calev GO 7/7), הרצנו את
+ה-live test `connect-in-process.live.test.ts` (RUN_LIVE=1) על הטלפון תחת `onecli` עם **token-דמה מוזרק**
+(תנאי ה-MiniPC), `CLAUDE_CODE_EXECUTABLE`=termux-claude. **ניסוי מבוקר**: (control) בלי `CLI_SPECS_FILE` →
+`× prompt → claude responds` **timeout 60s** (dummy token → claude נתקע); (fix) `CLI_SPECS_FILE=deploy/cli-specs.jsonc`
+→ `✓ prompt → claude responds with DRIVE_OK_5678` **3.3s, 4/4 passed**. אותו env בדיוק — ההבדל היחיד הוא
+ה-cli-spec שהקוד קורא ומזריק דרך `_meta.claudeCode.options.env`. זה מוכיח **end-to-end** את **§8b** (ההזרקה
+מגיעה לתת-תהליך claude — אחרת ה-fix לא היה עובד) **וגם §8c** (unset→OAuth). **שני ה-runtime-gates = GO.**
+
+**אימות-התנהגות חי מוקדם (טלפון/termux, 2026-07-03, לפני מימוש):** ניצלנו OneCLI חי על הטלפון כדי לאמת את
+התנהגות §8c **לפני** כתיבת קוד — `claude -p` הגולמי הוא אותו נתיב-auth של ה-claude שה-SDK מ-spawn (שניהם יורשים
+אותו `process.env`; ה-SDK מוסיף `createEnvForGateway`=∅). תוצאות (עם token-דמה של Anthropic מוזרק ב-OneCLI, כמו
+ה-MiniPC): **ברירת-מחדל** (key-דמה + proxy) → claude **נתקע** (timeout; מנסה-שוב מול ה-gateway); **התיקון**
+(`env -u ANTHROPIC_API_KEY NO_PROXY=api.anthropic.com`) → **OK** (OAuth, EXIT=0). claude עצמו הדפיס:
+*"connectors are disabled because ANTHROPIC_API_KEY … is set and takes precedence over your claude.ai login ·
+**Unset it**"* — בדיוק מה שה-slice עושה. **מסקנות**: (1) הדימנשן הקריטי = `unset ANTHROPIC_API_KEY` (עם key ריק +
+proxy דלוק claude כבר עבד — ה-gateway של הטלפון מנהרר OAuth בשקיפות); `NO_PROXY` **הגנתי** (מול gateway שעושה
+MITM, אולי ה-MiniPC). (2) מצב-הכשל עם token-דמה אמיתי הוא **hang** (לא 401-נקי) — גרוע יותר ל-UX. (3) OneCLI של
+הטלפון שונה מה-MiniPC (out-of-box בלי הזרקת ANTHROPIC_API_KEY). **נשאר לאימות פוסט-מימוש**: שהמנגנון שלנו
+(`_meta.claudeCode.options.env`) מייצר את צורת-ה-env הזו בתת-התהליך → §8b (sinkhole).
 
 **local mechanism-gate (הצעת המשתמשת, שולבה §8b):** ה-runtime-gate פוצל ל-3 שערים במקום אחד תלוי-deploy:
 §8a קוד (בכל מקום) → **§8b מנגנון-חי מקומי** → §8c התנהגות-auth (deploy). §8b מוכיח שה-env המוזרק מגיע
