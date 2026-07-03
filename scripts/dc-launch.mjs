@@ -1,25 +1,18 @@
 #!/usr/bin/env node
 // scripts/dc-launch.mjs
-// Launcher: builds the FE if missing, then starts the bin entry.
-import { existsSync } from "node:fs"
+// Launcher: builds/refreshes the FE if stale, then starts the bin entry.
+import { execFileSync, spawn } from "node:child_process"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { execFileSync, spawn } from "node:child_process"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, "..")
 
-const feIndexHtml = path.join(repoRoot, "packages/frontend/build/index.html")
-
-if (!existsSync(feIndexHtml)) {
-  console.log("[dc-launch] FE build not found — building now...")
-  execFileSync(
-    "pnpm",
-    ["--filter", "@drive-coding/frontend-v2", "build"],
-    { stdio: "inherit", cwd: repoRoot },
-  )
-  console.log("[dc-launch] FE build complete.")
-}
+// Delegate to the canonical atomic FE builder. --if-stale rebuilds only when the
+// served build's version (build/_app/version.json) differs from HEAD — so a
+// `git pull` that updated source no longer leaves a stale bundle served.
+const dcBuildFe = path.join(repoRoot, "scripts/dc-build-fe.mjs")
+execFileSync("node", [dcBuildFe, "--if-stale"], { stdio: "inherit", cwd: repoRoot })
 
 const binEntry = path.join(repoRoot, "packages/backend/src/bin/drive-coding.ts")
 
