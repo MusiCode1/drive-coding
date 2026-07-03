@@ -1,3 +1,15 @@
+## 2026-07-03 — tts-quota-subscription — Commit 0 (TDD): interpretSubscription
+
+**מה בוצע:**
+- `packages/core/src/tts/subscription.ts` — `interpretSubscription()` pure function: free_disabled → exhausted, count>=limit → exhausted, otherwise optimistic
+- `packages/core/src/tts/subscription.test.ts` — 10 טסטים ירוקים (TDD red→green)
+- Guard: `characterLimit=0` לא חוסם (unlimited/enterprise), קלטים שליליים לא חוסמים (optimistic)
+
+**בדיקות:**
+- 10/10 ירוק (`interpretSubscription` suite)
+- typecheck 0 שגיאות
+- lint:i18n נקי
+
 ## 2026-07-02 — tts-provider-availability — סיכום slice (3 commits)
 
 **מה בוצע:**
