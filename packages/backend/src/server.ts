@@ -65,11 +65,13 @@ import {
 import { registerHttpOptions } from "./delivery/http-options.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
 import { registerTtsCapabilitiesHttp } from "./delivery/http-tts-capabilities.js"
+import { registerUsageHttp } from "./delivery/http-usage.js"
 import { createWireRecorder } from "./delivery/wire-recorder.js"
 // הערה: createSessionsCache הוסר — רשימת הסשנים עכשיו מונעת מצד ה-FE דרך ACP WS
 import { createAgentWsHandler } from "./delivery/ws-agent.js"
 import { createEchoWsHandler } from "./delivery/ws-echo.js"
 import { ensureStateSubdir } from "./paths.js"
+import { createUsageStore } from "./usage/usage-store.js"
 
 const app = new Hono()
 
@@ -112,8 +114,17 @@ registerRecordingsHttp(app, { recordingsStore })
 registerRecordingsPostHttp(app, { recordingsStore })
 registerFsBrowseHttp(app)
 
-// Slice 10: פרוקסי שקוף עבור Google + ElevenLabs
-registerProxyHttp(app, { cacheBaseDir: ensureStateSubdir("cache", "proxy") })
+// Slice tts-usage-metering: usage metering store
+const usageStore = createUsageStore(ensureStateSubdir("usage"))
+
+// Slice 10: פרוקסי שקוף עבור Google + ElevenLabs (+ usage tap)
+registerProxyHttp(app, {
+  cacheBaseDir: ensureStateSubdir("cache", "proxy"),
+  usageStore,
+})
+
+// Slice tts-usage-metering: usage summary endpoint
+registerUsageHttp(app, { usageStore })
 
 // Slice 20: serve the built static FE (single-origin local prod).
 // Binary mode: serve from embedded FE manifest (assets in $bunfs, no disk reads).

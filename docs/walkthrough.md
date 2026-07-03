@@ -28,6 +28,48 @@
 - FE disabled per-provider: `caps?.[opt.value]?.available === false` (לא קבוע ל-elevenlabs)
 - שגיאות טסטים pre-existing: https-serve (bun.exe Windows) + bridge-failure integration
 
+## 2026-07-02 — tts-usage-metering — Commit 3: proxy hooks + /api/usage/summary endpoint (manual)
+
+**Commit 3 — proxy hook + endpoint:**
+- `http-proxy.ts`: `registerProxyHttp` מקבל `opts.usageStore?: UsageStore` (additive, no-op כשחסר)
+  - ElevenLabs cache-hit: `usageStore.record({provider:"elevenlabs", cached:true, costUsd:0})`
+  - ElevenLabs cache-miss (בבלוק tee): `extractElevenLabsChars(body)` → `elevenLabsCostUsd()` → record
+  - Gemini transparent-forward: **tee חדש** מותנה `provider==="google" && ":streamGenerateContent" ∈ pathSuffix`, branch ברקע → `extractGeminiUsage` → `geminiCostUsd` → record
+  - לקוח לא מושהה: branch ראשון (toClient) מיידי, tap ברקע בלבד
+- `http-usage.ts`: `registerUsageHttp` → `GET /api/usage/summary` → 200 UsageSummary (JSON)
+- `server.ts`: `createUsageStore(ensureStateSubdir("usage"))` + חיווט ל-registerProxyHttp ו-registerUsageHttp
+- `packages/core/package.json`: הוספת `./usage/*` export path
+- typecheck: ירוק | biome: ירוק | tests: 283/301 (2 pre-existing failures: spawn-ENOENT Windows + https-serve)
+- אימות ידני מתוכנן (DoD §5): ElevenLabs miss+hit, Gemini miss, persistence, no-latency
+
+## 2026-07-02 — tts-usage-metering — Commit 2: backend/usage/usage-store (mixed TDD+manual)
+
+**Commit 2 — TDD ל-aggregation, IO נבדק ידנית:**
+- קובץ חדש: `packages/backend/src/usage/usage-store.ts` — `createUsageStore(baseDir)` → `UsageStore`
+- sync in-memory counters (`ProviderTotals` פר ספק) + debounced flush (2s) ל-`totals.json` + append מיידי ל-`events.jsonl` (מטא בלבד)
+- load מ-`totals.json` ב-construct (שורד restart); פגום/חסר → אפסים
+- on-shutdown flush (SIGINT/SIGTERM/exit)
+- `UsageEvent`, `ProviderTotals`, `UsageSummary` types exported
+- קובץ חדש: `packages/backend/src/usage/usage-store.test.ts` — 8 TDD tests (initial zero, miss, hit, google, accumulation, snapshot immutability)
+- typecheck backend: ירוק | biome: ירוק | 8/8 tests passed
+
+## 2026-07-02 — tts-usage-metering — Commit 1: core/usage/extract (TDD)
+
+**Commit 1 — RED→GREEN:**
+- קובץ חדש: `packages/core/src/usage/extract.ts` — `extractElevenLabsChars(body)` + `extractGeminiUsage(responseBytes)`
+- `extractElevenLabsChars`: מפרסר JSON body של ElevenLabs → אורך `.text`; 0 על כשל
+- `extractGeminiUsage`: מפרסר SSE של Gemini (גם JSON array); לוקח usageMetadata **האחרון**; audio = `candidatesTokensDetails[AUDIO].tokenCount` (עדיפות), fallback=`candidatesTokenCount`
+- קובץ חדש: `packages/core/src/usage/extract.test.ts` — 15 tests (TDD: RED→GREEN)
+- fixtures: SSE עם details, SSE בלי details (fallback), multi-chunk (last wins), JSON array, כשל-פרסור → 0
+- typecheck core: ירוק | biome: ירוק | 15/15 tests passed
+
+## 2026-07-02 — tts-usage-metering — Commit 0: core/usage/pricing (TDD)
+
+**Commit 0 — RED→GREEN:**
+- קובץ חדש: `packages/core/src/usage/pricing.ts` — `TTS_PRICING` (snapshot 2026-07-02: ElevenLabs $0.18/1k, Gemini $1/1M input + $20/1M audio), `elevenLabsCostUsd(chars)`, `geminiCostUsd(inputTokens, audioTokens)`
+- קובץ חדש: `packages/core/src/usage/pricing.test.ts` — 11 tests (TDD: RED→GREEN); כיסוי: ערכי pricing > 0, 0 chars/tokens → 0, חישוב ל-1000 chars, חישוב ל-1M tokens, שילוב input+audio, סקלה לינארית
+- typecheck core: ירוק | biome (קבצים חדשים): ירוק | 11/11 tests passed
+
 ## 2026-06-29 — FEAT-thinking-live — Phase 1: אימות חי (manual)
 
 **אימות wire מקצה-לקצה:**
