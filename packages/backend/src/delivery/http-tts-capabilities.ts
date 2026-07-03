@@ -67,6 +67,8 @@ const subscriptionResponseSchema = type({
   character_count: "number",
   character_limit: "number",
   status: "string",
+  "max_character_limit_extension?": "number",
+  "can_extend_character_limit?": "boolean",
   "+": "ignore", // allow (and drop) extra fields
 })
 
@@ -119,6 +121,8 @@ async function probeElevenLabsQuota(): Promise<QuotaVerdict | null> {
     characterCount: parsed.character_count,
     characterLimit: parsed.character_limit,
     status: parsed.status,
+    maxExtension: parsed.max_character_limit_extension,
+    canExtend: parsed.can_extend_character_limit,
   })
 }
 
