@@ -33,6 +33,7 @@ import { createGeminiUsageAccumulator } from "@drive-coding/core/usage/gemini-us
 import { elevenLabsCostUsd, geminiCostUsd } from "@drive-coding/core/usage/pricing"
 import type { Hono } from "hono"
 import type { UsageStore } from "../usage/usage-store.js"
+import { boundedCollector } from "./bounded-collect.js"
 import { resolveProviderAuth } from "./proxy-auth.js"
 import {
   computeCacheKey,
@@ -177,12 +178,18 @@ export function registerProxyHttp(
     sanitizedHeaders.delete("content-encoding")
     sanitizedHeaders.delete("content-length")
 
-    // ── פיצול למטמון בהצלחה ──────────────────────────────────────────────
+    // ── Cache-miss path: bounded TransformStream collector ───────────────────
+    // Replaces tee+cacheStreamInBackground: tee() had no backpressure → OOM risk
+    // when audio was larger than RAM budget.
+    //
+    // New approach: TransformStream collects chunks up to PROXY_CACHE_MAX_ENTRY_BYTES (8MB).
+    // Above the cap: truncated=true → skip cache write (audio too large to cache).
+    // The client stream is always fully served regardless of cap.
+    //
+    // Slice 24: פענח meta מהלקוח (אם נשלח)
     if (cacheKey && res.ok && res.body) {
-      const [toClient, toCache] = res.body.tee()
       const contentType = sanitizedHeaders.get("content-type") ?? "application/octet-stream"
 
-      // Slice 24: פענח meta מהלקוח (אם נשלח)
       let meta: Record<string, unknown> | undefined
       if (clientMetaRaw) {
         try {
@@ -190,13 +197,44 @@ export function registerProxyHttp(
           // שמור את ה-key הקריא ב-meta לצורך מחיקה סלקטיבית עתידית
           meta._clientKey = clientKey
         } catch {
-          // meta לא תקין — התעלם
+          // meta invalid — ignore
         }
       }
 
-      // שמירה במטמון ברקע — אל תמתין
-      cacheStreamInBackground(proxyCache, cacheKey, toCache, contentType, meta).catch((e) => {
-        log.warn({ err: e, cacheKey }, "background cache write failed")
+      const collector = boundedCollector()
+      const capturedProxyCache = proxyCache
+      const capturedCacheKey = cacheKey
+      const capturedMeta = meta
+
+      const cacheTap = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          try {
+            collector.push(chunk)
+          } catch {
+            // fail-safe: tap errors never break the client stream
+          }
+          controller.enqueue(chunk)
+        },
+        flush() {
+          const { bytes, truncated } = collector.done()
+          if (truncated) {
+            log.debug(
+              { cacheKey: capturedCacheKey },
+              "cache tap: entry exceeded cap, skipping write",
+            )
+            return
+          }
+          // Write to cache in the background — flush() itself must be synchronous
+          capturedProxyCache
+            .set(capturedCacheKey, {
+              body: bytes,
+              headers: { contentType },
+              meta: capturedMeta,
+            })
+            .catch((e) => {
+              log.warn({ err: e, cacheKey: capturedCacheKey }, "background cache write failed")
+            })
+        },
       })
 
       // Usage tap: ElevenLabs cache-miss — chars from request body, cost calculated
@@ -215,7 +253,7 @@ export function registerProxyHttp(
       }
 
       sanitizedHeaders.set("x-cache", "miss")
-      return new Response(toClient, {
+      return new Response(res.body.pipeThrough(cacheTap), {
         status: res.status,
         headers: sanitizedHeaders,
       })
@@ -277,37 +315,4 @@ export function registerProxyHttp(
       headers: sanitizedHeaders,
     })
   })
-}
-
-// ─── כתיבה למטמון ברקע ───────────────────────────────────────────────────
-
-async function cacheStreamInBackground(
-  cache: ReturnType<typeof createProxyCache>,
-  key: string,
-  stream: ReadableStream<Uint8Array>,
-  contentType: string,
-  meta?: Record<string, unknown>,
-): Promise<void> {
-  const chunks: Uint8Array[] = []
-  const reader = stream.getReader()
-  try {
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
-      if (value) chunks.push(value)
-    }
-
-    // מזג את כל ה-chunks ל-Uint8Array אחד
-    const totalLength = chunks.reduce((s, c) => s + c.length, 0)
-    const merged = new Uint8Array(totalLength)
-    let offset = 0
-    for (const chunk of chunks) {
-      merged.set(chunk, offset)
-      offset += chunk.length
-    }
-
-    await cache.set(key, { body: merged, headers: { contentType }, meta })
-  } catch {
-    // תגובה חלקית — דלג על המטמון, אל תעשה כלום
-  }
 }
