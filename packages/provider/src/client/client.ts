@@ -102,77 +102,21 @@ export type AcpClientCallbacks = {
   onExtNotification?: (method: string, params: Record<string, unknown>) => void
 }
 
-export async function createAcpClient(
+// ─── helper פרטי: בונה את ה-facade המשותף לשני הנתיבים ────────────────────────
+
+/**
+ * buildAcpClientFacade — חילוץ ה-return-object ל-helper פרטי משותף.
+ * קורא לו גם createAcpClient (cold, אחרי initialize) וגם createAttachedAcpClient
+ * (warm reattach, בלי initialize). לוגיקת ה-facade עצמה לא השתנתה — extraction בלבד.
+ */
+function buildAcpClientFacade(
+  conn: ClientSideConnection,
   transport: AcpTransport,
-  onUpdateOrCallbacks: ((n: SessionNotification) => void) | AcpClientCallbacks,
-  options: AcpClientOptions = {},
-): Promise<AcpClient> {
-  const initTimeoutMs = options.initTimeoutMs ?? DEFAULT_INIT_TIMEOUT_MS
-
-  // תמיכה בשתי חתימות: callback ישיר (backward-compat) + object
-  const callbacks: AcpClientCallbacks =
-    typeof onUpdateOrCallbacks === "function"
-      ? { onUpdate: onUpdateOrCallbacks }
-      : onUpdateOrCallbacks
-
-  // בניית streams + connection — ה-SDK מתחיל לקרוא מהצינור מיד.
-  const stream = ndJsonStream(transport.writable, transport.readable)
-  const client = createClientImpl({
-    onUpdate: callbacks.onUpdate,
-    onExtNotification: callbacks.onExtNotification,
-  })
-  const conn = new ClientSideConnection((_agent) => client, stream)
-
-  // initialize עם fs caps = false — עטוף ב-Promise.race עם timeout.
-  // קבלת תגובת ACP תקינה היא עצמה אות המוכנות; אין צורך ב-frame handshake
-  // סינתטי. אם התעבורה או הסוכן אינם מגיבים, ה-timeout נורה עם שגיאה ברורה.
-  let initTimer: ReturnType<typeof setTimeout> | undefined
-  let initResult: Awaited<ReturnType<typeof conn.initialize>>
-  const initPromise = conn.initialize({
-    protocolVersion: 1,
-    clientCapabilities: {
-      fs: { readTextFile: false, writeTextFile: false },
-    },
-    clientInfo: { name: "drive-coding", version: "0.2.0" },
-  })
-  // מסמנים את initPromise כמטופל כדי לדכא unhandled-rejection אם ה-race
-  // מסתיים דרך timeout. הדחייה האמיתית (אם קיימת) עדיין נצפית
-  // על-ידי Promise.race למטה.
-  initPromise.catch(() => {})
-  try {
-    initResult = await Promise.race([
-      initPromise,
-      new Promise<never>((_, reject) => {
-        initTimer = setTimeout(() => {
-          reject(
-            new Error(
-              `ACP initialize timeout after ${initTimeoutMs}ms — no response from agent (transport or child unresponsive)`,
-            ),
-          )
-        }, initTimeoutMs)
-      }),
-    ])
-    if (initTimer !== undefined) clearTimeout(initTimer)
-  } catch (e) {
-    if (initTimer !== undefined) clearTimeout(initTimer)
-    // שגיאת auth_required — זורק מחדש עם kind ל-UI
-    const err = e as { code?: number; data?: { code?: string }; message?: string }
-    if (err?.data?.code === "auth_required") {
-      const authErr = new Error(
-        `ACP agent requires authentication: ${err.message ?? "auth_required"}. ` +
-          `Run in shell: '<cli> auth login'.`,
-      )
-      ;(authErr as Error & { kind?: string }).kind = "auth_required"
-      transport.close()
-      throw authErr
-    }
-    transport.close()
-    throw e
-  }
-
+  capabilities: AcpClient["capabilities"],
+): AcpClient {
   return {
     conn,
-    capabilities: initResult.agentCapabilities,
+    capabilities,
 
     /** יוצר session ACP חדש */
     async newSession(opts: { cwd: string; _meta?: AcpRequestMeta }) {
@@ -269,4 +213,122 @@ export async function createAcpClient(
       return conn.unstable_setSessionModel({ sessionId: opts.sessionId, modelId: opts.modelId })
     },
   }
+}
+
+export async function createAcpClient(
+  transport: AcpTransport,
+  onUpdateOrCallbacks: ((n: SessionNotification) => void) | AcpClientCallbacks,
+  options: AcpClientOptions = {},
+): Promise<AcpClient> {
+  const initTimeoutMs = options.initTimeoutMs ?? DEFAULT_INIT_TIMEOUT_MS
+
+  // תמיכה בשתי חתימות: callback ישיר (backward-compat) + object
+  const callbacks: AcpClientCallbacks =
+    typeof onUpdateOrCallbacks === "function"
+      ? { onUpdate: onUpdateOrCallbacks }
+      : onUpdateOrCallbacks
+
+  // בניית streams + connection — ה-SDK מתחיל לקרוא מהצינור מיד.
+  const stream = ndJsonStream(transport.writable, transport.readable)
+  const client = createClientImpl({
+    onUpdate: callbacks.onUpdate,
+    onExtNotification: callbacks.onExtNotification,
+  })
+  const conn = new ClientSideConnection((_agent) => client, stream)
+
+  // initialize עם fs caps = false — עטוף ב-Promise.race עם timeout.
+  // קבלת תגובת ACP תקינה היא עצמה אות המוכנות; אין צורך ב-frame handshake
+  // סינתטי. אם התעבורה או הסוכן אינם מגיבים, ה-timeout נורה עם שגיאה ברורה.
+  let initTimer: ReturnType<typeof setTimeout> | undefined
+  let initResult: Awaited<ReturnType<typeof conn.initialize>>
+  const initPromise = conn.initialize({
+    protocolVersion: 1,
+    clientCapabilities: {
+      fs: { readTextFile: false, writeTextFile: false },
+    },
+    clientInfo: { name: "drive-coding", version: "0.2.0" },
+  })
+  // מסמנים את initPromise כמטופל כדי לדכא unhandled-rejection אם ה-race
+  // מסתיים דרך timeout. הדחייה האמיתית (אם קיימת) עדיין נצפית
+  // על-ידי Promise.race למטה.
+  initPromise.catch(() => {})
+  try {
+    initResult = await Promise.race([
+      initPromise,
+      new Promise<never>((_, reject) => {
+        initTimer = setTimeout(() => {
+          reject(
+            new Error(
+              `ACP initialize timeout after ${initTimeoutMs}ms — no response from agent (transport or child unresponsive)`,
+            ),
+          )
+        }, initTimeoutMs)
+      }),
+    ])
+    if (initTimer !== undefined) clearTimeout(initTimer)
+  } catch (e) {
+    if (initTimer !== undefined) clearTimeout(initTimer)
+    // שגיאת auth_required — זורק מחדש עם kind ל-UI
+    const err = e as { code?: number; data?: { code?: string }; message?: string }
+    if (err?.data?.code === "auth_required") {
+      const authErr = new Error(
+        `ACP agent requires authentication: ${err.message ?? "auth_required"}. ` +
+          `Run in shell: '<cli> auth login'.`,
+      )
+      ;(authErr as Error & { kind?: string }).kind = "auth_required"
+      transport.close()
+      throw authErr
+    }
+    transport.close()
+    throw e
+  }
+
+  return buildAcpClientFacade(conn, transport, initResult.agentCapabilities)
+}
+
+// ─── slice warm-reattach-skip-init: נתיב warm reattach ───────────────────────
+
+export type AttachedAcpClientOptions = {
+  /**
+   * capabilities ידועות מבחוץ. warm reattach אין לו תגובת initialize לשאוב ממנה.
+   * משמש רק supportsImageInput (רדום מאחורי IMAGE_INPUT_ENABLED).
+   * NormalizedCapabilities מגיע מ-_drive/capabilities (ws-agent.ts:87) — לא מושפע.
+   * ברירת-מחדל: אובייקט ריק בטוח.
+   */
+  capabilities?: AcpClient["capabilities"]
+}
+
+/**
+ * createAttachedAcpClient — בונה AcpClient על transport פתוח, **ללא** קריאת initialize.
+ *
+ * מיועד ל-warm reattach: הסוכן כבר חי ואותחל, חיבור WS חדש נפתח אליו.
+ * שליחת initialize נוסף גורמת ל-Codex לזרוק "Already initialized" → לולאת סוקטים.
+ *
+ * הנתיב: ndJsonStream → ClientSideConnection → buildAcpClientFacade, ללא conn.initialize.
+ * הקורא אחראי להמתין ל-waitForOpen לפני הקריאה לפונקציה זו.
+ *
+ * סינכרוני (בניגוד ל-createAcpClient) — אין await על initialize.
+ * `await createAttachedAcpClient(...)` תקין (await על non-Promise לא גורם נזק).
+ */
+export function createAttachedAcpClient(
+  transport: AcpTransport,
+  onUpdateOrCallbacks: ((n: SessionNotification) => void) | AcpClientCallbacks,
+  options: AttachedAcpClientOptions = {},
+): AcpClient {
+  const callbacks: AcpClientCallbacks =
+    typeof onUpdateOrCallbacks === "function"
+      ? { onUpdate: onUpdateOrCallbacks }
+      : onUpdateOrCallbacks
+
+  const stream = ndJsonStream(transport.writable, transport.readable)
+  const client = createClientImpl({
+    onUpdate: callbacks.onUpdate,
+    onExtNotification: callbacks.onExtNotification,
+  })
+  const conn = new ClientSideConnection((_agent) => client, stream)
+
+  // capabilities מבחוץ (ברירת-מחדל: אובייקט ריק — raw caps משמש רק supportsImageInput הרדום)
+  const capabilities = options.capabilities ?? ({} as AcpClient["capabilities"])
+
+  return buildAcpClientFacade(conn, transport, capabilities)
 }

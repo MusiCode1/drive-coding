@@ -1,7 +1,7 @@
 # Slice B1 — UI בקרת השמעה + ריצה — תוכנית
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: ✅ READY (אביגיל r2 — 4 ממצאי r1 נסגרו; `reports/drive-coding/B1-avigail.md`). base=`slice/playback-ui` (A2-A5) @ 56c3a55
+> **סטטוס** (2026-07-01): 🟡 **קוד בוצע — runtime-gate פתוח.** הקוד גמור על `slice/playback-ui` (PlaybackControls + חיווי interrupted + חיווט; commits `ba6f496`→`a16893d`), עבר reconcile מול dev + build-gate ✅ (typecheck 0, tests 962/985 — כשלים pre-existing בלבד). **נותר רק: כלב calev-heavy חי** — חסום על מפתח Gemini שרוף (ר' `decisions/voice-acp.md` 2026-07-01). היסטוריה: ✅ READY (אביגיל r2 — 4 ממצאי r1 נסגרו; `reports/drive-coding/B1-avigail.md`). base=`slice/playback-ui` (A2-A5) @ 56c3a55
 > **Complexity**: 6/10 (verifier: heavy — UI חי + RTL + נייד)
 > **תלות**: [A4] (+ A5 אופציונלי ל‑turnInterrupted) · **base**: branch `slice/playback-core-a4`
 > **worktree נפרד** (UI) — מאפשר merge של התשתית (A2‑A5) בלי ה‑UI.

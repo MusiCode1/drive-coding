@@ -13,6 +13,164 @@
 - אימות e2e חי: BLOCKED (ראה הערה — calev-heavy ינסה לאמת מול ספק עם promptCapabilities.image)
 
 **חריגות:** שגיאת typecheck pre-existing ב-connect-in-process.test.ts:111 קיימת ב-base ולא שינינו.
+## 2026-07-03 — claude-inprocess-cli-env — Slice הושלם (3 commits)
+
+**מה בוצע:**
+
+Commit 1 (TDD):
+- `packages/provider/src/connection/claude-env-override.ts` — buildClaudeEnvOverride + injectEnvOverride.
+  unsetEnv → key=undefined (Node משמיט ב-spawn), setEnv → key=string; setEnv ינצח בהתנגשות.
+- `packages/provider/src/connection/claude-env-override.test.ts` — 11 טסטים TDD (6 buildClaudeEnvOverride + 4 injectEnvOverride).
+
+Commit 2 (wiring + structural):
+- connect-in-process.ts: ייבוא getCliSpec + buildClaudeEnvOverride/injectEnvOverride.
+  envOverride מחושב פעם אחת; session.new = withModel→withEnv; session.load/resume/fork = injectEnvOverride.
+- connect-in-process.test.ts: structural test עם CLI_SPECS_FILE+vi.resetModules().
+- scripts/claude-env-sinkhole.mjs + scripts/claude-env-proxy-logger.mjs — diagnostic scripts ל-mechanism-gate §8b.
+
+Commit 3 (config + deploy):
+- deploy/cli-specs.jsonc — הצהרת env-shaping declarative (claude: unsetEnv + setEnv NO_PROXY).
+- voice-acp-dev.service + voice-acp-main.service: Environment=CLI_SPECS_FILE + הערת-הסבר.
+- docs/deploy-local-service.md: פסקה "Claude in-process auth" + migration guidance.
+
+**בדיקות:**
+- TDD: 11/11 ירוקים (claude-env-override)
+- structural: 12/12 ירוקים (connect-in-process)
+- provider total: 161/169 ירוקים (169 = כולל skipped; baseline=149)
+- typecheck: 0 שגיאות; lint:i18n: נקי
+- node --check: שני סקריפטי האבחון עוברים
+
+**חריגות:**
+- הסבר בroadmap ב-worktree (§רקע): ה-ExecStart ה-tracked כבר היה נקי — אין wrapper בgit. הוסיפו רק Environment=CLI_SPECS_FILE.
+- deploy action (לא git): יש למחוק scripts/claude-direct-be.sh (untracked) בסביבת deploy ולוודא שאין ExecStart מקומי עם wrapper.
+- §8b/§8c (mechanism-gate ו-runtime-gate) — לא הורצו (runtime-gates על deploy, מרדכי + כלב מריצים).
+
+## 2026-07-03 — tts-quota-refine — Commit 2: FE reason ב-Select + quota labels + adapter (manual)
+
+**מה בוצע:**
+- `packages/frontend/src/lib/util/tts-reason.ts` — util משותף `ttsReasonMessage(reason, t)` (הוצא מ-TtsStatusCard)
+- `packages/frontend/src/lib/components/settings/TtsStatusCard.svelte` — שימוש ב-ttsReasonMessage; effective-limit derived (`canExtend+maxExtension`); quotaExhausted מול effective; isOverage; labels ברורים: "נוצל: X · מכסה: Y · חריגה"
+- `packages/frontend/src/lib/components/settings/SettingsScreen.svelte` — import ttsReasonMessage; description פר-אופציה disabled ב-ttsProviderOptions
+- `packages/frontend/src/lib/adapters/voice/subscription.ts` — ElevenLabsSubscription: maxExtension? + canExtend?; schema: max_character_limit_extension? + can_extend_character_limit?; snake→camel
+- `packages/core/src/i18n/keys.ts` + `he.ts` + `en.ts` — 3 מפתחות: quota.used / quota.limitLabel / quota.overage
+
+**בדיקות:**
+- typecheck 0 שגיאות
+- lint:i18n נקי (0 hardcoded Hebrew)
+- אימות ידני: preview — reason ב-Select disabled, labels ברורים בכרטיס
+
+**חריגות:**
+- ה-adapter (FE) מוסיף maxExtension/canExtend לסוג ElevenLabsSubscription — VM מחזיק את הסוג; TtsStatusCard ניגש ישירות.
+
+## 2026-07-03 — tts-quota-refine — Commit 0: core effective-limit TDD
+
+**מה בוצע:**
+- `packages/core/src/tts/subscription.ts` — SubscriptionInfo: maxExtension? + canExtend?; interpretSubscription: effectiveLimit = base + extension; חסימה מול effective
+- `packages/core/src/tts/subscription.test.ts` — 5 טסטים חדשים: overage מותר בין base ל-effective, count>=effective חסום, canExtend=false→base, maxExtension=0→base, undefined→base
+
+**בדיקות:**
+- TDD red→green: 15/15 טסטים ירוקים
+- typecheck 0
+
+## 2026-07-03 — tts-status-ui — Commit 1: VM + TtsStatusCard + i18n (manual)
+
+**מה בוצע:**
+- `packages/frontend/src/lib/view-models/tts-status.svelte.ts` — VM singleton עם `$state`: subscription, usage, loading; `refresh()` מריץ שני ה-adapters במקביל עם `Promise.allSettled` — כשל adapter → undefined, לא קורס
+- `packages/frontend/src/lib/components/settings/TtsStatusCard.svelte` — כרטיס TTS: reason (אם available===false), מכסת ElevenLabs עם progress bar + הדגשה כשמוצה, usage תווים+tokens+עלות לכל ספק
+- `packages/frontend/src/lib/components/settings/SettingsScreen.svelte` — הוספת import + TtsStatusCard + onMount refresh
+- `packages/core/src/i18n/keys.ts` + `he.ts` + `en.ts` — 15 מפתחות additive (tts-status-ui block)
+
+**בדיקות:**
+- typecheck 0 שגיאות
+- lint:i18n נקי
+- אימות ידני: preview (DoD §5) — ראה הגדרות → כרטיס מצב TTS
+
+**חריגות / הערות:**
+- reason מוצג רק כש-available===false (לא מציג OK)
+- Gemini quota אינו זמין — מוצג "—" כפי שנקבע ב-brief §2
+- usage labels פשוטים (dir=ltr, font-mono) — לא requires i18n עבור יחידות (chars/tokens)
+
+## 2026-07-03 — tts-status-ui — Commit 0: FE adapters (manual)
+
+**מה בוצע:**
+- `packages/frontend/src/lib/adapters/voice/subscription.ts` — `fetchElevenLabsSubscription()`: קורא `/proxy/elevenlabs/v1/user/subscription`, ArkType parse עם `tier?` optional + `"+":"ignore"`, snake→camel
+- `packages/frontend/src/lib/adapters/usage.ts` — `fetchUsageSummary()`: קורא `/api/usage/summary`, ArkType parse עם `ProviderTotals`+`UsageSummary` schemas
+
+**בדיקות:**
+- typecheck 0 שגיאות
+- lint:i18n נקי
+
+## 2026-07-03 — tts-quota-subscription — Commit 0 (TDD): interpretSubscription
+
+**מה בוצע:**
+- `packages/core/src/tts/subscription.ts` — `interpretSubscription()` pure function: free_disabled → exhausted, count>=limit → exhausted, otherwise optimistic
+- `packages/core/src/tts/subscription.test.ts` — 10 טסטים ירוקים (TDD red→green)
+- Guard: `characterLimit=0` לא חוסם (unlimited/enterprise), קלטים שליליים לא חוסמים (optimistic)
+
+**בדיקות:**
+- 10/10 ירוק (`interpretSubscription` suite)
+- typecheck 0 שגיאות
+- lint:i18n נקי
+
+## 2026-07-02 — tts-provider-availability — סיכום slice (3 commits)
+
+**מה בוצע:**
+- Commit 0 (TDD): `core/tts/probe-status.ts` — `interpretProbeStatus()` (11 טסטים ירוקים, 304 total)
+- Commit 1 (manual): `be/delivery/http-tts-capabilities.ts` — `GET /api/tts/capabilities` עם probe + cache 60s + OneCLI placeholder
+- Commit 2 (manual): FE — `adapters/tts-capabilities.ts` + `view-models/capabilities.svelte.ts` + disable per-provider בבורר + fallback $effect + הודעות i18n (3 קבצי i18n)
+
+**בדיקות ידניות שבוצעו:**
+- env-mode (מפתח מזויף): `curl localhost:4005/api/tts/capabilities` → `{elevenlabs:{available:false,reason:"no-key"},google:{available:false,reason:"error"}}` ✅
+- אין דליפת-סוד בלוג ✅
+- typecheck 0 שגיאות ✅
+- lint:i18n נקי ✅
+
+**חריגות / הערות:**
+- OneCLI-mode (מפתחות תקפים) לא נבדק ישירות — probe רץ בתוך תהליך BE תחת OneCLI, אותו מסלול כמו proxy
+- FE disabled per-provider: `caps?.[opt.value]?.available === false` (לא קבוע ל-elevenlabs)
+- שגיאות טסטים pre-existing: https-serve (bun.exe Windows) + bridge-failure integration
+
+## 2026-07-02 — tts-usage-metering — Commit 3: proxy hooks + /api/usage/summary endpoint (manual)
+
+**Commit 3 — proxy hook + endpoint:**
+- `http-proxy.ts`: `registerProxyHttp` מקבל `opts.usageStore?: UsageStore` (additive, no-op כשחסר)
+  - ElevenLabs cache-hit: `usageStore.record({provider:"elevenlabs", cached:true, costUsd:0})`
+  - ElevenLabs cache-miss (בבלוק tee): `extractElevenLabsChars(body)` → `elevenLabsCostUsd()` → record
+  - Gemini transparent-forward: **tee חדש** מותנה `provider==="google" && ":streamGenerateContent" ∈ pathSuffix`, branch ברקע → `extractGeminiUsage` → `geminiCostUsd` → record
+  - לקוח לא מושהה: branch ראשון (toClient) מיידי, tap ברקע בלבד
+- `http-usage.ts`: `registerUsageHttp` → `GET /api/usage/summary` → 200 UsageSummary (JSON)
+- `server.ts`: `createUsageStore(ensureStateSubdir("usage"))` + חיווט ל-registerProxyHttp ו-registerUsageHttp
+- `packages/core/package.json`: הוספת `./usage/*` export path
+- typecheck: ירוק | biome: ירוק | tests: 283/301 (2 pre-existing failures: spawn-ENOENT Windows + https-serve)
+- אימות ידני מתוכנן (DoD §5): ElevenLabs miss+hit, Gemini miss, persistence, no-latency
+
+## 2026-07-02 — tts-usage-metering — Commit 2: backend/usage/usage-store (mixed TDD+manual)
+
+**Commit 2 — TDD ל-aggregation, IO נבדק ידנית:**
+- קובץ חדש: `packages/backend/src/usage/usage-store.ts` — `createUsageStore(baseDir)` → `UsageStore`
+- sync in-memory counters (`ProviderTotals` פר ספק) + debounced flush (2s) ל-`totals.json` + append מיידי ל-`events.jsonl` (מטא בלבד)
+- load מ-`totals.json` ב-construct (שורד restart); פגום/חסר → אפסים
+- on-shutdown flush (SIGINT/SIGTERM/exit)
+- `UsageEvent`, `ProviderTotals`, `UsageSummary` types exported
+- קובץ חדש: `packages/backend/src/usage/usage-store.test.ts` — 8 TDD tests (initial zero, miss, hit, google, accumulation, snapshot immutability)
+- typecheck backend: ירוק | biome: ירוק | 8/8 tests passed
+
+## 2026-07-02 — tts-usage-metering — Commit 1: core/usage/extract (TDD)
+
+**Commit 1 — RED→GREEN:**
+- קובץ חדש: `packages/core/src/usage/extract.ts` — `extractElevenLabsChars(body)` + `extractGeminiUsage(responseBytes)`
+- `extractElevenLabsChars`: מפרסר JSON body של ElevenLabs → אורך `.text`; 0 על כשל
+- `extractGeminiUsage`: מפרסר SSE של Gemini (גם JSON array); לוקח usageMetadata **האחרון**; audio = `candidatesTokensDetails[AUDIO].tokenCount` (עדיפות), fallback=`candidatesTokenCount`
+- קובץ חדש: `packages/core/src/usage/extract.test.ts` — 15 tests (TDD: RED→GREEN)
+- fixtures: SSE עם details, SSE בלי details (fallback), multi-chunk (last wins), JSON array, כשל-פרסור → 0
+- typecheck core: ירוק | biome: ירוק | 15/15 tests passed
+
+## 2026-07-02 — tts-usage-metering — Commit 0: core/usage/pricing (TDD)
+
+**Commit 0 — RED→GREEN:**
+- קובץ חדש: `packages/core/src/usage/pricing.ts` — `TTS_PRICING` (snapshot 2026-07-02: ElevenLabs $0.18/1k, Gemini $1/1M input + $20/1M audio), `elevenLabsCostUsd(chars)`, `geminiCostUsd(inputTokens, audioTokens)`
+- קובץ חדש: `packages/core/src/usage/pricing.test.ts` — 11 tests (TDD: RED→GREEN); כיסוי: ערכי pricing > 0, 0 chars/tokens → 0, חישוב ל-1000 chars, חישוב ל-1M tokens, שילוב input+audio, סקלה לינארית
+- typecheck core: ירוק | biome (קבצים חדשים): ירוק | 11/11 tests passed
 
 ## 2026-06-29 — FEAT-thinking-live — Phase 1: אימות חי (manual)
 

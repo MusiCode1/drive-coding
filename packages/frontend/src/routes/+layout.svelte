@@ -51,6 +51,7 @@ import { ResponsiveVM } from "$lib/view-models/responsive.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
 import { Speaker } from "$lib/view-models/speaker.svelte"
 import { ThemeVM } from "$lib/view-models/theme.svelte"
+import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { UiShellVM } from "$lib/view-models/ui-shell.svelte"
 
 let { children } = $props()
@@ -107,6 +108,12 @@ const activeAgents = new ActiveAgents()
 
 // ─── recent-projects ─── (slice connect-recent-projects — בלתי-תלוי)
 const recentProjects = new RecentProjects()
+
+// ─── tts-capabilities ─── (slice tts-provider-availability, Commit 3 — race-fix)
+// מקדים את בדיקת הזמינות לפני שה-$effect ב-VoicePicker מופעל.
+// refresh() non-blocking (void) — אין await. ה-$effect reactive ב-VoicePicker
+// יתעורר אוטומטית כשcaps יתעדכן.
+void ttsCapabilities.refresh()
 
 // ─── wake-lock ─── (Track C — drive-first chrome)
 const wakeLock = new WakeLockEngine()

@@ -1,5 +1,344 @@
 # Decisions — drive-coding
 
+## 2026-07-03 — batch chrome/identity: app-title-build-env + cli-name-in-chat + rename re-verify
+
+> באץ' של 4 בקשות-משתמשת "קוסמטיות למחצה": (1) כותרת `Drive Coding [Dev|Preview] • [סשן]` + 3 פרופילי-בילד; (2) סימן דורש-תשומת-לב בטאב כשמסיים (אופציונלי); (3) rename חבילת-FE; (4) שם ה-CLI במסך הצ'אט. נחתכו ל-4 slices (JIT), 3 מהם עברו אביגיל→READY בסשן זה; #2 (`tab-attention-notify`) נכתב אחרון (תלוי ב-app-title).
+
+### app-title-build-env (בקשה #1)
+
+**רציונל**: חצי מהתשתית כבר קיימת אך מנותקת — `FE_ENV` מוגדר ב-systemd (dev.service) אבל `vite.config.ts` קרא `FE_SOURCEMAP` ולא `FE_ENV` (הפער תועד ב-D3a, 2026-06-28). הסלייס סוגר את הפער ומרחיב מ-2 מצבים ל-3 (dev/preview/prod). המשתמשת חידדה: **שלושה בילדים אמיתיים** (גם dev), כותרת קשיחה ב-HTML שנטענת מיד עם ה-badge ואז מוחלפת בקוד לפי ההקשר (סשן/הגדרות/סשנים).
+
+**הכרעות**:
+1. **מיפוי**: dev+preview = source-maps + badge ("Dev"/"Preview"); prod = בלי source-maps + בלי badge. ה-staging unit עובר מ-`FE_ENV=dev` ל-`FE_ENV=preview` (ה-`vite dev` המקומי הוא ה-dev האמיתי; ה-tunnel הוא preview).
+2. **מקור-אמת יחיד לכותרת** = `PUBLIC_APP_TITLE` (נגזר מ-FE_ENV ב-vite.config); גם ה-HTML וגם ה-runtime קוראים אותו → לא סוטים.
+3. **overrides**: `FE_TITLE` (base) + `FE_SOURCEMAP` (source-maps) גוברים על FE_ENV.
+
+**ממצאי אביגיל** (r1 USABLE-AFTER-FIX → r2 READY): כל 8 הטענות העובדתיות אומתו נכונות; אין blocker. הממצא המהותי (r1 #4): ה-crux — הזרקת-כותרת דרך vite `transformIndexHtml` + `define` — **לא-מאומת תחת SvelteKit**.
+
+**שינוי-כיוון (המהותי בבאץ')**: בעקבות finding 4 בדקתי את קוד SvelteKit 2.60.1 המותקן ומצאתי ש-`transformIndexHtml` **אינו מובטח על `app.html`**, אבל `%sveltekit.env.PUBLIC_*%` **כן נתמך נייטיבית** (`@sveltejs/kit/src/core/config/index.js:33-35`). **המנגנון הוחלף** ל-placeholder נייטיבי (HTML) + `$env/dynamic/public` (runtime), כאשר vite.config מציב `process.env.PUBLIC_APP_TITLE`. Commit 1 מתחיל באימות-מנגנון מוקדם (TEST123) עם fallback (הצבה ב-build scripts).
+
+**רעיונות שנדחו**: (א) vite plugin `transformIndexHtml` — לא מובטח על app.html ב-SvelteKit; (ב) `define`+global `__APP_TITLE_BASE__` — מיותר, `$env/*/public` נייטיבי ובטוח; (ג) מיגרציית `STORAGE_KEY="drive-coding-v2-settings"` — מחוץ ל-scope (מסכן אובדן-הגדרות; לא נתבקש).
+
+### cli-name-in-chat (בקשה #4)
+
+**רציונל**: ה-CLI הפעיל יושב ב-`#cliKind` פרטי ב-`agent-session`; אין getter ציבורי → בתוך הצ'אט אין אינדיקציה באיזה CLI עובדים. מיקום (בקשת המשתמשת): מעל סקשן "אפשרויות סוכן" ב-`SessionOptionsPanel`.
+
+**ממצאי אביגיל** (r1 USABLE-AFTER-FIX → r2 READY): 🔴 `#cliKind` הוא שדה פרטי **לא-`$state`**, וה-VM הוא **singleton** (`+layout.svelte:72`) שהפאנל קורא בלי `{#key}` → getter רגיל לא-ריאקטיבי; ה-badge היה נתקע ב-CLI הראשון (רגרסיה שקטה — smoke יחיד היה ירוק, עלול לעבור calev).
+
+**הכרעה (מרדכי, כי אביגיל ביקשה)**: הופכים את `#cliKind` ל-`$state`. **בטוח**: `CliKind` primitive (string|null) → signal בלי proxy; הקריאות ב-reconnect guards סינכרוניות ולא מושפעות. נדחה: שדה-מראה ציבורי נפרד (כפילות + סיכון-סנכרון). ההנחה השגויה המקורית ("remount של הפאנל מרענן") הוסרה מ-§6.
+
+### frontend-rename-cutover — אימות-מחדש (בקשה #3)
+
+**רציונל**: ה-brief אושר READY ב-25/06, אבל dev נסחף. הרצתי אימות-מחדש לפני dispatch.
+
+**ממצאי אביגיל** (r2/r3 USABLE-AFTER-FIX → r4 READY): 🔴 **2 קבצים פונקציונליים חדשים** עם `--filter @drive-coding/frontend-v2` שלא היו ברשימת ה-4 המקורית: `packages/release/scripts/build-binary.mjs:56` (bun --compile) ו-`scripts/dc-build-fe.mjs:77` (build של systemd). בלי תיקון — ה-rename היה שובר את בניית-הבינארי ואת build-if-stale. בנוסף: `dc-launch.mjs` עבר refactor (אין בו יותר frontend-v2); רשימת docs-חיים 11→9.
+
+**שינוי-כיוון**: רשימת Commit 1 הורחבה ל-5 קבצי-קוד (7 מופעים), docs ל-9. אישוש עצמאי ב-`git grep`. **לקח**: brief מאושר-בעבר חייב אימות-מחדש כש-base נסחף — התשתית (`dc-build-fe`/`build-binary`) נוספה *אחרי* האימות המקורי.
+
+### tab-attention-notify (בקשה #2) — נדחה לסוף הבאץ'
+
+**החלטה**: נכתב אחרון, `depends_on: [app-title-build-env]` (שניהם נוגעים ב-`document.title`). המשתמשת סימנה "אם מסובך אז לא עכשיו" → גרסה **קלה**: prefix ● בכותרת + badge ב-favicon כשה-turn מסתיים ו-`document.hidden`, ניקוי ב-visibilitychange. **בלי** OS-Notification (ה"מסובך").
+
+## 2026-07-03 — claude-inprocess-cli-env: claude in-process מכבד cli-spec env (החרגת-Anthropic הצהרתית)
+
+### רציונל
+אחרי provider cutover v0.8.0 claude רץ **in-process** — ה-Claude Agent SDK מ-spawn את ה-claude CLI,
+שיורש את `process.env` של ה-BE. תחת שער OneCLI זה מזריק `ANTHROPIC_API_KEY=<placeholder>` + proxy →
+קריאת claude ל-`api.anthropic.com` מנותבת לשער ומחזירה **401** (הסוכן voice-acp בכוונה לא מקבל את סוד
+Anthropic — מניעת שחיקת-יתרה). מנגנון ה-cli-spec (`unsetEnv`/`setEnv`) שכבר מעצב env ב-spawn-path
+(opencode/codex, `spawn-core.ts:92-103`) **לא חל על ה-in-process** — `connect-in-process.ts` לא נוגע
+ב-env כלל. הפער נסגר: connect-in-process יקרא `getCliSpec("claude")` (בדיוק כמו spawn-core) ויזריק את
+ה-env דרך `_meta.claudeCode.options.env`.
+
+### הכרעות
+1. **ערוץ ההזרקה: `_meta.claudeCode.options.env`** (לא mutation של process.env). אומת ב-node_modules:
+   `ClaudeAcpAgent.createSession` בונה `env: {...process.env, ...params._meta.claudeCode.options.env, ...}`
+   — אותו נתיב שדרכו כבר מוזרק `model` (injectModelOverride). ה-SDK מעביר את זה ל-spawn **verbatim**
+   (`initialize(): env:c=this.options.env`, בלי re-merge שני של process.env).
+2. **unset ע"י ערך `undefined`** — נבדק אמפירית: Node משמיט מפתח env בעל ערך undefined ב-`child_process.spawn`
+   (זהה ל-delete; לא הופך ל-`"undefined"`). מנגנון ה-SDK לא מ-zod-validate את env בנתיב זה (destructure ישיר).
+3. **scoped לתת-תהליך claude בלבד → TTS בטוח.** `process.env` של ה-BE לא נגוע → ה-proxy של ElevenLabs/Google
+   (TTS) נשאר שלם. זו הסיבה המרכזית לבחור בהזרקה-דרך-`_meta` על-פני ה-wrapper הישן ששינה את **כל** env ה-BE.
+4. **החלה על כל 4 ה-handlers** (new/load/resume/fork) — כולם מגיעים ל-`createSession` דרך `_meta`;
+   401 ב-reattach הוא UX גרוע. `injectModelOverride` נשאר רק ב-new (מחוץ ל-scope).
+5. **שכבת provider** (connect-in-process צורך `getCliSpec` ישירות), לא הרחבת `drivecodingShapeEnv` (backend,
+   שהוא ה-hook של ה-spawn-path ולא נצרך ב-in-process).
+6. **retire ה-workaround → קונפיג מוצהר tracked**: `scripts/claude-direct-be.sh` (untracked) + עטיפת
+   `ExecStart` ב-systemd מוחלפים ב-`deploy/cli-specs.jsonc` (tracked) + `Environment=CLI_SPECS_FILE=...`.
+   דקלרטיבי, ב-git, ליד ה-unit; לא משפיע על dev מקומי.
+
+### ממצאי אביגיל
+r1 **READY** (3 findings, כולם 🟢, כולם שולבו): (א) `getOrCreateSession` על session חי עם fingerprint
+תואם מחזיר מוקדם בלי createSession → env חסר-אפקט שם — **תקין** (env נחוץ ב-spawn הראשון בלבד; נרשם כמגבלה
+ידועה §10). (ב) בלוק ה-env הוא שורות 2422-2428 (לא 2427) בגרסה 0.52.0 — תוקן. (ג) **`CLI_SPECS_JSON`
+אינו נתמך ב-provider's `cli-config-file.ts`** (רק ב-mirror של ה-backend) → תוקן: טסט Commit 2 עובר
+ל-`CLI_SPECS_FILE`+temp-file, וכל אזכורי CLI_SPECS_JSON כאלטרנטיבה הוסרו.
+
+### שינויי-כיוון
+נמצאה טיוטה מוקדמת של ה-brief שהשאירה את מנגנון-ההזרקה כ"לחקור בביצוע" (§9 Q1 🟡). החקירה בוצעה
+**לפני** dispatch (מיפוי SDK מלא: createSession→query→spawn + בדיקת Node-undefined אמפירית) → כל השאלות
+הפתוחות הוכרעו, ה-executor מקבל brief de-risked ללא חקירת-SDK תוך-כדי.
+
+**✅ אימות end-to-end מלא על הקוד המוממש (טלפון/termux, 2026-07-03):** אחרי המימוש (calev GO 7/7), הרצנו את
+ה-live test `connect-in-process.live.test.ts` (RUN_LIVE=1) על הטלפון תחת `onecli` עם **token-דמה מוזרק**
+(תנאי ה-MiniPC), `CLAUDE_CODE_EXECUTABLE`=termux-claude. **ניסוי מבוקר**: (control) בלי `CLI_SPECS_FILE` →
+`× prompt → claude responds` **timeout 60s** (dummy token → claude נתקע); (fix) `CLI_SPECS_FILE=deploy/cli-specs.jsonc`
+→ `✓ prompt → claude responds with DRIVE_OK_5678` **3.3s, 4/4 passed**. אותו env בדיוק — ההבדל היחיד הוא
+ה-cli-spec שהקוד קורא ומזריק דרך `_meta.claudeCode.options.env`. זה מוכיח **end-to-end** את **§8b** (ההזרקה
+מגיעה לתת-תהליך claude — אחרת ה-fix לא היה עובד) **וגם §8c** (unset→OAuth). **שני ה-runtime-gates = GO.**
+
+**אימות-התנהגות חי מוקדם (טלפון/termux, 2026-07-03, לפני מימוש):** ניצלנו OneCLI חי על הטלפון כדי לאמת את
+התנהגות §8c **לפני** כתיבת קוד — `claude -p` הגולמי הוא אותו נתיב-auth של ה-claude שה-SDK מ-spawn (שניהם יורשים
+אותו `process.env`; ה-SDK מוסיף `createEnvForGateway`=∅). תוצאות (עם token-דמה של Anthropic מוזרק ב-OneCLI, כמו
+ה-MiniPC): **ברירת-מחדל** (key-דמה + proxy) → claude **נתקע** (timeout; מנסה-שוב מול ה-gateway); **התיקון**
+(`env -u ANTHROPIC_API_KEY NO_PROXY=api.anthropic.com`) → **OK** (OAuth, EXIT=0). claude עצמו הדפיס:
+*"connectors are disabled because ANTHROPIC_API_KEY … is set and takes precedence over your claude.ai login ·
+**Unset it**"* — בדיוק מה שה-slice עושה. **מסקנות**: (1) הדימנשן הקריטי = `unset ANTHROPIC_API_KEY` (עם key ריק +
+proxy דלוק claude כבר עבד — ה-gateway של הטלפון מנהרר OAuth בשקיפות); `NO_PROXY` **הגנתי** (מול gateway שעושה
+MITM, אולי ה-MiniPC). (2) מצב-הכשל עם token-דמה אמיתי הוא **hang** (לא 401-נקי) — גרוע יותר ל-UX. (3) OneCLI של
+הטלפון שונה מה-MiniPC (out-of-box בלי הזרקת ANTHROPIC_API_KEY). **נשאר לאימות פוסט-מימוש**: שהמנגנון שלנו
+(`_meta.claudeCode.options.env`) מייצר את צורת-ה-env הזו בתת-התהליך → §8b (sinkhole).
+
+**local mechanism-gate (הצעת המשתמשת, שולבה §8b):** ה-runtime-gate פוצל ל-3 שערים במקום אחד תלוי-deploy:
+§8a קוד (בכל מקום) → **§8b מנגנון-חי מקומי** → §8c התנהגות-auth (deploy). §8b מוכיח שה-env המוזרק מגיע
+לתת-תהליך claude ע"י משתנה-claude נצפה (`ANTHROPIC_BASE_URL` → sinkhole מקומי `scripts/claude-env-sinkhole.mjs`):
+בקשה שנוחתת ב-sinkhole = ההזרקה עובדת, **בלי OneCLI/OAuth/שריפת-יתרה**, על כל מכונה עם claude. זה מוציא את
+ליבת-האימות (האם ה-env מגיע ל-child) מהתלות ב-deploy — הופך את אימות-הקוד שלי לאישור-חי מוקדם. §8c (unset→OAuth
++ NO_PROXY-bypass מול OneCLI) נשאר deploy-only. (וריאנט B: `HTTPS_PROXY`→proxy-logger, נאמן-יותר אך מיותר.)
+
+### רעיונות שנדחו
+- **mutation גלובלי של process.env סביב ה-spawn** — נדחה: race עם קריאות-TTS מקבילות ב-BE + לא ניתן
+  לתחום את חלון-המוטציה (ה-spawn קורה בתוך ה-SDK).
+- **`CLI_SPECS_JSON` בתוך systemd `Environment=`** — נדחה: ה-provider לא קורא אותו; ובנוסף quoting של JSON
+  ב-systemd שביר. `CLI_SPECS_FILE` → קובץ נקי מנצח.
+- **הרחבת `drivecodingShapeEnv` + חיווט shapeEnv ל-in-process** — נדחה: connect-in-process לא צורך shapeEnv
+  היום; הרחבה כזו גדולה ומיותרת. provider-contained פשוט יותר.
+
+### תיאום merge
+`dc-launch-version-check` (ההחלטה למטה) נוגע ב-`ExecStartPre` של אותם `.service`; סבב זה נוגע ב-`ExecStart`+
+`Environment` — שורות שונות, conflict נמוך. מי שממזג שני — rebase טריוויאלי.
+
+## 2026-07-03 — dc-launch-version-check: rebuild-FE-if-stale (version-aware) בכל נתיבי-ההרצה
+
+### רציונל
+אבחון חי בטלפון (termux): "אי אפשר לחזור לקודקס" + לולאת-סוקטים. השורש **לא** היה באג-קוד חדש —
+הבאג עצמו (warm reattach שולח `initialize` חוזר ל-Codex → `Already initialized`) כבר תוקן ב-
+`warm-reattach-skip-init` (v0.9.0, `d74ff49`). מה שנמצא: **התיקון לא הגיע לדפדפן בטלפון**. ה-`git pull`
+עדכן את המקור, אבל ה-FE build שהוגש היה מ-Jul 1 (לפני התיקון) — כי כל נתיבי-הבנייה מדלגים על rebuild
+"אם ה-build קיים", בלי לבדוק אם הוא **עדכני**. ראיה כרונולוגית ודאית: build מ-Jul 1 11:26 לא יכול להכיל
+תיקון מ-Jul 2 19:35. תיקון-מיידי בטלפון: `pnpm --filter frontend-v2 build` ידני. תיקון-שורש: version-check.
+
+### הכרעות
+1. **בדיקת-הגרסה יורדת ל-`dc-build-fe.mjs`, לא ל-dc-launch** — אביגיל r1 תפסה 🔴: כבר קיים
+   `scripts/dc-build-fe.mjs` (מוזג ב-`fe-build-decouple`) עם **atomic swap** (staging→build). ה-brief
+   המקורי היה משכפל build **inline לא-אטומי** ב-dc-launch — כפילות שמתעלמת מה-pattern הקנוני. שכתוב:
+   מצב חדש `--if-stale` ב-dc-build-fe עצמו (שם הבנייה כבר קורית אטומית), ו-dc-launch **מאציל** אליו.
+2. **תיקון כל שלושת נתיבי-ההרצה, לא רק הטלפון** — אביגיל תפסה 🟡: אותו staleness חי גם ב-**systemd**
+   (`voice-acp-{dev,main}.service` `ExecStartPre --if-missing`). ה-brief המקורי "תיקן את הטלפון" אבל
+   השאיר את ה-deploys ל-linux תקועים. הכרעה: dc-launch + systemd ×2 + `package.json` script + doc
+   כולם עוברים ל-`--if-stale`.
+3. **השוואת string-מלא (semver + short-sha), לא semver-בלבד** — ה-sha כבר מוטבע ב-`build/_app/version.json`
+   (`v0.9.0 (d74ff49)`, מיוצר ע"י `svelte.config.js` `kit.version.name`). השוואת המחרוזת המלאה חינמית
+   וקולטת גם commit-שונה-באותה-גרסה, לא רק bump — היה תופס בדיוק את הבאג הזה. מחיר: rebuild (~60ש', אטומי →
+   ללא downtime) על כל commit שנמשך. הנוסחה משוכפלת **מילולית** מ-svelte.config (מקור-אמת יחיד; הערת-drift בשני הקבצים).
+4. **`--if-stale` flag חדש, `--if-missing` נשאר legacy** — לא משנים סמנטיקה קיימת; migrate את הצרכנים שלנו.
+
+### ממצאי אביגיל
+r1 **USABLE-AFTER-FIX** (4 findings: 🔴 inline-non-atomic-duplication מתעלם מ-dc-build-fe הקנוני;
+🟡 סמנטיקת FE_BUILD_OUT [מקובע פנימית ל-`.build-staging`, לא knob]; 🟡 systemd staleness לא-מטופל; 🟢 ספירת-שורות).
+→ שכתוב מלא → r2 **READY** (2 findings 🟢: doc `deploy-local-service.md` עדיין `--if-missing`; אי-עקביות
+מספרי-שורות 12-22/14-22 — **שולבו** ב-brief). ה-🔴 של r1 הוא בדיוק סוג-הטעות שה-plan-gate נועד לתפוס:
+brief שנכתב מהקוד שראיתי בטלפון, בלי לדעת שקיים כבר נתיב-בנייה קנוני חדש יותר.
+
+### שינויי-כיוון
+מ"תיקון inline ב-dc-launch בלבד" (r1) ל"version-check ב-dc-build-fe הקנוני + migrate כל 3 הצרכנים" (r2) —
+בעקבות גילוי `dc-build-fe.mjs`. גם היקף גדל (1→3 commits) כי systemd נכנס.
+
+### רעיונות שנדחו
+- **rebuild רק כשקבצי-FE השתנו** (git diff paths) — over-engineering; SHA-compare על כל commit מספיק ופשוט.
+- **semver-בלבד** — היה מספיק במודל bump-בכל-merge, אבל full-string strictly safer בחינם.
+- **שדרוג סמנטיקת `--if-missing` הקיים** — מסכן callers; flag חדש נקי יותר.
+
+## 2026-07-02 — tts-provider-availability + tts-usage-metering: השבתת-ספק-ללא-מפתח + מדידת-שימוש
+
+### רציונל
+שתי דרישות-משתמשת סביב מפתחות-ה-TTS: (א) להשבית ספק (ElevenLabs/Gemini) שאין לו מפתח תקף;
+(ב) לספור קריאות/טוקנים ולהעריך עלות. שני slices עצמאיים (`depends_on=[]`, base=dev, שניהם additive
+ב-`server.ts`), נכתבו לפי חקירה מלאה של שכבת ה-proxy.
+
+### הכרעות
+1. **זמינות = probe חינמי, לא בדיקת-env** — המשתמשת זיהתה שנתיב ה-OneCLI (מזריק מפתח *אחרי* ה-BE)
+   שובר בדיקת-env: false-negative תחת OneCLI, ו-false-positive על מפתח-**שרוף** (ה-Gemini החסום שלה,
+   `403`). הכרעה: ה-BE מריץ probe אמיתי (`GET /v1/voices` · `GET /v1beta/models`) דרך **אותו מסלול-auth**
+   כמו ה-proxy (resolveProviderAuth + placeholder→OneCLI). ה-probe הוא ground-truth — עובד בשני המסלולים
+   *ותופס מפתח-שרוף*. **ייתר את הכפיית env-dummy** שהמשתמשת הציעה כ-plan-B.
+2. **ספירה ב-choke-point (BE proxy), מדויקת** — `http-proxy.ts` הוא נקודה יחידה. אימות הפריך את החקירה
+   הראשונית ("אין metadata"): Gemini **כן** מחזיר `usageMetadata` (token counts, `genai.d.ts:4533`).
+   לכן ספירה **מדויקת**: chars-of-input ל-ElevenLabs (החיוב per-char), `usageMetadata` ל-Gemini
+   (עדיפות ל-`candidatesTokensDetails[modality=AUDIO]`). cache-miss בלבד נספר לעלות (hit=$0).
+3. **אין DB — מונים-בזיכרון + JSON/NDJSON** — ה-BE single-process (אין race) → מונים בזיכרון + flush
+   ל-`~/.config/drive-coding/usage/totals.json` (שורד restart) + `events.jsonl` append-log (לבקשת המשתמשת,
+   לפילוח/audit עתידי). לא SQLite — לא תואם סגנון, over-engineering. תקדים: `projects-registry.json` + `wire-recorder`.
+4. **מחירים סטטיים** — snapshot מאומת 2026-07-02: ElevenLabs ~$0.18/1k chars; Gemini-3.1-flash-tts $1/$20 per-1M
+   (input/audio). config עם תאריך+מקורות, "משוער" מפורש.
+5. **מנגנון 2 = BE-only בשלב זה** — הצגת-summary ב-FE נדחית ל-slice עתידי; character_count/limit מ-subscription
+   (`/v1/user/subscription`) ל-slice `tts-quota-subscription` (גל הבא). JIT — נכתבו 2 briefs, לא 3.
+
+### ממצאי אביגיל
+9 findings בשני ה-briefs (r1 USABLE-AFTER-FIX שניהם → r2 READY 0-findings). הבולטים:
+**availability**: 🔴 pseudo-code קיבע `caps.elevenlabs` לכל אופציה (Google היה נחסם לפי ElevenLabs) → per-provider;
+🟡 נתיב i18n שגוי (`frontend/` → הנכון `core/src/i18n/`, עריכת-3-קבצים). **metering**: 🔴 הנחת ה-tap סתרה את
+ה-cache — Gemini `:streamGenerateContent` **uncacheable**, אין tee לשמש בו → הנחיה ל-**tee חדש** על
+transparent-forward (escalation מובטח שנמנע); 🟡 `candidatesTokensDetails[]` מדויק יותר מ-`candidatesTokenCount`.
+
+### שינויי-כיוון
+- מ"בדיקת-env / env-dummy" ל-**probe** (בעקבות תובנת-OneCLI של המשתמשת).
+- מ"הערכה גסה (chars≈tokens)" ל-**ספירה מדויקת** (התגלה `usageMetadata` אמיתי ב-Gemini).
+
+### רעיונות שנדחו
+- **SQLite/DB** — לא תואם סגנון JSON-store, over-engineering ל-single-process.
+- **ספירה ב-FE adapters** — נוח יותר לקריאת ה-data, אך לא-persistent + דורש דיווח FE→BE; ה-choke-point נקי יותר.
+- **env-dummy תחת OneCLI** (הצעת-המשתמשת) — התייתר ע"י ה-probe.
+
+### שינוי-כיוון (2026-07-03, אחרי preview חי) — availability גדל ל-capability-gate
+**preview חשף פער-תכנון**: slice 1 סימן ספק `disabled` בבורר אבל **לא מנע תעבורה** — נתפס
+retry-loop של `loadVoices` (14 בקשות ל-`/v1/voices`, 7×401, מפתח-פגום). המשתמשת: "כל הרעיון
+להפסיק להטריד endpoints לא-שמישים". ההרחבה (Commits 3-4): ה-`ttsCapabilities` הופך ל-**gate
+מרכזי** — כל צרכני-הספק (loadVoices, Speaker/BubblePlayer synthesize) בודקים זמינות לפני קריאה
+ל-upstream. ספק לא-זמין → **0 בקשות מוחלט**.
+- **הכרעה ארכיטקטונית (5 סבבי אביגיל)**: הגישה הראשונה (`await ensureLoaded()` ב-loadVoices)
+  נדחתה — ה-`await` לפני ה-loading-guard **שובר reentrancy** (🔴 r3, test-7 DDoS-guard). הגישה
+  הסופית: **gate reactive ב-`$effect` של VoicePicker** — loadVoices לא נקרא כלל עד ש-caps ידוע
+  ו-available. אפס async ב-loadVoices → ה-guard הסינכרוני שלם. זה הדפוס ה-Svelte הנכון.
+- **חיבור ל-slice 3**: ה-probe (list-voices) תופס רק **מפתח**, לא **קרדיט**. slice 3 (subscription)
+  יזין את אותו `caps` עם `character_count>=character_limit` / `status=free_disabled` → available:false
+  → ה-gate יחסום אוטומטית גם על אפס-קרדיט. שני ה-slices = מנגנון אחד.
+- **ערך ה-preview**: כל זה נתפס **לפני merge**, לפני שאליעזר כתב שורה. בדיוק מטרת ה-runtime-gate/preview.
+
+## 2026-07-02 — codex-inprocess: codex כספק in-process דרך fork (במקום npx-spawn)
+
+### רציונל
+codex רץ דרך `npx -y @zed-industries/codex-acp@latest` (spawn). אובחן חי ששלושה כשלים
+מתלכדים סביב npx: boot ~10ש' (מירוץ מול `INIT_TIMEOUT_MS=10_000` → כשלי-connect אקראיים),
+נכד-יתום שמחזיק את הפורט, ו-exit-2 של המתאם הרשמי החדש תחת bun-spawn. **הוכח חי**: הרצת
+ה-JS של המתאם ישירות (בלי npx) פותרת את שלושתם. ההכרעה: **codex עובר ל-in-process** (מודל
+claude/Model-2) — המתאם רץ אצלנו, codex עצמו child מנוהל דרך `CODEX_PATH` → native codex.
+
+### הכרעות
+1. **fork בשליטתנו** — `MusiCode1/codex-acp` (public; git-dep על branch `#drive-coding` — ר' "מודל-הפורק"
+   למטה). הפורק מוסיף `src/lib.ts` שחושף `startAcpServer(readable, writable, opts)` דרך subpath `./lib`
+   (ה-agent מעל זוג-streams במקום stdio קשיח). **אומת in-process בלי BE** (initialize 0.7ש' + session/new חיים).
+2. **connect fn נפרדת** (`connectCodexInProcess`), לא הכללת `connectInProcess` הקיימת — כי claude
+   מדבר acp-sdk **object**-streams (`createStreamBridge`) ואילו הפורק מדבר **NDJSON על Node streams**.
+   שתיהן מחזירות `ProviderConnection` (זו ההכללה ברמה הנכונה). הבריג של codex פשוט יותר (PassThrough↔wire).
+3. **model = FE-driven** — `StartAcpServerOptions` אין לו `modelOverride`; ב-codex המודל נבחר דרך
+   ה-wire (`session/new`/`setSessionModel`), לא דרך אופציית הפורק.
+
+### מודל-הפורק וסיכון-התלות (git-dep) — הכרעה מפורשת
+
+**מודל שלושת הענפים** בפורק `MusiCode1/codex-acp` (fork של repo ציבורי → ציבורי):
+- **`main`** — מראה של upstream (`agentclientprotocol/codex-acp`). נתיב-סנכרון (`git fetch upstream && merge`).
+- **`inprocess-lib`** — ענף-ה-PR ל-upstream: נקי ומינימלי (רק `src/lib.ts` + build/exports). מיועד ל-PR.
+- **`drive-coding`** — ענף-האינטגרציה **שאנחנו שולטים בו**; **ה-git-dep מצביע לכאן** (`github:MusiCode1/codex-acp#drive-coding`).
+
+**למה ה-git-dep על `#drive-coding` ולא על `#inprocess-lib`**: ענף-PR עובר force-push (rebase לפי
+feedback) → ref נייד שישבור/יזיז את ה-git-dep. ענף-האינטגרציה יציב תחתינו. **`pnpm-lock` נועל את
+ה-SHA המדויק** — אז גם ref-של-branch רפרודוקטיבי (install משתמש ב-SHA הנעול עד עדכון מפורש).
+
+**בנייה ב-install**: `dist` gitignored → הוספנו `prepare: npm run build` בפורק, כך ש-`pnpm/npm install`
+של git-dep בונה dist (כולל subpath `./lib`). **אומת מקצה-לקצה**: `npm install github:...#drive-coding`
+נקי (בלי auth) → fetch אנונימי (`http=200`) → prepare בונה `dist/lib.js` → `./lib` נפתר. ~3 דק' (כולל @openai/codex).
+
+**סיכון-התלות (מתועד-במודע)**: git-dep על **פורק אישי**. אם `MusiCode1/codex-acp` יימחק/יהפוך פרטי —
+`pnpm install` של drive-coding יישבר (בכל מכונה/CI/deploy). זה מחיר מודע תמורת השליטה (in-process, בלי npx).
+**נתיב-יציאה (מיטיגציה)**: (א) PR מ-`inprocess-lib` ל-upstream → חזרה ל-`@agentclientprotocol/codex-acp`
+רשמי מ-npm; **או** (ב) publish תחת scope משלנו ל-npm. עד אז — הפורק הוא מקור-האמת ל-codex.
+
+### רעיונות שנדחו
+- **המשך npx-spawn** — מקור שלושת הכשלים (אומת חי).
+- **patch על ה-bundle של @zed** — שביר (bundled/minified, נשבר בכל bump).
+- **המתאם הרשמי דרך npx** — עדיין exit-2 תחת bun; ה-bundled `@openai/codex` קורס על Windows.
+- **in-process ללא fork (import ישיר)** — v1.0.2 לא חושף API (exports ריק, CLI-only) → fork הכרחי.
+
+### ממצאי אביגיל
+r1 USABLE-AFTER-FIX (3): (#1 type-error) `modelOverride` שאינו שדה ב-`StartAcpServerOptions`;
+(#2 naming) הומצא `staticCodexCapabilities()` במקום `staticCapsFor(cliKind)` הקיים; (#3 🟢) header
+של `capabilities-static.ts` אומר spawn-based. כולם תוקנו → r3 READY. (r2 אימת אך כתיבת-הדוח נקטעה;
+r3 פרסם.) הערת-המשך: `resolveCodexPath` פר-פלטפורמה (Windows חייב נתיב-מלא; bundled שבור שם).
+
+## 2026-07-02 — be-shutdown-hardening: kill-tree + graceful-shutdown + WS-heartbeat
+
+### רציונל
+כאב חוזר (המשתמשת: "מזמן"): כשעוצרים את ה-BE, הפורט 4000 נשאר תפוס על PID **מת**, ותהליכי-בן
+מתייתמים. חקירה (`docs/investigations/2026-07-01-be-shutdown-socket-health.md`) זיהתה שזה **לא באג
+יחיד** אלא שרשרת של שלושה כשלים בניהול-תהליכים שמתלכדים:
+1. **`npx …@latest`** (`core/schemas/agent.ts:30-43`) יוצר תהליך-עטיפה → ה-CLI האמיתי (codex-acp) הוא **נכד**.
+2. **`kill()` לא-רקורסיבי** (`spawn-core.ts:218-229`) — `child.kill()` על ה-PID הישיר בלבד → הנכד מתייתם.
+3. **spawn ללא בקרת-inheritance** + **אין graceful-shutdown** → הנכד היתום מחזיק את ה-listen socket.
+נוסף: דליפת-WS (60 סוקטים חצי-סגורים) מהיעדר server-side heartbeat → מזין את ה-hang.
+
+**ההכרעה — למתן היגיינה בתהליך-האב, לא לשנות מודל.** כל agent כבר תהליך-OS נפרד; ה-BE הוא
+pipe-relay. השורש אינו "יותר מדי תהליכים" אלא היגיינה רופפת. שלושה תיקונים זולים: kill-tree
+(POSIX process-group + Windows `taskkill /T`), graceful-shutdown (SIGINT/SIGTERM), WS-heartbeat.
+
+### שינויי-כיוון (מ-CodeNomad)
+בדקתי איך CodeNomad מנהל את opencode (`D:\UserProjects\AI\CodeNomad`). הם נתקלו **בדיוק** באותו
+סיכון — הערה מפורשת ב-`runtime.ts:375`: *"Prefer process-group signaling so wrapper launchers
+(bun/node) don't orphan the real server."* אימצתי את **תבנית ה-kill-tree** שלהם (`runtime.ts:262-430`:
+process-group POSIX + `taskkill /T` + escalation SIGTERM→SIGKILL) ואת תבנית ה-heartbeat/sweep
+(`connection-manager.ts`). **הבחנה קריטית שמנעה העתקה-עיוורת**: CodeNomad הוא HTTP-per-agent
+(`opencode serve`, `stdin:"ignore"`) — אנחנו **ACP-over-stdio** (claude/codex אין להם serve mode),
+חייבים את ה-stdin pipe. אז אימצתי kill/shutdown/heartbeat, **דחיתי** את מודל ה-HTTP-transport.
+
+### רעיונות שנדחו (מתועד ב-brief §2)
+- **HTTP/SSE transport (מודל CodeNomad)** — לא ישים ל-ACP-over-stdio; שמור ל-roadmap Future.
+- **החלפת `npx` בבינארי-ישיר** — יקטין נכדים, אבל slice נפרד (config/binary-dist).
+- **תמיכת WSL ב-kill** — אנחנו לא מריצים agents ב-WSL; הושמט מהתבנית.
+- **נעיצת codex-acp (boot-race, ממצא 5)** — slice נפרד.
+
+### ממצאי אביגיל (READY r1, 4 findings קלים — כולם שולבו)
+- 🟡 **hbInterval cross-commit** — Commit 2 מגדיר `hbInterval` אבל `gracefulShutdown` (Commit 1) צריך
+  `clearInterval`. חודד: Commit 2 עורך במפורש את קוד Commit 1, `hbInterval` module-level מעל ה-handler.
+- 🟡 **httpServer TLS-variant** — במסלול TLS זה `Http2SecureServer`/`https.Server`, לא `http.Server`;
+  `.close(cb)` קיים על כולם → לא חוסם. ניסוח חודד.
+- 🟢 **list() כפול** — ל-`spawn-core.ts:214` כבר יש `list()` (`BridgeHandle[]`); ה-list החדש
+  ב-`connection-registry` מחזיר `string[]`. סמלים נפרדים — הוספה אזהרה ל-executor.
+- 🟢 **kill() שורות** — 218-**229** לא 218-228. תוקן.
+> **תפיסה מוקדמת (טרם אביגיל)**: תוך כתיבה זיהיתי ש-`connection-registry` **חסר `list()`** (הוספתי
+> כצעד מפורש) ואת הסיכון ה-🔴 ש-`process.kill(-pid)` בלי `detached:true` יכול להרוג את ה-BE עצמו
+> (נעלתי את שניהם ל-Commit 0).
+
+### עדכון אחרי repro-אמיתי (המשתמשת דרשה אימות, לא hang-מוזרק) — שינה את התוכנית
+הרצתי repro חי. **ממצא מכריע ששינה שלושה דברים:**
+1. **הבאג אומת חי** — פורט 4000 נמצא תפוס על PID **מת** (67512) יומיים אחרי, עם פרופיל 13 CLOSE_WAIT +
+   13 FIN_WAIT_2 (החתמת-handle, לא TIME_WAIT). שרשרת ה-spawn נחשפה: `bun→npx→vp→cmd→node` (**5 רמות**).
+2. **אבל BE בריא עמיד** — 3 תרחישי-כיבוי (כולל `bun --watch`+SIGHUP דרך tmux) + 3 ניסויי-stress
+   (WS abandon 400, WS terminate 300, codex spawn-storm 25/104-תהליכים) → **אף אחד לא חנק**; bun/tmux
+   מנקים הכל; הסוקטים TIME_WAIT שמתפנה לבד.
+3. **הסיבתיות הפוכה** — ה-CLOSE_WAIT של 67512 הם **סימפטום** של loop-תקוע, לא הסיבה. הצטברות-סוקטים
+   **אינה** מחנקת. שורש-ה-hang **לא שוחזר** בשני וקטורים.
+
+**השינויים לתוכנית (r2):**
+- **Commit 2 שוכתב** — מ-native `ws.ping()` (server.ts) ל-מעקב `lastPingAt`+sweep על ה-`$/ping` שה-FE
+  **כבר שולח כל 25s** (`ws-transport.ts:22`), ב-`ws-agent.ts` בלבד. מוסגר-מחדש: **"ניקוי סוקטי-רפאים של
+  קליינט-מת"** (שאלה 1) — **לא** תרופת-hang. (בונוס: ביטל את ה-cross-commit dependency שאביגיל תפסה ב-r1.)
+- **kill-tree + graceful-shutdown** → הוגדרו-מחדש כ-**defense-in-depth** (bun כבר מנקה ב-happy-path;
+  ערכם ל-Node-runtime/systemd עתידי).
+- **watchdog חיצוני = slice נפרד `be-hang-supervisor`** — הפתרון היחיד ל-hang: מודד ping round-trip
+  **מחוץ** ל-loop (BE לא יכול לזהות את עצמו תקוע), ועל אי-מענה → kill-tree מבחוץ. agnostic → **לא דורש**
+  לדעת את שורש-ה-hang (טוב, כי חמקמק). נבדק עם hang-מוזרק.
+
+**הערך של האימות-האמיתי (שהמשתמשת התעקשה עליו)**: הפריך את השערת-הסוקטים **לפני** שנכתב קוד. בלעדיו
+היינו בונים heartbeat כ"תרופת-hang" וטועים. hang-מוזרק לבדו לא היה חושף זאת. **r2 → READY** (finding 🟢
+יחיד: שארית hbInterval מתה, הוסרה).
+
+### תיאום מול `slice/codex-inprocess` (סקירה 2026-07-02)
+codex-inprocess (branch נפרד, READY r3, לא מוזג) מעביר codex ל-in-process → **כשל #1 (npx-grandchild)
+נעלם עבור codex**. ה-slice שלי **נשאר תקף**: opencode/gemini/qoder עדיין spawn (kill-tree שלי מכסה),
+ו-native-codex רץ כ-child דרך `CODEX_PATH` **מחוץ ל-spawn-core** (מנוקה ב-`connectCodexInProcess.close()`,
+אחריותם). חפיפה יחידה+רכה: `connection-registry.ts` (routing שלהם מול `list()` שלי — additive, merge-order
+גמיש, אין תלות קשה). ה-DoD שלי עבר ל-**opencode** כדי להיות עמיד לסדר-המיזוג. פירוט: `slice-be-shutdown-hardening.md` §10.
+
 ## 2026-07-01 — image-paste Commit 4: gating דרך raw, לא normalized
 
 ### רציונל
