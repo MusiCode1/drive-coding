@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "build:dev": "cross-env FE_ENV=dev vite build",
+    "build:preview": "cross-env FE_ENV=preview vite build",
+    "build:prod": "cross-env FE_ENV=prod vite build",
     "preview": "vite preview",
     "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run"
@@ -28,6 +31,7 @@
     "virtua": "^0.49.1"
   },
   "devDependencies": {
+    "cross-env": "^7.0.3",
     "@sveltejs/adapter-static": "^3.0.0",
     "@sveltejs/kit": "^2.8.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
