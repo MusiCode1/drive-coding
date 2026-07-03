@@ -1,3 +1,35 @@
+## 2026-07-03 — claude-inprocess-cli-env — Slice הושלם (3 commits)
+
+**מה בוצע:**
+
+Commit 1 (TDD):
+- `packages/provider/src/connection/claude-env-override.ts` — buildClaudeEnvOverride + injectEnvOverride.
+  unsetEnv → key=undefined (Node משמיט ב-spawn), setEnv → key=string; setEnv ינצח בהתנגשות.
+- `packages/provider/src/connection/claude-env-override.test.ts` — 11 טסטים TDD (6 buildClaudeEnvOverride + 4 injectEnvOverride).
+
+Commit 2 (wiring + structural):
+- connect-in-process.ts: ייבוא getCliSpec + buildClaudeEnvOverride/injectEnvOverride.
+  envOverride מחושב פעם אחת; session.new = withModel→withEnv; session.load/resume/fork = injectEnvOverride.
+- connect-in-process.test.ts: structural test עם CLI_SPECS_FILE+vi.resetModules().
+- scripts/claude-env-sinkhole.mjs + scripts/claude-env-proxy-logger.mjs — diagnostic scripts ל-mechanism-gate §8b.
+
+Commit 3 (config + deploy):
+- deploy/cli-specs.jsonc — הצהרת env-shaping declarative (claude: unsetEnv + setEnv NO_PROXY).
+- voice-acp-dev.service + voice-acp-main.service: Environment=CLI_SPECS_FILE + הערת-הסבר.
+- docs/deploy-local-service.md: פסקה "Claude in-process auth" + migration guidance.
+
+**בדיקות:**
+- TDD: 11/11 ירוקים (claude-env-override)
+- structural: 12/12 ירוקים (connect-in-process)
+- provider total: 161/169 ירוקים (169 = כולל skipped; baseline=149)
+- typecheck: 0 שגיאות; lint:i18n: נקי
+- node --check: שני סקריפטי האבחון עוברים
+
+**חריגות:**
+- הסבר בroadmap ב-worktree (§רקע): ה-ExecStart ה-tracked כבר היה נקי — אין wrapper בgit. הוסיפו רק Environment=CLI_SPECS_FILE.
+- deploy action (לא git): יש למחוק scripts/claude-direct-be.sh (untracked) בסביבת deploy ולוודא שאין ExecStart מקומי עם wrapper.
+- §8b/§8c (mechanism-gate ו-runtime-gate) — לא הורצו (runtime-gates על deploy, מרדכי + כלב מריצים).
+
 ## 2026-07-03 — tts-quota-refine — Commit 2: FE reason ב-Select + quota labels + adapter (manual)
 
 **מה בוצע:**
