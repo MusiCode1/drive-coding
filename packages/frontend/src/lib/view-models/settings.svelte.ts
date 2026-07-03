@@ -18,6 +18,7 @@ import { DEFAULT_LOCALE, detectLocale, type Locale } from "@drive-coding/core/i1
 import { listVoices, type Voice } from "../adapters/voice/voices"
 import { setBeUrlBase } from "../util/be-url"
 import { DEFAULT_GEMINI_VOICE } from "../adapters/voice/voices-gemini"
+import { ttsCapabilities } from "./capabilities.svelte"
 
 const STORAGE_KEY = "drive-coding-v2-settings"
 
@@ -250,6 +251,14 @@ export class Settings {
    * הקורא (VoicePicker) מפעיל פעם אחת ב-mount עטוף ב-untrack. שגיאות → voicesError.
    */
   loadVoices = async (force = false): Promise<void> => {
+    // Commit 3 capability-gate (הגנה שנייה, סינכרונית — לקוראים אחרים מחוץ ל-VoicePicker).
+    // undefined caps → optimistic → לא חוסם (test-7 ממשיך לעבוד בלי שינוי).
+    // available===false → 0 בקשות ל-ElevenLabs.
+    // אין await כאן — Guard הסינכרוני (voicesLoading) בשורה הבאה נשאר שלם.
+    if (!ttsCapabilities.isAvailable("elevenlabs")) {
+      this.#clearVoicesRetry()
+      return
+    }
     if (this.voicesLoading) return
     // טעינה מוצלחת קיימת — אל תטען שוב.
     if (this.availableVoices.length > 0 && this.voicesError === null) return
@@ -283,6 +292,8 @@ export class Settings {
 
   /** מתזמן נסיון חוזר עם exponential backoff, עד תקרת הנסיונות. */
   #scheduleVoicesRetry(): void {
+    // Commit 3: אל תתזמן retry אם ElevenLabs לא-זמין (מניעת retry-loop על מפתח שרוף).
+    if (!ttsCapabilities.isAvailable("elevenlabs")) return
     if (this.#voicesRetries >= Settings.#VOICES_MAX_RETRIES) return
     const delay = Math.min(
       Settings.#VOICES_BASE_DELAY_MS * 2 ** this.#voicesRetries,
