@@ -37,6 +37,19 @@
 
 **בדיקות:** typecheck 0; 22/22 audio-playlist tests ירוקים (browser API — אין unit tests לסגמנטים)
 
+### Commit 2 — re-fetch wiring (Speaker + BubblePlayer)
+
+**speaker.svelte.ts:**
+- `#enqueue()`: reserve() מקבל `() => this.refetchSegment(segmentId)` כ-4th arg
+- `#processToolBubbles()`: reserve() לבועות tool — אותו thunk
+- `refetchSegment(segmentId)`: method ציבורי-פנימי — מוצא TtsJob, יוצר AbortController חדש (finding #5), מאפס status=pending, מריץ #pumpFetchLoop
+
+**bubble-player.svelte.ts:**
+- `#reserveAndPlay()`: reserve() מקבל refetch thunk עם `partText` + `provider` בסקופ (finding #1)
+- refetch: יוצר AbortController חדש, synthesize→prepareSegmentForBubble→markReady/markError
+
+**בדיקות:** typecheck 0; 22/22 audio-playlist tests ירוקים
+
 ---
 
 ## 2026-06-29 — slice A4 (playback-core-a4) — ניווט prev/next/jump + איחוד BubblePlayer

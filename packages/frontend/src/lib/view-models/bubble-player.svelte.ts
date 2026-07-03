@@ -142,11 +142,32 @@ export class BubblePlayer {
     )
 
     // שלב 1: reserve כל הסגמנטים לפלייליסט (reserve-on-enqueue)
+    // nav-retain: כל reserve מקבל refetch thunk עם הטקסט + provider בסקופ (finding #1)
     const segmentIds: string[] = []
-    for (const _part of parts) {
+    for (let i = 0; i < parts.length; i++) {
       const segmentId = crypto.randomUUID()
       const orderKey = this.#orderAlloc.next(bubbleId)
-      this.#playlist.reserve(segmentId, orderKey, bubbleId)
+      const partText = parts[i]
+      if (partText === undefined) continue
+      const refetch = () => {
+        // refetch thunk: synthesize מחדש עם AbortController חדש
+        const freshAc = new AbortController()
+        void (async () => {
+          try {
+            const stream = await provider.synthesize({
+              text: partText,
+              voiceId,
+              modelId,
+              signal: freshAc.signal,
+            })
+            await this.#playlist.prepareSegmentForBubble(segmentId, stream, freshAc)
+            this.#playlist.markReady(segmentId)
+          } catch {
+            this.#playlist.markError(segmentId)
+          }
+        })()
+      }
+      this.#playlist.reserve(segmentId, orderKey, bubbleId, refetch)
       segmentIds.push(segmentId)
     }
 
