@@ -1,126 +1,129 @@
-## 2026-07-01 — warm-reattach-skip-init — Commit 1: FE glue (#warmReconnect)
+## 2026-07-03 — tts-quota-refine — Commit 2: FE reason ב-Select + quota labels + adapter (manual)
 
 **מה בוצע:**
-- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
-  - import הורחב: `createAttachedAcpClient` נוסף לצד `createAcpClient`.
-  - קבוע `ATTACHED_CAPS_FALLBACK = {} as AcpClient["capabilities"]` נוסף ליד `IMAGE_INPUT_ENABLED`.
-  - `#warmReconnect` שורה ~525: החלפת `await createAcpClient(...)` ב-`createAttachedAcpClient(...)` (סינכרוני) — נתיבי cold (attach/loadSession/coldReconnect) לא נגעו.
+- `packages/frontend/src/lib/util/tts-reason.ts` — util משותף `ttsReasonMessage(reason, t)` (הוצא מ-TtsStatusCard)
+- `packages/frontend/src/lib/components/settings/TtsStatusCard.svelte` — שימוש ב-ttsReasonMessage; effective-limit derived (`canExtend+maxExtension`); quotaExhausted מול effective; isOverage; labels ברורים: "נוצל: X · מכסה: Y · חריגה"
+- `packages/frontend/src/lib/components/settings/SettingsScreen.svelte` — import ttsReasonMessage; description פר-אופציה disabled ב-ttsProviderOptions
+- `packages/frontend/src/lib/adapters/voice/subscription.ts` — ElevenLabsSubscription: maxExtension? + canExtend?; schema: max_character_limit_extension? + can_extend_character_limit?; snake→camel
+- `packages/core/src/i18n/keys.ts` + `he.ts` + `en.ts` — 3 מפתחות: quota.used / quota.limitLabel / quota.overage
 
-**תוצאות:**
-- `pnpm --filter @drive-coding/frontend-v2 typecheck` (svelte-check): 0 errors, 0 warnings
-- `pnpm typecheck` (root): ירוק
-- `pnpm --filter @drive-coding/frontend-v2 test`: 411 passed, 1 כשלון קיים-מראש (`formatting.test.ts > case 3` — `Intl.RelativeTimeFormat` locale difference, קדם לסליס)
-- `biome check` (קבצים נגועים): 0 errors (14 warnings קיימות-מראש)
-- lint:i18n: ירוק
-
-**נותר לאימות חי:** codex leave-running → reconnect → כניסה לצ'אט בלי "Already initialized" ובלי לולאת-סוקטים.
-
-## 2026-07-01 — warm-reattach-skip-init — Commit 0: provider TDD (createAttachedAcpClient)
-
-**מה בוצע:**
-- `packages/provider/src/client/client.ts`: חילוץ ה-return-object של createAcpClient ל-helper פרטי `buildAcpClientFacade(conn, transport, capabilities)` — extraction מילולי, אין שינוי לוגי. הוספת `createAttachedAcpClient` (סינכרוני, ללא conn.initialize).
-- `packages/provider/src/client/index.ts`: הוספת ייצוא `AttachedAcpClientOptions` ו-`createAttachedAcpClient`.
-- `packages/provider/src/client/client.attached.test.ts` (חדש): 5 טסטים TDD — אין frame initialize, session/load נכתב, capabilities מהאפשרויות מוחזרות, ברירת-מחדל לא זורקת, regression ל-createAcpClient.
-
-**תוצאות:**
-- `pnpm --filter @drive-coding/provider test`: 138 passed (ירוק)
-- `pnpm typecheck` (root): ירוק
-- `biome check` (קבצים נגועים): ירוק
-- הערה: `pnpm --filter @drive-coding/provider typecheck` חושף שגיאה קיימת-מראש ב-`connect-in-process.test.ts:111` (property 'method' לא קיים ב-WireFrame) — קדמה לסליס, לא נוגע לשינויים הנוכחיים.
-## 2026-07-02 — codex-inprocess — סבב-fix Commit B: codex משתמש ב-resolver + תיקון טסט
-
-**Fix Commit B:**
-- `connect-codex-in-process.ts`: `resolveCodexPath()` עכשיו קורא ל-`resolveCliBinary({ bin: "codex", envVar: "CODEX_PATH", knownPaths: [...] })`.
-  - ייבוא: `@drive-coding/core/cli-resolve` + `node:os` + `node:path`.
-  - knownPaths: מיקומים ידועים של codex על Windows (AppData/Programs/OpenAI/Codex, WinGet, Scoop, npm) ו-Unix (volta, nvm).
-- `connect-codex-in-process.test.ts`:
-  - טסט `done()` תוקן ל-`async/await + setTimeout Promise`.
-  - טסטי `resolveCodexPath` עודכנו: env-override נבדק מפורשות; "undefined כשאין CODEX_PATH" שונה לבדיקת type בלבד (ה-PATH-scan עשוי למצוא codex).
-- provider tests: 144/144 ירוק, אפס warnings. typecheck 0.
-
-## 2026-07-02 — codex-inprocess — סבב-fix Commit A: resolveCliBinary (TDD)
-
-**Fix Commit A — `resolveCliBinary` ב-`packages/core/src/cli-resolve.ts`:**
-- קובץ חדש `packages/core/src/cli-resolve.ts`: `CliResolveSpec` + `resolveCliBinary` — resolver סינכרוני לבינארי CLI.
-- שכבות: env-override → PATH scan (+PATHEXT) → pm-global-bins → knownPaths → undefined.
-- חיווט exports: `"./cli-resolve"` ב-`packages/core/package.json` + re-export ב-`index.ts`.
-- טסטים TDD: 12 tests ירוקים (env/PATH/PATHEXT/knownPaths/miss).
-- Typecheck 0, tests 294/294.
-
----
-
-## 2026-07-02 — codex-inprocess — סיכום slice
-
-**Commits:** 0c568eb..1fdcc44 (4 commits על slice/codex-inprocess)
-**Tests:** provider 144/144 (8 skipped pre-existing)
-**typecheck:** 0 errors
-**calev verdict:** ממתין (אימות-חי codex נדרש — §0 בbrief)
-
-**מה בוצע:**
-- Commit 0: git-dep `@agentclientprotocol/codex-acp` (github:MusiCode1/codex-acp#inprocess-lib) + pnpm install + אימות lib ok: function
-- Commit 1: `connectCodexInProcess` — PassThrough↔startAcpServer, NDJSON line-splitting, turn-tracker, onFrame, close + unit tests
-- Commit 2: `case "codex"` ב-staticCapsFor (mcp:true), עדכון header, unit tests
-- Commit 3: ניתוב codex→connectCodexInProcess ב-connection-registry + vendor.d.ts ב-backend
+**בדיקות:**
+- typecheck 0 שגיאות
+- lint:i18n נקי (0 hardcoded Hebrew)
+- אימות ידני: preview — reason ב-Select disabled, labels ברורים בכרטיס
 
 **חריגות:**
-- הפורק לא מייצר `.d.ts` (esbuild, לא tsc). נוסף `packages/backend/src/vendor.d.ts` עם ambient declare module — backend typecheck transitively מגיע ל-provider source. לא נדרש שינוי בפורק.
-- `resolveCodexPath()` מחזיר רק CODEX_PATH env — PATH-lookup לא מומש (מחוץ לסקופ מה שציין brief: "PATH-lookup ל-codex→נתיב מלא; אם אין→undefined"). לאימות-חי נדרש CODEX_PATH מוגדר.
+- ה-adapter (FE) מוסיף maxExtension/canExtend לסוג ElevenLabsSubscription — VM מחזיק את הסוג; TtsStatusCard ניגש ישירות.
 
-**מה נותר לאימות-חי (calev §0):**
-- codex connect דרך FE → initialize מהיר (~1ש')
-- session/new + chat עובד
-- אין `npx` בעץ-התהליכים
-- אחרי כיבוי agent — אין codex יתום
-- claude + opencode לא נפגעו (regression)
+## 2026-07-03 — tts-quota-refine — Commit 0: core effective-limit TDD
 
-## 2026-07-02 — codex-inprocess — Commit 3: routing ב-connection-registry
+**מה בוצע:**
+- `packages/core/src/tts/subscription.ts` — SubscriptionInfo: maxExtension? + canExtend?; interpretSubscription: effectiveLimit = base + extension; חסימה מול effective
+- `packages/core/src/tts/subscription.test.ts` — 5 טסטים חדשים: overage מותר בין base ל-effective, count>=effective חסום, canExtend=false→base, maxExtension=0→base, undefined→base
 
-**Commit 3 — routing + vendor.d.ts:**
-- `connection-registry.ts`:
-  - import `connectCodexInProcess` מ-provider/connection
-  - ניתוב: `cliKind==="codex" ? connectCodexInProcess : connectSpawn`
-  - עדכון comment (CUT-3b-iii-2 + codex-inprocess)
-- `packages/backend/src/vendor.d.ts`:
-  - ambient declare module `@agentclientprotocol/codex-acp/lib`
-  - נחוץ כי הפורק בנוי עם esbuild (ללא `tsc --declaration`)
-  - backend typecheck transitively מוצא את provider/connect-codex-in-process.ts
-- typecheck: 0 errors | tests: 144/144
+**בדיקות:**
+- TDD red→green: 15/15 טסטים ירוקים
+- typecheck 0
 
-## 2026-07-02 — codex-inprocess — Commit 2: capabilities-static + header
+## 2026-07-03 — tts-status-ui — Commit 1: VM + TtsStatusCard + i18n (manual)
 
-**Commit 2 — capabilities + resolveCodexPath:**
-- `capabilities-static.ts`:
-  - עודכן header: מכסה גם in-process connections (codex), לא רק spawn-based
-  - הוסף `case "codex"`: `mcp:true, thinkingTokens:false, rename:false, compact/commands/usage/configOptions:false`
-  - ערכים מבדיקה חיה: `mcpCapabilities.http:true → mcp:true`; thinking לא נתמך; fork/rename לא חשוף
-- unit tests (`capabilities-static.test.ts`):
-  - codex: mcp=true, thinkingTokens=false, rename=false, שאר false
-  - regression guards ל-opencode + claude
-- tests: 144/144 passed | typecheck: 0 errors
+**מה בוצע:**
+- `packages/frontend/src/lib/view-models/tts-status.svelte.ts` — VM singleton עם `$state`: subscription, usage, loading; `refresh()` מריץ שני ה-adapters במקביל עם `Promise.allSettled` — כשל adapter → undefined, לא קורס
+- `packages/frontend/src/lib/components/settings/TtsStatusCard.svelte` — כרטיס TTS: reason (אם available===false), מכסת ElevenLabs עם progress bar + הדגשה כשמוצה, usage תווים+tokens+עלות לכל ספק
+- `packages/frontend/src/lib/components/settings/SettingsScreen.svelte` — הוספת import + TtsStatusCard + onMount refresh
+- `packages/core/src/i18n/keys.ts` + `he.ts` + `en.ts` — 15 מפתחות additive (tts-status-ui block)
 
-## 2026-07-02 — codex-inprocess — Commit 1: connectCodexInProcess + unit tests
+**בדיקות:**
+- typecheck 0 שגיאות
+- lint:i18n נקי
+- אימות ידני: preview (DoD §5) — ראה הגדרות → כרטיס מצב TTS
 
-**Commit 1 — connectCodexInProcess:**
-- קובץ חדש: `packages/provider/src/connection/connect-codex-in-process.ts`
-  - `connectCodexInProcess(opts)` → ProviderConnection עם PassThrough pair ↔ startAcpServer
-  - `resolveCodexPath()` — מחזיר `process.env.CODEX_PATH` (undefined אם לא מוגדר)
-  - wire bridge: NDJSON lines (לא Web Streams) — split-by-newline, handleLine, turn-tracker
-  - capabilities: `staticCapsFor("codex")` (commit 2 יוסיף את ה-case)
-  - modelOverride: מתעלם — model FE-driven דרך ה-wire
-  - close(): serverIn.end() → startAcpServer הורג codex אחרי 2ש' (built-in)
-- export: `connectCodexInProcess, resolveCodexPath` ב-connection/index.ts
-- unit tests (`connect-codex-in-process.test.ts`):
-  - resolveCodexPath: CODEX_PATH מוגדר/לא מוגדר
-  - NDJSON line-buffering: שורה אחת, partial line, מספר שורות ב-chunk, empty lines
-  - wire.write: מוסיף \n ל-serverIn
-- tests: 140/140 passed | typecheck: 0 errors
+**חריגות / הערות:**
+- reason מוצג רק כש-available===false (לא מציג OK)
+- Gemini quota אינו זמין — מוצג "—" כפי שנקבע ב-brief §2
+- usage labels פשוטים (dir=ltr, font-mono) — לא requires i18n עבור יחידות (chars/tokens)
 
-## 2026-07-02 — codex-inprocess — Commit 0: git-dep הפורק
+## 2026-07-03 — tts-status-ui — Commit 0: FE adapters (manual)
 
-**Commit 0 — git-dep:**
-- הוסף `"@agentclientprotocol/codex-acp": "github:MusiCode1/codex-acp#inprocess-lib"` ל-packages/provider/package.json (dependencies)
-- `pnpm install` הריץ `prepare` → `build` → `dist/lib.js` נוצר
-- אומת: `node -e "import('@agentclientprotocol/codex-acp/lib').then(m=>console.log('lib ok:', typeof m.startAcpServer))"` → `lib ok: function`
+**מה בוצע:**
+- `packages/frontend/src/lib/adapters/voice/subscription.ts` — `fetchElevenLabsSubscription()`: קורא `/proxy/elevenlabs/v1/user/subscription`, ArkType parse עם `tier?` optional + `"+":"ignore"`, snake→camel
+- `packages/frontend/src/lib/adapters/usage.ts` — `fetchUsageSummary()`: קורא `/api/usage/summary`, ArkType parse עם `ProviderTotals`+`UsageSummary` schemas
+
+**בדיקות:**
+- typecheck 0 שגיאות
+- lint:i18n נקי
+
+## 2026-07-03 — tts-quota-subscription — Commit 0 (TDD): interpretSubscription
+
+**מה בוצע:**
+- `packages/core/src/tts/subscription.ts` — `interpretSubscription()` pure function: free_disabled → exhausted, count>=limit → exhausted, otherwise optimistic
+- `packages/core/src/tts/subscription.test.ts` — 10 טסטים ירוקים (TDD red→green)
+- Guard: `characterLimit=0` לא חוסם (unlimited/enterprise), קלטים שליליים לא חוסמים (optimistic)
+
+**בדיקות:**
+- 10/10 ירוק (`interpretSubscription` suite)
+- typecheck 0 שגיאות
+- lint:i18n נקי
+
+## 2026-07-02 — tts-provider-availability — סיכום slice (3 commits)
+
+**מה בוצע:**
+- Commit 0 (TDD): `core/tts/probe-status.ts` — `interpretProbeStatus()` (11 טסטים ירוקים, 304 total)
+- Commit 1 (manual): `be/delivery/http-tts-capabilities.ts` — `GET /api/tts/capabilities` עם probe + cache 60s + OneCLI placeholder
+- Commit 2 (manual): FE — `adapters/tts-capabilities.ts` + `view-models/capabilities.svelte.ts` + disable per-provider בבורר + fallback $effect + הודעות i18n (3 קבצי i18n)
+
+**בדיקות ידניות שבוצעו:**
+- env-mode (מפתח מזויף): `curl localhost:4005/api/tts/capabilities` → `{elevenlabs:{available:false,reason:"no-key"},google:{available:false,reason:"error"}}` ✅
+- אין דליפת-סוד בלוג ✅
+- typecheck 0 שגיאות ✅
+- lint:i18n נקי ✅
+
+**חריגות / הערות:**
+- OneCLI-mode (מפתחות תקפים) לא נבדק ישירות — probe רץ בתוך תהליך BE תחת OneCLI, אותו מסלול כמו proxy
+- FE disabled per-provider: `caps?.[opt.value]?.available === false` (לא קבוע ל-elevenlabs)
+- שגיאות טסטים pre-existing: https-serve (bun.exe Windows) + bridge-failure integration
+
+## 2026-07-02 — tts-usage-metering — Commit 3: proxy hooks + /api/usage/summary endpoint (manual)
+
+**Commit 3 — proxy hook + endpoint:**
+- `http-proxy.ts`: `registerProxyHttp` מקבל `opts.usageStore?: UsageStore` (additive, no-op כשחסר)
+  - ElevenLabs cache-hit: `usageStore.record({provider:"elevenlabs", cached:true, costUsd:0})`
+  - ElevenLabs cache-miss (בבלוק tee): `extractElevenLabsChars(body)` → `elevenLabsCostUsd()` → record
+  - Gemini transparent-forward: **tee חדש** מותנה `provider==="google" && ":streamGenerateContent" ∈ pathSuffix`, branch ברקע → `extractGeminiUsage` → `geminiCostUsd` → record
+  - לקוח לא מושהה: branch ראשון (toClient) מיידי, tap ברקע בלבד
+- `http-usage.ts`: `registerUsageHttp` → `GET /api/usage/summary` → 200 UsageSummary (JSON)
+- `server.ts`: `createUsageStore(ensureStateSubdir("usage"))` + חיווט ל-registerProxyHttp ו-registerUsageHttp
+- `packages/core/package.json`: הוספת `./usage/*` export path
+- typecheck: ירוק | biome: ירוק | tests: 283/301 (2 pre-existing failures: spawn-ENOENT Windows + https-serve)
+- אימות ידני מתוכנן (DoD §5): ElevenLabs miss+hit, Gemini miss, persistence, no-latency
+
+## 2026-07-02 — tts-usage-metering — Commit 2: backend/usage/usage-store (mixed TDD+manual)
+
+**Commit 2 — TDD ל-aggregation, IO נבדק ידנית:**
+- קובץ חדש: `packages/backend/src/usage/usage-store.ts` — `createUsageStore(baseDir)` → `UsageStore`
+- sync in-memory counters (`ProviderTotals` פר ספק) + debounced flush (2s) ל-`totals.json` + append מיידי ל-`events.jsonl` (מטא בלבד)
+- load מ-`totals.json` ב-construct (שורד restart); פגום/חסר → אפסים
+- on-shutdown flush (SIGINT/SIGTERM/exit)
+- `UsageEvent`, `ProviderTotals`, `UsageSummary` types exported
+- קובץ חדש: `packages/backend/src/usage/usage-store.test.ts` — 8 TDD tests (initial zero, miss, hit, google, accumulation, snapshot immutability)
+- typecheck backend: ירוק | biome: ירוק | 8/8 tests passed
+
+## 2026-07-02 — tts-usage-metering — Commit 1: core/usage/extract (TDD)
+
+**Commit 1 — RED→GREEN:**
+- קובץ חדש: `packages/core/src/usage/extract.ts` — `extractElevenLabsChars(body)` + `extractGeminiUsage(responseBytes)`
+- `extractElevenLabsChars`: מפרסר JSON body של ElevenLabs → אורך `.text`; 0 על כשל
+- `extractGeminiUsage`: מפרסר SSE של Gemini (גם JSON array); לוקח usageMetadata **האחרון**; audio = `candidatesTokensDetails[AUDIO].tokenCount` (עדיפות), fallback=`candidatesTokenCount`
+- קובץ חדש: `packages/core/src/usage/extract.test.ts` — 15 tests (TDD: RED→GREEN)
+- fixtures: SSE עם details, SSE בלי details (fallback), multi-chunk (last wins), JSON array, כשל-פרסור → 0
+- typecheck core: ירוק | biome: ירוק | 15/15 tests passed
+
+## 2026-07-02 — tts-usage-metering — Commit 0: core/usage/pricing (TDD)
+
+**Commit 0 — RED→GREEN:**
+- קובץ חדש: `packages/core/src/usage/pricing.ts` — `TTS_PRICING` (snapshot 2026-07-02: ElevenLabs $0.18/1k, Gemini $1/1M input + $20/1M audio), `elevenLabsCostUsd(chars)`, `geminiCostUsd(inputTokens, audioTokens)`
+- קובץ חדש: `packages/core/src/usage/pricing.test.ts` — 11 tests (TDD: RED→GREEN); כיסוי: ערכי pricing > 0, 0 chars/tokens → 0, חישוב ל-1000 chars, חישוב ל-1M tokens, שילוב input+audio, סקלה לינארית
+- typecheck core: ירוק | biome (קבצים חדשים): ירוק | 11/11 tests passed
 
 ## 2026-06-29 — FEAT-thinking-live — Phase 1: אימות חי (manual)
 
@@ -8483,22 +8486,3 @@ B2 (הצגה): הוספת `import { version } from "$app/environment"` ל-Settin
 ### חריגות
 
 - אין. הוספת dep highlight.js לחבילה.
-
----
-
-## slice-dc-launch-version-check (2026-07-03)
-
-**מבצע**: אליעזר החל (Commit 0), נותק על שגיאת-API; מרדכי השלים (C0 commit + C1 + C2) בהיעדר יכולת resume.
-
-3 commits על `slice/dc-launch-version-check` (base d74ff49):
-- `d777e63` — dc-build-fe: מצב `--if-stale` (computeExpectedVersion משכפל svelte.config; readBuiltVersion מ-build/ הסופי; --if-missing legacy נשמר).
-- `0ba6619` — dc-launch: האצלה ל-`node dc-build-fe.mjs --if-stale`, מחיקת ה-build ה-inline הלא-אטומי.
-- `db26e14` — systemd dev+main `ExecStartPre` --if-missing→--if-stale · package.json `fe:build:if-stale` · docs/deploy-local-service.md.
-
-**אימות שבוצע (מרדכי)**:
-- `--if-stale` skip-על-התאמה · stale-על-שוני · missing-על-חוסר — כולם נכונים (smoke).
-- `--if-missing` legacy ללא שינוי.
-- אינטגרציה: `node dc-launch.mjs` → dc-build-fe "up-to-date — skipping" → הבין עולה.
-- package.json JSON valid; biome נקי על dc-build-fe.mjs + dc-launch.mjs (LF).
-
-**⚠️ caveat ל-calev**: עץ-העבודה Windows עם `core.autocrlf=true` → `biome check .` מסמן CRLF format על **כל** קובץ checked-out (baseline, לא רגרסיה; הריפו שומר LF, CI על linux נקי). הקבצים החדשים שנכתבו ב-LF (dc-build-fe, dc-launch) נקיים לגמרי. אין להתייחס ל-CRLF כאל כשל-סלייס.

@@ -20,7 +20,9 @@
     "./cwd-validate": "./src/cwd-validate.ts",
     "./cli-resolve": "./src/cli-resolve.ts",
     "./async/*": "./src/async/*.ts",
-    "./config/*": "./src/config/*.ts"
+    "./config/*": "./src/config/*.ts",
+    "./tts/*": "./src/tts/*.ts",
+    "./usage/*": "./src/usage/*.ts"
   },
   "scripts": {
     "build": "tsc --build",

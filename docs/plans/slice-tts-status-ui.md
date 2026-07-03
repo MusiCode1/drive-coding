@@ -1,7 +1,7 @@
 # Slice — tts-status-ui — תוכנית
 
 > **תאריך**: 2026-07-03
-> **סטטוס**: ‏מאושר (‏אביגיל READY r2, 0 findings — 2026-07-03)
+> **סטטוס**: ‏הושלם + ‏מוזג ל-dev (‏אביגיל READY r2, ‏calev GO 9/9 — 2026-07-03)
 > **Complexity**: 5/10 (verifier: light)
 > **תלות**: ‏`tts-provider-availability` (caps.reason) · `tts-usage-metering` (/api/usage/summary) · `tts-quota-subscription` (reason:"quota"). **‏depends_on: [tts-provider-availability, tts-usage-metering, tts-quota-subscription]** · ‏base = `slice/tts-quota-subscription` (‏סוף השרשרת)
 

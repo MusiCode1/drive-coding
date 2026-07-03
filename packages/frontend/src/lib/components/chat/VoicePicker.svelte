@@ -6,24 +6,36 @@
  * שמתאימים לטופס שמסביב. בשימוש על ידי:
  *   - routes/+page.svelte (טופס התחברות, עם תווית בסגנון טופס)
  *
- * בעת טעינה (mount), מפעיל את `settings.loadVoices()` (אידמפוטנטי). כשלון משאיר
+ * בעת טעינה (mount), מפעיל את `settings.loadVoices()` רק אם ElevenLabs זמין.
+ * הזמינות נקבעת על ידי ttsCapabilities.caps (reactive). כשלון משאיר
  * את ה-voiceId הנוכחי כאפשרות חלופית (fallback) כדי שתהליך ה-TTS לא יישבר.
  *
  * לפי parallel-safe-code.md, ה-VM (View Model) מחזיק את הנתונים; הרכיב הזה
  * הוא קצה (leaf) דק שקורא + כותב שדה אחד בלבד.
+ *
+ * Commit 3 (capability-gate): ה-$effect ריאקטיבי ל-caps; loadVoices נקרא רק כש-
+ * caps ידוע + elevenlabs.available===true → 0 בקשות לספק לא-זמין.
  */
 import { untrack } from "svelte"
 import { getI18n, getSettings } from "$lib/context"
+import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
 
 const settings = getSettings()
 const t = getI18n().t
 
 $effect(() => {
-  // untrack: loadVoices כותב ל-voicesLoading/voicesError/availableVoices ($state).
-  // בלי untrack ה-$effect היה מגיב לכתיבות האלה ורץ שוב → לולאת retry על שגיאה
-  // (gotcha: $effect שקורא+כותב אותו $state). ה-retry האמיתי מתוזמן בתוך
-  // Settings.loadVoices (exponential backoff), לא כאן. כאן רק טריגר חד-פעמי ב-mount.
+  // Commit 3 capability-gate: reactive על caps.
+  // caps===undefined → עדיין loading → המתן (אל תקרא loadVoices).
+  // caps.elevenlabs.available===false → ספק לא-זמין → 0 בקשות.
+  // caps.elevenlabs.available===true → זמין → טען קולות (idempotent).
+  //
+  // חשוב: אין await כאן — loadVoices ב-untrack ממשיך להיות סינכרוני עד ה-await
+  // הפנימי שלו, כלומר ה-loading guard (voicesLoading===true) נשאר שלם.
+  // זה שומר על test-7 ("concurrent: 2 unawaited → invoked once").
+  const caps = ttsCapabilities.caps // tracked → re-run כשmissions מתעדכן
+  if (caps === undefined) return // עדיין loading → המתן
+  if (caps.elevenlabs.available === false) return // לא-זמין → 0 בקשות
   untrack(() => void settings.loadVoices())
 })
 
