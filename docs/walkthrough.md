@@ -21,6 +21,22 @@
 
 **בדיקות:** 22/22 audio-playlist tests ירוקים; typecheck 0; lint pre-existing (555 ב-base→554 אחרי שינוי)
 
+
+### Commit 1 — PlayableSink מאוחד + PlayableSegment (mp3/pcm)
+
+**קבצים חדשים:**
+- `engines/segments/playable-segment.ts` — ממשק PlayableSegment (prepare/play/pause/resume/isComplete/dispose)
+- `engines/segments/mp3-segment.ts` — Mp3Segment: MediaSource/HTMLAudio; isComplete=state∈{ready,playing,ended}; replay=currentTime=0; revokeURL רק ב-dispose
+- `engines/segments/pcm-segment.ts` — PcmSegment: WebAudio, ctx מוזרק; buffers retained (לא splice); sources חדשים בכל play(); #nextStartTime=ctx.currentTime בכל play
+- `engines/playable-sink.ts` — PlayableSink: AudioSink → segments Map; format→Mp3/Pcm; isComplete(id) duck-typing; cancel=dispose יחיד; clear=dispose כל; AudioContext lazy shared
+
+**נמחקו:** `engines/routing-audio-sink.ts`, `engines/audio-stream.ts`, `engines/pcm-audio-stream.ts`
+
+**עודכן:** `+layout.svelte` — import PlayableSink בלבד; `new PlayableSink()` במקום `new RoutingAudioSink(new AudioStream(), new PcmAudioStream())`
+**נוקו imports:** `speaker.svelte.ts` — הוסרו imports של AudioStream/PcmAudioStream/RoutingAudioSink (לא בשימוש)
+
+**בדיקות:** typecheck 0; 22/22 audio-playlist tests ירוקים (browser API — אין unit tests לסגמנטים)
+
 ---
 
 ## 2026-06-29 — slice A4 (playback-core-a4) — ניווט prev/next/jump + איחוד BubblePlayer

@@ -37,10 +37,8 @@ import {
 } from "$lib/context"
 import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
-import { AudioStream } from "$lib/engines/audio-stream"
+import { PlayableSink } from "$lib/engines/playable-sink"
 import { CuesEngine } from "$lib/engines/cues"
-import { PcmAudioStream } from "$lib/engines/pcm-audio-stream"
-import { RoutingAudioSink } from "$lib/engines/routing-audio-sink"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
 import { RecentProjects } from "$lib/view-models/recent-projects.svelte"
@@ -78,7 +76,7 @@ const session = new AgentSession({ cues, settings })
 // ─── audio-playlist ─── (A4 — entity משותף בין Speaker ו-BubblePlayer)
 // AudioSink נוצר כאן — Speaker מחזיק ref אליו (prepareSegment/clear).
 // AudioPlaylist נוצר לפני Speaker כי Speaker מקבל אותו כ-dependency.
-const sharedAudioStream = new RoutingAudioSink(new AudioStream(), new PcmAudioStream())
+const sharedAudioStream = new PlayableSink()
 // onPlaybackStart: cue "speaking" — guard #spokeThisTurn ב-Speaker
 // (Speaker יגדיר callback דרך onPlaybackStart בלבד — לא מוגדר כאן ישירות,
 //  כי Speaker צריך לבדוק #spokeThisTurn שלו. פתרון: Speaker ירשום callback לאחר init.)

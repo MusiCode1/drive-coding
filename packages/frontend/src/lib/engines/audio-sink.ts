@@ -5,8 +5,7 @@
  * PcmAudioStream (WebAudio) מממשים. Player מחזיק AudioSink בלבד —
  * אינו יודע על הפורמט.
  *
- * AudioSegmentState הועבר מ-audio-stream.ts לכאן (מקור-האמת).
- * audio-stream.ts ייבא אותו מכאן.
+ * AudioSegmentState מוגדר כאן (מקור-האמת).
  *
  * SegmentOpts.format: אופציונלי, משמש רק את RoutingAudioSink (Commit 6)
  * לניתוב ל-sink הנכון. AudioStream ו-PcmAudioStream מתעלמים ממנו.
