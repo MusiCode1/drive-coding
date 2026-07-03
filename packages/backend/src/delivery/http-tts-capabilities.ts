@@ -2,6 +2,7 @@
  * http-tts-capabilities.ts — GET /api/tts/capabilities endpoint.
  *
  * Slice: tts-provider-availability, Commit 1.
+ * Extended by: tts-quota-subscription, Commit 1.
  *
  * Probes upstream TTS providers (ElevenLabs + Google) via the SAME auth path
  * as the regular proxy: resolveProviderAuth (env key) or placeholder (OneCLI injects).
@@ -11,8 +12,11 @@
  * IMPORTANT: never log auth header values — they are secrets.
  */
 
+import { type } from "arktype"
 import type { ProbeResult } from "@drive-coding/core/tts/probe-status"
 import { interpretProbeStatus } from "@drive-coding/core/tts/probe-status"
+import type { QuotaVerdict } from "@drive-coding/core/tts/subscription"
+import { interpretSubscription } from "@drive-coding/core/tts/subscription"
 import type { Hono } from "hono"
 import { PROXY_HOSTS } from "./http-proxy.js"
 import { resolveProviderAuth } from "./proxy-auth.js"
@@ -23,6 +27,11 @@ export type ProviderCapabilities = Record<"elevenlabs" | "google", ProbeResult>
 const PROBE_PATHS: Record<string, string> = {
   elevenlabs: "/v1/voices",
   google: "/v1beta/models",
+}
+
+// Subscription endpoints — reveal quota status
+const SUBSCRIPTION_PATHS: Record<string, string> = {
+  elevenlabs: "/v1/user/subscription",
 }
 
 // Placeholder header names for OneCLI injection (when no env key is set)
@@ -50,6 +59,67 @@ function getCached(provider: string): ProbeResult | null {
 
 function setCached(provider: string, result: ProbeResult): void {
   cache.set(provider, { result, ts: Date.now() })
+}
+
+// ─── ArkType schema for /v1/user/subscription response ───────────────────────
+
+const subscriptionResponseSchema = type({
+  character_count: "number",
+  character_limit: "number",
+  status: "string",
+  "+": "ignore", // allow (and drop) extra fields
+})
+
+// ─── Quota probe (ElevenLabs only) ───────────────────────────────────────────
+
+/**
+ * Fetches /v1/user/subscription (same auth path as probe), parses via ArkType,
+ * interprets quota.
+ *
+ * Returns null when unsupported / fetch-fail / parse-fail → caller keeps probe result.
+ * IMPORTANT: never log auth.value.
+ */
+async function probeElevenLabsQuota(): Promise<QuotaVerdict | null> {
+  const subscriptionPath = SUBSCRIPTION_PATHS["elevenlabs"]
+  const base = PROXY_HOSTS["elevenlabs"]
+  if (!base || !subscriptionPath) return null
+
+  const url = base + subscriptionPath
+  const headers = new Headers()
+
+  // Inject auth: env key if available, otherwise placeholder for OneCLI
+  const auth = resolveProviderAuth("elevenlabs", process.env)
+  if (auth) {
+    headers.set(auth.name, auth.value)
+    // IMPORTANT: never log auth.value
+  } else {
+    headers.set("xi-api-key", "probe")
+  }
+
+  let json: unknown
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers,
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) return null
+    json = await res.json()
+  } catch {
+    return null
+  }
+
+  const parsed = subscriptionResponseSchema(json)
+  if (parsed instanceof type.errors) {
+    // parse-fail → null (caller keeps probe result, doesn't block)
+    return null
+  }
+
+  return interpretSubscription({
+    characterCount: parsed.character_count,
+    characterLimit: parsed.character_limit,
+    status: parsed.status,
+  })
 }
 
 // ─── Core probe logic ─────────────────────────────────────────────────────────
@@ -95,6 +165,17 @@ async function probeProvider(provider: "elevenlabs" | "google"): Promise<ProbeRe
   }
 
   const result = interpretProbeStatus(status)
+
+  // NEW: quota gate — elevenlabs only, only when key is valid (result.available)
+  if (provider === "elevenlabs" && result.available) {
+    const quota = await probeElevenLabsQuota()
+    if (quota?.exhausted) {
+      const gated: ProbeResult = { available: false, reason: quota.reason }
+      setCached(provider, gated)
+      return gated
+    }
+  }
+
   setCached(provider, result)
   return result
 }
