@@ -1,13 +1,26 @@
-## 2026-07-04 — cli-name-in-chat — Commit 1: $state + getter
+## 2026-07-04 — cli-name-in-chat — Slice הושלם (2 commits)
 
 **מה בוצע:**
-- `agent-session.svelte.ts:251` — `#cliKind: CliKind | null = null` הפך ל-`#cliKind = $state<CliKind | null>(null)` (ריאקטיביות).
+
+Commit 1 ($state + getter):
+- `agent-session.svelte.ts:251` — `#cliKind: CliKind | null = null` הפך ל-`#cliKind = $state<CliKind | null>(null)`.
 - getter ציבורי `get cliKind(): CliKind | null` נוסף אחרי `bypassActive` getter.
 
+Commit 2 (UI + i18n):
+- `SessionOptionsPanel.svelte` — שורת "פועל על <cli>" מעל בלוק "אפשרויות סוכן" עם `{#if session.cliKind}`.
+- `keys.ts` — `"sidebar.runningOn"` נוסף לbלוק sidebar.
+- `he.ts` — `"sidebar.runningOn": "פועל על"`.
+- `en.ts` — `"sidebar.runningOn": "Running on"`.
+- שם ה-CLI מוצג ב-`dir="ltr"`, badge עם bg-card/border.
+
 **בדיקות:**
-- typecheck: 0 errors (5065 files)
-- tests: 322/322 ירוקים (6 worker-crashes = known pre-existing: spawn ENOENT + TLS-cert-Windows)
+- typecheck: 0 errors (5065 files) · שני commits
+- tests: 1070/1089 ירוקים (2 שגיאות pre-existing: spawn-ENOENT + TLS-cert-Windows)
 - lint:i18n: נקי
+- smoke: manual — התחבר עם opencode → "פועל על opencode" מוצג מעל "אפשרויות סוכן"
+
+**חריגות:**
+- אין.
 
 ---
 

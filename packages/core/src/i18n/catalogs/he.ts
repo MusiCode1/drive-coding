@@ -150,6 +150,8 @@ export const he: Catalog = {
   "sidebar.sessions": "סשנים",
   "sidebar.refresh": "רענן",
   "sidebar.newSession": "סשן חדש",
+  // ─── cli-name-in-chat ─── (slice cli-name-in-chat)
+  "sidebar.runningOn": "פועל על",
   "sheet.handle": "גרור לפתיחה",
   // ─── bubble-play ─── (msr-v2)
   "bubble.play": "השמע",
