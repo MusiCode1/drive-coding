@@ -156,6 +156,34 @@ The namespace is `backend.acp.wire.*` (CLI↔BE layer) — survives FE disconnec
 
 ---
 
+## Claude in-process auth — exclusion of api.anthropic.com
+
+claude runs **in-process** (via `@agentclientprotocol/claude-agent-acp`) and spawns the claude CLI
+as a child. The child inherits `process.env`, which under OneCLI contains an `ANTHROPIC_API_KEY`
+placeholder and `HTTPS_PROXY` — both of which route to the OneCLI gateway. Without intervention, the
+claude child sends its Anthropic calls through OneCLI and gets a 401 (the gateway is not configured
+for Anthropic credentials in drive-coding by design).
+
+**Fix (declarative, via `deploy/cli-specs.jsonc` + `CLI_SPECS_FILE`):**
+The exclusion is declared in `deploy/cli-specs.jsonc` and wired through `CLI_SPECS_FILE`:
+- `unsetEnv: ["ANTHROPIC_API_KEY"]` — child process drops the placeholder key → falls back to
+  subscription OAuth (`~/.claude`).
+- `setEnv: { NO_PROXY: "api.anthropic.com", no_proxy: "api.anthropic.com" }` — child bypasses
+  the OneCLI proxy for Anthropic, communicates directly.
+
+This is applied **scoped to the claude child process only** via `_meta.claudeCode.options.env`
+(the SDK channel). The BE `process.env` is never mutated — ElevenLabs/Google TTS proxy stays intact.
+
+**`CLI_SPECS_FILE` is set by the systemd units** (`Environment=CLI_SPECS_FILE=<WorkingDirectory>/deploy/cli-specs.jsonc`).
+For local dev (without systemd), set it manually or place the config at
+`~/.config/drive-coding/cli-specs.jsonc` (the default path).
+
+> **Migration from the old workaround:** `scripts/claude-direct-be.sh` (untracked wrapper)
+> and any local `ExecStart` edits that invoke it must be removed. The declarative config replaces them.
+> Check with: `grep -r 'claude-direct-be' ~/.config/systemd/user/*.service` (should be empty).
+
+---
+
 ## CF Pages Access (legacy, still supported)
 
 `https://drive-coding.pages.dev` with `Settings.beUrl` → a BE address works too;
