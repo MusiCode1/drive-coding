@@ -31,6 +31,8 @@ import BottomSheet from "./BottomSheet.svelte"
 import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
 // ─── content-viewer ─── (slice content-viewer)
 import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
+// ─── ui-session-polish: loading spinner modal ───
+import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
 // ─── redesign-7: smart-scroll ───
 import ArrowDownIcon from "@lucide/svelte/icons/arrow-down"
 
@@ -347,4 +349,6 @@ $effect(() => {
   <FolderPickerDialog />
   <!-- content-viewer (slice content-viewer) -->
   <ContentViewerDialog />
+  <!-- ui-session-polish: loading spinner during session connect -->
+  <LoadingModal open={session.status === "connecting"} />
 </div>
