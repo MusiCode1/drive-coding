@@ -21,6 +21,8 @@ import {
   type AcpClient,
   createAcpClient,
   createAttachedAcpClient,
+  // ─── slice-image-paste Commit 4a/4b: טיפוס blocks לשליחה מולטימודלית ───
+  type PromptBlocks,
 } from "@drive-coding/provider/client"
 import { tick } from "svelte"
 import {
@@ -49,14 +51,16 @@ import { isBypassMode } from "$lib/util/permission-mode"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 // ─── image-attach kill-switch ─── (slice-image-paste Commit 2)
-// נשאר false עד ש-Commit 4 (שליחה מולטימודלית) + track-A מוכנים.
-// כל עוד false: supportsImageInput=false תמיד → לכידת-התמונה רדומה לחלוטין,
-// ללא תלות במה שהספק מדווח. Commit 4 הופך ל-true. (module-level const)
-const IMAGE_INPUT_ENABLED = false
+// Commit 4b הפך ל-true — שליחה מולטימודלית פעילה.
+// supportsImageInput קורא raw #client.capabilities.promptCapabilities.image
+// (§10 הכרעה א — raw, לא NormalizedCapabilities).
+const IMAGE_INPUT_ENABLED = true
 
 // ─── slice warm-reattach-skip-init ───
 // warm reattach אין לו תגובת initialize לשאוב raw capabilities ממנה.
-// raw capabilities משמש רק supportsImageInput (רדום מאחורי IMAGE_INPUT_ENABLED).
+// raw capabilities משמש רק supportsImageInput → known-limitation (image-paste):
+// אחרי warm reattach אין קלט-תמונות עד connect קר. יתוקן בנרמול caps —
+// ר' roadmap Track A "ניקוי/ארגון packages/provider" (normalize.ts raw↔normalized).
 // NormalizedCapabilities מגיע מ-_drive/capabilities (BE) — לא מושפע.
 const ATTACHED_CAPS_FALLBACK = {} as AcpClient["capabilities"]
 
@@ -727,18 +731,34 @@ export class AgentSession {
   // ─── פרומפטים (prompting) ────────────────────────────────────
 
   /**
-   * שולח פרומפט של טקסט. `opts.recordingId` שמור עבור slice 10 (ניגון מחדש).
+   * שולח פרומפט (טקסט + אופציונלי attachments). `opts.recordingId` שמור עבור slice 10.
    * מחזיר Promise שמסתיים כשהתור מושלם (או נדחה בשגיאה).
+   *
+   * ─── slice-image-paste Commit 4b ───
+   * opts.attachments — תמונות שנדחסו (ImageAttachment[]) — נשלחות כ-image blocks.
+   * guard: if (!text.trim() && atts.length === 0) → לא שולח (finding אביגיל r2).
+   * תמונה-בלבד (בלי טקסט): content = [image-blocks בלבד] (ללא text-block ריק).
    */
-  sendPrompt = async (text: string, opts?: { recordingId?: string }): Promise<void> => {
+  sendPrompt = async (
+    text: string,
+    opts?: { recordingId?: string; attachments?: { mimeType: string; dataBase64: string }[] },
+  ): Promise<void> => {
     if (this.status !== "connected") return
     if (!this.#client || !this.#sessionId) return
-    if (!text.trim()) return
+    // ─── slice-image-paste Commit 4b: guard מורחב — תמונה-בלבד מותרת ───
+    const atts = opts?.attachments ?? []
+    if (!text.trim() && atts.length === 0) return
 
     // Slice 4: לכידה לטובת הקשר הקריינות
     this.lastUserMessage = text
 
-    // אופטימי (optimistic): הוסף בועת משתמש מיד (מקטע יחיד, ללא messageId)
+    // ─── slice-image-paste Commit 4b: בניית content (PromptBlocks) ───
+    const content: PromptBlocks = [
+      ...(text.trim() ? [{ type: "text" as const, text }] : []),
+      ...atts.map((a) => ({ type: "image" as const, mimeType: a.mimeType, data: a.dataBase64 })),
+    ]
+
+    // אופטימי (optimistic): הוסף בועת משתמש מיד
     const userBubble: UserBubble = {
       id: crypto.randomUUID(),
       kind: "user",
@@ -746,13 +766,17 @@ export class AgentSession {
       createdAt: Date.now(),
       segments: [{ id: crypto.randomUUID(), text }],
       ...(opts?.recordingId !== undefined ? { recordingId: opts.recordingId } : {}),
+      // ─── slice-image-paste Commit 4b: attachments לבועה אופטימית ───
+      ...(atts.length > 0
+        ? { attachments: atts.map((a) => ({ mimeType: a.mimeType, dataBase64: a.dataBase64 })) }
+        : {}),
     }
     this.bubbles.push(userBubble)
     this.#setTurnState("waiting")
     this.#resetTurnTracking() // תחילת תור — #turnEnded=false + נקה טיימר יתום
 
     try {
-      await this.#client.prompt(this.#sessionId, text)
+      await this.#client.prompt(this.#sessionId, content)
       // RESP הגיע — opencode: tail עוד יבוא; gemini/claude: סוף
       this.#turnEnded = true
       this.#setTurnState("idle") // נכון ל-gemini/claude. opencode: tail יטופל ב-#onSessionUpdate
@@ -1506,10 +1530,36 @@ export class AgentSession {
       return
     }
 
-    const text = update.content?.type === "text" ? (update.content.text ?? "") : ""
-    if (!text) return
-
+    // §11: dispatch לפי contentType לפני ה-gate — כך user_message_chunk עם image/audio/resource_link
+    // לא נזרק בשקט. ה-gate למטה חל רק על agent_message_chunk ו-agent_thought_chunk (text-only).
     const messageId = update.messageId ?? null
+
+    if (update.sessionUpdate === "user_message_chunk") {
+      // נשלח על ידי הסוכן במהלך ניגון מחדש של ההיסטוריה מ-loadSession (לפי מפרט ACP
+      // סעיף §session-setup#loading-sessions). לעולם לא מגיע בתורים חיים —
+      // אלה מקורם מ-sendPrompt ואנחנו מוסיפים להם את הבועה האופטימית שם.
+      const content = update.content as { type?: string; text?: string; data?: string; mimeType?: string; name?: string; uri?: string } | undefined
+      if (content?.type === "text") {
+        this.#appendChunk("user", content.text ?? "", messageId)
+      } else if (content?.type === "image" && content.data !== undefined && content.mimeType !== undefined) {
+        this.#appendUserImage(messageId, { mimeType: content.mimeType, data: content.data })
+      } else if (content?.type === "resource_link") {
+        // resource_link: מצרף placeholder כדי למנוע איבוד-שקט.
+        // תצוגה מלאה (כתמונה/קישור) — slice local-file-proxy עתידי.
+        // §11.3א: i18n שייך לשכבת-הרכיב — ה-VM מצרף סמן מבני בלבד.
+        const label = content.name ?? content.uri
+        this.#appendUserPlaceholder(messageId, { kind: "resource_link", label })
+      } else {
+        // audio / resource (EmbeddedResource) / unknown — placeholder (אין יותר איבוד-שקט)
+        // §11.3א: הרכיב מתרגם דרך t("chat.content.unsupported") — ה-VM לא כותב מפתח.
+        const kind = content?.type === "audio" ? "audio" : "resource"
+        this.#appendUserPlaceholder(messageId, { kind })
+      }
+      return
+    }
+
+    const text = update.content?.type === "text" ? ((update.content as { text?: string }).text ?? "") : ""
+    if (!text) return
 
     if (update.sessionUpdate === "agent_message_chunk") {
       this.#setTurnState("responding")
@@ -1520,11 +1570,6 @@ export class AgentSession {
       this.#setTurnState("thinking")
       if (this.#turnEnded) this.#scheduleIdle()
       this.#appendChunk("thought", text, messageId)
-    } else if (update.sessionUpdate === "user_message_chunk") {
-      // נשלח על ידי הסוכן במהלך ניגון מחדש של ההיסטוריה מ-loadSession (לפי מפרט ACP
-      // סעיף §session-setup#loading-sessions). לעולם לא מגיע בתורים חיים —
-      // אלה מקורם מ-sendPrompt ואנחנו מוסיפים להם את הבועה האופטימית שם.
-      this.#appendChunk("user", text, messageId)
     }
   }
 
@@ -1661,6 +1706,77 @@ export class AgentSession {
                 createdAt: Date.now(),
                 segments: [{ id: crypto.randomUUID(), text }],
               }
+      this.bubbles.push(newBubble)
+    }
+  }
+
+  /**
+   * §11: מצרף image-attachment לבועת-user — קיבוץ לפי messageId כמו #appendChunk.
+   *
+   * הערה על reactivity: #appendChunk משתמש ב-segments.push() — עובד כי segments[]
+   * הוא deep $state proxy ב-Svelte 5. attachments מתחיל undefined (optional ב-UserBubble),
+   * לכן .push() על undefined יקרוס. לכן כאן **השמה** (`[..., a]`) — פותרת גם את
+   * ה-undefined-init וגם מבטיחה reactivity על מערך שנוסף מאפס.
+   */
+  #appendUserImage(
+    messageId: string | null,
+    img: { mimeType: string; data: string },
+  ): void {
+    const last = this.bubbles[this.bubbles.length - 1]
+    const canGroup =
+      last !== undefined &&
+      last.kind === "user" &&
+      (messageId !== null ? last.messageId === messageId : last.messageId === null)
+
+    const attachment = { mimeType: img.mimeType, dataBase64: img.data }
+
+    if (canGroup && last !== undefined) {
+      const userBubble = last as UserBubble
+      // השמה (לא push) כי attachments מתחיל undefined — ר' הערה מעל
+      userBubble.attachments = [...(userBubble.attachments ?? []), attachment]
+    } else {
+      const newBubble: UserBubble = {
+        id: crypto.randomUUID(),
+        kind: "user",
+        messageId,
+        createdAt: Date.now(),
+        segments: [],
+        attachments: [attachment],
+      }
+      this.bubbles.push(newBubble)
+    }
+  }
+
+  /**
+   * §11.3א: מצרף placeholder מבני לבועת-user עבור ContentBlocks לא-טקסטואליים (resource_link / audio / resource).
+   *
+   * אותה לוגיקת קיבוץ כמו #appendUserImage — grouping לפי messageId.
+   * contentPlaceholders מתחיל undefined → **השמה** (לא push), כמו attachments.
+   * ה-VM לא מייבא t ולא כותב שום מחרוזת-תצוגה או מפתח i18n — i18n שייך לשכבת-הרכיב.
+   */
+  #appendUserPlaceholder(
+    messageId: string | null,
+    ph: { kind: "resource_link" | "audio" | "resource"; label?: string },
+  ): void {
+    const last = this.bubbles[this.bubbles.length - 1]
+    const canGroup =
+      last !== undefined &&
+      last.kind === "user" &&
+      (messageId !== null ? last.messageId === messageId : last.messageId === null)
+
+    if (canGroup && last !== undefined) {
+      const userBubble = last as UserBubble
+      // השמה (לא push) כי contentPlaceholders מתחיל undefined — ר' הערה ב-#appendUserImage
+      userBubble.contentPlaceholders = [...(userBubble.contentPlaceholders ?? []), ph]
+    } else {
+      const newBubble: UserBubble = {
+        id: crypto.randomUUID(),
+        kind: "user",
+        messageId,
+        createdAt: Date.now(),
+        segments: [],
+        contentPlaceholders: [ph],
+      }
       this.bubbles.push(newBubble)
     }
   }

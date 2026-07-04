@@ -26,6 +26,7 @@ import type {
   SetSessionConfigOptionResponse,
   SetSessionModelResponse,
   SetSessionModeResponse,
+  ClientSideConnection as ClientSideConnectionType,
 } from "@agentclientprotocol/sdk"
 import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk"
 import type { AcpTransport } from "../transport/types.js"
@@ -33,6 +34,23 @@ import { createClientImpl } from "./client-impl.js"
 
 /** נגזר מ-SDK — לא shape מותאם; drift אפס. */
 type AcpRequestMeta = NewSessionRequest["_meta"]
+
+// ─── slice-image-paste: PromptBlocks + buildPromptParam ───
+/** projection טהור מה-SDK — ContentBlock[]; drift אפס. */
+type PromptRequest = Parameters<ClientSideConnectionType["prompt"]>[0]
+export type PromptBlocks = PromptRequest["prompt"]
+
+/**
+ * ממיר content (string או PromptBlocks) לפורמט ה-prompt של conn.prompt.
+ * string → [{type:"text",text}]; PromptBlocks → passthrough ישיר.
+ * מיוצאת לטובת unit tests (TDD — Commit 4a).
+ */
+export function buildPromptParam(content: string | PromptBlocks): PromptBlocks {
+  if (typeof content === "string") {
+    return [{ type: "text", text: content }]
+  }
+  return content
+}
 
 const DEFAULT_INIT_TIMEOUT_MS = 10_000
 
@@ -54,7 +72,8 @@ export type AcpClient = {
     _meta?: AcpRequestMeta
   }): ReturnType<ClientSideConnection["loadSession"]>
   listSessions(): ReturnType<ClientSideConnection["listSessions"]>
-  prompt(sessionId: string, text: string): ReturnType<ClientSideConnection["prompt"]>
+  // ─── slice-image-paste: Commit 4a — backward-compatible (string עדיין עובד) ───
+  prompt(sessionId: string, content: string | PromptBlocks): ReturnType<ClientSideConnection["prompt"]>
   cancel(sessionId: string): ReturnType<ClientSideConnection["cancel"]>
   close(): void
 
@@ -129,9 +148,10 @@ function buildAcpClientFacade(
       return conn.listSessions({})
     },
 
-    /** שולח פרומפט טקסטואלי ב-session הנתון */
-    async prompt(sessionId: string, text: string) {
-      return conn.prompt({ sessionId, prompt: [{ type: "text", text }] })
+    /** שולח פרומפט (טקסט או blocks מולטימודלי) ב-session הנתון */
+    // ─── slice-image-paste Commit 4a: backward-compatible (string עדיין עובד) ───
+    async prompt(sessionId: string, content: string | PromptBlocks) {
+      return conn.prompt({ sessionId, prompt: buildPromptParam(content) })
     },
 
     /** מבטל פעולה פעילה ב-session הנתון */

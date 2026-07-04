@@ -46,10 +46,13 @@ const isDisabled = $derived(
 function onSubmit(e?: SubmitEvent) {
   e?.preventDefault()
   const text = promptText.trim()
-  if (!text || isDisabled) return
-  session.sendPrompt(text)
+  // ─── slice-image-paste Commit 4b: שכבה 2 — תמונה-בלבד מותרת ───
+  if ((!text && attachments.length === 0) || isDisabled) return
+  session.sendPrompt(text, { attachments })
   promptText = ""
-  // Commit 4 ירחיב כאן: ניקוי tray + revokeAttachment לכולם
+  // ─── slice-image-paste Commit 4b: ניקוי tray ───
+  attachments.forEach(revokeAttachment)
+  attachments = []
 }
 
 // ─── image handlers (slice-image-paste) ─────────────────────────────────────
@@ -215,9 +218,10 @@ function openFilePicker(): void {
       }}
     ></textarea>
 
+    <!-- ─── slice-image-paste Commit 4b: שכבה 1 — disabled רק אם אין טקסט ואין תמונות ─── -->
     <button
       type="submit"
-      disabled={!promptText.trim() || isDisabled}
+      disabled={(!promptText.trim() && attachments.length === 0) || isDisabled}
       class="rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-1.5 shrink-0"
       style="background:var(--accent); color:white"
       aria-label={t("record.send")}

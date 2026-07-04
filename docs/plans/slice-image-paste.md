@@ -1,7 +1,7 @@
 # Slice image-paste — הדבקת/גרירת/בחירת תמונות בתיבת הפרומפט — תוכנית
 
-> **תאריך**: 2026-06-28 (עודכן 2026-07-01 — Commit 4 נעול, הכרעת-gating §10 סגורה)
-> **סטטוס**: 🟢 **plan-verified — READY ל-dispatch** (אביגיל r2 READY, 0 findings, 2026-07-01 — `reports/drive-coding/image-paste-avigail.md`). **Commits 0–3 מוזגו ל-dev** (merge `2cdb85a`; פיגום רדום, `IMAGE_INPUT_ENABLED=false`). **נותר: Commit 4a (provider) + 4b (FE).** הכרעת ה-gating (§10) **סגורה: נתיב (א) — raw**. ה-`AcpClient.prompt` text-only בבעלותנו (החבילה נספגה v0.8.0) → הרחבתו = חלק מ-Commit 4a (לא חסם חיצוני).
+> **תאריך**: 2026-06-28 (עודכן 2026-07-04 — Commit 5 §11 הושלם)
+> **סטטוס**: ✅ **הושלם** — Commits 0–5 בוצעו. Commit 5 (§11): תיקון replay gate; #appendUserImage; 7 טסטים TDD ירוקים. branch `slice/image-paste` @ `c6a48e5`. ממתין לאימות calev-heavy + merge.
 > **Complexity**: 8/10 (verifier: **calev-heavy**)
 > **תלות (depends_on)**: `[]` — כל התלויות מוזגו ל-dev. (`slice-input-autogrow` מוזג `b3b5140` — TypeArea שונה, ראה §3.5. Track-A נספג ל-`packages/provider/` בקוד שלנו.)
 >   - ⚠️ **תיאום merge (רך, לא depends_on)**: `slice-warm-reattach-skip-init` (סשן אחר) נוגע גם הוא ב-`packages/provider/src/client/client.ts` (מחלץ `buildAcpClientFacade`). שניהם מבוססים על dev ושניהם נוגעים במתודת `prompt`/ה-facade. מי שממזג שני — יְיַשם מחדש את שינויו ב-facade (אולי) המרוענן. ראה §6.
@@ -444,3 +444,135 @@ sendPrompt = async (
 איזה ספק זמין מצהיר `promptCapabilities.image: true` (claude / opencode / codex)? נדרש ל-DoD של Commit 4b
 (אימות end-to-end). **calev-heavy יאמת עם `WIRE_RECORD` מה כל ספק מצהיר** ויריץ את ה-e2e מול הספק שכן.
 אם אף ספק לא מצהיר → escalation (§7) — הפיצ'ר נכון-מבנית אבל לא-ניתן-לאימות-חי כרגע.
+
+---
+
+## §11 — Commit 5: תיקון replay — ContentBlocks לא-טקסטואליים ב-`session/load`
+
+> **נוסף 2026-07-04** אחרי ש-calev נתן GO (12/13) ו**המשתמשת תפסה חי** באג replay: תמונה שנשלחה **נעלמת בטעינה-מחדש** של הסשן. זה תיקון-במקום לפני merge (החלטה: `decisions/drive-coding.md` 2026-07-04). approach: **TDD** (VM handler, לוגיקה בדידה על bubbles).
+
+### §11.1 — השורש (מאומת בקוד)
+`#handleSessionUpdate` (`agent-session.svelte.ts`) — שורות **1527-1528**:
+```ts
+const text = update.content?.type === "text" ? (update.content.text ?? "") : ""
+if (!text) return   // ← content לא-טקסטואלי נזרק כאן, לפני מטפלי ה-chunks
+```
+ה-gate שומר **רק** `text` ומפיל בשקט **4 מ-5** `ContentBlock` (ACP SDK 0.21.1, `types.gen.d.ts:838`): `image` · `audio` · `resource_link` · `resource` (EmbeddedResource). חל על שלושת ה-chunks שאחריו (1532/1537/1541): `agent_message_chunk` · `agent_thought_chunk` · `user_message_chunk`. הבאג הנצפה: `user_message_chunk` עם `content.type==="image"` ב-replay (`session/load`) → נזרק → התמונה נעלמת מההיסטוריה. **מחלקת-הבאג: איבוד-מידע שקט.**
+
+### §11.2 — Scope
+| טיפול | כן/לא | הערה |
+|---|---|---|
+| `image` ב-`user_message_chunk` → `attachments[]` (רינדור מלא) | ✅ | התשתית קיימת (Commit 3): `UserBubble.attachments` + render `UserBubble.svelte:56-64` |
+| **placeholder** ל-`audio`/`resource_link`/`resource` ב-`user_message_chunk` | ✅ | **סמן מבני** על הבועה (לא טקסט-סגמנט!) שהרכיב מתרגם — ר' §11.3א. מונע איבוד-שקט |
+| קיבוץ image-chunk לבועת-user לפי `messageId` (כמו טקסט) | ✅ | chunk-תמונה עם אותו messageId כמו chunk-טקסט קודם → אותה בועה |
+| רינדור מלא של `resource` embedded (text/blob) | ❌ | slice נגזר `message-embedded-content` (roadmap) |
+| טיפול ב-image/resource ב-**`agent_message_chunk`** (צד-agent) | ❌ | לא נצפה בפועל (agents פולטים תוכן דרך `tool_call`); מחוץ ל-scope. **אבל** — אל תשבור: ודא שה-gate לא זורק בשקט גם שם ללא placeholder → אם קל, placeholder גם לצד-agent; אחרת השאר כמו-שהוא ותעד |
+
+### §11.3 — הקובץ + נקודות-שינוי
+**`packages/frontend/src/lib/view-models/agent-session.svelte.ts`** — `#handleSessionUpdate`:
+- **החלף את ה-gate** (1527-1528) כך שלא יזרוק content לא-טקסטואלי **לפני** שמגיעים למטפל ב-`user_message_chunk`. הדפוס הקיים כבר עושה זאת ל-`tool_call`/mode/config (מטופלים **לפני** ה-gate, 1498-1525) — הרחב את אותה גישה: או (א) הזז את מטפל ה-`user_message_chunk` לפני ה-gate עם dispatch פנימי לפי `content.type`, או (ב) חשב `contentType` והתנה.
+- **`user_message_chunk`** (היום 1541-1545): 
+  - `content.type==="text"` → כמו היום (`#appendChunk("user", text, messageId)`).
+  - `content.type==="image"` → helper חדש `#appendUserImage(messageId, { mimeType: content.mimeType, data: content.data })` שמצרף ל-`attachments[]` של בועת-user (קיבוץ לפי messageId כמו `#appendChunk`; אם אין בועה תואמת → בועה חדשה עם `attachments:[…]` ו-`segments:[]`).
+  - `content.type` ∈ {`audio`,`resource_link`,`resource`} → **סמן מבני** (§11.3א), לא טקסט.
+
+⚠️ **Svelte 5 reactivity על array** (learnings): הוספת attachment/placeholder בהשמה (`bubble.X = [...(bubble.X ?? []), a]`), לא `push`. **הערת-קוד חובה** (finding אביגיל r1 #2): ה-`#appendChunk` הקיים משתמש ב-`segments.push` (עובד — deep `$state` proxy), אבל `attachments`/`contentPlaceholders` מתחילים `undefined` (optional) → `.push` יקרוס; לכן **השמה**. הוסף הערה קצרה ליד ה-helper.
+
+⚠️ **אל תיגע** ב-`sendPrompt`/Commit 4b (נתיב השליחה — אומת GO). זה **read-path בלבד**.
+
+### §11.3א — i18n בשכבת-הרכיב, לא ב-VM (תיקון finding 2026-07-04)
+> **הבעיה שנתפסה במימוש הראשון**: ה-VM כתב מפתח-i18n גולמי כטקסט-סגמנט (`#appendChunk("user","chat.content.unsupported")`) → מרונדר מילולית ("chat.content.unsupported") כי `UserBubble.svelte:73` מעביר segments ל-`MarkdownContent`. בנוסף `t: (key)=>string` **חסר אינטרפולציה** → `"{name}"` לא יתורגם. **שורש: i18n שייך לרכיב (`getI18n().t`), לא ל-VM** (שאין לו `t`, ובצדק — locale ריאקטיבי).
+
+**המבנה הנכון — סמן מבני על הבועה שהרכיב מתרגם:**
+1. **`bubble.ts`** — הוסף ל-`UserBubble` (additive, optional):
+   ```ts
+   /** slice-image-paste §11 — תוכן לא-נתמך ב-replay (audio/resource/resource_link). הרכיב מתרגם. */
+   contentPlaceholders?: { kind: "resource_link" | "audio" | "resource"; label?: string }[]
+   ```
+   `label` = **data** (שם-קובץ/uri ל-resource_link) — לא מתורגם, מוצג כמו-שהוא.
+2. **VM** — helper `#appendUserPlaceholder(messageId, ph)` (אותה לוגיקת-קיבוץ כמו `#appendUserImage`, השמה לא push):
+   - `resource_link` → `{ kind:"resource_link", label: content.name ?? content.uri }`
+   - `audio` → `{ kind:"audio" }`
+   - `resource` → `{ kind:"resource" }`
+   **ה-VM לא מייבא/קורא `t` ולא כותב שום מחרוזת-תצוגה.**
+3. **`UserBubble.svelte`** — בלוק chips (כמו בלוק ה-attachments 56-64), פר placeholder:
+   - `resource_link` → אייקון (`Paperclip`, lucide) + `{label}` (raw). aria/title = `t("chat.content.attachedFile")`.
+   - `audio`/`resource` → `t("chat.content.unsupported")`.
+
+### §11.4 — i18n (חובה — `lint:i18n` חוסם עברית קשיחה; `t` **param-less**)
+מפתחות ב-`keys.ts` + `catalogs/he.ts` + `catalogs/en.ts` (additive ליד `attach.*` 216-218). **בלי `{name}`** (אין אינטרפולציה):
+- `chat.content.attachedFile` — he: "קובץ מצורף" · en: "Attached file" (aria/title ל-resource_link; שם-הקובץ עצמו = data ליד האייקון).
+- `chat.content.unsupported` — he: "תוכן לא-נתמך" · en: "Unsupported content".
+- ⚠️ **הסר** את `chat.content.fileAttachment` (`{name}`) שנוסף במימוש הראשון — שבור (אין אינטרפולציה).
+
+### §11.5 — Testing (TDD)
+`agent-session.test.ts` (כבר יש suite ל-`user_message_chunk`, שורות 104/189):
+1. `user_message_chunk` עם `content:{type:"image",data,mimeType}` → בועת-user אחת עם `attachments.length===1`, data/mimeType נכונים.
+2. טקסט+תמונה עם **אותו** messageId (שני chunks) → **בועה אחת**: `segments.length===1` **וגם** `attachments.length===1`.
+3. תמונה בלבד (בלי chunk-טקסט) → בועה עם `attachments.length===1`, `segments.length===0`.
+4. `resource_link` → בועה עם `contentPlaceholders.length===1`, `kind==="resource_link"`, `label` = השם/uri. `audio`/`resource` → `contentPlaceholders` עם ה-kind המתאים (לא segment-טקסט, לא מפתח-i18n).
+5. **רגרסיה**: `user_message_chunk` טקסט-בלבד → כמו היום (segment, בלי attachments/placeholders). `agent_message_chunk` טקסט → ללא רגרסיה.
+
+### §11.6 — DoD
+| בדיקה | איך | 
+|---|---|
+| replay image ב-`user_message_chunk` → attachment | unit + חי (calev) |
+| טקסט+תמונה אותו messageId → בועה אחת (segment+attachment) | unit |
+| audio/resource_link/resource → placeholder (לא איבוד-שקט) | unit + חי |
+| טקסט-בלבד ללא רגרסיה | unit |
+| **חי: שלח תמונה → reload סשן → התמונה מופיעה בהיסטוריה** | calev (הבאג המקורי) |
+| typecheck + build + `lint:i18n` ירוקים | פקודות §0 |
+
+### §11.7 — Complexity
+VM read-path + i18n + טסטים; אין UI חדש (render קיים), אין BE, אין פרוטוקול חדש. **~4/10 → verifier `calev`** (light) — אבל מכיוון שזה חלק מ-image-paste (8/10) ונמזג יחד, ה-runtime-gate המשולב יישאר **calev-heavy** על נתיב ה-replay + רגרסיית השליחה.
+
+### §11.8 — depends_on
+`[Commit 4b]` (אותו סלייס — משתמש ב-`UserBubble.attachments` שהוגדר ב-Commit 3 ובמודל שהודלק ב-4b). base = ה-branch הנוכחי `slice/image-paste` @ HEAD.
+
+---
+
+## §12 — Commit 6: lightbox לתמונת-המשתמש (עקביות עם תמונת-הכלי)
+
+> **נוסף 2026-07-04** — המשתמשת תפסה חי: תמונות שהסוכן מציג (תוכן-כלי) נפתחות ב-lightbox בלחיצה, אבל תמונה שהמשתמש שלח (attachment בבועת-user) היא `<img>` חשוף שלא ניתן להגדיל. פער-עקביות בפיצ'ר. approach: **manual** (חיווט UI לתשתית קיימת, ללא לוגיקה חדשה).
+
+### §12.1 — השורש (מאומת)
+`UserBubble.svelte:58-62` מרנדר את ה-attachment כ-`<img>` חשוף. `ToolBubble.svelte:139-145` עוטף את תמונת-הכלי ב-`<button onclick={() => viewer.show({ kind:"image", src, alt })}>` (`viewer = getContentViewer()`, `$lib/context:81`). ה-lightbox (`ContentViewerVM.show`, `view-models/content-viewer.svelte.ts:14,27`) **גנרי וקיים** — ToolBubble כבר משתמש בו. UserBubble פשוט לא חובר.
+
+### §12.2 — Scope
+- ✅ עטיפת ה-`<img>` של כל attachment ב-`UserBubble.svelte` ב-`<button>` שקורא `viewer.show({ kind:"image", src:`data:${att.mimeType};base64,${att.dataBase64}`, alt })`.
+- ❌ שום שינוי במודל/VM/BE/i18n-key חדש. **חיווט-UI בלבד.**
+- ❌ הגדלת ה-placeholders (resource_link/audio/resource) — לא רלוונטי (אין להם תמונה).
+
+### §12.3 — נקודות-שינוי (קובץ יחיד)
+`packages/frontend/src/lib/components/chat/bubbles/UserBubble.svelte`:
+1. ייבוא: הוסף `getContentViewer` לשורת ה-import הקיימת מ-`$lib/context` (שורה 16), ו-`const viewer = getContentViewer()` ליד ה-getters (שורה ~30).
+2. בבלוק ה-attachments (**שורות ~60-65** — ה-`{#each bubble.attachments as att, i (i)}` עם ה-`<img src="data:{att.mimeType};base64,{att.dataBase64}">`): עטוף את ה-`<img>` ב-`<button>`. ⚠️ **אין משתני `src`/`alt` בסקופ** (finding אביגיל 🟡) — בנה את ה-`src` מהאובייקט `att` בדיוק כמו ה-`<img>` הקיים:
+   ```svelte
+   <button
+     class="user-image-btn"
+     onclick={() => viewer.show({ kind: "image", src: `data:${att.mimeType};base64,${att.dataBase64}`, alt: "" })}
+     aria-label={t("contentViewer.expand")}
+     title={t("contentViewer.expand")}
+   >
+     <img src="data:{att.mimeType};base64,{att.dataBase64}" alt="" class="max-h-40 max-w-[12rem] rounded-xl object-contain border" style="border-color:var(--border)" />
+   </button>
+   ```
+   (ה-`<img>` נשאר עם ה-class/style הקיימים; רק נעטף.)
+3. CSS: `.user-image-btn` — reset בלבד: `background:none; border:none; padding:0; cursor:pointer; display:inline-flex`. ⚠️ **אל תעתיק verbatim את `.tool-image-btn`** (`ToolBubble.svelte:~295-308`) — יש בו `margin:0.2em 0` שיוסיף רווח-אנכי חדש לתמונת-המשתמש (finding אביגיל 🟢 — רגרסיה ויזואלית). `margin:0` (או השמט לגמרי).
+
+> **i18n**: אין מפתח חדש — `contentViewer.expand` (`keys.ts:210`) קיים. `alt` — השאר `""` כמו היום (התמונה דקורטיבית; ה-aria על ה-button).
+
+### §12.4 — DoD
+| בדיקה | איך |
+|---|---|
+| לחיצה על תמונת-משתמש (attachment) → lightbox fullscreen נפתח | חי (calev) |
+| ה-lightbox מציג את אותה תמונה (data-URI תואם) | חי |
+| סגירת lightbox (overlay/Esc) עובדת | חי (מנגנון קיים) |
+| רגרסיה: רינדור התמונה עצמה ללא שינוי (גודל/מסגרת) | חי + visual |
+| typecheck + build + `lint:i18n` ירוקים | פקודות §0 |
+
+### §12.5 — Complexity
+חיווט-UI לתשתית קיימת, קובץ יחיד, אפס לוגיקה/מודל. **~2/10**. נמזג עם image-paste → ה-runtime-gate המשולב נשאר **calev-heavy**; אימות §12 = smoke קצר (לחיצה→lightbox) בתוך אותה ריצה.
+
+### §12.6 — depends_on
+`[Commit 3]` (`UserBubble.attachments` render) + slice `content-viewer` (מוזג `e2126e0` — `ContentViewerVM`/`getContentViewer`). base = `slice/image-paste` @ HEAD.

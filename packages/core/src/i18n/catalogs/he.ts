@@ -208,6 +208,9 @@ export const he: Catalog = {
   // ─── image-attach tray ─── (slice-image-paste)
   "attach.addImage": "הוסף תמונה",
   "attach.remove": "הסר",
+  // ─── image-paste replay (§11) — placeholder for non-text ContentBlocks ───
+  "chat.content.attachedFile": "קובץ מצורף",
+  "chat.content.unsupported": "תוכן לא-נתמך",
   // ─── recent-projects ─── (slice connect-recent-projects)
   "connect.recent.title": "תיקיות אחרונות",
   "connect.recent.empty": "אין תיקיות אחרונות",

@@ -1,3 +1,92 @@
+## 2026-07-04 — slice-image-paste — Commit 6: lightbox לתמונת-המשתמש (§12)
+
+**מה בוצע (manual — חיווט UI לתשתית קיימת):**
+
+- `packages/frontend/src/lib/components/chat/bubbles/UserBubble.svelte`:
+  - הוסף `getContentViewer` לשורת ה-import מ-`$lib/context`
+  - `const viewer = getContentViewer()` ליד שאר ה-getters
+  - עטף את ה-`<img>` ב-`<button class="user-image-btn">` שקורא ל-`viewer.show({ kind: "image", src, alt: "" })` עם `onclick`
+  - `aria-label` ו-`title` משתמשים ב-`t("contentViewer.expand")` (מפתח קיים)
+  - CSS `.user-image-btn`: reset בלבד (background/border/padding/cursor/display) — בלי margin (שמנע רגרסיה ויזואלית מול `.tool-image-btn`)
+
+**בדיקות (approach: manual):**
+- typecheck: 0 errors, 0 warnings (svelte-check)
+- build: ירוק (47s, adapter-static)
+- lint:i18n: נקי
+
+**חריגות:**
+- אין — חיווט טהור לתשתית `ContentViewer` הקיימת. אימות חי (lightbox נפתח) = calev בהמשך.
+
+---
+
+## 2026-07-04 — slice-image-paste — Commit 5 follow-up: placeholder כסמן מבני (§11.3א)
+
+**מה בוצע (TDD):**
+
+- `packages/core/src/i18n/keys.ts`: החלף `chat.content.fileAttachment` (עם `{name}` — שבור) ב-`chat.content.attachedFile` (param-less)
+- `packages/core/src/i18n/catalogs/he.ts`: "קובץ מצורף" (ללא interpolation)
+- `packages/core/src/i18n/catalogs/en.ts`: "Attached file" (ללא interpolation)
+- `packages/frontend/src/lib/types/bubble.ts`: הוסף `contentPlaceholders?` ל-`UserBubble` (additive optional)
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+  - הסר `#appendChunk("user", "chat.content...")` ממקטעי resource_link/audio/resource
+  - הוסף `#appendUserPlaceholder(messageId, ph)` — helper חדש עם אותה לוגיקת קיבוץ כמו `#appendUserImage` (השמה, לא push)
+  - ה-VM לא מייבא t ולא כותב מחרוזת-תצוגה
+- `packages/frontend/src/lib/components/chat/bubbles/UserBubble.svelte`:
+  - import `PaperclipIcon`
+  - בלוק chips לcontentPlaceholders: resource_link→Paperclip+label+t("chat.content.attachedFile"), audio/resource→t("chat.content.unsupported")
+  - CSS `.content-chip`
+- `packages/frontend/src/lib/view-models/agent-session.test.ts`: עדכן טסטי resource_link+audio לבדוק `contentPlaceholders` במקום segments
+
+**בדיקות:**
+- TDD: 418/419 passed (1 כישלון pre-existing formatting.test.ts)
+- typecheck: 0 errors, 0 warnings
+- lint:i18n: נקי
+
+**חריגות:**
+- `formatting.test.ts` failure: pre-existing (לא קשור)
+- `chat.content.fileAttachment` הוסר מ-keys.ts — מחליפו `chat.content.attachedFile` (param-less)
+
+---
+
+## 2026-07-04 — slice-image-paste — Commit 5: תיקון replay (§11)
+
+**מה בוצע (TDD):**
+
+- `packages/core/src/i18n/keys.ts`: הוסף `chat.content.fileAttachment` ו-`chat.content.unsupported` (additive)
+- `packages/core/src/i18n/catalogs/he.ts`: תרגומים עבריים לשני המפתחות החדשים
+- `packages/core/src/i18n/catalogs/en.ts`: תרגומים אנגליים לשני המפתחות החדשים
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+  - `#handleSessionUpdate`: הוזז מטפל `user_message_chunk` **לפני** ה-gate `if (!text) return` — כך image/audio/resource_link/resource אינם נזרקים עוד בשקט
+  - dispatch פנימי לפי `content.type`: `text`→#appendChunk, `image`→#appendUserImage, `resource_link`/`audio`/`resource`→placeholder segment
+  - `#appendUserImage` — helper חדש: קיבוץ לפי messageId (כמו #appendChunk), השמה (לא push) כי attachments מתחיל undefined; הערת-קוד מסבירה את ההבחנה
+- `packages/frontend/src/lib/view-models/agent-session.test.ts`: 7 טסטים TDD §11 (image→attachment; text+image→בועה אחת; image-only→segments[]; resource_link placeholder; audio placeholder; רגרסיות טקסט ו-agent_message)
+
+**בדיקות:**
+- TDD: 7/7 ירוקים (§11)
+- frontend-v2 total: 418/419 passed (1 כישלון pre-existing formatting.test.ts — לא קשור)
+- typecheck: 0 errors
+- lint:i18n: נקי
+
+**חריגות:**
+- `chat.content.fileAttachment` ו-`chat.content.unsupported` נשמרים כ-text גולמי בסגמנט (ה-VM לא ניגש ל-i18n context); calev יאמת תצוגה ב-runtime
+- `formatting.test.ts` failure: pre-existing (אומת — קיים לפני השינויים)
+
+## 2026-07-01 — slice-image-paste — Commit 4a + Commit 4b
+
+**Commit 4a (provider, TDD):**
+- `packages/provider/src/client/client.ts`: הוסף `PromptBlocks` (projection מ-SDK ContentBlock[]), `buildPromptParam(string|PromptBlocks)→PromptBlocks` (טהורה, מיוצאת), הרחבת `prompt()` ל-`string | PromptBlocks` (backward-compat)
+- `packages/provider/src/client/index.ts`: ייצוא additive ל-`PromptBlocks` + `buildPromptParam`
+- `packages/provider/src/client/client.prompt.test.ts`: 6 טסטים TDD (string regression + blocks passthrough + image-block)
+- טסטים: 139/139 passed. typecheck: שגיאה pre-existing ב-connect-in-process.test.ts:111 (WireFrame.method) — לא בקוד שלנו.
+
+**Commit 4b (FE, manual):**
+- `agent-session.svelte.ts`: flip `IMAGE_INPUT_ENABLED = true`, ייבוא `PromptBlocks`, `sendPrompt` מורחב (`opts.attachments?`), guard מורחב (תמונה-בלבד), בניית content (PromptBlocks), אכלוס `userBubble.attachments`
+- `TypeArea.svelte`: שלוש שכבות חסימה הוסרו — כפתור Send disabled מורחב (שכבה 1), `onSubmit` guard מורחב + ניקוי tray (שכבה 2), VM guard מורחב (שכבה 3)
+- typecheck: 0 errors | build: ירוק | lint:i18n: ירוק
+- אימות e2e חי: BLOCKED (ראה הערה — calev-heavy ינסה לאמת מול ספק עם promptCapabilities.image)
+
+**חריגות:** שגיאת typecheck pre-existing ב-connect-in-process.test.ts:111 קיימת ב-base ולא שינינו.
+
 ## 2026-07-04 — proxy-tap-memory — תיקון ליקויים (harness + walkthrough)
 
 **מה בוצע:**
