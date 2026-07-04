@@ -1,5 +1,54 @@
 # Decisions — drive-coding
 
+## 2026-07-04 — slash-commands: השלמת פקודות-Slash (brief מאושר, טרם dispatch)
+
+### רציונל
+
+‏פקודות-Slash (`/commit`, `/code-review`...) ‏היו מסומנות ב-roadmap כ-"0% ‏תשתית, ‏תלוי
+‏Track A (‏משטח-חוזה)". ‏חקירה הראתה שההנחה **‏התיישנה**: ‏מאז reabsorb ‏של `packages/provider`
+‏ל-monorepo, ‏משטח-החוזה מקומי, ‏ו-ACP SDK (‏גם 0.21.1 ‏שה-FE ‏משתמש בה) ‏**‏כבר חושף**
+‏`available_commands_update` ‏עם `AvailableCommand[]`. ‏שלוש הכרעות עיצוב:
+
+1. **‏צד-קבלה בלבד חדש** — ‏מראה 1:1 ‏את `acp-mode-config-sync` ‏(‏שהיה VM-only). ‏ה-BE
+   ‏dumb-pipe ‏מעביר את ה-variant ללא שינוי; ‏ה-handler החדש ב-`#onSessionUpdate` ‏לפני ה-gate.
+2. **‏הפעלה = ‏טקסט-prompt רגיל** — ‏`AvailableCommandInput` ‏הוא unstructured ("‏כל הטקסט
+   ‏אחרי שם-הפקודה"), ‏ו**‏אין** ‏method ייעודי ב-SDK. ‏לכן `sendPrompt("/name args")` ‏הקיים
+   ‏מספיק — ‏**‏אפס שינוי BE/‏חוזה**. ‏זו הכרעת ה-de-risking המרכזית.
+3. **‏גייטינג על `availableCommands.length`, ‏לא על ה-capability** — ‏דגל
+   ‏`NormalizedCapabilities.commands` ‏מקובע `false` ‏בכל מקום (‏מעולם לא חווט); ‏גייטינג עליו
+   ‏= ‏פיצ'ר-מת. ‏האות האמיתי הוא אורך הרשימה בזמן-ריצה.
+
+‏מבנה: 3 ‏commits — VM receive (TDD) · engine `matchSlashCommands` ‏טהור (TDD) · dropdown
+‏השלמה ב-`TypeArea` (browser). Complexity 5/light.
+
+### ‏עיגון בהקלטת-אמת
+
+‏הקלטת-wire קיימת (`data/wire-recordings/_pre-test-archive/29175b45-...jsonl`) ‏הוכיחה חי:
+‏claude ‏פולט `available_commands_update` ‏**‏מיד עם פתיחת הסשן** (‏לפני כל prompt), ‏עם **47
+‏פקודות**, ‏שמות mixed-case (`Svelte-MCP`), ‏ותיאורים רב-שורתיים ארוכים → ‏חייבים סינון
+‏case-insensitive + ‏קיצור-תיאור + ‏רשימה נגללת. ‏codex ‏פולט אף הוא (‏אדפטר).
+
+### ‏ממצאי אביגיל
+
+‏r1 = USABLE-AFTER-FIX (3 ‏ממצאים): (#1) ‏שם-מתודת-האיפוס `#captureSessionConfig` ‏ולא
+‏`#captureSessionState`; (#2) ‏ה-FE ‏משתמש ב-SDK **0.21.1** ‏ולא 1.1.0 (‏אך הטיפוסים קיימים
+‏גם בה — ‏ההיתכנות שלמה); (#3) ‏ה-Enter-intercept ‏בלע גם Cmd/Ctrl+Enter. ‏כולם תוקנו.
+‏r2 = **READY**. ‏הערות-ליטוש שנותרו (‏null-guards ב-strict-TS, ‏Shift+Enter, ‏מספר-שורת-import)
+‏הוקשחו ב-pseudo-code כדי לחסוך לאליעזר confusion, ‏אף שאינן חוסמות.
+
+### ‏שינויי-כיוון
+
+- ‏**‏מ-"‏תלוי Track A" ‏ל-"‏FE-only"**: ‏ההנחה שהחוזה חוסם התבררה כלא-רלוונטית אחרי ה-cutover.
+- ‏**‏finding #2 ‏מנע באג-ייבוא**: ‏ה-repo ‏מכיל *‏שתי* ‏גרסאות SDK (0.21.1 + ‏alias `acp-sdk-v1`
+  ‏= 1.0.0 ‏ב-provider). ‏ה-brief מצמיד מפורשות ל-`@agentclientprotocol/sdk` ‏הרגיל.
+
+### ‏רעיונות שנדחו
+
+- ‏**‏spike נפרד ל-wire** — ‏מיותר: ‏הקלטות-אמת + ‏קוד-האדפטר סיפקו את העדות הסטטית.
+- ‏**‏slice נפרד ל-receive** — ‏אין לו משטח-אימות (‏אין UI); ‏אוחד ל-commit 0 ‏בתוך slice אחד.
+- ‏**‏gating על `supports.commands`** — ‏דגל מת (‏ראה רציונל §3).
+- ‏**‏רינדור `input.hint` ‏כ-form מובנה** — ‏future; ‏MVP ‏מציג תיאור + ‏token טקסטואלי.
+
 ## 2026-07-04 — image-paste: השלמה + תיקון replay (איבוד-שקט של ContentBlocks לא-טקסטואליים)
 
 > image-paste (Commits 0–4) הושלם, אומת (calev-heavy GO 12/13), reconcile מול dev v0.10.1. **לפני merge — המשתמשת תפסה חי באג replay:** תמונה שנשלחה נעלמה בטעינה-מחדש של הסשן.
