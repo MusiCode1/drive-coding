@@ -463,7 +463,7 @@ if (!text) return   // ← content לא-טקסטואלי נזרק כאן, לפנ
 | טיפול | כן/לא | הערה |
 |---|---|---|
 | `image` ב-`user_message_chunk` → `attachments[]` (רינדור מלא) | ✅ | התשתית קיימת (Commit 3): `UserBubble.attachments` + render `UserBubble.svelte:56-64` |
-| **placeholder** ל-`audio`/`resource_link`/`resource` ב-`user_message_chunk` | ✅ | segment-טקסט עם i18n (למשל "📎 קובץ מצורף: {name}" / "תוכן לא-נתמך"). מונע איבוד-שקט |
+| **placeholder** ל-`audio`/`resource_link`/`resource` ב-`user_message_chunk` | ✅ | **סמן מבני** על הבועה (לא טקסט-סגמנט!) שהרכיב מתרגם — ר' §11.3א. מונע איבוד-שקט |
 | קיבוץ image-chunk לבועת-user לפי `messageId` (כמו טקסט) | ✅ | chunk-תמונה עם אותו messageId כמו chunk-טקסט קודם → אותה בועה |
 | רינדור מלא של `resource` embedded (text/blob) | ❌ | slice נגזר `message-embedded-content` (roadmap) |
 | טיפול ב-image/resource ב-**`agent_message_chunk`** (צד-agent) | ❌ | לא נצפה בפועל (agents פולטים תוכן דרך `tool_call`); מחוץ ל-scope. **אבל** — אל תשבור: ודא שה-gate לא זורק בשקט גם שם ללא placeholder → אם קל, placeholder גם לצד-agent; אחרת השאר כמו-שהוא ותעד |
@@ -474,24 +474,44 @@ if (!text) return   // ← content לא-טקסטואלי נזרק כאן, לפנ
 - **`user_message_chunk`** (היום 1541-1545): 
   - `content.type==="text"` → כמו היום (`#appendChunk("user", text, messageId)`).
   - `content.type==="image"` → helper חדש `#appendUserImage(messageId, { mimeType: content.mimeType, data: content.data })` שמצרף ל-`attachments[]` של בועת-user (קיבוץ לפי messageId כמו `#appendChunk`; אם אין בועה תואמת → בועה חדשה עם `attachments:[…]` ו-`segments:[]`).
-  - `content.type` ∈ {`audio`,`resource_link`,`resource`} → segment-טקסט placeholder דרך `t(key)` (i18n חובה — ראה §11.4).
+  - `content.type` ∈ {`audio`,`resource_link`,`resource`} → **סמן מבני** (§11.3א), לא טקסט.
 
-⚠️ **Svelte 5 reactivity על array** (learnings): הוספת attachment בהשמה (`bubble.attachments = [...(bubble.attachments ?? []), a]`), לא `push`. **הערת-קוד חובה** (finding אביגיל r1 #2): ה-`#appendChunk` הקיים משתמש ב-`segments.push` (עובד — deep `$state` proxy), אבל `attachments` מתחיל `undefined` (optional) → `.push` יקרוס; לכן **השמה**. הוסף הערה קצרה ליד ה-helper שתסביר את ההבדל, כדי לא לבלבל את מי שקורא את שתי הפונקציות זו-לצד-זו.
+⚠️ **Svelte 5 reactivity על array** (learnings): הוספת attachment/placeholder בהשמה (`bubble.X = [...(bubble.X ?? []), a]`), לא `push`. **הערת-קוד חובה** (finding אביגיל r1 #2): ה-`#appendChunk` הקיים משתמש ב-`segments.push` (עובד — deep `$state` proxy), אבל `attachments`/`contentPlaceholders` מתחילים `undefined` (optional) → `.push` יקרוס; לכן **השמה**. הוסף הערה קצרה ליד ה-helper.
 
 ⚠️ **אל תיגע** ב-`sendPrompt`/Commit 4b (נתיב השליחה — אומת GO). זה **read-path בלבד**.
 
-### §11.4 — i18n (חובה — `lint:i18n` חוסם עברית קשיחה)
-מפתחות חדשים ב-`packages/core/src/i18n/keys.ts` + `catalogs/he.ts` + `catalogs/en.ts` (additive, ליד `attach.*` 216-218). הצעה:
-- `chat.content.fileAttachment` (resource_link — עם שם/uri)
-- `chat.content.unsupported` (audio/resource — "תוכן לא-נתמך")
+### §11.3א — i18n בשכבת-הרכיב, לא ב-VM (תיקון finding 2026-07-04)
+> **הבעיה שנתפסה במימוש הראשון**: ה-VM כתב מפתח-i18n גולמי כטקסט-סגמנט (`#appendChunk("user","chat.content.unsupported")`) → מרונדר מילולית ("chat.content.unsupported") כי `UserBubble.svelte:73` מעביר segments ל-`MarkdownContent`. בנוסף `t: (key)=>string` **חסר אינטרפולציה** → `"{name}"` לא יתורגם. **שורש: i18n שייך לרכיב (`getI18n().t`), לא ל-VM** (שאין לו `t`, ובצדק — locale ריאקטיבי).
+
+**המבנה הנכון — סמן מבני על הבועה שהרכיב מתרגם:**
+1. **`bubble.ts`** — הוסף ל-`UserBubble` (additive, optional):
+   ```ts
+   /** slice-image-paste §11 — תוכן לא-נתמך ב-replay (audio/resource/resource_link). הרכיב מתרגם. */
+   contentPlaceholders?: { kind: "resource_link" | "audio" | "resource"; label?: string }[]
+   ```
+   `label` = **data** (שם-קובץ/uri ל-resource_link) — לא מתורגם, מוצג כמו-שהוא.
+2. **VM** — helper `#appendUserPlaceholder(messageId, ph)` (אותה לוגיקת-קיבוץ כמו `#appendUserImage`, השמה לא push):
+   - `resource_link` → `{ kind:"resource_link", label: content.name ?? content.uri }`
+   - `audio` → `{ kind:"audio" }`
+   - `resource` → `{ kind:"resource" }`
+   **ה-VM לא מייבא/קורא `t` ולא כותב שום מחרוזת-תצוגה.**
+3. **`UserBubble.svelte`** — בלוק chips (כמו בלוק ה-attachments 56-64), פר placeholder:
+   - `resource_link` → אייקון (`Paperclip`, lucide) + `{label}` (raw). aria/title = `t("chat.content.attachedFile")`.
+   - `audio`/`resource` → `t("chat.content.unsupported")`.
+
+### §11.4 — i18n (חובה — `lint:i18n` חוסם עברית קשיחה; `t` **param-less**)
+מפתחות ב-`keys.ts` + `catalogs/he.ts` + `catalogs/en.ts` (additive ליד `attach.*` 216-218). **בלי `{name}`** (אין אינטרפולציה):
+- `chat.content.attachedFile` — he: "קובץ מצורף" · en: "Attached file" (aria/title ל-resource_link; שם-הקובץ עצמו = data ליד האייקון).
+- `chat.content.unsupported` — he: "תוכן לא-נתמך" · en: "Unsupported content".
+- ⚠️ **הסר** את `chat.content.fileAttachment` (`{name}`) שנוסף במימוש הראשון — שבור (אין אינטרפולציה).
 
 ### §11.5 — Testing (TDD)
 `agent-session.test.ts` (כבר יש suite ל-`user_message_chunk`, שורות 104/189):
 1. `user_message_chunk` עם `content:{type:"image",data,mimeType}` → בועת-user אחת עם `attachments.length===1`, data/mimeType נכונים.
 2. טקסט+תמונה עם **אותו** messageId (שני chunks) → **בועה אחת**: `segments.length===1` **וגם** `attachments.length===1`.
 3. תמונה בלבד (בלי chunk-טקסט) → בועה עם `attachments.length===1`, `segments.length===0`.
-4. `resource_link`/`audio` → בועה עם segment placeholder (לא ריקה, לא נזרקת).
-5. **רגרסיה**: `user_message_chunk` טקסט-בלבד → כמו היום (segment, בלי attachments). `agent_message_chunk` טקסט → ללא רגרסיה.
+4. `resource_link` → בועה עם `contentPlaceholders.length===1`, `kind==="resource_link"`, `label` = השם/uri. `audio`/`resource` → `contentPlaceholders` עם ה-kind המתאים (לא segment-טקסט, לא מפתח-i18n).
+5. **רגרסיה**: `user_message_chunk` טקסט-בלבד → כמו היום (segment, בלי attachments/placeholders). `agent_message_chunk` טקסט → ללא רגרסיה.
 
 ### §11.6 — DoD
 | בדיקה | איך | 
