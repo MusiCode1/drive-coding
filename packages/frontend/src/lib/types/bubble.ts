@@ -44,6 +44,13 @@ export type UserBubble = BubbleBase & {
    * Commit 4 מאכלס את השדה; Commit 3 רק מרנדר (mock).
    */
   attachments?: { mimeType: string; dataBase64: string }[]
+  /**
+   * slice-image-paste §11.3א — תוכן לא-טקסטואלי מ-replay (resource_link / audio / resource).
+   * הרכיב (UserBubble) אחראי לתרגום הtitle/aria-label דרך t().
+   * ה-VM לא מייבא t ולא כותב מחרוזות-תצוגה — שכבת-הרכיב בלבד.
+   * label: raw data (name/uri) — ללא אינטרפולציה.
+   */
+  contentPlaceholders?: { kind: "resource_link" | "audio" | "resource"; label?: string }[]
 }
 
 export type MessageBubble = BubbleBase & {

@@ -1,3 +1,32 @@
+## 2026-07-04 — slice-image-paste — Commit 5 follow-up: placeholder כסמן מבני (§11.3א)
+
+**מה בוצע (TDD):**
+
+- `packages/core/src/i18n/keys.ts`: החלף `chat.content.fileAttachment` (עם `{name}` — שבור) ב-`chat.content.attachedFile` (param-less)
+- `packages/core/src/i18n/catalogs/he.ts`: "קובץ מצורף" (ללא interpolation)
+- `packages/core/src/i18n/catalogs/en.ts`: "Attached file" (ללא interpolation)
+- `packages/frontend/src/lib/types/bubble.ts`: הוסף `contentPlaceholders?` ל-`UserBubble` (additive optional)
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+  - הסר `#appendChunk("user", "chat.content...")` ממקטעי resource_link/audio/resource
+  - הוסף `#appendUserPlaceholder(messageId, ph)` — helper חדש עם אותה לוגיקת קיבוץ כמו `#appendUserImage` (השמה, לא push)
+  - ה-VM לא מייבא t ולא כותב מחרוזת-תצוגה
+- `packages/frontend/src/lib/components/chat/bubbles/UserBubble.svelte`:
+  - import `PaperclipIcon`
+  - בלוק chips לcontentPlaceholders: resource_link→Paperclip+label+t("chat.content.attachedFile"), audio/resource→t("chat.content.unsupported")
+  - CSS `.content-chip`
+- `packages/frontend/src/lib/view-models/agent-session.test.ts`: עדכן טסטי resource_link+audio לבדוק `contentPlaceholders` במקום segments
+
+**בדיקות:**
+- TDD: 418/419 passed (1 כישלון pre-existing formatting.test.ts)
+- typecheck: 0 errors, 0 warnings
+- lint:i18n: נקי
+
+**חריגות:**
+- `formatting.test.ts` failure: pre-existing (לא קשור)
+- `chat.content.fileAttachment` הוסר מ-keys.ts — מחליפו `chat.content.attachedFile` (param-less)
+
+---
+
 ## 2026-07-04 — slice-image-paste — Commit 5: תיקון replay (§11)
 
 **מה בוצע (TDD):**

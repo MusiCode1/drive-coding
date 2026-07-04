@@ -207,7 +207,7 @@ export const he: Catalog = {
   "attach.addImage": "הוסף תמונה",
   "attach.remove": "הסר",
   // ─── image-paste replay (§11) — placeholder for non-text ContentBlocks ───
-  "chat.content.fileAttachment": "קובץ מצורף: {name}",
+  "chat.content.attachedFile": "קובץ מצורף",
   "chat.content.unsupported": "תוכן לא-נתמך",
   // ─── recent-projects ─── (slice connect-recent-projects)
   "connect.recent.title": "תיקיות אחרונות",

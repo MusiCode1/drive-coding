@@ -502,25 +502,31 @@ describe("AgentSession §11 — user_message_chunk non-text ContentBlocks", () =
     expect(bubble.attachments![0]!.mimeType).toBe("image/gif")
   })
 
-  it("resource_link chunk → UserBubble with a non-empty placeholder segment (no silent loss)", () => {
+  it("resource_link chunk → UserBubble with contentPlaceholders[kind=resource_link, label=name] (no silent loss)", () => {
     onSessionUpdate!(userResourceLinkChunk("report.pdf", "file:///home/user/report.pdf", "msg-3"))
 
     expect(session.bubbles).toHaveLength(1)
     const bubble = session.bubbles[0] as UserBubble
     expect(bubble.kind).toBe("user")
-    // placeholder non-empty: no silent loss
-    expect(bubble.segments.length).toBeGreaterThan(0)
-    expect(bubble.segments[0]!.text.length).toBeGreaterThan(0)
+    // §11.3א: i18n in component — VM stores structural marker, not display string
+    expect(bubble.contentPlaceholders).toHaveLength(1)
+    expect(bubble.contentPlaceholders![0]!.kind).toBe("resource_link")
+    // label = name field (raw data, no i18n key)
+    expect(bubble.contentPlaceholders![0]!.label).toBe("report.pdf")
+    // segments should be empty (no text appended to VM)
+    expect(bubble.segments).toHaveLength(0)
   })
 
-  it("audio chunk → UserBubble with a non-empty placeholder segment (no silent loss)", () => {
+  it("audio chunk → UserBubble with contentPlaceholders[kind=audio] (no silent loss)", () => {
     onSessionUpdate!(userAudioChunk("msg-4"))
 
     expect(session.bubbles).toHaveLength(1)
     const bubble = session.bubbles[0] as UserBubble
     expect(bubble.kind).toBe("user")
-    expect(bubble.segments.length).toBeGreaterThan(0)
-    expect(bubble.segments[0]!.text.length).toBeGreaterThan(0)
+    // §11.3א: i18n in component — VM stores structural marker only
+    expect(bubble.contentPlaceholders).toHaveLength(1)
+    expect(bubble.contentPlaceholders![0]!.kind).toBe("audio")
+    expect(bubble.segments).toHaveLength(0)
   })
 
   it("regression: text-only user_message_chunk still creates segment (no attachment)", () => {

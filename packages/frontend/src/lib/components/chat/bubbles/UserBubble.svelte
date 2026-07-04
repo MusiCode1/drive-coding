@@ -23,6 +23,7 @@ import PlayIcon from "@lucide/svelte/icons/play"
 import SquareIcon from "@lucide/svelte/icons/square"
 import CopyIcon from "@lucide/svelte/icons/copy"
 import CheckIcon from "@lucide/svelte/icons/check"
+import PaperclipIcon from "@lucide/svelte/icons/paperclip"
 
 let { bubble }: { bubble: UserBubble } = $props()
 const t = getI18n().t
@@ -62,6 +63,27 @@ async function handleCopy() {
             class="max-h-40 max-w-[12rem] rounded-xl object-contain border"
             style="border-color:var(--border)"
           />
+        {/each}
+      </div>
+    {/if}
+    <!-- §11.3א: placeholder chips לתוכן לא-טקסטואלי מ-replay (resource_link / audio / resource) -->
+    {#if bubble.contentPlaceholders && bubble.contentPlaceholders.length > 0}
+      <div class="flex flex-wrap gap-1.5 mb-1">
+        {#each bubble.contentPlaceholders as ph, i (i)}
+          {#if ph.kind === "resource_link"}
+            <span
+              class="content-chip"
+              title={t("chat.content.attachedFile")}
+              aria-label={t("chat.content.attachedFile")}
+            >
+              <PaperclipIcon size={12} strokeWidth={2} />
+              {ph.label}
+            </span>
+          {:else}
+            <span class="content-chip" title={t("chat.content.unsupported")} aria-label={t("chat.content.unsupported")}>
+              {t("chat.content.unsupported")}
+            </span>
+          {/if}
         {/each}
       </div>
     {/if}
@@ -171,4 +193,21 @@ async function handleCopy() {
     padding: 0;
   }
   .action-btn:hover { opacity: 1; }
+
+  /* §11.3א: chip לתוכן לא-טקסטואלי מ-replay */
+  .content-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--fg-dim);
+    max-width: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 </style>
