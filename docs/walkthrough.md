@@ -1,3 +1,21 @@
+## 2026-07-04 — slice-reattach-state-sync — Commit 2 (Phase A): FE supportsImageInput דרך NormalizedCapabilities (manual)
+
+**מה בוצע (approach: manual):**
+
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+  - `get supportsImageInput()`: שונה לקרוא `#capabilities?.image` כ-primary source (NormalizedCapabilities מ-`_drive/capabilities`, שורד warm reattach). fallback: raw `#client.capabilities.promptCapabilities.image` (cold path כשאין `#capabilities`).
+  - עדכון הערת-ראש `IMAGE_INPUT_ENABLED` לתאר את ה-dual-source החדש.
+
+**בדיקות (approach: manual):**
+- FE typecheck: 0 errors, 0 warnings
+- lint:i18n: נקי
+- FE tests: 418/419 (1 כישלון pre-existing formatting.test.ts)
+
+**חריגות:**
+- אין
+
+---
+
 ## 2026-07-04 — slice-reattach-state-sync — Commit 1 (Phase A): NormalizedCapabilities.image + tap init-frame (TDD)
 
 **מה בוצע (approach: TDD):**

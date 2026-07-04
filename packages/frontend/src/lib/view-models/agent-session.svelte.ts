@@ -52,16 +52,15 @@ import type { Settings } from "$lib/view-models/settings.svelte"
 
 // ─── image-attach kill-switch ─── (slice-image-paste Commit 2)
 // Commit 4b הפך ל-true — שליחה מולטימודלית פעילה.
-// supportsImageInput קורא raw #client.capabilities.promptCapabilities.image
-// (§10 הכרעה א — raw, לא NormalizedCapabilities).
+// supportsImageInput קורא #capabilities?.image (NormalizedCapabilities מ-_drive/capabilities)
+// כ-primary source — שורד warm reattach. fallback ל-raw cold כשאין NormalizedCapabilities.
+// ר' slice-reattach-state-sync Commit 2 (§4 Commit 2 ב-brief).
 const IMAGE_INPUT_ENABLED = true
 
 // ─── slice warm-reattach-skip-init ───
 // warm reattach אין לו תגובת initialize לשאוב raw capabilities ממנה.
-// raw capabilities משמש רק supportsImageInput → known-limitation (image-paste):
-// אחרי warm reattach אין קלט-תמונות עד connect קר. יתוקן בנרמול caps —
-// ר' roadmap Track A "ניקוי/ארגון packages/provider" (normalize.ts raw↔normalized).
-// NormalizedCapabilities מגיע מ-_drive/capabilities (BE) — לא מושפע.
+// NormalizedCapabilities (מ-_drive/capabilities, BE) שורד reattach — מכסה image גם ב-warm.
+// raw capabilities נשאר ל-cold path (כש-#capabilities עדיין null).
 const ATTACHED_CAPS_FALLBACK = {} as AcpClient["capabilities"]
 
 // ─── slice FE-normalization: ייבוא ─── (additive)
@@ -150,10 +149,18 @@ export class AgentSession {
   /**
    * האם הסשן הנוכחי תומך בקלט תמונה.
    * IMAGE_INPUT_ENABLED=false → תמיד false (פיגום רדום).
-   * Commit 4 הופך ל-true ובודק promptCapabilities.image מהספק.
+   *
+   * ─── slice-reattach-state-sync Commit 2 ───
+   * Primary source: #capabilities?.image (NormalizedCapabilities מ-_drive/capabilities, שורד warm reattach).
+   * Fallback: raw #client.capabilities.promptCapabilities.image (cold path — כש-#capabilities עדיין null).
+   * ה-BE שולח _drive/capabilities בכל attach (כולל warm reattach) → image זמין מיד.
    */
   get supportsImageInput(): boolean {
-    return IMAGE_INPUT_ENABLED && this.#client?.capabilities?.promptCapabilities?.image === true
+    if (!IMAGE_INPUT_ENABLED) return false
+    // primary: NormalizedCapabilities מ-_drive/capabilities (שורד warm reattach)
+    if (this.#capabilities !== null) return this.#capabilities.image
+    // fallback: raw cold path (לפני קבלת _drive/capabilities)
+    return this.#client?.capabilities?.promptCapabilities?.image === true
   }
 
   // ─── slice FE-normalization: capabilities + gating ─── (additive)
