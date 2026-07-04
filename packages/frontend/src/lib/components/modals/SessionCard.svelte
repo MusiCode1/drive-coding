@@ -73,7 +73,7 @@ async function handleCopy(e: MouseEvent) {
     </div>
   </button>
   <button
-    class="absolute top-2 inline-end-2 p-1.5 rounded-lg opacity-70 hover:opacity-100"
+    class="absolute end-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg opacity-70 hover:opacity-100"
     aria-label={copied ? t("bubble.copied") : t("session.copyId")}
     title={copied ? t("bubble.copied") : t("session.copyId")}
     onclick={handleCopy}
