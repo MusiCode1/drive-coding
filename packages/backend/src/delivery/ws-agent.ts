@@ -73,19 +73,29 @@ export function createAgentWsHandler(deps: {
     deps.connectionRegistry.markAttached(agentId)
     childLog.info({ pid: conn.pid }, "WS connect → pipe attached")
 
-    // ── capability delivery (CUT-3b-iii-2): שלח _drive/capabilities ל-FE ────────
+    // ── capability delivery (CUT-3b-iii-2 + reattach-state-sync Commit 3): שלח _drive/capabilities ל-FE ────────
     // conn.capabilities נגיש מיד אחרי connect (static per-provider).
     // שולחים כ-JSON-RPC notification (extNotification) אחרי markAttached.
     // ה-FE יקרא ל-_drive/capabilities listener (FE-normalization slice).
     // נשלח באופן synchronous (לפני onLine subscription) — FE מקבל caps לפני אירועים.
+    //
+    // reattach-state-sync: הרחב params לכלול גם busy (turn.isBusy()) — שורד detach.
+    // FE ישתמש ב-busy לזרוע turnState מיד ב-attach (מוצג "רץ" אם BA רץ באמצע turn).
+    // §9 Q1: busy על אותו _drive/capabilities (פחות ערוצים; caps+runtime יחד ב-attach).
     try {
+      // getRuntimeInfo returns busy from conn.turn.isBusy() — survives detach (always fresh).
+      const runtimeInfo = deps.connectionRegistry.getRuntimeInfo(agentId)
+      const capsParams = {
+        ...conn.capabilities,
+        busy: runtimeInfo?.busy ?? false,
+      }
       const capsFrame = JSON.stringify({
         jsonrpc: "2.0",
         method: "_drive/capabilities",
-        params: conn.capabilities,
+        params: capsParams,
       })
       feWs.send(`${capsFrame}\n`)
-      childLog.debug({ capabilities: conn.capabilities }, "_drive/capabilities sent to FE")
+      childLog.debug({ capabilities: capsParams }, "_drive/capabilities sent to FE")
     } catch {
       /* feWs may have closed between connect and here — non-fatal */
     }

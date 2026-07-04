@@ -240,6 +240,11 @@ export class AgentSession {
   // ─── slice FE-normalization: capabilities ─── (additive)
   /** NormalizedCapabilities שהתקבלו מ-_drive/capabilities ext notification. null = טרם התקבל. */
   #capabilities: NormalizedCapabilities | null = null
+  // ─── slice-reattach-state-sync Commit 3: busy סמכותי מה-BE (turn.isBusy) ───
+  /** busy שהתקבל ב-_drive/capabilities על attach. מיושם אחרי replay-end (שורה ~603)
+   *  כדי לגבור על ה-idle-reset של ה-replay. ה-debounce (1.5ש') ב-turn-tracker של ה-BE
+   *  מבטיח שזה מדויק ברגע ה-attach; frames חיים/שקט מנקים אחריו. */
+  #attachBusy = false
   // ─── slice ws-reconnect-fix-nbug2: ref ל-transport החי (NBug2 root fix) ───
   /** ref ל-transport הפעיל — נשמר בכל יצירת transport, מנוקה עם #client. */
   #transport: WsAcpTransport | null = null
@@ -600,7 +605,13 @@ export class AgentSession {
           this.#captureSessionConfig(loadResult)
         } finally {
           this.isLoadingHistory = false
-          this.#setTurnState("idle") // replay מסתיים — reset turnState (replay אינו תור). מתאם ל-loadSession/switchSession; בלעדיו אינדיקטור "המודל פועל" נתקע אחרי warm-reconnect (ה-turn-tracker observe על frames משוחזרים)
+          // replay מסתיים — reset turnState (replay אינו תור; בלעדיו האינדיקטור נתקע
+          // כי ה-turn-tracker observe על frames משוחזרים). מתאם ל-loadSession/switchSession.
+          // ─── slice-reattach-state-sync Commit 3 ───
+          // אם ה-BE דיווח busy=true ב-attach (_drive/capabilities, turn.isBusy סמכותי עם
+          // debounce 1.5ש') → ה-agent באמת פעיל מעבר לרעש-ה-replay → הצג "responding".
+          // אחרת idle. frames חיים אחרי-כאן / שקט (debounce) יעדכנו מכאן.
+          this.#setTurnState(this.#attachBusy ? "responding" : "idle")
         }
         // replace:true — אותו דגם כמו switchSession:327 (fix-409 מוזג ב-8f59ec3)
         await notifySessionAttached(agentId, this.#sessionId!, { replace: true }).catch(() => {})
@@ -1338,6 +1349,7 @@ export class AgentSession {
     this.#client = null
     this.#ext = null // slice FE-normalization: נקה facade
     this.#capabilities = null // slice FE-normalization: נקה capabilities (חיבור חדש = caps חדשים)
+    this.#attachBusy = false // slice-reattach-state-sync: נקה busy סמכותי (חיבור חדש)
     this.#transport = null // slice ws-reconnect-fix-nbug2: נקה ref
     this.#sessionId = null
     this.agentId = null
@@ -1481,10 +1493,29 @@ export class AgentSession {
    * מקבל ext notifications מה-SDK (default-routed).
    * `_drive/capabilities` → מאחסן ב-#capabilities (reactive via getter).
    * לא ב-#onSessionUpdate — capabilities מגיע כ-extNotification, לא כ-session/update.
+   *
+   * ─── slice-reattach-state-sync Commit 3 ───
+   * `_drive/capabilities.busy` (boolean) → זרע turnState מיד ב-attach.
+   * true → הצג "responding" (אין מידע מדויק, אבל ברור שיש turn פעיל).
+   * false → השאר "idle" (ברירת מחדל).
+   * guard: רק כשסטטוס "connected" — ה-notification מגיע לפני connected, אבל
+   * setTurnState יוגדר מיד (reactive). לא דורסים idle אחרי שהסשן כבר פתוח.
    */
   #onExtNotification = (method: string, params: Record<string, unknown>): void => {
     if (method === "_drive/capabilities") {
-      this.#capabilities = params as unknown as NormalizedCapabilities
+      // ─── capabilities ───
+      // NormalizedCapabilities + busy field — שלח ב-attach.
+      // חלץ busy לפני שמירת caps (busy אינו חלק מ-NormalizedCapabilities).
+      const { busy, ...caps } = params as { busy?: boolean } & Record<string, unknown>
+      this.#capabilities = caps as unknown as NormalizedCapabilities
+
+      // ─── turn seeding (Commit 3) ───
+      // אחסן את busy הסמכותי (turn.isBusy מה-BE, עם debounce 1.5ש' → מדויק ב-attach).
+      // לא זורעים turnState כאן: ב-warm reattach ה-replay-end (attach() ~שורה 603/finally)
+      // עושה #setTurnState("idle") בכוח (נטרול רעש-replay) → seed מיידי היה נמחק.
+      // לכן שומרים ל-#attachBusy, וה-attach() מיישם אותו *אחרי* ה-idle-reset.
+      // frames חיים אחרי ה-replay (או שקט → debounce) יעדכנו מכאן והלאה.
+      this.#attachBusy = busy === true
     }
   }
 
