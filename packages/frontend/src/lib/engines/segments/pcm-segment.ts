@@ -181,6 +181,21 @@ export class PcmSegment implements PlayableSegment {
     }
   }
 
+  /**
+   * עוצר את ה-sources הפעילים **בלי למחוק את ה-buffers** (retain-and-replay).
+   * play() הבא ייצור sources חדשים מ-#buffers. streamDone נשמר → isComplete נשאר תקף.
+   */
+  stop(): void {
+    for (const source of this.#activeSources) {
+      try {
+        source.stop()
+      } catch {
+        /* התעלם */
+      }
+    }
+    this.#activeSources = []
+  }
+
   resume(): void {
     if (this.#ctx.state === "suspended") {
       void this.#ctx.resume()

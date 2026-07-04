@@ -19,6 +19,12 @@ export interface PlayableSegment {
   /** ממשיך ניגון אחרי pause. */
   resume(): void
   /**
+   * עוצר את הניגון הפעיל **בלי למחוק את ה-buffer** (retain-and-replay).
+   * בשימוש ע"י PlayableSink כשמתחילים segment אחר — מונע חפיפת-קול בניווט.
+   * שונה מ-dispose() (שמוחק) ומ-pause() (ששומר מיקום ל-resume).
+   */
+  stop(): void
+  /**
    * האם ה-buffer שלם וניתן לניגון-מחדש.
    * mp3: state ∈ {ready, playing, ended}
    * pcm: streamDone === true

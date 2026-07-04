@@ -20,6 +20,9 @@ import type { PlayableSegment } from "./segments/playable-segment"
 export class PlayableSink implements AudioSink {
   #segments = new Map<string, PlayableSegment>()
   #ctx: AudioContext | null = null
+  // nav-retain fix: ה-segment שמתנגן כרגע. play() של segment אחר עוצר אותו קודם —
+  // בלי זה, ניווט (prev/next) מתחיל segment חדש בעוד הקודם עדיין משמיע → קקפוניה.
+  #current: PlayableSegment | null = null
 
   #getCtx(): AudioContext {
     if (!this.#ctx) {
@@ -49,6 +52,11 @@ export class PlayableSink implements AudioSink {
   async play(segmentId: string): Promise<void> {
     const seg = this.#segments.get(segmentId)
     if (!seg) throw new Error(`PlayableSink: no segment ${segmentId}`)
+    // nav-retain fix: עצור את ה-segment הקודם (שומר buffer ל-replay) לפני שמתחילים חדש.
+    if (this.#current && this.#current !== seg) {
+      this.#current.stop()
+    }
+    this.#current = seg
     return seg.play()
   }
 
@@ -79,6 +87,7 @@ export class PlayableSink implements AudioSink {
   cancel(segmentId: string): void {
     const seg = this.#segments.get(segmentId)
     if (!seg) return
+    if (this.#current === seg) this.#current = null
     seg.dispose()
     this.#segments.delete(segmentId)
   }
@@ -89,5 +98,6 @@ export class PlayableSink implements AudioSink {
       seg.dispose()
     }
     this.#segments.clear()
+    this.#current = null
   }
 }

@@ -148,6 +148,11 @@ export class Mp3Segment implements PlayableSegment {
     this.#audio.pause()
   }
 
+  /** עוצר קול, שומר MediaSource/buffer ל-replay (currentTime יאופס ב-play הבא). */
+  stop(): void {
+    this.#audio.pause()
+  }
+
   resume(): void {
     void this.#audio.play()
   }
