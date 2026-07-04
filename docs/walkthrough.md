@@ -1,3 +1,27 @@
+## 2026-07-04 — ui-session-polish — post-preview (2 commits נוספים)
+
+**מה בוצע:**
+
+Commit 5 (fix3-tweak — מיקום כפתור-ההעתקה):
+- `packages/frontend/src/lib/components/modals/SessionCard.svelte` שורה 76 —
+  `top-2 inline-end-2` → `end-2 top-1/2 -translate-y-1/2`.
+  `inline-end-2` לא היה class תקין ב-Tailwind; `end-2` = `inset-inline-end` הנכון.
+  מרכוז אנכי בקו עם הנקודה עם `top-1/2 -translate-y-1/2`.
+
+Commit 6 (fix5-extend — LoadingModal גם ב-connect/reconnect):
+- `packages/frontend/src/routes/+page.svelte` — הוסף import `LoadingModal` +
+  `<LoadingModal open={session.status === "connecting"} />` ליד `FolderPickerDialog`/`ContentViewerDialog`.
+  מסך-connect אינו עטוף ב-AppShell ולכן mount נוסף נדרש. חיווי inline נשאר.
+
+**בדיקות:**
+- typecheck: 0 שגיאות (שני הקומיטים)
+- i18n lint: נקי
+- build FE: ירוק (41.89s, adapter-static, LoadingModal.js נראה ב-output)
+
+**חריגות:** אין.
+
+---
+
 ## 2026-07-04 — ui-session-polish — Slice הושלם (5 commits)
 
 **מה בוצע:**
