@@ -1,7 +1,7 @@
 # Slice cli-name-in-chat — הצגת שם ה-CLI הפעיל במסך הצ'אט — תוכנית
 
 > **תאריך**: 2026-07-03 · **תיקון r1**: 2026-07-03 (אביגיל USABLE-AFTER-FIX → הוכרע מנגנון-ריאקטיביות)
-> **סטטוס**: ✅ מאושר (אביגיל r2 READY — 2026-07-03) · ready ל-dispatch
+> **סטטוס**: ✅ בוצע + runtime-gate GO (כלב עצמאי 7/7, 0 findings; regression reconnect נשלל; + כלב-אליעזר 7/7) · branch `slice/cli-name-in-chat` (`5c5a162`+`a01bbe1`) · **ממתין ל-preview + אישור-merge**
 > **Complexity**: 3/10 (verifier: light)
 > **תלות (depends_on)**: `[]` — עצמאי. נוגע ב-`agent-session.svelte.ts` (getter) + `SessionOptionsPanel.svelte` + קטלוגי i18n.
 > **Base**: `dev` HEAD `c5deb8f`.

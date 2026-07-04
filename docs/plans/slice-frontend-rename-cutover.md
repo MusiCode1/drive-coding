@@ -1,7 +1,7 @@
 # Slice frontend-rename-cutover — `@drive-coding/frontend-v2` → `@drive-coding/frontend` — תוכנית
 
 > **תאריך**: 2026-06-25 · **אימות-מחדש**: 2026-07-03 (dev נסחף — ר' הערת-אימות למטה)
-> **סטטוס**: ✅ בוצע + runtime-gate GO (כלב עצמאי 11/11, 0 findings; + כלב-אליעזר 10/10) · branch `slice-frontend-rename-cutover` (`13bbe9e`+`b60d34e`) · **ממתין לאישור-merge מהמשתמשת**
+> **סטטוס**: ✅ **מוזג ל-dev** (2026-07-04, merge `35d8e95` `--no-ff`, release **v0.10.2** `9c9b371`, push origin; אביגיל r4 READY + כלב GO 11/11; קונפליקט walkthrough.md נפתר [שני entries]; worktree+branch נוקו)
 > **Complexity**: 3/10 (verifier: light)
 > **תלות (depends_on)**: `[]` — שינוי שם-חבילה + הפניות. אין תלות בסלייס אחר.
 > **Base**: `dev` HEAD `c5deb8f` (גזור מ-`dev` עדכני).

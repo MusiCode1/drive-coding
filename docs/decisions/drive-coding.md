@@ -1,5 +1,23 @@
 # Decisions — drive-coding
 
+## 2026-07-04 — ui-session-polish: באטש של 5 תיקוני-ממשק קטנים
+
+> חמש בקשות-משתמשת שנתפסו בשימוש, מקובצות ל-slice אחד קליל (‏Complexity 5/10, ‏calev light): (1) פס-גלילה-רפאים בפרומפט; (2) כותרת-סשן מלאה (‏מעבר-שורה); (3) כפתור העתקת-מזהה-סשן; (4) אזהרת-יציאה שלא תקפוץ כשאין תור פעיל; (5) `LoadingModal` עם ספינר לשימוש-חוזר, מחווט לטעינת-סשן.
+
+**רציונל / למה באטש**: כל החמישה **FE + `core/i18n` בלבד** — אין BE/contract/streaming, רגרסיה נמוכה (‏הכל additive), וזול לאמת יחד. תלות: אין (‏base=dev). שורשים שאותרו לפני כתיבת ה-brief (‏3 סוכני-חקירה): פס-הגלילה = **שארית ב-autogrow שכבר מוזג** (‏`overflow-y:auto` קבוע + אי-התאמת `line-height:1.25rem` מול `1.5em` בחישוב ה-`max-height`); fix4 = ה-guard משתמש רק ב-`bypassActive` בלי לבדוק `turnState` → מזהיר גם ב-idle; fix5 = **אין** רכיב-מודאל גנרי ולא ספינר — נבנה חדש מעל שלד bits-ui של `FolderPickerDialog`, `open` נגזר מ-`session.status === "connecting"` (‏אין state חדש).
+
+**החלטות-מפתח**:
+- ‏**fix3 (‏copy-id)** — כרטיס-הסשן הוא `<button>` שלם → כפתור-copy מקונן = HTML לא-תקין. נבחר **sibling ממוקם absolutely** ב-`<div class="relative">` (‏במקום לשנות את הכרטיס ל-`div role=button`), עם `e.stopPropagation()` כדי לא להפעיל `onSelect`.
+- ‏**fix5 (‏mount)** — mount יחיד ב-`AppShell` (‏מכסה switch/load/new בתוך-האפליקציה). מסך-connect **לא** נעטף — כבר יש לו חיווי inline (`connect.submitting`). הרכיב נבנה prop-driven (`open`/`label`) לשימוש-חוזר עתידי, אבל מחווט רק שימוש אחד (‏טעינת-סשן).
+
+**ממצאי אביגיל — ‏3 סבבים, ‏והלקח המתודולוגי**:
+- ‏**r1 (‏שם `ui-polish-batch`)**: READY, 2 findings 🟢. איתרתי גם התנגשות-שם עם slice ישן (‏06/18) → **שיניתי שם ל-`ui-session-polish`**.
+- ‏**r2 (‏אחרי rename + קיפול ממצאים)**: **USABLE-AFTER-FIX** — תפסה ש**החיזוק שאני קיפלתי מ-r1 היה שגוי**: r1 טענה ש-`@keyframes spin` "‏רק ב-MicLarge", ואני הפכתי את זה להוראה "‏הוסף ל-app.css". r2 בדקה לעומק → `@keyframes spin` **כבר קיים ב-`app.css:296`** (‏+ Tailwind v4 auto-inject). ביטלתי את ההוראה השגויה. + תיקון line-ref ל-`beforeunload` (39-43 לא 39-44).
+- ‏**r3**: READY, 0 findings.
+- ‏**הלקח**: אל תסמן plan-verified מכותרת-ה-result; re-run **אחרי עריכה** שווה את הזמן — הוא תפס טעות-עובדתית שאני הזרקתי בתום-לב מקיפול headline של סבב קודם. (‏מחזק את ה-anti-pattern "‏להחליט על finding מכותרת בלבד".)
+
+**רעיונות שנדחו**: (‏א) כותרת wrap בלתי-מוגבל → `line-clamp-2` (‏עקבי עם `header-title-responsive`, רשימה מסודרת); (‏ב) שינוי כרטיס-סשן ל-`div role=button` → sibling-absolute פחות-פולשני; (‏ג) extract של `<Modal>` shell גנרי + refactor הדיאלוגים הקיימים → future (‏fix5 רק **מוסיף** רכיב); (‏ד) חיווט LoadingModal גם למסך-connect → מיותר (‏כבר יש inline feedback).
+
 ## 2026-07-04 — proxy-tap-memory: תיקון נפילת-OOM בנתיב Gemini TTS proxy
 
 > נולד מ**נפילה חיה**: ה-BE (pid 29680) קרס בזמן proxy ל-Gemini TTS. אבחנה עם המשתמשת הפרידה שני אירועים שהתלכדו בלוג — (א) **הנפילה** עצמה, (ב) "סוכן שסגר שוב ושוב את המארח" (ירד מהשולחן — רק ההסבר למה הריצה נעצרה, לא הבאג).
@@ -17,6 +35,8 @@
 **ממצאי אביגיל** (r1 **READY**, 3 findings — הדוח לא נשמר פיזית, תמצית בלבד): 🟡 (1) ה-helper המשותף `parseGeminiChunkUsage` חייב להחזיר `GeminiUsage` המיוצא, לא `UsageMetadata` הפנימי-הלא-מיוצא → שולב ב-brief; 🟡 (2) סדר שני ה-tee בקובץ הפוך מסדר ה-commits (cache ~181 לפני Gemini ~234) → הובהר לפי שם-בלוק; 🟢 (3) `flush` לא-נקרא-ב-abort הוא **נסיגת-התנהגות מכוונת** (הקוד הנוכחי כן רושם usage חלקי ב-abort) — מקובל (fail-safe), מתועד ב-§6.
 
 **רעיונות שנדחו**: (א) `drainWithCap` על ה-tap — לא נוגע בשורש (ה-repro); (ב) ring-buffer של N-KB-אחרונים — מנחש איפה הסוף, נחות מ-parse; (ג) dep `eventsource-parser` — הליבה (`extractGeminiUsage`) כבר קיימת ובדוקה, חסר רק line-framing (~10 שורות), ו-single-binary מעניש deps; (ד) disk-cache-LRU ובידוד-תהליכי-לסוכנים (claude in-process = blast radius) — הוצאו ל-scope נפרד לבקשת המשתמשת ("הדיסק פחות דחוף; מה שאפשר, מקס' נשפר בעתיד").
+
+**‏memoryGuard (Commit 3) — החלטת-interim מודעת** (נדון 2026-07-04, בעקבות שאלת-המשתמשת "האם רץ בתוך התהליך? תמיד?"): ה-`memoryGuard` הוא **in-process** (`setInterval` 5s על `process.memoryUsage().rss`, `.unref()`), ולכן **הגנה חלקית בלבד** — תופס רק **טיפוס-הדרגתי** של RSS (מה שהפיל אותנו, לכן רלוונטי לסוג-הבאג), אך **נופל בשני התרחישים הקריטיים**: OOM-native (מת לפני שה-poll רץ) ו-event-loop-hang (ה-poll יושב באותו loop תקוע). **הוכרע להשאירו כרשת-משנית** (עלות זעירה, מתועד בקוד ככזה) ולא לממש עכשיו את הפתרון-המלא — לבקשת המשתמשת ("לא רוצה את זה עכשיו, רק תעד"). הפתרון האמיתי ל-blast-radius (**המארח + כל הסוכנים ה-in-process**) הוא **child-process supervisor** (parent שמנטר את ה-BE; שורד crash+hang; רואה RSS דרך OS/pid). ניתוח מלא (worker-thread שורד hang אך מת ב-crash · מול child-process ששורד את שניהם) **תועד להרחבת `be-hang-supervisor` ב-roadmap**; ה-`memoryGuard` הזה ייספג לתוכו כשיֵצא. שני ה-observations של calev (503 חוסם גם cache-hits · flush-לא-רץ-ב-abort) שייכים ל-Commit 3 ויתאפסו אם/כשהוא ייספג.
 
 ## 2026-07-03 — batch chrome/identity: app-title-build-env + cli-name-in-chat + rename re-verify
 
