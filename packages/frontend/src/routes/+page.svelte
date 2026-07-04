@@ -12,6 +12,7 @@ import LanguageSelect from "$lib/components/settings/LanguageSelect.svelte"
 import Select from "$lib/components/ui/Select.svelte"
 import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
 import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
+import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
 import FolderIcon from "@lucide/svelte/icons/folder"
 import { getI18n, getSession, getSettings, getModals, getActiveAgents } from "$lib/context"
 
@@ -180,6 +181,8 @@ async function handleRecentSelect(project: RecentProject) {
 <FolderPickerDialog startPath={cwd} />
 <!-- content-viewer (slice content-viewer — כמו FolderPickerDialog: מסך connect אינו עטוף ב-AppShell) -->
 <ContentViewerDialog />
+<!-- ui-session-polish fix5-extend: מודאל-טעינה גם ב-connect ראשוני + reconnect + רינדור היסטוריה -->
+<LoadingModal open={session.status === "connecting" || session.isLoadingHistory} />
 
 <style>
   /* גובה מלא + גלילה פנימית: ה-body הוא overflow:hidden (app.css), ודף החיבור

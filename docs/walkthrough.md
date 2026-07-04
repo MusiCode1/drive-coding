@@ -87,6 +87,86 @@
 
 **חריגות:** שגיאת typecheck pre-existing ב-connect-in-process.test.ts:111 קיימת ב-base ולא שינינו.
 
+## 2026-07-04 — ui-session-polish — Commit 7 (fix5-view-loaded)
+
+**מה בוצע:**
+
+Commit 7 (fix5-view-loaded — ספינר נשאר עד סיום רינדור ההיסטוריה):
+- `packages/frontend/src/lib/components/layout/AppShell.svelte` שורה 353 —
+  `open={session.status === "connecting"}` → `open={session.status === "connecting" || session.isLoadingHistory}`.
+- `packages/frontend/src/routes/+page.svelte` שורה 185 — אותו שינוי.
+  `session.isLoadingHistory` הוא `$state(false)` ציבורי ב-`agent-session.svelte.ts:129`
+  — מוגדר true לפני replay ו-false ב-finally אחרי עיבוד הבועות.
+
+**בדיקות:**
+- typecheck: 0 שגיאות
+- i18n lint: נקי (אין מחרוזות עברית חדשות בקוד)
+- build FE: ירוק (47.84s, adapter-static)
+
+**חריגות:** אין.
+
+---
+
+## 2026-07-04 — ui-session-polish — post-preview (2 commits נוספים)
+
+**מה בוצע:**
+
+Commit 5 (fix3-tweak — מיקום כפתור-ההעתקה):
+- `packages/frontend/src/lib/components/modals/SessionCard.svelte` שורה 76 —
+  `top-2 inline-end-2` → `end-2 top-1/2 -translate-y-1/2`.
+  `inline-end-2` לא היה class תקין ב-Tailwind; `end-2` = `inset-inline-end` הנכון.
+  מרכוז אנכי בקו עם הנקודה עם `top-1/2 -translate-y-1/2`.
+
+Commit 6 (fix5-extend — LoadingModal גם ב-connect/reconnect):
+- `packages/frontend/src/routes/+page.svelte` — הוסף import `LoadingModal` +
+  `<LoadingModal open={session.status === "connecting"} />` ליד `FolderPickerDialog`/`ContentViewerDialog`.
+  מסך-connect אינו עטוף ב-AppShell ולכן mount נוסף נדרש. חיווי inline נשאר.
+
+**בדיקות:**
+- typecheck: 0 שגיאות (שני הקומיטים)
+- i18n lint: נקי
+- build FE: ירוק (41.89s, adapter-static, LoadingModal.js נראה ב-output)
+
+**חריגות:** אין.
+
+---
+
+## 2026-07-04 — ui-session-polish — Slice הושלם (5 commits)
+
+**מה בוצע:**
+
+Commit 0 (fix1 — TypeArea scrollbar):
+- `packages/frontend/src/lib/components/chat/TypeArea.svelte` — `$effect` מחשב `clamped`
+  לפי `getComputedStyle(el).maxHeight`; `overflowY="hidden"` כשלא חתוך, `"auto"` כשחתוך.
+  הסיר `overflow-y:auto` הקבוע מה-style של ה-textarea.
+
+Commit 1 (fix2 — כותרת-סשן מלאה):
+- `packages/frontend/src/lib/components/modals/SessionCard.svelte` — `truncate`→`line-clamp-2`
+  בכותרת. שורת-המשנה נשארת `truncate`.
+
+Commit 2 (fix3 — כפתור העתקת-מזהה-סשן):
+- `SessionCard.svelte` — שינוי מבנה: `<div class="relative">` עוטף; כפתור-copy אח absolutely-מוקם.
+  `handleCopy` קורא `e.stopPropagation()` → לחיצה לא בוחרת סשן.
+- `packages/core/src/i18n/keys.ts` + `he.ts` + `en.ts` — `session.copyId` + `modal.loading.session`
+  בבלוק נפרד בסוף.
+
+Commit 3 (fix4 — guard לאזהרת-יציאה):
+- `SessionOptionsPanel.svelte` — `onLeaveRunning` מוסיף `session.turnState === "idle"` כתנאי-bypass.
+- `routes/chat/+page.svelte` — `onBeforeUnload` מוסיף `session.turnState !== "idle"` לתנאי.
+
+Commit 4 (fix5 — LoadingModal):
+- חדש: `packages/frontend/src/lib/components/modals/LoadingModal.svelte` — bits-ui Dialog,
+  `Loader2Icon animate-spin`, prop-driven `{open, label?}`, לא סגיר ידנית.
+- `AppShell.svelte` — mount `<LoadingModal open={session.status === "connecting"} />`.
+
+**בדיקות:**
+- typecheck: 0 שגיאות (כל commit)
+- i18n lint: נקי (bash scripts/lint-no-hebrew-in-code.sh)
+- build FE: ירוק (33.63s, adapter-static)
+- manual: ידני בדפדפן (יאומת ע"י כלב calev light)
+
+**חריגות:** אין — כל 5 fixes בוצעו לפי ה-brief.
+
 ## 2026-07-04 — proxy-tap-memory — תיקון ליקויים (harness + walkthrough)
 
 **מה בוצע:**

@@ -30,13 +30,17 @@ const MAX_ROWS = 6
 let attachments = $state<ImageAttachment[]>([])
 let fileInputEl = $state<HTMLInputElement>()
 
-// גדל עם התוכן עד תקרה; ה-effect רץ גם בהקלדה וגם בכיווץ פרוגרמטי (promptText="")
+// גדל עם התוכן עד תקרה; scrollbar מופיע רק כשהתוכן חותך את ה-max-height
 $effect(() => {
   promptText // dependency — re-run on every value change
   const el = taEl
   if (!el) return
   el.style.height = "auto"            // קודם מאפסים כדי שה-scrollHeight ישקף את התוכן הנוכחי
-  el.style.height = `${el.scrollHeight}px`
+  const maxH = parseFloat(getComputedStyle(el).maxHeight)   // px מה-max-height ב-CSS
+  const needed = el.scrollHeight
+  const clamped = Number.isFinite(maxH) && needed > maxH
+  el.style.height = clamped ? `${maxH}px` : `${needed}px`
+  el.style.overflowY = clamped ? "auto" : "hidden"          // scrollbar רק כשבאמת חתוך
 })
 
 const isDisabled = $derived(
@@ -201,7 +205,7 @@ function openFilePicker(): void {
       rows={1}
       disabled={isDisabled}
       class="flex-1 rounded-xl px-3 py-2.5 text-sm resize-none outline-none border"
-      style="background:var(--bg-card); border-color:var(--border); color:var(--fg); max-height:calc({MAX_ROWS} * 1.5em + 1.25rem); overflow-y:auto"
+      style="background:var(--bg-card); border-color:var(--border); color:var(--fg); max-height:calc({MAX_ROWS} * 1.5em + 1.25rem)"
       onpaste={handlePaste}
       onkeydown={(e) => {
         // Cmd/Ctrl+Enter תמיד שולח (power-user, ללא תלות בהגדרה)
