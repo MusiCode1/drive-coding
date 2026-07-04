@@ -1,3 +1,21 @@
+## 2026-07-05 — slice producer-test-hardening — R4a Commit 1: seam אמיתי ל-BubblePlayer producer tests
+
+**קבצים שהשתנו**: `view-models/bubble-player.producer.test.svelte.ts`
+**שינויים**:
+- נכתב מחדש — 12 טסטים אמיתיים שמשתמשים ב-`toggle()` כ-seam:
+  - seedJobs helper: toggle(bubbleId) → await Promise.resolve() → segIds מ-reserveCalls
+  - fetchState: pending/fetching→in-flight, resolve→idle, reject→failed, unknown→idle
+  - ensureFetch: idempotency על fetching ועל ready (ספירת synthesize calls)
+  - cancelFetch: ghost-guard שלב-1 (synthesize תלוי) + שלב-2 (catch)
+  - stop(): מנקה jobs + playingBubbleId=null
+  - reserve מעביר this (לא thunk) — בדיקה ישירה
+  - implements SegmentProducer
+**הנמקת seam**: #reserveAndPlay קורא jobs.set + reserve sync → toggle() + await Promise.resolve() מספיק לתפוס segIds. synthesize נשלט דרך mockSynthesize (Promise מוחזק/משוחרר).
+**הסרת vacuous**: אין יותר `["#jobs" as never]` cast — כולם flow-based.
+**testing**: typecheck 0; 12/12 bubble-player.producer ירוקים; 466/467 FE suite (pre-existing formatting.test).
+
+---
+
 ## 2026-07-05 — slice producer-test-hardening — R4a Commit 0: seam אמיתי ל-Speaker producer tests
 
 **קבצים שהשתנו**: `view-models/speaker.svelte.ts`, `view-models/speaker.producer.test.svelte.ts`

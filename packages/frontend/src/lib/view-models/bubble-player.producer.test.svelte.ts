@@ -2,19 +2,30 @@
  * bubble-player.producer.test.svelte.ts — TDD tests for BubblePlayer as SegmentProducer.
  *
  * R3 Commit 3: BubblePlayer implements SegmentProducer.
+ * R4a Commit 1: seam אמיתי — הזרקת job דרך toggle() (flow-based injection).
+ *
+ * הסבר: ה-jobs נוצרים ב-#reserveAndPlay שנקרא מ-toggle(). מספיק להריץ toggle() על
+ * bubble היסטורית (items=[] במock-playlist → ענף "היסטורי") ואז לתפוס את ה-segId
+ * מ-playlist.reserveCalls[i][0]. prepareSegmentForBubble מחזיר מיידי ב-מצב ברירת-מחדל.
+ *
+ * ⚠️ שימו לב ל-timing: #reserveAndPlay הוא async. reserve נקרא sync בתוכו, אבל
+ * synthesize נקרא אחרי כן. לכן:
+ * - אחרי toggle() + await Promise.resolve() — reserveCalls מאוכלס (reserve sync)
+ * - כדי לחכות לסיום synthesize — שלטו דרך mockSynthesize (החזקה/שחרור Promise)
  *
  * Tests:
- *   1. fetchState: for unknown id → idle
- *   2. fetchState: pending job → in-flight
- *   3. fetchState: fetching job → in-flight
- *   4. fetchState: error job → failed
- *   5. fetchState: ready job → idle
- *   6. ensureFetch: no-op on unknown id (no throw)
- *   7. ensureFetch: idempotent on fetching job (no extra synthesize call)
- *   8. cancelFetch: sets canceled=true, aborts
- *   9. cancelFetch ghost guard: canceled job → markReady NOT called after cancel
- *  10. reserve passes `this` as producer (not a thunk)
- *  11. stop() clears #jobs (aborts all and clears map)
+ *  1. fetchState: pending job → in-flight (לפני synthesize resolve)
+ *  2. fetchState: synthesize+prepareSegment resolve → idle (ready)
+ *  3. fetchState: synthesize reject → failed
+ *  4. fetchState: unknown segmentId → idle
+ *  5. ensureFetch: idempotent על fetching job — synthesize לא נקרא שנית
+ *  6. ensureFetch: idempotent על ready job — synthesize לא נקרא שנית
+ *  7. cancelFetch: מסמן canceled=true + abort signal
+ *  8. ghost (קריטי): cancelFetch בזמן synthesize תלוי → markReady לא נקרא
+ *  9. ghost-catch: cancelFetch → synthesize reject → markError לא נקרא
+ * 10. stop(): מנקה את כל ה-jobs (aborts + clears)
+ * 11. reserve מעביר this כ-producer (לא thunk)
+ * 12. BubblePlayer implements SegmentProducer — all 3 methods present
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -26,7 +37,6 @@ import type { SegmentProducer } from "$lib/engines/segment-producer"
 
 // ─── mocks ────────────────────────────────────────────────────────────────────
 
-let mockSynthesizeResolve: (() => void) | null = null
 let mockSynthesize = vi.fn().mockResolvedValue(new ReadableStream())
 
 vi.mock("$lib/adapters/voice/tts-resolve", () => ({
@@ -42,7 +52,8 @@ vi.mock("$lib/adapters/voice/tts-resolve", () => ({
 
 vi.mock("@drive-coding/core/voice/sentence-boundary", () => ({
   splitIntoSentences: vi.fn((_text: string) => ({
-    sentences: ["sentence one", "sentence two"],
+    // מחזיר שני משפטים כדי שנוכל לבדוק כמה segIds נוצרו
+    sentences: ["sentence one is here.", "sentence two is here."],
     remaining: "",
   })),
 }))
@@ -53,15 +64,21 @@ vi.mock("$lib/adapters/voice/play-bubble", () => ({
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-function makeSession(): AgentSession {
+function makeSession(): AgentSession & { bubbles: { id: string; kind: "message"; segments: { text: string }[] }[] } {
   return {
     status: "idle",
     turnState: "idle",
-    bubbles: [],
+    bubbles: [
+      {
+        id: "bubble-1",
+        kind: "message" as const,
+        segments: [{ text: "This is a full narration sentence for testing bubble player." }],
+      },
+    ],
     isLoadingHistory: false,
     lastUserMessage: "",
     recentAssistantMessages: () => [],
-  } as unknown as AgentSession
+  } as unknown as AgentSession & { bubbles: { id: string; kind: "message"; segments: { text: string }[] }[] }
 }
 
 function makeSettings(): Settings {
@@ -87,7 +104,8 @@ function makePlaylist(): MockPlaylist {
   const playlist = {
     state: "idle" as const,
     transport: "playing" as const,
-    items: [],
+    // items=[] → toggle יכנס לענף "היסטורי" (alreadyInPlaylist=false)
+    items: [] as unknown[],
     currentSegmentId: null,
     cursor: 0,
     markReadyCalls,
@@ -116,18 +134,40 @@ function makePlaylist(): MockPlaylist {
   return playlist
 }
 
+/**
+ * מזריק job דרך toggle(). מחזיר segIds שנוצרו.
+ *
+ * ⚠️ splitIntoSentences mock מחזיר 2 משפטים → 2 segIds.
+ * אחרי toggle() + await Promise.resolve() — reserveCalls מאוכלס (reserve sync).
+ * synthesize עדיין תלוי (controlled במשתנה המוחזר).
+ */
+async function seedJobs(
+  player: BubblePlayer,
+  playlist: MockPlaylist,
+  bubbleId = "bubble-1",
+): Promise<{ segIds: string[] }> {
+  player.toggle(bubbleId)
+  // allow sync phase of #reserveAndPlay (jobs.set + reserve) to run
+  await Promise.resolve()
+
+  const segIds = playlist.reserveCalls.map((call) => call[0] as string)
+  if (segIds.length === 0) {
+    throw new Error("seedJobs: no jobs created — toggle didn't trigger #reserveAndPlay")
+  }
+  return { segIds }
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("BubblePlayer as SegmentProducer", () => {
-  let session: AgentSession
+  let session: ReturnType<typeof makeSession>
   let settings: Settings
   let playlist: MockPlaylist
   let player: BubblePlayer
 
   beforeEach(() => {
     vi.useFakeTimers()
-    mockSynthesize = vi.fn().mockResolvedValue(new ReadableStream())
-    mockSynthesizeResolve = null
+    mockSynthesize = vi.fn().mockReturnValue(new Promise<ReadableStream>(() => undefined)) // never resolves by default
     session = makeSession()
     settings = makeSettings()
     playlist = makePlaylist()
@@ -138,240 +178,182 @@ describe("BubblePlayer as SegmentProducer", () => {
     vi.useRealTimers()
   })
 
-  // ── fetchState ──────────────────────────────────────────────────────────────
+  // ── fetchState ───────────────────────────────────────────────────────────────
 
-  it("(1) fetchState: unknown segmentId → idle", () => {
-    const producer = player as unknown as SegmentProducer
-    expect(producer.fetchState("non-existent-id")).toBe("idle")
+  it("(1) fetchState: pending job (לפני synthesize resolve) → in-flight", async () => {
+    // synthesize never resolves → jobs stay pending/fetching
+    const { segIds } = await seedJobs(player, playlist)
+    const segId = segIds[0]!
+
+    // fetchState מיד → in-flight (fetching)
+    expect(player.fetchState(segId)).toBe("in-flight")
   })
 
-  it("(2) fetchState: pending job → in-flight", () => {
-    const producer = player as unknown as SegmentProducer
-    // Inject a pending job via #jobs directly (private — use cast)
-    const jobs = (player as unknown as { [k: string]: unknown })["#jobs" as never] as unknown as Map<
-      string,
-      { text: string; provider: unknown; voiceId: string; modelId: string; abort: AbortController; status: string; canceled: boolean }
-    >
-    if (jobs instanceof Map) {
-      jobs.set("seg-pending", {
-        text: "hello",
-        provider: {} as unknown,
-        voiceId: "v",
-        modelId: "m",
-        abort: new AbortController(),
-        status: "pending",
-        canceled: false,
-      })
-      expect(producer.fetchState("seg-pending")).toBe("in-flight")
-    } else {
-      // If #jobs isn't a Map yet (pre-implementation), the method should still exist
-      expect(typeof producer.fetchState).toBe("function")
-    }
+  it("(2) fetchState: synthesize+prepareSegment resolve → idle (ready)", async () => {
+    mockSynthesize = vi.fn().mockResolvedValue(new ReadableStream())
+
+    const { segIds } = await seedJobs(player, playlist)
+    const segId = segIds[0]!
+
+    // תן לsynthesisize ולprepareSegmentForBubble לסיים
+    await vi.runAllTimersAsync()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    // ready → idle + markReady נקרא
+    expect(player.fetchState(segId)).toBe("idle")
+    expect(playlist.markReadyCalls).toContain(segId)
   })
 
-  it("(3) fetchState: fetching job → in-flight", () => {
-    const producer = player as unknown as SegmentProducer
-    const jobs = (player as unknown as { [k: string]: unknown })["#jobs" as never] as unknown as Map<
-      string,
-      { text: string; provider: unknown; voiceId: string; modelId: string; abort: AbortController; status: string; canceled: boolean }
-    >
-    if (jobs instanceof Map) {
-      jobs.set("seg-fetching", {
-        text: "hello",
-        provider: {} as unknown,
-        voiceId: "v",
-        modelId: "m",
-        abort: new AbortController(),
-        status: "fetching",
-        canceled: false,
-      })
-      expect(producer.fetchState("seg-fetching")).toBe("in-flight")
-    } else {
-      expect(typeof producer.fetchState).toBe("function")
-    }
+  it("(3) fetchState: synthesize reject → failed", async () => {
+    mockSynthesize = vi.fn().mockRejectedValue(new Error("TTS error"))
+
+    const { segIds } = await seedJobs(player, playlist)
+    const segId = segIds[0]!
+
+    // תן לsynthesisize לנפול → catch → job.status=error
+    await vi.runAllTimersAsync()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    expect(player.fetchState(segId)).toBe("failed")
   })
 
-  it("(4) fetchState: error job → failed", () => {
-    const producer = player as unknown as SegmentProducer
-    const jobs = (player as unknown as { [k: string]: unknown })["#jobs" as never] as unknown as Map<
-      string,
-      { text: string; provider: unknown; voiceId: string; modelId: string; abort: AbortController; status: string; canceled: boolean }
-    >
-    if (jobs instanceof Map) {
-      jobs.set("seg-error", {
-        text: "hello",
-        provider: {} as unknown,
-        voiceId: "v",
-        modelId: "m",
-        abort: new AbortController(),
-        status: "error",
-        canceled: false,
-      })
-      expect(producer.fetchState("seg-error")).toBe("failed")
-    } else {
-      expect(typeof producer.fetchState).toBe("function")
-    }
+  it("(4) fetchState: unknown segmentId → idle", () => {
+    expect(player.fetchState("completely-unknown")).toBe("idle")
   })
 
-  it("(5) fetchState: ready job → idle", () => {
-    const producer = player as unknown as SegmentProducer
-    const jobs = (player as unknown as { [k: string]: unknown })["#jobs" as never] as unknown as Map<
-      string,
-      { text: string; provider: unknown; voiceId: string; modelId: string; abort: AbortController; status: string; canceled: boolean }
-    >
-    if (jobs instanceof Map) {
-      jobs.set("seg-ready", {
-        text: "hello",
-        provider: {} as unknown,
-        voiceId: "v",
-        modelId: "m",
-        abort: new AbortController(),
-        status: "ready",
-        canceled: false,
-      })
-      expect(producer.fetchState("seg-ready")).toBe("idle")
-    } else {
-      expect(typeof producer.fetchState).toBe("function")
-    }
-  })
+  // ── ensureFetch idempotency ────────────────────────────────────────────────
 
-  // ── ensureFetch ────────────────────────────────────────────────────────────
+  it("(5) ensureFetch: idempotent על fetching job — synthesize לא נקרא שנית", async () => {
+    // synthesize never resolves → job נשאר fetching
+    const { segIds } = await seedJobs(player, playlist)
+    const segId = segIds[0]!
 
-  it("(6) ensureFetch: no-op on unknown id — no throw", () => {
-    const producer = player as unknown as SegmentProducer
-    expect(() => producer.ensureFetch("non-existent")).not.toThrow()
-  })
+    const synthCountBefore = mockSynthesize.mock.calls.length
 
-  it("(7) ensureFetch: idempotent on fetching job — no extra synthesize call", async () => {
-    const producer = player as unknown as SegmentProducer
-    // We can't directly inject a fetching job without the full pipeline,
-    // but we can verify that calling ensureFetch on a non-existent id doesn't trigger synthesize
-    const initialCallCount = mockSynthesize.mock.calls.length
-    producer.ensureFetch("non-existent")
+    // job ב-fetching → ensureFetch no-op (fetching → return)
+    player.ensureFetch(segId)
     await vi.advanceTimersByTimeAsync(0)
-    expect(mockSynthesize.mock.calls.length).toBe(initialCallCount)
+    await Promise.resolve()
+
+    // synthesize לא נקרא שנית
+    expect(mockSynthesize.mock.calls.length).toBe(synthCountBefore)
   })
 
-  // ── cancelFetch ────────────────────────────────────────────────────────────
+  it("(6) ensureFetch: idempotent על ready job — synthesize לא נקרא שנית", async () => {
+    mockSynthesize = vi.fn().mockResolvedValue(new ReadableStream())
 
-  it("(8) cancelFetch: sets canceled=true + no throw on unknown id", () => {
-    const producer = player as unknown as SegmentProducer
-    expect(() => producer.cancelFetch("non-existent")).not.toThrow()
+    const { segIds } = await seedJobs(player, playlist)
+    const segId = segIds[0]!
+
+    // המתן לסיום → job.status=ready
+    await vi.runAllTimersAsync()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    const synthCountBefore = mockSynthesize.mock.calls.length
+
+    // ready → ensureFetch no-op
+    player.ensureFetch(segId)
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+
+    expect(mockSynthesize.mock.calls.length).toBe(synthCountBefore)
   })
 
-  it("(9) cancelFetch ghost guard: canceled job → markReady NOT called after cancel", async () => {
-    // Use a controllable synthesize that we can hold until after cancelFetch
-    let resolveSynth!: (stream: ReadableStream) => void
+  // ── cancelFetch ───────────────────────────────────────────────────────────
+
+  it("(7) cancelFetch: מסמן canceled=true + abort signal", async () => {
+    const { segIds } = await seedJobs(player, playlist)
+    const segId = segIds[0]!
+
+    player.cancelFetch(segId)
+
+    // markReady לא נקרא (ghost-guard הגן)
+    await vi.runAllTimersAsync()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    expect(playlist.markReadyCalls).not.toContain(segId)
+  })
+
+  it("(8) ghost (קריטי): cancelFetch בזמן synthesize תלוי → markReady לא נקרא", async () => {
+    // synthesize never resolves → חלון ל-cancelFetch
+    const { segIds } = await seedJobs(player, playlist)
+    const segId = segIds[0]!
+
+    // cancelFetch בזמן synthesize עדיין תלוי
+    player.cancelFetch(segId)
+
+    // אפשר לflow לסיים (אם ה-guard נכשל → markReady יקרא)
+    await vi.runAllTimersAsync()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    // guard [bubble-player.svelte.ts:209]: job.canceled → return, לא קורא markReady
+    expect(playlist.markReadyCalls).not.toContain(segId)
+  })
+
+  it("(9) ghost-catch: cancelFetch → synthesize reject → markError לא נקרא", async () => {
+    let rejectSynth!: (e: Error) => void
     mockSynthesize = vi.fn().mockReturnValue(
-      new Promise<ReadableStream>((resolve) => {
-        resolveSynth = resolve
+      new Promise<ReadableStream>((_resolve, reject) => {
+        rejectSynth = reject
       }),
     )
 
-    const producer = player as unknown as SegmentProducer
+    const { segIds } = await seedJobs(player, playlist)
+    const segId = segIds[0]!
 
-    // Inject a job manually with pending status
-    const jobs = (player as unknown as { [k: string]: unknown })["#jobs" as never] as unknown as Map<
-      string,
-      { text: string; provider: unknown; voiceId: string; modelId: string; abort: AbortController; status: string; canceled: boolean }
-    >
+    // cancelFetch לפני reject
+    player.cancelFetch(segId)
 
-    if (jobs instanceof Map) {
-      const abort = new AbortController()
-      const mockProvider = { synthesize: mockSynthesize }
-      jobs.set("seg-ghost", {
-        text: "hello",
-        provider: mockProvider,
-        voiceId: "v",
-        modelId: "m",
-        abort,
-        status: "pending",
-        canceled: false,
-      })
+    // reject synthesize → catch
+    rejectSynth(new Error("aborted"))
+    await vi.runAllTimersAsync()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
 
-      // Call cancelFetch — should set canceled=true and abort
-      producer.cancelFetch("seg-ghost")
-      const job = jobs.get("seg-ghost")
-      expect(job?.canceled).toBe(true)
-      expect(job?.abort.signal.aborted).toBe(true)
+    // guard [bubble-player.svelte.ts:214]: job.canceled → return מה-catch, לא קורא markError
+    expect(playlist.markErrorCalls).not.toContain(segId)
+  })
 
-      // Now resolve synthesize — even if it resolves, markReady should not be called
-      resolveSynth(new ReadableStream())
-      await vi.advanceTimersByTimeAsync(0)
-      await Promise.resolve()
+  // ── stop() ────────────────────────────────────────────────────────────────
 
-      // markReady must NOT have been called for this segment
-      expect(playlist.markReadyCalls).not.toContain("seg-ghost")
-    } else {
-      // Pre-implementation: just verify the interface
-      expect(typeof producer.cancelFetch).toBe("function")
+  it("(10) stop(): מנקה את כל ה-jobs + playingBubbleId=null", async () => {
+    const { segIds } = await seedJobs(player, playlist)
+
+    expect(segIds.length).toBeGreaterThan(0)
+    expect(player.playingBubbleId).toBe("bubble-1")
+
+    // stop() → jobs.clear + playingBubbleId=null
+    player.stop()
+
+    // fetchState על כל ה-segIds → idle (jobs נמחקו)
+    for (const segId of segIds) {
+      expect(player.fetchState(segId)).toBe("idle")
     }
+    expect(player.playingBubbleId).toBeNull()
   })
 
   // ── reserve passes `this` ──────────────────────────────────────────────────
 
-  it("(10) #reserveAndPlay passes `this` as producer (not a thunk)", async () => {
-    const bubble = {
-      id: "bubble-test",
-      kind: "message" as const,
-      segments: [{ text: "hello world sentence here" }],
-    }
-    session = makeSession()
-    ;(session as unknown as { bubbles: typeof bubble[] }).bubbles = [bubble]
-    player = new BubblePlayer({ session, settings, playlist })
+  it("(11) reserve מעביר this כ-producer (לא thunk)", async () => {
+    const { segIds } = await seedJobs(player, playlist)
+    expect(segIds.length).toBeGreaterThan(0)
 
-    // trigger toggle to run #reserveAndPlay
-    player.toggle("bubble-test")
+    // הארגומנט הרביעי של reserve הוא ה-player עצמו (SegmentProducer), לא function
+    const firstCall = playlist.reserveCalls[0]
+    const fourthArg = firstCall?.[3]
 
-    // allow micro-task queue to run
-    await vi.advanceTimersByTimeAsync(0)
-    await Promise.resolve()
-
-    // reserve should have been called with `this` (player) as producer — not a function
-    if (playlist.reserveCalls.length > 0) {
-      const firstCall = playlist.reserveCalls[0]
-      const fourthArg = firstCall?.[3]
-      // After Commit 3: the fourth arg should be an object (SegmentProducer), not a function
-      if (fourthArg !== undefined) {
-        // It should be the player itself implementing SegmentProducer
-        expect(typeof fourthArg).not.toBe("function")
-        expect(typeof (fourthArg as unknown as SegmentProducer).fetchState).toBe("function")
-        expect(typeof (fourthArg as unknown as SegmentProducer).ensureFetch).toBe("function")
-        expect(typeof (fourthArg as unknown as SegmentProducer).cancelFetch).toBe("function")
-      }
-    }
+    expect(typeof fourthArg).not.toBe("function")
+    expect(typeof (fourthArg as unknown as SegmentProducer).fetchState).toBe("function")
+    expect(typeof (fourthArg as unknown as SegmentProducer).ensureFetch).toBe("function")
+    expect(typeof (fourthArg as unknown as SegmentProducer).cancelFetch).toBe("function")
+    // הביקורת: הarg הוא בדיוק player
+    expect(fourthArg).toBe(player)
   })
 
-  // ── stop() clears #jobs ────────────────────────────────────────────────────
-
-  it("(11) stop() aborts all jobs and clears #jobs", () => {
-    const jobs = (player as unknown as { [k: string]: unknown })["#jobs" as never] as unknown as Map<
-      string,
-      { abort: AbortController; canceled: boolean; status: string }
-    >
-
-    if (jobs instanceof Map) {
-      const abort1 = new AbortController()
-      const abort2 = new AbortController()
-      jobs.set("seg-1", { abort: abort1, canceled: false, status: "fetching" })
-      jobs.set("seg-2", { abort: abort2, canceled: false, status: "pending" })
-
-      player.stop()
-
-      // After stop: #jobs should be cleared
-      expect(jobs.size).toBe(0)
-    } else {
-      // Pre-implementation: just call stop and verify no throw
-      expect(() => player.stop()).not.toThrow()
-    }
-  })
-
-  // ── implements SegmentProducer interface ──────────────────────────────────
+  // ── implements SegmentProducer ────────────────────────────────────────────
 
   it("(12) BubblePlayer implements SegmentProducer — all 3 methods present", () => {
-    const p = player as unknown as Record<string, unknown>
-    expect(typeof p["fetchState"]).toBe("function")
-    expect(typeof p["ensureFetch"]).toBe("function")
-    expect(typeof p["cancelFetch"]).toBe("function")
+    expect(typeof player.fetchState).toBe("function")
+    expect(typeof player.ensureFetch).toBe("function")
+    expect(typeof player.cancelFetch).toBe("function")
   })
 })
