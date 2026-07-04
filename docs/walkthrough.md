@@ -1,3 +1,17 @@
+## 2026-07-05 — slice producer-test-hardening — R4a Commit 2: H2 wiring tests (cancelFetch + ensureFetch)
+
+**קבצים שהשתנו**: `engines/audio-playlist.nav.test.ts`
+**שינויים**:
+- Test 13 (retain-13): navigate(next) → resetToPending → cancelFetch(s1) נקרא עם segId הנכון
+  - mockProducer.fetchState → "in-flight", s1 reserved+in-flight → next() → resetToPending → cancelFetch
+  - מוטציה 4: הסרת cancelFetch(id) → הטסט נופל (cancelFetch.mock.calls.length === 0)
+- Test 14 (retain-14): fetchState=idle → request-fetch → ensureFetch(s1) נקרא
+  - mockProducer.fetchState → "idle", item reserved+idle → decidePlaylistAction → request-fetch
+  - מוטציה 5: הסרת ensureFetch(id) → הטסט נופל (ensureFetch.mock.calls.length === 0)
+**testing**: typecheck 0; 14/14 nav-tests ירוקים; 468/469 FE suite (pre-existing formatting.test).
+
+---
+
 ## 2026-07-05 — slice producer-test-hardening — R4a Commit 1: seam אמיתי ל-BubblePlayer producer tests
 
 **קבצים שהשתנו**: `view-models/bubble-player.producer.test.svelte.ts`

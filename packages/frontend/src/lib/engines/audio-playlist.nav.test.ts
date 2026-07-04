@@ -583,6 +583,90 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     await vi.advanceTimersByTimeAsync(0)
   })
 
+  // ── Test 13: H2 — cancelFetch wiring: navigate → resetToPending → cancelFetch נקרא ──
+  //
+  // מוטציה 4 (calev R3): ניטרול this.#producers.get(id)?.cancelFetch(id) ב-#navigate [272]
+  // → item נשאר ב-loading (fetch ממשיך) במקום להיקטע → מוטציה שורדת.
+  // הטסט מאמת שcancelFetch נקרא עם ה-segId הנכון בעת ה-skip-cancel.
+
+  it("(retain-13) navigate (next) → resetToPending → cancelFetch נקרא על ה-segId", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    const mockProducer = {
+      ensureFetch: vi.fn(),
+      cancelFetch: vi.fn(),
+      fetchState: vi.fn(() => "in-flight" as const), // s1 עדיין מ-fetch
+    }
+
+    // s0: ready (יתנגן מיד). s1: reserved+in-flight (fetch חי). s2: ready.
+    playlist.reserve("s0", key(0), "bubble-A")
+    playlist.reserve("s1", key(1), "bubble-B", mockProducer) // in-flight → resetToPending בעת skip
+    playlist.reserve("s2", key(2), "bubble-C")
+
+    playlist.markReady("s0")
+    playlist.markReady("s2")
+
+    // אפשר לloop להתחיל — s0 מתנגן
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sink.playOrder).toContain("s0")
+
+    sink.resolvePlay("s0")
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    // loop מחכה על s1 (in-flight = wait-fetch)
+
+    // next() → navigate → s1 ב-resetToPending → cancelFetch(s1) צריך להיקרא
+    playlist.next()
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // ✅ מוטציה 4: הסרת cancelFetch(id) → cancelFetch.mock.calls.length === 0 → נופל
+    expect(mockProducer.cancelFetch).toHaveBeenCalledWith("s1")
+
+    sink.resolvePlay("s2")
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  // ── Test 14: H2 — ensureFetch wiring: fetchState=idle → request-fetch → ensureFetch נקרא ──
+  //
+  // מוטציה 5 (calev R3): ניטרול producer.ensureFetch(item.segmentId) ב-request-fetch [474]
+  // → item נשאר ב-reserved לנצח (אין fetch חדש) → מוטציה שורדת.
+  // הטסט מאמת שensureFetch נקרא כשfetchState="idle" (re-fetch על item שנזרק/נכשל).
+
+  it("(retain-14) request-fetch: fetchState=idle (failed→reset) → ensureFetch נקרא", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 30000 })
+
+    // מדמה producer שstate שלו "idle" = צריך fetch חדש (כאילו item נזרק/reset).
+    const mockProducer = {
+      ensureFetch: vi.fn(),
+      cancelFetch: vi.fn(),
+      fetchState: vi.fn(() => "idle" as const), // idle → request-fetch
+    }
+
+    // s0: ready (יתנגן מיד). s1: reserved עם producer שמחזיר fetchState=idle.
+    playlist.reserve("s0", key(0), "bubble-A")
+    playlist.reserve("s1", key(1), "bubble-B", mockProducer) // idle → loop ידרוש request-fetch
+
+    playlist.markReady("s0")
+
+    // אפשר לloop להתחיל — s0 מתנגן
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sink.playOrder).toContain("s0")
+
+    sink.resolvePlay("s0")
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    await Promise.resolve()
+    // loop הגיע ל-s1: state=reserved + fetchState=idle → decide→request-fetch → ensureFetch
+
+    // ✅ מוטציה 5: הסרת ensureFetch(id) → ensureFetch.mock.calls.length === 0 → נופל
+    expect(mockProducer.ensureFetch).toHaveBeenCalledWith("s1")
+  })
+
   // ── Test 12: refetch thunk נקרא על reserved-ללא-fetch ─────────────────────
 
   it("(retain-12) ensureFetch לא נקרא על reserved רגיל — רק על item שנזרק (needsRefetch→cancelFetch)", async () => {
