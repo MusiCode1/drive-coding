@@ -56,9 +56,9 @@ const t = getI18n().t
     overflow-wrap: normal;     /* מבטל את ה-anywhere של inline-code בתוך pre */
     white-space: pre;          /* יורש, מפורש להבהרה */
   }
-  /* ── req #5: שחזור list-style ש-Tailwind preflight איפס ── */
-  .md-content :global(ul) { padding-inline-start: 1.4em; margin: 0.3em 0; list-style: disc outside; }
-  .md-content :global(ol) { padding-inline-start: 1.4em; margin: 0.3em 0; list-style: decimal outside; }
+  /* ── req #5 + rtl-bubble-fixes: סמן inside — זורם בתוך ה-content-box, לא נחתך ע"י overflow-hidden ── */
+  .md-content :global(ul) { padding-inline-start: 1.2em; margin: 0.3em 0; list-style: disc inside; }
+  .md-content :global(ol) { padding-inline-start: 1.2em; margin: 0.3em 0; list-style: decimal inside; }
   .md-content :global(li) { margin: 0.15em 0; }
   .md-content :global(h1) { font-size: 1.2em; font-weight: 700; margin: 0.4em 0 0.15em; }
   .md-content :global(h2) { font-size: 1.1em; font-weight: 700; margin: 0.4em 0 0.15em; }
