@@ -1,5 +1,54 @@
 # Decisions — voice-acp
 
+## 2026-07-05 — producer-ownership (R3): בעלות-fetch עוברת ליצרן + סגירת ghost
+
+> ‏brief: `docs/plans/slice-producer-ownership.md` (אביגיל READY r2) · base: `slice/playlist-pure-decision` (R1) @ `375897a` · שני בשרשרת R1→R4
+
+### רציונל
+‏R1 השאיר את ה-`fetch` ב-`#factsFor` כ-adapter זמני (מיפוי `item.state`+`needsRefetch`). R3 מוציא את
+**בעלות-ה-fetch** ליצרן דרך interface `SegmentProducer` (`ensureFetch`/`cancelFetch`/`fetchState`),
+מועבר **פר-`reserve`** (כי שני יצרנים — Speaker+BubblePlayer — חולקים playlist). ה-thunk וה-`needsRefetch`
+נמחקו; `#factsFor.fetch` ← `producer.fetchState()`; ביטול-fetch עובר ליצרן (סוגר **ghost**: fetchJob ישן
+לא קורא markReady/markError אחרי cancel, דרך דגל `TtsJob.canceled` + guard ב-2 נקודות ב-`#fetchJob`).
+‏item.state נשאר (playing/done/skipped) — מחיקתו היא R4.
+
+### סטטוס ביצוע (2026-07-05): 🟡 בוצע — calev-heavy **PARTIAL** (הקוד נכון-runtime, רשת-הטסטים חורית)
+‏5 commits (`18c0a84..0afc73f`): 1 interface+wiring(union) · 2 Speaker+ghost · 3 BubblePlayer · 4 מחיקת-thunk+#factsFor+Test-12 · 5 F1. typecheck 0; ‏frontend **466/467** (הכשל היחיד `formatting` pre-existing).
+**התאוששות מ-session-limit**: אליעזר הראשון עצר בין סיום Commit 2 לחתימתו → מרדכי בדק שהעבודה גמורה-ועוברת (typecheck+11/11+33/33) וחתם; אליעזר שני השלים 3-5.
+
+> **⚠️ שני calev סותרים — המחמיר מנצח.** אליעזר הפעיל calev משלו → **GO** (מקל, findings minor).
+> מרדכי הפעיל calev משלו → **PARTIAL** (מחמיר). ה-PARTIAL תפס מה שה-GO פספס: **mutation-suite
+> 5/7 שרדו** (כל ה-ghost-guards + guard-אידמפוטנטיות + 2 קריאות-הליבה), + **M1 באג-קוד אמיתי**.
+> **לקח: executor-שמריץ-verifier נוטה להקל** — ה-runtime-gate הרשמי הוא ה-PARTIAL. (ר' `reports/producer-ownership-calev.md`.)
+
+### חוב שאותר (calev PARTIAL: H1+H2 HIGH · M1 MED · L1 LOW) → **נסגר ב-R4 עם mutation re-run כתנאי-שער**
+‏**H1 [HIGH]** — טסטי `speaker.producer`+`bubble-player.producer` **vacuous**: `#jobs` הוא hash-private,
+`(vm as…)["#jobs" as never]` מחזיר `undefined` → כל ה-assertions כלואות ב-`if (jobs instanceof Map)` שלעולם false.
+ghost-guard/fetchState/idempotency/stop-clear — **0 כיסוי אמיתי** (מוטציות 1-3 שרדו).
+‏**H2 [HIGH]** — ה-wiring שכל R3 נשען עליו: `cancelFetch` ב-`#navigate` + `ensureFetch` ב-request-fetch —
+**0 טסט חיובי** (מוטציות 4-5 שרדו). Test-12 מאמת רק את השלילה (ensureFetch לא-נקרא).
+‏**M1 [MED · באג-קוד]** — `BubblePlayer.#reserveAndPlay` שלב-3 מעביר ל-synthesize את `abortCtrl` **המשותף**,
+לא `job.abort` → `cancelFetch` מרים flag אך **לא קוטע** את הבקשה הראשונית (בזבוז-רשת בניווט תוך-בועה-חיה).
+הקורקטיות של ghost נשמרת (guard עוצר markReady). ‏**L1 [LOW]** — F1 flake תחת עומס-worker (fake timers).
+
+**הכרעה — R4 מתחיל בסגירת החוב** (calev: "בטוח לבנות R4 מבחינת runtime, אסור למזג עד H1+H2 נסגר"):
+- **R4 Commit 0** — test-seam אמיתי ל-producer-tests (H1) + **טסט-wiring חיובי** (H2: reserve+mockProducer,
+  navigate→cancelFetch נקרא; skip+explicitVisit→ensureFetch נקרא) + חיזוק F1 דטרמיניזם (L1).
+- **R4 Commit 1** — תיקון M1 (חווט `job.abort` לבקשה הראשונית) + מחיקת `refetchSegment` alias (§9 Q4).
+- **תנאי-שער**: **mutation re-run לפני סוף R4** — 7 המוטציות של calev חייבות להיתפס. בלי זה "ghost סגור" הוא שקר.
+- ה-test-seam על ה-producers ישרוד את R4 (R4 נוגע ב-Playlist, לא ב-producers).
+
+### שינויי-כיוון
+- **producer פר-reserve, לא ב-ctor** — כי Speaker+BubblePlayer חולקים playlist אחד; `#producers Map<id,producer>`.
+- **union זמני ב-Commit 1** (`SegmentProducer | (() => void)`) — שמר commit-ים ירוקים בלי big-bang; הוסר ב-Commit 4.
+- **ghost-guard 2 נקודות (לא 3)** — ה-`finally` ב-`#fetchJob` אינו נקודת-ghost (אביגיל תיקנה את ה-framing).
+
+### חריגות-תהליך (לתיעוד)
+- **אליעזר הפעיל calev בעצמו** (חריגה — executor לא מריץ verifier) → GO מקל שפספס H2+M1. **מחזק את הכלל**: verifier של המתכנן, לא של ה-executor.
+- **סשן-כפול נמשך** — אביגיל/calev רצו פעמיים. הפעם הכפילות **חשפה פער-חומרה** (GO מול PARTIAL) — לא "אותה מסקנה". ערך-אמיתי לאימות-כפול, אבל session יחיד ממשיך.
+
+---
+
 ## 2026-07-04 — playlist-pure-decision (R1): חילוץ החלטת-הפלייליסט ל-core טהור + ערוץ-השכמה יחיד
 
 > ‏brief: `docs/plans/slice-playlist-pure-decision.md` (אביגיל READY r3) · base: `slice/playback-nav-retain` @ `b159906`
