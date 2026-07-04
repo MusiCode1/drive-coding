@@ -3,9 +3,9 @@
  *
  * מאמת (A4 — קיים):
  *   1. next() — cursor מתקדם; הסגמנט הבא מתנגן
- *   2. prev() — cursor חוזר; re-fetch (mock sink — markReady מחדש)
- *   3. jumpTo(index) — cursor קופץ לindex הנכון
- *   4. jumpToBubble(bubbleId) — cursor קופץ ל-item הראשון של הבועה
+ *   2. prev() — cursor חוזר; nav-retain: replay מיידי אם isComplete (תוקן Commit 3)
+ *   3. jumpTo(index) — cursor קופץ לindex הנכון; isComplete → replay ישיר (Commit 3)
+ *   4. jumpToBubble(bubbleId) — cursor קופץ ל-item הראשון של הבועה; replay אם complete (Commit 3)
  *   5. reserveFromText flow — item נוסף עם bubbleId, מתנגן בתורו
  *   6. BUG-1 carry: ניווט לבועה ready-שלא-נוגן-חי (not done) — re-fetch + ניגון
  *   7. cursor getter חשוף
@@ -18,7 +18,9 @@
  *  12. refetch thunk: reserved-ללא-fetch → refetch() נקרא
  *
  * mock AudioSink: play() מחזיר Promise שמתממש רק כשקוראים לו resolvePlay(segmentId).
- * isComplete() — mock: מחזיר true אחרי play הראשון (שדה preparedSegments).
+ * isComplete() — mock: מחזיר true אחרי completeSegment(id) — **לא** אחרי play.
+ * isPlayable() — same as isComplete() in mock (mp3-equivalent).
+ * stopCurrent() — vi.fn() for Commit 4 compatibility.
  * WebAudio לא נגעת — בדיקה טהורה של לוגיקת ה-playlist.
  */
 
@@ -32,11 +34,14 @@ import type { AudioSink, SegmentOpts } from "./audio-sink"
 type MockSink = AudioSink & {
   playOrder: string[]
   resolvePlay: (segmentId: string) => void
+  /** Mark a segment as fetch-complete (call after markReady — mirrors reality). */
+  completeSegment: (segmentId: string) => void
   preparedSegments: Set<string>
   cancelledSegments: string[]
-  /** nav-retain: מחקה isComplete — true אחרי שה-segment נוגן לפחות פעם אחת */
   completedSegments: Set<string>
   isComplete: (id: string) => boolean
+  isPlayable: (id: string) => boolean
+  stopCurrent: ReturnType<typeof vi.fn>
 }
 
 function makeMockSink(): MockSink {
@@ -47,7 +52,7 @@ function makeMockSink(): MockSink {
   const completedSegments = new Set<string>()
 
   const resolvePlay = (segmentId: string) => {
-    completedSegments.add(segmentId) // mark as complete when resolved
+    // resolvePlay does NOT mark as complete — completion happens at fetch-end (completeSegment)
     const r = playResolvers.get(segmentId)
     if (r !== undefined) {
       r()
@@ -55,13 +60,20 @@ function makeMockSink(): MockSink {
     }
   }
 
+  const completeSegment = (segmentId: string) => {
+    completedSegments.add(segmentId)
+  }
+
   const sink: MockSink = {
     playOrder,
     resolvePlay,
+    completeSegment,
     preparedSegments,
     cancelledSegments,
     completedSegments,
     isComplete: (id: string) => completedSegments.has(id),
+    isPlayable: (id: string) => completedSegments.has(id),
+    stopCurrent: vi.fn(),
     prepareSegment: async (
       segmentId: string,
       _stream: ReadableStream<Uint8Array>,
@@ -163,12 +175,13 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     playlist.reserve("s1", key(1), "bubble-A")
 
     playlist.markReady("s0")
+    sink.completeSegment("s0") // fetch complete → isComplete=true (ה-retain שנשמר)
     playlist.markReady("s1")
 
     await vi.advanceTimersByTimeAsync(0)
     expect(sink.playOrder).toContain("s0")
 
-    // s0 סיים — isComplete=true (completedSegments.add("s0") ב-resolvePlay)
+    // s0 סיים ניגון
     sink.resolvePlay("s0")
     await vi.advanceTimersByTimeAsync(0)
     await Promise.resolve()
@@ -310,12 +323,13 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     playlist.reserve("s1", key(1), "bubble-A")
 
     playlist.markReady("s0")
+    sink.completeSegment("s0") // fetch complete → isComplete=true (retain)
     playlist.markReady("s1")
 
     await vi.advanceTimersByTimeAsync(0)
     // s0 מנגן
     expect(sink.playOrder).toContain("s0")
-    // s0 מסיים — isComplete=true
+    // s0 מסיים ניגון
     sink.resolvePlay("s0")
     await vi.advanceTimersByTimeAsync(0)
     await Promise.resolve()
@@ -385,7 +399,9 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     playlist.reserve("s2", key(2), "bubble-A")
 
     playlist.markReady("s0")
+    sink.completeSegment("s0")
     playlist.markReady("s1")
+    sink.completeSegment("s1")
     playlist.markReady("s2")
 
     // הניגון מתחיל
@@ -433,7 +449,9 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     playlist.reserve("s2", key(2), "bubble-A")
 
     playlist.markReady("s0")
+    sink.completeSegment("s0")
     playlist.markReady("s1")
+    sink.completeSegment("s1")
     playlist.markReady("s2")
 
     await vi.advanceTimersByTimeAsync(0)
@@ -532,7 +550,9 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     playlist.reserve("s1", key(1), "bubble-A")
 
     playlist.markReady("s0")
+    sink.completeSegment("s0")
     playlist.markReady("s1")
+    sink.completeSegment("s1")
 
     await vi.advanceTimersByTimeAsync(0)
     sink.resolvePlay("s0")

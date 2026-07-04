@@ -11,6 +11,8 @@
  *   7. re-entrancy guard
  *
  * mock AudioSink: play() מחזיר Promise שמתממש רק כשקוראים לו resolvePlay(segmentId).
+ * isComplete נכלל (Commit 3); isPlayable **לא** נכלל — fallback coverage (sink בלי isPlayable).
+ * stopCurrent: vi.fn() — נכלל (Commit 3 compatibility).
  * WebAudio לא נגעת — בדיקה טהורה של לוגיקת ה-playlist.
  */
 
@@ -24,11 +26,17 @@ import type { AudioSink } from "./audio-sink"
 type MockSink = AudioSink & {
   playOrder: string[]
   resolvePlay: (segmentId: string) => void
+  /** Mark a segment as fetch-complete (isComplete=true). Call after markReady. */
+  completeSegment: (segmentId: string) => void
+  completedSegments: Set<string>
+  stopCurrent: ReturnType<typeof vi.fn>
+  // NOTE: isPlayable intentionally absent — this mock is the "fallback" coverage test
 }
 
 function makeMockSink(): MockSink {
   const playOrder: string[] = []
   const playResolvers = new Map<string, () => void>()
+  const completedSegments = new Set<string>()
 
   const resolvePlay = (segmentId: string) => {
     const r = playResolvers.get(segmentId)
@@ -38,9 +46,18 @@ function makeMockSink(): MockSink {
     }
   }
 
+  const completeSegment = (segmentId: string) => {
+    completedSegments.add(segmentId)
+  }
+
   const sink: MockSink = {
     playOrder,
     resolvePlay,
+    completeSegment,
+    completedSegments,
+    stopCurrent: vi.fn(),
+    isComplete: (id: string) => completedSegments.has(id),
+    // isPlayable intentionally omitted — fallback coverage
     prepareSegment: async () => {
       // no-op — ב-A2 prepareSegment נקרא מ-Speaker, לא מ-AudioPlaylist
     },

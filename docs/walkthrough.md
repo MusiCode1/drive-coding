@@ -16,6 +16,18 @@
 **קובץ חדש**: `bubble-player.toggle.test.svelte.ts` — 3 טסטי-רגרסיה.
 **בדיקות**: 3/3 ירוקים; typecheck 0.
 
+### Commit 3 — מockים מתוקנים: completeSegment + isComplete/isPlayable/stopCurrent (integration)
+
+**רציונל**: ה-mock הישן קרא ל-`completedSegments.add(id)` ב-`resolvePlay` — כלומר item נחשב "complete" רק אחרי ניגון, לא אחרי fetch. זה הסתיר את ה-retain-replay (isComplete=false → skip-cancel תמיד). ה-mock החדש: `completeSegment(id)` = mark כ-fetch-complete (הטסט קורא לזה אחרי `markReady`); `resolvePlay` נקי.
+
+**שינויים**:
+- `audio-playlist.nav.test.ts`: mock חדש (`completeSegment`, `isComplete`, `isPlayable`, `stopCurrent`); `resolvePlay` לא נוגע ב-completed; tests 2/6/8/9/11 מוסיפים `sink.completeSegment(id)` אחרי `markReady` על items שנדרש להם retain.
+- `audio-playlist.test.ts`: הוסף `isComplete`, `completeSegment`, `stopCurrent` ל-mock; `isPlayable` **לא** נכלל בכוונה (fallback coverage).
+
+**assertion שהשתנה**: tests 2/6/8/9/11 — כעת s0/s1 עם `completeSegment` → `isComplete=true` → retain-replay (ה-behavior הרצוי שה-mock הישן הסתיר).
+
+**בדיקות**: 22/22 ירוקים על הקוד הקיים (לפני rewrite); typecheck 0.
+
 ### Commit 2 — חוזה-סיום play + stopCurrent/isPlayable (mixed-TDD)
 
 **קבצים שעודכנו**:
