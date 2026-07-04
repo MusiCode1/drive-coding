@@ -585,34 +585,36 @@ describe("AudioPlaylist — ניווט (A4)", () => {
 
   // ── Test 12: refetch thunk נקרא על reserved-ללא-fetch ─────────────────────
 
-  it("(retain-12) refetch לא נקרא על reserved רגיל — רק על item שנזרק (needsRefetch)", async () => {
-    // תיקון סופת-fetch: item שנוצר ב-reserve() רגיל (זרם חי) חייב להמתין ל-markReady
-    // החיצוני של Speaker, ולא להפעיל refetch. refetch שמור ל-item שנזרק ב-skip-cancel.
+  it("(retain-12) ensureFetch לא נקרא על reserved רגיל — רק על item שנזרק (needsRefetch→cancelFetch)", async () => {
+    // R3 Commit 4: thunk הוחלף ב-mock-producer.
+    // הליבה: item שנוצר ב-reserve() רגיל (זרם חי) חייב להמתין ל-markReady
+    // החיצוני של Speaker, ולא לקרוא ensureFetch. ensureFetch שמור ל-item שנזרק ב-skip-cancel.
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
-    let refetchCount = 0
-    const thunk = () => {
-      refetchCount++
+    const mockProducer = {
+      ensureFetch: vi.fn(),
+      cancelFetch: vi.fn(),
+      fetchState: vi.fn(() => "in-flight" as const), // live fetch in-flight → in-flight
     }
 
-    // s0: reserved עם thunk (הזרם החי בדרך — לא נזרק). s1: ready.
-    playlist.reserve("s0", key(0), "bubble-A", thunk)
+    // s0: reserved עם producer (הזרם החי בדרך — לא נזרק). s1: ready (no producer).
+    playlist.reserve("s0", key(0), "bubble-A", mockProducer)
     playlist.reserve("s1", key(1), "bubble-A")
     playlist.markReady("s1")
 
     await vi.advanceTimersByTimeAsync(0)
     await Promise.resolve()
 
-    // ✅ הליבה: s0 reserved אך needsRefetch כבוי → refetch לא נקרא
-    expect(refetchCount).toBe(0)
+    // ✅ הליבה: s0 reserved, fetchState=in-flight → wait-fetch, לא request-fetch → ensureFetch לא נקרא
+    expect(mockProducer.ensureFetch).not.toHaveBeenCalled()
 
-    // הזרם החי מגיע (כמו Speaker.#fetchJob) → markReady חיצוני, לא refetch
+    // הזרם החי מגיע (כמו Speaker.#fetchJob) → markReady חיצוני, לא ensureFetch
     playlist.markReady("s0")
     await vi.advanceTimersByTimeAsync(0)
     await Promise.resolve()
 
-    expect(refetchCount).toBe(0) // עדיין 0 — אף פעם לא refetch על reserved רגיל
+    expect(mockProducer.ensureFetch).not.toHaveBeenCalled() // עדיין 0 — אף פעם לא ensureFetch על reserved רגיל
     expect(sink.playOrder).toContain("s0")
 
     sink.resolvePlay("s0")

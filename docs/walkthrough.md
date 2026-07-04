@@ -1,3 +1,20 @@
+## 2026-07-05 — slice producer-ownership — R3 Commit 4: Playlist צורך producer, מחיקת thunk+needsRefetch (manual)
+
+**קבצים שהשתנו**: `engines/audio-playlist.svelte.ts`, `engines/audio-playlist.nav.test.ts`
+**שינויים**:
+- `PlaylistItem`: מחיקת `refetch?` ו-`needsRefetch?`
+- `reserve`: הסרת union — פרמטר רביעי `producer?: SegmentProducer` בלבד
+- `#factsFor`: fetch מגיע מ-`producer.fetchState(id)` (fallback: no-producer+reserved/loading → `"in-flight"`)
+- `#navigate.resetToPending`: `cancelFetch` דרך producer (במקום `needsRefetch=true`)
+- `request-fetch`: guard על producer, קריאה ל-`producer.ensureFetch(id)`, הסרת `needsRefetch=false`
+- Test-12 ב-nav.test: thunk הוחלף ב-mock-producer (`ensureFetch/cancelFetch/fetchState`)
+**סטיות מה-brief**:
+- `#factsFor` fallback: כשאין producer ו-item.state=reserved/loading → `"in-flight"` (לא `"idle"`). סיבה: טסטים ישנים שקוראים reserve ללא producer (כמו Speaker שמעביר markReady חיצוני) היו שבורים עם `"idle"` → decide→request-fetch→no-producer→skip. הfallback שומר על behavior ישן.
+**grep נקי**: לא נמצא קוד פעיל עם refetch/needsRefetch ב-audio-playlist.svelte.ts (רק comments).
+**testing**: typecheck 0; 22/22 audio-playlist ירוקים.
+
+---
+
 ## 2026-07-05 — slice producer-ownership — R3 Commit 3: BubblePlayer implements SegmentProducer (TDD)
 
 **RED לפני מימוש**: 11/12 טסטים נכשלו — fetchState/ensureFetch/cancelFetch לא קיימים על BubblePlayer; reserve עדיין מעביר thunk.

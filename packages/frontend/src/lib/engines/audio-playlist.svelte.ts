@@ -18,9 +18,8 @@
  *   pause, resume, stop, prepareSegmentForBubble, setOnPlaybackStart,
  *   state, transport, items, currentSegmentId, cursor.
  *
- * Internal adapter (R1 — survives until R3/R4):
- *   PlaylistItem with state (7 values), needsRefetch, refetch thunk.
- *   #factsFor maps item.state → SegmentFacts for the pure function.
+ * R3 Commit 4: #producers Map owns fetch lifecycle; thunk/needsRefetch removed.
+ *   #factsFor maps item.state + producer.fetchState(id) → SegmentFacts for the pure function.
  */
 
 import { applyNavigation, decidePlaylistAction } from "@drive-coding/core/voice/playlist-decision"
@@ -43,16 +42,7 @@ export type PlaylistItem = {
   state: PlaylistItemState
   /** A4: bubble id for jumpToBubble + on-demand TTS. */
   bubbleId: string
-  /**
-   * nav-retain: thunk for re-synthesis.
-   * Called when item is in reserved state without a live fetch (skip-cancelled, failed).
-   */
-  refetch?: () => void
-  /**
-   * nav-retain fix: true only when item was discarded (skip-cancel) and needs re-synthesis.
-   * Regular reserve() items have this off; the live fetch arrives via Speaker.
-   */
-  needsRefetch?: boolean
+  // R3 Commit 4: refetch? and needsRefetch? removed — fetch ownership moved to SegmentProducer.
 }
 
 export type AudioPlaylistState = "idle" | "playing"
@@ -133,23 +123,16 @@ export class AudioPlaylist {
     segmentId: string,
     orderKey: OrderKey,
     bubbleId: string,
-    /**
-     * R3 Commit 1 — temporary union:
-     *   - SegmentProducer (new): stored in #producers; thunk slot left undefined.
-     *   - () => void (legacy): stored as refetch thunk on item (dual-write until Commit 4).
-     * Union is removed in Commit 4 when the thunk path is deleted.
-     */
-    producerOrRefetch?: SegmentProducer | (() => void),
+    /** R3 Commit 4: producer only — the union (| () => void) was removed. */
+    producer?: SegmentProducer,
   ): void {
     if (this.transport === "stopped") {
       this.transport = "playing"
     }
 
-    // R3: register producer in #producers; keep legacy thunk path for dual-write.
-    const refetch =
-      typeof producerOrRefetch === "function" ? producerOrRefetch : undefined
-    if (producerOrRefetch !== undefined && typeof producerOrRefetch !== "function") {
-      this.#producers.set(segmentId, producerOrRefetch)
+    // R3: register producer in #producers (fetch lifecycle owner).
+    if (producer !== undefined) {
+      this.#producers.set(segmentId, producer)
     }
 
     const newItem: PlaylistItem = {
@@ -157,7 +140,6 @@ export class AudioPlaylist {
       segmentId,
       state: "reserved",
       bubbleId,
-      refetch,
     }
     // sorted-insert by compareOrderKey
     let i = this.items.length
@@ -286,7 +268,8 @@ export class AudioPlaylist {
       const it = this.items.find((x) => x.segmentId === id)
       if (it !== undefined) {
         it.state = "reserved"
-        it.needsRefetch = true
+        // R3 Commit 4: cancel live fetch via producer (replaces needsRefetch=true)
+        this.#producers.get(id)?.cancelFetch(id)
       }
       this.#fetchWaitStartedAt.delete(id)
     }
@@ -368,13 +351,14 @@ export class AudioPlaylist {
   }
 
   /**
-   * R1 adapter: maps PlaylistItem (7-state + needsRefetch) → SegmentFacts.
+   * R3 Commit 4: maps PlaylistItem → SegmentFacts. fetch comes from the producer.
    *
    * fetch mapping:
-   *   reserved + needsRefetch=true  → "idle"      (discarded — next visit will request-fetch)
-   *   reserved / loading (no refetch) → "in-flight" (Speaker's live fetch is on the way)
-   *   error / skipped                → "failed"   (explicitVisit → retry)
-   *   ready / playing / done         → "idle"      (result at sink; buffered/playable decide)
+   *   error / skipped               → "failed"    (explicitVisit → retry)
+   *   producer.fetchState(id)       → live source of truth (in-flight/failed/idle)
+   *   no producer + reserved/loading → "in-flight" (fallback: external markReady expected)
+   *   no producer + other state     → "idle"
+   *   ready / playing / done        → "idle"       (result at sink; buffered/playable decide)
    */
   #factsFor(item: PlaylistItem) {
     const id = item.segmentId
@@ -384,17 +368,16 @@ export class AudioPlaylist {
     let fetch: "idle" | "in-flight" | "failed"
     if (item.state === "error" || item.state === "skipped") {
       fetch = "failed"
-    } else if (item.state === "reserved" || item.state === "loading") {
-      if (item.needsRefetch === true && item.refetch !== undefined) {
-        // discarded with a refetch thunk — request-fetch will call it
-        fetch = "idle"
-      } else {
-        // either a live fetch in-flight (no needsRefetch) OR
-        // discarded without a thunk (needs external markReady — treat as in-flight)
-        fetch = "in-flight"
-      }
     } else {
-      fetch = "idle"
+      const producer = this.#producers.get(id)
+      if (producer !== undefined) {
+        fetch = producer.fetchState(id)
+      } else if (item.state === "reserved" || item.state === "loading") {
+        // No producer: external markReady expected (e.g. legacy call site or in-flight fetch)
+        fetch = "in-flight"
+      } else {
+        fetch = "idle"
+      }
     }
 
     const buffered = (sink as { isComplete?: (id: string) => boolean }).isComplete?.(id) ?? false
@@ -480,14 +463,15 @@ export class AudioPlaylist {
               this.#cursor++
               break
             }
-            if (item.refetch === undefined) {
-              // no producer — skip silently
+            // R3 Commit 4: use producer (no thunk). No producer → skip silently.
+            const producer = this.#producers.get(item.segmentId)
+            if (producer === undefined) {
               item.state = "skipped"
               this.#cursor++
               break
             }
-            item.needsRefetch = false // one-shot gate (prevents refetch loop)
-            item.refetch()
+            // idempotency is handled by producer.ensureFetch (fetching/ready → no-op)
+            producer.ensureFetch(item.segmentId)
             // register fetch-start time for waitedTooLong tracking
             if (!this.#fetchWaitStartedAt.has(item.segmentId)) {
               this.#fetchWaitStartedAt.set(item.segmentId, Date.now())
