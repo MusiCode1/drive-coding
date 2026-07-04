@@ -23,7 +23,7 @@ The app uses a **"bring your own backend"** model:
 From the monorepo root:
 
 ```bash
-pnpm --filter @drive-coding/frontend-v2 build
+pnpm --filter @drive-coding/frontend build
 ```
 
 Output: `packages/frontend/build/` (static SPA with `index.html` fallback for client-side routing).
@@ -54,7 +54,7 @@ Configure the project in the Cloudflare dashboard with:
 
 | Setting | Value |
 |---|---|
-| Build command | `pnpm --filter @drive-coding/frontend-v2 build` |
+| Build command | `pnpm --filter @drive-coding/frontend build` |
 | Build output directory | `packages/frontend/build` |
 | Root directory | `/` (monorepo root) |
 

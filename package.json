@@ -1,6 +1,6 @@
 {
   "name": "drive-coding",
-  "version": "0.8.0",
+  "version": "0.10.2",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.0.0",
@@ -21,7 +21,8 @@
     "format": "biome format --write .",
     "hooks:install": "git config core.hooksPath .githooks",
     "fe:build": "node scripts/dc-build-fe.mjs",
-    "fe:build:if-missing": "node scripts/dc-build-fe.mjs --if-missing"
+    "fe:build:if-missing": "node scripts/dc-build-fe.mjs --if-missing",
+    "fe:build:if-stale": "node scripts/dc-build-fe.mjs --if-stale"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",

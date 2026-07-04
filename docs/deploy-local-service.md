@@ -57,9 +57,11 @@ systemctl --user enable --now voice-acp-main.service
 systemctl --user enable --now voice-acp-dev.service
 ```
 
-Each unit's `ExecStartPre` runs `pnpm install --frozen-lockfile && node scripts/dc-build-fe.mjs --if-missing`
-in its worktree — installs dependencies and builds the FE only if missing (safety net for fresh
-clones / bots). The FE is **not** rebuilt on every restart; use `pnpm fe:build` for that (see Daily Use).
+Each unit's `ExecStartPre` runs `pnpm install --frozen-lockfile && node scripts/dc-build-fe.mjs --if-stale`
+in its worktree — installs dependencies and rebuilds the FE **if missing or stale** (compares the version
+baked into `build/_app/version.json` against `HEAD`; rebuilds when they differ). So a restart after a
+`git pull`/merge picks up the new FE automatically. For a live FE refresh without restart, use `pnpm fe:build`
+(see Daily Use).
 
 ---
 
@@ -96,9 +98,9 @@ systemctl --user restart voice-acp-main.service
 ```
 
 `restart` re-runs `pnpm install --frozen-lockfile` (picks up new BE deps) and
-`node scripts/dc-build-fe.mjs --if-missing` (builds FE only if missing). If you
-also want to refresh FE on restart, run `pnpm fe:build` before the restart, or
-delete `packages/frontend/build/` first (the `--if-missing` guard will then rebuild).
+`node scripts/dc-build-fe.mjs --if-stale` (rebuilds FE if missing **or** the built
+version differs from `HEAD`). So after a merge/pull, the restart refreshes the FE
+automatically — no need to delete `build/` or run `pnpm fe:build` first.
 
 ---
 
@@ -151,6 +153,34 @@ The namespace is `backend.acp.wire.*` (CLI↔BE layer) — survives FE disconnec
 | Static files 404 on `/` | `FE_STATIC_DIR` missing/wrong | `ls $FE_STATIC_DIR/index.html`; run `pnpm fe:build` in that worktree |
 | `frozen-lockfile` fails on restart | new dependency not installed in that worktree | run `pnpm install` once manually in the worktree, then restart |
 | public domain 502/404 | CF ingress points at wrong port, or BE down | verify `systemctl --user is-active voice-acp-<x>`; re-check ingress via CF API |
+
+---
+
+## Claude in-process auth — exclusion of api.anthropic.com
+
+claude runs **in-process** (via `@agentclientprotocol/claude-agent-acp`) and spawns the claude CLI
+as a child. The child inherits `process.env`, which under OneCLI contains an `ANTHROPIC_API_KEY`
+placeholder and `HTTPS_PROXY` — both of which route to the OneCLI gateway. Without intervention, the
+claude child sends its Anthropic calls through OneCLI and gets a 401 (the gateway is not configured
+for Anthropic credentials in drive-coding by design).
+
+**Fix (declarative, via `deploy/cli-specs.jsonc` + `CLI_SPECS_FILE`):**
+The exclusion is declared in `deploy/cli-specs.jsonc` and wired through `CLI_SPECS_FILE`:
+- `unsetEnv: ["ANTHROPIC_API_KEY"]` — child process drops the placeholder key → falls back to
+  subscription OAuth (`~/.claude`).
+- `setEnv: { NO_PROXY: "api.anthropic.com", no_proxy: "api.anthropic.com" }` — child bypasses
+  the OneCLI proxy for Anthropic, communicates directly.
+
+This is applied **scoped to the claude child process only** via `_meta.claudeCode.options.env`
+(the SDK channel). The BE `process.env` is never mutated — ElevenLabs/Google TTS proxy stays intact.
+
+**`CLI_SPECS_FILE` is set by the systemd units** (`Environment=CLI_SPECS_FILE=<WorkingDirectory>/deploy/cli-specs.jsonc`).
+For local dev (without systemd), set it manually or place the config at
+`~/.config/drive-coding/cli-specs.jsonc` (the default path).
+
+> **Migration from the old workaround:** `scripts/claude-direct-be.sh` (untracked wrapper)
+> and any local `ExecStart` edits that invoke it must be removed. The declarative config replaces them.
+> Check with: `grep -r 'claude-direct-be' ~/.config/systemd/user/*.service` (should be empty).
 
 ---
 

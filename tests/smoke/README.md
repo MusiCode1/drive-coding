@@ -27,7 +27,7 @@ cd packages/backend
 onecli run --agent voice-acp -- bun --watch src/server.ts
 
 # Terminal 2 — FE
-pnpm --filter @drive-coding/frontend-v2 dev
+pnpm --filter @drive-coding/frontend dev
 
 # Terminal 3 — smoke
 cd tests/smoke

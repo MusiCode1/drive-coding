@@ -1,6 +1,6 @@
 {
   "name": "@drive-coding/core",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -18,8 +18,11 @@
     },
     "./cwd-hash": "./src/cwd-hash.ts",
     "./cwd-validate": "./src/cwd-validate.ts",
+    "./cli-resolve": "./src/cli-resolve.ts",
     "./async/*": "./src/async/*.ts",
-    "./config/*": "./src/config/*.ts"
+    "./config/*": "./src/config/*.ts",
+    "./tts/*": "./src/tts/*.ts",
+    "./usage/*": "./src/usage/*.ts"
   },
   "scripts": {
     "build": "tsc --build",

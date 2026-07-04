@@ -1,6 +1,6 @@
 {
-  "name": "@drive-coding/frontend-v2",
-  "version": "0.7.0",
+  "name": "@drive-coding/frontend",
+  "version": "0.9.1",
   "private": true,
   "type": "module",
   "scripts": {

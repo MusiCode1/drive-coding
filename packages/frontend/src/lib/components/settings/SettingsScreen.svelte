@@ -11,18 +11,23 @@
  *
  * כפתורי איפוס ושמור.
  *
- * ─── settings-redesign (redesign-3) · redesign-fix · V4a (TTS provider) ───
+ * ─── settings-redesign (redesign-3) · redesign-fix · V4a (TTS provider) · tts-provider-availability ───
  */
+import { onMount } from "svelte"
 import { version } from "$app/environment"
 import { goto } from "$app/navigation"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import GeminiVoicePicker from "$lib/components/chat/GeminiVoicePicker.svelte"
 import { getI18n, getSettings } from "$lib/context"
 import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
+import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
+import { ttsStatus } from "$lib/view-models/tts-status.svelte"
+import { ttsReasonMessage } from "$lib/util/tts-reason"
 import LanguageSelect from "./LanguageSelect.svelte"
 import PalettePicker from "./PalettePicker.svelte"
 import SettingsCard from "./SettingsCard.svelte"
 import SettingToggle from "./SettingToggle.svelte"
+import TtsStatusCard from "./TtsStatusCard.svelte"
 
 const settings = getSettings()
 const t = getI18n().t
@@ -30,11 +35,64 @@ const t = getI18n().t
 // translateThoughts disabled כש-speakThoughts כבוי
 const translateDisabled = $derived(!settings.speakThoughts)
 
-// ─── TTS provider ─── (V4a)
+// ─── TTS provider + availability ─── (V4a + tts-provider-availability)
+const caps = $derived(ttsCapabilities.caps)
+
+// per-provider disabled: available===false → disabled. undefined (loading) → enabled (optimistic).
+// description on disabled options → reason message shown below the label in Select.
 const ttsProviderOptions = $derived<SelectOption[]>([
-  { value: "elevenlabs", label: t("settings.ttsProvider.elevenlabs") },
-  { value: "google", label: t("settings.ttsProvider.gemini") },
+  {
+    value: "elevenlabs",
+    label: t("settings.ttsProvider.elevenlabs"),
+    disabled: caps?.["elevenlabs"]?.available === false,
+    description:
+      caps?.["elevenlabs"]?.available === false
+        ? ttsReasonMessage(caps["elevenlabs"].reason, t)
+        : undefined,
+  },
+  {
+    value: "google",
+    label: t("settings.ttsProvider.gemini"),
+    disabled: caps?.["google"]?.available === false,
+    description:
+      caps?.["google"]?.available === false
+        ? ttsReasonMessage(caps["google"].reason, t)
+        : undefined,
+  },
 ])
+
+// Fallback: if the currently selected provider became unavailable, switch to the other
+$effect(() => {
+  if (!caps) return
+  const current = settings.ttsProvider
+  const currentCap = caps[current]
+  if (currentCap?.available === false) {
+    // Find an available provider
+    const fallback = (Object.keys(caps) as Array<"elevenlabs" | "google">).find(
+      (p) => caps[p]?.available !== false,
+    )
+    if (fallback) {
+      settings.setTtsProvider(fallback)
+    }
+    // If both unavailable: don't switch, show allUnavailable warning instead
+  }
+})
+
+// Derived for UI messages
+const currentUnavailable = $derived(
+  caps !== undefined && caps[settings.ttsProvider]?.available === false,
+)
+const allUnavailable = $derived(
+  caps !== undefined &&
+    caps["elevenlabs"]?.available === false &&
+    caps["google"]?.available === false,
+)
+
+// Refresh capabilities + tts-status on mount (non-blocking)
+onMount(() => {
+  void ttsCapabilities.refresh()
+  void ttsStatus.refresh()
+})
 
 // כיבוי הקראת מחשבות מכבה גם את תרגום המחשבות (לא נשאר דלוק-לא-זמין)
 function onSpeakThoughtsChange(v: boolean) {
@@ -87,7 +145,7 @@ $effect(() => {
 
   <!-- כרטיס קול ודיבור -->
   <SettingsCard title={t("settings.voiceSpeech")}>
-    <!-- TTS provider selector — (V4a) -->
+    <!-- TTS provider selector — (V4a + tts-provider-availability) -->
     <label class="flex flex-col gap-1.5">
       <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.ttsProvider.label")}</span>
       <Select
@@ -96,6 +154,11 @@ $effect(() => {
         title={t("settings.ttsProvider.label")}
         onchange={(v) => settings.setTtsProvider(v as "elevenlabs" | "google")}
       />
+      {#if allUnavailable}
+        <span class="text-[12px]" style="color:var(--recording)">{t("settings.ttsProvider.allUnavailable")}</span>
+      {:else if currentUnavailable}
+        <span class="text-[12px]" style="color:var(--accent)">{t("settings.ttsProvider.fallbackNotice")}</span>
+      {/if}
     </label>
 
     <!-- בורר קול — conditional לפי הספק הפעיל (V4b) -->
@@ -137,6 +200,11 @@ $effect(() => {
         disabled
       />
     </div>
+  </SettingsCard>
+
+  <!-- כרטיס מצב TTS — tts-status-ui -->
+  <SettingsCard title={t("settings.ttsStatus.title")}>
+    <TtsStatusCard />
   </SettingsCard>
 
   <!-- כרטיס מסך — wake-lock (slice-wake-lock) -->

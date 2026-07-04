@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // packages/release/scripts/build.mjs
 // Builds the release bundle:
-//   1. Builds the frontend (pnpm --filter @drive-coding/frontend-v2 build)
+//   1. Builds the frontend (pnpm --filter @drive-coding/frontend build)
 //   2. Copies frontend/build → release/frontend-dist/
 //   3. Copies backend/plugins  → release/plugins/
 //   4. Bundles the backend bin with bun build (core+provider-contract inline)
@@ -37,7 +37,7 @@ const releaseBinOut = path.join(releaseDist, "drive-coding.js")
 
 // Step 1: Build frontend
 console.log("[build] Step 1: building frontend…")
-execFileSync("pnpm", ["--filter", "@drive-coding/frontend-v2", "build"], {
+execFileSync("pnpm", ["--filter", "@drive-coding/frontend", "build"], {
   cwd: repoRoot,
   stdio: "inherit",
 })

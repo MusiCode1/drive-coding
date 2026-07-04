@@ -1,16 +1,16 @@
 # Slice image-paste — הדבקת/גרירת/בחירת תמונות בתיבת הפרומפט — תוכנית
 
-> **תאריך**: 2026-06-28 (עודכן 2026-06-28 אחרי merge של slice-input-autogrow)
-> **סטטוס**: **הושלם (Commits 0–3)** — calev-heavy GO 10/10, 1 finding low (2026-06-28). Commit 4 GATED (track-A). ממתין לאישור merge.
+> **תאריך**: 2026-06-28 (עודכן 2026-07-01 — Commit 4 נעול, הכרעת-gating §10 סגורה)
+> **סטטוס**: 🟢 **plan-verified — READY ל-dispatch** (אביגיל r2 READY, 0 findings, 2026-07-01 — `reports/drive-coding/image-paste-avigail.md`). **Commits 0–3 מוזגו ל-dev** (merge `2cdb85a`; פיגום רדום, `IMAGE_INPUT_ENABLED=false`). **נותר: Commit 4a (provider) + 4b (FE).** הכרעת ה-gating (§10) **סגורה: נתיב (א) — raw**. ה-`AcpClient.prompt` text-only בבעלותנו (החבילה נספגה v0.8.0) → הרחבתו = חלק מ-Commit 4a (לא חסם חיצוני).
 > **Complexity**: 8/10 (verifier: **calev-heavy**)
-> **תלות (depends_on)**: `[slice-input-autogrow (מוזג b3b5140 — TypeArea שונה), track-A: provider-contract — AcpClient.prompt(blocks)]`.
->   - `input-autogrow` — **תלות-קוד**: שינה את `TypeArea.svelte` (autogrow $effect + form layout). ה-slice הזה בונה מעליו. ראה §"שינוי TypeArea אחרי autogrow" למטה.
->   - `track-A` — **רק ל-Commit 4 ול-merge**. Commits 0–3 עצמאיים ובְּני-ביצוע על dev הנוכחי.
-> **Base**: `dev` HEAD (tip בעת הרענון `b3b5140` — כולל autogrow; הקודם `3bb36a9` היה לפני)
+> **תלות (depends_on)**: `[]` — כל התלויות מוזגו ל-dev. (`slice-input-autogrow` מוזג `b3b5140` — TypeArea שונה, ראה §3.5. Track-A נספג ל-`packages/provider/` בקוד שלנו.)
+>   - ⚠️ **תיאום merge (רך, לא depends_on)**: `slice-warm-reattach-skip-init` (סשן אחר) נוגע גם הוא ב-`packages/provider/src/client/client.ts` (מחלץ `buildAcpClientFacade`). שניהם מבוססים על dev ושניהם נוגעים במתודת `prompt`/ה-facade. מי שממזג שני — יְיַשם מחדש את שינויו ב-facade (אולי) המרוענן. ראה §6.
+> **Base**: `dev` HEAD (`0ad8ed3` — 2026-07-01; ה-branch/worktree של Commits 0–3 נוקו אחרי merge → **צור worktree טרי על dev הנוכחי**)
 > **⚠️ MERGE-GATE (עודכן 2026-06-28 — kill-switch)**: ה-feature מוגן ב-**דגל קשיח `IMAGE_INPUT_ENABLED = false`** (Commit 2). כל עוד הוא `false`, `supportsImageInput` מחזיר `false` **תמיד** — ללא תלות במה שהספק מדווח → כל הלכידה רדומה לחלוטין, אפס שינוי-התנהגות. לכן:
 >   - **Commits 0–3 בטוחים ל-merge מיד** (פיגום רדום; הדגל false). אין צורך בבדיקת-runtime של capability — הדגל כופה.
->   - **Commit 4** (שליחה מולטימודלית) הופך את הדגל ל-`true` ומחווט ל-`AcpClient.prompt(blocks)`. **חסום על track-A** — לא לבצע/למזג עד שהחוזה מולטימודלי.
+>   - **Commit 4** (שליחה מולטימודלית) הופך את הדגל ל-`true`, **מרחיב את `AcpClient.prompt` לקבל blocks** (client.ts — בבעלותנו), ומחווט. **כל החסמים סגורים** — הכרעת-gating §10 נעולה (raw), track-A נספג.
 >   - ההחלטה (המשתמשת, 2026-06-28): כופים `false` במקום לבדוק מה הספק מדווח. flip ל-`true` = שורה אחת, יחד עם Commit 4.
+>   - **gating אחרי flip = raw** (הכרעת §10): `supportsImageInput` קורא `#client.capabilities.promptCapabilities.image` — הערך האמיתי פר-סוכן מ-`initialize`, לכל הספקים.
 
 ---
 
@@ -49,14 +49,14 @@ pnpm install && pnpm hooks:install
 **must-read לפני**:
 - `packages/frontend/AGENTS.md` — חמשת חוקי הזהב (במיוחד #4 effect-ownership, #5 אין-תאימות-לאחור).
 - `docs/design-principles.md` §1-2 — מה זה "engine" מול "view-model" (הדחיסה = engine; ה-tray = state ב-VM/component).
-- `packages/frontend/src/lib/components/chat/TypeArea.svelte` — **כל הקובץ** (**79 שורות, אחרי merge של slice-input-autogrow** — לא 67). הקובץ המרכזי שמשתנה. ⚠️ הוא כבר מכיל לוגיקת autogrow (`$effect` L21-28, `taEl` binding, `rows={1}`+`max-height`, `items-end`) — ראה §"שינוי TypeArea אחרי autogrow".
-- `packages/frontend/src/lib/view-models/agent-session.svelte.ts` §565-597 (`sendPrompt`, מתחיל בשורה 565 — drift +6 אחרי 131-commit sync) + הגדרת `#client`/`capabilities`.
+- `packages/frontend/src/lib/components/chat/TypeArea.svelte` — **כל הקובץ (229 שורות — Commit 2 של הסלייס הזה כבר מוזג!).** מכיל כבר: autogrow (`$effect` L34-40, `taEl`, `rows={1}`+`max-height`, `items-end`), **וגם** tray+handlers+gating מ-Commit 2 (`attachments` L30, `handlePaste` L67, `handleDrop` L94, `handleFileChange` L108, `removeAttachment` L123, tray-UI L137-159, כפתור-הוספה L180-192). Commit 4b **משנה רק** את `onSubmit` (L46-53) וכפתור Send (L220) — ראה §4b. **לא ליצור מחדש** את ה-tray/handlers.
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts` — `sendPrompt` **בשורה 671** (לא 565 — 565 הוא `attach`); guard `if (!text.trim()) return` **בשורה 674**; קריאת `this.#client.prompt(this.#sessionId, text)` **בשורה 693**; getter `supportsImageInput` **בשורה 137**; `IMAGE_INPUT_ENABLED` **בשורה 46**; `#client`/`capabilities`.
 - `packages/frontend/src/lib/types/bubble.ts` §30-41 (`UserBubble`).
 
 **reference בזמן עבודה**:
 - `docs/plans/ui-feature-backlog.md` §3a + §5 ("attachments מלא" — reference CodeNomad `composer.tsx`: drag-drop+paste+דחיסה ≤8MB/JPEG/2048px).
 - `docs/conventions/parallel-safe-code.md` — **רק אם** נוגעים ב-`packages/core/src/i18n/keys.ts` / `catalogs/*` (מחרוזות tray).
-- Contract types — **הגרסה ש-ה-FE פותר אליה** (`packages/frontend/node_modules/provider-contract` → symlink ל-`node_modules/.pnpm/provider-contract@git+https_f03460478b9f19a4a0f949e446254e90/node_modules/provider-contract`): `dist/adapters/acp/client/client.d.ts:45` (`AcpClient.prompt` — היום `text: string`), `dist/contract/events.d.ts:160` (`PromptContent = string | PromptContentPart[]`). ⚠️ קיימות **שתי** גרסאות ב-`.pnpm` (השנייה `b745...` = ה-ancestor הישן) — תמיד לאמת מול זו ש-ה-FE פותר (`f034...`).
+- **Contract/client types — עכשיו בקוד שלנו** (החבילה נספגה v0.8.0): `packages/provider/src/client/client.ts` — `AcpClient.prompt` (שורה 57 type, 189-190 impl; היום `text: string`), `capabilities` (שורה 46 = raw `agentCapabilities`). ה-image-block הוא ContentBlock סטנדרטי של `@agentclientprotocol/sdk` (`{type:"image", mimeType, data}`, data=base64 גולמי). ⚠️ **אין יותר** git-dep/`.pnpm` symlink — התעלם מהפניות ישנות ל-`provider-contract`.
 
 ---
 
@@ -73,9 +73,9 @@ pnpm install && pnpm hooks:install
 | preview כ-thumbnail + הסרה | ✅ | הסבב הזה |
 | דחיסה אוטומטית (resize≤2048px, JPEG, ≤8MB) | ✅ | הסבב הזה |
 | capability gating (`promptCapabilities.image`) | ✅ | הסבב הזה |
-| שליחת `PromptContent[]` מולטימודלי | ✅ (Commit 4, **gated**) | תלוי חוזה |
-| רינדור התמונה בבועת-המשתמש האופטימית | ✅ (Commit 4) | הסבב הזה |
-| **הרחבת `AcpClient.prompt` לקבל blocks** | ❌ | **Track A — `provider-contract`** (הסוכן השני) |
+| שליחת `PromptContent[]` מולטימודלי | ✅ (Commit 4b) | הסבב הזה |
+| רינדור התמונה בבועת-המשתמש האופטימית | ✅ (Commit 4b) | הסבב הזה |
+| **הרחבת `AcpClient.prompt` לקבל blocks** | ✅ (Commit 4a) | הסבב הזה — החבילה בבעלותנו |
 | הדבקת **קבצים לא-תמונה** (PDF/טקסט) כ-`resource` | ❌ | slice attachments-files עתידי |
 | draft persistence (טיוטה+attachments בין sessions) | ❌ | backlog (CodeNomad `instance-shell2`) |
 | `@` mentions / slash / shell-mode | ❌ | slices נפרדים (slash תלוי-חוזה) |
@@ -106,7 +106,11 @@ pnpm install && pnpm hooks:install
 BE: אפס שינוי (bridge-manager dumb-pipe שקוף).
 ```
 
-## §3.5 — שינוי TypeArea אחרי autogrow (קרא לפני Commit 2)
+## §3.5 — [היסטורי] שינוי TypeArea אחרי autogrow
+
+> 🟢 **הערה 2026-07-01**: הסעיף הזה + Commit 2 למטה **כבר מוזגו** (Commits 0–3, `2cdb85a`).
+> ה-line-refs כאן (79 שורות, L18/L21-28...) **מיושנים** — TypeArea עכשיו **229 שורות** וכבר מכיל
+> את הכל. הסעיף נשמר להקשר בלבד. **ל-Commit 4b השתמש ב-line-refs של §4b / §0**, לא כאן.
 
 > **למה הסעיף הזה קיים**: ה-brief המקורי נכתב מול TypeArea בן 67 שורות. בינתיים מוזג
 > `slice-input-autogrow` (`b3b5140`) ששינה את אותו קובץ. ה-brief רוענן, אבל ה-executor
@@ -132,6 +136,9 @@ BE: אפס שינוי (bridge-manager dumb-pipe שקוף).
    ממשיך כרגיל (Verification §5) ומפעיל autogrow — זה תקין.
 
 ## §4 — Commits
+
+> 🟢 **מצב 2026-07-01**: **Commits 0, 1, 2, 3 כבר מוזגו ל-dev** (`2cdb85a`, calev-heavy GO). הם למטה
+> **להקשר בלבד** — אל תבצע אותם מחדש. **העבודה שנותרה = Commit 4a + Commit 4b בלבד.** דלג ישר אליהם.
 
 ### Commit 0 — `resize-plan` חישוב טהור (approach: **TDD**)
 **קובץ חדש**: `packages/core/src/image/resize-plan.ts` (+ייצוא ב-`packages/core/src/index.ts`)
@@ -194,7 +201,7 @@ export function revokeAttachment(a: ImageAttachment): void
 
 **(א) VM — getter נגזר + kill-switch** (ב-`AgentSession`, additive):
 ```ts
-// 🔒 kill-switch — נשאר false עד ש-Commit 4 (שליחה מולטימודלית) + track-A מוכנים.
+// 🔒 kill-switch — נשאר false עד Commit 4b (שליחה מולטימודלית). Commit 4b הופך ל-true.
 // כל עוד false: supportsImageInput=false תמיד → לכידת-התמונה רדומה לחלוטין,
 // ללא תלות במה שהספק מדווח. Commit 4 הופך ל-true. (module-level const בראש הקובץ.)
 const IMAGE_INPUT_ENABLED = false
@@ -255,13 +262,73 @@ pnpm --filter @drive-coding/frontend typecheck && pnpm --filter @drive-coding/fr
 
 ---
 
-### Commit 4 — שליחה מולטימודלית (approach: **manual**) — **⚠️ GATED על Track A**
-> **לא לבצע** עד ש-`provider-contract` המותקן חושף `AcpClient.prompt(sessionId, content: PromptContent)` (היום: `text: string` בלבד, client.d.ts:45). **escalation מיידי למרדכי** אם הבסיס עדיין טקסט-בלבד (ר' §7).
+### Commit 4 — שליחה מולטימודלית (approach: **manual**) — **עצמאי (כל החסמים סגורים)**
+> החוזה בבעלותנו (`packages/provider/`). Commit 4 מפוצל לשני sub-steps: **4a** (provider — הרחבת `prompt`) → **4b** (FE — flip + wiring). 4b תלוי ב-4a.
 
+---
+
+#### Commit 4a — provider: הרחבת `AcpClient.prompt` ל-blocks (approach: **TDD** — provider test)
+**קובץ**: `packages/provider/src/client/client.ts` (חתימה **שורה 57** + מימוש **שורות 189-190**).
+
+**מצב נוכחי (נמדד 2026-07-01)**:
+```ts
+// type (57):
+prompt(sessionId: string, text: string): ReturnType<ClientSideConnection["prompt"]>
+// impl (189-190):
+async prompt(sessionId: string, text: string) {
+  return conn.prompt({ sessionId, prompt: [{ type: "text", text }] })
+}
+```
+> ה-layer התחתון `conn.prompt` (`@agentclientprotocol/sdk`) **כבר** מקבל `ContentBlock[]` מלא (כולל image). ההרחבה = לתת ל-facade לקבל blocks ולהעביר כמו-שהם, תוך שמירת התאימות-לאחור לחתימת ה-string.
+> ✅ **מאומת מול SDK המותקן 0.21.1** (`node_modules/.pnpm/@agentclientprotocol+sdk@0.21.1_.../dist/schema/types.gen.d.ts`, 2026-07-01 — זה ה-SDK ש-client.ts מייבא, provider/package.json:23):
+> - `ClientSideConnection.prompt(params: PromptRequest)` (`acp.d.ts:446`) → `PromptRequest.prompt: Array<ContentBlock>` (`types.gen.d.ts:3383`).
+> - `ContentBlock` union כולל image: `ImageContent & { type: "image" }` (`:840-841`).
+> - `ImageContent = { data: string; mimeType: string; annotations?; _meta?; uri? }` (`:1760-1775`) → הבלוק `{ type: "image", mimeType, data }` **תקף** (data+mimeType חובה, שאר optional).
+> - `PromptCapabilities.image` קיים (`:3332`) → ה-getter raw type-correct (כבר אומת סבב קודם).
+> ⇒ `PromptBlocks = Parameters<ClientSideConnection["prompt"]>[0]["prompt"]` = `Array<ContentBlock>` — projection טהור, קומפילי. ב-FE הליטרל `{ type: "image" as const, mimeType, data }` assignable ל-union member (discriminant + שני שדות-חובה).
+
+**שינוי — backward-compatible (string עדיין עובד)**:
+```ts
+// טיפוס נגזר-SDK (drift אפס — דפוס AcpRequestMeta הקיים בשורות 34-35):
+type PromptRequest = Parameters<ClientSideConnection["prompt"]>[0]
+export type PromptBlocks = PromptRequest["prompt"]   // = ContentBlock[]; ייצוא ל-FE (index.ts, additive)
+
+// type (57 — union backward-compatible):
+prompt(sessionId: string, content: string | PromptBlocks): ReturnType<ClientSideConnection["prompt"]>
+
+// impl (189-190):
+async prompt(sessionId: string, content: string | PromptBlocks) {
+  const prompt = typeof content === "string" ? [{ type: "text", text: content }] : content
+  return conn.prompt({ sessionId, prompt })
+}
+```
+> **`index.ts`** — additive: הוסף ל-export הקיים גם `PromptBlocks` (type). אל תדרוס.
+> **חתימה בלבד — אין שינוי שכבת-capabilities.** ה-gating נשאר raw (§10 החלטה א); `NormalizedCapabilities` לא נגעים.
+
+**Tests (`client.ts` יש כבר suite — הוסף לו / קובץ נלווה)**:
+- string עדיין נכתב כ-`prompt:[{type:"text",text}]` (regression — התנהגות קיימת נשמרת).
+- מערך blocks `[{type:"text",...},{type:"image",mimeType,data}]` מועבר **כמו-שהוא** ל-`conn.prompt` (frame ב-transport-double מכיל את ה-image-block).
+> אם אין תשתית transport-double בקלות — לפחות assert על ה-frame שנכתב (ראה דפוס ב-`client.extmethod.test.ts` / `client.attached.test.ts` אם קיים).
+
+**Verification**: `pnpm --filter @drive-coding/provider test && pnpm --filter @drive-coding/provider typecheck`.
+
+---
+
+#### Commit 4b — FE: flip + wiring (approach: **manual** — אומת חי)
 **קבצים שמשתנים**:
-- `agent-session.svelte.ts` — **(0) הפוך `IMAGE_INPUT_ENABLED = false` → `true`** (kill-switch מ-Commit 2 — מדליק את כל הלכידה). **(1)** `sendPrompt(text, { attachments }?)`: בונה `PromptContent` = `[...(text.trim() ? [{type:"text",text}] : []), ...attachments.map(a => ({type:"image", mimeType:a.mimeType, data:a.dataBase64}))]`, מאכלס `userBubble.attachments`, קורא `this.#client.prompt(this.#sessionId, content)`.
-  > ⚠️ **finding אביגיל r2** — ה-guard הקיים `if (!text.trim()) return` (שורה 568 — drift +6 מ-562) **יזרוק בשקט שליחת תמונה-בלבד**. שנה את התנאי ל: `if (!text.trim() && !(opts?.attachments?.length)) return` — כלומר חוסם רק כשגם הטקסט ריק וגם אין attachments. בלוק-טקסט נכלל ב-`PromptContent` רק אם אינו ריק (תמונה-בלבד = מערך עם image-block בלבד).
-- `TypeArea.svelte` — `onSubmit` מעביר `{ attachments }`, מנקה את ה-tray (+`revokeAttachment` לכולם) אחרי שליחה.
+- `agent-session.svelte.ts`:
+  - **(0)** הפוך `IMAGE_INPUT_ENABLED = false` → `true` (**שורה 46** — kill-switch מ-Commit 2; מדליק את כל הלכידה). ה-getter `supportsImageInput` (**שורה 137**) כבר קורא raw `#client?.capabilities?.promptCapabilities?.image` — **אין שינוי בו** (§10 החלטה א).
+  - **(1)** `sendPrompt(text, { attachments }?)` (**שורה 671**): בונה content = `[...(text.trim() ? [{type:"text",text}] : []), ...attachments.map(a => ({type:"image", mimeType:a.mimeType, data:a.dataBase64}))]`, מאכלס `userBubble.attachments`, קורא `this.#client.prompt(this.#sessionId, content)` (**שורה 693** — היום `..., text`).
+  > ⚠️ **finding אביגיל r2** — ה-guard `if (!text.trim()) return` (**שורה 674**) **יזרוק בשקט שליחת תמונה-בלבד**. שנה ל: `const atts = opts?.attachments ?? []; if (!text.trim() && atts.length === 0) return`. בלוק-טקסט נכלל ב-content רק אם אינו ריק (תמונה-בלבד = מערך עם image-block בלבד).
+  > ⚠️ **טיפוס** — content הוא `PromptBlocks` (ייצוא מ-4a). אם TS לא מסיק structural — יְיַבֵּא `import type { PromptBlocks } from "@drive-coding/provider/client"` ויטפס את המערך. ה-`as const` על `type` עוזר.
+- `TypeArea.svelte` — ⚠️ **הקובץ כבר 229 שורות (Commit 2 מוזג — ה-tray/handlers/gating כבר בקוד).** לשליחת **תמונה-בלבד** צריך לשחרר **שלוש** שכבות-חסימה, לא אחת. ה-brief המקורי טיפל רק בשכבת ה-VM guard — **finding אביגיל 2026-07-01 (🔴)**. שלוש השכבות במצב הנוכחי:
+  | שכבה | מיקום נוכחי | תיקון |
+  |---|---|---|
+  | **1. כפתור Send `disabled`** | `TypeArea.svelte:220` — `disabled={!promptText.trim() \|\| isDisabled}` | `disabled={(!promptText.trim() && attachments.length === 0) \|\| isDisabled}` — אפשר שליחה כשיש attachments גם בלי טקסט |
+  | **2. `onSubmit` early-return** | `TypeArea.svelte:46-53` — `const text = promptText.trim(); if (!text \|\| isDisabled) return; session.sendPrompt(text)` | `if ((!text && attachments.length === 0) \|\| isDisabled) return; session.sendPrompt(text, { attachments }); …` |
+  | **3. VM guard** | `agent-session.svelte.ts:674` | ראה למעלה (`atts.length === 0`) |
+  - **`onSubmit` המלא (4b)**: מעביר `{ attachments }` ל-`sendPrompt`, ואז מנקה: `attachments.forEach(revokeAttachment); attachments = []`. **אל תסיר** את `promptText = ""` (שורה 51 — מפעיל autogrow-collapse §3.5). ההערה `// Commit 4 ירחיב כאן` (שורה 52) היא בדיוק המקום.
+  - **handlers כבר קיימים** (`handlePaste:67`, `handleDrop:94`, `handleFileChange:108`, `removeAttachment:123`, `processImageFile:57`, tray-UI:137-159) — **אל תיצור מחדש**. הם כבר מגַטים על `session.supportsImageInput` (early-return) → כשהדגל נדלק ב-4b(0), הם מתעוררים אוטומטית.
 
 **API skeleton** (הרחבת החתימה הקיימת — backward-compatible):
 ```ts
@@ -273,11 +340,12 @@ sendPrompt = async (
 
 **Verification (חי, BE+agent עם image-capability)**:
 ```
-# opencode/claude עם promptCapabilities.image=true:
+# ספק עם promptCapabilities.image=true (ר' §10 "שאלה משנית" — לאמת מי):
 #  1. paste תמונה + טקסט → שלח → ה-agent מגיב על תוכן התמונה (אימות end-to-end)
 #  2. בועת-המשתמש מציגה את התמונה ששלחה
 #  3. WIRE_RECORD=1 → frame session/prompt מכיל {type:"image",mimeType,data}
 #  4. שליחת טקסט-בלבד (בלי attachments) → ללא רגרסיה
+#  5. ספק בלי image-capability → אייקון הלכידה מוסתר (getter=false); paste-טקסט תקין
 ```
 
 ## §5 — DoD
@@ -293,9 +361,11 @@ sendPrompt = async (
 | **`IMAGE_INPUT_ENABLED = false` ב-commit הסופי של 0–3** | grep בקוד | 2 |
 | **עם דגל false: לכידה מוסתרת תמיד, אפס שינוי-התנהגות** (פיגום רדום — בטוח ל-merge) | ידני /chat | 2 |
 | בועת-משתמש מרנדרת תמונה | ידני (mock) | 3 |
-| **שליחה מולטימודלית מגיעה ל-agent (חי)** | BE+agent + WIRE_RECORD | 4 (gated) |
-| **שליחת תמונה-בלבד (בלי טקסט) לא נחסמת** | ידני — הוסף תמונה, השאר textarea ריק, שלח | 4 |
-| טקסט-בלבד ללא רגרסיה | ידני | 4 |
+| **`AcpClient.prompt(string)` — regression: עדיין נכתב כ-`[{type:"text"}]`** | provider test | 4a |
+| **`AcpClient.prompt(blocks)` — image-block מועבר כמו-שהוא ל-`conn.prompt`** | provider test | 4a |
+| **שליחה מולטימודלית מגיעה ל-agent (חי)** | BE+agent + WIRE_RECORD | 4b |
+| **שליחת תמונה-בלבד (בלי טקסט) לא נחסמת — 3 שכבות** | ידני — הוסף תמונה, textarea ריק: (א) כפתור Send **פעיל** (לא disabled), (ב) לחיצה/Cmd+Enter שולחת, (ג) מגיע ל-agent | 4b |
+| טקסט-בלבד ללא רגרסיה | ידני | 4b |
 | typecheck + build + lint:i18n ירוקים | פקודות §0 | כל commit |
 
 ## §6 — Risks
@@ -308,18 +378,19 @@ sendPrompt = async (
 | **object URL leak** — tray לא משחרר | דפוס ידוע | `revokeAttachment` ב-onremove וב-onsend; DoD בודק |
 | **paste image דורש secure-context** | AGENTS.md (getUserMedia) | בדיקה ב-localhost/HTTPS בלבד; לא חוסם dev |
 | **clipboard מרובה-items / HEIC בנייד** | edge | מסננים `image/*`; פורמט לא-נתמך → התעלמות שקטה (לא crash) |
-| **החוזה לא יורד / חתימה שונה** מהצפוי | תלות Track A | Commit 4 מבודד + gated; escalation §7; שאר ה-slice נמסר/נבדק עצמאית |
-| **merge מוקדם מדי** | תיאום | MERGE-GATE מפורש בראש המסמך; runtime-gate (calev) רק אחרי Commit 4 חי |
+| **חתימת `conn.prompt` שונה מהמדוד** | SDK version | נמדד 2026-07-01 (`conn.prompt` מקבל `ContentBlock[]`); 4a TDD-regression על string; escalation §7 אם מופרך |
+| **התנגשות ב-`client.ts` מול `warm-reattach-skip-init`** | שני slices נוגעים ב-facade/`prompt`, שניהם base=dev (סשן אחר) | merge-order: מי ששני מְיַשם מחדש את שינויו ב-facade המרוענן. השינויים קטנים וממוקדים (4a=מתודת prompt; warm=חילוץ facade). מרדכי מתאם בזמן merge. |
+| **merge מוקדם מדי** | תיאום | MERGE-GATE מפורש בראש המסמך; runtime-gate (calev-heavy) רק אחרי Commit 4b חי מול ספק עם image-cap |
 
 ## §7 — Escalation triggers
 עצור ושאל את מרדכי (parent task) אם:
-- **Commit 4**: ה-`AcpClient.prompt` בבסיס עדיין `(sessionId, text: string)` — החוזה טרם ירד → **אל תבצע את Commit 4**, דווח, המשך ל-DoD של 0–3.
-- חתימת `PromptContent`/`PromptContentPart` בחוזה שונה ממה שמתואר (`{type:"image",mimeType,data}`) → החלטת-מיפוי.
-- `AcpClient.capabilities.promptCapabilities` חסר/undefined בפועל → אי-אפשר gating לפי spec → החלטה.
+- **Commit 4a**: `conn.prompt` (SDK) לא מקבל בפועל `ContentBlock[]` עם image-block כפי שמתואר (`{type:"image",mimeType,data}`) → החלטת-מיפוי. (הבסיס נמדד — `conn.prompt` מקבל blocks; escalate רק אם המדידה מופרכת בפועל.)
+- `AcpClient.capabilities.promptCapabilities` חסר/undefined בפועל בזמן ריצה → ה-getter raw יחזיר false תמיד (לא crash — optional chaining), אבל הפיצ'ר לא יעבוד לאף ספק → דווח לפני מעבר ל-runtime-gate.
+- **אף ספק זמין** לא מצהיר `promptCapabilities.image:true` (בדוק ב-`WIRE_RECORD`) → אי-אפשר לאמת חי את Commit 4b → דווח (חוסם runtime-gate, לא את הביצוע).
 - דחיסת canvas מייצרת תמונות פגומות/ריקות בדפדפן היעד → ייתכן stack/API שגוי.
 
 ## §8 — Complexity score
-- commits: 4 (+ gated) → בינוני-גבוה
+- commits: 5 (0–3 מוזגו; נותרו 4a provider + 4b FE) → בינוני-גבוה
 - שכבות חדשות: 2 (`core/image` + FE `engine`) → +1
 - state model: הרחבת tray + UserBubble.attachments → +1
 - protocol coupling (ACP ImageContent + capability gating) → +2
@@ -334,5 +405,42 @@ sendPrompt = async (
 | 1 | פורמט יעד לדחיסה — JPEG תמיד, או לשמר PNG כשיש שקיפות? | JPEG (כמו CodeNomad); PNG→JPEG מאבד alpha אך זול | ❌ |
 | 2 | מגבלות — `maxDim=2048`, `maxBytes=8MB` (CodeNomad). סביר? | כן | ❌ |
 | 3 | ריבוי תמונות בפרומפט אחד — מותר כמה? | כן, מערך; בלי תקרה קשיחה ב-MVP | ❌ |
-| 4 | האם החוזה (הסוכן השני) חושף `PromptContent` ברמת ACP-client, או רק `ProviderSession`? drive-coding משתמש ב-`AcpClient` הישיר — צריך ש**הוא** יקבל blocks | לתאם עם הסוכן השני; ברירת מחדל: `AcpClient.prompt(sessionId, PromptContent)` | ✅ **חוסם Commit 4** |
+| 4 | האם החוזה חושף `PromptContent` ברמת ACP-client? drive-coding משתמש ב-`AcpClient` הישיר — צריך ש**הוא** יקבל blocks | **הוכרע 2026-07-01**: החבילה בבעלותנו → Commit 4a מרחיב את `AcpClient.prompt` ל-`string \| PromptBlocks` (backward-compat). ה-layer התחתון `conn.prompt` כבר מקבל blocks. | ❌ (נסגר) |
 | 5 | base64 — עם או בלי prefix `data:`? ACP `ImageContent.data` = base64 **גולמי** (בלי prefix) | גולמי (לפי ACP SDK) | ❌ |
+
+## §10 — הכרעת ה-gating: **נתיב (א) — raw** (נעול ע"י מרדכי 2026-07-01)
+
+> ה-§ הזה היה "שאלה פתוחה לסוכן provider-cutover". אחרי ספיגת החבילה (v0.8.0) אין סוכן כזה —
+> ההכרעה חזרה למרדכי, שמדד את הקוד והכריע. **ההכרעה סופית; אין פעולה פתוחה כאן ל-executor.**
+
+### ההכרעה
+`supportsImageInput` נשאר קורא **raw**: `#client.capabilities.promptCapabilities.image` (getter קיים,
+`agent-session.svelte.ts:137`). **אפס שינוי בשכבת ה-capabilities.** `NormalizedCapabilities` לא נגעים.
+
+### נימוק (מה שמכריע — נמדד 2026-07-01)
+1. **`staticCapsFor` (spawn: opencode/codex/claude-spawn) hardcoded לגמרי** (`capabilities-static.ts:1-52`):
+   "capabilities cannot be discovered at runtime here". נתיב (ב) normalized היה כופה את `image` להיות
+   **ניחוש קשיח** לספקי-spawn — מנותק ממה שהסוכן מדווח → בדיוק סיכון הכשל-השקט שה-kill-switch נועד למנוע.
+2. **raw = הערך האמיתי פר-סוכן לכל הספקים.** `#client.capabilities` = `agentCapabilities` מ-`initialize`
+   האמיתי של הסוכן המחובר (client.ts:46,156) — עובר דרך ה-bridge לסוכן האמיתי (in-process claude *וגם*
+   spawn opencode/codex). זה המסלול היחיד שנותן ערך-אמת אחיד.
+3. **`promptCapabilities.image` הוא שדה ACP סטנדרטי** — כבר אחיד לכל סוכן תואם-ACP. `NormalizedCapabilities`
+   נועד ל-host/_drive features שהמשטח הגולמי *לא* חשף אחיד (mcp/compact/commands/usage/configOptions/
+   rename/thinkingTokens). `image` לא צריך את שכבת הנרמול — הוא כבר נורמלי.
+
+### ה"חיסרון" (image raw בעוד השאר normalized) — מקובל ונכון
+זו הבחנה **קטגוריאלית נכונה**, לא חוסר-עקביות: prompt-content caps ⊥ host/_drive caps. אם בעתיד יתווספו
+`audio`/`embeddedContext` (גם הם תחת `promptCapabilities`) — הם ילכו באותו מסלול raw, עקבי.
+
+### מצב הקוד שנמדד (2026-07-01, dev `0ad8ed3`)
+| מה | היכן | מצב |
+|----|------|-----|
+| חתימת `AcpClient.prompt` | `client.ts:57,189` | `(sessionId, text: string)` — Commit 4a מרחיב ל-`string \| PromptBlocks` |
+| השכבה התחתונה | `client.ts:190` | `conn.prompt` **כבר מקבל `ContentBlock[]`** — passthrough |
+| getter `supportsImageInput` | `agent-session.svelte.ts:137` | raw `#client.capabilities.promptCapabilities.image` — **נשאר** |
+| `IMAGE_INPUT_ENABLED` | `agent-session.svelte.ts:46` | `false` → Commit 4b הופך ל-`true` |
+
+### שאלה משנית (לא חוסמת ביצוע, חוסמת runtime-gate — ל-calev)
+איזה ספק זמין מצהיר `promptCapabilities.image: true` (claude / opencode / codex)? נדרש ל-DoD של Commit 4b
+(אימות end-to-end). **calev-heavy יאמת עם `WIRE_RECORD` מה כל ספק מצהיר** ויריץ את ה-e2e מול הספק שכן.
+אם אף ספק לא מצהיר → escalation (§7) — הפיצ'ר נכון-מבנית אבל לא-ניתן-לאימות-חי כרגע.

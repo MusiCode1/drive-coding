@@ -11,18 +11,28 @@
  */
 
 import type {
-  SessionNotification,
   SessionConfigOption,
-  SessionModeState,
   SessionModelState,
+  SessionModeState,
+  SessionNotification,
 } from "@agentclientprotocol/sdk"
+import type { CliKind } from "@drive-coding/core"
+import {
+  type AcpClient,
+  createAcpClient,
+  createAttachedAcpClient,
+} from "@drive-coding/provider/client"
 import { tick } from "svelte"
-import { createAcpClient, type AcpClient } from "@drive-coding/provider/client"
+import {
+  createAgent,
+  deleteAgent,
+  listAgents,
+  notifySessionAttached,
+} from "$lib/adapters/agents-api"
+// ─── slice sessions-inline: ייבוא טיפוס + normalize ───
+import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import type { CuesEngine } from "$lib/engines/cues"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
-import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
-import type { CliKind } from "@drive-coding/core"
-import type { Settings } from "$lib/view-models/settings.svelte"
 import type {
   Bubble,
   MessageBubble,
@@ -34,16 +44,21 @@ import type {
   ToolLocation,
   UserBubble,
 } from "$lib/types/bubble"
-// ─── slice sessions-inline: ייבוא טיפוס + normalize ───
-import { type SessionInfo, normalizeSessionInfo } from "$lib/adapters/sessions"
 // ─── slice leave-running-background ───
 import { isBypassMode } from "$lib/util/permission-mode"
+import type { Settings } from "$lib/view-models/settings.svelte"
 
 // ─── image-attach kill-switch ─── (slice-image-paste Commit 2)
 // נשאר false עד ש-Commit 4 (שליחה מולטימודלית) + track-A מוכנים.
 // כל עוד false: supportsImageInput=false תמיד → לכידת-התמונה רדומה לחלוטין,
 // ללא תלות במה שהספק מדווח. Commit 4 הופך ל-true. (module-level const)
 const IMAGE_INPUT_ENABLED = false
+
+// ─── slice warm-reattach-skip-init ───
+// warm reattach אין לו תגובת initialize לשאוב raw capabilities ממנה.
+// raw capabilities משמש רק supportsImageInput (רדום מאחורי IMAGE_INPUT_ENABLED).
+// NormalizedCapabilities מגיע מ-_drive/capabilities (BE) — לא מושפע.
+const ATTACHED_CAPS_FALLBACK = {} as AcpClient["capabilities"]
 
 // ─── slice FE-normalization: ייבוא ─── (additive)
 // import type בלבד — NormalizedCapabilities מ-subpath ./types (pure, ללא spawn-core).
@@ -61,11 +76,11 @@ const CLAUDE_SESSION_META = {
 } as const
 
 export type AgentSessionStatus =
-  | "idle"          // טרם נוצר סוכן
-  | "connecting"    // יוצר סוכן + לחיצת יד של ACP
-  | "connected"     // מוכן לקבל פרומפטים
+  | "idle" // טרם נוצר סוכן
+  | "connecting" // יוצר סוכן + לחיצת יד של ACP
+  | "connected" // מוכן לקבל פרומפטים
   | "error"
-  | "disconnected"  // WS נפל, ממתין ל-reconnect (ידני/אוטו) — slice ws-reconnect-infra
+  | "disconnected" // WS נפל, ממתין ל-reconnect (ידני/אוטו) — slice ws-reconnect-infra
 
 /** מה המודל עושה בתור הנוכחי. מופרד מ-status (חיבור) — §1 ב-brief. */
 export type TurnState = "idle" | "waiting" | "thinking" | "responding" | "calling-tool"
@@ -177,7 +192,7 @@ export class AgentSession {
   sessions = $state<SessionInfo[]>([])
   sessionsLoading = $state<boolean>(false)
   sessionsError = $state<string | null>(null)
-  #sessionsLoaded = false   // True אחרי טעינה מוצלחת אחת — cache; force=true מרענן
+  #sessionsLoaded = false // True אחרי טעינה מוצלחת אחת — cache; force=true מרענן
 
   // ─── slice-A5-watchdog: watchdog state ───
   /** אמת אם watchdog אילץ idle (RESP אבד). B1 יכול להציג חיווי. מאופס בתחילת תור הבא. */
@@ -190,9 +205,9 @@ export class AgentSession {
   // מגיעה אחרי ה-RESP, ודורסת turnState ל-responding אחרי שכבר נקבע idle.
   // מפר את ה-ACP spec (כל notifications לפני response). gemini/claude תקינים →
   // ה-net הזה לא מופעל אצלם. כשהבאג ייסגר אפשר להסיר #turnEnded/#scheduleIdle/#TAIL_MS.
-  #turnEnded = false                                               // דלוק בין RESP לתחילת תור הבא
-  #idleTimer: ReturnType<typeof setTimeout> | null = null          // | null כמו settings.svelte.ts
-  #TAIL_MS = 1500                                                  // debounce לבליעת tail (אחרי RESP בלבד)
+  #turnEnded = false // דלוק בין RESP לתחילת תור הבא
+  #idleTimer: ReturnType<typeof setTimeout> | null = null // | null כמו settings.svelte.ts
+  #TAIL_MS = 1500 // debounce לבליעת tail (אחרי RESP בלבד)
 
   /** מתזמן idle אחרי שקט מ-tail. נקרא רק כש-#turnEnded דלוק. כל tail-chunk מאפס. */
   #scheduleIdle(): void {
@@ -206,7 +221,10 @@ export class AgentSession {
   /** מאפס את מעקב-התור. חובה בתחילת תור (sendPrompt) ובכל טעינה (replay אינו תור). */
   #resetTurnTracking(): void {
     this.#turnEnded = false
-    if (this.#idleTimer !== null) { clearTimeout(this.#idleTimer); this.#idleTimer = null }
+    if (this.#idleTimer !== null) {
+      clearTimeout(this.#idleTimer)
+      this.#idleTimer = null
+    }
   }
 
   // ─── slice-A5-watchdog: watchdog helpers ───
@@ -272,9 +290,15 @@ export class AgentSession {
   #reconnecting = false
 
   // ─── DEV-only test helpers (tree-shaken from prod) ───
-  /** @internal */ _setStatusForTest(s: AgentSessionStatus): void { this.#setStatus(s) }
-  /** @internal */ _setReconnectAttemptForTest(n: number): void { this.reconnectAttempt = n }
-  /** @internal */ _setTearingDownForTest(v: boolean): void { this.#tearingDown = v }
+  /** @internal */ _setStatusForTest(s: AgentSessionStatus): void {
+    this.#setStatus(s)
+  }
+  /** @internal */ _setReconnectAttemptForTest(n: number): void {
+    this.reconnectAttempt = n
+  }
+  /** @internal */ _setTearingDownForTest(v: boolean): void {
+    this.#tearingDown = v
+  }
   /**
    * @internal **predicate טהור** — מחזיר האם onClose עם ה-code הנתון *היה* מצית
    * reconnect, לפי אותה שרשרת gate כמו ה-handlers האמיתיים (#detached → #tearingDown
@@ -313,7 +337,9 @@ export class AgentSession {
    * @internal override ל-#coldReconnect — זורק/מחזיר ערך קבוע לטסטים.
    */
   _mockColdReconnectForTest(error: Error): void {
-    this.#coldReconnect = async () => { throw error }
+    this.#coldReconnect = async () => {
+      throw error
+    }
   }
   /**
    * @internal override ל-#warmReconnect — מחזיר ערך קבוע לטסטים.
@@ -372,7 +398,7 @@ export class AgentSession {
       )
       return match?.id ?? null
     } catch {
-      return null   // שגיאת רשת — cold יטפל
+      return null // שגיאת רשת — cold יטפל
     }
   }
 
@@ -390,10 +416,10 @@ export class AgentSession {
   #handleUnexpectedClose(code: number, reason: string): void {
     this.error = `WS closed (${code}): ${reason || "no reason"}`
     if (this.#pageHidden) {
-      this.#setStatus("disconnected")   // רקע — לא אוטו
+      this.#setStatus("disconnected") // רקע — לא אוטו
       return
     }
-    this.#scheduleReconnect()           // פוקוס — backoff
+    this.#scheduleReconnect() // פוקוס — backoff
   }
 
   #scheduleReconnect(): void {
@@ -406,13 +432,16 @@ export class AgentSession {
 
   async #runReconnectLoop(): Promise<void> {
     while (this.reconnectAttempt < AgentSession.#MAX_RECONNECT_ATTEMPTS) {
-      const attempt = this.reconnectAttempt           // 0-indexed לתוך BACKOFF_MS
+      const attempt = this.reconnectAttempt // 0-indexed לתוך BACKOFF_MS
       const delay = AgentSession.#BACKOFF_MS[attempt] ?? 16000
-      this.reconnectAttempt = attempt + 1             // 1-indexed לחיווי
+      this.reconnectAttempt = attempt + 1 // 1-indexed לחיווי
       await new Promise<void>((resolve) => {
         this.#reconnectTimer = setTimeout(resolve, delay)
       })
-      if (this.#detached) { this.#reconnecting = false; return }
+      if (this.#detached) {
+        this.#reconnecting = false
+        return
+      }
       try {
         await this.#doReconnect()
       } catch {
@@ -425,7 +454,7 @@ export class AgentSession {
       }
     }
     this.#reconnecting = false
-    this.#setStatus("disconnected")   // מיצינו — ממתין ל-reconnect ידני
+    this.#setStatus("disconnected") // מיצינו — ממתין ל-reconnect ידני
   }
 
   #clearReconnectTimer(): void {
@@ -483,22 +512,28 @@ export class AgentSession {
   #coldReconnect = async (): Promise<void> => {
     // שמור agentId הקודם לפני שloadSession ידרוס אותו
     const prevAgentId = this.agentId
-    this.#tearingDown = true          // NBug2: השתק onClose ישן (1005) של ה-WS שאנו סוגרים
+    this.#tearingDown = true // NBug2: השתק onClose ישן (1005) של ה-WS שאנו סוגרים
     try {
       // סגור את ה-WS/client הישן (NBug2: מנע WS ו-agent תקועים ב-BE)
-      try { this.#client?.close() } catch { /* כבר סגור */ }
+      try {
+        this.#client?.close()
+      } catch {
+        /* כבר סגור */
+      }
       this.#client = null
-      this.#transport = null   // slice ws-reconnect-fix-nbug2: נקה אחרי סגירה
+      this.#transport = null // slice ws-reconnect-fix-nbug2: נקה אחרי סגירה
       if (this.status === "connecting" || this.status === "connected") {
-        this.#setStatus("disconnected")   // מאפס מצב שהשאיר warm-fail; עובר את guard 217
+        this.#setStatus("disconnected") // מאפס מצב שהשאיר warm-fail; עובר את guard 217
       }
       // defensive: ה-guard ב-#doReconnect כבר מבטיח שאלה לא null, אך לא נשען על ! בלבד
       // (assertion של TS, ללא בדיקת runtime) — אחרת session/load: null ידחה ע"י ה-agent.
-      const sid = this.#sessionId, cwd = this.cwd, cliKind = this.#cliKind
+      const sid = this.#sessionId,
+        cwd = this.cwd,
+        cliKind = this.#cliKind
       if (sid === null || cwd === null || cliKind === null) return
       await this.loadSession({ sessionId: sid, cwd, cliKind })
     } finally {
-      this.#tearingDown = false       // שחרר אחרי שה-WS החדש פעיל
+      this.#tearingDown = false // שחרר אחרי שה-WS החדש פעיל
     }
     // מחק את ה-agent הישן אחרי שloadSession הצליח לייצר חדש (NBug1: מנע agent leak)
     // רק אם ה-agentId השתנה (loadSession קובע agentId חדש; prevAgentId הוא הישן)
@@ -514,24 +549,32 @@ export class AgentSession {
    */
   #warmReconnect = async (agentId: string): Promise<boolean> => {
     this.#detached = false
-    this.#setStatus("connecting")   // ל-warm מותר — לא עובר דרך loadSession של ה-VM
+    this.#setStatus("connecting") // ל-warm מותר — לא עובר דרך loadSession של ה-VM
 
     for (let attempt = 0; attempt <= AgentSession.#MED8_MAX_RETRIES; attempt++) {
       this.#client = null
-      this.#transport = null   // slice ws-reconnect-fix-nbug2: איפוס iteration (WS החי כבר סגור ב-#doReconnect)
+      this.#transport = null // slice ws-reconnect-fix-nbug2: איפוס iteration (WS החי כבר סגור ב-#doReconnect)
       const proto = location.protocol === "https:" ? "wss:" : "ws:"
       const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
-      this.#transport = transport   // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
+      this.#transport = transport // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
 
       // ⚠️ תיקון אביגיל #1 — DEADLOCK: waitForOpen (ws-transport.ts:70-78) מאזין רק
       // open+error, לא close. סגירת 1008 היא close event → waitForOpen נתקע לנצח.
       // לכן race בין waitForOpen ל-Promise שנפתר ב-onClose.
-      const closeOutcome = new Promise<{ closed: true; code: number; reason: string }>((resolve) => {
-        transport.onClose((code, reason) => resolve({ closed: true, code, reason }))
-      })
+      const closeOutcome = new Promise<{ closed: true; code: number; reason: string }>(
+        (resolve) => {
+          transport.onClose((code, reason) => resolve({ closed: true, code, reason }))
+        },
+      )
       let opened = false
       const closeResult = await Promise.race([
-        transport.waitForOpen().then(() => { opened = true; return null }).catch(() => null),
+        transport
+          .waitForOpen()
+          .then(() => {
+            opened = true
+            return null
+          })
+          .catch(() => null),
         closeOutcome,
       ])
 
@@ -541,33 +584,43 @@ export class AgentSession {
         const code = closeResult && "closed" in closeResult ? closeResult.code : 0
         if (code === 1008 && attempt < AgentSession.#MED8_MAX_RETRIES) {
           await new Promise((r) => setTimeout(r, AgentSession.#MED8_RETRY_MS))
-          continue   // MED-8 — נסה שוב
+          continue // MED-8 — נסה שוב
         }
-        return false   // לא-1008, או מיצינו retries → cold
+        return false // לא-1008, או מיצינו retries → cold
       }
 
       // ה-WS פתוח. רשום onClose "אמיתי" לנפילות עתידיות.
       transport.onClose((code, reason) => {
         if (this.#detached) return
-        if (this.#tearingDown) return        // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
+        if (this.#tearingDown) return // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
         if (code !== 1000 && code !== 1001) this.#handleUnexpectedClose(code, reason)
       })
 
       try {
         this.agentId = agentId
-        this.#client = await createAcpClient(transport, {
-          onUpdate: this.#onSessionUpdate,
-          onExtNotification: this.#onExtNotification,
-        })
+        // ─── slice warm-reattach-skip-init: דילוג על initialize ב-warm reattach ───
+        // createAcpClient שולח initialize — Codex על process חי זורק "Already initialized"
+        // → catch → transport.close() → #handleUnexpectedClose → warm שוב → לולאת סוקטים.
+        // createAttachedAcpClient (סינכרוני) מדלג על initialize; loadSession עובד על process חי.
+        this.#client = createAttachedAcpClient(
+          transport,
+          { onUpdate: this.#onSessionUpdate, onExtNotification: this.#onExtNotification },
+          { capabilities: ATTACHED_CAPS_FALLBACK },
+        )
         this.#ext = createExtClient(this.#client)
         this.bubbles = []
         this.isLoadingHistory = true
         try {
           const m = this.#sessionMeta()
-          const loadResult = await this.#client.loadSession({ sessionId: this.#sessionId!, cwd: this.cwd!, ...(m && { _meta: m }) })
+          const loadResult = await this.#client.loadSession({
+            sessionId: this.#sessionId!,
+            cwd: this.cwd!,
+            ...(m && { _meta: m }),
+          })
           this.#captureSessionConfig(loadResult)
         } finally {
           this.isLoadingHistory = false
+          this.#setTurnState("idle") // replay מסתיים — reset turnState (replay אינו תור). מתאם ל-loadSession/switchSession; בלעדיו אינדיקטור "המודל פועל" נתקע אחרי warm-reconnect (ה-turn-tracker observe על frames משוחזרים)
         }
         // replace:true — אותו דגם כמו switchSession:327 (fix-409 מוזג ב-8f59ec3)
         await notifySessionAttached(agentId, this.#sessionId!, { replace: true }).catch(() => {})
@@ -576,7 +629,7 @@ export class AgentSession {
       } catch {
         // שגיאת handshake/loadSession — נקה ונפול ל-cold
         this.#client = null
-        this.#transport = null   // slice ws-reconnect-fix-nbug2: נקה אחרי כשל warm
+        this.#transport = null // slice ws-reconnect-fix-nbug2: נקה אחרי כשל warm
         transport.close()
         return false
       }
@@ -604,15 +657,15 @@ export class AgentSession {
       const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
       this.agentId = agentId
       this.cwd = input.cwd
-      this.#cliKind = input.cliKind   // slice ws-reconnect-infra: שמור ל-cold reconnect
+      this.#cliKind = input.cliKind // slice ws-reconnect-infra: שמור ל-cold reconnect
 
       // 2. פתח תעבורת WS
       const proto = location.protocol === "https:" ? "wss:" : "ws:"
       const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
-      this.#transport = transport   // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
+      this.#transport = transport // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
       transport.onClose((code, reason) => {
         if (this.#detached) return
-        if (this.#tearingDown) return        // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
+        if (this.#tearingDown) return // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
         if (code !== 1000 && code !== 1001) {
           this.#handleUnexpectedClose(code, reason)
         }
@@ -626,12 +679,15 @@ export class AgentSession {
       })
       this.#ext = createExtClient(this.#client)
       const m = this.#sessionMeta()
-      const sessionResult = await this.#client.newSession({ cwd: input.cwd, ...(m && { _meta: m }) })
+      const sessionResult = await this.#client.newSession({
+        cwd: input.cwd,
+        ...(m && { _meta: m }),
+      })
       this.#sessionId = (sessionResult as { sessionId?: string }).sessionId ?? null
       if (!this.#sessionId) {
         throw new Error("newSession returned no sessionId")
       }
-      this.#captureSessionConfig(sessionResult)   // slice 23: לכוד config מה-session
+      this.#captureSessionConfig(sessionResult) // slice 23: לכוד config מה-session
 
       // 4. תגיד ל-BE לאיזה sessionId התחברנו (מאמץ מיטבי - best-effort)
       await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
@@ -648,7 +704,7 @@ export class AgentSession {
   }
 
   detach = (): void => {
-    this.#detached = true  // ‏לפני ה-cleanup — ‏ה-WS close fires async
+    this.#detached = true // ‏לפני ה-cleanup — ‏ה-WS close fires async
     // ─── slice ws-reconnect-infra: ביטול לולאת reconnect ───
     this.#clearReconnectTimer()
     this.#reconnecting = false
@@ -671,7 +727,7 @@ export class AgentSession {
     this.#clearReconnectTimer()
     this.#reconnecting = false
     this.reconnectAttempt = 0
-    this.#cleanup({ keepAgent: true })   // ← ההבדל היחיד מ-detach
+    this.#cleanup({ keepAgent: true }) // ← ההבדל היחיד מ-detach
     this.#setStatus("idle")
     this.error = null
     this.bubbles = []
@@ -720,18 +776,18 @@ export class AgentSession {
     }
     this.bubbles.push(userBubble)
     this.#setTurnState("waiting")
-    this.#resetTurnTracking()   // תחילת תור — #turnEnded=false + נקה טיימר יתום
+    this.#resetTurnTracking() // תחילת תור — #turnEnded=false + נקה טיימר יתום
     // ─── slice-A5-watchdog: תחילת תור ───
-    this.turnInterrupted = false   // מאפס חיווי "נקטע" מהתור הקודם
-    this.#clearWatchdog()          // בטל watchdog קודם (לא אמור להיות, אבל defensive)
-    this.#kickWatchdog()           // התחל watchdog — waiting state מפעיל
+    this.turnInterrupted = false // מאפס חיווי "נקטע" מהתור הקודם
+    this.#clearWatchdog() // בטל watchdog קודם (לא אמור להיות, אבל defensive)
+    this.#kickWatchdog() // התחל watchdog — waiting state מפעיל
 
     try {
       await this.#client.prompt(this.#sessionId, text)
       // RESP הגיע — opencode: tail עוד יבוא; gemini/claude: סוף
       this.#turnEnded = true
-      this.#clearWatchdog()        // RESP תקין — בטל watchdog
-      this.#setTurnState("idle")   // נכון ל-gemini/claude. opencode: tail יטופל ב-#onSessionUpdate
+      this.#clearWatchdog() // RESP תקין — בטל watchdog
+      this.#setTurnState("idle") // נכון ל-gemini/claude. opencode: tail יטופל ב-#onSessionUpdate
     } catch (err: unknown) {
       this.#turnEnded = true
       this.#clearWatchdog()        // שגיאה — גם כן מנקה
@@ -752,7 +808,7 @@ export class AgentSession {
     sessionId: string
     cwd: string
     cliKind: CliKind
-    title?: string   // ← slice session-title: תוספתי (קוראים קיימים לא נשברים)
+    title?: string // ← slice session-title: תוספתי (קוראים קיימים לא נשברים)
   }): Promise<void> => {
     if (this.status === "connecting" || this.status === "connected") {
       throw new Error(`cannot loadSession in status ${this.status}`)
@@ -770,22 +826,22 @@ export class AgentSession {
       return
     }
 
-    this.#resetTurnTracking()   // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
+    this.#resetTurnTracking() // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
 
     try {
       // 1. צור סוכן בצד השרת (זהה ל-attach)
       const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
       this.agentId = agentId
       this.cwd = input.cwd
-      this.#cliKind = input.cliKind   // slice ws-reconnect-infra: שמור ל-cold reconnect
+      this.#cliKind = input.cliKind // slice ws-reconnect-infra: שמור ל-cold reconnect
 
       // 2. פתח תעבורת WS + הוסף מאזין onClose (זהה ל-attach)
       const proto = location.protocol === "https:" ? "wss:" : "ws:"
       const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
-      this.#transport = transport   // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
+      this.#transport = transport // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
       transport.onClose((code, reason) => {
         if (this.#detached) return
-        if (this.#tearingDown) return        // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
+        if (this.#tearingDown) return // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
         if (code !== 1000 && code !== 1001) {
           this.#handleUnexpectedClose(code, reason)
         }
@@ -804,14 +860,18 @@ export class AgentSession {
       this.isLoadingHistory = true
       try {
         const m = this.#sessionMeta()
-        const loadResult = await this.#client.loadSession({ sessionId: input.sessionId, cwd: input.cwd, ...(m && { _meta: m }) })
-        this.#captureSessionConfig(loadResult)   // slice 23: לכוד config (sessionId מ-input, לא מ-response)
+        const loadResult = await this.#client.loadSession({
+          sessionId: input.sessionId,
+          cwd: input.cwd,
+          ...(m && { _meta: m }),
+        })
+        this.#captureSessionConfig(loadResult) // slice 23: לכוד config (sessionId מ-input, לא מ-response)
       } finally {
         this.isLoadingHistory = false
-        this.#setTurnState("idle")   // NBug3: replay מסתיים — reset turnState (replay אינו תור)
+        this.#setTurnState("idle") // NBug3: replay מסתיים — reset turnState (replay אינו תור)
       }
       this.#sessionId = input.sessionId
-      this.sessionTitle = input.title ?? this.sessionTitle   // keep-on-undefined: reconnect לא מאפס
+      this.sessionTitle = input.title ?? this.sessionTitle // keep-on-undefined: reconnect לא מאפס
 
       // 4. הודע ל-BE (זהה ל-attach, מאמץ מיטבי)
       await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
@@ -820,7 +880,7 @@ export class AgentSession {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = `loadSession failed: ${msg}`
-      this.#setTurnState("idle")   // NBug3: throw מוקדם (createAgent/waitForOpen) — ה-finally הפנימי לא רץ
+      this.#setTurnState("idle") // NBug3: throw מוקדם (createAgent/waitForOpen) — ה-finally הפנימי לא רץ
       this.#setStatus("error")
       this.#cleanup()
     }
@@ -856,8 +916,8 @@ export class AgentSession {
     cwd: string
     cliKind: CliKind
   }): Promise<void> => {
-    this.error = null   // אביגיל: #warmReconnect מאפס bubbles אך לא error — נקה כדי
-                        // שלא יישאר error ישן אחרי re-attach מוצלח.
+    this.error = null // אביגיל: #warmReconnect מאפס bubbles אך לא error — נקה כדי
+    // שלא יישאר error ישן אחרי re-attach מוצלח.
     // דפנסיבי: סגור חיבור קיים (אם המשתמש כבר מחובר ל-agent אחר)
     if (this.#transport) {
       await this.#transport.closeAndWait()
@@ -867,7 +927,7 @@ export class AgentSession {
     this.#sessionId = input.sessionId
     this.cwd = input.cwd
     this.#cliKind = input.cliKind
-    this.sessionTitle = ""   // slice session-title: process חי בלי title → fallback ל-"drive-coding"
+    this.sessionTitle = "" // slice session-title: process חי בלי title → fallback ל-"drive-coding"
     const ok = await this.#warmReconnect(input.agentId)
     if (!ok) {
       this.error = "reconnect failed: agent no longer available"
@@ -890,7 +950,7 @@ export class AgentSession {
     sessionId: string
     cwd: string
     cliKind: CliKind
-    title?: string   // ← slice session-title: תוספתי
+    title?: string // ← slice session-title: תוספתי
   }): Promise<void> => {
     // אין חיבור פעיל → נתיב כבד (דפנסיבי; ה-panel מוצג רק עם חיבור)
     if (this.#client === null) {
@@ -905,7 +965,7 @@ export class AgentSession {
       return this.loadSession(input)
     }
 
-    this.#resetTurnTracking()   // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
+    this.#resetTurnTracking() // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
     this.#setStatus("connecting")
     this.error = null
     this.bubbles = []
@@ -922,23 +982,25 @@ export class AgentSession {
         this.#captureSessionConfig(loadResult)
       } finally {
         this.isLoadingHistory = false
-        this.#setTurnState("idle")   // NBug3: replay מסתיים — reset turnState
+        this.#setTurnState("idle") // NBug3: replay מסתיים — reset turnState
       }
       this.#sessionId = input.sessionId
       this.cwd = input.cwd
-      this.sessionTitle = input.title ?? this.sessionTitle   // keep-on-undefined
+      this.sessionTitle = input.title ?? this.sessionTitle // keep-on-undefined
 
       // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים)
       // replace:true — warm switch מכוון, מאפשר דריסת sessionId קיים (עוקף guard MED-9)
       if (this.agentId) {
-        await notifySessionAttached(this.agentId, input.sessionId, { replace: true }).catch(() => {})
+        await notifySessionAttached(this.agentId, input.sessionId, { replace: true }).catch(
+          () => {},
+        )
       }
 
       this.#setStatus("connected")
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = `switchSession failed: ${msg}`
-      this.#setTurnState("idle")   // NBug3: throw מוקדם — ה-finally הפנימי אולי לא רץ
+      this.#setTurnState("idle") // NBug3: throw מוקדם — ה-finally הפנימי אולי לא רץ
       this.#setStatus("error")
       // לא #cleanup — החיבור עדיין תקין; רק הטעינה נכשלה. השאר את ה-#client חי.
     }
@@ -971,7 +1033,7 @@ export class AgentSession {
     this.#setStatus("connecting")
     this.error = null
     this.bubbles = []
-    this.sessionTitle = ""   // slice session-title: סשן חדש = אין כותרת
+    this.sessionTitle = "" // slice session-title: סשן חדש = אין כותרת
 
     try {
       const m = this.#sessionMeta()
@@ -1047,7 +1109,9 @@ export class AgentSession {
     const optById = this.configOptions.find((o) => o.id === configId)
     if (optById) {
       const res = await this.#client!.setSessionConfigOption({
-        sessionId: this.#sessionId!, configId, value,
+        sessionId: this.#sessionId!,
+        configId,
+        value,
       })
       this.configOptions = res.configOptions
       return true
@@ -1058,7 +1122,9 @@ export class AgentSession {
       const byCat = this.configOptions.find((o) => o.category === "model")
       if (byCat) {
         const res = await this.#client!.setSessionConfigOption({
-          sessionId: this.#sessionId!, configId: byCat.id, value,
+          sessionId: this.#sessionId!,
+          configId: byCat.id,
+          value,
         })
         this.configOptions = res.configOptions
         return true
@@ -1072,7 +1138,9 @@ export class AgentSession {
       const byCat = this.configOptions.find((o) => o.category === "mode")
       if (byCat) {
         const res = await this.#client!.setSessionConfigOption({
-          sessionId: this.#sessionId!, configId: byCat.id, value,
+          sessionId: this.#sessionId!,
+          configId: byCat.id,
+          value,
         })
         this.configOptions = res.configOptions
         return true
@@ -1117,14 +1185,17 @@ export class AgentSession {
       return typeof value === "string" && this.modes.availableModes.some((m) => m.id === value)
     }
     if (key === "model" && this.models) {
-      return typeof value === "string" && this.models.availableModels.some((m) => m.modelId === value)
+      return (
+        typeof value === "string" && this.models.availableModels.some((m) => m.modelId === value)
+      )
     }
     const opt = this.configOptions.find((o) => o.id === key || o.category === key)
     if (!opt) return false
     if (opt.type === "select" && typeof value === "string") {
       // flatten זהה ללוגיקה של flattenSelectOptions (SessionOptionsPanel) — inline ב-VM
-      const flat = (opt.options as Array<{ value?: string; options?: Array<{ value: string }> }>)
-        .flatMap((i) => ("options" in i && i.options ? i.options : [i as { value: string }]))
+      const flat = (
+        opt.options as Array<{ value?: string; options?: Array<{ value: string }> }>
+      ).flatMap((i) => ("options" in i && i.options ? i.options : [i as { value: string }]))
       return flat.some((c) => c.value === value)
     }
     if (opt.type === "boolean") return typeof value === "boolean"
@@ -1161,7 +1232,7 @@ export class AgentSession {
    *  בחירת סשן נעשית מתוך הסשן הפעיל דרך SessionOptionsPanel.)
    */
   listSessions = async (force = false): Promise<void> => {
-    if (this.#client === null) return          // אין חיבור — לא טוענים פה
+    if (this.#client === null) return // אין חיבור — לא טוענים פה
     if (this.sessionsLoading) return
     if (this.#sessionsLoaded && !force) return
     this.sessionsLoading = true
@@ -1259,7 +1330,10 @@ export class AgentSession {
     // לכוד את ה-agentId לפני האיפוס — צריך אותו ל-deleteAgent.
     const agentId = this.agentId
     // נקה timer של tail-debounce (msr-v2 — NBug1 opencode)
-    if (this.#idleTimer !== null) { clearTimeout(this.#idleTimer); this.#idleTimer = null }
+    if (this.#idleTimer !== null) {
+      clearTimeout(this.#idleTimer)
+      this.#idleTimer = null
+    }
     // ─── slice-A5-watchdog: ניקוי watchdog ב-destroy ───
     this.#clearWatchdog()
     try {
@@ -1268,9 +1342,9 @@ export class AgentSession {
       // כבר סגור
     }
     this.#client = null
-    this.#ext = null          // slice FE-normalization: נקה facade
+    this.#ext = null // slice FE-normalization: נקה facade
     this.#capabilities = null // slice FE-normalization: נקה capabilities (חיבור חדש = caps חדשים)
-    this.#transport = null    // slice ws-reconnect-fix-nbug2: נקה ref
+    this.#transport = null // slice ws-reconnect-fix-nbug2: נקה ref
     this.#sessionId = null
     this.agentId = null
     // הורג את ה-bridge בצד ה-BE. ה-BE לא הורג את ה-child בסגירת WS לבד
@@ -1304,7 +1378,11 @@ export class AgentSession {
         } else if (cb?.type === "resource") {
           // chat-render-polish: EmbeddedResource { resource: { blob, mimeType, uri } } — רק blob עם image/*
           const r = (cb as { resource?: { blob?: unknown; mimeType?: unknown } }).resource
-          if (typeof r?.blob === "string" && typeof r.mimeType === "string" && r.mimeType.startsWith("image/")) {
+          if (
+            typeof r?.blob === "string" &&
+            typeof r.mimeType === "string" &&
+            r.mimeType.startsWith("image/")
+          ) {
             out.push({ type: "image", data: r.blob, mimeType: r.mimeType })
           } else {
             out.push({ type: "other", raw: item })
@@ -1370,7 +1448,7 @@ export class AgentSession {
       }
       this.cwd = cwd
       this.#sessionId = `mock:${name}`
-      this.sessionTitle = `🧪 ${name}`   // slice session-title: כותרת-דמו לharness הוויזואלי
+      this.sessionTitle = `🧪 ${name}` // slice session-title: כותרת-דמו לharness הוויזואלי
       // DEV: לכוד configOptions/modes/models מ-loadResult של ה-fixture (אם קיים) —
       // מאפשר mockup של בוררי ה-config (mode/model/agent/effort) + descriptions ללא ACP חי.
       if (data.loadResult) this.#captureSessionConfig(data.loadResult)
@@ -1379,7 +1457,7 @@ export class AgentSession {
       const params = new URLSearchParams(typeof location !== "undefined" ? location.search : "")
       const delayMs = Number(params.get("stream") ?? "0") || 0
 
-      this.#resetTurnTracking()   // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
+      this.#resetTurnTracking() // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
       this.isLoadingHistory = true
       try {
         for (const update of data.updates) {
@@ -1393,13 +1471,13 @@ export class AgentSession {
         await tick()
       } finally {
         this.isLoadingHistory = false
-        this.#setTurnState("idle")   // NBug3: replay מסתיים — reset turnState
+        this.#setTurnState("idle") // NBug3: replay מסתיים — reset turnState
       }
       this.status = "connected"
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       this.error = `mock loadSession failed: ${msg}`
-      this.#setTurnState("idle")   // NBug3: throw מוקדם — ה-finally הפנימי אולי לא רץ
+      this.#setTurnState("idle") // NBug3: throw מוקדם — ה-finally הפנימי אולי לא רץ
       this.status = "error"
     }
   }
@@ -1580,11 +1658,7 @@ export class AgentSession {
     this.#toolBubbleByCallId.set(update.toolCallId, this.bubbles[idx] as ToolBubble)
   }
 
-  #appendChunk(
-    kind: "message" | "thought" | "user",
-    text: string,
-    messageId: string | null,
-  ): void {
+  #appendChunk(kind: "message" | "thought" | "user", text: string, messageId: string | null): void {
     const last = this.bubbles[this.bubbles.length - 1]
     // קבץ יחד רק כאשר: (א) מאותו סוג, וגם (ב) מזהה הודעה (messageId) תואם.
     // אם messageId הוא null (Gemini ACP, שאינו שולח messageId) — קבץ לפי kind בלבד.
@@ -1592,18 +1666,18 @@ export class AgentSession {
       last !== undefined &&
       last.kind === kind &&
       (messageId !== null
-        ? last.messageId === messageId     // יש messageId → קבץ לפי מזהה (Claude)
-        : last.messageId === null)         // אין messageId → קבץ לפי kind (Gemini)
+        ? last.messageId === messageId // יש messageId → קבץ לפי מזהה (Claude)
+        : last.messageId === null) // אין messageId → קבץ לפי kind (Gemini)
 
     if (canGroup && last !== undefined) {
       const seg: Segment = { id: crypto.randomUUID(), text }
       // last הוא מסוג MessageBubble | ThoughtBubble | UserBubble — לכולם יש מערכי segments
       if (last.kind === "message") {
-        (last as MessageBubble).segments.push(seg)
+        ;(last as MessageBubble).segments.push(seg)
       } else if (last.kind === "thought") {
-        (last as ThoughtBubble).segments.push(seg)
+        ;(last as ThoughtBubble).segments.push(seg)
       } else if (last.kind === "user") {
-        (last as UserBubble).segments.push(seg)
+        ;(last as UserBubble).segments.push(seg)
       }
     } else {
       const newBubble: MessageBubble | ThoughtBubble | UserBubble =
@@ -1616,20 +1690,20 @@ export class AgentSession {
               segments: [{ id: crypto.randomUUID(), text }],
             }
           : kind === "thought"
-          ? {
-              id: crypto.randomUUID(),
-              kind: "thought",
-              messageId,
-              createdAt: Date.now(),
-              segments: [{ id: crypto.randomUUID(), text }],
-            }
-          : {
-              id: crypto.randomUUID(),
-              kind: "user",
-              messageId,
-              createdAt: Date.now(),
-              segments: [{ id: crypto.randomUUID(), text }],
-            }
+            ? {
+                id: crypto.randomUUID(),
+                kind: "thought",
+                messageId,
+                createdAt: Date.now(),
+                segments: [{ id: crypto.randomUUID(), text }],
+              }
+            : {
+                id: crypto.randomUUID(),
+                kind: "user",
+                messageId,
+                createdAt: Date.now(),
+                segments: [{ id: crypto.randomUUID(), text }],
+              }
       this.bubbles.push(newBubble)
     }
   }

@@ -1,10 +1,16 @@
 # Slice frontend-rename-cutover — `@drive-coding/frontend-v2` → `@drive-coding/frontend` — תוכנית
 
-> **תאריך**: 2026-06-25
-> **סטטוס**: טיוטה (אביגיל טרם)
+> **תאריך**: 2026-06-25 · **אימות-מחדש**: 2026-07-03 (dev נסחף — ר' הערת-אימות למטה)
+> **סטטוס**: ✅ בוצע + runtime-gate GO (כלב עצמאי 11/11, 0 findings; + כלב-אליעזר 10/10) · branch `slice-frontend-rename-cutover` (`13bbe9e`+`b60d34e`) · **ממתין לאישור-merge מהמשתמשת**
 > **Complexity**: 3/10 (verifier: light)
 > **תלות (depends_on)**: `[]` — שינוי שם-חבילה + הפניות. אין תלות בסלייס אחר.
-> **Base**: `dev` HEAD (גזור מ-`dev` עדכני).
+> **Base**: `dev` HEAD `c5deb8f` (גזור מ-`dev` עדכני).
+
+> **⚠️ הערת אימות-מחדש (2026-07-03, dev@c5deb8f)** — אביגיל אימתה מחדש מול dev הנוכחי ומצאה ש-dev נסחף מאז 25/06:
+> - **נוספו 2 קבצים פונקציונליים** עם `--filter @drive-coding/frontend-v2` שלא היו בעת האימות המקורי: `packages/release/scripts/build-binary.mjs:56` (+הערה `:5`) ו-`scripts/dc-build-fe.mjs:77`. בלי לתקנם — ה-rename ישבור את בניית-הבינארי ואת build-if-stale של systemd. **נוספו לרשימת Commit 1.**
+> - **`scripts/dc-launch.mjs:18` הוסר מהרשימה** — עבר refactor לדלגציה ל-`dc-build-fe.mjs`, אין בו יותר `frontend-v2` (אומת ב-`git grep`).
+> - **רשימת docs-החיים 11→9**: `docs/plans/EXECUTOR_DISPATCH.md` (כבר 0 מופעים) ו-`docs/plans/redesign-chain-dispatch.md` (עבר ל-`plans/archive/`) יורדים.
+> - `STORAGE_KEY = "drive-coding-v2-settings"` (localStorage) — אומת **שלא** נסחף (🟢).
 
 ---
 
@@ -32,7 +38,7 @@ pnpm install && pnpm hooks:install
 - `pnpm install` (אחרי rename — מאמת שה-workspace עדיין נפתר)
 - `pnpm --filter @drive-coding/frontend build` (השם החדש — חייב להיתפס ולבנות)
 - `node packages/release/scripts/build.mjs` (ה-release build המלא — FE build + copy ל-frontend-dist)
-- `node scripts/dc-launch.mjs --help` או ריצה חלקית (ר' §5 — לפחות לוודא שה-`--filter` נפתר, לא "No projects matched")
+- `node scripts/dc-build-fe.mjs` (ר' §5 — בונה FE עם ה-`--filter` החדש; לוודא שנפתר, לא "No projects matched")
 
 ### OneCLI / Browser
 - **לא דרוש** — אין נגיעת proxy/TTS/UI; זה refactor של שמות.
@@ -59,7 +65,7 @@ pnpm install && pnpm hooks:install
 | פיצ'ר | כן/לא | לאן |
 |---|---|---|
 | שם החבילה `package.json` → `@drive-coding/frontend` | ✅ | Commit 1 |
-| 2 קריאות `--filter @drive-coding/frontend-v2` פונקציונליות (build.mjs, dc-launch.mjs) | ✅ | Commit 1 |
+| 4 קריאות `--filter @drive-coding/frontend-v2` פונקציונליות (build.mjs, build-binary.mjs, dc-build-fe.mjs) + package.json name | ✅ | Commit 1 |
 | הערות-קוד שמזכירות את השם (build.mjs:4, smoke:26) | ✅ | Commit 1 |
 | docs **חיים** שסוכנים מריצים מהם פקודות `--filter` | ✅ | Commit 2 |
 | **archives / reports / briefs שהושלמו-ומוזגו** — רשומה היסטורית | ❌ | נשארים כפי שהם (ר' §9 Q1) — שכתוב רשומה היסטורית = רעש + מטעה ("אז זה היה frontend-v2") |
@@ -71,15 +77,17 @@ pnpm install && pnpm hooks:install
 ```
 packages/frontend/package.json   "name": "@drive-coding/frontend-v2"  ← מקור-האמת (Commit 1)
         │
-        ├─ packages/release/scripts/build.mjs:40   pnpm --filter <name> build   ← Commit 1
-        ├─ scripts/dc-launch.mjs:18                pnpm --filter <name> build   ← Commit 1
+        ├─ packages/release/scripts/build.mjs:40        pnpm --filter <name> build   ← Commit 1
+        ├─ packages/release/scripts/build-binary.mjs:56  pnpm --filter <name> build   ← Commit 1 [נוסף]
+        ├─ scripts/dc-build-fe.mjs:77                    pnpm --filter <name> build   ← Commit 1 [נוסף]
         └─ (build output = packages/frontend/build — דירקטוריוני, לא נוגעים)
+        (dc-launch.mjs — כבר לא מכיל frontend-v2: מדלג ל-dc-build-fe.mjs)
 
-docs חיים (Commit 2): AGENTS.md · packages/frontend/AGENTS.md · docs/running-locally.md ·
-  packages/frontend/docs/slices.md · docs/plans/EXECUTOR_DISPATCH.md · tests/smoke/README.md ·
-  docs/roadmap.md · docs/vnext-spec.md · docs/deploy-cf-pages.md · docs/behaviors-coverage.md ·
-  docs/plans/redesign-chain-dispatch.md
-היסטורי — לא נוגעים: walkthrough.md · decisions/voice-acp.md · reports/** · docs/reports/** ·
+docs חיים (Commit 2) — 9 קבצים: AGENTS.md · packages/frontend/AGENTS.md · docs/running-locally.md ·
+  packages/frontend/docs/slices.md · tests/smoke/README.md ·
+  docs/roadmap.md · docs/vnext-spec.md · docs/deploy-cf-pages.md · docs/behaviors-coverage.md
+היסטורי / ירדו — לא נוגעים: EXECUTOR_DISPATCH.md (0 מופעים) · redesign-chain-dispatch.md (→archive) ·
+  walkthrough.md · decisions/voice-acp.md · reports/** · docs/reports/** ·
   redesign-vnext-mockup.html · archive/**
 ```
 
@@ -87,11 +95,13 @@ docs חיים (Commit 2): AGENTS.md · packages/frontend/AGENTS.md · docs/runni
 
 ### Commit 1 — rename פונקציונלי (approach: manual — הרצת ה-build pipelines)
 
-**קבצים שמשתנים** (החלפה מדויקת `@drive-coding/frontend-v2` → `@drive-coding/frontend`):
+**קבצים שמשתנים** (החלפה מדויקת `@drive-coding/frontend-v2` → `@drive-coding/frontend`) — **רשימה מעודכנת ל-dev@c5deb8f**:
 - `packages/frontend/package.json:2` — `"name": "@drive-coding/frontend-v2"` → `"@drive-coding/frontend"`.
-- `packages/release/scripts/build.mjs:40` — `execFileSync("pnpm", ["--filter", "@drive-coding/frontend-v2", "build"], …)` → השם החדש. (וגם ההערה :4.)
-- `scripts/dc-launch.mjs:18` — `["--filter", "@drive-coding/frontend-v2", "build"]` → השם החדש.
+- `packages/release/scripts/build.mjs:40` — `execFileSync("pnpm", ["--filter", "@drive-coding/frontend-v2", "build"], …)` → השם החדש. (וגם ההערה `:4`.)
+- **`packages/release/scripts/build-binary.mjs:56`** — `execFileSync("pnpm", ["--filter", "@drive-coding/frontend-v2", "build"], …)` → השם החדש. (וגם ההערה `:5`.) **[נוסף באימות-מחדש — בניית `bun --compile`.]**
+- **`scripts/dc-build-fe.mjs:77`** — `execFileSync("pnpm", ["--filter", "@drive-coding/frontend-v2", "build"], …)` → השם החדש. **[נוסף באימות-מחדש — ה-build של systemd (`--if-stale`).]**
 - `tests/smoke/chat-roundtrip.mjs:26` — הערה בלבד (`pnpm --filter … dev`) → השם החדש.
+- ~~`scripts/dc-launch.mjs:18`~~ — **הוסר**: dc-launch עבר refactor לדלגציה ל-`dc-build-fe.mjs`; אין בו יותר `frontend-v2` (אומת `git grep`).
 
 > **למה לא `sed -i` עיוור על כל הריפו**: כדי לא לסחוף את 90+ ההפניות ב-archives/reports/briefs
 > היסטוריים. ב-Commit 1 נוגעים **רק** ב-4 הקבצים האלה — מדויק.
@@ -115,12 +125,15 @@ pnpm typecheck && pnpm lint:i18n                      # נקי
 (שסוכנים/מפתחים מעתיקים מהם פקודות). **לא** לגעת ב-`docs/plans/archive/**`, `reports/**`,
 `docs/archive/**`, או ב-briefs של slices שכבר מוזגו.
 
-**קבצים שכן מעדכנים** (אומתו עם `git grep -l` — כולם docs חיים שמריצים מהם `--filter`):
-`AGENTS.md`, `packages/frontend/AGENTS.md`, `docs/running-locally.md`,
-`packages/frontend/docs/slices.md`, `docs/plans/EXECUTOR_DISPATCH.md`,
-`tests/smoke/README.md`, `docs/roadmap.md`, `docs/vnext-spec.md`,
-`docs/deploy-cf-pages.md`, `docs/behaviors-coverage.md`,
-**`docs/plans/redesign-chain-dispatch.md`** (אביגיל r1 #2 — dispatch-prompt חי בתיקיית `plans/` עם פקודות `--filter` רצות; השרשרת מוזגה אבל הקובץ בתיקייה החיה → מעדכנים את הפקודה, אין סיבה להשאיר פקודה שגויה).
+**קבצים שכן מעדכנים** — **רשימה מעודכנת ל-dev@c5deb8f: 9 קבצים** (אומתו עם `grep -c` שכל אחד עדיין מכיל `frontend-v2`):
+`AGENTS.md` (3), `packages/frontend/AGENTS.md` (1), `docs/running-locally.md` (3),
+`packages/frontend/docs/slices.md` (10), `tests/smoke/README.md` (1),
+`docs/roadmap.md` (1), `docs/vnext-spec.md` (1),
+`docs/deploy-cf-pages.md` (2), `docs/behaviors-coverage.md` (2).
+
+> **ירדו מהרשימה המקורית (11→9) באימות-מחדש 2026-07-03**:
+> - `docs/plans/EXECUTOR_DISPATCH.md` — **0 מופעים** כעת (נוקה מאז). לא לגעת.
+> - `docs/plans/redesign-chain-dispatch.md` — **עבר ל-`docs/plans/archive/`** (הקובץ לא קיים בנתיב הישן) → ארכיון, לא נוגעים.
 
 **קבצי-גבול — מַשאירים כפי שהם (רשומה היסטורית, אל תיגע)** — הוכרעו מראש כדי שלא תתלבט:
 - `docs/walkthrough.md` — changelog append-only מתוארך (כל entry מתאר מצב בזמנו).
@@ -136,13 +149,13 @@ pnpm typecheck && pnpm lint:i18n                      # נקי
 
 **Verification** — בדיקת ה**רשימה המתוחמת** (לא grep גלובלי, שמתנגש עם ה-briefs ההיסטוריים):
 ```bash
-# כל 11 קבצי ה-docs-החיים נקיים אחרי הסוויפ:
+# כל 9 קבצי ה-docs-החיים נקיים אחרי הסוויפ:
 git grep -l "frontend-v2" -- \
   AGENTS.md packages/frontend/AGENTS.md docs/running-locally.md \
-  packages/frontend/docs/slices.md docs/plans/EXECUTOR_DISPATCH.md \
+  packages/frontend/docs/slices.md \
   tests/smoke/README.md docs/roadmap.md docs/vnext-spec.md \
-  docs/deploy-cf-pages.md docs/behaviors-coverage.md docs/plans/redesign-chain-dispatch.md
-#   → צפוי: ריק (כל 11 עודכנו).
+  docs/deploy-cf-pages.md docs/behaviors-coverage.md
+#   → צפוי: ריק (כל 9 עודכנו).
 pnpm lint:i18n   # docs בלבד — לא אמור להישבר
 ```
 
@@ -155,17 +168,18 @@ pnpm lint:i18n   # docs בלבד — לא אמור להישבר
 | `pnpm --filter @drive-coding/frontend build` בונה בהצלחה | הרצה → `packages/frontend/build/index.html` קיים |
 | השם הישן `@drive-coding/frontend-v2` כבר **לא** תופס שום project | `pnpm --filter @drive-coding/frontend-v2 build` → "No projects matched" |
 | `node packages/release/scripts/build.mjs` — release build מלא עובר | הרצה → `packages/release/frontend-dist/` מאוכלס |
-| `scripts/dc-launch.mjs` נפתר ל-build (לא "No projects matched") | הרצת ה-build step / קריאת הקוד |
-| אין `frontend-v2` בקוד פונקציונלי | `git grep "frontend-v2" -- ':!*.md' ':!*.html'` → רק comments שעודכנו / ריק (ה-`.html` mockup מוחרג) |
-| 11 קבצי docs-החיים נקיים | `git grep -l "frontend-v2" -- <11 הקבצים מרשימת Commit 2>` → ריק (ר' הפקודה המלאה ב-§4 Commit 2 Verification) |
-| briefs היסטוריים ב-`docs/plans/*.md` — נשארו ללא שינוי (לא נסחפו) | code review: ה-diff נוגע רק ב-4 קבצי-קוד + 11 docs-חיים; שום brief אחר לא ב-diff |
+| `scripts/dc-build-fe.mjs` נפתר ל-build (לא "No projects matched") | הרצה: `node scripts/dc-build-fe.mjs` → `packages/frontend/build/index.html` קיים |
+| `packages/release/scripts/build-binary.mjs` נפתר ל-build (השלב `--filter`) | קריאת הקוד :56 / הרצת שלב-ה-FE אם בר-הרצה בסביבה |
+| אין `frontend-v2` בקוד פונקציונלי | `git grep "frontend-v2" -- ':!*.md' ':!*.html'` → ריק (ה-`.html` mockup מוחרג; אין יותר `dc-launch.mjs`) |
+| 9 קבצי docs-החיים נקיים | `git grep -l "frontend-v2" -- <9 הקבצים מרשימת Commit 2>` → ריק (ר' הפקודה המלאה ב-§4 Commit 2 Verification) |
+| briefs היסטוריים ב-`docs/plans/*.md` — נשארו ללא שינוי (לא נסחפו) | code review: ה-diff נוגע רק ב-5 קבצי-קוד + 9 docs-חיים; שום brief אחר לא ב-diff |
 | typecheck + lint:i18n נקיים | הפקודות |
 
 ## §6 — Risks
 
 | סיכון | מקור | מיטיגציה |
 |---|---|---|
-| `--filter` פונקציונלי שנשכח → build pipeline נשבר עם "No projects matched the filters" | טבע ה-slice | §5 בודק את שני ה-pipelines (release build + dc-launch) במפורש; חיפוש `git grep "frontend-v2" -- ':!*.md'` סוגר |
+| `--filter` פונקציונלי שנשכח → build pipeline נשבר עם "No projects matched the filters" | טבע ה-slice | §5 בודק את ה-pipelines (release build.mjs + build-binary + dc-build-fe) במפורש; חיפוש `git grep "frontend-v2" -- ':!*.md'` סוגר |
 | `sed -i` עיוור סחף archives/reports → רעש ענק ב-diff + שכתוב רשומה היסטורית | — | Commit 1 = 4 קבצים נקובים בלבד; Commit 2 = רשימת docs-חיים מפורשת + exclude מפורש של archive/reports |
 | pnpm-lock drift לא-צפוי | learnings (`pnpm update -r` הסיר `#main` בעבר) | **לא** מריצים `pnpm update`; רק `pnpm install`. בודקים `git diff pnpm-lock.yaml` ≈ ריק. אם יש drift גדול — §7 escalation |
 | מחרוזת עברית קשיחה | pre-commit hook | אין מחרוזות חדשות (rename בלבד) |
@@ -189,7 +203,7 @@ pnpm lint:i18n   # docs בלבד — לא אמור להישבר
 - שינוי protocol BE↔FE: לא
 - ריבוי קבצים (docs sweep) + נגיעה ב-build/release/launch → +1 ערנות
 
-**Score ≈ 3/10 → verifier `calev` mode: light.** הדגש: להריץ בפועל את שני ה-build pipelines (release + dc-launch), לא רק typecheck.
+**Score ≈ 3/10 → verifier `calev` mode: light.** הדגש: להריץ בפועל את ה-build pipelines (release build.mjs + dc-build-fe.mjs; ו-build-binary אם בר-הרצה בסביבה), לא רק typecheck.
 
 ## §9 — שאלות פתוחות
 

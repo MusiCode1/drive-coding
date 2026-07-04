@@ -1,5 +1,43 @@
 # Decisions — voice-acp
 
+## 2026-07-01 — playback A2→B1: כל השרשרת בוצעה + reconcile; runtime-gate של B1 חסום על מפתח Gemini
+
+> תכנון מרדכי. מסמך-אב: `docs/plans/playback-run-control-roadmap.md`. **סטטוס: קוד גמור, טרם מוזג.**
+> נקודת-המשך לפעם הבאה — כדי לא להתחיל את האימות מ-0.
+
+### מצב השרשרת (branch `slice/playback-ui`, worktree `dev/.worktrees/playback-ui`)
+| slice | סטטוס |
+|---|---|
+| **A2** audio-playlist (reserve-on-enqueue) | ✅ calev GO* (GO-עם-דחיית BUG-1, ר' entry 06-29) |
+| **A3** transport (pause/resume/stop + פיצול cancel) | ✅ calev-heavy GO* (אחרי fix svelte-check) |
+| **A4** navigation (prev/next/jump + איחוד BubblePlayer) | ✅ calev-heavy GO* (2 edge-cases → carry ל-B1) |
+| **A5** watchdog (turnState timeout → idle) | ✅ calev light 5/5 |
+| **B1** controls-UI (⏹/⏸▶/⏮/⏭ + עצור-ריצה + interrupted) | 🟡 קוד גמור, אביגיל r2 READY — **runtime-gate פתוח** |
+
+`slice/playback-ui` מאגד A2→A3→A4 + A5 (merge staging) + B1, ו**עבר reconcile מול dev** (102 commits +
+provider cutover v0.8.0; `48b3403` תיקן import של ה-watchdog: `provider-contract/acp`→`@drive-coding/provider/client`).
+
+### build-gate אחרי reconcile (2026-07-01) — ✅ ירוק
+`pnpm typecheck` = **0**. `pnpm test` = **962/985 pass**. 6 הכשלים **כולם pre-existing/סביבתיים, לא רגרסיית-שרשרת**:
+4× `bridge-failure-modes` (=spawn-ENOENT known-bug, F-1 אדום מ-slice 10) · 2× `tls`/`https-serve` (יצירת cert
+ב-Windows). **אפס כשל בטסטי הפלייליסט** (playlist/transport/navigation/watchdog/speaker). מסקנה: ה-reconcile
+לא שבר את קוד הפלייליסט.
+
+### למה ה-runtime-gate של B1 חסום — לא בצד שלנו
+ה-preview הורם חי (build production, single-origin על 4002). בקובץ ה-env שהמשתמשת סיפקה יש רק `GEMINI_API_KEY`
+(ElevenLabs חסר → 401 צפוי, לא בשימוש). Gemini-TTS נכשל, ואבחון-gcloud מלא הראה:
+- ה-env **הוזרק נכון** (BE→`x-goog-api-key`); המפתח **תקף** (`listModels`=200).
+- הפרויקט של המפתח = **`generative-code`** (project# 100829744038). API מופעל, billing פעיל — **ובכל זאת**
+  גם מודל-טקסט רגיל (`gemini-flash-latest`) מחזיר `403 PERMISSION_DENIED: "Your project has been denied access"`.
+- **שורש (לפי המשתמשת):** תשלום תקוע; הפרויקט חסום מנהלית עד שהחיוב יתרענן. **חיצוני לחלוטין.**
+
+### נקודת-המשך (כשיהיה מפתח TTS תקין)
+1. החזרת preview = דקה: build כבר קיים. הרצה: `cd .worktrees/playback-ui/packages/backend && FE_STATIC_DIR=<worktree>/packages/frontend/build GEMINI_API_KEY=<key> PORT=4002 bun src/server.ts` (4000/4001 תפוסים). גישה: `http://localhost:4002` (לא Vite — build). בהגדרות: **בחירת Gemini** כספק-TTS.
+2. **כלב (calev-heavy) על B1** — הבדיקה החיה היחידה שנותרה: כפתורים ב-phase=speaking · pause/resume · prev/next בין משפטים · עצור-ריצה עוצר סוכן+קול · **סדר-השמעה נכון ב-Gemini** (הליבה של A2) · RTL בשתי שפות · tap-targets נייד · חיווי turnInterrupted. + 2 ה-carry מ-A4 (ר' ראש `slice-B1-controls-ui.md`).
+3. אחרי GO + אישור משתמשת → **merge יחיד**: A2→A3→A4 (`--no-ff` שרשרת) + A5, ואז B1.
+
+---
+
 ## 2026-06-29 — gate: build-gate ל-frontend = `svelte-check`, לא root `tsc --build`
 
 > נחשף ב-A3 (calev-heavy r1 NO-GO): executor דיווח "typecheck 0" אבל ה-frontend היה אדום.

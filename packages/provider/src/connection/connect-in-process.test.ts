@@ -12,7 +12,10 @@
  * The agentApp handles initialize in-process and responds via wire.
  */
 
-import { describe, expect, it } from "vitest"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { connectInProcess } from "./connect-in-process.js"
 
 /** Small helper: wait up to maxMs for condition to become true */
@@ -203,6 +206,60 @@ describe("connectInProcess — structural (no real claude session)", () => {
     try {
       const unsub = conn.onCrash(() => {})
       expect(() => unsub()).not.toThrow()
+    } finally {
+      await conn.close()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Structural test: CLI_SPECS_FILE with claude env spec is loaded without crash.
+// Verifies that connectInProcess reads the cli-spec and builds without error
+// when a valid CLI_SPECS_FILE is set. Cannot verify params sent to real claude
+// (no real claude in CI), but injection is covered at unit level (claude-env-override.test.ts).
+// ---------------------------------------------------------------------------
+
+describe("connectInProcess — env override wiring (structural)", () => {
+  let tmpFile: string
+  let origCliSpecsFile: string | undefined
+
+  beforeEach(() => {
+    // Create a temp JSONC with claude env spec (matches production deploy/cli-specs.jsonc).
+    tmpFile = path.join(os.tmpdir(), `test-cli-specs-${Date.now()}.jsonc`)
+    const spec = JSON.stringify({
+      claude: {
+        unsetEnv: ["ANTHROPIC_API_KEY"],
+        setEnv: { NO_PROXY: "api.anthropic.com", no_proxy: "api.anthropic.com" },
+      },
+    })
+    fs.writeFileSync(tmpFile, spec, "utf8")
+    origCliSpecsFile = process.env["CLI_SPECS_FILE"]
+    process.env["CLI_SPECS_FILE"] = tmpFile
+    // Reset memoized loadCliSpecsOverride so it picks up the new CLI_SPECS_FILE.
+    vi.resetModules()
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpFile, { force: true })
+    if (origCliSpecsFile === undefined) {
+      delete process.env["CLI_SPECS_FILE"]
+    } else {
+      process.env["CLI_SPECS_FILE"] = origCliSpecsFile
+    }
+    vi.resetModules()
+  })
+
+  it("connectInProcess builds without crash when CLI_SPECS_FILE points to claude env spec", async () => {
+    // Re-import after resetModules so the memoized cache is fresh.
+    const { connectInProcess: freshConnect } = await import("./connect-in-process.js")
+    const conn = await freshConnect({ cwd: process.cwd() })
+    try {
+      // Shape verification: ProviderConnection is intact.
+      expect(typeof conn.wire.write).toBe("function")
+      expect(typeof conn.wire.onLine).toBe("function")
+      expect(conn.capabilities.thinkingTokens).toBe(true)
+      // pid is null (in-process)
+      expect(conn.pid).toBeNull()
     } finally {
       await conn.close()
     }

@@ -281,6 +281,29 @@ export type MessageKey =
   | "settings.geminiVoice.desc.Sadachbia"
   | "settings.geminiVoice.desc.Sadaltager"
   | "settings.geminiVoice.desc.Sulafat"
+  // ─── tts-provider-availability ─── (slice tts-provider-availability)
+  | "settings.ttsProvider.unavailable"
+  | "settings.ttsProvider.fallbackNotice"
+  | "settings.ttsProvider.allUnavailable"
+  // ─── tts-status-ui ─── (slice tts-status-ui)
+  | "settings.ttsStatus.title"
+  | "settings.ttsStatus.loading"
+  | "settings.ttsStatus.reason.quota"
+  | "settings.ttsStatus.reason.noKey"
+  | "settings.ttsStatus.reason.forbidden"
+  | "settings.ttsStatus.reason.error"
+  | "settings.ttsStatus.quota.label"
+  | "settings.ttsStatus.quota.exhausted"
+  | "settings.ttsStatus.quota.used"
+  | "settings.ttsStatus.quota.limitLabel"
+  | "settings.ttsStatus.quota.overage"
+  | "settings.ttsStatus.usage.label"
+  | "settings.ttsStatus.usage.elevenlabs"
+  | "settings.ttsStatus.usage.gemini"
+  | "settings.ttsStatus.usage.cache"
+  | "settings.ttsStatus.usage.cost"
+  | "settings.ttsStatus.usage.notAvailable"
+  | "settings.ttsStatus.refresh"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

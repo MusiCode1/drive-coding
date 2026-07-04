@@ -1,7 +1,7 @@
-# Slices Roadmap — frontend-v2
+# Slices Roadmap — frontend
 
 > **‎סטטוס**: ‎חי, ‎עדכון 2026-05-28.
-> **‎תפקיד**: ‎מקור-אמת ‎יחיד לסדר ה-slices של ‎`packages/frontend-v2/`.
+> **‎תפקיד**: ‎מקור-אמת ‎יחיד לסדר ה-slices של ‎`packages/frontend/`.
 > **‎מחליף**: ‎`docs/frontend-reorganization-plan.md` ‎(הועבר ל-archive) ‎+ ‎חלק §8.5 ב-`docs/vnext-spec.md` (סומן obsolete).
 >
 > **שינוי 2026-05-28**: נוסף slice 0.5 (i18n) ושונה סדר ה-slices אחרי בדיקת ‎מסמכי ‎התכנון.
