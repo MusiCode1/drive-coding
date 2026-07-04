@@ -57,7 +57,6 @@ async function handleCopy() {
     <div
       class="px-3.5 py-2.5 rounded-2xl rounded-ee-sm text-sm leading-relaxed min-w-0 max-w-full overflow-hidden break-words"
       style="background:var(--bubble-agent); {isPlaying ? 'outline:2px solid var(--accent); outline-offset:1px' : ''}"
-      dir="auto"
     >
       <MarkdownContent text={joinSegmentText(bubble.segments)} />
       <!-- כופה ריאקטיביות של Svelte בעת .segments.push() -->
