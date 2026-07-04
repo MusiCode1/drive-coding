@@ -289,4 +289,7 @@ export const en: Catalog = {
   "settings.ttsStatus.usage.cost": "Est. cost",
   "settings.ttsStatus.usage.notAvailable": "—",
   "settings.ttsStatus.refresh": "Refresh",
+  // ─── ui-session-polish ─── (slice ui-session-polish)
+  "session.copyId": "Copy session ID",
+  "modal.loading.session": "Loading session…",
 }

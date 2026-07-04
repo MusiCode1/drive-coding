@@ -285,4 +285,7 @@ export const he: Catalog = {
   "settings.ttsStatus.usage.cost": "עלות משוערת",
   "settings.ttsStatus.usage.notAvailable": "—",
   "settings.ttsStatus.refresh": "רענן",
+  // ─── ui-session-polish ─── (slice ui-session-polish)
+  "session.copyId": "העתק מזהה סשן",
+  "modal.loading.session": "טוען סשן…",
 }

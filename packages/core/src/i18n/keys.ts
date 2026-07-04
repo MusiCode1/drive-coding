@@ -293,6 +293,9 @@ export type MessageKey =
   | "settings.ttsStatus.usage.cost"
   | "settings.ttsStatus.usage.notAvailable"
   | "settings.ttsStatus.refresh"
+  // ─── ui-session-polish ─── (slice ui-session-polish)
+  | "session.copyId"
+  | "modal.loading.session"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
