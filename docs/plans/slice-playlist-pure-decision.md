@@ -41,7 +41,7 @@ pnpm install && pnpm hooks:install
 
 **must-read לפני**:
 - `packages/frontend/src/lib/engines/audio-playlist.svelte.ts` — הקובץ המרכזי שמשוכתב (629 שורות, קרא הכל כולל ההערות ההיסטוריות A2/A3/A4/nav-retain)
-- `packages/frontend/src/lib/engines/playable-sink.ts` + `engines/segments/*.ts` (4 קבצים)
+- `packages/frontend/src/lib/engines/playable-sink.ts` + `engines/segments/*.ts` (3 קבצים: mp3-segment, pcm-segment, playable-segment)
 - `packages/frontend/src/lib/view-models/bubble-player.svelte.ts` — בשביל Commit 0
 - `docs/design-principles.md` §1.3 (מה זה engine) + §2.2 (מתי method ולא effect)
 - שני קבצי הטסט: `engines/audio-playlist.test.ts`, `engines/audio-playlist.nav.test.ts` — הם ה-spec ההתנהגותי הקיים
