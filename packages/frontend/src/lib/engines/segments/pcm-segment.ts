@@ -29,6 +29,9 @@ export class PcmSegment implements PlayableSegment {
   #streamDone = false
   #activeSources: AudioBufferSourceNode[] = []
   #abortController: AbortController | null = null
+  // stop-requested flag: set by stop() before stopping sources.
+  // scheduleNext checks this to avoid scheduling new buffers after stop().
+  #stopRequested = false
 
   constructor(segmentId: string, ctx: AudioContext) {
     this.segmentId = segmentId
@@ -97,6 +100,9 @@ export class PcmSegment implements PlayableSegment {
    * #nextStartTime מאותחל ל-ctx.currentTime בכל קריאה → אין drift בין replays.
    */
   async play(): Promise<void> {
+    // reset stop flag at the start of each play (replay-safe)
+    this.#stopRequested = false
+
     // resume (gesture-gated)
     if (this.#ctx.state === "suspended") {
       await this.#ctx.resume()
@@ -113,16 +119,26 @@ export class PcmSegment implements PlayableSegment {
     // אפס cursor ל-ctx.currentTime בכל play (replay-safe, אין drift)
     this.#nextStartTime = this.#ctx.currentTime
 
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<void>((resolve) => {
       let scheduledCount = 0
       let finishedCount = 0
       let done = false
 
       const scheduleNext = () => {
+        // stop was requested — resolve cleanly (stop is a valid completion)
+        if (this.#stopRequested) {
+          if (!done) {
+            done = true
+            resolve()
+          }
+          return
+        }
+
         if (this.#state === "cancelled") {
           if (!done) {
             done = true
-            reject(new Error("cancelled"))
+            // cancelled resolves too (loop will skip via item.state=skipped/cancelled)
+            resolve()
           }
           return
         }
@@ -184,8 +200,12 @@ export class PcmSegment implements PlayableSegment {
   /**
    * עוצר את ה-sources הפעילים **בלי למחוק את ה-buffers** (retain-and-replay).
    * play() הבא ייצור sources חדשים מ-#buffers. streamDone נשמר → isComplete נשאר תקף.
+   * Sets #stopRequested BEFORE stopping sources so scheduleNext exits cleanly.
+   * After stop(), the play() promise resolves (no deadlock in the loop).
    */
   stop(): void {
+    // Set flag first — scheduleNext will see it before scheduling new buffers
+    this.#stopRequested = true
     for (const source of this.#activeSources) {
       try {
         source.stop()
@@ -205,6 +225,14 @@ export class PcmSegment implements PlayableSegment {
   /** isComplete: כל ה-stream התקבל */
   isComplete(): boolean {
     return this.#streamDone
+  }
+
+  /**
+   * isPlayable: enough data to start playback (≥1 buffer or stream done).
+   * Mirrors #waitForSomeData condition — first audio available early.
+   */
+  isPlayable(): boolean {
+    return this.#buffers.length > 0 || this.#streamDone
   }
 
   /** Teardown מלא — abort + stop sources. */

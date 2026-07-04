@@ -16,6 +16,21 @@
 **קובץ חדש**: `bubble-player.toggle.test.svelte.ts` — 3 טסטי-רגרסיה.
 **בדיקות**: 3/3 ירוקים; typecheck 0.
 
+### Commit 2 — חוזה-סיום play + stopCurrent/isPlayable (mixed-TDD)
+
+**קבצים שעודכנו**:
+- `playable-segment.ts` — interface: הוסף `isPlayable()` + doc עדכון ל-play() (resolves on end or stop)
+- `mp3-segment.ts` — `#playResolve`/`#playCleanup`: stop() מסיר listeners + קורא resolve; guard double-resolve; `isPlayable()=isComplete()` (intentional — progressive future)
+- `pcm-segment.ts` — `#stopRequested` flag: stop() מציב לפני עצירת sources; scheduleNext בודק בשתי כניסות; play() מאפס flag; `isPlayable()=buffers.length>0||streamDone`
+- `playable-sink.ts` — `stopCurrent()`: עוצר #current + null; `isPlayable(segmentId)`: מאציל ל-seg.isPlayable()
+- `audio-sink.ts` — additive: `isComplete?/isPlayable?/stopCurrent?` (optional methods)
+
+**unit לסגמנטים**: JSDOM לא תומך ב-AudioContext/MediaSource — ניסיון אחד הופרך (§7 מפורש). כיסוי דרך mock-playlist (22/22 ירוקים) + הפניית-קוד:
+- mp3: `stop()` שורות `#playCleanup?.()` + `resolve?.()` — ניתוח סטטי מוכיח resolve-on-stop
+- pcm: `#stopRequested=true` לפני source.stop() + בדיקה ב-scheduleNext בשתי נקודות
+
+**בדיקות**: typecheck 0; 22/22 audio-playlist tests ירוקים.
+
 ### Commit 1 — core: playlist-decision.ts — החלטה כפונקציה טהורה (TDD)
 
 **קבצים חדשים**:

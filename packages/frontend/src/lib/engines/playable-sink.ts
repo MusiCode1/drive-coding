@@ -83,6 +83,25 @@ export class PlayableSink implements AudioSink {
     return seg.isComplete()
   }
 
+  /**
+   * Stops the currently playing segment (buffer retained). Its play() resolves.
+   * Used by AudioPlaylist.#navigate() so the loop exits the play() await cleanly.
+   */
+  stopCurrent(): void {
+    this.#current?.stop()
+    this.#current = null
+  }
+
+  /**
+   * Whether the sink can start playing this segment right now.
+   * Delegates to segment.isPlayable(); falls back to isComplete() if not implemented.
+   */
+  isPlayable(segmentId: string): boolean {
+    const seg = this.#segments.get(segmentId)
+    if (!seg) return false
+    return seg.isPlayable()
+  }
+
   /** Teardown של segment יחיד (skip-cancel / stop) — segment נשאר ב-#segments כ-disposed. */
   cancel(segmentId: string): void {
     const seg = this.#segments.get(segmentId)

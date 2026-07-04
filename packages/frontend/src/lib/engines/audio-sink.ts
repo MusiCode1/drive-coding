@@ -33,4 +33,10 @@ export interface AudioSink {
   pause(): void
   /** A3: ממשיך ניגון אחרי pause. */
   resume(): void
+  /** Optional (PlayableSink implements): full buffer retained — replayable. */
+  isComplete?(segmentId: string): boolean
+  /** Optional: enough buffered to start now. Fallback: isComplete. */
+  isPlayable?(segmentId: string): boolean
+  /** Optional: stop current playback, keep buffer; its play() promise resolves. */
+  stopCurrent?(): void
 }

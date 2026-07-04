@@ -24,6 +24,10 @@ export class Mp3Segment implements PlayableSegment {
   #sourceBuffer: SourceBuffer | null = null
   #abortController: AbortController | null = null
   #objectUrl: string
+  // resolve-on-stop: saved by play() so stop() can resolve the promise
+  #playResolve: (() => void) | null = null
+  // cleanup saved by play() to remove listeners on stop()
+  #playCleanup: (() => void) | null = null
 
   constructor(segmentId: string) {
     this.segmentId = segmentId
@@ -114,8 +118,12 @@ export class Mp3Segment implements PlayableSegment {
     }
   }
 
-  /** מנגן מה-התחלה. ניתן לקרוא שוב (replay: currentTime=0). */
+  /** מנגן מה-התחלה. ניתן לקרוא שוב (replay: currentTime=0). Resolves on end or stop(). */
   async play(): Promise<void> {
+    // clear any previous play state
+    this.#playResolve = null
+    this.#playCleanup = null
+
     // המתן עד שהמקטע מוכן או בוטל
     await this.#waitForReady()
 
@@ -129,14 +137,29 @@ export class Mp3Segment implements PlayableSegment {
 
     return new Promise<void>((resolve, reject) => {
       const audio = this.#audio
+      // capture resolve for stop() to call
+      this.#playResolve = resolve
+
       const onEnded = () => {
+        // Guard: only resolve if this is still the active play() call
+        if (this.#playResolve !== resolve) return
+        this.#playCleanup = null
+        this.#playResolve = null
         audio.removeEventListener("error", onError)
         this.#state = "ended"
         resolve()
       }
       const onError = (e: Event) => {
+        if (this.#playResolve !== resolve) return
+        this.#playCleanup = null
+        this.#playResolve = null
         audio.removeEventListener("ended", onEnded)
         reject(e)
+      }
+      // save cleanup fn for stop()
+      this.#playCleanup = () => {
+        audio.removeEventListener("ended", onEnded)
+        audio.removeEventListener("error", onError)
       }
       audio.addEventListener("ended", onEnded, { once: true })
       audio.addEventListener("error", onError, { once: true })
@@ -148,9 +171,21 @@ export class Mp3Segment implements PlayableSegment {
     this.#audio.pause()
   }
 
-  /** עוצר קול, שומר MediaSource/buffer ל-replay (currentTime יאופס ב-play הבא). */
+  /**
+   * עוצר קול, שומר MediaSource/buffer ל-replay (currentTime יאופס ב-play הבא).
+   * Resolves the active play() promise so the loop is never deadlocked.
+   */
   stop(): void {
     this.#audio.pause()
+    // Remove listeners to prevent double-resolve / stale onEnded after replay
+    this.#playCleanup?.()
+    this.#playCleanup = null
+    // Resolve the active play() promise (stop is a valid completion)
+    const resolve = this.#playResolve
+    this.#playResolve = null
+    resolve?.()
+    // Note: #state stays "playing" — the next play() call will reset currentTime.
+    // isComplete() returns true regardless (state in {ready, playing, ended}).
   }
 
   resume(): void {
@@ -165,6 +200,14 @@ export class Mp3Segment implements PlayableSegment {
     return (
       this.#state === "ready" || this.#state === "playing" || this.#state === "ended"
     )
+  }
+
+  /**
+   * isPlayable: mp3 can only start playing once the full stream is buffered.
+   * Progressive playback is a future feature — intentionally isComplete() for now.
+   */
+  isPlayable(): boolean {
+    return this.isComplete()
   }
 
   /** Teardown מלא — abort + revoke URL. */
