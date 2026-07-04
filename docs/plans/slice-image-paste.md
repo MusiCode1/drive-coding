@@ -546,8 +546,19 @@ VM read-path + i18n + טסטים; אין UI חדש (render קיים), אין BE,
 ### §12.3 — נקודות-שינוי (קובץ יחיד)
 `packages/frontend/src/lib/components/chat/bubbles/UserBubble.svelte`:
 1. ייבוא: הוסף `getContentViewer` לשורת ה-import הקיימת מ-`$lib/context` (שורה 16), ו-`const viewer = getContentViewer()` ליד ה-getters (שורה ~30).
-2. בבלוק ה-attachments (58-62): עטוף את ה-`<img>` ב-`<button class="user-image-btn" onclick={() => viewer.show({ kind:"image", src, alt })} aria-label={t("contentViewer.expand")} title={t("contentViewer.expand")}>` — בדיוק כמו `ToolBubble.svelte:139-145`. שמור על ה-`src` הקיים; ה-`<img>` נשאר בפנים עם ה-class הקיים.
-3. CSS: `.user-image-btn` — reset (bg/border/padding 0, cursor pointer, display block/inline-flex), כמו `.tool-image-btn` ב-ToolBubble (`:294-296`). אפשר להעתיק את התבנית.
+2. בבלוק ה-attachments (**שורות ~60-65** — ה-`{#each bubble.attachments as att, i (i)}` עם ה-`<img src="data:{att.mimeType};base64,{att.dataBase64}">`): עטוף את ה-`<img>` ב-`<button>`. ⚠️ **אין משתני `src`/`alt` בסקופ** (finding אביגיל 🟡) — בנה את ה-`src` מהאובייקט `att` בדיוק כמו ה-`<img>` הקיים:
+   ```svelte
+   <button
+     class="user-image-btn"
+     onclick={() => viewer.show({ kind: "image", src: `data:${att.mimeType};base64,${att.dataBase64}`, alt: "" })}
+     aria-label={t("contentViewer.expand")}
+     title={t("contentViewer.expand")}
+   >
+     <img src="data:{att.mimeType};base64,{att.dataBase64}" alt="" class="max-h-40 max-w-[12rem] rounded-xl object-contain border" style="border-color:var(--border)" />
+   </button>
+   ```
+   (ה-`<img>` נשאר עם ה-class/style הקיימים; רק נעטף.)
+3. CSS: `.user-image-btn` — reset בלבד: `background:none; border:none; padding:0; cursor:pointer; display:inline-flex`. ⚠️ **אל תעתיק verbatim את `.tool-image-btn`** (`ToolBubble.svelte:~295-308`) — יש בו `margin:0.2em 0` שיוסיף רווח-אנכי חדש לתמונת-המשתמש (finding אביגיל 🟢 — רגרסיה ויזואלית). `margin:0` (או השמט לגמרי).
 
 > **i18n**: אין מפתח חדש — `contentViewer.expand` (`keys.ts:210`) קיים. `alt` — השאר `""` כמו היום (התמונה דקורטיבית; ה-aria על ה-button).
 
