@@ -1,7 +1,7 @@
 # Slice R1 — playlist-pure-decision — תוכנית
 
 > **תאריך**: 2026-07-04
-> **סטטוס**: מאושר — אביגיל **READY r3** (r1: 4 findings→תוקנו, כולל היפוך-סדר commits; r2: 3 findings→תוקנו; r3: 0). דוחות: `reports/drive-coding/playlist-pure-decision-avigail-r{2,3}.md`
+> **סטטוס**: הושלם — אליעזר ביצע 5 commits (3498cef→003feb7). ממתין לכלב calev-heavy + מרדכי.
 > **Complexity**: 9/10 (verifier: **calev-heavy**)
 > **base**: `slice/playback-nav-retain` @ `3c3a0b7` (קוד-גמור, טרם מוזג ל-dev)
 > **depends_on**: `[playback-nav-retain]`

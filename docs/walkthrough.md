@@ -1,3 +1,14 @@
+## 2026-07-04 — slice playlist-pure-decision — סיכום סופי
+
+**commits**: `b159906..003feb7` (5 commits: 3498cef, 8036baa, 3127023, db041b9, 003feb7)
+**packages שנגעו**: core (playlist-decision), frontend (audio-playlist, segments, bubble-player)
+**tests**: 22 audio-playlist + 30 core/playlist-decision + 3 bubble-player.toggle = 55 טסטים חדשים/מעודכנים. כל 22 ירוקים לפני ואחרי שכתוב (Commit 3 → 4).
+**pre-existing failures**: spawn-ENOENT (bridge-failure-modes) + formatting.test.ts + TLS-cert-Windows — לא הוכנסו.
+
+**סטיות מהbrief שתועדו**:
+1. `#factsFor`: `reserved+needsRefetch=true+refetch=undefined` → `fetch="in-flight"` (לא "idle") — thunk חסר אינו "idle request-fetch", הוא "waiting for external markReady".
+2. `#factsFor playable`: state=ready → playable=true תמיד (לא תלוי sink.isPlayable) — state=ready = prepareSegment הסתיים → data בsink.
+
 ## 2026-07-04 — slice playlist-pure-decision — החלטה טהורה + תיקוני toggle/sink/loop
 
 ### Commit 0 — hotfix: החזרת ה-else האבוד ב-BubblePlayer.toggle (TDD)
