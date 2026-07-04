@@ -1,3 +1,23 @@
+## 2026-07-04 — slice playlist-pure-decision — החלטה טהורה + תיקוני toggle/sink/loop
+
+### Commit 0 — hotfix: החזרת ה-else האבוד ב-BubblePlayer.toggle (TDD)
+
+**בעיה**: ב-merge 1328b9d נמחק ה-`else` בין ענף `alreadyInPlaylist` לענף ההיסטורי.
+תוצאה: (א) בועה בפלייליסט — גם הענף ההיסטורי רץ (reserve כפול, stop() שדורס jump).
+(ב) בועה היסטורית — שום דבר לא רץ (▶ מת).
+
+**RED לפני התיקון**: 3/3 טסטים נכשלו על הקוד הישן:
+- בועה בפלייליסט+playing: reserve נקרא 2 פעמים (אמור להיות 0)
+- בועה בפלייליסט+idle: reserve נקרא 4 פעמים (אמור ≤2)
+- בועה היסטורית: reserve לא נקרא כלל (אמור להיקרא)
+
+**תיקון**: הוספת `else {` לפני ענף ההיסטורי ב-`toggle()`.
+
+**קובץ חדש**: `bubble-player.toggle.test.svelte.ts` — 3 טסטי-רגרסיה.
+**בדיקות**: 3/3 ירוקים; typecheck 0.
+
+---
+
 ## 2026-07-03 — slice playback-nav-retain — פלייליסט ממומש: retain-and-replay + PlayableSink
 
 ### Commit 0 — TDD: retain-and-replay + idle-park + refetch thunk (audio-playlist.svelte.ts + nav.test.ts)

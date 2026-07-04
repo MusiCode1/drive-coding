@@ -115,6 +115,7 @@ export class BubblePlayer {
         this.#playlist.jumpToBubble(bubbleId)
         this.playingBubbleId = bubbleId
       }
+    } else {
       // בועה היסטורית — split + reserveFromText לכל משפט → jumpToBubble
       this.stop()
       this.playingBubbleId = bubbleId
