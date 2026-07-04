@@ -565,43 +565,36 @@ describe("AudioPlaylist — ניווט (A4)", () => {
 
   // ── Test 12: refetch thunk נקרא על reserved-ללא-fetch ─────────────────────
 
-  it("(retain-12) ניווט ל-item reserved ללא fetch → refetch thunk נקרא", async () => {
+  it("(retain-12) refetch לא נקרא על reserved רגיל — רק על item שנזרק (needsRefetch)", async () => {
+    // תיקון סופת-fetch: item שנוצר ב-reserve() רגיל (זרם חי) חייב להמתין ל-markReady
+    // החיצוני של Speaker, ולא להפעיל refetch. refetch שמור ל-item שנזרק ב-skip-cancel.
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
-    let refetchCalled = false
-    const refetchThunk = () => {
-      refetchCalled = true
-      // simulate re-fetch: markReady אחרי קצת זמן
-      setTimeout(() => {
-        playlist.markReady("s0")
-      }, 10)
+    let refetchCount = 0
+    const thunk = () => {
+      refetchCount++
     }
 
-    // s0: reserved עם refetch thunk (נזרק ב-skip-cancel)
-    // s1: ready מיד
-    playlist.reserve("s0", key(0), "bubble-A", refetchThunk)
+    // s0: reserved עם thunk (הזרם החי בדרך — לא נזרק). s1: ready.
+    playlist.reserve("s0", key(0), "bubble-A", thunk)
     playlist.reserve("s1", key(1), "bubble-A")
-
     playlist.markReady("s1")
-    // s0 נשאר reserved (לא נקרא markReady)
 
     await vi.advanceTimersByTimeAsync(0)
-    // #playLoop ממתין על s0 (reserved) — 5s timeout
-    // לפי reserved-without-fetch logic: קורא refetch
-    // אבל כרגע עם הקוד הישן: #waitForItem תקוע
-
-    // בקוד החדש: #playLoop מבחין ש-s0 reserved ו-refetch קיים → קורא אותו
-    await vi.advanceTimersByTimeAsync(100) // מספיק לreset + timer refetch
-    await Promise.resolve()
     await Promise.resolve()
 
-    // refetch צריך להיקרא
-    expect(refetchCalled).toBe(true)
+    // ✅ הליבה: s0 reserved אך needsRefetch כבוי → refetch לא נקרא
+    expect(refetchCount).toBe(0)
 
-    // s0 יתנגן אחרי refetch
+    // הזרם החי מגיע (כמו Speaker.#fetchJob) → markReady חיצוני, לא refetch
+    playlist.markReady("s0")
     await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+
+    expect(refetchCount).toBe(0) // עדיין 0 — אף פעם לא refetch על reserved רגיל
     expect(sink.playOrder).toContain("s0")
+
     sink.resolvePlay("s0")
     await vi.advanceTimersByTimeAsync(0)
     await Promise.resolve()

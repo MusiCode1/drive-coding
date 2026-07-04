@@ -52,6 +52,12 @@ export type PlaylistItem = {
    * owner מעביר אותו ב-reserve(); מייצר stream→prepareSegment→markReady/markError.
    */
   refetch?: () => void
+  /**
+   * nav-retain fix: אמת רק כשה-item **נזרק** (skip-cancel) או נכשל וצריך סינתוז-מחדש.
+   * item שנוצר ב-reserve() רגיל (זרם חי) — הדגל כבוי; ה-fetch החי מגיע דרך Speaker.
+   * בלי הדגל, ה-#playLoop היה קורא refetch() על כל item רגיל → סופת-fetch → קקפוניה/שקט.
+   */
+  needsRefetch?: boolean
 }
 
 export type AudioPlaylistState = "idle" | "playing"
@@ -84,6 +90,9 @@ export class AudioPlaylist {
   // #navSignal/resolver — מעיר את ה-#playLoop מה-await play הנוכחי בעת ניווט.
   #cursor: number = $state(0)
   #navResolve: (() => void) | null = null
+  // nav-retain fix: resolver נפרד ל-idle-park. חייב להיות נפרד מ-#navResolve
+  // (של #playWithNav) — אחרת reserve() בזמן נגינה פעילה יקטע את ה-play-race → קקפוניה.
+  #parkResolve: (() => void) | null = null
 
   constructor(
     audioStream: AudioSink,
@@ -148,9 +157,12 @@ export class AudioPlaylist {
     if (!this.#playing) {
       void this.#playLoop()
     } else {
-      // nav-retain: idle-park — אם הלולאה ממתינה על navResolve, הרץ אותה מחדש
-      const resolve = this.#navResolve
-      this.#navResolve = null
+      // nav-retain fix: אם הלולאה ב-idle-park (סוף פלייליסט) — העירי אותה.
+      // ⚠️ רק #parkResolve! לא #navResolve — אחרת reserve בזמן נגינה פעילה יפתור
+      //    את ה-#playWithNav race → הלולאה מתקדמת והסגמנט הבא מתחיל בעוד הנוכחי
+      //    עדיין מנגן → כל הסגמנטים מנגנים יחד (קקפוניה).
+      const resolve = this.#parkResolve
+      this.#parkResolve = null
       resolve?.()
     }
   }
@@ -289,6 +301,7 @@ export class AudioPlaylist {
           currentItem.state === "loading"
         ) {
           currentItem.state = "reserved"
+          currentItem.needsRefetch = true // נזרק → ביקור עתידי יסנתז מחדש
         }
       }
       // אם currentComplete===true: item נשאר כמו שהוא (done/ready — buffer שמור ב-sink)
@@ -316,6 +329,7 @@ export class AudioPlaylist {
             targetItem.state === "loading"
           ) {
             targetItem.state = "reserved"
+            targetItem.needsRefetch = true // נזרק (לא ממומש) → סינתוז-מחדש בביקור
           }
         }
         // אם targetComplete===true (done/ready עם buffer שמור): נשאר — replay ב-#playLoop
@@ -326,10 +340,14 @@ export class AudioPlaylist {
     // (3) cursor חדש
     this.#cursor = newIndex
 
-    // (4) פתור navSignal
-    const resolve = this.#navResolve
+    // (4) פתור signals — גם play-race (#navResolve, לקטיעת ה-play הנוכחי)
+    //     וגם park (#parkResolve), כי ניווט יכול לקרות בזמן נגינה או בזמן idle-park.
+    const navResolve = this.#navResolve
     this.#navResolve = null
-    resolve?.()
+    navResolve?.()
+    const parkResolve = this.#parkResolve
+    this.#parkResolve = null
+    parkResolve?.()
   }
 
   /**
@@ -354,10 +372,13 @@ export class AudioPlaylist {
     const pauseResolve = this.#pauseResolve
     this.#pauseResolve = null
     pauseResolve?.()
-    // A4: שחרר nav signal אם תקוע
+    // A4: שחרר nav signal + park signal אם תקועים
     const navResolve = this.#navResolve
     this.#navResolve = null
     navResolve?.()
+    const parkResolve = this.#parkResolve
+    this.#parkResolve = null
+    parkResolve?.()
     // בטל סגמנטים שכבר ב-AudioSink (playing/ready/reserved)
     for (const item of this.items) {
       if (item.state !== "done" && item.state !== "error" && item.state !== "skipped") {
@@ -462,9 +483,10 @@ export class AudioPlaylist {
         }
 
         if (item.state === "reserved" || item.state === "loading") {
-          // nav-retain: reserved ללא fetch חי — קרא refetch thunk אם קיים
-          if (item.state === "reserved" && item.refetch !== undefined) {
-            // יש thunk — הפעל re-fetch (owner יקרא markReady/markError)
+          // nav-retain fix: קרא refetch **רק** ל-item שנזרק (needsRefetch), לא ל-item
+          // רגיל שה-fetch החי שלו בדרך (דרך Speaker.#pumpFetchLoop). אחרת = סופת-fetch.
+          if (item.state === "reserved" && item.needsRefetch === true && item.refetch !== undefined) {
+            item.needsRefetch = false // חד-פעמי — מונע לולאת refetch
             item.refetch()
             // המשך לחכות ב-#waitForItem (refetch קורא markReady async)
           }
@@ -534,6 +556,8 @@ export class AudioPlaylist {
       this.#pauseResolve = null
       // A4: אפס nav resolver אם נשאר (הגנה)
       this.#navResolve = null
+      // nav-retain fix: אפס גם park resolver (הגנה)
+      this.#parkResolve = null
     }
   }
 
@@ -554,7 +578,7 @@ export class AudioPlaylist {
    */
   #waitForNav(): Promise<void> {
     return new Promise<void>((resolve) => {
-      this.#navResolve = resolve
+      this.#parkResolve = resolve
     })
   }
 
