@@ -42,6 +42,7 @@ import { resolveTts } from "../adapters/voice/tts-resolve"
 import type { AudioSink } from "../engines/audio-sink"
 import type { AudioPlaylist } from "../engines/audio-playlist.svelte"
 import type { CuesEngine } from "../engines/cues"
+import type { SegmentProducer } from "../engines/segment-producer"
 import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
 import { ttsCapabilities } from "./capabilities.svelte"
@@ -66,6 +67,9 @@ export type TtsJob = {
   orderKey: OrderKey // (seq, segmentIndex)
   /** ל-tool: toolCallId לכתיבת narration חזרה לבועה אחרי ה-fetch. */
   toolCallId?: string
+  // ─── R3 ───
+  /** R3: ghost-guard flag — set by cancelFetch; prevents markReady/markError after cancel. */
+  canceled?: boolean
 }
 
 type BubbleState = {
@@ -73,7 +77,7 @@ type BubbleState = {
   buffer: string
 }
 
-export class Speaker {
+export class Speaker implements SegmentProducer {
   // ui-polish-batch C8: מאותחל מ-settings.muted (false = מופעל, true = מושתק)
   enabled: boolean = $state(true)
 
@@ -354,8 +358,8 @@ export class Speaker {
     })
     // A2: reserve-on-enqueue — הסגמנט נכנס לפלייליסט מיד (לפני fetch)
     // A4: העבר bubbleId (bid) כדי ש-PlaylistItem יכיל אותו לניווט jumpToBubble
-    // nav-retain: refetch thunk — מאפשר re-fetch בביקור מפורש אחרי skip
-    this.#player.reserve(segmentId, orderKey, bid, () => this.refetchSegment(segmentId))
+    // R3: pass `this` as SegmentProducer (dual-write: union accepts both producer and thunk)
+    this.#player.reserve(segmentId, orderKey, bid, this)
     this.#pendingCount += 1
   }
 
@@ -364,15 +368,54 @@ export class Speaker {
    * נקרא ע"י AudioPlaylist כשמנווטים ל-item reserved (שדולג/נכשל).
    * מוצא את ה-TtsJob לפי segmentId, יוצר AbortController חדש (finding #5),
    * מאפס status=pending ומריץ את לולאת ה-fetch.
+   * R3: alias ל-ensureFetch (נמחק ב-Commit 4 אחרי שה-thunk מוסר).
    */
   refetchSegment(segmentId: string): void {
+    this.ensureFetch(segmentId)
+  }
+
+  // ─── SegmentProducer implementation (R3) ────────────────────────────────────
+
+  /**
+   * R3: Current production status for a segment.
+   * pending/fetching → in-flight; error → failed; ready/missing → idle.
+   */
+  fetchState(segmentId: string): "idle" | "in-flight" | "failed" {
+    const job = this.#jobs.find((j) => j.segmentId === segmentId)
+    if (job === undefined) return "idle"
+    if (job.status === "pending" || job.status === "fetching") return "in-flight"
+    if (job.status === "error") return "failed"
+    return "idle" // ready ⇒ product handed to sink; no live production
+  }
+
+  /**
+   * R3: Start (or restart) synthesis for a segment. Idempotent.
+   * fetching/ready → no-op. pending/error → reset + pump.
+   */
+  ensureFetch(segmentId: string): void {
     const job = this.#jobs.find((j) => j.segmentId === segmentId)
     if (job === undefined) return
     if (job.status === "fetching" || job.status === "ready") return // fetch כבר בדרך
-    job.abort = new AbortController() // finding #5: abort חדש (הישן כבר בוצע)
+    job.abort = new AbortController() // fresh abort (old one may have been used)
+    job.canceled = false // reset ghost guard on re-fetch
     job.status = "pending"
     this.#pendingCount += 1
     this.#pumpFetchLoop()
+  }
+
+  /**
+   * R3: Abort any live fetch; guarantee no subsequent markReady/markError.
+   * Sets job.canceled=true + aborts the AbortController.
+   */
+  cancelFetch(segmentId: string): void {
+    const job = this.#jobs.find((j) => j.segmentId === segmentId)
+    if (job === undefined) return
+    job.canceled = true // ghost-guard: #fetchJob checks this before markReady/markError
+    try {
+      job.abort.abort()
+    } catch {
+      // already aborted
+    }
   }
 
   #pumpFetchLoop(): void {
@@ -459,10 +502,15 @@ export class Speaker {
         textHash,
         format: provider.format,
       })
+      // R3 ghost-guard (point 1): cancelFetch may have fired during prepareSegment await.
+      // If so, do NOT call markReady — the playlist already moved on.
+      if (job.canceled) return
       // A2: markReady — הסגמנט מוכן ב-AudioSink; #playLoop יתחיל לנגן
       this.#player.markReady(job.segmentId)
       job.status = "ready"
     } catch (e) {
+      // R3 ghost-guard (point 2): abort throws into this catch; don't call markError.
+      if (job.canceled) return
       // MIN-5: דלג + המשך, אל תזרוק.
       job.status = "error"
       // A2: markError — הסגמנט נכשל; #playLoop ידלג
@@ -535,8 +583,8 @@ export class Speaker {
       })
       // A2: reserve-on-enqueue
       // A4: העבר bubbleId כדי ש-PlaylistItem יכיל אותו לניווט jumpToBubble
-      // nav-retain: refetch thunk — re-fetch בביקור מפורש אחרי skip
-      this.#player.reserve(segmentId, orderKey, bid, () => this.refetchSegment(segmentId))
+      // R3: pass `this` as SegmentProducer (dual-write)
+      this.#player.reserve(segmentId, orderKey, bid, this)
       this.#pendingCount += 1
       this.#pumpFetchLoop()
     }
@@ -622,6 +670,7 @@ export class Speaker {
     this.#spokeThisTurn = false
     for (const job of this.#jobs) {
       if (job.status === "fetching" || job.status === "pending") {
+        job.canceled = true // R3: ghost-guard — prevent markReady/markError after clear
         try {
           job.abort.abort()
         } catch {

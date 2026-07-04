@@ -1,3 +1,22 @@
+## 2026-07-04 — slice producer-ownership — R3 Commit 2: Speaker implements SegmentProducer (TDD)
+
+**RED לפני התיקון**: 11/11 טסטים נכשלו — fetchState/ensureFetch/cancelFetch לא קיימים על Speaker.
+**GREEN אחרי מימוש**:
+- `TtsJob` קיבל `canceled?: boolean`
+- `Speaker implements SegmentProducer`
+- `fetchState(id)`: pending/fetching→in-flight, error→failed, ready/missing→idle
+- `ensureFetch(id)`: idempotent (fetching/ready=no-op; else reset+pump)
+- `cancelFetch(id)`: sets job.canceled=true + abort
+- `refetchSegment` → alias ל-`ensureFetch`
+- ghost-guard: נקודה 1 — `if (job.canceled) return` לפני `markReady` אחרי prepareSegment
+- ghost-guard: נקודה 2 — `if (job.canceled) return` ב-catch לפני `markError`
+- `#enqueue` + `#processToolBubbles` מעבירים `this` במקום thunk (dual-write)
+- `#stopAndClear` מסמן `job.canceled=true` לפני abort
+**testing**: TDD — 11 טסטי speaker.producer; 22 audio-playlist; typecheck 0.
+**סטיות**: אין.
+
+---
+
 ## 2026-07-04 — slice producer-ownership — R3 Commit 1: SegmentProducer interface + Playlist wiring
 
 **קבצים חדשים**: `engines/segment-producer.ts` (interface SegmentProducer: ensureFetch/cancelFetch/fetchState)
