@@ -83,3 +83,18 @@ onecli run --agent voice-acp -- bun --watch src/server.ts
 ‏ב-end לפענוח קל. ‏פירוט: `tests/smoke/README.md`.
 
 ‏הרצה ‏אחרי merge ל-dev: ‏`cd tests/smoke && node run-all.mjs` ‏(BE+FE רצים).
+
+### [2026-07-04] gotcha: `taskkill //T` (kill-tree) על Windows הורג את ה-host הלא-נכון
+‏בניקוי preview-servers אחרי merge, הרגתי כל preview עם `taskkill //PID <x> //F //T`.
+‏ה-**`/T`** הורג את **כל עץ-התהליכים** תחת ה-pid — לא רק ה-server. bun מריץ
+‏worker/children תחת shell/launcher משותף; ה-`/T` טיפס על העץ המשותף והרג בטעות
+‏את ה-**BE הראשי** (pid 13644, port 4000) — לא הייתי אמור לגעת בו. **סימן חי**:
+‏ה-kill של ה-integration server **נקטע אחרי 2 דקות** (exit 1) — טיפוס על עץ גדול
+‏ולא-צפוי. **תסמין נלווה**: 4000 נשאר `LISTENING` על pid מת (zombie-socket,
+‏handle-inheritance — ר' `docs/investigations/2026-07-01-be-shutdown-socket-health.md` §3).
+
+**‏הכלל**: לעולם לא `taskkill //T` על bun/node servers שחולקים shell. **kill ממוקד
+‏בלבד**: `taskkill //PID <pid> //F` (בלי `//T`), *אחרי* אימות ש-pid הוא ה-server
+‏הבודד (command-line מ-`Get-CimInstance Win32_Process`). זהו הצד ההפוך של "כשל #2"
+‏בחקירת be-shutdown (שם ה-kill הרג *מעט מדי* — רק בן ישיר; כאן `//T` הרג *יותר מדי*).
+‏אירוני: הרגתי את ה-host בדיוק כמו ה-`be-shutdown-hardening` שהזהיר מפני זה.

@@ -1,7 +1,7 @@
 # Slice tab-attention-notify — סימן "דורש תשומת לב" בטאב כשה-turn מסתיים והדף מוסתר — תוכנית
 
 > **תאריך**: 2026-07-03
-> **סטטוס**: ✅ מאושר (אביגיל r1 READY, 3×🟢 — 2026-07-03) · ready ל-dispatch (אחרי B)
+> **סטטוס**: ✅ מאושר (אביגיל **r2 READY**, 2026-07-04 — הבהוב; 2 findings שולבו) · ready ל-dispatch · base=**dev** (app-title מוזג, אין שרשור)
 > **Complexity**: 4/10 (verifier: light)
 > **תלות (depends_on)**: `[app-title-build-env]` — **שניהם נוגעים ב-`document.title`** (הסלייס הזה מוסיף prefix ל-`docTitle` שנוצר שם). **Base**: branch של `slice/app-title-build-env` (שרשור) אם טרם מוזג, אחרת `dev` אחרי מיזוגו.
 
@@ -13,7 +13,7 @@
 המשתמשת ביקשה (28/06 → 03/07): "סימן של דורש תשומת לב כשמסיים והמשתמש עדיין לא עבר לטאב. **אם זה מסובך אז לא עכשיו**." → הגרסה כאן היא ה**קלה**: prefix `● ` בכותרת-הטאב כשה-turn מסתיים בזמן ש-`document.hidden`, וניקוי כשחוזרים לטאב. **בלי** OS-Notification (זה ה"מסובך" — הרשאות, permission prompt, שונות בין דפדפנים).
 
 ### עובדות שאומתו (חוסך חיפוש)
-- `session.turnState` — **`$state<TurnState>` ציבורי** (`agent-session.svelte.ts:119`). ריאקטיבי, נגיש דרך `getSession()`.
+- `session.turnState` — **`$state<TurnState>` ציבורי** (`agent-session.svelte.ts:123`). ריאקטיבי, נגיש דרך `getSession()`.
 - **דפוס "turn הסתיים"**: `#prevTurnState !== "idle" && turnState === "idle"` — כבר בשימוש ב-`speaker.svelte.ts:304` (העתק את הלוגיקה, לא את הקוד).
 - **דפוס `visibilitychange` נקי**: `lib/engines/wake-lock.ts` (addEventListener ב-constructor, removeEventListener ב-dispose, בדיקת `document.visibilityState`). זה ה-reference לשכבת-engine.
 - **הכותרת נוצרת ב-`+layout.svelte`** ע"י slice `app-title-build-env` כ-`docTitle` ($derived) בתוך `<svelte:head><title>`. הסלייס הזה **מקדים** ל-`docTitle` את ה-prefix.
@@ -48,13 +48,14 @@ pnpm install && pnpm hooks:install
 
 ## §1 — מטרה
 
-אחרי הסלייס: כשהמודל מסיים לענות ואתה לא בטאב (`document.hidden`), כותרת-הטאב ברקע מקבלת סימן `● ` בהתחלה — כך שבמבט על שורת-הטאבים אתה רואה שיש תשובה שמחכה. ברגע שאתה חוזר לטאב, הסימן נעלם.
+אחרי הסלייס: כשהמודל מסיים לענות ואתה לא בטאב (`document.hidden`), כותרת-הטאב ברקע **מהבהבת** עם סימן `● ` בהתחלה (מתחלף כל ~1.2s) — כך שבמבט על שורת-הטאבים אתה רואה שיש תשובה שמחכה. ברגע שאתה חוזר לטאב, ההבהוב נעצר והסימן נעלם.
 
 ## §2 — Scope
 
 | פיצ'ר | כן/לא | לאן |
 |---|---|---|
 | engine `AttentionEngine` — flag `needsAttention` + visibilitychange listener | ✅ | Commit 1 |
+| **הבהוב** — `● ` מתחלף כל 1.2s כל עוד needsAttention+hidden (`titlePrefix` getter + `setInterval`) — **תמיד, לא אופציונלי** | ✅ | Commit 1 |
 | prefix `● ` ב-`docTitle` (ב-+layout, לפני base) | ✅ | Commit 2 |
 | חיווט: `$effect` על `session.turnState` → `attention.notifyTurn(...)` | ✅ | Commit 2 |
 | OS-Notification (Notification API + permission) | ❌ | "המסובך" — המשתמשת ביקשה לדחות. slice עתידי אם ירצו |
@@ -73,7 +74,7 @@ AttentionEngine                             +layout.svelte
     && ts==="idle" && document.hidden
     → needsAttention = true; #prev = ts     // app-title docTitle:
   (ctor) visibilitychange →                 const docTitle = $derived(
-    visible ⇒ needsAttention = false          (attention.needsAttention ? "● " : "") +   ← חדש (prefix)
+    visible ⇒ needsAttention=false;stopBlink  attention.titlePrefix +   ← חדש (●/"" מהבהב 1.2s)
   dispose() removeEventListener               (titleContext ? `${base} • ${titleContext}` : base)
                                             )
 ```
@@ -87,14 +88,19 @@ AttentionEngine                             +layout.svelte
 ```ts
 import type { TurnState } from "..."  // אותו type כמו ב-agent-session (מצא את מקורו)
 
-/** מסמן "דורש תשומת לב" כשה-turn מסתיים בזמן שהדף מוסתר; מתנקה בחזרה לטאב. */
+const BLINK_MS = 1200  // קצב הבהוב עדין; מעל ה-throttle-floor (~1s) של timers בטאב מוסתר
+
+/** מסמן "דורש תשומת לב" כשה-turn מסתיים בזמן שהדף מוסתר; הכותרת **מהבהבת**; מתנקה בחזרה לטאב. */
 export class AttentionEngine {
   needsAttention = $state(false)
+  #blinkOn = $state(false)          // מתחלף כל BLINK_MS כל עוד needsAttention
   #prevTurn: TurnState = "idle"
+  #timer: ReturnType<typeof setInterval> | undefined
   #bound = () => {
-    // כשחוזרים לטאב (visible) — נקה את הסימן.
+    // כשחוזרים לטאב (visible) — נקה את הסימן + עצור הבהוב.
     if (typeof document !== "undefined" && document.visibilityState === "visible") {
       this.needsAttention = false
+      this.#stopBlink()
     }
   }
   constructor() {
@@ -102,14 +108,31 @@ export class AttentionEngine {
       document.addEventListener("visibilitychange", this.#bound)
     }
   }
-  /** נקרא מ-$effect ב-layout עם turnState הנוכחי. non-idle→idle בזמן hidden = הדלק. */
+  /** ה-prefix לכותרת: מוצג רק כש-needsAttention **וגם** בפאזת-blink הדולקת → הבהוב. */
+  get titlePrefix(): string {
+    return this.needsAttention && this.#blinkOn ? "● " : ""
+  }
+  /** נקרא מ-$effect ב-layout עם turnState הנוכחי. non-idle→idle בזמן hidden = הדלק+הבהב. */
   notifyTurn(ts: TurnState): void {
     if (this.#prevTurn !== "idle" && ts === "idle") {
-      if (typeof document !== "undefined" && document.hidden) this.needsAttention = true
+      if (typeof document !== "undefined" && document.hidden) {
+        this.needsAttention = true
+        this.#startBlink()
+      }
     }
     this.#prevTurn = ts
   }
+  #startBlink(): void {
+    this.#blinkOn = true
+    // guard: timer יחיד — אל תיצור שני intervals אם notifyTurn נקרא שוב
+    this.#timer ??= setInterval(() => { this.#blinkOn = !this.#blinkOn }, BLINK_MS)
+  }
+  #stopBlink(): void {
+    if (this.#timer !== undefined) { clearInterval(this.#timer); this.#timer = undefined }
+    this.#blinkOn = false
+  }
   dispose(): void {
+    this.#stopBlink()
     if (typeof document !== "undefined") {
       document.removeEventListener("visibilitychange", this.#bound)
     }
@@ -145,7 +168,7 @@ $effect(() => () => attention.dispose())
 // לפני (app-title):  titleContext ? `${baseTitle} • ${titleContext}` : baseTitle
 // אחרי:
 const docTitle = $derived(
-  (attention.needsAttention ? "● " : "") +
+  attention.titlePrefix +   // "● " בפאזת-blink דולקת, "" אחרת → הבהוב
     (titleContext ? `${baseTitle} • ${titleContext}` : baseTitle)
 )
 ```
@@ -160,8 +183,9 @@ pnpm --filter @drive-coding/frontend typecheck
 
 | בדיקה | איך |
 |---|---|
-| turn מסתיים כשהדף מוסתר → כותרת-הטאב מתחילה ב-`● ` | smoke: פרומפט ארוך + מעבר-טאב |
-| חזרה לטאב → ה-`● ` נעלם מיד | smoke: visibilitychange |
+| turn מסתיים כשהדף מוסתר → כותרת-הטאב **מהבהבת** (`● ` מתחלף ~1.2s) | smoke: פרומפט ארוך + מעבר-טאב + צפייה בשורת-הטאב |
+| חזרה לטאב → ההבהוב נעצר (`clearInterval`) + ה-`● ` נעלם מיד | smoke: visibilitychange + code review (`#stopBlink`) |
+| קריאות `notifyTurn` חוזרות לא יוצרות timer כפול | code review (`#timer ??=`) + אין דליפת-intervals |
 | turn מסתיים כשהדף **גלוי** → אין `● ` (לא מטריד כשאתה שם) | smoke: השאר בטאב |
 | ה-prefix מתלבש נכון על ה-docTitle של app-title (`● Drive Coding Dev • …`) | code review + smoke |
 | `notifyTurn` unit-tests ירוקים (3 מקרים) | `pnpm test attention` |
@@ -174,9 +198,11 @@ pnpm --filter @drive-coding/frontend typecheck
 |---|---|---|
 | `$state` בקובץ `.ts` רגיל לא-מהודר | Svelte 5 runes רק ב-`.svelte`/`.svelte.ts` | שם הקובץ `attention.svelte.ts` (כמו player/recent-projects הקיימים) |
 | `document.hidden` ב-SSR/prerender (adapter-static) → crash | טבע adapter-static | guard `typeof document !== "undefined"` בכל גישה (כמו ב-wake-lock) |
-| `$effect` על `session.turnState` לא נורה כי turnState לא ריאקטיבי | — | אומת: `turnState = $state<TurnState>` (`agent-session:119`) — ריאקטיבי ✓ |
+| `$effect` על `session.turnState` לא נורה כי turnState לא ריאקטיבי | — | אומת: `turnState = $state<TurnState>` (`agent-session:123`) — ריאקטיבי ✓ |
 | double-fire / flicker אם turnState עושה idle→responding→idle | msr-v2 note (`agent-session:199`) | ה-flag בינארי + מתנקה רק ב-visible; ריצוד בכותרת-רקע לא-מורגש. לא-חוסם |
-| התנגשות עם app-title על `docTitle` | depends_on | הסלייס **מבוסס על branch של app-title** (שרשור) — עורך את אותו `$derived` שכבר קיים שם |
+| התנגשות עם app-title על `docTitle` | depends_on | app-title **כבר מוזג ל-dev** → base=dev; עורך את אותו `$derived` הקיים (לא שרשור עוד) |
+| **background-tab throttling** מאט/עוצר את ההבהוב אחרי ~5 דק' | טבע דפדפן (Chrome "intensive throttling" → timer פעם/דקה) | **מקובל** — הבהוב 1.2s בולט בדקות הראשונות (מתי שחוזרים בפועל); מאט לכדי-סטטי אחרי-כן אבל עדיין מציג `●`. לא-חוסם, מתועד |
+| `setInterval` דולף אם לא מנוקה (dispose/HMR/visible) | timer lifecycle | ניקוי משולש: `#stopBlink()` ב-visible, ב-dispose, ו-guard `#timer ??=` נגד כפילות |
 
 ## §7 — Escalation triggers
 
