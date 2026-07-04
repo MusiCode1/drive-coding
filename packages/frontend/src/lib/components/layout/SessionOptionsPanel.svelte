@@ -326,6 +326,16 @@ $effect(() => {
      כך שכשהגובה קטן ראש הרשימה לא נחתך אלא נגלל. שורת הפעולות מעל נשארת קבועה (shrink-0). -->
 <div class="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto chat-scroll -mx-1 px-1">
 
+<!-- ─── cli-name-in-chat: שם ה-CLI מעל אפשרויות סוכן ─── -->
+{#if session.cliKind}
+  <div class="flex items-center gap-2 px-1 shrink-0 text-[11px]" style="color:var(--fg-dim)">
+    <span class="uppercase tracking-wider font-semibold">{t("sidebar.runningOn")}</span>
+    <span class="px-2 py-0.5 rounded-md font-mono font-semibold"
+          style="background:var(--bg-card); border:1px solid var(--border); color:var(--fg)"
+          dir="ltr">{session.cliKind}</span>
+  </div>
+{/if}
+
 <!-- אפשרויות סוכן — מחווט מ-redesign-3 -->
 <div class="flex flex-col gap-2.5 shrink-0">
   <div class="text-[11px] font-semibold uppercase tracking-wider px-1" style="color:var(--fg-dim)">

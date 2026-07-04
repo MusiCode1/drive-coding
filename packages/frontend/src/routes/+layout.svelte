@@ -14,6 +14,8 @@
  * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
  */
 import "../app.css"
+import { page } from "$app/state"
+import { env } from "$env/dynamic/public"
 import type { Locale } from "@drive-coding/core/i18n"
 import {
   setActiveAgents,
@@ -134,6 +136,18 @@ $effect(() => {
   document.documentElement.lang = loc
 })
 
+// ─── document title ─── (slice app-title-build-env)
+// base מ-env (נצרב ב-build); fallback "Drive Coding" אם ה-var חסר (dev-server בלי FE_ENV).
+const baseTitle = env.PUBLIC_APP_TITLE || "Drive Coding"
+const titleContext = $derived.by(() => {
+  const p = page.url.pathname
+  if (p.startsWith("/settings")) return i18n.t("appTitle.settings")
+  if (p.startsWith("/chat")) return session.sessionTitle?.trim() || null
+  if (p === "/") return i18n.t("appTitle.sessions")
+  return null
+})
+const docTitle = $derived(titleContext ? `${baseTitle} • ${titleContext}` : baseTitle)
+
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
@@ -162,5 +176,9 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
   ;(window as any).__session = session
 }
 </script>
+
+<svelte:head>
+  <title>{docTitle}</title>
+</svelte:head>
 
 {@render children?.()}

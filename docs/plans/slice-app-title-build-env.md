@@ -1,7 +1,9 @@
 # Slice app-title-build-env — כותרת-אפליקציה דינמית + שלושה פרופילי-בילד (dev/preview/prod) — תוכנית
 
 > **תאריך**: 2026-07-03 · **עדכון r1→fix**: 2026-07-03 (אביגיל USABLE-AFTER-FIX → תוקן; ר' הערת-אימות)
-> **סטטוס**: ✅ מאושר (אביגיל r2 READY, 2×🟢 קוסמטי — 2026-07-03) · ready ל-dispatch
+> **סטטוס**: ✅ בוצע + **פורמט-כותרת חדש מאומת** (badge-first + `FE_PREVIEW_LABEL`, commit `b8326fb`). אביגיל r3 READY + כלב r2 GO 10/10 (4 מצבים + overrides, 0 findings) · branch `slice/app-title-build-env` (6 commits) · **מוכן-למיזוג · מוחזק לבקשת המשתמשת** (אולי איחוד עם merges אחרים)
+
+> **⚠️ שינוי-פורמט 2026-07-04 (אחרי preview חי)**: המשתמשת ביקשה (א) `FE_PREVIEW_LABEL` (תווית-נושא ל-preview) ו-(ב) ה-badge **לפני** "Drive Coding" (נראות בלשונית צרה). הפורמט: `<badge> · <label> · Drive Coding` (prod=`Drive Coding` נטו). מומש ב-`vite.config.ts` (prefix), אומת חי ב-3 מצבים (4009 dev / 4007 preview / 4008 preview+label). דורש re-verify כי הפורמט שונה ממה שכלב אישר קודם (`Drive Coding Preview`).
 > **Complexity**: 6/10 (verifier: light — אך חובה לבנות את **שלושת** המצבים ולבדוק כותרת+source-maps בכל אחד)
 > **תלות (depends_on)**: `[]` — עצמאי. נוגע ב-`packages/frontend/package.json` (scripts, **לא** name) כמו `slice-frontend-rename-cutover` (name) → אזורים שונים, additive. **סדר מומלץ: אחרי מיזוג rename** (base=dev עדכני), אך לא חוסם.
 > **Base**: `dev` HEAD `c5deb8f`.
@@ -25,7 +27,7 @@
 - `FE_ENV` כבר **זולג אוטומטית** ל-vite דרך `scripts/dc-build-fe.mjs:80` (`env: { ...process.env, FE_BUILD_OUT }`) — כשה-unit מגדיר אותו הוא מגיע ל-build. **אין צורך לגעת ב-dc-build-fe.mjs.**
 
 ### עקרון-העל של הפיצ'ר (קראו לפני קוד)
-1. **כותרת קשיחה ב-HTML** שנטענת **מיד** (לפני JS) — כוללת כבר את ה-badge: `Drive Coding Dev` / `Drive Coding Preview` / `Drive Coding`. ה-badge תלוי-בילד → מוזרק ב-build-time דרך **placeholder נייטיבי של SvelteKit** `%sveltekit.env.PUBLIC_APP_TITLE%` (לא vite plugin — ר' הערת-אימות).
+1. **כותרת קשיחה ב-HTML** שנטענת **מיד** (לפני JS) — כוללת כבר את ה-badge **בהתחלה** (לפני "Drive Coding", כדי שיישאר נראה בלשונית צרה): `Dev · Drive Coding` / `Preview · Drive Coding` / `Drive Coding` (prod). אופציונלי `FE_PREVIEW_LABEL` → `Preview · <label> · Drive Coding`. ה-badge תלוי-בילד → מוזרק ב-build-time דרך **placeholder נייטיבי של SvelteKit** `%sveltekit.env.PUBLIC_APP_TITLE%` (לא vite plugin — ר' הערת-אימות).
 2. **כותרת ריאקטיבית ב-runtime** מחליפה אותה לפי ההקשר: `<base> • <context>`, כאשר `<base>` = `env.PUBLIC_APP_TITLE` מ-`$env/dynamic/public` (אותו ערך שנצרב ל-HTML — מקור-אמת יחיד = `PUBLIC_APP_TITLE` שנגזר מ-`FE_ENV` ב-`vite.config.ts`), ו-`<context>` = כותרת-סשן / "הגדרות" / "סשנים".
 
 ### Worktree
@@ -38,8 +40,8 @@ pnpm install && pnpm hooks:install
 ### Run / Verify (ליבת ה-slice — build-time, לא רק typecheck)
 ```bash
 # בונים את שלושת המצבים ובודקים את הכותרת ב-index.html שנוצר + נוכחות/היעדר .map:
-pnpm --filter @drive-coding/frontend build:dev      # → build/index.html <title>Drive Coding Dev</title>  + *.map קיימים
-pnpm --filter @drive-coding/frontend build:preview  # → <title>Drive Coding Preview</title>                + *.map קיימים
+pnpm --filter @drive-coding/frontend build:dev      # → build/index.html <title>Dev · Drive Coding</title>      + *.map קיימים
+pnpm --filter @drive-coding/frontend build:preview  # → <title>Preview · Drive Coding</title>                    + *.map קיימים
 pnpm --filter @drive-coding/frontend build:prod     # → <title>Drive Coding</title>                        + אין *.map
 ```
 > אם שם החבילה עדיין `@drive-coding/frontend-v2` (rename טרם מוזג) — השתמשו ב-`--filter @drive-coding/frontend-v2`. ה-scripts שמתווספים הם **תוך-חבילתיים** (`vite build`), עמידים לשם.
@@ -66,7 +68,7 @@ pnpm --filter @drive-coding/frontend build:prod     # → <title>Drive Coding</t
 
 ## §1 — מטרה
 
-אחרי הסלייס: כותרת-הטאב מזהה **מיד** את הסביבה שאתה מסתכל עליה — `Drive Coding Dev` (בילד-דב), `Drive Coding Preview` (staging), או `Drive Coding` (prod) — כך שכשפתוחים כמה טאבים אי-אפשר להתבלבל. ברגע שנכנסים לסשן/הגדרות הכותרת מתעדכנת ל-`Drive Coding <badge> • <הקשר>`. במקביל, קיימים שלושה פרופילי-בילד אמיתיים: dev+preview עם source-maps (דיבוג), prod בלעדיהם (bundle נקי לפרסום).
+אחרי הסלייס: כותרת-הטאב מזהה **מיד** את הסביבה — `Dev · Drive Coding` (בילד-דב), `Preview · Drive Coding` (staging), או `Drive Coding` (prod). ה-badge **בהתחלה** כדי שיישאר נראה כשהלשונית נחתכת. אופציונלי `FE_PREVIEW_LABEL` מוסיף תווית-נושא (`Preview · title+cli · Drive Coding`) להבחנה בין כמה טאבי-preview. בתוך סשן/הגדרות → `<badge> · Drive Coding • <הקשר>`. במקביל, שלושה פרופילי-בילד אמיתיים: dev+preview עם source-maps, prod בלעדיהם.
 
 ## §2 — Scope
 
@@ -76,6 +78,7 @@ pnpm --filter @drive-coding/frontend build:prod     # → <title>Drive Coding</t
 | `%sveltekit.env.PUBLIC_APP_TITLE%` ב-app.html — הזרקת `<title>` נייטיבית בזמן build | ✅ | Commit 1 |
 | `$env/dynamic/public` → צריכת ה-base-title ב-runtime | ✅ | Commit 3 |
 | override מפורש: `FE_TITLE` (base) + `FE_SOURCEMAP` (source-maps) גוברים על FE_ENV | ✅ | Commit 1 |
+| **`FE_PREVIEW_LABEL`** — תווית-נושא בכותרת (`<badge> · <label> · Drive Coding`); badge **לפני** השם | ✅ | Commit 1 |
 | scripts `build:dev` / `build:preview` / `build:prod` + `cross-env` | ✅ | Commit 2 |
 | כותרת ריאקטיבית `<svelte:head>` ב-`+layout` (route+session aware) | ✅ | Commit 3 |
 | מפתחות i18n `appTitle.settings` / `appTitle.sessions` (he+en) | ✅ | Commit 3 |
@@ -91,7 +94,7 @@ pnpm --filter @drive-coding/frontend build:prod     # → <title>Drive Coding</t
 build-time (Node, vite.config.ts — מורץ לפני SvelteKit plugin)
   process.env.FE_ENV ─┐
                       ├─► feEnv ─► badge (" Dev"/" Preview"/"")
-  process.env.FE_TITLE┘          └─► BASE_TITLE = FE_TITLE ?? `Drive Coding${badge}`
+  process.env.FE_TITLE┘  FE_PREVIEW_LABEL ─► BASE_TITLE = FE_TITLE ?? `${badge}[· label] · Drive Coding`
   process.env.FE_SOURCEMAP ─────► sourcemap = FE_SOURCEMAP ?? (feEnv !== "prod")
                       │                     │
                       ▼                     ▼
@@ -120,9 +123,14 @@ runtime (Svelte)                                              $derived docTitle 
 ```ts
 type FeEnv = "dev" | "preview" | "prod"
 const FE_ENV = (process.env.FE_ENV ?? "prod") as FeEnv
-const BADGES: Record<FeEnv, string> = { dev: " Dev", preview: " Preview", prod: "" }
-// base-title: FE_TITLE override גובר; אחרת "Drive Coding" + badge לפי הסביבה.
-const BASE_TITLE = process.env.FE_TITLE ?? `Drive Coding${BADGES[FE_ENV] ?? ""}`
+const BADGES: Record<FeEnv, string> = { dev: "Dev", preview: "Preview", prod: "" }
+// FE_PREVIEW_LABEL — תווית-נושא אופציונלית להבחנה בין טאבי-preview.
+const PREVIEW_LABEL = process.env.FE_PREVIEW_LABEL?.trim()
+// badge + label מוקדמים (PREFIX) לפני "Drive Coding" — כדי שיישארו נראים כשלשונית נחתכת.
+const PREFIX_PARTS = [BADGES[FE_ENV], PREVIEW_LABEL].filter(Boolean)
+const PREFIX = PREFIX_PARTS.length > 0 ? `${PREFIX_PARTS.join(" · ")} · ` : ""
+// base-title: FE_TITLE override גובר; אחרת "<badge> · <label> · Drive Coding".
+const BASE_TITLE = process.env.FE_TITLE ?? `${PREFIX}Drive Coding`
 // חושפים ל-SvelteKit דרך env-var בעל prefix PUBLIC_ (נצרך גם ב-app.html וגם ב-runtime).
 // מוצב כאן (top-level של vite.config) — רץ לפני ש-SvelteKit-plugin קורא env.
 process.env.PUBLIC_APP_TITLE = BASE_TITLE
@@ -142,8 +150,9 @@ export default defineConfig({
 **Verification**:
 ```bash
 # name-agnostic: אם החבילה עדיין -v2, החלף frontend→frontend-v2 ב-filter.
-FE_ENV=dev     pnpm --filter @drive-coding/frontend build && grep -o '<title>[^<]*</title>' packages/frontend/build/index.html   # Drive Coding Dev
-FE_ENV=preview pnpm --filter @drive-coding/frontend build && grep -o '<title>[^<]*</title>' packages/frontend/build/index.html   # Drive Coding Preview
+FE_ENV=dev     pnpm --filter @drive-coding/frontend build && grep -o '<title>[^<]*</title>' packages/frontend/build/index.html   # Dev · Drive Coding
+FE_ENV=preview pnpm --filter @drive-coding/frontend build && grep -o '<title>[^<]*</title>' packages/frontend/build/index.html   # Preview · Drive Coding
+FE_ENV=preview FE_PREVIEW_LABEL="x" pnpm --filter @drive-coding/frontend build && grep -o '<title>[^<]*</title>' packages/frontend/build/index.html   # Preview · x · Drive Coding
 FE_ENV=prod    pnpm --filter @drive-coding/frontend build && grep -o '<title>[^<]*</title>' packages/frontend/build/index.html   # Drive Coding
 ls packages/frontend/build/_app/immutable/**/*.map >/dev/null 2>&1 && echo "prod: יש map (רגרסיה!)" || echo "prod: אין map ✓"
 pnpm --filter @drive-coding/frontend typecheck
@@ -165,7 +174,7 @@ pnpm --filter @drive-coding/frontend typecheck
 **Verification**:
 ```bash
 cd .worktrees/app-title-build-env && pnpm install    # cross-env נמשך; בדקו git diff pnpm-lock.yaml — תוספת cross-env בלבד
-pnpm --filter @drive-coding/frontend build:preview && grep -o '<title>[^<]*</title>' packages/frontend/build/index.html  # Drive Coding Preview (עובד גם ב-Windows)
+pnpm --filter @drive-coding/frontend build:preview && grep -o '<title>[^<]*</title>' packages/frontend/build/index.html  # Preview · Drive Coding (עובד גם ב-Windows)
 ```
 
 ### Commit 3 — כותרת ריאקטיבית ב-layout + i18n (approach: manual)
@@ -227,12 +236,14 @@ pnpm lint:i18n   # docs — לא אמור להישבר
 
 | בדיקה | איך |
 |---|---|
-| `build:dev` → `<title>Drive Coding Dev</title>` | build + `grep <title> build/index.html` |
-| `build:preview` → `<title>Drive Coding Preview</title>` | build + grep |
-| `build:prod` (ו-`build` סתם) → `<title>Drive Coding</title>` | build + grep |
+| `build:dev` → `<title>Dev · Drive Coding</title>` (badge **לפני** השם) | build + `grep <title> build/index.html` |
+| `build:preview` → `<title>Preview · Drive Coding</title>` | build + grep |
+| `build:preview` + `FE_PREVIEW_LABEL="x"` → `<title>Preview · x · Drive Coding</title>` | build + grep |
+| `build:prod` (ו-`build` סתם) → `<title>Drive Coding</title>` (בלי badge/label) | build + grep |
 | dev+preview מייצרים `*.map`; prod **לא** | `ls build/_app/immutable/**/*.map` בכל מצב |
-| `FE_TITLE=X` גובר על ה-badge; `FE_SOURCEMAP=false` מכבה map גם ב-dev | `FE_ENV=dev FE_TITLE=Foo FE_SOURCEMAP=false pnpm ... build` + grep + ls |
-| כותרת קשיחה נטענת מיד (לפני JS) עם ה-badge | code review: ה-`<title>` ב-build/index.html מכיל את הטקסט המחושב (`Drive Coding Dev`), **לא** את ה-placeholder `%sveltekit.env...%` |
+| `FE_TITLE=X` גובר על הכל (base מלא); `FE_SOURCEMAP=false` מכבה map גם ב-dev | `FE_ENV=dev FE_TITLE=Foo FE_SOURCEMAP=false pnpm ... build` → `<title>Foo</title>` + אין map |
+| `FE_PREVIEW_LABEL` מוסיף `· <label>` אחרי ה-badge (לא מחליף); ריק → אין שינוי | grep על שני המצבים |
+| כותרת קשיחה נטענת מיד (לפני JS) עם ה-badge | code review: ה-`<title>` ב-build/index.html מכיל את הטקסט המחושב (`Dev · Drive Coding`), **לא** את ה-placeholder `%sveltekit.env...%` |
 | runtime: `/settings` → `... • הגדרות`, `/chat`+סשן → `... • <כותרת>`, `/` → `... • סשנים` | smoke ידני בדפדפן (preview על 4002) |
 | `env.PUBLIC_APP_TITLE` זמין ל-runtime (הכותרת אינה "undefined • ...") | typecheck ירוק + smoke |
 | קטלוגי he+en מכילים את 2 המפתחות; אין key חסר | `pnpm --filter @drive-coding/core test` (אם קיים טסט-שלמות) + typecheck |
@@ -250,7 +261,7 @@ pnpm lint:i18n   # docs — לא אמור להישבר
 | Windows: `FE_ENV=x vite build` נכשל ב-cmd | pnpm scripts רצים דרך cmd ב-Windows | `cross-env` (Commit 2); ה-DoD מריץ `build:preview` שהוא cross-env |
 | `page` מ-`$app/state` לא ריאקטיבי / import שגוי | SvelteKit 2 API | הדפוס כבר בשימוש ב-`src/lib/components/layout/SessionOptionsPanel.svelte:24` (`import { page } from "$app/state"`) — להעתיק |
 | `<svelte:head>` כפול (layout + wake-word-test) → last-wins לא צפוי | SvelteKit dedupe | `wake-word-test` הוא route-דיבוג מבודד; ה-layout title תקף לכל שאר ה-routes. לא-חוסם |
-| flash: HTML="Drive Coding Dev" → runtime מוסיף " • …" | טבעי (התנהגות רצויה) | לא באג — זה בדיוק ה-flow שהמשתמשת ביקשה ("קשיח מיד, קוד מחליף") |
+| flash: HTML="Dev · Drive Coding" → runtime מוסיף " • …" | טבעי (התנהגות רצויה) | לא באג — זה בדיוק ה-flow שהמשתמשת ביקשה ("קשיח מיד, קוד מחליף") |
 | `pnpm-lock.yaml` drift מעבר ל-cross-env | learnings (pnpm) | לא מריצים `pnpm update`; רק `pnpm install`. DoD: `git diff pnpm-lock.yaml` = cross-env בלבד |
 
 ## §7 — Escalation triggers
