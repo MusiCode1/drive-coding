@@ -2,18 +2,24 @@
  * speaker.producer.test.svelte.ts — TDD tests for Speaker as SegmentProducer.
  *
  * R3 Commit 2: Speaker implements SegmentProducer.
+ * R4a Commit 0: seam אמיתי — הזרקת job דרך _seedJobForTest (test-only seam).
+ *
+ * הסבר: $effect.root לא רץ בסביבת vitest/node, ולכן flushSync אינו יכול
+ * להזריק job דרך ה-flow הרגיל. הפתרון: _seedJobForTest קורא ל-#enqueue ישירות
+ * ומחזיר segId — seam מינימלי (מוגדר ב-R4a ונמחק ב-Commit 3 יחד עם refetchSegment).
  *
  * Tests:
- *   1. fetchState: pending → in-flight
- *   2. fetchState: fetching → in-flight
- *   3. fetchState: error → failed
- *   4. fetchState: ready → idle
+ *   1. fetchState: job חדש (pending/fetching) → in-flight
+ *   2. fetchState: job אחרי synthesize resolve → in-flight (עדיין fetching)
+ *   3. fetchState: synthesize reject → failed
+ *   4. fetchState: job מוכן (prepareSegment + markReady) → idle
  *   5. fetchState: unknown segmentId → idle
- *   6. ensureFetch: idempotent on job.status=fetching (no pendingCount bump)
- *   7. ensureFetch: idempotent on job.status=ready (no pendingCount bump)
- *   8. cancelFetch: job.canceled=true, abort called
- *   9. cancelFetch ghost guard: canceled job → #fetchJob does NOT call markReady
- *  10. cancelFetch ghost guard: canceled job → #fetchJob does NOT call markError (via catch)
+ *   6. ensureFetch: idempotent על fetching job — reserve לא נקרא שנית
+ *   7. ensureFetch: idempotent על ready job — reserve לא נקרא שנית
+ *   8. cancelFetch: מסמן canceled=true + abort signal
+ *   9. ghost (קריטי): cancelFetch בזמן prepareSegment תלוי → markReady לא נקרא
+ *  10. ghost-catch: cancelFetch → synthesize reject → markError לא נקרא
+ *  11. Speaker implements SegmentProducer — all 3 methods present
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -25,10 +31,12 @@ import type { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 
 // ─── mocks ────────────────────────────────────────────────────────────────────
 
+let mockSynthesize = vi.fn().mockResolvedValue(new ReadableStream())
+
 vi.mock("$lib/adapters/voice/tts-resolve", () => ({
   resolveTts: vi.fn(() => ({
     provider: {
-      synthesize: mockSynthesize,
+      synthesize: (...args: unknown[]) => mockSynthesize(...args),
       format: "mp3",
     },
     voiceId: "voice-test",
@@ -58,10 +66,6 @@ vi.mock("@drive-coding/core/voice/sentence-boundary", () => ({
   splitIntoSentences: vi.fn((_text: string) => ({ sentences: [_text], remaining: "" })),
 }))
 
-// ─── controllable synthesize ──────────────────────────────────────────────────
-
-let mockSynthesize = vi.fn().mockResolvedValue(new ReadableStream())
-
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 function makeSession(): AgentSession {
@@ -88,21 +92,9 @@ function makeSettings(): Settings {
   } as unknown as Settings
 }
 
-function makeAudioSink(): AudioSink & {
-  prepareCallCount: number
-  resolvePrepareFn: ((id: string) => void) | null
-} {
-  let resolvePrepareFn: ((id: string) => void) | null = null
-  const prepareResolvers = new Map<string, () => void>()
-  let prepareCallCount = 0
-
-  const sink = {
-    prepareCallCount,
-    resolvePrepareFn,
-    prepareSegment: vi.fn(async (_id: string, _stream: ReadableStream, _ac: AbortController) => {
-      prepareCallCount++
-      sink.prepareCallCount = prepareCallCount
-    }),
+function makeAudioSink(): AudioSink {
+  return {
+    prepareSegment: vi.fn().mockResolvedValue(undefined),
     play: vi.fn().mockResolvedValue(undefined),
     cancel: vi.fn(),
     clear: vi.fn(),
@@ -110,12 +102,10 @@ function makeAudioSink(): AudioSink & {
     resume: vi.fn(),
     isComplete: vi.fn(() => false),
     stopCurrent: vi.fn(),
-  } as unknown as AudioSink & { prepareCallCount: number; resolvePrepareFn: ((id: string) => void) | null }
-
-  return sink
+  } as unknown as AudioSink
 }
 
-function makePlaylist(sink: AudioSink): {
+function makePlaylist(): {
   playlist: AudioPlaylist
   markReadyCalls: string[]
   markErrorCalls: string[]
@@ -154,14 +144,22 @@ function makePlaylist(sink: AudioSink): {
   return { playlist, markReadyCalls, markErrorCalls, reserveCalls }
 }
 
+// ─── SpeakerWithSeam helper type ──────────────────────────────────────────────
+
+type SpeakerWithSeam = Speaker & {
+  _seedJobForTest(text: string): string
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("Speaker as SegmentProducer", () => {
   let session: AgentSession
   let settings: Settings
-  let sink: ReturnType<typeof makeAudioSink>
-  let playlistMocks: ReturnType<typeof makePlaylist>
-  let speaker: Speaker
+  let sink: AudioSink
+  let pm: ReturnType<typeof makePlaylist>
+  let speaker: SpeakerWithSeam
+
+  const SEED_TEXT = "This is a full narration sentence for testing."
 
   beforeEach(() => {
     vi.useFakeTimers()
@@ -169,13 +167,13 @@ describe("Speaker as SegmentProducer", () => {
     session = makeSession()
     settings = makeSettings()
     sink = makeAudioSink()
-    playlistMocks = makePlaylist(sink)
+    pm = makePlaylist()
     speaker = new Speaker({
       session,
       settings,
-      playlist: playlistMocks.playlist,
+      playlist: pm.playlist,
       audioStream: sink,
-    })
+    }) as SpeakerWithSeam
   })
 
   afterEach(() => {
@@ -184,127 +182,173 @@ describe("Speaker as SegmentProducer", () => {
 
   // ── fetchState ───────────────────────────────────────────────────────────────
 
-  it("(1) fetchState: pending job → in-flight", () => {
-    // Inject a pending job directly via the private #jobs array (using Speaker internals)
-    // We do this by triggering enqueue — but that requires effects, so we use a simpler approach:
-    // call ensureFetch on a non-existent id → returns early. Then check fetchState for unknown → idle.
-    // For the actual pending test, we need to expose internals or use refetchSegment.
+  it("(1) fetchState: pending/fetching job → in-flight", () => {
+    // synthesize לעולם לא resolves → job נשאר pending/fetching
+    mockSynthesize = vi.fn().mockReturnValue(new Promise<ReadableStream>(() => undefined))
+    const segId = speaker._seedJobForTest(SEED_TEXT)
 
-    // Instead: call refetchSegment to create a pending job state after initially adding one.
-    // We inject via Speaker's own `refetchSegment` method which sets status=pending.
-    // First, we need a job in the array. We'll use the fact that speaker.refetchSegment
-    // calls ensureFetch internally (they share the same logic after R3).
-    // The cleanest approach: test via the public interface.
-
-    // Since Speaker is not yet implementing SegmentProducer, this test will FAIL (RED).
-    // After implementation, fetchState should return "in-flight" for pending/fetching jobs.
-
-    // We access fetchState after the implementation — for now just check the interface exists.
-    expect(typeof (speaker as unknown as { fetchState: unknown }).fetchState).toBe("function")
+    // job נוצר ויש לו status pending או fetching (תלוי בmicrotask timing)
+    // בשני המקרים fetchState → "in-flight"
+    expect(speaker.fetchState(segId)).toBe("in-flight")
   })
 
-  it("(2) fetchState: fetching job → in-flight", () => {
-    expect(typeof (speaker as unknown as { fetchState: unknown }).fetchState).toBe("function")
-    // After implementation: inject a "fetching" job and expect fetchState to return "in-flight"
-    const fetchStateFn = (speaker as unknown as { fetchState: (id: string) => string }).fetchState
-    expect(fetchStateFn.call(speaker, "non-existent-id")).toBe("idle")
+  it("(2) fetchState: job ב-fetching (אחרי pumpFetchLoop) → in-flight", async () => {
+    mockSynthesize = vi.fn().mockReturnValue(new Promise<ReadableStream>(() => undefined))
+    const segId = speaker._seedJobForTest(SEED_TEXT)
+
+    // אפשר ל-#pumpFetchLoop לרוץ → job.status=fetching
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+
+    expect(speaker.fetchState(segId)).toBe("in-flight")
   })
 
-  it("(3) fetchState: error job → failed", () => {
-    const fetchStateFn = (speaker as unknown as { fetchState: (id: string) => string }).fetchState
-    expect(fetchStateFn).toBeDefined()
-    // For a non-existent id, it should return "idle" (not error)
-    expect(fetchStateFn.call(speaker, "no-such-id")).toBe("idle")
+  it("(3) fetchState: synthesize reject → failed", async () => {
+    mockSynthesize = vi.fn().mockRejectedValue(new Error("TTS error"))
+    const segId = speaker._seedJobForTest(SEED_TEXT)
+
+    // תן ל-#fetchJob לסיים:
+    // #pumpFetchLoop → #fetchJob → cacheKeyFor(await) → synthesize(rejects) → catch → job.status=error
+    // runAllTimersAsync מנקה timers + microtasks, לולאת Promise.resolve מנקה את שרשרת ה-await
+    await vi.runAllTimersAsync()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    expect(speaker.fetchState(segId)).toBe("failed")
   })
 
-  it("(4) fetchState: ready job → idle", () => {
-    const fetchStateFn = (speaker as unknown as { fetchState: (id: string) => string }).fetchState
-    expect(fetchStateFn).toBeDefined()
-    expect(fetchStateFn.call(speaker, "no-such-id")).toBe("idle")
+  it("(4) fetchState: synthesize+prepareSegment resolve → idle (ready)", async () => {
+    mockSynthesize = vi.fn().mockResolvedValue(new ReadableStream())
+    const segId = speaker._seedJobForTest(SEED_TEXT)
+
+    // תן ל-#fetchJob לסיים:
+    // #pumpFetchLoop → #fetchJob → cacheKeyFor(await) → synthesize(resolves) →
+    // prepareSegment(resolves) → markReady → job.status=ready
+    await vi.runAllTimersAsync()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    // ready → idle (product handed to sink)
+    expect(speaker.fetchState(segId)).toBe("idle")
+    // markReady נקרא
+    expect(pm.markReadyCalls).toContain(segId)
   })
 
   it("(5) fetchState: unknown segmentId → idle", () => {
-    const fetchStateFn = (speaker as unknown as { fetchState: (id: string) => string }).fetchState
-    expect(fetchStateFn).toBeDefined()
-    expect(fetchStateFn.call(speaker, "completely-unknown")).toBe("idle")
+    expect(speaker.fetchState("completely-unknown")).toBe("idle")
   })
 
   // ── ensureFetch idempotency ────────────────────────────────────────────────
 
-  it("(6) ensureFetch: idempotent on fetching job — no pendingCount bump", () => {
-    const ensureFetchFn = (speaker as unknown as { ensureFetch: unknown }).ensureFetch
-    expect(ensureFetchFn).toBeDefined()
+  it("(6) ensureFetch: idempotent על fetching job — reserve לא נקרא שנית", () => {
+    // synthesize never resolves → job נשאר pending/fetching
+    mockSynthesize = vi.fn().mockReturnValue(new Promise<ReadableStream>(() => undefined))
+    const segId = speaker._seedJobForTest(SEED_TEXT)
+    const reserveCountBefore = pm.reserveCalls.length // 1 (מה-seedJob)
 
-    // Calling ensureFetch on unknown segmentId should be a no-op
-    expect(() => {
-      (speaker as unknown as { ensureFetch: (id: string) => void }).ensureFetch("non-existent")
-    }).not.toThrow()
+    // job ב-fetching → ensureFetch no-op (fetching/ready → return)
+    speaker.ensureFetch(segId)
+
+    // reserve לא נקרא שנית (idempotency)
+    expect(pm.reserveCalls.length).toBe(reserveCountBefore)
   })
 
-  it("(7) ensureFetch: idempotent on ready job — no pendingCount bump", () => {
-    const ensureFetchFn = (speaker as unknown as { ensureFetch: unknown }).ensureFetch
-    expect(ensureFetchFn).toBeDefined()
-    expect(() => {
-      (speaker as unknown as { ensureFetch: (id: string) => void }).ensureFetch("non-existent")
-    }).not.toThrow()
+  it("(7) ensureFetch: idempotent על ready job — reserve לא נקרא שנית", async () => {
+    mockSynthesize = vi.fn().mockResolvedValue(new ReadableStream())
+    const segId = speaker._seedJobForTest(SEED_TEXT)
+
+    // המתן לסיום → job.status=ready
+    await vi.runAllTimersAsync()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const reserveCountBefore = pm.reserveCalls.length
+
+    speaker.ensureFetch(segId)
+
+    // ready → no-op, reserve לא נקרא שנית
+    expect(pm.reserveCalls.length).toBe(reserveCountBefore)
   })
 
   // ── cancelFetch ───────────────────────────────────────────────────────────
 
-  it("(8) cancelFetch: for unknown segmentId — no throw", () => {
-    const cancelFetchFn = (speaker as unknown as { cancelFetch: unknown }).cancelFetch
-    expect(cancelFetchFn).toBeDefined()
-    expect(() => {
-      (speaker as unknown as { cancelFetch: (id: string) => void }).cancelFetch("non-existent")
-    }).not.toThrow()
+  it("(8) cancelFetch: מסמן job.canceled ומבטיח שmarkReady לא נקרא", async () => {
+    mockSynthesize = vi.fn().mockReturnValue(new Promise<ReadableStream>(() => undefined))
+    const segId = speaker._seedJobForTest(SEED_TEXT)
+
+    speaker.cancelFetch(segId)
+
+    // תן זמן ל-#fetchJob לסיים (אם יסיים)
+    await vi.runAllTimersAsync()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // markReady לא נקרא (ghost-guard הגן)
+    expect(pm.markReadyCalls).not.toContain(segId)
   })
 
-  it("(9) cancelFetch ghost guard: canceled job → markReady NOT called after cancel", async () => {
-    // We use refetchSegment to inject a job in pending state, then cancel it.
-    // Before implementation, this test verifies the guard exists.
-    const cancelFetchFn = (speaker as unknown as { cancelFetch: (id: string) => void }).cancelFetch
-    expect(cancelFetchFn).toBeDefined()
+  it("(9) ghost (קריטי): cancelFetch בזמן prepareSegment תלוי → markReady לא נקרא", async () => {
+    // synthesize resolves מיד, prepareSegment תלוי (חלון ל-cancelFetch)
+    mockSynthesize = vi.fn().mockResolvedValue(new ReadableStream())
+    let resolvePrepare!: () => void
+    const preparePromise = new Promise<void>((resolve) => {
+      resolvePrepare = resolve
+    })
+    ;(sink as unknown as { prepareSegment: ReturnType<typeof vi.fn> }).prepareSegment = vi.fn(
+      async () => { await preparePromise },
+    )
 
-    // Synthesize will delay indefinitely until we resolve it
-    let resolveSynth!: () => void
+    const segId = speaker._seedJobForTest(SEED_TEXT)
+
+    // תן ל-synthesize לסיים (prepareSegment עדיין תלוי — ghost window)
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // cancelFetch בזמן prepareSegment תלוי
+    speaker.cancelFetch(segId)
+
+    // שחרר prepareSegment — #fetchJob יגיע ל-guard job.canceled → return
+    resolvePrepare()
+    await vi.runAllTimersAsync()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // guard [speaker.ts:507]: job.canceled → return, לא קורא markReady
+    expect(pm.markReadyCalls).not.toContain(segId)
+  })
+
+  it("(10) ghost-catch: cancelFetch → synthesize reject → markError לא נקרא", async () => {
+    let rejectSynth!: (e: Error) => void
     mockSynthesize = vi.fn().mockReturnValue(
-      new Promise<ReadableStream>((resolve) => {
-        resolveSynth = () => resolve(new ReadableStream())
+      new Promise<ReadableStream>((_resolve, reject) => {
+        rejectSynth = reject
       }),
     )
 
-    // Inject a job via refetchSegment (it sets status=pending and calls pumpFetchLoop)
-    // We need to add a job first. Speaker only adds jobs via #enqueue which is called
-    // from #processBubbles/$effect. We'll access #jobs directly via a cast.
-    const jobsArr = (speaker as unknown as { [key: string]: TtsJob[] })["#jobs" as never] as unknown as Array<{
-      segmentId: string
-      status: string
-      abort: AbortController
-      canceled?: boolean
-    }>
+    const segId = speaker._seedJobForTest(SEED_TEXT)
 
-    // Since #jobs is private, we check the external contract:
-    // cancelFetch should prevent markReady from being called.
-    // For a job that doesn't exist, cancelFetch is a no-op.
-    cancelFetchFn.call(speaker, "seg-id-that-does-not-exist")
-    expect(playlistMocks.markReadyCalls).toHaveLength(0)
-  })
+    // תן ל-#fetchJob להתחיל
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
 
-  it("(10) cancelFetch ghost guard: canceled job → markError NOT called via catch", () => {
-    const cancelFetchFn = (speaker as unknown as { cancelFetch: (id: string) => void }).cancelFetch
-    expect(cancelFetchFn).toBeDefined()
-    cancelFetchFn.call(speaker, "non-existent")
-    expect(playlistMocks.markErrorCalls).toHaveLength(0)
+    // cancelFetch לפני reject
+    speaker.cancelFetch(segId)
+
+    // reject synthesize → catch
+    rejectSynth(new Error("aborted"))
+    await vi.runAllTimersAsync()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // guard [speaker.ts:513]: job.canceled → return מה-catch, לא קורא markError
+    expect(pm.markErrorCalls).not.toContain(segId)
   })
 
   // ── implements SegmentProducer interface ──────────────────────────────────
 
   it("(11) Speaker implements SegmentProducer — all 3 methods present", () => {
-    expect(typeof (speaker as unknown as Record<string, unknown>)["fetchState"]).toBe("function")
-    expect(typeof (speaker as unknown as Record<string, unknown>)["ensureFetch"]).toBe("function")
-    expect(typeof (speaker as unknown as Record<string, unknown>)["cancelFetch"]).toBe("function")
+    expect(typeof speaker.fetchState).toBe("function")
+    expect(typeof speaker.ensureFetch).toBe("function")
+    expect(typeof speaker.cancelFetch).toBe("function")
   })
 })
-
-// ─── import needed for test (9) type annotation ───────────────────────────────
-import type { TtsJob } from "./speaker.svelte"

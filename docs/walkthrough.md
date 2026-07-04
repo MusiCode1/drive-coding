@@ -1,3 +1,20 @@
+## 2026-07-05 — slice producer-test-hardening — R4a Commit 0: seam אמיתי ל-Speaker producer tests
+
+**קבצים שהשתנו**: `view-models/speaker.svelte.ts`, `view-models/speaker.producer.test.svelte.ts`
+**שינויים**:
+- `speaker.svelte.ts`: הוספת `_seedJobForTest(text)` — test-only seam שקורא ל-`#enqueue` + `#pumpFetchLoop` ישירות ומחזיר segId. מסומן למחיקה ב-Commit 3 יחד עם refetchSegment.
+- `speaker.producer.test.svelte.ts`: נכתב מחדש — 11 טסטים אמיתיים שמשתמשים ב-`_seedJobForTest` כ-seam:
+  - fetchState בשלושה מצבים: pending/fetching → in-flight, error → failed, ready → idle
+  - fetchState: unknown segId → idle
+  - ensureFetch: idempotency בשני מצבים (fetching, ready)
+  - cancelFetch: ghost-guard point 1 (prepareSegment window)
+  - cancelFetch: ghost-guard point 2 (catch window)
+  - implements check
+**הנמקת seam**: `$effect.root` לא רץ בסביבת vitest/node (אומת ב-5 probe tests). flushSync/tick/Promise.resolve לא עוזרים. הסיבה: ה-root callback עצמו לא נקרא כלל. `_seedJobForTest` קורא ל-`#enqueue`+`#pumpFetchLoop` ישירות — seam מינימלי שאינו משנה התנהגות פרודקשן.
+**testing**: typecheck 0; 11/11 speaker.producer ירוקים; 466/467 FE suite (כישלון pre-existing: formatting.test.ts).
+
+---
+
 ## 2026-07-05 — slice producer-ownership — R3 Commit 5: F1 טסט stop-during-active-play (TDD)
 
 **קבצים שהשתנו**: `engines/audio-playlist.test.ts`

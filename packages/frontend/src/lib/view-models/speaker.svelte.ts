@@ -374,6 +374,20 @@ export class Speaker implements SegmentProducer {
     this.ensureFetch(segmentId)
   }
 
+  /**
+   * R4a test-seam: מזמן #enqueue ישירות ומחזיר segId.
+   * נדרש כי $effect.root לא רץ בסביבת vitest/node — לא ניתן להשתמש ב-flushSync.
+   * נמחק ב-Commit 3 (יחד עם refetchSegment).
+   * @internal — test only
+   */
+  _seedJobForTest(text: string): string {
+    this.#enqueue("message", null, text, "test-bubble")
+    const job = this.#jobs[this.#jobs.length - 1]
+    if (job === undefined) throw new Error("_seedJobForTest: no job created")
+    this.#pumpFetchLoop()
+    return job.segmentId
+  }
+
   // ─── SegmentProducer implementation (R3) ────────────────────────────────────
 
   /**
