@@ -16,6 +16,20 @@
 **קובץ חדש**: `bubble-player.toggle.test.svelte.ts` — 3 טסטי-רגרסיה.
 **בדיקות**: 3/3 ירוקים; typecheck 0.
 
+### Commit 4 — שכתוב #playLoop: interpreter + ערוץ-השכמה יחיד (manual, מוגן ע"י Commit 3)
+
+**קבצים שעודכנו**: `audio-playlist.svelte.ts` בלבד (שכתוב מלא).
+
+**מה נמחק**: `#itemResolvers`, `#pauseResolve`, `#navResolve`, `#parkResolve`, `#stopped`, `#playing`, `#waitForItem`, `#waitForResume`, `#waitForNav`, `#playWithNav`, שני מסלולי-play הכפולים. 0 traces ב-grep.
+
+**מה נוסף**: `#version`+`#wake` (ערוץ יחיד), `#runPromise` (anti re-entrancy), `#fetchWaitStartedAt`, `#explicitVisit`; methods: `#bump()`, `#changed(seen)`, `#snapshot()`, `#factsFor()`, `#ensureRunning()`, `async #runLoop()`.
+
+**סטיה מ-spec ב-#factsFor**: ה-brief מגדיר `reserved+needsRefetch=true→fetch="idle"` בלי-הבחנה. בפועל: `reserved+needsRefetch=true+refetch=undefined` (item שנזרק בלי thunk) → ה-loop צריך לחכות לmarkReady חיצוני (כמו test 3/jumpTo). תוקן: רק `needsRefetch=true+refetch!==undefined` → `fetch="idle"` (request-fetch יקרא את ה-thunk); כל שאר ה-reserved → `fetch="in-flight"` (ממתין ל-bump). זה תואם לprevious impl שהמתין ב-#waitForItem.
+
+**#factsFor — playable**: הbrief אומר `playable=sink.isPlayable??sink.isComplete??false`. בפועל: `state=ready` → prepareSegment הסתיים → playable=true תמיד (אחרת item.state=ready עם playable=false → request-fetch → skipped). הוסף: `playable = state==="ready"||state==="playing" ? true : sinkPlayable`.
+
+**22/22 ירוקים** (לפני ואחרי שכתוב). typecheck 0. i18n clean.
+
 ### Commit 3 — מockים מתוקנים: completeSegment + isComplete/isPlayable/stopCurrent (integration)
 
 **רציונל**: ה-mock הישן קרא ל-`completedSegments.add(id)` ב-`resolvePlay` — כלומר item נחשב "complete" רק אחרי ניגון, לא אחרי fetch. זה הסתיר את ה-retain-replay (isComplete=false → skip-cancel תמיד). ה-mock החדש: `completeSegment(id)` = mark כ-fetch-complete (הטסט קורא לזה אחרי `markReady`); `resolvePlay` נקי.
