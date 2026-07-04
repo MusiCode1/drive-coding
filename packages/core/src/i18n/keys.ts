@@ -216,6 +216,9 @@ export type MessageKey =
   // ─── image-attach tray ─── (slice-image-paste)
   | "attach.addImage"
   | "attach.remove"
+  // ─── image-paste replay (§11) — placeholder for non-text ContentBlocks ───
+  | "chat.content.fileAttachment"
+  | "chat.content.unsupported"
   // ─── recent-projects ─── (slice connect-recent-projects)
   | "connect.recent.title"
   | "connect.recent.empty"

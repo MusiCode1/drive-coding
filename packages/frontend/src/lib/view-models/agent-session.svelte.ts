@@ -1524,10 +1524,33 @@ export class AgentSession {
       return
     }
 
-    const text = update.content?.type === "text" ? (update.content.text ?? "") : ""
-    if (!text) return
-
+    // §11: dispatch לפי contentType לפני ה-gate — כך user_message_chunk עם image/audio/resource_link
+    // לא נזרק בשקט. ה-gate למטה חל רק על agent_message_chunk ו-agent_thought_chunk (text-only).
     const messageId = update.messageId ?? null
+
+    if (update.sessionUpdate === "user_message_chunk") {
+      // נשלח על ידי הסוכן במהלך ניגון מחדש של ההיסטוריה מ-loadSession (לפי מפרט ACP
+      // סעיף §session-setup#loading-sessions). לעולם לא מגיע בתורים חיים —
+      // אלה מקורם מ-sendPrompt ואנחנו מוסיפים להם את הבועה האופטימית שם.
+      const content = update.content as { type?: string; text?: string; data?: string; mimeType?: string; name?: string; uri?: string } | undefined
+      if (content?.type === "text") {
+        this.#appendChunk("user", content.text ?? "", messageId)
+      } else if (content?.type === "image" && content.data !== undefined && content.mimeType !== undefined) {
+        this.#appendUserImage(messageId, { mimeType: content.mimeType, data: content.data })
+      } else if (content?.type === "resource_link") {
+        // resource_link: מצרף placeholder כדי למנוע איבוד-שקט.
+        // תצוגה מלאה (כתמונה/קישור) — slice local-file-proxy עתידי.
+        const name = content.name ?? content.uri ?? "chat.content.fileAttachment"
+        this.#appendChunk("user", name, messageId)
+      } else {
+        // audio / resource (EmbeddedResource) / unknown — placeholder (אין יותר איבוד-שקט)
+        this.#appendChunk("user", "chat.content.unsupported", messageId)
+      }
+      return
+    }
+
+    const text = update.content?.type === "text" ? ((update.content as { text?: string }).text ?? "") : ""
+    if (!text) return
 
     if (update.sessionUpdate === "agent_message_chunk") {
       this.#setTurnState("responding")
@@ -1538,11 +1561,6 @@ export class AgentSession {
       this.#setTurnState("thinking")
       if (this.#turnEnded) this.#scheduleIdle()
       this.#appendChunk("thought", text, messageId)
-    } else if (update.sessionUpdate === "user_message_chunk") {
-      // נשלח על ידי הסוכן במהלך ניגון מחדש של ההיסטוריה מ-loadSession (לפי מפרט ACP
-      // סעיף §session-setup#loading-sessions). לעולם לא מגיע בתורים חיים —
-      // אלה מקורם מ-sendPrompt ואנחנו מוסיפים להם את הבועה האופטימית שם.
-      this.#appendChunk("user", text, messageId)
     }
   }
 
@@ -1679,6 +1697,43 @@ export class AgentSession {
                 createdAt: Date.now(),
                 segments: [{ id: crypto.randomUUID(), text }],
               }
+      this.bubbles.push(newBubble)
+    }
+  }
+
+  /**
+   * §11: מצרף image-attachment לבועת-user — קיבוץ לפי messageId כמו #appendChunk.
+   *
+   * הערה על reactivity: #appendChunk משתמש ב-segments.push() — עובד כי segments[]
+   * הוא deep $state proxy ב-Svelte 5. attachments מתחיל undefined (optional ב-UserBubble),
+   * לכן .push() על undefined יקרוס. לכן כאן **השמה** (`[..., a]`) — פותרת גם את
+   * ה-undefined-init וגם מבטיחה reactivity על מערך שנוסף מאפס.
+   */
+  #appendUserImage(
+    messageId: string | null,
+    img: { mimeType: string; data: string },
+  ): void {
+    const last = this.bubbles[this.bubbles.length - 1]
+    const canGroup =
+      last !== undefined &&
+      last.kind === "user" &&
+      (messageId !== null ? last.messageId === messageId : last.messageId === null)
+
+    const attachment = { mimeType: img.mimeType, dataBase64: img.data }
+
+    if (canGroup && last !== undefined) {
+      const userBubble = last as UserBubble
+      // השמה (לא push) כי attachments מתחיל undefined — ר' הערה מעל
+      userBubble.attachments = [...(userBubble.attachments ?? []), attachment]
+    } else {
+      const newBubble: UserBubble = {
+        id: crypto.randomUUID(),
+        kind: "user",
+        messageId,
+        createdAt: Date.now(),
+        segments: [],
+        attachments: [attachment],
+      }
       this.bubbles.push(newBubble)
     }
   }

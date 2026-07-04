@@ -420,3 +420,122 @@ describe("AgentSession.bypassActive — reads configOptions first, falls back to
     expect(openCodeSession.bypassActive).toBe(false)
   })
 })
+
+// ─── TDD §11: user_message_chunk — ContentBlocks לא-טקסטואליים ───────────────
+// תיקון replay: ה-gate `if (!text) return` זרק image/audio/resource_link/resource.
+// helpers
+
+function userImageChunk(data: string, mimeType: string, messageId: string | null): unknown {
+  return {
+    update: {
+      sessionUpdate: "user_message_chunk",
+      content: { type: "image", data, mimeType },
+      messageId,
+    },
+  }
+}
+
+function userResourceLinkChunk(name: string, uri: string, messageId: string | null): unknown {
+  return {
+    update: {
+      sessionUpdate: "user_message_chunk",
+      content: { type: "resource_link", name, uri },
+      messageId,
+    },
+  }
+}
+
+function userAudioChunk(messageId: string | null): unknown {
+  return {
+    update: {
+      sessionUpdate: "user_message_chunk",
+      content: { type: "audio", data: "base64audio" },
+      messageId,
+    },
+  }
+}
+
+describe("AgentSession §11 — user_message_chunk non-text ContentBlocks", () => {
+  let session: AgentSession
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    onSessionUpdate = null
+    vi.stubGlobal("location", { protocol: "http:", host: "localhost:4000" })
+    session = new AgentSession()
+    await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+  })
+
+  it("image chunk → UserBubble with attachments[0] containing dataBase64+mimeType", () => {
+    onSessionUpdate!(userImageChunk("abc123", "image/jpeg", "msg-1"))
+
+    expect(session.bubbles).toHaveLength(1)
+    const bubble = session.bubbles[0] as UserBubble
+    expect(bubble.kind).toBe("user")
+    expect(bubble.attachments).toHaveLength(1)
+    // ACP ImageContent.data (גולמי, בלי prefix) → נשמר ב-dataBase64 של attachment
+    expect(bubble.attachments![0]!.dataBase64).toBe("abc123")
+    expect(bubble.attachments![0]!.mimeType).toBe("image/jpeg")
+  })
+
+  it("text chunk + image chunk with same messageId → 1 bubble with segment + attachment", () => {
+    onSessionUpdate!(userChunk("hello", "msg-2"))
+    onSessionUpdate!(userImageChunk("imgdata", "image/png", "msg-2"))
+
+    expect(session.bubbles).toHaveLength(1)
+    const bubble = session.bubbles[0] as UserBubble
+    expect(bubble.kind).toBe("user")
+    expect(bubble.segments).toHaveLength(1)
+    expect(bubble.segments[0]!.text).toBe("hello")
+    expect(bubble.attachments).toHaveLength(1)
+    expect(bubble.attachments![0]!.mimeType).toBe("image/png")
+  })
+
+  it("image chunk only (no text) → UserBubble with attachments and empty segments", () => {
+    onSessionUpdate!(userImageChunk("onlyimg", "image/gif", null))
+
+    expect(session.bubbles).toHaveLength(1)
+    const bubble = session.bubbles[0] as UserBubble
+    expect(bubble.kind).toBe("user")
+    expect(bubble.segments).toHaveLength(0)
+    expect(bubble.attachments).toHaveLength(1)
+    expect(bubble.attachments![0]!.mimeType).toBe("image/gif")
+  })
+
+  it("resource_link chunk → UserBubble with a non-empty placeholder segment (no silent loss)", () => {
+    onSessionUpdate!(userResourceLinkChunk("report.pdf", "file:///home/user/report.pdf", "msg-3"))
+
+    expect(session.bubbles).toHaveLength(1)
+    const bubble = session.bubbles[0] as UserBubble
+    expect(bubble.kind).toBe("user")
+    // placeholder non-empty: no silent loss
+    expect(bubble.segments.length).toBeGreaterThan(0)
+    expect(bubble.segments[0]!.text.length).toBeGreaterThan(0)
+  })
+
+  it("audio chunk → UserBubble with a non-empty placeholder segment (no silent loss)", () => {
+    onSessionUpdate!(userAudioChunk("msg-4"))
+
+    expect(session.bubbles).toHaveLength(1)
+    const bubble = session.bubbles[0] as UserBubble
+    expect(bubble.kind).toBe("user")
+    expect(bubble.segments.length).toBeGreaterThan(0)
+    expect(bubble.segments[0]!.text.length).toBeGreaterThan(0)
+  })
+
+  it("regression: text-only user_message_chunk still creates segment (no attachment)", () => {
+    onSessionUpdate!(userChunk("just text", "msg-5"))
+
+    const bubble = session.bubbles[0] as UserBubble
+    expect(bubble.segments).toHaveLength(1)
+    expect(bubble.segments[0]!.text).toBe("just text")
+    expect(bubble.attachments).toBeUndefined()
+  })
+
+  it("regression: agent_message_chunk text still works correctly", () => {
+    onSessionUpdate!(msgChunk("agent reply", "msg-6"))
+
+    expect(session.bubbles).toHaveLength(1)
+    expect(session.bubbles[0]!.kind).toBe("message")
+  })
+})

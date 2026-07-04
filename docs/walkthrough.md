@@ -1,3 +1,26 @@
+## 2026-07-04 — slice-image-paste — Commit 5: תיקון replay (§11)
+
+**מה בוצע (TDD):**
+
+- `packages/core/src/i18n/keys.ts`: הוסף `chat.content.fileAttachment` ו-`chat.content.unsupported` (additive)
+- `packages/core/src/i18n/catalogs/he.ts`: תרגומים עבריים לשני המפתחות החדשים
+- `packages/core/src/i18n/catalogs/en.ts`: תרגומים אנגליים לשני המפתחות החדשים
+- `packages/frontend/src/lib/view-models/agent-session.svelte.ts`:
+  - `#handleSessionUpdate`: הוזז מטפל `user_message_chunk` **לפני** ה-gate `if (!text) return` — כך image/audio/resource_link/resource אינם נזרקים עוד בשקט
+  - dispatch פנימי לפי `content.type`: `text`→#appendChunk, `image`→#appendUserImage, `resource_link`/`audio`/`resource`→placeholder segment
+  - `#appendUserImage` — helper חדש: קיבוץ לפי messageId (כמו #appendChunk), השמה (לא push) כי attachments מתחיל undefined; הערת-קוד מסבירה את ההבחנה
+- `packages/frontend/src/lib/view-models/agent-session.test.ts`: 7 טסטים TDD §11 (image→attachment; text+image→בועה אחת; image-only→segments[]; resource_link placeholder; audio placeholder; רגרסיות טקסט ו-agent_message)
+
+**בדיקות:**
+- TDD: 7/7 ירוקים (§11)
+- frontend-v2 total: 418/419 passed (1 כישלון pre-existing formatting.test.ts — לא קשור)
+- typecheck: 0 errors
+- lint:i18n: נקי
+
+**חריגות:**
+- `chat.content.fileAttachment` ו-`chat.content.unsupported` נשמרים כ-text גולמי בסגמנט (ה-VM לא ניגש ל-i18n context); calev יאמת תצוגה ב-runtime
+- `formatting.test.ts` failure: pre-existing (אומת — קיים לפני השינויים)
+
 ## 2026-07-01 — slice-image-paste — Commit 4a + Commit 4b
 
 **Commit 4a (provider, TDD):**
