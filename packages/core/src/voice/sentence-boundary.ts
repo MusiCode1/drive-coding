@@ -36,6 +36,11 @@ export function splitIntoSentences(buffer: string, opts: SplitOptions = {}): Spl
   const maxChars = opts.maxChars ?? 200
   const locale = opts.locale ?? "he"
 
+  // TTS-only: תווי-כיווניות נחוצים לתצוגה (הבועות מרונדרות מ-bubble.segments המקוריים),
+  // אך משבשים את TERMINATOR_RE ומנפחים את ספירת-maxChars. הסרתם כאן בטוחה — הטקסט זורם רק ל-TTS.
+  // טווח: LRM/RLM (200E/200F) + embeddings (202A-202E) + isolates (2066-2069). לא ניקוד.
+  buffer = buffer.replace(/[‎‏‪-‮⁦-⁩]/g, "")
+
   if (buffer.length === 0) return { sentences: [], remaining: "" }
 
   const sentenceSegmenter = new Intl.Segmenter(locale, { granularity: "sentence" })

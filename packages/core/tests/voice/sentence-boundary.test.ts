@@ -193,3 +193,91 @@ describe("splitIntoSentences — streaming mid-word safety (commit 0: fix A)", (
     }
   })
 })
+
+describe("splitIntoSentences — bidi normalization (commit 1: fix B)", () => {
+  // Use \u-escapes for bidi chars to avoid lint:i18n issues and for clarity.
+  // U+200F = RLM (Right-to-Left Mark), U+200E = LRM (Left-to-Right Mark)
+  // U+202B = Right-to-Left Embedding, U+202C = Pop Directional Formatting
+  // U+2066 = Left-to-Right Isolate, U+2069 = Pop Directional Isolate
+  const RLM = "‏"
+  const LRM = "‎"
+
+  it("bidi-1: RLM after terminator does not block sentence emission", () => {
+    // Without normalization, RLM after "." breaks TERMINATOR_RE → sentence held in remaining
+    const input = "משפט ראשון ארוך מספיק להיפלט." + RLM
+    const { sentences, remaining } = splitIntoSentences(input)
+    expect(sentences).toEqual(["משפט ראשון ארוך מספיק להיפלט."])
+    expect(remaining).toBe("")
+  })
+
+  it("bidi-2: RLM followed by space after terminator does not block emission", () => {
+    const input = "משפט ראשון ארוך מספיק להיפלט." + RLM + " "
+    const { sentences, remaining } = splitIntoSentences(input)
+    expect(sentences.length).toBeGreaterThanOrEqual(1)
+    expect(remaining).toBe("")
+  })
+
+  it("bidi-3: control — same sentence without RLM is emitted (no regression)", () => {
+    const input = "משפט ראשון ארוך מספיק להיפלט."
+    const { sentences, remaining } = splitIntoSentences(input)
+    expect(sentences).toEqual(["משפט ראשון ארוך מספיק להיפלט."])
+    expect(remaining).toBe("")
+  })
+
+  it("bidi-4: RLM at start of continuation chunk does NOT appear at start of emitted segment", () => {
+    // Streaming: first chunk emits a sentence, second chunk starts with RLM
+    const c1 = "משפט ראשון ארוך מספיק להיפלט."
+    const c2 = RLM + "משפט שני ארוך מספיק כאן."
+    let buf = ""
+    const emitted: string[] = []
+    for (const ch of [c1, c2]) {
+      const { sentences, remaining } = splitIntoSentences(buf + ch)
+      for (const s of sentences) emitted.push(s)
+      buf = remaining
+    }
+    // No segment should start with a bidi character
+    for (const seg of emitted) {
+      expect(seg.startsWith(RLM)).toBe(false)
+      expect(seg.startsWith(LRM)).toBe(false)
+    }
+  })
+
+  it("bidi-5: Hebrew vowel diacritics (niqqud) are NOT stripped — preserved in output", () => {
+    // Niqqud (U+05B0-U+05C7) must NOT be removed — they help pronunciation
+    const input = "שְלוֹם עוֹלָם. משִפט שֵני ארוך מספיק כאן."
+    // = "שְׁלוֹם עוֹלָם. משפט שני ארוך מספיק כאן." (with niqqud on first word)
+    const { sentences } = splitIntoSentences(input)
+    // should split into 2 sentences (or merge if first is short)
+    expect(sentences.length).toBeGreaterThanOrEqual(1)
+    // niqqud chars must be present in the output
+    expect(sentences.join("")).toMatch(/[ְ-ׇ]/)
+  })
+
+  it("bidi-6: heavy RLM inflation — segments count and size match clean version", () => {
+    // A long sentence with RLM after every space — should not inflate segment count
+    const base = "מילה ".repeat(45).trim() + "."
+    const withRlm = base.replace(/ /g, " " + RLM)
+    const cleanResult = splitIntoSentences(base)
+    const rlmResult = splitIntoSentences(withRlm)
+    // same number of segments
+    expect(rlmResult.sentences.length).toBe(cleanResult.sentences.length)
+    // all segments within maxChars=200
+    for (const s of rlmResult.sentences) {
+      expect(s.length).toBeLessThanOrEqual(200)
+    }
+  })
+
+  it("bidi-7: bilingual text with LRM/RLM around latin — splits correctly, no bidi in output", () => {
+    // "...‎npm run build‏ עובד. משפט הבא ארוך מספיק כאן."
+    const input = "פרויקט הרצה עם " + LRM + "npm run build" + RLM + " עובד. משפט הבא ארוך מספיק כאן."
+    const { sentences, remaining } = splitIntoSentences(input)
+    // at least one sentence emitted (possibly merged if first is short)
+    expect(sentences.length).toBeGreaterThanOrEqual(1)
+    // no bidi chars in any emitted segment
+    const bidiRe = /[‎‏‪-‮⁦-⁩]/
+    for (const s of sentences) {
+      expect(bidiRe.test(s)).toBe(false)
+    }
+    expect(bidiRe.test(remaining)).toBe(false)
+  })
+})
