@@ -444,3 +444,67 @@ sendPrompt = async (
 איזה ספק זמין מצהיר `promptCapabilities.image: true` (claude / opencode / codex)? נדרש ל-DoD של Commit 4b
 (אימות end-to-end). **calev-heavy יאמת עם `WIRE_RECORD` מה כל ספק מצהיר** ויריץ את ה-e2e מול הספק שכן.
 אם אף ספק לא מצהיר → escalation (§7) — הפיצ'ר נכון-מבנית אבל לא-ניתן-לאימות-חי כרגע.
+
+---
+
+## §11 — Commit 5: תיקון replay — ContentBlocks לא-טקסטואליים ב-`session/load`
+
+> **נוסף 2026-07-04** אחרי ש-calev נתן GO (12/13) ו**המשתמשת תפסה חי** באג replay: תמונה שנשלחה **נעלמת בטעינה-מחדש** של הסשן. זה תיקון-במקום לפני merge (החלטה: `decisions/drive-coding.md` 2026-07-04). approach: **TDD** (VM handler, לוגיקה בדידה על bubbles).
+
+### §11.1 — השורש (מאומת בקוד)
+`#handleSessionUpdate` (`agent-session.svelte.ts`) — שורות **1527-1528**:
+```ts
+const text = update.content?.type === "text" ? (update.content.text ?? "") : ""
+if (!text) return   // ← content לא-טקסטואלי נזרק כאן, לפני מטפלי ה-chunks
+```
+ה-gate שומר **רק** `text` ומפיל בשקט **4 מ-5** `ContentBlock` (ACP SDK 0.21.1, `types.gen.d.ts:838`): `image` · `audio` · `resource_link` · `resource` (EmbeddedResource). חל על שלושת ה-chunks שאחריו (1532/1537/1541): `agent_message_chunk` · `agent_thought_chunk` · `user_message_chunk`. הבאג הנצפה: `user_message_chunk` עם `content.type==="image"` ב-replay (`session/load`) → נזרק → התמונה נעלמת מההיסטוריה. **מחלקת-הבאג: איבוד-מידע שקט.**
+
+### §11.2 — Scope
+| טיפול | כן/לא | הערה |
+|---|---|---|
+| `image` ב-`user_message_chunk` → `attachments[]` (רינדור מלא) | ✅ | התשתית קיימת (Commit 3): `UserBubble.attachments` + render `UserBubble.svelte:56-64` |
+| **placeholder** ל-`audio`/`resource_link`/`resource` ב-`user_message_chunk` | ✅ | segment-טקסט עם i18n (למשל "📎 קובץ מצורף: {name}" / "תוכן לא-נתמך"). מונע איבוד-שקט |
+| קיבוץ image-chunk לבועת-user לפי `messageId` (כמו טקסט) | ✅ | chunk-תמונה עם אותו messageId כמו chunk-טקסט קודם → אותה בועה |
+| רינדור מלא של `resource` embedded (text/blob) | ❌ | slice נגזר `message-embedded-content` (roadmap) |
+| טיפול ב-image/resource ב-**`agent_message_chunk`** (צד-agent) | ❌ | לא נצפה בפועל (agents פולטים תוכן דרך `tool_call`); מחוץ ל-scope. **אבל** — אל תשבור: ודא שה-gate לא זורק בשקט גם שם ללא placeholder → אם קל, placeholder גם לצד-agent; אחרת השאר כמו-שהוא ותעד |
+
+### §11.3 — הקובץ + נקודות-שינוי
+**`packages/frontend/src/lib/view-models/agent-session.svelte.ts`** — `#handleSessionUpdate`:
+- **החלף את ה-gate** (1527-1528) כך שלא יזרוק content לא-טקסטואלי **לפני** שמגיעים למטפל ב-`user_message_chunk`. הדפוס הקיים כבר עושה זאת ל-`tool_call`/mode/config (מטופלים **לפני** ה-gate, 1498-1525) — הרחב את אותה גישה: או (א) הזז את מטפל ה-`user_message_chunk` לפני ה-gate עם dispatch פנימי לפי `content.type`, או (ב) חשב `contentType` והתנה.
+- **`user_message_chunk`** (היום 1541-1545): 
+  - `content.type==="text"` → כמו היום (`#appendChunk("user", text, messageId)`).
+  - `content.type==="image"` → helper חדש `#appendUserImage(messageId, { mimeType: content.mimeType, data: content.data })` שמצרף ל-`attachments[]` של בועת-user (קיבוץ לפי messageId כמו `#appendChunk`; אם אין בועה תואמת → בועה חדשה עם `attachments:[…]` ו-`segments:[]`).
+  - `content.type` ∈ {`audio`,`resource_link`,`resource`} → segment-טקסט placeholder דרך `t(key)` (i18n חובה — ראה §11.4).
+
+⚠️ **Svelte 5 reactivity על array** (learnings): הוספת attachment בהשמה (`bubble.attachments = [...(bubble.attachments ?? []), a]`), לא `push`. **הערת-קוד חובה** (finding אביגיל r1 #2): ה-`#appendChunk` הקיים משתמש ב-`segments.push` (עובד — deep `$state` proxy), אבל `attachments` מתחיל `undefined` (optional) → `.push` יקרוס; לכן **השמה**. הוסף הערה קצרה ליד ה-helper שתסביר את ההבדל, כדי לא לבלבל את מי שקורא את שתי הפונקציות זו-לצד-זו.
+
+⚠️ **אל תיגע** ב-`sendPrompt`/Commit 4b (נתיב השליחה — אומת GO). זה **read-path בלבד**.
+
+### §11.4 — i18n (חובה — `lint:i18n` חוסם עברית קשיחה)
+מפתחות חדשים ב-`packages/core/src/i18n/keys.ts` + `catalogs/he.ts` + `catalogs/en.ts` (additive, ליד `attach.*` 216-218). הצעה:
+- `chat.content.fileAttachment` (resource_link — עם שם/uri)
+- `chat.content.unsupported` (audio/resource — "תוכן לא-נתמך")
+
+### §11.5 — Testing (TDD)
+`agent-session.test.ts` (כבר יש suite ל-`user_message_chunk`, שורות 104/189):
+1. `user_message_chunk` עם `content:{type:"image",data,mimeType}` → בועת-user אחת עם `attachments.length===1`, data/mimeType נכונים.
+2. טקסט+תמונה עם **אותו** messageId (שני chunks) → **בועה אחת**: `segments.length===1` **וגם** `attachments.length===1`.
+3. תמונה בלבד (בלי chunk-טקסט) → בועה עם `attachments.length===1`, `segments.length===0`.
+4. `resource_link`/`audio` → בועה עם segment placeholder (לא ריקה, לא נזרקת).
+5. **רגרסיה**: `user_message_chunk` טקסט-בלבד → כמו היום (segment, בלי attachments). `agent_message_chunk` טקסט → ללא רגרסיה.
+
+### §11.6 — DoD
+| בדיקה | איך | 
+|---|---|
+| replay image ב-`user_message_chunk` → attachment | unit + חי (calev) |
+| טקסט+תמונה אותו messageId → בועה אחת (segment+attachment) | unit |
+| audio/resource_link/resource → placeholder (לא איבוד-שקט) | unit + חי |
+| טקסט-בלבד ללא רגרסיה | unit |
+| **חי: שלח תמונה → reload סשן → התמונה מופיעה בהיסטוריה** | calev (הבאג המקורי) |
+| typecheck + build + `lint:i18n` ירוקים | פקודות §0 |
+
+### §11.7 — Complexity
+VM read-path + i18n + טסטים; אין UI חדש (render קיים), אין BE, אין פרוטוקול חדש. **~4/10 → verifier `calev`** (light) — אבל מכיוון שזה חלק מ-image-paste (8/10) ונמזג יחד, ה-runtime-gate המשולב יישאר **calev-heavy** על נתיב ה-replay + רגרסיית השליחה.
+
+### §11.8 — depends_on
+`[Commit 4b]` (אותו סלייס — משתמש ב-`UserBubble.attachments` שהוגדר ב-Commit 3 ובמודל שהודלק ב-4b). base = ה-branch הנוכחי `slice/image-paste` @ HEAD.

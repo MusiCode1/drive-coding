@@ -1,5 +1,30 @@
 # Decisions — drive-coding
 
+## 2026-07-04 — image-paste: השלמה + תיקון replay (איבוד-שקט של ContentBlocks לא-טקסטואליים)
+
+> image-paste (Commits 0–4) הושלם, אומת (calev-heavy GO 12/13), reconcile מול dev v0.10.1. **לפני merge — המשתמשת תפסה חי באג replay:** תמונה שנשלחה נעלמה בטעינה-מחדש של הסשן.
+
+### רציונל — למה תיקון-במקום ולא merge+follow-up
+הבאג הוא **בשלמות הפיצ'ר עצמו**: שולחים תמונה (עובד) → טוענים מחדש → נעלמת. לא מקרה-קצה. פיצ'ר "שלח תמונות" שהתמונות נעלמות בו בטעינה = לא-גמור. לכן fix-in-place באותו worktree, re-verify, ואז merge.
+
+### השורש (מיפוי-פרוטוקול)
+`#handleSessionUpdate` ב-`agent-session.svelte.ts:1527-1528`: `const text = update.content?.type === "text" ? ... : ""` ואז `if (!text) return`. ה-gate הזה שומר **רק** `text` ומפיל בשקט **4 מ-5** ה-`ContentBlock` של ACP: `image` · `audio` · `resource_link` · `resource` (embedded). חל על **שלושת** ה-chunks שאחריו: `agent_message_chunk` · `agent_thought_chunk` · `user_message_chunk` (replay מ-`session/load`). זה סוג-הבאג המסוכן: **איבוד-מידע שקט**, בלי שום סימן.
+
+### ההכרעה (אושר ע"י המשתמשת)
+1. **`image` — תמיכה מלאה עכשיו** (בסלייס image-paste): רינדור ב-`user_message_chunk` דרך `attachments[]` (התשתית + ה-render של `UserBubble` כבר קיימים מ-Commit 3), קיבוץ לפי `messageId` כמו הטקסט.
+2. **placeholder ל-audio/resource_link/resource** — במקום היעלמות שקטה. סוגר את **מחלקת-הבאג** בעלות זעירה, בלי renderers ספקולטיביים.
+3. **אין "תמיכה מלאה בכל ה-union" בסלייס הזה** — נמנע: (א) פותח מחדש סלייס-מאומת; (ב) audio/resource דורשים UI+מודל חדשים; (ג) **אין producer** לבדוק audio/resource-in-message → כלב לא יכול לאמת (עיוור); (ד) `resource_link` חוסם על אבטחה (`local-file-proxy`).
+
+### הבחנה שהכריעה את התכנון (חידוד המשתמשת) — embedded ⊥ link
+- **`resource` (embedded)** = **self-contained**: התוכן ב-frame (`text` או `blob` base64). **לא דורש proxy** — כמו image, הנתונים גולמיים ב-wire. ⇒ תמיכה חלקית זמינה **עכשיו** → slice נגזר `message-embedded-content`.
+- **`resource_link`** = רק `uri` (בד"כ `file://`) → הדפדפן ב-https לא יכול לטעון → **חייב** את `local-file-proxy` (LFI/path-traversal). ⇒ הרינדור-המלא שלו **מקופל לתוך** תוכנית ה-proxy; ב-image-paste מקבל placeholder בלבד.
+
+### רעיונות שנדחו
+- **"פשוט לתמוך בהכל" עכשיו** — נדחה: 4 מיני-פיצ'רים עם עלויות שונות (מודל+UI+אבטחה+producer), לא שורה אחת. מפרק ל: image (עכשיו) · embedded-resource (slice מיידי) · resource_link (proxy) · audio (slice כשיהיה producer).
+
+### עדכוני-roadmap
+image-paste → 🟢 הושלם-ממתין-merge (כולל תיקון replay); **נוסף** `message-embedded-content` (base=dev אחרי image-paste, ~6); `local-file-proxy` → מקפל את `resource_link` המלא.
+
 ## 2026-07-03 — batch chrome/identity: app-title-build-env + cli-name-in-chat + rename re-verify
 
 > באץ' של 4 בקשות-משתמשת "קוסמטיות למחצה": (1) כותרת `Drive Coding [Dev|Preview] • [סשן]` + 3 פרופילי-בילד; (2) סימן דורש-תשומת-לב בטאב כשמסיים (אופציונלי); (3) rename חבילת-FE; (4) שם ה-CLI במסך הצ'אט. נחתכו ל-4 slices (JIT), 3 מהם עברו אביגיל→READY בסשן זה; #2 (`tab-attention-notify`) נכתב אחרון (תלוי ב-app-title).
