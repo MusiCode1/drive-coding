@@ -1,3 +1,41 @@
+## 2026-07-04 — ui-session-polish — Slice הושלם (5 commits)
+
+**מה בוצע:**
+
+Commit 0 (fix1 — TypeArea scrollbar):
+- `packages/frontend/src/lib/components/chat/TypeArea.svelte` — `$effect` מחשב `clamped`
+  לפי `getComputedStyle(el).maxHeight`; `overflowY="hidden"` כשלא חתוך, `"auto"` כשחתוך.
+  הסיר `overflow-y:auto` הקבוע מה-style של ה-textarea.
+
+Commit 1 (fix2 — כותרת-סשן מלאה):
+- `packages/frontend/src/lib/components/modals/SessionCard.svelte` — `truncate`→`line-clamp-2`
+  בכותרת. שורת-המשנה נשארת `truncate`.
+
+Commit 2 (fix3 — כפתור העתקת-מזהה-סשן):
+- `SessionCard.svelte` — שינוי מבנה: `<div class="relative">` עוטף; כפתור-copy אח absolutely-מוקם.
+  `handleCopy` קורא `e.stopPropagation()` → לחיצה לא בוחרת סשן.
+- `packages/core/src/i18n/keys.ts` + `he.ts` + `en.ts` — `session.copyId` + `modal.loading.session`
+  בבלוק נפרד בסוף.
+
+Commit 3 (fix4 — guard לאזהרת-יציאה):
+- `SessionOptionsPanel.svelte` — `onLeaveRunning` מוסיף `session.turnState === "idle"` כתנאי-bypass.
+- `routes/chat/+page.svelte` — `onBeforeUnload` מוסיף `session.turnState !== "idle"` לתנאי.
+
+Commit 4 (fix5 — LoadingModal):
+- חדש: `packages/frontend/src/lib/components/modals/LoadingModal.svelte` — bits-ui Dialog,
+  `Loader2Icon animate-spin`, prop-driven `{open, label?}`, לא סגיר ידנית.
+- `AppShell.svelte` — mount `<LoadingModal open={session.status === "connecting"} />`.
+
+**בדיקות:**
+- typecheck: 0 שגיאות (כל commit)
+- i18n lint: נקי (bash scripts/lint-no-hebrew-in-code.sh)
+- build FE: ירוק (33.63s, adapter-static)
+- manual: ידני בדפדפן (יאומת ע"י כלב calev light)
+
+**חריגות:** אין — כל 5 fixes בוצעו לפי ה-brief.
+
+---
+
 ## 2026-07-03 — claude-inprocess-cli-env — Slice הושלם (3 commits)
 
 **מה בוצע:**
