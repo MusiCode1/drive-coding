@@ -5,7 +5,7 @@
 > ‏brief: `docs/plans/slice-playlist-pure-decision.md` (אביגיל READY r3) · base: `slice/playback-nav-retain` @ `b159906`
 > ‏חקירה: `docs/investigations/2026-07-04-playback-ownership-redesign.md` · ראשון בשרשרת R1→R4
 >
-> **‏סטטוס ביצוע (2026-07-04): ✅ בוצע + calev-heavy GO 7/7, 0 באגים.** ‏5 commits (`b159906..0514ee8`):
+> **‏סטטוס ביצוע (2026-07-04): ✅ בוצע + calev-heavy GO (10/10 DoD, mutation-verified), 0 באגים.** ‏5 commits (`b159906..0514ee8`):
 > ‏0 else-fix (RED 3/3 מאומת) · 1 core decide+nav (32 טסטים) · 2 חוזה-סיום play · 3 mock-fix · 4 שכתוב
 > הלולאה (4 resolvers→ערוץ יחיד, 0 שרידים). ‏typecheck 0; ‏57 טסטים ממוקדים + 442/443 frontend (הכשל
 > ‏היחיד `formatting` pre-existing על ה-base). **טרם מוזג** — ‏merge רק אחרי R1→R4 + preview חי (המשתמשת).
@@ -13,6 +13,18 @@
 > ‏in-flight (מונע לולאת request-fetch); state=ready→playable=true (מונע זריקת item-מוכן ל-skip).
 > **‏הערת-מתודולוגיה מ-calev (לזיקוק):** brief-template של core-adapter slices צריך לדרוש טבלת-mapping
 > ‏ממצה — כולל מקרי-null (refetch=undefined) ו-state-implies-playable. ‏R3/R4 יאמצו זאת.
+>
+> **‏חוב-רשת ל-R3/R4 (F1 [MED], calev via mutation-testing):** הקוד נכון (stop-during-play הוכח יוצא
+> ‏נקי), אבל **הרשת** חורה: ה-mock `stopCurrent` הוא no-op ואין טסט של stop-בזמן-play-פעיל → הסרת
+> ‏`stopCurrent()` מ-`stop()` **לא הפילה אף טסט**. אם R3/R4 ישברו את החוזה `stop→stopCurrent→play()
+> ‏resolves`, הרשת לא תתפוס. **‏R3/R4 חייבים להוסיף טסט אחד** (mock שבו `stopCurrent` פותר את ה-play
+> ‏הנוכחי + stop בזמן play — ~40 שורות, calev הדגים). F2/F3 (LOW): `stopCurrent` על disposed-segment
+> ‏(no-op) · חלון-timing תיאורטי ב-`mp3.play()` בין waitForReady ל-new Promise — שניהם לתשומת-לב
+> ‏כשה-segments יעברו refactor. ‏ה-preview-החי ברמת-השרשרת יתפוס שבירת-חוזה בפועל.
+>
+> **⚠️ סשן-כפול (2026-07-04):** ה-slice הזה עבר **שני** מסלולי-אימות מקבילים בלתי-תלויים (אביגיל ×2,
+> ‏calev ×2) בגלל שני sessions פעילים. יתרון-בדיעבד: כיסוי-כפול (ה-calev השני תפס את F1 שהראשון פספס).
+> ‏סיכון: ‏dispatch-כפול. ‏מכאן והלאה — session יחיד ממשיך את השרשרת.
 
 ### רציונל
 שלושה באגים בשעת בדיקה-חיה אחת (`c39bc1e` קקפוניה+שקט, `3c3a0b7` קקפוניה-בניווט) + רביעי
