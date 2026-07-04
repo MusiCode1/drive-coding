@@ -293,6 +293,9 @@ export type MessageKey =
   | "settings.ttsStatus.usage.cost"
   | "settings.ttsStatus.usage.notAvailable"
   | "settings.ttsStatus.refresh"
+  // ─── app-title ─── (slice app-title-build-env)
+  | "appTitle.settings"
+  | "appTitle.sessions"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

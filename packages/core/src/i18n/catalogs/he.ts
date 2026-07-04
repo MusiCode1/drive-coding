@@ -285,4 +285,7 @@ export const he: Catalog = {
   "settings.ttsStatus.usage.cost": "עלות משוערת",
   "settings.ttsStatus.usage.notAvailable": "—",
   "settings.ttsStatus.refresh": "רענן",
+  // ─── app-title ─── (slice app-title-build-env)
+  "appTitle.settings": "הגדרות",
+  "appTitle.sessions": "סשנים",
 }

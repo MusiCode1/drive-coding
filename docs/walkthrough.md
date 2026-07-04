@@ -8634,3 +8634,39 @@ B2 (הצגה): הוספת `import { version } from "$app/environment"` ל-Settin
 ### חריגות
 
 - אין. הוספת dep highlight.js לחבילה.
+
+## 2026-07-04 — slice-app-title-build-env — סיום (manual, 4 commits)
+
+**מה בוצע:**
+
+Commit 1 (FE_ENV wiring + title placeholder):
+- vite.config.ts: FE_ENV → badge + BASE_TITLE + SOURCEMAP; process.env.PUBLIC_APP_TITLE = BASE_TITLE (לפני SvelteKit plugin); FE_TITLE/FE_SOURCEMAP overrides.
+- app.html: <title>drive-coding v2</title> → <title>%sveltekit.env.PUBLIC_APP_TITLE%</title>.
+- שלב-0 אומת: TEST123 נצרב ל-<title>TEST123</title> בבדיקת grep.
+
+Commit 2 (build scripts + cross-env):
+- packages/frontend/package.json: build:dev/build:preview/build:prod + cross-env@7.0.3.
+- cross-env מאפשר הגדרת env ב-Windows (cmd לא תומך ב-VAR=x cmd).
+
+Commit 3 (כותרת ריאקטיבית + i18n):
+- +layout.svelte: import page/$env/dynamic/public; baseTitle=env.PUBLIC_APP_TITLE||"Drive Coding"; titleContext (routes: /settings/chat/); <svelte:head><title>{docTitle}</title>.
+- i18n/keys.ts: appTitle.settings + appTitle.sessions.
+- catalogs/he.ts: "הגדרות" · "סשנים".
+- catalogs/en.ts: "Settings" · "Sessions".
+
+Commit 4 (systemd + docs):
+- voice-acp-dev.service: FE_ENV=dev → FE_ENV=preview + עדכון הערה.
+- voice-acp-main.service: עדכון הערה בלבד (אין FE_ENV → prod).
+- docs/running-locally.md: טבלת פרופילי-בילד (dev/preview/prod) + הסבר overrides.
+
+**בדיקות:**
+- build:dev → <title>Drive Coding Dev</title> + *.map קיימים ✓
+- build:preview → <title>Drive Coding Preview</title> + *.map קיימים ✓
+- build:prod → <title>Drive Coding</title> + אין *.map ✓
+- FE_TITLE=Foo FE_SOURCEMAP=false → <title>Foo</title> + אין *.map ✓
+- typecheck: 0 errors ✓
+- lint:i18n: נקי ✓
+
+**חריגות:**
+- biome.json global lint נכשל (CRLF vs LF pre-existing issue) — קבצים שנגעתי בהם עברו biome check פרטני ✓.
+- smoke ידני בדפדפן לא בוצע (לא-חסם עבור calev).

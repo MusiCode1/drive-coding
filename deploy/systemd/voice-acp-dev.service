@@ -8,11 +8,12 @@ Type=simple
 WorkingDirectory=/home/user/projects/drive-coding/dev
 Environment=PORT=4001
 Environment=FE_STATIC_DIR=/home/user/projects/drive-coding/dev/packages/frontend/build
-# Deployment profile. vite.config.ts derives from FE_ENV: page title gets a "dev"
-# suffix ("drive-coding dev") and the prod build emits source maps. Per-setting
-# overrides win if set (FE_SOURCEMAP=false / FE_TITLE=...). main leaves FE_ENV
-# unset → defaults to prod (clean title, no source maps). See slice cache-headers-version §D.
-Environment=FE_ENV=dev
+# Deployment profile (slice app-title-build-env).
+# FE_ENV=preview: badge "Preview" in the tab title ("Drive Coding Preview"),
+# source maps ON (debug staging builds). prod (voice-acp-main) leaves FE_ENV
+# unset → "Drive Coding" (clean, no source maps). Local vite dev: use FE_ENV=dev.
+# Overrides: FE_TITLE=<custom> / FE_SOURCEMAP=false|true.
+Environment=FE_ENV=preview
 Environment=LOG_WIRE=ws
 # CORS: localhost (dev port) + ה-CF tunnel הציבורי של dev (drive-coding-dev).
 Environment=CORS_ORIGINS=http://localhost:4001,https://drive-coding-dev.example.com
