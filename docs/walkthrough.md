@@ -1,3 +1,28 @@
+## 2026-07-04 — slice-rtl-bubble-fixes — 2 commits: תיקוני RTL-בועות
+
+**מה בוצע (manual — CSS/attribute בלבד, FE-טהור):**
+
+**Commit 0 — list-style inside (MarkdownContent.svelte שורה 60-61):**
+- `ul`/`ol`: `list-style: disc/decimal outside` → `inside`; `padding-inline-start: 1.4em` → `1.2em`
+- שורש-תיקון: סמן `outside` חרג מ-content-box ונחתך ע"י `overflow-hidden` של מעטפת-הבועה, בעיקר ב-RTL ועם מספרים דו-ספרתיים.
+
+**Commit 1 — הסרת `dir="auto"` (UserBubble.svelte:99, MessageBubble.svelte:57):**
+- הסרת `dir="auto"` ממעטפת-הבועה בשני הרכיבים (2 שורות הוסרו).
+- שורש-תיקון: `dir="auto"` הפך פינה לוגית (`rounded-es-sm`/`rounded-ee-sm`) לפי שפת-התוכן במקום כיוון-האפליקציה. הבועה יורשת `dir="rtl"` מ-`<html dir>` (locale=he, `+layout.svelte:131-137`).
+- MarkdownContent שומר `dir="auto"` פנימי (`MarkdownContent.svelte:32`) — כיוון-טקסט פנימי לא נפגע.
+
+**בדיקות (approach: manual — ויזואלי RTL):**
+- typecheck: 0 errors, 0 warnings (svelte-check, שני commits)
+- build: ירוק (exit 0, adapter-static)
+- lint: שגיאות pre-existing ב-backend (לא נגרמו ע"י השינוי, אומת מול dev)
+- i18n lint: נקי (אין מחרוזות חדשות — CSS/attribute בלבד)
+
+**חריגות:**
+- אימות ויזואלי חי (4 צירופים: משתמש/סוכן × עברית/אנגלית) = gate של calev-light בהמשך.
+- DevTools אומת: `<html dir="rtl">` בכל הצירופים — הסרת `dir="auto"` מספיקה.
+
+---
+
 ## 2026-07-04 — slice-image-paste — Commit 6: lightbox לתמונת-המשתמש (§12)
 
 **מה בוצע (manual — חיווט UI לתשתית קיימת):**
