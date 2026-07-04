@@ -21,10 +21,12 @@ describe("splitIntoSentences — core behaviour", () => {
     expect(remaining).toBe("")
   })
 
-  it("test 4: treats a double-newline as a paragraph boundary even without a period", () => {
+  it("test 4: multi-para requires completed paragraphs (\\n\\n after them); trailing last-para is held in remaining", () => {
+    // before fix: sentences=["שלום","עולם"], remaining=""
+    // after fix: הפסקה האחרונה ("עולם") עדיין בזרימה → מוחזקת כ-remaining
     const { sentences, remaining } = splitIntoSentences("שלום\n\nעולם")
-    expect(sentences).toEqual(["שלום", "עולם"])
-    expect(remaining).toBe("")
+    expect(sentences).toEqual(["שלום"])
+    expect(remaining).toBe("עולם")
   })
 
   it("test 5: merges short raw segments into the next one (minChars=20 default)", () => {
@@ -132,5 +134,62 @@ describe("splitIntoSentences — supporting cases", () => {
     const { sentences, remaining } = splitIntoSentences("done now and this is long. Bye")
     expect(sentences).toEqual(["done now and this is long."])
     expect(remaining).toBe("Bye")
+  })
+})
+
+describe("splitIntoSentences — streaming mid-word safety (commit 0: fix A)", () => {
+  it("streaming: a chunk ending mid-word in a multi-paragraph buffer does NOT emit a mid-word segment", () => {
+    // chunk#1 ends mid-word ("### מ") while the buffer already contains a \n\n
+    const c1 =
+      "טקסט קודם ארוך מספיק כדי להיחשב.\n\n### מ"
+    const c2 =
+      "ה נשאר פתוח (לא חוסם)\n- פריט"
+    let buf = ""
+    const emitted: string[] = []
+    for (const ch of [c1, c2]) {
+      const { sentences, remaining } = splitIntoSentences(buf + ch)
+      for (const s of sentences) emitted.push(s)
+      buf = remaining
+    }
+    // no segment should end with the half-word "### מ" (U+05DE alone)
+    expect(emitted.join(" | ")).not.toMatch(/### מ$/)
+    // the complete word "מה" (U+05DE U+05D4) should appear in some emitted segment
+    expect(emitted.some((s) => s.includes("### מה"))).toBe(true)
+  })
+
+  it("streaming: single-para buffer — trailing unfinished segment is still held in remaining (regression guard)", () => {
+    // single paragraph, no \n\n → remaining-hold already worked before fix A
+    const buf = "טקסט קודם ארוך מספיק כדי להיחשב. חצי"
+    const { sentences, remaining } = splitIntoSentences(buf)
+    // the complete first sentence is emitted
+    expect(sentences.length).toBeGreaterThanOrEqual(1)
+    // the half-word is NOT emitted, it stays in remaining
+    expect(sentences.join(" ")).not.toMatch(/חצי$/)
+    expect(remaining).toMatch(/חצי/)
+  })
+
+  it("streaming: real-world fixtures — words from actual recordings are NOT split mid-word", () => {
+    // Three of the 7 words that were cut mid-word in the live recordings:
+    // "הודעת" (=הודעת), "בוצע" (=בוצע), "השינויים" (=השינויים)
+    const words = ["הודעת", "בוצע", "השינויים"]
+    for (const word of words) {
+      // Simulate: buffer has completed paragraph + \n\n, then second para starts mid-word
+      const half = word.slice(0, Math.ceil(word.length / 2))
+      const rest = word.slice(Math.ceil(word.length / 2))
+      const c1 = "פסקה ראשונה ארוכה מספיק. תוכן.\n\n" + half
+      const c2 = rest + " ועוד תוכן נוסף."
+      let buf = ""
+      const emitted: string[] = []
+      for (const ch of [c1, c2]) {
+        const { sentences, remaining } = splitIntoSentences(buf + ch)
+        for (const s of sentences) emitted.push(s)
+        buf = remaining
+      }
+      const combined = emitted.join(" ") + " " + buf
+      // the whole word should appear somewhere — not split across segments
+      expect(combined).toContain(word)
+      // no emitted segment ends with the partial first half alone
+      expect(emitted.some((s) => s.trimEnd().endsWith(half))).toBe(false)
+    }
   })
 })

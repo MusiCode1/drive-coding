@@ -1,3 +1,24 @@
+## 2026-07-04 — slice-segment-word-safe — Commit 0: שורש A — החזקת זנב הפסקה-האחרונה (TDD)
+
+**מה בוצע (TDD — Red→Green→Refactor):**
+
+- `packages/core/src/voice/sentence-boundary.ts` שורה ~65:
+  - הסרת `&& !isMulti` מהתנאי `if (isLastPara && isLastSeg)`.
+  - עדכון הערת-הקוד: הפסקה האחרונה (עוד בזרימה, אין `\n\n` אחריה) מטופלת כמו פסקה-בודדת — הזנב הלא-מסתיים מוחזק כ-`remaining`, מונע חיתוך-אמצע-מילה.
+- `packages/core/tests/voice/sentence-boundary.test.ts`:
+  - עדכון test 4 לציפייה החדשה: `sentences=["שלום"]`, `remaining="עולם"`.
+  - 3 טסטים חדשים (describe "streaming mid-word safety"): streaming multi-para mid-word, regression guard חד-פסקאתי, fixtures מנתוני-אמת (הודעת/בוצע/השינויים).
+
+**בדיקות (TDD: Red 3 → Green 19/19):**
+- טסטים: 19/19 ירוקים
+- typecheck: 0 errors
+- lint:i18n: נקי
+
+**חריגות:**
+- אין. תיקון שורת-שורש אחת, אפס שינוי ב-API.
+
+---
+
 ## 2026-07-04 — slice-image-paste — Commit 6: lightbox לתמונת-המשתמש (§12)
 
 **מה בוצע (manual — חיווט UI לתשתית קיימת):**
