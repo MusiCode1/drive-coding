@@ -1,8 +1,41 @@
 # חקירה — "אחרי קריסה+ריסטארט, כניסה-מחדש לסשן שהיה באמצע-ריצה ממשיכה לרוץ מעצמה"
 
-**תאריך:** 2026-07-04 · **סוג:** חקירת-runtime (סביבה חיה, claude in-process) · **סטטוס:** 🔬 **פתוחה — לא שוחזר**
+**תאריך:** 2026-07-04 · **סוג:** חקירת-runtime (סביבה חיה, claude in-process) · **סטטוס:** ✅ **נפתר**
 **נקודת-ייחוס:** `9c9b371` (v0.10.2), עץ-עבודה `dev`
 **דווח ע"י המשתמשת:** "התחיל ממש אתמול (03/07)"
+**שורש (זוהה ע"י המשתמשת, אומת בנתונים):** התנהגות **upstream של claude-code** — הזרקת
+הודעת "background shell ללא completion-record" ב-resume, שמריצה turn חדש מעצמה.
+
+---
+
+## 0. ההכרעה — השורש (upstream claude-code, לא drive-coding)
+
+**המנגנון:**
+1. סשן claude-code מכיל **פקודת-shell שרצה ברקע** (Bash background / `run_in_background`).
+2. קריסת-BE / ריסטארט-מחשב קוטעים את הסשן → לתת-התהליך אין `completion record`.
+3. בכניסה-מחדש (`session/load`/resume), **claude-code מזריק הודעה** (נשמרת ב-session-store
+   כ-`type: queue-operation`):
+   > *"No completion record was found for this background shell command from the previous
+   > session. It may have been stopped (via the UI, Monitor timeout, or agent teardown —
+   > these leave no transcript marker), or it may have been running when the previous
+   > Claude Code process exited. Check the output file for partial results…"*
+4. ההודעה המוזרקת נחשבת **קלט** → claude מגיב עליה → **turn חדש רץ אוטומטית, בלי שהמשתמשת
+   שלחה הודעה.** = בדיוק התופעה.
+
+**למה השחזור הנאמן (§3) לא שחזר:** כל מצבי-הקטיעה שבדקתי היו turns של **foreground**
+(כלי/טקסט/thinking). הטריגר דורש **shell שרץ ברקע** שגורלו לא-ידוע ב-resume — מצב שלא יצרתי.
+
+**למה "אתמול":** זו תכונת claude-code CLI (מעקב background-shells + הודעת-resume), שהופיעה
+עם ה-native-binary / הגרסה שהוטמעה בחלון 02-04/07 — **לא** שינוי drive-coding. לכן התאום ל-in-process.
+
+**ראיה ישירה:** ה-session-store של claude-code (`~/.claude/projects/.../062c8883…jsonl` —
+סשן חקירה זה עצמו) מכיל את ההודעה המוזרקת המדויקת; והיא זהה ל-`<task-notification>` שה-CLI
+פולט חי כשתת-תהליך רקע נעצר.
+
+**המשמעות ל-drive-coding:** התופעה שקופה ל-BE/FE (dumb-pipe). אם רוצים לשלוט בה — זו
+החלטת-מוצר: האם הזרקת-resume אוטומטית של claude-code רצויה, ואם לא — האם לסנן/להתריע עליה
+ב-FE. **מתחבר לבאג הפורט התקוע (§7)**: אותם shells-רקע שיורשים socket הם אלה שמייצרים גם את
+ה-`http=000` וגם את הודעת-ה-resume.
 
 ---
 
