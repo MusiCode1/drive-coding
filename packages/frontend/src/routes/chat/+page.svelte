@@ -37,7 +37,7 @@ if (session.status === "idle") {
 // scope: /chat בלבד — רענון בדף-הבית/רשימה לא מזהיר.
 onMount(() => {
   function onBeforeUnload(e: BeforeUnloadEvent) {
-    if (session.status === "connected" && !session.bypassActive) {
+    if (session.status === "connected" && session.turnState !== "idle" && !session.bypassActive) {
       e.preventDefault()   // מפעיל dialog גנרי של הדפדפן
       e.returnValue = ""   // נדרש לדפדפנים ישנים
     }

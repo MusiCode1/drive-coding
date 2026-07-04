@@ -54,10 +54,10 @@ let leaveConfirmOpen = $state(false)
 let dontShowAgain = $state(false)
 
 function onLeaveRunning() {
-  if (session.bypassActive || settings.suppressLeaveWarning) {
-    doLeaveRunning() // bypass / suppressed → צא ישר
+  if (session.bypassActive || settings.suppressLeaveWarning || session.turnState === "idle") {
+    doLeaveRunning() // bypass / suppressed / אין תור פעיל → צא ישר
   } else {
-    leaveConfirmOpen = true // לא-bypass → אזהר קודם
+    leaveConfirmOpen = true // לא-bypass + תור פעיל → אזהר קודם
   }
 }
 
