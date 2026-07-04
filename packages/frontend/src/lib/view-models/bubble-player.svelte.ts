@@ -20,11 +20,13 @@
  * אין $effect — toggle הוא method ישיר (§8.10).
  */
 
+import type { FetchState } from "@drive-coding/core/voice/playlist-decision"
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
 import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import type { AgentSession } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
 import type { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
+import type { SegmentProducer } from "$lib/engines/segment-producer"
 import type { Bubble } from "$lib/types/bubble"
 import { playUserRecording } from "$lib/adapters/voice/play-bubble"
 import { resolveTts } from "$lib/adapters/voice/tts-resolve"
@@ -33,7 +35,18 @@ import { resolveTts } from "$lib/adapters/voice/tts-resolve"
 const MIN_CHARS = 20
 const MAX_CHARS = 200
 
-export class BubblePlayer {
+/** R3: job record for BubblePlayer — parallel to TtsJob in Speaker but simpler (no kind/messageId). */
+type BubbleJob = {
+  text: string
+  provider: { synthesize: (opts: { text: string; voiceId: string; modelId: string; signal: AbortSignal }) => Promise<ReadableStream<Uint8Array>> }
+  voiceId: string
+  modelId: string
+  abort: AbortController
+  status: "pending" | "fetching" | "ready" | "error"
+  canceled: boolean
+}
+
+export class BubblePlayer implements SegmentProducer {
   playingBubbleId: string | null = $state(null)
 
   readonly #session: AgentSession
@@ -44,6 +57,8 @@ export class BubblePlayer {
   #abortCtrl: AbortController | null = null
   /** A4: OrderAllocator לסגמנטים שלנו — seq נפרד מ-Speaker. */
   readonly #orderAlloc = new OrderAllocator()
+  /** R3: job-map for SegmentProducer — keyed by segmentId. */
+  #jobs = new Map<string, BubbleJob>()
 
   constructor(opts: { session: AgentSession; settings: Settings; playlist: AudioPlaylist }) {
     this.#session = opts.session
@@ -142,32 +157,25 @@ export class BubblePlayer {
     )
 
     // שלב 1: reserve כל הסגמנטים לפלייליסט (reserve-on-enqueue)
-    // nav-retain: כל reserve מקבל refetch thunk עם הטקסט + provider בסקופ (finding #1)
+    // R3: רשום job ל-#jobs פר-segmentId ו-reserve עם `this` כ-producer (לא thunk)
     const segmentIds: string[] = []
     for (let i = 0; i < parts.length; i++) {
       const segmentId = crypto.randomUUID()
       const orderKey = this.#orderAlloc.next(bubbleId)
       const partText = parts[i]
       if (partText === undefined) continue
-      const refetch = () => {
-        // refetch thunk: synthesize מחדש עם AbortController חדש
-        const freshAc = new AbortController()
-        void (async () => {
-          try {
-            const stream = await provider.synthesize({
-              text: partText,
-              voiceId,
-              modelId,
-              signal: freshAc.signal,
-            })
-            await this.#playlist.prepareSegmentForBubble(segmentId, stream, freshAc)
-            this.#playlist.markReady(segmentId)
-          } catch {
-            this.#playlist.markError(segmentId)
-          }
-        })()
-      }
-      this.#playlist.reserve(segmentId, orderKey, bubbleId, refetch)
+      // R3: רשום job ב-#jobs (dual-write עד Commit 4)
+      this.#jobs.set(segmentId, {
+        text: partText,
+        provider,
+        voiceId,
+        modelId,
+        abort: new AbortController(),
+        status: "pending",
+        canceled: false,
+      })
+      // R3: העבר `this` כ-producer (לא thunk); union ב-reserve מקבל את שניהם עד Commit 4
+      this.#playlist.reserve(segmentId, orderKey, bubbleId, this)
       segmentIds.push(segmentId)
     }
 
@@ -179,11 +187,14 @@ export class BubblePlayer {
     const fetchPromises = parts.map(async (part, i) => {
       const segId = segmentIds[i]
       if (segId === undefined) return
+      const job = this.#jobs.get(segId)
       try {
         if (abortCtrl.signal.aborted) {
+          if (job !== undefined) { job.status = "error"; job.canceled = true }
           this.#playlist.markError(segId)
           return
         }
+        if (job !== undefined) job.status = "fetching"
         const stream = await provider.synthesize({
           text: part,
           voiceId,
@@ -194,8 +205,14 @@ export class BubblePlayer {
         // BubblePlayer לא מחזיק ref ל-audioStream — #playlist מחזיק אותו פנימי.
         // נעשה זאת דרך wrapper method חדש ב-AudioPlaylist.
         await this.#playlist.prepareSegmentForBubble(segId, stream, abortCtrl)
+        // R3 ghost-guard (point 1): cancelFetch may have fired during prepareSegmentForBubble await.
+        if (job?.canceled === true) return
+        if (job !== undefined) job.status = "ready"
         this.#playlist.markReady(segId)
       } catch {
+        // R3 ghost-guard (point 2): abort throws into catch; don't call markError.
+        if (job?.canceled === true) return
+        if (job !== undefined) job.status = "error"
         this.#playlist.markError(segId)
       }
     })
@@ -204,6 +221,70 @@ export class BubblePlayer {
     // cleanup אחרי שכל הסגמנטים סיימו — playlist ממשיך בעצמו
     if (!abortCtrl.signal.aborted) {
       this.playingBubbleId = null
+    }
+  }
+
+  // ─── SegmentProducer implementation (R3) ─────────────────────────────────
+
+  /**
+   * R3: Current production status for a segment owned by this BubblePlayer.
+   * pending/fetching → in-flight; error → failed; ready/missing → idle.
+   */
+  fetchState(segmentId: string): FetchState {
+    const job = this.#jobs.get(segmentId)
+    if (job === undefined) return "idle"
+    if (job.status === "pending" || job.status === "fetching") return "in-flight"
+    if (job.status === "error") return "failed"
+    return "idle" // ready ⇒ product handed to sink; no live production
+  }
+
+  /**
+   * R3: Start (or restart) synthesis for a segment. Idempotent.
+   * fetching/ready → no-op. pending/error → synthesize + prepareSegment + markReady/markError.
+   */
+  ensureFetch(segmentId: string): void {
+    const job = this.#jobs.get(segmentId)
+    if (job === undefined) return
+    if (job.status === "fetching" || job.status === "ready") return // already in-flight or done
+    // reset for re-synthesis
+    const freshAc = new AbortController()
+    job.abort = freshAc
+    job.canceled = false
+    job.status = "fetching"
+    void (async () => {
+      try {
+        const stream = await job.provider.synthesize({
+          text: job.text,
+          voiceId: job.voiceId,
+          modelId: job.modelId,
+          signal: freshAc.signal,
+        })
+        await this.#playlist.prepareSegmentForBubble(segmentId, stream, freshAc)
+        // R3 ghost-guard (point 1): cancelFetch may have fired during prepareSegmentForBubble await.
+        if (job.canceled) return
+        job.status = "ready"
+        this.#playlist.markReady(segmentId)
+      } catch {
+        // R3 ghost-guard (point 2): abort throws into catch; don't call markError.
+        if (job.canceled) return
+        job.status = "error"
+        this.#playlist.markError(segmentId)
+      }
+    })()
+  }
+
+  /**
+   * R3: Abort any live fetch; guarantee no subsequent markReady/markError.
+   * Sets job.canceled=true + aborts the AbortController.
+   */
+  cancelFetch(segmentId: string): void {
+    const job = this.#jobs.get(segmentId)
+    if (job === undefined) return
+    job.canceled = true // ghost-guard
+    try {
+      job.abort.abort()
+    } catch {
+      // already aborted
     }
   }
 
@@ -222,6 +303,16 @@ export class BubblePlayer {
       }
       this.#audioEl = null
     }
+    // R3: abort + clear all #jobs
+    for (const [, job] of this.#jobs) {
+      job.canceled = true
+      try {
+        job.abort.abort()
+      } catch {
+        // already aborted
+      }
+    }
+    this.#jobs.clear()
     this.playingBubbleId = null
   }
 }

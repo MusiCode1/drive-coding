@@ -1,3 +1,22 @@
+## 2026-07-05 — slice producer-ownership — R3 Commit 3: BubblePlayer implements SegmentProducer (TDD)
+
+**RED לפני מימוש**: 11/12 טסטים נכשלו — fetchState/ensureFetch/cancelFetch לא קיימים על BubblePlayer; reserve עדיין מעביר thunk.
+**GREEN אחרי מימוש**:
+- הוסף type `BubbleJob` (job record: text/provider/voiceId/modelId/abort/status/canceled)
+- `BubblePlayer implements SegmentProducer`
+- `#jobs = new Map<string, BubbleJob>()` — job-map פר-segmentId
+- `fetchState(id)`: pending/fetching→in-flight, error→failed, ready/missing→idle
+- `ensureFetch(id)`: idempotent (fetching/ready=no-op; אחרת freshAc + synthesize + prepareSegmentForBubble)
+- `cancelFetch(id)`: sets job.canceled=true + abort
+- ghost-guard בenqueueAndPlay: נקודה 1 — `if (job.canceled) return` לפני `markReady` אחרי prepareSegmentForBubble; נקודה 2 — ב-catch לפני `markError`
+- `#reserveAndPlay` שלב 1: רושם job ב-#jobs + מעביר `this` כ-producer לreserve (לא thunk)
+- `#reserveAndPlay` שלב 3: מעדכן `job.status` לאורך ה-fetch flow
+- `stop()` מנקה `#jobs` (canceled=true + abort לכולם + clear)
+**testing**: TDD — 12 טסטי bubble-player.producer + 3 bubble-player.toggle = 15/15 ירוקים. typecheck 0.
+**סטיות**: אין.
+
+---
+
 ## 2026-07-04 — slice producer-ownership — R3 Commit 2: Speaker implements SegmentProducer (TDD)
 
 **RED לפני התיקון**: 11/11 טסטים נכשלו — fetchState/ensureFetch/cancelFetch לא קיימים על Speaker.
