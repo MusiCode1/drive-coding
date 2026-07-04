@@ -2,8 +2,17 @@
 
 ## 2026-07-04 — playlist-pure-decision (R1): חילוץ החלטת-הפלייליסט ל-core טהור + ערוץ-השכמה יחיד
 
-> ‏brief: `docs/plans/slice-playlist-pure-decision.md` (אביגיל READY r3) · base: `slice/playback-nav-retain` @ `3c3a0b7`
+> ‏brief: `docs/plans/slice-playlist-pure-decision.md` (אביגיל READY r3) · base: `slice/playback-nav-retain` @ `b159906`
 > ‏חקירה: `docs/investigations/2026-07-04-playback-ownership-redesign.md` · ראשון בשרשרת R1→R4
+>
+> **‏סטטוס ביצוע (2026-07-04): ✅ בוצע + calev-heavy GO 7/7, 0 באגים.** ‏5 commits (`b159906..0514ee8`):
+> ‏0 else-fix (RED 3/3 מאומת) · 1 core decide+nav (32 טסטים) · 2 חוזה-סיום play · 3 mock-fix · 4 שכתוב
+> הלולאה (4 resolvers→ערוץ יחיד, 0 שרידים). ‏typecheck 0; ‏57 טסטים ממוקדים + 442/443 frontend (הכשל
+> ‏היחיד `formatting` pre-existing על ה-base). **טרם מוזג** — ‏merge רק אחרי R1→R4 + preview חי (המשתמשת).
+> ‏2 סטיות `#factsFor` (מתועדות ב-walkthrough, אושרו ע"י calev כתיקוני-פער נכונים): refetch=undefined→
+> ‏in-flight (מונע לולאת request-fetch); state=ready→playable=true (מונע זריקת item-מוכן ל-skip).
+> **‏הערת-מתודולוגיה מ-calev (לזיקוק):** brief-template של core-adapter slices צריך לדרוש טבלת-mapping
+> ‏ממצה — כולל מקרי-null (refetch=undefined) ו-state-implies-playable. ‏R3/R4 יאמצו זאת.
 
 ### רציונל
 שלושה באגים בשעת בדיקה-חיה אחת (`c39bc1e` קקפוניה+שקט, `3c3a0b7` קקפוניה-בניווט) + רביעי
