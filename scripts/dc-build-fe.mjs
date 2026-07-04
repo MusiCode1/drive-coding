@@ -74,7 +74,7 @@ if (ifStale && indexExists) {
 console.log("[dc-build-fe] starting FE build...")
 
 // 1) Build to staging dir (FE_BUILD_OUT is relative to packages/frontend — adapter-static resolves from there)
-execFileSync("pnpm", ["--filter", "@drive-coding/frontend-v2", "build"], {
+execFileSync("pnpm", ["--filter", "@drive-coding/frontend", "build"], {
   stdio: "inherit",
   cwd: repoRoot,
   env: { ...process.env, FE_BUILD_OUT: ".build-staging" },

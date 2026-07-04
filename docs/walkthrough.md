@@ -97,6 +97,27 @@ Commit 3 (config + deploy):
 - deploy action (לא git): יש למחוק scripts/claude-direct-be.sh (untracked) בסביבת deploy ולוודא שאין ExecStart מקומי עם wrapper.
 - §8b/§8c (mechanism-gate ו-runtime-gate) — לא הורצו (runtime-gates על deploy, מרדכי + כלב מריצים).
 
+## 2026-07-03 — slice-frontend-rename-cutover — סיום (none/manual)
+
+**מה בוצע:**
+- Commit 1 (rename פונקציונלי): `packages/frontend/package.json` name → `@drive-coding/frontend`; `--filter @drive-coding/frontend-v2` → `--filter @drive-coding/frontend` ב-4 קבצי-קוד (`build.mjs`, `build-binary.mjs`, `dc-build-fe.mjs`, `chat-roundtrip.mjs` הערה).
+- Commit 2 (docs חיים): עדכון `@drive-coding/frontend-v2` → `@drive-coding/frontend` ב-7 מתוך 9 קבצי docs-חיים (AGENTS.md × 2 + running-locally.md + deploy-cf-pages.md + smoke/README.md); כותרת slices.md; roadmap.md סטטוס. 2 קבצים ב-9 (vnext-spec.md, behaviors-coverage.md) — מופעים היסטוריים של שם-דירקטוריה בלבד (לא שם-חבילה), נשארו כרשומה היסטורית.
+
+**בדיקות:**
+- pnpm install: lockfile ללא drift.
+- `pnpm --filter @drive-coding/frontend build` → בנה בהצלחה.
+- `pnpm --filter @drive-coding/frontend-v2 build` → "No projects matched" (השם הישן לא תופס).
+- `node scripts/dc-build-fe.mjs` → בנה בהצלחה.
+- `node packages/release/scripts/build.mjs` → release build מלא (FE build + copy + bun bundle) עבר.
+- `git grep "frontend-v2" -- ':!*.md' ':!*.html'` → ריק.
+- `git grep "@drive-coding/frontend-v2" -- <9 docs>` → ריק.
+- typecheck: 0 שגיאות.
+- lint:i18n: "No hardcoded Hebrew in code."
+
+**חריגות:**
+- מופעים של `frontend-v2/` (שם-דירקטוריה, לא שם-חבילה) ב-vnext-spec.md, behaviors-coverage.md, AGENTS.md, packages/frontend/AGENTS.md, slices.md — נשארו כרשומות היסטוריות (§9 Q1 brief). אלה לא פקודות שמפתחים מריצים.
+- `docs/plans/redesign-vnext-mockup.html:524` — דגימת package.json סטטית, לא פונקציונלית (מחורג ב-DoD grep).
+
 ## 2026-07-03 — tts-quota-refine — Commit 2: FE reason ב-Select + quota labels + adapter (manual)
 
 **מה בוצע:**

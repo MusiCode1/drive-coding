@@ -122,7 +122,7 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 | **drive-first chrome** (car mode, Media Session, wake lock) | 💭 |
 | recordings + replay | 💭 |
 | **ידית BottomSheet מתנגשת ב-OS gesture bar (מובייל)** — ה-handle יושב ב-28px התחתונים (detent `peek`), בדיוק על ה-gesture bar של הטלפון → גרירת ה-sheet מתנגשת במחוות ה-OS. פתרון מוצע: לנתק את ה-handle מה-sheet ולמקמו **מעל ה-toggle של RecordFooter**; ב"סגור" ה-sheet נעלם לגמרי (`peek 28px`→`hidden 0px`). ההתנהגות (משיכה→sheet עולה ומכסה) נשמרת. דורש: decoupling handle↔sheet + שינוי detent-model + drag-ownership (`BottomSheet`/`RecordFooter`/`ui-shell`) + z-index. כבר יש workaround חלקי (RecordFooter `pb` במצב hidden). **מצריך brief — regression בליבת ה-gesture, לא נתפס ב-typecheck.** | 💭 brief |
-| cutover frontend-v2 → frontend | 🟢 **brief READY** (`slice-frontend-rename-cutover.md`, אביגיל READY 3 סבבים/0 findings; הפתעה: המשטח הפונקציונלי = **4 קבצי-קוד בלבד**, 92/97 ההפניות docs היסטוריים; decision נרשם. ממתין ל-dispatch) |
+| cutover frontend-v2 → frontend | 🟡 **בביצוע** (`slice-frontend-rename-cutover.md`, branch `slice-frontend-rename-cutover`; 2 commits: קוד פונקציונלי + docs-חיים; ממתין ל-calev + merge) |
 
 ### D — Assistant capabilities  ·  *חדש (עוזר אישי)*
 היכולות שהופכות מ"כותב קוד" ל"עוזר אישי". **כולן אופציונליות.**

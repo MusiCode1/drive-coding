@@ -31,7 +31,7 @@ cd packages/backend
 PORT=4000 bun src/server.ts          # ראה "חסמי Windows" לגבי onecli
 
 # FE (Vite dev, port OS-assigned, מדפיס בהפעלה; ברירת מחדל 5173)
-pnpm --filter @drive-coding/frontend-v2 dev
+pnpm --filter @drive-coding/frontend dev
 ```
 
 ב-dev, Vite עושה proxy ל-`/api`, `/proxy`, `/ws` → BE (port 4000, או `BE_PORT`).
@@ -44,7 +44,7 @@ Vite dev לא תמיד נאמן ל-prod (במיוחד עם tunnels ו-WebSocket)
 
 ```bash
 # 1. build → static ב-packages/frontend/build (adapter-static, SPA fallback)
-pnpm --filter @drive-coding/frontend-v2 build
+pnpm --filter @drive-coding/frontend build
 
 # 2. BE שמגיש גם את ה-static — same-origin, ללא proxy
 cd packages/backend
@@ -80,7 +80,7 @@ URL: `https://your-app.tuns.sh`
 חזרה למקור. כדי לקבל source maps, בנה עם `FE_SOURCEMAP=true`:
 
 ```bash
-FE_SOURCEMAP=true pnpm --filter @drive-coding/frontend-v2 build
+FE_SOURCEMAP=true pnpm --filter @drive-coding/frontend build
 ```
 
 `vite.config.ts` → `build.sourcemap` מבוקר ע"י ה-env הזה. בפריסת **dev/staging**

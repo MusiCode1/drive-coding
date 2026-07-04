@@ -25,6 +25,24 @@
 ### עדכוני-roadmap
 image-paste → 🟢 הושלם-ממתין-merge (כולל תיקון replay); **נוסף** `message-embedded-content` (base=dev אחרי image-paste, ~6); `local-file-proxy` → מקפל את `resource_link` המלא.
 
+## 2026-07-04 — proxy-tap-memory: תיקון נפילת-OOM בנתיב Gemini TTS proxy
+
+> נולד מ**נפילה חיה**: ה-BE (pid 29680) קרס בזמן proxy ל-Gemini TTS. אבחנה עם המשתמשת הפרידה שני אירועים שהתלכדו בלוג — (א) **הנפילה** עצמה, (ב) "סוכן שסגר שוב ושוב את המארח" (ירד מהשולחן — רק ההסבר למה הריצה נעצרה, לא הבאג).
+
+**רציונל / אבחנה**: התהליך **מת** (`tasklist` ריק) — crash אמיתי, לא hang. ה-listen-socket שנשאר על 4000 היה שריד **נפרד** (handle-inheritance → be-shutdown-hardening, לא הנפילה). **אין** `uncaughtException — exiting` בלוג → לא עבר דרך ה-JS handler ב-`server.ts` → crash ברמת ה-runtime (OOM/native), שהורג מיד בלי לתת ל-JS לרוץ. השורש אותר ב-`git log -S`: commit `76bb8b7` (slice `tts-usage-metering`, ב-dev) הוסיף בנתיב Gemini `res.body.tee()` + `readStreamInBackground` (full-buffer) — כדי לחלץ `usageMetadata` (כמה tokens) הוא צובר את **כל** ה-audio PCM בזיכרון.
+
+**מה שהכריע — repro חי** (‏`bun 1.3.14`, לא רק ניתוח-קוד):
+- ‏`tee()` עם ה-tap קורא בלי-לצבור + client לא-נצרך → RSS 67→**326MB**. כלומר **ה-`tee` של Bun לא מפעיל backpressure** — מבפר את ה-branch הלא-נצרך במלואו.
+- ‏`TransformStream` peek עם client איטי → RSS 67→**86MB** יציב (`produced≈clientRead`, client-paced).
+
+**שינוי-כיוון (המהותי)**: התוכנית הראשונה הייתה `drainWithCap` על ה-**tap**. ה-repro **הפריך** אותה — השורש אינו ה-tap-buffer אלא ה-**`tee()` עצמו** (מבפר את ה-client-branch ללא-תלות ב-tap). לכן ה-Commit המרכזי הוא **החלפת `tee` ב-`TransformStream` peek** (‏audio זורם client-paced, ה-tap מציץ inline ומחלץ usage ב-`flush`, zero-retain). ה-`drainWithCap` נשאר רק כרשת-ביטחון ל-cache-path.
+
+**מבנה** (4 commits, אפס deps חדשים): (0) `createGeminiUsageAccumulator` ב-core — SSE line-frame + `TextDecoder({stream})` ל-utf8-boundary, TDD; (1) Gemini `tee`→`TransformStream`; (2) ElevenLabs cache `tee`→bounded-collector עם cap; (3) RSS watchdog + 503 degradation ("גרסה מספקת, נשפר בעתיד" — בקשת המשתמשת). ה-DoD המרכזי (§5.1) = **repro-under-load הפוך** (mock upstream ~256MB, client-שלא-קורא → RSS delta < 50MB), לא תלוי במפתח-Gemini-השרוף.
+
+**ממצאי אביגיל** (r1 **READY**, 3 findings — הדוח לא נשמר פיזית, תמצית בלבד): 🟡 (1) ה-helper המשותף `parseGeminiChunkUsage` חייב להחזיר `GeminiUsage` המיוצא, לא `UsageMetadata` הפנימי-הלא-מיוצא → שולב ב-brief; 🟡 (2) סדר שני ה-tee בקובץ הפוך מסדר ה-commits (cache ~181 לפני Gemini ~234) → הובהר לפי שם-בלוק; 🟢 (3) `flush` לא-נקרא-ב-abort הוא **נסיגת-התנהגות מכוונת** (הקוד הנוכחי כן רושם usage חלקי ב-abort) — מקובל (fail-safe), מתועד ב-§6.
+
+**רעיונות שנדחו**: (א) `drainWithCap` על ה-tap — לא נוגע בשורש (ה-repro); (ב) ring-buffer של N-KB-אחרונים — מנחש איפה הסוף, נחות מ-parse; (ג) dep `eventsource-parser` — הליבה (`extractGeminiUsage`) כבר קיימת ובדוקה, חסר רק line-framing (~10 שורות), ו-single-binary מעניש deps; (ד) disk-cache-LRU ובידוד-תהליכי-לסוכנים (claude in-process = blast radius) — הוצאו ל-scope נפרד לבקשת המשתמשת ("הדיסק פחות דחוף; מה שאפשר, מקס' נשפר בעתיד").
+
 ## 2026-07-03 — batch chrome/identity: app-title-build-env + cli-name-in-chat + rename re-verify
 
 > באץ' של 4 בקשות-משתמשת "קוסמטיות למחצה": (1) כותרת `Drive Coding [Dev|Preview] • [סשן]` + 3 פרופילי-בילד; (2) סימן דורש-תשומת-לב בטאב כשמסיים (אופציונלי); (3) rename חבילת-FE; (4) שם ה-CLI במסך הצ'אט. נחתכו ל-4 slices (JIT), 3 מהם עברו אביגיל→READY בסשן זה; #2 (`tab-attention-notify`) נכתב אחרון (תלוי ב-app-title).
