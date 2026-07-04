@@ -155,6 +155,8 @@ export const en: Catalog = {
   "sidebar.sessions": "Sessions",
   "sidebar.refresh": "Refresh",
   "sidebar.newSession": "New session",
+  // ─── cli-name-in-chat ─── (slice cli-name-in-chat)
+  "sidebar.runningOn": "Running on",
   "sheet.handle": "Drag to open",
   // ─── bubble-play ─── (msr-v2)
   "bubble.play": "Play",
