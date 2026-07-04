@@ -5,13 +5,21 @@ import { defineConfig } from "vite"
 // ─── build-env profile ───────────────────────────────────────────────────────
 // FE_ENV ∈ { "dev" | "preview" | "prod" } (default "prod").
 // Controls both the app title badge and source-map generation.
-// Overrides: FE_TITLE (base title) · FE_SOURCEMAP (source maps on/off).
-// See docs/running-locally.md for the three profiles.
+// Overrides: FE_TITLE (whole base title) · FE_SOURCEMAP (source maps on/off).
+// FE_PREVIEW_LABEL: a preview-subject tag so several preview tabs are distinguishable.
+// The env badge (Dev/Preview) + label are PREFIXED before "Drive Coding" so they stay
+// visible when the browser truncates a narrow tab. e.g. "Preview · title+cli · Drive Coding".
+// prod has no badge → plain "Drive Coding". See docs/running-locally.md.
 type FeEnv = "dev" | "preview" | "prod"
 const FE_ENV = (process.env.FE_ENV ?? "prod") as FeEnv
-const BADGES: Record<FeEnv, string> = { dev: " Dev", preview: " Preview", prod: "" }
-// base-title: FE_TITLE override wins; otherwise "Drive Coding" + badge per env.
-const BASE_TITLE = process.env.FE_TITLE ?? `Drive Coding${BADGES[FE_ENV] ?? ""}`
+const BADGES: Record<FeEnv, string> = { dev: "Dev", preview: "Preview", prod: "" }
+// optional preview-subject label — distinguishes multiple preview tabs.
+const PREVIEW_LABEL = process.env.FE_PREVIEW_LABEL?.trim()
+// badge + label prefixed (before "Drive Coding"), joined by " · ".
+const PREFIX_PARTS = [BADGES[FE_ENV], PREVIEW_LABEL].filter(Boolean)
+const PREFIX = PREFIX_PARTS.length > 0 ? `${PREFIX_PARTS.join(" · ")} · ` : ""
+// base-title: FE_TITLE override wins; otherwise "<badge> · <label> · Drive Coding".
+const BASE_TITLE = process.env.FE_TITLE ?? `${PREFIX}Drive Coding`
 // Expose to SvelteKit so that:
 //  (a) %sveltekit.env.PUBLIC_APP_TITLE% in app.html is replaced at build time.
 //  (b) $env/dynamic/public.PUBLIC_APP_TITLE is available at runtime.
