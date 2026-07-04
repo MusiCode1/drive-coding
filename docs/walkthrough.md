@@ -1,3 +1,16 @@
+## 2026-07-04 — slice producer-ownership — R3 Commit 1: SegmentProducer interface + Playlist wiring
+
+**קבצים חדשים**: `engines/segment-producer.ts` (interface SegmentProducer: ensureFetch/cancelFetch/fetchState)
+**קבצים שהשתנו**: `engines/audio-playlist.svelte.ts`
+- הוסף import של `SegmentProducer`
+- הוסף `#producers = new Map<string, SegmentProducer>()`
+- `reserve` פרמטר רביעי הפך ל-union זמני: `SegmentProducer | (() => void)` — אם function → thunk (dual-write); אם object → #producers.set
+- `stop()` מנקה `#producers.clear()`
+**testing**: manual — typecheck + 22/22 audio-playlist ירוקים. union לא שובר קוראים ישנים (refetch thunk עדיין עובד).
+**סטיות**: אין — יישום מדויק לפי ה-brief §4 Commit 1 + union זמני כפי שנדרש.
+
+---
+
 ## 2026-07-04 — slice playlist-pure-decision — סיכום סופי
 
 **commits**: `b159906..003feb7` (5 commits: 3498cef, 8036baa, 3127023, db041b9, 003feb7)

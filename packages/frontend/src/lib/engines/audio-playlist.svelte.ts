@@ -26,6 +26,7 @@
 import { applyNavigation, decidePlaylistAction } from "@drive-coding/core/voice/playlist-decision"
 import { compareOrderKey, type OrderKey } from "@drive-coding/core/voice/tts-queue"
 import type { AudioSink } from "./audio-sink"
+import type { SegmentProducer } from "./segment-producer"
 
 export type PlaylistItemState =
   | "reserved"
@@ -87,6 +88,9 @@ export class AudioPlaylist {
   // Timeout tracking for wait-fetch / request-fetch.
   #fetchWaitStartedAt = new Map<string, number>()
 
+  // R3: producer registry — maps segmentId → SegmentProducer (owns fetch lifecycle).
+  #producers = new Map<string, SegmentProducer>()
+
   // One-shot flag: set by prev/jumpTo/jumpToBubble — consumed by next #snapshot().
   // Enables the pure function to distinguish explicit navigation (retry failed items).
   #explicitVisit = false
@@ -125,9 +129,27 @@ export class AudioPlaylist {
    * Starts or wakes the run loop.
    * A3: if transport==="stopped" → reset to "playing" (new queue after stop).
    */
-  reserve(segmentId: string, orderKey: OrderKey, bubbleId: string, refetch?: () => void): void {
+  reserve(
+    segmentId: string,
+    orderKey: OrderKey,
+    bubbleId: string,
+    /**
+     * R3 Commit 1 — temporary union:
+     *   - SegmentProducer (new): stored in #producers; thunk slot left undefined.
+     *   - () => void (legacy): stored as refetch thunk on item (dual-write until Commit 4).
+     * Union is removed in Commit 4 when the thunk path is deleted.
+     */
+    producerOrRefetch?: SegmentProducer | (() => void),
+  ): void {
     if (this.transport === "stopped") {
       this.transport = "playing"
+    }
+
+    // R3: register producer in #producers; keep legacy thunk path for dual-write.
+    const refetch =
+      typeof producerOrRefetch === "function" ? producerOrRefetch : undefined
+    if (producerOrRefetch !== undefined && typeof producerOrRefetch !== "function") {
+      this.#producers.set(segmentId, producerOrRefetch)
     }
 
     const newItem: PlaylistItem = {
@@ -295,6 +317,7 @@ export class AudioPlaylist {
     this.items = []
     this.#cursor = 0
     this.#fetchWaitStartedAt.clear()
+    this.#producers.clear() // R3: release producer refs
     this.state = "idle"
     this.currentSegmentId = null
     this.#bump() // wake loop so it can exit
