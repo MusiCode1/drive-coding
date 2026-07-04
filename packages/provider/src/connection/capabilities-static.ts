@@ -34,6 +34,7 @@ export function staticCapsFor(
         configOptions: false, // discovered at runtime in CUT-3b-iii+
         rename: false,
         thinkingTokens: false,
+        image: false, // tap init-response will update if observed
       }
     case "claude":
       return {
@@ -44,10 +45,12 @@ export function staticCapsFor(
         configOptions: false,
         rename: false,
         thinkingTokens: false,
+        image: false, // tap init-response will update if observed
       }
     case "codex":
       // Values from live initialize response (in-process harness):
       //   mcpCapabilities.http:true → mcp:true
+      //   promptCapabilities.image:true (from live codex initialize — capabilities-static.ts:12)
       //   thinking: not supported → thinkingTokens:false
       //   fork/rename: not exposed → rename:false
       return {
@@ -58,6 +61,7 @@ export function staticCapsFor(
         configOptions: false,
         rename: false,
         thinkingTokens: false,
+        image: true, // from live codex initialize response (see file header comment)
       }
     default:
       return {
@@ -68,6 +72,7 @@ export function staticCapsFor(
         configOptions: false,
         rename: false,
         thinkingTokens: false,
+        image: false,
       }
   }
 }

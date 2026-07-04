@@ -25,6 +25,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { startAcpServer } from "@agentclientprotocol/codex-acp/lib"
 import { resolveCliBinary } from "@drive-coding/core/cli-resolve"
+import { extractPromptCaps } from "../shared/extract-prompt-caps.js"
 import { createTurnTracker } from "../shared/turn-tracker.js"
 import { decodeWireLine } from "../shared/wire-decode.js"
 import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
@@ -100,6 +101,11 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
     if (dir === "in") {
       tracker.observe(s, Date.now())
       emitBusyChange()
+      // tap init-response: extract promptCapabilities.image from initialize result frame.
+      const promptCaps = extractPromptCaps(s.parsed)
+      if (promptCaps !== undefined) {
+        caps = { ...caps, image: promptCaps.image }
+      }
     }
 
     // Derive type label (same as connectInProcess/connectSpawn).
@@ -200,12 +206,17 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
     },
   }
 
-  // capabilities: staticCapsFor("codex") — static, no runtime discovery.
-  const capabilities = staticCapsFor("codex")
+  // capabilities: mutable internal state, updated by tap on init-response.
+  // Base: staticCapsFor("codex") — static defaults (mcp:true, image:true from live initialize).
+  // After initialize response arrives on dir="in": extractPromptCaps updates image field.
+  // Exposed via getter so all consumers always read latest.
+  let caps = staticCapsFor("codex")
 
   const connection: ProviderConnection = {
     wire,
-    capabilities,
+    get capabilities() {
+      return caps
+    },
 
     onFrame(cb: (f: WireFrame) => void): () => void {
       frameListeners.add(cb)

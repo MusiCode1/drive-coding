@@ -37,5 +37,6 @@ export function mapClaudeCapabilities(raw: unknown): NormalizedCapabilities {
     configOptions: false,
     rename: true,
     thinkingTokens: true,
+    image: false, // base value; tap init-response (extract-prompt-caps) will update after initialize
   }
 }

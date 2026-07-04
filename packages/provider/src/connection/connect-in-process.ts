@@ -25,6 +25,7 @@ import { getCliSpec } from "../config/index.js"
 import { mapClaudeCapabilities } from "../providers/claude/capabilities.js"
 import { makeAcpClientFromCtx } from "../providers/claude/client-bridge.js"
 import { getQuery } from "../providers/claude/query-access.js"
+import { extractPromptCaps } from "../shared/extract-prompt-caps.js"
 import { createTurnTracker } from "../shared/turn-tracker.js"
 import { decodeWireLine } from "../shared/wire-decode.js"
 import { buildClaudeEnvOverride, injectEnvOverride } from "./claude-env-override.js"
@@ -103,6 +104,13 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
     if (dir === "in") {
       tracker.observe(s, Date.now())
       emitBusyChange()
+      // tap init-response: extract promptCapabilities.image from initialize result frame.
+      // Identification: responseKind==="result" + agentCapabilities present (no method = not notification).
+      // §10 in brief: passive tap, no touch to @agentclientprotocol/* adapter.
+      const promptCaps = extractPromptCaps(s.parsed)
+      if (promptCaps !== undefined) {
+        caps = { ...caps, image: promptCaps.image }
+      }
     }
 
     // Derive type label (same as connectSpawn).
@@ -256,16 +264,17 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
     },
   }
 
-  // capabilities: mapClaudeCapabilities(null) — static for claude in-process.
-  // initResult is not captured here; the FE sends initialize over the wire.
-  // mapClaudeCapabilities(null) returns: mcp=false, rename=true, thinkingTokens=true.
-  // Note: mcp will be false until we tap the initialize response (future improvement).
-  // Per brief §3: "BE-side, mapClaudeCapabilities — already includes rename/thinkingTokens".
-  const capabilities = mapClaudeCapabilities(null)
+  // capabilities: mutable internal state, updated by tap on init-response.
+  // Base: mapClaudeCapabilities(null) — static defaults (rename=true, thinkingTokens=true, image=false).
+  // After initialize response arrives on dir="in": extractPromptCaps updates image field.
+  // Exposed via getter so all consumers (getRuntimeInfo, _drive/capabilities) always read latest.
+  let caps = mapClaudeCapabilities(null)
 
   const connection: ProviderConnection = {
     wire,
-    capabilities,
+    get capabilities() {
+      return caps
+    },
 
     onFrame(cb: (f: WireFrame) => void): () => void {
       frameListeners.add(cb)

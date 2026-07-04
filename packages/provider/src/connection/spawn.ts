@@ -15,6 +15,7 @@
 
 import { randomUUID } from "node:crypto"
 import { createSpawnCore } from "../shared/spawn-core.js"
+import { extractPromptCaps } from "../shared/extract-prompt-caps.js"
 import { createTurnTracker } from "../shared/turn-tracker.js"
 import { decodeWireLine } from "../shared/wire-decode.js"
 import type { SpawnBridgeInput } from "../spawn/index.js"
@@ -77,6 +78,11 @@ export async function connectSpawn(
       if (dir === "in") {
         tracker.observe(s, Date.now())
         emitBusyChange()
+        // tap init-response: extract promptCapabilities.image from initialize result frame.
+        const promptCaps = extractPromptCaps(s.parsed)
+        if (promptCaps !== undefined) {
+          caps = { ...caps, image: promptCaps.image }
+        }
       }
 
       // Derive type label (brief §3ג).
@@ -109,6 +115,12 @@ export async function connectSpawn(
   }
   await core.spawnWithStderr(bridgeId, input)
 
+  // capabilities: mutable internal state, updated by tap on init-response.
+  // Base: staticCapsFor(cliKind) — static defaults per provider.
+  // After initialize response arrives on dir="in": extractPromptCaps updates image field.
+  // Exposed via getter so all consumers always read latest.
+  let caps = staticCapsFor(cliKind)
+
   // Build the ProviderConnection.
   const connection: ProviderConnection = {
     wire: {
@@ -120,7 +132,9 @@ export async function connectSpawn(
       },
     },
 
-    capabilities: staticCapsFor(cliKind),
+    get capabilities() {
+      return caps
+    },
 
     onFrame(cb: (f: WireFrame) => void): () => void {
       frameListeners.add(cb)

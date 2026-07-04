@@ -180,6 +180,7 @@ export class AgentSession {
         configOptions: false,
         rename: false,
         thinkingTokens: false,
+        image: false,
       }
     )
   }

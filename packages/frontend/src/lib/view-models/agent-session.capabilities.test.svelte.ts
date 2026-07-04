@@ -110,6 +110,7 @@ function makeCapabilities(overrides: Partial<NormalizedCapabilities> = {}): Norm
     configOptions: false,
     rename: false,
     thinkingTokens: false,
+    image: false,
     ...overrides,
   }
 }

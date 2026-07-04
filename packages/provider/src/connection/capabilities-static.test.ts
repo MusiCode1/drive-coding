@@ -27,11 +27,17 @@ describe("staticCapsFor", () => {
     expect(caps.configOptions).toBe(false)
   })
 
+  it("codex: image=true (from live initialize response)", () => {
+    const caps = staticCapsFor("codex")
+    expect(caps.image).toBe(true)
+  })
+
   it("opencode: all false (regression guard)", () => {
     const caps = staticCapsFor("opencode")
     expect(caps.mcp).toBe(false)
     expect(caps.thinkingTokens).toBe(false)
     expect(caps.rename).toBe(false)
+    expect(caps.image).toBe(false)
   })
 
   it("claude (spawn fallback): all false (regression guard)", () => {
@@ -39,5 +45,6 @@ describe("staticCapsFor", () => {
     expect(caps.mcp).toBe(false)
     expect(caps.thinkingTokens).toBe(false)
     expect(caps.rename).toBe(false)
+    expect(caps.image).toBe(false)
   })
 })

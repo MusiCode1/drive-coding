@@ -1,3 +1,31 @@
+## 2026-07-04 — slice-reattach-state-sync — Commit 1 (Phase A): NormalizedCapabilities.image + tap init-frame (TDD)
+
+**מה בוצע (approach: TDD):**
+
+- `packages/provider/src/types.ts`: הוסף `image: boolean` ל-`NormalizedCapabilities` (non-optional, עקבי עם mcp/rename/thinkingTokens)
+- `packages/provider/src/shared/extract-prompt-caps.ts`: helper חדש `extractPromptCaps(parsed)` — זיהוי מבני של init-response: `result` ב-frame (אין `method`, אין `error`) + `result.agentCapabilities.promptCapabilities` קיים → `{ image: boolean }`. fallback safe: `image: false`.
+- `packages/provider/src/shared/extract-prompt-caps.test.ts`: 9 טסטים (TDD red→green) — init-result עם image:true/false/missing, ללא agentCapabilities, notification, error, null, undefined, מספר.
+- עדכון 4 אתרים בגלל `image` non-optional:
+  1. `connection/capabilities-static.ts`: כל case + default — הוסף `image` (codex→`true` לפי live init, שאר→`false`)
+  2. `providers/claude/capabilities.ts`: הוסף `image: false` (tap יעדכן אחרי init)
+  3. `frontend/src/lib/view-models/agent-session.svelte.ts`: fallback object ב-`get supports()` — הוסף `image: false`
+  4. `connection/capabilities-static.test.ts`: הוסף assertions ל-`image`
+- חיווט tap ב-3 קבצי connect-*:
+  - `connection/connect-in-process.ts`: `let caps` mutable + getter + tap ב-handleLine dir="in"
+  - `connection/connect-codex-in-process.ts`: אותו דפוס
+  - `connection/spawn.ts`: אותו דפוס
+
+**בדיקות (approach: TDD):**
+- provider tests: 177/185 passed (8 skipped pre-existing)
+- FE typecheck: 0 errors, 0 warnings
+- lint:i18n: נקי
+- שגיאות typecheck: 3 pre-existing (codex-acp/lib missing types, connect-in-process.test.ts WireFrame.method, claude-env-override.test.ts _meta)
+
+**חריגות:**
+- אין — כל השינויים כמפורט ב-brief §4.1
+
+---
+
 ## 2026-07-04 — slice-image-paste — Commit 6: lightbox לתמונת-המשתמש (§12)
 
 **מה בוצע (manual — חיווט UI לתשתית קיימת):**

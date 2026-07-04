@@ -32,6 +32,12 @@ export interface NormalizedCapabilities {
    * Runtime control — no patch required. Controlled via ext channel (_drive/setThinkingTokens).
    */
   thinkingTokens: boolean
+  /**
+   * promptCapabilities.image from initialize response → true if provider supports image input.
+   * Sourced from tap on init-response (extract-prompt-caps.ts). Default: false until observed.
+   * Non-optional — consistent with mcp/rename/thinkingTokens.
+   */
+  image: boolean
 }
 
 /**
