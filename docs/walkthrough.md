@@ -1,3 +1,24 @@
+## 2026-07-04 — slice-image-paste — Commit 6: lightbox לתמונת-המשתמש (§12)
+
+**מה בוצע (manual — חיווט UI לתשתית קיימת):**
+
+- `packages/frontend/src/lib/components/chat/bubbles/UserBubble.svelte`:
+  - הוסף `getContentViewer` לשורת ה-import מ-`$lib/context`
+  - `const viewer = getContentViewer()` ליד שאר ה-getters
+  - עטף את ה-`<img>` ב-`<button class="user-image-btn">` שקורא ל-`viewer.show({ kind: "image", src, alt: "" })` עם `onclick`
+  - `aria-label` ו-`title` משתמשים ב-`t("contentViewer.expand")` (מפתח קיים)
+  - CSS `.user-image-btn`: reset בלבד (background/border/padding/cursor/display) — בלי margin (שמנע רגרסיה ויזואלית מול `.tool-image-btn`)
+
+**בדיקות (approach: manual):**
+- typecheck: 0 errors, 0 warnings (svelte-check)
+- build: ירוק (47s, adapter-static)
+- lint:i18n: נקי
+
+**חריגות:**
+- אין — חיווט טהור לתשתית `ContentViewer` הקיימת. אימות חי (lightbox נפתח) = calev בהמשך.
+
+---
+
 ## 2026-07-04 — slice-image-paste — Commit 5 follow-up: placeholder כסמן מבני (§11.3א)
 
 **מה בוצע (TDD):**

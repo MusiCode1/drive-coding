@@ -13,7 +13,7 @@
  * ─── slice/markdown-content-unify (Commit 1) — CSS עבר ל-MarkdownContent ───
  */
 import type { UserBubble } from "$lib/types/bubble"
-import { getBubblePlayer, getI18n, getSpeaker } from "$lib/context"
+import { getBubblePlayer, getContentViewer, getI18n, getSpeaker } from "$lib/context"
 import Avatar from "$lib/components/chat/Avatar.svelte"
 import { joinSegmentText } from "./bubble-rendering"
 import { copyToClipboard } from "$lib/util/clipboard"
@@ -30,6 +30,7 @@ const t = getI18n().t
 const bubblePlayer = getBubblePlayer()
 // C10: גייט על speaker.enabled — מסתיר כפתור ▶ כשמושתק
 const speaker = getSpeaker()
+const viewer = getContentViewer()
 
 const isPlaying = $derived(bubblePlayer.playingBubbleId === bubble.id)
 
@@ -57,12 +58,19 @@ async function handleCopy() {
     {#if bubble.attachments && bubble.attachments.length > 0}
       <div class="flex flex-wrap gap-1.5 mb-1">
         {#each bubble.attachments as att, i (i)}
-          <img
-            src="data:{att.mimeType};base64,{att.dataBase64}"
-            alt=""
-            class="max-h-40 max-w-[12rem] rounded-xl object-contain border"
-            style="border-color:var(--border)"
-          />
+          <button
+            class="user-image-btn"
+            onclick={() => viewer.show({ kind: "image", src: `data:${att.mimeType};base64,${att.dataBase64}`, alt: "" })}
+            aria-label={t("contentViewer.expand")}
+            title={t("contentViewer.expand")}
+          >
+            <img
+              src="data:{att.mimeType};base64,{att.dataBase64}"
+              alt=""
+              class="max-h-40 max-w-[12rem] rounded-xl object-contain border"
+              style="border-color:var(--border)"
+            />
+          </button>
         {/each}
       </div>
     {/if}
@@ -193,6 +201,15 @@ async function handleCopy() {
     padding: 0;
   }
   .action-btn:hover { opacity: 1; }
+
+  /* §12: lightbox לתמונת-משתמש */
+  .user-image-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    display: inline-flex;
+  }
 
   /* §11.3א: chip לתוכן לא-טקסטואלי מ-replay */
   .content-chip {
