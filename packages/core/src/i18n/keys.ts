@@ -160,6 +160,8 @@ export type MessageKey =
   | "sidebar.sessions"
   | "sidebar.refresh"
   | "sidebar.newSession"
+  // ─── cli-name-in-chat ─── (slice cli-name-in-chat)
+  | "sidebar.runningOn"
   | "sheet.handle"
   // ─── bubble-play ─── (msr-v2)
   | "bubble.play"
@@ -297,6 +299,9 @@ export type MessageKey =
   | "settings.ttsStatus.usage.cost"
   | "settings.ttsStatus.usage.notAvailable"
   | "settings.ttsStatus.refresh"
+  // ─── app-title ─── (slice app-title-build-env)
+  | "appTitle.settings"
+  | "appTitle.sessions"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

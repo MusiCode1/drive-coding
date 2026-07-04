@@ -1,0 +1,17 @@
+import { chromium } from 'file:///D:/Users/User/AppData/Local/npm-cache/_npx/361ceb562f3b3235/node_modules/playwright/index.mjs';
+const OUT = 'D:/UserProjects/AI/drive-coding/dev/.worktrees/slice-image-paste/.tmp/verify-c6';
+const log = (...a) => console.log('[p5]', ...a);
+const browser = await chromium.launch({ headless: true });
+const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
+await page.goto('http://localhost:4005/', { waitUntil: 'networkidle' });
+await page.waitForTimeout(1200);
+await page.getByRole('button').filter({ hasText: /^claude\s+dev\b/ }).first().click();
+log('clicked, waiting for URL change or chat...');
+await page.waitForTimeout(15000);
+log('URL:', page.url());
+await page.screenshot({ path: OUT+'/probe-connected.png', fullPage: true });
+const btns = await page.$$eval('button', els => els.map(e=>({t:e.textContent.trim().slice(0,25), aria:e.getAttribute('aria-label')})).filter(x=>x.t||x.aria));
+log('BUTTONS:', JSON.stringify(btns.slice(0,30)));
+const bodyText = await page.$eval('body', e=>e.innerText.slice(0,400));
+log('BODY:', bodyText);
+await browser.close();

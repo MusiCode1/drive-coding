@@ -86,6 +86,124 @@
 - אימות e2e חי: BLOCKED (ראה הערה — calev-heavy ינסה לאמת מול ספק עם promptCapabilities.image)
 
 **חריגות:** שגיאת typecheck pre-existing ב-connect-in-process.test.ts:111 קיימת ב-base ולא שינינו.
+
+## 2026-07-04 — proxy-tap-memory — תיקון ליקויים (harness + walkthrough)
+
+**מה בוצע:**
+
+- `packages/backend/tests/proxy-mem-regression.test.ts` (חדש) — regression test CI-runnable המחליף את `scripts/repro-proxy-mem.mjs` שנכשל בגלל `hono` לא מוחסן ב-workspace root. הtest בודק 256MB Gemini SSE stream + client שמבטל את הגוף (גרוע-ביותר עבור `tee()` הישן). תוצאה בפועל: `delta=0.1MB` (מתחת לתקציב 50MB).
+- `docs/walkthrough.md` — הוסף Commit 0, 1, 2 שחסרו; תוצאת ה-repro בפועל.
+
+**בדיקות:**
+
+- Regression test חדש: `RSS delta < 50MB when FE client cancels a 256MB Gemini stream` — עבר ב-1.02s, delta=0.1MB.
+- Backend total: 248 ירוקים / 266 (כשלים = known-bugs pre-existing: bun ENOENT + TLS Windows).
+- Typecheck: 0 שגיאות.
+
+**חריגות:**
+
+- הtest החדש מדמה `client.body.cancel()` (לא קריאה מלאה) — זה התרחיש המדויק שמרדכי אימת ידנית.
+
+---
+
+## 2026-07-04 — proxy-tap-memory — Commit 2 (ElevenLabs cache — tee→boundedCollector)
+
+**מה בוצע:**
+
+- `packages/backend/src/delivery/bounded-collect.ts` (חדש) — מצבר עד `PROXY_CACHE_MAX_ENTRY_BYTES=8MB`; מעל ה-cap: `truncated=true` → דולג על כתיבת המטמון (audio גדול מדי); ה-client stream תמיד מקבל מידע מלא.
+- `packages/backend/src/delivery/http-proxy.ts` — החלפת `tee()+cacheStreamInBackground` ב-TransformStream עם `boundedCollector`. מחיקת `cacheStreamInBackground` (לא בשימוש).
+
+**בדיקות:**
+
+- 22 טסטים ב-http-proxy.test.ts ירוקים.
+- Typecheck: 0 שגיאות. lint: נקי.
+
+**חריגות:**
+
+## 2026-07-04 — cli-name-in-chat — Slice הושלם (2 commits)
+
+**מה בוצע:**
+
+Commit 1 ($state + getter):
+- `agent-session.svelte.ts:251` — `#cliKind: CliKind | null = null` הפך ל-`#cliKind = $state<CliKind | null>(null)`.
+- getter ציבורי `get cliKind(): CliKind | null` נוסף אחרי `bypassActive` getter.
+
+Commit 2 (UI + i18n):
+- `SessionOptionsPanel.svelte` — שורת "פועל על <cli>" מעל בלוק "אפשרויות סוכן" עם `{#if session.cliKind}`.
+- `keys.ts` — `"sidebar.runningOn"` נוסף לbלוק sidebar.
+- `he.ts` — `"sidebar.runningOn": "פועל על"`.
+- `en.ts` — `"sidebar.runningOn": "Running on"`.
+- שם ה-CLI מוצג ב-`dir="ltr"`, badge עם bg-card/border.
+
+**בדיקות:**
+- typecheck: 0 errors (5065 files) · שני commits
+- tests: 1070/1089 ירוקים (2 שגיאות pre-existing: spawn-ENOENT + TLS-cert-Windows)
+- lint:i18n: נקי
+- smoke: manual — התחבר עם opencode → "פועל על opencode" מוצג מעל "אפשרויות סוכן"
+
+**חריגות:**
+- אין.
+
+---
+
+## 2026-07-04 — proxy-tap-memory — Commit 1 (Gemini proxy tap — tee→TransformStream)
+
+**מה בוצע:**
+
+- `packages/backend/src/delivery/http-proxy.ts` — החלפת `tee()+readStreamInBackground` ב-TransformStream peek: הaccumulator (Commit 0) רץ inline על כל chunk ב-`transform()`; `flush()` מתעד usage אחרי ה-chunk האחרון. fail-safe: try/catch לעולם לא שובר stream. מחיקת `readStreamInBackground`.
+
+**בדיקות:**
+
+- 22 טסטים ב-http-proxy.test.ts ירוקים (20 קיימים + 2 חדשים: metering + RSS delta < 50MB על 64MB stream).
+- Typecheck: 0 שגיאות. lint: נקי.
+
+**חריגות:**
+
+- אין.
+
+---
+
+## 2026-07-04 — proxy-tap-memory — Commit 0 (createGeminiUsageAccumulator — TDD)
+
+**מה בוצע:**
+
+- `packages/core/src/usage/gemini-usage-accumulator.ts` (חדש) — accumulator incremental לחילוץ `usageMetadata` מזרם SSE של Gemini בלי לצבור audio. מטפל ב-line boundary (leftover) + utf8 boundary (TextDecoder stream).
+- `packages/core/src/usage/extract.ts` — חילוץ helper משותף `parseGeminiChunkUsage` (DRY: batch ו-incremental פועלים על לוגיקת-נרמול זהה). `extractGeminiUsage` — חתימה ללא שינוי.
+- `packages/core/src/usage/gemini-usage-accumulator.test.ts` (חדש) — 11 טסטים TDD.
+
+**בדיקות:**
+
+- TDD red→green: 36/36 ירוקים (gemini-usage-accumulator ×11, extract ×8, pricing ×17).
+- Typecheck: 0 שגיאות. lint: נקי.
+
+**חריגות:**
+
+- אין.
+
+---
+
+## 2026-07-04 — proxy-tap-memory — Commit 3 (RSS watchdog)
+
+**מה בוצע:**
+
+- `packages/backend/src/delivery/memory-guard.ts` (חדש) — `createMemoryGuard()`: RSS watchdog עם `setInterval` (5s, `.unref()`). `overBudget()` מחזיר `true` כש-RSS > threshold (default 1.5GB, override עם `RSS_BUDGET_MB` env). `stop()` מבטל את ה-interval.
+- `packages/backend/src/delivery/http-proxy.ts` — הוספת `memoryGuard?: MemoryGuard` ל-opts; בתחילת handler: `if (memoryGuard?.overBudget()) return 503`.
+- `packages/backend/src/server.ts` — import `createMemoryGuard`, יצירת instance, הזרקה ל-`registerProxyHttp`.
+- `packages/backend/tests/http-proxy.test.ts` — 2 טסטים חדשים: (1) `overBudget=true` → 503 + fetch לא נקרא; (2) `overBudget=false` → 200 רגיל.
+
+**בדיקות:**
+
+- 24 טסטים ב-http-proxy.test.ts ירוקים (כולל 2 חדשים).
+- Backend total: 757 ירוקים / 775 (כשלים = known-bugs pre-existing: bun ENOENT + TLS Windows).
+- Typecheck: 0 שגיאות.
+- Lint (biome, קבצים שנגעו): נקי.
+
+**חריגות:**
+
+- אין. defense-in-depth טהורה — אין שינוי ב-business logic.
+
+---
+
 ## 2026-07-03 — claude-inprocess-cli-env — Slice הושלם (3 commits)
 
 **מה בוצע:**
@@ -8627,3 +8745,39 @@ B2 (הצגה): הוספת `import { version } from "$app/environment"` ל-Settin
 ### חריגות
 
 - אין. הוספת dep highlight.js לחבילה.
+
+## 2026-07-04 — slice-app-title-build-env — סיום (manual, 4 commits)
+
+**מה בוצע:**
+
+Commit 1 (FE_ENV wiring + title placeholder):
+- vite.config.ts: FE_ENV → badge + BASE_TITLE + SOURCEMAP; process.env.PUBLIC_APP_TITLE = BASE_TITLE (לפני SvelteKit plugin); FE_TITLE/FE_SOURCEMAP overrides.
+- app.html: <title>drive-coding v2</title> → <title>%sveltekit.env.PUBLIC_APP_TITLE%</title>.
+- שלב-0 אומת: TEST123 נצרב ל-<title>TEST123</title> בבדיקת grep.
+
+Commit 2 (build scripts + cross-env):
+- packages/frontend/package.json: build:dev/build:preview/build:prod + cross-env@7.0.3.
+- cross-env מאפשר הגדרת env ב-Windows (cmd לא תומך ב-VAR=x cmd).
+
+Commit 3 (כותרת ריאקטיבית + i18n):
+- +layout.svelte: import page/$env/dynamic/public; baseTitle=env.PUBLIC_APP_TITLE||"Drive Coding"; titleContext (routes: /settings/chat/); <svelte:head><title>{docTitle}</title>.
+- i18n/keys.ts: appTitle.settings + appTitle.sessions.
+- catalogs/he.ts: "הגדרות" · "סשנים".
+- catalogs/en.ts: "Settings" · "Sessions".
+
+Commit 4 (systemd + docs):
+- voice-acp-dev.service: FE_ENV=dev → FE_ENV=preview + עדכון הערה.
+- voice-acp-main.service: עדכון הערה בלבד (אין FE_ENV → prod).
+- docs/running-locally.md: טבלת פרופילי-בילד (dev/preview/prod) + הסבר overrides.
+
+**בדיקות:**
+- build:dev → <title>Drive Coding Dev</title> + *.map קיימים ✓
+- build:preview → <title>Drive Coding Preview</title> + *.map קיימים ✓
+- build:prod → <title>Drive Coding</title> + אין *.map ✓
+- FE_TITLE=Foo FE_SOURCEMAP=false → <title>Foo</title> + אין *.map ✓
+- typecheck: 0 errors ✓
+- lint:i18n: נקי ✓
+
+**חריגות:**
+- biome.json global lint נכשל (CRLF vs LF pre-existing issue) — קבצים שנגעתי בהם עברו biome check פרטני ✓.
+- smoke ידני בדפדפן לא בוצע (לא-חסם עבור calev).

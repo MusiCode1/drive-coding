@@ -74,19 +74,34 @@ URL: `https://your-app.tuns.sh`
 ב-mode הזה `/api`, `/proxy`, `/ws` וה-FE כולם על origin אחד (4000) — בדיוק כמו
 הפריסה הקבועה. זה הנתיב המועדף לבדוק התנהגות WS (כולל ה-heartbeat `$/ping`/`$/pong`).
 
-#### Source maps (לדיבוג ה-build המוקטן)
+#### פרופילי-בילד: dev / preview / prod (slice app-title-build-env)
 
-ה-build מוקטן וה-chunks hashed (`DFDqgTZT.js`), כך שאי אפשר למפות `[Violation]`/stack
-חזרה למקור. כדי לקבל source maps, בנה עם `FE_SOURCEMAP=true`:
+שלושה פרופילים דרך `FE_ENV` — שולטים גם בכותרת-הטאב וגם ב-source maps:
+
+| פרופיל | כותרת-טאב | Source maps | שימוש |
+|--------|-----------|-------------|-------|
+| `dev` | Drive Coding Dev | ✅ ON | פיתוח שוטף / debug מקומי |
+| `preview` | Drive Coding Preview | ✅ ON | staging (voice-acp-dev.service) |
+| `prod` | Drive Coding | ❌ OFF | production (voice-acp-main.service) |
 
 ```bash
-FE_SOURCEMAP=true pnpm --filter @drive-coding/frontend build
+# build:dev — badge "Dev" + source maps
+pnpm --filter @drive-coding/frontend build:dev
+
+# build:preview — badge "Preview" + source maps (staging)
+pnpm --filter @drive-coding/frontend build:preview
+
+# build:prod (או build סתם) — ללא badge + ללא source maps
+pnpm --filter @drive-coding/frontend build:prod
 ```
 
-`vite.config.ts` → `build.sourcemap` מבוקר ע"י ה-env הזה. בפריסת **dev/staging**
-הוא מופעל קבוע ([`deploy/systemd/voice-acp-dev.service`](../deploy/systemd/voice-acp-dev.service)
-מגדיר `FE_SOURCEMAP=true`); ב-**main/prod** הוא כבוי — כדי לא לשלוח source maps
-פומביים ולא לנפח את ה-build.
+**Overrides** (גוברים על FE_ENV):
+- `FE_TITLE=My App` — base title מותאם (במקום "Drive Coding")
+- `FE_SOURCEMAP=true|false` — מפעיל/מכבה source maps ללא תלות בפרופיל
+
+הכותרת מוזרקת ב-build-time דרך `%sveltekit.env.PUBLIC_APP_TITLE%` ב-`app.html`
+(נצרב ל-`index.html` לפני JS) ומתעדכנת ב-runtime דרך `<svelte:head>` ל-`+layout.svelte`
+(מוסיף הקשר: `Drive Coding Preview • הגדרות`).
 
 #### איך הגשת ה-static עובדת בקוד
 

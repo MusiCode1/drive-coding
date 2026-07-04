@@ -1,0 +1,27 @@
+{
+  "attachBtn": 1,
+  "trayThumbs": 1,
+  "userImgBtn": 1,
+  "bubbleSrcLen": 342,
+  "imgBox": {
+    "x": 694,
+    "y": 80,
+    "width": 102,
+    "height": 102
+  },
+  "btnStyle": {
+    "marginTop": "0px",
+    "marginBottom": "0px",
+    "padding": "0px",
+    "border": "0px"
+  },
+  "lightboxVisible": true,
+  "lbImgCount": 1,
+  "lbSrcMatch": true,
+  "escClosed": true,
+  "reopened": true,
+  "overlayClosed": true,
+  "imgBtnAfterTextOnly": 1,
+  "textOnlyNoNewImage": true,
+  "relevantErrors": []
+}
