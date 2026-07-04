@@ -1,3 +1,23 @@
+## 2026-07-04 — ui-session-polish — Commit 7 (fix5-view-loaded)
+
+**מה בוצע:**
+
+Commit 7 (fix5-view-loaded — ספינר נשאר עד סיום רינדור ההיסטוריה):
+- `packages/frontend/src/lib/components/layout/AppShell.svelte` שורה 353 —
+  `open={session.status === "connecting"}` → `open={session.status === "connecting" || session.isLoadingHistory}`.
+- `packages/frontend/src/routes/+page.svelte` שורה 185 — אותו שינוי.
+  `session.isLoadingHistory` הוא `$state(false)` ציבורי ב-`agent-session.svelte.ts:129`
+  — מוגדר true לפני replay ו-false ב-finally אחרי עיבוד הבועות.
+
+**בדיקות:**
+- typecheck: 0 שגיאות
+- i18n lint: נקי (אין מחרוזות עברית חדשות בקוד)
+- build FE: ירוק (47.84s, adapter-static)
+
+**חריגות:** אין.
+
+---
+
 ## 2026-07-04 — ui-session-polish — post-preview (2 commits נוספים)
 
 **מה בוצע:**

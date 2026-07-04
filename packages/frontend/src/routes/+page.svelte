@@ -181,8 +181,8 @@ async function handleRecentSelect(project: RecentProject) {
 <FolderPickerDialog startPath={cwd} />
 <!-- content-viewer (slice content-viewer — כמו FolderPickerDialog: מסך connect אינו עטוף ב-AppShell) -->
 <ContentViewerDialog />
-<!-- ui-session-polish fix5-extend: מודאל-טעינה גם ב-connect ראשוני + reconnect -->
-<LoadingModal open={session.status === "connecting"} />
+<!-- ui-session-polish fix5-extend: מודאל-טעינה גם ב-connect ראשוני + reconnect + רינדור היסטוריה -->
+<LoadingModal open={session.status === "connecting" || session.isLoadingHistory} />
 
 <style>
   /* גובה מלא + גלילה פנימית: ה-body הוא overflow:hidden (app.css), ודף החיבור

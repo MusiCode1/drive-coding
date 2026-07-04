@@ -349,6 +349,6 @@ $effect(() => {
   <FolderPickerDialog />
   <!-- content-viewer (slice content-viewer) -->
   <ContentViewerDialog />
-  <!-- ui-session-polish: loading spinner during session connect -->
-  <LoadingModal open={session.status === "connecting"} />
+  <!-- ui-session-polish: loading spinner during session connect or history render -->
+  <LoadingModal open={session.status === "connecting" || session.isLoadingHistory} />
 </div>
