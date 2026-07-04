@@ -3,6 +3,9 @@
  *
  * Both functions are pure (no IO) and return safe defaults (zeros) on parse failure.
  * Suitable for use in a background tap without risk of crashing the proxy.
+ *
+ * Updated in slice proxy-tap-memory (Commit 0): extracted parseGeminiChunkUsage helper
+ * for DRY sharing with createGeminiUsageAccumulator (incremental path).
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -43,13 +46,62 @@ export function extractElevenLabsChars(body: Uint8Array | string): number {
   }
 }
 
+// ─── Shared helper: parse a single Gemini response chunk ─────────────────────
+
+/**
+ * Parses a single Gemini response chunk (already-parsed JSON object) and extracts
+ * GeminiUsage if usageMetadata is present.
+ *
+ * Returns undefined if the chunk has no usageMetadata (caller applies last-wins logic).
+ *
+ * audioTokens priority:
+ * 1. candidatesTokensDetails[].modality === "AUDIO" → exact audio token count
+ * 2. Fallback: candidatesTokenCount (TTS output is audio-only, good estimate)
+ *
+ * Used by both:
+ *   - extractGeminiUsage (batch, processes a full buffer)
+ *   - createGeminiUsageAccumulator (incremental, processes per-chunk)
+ *
+ * DRY: identical normalization logic ensures batch and incremental paths agree.
+ *
+ * Note: returns GeminiUsage (the exported type), not the internal UsageMetadata —
+ * avoids exporting internal types unnecessarily. "last non-undefined wins" semantics
+ * are identical in both batch and incremental paths.
+ */
+export function parseGeminiChunkUsage(json: unknown): GeminiUsage | undefined {
+  if (typeof json !== "object" || json === null) return undefined
+  const chunk = json as GeminiResponseChunk
+  const meta = chunk.usageMetadata
+  if (!meta) return undefined
+
+  const inputTokens = meta.promptTokenCount ?? 0
+
+  let audioTokens = 0
+  if (meta.candidatesTokensDetails && meta.candidatesTokensDetails.length > 0) {
+    const audioEntry = meta.candidatesTokensDetails.find((d) => d.modality === "AUDIO")
+    if (audioEntry) {
+      audioTokens = audioEntry.tokenCount
+    } else {
+      // candidatesTokensDetails present but no AUDIO entry found →
+      // fallback to candidatesTokenCount (TTS output is audio-only)
+      audioTokens = meta.candidatesTokenCount ?? 0
+    }
+  } else {
+    // No candidatesTokensDetails at all → fallback to candidatesTokenCount
+    // For TTS, the entire output is audio, so candidatesTokenCount ≈ audioTokenCount
+    audioTokens = meta.candidatesTokenCount ?? 0
+  }
+
+  return { inputTokens, audioTokens }
+}
+
 // ─── Gemini SSE extractor ─────────────────────────────────────────────────────
 
 /**
  * Extracts token usage from Gemini streamGenerateContent SSE or JSON-array response.
  *
  * The usageMetadata appears in the last chunk (or accumulates); we take the LAST
- * one seen in the stream.
+ * one seen in the stream (last-wins via parseGeminiChunkUsage).
  *
  * audioTokens priority:
  * 1. candidatesTokensDetails[].modality === "AUDIO" → exact audio token count
@@ -103,36 +155,16 @@ export function extractGeminiUsage(responseBytes: Uint8Array | string): GeminiUs
 
     if (chunks.length === 0) return { inputTokens: 0, audioTokens: 0 }
 
-    // Take the LAST usageMetadata seen (most complete/accurate)
-    let lastMeta: UsageMetadata | undefined
+    // Take the LAST usageMetadata seen (most complete/accurate) — last-wins via parseGeminiChunkUsage
+    let lastUsage: GeminiUsage | undefined
     for (const chunk of chunks) {
-      if (chunk.usageMetadata) {
-        lastMeta = chunk.usageMetadata
+      const usage = parseGeminiChunkUsage(chunk)
+      if (usage !== undefined) {
+        lastUsage = usage
       }
     }
 
-    if (!lastMeta) return { inputTokens: 0, audioTokens: 0 }
-
-    const inputTokens = lastMeta.promptTokenCount ?? 0
-
-    // audioTokens: prefer exact AUDIO modality from candidatesTokensDetails
-    let audioTokens = 0
-    if (lastMeta.candidatesTokensDetails && lastMeta.candidatesTokensDetails.length > 0) {
-      const audioEntry = lastMeta.candidatesTokensDetails.find((d) => d.modality === "AUDIO")
-      if (audioEntry) {
-        audioTokens = audioEntry.tokenCount
-      } else {
-        // candidatesTokensDetails present but no AUDIO entry found →
-        // fallback to candidatesTokenCount (TTS output is audio-only)
-        audioTokens = lastMeta.candidatesTokenCount ?? 0
-      }
-    } else {
-      // No candidatesTokensDetails at all → fallback to candidatesTokenCount
-      // For TTS, the entire output is audio, so candidatesTokenCount ≈ audioTokenCount
-      audioTokens = lastMeta.candidatesTokenCount ?? 0
-    }
-
-    return { inputTokens, audioTokens }
+    return lastUsage ?? { inputTokens: 0, audioTokens: 0 }
   } catch {
     return { inputTokens: 0, audioTokens: 0 }
   }

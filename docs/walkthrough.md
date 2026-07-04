@@ -1,3 +1,98 @@
+## 2026-07-04 — proxy-tap-memory — תיקון ליקויים (harness + walkthrough)
+
+**מה בוצע:**
+
+- `packages/backend/tests/proxy-mem-regression.test.ts` (חדש) — regression test CI-runnable המחליף את `scripts/repro-proxy-mem.mjs` שנכשל בגלל `hono` לא מוחסן ב-workspace root. הtest בודק 256MB Gemini SSE stream + client שמבטל את הגוף (גרוע-ביותר עבור `tee()` הישן). תוצאה בפועל: `delta=0.1MB` (מתחת לתקציב 50MB).
+- `docs/walkthrough.md` — הוסף Commit 0, 1, 2 שחסרו; תוצאת ה-repro בפועל.
+
+**בדיקות:**
+
+- Regression test חדש: `RSS delta < 50MB when FE client cancels a 256MB Gemini stream` — עבר ב-1.02s, delta=0.1MB.
+- Backend total: 248 ירוקים / 266 (כשלים = known-bugs pre-existing: bun ENOENT + TLS Windows).
+- Typecheck: 0 שגיאות.
+
+**חריגות:**
+
+- הtest החדש מדמה `client.body.cancel()` (לא קריאה מלאה) — זה התרחיש המדויק שמרדכי אימת ידנית.
+
+---
+
+## 2026-07-04 — proxy-tap-memory — Commit 2 (ElevenLabs cache — tee→boundedCollector)
+
+**מה בוצע:**
+
+- `packages/backend/src/delivery/bounded-collect.ts` (חדש) — מצבר עד `PROXY_CACHE_MAX_ENTRY_BYTES=8MB`; מעל ה-cap: `truncated=true` → דולג על כתיבת המטמון (audio גדול מדי); ה-client stream תמיד מקבל מידע מלא.
+- `packages/backend/src/delivery/http-proxy.ts` — החלפת `tee()+cacheStreamInBackground` ב-TransformStream עם `boundedCollector`. מחיקת `cacheStreamInBackground` (לא בשימוש).
+
+**בדיקות:**
+
+- 22 טסטים ב-http-proxy.test.ts ירוקים.
+- Typecheck: 0 שגיאות. lint: נקי.
+
+**חריגות:**
+
+- אין.
+
+---
+
+## 2026-07-04 — proxy-tap-memory — Commit 1 (Gemini proxy tap — tee→TransformStream)
+
+**מה בוצע:**
+
+- `packages/backend/src/delivery/http-proxy.ts` — החלפת `tee()+readStreamInBackground` ב-TransformStream peek: הaccumulator (Commit 0) רץ inline על כל chunk ב-`transform()`; `flush()` מתעד usage אחרי ה-chunk האחרון. fail-safe: try/catch לעולם לא שובר stream. מחיקת `readStreamInBackground`.
+
+**בדיקות:**
+
+- 22 טסטים ב-http-proxy.test.ts ירוקים (20 קיימים + 2 חדשים: metering + RSS delta < 50MB על 64MB stream).
+- Typecheck: 0 שגיאות. lint: נקי.
+
+**חריגות:**
+
+- אין.
+
+---
+
+## 2026-07-04 — proxy-tap-memory — Commit 0 (createGeminiUsageAccumulator — TDD)
+
+**מה בוצע:**
+
+- `packages/core/src/usage/gemini-usage-accumulator.ts` (חדש) — accumulator incremental לחילוץ `usageMetadata` מזרם SSE של Gemini בלי לצבור audio. מטפל ב-line boundary (leftover) + utf8 boundary (TextDecoder stream).
+- `packages/core/src/usage/extract.ts` — חילוץ helper משותף `parseGeminiChunkUsage` (DRY: batch ו-incremental פועלים על לוגיקת-נרמול זהה). `extractGeminiUsage` — חתימה ללא שינוי.
+- `packages/core/src/usage/gemini-usage-accumulator.test.ts` (חדש) — 11 טסטים TDD.
+
+**בדיקות:**
+
+- TDD red→green: 36/36 ירוקים (gemini-usage-accumulator ×11, extract ×8, pricing ×17).
+- Typecheck: 0 שגיאות. lint: נקי.
+
+**חריגות:**
+
+- אין.
+
+---
+
+## 2026-07-04 — proxy-tap-memory — Commit 3 (RSS watchdog)
+
+**מה בוצע:**
+
+- `packages/backend/src/delivery/memory-guard.ts` (חדש) — `createMemoryGuard()`: RSS watchdog עם `setInterval` (5s, `.unref()`). `overBudget()` מחזיר `true` כש-RSS > threshold (default 1.5GB, override עם `RSS_BUDGET_MB` env). `stop()` מבטל את ה-interval.
+- `packages/backend/src/delivery/http-proxy.ts` — הוספת `memoryGuard?: MemoryGuard` ל-opts; בתחילת handler: `if (memoryGuard?.overBudget()) return 503`.
+- `packages/backend/src/server.ts` — import `createMemoryGuard`, יצירת instance, הזרקה ל-`registerProxyHttp`.
+- `packages/backend/tests/http-proxy.test.ts` — 2 טסטים חדשים: (1) `overBudget=true` → 503 + fetch לא נקרא; (2) `overBudget=false` → 200 רגיל.
+
+**בדיקות:**
+
+- 24 טסטים ב-http-proxy.test.ts ירוקים (כולל 2 חדשים).
+- Backend total: 757 ירוקים / 775 (כשלים = known-bugs pre-existing: bun ENOENT + TLS Windows).
+- Typecheck: 0 שגיאות.
+- Lint (biome, קבצים שנגעו): נקי.
+
+**חריגות:**
+
+- אין. defense-in-depth טהורה — אין שינוי ב-business logic.
+
+---
+
 ## 2026-07-03 — claude-inprocess-cli-env — Slice הושלם (3 commits)
 
 **מה בוצע:**
