@@ -1,7 +1,7 @@
 # Slice image-paste — הדבקת/גרירת/בחירת תמונות בתיבת הפרומפט — תוכנית
 
-> **תאריך**: 2026-06-28 (עודכן 2026-07-01 — Commits 4a+4b בוצעו ע"י אליעזר)
-> **סטטוס**: 🟡 **הושלם (ממתין לאימות calev-heavy)** — Commits 4a (provider TDD, 139/139) + 4b (FE flip+wiring, typecheck+build ירוקים). calev-heavy נדרש לאימות e2e חי. **branch**: `slice/image-paste` commits `68f2b76`+`fc3ceb3`.
+> **תאריך**: 2026-06-28 (עודכן 2026-07-04 — Commit 5 §11 הושלם)
+> **סטטוס**: ✅ **הושלם** — Commits 0–5 בוצעו. Commit 5 (§11): תיקון replay gate; #appendUserImage; 7 טסטים TDD ירוקים. branch `slice/image-paste` @ `c6a48e5`. ממתין לאימות calev-heavy + merge.
 > **Complexity**: 8/10 (verifier: **calev-heavy**)
 > **תלות (depends_on)**: `[]` — כל התלויות מוזגו ל-dev. (`slice-input-autogrow` מוזג `b3b5140` — TypeArea שונה, ראה §3.5. Track-A נספג ל-`packages/provider/` בקוד שלנו.)
 >   - ⚠️ **תיאום merge (רך, לא depends_on)**: `slice-warm-reattach-skip-init` (סשן אחר) נוגע גם הוא ב-`packages/provider/src/client/client.ts` (מחלץ `buildAcpClientFacade`). שניהם מבוססים על dev ושניהם נוגעים במתודת `prompt`/ה-facade. מי שממזג שני — יְיַשם מחדש את שינויו ב-facade (אולי) המרוענן. ראה §6.
