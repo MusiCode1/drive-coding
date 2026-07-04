@@ -1,7 +1,7 @@
 # Slice R3 — producer-ownership — תוכנית
 
 > **תאריך**: 2026-07-04
-> **סטטוס**: מאושר — אביגיל READY r2 (r1: 4 findings confusion/framing → תוקנו)
+> **סטטוס**: הושלם — 5 commits (18c0a84..3347beb) על slice/producer-ownership, 2026-07-05
 > **Complexity**: 8/10 (verifier: **calev-heavy**)
 > **base**: `slice/playlist-pure-decision` @ `9c13140` (R1 — calev GO, טרם מוזג)
 > **depends_on**: `[playlist-pure-decision]`
