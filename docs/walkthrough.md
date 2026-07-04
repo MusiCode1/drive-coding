@@ -1,3 +1,18 @@
+## 2026-07-05 — slice producer-ownership — R3 Commit 5: F1 טסט stop-during-active-play (TDD)
+
+**קבצים שהשתנו**: `engines/audio-playlist.test.ts`
+**שינויים**:
+- טסט F1 חדש: `stop() בזמן play פעיל → play-promise נפתר, loop יוצא נקי`
+- mock sink משופר `stopCurrentSink`: `stopCurrent()` פותר את כל ה-play-promises הפתוחים (חוזה Commit 2)
+- הטסט מאמת: reserve+markReady → loop מגיע ל-play → stop() → stopCurrent נקרא ≥1 → state=idle, items=[]
+**ריצת מוטציה**:
+- הסרת `this.#audioStream.stopCurrent?.()` מ-`stop()` → הטסט נפל: `expected 0 to be >= 1`
+- רק F1 נפל (10/11 עברו), לא טסט אחר — מוכיח רגישות
+- קוד שוחזר; 11/11 ירוקים
+**testing**: typecheck 0; 11/11 audio-playlist.test.ts; 466/467 FE suite (כישלון pre-existing: formatting.test.ts "לפני שתי דקות" — קיים לפני slice).
+
+---
+
 ## 2026-07-05 — slice producer-ownership — R3 Commit 4: Playlist צורך producer, מחיקת thunk+needsRefetch (manual)
 
 **קבצים שהשתנו**: `engines/audio-playlist.svelte.ts`, `engines/audio-playlist.nav.test.ts`

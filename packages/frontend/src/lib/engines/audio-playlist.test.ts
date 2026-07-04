@@ -366,6 +366,82 @@ describe("AudioPlaylist", () => {
 
   // ── Test 10: reserve() אחרי stop() → transport מתאפס ל-"playing" ──────────
 
+  /**
+   * F1 (Commit 5 — TDD): stop() בזמן play פעיל → play-promise נפתר דרך stopCurrent, loop יוצא נקי.
+   *
+   * Mock sink משופר: stopCurrent() פותר את ה-play-promise הנוכחי (חוזה Commit 2).
+   * הטסט מוכיח שהחוזה "stopCurrent פותר play" ממומש בפועל.
+   *
+   * רגישות (מוטציה): אם stop() לא יקרא stopCurrent() — ה-play-promise יישאר תלוי
+   * → הלולאה תיתקע → הטסט יפסל ב-timeout.
+   */
+  it("F1: stop() בזמן play פעיל → play-promise נפתר, loop יוצא נקי (stop-during-active-play)", async () => {
+    // mock sink שב-stopCurrent() פותר את ה-play-promise הנוכחי
+    const playOrder: string[] = []
+    const playResolvers = new Map<string, () => void>()
+    let stopCurrentCallCount = 0
+
+    const stopCurrentSink: AudioSink & {
+      playOrder: string[]
+      stopCurrentCallCount: () => number
+    } = {
+      playOrder,
+      stopCurrentCallCount: () => stopCurrentCallCount,
+      isComplete: () => false,
+      prepareSegment: async () => {},
+      play: (segmentId) => {
+        playOrder.push(segmentId)
+        return new Promise<void>((resolve) => {
+          playResolvers.set(segmentId, resolve)
+        })
+      },
+      stopCurrent: () => {
+        // פתור את כל ה-play promises הפתוחים — חוזה: stop unblocks play
+        stopCurrentCallCount++
+        for (const resolve of playResolvers.values()) {
+          resolve()
+        }
+        playResolvers.clear()
+      },
+      cancel: (segmentId) => {
+        const r = playResolvers.get(segmentId)
+        if (r !== undefined) {
+          r()
+          playResolvers.delete(segmentId)
+        }
+      },
+      clear: () => {
+        playResolvers.clear()
+      },
+      pause: () => {},
+      resume: () => {},
+    }
+
+    const playlist = new AudioPlaylist(stopCurrentSink, undefined, { reserveTimeoutMs: 5000 })
+
+    // שלב 1: reserve + markReady + completeSegment
+    playlist.reserve("s0", key(0), "bubble-0")
+    playlist.markReady("s0")
+    stopCurrentSink.isComplete = (id) => id === "s0" // s0 מוכן לניגון
+
+    // שלב 2: הלולאה מגיעה ל-play — play-promise תלוי
+    await vi.advanceTimersByTimeAsync(0)
+    expect(stopCurrentSink.playOrder).toContain("s0") // play הופעל
+
+    // s0 עדיין לא הסתיים (play-promise תלוי — לא קראנו resolvePlay)
+
+    // שלב 3: stop() בזמן play תלוי → stopCurrent() נקרא → play-promise נפתר
+    playlist.stop()
+    await vi.advanceTimersByTimeAsync(0)
+
+    // חוזה: stopCurrent() נקרא לפחות פעם אחת
+    expect(stopCurrentCallCount).toBeGreaterThanOrEqual(1)
+
+    // הלולאה יצאה נקי: state=idle, items=[]
+    expect(playlist.state).toBe("idle")
+    expect(playlist.items).toEqual([])
+  })
+
   it("reserve() אחרי stop() → transport מתאפס ל-playing, תור חדש מנוגן", async () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
