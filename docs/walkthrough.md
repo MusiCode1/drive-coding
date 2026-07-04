@@ -16,6 +16,20 @@
 **קובץ חדש**: `bubble-player.toggle.test.svelte.ts` — 3 טסטי-רגרסיה.
 **בדיקות**: 3/3 ירוקים; typecheck 0.
 
+### Commit 1 — core: playlist-decision.ts — החלטה כפונקציה טהורה (TDD)
+
+**קבצים חדשים**:
+- `packages/core/src/voice/playlist-decision.ts` — `decidePlaylistAction` (9 כללים) + `applyNavigation`
+- `packages/core/tests/voice/playlist-decision.test.ts` — 30 טסטים ממצים
+
+**RED לפני GREEN**: הטסטים נכתבו לפני המימוש; נכשלו עם "cannot find module".
+תיקון בינוני: `target===current` → self-navigation no-op (שכחתי early-return לפני בדיקת current).
+
+**כיסוי**: כל 9 ענפי decide + צירופים (buffered beats failed-fetch, playable beats waitedTooLong,
+playedToEnd+buffered→play, playedToEnd+explicitVisit→still-skip-decide); applyNavigation 9 cases.
+
+**בדיקות**: 30+ טסטים ירוקים; typecheck 0; 6 כשלים pre-existing (spawn-ENOENT, TLS-cert-Windows, formatting).
+
 ---
 
 ## 2026-07-03 — slice playback-nav-retain — פלייליסט ממומש: retain-and-replay + PlayableSink
