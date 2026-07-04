@@ -528,3 +528,40 @@ VM read-path + i18n + טסטים; אין UI חדש (render קיים), אין BE,
 
 ### §11.8 — depends_on
 `[Commit 4b]` (אותו סלייס — משתמש ב-`UserBubble.attachments` שהוגדר ב-Commit 3 ובמודל שהודלק ב-4b). base = ה-branch הנוכחי `slice/image-paste` @ HEAD.
+
+---
+
+## §12 — Commit 6: lightbox לתמונת-המשתמש (עקביות עם תמונת-הכלי)
+
+> **נוסף 2026-07-04** — המשתמשת תפסה חי: תמונות שהסוכן מציג (תוכן-כלי) נפתחות ב-lightbox בלחיצה, אבל תמונה שהמשתמש שלח (attachment בבועת-user) היא `<img>` חשוף שלא ניתן להגדיל. פער-עקביות בפיצ'ר. approach: **manual** (חיווט UI לתשתית קיימת, ללא לוגיקה חדשה).
+
+### §12.1 — השורש (מאומת)
+`UserBubble.svelte:58-62` מרנדר את ה-attachment כ-`<img>` חשוף. `ToolBubble.svelte:139-145` עוטף את תמונת-הכלי ב-`<button onclick={() => viewer.show({ kind:"image", src, alt })}>` (`viewer = getContentViewer()`, `$lib/context:81`). ה-lightbox (`ContentViewerVM.show`, `view-models/content-viewer.svelte.ts:14,27`) **גנרי וקיים** — ToolBubble כבר משתמש בו. UserBubble פשוט לא חובר.
+
+### §12.2 — Scope
+- ✅ עטיפת ה-`<img>` של כל attachment ב-`UserBubble.svelte` ב-`<button>` שקורא `viewer.show({ kind:"image", src:`data:${att.mimeType};base64,${att.dataBase64}`, alt })`.
+- ❌ שום שינוי במודל/VM/BE/i18n-key חדש. **חיווט-UI בלבד.**
+- ❌ הגדלת ה-placeholders (resource_link/audio/resource) — לא רלוונטי (אין להם תמונה).
+
+### §12.3 — נקודות-שינוי (קובץ יחיד)
+`packages/frontend/src/lib/components/chat/bubbles/UserBubble.svelte`:
+1. ייבוא: הוסף `getContentViewer` לשורת ה-import הקיימת מ-`$lib/context` (שורה 16), ו-`const viewer = getContentViewer()` ליד ה-getters (שורה ~30).
+2. בבלוק ה-attachments (58-62): עטוף את ה-`<img>` ב-`<button class="user-image-btn" onclick={() => viewer.show({ kind:"image", src, alt })} aria-label={t("contentViewer.expand")} title={t("contentViewer.expand")}>` — בדיוק כמו `ToolBubble.svelte:139-145`. שמור על ה-`src` הקיים; ה-`<img>` נשאר בפנים עם ה-class הקיים.
+3. CSS: `.user-image-btn` — reset (bg/border/padding 0, cursor pointer, display block/inline-flex), כמו `.tool-image-btn` ב-ToolBubble (`:294-296`). אפשר להעתיק את התבנית.
+
+> **i18n**: אין מפתח חדש — `contentViewer.expand` (`keys.ts:210`) קיים. `alt` — השאר `""` כמו היום (התמונה דקורטיבית; ה-aria על ה-button).
+
+### §12.4 — DoD
+| בדיקה | איך |
+|---|---|
+| לחיצה על תמונת-משתמש (attachment) → lightbox fullscreen נפתח | חי (calev) |
+| ה-lightbox מציג את אותה תמונה (data-URI תואם) | חי |
+| סגירת lightbox (overlay/Esc) עובדת | חי (מנגנון קיים) |
+| רגרסיה: רינדור התמונה עצמה ללא שינוי (גודל/מסגרת) | חי + visual |
+| typecheck + build + `lint:i18n` ירוקים | פקודות §0 |
+
+### §12.5 — Complexity
+חיווט-UI לתשתית קיימת, קובץ יחיד, אפס לוגיקה/מודל. **~2/10**. נמזג עם image-paste → ה-runtime-gate המשולב נשאר **calev-heavy**; אימות §12 = smoke קצר (לחיצה→lightbox) בתוך אותה ריצה.
+
+### §12.6 — depends_on
+`[Commit 3]` (`UserBubble.attachments` render) + slice `content-viewer` (מוזג `e2126e0` — `ContentViewerVM`/`getContentViewer`). base = `slice/image-paste` @ HEAD.
