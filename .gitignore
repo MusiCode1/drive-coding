@@ -34,3 +34,4 @@ packages/frontend/.build-old/
 
 # Worktrees live under .worktrees/ (each is its own checkout — never track as gitlink)
 .worktrees/
+.tmp/
