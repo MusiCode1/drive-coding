@@ -92,6 +92,41 @@ For the full build/serve flow (dev vs. production-like single-origin via
 `FE_STATIC_DIR`), HTTPS tunneling, and Windows blockers/workarounds (onecli/bun,
 opencode → use CLI=claude), see [`docs/running-locally.md`](docs/running-locally.md).
 
+### Preview rules — showing the user a build to verify
+
+> **Preview is a hard pre-merge gate.** מרדכי **never** merges anything before the
+> **user has seen and OK'd a live preview** with their own eyes. calev GO (especially
+> a static-only GO) is **not** a substitute — a green report never replaces the user
+> looking at a running build. Every merge is preceded by: build → serve → user views →
+> user approves → merge.
+
+When an agent (calev runtime-gate, or any "look at this and confirm" moment) serves
+the FE for the **user** to inspect, follow these rules:
+
+1. **Preview = a production build, never HMR.** Do **not** hand the user the Vite dev
+   server (`pnpm dev` / HMR) as a "preview". Build first
+   (`pnpm --filter @drive-coding/frontend build`) and serve the built output
+   (production-like single-origin via `FE_STATIC_DIR`, per `docs/running-locally.md`).
+   HMR is for the executor's own inner loop — it is **not** what we show the user.
+
+2. **Where the agent runs decides the URL:**
+   - **Agent runs on the user's own machine** → a `localhost` preview URL is enough
+     (secure-context Web APIs work over `http://localhost`).
+   - **Agent runs on a remote host** (e.g. the `cli-agents` box / `ufw`) → `localhost`
+     is unreachable for the user, and plain `http://` breaks the secure-context APIs
+     (`getUserMedia`, `AudioWorklet`). You **must** expose an **HTTPS tunnel** and give
+     the user the tunnel URL. Use the **pico + `tuns`** HTTPS tunnel (see
+     `docs/running-locally.md` for the exact command). Never ask the user to open a
+     plain-`http://` external address.
+
+3. **Hand over a URL the user can actually open over HTTPS** — that is the deliverable
+   of a preview, not a "it builds" report.
+
+> **TODO (after `ui-session-polish` is merged):** make the preview target
+> **environment-variable driven** (localhost vs. tunnel, and the tunnel URL) so the
+> serve flow is config-driven instead of decided ad-hoc per run. Tracked as a
+> follow-up; document the env var here once implemented.
+
 ## Git hooks
 
 After clone, run `pnpm hooks:install` once. It sets `core.hooksPath=.githooks/`
