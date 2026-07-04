@@ -43,7 +43,7 @@ function formatDate(iso: string): string {
       : "background:var(--fg-muted)"}
   ></span>
   <div class="flex-1 min-w-0">
-    <div class="text-sm font-medium truncate">{session.title || session.sessionId.slice(0, 8)}</div>
+    <div class="text-sm font-medium line-clamp-2">{session.title || session.sessionId.slice(0, 8)}</div>
     <div class="text-xs truncate" style="color:var(--fg-dim)">
       {session.cwd} · {formatDate(session.updatedAt)}
     </div>
