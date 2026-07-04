@@ -1,5 +1,51 @@
 # Decisions — voice-acp
 
+## 2026-07-04 — playlist-pure-decision (R1): חילוץ החלטת-הפלייליסט ל-core טהור + ערוץ-השכמה יחיד
+
+> ‏brief: `docs/plans/slice-playlist-pure-decision.md` (אביגיל READY r3) · base: `slice/playback-nav-retain` @ `3c3a0b7`
+> ‏חקירה: `docs/investigations/2026-07-04-playback-ownership-redesign.md` · ראשון בשרשרת R1→R4
+
+### רציונל
+שלושה באגים בשעת בדיקה-חיה אחת (`c39bc1e` קקפוניה+שקט, `3c3a0b7` קקפוניה-בניווט) + רביעי
+שנמצא בחקירה (else אבוד ב-`BubblePlayer.toggle`, merge `1328b9d`) — כולם מאותה משפחה:
+ההחלטה "מה לנגן עכשיו" שזורה בלולאה אימפרטיבית עם 4 ערוצי-השכמה נפרדים, והפלייליסט
+מחזיק עותק-מצב (`item.state`, 7 ערכים) של עובדות שהבעלים האמיתיים שלהן הם אחרים (fetch
+אצל היצרן, buffer אצל ה-sink). הכיוון: **עובדות→החלטה→פעולה** — `decidePlaylistAction`
++ `applyNavigation` טהורים ב-core (TDD ממצה), הלולאה = interpreter דק, ערוץ-השכמה יחיד
+(`bump`/version — אין lost-wakeup), וחוזה-סיום ל-`play()` (mp3 resolve-on-stop; pcm
+`#stopRequested` — כולל באג-סמוי שבו הקול "קם לתחייה" אחרי stop באמצע-stream). ‏API
+הצרכנים (Speaker/BubblePlayer/UI) לא משתנה. ‏R3 (בעלות-יצרן) ו-R4 (מחיקת הכפילויות)
+בהמשך השרשרת — ה-`item.state` נשאר בינתיים כ-adapter פנימי (`#factsFor`).
+
+### ממצאי אביגיל
+‏r1 (USABLE-AFTER-FIX, 4): ‏baseline הוא 22 it-blocks לא 43 · ה-mock של
+`audio-playlist.test.ts` חסר `isComplete`/`isPlayable` → השכתוב היה רץ על רשת-ביטחון
+ריקה · טסטי-core ב-`tests/voice/` לא co-located · ‏mapping של done-בלי-buffer שינה
+התנהגות בלי הצהרה. ‏r2 (USABLE-AFTER-FIX, 3 — כולן שיירי-עריכה): מספור 8→9 · "שיקוף
+1:1" סתר את החריגה-המוצהרת · ניסוח-מוחלט על co-location (המבנה בפועל מעורב). ‏r3: READY,
+0 findings. בדרך אומתו בפועל: 22/22 ירוקים על ה-base, ה-else-האבוד אומת כבאג-חי,
+תרחיש-הקצה jumpToBubble-לבועת-done-בלי-buffer מתיישב עם `toggle`.
+
+### שינויי-כיוון
+1. **היפוך סדר commits** (מ-finding r1): תיקון-ה-mocks עלה ל-Commit 3 (ירוק על הקוד
+   הקיים) והשכתוב ירד ל-Commit 4 — "מיישרים את הרשת לפני שמשכתבים תחתיה". מנגנון
+   ה-`.todo` הזמני נמחק כליל.
+2. **כלל 6 ב-decide** (`playedToEnd → skip`): ‏auto-advance משמר את הדילוג-השקט של היום
+   על done-בלי-buffer; **ביקור מפורש** (prev/jump) מסנתז-מחדש דרך `resetToPending` —
+   שינוי-התנהגות מוצהר (שיפור), לא שימור-בשוגג.
+
+### רעיונות שנדחו
+- ‏`state` כנגזרת מ-`currentSegmentId` — היה הופך ל-idle בין-סגמנטים ושובר את
+  מחוון-"מדבר" (Speaker.get state). נשאר שדה שהלולאה כותבת בנקודות של היום.
+- ‏`stop()` אסינכרוני — היה משנה חתימת-צרכנים; נשאר sync עם `#runPromise`-guard
+  (סוגר גם את חשש שתי-הלולאות).
+- טסטי-core co-located (תקדים `pcm`/`select`) — נדחה לטובת `tests/voice/` (תקדים
+  `tts-queue`, השכן הקרוב).
+- ‏mp3 progressive-playback (ניגון לפני endOfStream) — נדחה ל-future; `isPlayable(mp3)`
+  ≡ `isComplete` בכוונה.
+
+---
+
 ## 2026-07-01 — playback A2→B1: כל השרשרת בוצעה + reconcile; runtime-gate של B1 חסום על מפתח Gemini
 
 > תכנון מרדכי. מסמך-אב: `docs/plans/playback-run-control-roadmap.md`. **סטטוס: קוד גמור, טרם מוזג.**
