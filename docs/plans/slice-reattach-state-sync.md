@@ -55,8 +55,8 @@
     3. FE all-false fallback ב-`agent-session.svelte.ts` (‏`supports`/`ATTACHED_CAPS_FALLBACK` — כל object שבונה NormalizedCapabilities מלא).
     4. ‏2 literals בטסטים (`capabilities-static.test.ts` + FE/VM test) — הוסף `image:false`.
   - (אלטרנטיבה שנשקלה ונדחתה: `image?: boolean` optional — פחות churn אבל שובר עקביות עם 3 השדות האחרים; בחרנו non-optional + עדכון 4 האתרים.)
-- מנגנון tap: helper `extractPromptCaps(parsed)` (core, TDD — טהור).
-  - ⚠️ **finding אביגיל 🟡 — זיהוי מבני, לא לפי method:** ה-initialize **response** הוא frame מסוג **JSON-RPC result** — **אין בו `method`**. `extractPromptCaps` חייב לזהות מבנית: לחפש `parsed.result?.agentCapabilities?.promptCapabilities` (או `agentCapabilities.promptCapabilities` לפי צורת ה-`parsed` של `decodeWireLine`). מחזיר `{ image: boolean }` (או `undefined` אם אין `agentCapabilities` → לא frame של init).
+- מנגנון tap: helper `extractPromptCaps(parsed)` (core, TDD — טהור). **המפענח שלנו קיים — אין נגיעה במתאם:** `decodeWireLine` (`shared/wire-decode.ts`) כבר רץ בכל 3 ה-`connect-*` וחושף `parsed` (האובייקט המלא) + `responseKind` (`"result"`/`"error"`/undefined).
+  - ⚠️ **finding אביגיל 🟡 — זיהוי מבני, לא לפי method:** ה-initialize **response** הוא frame מסוג **JSON-RPC result** — **אין בו `method`**. הסימן המוכן: `WireSummary.responseKind === "result"` (`wire-decode.ts:38`) **וגם** `parsed.result?.agentCapabilities?.promptCapabilities` קיים. `extractPromptCaps(parsed)` מחזיר `{ image: boolean }` (או `undefined` אם אין `agentCapabilities` → לא frame של init). כך מבחינים init-response מ-notification (`method`) ומ-`error`.
   - חיווט בכל `connect-*`: ב-`handleLine`/tap של dir="in", אם `extractPromptCaps` מחזיר ערך → עדכן את ה-caps הפנימי. ⚠️ ה-`capabilities` היום `readonly` value — יהפוך ל-getter שקורא `let caps` פנימי mutable.
 - fallback: עד שנצפה init-response, `image=false` (בטוח).
 
@@ -124,3 +124,9 @@ BE (3 connect-* + types + registry + delivery) + FE (VM) + 3 ספקים + tap-wi
 | 2 | `isAlive` sync או async? | sync (pid signal-0 + conn-state שניהם sync) | ❌ |
 | 3 | tap init-frame — לאחסן רק `image` או את כל `promptCapabilities`? | כל `promptCapabilities` (audio/embeddedContext עתידיים ילכו באותו מסלול) | ❌ |
 | 4 | Phase B נפרד או מאוחד ל-`be-hang-supervisor`? | להכריע לפני dispatch של B | ❌ (רק ל-B) |
+
+## §10 — כיוון-עתיד (לא ב-scope): hooks במתאם
+
+ה-slice הזה משתמש ב-**tap פסיבי** (`decodeWireLine` על ה-wire) כדי להישאר **אגנוסטי למתאם** — קוד ה-`@agentclientprotocol/*` נשאר שקוף (עיקרון-יסוד של הפרויקט). זה עובד, אבל לוכד state *בדיעבד* מהתעבורה.
+
+**כיוון-עתיד (נדון 2026-07-04):** להכניס **hooks רשמיים למתאם** (callbacks על initialize/turn-lifecycle/capabilities) במקום הסקה מ-wire — נקי יותר וסמכותי יותר. אם המנגנון גנרי — **שקול PR upstream** ל-`agent-client-protocol`. עד אז, ה-tap הפסיבי הוא הגישה הנכונה (אפס תלות ב-fork/מתאם). אם/כשיוכנסו hooks — `extractPromptCaps` + turn-tracker יוחלפו בקריאות-hook ישירות, וה-`_drive/*` delivery + registry-hold נשארים ללא שינוי.
