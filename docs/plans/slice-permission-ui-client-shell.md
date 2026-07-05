@@ -1,7 +1,12 @@
 # Slice — permission-ui-client-shell — שלד לקוח לבקשות הרשאה
 
 > **תאריך**: 2026-06-28
-> **סטטוס**: DRAFT / ממתין לאביגיל
+> **סטטוס**: ✅ **הושלם** (4/4 commits, בוצע ע"י אליעזר 2026-07-05).
+> ⚠️ **הערה**: עותק זה (בענף ה-worktree) הוא **טיוטה שקדמה לאישור אביגיל r2** —
+> ה-base של הענף (`49b98e9`) קדם לעדכון ה-brief ל-READY על `dev`. הביצוע בפועל
+> נעשה לפי הגרסה המעודכנת (READY, אביגיל r2) שנקראה ישירות מ-`dev/docs/plans/...`
+> לפי הנחיית מרדכי ב-dispatch — כולל תיקון virtua-Virtualizer ב-§3 ו-arrow-bound
+> class fields ב-Commit 1. ראה `docs/walkthrough.md` לפרטי הביצוע המלאים.
 > **Complexity**: 6/10 (verifier: calev-light)
 > **תלויות (`depends_on`)**: `[]`
 > **Base**: `dev`
@@ -342,4 +347,11 @@ pnpm lint:rtl
 
 ## סטיות מהתכנון
 
-- ...
+- אין סטייה מ-הגרסה המעודכנת (READY, אביגיל r2) של הבריף. הביצוע כולל את כל
+  התיקונים שהוספו ב-r2 שלא מופיעים בעותק-הטיוטה הזה (virtua Virtualizer + מיקום
+  מחוץ ל-list ליד StatusBubble; resolvePermission/cancelPermission + harness
+  helper כ-arrow-bound class fields; גישור-חתימה מפורש onSelect/onCancel).
+- Commit 2 הוסיף גם כפתור ✕ נפרד (cancelPermission) שלא צוין ב-Commit 2 המקורי
+  כאן, כי `RequestPermissionOutcome` תומך ב-`cancelled` גם בלי בחירת option —
+  נדרש נתיב UI לכך מעבר לכפתורי ה-options.
+- ראה `docs/walkthrough.md` (entry 2026-07-05) לפירוט מלא פר-commit + תוצאות בדיקה.
