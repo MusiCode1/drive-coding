@@ -179,6 +179,7 @@ tool rendering, WS reconnect, אריזה (bunx/npm), Windows. הבסיס יצי�
 ## Future / רעיונות לא-מחייבים
 
 + **Backend-managed (HTTP/SSE transport)** — session-owner ב-backend, client דק, כמו טופולוגיית CodeNomad. מתועד ב-`provider-abstraction/docs/design/ideas/backend-managed-http-transport.md`. **רעיון אופציונלי** — לא ב-roadmap המחייב; לחזור אליו אם יציבות WS / איבוד-state יהפכו לכאב. **עדכון (sessions 848d3296/e7a6f5c1/e038a47a):** עלתה כוונה אקטיבית יותר — **להפוך את ספריית-הספקים עצמה לגשר** שמדבר frames מצד אחד ו-WS/SSE/HTTP/ACP מהשני, **הדרגתית** (שלב ראשון: רק לאשר בקשות; התשתית כבר תהיה שם). טרם הוכרע אם נכלל ב-M-מחייב.
++ **Native Android app + BE-מוטמע (Capacitor) + צינור-ACP דק בטרמוקס** — אפליקציה סגורה שאורזת FE+`core`, מריצה את כל לוגיקת-ה-ACP **בתוך ה-webview** (בלי Node/שרת/spawn — כי ה-FE כבר ה-ACP-client), בעוד טרמוקס נשאר רק כצינור `ACP-over-WS` שעושה `spawn`. קל-סוללה בעיצוב. **צרכן ישיר של רעיון-הגשר לעיל.** מתאם-ה-claude (Node+exec ל-claude-code) רץ בצד-טרמוקס — **לא נוגד את ה-cutover** (claude-code תמיד תהליך-נפרד; "in-process" = אירוח-המתאם בלבד); הסיכון האמיתי = מסלול-ext מעל WS. **כיוון עתידי מפורט + כל ההנחות-לאימות:** `docs/investigations/2026-07-02-native-app-embedded-be-direction.md`. **Future, לא מחייב.**
 + פיצ'רים שנדחו — ראה `docs/future-features.md`.
 
 ## מקורות (sub-roadmaps)
