@@ -305,6 +305,17 @@ export type MessageKey =
   // ─── app-title ─── (slice app-title-build-env)
   | "appTitle.settings"
   | "appTitle.sessions"
+  // ─── permission ─── (slice-permission-ui-client-shell)
+  | "permission.title"
+  | "permission.pending"
+  | "permission.resolved"
+  | "permission.cancelled"
+  | "permission.details"
+  | "permission.allowOnce"
+  | "permission.allowAlways"
+  | "permission.rejectOnce"
+  | "permission.rejectAlways"
+  | "permission.unknownOption"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

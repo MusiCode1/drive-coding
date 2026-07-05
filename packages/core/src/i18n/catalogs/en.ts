@@ -300,4 +300,15 @@ export const en: Catalog = {
   // ─── app-title ─── (slice app-title-build-env)
   "appTitle.settings": "Settings",
   "appTitle.sessions": "Sessions",
+  // ─── permission ─── (slice-permission-ui-client-shell)
+  "permission.title": "Permission request",
+  "permission.pending": "Waiting for approval",
+  "permission.resolved": "Answered",
+  "permission.cancelled": "Cancelled",
+  "permission.details": "Details",
+  "permission.allowOnce": "Allow once",
+  "permission.allowAlways": "Always allow",
+  "permission.rejectOnce": "Reject once",
+  "permission.rejectAlways": "Always reject",
+  "permission.unknownOption": "Option",
 }

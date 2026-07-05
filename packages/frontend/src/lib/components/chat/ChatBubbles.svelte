@@ -16,8 +16,10 @@
  * {#if chatScroll.scrollEl} מונע mount לפני שה-scrollEl קיים.
  */
 import { Virtualizer, type VirtualizerHandle } from "virtua/svelte"
-import { getI18n, getSession, getChatScroll } from "$lib/context"
+import { getChatScroll, getI18n, getSession } from "$lib/context"
 import BubbleRenderer from "./BubbleRenderer.svelte"
+// ─── slice-permission-ui-client-shell Commit 2: inline permission block ───
+import PermissionRequestBlock from "./PermissionRequestBlock.svelte"
 import StatusBubble from "./StatusBubble.svelte"
 
 const session = getSession()
@@ -46,6 +48,14 @@ $effect(() => {
   </Virtualizer>
 {/if}
 <StatusBubble />
+{#if session.pendingPermission}
+  <!-- slice-permission-ui-client-shell Commit 2: client shell בלבד — אין חיבור חי ל-ACP -->
+  <PermissionRequestBlock
+    request={session.pendingPermission}
+    onSelect={session.resolvePermission}
+    onCancel={session.cancelPermission}
+  />
+{/if}
 {#if session.bubbles.length === 0}
   <div class="empty">{t("chat.empty")}</div>
 {/if}

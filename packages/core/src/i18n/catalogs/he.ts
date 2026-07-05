@@ -296,4 +296,15 @@ export const he: Catalog = {
   // ─── app-title ─── (slice app-title-build-env)
   "appTitle.settings": "הגדרות",
   "appTitle.sessions": "סשנים",
+  // ─── permission ─── (slice-permission-ui-client-shell)
+  "permission.title": "בקשת הרשאה",
+  "permission.pending": "ממתין לאישור",
+  "permission.resolved": "נענה",
+  "permission.cancelled": "בוטל",
+  "permission.details": "פרטים",
+  "permission.allowOnce": "אשר פעם אחת",
+  "permission.allowAlways": "אשר תמיד",
+  "permission.rejectOnce": "דחה פעם אחת",
+  "permission.rejectAlways": "דחה תמיד",
+  "permission.unknownOption": "אפשרות",
 }
