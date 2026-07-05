@@ -49,7 +49,18 @@ export function createAgentWsHandler(deps: {
   connectionRegistry: ConnectionRegistry
 }): (ws: WebSocket, agentId: string) => void {
   // MED-8: חיבור FE WS פעיל אחד לכל agentId — מונע התנגשות מצב ACP בטאב שני
-  const activeFeWs = new Map<string, WebSocket>()
+  // be-shutdown-hardening Commit 2: מרחיבים ל-{ws,lastPingAt} לניקוי סוקטי-רפאים
+  // של קליינט-מת (לא זיהוי-hang — זה חיצוני-ל-loop, slice `be-hang-supervisor`).
+  const activeFeWs = new Map<string, { ws: WebSocket; lastPingAt: number }>()
+
+  const STALE_MS = 60_000 // 2+ פעימות שהוחמצו (FE שולח $/ping כל 25s — ws-transport.ts)
+  const sweep = setInterval(() => {
+    const now = Date.now()
+    for (const [, e] of activeFeWs) {
+      if (now - e.lastPingAt > STALE_MS) e.ws.terminate() // RST → "close" → detach הקיים מנקה
+    }
+  }, 20_000)
+  sweep.unref() // לא מעכב process.exit
 
   return function onConnect(feWs: WebSocket, agentId: string): void {
     const childLog = log.child({ agentId })
@@ -69,7 +80,7 @@ export function createAgentWsHandler(deps: {
       return
     }
 
-    activeFeWs.set(agentId, feWs)
+    activeFeWs.set(agentId, { ws: feWs, lastPingAt: Date.now() })
     deps.connectionRegistry.markAttached(agentId)
     childLog.info({ pid: conn.pid }, "WS connect → pipe attached")
 
@@ -111,6 +122,9 @@ export function createAgentWsHandler(deps: {
 
         // keepalive ספציפי ל-WS — עונים $/pong ולא מעבירים ל-child.
         if (text.includes('"$/ping"')) {
+          // be-shutdown-hardening Commit 2: מעדכן lastPingAt — הסימן היחיד שהקליינט חי.
+          const e = activeFeWs.get(agentId)
+          if (e) e.lastPingAt = Date.now()
           feWs.send(`${JSON.stringify({ jsonrpc: "2.0", method: "$/pong" })}\n`)
           return
         }

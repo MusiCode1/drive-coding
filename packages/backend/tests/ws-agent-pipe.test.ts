@@ -100,6 +100,7 @@ function makeMockConnectionRegistry(conn: ProviderConnection | null): {
         })(),
     ),
     get: vi.fn(() => conn ?? undefined),
+    list: vi.fn(() => []),
     markAttached: markAttachedSpy,
     markDetached: markDetachedSpy,
     getRuntimeInfo: vi.fn(() => null),

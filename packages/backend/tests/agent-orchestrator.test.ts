@@ -119,6 +119,7 @@ function makeConnectionRegistry(
   const reg: ConnectionRegistry = {
     connect: connectMock,
     get: vi.fn(() => undefined),
+    list: vi.fn(() => []),
     markAttached: vi.fn(),
     markDetached: vi.fn(),
     getRuntimeInfo: vi.fn(() => null),
