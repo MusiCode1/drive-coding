@@ -23,6 +23,52 @@
 
 ---
 
+## 2026-07-04 — slice-segment-word-safe — Commit 1: שורש B — נרמול תווי-כיווניות (bidi) + סיום סלייס (TDD)
+
+**מה בוצע (TDD — Red→Green):**
+
+- `packages/core/src/voice/sentence-boundary.ts`, בכניסת `splitIntoSentences` (לפני יצירת ה-`Intl.Segmenter` ולפני ה-`split(/\n{2,}/)`):
+  - `buffer = buffer.replace(/[‎‏‪-‮⁦-⁩]/g, "")` — מסיר LRM/RLM (200E/200F) + embeddings (202A-202E) + isolates (2066-2069). **ניקוד לא נגוע.**
+  - הערת-קוד: TTS-only — התווים נחוצים לתצוגה (הבועות מרונדרות מ-`bubble.segments` המקוריים), אך משבשים את `TERMINATOR_RE` ומנפחים את ספירת-`maxChars`; הסרתם כאן בטוחה כי הטקסט המנורמל זורם רק ל-TTS.
+- `packages/core/tests/voice/sentence-boundary.test.ts` — `describe("bidi normalization")`, 7 טסטים חדשים (RLM/LRM ב-`\u`-escapes, לא ליטרלים): RLM-אחרי-טרמינטור לא חוסם פליטה · RLM+רווח · control בלי bidi · RLM בתחילת chunk-המשך לא נדבק לסגמנט הבא · ניקוד נשמר (לא מנורמל) · ניפוח-אורך RLM לא משנה ספירת-סגמנטים · דו-לשוני (LRM/RLM סביב לטינית) — פיצול תקין בלי bidi בפלט.
+
+**בדיקות (TDD: Green 26/26):**
+- `sentence-boundary`: 26/26 ירוקים (19 קיימים מ-commit 0 + 7 חדשים)
+- `tsc --build` (מלוא ה-monorepo): 0 errors
+- `lint:i18n`: נקי (`.test.ts` ב-allowlist, ה-`\u`-escapes תקינים)
+- build-gate מלא (`vitest run`, 113 קבצי-טסט): 1186/1205 ירוקים. 19 נכשלים — **כולם pre-existing, לא קשורים לפלייבק/voice**: `bridge-failure-modes.test.ts` (spawn-ENOENT known-bug, מתועד ב-roadmap) · `https-serve.test.ts`/`tls.test.ts` (TLS-cert-Windows known-bug) · `formatting.test.ts` (הבדל-ICU של Node ב-`Intl.RelativeTimeFormat` — "לפני שתי דקות" מול "לפני 2 דקות" — אין קשר ל-sentence-boundary). **גילוי-סביבה בדרך:** ה-worktree חסר `packages/frontend/.svelte-kit/` (נוצר טרי ב-`git worktree add`, לא ב-git) → כל טסטי ה-FE נכשלו על `Cannot find module './.svelte-kit/tsconfig.json'`; תוקן חד-פעמית עם `npx svelte-kit sync` (ללא שינוי-קוד, לא-committed — תיקיה מיוצרת/gitignored).
+
+**חריגות:**
+- אין סטייה מה-brief. המימוש תואם במדויק את §4 Commit 1 (טווח-regex, מיקום-הנרמול, ניקוד לא-מנורמל).
+
+**סיכום-סלייס (2 commits, TDD מלא):**
+- commit 0 (`95418ac`) — שורש A. commit 1 — שורש B.
+- 26/26 טסטים ב-`sentence-boundary`, typecheck נקי, build-gate ירוק (חוץ מ-pre-existing known-bugs).
+- **סטטוס: הושלם** — ממתין ל-calev (smoke חי, §5 DoD) ואישור-מיזוג של מרדכי.
+
+---
+
+## 2026-07-04 — slice-segment-word-safe — Commit 0: שורש A — החזקת זנב הפסקה-האחרונה (TDD)
+
+**מה בוצע (TDD — Red→Green→Refactor):**
+
+- `packages/core/src/voice/sentence-boundary.ts` שורה ~65:
+  - הסרת `&& !isMulti` מהתנאי `if (isLastPara && isLastSeg)`.
+  - עדכון הערת-הקוד: הפסקה האחרונה (עוד בזרימה, אין `\n\n` אחריה) מטופלת כמו פסקה-בודדת — הזנב הלא-מסתיים מוחזק כ-`remaining`, מונע חיתוך-אמצע-מילה.
+- `packages/core/tests/voice/sentence-boundary.test.ts`:
+  - עדכון test 4 לציפייה החדשה: `sentences=["שלום"]`, `remaining="עולם"`.
+  - 3 טסטים חדשים (describe "streaming mid-word safety"): streaming multi-para mid-word, regression guard חד-פסקאתי, fixtures מנתוני-אמת (הודעת/בוצע/השינויים).
+
+**בדיקות (TDD: Red 3 → Green 19/19):**
+- טסטים: 19/19 ירוקים
+- typecheck: 0 errors
+- lint:i18n: נקי
+
+**חריגות:**
+- אין. תיקון שורת-שורש אחת, אפס שינוי ב-API.
+
+---
+
 ## 2026-07-04 — slice-image-paste — Commit 6: lightbox לתמונת-המשתמש (§12)
 
 **מה בוצע (manual — חיווט UI לתשתית קיימת):**
