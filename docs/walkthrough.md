@@ -1,3 +1,63 @@
+## 2026-07-05 — slice-permission-ui-client-shell — 4 commits: שלד לקוח לבקשות הרשאה
+
+**מה בוצע (client shell בלבד — אין חיבור חי ל-ACP, `depends_on: []`):**
+
+**Commit 0 — טיפוסי permission ומיפוי טהור (TDD):**
+- `packages/frontend/src/lib/types/permission.ts` (חדש): `PermissionParams`/
+  `PermissionResponse` נגזרים מ-`Client["requestPermission"]` (SDK), `PermissionRequestState`,
+  `PermissionOptionView`, `permissionSelected`/`permissionCancelled`, `toPermissionOptionViews`
+  (`option.name` — לא `option.label`; לא ממיין; לא ממציא options).
+- טסטים: 7/7 ירוקים (mapping/order/kind-passthrough/empty/selected/cancelled shapes).
+
+**Commit 1 — state bridge בצד VM בלבד (TDD):**
+- `agent-session.svelte.ts`: `pendingPermission = $state<PermissionRequestState|null>(null)`,
+  `beginPermissionForTestOrHarness(params)` (local-only, arrow-bound — משמש טסטים/harness),
+  `resolvePermission(requestId, optionId)`/`cancelPermission(requestId)` (arrow-bound class
+  fields — מועברים כ-callbacks). requestId שגוי → no-op. בקשה חדשה בזמן pending ישנה →
+  הישנה מסומנת cancelled ונדרסת. `#cancelPendingPermission()` פרטי קרוא מ-`#cleanup()`
+  (מכסה `detach`/`leaveRunning` שעוברים דרכו) ומ-`cancelTurn()` ישירות — סוגר כ-cancelled,
+  לא מוחק (state נשאר להצגה).
+- טסטים: `agent-session.permission.test.svelte.ts` — 11/11 ירוקים. regression: 87 טסטי
+  agent-session* ירוקים.
+
+**Commit 2 — UI inline + i18n (component/manual):**
+- `PermissionRequestBlock.svelte` (חדש): inline בצ'אט, לא modal, לא card-בתוך-card.
+  עיצוב קרוב ל-ToolBubble (status dot + title + `<details>` סגור כברירת מחדל עם raw
+  params). כפתורים מ-`request.options`; `option.name` הוא הטקסט הנראה (runtime
+  מה-agent) — kind (allow/reject/neutral) רק לצביעה/aria-label. handler פנימי מגשר:
+  `onSelect(request.id, option.optionId)`/`onCancel(request.id)`. kind לא-מוכר →
+  neutral + `option.name`. touch targets ≥40px. כפתור ✕ נפרד (cancelPermission) —
+  RequestPermissionOutcome תומך ב-cancelled גם בלי בחירת option.
+- `ChatBubbles.svelte`: `{#if session.pendingPermission}` **מחוץ** ל-`<Virtualizer>`,
+  ליד `<StatusBubble/>` — `session` כבר מ-`getSession()` context, אין props חדשים.
+- i18n: 10 מפתחות `permission.*` ב-`keys.ts`+`he.ts`+`en.ts`.
+
+**Commit 3 — dev/test harness verification (manual):**
+- `routes/chat/+page.svelte`: `/chat?mock=<name>&permission=1` (DEV-only, tree-shaken
+  מ-production, אותו pattern כמו `?mock=` הקיים) — קורא ל-`beginPermissionForTestOrHarness`
+  עם 4 options (allow_once/allow_always/reject_once + kind לא-מוכר מכוון
+  `custom_experimental`, מחוץ ל-`PermissionOptionKind` של ה-SDK — הוכחת neutral fallback).
+
+**בדיקות (סה"כ):**
+- typecheck: 0 errors/0 warnings (5070 files, svelte-check).
+- `lint:i18n` נקי, `lint:rtl` נקי.
+- טסטים: 436/437 ירוקים (18 חדשים ב-slice זה). הכשל היחיד — `formatting.test.ts`
+  (pre-existing, הבדל-ICU של Node ב-Windows, לא קשור).
+- אימות ויזואלי חי (playwright, `localhost:5173/chat?mock=greeting&permission=1`):
+  pending עם 4 options (כולל kind לא-מוכר, בלי קריסה) · details נפתח/נסגר עם raw
+  JSON קריא · mobile viewport (390px) — הכפתורים עוברים ל-wrap, אין overflow על
+  RecordFooter · resolve (Allow once) → status "נענה", הכפתור הנבחר מסומן (outline),
+  שאר הכפתורים disabled · cancel (✕) → status "בוטל", כל הכפתורים disabled.
+  Screenshots: `/tmp/permission-ui-client-shell/phase-3-{pending-desktop,details-open,
+  mobile,resolved,cancelled}.png`.
+
+**סטיות מהתכנון:** אין. מימוש תואם במדויק ל-§3/§4 של הבריף (כולל תיקון אביגיל r2 —
+virtua Virtualizer + מיקום מחוץ ל-list, ליד StatusBubble).
+
+**סטטוס: הושלם** — 4/4 commits, ממתין ל-calev-light + אישור-מיזוג של מרדכי.
+
+---
+
 ## 2026-07-04 — slice-rtl-bubble-fixes — 2 commits: תיקוני RTL-בועות
 
 **מה בוצע (manual — CSS/attribute בלבד, FE-טהור):**
