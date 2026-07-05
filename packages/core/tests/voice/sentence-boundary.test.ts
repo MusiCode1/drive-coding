@@ -281,3 +281,116 @@ describe("splitIntoSentences — bidi normalization (commit 1: fix B)", () => {
     expect(bidiRe.test(remaining)).toBe(false)
   })
 })
+
+describe("force-split floor", () => {
+  const minChars = 20
+  const maxChars = 200
+
+  it("test 1: orphan tail is absorbed — no chunk below minChars", () => {
+    // "מילה ".repeat(n) builds a long prefix, then a short trailing word ("סוף.")
+    // that force-split would otherwise emit as its own tiny tail chunk.
+    const long = "מילה ".repeat(40).trim() + " סוף."
+    const { sentences } = splitIntoSentences(long, { maxChars, minChars })
+    for (const s of sentences) expect(s.length).toBeGreaterThanOrEqual(minChars)
+  })
+
+  it("test 2: a healthy tail (>= minChars) is NOT merged (regression guard)", () => {
+    // Build a sentence whose force-split tail chunk is comfortably >= minChars,
+    // so the floor-pass must leave the chunk boundaries alone.
+    const long = "word ".repeat(60).trim() + "."
+    const before = splitIntoSentences(long, { maxChars: 200, minChars: 0 }).sentences
+    const after = splitIntoSentences(long, { maxChars: 200, minChars }).sentences
+    // no merging should occur: same chunk boundaries as the minChars=0 baseline
+    expect(after).toEqual(before)
+  })
+
+  it("test 3: merge-overflow bound — merged chunk <= maxChars + 2*minChars (double-absorption)", () => {
+    // Configuration [short prefix, giant word, short tail] forces the giant word's
+    // chunk to absorb BOTH neighbors (double-absorption), the true worst case.
+    const prefix = "אב" // 2 chars — well below minChars
+    const giant = "x".repeat(199) // just under maxChars alone, but combined with prefix > maxChars
+    const tail = "סוף" // 3 chars — well below minChars
+    const input = `${prefix} ${giant} ${tail}.`
+    const { sentences } = splitIntoSentences(input, { maxChars, minChars })
+    for (const s of sentences) {
+      expect(s.length).toBeLessThanOrEqual(maxChars + 2 * minChars)
+      expect(s.length).toBeGreaterThanOrEqual(minChars)
+    }
+  })
+
+  it("test 4: a single word longer than maxChars — single chunk, no crash, no merge", () => {
+    const input = "x".repeat(250) + "."
+    const { sentences } = splitIntoSentences(input, { maxChars, minChars })
+    expect(sentences.length).toBe(1)
+    expect(sentences[0]?.length).toBeGreaterThan(maxChars)
+  })
+
+  it("test 5: orphan tail that is NOT last is absorbed (finding 2 — non-last sub-floor chunk)", () => {
+    // A short prefix followed by a word so long it alone forces the prefix into
+    // its own sub-floor chunk (not the last chunk in the force-split output),
+    // followed by more normal content. The naive "fix only the last chunk"
+    // approach fails this test; the backward floor-pass must catch it too.
+    const prefix = "אב"
+    const giant = "x".repeat(199)
+    const input = `${prefix} ${giant} המשך ארוך תקין כדי לא ליצור עוד זנב קצר כאן בסוף המשפט הזה.`
+    const { sentences } = splitIntoSentences(input, { maxChars, minChars })
+    for (const s of sentences) expect(s.length).toBeGreaterThanOrEqual(minChars)
+  })
+
+  it("test 6: 3+ chunks, only the trailing orphan merges — middle chunks stay intact", () => {
+    // A long run of "word " content (multiple full maxChars-sized chunks) followed
+    // by a short trailing word. Only the tail should merge; earlier full chunks
+    // (well above minChars) must remain untouched.
+    const long = "word ".repeat(120).trim() + " סוף."
+    const { sentences } = splitIntoSentences(long, { maxChars, minChars })
+    expect(sentences.length).toBeGreaterThanOrEqual(3)
+    for (const s of sentences) expect(s.length).toBeGreaterThanOrEqual(minChars)
+    // the very last emitted chunk must not be the standalone short tail
+    expect(sentences[sentences.length - 1]).not.toBe("סוף.")
+  })
+
+  it("test 7: live fixture — the sentence that was caught live does not end in a standalone tail", () => {
+    // ~201 chars — long enough to force-split, with the trailing word "ביניהם."
+    // ending up as an orphan tail chunk before the floor-pass fix (the exact
+    // shape of the sentence caught live on 2026-07-05).
+    const input =
+      "מסקנה: הבנו את מלוא ההשלכות של השינוי הזה על כל שאר חלקי המערכת ולוודא שהצלחנו להבין לחלוטין ובאופן מלא ומדויק ביותר את מלוא אופיים המדויק של הקשרים ההדדיים ואת מכלול הכללים והחוקיות של המעברים ביניהם."
+    expect(input.length).toBeGreaterThan(maxChars)
+    const { sentences } = splitIntoSentences(input, { maxChars, minChars })
+    expect(sentences).not.toContain("ביניהם.")
+    for (const s of sentences) expect(s.length).toBeGreaterThanOrEqual(minChars)
+  })
+
+  it("test 8: minChars=0 disables the floor (regression guard — consistent with existing custom minChars=0 test)", () => {
+    const long = "מילה ".repeat(40).trim() + " סוף."
+    const withFloor = splitIntoSentences(long, { maxChars, minChars: 20 }).sentences
+    const withoutFloor = splitIntoSentences(long, { maxChars, minChars: 0 }).sentences
+    // disabling the floor must not error and may leave a short tail
+    expect(Array.isArray(withoutFloor)).toBe(true)
+    // sanity: the floor-enabled version should have fewer or equal chunks (merge only shrinks count)
+    expect(withFloor.length).toBeLessThanOrEqual(withoutFloor.length)
+  })
+
+  it("test 9: determinism — same input always yields the same output", () => {
+    const input = "מילה ".repeat(40).trim() + " סוף."
+    const r1 = splitIntoSentences(input, { maxChars, minChars })
+    const r2 = splitIntoSentences(input, { maxChars, minChars })
+    expect(r1).toEqual(r2)
+  })
+
+  it("test 10: existing maxChars tests remain green unchanged (no orphan tail in their inputs)", () => {
+    // test 6 fixture from the top describe block
+    const long = "word ".repeat(50).trim() + "."
+    const { sentences: s1 } = splitIntoSentences(long, { maxChars: 200 })
+    expect(s1.length).toBeGreaterThanOrEqual(2)
+    for (const s of s1) {
+      expect(s.length).toBeLessThanOrEqual(200)
+      expect(/word\.?$/.test(s)).toBe(true)
+    }
+
+    // "force-split chunks are also subject to maxChars" fixture
+    const verylong = "alpha ".repeat(200).trim() + "."
+    const { sentences: s2 } = splitIntoSentences(verylong, { maxChars: 100 })
+    for (const s of s2) expect(s.length).toBeLessThanOrEqual(100)
+  })
+})

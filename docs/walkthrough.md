@@ -1,3 +1,33 @@
+## 2026-07-05 — slice-tts-segment-floor — Commit 0: רצפת-זנב ב-forceSplitWords (TDD)
+
+**מה בוצע (TDD — Red→Green):**
+
+- `packages/core/src/voice/sentence-boundary.ts`:
+  - `forceSplitWords(text, maxChars, locale)` → `forceSplitWords(text, maxChars, minChars, locale)` (+פרמטר `minChars`).
+  - עדכון הקריאה היחידה (`splitIntoSentences`, שורה ~114) להעביר `minChars`.
+  - **לולאת-הצבירה הקיימת (על-גבי גבול-מילה) — ללא שינוי, אפס רגרסיה.**
+  - נוסף **floor-pass אחורני** בסוף הפונקציה (לפני `return chunks`): סורק את ה-chunks **מהסוף להתחלה**, וכל chunk `< minChars` מקופל לשכן (קודם מועדף; קדימה אם ראשון). מקיף גם זנב-יתום **לא-אחרון** (prefix קצר שנדחף כ-chunk-נפרד לפני מילה ענקית — finding 2 של אביגיל r1).
+- `packages/core/tests/voice/sentence-boundary.test.ts` — `describe("force-split floor")`, 10 טסטים חדשים לפי §4 של ה-brief: זנב-יתום נבלע (1) · זנב תקין לא-נבלע/regression (2) · חסם-חריגה `maxChars+2*minChars` ל-double-absorption `[קצר,ענק,קצר]` (3) · מילה-בודדת>maxChars (4) · **זנב-יתום לא-אחרון נבלע** (5, finding-2 המפיל post-pass נאיבי) · 3+ chunks עם רק-הזנב-מתמזג (6) · fixture חי (~201ch, "...המעברים ביניהם.") (7) · minChars=0 מכבה (8) · דטרמיניזם (9) · אי-רגרסיה לטסטי-maxChars הקיימים (10).
+
+**בדיקות (TDD: Red 6 → Green 36/36):**
+- RED מאומת קודם-קוד: 5 טסטים נכשלו מיידית (1/3/4/5/6), ותוקן fixture-הטסט-7 (המשפט המקורי היה קצר-מדי, 105ch — הורחב ל-~201ch כדי שבאמת יעבור דרך `forceSplitWords`) → 6/6 נכשלו לפני המימוש.
+- אחרי המימוש: 36/36 ירוקים (26 קיימים + 10 חדשים), כולל טסטי-maxChars הישנים ללא שינוי.
+- `pnpm --filter @drive-coding/core typecheck`: 0 שגיאות.
+- `pnpm lint:i18n` (הרצה ישירה דרך bash — ה-npm-script נכשל תחת cmd.exe ב-Windows, `.` לא מוכר; לא קשור לשינוי): נקי.
+- `pnpm typecheck` (מלוא ה-monorepo, `tsc --build`): 0 שגיאות.
+- build-gate מלא (`pnpm test`, 113 קבצי-טסט): 1190/1215 ירוקים, 17 מדולגים. **8 נכשלים — כולם pre-existing, לא קשורים ל-core/voice**: `bridge-failure-modes.test.ts` (spawn-ENOENT bun.exe, known-bug) · `https-serve.test.ts`/`tls.test.ts` (TLS-cert-Windows known-bug) · `http-proxy.test.ts`/`proxy-mem-regression.test.ts` (hook-timeout, לא קשור) · `formatting.test.ts` (הבדל-ICU `Intl.RelativeTimeFormat` — "לפני שתי דקות" מול "לפני 2 דקות").
+- **הכנת-סביבה חד-פעמית**: ה-worktree חסר `packages/frontend/.svelte-kit/` (gitignored, נוצר טרי) → `npx svelte-kit sync` בתוך `packages/frontend` (ללא שינוי-קוד, לא-committed).
+
+**חריגות:**
+- אין סטייה מה-brief. המימוש תואם במדויק את §4 Commit 0 (חתימה, מיקום-הקוד, קוד ה-floor-pass, החסם `maxChars+2*minChars`).
+- הרחבה קלה של fixture-הטסט-7 (מ-105 ל-~201 תווים) כדי שיעבור בפועל דרך `forceSplitWords` (ה-brief אמד "~207ch" — תיאום פרטני נדרש כדי לשמר RED-אמיתי).
+
+**סיכום-סלייס (commit יחיד, TDD מלא):**
+- 36/36 טסטים ב-`sentence-boundary`, typecheck נקי (core + monorepo), build-gate ירוק חוץ מ-8 pre-existing known-bugs.
+- **סטטוס: הושלם** — ממתין ל-calev (light, smoke חי §5 DoD) ואישור-מיזוג של מרדכי.
+
+---
+
 ## 2026-07-04 — slice-rtl-bubble-fixes — 2 commits: תיקוני RTL-בועות
 
 **מה בוצע (manual — CSS/attribute בלבד, FE-טהור):**

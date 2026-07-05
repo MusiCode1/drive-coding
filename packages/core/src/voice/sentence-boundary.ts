@@ -111,7 +111,7 @@ export function splitIntoSentences(buffer: string, opts: SplitOptions = {}): Spl
       if (s.length <= maxChars) {
         final.push(s)
       } else {
-        for (const chunk of forceSplitWords(s, maxChars, locale)) final.push(chunk)
+        for (const chunk of forceSplitWords(s, maxChars, minChars, locale)) final.push(chunk)
       }
     }
   }
@@ -124,7 +124,7 @@ export function splitIntoSentences(buffer: string, opts: SplitOptions = {}): Spl
   return { sentences: final, remaining }
 }
 
-function forceSplitWords(text: string, maxChars: number, locale: string): string[] {
+function forceSplitWords(text: string, maxChars: number, minChars: number, locale: string): string[] {
   const wordSegmenter = new Intl.Segmenter(locale, { granularity: "word" })
   const chunks: string[] = []
   let cur = ""
@@ -139,5 +139,21 @@ function forceSplitWords(text: string, maxChars: number, locale: string): string
     }
   }
   if (cur.trim().length > 0) chunks.push(cur.trim())
+
+  // floor-pass (תקרה רכה): כל chunk תת-רצפה נבלע לשכן — קודם מועדף, קדימה אם הוא הראשון.
+  // סורק אחורה כדי לטפל גם בזנב-יתום לא-אחרון (prefix קצר לפני מילה ענקית — finding 2).
+  // חריגה חסומה: כשכל מילה ≤ maxChars, chunk ממוזג ≤ maxChars+2*minChars (double-absorption ב-[קצר,ענק,קצר]).
+  if (minChars > 0) {
+    for (let i = chunks.length - 1; i >= 0 && chunks.length > 1; i--) {
+      const c = chunks[i] ?? ""
+      if (c.length >= minChars) continue
+      if (i > 0) {
+        chunks.splice(i - 1, 2, `${chunks[i - 1]} ${c}`)
+      } else {
+        chunks.splice(0, 2, `${c} ${chunks[1]}`)
+      }
+    }
+  }
+
   return chunks
 }
