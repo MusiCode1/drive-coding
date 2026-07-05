@@ -11,7 +11,7 @@
  *   Normalization (slice of trailing \n for record/decode) is the WRAPPER's responsibility.
  */
 
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
+import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process"
 import { createInterface } from "node:readline"
 import { createLogger } from "@drive-coding/core/log"
 import { getCliCommand, getCliSpec } from "../config/index.js"
@@ -24,6 +24,40 @@ import type {
 
 const log = createLogger("provider.host.spawn-core")
 const STDERR_MAX_LINES = 200
+
+/**
+ * killTree — kill-tree (slice be-shutdown-hardening): kills the whole process
+ * group (POSIX) / process tree (Windows), not just the direct child. Prevents
+ * orphaned grandchildren (e.g. npx → node) from surviving a kill().
+ *
+ * POSIX: process.kill(-pid, signal) targets the process GROUP (negative pid).
+ *   Requires the child to have been spawned with detached:true (see spawnInternal
+ *   below) — otherwise the group IS the BE's own group (🔴 critical risk, §6).
+ *   ESRCH → already dead, fine. Any other failure → fallback to single-pid kill.
+ * Windows: `taskkill /PID <pid> /T [/F]` — /T = tree, /F = force (SIGKILL-equivalent).
+ * Both branches swallow all errors — kill must never throw into the caller.
+ */
+function killTree(pid: number, signal: "SIGTERM" | "SIGKILL"): void {
+  try {
+    if (process.platform === "win32") {
+      spawnSync("taskkill", ["/PID", String(pid), "/T", ...(signal === "SIGKILL" ? ["/F"] : [])])
+      return
+    }
+    try {
+      process.kill(-pid, signal)
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === "ESRCH") return // already dead — fine
+      try {
+        process.kill(pid, signal) // fallback: single-pid (group kill unavailable)
+      } catch {
+        /* ignore — kill never throws */
+      }
+    }
+  } catch {
+    /* kill never throws */
+  }
+}
 
 export interface SpawnCoreHooks {
   /**
@@ -108,6 +142,8 @@ export function createSpawnCore(hooks?: SpawnCoreHooks): SpawnCore {
         cwd: input.cwd,
         env: childEnv,
         stdio: ["pipe", "pipe", "pipe"],
+        detached: process.platform !== "win32", // POSIX process-group; required for killTree(-pid)
+        windowsHide: true, // no flashing console window on Windows
       })
     } catch (err) {
       childLog.warn({ err }, "spawn threw synchronously")
@@ -219,12 +255,25 @@ export function createSpawnCore(hooks?: SpawnCoreHooks): SpawnCore {
       const entry = store.get(bridgeId)
       if (!entry) return false
       log.info({ bridgeId }, "kill")
+      const pid = entry.child.pid
       // Remove before exit event fires — prevents notifyCrash on intentional kill.
       store.delete(bridgeId)
+      if (!pid) return true
       return new Promise<boolean>((resolve) => {
         entry.child.once("exit", () => resolve(true))
-        entry.child.kill("SIGTERM")
-        setTimeout(() => entry.child.kill("SIGKILL"), 5000)
+        if (process.platform === "win32") {
+          // Windows: taskkill /T /F directly — there is no real SIGTERM there
+          // (child.kill("SIGTERM") already mapped to TerminateProcess), and
+          // taskkill WITHOUT /F reliably fails for console node.exe processes
+          // (exit 255, "can only be terminated forcefully") — verified live.
+          // Escalation-then-graceful would only add a useless 5s stall.
+          killTree(pid, "SIGKILL")
+        } else {
+          // POSIX: graceful group-kill first, escalate to SIGKILL after 5s.
+          killTree(pid, "SIGTERM")
+          const escalate = setTimeout(() => killTree(pid, "SIGKILL"), 5000)
+          entry.child.once("exit", () => clearTimeout(escalate))
+        }
       })
     },
 

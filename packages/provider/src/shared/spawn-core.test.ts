@@ -39,6 +39,28 @@ function getEchoScript(line: string): string {
   return echoScriptPath
 }
 
+/**
+ * Script that spawns a detached grandchild (own process group) and writes its
+ * pid to gpidFile — used to verify kill-tree kills the WHOLE group, not just
+ * the direct child (be-shutdown-hardening Commit 0).
+ */
+function getGrandchildScript(gpidFile: string): string {
+  const scriptPath = path.join(os.tmpdir(), "spawn-core-grandchild.mjs")
+  fs.writeFileSync(
+    scriptPath,
+    [
+      'import { spawn } from "node:child_process"',
+      'import fs from "node:fs"',
+      `const gp = spawn(process.execPath, ["-e", "setInterval(() => {}, 99999)"], { stdio: "ignore" })`,
+      `fs.writeFileSync(${JSON.stringify(gpidFile)}, String(gp.pid))`,
+      "setInterval(() => {}, 99999);",
+      "",
+    ].join("\n"),
+    "utf8",
+  )
+  return scriptPath
+}
+
 /** Set env vars so OPENCODE_BIN=node and OPENCODE_ARGS=[scriptPath]. Returns cleanup fn. */
 function useScript(scriptPath: string): () => void {
   const prevBin = process.env.OPENCODE_BIN
@@ -152,6 +174,59 @@ describe("spawn-core — hooks and lifecycle", () => {
     await core.kill("kill-test-1")
     expect(core.get("kill-test-1")).toBeNull()
   })
+
+  // POSIX-only: kill-tree relies on process.kill(-pid) group semantics, which
+  // requires the child to be spawned with detached:true (Commit 0). Windows
+  // uses `taskkill /T` — verified live in the DoD (calev), not unit-testable here.
+  it.skipIf(process.platform === "win32")(
+    "kill() kills the whole process group — grandchild dies too (POSIX)",
+    async () => {
+      const gpidFile = path.join(os.tmpdir(), `spawn-core-gpid-${Date.now()}.txt`)
+      const scriptPath = getGrandchildScript(gpidFile)
+      const core = createSpawnCore()
+      const cleanup = useScript(scriptPath)
+      let child: ChildProcessWithoutNullStreams
+      try {
+        const handle = await core.spawnWithStderr("killtree-1", {
+          cliKind: "opencode",
+          cwd: os.tmpdir(),
+          modelOverride: null,
+        })
+        child = handle.child
+      } finally {
+        cleanup()
+      }
+      spawnedChildren.push(child)
+
+      // Wait for the grandchild to write its pid.
+      let gpid = 0
+      await new Promise<void>((resolve) => {
+        const deadline = setTimeout(() => resolve(), 2000)
+        const interval = setInterval(() => {
+          if (fs.existsSync(gpidFile)) {
+            const content = fs.readFileSync(gpidFile, "utf8").trim()
+            if (content) {
+              gpid = Number(content)
+              clearInterval(interval)
+              clearTimeout(deadline)
+              resolve()
+            }
+          }
+        }, 20)
+      })
+      expect(gpid).toBeGreaterThan(0)
+
+      await core.kill("killtree-1")
+
+      // Give the SIGTERM signal a moment to propagate to the grandchild.
+      await new Promise((r) => setTimeout(r, 200))
+
+      // ESRCH — process.kill(gpid, 0) throws if the process no longer exists.
+      expect(() => process.kill(gpid, 0)).toThrow()
+
+      fs.rmSync(gpidFile, { force: true })
+    },
+  )
 
   it("shapeEnv hook called via spawn()", async () => {
     const calls: string[] = []
