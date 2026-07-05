@@ -108,6 +108,22 @@ describe("connection-registry — basic Map operations", () => {
     await reg.close("agent-5")
     await expect(reg.close("agent-5")).resolves.toBeUndefined()
   })
+
+  // be-shutdown-hardening Commit 1: list() feeds graceful shutdown.
+  it("list() returns empty array when no connections", () => {
+    const reg = createConnectionRegistry()
+    expect(reg.list()).toEqual([])
+  })
+
+  it("list() returns all live agentIds; shrinks after close", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("list-a", "opencode", { cwd: os.tmpdir() })
+    await reg.connect("list-b", "opencode", { cwd: os.tmpdir() })
+    expect(reg.list().sort()).toEqual(["list-a", "list-b"])
+    await reg.close("list-a")
+    expect(reg.list()).toEqual(["list-b"])
+    await reg.close("list-b")
+  })
 })
 
 describe("connection-registry — attached-state", () => {

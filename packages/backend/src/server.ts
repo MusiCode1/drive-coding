@@ -247,6 +247,35 @@ httpServer.on("upgrade", (req, socket, head) => {
 
 log.info({ port }, "listening")
 
+// ── Graceful shutdown (be-shutdown-hardening Commit 1) ──────────────────────
+// SIGINT/SIGTERM → close all live connections (spawn: kill-tree via Commit 0;
+// in-process: their own close()) → close WS servers → close httpServer → exit.
+// force-timeout fallback: if something hangs (e.g. keep-alive sockets), don't
+// wait forever — exit anyway after 8s. NOTE: does not fix an event-loop hang
+// (that requires an external watchdog — slice `be-hang-supervisor`).
+let shuttingDown = false
+async function gracefulShutdown(sig: string): Promise<void> {
+  if (shuttingDown) return
+  shuttingDown = true
+  procLog.info({ sig }, "graceful shutdown — closing connections + children")
+  const force = setTimeout(() => {
+    procLog.warn({}, "shutdown timeout — forcing exit")
+    process.exit(0)
+  }, 8000)
+  force.unref()
+  try {
+    await Promise.allSettled(connectionRegistry.list().map((id) => connectionRegistry.close(id)))
+    echoWss.close()
+    agentWss.close()
+    await new Promise<void>((r) => httpServer.close(() => r()))
+  } catch (e) {
+    procLog.error({ err: e }, "error during shutdown")
+  }
+  process.exit(0)
+}
+process.on("SIGINT", () => void gracefulShutdown("SIGINT"))
+process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"))
+
 /**
  * הרצה ידנית (dev/debug) — BE על פורט נפרד, משרת FE סטטי, דרך OneCLI:
  *

@@ -44,6 +44,9 @@ export type ConnectionRegistry = {
 
   get(agentId: string): ProviderConnection | undefined
 
+  /** list — כל ה-agentIds החיים (לכיבוי-מסודר, be-shutdown-hardening Commit 1). */
+  list(): string[]
+
   markAttached(agentId: string): void
   markDetached(agentId: string): void
 
@@ -154,6 +157,10 @@ export function createConnectionRegistry(opts?: {
 
     get(agentId) {
       return map.get(agentId)?.conn
+    },
+
+    list() {
+      return [...map.keys()]
     },
 
     markAttached(agentId) {
