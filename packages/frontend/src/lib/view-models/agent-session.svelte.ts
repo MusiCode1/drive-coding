@@ -46,6 +46,12 @@ import type {
   ToolLocation,
   UserBubble,
 } from "$lib/types/bubble"
+// ─── slice-permission-ui-client-shell Commit 1: state bridge בלבד — אין חיבור חי ל-ACP ───
+import {
+  type PermissionParams,
+  type PermissionRequestState,
+  toPermissionOptionViews,
+} from "$lib/types/permission"
 // ─── slice leave-running-background ───
 import { isBypassMode } from "$lib/util/permission-mode"
 import type { Settings } from "$lib/view-models/settings.svelte"
@@ -145,6 +151,15 @@ export class AgentSession {
   // ─── slice session-title: כותרת הסשן הפעיל ─── (תוספתי)
   /** כותרת הסשן הפעיל. snapshot מרגע הטעינה/החלפה. "" = אין כותרת (סשן חדש). */
   sessionTitle = $state<string>("")
+
+  // ─── slice-permission-ui-client-shell: state bridge לבקשת-הרשאה inline ─── (תוספתי)
+  /**
+   * בקשת ההרשאה הממתינה הנוכחית (אם יש). client shell בלבד — מאוכלס כרגע רק דרך
+   * beginPermissionForTestOrHarness (טסטים / dev harness), לא דרך ACP חי (אין
+   * onRequestPermission מחובר ל-createAcpClient בסלייס הזה).
+   * אחרי resolve/cancel: נשאר לא-null (disabled להצגה) — לא נמחק מיידית (§9 Q3).
+   */
+  pendingPermission = $state<PermissionRequestState | null>(null)
 
   // ─── image-attach: capability gating ─── (slice-image-paste, additive)
   /**
@@ -1263,6 +1278,47 @@ export class AgentSession {
       // best-effort — בכל מקרה נאלץ idle מקומית
     }
     this.#setTurnState("idle")
+    // ─── slice-permission-ui-client-shell: ביטול תור סוגר pending permission ───
+    this.#cancelPendingPermission()
+  }
+
+  // ─── slice-permission-ui-client-shell: bridge בקשת-הרשאה (client shell בלבד) ─────────
+
+  /**
+   * מייצר pendingPermission חדש מ-PermissionParams — local-only, **לא** דרך ACP חי.
+   * משמש טסטים ו-dev/test harness (Commit 3) להדגמת ה-UX בלי חיבור לסוכן אמיתי.
+   * אם יש pending ישנה עדיין "pending" — מסומנת cancelled ונדרסת (§4 Commit 1 חוקים).
+   */
+  beginPermissionForTestOrHarness = (params: PermissionParams): void => {
+    this.#cancelPendingPermission()
+    this.pendingPermission = {
+      id: crypto.randomUUID(),
+      raw: params,
+      options: toPermissionOptionViews(params),
+      status: "pending",
+    }
+  }
+
+  /**
+   * פותר את בקשת-ההרשאה הממתינה בבחירת optionId. requestId שגוי (לא תואם ל-pending
+   * הנוכחית) — no-op, לא פותר. אחרי resolve: state נשאר (disabled להצגה), לא נמחק.
+   */
+  resolvePermission = (requestId: string, optionId: string): void => {
+    if (!this.pendingPermission || this.pendingPermission.id !== requestId) return
+    this.pendingPermission = {
+      ...this.pendingPermission,
+      status: "resolved",
+      selectedOptionId: optionId,
+    }
+  }
+
+  /**
+   * מבטל את בקשת-ההרשאה הממתינה. requestId שגוי — no-op. אחרי cancel: state נשאר
+   * (disabled להצגה), לא נמחק.
+   */
+  cancelPermission = (requestId: string): void => {
+    if (!this.pendingPermission || this.pendingPermission.id !== requestId) return
+    this.pendingPermission = { ...this.pendingPermission, status: "cancelled" }
   }
 
   // ─── slice claude-thinking-meta: _meta helper ───
@@ -1314,7 +1370,17 @@ export class AgentSession {
     this.modes = result.modes ?? null
   }
 
+  // ─── slice-permission-ui-client-shell: helper פרטי לסגירת pending ───
+  /** סוגר pendingPermission "pending" ל-cancelled — לא מוחק. no-op אם אין pending פתוחה. */
+  #cancelPendingPermission(): void {
+    if (this.pendingPermission && this.pendingPermission.status === "pending") {
+      this.pendingPermission = { ...this.pendingPermission, status: "cancelled" }
+    }
+  }
+
   #cleanup(opts?: { keepAgent?: boolean }): void {
+    // ─── slice-permission-ui-client-shell: cleanup סוגר pending permission ───
+    this.#cancelPendingPermission()
     // לכוד את ה-agentId לפני האיפוס — צריך אותו ל-deleteAgent.
     const agentId = this.agentId
     // נקה timer של tail-debounce (msr-v2 — NBug1 opencode)
@@ -1538,10 +1604,23 @@ export class AgentSession {
       // נשלח על ידי הסוכן במהלך ניגון מחדש של ההיסטוריה מ-loadSession (לפי מפרט ACP
       // סעיף §session-setup#loading-sessions). לעולם לא מגיע בתורים חיים —
       // אלה מקורם מ-sendPrompt ואנחנו מוסיפים להם את הבועה האופטימית שם.
-      const content = update.content as { type?: string; text?: string; data?: string; mimeType?: string; name?: string; uri?: string } | undefined
+      const content = update.content as
+        | {
+            type?: string
+            text?: string
+            data?: string
+            mimeType?: string
+            name?: string
+            uri?: string
+          }
+        | undefined
       if (content?.type === "text") {
         this.#appendChunk("user", content.text ?? "", messageId)
-      } else if (content?.type === "image" && content.data !== undefined && content.mimeType !== undefined) {
+      } else if (
+        content?.type === "image" &&
+        content.data !== undefined &&
+        content.mimeType !== undefined
+      ) {
         this.#appendUserImage(messageId, { mimeType: content.mimeType, data: content.data })
       } else if (content?.type === "resource_link") {
         // resource_link: מצרף placeholder כדי למנוע איבוד-שקט.
@@ -1558,7 +1637,8 @@ export class AgentSession {
       return
     }
 
-    const text = update.content?.type === "text" ? ((update.content as { text?: string }).text ?? "") : ""
+    const text =
+      update.content?.type === "text" ? ((update.content as { text?: string }).text ?? "") : ""
     if (!text) return
 
     if (update.sessionUpdate === "agent_message_chunk") {
@@ -1718,10 +1798,7 @@ export class AgentSession {
    * לכן .push() על undefined יקרוס. לכן כאן **השמה** (`[..., a]`) — פותרת גם את
    * ה-undefined-init וגם מבטיחה reactivity על מערך שנוסף מאפס.
    */
-  #appendUserImage(
-    messageId: string | null,
-    img: { mimeType: string; data: string },
-  ): void {
+  #appendUserImage(messageId: string | null, img: { mimeType: string; data: string }): void {
     const last = this.bubbles[this.bubbles.length - 1]
     const canGroup =
       last !== undefined &&
