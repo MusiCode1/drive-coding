@@ -8932,3 +8932,37 @@ Commit 4 (systemd + docs):
 **חריגות:**
 - biome.json global lint נכשל (CRLF vs LF pre-existing issue) — קבצים שנגעתי בהם עברו biome check פרטני ✓.
 - smoke ידני בדפדפן לא בוצע (לא-חסם עבור calev).
+
+## 2026-07-07 — slice-slash-commands — Commit 0 (TDD)
+
+### מה בוצע?
+
+`packages/frontend/src/lib/view-models/agent-session.svelte.ts` — handler ל-`available_commands_update`
+בדיוק לפי תקדים `acp-mode-config-sync` (mode/config handlers):
+- import טיפוס `AvailableCommand` מ-`@agentclientprotocol/sdk` (הרגיל — לא ה-alias `acp-sdk-v1`).
+- שדה חדש `availableCommands = $state<AvailableCommand[]>([])` ליד `modes`/`configOptions`.
+- handler ב-`#onSessionUpdate` **לפני** ה-gate `if (!text) return`, ליד `config_option_update`:
+  מאמת `Array.isArray` על ה-payload, אחרת מאפס ל-`[]` (לא קורס).
+- `#captureSessionConfig` — הוספת איפוס `this.availableCommands = []` בהחלפת/פתיחת סשן
+  (ה-update הטרי מגיע *אחרי* תגובת session/new/load, כך שהאיפוס לא דורס נתון טרי).
+
+הבדיקה `agent-session.slash-commands.test.svelte.ts` כבר הייתה כתובה (RED) מסשן קודם שנקטע
+מסיבת-רשת — נבדקה ונמצאה תקינה ושלמה מול הבריף, לא נכתבה מחדש.
+
+### בדיקות
+
+- 4/4 טסטי-Commit-0 ירוקים (`npx vitest run slash-commands`): איכלוס מ-update, איפוס על payload
+  ריק, אי-קריסה על payload לא-מערך, איפוס ב-`#captureSessionConfig` בהחלפת-סשן.
+- `pnpm typecheck` — ירוק (tsc --build, 0 errors).
+- `pnpm lint:i18n` (דרך `bash scripts/lint-no-hebrew-in-code.sh` ישירות — ה-alias `pnpm lint:i18n`
+  נכשל ב-Windows cmd-shell resolution, לא קשור לסלייס) — נקי.
+- `pnpm test` (frontend, מלא) — 422/423 ירוק; הכישלון היחיד (`formatting.test.ts` — "לפני 2 דקות"
+  מול "לפני שתי דקות") הוא **pre-existing** (אושר עם `git stash` על אותו commit בסיס, ללא השינויים
+  שלי — נכשל זהה; הבדל ICU/Node locale-rendering, לא-קשור ל-slash-commands).
+
+### חריגות
+
+- `pnpm lint` (biome, global) — נכשל על CRLF-vs-LF ב-קבצים רבים ברחבי הריפו (pre-existing, ראה
+  entry קודם `slice-app-title-build-env`). אימתתי עם `git stash` שאותו כישלון קיים גם *לפני*
+  השינויים שלי על `agent-session.svelte.ts` — לא רגרסיה. `biome check` פרטני על שני הקבצים
+  שנגעתי בהם מראה אותה שגיאת-CRLF בלבד (לא שגיאת-תוכן).
