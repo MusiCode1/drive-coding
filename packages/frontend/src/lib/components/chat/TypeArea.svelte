@@ -43,6 +43,21 @@ let selectedIndex = $state(0)
 const slash = $derived(matchSlashCommands(promptText, session.availableCommands))
 const menuOpen = $derived(!!slash && slash.matches.length > 0 && !dismissed)
 
+// ─── ghost-hint (slice-slash-menu-native, Commit 2) ─────────────────────────
+// כשה-textarea מכיל "/name " (פקודה עם input.hint, רווח נגרר, בלי ארגומנט),
+// הצג את ה-hint כ-ghost אפור. slash=null במצב הזה (matchSlashCommands מחזיר null
+// כש-rest.includes(" ")), לכן סורקים את availableCommands ישירות.
+const ghostHint = $derived.by(() => {
+  const text = promptText
+  if (!text.startsWith("/")) return null
+  const spaceIdx = text.indexOf(" ")
+  // בדיוק "/name " — יש רווח אחד, אחריו אין ארגומנט
+  if (spaceIdx === -1 || text.slice(spaceIdx + 1).trim().length > 0) return null
+  const name = text.slice(1, spaceIdx)
+  const cmd = session.availableCommands.find((c) => c.name === name)
+  return cmd?.input?.hint ?? null
+})
+
 // dismissed מתאפס בכל שינוי-query (המשתמש ממשיך להקליד → פותחים מחדש)
 $effect(() => {
   slash?.query // dependency
@@ -256,7 +271,7 @@ function openFilePicker(): void {
     {/if}
 
     <!-- ─── wrapper: מארח את ה-textarea (ה-dropdown עצמו portal-ל-body — ר' SlashCommandMenu.svelte) ─── -->
-    <div class="flex-1">
+    <div class="flex-1 relative">
     {#if menuOpen && slash && menuRect}
       <SlashCommandMenu
         matches={slash.matches}
@@ -264,6 +279,17 @@ function openFilePicker(): void {
         onselect={acceptSlashSelection}
         rect={menuRect}
       />
+    {/if}
+    <!-- ghost-hint overlay (slice-slash-menu-native Commit 2): מציג hint כ-ghost
+         כשה-textarea מכיל "/name " בלי ארגומנט. pointer-events:none כדי שה-textarea
+         מקבל קליקים. aria-hidden כי זו הצגה ויזואלית בלבד. font/padding זהים ל-textarea.
+         position:absolute inset-0 — מיישר מול ה-textarea ומתאים לגובה הדינמי שלו. -->
+    {#if ghostHint}
+      <div
+        aria-hidden="true"
+        class="absolute inset-0 rounded-xl px-3 py-2.5 text-sm pointer-events-none overflow-hidden whitespace-pre-wrap break-words"
+        style="color:transparent; background:transparent; border:1px solid transparent"
+      ><span style="color:transparent">{promptText}</span><span style="color:var(--fg-muted); opacity:0.6">{ghostHint}</span></div>
     {/if}
     <textarea
       bind:this={taEl}
@@ -275,7 +301,7 @@ function openFilePicker(): void {
       aria-expanded={menuOpen}
       aria-controls={menuOpen ? "slash-listbox" : undefined}
       aria-activedescendant={menuOpen ? `slash-opt-${selectedIndex}` : undefined}
-      class="w-full rounded-xl px-3 py-2.5 text-sm resize-none outline-none border"
+      class="w-full rounded-xl px-3 py-2.5 text-sm resize-none outline-none border relative"
       style="background:var(--bg-card); border-color:var(--border); color:var(--fg); max-height:calc({MAX_ROWS} * 1.5em + 1.25rem)"
       onpaste={handlePaste}
       onkeydown={(e) => {

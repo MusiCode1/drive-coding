@@ -1,3 +1,27 @@
+## 2026-07-07 — slice-slash-menu-native — Commit 6 (ghost-hint overlay)
+
+**מה בוצע (manual/browser — FE-טהור, slice-slash-menu-native §4 Commit 2):**
+
+`TypeArea.svelte` בלבד — ghost-hint מבודד (קל-revert):
+
+- **`ghostHint` derived**: סורק `session.availableCommands` ישירות (לא `slash.matches` — `slash=null` במצב `/name ` עם רווח, כי `matchSlashCommands` מחזיר null כש-`rest.includes(" ")`). לוגיקה: `/name ` (רווח נגרר, בלי ארגומנט) → מצא פקודה לפי שם → `cmd.input?.hint`. פקודה בלי `input` → null.
+- **overlay-mirror**: `<div aria-hidden="true" class="absolute inset-0 ...">` — `position:absolute inset-0` מתאים לגובה הדינמי (auto-grow) של ה-textarea שמגדיר את גובה ה-wrapper. `pointer-events:none` כדי שה-textarea מקבל קליקים. span אחד עם `color:transparent` על ה-promptText (כדי לדחוף את ה-ghost למיקום הנכון), span שני עם `color:var(--fg-muted) opacity:0.6` על ה-hint. `aria-hidden` — תצוגה ויזואלית בלבד, ה-textarea הוא ה-semantic source.
+- ה-`<div class="flex-1">` קיבל `relative` (ה-overlay מתייחס אליו).
+- ה-textarea קיבל `relative` כדי להיות מעל ה-overlay ב-stacking order (מגיע אחרי ה-overlay ב-DOM).
+
+### בדיקות (Manual/browser — אחרי Commit 5 commit)
+
+- `pnpm typecheck`: 0 errors. `biome check`: נקי.
+- אימות חי: `/code-review ` (עם רווח) → ghost hint מוצג; הקלדת תו → ghost נעלם.
+- פקודה בלי hint (כמו `/context `) → אין ghost.
+- `git show <sha> --stat`: TypeArea בלבד (+28/-1 לגבי Commit 5) — בידוד מלא.
+
+### חריגות
+
+- Overlay approach נבחר (לא fallback chip) — גישה ראשית לפי §4 עבדה.
+
+---
+
 ## 2026-07-07 — slice-slash-menu-native — Commit 5 (listbox parity)
 
 **מה בוצע (manual/browser — FE-טהור, slice-slash-menu-native §4 Commit 1):**
