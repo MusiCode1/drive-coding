@@ -12,11 +12,14 @@
  *  - onpaste / ondrop / file-picker → fileToImageAttachment → tray
  *  - gating: session.supportsImageInput (kill-switch IMAGE_INPUT_ENABLED כבר ב-VM)
  */
+import type { AvailableCommand } from "@agentclientprotocol/sdk"
 import SendIcon from "@lucide/svelte/icons/send"
 import ImagePlusIcon from "@lucide/svelte/icons/image-plus"
 import XIcon from "@lucide/svelte/icons/x"
 import { getI18n, getSession, getSettings } from "$lib/context"
 import { fileToImageAttachment, revokeAttachment, type ImageAttachment } from "$lib/engines/image-attachment"
+import { applySlashSelection, matchSlashCommands } from "$lib/engines/slash-commands"
+import SlashCommandMenu from "./SlashCommandMenu.svelte"
 
 const session = getSession()
 const settings = getSettings()
@@ -29,6 +32,58 @@ const MAX_ROWS = 6
 // ─── image-attach tray state ─── (slice-image-paste)
 let attachments = $state<ImageAttachment[]>([])
 let fileInputEl = $state<HTMLInputElement>()
+
+// ─── slash-command dropdown state ─── (slice-slash-commands, Commit 2)
+let dismissed = $state(false)
+let selectedIndex = $state(0)
+const slash = $derived(matchSlashCommands(promptText, session.availableCommands))
+const menuOpen = $derived(!!slash && slash.matches.length > 0 && !dismissed)
+
+// dismissed מתאפס בכל שינוי-query (המשתמש ממשיך להקליד → פותחים מחדש)
+$effect(() => {
+  slash?.query // dependency
+  dismissed = false
+})
+
+// selectedIndex מתאפס כשרשימת ה-matches משתנה (הדגשה תמיד מתחילה מהראשון)
+$effect(() => {
+  slash?.matches.length // dependency
+  selectedIndex = 0
+})
+
+function acceptSlashSelection(cmd: AvailableCommand): void {
+  promptText = applySlashSelection(cmd)
+  dismissed = false
+  taEl?.focus()
+}
+
+// ─── מיקום ה-dropdown (portal ל-body — נחתך ע"י overflow:hidden של record-pane-inner
+// אם היה absolute רגיל; ר' הערת SlashCommandMenu.svelte) ─── (slice-slash-commands)
+let menuRect = $state<{ top: number; left: number; width: number } | null>(null)
+
+function updateMenuRect(): void {
+  const el = taEl
+  if (!el) {
+    menuRect = null
+    return
+  }
+  const r = el.getBoundingClientRect()
+  menuRect = { top: r.top, left: r.left, width: r.width }
+}
+
+$effect(() => {
+  if (!menuOpen) {
+    menuRect = null
+    return
+  }
+  updateMenuRect()
+  window.addEventListener("resize", updateMenuRect)
+  window.addEventListener("scroll", updateMenuRect, true) // capture — תופס גם גלילת אב
+  return () => {
+    window.removeEventListener("resize", updateMenuRect)
+    window.removeEventListener("scroll", updateMenuRect, true)
+  }
+})
 
 // גדל עם התוכן עד תקרה; scrollbar מופיע רק כשהתוכן חותך את ה-max-height
 $effect(() => {
@@ -198,16 +253,57 @@ function openFilePicker(): void {
       </button>
     {/if}
 
+    <!-- ─── wrapper: מארח את ה-textarea (ה-dropdown עצמו portal-ל-body — ר' SlashCommandMenu.svelte) ─── -->
+    <div class="flex-1">
+    {#if menuOpen && slash && menuRect}
+      <SlashCommandMenu
+        matches={slash.matches}
+        {selectedIndex}
+        onselect={acceptSlashSelection}
+        rect={menuRect}
+      />
+    {/if}
     <textarea
       bind:this={taEl}
       bind:value={promptText}
       placeholder={t("record.placeholder")}
       rows={1}
       disabled={isDisabled}
-      class="flex-1 rounded-xl px-3 py-2.5 text-sm resize-none outline-none border"
+      class="w-full rounded-xl px-3 py-2.5 text-sm resize-none outline-none border"
       style="background:var(--bg-card); border-color:var(--border); color:var(--fg); max-height:calc({MAX_ROWS} * 1.5em + 1.25rem)"
       onpaste={handlePaste}
       onkeydown={(e) => {
+        // ─── slice-slash-commands: keydown-intercept לדפדוף-בתפריט ───────────
+        // Cmd/Ctrl+Enter תמיד שולח — לא נבלע כאן (החרגת המקש המשולב במפורש).
+        // `&& slash` נחוץ ל-narrowing: menuOpen הוא derived נפרד ולא מצמצם את slash ל-non-null.
+        if (menuOpen && slash && !((e.metaKey || e.ctrlKey) && e.key === "Enter")) {
+          const n = slash.matches.length
+          if (e.key === "ArrowDown") {
+            e.preventDefault()
+            selectedIndex = (selectedIndex + 1) % n
+            return
+          }
+          if (e.key === "ArrowUp") {
+            e.preventDefault()
+            selectedIndex = (selectedIndex - 1 + n) % n
+            return
+          }
+          // Enter רגיל בוחר (לא Shift+Enter — שורה-חדשה נשמרת); Tab בוחר.
+          if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+            const cmd = slash.matches[selectedIndex]
+            if (cmd) {
+              e.preventDefault()
+              acceptSlashSelection(cmd)
+              return
+            }
+          }
+          if (e.key === "Escape") {
+            e.preventDefault()
+            dismissed = true
+            return
+          }
+        }
+
         // Cmd/Ctrl+Enter תמיד שולח (power-user, ללא תלות בהגדרה)
         if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
           e.preventDefault()
@@ -221,6 +317,7 @@ function openFilePicker(): void {
         }
       }}
     ></textarea>
+    </div>
 
     <!-- ─── slice-image-paste Commit 4b: שכבה 1 — disabled רק אם אין טקסט ואין תמונות ─── -->
     <button

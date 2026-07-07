@@ -8991,3 +8991,84 @@ Commit 4 (systemd + docs):
 ### חריגות
 
 - אין.
+
+## 2026-07-07 — slice-slash-commands — Commit 2 (manual/browser) + סיום
+
+### מה בוצע?
+
+**קובץ חדש** `packages/frontend/src/lib/components/chat/SlashCommandMenu.svelte` — רשימת-השלמה
+(name + description מקוצר-לשורה, פריט נבחר עם רקע-הדגשה). **פורטל ל-`document.body`** (ולא
+`position:absolute` רגיל כפי שהבריף תיאר) — סיבה: ה-textarea יושב בתוך
+`RecordFooter.svelte` `.record-pane-inner` שיש לה `overflow:hidden` (נחוץ לאנימציית-קיפול
+הפוטר) → `absolute` היה נחתך ובלתי-נראה (**נתפס ב-verification ידני חי בדפדפן** — הרשימה
+הייתה קיימת ב-DOM [57 items] אך invisible, וקליקים נפלו על `.chat-scroll` שמתחתיה). התיקון:
+portal ידני (`document.body.appendChild` ב-mount, `node.remove()` ב-destroy) +
+`position:fixed` עם קואורדינטות viewport-relative (`getBoundingClientRect` של ה-textarea,
+מחושב ב-TypeArea ומועבר כ-prop `rect`). זה גם פותר containing-block-של-fixed שהיה נוצר
+מ-`transform` ב-`BottomSheet.svelte` (מובייל) — portal ל-body יוצא מהתת-עץ המשתנה-transform
+לגמרי.
+
+**שינויים** ב-`TypeArea.svelte`:
+- state: `dismissed`/`selectedIndex`/`slash`(derived)/`menuOpen`(derived) בדיוק לפי הבריף.
+- `$effect` לאיפוס `dismissed` על שינוי `query`, ו-`selectedIndex` על שינוי `matches.length`.
+- `acceptSlashSelection()` — מציב `applySlashSelection()`, מחזיר focus לתיבה.
+- `menuRect` state + `$effect` שמחשב/מעדכן `getBoundingClientRect()` בכל פתיחה +
+  resize/scroll(capture) listeners (חדש — לא היה בבריף, נדרש בגלל הפורטל).
+- keydown-intercept **לפני** לוגיקת ה-Enter-to-send הקיימת: ArrowUp/Down מזיזים `selectedIndex`
+  (מודולו), Enter-רגיל/Tab בוחרים (`e.preventDefault()`, לא שולחים), Escape סוגר
+  (`dismissed=true`), Cmd/Ctrl+Enter מוחרג במפורש (תמיד שולח, נופל דרך ללוגיקת ה-send).
+
+**i18n**: מפתח חדש `slash.commandsList` (aria-label לרשימה) ב-`packages/core/src/i18n/keys.ts`
++ קטלוגים `en.ts`/`he.ts`. `name`/`description` של הפקודות הם data מהספק — לא מתורגמים
+(לפי §6 בבריף).
+
+### בדיקות (manual/browser — real claude + real opencode, per Testing strategy)
+
+חיברתי BE אמיתי (bun direct, port 4001 — פורט 4000 היה תפוס ע"י תהליך-BE חי אחר, לא שלי)
++ FE dev (BE_PORT=4001) + Playwright (headed Chrome) על ה-worktree עצמו כ-cwd. תסריט-אימות
+חד-פעמי (נמחק בסוף — לא נשמר בריפו):
+
+1. **claude מחובר** → 57 פקודות-slash הופיעו מיד (available_commands_update הגיע עם
+   session/new, בדיוק כפי שההקלטה-ההיסטורית חזתה).
+2. **סינון**: `/co` → `commit, code-review, compact, config, context` — prefix-match תקין.
+3. **ניווט-מקלדת**: ArrowDown הזיז את ההדגשה לפריט השני (מאומת ויזואלית).
+4. **Enter עם menu פתוח בוחר ולא שולח**: `promptText` הפך ל-`"/code-review "`,
+   ספירת-בועות **לא** השתנתה (0 רגרסיה).
+5. **Escape סוגר**: 0 items אחרי Escape; הקלדת תו נוסף פתחה מחדש (6 items).
+6. **קליק בוחר**: קליק על `/agent-device` הציב `"/agent-device "` בתיבה.
+7. **רגרסיה — שליחה רגילה**: `"hello no slash here"` + Enter → בועה נשלחה כרגיל (ספירת-בועות
+   עלתה 1→2).
+8. **הפעלה מקצה-לקצה**: שליחת `/agent-device` (Ctrl+Enter) → claude הגיב תוכן אמיתי (לא
+   הודעת-שגיאה) — הפרוטוקול טקסטואלי-`/name` אכן מתפרש ע"י claude כצפוי.
+9. **opencode**: לבדיקת ה-DoD "ריק-graceful" חיברתי גם opencode — **תגלית**: opencode **כן**
+   חושף `available_commands_update` (30 פקודות, `init/`, `review/` וכו' — ככל-הנראה custom
+   commands של opencode עצמו), בניגוד להנחת ה-roadmap הישנה ("opencode ללא פקודות"). זו לא
+   רגרסיה/באג — ההתנהגות "אין dropdown כשאין פקודות" מובטחת **מבנית** ע"י הקוד
+   (`menuOpen = matches.length > 0`) ומכוסה ב-unit-tests של Commit 0/1 (payload ריק/רשימה
+   ריקה) — לא נדרש ספק חי-ריק כדי להוכיח זאת.
+
+### באג שנמצא ותוקן באותו commit (manual verification, DoD §5 "רגרסיית Enter-to-send")
+
+**Bug**: ה-dropdown נחתך ובלתי-נראה (קיים ב-DOM, invisible), קליקים נופלים מתחת. ראה
+תיאור מלא + תיקון למעלה (SlashCommandMenu.svelte). זוהה **לפני** מסירה ל-calev — לא נמסר
+כ-finding חיצוני.
+
+### חריגות
+
+- `pnpm lint` (biome, global) — נכשל על CRLF-vs-LF pre-existing ברחבי הריפו (ראה entries
+  קודמים). `biome check` פרטני על כל הקבצים שנגעתי בהם (`SlashCommandMenu.svelte`,
+  `TypeArea.svelte`, i18n keys/catalogs) — נקי (אחרי `--write` על קובץ אחד, פורמט
+  destructuring).
+- הבריף תיאר מיקום `position:absolute bottom-full` פשוט; שונה ל-portal+`fixed` בגלל ה-bug
+  שנמצא בפועל (ר' למעלה) — סטייה מתועדת, לא ארכיטקטונית (component-local, אין נגיעה
+  בקבצים משותפים).
+- Playwright script לאימות נמחק בסוף (`scripts/verify-slash-commands*.cjs`) — לא נשמר בריפו,
+  היה חד-פעמי.
+
+### סיכום סליס
+
+- **3 commits**: Commit 0 (VM, TDD, 4 טסטים) → Commit 1 (engine, TDD, 10 טסטים) →
+  Commit 2 (UI, manual/browser, verified live עם claude+opencode אמיתיים).
+- **14 טסטים אוטומטיים חדשים** (4+10), כולם ירוקים. `pnpm typecheck` נקי לאורך כל השרשרת.
+  `pnpm --filter @drive-coding/frontend build` ירוק. `lint:i18n` נקי.
+- Base: `dev` @ `9faf62f`. אין merge — ממתין לאישור.

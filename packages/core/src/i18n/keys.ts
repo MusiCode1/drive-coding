@@ -305,6 +305,8 @@ export type MessageKey =
   // ─── app-title ─── (slice app-title-build-env)
   | "appTitle.settings"
   | "appTitle.sessions"
+  // ─── slash commands ─── (slice-slash-commands)
+  | "slash.commandsList"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
