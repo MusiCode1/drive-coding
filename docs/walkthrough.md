@@ -9,16 +9,19 @@
 - ה-`<div class="flex-1">` קיבל `relative` (ה-overlay מתייחס אליו).
 - ה-textarea קיבל `relative` כדי להיות מעל ה-overlay ב-stacking order (מגיע אחרי ה-overlay ב-DOM).
 
-### בדיקות (Manual/browser — אחרי Commit 5 commit)
+### בדיקות (Manual/browser — Playwright חי, session claude אמיתי)
 
 - `pnpm typecheck`: 0 errors. `biome check`: נקי.
-- אימות חי: `/code-review ` (עם רווח) → ghost hint מוצג; הקלדת תו → ghost נעלם.
-- פקודה בלי hint (כמו `/context `) → אין ghost.
-- `git show <sha> --stat`: TypeArea בלבד (+28/-1 לגבי Commit 5) — בידוד מלא.
+- **אימות Playwright חי** (claude connected, `50510514`):
+  - `/code-review ` → `div[aria-hidden="true"]` count=1, ghost text=`"/code-review [low|medium|high|xhigh|max|ultra] [--fix] [--comment] [<target>]"` ✅
+  - הקלדת `medium` → ghost count=0 ✅
+  - `/context ` (ללא input.hint) → ghost count=0 ✅ (DoD#8)
+- `git show --stat`: TypeArea בלבד (+33 שורות לגבי Commit 5 base) — בידוד מלא ✅
 
 ### חריגות
 
 - Overlay approach נבחר (לא fallback chip) — גישה ראשית לפי §4 עבדה.
+- ה-ghost נראה ויזואלית ב-RTL mode כ-`code-review/` (ה-text align מימין לשמאל) — זה עקבי עם כיוון האפליקציה. לא רגרסיה, לא בסקופ.
 
 ---
 
@@ -34,15 +37,21 @@
 - **Home/End**: `selectedIndex=0` / `selectedIndex=n-1` עם `preventDefault`, בתוך ה-`if (menuOpen && slash)` הקיים.
 - **Biome format+organize-imports**: CRLF→LF ו-import order תוקנו אוטומטית (pre-existing, לא שינויי-לוגיקה).
 
-### בדיקות
+### בדיקות (Playwright חי, claude session)
 
 - `pnpm typecheck`: 0 errors.
-- `biome check` על 2 הקבצים: נקי לאחר format+fix.
-- בדיקה חיה: ARIA אומת ב-DevTools (role=listbox/option, aria-activedescendant מתעדכן); scroll + Home/End + wrap-around אומתו ב-browser (BE bun ישיר + FE dev, port 4011+).
+- `biome check` על 2 הקבצים: נקי לאחר format+fix (CRLF+organize-imports).
+- **אימות Playwright חי** (claude connected, 57 פקודות):
+  - role=combobox, aria-expanded, aria-controls=slash-listbox, aria-activedescendant=slash-opt-0 ✅ (DoD#5)
+  - End → slash-opt-56, Home → slash-opt-0 ✅ (DoD#3)
+  - 10x ArrowDown → slash-opt-10 (רשימה גללה לתצוגה) ✅ (DoD#2)
+  - ArrowUp from slot-opt-0 → slash-opt-56 (wrap-around) ✅ (DoD#4)
+  - Escape → aria-expanded=false, listbox=0 ✅ (DoD#6)
+  - Screenshots: `/tmp/slash-open.png`, `/tmp/slash-scrolled.png`
 
 ### חריגות
 
-- אין.
+- Biome organize-imports ו-format תוקנו (pre-existing, לא לוגיקה).
 
 ---
 
