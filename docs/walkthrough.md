@@ -9065,10 +9065,70 @@ portal ידני (`document.body.appendChild` ב-mount, `node.remove()` ב-destro
 - Playwright script לאימות נמחק בסוף (`scripts/verify-slash-commands*.cjs`) — לא נשמר בריפו,
   היה חד-פעמי.
 
-### סיכום סליס
+### סיכום סליס (עודכן — ראה גם Commit 4 להלן, הרחבת slice-slash-commands-hint)
 
 - **3 commits**: Commit 0 (VM, TDD, 4 טסטים) → Commit 1 (engine, TDD, 10 טסטים) →
   Commit 2 (UI, manual/browser, verified live עם claude+opencode אמיתיים).
 - **14 טסטים אוטומטיים חדשים** (4+10), כולם ירוקים. `pnpm typecheck` נקי לאורך כל השרשרת.
   `pnpm --filter @drive-coding/frontend build` ירוק. `lint:i18n` נקי.
+
+---
+
+## 2026-07-07 — slice-slash-commands-hint — Commit 4 (manual/browser, הרחבת slice-slash-commands)
+
+### מה בוצע?
+
+הרחבה של `SlashCommandMenu.svelte` (הקובץ היחיד שנגע) — לפי
+`docs/plans/slice-slash-commands-hint.md`. הצגת `cmd.input?.hint` ליד שם-הפקודה בדרופדאון:
+
+- עטפתי את `/{cmd.name}` + ה-hint (אם קיים) ב-`<span class="flex items-baseline gap-1.5 min-w-0">`
+  משותף, כדי ששניהם יישבו **inline באותה שורה** מעל ה-`description` (שנשאר בשורה נפרדת מתחת,
+  ללא שינוי).
+- `cmd.input?.hint` (טיפוס `string | undefined`, `noUncheckedIndexedAccess`-safe ללא `any`/`!`)
+  מרונדר ב-`<span class="min-w-0 truncate font-mono text-xs" style="color:var(--fg-muted)">`
+  — משפחת-מונו, `--fg-muted` (עמום **יותר** מ-`--fg-dim` שבו משתמש ה-description, בדיוק לפי
+  §4 בבריף — אומת ש-`--fg-muted` מוגדר בכל 8 הפלטות ב-`app.css`).
+- `truncate`+`min-w-0` על ה-hint (ולא `whitespace-nowrap` בנפרד — `truncate` של Tailwind כבר
+  כולל `overflow:hidden;white-space:nowrap;text-overflow:ellipsis`) — **בלי wrap לשורה שנייה**,
+  כך שגובה-הפריט האחיד נשמר.
+- `shrink-0` על `/{cmd.name}` כדי שה-hint (לא השם) יהיה זה שנחתך כשאין מקום.
+- פקודות בלי `input` (40/47) — ה-`{#if cmd.input?.hint}` פשוט לא מרנדר את ה-span, 0 שינוי
+  ויזואלי.
+
+### בדיקות (manual/browser — real claude, per Testing strategy בבריף)
+
+חיברתי BE אמיתי (bun direct, port 4010 — פורטים 4000/4002/4015 היו תפוסים ע"י תהליכים חיים
+אחרים, לא שלי) + FE dev (`BE_PORT=4010`, Vite על 5173) + `playwright-cli` (headless chrome,
+snapshot+screenshot) על ה-worktree עצמו כ-cwd, session קיים (claude):
+
+1. **typecheck**: `pnpm --filter @drive-coding/frontend typecheck` → **0 errors, 0 warnings**
+   (5070 files).
+2. **`biome check` פרטני** על `SlashCommandMenu.svelte` → נקי (0 fixes נדרשו).
+3. **DoD#2 — `/co` → `/code-review`**: accessibility-snapshot אישר `button "/code-review
+   [low|medium|high|xhigh|max|ultra] [--fix] [--comment] [<target>] …"` — hint מרונדר
+   ומכיל את המחרוזת המלאה (הדפדפן בעצמו עושה את ה-truncate ויזואלית, ה-DOM מכיל את כל
+   הטקסט — accessibility tree חושף את value המלא).
+4. **DoD#3 — truncate בלי שבירת-layout**: **screenshot** (`/tmp/slash-commands-hint/phase-4.png`)
+   אישר ויזואלית — `/code-review` ו-`/compact` מציגים hint מקוצר בשורה אחת, גובה-הפריט זהה
+   לשאר הפריטים (`/config`/`/context` בלי hint), אין overflow/wrap. (locale=עברית, dir=rtl —
+   ה-hint מוצג משמאל לשם בהתאם לכיוון-האפליקציה; לא רגרסיה, לא בסקופ הבריף.)
+5. **DoD#4 — בלי hint**: אומת ל-`/context` **וגם** ל-`/usage`+`/usage-credits` (הקלדת `/usage`
+   נוספת שלא הייתה בבריף המקורי, לביטחון-כפול) — ה-accessibility-tree מראה רק name+description,
+   ללא span-hint נפרד. 0 רגרסיה.
+6. **DoD#5 — 0 רגרסיה על dropdown**: קליק על `/compact` הציב `"/compact "` בתיבה (זהה
+   להתנהגות Commit 2, עם ה-span-wrapper החדש סביב ה-name לא שינה את מנגנון ה-onclick/selection).
+7. **DoD#6**: שינוי מקומי לקובץ יחיד, `depends_on:[]` על שאר-המערכת — לא נגעתי בשום קובץ אחר.
+
+### חריגות
+
+- `git diff --stat`: קובץ יחיד, +6/-1 שורות — תואם בדיוק את ה-scope בבריף (§2: "קובץ יחיד" ✅).
+- אין טסטים אוטומטיים חדשים — Testing strategy = `manual/browser` בלבד, לפי §5 בבריף (0 לוגיקה
+  חדשה מעבר לתצוגה).
+- ה-BE/FE/browser נסגרו בסוף האימות; לא נותרו תהליכים תלויים.
+
+### סיכום commit
+
+- **Commit 4** על `slice/slash-commands` (מעל Commit 0-1-2, base `f5a6817`) — שדרוג-תצוגה
+  קטן, ללא merge (ממתין לאישור, יחד עם שאר השרשרת — לפי §8 בבריף).
+- `pnpm typecheck`: 0/0. `biome check` פרטני: נקי. אומת חי בדפדפן (claude אמיתי) — 6/6 DoD.
 - Base: `dev` @ `9faf62f`. אין merge — ממתין לאישור.

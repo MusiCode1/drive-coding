@@ -58,7 +58,12 @@ function portal(node: HTMLElement) {
         style={i === selectedIndex ? "background:color-mix(in srgb, var(--accent) 18%, transparent)" : ""}
         onclick={() => onselect(cmd)}
       >
-        <span class="font-semibold" style="color:var(--fg)">/{cmd.name}</span>
+        <span class="flex items-baseline gap-1.5 min-w-0">
+          <span class="font-semibold shrink-0" style="color:var(--fg)">/{cmd.name}</span>
+          {#if cmd.input?.hint}
+            <span class="min-w-0 truncate font-mono text-xs" style="color:var(--fg-muted)">{cmd.input.hint}</span>
+          {/if}
+        </span>
         {#if cmd.description}
           <span class="truncate text-xs" style="color:var(--fg-dim)">{cmd.description}</span>
         {/if}
