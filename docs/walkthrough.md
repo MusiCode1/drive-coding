@@ -8966,3 +8966,28 @@ Commit 4 (systemd + docs):
   entry קודם `slice-app-title-build-env`). אימתתי עם `git stash` שאותו כישלון קיים גם *לפני*
   השינויים שלי על `agent-session.svelte.ts` — לא רגרסיה. `biome check` פרטני על שני הקבצים
   שנגעתי בהם מראה אותה שגיאת-CRLF בלבד (לא שגיאת-תוכן).
+
+## 2026-07-07 — slice-slash-commands — Commit 1 (TDD)
+
+### מה בוצע?
+
+`packages/frontend/src/lib/engines/slash-commands.ts` — engine טהור (אין browser/DOM):
+- `matchSlashCommands(input, commands)` — `null` אם הקלט לא מתחיל ב-`"/"` או אם יש רווח אחרי
+  ה-token (מצב-ארגומנטים); אחרת `{ query, matches }` עם prefix-match case-insensitive על `name`.
+  `query=""` (רק `"/"`) → כל הפקודות. אין תוצאות → `matches: []` (עדיין לא-`null`, המצב "הקלדת-פקודה"
+  עדיין פעיל).
+- `applySlashSelection(command)` — `"/<name> "` (רווח נגרר לארגומנטים).
+
+### בדיקות
+
+- TDD red→green: כתבתי `slash-commands.test.ts` קודם (10 טסטים), אימתתי RED
+  (`Cannot find module './slash-commands'`), ואז מימשתי → GREEN מלא.
+- 10/10 טסטים ירוקים: ריק/לא-slash → null · "/" → הכל · prefix-match ("/co") · מצב-ארגומנטים
+  ("/commit " → null) · case-insensitive ("/svelte"↔"Svelte-MCP") · "/zzz" → matches:[] (לא null) ·
+  רשימת-פקודות ריקה.
+- `pnpm typecheck` — ירוק. `biome check` פרטני על שני הקבצים — נקי (אין אזהרת-CRLF, קבצים חדשים
+  נכתבו כבר ב-LF).
+
+### חריגות
+
+- אין.
