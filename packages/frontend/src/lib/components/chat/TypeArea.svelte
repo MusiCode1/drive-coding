@@ -13,11 +13,15 @@
  *  - gating: session.supportsImageInput (kill-switch IMAGE_INPUT_ENABLED כבר ב-VM)
  */
 import type { AvailableCommand } from "@agentclientprotocol/sdk"
-import SendIcon from "@lucide/svelte/icons/send"
 import ImagePlusIcon from "@lucide/svelte/icons/image-plus"
+import SendIcon from "@lucide/svelte/icons/send"
 import XIcon from "@lucide/svelte/icons/x"
 import { getI18n, getSession, getSettings } from "$lib/context"
-import { fileToImageAttachment, revokeAttachment, type ImageAttachment } from "$lib/engines/image-attachment"
+import {
+  fileToImageAttachment,
+  type ImageAttachment,
+  revokeAttachment,
+} from "$lib/engines/image-attachment"
 import { applySlashSelection, matchSlashCommands } from "$lib/engines/slash-commands"
 import SlashCommandMenu from "./SlashCommandMenu.svelte"
 
@@ -90,17 +94,15 @@ $effect(() => {
   promptText // dependency — re-run on every value change
   const el = taEl
   if (!el) return
-  el.style.height = "auto"            // קודם מאפסים כדי שה-scrollHeight ישקף את התוכן הנוכחי
-  const maxH = parseFloat(getComputedStyle(el).maxHeight)   // px מה-max-height ב-CSS
+  el.style.height = "auto" // קודם מאפסים כדי שה-scrollHeight ישקף את התוכן הנוכחי
+  const maxH = parseFloat(getComputedStyle(el).maxHeight) // px מה-max-height ב-CSS
   const needed = el.scrollHeight
   const clamped = Number.isFinite(maxH) && needed > maxH
   el.style.height = clamped ? `${maxH}px` : `${needed}px`
-  el.style.overflowY = clamped ? "auto" : "hidden"          // scrollbar רק כשבאמת חתוך
+  el.style.overflowY = clamped ? "auto" : "hidden" // scrollbar רק כשבאמת חתוך
 })
 
-const isDisabled = $derived(
-  session.status !== "connected"
-)
+const isDisabled = $derived(session.status !== "connected")
 
 function onSubmit(e?: SubmitEvent) {
   e?.preventDefault()
@@ -269,6 +271,10 @@ function openFilePicker(): void {
       placeholder={t("record.placeholder")}
       rows={1}
       disabled={isDisabled}
+      role="combobox"
+      aria-expanded={menuOpen}
+      aria-controls={menuOpen ? "slash-listbox" : undefined}
+      aria-activedescendant={menuOpen ? `slash-opt-${selectedIndex}` : undefined}
       class="w-full rounded-xl px-3 py-2.5 text-sm resize-none outline-none border"
       style="background:var(--bg-card); border-color:var(--border); color:var(--fg); max-height:calc({MAX_ROWS} * 1.5em + 1.25rem)"
       onpaste={handlePaste}
@@ -286,6 +292,17 @@ function openFilePicker(): void {
           if (e.key === "ArrowUp") {
             e.preventDefault()
             selectedIndex = (selectedIndex - 1 + n) % n
+            return
+          }
+          // listbox parity (slice-slash-menu-native, Commit 1): Home/End קופצים לקצוות.
+          if (e.key === "Home") {
+            e.preventDefault()
+            selectedIndex = 0
+            return
+          }
+          if (e.key === "End") {
+            e.preventDefault()
+            selectedIndex = n - 1
             return
           }
           // Enter רגיל בוחר (לא Shift+Enter — שורה-חדשה נשמרת); Tab בוחר.

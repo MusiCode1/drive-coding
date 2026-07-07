@@ -1,3 +1,27 @@
+## 2026-07-07 — slice-slash-menu-native — Commit 5 (listbox parity)
+
+**מה בוצע (manual/browser — FE-טהור, slice-slash-menu-native §4 Commit 1):**
+
+`SlashCommandMenu.svelte` + `TypeArea.svelte` — השלמת listbox native parity:
+
+- **scroll-into-view**: `$effect` שמגיב ל-`selectedIndex` ול-`matches` (שניהם dependency) + `querySelector('[data-index]')` על ה-`<ul>` הממוקד; `block:"nearest"` — גולל רק את ה-`<ul>` (scroll-container הקרוב), לא את הדף. תיקון הבאג שנתפס חי: ניווט-חיצים ברשימה ארוכה הוציא את הפריט המודגש מחוץ ל-`max-h-64`.
+- **ARIA מלא**: `<ul role="listbox" id="slash-listbox">` (id קבוע ליציבות-portal); `role="option" id="slash-opt-{i}" data-index={i} aria-selected={i===selectedIndex}` על ה-`<button>` (לא `<li>` — ARIA anti-pattern).
+- **TypeArea**: `role="combobox" aria-expanded aria-controls aria-activedescendant` על ה-textarea — מותנה ב-`menuOpen`.
+- **Home/End**: `selectedIndex=0` / `selectedIndex=n-1` עם `preventDefault`, בתוך ה-`if (menuOpen && slash)` הקיים.
+- **Biome format+organize-imports**: CRLF→LF ו-import order תוקנו אוטומטית (pre-existing, לא שינויי-לוגיקה).
+
+### בדיקות
+
+- `pnpm typecheck`: 0 errors.
+- `biome check` על 2 הקבצים: נקי לאחר format+fix.
+- בדיקה חיה: ARIA אומת ב-DevTools (role=listbox/option, aria-activedescendant מתעדכן); scroll + Home/End + wrap-around אומתו ב-browser (BE bun ישיר + FE dev, port 4011+).
+
+### חריגות
+
+- אין.
+
+---
+
 ## 2026-07-04 — slice-rtl-bubble-fixes — 2 commits: תיקוני RTL-בועות
 
 **מה בוצע (manual — CSS/attribute בלבד, FE-טהור):**

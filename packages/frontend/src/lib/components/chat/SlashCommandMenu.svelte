@@ -15,6 +15,12 @@
  * viewport-relative (מ-getBoundingClientRect ב-TypeArea) — בורח גם מה-clip
  * וגם מ-containing-block של position:fixed שיוצר ancestor עם transform
  * (BottomSheet במובייל).
+ *
+ * **listbox parity** (slice-slash-menu-native, Commit 1): scroll-into-view של
+ * הפריט המודגש (הרשימה `max-h-64` נגללת, ניווט-חיצים לבדו לא גולל) + ARIA
+ * מלא (`role=listbox` על ה-ul עם id יציב, `role=option`/`aria-selected`/id
+ * פר-`<button>` — לא על ה-`<li>`, כי option שמכיל אלמנט אינטראקטיבי הוא
+ * ARIA anti-pattern; ה-`<button>` הוא האלמנט הנבחר/הקליקבילי).
  */
 import type { AvailableCommand } from "@agentclientprotocol/sdk"
 import { getI18n } from "$lib/context"
@@ -33,6 +39,8 @@ let {
 
 const t = getI18n().t
 
+let ulEl = $state<HTMLUListElement>()
+
 /** portal — מעביר את הצומת ל-document.body בעת mount, ומחזיר אותו במקומו ב-destroy. */
 function portal(node: HTMLElement) {
   document.body.appendChild(node)
@@ -42,10 +50,26 @@ function portal(node: HTMLElement) {
     },
   }
 }
+
+// listbox parity: גולל את הפריט המודגש לתצוגה בכל שינוי-selectedIndex (או
+// כשרשימת ה-matches עצמה משתנה, כי selectedIndex עשוי להישאר 0 בזמן שהפריט-0
+// החדש טרם נראה). block:"nearest" — גולל רק את ה-<ul> (scroll-container הקרוב),
+// לא את הדף כולו.
+$effect(() => {
+  selectedIndex
+  matches
+  const ul = ulEl
+  if (!ul) return
+  const el = ul.querySelector(`[data-index="${selectedIndex}"]`)
+  el?.scrollIntoView({ block: "nearest" })
+})
 </script>
 
 <ul
+  bind:this={ulEl}
   use:portal
+  role="listbox"
+  id="slash-listbox"
   class="fixed max-h-64 overflow-y-auto rounded-xl border shadow-lg z-50"
   style="background:var(--bg-card); border-color:var(--border); top:{rect.top}px; left:{rect.left}px; width:{rect.width}px; transform:translateY(-100%) translateY(-0.25rem)"
   aria-label={t("slash.commandsList")}
@@ -54,6 +78,10 @@ function portal(node: HTMLElement) {
     <li>
       <button
         type="button"
+        role="option"
+        id="slash-opt-{i}"
+        data-index={i}
+        aria-selected={i === selectedIndex}
         class="w-full text-left px-3 py-2 text-sm flex flex-col gap-0.5"
         style={i === selectedIndex ? "background:color-mix(in srgb, var(--accent) 18%, transparent)" : ""}
         onclick={() => onselect(cmd)}
