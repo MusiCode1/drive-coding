@@ -187,9 +187,6 @@ importers:
 
   packages/provider:
     dependencies:
-      '@agentclientprotocol/codex-acp':
-        specifier: github:MusiCode1/codex-acp#drive-coding
-        version: https://codeload.github.com/MusiCode1/codex-acp/tar.gz/96048dc7aef1abe56cdaa946108206e81ed3228d
       '@agentclientprotocol/sdk':
         specifier: ^0.21.1
         version: 0.21.1(zod@4.4.3)
@@ -199,6 +196,9 @@ importers:
       '@drive-coding/core':
         specifier: workspace:*
         version: link:../core
+      '@musicode1/codex-acp':
+        specifier: ^1.0.2
+        version: 1.0.2
       arktype:
         specifier: ^2.0.0
         version: 2.2.0
@@ -230,11 +230,6 @@ packages:
   '@agentclientprotocol/claude-agent-acp@0.52.0':
     resolution: {integrity: sha512-IvbKJ8EBaamuXtYB5RSD/PEk2Mz5XczQrfo90wG2iOjhko3o7HOSueysCTyCvPZn+px6Kbuot8TLIvTad2J2zw==}
     engines: {node: '>=22'}
-    hasBin: true
-
-  '@agentclientprotocol/codex-acp@https://codeload.github.com/MusiCode1/codex-acp/tar.gz/96048dc7aef1abe56cdaa946108206e81ed3228d':
-    resolution: {tarball: https://codeload.github.com/MusiCode1/codex-acp/tar.gz/96048dc7aef1abe56cdaa946108206e81ed3228d}
-    version: 1.0.2
     hasBin: true
 
   '@agentclientprotocol/sdk@0.21.1':
@@ -713,6 +708,10 @@ packages:
     resolution: {integrity: sha512-CmCXPQrkbwExx3j946/PtHWHbYJiCRBRDl4BlkRQcJB/YOwQxJRTpoo7aTsortjgoJ1x7opzTSxn7C+ASSLVjQ==}
     cpu: [x64]
     os: [win32]
+
+  '@musicode1/codex-acp@1.0.2':
+    resolution: {integrity: sha512-fApVUa+0VBDN4pnSK1aN80b9TdGt5B/1guBywAGVJt2z6PrSQf8SS+VA6f2Xd0KfELnp1ZsbZWZNEc0exVEDDw==}
+    hasBin: true
 
   '@openai/codex@0.142.5':
     resolution: {integrity: sha512-WQEpD7l3k68eIAP0aq28EdR18ENBAf8DyprzFhzNwCOQJSv4nHzpwT8Fl30IJacprko2ZCmUBZjM2u941l2yLw==}
@@ -2467,15 +2466,6 @@ snapshots:
       - '@anthropic-ai/sdk'
       - '@modelcontextprotocol/sdk'
 
-  '@agentclientprotocol/codex-acp@https://codeload.github.com/MusiCode1/codex-acp/tar.gz/96048dc7aef1abe56cdaa946108206e81ed3228d':
-    dependencies:
-      '@agentclientprotocol/sdk': 1.1.0(zod@4.4.3)
-      '@openai/codex': 0.142.5
-      diff: 9.0.0
-      open: 11.0.0
-      vscode-jsonrpc: 8.2.1
-      zod: 4.4.3
-
   '@agentclientprotocol/sdk@0.21.1(zod@4.4.3)':
     dependencies:
       zod: 4.4.3
@@ -2833,6 +2823,15 @@ snapshots:
 
   '@msgpackr-extract/msgpackr-extract-win32-x64@3.0.4':
     optional: true
+
+  '@musicode1/codex-acp@1.0.2':
+    dependencies:
+      '@agentclientprotocol/sdk': 1.1.0(zod@4.4.3)
+      '@openai/codex': 0.142.5
+      diff: 9.0.0
+      open: 11.0.0
+      vscode-jsonrpc: 8.2.1
+      zod: 4.4.3
 
   '@openai/codex@0.142.5':
     optionalDependencies:

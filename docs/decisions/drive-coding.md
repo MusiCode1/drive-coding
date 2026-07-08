@@ -1,5 +1,183 @@
 # Decisions — drive-coding
 
+## 2026-07-07 — slash-menu-native + native-select-parity: תיקון-כיוון (B ל-slash, C ל-select)
+
+### רקע
+אחרי ה-preview שהמשתמשת אישרה, היא ביקשה **native-select parity מלא**: scroll-into-view בניווט-חיצים
+(ה-selected יוצא מהתצוגה — באג), Home/End/wrap-around, ARIA, ורמזי-ארגומנט **גם ב-input** (ghost כמו CLI).
+בחירה ראשונית: **C** (מעבר מלא ל-bits-ui).
+
+### הממצא ששינה כיוון
+`bits-ui` (^2.18.1, כבר בפרויקט) חושף `Command` (cmdk-port) + `Combobox` + `Select`. **אבל** `Command`
+מיועד ל-**standalone**: `Command.Input` **חובה** ל-search, keyboard-nav עובד **רק כשה-focus עליו**, ו**אין**
+`searchValue` חיצוני על `Command.Root` (אומת ב-`types.d.ts` + docs הרשמיים). ה-slash menu לעומת זאת הוא
+**inline-autocomplete בתוך ה-textarea הקיים** (המשתמש מקליד `/co` ב-textarea, לא ב-input נפרד) → כפיית
+`Command` = `Command.Input` מוסתר-מסונכרן + keyboard-forwarding imperative = **hack, לא C נקי**.
+
+### ההכרעה — כלי לכל מקרה (אותה מטרה: native parity)
+- **`ui/Select` הרוחבי** (צרכנים: VoicePicker · GeminiVoicePicker · LanguageSelect · PalettePicker ·
+  SessionOptionsPanel · SettingsScreen — כולם על bits-ui `Dialog`/`Popover` + רשימת-`{#each}` custom, **בלי**
+  keyboard-nav) → **C: bits-ui `Select` primitive**. סלייס `native-select-parity` (רוחבי, מתקן 6 צרכנים).
+- **slash menu** (inline) → **B: scroll-into-view + Home/End/wrap + ARIA `listbox`** על ה-`<ul>` הקיים.
+  אותה native parity בדיוק, בלי primitive זר.
+
+### מבנה `slash-menu-native`
+Commit 1: keyboard (Home/End/wrap) + scroll-into-view + ARIA listbox roles. Commit 2 (**מבודד, קל-revert**
+לבקשת המשתמשת): ghost-hint ב-input (rendered רמז-ארגומנט אחרי בחירת פקודה, כל עוד לא הוקלד ארגומנט).
+base = worktree `slice/slash-commands` @ `abb0b78` (טרם merge — לא ממזגים ואז מחליפים).
+
+### נדחה
+- **C אחיד** — נדחה: `Command` לא מתאים ל-inline-textarea-autocomplete (Input חובה, אין external keyboard).
+- **enum-cycling** (#2, מעבר עם חיצים בין `[low|medium|…]`) — future: parsing של format ה-hint שביר ולא-סטנדרטי.
+
+## 2026-07-07 — slash-commands: ביצוע הבסיס (GO×2) + ממצאי `slash-commands-typed` + הרחבת `hint`
+
+### רציונל — הבסיס בוצע ואומת
+`slice-slash-commands` (brief מ-2026-07-04) בוצע: 3 commits (VM receive `available_commands_update` · engine
+`matchSlashCommands` טהור · dropdown `SlashCommandMenu`). FE-only, BE dumb-pipe. **calev GO×2** (12/12 + 13/13,
+cross-check), **preview חי אושר ע"י המשתמשת**. אומת חי מול claude (57 פקודות) **וגם opencode (30)** — סתירה
+להנחה הישנה ב-roadmap ("opencode ללא פקודות"). base=dev @ `9faf62f`, טרם merge (ממתין להרחבת `hint`).
+
+### סטיית-מימוש שאושרה — portal-to-body
+ה-brief תיאר `position:absolute bottom-full` פשוט. בפועל ה-textarea יושב בתוך `.record-pane-inner` עם
+`overflow:hidden` (אנימציית-קיפול הפוטר) → ה-dropdown נחתך ובלתי-נראה (נתפס חי: קיים ב-DOM, קליקים נופלים על
+`.chat-scroll` מתחת). התיקון: **portal ידני ל-`document.body` + `position:fixed`** עם קואורדינטות
+`getBoundingClientRect` — בורח גם מה-clip וגם מ-containing-block של `transform` ב-`BottomSheet` (מובייל).
+
+### ממצאי `slash-commands-typed` — למה אין הבחנת-סוגים קלה (חסם-ידע מאומת)
+המשתמשת ביקשה הבחנה ויזואלית בין **סקיל** לבין **פקודת-הרנס** (compact) ואחרים. חקירת הקלטת-wire אמיתית
+(`29175b45-…-1781776443783.jsonl`, 47 פקודות) הראתה:
+- **ה-`available_commands_update` מכיל רק `{ availableCommands, sessionId }`; כל פקודה בהקלטה = `{name, description, input}` בלבד.**
+  **אין `type`/`category`/`source`** — זו העובדה החוסמת. ⚠️ דיוק: הסכמה (`zAvailableCommand`, SDK 0.21.1) **כן**
+  מגדירה `_meta?: Record<string,unknown> | null` אופציונלי (גם על הפקודה וגם על `input`), אבל בהקלטה הוא **לא אוכלס**.
+  ה-`_meta` הזה הוא **ה-vehicle הטבעי לגישה ג'** (fork-adapter שמזריק `source`/`kind` ל-`_meta` בלי לשבור את החוזה).
+- **5 מקורות-פקודה ב-Claude Code** קורסים ל-shape האחיד הזה: (1) **פקודות-הרנס/built-in** (compact/context/usage/
+  init/reload-skills/heapdump/security-review/insights/goal/schedule/team-onboarding — רצות מקומית, משנות מצב);
+  (2) **סקילים** (`.claude/skills/`, agentic, model-invoked או /slash — 15 מזוהים ודאית ע"י `"Triggers when user
+  mentions"` בתיאור); (3) **custom commands** (`.claude/commands/`, prompt-md); (4) **MCP prompts** (`Svelte-MCP`);
+  (5) **plugin commands**.
+- **חתך שני שכן יש על ה-wire**: `input.hint` — 7 פקודות מקבלות ארגומנט (`compact`/`code-review`/`debug`/`simplify`/
+  `batch`/`loop`/`design-sync`). זה נוצל ל-slice ה-`hint` (ר' למטה).
+
+**שלוש גישות להבחנה (טרם הוכרע — נשמר ל-brief עתידי):**
+1. **Heuristic על התיאור** (`"Triggers when"` → סקיל) — FE-only מיידי, אך **שביר** (תופס 15/? — סקיל בלי המחרוזת נופל שגוי).
+2. **allowlist של built-in ידועים** — יציב יחסית, דורש תחזוקה כשאנתרופיק מוסיפה built-in.
+3. **fork/הרחבת adapter** — לחשוף מקור מה-SDK דרך `_meta` (תבנית `claude-subagent-adapter-fork`); מדויק אך
+   per-provider (opencode חושף אחרת) ודורש spike. **המלצה: spike קצר לבדוק אם `system.init.slash_commands`/SDK
+   חושפים מקור לפני הכרעה.**
+
+### רעיונות שנדחו (לעת עתה)
+- **להבחין ב-heuristic לבד ולמזג מיד** — נדחה: false-classification של סקיל→פקודה מטעה משתמש. עדיף מקור מוסמך או allowlist.
+- **לדחות את `hint` ל-typed** — נדחה: ה-`hint` כבר על ה-wire (אפס-מחקר), משלים את ה-dropdown, ולא תלוי בהכרעת-הסוגים.
+
+## 2026-07-05 — claude-subagent-adapter-fork (Slice A): fork שקוף שחושף פעילות תת-סוכן (brief READY, טרם dispatch)
+
+> המימוש הקונקרטי הראשון של `provider-adapter-split` (למטה). Slice A בשרשרת → B `subagent-nested-bubble` (renderer FE, טרם brief).
+
+### רציונל
+
+ה-adapter `claude-agent-acp` **זורק בכוונה** את כל פעילות תת-הסוכן: `break` על `system/task_{started,notification,progress,updated}` + סינון `text`/`thinking` של הודעות subagent ("keep dropping so subagent prose doesn't leak into the top-level feed"). המבנה קיים במלואו על ה-wire (אומת מול `provider-contract/PROTOCOL.md`: task lifecycle + subagent attribution `subagent_type`/`task_description`/`parent_tool_use_id`, 704×) — ה-adapter פשוט לא מעביר אותו. שדרוג לא פותר (זהה 0.52→0.55, התנהגות upstream מכוונת). **הפתרון: fork שקוף.**
+
+### הכרעות-עיצוב
+
+1. **אפס-זריקה (הנחיית משתמשת)** — ה-fork לא מקבל החלטת-תצוגה; מעביר raw ב-`_meta.claudeCode`, וה-FE/`provider-contract` בורר. scope = **שתי נקודות** ב-`src/acp-agent.ts`: (א) task_* → `tool_call_update` עם `_meta.claudeCode.task=frame` (במקום `break`); (ב) הסרת ה-filter של subagent prose.
+2. **הסרת ה-filter מספיקה** (הגילוי שחסך שינוי שלישי) — `toAcpNotifications` **כבר** מצמיד `_meta.claudeCode.parentToolUseId` (string-path @4864 + array-path @5123), אז ה-prose יגיע מתויג-parent בלי לזהם את ה-feed הראשי (ה-gates של `parent===null` נשארים).
+3. **envelope = `tool_call_update`** על `tool_use_id`, בלי `status` — תבנית `terminal_output` (לא `tool_progress` שנושא status). SDK 1.1.0 מאשר `status` optional; ובפועל ה-BE כבר מקבל status-less tool_call_update מ-terminal_output ועובד.
+4. **repo נפרד** — Slice A מתבצע ב-`MusiCode1/claude-agent-acp#drive-coding` (sync מ-v0.55.0), נצרך כ-github-dep עם `"prepare":"npm run build"` (תבנית codex-acp). חיבור drive-coding = scope של Slice B.
+
+### ממצאי אביגיל
+
+**r1 USABLE-AFTER-FIX** (3 findings, כולם תוקנו): 🔴 ה-skeleton החסיר את 4 השכנים (`hook_*`/`files_persisted`) שחולקים `break` יחיד עם ה-task_* → silent regression; תוקן להצגה מפורשת · 🟡 הפניה שגויה ל-`tool_progress` (נושא status) → שונתה ל-`terminal_output` · 🟢 Q1 (status חובה?) נסגר: SDK 1.1.0 optional. **r2 READY, 0 findings** — כל התיקונים אומתו מול upstream v0.55.0 (SHA `6e01792`); ה-caution על SDK 1.0.0 vs 1.1.0 נוטרל (upstream עצמו פולט status-less tool_call_update שעובד ב-BE).
+
+### אימות (אליעזר + כלב) — ✅ בוצע ואומת GO
+
+**בוצע** ב-`@vendor/claude-agent-acp` (branch `drive-coding`, 4 commits מ-v0.55.0, נדחף ל-`origin/drive-coding`): **2 hunks בלבד** ב-`acp-agent.ts` (כפי שהובטח), 5 tests חדשים TDD. **כלב runtime-gate GO 7/7** (light) — אימת עצמאית מול baseline v0.55.0 נקי: build/lint/tests ירוקים; 2 failing tests = pre-existing (path-sep Windows, זהים ב-baseline); prettier-fail = CRLF artifact (`--end-of-line auto` נקי בקבצים ששונו). **הסטייה** (עדכון test 'leak') אומתה תקינה: ה-gate `if(parentToolUseId)` מתייג רק `parent≠null`; regression-test חדש מאשר ש-top-level (`parent===null`) נשאר `undefined` → אין זיהום.
+
+**מבנה ה-`_meta` הנעול ל-Slice B**: task_* → `tool_call_update{toolCallId: tool_use_id ?? task_id, _meta.claudeCode.task: <raw frame>}`; subagent prose → `agent_message_chunk`/`agent_thought_chunk` עם `_meta.claudeCode.parentToolUseId`. **לא מוזג** (A חי ב-fork, נדחף; drive-coding יצרוך ב-Slice B).
+
+### smoke חי מקצה-לקצה + `forwardSubagentText` (2026-07-06)
+
+**smoke חי** (worktree `subagent-smoke`: github-dep→claude אמיתי דרך `connectInProcess`, live-test): אימת מקצה-לקצה — build-on-install ב-Windows (`prepare`→`dist`), ה-fork עם השינויים, ה-BE dumb-pipe מעביר `_meta`, task_* passthrough חי (כולל `toolCallId: tool_use_id ?? task_id` על `task_updated`), zero-leak חי (0 frames עם parent על top-level).
+
+**גילוי מכריע**: ב-**SDK query mode** (איך ש-drive-coding מריץ claude) claude שולח מתת-הסוכן **רק** `tool_use`/`tool_result` — לא `text`/`thinking` (שחוזרים רק ב-`task_notification.summary`). זה **שונה** מ-VS Code captures (`provider-contract/research-assets`, 32.5k frames) שבהם subagent שולח גם `text` (59×) ו-`thinking` (122×). ההבדל אינו bug אלא **query option**.
+
+**השורש**: `forwardSubagentText` (SDK query option, `@anthropic-ai/claude-agent-sdk` 0.3.198). default `false` → רק tool_use/tool_result (heartbeat); `true` → full subagent conversation (text+thinking, tagged `parent_tool_use_id`) לרינדור nested transcript.
+
+**הכרעה — config, לא convert** (נגזר משאלת-משתמשת "לאיזה ענף?"): `forwardSubagentText` הוא **query option**, לא שינוי-תרגום. ה-adapter כבר עושה `...userProvidedOptions` (מ-`_meta.claudeCode.options`, שורה 3583/3623). לכן הוא **לא שייך ל-fork** — drive-coding מזריק אותו כהגדרה (`injectForwardSubagentText` ב-`connect-in-process`, תאום מדויק ל-`injectModelOverride`). כך ה-fork נשאר **2-commits רזה** (convert בלבד, כפי שכלב אימת — אין re-verify), וה-config חי ב-drive-coding: פחות סחף מול upstream, ניתן-לשליטה. תואם `provider-adapter-split`.
+
+**אומת חי**: עם ה-injection (config-path), `proseFrameCount` עלה מ-2 (tool בלבד) ל-**4** (tool + `agent_message_chunk` מקונן) — subagent prose זורם עם `parentToolUseId`, **זהה בדיוק** ל-hardcoded-ב-fork. Commit 2 (הסרת filter) **מוצדק**: הוא מעביר את ה-text/thinking כשה-flag גורם להם לזרום.
+
+**Slice B מפוצל** (הכרעת-משתמשת "transcript בתוך הבועה" — ה-transcript חי כמערך פנימי בבועת-Task, לא כעץ ב-`bubbles` הראשי → הווירטואליזציה השטוחה נשמרת):
+- **B1 `subagent-transcript-data`** (data layer) — Commit 0: github-dep (pin `d6891f8`) + `injectForwardSubagentText` (כתוב+מאומת חי ב-worktree); Commit 1-3: קריאת `_meta.claudeCode` ב-`#onSessionUpdate` (היום מושמט) + `subFrames?`/`task?` additive + `#routeToSubFrames` (mini-dispatch, object-replacement) + task-merge בתוך `#handleToolCallUpdate`. **אביגיל READY r2** (r1: 2×🟡 confusion — task-meta רוכב על `tool_call_update` [early-return :1508] → merge בתוך `#handleToolCallUpdate`; reuse-push לא מצית reactivity → mini-dispatch). Complexity 7/light. **טרם dispatch.**
+- **B2 `subagent-transcript-render`** (renderer FE — אזור-נגלל בבועה, `max-height`+overflow, task-summary, sticky-bottom-בריצה) — calev-heavy, טרם brief.
+
+### רעיונות שנדחו
+
+**opencode באותו slice** — נדחה: opencode **משטח** (desk-research) ל-`tool_call` יחיד (`kind:think`), subagent ב-session נפרד, רק output חוזר — אין קינון ב-wire. דורש spike חי + אולי fork עמוק ל-opencode; מופרד. **normalize ב-fork** — נדחה לטובת passthrough דק + נירמול ב-`provider-contract` (רזה לרבייס מול upstream).
+
+## 2026-07-05 — provider-adapter-split: בידוד spawn↔convert ב-claude adapter + fork לחשיפת sub-agent (כיוון ארכיטקטוני, טרם brief)
+
+> נגזר משתי משימות שהתלכדו: (א) "סידור תצוגת קריאות-סוכן (sub-agent/Task)" — התגלה שה-adapter **זורק** את פעילות תת-הסוכן בכוונה; (ב) הנחיית-משתמשת לבודד את שכבת ההשרצה משכבת ההמרה ולהשתחרר מהבינארי המבונדל. מרחיב את `claude-executable-from-specs` (למטה) מ-workaround-נקודתי לכיוון-מבנה.
+
+### רציונל
+
+היום claude רץ in-process: `connect-in-process.ts` מייבא `ClaudeAcpAgent` (ה-adapter = **שכבת ההמרה**, frames↔ACP) ומחווט כל method ידנית; ה-adapter תלוי ב-`@anthropic-ai/claude-agent-sdk` (= **שכבת ההשרצה**) דרך `query()`. הגבול spawn↔convert **לא מבודד** — ה-adapter מוזמן inline, וה-SDK מוסתר בתוכו. הכוונה: לצרוך מה-adapter **רק** את קוד ההמרה כלוגיקה טהורה, ולשלוט/לכתוב-מחדש את שכבת ההשרצה אצלנו.
+
+### ממצאים מרכזיים (אומתו בקוד)
+
+1. **הבינארי המבונדל** — `claude-agent-sdk` מבנדל את ה-CLI `claude` השלם ב-`$bunfs` (`manifest.json`: **~220-240MB × 8 platforms**), ו-`extractFromBunfs.js` מחלץ ל-tmpdir בזמן ריצה ומריץ כ-subprocess. **דלת-מילוט**: `pathToClaudeCodeExecutable` / `CLAUDE_CODE_EXECUTABLE` → CLI חיצוני, עוקף חילוץ (זה בדיוק ה-workaround של `claude-executable-from-specs`).
+2. **שני מנגנוני-spawn נפרדים** — spawn של ה-BE (`spawn-core`/`connectSpawn`, ל-opencode/gemini) ש-claude **לא** עובר בו; ו-spawn **נסתר בתוך ה-SDK** שמריץ את בינארי-claude. ה-kill-tree של `slice-be-shutdown-hardening` מכסה רק את הראשון — בינארי-claude מנוהל בתוך ה-SDK/adapter.
+3. **הבעיות נופלות לפי הקו** — *שכבת השרצה/lifecycle*: hang (event-loop block, שורש לא אותר → `be-hang-supervisor`), port-not-released (kill-tree), NBug2 (4 מקורות-אמת → `AgentLifecycleManager`), F-4 (אין BE-buffering ב-reattach). *שכבת המרה*: warm-reattach (`initialize` כפול → `skipInitialize`), F-3 (נירמול frame חסר), **task_\*/subagent** (ה-adapter `break`-ים את כל אירועי ה-Task ומסננים text/thinking של תת-סוכן — `acp-agent.js` "keep dropping so subagent prose doesn't leak"; זהה ב-0.52.0 ו-0.55.0-האחרון → **התנהגות upstream מכוונת, שדרוג לא פותר**).
+4. **fork קיים אך מנותק** — `MusiCode1/claude-agent-acp` (fork ציבורי, ~0.48, שבע גרסאות מאחור). היום ה-provider צורך את claude **מ-npm** (`^0.52.0`), בעוד codex כבר נצרך מ-fork (`github:MusiCode1/codex-acp#drive-coding`) — תבנית-חיבור מוכחת.
+
+### שינוי-כיוון (סטייה מתועדת)
+
+מסמך `multi-client-mux-design` קבע במפורש "להשאיר את `claude-agent-acp` npm `@latest`, ללא fork". החלטה זו **סוטה** מכך במכוון: כדי לחשוף sub-agent ולשלוט בהשרצה, fork הוא הכרחי (upstream לא יחשוף task_*). זו הכרעה חדשה, לא המשך העיצוב הקודם.
+
+### מסלול מדורג (אופציות פתוחות — טרם נעול)
+
+- **(א) מיידי/זול** — `CLAUDE_CODE_EXECUTABLE` → CLI מותקן. מבטל את חילוץ ה-240MB בלי fork. (= `claude-executable-from-specs`, כבר brief-READY.)
+- **(ב) fork ל-adapter** — `MusiCode1/claude-agent-acp#drive-coding`: לחשוף task_*/subagent (למשל דרך `_meta`) + ידית ל-lifecycle של ה-child.
+- **(ג) בידוד מלא** — להחליף את `query()` של ה-SDK במימוש-השרצה שלנו (spawn CLI חיצוני + stream-json), לצרוך מה-adapter **רק** convert; + `capabilities/normalize.ts` (נקודת-תרגום raw→normalized, כבר תוכננה ב-`provider-package-organization`).
+
+### רעיונות שנדחו
+
+**שדרוג-גרסה כפתרון ל-sub-agent** — נדחה: 0.55.0 (האחרון) זהה ל-0.52.0 בטיפול ב-task_*. **מודל process-per-agent/worker-threads** — נדחה (`be-shutdown-socket-health §"האם המודל"`): "אב יחיד → N צאצאים" לגיטימי; הכאב הוא היגיינת-תהליך, לא כמות צאצאים.
+
+## 2026-07-05 — claude-executable-from-specs: claude in-process רץ על ה-executable המקומי (brief מאושר, טרם dispatch)
+
+> נגזר מדיווח-משתמשת: claude מציג "Sonnet 4.6" בעוד ה-CLI המקומי הוא Sonnet 5. חקירה חצתה 4 שכבות עד שורש חד-משמעי.
+
+### רציונל
+
+claude רץ **in-process**: BE → adapter `@agentclientprotocol/claude-agent-acp@0.52.0` → `query()` של `@anthropic-ai/claude-agent-sdk@0.3.191` → spawn של `claude.exe`. **איזה** `claude.exe` נקבע ב-`acp-agent.js:2445`: `pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_EXECUTABLE ?? (await claudeCliPath())`. ללא ה-env var → נופל ל-native binary **המבונדל** של ה-SDK (`claude-agent-sdk-win32-x64@0.3.191`, יודע רק Sonnet 4.6). המקומי (`~/.local/bin/claude.exe`, 2.1.200) יודע Sonnet 5.
+
+**שורש ה"מוזרות"**: המשתמשת הגדירה `CLAUDE_CODE_EXECUTABLE` ב-`cli-specs.jsonc` תחת `claude.setEnv`, אבל `claude-env-override.ts` מזריק setEnv ל-`_meta.claudeCode.options.env` — ה-env של ה-**child**, לא של ה-BE. השורה 2445 קוראת `process.env` של ה-**BE**. שני ערוצי-env נפרדים → ההגדרה נכונה-ברעיון אך הלכה לערוץ הלא-נכון. הזרקה דרך `_meta...pathToClaudeCodeExecutable` גם לא תעבוד: השורה 2445 באה **אחרי** `...userProvidedOptions` ודורסת. הערוץ היחיד = `process.env.CLAUDE_CODE_EXECUTABLE` של ה-BE.
+
+**ההכרעה**: `applyClaudeExecutablePath` (ב-`claude-env-override.ts`, claude-specific) מחיל את המפתח מ-`cli-specs` על `process.env` של ה-BE, מחוּוט ב-`connect-in-process.ts:145` (לפני ה-`query()`). אומת חי (workaround ידני עבד → Sonnet 5).
+
+### הכרעת-עיצוב (הנחיית משתמשת)
+
+הקוד claude-specific → **חייב לחיות במסלול claude** (`claude-env-override.ts`/`connect-in-process.ts`), **אפס נגיעה בקוד הכללי** (`server.ts`/`cli-config`/`connection-registry`). whitelist מפתח-בודד: **רק** `CLAUDE_CODE_EXECUTABLE` — דחיפת כל ה-`setEnv` ל-`process.env` תדליף `NO_PROXY` ותשבור את ה-TTS proxy.
+
+### ממצאי אביגיל
+
+r1 **READY** (3 findings דיוקי-נוסח, תוקנו): 🟡 `registerHttpOptions` מחזיר `void` (ה-`{models,projects,homeDir}` הוא גוף `c.json` של ה-route) · 🟡 ה-DoD החי נשען על ה-cli-specs.jsonc ה**מקומי** (`~/.config`), לא `deploy/` שב-repo · 🟢 Commit 2 מוחק ~5 טסטים (קבוצה, לא בודד). אומתה השורה 2445 והסדר מול `...userProvidedOptions`, וש-connect-in-process:145 קודם ל-`query()`.
+
+### רעיונות שנדחו
+
+**גשר גנרי `cli-specs→process.env` בקוד הכללי** — נדחה: מפר את containment ה-claude-specific + סיכון-`NO_PROXY`. **הזרקה דרך `_meta.claudeCode.options.pathToClaudeCodeExecutable`** — נדחה: נדרס ע"י 2445. **עדכון `MODEL_FALLBACKS`** — התגלה כ-dead code (אף צרכן FE ל-`ServerOptions.models`); מסומן למחיקה (Commit 2), לא לתיקון.
+
+## 2026-07-04 — claude-session-title: פענוח מנגנון הכותרת (`generate_session_title`)
+
+> נגזר מהבאג "‏חזרה-לסשן-חי מאפסת title" (`attachToLiveAgent:921`). התרחב לפענוח **מלא** של מנגנון כותרת-הסשן של claude — עם capture חי כראיה.
+
+**הפענוח**: ה-title של claude מגיע כ-`generate_session_title` **control_request** — ערוץ ה-control-protocol של Claude Code SDK, **לא** ACP (‏לא `session/update`, לא transcript, לא `session/load`). חמש עובדות מאומתות: (1) ה-**client יוזם** (‏claude לא דוחף); (2) ה-`description` = **ההודעה הראשונה** של המשתמש מילה-במילה (‏claude רק מלטש→title); (3) נשלח אחרי ~3 turns; (4) **`persist:boolean`** הוא מנגנון-השמירה היחיד (‏**אין** `set_title` נפרד) — false→ה-client שומר, true→claude שומר; (5) drive-coding **אף פעם לא שולח** את הבקשה → אין title live → נופל ל-`session/list` flaky → `attach` אפילו מאפס.
+
+**איך פוענח**: כלי-tap (`claude-protocol-wrapper`, שהמשתמשת יצרה ב-ClaudeCodeACP והושתל ל-`packages/provider/tools/`) לכד את ה-stdio של claude. ה-frame: `control_response.response.title = "ניסיון תקשורת"` (‏מ-description `"ניסוי תקשורת."` = ההודעה הראשונה).
+
+**ההכרעה**: `slice-claude-session-title` — **persist=true** (‏title first-class, שורד attach/reload) + תיקון attach. **spike-מקדים חוסם**: איך שולחים control_request דרך ה-stack (`claude-agent-acp`→SDK: API קיים / fork). ר' `docs/investigations/2026-07-04-claude-session-title-mechanism.md`. **כלי-לוואי נלווה**: `packages/provider/tools/claude-protocol-wrapper.cjs` (‏debug-tap, passthrough).
+
 ## 2026-07-04 — slash-commands: השלמת פקודות-Slash (brief מאושר, טרם dispatch)
 
 ### רציונל
