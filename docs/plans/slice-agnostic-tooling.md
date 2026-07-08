@@ -265,14 +265,56 @@ timeout 12 bun run dev   # ‏BE + FE שניהם מתחילים (‏עד timeout
 
 | ‏בדיקה | ‏איך |
 |---|---|
-| `bun run build` ‏עובד end-to-end | ‏רץ עד exit 0, ‏בלי `pnpm: command not found`; ‏`packages/frontend/build/index.html` ‏קיים |
-| `bun run fe:build` ‏עובד | ‏מדפיס `[dc-build-fe] done`; ‏swap אטומי הצליח (build/ ‏מעודכן) |
-| `bun run start` ‏עובד | ‏BE עולה על 4000; ‏`curl localhost:4000/api/health` → 200 |
-| `bun run dev` ‏עובד | ‏BE **‏ו**-FE שניהם מתחילים במקביל (‏לוג של שניהם תוך ~10ש') |
+| `bun run build` — ‏מנגנון אגנוסטי | ‏רץ **‏בלי** `pnpm: command not found`; ‏`bun run --filter '*' build` ‏מבצע את החבילות; ‏`packages/frontend/build/index.html` ‏קיים. ⚠️ **‏exit-code על bun-only = 1 היום, ‏אך ‏לא מהסלייס**: ‏שלב `tsc --build` ‏של backend נופל על **‏פער `@types/bun` pre-existing** (`Response.ok/json`, `Headers.set` ‏ב-`http-proxy.ts`+`http-tts-capabilities.ts`) — ‏blocker נפרד (`bun-types-web-api-gap`, ‏ר' decisions). ‏ה-FE **‏כן** ‏נבנה תחת אותו build. ‏קריטריון-לסלייס: ‏אין שגיאת-PM + ‏FE נבנה. ✅ **‏אומת חי (כלב)** |
+| `bun run fe:build` ‏עובד | ‏מדפיס `[dc-build-fe] done`; ‏swap אטומי הצליח (build/ ‏מעודכן). ✅ **‏אומת חי (כלב, exit 0)** |
+| `bun run start` ‏עובד | ‏BE עולה על 4000; ‏`curl localhost:4000/api/health` → 200. ✅ **‏אומת חי (כלב, PORT=4005 → 200)** |
+| `bun run dev` ‏עובד | ‏BE **‏ו**-FE שניהם מתחילים במקביל (‏לוג של שניהם תוך ~10ש'). ✅ **‏אומת חי (כלב, PORT=4006 → BE+VITE)** |
 | ‏טסט הבורר עובר | `bun run test` — ‏`pm.test.mjs` ‏ירוק, **‏בלי כשל *‏חדש* שהסלייס גרם**. ⚠️ **‏ה-suite לא-ירוק ב-baseline** (‏לא קשור לסלייס — ‏הסלייס נוגע רק בסקריפטי-תשתית, ‏אפס קוד תחת-טסט). ‏**‏אל תפעל לפי מונה קבוע** — ‏במקום זה: (‏א) **‏לפני** ‏כל שינוי, ‏על ה-tip הנקי, ‏הרץ `bun run test 2>&1 \| tail -5` ‏ושמור את שורות ה-`Test Files … failed` / `Tests … failed` ‏כ-baseline; (‏ב) ‏אחרי השינוי — ‏אותו מונה בדיוק. ‏הכשלים ה-pre-existing הידועים (‏environmental, ‏**‏לא לגעת, ‏לא לחקור**): `http-options.test.ts` (`os.tmpdir()`/hardcoded-`/tmp`) · `formatting.test.ts` ("‏לפני 2 דקות" he) · `https-serve.test.ts` (‏מקודד-קשיח נתיב Windows `D:/…bun.exe` → ‏`ENOENT posix_spawn` ‏על linux; ‏Windows-only, ‏same-class כמו spawn-ENOENT known-bug ב-roadmap). ‏הפלט יראה `Test Files 3 failed` + traceback של `D:/…bun.exe` — ‏**‏זה ה-baseline, ‏לא רגרסיה שלך.** |
-| ‏אין רגרסיה ל-typecheck | `bun run typecheck` — exit 0 |
-| ‏i18n hook | `bun run lint:i18n` — ‏אין עברית בקוד (‏הערות מותרות) |
-| **pnpm-parity (‏לא-נבדק כאן)** | ‏על מכונה עם node+pnpm: ‏`pnpm run build`/`dev`/`fe:build`/`start` ‏עדיין עובדים (‏אותו `pm.mjs` ‏מזהה pnpm) — ‏**‏לאימות ידני על dev**, ‏אי-אפשר על שרת bun-only |
+| ‏אין רגרסיה חדשה ל-typecheck | `bun run typecheck` — ‏אין כשל **‏חדש** מהסלייס. ⚠️ ‏על bun-only יוצא 1 היום על **‏אותו** ‏פער `bun-types-web-api-gap` (`http-proxy.ts`+`http-tts-capabilities.ts`) — ‏pre-existing, ‏git מאשר שאף commit של הסלייס לא נגע בהם. ‏4 הקבצים ששונו: ‏0 TS/tsconfig/types |
+| ‏i18n hook | `bun run lint:i18n` — ‏אין עברית בקוד (‏הערות מותרות). ✅ ‏אומת |
+| **pnpm-parity (‏Windows/dev — ‏ר' §5b)** | ‏על מכונה עם node+pnpm: ‏אותם 4 הסקריפטים דרך `pnpm` ‏(‏הבורר מזהה pnpm מ-`npm_config_user_agent`). ‏**‏לא ניתן לאימות על שרת bun-only** → ‏צ'קליסט מלא ב-**§5b** |
+
+## §5b — Windows / pnpm-parity — צ'קליסט לבדיקה במכונה עם node+pnpm
+
+> ‏מסלול ה-bun אומת חי על Linux (bun-only, ‏כלב GO). ‏המסלול הזה (pnpm) ‏**‏לא ניתן לאימות על
+> ‏השרת** (‏אין pnpm/node אמיתי). ‏זו הרשימה למכונת Windows/dev. ‏המטרה: ‏אותו `pm.mjs` ‏מזהה
+> ‏**pnpm** ‏(‏דרך `npm_config_user_agent` ‏שמתחיל ב-`pnpm/`) ‏ומייצר `pnpm -r …`/`pnpm --filter …`.
+
+```powershell
+# 0) בסיס — install דרך pnpm (הבסיס עדיין pnpm-lock.yaml + packageManager: pnpm)
+pnpm install ; pnpm hooks:install
+
+# 1) build — pm.mjs → 'pnpm -r run build'
+pnpm run build
+#    ציפייה: כל החבילות נבנות. ⚠️ backend tsc אמור לעבור כאן (על Windows/node יש @types/node+lib.dom
+#    → הפער Response/Headers של bun-types כנראה לא יצוץ) — אם אכן ירוק, זה מחזק ש-bun-types-web-api-gap
+#    הוא בעיית-סביבה של bun, לא של הקוד.
+
+# 2) fe:build — dc-build-fe → runFilterArgs → 'pnpm --filter @drive-coding/frontend build'
+pnpm run fe:build
+#    ציפייה: [dc-build-fe] done ; packages/frontend/build/index.html קיים
+
+# 3) start — dc-launch → process.execPath(=node) מריץ dc-build-fe --if-stale, ואז spawn('bun') ל-BE
+pnpm run start
+#    ציפייה: BE עולה על 4000 ; פתחי דפדפן/curl ל-/api/health → 200
+#    ⚠️ דורש bun מותקן גם על Windows (ה-BE bin הוא #!/usr/bin/env bun) — כפי שהיה תמיד
+
+# 4) dev — pm.mjs → 'pnpm -r --parallel run dev'
+pnpm run dev
+#    ציפייה: BE (bun --watch, port 4000) + FE (vite) שניהם רצים במקביל
+
+# 5) resolver sanity (אופציונלי) — לוודא שהבורר זיהה pnpm
+node -e "process.env.npm_config_user_agent='pnpm/10.0.0'; import('./scripts/pm.mjs').then(m=>console.log(m.detectPm(), m.runAllArgs('build',{pm:'pnpm'})))"
+#    ציפייה: pnpm [ 'pnpm', [ '-r', 'run', 'build' ] ]
+
+# 6) טסט הבורר
+pnpm run test   # או: pnpm exec vitest run --project scripts  → pm.test.mjs ירוק (25)
+```
+
+**נקודות-תשומת-לב ל-Windows ספציפית:**
+- `scripts/lint-no-hebrew-in-code.sh` (i18n) — ‏sh; ‏על Windows דורש git-bash/WSL. ‏לא חלק מ-4 הסקריפטים הנבדקים.
+- `spawn('bun', …)` — ‏על Windows ה-PATH ל-`bun` ‏חייב להיות זמין ל-node (‏כמו בכל מקום).
+- ‏אם `pnpm run build` **‏כן** ‏ירוק על Windows בעוד `bun run build` ‏אדום על Linux → ‏זו ‏**‏הוכחה** ‏ש-`bun-types-web-api-gap` ‏הוא פער-סביבה (bun-types), ‏מנותק מסלייס-הסקריפטים.
 
 ## §6 — Risks
 
