@@ -34,6 +34,21 @@
 - **החלפת `spawn("bun")` ב-`process.execPath`** — היה מפיל את ה-BE תחת pnpm/node (ה-bin חייב bun).
 - **הסרת `packageManager: pnpm`/`engines`** — נשמר לתאימות dev; bun מתעלם מהם ב-`run`.
 
+### runtime-gate (כלב) — GO 7/7 (light, commit 707105e)
+אומת חי על bun-only: `fe:build` exit 0 · `start`→`/api/health` 200 · `dev`→BE+FE במקביל ·
+`pm.test.mjs` 25/25 · CLI `run-filter core build` exit 0 · i18n נקי. אפס רגרסיות מהסלייס.
+מסלול pnpm/npm לא-נבדק כאן (אין node/pnpm על השרת) — לאימות-parity על מכונת-dev.
+
+### 🆕 follow-up שנגזר (blocker נפרד, out-of-scope) — `bun-types-web-api-gap`
+`bun run build`/`typecheck` יוצאים code 1 בגלל שגיאות tsc ב-backend (`http-proxy.ts` +
+`http-tts-capabilities.ts`): `Property 'ok'/'json'/'body'/'set'/'delete'/'signal' does not
+exist on 'Response'/'Headers'/'Request'`. שורש: `packages/backend/tsconfig.json` `"types":["bun"]`
++ `@types/bun@1.3.14` עם Web-API types חלקיים. **לא נגרם ע"י סלייס-הסקריפטים** (git: אף אחד מ-3
+ה-commits לא נגע בקבצים; ה-FE כן נבנה תחת אותו `bun run build`). זהו החלק הלא-גמור של שכבת
+ה-bun-native-install (הטייפים), נפרד מהסקריפטים. תיקון מוצע: שדרוג `@types/bun` / augment
+ל-`lib.bun.d.ts` / הוספת `"dom"` ל-`lib`. **מרדכי: להפוך ל-brief נפרד לפני שסומכים על `bun run build`
+המלא על השרת.**
+
 ## 2026-07-07 — slash-menu-native + native-select-parity: תיקון-כיוון (B ל-slash, C ל-select)
 
 ### רקע
