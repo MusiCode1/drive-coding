@@ -1,5 +1,39 @@
 # Decisions — drive-coding
 
+## 2026-07-08 — agnostic-tooling: סקריפטי-שורש PM/runtime-אגנוסטיים (bun-only server)
+
+### רקע
+שכבת ה-install כבר bun-native (codex-acp→npm, `cce234c` על origin/dev). מה שנשאר שבר על שרת
+**bun-only** (אין pnpm/node): ארבעת סקריפטי-השורש `build`/`dev`/`start`/`fe:build` היו כבולים
+ל-`pnpm -r …`/`node …` literals. אומת חי: `bun run build` קורס על `pnpm: command not found` (exit 127).
+
+### רציונל
+**בורר-אחד `scripts/pm.mjs`** שמזהה PM דרך `npm_config_user_agent` ו-runtime דרך `process.execPath`,
+ומייצא arg-builders (`runAllArgs`/`runFilterArgs`) + CLI (`run-all`/`run-all-parallel`/`run-filter`).
+כל סקריפט קורא לבורר במקום literals → אותם סקריפטים רצים זהה תחת bun (שרת) ו-pnpm (dev), בלי שכפול.
+עדיף על סקריפטים כפולים פר-PM (drift) ועל `Makefile` (עוד תלות). `spawn("bun")` ב-`dc-launch`
+**נשאר literal** — ה-BE bin הוא `#!/usr/bin/env bun` + `Bun.*` ב-`server.ts` → חייב bun תמיד.
+
+### ממצאי אביגיל (3 סבבים → READY)
+- **r1 (USABLE-AFTER-FIX, 3):** כל 7 הטענות הטכניות אומתו חי (כולל `bun run --filter '*' build` end-to-end
+  ו-`dev` מקבילי). ה-findings היו בהירות בלבד: (1) ה-DoD "test passes" הניח baseline ירוק — שגוי;
+  (2) `runFilterArgs` על חבילה חסרת-סקריפט נכשל exit 1 (רק `'*'` מדלג בחן); (3) מיקום ה-`include`
+  ב-`scripts/vitest.config.ts`, לא root inline.
+- **r2 (USABLE-AFTER-FIX, 1):** תיקון #1 הראשון קיבע "בדיוק 2 כשלים" — אבל יש **קובץ-כשל שלישי**
+  pre-existing (`https-serve.test.ts`, מקודד-קשיח `D:/…bun.exe` → ENOENT על linux).
+- **r3 (READY, 0):** ה-DoD חודד ל-**baseline-capture-then-compare** (מדוד לפני/אחרי, בלי מונה קשיח).
+
+### שינויי-כיוון
+- **base ל-worktree = `origin/dev`, לא local dev.** התגלה ש-local dev (`9faf62f`) **מאחורי** origin/dev
+  ושהשכבה ה-bun-native (`cce234c`) יושבת שם כ-drift לא-committed מקומית. worktree מ-`9faf62f` היה
+  מקבל את ה-github codex-acp הישן → BE לא היה עולה. הבסיס הנכון = origin/dev (עם cce234c committed).
+- **DoD test-gate**: ממונה-קשיח → capture-and-compare (חסין למספר הכשלים ה-pre-existing).
+
+### רעיונות שנדחו
+- **סקריפטים כפולים פר-PM** (`build:pnpm`/`build:bun`) — drift + על המשתמש לבחור. הבורר מסתיר את ה-PM.
+- **החלפת `spawn("bun")` ב-`process.execPath`** — היה מפיל את ה-BE תחת pnpm/node (ה-bin חייב bun).
+- **הסרת `packageManager: pnpm`/`engines`** — נשמר לתאימות dev; bun מתעלם מהם ב-`run`.
+
 ## 2026-07-07 — slash-menu-native + native-select-parity: תיקון-כיוון (B ל-slash, C ל-select)
 
 ### רקע
