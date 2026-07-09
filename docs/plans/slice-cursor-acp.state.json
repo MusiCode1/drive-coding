@@ -1,0 +1,11 @@
+{
+  "id": "cursor-acp",
+  "status": "plan-verified",
+  "plan_verified": true,
+  "dispatch_ready": true,
+  "base": "dev",
+  "depends_on": [],
+  "complexity": 5,
+  "verifier": "calev-light",
+  "dev_tip": "1292765"
+}
