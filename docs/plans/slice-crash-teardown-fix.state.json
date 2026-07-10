@@ -1,0 +1,15 @@
+{
+  "id": "crash-teardown-fix",
+  "status": "plan-verified",
+  "plan_verified": true,
+  "dispatch_ready": true,
+  "base": "slice/be-crash-hardening",
+  "depends_on": [],
+  "complexity": 3,
+  "verifier": "calev-light",
+  "dev_tip": "064f7d5a",
+  "avigail_rounds": 1,
+  "avigail_verdict": "USABLE-AFTER-FIX",
+  "avigail_note": "4 findings all doc/citation (not logic); approach validated; corrected in-brief. Findings #1 (no other crashListeners feeder) + #4 (SDK never .cancel) folded into eliezer verification gates. Planner-judgment: proceed without 2nd avigail round (harness instability; self-corrected).",
+  "fixes": "be-crash-hardening C3 regression (spontaneous in-process session teardown on transient stream-write rejection)"
+}
