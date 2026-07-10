@@ -1,3 +1,22 @@
+## 2026-07-10 — slice-be-diag-harness — C3: scripts/watch.mjs watchdog
+
+**מה בוצע (manual/live):**
+
+**Commit C3 — scripts/watch.mjs:**
+- פורט מ-`scripts/spawn-spike/watch.mjs`, עם 3 שינויי-חובה:
+  1. `BE_PORT` default `"4010"` → `"4001"` (dev-BE port).
+  2. `WT` path `"../.."`→`".."` (הקובץ עכשיו ב-`scripts/` = רמה אחת מתחת לשורש).
+  3. JSDoc דוגמת-שימוש עודכנה: `BE_PORT=4001 bun scripts/watch.mjs`.
+- **בדיקה חיה (port 4003 לבדיקה — 4001 תפוס)**:
+  - `/api/diag` החזיר `eventLoop.maxMs=3.9ms`, `memory.rssMB=162`, `agents={total:0}`.
+  - watch.mjs עם BE רץ: טבלה מתעדכנת כל שנייה, status=ok.
+  - watch.mjs ללא BE: "⛔ NO RESPONSE (frozen/down)" + "🔴 endpoint silent ~3s" אחרי STALL_STREAK=3.
+  - `.tmp/watch.log` נוצר בתוך ה-worktree (`/home/user/Projects/drive-coding/.worktrees/be-diag-harness/.tmp/watch.log`).
+- **176/176 provider + 2 backend http-health ירוקים** (אין שינוי בtest suite לC3).
+- lint:i18n: נקי.
+
+---
+
 ## 2026-07-10 — slice-be-diag-harness — C2: /api/diag endpoint
 
 **מה בוצע (integration):**
