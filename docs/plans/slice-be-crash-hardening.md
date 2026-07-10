@@ -14,18 +14,22 @@
 ```bash
 git worktree add .worktrees/be-crash-hardening -b slice/be-crash-hardening dev
 cd .worktrees/be-crash-hardening
-pnpm install && pnpm hooks:install
+bun install          # ⚠️ שרת bun-only — אין pnpm/node אמיתי. install דרך bun (קורא bun.lock).
 ```
 - env הפרויקט (ports/OneCLI/commands): `AGENTS.md`. פרוטוקול executor: הגדרת הסוכן **eliezer** + סקיל brief-driven-slices.
 - ה-slice הזה **backend/provider בלבד** — אין FE, אין Svelte, אין i18n-strings בקוד (מחרוזות-לוג באנגלית כמקובל).
+- ⚠️ **סביבת-הרצה bun-only** (השרת הזה, אחרי merge של `agnostic-tooling`): **אין `pnpm`/`node` אמיתי — רק `bun`**.
+  `pm.mjs` מזהה bun אוטומטית תחת `bun run`. השתמש בפקודות-bun למטה, **לא** ב-`pnpm`.
 
-### Verification (build-gate)
+### Verification (build-gate) — **bun**
 ```bash
-pnpm --filter @drive-coding/provider test        # stream-bridge unit (Commit 1+3)
-pnpm --filter @drive-coding/backend test         # server-survival integration (Commit 2)
-pnpm --filter @drive-coding/provider typecheck
-pnpm --filter @drive-coding/backend typecheck
+cd packages/provider && CI=true bun run test        # stream-bridge unit (Commit 1+3) — "vitest run"
+cd ../.. && CI=true bunx vitest run packages/backend # server-survival integration (Commit 2)
+#   ↑ ל-packages/backend אין `test` script פר-חבילה — הטסטים רצים מה-root דרך vitest (בדוק חי, אל תנחש).
+bun run typecheck                                    # root — provider+backend, exit 0
 ```
+> **baseline pre-existing** (environmental, לא רגרסיה שלך — אל תתקן/תחקור): `http-options` · `formatting` · `https-serve`.
+> תפוס baseline לפני שינוי (`CI=true bunx vitest run 2>&1 | tail -5`) והשווה מונה אחרי — לא מונה קשיח.
 
 ### Reading list
 **must-read**:
@@ -170,7 +174,7 @@ pnpm --filter @drive-coding/backend typecheck
 | **unit: safeUrlPathname לעולם לא זורק** | `packages/backend/tests/url-safe.test.ts` ירוק על כל 3 הקלטים הפגומים |
 | **integration: server-survival** | הטסט החדש בתבנית `ws-agent-error-survival` ירוק (או `skip`+אימות-חי אם flaky) |
 | **אפס רגרסיה** | כל טסטי provider+backend הקיימים ירוקים; happy-path round-trip של ה-bridge לא נשבר |
-| build-gate | `typecheck` (provider+backend) 0 · כל הטסטים ירוקים · `pnpm lint:i18n` עובר |
+| build-gate | `bun run typecheck` (provider+backend) 0 · כל הטסטים ירוקים (מול baseline) · `bun run lint:i18n` עובר |
 
 ## §5 — Risks
 
