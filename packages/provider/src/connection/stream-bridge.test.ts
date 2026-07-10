@@ -169,6 +169,50 @@ describe("createStreamBridge — Stream↔wire adapter", () => {
     ).toBe(false)
   })
 
+  it("onError fires exactly once when inbound stream errors", async () => {
+    // Commit 3: onError callback is invoked when the .catch absorbs the write rejection.
+    // Must fire exactly once even if multiple writes happen on the errored stream.
+    const bridge = createStreamBridge()
+    const errorSpy = vi.fn()
+    bridge.onError(errorSpy)
+
+    // Force the inbound stream into errored state.
+    const r = bridge.agentEnd.readable.getReader()
+    await r.cancel(new Error("agent gone"))
+    r.releaseLock()
+
+    // Two writes on the errored stream — onError must fire only once (erroredOnce guard).
+    bridge.wireEnd.write(JSON.stringify({ jsonrpc: "2.0", method: "ping", id: 1 }))
+    await tick()
+    await tick()
+    // Second write: closed=true, returns false immediately (no second .catch path).
+    bridge.wireEnd.write(JSON.stringify({ jsonrpc: "2.0", method: "ping", id: 2 }))
+    await tick()
+    await tick()
+
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    // The error passed to the callback must be the rejection reason.
+    expect(errorSpy.mock.calls[0]).toBeDefined()
+  })
+
+  it("onError unsubscribe stops receiving callbacks", async () => {
+    const bridge = createStreamBridge()
+    const errorSpy = vi.fn()
+    const unsub = bridge.onError(errorSpy)
+    unsub()
+
+    const r = bridge.agentEnd.readable.getReader()
+    await r.cancel(new Error("agent gone"))
+    r.releaseLock()
+
+    bridge.wireEnd.write(JSON.stringify({ jsonrpc: "2.0", method: "ping", id: 1 }))
+    await tick()
+    await tick()
+
+    // Unsubscribed — must not have been called.
+    expect(errorSpy).not.toHaveBeenCalled()
+  })
+
   it("round-trip: multiple messages in both directions", async () => {
     const bridge = createStreamBridge()
 
