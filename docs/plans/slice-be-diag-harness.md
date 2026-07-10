@@ -1,7 +1,7 @@
 # Slice — be-diag-harness — תוכנית
 
 > **תאריך**: 2026-07-10
-> **סטטוס**: 📝 טיוטה — טרם אביגיל
+> **סטטוס**: ✅ הושלם — commits: 098bff60..a828943f (C1 hot-path-timing, C2 /api/diag, C3 watch.mjs)
 > **Complexity**: 5/10 (verifier: **light / calev**)
 > **תלות**: `depends_on: [be-crash-hardening]` · **base**: `slice/be-crash-hardening` @ `064f7d5a` (שרשור — טרם merge ל-dev)
 > **מקור**: ה-spike השמור `slice/claude-spawn-spike` (@ `dbd70013`) — תשתית-אבחון שרצה חי ב-CodeShark ותפסה
