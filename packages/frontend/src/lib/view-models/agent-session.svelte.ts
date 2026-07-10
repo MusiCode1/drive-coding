@@ -11,6 +11,7 @@
  */
 
 import type {
+  AvailableCommand,
   SessionConfigOption,
   SessionModelState,
   SessionModeState,
@@ -141,6 +142,10 @@ export class AgentSession {
   models = $state<SessionModelState | null>(null)
   /** מצב ה-modes הזמינים — null אם ה-agent לא חשף מידע mode. */
   modes = $state<SessionModeState | null>(null)
+
+  // ─── slice-slash-commands Commit 0: פקודות ה-slash שהספק חשף ─── (תוספתי)
+  /** פקודות ה-slash שהספק חשף (available_commands_update). [] = אין/טרם. */
+  availableCommands = $state<AvailableCommand[]>([])
 
   // ─── slice session-title: כותרת הסשן הפעיל ─── (תוספתי)
   /** כותרת הסשן הפעיל. snapshot מרגע הטעינה/החלפה. "" = אין כותרת (סשן חדש). */
@@ -1312,6 +1317,8 @@ export class AgentSession {
     this.configOptions = result.configOptions ?? []
     this.models = result.models ?? null
     this.modes = result.modes ?? null
+    // slice-slash-commands: ניקוי בהחלפת/פתיחת סשן; ה-update הטרי יאכלס
+    this.availableCommands = []
   }
 
   #cleanup(opts?: { keepAgent?: boolean }): void {
@@ -1527,6 +1534,12 @@ export class AgentSession {
       if (Array.isArray(opts)) {
         this.configOptions = opts as SessionConfigOption[]
       }
+      return
+    }
+    // ─── slice-slash-commands Commit 0: available_commands_update ───────────
+    if (update.sessionUpdate === "available_commands_update") {
+      const cmds = (update as { availableCommands?: unknown }).availableCommands
+      this.availableCommands = Array.isArray(cmds) ? (cmds as AvailableCommand[]) : []
       return
     }
 
