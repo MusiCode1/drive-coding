@@ -33,6 +33,12 @@ export interface StreamBridge {
   readonly wireEnd: WireEnd
   /** Close both sides of the bridge (signals end of stream). */
   close(): void
+  /**
+   * Register a callback to be fired when the stream errors (inbound write rejected or
+   * outbound drain rejected). Commit 3 wires this into crashListeners for session cleanup.
+   * Fires at most once (erroredOnce guard). Returns an unsubscribe function.
+   */
+  onError(cb: (err: unknown) => void): () => void
 }
 
 /**
@@ -67,6 +73,22 @@ export function createStreamBridge(): StreamBridge {
   let closed = false
   let inboundWriter: WritableStreamDefaultWriter<AnyMessage> | null = null
 
+  // Error listeners — fired at most once when the stream errors (Commit 3: session cleanup).
+  const errListeners = new Set<(err: unknown) => void>()
+  let erroredOnce = false
+
+  function onErrorFire(err: unknown): void {
+    if (erroredOnce) return
+    erroredOnce = true
+    for (const cb of errListeners) {
+      try {
+        cb(err)
+      } catch {
+        /* listener must not break the pipe */
+      }
+    }
+  }
+
   // Start draining the outbound channel (agent→FE) and broadcasting to listeners.
   // We do this lazily in a microtask so agentApp.connect() can be called first.
   let drainStarted = false
@@ -74,7 +96,11 @@ export function createStreamBridge(): StreamBridge {
   function ensureDraining(): void {
     if (drainStarted) return
     drainStarted = true
-    void drainOutbound()
+    drainOutbound().catch((err: unknown) => {
+      // outbound readable errored (agent closed/crashed) — absorb, mark closed, notify listeners.
+      closed = true
+      onErrorFire(err)
+    })
   }
 
   async function drainOutbound(): Promise<void> {
@@ -121,7 +147,13 @@ export function createStreamBridge(): StreamBridge {
       }
       // Write is async but we return synchronously (fire-and-forget, matching wire contract).
       // Backpressure is handled by the WritableStream internally.
-      void inboundWriter.write(msg)
+      // .catch absorbs rejection when the inbound stream has errored (e.g. agent cancelled its
+      // readable) — prevents unhandledRejection → process.exit(1). Sets closed=true (fail-fast)
+      // and notifies error listeners (Commit 3 wires these to session cleanup).
+      inboundWriter.write(msg).catch((err: unknown) => {
+        closed = true
+        onErrorFire(err)
+      })
       return true
     },
   }
@@ -129,6 +161,13 @@ export function createStreamBridge(): StreamBridge {
   return {
     agentEnd,
     wireEnd,
+
+    onError(cb: (err: unknown) => void): () => void {
+      errListeners.add(cb)
+      return () => {
+        errListeners.delete(cb)
+      }
+    },
 
     close(): void {
       if (closed) return

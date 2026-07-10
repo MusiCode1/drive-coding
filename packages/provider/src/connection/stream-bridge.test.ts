@@ -144,6 +144,31 @@ describe("createStreamBridge — Stream↔wire adapter", () => {
     expect(result).toBe(false)
   })
 
+  it("write on an errored inbound stream does not crash and marks closed", async () => {
+    // TDD RED→GREEN: vitest fails automatically on unhandledRejection that escapes.
+    // Before the fix: void inboundWriter.write(msg) on an errored stream leaks a rejection
+    // → unhandledRejection → process exit (or vitest failure). After the fix: absorbed by .catch.
+    const bridge = createStreamBridge()
+
+    // Force the inbound stream into an errored state (agent side cancelled):
+    const r = bridge.agentEnd.readable.getReader()
+    await r.cancel(new Error("agent gone"))
+    r.releaseLock()
+
+    // The first write opens a writer on the errored inbound stream → write rejects.
+    // Must be absorbed (no unhandledRejection), and closed must become true.
+    bridge.wireEnd.write(JSON.stringify({ jsonrpc: "2.0", method: "ping", id: 1 }))
+
+    // Wait for the async .catch to fire (two microtask ticks).
+    await tick()
+    await tick()
+
+    // After absorption: closed → write returns false (fail-fast).
+    expect(
+      bridge.wireEnd.write(JSON.stringify({ jsonrpc: "2.0", method: "ping", id: 2 })),
+    ).toBe(false)
+  })
+
   it("round-trip: multiple messages in both directions", async () => {
     const bridge = createStreamBridge()
 
