@@ -1,0 +1,13 @@
+{
+  "id": "options-trim",
+  "status": "plan-verified",
+  "plan_verified": true,
+  "dispatch_ready": true,
+  "base": "slice/be-diag-harness",
+  "depends_on": ["be-crash-hardening", "be-diag-harness"],
+  "complexity": 3,
+  "verifier": "calev-light",
+  "dev_tip": "585ea804",
+  "avigail_rounds": 2,
+  "avigail_verdict": "READY"
+}

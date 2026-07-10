@@ -1,5 +1,56 @@
 # Decisions — drive-coding
 
+## 2026-07-10 — options-trim: מחיקת החישוב היקר ב-`/api/options` (במקום cache) — משורשר על diag-harness
+
+### רציונל
+
+‏ממצא #4 בסקירת-הבאגים 07-06: `GET /api/options` חוסם את ה-event-loop **סינכרונית בכל בקשה** דרך
+‏`execFileSync("opencode",["models"],{timeout:5000})` (עד 5 שניות) + `readdirSync`/`statSync` על 3 שורשים.
+‏זה החשוד המרכזי ל-lag שה-`watch.mjs` (diag-harness) תפס חי (138ms spike). **התוכנית המקורית הייתה
+‏`options-async-cache`** — להפוך את העבודה ל-async + TTL-cache.
+
+‏**חקירה חיה (07-10) הפכה את ההנחה**: ה-FE צורך **רק `homeDir`** מ-`/api/options` (שני צרכנים:
+‏default-cwd ב-`+page.svelte:41`, start-של-folder-picker ב-`FolderPickerDialog.svelte:61`). השדות
+‏`models` ו-`projects` — החישובים היקרים — הם **dead payload, 0 צרכנים**: ה-dropdown של המודלים
+‏משתמש ב-`session.models` מה-ACP החי (מקור אחר לגמרי); התיקיות-האחרונות מגיעות מ-`/api/projects`
+‏(ProjectsRegistry נפרד). ה-endpoint נורה ב-onMount של מסך-הפתיחה → כל טעינה משלמת `execFileSync` יקר
+‏על תוצאה שנזרקת.
+
+‏**ההכרעה: trim, לא cache.** מוחקים את `listOpencodeModels`+`listProjectDirs`+`MODEL_FALLBACKS`,
+‏`/api/options` → `{ homeDir }` בלבד. ה-blocker **נעלם בשורש** (לא נדחה ל-cache), פחות קוד, אפס-שינוי-התנהגות
+‏ב-FE. אותו anti-pattern בדיוק שהוסר ב-"הסרת רשימת-הסשנים במסך-הפתיחה" (מוזג 06-28) — עבודה יקרה
+‏במסך-הפתיחה שאינה נחוצה. (ובנוסף: `ServerOptions.models` **כבר סומן dead-code** ב-decisions 07-05
+‏[claude-executable-from-specs] — ה-slice מבצע את המחיקה שנדחתה שם.)
+
+### ‏ממצאי אביגיל
+
+‏r1 → USABLE-AFTER-FIX (3 findings, **כולם ניקוי-טסט — אפס blocker/regression**). **ההנחה-המרכזית
+‏(models/projects=dead-payload) אומתה אמפירית ומלאה** (grep על `opts.models`/`opts.projects`/destructuring
+‏→ 0 hits; `session.models` מקור-ACP; recent-folders מ-`/api/projects`), וכל הטענות העובדתיות
+‏(line-numbers, imports שמתייתמים [`os` נשאר], `getHomeDir` importer=`paths.ts`, רשימת-cases, ה-baseline-האדום,
+‏אי-חפיפת-קוד עם השרשרת ב-`git log`) **מדויקות**. שלושת ה-findings: (#1🟡) המחיקה בטסט משאירה את
+‏mock-ה-`child_process`+`execFileSyncMock` יתומים — הוספתי הנחיה מפורשת למחיקתם; (#2🟢) `import * as path`
+‏יתום; (#3🟢) הערה מיושנת ב-`tls.test.ts:19`. **r2 → READY, 0 findings.**
+
+### ‏שינויי-כיוון
+
+‏**מ-`options-async-cache` ל-`options-trim`** — התוכנית הישנה (async+cache) **מבוטלת**. אין טעם לְקַשׁ
+‏עבודה שאיש לא צורך; מחיקה פותרת את #4 בשורש, בטוחה יותר (מוחקת dead-code), וקטנה יותר (Complexity 3 מול 5+).
+
+### ‏רעיונות שנדחו
+
+- ‏**async+cache (התוכנית המקורית)** — נדחה: שומר על העבודה המתה, מוסיף שכבת-cache לתחזוקה, לא מוחק dead-code.
+- ‏**שינוי-שם `/api/options`→`/api/home`** — נדחה: מרחיב blast-radius (route+adapter+imports) בלי תועלת;
+  ‏ה-שם נשאר legacy (מתועד). קטלוג-מודלים אמיתי, אם יידרש בעתיד, יבוא כ-endpoint on-demand נפרד (לא eager במסך-הפתיחה).
+- ‏**איחוד `homeDir` לתוך `/api/projects` וביטול endpoint** — נדחה: coupling מיותר + עוד שינוי-FE; ה-trim לבד מסיר את כל העלות.
+
+### ‏base ושרשור
+
+‏base = `slice/be-diag-harness` @ `585ea804` (השרשרת החיה/baking). `depends_on: [be-crash-hardening, be-diag-harness]`
+‏הוא **תלות-שרשור, לא תלות-קוד** (קבצים זרים — `http-options.ts`/FE-`options.ts` לא נגעו בשרשרת; אומת ב-`git log`).
+‏השרשור מכוון: (א) בונים על הענף החי; (ב) ה-diag-harness נותן את ה**עיניים** לאמת חי שה-blocker נעלם
+‏(DoD: hammer על `/api/options` + `/api/diag` `eventLoop.maxMs` שטוח). merge-order: crash-hardening → diag-harness → options-trim.
+
 ## 2026-07-10 — be-diag-harness: תשתית-אבחון (observability) — משורשר על crash-hardening
 
 ### רציונל
