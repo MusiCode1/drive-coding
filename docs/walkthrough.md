@@ -1,3 +1,15 @@
+## 2026-07-10 — slice-options-trim — Commit 2: frontend ServerOptions צמצום ל-homeDir בלבד
+
+**מה בוצע:**
+- `packages/frontend/src/lib/adapters/options.ts`: `ServerOptions` type צומצם ל-`{ homeDir: string }` — נמחקו `models` ו-`projects`.
+- `fetchServerOptions` נשאר ללא שינוי (עדיין `fetch(beUrl("/api/options"))` → `res.json()`).
+- **typecheck gate**: שני הצרכנים (`+page.svelte:41 cwd = opts.homeDir`, `FolderPickerDialog.svelte:61 start = opts.homeDir`) קוראים רק `homeDir` — מקמפלים נקי; 0 שגיאות TS חדשות.
+- lint:i18n נקי.
+
+**חריגות**: אין. testing=none לפי הבריף (אין לוגיקה חדשה — הגייט הוא typecheck).
+
+---
+
 ## 2026-07-10 — slice-options-trim — Commit 1: backend trim http-options ל-homeDir בלבד
 
 **מה בוצע:**
