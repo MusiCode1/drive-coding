@@ -296,4 +296,6 @@ export const he: Catalog = {
   // ─── app-title ─── (slice app-title-build-env)
   "appTitle.settings": "הגדרות",
   "appTitle.sessions": "סשנים",
+  // ─── slash commands ─── (slice-slash-commands)
+  "slash.commandsList": "רשימת פקודות slash",
 }

@@ -1,7 +1,8 @@
 # Slice — slash-commands — תוכנית
 
 > **תאריך**: 2026-07-04
-> **סטטוס**: ‏מאושר (`plan_verified: true` — ‏אביגיל r2 = READY)
+> **סטטוס**: ✅ **הושלם** (2026-07-07, 3 commits על `slice/slash-commands`; אומת חי בדפדפן עם
+> claude+opencode אמיתיים; ר' `docs/walkthrough.md` לפירוט מלא כולל bug שנמצא+תוקן ב-Commit 2)
 > **Complexity**: 5/10 (verifier: light — ר' §8, borderline)
 > **תלות**: ‏אין (`depends_on: []`, base=dev)
 

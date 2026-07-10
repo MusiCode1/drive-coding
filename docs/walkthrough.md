@@ -130,6 +130,105 @@
 **חריגות:**
 - Integration test של connect-in-process C3 הוא structural בלבד (לא מדמה stream-error אמיתי in-process) — הכיסוי על stream-bridge.test.ts + unit. אימות-חי ב-DoD §4 נדחה ל-calev (BE חי).
 - typecheck errors (28): כולם pre-existing ב-http-proxy/tts-capabilities. לא שינויים שלנו.
+## 2026-07-11 00:53 — localhost-bind-hotfix — סגירת האזנה חיצונית כברירת מחדל
+
+**מה בוצע (hotfix אבטחה + brief-driven gate רטרואקטיבי):**
+
+השרת ננעל להאזנה על loopback כברירת מחדל, אחרי שנמצא ש-`:4000` היה נגיש מבחוץ דרך כתובת השרת. ההוטפיקס יושם מיד כדי לסגור את החשיפה, ולאחר מכן הועבר דרך brief קצר, אביגיל וכלב.
+
+**1. Backend bind בטוח כברירת מחדל:**
+- `packages/backend/src/server.ts` משתמש ב-`process.env.DRIVE_CODING_HOST ?? "127.0.0.1"` ומעביר `hostname` ל-`serve(...)` גם במסלול HTTP וגם במסלול HTTPS.
+- לוג `listening` כולל עכשיו `hostname` ו-`port`.
+- אימות חי: `ss -ltnp 'sport = :4000'` מציג `127.0.0.1:4000`, לא `*:4000`.
+
+**2. Override מפורש לפתיחה מכוונת:**
+- `packages/backend/src/bin/drive-coding.ts` קיבל `--host <addr>`.
+- `DRIVE_CODING_HOST` נוסף לשכבת config/env/flag ב-`packages/backend/src/config/load-config.ts`.
+- `packages/core/src/config/schema.ts` קיבל `host?: string`.
+- `--host ""` נדחה עם שגיאה, ו-`--help` מציג את ברירת המחדל `127.0.0.1`.
+
+**3. systemd ותיעוד deploy:**
+- `deploy/systemd/voice-acp-main.service` ו-`voice-acp-dev.service` מצהירים `Environment=DRIVE_CODING_HOST=127.0.0.1`.
+- `docs/deploy-local-service.md` עודכן: ה-CF tunnel צריך לפנות ל-`http://localhost:4000/4001`, לא לכתובת LAN.
+- נכתב במפורש שחשיפת LAN מכוונת דורשת `DRIVE_CODING_HOST=0.0.0.0` או `--host 0.0.0.0`, ולא להשתמש בזה ביחידות main/dev הרגילות.
+
+**4. תכנון ואימות:**
+- Brief: `docs/plans/slice-localhost-bind-hotfix.md`.
+- State: `docs/plans/slice-localhost-bind-hotfix.state.json`.
+- אביגיל r1: `USABLE-AFTER-FIX` — דרשה לכסות את נתיב systemd/CF tunnel ולתקן את פקודת ה-smoke.
+- אביגיל r2: `READY`, findings 0.
+- כלב light: `GO`, DoD 9/9, findings 0.
+
+**בדיקות:**
+- `bun run --filter @drive-coding/core build` — עבר.
+- `bun run --filter @drive-coding/core typecheck` — עבר.
+- `bun run --filter @drive-coding/backend typecheck` — עבר.
+- `cd packages/core && bun run test config-resolve` — עבר.
+- `cd packages/backend && bun run test load-config` — עבר.
+- `bun run lint:i18n` — עבר.
+- smoke זמני: שרת על `PORT=4098 DRIVE_CODING_HOST=127.0.0.1`, `ss` הראה `127.0.0.1:4098`, ו-`/api/agents` החזיר 200.
+
+**חריגות / המשך:**
+- לא בוצע restart נוסף ל-tmux מעבר למה שכבר נעשה; השרת החי כבר מאומת כ-loopback.
+- לפני restart של יחידות systemd main/dev, צריך לוודא בפועל שה-CF tunnel daemon המקומי מפנה ל-`localhost:<port>` ולא לכתובת LAN ישנה.
+- `offline-page` ו-`@Vendor/` נשארו מחוץ לסקופ הקומיט הזה.
+
+---
+
+## 2026-07-07 — slice-slash-menu-native — Commit 6 (ghost-hint overlay)
+
+**מה בוצע (manual/browser — FE-טהור, slice-slash-menu-native §4 Commit 2):**
+
+`TypeArea.svelte` בלבד — ghost-hint מבודד (קל-revert):
+
+- **`ghostHint` derived**: סורק `session.availableCommands` ישירות (לא `slash.matches` — `slash=null` במצב `/name ` עם רווח, כי `matchSlashCommands` מחזיר null כש-`rest.includes(" ")`). לוגיקה: `/name ` (רווח נגרר, בלי ארגומנט) → מצא פקודה לפי שם → `cmd.input?.hint`. פקודה בלי `input` → null.
+- **overlay-mirror**: `<div aria-hidden="true" class="absolute inset-0 ...">` — `position:absolute inset-0` מתאים לגובה הדינמי (auto-grow) של ה-textarea שמגדיר את גובה ה-wrapper. `pointer-events:none` כדי שה-textarea מקבל קליקים. span אחד עם `color:transparent` על ה-promptText (כדי לדחוף את ה-ghost למיקום הנכון), span שני עם `color:var(--fg-muted) opacity:0.6` על ה-hint. `aria-hidden` — תצוגה ויזואלית בלבד, ה-textarea הוא ה-semantic source.
+- ה-`<div class="flex-1">` קיבל `relative` (ה-overlay מתייחס אליו).
+- ה-textarea קיבל `relative` כדי להיות מעל ה-overlay ב-stacking order (מגיע אחרי ה-overlay ב-DOM).
+
+### בדיקות (Manual/browser — Playwright חי, session claude אמיתי)
+
+- `pnpm typecheck`: 0 errors. `biome check`: נקי.
+- **אימות Playwright חי** (claude connected, `50510514`):
+  - `/code-review ` → `div[aria-hidden="true"]` count=1, ghost text=`"/code-review [low|medium|high|xhigh|max|ultra] [--fix] [--comment] [<target>]"` ✅
+  - הקלדת `medium` → ghost count=0 ✅
+  - `/context ` (ללא input.hint) → ghost count=0 ✅ (DoD#8)
+- `git show --stat`: TypeArea בלבד (+33 שורות לגבי Commit 5 base) — בידוד מלא ✅
+
+### חריגות
+
+- Overlay approach נבחר (לא fallback chip) — גישה ראשית לפי §4 עבדה.
+- ה-ghost נראה ויזואלית ב-RTL mode כ-`code-review/` (ה-text align מימין לשמאל) — זה עקבי עם כיוון האפליקציה. לא רגרסיה, לא בסקופ.
+
+---
+
+## 2026-07-07 — slice-slash-menu-native — Commit 5 (listbox parity)
+
+**מה בוצע (manual/browser — FE-טהור, slice-slash-menu-native §4 Commit 1):**
+
+`SlashCommandMenu.svelte` + `TypeArea.svelte` — השלמת listbox native parity:
+
+- **scroll-into-view**: `$effect` שמגיב ל-`selectedIndex` ול-`matches` (שניהם dependency) + `querySelector('[data-index]')` על ה-`<ul>` הממוקד; `block:"nearest"` — גולל רק את ה-`<ul>` (scroll-container הקרוב), לא את הדף. תיקון הבאג שנתפס חי: ניווט-חיצים ברשימה ארוכה הוציא את הפריט המודגש מחוץ ל-`max-h-64`.
+- **ARIA מלא**: `<ul role="listbox" id="slash-listbox">` (id קבוע ליציבות-portal); `role="option" id="slash-opt-{i}" data-index={i} aria-selected={i===selectedIndex}` על ה-`<button>` (לא `<li>` — ARIA anti-pattern).
+- **TypeArea**: `role="combobox" aria-expanded aria-controls aria-activedescendant` על ה-textarea — מותנה ב-`menuOpen`.
+- **Home/End**: `selectedIndex=0` / `selectedIndex=n-1` עם `preventDefault`, בתוך ה-`if (menuOpen && slash)` הקיים.
+- **Biome format+organize-imports**: CRLF→LF ו-import order תוקנו אוטומטית (pre-existing, לא שינויי-לוגיקה).
+
+### בדיקות (Playwright חי, claude session)
+
+- `pnpm typecheck`: 0 errors.
+- `biome check` על 2 הקבצים: נקי לאחר format+fix (CRLF+organize-imports).
+- **אימות Playwright חי** (claude connected, 57 פקודות):
+  - role=combobox, aria-expanded, aria-controls=slash-listbox, aria-activedescendant=slash-opt-0 ✅ (DoD#5)
+  - End → slash-opt-56, Home → slash-opt-0 ✅ (DoD#3)
+  - 10x ArrowDown → slash-opt-10 (רשימה גללה לתצוגה) ✅ (DoD#2)
+  - ArrowUp from slot-opt-0 → slash-opt-56 (wrap-around) ✅ (DoD#4)
+  - Escape → aria-expanded=false, listbox=0 ✅ (DoD#6)
+  - Screenshots: `/tmp/slash-open.png`, `/tmp/slash-scrolled.png`
+
+### חריגות
+
+- Biome organize-imports ו-format תוקנו (pre-existing, לא לוגיקה).
 
 ---
 
@@ -9067,3 +9166,203 @@ Commit 4 (systemd + docs):
 **חריגות:**
 - biome.json global lint נכשל (CRLF vs LF pre-existing issue) — קבצים שנגעתי בהם עברו biome check פרטני ✓.
 - smoke ידני בדפדפן לא בוצע (לא-חסם עבור calev).
+
+## 2026-07-07 — slice-slash-commands — Commit 0 (TDD)
+
+### מה בוצע?
+
+`packages/frontend/src/lib/view-models/agent-session.svelte.ts` — handler ל-`available_commands_update`
+בדיוק לפי תקדים `acp-mode-config-sync` (mode/config handlers):
+- import טיפוס `AvailableCommand` מ-`@agentclientprotocol/sdk` (הרגיל — לא ה-alias `acp-sdk-v1`).
+- שדה חדש `availableCommands = $state<AvailableCommand[]>([])` ליד `modes`/`configOptions`.
+- handler ב-`#onSessionUpdate` **לפני** ה-gate `if (!text) return`, ליד `config_option_update`:
+  מאמת `Array.isArray` על ה-payload, אחרת מאפס ל-`[]` (לא קורס).
+- `#captureSessionConfig` — הוספת איפוס `this.availableCommands = []` בהחלפת/פתיחת סשן
+  (ה-update הטרי מגיע *אחרי* תגובת session/new/load, כך שהאיפוס לא דורס נתון טרי).
+
+הבדיקה `agent-session.slash-commands.test.svelte.ts` כבר הייתה כתובה (RED) מסשן קודם שנקטע
+מסיבת-רשת — נבדקה ונמצאה תקינה ושלמה מול הבריף, לא נכתבה מחדש.
+
+### בדיקות
+
+- 4/4 טסטי-Commit-0 ירוקים (`npx vitest run slash-commands`): איכלוס מ-update, איפוס על payload
+  ריק, אי-קריסה על payload לא-מערך, איפוס ב-`#captureSessionConfig` בהחלפת-סשן.
+- `pnpm typecheck` — ירוק (tsc --build, 0 errors).
+- `pnpm lint:i18n` (דרך `bash scripts/lint-no-hebrew-in-code.sh` ישירות — ה-alias `pnpm lint:i18n`
+  נכשל ב-Windows cmd-shell resolution, לא קשור לסלייס) — נקי.
+- `pnpm test` (frontend, מלא) — 422/423 ירוק; הכישלון היחיד (`formatting.test.ts` — "לפני 2 דקות"
+  מול "לפני שתי דקות") הוא **pre-existing** (אושר עם `git stash` על אותו commit בסיס, ללא השינויים
+  שלי — נכשל זהה; הבדל ICU/Node locale-rendering, לא-קשור ל-slash-commands).
+
+### חריגות
+
+- `pnpm lint` (biome, global) — נכשל על CRLF-vs-LF ב-קבצים רבים ברחבי הריפו (pre-existing, ראה
+  entry קודם `slice-app-title-build-env`). אימתתי עם `git stash` שאותו כישלון קיים גם *לפני*
+  השינויים שלי על `agent-session.svelte.ts` — לא רגרסיה. `biome check` פרטני על שני הקבצים
+  שנגעתי בהם מראה אותה שגיאת-CRLF בלבד (לא שגיאת-תוכן).
+
+## 2026-07-07 — slice-slash-commands — Commit 1 (TDD)
+
+### מה בוצע?
+
+`packages/frontend/src/lib/engines/slash-commands.ts` — engine טהור (אין browser/DOM):
+- `matchSlashCommands(input, commands)` — `null` אם הקלט לא מתחיל ב-`"/"` או אם יש רווח אחרי
+  ה-token (מצב-ארגומנטים); אחרת `{ query, matches }` עם prefix-match case-insensitive על `name`.
+  `query=""` (רק `"/"`) → כל הפקודות. אין תוצאות → `matches: []` (עדיין לא-`null`, המצב "הקלדת-פקודה"
+  עדיין פעיל).
+- `applySlashSelection(command)` — `"/<name> "` (רווח נגרר לארגומנטים).
+
+### בדיקות
+
+- TDD red→green: כתבתי `slash-commands.test.ts` קודם (10 טסטים), אימתתי RED
+  (`Cannot find module './slash-commands'`), ואז מימשתי → GREEN מלא.
+- 10/10 טסטים ירוקים: ריק/לא-slash → null · "/" → הכל · prefix-match ("/co") · מצב-ארגומנטים
+  ("/commit " → null) · case-insensitive ("/svelte"↔"Svelte-MCP") · "/zzz" → matches:[] (לא null) ·
+  רשימת-פקודות ריקה.
+- `pnpm typecheck` — ירוק. `biome check` פרטני על שני הקבצים — נקי (אין אזהרת-CRLF, קבצים חדשים
+  נכתבו כבר ב-LF).
+
+### חריגות
+
+- אין.
+
+## 2026-07-07 — slice-slash-commands — Commit 2 (manual/browser) + סיום
+
+### מה בוצע?
+
+**קובץ חדש** `packages/frontend/src/lib/components/chat/SlashCommandMenu.svelte` — רשימת-השלמה
+(name + description מקוצר-לשורה, פריט נבחר עם רקע-הדגשה). **פורטל ל-`document.body`** (ולא
+`position:absolute` רגיל כפי שהבריף תיאר) — סיבה: ה-textarea יושב בתוך
+`RecordFooter.svelte` `.record-pane-inner` שיש לה `overflow:hidden` (נחוץ לאנימציית-קיפול
+הפוטר) → `absolute` היה נחתך ובלתי-נראה (**נתפס ב-verification ידני חי בדפדפן** — הרשימה
+הייתה קיימת ב-DOM [57 items] אך invisible, וקליקים נפלו על `.chat-scroll` שמתחתיה). התיקון:
+portal ידני (`document.body.appendChild` ב-mount, `node.remove()` ב-destroy) +
+`position:fixed` עם קואורדינטות viewport-relative (`getBoundingClientRect` של ה-textarea,
+מחושב ב-TypeArea ומועבר כ-prop `rect`). זה גם פותר containing-block-של-fixed שהיה נוצר
+מ-`transform` ב-`BottomSheet.svelte` (מובייל) — portal ל-body יוצא מהתת-עץ המשתנה-transform
+לגמרי.
+
+**שינויים** ב-`TypeArea.svelte`:
+- state: `dismissed`/`selectedIndex`/`slash`(derived)/`menuOpen`(derived) בדיוק לפי הבריף.
+- `$effect` לאיפוס `dismissed` על שינוי `query`, ו-`selectedIndex` על שינוי `matches.length`.
+- `acceptSlashSelection()` — מציב `applySlashSelection()`, מחזיר focus לתיבה.
+- `menuRect` state + `$effect` שמחשב/מעדכן `getBoundingClientRect()` בכל פתיחה +
+  resize/scroll(capture) listeners (חדש — לא היה בבריף, נדרש בגלל הפורטל).
+- keydown-intercept **לפני** לוגיקת ה-Enter-to-send הקיימת: ArrowUp/Down מזיזים `selectedIndex`
+  (מודולו), Enter-רגיל/Tab בוחרים (`e.preventDefault()`, לא שולחים), Escape סוגר
+  (`dismissed=true`), Cmd/Ctrl+Enter מוחרג במפורש (תמיד שולח, נופל דרך ללוגיקת ה-send).
+
+**i18n**: מפתח חדש `slash.commandsList` (aria-label לרשימה) ב-`packages/core/src/i18n/keys.ts`
++ קטלוגים `en.ts`/`he.ts`. `name`/`description` של הפקודות הם data מהספק — לא מתורגמים
+(לפי §6 בבריף).
+
+### בדיקות (manual/browser — real claude + real opencode, per Testing strategy)
+
+חיברתי BE אמיתי (bun direct, port 4001 — פורט 4000 היה תפוס ע"י תהליך-BE חי אחר, לא שלי)
++ FE dev (BE_PORT=4001) + Playwright (headed Chrome) על ה-worktree עצמו כ-cwd. תסריט-אימות
+חד-פעמי (נמחק בסוף — לא נשמר בריפו):
+
+1. **claude מחובר** → 57 פקודות-slash הופיעו מיד (available_commands_update הגיע עם
+   session/new, בדיוק כפי שההקלטה-ההיסטורית חזתה).
+2. **סינון**: `/co` → `commit, code-review, compact, config, context` — prefix-match תקין.
+3. **ניווט-מקלדת**: ArrowDown הזיז את ההדגשה לפריט השני (מאומת ויזואלית).
+4. **Enter עם menu פתוח בוחר ולא שולח**: `promptText` הפך ל-`"/code-review "`,
+   ספירת-בועות **לא** השתנתה (0 רגרסיה).
+5. **Escape סוגר**: 0 items אחרי Escape; הקלדת תו נוסף פתחה מחדש (6 items).
+6. **קליק בוחר**: קליק על `/agent-device` הציב `"/agent-device "` בתיבה.
+7. **רגרסיה — שליחה רגילה**: `"hello no slash here"` + Enter → בועה נשלחה כרגיל (ספירת-בועות
+   עלתה 1→2).
+8. **הפעלה מקצה-לקצה**: שליחת `/agent-device` (Ctrl+Enter) → claude הגיב תוכן אמיתי (לא
+   הודעת-שגיאה) — הפרוטוקול טקסטואלי-`/name` אכן מתפרש ע"י claude כצפוי.
+9. **opencode**: לבדיקת ה-DoD "ריק-graceful" חיברתי גם opencode — **תגלית**: opencode **כן**
+   חושף `available_commands_update` (30 פקודות, `init/`, `review/` וכו' — ככל-הנראה custom
+   commands של opencode עצמו), בניגוד להנחת ה-roadmap הישנה ("opencode ללא פקודות"). זו לא
+   רגרסיה/באג — ההתנהגות "אין dropdown כשאין פקודות" מובטחת **מבנית** ע"י הקוד
+   (`menuOpen = matches.length > 0`) ומכוסה ב-unit-tests של Commit 0/1 (payload ריק/רשימה
+   ריקה) — לא נדרש ספק חי-ריק כדי להוכיח זאת.
+
+### באג שנמצא ותוקן באותו commit (manual verification, DoD §5 "רגרסיית Enter-to-send")
+
+**Bug**: ה-dropdown נחתך ובלתי-נראה (קיים ב-DOM, invisible), קליקים נופלים מתחת. ראה
+תיאור מלא + תיקון למעלה (SlashCommandMenu.svelte). זוהה **לפני** מסירה ל-calev — לא נמסר
+כ-finding חיצוני.
+
+### חריגות
+
+- `pnpm lint` (biome, global) — נכשל על CRLF-vs-LF pre-existing ברחבי הריפו (ראה entries
+  קודמים). `biome check` פרטני על כל הקבצים שנגעתי בהם (`SlashCommandMenu.svelte`,
+  `TypeArea.svelte`, i18n keys/catalogs) — נקי (אחרי `--write` על קובץ אחד, פורמט
+  destructuring).
+- הבריף תיאר מיקום `position:absolute bottom-full` פשוט; שונה ל-portal+`fixed` בגלל ה-bug
+  שנמצא בפועל (ר' למעלה) — סטייה מתועדת, לא ארכיטקטונית (component-local, אין נגיעה
+  בקבצים משותפים).
+- Playwright script לאימות נמחק בסוף (`scripts/verify-slash-commands*.cjs`) — לא נשמר בריפו,
+  היה חד-פעמי.
+
+### סיכום סליס (עודכן — ראה גם Commit 4 להלן, הרחבת slice-slash-commands-hint)
+
+- **3 commits**: Commit 0 (VM, TDD, 4 טסטים) → Commit 1 (engine, TDD, 10 טסטים) →
+  Commit 2 (UI, manual/browser, verified live עם claude+opencode אמיתיים).
+- **14 טסטים אוטומטיים חדשים** (4+10), כולם ירוקים. `pnpm typecheck` נקי לאורך כל השרשרת.
+  `pnpm --filter @drive-coding/frontend build` ירוק. `lint:i18n` נקי.
+
+---
+
+## 2026-07-07 — slice-slash-commands-hint — Commit 4 (manual/browser, הרחבת slice-slash-commands)
+
+### מה בוצע?
+
+הרחבה של `SlashCommandMenu.svelte` (הקובץ היחיד שנגע) — לפי
+`docs/plans/slice-slash-commands-hint.md`. הצגת `cmd.input?.hint` ליד שם-הפקודה בדרופדאון:
+
+- עטפתי את `/{cmd.name}` + ה-hint (אם קיים) ב-`<span class="flex items-baseline gap-1.5 min-w-0">`
+  משותף, כדי ששניהם יישבו **inline באותה שורה** מעל ה-`description` (שנשאר בשורה נפרדת מתחת,
+  ללא שינוי).
+- `cmd.input?.hint` (טיפוס `string | undefined`, `noUncheckedIndexedAccess`-safe ללא `any`/`!`)
+  מרונדר ב-`<span class="min-w-0 truncate font-mono text-xs" style="color:var(--fg-muted)">`
+  — משפחת-מונו, `--fg-muted` (עמום **יותר** מ-`--fg-dim` שבו משתמש ה-description, בדיוק לפי
+  §4 בבריף — אומת ש-`--fg-muted` מוגדר בכל 8 הפלטות ב-`app.css`).
+- `truncate`+`min-w-0` על ה-hint (ולא `whitespace-nowrap` בנפרד — `truncate` של Tailwind כבר
+  כולל `overflow:hidden;white-space:nowrap;text-overflow:ellipsis`) — **בלי wrap לשורה שנייה**,
+  כך שגובה-הפריט האחיד נשמר.
+- `shrink-0` על `/{cmd.name}` כדי שה-hint (לא השם) יהיה זה שנחתך כשאין מקום.
+- פקודות בלי `input` (40/47) — ה-`{#if cmd.input?.hint}` פשוט לא מרנדר את ה-span, 0 שינוי
+  ויזואלי.
+
+### בדיקות (manual/browser — real claude, per Testing strategy בבריף)
+
+חיברתי BE אמיתי (bun direct, port 4010 — פורטים 4000/4002/4015 היו תפוסים ע"י תהליכים חיים
+אחרים, לא שלי) + FE dev (`BE_PORT=4010`, Vite על 5173) + `playwright-cli` (headless chrome,
+snapshot+screenshot) על ה-worktree עצמו כ-cwd, session קיים (claude):
+
+1. **typecheck**: `pnpm --filter @drive-coding/frontend typecheck` → **0 errors, 0 warnings**
+   (5070 files).
+2. **`biome check` פרטני** על `SlashCommandMenu.svelte` → נקי (0 fixes נדרשו).
+3. **DoD#2 — `/co` → `/code-review`**: accessibility-snapshot אישר `button "/code-review
+   [low|medium|high|xhigh|max|ultra] [--fix] [--comment] [<target>] …"` — hint מרונדר
+   ומכיל את המחרוזת המלאה (הדפדפן בעצמו עושה את ה-truncate ויזואלית, ה-DOM מכיל את כל
+   הטקסט — accessibility tree חושף את value המלא).
+4. **DoD#3 — truncate בלי שבירת-layout**: **screenshot** (`/tmp/slash-commands-hint/phase-4.png`)
+   אישר ויזואלית — `/code-review` ו-`/compact` מציגים hint מקוצר בשורה אחת, גובה-הפריט זהה
+   לשאר הפריטים (`/config`/`/context` בלי hint), אין overflow/wrap. (locale=עברית, dir=rtl —
+   ה-hint מוצג משמאל לשם בהתאם לכיוון-האפליקציה; לא רגרסיה, לא בסקופ הבריף.)
+5. **DoD#4 — בלי hint**: אומת ל-`/context` **וגם** ל-`/usage`+`/usage-credits` (הקלדת `/usage`
+   נוספת שלא הייתה בבריף המקורי, לביטחון-כפול) — ה-accessibility-tree מראה רק name+description,
+   ללא span-hint נפרד. 0 רגרסיה.
+6. **DoD#5 — 0 רגרסיה על dropdown**: קליק על `/compact` הציב `"/compact "` בתיבה (זהה
+   להתנהגות Commit 2, עם ה-span-wrapper החדש סביב ה-name לא שינה את מנגנון ה-onclick/selection).
+7. **DoD#6**: שינוי מקומי לקובץ יחיד, `depends_on:[]` על שאר-המערכת — לא נגעתי בשום קובץ אחר.
+
+### חריגות
+
+- `git diff --stat`: קובץ יחיד, +6/-1 שורות — תואם בדיוק את ה-scope בבריף (§2: "קובץ יחיד" ✅).
+- אין טסטים אוטומטיים חדשים — Testing strategy = `manual/browser` בלבד, לפי §5 בבריף (0 לוגיקה
+  חדשה מעבר לתצוגה).
+- ה-BE/FE/browser נסגרו בסוף האימות; לא נותרו תהליכים תלויים.
+
+### סיכום commit
+
+- **Commit 4** על `slice/slash-commands` (מעל Commit 0-1-2, base `f5a6817`) — שדרוג-תצוגה
+  קטן, ללא merge (ממתין לאישור, יחד עם שאר השרשרת — לפי §8 בבריף).
+- `pnpm typecheck`: 0/0. `biome check` פרטני: נקי. אומת חי בדפדפן (claude אמיתי) — 6/6 DoD.
+- Base: `dev` @ `9faf62f`. אין merge — ממתין לאישור.

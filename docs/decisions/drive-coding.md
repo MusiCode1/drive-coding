@@ -139,6 +139,41 @@
 
 ‏"פורט as-is" הוא מלכודת לקבצים **תלויי-מיקום/סביבה** — אביגיל תפסה נכון שהעברת `watch.mjs` מ-`scripts/spawn-spike/`
 ‏ל-`scripts/` שוברת בשקט את נתיב-ה-log. brief שמורה "פורט" חייב לפרט את ההתאמות-למיקום, לא להניח.
+## 2026-07-10 — slash-commands: merge ל-dev v0.14.0 (reconcile + fix-in-place RTL/ghost)
+
+### רציונל
+הסלייס (`slice-slash-commands` + הרחבות `hint`/`slash-menu-native`) היה קוד-גמור מ-07-07 עם
+calev GO×2 ו-preview שאושר — **אבל לא מוזג**, ובינתיים dev התקדם 11 commits כולל מיגרציית
+`agnostic-tooling` v0.13.3 (bun-only, `pm.mjs`, codex-acp מ-npm). לכן ה-merge חייב **reconcile**
+תחילה.
+
+### reconcile — כמעט-נקי (מנוגד לחשש)
+merge `dev→branch` (`016c0b23`) עבר **אפס קונפליקטים**: (1) codex-acp — שני הצדדים התכנסו
+עצמאית לאותה חבילה בדיוק (`@musicode1/codex-acp@^1.0.2`); (2) ה-`workspaces` field וה-`bun.lock`
+הלא-committed ב-worktree היו שחזור-ידני חלקי של אותה מיגרציה שכבר קיימת כראוי ב-dev → נזרקו;
+(3) קוד ה-slash (FE-only) לא נגע כלל באזורי agnostic-tooling. build-gate מול baseline: FE typecheck 0,
+slash-tests 14/14, 1228 tests pass. 28 typecheck-errors ב-backend = `bun-types-web-api-gap` המתועד
+(זהה על התקנת-bun טרייה של dev עצמו) — לא רגרסיה.
+
+### fix-in-place — 3 באגי-RTL שנתפסו חי ב-preview (runtime-gate עבד)
+preview production (bun build, tunnel, claude 57 פקודות) חשף 3 באגים ש-calev-הסטטי **פספס** —
+כולם משורש אחד: האפליקציה `dir=rtl`-first, וה-slash מרנדר תוכן-LTR (`/code-review`, `[--fix]`):
+1. **תפריט מיושר-ימין + סדר הפוך** (`[--fix]`→`[fix--]`) → `dir=ltr` על ה-item, `dir=auto` על התיאור.
+2. **ghost-hint בלתי-נראה** — ה-overlay רונדר *לפני* ה-textarea האטום שצבע מעליו. `z-10` על ה-overlay.
+3. **`/code-review` הוצג `code-review/`** + placeholder עברי משמאל → `dir={len?"auto":"rtl"}`.
+תוקן ב-`c53d7096`, rebuild, **אושר חזותית ע"י המשתמשת** (הצילום: ghost עובד נקי).
+
+### ממצא-שיטה — calev DOM-check ≠ נראות חזותית
+calev המקורי נתן GO 8/8 על ה-ghost כי בדק **נוכחות-DOM** של ה-span (צבע `rgb(125,112,100)`) —
+אבל ה-span היה **מוסתר חזותית** מאחורי ה-textarea האטום. זה בדיוק "green report ≠ עיני המשתמשת".
+ה-fix-round חוזק להנחות בדיקת-**נראות** (bounding-box/z-order), אך calev-החוזר נחסם ע"י חוסר
+`libnspr4`/`libnss3` בהוסט (אין browser) → PARTIAL 10/13 **מטעמי-כלים-לא-קוד**; 3 הפריטים הלא-מאומתים
+= בדיוק החזותיים שהמשתמשת כבר אישרה חי. calev אישר את הקוד מבנית (z-stacking sound). ה-runtime-gate
+מולא במהותו: GO-מבני על הקוד + GO-חזותי של המשתמשת.
+
+### מוזג
+merge `6d80a28a` (`--no-ff`) → release **v0.14.0** (`56ac821c`, frontend 0.13.0 + core 0.11.0), push origin.
+FE-only + core/i18n. **`slash-commands-typed`** (הבחנת סוגי-פקודה) נשאר 💭 טרם brief (חסם-ידע 07-07).
 
 ## 2026-07-10 — be-crash-hardening: הקשחת ה-BE מול 2 וקטורי-קריסה (brief READY, טרם dispatch)
 

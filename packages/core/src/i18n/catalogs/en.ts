@@ -300,4 +300,6 @@ export const en: Catalog = {
   // ─── app-title ─── (slice app-title-build-env)
   "appTitle.settings": "Settings",
   "appTitle.sessions": "Sessions",
+  // ─── slash commands ─── (slice-slash-commands)
+  "slash.commandsList": "Slash commands",
 }

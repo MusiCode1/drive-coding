@@ -1,0 +1,21 @@
+{
+  "project": "drive-coding",
+  "repo_root": "/home/user/Projects/drive-coding/dev",
+  "base_branch": "dev",
+  "dev_tip": "6d99dcbf5e3750f637a0549e7658a1e0dbe39be7",
+  "updated": "2026-07-10T23:59:00+03:00",
+  "slices": [
+    {
+      "id": "offline-page",
+      "name": "דף fallback למצב לא-מקוון",
+      "status": "plan-verified",
+      "brief": "docs/plans/slice-offline-page.md",
+      "plan_verified": true,
+      "depends_on": [],
+      "dispatch_ready": true,
+      "base": "dev",
+      "branch": "slice/offline-page",
+      "worktree": "../.worktrees/offline-page-fix"
+    }
+  ]
+}

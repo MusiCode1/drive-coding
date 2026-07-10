@@ -12,11 +12,18 @@
  *  - onpaste / ondrop / file-picker → fileToImageAttachment → tray
  *  - gating: session.supportsImageInput (kill-switch IMAGE_INPUT_ENABLED כבר ב-VM)
  */
-import SendIcon from "@lucide/svelte/icons/send"
+import type { AvailableCommand } from "@agentclientprotocol/sdk"
 import ImagePlusIcon from "@lucide/svelte/icons/image-plus"
+import SendIcon from "@lucide/svelte/icons/send"
 import XIcon from "@lucide/svelte/icons/x"
 import { getI18n, getSession, getSettings } from "$lib/context"
-import { fileToImageAttachment, revokeAttachment, type ImageAttachment } from "$lib/engines/image-attachment"
+import {
+  fileToImageAttachment,
+  type ImageAttachment,
+  revokeAttachment,
+} from "$lib/engines/image-attachment"
+import { applySlashSelection, matchSlashCommands } from "$lib/engines/slash-commands"
+import SlashCommandMenu from "./SlashCommandMenu.svelte"
 
 const session = getSession()
 const settings = getSettings()
@@ -30,22 +37,87 @@ const MAX_ROWS = 6
 let attachments = $state<ImageAttachment[]>([])
 let fileInputEl = $state<HTMLInputElement>()
 
+// ─── slash-command dropdown state ─── (slice-slash-commands, Commit 2)
+let dismissed = $state(false)
+let selectedIndex = $state(0)
+const slash = $derived(matchSlashCommands(promptText, session.availableCommands))
+const menuOpen = $derived(!!slash && slash.matches.length > 0 && !dismissed)
+
+// ─── ghost-hint (slice-slash-menu-native, Commit 2) ─────────────────────────
+// כשה-textarea מכיל "/name " (פקודה עם input.hint, רווח נגרר, בלי ארגומנט),
+// הצג את ה-hint כ-ghost אפור. slash=null במצב הזה (matchSlashCommands מחזיר null
+// כש-rest.includes(" ")), לכן סורקים את availableCommands ישירות.
+const ghostHint = $derived.by(() => {
+  const text = promptText
+  if (!text.startsWith("/")) return null
+  const spaceIdx = text.indexOf(" ")
+  // בדיוק "/name " — יש רווח אחד, אחריו אין ארגומנט
+  if (spaceIdx === -1 || text.slice(spaceIdx + 1).trim().length > 0) return null
+  const name = text.slice(1, spaceIdx)
+  const cmd = session.availableCommands.find((c) => c.name === name)
+  return cmd?.input?.hint ?? null
+})
+
+// dismissed מתאפס בכל שינוי-query (המשתמש ממשיך להקליד → פותחים מחדש)
+$effect(() => {
+  slash?.query // dependency
+  dismissed = false
+})
+
+// selectedIndex מתאפס כשרשימת ה-matches משתנה (הדגשה תמיד מתחילה מהראשון)
+$effect(() => {
+  slash?.matches.length // dependency
+  selectedIndex = 0
+})
+
+function acceptSlashSelection(cmd: AvailableCommand): void {
+  promptText = applySlashSelection(cmd)
+  dismissed = false
+  taEl?.focus()
+}
+
+// ─── מיקום ה-dropdown (portal ל-body — נחתך ע"י overflow:hidden של record-pane-inner
+// אם היה absolute רגיל; ר' הערת SlashCommandMenu.svelte) ─── (slice-slash-commands)
+let menuRect = $state<{ top: number; left: number; width: number } | null>(null)
+
+function updateMenuRect(): void {
+  const el = taEl
+  if (!el) {
+    menuRect = null
+    return
+  }
+  const r = el.getBoundingClientRect()
+  menuRect = { top: r.top, left: r.left, width: r.width }
+}
+
+$effect(() => {
+  if (!menuOpen) {
+    menuRect = null
+    return
+  }
+  updateMenuRect()
+  window.addEventListener("resize", updateMenuRect)
+  window.addEventListener("scroll", updateMenuRect, true) // capture — תופס גם גלילת אב
+  return () => {
+    window.removeEventListener("resize", updateMenuRect)
+    window.removeEventListener("scroll", updateMenuRect, true)
+  }
+})
+
 // גדל עם התוכן עד תקרה; scrollbar מופיע רק כשהתוכן חותך את ה-max-height
 $effect(() => {
   promptText // dependency — re-run on every value change
   const el = taEl
   if (!el) return
-  el.style.height = "auto"            // קודם מאפסים כדי שה-scrollHeight ישקף את התוכן הנוכחי
-  const maxH = parseFloat(getComputedStyle(el).maxHeight)   // px מה-max-height ב-CSS
+  el.style.height = "auto" // קודם מאפסים כדי שה-scrollHeight ישקף את התוכן הנוכחי
+  const maxH = parseFloat(getComputedStyle(el).maxHeight) // px מה-max-height ב-CSS
   const needed = el.scrollHeight
   const clamped = Number.isFinite(maxH) && needed > maxH
   el.style.height = clamped ? `${maxH}px` : `${needed}px`
-  el.style.overflowY = clamped ? "auto" : "hidden"          // scrollbar רק כשבאמת חתוך
+  el.style.overflowY = clamped ? "auto" : "hidden" // scrollbar רק כשבאמת חתוך
 })
 
-const isDisabled = $derived(
-  session.status !== "connected"
-)
+const isDisabled = $derived(session.status !== "connected")
 
 function onSubmit(e?: SubmitEvent) {
   e?.preventDefault()
@@ -198,16 +270,85 @@ function openFilePicker(): void {
       </button>
     {/if}
 
+    <!-- ─── wrapper: מארח את ה-textarea (ה-dropdown עצמו portal-ל-body — ר' SlashCommandMenu.svelte) ─── -->
+    <div class="flex-1 relative">
+    {#if menuOpen && slash && menuRect}
+      <SlashCommandMenu
+        matches={slash.matches}
+        {selectedIndex}
+        onselect={acceptSlashSelection}
+        rect={menuRect}
+      />
+    {/if}
+    <!-- ghost-hint overlay (slice-slash-menu-native Commit 2): מציג hint כ-ghost
+         כשה-textarea מכיל "/name " בלי ארגומנט. pointer-events:none כדי שה-textarea
+         מקבל קליקים. aria-hidden כי זו הצגה ויזואלית בלבד. font/padding זהים ל-textarea.
+         position:absolute inset-0 — מיישר מול ה-textarea ומתאים לגובה הדינמי שלו. -->
+    {#if ghostHint}
+      <div
+        aria-hidden="true"
+        dir="auto"
+        class="absolute inset-0 z-10 rounded-xl px-3 py-2.5 text-sm pointer-events-none overflow-hidden whitespace-pre-wrap break-words"
+        style="color:transparent; background:transparent; border:1px solid transparent"
+      ><span style="color:transparent">{promptText}</span><span style="color:var(--fg-muted); opacity:0.6">{ghostHint}</span></div>
+    {/if}
     <textarea
       bind:this={taEl}
       bind:value={promptText}
       placeholder={t("record.placeholder")}
       rows={1}
       disabled={isDisabled}
-      class="flex-1 rounded-xl px-3 py-2.5 text-sm resize-none outline-none border"
+      dir={promptText.length ? "auto" : "rtl"}
+      role="combobox"
+      aria-expanded={menuOpen}
+      aria-controls={menuOpen ? "slash-listbox" : undefined}
+      aria-activedescendant={menuOpen ? `slash-opt-${selectedIndex}` : undefined}
+      class="w-full rounded-xl px-3 py-2.5 text-sm resize-none outline-none border relative"
       style="background:var(--bg-card); border-color:var(--border); color:var(--fg); max-height:calc({MAX_ROWS} * 1.5em + 1.25rem)"
       onpaste={handlePaste}
       onkeydown={(e) => {
+        // ─── slice-slash-commands: keydown-intercept לדפדוף-בתפריט ───────────
+        // Cmd/Ctrl+Enter תמיד שולח — לא נבלע כאן (החרגת המקש המשולב במפורש).
+        // `&& slash` נחוץ ל-narrowing: menuOpen הוא derived נפרד ולא מצמצם את slash ל-non-null.
+        if (menuOpen && slash && !((e.metaKey || e.ctrlKey) && e.key === "Enter")) {
+          const n = slash.matches.length
+          if (e.key === "ArrowDown") {
+            e.preventDefault()
+            selectedIndex = (selectedIndex + 1) % n
+            return
+          }
+          if (e.key === "ArrowUp") {
+            e.preventDefault()
+            selectedIndex = (selectedIndex - 1 + n) % n
+            return
+          }
+          // listbox parity (slice-slash-menu-native, Commit 1): Home/End קופצים לקצוות.
+          if (e.key === "Home") {
+            e.preventDefault()
+            selectedIndex = 0
+            return
+          }
+          if (e.key === "End") {
+            e.preventDefault()
+            selectedIndex = n - 1
+            return
+          }
+          // Enter רגיל בוחר (לא Shift+Enter — שורה-חדשה נשמרת); Tab בוחר.
+          if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+            const cmd = slash.matches[selectedIndex]
+            if (cmd) {
+              e.preventDefault()
+              acceptSlashSelection(cmd)
+              return
+            }
+          }
+          if (e.key === "Escape") {
+            e.preventDefault()
+            dismissed = true
+            return
+          }
+        }
+
         // Cmd/Ctrl+Enter תמיד שולח (power-user, ללא תלות בהגדרה)
         if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
           e.preventDefault()
@@ -221,6 +362,7 @@ function openFilePicker(): void {
         }
       }}
     ></textarea>
+    </div>
 
     <!-- ─── slice-image-paste Commit 4b: שכבה 1 — disabled רק אם אין טקסט ואין תמונות ─── -->
     <button
