@@ -20,6 +20,7 @@ import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync, renameSync, rmSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { runFilterArgs, runPm } from "./pm.mjs"
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const ifMissing = process.argv.includes("--if-missing")
@@ -74,11 +75,13 @@ if (ifStale && indexExists) {
 console.log("[dc-build-fe] starting FE build...")
 
 // 1) Build to staging dir (FE_BUILD_OUT is relative to packages/frontend — adapter-static resolves from there)
-execFileSync("pnpm", ["--filter", "@drive-coding/frontend", "build"], {
-  stdio: "inherit",
+//    PM-agnostic: bun `run --filter … build` on the server, pnpm `--filter … build` on dev.
+const [feCmd, feArgs] = runFilterArgs("@drive-coding/frontend", "build")
+const feCode = runPm(feCmd, feArgs, {
   cwd: repoRoot,
   env: { ...process.env, FE_BUILD_OUT: ".build-staging" },
 })
+if (feCode !== 0) throw new Error(`[dc-build-fe] FE build failed (exit ${feCode})`)
 
 // 2) Verify staging produced index.html (guard against silent vite failure)
 const stagingIndex = path.join(stagingDir, "index.html")

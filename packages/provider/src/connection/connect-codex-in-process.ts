@@ -1,6 +1,6 @@
 /**
  * connect-codex-in-process.ts — connectCodexInProcess: ProviderConnection wrapping
- * the codex ACP agent in-process via the @agentclientprotocol/codex-acp fork.
+ * the codex ACP agent in-process via the @musicode1/codex-acp fork.
  *
  * Architecture:
  *   FE ←[wire: string onLine/write]→ PassThrough pair ←[NDJSON]→ startAcpServer(codex)
@@ -23,7 +23,7 @@
 import { PassThrough } from "node:stream"
 import * as os from "node:os"
 import * as path from "node:path"
-import { startAcpServer } from "@agentclientprotocol/codex-acp/lib"
+import { startAcpServer } from "@musicode1/codex-acp/lib"
 import { resolveCliBinary } from "@drive-coding/core/cli-resolve"
 import { createTurnTracker } from "../shared/turn-tracker.js"
 import { decodeWireLine } from "../shared/wire-decode.js"
