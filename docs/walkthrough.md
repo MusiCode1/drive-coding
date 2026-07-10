@@ -1,3 +1,44 @@
+## 2026-07-10 — slice-be-crash-hardening — 3 commits: ספיגת וקטורי-קריסה BE
+
+**מה בוצע (TDD unit + integration):**
+
+**Commit C1 (`ec7ccfb6`) — stream-bridge: .catch() על שני ה-fire-and-forget:**
+- `stream-bridge.ts:124`: `void inboundWriter.write(msg)` → `.catch((err) => { closed=true; onErrorFire(err) })`
+- `stream-bridge.ts:77`: `void drainOutbound()` → `.catch((err) => { closed=true; onErrorFire(err) })`
+- הוסף `StreamBridge.onError(cb)` ל-interface + מימוש (`errListeners`, `erroredOnce` guard).
+- TDD: טסט חדש "write on an errored inbound stream does not crash" — red לפני / green אחרי.
+- 168/168 provider passed.
+
+**Commit C2 (`ac9a6413`) — server: safeUrlPathname guard על upgrade+connection:**
+- חילץ `safeUrlPathname(rawUrl): string|null` ב-`packages/backend/src/delivery/url-safe.ts` — טהורה, לא זורקת.
+- `server.ts:228` (upgrade): pathname===null → log.warn + socket.destroy() + return.
+- `server.ts:213` (connection): pathname===null → ws.close() + return (defense-in-depth).
+- TDD: `tests/url-safe.test.ts` (9 tests) + integration `tests/url-upgrade-survival.test.ts` (1 test).
+- 341/341 backend passed.
+
+**Commit C3 (`d259a50b`) — connect-in-process: onError → crashListeners:**
+- `connect-in-process.ts`: `bridge.onError(err => { for cb of crashListeners: cb(BridgeCrashInfo) })`.
+- BridgeCrashInfo: exitCode=null, signal=null, spawnError.message=err.message.
+- גבול §3.3: רק טריגר stream-error — #6/#7 (onCrash כללי) → be-lifecycle-hardening.
+- Unit: טסטי onError fires×1, unsubscribe; Integration structural: wiring subscribable+unsubscribable.
+- 172/172 provider passed.
+
+**בדיקות:**
+- provider: 172 passed (baseline 167 + 5 חדשים), 0 failed, 8 skipped (pre-existing)
+- backend: 341 passed (baseline 291 + 10 חדשים + 0 רגרסיה), 1 failed (http-options pre-existing), 2 file-errors (https-serve pre-existing)
+- typecheck: 28 errors — כולם pre-existing ב-http-proxy.ts/http-tts-capabilities.ts (מאומת מול baseline)
+- lint:i18n: נקי
+- DoD אמות:
+  - unit: stream-errored write נספג ✓, safeUrlPathname לא זורק ✓, onError fires×1 ✓
+  - integration: server-survival (url-upgrade-survival) ✓
+  - אפס רגרסיה ✓
+
+**חריגות:**
+- Integration test של connect-in-process C3 הוא structural בלבד (לא מדמה stream-error אמיתי in-process) — הכיסוי על stream-bridge.test.ts + unit. אימות-חי ב-DoD §4 נדחה ל-calev (BE חי).
+- typecheck errors (28): כולם pre-existing ב-http-proxy/tts-capabilities. לא שינויים שלנו.
+
+---
+
 ## 2026-07-04 — slice-rtl-bubble-fixes — 2 commits: תיקוני RTL-בועות
 
 **מה בוצע (manual — CSS/attribute בלבד, FE-טהור):**
