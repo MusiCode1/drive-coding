@@ -1,6 +1,6 @@
 {
   "id": "options-trim",
-  "status": "plan-verified",
+  "status": "completed",
   "plan_verified": true,
   "dispatch_ready": true,
   "base": "slice/be-diag-harness",
@@ -8,6 +8,10 @@
   "complexity": 3,
   "verifier": "calev-light",
   "dev_tip": "585ea804",
+  "implementation_tip": "9d17532a",
   "avigail_rounds": 2,
-  "avigail_verdict": "READY"
+  "avigail_verdict": "READY",
+  "calev_verdict": "GO",
+  "calev_dod": "7/7",
+  "merge_status": "eligible-held-baking"
 }
