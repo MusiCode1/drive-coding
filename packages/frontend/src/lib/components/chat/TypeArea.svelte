@@ -287,7 +287,8 @@ function openFilePicker(): void {
     {#if ghostHint}
       <div
         aria-hidden="true"
-        class="absolute inset-0 rounded-xl px-3 py-2.5 text-sm pointer-events-none overflow-hidden whitespace-pre-wrap break-words"
+        dir="auto"
+        class="absolute inset-0 z-10 rounded-xl px-3 py-2.5 text-sm pointer-events-none overflow-hidden whitespace-pre-wrap break-words"
         style="color:transparent; background:transparent; border:1px solid transparent"
       ><span style="color:transparent">{promptText}</span><span style="color:var(--fg-muted); opacity:0.6">{ghostHint}</span></div>
     {/if}
@@ -297,6 +298,7 @@ function openFilePicker(): void {
       placeholder={t("record.placeholder")}
       rows={1}
       disabled={isDisabled}
+      dir={promptText.length ? "auto" : "rtl"}
       role="combobox"
       aria-expanded={menuOpen}
       aria-controls={menuOpen ? "slash-listbox" : undefined}

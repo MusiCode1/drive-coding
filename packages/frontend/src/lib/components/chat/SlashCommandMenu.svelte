@@ -82,6 +82,7 @@ $effect(() => {
         id="slash-opt-{i}"
         data-index={i}
         aria-selected={i === selectedIndex}
+        dir="ltr"
         class="w-full text-left px-3 py-2 text-sm flex flex-col gap-0.5"
         style={i === selectedIndex ? "background:color-mix(in srgb, var(--accent) 18%, transparent)" : ""}
         onclick={() => onselect(cmd)}
@@ -93,7 +94,9 @@ $effect(() => {
           {/if}
         </span>
         {#if cmd.description}
-          <span class="truncate text-xs" style="color:var(--fg-dim)">{cmd.description}</span>
+          <!-- dir=auto: description flows by its own content (Hebrew→RTL, English→LTR) while the
+               item layout stays LTR-structured (command name → hint). -->
+          <span dir="auto" class="truncate text-xs" style="color:var(--fg-dim)">{cmd.description}</span>
         {/if}
       </button>
     </li>
