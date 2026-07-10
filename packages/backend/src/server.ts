@@ -56,6 +56,7 @@ import { createRecordingsStore } from "./app/recordings-store.js"
 import { parseCorsOrigins } from "./delivery/cors-config.js"
 import { registerHttp } from "./delivery/http.js"
 import { registerAgentsHttp } from "./delivery/http-agents.js"
+import { registerHealthHttp } from "./delivery/http-health.js"
 import { registerClientLogHttp } from "./delivery/http-client-log.js"
 import {
   registerFsBrowseHttp,
@@ -111,6 +112,8 @@ registerAgentsHttp(app, {
   projectsRegistry,
   bridgeManager: connectionRegistry,
 })
+// Slice be-diag-harness: endpoint אבחון עשיר (eventLoop histogram + memory + agents)
+registerHealthHttp(app, { registry, connectionRegistry })
 registerProjectsHttp(app, { projectsRegistry })
 registerRecordingsHttp(app, { recordingsStore })
 registerRecordingsPostHttp(app, { recordingsStore })

@@ -1,23 +1,20 @@
-## 2026-07-11 — crash-teardown-fix — Commit 1: ביטול C3 (revert פירוק-סשן-על-דחיית-stream)
+## 2026-07-10 — slice-be-diag-harness — C2: /api/diag endpoint
 
-**מה בוצע (TDD unit + integration — revert C3):**
+**מה בוצע (integration):**
 
-**Commit 1 (`e3e7f785`) — stream-bridge + connect-in-process: log-and-continue במקום פירוק-סשן:**
-- `stream-bridge.ts`: הוסף `createLogger("provider.stream-bridge")` (תבנית spawn-core).
-- `drainOutbound().catch`: הוחלף `closed=true; onErrorFire(err)` → `log.warn(..., "outbound drain rejected — absorbed")`.
-- `inboundWriter.write().catch`: הוחלף `closed=true; onErrorFire(err)` → `log.warn(..., "inbound write rejected — absorbed")`.
-- מחק קוד מת C3 מ-stream-bridge: `errListeners`, `erroredOnce`, `onErrorFire()`, מתודת `onError`, ו-`onError` מ-interface `StreamBridge`.
-- `connect-in-process.ts`: מחק block `bridge.onError(...)` (שורות :136-157). השאיר `crashListeners` + `onCrash` (API symmetry, כמו dev).
-- טסטים: הפך `:147` ל-"write rejection absorbed and does NOT close bridge". מחק "onError fires×1" + "onError unsubscribe". הפך connect-in-process C3 describe ל-"does NOT fire onCrash (session survives)".
+**Commit C2 — http-health.ts + רישום ב-server.ts:**
+- `packages/backend/src/delivery/http-health.ts` (חדש, פורט מ-spike): `registerHealthHttp(app, {registry, connectionRegistry})` → `GET /api/diag`.
+  - JSDoc נוקה: שורת "GET /api/health" שוגגת תוקנה ל-`/api/diag`.
+  - `monitorEventLoopDelay` singleton (process-wide, rolling window reset() כל poll).
+  - shape: `{ts, uptimeMs, eventLoop{meanMs,maxMs,p99Ms,stddevMs}, memory{rssMB,...}, agents{total,busy,list}}`.
+- `server.ts`: `import registerHealthHttp` + `registerHealthHttp(app, { registry, connectionRegistry })` ליד `registerAgentsHttp`.
+- shape check: `registry.list()` מחזיר `Agent[]` עם `.id`/`.cliKind` — תואם. `connectionRegistry.getRuntimeInfo(id)` מחזיר `{pid,attached,busy,lastMessageAt}` — תואם.
+- integration test: `http-health.test.ts` — 2 tests (shape מלאה + fallback כשconnRegistry ריק).
+- **176/176 provider, 2 backend http-health tests ירוקים**.
+- typecheck: אפס שגיאות חדשות (http-proxy pre-existing).
+- lint:i18n: נקי.
 
-**שערי-אימות (מאומתים לפני ביצוע):**
-- Finding #1: `bridge.onError` היה ה-feeder היחיד ל-`crashListeners`. מחיקתו = חזרה למצב-dev (אין teardown על stream). `crashListeners` + `onCrash` נשארים.
-- Finding #4: `grep -rn '.cancel(' node_modules/@agentclientprotocol/sdk/dist/` — אפס תוצאות. SDK לא קורא `.cancel()` — ה-teardown של C3 לא נחוץ.
-
-**בדיקות:**
-- provider: 170 passed (172 baseline − 2 שנמחקו [onError fires×1 + unsubscribe]), 0 failed, 8 skipped (pre-existing)
-- typecheck: 28 errors — כולם pre-existing ב-http-proxy.ts/http-tts-capabilities.ts (מאומת: זהה לפני ואחרי)
-- lint:i18n: נקי
+---
 
 ## 2026-07-10 — slice-be-diag-harness — C1: hot-path-timing + חיווט
 
