@@ -15,6 +15,7 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import { createInterface } from "node:readline"
 import { createLogger } from "@drive-coding/core/log"
 import { getCliCommand, getCliSpec } from "../config/index.js"
+import { logIfSlow, markStart } from "./hot-path-timing.js"
 import type {
   BridgeCrashInfo,
   BridgeHandle,
@@ -154,7 +155,8 @@ export function createSpawnCore(hooks?: SpawnCoreHooks): SpawnCore {
     stdoutRl.on("line", (line) => {
       const entry = store.get(bridgeId)
       if (!entry) return
-      // (1) subscribers first (ws-agent -> feWs.send)
+      // (1) subscribers first (ws-agent -> feWs.send) — timed (hot-path)
+      const t = markStart()
       for (const cb of entry.lineSubscribers) {
         try {
           cb(line)
@@ -162,6 +164,7 @@ export function createSpawnCore(hooks?: SpawnCoreHooks): SpawnCore {
           /* subscriber must not break the pipe */
         }
       }
+      logIfSlow("readline-dispatch", t, { bytes: line.length })
       // (2) onFrame hook: dir:"in", line has no \n (readline stripped it)
       try {
         hooks?.onFrame?.(bridgeId, "in", line)
@@ -247,7 +250,9 @@ export function createSpawnCore(hooks?: SpawnCoreHooks): SpawnCore {
     writeStdin(bridgeId: string, line: string): boolean {
       const entry = store.get(bridgeId)
       if (!entry) return false
+      const t = markStart()
       entry.child.stdin.write(line)
+      logIfSlow("writeStdin", t, { bytes: line.length })
       // onFrame hook: dir:"out", line verbatim (may include \n — wrapper normalizes).
       try {
         hooks?.onFrame?.(bridgeId, "out", line)

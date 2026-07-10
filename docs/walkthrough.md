@@ -19,6 +19,19 @@
 - typecheck: 28 errors — כולם pre-existing ב-http-proxy.ts/http-tts-capabilities.ts (מאומת: זהה לפני ואחרי)
 - lint:i18n: נקי
 
+## 2026-07-10 — slice-be-diag-harness — C1: hot-path-timing + חיווט
+
+**מה בוצע (TDD unit):**
+
+**Commit C1 — hot-path-timing.ts + חיווט stream-bridge + spawn-core:**
+- `packages/provider/src/shared/hot-path-timing.ts` (חדש, פורט מ-spike): `markStart()` + `logIfSlow(op, startedAt, meta)`, threshold `HOTPATH_SLOW_MS` (default 50ms), `log.warn` רק בחריגה.
+- חיווט additive ב-`stream-bridge.ts`: `JSON.parse` ב-`write()` עטוף ב-markStart/logIfSlow("parse"), `JSON.stringify` ב-`drainOutbound()` עטוף ב-markStart/logIfSlow("stringify").
+- חיווט additive ב-`spawn-core.ts`: readline-dispatch (subscribers loop) עטוף ב-markStart/logIfSlow("readline-dispatch"), `writeStdin` עטוף ב-markStart/logIfSlow("writeStdin").
+- TDD: `hot-path-timing.test.ts` — 4 טסטים (markStart returns number, no-log below threshold, log.warn above threshold, overhead=2 calls).
+- **176/176 provider passed** (172 baseline + 4 חדשים), 8 skipped (pre-existing).
+- typecheck: 3 שגיאות pre-existing (connect-codex/claude-env-override/connect-in-process.test) — אפס חדשות.
+- lint:i18n: נקי.
+
 ---
 
 ## 2026-07-10 — slice-be-crash-hardening — 3 commits: ספיגת וקטורי-קריסה BE

@@ -19,6 +19,7 @@
 
 import type { AnyMessage, Stream } from "acp-sdk-v1"
 import { createLogger } from "@drive-coding/core/log"
+import { logIfSlow, markStart } from "../shared/hot-path-timing.js"
 
 const log = createLogger("provider.stream-bridge")
 
@@ -91,7 +92,9 @@ export function createStreamBridge(): StreamBridge {
         const { done, value } = await reader.read()
         if (done) break
         if (closed) break
+        const t = markStart()
         const line = JSON.stringify(value)
+        logIfSlow("stringify", t, { bytes: line.length })
         for (const cb of lineListeners) {
           try {
             cb(line)
@@ -121,7 +124,9 @@ export function createStreamBridge(): StreamBridge {
       }
       let msg: AnyMessage
       try {
+        const t = markStart()
         msg = JSON.parse(line) as AnyMessage
+        logIfSlow("parse", t, { bytes: line.length })
       } catch {
         // Malformed JSON — drop and return false (matches spawn-core behavior on parse errors)
         return false
