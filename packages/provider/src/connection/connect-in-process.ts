@@ -130,31 +130,10 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
   const bridge = createStreamBridge()
 
   // onCrash listeners — in-process has no child process crash, but we expose
-  // the interface for API symmetry AND for stream-error recovery (Commit 3).
+  // the interface for API symmetry (matches dev behavior: onCrash never fires for in-process).
+  // C3 wiring (stream-error → crashListeners) was reverted: stream rejections are transient
+  // (race with close, transport blip) and not a reliable crash signal. teardown via agentConn.closed.
   const crashListeners = new Set<(info: import("../spawn/index.js").BridgeCrashInfo) => void>()
-
-  // Wire stream errors → crashListeners for session cleanup (be-crash-hardening C3).
-  // When the inbound stream errors (e.g. agent cancelled its readable), bridge.onError fires.
-  // We forward to crashListeners so connection-registry.cleanup(agentId) triggers:
-  //   registry removes the entry, pending requests are rejected, orchestrator marks crashed.
-  // Scope (§3.3): only for stream-error trigger — NOT the general onCrash wiring (#6/#7
-  // from be-lifecycle-hardening). Those remain separate.
-  bridge.onError((err) => {
-    const info: import("../spawn/index.js").BridgeCrashInfo = {
-      exitCode: null,
-      signal: null,
-      spawnError: {
-        message: err instanceof Error ? err.message : String(err),
-      },
-    }
-    for (const cb of crashListeners) {
-      try {
-        cb(info)
-      } catch {
-        /* crash listener must not break the pipe */
-      }
-    }
-  })
 
   // Internal claudeAgent reference (set inside onConnect).
   let claudeAgent: ClaudeAcpAgent | undefined

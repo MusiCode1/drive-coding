@@ -18,6 +18,9 @@
  */
 
 import type { AnyMessage, Stream } from "acp-sdk-v1"
+import { createLogger } from "@drive-coding/core/log"
+
+const log = createLogger("provider.stream-bridge")
 
 export interface WireEnd {
   /** Subscribe to lines emitted from the agent (agent→FE direction). Returns unsubscribe. */
@@ -33,12 +36,6 @@ export interface StreamBridge {
   readonly wireEnd: WireEnd
   /** Close both sides of the bridge (signals end of stream). */
   close(): void
-  /**
-   * Register a callback to be fired when the stream errors (inbound write rejected or
-   * outbound drain rejected). Commit 3 wires this into crashListeners for session cleanup.
-   * Fires at most once (erroredOnce guard). Returns an unsubscribe function.
-   */
-  onError(cb: (err: unknown) => void): () => void
 }
 
 /**
@@ -73,22 +70,6 @@ export function createStreamBridge(): StreamBridge {
   let closed = false
   let inboundWriter: WritableStreamDefaultWriter<AnyMessage> | null = null
 
-  // Error listeners — fired at most once when the stream errors (Commit 3: session cleanup).
-  const errListeners = new Set<(err: unknown) => void>()
-  let erroredOnce = false
-
-  function onErrorFire(err: unknown): void {
-    if (erroredOnce) return
-    erroredOnce = true
-    for (const cb of errListeners) {
-      try {
-        cb(err)
-      } catch {
-        /* listener must not break the pipe */
-      }
-    }
-  }
-
   // Start draining the outbound channel (agent→FE) and broadcasting to listeners.
   // We do this lazily in a microtask so agentApp.connect() can be called first.
   let drainStarted = false
@@ -97,9 +78,9 @@ export function createStreamBridge(): StreamBridge {
     if (drainStarted) return
     drainStarted = true
     drainOutbound().catch((err: unknown) => {
-      // outbound readable errored (agent closed/crashed) — absorb, mark closed, notify listeners.
-      closed = true
-      onErrorFire(err)
+      // outbound drain rejected — absorb (מונע unhandledRejection→exit) ורשום. אל תפרק את הסשן:
+      // דחיית-stream אינה אות-crash אמין (in-process אין exitCode/signal). teardown אמיתי = agentConn.closed.
+      log.warn({ err: err instanceof Error ? err.message : String(err) }, "outbound drain rejected — absorbed")
     })
   }
 
@@ -147,12 +128,11 @@ export function createStreamBridge(): StreamBridge {
       }
       // Write is async but we return synchronously (fire-and-forget, matching wire contract).
       // Backpressure is handled by the WritableStream internally.
-      // .catch absorbs rejection when the inbound stream has errored (e.g. agent cancelled its
-      // readable) — prevents unhandledRejection → process.exit(1). Sets closed=true (fail-fast)
-      // and notifies error listeners (Commit 3 wires these to session cleanup).
+      // .catch absorbs rejection when the inbound stream has errored — prevents
+      // unhandledRejection → process.exit(1). אל תפרק את הסשן: דחייה תמימה (race עם close,
+      // כשל-transport חולף) אינה אות-crash אמין. teardown אמיתי = agentConn.closed.
       inboundWriter.write(msg).catch((err: unknown) => {
-        closed = true
-        onErrorFire(err)
+        log.warn({ err: err instanceof Error ? err.message : String(err) }, "inbound write rejected — absorbed")
       })
       return true
     },
@@ -161,13 +141,6 @@ export function createStreamBridge(): StreamBridge {
   return {
     agentEnd,
     wireEnd,
-
-    onError(cb: (err: unknown) => void): () => void {
-      errListeners.add(cb)
-      return () => {
-        errListeners.delete(cb)
-      }
-    },
 
     close(): void {
       if (closed) return

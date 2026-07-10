@@ -1,3 +1,26 @@
+## 2026-07-11 — crash-teardown-fix — Commit 1: ביטול C3 (revert פירוק-סשן-על-דחיית-stream)
+
+**מה בוצע (TDD unit + integration — revert C3):**
+
+**Commit 1 (`TBD`) — stream-bridge + connect-in-process: log-and-continue במקום פירוק-סשן:**
+- `stream-bridge.ts`: הוסף `createLogger("provider.stream-bridge")` (תבנית spawn-core).
+- `drainOutbound().catch`: הוחלף `closed=true; onErrorFire(err)` → `log.warn(..., "outbound drain rejected — absorbed")`.
+- `inboundWriter.write().catch`: הוחלף `closed=true; onErrorFire(err)` → `log.warn(..., "inbound write rejected — absorbed")`.
+- מחק קוד מת C3 מ-stream-bridge: `errListeners`, `erroredOnce`, `onErrorFire()`, מתודת `onError`, ו-`onError` מ-interface `StreamBridge`.
+- `connect-in-process.ts`: מחק block `bridge.onError(...)` (שורות :136-157). השאיר `crashListeners` + `onCrash` (API symmetry, כמו dev).
+- טסטים: הפך `:147` ל-"write rejection absorbed and does NOT close bridge". מחק "onError fires×1" + "onError unsubscribe". הפך connect-in-process C3 describe ל-"does NOT fire onCrash (session survives)".
+
+**שערי-אימות (מאומתים לפני ביצוע):**
+- Finding #1: `bridge.onError` היה ה-feeder היחיד ל-`crashListeners`. מחיקתו = חזרה למצב-dev (אין teardown על stream). `crashListeners` + `onCrash` נשארים.
+- Finding #4: `grep -rn '.cancel(' node_modules/@agentclientprotocol/sdk/dist/` — אפס תוצאות. SDK לא קורא `.cancel()` — ה-teardown של C3 לא נחוץ.
+
+**בדיקות:**
+- provider: 170 passed (172 baseline − 2 שנמחקו [onError fires×1 + unsubscribe]), 0 failed, 8 skipped (pre-existing)
+- typecheck: 28 errors — כולם pre-existing ב-http-proxy.ts/http-tts-capabilities.ts (מאומת: זהה לפני ואחרי)
+- lint:i18n: נקי
+
+---
+
 ## 2026-07-10 — slice-be-crash-hardening — 3 commits: ספיגת וקטורי-קריסה BE
 
 **מה בוצע (TDD unit + integration):**

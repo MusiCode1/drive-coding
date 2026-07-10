@@ -213,24 +213,19 @@ describe("connectInProcess — structural (no real claude session)", () => {
 })
 
 // ---------------------------------------------------------------------------
-// Integration test: stream-error → onCrash (Commit 3 — be-crash-hardening).
-// Verifies that when the stream errors, onCrash listeners are notified
-// and the connection lifecycle proceeds cleanly (no zombie session).
+// Integration test: stream write rejection does NOT fire onCrash (session survives).
+// Verifies that C3 revert is correct: stream-error → no teardown.
 // ---------------------------------------------------------------------------
 
-describe("connectInProcess — stream-error → onCrash wiring (C3)", () => {
-  it("onCrash fires when stream errors via wire.write after agentEnd.readable cancel", async () => {
-    // This test simulates vector #1: the FE writes a message that causes the inbound
-    // stream to error. In this simulated scenario we directly cancel the agent's readable.
-    // After the error, onCrash must fire (so connection-registry can clean up).
+describe("connectInProcess — stream write rejection does NOT fire onCrash (session survives)", () => {
+  it("onCrash is NOT fired after a stream write rejection (C3 reverted)", async () => {
+    // After C3 revert: write rejection is absorbed via log.warn only.
+    // onCrash must NOT be called — the session must survive a transient write rejection.
     const conn = await connectInProcess({ cwd: process.cwd() })
     const crashSpy = vi.fn()
     conn.onCrash(crashSpy)
 
-    // Wait for the bridge to initialize (agentApp.connect is sync, but let it settle).
-    await new Promise((resolve) => setTimeout(resolve, 10))
-
-    // Send initialize first so the inboundWriter is acquired.
+    // Send a write (it may or may not error — but regardless, onCrash must stay silent).
     conn.wire.write(
       JSON.stringify({
         jsonrpc: "2.0",
@@ -240,21 +235,14 @@ describe("connectInProcess — stream-error → onCrash wiring (C3)", () => {
       }),
     )
 
-    // Wait briefly for the initialize to reach the agent.
+    // Wait for async .catch to potentially fire (if write rejected).
     await new Promise((resolve) => setTimeout(resolve, 50))
 
-    // Now simulate the agent cancelling its readable (stream-error vector #1).
-    // This is what happens when the agent SDK closes the readable after a fatal frame.
-    // We obtain the agentEnd via the bridge — but connect-in-process doesn't expose bridge.
-    // Instead, we simulate by closing the connection (bridge.close → sets closed=true),
-    // and separately by directly writing to an already-closed connection (closed=true → false).
-    // The real stream-error path is covered by stream-bridge.test.ts unit tests.
-    // For integration, we verify onCrash is structural (subscribable + unsubscribable).
-    const unsub = conn.onCrash(() => {})
-    expect(() => unsub()).not.toThrow()
+    // onCrash must NOT have fired — stream rejection is absorbed, not a teardown trigger.
+    expect(crashSpy).not.toHaveBeenCalled()
 
     await conn.close()
-    // After close, no crash should have fired (normal close is not an error).
+    // After normal close, onCrash must still not have fired.
     expect(crashSpy).not.toHaveBeenCalled()
   })
 
