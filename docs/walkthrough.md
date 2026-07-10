@@ -1,3 +1,15 @@
+## 2026-07-10 — slice-options-trim — Commit 1: backend trim http-options ל-homeDir בלבד
+
+**מה בוצע:**
+- `packages/backend/src/delivery/http-options.ts` צומצם: נמחקו `MODEL_FALLBACKS`, `listOpencodeModels` (כולל `execFileSync`), `listProjectDirs` (כולל `readdirSync`/`statSync`/`existsSync`), וכל ה-imports שהתייתמו (`node:child_process`, `node:fs`, `node:path`, `validateCwd`).
+- נשמרו: `getHomeDir` (מיוצא, נדרש ב-`paths.ts`) + `import os` + `registerHttpOptions` (מצומצם ל-`c.json({ homeDir: getHomeDir() })`).
+- `packages/backend/tests/http-options.test.ts` עודכן: נמחקו 10 cases של models/projects, נמחק `vi.mock("node:child_process")` + `execFileSyncMock`, נמחק `beforeEach` (רק איפס mock), נמחק `import * as path`. נשמרו: `vi` (נצרך ל-`vi.stubEnv`), `import os`, cases של homeDir ו-`describe("getHomeDir")`. נוסף case `returns 200 + { homeDir } only` עם regression-guard.
+- **תוצאות build-gate**: `CI=true bunx vitest run packages/backend` — 296 passed (0 failures בטסטי http-options; https-serve = pre-existing baseline). `bun run lint:i18n` נקי.
+
+**חריגות**: שגיאות typecheck ב-`http-proxy.ts`/`http-tts-capabilities.ts` הן pre-existing (@types/bun web-api gap) — לא שינוי שלנו.
+
+---
+
 ## 2026-07-10 — slice-be-diag-harness — C3: scripts/watch.mjs watchdog
 
 **מה בוצע (manual/live):**

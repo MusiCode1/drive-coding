@@ -1,125 +1,20 @@
-import { execFileSync } from "node:child_process"
-import { existsSync, readdirSync, statSync } from "node:fs"
 import * as os from "node:os"
-import * as path from "node:path"
 import type { Hono } from "hono"
-import { validateCwd } from "@drive-coding/core"
 
 /**
- * מחזיר רשימה מנופה של מודלים לכל CLI, בתוספת רשימת ספריות פרויקטים
- * לבחירה בטופס סוכן חדש. Scaffolding עבור Slice 5 ומעלה — Slice 8
- * יחליף את זה ב-UI קטלוג ספקים אמיתי.
- */
-
-const MODEL_FALLBACKS = {
-  opencode: [
-    "anthropic/claude-opus-4-7",
-    "anthropic/claude-opus-4-6",
-    "anthropic/claude-sonnet-4-6",
-    "anthropic/claude-sonnet-4-5",
-    "anthropic/claude-haiku-4-5",
-    "openai/gpt-5",
-    "google/gemini-2.5-pro",
-    "google/gemini-2.5-flash",
-  ],
-  claude: ["claude-sonnet-4-5", "claude-opus-4-7", "claude-haiku-4-5"],
-  gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-flash-latest"],
-  codex: ["gpt-5", "gpt-5-mini"],
-} as const satisfies Record<string, readonly string[]>
-
-function listOpencodeModels(): string[] {
-  try {
-    const out = execFileSync("opencode", ["models"], {
-      encoding: "utf8",
-      timeout: 5000,
-    })
-    const lines = out
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean)
-    // מעדיף מודלים נפוצים באיכות גבוהה קודם.
-    const preferredPrefixes = [
-      "anthropic/claude-opus-4-7",
-      "anthropic/claude-opus-4-6",
-      "anthropic/claude-sonnet-4-6",
-      "anthropic/claude-sonnet-4-5",
-      "anthropic/claude-haiku-4-5",
-      "openai/gpt-5",
-      "google/gemini-2.5-pro",
-      "google/gemini-2.5-flash",
-    ]
-    const picked: string[] = []
-    for (const pref of preferredPrefixes) {
-      const exact = lines.find((l) => l === pref)
-      if (exact) picked.push(exact)
-    }
-    // כולל גם את שאר המודלים של anthropic/openai/google, עם הגבלת כמות.
-    const remaining = lines
-      .filter(
-        (l) =>
-          !picked.includes(l) &&
-          (l.startsWith("anthropic/") || l.startsWith("openai/") || l.startsWith("google/")),
-      )
-      .slice(0, 20)
-    return [...picked, ...remaining]
-  } catch {
-    return [...MODEL_FALLBACKS.opencode]
-  }
-}
-
-/**
- * תיקיית הבית: env (HOME/USERPROFILE) קודם, ואז os.homedir() כ-fallback.
- * מאפשר override ע"י הסביבה (git-bash/onecli מגדירים HOME). `||` (לא `??`) —
- * כך HOME="" ריק נופל ל-fallback ולא מוחזר כמחרוזת ריקה.
+ * getHomeDir: env (HOME/USERPROFILE) קודם, ואז os.homedir() כ-fallback.
+ * `||` (לא `??`) — HOME="" ריק נופל ל-fallback ולא מוחזר כמחרוזת ריקה.
  */
 export function getHomeDir(): string {
   return process.env.HOME || process.env.USERPROFILE || os.homedir()
 }
 
-function listProjectDirs(): string[] {
-  const home = getHomeDir()
-  // Commit 2: os.tmpdir() במקום "/tmp" (cross-platform — על Windows: C:\Users\...\AppData\Local\Temp)
-  const candidates = [path.join(home, "projects"), home, os.tmpdir()]
-  const dirs: string[] = []
-  for (const root of candidates) {
-    if (!existsSync(root)) continue
-    try {
-      const entries = readdirSync(root, { withFileTypes: true })
-      for (const e of entries) {
-        if (!e.isDirectory()) continue
-        if (e.name.startsWith(".")) continue
-        const full = path.join(root, e.name)
-        // מדלג על mounts לא קריאים / ענקיים (למשל rclone של user-files).
-        if (e.name === "user-files" || e.name === "node_modules") continue
-        try {
-          statSync(full)
-          // Commit 2: סינון נתיבים פסולים (למשל \tmp\x על Windows — לא absolute תקף)
-          // validateCwd מ-core מוודא שהנתיב absolute + תקף cross-platform.
-          if (validateCwd(full).isErr()) continue
-          dirs.push(full)
-        } catch {
-          // דלג
-        }
-      }
-    } catch {
-      // דלג
-    }
-  }
-  // מגביל ל-50 כדי לשמור על dropdown סביר.
-  return dirs.slice(0, 50)
-}
-
+/**
+ * GET /api/options — מחזיר { homeDir } בלבד.
+ * homeDir משמש את ה-FE ל-default של שדה cwd (connect page) ול-start של folder-picker.
+ * (היסטורי: החזיר גם models+projects — נמחקו 2026-07-10, היו dead payload שחסם את ה-event-loop
+ *  דרך execFileSync("opencode models") + readdirSync. ר' decisions/drive-coding.md.)
+ */
 export function registerHttpOptions(app: Hono): void {
-  app.get("/api/options", (c) => {
-    const models: Record<string, readonly string[]> = {
-      opencode: listOpencodeModels(),
-      claude: MODEL_FALLBACKS.claude,
-      gemini: MODEL_FALLBACKS.gemini,
-      codex: MODEL_FALLBACKS.codex,
-    }
-    const projects = listProjectDirs()
-    // Slice 24: homeDir מאפשר ל-FE לאכלס את שדה ה-cwd ברירת מחדל (נייד, לא מקובע)
-    const homeDir = getHomeDir()
-    return c.json({ models, projects, homeDir })
-  })
+  app.get("/api/options", (c) => c.json({ homeDir: getHomeDir() }))
 }
