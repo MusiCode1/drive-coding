@@ -1,5 +1,32 @@
 # Decisions — drive-coding
 
+## 2026-07-10 — be-diag-harness: תשתית-אבחון (observability) — משורשר על crash-hardening
+
+### רציונל
+
+‏המשתמשת בחרה **לא למזג את crash-hardening מיד** אלא "לאפות אותו בשימוש לאורך זמן" — וזה ה-preview
+‏הכי-טוב לתיקון-יציבות. כדי לתת **עיניים** בזמן האפייה (לראות אם ה-BE נשאר בריא / מתחיל להתעכב), משרשרים
+‏מעליו slice-אבחון. שרשור (`base = slice/be-crash-hardening`, `depends_on: [be-crash-hardening]`) —
+‏ממשיכים לבנות בלי merge, ממזגים את השרשרת בסדר A→B כשבטוחים.
+
+‏ה-slice **מפורט** תשתית-אבחון מה-spike השמור `slice/claude-spawn-spike` (שרץ חי ב-CodeShark ותפס
+‏וקטורי-קריסה) אל branch מודרני: (1) `/api/diag` — histogram של event-loop delay + memory + per-agent;
+‏(2) `hot-path-timing` — לוג gated שמצביע *איזו* op נתקעה; (3) `watch.mjs` — watchdog חיצוני (timeout=freeze).
+‏**תצפית טהורה — אפס שינוי-התנהגות.** זה **לא** supervisor (התאוששות) — זה עיניים; ה-supervisor הוא slice עתידי שיצרוך את ה-`/api/diag`.
+
+### ממצאי אביגיל
+
+‏r1 → USABLE-AFTER-FIX (4 findings). כל **5 נקודות-האינטגרציה** שביקשתי אומתו 1:1 (getRuntimeInfo shape
+‏**התאמה מושלמת**, registry.list, נקודת-רישום ב-server.ts, אי-התנגשות /api/diag↔/api/health, יעדי hot-path).
+‏שני ה-🟡 היו מאותו שורש: **"port as-is" של `watch.mjs` אינו as-is** — הקובץ תלוי-מיקום (`WT` דרך `../..`)
+‏ותלוי-פורט (default 4010). תיקנתי לשני שינויים מפורשים (default→4001, `../..`→`..`) + 2🟢 (JSDoc, anchor).
+‏**r2 → READY.**
+
+### לקח-שיטה
+
+‏"פורט as-is" הוא מלכודת לקבצים **תלויי-מיקום/סביבה** — אביגיל תפסה נכון שהעברת `watch.mjs` מ-`scripts/spawn-spike/`
+‏ל-`scripts/` שוברת בשקט את נתיב-ה-log. brief שמורה "פורט" חייב לפרט את ההתאמות-למיקום, לא להניח.
+
 ## 2026-07-10 — be-crash-hardening: הקשחת ה-BE מול 2 וקטורי-קריסה (brief READY, טרם dispatch)
 
 ### רציונל
