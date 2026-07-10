@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/home/user/projects/drive-coding/main
 Environment=PORT=4000
+Environment=DRIVE_CODING_HOST=127.0.0.1
 Environment=FE_STATIC_DIR=/home/user/projects/drive-coding/main/packages/frontend/build
 # No FE_ENV → defaults to prod in vite.config.ts (slice app-title-build-env):
 # title = "Drive Coding" (no badge), source maps OFF (clean public bundle).
@@ -33,6 +34,6 @@ RestartSec=2
 [Install]
 WantedBy=default.target
 
-# הסביבה הציבורית: https://drive-coding.example.com (CF tunnel home-server,
-# token-based, id fed5a59e... → ingress drive-coding.example.com → 192.168.x.x:4000).
+# הסביבה הציבורית: https://drive-coding.example.com (CF tunnel home-server).
+# ה-BE מאזין ל-loopback בלבד; ingress חייב להיות drive-coding.example.com → http://localhost:4000.
 # ה-routing מנוהל דרך CF API (PUT cfd_tunnel configurations), לא config מקומי.

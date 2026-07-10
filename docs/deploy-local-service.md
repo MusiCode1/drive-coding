@@ -39,7 +39,8 @@ local `config.yml`). To change which port a domain hits:
 
 IDs: ACCT `REDACTED-ACCOUNT-ID`, TUN `REDACTED-TUNNEL-ID`,
 ZONE (example.com) `REDACTED-ZONE-ID`. Both hosts point at
-`192.168.x.x` (this CT, `cli-agents`): main→`:4000`, dev→`:4001`.
+`localhost` on this CT (`cli-agents`): main→`http://localhost:4000`, dev→`http://localhost:4001`.
+The backend binds to loopback by default (`DRIVE_CODING_HOST=127.0.0.1`) so direct LAN/IP access is closed.
 
 Access the CF API via `onecli run --agent voice-coda-cf -- curl ...` (the CF
 secret is configured in that OneCLI selective agent — NOT in `voice-acp`).
@@ -123,10 +124,11 @@ systemctl --user restart voice-acp-main.service
 
 ## Local Access
 
-- main: `http://localhost:4000/` (or `http://192.168.x.x:4000/` on LAN)
-- dev:  `http://localhost:4001/` (or `http://192.168.x.x:4001/` on LAN)
+- main: `http://localhost:4000/`
+- dev:  `http://localhost:4001/`
 
-Each BE listens on all interfaces (node-server).
+Each BE listens on loopback by default. To intentionally expose a development server on a LAN, set
+`DRIVE_CODING_HOST=0.0.0.0` or pass `--host 0.0.0.0`; do not use that for the regular main/dev units.
 
 ---
 

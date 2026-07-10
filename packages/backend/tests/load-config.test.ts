@@ -75,6 +75,16 @@ describe("loadConfig — precedence", () => {
     expect(envPatch["PORT"]).toBe("4300")
   })
 
+  it("3b. host precedence: --host wins over DRIVE_CODING_HOST and config file", () => {
+    const configPath = writeTmpJson({ host: "127.0.0.1" })
+    const { config, envPatch } = loadConfig({
+      argv: { config: configPath, host: "0.0.0.0" },
+      env: { DRIVE_CODING_HOST: "localhost" },
+    })
+    expect(config.host).toBe("0.0.0.0")
+    expect(envPatch["DRIVE_CODING_HOST"]).toBe("0.0.0.0")
+  })
+
   it("4. --config-json inline overrides file (file is ignored)", () => {
     const configPath = writeTmpJson({ port: 4100 })
     const { config } = loadConfig({
@@ -119,6 +129,15 @@ describe("loadConfig — env vars", () => {
     })
     expect(config.corsOrigins).toEqual(["http://a.com", "http://b.com"])
     expect(envPatch["CORS_ORIGINS"]).toBe("http://a.com,http://b.com")
+  })
+
+  it("DRIVE_CODING_HOST from env → host in config + envPatch", () => {
+    const { config, envPatch } = loadConfig({
+      argv: {},
+      env: { DRIVE_CODING_HOST: "127.0.0.1" },
+    })
+    expect(config.host).toBe("127.0.0.1")
+    expect(envPatch["DRIVE_CODING_HOST"]).toBe("127.0.0.1")
   })
 })
 

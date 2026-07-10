@@ -227,11 +227,12 @@ agentWss.on("connection", (ws, req) => {
 })
 
 const port = Number(process.env.PORT ?? 4000)
+const hostname = process.env.DRIVE_CODING_HOST ?? "127.0.0.1"
 
 const tls = resolveTls(process.env)
 const httpServer: ServerType = tls
-  ? serve({ fetch: app.fetch, port, createServer: httpsCreateServer, serverOptions: tls })
-  : serve({ fetch: app.fetch, port })
+  ? serve({ fetch: app.fetch, hostname, port, createServer: httpsCreateServer, serverOptions: tls })
+  : serve({ fetch: app.fetch, hostname, port })
 
 httpServer.on("upgrade", (req, socket, head) => {
   // safeUrlPathname: עטיפה בטוחה ל-new URL — לעולם לא זורקת.
@@ -262,7 +263,7 @@ httpServer.on("upgrade", (req, socket, head) => {
   socket.destroy()
 })
 
-log.info({ port }, "listening")
+log.info({ hostname, port }, "listening")
 
 /**
  * הרצה ידנית (dev/debug) — BE על פורט נפרד, משרת FE סטטי, דרך OneCLI:
