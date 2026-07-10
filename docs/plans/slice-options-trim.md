@@ -1,7 +1,7 @@
 # Slice — options-trim — תוכנית
 
 > **תאריך**: 2026-07-10
-> **סטטוס**: 📝 טיוטה — טרם אביגיל
+> **סטטוס**: ✅ הושלם — 2026-07-10 (2 commits: `39d1b14a`, `7beec0f3`)
 > **Complexity**: 3/10 (verifier: **light / calev**)
 > **תלות**: `depends_on: [be-crash-hardening, be-diag-harness]` (⚠️ **תלות-שרשור/baking, לא תלות-קוד** — ר' §0) · **base**: `slice/be-diag-harness` @ `585ea804`
 > **מקור**: `docs/investigations/2026-07-06-project-wide-bug-review.md` §🟠 **ממצא #4** (`/api/options` חוסם event-loop).

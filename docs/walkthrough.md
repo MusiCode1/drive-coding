@@ -1,3 +1,21 @@
+## 2026-07-10 — slice-options-trim — סיכום סופי
+
+**סטטוס**: הושלם. 2 commits על `slice/options-trim` (base: `slice/be-diag-harness` @ `d57e0632`).
+
+**commits**:
+- `39d1b14a` — trim(options): מחק listOpencodeModels+listProjectDirs+MODEL_FALLBACKS (backend)
+- `7beec0f3` — trim(options): צמצם ServerOptions ל-{ homeDir: string } (frontend type)
+
+**build-gate vs baseline**:
+- baseline: 13 tests ב-http-options, 1 failed (os.tmpdir — נמחק)
+- אחרי: 5 tests ב-http-options, 0 failed. 296 passed ב-packages/backend סה"כ (https-serve = pre-existing, לא רגרסיה חדשה)
+- typecheck: 0 שגיאות חדשות (pre-existing: http-proxy/http-tts-capabilities @types/bun gap)
+- lint:i18n: נקי
+
+**DoD חי** (`curl localhost:4001/api/options`): `{"homeDir":"/home/user"}` — בלי models, בלי projects. ה-event-loop blocker נעלם.
+
+---
+
 ## 2026-07-10 — slice-options-trim — Commit 2: frontend ServerOptions צמצום ל-homeDir בלבד
 
 **מה בוצע:**
