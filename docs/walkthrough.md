@@ -1,3 +1,48 @@
+## 2026-07-11 00:53 — localhost-bind-hotfix — סגירת האזנה חיצונית כברירת מחדל
+
+**מה בוצע (hotfix אבטחה + brief-driven gate רטרואקטיבי):**
+
+השרת ננעל להאזנה על loopback כברירת מחדל, אחרי שנמצא ש-`:4000` היה נגיש מבחוץ דרך כתובת השרת. ההוטפיקס יושם מיד כדי לסגור את החשיפה, ולאחר מכן הועבר דרך brief קצר, אביגיל וכלב.
+
+**1. Backend bind בטוח כברירת מחדל:**
+- `packages/backend/src/server.ts` משתמש ב-`process.env.DRIVE_CODING_HOST ?? "127.0.0.1"` ומעביר `hostname` ל-`serve(...)` גם במסלול HTTP וגם במסלול HTTPS.
+- לוג `listening` כולל עכשיו `hostname` ו-`port`.
+- אימות חי: `ss -ltnp 'sport = :4000'` מציג `127.0.0.1:4000`, לא `*:4000`.
+
+**2. Override מפורש לפתיחה מכוונת:**
+- `packages/backend/src/bin/drive-coding.ts` קיבל `--host <addr>`.
+- `DRIVE_CODING_HOST` נוסף לשכבת config/env/flag ב-`packages/backend/src/config/load-config.ts`.
+- `packages/core/src/config/schema.ts` קיבל `host?: string`.
+- `--host ""` נדחה עם שגיאה, ו-`--help` מציג את ברירת המחדל `127.0.0.1`.
+
+**3. systemd ותיעוד deploy:**
+- `deploy/systemd/voice-acp-main.service` ו-`voice-acp-dev.service` מצהירים `Environment=DRIVE_CODING_HOST=127.0.0.1`.
+- `docs/deploy-local-service.md` עודכן: ה-CF tunnel צריך לפנות ל-`http://localhost:4000/4001`, לא לכתובת LAN.
+- נכתב במפורש שחשיפת LAN מכוונת דורשת `DRIVE_CODING_HOST=0.0.0.0` או `--host 0.0.0.0`, ולא להשתמש בזה ביחידות main/dev הרגילות.
+
+**4. תכנון ואימות:**
+- Brief: `docs/plans/slice-localhost-bind-hotfix.md`.
+- State: `docs/plans/slice-localhost-bind-hotfix.state.json`.
+- אביגיל r1: `USABLE-AFTER-FIX` — דרשה לכסות את נתיב systemd/CF tunnel ולתקן את פקודת ה-smoke.
+- אביגיל r2: `READY`, findings 0.
+- כלב light: `GO`, DoD 9/9, findings 0.
+
+**בדיקות:**
+- `bun run --filter @drive-coding/core build` — עבר.
+- `bun run --filter @drive-coding/core typecheck` — עבר.
+- `bun run --filter @drive-coding/backend typecheck` — עבר.
+- `cd packages/core && bun run test config-resolve` — עבר.
+- `cd packages/backend && bun run test load-config` — עבר.
+- `bun run lint:i18n` — עבר.
+- smoke זמני: שרת על `PORT=4098 DRIVE_CODING_HOST=127.0.0.1`, `ss` הראה `127.0.0.1:4098`, ו-`/api/agents` החזיר 200.
+
+**חריגות / המשך:**
+- לא בוצע restart נוסף ל-tmux מעבר למה שכבר נעשה; השרת החי כבר מאומת כ-loopback.
+- לפני restart של יחידות systemd main/dev, צריך לוודא בפועל שה-CF tunnel daemon המקומי מפנה ל-`localhost:<port>` ולא לכתובת LAN ישנה.
+- `offline-page` ו-`@Vendor/` נשארו מחוץ לסקופ הקומיט הזה.
+
+---
+
 ## 2026-07-07 — slice-slash-menu-native — Commit 6 (ghost-hint overlay)
 
 **מה בוצע (manual/browser — FE-טהור, slice-slash-menu-native §4 Commit 2):**

@@ -11,6 +11,7 @@ import { type } from "arktype"
 
 export const DriveCodingConfig = type({
   "port?": "number",
+  "host?": "string",
   "corsOrigins?": "string[]",
   "feStaticDir?": "string",
   "opencodeBin?": "string",

@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/home/user/projects/drive-coding/dev
 Environment=PORT=4001
+Environment=DRIVE_CODING_HOST=127.0.0.1
 Environment=FE_STATIC_DIR=/home/user/projects/drive-coding/dev/packages/frontend/build
 # Deployment profile (slice app-title-build-env).
 # FE_ENV=preview: badge "Preview" in the tab title ("Drive Coding Preview"),
@@ -37,8 +38,8 @@ RestartSec=2
 [Install]
 WantedBy=default.target
 
-# הסביבה הציבורית: https://drive-coding-dev.example.com (CF tunnel home-server,
-# token-based, id fed5a59e... → ingress drive-coding-dev.example.com → 192.168.x.x:4001).
+# הסביבה הציבורית: https://drive-coding-dev.example.com (CF tunnel home-server).
+# ה-BE מאזין ל-loopback בלבד; ingress חייב להיות drive-coding-dev.example.com → http://localhost:4001.
 # ה-routing מנוהל דרך CF API (PUT cfd_tunnel configurations), לא config מקומי.
 #
 # Drop-in: deploy/systemd/voice-acp-dev.service.d/10-logging.conf widens logging

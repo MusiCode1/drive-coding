@@ -45,6 +45,16 @@ describe("resolveConfig — precedence", () => {
     expect(result._unsafeUnwrap().port).toBe(4100)
   })
 
+  it("3b. host follows layer precedence", () => {
+    const result = resolveConfig([
+      { host: "127.0.0.1" },
+      { host: "localhost" },
+      { host: "0.0.0.0" },
+    ])
+    expect(result.isOk()).toBe(true)
+    expect(result._unsafeUnwrap().host).toBe("0.0.0.0")
+  })
+
   it("4. log object — wholesale override (higher layer wins entirely)", () => {
     const result = resolveConfig([
       { log: { level: "debug", ns: "all", format: "pretty" } }, // file
@@ -146,13 +156,14 @@ describe("resolveConfig — other fields", () => {
 
   it("multiple fields from multiple layers combined", () => {
     const result = resolveConfig([
-      { port: 4100, feStaticDir: "/static" }, // file
+      { port: 4100, host: "127.0.0.1", feStaticDir: "/static" }, // file
       { corsOrigins: ["http://example.com"] }, // env
       { opencodeBin: "/custom/opencode" }, // flag
     ])
     expect(result.isOk()).toBe(true)
     const cfg = result._unsafeUnwrap()
     expect(cfg.port).toBe(4100)
+    expect(cfg.host).toBe("127.0.0.1")
     expect(cfg.feStaticDir).toBe("/static")
     expect(cfg.corsOrigins).toEqual(["http://example.com"])
     expect(cfg.opencodeBin).toBe("/custom/opencode")
