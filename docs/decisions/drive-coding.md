@@ -1,5 +1,67 @@
 # Decisions — drive-coding
 
+## 2026-07-11 — crash-teardown-fix: ביטול רגרסיית C3 (סשנים נסגרים לבד) — התיקון שה-baking תפס
+
+### רציונל
+
+‏המשתמש דיווח **סשנים נסגרים מעצמם** בשרשרת החיה (crash-hardening+diag-harness). אבחון-חי (סוכן-חקירה)
+‏זיהה **רגרסיה מ-be-crash-hardening Commit 3**: הוא חיווט דחיית-`inboundWriter.write`/`drainOutbound`
+‏(`.catch` → `closed=true; onErrorFire`) אל `crashListeners` → `connection-registry.cleanup(agentId)` +
+‏`feWs.close(1011)` → **פירוק-סשן מול המשתמש**. ב-dev אותה דחייה נבלעה (fire-and-forget) → הסשן שרד.
+
+‏**הגילוי המכריע**: וקטור-הטריגר שבשמו נבנה C3 (SDK שמבטל את ה-readable אחרי frame-קטלני) **אינו קיים** —
+‏`acp-sdk-v1@1.0.0` **לעולם לא קורא `.cancel()`** על ה-Stream (אומת: 0 תוצאות ב-`dist/`; גם הטסט של המחברים
+‏עצמם לא הצליח לשחזר בזרימה אמיתית, נאלץ לזייף ב-`cancel(new Error)` מלאכותי). לכן C3 **פתר בעיה לא-קיימת
+‏ויצר רגרסיה אמיתית** — דחיות-write אמיתיות שכן קורות מדי-פעם (race של `bridge.close()` מול write, כשל-transport חולף)
+‏תורגמו לפירוק-סשן.
+
+‏**התיקון (revert של C3)**: ה-`.catch` נשאר (בליעה = הערך של C1, מונע `unhandledRejection→exit`), אבל גופו הופך
+‏ל-`log.warn(...)` בלבד — בלי `closed=true`, בלי `onErrorFire`. מחיקת תשתית onError (errListeners/onErrorFire/
+‏מתודת onError) + ה-wiring ב-connect-in-process. **C2 (URL-guard) לא נגע.** = חזרה מדויקת להתנהגות-dev.
+
+### ‏ממצאי אביגיל (r1 USABLE-AFTER-FIX → מתוקן; החלטת-planner להמשיך)
+
+‏4 findings, **כולם doc/citation — לא לוגיקה**: (#1🟡) מחיקת ה-wiring הופכת את onCrash של in-process למת — אבל
+‏**זה מצב-dev המקורי** (C1 הוסיף את ה-feeder היחיד; אין נתיב-crash אמיתי מחווט ל-in-process; איסוף-אמיתי = reaper נפרד);
+‏(#2🟡) precedent ל-logger תוקן ל-`spawn-core.ts:16` (‏`hot-path-timing` הוא diag-harness, לא קיים על base זה);
+‏(#3🟢) מספרי-שורות ±5; (#4🟢) טענת ה-SDK-`.cancel` תאומת ע"י אליעזר אחרי install. תיקנתי in-brief; **אליעזר אימת
+‏את שני שערי-האימות (#1 feeder-יחיד, #4 אין-cancel) לפני ביצוע**. ה-slice מומש בעצמי (planner-does-it, כפי שאושר),
+‏בלי סבב-אביגיל-שני (findings doc-בלבד + אי-יציבות harness) — שיפוט מתועד ב-state.
+
+### ‏ביצוע + rebase השרשרת
+
+‏eliezer מימש (`e3e7f785` על ענף crash-hardening). ואז **rebase מלא**: crash-hardening (מתוקן, `0298bc15`) →
+‏diag-harness (`6a038f1c`) → options-trim (`8eebee30`). קונפליקט-יחיד-מהותי ב-stream-bridge (imports) נפתר לשמור
+‏**גם** `createLogger` (התיקון) **וגם** `logIfSlow/markStart` (ה-timing של diag). אומת: provider 174 tests ירוקים,
+‏typecheck 28 pre-existing בלבד. **הבאג מתוקן בשורש; ה-baking תפס אותו לפני merge — בדיוק לשם כך.**
+
+### ‏ממצא נלווה 1 — reconnect-ghost (root-cause, טרם תוקן)
+
+‏המשתמש דיווח: אחרי "צא—השאר רץ", reconnect חסום ("מישהו מחובר") לכמה דקות. **שורש (חקירה): באג קדם-קיים, לא רגרסיה**
+‏(`ws-agent.ts`/`connection-registry.ts` זהים dev↔chain). המנגנון: הדגל `ConnEntry.attached` מתאפס **רק** ב-`markDetached`
+‏שנקרא מ-`feWs.on("close")`; `leaveRunning`→`#cleanup` סוגר את ה-WS **fire-and-forget** (`#client.close()`, לא ממתין);
+‏**אין server-side sweep** על ה-`$/ping` הקיים. בניתוק "מלוכלך" אירוע ה-close מתעכב → `attached` נשאר `true` → ה-FE חוסם
+‏(`isReconnectDisabled = attached===true`). ה"כמה דקות" = teardown ברמת-TCP (אין טיימר-אפליקטיבי). **התיקון (מאושר, טרם בוצע)
+‏→ `be-shutdown-hardening`**: (א) `lastPingAt`+sweep שקורא `markDetached`; (ב) **הודעת `$/detach` מפורשת FE→BE** (הצעת-המשתמש,
+‏עדיפה על closeAndWait). takeover-semantics = `ws-reconnect-takeover` נפרד (Track F "WS thrashing").
+
+### ‏ממצא נלווה 2 — reaper לסוכנים-idle (פער-קיים)
+
+‏אין ב-BE **שום** טיימר שסוגר סוכן שסיים/ממתין-לתשובה (אומת: אין setInterval/reaper ב-acp/agents). סוכן idle נשאר חי עד
+‏מחיקה-ידנית/נפילת-BE = שורש תהליכי-הרפאים. **מתח עם "השאר רץ"** (שמכוון להשאיר חי) → מדיניות זהירה (איסוף רק detached+idle
+‏שעות רבות). → slice/דיון נפרד.
+
+### ‏ממצא נלווה 3 — be-bind-localhost (אבטחה, תוקן ב-dev)
+
+‏ה-BE עשה bind ל-`::` (כל הממשקים) → נגיש פומבית (המשתמש תפס גישה מ-IP חיצוני). **תוקן ע"י המשתמש ב-dev** (`1224e23e`,
+‏"security: סגירת ברירת-המחדל להאזנה מקומית"): `hostname = process.env.DRIVE_CODING_HOST ?? "127.0.0.1"`. **cherry-picked**
+‏לשרשרת (`91c80526`) כדי שה-preview יאזין localhost. (כפילות מול dev — יתאזן ב-reconcile הסופי.)
+
+### ‏מצב (2026-07-11)
+
+‏השרשרת המתוקנת (crash-fix + diag + options-trim + LAN-fix) **רצה ב-preview** (‏:4001 tmux, localhost, cloudflared HTTPS,
+‏Gemini TTS מ-`.env`). **טרם מוזג** — ממתין לאימות-חי של המשתמש (יציבות-סשנים) + reconcile מול dev + אישור-merge.
+
 ## 2026-07-10 — options-trim: מחיקת החישוב היקר ב-`/api/options` (במקום cache) — משורשר על diag-harness
 
 ### רציונל
