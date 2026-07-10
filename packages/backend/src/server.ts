@@ -7,6 +7,7 @@ import { Hono } from "hono"
 import { WebSocketServer } from "ws"
 import { isBinary } from "./binary.js"
 import { isTransientSocketError } from "./delivery/transient-socket-error.js"
+import { safeUrlPathname } from "./delivery/url-safe.js"
 import { resolveTls } from "./tls.js"
 
 const log = createLogger("backend.server")
@@ -209,9 +210,14 @@ echoWss.on("connection", (ws) => {
 })
 
 agentWss.on("connection", (ws, req) => {
-  // חלץ agentId מה-URL
-  const url = new URL(req.url ?? "", `http://localhost`)
-  const match = url.pathname.match(/^\/ws\/agent\/([^/]+)$/)
+  // חלץ agentId מה-URL — defense-in-depth: אחרי upgrade-תקין לא אמור להיות null,
+  // אבל אם כן (target פגום הגיע לכאן בכל-זאת) — סגור בטוח, אל תקרוס.
+  const pathname = safeUrlPathname(req.url)
+  if (pathname === null) {
+    ws.close()
+    return
+  }
+  const match = pathname.match(/^\/ws\/agent\/([^/]+)$/)
   const agentId = match?.[1] ?? ""
 
   onAgentConnect(ws, agentId)
@@ -225,16 +231,24 @@ const httpServer: ServerType = tls
   : serve({ fetch: app.fetch, port })
 
 httpServer.on("upgrade", (req, socket, head) => {
-  const url = new URL(req.url ?? "", `http://localhost`)
+  // safeUrlPathname: עטיפה בטוחה ל-new URL — לעולם לא זורקת.
+  // target פגום (למשל "//[::1") גורם ל-new URL לזרוק TypeError → uncaughtException → exit.
+  // כאן: pathname===null → הרוס סוקט ו-return, ה-BE שורד.
+  const pathname = safeUrlPathname(req.url)
+  if (pathname === null) {
+    log.warn({ url: req.url }, "upgrade: malformed request-target — destroying socket")
+    socket.destroy()
+    return
+  }
 
-  if (url.pathname === "/ws/echo") {
+  if (pathname === "/ws/echo") {
     echoWss.handleUpgrade(req, socket, head, (ws) => {
       echoWss.emit("connection", ws, req)
     })
     return
   }
 
-  if (url.pathname.startsWith("/ws/agent/")) {
+  if (pathname.startsWith("/ws/agent/")) {
     agentWss.handleUpgrade(req, socket, head, (ws) => {
       agentWss.emit("connection", ws, req)
     })
