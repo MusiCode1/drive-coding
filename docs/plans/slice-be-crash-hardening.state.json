@@ -1,0 +1,11 @@
+{
+  "id": "be-crash-hardening",
+  "status": "plan-verified",
+  "plan_verified": true,
+  "dispatch_ready": true,
+  "base": "dev",
+  "depends_on": [],
+  "complexity": 6,
+  "verifier": "calev-light",
+  "dev_tip": "b448adcb"
+}

@@ -1,6 +1,6 @@
 {
   "name": "drive-coding",
-  "version": "0.13.2",
+  "version": "0.13.3",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.0.0",
@@ -9,9 +9,9 @@
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "dev": "pnpm -r --parallel run dev",
+    "dev": "node scripts/pm.mjs run-all-parallel dev",
     "start": "node scripts/dc-launch.mjs",
-    "build": "pnpm -r run build",
+    "build": "node scripts/pm.mjs run-all build",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --build",
@@ -35,5 +35,8 @@
     "onlyBuiltDependencies": [
       "esbuild"
     ]
-  }
+  },
+  "workspaces": [
+    "packages/*"
+  ]
 }

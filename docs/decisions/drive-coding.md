@@ -1,5 +1,103 @@
 # Decisions — drive-coding
 
+## 2026-07-10 — be-crash-hardening: הקשחת ה-BE מול 2 וקטורי-קריסה (brief READY, טרם dispatch)
+
+### רציונל
+
+‏המשתמשת דיווחה על אי-יציבות חוזרת ב-BE (event-loop נתקע, קריסות עד נפילה). חקירה הראתה
+‏שאין תעלומה אחת אלא **שלוש משפחות-כשל**: (A) מוות-רועש (קריסות), (B) ריקבון-שקט (דליפות
+‏שמייצרות את ה-hang), (C) תקיעה סינכרונית. סקירת-הבאגים הכלל-פרויקטית (07-06, 4 סוכנים
+‏מקבילים) מצאה 3 שורשי-קריסה קריטיים; אימות-קוד עצמאי שלי (מרדכי, 07-10, שורה-שורה)
+‏אישר 4/4 מהטענות שבדקתי, כולל את המנגנונים המדויקים. שני וקטורים **חיים ב-dev כרגע**:
+
+1. **#1** — `stream-bridge.ts:77,124` — `void drainOutbound()` / `void inboundWriter.write(msg)`
+   ‏fire-and-forget בלי `.catch()`. frame שהוא JSON-תקין-אך-לא-אובייקט → ה-SDK זורק ב-receive-loop
+   ‏→ ה-stream errored → ה-write הבא נדחה → `unhandledRejection` לא-transient → `process.exit(1)`.
+2. **#3** — `server.ts:228` — `new URL(req.url)` ב-upgrade handler בלי try/catch. target פגום
+   ‏(`//[::1`) → `TypeError` (אין `.code` → לא-transient) → `uncaughtException` → exit. **קריסה מרחוק.**
+
+‏הבחירה: slice **כירורגי** ל-#1+#3 (3 commits — `.catch`+`closed`, `safeUrlPathname` טהור,
+‏`onError`→פירוק-סשן). ROI עצום, blast-radius קטן.
+
+### ‏הכרעת-גבולות (מניעת חפיפה)
+
+‏סקירת-07-06 מצאה 10 שורשים; חילקתי אותם לסלייסים כדי למנוע חפיפה (§9 בברִיף):
+- **#2** (חטיפת SIGINT/SIGTERM ב-`usage-store.ts:129-135`) → **`be-shutdown-hardening`** (brief READY קיים)
+  ‏**עם דגל שהברִיף שם צריך עדכון** — הוא נכתב 07-01, לפני שזוהה ש-usage-store הוא שורש-החטיפה;
+  ‏ה-graceful-shutdown שם חייב להסיר את ה-listeners של usage-store ולנתב את ה-flush דרכו.
+- **#4** (`/api/options` `execFileSync` חוסם-loop) → slice נפרד `options-async-cache`.
+- **#5/#6/#7** (dispose / onCrash כללי / מרוץ-DELETE) → `be-lifecycle-hardening`.
+- **תשתית-אבחון** (`/api/diag` + `watch.mjs` + hot-path) → `be-diag-harness` (מהspikes השמורים).
+
+### ‏תובנה מרכזית (מעבר לדוח)
+
+‏הקריסות (A) הן הסימפטום החריף; **הדליפות (B) הן מה שמייצר את ה-hang/פורט-לא-משתחרר**
+‏המקורי. לכן תיקון-הקריסות לבד לא יפתור את "אי-היציבות" שדווחה — תיקוני-ה-lifecycle (B) הם
+‏מה שבאמת פותר אותה. נגזר: crash-hardening ראשון (חריף), אבל be-lifecycle-hardening הוא
+‏העיקר. עוד תובנה: `.catch()` לבד לא מספיק — הוא עוצר את הקריסה אבל משאיר סשן-זומבי שקט;
+‏לכן Commit 3 מפרק את הסשן דרך `crashListeners`.
+
+### ‏ממצאי אביגיל
+
+‏r1 → USABLE-AFTER-FIX (3 findings, **כולם reference/naming — אפס בעיה טכנית**). כל הטענות
+‏העובדתיות אומתו נכונות, כולל **אימות אמפירי** של הנחת-הליבה של Commit 1 (`reader.cancel`→
+‏errored→write נדחה) ושל idempotency של `cleanup`. תיקנתי: (1) קימטתי את מסמך-המקור 07-06
+‏ל-dev (`b448adcb`) — היה רק ב-wip; (2)+(3) שם+נתיב הטסטים. **r2 → READY, 0 findings.**
+
+### ‏שאלה ארכיטקטונית פתוחה (הושארה מחוץ-scope)
+
+‏מדיניות ה-handler הגלובלי — `unhandledRejection` לא-transient עדיין עושה `process.exit(1)`.
+‏ריכוך ל-log-and-continue הוא trade-off אמיתי (חוסן מול הסתרת-באגים); הוכרע **לא** לכרוך
+‏אותו ב-crash-hardening — מתקנים מקורות ידועים, לא מדיניות. יעלה למשתמשת בנפרד.
+## 2026-07-08 — agnostic-tooling: סקריפטי-שורש PM/runtime-אגנוסטיים (bun-only server)
+
+### רקע
+שכבת ה-install כבר bun-native (codex-acp→npm, `cce234c` על origin/dev). מה שנשאר שבר על שרת
+**bun-only** (אין pnpm/node): ארבעת סקריפטי-השורש `build`/`dev`/`start`/`fe:build` היו כבולים
+ל-`pnpm -r …`/`node …` literals. אומת חי: `bun run build` קורס על `pnpm: command not found` (exit 127).
+
+### רציונל
+**בורר-אחד `scripts/pm.mjs`** שמזהה PM דרך `npm_config_user_agent` ו-runtime דרך `process.execPath`,
+ומייצא arg-builders (`runAllArgs`/`runFilterArgs`) + CLI (`run-all`/`run-all-parallel`/`run-filter`).
+כל סקריפט קורא לבורר במקום literals → אותם סקריפטים רצים זהה תחת bun (שרת) ו-pnpm (dev), בלי שכפול.
+עדיף על סקריפטים כפולים פר-PM (drift) ועל `Makefile` (עוד תלות). `spawn("bun")` ב-`dc-launch`
+**נשאר literal** — ה-BE bin הוא `#!/usr/bin/env bun` + `Bun.*` ב-`server.ts` → חייב bun תמיד.
+
+### ממצאי אביגיל (3 סבבים → READY)
+- **r1 (USABLE-AFTER-FIX, 3):** כל 7 הטענות הטכניות אומתו חי (כולל `bun run --filter '*' build` end-to-end
+  ו-`dev` מקבילי). ה-findings היו בהירות בלבד: (1) ה-DoD "test passes" הניח baseline ירוק — שגוי;
+  (2) `runFilterArgs` על חבילה חסרת-סקריפט נכשל exit 1 (רק `'*'` מדלג בחן); (3) מיקום ה-`include`
+  ב-`scripts/vitest.config.ts`, לא root inline.
+- **r2 (USABLE-AFTER-FIX, 1):** תיקון #1 הראשון קיבע "בדיוק 2 כשלים" — אבל יש **קובץ-כשל שלישי**
+  pre-existing (`https-serve.test.ts`, מקודד-קשיח `D:/…bun.exe` → ENOENT על linux).
+- **r3 (READY, 0):** ה-DoD חודד ל-**baseline-capture-then-compare** (מדוד לפני/אחרי, בלי מונה קשיח).
+
+### שינויי-כיוון
+- **base ל-worktree = `origin/dev`, לא local dev.** התגלה ש-local dev (`9faf62f`) **מאחורי** origin/dev
+  ושהשכבה ה-bun-native (`cce234c`) יושבת שם כ-drift לא-committed מקומית. worktree מ-`9faf62f` היה
+  מקבל את ה-github codex-acp הישן → BE לא היה עולה. הבסיס הנכון = origin/dev (עם cce234c committed).
+- **DoD test-gate**: ממונה-קשיח → capture-and-compare (חסין למספר הכשלים ה-pre-existing).
+
+### רעיונות שנדחו
+- **סקריפטים כפולים פר-PM** (`build:pnpm`/`build:bun`) — drift + על המשתמש לבחור. הבורר מסתיר את ה-PM.
+- **החלפת `spawn("bun")` ב-`process.execPath`** — היה מפיל את ה-BE תחת pnpm/node (ה-bin חייב bun).
+- **הסרת `packageManager: pnpm`/`engines`** — נשמר לתאימות dev; bun מתעלם מהם ב-`run`.
+
+### runtime-gate (כלב) — GO 7/7 (light, commit 707105e)
+אומת חי על bun-only: `fe:build` exit 0 · `start`→`/api/health` 200 · `dev`→BE+FE במקביל ·
+`pm.test.mjs` 25/25 · CLI `run-filter core build` exit 0 · i18n נקי. אפס רגרסיות מהסלייס.
+מסלול pnpm/npm לא-נבדק כאן (אין node/pnpm על השרת) — לאימות-parity על מכונת-dev.
+
+### 🆕 follow-up שנגזר (blocker נפרד, out-of-scope) — `bun-types-web-api-gap`
+`bun run build`/`typecheck` יוצאים code 1 בגלל שגיאות tsc ב-backend (`http-proxy.ts` +
+`http-tts-capabilities.ts`): `Property 'ok'/'json'/'body'/'set'/'delete'/'signal' does not
+exist on 'Response'/'Headers'/'Request'`. שורש: `packages/backend/tsconfig.json` `"types":["bun"]`
++ `@types/bun@1.3.14` עם Web-API types חלקיים. **לא נגרם ע"י סלייס-הסקריפטים** (git: אף אחד מ-3
+ה-commits לא נגע בקבצים; ה-FE כן נבנה תחת אותו `bun run build`). זהו החלק הלא-גמור של שכבת
+ה-bun-native-install (הטייפים), נפרד מהסקריפטים. תיקון מוצע: שדרוג `@types/bun` / augment
+ל-`lib.bun.d.ts` / הוספת `"dom"` ל-`lib`. **מרדכי: להפוך ל-brief נפרד לפני שסומכים על `bun run build`
+המלא על השרת.**
+
 ## 2026-07-07 — slash-menu-native + native-select-parity: תיקון-כיוון (B ל-slash, C ל-select)
 
 ### רקע
