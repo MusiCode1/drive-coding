@@ -2,7 +2,7 @@
 
 **מה בוצע (TDD unit + integration — revert C3):**
 
-**Commit 1 (`TBD`) — stream-bridge + connect-in-process: log-and-continue במקום פירוק-סשן:**
+**Commit 1 (`e3e7f785`) — stream-bridge + connect-in-process: log-and-continue במקום פירוק-סשן:**
 - `stream-bridge.ts`: הוסף `createLogger("provider.stream-bridge")` (תבנית spawn-core).
 - `drainOutbound().catch`: הוחלף `closed=true; onErrorFire(err)` → `log.warn(..., "outbound drain rejected — absorbed")`.
 - `inboundWriter.write().catch`: הוחלף `closed=true; onErrorFire(err)` → `log.warn(..., "inbound write rejected — absorbed")`.

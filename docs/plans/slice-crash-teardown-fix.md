@@ -1,7 +1,7 @@
 # Slice — crash-teardown-fix — תוכנית
 
 > **תאריך**: 2026-07-10
-> **סטטוס**: 📝 טיוטה — טרם אביגיל
+> **סטטוס**: ✅ הושלם — commit e3e7f785 על slice/be-crash-hardening (2026-07-11)
 > **Complexity**: 3/10 (verifier: **light / calev** — אך אימות-חי שסשן לא-נסגר-לבד)
 > **תלות**: `depends_on: []` (מתקן slice קיים) · **base**: `slice/be-crash-hardening` @ `064f7d5a`
 >   ⚠️ ה-commit **נוחת על ענף crash-hardening עצמו** (התיקון שייך ל-slice — "נכון כיחידה"), ואז
