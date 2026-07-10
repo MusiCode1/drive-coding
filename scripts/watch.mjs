@@ -30,10 +30,17 @@ const RSS_WARN_MB = 1200
 const STALL_STREAK = 3
 
 const pad = (v, n) => String(v).padStart(n)
-function line(s) {
+// stdout ALWAYS (live table for interactive watching).
+function out(s) {
   process.stdout.write(`${s}\n`)
+}
+// stdout + persist to .tmp/watch.log — ONLY for anomalies (signal-only log,
+// not a per-second heartbeat; keeps the file small + every line meaningful).
+// A date prefix is added since the row time is HH:MM:SS only.
+function log(s) {
+  out(s)
   try {
-    appendFileSync(LOG, `${s}\n`)
+    appendFileSync(LOG, `${new Date().toISOString().slice(0, 10)} ${s.replace(/^\n/, "")}\n`)
   } catch {}
 }
 
@@ -55,7 +62,7 @@ async function poll() {
 let streak = 0
 let announced = false
 
-console.log(`\nwatchdog → ${HEALTH}   (Ctrl+C to stop, log → ${LOG})\n`)
+console.log(`\nwatchdog → ${HEALTH}   (Ctrl+C to stop · anomaly-only log → ${LOG})\n`)
 console.log("  time      rtt     loop-max  loop-mean  BE-rss   heap     agents      status")
 console.log("  --------  ------  --------  ---------  -------  -------  ----------  -------------------------")
 
@@ -65,11 +72,11 @@ async function tick() {
 
   if (!r.ok) {
     streak++
-    line(`  ${t}   --      --        --         --       --       --          ⛔ NO RESPONSE (frozen/down)`)
+    log(`  ${t}   --      --        --         --       --       --          ⛔ NO RESPONSE (frozen/down)`)
     if (streak >= STALL_STREAK && !announced) {
       announced = true
-      line(`\n  🔴 endpoint silent ~${streak}s — event-loop FROZEN or BE dead. THIS is the hang.`)
-      line(`     (check BE log for the last 'slow hot-path op' before the silence)\n`)
+      log(`\n  🔴 endpoint silent ~${streak}s — event-loop FROZEN or BE dead. THIS is the hang.`)
+      log(`     (check BE log for the last 'slow hot-path op' before the silence)\n`)
     }
     return
   }
@@ -86,9 +93,10 @@ async function tick() {
   else if (el.maxMs >= LAG_WARN_MS) status = `⚠️  lag climbing (max=${el.maxMs}ms)`
   if (m.rssMB >= RSS_WARN_MB) status += ` ⚠️ RSS ${m.rssMB}MB`
 
-  line(
-    `  ${t}  ${pad(rtt, 4)}ms  ${pad(el.maxMs, 6)}ms  ${pad(el.meanMs, 7)}ms  ${pad(m.rssMB, 4)}MB  ${pad(m.heapUsedMB, 4)}MB  ${pad(ag.total, 2)} (${ag.busy} busy)   ${status}`,
-  )
+  const row = `  ${t}  ${pad(rtt, 4)}ms  ${pad(el.maxMs, 6)}ms  ${pad(el.meanMs, 7)}ms  ${pad(m.rssMB, 4)}MB  ${pad(m.heapUsedMB, 4)}MB  ${pad(ag.total, 2)} (${ag.busy} busy)   ${status}`
+  // stdout always; persist to the log ONLY when there's a problem (signal-only).
+  if (status === "ok") out(row)
+  else log(row)
 }
 
 setInterval(() => void tick(), 1000)
