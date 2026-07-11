@@ -1,3 +1,27 @@
+## 2026-07-11 — slice-cursor-acp — תיקון calev NO-GO (Commit 1): authenticate לא-פאטלי כש-RPC לא מיושם
+
+**מה בוצע:**
+- שורש-הבעיה שכלב תפס (`reports/drive-coding/cursor-acp-calev.md`): opencode מכריז `authMethods: [{id:"opencode-login"}]` לא-ריק, אבל ה-`authenticate` RPC אצלו לא מיושם בפועל (`-32603`/"not implemented"). הקוד המקורי ב-Commit 1 סגר transport פאטלית על **כל** כישלון `authenticate` → opencode נשבר לגמרי חי (WS closed 1005).
+- `packages/provider/src/client/client.ts`:
+  - חילוץ classifier משותף `isAuthRequiredError(e)` (בודק `err?.data?.code === "auth_required"`) — משמש עכשיו גם ב-catch של `initialize` (היה inline קודם) וגם ב-catch החדש של `authenticate` (DRY, לפי §4 Commit 1 🔴 בבריף המתוקן).
+  - catch של `authenticate`: אם `isAuthRequiredError(e)` → פאטלי כמו קודם (סגירת transport + זריקת `kind:"auth_required"`). אחרת (למשל `-32603` של opencode) → **לא-פאטלי**: `console.warn` עם methodId+error, וממשיך ל-`buildAcpClientFacade(...)` כאילו authenticate לא נקרא.
+- `packages/provider/src/client/client.authenticate.test.ts`:
+  - שכתוב ה-mock transport: `authenticateBehavior` עכשיו `"success"|"reject-auth-required"|"reject-not-implemented"` (היה `"success"|"reject"` גנרי בלי `data.code`).
+  - טסט קיים ("authenticate rejection…") הוסב ל-`reject-auth-required` (כדי שימשיך לבדוק את הנתיב הפאטלי בפועל).
+  - 2 טסטים חדשים לפי הבריף: #6 opencode-regression (`reject-not-implemented`, בלי `data.code==="auth_required"`) → `createAcpClient` **לא** זורק, `transport` לא נסגר, מסתיים בהצלחה. #7 auth_required אמיתי (`reject-auth-required`) → **כן** זורק `kind:"auth_required"` + סוגר transport.
+
+**build-gate:**
+- `pnpm typecheck` (root, `tsc --build`): 0 שגיאות.
+- provider tests: 200 passed | 9 skipped (24 files) — כולל 2 הטסטים החדשים + הטסט המוסב.
+- `scripts/lint-no-hebrew-in-code.sh` (הרצה ישירה דרך bash — `pnpm lint:i18n` נכשל ב-shell של Windows על invocation `.` בלבד, לא קשור לשינוי): ✓ עובר.
+- `pnpm lint` (biome): 627 errors קיימים-מראש (CRLF/formatting על קבצי config לא-קשורים — `tsconfig.json`, `vitest.config.ts` וכו') — 0 errors חדשים על `client.ts`/`client.authenticate.test.ts` (אומת ב-grep ממוקד).
+
+**חריגות:** אין מעבר למה שהבריף המתוקן (§4 Commit 1 🔴) ביקש. Testing strategy = tdd — הטסטים נכתבו/הוסבו יחד עם הקוד, לא בנפרד.
+
+**Verifier-phase (מחודש)**: calev (mode: phase) יורץ שוב על אותם DoD #4/#5/#8 — cursor+grok authenticate (כבר GO בסבב הקודם) + regression opencode (זה שנשבר, דורש אימות-חי חוזר).
+
+---
+
 ## 2026-07-11 — slice-cursor-acp — Commit 1: ACP authenticate גנרי + Cursor blocking-ext
 
 **מה בוצע:**

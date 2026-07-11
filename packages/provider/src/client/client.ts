@@ -68,6 +68,17 @@ export function resolveAuthMethodId(
   return PREFERRED.find((id) => ids.has(id)) ?? authMethods[0]?.id
 }
 
+/**
+ * מזהה שגיאת auth_required אמיתית (data.code === "auth_required") — בניגוד לכל שגיאה
+ * אחרת (כמו -32603 "not implemented" של opencode, שמכריז authMethods בלי ליישם authenticate).
+ * משותף ל-catch של initialize וגם authenticate — ר' docs/plans/slice-cursor-acp.md §4 Commit 1
+ * (תוקן אחרי calev NO-GO — הגרסה המקורית סגרה transport על כל כישלון authenticate ושברה opencode).
+ */
+function isAuthRequiredError(e: unknown): e is { data?: { code?: string }; message?: string } {
+  const err = e as { data?: { code?: string } }
+  return err?.data?.code === "auth_required"
+}
+
 export type AcpClientOptions = {
   /** דריסת timeout האתחול. ברירת מחדל: 10 שניות. בבדיקות מעבירים ערך קטן. */
   initTimeoutMs?: number
@@ -283,10 +294,9 @@ export async function createAcpClient(
   } catch (e) {
     if (initTimer !== undefined) clearTimeout(initTimer)
     // שגיאת auth_required — זורק מחדש עם kind ל-UI
-    const err = e as { code?: number; data?: { code?: string }; message?: string }
-    if (err?.data?.code === "auth_required") {
+    if (isAuthRequiredError(e)) {
       const authErr = new Error(
-        `ACP agent requires authentication: ${err.message ?? "auth_required"}. ` +
+        `ACP agent requires authentication: ${e.message ?? "auth_required"}. ` +
           `Run in shell: '<cli> auth login'.`,
       )
       ;(authErr as Error & { kind?: string }).kind = "auth_required"
@@ -304,14 +314,22 @@ export async function createAcpClient(
     try {
       await conn.authenticate({ methodId: authMethodId })
     } catch (e) {
-      transport.close()
+      // auth_required אמיתי → פאטלי (כמו initialize). כל שגיאה אחרת (כמו -32603
+      // "not implemented" של opencode, שמכריז authMethods בלי ליישם את ה-RPC בפועל)
+      // → לא-פאטלי: log + המשך כאילו authenticate לא נקרא. מונע רגרסיה (calev NO-GO).
+      if (isAuthRequiredError(e)) {
+        transport.close()
+        const authErr = new Error(
+          `ACP agent authentication failed (methodId: ${authMethodId}): ${e.message ?? String(e)}. ` +
+            `Run in shell: '<cli> auth login'.`,
+        )
+        ;(authErr as Error & { kind?: string }).kind = "auth_required"
+        throw authErr
+      }
       const err = e as { message?: string }
-      const authErr = new Error(
-        `ACP agent authentication failed (methodId: ${authMethodId}): ${err?.message ?? String(e)}. ` +
-          `Run in shell: '<cli> auth login'.`,
+      console.warn(
+        `[acp] authenticate(methodId=${authMethodId}) failed non-fatally — agent declared authMethods but RPC not implemented; continuing: ${err?.message ?? String(e)}`,
       )
-      ;(authErr as Error & { kind?: string }).kind = "auth_required"
-      throw authErr
     }
   }
 

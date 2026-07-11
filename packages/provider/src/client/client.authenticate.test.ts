@@ -12,9 +12,16 @@
  *   3. authMethods: [] / missing → NO authenticate frame
  *   4. [{ id: "other_login" }] (not in PREFERRED) → fallback to first
  *   5. regression: initialize still sent with protocolVersion: 1
+ *   6. opencode-regression: authenticate rejects with -32603 "not implemented" (no data.code
+ *      "auth_required") → createAcpClient does NOT throw, finishes successfully.
+ *   7. real auth_required: authenticate rejects with data.code === "auth_required" → throws
+ *      with kind "auth_required" and closes transport.
  *   + priority ordering: PREFERRED wins over array order
- *   + authenticate rejection → transport closed + error with kind "auth_required"
  *   + resolveAuthMethodId pure-function coverage (priority + fallback + empty)
+ *
+ * תוקן אחרי calev phase-verification NO-GO (2026-07-11) — ר' docs/plans/slice-cursor-acp.md
+ * §4 Commit 1 (🔴) ו-reports/drive-coding/cursor-acp-calev.md. opencode מכריז authMethods
+ * לא-ריק אבל לא מיישם authenticate RPC בפועל — היה שובר את opencode בפועל.
  */
 
 import { describe, expect, it } from "vitest"
@@ -39,7 +46,12 @@ type WrittenMessage = {
  */
 function makeAutoRespondTransport(opts: {
   authMethods?: ReadonlyArray<{ id: string }>
-  authenticateBehavior?: "success" | "reject"
+  /**
+   * "reject-auth-required" → error עם data.code === "auth_required" (פאטלי, כמו קודם).
+   * "reject-not-implemented" → error -32603 בלי data.code === "auth_required" (מדמה opencode;
+   *   לא-פאטלי אחרי התיקון).
+   */
+  authenticateBehavior?: "success" | "reject-auth-required" | "reject-not-implemented"
 }) {
   const writtenMessages: WrittenMessage[] = []
   const dec = new TextDecoder()
@@ -70,11 +82,26 @@ function makeAutoRespondTransport(opts: {
           },
         })
       } else if (msg.method === "authenticate") {
-        if (opts.authenticateBehavior === "reject") {
+        if (opts.authenticateBehavior === "reject-auth-required") {
           pushIn({
             jsonrpc: "2.0",
             id: msg.id,
-            error: { code: -32000, message: "auth failed (mock)" },
+            error: {
+              code: -32000,
+              message: "auth failed (mock)",
+              data: { code: "auth_required" },
+            },
+          })
+        } else if (opts.authenticateBehavior === "reject-not-implemented") {
+          // מדמה opencode חי: -32603, בלי data.code === "auth_required".
+          pushIn({
+            jsonrpc: "2.0",
+            id: msg.id,
+            error: {
+              code: -32603,
+              message: "Internal error",
+              data: { details: "Authentication not implemented" },
+            },
           })
         } else {
           pushIn({ jsonrpc: "2.0", id: msg.id, result: {} })
@@ -188,10 +215,24 @@ describe("createAcpClient — generic authenticate after initialize", () => {
     expect(initFrame?.params).toMatchObject({ protocolVersion: 1 })
   })
 
-  it("authenticate rejection → transport closed + error thrown with kind auth_required", async () => {
+  it("6. opencode-regression: authenticate rejects with -32603 not-implemented (no data.code auth_required) → createAcpClient does NOT throw", async () => {
+    const { transport, writtenMessages, isClosed } = makeAutoRespondTransport({
+      authMethods: [{ id: "opencode-login" }],
+      authenticateBehavior: "reject-not-implemented",
+    })
+
+    const client = await createAcpClient(transport, () => {})
+
+    expect(client).toBeDefined()
+    expect(isClosed()).toBe(false)
+    const authFrame = writtenMessages.find((m) => m.method === "authenticate")
+    expect(authFrame?.params).toMatchObject({ methodId: "opencode-login" })
+  })
+
+  it("7. real auth_required: authenticate rejects with data.code === auth_required → transport closed + error thrown with kind auth_required", async () => {
     const { transport, isClosed } = makeAutoRespondTransport({
       authMethods: [{ id: "cursor_login" }],
-      authenticateBehavior: "reject",
+      authenticateBehavior: "reject-auth-required",
     })
 
     let caught: (Error & { kind?: string }) | undefined
