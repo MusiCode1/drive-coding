@@ -9668,4 +9668,38 @@ snapshot+screenshot) על ה-worktree עצמו כ-cwd, session קיים (claude)
 - **Commit 4** על `slice/slash-commands` (מעל Commit 0-1-2, base `f5a6817`) — שדרוג-תצוגה
   קטן, ללא merge (ממתין לאישור, יחד עם שאר השרשרת — לפי §8 בבריף).
 - `pnpm typecheck`: 0/0. `biome check` פרטני: נקי. אומת חי בדפדפן (claude אמיתי) — 6/6 DoD.
+
+## 2026-07-11 — npm-publish — פרסום ראשוני (drive-coding@0.17.0)
+
+פרסום ראשון-אי-פעם של `drive-coding` ל-npm (`packages/release`; השם היה פנוי — 404
+לפני הפרסום; `publishConfig.access:public` כבר מוגדר).
+
+### מה בוצע
+
+- נוצר `packages/release/LICENSE` (MIT) — היה חסר בפועל למרות `"license": "MIT"`
+  ב-`package.json`.
+- נמחק שריד `dist/drive-coding.exe` (בינארי `bun --compile` ישן, 141MB, לא קשור
+  ל-`scripts/build.mjs`).
+- `node scripts/build.mjs` (prepack) רץ נקי — `dist/drive-coding.js` (4.8MB),
+  `frontend-dist/`, `plugins/`.
+- `npm pack --dry-run` אומת: 117 קבצים, tarball 14.8MB / unpacked 41.8MB (רובו
+  מודלי wake-word ONNX + `ort-wasm-simd-threaded...wasm` 26.2MB — במכוון).
+- בדיקה חיה: `bun dist/drive-coding.js --port <n>` → HTTP 200, UI תקין (RTL/עברית).
+- **תקלה בדרך**: `npm publish` ראשון הורץ בטעות משורש המונו-רפו (`dev/`, לא
+  `dev/packages/release/`) — שני ה-`package.json` נקראים `"drive-coding"`, אז
+  נארז כל עץ-המקורות (`docs/`, `packages/*/src`, `walkthrough.md` וכו') במקום
+  ה-bundle הבנוי. נבלם לפני שהגיע ל-registry (חסם OTP) — אומת עם
+  `npm view drive-coding` (404) שדבר לא התפרסם בפועל.
+- Publish שני, מהתיקייה הנכונה (`packages/release`) — הצליח. `unpackedSize`
+  ב-registry (41,825,788 bytes) תואם בדיוק ל-dry-run.
+- `bunx drive-coding@latest --version` ו-`--port <n>` אומתו בתיקייה זמנית נקייה,
+  מחוץ למונו-רפו — `0.17.0`, HTTP 200.
+
+### חריגות / הערות
+
+- לא הורץ `npm run check` (לא קיים script בשם זה בפרויקט) — השינוי היחיד לקוד
+  היה קובץ `LICENSE` טקסטואלי, לא קוד.
+- אין עדיין git tag בפורמט `vX.Y.Z` בהיסטוריה (רק `archive/*`) — נוסף `v0.17.0`
+  בעקבות ה-publish הזה, ונוסף `packages/release/RELEASING.md` (checklist
+  לפרסומים הבאים).
 - Base: `dev` @ `9faf62f`. אין merge — ממתין לאישור.
