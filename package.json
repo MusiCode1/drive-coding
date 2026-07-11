@@ -1,6 +1,6 @@
 {
   "name": "drive-coding",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.0.0",
@@ -36,11 +36,15 @@
       "esbuild"
     ],
     "overrides": {
-      "@anthropic-ai/claude-agent-sdk": "0.3.206"
+      "@agentclientprotocol/sdk": "1.2.1",
+      "@anthropic-ai/claude-agent-sdk": "0.3.207",
+      "@openai/codex": "0.144.1"
     }
   },
   "overrides": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.206"
+    "@agentclientprotocol/sdk": "1.2.1",
+    "@anthropic-ai/claude-agent-sdk": "0.3.207",
+    "@openai/codex": "0.144.1"
   },
   "workspaces": [
     "packages/*"

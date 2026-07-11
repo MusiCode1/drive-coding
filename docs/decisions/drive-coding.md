@@ -1,5 +1,135 @@
 # Decisions — drive-coding
 
+## 2026-07-11 — acp-stack-upgrade: מוזג ל-dev (מרדכי — הכנה+מיזוג post-hoc)
+
+### רציונל
+ה-branch בוצע ב-session נפרד (ככל הנראה מכונת cli-agents, לפי נתיבי `/home/user/...`
+ב-decisions הקיימות) **מחוץ** לתהליך הרגיל מרדכי→אביגיל→אליעזר→כלב — ללא brief
+פורמלי ב-`docs/plans/`, ללא state.json. מרדכי נכנס בשלב ה-הכנה-למיזוג בלבד.
+
+### הכנה למיזוג (בוצע ע"י מרדכי, 2026-07-11)
+worktree חדש עוקב אחרי `origin/slice/acp-stack-upgrade` → `git merge dev` (2
+קונפליקטים טריוויאליים ב-docs append-log — `decisions.md`/`walkthrough.md`, שילוב
+שני הצדדים; `client.ts` התמזג אוטומטית, אפס קונפליקט קוד) → `bun install` → וידוא
+גרסאות בפועל (`bun pm ls --all`): SDK `1.2.1`, claude-agent-acp `0.58.1`,
+claude-agent-sdk `0.3.207`, codex `0.144.1` — תואם למתועד. `pnpm typecheck` נקי.
+`pnpm test` תפס תחילה 41 קבצים כושלים — אובחן **לא**-קשור ל-SDK: `.svelte-kit/`
+חסר ב-worktree חדש (`svelte-kit sync` לא רץ אוטומטית). אחרי `bunx svelte-kit
+sync`: ירד ל-4 כשלים, כולם `packages/backend` (spawn/tmp-dir), אותה קטגוריית
+כשלי-סביבה ידועה ב-Windows שכבר תועדה ב-`cursor-acp-calev.md`. `packages/provider`
+(החבילה הכי חשופה לשדרוג) — 200/200 ירוק.
+
+### תאימות מול cursor-acp
+נבדקה **לפני** ש-cursor-acp מוזג (`git merge-tree`) — ראה entry cursor-acp למטה.
+אושרה חיה בפועל כאן: אין קונפליקט קוד, `conn.authenticate`/`Client.extMethod` זהים.
+
+### 3 briefs נלווים שהגיעו יחד (לא בוצעו)
+`session-budget-meter` (READY, dispatch_ready), `provider-quota-meter`
+(superseded ע"י הקודם), `be-lifecycle-hardening` (READY, dispatch_ready) — כולם
+brief+state.json בלבד, **0 קוד מבוצע** (אומת: `git diff` על הקבצים שה-decisions
+המקוריות מתארות כ"commits" לא מראה שינוי תואם). הוחלט (עם המשתמשת) לא לפצל אותם
+מה-branch — הם ייכנסו ל-`dev` כ-briefs ממתינים-ל-dispatch, בלי סיכון (0 קוד).
+
+### מיזוג
+Preview אושר חי ע"י המשתמשת (`localhost:4000`, production build, אחרי build+bun
+install+typecheck נקי). מוזג ל-dev `--no-ff` (bump `v0.17.0`, minor, frontend
+בלבד — provider/backend/core בלי שינוי-קוד פונקציונלי מהמיזוג הזה מעבר לגרסת-חבילה),
+push origin. worktree+branch נוקו.
+
+## 2026-07-11 — acp-stack-upgrade: baseline audit לפני שדרוג client/Claude/Codex
+
+### תמונת גרסאות
+
+| רכיב | current ב-drive-coding | npm dist-tag latest | יעד בסלייס |
+|---|---:|---:|---:|
+| `@agentclientprotocol/sdk` | `^0.21.1` | `1.2.1` | `^1.2.1` בכל workspaces |
+| `acp-sdk-v1` alias | `@agentclientprotocol/sdk@1.0.0` | `1.2.1` | הסרה, או alias זמני ל-`1.2.1` בלבד |
+| `@agentclientprotocol/claude-agent-acp` | `^0.52.0` | `0.58.1` | `^0.58.1` upstream |
+| `@anthropic-ai/claude-agent-sdk` | `^0.3.206` + override `0.3.206` | `0.3.207` | `^0.3.207` + override `0.3.207` |
+| `@anthropic-ai/claude-code` | לא תלות ישירה | `2.1.207` | reference בלבד, לא להוסיף אם smoke עובר |
+| `@musicode1/codex-acp` | `^1.0.2` | `1.0.2` | upstream אם יש `./lib`, אחרת fork מסונכרן |
+| `@agentclientprotocol/codex-acp` | לא בשימוש runtime | `1.1.2` | gate ראשון ל-`./lib.startAcpServer` |
+| `@zed-industries/codex-acp` | לא בשימוש runtime | `0.16.0` | legacy reference בלבד |
+| `@openai/codex` | דרך fork `^0.142.5` | `0.144.1` | `^0.144.1` stable בלבד |
+
+### Package manager baseline
+
+`package.json` עדיין מצהיר `packageManager: "pnpm@10.0.0"` ו-`engines.pnpm`, אבל הסלייס הזה מבוצע עם
+`bun install` לפי ה-dispatch. לכן `bun.lock` הוא source-of-truth הפעיל לשדרוגי ACP בסלייס הזה.
+`pnpm-lock.yaml` נשאר stale/deprecated עד סלייס package-manager ייעודי, ולא משמש כ-DoD פעיל כאן.
+
+### Commit 2 — איחוד SDK בלי `acp-sdk-v1`
+
+ה-alias `acp-sdk-v1` הוסר. כדי שגם `claude-agent-acp@0.52.0` לא יחזיק עותק מקונן של
+`@agentclientprotocol/sdk@1.0.0` לפני שדרוג ה-adapter ב-Commit 3, נוסף root override ל-`@agentclientprotocol/sdk: 1.2.1`
+גם תחת `pnpm.overrides` וגם תחת `overrides`. אחרי `bun install`, `bun.lock` לא מכיל עוד SDK `0.21.1` או `1.0.0`.
+
+### Commit 3 — Claude adapter/SDK latest
+
+`@agentclientprotocol/claude-agent-acp` עודכן ל-`^0.58.1` והועבר ל-`dependencies`, כי הוא מיובא runtime-ית
+מ-`in-process-host.ts`/`connect-in-process.ts`. `@anthropic-ai/claude-agent-sdk` עודכן ל-`^0.3.207`, עם override
+שורשי כפול (`pnpm.overrides` + top-level `overrides`) ל-`0.3.207`, כדי שגם התלות המדויקת של ה-adapter
+(`0.3.205` ב-`bun.lock`) תרוץ בפועל על `0.3.207`.
+
+`@anthropic-ai/claude-code@2.1.207` נשאר reference בלבד ולא נוסף כתלות: המסלול החי ממשיך להיטען דרך
+`@anthropic-ai/claude-agent-sdk`/ה-CLI שה-SDK מפעיל, ואין import runtime ישיר ל-`claude-code`.
+
+אומת שה-method `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET` עדיין קיים ב-SDK `0.3.207`.
+במבנה Bun של ה-worktree אין symlink שורשי `node_modules/@anthropic-ai/claude-agent-sdk`, ולכן הפקודה המדויקת של
+הבריף מחזירה `exit 2` על הנתיב השורשי, אבל הנתיב הפעיל של provider
+`packages/provider/node_modules/@anthropic-ai/claude-agent-sdk` מכיל את ה-method ב-`sdk.d.ts`, `sdk.mjs`, ו-`browser-sdk.js`.
+
+ב-live verbose לא הופיע `background_tasks_changed` כ-`Unexpected case`. כן הופיעו פריימי `command_lifecycle`
+כ-`Unexpected case`; זה תועד כ-known residual לפי הבריף ולא תוקן ב-Commit 3, כי הבריף מורה לא לתקן כאן אלא אם
+מדובר בתיקון no-op קטן וברור.
+
+### Commit 4 — Codex upstream gate ו-runtime override
+
+Gate A מול `@agentclientprotocol/codex-acp@1.1.2` נכשל: התקנה זמנית ב-`/tmp` והרצת
+`import("@agentclientprotocol/codex-acp/lib")` החזירה `Cannot find module`, כלומר upstream הרשמי עדיין לא מספק
+`./lib.startAcpServer`. בדיקת legacy מול `@zed-industries/codex-acp@0.16.0` נתנה אותה תוצאה, ולכן אין חזרה ל-legacy.
+
+הפורק המקומי `/home/user/Projects/drive-coding/sub-packages/codex-acp` נפתח על branch
+`slice/acp-stack-upgrade-codex` מ-`origin/drive-coding`, לא מ-`main`. branch זה כבר מכיל `src/lib.ts`,
+`exports["./lib"]`, ו-`startAcpServer(readable,writable,opts)`. מאחר שהמשתמש אסר push/publish בסלייס,
+drive-coding לא הופנה ל-SHA לא-דחוף ולא ל-file dependency. במקום זאת, נשארת הצריכה היציבה
+`@musicode1/codex-acp@^1.0.2` שכבר מתפרסמת תחת שם החבילה הנכון ומספקת `./lib`, ונוסף root override ל-`@openai/codex: 0.144.1`
+כדי שה-runtime וה-lock ישתמשו ב-Codex stable latest. ה-override הקיים ל-`@agentclientprotocol/sdk: 1.2.1`
+ממשיך לכפות SDK אחיד גם על תלות ה-fork.
+
+`bun.lock` עדיין מציג בתוך רשומת metadata של `@musicode1/codex-acp@1.0.2` את הדרישות המקוריות של החבילה
+(`@agentclientprotocol/sdk: 1.1.0`, `@openai/codex: 0.142.5`), אבל ה-resolution הפעיל הוא root-level:
+`bun pm ls --all` מציג `@agentclientprotocol/sdk@1.2.1` ו-`@openai/codex@0.144.1`.
+
+ה-smoke החי של `connectCodexInProcess` עבר מול `CODEX_PATH=/home/user/.local/bin/codex` (`codex-cli 0.144.1`):
+`initialize`, `session/new`, ו-`session/prompt` הסתיימו, `stopReason=end_turn`, ואחרי `close()` לא נשאר PID חדש של
+`codex app-server` מעבר ל-PID שהיה קיים לפני הבדיקה.
+
+### Commit 5 — fork-not-needed-for-transcript
+
+הכרעה: `fork-not-needed-for-transcript`.
+
+הפעלת `emitRawSDKMessages` דרך `_meta.claudeCode.emitRawSDKMessages` יחד עם
+`_meta.claudeCode.options.forwardSubagentText=true` מספיקה כדי לקבל את חומר ה-transcript שנדרש ל-slice המשך של nested
+subagent bubble, בלי להחזיר את fork ה-Claude המקומי הישן.
+
+הוכחה חיה ב-`connectInProcess` מול `@agentclientprotocol/claude-agent-acp@0.58.1` +
+`@anthropic-ai/claude-agent-sdk@0.3.207`: prompt קצר שחייב שימוש ב-Task יצר `_claude/sdkMessage` לפני שה-adapter שובר על
+אירועי `task_*`. התקבלו 7 raw messages, מתוכם `task_started`, `task_updated`, `task_notification`, ו-4 הודעות
+`assistant`. אחת מהודעות ה-`assistant` נשאה `parent_tool_use_id` של ה-Task וכללה content text
+`SUBAGENT_RAW_OK`. במסלול ACP הרגיל עדיין הגיעו רק `tool_call`/`tool_call_update` ו-agent chunks עליונים; זה תואם את
+הקוד ב-upstream שמסנן text/thinking של subagent מה-feed הרגיל, אבל raw ext notification מגיע לפני הסינון ולכן מספיק
+כמקור ל-normalization עתידי.
+
+תוצאה: אין להסיר את האפשרות ל-fork בעתיד אם upstream ישתנה, אבל עבור transcript ב-stack הנוכחי אין צורך לבנות fork
+Claude חדש על `0.58.1`. slice ההמשך יכול לצרוך `_claude/sdkMessage` ולבנות normalization/UI בלי לגעת בפורק.
+
+### פיצול ביצוע
+
+השדרוג מפוצל לשערים: client SDK, הסרת containment של `acp-sdk-v1`, Claude adapter/SDK, Codex upstream-or-fork,
+ורק בסוף raw SDK spike שמכריע אם fork Claude עדיין נחוץ ל-transcript. Commit 5 הוא gate רצף: לא מסירים מסלול fork
+ולא מחליטים upstream-only בלי הוכחת raw SDK או החלטת `fork-still-needed` מתועדת.
+
 ## 2026-07-11 — session-budget-meter: מד תקציב-סשן (קונטקסט + מכסה) — popover אחד
 
 > **עדכון (איחוד):** ה-slice `provider-quota-meter` (מכסה בלבד, READY) **אוחד** עם מד-מלאות-הקונטקסט

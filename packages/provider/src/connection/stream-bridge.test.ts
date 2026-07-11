@@ -10,7 +10,7 @@
  *   - unsubscribe from onLine works
  */
 
-import type { AnyMessage } from "acp-sdk-v1"
+import type { AnyMessage } from "@agentclientprotocol/sdk"
 import { describe, expect, it, vi } from "vitest"
 import { createStreamBridge } from "./stream-bridge.js"
 

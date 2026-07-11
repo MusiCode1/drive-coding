@@ -7,8 +7,8 @@
  * שונה מ-SessionPicker.formatDate (relative-time עם Intl.RelativeTimeFormat).
  */
 
-import { describe, it, expect } from "vitest"
-import { formatTime, formatRelativeTime } from "./formatting"
+import { describe, expect, it } from "vitest"
+import { formatRelativeTime, formatTime } from "./formatting"
 
 describe("formatTime", () => {
   it("returns HH:MM string for a known timestamp (midnight UTC)", () => {
@@ -59,10 +59,10 @@ describe("formatRelativeTime", () => {
     expect(result).toContain("שניות")
   })
 
-  // מקרה 3: 2 דקות → "לפני 2 דקות" (he)
-  it("case 3 — 120_000ms (2 min): returns 'לפני 2 דקות' in he", () => {
+  // מקרה 3: 2 דקות → numeric digits או צורת dual מילולית, תלוי ICU
+  it("case 3 — 120_000ms (2 min): returns two-minutes string in he", () => {
     const result = formatRelativeTime(BASE - 120_000, "he", BASE)
-    expect(result).toBe("לפני 2 דקות")
+    expect(result).toMatch(/^לפני (2|שתי) דקות$/)
   })
 
   // מקרה 4: 90 דקות → שעה (numeric:auto → "לפני שעה" / "לפני שעה (1)" תלוי ICU)

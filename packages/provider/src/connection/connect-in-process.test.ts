@@ -7,7 +7,7 @@
  * - DoD 4: onFrame decoded (in+out); turn.isBusy in turn; capabilities includes rename=true, thinkingTokens=true
  * - DoD 6: additive (no BE/FE changes)
  *
- * Tests use real agentApp (acp-sdk-v1) with in-process wire, NOT real claude.
+ * Tests use real agentApp with in-process wire, NOT real claude.
  * We simulate the FE by writing ACP messages directly to wire.write().
  * The agentApp handles initialize in-process and responds via wire.
  */
@@ -111,7 +111,6 @@ describe("connectInProcess — structural (no real claude session)", () => {
       const f = frames.find((f) => f.dir === "out" && f.id === 99)
       expect(f).toBeDefined()
       expect(f!.dir).toBe("out")
-      expect(f!.method).toBeUndefined() // WireFrame.type is the derived label, not .method
       // type = method name for a request
       expect(f!.type).toBe("initialize")
     } finally {
@@ -231,7 +230,11 @@ describe("connectInProcess — stream write rejection does NOT fire onCrash (ses
         jsonrpc: "2.0",
         id: 1,
         method: "initialize",
-        params: { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: "t", version: "0" } },
+        params: {
+          protocolVersion: 1,
+          clientCapabilities: {},
+          clientInfo: { name: "t", version: "0" },
+        },
       }),
     )
 

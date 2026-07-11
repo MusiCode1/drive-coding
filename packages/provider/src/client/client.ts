@@ -21,12 +21,11 @@
  *   - Auto-reconnect — לא מטופל באף שכבה. ה-UI מציג פרומפט "רענן".
  */
 import type {
+  ClientSideConnection as ClientSideConnectionType,
   NewSessionRequest,
   SessionNotification,
   SetSessionConfigOptionResponse,
-  SetSessionModelResponse,
   SetSessionModeResponse,
-  ClientSideConnection as ClientSideConnectionType,
 } from "@agentclientprotocol/sdk"
 import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk"
 import type { AcpTransport } from "../transport/types.js"
@@ -98,7 +97,10 @@ export type AcpClient = {
   }): ReturnType<ClientSideConnection["loadSession"]>
   listSessions(): ReturnType<ClientSideConnection["listSessions"]>
   // ─── slice-image-paste: Commit 4a — backward-compatible (string עדיין עובד) ───
-  prompt(sessionId: string, content: string | PromptBlocks): ReturnType<ClientSideConnection["prompt"]>
+  prompt(
+    sessionId: string,
+    content: string | PromptBlocks,
+  ): ReturnType<ClientSideConnection["prompt"]>
   cancel(sessionId: string): ReturnType<ClientSideConnection["cancel"]>
   close(): void
 
@@ -111,7 +113,7 @@ export type AcpClient = {
 
   setSessionMode(opts: { sessionId: string; modeId: string }): Promise<SetSessionModeResponse>
 
-  setSessionModel(opts: { sessionId: string; modelId: string }): Promise<SetSessionModelResponse>
+  setSessionModel(opts: { sessionId: string; modelId: string }): Promise<void>
 
   // ─── slice FE-normalization: ext channel ───
   /**
@@ -231,11 +233,12 @@ function buildAcpClientFacade(
     },
 
     /** משנה את המודל של סשן פתוח (unstable API). */
-    async setSessionModel(opts: {
-      sessionId: string
-      modelId: string
-    }): Promise<SetSessionModelResponse> {
-      return conn.unstable_setSessionModel({ sessionId: opts.sessionId, modelId: opts.modelId })
+    async setSessionModel(opts: { sessionId: string; modelId: string }): Promise<void> {
+      await conn.setSessionConfigOption({
+        sessionId: opts.sessionId,
+        configId: "model",
+        value: opts.modelId,
+      })
     },
   }
 }
