@@ -1,5 +1,44 @@
 # Decisions — drive-coding
 
+## 2026-07-11 — be-lifecycle-hardening: dispose-on-close ל-claude in-process + סגירת DELETE-בזמן-spawn race
+
+### רציונל
+`be-shutdown-hardening` (מוזג v0.15.0) נתן kill-tree ל-**spawn**-connections (opencode/gemini/qoder), אבל
+**claude עובר `connectInProcess`** — אין child חשוף, לא עובר spawn-core. ה-`close()` שלו קורא `bridge.close()`
+בלבד ו**לא `claudeAgent.dispose()`** → ה-SDK `query.close()` (ש"terminates the subprocess") לא רץ → ה-claude
+CLI subprocess **דולף** (יתום ב-`kill <pid>`/deleteAndKill; מת רק ב-group-kill מקרי). הסלייס מוסיף
+**dispose-on-close** (#5) — משלים את הפער היחיד שנשאר מ-be-shutdown-hardening §10 ל-claude. בנוסף סוגר
+**#7**: DELETE שמגיע בזמן ש-spawn עדיין בטיסה — `map.set` קורה *אחרי* ה-`await connect`, ו-`close()` עושה
+early-return על `!map.get` → connection אלמותי-בלתי-נגיש (child שאף אחד לא יכול להרוג). תיקון: token-cancel
+פר-spawn-בטיסה. שני התיקונים בקוד שבבעלותנו, מתקנים דליפות-child אמיתיות.
+
+### דחיית #6 (onCrash על מוות-אמיתי של claude child) — ההכרעה החשובה
+ה-bug-review מנה גם #6 ("registry חושב שהסוכן חי → pending requests hang forever"). **נדחה** אחרי חקירת
+ה-adapter החי (0.52.0):
+1. **ה-adapter כבר מטפל**: ה-consumer catch (`acp-agent.js:~1595`) מזהה `processDied` → `failAllTurns`
+   (דוחה כל prompt תלוי עם "process exited unexpectedly. Please start a new session.") → `closeQueryStream`
+   → `delete session`. ה-harm המקורי ("hang forever") **לא קיים** ב-0.52.0.
+2. **אין signal-host נקי**: המוות מטופל *בתוך* ClaudeAcpAgent, לא נחשף ל-`connectInProcess` (אין callback;
+   `agentConn.closed` לא נפתר — ה-bridge חי). ה-signal היחיד מבחוץ = מחרוזת-שגיאה על ה-wire → **שביר** +
+   **חלקי** (רק אם turn באוויר). זה בדיוק **לקח-C3** — אל תתלה teardown ב-signal-שביר (בדיוק הבאג שתיקנו
+   ב-crash-teardown-fix). מימוש #6 עם signal כזה היה מחזיר את C3.
+3. **הבעלים הנכון** = `be-hang-supervisor` (watchdog חיצוני-ל-loop, agnostic לסיבה, רואה מוות/hang/RSS
+   דרך ה-OS). הפער-שנותר (registry-staleness על מוות-idle-ספונטני) מינורי ומכוסה שם.
+
+### ממצאי אביגיל
+r1 `USABLE-AFTER-FIX` → r2 `READY` (0 findings). r1: הליבה (race-analysis #7 + dispose-chain #5)
+**אומתה אמפירית מקצה-לקצה, 0 blockers, 0 regressions**; דחיית #6 מוצדקת אמפירית. 4 findings היו
+הבהרות-בלבד: (#1 🟡) ל-race-test **אין תקדים ל-`vi.mock`** — הטסט הקיים מריץ ילדים אמיתיים (`OPENCODE_BIN`),
+ו-`vi.mock` מורם ברמת-מודול → **ישבור אותם** → הוריתי על **קובץ-טסט נפרד** `connection-registry.race.test.ts`
++ re-export חובה של `decodeWireLine` (השמטתו=קריסת-import). (#2/#3 🟢) `createLogger`/`withTimeout` אינם
+קיימים ב-connect-in-process/provider → הפכתי ל-definitive "הוסף/כתוב-מקומי". (#4 🟢, severity-0) Complexity
+6/light גבולי — אימות-היתומים **החי** (`pgrep`/`kill -0`) הוא ה-gate האמיתי, לא unit.
+
+### רעיונות שנדחו
+- **מימוש #6 עכשיו** — נדחה (signal-שביר, מחזיר C3; שייך ל-be-hang-supervisor).
+- **fork ל-adapter כדי לחשוף event על processDied** — עלות-תחזוקה, מחוץ-scope לתשתית-lifecycle.
+- **codex dispose analog** — מיותר: codex `close()` כבר מנקה (`serverIn.end`→fork הורג אחרי 2s).
+
 ## 2026-07-11 — claude-agent-sdk bump ל-0.3.206 + override interim על ה-adapter
 
 ### רציונל
