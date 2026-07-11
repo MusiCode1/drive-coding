@@ -41,6 +41,12 @@ export const CLI_SPECS = {
     supportsModelFlag: true,
   },
   qoder: { bin: "qodercli", args: ["--acp"], supportsModelFlag: true },
+  cursor: { bin: "agent", args: ["acp"], supportsModelFlag: false },
+  grok: {
+    bin: "grok",
+    args: ["--no-auto-update", "agent", "stdio"],
+    supportsModelFlag: false, // חובה false — ר' טבלת argv ב-docs/plans/slice-cursor-acp.md §-1
+  },
 } as const satisfies Record<string, CliSpec>
 
 // רשימת השמות נגזרת ממפתחות ה-specs — אין כפילות.
