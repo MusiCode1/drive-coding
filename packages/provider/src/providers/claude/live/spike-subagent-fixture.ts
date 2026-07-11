@@ -11,13 +11,15 @@
  * NOT a vitest test — a one-shot investigative harness.
  */
 
-import { mkdtemp, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { connectInProcess } from "../../../connection/connect-in-process.js"
 import type { ProviderConnection } from "../../../connection/types.js"
 
-const OUT = join(process.cwd(), `../../docs/investigations/subagent-spike-raw-${Date.now()}.jsonl`)
+// Raw captures are local-only research artifacts → .research/ (gitignored). cwd = packages/provider.
+const OUT_DIR = join(process.cwd(), "../../.research/subagent-spike")
+const OUT = join(OUT_DIR, `raw-${Date.now()}.jsonl`)
 
 type Cap = { ts: number; dir: string; type: string; raw: string }
 
@@ -140,6 +142,7 @@ async function main(): Promise<void> {
   await conn.close()
 
   // ── dump raw capture ──
+  await mkdir(OUT_DIR, { recursive: true })
   await writeFile(OUT, cap.map((c) => JSON.stringify(c)).join("\n") + "\n", "utf8")
   console.log(`\n[spike] wrote ${cap.length} frames → ${OUT}`)
 
