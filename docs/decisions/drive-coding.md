@@ -1,5 +1,38 @@
 # Decisions — drive-coding
 
+## 2026-07-11 — claude-agent-sdk bump ל-0.3.206 + override interim על ה-adapter
+
+### רציונל
+גרסת ה-SDK של Claude בפרויקט הייתה מיושנת: `packages/provider` צימד `@anthropic-ai/claude-agent-sdk`
+מדויק ל-`0.3.191`, ו-latest = `0.3.206` (15 patches מאחור). עודכן הצימוד הישיר ל-`^0.3.206`
+(caret-minor, לא `0.x` — כי pre-1.0 mינ'ורים מותר להם לשבור; ר' §"רעיונות שנדחו").
+
+### הממצא המכריע — ה-SDK שרץ בפועל הוא של ה-adapter
+הצימוד הישיר אינו הנתיב שטוען את Claude. `claude-agent-acp` (`in-process-host.ts` /
+`connect-in-process.ts` מייבאים `ClaudeAcpAgent`) הוא שטוען את Claude **in-process** — והוא מצמיד
+**עותק-SDK מקונן ומדויק משלו**: `0.3.191` ב-upstream `0.52.0`. כלומר לפני התיקון, Claude רץ על
+`0.3.191` למרות הצימוד הישיר. פִּטרתי זאת בטעות תחילה כ"נורמלי"; המשתמשת תיקנה — צדק.
+
+### ההכרעה — B (override) כפתרון-ביניים
+כדי להריץ את Claude על ה-SDK העדכני **מיד**, נוסף `overrides` (גם `pnpm.overrides` וגם top-level
+עבור bun) בשורש: `"@anthropic-ai/claude-agent-sdk": "0.3.206"` — כופה **כל** מופע, כולל העותק
+המקונן של ה-adapter. אחרי `bun install`: `bun.lock` מכיל **רק** 0.3.206 (ה-0.3.191 נעלם), בדיקות
+provider **167/167** ירוקות, ו-smoke חי מול Claude **עבד** (אישור המשתמשת).
+
+### שינויי-כיוון / known-followup
+B הוא **interim מודע-סיכון**: ה-adapter מצמיד SDK מדויק בכוונה (צמוד-internals), וה-override עוקף
+זאת בכוח. היעד הנקי הוא **A** — מעבר לפורק `MusiCode1/claude-agent-acp#drive-coding` (v0.55.0, כבר
+מצמיד `0.3.198`) + bump פנימי ל-0.3.206. A מביא **בחינם** גם את passthrough תת-הסוכן שהפורק כבר
+מכיל (ר' `slice-claude-subagent-adapter-fork`). **כש-A נוחת → להסיר את ה-override.**
+
+### רעיונות שנדחו
+- **`0.x` ("מז'ור" מלא)** — לחבילת pre-1.0, קפיצות minor (0.3→0.4) מותר להן לשבור → נדחה לטובת `^0.3.206`.
+- **מעבר-לפורק כאן ועכשיו (A)** — נדחה לעת-עתה: A הוא סלייס עם build/publish + תלות רינדור, לא bump מהיר.
+
+### פתוח לפני merge
+`pnpm-lock.yaml` ה-committed עדיין על 0.3.191 → דורש `pnpm install` במכונה עם pnpm+Node אמיתי
+(כאן pnpm קרס על `node:sqlite` שחסר ל-bun). **`bun.lock` לא נכנס ל-commit** (הריפו מנוהל pnpm).
+
 ## 2026-07-10 — slash-commands: merge ל-dev v0.14.0 (reconcile + fix-in-place RTL/ghost)
 
 ### רציונל

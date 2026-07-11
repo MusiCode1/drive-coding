@@ -34,7 +34,13 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "@anthropic-ai/claude-agent-sdk": "0.3.206"
+    }
+  },
+  "overrides": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.206"
   },
   "workspaces": [
     "packages/*"
