@@ -1,3 +1,18 @@
+## 2026-07-11 — slice-cursor-acp — Commit 2: deploy docs + override
+
+**מה בוצע:**
+- `deploy/cli-specs.jsonc`: הוספת שתי שורות-הערה (מוערות, לא פעילות) לדוגמת override — `cursor` (`agent.cmd` נתיב מלא) ו-`grok` (`grok.exe` נתיב מלא), לפי §4 Commit 2 בבריף.
+- `docs/running-locally.md`: פסקה חדשה "ספקי ACP נוספים — Cursor + Grok" — login/env vars/בחירה ב-FE לכל ספק, הערת `session/load` שבור (Cursor, upstream) והערת `429`/`402` free-tier (Grok).
+- `docs/decisions/drive-coding.md` — **לא נגעתי** (לפי §4 הערה מפורשת בבריף: entry זה נכתב ע"י מרדכי אחרי READY מאביגיל, לא ע"י אליעזר).
+
+**build-gate:**
+- `scripts/lint-no-hebrew-in-code.sh` (הרצה ישירה דרך bash — `pnpm lint:i18n` נכשל ב-shell של Windows על invocation `.` בלבד, ידוע מ-Commit 1 הקודם, לא קשור לשינוי): ✓ עובר.
+- אין שינוי קוד — רק docs/config מוער, אין typecheck/test רלוונטי.
+
+**חריגות:** אין. Testing strategy = manual לפי §4 Commit 2.
+
+---
+
 ## 2026-07-11 — slice-cursor-acp — תיקון calev NO-GO (Commit 1): authenticate לא-פאטלי כש-RPC לא מיושם
 
 **מה בוצע:**
