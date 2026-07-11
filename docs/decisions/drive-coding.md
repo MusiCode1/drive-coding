@@ -1,5 +1,41 @@
 # Decisions — drive-coding
 
+## 2026-07-11 — acp-stack-upgrade: מוזג ל-dev (מרדכי — הכנה+מיזוג post-hoc)
+
+### רציונל
+ה-branch בוצע ב-session נפרד (ככל הנראה מכונת cli-agents, לפי נתיבי `/home/user/...`
+ב-decisions הקיימות) **מחוץ** לתהליך הרגיל מרדכי→אביגיל→אליעזר→כלב — ללא brief
+פורמלי ב-`docs/plans/`, ללא state.json. מרדכי נכנס בשלב ה-הכנה-למיזוג בלבד.
+
+### הכנה למיזוג (בוצע ע"י מרדכי, 2026-07-11)
+worktree חדש עוקב אחרי `origin/slice/acp-stack-upgrade` → `git merge dev` (2
+קונפליקטים טריוויאליים ב-docs append-log — `decisions.md`/`walkthrough.md`, שילוב
+שני הצדדים; `client.ts` התמזג אוטומטית, אפס קונפליקט קוד) → `bun install` → וידוא
+גרסאות בפועל (`bun pm ls --all`): SDK `1.2.1`, claude-agent-acp `0.58.1`,
+claude-agent-sdk `0.3.207`, codex `0.144.1` — תואם למתועד. `pnpm typecheck` נקי.
+`pnpm test` תפס תחילה 41 קבצים כושלים — אובחן **לא**-קשור ל-SDK: `.svelte-kit/`
+חסר ב-worktree חדש (`svelte-kit sync` לא רץ אוטומטית). אחרי `bunx svelte-kit
+sync`: ירד ל-4 כשלים, כולם `packages/backend` (spawn/tmp-dir), אותה קטגוריית
+כשלי-סביבה ידועה ב-Windows שכבר תועדה ב-`cursor-acp-calev.md`. `packages/provider`
+(החבילה הכי חשופה לשדרוג) — 200/200 ירוק.
+
+### תאימות מול cursor-acp
+נבדקה **לפני** ש-cursor-acp מוזג (`git merge-tree`) — ראה entry cursor-acp למטה.
+אושרה חיה בפועל כאן: אין קונפליקט קוד, `conn.authenticate`/`Client.extMethod` זהים.
+
+### 3 briefs נלווים שהגיעו יחד (לא בוצעו)
+`session-budget-meter` (READY, dispatch_ready), `provider-quota-meter`
+(superseded ע"י הקודם), `be-lifecycle-hardening` (READY, dispatch_ready) — כולם
+brief+state.json בלבד, **0 קוד מבוצע** (אומת: `git diff` על הקבצים שה-decisions
+המקוריות מתארות כ"commits" לא מראה שינוי תואם). הוחלט (עם המשתמשת) לא לפצל אותם
+מה-branch — הם ייכנסו ל-`dev` כ-briefs ממתינים-ל-dispatch, בלי סיכון (0 קוד).
+
+### מיזוג
+Preview אושר חי ע"י המשתמשת (`localhost:4000`, production build, אחרי build+bun
+install+typecheck נקי). מוזג ל-dev `--no-ff` (bump `v0.17.0`, minor, frontend
+בלבד — provider/backend/core בלי שינוי-קוד פונקציונלי מהמיזוג הזה מעבר לגרסת-חבילה),
+push origin. worktree+branch נוקו.
+
 ## 2026-07-11 — acp-stack-upgrade: baseline audit לפני שדרוג client/Claude/Codex
 
 ### תמונת גרסאות
