@@ -11,10 +11,11 @@
  *   Normalization (slice of trailing \n for record/decode) is the WRAPPER's responsibility.
  */
 
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
+import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process"
 import { createInterface } from "node:readline"
 import { createLogger } from "@drive-coding/core/log"
 import { getCliCommand, getCliSpec } from "../config/index.js"
+import { logIfSlow, markStart } from "./hot-path-timing.js"
 import type {
   BridgeCrashInfo,
   BridgeHandle,
@@ -24,6 +25,42 @@ import type {
 
 const log = createLogger("provider.host.spawn-core")
 const STDERR_MAX_LINES = 200
+
+/**
+ * killTree — הרוג תהליך ואת כל צאצאיו.
+ *
+ * POSIX: process.kill(-pid, signal) → group-kill כל ה-process-group (דורש detached:true).
+ *   על ESRCH (כבר מת) → בסדר. על שגיאה אחרת → fallback ל-kill פרט.
+ * Windows: spawnSync("taskkill") עם /T (tree) + /F (force).
+ *   signal מתעלם על Windows — node.exe לא תומך graceful termination דרך WM_CLOSE.
+ *
+ * ⚠️ בלי detached:true ב-spawn, process.kill(-pid) על POSIX יכול לכוון ל-process-group
+ * של ה-BE עצמו ולהרוג אותו! ה-detached:true בספאון הוא תנאי-מוקדם לפונקציה זו.
+ */
+function killTree(pid: number, signal: NodeJS.Signals): void {
+  try {
+    if (process.platform === "win32") {
+      // Windows: taskkill /T = כל עץ הצאצאים; /F = force (node.exe לא תומך graceful)
+      spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"])
+    } else {
+      // POSIX: negative pid = group kill (כל תהליכי ה-group שנוצרו עם detached:true)
+      try {
+        process.kill(-pid, signal)
+      } catch (groupErr) {
+        // ESRCH = group כבר מת (בסדר). שגיאה אחרת → fallback ל-kill פרט
+        if ((groupErr as NodeJS.ErrnoException).code !== "ESRCH") {
+          try {
+            process.kill(pid, signal)
+          } catch {
+            /* כבר מת */
+          }
+        }
+      }
+    }
+  } catch {
+    /* kill לעולם לא זורק החוצה */
+  }
+}
 
 export interface SpawnCoreHooks {
   /**
@@ -108,6 +145,13 @@ export function createSpawnCore(hooks?: SpawnCoreHooks): SpawnCore {
         cwd: input.cwd,
         env: childEnv,
         stdio: ["pipe", "pipe", "pipe"],
+        // detached=true על POSIX יוצר process-group חדש לצאצא → killTree(-pid) הורג
+        // רק את הצאצא ואת כל נכדיו, לא את ה-BE עצמו.
+        // ⚠️ בלי detached, process.kill(-pid) יכול לכוון ל-group של ה-BE!
+        // windowsHide: מונע חלון console קופץ ב-Windows.
+        // ⚠️ אסור unref() — ממשיכים לנהל את התהליך (stdin/stdout pipes פעילים).
+        detached: process.platform !== "win32",
+        windowsHide: true,
       })
     } catch (err) {
       childLog.warn({ err }, "spawn threw synchronously")
@@ -154,7 +198,8 @@ export function createSpawnCore(hooks?: SpawnCoreHooks): SpawnCore {
     stdoutRl.on("line", (line) => {
       const entry = store.get(bridgeId)
       if (!entry) return
-      // (1) subscribers first (ws-agent -> feWs.send)
+      // (1) subscribers first (ws-agent -> feWs.send) — timed (hot-path)
+      const t = markStart()
       for (const cb of entry.lineSubscribers) {
         try {
           cb(line)
@@ -162,6 +207,7 @@ export function createSpawnCore(hooks?: SpawnCoreHooks): SpawnCore {
           /* subscriber must not break the pipe */
         }
       }
+      logIfSlow("readline-dispatch", t, { bytes: line.length })
       // (2) onFrame hook: dir:"in", line has no \n (readline stripped it)
       try {
         hooks?.onFrame?.(bridgeId, "in", line)
@@ -221,10 +267,25 @@ export function createSpawnCore(hooks?: SpawnCoreHooks): SpawnCore {
       log.info({ bridgeId }, "kill")
       // Remove before exit event fires — prevents notifyCrash on intentional kill.
       store.delete(bridgeId)
+      const pid = entry.child.pid
+      if (!pid) return true
+      // רשום את ה-exit listener לפני ה-kill — מונע race condition שבו ה-child
+      // יוצא לפני שנרשם ה-listener (exit event שכבר פוחח לא יופעל).
       return new Promise<boolean>((resolve) => {
+        if (entry.child.exitCode !== null) {
+          // כבר יצא — פתור מיד
+          resolve(true)
+          return
+        }
         entry.child.once("exit", () => resolve(true))
-        entry.child.kill("SIGTERM")
-        setTimeout(() => entry.child.kill("SIGKILL"), 5000)
+        if (process.platform === "win32") {
+          // Windows: node.exe לא תומך graceful (exit 255 על SIGTERM WM_CLOSE) — force מיד
+          killTree(pid, "SIGKILL")
+        } else {
+          // POSIX: graceful group-kill → escalation ל-SIGKILL אחרי 5s
+          killTree(pid, "SIGTERM")
+          setTimeout(() => killTree(pid, "SIGKILL"), 5000)
+        }
       })
     },
 
@@ -247,7 +308,9 @@ export function createSpawnCore(hooks?: SpawnCoreHooks): SpawnCore {
     writeStdin(bridgeId: string, line: string): boolean {
       const entry = store.get(bridgeId)
       if (!entry) return false
+      const t = markStart()
       entry.child.stdin.write(line)
+      logIfSlow("writeStdin", t, { bytes: line.length })
       // onFrame hook: dir:"out", line verbatim (may include \n — wrapper normalizes).
       try {
         hooks?.onFrame?.(bridgeId, "out", line)

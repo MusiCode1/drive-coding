@@ -1329,6 +1329,13 @@ export class AgentSession {
       clearTimeout(this.#idleTimer)
       this.#idleTimer = null
     }
+    // ─── slice be-shutdown-hardening Commit 3: $/detach לפני סגירה מכוונת ───
+    // keepAgent=true = leaveRunning — FE מודיע ל-BE שהוא עוזב מרצון.
+    // ה-BE מקבל $/detach → markDetached מיד → reconnect-ghost נסגר מיידית
+    // (במקום לחכות ל-sweep של ה-WS אחרי 60s).
+    if (opts?.keepAgent && this.#transport) {
+      this.#transport.sendRaw(`${JSON.stringify({ jsonrpc: "2.0", method: "$/detach" })}\n`)
+    }
     try {
       this.#client?.close()
     } catch {

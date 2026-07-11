@@ -213,6 +213,52 @@ describe("connectInProcess — structural (no real claude session)", () => {
 })
 
 // ---------------------------------------------------------------------------
+// Integration test: stream write rejection does NOT fire onCrash (session survives).
+// Verifies that C3 revert is correct: stream-error → no teardown.
+// ---------------------------------------------------------------------------
+
+describe("connectInProcess — stream write rejection does NOT fire onCrash (session survives)", () => {
+  it("onCrash is NOT fired after a stream write rejection (C3 reverted)", async () => {
+    // After C3 revert: write rejection is absorbed via log.warn only.
+    // onCrash must NOT be called — the session must survive a transient write rejection.
+    const conn = await connectInProcess({ cwd: process.cwd() })
+    const crashSpy = vi.fn()
+    conn.onCrash(crashSpy)
+
+    // Send a write (it may or may not error — but regardless, onCrash must stay silent).
+    conn.wire.write(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: "t", version: "0" } },
+      }),
+    )
+
+    // Wait for async .catch to potentially fire (if write rejected).
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    // onCrash must NOT have fired — stream rejection is absorbed, not a teardown trigger.
+    expect(crashSpy).not.toHaveBeenCalled()
+
+    await conn.close()
+    // After normal close, onCrash must still not have fired.
+    expect(crashSpy).not.toHaveBeenCalled()
+  })
+
+  it("onCrash unsubscribe stops receiving future callbacks", async () => {
+    const conn = await connectInProcess({ cwd: process.cwd() })
+    const crashSpy = vi.fn()
+    const unsub = conn.onCrash(crashSpy)
+    unsub()
+
+    // Even if crash were to fire (it won't in this test), the spy must not be called.
+    await conn.close()
+    expect(crashSpy).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Structural test: CLI_SPECS_FILE with claude env spec is loaded without crash.
 // Verifies that connectInProcess reads the cli-spec and builds without error
 // when a valid CLI_SPECS_FILE is set. Cannot verify params sent to real claude

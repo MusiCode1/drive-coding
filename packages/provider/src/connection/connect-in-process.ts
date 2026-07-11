@@ -129,9 +129,10 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
   // Create the stream bridge.
   const bridge = createStreamBridge()
 
-  // onCrash listeners — in-process has no crash (no child process), but we expose
-  // the interface for API symmetry. The agent will never crash in-process (SDK throws instead).
-  // We keep the set for future use; no callers will fire it in practice.
+  // onCrash listeners — in-process has no child process crash, but we expose
+  // the interface for API symmetry (matches dev behavior: onCrash never fires for in-process).
+  // C3 wiring (stream-error → crashListeners) was reverted: stream rejections are transient
+  // (race with close, transport blip) and not a reliable crash signal. teardown via agentConn.closed.
   const crashListeners = new Set<(info: import("../spawn/index.js").BridgeCrashInfo) => void>()
 
   // Internal claudeAgent reference (set inside onConnect).

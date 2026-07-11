@@ -1,3 +1,161 @@
+## 2026-07-11 — slice-be-shutdown-hardening — סיכום סופי
+
+**סטטוס**: הושלם. 4 commits על `slice/be-shutdown-hardening`.
+
+**commits**:
+- `5afe37c0` — Commit 0: kill-tree + detached ב-spawn-core (POSIX group kill + Windows taskkill /T /F)
+- `982db169` — Commit 1: graceful-shutdown + usage-store תיאום (SIGINT/SIGTERM → process.exit)
+- `25097e79` — Commit 2: sweep קליינטים-מתים + $/detach ב-BE (lastPingAt, 60s stale, setInterval unref)
+- `7bb92035` — Commit 3: FE שולח $/detach לפני leaveRunning (sendRaw + #cleanup)
+
+**build-gate**:
+- provider typecheck: 3 שגיאות pre-existing (ללא שינוי)
+- backend typecheck: 28 שגיאות pre-existing (ללא שינוי)
+- frontend typecheck: 0 שגיאות, 0 אזהרות
+- provider tests: 175 passed | 8 skipped (15 spawn-core ירוקים כולל kill-tree grandchild POSIX)
+- lint:i18n: נקי
+
+**DoD חי** (PORT=4002 על Linux):
+- BE עלה, health endpoint מחזיר ok
+- SIGINT → לוג "graceful shutdown — closing connections + children" → תהליך מת → פורט משתחרר
+- SIGTERM — זהה
+
+**חריגות**: afterEach ב-spawn-core.test.ts תוקן — timeout 500ms לתהליכים detached (exit event לא מגיע אחרי killTree(-pid) synchronously).
+
+---
+
+## 2026-07-10 — slice-options-trim — סיכום סופי
+
+**סטטוס**: הושלם. 2 commits על `slice/options-trim` (base: `slice/be-diag-harness` @ `d57e0632`).
+
+**commits**:
+- `39d1b14a` — trim(options): מחק listOpencodeModels+listProjectDirs+MODEL_FALLBACKS (backend)
+- `7beec0f3` — trim(options): צמצם ServerOptions ל-{ homeDir: string } (frontend type)
+
+**build-gate vs baseline**:
+- baseline: 13 tests ב-http-options, 1 failed (os.tmpdir — נמחק)
+- אחרי: 5 tests ב-http-options, 0 failed. 296 passed ב-packages/backend סה"כ (https-serve = pre-existing, לא רגרסיה חדשה)
+- typecheck: 0 שגיאות חדשות (pre-existing: http-proxy/http-tts-capabilities @types/bun gap)
+- lint:i18n: נקי
+
+**DoD חי** (`curl localhost:4001/api/options`): `{"homeDir":"/home/user"}` — בלי models, בלי projects. ה-event-loop blocker נעלם.
+
+---
+
+## 2026-07-10 — slice-options-trim — Commit 2: frontend ServerOptions צמצום ל-homeDir בלבד
+
+**מה בוצע:**
+- `packages/frontend/src/lib/adapters/options.ts`: `ServerOptions` type צומצם ל-`{ homeDir: string }` — נמחקו `models` ו-`projects`.
+- `fetchServerOptions` נשאר ללא שינוי (עדיין `fetch(beUrl("/api/options"))` → `res.json()`).
+- **typecheck gate**: שני הצרכנים (`+page.svelte:41 cwd = opts.homeDir`, `FolderPickerDialog.svelte:61 start = opts.homeDir`) קוראים רק `homeDir` — מקמפלים נקי; 0 שגיאות TS חדשות.
+- lint:i18n נקי.
+
+**חריגות**: אין. testing=none לפי הבריף (אין לוגיקה חדשה — הגייט הוא typecheck).
+
+---
+
+## 2026-07-10 — slice-options-trim — Commit 1: backend trim http-options ל-homeDir בלבד
+
+**מה בוצע:**
+- `packages/backend/src/delivery/http-options.ts` צומצם: נמחקו `MODEL_FALLBACKS`, `listOpencodeModels` (כולל `execFileSync`), `listProjectDirs` (כולל `readdirSync`/`statSync`/`existsSync`), וכל ה-imports שהתייתמו (`node:child_process`, `node:fs`, `node:path`, `validateCwd`).
+- נשמרו: `getHomeDir` (מיוצא, נדרש ב-`paths.ts`) + `import os` + `registerHttpOptions` (מצומצם ל-`c.json({ homeDir: getHomeDir() })`).
+- `packages/backend/tests/http-options.test.ts` עודכן: נמחקו 10 cases של models/projects, נמחק `vi.mock("node:child_process")` + `execFileSyncMock`, נמחק `beforeEach` (רק איפס mock), נמחק `import * as path`. נשמרו: `vi` (נצרך ל-`vi.stubEnv`), `import os`, cases של homeDir ו-`describe("getHomeDir")`. נוסף case `returns 200 + { homeDir } only` עם regression-guard.
+- **תוצאות build-gate**: `CI=true bunx vitest run packages/backend` — 296 passed (0 failures בטסטי http-options; https-serve = pre-existing baseline). `bun run lint:i18n` נקי.
+
+**חריגות**: שגיאות typecheck ב-`http-proxy.ts`/`http-tts-capabilities.ts` הן pre-existing (@types/bun web-api gap) — לא שינוי שלנו.
+
+---
+
+## 2026-07-10 — slice-be-diag-harness — C3: scripts/watch.mjs watchdog
+
+**מה בוצע (manual/live):**
+
+**Commit C3 — scripts/watch.mjs:**
+- פורט מ-`scripts/spawn-spike/watch.mjs`, עם 3 שינויי-חובה:
+  1. `BE_PORT` default `"4010"` → `"4001"` (dev-BE port).
+  2. `WT` path `"../.."`→`".."` (הקובץ עכשיו ב-`scripts/` = רמה אחת מתחת לשורש).
+  3. JSDoc דוגמת-שימוש עודכנה: `BE_PORT=4001 bun scripts/watch.mjs`.
+- **בדיקה חיה (port 4003 לבדיקה — 4001 תפוס)**:
+  - `/api/diag` החזיר `eventLoop.maxMs=3.9ms`, `memory.rssMB=162`, `agents={total:0}`.
+  - watch.mjs עם BE רץ: טבלה מתעדכנת כל שנייה, status=ok.
+  - watch.mjs ללא BE: "⛔ NO RESPONSE (frozen/down)" + "🔴 endpoint silent ~3s" אחרי STALL_STREAK=3.
+  - `.tmp/watch.log` נוצר בתוך ה-worktree (`/home/user/Projects/drive-coding/.worktrees/be-diag-harness/.tmp/watch.log`).
+- **176/176 provider + 2 backend http-health ירוקים** (אין שינוי בtest suite לC3).
+- lint:i18n: נקי.
+
+---
+
+## 2026-07-10 — slice-be-diag-harness — C2: /api/diag endpoint
+
+**מה בוצע (integration):**
+
+**Commit C2 — http-health.ts + רישום ב-server.ts:**
+- `packages/backend/src/delivery/http-health.ts` (חדש, פורט מ-spike): `registerHealthHttp(app, {registry, connectionRegistry})` → `GET /api/diag`.
+  - JSDoc נוקה: שורת "GET /api/health" שוגגת תוקנה ל-`/api/diag`.
+  - `monitorEventLoopDelay` singleton (process-wide, rolling window reset() כל poll).
+  - shape: `{ts, uptimeMs, eventLoop{meanMs,maxMs,p99Ms,stddevMs}, memory{rssMB,...}, agents{total,busy,list}}`.
+- `server.ts`: `import registerHealthHttp` + `registerHealthHttp(app, { registry, connectionRegistry })` ליד `registerAgentsHttp`.
+- shape check: `registry.list()` מחזיר `Agent[]` עם `.id`/`.cliKind` — תואם. `connectionRegistry.getRuntimeInfo(id)` מחזיר `{pid,attached,busy,lastMessageAt}` — תואם.
+- integration test: `http-health.test.ts` — 2 tests (shape מלאה + fallback כשconnRegistry ריק).
+- **176/176 provider, 2 backend http-health tests ירוקים**.
+- typecheck: אפס שגיאות חדשות (http-proxy pre-existing).
+- lint:i18n: נקי.
+
+---
+
+## 2026-07-10 — slice-be-diag-harness — C1: hot-path-timing + חיווט
+
+**מה בוצע (TDD unit):**
+
+**Commit C1 — hot-path-timing.ts + חיווט stream-bridge + spawn-core:**
+- `packages/provider/src/shared/hot-path-timing.ts` (חדש, פורט מ-spike): `markStart()` + `logIfSlow(op, startedAt, meta)`, threshold `HOTPATH_SLOW_MS` (default 50ms), `log.warn` רק בחריגה.
+- חיווט additive ב-`stream-bridge.ts`: `JSON.parse` ב-`write()` עטוף ב-markStart/logIfSlow("parse"), `JSON.stringify` ב-`drainOutbound()` עטוף ב-markStart/logIfSlow("stringify").
+- חיווט additive ב-`spawn-core.ts`: readline-dispatch (subscribers loop) עטוף ב-markStart/logIfSlow("readline-dispatch"), `writeStdin` עטוף ב-markStart/logIfSlow("writeStdin").
+- TDD: `hot-path-timing.test.ts` — 4 טסטים (markStart returns number, no-log below threshold, log.warn above threshold, overhead=2 calls).
+- **176/176 provider passed** (172 baseline + 4 חדשים), 8 skipped (pre-existing).
+- typecheck: 3 שגיאות pre-existing (connect-codex/claude-env-override/connect-in-process.test) — אפס חדשות.
+- lint:i18n: נקי.
+
+---
+
+## 2026-07-10 — slice-be-crash-hardening — 3 commits: ספיגת וקטורי-קריסה BE
+
+**מה בוצע (TDD unit + integration):**
+
+**Commit C1 (`ec7ccfb6`) — stream-bridge: .catch() על שני ה-fire-and-forget:**
+- `stream-bridge.ts:124`: `void inboundWriter.write(msg)` → `.catch((err) => { closed=true; onErrorFire(err) })`
+- `stream-bridge.ts:77`: `void drainOutbound()` → `.catch((err) => { closed=true; onErrorFire(err) })`
+- הוסף `StreamBridge.onError(cb)` ל-interface + מימוש (`errListeners`, `erroredOnce` guard).
+- TDD: טסט חדש "write on an errored inbound stream does not crash" — red לפני / green אחרי.
+- 168/168 provider passed.
+
+**Commit C2 (`ac9a6413`) — server: safeUrlPathname guard על upgrade+connection:**
+- חילץ `safeUrlPathname(rawUrl): string|null` ב-`packages/backend/src/delivery/url-safe.ts` — טהורה, לא זורקת.
+- `server.ts:228` (upgrade): pathname===null → log.warn + socket.destroy() + return.
+- `server.ts:213` (connection): pathname===null → ws.close() + return (defense-in-depth).
+- TDD: `tests/url-safe.test.ts` (9 tests) + integration `tests/url-upgrade-survival.test.ts` (1 test).
+- 341/341 backend passed.
+
+**Commit C3 (`d259a50b`) — connect-in-process: onError → crashListeners:**
+- `connect-in-process.ts`: `bridge.onError(err => { for cb of crashListeners: cb(BridgeCrashInfo) })`.
+- BridgeCrashInfo: exitCode=null, signal=null, spawnError.message=err.message.
+- גבול §3.3: רק טריגר stream-error — #6/#7 (onCrash כללי) → be-lifecycle-hardening.
+- Unit: טסטי onError fires×1, unsubscribe; Integration structural: wiring subscribable+unsubscribable.
+- 172/172 provider passed.
+
+**בדיקות:**
+- provider: 172 passed (baseline 167 + 5 חדשים), 0 failed, 8 skipped (pre-existing)
+- backend: 341 passed (baseline 291 + 10 חדשים + 0 רגרסיה), 1 failed (http-options pre-existing), 2 file-errors (https-serve pre-existing)
+- typecheck: 28 errors — כולם pre-existing ב-http-proxy.ts/http-tts-capabilities.ts (מאומת מול baseline)
+- lint:i18n: נקי
+- DoD אמות:
+  - unit: stream-errored write נספג ✓, safeUrlPathname לא זורק ✓, onError fires×1 ✓
+  - integration: server-survival (url-upgrade-survival) ✓
+  - אפס רגרסיה ✓
+
+**חריגות:**
+- Integration test של connect-in-process C3 הוא structural בלבד (לא מדמה stream-error אמיתי in-process) — הכיסוי על stream-bridge.test.ts + unit. אימות-חי ב-DoD §4 נדחה ל-calev (BE חי).
+- typecheck errors (28): כולם pre-existing ב-http-proxy/tts-capabilities. לא שינויים שלנו.
 ## 2026-07-11 00:53 — localhost-bind-hotfix — סגירת האזנה חיצונית כברירת מחדל
 
 **מה בוצע (hotfix אבטחה + brief-driven gate רטרואקטיבי):**

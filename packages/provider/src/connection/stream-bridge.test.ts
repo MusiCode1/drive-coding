@@ -144,6 +144,37 @@ describe("createStreamBridge — Stream↔wire adapter", () => {
     expect(result).toBe(false)
   })
 
+  it("write rejection is absorbed and does NOT close the bridge (session survives)", async () => {
+    // TDD: vitest fails automatically on unhandledRejection that escapes.
+    // Before the fix (C3): write rejection set closed=true + fired onErrorFire → crashListeners → session teardown.
+    // After revert: rejection is absorbed via log.warn only — no teardown, no closed from rejection.
+    const bridge = createStreamBridge()
+
+    // Force the inbound stream into an errored state (agent side cancelled):
+    const r = bridge.agentEnd.readable.getReader()
+    await r.cancel(new Error("agent gone"))
+    r.releaseLock()
+
+    // The first write opens a writer on the errored inbound stream → write rejects.
+    // Must be absorbed (no unhandledRejection) — and the bridge must NOT set closed from the rejection.
+    bridge.wireEnd.write(JSON.stringify({ jsonrpc: "2.0", method: "ping", id: 1 }))
+
+    // Wait for the async .catch to fire (two microtask ticks).
+    await tick()
+    await tick()
+
+    // The WritableStream itself may be errored, but closed was NOT set by the rejection.
+    // Verify: a subsequent write that would fail only due to closed=true (not stream error) still
+    // reaches the stream path (write returns true — not false from the closed guard).
+    // Note: the underlying WritableStream may still reject (it's errored), but that's absorbed too.
+    const result = bridge.wireEnd.write(JSON.stringify({ jsonrpc: "2.0", method: "ping", id: 2 }))
+    // Returns true because closed was NOT set by the rejection (only stream internals are errored).
+    expect(result).toBe(true)
+    await tick()
+    await tick()
+    // No unhandledRejection → test passes (vitest would fail automatically if one escaped).
+  })
+
   it("round-trip: multiple messages in both directions", async () => {
     const bridge = createStreamBridge()
 

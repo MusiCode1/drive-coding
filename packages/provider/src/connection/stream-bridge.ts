@@ -18,6 +18,10 @@
  */
 
 import type { AnyMessage, Stream } from "acp-sdk-v1"
+import { createLogger } from "@drive-coding/core/log"
+import { logIfSlow, markStart } from "../shared/hot-path-timing.js"
+
+const log = createLogger("provider.stream-bridge")
 
 export interface WireEnd {
   /** Subscribe to lines emitted from the agent (agent→FE direction). Returns unsubscribe. */
@@ -74,7 +78,11 @@ export function createStreamBridge(): StreamBridge {
   function ensureDraining(): void {
     if (drainStarted) return
     drainStarted = true
-    void drainOutbound()
+    drainOutbound().catch((err: unknown) => {
+      // outbound drain rejected — absorb (מונע unhandledRejection→exit) ורשום. אל תפרק את הסשן:
+      // דחיית-stream אינה אות-crash אמין (in-process אין exitCode/signal). teardown אמיתי = agentConn.closed.
+      log.warn({ err: err instanceof Error ? err.message : String(err) }, "outbound drain rejected — absorbed")
+    })
   }
 
   async function drainOutbound(): Promise<void> {
@@ -84,7 +92,9 @@ export function createStreamBridge(): StreamBridge {
         const { done, value } = await reader.read()
         if (done) break
         if (closed) break
+        const t = markStart()
         const line = JSON.stringify(value)
+        logIfSlow("stringify", t, { bytes: line.length })
         for (const cb of lineListeners) {
           try {
             cb(line)
@@ -114,14 +124,21 @@ export function createStreamBridge(): StreamBridge {
       }
       let msg: AnyMessage
       try {
+        const t = markStart()
         msg = JSON.parse(line) as AnyMessage
+        logIfSlow("parse", t, { bytes: line.length })
       } catch {
         // Malformed JSON — drop and return false (matches spawn-core behavior on parse errors)
         return false
       }
       // Write is async but we return synchronously (fire-and-forget, matching wire contract).
       // Backpressure is handled by the WritableStream internally.
-      void inboundWriter.write(msg)
+      // .catch absorbs rejection when the inbound stream has errored — prevents
+      // unhandledRejection → process.exit(1). אל תפרק את הסשן: דחייה תמימה (race עם close,
+      // כשל-transport חולף) אינה אות-crash אמין. teardown אמיתי = agentConn.closed.
+      inboundWriter.write(msg).catch((err: unknown) => {
+        log.warn({ err: err instanceof Error ? err.message : String(err) }, "inbound write rejected — absorbed")
+      })
       return true
     },
   }

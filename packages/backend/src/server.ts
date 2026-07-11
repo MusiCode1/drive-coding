@@ -7,6 +7,7 @@ import { Hono } from "hono"
 import { WebSocketServer } from "ws"
 import { isBinary } from "./binary.js"
 import { isTransientSocketError } from "./delivery/transient-socket-error.js"
+import { safeUrlPathname } from "./delivery/url-safe.js"
 import { resolveTls } from "./tls.js"
 
 const log = createLogger("backend.server")
@@ -55,6 +56,7 @@ import { createRecordingsStore } from "./app/recordings-store.js"
 import { parseCorsOrigins } from "./delivery/cors-config.js"
 import { registerHttp } from "./delivery/http.js"
 import { registerAgentsHttp } from "./delivery/http-agents.js"
+import { registerHealthHttp } from "./delivery/http-health.js"
 import { registerClientLogHttp } from "./delivery/http-client-log.js"
 import {
   registerFsBrowseHttp,
@@ -110,6 +112,8 @@ registerAgentsHttp(app, {
   projectsRegistry,
   bridgeManager: connectionRegistry,
 })
+// Slice be-diag-harness: endpoint אבחון עשיר (eventLoop histogram + memory + agents)
+registerHealthHttp(app, { registry, connectionRegistry })
 registerProjectsHttp(app, { projectsRegistry })
 registerRecordingsHttp(app, { recordingsStore })
 registerRecordingsPostHttp(app, { recordingsStore })
@@ -209,9 +213,14 @@ echoWss.on("connection", (ws) => {
 })
 
 agentWss.on("connection", (ws, req) => {
-  // חלץ agentId מה-URL
-  const url = new URL(req.url ?? "", `http://localhost`)
-  const match = url.pathname.match(/^\/ws\/agent\/([^/]+)$/)
+  // חלץ agentId מה-URL — defense-in-depth: אחרי upgrade-תקין לא אמור להיות null,
+  // אבל אם כן (target פגום הגיע לכאן בכל-זאת) — סגור בטוח, אל תקרוס.
+  const pathname = safeUrlPathname(req.url)
+  if (pathname === null) {
+    ws.close()
+    return
+  }
+  const match = pathname.match(/^\/ws\/agent\/([^/]+)$/)
   const agentId = match?.[1] ?? ""
 
   onAgentConnect(ws, agentId)
@@ -226,16 +235,24 @@ const httpServer: ServerType = tls
   : serve({ fetch: app.fetch, hostname, port })
 
 httpServer.on("upgrade", (req, socket, head) => {
-  const url = new URL(req.url ?? "", `http://localhost`)
+  // safeUrlPathname: עטיפה בטוחה ל-new URL — לעולם לא זורקת.
+  // target פגום (למשל "//[::1") גורם ל-new URL לזרוק TypeError → uncaughtException → exit.
+  // כאן: pathname===null → הרוס סוקט ו-return, ה-BE שורד.
+  const pathname = safeUrlPathname(req.url)
+  if (pathname === null) {
+    log.warn({ url: req.url }, "upgrade: malformed request-target — destroying socket")
+    socket.destroy()
+    return
+  }
 
-  if (url.pathname === "/ws/echo") {
+  if (pathname === "/ws/echo") {
     echoWss.handleUpgrade(req, socket, head, (ws) => {
       echoWss.emit("connection", ws, req)
     })
     return
   }
 
-  if (url.pathname.startsWith("/ws/agent/")) {
+  if (pathname.startsWith("/ws/agent/")) {
     agentWss.handleUpgrade(req, socket, head, (ws) => {
       agentWss.emit("connection", ws, req)
     })
@@ -247,6 +264,34 @@ httpServer.on("upgrade", (req, socket, head) => {
 })
 
 log.info({ hostname, port }, "listening")
+
+// ─── Graceful shutdown ────────────────────────────────────────────────────────
+// SIGINT (Ctrl+C) / SIGTERM — סגור חיבורים, הרוג ילדים, צא בצורה מסודרת.
+// force-timeout: אם הכיבוי תקוע (hang) — הכרח יציאה אחרי 8s.
+// usage-store: flush לפני יציאה (נקי יותר מ-SIGINT handler מקביל ב-usage-store).
+let shuttingDown = false
+async function gracefulShutdown(sig: string): Promise<void> {
+  if (shuttingDown) return
+  shuttingDown = true
+  procLog.info({ sig }, "graceful shutdown — closing connections + children")
+  const force = setTimeout(() => {
+    procLog.warn({}, "shutdown timeout — forcing exit")
+    process.exit(0)
+  }, 8000)
+  force.unref()
+  try {
+    await Promise.allSettled(connectionRegistry.list().map((id) => connectionRegistry.close(id)))
+    echoWss.close()
+    agentWss.close()
+    usageStore.flushUsageOnShutdown()
+    await new Promise<void>((r) => httpServer.close(() => r()))
+  } catch (e) {
+    procLog.error({ err: e }, "error during shutdown")
+  }
+  process.exit(0)
+}
+process.on("SIGINT", () => void gracefulShutdown("SIGINT"))
+process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"))
 
 /**
  * הרצה ידנית (dev/debug) — BE על פורט נפרד, משרת FE סטטי, דרך OneCLI:

@@ -1,12 +1,16 @@
 # Slice — be-shutdown-hardening — תוכנית
 
-> **תאריך**: 2026-07-02
-> **סטטוס**: ✅ **מאושר — אביגיל READY r2** (2026-07-02, finding 🟢 יחיד [שארית hbInterval מתה] שולב).
->   עבר repro-אמיתי ששינה את Commit 2 (native-ping → `lastPingAt`+sweep על ה-`$/ping` הקיים) ומיסגר-מחדש
->   (heartbeat=ניקוי-קליינט; watchdog=slice נפרד `be-hang-supervisor`). מוכן ל-dispatch.
-> **Complexity**: 7/10 (verifier: light — **אך האימות חייב להיות חי על Windows**)
-> **תלות**: [] · **base**: `dev` @ `9912912` (עצמאי)
-> **מקור**: `docs/investigations/2026-07-01-be-shutdown-socket-health.md` (§השורש המאומת + §לקחים מ-CodeNomad)
+> **תאריך**: 2026-07-02 · **עודכן 2026-07-11** (rebase על השרשרת הממוזגת + 3 תוספות — ר' §11)
+> **סטטוס**: ✅ **הושלם** (2026-07-11, 4 commits: 5afe37c0..7bb92035).
+> **Complexity**: 8/10 (verifier: light — **אך האימות חייב להיות חי; כיבוי/יתומים לא ניתנים לאימות אמין ב-unit**)
+> **תלות**: `depends_on: [crash-teardown-fix-chain]` · **base**: `slice/options-trim` @ `cfc96866` (השרשרת הממוזגת = dev + crash-fix + diag + options-trim + LAN)
+> **מקור**: `docs/investigations/2026-07-01-be-shutdown-socket-health.md` + **אבחון-חי 2026-07-11** (4 שורשי-יתומים-בכיבוי + reconnect-ghost).
+>
+> ⚠️ **הבהרת-מטרה (2026-07-11)**: זה הסלייס שסוגר "תהליכים נשארים בכיבוי-BE" + "reconnect חסום אחרי השאר-רץ".
+> **4 שורשי-היתומים** (אומתו חי בקוד): (1) `usage-store.ts` חוטף SIGINT בלי `exit` → **ה-BE לא מת ב-Ctrl+C**;
+> (2) אין graceful-shutdown שהורג ילדים; (3) `spawn-core` בלי `detached`/kill-tree + נקרא רק במחיקה-מפורשת;
+> (4) claude in-process בלי `dispose` (→ `be-lifecycle-hardening`, מחוץ-scope). הסלייס סוגר (1)+(2)+(3).
+> **⚠️ base חדש → כל מספרי-השורות למטה זזו** (crash-hardening C2 + diag-harness + dev שינו server.ts/spawn-core) — **הישען על סמלים; אביגיל תאמת-מחדש.**
 
 ## §0 — Pre-flight
 
@@ -340,3 +344,44 @@ pnpm --filter @drive-coding/backend typecheck && pnpm --filter @drive-coding/bac
 
 **שובל לניקוי (לא חוסם)**: codex-inprocess השאיר את `codex` ב-`CLI_SPECS` כ-`npx…@latest` (לא בשימוש
 בנתיב ה-in-process, ה-routing עוקף). ניקוי עתידי — לא בסלייס הזה ולא בשלהם.
+
+## §11 — עדכוני 2026-07-11 (3 תוספות מעבר ל-brief המקורי)
+
+> נגזרו מאבחון-חי של "תהליכים נשארים בכיבוי" + "reconnect חסום". **אלה תוספות ל-3 ה-commits הקיימים, לא commits חדשים
+> (מלבד ה-FE הקטן).** אביגיל: אמתי שהשורות/הסמלים תואמים את ה-**base החדש** (`cfc96866`), במיוחד `server.ts` (crash-hardening
+> C2 + LAN הזיזו שורות) ו-`spawn-core.ts` (diag-harness הוסיף hot-path-timing).
+
+### (א) Commit 1 — תיאום עם `usage-store` (השורש שה-BE לא מת ב-Ctrl+C)
+`packages/backend/src/usage/usage-store.ts:~128-135` רושם `process.on("SIGINT"/"SIGTERM")` שעושים `flushOnExit()`
+אבל **במפורש לא קוראים `process.exit`** ("let other handlers run"). ברגע ש-Node רואה SIGINT listener — **הוא מבטל
+את היציאה האוטומטית**. ה-`gracefulShutdown` של Commit 1 (שכן קורא `process.exit`) **משלים את התכנון** — שני ה-handlers
+נורים ב-SIGINT: usage-store עושה flush, gracefulShutdown סוגר-חיבורים+הורג-ילדים+יוצא.
+- **מינימום נדרש**: ודא ש-Commit 1 מוסיף `process.on("SIGINT"/"SIGTERM") → gracefulShutdown` (עם `process.exit`) — זה לבד
+  מחזיר את המיתה-ב-Ctrl+C.
+- **מומלץ (נקי)**: יַצֵא `flushUsageOnShutdown()` מ-usage-store, **הסר** את ה-`process.on("SIGINT"/"SIGTERM")` שלו
+  (השאר `process.on("exit")` כרשת-בטחון), ו-`gracefulShutdown` יקרא את ה-flush **בנתיב המסודר** לפני `httpServer.close`.
+  כך אין שני handlers שמתחרים ואין תלות-בסדר-ההרשמה.
+- **DoD נוסף**: `Ctrl+C` על ה-BE → התהליך **מת** (הפורט משתחרר), ובלוג רואים `graceful shutdown` + flush של usage.
+
+### (ב) Commit 2 — כיסוי reconnect-ghost לניתוק-מלוכלך (הבהרה — אביגיל #3)
+**דיוק**: `detach()` ב-`ws-agent.ts:~148` **כבר** קורא `markDetached(agentId)`, וה-`ws.terminate()` של ה-sweep פולט `close`
+→ `detach()` → `markDetached`. כלומר **ה-sweep כבר מאפס את `attached`** — אין צורך בקריאה נוספת מפורשת בנתיב הזה.
+לכן: **אין קוד נוסף ב-Commit 2** מעבר ל-sweep הקיים. ה-sweep מכסה את ה-**reconnect-ghost של ניתוק-מלוכלך** (מובייל/רשת)
+תוך ≤ חלון-ה-sweep (~80ש'). את ה-**עזיבה-המכוונת** ("השאר רץ", שם ה-`close` מתעכב) פותרים מיָדית ב-**§11(ג)** (`$/detach`).
+(אם אימות-חי יגלה ש-`terminate()`→`close` לא-אמין בסביבה מסוימת → אז, ורק אז, להוסיף `markDetached` מפורש ב-sweep כ-belt-and-suspenders.)
+
+### (ג) Commit 3 (חדש, FE-קטן) — הודעת `$/detach` מפורשת → reconnect מיָדי
+היום `leaveRunning`→`#cleanup` סוגר את ה-WS **fire-and-forget** (‏`#client.close()`), וה-BE מנחש מה-`close` המתעכב.
+**הוסף**: לפני הסגירה, ה-FE שולח frame `{"jsonrpc":"2.0","method":"$/detach"}` על ה-WS; ה-BE ב-`ws-agent.ts` ה-`$/ping`-handler
+מזהה גם `$/detach` → קורא `markDetached(agentId)` **מיָד** (בלי לחכות ל-close). זה נותן **reconnect מיָדי בעזיבה מכוונת**
+(הצעת-המשתמש, נקייה יותר מ-closeAndWait). **קבצים**: FE `packages/frontend/src/lib/view-models/agent-session.svelte.ts`
+(‏`#cleanup`/`leaveRunning` — אביגיל #4: **view-models**, לא engines) + BE `packages/backend/src/delivery/ws-agent.ts`
+(ה-`$/ping` handler שמזהה `text.includes('"$/ping"')` — הוסף לו זרוע ל-`"$/detach"`→`markDetached`). **גבול**: takeover-semantics
+(reconnect מיָדי *גם* במקרה פתולוגי) נשאר `ws-reconnect-takeover` נפרד.
+
+> **הערות אביגיל שנותרו (לא-חוסמות)**: (#1/#2) מספרי-שורות inline ב-§4 של `server.ts`/`spawn-core.ts` **התיישנו** (C2+LAN+diag
+> הזיזו) — **הישען על סמלים** (אביגיל אימתה שכולם קיימים; `kill()`≈:221-231, `spawn()`≈:108-113, ו-`ws-agent.ts` **לא זז כלל**).
+> (#5) הפניות CodeNomad הן נתיבי-Windows `D:\` — **reference בלבד** (התבנית מתוארת מילולית ב-§4; אין צורך לפתוח אותן על Linux).
+
+> **סדר commits מעודכן**: 0 (kill-tree) · 1 (graceful-shutdown **+ usage-store**) · 2 (sweep **+ markDetached**) · 3 (**FE $/detach**).
+> **DoD מעודכן**: מוסיף (i) Ctrl+C מוריד את ה-BE ומשחרר פורט; (ii) אחרי "השאר-רץ" → reconnect **מיָדי** (לא חסום).

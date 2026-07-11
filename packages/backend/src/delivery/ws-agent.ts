@@ -44,12 +44,28 @@ export type AgentWsData = {
 
 // ─── פקטורית טיפולן ──────────────────────────────────────────────────────────
 
+// ── Stale-client sweep ────────────────────────────────────────────────────────
+// הFE שולח $/ping כל 25s (ws-transport.ts). אם אחרי STALE_MS לא הגיע ping,
+// הלקוח מת (קריסת דפדפן, רשת שנפלה) — terminate ה-WS → "close" → detach().
+// sweep.unref() = לא מונע exit של ה-BE.
+const STALE_MS = 60_000 // 2+ פעימות שהוחמצו (FE שולח כל 25s)
+
 export function createAgentWsHandler(deps: {
   orchestrator: AgentOrchestrator
   connectionRegistry: ConnectionRegistry
 }): (ws: WebSocket, agentId: string) => void {
   // MED-8: חיבור FE WS פעיל אחד לכל agentId — מונע התנגשות מצב ACP בטאב שני
-  const activeFeWs = new Map<string, WebSocket>()
+  // הרחבה מ-Commit 2: {ws, lastPingAt} לניהול sweep
+  const activeFeWs = new Map<string, { ws: WebSocket; lastPingAt: number }>()
+
+  // sweep: terminate WS של לקוח שלא שלח ping בזמן (קליינט-מת)
+  const sweep = setInterval(() => {
+    const now = Date.now()
+    for (const [, e] of activeFeWs) {
+      if (now - e.lastPingAt > STALE_MS) e.ws.terminate()
+    }
+  }, 20_000)
+  sweep.unref()
 
   return function onConnect(feWs: WebSocket, agentId: string): void {
     const childLog = log.child({ agentId })
@@ -69,7 +85,7 @@ export function createAgentWsHandler(deps: {
       return
     }
 
-    activeFeWs.set(agentId, feWs)
+    activeFeWs.set(agentId, { ws: feWs, lastPingAt: Date.now() })
     deps.connectionRegistry.markAttached(agentId)
     childLog.info({ pid: conn.pid }, "WS connect → pipe attached")
 
@@ -111,7 +127,16 @@ export function createAgentWsHandler(deps: {
 
         // keepalive ספציפי ל-WS — עונים $/pong ולא מעבירים ל-child.
         if (text.includes('"$/ping"')) {
+          // עדכן lastPingAt (sweep detection — Commit 2)
+          const entry = activeFeWs.get(agentId)
+          if (entry) entry.lastPingAt = Date.now()
           feWs.send(`${JSON.stringify({ jsonrpc: "2.0", method: "$/pong" })}\n`)
+          return
+        }
+
+        // $/detach — FE מודיע שהוא עוזב מרצון (leaveRunning / #cleanup) — Commit 3
+        if (text.includes('"$/detach"')) {
+          deps.connectionRegistry.markDetached(agentId)
           return
         }
 
