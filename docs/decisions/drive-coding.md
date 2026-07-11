@@ -51,9 +51,17 @@ messages (assistant/user/system). ה-brief כולו נגזר מה-fixture האמ
 - **Commit 0 מתקן פער חי**: `CLAUDE_SESSION_META` חסר `{type:"user"}` → tool_result של תת-הסוכן לא זרם.
 - הפורק (`claude-subagent-adapter-fork`) — superseded (מיותר על upstream).
 
-### החלטת-scope פתוחה (Q7)
-transcript **live-only** (spike הוכיח: `session/load` לא משחזר ext). ברירת-מחדל MVP: live-only;
-B3-persistence = follow-up. **טעון החלטת משתמשת** לפני שסוגרים את scope B2.
+### החלטת-scope (Q7) — הוכרע: LIVE-ONLY (משתמשת, 2026-07-11)
+transcript **live-only** (spike הוכיח: `session/load` לא משחזר ext). המשתמשת בחרה live-only ל-MVP;
+persistence = **future toggle** ("המתג שמשנה את זה") — BE tap+store+replay, הצנרת כבר קיימת
+(`connection-registry.onFrame`). לא נוגע ב-B1.
+
+### חידוד-ערך מהמשתמשת (משפיע על B2)
+הליבה שהמשתמשת רוצה = **prompt של תת-הסוכן + הודעת-הסיום/summary**. שניהם ב-`TaskMeta`
+(`task_started.prompt` + `task_notification.summary`) — **כבר נמזגים ב-B1 Commit 3**, לפני ה-transcript
+המלא. ה-`subFrames` (text/thinking/tool המקוננים) = **enhancement, לא חובה**. משמעות תכנונית:
+**ה-MVP האמיתי עשוי להיות רזה** — בועת Task עם prompt+summary בכותרת (TaskMeta ב-B2 קליל), וה-transcript
+המלא כשכבה שנייה. B1 נשאר כמו-שהוא (הוא בונה גם TaskMeta וגם subFrames); ההחלטה משפיעה על **סדר/היקף B2**.
 
 ### ממצאי אביגיל
 r1 USABLE-AFTER-FIX (5: 2🟡 Commit3 + 3🟢 doc/type) → r2 READY 0-findings. ר' spike entry לעיל לממצאי §9.

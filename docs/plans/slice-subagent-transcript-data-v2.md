@@ -233,7 +233,7 @@ malformed/unknown subtype → `ignored` (לא throw).
 
 | # | שאלה | ברירת-מחדל | חוסם? |
 |---|------|-----------|-------|
-| 1 | **Q7 — transcript live-only** (ext לא ב-`session/load`). live-only ב-B2 או B3-persistence? | live-only ל-MVP (transcript חי בזמן ריצה; אחרי reload — ריק). B3 persistence = follow-up. **החלטת מרדכי+משתמשת.** | ⚠️ קובע scope B2/B3 (לא חוסם B1) |
+| 1 | ~~Q7 — transcript live-only~~ **הוכרע (משתמשת 2026-07-11): LIVE-ONLY ל-MVP.** persistence = future toggle. + חידוד-ערך: הליבה = prompt+summary (TaskMeta, Commit 3); ה-subFrames המלא = enhancement. ר' decisions. | ✅ נסגר | ❌ |
 | 2 | parser: ArkType או guards ידניים? | guards ממוקדים (unions רחבים/משתנים; ר' §7) | ❌ |
 | 3 | `SubFrame` = subset של `Bubble`? | כן, בלי `UserBubble` (reuse `BubbleRenderer` ב-B2) | ❌ |
 | 4 | `#claudeRawSdkMessageCount` — לשמר או להסיר? | לתאם עם `agent-session.test.ts`; אם אין reader אחר — להסיר בזהירות | ❌ |

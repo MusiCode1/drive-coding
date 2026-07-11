@@ -15,5 +15,6 @@
   "supersedes": ["subagent-transcript-data", "claude-subagent-adapter-fork"],
   "spike": "spike-subagent-transcript-fixture (Gate 1) — ממצאי §9 חיים; fixture: packages/frontend/src/lib/view-models/__fixtures__/subagent-task-single.json",
   "note": "מקור-נתונים השתנה מ-v1: _claude/sdkMessage (ext, דרך #onExtNotification) במקום _meta.claudeCode על session/update. הפורק מיותר (acp-stack העביר ל-upstream 0.58.1). Commit 0 מתקן פער חי: CLAUDE_SESSION_META חסר {type:\"user\"} → tool_result לא זורם.",
-  "open_scope": "Q7 — transcript live-only (session/load לא משחזר ext). live-only ל-MVP או B3-persistence — החלטת מרדכי+משתמשת."
+  "scope_decision": "Q7 — LIVE-ONLY ל-MVP (החלטת משתמשת 2026-07-11). persistence = future toggle (BE tap+store+replay; הצנרת כבר קיימת). לא נוגע ב-B1.",
+  "value_priority": "משתמשת: הליבה = prompt (task_started.prompt) + הודעת-סיום (task_notification.summary) — שניהם ב-TaskMeta, כבר ב-Commit 3. ה-transcript המלא (subFrames) = enhancement, לא חובה. → ייתכן MVP רזה יותר (ר' decisions)."
 }
