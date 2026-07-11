@@ -1,5 +1,27 @@
 ## 2026-07-11 17:50
 
+### slice-acp-stack-upgrade — Commit 3: שדרוג Claude adapter/SDK
+
+**מה בוצע:**
+- `@agentclientprotocol/claude-agent-acp` עודכן ל-`^0.58.1` והועבר מ-`devDependencies` ל-`dependencies`, כי הוא נטען בזמן ריצה במסלול Claude in-process.
+- `@anthropic-ai/claude-agent-sdk` עודכן ל-`^0.3.207`, ו-root overrides עודכנו ל-`0.3.207` גם עבור Bun וגם עבור pnpm.
+- הערת env override ישנה עודכנה כך שלא תקבע את `claude-agent-acp@0.52.0` כגרסה חיה.
+- `@anthropic-ai/claude-code@2.1.207` תועד כ-reference בלבד ולא נוסף כתלות, כי אין import runtime ישיר אליו.
+
+**בדיקות:**
+- `bun install` — עבר ועדכן את `bun.lock`.
+- `bun --filter @drive-coding/provider typecheck` — עבר.
+- `bun --filter @drive-coding/provider test` — 175 passed, 8 skipped.
+- `bun --filter @drive-coding/provider test:live` — 2 files passed, 8 tests passed.
+- live verbose: `background_tasks_changed` לא הופיע כ-`Unexpected case`.
+- live verbose: `command_lifecycle` עדיין מופיע כ-`Unexpected case`; תועד כ-known residual לפי הבריף, ללא תיקון בקומיט הזה.
+- `bun run lint:i18n` — עבר.
+- אימות `@anthropic-ai/claude-agent-sdk` resolved ל-`0.3.207` — עבר.
+- `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET` קיים בנתיב Bun הפעיל של provider.
+
+**חריגות:**
+- פקודת ה-`rg` המדויקת מהבריף על שני נתיבי `node_modules` מחזירה `exit 2`, כי אין symlink שורשי `node_modules/@anthropic-ai/claude-agent-sdk` ב-worktree של Bun. הנתיב הפעיל `packages/provider/node_modules/@anthropic-ai/claude-agent-sdk` כן קיים ומכיל את ה-method.
+
 ### slice-acp-stack-upgrade — Commit 2: הסרת `acp-sdk-v1` ואיחוד SDK ל-1.2.1
 
 **מה בוצע:**

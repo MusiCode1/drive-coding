@@ -28,6 +28,25 @@
 `@agentclientprotocol/sdk@1.0.0` לפני שדרוג ה-adapter ב-Commit 3, נוסף root override ל-`@agentclientprotocol/sdk: 1.2.1`
 גם תחת `pnpm.overrides` וגם תחת `overrides`. אחרי `bun install`, `bun.lock` לא מכיל עוד SDK `0.21.1` או `1.0.0`.
 
+### Commit 3 — Claude adapter/SDK latest
+
+`@agentclientprotocol/claude-agent-acp` עודכן ל-`^0.58.1` והועבר ל-`dependencies`, כי הוא מיובא runtime-ית
+מ-`in-process-host.ts`/`connect-in-process.ts`. `@anthropic-ai/claude-agent-sdk` עודכן ל-`^0.3.207`, עם override
+שורשי כפול (`pnpm.overrides` + top-level `overrides`) ל-`0.3.207`, כדי שגם התלות המדויקת של ה-adapter
+(`0.3.205` ב-`bun.lock`) תרוץ בפועל על `0.3.207`.
+
+`@anthropic-ai/claude-code@2.1.207` נשאר reference בלבד ולא נוסף כתלות: המסלול החי ממשיך להיטען דרך
+`@anthropic-ai/claude-agent-sdk`/ה-CLI שה-SDK מפעיל, ואין import runtime ישיר ל-`claude-code`.
+
+אומת שה-method `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET` עדיין קיים ב-SDK `0.3.207`.
+במבנה Bun של ה-worktree אין symlink שורשי `node_modules/@anthropic-ai/claude-agent-sdk`, ולכן הפקודה המדויקת של
+הבריף מחזירה `exit 2` על הנתיב השורשי, אבל הנתיב הפעיל של provider
+`packages/provider/node_modules/@anthropic-ai/claude-agent-sdk` מכיל את ה-method ב-`sdk.d.ts`, `sdk.mjs`, ו-`browser-sdk.js`.
+
+ב-live verbose לא הופיע `background_tasks_changed` כ-`Unexpected case`. כן הופיעו פריימי `command_lifecycle`
+כ-`Unexpected case`; זה תועד כ-known residual לפי הבריף ולא תוקן ב-Commit 3, כי הבריף מורה לא לתקן כאן אלא אם
+מדובר בתיקון no-op קטן וברור.
+
 ### פיצול ביצוע
 
 השדרוג מפוצל לשערים: client SDK, הסרת containment של `acp-sdk-v1`, Claude adapter/SDK, Codex upstream-or-fork,

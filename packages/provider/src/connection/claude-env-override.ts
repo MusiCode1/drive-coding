@@ -11,8 +11,8 @@
  *   Object.assign(env, setEnv)               → here: key = string
  *
  * Verified (§3 findings):
- *   - claude-agent-acp 0.52.0 merges userProvidedOptions.env after process.env
- *     (createSession, dist/acp-agent.js:2422-2428).
+ *   - claude-agent-acp merges userProvidedOptions.env after process.env
+ *     (verified on 0.52.0; retained through the 0.58.1 upgrade).
  *   - claude-agent-sdk initialize() passes env verbatim to spawn (no re-merge).
  *   - Node: key=undefined in spawn env → key absent in child (empirically verified).
  */
