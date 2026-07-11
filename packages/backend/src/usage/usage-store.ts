@@ -44,6 +44,12 @@ export interface UsageStore {
   record(event: UsageEvent): void
   /** Returns a snapshot of current totals (new object each call). */
   summary(): UsageSummary
+  /**
+   * flushUsageOnShutdown — flush pending writes synchronously.
+   * Called by gracefulShutdown (server.ts) before process.exit.
+   * Exported so gracefulShutdown owns the single exit path.
+   */
+  flushUsageOnShutdown(): void
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -117,7 +123,10 @@ export function createUsageStore(baseDir: string): UsageStore {
     }
   }
 
-  // Register on-shutdown flush (integrates with graceful-shutdown slice when available)
+  // Register on-shutdown flush as safety net (process.exit always flushes).
+  // SIGINT/SIGTERM handlers removed — gracefulShutdown (server.ts) calls
+  // flushUsageOnShutdown() explicitly before process.exit, avoiding competing
+  // handlers and ordering dependency on registration sequence.
   const flushOnExit = () => {
     if (flushTimer !== null) {
       clearTimeout(flushTimer)
@@ -126,13 +135,6 @@ export function createUsageStore(baseDir: string): UsageStore {
     flushNow()
   }
   process.on("exit", flushOnExit)
-  process.on("SIGINT", () => {
-    flushOnExit()
-    // Don't call process.exit here — let other handlers run
-  })
-  process.on("SIGTERM", () => {
-    flushOnExit()
-  })
 
   return {
     record(event: UsageEvent): void {
@@ -170,6 +172,10 @@ export function createUsageStore(baseDir: string): UsageStore {
 
     summary(): UsageSummary {
       return snapshotSummary(counters)
+    },
+
+    flushUsageOnShutdown(): void {
+      flushOnExit()
     },
   }
 }

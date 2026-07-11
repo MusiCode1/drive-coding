@@ -265,6 +265,34 @@ httpServer.on("upgrade", (req, socket, head) => {
 
 log.info({ hostname, port }, "listening")
 
+// ─── Graceful shutdown ────────────────────────────────────────────────────────
+// SIGINT (Ctrl+C) / SIGTERM — סגור חיבורים, הרוג ילדים, צא בצורה מסודרת.
+// force-timeout: אם הכיבוי תקוע (hang) — הכרח יציאה אחרי 8s.
+// usage-store: flush לפני יציאה (נקי יותר מ-SIGINT handler מקביל ב-usage-store).
+let shuttingDown = false
+async function gracefulShutdown(sig: string): Promise<void> {
+  if (shuttingDown) return
+  shuttingDown = true
+  procLog.info({ sig }, "graceful shutdown — closing connections + children")
+  const force = setTimeout(() => {
+    procLog.warn({}, "shutdown timeout — forcing exit")
+    process.exit(0)
+  }, 8000)
+  force.unref()
+  try {
+    await Promise.allSettled(connectionRegistry.list().map((id) => connectionRegistry.close(id)))
+    echoWss.close()
+    agentWss.close()
+    usageStore.flushUsageOnShutdown()
+    await new Promise<void>((r) => httpServer.close(() => r()))
+  } catch (e) {
+    procLog.error({ err: e }, "error during shutdown")
+  }
+  process.exit(0)
+}
+process.on("SIGINT", () => void gracefulShutdown("SIGINT"))
+process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"))
+
 /**
  * הרצה ידנית (dev/debug) — BE על פורט נפרד, משרת FE סטטי, דרך OneCLI:
  *
