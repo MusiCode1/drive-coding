@@ -1,3 +1,30 @@
+## 2026-07-11 — slice-cursor-acp — Commit 3: docs/adding-a-provider.md
+
+**מה בוצע:**
+- קובץ חדש `docs/adding-a-provider.md` — checklist (6 סעיפים) להוספת ספק ACP-spawn
+  חדש: (1) `CLI_SPECS` entry + אזהרת `supportsModelFlag`/מיקום `--model` ב-argv
+  (דוגמה חיה Grok), (2) `staticCapsFor` case אופציונלי, (3) `authenticate` גנרי —
+  מתי צריך להוסיף ל-`PREFERRED`-list ומתי לא, כולל הסבר `isAuthRequiredError`
+  (פאטלי רק על `auth_required` אמיתי, לא על CLI שמכריז `authMethods` בלי ליישם
+  RPC — לינק לדוח calev שתפס את הרגרסיה), (4) blocking extensions handler,
+  (5) `deploy/cli-specs.jsonc` override + `docs/running-locally.md` פסקה,
+  (6) טסטים (`agent-schema.test.ts`, `cli-config.test.ts`).
+- סעיף "מה כבר אוטומטי" — routing (`connection-registry.ts`), authenticate גנרי,
+  דרופדאון FE (`CLI_KINDS`).
+- סעיף "למה לא config-driven מלא" — `CliKind` union סגור, לינק ל-`docs/roadmap.md`
+  **Track A** (תוקן מול הבריף שציין "Track F" בטעות — אומת מול התוכן בפועל של
+  roadmap.md, הרעיון נמצא תחת Track A, לא F).
+
+**build-gate:**
+- `scripts/lint-no-hebrew-in-code.sh` (בבash ישירות): ✓ עובר (docs בעברית מותר).
+- אין קוד/טסטים רלוונטיים — קובץ docs בלבד.
+
+**חריגות:**
+- תיקנתי הפניה שגויה בבריף ("Track F") ל-Track A בפועל (`docs/roadmap.md`) —
+  אימות מול התוכן האמיתי של הקובץ, לא העתקה עיוורת מהבריף.
+
+---
+
 ## 2026-07-11 — slice-cursor-acp — Commit 2: deploy docs + override
 
 **מה בוצע:**
