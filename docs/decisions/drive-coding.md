@@ -1,5 +1,33 @@
 # Decisions — drive-coding
 
+## 2026-07-11 — acp-stack-upgrade: baseline audit לפני שדרוג client/Claude/Codex
+
+### תמונת גרסאות
+
+| רכיב | current ב-drive-coding | npm dist-tag latest | יעד בסלייס |
+|---|---:|---:|---:|
+| `@agentclientprotocol/sdk` | `^0.21.1` | `1.2.1` | `^1.2.1` בכל workspaces |
+| `acp-sdk-v1` alias | `@agentclientprotocol/sdk@1.0.0` | `1.2.1` | הסרה, או alias זמני ל-`1.2.1` בלבד |
+| `@agentclientprotocol/claude-agent-acp` | `^0.52.0` | `0.58.1` | `^0.58.1` upstream |
+| `@anthropic-ai/claude-agent-sdk` | `^0.3.206` + override `0.3.206` | `0.3.207` | `^0.3.207` + override `0.3.207` |
+| `@anthropic-ai/claude-code` | לא תלות ישירה | `2.1.207` | reference בלבד, לא להוסיף אם smoke עובר |
+| `@musicode1/codex-acp` | `^1.0.2` | `1.0.2` | upstream אם יש `./lib`, אחרת fork מסונכרן |
+| `@agentclientprotocol/codex-acp` | לא בשימוש runtime | `1.1.2` | gate ראשון ל-`./lib.startAcpServer` |
+| `@zed-industries/codex-acp` | לא בשימוש runtime | `0.16.0` | legacy reference בלבד |
+| `@openai/codex` | דרך fork `^0.142.5` | `0.144.1` | `^0.144.1` stable בלבד |
+
+### Package manager baseline
+
+`package.json` עדיין מצהיר `packageManager: "pnpm@10.0.0"` ו-`engines.pnpm`, אבל הסלייס הזה מבוצע עם
+`bun install` לפי ה-dispatch. לכן `bun.lock` הוא source-of-truth הפעיל לשדרוגי ACP בסלייס הזה.
+`pnpm-lock.yaml` נשאר stale/deprecated עד סלייס package-manager ייעודי, ולא משמש כ-DoD פעיל כאן.
+
+### פיצול ביצוע
+
+השדרוג מפוצל לשערים: client SDK, הסרת containment של `acp-sdk-v1`, Claude adapter/SDK, Codex upstream-or-fork,
+ורק בסוף raw SDK spike שמכריע אם fork Claude עדיין נחוץ ל-transcript. Commit 5 הוא gate רצף: לא מסירים מסלול fork
+ולא מחליטים upstream-only בלי הוכחת raw SDK או החלטת `fork-still-needed` מתועדת.
+
 ## 2026-07-11 — session-budget-meter: מד תקציב-סשן (קונטקסט + מכסה) — popover אחד
 
 > **עדכון (איחוד):** ה-slice `provider-quota-meter` (מכסה בלבד, READY) **אוחד** עם מד-מלאות-הקונטקסט

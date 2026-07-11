@@ -1,3 +1,18 @@
+## 2026-07-11 17:35
+
+### slice-acp-stack-upgrade — Commit 0: audit גרסאות ACP ו-baseline ל-package manager
+
+**מה בוצע:**
+- הורץ audit מול npm registry עבור חבילות ACP/Claude/Codex הרלוונטיות.
+- נוסף entry ב-`docs/decisions/drive-coding.md` עם טבלת current/latest ויעדי הסלייס.
+- תועד ש-`bun.lock` הוא מקור האמת הפעיל בסלייס הזה, בעוד `pnpm-lock.yaml` נשאר stale/deprecated עד סלייס package-manager נפרד.
+
+**בדיקות:**
+- `python3` registry audit לפי הבריף עבר והחזיר את ה-dist-tags המצופים.
+
+**חריגות:**
+- אין שינויי קוד בשלב זה.
+
 ## 2026-07-11 — slice-be-shutdown-hardening — סיכום סופי
 
 **סטטוס**: הושלם. 4 commits על `slice/be-shutdown-hardening`.
