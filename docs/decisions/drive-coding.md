@@ -1,5 +1,63 @@
 # Decisions — drive-coding
 
+## 2026-07-11 — subagent-transcript spike (Gate 1): ממצאי §9 חיים לפני B1
+
+### רקע
+`prebrief-subagent-nested-bubble.md` §9 דרש spike חי לפני שאפשר להפוך את B1 לבריף
+ביצועי — כדי לקבע reducer-semantics על ראיה ולא על ניחוש. הרצתי harness
+(`packages/provider/src/providers/claude/live/spike-subagent-fixture.ts`) מול claude
+2.1.202 האמיתי, פעמיים (עקבי): `connectInProcess` → session/new עם
+`_meta.claudeCode.emitRawSDKMessages`+`forwardSubagentText:true` → prompt שכופה Task
+רב-שלבי → לכידת **שני הערוצים** דרך `conn.onFrame` (ACP `session/update` +
+`_claude/sdkMessage` — שניהם רוכבים על אותו wire, dir="in"). fixture מצונזר:
+`packages/frontend/src/lib/view-models/__fixtures__/subagent-task-single.json`.
+
+### ממצאי §9 (אמפירי)
+- **Q1 — DELTAS, לא snapshot.** אותו `message.id` חוזר עם content-block שונה בכל frame
+  (thinking→text→tool_use). ה-reducer חייב **append מקובץ לפי `message.id`** + dedup, לא replace.
+- **Q2 — מיקום:** subagent `tool_use` ב-`assistant` content; subagent `tool_result` ב-**`user`**
+  content. שניהם עם `parent_tool_use_id`=Task.
+- **Q3 — task_\*:** `task_started`/`task_progress`/`task_notification` נושאים `task_id`+`tool_use_id`
+  (+`subagent_type`/`description`/`prompt`/`summary`/`usage`); **`task_updated` נושא רק `task_id`+`patch`**
+  (מאשר את אזהרת ה-pre-brief — index `task_id→tool_use_id` נבנה מ-`task_started`).
+- **Q4 — `parent_tool_use_id` == ACP `toolCallId`, בדיוק.** אומת בשתי הרצות (ids שונים, `⊆` מלא).
+- **Q5 — סדר:** ACP `tool_call` של ה-Task מגיע **לפני** `task_started` ולפני ה-assistant המקוננים
+  (parent-before-children החזיק) — אך pending-queue נשמר כהגנה (הסדר לא מובטח חוזית).
+- **Q6 — message-ids יציבים** ומשותפים בין כל ה-deltas של הודעה → grouping עובד.
+- **Q7 — `session/load` לא משחזר את ה-ext channel** (0 raw אחרי load). **ה-transcript live-only** →
+  נעלם ב-reload. מכריע: או להצהיר live-only ב-B2, או B3-persistence של ext ב-BE.
+
+### 🐛 פער בקוד שנחת ב-acp-stack
+`CLAUDE_SESSION_META` (ב-`agent-session.svelte.ts`) מבקש `{type:"assistant"}` אבל **חסר
+`{type:"user"}`** → תוצאות-הכלים של תת-הסוכן (tool_result) **לא זורמות**. נמצא רק בזכות הרצה
+חיה (ה-spike של acp-stack בדק רק assistant, הודעת `SUBAGENT_RAW_OK` בודדת). **B1 Commit-0
+חייב להוסיף `{type:"user"}`.**
+
+### רעש שאינו transcript (מאושר)
+`command_lifecycle` (queued/started/completed) פלט "Unexpected case" בdecode — noise, לא תוכן.
+`system.background_tasks_changed` לא נצפה (התרחיש לא הפעיל background).
+
+## 2026-07-11 — subagent-transcript-data-v2 (B1): brief READY (אביגיל r2), טרם dispatch
+
+### רציונל
+B1-v2 מחליף את `slice-subagent-transcript-data.md` (v1). **שינוי-מקור מהותי**: v1 הניח fork +
+`_meta.claudeCode.parentToolUseId` על `session/update`. אחרי `acp-stack-upgrade` (upstream 0.58.1,
+בלי fork) + ה-spike החי — המקור הוא `_claude/sdkMessage` (ext) דרך `#onExtNotification`, עם raw SDK
+messages (assistant/user/system). ה-brief כולו נגזר מה-fixture האמפירי, לא מהנחות.
+
+### שינויי-כיוון מ-v1
+- `#onExtNotification` (לא `#onSessionUpdate`) הוא נקודת-הכניסה.
+- parser טהור `parseClaudeSdkMessage` + reducer append-by-`message.id` (Q1 DELTAS) + index `taskId→toolUseId` (Q3).
+- **Commit 0 מתקן פער חי**: `CLAUDE_SESSION_META` חסר `{type:"user"}` → tool_result של תת-הסוכן לא זרם.
+- הפורק (`claude-subagent-adapter-fork`) — superseded (מיותר על upstream).
+
+### החלטת-scope פתוחה (Q7)
+transcript **live-only** (spike הוכיח: `session/load` לא משחזר ext). ברירת-מחדל MVP: live-only;
+B3-persistence = follow-up. **טעון החלטת משתמשת** לפני שסוגרים את scope B2.
+
+### ממצאי אביגיל
+r1 USABLE-AFTER-FIX (5: 2🟡 Commit3 + 3🟢 doc/type) → r2 READY 0-findings. ר' spike entry לעיל לממצאי §9.
+
 ## 2026-07-11 — acp-stack-upgrade: מוזג ל-dev (מרדכי — הכנה+מיזוג post-hoc)
 
 ### רציונל

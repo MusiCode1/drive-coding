@@ -1,7 +1,12 @@
 # Slice B1 — subagent-transcript-data — תוכנית
 
+> ⚠️ **SUPERSEDED (2026-07-11)** — הוחלף ע"י `slice-subagent-transcript-data-v2.md` (אביגיל READY r2).
+> ה-brief הזה הניח fork + `_meta.claudeCode` על `session/update`; המציאות השתנתה אחרי `acp-stack-upgrade`
+> (upstream 0.58.1, בלי fork) + spike חי: המקור הוא `_claude/sdkMessage` דרך `#onExtNotification`.
+> נשמר כ-reference בלבד. **אין dispatch.**
+
 > **תאריך**: 2026-07-06
-> **סטטוס**: טיוטה
+> **סטטוס**: superseded (היה: טיוטה)
 > **Complexity**: 7/10 (verifier: light — calev; ה-UI ב-B2 calev-heavy)
 > **depends_on**: [`claude-subagent-adapter-fork`] (Slice A — ה-fork; נדחף ל-`origin/drive-coding`)
 > **base**: dev + חיבור github-dep ל-fork
