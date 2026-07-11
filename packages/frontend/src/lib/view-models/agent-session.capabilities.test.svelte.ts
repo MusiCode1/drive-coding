@@ -176,4 +176,19 @@ describe("AgentSession — capabilities ingestion (FE-normalization)", () => {
 
     expect(session.capabilities).toBeNull()
   })
+
+  it("counts _claude/sdkMessage ext notifications for the raw SDK spike", async () => {
+    await session.attach({ cwd: "/some/cwd", cliKind: "claude" })
+    expect(session.claudeRawSdkMessageCount).toBe(0)
+
+    capturedExtNotification?.("_claude/sdkMessage", {
+      message: { type: "system", subtype: "task_started" },
+    })
+    capturedExtNotification?.("_claude/sdkMessage", {
+      message: { type: "assistant", parent_tool_use_id: "toolu_123" },
+    })
+
+    expect(session.claudeRawSdkMessageCount).toBe(2)
+    expect(session.capabilities).toBeNull()
+  })
 })

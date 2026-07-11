@@ -14,7 +14,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.21.1",
+    "@agentclientprotocol/sdk": "^1.2.1",
     "@ai-sdk/google": "^3.0.75",
     "@drive-coding/core": "workspace:*",
     "@google/genai": "^2.3.0",

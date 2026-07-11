@@ -1,3 +1,139 @@
+## 2026-07-11 18:17
+
+### slice-acp-stack-upgrade — Commit 5: raw SDK spike ל-Claude subagent transcript
+
+**מה בוצע:**
+- `CLAUDE_SESSION_META` ב-FE הורחב עבור Claude בלבד:
+  - `thinking: { type: "adaptive", display: "summarized" }` נשאר.
+  - נוסף `forwardSubagentText: true`.
+  - נוסף `emitRawSDKMessages` עבור `task_started`, `task_progress`, `task_notification`, `task_updated`, ו-`assistant`.
+- נוסף counter פנימי ב-`AgentSession` עבור `_claude/sdkMessage`, כ-test hook מינימלי בלבד; אין UI ואין normalization מלא.
+- הטסטים עודכנו כך ש-`session/new`/`loadSession` מצפים ל-meta החדש, ושה-handler סופר `_claude/sdkMessage` בלי לדרוס capabilities.
+- תועדה הכרעה ב-`docs/decisions/drive-coding.md`: `fork-not-needed-for-transcript`.
+
+**בדיקות:**
+- `bun --filter @drive-coding/frontend typecheck` — עבר, 0 errors/warnings.
+- `bun --filter @drive-coding/frontend test -- agent-session.test.ts agent-session.capabilities.test.svelte.ts` — 35 passed.
+- live spike ישיר דרך `connectInProcess`:
+  - `initialize`, `session/new` עם `_meta`, ו-`session/prompt` עברו; `stopReason=end_turn`.
+  - התקבלו 7 `_claude/sdkMessage` raw messages.
+  - התקבלו `task_started`, `task_updated`, ו-`task_notification` לפני שה-adapter שובר על `task_*`.
+  - התקבלה הודעת `assistant` עם `parent_tool_use_id` של ה-Task ו-content text `SUBAGENT_RAW_OK`.
+  - במסלול `session/update` הרגיל עדיין לא זרם טקסט subagent; raw ext notification הוא המקור הנכון ל-slice המשך.
+
+**חריגות:**
+- live spike הדפיס גם `command_lifecycle` כ-`Unexpected case`, אותו residual שתועד ב-Commit 3; לא תוקן כאן.
+- סקריפט ה-live החד-פעמי החזיק handle פתוח אחרי שהדפיס תוצאה, ולכן הופסק ידנית לאחר `conn.close()`; `pgrep` אחר כך הראה רק את `codex app-server` שהיה קיים קודם.
+- לא נבנו `subFrames`, UI, או normalization מלא, לפי גבול Commit 5.
+
+## 2026-07-11 17:50
+
+### slice-acp-stack-upgrade — Commit 4: Codex upstream gate ו-`@openai/codex` override
+
+**מה בוצע:**
+- Gate A נבדק מול `@agentclientprotocol/codex-acp@1.1.2` בהתקנה זמנית: `@agentclientprotocol/codex-acp/lib` לא קיים.
+- בדיקת legacy מול `@zed-industries/codex-acp@0.16.0` גם לא מצאה `./lib`; אין חזרה ל-legacy.
+- נוצר branch מקומי בפורק `/home/user/Projects/drive-coding/sub-packages/codex-acp`: `slice/acp-stack-upgrade-codex` מ-`origin/drive-coding`.
+- אומת שבפורק המקומי קיימים `src/lib.ts`, `exports["./lib"]`, ו-`startAcpServer(readable,writable,opts)`.
+- drive-coding נשאר על `@musicode1/codex-acp@^1.0.2`, כי זו החבילה המפורסמת בשם הנכון ומספקת `./lib`; לא בוצע push/publish ולא נצרך SHA שלא נדחף.
+- נוסף root override ל-`@openai/codex: 0.144.1` כדי לעדכן את runtime ה-CLI של fork ה-Codex בלי לשנות שם חבילה או ambient declaration.
+
+**בדיקות:**
+- `bun install` — עבר ועדכן את `bun.lock`.
+- `node -e import("@musicode1/codex-acp/lib")...` מתוך `packages/provider` — החזיר `function`.
+- `bun pm ls --all` — מציג `@agentclientprotocol/sdk@1.2.1`, `@musicode1/codex-acp@1.0.2`, ו-`@openai/codex@0.144.1`.
+- `codex --version` — `codex-cli 0.144.1`.
+- live smoke עם `connectCodexInProcess` ו-`CODEX_PATH=/home/user/.local/bin/codex` — `initialize`, `session/new`, ו-`session/prompt` עברו; `stopReason=end_turn`.
+- בדיקת child cleanup — לא נשאר PID חדש של `codex app-server` אחרי `conn.close()` ו-3 שניות המתנה.
+- `bun --filter @drive-coding/provider typecheck` — עבר.
+- `bun --filter @drive-coding/provider test` — 175 passed, 8 skipped.
+- `bun run lint:i18n` — עבר.
+
+**חריגות:**
+- `bun.lock` עדיין כולל ברשומת metadata של `@musicode1/codex-acp@1.0.2` את הדרישות המקוריות `@agentclientprotocol/sdk: 1.1.0` ו-`@openai/codex: 0.142.5`; ה-resolution הפעיל נכפה ב-root overrides ומופיע כ-`1.2.1`/`0.144.1`.
+- השלמת publish/SHA לפורק דורשת אישור push/publish ממרדכי/המשתמש.
+- `bun --filter @drive-coding/backend typecheck` עדיין נכשל ב-28 שגיאות base קיימות ב-`http-proxy.ts` ו-`http-tts-capabilities.ts` סביב טיפוסי `Headers`/`Request`/`Response`; לא נגעתי בקבצים האלה.
+
+### slice-acp-stack-upgrade — Commit 3: שדרוג Claude adapter/SDK
+
+**מה בוצע:**
+- `@agentclientprotocol/claude-agent-acp` עודכן ל-`^0.58.1` והועבר מ-`devDependencies` ל-`dependencies`, כי הוא נטען בזמן ריצה במסלול Claude in-process.
+- `@anthropic-ai/claude-agent-sdk` עודכן ל-`^0.3.207`, ו-root overrides עודכנו ל-`0.3.207` גם עבור Bun וגם עבור pnpm.
+- הערת env override ישנה עודכנה כך שלא תקבע את `claude-agent-acp@0.52.0` כגרסה חיה.
+- `@anthropic-ai/claude-code@2.1.207` תועד כ-reference בלבד ולא נוסף כתלות, כי אין import runtime ישיר אליו.
+
+**בדיקות:**
+- `bun install` — עבר ועדכן את `bun.lock`.
+- `bun --filter @drive-coding/provider typecheck` — עבר.
+- `bun --filter @drive-coding/provider test` — 175 passed, 8 skipped.
+- `bun --filter @drive-coding/provider test:live` — 2 files passed, 8 tests passed.
+- live verbose: `background_tasks_changed` לא הופיע כ-`Unexpected case`.
+- live verbose: `command_lifecycle` עדיין מופיע כ-`Unexpected case`; תועד כ-known residual לפי הבריף, ללא תיקון בקומיט הזה.
+- `bun run lint:i18n` — עבר.
+- אימות `@anthropic-ai/claude-agent-sdk` resolved ל-`0.3.207` — עבר.
+- `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET` קיים בנתיב Bun הפעיל של provider.
+
+**חריגות:**
+- פקודת ה-`rg` המדויקת מהבריף על שני נתיבי `node_modules` מחזירה `exit 2`, כי אין symlink שורשי `node_modules/@anthropic-ai/claude-agent-sdk` ב-worktree של Bun. הנתיב הפעיל `packages/provider/node_modules/@anthropic-ai/claude-agent-sdk` כן קיים ומכיל את ה-method.
+
+### slice-acp-stack-upgrade — Commit 2: הסרת `acp-sdk-v1` ואיחוד SDK ל-1.2.1
+
+**מה בוצע:**
+- הוסר alias `acp-sdk-v1` מ-`packages/provider/package.json`.
+- imports במסלולי Claude in-process/stream bridge עברו ל-`@agentclientprotocol/sdk`.
+- נוסף root override ל-`@agentclientprotocol/sdk: 1.2.1` כדי למנוע עותק SDK `1.0.0` מקונן דרך `claude-agent-acp@0.52.0` לפני Commit 3.
+- עודכנו הערות containment ישנות שהזכירו `sdk@1.0.0`.
+- `client-bridge` קיבל return type מפורש הנגזר מה-constructor של `ClaudeAcpAgent`, כדי למנוע inferred type לא-portable.
+
+**בדיקות:**
+- grep ל-`acp-sdk-v1`, `@agentclientprotocol/sdk@1.0.0`, ו-`@agentclientprotocol/sdk@0.21.1` ב-`package.json`, `packages`, ו-`bun.lock` — ריק.
+- `bun --filter @drive-coding/provider typecheck` — עבר.
+- `bun --filter @drive-coding/provider test` — 175 passed, 8 skipped.
+- `bun run lint:i18n` — עבר.
+
+**חריגות:**
+- אין. fallback ל-alias לא נדרש.
+
+## 2026-07-11 17:43
+
+### slice-acp-stack-upgrade — Commit 1: שדרוג client SDK ל-1.2.1
+
+**מה בוצע:**
+- `@agentclientprotocol/sdk` עודכן ל-`^1.2.1` ב-`backend`, `core`, `frontend`, ו-`provider`.
+- `bun install` עדכן את `bun.lock`.
+- תוקנו שברי type מינימליים מה-SDK החדש: model fallback עובר דרך `setSessionConfigOption`, ו-`SessionModelState` נשמר כטיפוס legacy מקומי ב-FE.
+- נשמר containment של `acp-sdk-v1` לשלב הבא; `NewSessionRequest` במסלול Claude in-process נלקח זמנית מה-alias כדי לא לערבב טיפוסי SDK.
+- נוסף declaration מקומי ב-provider ל-`@musicode1/codex-acp/lib`.
+- טסט formatting עבר התאמת ICU כדי לקבל גם digits וגם צורת dual מילולית בעברית.
+
+**בדיקות:**
+- `bun --filter @drive-coding/provider typecheck` — עבר.
+- `bun --filter @drive-coding/frontend typecheck` — עבר.
+- `bun --filter @drive-coding/core typecheck` — עבר.
+- `bun --filter @drive-coding/provider test` — 175 passed, 8 skipped.
+- `bun --filter @drive-coding/frontend test` — 433 passed.
+- `bun run lint:i18n` — עבר.
+- grep לגרסת SDK ישנה `0.21.1` ב-`packages`, `bun.lock`, ו-`package.json` — ריק.
+
+**חריגות:**
+- `bun --filter @drive-coding/backend typecheck` עדיין נופל רק על 28 שגיאות base קיימות ב-`http-proxy.ts` ו-`http-tts-capabilities.ts` סביב טיפוסי `Headers`/`Request`/`Response`.
+- `bun run lint` גלובלי עדיין חסום על ממצאי base קיימים ב-HTML mockups/archive; לא נוצרו ממצאי i18n חדשים.
+
+## 2026-07-11 17:35
+
+### slice-acp-stack-upgrade — Commit 0: audit גרסאות ACP ו-baseline ל-package manager
+
+**מה בוצע:**
+- הורץ audit מול npm registry עבור חבילות ACP/Claude/Codex הרלוונטיות.
+- נוסף entry ב-`docs/decisions/drive-coding.md` עם טבלת current/latest ויעדי הסלייס.
+- תועד ש-`bun.lock` הוא מקור האמת הפעיל בסלייס הזה, בעוד `pnpm-lock.yaml` נשאר stale/deprecated עד סלייס package-manager נפרד.
+
+**בדיקות:**
+- `python3` registry audit לפי הבריף עבר והחזיר את ה-dist-tags המצופים.
+
+**חריגות:**
+- אין שינויי קוד בשלב זה.
+
 ## 2026-07-11 — slice-cursor-acp — סיכום סופי
 
 **סטטוס**: הושלם. 6 commits קוד/docs על `slice/cursor-acp` (מעל `f582b46` הבריף

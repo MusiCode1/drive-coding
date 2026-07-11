@@ -1,0 +1,19 @@
+{
+  "id": "session-budget-meter",
+  "status": "plan-verified",
+  "plan_verified": true,
+  "dispatch_ready": true,
+  "base": "dev",
+  "depends_on": [],
+  "complexity": 7,
+  "verifier": "calev-light",
+  "dev_tip": "22b57b9b",
+  "avigail_rounds": 2,
+  "avigail_verdict": "READY",
+  "avigail_note": "r1 USABLE-AFTER-FIX (2 findings): (1) context.cost flicker — pseudo replaced whole context obj but only 1/4 usage_update sites carries cost → fixed with `cost: u.cost?.amount ?? this.context?.cost`; (2) text-guard cited ~L1592, actual L1582 → fixed (cosmetic). r2 READY 0-findings. Core verified clean: usage_update emitted by adapter 0.52.0 (4 sites), payload {used,size,cost}, method exists in SDK 0.3.191 AND 0.3.206, all anchors/line-numbers/strict-TS confirmed.",
+  "fixes": "one popover 'session budget': context-fullness meter (PUSH usage_update, FE-only, reliable) + subscription quota (PULL usage_EXPERIMENTAL, provider ext, billing-gated). context% in header, click → read-only popover.",
+  "commits": "0 quota billing data-confirm (gate) · 1 context state (usage_update FE branch) · 2 quota provider ext _drive/getUsage+normalizer+capability · 3 quota FE facade+VM · 4 UI SessionBudgetMeter+popover · 5 calev light",
+  "decision": "merges slice-provider-quota-meter + slice-context-window-meter into one. context=push (reliable backbone), quota=pull (at-risk). click→popover read-only (not compact — VSCode footgun avoided). compact button = fast-follow. types FE-local (MVP).",
+  "supersedes": ["provider-quota-meter", "context-window-meter"],
+  "open_risk": "billing: quota may return rate_limits_available:false on our SDK auth (Commit 0 gate) — context meter unaffected (de-risked)"
+}

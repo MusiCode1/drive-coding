@@ -19,9 +19,9 @@
 
 import { ClaudeAcpAgent } from "@agentclientprotocol/claude-agent-acp"
 import type { NewSessionRequest } from "@agentclientprotocol/sdk"
-import { agent, methods, RequestError } from "acp-sdk-v1"
-import { parseExtParams } from "../extensions/index.js"
+import { agent, methods, RequestError } from "@agentclientprotocol/sdk"
 import { getCliSpec } from "../config/index.js"
+import { parseExtParams } from "../extensions/index.js"
 import { mapClaudeCapabilities } from "../providers/claude/capabilities.js"
 import { makeAcpClientFromCtx } from "../providers/claude/client-bridge.js"
 import { getQuery } from "../providers/claude/query-access.js"

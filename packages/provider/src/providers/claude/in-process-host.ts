@@ -1,5 +1,5 @@
 /**
- * host.ts — InProcessHost: hosts ClaudeAcpAgent in-process via sdk@1.0.0.
+ * host.ts — InProcessHost: hosts ClaudeAcpAgent in-process via @agentclientprotocol/sdk.
  *
  * Single connection model (brief §3 🟡#1 fix):
  *   agentApp.connect(clientApp) → AgentConnection (agent-side)
@@ -28,14 +28,13 @@
  * we reach into the peer AgentConnection to get AgentContext for ClaudeAcpAgent.
  * We do this via agentApp.onConnect() which is called when clientApp connects to it.
  *
- * ⚠️ Two-SDK containment: all sdk@1.0.0 and claude-agent-acp imports stay
- * inside this file + client-bridge.ts + claude/capabilities.ts.
- * No sdk@1.0.0 types appear in the exported InProcessHost interface.
+ * Claude adapter imports stay inside provider internals.
+ * No ACP SDK types appear in the exported InProcessHost interface.
  */
 
 import { ClaudeAcpAgent } from "@agentclientprotocol/claude-agent-acp"
-import type { ActiveSession, AgentConnection, ClientContext } from "acp-sdk-v1"
-import { agent, client, methods, RequestError } from "acp-sdk-v1"
+import type { ActiveSession, AgentConnection, ClientContext } from "@agentclientprotocol/sdk"
+import { agent, client, methods, RequestError } from "@agentclientprotocol/sdk"
 import { parseExtParams } from "../../extensions/index.js"
 import type { NormalizedCapabilities } from "../../types.js"
 import { mapClaudeCapabilities } from "./capabilities.js"
@@ -44,7 +43,7 @@ import { getQuery } from "./query-access.js"
 import { claudeRenameSession } from "./rename.js"
 
 /**
- * Public interface — no sdk@1.0.0 types leak here.
+ * Public interface — no ACP SDK types leak here.
  * Independent interface (not an alias to AdapterHost) per brief §3 🟡#6.
  */
 export interface InProcessHost {
@@ -94,12 +93,12 @@ export type ExtHandlers = Record<
  *   SessionUpdateRouter on the ClientApp side (same connection).
  */
 export function createClaudeInProcessHost(options?: { extHandlers?: ExtHandlers }): InProcessHost {
-  // sdk@1.0.0 objects — all internal, never exported
+  // ACP SDK objects — all internal, never exported
   let claudeAgent: ClaudeAcpAgent | undefined
   let clientCtx: ClientContext | undefined
   let agentConn: AgentConnection | undefined
 
-  // Active sessions keyed by sessionId — sdk@1.0.0 ActiveSession objects (internal, not exported)
+  // Active sessions keyed by sessionId — ACP SDK ActiveSession objects (internal, not exported)
   const activeSessions = new Map<string, ActiveSession>()
 
   // sessionId → cwd map: populated in newSession() so rename() can scope the lookup.
