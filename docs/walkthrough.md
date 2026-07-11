@@ -1,3 +1,32 @@
+## 2026-07-11 — slice-cursor-acp — סיכום סופי
+
+**סטטוס**: הושלם. 6 commits קוד/docs על `slice/cursor-acp` (מעל `f582b46` הבריף
+המאוחד): `fb56425` (Commit 0) → `7d828a9` (Commit 1) → `0985ab4`+`2016994` (תיקון
+calev NO-GO על Commit 1, opencode regression) → `71971d2` (merge dev) → `dbea92c`
+(Commit 2) → `c143073` (Commit 3).
+
+**מה נבנה**: רישום `cursor`+`grok` ב-`CLI_SPECS` (spawn, לא in-process), שכבת
+`authenticate` גנרית משותפת (PREFERRED-list + `isAuthRequiredError` non-fatal
+classifier — נדרש אחרי רגרסיה חיה שנתפסה ב-calev), blocking-ext handlers ל-Cursor,
+deploy override + running-locally.md, ו-`docs/adding-a-provider.md` (checklist
+לספק spawn הבא).
+
+**בדיקות**: 21/21 unit ממוקדים (`client.authenticate.test.ts`+`client.cursor-ext.test.ts`),
++ 442 core / 179+ provider tests (Commit 0), typecheck נקי (`tsc --build`), smoke חי
+כפול (cursor+grok, wire-recording אמיתי) + regression opencode מאומת-חי.
+
+**calev**: verifier-phase אחרי Commit 1 — סבב ראשון NO-GO (opencode regression,
+`WS closed 1005`), תוקן חי (`2016994`), סבב שני **GO** (2 ממצאים minor, לא-בלוקרים —
+ר' `reports/drive-coding/cursor-acp-calev.md`).
+
+**חריגות מהתכנון**:
+- Commit 1 דרש תיקון-ביניים (auth non-fatal) אחרי calev NO-GO — לא היה בתכנון
+  המקורי, נבע מהבדל בין דיווח-`authMethods` להמלצה בפועל אצל opencode.
+- Commit 3: תוקנה הפניה שגויה בבריף ("Track F"→"Track A" ב-`docs/roadmap.md`).
+- כל השאר לפי הבריף, בלי סטיות.
+
+---
+
 ## 2026-07-11 — slice-cursor-acp — Commit 3: docs/adding-a-provider.md
 
 **מה בוצע:**

@@ -1,7 +1,7 @@
 # Slice — cursor-acp — רישום Cursor + Grok כספקי ACP + סטנדרט הוספת-ספק
 
 > **תאריך**: 2026-07-08 (מקורי) · **עודכן**: 2026-07-11 — אוחד עם `slice-grok-acp` (בוטל, ר' §0)
-> **סטטוס**: טיוטה מאוחדת — **טרם עברה אביגיל מחדש** (ה-READY הקודם היה על scope צר יותר; לא תקף לתוכן הזה)
+> **סטטוס**: **הושלם** — כל 4 ה-commits (0/1/2/3) בוצעו + calev phase-verification GO אחרי Commit 1 (סבב שני, אחרי תיקון רגרסיית opencode). ממתין ל-verifier-slice סופי + מרדכי למיזוג.
 > **Complexity**: 6/10 (verifier: light + phase אחרי commit 1)
 > **תלות (`depends_on`)**: [] — בנוי ישירות על `dev`
 > **Base**: `dev`
