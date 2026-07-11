@@ -1,3 +1,28 @@
+## 2026-07-11 17:43
+
+### slice-acp-stack-upgrade — Commit 1: שדרוג client SDK ל-1.2.1
+
+**מה בוצע:**
+- `@agentclientprotocol/sdk` עודכן ל-`^1.2.1` ב-`backend`, `core`, `frontend`, ו-`provider`.
+- `bun install` עדכן את `bun.lock`.
+- תוקנו שברי type מינימליים מה-SDK החדש: model fallback עובר דרך `setSessionConfigOption`, ו-`SessionModelState` נשמר כטיפוס legacy מקומי ב-FE.
+- נשמר containment של `acp-sdk-v1` לשלב הבא; `NewSessionRequest` במסלול Claude in-process נלקח זמנית מה-alias כדי לא לערבב טיפוסי SDK.
+- נוסף declaration מקומי ב-provider ל-`@musicode1/codex-acp/lib`.
+- טסט formatting עבר התאמת ICU כדי לקבל גם digits וגם צורת dual מילולית בעברית.
+
+**בדיקות:**
+- `bun --filter @drive-coding/provider typecheck` — עבר.
+- `bun --filter @drive-coding/frontend typecheck` — עבר.
+- `bun --filter @drive-coding/core typecheck` — עבר.
+- `bun --filter @drive-coding/provider test` — 175 passed, 8 skipped.
+- `bun --filter @drive-coding/frontend test` — 433 passed.
+- `bun run lint:i18n` — עבר.
+- grep לגרסת SDK ישנה `0.21.1` ב-`packages`, `bun.lock`, ו-`package.json` — ריק.
+
+**חריגות:**
+- `bun --filter @drive-coding/backend typecheck` עדיין נופל רק על 28 שגיאות base קיימות ב-`http-proxy.ts` ו-`http-tts-capabilities.ts` סביב טיפוסי `Headers`/`Request`/`Response`.
+- `bun run lint` גלובלי עדיין חסום על ממצאי base קיימים ב-HTML mockups/archive; לא נוצרו ממצאי i18n חדשים.
+
 ## 2026-07-11 17:35
 
 ### slice-acp-stack-upgrade — Commit 0: audit גרסאות ACP ו-baseline ל-package manager

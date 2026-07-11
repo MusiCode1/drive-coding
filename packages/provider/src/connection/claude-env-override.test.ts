@@ -115,7 +115,7 @@ describe("injectEnvOverride", () => {
 
   it("sets _meta.claudeCode.options.env on empty params", () => {
     const envOverride = { ANTHROPIC_API_KEY: undefined, NO_PROXY: "api.anthropic.com" }
-    const result = injectEnvOverride({}, envOverride)
+    const result = injectEnvOverride({} as Record<string, unknown>, envOverride)
     const meta = result["_meta"] as Record<string, unknown>
     const claudeCode = meta?.["claudeCode"] as Record<string, unknown>
     const options = claudeCode?.["options"] as Record<string, unknown>

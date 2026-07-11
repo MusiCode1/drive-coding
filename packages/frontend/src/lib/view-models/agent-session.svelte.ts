@@ -13,7 +13,6 @@
 import type {
   AvailableCommand,
   SessionConfigOption,
-  SessionModelState,
   SessionModeState,
   SessionNotification,
 } from "@agentclientprotocol/sdk"
@@ -79,6 +78,11 @@ import { createExtClient, type ExtClient } from "$lib/adapters/ext"
 const CLAUDE_SESSION_META = {
   claudeCode: { options: { thinking: { type: "adaptive", display: "summarized" } } },
 } as const
+
+type SessionModelState = {
+  currentModelId: string
+  availableModels: Array<{ modelId: string; name: string; description?: string | null }>
+}
 
 export type AgentSessionStatus =
   | "idle" // טרם נוצר סוכן

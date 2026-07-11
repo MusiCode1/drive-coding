@@ -14,12 +14,12 @@
     },
     "packages/backend": {
       "name": "@drive-coding/backend",
-      "version": "0.6.1",
+      "version": "0.7.0",
       "bin": {
         "drive-coding": "./src/bin/drive-coding.ts",
       },
       "dependencies": {
-        "@agentclientprotocol/sdk": "^0.21.1",
+        "@agentclientprotocol/sdk": "^1.2.1",
         "@ai-sdk/elevenlabs": "^2.0.33",
         "@ai-sdk/google": "^3.0.75",
         "@ai-sdk/provider": "^3.0.10",
@@ -45,7 +45,7 @@
       "name": "@drive-coding/core",
       "version": "0.11.0",
       "dependencies": {
-        "@agentclientprotocol/sdk": "^0.21.1",
+        "@agentclientprotocol/sdk": "^1.2.1",
         "@drive-coding/provider": "workspace:*",
         "arktype": "^2.0.0",
         "marked": "^18.0.3",
@@ -56,9 +56,9 @@
     },
     "packages/frontend": {
       "name": "@drive-coding/frontend",
-      "version": "0.13.0",
+      "version": "0.14.0",
       "dependencies": {
-        "@agentclientprotocol/sdk": "^0.21.1",
+        "@agentclientprotocol/sdk": "^1.2.1",
         "@ai-sdk/google": "^3.0.75",
         "@drive-coding/core": "workspace:*",
         "@drive-coding/provider": "workspace:*",
@@ -89,9 +89,9 @@
     },
     "packages/provider": {
       "name": "@drive-coding/provider",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
-        "@agentclientprotocol/sdk": "^0.21.1",
+        "@agentclientprotocol/sdk": "^1.2.1",
         "@anthropic-ai/claude-agent-sdk": "^0.3.206",
         "@drive-coding/core": "workspace:*",
         "@musicode1/codex-acp": "^1.0.2",
@@ -106,7 +106,7 @@
     },
     "packages/release": {
       "name": "drive-coding",
-      "version": "0.14.0",
+      "version": "0.15.0",
       "bin": {
         "drive-coding": "dist/drive-coding.js",
       },
@@ -122,7 +122,7 @@
   "packages": {
     "@agentclientprotocol/claude-agent-acp": ["@agentclientprotocol/claude-agent-acp@0.52.0", "", { "dependencies": { "@agentclientprotocol/sdk": "1.0.0", "@anthropic-ai/claude-agent-sdk": "0.3.191", "zod": "4.4.3" }, "bin": { "claude-agent-acp": "dist/index.js" } }, "sha512-IvbKJ8EBaamuXtYB5RSD/PEk2Mz5XczQrfo90wG2iOjhko3o7HOSueysCTyCvPZn+px6Kbuot8TLIvTad2J2zw=="],
 
-    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@0.21.1", "", { "peerDependencies": { "zod": "4.4.3" } }, "sha512-ZTLH+o9QxcZDLX/9ww+W7C2iExnXFM+vD/uGFVSlR61Kzj9FaxUqBC6Rv/kwgA7qVWYUEI9c5ZNqCuO9PM4rKg=="],
+    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@1.2.1", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-jwYUdOQR7tc+Zfch53VL4JJyUNK/46q03uUTYb+PjECsmnNl94XFXOfYLJ8RBpMNidXd1rpOAVgb0vqD98xImA=="],
 
     "@ai-sdk/elevenlabs": ["@ai-sdk/elevenlabs@2.0.33", "", { "dependencies": { "@ai-sdk/provider": "3.0.10", "@ai-sdk/provider-utils": "4.0.27" }, "peerDependencies": { "zod": "4.4.3" } }, "sha512-EtvsWfGrqx3OhzJdoi82qH+4yzEPPKZr2utyQ+w8cHKoFeg0+8Lou9Z3uixy73WEwz8Z1+AR8QT9fZ64AWGYPA=="],
 
@@ -1081,8 +1081,6 @@
     "@agentclientprotocol/claude-agent-acp/@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@1.0.0", "", { "peerDependencies": { "zod": "4.4.3" } }, "sha512-5FHgLbLZhSAq9F+9SU7AOCXTDzaw/IYx/AvMjrZDs/YFZ9ZPxkdn9ti3fSkny0huHfj2hrqF6pqdns9gN5/Fig=="],
 
     "@agentclientprotocol/claude-agent-acp/zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
-
-    "@agentclientprotocol/sdk/zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
 
     "@ai-sdk/elevenlabs/zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
 

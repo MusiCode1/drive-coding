@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "@drive-coding/provider": "workspace:*",
-    "@agentclientprotocol/sdk": "^0.21.1",
+    "@agentclientprotocol/sdk": "^1.2.1",
     "arktype": "^2.0.0",
     "marked": "^18.0.3",
     "neverthrow": "^8.0.0",
