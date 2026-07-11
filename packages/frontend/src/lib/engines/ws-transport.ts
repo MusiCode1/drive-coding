@@ -77,6 +77,21 @@ export class WsAcpTransport implements AcpTransport {
     })
   }
 
+  /**
+   * שולח frame גולמי (JSON-RPC notification) על ה-WS.
+   * fire-and-forget — נכשל בשקט אם WS לא פתוח.
+   * משמש לשליחת $/detach לפני סגירה (slice be-shutdown-hardening Commit 3).
+   */
+  sendRaw(data: string): void {
+    try {
+      if (this.#ws.readyState === WebSocket.OPEN) {
+        this.#ws.send(data)
+      }
+    } catch {
+      // WS כבר סגור — לא-קריטי
+    }
+  }
+
   close(): void {
     this.#stopHeartbeat()
     try {
