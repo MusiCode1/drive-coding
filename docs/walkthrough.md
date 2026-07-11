@@ -1,3 +1,31 @@
+## 2026-07-11 18:17
+
+### slice-acp-stack-upgrade — Commit 5: raw SDK spike ל-Claude subagent transcript
+
+**מה בוצע:**
+- `CLAUDE_SESSION_META` ב-FE הורחב עבור Claude בלבד:
+  - `thinking: { type: "adaptive", display: "summarized" }` נשאר.
+  - נוסף `forwardSubagentText: true`.
+  - נוסף `emitRawSDKMessages` עבור `task_started`, `task_progress`, `task_notification`, `task_updated`, ו-`assistant`.
+- נוסף counter פנימי ב-`AgentSession` עבור `_claude/sdkMessage`, כ-test hook מינימלי בלבד; אין UI ואין normalization מלא.
+- הטסטים עודכנו כך ש-`session/new`/`loadSession` מצפים ל-meta החדש, ושה-handler סופר `_claude/sdkMessage` בלי לדרוס capabilities.
+- תועדה הכרעה ב-`docs/decisions/drive-coding.md`: `fork-not-needed-for-transcript`.
+
+**בדיקות:**
+- `bun --filter @drive-coding/frontend typecheck` — עבר, 0 errors/warnings.
+- `bun --filter @drive-coding/frontend test -- agent-session.test.ts agent-session.capabilities.test.svelte.ts` — 35 passed.
+- live spike ישיר דרך `connectInProcess`:
+  - `initialize`, `session/new` עם `_meta`, ו-`session/prompt` עברו; `stopReason=end_turn`.
+  - התקבלו 7 `_claude/sdkMessage` raw messages.
+  - התקבלו `task_started`, `task_updated`, ו-`task_notification` לפני שה-adapter שובר על `task_*`.
+  - התקבלה הודעת `assistant` עם `parent_tool_use_id` של ה-Task ו-content text `SUBAGENT_RAW_OK`.
+  - במסלול `session/update` הרגיל עדיין לא זרם טקסט subagent; raw ext notification הוא המקור הנכון ל-slice המשך.
+
+**חריגות:**
+- live spike הדפיס גם `command_lifecycle` כ-`Unexpected case`, אותו residual שתועד ב-Commit 3; לא תוקן כאן.
+- סקריפט ה-live החד-פעמי החזיק handle פתוח אחרי שהדפיס תוצאה, ולכן הופסק ידנית לאחר `conn.close()`; `pgrep` אחר כך הראה רק את `codex app-server` שהיה קיים קודם.
+- לא נבנו `subFrames`, UI, או normalization מלא, לפי גבול Commit 5.
+
 ## 2026-07-11 17:50
 
 ### slice-acp-stack-upgrade — Commit 4: Codex upstream gate ו-`@openai/codex` override

@@ -71,12 +71,25 @@ import type { NormalizedCapabilities } from "@drive-coding/provider/types"
 import { createExtClient, type ExtClient } from "$lib/adapters/ext"
 
 /**
- * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries.
+ * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries
+ * ומבקש raw SDK frames ל-spike של subagent transcript.
  * Opus 4.7+ שינה default ל-display:"omitted"; זה מבקש "summarized" מפורשות.
  * provider-agnostic: ה-key claudeCode מתעלם ע"י ספקים אחרים. ר' decisions/voice-acp.md.
  */
 const CLAUDE_SESSION_META = {
-  claudeCode: { options: { thinking: { type: "adaptive", display: "summarized" } } },
+  claudeCode: {
+    options: {
+      thinking: { type: "adaptive", display: "summarized" },
+      forwardSubagentText: true,
+    },
+    emitRawSDKMessages: [
+      { type: "system", subtype: "task_started" },
+      { type: "system", subtype: "task_progress" },
+      { type: "system", subtype: "task_notification" },
+      { type: "system", subtype: "task_updated" },
+      { type: "assistant" },
+    ],
+  },
 } as const
 
 type SessionModelState = {
@@ -175,6 +188,11 @@ export class AgentSession {
     return this.#capabilities
   }
 
+  /** Test hook ל-spike: כמה raw Claude SDK ext notifications התקבלו בחיבור הנוכחי. */
+  get claudeRawSdkMessageCount(): number {
+    return this.#claudeRawSdkMessageCount
+  }
+
   /**
    * Helper gating — מחזיר אובייקט עם כל ה-caps (all false אם עדיין null).
    * UI: `{#if vm.supports.thinkingTokens}`.
@@ -241,6 +259,8 @@ export class AgentSession {
   // ─── slice FE-normalization: capabilities ─── (additive)
   /** NormalizedCapabilities שהתקבלו מ-_drive/capabilities ext notification. null = טרם התקבל. */
   #capabilities: NormalizedCapabilities | null = null
+  /** Counter פנימי ל-spike raw SDK. לא נרנדר ב-UI. */
+  #claudeRawSdkMessageCount = 0
   // ─── slice ws-reconnect-fix-nbug2: ref ל-transport החי (NBug2 root fix) ───
   /** ref ל-transport הפעיל — נשמר בכל יצירת transport, מנוקה עם #client. */
   #transport: WsAcpTransport | null = null
@@ -1348,6 +1368,7 @@ export class AgentSession {
     this.#client = null
     this.#ext = null // slice FE-normalization: נקה facade
     this.#capabilities = null // slice FE-normalization: נקה capabilities (חיבור חדש = caps חדשים)
+    this.#claudeRawSdkMessageCount = 0
     this.#transport = null // slice ws-reconnect-fix-nbug2: נקה ref
     this.#sessionId = null
     this.agentId = null
@@ -1490,9 +1511,14 @@ export class AgentSession {
   /**
    * מקבל ext notifications מה-SDK (default-routed).
    * `_drive/capabilities` → מאחסן ב-#capabilities (reactive via getter).
+   * `_claude/sdkMessage` → counter מינימלי ל-Commit 5 raw SDK spike.
    * לא ב-#onSessionUpdate — capabilities מגיע כ-extNotification, לא כ-session/update.
    */
   #onExtNotification = (method: string, params: Record<string, unknown>): void => {
+    if (method === "_claude/sdkMessage") {
+      this.#claudeRawSdkMessageCount += 1
+      return
+    }
     if (method === "_drive/capabilities") {
       this.#capabilities = params as unknown as NormalizedCapabilities
     }

@@ -69,6 +69,25 @@ drive-coding לא הופנה ל-SHA לא-דחוף ולא ל-file dependency. ב�
 `initialize`, `session/new`, ו-`session/prompt` הסתיימו, `stopReason=end_turn`, ואחרי `close()` לא נשאר PID חדש של
 `codex app-server` מעבר ל-PID שהיה קיים לפני הבדיקה.
 
+### Commit 5 — fork-not-needed-for-transcript
+
+הכרעה: `fork-not-needed-for-transcript`.
+
+הפעלת `emitRawSDKMessages` דרך `_meta.claudeCode.emitRawSDKMessages` יחד עם
+`_meta.claudeCode.options.forwardSubagentText=true` מספיקה כדי לקבל את חומר ה-transcript שנדרש ל-slice המשך של nested
+subagent bubble, בלי להחזיר את fork ה-Claude המקומי הישן.
+
+הוכחה חיה ב-`connectInProcess` מול `@agentclientprotocol/claude-agent-acp@0.58.1` +
+`@anthropic-ai/claude-agent-sdk@0.3.207`: prompt קצר שחייב שימוש ב-Task יצר `_claude/sdkMessage` לפני שה-adapter שובר על
+אירועי `task_*`. התקבלו 7 raw messages, מתוכם `task_started`, `task_updated`, `task_notification`, ו-4 הודעות
+`assistant`. אחת מהודעות ה-`assistant` נשאה `parent_tool_use_id` של ה-Task וכללה content text
+`SUBAGENT_RAW_OK`. במסלול ACP הרגיל עדיין הגיעו רק `tool_call`/`tool_call_update` ו-agent chunks עליונים; זה תואם את
+הקוד ב-upstream שמסנן text/thinking של subagent מה-feed הרגיל, אבל raw ext notification מגיע לפני הסינון ולכן מספיק
+כמקור ל-normalization עתידי.
+
+תוצאה: אין להסיר את האפשרות ל-fork בעתיד אם upstream ישתנה, אבל עבור transcript ב-stack הנוכחי אין צורך לבנות fork
+Claude חדש על `0.58.1`. slice ההמשך יכול לצרוך `_claude/sdkMessage` ולבנות normalization/UI בלי לגעת בפורק.
+
 ### פיצול ביצוע
 
 השדרוג מפוצל לשערים: client SDK, הסרת containment של `acp-sdk-v1`, Claude adapter/SDK, Codex upstream-or-fork,

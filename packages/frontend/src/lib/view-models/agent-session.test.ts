@@ -260,7 +260,19 @@ describe("AgentSession.newSession", () => {
 // ─── TDD: claude-thinking-meta — #sessionMeta + _meta injection ──────────────
 
 const EXPECTED_META = {
-  claudeCode: { options: { thinking: { type: "adaptive", display: "summarized" } } },
+  claudeCode: {
+    options: {
+      thinking: { type: "adaptive", display: "summarized" },
+      forwardSubagentText: true,
+    },
+    emitRawSDKMessages: [
+      { type: "system", subtype: "task_started" },
+      { type: "system", subtype: "task_progress" },
+      { type: "system", subtype: "task_notification" },
+      { type: "system", subtype: "task_updated" },
+      { type: "assistant" },
+    ],
+  },
 }
 
 describe("AgentSession._meta injection (claude-thinking-meta)", () => {
