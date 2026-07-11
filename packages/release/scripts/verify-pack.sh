@@ -12,7 +12,10 @@ echo "[verify] packing..."
 # Note: bun build writes files only when stdio is inherited (TTY/pipe with inherit).
 # Using npm pack without 2>&1 redirect to preserve stdio inheritance for bun subprocess.
 npm pack
-TGZ="$(pwd)/drive-coding-0.1.0.tgz"
+# Derive the tarball name from package.json (npm pack writes drive-coding-<version>.tgz).
+# Reading version separately keeps npm pack's stdio inherited (bun build needs it — see note above).
+VERSION="$(node -p "require('./package.json').version")"
+TGZ="$(pwd)/drive-coding-${VERSION}.tgz"
 
 # ---- Step 1: tarball structure checks ----
 echo "[verify] checking tarball contents..."
