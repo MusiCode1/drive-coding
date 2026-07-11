@@ -91,6 +91,27 @@ describe("getCliCommand", () => {
     expect(cmd.args).toContain("some-model")
   })
 
+  it('cursor without model → agent acp', () => {
+    const cmd = getCliCommand("cursor")
+    expect(cmd.bin).toBe("agent")
+    expect(cmd.args).toEqual(["acp"])
+    expect(cmd.args).not.toContain("--model")
+  })
+
+  it('grok without model → grok --no-auto-update agent stdio', () => {
+    const cmd = getCliCommand("grok")
+    expect(cmd.bin).toBe("grok")
+    expect(cmd.args).toEqual(["--no-auto-update", "agent", "stdio"])
+    expect(cmd.args).not.toContain("--model")
+  })
+
+  it("grok with modelOverride does NOT add --model (supportsModelFlag: false — argv bug, ר' §-1)", () => {
+    const cmd = getCliCommand("grok", "grok-4.5")
+    expect(cmd.bin).toBe("grok")
+    expect(cmd.args).toEqual(["--no-auto-update", "agent", "stdio"])
+    expect(cmd.args).not.toContain("--model")
+  })
+
   it("modelOverride trim — empty/whitespace string treated as no model", () => {
     const cmd = getCliCommand("claude", "   ")
     expect(cmd.args).not.toContain("--model")
