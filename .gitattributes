@@ -1,0 +1,6 @@
+# Auto-generated stubs (fe-manifest.gen.ts, plugin-src.gen.ts) are rewritten by
+# packages/release/scripts/build-binary.mjs with LF line endings. Force LF in the
+# working tree too, so a Windows checkout (core.autocrlf) doesn't leave them dirty
+# after every `bun --compile` build (the restored stub would otherwise be LF vs a
+# CRLF working copy).
+*.gen.ts text eol=lf

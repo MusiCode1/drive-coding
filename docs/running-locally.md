@@ -130,6 +130,22 @@ Vite מגיש וה-BE נשאר API/WS/proxy בלבד.
 
 ---
 
+## ספקי ACP נוספים — Cursor + Grok
+
+שני הספקים רצים דרך `connectSpawn` (כמו opencode/gemini/qoder) — לא in-process.
+
+- **Cursor** — `agent acp` (`cursor-agent`). התחברות: `agent login` פעם אחת מראש
+  (בדפדפן), ואז `agent --version` מוודא שה-CLI מותקן ונגיש. אם `agent` לא ב-PATH,
+  הוסף override ל-`deploy/cli-specs.jsonc` (`bin` מלא ל-`agent.cmd`). בבחירת `cursor`
+  בדרופדאון, ה-authenticate (`cursor_login`) קורה אוטומטית אחרי ה-handshake.
+  ⚠️ `session/load` שבור upstream ב-Cursor — MVP תמיד פותח session חדש.
+
+- **Grok** — `grok --no-auto-update agent stdio` (Grok Build). הבינארי לרוב **לא**
+  ב-PATH ב-Windows (`%USERPROFILE%\.grok\bin\grok.exe`) — הוסף override דומה
+  ל-`deploy/cli-specs.jsonc`. התחברות: `grok login` (שומר `cached_token` ב-
+  `~/.grok/auth.json`) או מנוי/קרדיטים פעילים. ⚠️ ב-Free tier ייתכן `429`/`402`
+  (rate-limit/spending-limit) על prompt מלא — ה-handshake+auth עדיין מצליחים.
+
 ## בדיקה מהירה שהכל עלה
 
 ```bash

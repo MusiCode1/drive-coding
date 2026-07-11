@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Agent, CreateAgentInput, toAgentPublic } from "../src"
+import { Agent, CLI_KINDS, CreateAgentInput, toAgentPublic } from "../src"
 
 describe("CreateAgentInput", () => {
   it("accepts valid input", () => {
@@ -26,10 +26,15 @@ describe("CreateAgentInput", () => {
   })
 
   it("accepts all valid cliKinds", () => {
-    for (const kind of ["opencode", "claude", "gemini", "codex"] as const) {
+    for (const kind of CLI_KINDS) {
       const result = CreateAgentInput({ cliKind: kind, cwd: "/foo" })
       expect(result).not.toHaveProperty("summary")
     }
+  })
+
+  it("CLI_KINDS includes cursor and grok", () => {
+    expect(CLI_KINDS).toContain("cursor")
+    expect(CLI_KINDS).toContain("grok")
   })
 
   it("accepts modelOverride as string", () => {

@@ -1,3 +1,144 @@
+## 2026-07-11 — slice-cursor-acp — סיכום סופי
+
+**סטטוס**: הושלם. 6 commits קוד/docs על `slice/cursor-acp` (מעל `f582b46` הבריף
+המאוחד): `fb56425` (Commit 0) → `7d828a9` (Commit 1) → `0985ab4`+`2016994` (תיקון
+calev NO-GO על Commit 1, opencode regression) → `71971d2` (merge dev) → `dbea92c`
+(Commit 2) → `c143073` (Commit 3).
+
+**מה נבנה**: רישום `cursor`+`grok` ב-`CLI_SPECS` (spawn, לא in-process), שכבת
+`authenticate` גנרית משותפת (PREFERRED-list + `isAuthRequiredError` non-fatal
+classifier — נדרש אחרי רגרסיה חיה שנתפסה ב-calev), blocking-ext handlers ל-Cursor,
+deploy override + running-locally.md, ו-`docs/adding-a-provider.md` (checklist
+לספק spawn הבא).
+
+**בדיקות**: 21/21 unit ממוקדים (`client.authenticate.test.ts`+`client.cursor-ext.test.ts`),
++ 442 core / 179+ provider tests (Commit 0), typecheck נקי (`tsc --build`), smoke חי
+כפול (cursor+grok, wire-recording אמיתי) + regression opencode מאומת-חי.
+
+**calev**: verifier-phase אחרי Commit 1 — סבב ראשון NO-GO (opencode regression,
+`WS closed 1005`), תוקן חי (`2016994`), סבב שני **GO** (2 ממצאים minor, לא-בלוקרים —
+ר' `reports/drive-coding/cursor-acp-calev.md`).
+
+**חריגות מהתכנון**:
+- Commit 1 דרש תיקון-ביניים (auth non-fatal) אחרי calev NO-GO — לא היה בתכנון
+  המקורי, נבע מהבדל בין דיווח-`authMethods` להמלצה בפועל אצל opencode.
+- Commit 3: תוקנה הפניה שגויה בבריף ("Track F"→"Track A" ב-`docs/roadmap.md`).
+- כל השאר לפי הבריף, בלי סטיות.
+
+---
+
+## 2026-07-11 — slice-cursor-acp — Commit 3: docs/adding-a-provider.md
+
+**מה בוצע:**
+- קובץ חדש `docs/adding-a-provider.md` — checklist (6 סעיפים) להוספת ספק ACP-spawn
+  חדש: (1) `CLI_SPECS` entry + אזהרת `supportsModelFlag`/מיקום `--model` ב-argv
+  (דוגמה חיה Grok), (2) `staticCapsFor` case אופציונלי, (3) `authenticate` גנרי —
+  מתי צריך להוסיף ל-`PREFERRED`-list ומתי לא, כולל הסבר `isAuthRequiredError`
+  (פאטלי רק על `auth_required` אמיתי, לא על CLI שמכריז `authMethods` בלי ליישם
+  RPC — לינק לדוח calev שתפס את הרגרסיה), (4) blocking extensions handler,
+  (5) `deploy/cli-specs.jsonc` override + `docs/running-locally.md` פסקה,
+  (6) טסטים (`agent-schema.test.ts`, `cli-config.test.ts`).
+- סעיף "מה כבר אוטומטי" — routing (`connection-registry.ts`), authenticate גנרי,
+  דרופדאון FE (`CLI_KINDS`).
+- סעיף "למה לא config-driven מלא" — `CliKind` union סגור, לינק ל-`docs/roadmap.md`
+  **Track A** (תוקן מול הבריף שציין "Track F" בטעות — אומת מול התוכן בפועל של
+  roadmap.md, הרעיון נמצא תחת Track A, לא F).
+
+**build-gate:**
+- `scripts/lint-no-hebrew-in-code.sh` (בבash ישירות): ✓ עובר (docs בעברית מותר).
+- אין קוד/טסטים רלוונטיים — קובץ docs בלבד.
+
+**חריגות:**
+- תיקנתי הפניה שגויה בבריף ("Track F") ל-Track A בפועל (`docs/roadmap.md`) —
+  אימות מול התוכן האמיתי של הקובץ, לא העתקה עיוורת מהבריף.
+
+---
+
+## 2026-07-11 — slice-cursor-acp — Commit 2: deploy docs + override
+
+**מה בוצע:**
+- `deploy/cli-specs.jsonc`: הוספת שתי שורות-הערה (מוערות, לא פעילות) לדוגמת override — `cursor` (`agent.cmd` נתיב מלא) ו-`grok` (`grok.exe` נתיב מלא), לפי §4 Commit 2 בבריף.
+- `docs/running-locally.md`: פסקה חדשה "ספקי ACP נוספים — Cursor + Grok" — login/env vars/בחירה ב-FE לכל ספק, הערת `session/load` שבור (Cursor, upstream) והערת `429`/`402` free-tier (Grok).
+- `docs/decisions/drive-coding.md` — **לא נגעתי** (לפי §4 הערה מפורשת בבריף: entry זה נכתב ע"י מרדכי אחרי READY מאביגיל, לא ע"י אליעזר).
+
+**build-gate:**
+- `scripts/lint-no-hebrew-in-code.sh` (הרצה ישירה דרך bash — `pnpm lint:i18n` נכשל ב-shell של Windows על invocation `.` בלבד, ידוע מ-Commit 1 הקודם, לא קשור לשינוי): ✓ עובר.
+- אין שינוי קוד — רק docs/config מוער, אין typecheck/test רלוונטי.
+
+**חריגות:** אין. Testing strategy = manual לפי §4 Commit 2.
+
+---
+
+## 2026-07-11 — slice-cursor-acp — תיקון calev NO-GO (Commit 1): authenticate לא-פאטלי כש-RPC לא מיושם
+
+**מה בוצע:**
+- שורש-הבעיה שכלב תפס (`reports/drive-coding/cursor-acp-calev.md`): opencode מכריז `authMethods: [{id:"opencode-login"}]` לא-ריק, אבל ה-`authenticate` RPC אצלו לא מיושם בפועל (`-32603`/"not implemented"). הקוד המקורי ב-Commit 1 סגר transport פאטלית על **כל** כישלון `authenticate` → opencode נשבר לגמרי חי (WS closed 1005).
+- `packages/provider/src/client/client.ts`:
+  - חילוץ classifier משותף `isAuthRequiredError(e)` (בודק `err?.data?.code === "auth_required"`) — משמש עכשיו גם ב-catch של `initialize` (היה inline קודם) וגם ב-catch החדש של `authenticate` (DRY, לפי §4 Commit 1 🔴 בבריף המתוקן).
+  - catch של `authenticate`: אם `isAuthRequiredError(e)` → פאטלי כמו קודם (סגירת transport + זריקת `kind:"auth_required"`). אחרת (למשל `-32603` של opencode) → **לא-פאטלי**: `console.warn` עם methodId+error, וממשיך ל-`buildAcpClientFacade(...)` כאילו authenticate לא נקרא.
+- `packages/provider/src/client/client.authenticate.test.ts`:
+  - שכתוב ה-mock transport: `authenticateBehavior` עכשיו `"success"|"reject-auth-required"|"reject-not-implemented"` (היה `"success"|"reject"` גנרי בלי `data.code`).
+  - טסט קיים ("authenticate rejection…") הוסב ל-`reject-auth-required` (כדי שימשיך לבדוק את הנתיב הפאטלי בפועל).
+  - 2 טסטים חדשים לפי הבריף: #6 opencode-regression (`reject-not-implemented`, בלי `data.code==="auth_required"`) → `createAcpClient` **לא** זורק, `transport` לא נסגר, מסתיים בהצלחה. #7 auth_required אמיתי (`reject-auth-required`) → **כן** זורק `kind:"auth_required"` + סוגר transport.
+
+**build-gate:**
+- `pnpm typecheck` (root, `tsc --build`): 0 שגיאות.
+- provider tests: 200 passed | 9 skipped (24 files) — כולל 2 הטסטים החדשים + הטסט המוסב.
+- `scripts/lint-no-hebrew-in-code.sh` (הרצה ישירה דרך bash — `pnpm lint:i18n` נכשל ב-shell של Windows על invocation `.` בלבד, לא קשור לשינוי): ✓ עובר.
+- `pnpm lint` (biome): 627 errors קיימים-מראש (CRLF/formatting על קבצי config לא-קשורים — `tsconfig.json`, `vitest.config.ts` וכו') — 0 errors חדשים על `client.ts`/`client.authenticate.test.ts` (אומת ב-grep ממוקד).
+
+**חריגות:** אין מעבר למה שהבריף המתוקן (§4 Commit 1 🔴) ביקש. Testing strategy = tdd — הטסטים נכתבו/הוסבו יחד עם הקוד, לא בנפרד.
+
+**Verifier-phase (מחודש)**: calev (mode: phase) יורץ שוב על אותם DoD #4/#5/#8 — cursor+grok authenticate (כבר GO בסבב הקודם) + regression opencode (זה שנשבר, דורש אימות-חי חוזר).
+
+---
+
+## 2026-07-11 — slice-cursor-acp — Commit 1: ACP authenticate גנרי + Cursor blocking-ext
+
+**מה בוצע:**
+- `packages/provider/src/client/client.ts`:
+  - תיקון `PREFERRED`-list (מה-WIP הקודם — רק `cursor_login`) ל-`["cached_token","grok.com","cursor_login"]` לפי המדידה החיה בבריף §-1 — `resolveAuthMethodId` עכשיו בוחר לפי סדר-עדיפות אמיתי (לא רק "cursor_login אם קיים, אחרת ראשון").
+  - `conn.authenticate({methodId})` עטוף ב-try/catch: כישלון → `transport.close()` + זריקת שגיאה עם `kind:"auth_required"` (עקבי עם ה-catch הקיים של `initialize`).
+  - `authenticate` **לא** נקרא כש-`authMethods` ריק/חסר — regression guard ל-opencode/gemini/qoder/claude/codex.
+- `packages/provider/src/client/client-impl.ts`: `extMethod` handlers ל-Cursor blocking extensions כבר היו קיימים ב-WIP (`cursor/ask_question`→skipped, `cursor/create_plan`→accepted) — אומתו כנכונים לפי הבריף, לא שונו.
+- **קבצי טסט ייעודיים חדשים** (Q6 בבריף — קבצים ייעודיים, לא inline):
+  - `client.authenticate.test.ts` — mock transport מלא (auto-responder ל-`initialize`+`authenticate` frames): 5 התרחישים מהבריף (cached_token/cursor_login/ריק/fallback/regression protocolVersion:1) + 2 טסטים נוספים ל-סדר-עדיפות אמיתי (PREFERRED גובר על סדר-מערך) + טסט כישלון-authenticate (transport נסגר + kind auth_required) + 6 unit tests ל-`resolveAuthMethodId` הטהורה.
+  - `client.cursor-ext.test.ts` — `extMethod` ל-`cursor/ask_question`/`cursor/create_plan`/method לא-מוכר (no-op בטוח) + regression ל-`sessionUpdate`/`requestPermission`.
+- **RED אומת** לפני התיקון: 5 טסטים נכשלו (3 על מיון-עדיפות, 1 על error-handling חסר, 1 unit) — הוכיחו שה-WIP הישן (`cursor_login`-only, בלי try/catch) לא תואם את הבריף.
+
+**build-gate:**
+- `tsc --build`: 0 שגיאות.
+- provider tests: 199 passed | 9 skipped (24 files, כולל 20 טסטים חדשים GREEN).
+- lint (biome): רק `assist/source/organizeImports` על `client.ts` — **pre-existing על `dev` tip** (אומת עם `git show dev:...` + biome check על עותק זמני) + CRLF noise ידוע (ר' Commit 0). שום lint error חדש.
+
+**חריגות:** אין. Testing strategy = tdd — RED→GREEN נשמר בקפדנות (ר' למעלה).
+
+**Verifier-phase**: יבוצע calev (mode: light) אחרי commit זה, לפי בריף §8 — smoke ידני מול ספק אחד (cursor/grok) מוכיח `authenticate` נשלח אחרי `initialize`.
+
+---
+
+## 2026-07-11 — slice-cursor-acp — Commit 0: רישום cursor + grok ב-CLI_SPECS
+
+**מה בוצע:**
+- נקודת-פתיחה: worktree כבר הכיל WIP לא-מקומט (cursor בלבד) — הורחב, לא נזרק (לפי §0 בבריף).
+- `packages/core/src/schemas/agent.ts`: הוספת `grok: { bin: "grok", args: ["--no-auto-update","agent","stdio"], supportsModelFlag: false }` ל-`CLI_SPECS` (cursor כבר היה שם מה-WIP).
+- `packages/core/tests/agent-schema.test.ts`: הרחבת assertion קיים ל-`CLI_KINDS` כולל גם `"grok"` (TDD — RED אומת לפני ההוספה).
+- `packages/provider/cli-config.test.ts`: 2 טסטים חדשים RED→GREEN ל-`getCliCommand("grok")` (ללא מודל, ועם `modelOverride` — מוודא ש-`--model` לא נוסף כי `supportsModelFlag:false`).
+- `packages/provider/src/connection/capabilities-static.ts`: `case "grok"` חדש (`mcp:true`, שאר false) + תיקון `case "cursor"` הקיים מ-`mcp:false`→`mcp:true` (שני הספקים נמדדו חיים תומכים http+sse — ר' בריף §-1/§4).
+- `packages/provider/src/connection/capabilities-static.test.ts`: 2 טסטים חדשים ל-`staticCapsFor("cursor"/"grok")` — `mcp:true`, שאר false.
+- `packages/backend/src/acp/connection-registry.ts`: עדכון הערת routing לכלול `cursor`+`grok` (routing עצמו לא שונה — `connectSpawn` אוטומטי לכל kind שאינו claude/codex).
+
+**build-gate:**
+- `tsc --build` (root): 0 שגיאות.
+- provider tests: 179 passed | 9 skipped (22 files) — כולל cli-config + capabilities-static.
+- core tests: 442 passed (36 files) — כולל agent-schema.
+- backend `connection-registry` tests: 39 passed.
+- lint (biome): baseline noise קיים (CRLF format diffs + `noUnusedImports` ב-`cli-config.test.ts` שורה 2) — **pre-existing על `dev` tip `f582b46`, אומת עם `git stash`** (`core.autocrlf=true` בסביבת Windows גורם ל-biome לדגול כל קובץ ב-repo כ-format violation; לא רגרסיה מהסלייס הזה). שום lint error חדש לא נוסף על-ידי השינויים.
+
+**חריגות:** אין. Testing strategy = tdd לפי בריף §4 Commit 0 — נשמר (RED לפני GREEN בכל טסט חדש).
+
+---
+
 ## 2026-07-11 — slice-be-shutdown-hardening — סיכום סופי
 
 **סטטוס**: הושלם. 4 commits על `slice/be-shutdown-hardening`.
