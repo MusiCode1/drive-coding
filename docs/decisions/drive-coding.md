@@ -1,5 +1,48 @@
 # Decisions — drive-coding
 
+## 2026-07-11 — cursor-acp: רישום Cursor+Grok כספקי ACP + סטנדרט הוספת-ספק + מוזג ל-dev
+
+### רציונל
+שני briefs עצמאיים (`slice-cursor-acp`, `slice-grok-acp`) אוחדו לאחד — שניהם נגעו באותם
+קבצי-ליבה בדיוק (`CLI_SPECS`, `client.ts` handshake) ומימשו את אותה שכבת `authenticate`
+גנרית (הבדל רק ב-PREFERRED-list פר-ספק). איחוד מנע כפל-מימוש וקונפליקטים ודאיים. נוסף
+Commit 3 חדש: `docs/adding-a-provider.md` — checklist מתועד להוספת ספק spawn עתידי (בקשת
+המשתמשת, ר' §-1 בברif).
+
+### הכרעה: לא config-driven מלא
+נבדק לעומק (2026-07-11) האם אפשר להפוך את הוספת-ספק למנגנון-קונפיגורציה טהור (JSON, אפס
+קוד). נמצא קיר ארכיטקטוני אמיתי: `CliKind` הוא union סגור בזמן-קומפילציה, נצרך ב-arktype
+validation וב-FE VMs (`permission-mode.ts`, `agent-session.svelte.ts`, dropdown). הפיכתו
+ל-`string` דינמי תפגע ב-type-safety (`AGENTS.md`: "No `any`"). **הוחלט (עם המשתמשת)**: לא
+לממש registry מלא בסלייס הזה — לתעד את המתכון-הקיים ככתוב (`adding-a-provider.md`) + לרשום
+את הרעיון ל-`docs/roadmap.md` Track A כפריט עתידי לא-מחייב.
+
+### ממצאי אביגיל
+3 סבבים. סבב 1 (USABLE-AFTER-FIX): אימתה מלא מול ה-SDK בפועל ש-`conn.authenticate`/
+`Client.extMethod` קיימים (0.21.1) — וגם תפסה סתירת-נתונים אמיתית: PREFERRED-list כלל
+`xai.api_key` (מעולם לא נמדד ל-Grok) וחסר `grok.com` (כן נמדד). סבב 2 תפס שארית-פרוזה של
+אותה סתירה. סבב 3: READY.
+
+### ממצאי כלב — רגרסיה חיה שנתפסה ותוקנה
+**verifier-phase (אחרי Commit 1) נתן NO-GO**: `authenticate` הפך פאטלי עבור **כל** כישלון —
+שבר את opencode בפועל (חי, 2/2, `WS closed 1005`), כי opencode מכריז `authMethods` לא-ריק
+אבל לא מיישם את ה-RPC בפועל (`-32603` "not implemented"). זה בדיוק הסיכון שה-brief חזה
+מפורשות ב-§6, אבל המיטיגציה המתוכננת (`authMethods?.length > 0`) לא כיסתה את המקרה. **תיקון**:
+`isAuthRequiredError` classifier — פאטלי **רק** על `data.code === "auth_required"` (זהה
+לקלאסיפייר הקיים ב-catch של `initialize`), כל שגיאה אחרת → non-fatal (log+המשך). re-verify
+נתן GO; runtime-gate סופי (light) נתן **GO** (10/11 DoD + 1 PARTIAL-מותר-מפורשות — grok
+free-tier rate-limit, לא קוד).
+
+### תאימות מול `origin/slice/acp-stack-upgrade`
+נבדק (`git merge-tree`) לפני merge — SDK bump עתידי (0.21.1→1.2.1) שם: מנגנוני
+`authenticate`/`extMethod` זהים ב-1.2.1 (אומת מול unpkg), `client.ts` מתמזג נקי (חפיפה
+אפסית — קטעים שונים), `client-impl.ts`/FE כלל לא נגועים ב-acp-stack-upgrade. קונפליקט יחיד
+צפוי: `docs/walkthrough.md` (append-log טריוויאלי).
+
+### מיזוג
+Preview אושר חי ע"י המשתמשת (`localhost:4000`, production build). מוזג ל-dev `--no-ff`
+(`7e4ab94`), bump `v0.16.0` (minor, core+backend), push origin. worktree+branch נוקו.
+
 ## 2026-07-11 — claude-agent-sdk bump ל-0.3.206 + override interim על ה-adapter
 
 ### רציונל

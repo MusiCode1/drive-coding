@@ -1,6 +1,6 @@
 {
   "id": "cursor-acp",
-  "status": "plan-verified",
+  "status": "merged",
   "plan_verified": true,
   "dispatch_ready": true,
   "base": "dev",
