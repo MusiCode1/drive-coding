@@ -23,7 +23,7 @@
 JSON runtime בלי קוד תדרוש להחליש את `CliKind` ל-`string`** (union סגור, `agent.ts` — `CLI_KINDS`/`CliKind`), מה שסותר את עקרון-הפרויקט
 ("No `any`", ArkType בכל מקום). המשתמשת אישרה (2026-07-11): **לא** להפוך את זה למנוע-config
 מלא בסלייס הזה — רק **לתעד את המתכון המינימלי הקיים כסטנדרט כתוב** (Commit 3) + **לרשום את
-רעיון ה-registry המלא ל-roadmap** כפריט עתידי נפרד (בוצע, ר' `docs/roadmap.md` Track F).
+רעיון ה-registry המלא ל-roadmap** כפריט עתידי נפרד (בוצע, ר' `docs/roadmap.md` Track A).
 
 ### Cursor ACP (נמדד חי, 2026-07-08 — Cursor CLI 2026.07.01-41b2de7)
 
@@ -148,7 +148,7 @@ Preview מקומי `http://localhost:4000`.
 | דוגמת override ב-`deploy/cli-specs.jsonc` (Windows paths, שני הספקים) | ✅ | commit 2 |
 | `docs/adding-a-provider.md` — סטנדרט כתוב להוספת ספק spawn חדש | ✅ | commit 3 |
 | runtime-gate חי: prompt → תשובה, שני הספקים | ✅ | DoD |
-| **מנגנון config-driven מלא (ספק חדש = JSON בלי קוד)** | ❌ | נדחה במפורש — דורש `CliKind: string` (פגיעה ב-type-safety). נרשם ל-roadmap Track F כרעיון עתידי נפרד |
+| **מנגנון config-driven מלא (ספק חדש = JSON בלי קוד)** | ❌ | נדחה במפורש — דורש `CliKind: string` (פגיעה ב-type-safety). נרשם ל-roadmap Track A כרעיון עתידי נפרד |
 | UI אישור הרשאות (permission UI) | ❌ | Track C backlog |
 | `cursor/update_todos`/`cursor/task`/`cursor/generate_image`, `_x.ai/*` UI | ❌ | backlog |
 | in-process host לאף אחד מהשניים | ❌ | spawn מספיק |
@@ -330,7 +330,7 @@ pnpm typecheck
 **קובץ חדש**: `docs/adding-a-provider.md` —
 - Checklist בסדר: (1) `CLI_SPECS` entry ב-`packages/core/src/schemas/agent.ts` (bin/args/supportsModelFlag — עם אזהרה על מיקום `--model` ב-argv כמו Grok) → (2) `staticCapsFor` case אופציונלי (`default` מכסה MVP) → (3) בדיקה אם ה-CLI דורש `authenticate` (authMethods לא ריק) — אם כן, להוסיף methodId ל-PREFERRED-list ב-`client.ts` **רק אם** יש עדיפות ספציפית; אחרת fallback-לראשון כבר עובד ללא שינוי → (4) אם יש blocking extensions דמויי-Cursor — handler ב-`client-impl.ts` → (5) `deploy/cli-specs.jsonc` override לדוגמה + `docs/running-locally.md` פסקה → (6) טסטים (`agent-schema.test.ts`, `cli-config.test.ts`).
 - **מה כבר אוטומטי, בלי לגעת בקוד**: ניתוב spawn (`connection-registry.ts` — כל kind שהוא לא `claude`/`codex`), `authenticate` (גנרי מ-commit 1), FE dropdown (`CLI_KINDS` נגזר מ-`CLI_SPECS`).
-- **סעיף "למה לא config-driven מלא"**: הסבר קצר — `CliKind` union סגור, נצרך ב-arktype validation + FE VMs (`permission-mode.ts`, `agent-session.svelte.ts`) — לינק ל-`docs/roadmap.md` Track F לרעיון העתידי אם מישהו ירצה לשקול מחדש.
+- **סעיף "למה לא config-driven מלא"**: הסבר קצר — `CliKind` union סגור, נצרך ב-arktype validation + FE VMs (`permission-mode.ts`, `agent-session.svelte.ts`) — לינק ל-`docs/roadmap.md` Track A לרעיון העתידי אם מישהו ירצה לשקול מחדש.
 
 **Verification**: `pnpm lint:i18n` (מסמך בעברית — מותר, זה docs לא קוד).
 
