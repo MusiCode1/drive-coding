@@ -9702,4 +9702,44 @@ snapshot+screenshot) על ה-worktree עצמו כ-cwd, session קיים (claude)
 - אין עדיין git tag בפורמט `vX.Y.Z` בהיסטוריה (רק `archive/*`) — נוסף `v0.17.0`
   בעקבות ה-publish הזה, ונוסף `packages/release/RELEASING.md` (checklist
   לפרסומים הבאים).
+
+## 2026-07-12 — history-cleanup + open-source-readiness — ניקוי PII + README/LICENSE בשורש
+
+בהמשך ישיר לפרסום ה-npm: לקראת פתיחת `drive-coding` כ-open source, סריקת
+אבטחה (4 סוכנים מקבילים) מצאה PII אמיתי (ת.ז., שם מלא, מיילי-צד-ג', נתוני-שכר,
+Google Maps timeline) ב-`packages/frontend/static/fixtures/{salary-attendance,
+salary-prev}.json` + תשתית-בית חשופה (IP ציבורי, דומיין אישי, שם-מכונה עם
+מיקום גיאוגרפי, מזהי Cloudflare) בכמה קבצי `docs/`+`deploy/systemd/`.
+
+### מה בוצע
+
+- `git filter-repo` (על עותק-mirror מבודד, לא על ה-`.bare` החי): הסרת 5 קבצים
+  מכל ההיסטוריה + החלפת 13+ מחרוזות רגישות (IP/דומיין/ת.ז./Cloudflare IDs/
+  מיילים) — אומת: 0 matches לכל pattern, בכל ה-refs.
+- **תקלה קריטית שנתפסה באימות-שני**: `git push --mirror --force` ל-`origin`
+  הצליח על `refs/heads/*` הרגילים, אבל `refs/pull/1/head` (ref פנימי שGitHub
+  שומר לכל PR, גם אחרי merge — לא ניתן לניקוי ב-push רגיל) המשיך להכיל את
+  ה-history הישן. תוקן: שם הריפו הישן שונה ל-`MusiCode1/drive-coding-archive`
+  (private, נשאר קיים כגיבוי — לא לפתוח ל-public), ונוצר ריפו **חדש ונקי**
+  `MusiCode1/drive-coding` (private) עם ה-history המנוקה בלבד. אומת בקלון טרי
+  ישירות מ-GitHub: `refs/pull` ריק, 0 matches לכל pattern, **1500/1500 commits
+  זהים** לגיבוי המקורי (רק תוכן קבצים ספציפי נגע — שום commit לא אבד).
+- עודכנו 22 worktrees מקומיים (`dev`/`main` + slices) ל-history הנקי
+  (`git update-ref` ישיר + `reset --hard` — `fetch` רגיל מסרב על branch
+  checked-out). 8 worktrees עם עבודה לא-committed דולגו בכוונה, מתועדים
+  ב-`PII-CLEANUP-PENDING-WORKTREES.md` (בשורש) לטיפול עתידי.
+- נשלחה הזמנת collaborator ל-`isaacBrown23` על הריפו החדש.
+- נוסף `LICENSE` (MIT) ברמת שורש הריפו (היה קיים רק ב-`packages/release/`).
+- `README.md`+`README.he.md` בשורש הוחלפו — הישן היה מיושן (מפנה ל-
+  `docs/vnext-planning.md` המתועד כ-"historical, not maintained"); החדש
+  מתאר את הפרויקט, quick-start למשתמש-קצה (`bunx drive-coding`) ולמפתחים
+  (`pnpm install && pnpm dev`), מבנה המונו-רפו, וקישורים ל-`AGENTS.md`/
+  `docs/design-principles.md`/`docs/roadmap.md`.
+
+### חריגות / הערות
+
+- `server` remote (cli-agents, staging חי) עדיין לא טופל — לא נגיש (timeout
+  ברשת/VPN מהמחשב הזה). ה-history הישן עדיין שם עד שיטופל בנפרד.
+- הריפו `MusiCode1/drive-coding` נשאר **Private** — הפיכתו ל-public היא
+  החלטה נפרדת, טרם בוצעה.
 - Base: `dev` @ `9faf62f`. אין merge — ממתין לאישור.
