@@ -1,0 +1,18 @@
+{
+  "id": "provider-quota-meter",
+  "status": "plan-verified",
+  "plan_verified": true,
+  "dispatch_ready": true,
+  "base": "dev",
+  "depends_on": [],
+  "complexity": 5,
+  "verifier": "calev-light",
+  "dev_tip": "be4cd695",
+  "avigail_rounds": 2,
+  "avigail_verdict": "READY",
+  "avigail_note": "r1 USABLE-AFTER-FIX (5 findings, all real): (1) gate capabilities.usage→supports.usage getter; (2) ext result must be ArkType schema not TS interface; (3) new quota-types.ts had no export subpath→moved type to extensions/; (4) SDK 'locked 0.3.206' inaccurate (override=0.3.206, bun.lock=0.3.206, pnpm-lock=0.3.191, method in both); (5) reset referenced non-existent usage VM field (context-window-meter not merged). r2 READY — all 5 verified fixed, 2 cosmetic-green only (stale dev_tip + one §2 wording), fixed.",
+  "fixes": "display claude subscription rate-limit quota (5h/weekly utilization %) in FE; multi-provider QuotaSnapshot; claude-specific fetch via SDK query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET() behind _drive/getUsage ext-method",
+  "commits": "0 CONFIRM data-availability (billing gate) · 1 provider ext _drive/getUsage + claude normalizer + capability flip · 2 FE ext facade + VM #refreshQuota · 3 QuotaMeter.svelte UI · 4 calev light",
+  "decision": "pull-only MVP (user 2026-07-11); push-via-fork (rate_limit_event forwarding) deferred to follow-up, gated on adopting subagent fork; QuotaSnapshot FE-local (not provider-contract) for MVP",
+  "open_risk": "billing: claude-via-SDK may fall out of subscription pool → rate_limits_available may be false on our auth (Commit 0 confirms live)"
+}

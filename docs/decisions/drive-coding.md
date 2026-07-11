@@ -1,5 +1,43 @@
 # Decisions — drive-coding
 
+## 2026-07-11 — provider-quota-meter: מד מכסת-מנוי (5h/weekly) בפרונט, רב-ספקי, PULL
+
+### רציונל
+מציגים למשתמשת את **מכסת-המנוי שנשארה** (utilization% לחלון 5-שעות ולשבועי) — מה ש-`/usage` מראה.
+המקור: פקודת `get_usage` של Claude Code. **הגילוי המרכזי (חקירת-קוד 2026-07-11):** למרות ש-`get_usage`
+הוא משטח של ה-CLI, ה-**SDK (`@anthropic-ai/claude-agent-sdk`) חושף אותו כ-method ציבורי** על אובייקט
+ה-`query`: `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET()` → `SDKControlGetUsageResponse`
+(`rate_limits.{five_hour,seven_day}.{utilization,resets_at}` + `subscription_type`). ו-drive-coding
+**כבר** מגיע ל-`query` החי דרך `getQuery()` וכבר קורא method-אח (`setMaxThinkingTokens`) דרך
+`_drive/setThinkingTokens` — אז זה אותו דפוס בדיוק. **אין צורך ב-fork, ב-spawn-CLI, או ב-patch ל-SDK.**
+הפקודה הספציפית-ל-claude מבודדת ב-`providers/claude/quota.ts`; ה-FE מכיר רק `QuotaSnapshot` מנורמל
+(תשתית רב-ספקית — codex/opencode עתידיים באותו טיפוס). Complexity 5, calev-light.
+
+### שינויי-כיוון
+1. **spike-חוסם → method-מאושר.** התכנון הראשוני מיסגר את Commit 0 כ-spike שעלול להרוג את הפיצ'ר
+   ("האם ה-SDK בכלל חושף get_usage"). חקירת-קוד הוכיחה נגישות סטטית → Commit 0 ירד ל**data-confirm צר**:
+   האם ה-auth שלנו מחזיר `rate_limits_available:true` (סיכון-החיוב — claude-via-SDK עלול לצאת מ-pool המנוי).
+2. **upstream, לא fork.** תיקון הנחה: העץ מריץ `@agentclientprotocol/claude-agent-acp@0.52.0` upstream (Zed),
+   **לא** את ה-fork של MusiCode1. הפיצ'ר לא תלוי ב-fork.
+3. **pull, לא push (החלטת-משתמשת).** נשקלה חלופה: לתקן את ה-fork שיעביר את פריימי ה-`rate_limit_event`
+   (push) ל-FE כ-ExtNotification. **נדחתה ל-MVP** — ה-pull נותן snapshot מלא ואמין on-demand בלי fork;
+   ה-push דל (היסטורית `utilization` לא נצפה בו) ודורש לאמץ את ה-fork.
+
+### ממצאי אביגיל
+r1 `USABLE-AFTER-FIX` (5 findings, כולם אמיתיים) → r2 `READY` (2 🟢 קוסמטיים בלבד). r1: (1) gate על
+`capabilities.usage` ה-nullable → ה-getter `supports.usage` (L178); (2) `result` ברישום ext **חייב סכמת
+ArkType**, לא interface → `quotaSnapshot = type({...})` + `.infer`; (3) קובץ טיפוס חדש בלי export-subpath
+ב-`package.json` → הטיפוס עבר ל-`extensions/` (subpath `./extensions` קיים); (4) הטענה "SDK נעול 0.3.206"
+לא-מדויקת (bun.lock=0.3.206, pnpm-lock=**0.3.191**; ה-method בשתיהן); (5) reset התייחס לשדה `usage`
+שלא קיים ב-VM (context-window-meter לא מוזג) → reset ליד `configOptions/models/modes/availableCommands`.
+
+### רעיונות שנדחו
+- **push דרך fork (`rate_limit_event` forwarding)** — נדחה ל-slice המשך, gated על אימוץ ה-fork של subagent;
+  ואם ייעשה — forward **ממוקד** של פריים-המכסה, **לא** "העבר את כל הפריימים" (זריקות מכוונות באדפטר, כמו
+  דליפת-prose של subagent, נועדו להישאר).
+- **`QuotaSnapshot` ב-`provider-contract`** — נדחה ל-MVP; FE-local (drive-coding self-contained). הרמה ל-contract = future.
+- **חישוב מ-per-turn `usage`/`total_cost_usd`** — fallback בלבד; לא נותן utilization% מול תקרה.
+
 ## 2026-07-11 — be-lifecycle-hardening: dispose-on-close ל-claude in-process + סגירת DELETE-בזמן-spawn race
 
 ### רציונל
