@@ -1,6 +1,21 @@
 # Decisions — drive-coding
 
-## 2026-07-11 — provider-quota-meter: מד מכסת-מנוי (5h/weekly) בפרונט, רב-ספקי, PULL
+## 2026-07-11 — session-budget-meter: מד תקציב-סשן (קונטקסט + מכסה) — popover אחד
+
+> **עדכון (איחוד):** ה-slice `provider-quota-meter` (מכסה בלבד, READY) **אוחד** עם מד-מלאות-הקונטקסט
+> ל-slice אחד **`slice-session-budget-meter`** — popover אחד "כמה נשאר" עם שני התקציבים. `provider-quota-meter`
+> ו-`context-window-meter` (הישן) **superseded**. סעיף ה-"מכסה" למטה תקף כמו-שהוא; להלן תוספת-הקונטקסט וההכרעות שנלוו.
+>
+> **קונטקסט = push, לא pull.** חקירת-קוד: האדפטר `@agentclientprotocol/claude-agent-acp@0.52.0` **כבר פולט**
+> `usage_update` (4 אתרים: mid-stream/turn-result/compact_boundary/rate_limit) עם `{used, size, cost}` — מגיע ל-FE
+> `#onSessionUpdate` אבל נזרק ב-guard `if (!text) return`. → מד-הקונטקסט הוא **FE-only** (ענף אחד), בלי pull, בלי provider.
+> ה-pull `getContextUsage()` (קיים, לא-experimental) נשמר ל-future (פירוק-קטגוריות). **de-risking:** הקונטקסט אמין
+> (לא-billing, לא-experimental) → נותן ערך גם אם ה-Commit-0 של המכסה יחזיר `rate_limits_available:false`.
+>
+> **click → popover, לא דחיסה.** קלוד קוד לא-עקבי (דסקטופ=usage, VSCode=compact). בחרנו **click→popover read-only**
+> (הימנעות מ-footgun של דחיסה-בטעות); **דחיסה = כפתור מפורש ב-fast-follow** (`/compact`/`_drive/compact`).
+> ממצא אביגיל (r1) על מד-הקונטקסט: `cost` מגיע רק ב-turn-result (1 מ-4) → `cost: u.cost?.amount ?? this.context?.cost`
+> כדי שלא יהבהב. r2 READY.
 
 ### רציונל
 מציגים למשתמשת את **מכסת-המנוי שנשארה** (utilization% לחלון 5-שעות ולשבועי) — מה ש-`/usage` מראה.

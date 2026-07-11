@@ -1,8 +1,9 @@
 {
   "id": "provider-quota-meter",
-  "status": "plan-verified",
+  "status": "superseded",
+  "superseded_by": "session-budget-meter",
   "plan_verified": true,
-  "dispatch_ready": true,
+  "dispatch_ready": false,
   "base": "dev",
   "depends_on": [],
   "complexity": 5,

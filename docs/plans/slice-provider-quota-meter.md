@@ -2,8 +2,8 @@
 
 > **תאריך**: 2026-07-11
 > **סוג מסמך**: בריף ביצועי לסלייס — לא תוכנית טרום-בריף
-> **סטטוס**: מאושר (אביגיל READY r2)
-> **אימות אביגיל**: **READY** (r2 · 5 תיקוני-r1 אומתו · 2 findings 🟢 קוסמטיים בלבד · דוח: `reports/drive-coding/slice-provider-quota-meter-avigail.md`)
+> **סטטוס**: ⛔ **SUPERSEDED** (2026-07-11) → מוזג ל-**`slice-session-budget-meter.md`** (מכסה + מלאות-קונטקסט ב-popover אחד). אל תבצע את ה-slice הזה. תוכנו (חלק-המכסה) הועתק מאומת ל-session-budget.
+> **אימות אביגיל**: READY (r2) — נשמר כ-reference; לא ל-dispatch.
 > **Dispatch**: מותר לאליעזר רק אם `אימות אביגיל = READY`.
 > **Complexity**: 5/10 (verifier: light + phase על Commit 0 ו-Commit 3)
 > **תלויות (`depends_on`)**: []
