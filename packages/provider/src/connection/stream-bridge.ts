@@ -1,7 +1,7 @@
 /**
  * stream-bridge.ts — Stream↔wire adapter for connectInProcess (CUT-3b-iii-1).
  *
- * The ACP SDK Stream (sdk@1.0.0) is:
+ * The ACP SDK Stream is:
  *   { writable: WritableStream<AnyMessage>, readable: ReadableStream<AnyMessage> }
  * i.e. Web Streams of decoded AnyMessage OBJECTS — not NDJSON strings.
  *
@@ -17,7 +17,7 @@
  *   wireEnd   — the string-based { onLine, write } that ProviderConnection.wire exposes
  */
 
-import type { AnyMessage, Stream } from "acp-sdk-v1"
+import type { AnyMessage, Stream } from "@agentclientprotocol/sdk"
 import { createLogger } from "@drive-coding/core/log"
 import { logIfSlow, markStart } from "../shared/hot-path-timing.js"
 

@@ -1,3 +1,23 @@
+## 2026-07-11 17:50
+
+### slice-acp-stack-upgrade — Commit 2: הסרת `acp-sdk-v1` ואיחוד SDK ל-1.2.1
+
+**מה בוצע:**
+- הוסר alias `acp-sdk-v1` מ-`packages/provider/package.json`.
+- imports במסלולי Claude in-process/stream bridge עברו ל-`@agentclientprotocol/sdk`.
+- נוסף root override ל-`@agentclientprotocol/sdk: 1.2.1` כדי למנוע עותק SDK `1.0.0` מקונן דרך `claude-agent-acp@0.52.0` לפני Commit 3.
+- עודכנו הערות containment ישנות שהזכירו `sdk@1.0.0`.
+- `client-bridge` קיבל return type מפורש הנגזר מה-constructor של `ClaudeAcpAgent`, כדי למנוע inferred type לא-portable.
+
+**בדיקות:**
+- grep ל-`acp-sdk-v1`, `@agentclientprotocol/sdk@1.0.0`, ו-`@agentclientprotocol/sdk@0.21.1` ב-`package.json`, `packages`, ו-`bun.lock` — ריק.
+- `bun --filter @drive-coding/provider typecheck` — עבר.
+- `bun --filter @drive-coding/provider test` — 175 passed, 8 skipped.
+- `bun run lint:i18n` — עבר.
+
+**חריגות:**
+- אין. fallback ל-alias לא נדרש.
+
 ## 2026-07-11 17:43
 
 ### slice-acp-stack-upgrade — Commit 1: שדרוג client SDK ל-1.2.1

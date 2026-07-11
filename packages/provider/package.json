@@ -28,7 +28,6 @@
   },
   "devDependencies": {
     "@agentclientprotocol/claude-agent-acp": "^0.52.0",
-    "acp-sdk-v1": "npm:@agentclientprotocol/sdk@1.0.0",
     "@types/node": "^22.0.0",
     "vitest": "^4.0.0"
   }

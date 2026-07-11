@@ -22,6 +22,12 @@
 `bun install` לפי ה-dispatch. לכן `bun.lock` הוא source-of-truth הפעיל לשדרוגי ACP בסלייס הזה.
 `pnpm-lock.yaml` נשאר stale/deprecated עד סלייס package-manager ייעודי, ולא משמש כ-DoD פעיל כאן.
 
+### Commit 2 — איחוד SDK בלי `acp-sdk-v1`
+
+ה-alias `acp-sdk-v1` הוסר. כדי שגם `claude-agent-acp@0.52.0` לא יחזיק עותק מקונן של
+`@agentclientprotocol/sdk@1.0.0` לפני שדרוג ה-adapter ב-Commit 3, נוסף root override ל-`@agentclientprotocol/sdk: 1.2.1`
+גם תחת `pnpm.overrides` וגם תחת `overrides`. אחרי `bun install`, `bun.lock` לא מכיל עוד SDK `0.21.1` או `1.0.0`.
+
 ### פיצול ביצוע
 
 השדרוג מפוצל לשערים: client SDK, הסרת containment של `acp-sdk-v1`, Claude adapter/SDK, Codex upstream-or-fork,

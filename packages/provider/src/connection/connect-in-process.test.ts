@@ -7,7 +7,7 @@
  * - DoD 4: onFrame decoded (in+out); turn.isBusy in turn; capabilities includes rename=true, thinkingTokens=true
  * - DoD 6: additive (no BE/FE changes)
  *
- * Tests use real agentApp (acp-sdk-v1) with in-process wire, NOT real claude.
+ * Tests use real agentApp with in-process wire, NOT real claude.
  * We simulate the FE by writing ACP messages directly to wire.write().
  * The agentApp handles initialize in-process and responds via wire.
  */

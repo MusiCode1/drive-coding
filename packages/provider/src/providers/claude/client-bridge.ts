@@ -1,22 +1,24 @@
 /**
  * client-bridge.ts — bridges ClaudeAcpAgent's AcpClient interface
- * over the AgentContext exposed by sdk@1.0.0.
+ * over the AgentContext exposed by @agentclientprotocol/sdk.
  *
  * Promoted from spike.ts::makeAcpClientFromCtx.
- * This file is the ONLY place in in-process/ that imports from acp-sdk-v1.
- * No types from acp-sdk-v1 appear in the public function signature.
+ * No ACP SDK types appear in the public function signature.
  */
 
-import type { AgentContext } from "acp-sdk-v1"
-import { methods } from "acp-sdk-v1"
+import type { ClaudeAcpAgent } from "@agentclientprotocol/claude-agent-acp"
+import type { AgentContext } from "@agentclientprotocol/sdk"
+import { methods } from "@agentclientprotocol/sdk"
+
+type ClaudeAcpClient = ConstructorParameters<typeof ClaudeAcpAgent>[0]
 
 /**
- * Creates an AcpClient-compatible object over an sdk@1.0.0 AgentContext.
+ * Creates an AcpClient-compatible object over an ACP AgentContext.
  * Mirrors the unexported ClientConnection class in acp-agent.js:255.
  *
  * @internal — only used inside providers/claude/
  */
-export function makeAcpClientFromCtx(ctx: AgentContext) {
+export function makeAcpClientFromCtx(ctx: AgentContext): ClaudeAcpClient {
   return {
     sessionUpdate: (params: unknown) => ctx.notify(methods.client.session.update, params as never),
     requestPermission: (params: unknown, signal?: AbortSignal) =>
