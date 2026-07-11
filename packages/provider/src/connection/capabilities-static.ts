@@ -59,6 +59,29 @@ export function staticCapsFor(
         rename: false,
         thinkingTokens: false,
       }
+    case "cursor":
+      // Spawn-native. Measured live (2026-07-08, brief §-1): mcp = http+sse → mcp:true.
+      // Other caps not discovered statically — runtime caps come from initialize on the FE path.
+      return {
+        mcp: true,
+        compact: false,
+        commands: false,
+        usage: false,
+        configOptions: false,
+        rename: false,
+        thinkingTokens: false,
+      }
+    case "grok":
+      // Spawn-native. Measured live (2026-07-10, brief §-1): mcpCapabilities.http/sse:true → mcp:true.
+      return {
+        mcp: true,
+        compact: false,
+        commands: false,
+        usage: false,
+        configOptions: false,
+        rename: false,
+        thinkingTokens: false,
+      }
     default:
       return {
         mcp: false,

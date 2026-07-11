@@ -1,3 +1,25 @@
+## 2026-07-11 — slice-cursor-acp — Commit 0: רישום cursor + grok ב-CLI_SPECS
+
+**מה בוצע:**
+- נקודת-פתיחה: worktree כבר הכיל WIP לא-מקומט (cursor בלבד) — הורחב, לא נזרק (לפי §0 בבריף).
+- `packages/core/src/schemas/agent.ts`: הוספת `grok: { bin: "grok", args: ["--no-auto-update","agent","stdio"], supportsModelFlag: false }` ל-`CLI_SPECS` (cursor כבר היה שם מה-WIP).
+- `packages/core/tests/agent-schema.test.ts`: הרחבת assertion קיים ל-`CLI_KINDS` כולל גם `"grok"` (TDD — RED אומת לפני ההוספה).
+- `packages/provider/cli-config.test.ts`: 2 טסטים חדשים RED→GREEN ל-`getCliCommand("grok")` (ללא מודל, ועם `modelOverride` — מוודא ש-`--model` לא נוסף כי `supportsModelFlag:false`).
+- `packages/provider/src/connection/capabilities-static.ts`: `case "grok"` חדש (`mcp:true`, שאר false) + תיקון `case "cursor"` הקיים מ-`mcp:false`→`mcp:true` (שני הספקים נמדדו חיים תומכים http+sse — ר' בריף §-1/§4).
+- `packages/provider/src/connection/capabilities-static.test.ts`: 2 טסטים חדשים ל-`staticCapsFor("cursor"/"grok")` — `mcp:true`, שאר false.
+- `packages/backend/src/acp/connection-registry.ts`: עדכון הערת routing לכלול `cursor`+`grok` (routing עצמו לא שונה — `connectSpawn` אוטומטי לכל kind שאינו claude/codex).
+
+**build-gate:**
+- `tsc --build` (root): 0 שגיאות.
+- provider tests: 179 passed | 9 skipped (22 files) — כולל cli-config + capabilities-static.
+- core tests: 442 passed (36 files) — כולל agent-schema.
+- backend `connection-registry` tests: 39 passed.
+- lint (biome): baseline noise קיים (CRLF format diffs + `noUnusedImports` ב-`cli-config.test.ts` שורה 2) — **pre-existing על `dev` tip `f582b46`, אומת עם `git stash`** (`core.autocrlf=true` בסביבת Windows גורם ל-biome לדגול כל קובץ ב-repo כ-format violation; לא רגרסיה מהסלייס הזה). שום lint error חדש לא נוסף על-ידי השינויים.
+
+**חריגות:** אין. Testing strategy = tdd לפי בריף §4 Commit 0 — נשמר (RED לפני GREEN בכל טסט חדש).
+
+---
+
 ## 2026-07-11 — slice-be-shutdown-hardening — סיכום סופי
 
 **סטטוס**: הושלם. 4 commits על `slice/be-shutdown-hardening`.

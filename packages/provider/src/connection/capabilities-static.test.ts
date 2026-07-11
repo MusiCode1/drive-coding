@@ -40,4 +40,27 @@ describe("staticCapsFor", () => {
     expect(caps.thinkingTokens).toBe(false)
     expect(caps.rename).toBe(false)
   })
+
+  // slice-cursor-acp commit 0: cursor + grok both measured mcp:true (http+sse) — ר' brief §-1.
+  it("cursor: mcp=true, rest false (measured http+sse)", () => {
+    const caps = staticCapsFor("cursor")
+    expect(caps.mcp).toBe(true)
+    expect(caps.compact).toBe(false)
+    expect(caps.commands).toBe(false)
+    expect(caps.usage).toBe(false)
+    expect(caps.configOptions).toBe(false)
+    expect(caps.rename).toBe(false)
+    expect(caps.thinkingTokens).toBe(false)
+  })
+
+  it("grok: mcp=true, rest false (measured http+sse)", () => {
+    const caps = staticCapsFor("grok")
+    expect(caps.mcp).toBe(true)
+    expect(caps.compact).toBe(false)
+    expect(caps.commands).toBe(false)
+    expect(caps.usage).toBe(false)
+    expect(caps.configOptions).toBe(false)
+    expect(caps.rename).toBe(false)
+    expect(caps.thinkingTokens).toBe(false)
+  })
 })

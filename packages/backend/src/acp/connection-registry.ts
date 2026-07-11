@@ -110,7 +110,7 @@ export function createConnectionRegistry(opts?: {
       // claude → connectInProcess (acp-sdk Web Streams, Model 2)
       // codex  → connectCodexInProcess (NDJSON PassThrough, startAcpServer fork)
       // else   → connectSpawn (opencode/gemini/qoder)
-      // cliKinds: opencode/claude/gemini/codex/qoder (core/src/schemas/agent.ts:30).
+      // cliKinds: opencode/claude/gemini/codex/qoder/cursor/grok (core/src/schemas/agent.ts).
       const conn =
         cliKind === "claude"
           ? await connectInProcess(connectOpts)
