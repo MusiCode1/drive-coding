@@ -1,5 +1,31 @@
 ## 2026-07-11 17:50
 
+### slice-acp-stack-upgrade — Commit 4: Codex upstream gate ו-`@openai/codex` override
+
+**מה בוצע:**
+- Gate A נבדק מול `@agentclientprotocol/codex-acp@1.1.2` בהתקנה זמנית: `@agentclientprotocol/codex-acp/lib` לא קיים.
+- בדיקת legacy מול `@zed-industries/codex-acp@0.16.0` גם לא מצאה `./lib`; אין חזרה ל-legacy.
+- נוצר branch מקומי בפורק `/home/user/Projects/drive-coding/sub-packages/codex-acp`: `slice/acp-stack-upgrade-codex` מ-`origin/drive-coding`.
+- אומת שבפורק המקומי קיימים `src/lib.ts`, `exports["./lib"]`, ו-`startAcpServer(readable,writable,opts)`.
+- drive-coding נשאר על `@musicode1/codex-acp@^1.0.2`, כי זו החבילה המפורסמת בשם הנכון ומספקת `./lib`; לא בוצע push/publish ולא נצרך SHA שלא נדחף.
+- נוסף root override ל-`@openai/codex: 0.144.1` כדי לעדכן את runtime ה-CLI של fork ה-Codex בלי לשנות שם חבילה או ambient declaration.
+
+**בדיקות:**
+- `bun install` — עבר ועדכן את `bun.lock`.
+- `node -e import("@musicode1/codex-acp/lib")...` מתוך `packages/provider` — החזיר `function`.
+- `bun pm ls --all` — מציג `@agentclientprotocol/sdk@1.2.1`, `@musicode1/codex-acp@1.0.2`, ו-`@openai/codex@0.144.1`.
+- `codex --version` — `codex-cli 0.144.1`.
+- live smoke עם `connectCodexInProcess` ו-`CODEX_PATH=/home/user/.local/bin/codex` — `initialize`, `session/new`, ו-`session/prompt` עברו; `stopReason=end_turn`.
+- בדיקת child cleanup — לא נשאר PID חדש של `codex app-server` אחרי `conn.close()` ו-3 שניות המתנה.
+- `bun --filter @drive-coding/provider typecheck` — עבר.
+- `bun --filter @drive-coding/provider test` — 175 passed, 8 skipped.
+- `bun run lint:i18n` — עבר.
+
+**חריגות:**
+- `bun.lock` עדיין כולל ברשומת metadata של `@musicode1/codex-acp@1.0.2` את הדרישות המקוריות `@agentclientprotocol/sdk: 1.1.0` ו-`@openai/codex: 0.142.5`; ה-resolution הפעיל נכפה ב-root overrides ומופיע כ-`1.2.1`/`0.144.1`.
+- השלמת publish/SHA לפורק דורשת אישור push/publish ממרדכי/המשתמש.
+- `bun --filter @drive-coding/backend typecheck` עדיין נכשל ב-28 שגיאות base קיימות ב-`http-proxy.ts` ו-`http-tts-capabilities.ts` סביב טיפוסי `Headers`/`Request`/`Response`; לא נגעתי בקבצים האלה.
+
 ### slice-acp-stack-upgrade — Commit 3: שדרוג Claude adapter/SDK
 
 **מה בוצע:**

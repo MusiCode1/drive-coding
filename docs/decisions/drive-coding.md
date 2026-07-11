@@ -47,6 +47,28 @@
 כ-`Unexpected case`; זה תועד כ-known residual לפי הבריף ולא תוקן ב-Commit 3, כי הבריף מורה לא לתקן כאן אלא אם
 מדובר בתיקון no-op קטן וברור.
 
+### Commit 4 — Codex upstream gate ו-runtime override
+
+Gate A מול `@agentclientprotocol/codex-acp@1.1.2` נכשל: התקנה זמנית ב-`/tmp` והרצת
+`import("@agentclientprotocol/codex-acp/lib")` החזירה `Cannot find module`, כלומר upstream הרשמי עדיין לא מספק
+`./lib.startAcpServer`. בדיקת legacy מול `@zed-industries/codex-acp@0.16.0` נתנה אותה תוצאה, ולכן אין חזרה ל-legacy.
+
+הפורק המקומי `/home/user/Projects/drive-coding/sub-packages/codex-acp` נפתח על branch
+`slice/acp-stack-upgrade-codex` מ-`origin/drive-coding`, לא מ-`main`. branch זה כבר מכיל `src/lib.ts`,
+`exports["./lib"]`, ו-`startAcpServer(readable,writable,opts)`. מאחר שהמשתמש אסר push/publish בסלייס,
+drive-coding לא הופנה ל-SHA לא-דחוף ולא ל-file dependency. במקום זאת, נשארת הצריכה היציבה
+`@musicode1/codex-acp@^1.0.2` שכבר מתפרסמת תחת שם החבילה הנכון ומספקת `./lib`, ונוסף root override ל-`@openai/codex: 0.144.1`
+כדי שה-runtime וה-lock ישתמשו ב-Codex stable latest. ה-override הקיים ל-`@agentclientprotocol/sdk: 1.2.1`
+ממשיך לכפות SDK אחיד גם על תלות ה-fork.
+
+`bun.lock` עדיין מציג בתוך רשומת metadata של `@musicode1/codex-acp@1.0.2` את הדרישות המקוריות של החבילה
+(`@agentclientprotocol/sdk: 1.1.0`, `@openai/codex: 0.142.5`), אבל ה-resolution הפעיל הוא root-level:
+`bun pm ls --all` מציג `@agentclientprotocol/sdk@1.2.1` ו-`@openai/codex@0.144.1`.
+
+ה-smoke החי של `connectCodexInProcess` עבר מול `CODEX_PATH=/home/user/.local/bin/codex` (`codex-cli 0.144.1`):
+`initialize`, `session/new`, ו-`session/prompt` הסתיימו, `stopReason=end_turn`, ואחרי `close()` לא נשאר PID חדש של
+`codex app-server` מעבר ל-PID שהיה קיים לפני הבדיקה.
+
 ### פיצול ביצוע
 
 השדרוג מפוצל לשערים: client SDK, הסרת containment של `acp-sdk-v1`, Claude adapter/SDK, Codex upstream-or-fork,

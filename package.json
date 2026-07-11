@@ -37,12 +37,14 @@
     ],
     "overrides": {
       "@agentclientprotocol/sdk": "1.2.1",
-      "@anthropic-ai/claude-agent-sdk": "0.3.207"
+      "@anthropic-ai/claude-agent-sdk": "0.3.207",
+      "@openai/codex": "0.144.1"
     }
   },
   "overrides": {
     "@agentclientprotocol/sdk": "1.2.1",
-    "@anthropic-ai/claude-agent-sdk": "0.3.207"
+    "@anthropic-ai/claude-agent-sdk": "0.3.207",
+    "@openai/codex": "0.144.1"
   },
   "workspaces": [
     "packages/*"
