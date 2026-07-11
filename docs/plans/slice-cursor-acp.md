@@ -236,9 +236,44 @@ pnpm test --filter @drive-coding/provider -- cli-config
   }
   ```
   קרא `resolveAuthMethodId(initResult.authMethods)`; אם מוגדר → `await conn.authenticate({ methodId })`.
-  אם `authenticate` נכשל — סגור transport וזרוק error ברור (`kind: "auth_required"` כשמתאים).
-  **אין** authenticate כש-`authMethods` ריק/חסר — opencode/gemini/qoder/claude/codex לא נשברים.
-  שמור התנהגות `auth_required` קיימת בכ-catch של initialize (~שורות 273-281).
+
+  > 🔴 **תוקן אחרי calev phase-verification NO-GO (2026-07-11, ר' `reports/drive-coding/cursor-acp-calev.md`)**:
+  > הגרסה המקורית סגרה את ה-transport וזרקה `auth_required` על **כל** כישלון `authenticate` —
+  > זה שבר את opencode בפועל (חי, 2/2): opencode מפרסם `authMethods: [{id:"opencode-login"}]`
+  > לא-ריק (אז `resolveAuthMethodId` מחזיר ערך ו-`authenticate` נשלח), אבל ה-RPC בפועל **לא
+  > מיושם** אצלו — מחזיר `{code:-32603, message:"Internal error", data:{details:"Authentication
+  > not implemented"}}`. ה-guard `authMethods?.length > 0` (§6 המקורי) לא הספיק — הוא בודק
+  > "יש הכרזה על authMethods?" ולא "ה-authenticate RPC באמת מיושם?".
+  >
+  > **התיקון**: להבחין בין שגיאת-authenticate **מסוג auth_required אמיתי** (אותה צורה בדיוק
+  > שכבר מזוהה ב-catch של `initialize`: `err?.data?.code === "auth_required"`) לבין **כל שגיאה
+  > אחרת** (כמו `-32603`/"not implemented" של opencode). מיצוי ה-classifier לפונקציה משותפת
+  > `isAuthRequiredError(err): boolean` (משמשת גם את ה-catch של `initialize` וגם את זה של
+  > `authenticate` — DRY, ולא לשכפל את הבדיקה):
+  > ```ts
+  > function isAuthRequiredError(e: unknown): e is { data?: { code?: string }; message?: string } {
+  >   const err = e as { data?: { code?: string } }
+  >   return err?.data?.code === "auth_required"
+  > }
+  > ```
+  > ב-catch של `authenticate`:
+  > - אם `isAuthRequiredError(e)` → **פאטלי** (כמו קודם): סגור transport, זרוק error עם
+  >   `kind: "auth_required"` — שומר על DoD #9 (cursor/grok באמת-לא-מחוברים עדיין מקבלים
+  >   הודעה ברורה).
+  > - **אחרת** (כל שגיאה אחרת, כולל "not implemented") → **לא-פאטלי**: `console.warn`/logger
+  >   עם ה-methodId וה-error, **המשך** ל-`return buildAcpClientFacade(...)` כאילו `authenticate`
+  >   לא נקרא בכלל. מונע רגרסיה בכל CLI שמכריז authMethods בלי ליישם את ה-RPC בפועל.
+  >
+  > **טסט-רגרסיה חדש חובה** (הוסף ל-`client.authenticate.test.ts`, §"קבצים לטסטים" למטה):
+  > mock-transport שמחזיר ל-`authenticate` שגיאת JSON-RPC `-32603` (**לא** `auth_required`
+  > ב-`data.code`) → הקוד **לא** זורק, `createAcpClient` מסתיים בהצלחה (מדמה את opencode
+  > בדיוק). טסט נפרד: שגיאה עם `data.code === "auth_required"` בפועל → עדיין זורק/סוגר
+  > transport כמו קודם.
+
+  **אין** authenticate כש-`authMethods` ריק/חסר — providers שלא מכריזים authMethods בכלל
+  (claude/codex/gemini/qoder ללא declaration) לא נוגעים כלל.
+  שמור התנהגות `auth_required` קיימת בכ-catch של initialize (~שורות 273-281) — עכשיו דרך
+  אותו `isAuthRequiredError`.
   **אל תיגע**: `createAttachedAcpClient` (warm reattach) — בלי initialize/authenticate מחדש.
 - `packages/provider/src/client/client-impl.ts` — handlers ל-blocking Cursor extensions:
   - `cursor/ask_question` → `{ outcome: { outcome: "skipped" } }`
@@ -252,6 +287,12 @@ pnpm test --filter @drive-coding/provider -- cli-config
   3. `authMethods: []`/חסר → **אין** frame `authenticate`.
   4. `[{ id: "other_login" }]` (לא ב-PREFERRED) → fallback לראשון.
   5. regression: `initialize` עדיין נשלח עם `protocolVersion: 1`.
+  6. 🆕 **opencode-regression**: `authMethods: [{ id: "opencode-login" }]`, ותגובת `authenticate`
+     היא error `{code:-32603, data:{details:"Authentication not implemented"}}` (**בלי**
+     `data.code === "auth_required"`) → `createAcpClient` **לא** זורק, מסתיים בהצלחה
+     (`buildAcpClientFacade` מוחזר). מדמה חי את opencode.
+  7. 🆕 **auth_required אמיתי**: תגובת `authenticate` היא error עם `data.code === "auth_required"`
+     → `createAcpClient` **כן** זורק עם `kind: "auth_required"`, וסוגר את ה-transport (`transport.close()` נקרא).
 - `packages/provider/src/client/client.cursor-ext.test.ts` — blocking ext לא תוקע (unit).
 
 **API skeleton** — לא לשנות חתימות `AcpClient` public; רק פנימי ב-`createAcpClient`.
@@ -320,7 +361,7 @@ pnpm typecheck
 | `agent`/`grok` לא ב-PATH | spawn ENOENT | `cli-specs.jsonc` override; DoD #4-5 |
 | `session/load` שבור ב-Cursor upstream | Cursor forum | MVP = `newSession`; תיעוד ב-decisions |
 | blocking `cursor/ask_question` תוקע turn | Cursor ext docs | auto-answer ב-commit 1 |
-| `authenticate` שובר ספקים אחרים (opencode/gemini/qoder/claude/codex) | regression | authenticate **רק** אם `authMethods?.length > 0`; טסט ייעודי |
+| `authenticate` שובר ספקים אחרים | regression | ~~authenticate רק אם authMethods?.length > 0~~ **לא הספיק** (calev NO-GO חי — opencode מכריז authMethods בלי ליישם authenticate). **תוקן**: catch מבחין `isAuthRequiredError` — פאטלי רק על `data.code === "auth_required"`, אחרת לא-פאטלי (log+המשך). ר' Commit 1 |
 | 402 spending-limit / Free tier (grok) | smoke stderr | PARTIAL מותר עם דחייה מפורשת בדוח כלב — handshake+auth+dropdown חובה GO |
 | SDK בלי `conn.authenticate`/`extMethod` | dependency | escalate; אל תמציא JSON-RPC ידני |
 | worktree קיים אחורה מול dev (5+ commits) | git status | `git merge dev` לפני המשך — ר' §0 |
@@ -370,4 +411,11 @@ pnpm typecheck
 
 ## סטיות מהתכנון (מתעדכן ע"י executor)
 
-- (ריק — ה-WIP הקיים מ-cursor-acp המקורי כבר תועד ב-§0 כנקודת-התחלה, לא כסטייה)
+- (ה-WIP הקיים מ-cursor-acp המקורי כבר תועד ב-§0 כנקודת-התחלה, לא כסטייה)
+- **2026-07-11 — calev phase-verification NO-GO אחרי Commit 1**: התיקון המתוכנן במקור
+  (`authenticate` פאטלי + guard `authMethods?.length > 0`) שבר את opencode חי (WS closed
+  1005, 2/2). שורש: opencode מכריז `authMethods` לא-ריק אבל לא מיישם את ה-RPC בפועל
+  (`-32603` "not implemented"). תוקן ב-Commit 1 (`isAuthRequiredError` classifier, פאטלי רק
+  על auth_required אמיתי) — ר' §4 Commit 1 וטבלת סיכונים §6. דוח מלא:
+  `reports/drive-coding/cursor-acp-calev.md`. DoD #4/#5 (cursor+grok authenticate) עברו
+  במלואם באותה בדיקה — הבלוקר הוא **רק** ה-opencode-regression.
