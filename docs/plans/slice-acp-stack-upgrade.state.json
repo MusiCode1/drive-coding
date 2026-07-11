@@ -1,0 +1,15 @@
+{
+  "id": "acp-stack-upgrade",
+  "status": "plan-verified",
+  "plan_verified": true,
+  "dispatch_ready": true,
+  "base": "dev",
+  "depends_on": [],
+  "complexity": 8,
+  "verifier": "calev-heavy",
+  "dev_tip": "0f3467bd",
+  "avigail_rounds": 5,
+  "avigail_verdict": "READY",
+  "avigail_report": "reports/drive-coding/slice-acp-stack-upgrade-avigail.md",
+  "avigail_note": "r1 found 4 issues: pnpm unavailable, Codex fork base branch wrong, stale dev_tip, missing state file. r2 found 4 command/package details: import smoke cwd, current Codex upstream package, bun.lock in old-version checks, onecli fallback. All were fixed. r3 READY with 0 findings. Post-r3 QC from Mordechai resolved in brief: bun.lock is source-of-truth, pnpm-lock is stale/deprecated, session-budget usage method is checked in Commit 3, and Commit 5 is a phase-verifier gate. r4 found one metadata mismatch; r5 READY after adding Commit 5 to the top phase-verifier list."
+}
