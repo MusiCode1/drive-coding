@@ -1,3 +1,29 @@
+## 2026-07-11 — slice-be-shutdown-hardening — סיכום סופי
+
+**סטטוס**: הושלם. 4 commits על `slice/be-shutdown-hardening`.
+
+**commits**:
+- `5afe37c0` — Commit 0: kill-tree + detached ב-spawn-core (POSIX group kill + Windows taskkill /T /F)
+- `982db169` — Commit 1: graceful-shutdown + usage-store תיאום (SIGINT/SIGTERM → process.exit)
+- `25097e79` — Commit 2: sweep קליינטים-מתים + $/detach ב-BE (lastPingAt, 60s stale, setInterval unref)
+- `7bb92035` — Commit 3: FE שולח $/detach לפני leaveRunning (sendRaw + #cleanup)
+
+**build-gate**:
+- provider typecheck: 3 שגיאות pre-existing (ללא שינוי)
+- backend typecheck: 28 שגיאות pre-existing (ללא שינוי)
+- frontend typecheck: 0 שגיאות, 0 אזהרות
+- provider tests: 175 passed | 8 skipped (15 spawn-core ירוקים כולל kill-tree grandchild POSIX)
+- lint:i18n: נקי
+
+**DoD חי** (PORT=4002 על Linux):
+- BE עלה, health endpoint מחזיר ok
+- SIGINT → לוג "graceful shutdown — closing connections + children" → תהליך מת → פורט משתחרר
+- SIGTERM — זהה
+
+**חריגות**: afterEach ב-spawn-core.test.ts תוקן — timeout 500ms לתהליכים detached (exit event לא מגיע אחרי killTree(-pid) synchronously).
+
+---
+
 ## 2026-07-10 — slice-options-trim — סיכום סופי
 
 **סטטוס**: הושלם. 2 commits על `slice/options-trim` (base: `slice/be-diag-harness` @ `d57e0632`).

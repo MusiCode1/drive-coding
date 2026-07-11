@@ -1,7 +1,7 @@
 # Slice — be-shutdown-hardening — תוכנית
 
 > **תאריך**: 2026-07-02 · **עודכן 2026-07-11** (rebase על השרשרת הממוזגת + 3 תוספות — ר' §11)
-> **סטטוס**: 🔄 **עודכן — טעון אימות-אביגיל מחדש** (היה READY r2 על base=dev; ה-base והשורות **זזו** → חובה re-verify).
+> **סטטוס**: ✅ **הושלם** (2026-07-11, 4 commits: 5afe37c0..7bb92035).
 > **Complexity**: 8/10 (verifier: light — **אך האימות חייב להיות חי; כיבוי/יתומים לא ניתנים לאימות אמין ב-unit**)
 > **תלות**: `depends_on: [crash-teardown-fix-chain]` · **base**: `slice/options-trim` @ `cfc96866` (השרשרת הממוזגת = dev + crash-fix + diag + options-trim + LAN)
 > **מקור**: `docs/investigations/2026-07-01-be-shutdown-socket-health.md` + **אבחון-חי 2026-07-11** (4 שורשי-יתומים-בכיבוי + reconnect-ghost).
