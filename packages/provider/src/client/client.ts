@@ -54,6 +54,20 @@ export function buildPromptParam(content: string | PromptBlocks): PromptBlocks {
 
 const DEFAULT_INIT_TIMEOUT_MS = 10_000
 
+// סדר-עדיפות לפי המדידה החיה ב-docs/plans/slice-cursor-acp.md §-1:
+// grok = cached_token/grok.com, cursor = cursor_login.
+// אין xai.api_key בפועל — לא להוסיף methodId שלא נצפה.
+const PREFERRED = ["cached_token", "grok.com", "cursor_login"] as const
+
+/** Pick auth method from initialize response — PREFERRED order, then first offered. */
+export function resolveAuthMethodId(
+  authMethods: ReadonlyArray<{ id: string }> | undefined,
+): string | undefined {
+  if (!authMethods?.length) return undefined
+  const ids = new Set(authMethods.map((m) => m.id))
+  return PREFERRED.find((id) => ids.has(id)) ?? authMethods[0]?.id
+}
+
 export type AcpClientOptions = {
   /** דריסת timeout האתחול. ברירת מחדל: 10 שניות. בבדיקות מעבירים ערך קטן. */
   initTimeoutMs?: number
@@ -281,6 +295,24 @@ export async function createAcpClient(
     }
     transport.close()
     throw e
+  }
+
+  // authenticate גנרי — רק כש-authMethods לא ריק (Cursor: cursor_login, Grok: cached_token/grok.com).
+  // opencode/gemini/qoder/claude/codex לא מציעים authMethods → לא נוגעים כלל, אין רגרסיה.
+  const authMethodId = resolveAuthMethodId(initResult.authMethods)
+  if (authMethodId) {
+    try {
+      await conn.authenticate({ methodId: authMethodId })
+    } catch (e) {
+      transport.close()
+      const err = e as { message?: string }
+      const authErr = new Error(
+        `ACP agent authentication failed (methodId: ${authMethodId}): ${err?.message ?? String(e)}. ` +
+          `Run in shell: '<cli> auth login'.`,
+      )
+      ;(authErr as Error & { kind?: string }).kind = "auth_required"
+      throw authErr
+    }
   }
 
   return buildAcpClientFacade(conn, transport, initResult.agentCapabilities)

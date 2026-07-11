@@ -1,3 +1,27 @@
+## 2026-07-11 — slice-cursor-acp — Commit 1: ACP authenticate גנרי + Cursor blocking-ext
+
+**מה בוצע:**
+- `packages/provider/src/client/client.ts`:
+  - תיקון `PREFERRED`-list (מה-WIP הקודם — רק `cursor_login`) ל-`["cached_token","grok.com","cursor_login"]` לפי המדידה החיה בבריף §-1 — `resolveAuthMethodId` עכשיו בוחר לפי סדר-עדיפות אמיתי (לא רק "cursor_login אם קיים, אחרת ראשון").
+  - `conn.authenticate({methodId})` עטוף ב-try/catch: כישלון → `transport.close()` + זריקת שגיאה עם `kind:"auth_required"` (עקבי עם ה-catch הקיים של `initialize`).
+  - `authenticate` **לא** נקרא כש-`authMethods` ריק/חסר — regression guard ל-opencode/gemini/qoder/claude/codex.
+- `packages/provider/src/client/client-impl.ts`: `extMethod` handlers ל-Cursor blocking extensions כבר היו קיימים ב-WIP (`cursor/ask_question`→skipped, `cursor/create_plan`→accepted) — אומתו כנכונים לפי הבריף, לא שונו.
+- **קבצי טסט ייעודיים חדשים** (Q6 בבריף — קבצים ייעודיים, לא inline):
+  - `client.authenticate.test.ts` — mock transport מלא (auto-responder ל-`initialize`+`authenticate` frames): 5 התרחישים מהבריף (cached_token/cursor_login/ריק/fallback/regression protocolVersion:1) + 2 טסטים נוספים ל-סדר-עדיפות אמיתי (PREFERRED גובר על סדר-מערך) + טסט כישלון-authenticate (transport נסגר + kind auth_required) + 6 unit tests ל-`resolveAuthMethodId` הטהורה.
+  - `client.cursor-ext.test.ts` — `extMethod` ל-`cursor/ask_question`/`cursor/create_plan`/method לא-מוכר (no-op בטוח) + regression ל-`sessionUpdate`/`requestPermission`.
+- **RED אומת** לפני התיקון: 5 טסטים נכשלו (3 על מיון-עדיפות, 1 על error-handling חסר, 1 unit) — הוכיחו שה-WIP הישן (`cursor_login`-only, בלי try/catch) לא תואם את הבריף.
+
+**build-gate:**
+- `tsc --build`: 0 שגיאות.
+- provider tests: 199 passed | 9 skipped (24 files, כולל 20 טסטים חדשים GREEN).
+- lint (biome): רק `assist/source/organizeImports` על `client.ts` — **pre-existing על `dev` tip** (אומת עם `git show dev:...` + biome check על עותק זמני) + CRLF noise ידוע (ר' Commit 0). שום lint error חדש.
+
+**חריגות:** אין. Testing strategy = tdd — RED→GREEN נשמר בקפדנות (ר' למעלה).
+
+**Verifier-phase**: יבוצע calev (mode: light) אחרי commit זה, לפי בריף §8 — smoke ידני מול ספק אחד (cursor/grok) מוכיח `authenticate` נשלח אחרי `initialize`.
+
+---
+
 ## 2026-07-11 — slice-cursor-acp — Commit 0: רישום cursor + grok ב-CLI_SPECS
 
 **מה בוצע:**

@@ -49,6 +49,20 @@ export function createClientImpl(opts: {
       opts.onExtNotification?.(method, params)
     },
 
+    /**
+     * Cursor ACP blocking extensions (and other agent→client ext requests).
+     * MVP: safe auto-answers so turns do not stall without a UI.
+     */
+    async extMethod(method: string, _params: Record<string, unknown>) {
+      if (method === "cursor/ask_question") {
+        return { outcome: { outcome: "skipped" } }
+      }
+      if (method === "cursor/create_plan") {
+        return { outcome: { outcome: "accepted" } }
+      }
+      return {}
+    },
+
     // fs.readTextFile + writeTextFile: לא מוצהר.
     // clientCapabilities.fs = { readTextFile: false, writeTextFile: false }
     // opencode משתמש בקריאות fs tool פנימיות שלו — לא זקוק ל-ACP fs caps ב-MVP.
