@@ -1,7 +1,8 @@
 # Slice B1-v2 — subagent-transcript-data — תוכנית
 
 > **תאריך**: 2026-07-11
-> **סטטוס**: טיוטה (ממתין אביגיל)
+> **סטטוס**: הושלם (אביגיל READY r2 → אליעזר ביצע 4 commits 2026-07-12, branch
+> `slice/subagent-transcript-data` @ `978a3aa7`; ממתין ל-calev verifier-slice + מיזוג מרדכי)
 > **Complexity**: 7/10 (verifier: light — calev; ה-UI ב-B2 calev-heavy)
 > **depends_on**: [`acp-stack-upgrade`] (מוזג ל-dev v0.17.0 — ה-raw-SDK path חי)
 > **base**: dev @ v0.17.0

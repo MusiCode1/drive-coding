@@ -9669,3 +9669,80 @@ snapshot+screenshot) על ה-worktree עצמו כ-cwd, session קיים (claude)
   קטן, ללא merge (ממתין לאישור, יחד עם שאר השרשרת — לפי §8 בבריף).
 - `pnpm typecheck`: 0/0. `biome check` פרטני: נקי. אומת חי בדפדפן (claude אמיתי) — 6/6 DoD.
 - Base: `dev` @ `9faf62f`. אין merge — ממתין לאישור.
+
+---
+
+## 2026-07-12 — slice-subagent-transcript-data-v2 (B1) — שכבת-נתונים לתעתיק תת-סוכן
+
+### מה בוצע?
+
+בוצע לפי `docs/plans/slice-subagent-transcript-data-v2.md` (אביגיל READY r2, 0 findings).
+worktree `.worktrees/subagent-transcript-data` (branch `slice/subagent-transcript-data`),
+base `dev @ f3039839` (v0.17.0). 4 commits, בדיוק לפי §5 של הבריף:
+
+- **Commit 0** (`8cfddc2c`, manual) — `CLAUDE_SESSION_META.claudeCode.emitRawSDKMessages`
+  ב-`agent-session.svelte.ts`: הוספת `{ type: "user" }` — בלעדיו tool_result של תת-הסוכן
+  לא זורם (spike Q2, `decisions/drive-coding.md` 2026-07-11).
+- **Commit 1** (`2f711661`, TDD על fixture) — `claude-subagent-parse.ts` חדש:
+  `parseClaudeSdkMessage(unknown) → ClaudeSubagentEvent` (guards ממוקדים, לא `as SDKMessage`).
+  `bubble.ts` (additive): `TaskMeta`/`SubagentTaskStatus`/`SubFrame` + `ToolCall.task?` +
+  `ToolBubble.subFrames?`. 13 table tests על `__fixtures__/subagent-task-single.json`
+  (spike Gate-1 חי מול claude 2.1.202): 4 subtypes system (task_started/progress/
+  notification/updated) + assistant/user עם parent → assistantDelta/toolResult +
+  top-level (ללא parent) → ignored + malformed → ignored (לא throw).
+- **Commit 2** (`8f049199`, TDD) — באותו קובץ: `createSubagentIndex()` (taskId→toolUseId,
+  task_started בונה / task_updated קורא — Q3) + `reduceSubagent(taskBubble, event, now?)`
+  טהור immutable: assistantDelta מצטבר לפי messageId (Q1 DELTAS, לא snapshot) עם דדופ
+  לפי id דטרמיניסטי (`sub:${parentId}:${messageId}` לבועה, `blk:${groupKey}:${hash}`
+  לסגמנט — finding #5, בלי Date.now()/random בליבה הטהורה); toolResult מוסיף SubFrame
+  חדש עם דדופ לפי key (uuid/tool_use_id); task ממזג TaskMeta בלי לדרוס שדות קיימים.
+  13 unit tests: append/dedup/isolation בין 2 Tasks מקבילים/task-metadata-merge/immutability.
+- **Commit 3** (`978a3aa7`, VM integration על replay) — `#onExtNotification` ב-
+  `agent-session.svelte.ts`: מנתח כל `_claude/sdkMessage`, מקשר ל-parentId
+  (`#subagentIndex.resolve`), מוצא את בועת ה-Task ב-`bubbles` לפי `toolCallId`,
+  ומעדכן ב-object-replacement (`reduceSubagent`). `#pendingByParent` (bounded, cap=50,
+  drop-oldest) לאירועים שהגיעו לפני שה-Task tool_call נוצר — מפורק ב-`#handleToolCall`
+  (הגנתי; ה-fixture עצמו לא צריך זאת, כי ACP tool_call מגיע *לפני* `task_started` —
+  Q5 מאושר). `#cleanup()` מאפס `#subagentIndex`/`#pendingByParent` (חיבור חדש = state נקי).
+  5 טסטי אינטגרציה חדשים (`agent-session.subagent-transcript.test.svelte.ts`) — replay
+  מלא של אותו fixture חי דרך ה-callbacks האמיתיים: bubbles הראשי לא גדל מ-raw sdkMessage
+  (רק מ-ACP session/update) · subFrames מתמלא (4 SubFrames על בועת ה-Task) · task metadata
+  (prompt/summary/status="completed"/subagentType) מאוכלס · ה-Bash tool_call המקונן (מגיע
+  דרך ACP session/update רגיל + `_meta.claudeCode.parentToolUseId`, **לא** דרך ה-ext
+  channel) נשאר flat top-level כרגיל (regression check, לא בסקופ B1) · counter
+  (`claudeRawSdkMessageCount`) תואם למספר ה-raw entries (14).
+
+### ממצאים תוך-כדי (מעבר לבריף)
+
+- **agent-session.test.ts**: `EXPECTED_META` (golden-value test קיים ל-`_meta` injection)
+  ציפה לצורה הישנה בלי `{type:"user"}` — נכשל אחרי Commit 0. עודכן (שורה אחת + הערה) כחלק
+  מ-Commit 3, כשה-full-suite חשף את זה (Commit 0 עצמו לא הריץ את כל ה-suite). תועד ב-commit
+  message של Commit 3.
+- **סביבת-ההרצה**: אין `pnpm`/Node אמיתי מותקן במכונה — רק Bun (עם `node` symlinked אליו).
+  `pnpm install`/`bunx pnpm` נכשלים (`node:sqlite` חסר בגרסת-Bun הזו). הפתרון: `bun install`
+  (`bun.lock` כבר מנוהל בגיט לצד `pnpm-lock.yaml`) + `bun run <script>` לכל הפקודות
+  (`bun run typecheck`/`bun run test`/`bun run lint`). לא ספציפי לסליס הזה — worktrees
+  אחרים באותה מכונה כבר עובדים כך.
+- **`pnpm lint` (biome, full-repo) שבור מקדם** — 1320 שגיאות על `dev` baseline (לא נגרם
+  ע"י הסליס; אומת שאותה כמות שגיאות קיימת גם על `dev` נקי). ה-pre-commit hook בפועל
+  (`.githooks/pre-commit`) מריץ רק את בדיקת-העברית, לא biome מלא — לכן זה לא gate אמיתי.
+  הרצתי `biome check` **פרטני** על כל קובץ שנגעתי/יצרתי בו (לא full-repo) — נקי בכולם
+  (0 warnings/errors שמקורם בשינויים שלי; ה-`--write` הראשוני על `agent-session.test.ts`
+  תיקן גם עיצוב לא-קשור בכל הקובץ — שוחזר עם `git checkout` והוחל רק השינוי הממוקד).
+
+### חריגות
+
+- אין — הבריף בוצע כלשונו, 4 commits לפי §5, כל commit עם ה-testing strategy שהוגדרה לו.
+- DoD-שורה "live: Task אמיתי → transcript state מלא" (הרצת `spike-subagent-fixture.ts`
+  מול claude חי) — מוגדרת בבריף כ-`verifier-phase (calev)`, לא כחלק מ-commit ספציפי.
+  הועברה ל-calev בסוף הסליס (verifier-slice, tier=light לפי `state.json`).
+
+### סיכום סליס
+
+- **4 commits** על `slice/subagent-transcript-data`, כולם ירוקים
+  (`pnpm --filter @drive-coding/frontend typecheck`: 0/0 לאורך כל השרשרת;
+  `pnpm test`: 1272/1287 עוברים — ה-1 test-file שנכשל [`https-serve.test.ts`,
+  spawn-ENOENT Windows-path] הוא known-bug **קיים על `dev` baseline**, לא רגרסיה).
+- **31 טסטים אוטומטיים חדשים** (13+13 unit על הפרסר/reducer + 5 VM integration).
+- `lint:i18n` נקי לאורך כל השרשרת.
+- אין merge — ה-branch נשאר על `slice/subagent-transcript-data`, ממתין למרדכי.
