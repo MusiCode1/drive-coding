@@ -88,6 +88,10 @@ const CLAUDE_SESSION_META = {
       { type: "system", subtype: "task_notification" },
       { type: "system", subtype: "task_updated" },
       { type: "assistant" },
+      // ─── slice subagent-transcript-data-v2 Commit 0 ───
+      // בלי {type:"user"} תוצאות-הכלים (tool_result) של תת-הסוכן לא זורמות
+      // (spike Q2, decisions 2026-07-11 — "🐛 פער בקוד שנחת ב-acp-stack").
+      { type: "user" },
     ],
   },
 } as const
