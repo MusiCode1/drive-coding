@@ -70,6 +70,37 @@ describe("connectInProcess — structural (no real claude session)", () => {
     }
   })
 
+  it("capabilities.image defaults to false before an initialize response is observed", async () => {
+    const conn = await connectInProcess({ cwd: process.cwd() })
+    try {
+      expect(conn.capabilities.image).toBe(false)
+    } finally {
+      await conn.close()
+    }
+  })
+
+  it("capabilities.image becomes true after the real initialize response is tapped off the wire (Commit 1)", async () => {
+    // The real ClaudeAcpAgent.initialize() returns agentCapabilities.promptCapabilities.image=true
+    // without a live claude subprocess (pure protocol negotiation) — see acp-agent.js.
+    // This is the actual "inject an init-result-frame" integration path: writing a real
+    // initialize request over the wire and letting the tap (handleLine, dir="in") observe
+    // the agent's real response.
+    const conn = await connectInProcess({ cwd: process.cwd() })
+    try {
+      expect(conn.capabilities.image).toBe(false)
+
+      const lines: string[] = []
+      const unsubLine = conn.wire.onLine((l) => lines.push(l))
+      conn.wire.write(buildInitRequest(7))
+      await waitFor(() => lines.length > 0, 3000)
+      unsubLine()
+
+      expect(conn.capabilities.image).toBe(true)
+    } finally {
+      await conn.close()
+    }
+  })
+
   it("ext is undefined (ext lives inside the wire, not BE-initiated)", async () => {
     const conn = await connectInProcess({ cwd: process.cwd() })
     try {

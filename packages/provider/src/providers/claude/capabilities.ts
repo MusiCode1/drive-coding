@@ -37,5 +37,8 @@ export function mapClaudeCapabilities(raw: unknown): NormalizedCapabilities {
     configOptions: false,
     rename: true,
     thinkingTokens: true,
+    // image: safe default; slice reattach-state-sync's init-frame tap (extractPromptCaps)
+    // is the source of truth, not a per-provider hardcode.
+    image: false,
   }
 }

@@ -20,6 +20,7 @@
     "./cwd-validate": "./src/cwd-validate.ts",
     "./cli-resolve": "./src/cli-resolve.ts",
     "./async/*": "./src/async/*.ts",
+    "./acp/*": "./src/acp/*.ts",
     "./config/*": "./src/config/*.ts",
     "./tts/*": "./src/tts/*.ts",
     "./usage/*": "./src/usage/*.ts"
