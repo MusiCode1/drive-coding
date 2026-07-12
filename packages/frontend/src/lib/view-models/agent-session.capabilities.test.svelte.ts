@@ -110,6 +110,7 @@ function makeCapabilities(overrides: Partial<NormalizedCapabilities> = {}): Norm
     configOptions: false,
     rename: false,
     thinkingTokens: false,
+    image: false,
     ...overrides,
   }
 }
@@ -175,6 +176,26 @@ describe("AgentSession — capabilities ingestion (FE-normalization)", () => {
     session.detach()
 
     expect(session.capabilities).toBeNull()
+  })
+
+  // ─── slice reattach-state-sync: supportsImageInput from normalized caps ───
+  // mockClient.capabilities === {} (raw empty) mirrors warm reattach (ATTACHED_CAPS_FALLBACK).
+  it("supportsImageInput becomes true from normalized _drive/capabilities even when raw client caps are empty (warm reattach)", async () => {
+    await session.attach({ cwd: "/some/cwd", cliKind: "codex" })
+    // raw #client.capabilities.promptCapabilities is undefined (empty mock) → false before caps arrive
+    expect(session.supportsImageInput).toBe(false)
+
+    simulateCaps({ image: true })
+
+    // normalized image survives reattach → gate opens despite empty raw caps
+    expect(session.supportsImageInput).toBe(true)
+  })
+
+  it("supportsImageInput stays false when normalized image is false", async () => {
+    await session.attach({ cwd: "/some/cwd", cliKind: "codex" })
+    simulateCaps({ image: false })
+
+    expect(session.supportsImageInput).toBe(false)
   })
 
   it("counts _claude/sdkMessage ext notifications for the raw SDK spike", async () => {

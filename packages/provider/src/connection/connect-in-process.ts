@@ -19,6 +19,7 @@
 
 import { ClaudeAcpAgent } from "@agentclientprotocol/claude-agent-acp"
 import type { NewSessionRequest } from "@agentclientprotocol/sdk"
+import { extractPromptCaps } from "@drive-coding/core/acp/extract-prompt-caps"
 import { createLogger } from "@drive-coding/core/log"
 import { agent, methods, RequestError } from "@agentclientprotocol/sdk"
 import { getCliSpec } from "../config/index.js"
@@ -28,6 +29,7 @@ import { makeAcpClientFromCtx } from "../providers/claude/client-bridge.js"
 import { getQuery } from "../providers/claude/query-access.js"
 import { createTurnTracker } from "../shared/turn-tracker.js"
 import { decodeWireLine } from "../shared/wire-decode.js"
+import type { NormalizedCapabilities } from "../types.js"
 import { buildClaudeEnvOverride, injectEnvOverride } from "./claude-env-override.js"
 import { createStreamBridge } from "./stream-bridge.js"
 import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
@@ -124,6 +126,13 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
     if (dir === "in") {
       tracker.observe(s, Date.now())
       emitBusyChange()
+
+      // slice reattach-state-sync Commit 1 — tap the initialize response for the real
+      // promptCapabilities (structural: responseKind==="result" + agentCapabilities present).
+      const promptCaps = extractPromptCaps(s.parsed)
+      if (promptCaps) {
+        caps = { ...caps, image: promptCaps.image === true }
+      }
     }
 
     // Derive type label (same as connectSpawn).
@@ -278,16 +287,20 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
     },
   }
 
-  // capabilities: mapClaudeCapabilities(null) — static for claude in-process.
+  // caps: mapClaudeCapabilities(null) — static baseline for claude in-process.
   // initResult is not captured here; the FE sends initialize over the wire.
-  // mapClaudeCapabilities(null) returns: mcp=false, rename=true, thinkingTokens=true.
-  // Note: mcp will be false until we tap the initialize response (future improvement).
+  // mapClaudeCapabilities(null) returns: mcp=false, rename=true, thinkingTokens=true, image=false.
+  // Note: mcp stays false until we tap the initialize response (future improvement).
   // Per brief §3: "BE-side, mapClaudeCapabilities — already includes rename/thinkingTokens".
-  const capabilities = mapClaudeCapabilities(null)
+  // mutable — slice reattach-state-sync Commit 1: the init-frame tap (handleLine, dir="in")
+  // updates `image` in place once it observes a real initialize response.
+  let caps = mapClaudeCapabilities(null)
 
   const connection: ProviderConnection = {
     wire,
-    capabilities,
+    get capabilities(): NormalizedCapabilities {
+      return caps
+    },
 
     onFrame(cb: (f: WireFrame) => void): () => void {
       frameListeners.add(cb)

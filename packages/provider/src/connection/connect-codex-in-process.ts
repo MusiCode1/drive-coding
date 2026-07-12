@@ -20,16 +20,18 @@
  * which kills codex child after 2s (built into the fork).
  */
 
-import { PassThrough } from "node:stream"
 import * as os from "node:os"
 import * as path from "node:path"
-import { startAcpServer } from "@musicode1/codex-acp/lib"
+import { PassThrough } from "node:stream"
+import { extractPromptCaps } from "@drive-coding/core/acp/extract-prompt-caps"
 import { resolveCliBinary } from "@drive-coding/core/cli-resolve"
+import { startAcpServer } from "@musicode1/codex-acp/lib"
 import { createTurnTracker } from "../shared/turn-tracker.js"
 import { decodeWireLine } from "../shared/wire-decode.js"
-import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
-import { staticCapsFor } from "./capabilities-static.js"
 import type { BridgeCrashInfo } from "../spawn/index.js"
+import type { NormalizedCapabilities } from "../types.js"
+import { staticCapsFor } from "./capabilities-static.js"
+import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
 
 /**
  * resolveCodexPath — finds the native codex binary using resolveCliBinary.
@@ -100,6 +102,13 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
     if (dir === "in") {
       tracker.observe(s, Date.now())
       emitBusyChange()
+
+      // slice reattach-state-sync Commit 1 — tap the initialize response for the real
+      // promptCapabilities (structural: responseKind==="result" + agentCapabilities present).
+      const promptCaps = extractPromptCaps(s.parsed)
+      if (promptCaps) {
+        caps = { ...caps, image: promptCaps.image === true }
+      }
     }
 
     // Derive type label (same as connectInProcess/connectSpawn).
@@ -200,12 +209,16 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
     },
   }
 
-  // capabilities: staticCapsFor("codex") — static, no runtime discovery.
-  const capabilities = staticCapsFor("codex")
+  // caps: staticCapsFor("codex") — static baseline. mutable — slice reattach-state-sync
+  // Commit 1: the init-frame tap (handleLine, dir="in") updates `image` in place once it
+  // observes a real initialize response.
+  let caps = staticCapsFor("codex")
 
   const connection: ProviderConnection = {
     wire,
-    capabilities,
+    get capabilities(): NormalizedCapabilities {
+      return caps
+    },
 
     onFrame(cb: (f: WireFrame) => void): () => void {
       frameListeners.add(cb)

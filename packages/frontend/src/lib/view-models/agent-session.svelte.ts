@@ -172,10 +172,16 @@ export class AgentSession {
   /**
    * האם הסשן הנוכחי תומך בקלט תמונה.
    * IMAGE_INPUT_ENABLED=false → תמיד false (פיגום רדום).
-   * Commit 4 הופך ל-true ובודק promptCapabilities.image מהספק.
+   * מקור כפול (slice reattach-state-sync): raw `#client` caps (cold connect, מ-`initialize`)
+   * **או** ה-NormalizedCapabilities מ-`_drive/capabilities` (`#capabilities.image`) — שנדחף בכל
+   * attach ולכן **שורד warm reattach** (שבו `#client` נוצר עם `ATTACHED_CAPS_FALLBACK` ריק).
    */
   get supportsImageInput(): boolean {
-    return IMAGE_INPUT_ENABLED && this.#client?.capabilities?.promptCapabilities?.image === true
+    return (
+      IMAGE_INPUT_ENABLED &&
+      (this.#client?.capabilities?.promptCapabilities?.image === true ||
+        this.#capabilities?.image === true)
+    )
   }
 
   // ─── slice FE-normalization: capabilities + gating ─── (additive)
@@ -207,6 +213,7 @@ export class AgentSession {
         configOptions: false,
         rename: false,
         thinkingTokens: false,
+        image: false,
       }
     )
   }
@@ -1588,10 +1595,23 @@ export class AgentSession {
       // נשלח על ידי הסוכן במהלך ניגון מחדש של ההיסטוריה מ-loadSession (לפי מפרט ACP
       // סעיף §session-setup#loading-sessions). לעולם לא מגיע בתורים חיים —
       // אלה מקורם מ-sendPrompt ואנחנו מוסיפים להם את הבועה האופטימית שם.
-      const content = update.content as { type?: string; text?: string; data?: string; mimeType?: string; name?: string; uri?: string } | undefined
+      const content = update.content as
+        | {
+            type?: string
+            text?: string
+            data?: string
+            mimeType?: string
+            name?: string
+            uri?: string
+          }
+        | undefined
       if (content?.type === "text") {
         this.#appendChunk("user", content.text ?? "", messageId)
-      } else if (content?.type === "image" && content.data !== undefined && content.mimeType !== undefined) {
+      } else if (
+        content?.type === "image" &&
+        content.data !== undefined &&
+        content.mimeType !== undefined
+      ) {
         this.#appendUserImage(messageId, { mimeType: content.mimeType, data: content.data })
       } else if (content?.type === "resource_link") {
         // resource_link: מצרף placeholder כדי למנוע איבוד-שקט.
@@ -1608,7 +1628,8 @@ export class AgentSession {
       return
     }
 
-    const text = update.content?.type === "text" ? ((update.content as { text?: string }).text ?? "") : ""
+    const text =
+      update.content?.type === "text" ? ((update.content as { text?: string }).text ?? "") : ""
     if (!text) return
 
     if (update.sessionUpdate === "agent_message_chunk") {
@@ -1768,10 +1789,7 @@ export class AgentSession {
    * לכן .push() על undefined יקרוס. לכן כאן **השמה** (`[..., a]`) — פותרת גם את
    * ה-undefined-init וגם מבטיחה reactivity על מערך שנוסף מאפס.
    */
-  #appendUserImage(
-    messageId: string | null,
-    img: { mimeType: string; data: string },
-  ): void {
+  #appendUserImage(messageId: string | null, img: { mimeType: string; data: string }): void {
     const last = this.bubbles[this.bubbles.length - 1]
     const canGroup =
       last !== undefined &&
