@@ -74,6 +74,28 @@ export type ToolContent = ToolContentText | ToolContentDiff | ToolContentTermina
 
 export type ToolLocation = { path: string; line?: number }
 
+// ─── slice subagent-transcript-data-v2: תעתיק תת-סוכן (additive) ───
+// שכבת-נתונים בלבד — B1. אין רינדור (B2). ר' docs/plans/slice-subagent-transcript-data-v2.md §4.
+
+/** מצב תת-הסוכן, נגזר ממקורות _claude/sdkMessage (task_started/progress/notification/updated). */
+export type SubagentTaskStatus = "pending" | "in_progress" | "completed" | "failed" | "unknown"
+
+/** metadata של Task/תת-סוכן, ממופה על ToolCall.task. הליבה = prompt + summary (value_priority, decisions 2026-07-11). */
+export type TaskMeta = {
+  taskId?: string
+  subagentType?: string
+  prompt?: string
+  summary?: string
+  lastToolName?: string
+  status: SubagentTaskStatus
+}
+
+/**
+ * SubFrame — פריט בתעתיק המקונן (subFrames) של בועת Task.
+ * subset של Bubble — message/thought/tool בלבד (אין UserBubble) — reuse ל-renderer ב-B2.
+ */
+export type SubFrame = MessageBubble | ThoughtBubble | ToolBubble
+
 export type ToolCall = {
   toolCallId: string
   name: string
@@ -90,6 +112,8 @@ export type ToolCall = {
   // ─── slice 16 (ACP content) ───
   content?: ToolContent[]
   locations?: ToolLocation[]
+  /** slice subagent-transcript-data-v2 — metadata של Task/תת-סוכן. undefined = לא-Task tool call. */
+  task?: TaskMeta
 }
 
 export type ToolBubble = BubbleBase & {
@@ -98,6 +122,8 @@ export type ToolBubble = BubbleBase & {
   toolCall: ToolCall
   /** תמיד ריק — שומר על מבנה אחיד מול בועות תוכן עבור האיחוד (union). */
   segments: never[]
+  /** slice subagent-transcript-data-v2 — תעתיק תת-סוכן מקונן. undefined = לא-Task tool call. */
+  subFrames?: SubFrame[]
 }
 
 export type Bubble = UserBubble | MessageBubble | ThoughtBubble | ToolBubble
