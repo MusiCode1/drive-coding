@@ -172,10 +172,16 @@ export class AgentSession {
   /**
    * האם הסשן הנוכחי תומך בקלט תמונה.
    * IMAGE_INPUT_ENABLED=false → תמיד false (פיגום רדום).
-   * Commit 4 הופך ל-true ובודק promptCapabilities.image מהספק.
+   * מקור כפול (slice reattach-state-sync): raw `#client` caps (cold connect, מ-`initialize`)
+   * **או** ה-NormalizedCapabilities מ-`_drive/capabilities` (`#capabilities.image`) — שנדחף בכל
+   * attach ולכן **שורד warm reattach** (שבו `#client` נוצר עם `ATTACHED_CAPS_FALLBACK` ריק).
    */
   get supportsImageInput(): boolean {
-    return IMAGE_INPUT_ENABLED && this.#client?.capabilities?.promptCapabilities?.image === true
+    return (
+      IMAGE_INPUT_ENABLED &&
+      (this.#client?.capabilities?.promptCapabilities?.image === true ||
+        this.#capabilities?.image === true)
+    )
   }
 
   // ─── slice FE-normalization: capabilities + gating ─── (additive)
