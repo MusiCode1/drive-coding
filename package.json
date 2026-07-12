@@ -1,6 +1,6 @@
 {
   "name": "drive-coding",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.0.0",

@@ -1,3 +1,84 @@
+## 2026-07-11 — slice-be-lifecycle-hardening — סיכום סופי
+
+**סטטוס**: הושלם. 2 commits על `slice/be-lifecycle-hardening` (base: `dev` @ `dfac736d`).
+
+**commits**:
+- Commit 0 — dispose-on-close ל-claude in-process (#5): `withTimeout`+`createLogger`+`DISPOSE_TIMEOUT_MS`
+  ב-`connect-in-process.ts`, 3 טסטים חדשים (spy על `ClaudeAcpAgent.prototype.dispose`).
+- Commit 1 — סגירת DELETE-בזמן-spawn race (#7): `pending` Map + token-cancel + double-connect guard
+  ב-`connection-registry.ts`, קובץ-טסט חדש נפרד `connection-registry.race.test.ts` (`vi.mock`).
+
+**build-gate**:
+- provider typecheck: 3 שגיאות pre-existing (ללא שינוי)
+- backend typecheck: 28 שגיאות pre-existing (ללא שינוי)
+- provider tests: 178 passed | 8 skipped (0 רגרסיות)
+- backend tests: 741 passed | 14 skipped (0 רגרסיות; כשל יחיד pre-existing ב-`https-serve.test.ts`, Windows-only)
+- lint (biome check): 0 errors, 0 warnings על כל הקבצים ששונו
+
+**DoD חי (#5) — אומת בפועל עם claude אמיתי**: כתבתי סקריפט-אימות חד-פעמי (זמני, לא בקוד — נמחק
+בסיום) שהריץ `connectInProcess` אמיתי מול claude חי (claude CLI מותקן ומחובר בסביבה): initialize →
+session/new → session/prompt ("Reply with exactly: OK") → `pgrep -af claude` הראה subprocess חדש
+(pid 46084, session-id `cb9fb3e0-...`) → `conn.close()` → `pgrep` אחרי 1s **לא הראה יותר** את ה-pid
+הזה. **הוכחה חיה ש-dispose-on-close הורג את ה-claude CLI subprocess** (לפני התיקון זה לא היה קורה
+— ה-subprocess היה שורד). הערה: היו 4 תהליכי-claude *אחרים* (pids 42611-42713, session-ids שונים)
+שנכחו גם *לפני* תחילת הבדיקה (יתומים ממופע/worktree אחר שרץ במקביל בסביבה) — לא קשורים לבדיקה הזו
+ולא הושפעו ממנה; האסרשן תוקן לבדוק את ה-pid הספציפי של הבדיקה, לא ריקנות מוחלטת של pgrep.
+
+**DoD חי (#7) — לא אומת חי** (דורש תזמון מדויק של DELETE-באמצע-spawn, קשה לשחזור אמין בסקריפט
+חד-פעמי) — מכוסה במלואו ע"י `connection-registry.race.test.ts` (deterministic, mocked connect עם
+deferred promise נשלט). מסומן ל-runtime-gate (calev) אם רלוונטי.
+
+**חריגות**: אין מבחינת עיצוב-קוד — שני ה-commits תואמים את §4 של הבריף במדויק (סמלים, סדר, הערות).
+
+---
+
+## 2026-07-11 — slice-be-lifecycle-hardening — Commit 1
+
+**סטטוס**: Commit 1/2 הושלם (סגירת DELETE-בזמן-spawn race, #7) על `slice/be-lifecycle-hardening`.
+
+**מה בוצע**:
+- `packages/backend/src/acp/connection-registry.ts`:
+  - `pending` Map חדש (module-scope בתוך `createConnectionRegistry`) — `Map<string, {cancelled: boolean}>`.
+  - `connect()`: double-connect guard (`pending.has(agentId)` → throw "already connecting") **לפני** ה-spawn; `token={cancelled:false}` נכנס ל-`pending` לפני ה-`await connect*`; אחרי ה-`await` — בדיקת `token.cancelled` **בלי await בין הבדיקה ל-map.set** (סינכרוני, כפי שהבריף מדגיש) — אם בוטל: `rec.close()` + `await conn.close().catch(...)` + throw "cancelled by concurrent close". כל הגוף עטוף ב-`try/finally` עם `pending.delete(agentId)` ב-finally. `rec` הוזז לתוך ה-try (כדי ש-`rec.close()` יהיה נגיש בנתיב-הביטול). onFrame/onCrash/map.set **verbatim** מהקוד הקיים.
+  - `close()`: מסמן `pending.get(agentId).cancelled = true` (אם קיים) **לפני** הבדיקה `map.get` — כך ש-connect בטיסה יבטל את עצמו גם אם `close` רץ *לפני* שה-spawn הסתיים.
+- `connection-registry.race.test.ts` — **קובץ חדש נפרד** (לא בתוך הקיים, לפי הנחיית הבריף/אביגיל #1): `vi.mock("@drive-coding/provider/connection", ...)` עם factory שמייצאת-מחדש את כל 4 הסמלים (`connectInProcess`/`connectSpawn`/`connectCodexInProcess` מדומים עם deferred promise נשלט; `decodeWireLine` = `importOriginal` אמיתי — השמטתו הייתה מקריסה את ה-import). 2 טסטים: (א) `close()` באמצע `connect()` בטיסה → connect נדחה עם "cancelled by concurrent close", `conn.close()` נקרא, אין entry ב-map; (ב) double-connect guard — connect שני על agentId בטיסה נדחה מיָד עם "already connecting".
+- `connection-registry.test.ts` הקיים (real children, אין `vi.mock`) — **ללא שינוי**, כולל טסט "double-connect → already live" (עדיין ירוק עם ה-guard החדש).
+
+**build-gate**:
+- backend typecheck: 28 שגיאות pre-existing (אומת ב-`git stash`/`git stash pop` — זהות ל-base), 0 חדשות.
+- backend tests: 741 passed | 14 skipped (כולל שני קבצי connection-registry: 16 קיימים + 2 חדשים = 18; 0 רגרסיות). כשל יחיד pre-existing ב-`tests/https-serve.test.ts` (Windows-only hardcoded `bun.exe` path — לא רלוונטי ל-Linux, אומת שקיים גם על base).
+- lint (biome check על שני הקבצים): 0 errors, 0 warnings (תוקנו: organize-imports + noNonNullAssertion בקוד החדש; format-fix על ה-import הקיים ב-connection-registry.ts היה pre-existing).
+
+**חריגות**: אין מבחינת עיצוב — ה-implementation תואם את §4 Commit 1 מדויק (טוקן-ביטול, ללא await בין check ל-set, double-connect guard). `withTimeout`/`DISPOSE_TIMEOUT_MS` מ-Commit 0 נשארו בלתי-נוגעים.
+
+**חי (DoD #7)**: לא הורץ בשלב זה (dispatch note: מרבית הבדיקות כאן unit+typecheck; אין claude/opencode חי בסביבת הביצוע) — מסומן ל-runtime-gate (calev) בסוף הסלייס.
+
+---
+
+## 2026-07-11 — slice-be-lifecycle-hardening — Commit 0
+
+**סטטוס**: Commit 0/2 הושלם (dispose-on-close ל-claude in-process, #5) על `slice/be-lifecycle-hardening`.
+
+**מה בוצע**:
+- `packages/provider/src/connection/connect-in-process.ts`:
+  - הוספת `import { createLogger } from "@drive-coding/core/log"` + `const log = createLogger("provider.connect-in-process")` (לא היו קיימים).
+  - `withTimeout<T>(p, ms)` — עוזר מקומי חדש (module-level, `Promise.race`+timer `.unref?.()`); אין עוזר-נגיש קיים ב-provider (אומת ע"י אביגיל).
+  - `DISPOSE_TIMEOUT_MS = 5000` (module-const, לפי §9 Q2).
+  - `close()`: הוסף `await withTimeout(claudeAgent.dispose(), DISPOSE_TIMEOUT_MS).catch(...)` **לפני** `bridge.close()` — סוגר את ה-SDK query → `query.close()` מסיים את ה-claude CLI subprocess. `dispose` נקרא **רק** מ-`close()` המפורש (נתיב-C3 נשאר log-only, לא נגעתי בו).
+- `connect-in-process.test.ts`: 3 טסטים חדשים (describe `dispose-on-close (#5)`), spy על `ClaudeAcpAgent.prototype.dispose`:
+  - dispose נקרא פעם-אחת ב-close (mockResolvedValue).
+  - close נפתר גם כש-dispose נדחה (mockRejectedValue).
+  - close נפתר דרך ה-timeout-guard כש-dispose נתקע לנצח (mockImplementation תלוי-promise + `vi.useFakeTimers()`/`advanceTimersByTimeAsync(5001)` — לא ממתין 5s אמיתיות).
+
+**build-gate**:
+- provider typecheck: 3 שגיאות pre-existing (זהות למצב לפני השינוי — אומת ב-`git stash`/`git stash pop`), 0 חדשות.
+- provider tests: 178 passed | 8 skipped (0 רגרסיות; כולל 14/14 טסטים קיימים ב-`connect-in-process.test.ts` + 3 חדשים = 17).
+- הטסט הקיים "stream write rejection does NOT fire onCrash (C3 reverted)" — ירוק, ללא שינוי בהתנהגות.
+- lint (biome check על שני הקבצים): 0 errors (5 warnings/4 infos — כולם pre-existing, `noNonNullAssertion` בשורות שלא נגעתי בהן).
+
+**חריגות**: אין. הרצתי `git stash`/`git stash pop` כדי לאמת שה-3 שגיאות typecheck הן pre-existing ולא נגרמו מהשינוי שלי (gotcha ידוע: `core/dist` — לא רלוונטי כאן כי `@drive-coding/core` מייצא ישירות מ-`.ts`, אין build נדרש).
+
+**חי (DoD claude-child)**: לא הורץ בשלב זה (אין claude חי זמין ב-session הנוכחי) — מסומן ל-runtime-gate (calev) בסוף הסלייס, לפי הנחיית ה-dispatch.
 ## 2026-07-11 18:17
 
 ### slice-acp-stack-upgrade — Commit 5: raw SDK spike ל-Claude subagent transcript

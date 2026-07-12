@@ -1,6 +1,6 @@
 # Slice — be-lifecycle-hardening — תוכנית
 
-> **תאריך**: 2026-07-11 · **סטטוס**: 🟢 brief (טרם אביגיל)
+> **תאריך**: 2026-07-11 · **סטטוס**: ✅ **הושלם** (2026-07-11, 2 commits: 5d4a8b34..b1d1bde6). אביגיל r2 READY לפני ביצוע.
 > **Complexity**: 6/10 (verifier: **light (calev)**, אך אימות-היתומים חייב להיות **חי** — child אמיתי, לא unit)
 > **תלות**: `depends_on: []` · **base**: `dev` @ `0c8cb0e8` (השרשרת be-shutdown-hardening + crash-teardown + diag + options-trim + LAN כבר מוזגו; v0.15.0)
 > **מקור**: bug-review 2026-07-06 findings #5 (claude `dispose`), #7 (DELETE-during-spawn race) + המשך-ישיר ל-`be-shutdown-hardening` §11(4) ("claude in-process בלי `dispose` → out-of-scope שם").

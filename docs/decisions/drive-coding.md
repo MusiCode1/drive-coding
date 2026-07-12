@@ -1,5 +1,139 @@
 # Decisions — drive-coding
 
+## 2026-07-12 — reattach-state-sync (capabilities-only): גיבוי יכולות-ה-CLI ברישום ה-BE כך שישרדו reconnect
+
+### רציונל
+ב-warm reattach (‏`createAttachedAcpClient` — ה-FE מתחבר לסוכן שכבר רץ בלי `initialize`) ה-FE
+מאבד את היכולות שה-CLI שולח ב-`initialize` בתחילת סשן (במיוחד `promptCapabilities.image`) →
+כפתור-התמונה נעלם אחרי reconnect (known-limitation של image-paste). הפתרון: ה-BE **מחזיק** את
+היכולות ב-`connection-registry` (‏`ConnEntry` ששורד detach) ודוחף אותן ל-FE דרך הערוץ
+`_drive/capabilities` בכל attach — בלתי-תלוי ב-`initialize`. המקור: **tap פסיבי** על frame ה-init
+(‏`decodeWireLine`/`responseKind==='result'`) בכל 3 ה-connect-* → אגנוסטי-למתאם (אפס נגיעה ב-SDK,
+עיקרון-יסוד של הפרויקט). Scope צומצם ל-**capabilities-only (Commit 1+2)** לבקשת המשתמשת; turn-state
+(Commit 3) ו-liveness (Commit 4) נדחו ל-slices/dispatches נפרדים.
+
+### ממצאי אביגיל
+Brief **יתום**: היה READY r2 היסטורית (‏`f017665e`) על base v0.12.0, אך מעולם לא שוגר, ללא
+state.json, וה-base התיישן ב-134 commits. base-refresh ל-v0.17.1 (`43e9d28e`) + re-verify:
+r3 USABLE-AFTER-FIX (4: ספירת-literals מיושנת אחרי cursor/grok ב-`fb564254`, line-refs נדדו,
+בלבול raw-vs-Normalized fallback, 7-שדות) → r4 USABLE-AFTER-FIX (2: ספירת-test-literals עדיין
+שגויה, line-refs נדדו שוב תוך דקות) → **r5 READY, 0 findings**. הפרמיסה המבנית נשארה שלמה לאורך
+כל הסבבים; התיקונים היו planner-text בלבד.
+
+### שינויי-כיוון
+(א) מספירת-literals מדויקת → **typecheck-driven**: `image` non-optional הופך את ה-typechecker
+ל-backstop. מונים production=8 (מעוגן בשמות-סמל), tests=**2 literals מלאים בלבד** (`makeCapabilities`
++ stub ב-`connection-registry.race.test.ts`); payloads מסוג `Partial<>`/`Record<string,unknown>`
+(‏`simulateCaps`/`client.extmethod`) **לא** נוגעים (יישברו `toHaveBeenCalledWith`). (ב) מ-line-numbers
+מוחלטים → **anchors**: הודגם חי שה-dev זז 3 פעמים תוך הסבב וה-line-numbers התיישנו תוך דקות.
+(ג) scope: מ-Phase A מלא (caps+turn) → capabilities-only.
+
+### רעיונות שנדחו
+- **`image?: boolean` optional** — פחות churn אך שובר עקביות עם 7 השדות ה-non-optional; נבחר
+  non-optional + עדכון כל האתרים (typecheck כ-backstop).
+- **hardcode סטטי פר-ספק** ל-`image` — ניחוש שסוטה ממה שהסוכן מדווח; נבחר tap-אמיתי + fallback `false` אחיד.
+- **fork של המתאם / hooks רשמיים** — נדחה ל-future (§10); ה-tap הפסיבי שומר אגנוסטיות-מתאם עכשיו.
+
+## 2026-07-12 — B2 subagent-transcript-render: רינדור מקונן מעל שכבת-הנתונים של B1
+
+### רציונל
+אחרי ש-B1 (`subagent-transcript-data`) נחת (calev GO, `3203f393`) — bועת ה-Task מחזיקה
+`toolCall.task` (metadata) ו-`subFrames` (תעתיק מקונן), אך אין רינדור. B2 מוסיף רכיב
+`SubagentBubble.svelte` שהופך את בועת ה-Task ל-container חי: header (זהות תת-סוכן + status)
++ אזור-transcript נגלל (max-height) עם ה-frames. **הכרעות-מפתח**: (א) **reuse דרך
+`BubbleRenderer`** — ה-subFrames (message/thought/tool) מרונדרים ע"י ה-dispatcher הקיים,
+אפס שכפול-רינדור, `SubFrame ⊆ Bubble` → type-safe; (ב) **depth-guard** `MAX_NEST_DEPTH=1`
+(Task-בתוך-Task מרונדר שטוח → מונע recursion runaway, depth>1 = B3); (ג) **live-only ל-MVP**
+(עקבי עם הכרעת B1 — transcript נעלם ב-reload, persistence = future).
+
+### ממצאי אביגיל
+r1 = USABLE-AFTER-FIX (6 findings): `task` optional מפורק בלי guard (typecheck) · סמן
+`subFrames !== undefined` שביר · Svelte scoped-style (אי-אפשר reuse CSS של status-dot,
+חייב להעתיק) · `.status-unknown` חסר · derives לא-מוכרזים · טענת-reactivity לא-מדויקת.
+תוקנו → r2 = READY (+4 nits הוטמעו: עקביות-marker, aria-label `chat.subagent.status.*`,
+גדילה-תוך-frame נשענת על object-replacement).
+
+### שינויי-כיוון
+**סמן-הזיהוי הוכרע מול הקוד החי של B1** (לא מהניחוש ב-brief): אימות `reduceSubagent` הראה
+ש-B1 קובע `task` על `task_started` אך יוצר `subFrames` **lazily** (על ה-frame הראשון). לכן
+`subFrames !== undefined` לבדו **שביר** (מחמיץ Task שקיבל רק task_started). ההכרעה: פונקציה
+טהורה `isSubagentTask = task !== undefined || subFrames !== undefined` — predicate יחיד
+המשותף ל-`BubbleRenderer` ול-`SubagentBubble` (avigail r2 🟡: אותו תנאי בשני מקומות).
+
+### רעיונות שנדחו
+- **רכיב מקונן דרך עץ ב-`bubbles` הראשי** (במקום `subFrames` פנימי) — נדחה ב-B1; virtua נשאר שטוח.
+- **compact-frames ייעודיים ל-transcript** (במקום reuse רכיבים מלאים) — נדחה ל-MVP; אם ה-actions/TTS
+  על MessageBubble ייראו זרים בתעתיק → חידוד-CSS בהמשך (calev-heavy visual יתפוס). ר' §9 Q2.
+- **`subFrames !== undefined` כסמן-יחיד** — נדחה (שביר מול lazy-init של B1, ר' שינויי-כיוון).
+
+---
+
+## 2026-07-11 — subagent-transcript spike (Gate 1): ממצאי §9 חיים לפני B1
+
+### רקע
+`prebrief-subagent-nested-bubble.md` §9 דרש spike חי לפני שאפשר להפוך את B1 לבריף
+ביצועי — כדי לקבע reducer-semantics על ראיה ולא על ניחוש. הרצתי harness
+(`packages/provider/src/providers/claude/live/spike-subagent-fixture.ts`) מול claude
+2.1.202 האמיתי, פעמיים (עקבי): `connectInProcess` → session/new עם
+`_meta.claudeCode.emitRawSDKMessages`+`forwardSubagentText:true` → prompt שכופה Task
+רב-שלבי → לכידת **שני הערוצים** דרך `conn.onFrame` (ACP `session/update` +
+`_claude/sdkMessage` — שניהם רוכבים על אותו wire, dir="in"). fixture מצונזר:
+`packages/frontend/src/lib/view-models/__fixtures__/subagent-task-single.json`.
+
+### ממצאי §9 (אמפירי)
+- **Q1 — DELTAS, לא snapshot.** אותו `message.id` חוזר עם content-block שונה בכל frame
+  (thinking→text→tool_use). ה-reducer חייב **append מקובץ לפי `message.id`** + dedup, לא replace.
+- **Q2 — מיקום:** subagent `tool_use` ב-`assistant` content; subagent `tool_result` ב-**`user`**
+  content. שניהם עם `parent_tool_use_id`=Task.
+- **Q3 — task_\*:** `task_started`/`task_progress`/`task_notification` נושאים `task_id`+`tool_use_id`
+  (+`subagent_type`/`description`/`prompt`/`summary`/`usage`); **`task_updated` נושא רק `task_id`+`patch`**
+  (מאשר את אזהרת ה-pre-brief — index `task_id→tool_use_id` נבנה מ-`task_started`).
+- **Q4 — `parent_tool_use_id` == ACP `toolCallId`, בדיוק.** אומת בשתי הרצות (ids שונים, `⊆` מלא).
+- **Q5 — סדר:** ACP `tool_call` של ה-Task מגיע **לפני** `task_started` ולפני ה-assistant המקוננים
+  (parent-before-children החזיק) — אך pending-queue נשמר כהגנה (הסדר לא מובטח חוזית).
+- **Q6 — message-ids יציבים** ומשותפים בין כל ה-deltas של הודעה → grouping עובד.
+- **Q7 — `session/load` לא משחזר את ה-ext channel** (0 raw אחרי load). **ה-transcript live-only** →
+  נעלם ב-reload. מכריע: או להצהיר live-only ב-B2, או B3-persistence של ext ב-BE.
+
+### 🐛 פער בקוד שנחת ב-acp-stack
+`CLAUDE_SESSION_META` (ב-`agent-session.svelte.ts`) מבקש `{type:"assistant"}` אבל **חסר
+`{type:"user"}`** → תוצאות-הכלים של תת-הסוכן (tool_result) **לא זורמות**. נמצא רק בזכות הרצה
+חיה (ה-spike של acp-stack בדק רק assistant, הודעת `SUBAGENT_RAW_OK` בודדת). **B1 Commit-0
+חייב להוסיף `{type:"user"}`.**
+
+### רעש שאינו transcript (מאושר)
+`command_lifecycle` (queued/started/completed) פלט "Unexpected case" בdecode — noise, לא תוכן.
+`system.background_tasks_changed` לא נצפה (התרחיש לא הפעיל background).
+
+## 2026-07-11 — subagent-transcript-data-v2 (B1): brief READY (אביגיל r2), טרם dispatch
+
+### רציונל
+B1-v2 מחליף את `slice-subagent-transcript-data.md` (v1). **שינוי-מקור מהותי**: v1 הניח fork +
+`_meta.claudeCode.parentToolUseId` על `session/update`. אחרי `acp-stack-upgrade` (upstream 0.58.1,
+בלי fork) + ה-spike החי — המקור הוא `_claude/sdkMessage` (ext) דרך `#onExtNotification`, עם raw SDK
+messages (assistant/user/system). ה-brief כולו נגזר מה-fixture האמפירי, לא מהנחות.
+
+### שינויי-כיוון מ-v1
+- `#onExtNotification` (לא `#onSessionUpdate`) הוא נקודת-הכניסה.
+- parser טהור `parseClaudeSdkMessage` + reducer append-by-`message.id` (Q1 DELTAS) + index `taskId→toolUseId` (Q3).
+- **Commit 0 מתקן פער חי**: `CLAUDE_SESSION_META` חסר `{type:"user"}` → tool_result של תת-הסוכן לא זרם.
+- הפורק (`claude-subagent-adapter-fork`) — superseded (מיותר על upstream).
+
+### החלטת-scope (Q7) — הוכרע: LIVE-ONLY (משתמשת, 2026-07-11)
+transcript **live-only** (spike הוכיח: `session/load` לא משחזר ext). המשתמשת בחרה live-only ל-MVP;
+persistence = **future toggle** ("המתג שמשנה את זה") — BE tap+store+replay, הצנרת כבר קיימת
+(`connection-registry.onFrame`). לא נוגע ב-B1.
+
+### חידוד-ערך מהמשתמשת (משפיע על B2)
+הליבה שהמשתמשת רוצה = **prompt של תת-הסוכן + הודעת-הסיום/summary**. שניהם ב-`TaskMeta`
+(`task_started.prompt` + `task_notification.summary`) — **כבר נמזגים ב-B1 Commit 3**, לפני ה-transcript
+המלא. ה-`subFrames` (text/thinking/tool המקוננים) = **enhancement, לא חובה**. משמעות תכנונית:
+**ה-MVP האמיתי עשוי להיות רזה** — בועת Task עם prompt+summary בכותרת (TaskMeta ב-B2 קליל), וה-transcript
+המלא כשכבה שנייה. B1 נשאר כמו-שהוא (הוא בונה גם TaskMeta וגם subFrames); ההחלטה משפיעה על **סדר/היקף B2**.
+
+### ממצאי אביגיל
+r1 USABLE-AFTER-FIX (5: 2🟡 Commit3 + 3🟢 doc/type) → r2 READY 0-findings. ר' spike entry לעיל לממצאי §9.
+
 ## 2026-07-11 — acp-stack-upgrade: מוזג ל-dev (מרדכי — הכנה+מיזוג post-hoc)
 
 ### רציונל

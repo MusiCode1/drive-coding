@@ -19,6 +19,7 @@
 
 import { ClaudeAcpAgent } from "@agentclientprotocol/claude-agent-acp"
 import type { NewSessionRequest } from "@agentclientprotocol/sdk"
+import { createLogger } from "@drive-coding/core/log"
 import { agent, methods, RequestError } from "@agentclientprotocol/sdk"
 import { getCliSpec } from "../config/index.js"
 import { parseExtParams } from "../extensions/index.js"
@@ -30,6 +31,26 @@ import { decodeWireLine } from "../shared/wire-decode.js"
 import { buildClaudeEnvOverride, injectEnvOverride } from "./claude-env-override.js"
 import { createStreamBridge } from "./stream-bridge.js"
 import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
+
+const log = createLogger("provider.connect-in-process")
+
+/** #5 — timeout budget for claudeAgent.dispose() during close(); see brief §9 Q2. */
+const DISPOSE_TIMEOUT_MS = 5000
+
+/**
+ * withTimeout — races a promise against a timer, rejecting if the promise doesn't
+ * settle within `ms`. Local helper — no shared "race with timeout" utility exists
+ * in provider (checked: only inline Promise.race in ws.ts:107 / client.ts:256).
+ */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => {
+      const t = setTimeout(() => reject(new Error("dispose timeout")), ms)
+      t.unref?.()
+    }),
+  ])
+}
 
 /**
  * connectInProcess — creates a ProviderConnection that hosts ClaudeAcpAgent in-process.
@@ -298,6 +319,17 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
     },
 
     async close(): Promise<void> {
+      // #5 — סיים את כל ה-SDK sessions → query.close() מסיים את ה-claude subprocess.
+      // בלי זה ה-child דולף (be-shutdown kill-tree לא מכסה in-process). dispose אידמפוטנטי
+      // ובטוח על 0 sessions (Promise.all([])). timeout-guard: turn תקוע לא יתקע את close לנצח.
+      // נקרא רק כאן — מ-close() המפורש — ולא מ-.catch של agentConn/bridge (נתיב-C3 נשאר log-only).
+      if (claudeAgent) {
+        await withTimeout(claudeAgent.dispose(), DISPOSE_TIMEOUT_MS).catch((err) => {
+          // dispose נכשל/נתקע — ממשיכים לסגור bridge; ה-subprocess ייתפס ע"י
+          // graceful-shutdown/kill-tree של ה-BE כרשת-בטחון. לא זורקים החוצה.
+          log.warn({ err }, "claudeAgent.dispose() failed/timed-out during close — continuing")
+        })
+      }
       // Close the stream bridge first to terminate the underlying stream.
       // The agentConn will detect the stream closure and close itself.
       // We do NOT call agentConn.close() explicitly — it would create a double-close

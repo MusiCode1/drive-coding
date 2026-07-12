@@ -1,0 +1,13 @@
+{
+  "id": "reattach-state-sync",
+  "status": "plan-verified",
+  "plan_verified": true,
+  "dispatch_ready": true,
+  "base": "dev",
+  "depends_on": [],
+  "complexity": 5,
+  "verifier": "calev",
+  "dev_tip": "227be0e1",
+  "scope": "capabilities-only (Commit 1+2). Commit 3 (turn/busy) + Commit 4 (liveness) deferred to separate dispatches.",
+  "note": "Orphaned brief: Avigail READY r2 historically (f017665e) on base v0.12.0 but never dispatched, no state.json, base 134 commits stale. 2026-07-12 base-refreshed v0.12.0->v0.17.1 (43e9d28e) + re-verified: r3 USABLE-AFTER-FIX (4) -> r4 USABLE-AFTER-FIX (2) -> r5 READY (0 findings). Fixes were planner-text only (typecheck-driven literal count + anchor-based refs); structural premise intact."
+}

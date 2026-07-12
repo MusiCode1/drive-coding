@@ -18,7 +18,12 @@
 
 import { createLogger } from "@drive-coding/core/log"
 import type { ConnectOpts, ProviderConnection } from "@drive-coding/provider/connection"
-import { connectCodexInProcess, connectInProcess, connectSpawn, decodeWireLine } from "@drive-coding/provider/connection"
+import {
+  connectCodexInProcess,
+  connectInProcess,
+  connectSpawn,
+  decodeWireLine,
+} from "@drive-coding/provider/connection"
 import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
 import type { WireRecorder, WireSession } from "../delivery/wire-recorder.js"
 
@@ -82,6 +87,9 @@ export function createConnectionRegistry(opts?: {
   const crashListeners = new Set<
     (agentId: string, info: import("@drive-coding/provider/spawn").BridgeCrashInfo) => void
   >()
+  // #7 — טוקן-ביטול פר-spawn-בטיסה: סוגר את חלון-הרייס שבו DELETE מגיע בזמן
+  // ש-connect עדיין ב-await (map.set טרם רץ) → child אלמותי-בלתי-נגיש.
+  const pending = new Map<string, { cancelled: boolean }>()
 
   function cleanup(agentId: string): void {
     const entry = map.get(agentId)
@@ -103,56 +111,77 @@ export function createConnectionRegistry(opts?: {
       if (map.has(agentId)) {
         throw new Error(`connection-registry: agentId already live: ${agentId}`)
       }
+      // ── #7 double-connect guard: אותו agentId כבר בטיסה (in-flight spawn) ──
+      if (pending.has(agentId)) {
+        throw new Error(`connection-registry: agentId already connecting: ${agentId}`)
+      }
+      const token = { cancelled: false }
+      pending.set(agentId, token)
 
-      const rec = wireRecorder?.open(agentId) ?? { record() {}, close() {} }
+      try {
+        const rec = wireRecorder?.open(agentId) ?? { record() {}, close() {} }
 
-      // ── Routing (CUT-3b-iii-2 + codex-inprocess): ──
-      // claude → connectInProcess (acp-sdk Web Streams, Model 2)
-      // codex  → connectCodexInProcess (NDJSON PassThrough, startAcpServer fork)
-      // else   → connectSpawn (opencode/gemini/qoder)
-      // cliKinds: opencode/claude/gemini/codex/qoder/cursor/grok (core/src/schemas/agent.ts).
-      const conn =
-        cliKind === "claude"
-          ? await connectInProcess(connectOpts)
-          : cliKind === "codex"
-            ? await connectCodexInProcess(connectOpts)
-            : await connectSpawn(cliKind, connectOpts)
+        // ── Routing (CUT-3b-iii-2 + codex-inprocess): ──
+        // claude → connectInProcess (acp-sdk Web Streams, Model 2)
+        // codex  → connectCodexInProcess (NDJSON PassThrough, startAcpServer fork)
+        // else   → connectSpawn (opencode/gemini/qoder)
+        // cliKinds: opencode/claude/gemini/codex/qoder/cursor/grok (core/src/schemas/agent.ts).
+        const conn =
+          cliKind === "claude"
+            ? await connectInProcess(connectOpts)
+            : cliKind === "codex"
+              ? await connectCodexInProcess(connectOpts)
+              : await connectSpawn(cliKind, connectOpts)
 
-      // Register onFrame once (in+out) for wire-observability.
-      // Must NOT decode in wire.write separately — this is the single decode point.
-      const unsubFrame = conn.onFrame((frame) => {
-        try {
-          const s = decodeWireLine(frame.raw)
-          const type =
-            s.sessionUpdate ?? s.method ?? s.responseKind ?? (s.unparsed ? "unparsed" : "unknown")
-          wireLog.debug({ agentId, dir: frame.dir, type, id: s.id }, "wire")
-          if (!s.unparsed) wireLog.trace({ agentId, dir: frame.dir, frame: s.parsed }, "wire-full")
-        } catch {
-          /* silent — must not break the pipe */
+        // #7 — DELETE הגיע בזמן ה-spawn? סגור מיָד ואל תרשום (מונע child אלמותי).
+        // אין await בין הבדיקה הזו ל-map.set למטה — זה מה שסוגר את חלון-הרייס.
+        if (token.cancelled) {
+          rec.close()
+          await conn.close().catch(() => {
+            /* child may already be dead */
+          })
+          throw new Error(`connection-registry: connect cancelled by concurrent close: ${agentId}`)
         }
-        rec.record(frame.dir, frame.raw)
-      })
 
-      // onCrash: notify aggregate listeners + cleanup entry.
-      const unsubCrash = conn.onCrash((info) => {
-        for (const cb of crashListeners) {
+        // Register onFrame once (in+out) for wire-observability.
+        // Must NOT decode in wire.write separately — this is the single decode point.
+        const unsubFrame = conn.onFrame((frame) => {
           try {
-            cb(agentId, info)
+            const s = decodeWireLine(frame.raw)
+            const type =
+              s.sessionUpdate ?? s.method ?? s.responseKind ?? (s.unparsed ? "unparsed" : "unknown")
+            wireLog.debug({ agentId, dir: frame.dir, type, id: s.id }, "wire")
+            if (!s.unparsed)
+              wireLog.trace({ agentId, dir: frame.dir, frame: s.parsed }, "wire-full")
           } catch {
-            /* ignore */
+            /* silent — must not break the pipe */
           }
-        }
-        cleanup(agentId)
-      })
+          rec.record(frame.dir, frame.raw)
+        })
 
-      map.set(agentId, {
-        conn,
-        attached: false,
-        rec,
-        unsubs: [unsubFrame, unsubCrash],
-      })
+        // onCrash: notify aggregate listeners + cleanup entry.
+        const unsubCrash = conn.onCrash((info) => {
+          for (const cb of crashListeners) {
+            try {
+              cb(agentId, info)
+            } catch {
+              /* ignore */
+            }
+          }
+          cleanup(agentId)
+        })
 
-      return conn
+        map.set(agentId, {
+          conn,
+          attached: false,
+          rec,
+          unsubs: [unsubFrame, unsubCrash],
+        })
+
+        return conn
+      } finally {
+        pending.delete(agentId)
+      }
     },
 
     get(agentId) {
@@ -187,8 +216,11 @@ export function createConnectionRegistry(opts?: {
     },
 
     async close(agentId) {
+      // #7 — סמן ל-connect שבטיסה (אם יש) לבטל את עצמו ברגע שה-spawn מסתיים.
+      const pend = pending.get(agentId)
+      if (pend) pend.cancelled = true
       const e = map.get(agentId)
-      if (!e) return
+      if (!e) return // אם רק pending — הסימון לבד מספיק; connect יסגור בעצמו
       cleanup(agentId)
       try {
         await e.conn.close()
