@@ -1,3 +1,24 @@
+## 2026-07-12
+
+### slice-subagent-transcript-render — Commit 1: `SubagentBubble.svelte` + פיצול `BubbleRenderer`
+
+**מה בוצע:**
+- `isSubagentTask(bubble)` נוספה כפונקציה טהורה ב-`bubble-rendering.ts`: `toolCall.task !== undefined || subFrames !== undefined` (סמן משולב שהוכרע מול B1).
+- `SubagentBubble.svelte` חדש: props-only (`bubble: ToolBubble`, `depth = 0`). header עם status-dot (`chat.subagent.status.*`, כולל `unknown`) + `subagentType`/`prompt` (truncate, `dir="auto"`). transcript region עם `{#each subFrames as sf (sf.id)} <BubbleRenderer bubble={sf} depth={depth+1} />` + `<span class="hidden">{frames.length}</span>` לכפיית reactivity (object-replacement).
+- `BubbleRenderer.svelte`: prop `depth = 0` נוסף; ענף `bubble.kind === "tool"` מתפצל — `isSubagentTask(bubble) && depth < MAX_NEST_DEPTH(=1)` → `SubagentBubble`, אחרת `ToolBubble` הרגיל (ללא רגרסיה לכלים רגילים).
+- `derived`-ים לפי finding #5 (לא destructuring ישיר), `task?.` fallbacks לפי finding #1/#4, CSS status-dot **הועתק** (לא reuse) ל-`<style>` הscoped של SubagentBubble כולל `.status-unknown` (finding #3/#4).
+- i18n: 8 מפתחות חדשים תחת `chat.subagent.*` ב-`keys.ts` + ערכים ב-`catalogs/he.ts`+`catalogs/en.ts`.
+
+**בדיקות:**
+- `svelte-check --tsconfig ./tsconfig.json` — 0 errors, 0 warnings (5020 קבצים).
+- `vitest run` (FE מלא) — 465/465 ירוק, ללא רגרסיה מהבייסליין.
+- `scripts/lint-no-hebrew-in-code.sh` — נקי.
+- `vite build` (production) — הצליח; אומת בגריפ שה-CSS/JS של `SubagentBubble` (`chat.subagent`, `transcript-region`) אכן ארוזים ב-bundle.
+- `vite preview` + `curl` ל-`/chat` — HTTP 200, shell נטען.
+
+**חריגות:**
+- **אין דפדפן/GUI זמין בסביבת-הביצוע הזו** (linux sandbox ללא chromium/playwright) — אי-אפשר לצלם screenshot או לבצע smoke ויזואלי אמיתי (Task חי/fixture-replay) כפי שה-Commit דורש. הביצוע התבסס על typecheck+test+build+preview-HTTP בלבד. **הווידוא הויזואלי/E2E האמיתי (DoD #1,4,5,6,7,8,9,10,12,14) מופקד ב-calev-heavy** כפי שה-brief כבר קבע (complexity 8 → verifier heavy, בדיוק בגלל שהטסטים לא מספיקים לרכיב הזה).
+
 ## 2026-07-11 18:17
 
 ### slice-acp-stack-upgrade — Commit 5: raw SDK spike ל-Claude subagent transcript

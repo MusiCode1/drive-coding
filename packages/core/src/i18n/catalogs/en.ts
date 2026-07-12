@@ -64,6 +64,15 @@ export const en: Catalog = {
   "chat.tool.terminal": "Terminal",
   "chat.tool.diff.added": "Added",
   "chat.tool.diff.removed": "Removed",
+  // ─── subagent-bubble ─── (slice subagent-transcript-render)
+  "chat.subagent.status.pending": "Pending",
+  "chat.subagent.status.in_progress": "In progress",
+  "chat.subagent.status.completed": "Completed",
+  "chat.subagent.status.failed": "Failed",
+  "chat.subagent.status.unknown": "Unknown",
+  "chat.subagent.prompt": "Task",
+  "chat.subagent.summary": "Summary",
+  "chat.subagent.transcript": "Subagent activity",
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)

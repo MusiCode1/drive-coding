@@ -60,6 +60,15 @@ export const he: Catalog = {
   "chat.tool.terminal": "טרמינל",
   "chat.tool.diff.added": "נוסף",
   "chat.tool.diff.removed": "הוסר",
+  // ─── subagent-bubble ─── (slice subagent-transcript-render)
+  "chat.subagent.status.pending": "ממתין",
+  "chat.subagent.status.in_progress": "בתהליך",
+  "chat.subagent.status.completed": "הושלם",
+  "chat.subagent.status.failed": "נכשל",
+  "chat.subagent.status.unknown": "לא ידוע",
+  "chat.subagent.prompt": "משימה",
+  "chat.subagent.summary": "סיכום",
+  "chat.subagent.transcript": "פעילות תת-סוכן",
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)
