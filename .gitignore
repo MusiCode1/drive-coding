@@ -41,3 +41,7 @@ packages/frontend/.build-old/
 .research/
 **/.localappdata/**
 .localappdata/
+
+# docs/ הועבר ל-docs-repo (private, משותף בין פרויקטים)
+docs/
+docs-for-llm/
