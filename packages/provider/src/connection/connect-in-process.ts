@@ -19,6 +19,8 @@
 
 import { ClaudeAcpAgent } from "@agentclientprotocol/claude-agent-acp"
 import type { NewSessionRequest } from "@agentclientprotocol/sdk"
+import { extractPromptCaps } from "@drive-coding/core/acp/extract-prompt-caps"
+import { createLogger } from "@drive-coding/core/log"
 import { agent, methods, RequestError } from "@agentclientprotocol/sdk"
 import { getCliSpec } from "../config/index.js"
 import { parseExtParams } from "../extensions/index.js"
@@ -27,9 +29,30 @@ import { makeAcpClientFromCtx } from "../providers/claude/client-bridge.js"
 import { getQuery } from "../providers/claude/query-access.js"
 import { createTurnTracker } from "../shared/turn-tracker.js"
 import { decodeWireLine } from "../shared/wire-decode.js"
+import type { NormalizedCapabilities } from "../types.js"
 import { buildClaudeEnvOverride, injectEnvOverride } from "./claude-env-override.js"
 import { createStreamBridge } from "./stream-bridge.js"
 import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
+
+const log = createLogger("provider.connect-in-process")
+
+/** #5 — timeout budget for claudeAgent.dispose() during close(); see brief §9 Q2. */
+const DISPOSE_TIMEOUT_MS = 5000
+
+/**
+ * withTimeout — races a promise against a timer, rejecting if the promise doesn't
+ * settle within `ms`. Local helper — no shared "race with timeout" utility exists
+ * in provider (checked: only inline Promise.race in ws.ts:107 / client.ts:256).
+ */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => {
+      const t = setTimeout(() => reject(new Error("dispose timeout")), ms)
+      t.unref?.()
+    }),
+  ])
+}
 
 /**
  * connectInProcess — creates a ProviderConnection that hosts ClaudeAcpAgent in-process.
@@ -103,6 +126,13 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
     if (dir === "in") {
       tracker.observe(s, Date.now())
       emitBusyChange()
+
+      // slice reattach-state-sync Commit 1 — tap the initialize response for the real
+      // promptCapabilities (structural: responseKind==="result" + agentCapabilities present).
+      const promptCaps = extractPromptCaps(s.parsed)
+      if (promptCaps) {
+        caps = { ...caps, image: promptCaps.image === true }
+      }
     }
 
     // Derive type label (same as connectSpawn).
@@ -257,16 +287,20 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
     },
   }
 
-  // capabilities: mapClaudeCapabilities(null) — static for claude in-process.
+  // caps: mapClaudeCapabilities(null) — static baseline for claude in-process.
   // initResult is not captured here; the FE sends initialize over the wire.
-  // mapClaudeCapabilities(null) returns: mcp=false, rename=true, thinkingTokens=true.
-  // Note: mcp will be false until we tap the initialize response (future improvement).
+  // mapClaudeCapabilities(null) returns: mcp=false, rename=true, thinkingTokens=true, image=false.
+  // Note: mcp stays false until we tap the initialize response (future improvement).
   // Per brief §3: "BE-side, mapClaudeCapabilities — already includes rename/thinkingTokens".
-  const capabilities = mapClaudeCapabilities(null)
+  // mutable — slice reattach-state-sync Commit 1: the init-frame tap (handleLine, dir="in")
+  // updates `image` in place once it observes a real initialize response.
+  let caps = mapClaudeCapabilities(null)
 
   const connection: ProviderConnection = {
     wire,
-    capabilities,
+    get capabilities(): NormalizedCapabilities {
+      return caps
+    },
 
     onFrame(cb: (f: WireFrame) => void): () => void {
       frameListeners.add(cb)
@@ -298,6 +332,17 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
     },
 
     async close(): Promise<void> {
+      // #5 — סיים את כל ה-SDK sessions → query.close() מסיים את ה-claude subprocess.
+      // בלי זה ה-child דולף (be-shutdown kill-tree לא מכסה in-process). dispose אידמפוטנטי
+      // ובטוח על 0 sessions (Promise.all([])). timeout-guard: turn תקוע לא יתקע את close לנצח.
+      // נקרא רק כאן — מ-close() המפורש — ולא מ-.catch של agentConn/bridge (נתיב-C3 נשאר log-only).
+      if (claudeAgent) {
+        await withTimeout(claudeAgent.dispose(), DISPOSE_TIMEOUT_MS).catch((err) => {
+          // dispose נכשל/נתקע — ממשיכים לסגור bridge; ה-subprocess ייתפס ע"י
+          // graceful-shutdown/kill-tree של ה-BE כרשת-בטחון. לא זורקים החוצה.
+          log.warn({ err }, "claudeAgent.dispose() failed/timed-out during close — continuing")
+        })
+      }
       // Close the stream bridge first to terminate the underlying stream.
       // The agentConn will detect the stream closure and close itself.
       // We do NOT call agentConn.close() explicitly — it would create a double-close

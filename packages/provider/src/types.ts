@@ -32,6 +32,12 @@ export interface NormalizedCapabilities {
    * Runtime control — no patch required. Controlled via ext channel (_drive/setThinkingTokens).
    */
   thinkingTokens: boolean
+  /**
+   * promptCapabilities.image from the real initialize response (tapped from the wire,
+   * not hardcoded per-provider). false until the tap observes an init-response frame.
+   * Slice reattach-state-sync Commit 1 — see extractPromptCaps (core).
+   */
+  image: boolean
 }
 
 /**

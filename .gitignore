@@ -41,5 +41,9 @@ packages/frontend/.build-old/
 # Worktrees live under .worktrees/ (each is its own checkout — never track as gitlink)
 .worktrees/
 .tmp/
+
+# Local-only logs / raw wire-captures / research artifacts (never in repo).
+# Canonical censored fixtures live under the relevant package; this is raw material.
+.research/
 **/.localappdata/**
 .localappdata/
