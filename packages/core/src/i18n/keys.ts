@@ -24,6 +24,9 @@ export type MessageKey =
   | "connect.title"
   | "connect.subtitle"
   | "connect.cli.label"
+  // slice cli-availability: מצב טעינה + fallback ב-dropdown הספקים
+  | "connect.cli.loading"
+  | "connect.cli.showAll"
   | "connect.cwd.label"
   | "connect.cwd.placeholder"
   | "connect.submit"

@@ -128,6 +128,10 @@ async function handleRecentSelect(project: RecentProject) {
         {t("connect.cli.label")}
         {#if cliAvailability.loading}
           <Loader2Icon size={14} class="animate-spin" style="color:var(--fg-dim)" aria-hidden="true" />
+          <span class="cli-hint">{t("connect.cli.loading")}</span>
+        {:else if cliAvailability.error}
+          <!-- §2/§6/§9 Q3: fallback = מציג הכול + אינדיקציה חלשה (לא באנר חוסם) -->
+          <span class="cli-hint">{t("connect.cli.showAll")}</span>
         {/if}
       </span>
       <!-- Select.value נשאר cliKind גם אם הוא לא ב-options המסוננים (למקרה reconnect) —
@@ -237,11 +241,17 @@ async function handleRecentSelect(project: RecentProject) {
     color: var(--fg-dim);
   }
 
-  /* slice cli-availability: ספינר-טעינה ליד תווית ה-dropdown של הספקים */
+  /* slice cli-availability: ספינר-טעינה / אינדיקציית-fallback ליד תווית ה-dropdown */
   .cli-label-row {
     display: flex;
     align-items: center;
     gap: 0.4rem;
+  }
+
+  .cli-hint {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--fg-dim);
   }
 
   /* יישור לגובה ה-Select (px-3 py-2.5 text-sm rounded-xl) — אחידות שורות */
