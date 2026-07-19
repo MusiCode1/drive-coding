@@ -1,5 +1,5 @@
 <script lang="ts">
-import { CLI_KINDS, type CliKind, type AgentPublic } from "@drive-coding/core"
+import { type CliKind, type AgentPublic } from "@drive-coding/core"
 import { goto } from "$app/navigation"
 import { onMount, untrack } from "svelte"
 import { connectAgent } from "$lib/actions/connect-agent"
@@ -14,7 +14,9 @@ import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte
 import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
 import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
 import FolderIcon from "@lucide/svelte/icons/folder"
+import Loader2Icon from "@lucide/svelte/icons/loader-2"
 import { getI18n, getSession, getSettings, getModals, getActiveAgents } from "$lib/context"
+import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
 
 const settings = getSettings()
 const session = getSession()
@@ -22,6 +24,9 @@ const modals = getModals()
 const i18n = getI18n()
 const t = i18n.t
 const activeAgents = getActiveAgents()
+// slice cli-availability: מסנן את ה-dropdown לפי CLIs שמותקנים בפועל בסביבת ה-BE.
+// available מאותחל ל-CLI_KINDS המלא (race-safe) ונופל חזרה אליו אם ה-endpoint נכשל (§2, §6).
+const cliAvailability = new CliAvailability()
 
 let cliKind = $state<CliKind>(settings.cliKind)
 let cwd = $state(settings.lastCwd)
@@ -32,6 +37,7 @@ let cwd = $state(settings.lastCwd)
 // עדכן רק אם cwd עדיין ריק (המשתמש לא הקליד בינתיים).
 onMount(() => {
   void activeAgents.refresh()
+  void cliAvailability.load()
 
   fetchServerOptions()
     .then((opts) => {
@@ -118,13 +124,20 @@ async function handleRecentSelect(project: RecentProject) {
     </label>
 
     <label>
-      <span>{t("connect.cli.label")}</span>
+      <span class="cli-label-row">
+        {t("connect.cli.label")}
+        {#if cliAvailability.loading}
+          <Loader2Icon size={14} class="animate-spin" style="color:var(--fg-dim)" aria-hidden="true" />
+        {/if}
+      </span>
+      <!-- Select.value נשאר cliKind גם אם הוא לא ב-options המסוננים (למקרה reconnect) —
+           רק רשימת ה-options מסוננת לפי זמינות (§4 Commit 2). -->
       <Select
         value={cliKind}
-        options={CLI_KINDS.map((k) => ({ value: k, label: k }))}
+        options={cliAvailability.available.map((k) => ({ value: k, label: k }))}
         title={t("connect.cli.label")}
         ariaLabel={t("connect.cli.label")}
-        disabled={session.status === "connecting"}
+        disabled={session.status === "connecting" || cliAvailability.loading}
         onchange={(v) => (cliKind = v as CliKind)}
       />
     </label>
@@ -222,6 +235,13 @@ async function handleRecentSelect(project: RecentProject) {
   label > span {
     font-size: 0.85rem;
     color: var(--fg-dim);
+  }
+
+  /* slice cli-availability: ספינר-טעינה ליד תווית ה-dropdown של הספקים */
+  .cli-label-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
   }
 
   /* יישור לגובה ה-Select (px-3 py-2.5 text-sm rounded-xl) — אחידות שורות */
