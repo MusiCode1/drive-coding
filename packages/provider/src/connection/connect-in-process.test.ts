@@ -15,6 +15,7 @@
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { ClaudeAcpAgent } from "@agentclientprotocol/claude-agent-acp"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { connectInProcess } from "./connect-in-process.js"
 
@@ -64,6 +65,37 @@ describe("connectInProcess — structural (no real claude session)", () => {
     try {
       expect(conn.capabilities.rename).toBe(true)
       expect(conn.capabilities.thinkingTokens).toBe(true)
+    } finally {
+      await conn.close()
+    }
+  })
+
+  it("capabilities.image defaults to false before an initialize response is observed", async () => {
+    const conn = await connectInProcess({ cwd: process.cwd() })
+    try {
+      expect(conn.capabilities.image).toBe(false)
+    } finally {
+      await conn.close()
+    }
+  })
+
+  it("capabilities.image becomes true after the real initialize response is tapped off the wire (Commit 1)", async () => {
+    // The real ClaudeAcpAgent.initialize() returns agentCapabilities.promptCapabilities.image=true
+    // without a live claude subprocess (pure protocol negotiation) — see acp-agent.js.
+    // This is the actual "inject an init-result-frame" integration path: writing a real
+    // initialize request over the wire and letting the tap (handleLine, dir="in") observe
+    // the agent's real response.
+    const conn = await connectInProcess({ cwd: process.cwd() })
+    try {
+      expect(conn.capabilities.image).toBe(false)
+
+      const lines: string[] = []
+      const unsubLine = conn.wire.onLine((l) => lines.push(l))
+      conn.wire.write(buildInitRequest(7))
+      await waitFor(() => lines.length > 0, 3000)
+      unsubLine()
+
+      expect(conn.capabilities.image).toBe(true)
     } finally {
       await conn.close()
     }
@@ -207,6 +239,68 @@ describe("connectInProcess — structural (no real claude session)", () => {
       expect(() => unsub()).not.toThrow()
     } finally {
       await conn.close()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// #5 — dispose-on-close: claudeAgent.dispose() must be called exactly once
+// from close(), and close() must resolve even if dispose() rejects/times out.
+// Structural (no real claude) — spies on ClaudeAcpAgent.prototype.dispose.
+// ---------------------------------------------------------------------------
+
+describe("connectInProcess — dispose-on-close (#5)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it("calls claudeAgent.dispose() exactly once when close() is invoked", async () => {
+    const disposeSpy = vi.spyOn(ClaudeAcpAgent.prototype, "dispose").mockResolvedValue(undefined)
+    const conn = await connectInProcess({ cwd: process.cwd() })
+
+    await conn.close()
+
+    expect(disposeSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("close() still resolves when dispose() rejects (timeout-path absorbed)", async () => {
+    const disposeSpy = vi
+      .spyOn(ClaudeAcpAgent.prototype, "dispose")
+      .mockRejectedValue(new Error("dispose blew up"))
+    const conn = await connectInProcess({ cwd: process.cwd() })
+
+    await expect(conn.close()).resolves.toBeUndefined()
+    expect(disposeSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("close() resolves via the timeout-guard when dispose() hangs past DISPOSE_TIMEOUT_MS", async () => {
+    // Never-resolving dispose simulates a wedged turn (force-cancel floor stuck).
+    // Fake timers let us advance past the 5s DISPOSE_TIMEOUT_MS deterministically
+    // instead of waiting real wall-clock time.
+    vi.useFakeTimers()
+    try {
+      const disposeSpy = vi
+        .spyOn(ClaudeAcpAgent.prototype, "dispose")
+        .mockImplementation(() => new Promise(() => {}))
+      const conn = await connectInProcess({ cwd: process.cwd() })
+
+      let closed = false
+      const closePromise = conn.close().then(() => {
+        closed = true
+      })
+
+      expect(disposeSpy).toHaveBeenCalledTimes(1)
+      expect(closed).toBe(false)
+
+      // Advance past DISPOSE_TIMEOUT_MS (5000ms) — the withTimeout race should
+      // reject internally, be absorbed by .catch(log.warn), and let close()
+      // proceed to bridge.close()/agentConn.closed.
+      await vi.advanceTimersByTimeAsync(5001)
+      await closePromise
+
+      expect(closed).toBe(true)
+    } finally {
+      vi.useRealTimers()
     }
   })
 })

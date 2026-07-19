@@ -71,8 +71,19 @@ export function createAgentWsHandler(deps: {
     const childLog = log.child({ agentId })
 
     // שומר MED-8
-    if (activeFeWs.has(agentId)) {
-      childLog.warn({}, "second tab rejected")
+    const existing = activeFeWs.get(agentId)
+    if (existing) {
+      // observability (reconnect-ghost, נדיר): מעשירים את הדחייה כדי לאבחן כשזה קורה —
+      // האם ה-WS הישן חי (readyState=1=OPEN → tab-שני-אמיתי) או רפאים (2=CLOSING/3=CLOSED,
+      // או ping ישן → קליינט-מת שה-close/sweep עוד לא ניקה). readyState 0=CONNECTING/1=OPEN.
+      // תוספת-לוג בלבד — אותה זרימת-בקרה (close 1008 + return). השורש (takeover) = slice נפרד.
+      childLog.warn(
+        {
+          existingReadyState: existing.ws.readyState,
+          msSinceLastPing: Date.now() - existing.lastPingAt,
+        },
+        "second tab rejected",
+      )
       feWs.close(1008, "agent in use by another tab")
       return
     }

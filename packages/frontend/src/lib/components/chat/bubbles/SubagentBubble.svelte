@@ -9,11 +9,13 @@
  * כטקסט). הבחנה ויזואלית פר-סוג = B (per-kind) עתידי — הרנדרר כאן כבר תומך בכך בחינם (reuse).
  *
  * ─── slice/subagent-transcript-render (Commit 1) — header + transcript region בסיסי ───
+ * ─── slice/subagent-transcript-render (Commit 2) — max-height+overflow, summary footer, dir ───
  */
 import type { ToolBubble } from "$lib/types/bubble"
 import { getI18n } from "$lib/context"
 import Avatar from "$lib/components/chat/Avatar.svelte"
 import BubbleRenderer from "$lib/components/chat/BubbleRenderer.svelte"
+import MarkdownContent from "./MarkdownContent.svelte"
 
 let { bubble, depth = 0 }: { bubble: ToolBubble; depth?: number } = $props()
 
@@ -28,7 +30,9 @@ const frames = $derived(bubble.subFrames ?? [])
 const status = $derived(task?.status ?? "unknown")
 const heading = $derived(task?.subagentType ?? tc.name)
 
-// local state — פתוח בזמן ריצה, מאותחל פעם אחת (§5 Commit 2 מרחיב ל-no-snapback).
+// local state — מאותחל פעם אחת (לא $derived מ-setting) — פתוח בזמן ריצה, נשאר
+// לפי בחירת-המשתמש אחרי toggle. מונע snap-back כשה-status/subFrames מתעדכנים
+// (תבנית מדויקת מ-ThoughtBubble.svelte).
 let open = $state(true)
 </script>
 
@@ -63,6 +67,13 @@ let open = $state(true)
         <!-- finding #6 — כפיית reactivity על מערך subFrames (object-replacement של B1) -->
         <span class="hidden">{frames.length}</span>
       </div>
+
+      {#if task?.summary}
+        <div class="border-t px-3 py-2" style="border-color:var(--border)">
+          <div class="section-label">{t("chat.subagent.summary")}</div>
+          <MarkdownContent text={task.summary} />
+        </div>
+      {/if}
     </details>
   </div>
 </div>
@@ -76,7 +87,18 @@ let open = $state(true)
 
   @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
 
+  .section-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    opacity: 0.6;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
   .transcript-region {
+    max-height: 360px;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 0.4rem;

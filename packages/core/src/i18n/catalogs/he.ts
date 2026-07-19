@@ -307,4 +307,15 @@ export const he: Catalog = {
   "appTitle.sessions": "סשנים",
   // ─── slash commands ─── (slice-slash-commands)
   "slash.commandsList": "רשימת פקודות slash",
+  // ─── session budget meter ─── (slice session-budget-meter)
+  "sessionBudget.trigger": "תקציב הסשן",
+  "sessionBudget.title": "תקציב סשן",
+  "sessionBudget.context.heading": "הקשר",
+  "sessionBudget.context.cost": "עלות",
+  "sessionBudget.quota.heading": "מכסה",
+  "sessionBudget.quota.loading": "טוען…",
+  "sessionBudget.quota.unavailable": "אין נתוני מכסה",
+  "sessionBudget.quota.used": "נוצל",
+  "sessionBudget.quota.of": "מתוך",
+  "sessionBudget.quota.resetsIn": "מתאפס",
 }
