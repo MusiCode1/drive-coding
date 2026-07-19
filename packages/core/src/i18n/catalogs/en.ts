@@ -322,4 +322,11 @@ export const en: Catalog = {
   "sessionBudget.quota.used": "Used",
   "sessionBudget.quota.of": "of",
   "sessionBudget.quota.resetsIn": "Resets",
+  // ─── plan ─── (slice plan-todo-list)
+  "plan.title": "Plan",
+  "plan.status.pending": "Pending",
+  "plan.status.in_progress": "In progress",
+  "plan.status.completed": "Completed",
+  "plan.openMarkdown": "Open plan",
+  "plan.file.label": "Plan file",
 }

@@ -18,6 +18,7 @@
 import { Virtualizer, type VirtualizerHandle } from "virtua/svelte"
 import { getI18n, getSession, getChatScroll } from "$lib/context"
 import BubbleRenderer from "./BubbleRenderer.svelte"
+import PlanChecklist from "./PlanChecklist.svelte"
 import StatusBubble from "./StatusBubble.svelte"
 
 const session = getSession()
@@ -45,6 +46,7 @@ $effect(() => {
     {/snippet}
   </Virtualizer>
 {/if}
+<PlanChecklist />
 <StatusBubble />
 {#if session.bubbles.length === 0}
   <div class="empty">{t("chat.empty")}</div>
