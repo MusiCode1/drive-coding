@@ -79,6 +79,8 @@ import {
 } from "./claude-subagent-parse"
 // ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
 import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
+// ─── slice plan-todo-list Commit 1: reducer טהור + טיפוסים ─── (additive)
+import { EMPTY_PLAN_STORE, type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
 
 /**
  * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries
@@ -181,6 +183,10 @@ export class AgentSession {
   // ─── slice session-title: כותרת הסשן הפעיל ─── (תוספתי)
   /** כותרת הסשן הפעיל. snapshot מרגע הטעינה/החלפה. "" = אין כותרת (סשן חדש). */
   sessionTitle = $state<string>("")
+
+  // ─── slice plan-todo-list Commit 1: תוכנית-עבודה חיה (TodoWrite/update_plan) ─── (תוספתי)
+  /** מצב הצ'קליסט הנעוץ, מ-session/update מסוגי plan/plan_update/plan_removed. reducer טהור ב-core. */
+  planStore = $state<PlanStore>(EMPTY_PLAN_STORE)
 
   // ─── slice session-budget-meter: context state מ-ACP usage_update התקני ─── (תוספתי)
   /**
@@ -1484,6 +1490,8 @@ export class AgentSession {
     this.quota = null
     this.quotaLoading = false
     this.#mockQuota = undefined
+    // slice plan-todo-list: איפוס הצ'קליסט בהחלפת/פתיחת סשן (סשן חדש = אין תוכנית ישנה)
+    this.planStore = EMPTY_PLAN_STORE
   }
 
   #cleanup(opts?: { keepAgent?: boolean }): void {
@@ -1799,6 +1807,18 @@ export class AgentSession {
     if (update.sessionUpdate === "available_commands_update") {
       const cmds = (update as { availableCommands?: unknown }).availableCommands
       this.availableCommands = Array.isArray(cmds) ? (cmds as AvailableCommand[]) : []
+      return
+    }
+
+    // ─── slice plan-todo-list Commit 1: plan / plan_update / plan_removed ───
+    // לא נושאים content.text — חובה לטפל בהם לפני ה-gate `if (!text) return`.
+    // reducePlan טהור (core): הקשחה מובנית, אף פעם לא זורק.
+    if (
+      update.sessionUpdate === "plan" ||
+      update.sessionUpdate === "plan_update" ||
+      update.sessionUpdate === "plan_removed"
+    ) {
+      this.planStore = reducePlan(this.planStore, update)
       return
     }
 
