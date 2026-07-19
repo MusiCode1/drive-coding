@@ -17,6 +17,8 @@ import MenuIcon from "@lucide/svelte/icons/menu"
 import FolderIcon from "@lucide/svelte/icons/folder"
 import { getI18n, getResponsive, getSession, getUiShell } from "$lib/context"
 import { basename } from "$lib/util/path"
+// ─── slice session-budget-meter Commit 5 ───
+import SessionBudgetMeter from "./SessionBudgetMeter.svelte"
 
 const responsive = getResponsive()
 const uiShell = getUiShell()
@@ -60,9 +62,11 @@ const headerLabel = $derived(session.sessionTitle?.trim() ? session.sessionTitle
     >{headerLabel}</span>
   </div>
 
-  <!-- קבוצת-סטטוס (inline-end): cwd chip + נקודת-חיבור. בעברית inline-end = שמאל. -->
+  <!-- קבוצת-סטטוס (inline-end): מד תקציב-סשן + cwd chip + נקודת-חיבור. בעברית inline-end = שמאל. -->
   <!-- קלאסים לוגיים בלבד: gap/px/py סימטריים (תקין). אסור ml/mr/pl/pr/left/right חדשים. -->
   <div class="flex items-center gap-2 shrink-0">
+    <!-- slice session-budget-meter Commit 5: מד ניצול-קונטקסט + popover quota רב-ספקי -->
+    <SessionBudgetMeter />
     {#if cwdLabel}
       <!-- cwd chip: dir="ltr" נשאר רק על ה-chip (path הוא LTR), לא על הקבוצה -->
       <span

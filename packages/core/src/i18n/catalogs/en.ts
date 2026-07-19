@@ -302,4 +302,15 @@ export const en: Catalog = {
   "appTitle.sessions": "Sessions",
   // ─── slash commands ─── (slice-slash-commands)
   "slash.commandsList": "Slash commands",
+  // ─── session budget meter ─── (slice session-budget-meter)
+  "sessionBudget.trigger": "Session budget",
+  "sessionBudget.title": "Session budget",
+  "sessionBudget.context.heading": "Context",
+  "sessionBudget.context.cost": "Cost",
+  "sessionBudget.quota.heading": "Quota",
+  "sessionBudget.quota.loading": "Loading…",
+  "sessionBudget.quota.unavailable": "No quota data",
+  "sessionBudget.quota.used": "Used",
+  "sessionBudget.quota.of": "of",
+  "sessionBudget.quota.resetsIn": "Resets",
 }

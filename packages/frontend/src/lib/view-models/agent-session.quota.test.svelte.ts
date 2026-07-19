@@ -22,7 +22,7 @@
 import type { SessionNotification } from "@agentclientprotocol/sdk"
 import type { AcpClient } from "@drive-coding/provider/client"
 import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 // ─── Module-level mocks ───────────────────────────────────────────────────────
 
@@ -110,20 +110,24 @@ vi.stubGlobal("location", {
 
 vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("test-uuid") })
 
-// #loadMockSession fetches /fixtures/<name>.json — stub minimal valid content.
-// The mock-harness tests below inject #mockQuota directly via _setMockQuotaForTest,
-// so the fixture body itself is irrelevant (empty updates array is enough).
-vi.stubGlobal(
-  "fetch",
-  vi.fn().mockResolvedValue({
-    ok: true,
-    json: async () => ({ updates: [] }),
-  }),
-)
+// #loadMockSession fetches /fixtures/<name>.json. Default stub returns minimal valid
+// content (empty updates) for most tests — the mock-harness tests below inject #mockQuota
+// directly via _setMockQuotaForTest, so the fixture body is usually irrelevant. The
+// "real fixture" describe block at the bottom overrides this per-URL to serve the
+// ACTUAL committed session-budget-monthly.json (Commit 5 data-flow-bridge integration test).
+type MockFetchResponse = { ok: boolean; json: () => Promise<unknown> }
+const fetchMock = vi.fn<(url: string) => Promise<MockFetchResponse>>(async (_url: string) => ({
+  ok: true,
+  json: async () => ({ updates: [] }),
+}))
+vi.stubGlobal("fetch", fetchMock)
 
 // ─── Import after mocks ───────────────────────────────────────────────────────
 
 import { AgentSession } from "./agent-session.svelte"
+// slice session-budget-meter Commit 5: the real fixture — proves the committed JSON
+// round-trips through #loadMockSession's mockState handling (data-flow-bridge integration).
+import sessionBudgetMonthlyFixture from "../../../static/fixtures/session-budget-monthly.json"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -390,5 +394,97 @@ describe("AgentSession — refreshQuota() DEV mock harness", () => {
 
     expect(session.quota).toBeNull()
     expect(getQuotaSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe("AgentSession — /chat?mock=session-budget-monthly data-flow-bridge (Commit 5 integration)", () => {
+  /**
+   * Proves the ACTUAL committed fixture round-trips through #loadMockSession's
+   * mockState handling end-to-end: capabilities.usage merged from mockState →
+   * supports.usage=true → refreshQuota() copies mockState.quota to `quota`, all
+   * without an ext request. This is the "generic UI proof" data bridge from brief
+   * §3 (Data Flow Bridges table, row "normalized snapshot | generic UI").
+   */
+  beforeEach(() => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes("session-budget-monthly")) {
+        return { ok: true, json: async () => sessionBudgetMonthlyFixture }
+      }
+      return { ok: true, json: async () => ({ updates: [] }) }
+    })
+  })
+
+  afterEach(() => {
+    // restore the default (empty-updates) stub for any test that runs after this block
+    fetchMock.mockImplementation(async (_url: string) => ({
+      ok: true,
+      json: async () => ({ updates: [] }),
+    }))
+  })
+
+  it("usage_update from the fixture populates contextUsage (context section proof)", async () => {
+    const session = new AgentSession()
+    await session.loadSession({
+      sessionId: "mock:session-budget-monthly",
+      cwd: "/mock",
+      cliKind: "opencode",
+    })
+
+    expect(session.contextUsage).toEqual({ used: 25_000, size: 200_000, cost: undefined })
+  })
+
+  it("mockState.capabilities merges into #capabilities — supports.usage becomes true", async () => {
+    const session = new AgentSession()
+    await session.loadSession({
+      sessionId: "mock:session-budget-monthly",
+      cwd: "/mock",
+      cliKind: "opencode",
+    })
+
+    expect(session.supports.usage).toBe(true)
+    // regression: the merge uses safe defaults for the rest of NormalizedCapabilities —
+    // it does not accidentally turn on other flags the fixture didn't request.
+    expect(session.supports.compact).toBe(false)
+    expect(session.supports.rename).toBe(false)
+    expect(session.supports.thinkingTokens).toBe(false)
+    expect(session.supports.mcp).toBe(false)
+    expect(session.supports.configOptions).toBe(false)
+    expect(session.supports.commands).toBe(false)
+    expect(session.supports.image).toBe(false)
+  })
+
+  it("quota is null before refreshQuota() is called (open→refresh→render, not eager)", async () => {
+    const session = new AgentSession()
+    await session.loadSession({
+      sessionId: "mock:session-budget-monthly",
+      cwd: "/mock",
+      cliKind: "opencode",
+    })
+
+    expect(session.quota).toBeNull()
+  })
+
+  it("refreshQuota() populates the monthly calendar/absolute window from the fixture — no ext call", async () => {
+    const session = new AgentSession()
+    await session.loadSession({
+      sessionId: "mock:session-budget-monthly",
+      cwd: "/mock",
+      cliKind: "opencode",
+    })
+
+    await session.refreshQuota()
+
+    expect(getQuotaSpy).not.toHaveBeenCalled()
+    expect(session.quota).toEqual({
+      provider: "synthetic",
+      windows: [
+        {
+          id: "monthly",
+          period: { kind: "calendar", unit: "month" },
+          consumption: { kind: "absolute", used: 40, limit: 100, unit: "requests" },
+          resetsAtMs: null,
+        },
+      ],
+    })
   })
 })

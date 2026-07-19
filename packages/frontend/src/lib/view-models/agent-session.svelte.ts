@@ -1599,6 +1599,11 @@ export class AgentSession {
           models?: SessionModelState | null
           modes?: SessionModeState | null
         }
+        // ─── slice session-budget-meter Commit 5: mockState גנרי ─── (additive)
+        mockState?: {
+          capabilities?: Partial<NormalizedCapabilities>
+          quota?: QuotaSnapshot | null
+        }
       }
       this.cwd = cwd
       this.#sessionId = `mock:${name}`
@@ -1606,6 +1611,31 @@ export class AgentSession {
       // DEV: לכוד configOptions/modes/models מ-loadResult של ה-fixture (אם קיים) —
       // מאפשר mockup של בוררי ה-config (mode/model/agent/effort) + descriptions ללא ACP חי.
       if (data.loadResult) this.#captureSessionConfig(data.loadResult)
+
+      // ─── slice session-budget-meter Commit 5: mockState.capabilities/quota ───
+      // #mockQuota מתאפס תמיד תחילה — מונע דליפה מ-mock session קודם (brief §0/§4 Commit 4).
+      // fixture ללא mockState.quota → #mockQuota נשאר undefined → refreshQuota() נופל
+      // ל-נתיב "אין #ext" (unavailable), לא מציג snapshot ישן.
+      this.#mockQuota = undefined
+      if (data.mockState) {
+        if (data.mockState.capabilities) {
+          // ממזג עם defaults בטוחים (כל השאר false) — לא מניח שהמפתח קיים ב-fixture.
+          this.#capabilities = {
+            mcp: false,
+            compact: false,
+            commands: false,
+            usage: false,
+            configOptions: false,
+            rename: false,
+            thinkingTokens: false,
+            image: false,
+            ...data.mockState.capabilities,
+          }
+        }
+        if ("quota" in data.mockState) {
+          this.#mockQuota = data.mockState.quota
+        }
+      }
 
       // delay אופציונלי דרך ?stream=<ms> (ללא תשתית — sleep צד-לקוח בלבד)
       const params = new URLSearchParams(typeof location !== "undefined" ? location.search : "")
