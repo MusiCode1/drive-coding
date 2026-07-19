@@ -155,7 +155,7 @@ export function createAgentOrchestrator(deps: {
         // modelOverride (🔴 avigail): מועבר מ-input — לא מקובע null.
         // shapeEnv (opencode-only): verbatim מ-bridge-manager:71-83.
         // systemPrompt (slice project-system-prompt): גנרי — הצורה הספציפית-לספק
-        // (_meta.systemPrompt לקלוד / config.developer_instructions לcodex) נכתבת בתוך provider.
+        // (מיפוי-meta לקלוד / config.developer_instructions לcodex) נכתבת בתוך provider בלבד.
         await deps.connectionRegistry.connect(agent.id, input.cliKind, {
           cwd: input.cwd,
           modelOverride: input.modelOverride ?? null,
