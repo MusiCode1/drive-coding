@@ -40,6 +40,7 @@ import type { NormalizedCapabilities } from "../../types.js"
 import { mapClaudeCapabilities } from "./capabilities.js"
 import { makeAcpClientFromCtx } from "./client-bridge.js"
 import { getQuery } from "./query-access.js"
+import { createClaudeQuotaHandler } from "./quota-handler.js"
 import { claudeRenameSession } from "./rename.js"
 
 /**
@@ -208,6 +209,16 @@ export function createClaudeInProcessHost(options?: { extHandlers?: ExtHandlers 
       await getQuery(claudeAgent, sessionId).setMaxThinkingTokens(n)
       return { ok: true }
     },
+  )
+
+  // Internal handler: _drive/getQuota (slice session-budget-meter Commit 3).
+  // getAgent closure reads the live `claudeAgent` variable at call-time (set in onConnect) —
+  // same handler factory shared with connect-in-process.ts (no duplicate normalizer).
+  const getQuotaHandler = createClaudeQuotaHandler(() => claudeAgent)
+  agentApp = agentApp.onRequest(
+    "_drive/getQuota",
+    { parse: (p: unknown) => p as Record<string, unknown> },
+    (ctx) => getQuotaHandler(ctx.params),
   )
 
   // Build ClientApp — handles client-side ACP requests from the agent.

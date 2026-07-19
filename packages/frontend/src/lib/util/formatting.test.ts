@@ -7,8 +7,9 @@
  * שונה מ-SessionPicker.formatDate (relative-time עם Intl.RelativeTimeFormat).
  */
 
+import type { QuotaPeriod } from "@drive-coding/provider/extensions"
 import { describe, expect, it } from "vitest"
-import { formatRelativeTime, formatTime } from "./formatting"
+import { formatQuotaPeriod, formatRelativeTime, formatTime, formatTimeUntil } from "./formatting"
 
 describe("formatTime", () => {
   it("returns HH:MM string for a known timestamp (midnight UTC)", () => {
@@ -93,5 +94,78 @@ describe("formatRelativeTime", () => {
   it("case 7 — locale=en: returns English output for 2 minutes", () => {
     const result = formatRelativeTime(BASE - 120_000, "en", BASE)
     expect(result).toBe("2 minutes ago")
+  })
+})
+
+describe("formatQuotaPeriod", () => {
+  it("rolling 5h (18000s) — derives 'hour' unit from durationSeconds, not provider ID", () => {
+    const period: QuotaPeriod = { kind: "rolling", durationSeconds: 5 * 60 * 60 }
+    expect(formatQuotaPeriod(period, "en")).toBe("5 hours")
+    expect(formatQuotaPeriod(period, "he")).toBe("5 שעות")
+  })
+
+  it("rolling 7d (604800s) — derives 'day' unit", () => {
+    const period: QuotaPeriod = { kind: "rolling", durationSeconds: 7 * 24 * 60 * 60 }
+    expect(formatQuotaPeriod(period, "en")).toBe("7 days")
+    expect(formatQuotaPeriod(period, "he")).toBe("7 ימים")
+  })
+
+  it("rolling — non-round-hour duration falls back to minutes", () => {
+    const period: QuotaPeriod = { kind: "rolling", durationSeconds: 90 * 60 }
+    expect(formatQuotaPeriod(period, "en")).toBe("90 minutes")
+  })
+
+  it("calendar month — generic monthly period, no provider branching", () => {
+    const period: QuotaPeriod = { kind: "calendar", unit: "month" }
+    expect(formatQuotaPeriod(period, "en")).toBe("1 month")
+    expect(formatQuotaPeriod(period, "he")).toBe("חודש")
+  })
+
+  it("calendar week/day — generic, unit comes straight from the snapshot", () => {
+    expect(formatQuotaPeriod({ kind: "calendar", unit: "week" }, "en")).toBe("1 week")
+    expect(formatQuotaPeriod({ kind: "calendar", unit: "day" }, "en")).toBe("1 day")
+  })
+})
+
+describe("formatTimeUntil", () => {
+  const BASE = 1_700_000_000_000
+
+  it("case 1 — diff=0: returns present-tense string", () => {
+    expect(formatTimeUntil(BASE, "en", BASE)).toBe("now")
+    expect(formatTimeUntil(BASE, "he", BASE)).toMatch(/כעת|עכשיו/)
+  })
+
+  it("case 2 — future 5 minutes: returns 'in N minutes' (not past tense)", () => {
+    const result = formatTimeUntil(BASE + 5 * 60_000, "en", BASE)
+    expect(result).toBe("in 5 minutes")
+  })
+
+  it("case 2 — future 5 minutes in he", () => {
+    const result = formatTimeUntil(BASE + 5 * 60_000, "he", BASE)
+    expect(result).toMatch(/^בעוד (5|חמש) דקות$/)
+  })
+
+  it("case 3 — future 90 minutes: returns hour-unit string", () => {
+    const result = formatTimeUntil(BASE + 90 * 60_000, "en", BASE)
+    expect(result).toMatch(/hour/)
+  })
+
+  it("case 4 — future 26 hours: returns day-unit string", () => {
+    const result = formatTimeUntil(BASE + 26 * 3_600_000, "en", BASE)
+    expect(result).toMatch(/day|tomorrow/)
+  })
+
+  // case 5: עבר/clock skew (epochMs < now) → clamp ל-0, בלי מספר שלילי, לא קורס.
+  it("case 5 — past epochMs (clock skew / already reset) → clamp to now, no crash", () => {
+    const past = BASE - 5_000
+    expect(() => formatTimeUntil(past, "en", BASE)).not.toThrow()
+    expect(formatTimeUntil(past, "en", BASE)).toBe("now")
+    expect(formatTimeUntil(past, "he", BASE)).toMatch(/כעת|עכשיו/)
+  })
+
+  it("case 6 — never returns a negative-looking string for the future", () => {
+    const result = formatTimeUntil(BASE + 30 * 60_000, "en", BASE)
+    expect(result).not.toMatch(/-/)
+    expect(result).toMatch(/^in /)
   })
 })

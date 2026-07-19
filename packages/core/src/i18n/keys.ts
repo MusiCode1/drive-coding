@@ -307,6 +307,17 @@ export type MessageKey =
   | "appTitle.sessions"
   // ─── slash commands ─── (slice-slash-commands)
   | "slash.commandsList"
+  // ─── session budget meter ─── (slice session-budget-meter)
+  | "sessionBudget.trigger"
+  | "sessionBudget.title"
+  | "sessionBudget.context.heading"
+  | "sessionBudget.context.cost"
+  | "sessionBudget.quota.heading"
+  | "sessionBudget.quota.loading"
+  | "sessionBudget.quota.unavailable"
+  | "sessionBudget.quota.used"
+  | "sessionBudget.quota.of"
+  | "sessionBudget.quota.resetsIn"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

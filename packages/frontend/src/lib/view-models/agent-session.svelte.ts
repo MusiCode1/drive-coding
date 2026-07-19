@@ -15,6 +15,7 @@ import type {
   SessionConfigOption,
   SessionModeState,
   SessionNotification,
+  UsageUpdate,
 } from "@agentclientprotocol/sdk"
 import type { CliKind } from "@drive-coding/core"
 import {
@@ -69,6 +70,8 @@ const ATTACHED_CAPS_FALLBACK = {} as AcpClient["capabilities"]
 // ⚠️ אל תייבא value מ-@drive-coding/provider/host → יגרור spawn-core → vite crash.
 import type { NormalizedCapabilities } from "@drive-coding/provider/types"
 import { createExtClient, type ExtClient } from "$lib/adapters/ext"
+// ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
+import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 
 /**
  * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries
@@ -168,6 +171,25 @@ export class AgentSession {
   /** כותרת הסשן הפעיל. snapshot מרגע הטעינה/החלפה. "" = אין כותרת (סשן חדש). */
   sessionTitle = $state<string>("")
 
+  // ─── slice session-budget-meter: context state מ-ACP usage_update התקני ─── (תוספתי)
+  /**
+   * מצב ניצול חלון-הקונטקסט + עלות, מתוך `session/update` מסוג `usage_update` (ACP תקני —
+   * לא ext, לא `_meta._claude/rateLimit`). null = טרם התקבל update בסשן הנוכחי.
+   * cost אופציונלי ב-ACP — אם update חדש משמיט אותו, הערך הקודם נשמר (למניעת flicker).
+   */
+  contextUsage = $state<UsageUpdate | null>(null)
+
+  // ─── slice session-budget-meter Commit 4: quota (רב-ספקי, generic) ─── (תוספתי)
+  /**
+   * Snapshot מכסה גנרי (windows[]) מ-`_drive/getQuota`. null = אין מגבלות זמינות
+   * (תגובה תקינה) **או** שהספק לא תומך (`supports.usage===false`) **או** שגיאה — ה-UI
+   * מבחין ביניהם דרך `supports.usage` + `quotaLoading`, לא דרך ה-VM. מתעדכן רק דרך
+   * `refreshQuota()` הציבורית (on-open, לא polling — brief §9 Q4).
+   */
+  quota = $state<QuotaSnapshot | null>(null)
+  /** True בזמן בקשת `refreshQuota()` פעילה. */
+  quotaLoading = $state(false)
+
   // ─── image-attach: capability gating ─── (slice-image-paste, additive)
   /**
    * האם הסשן הנוכחי תומך בקלט תמונה.
@@ -266,6 +288,17 @@ export class AgentSession {
   // ─── slice FE-normalization: capabilities ─── (additive)
   /** NormalizedCapabilities שהתקבלו מ-_drive/capabilities ext notification. null = טרם התקבל. */
   #capabilities: NormalizedCapabilities | null = null
+  // ─── slice session-budget-meter Commit 4: mock quota harness (DEV-only) ─── (additive)
+  /**
+   * snapshot מדומה ל-mock harness בלבד (`/chat?mock=<fixture>` עם `mockState.quota`).
+   * undefined = לא הוזרק ע"י fixture (ברירת המחדל). null = הוזרק במפורש כ"אין מגבלות".
+   * `refreshQuota()` מעתיק את זה ל-`quota` הציבורי רק כש-sessionId מתחיל "mock:" וגם
+   * הערך `!== undefined` — כדי ש-open→refresh→render יעבור דרך אותה מתודה כמו production.
+   * מתאפס ב-#cleanup ו-#captureSessionConfig (brief §0 "התאמת scope").
+   */
+  #mockQuota: QuotaSnapshot | null | undefined = undefined
+  /** Promise פעיל של refreshQuota — dedupe לפתיחות popover מקבילות (brief §4 Commit 4). */
+  #quotaFetchInFlight: Promise<void> | null = null
   /** Counter פנימי ל-spike raw SDK. לא נרנדר ב-UI. */
   #claudeRawSdkMessageCount = 0
   // ─── slice ws-reconnect-fix-nbug2: ref ל-transport החי (NBug2 root fix) ───
@@ -306,6 +339,13 @@ export class AgentSession {
   }
   /** @internal */ _setTearingDownForTest(v: boolean): void {
     this.#tearingDown = v
+  }
+  /**
+   * @internal slice session-budget-meter Commit 4 — מזריק #mockQuota ישירות לטסט,
+   * בלי תלות ב-fixture JSON (ה-wiring האמיתי דרך mockState.quota מגיע ב-Commit 5).
+   */
+  _setMockQuotaForTest(q: QuotaSnapshot | null | undefined): void {
+    this.#mockQuota = q
   }
   /**
    * @internal **predicate טהור** — מחזיר האם onClose עם ה-code הנתון *היה* מצית
@@ -1196,6 +1236,76 @@ export class AgentSession {
     await this.#ext.setThinkingTokens(this.#sessionId, n)
   }
 
+  // ─── slice session-budget-meter Commit 4: refreshQuota ─── (תוספתי)
+
+  /**
+   * מרענן את `quota` מ-`_drive/getQuota` (on-open בלבד — לא polling, brief §9 Q4).
+   * ציבורית — הפופאובר קורא לה ב-on-open.
+   *
+   * כללים (brief §4 Commit 4):
+   *   - `supports.usage===false` → אין request (ה-quota section מוסתר ב-UI ממילא).
+   *     **חריג**: ה-DEV mock harness עוקף את הבדיקה הזו במפורש — mock sessions לא
+   *     עוברות דרך `_drive/capabilities` האמיתי (אין #client/#ext ל-mock בכלל), ולכן
+   *     `supports.usage` לא בהכרח true גם כש-mockState.capabilities מבקש usage:true
+   *     (המיזוג ל-#capabilities מגיע ב-Commit 5). הבדיקה על sessionId+#mockQuota
+   *     מספיקה כדי לזהות "זהו debug harness מכוון", לא request אמיתי.
+   *   - dedupe: פתיחות מקבילות חולקות את אותו Promise, לא שולחות בקשות כפולות.
+   *   - race safety: sessionId נלכד לפני ה-await; תשובה שמגיעה אחרי session
+   *     switch/cleanup (`this.#sessionId !== capturedSessionId`) לא נכתבת.
+   *   - error/unavailable → `quota=null`, `quotaLoading` מסתיים, אין קריסה ב-UI.
+   *   - DEV-only mock harness: sessionId מתחיל "mock:" + `#mockQuota !== undefined` →
+   *     מעתיק ל-quota בלי ext request (אותו flow open→refresh→render כמו production).
+   */
+  refreshQuota = async (): Promise<void> => {
+    const sessionId = this.#sessionId
+    if (sessionId === null) return
+
+    const isMockWithSnapshot =
+      import.meta.env.MODE !== "production" &&
+      sessionId.startsWith("mock:") &&
+      this.#mockQuota !== undefined
+
+    if (!isMockWithSnapshot && !this.supports.usage) return
+
+    if (this.#quotaFetchInFlight) {
+      await this.#quotaFetchInFlight
+      return
+    }
+
+    this.quotaLoading = true
+    const fetchPromise = this.#doRefreshQuota(sessionId).finally(() => {
+      this.#quotaFetchInFlight = null
+    })
+    this.#quotaFetchInFlight = fetchPromise
+    await fetchPromise
+  }
+
+  /** מבצע את בקשת ה-quota בפועל, עם guard נגד כתיבה אחרי session switch/cleanup. */
+  #doRefreshQuota = async (sessionId: string): Promise<void> => {
+    try {
+      // DEV-only mock harness — אותו תנאי כמו ה-mock loader הקיים (brief §4 Commit 4).
+      if (
+        import.meta.env.MODE !== "production" &&
+        sessionId.startsWith("mock:") &&
+        this.#mockQuota !== undefined
+      ) {
+        if (this.#sessionId === sessionId) this.quota = this.#mockQuota
+        return
+      }
+      if (!this.#ext) {
+        // אין ext פעיל (session מנותק/mock ללא mockState.quota) — unavailable, לא קריסה.
+        if (this.#sessionId === sessionId) this.quota = null
+        return
+      }
+      const snapshot = await this.#ext.getQuota(sessionId)
+      if (this.#sessionId === sessionId) this.quota = snapshot
+    } catch {
+      if (this.#sessionId === sessionId) this.quota = null
+    } finally {
+      if (this.#sessionId === sessionId) this.quotaLoading = false
+    }
+  }
+
   // ─── slice-restore-last-config: apply remembered config ─── (תוספתי)
 
   /**
@@ -1350,6 +1460,13 @@ export class AgentSession {
     this.modes = result.modes ?? null
     // slice-slash-commands: ניקוי בהחלפת/פתיחת סשן; ה-update הטרי יאכלס
     this.availableCommands = []
+    // slice session-budget-meter: איפוס context-usage/quota בהחלפת/פתיחת סשן (#captureSessionConfig
+    // אינו מאפס capabilities — ר' brief §0 — אבל contextUsage/quota הם שדות תוספתיים חדשים
+    // ללא reset קודם, ולכן מתווספים כאן וב-#cleanup במפורש).
+    this.contextUsage = null
+    this.quota = null
+    this.quotaLoading = false
+    this.#mockQuota = undefined
   }
 
   #cleanup(opts?: { keepAgent?: boolean }): void {
@@ -1375,6 +1492,11 @@ export class AgentSession {
     this.#client = null
     this.#ext = null // slice FE-normalization: נקה facade
     this.#capabilities = null // slice FE-normalization: נקה capabilities (חיבור חדש = caps חדשים)
+    this.contextUsage = null // slice session-budget-meter: נקה context-usage (חיבור חדש = caps חדשים)
+    this.quota = null // slice session-budget-meter Commit 4: נקה quota
+    this.quotaLoading = false
+    this.#mockQuota = undefined
+    this.#quotaFetchInFlight = null
     this.#claudeRawSdkMessageCount = 0
     this.#transport = null // slice ws-reconnect-fix-nbug2: נקה ref
     this.#sessionId = null
@@ -1477,6 +1599,11 @@ export class AgentSession {
           models?: SessionModelState | null
           modes?: SessionModeState | null
         }
+        // ─── slice session-budget-meter Commit 5: mockState גנרי ─── (additive)
+        mockState?: {
+          capabilities?: Partial<NormalizedCapabilities>
+          quota?: QuotaSnapshot | null
+        }
       }
       this.cwd = cwd
       this.#sessionId = `mock:${name}`
@@ -1484,6 +1611,31 @@ export class AgentSession {
       // DEV: לכוד configOptions/modes/models מ-loadResult של ה-fixture (אם קיים) —
       // מאפשר mockup של בוררי ה-config (mode/model/agent/effort) + descriptions ללא ACP חי.
       if (data.loadResult) this.#captureSessionConfig(data.loadResult)
+
+      // ─── slice session-budget-meter Commit 5: mockState.capabilities/quota ───
+      // #mockQuota מתאפס תמיד תחילה — מונע דליפה מ-mock session קודם (brief §0/§4 Commit 4).
+      // fixture ללא mockState.quota → #mockQuota נשאר undefined → refreshQuota() נופל
+      // ל-נתיב "אין #ext" (unavailable), לא מציג snapshot ישן.
+      this.#mockQuota = undefined
+      if (data.mockState) {
+        if (data.mockState.capabilities) {
+          // ממזג עם defaults בטוחים (כל השאר false) — לא מניח שהמפתח קיים ב-fixture.
+          this.#capabilities = {
+            mcp: false,
+            compact: false,
+            commands: false,
+            usage: false,
+            configOptions: false,
+            rename: false,
+            thinkingTokens: false,
+            image: false,
+            ...data.mockState.capabilities,
+          }
+        }
+        if ("quota" in data.mockState) {
+          this.#mockQuota = data.mockState.quota
+        }
+      }
 
       // delay אופציונלי דרך ?stream=<ms> (ללא תשתית — sleep צד-לקוח בלבד)
       const params = new URLSearchParams(typeof location !== "undefined" ? location.search : "")
@@ -1584,6 +1736,19 @@ export class AgentSession {
     if (update.sessionUpdate === "available_commands_update") {
       const cmds = (update as { availableCommands?: unknown }).availableCommands
       this.availableCommands = Array.isArray(cmds) ? (cmds as AvailableCommand[]) : []
+      return
+    }
+
+    // ─── slice session-budget-meter Commit 1: usage_update (ACP תקני) ───────
+    // לא נושא content.text — חובה לטפל בו לפני ה-gate `if (!text) return`.
+    // cost אופציונלי: אם ה-update החדש משמיט אותו, שומר את הקודם (anti-flicker, brief §4).
+    if (update.sessionUpdate === "usage_update") {
+      const u = update as unknown as UsageUpdate
+      this.contextUsage = {
+        used: u.used,
+        size: u.size,
+        cost: u.cost ?? this.contextUsage?.cost,
+      }
       return
     }
 

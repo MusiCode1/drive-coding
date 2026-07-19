@@ -15,7 +15,12 @@ export interface NormalizedCapabilities {
   compact: boolean
   /** Not declared in initialize (runtime feature) → false */
   commands: boolean
-  /** Not declared in initialize (runtime feature) → false */
+  /**
+   * true = this provider implements the `_drive/getQuota` quota-handler contract
+   * (slice session-budget-meter). This is NOT a promise that a snapshot exists —
+   * an account with no visible limits yet still returns { snapshot: null }, a
+   * valid supported response. Consumers must not read this as "has limits".
+   */
   usage: boolean
   /**
    * configOptions from session/new response if called; otherwise false.
