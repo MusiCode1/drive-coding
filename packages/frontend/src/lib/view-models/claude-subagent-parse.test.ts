@@ -274,18 +274,25 @@ describe("reduceSubagent — assistantDelta append (Q1 DELTAS)", () => {
 })
 
 describe("reduceSubagent — toolResult", () => {
-  it("מוסיף SubFrame חדש עם ה-blocks", () => {
+  it("מוסיף SubFrame חדש עם ה-blocks (tool_result מדולג בשיטוח — slice subagent-tool-nesting §3 אביגיל #4)", () => {
     let bubble = makeTaskBubble("toolu-A")
     const ev: ClaudeSubagentEvent = {
       kind: "toolResult",
       parentToolUseId: "toolu-A",
       key: "uuid-1",
-      blocks: [{ type: "tool_result", content: "output-text", is_error: false }],
+      // {type:"text"} נוסף לשימור כיסוי-היצירה (אחרת ה-block היחיד הוא tool_result-בלבד →
+      // מדולג+skip-empty → אין subFrame כלל, ו-item-1 בברייף בורח מ-toHaveLength(0)).
+      blocks: [
+        { type: "text", text: "output-text" },
+        { type: "tool_result", content: "output-text", is_error: false },
+      ],
     }
     bubble = reduceSubagent(bubble, ev, 2000)
     expect(bubble.subFrames).toHaveLength(1)
     const frame = bubble.subFrames?.[0]
     if (frame?.kind !== "message") throw new Error("expected message frame")
+    // ה-block הכלי (tool_result) לא ב-segments — רק הטקסט.
+    expect(frame.segments).toHaveLength(1)
     expect(frame.segments[0]?.text).toBe("output-text")
   })
 
@@ -295,11 +302,61 @@ describe("reduceSubagent — toolResult", () => {
       kind: "toolResult",
       parentToolUseId: "toolu-A",
       key: "uuid-1",
-      blocks: [{ type: "tool_result", content: "x", is_error: false }],
+      // {type:"text"} נוסף לשימור כיסוי-הדדופ (ר' item-2 בברייף — בלעדיו subFrame לא נוצר כלל).
+      blocks: [
+        { type: "text", text: "x" },
+        { type: "tool_result", content: "x", is_error: false },
+      ],
     }
     bubble = reduceSubagent(bubble, ev, 2000)
     bubble = reduceSubagent(bubble, ev, 2001)
     expect(bubble.subFrames).toHaveLength(1)
+  })
+
+  it("blocks שכולם tool_result (אין טקסט אחרי הסינון) — לא יוצר subFrame ריק", () => {
+    let bubble = makeTaskBubble("toolu-A")
+    const ev: ClaudeSubagentEvent = {
+      kind: "toolResult",
+      parentToolUseId: "toolu-A",
+      key: "uuid-1",
+      blocks: [{ type: "tool_result", content: "output-text", is_error: false }],
+    }
+    bubble = reduceSubagent(bubble, ev, 2000)
+    expect(bubble.subFrames ?? []).toHaveLength(0)
+  })
+})
+
+describe("reduceSubagent — assistantDelta עם tool_use (dedup B1/B2)", () => {
+  it("blocks שכולם tool_use (אין טקסט אחרי הסינון) — לא יוצר subFrame ריק", () => {
+    let bubble = makeTaskBubble("toolu-A")
+    const ev: ClaudeSubagentEvent = {
+      kind: "assistantDelta",
+      parentToolUseId: "toolu-A",
+      messageId: "msg-1",
+      blocks: [{ type: "tool_use", id: "toolu-child", name: "Bash", input: {} }],
+    }
+    bubble = reduceSubagent(bubble, ev, 1000)
+    expect(bubble.subFrames ?? []).toHaveLength(0)
+  })
+
+  it("blocks עם text + tool_use — ה-tool_use לא ב-segments, הטקסט כן", () => {
+    let bubble = makeTaskBubble("toolu-A")
+    const ev: ClaudeSubagentEvent = {
+      kind: "assistantDelta",
+      parentToolUseId: "toolu-A",
+      messageId: "msg-1",
+      blocks: [
+        { type: "text", text: "לפני הכלי" },
+        { type: "tool_use", id: "toolu-child", name: "Bash", input: {} },
+      ],
+    }
+    bubble = reduceSubagent(bubble, ev, 1000)
+    expect(bubble.subFrames).toHaveLength(1)
+    const frame = bubble.subFrames?.[0]
+    if (frame?.kind !== "message") throw new Error("expected message frame")
+    expect(frame.segments).toHaveLength(1)
+    expect(frame.segments[0]?.text).toBe("לפני הכלי")
+    expect(frame.segments.some((s) => s.text.includes("tool_use"))).toBe(false)
   })
 })
 

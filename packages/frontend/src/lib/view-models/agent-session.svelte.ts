@@ -106,6 +106,23 @@ const CLAUDE_SESSION_META = {
   },
 } as const
 
+// ─── slice subagent-tool-nesting: helper טהור לחילוץ parentToolUseId ───
+/**
+ * מחלץ `parentToolUseId` מ-`_meta.claudeCode` של frame גולמי של `session/update`.
+ * `rawUpdate` הוא `notification.update` **לפני** ה-cast הטיפוסי ב-`#onSessionUpdate`
+ * (ה-cast המקומי משמיט את `_meta` מהטיפוס אבל לא מהאובייקט בזמן-ריצה) — narrowing בטוח,
+ * בלי `as SDKMessage`. brief §3/§4 (אביגיל #2).
+ */
+function extractParentToolUseId(rawUpdate: unknown): string | undefined {
+  if (typeof rawUpdate !== "object" || rawUpdate === null) return undefined
+  const meta = (rawUpdate as { _meta?: unknown })._meta
+  if (typeof meta !== "object" || meta === null) return undefined
+  const claudeCode = (meta as { claudeCode?: unknown }).claudeCode
+  if (typeof claudeCode !== "object" || claudeCode === null) return undefined
+  const parentToolUseId = (claudeCode as { parentToolUseId?: unknown }).parentToolUseId
+  return typeof parentToolUseId === "string" ? parentToolUseId : undefined
+}
+
 type SessionModelState = {
   currentModelId: string
   availableModels: Array<{ modelId: string; name: string; description?: string | null }>
@@ -317,6 +334,14 @@ export class AgentSession {
   #subagentIndex = createSubagentIndex()
   /** אירועים שהגיעו לפני שה-Task ToolBubble נוצר ב-bubbles (bounded — §7 Risks). */
   #pendingByParent: { parentId: string; event: ClaudeSubagentEvent }[] = []
+  // ─── slice subagent-tool-nesting: קינון-כלים של תת-סוכן (additive) ───
+  /**
+   * מפת toolCallId (של כלי-בן) → parentToolUseId (toolCallId של בועת ה-Task האב).
+   * נבנית ב-`#handleSubagentToolCall` (create), נקראת ב-`#handleSubagentToolCallUpdate` —
+   * מקור-קישור אמין ל-tool_call_update, בלי תלות בשאלה אם ה-update עצמו נושא parentToolUseId
+   * (חלק כן, חלק לא — brief §3 אביגיל #3). מתאפס ב-#captureSessionConfig/#cleanup.
+   */
+  #subagentToolCallParents: Map<string, string> = new Map()
   static readonly #SUBAGENT_PENDING_CAP = 50
   // ─── slice ws-reconnect-fix-nbug2: ref ל-transport החי (NBug2 root fix) ───
   /** ref ל-transport הפעיל — נשמר בכל יצירת transport, מנוקה עם #client. */
@@ -1484,6 +1509,8 @@ export class AgentSession {
     this.quota = null
     this.quotaLoading = false
     this.#mockQuota = undefined
+    // slice subagent-tool-nesting: נקה מיפוי-קינון (החלפת/פתיחת סשן = מיפוי חדש)
+    this.#subagentToolCallParents = new Map()
   }
 
   #cleanup(opts?: { keepAgent?: boolean }): void {
@@ -1518,6 +1545,8 @@ export class AgentSession {
     // slice subagent-transcript-data-v2: נקה state תעתיק תת-סוכן (חיבור חדש = index/pending חדשים)
     this.#subagentIndex = createSubagentIndex()
     this.#pendingByParent = []
+    // slice subagent-tool-nesting: נקה מיפוי-קינון (חיבור חדש = מיפוי חדש)
+    this.#subagentToolCallParents = new Map()
     this.#transport = null // slice ws-reconnect-fix-nbug2: נקה ref
     this.#sessionId = null
     this.agentId = null
@@ -1768,11 +1797,24 @@ export class AgentSession {
     // ההתראות tool_call / tool_call_update לא נושאות תוכן טקסט — חובה לטפל בהן
     // לפני השורה `if (!text) return`.
     if (update.sessionUpdate === "tool_call") {
-      this.#handleToolCall(update)
+      // slice subagent-tool-nesting §3: כלי-בן של תת-סוכן (parentToolUseId ב-_meta.claudeCode)
+      // מקונן ב-subFrames של בועת ה-Task האב — לא top-level.
+      const parentToolUseId = extractParentToolUseId(notification.update)
+      if (parentToolUseId !== undefined) {
+        this.#handleSubagentToolCall(update, parentToolUseId)
+      } else {
+        this.#handleToolCall(update)
+      }
       return
     }
     if (update.sessionUpdate === "tool_call_update") {
-      this.#handleToolCallUpdate(update)
+      // slice subagent-tool-nesting §3 (אביגיל #3/#6): ה-Map (מבוסס tool_call create) הוא
+      // מקור-הקישור האמין — לא ה-_meta של ה-update עצמו (חלק מה-updates לא נושאים parent).
+      if (update.toolCallId !== undefined && this.#subagentToolCallParents.has(update.toolCallId)) {
+        this.#handleSubagentToolCallUpdate(update)
+      } else {
+        this.#handleToolCallUpdate(update)
+      }
       return
     }
 
@@ -1959,6 +2001,123 @@ export class AgentSession {
     this.bubbles[idx] = { ...old, toolCall: newToolCall }
     // שמור על ה-Map מסונכרן (מצביע לאובייקט ה-bubble החדש)
     this.#toolBubbleByCallId.set(update.toolCallId, this.bubbles[idx] as ToolBubble)
+  }
+
+  // ─── slice subagent-tool-nesting: כלים מקוננים של תת-סוכן ─────────────────────────
+
+  /**
+   * tool_call של כלי-בן של תת-סוכן (`_meta.claudeCode.parentToolUseId`) — בונה `ToolBubble` עשיר
+   * (אותה צורה שיוצר `#handleToolCall`) ומקנן אותו ב-`subFrames` של בועת ה-Task האב, במקום
+   * top-level (brief §3). **fallback**: אם בועת-Task האב לא נמצאה — top-level רגיל (אל תשמיט).
+   */
+  #handleSubagentToolCall(
+    update: {
+      toolCallId?: string
+      title?: string
+      kind?: string
+      rawInput?: unknown
+      rawOutput?: unknown
+      status?: ToolCall["status"]
+      content?: unknown[] | null
+      locations?: unknown[] | null
+    },
+    parentToolUseId: string,
+  ): void {
+    if (update.toolCallId === undefined) return
+    const parentIdx = this.bubbles.findIndex(
+      (b) => b.kind === "tool" && b.toolCall.toolCallId === parentToolUseId,
+    )
+    const parent = parentIdx === -1 ? undefined : this.bubbles[parentIdx]
+    if (parent === undefined || parent.kind !== "tool") {
+      // fallback (אביגיל) — בועת-Task אב לא נמצאה: עדיף כלי top-level על כלי נעלם.
+      this.#handleToolCall(update)
+      return
+    }
+
+    const childBubble: ToolBubble = {
+      id: crypto.randomUUID(),
+      kind: "tool",
+      messageId: null,
+      createdAt: Date.now(),
+      toolCall: {
+        toolCallId: update.toolCallId,
+        name: update.kind ?? update.title ?? "tool",
+        kind: update.kind,
+        args: update.rawInput ?? {},
+        status: update.status ?? "pending",
+        title: update.title,
+        narration: undefined,
+        result: update.rawOutput,
+        content: update.content != null ? this.#mapToolContent(update.content) : undefined,
+        locations: update.locations != null ? this.#mapLocations(update.locations) : undefined,
+      },
+      segments: [],
+    }
+
+    // immutable append + object-replacement (שומר reactivity, כמו B1).
+    this.bubbles[parentIdx] = {
+      ...parent,
+      subFrames: [...(parent.subFrames ?? []), childBubble],
+    }
+    this.#subagentToolCallParents.set(update.toolCallId, parentToolUseId)
+    this.#setTurnState("calling-tool")
+    if (this.#turnEnded) this.#scheduleIdle()
+  }
+
+  /**
+   * tool_call_update לכלי-בן מקונן (toolCallId ב-`#subagentToolCallParents`) — מאתר את ה-ToolBubble
+   * ב-subFrames של בועת ה-Task האב **לפי `toolCall.toolCallId`** (לא `sf.id`/UUID — אביגיל #6)
+   * ומעדכן אותו בתוך ה-subFrames (לא top-level).
+   */
+  #handleSubagentToolCallUpdate(update: {
+    toolCallId?: string
+    status?: ToolCall["status"]
+    rawInput?: unknown
+    rawOutput?: unknown
+    kind?: string
+    title?: string
+    content?: unknown[] | null
+    locations?: unknown[] | null
+  }): void {
+    if (update.toolCallId === undefined) return
+    if (update.status === "pending" || update.status === "in_progress") {
+      this.#setTurnState("calling-tool")
+      if (this.#turnEnded) this.#scheduleIdle()
+    }
+    const parentToolUseId = this.#subagentToolCallParents.get(update.toolCallId)
+    if (parentToolUseId === undefined) return
+    const parentIdx = this.bubbles.findIndex(
+      (b) => b.kind === "tool" && b.toolCall.toolCallId === parentToolUseId,
+    )
+    const parent = parentIdx === -1 ? undefined : this.bubbles[parentIdx]
+    if (parent === undefined || parent.kind !== "tool") return
+
+    const subFrames = parent.subFrames ?? []
+    const childIdx = subFrames.findIndex(
+      (sf) => sf.kind === "tool" && sf.toolCall.toolCallId === update.toolCallId,
+    )
+    if (childIdx === -1) return
+    const oldChild = subFrames[childIdx]
+    if (oldChild === undefined || oldChild.kind !== "tool") return
+
+    const newToolCall: ToolCall = {
+      ...oldChild.toolCall,
+      ...(update.status !== undefined && { status: update.status }),
+      ...(update.rawInput !== undefined && { args: update.rawInput }),
+      ...(update.rawOutput !== undefined && { result: update.rawOutput }),
+      ...(update.kind !== undefined && { kind: update.kind }),
+      ...(update.title !== undefined && { title: update.title }),
+      ...(update.content !== undefined && {
+        content: update.content === null ? undefined : this.#mapToolContent(update.content),
+      }),
+      ...(update.locations !== undefined && {
+        locations: update.locations === null ? undefined : this.#mapLocations(update.locations),
+      }),
+    }
+    const newChild: ToolBubble = { ...oldChild, toolCall: newToolCall }
+    const newSubFrames = [...subFrames]
+    newSubFrames[childIdx] = newChild
+    this.bubbles[parentIdx] = { ...parent, subFrames: newSubFrames }
   }
 
   #appendChunk(kind: "message" | "thought" | "user", text: string, messageId: string | null): void {
