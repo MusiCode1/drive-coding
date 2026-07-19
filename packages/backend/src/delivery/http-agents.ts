@@ -13,6 +13,8 @@ const CreateAgentInputFull = type({
   cwd: "string >= 1",
   "modelOverride?": "string | null",
   "existingSessionId?": "string | null",
+  // slice project-system-prompt: פרומפט-מערכת פר-פרויקט, מתווסף (append) בתוך provider (§3).
+  "systemPrompt?": "string | null",
 })
 
 export function registerAgentsHttp(
