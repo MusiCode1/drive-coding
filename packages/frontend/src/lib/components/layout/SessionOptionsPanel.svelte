@@ -454,6 +454,25 @@ $effect(() => {
   {/if}
 </div>
 
+<!-- ─── פרומפט מערכת פר-פרויקט ─── (slice project-system-prompt) -->
+{#if session.cwd}
+<div class="flex flex-col gap-1.5 shrink-0">
+  <div class="text-[11px] font-semibold uppercase tracking-wider px-1" style="color:var(--fg-dim)">
+    {t("projectPrompt.label")}
+  </div>
+  <textarea
+    class="w-full rounded-lg px-2.5 py-2 text-[13px] resize-y outline-none border"
+    style="background:var(--bg-card); border-color:var(--border); color:var(--fg); min-height:4.5em"
+    dir="auto"
+    rows={3}
+    placeholder={t("projectPrompt.placeholder")}
+    value={settings.getProjectPrompt(session.cwd)}
+    onchange={(e) => settings.setProjectPrompt(session.cwd ?? "", (e.target as HTMLTextAreaElement).value)}
+  ></textarea>
+  <div class="text-[11px] px-1" style="color:var(--fg-dim)">{t("projectPrompt.hint")}</div>
+</div>
+{/if}
+
 <!-- סשנים — inline (slice sessions-inline: מחליף SessionsDialog) -->
 <div class="flex flex-col gap-2 shrink-0">
   <div class="flex items-center justify-between px-1 shrink-0">

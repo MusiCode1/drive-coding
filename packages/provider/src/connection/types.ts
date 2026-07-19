@@ -42,6 +42,13 @@ export interface ConnectOpts {
    * אותו חתימה כמו SpawnCoreHooks.shapeEnv — תואם ישיר.
    */
   shapeEnv?: (cliKind: SpawnBridgeInput["cliKind"], base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
+  /**
+   * systemPrompt — פרומפט-מערכת פר-פרויקט, טקסט חופשי שמתווסף (append) להוראות ברירת-המחדל
+   * של הסוכן. גנרי כאן (string) — הצורה הספציפית-לספק (`_meta.systemPrompt` לקלוד,
+   * `config.developer_instructions` ל-codex) נכתבת רק בקובץ-הספק (slice project-system-prompt §3).
+   * null/undefined = ללא הזרקה. ספקים שלא קוראים את השדה (opencode/spawn) מתעלמים בשקט.
+   */
+  systemPrompt?: string | null
 }
 
 /**

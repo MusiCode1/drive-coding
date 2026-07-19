@@ -16,6 +16,8 @@ export type CreateAgentInput = {
   cliKind: CliKind
   modelOverride?: string | null
   existingSessionId?: string
+  // slice project-system-prompt: פרומפט-מערכת פר-פרויקט, מתווסף (append) בתוך provider.
+  systemPrompt?: string | null
 }
 
 export type CreateAgentResponse = {

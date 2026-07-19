@@ -92,6 +92,28 @@ function injectModelOverride(
   }
 }
 
+/**
+ * injectSystemPrompt — מוסיף _meta.systemPrompt:{append} ל-session/new params (קלוד בלבד).
+ * המתאם claude-agent-acp@0.58.1 (acp-agent.js:2808) קורא params._meta.systemPrompt:
+ *   object {append} → מתווסף ל-preset claude_code. אומת חי 2026-07-19.
+ * null/undefined/מחרוזת-ריקה → params ללא שינוי (no-op).
+ * additive: משמר _meta.claudeCode ושדות _meta קיימים (deep-spread כמו injectModelOverride).
+ */
+export function injectSystemPrompt(
+  params: Record<string, unknown>,
+  systemPrompt: string | null | undefined,
+): Record<string, unknown> {
+  if (systemPrompt == null || systemPrompt === "") return params
+  const existingMeta = params._meta as Record<string, unknown> | undefined
+  return {
+    ...params,
+    _meta: {
+      ...existingMeta,
+      systemPrompt: { append: systemPrompt },
+    },
+  }
+}
+
 export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConnection> {
   // Listeners for onFrame — broadcast decoded frames.
   const frameListeners = new Set<(f: WireFrame) => void>()
@@ -190,10 +212,12 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
       if (!claudeAgent) throw new Error("claudeAgent not set before session/new")
       // modelOverride: inject into _meta.claudeCode.options.model if provided (brief §3).
       // envOverride: inject into _meta.claudeCode.options.env for unset/set env shaping.
-      // Both target _meta.claudeCode.options and compose additively (no overwrite).
-      // Cast: both functions return Record<string,unknown> with additive _meta only.
+      // systemPrompt: inject into _meta.systemPrompt:{append} (slice project-system-prompt).
+      // All three compose additively (no overwrite) — see injectSystemPrompt doc comment.
+      // Cast: all functions return Record<string,unknown> with additive _meta only.
       const withModel = injectModelOverride(ctx.params, opts.modelOverride)
-      const params = injectEnvOverride(withModel, envOverride) as NewSessionRequest
+      const withEnv = injectEnvOverride(withModel, envOverride)
+      const params = injectSystemPrompt(withEnv, opts.systemPrompt) as NewSessionRequest
       return claudeAgent.newSession(params)
     })
     .onRequest(methods.agent.session.prompt, (ctx) => {

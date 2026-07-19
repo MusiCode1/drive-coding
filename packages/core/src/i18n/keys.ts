@@ -334,6 +334,10 @@ export type MessageKey =
   | "plan.status.completed"
   | "plan.openMarkdown"
   | "plan.file.label"
+  // ─── projectPrompt ─── (slice project-system-prompt)
+  | "projectPrompt.label"
+  | "projectPrompt.placeholder"
+  | "projectPrompt.hint"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

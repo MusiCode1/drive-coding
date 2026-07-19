@@ -154,10 +154,13 @@ export function createAgentOrchestrator(deps: {
         // ── הפעלת connection (connectSpawn דרך connectionRegistry) ──────────────
         // modelOverride (🔴 avigail): מועבר מ-input — לא מקובע null.
         // shapeEnv (opencode-only): verbatim מ-bridge-manager:71-83.
+        // systemPrompt (slice project-system-prompt): גנרי — הצורה הספציפית-לספק
+        // (מיפוי-meta לקלוד / config.developer_instructions לcodex) נכתבת בתוך provider בלבד.
         await deps.connectionRegistry.connect(agent.id, input.cliKind, {
           cwd: input.cwd,
           modelOverride: input.modelOverride ?? null,
           shapeEnv: drivecodingShapeEnv,
+          systemPrompt: input.systemPrompt ?? null,
         })
 
         // ⚠️ port/wsUrl stub (🟡 avigail): in-process pipe — אין WS-bridge אמיתי.

@@ -145,8 +145,15 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
   // Start the codex ACP server in-process.
   // modelOverride is intentionally NOT passed — model selection is FE-driven via the wire
   // (session/new params / setSessionModel). codex does not accept modelOverride in opts.
+  // systemPrompt (slice project-system-prompt): opts.config → codex-acp ממזג ל-thread/start
+  // config (startAcpServer, dist/lib.js:29014). developer_instructions מתווסף (append-equivalent)
+  // ל-base של codex — בניגוד ל-instructions שמחליף אותו. אומת חי 2026-07-19: codex כיבד את
+  // developer_instructions (ZQX_CDX_7).
   const codexPath = resolveCodexPath()
-  startAcpServer(serverIn, serverOut, { codexPath })
+  startAcpServer(serverIn, serverOut, {
+    codexPath,
+    config: opts.systemPrompt ? { developer_instructions: opts.systemPrompt } : undefined,
+  })
 
   // Line buffer for serverOut — accumulate bytes until '\n'.
   let lineBuffer = ""

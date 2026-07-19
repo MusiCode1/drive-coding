@@ -329,4 +329,8 @@ export const en: Catalog = {
   "plan.status.completed": "Completed",
   "plan.openMarkdown": "Open plan",
   "plan.file.label": "Plan file",
+  // ─── projectPrompt ─── (slice project-system-prompt)
+  "projectPrompt.label": "Project system prompt",
+  "projectPrompt.placeholder": "e.g. Always reply concisely, and open every answer in Hebrew...",
+  "projectPrompt.hint": "Appended to the agent's default instructions. Takes effect from the next session.",
 }

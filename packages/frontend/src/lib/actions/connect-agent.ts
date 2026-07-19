@@ -23,7 +23,13 @@ export async function connectAgent(params: {
   params.settings.setCliKind(params.cliKind)
   params.settings.setLastCwd(params.cwd)
 
-  await params.session.attach({ cwd: params.cwd, cliKind: params.cliKind })
+  // slice project-system-prompt: שולף את הפרומפט השמור לפרויקט (cwd) מ-Settings — ה-VM
+  // עצמו לא מחזיק Settings, ה-action (שכבת חוצה-VM) היא המקום הנכון לשלוף (§9 Q1).
+  await params.session.attach({
+    cwd: params.cwd,
+    cliKind: params.cliKind,
+    systemPrompt: params.settings.getProjectPrompt(params.cwd),
+  })
 
   if (params.session.status === "connected") {
     await goto("/chat")
