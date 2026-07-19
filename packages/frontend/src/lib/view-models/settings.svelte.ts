@@ -57,6 +57,9 @@ type Persisted = {
   suppressLeaveWarning: boolean
   // ─── קול Gemini ─── (V4b-gemini-voice-picker)
   geminiVoice: string
+  // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
+  // מפה: cwd → טקסט הפרומפט (מתווסף להוראות ברירת-המחדל של הסוכן, ר' provider/connection).
+  projectSystemPrompt: Record<string, string>
 }
 
 const DEFAULTS: Persisted = {
@@ -93,6 +96,8 @@ const DEFAULTS: Persisted = {
   suppressLeaveWarning: false,
   // ─── קול Gemini ─── (V4b-gemini-voice-picker)
   geminiVoice: DEFAULT_GEMINI_VOICE,
+  // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
+  projectSystemPrompt: {},
 }
 
 function load(): Persisted {
@@ -185,6 +190,9 @@ export class Settings {
   // ─── קול Gemini ─── (V4b-gemini-voice-picker)
   geminiVoice = $state<string>(DEFAULTS.geminiVoice)
 
+  // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
+  projectSystemPrompt = $state<Record<string, string>>(DEFAULTS.projectSystemPrompt)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -219,6 +227,8 @@ export class Settings {
     this.suppressLeaveWarning = loaded.suppressLeaveWarning
     // ─── קול Gemini ───
     this.geminiVoice = loaded.geminiVoice
+    // ─── פרומפט-מערכת פר-פרויקט ───
+    this.projectSystemPrompt = loaded.projectSystemPrompt
   }
 
   // ─── טופס חיבור ───
@@ -452,6 +462,22 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
+
+  /** מחזיר את הפרומפט השמור לפרויקט הנתון (cwd), או מחרוזת ריקה אם אין. */
+  getProjectPrompt = (cwd: string): string => {
+    return this.projectSystemPrompt[cwd] ?? ""
+  }
+
+  /** שומר את הפרומפט עבור cwd נתון. object-replacement (immutable) לשמירת reactivity. */
+  setProjectPrompt = (cwd: string, text: string): void => {
+    this.projectSystemPrompt = {
+      ...this.projectSystemPrompt,
+      [cwd]: text,
+    }
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -475,6 +501,7 @@ export class Settings {
       recentCollapsed: this.recentCollapsed,
       suppressLeaveWarning: this.suppressLeaveWarning,
       geminiVoice: this.geminiVoice,
+      projectSystemPrompt: this.projectSystemPrompt,
     })
   }
 }

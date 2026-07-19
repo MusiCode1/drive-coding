@@ -331,6 +331,43 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
   })
 })
 
+// ─── slice project-system-prompt Commit 2 — attach forwards systemPrompt to createAgent ───
+
+describe("AgentSession.attach — systemPrompt forwarded to createAgent", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal("location", { protocol: "http:", host: "localhost:4000" })
+  })
+
+  it("attach({ systemPrompt }) → createAgent called with systemPrompt", async () => {
+    const { createAgent } = await import("$lib/adapters/agents-api")
+    const session = new AgentSession()
+    await session.attach({
+      cwd: "/proj",
+      cliKind: "claude",
+      systemPrompt: "Always end every reply with QAZ",
+    })
+
+    expect(createAgent).toHaveBeenCalledWith({
+      cwd: "/proj",
+      cliKind: "claude",
+      systemPrompt: "Always end every reply with QAZ",
+    })
+  })
+
+  it("attach without systemPrompt → createAgent called with systemPrompt: undefined", async () => {
+    const { createAgent } = await import("$lib/adapters/agents-api")
+    const session = new AgentSession()
+    await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+
+    expect(createAgent).toHaveBeenCalledWith({
+      cwd: "/tmp",
+      cliKind: "opencode",
+      systemPrompt: undefined,
+    })
+  })
+})
+
 // ─── TDD: slice-session-title-header — sessionTitle state ────────────────────
 
 describe("AgentSession.sessionTitle (slice-session-title-header)", () => {

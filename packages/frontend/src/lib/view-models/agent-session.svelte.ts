@@ -708,7 +708,13 @@ export class AgentSession {
    * יצירת סוכן חדש עבור (cwd, cliKind), פתיחת WS, לחיצת יד של ACP, ורישום
    * של מאזין להתראות. לאחר ההשלמה, הסשן מוכן עבור sendPrompt.
    */
-  attach = async (input: { cwd: string; cliKind: CliKind }): Promise<void> => {
+  attach = async (input: {
+    cwd: string
+    cliKind: CliKind
+    // slice project-system-prompt: פרומפט-מערכת פר-פרויקט. הקורא (action connectAgent)
+    // שולף אותו מ-Settings לפי cwd — ה-VM עצמו לא מחזיק Settings (שכבתיות, §9 Q1).
+    systemPrompt?: string | null
+  }): Promise<void> => {
     if (this.status === "connecting" || this.status === "connected") {
       throw new Error(`cannot attach in status ${this.status}`)
     }
@@ -719,7 +725,11 @@ export class AgentSession {
 
     try {
       // 1. צור סוכן בצד השרת (BE)
-      const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
+      const { agentId } = await createAgent({
+        cwd: input.cwd,
+        cliKind: input.cliKind,
+        systemPrompt: input.systemPrompt,
+      })
       this.agentId = agentId
       this.cwd = input.cwd
       this.#cliKind = input.cliKind // slice ws-reconnect-infra: שמור ל-cold reconnect
