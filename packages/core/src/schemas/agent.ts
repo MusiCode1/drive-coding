@@ -25,10 +25,16 @@ export type CliSpec = {
   readonly unsetEnv?: readonly string[]
   /** משתני-סביבה להוספה/דריסה ב-child לפני spawn. */
   readonly setEnv?: Readonly<Record<string, string>>
+  /**
+   * שם משתנה-סביבה שדורס את ה-bin (למשל OPENCODE_BIN — D14, Proxmox).
+   * נצרך ע"י detectAvailableClis (slice cli-availability) כדי שגילוי הזמינות
+   * יכבד את אותו סדר-עדיפויות כמו getCliCommand.
+   */
+  readonly envVar?: string
 }
 
 export const CLI_SPECS = {
-  opencode: { bin: "opencode", args: ["acp"], supportsModelFlag: false },
+  opencode: { bin: "opencode", args: ["acp"], supportsModelFlag: false, envVar: "OPENCODE_BIN" },
   claude: {
     bin: "npx",
     args: ["-y", "@agentclientprotocol/claude-agent-acp@latest"],
