@@ -5,5 +5,13 @@
 
 export { extMethods } from "./schema.js"
 export type { ExtMethodName } from "./schema.js"
-export type { ExtParams, ExtResult } from "./types.js"
-export { parseExtParams } from "./types.js"
+export type {
+  ExtParams,
+  ExtResult,
+  GetQuotaResult,
+  QuotaConsumption,
+  QuotaPeriod,
+  QuotaSnapshot,
+  QuotaWindow,
+} from "./types.js"
+export { parseExtParams, parseExtResult } from "./types.js"
