@@ -5,19 +5,23 @@
  *    כל רשומה מחזיקה query חי. נקודת-שבירה יחידה אם claude-agent-acp ישנה את sessions.
  *    מכוסה ע"י live test. גרסה נעולה ממילא.
  *
- * Two-SDK containment: ה-interface המקומי מטפס רק את המתודה שאנו קוראים —
- * אין ייבוא טיפוס query מה-SDK.
+ * Two-SDK containment: ה-interface המקומי מטפס רק את המתודות שאנו קוראים —
+ * אין ייבוא טיפוס Query מה-SDK. `SDKControlGetUsageResponse` הוא רק ה-response
+ * shape (לא ה-Query interface עצמו) — משמש את quota.ts לנרמול (slice session-budget-meter).
  */
 
 import type { ClaudeAcpAgent } from "@agentclientprotocol/claude-agent-acp"
+import type { SDKControlGetUsageResponse } from "@anthropic-ai/claude-agent-sdk"
 
 /**
  * Local interface that captures only what we need from the session record's query.
- * We do NOT import the SDK's Query type — only the method we call.
+ * We do NOT import the SDK's Query type — only the methods we call.
  */
 interface SessionRecord {
   query: {
     setMaxThinkingTokens(n: number | null, display?: "summarized" | "omitted" | null): Promise<void>
+    // slice session-budget-meter Commit 3 — experimental, per @anthropic-ai/claude-agent-sdk 0.3.207.
+    usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET(): Promise<SDKControlGetUsageResponse>
   }
 }
 

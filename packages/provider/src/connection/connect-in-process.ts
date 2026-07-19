@@ -27,6 +27,7 @@ import { parseExtParams } from "../extensions/index.js"
 import { mapClaudeCapabilities } from "../providers/claude/capabilities.js"
 import { makeAcpClientFromCtx } from "../providers/claude/client-bridge.js"
 import { getQuery } from "../providers/claude/query-access.js"
+import { createClaudeQuotaHandler } from "../providers/claude/quota-handler.js"
 import { createTurnTracker } from "../shared/turn-tracker.js"
 import { decodeWireLine } from "../shared/wire-decode.js"
 import type { NormalizedCapabilities } from "../types.js"
@@ -257,6 +258,17 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
       await getQuery(claudeAgent, sessionId).setMaxThinkingTokens(n)
       return { ok: true }
     },
+  )
+
+  // Register _drive/getQuota ext handler (slice session-budget-meter Commit 3).
+  // Wiring-only per brief §2 "חריג wiring בלבד" — handler prepared entirely inside
+  // providers/claude/quota-handler.ts; no quota SDK symbols/response fields/mapping
+  // here. Same handler factory as in-process-host.ts (no duplicate normalizer).
+  const getQuotaHandler = createClaudeQuotaHandler(() => claudeAgent)
+  agentApp = agentApp.onRequest(
+    "_drive/getQuota",
+    { parse: (p: unknown) => p as Record<string, unknown> },
+    (ctx) => getQuotaHandler(ctx.params),
   )
 
   // Connect agentApp to stream bridge (Model 2).
