@@ -318,4 +318,8 @@ export const he: Catalog = {
   "sessionBudget.quota.used": "נוצל",
   "sessionBudget.quota.of": "מתוך",
   "sessionBudget.quota.resetsIn": "מתאפס",
+  // ─── projectPrompt ─── (slice project-system-prompt)
+  "projectPrompt.label": "פרומפט מערכת לפרויקט",
+  "projectPrompt.placeholder": "לדוגמה: תמיד ענה בקצרה, ופתח כל תשובה בעברית...",
+  "projectPrompt.hint": "מתווסף להוראות ברירת-המחדל של הסוכן. השינוי חל מהסשן הבא.",
 }

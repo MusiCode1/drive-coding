@@ -327,6 +327,10 @@ export type MessageKey =
   | "sessionBudget.quota.used"
   | "sessionBudget.quota.of"
   | "sessionBudget.quota.resetsIn"
+  // ─── projectPrompt ─── (slice project-system-prompt)
+  | "projectPrompt.label"
+  | "projectPrompt.placeholder"
+  | "projectPrompt.hint"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
