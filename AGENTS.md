@@ -22,7 +22,9 @@ links to).
 - SvelteKit + adapter-static (frontend)
 - ArkType (schemas), neverthrow (Result)
 - Vitest (tests), Biome (lint+format)
-- pnpm workspaces
+- bun workspaces (**bun-only since 2026-07-19** — the old `pnpm` choice was forced by a
+  vite plugin that didn't support bun at the time; that constraint has since lifted and
+  the vite/sveltekit build is verified under bun. `pnpm-lock.yaml` removed.)
 
 ## Structure
 
@@ -72,15 +74,19 @@ git push origin dev
 ## Commands
 
 ```bash
-pnpm install
-pnpm dev              # all packages
-pnpm test             # all tests
-pnpm typecheck
-pnpm lint             # Biome
-pnpm lint:i18n        # scripts/lint-no-hebrew-in-code.sh — blocks Hebrew in code
-pnpm format
-pnpm hooks:install    # one-time: set core.hooksPath=.githooks (runs pre-commit lint)
+bun install
+bun run dev           # all packages
+bun run test          # all tests
+bun run typecheck
+bun run lint          # Biome
+bun run lint:i18n     # scripts/lint-no-hebrew-in-code.sh — blocks Hebrew in code
+bun run format
+bun run hooks:install # one-time: set core.hooksPath=.githooks (runs pre-commit lint)
 ```
+
+> **Per-package commands** stay PM-agnostic via `node scripts/pm.mjs run-filter <pkg> <script>`
+> (it detects bun from the user-agent). Scattered `pnpm --filter …` mentions elsewhere in the
+> docs are legacy; prefer `bun run --filter` / `pm.mjs`. Full docs sweep tracked as follow-up.
 
 ## Running & serving locally
 

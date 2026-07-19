@@ -3,10 +3,10 @@
   "version": "0.18.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.0.0",
+  "packageManager": "bun@1.3.14",
   "engines": {
     "node": ">=22.5.0",
-    "pnpm": ">=10.0.0"
+    "bun": ">=1.3.0"
   },
   "scripts": {
     "dev": "node scripts/pm.mjs run-all-parallel dev",
