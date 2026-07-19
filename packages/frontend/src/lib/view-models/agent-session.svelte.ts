@@ -15,6 +15,7 @@ import type {
   SessionConfigOption,
   SessionModeState,
   SessionNotification,
+  UsageUpdate,
 } from "@agentclientprotocol/sdk"
 import type { CliKind } from "@drive-coding/core"
 import {
@@ -167,6 +168,14 @@ export class AgentSession {
   // ─── slice session-title: כותרת הסשן הפעיל ─── (תוספתי)
   /** כותרת הסשן הפעיל. snapshot מרגע הטעינה/החלפה. "" = אין כותרת (סשן חדש). */
   sessionTitle = $state<string>("")
+
+  // ─── slice session-budget-meter: context state מ-ACP usage_update התקני ─── (תוספתי)
+  /**
+   * מצב ניצול חלון-הקונטקסט + עלות, מתוך `session/update` מסוג `usage_update` (ACP תקני —
+   * לא ext, לא `_meta._claude/rateLimit`). null = טרם התקבל update בסשן הנוכחי.
+   * cost אופציונלי ב-ACP — אם update חדש משמיט אותו, הערך הקודם נשמר (למניעת flicker).
+   */
+  contextUsage = $state<UsageUpdate | null>(null)
 
   // ─── image-attach: capability gating ─── (slice-image-paste, additive)
   /**
@@ -1350,6 +1359,10 @@ export class AgentSession {
     this.modes = result.modes ?? null
     // slice-slash-commands: ניקוי בהחלפת/פתיחת סשן; ה-update הטרי יאכלס
     this.availableCommands = []
+    // slice session-budget-meter: איפוס context-usage בהחלפת/פתיחת סשן (#captureSessionConfig
+    // אינו מאפס capabilities — ר' brief §0 — אבל contextUsage/quota הם שדות תוספתיים חדשים
+    // ללא reset קודם, ולכן מתווספים כאן וב-#cleanup במפורש).
+    this.contextUsage = null
   }
 
   #cleanup(opts?: { keepAgent?: boolean }): void {
@@ -1375,6 +1388,7 @@ export class AgentSession {
     this.#client = null
     this.#ext = null // slice FE-normalization: נקה facade
     this.#capabilities = null // slice FE-normalization: נקה capabilities (חיבור חדש = caps חדשים)
+    this.contextUsage = null // slice session-budget-meter: נקה context-usage (חיבור חדש = caps חדשים)
     this.#claudeRawSdkMessageCount = 0
     this.#transport = null // slice ws-reconnect-fix-nbug2: נקה ref
     this.#sessionId = null
@@ -1584,6 +1598,19 @@ export class AgentSession {
     if (update.sessionUpdate === "available_commands_update") {
       const cmds = (update as { availableCommands?: unknown }).availableCommands
       this.availableCommands = Array.isArray(cmds) ? (cmds as AvailableCommand[]) : []
+      return
+    }
+
+    // ─── slice session-budget-meter Commit 1: usage_update (ACP תקני) ───────
+    // לא נושא content.text — חובה לטפל בו לפני ה-gate `if (!text) return`.
+    // cost אופציונלי: אם ה-update החדש משמיט אותו, שומר את הקודם (anti-flicker, brief §4).
+    if (update.sessionUpdate === "usage_update") {
+      const u = update as unknown as UsageUpdate
+      this.contextUsage = {
+        used: u.used,
+        size: u.size,
+        cost: u.cost ?? this.contextUsage?.cost,
+      }
       return
     }
 
