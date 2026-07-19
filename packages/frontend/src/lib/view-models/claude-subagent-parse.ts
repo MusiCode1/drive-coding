@@ -239,12 +239,24 @@ function blockToText(block: unknown): string {
   return ""
 }
 
+/**
+ * `tool_use`/`tool_result` blocks — מדולגים בשיטוח-הטקסט (slice subagent-tool-nesting §3
+ * אביגיל #4): הם מיוצגים כעת ע"י ToolBubble עשיר ומקונן מערוץ ה-session (agent-session.svelte.ts
+ * `#handleSubagentToolCall`), לא כטקסט חלקי (`[tool_use: Bash]`) — מניעת כפילות. חריג parser
+ * ממוקד לבלוקים אלה בלבד; text/thinking נשארים כטקסט כרגיל.
+ */
+function isToolBlock(block: unknown): boolean {
+  return isRecord(block) && (block.type === "tool_use" || block.type === "tool_result")
+}
+
 /** ממיר content blocks ל-Segments, עם id דטרמיניסטי (messageId+hash-תוכן) — מאפשר דדופ לפי id. */
 function blocksToSegments(groupKey: string, blocks: unknown[]): Segment[] {
-  return blocks.map((block) => ({
-    id: `blk:${groupKey}:${stableHash(JSON.stringify(block))}`,
-    text: blockToText(block),
-  }))
+  return blocks
+    .filter((block) => !isToolBlock(block))
+    .map((block) => ({
+      id: `blk:${groupKey}:${stableHash(JSON.stringify(block))}`,
+      text: blockToText(block),
+    }))
 }
 
 function applyTaskEvent(taskBubble: ToolBubble, event: SubagentTaskEvent): ToolBubble {
@@ -285,6 +297,10 @@ function applyAssistantDelta(
     return { ...taskBubble, subFrames }
   }
 
+  // slice subagent-tool-nesting §3 אביגיל #2: בלוק-קבוצה שכולו tool_use/tool_result (אחרי הסינון
+  // לא נשאר תוכן טקסטואלי) — אל תיצור MessageBubble ריק, דלג על יצירת ה-subFrame כולו.
+  if (newSegments.length === 0) return taskBubble
+
   const newFrame: MessageBubble = {
     id: frameId,
     kind: "message",
@@ -300,12 +316,17 @@ function applyToolResult(taskBubble: ToolBubble, event: ToolResultEvent, now: nu
   const exists = taskBubble.subFrames?.some((f) => f.id === frameId) ?? false
   if (exists) return taskBubble // דדופ — replay של אותו frame
 
+  const segments = blocksToSegments(event.key, event.blocks)
+  // slice subagent-tool-nesting §3 אביגיל #2: תוצאת-כלי שכולה tool_result (אין טקסט אחרי הסינון) —
+  // דלג, אל תיצור subFrame ריק.
+  if (segments.length === 0) return taskBubble
+
   const newFrame: MessageBubble = {
     id: frameId,
     kind: "message",
     messageId: null,
     createdAt: now,
-    segments: blocksToSegments(event.key, event.blocks),
+    segments,
   }
   return { ...taskBubble, subFrames: [...(taskBubble.subFrames ?? []), newFrame] }
 }

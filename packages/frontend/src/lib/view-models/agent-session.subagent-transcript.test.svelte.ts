@@ -185,15 +185,51 @@ describe("AgentSession — subagent transcript replay (slice subagent-transcript
     expect(taskBubble.toolCall.task?.subagentType).toBe("general-purpose")
   })
 
-  it("Bash tool_call המקונן (ACP session/update רגיל, לא raw) נשאר flat top-level — לא בתוך subFrames", async () => {
+  // slice subagent-tool-nesting (re-scope 2026-07-19): התנהגות ישנה הוחלפה — קינון-הבועה-העשירה
+  // במקום דיכוי/flat. בעבר הטסט הזה ציפה ל-top-level flat; עכשיו הכלי מקונן ב-subFrames של ה-Task.
+  it("Bash tool_call המקונן (ACP session/update רגיל, לא raw) מקונן ב-subFrames של ה-Task — לא top-level", async () => {
     const session = new AgentSession()
     await session.attach({ cwd: "/proj", cliKind: "claude" })
     replay(inbound)
 
-    const bashBubble = session.bubbles.find(
+    const bashBubbleTopLevel = session.bubbles.find(
       (b) => b.kind === "tool" && b.toolCall.toolCallId === "toolu_01RcvmgbihnkJJnFJnk9ksRc",
     )
-    expect(bashBubble).toBeDefined() // עדיין מגיע דרך #handleToolCall הרגיל (regression check)
+    expect(bashBubbleTopLevel).toBeUndefined() // אין יותר בועת top-level (re-scope: קינון, לא דיכוי)
+
+    const taskBubble = session.bubbles.find(
+      (b) => b.kind === "tool" && b.toolCall.toolCallId === TASK_TOOL_CALL_ID,
+    )
+    if (taskBubble?.kind !== "tool") throw new Error("expected tool bubble")
+    const nestedBash = taskBubble.subFrames?.find(
+      (sf) => sf.kind === "tool" && sf.toolCall.toolCallId === "toolu_01RcvmgbihnkJJnFJnk9ksRc",
+    )
+    expect(nestedBash).toBeDefined() // בועה עשירה מקוננת (§3 — לא דיכוי, לא טקסט חלקי)
+    if (nestedBash?.kind !== "tool") throw new Error("expected nested tool bubble")
+    expect(nestedBash.toolCall.title).toBe("echo hello-from-subagent")
+    // tool_call_update (idx 24 בפיקסצ'ר) מעדכן את הבועה המקוננת בתוך subFrames — status+output.
+    expect(nestedBash.toolCall.status).toBe("completed")
+    expect(nestedBash.toolCall.result).toBe("hello-from-subagent")
+
+    // מניעת כפילות מול B1 (אביגיל #4): ה-subFrame הטקסטואלי (MessageBubble) לא מכיל
+    // [tool_use: ...]/[tool_result] — הכלי מיוצג רק ע"י ה-ToolBubble המקונן, לא כטקסט.
+    const flattenedText = (taskBubble.subFrames ?? [])
+      .filter((sf) => sf.kind === "message")
+      .flatMap((sf) => sf.segments.map((s) => s.text))
+      .join(" ")
+    expect(flattenedText).not.toContain("[tool_use:")
+    expect(flattenedText).not.toContain("[tool_result]")
+  })
+
+  it("כלי top-level אמיתי (בלי parentToolUseId, למשל ה-Task tool_call עצמו) — נשאר top-level (רגרסיה)", async () => {
+    const session = new AgentSession()
+    await session.attach({ cwd: "/proj", cliKind: "claude" })
+    replay(inbound)
+
+    const taskBubble = session.bubbles.find(
+      (b) => b.kind === "tool" && b.toolCall.toolCallId === TASK_TOOL_CALL_ID,
+    )
+    expect(taskBubble).toBeDefined() // ה-Task tool_call עצמו (Agent, בלי parentToolUseId) נשאר top-level
   })
 
   it("counter (_claude/sdkMessage) שווה למספר ה-raw entries בפיקסצ'ר — finding #1 נשמר", async () => {
