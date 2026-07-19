@@ -318,4 +318,11 @@ export const he: Catalog = {
   "sessionBudget.quota.used": "נוצל",
   "sessionBudget.quota.of": "מתוך",
   "sessionBudget.quota.resetsIn": "מתאפס",
+  // ─── plan ─── (slice plan-todo-list)
+  "plan.title": "תוכנית",
+  "plan.status.pending": "ממתין",
+  "plan.status.in_progress": "בתהליך",
+  "plan.status.completed": "הושלם",
+  "plan.openMarkdown": "פתח תוכנית",
+  "plan.file.label": "קובץ תוכנית",
 }

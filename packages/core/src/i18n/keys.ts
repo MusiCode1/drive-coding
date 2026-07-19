@@ -327,6 +327,13 @@ export type MessageKey =
   | "sessionBudget.quota.used"
   | "sessionBudget.quota.of"
   | "sessionBudget.quota.resetsIn"
+  // ─── plan ─── (slice plan-todo-list)
+  | "plan.title"
+  | "plan.status.pending"
+  | "plan.status.in_progress"
+  | "plan.status.completed"
+  | "plan.openMarkdown"
+  | "plan.file.label"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
