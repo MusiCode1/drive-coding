@@ -79,6 +79,8 @@ import {
 } from "./claude-subagent-parse"
 // ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
 import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
+// ─── slice plan-todo-list Commit 1: reducer טהור + טיפוסים ─── (additive)
+import { EMPTY_PLAN_STORE, type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
 
 /**
  * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries
@@ -198,6 +200,10 @@ export class AgentSession {
   // ─── slice session-title: כותרת הסשן הפעיל ─── (תוספתי)
   /** כותרת הסשן הפעיל. snapshot מרגע הטעינה/החלפה. "" = אין כותרת (סשן חדש). */
   sessionTitle = $state<string>("")
+
+  // ─── slice plan-todo-list Commit 1: תוכנית-עבודה חיה (TodoWrite/update_plan) ─── (תוספתי)
+  /** מצב הצ'קליסט הנעוץ, מ-session/update מסוגי plan/plan_update/plan_removed. reducer טהור ב-core. */
+  planStore = $state<PlanStore>(EMPTY_PLAN_STORE)
 
   // ─── slice session-budget-meter: context state מ-ACP usage_update התקני ─── (תוספתי)
   /**
@@ -733,7 +739,13 @@ export class AgentSession {
    * יצירת סוכן חדש עבור (cwd, cliKind), פתיחת WS, לחיצת יד של ACP, ורישום
    * של מאזין להתראות. לאחר ההשלמה, הסשן מוכן עבור sendPrompt.
    */
-  attach = async (input: { cwd: string; cliKind: CliKind }): Promise<void> => {
+  attach = async (input: {
+    cwd: string
+    cliKind: CliKind
+    // slice project-system-prompt: פרומפט-מערכת פר-פרויקט. הקורא (action connectAgent)
+    // שולף אותו מ-Settings לפי cwd — ה-VM עצמו לא מחזיק Settings (שכבתיות, §9 Q1).
+    systemPrompt?: string | null
+  }): Promise<void> => {
     if (this.status === "connecting" || this.status === "connected") {
       throw new Error(`cannot attach in status ${this.status}`)
     }
@@ -744,7 +756,11 @@ export class AgentSession {
 
     try {
       // 1. צור סוכן בצד השרת (BE)
-      const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
+      const { agentId } = await createAgent({
+        cwd: input.cwd,
+        cliKind: input.cliKind,
+        systemPrompt: input.systemPrompt,
+      })
       this.agentId = agentId
       this.cwd = input.cwd
       this.#cliKind = input.cliKind // slice ws-reconnect-infra: שמור ל-cold reconnect
@@ -1511,6 +1527,8 @@ export class AgentSession {
     this.#mockQuota = undefined
     // slice subagent-tool-nesting: נקה מיפוי-קינון (החלפת/פתיחת סשן = מיפוי חדש)
     this.#subagentToolCallParents = new Map()
+    // slice plan-todo-list: איפוס הצ'קליסט בהחלפת/פתיחת סשן (סשן חדש = אין תוכנית ישנה)
+    this.planStore = EMPTY_PLAN_STORE
   }
 
   #cleanup(opts?: { keepAgent?: boolean }): void {
@@ -1841,6 +1859,18 @@ export class AgentSession {
     if (update.sessionUpdate === "available_commands_update") {
       const cmds = (update as { availableCommands?: unknown }).availableCommands
       this.availableCommands = Array.isArray(cmds) ? (cmds as AvailableCommand[]) : []
+      return
+    }
+
+    // ─── slice plan-todo-list Commit 1: plan / plan_update / plan_removed ───
+    // לא נושאים content.text — חובה לטפל בהם לפני ה-gate `if (!text) return`.
+    // reducePlan טהור (core): הקשחה מובנית, אף פעם לא זורק.
+    if (
+      update.sessionUpdate === "plan" ||
+      update.sessionUpdate === "plan_update" ||
+      update.sessionUpdate === "plan_removed"
+    ) {
+      this.planStore = reducePlan(this.planStore, update)
       return
     }
 

@@ -321,4 +321,15 @@ export const he: Catalog = {
   "sessionBudget.quota.used": "נוצל",
   "sessionBudget.quota.of": "מתוך",
   "sessionBudget.quota.resetsIn": "מתאפס",
+  // ─── plan ─── (slice plan-todo-list)
+  "plan.title": "תוכנית",
+  "plan.status.pending": "ממתין",
+  "plan.status.in_progress": "בתהליך",
+  "plan.status.completed": "הושלם",
+  "plan.openMarkdown": "פתח תוכנית",
+  "plan.file.label": "קובץ תוכנית",
+  // ─── projectPrompt ─── (slice project-system-prompt)
+  "projectPrompt.label": "פרומפט מערכת לפרויקט",
+  "projectPrompt.placeholder": "לדוגמה: תמיד ענה בקצרה, ופתח כל תשובה בעברית...",
+  "projectPrompt.hint": "מתווסף להוראות ברירת-המחדל של הסוכן. השינוי חל מהסשן הבא.",
 }

@@ -137,6 +137,58 @@ describe("HTTP /api/agents", () => {
       expect(body.cwd).toBe("/x")
     })
 
+    // slice project-system-prompt Commit 1 — systemPrompt accepted by CreateAgentInputFull
+    // and forwarded to orchestrator.createAndSpawn.
+    it("creates with systemPrompt — accepted by schema and forwarded to orchestrator", async () => {
+      let received: unknown
+      const app = new Hono()
+      const registry = createInMemoryAgentRegistry()
+      const orchestrator: AgentOrchestrator = {
+        async createAndSpawn(input): Promise<CreateAndSpawnResult> {
+          received = input
+          const agent = await registry.create(input)
+          await registry.update(agent.id, { status: "ready", bridgePort: 7100 })
+          return {
+            agentId: agent.id,
+            cwd: agent.cwd,
+            cliKind: agent.cliKind,
+            wsUrl: `ws://127.0.0.1:7100/`,
+            bridgePort: 7100,
+            status: "spawning",
+          }
+        },
+        async deleteAndKill(id) {
+          await registry.delete(id).catch(() => {})
+        },
+        getBridgePort: vi.fn(() => 7100),
+      }
+      registerAgentsHttp(app, { registry, orchestrator })
+
+      const res = await app.request("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cliKind: "claude",
+          cwd: "/x",
+          systemPrompt: "Always end every reply with QAZ",
+        }),
+      })
+      expect(res.status).toBe(201)
+      expect((received as { systemPrompt?: string | null })?.systemPrompt).toBe(
+        "Always end every reply with QAZ",
+      )
+    })
+
+    it("creates without systemPrompt — omitted (not required)", async () => {
+      const { app } = makeApp()
+      const res = await app.request("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cliKind: "claude", cwd: "/x" }),
+      })
+      expect(res.status).toBe(201)
+    })
+
     it("returns 500 if orchestrator throws", async () => {
       const app = new Hono()
       const registry = createInMemoryAgentRegistry()

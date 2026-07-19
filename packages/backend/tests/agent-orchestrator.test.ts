@@ -390,6 +390,44 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
     )
   })
 
+  // slice project-system-prompt Commit 1 — thread systemPrompt through core+BE.
+  it("createAndSpawn passes systemPrompt to connectionRegistry.connect via ConnectOpts", async () => {
+    const { registry } = makeRegistry()
+    const { reg, connectMock } = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+    await orch.createAndSpawn({
+      cliKind: "claude",
+      cwd: "/proj",
+      modelOverride: null,
+      systemPrompt: "Always end every reply with QAZ",
+    })
+
+    expect(connectMock).toHaveBeenCalledWith(
+      expect.any(String),
+      "claude",
+      expect.objectContaining({ systemPrompt: "Always end every reply with QAZ" }),
+    )
+  })
+
+  it("createAndSpawn without systemPrompt → connectionRegistry.connect receives systemPrompt: null", async () => {
+    const { registry } = makeRegistry()
+    const { reg, connectMock } = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+    await orch.createAndSpawn({
+      cliKind: "claude",
+      cwd: "/proj",
+      modelOverride: null,
+    })
+
+    expect(connectMock).toHaveBeenCalledWith(
+      expect.any(String),
+      "claude",
+      expect.objectContaining({ systemPrompt: null }),
+    )
+  })
+
   // removed in slice 10 phase 4 — old tests for getSession, ACP session creation
   describe.skip("OLD: session management (removed in Slice 10 Phase 4)", () => {
     it("createAndSpawn success → session created", () => {})

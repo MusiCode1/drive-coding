@@ -123,6 +123,9 @@ export const CreateAgentInput = type({
   "modelOverride?": "string | null",
   // Slice 8a: טעינת session ACP קיים דרך session/load במקום newSession
   "existingSessionId?": "string",
+  // slice project-system-prompt: פרומפט-מערכת פר-פרויקט, מתווסף (append) להוראות ברירת-המחדל.
+  // גנרי — הצורה הספציפית-לספק נכתבת רק בקובץ-הספק (provider/connection).
+  "systemPrompt?": "string | null",
 })
 export type CreateAgentInput = typeof CreateAgentInput.infer
 
