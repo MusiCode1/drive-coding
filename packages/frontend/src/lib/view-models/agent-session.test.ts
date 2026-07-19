@@ -271,6 +271,8 @@ const EXPECTED_META = {
       { type: "system", subtype: "task_notification" },
       { type: "system", subtype: "task_updated" },
       { type: "assistant" },
+      // slice subagent-transcript-data-v2 Commit 0: בלי זה, tool_result של תת-הסוכן לא זורם.
+      { type: "user" },
     ],
   },
 }

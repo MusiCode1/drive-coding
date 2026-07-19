@@ -70,6 +70,13 @@ const ATTACHED_CAPS_FALLBACK = {} as AcpClient["capabilities"]
 // ⚠️ אל תייבא value מ-@drive-coding/provider/host → יגרור spawn-core → vite crash.
 import type { NormalizedCapabilities } from "@drive-coding/provider/types"
 import { createExtClient, type ExtClient } from "$lib/adapters/ext"
+// ─── slice subagent-transcript-data-v2: פרסר+reducer טהורים (additive) ───
+import {
+  type ClaudeSubagentEvent,
+  createSubagentIndex,
+  parseClaudeSdkMessage,
+  reduceSubagent,
+} from "./claude-subagent-parse"
 // ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
 import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 
@@ -91,6 +98,10 @@ const CLAUDE_SESSION_META = {
       { type: "system", subtype: "task_notification" },
       { type: "system", subtype: "task_updated" },
       { type: "assistant" },
+      // ─── slice subagent-transcript-data-v2 Commit 0 ───
+      // בלי {type:"user"} תוצאות-הכלים (tool_result) של תת-הסוכן לא זורמות
+      // (spike Q2, decisions 2026-07-11 — "🐛 פער בקוד שנחת ב-acp-stack").
+      { type: "user" },
     ],
   },
 } as const
@@ -301,6 +312,12 @@ export class AgentSession {
   #quotaFetchInFlight: Promise<void> | null = null
   /** Counter פנימי ל-spike raw SDK. לא נרנדר ב-UI. */
   #claudeRawSdkMessageCount = 0
+  // ─── slice subagent-transcript-data-v2: תעתיק תת-סוכן (additive) ───
+  /** taskId→toolUseId, נבנה מ-task_started (Q3). */
+  #subagentIndex = createSubagentIndex()
+  /** אירועים שהגיעו לפני שה-Task ToolBubble נוצר ב-bubbles (bounded — §7 Risks). */
+  #pendingByParent: { parentId: string; event: ClaudeSubagentEvent }[] = []
+  static readonly #SUBAGENT_PENDING_CAP = 50
   // ─── slice ws-reconnect-fix-nbug2: ref ל-transport החי (NBug2 root fix) ───
   /** ref ל-transport הפעיל — נשמר בכל יצירת transport, מנוקה עם #client. */
   #transport: WsAcpTransport | null = null
@@ -1498,6 +1515,9 @@ export class AgentSession {
     this.#mockQuota = undefined
     this.#quotaFetchInFlight = null
     this.#claudeRawSdkMessageCount = 0
+    // slice subagent-transcript-data-v2: נקה state תעתיק תת-סוכן (חיבור חדש = index/pending חדשים)
+    this.#subagentIndex = createSubagentIndex()
+    this.#pendingByParent = []
     this.#transport = null // slice ws-reconnect-fix-nbug2: נקה ref
     this.#sessionId = null
     this.agentId = null
@@ -1670,17 +1690,60 @@ export class AgentSession {
   /**
    * מקבל ext notifications מה-SDK (default-routed).
    * `_drive/capabilities` → מאחסן ב-#capabilities (reactive via getter).
-   * `_claude/sdkMessage` → counter מינימלי ל-Commit 5 raw SDK spike.
+   * `_claude/sdkMessage` → מנותח ומקושר לבועת ה-Task האב (slice subagent-transcript-data-v2).
    * לא ב-#onSessionUpdate — capabilities מגיע כ-extNotification, לא כ-session/update.
    */
   #onExtNotification = (method: string, params: Record<string, unknown>): void => {
     if (method === "_claude/sdkMessage") {
+      // finding #1: השאר את ה-counter — agent-session.capabilities.test.svelte.ts:191 מצפה 0→2.
       this.#claudeRawSdkMessageCount += 1
+      const ev = parseClaudeSdkMessage(params)
+      if (ev.kind === "ignored") return
+      const parentId = this.#subagentIndex.resolve(ev)
+      if (parentId === undefined) return // task_updated לפני task_started — לא צפוי (§7), drop
+      const idx = this.bubbles.findIndex(
+        (b) => b.kind === "tool" && b.toolCall.toolCallId === parentId,
+      )
+      if (idx === -1) {
+        this.#pushPendingSubagentEvent(parentId, ev)
+        return
+      }
+      const task = this.bubbles[idx]
+      // finding #3: this.bubbles[idx] הוא Bubble|undefined תחת noUncheckedIndexedAccess.
+      if (!task || task.kind !== "tool") return
+      this.bubbles[idx] = reduceSubagent(task, ev)
       return
     }
+    // finding #2: ענף _drive/capabilities (וכל ענף עתידי) — ללא שינוי.
     if (method === "_drive/capabilities") {
       this.#capabilities = params as unknown as NormalizedCapabilities
     }
+  }
+
+  /** דוחף אירוע-תת-סוכן שממתין ל-Task ToolBubble שטרם נוצר. bounded (drop-oldest) — §7 Risks. */
+  #pushPendingSubagentEvent(parentId: string, event: ClaudeSubagentEvent): void {
+    this.#pendingByParent.push({ parentId, event })
+    if (this.#pendingByParent.length > AgentSession.#SUBAGENT_PENDING_CAP) {
+      this.#pendingByParent.shift()
+    }
+  }
+
+  /** מפעיל אירועי-תת-סוכן שהמתינו ל-Task ToolBubble הזה (נקרא מ-#handleToolCall). */
+  #flushPendingSubagentEvents(toolCallId: string): void {
+    if (this.#pendingByParent.length === 0) return
+    const matching = this.#pendingByParent.filter((p) => p.parentId === toolCallId)
+    if (matching.length === 0) return
+    this.#pendingByParent = this.#pendingByParent.filter((p) => p.parentId !== toolCallId)
+    const idx = this.bubbles.findIndex(
+      (b) => b.kind === "tool" && b.toolCall.toolCallId === toolCallId,
+    )
+    if (idx === -1) return
+    let task = this.bubbles[idx]
+    if (!task || task.kind !== "tool") return
+    for (const { event } of matching) {
+      task = reduceSubagent(task, event)
+    }
+    this.bubbles[idx] = task
   }
 
   #onSessionUpdate = (notification: SessionNotification): void => {
@@ -1847,6 +1910,8 @@ export class AgentSession {
     }
     this.bubbles.push(bubble)
     this.#toolBubbleByCallId.set(update.toolCallId, bubble)
+    // slice subagent-transcript-data-v2: אם זה ה-Task tool_call — פרוק אירועים שהמתינו לו.
+    this.#flushPendingSubagentEvents(update.toolCallId)
     // msr-v2: עדכן turnState
     this.#setTurnState("calling-tool")
     if (this.#turnEnded) this.#scheduleIdle()

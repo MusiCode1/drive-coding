@@ -71,6 +71,15 @@ export type MessageKey =
   | "chat.tool.terminal"
   | "chat.tool.diff.added"
   | "chat.tool.diff.removed"
+  // ─── subagent-bubble ─── (slice subagent-transcript-render)
+  | "chat.subagent.status.pending"
+  | "chat.subagent.status.in_progress"
+  | "chat.subagent.status.completed"
+  | "chat.subagent.status.failed"
+  | "chat.subagent.status.unknown"
+  | "chat.subagent.prompt"
+  | "chat.subagent.summary"
+  | "chat.subagent.transcript"
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)
