@@ -46,7 +46,7 @@ export function detectAvailableClis(
 
     const resolved = isOverride
       ? resolveCliBinary({ bin: spec.bin }, env)
-      : resolveCliBinary({ bin: spec.bin, envVar: spec.envVar }, env)
+      : resolveCliBinary({ bin: spec.detectBin ?? spec.bin, envVar: spec.envVar }, env)
 
     const found = resolved !== undefined
     const source: CliAvailabilityDetails["source"] = found

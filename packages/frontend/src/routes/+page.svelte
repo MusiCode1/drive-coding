@@ -1,5 +1,5 @@
 <script lang="ts">
-import { type CliKind, type AgentPublic } from "@drive-coding/core"
+import { CLI_KINDS, type CliKind, type AgentPublic } from "@drive-coding/core"
 import { goto } from "$app/navigation"
 import { onMount, untrack } from "svelte"
 import { connectAgent } from "$lib/actions/connect-agent"
@@ -24,8 +24,10 @@ const modals = getModals()
 const i18n = getI18n()
 const t = i18n.t
 const activeAgents = getActiveAgents()
-// slice cli-availability: מסנן את ה-dropdown לפי CLIs שמותקנים בפועל בסביבת ה-BE.
-// available מאותחל ל-CLI_KINDS המלא (race-safe) ונופל חזרה אליו אם ה-endpoint נכשל (§2, §6).
+// slice cli-availability (re-scope): מציג את כל ה-CLI_KINDS תמיד, ומשבית (disabled)
+// את מי שלא מותקן בפועל בסביבת ה-BE — לא מסתיר (§1).
+// available מאותחל ל-CLI_KINDS המלא (race-safe) ונופל חזרה אליו אם ה-endpoint נכשל (§2, §6) —
+// בשני המצבים (loading/error) זה שקול ל"הכל enabled" כי disabled נגזר מ-!available.includes(k).
 const cliAvailability = new CliAvailability()
 
 let cliKind = $state<CliKind>(settings.cliKind)
@@ -134,14 +136,21 @@ async function handleRecentSelect(project: RecentProject) {
           <span class="cli-hint">{t("connect.cli.showAll")}</span>
         {/if}
       </span>
-      <!-- Select.value נשאר cliKind גם אם הוא לא ב-options המסוננים (למקרה reconnect) —
-           רק רשימת ה-options מסוננת לפי זמינות (§4 Commit 2). -->
+      <!-- Select.value נשאר cliKind גם אם הוא disabled ב-options (למקרה reconnect) —
+           כל ה-CLI_KINDS מוצגים תמיד; מי שלא available מקבל disabled פר-option (§1, §4 Commit 2). -->
       <Select
         value={cliKind}
-        options={cliAvailability.available.map((k) => ({ value: k, label: k }))}
+        options={CLI_KINDS.map((k) => ({
+          value: k,
+          label: k,
+          disabled: !cliAvailability.available.includes(k),
+          description: cliAvailability.available.includes(k)
+            ? null
+            : t("connect.cli.notInstalled"),
+        }))}
         title={t("connect.cli.label")}
         ariaLabel={t("connect.cli.label")}
-        disabled={session.status === "connecting" || cliAvailability.loading}
+        disabled={session.status === "connecting"}
         onchange={(v) => (cliKind = v as CliKind)}
       />
     </label>

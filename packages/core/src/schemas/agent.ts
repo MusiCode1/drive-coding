@@ -31,6 +31,13 @@ export type CliSpec = {
    * יכבד את אותו סדר-עדיפויות כמו getCliCommand.
    */
   readonly envVar?: string
+  /**
+   * הבינארי לבדיקת-זמינות (detectAvailableClis, slice cli-availability) כשהוא שונה
+   * מ-`bin` (ה-spawn-bin). claude/codex רצים in-process אבל ה-spawn-bin שלהם `npx`
+   * (legacy) — detectBin מפריד את בדיקת-הזמינות מבדיקת-ה-npx. ספק ללא detectBin
+   * משתמש ב-bin (spawned CLIs, ללא שינוי).
+   */
+  readonly detectBin?: string
 }
 
 export const CLI_SPECS = {
@@ -39,12 +46,14 @@ export const CLI_SPECS = {
     bin: "npx",
     args: ["-y", "@agentclientprotocol/claude-agent-acp@latest"],
     supportsModelFlag: true,
+    detectBin: "claude",
   },
   gemini: { bin: "gemini", args: ["--acp"], supportsModelFlag: true },
   codex: {
     bin: "npx",
     args: ["-y", "@zed-industries/codex-acp@latest"],
     supportsModelFlag: true,
+    detectBin: "codex",
   },
   qoder: { bin: "qodercli", args: ["--acp"], supportsModelFlag: true },
   cursor: { bin: "agent", args: ["acp"], supportsModelFlag: false },

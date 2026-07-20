@@ -71,6 +71,49 @@ describe("GET /api/cli-availability — shape", () => {
   })
 })
 
+describe("GET /api/cli-availability — detectBin gateway (getCliSpec must preserve detectBin)", () => {
+  // 🔴 re-scope regression test: getCliSpec builds CliSpec field-by-field and must forward
+  // `detectBin` from the base CLI_SPECS entry, or claude/codex silently fall back to
+  // detecting `bin` (npx) instead of `claude`/`codex` — the exact bug the preview surfaced.
+  let binDir: string
+
+  beforeEach(() => {
+    binDir = fs.mkdtempSync(path.join(os.tmpdir(), "cli-availability-detectbin-"))
+    fs.writeFileSync(path.join(binDir, "claude"), "")
+    fs.writeFileSync(path.join(binDir, "codex"), "")
+    // deliberately NOT writing "npx" — proves detection goes through detectBin, not bin.
+  })
+
+  afterEach(() => {
+    fs.rmSync(binDir, { recursive: true, force: true })
+  })
+
+  it("reports claude+codex as found:true via detectBin (claude/codex), not bin (npx)", async () => {
+    vi.stubEnv("PATH", binDir)
+    vi.stubEnv("PATHEXT", "")
+
+    const app = await makeApp()
+    const res = await app.request("/api/cli-availability")
+    const body = (await res.json()) as {
+      available: string[]
+      details: Record<string, { found: boolean; path?: string; source: string }>
+    }
+
+    expect(body.available).toContain("claude")
+    expect(body.available).toContain("codex")
+    expect(body.details.claude).toEqual({
+      found: true,
+      path: path.join(binDir, "claude"),
+      source: "path",
+    })
+    expect(body.details.codex).toEqual({
+      found: true,
+      path: path.join(binDir, "codex"),
+      source: "path",
+    })
+  })
+})
+
 describe("GET /api/cli-availability — override gateway (bin: cli-specs.jsonc → getCliSpec → detectAvailableClis)", () => {
   let overrideFile: string
   let binDir: string

@@ -12,6 +12,8 @@ export const he: Catalog = {
   // slice cli-availability
   "connect.cli.loading": "בודק זמינות…",
   "connect.cli.showAll": "לא ניתן לבדוק זמינות — מוצגים כל ה-CLIs",
+  // slice cli-availability (re-scope)
+  "connect.cli.notInstalled": "(לא מותקן)",
   "connect.cwd.label": "תיקיית עבודה",
   "connect.cwd.placeholder": "/home/user/projects/X",
   "connect.submit": "חבר",

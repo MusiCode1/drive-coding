@@ -45,6 +45,10 @@ export function getCliSpec(kind: string, env?: NodeJS.ProcessEnv): CliSpec | und
       : base?.envVar !== undefined
         ? { envVar: base.envVar }
         : {}),
+    // detectBin (slice cli-availability re-scope): נשמר מה-base — אין לו שדה override
+    // ייעודי (כמו envVar). בלי זה, detectAvailableClis מקבל spec ללא detectBin עבור
+    // claude/codex ונופל בחזרה ל-bin=npx — התיקון מנוטרל בשקט.
+    ...(base?.detectBin !== undefined ? { detectBin: base.detectBin } : {}),
   }
 }
 

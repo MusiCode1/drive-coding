@@ -27,6 +27,8 @@ export type MessageKey =
   // slice cli-availability: מצב טעינה + fallback ב-dropdown הספקים
   | "connect.cli.loading"
   | "connect.cli.showAll"
+  // slice cli-availability (re-scope): תווית ל-option disabled בדropdown (לא מותקן)
+  | "connect.cli.notInstalled"
   | "connect.cwd.label"
   | "connect.cwd.placeholder"
   | "connect.submit"
