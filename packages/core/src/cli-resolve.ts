@@ -26,20 +26,23 @@ export interface CliResolveSpec {
 }
 
 /** Returns the full path to the installed binary, or undefined if not found. */
-export function resolveCliBinary(spec: CliResolveSpec): string | undefined {
+export function resolveCliBinary(
+  spec: CliResolveSpec,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
   // 1. env-override
   if (spec.envVar) {
-    const envVal = process.env[spec.envVar]
+    const envVal = env[spec.envVar]
     if (envVal && envVal.length > 0) {
       return envVal
     }
   }
 
   // Candidate extensions: on Windows check PATHEXT; elsewhere bare binary only.
-  const extensions = getCandidateExtensions()
+  const extensions = getCandidateExtensions(env)
 
   // 2. PATH scan
-  const rawPath = process.env["PATH"] ?? ""
+  const rawPath = env["PATH"] ?? ""
   const dirs = rawPath.split(path.delimiter).filter(Boolean)
   for (const dir of dirs) {
     const found = findBinInDir(dir, spec.bin, extensions)
@@ -47,7 +50,7 @@ export function resolveCliBinary(spec: CliResolveSpec): string | undefined {
   }
 
   // 3. pm-global-bins
-  const globalDirs = getPmGlobalBinDirs()
+  const globalDirs = getPmGlobalBinDirs(env)
   for (const dir of globalDirs) {
     const found = findBinInDir(dir, spec.bin, extensions)
     if (found) return found
@@ -83,9 +86,9 @@ export function resolveCliBinary(spec: CliResolveSpec): string | undefined {
  * Returns the list of extensions to try. On Windows: PATHEXT entries (uppercased).
  * On all platforms: bare empty string always included first.
  */
-function getCandidateExtensions(): string[] {
+function getCandidateExtensions(env: NodeJS.ProcessEnv): string[] {
   const exts: string[] = [""] // bare (no extension) — always first
-  const pathExt = process.env["PATHEXT"] ?? ""
+  const pathExt = env["PATHEXT"] ?? ""
   if (pathExt.length > 0) {
     for (const ext of pathExt.split(";")) {
       const trimmed = ext.trim()
@@ -114,13 +117,13 @@ function findBinInDir(
  * Returns common package-manager global bin directories.
  * All paths are best-effort; missing dirs are silently skipped (existsSync in caller).
  */
-function getPmGlobalBinDirs(): string[] {
+function getPmGlobalBinDirs(env: NodeJS.ProcessEnv): string[] {
   const home = os.homedir()
   const dirs: string[] = [
     // bun global bin
     path.join(home, ".bun", "bin"),
     // npm global bin (via npm_config_prefix or fallback)
-    getNpmGlobalBin(),
+    getNpmGlobalBin(env),
     // ~/.local/bin (Linux/Termux user installs)
     path.join(home, ".local", "bin"),
     // /usr/local/bin (Unix standard)
@@ -136,8 +139,8 @@ function getPmGlobalBinDirs(): string[] {
 }
 
 /** Derive npm global bin directory from npm_config_prefix or OS conventions. */
-function getNpmGlobalBin(): string {
-  const prefix = process.env["npm_config_prefix"]
+function getNpmGlobalBin(env: NodeJS.ProcessEnv): string {
+  const prefix = env["npm_config_prefix"]
   if (prefix && prefix.length > 0) {
     // On Unix: <prefix>/bin; on Windows: <prefix>
     return process.platform === "win32" ? prefix : path.join(prefix, "bin")

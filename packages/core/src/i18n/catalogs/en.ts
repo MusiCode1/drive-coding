@@ -13,6 +13,11 @@ export const en: Catalog = {
   "connect.title": "drive-coding v2",
   "connect.subtitle": "Connect to a CLI agent",
   "connect.cli.label": "CLI",
+  // slice cli-availability
+  "connect.cli.loading": "Checking availability…",
+  "connect.cli.showAll": "Couldn't check availability — showing all CLIs",
+  // slice cli-availability (re-scope)
+  "connect.cli.notInstalled": "(not installed)",
   "connect.cwd.label": "Working directory",
   "connect.cwd.placeholder": "/home/user/projects/X",
   "connect.submit": "Connect",
