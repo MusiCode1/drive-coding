@@ -65,7 +65,7 @@ onMount(() => {
         {recent.loading ? "…" : t("connect.recent.empty")}
       </div>
     {:else}
-      <ul class="project-list">
+      <ul class="project-list chat-scroll">
         {#each recent.projects as project (project.cwd)}
           <li class="project-row">
             <button
@@ -182,6 +182,8 @@ onMount(() => {
     list-style: none;
     margin: 0;
     padding: 0;
+    max-height: 16rem; /* גובה קבוע ~4-5 שורות */
+    overflow-y: auto;
   }
 
   .project-row {
