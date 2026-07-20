@@ -509,7 +509,12 @@ $effect(() => {
       <div class="text-[12px] px-1" style="color:var(--recording)">{t("modal.sessions.error")}: {session.sessionsError}</div>
     {:else}
       {#each session.sessions as s (s.sessionId)}
-        <SessionCard session={s} isActive={false} onSelect={() => selectSession(s)} />
+        <SessionCard
+          session={s}
+          isActive={false}
+          onSelect={() => selectSession(s)}
+          onDelete={session.supportsSessionDelete ? (id) => session.deleteSession(id) : undefined}
+        />
       {/each}
     {/if}
   </div>

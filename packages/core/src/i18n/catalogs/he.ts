@@ -334,4 +334,7 @@ export const he: Catalog = {
   "projectPrompt.label": "פרומפט מערכת לפרויקט",
   "projectPrompt.placeholder": "לדוגמה: תמיד ענה בקצרה, ופתח כל תשובה בעברית...",
   "projectPrompt.hint": "מתווסף להוראות ברירת-המחדל של הסוכן. השינוי חל מהסשן הבא.",
+  // ─── session delete ─── (slice session-delete)
+  "session.delete": "מחק",
+  "session.deleteConfirm": "בטוח? מחיקת סשן",
 }

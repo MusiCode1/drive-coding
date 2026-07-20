@@ -343,6 +343,9 @@ export type MessageKey =
   | "projectPrompt.label"
   | "projectPrompt.placeholder"
   | "projectPrompt.hint"
+  // ─── session delete ─── (slice session-delete)
+  | "session.delete"
+  | "session.deleteConfirm"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
