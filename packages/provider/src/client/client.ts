@@ -96,6 +96,12 @@ export type AcpClient = {
     _meta?: AcpRequestMeta
   }): ReturnType<ClientSideConnection["loadSession"]>
   listSessions(): ReturnType<ClientSideConnection["listSessions"]>
+  // ─── slice session-delete: Commit 0 ───
+  /**
+   * מוחק session מ-`session/list` (store/persistence) — **לא** הורג את ה-process.
+   * זמין רק אם הסוכן מכריז `sessionCapabilities.delete` (raw capabilities, `client.capabilities`).
+   */
+  deleteSession(sessionId: string): Promise<void>
   // ─── slice-image-paste: Commit 4a — backward-compatible (string עדיין עובד) ───
   prompt(
     sessionId: string,
@@ -173,6 +179,15 @@ function buildAcpClientFacade(
      */
     async listSessions() {
       return conn.listSessions({})
+    },
+
+    // ─── slice session-delete: Commit 0 ───
+    /**
+     * מוחק session (session/list). `DeleteSessionResponse` הוא `{}` אפקטיבית → מחזירים void.
+     * עשוי לזרוק -32601 אם ה-CLI אינו תומך ביכולת delete — הקורא (VM) מטפל.
+     */
+    async deleteSession(sessionId: string): Promise<void> {
+      await conn.deleteSession({ sessionId })
     },
 
     /** שולח פרומפט (טקסט או blocks מולטימודלי) ב-session הנתון */
