@@ -343,6 +343,12 @@ export type MessageKey =
   | "projectPrompt.label"
   | "projectPrompt.placeholder"
   | "projectPrompt.hint"
+  // ─── permission ─── (slice-permission-ui-basic)
+  | "permission.title"
+  | "permission.allowOnce"
+  | "permission.allowAlways"
+  | "permission.reject"
+  | "permission.pending"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

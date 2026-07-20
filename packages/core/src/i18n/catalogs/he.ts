@@ -334,4 +334,10 @@ export const he: Catalog = {
   "projectPrompt.label": "פרומפט מערכת לפרויקט",
   "projectPrompt.placeholder": "לדוגמה: תמיד ענה בקצרה, ופתח כל תשובה בעברית...",
   "projectPrompt.hint": "מתווסף להוראות ברירת-המחדל של הסוכן. השינוי חל מהסשן הבא.",
+  // ─── permission ─── (slice-permission-ui-basic)
+  "permission.title": "בקשת הרשאה",
+  "permission.allowOnce": "אשר פעם",
+  "permission.allowAlways": "אשר תמיד",
+  "permission.reject": "דחה",
+  "permission.pending": "ממתין להחלטה",
 }
