@@ -27,6 +27,7 @@ const t = i18n.t
 const settings = getSettings()
 
 let dragHeight = $state<number | null>(null)
+let handleEl = $state<HTMLDivElement | null>(null)
 
 onMount(() => {
   void recent.refresh()
@@ -105,9 +106,13 @@ onMount(() => {
       </ul>
       <div
         class="resize-handle"
+        bind:this={handleEl}
         use:resizeDrag={{
           getStart: () => settings.recentPanelHeight,
-          onMove: (px) => (dragHeight = px),
+          onMove: (px) => {
+            dragHeight = px
+            handleEl?.scrollIntoView({ block: "nearest" })
+          },
           onEnd: (px) => {
             settings.setRecentPanelHeight(px)
             dragHeight = null
@@ -221,13 +226,15 @@ onMount(() => {
     height: 3px;
     transform: translateY(-50%);
     border-radius: 2px;
-    background: transparent;
+    /* גלוי-תמיד (לא hover-only) — במובייל אין hover, וגריפ hover-only היה בלתי-נראה
+       כשגוללים אליו (slice connect-panel-resize, Commit 2.5, DoD #12) */
+    background: var(--border-str);
     transition: background 0.15s;
   }
 
   .resize-handle:hover::after,
   .resize-handle:active::after {
-    background: var(--border);
+    background: var(--accent);
   }
 
   .project-row {
