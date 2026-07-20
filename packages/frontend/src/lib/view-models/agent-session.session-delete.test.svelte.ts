@@ -147,27 +147,30 @@ describe("AgentSession — deleteSession", () => {
     expect(mockClient.deleteSession).not.toHaveBeenCalled()
   })
 
-  it("calls #client.deleteSession(id) and removes it from vm.sessions (non-active)", async () => {
-    await session.deleteSession("other-session")
+  it("calls #client.deleteSession(id), removes from vm.sessions, returns false (non-active)", async () => {
+    const wasActive = await session.deleteSession("other-session")
 
     expect(mockClient.deleteSession).toHaveBeenCalledWith("other-session")
     expect(session.sessions.map((s) => s.sessionId)).toEqual(["session-delete-test"])
-    // לא הפעיל → אין detach, נשאר connected
+    // לא הפעיל → אין detach, נשאר connected, wasActive=false (הקומפוננטה לא מנווטת)
     expect(session.status).toBe("connected")
+    expect(wasActive).toBe(false)
   })
 
-  it("deleting the active session detaches (status→idle, sessions cleared)", async () => {
-    await session.deleteSession("session-delete-test")
+  it("deleting the active session detaches (status→idle, sessions cleared) and returns true", async () => {
+    const wasActive = await session.deleteSession("session-delete-test")
 
     expect(mockClient.deleteSession).toHaveBeenCalledWith("session-delete-test")
     expect(session.status).toBe("idle")
     expect(session.sessions).toEqual([])
+    // wasActive=true → הקומפוננטה עושה goto("/") (calev NO-GO fix, DoD #7)
+    expect(wasActive).toBe(true)
   })
 
   it("-32601 (method not found) is handled gently — not thrown, sessionsError untouched", async () => {
     ;(mockClient.deleteSession as ReturnType<typeof vi.fn>).mockRejectedValueOnce({ code: -32601 })
 
-    await expect(session.deleteSession("other-session")).resolves.toBeUndefined()
+    await expect(session.deleteSession("other-session")).resolves.toBe(false)
 
     expect(session.sessionsError).toBeNull()
     // לא הוסר — הקריאה נכשלה
@@ -180,7 +183,7 @@ describe("AgentSession — deleteSession", () => {
   it("other errors set sessionsError (not thrown to UI)", async () => {
     ;(mockClient.deleteSession as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("boom"))
 
-    await expect(session.deleteSession("other-session")).resolves.toBeUndefined()
+    await expect(session.deleteSession("other-session")).resolves.toBe(false)
 
     expect(session.sessionsError).toBe("boom")
   })

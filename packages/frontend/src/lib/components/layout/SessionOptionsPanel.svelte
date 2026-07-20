@@ -49,6 +49,12 @@ function onDisconnect() {
   goto("/")
 }
 
+// ─── slice session-delete: מחיקת הסשן הפעיל מנווטת החוצה (עקבי עם onDisconnect) ───
+async function onDeleteSession(id: string) {
+  const wasActive = await session.deleteSession(id)
+  if (wasActive) goto("/") // אחרת נשארים על /chat עם עמוד ריק (calev NO-GO fix, DoD #7)
+}
+
 // ─── slice leave-running-background: יציאה בלי להרוג ───
 let leaveConfirmOpen = $state(false)
 let dontShowAgain = $state(false)
@@ -513,7 +519,7 @@ $effect(() => {
           session={s}
           isActive={false}
           onSelect={() => selectSession(s)}
-          onDelete={session.supportsSessionDelete ? (id) => session.deleteSession(id) : undefined}
+          onDelete={session.supportsSessionDelete ? onDeleteSession : undefined}
         />
       {/each}
     {/if}
