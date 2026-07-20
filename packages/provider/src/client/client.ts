@@ -23,6 +23,8 @@
 import type {
   Client,
   ClientSideConnection as ClientSideConnectionType,
+  CreateElicitationRequest,
+  CreateElicitationResponse,
   NewSessionRequest,
   SessionNotification,
   SetSessionConfigOptionResponse,
@@ -128,6 +130,14 @@ export type AcpClient = {
 type PermissionParams = Parameters<Client["requestPermission"]>[0]
 type PermissionResponse = Awaited<ReturnType<Client["requestPermission"]>>
 
+/**
+ * ─── slice-elicitation-ui: elicitation/create ─── ייבוא ישיר (לא Parameters<Client[...]>
+ * — unstable_createElicitation אופציונלי על Client → נכשל ב-TS2344). ר' docs/plans/
+ * slice-elicitation-ui.md §4 Commit 0.
+ */
+type ElicitationParams = CreateElicitationRequest
+type ElicitationResponse = CreateElicitationResponse
+
 export type AcpClientCallbacks = {
   onUpdate: (n: SessionNotification) => void
   /** ─── slice FE-normalization: קבלת ext notifications (כולל _drive/capabilities) ─── */
@@ -137,6 +147,11 @@ export type AcpClientCallbacks = {
    * דפוס גנרי ניתן-לשכפול — slice B (elicitation) ישכפל אותו ל-onCreateElicitation.
    */
   onRequestPermission?: (params: PermissionParams) => Promise<PermissionResponse>
+  /**
+   * ─── slice-elicitation-ui: שאלה מובנת חיה ─── מחקה את onRequestPermission. ללא handler
+   * → default `{action:"cancel"}` (client-impl.ts).
+   */
+  onCreateElicitation?: (params: ElicitationParams) => Promise<ElicitationResponse>
 }
 
 // ─── helper פרטי: בונה את ה-facade המשותף לשני הנתיבים ────────────────────────
@@ -272,6 +287,7 @@ export async function createAcpClient(
     onUpdate: callbacks.onUpdate,
     onExtNotification: callbacks.onExtNotification,
     onRequestPermission: callbacks.onRequestPermission,
+    onCreateElicitation: callbacks.onCreateElicitation,
   })
   const conn = new ClientSideConnection((_agent) => client, stream)
 
@@ -389,6 +405,7 @@ export function createAttachedAcpClient(
     onUpdate: callbacks.onUpdate,
     onExtNotification: callbacks.onExtNotification,
     onRequestPermission: callbacks.onRequestPermission,
+    onCreateElicitation: callbacks.onCreateElicitation,
   })
   const conn = new ClientSideConnection((_agent) => client, stream)
 

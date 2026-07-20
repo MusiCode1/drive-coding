@@ -12,11 +12,26 @@
  * המודול הזה הוא לוגיקה טהורה — ללא I/O, ללא DOM, ללא Node APIs. נעשה בו שימוש גם
  * ב-FE (browser WS transport) וגם בכל ACP client עתידי בצד ה-BE.
  */
-import type { Client, SessionNotification } from "@agentclientprotocol/sdk"
+import type {
+  Client,
+  CreateElicitationRequest,
+  CreateElicitationResponse,
+  SessionNotification,
+} from "@agentclientprotocol/sdk"
 
 /** נגזר מ-SDK — לא shape מותאם; drift אפס. ר' docs/plans/slice-permission-ui-basic.md §4 Commit 0. */
 type PermissionParams = Parameters<Client["requestPermission"]>[0]
 type PermissionResponse = Awaited<ReturnType<Client["requestPermission"]>>
+
+/**
+ * ─── slice-elicitation-ui: elicitation/create ─── נגזר מ-SDK דרך ייבוא ישיר (לא
+ * Parameters<Client["unstable_createElicitation"]>) — השדה אופציונלי על Client, לכן
+ * Parameters<...> נכשל ב-TS2344 (כולל undefined). CreateElicitationRequest/Response
+ * מיוצאים מ-root ה-SDK (אין subpath /schema ב-exports map). ר' docs/plans/
+ * slice-elicitation-ui.md §4 Commit 0.
+ */
+type ElicitationParams = CreateElicitationRequest
+type ElicitationResponse = CreateElicitationResponse
 
 export function createClientImpl(opts: {
   onUpdate: (n: SessionNotification) => void
@@ -28,6 +43,12 @@ export function createClientImpl(opts: {
    * התנהגות ברירת-מחדל — regression test מכסה זאת).
    */
   onRequestPermission?: (params: PermissionParams) => Promise<PermissionResponse>
+  /**
+   * ─── slice-elicitation-ui: שאלה מובנת חיה ─── אם מסופק, unstable_createElicitation
+   * מאציל אליו את ההחלטה (round-trip ל-UI, מחקה onRequestPermission). ללא handler →
+   * default `{action:"cancel"}` (כי היום אין UI; לא לתקוע turn / לזרוק method-not-found).
+   */
+  onCreateElicitation?: (params: ElicitationParams) => Promise<ElicitationResponse>
 }): Client {
   return {
     /**
@@ -55,6 +76,15 @@ export function createClientImpl(opts: {
 
     async sessionUpdate(notification) {
       opts.onUpdate(notification)
+    },
+
+    // ─── slice-elicitation-ui: unstable_createElicitation ───
+    // אם onCreateElicitation סופק (UI חי) → מאציל אליו. אחרת → default cancel (לא לתקוע turn).
+    async unstable_createElicitation(params: ElicitationParams): Promise<ElicitationResponse> {
+      if (opts.onCreateElicitation) {
+        return await opts.onCreateElicitation(params)
+      }
+      return { action: "cancel" }
     },
 
     // ─── slice FE-normalization: extNotification ───
