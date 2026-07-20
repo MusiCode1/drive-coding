@@ -7,13 +7,15 @@
  *
  * slice: active-processes-icons
  */
-import type { AgentPublic } from "@drive-coding/core"
+import type { AgentPublic, MachineStats } from "@drive-coding/core"
 import { getActiveAgents, getI18n, getSettings } from "$lib/context"
 import { formatRelativeTime } from "$lib/util/formatting"
 import { basename } from "$lib/util/path"
 import { resizeDrag } from "$lib/util/resize-drag"
+import { getMachineStats } from "$lib/adapters/system-api"
 import Trash2Icon from "@lucide/svelte/icons/trash-2"
 import PlugIcon from "@lucide/svelte/icons/plug"
+import MachineStatsBar from "./MachineStatsBar.svelte"
 
 interface Props {
   onReconnect: (agent: AgentPublic) => void
@@ -33,11 +35,26 @@ let handleEl = $state<HTMLDivElement | null>(null)
 let confirmingId = $state<string | null>(null)
 let confirmTimer = $state<ReturnType<typeof setTimeout> | null>(null)
 
+// מדדי-מכונה (RAM/CPU) — poll קיים 12s, בית ב-MachineStatsBar (slice be-machine-stats)
+let machine = $state<MachineStats | null>(null)
+
+function refreshMachine() {
+  getMachineStats()
+    .then((m) => {
+      machine = m
+    })
+    .catch(() => {
+      // כישלון שקט — המחוון פשוט לא יתעדכן; לא לשבור את הפאנל
+    })
+}
+
 // C12: auto-refresh כל ~12s; לא מרענן אם הפאנל מוסתר (document.hidden)
 $effect(() => {
+  void refreshMachine() // fetch ראשוני מיידי ב-mount
   const interval = setInterval(() => {
     if (typeof document !== "undefined" && document.hidden) return
     void activeAgents.refresh()
+    void refreshMachine()
   }, 12_000)
   return () => clearInterval(interval)
 })
@@ -99,18 +116,22 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
 
 <section class="active-panel">
   <div class="panel-header">
-    <span class="panel-title">{t("connect.agents.title")}</span>
+    <span class="panel-title">
+      {t("connect.agents.title")}{activeAgents.agents.length > 0 ? ` (${activeAgents.agents.length})` : ""}
+    </span>
     <button
       type="button"
       class="refresh-btn"
       disabled={activeAgents.loading}
-      onclick={() => void activeAgents.refresh()}
+      onclick={() => { void activeAgents.refresh(); void refreshMachine() }}
       title={t("connect.agents.refresh")}
       aria-label={t("connect.agents.refresh")}
     >
       ↺
     </button>
   </div>
+
+  <MachineStatsBar stats={machine} />
 
   {#if activeAgents.agents.length === 0}
     <div class="empty-state">

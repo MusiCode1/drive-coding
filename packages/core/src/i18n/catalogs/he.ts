@@ -336,4 +336,8 @@ export const he: Catalog = {
   "projectPrompt.hint": "מתווסף להוראות ברירת-המחדל של הסוכן. השינוי חל מהסשן הבא.",
   // ─── panel resize handle ─── (slice connect-panel-resize)
   "connect.panel.resizeHandle": "גרור לשינוי גובה",
+  // ─── machine-stats ─── (slice-be-machine-stats)
+  "connect.machine.memory": "זיכרון",
+  "connect.machine.cpu": "מעבד",
+  "connect.machine.label": "עומס מכונה",
 }

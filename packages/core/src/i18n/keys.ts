@@ -345,6 +345,10 @@ export type MessageKey =
   | "projectPrompt.hint"
   // ─── panel resize handle ─── (slice connect-panel-resize)
   | "connect.panel.resizeHandle"
+  // ─── machine-stats ─── (slice-be-machine-stats)
+  | "connect.machine.memory"
+  | "connect.machine.cpu"
+  | "connect.machine.label"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

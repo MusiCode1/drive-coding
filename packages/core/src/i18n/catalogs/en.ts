@@ -340,4 +340,8 @@ export const en: Catalog = {
   "projectPrompt.hint": "Appended to the agent's default instructions. Takes effect from the next session.",
   // ─── panel resize handle ─── (slice connect-panel-resize)
   "connect.panel.resizeHandle": "Drag to resize",
+  // ─── machine-stats ─── (slice-be-machine-stats)
+  "connect.machine.memory": "Memory",
+  "connect.machine.cpu": "CPU",
+  "connect.machine.label": "Machine load",
 }
