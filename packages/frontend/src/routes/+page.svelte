@@ -14,7 +14,9 @@ import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte
 import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
 import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
 import FolderIcon from "@lucide/svelte/icons/folder"
+import Loader2Icon from "@lucide/svelte/icons/loader-2"
 import { getI18n, getSession, getSettings, getModals, getActiveAgents } from "$lib/context"
+import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
 
 const settings = getSettings()
 const session = getSession()
@@ -22,6 +24,11 @@ const modals = getModals()
 const i18n = getI18n()
 const t = i18n.t
 const activeAgents = getActiveAgents()
+// slice cli-availability (re-scope): מציג את כל ה-CLI_KINDS תמיד, ומשבית (disabled)
+// את מי שלא מותקן בפועל בסביבת ה-BE — לא מסתיר (§1).
+// available מאותחל ל-CLI_KINDS המלא (race-safe) ונופל חזרה אליו אם ה-endpoint נכשל (§2, §6) —
+// בשני המצבים (loading/error) זה שקול ל"הכל enabled" כי disabled נגזר מ-!available.includes(k).
+const cliAvailability = new CliAvailability()
 
 let cliKind = $state<CliKind>(settings.cliKind)
 let cwd = $state(settings.lastCwd)
@@ -32,6 +39,7 @@ let cwd = $state(settings.lastCwd)
 // עדכן רק אם cwd עדיין ריק (המשתמש לא הקליד בינתיים).
 onMount(() => {
   void activeAgents.refresh()
+  void cliAvailability.load()
 
   fetchServerOptions()
     .then((opts) => {
@@ -119,10 +127,28 @@ async function handleRecentSelect(project: RecentProject) {
       </label>
 
       <label>
-        <span>{t("connect.cli.label")}</span>
+        <span class="cli-label-row">
+          {t("connect.cli.label")}
+          {#if cliAvailability.loading}
+            <Loader2Icon size={14} class="animate-spin" style="color:var(--fg-dim)" aria-hidden="true" />
+            <span class="cli-hint">{t("connect.cli.loading")}</span>
+          {:else if cliAvailability.error}
+            <!-- §2/§6/§9 Q3: fallback = מציג הכול + אינדיקציה חלשה (לא באנר חוסם) -->
+            <span class="cli-hint">{t("connect.cli.showAll")}</span>
+          {/if}
+        </span>
+        <!-- Select.value נשאר cliKind גם אם הוא disabled ב-options (למקרה reconnect) —
+             כל ה-CLI_KINDS מוצגים תמיד; מי שלא available מקבל disabled פר-option (§1, §4 Commit 2). -->
         <Select
           value={cliKind}
-          options={CLI_KINDS.map((k) => ({ value: k, label: k }))}
+          options={CLI_KINDS.map((k) => ({
+            value: k,
+            label: k,
+            disabled: !cliAvailability.available.includes(k),
+            description: cliAvailability.available.includes(k)
+              ? null
+              : t("connect.cli.notInstalled"),
+          }))}
           title={t("connect.cli.label")}
           ariaLabel={t("connect.cli.label")}
           disabled={session.status === "connecting"}
@@ -251,6 +277,19 @@ async function handleRecentSelect(project: RecentProject) {
 
   label > span {
     font-size: 0.85rem;
+    color: var(--fg-dim);
+  }
+
+  /* slice cli-availability: ספינר-טעינה / אינדיקציית-fallback ליד תווית ה-dropdown */
+  .cli-label-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .cli-hint {
+    font-size: 0.75rem;
+    font-weight: 400;
     color: var(--fg-dim);
   }
 

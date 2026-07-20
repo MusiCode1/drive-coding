@@ -56,6 +56,7 @@ import { createRecordingsStore } from "./app/recordings-store.js"
 import { parseCorsOrigins } from "./delivery/cors-config.js"
 import { registerHttp } from "./delivery/http.js"
 import { registerAgentsHttp } from "./delivery/http-agents.js"
+import { registerCliAvailabilityHttp } from "./delivery/http-cli-availability.js"
 import { registerHealthHttp } from "./delivery/http-health.js"
 import { registerClientLogHttp } from "./delivery/http-client-log.js"
 import {
@@ -136,6 +137,9 @@ registerProxyHttp(app, {
 
 // Slice tts-usage-metering: usage summary endpoint
 registerUsageHttp(app, { usageStore })
+
+// Slice cli-availability: מסנן dropdown הספקים ב-FE לפי CLIs מותקנים בפועל
+registerCliAvailabilityHttp(app)
 
 // Slice 20: serve the built static FE (single-origin local prod).
 // Binary mode: serve from embedded FE manifest (assets in $bunfs, no disk reads).

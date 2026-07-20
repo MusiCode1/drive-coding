@@ -25,20 +25,35 @@ export type CliSpec = {
   readonly unsetEnv?: readonly string[]
   /** משתני-סביבה להוספה/דריסה ב-child לפני spawn. */
   readonly setEnv?: Readonly<Record<string, string>>
+  /**
+   * שם משתנה-סביבה שדורס את ה-bin (למשל OPENCODE_BIN — D14, Proxmox).
+   * נצרך ע"י detectAvailableClis (slice cli-availability) כדי שגילוי הזמינות
+   * יכבד את אותו סדר-עדיפויות כמו getCliCommand.
+   */
+  readonly envVar?: string
+  /**
+   * הבינארי לבדיקת-זמינות (detectAvailableClis, slice cli-availability) כשהוא שונה
+   * מ-`bin` (ה-spawn-bin). claude/codex רצים in-process אבל ה-spawn-bin שלהם `npx`
+   * (legacy) — detectBin מפריד את בדיקת-הזמינות מבדיקת-ה-npx. ספק ללא detectBin
+   * משתמש ב-bin (spawned CLIs, ללא שינוי).
+   */
+  readonly detectBin?: string
 }
 
 export const CLI_SPECS = {
-  opencode: { bin: "opencode", args: ["acp"], supportsModelFlag: false },
+  opencode: { bin: "opencode", args: ["acp"], supportsModelFlag: false, envVar: "OPENCODE_BIN" },
   claude: {
     bin: "npx",
     args: ["-y", "@agentclientprotocol/claude-agent-acp@latest"],
     supportsModelFlag: true,
+    detectBin: "claude",
   },
   gemini: { bin: "gemini", args: ["--acp"], supportsModelFlag: true },
   codex: {
     bin: "npx",
     args: ["-y", "@zed-industries/codex-acp@latest"],
     supportsModelFlag: true,
+    detectBin: "codex",
   },
   qoder: { bin: "qodercli", args: ["--acp"], supportsModelFlag: true },
   cursor: { bin: "agent", args: ["acp"], supportsModelFlag: false },

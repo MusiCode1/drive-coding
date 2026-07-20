@@ -24,7 +24,7 @@ export type CliCommand = {
  * מקבל kind כ-string (לא BridgeKind) — כי הקובץ יכול להגדיר override לכל מפתח.
  */
 export function getCliSpec(kind: string, env?: NodeJS.ProcessEnv): CliSpec | undefined {
-  const base = CLI_SPECS[kind as BridgeKind]
+  const base: CliSpec | undefined = CLI_SPECS[kind as BridgeKind]
   const override = loadCliSpecsOverride(env)[kind]
 
   // אם אין base ואין override — לא ידוע
@@ -37,6 +37,18 @@ export function getCliSpec(kind: string, env?: NodeJS.ProcessEnv): CliSpec | und
     supportsModelFlag: override?.supportsModelFlag ?? base?.supportsModelFlag ?? false,
     ...(override?.unsetEnv !== undefined ? { unsetEnv: override.unsetEnv } : {}),
     ...(override?.setEnv !== undefined ? { setEnv: override.setEnv } : {}),
+    // envVar (slice cli-availability): נשמר מה-base — אין לו שדה override ייעודי היום
+    // (validateOverride לא כולל אותו), אבל detectAvailableClis צריך אותו כדי לכבד
+    // את סדר-העדיפויות של getCliCommand (override.bin > envVar > spec.bin).
+    ...(override?.envVar !== undefined
+      ? { envVar: override.envVar }
+      : base?.envVar !== undefined
+        ? { envVar: base.envVar }
+        : {}),
+    // detectBin (slice cli-availability re-scope): נשמר מה-base — אין לו שדה override
+    // ייעודי (כמו envVar). בלי זה, detectAvailableClis מקבל spec ללא detectBin עבור
+    // claude/codex ונופל בחזרה ל-bin=npx — התיקון מנוטרל בשקט.
+    ...(base?.detectBin !== undefined ? { detectBin: base.detectBin } : {}),
   }
 }
 

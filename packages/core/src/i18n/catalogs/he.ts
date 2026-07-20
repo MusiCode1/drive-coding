@@ -9,6 +9,11 @@ export const he: Catalog = {
   "connect.title": "drive-coding v2",
   "connect.subtitle": "חבר ל-CLI agent",
   "connect.cli.label": "CLI",
+  // slice cli-availability
+  "connect.cli.loading": "בודק זמינות…",
+  "connect.cli.showAll": "לא ניתן לבדוק זמינות — מוצגים כל ה-CLIs",
+  // slice cli-availability (re-scope)
+  "connect.cli.notInstalled": "(לא מותקן)",
   "connect.cwd.label": "תיקיית עבודה",
   "connect.cwd.placeholder": "/home/user/projects/X",
   "connect.submit": "חבר",
