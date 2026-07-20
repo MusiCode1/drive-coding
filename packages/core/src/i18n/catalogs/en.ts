@@ -344,4 +344,9 @@ export const en: Catalog = {
   "permission.allowAlways": "Always allow",
   "permission.reject": "Reject",
   "permission.pending": "Awaiting decision",
+  // ─── elicitation ─── (slice-elicitation-ui)
+  "elicitation.accept": "Submit",
+  "elicitation.decline": "Decline",
+  "elicitation.cancel": "Cancel",
+  "elicitation.required": "Required",
 }

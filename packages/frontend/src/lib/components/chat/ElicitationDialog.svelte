@@ -1,0 +1,326 @@
+<script lang="ts">
+/**
+ * ElicitationDialog — שאלה מובנת חיה מהסוכן, inline בצ'אט (סגנון PermissionRequestBlock,
+ * לא modal — עקביות עם A1 בבחירת §9 Q3 בבריף). form דינמי מ-requestedSchema.
+ *
+ * מוצג ע"י ChatBubbles כש-session.pendingElicitation לא-null (מחוץ ל-Virtualizer,
+ * אחרי הרשימה — כמו PermissionRequestBlock/PlanChecklist/StatusBubble). props בלבד —
+ * לא ניגש ל-session ישירות (מחקה את דפוס PermissionRequestBlock, §3 בבריף).
+ *
+ * message ותוויות-שדות (schema.title) מגיעים מהסוכן — מוצגים as-is. רק תוויות-כפתורים
+ * ו-"שדה חובה" דרך t().
+ *
+ * mode:"form" בלבד ב-scope (§2 בבריף) — mode:"url"/custom מפתרים מיידית כ-cancel
+ * (אין UI לרנדר בלעדיהם; לא לתקוע turn).
+ *
+ * ─── slice-elicitation-ui Commit 3 ───
+ */
+
+import Avatar from "$lib/components/chat/Avatar.svelte"
+import Select from "$lib/components/ui/Select.svelte"
+import { getI18n } from "$lib/context"
+import {
+  type ElicitationParams,
+  isFormElicitation,
+  mapElicitationFields,
+} from "$lib/types/elicitation"
+
+let {
+  params,
+  onResolve,
+  onDecline,
+  onCancel,
+}: {
+  params: ElicitationParams
+  onResolve: (content: Record<string, string | number | boolean>) => void
+  onDecline: () => void
+  onCancel: () => void
+} = $props()
+
+const t = getI18n().t
+
+const isForm = $derived(isFormElicitation(params))
+// קריאה ישירה ל-isFormElicitation (לא דרך isForm) — type-guard narrowing עובד רק על
+// קריאה ישירה בתנאי, לא על boolean $derived שנשמר בנפרד.
+const fields = $derived(
+  isFormElicitation(params) ? mapElicitationFields(params.requestedSchema) : [],
+)
+// message — as-is מהסוכן (§1 בבריף)
+const message = $derived(params.message)
+
+// ─── ערכי הטופס — store נפרד פר-kind (type-safety על bind:value/bind:checked) ───
+let textValues = $state<Record<string, string>>({})
+let numberValues = $state<Record<string, number | undefined>>({})
+let boolValues = $state<Record<string, boolean>>({})
+
+// אתחול/איפוס הערכים בכל שינוי fields (בקשה חדשה — mount ראשוני או supersede).
+$effect(() => {
+  const nextText: Record<string, string> = {}
+  const nextNumber: Record<string, number | undefined> = {}
+  const nextBool: Record<string, boolean> = {}
+  for (const f of fields) {
+    if (f.kind === "boolean") nextBool[f.key] = false
+    else if (f.kind === "number") nextNumber[f.key] = undefined
+    else nextText[f.key] = ""
+  }
+  textValues = nextText
+  numberValues = nextNumber
+  boolValues = nextBool
+})
+
+// mode לא-נתמך (url/custom — §2 out of scope) → פתור מיידית כ-cancel, אין UI לרנדר.
+$effect(() => {
+  if (!isForm) {
+    onCancel()
+  }
+})
+
+const canSubmit = $derived(
+  fields.every((f) => {
+    if (!f.required) return true
+    if (f.kind === "boolean") return true // boolean תמיד יש לו ערך (false תקין)
+    if (f.kind === "number") return numberValues[f.key] !== undefined
+    return (textValues[f.key] ?? "").trim() !== ""
+  }),
+)
+
+// disabled אחרי קליק ראשון — מונע double-submit בזמן שה-VM מאפס את pendingElicitation
+// (מחקה את PermissionRequestBlock — גשר-הגנה קצר).
+let submitting = $state(false)
+
+function buildContent(): Record<string, string | number | boolean> {
+  const content: Record<string, string | number | boolean> = {}
+  for (const f of fields) {
+    if (f.kind === "boolean") {
+      content[f.key] = boolValues[f.key] ?? false
+      continue
+    }
+    if (f.kind === "number") {
+      const v = numberValues[f.key]
+      if (v !== undefined) content[f.key] = v
+      continue
+    }
+    const v = textValues[f.key]
+    if (v !== undefined && v !== "") content[f.key] = v
+  }
+  return content
+}
+
+function handleAccept(): void {
+  if (submitting || !canSubmit) return
+  submitting = true
+  onResolve(buildContent())
+}
+
+function handleDecline(): void {
+  if (submitting) return
+  submitting = true
+  onDecline()
+}
+
+function handleCancel(): void {
+  if (submitting) return
+  submitting = true
+  onCancel()
+}
+</script>
+
+{#if isForm}
+  <div class="flex gap-2 self-end max-w-[78%] min-w-0 items-end flex-row-reverse pb-5">
+    <Avatar kind="tool" />
+
+    <div class="elicitation-block" role="alertdialog" aria-live="assertive">
+      <div class="header">
+        <span class="message" dir="auto">{message}</span>
+        <button
+          class="close-btn"
+          onclick={handleCancel}
+          disabled={submitting}
+          aria-label={t("elicitation.cancel")}
+        >
+          ✕
+        </button>
+      </div>
+
+      {#if fields.length > 0}
+        <div class="fields">
+          {#each fields as field (field.key)}
+            <div class="field">
+              <span class="field-label" dir="auto">
+                {field.label}
+                {#if field.required}<span class="required-mark" title={t("elicitation.required")}>*</span>{/if}
+              </span>
+              {#if field.kind === "text"}
+                <input
+                  type="text"
+                  class="field-input"
+                  dir="auto"
+                  disabled={submitting}
+                  bind:value={textValues[field.key]}
+                />
+              {:else if field.kind === "number"}
+                <input
+                  type="number"
+                  class="field-input"
+                  disabled={submitting}
+                  bind:value={numberValues[field.key]}
+                />
+              {:else if field.kind === "boolean"}
+                <label class="checkbox-row">
+                  <input
+                    type="checkbox"
+                    disabled={submitting}
+                    bind:checked={boolValues[field.key]}
+                  />
+                  <span dir="auto">{field.label}</span>
+                </label>
+              {:else if field.kind === "select"}
+                <Select
+                  bind:value={textValues[field.key]}
+                  options={field.options ?? []}
+                  title={field.label}
+                  disabled={submitting}
+                  compact={false}
+                />
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      <div class="actions">
+        <button
+          class="btn accept"
+          disabled={submitting || !canSubmit}
+          onclick={handleAccept}
+        >
+          {t("elicitation.accept")}
+        </button>
+        <button class="btn decline" disabled={submitting} onclick={handleDecline}>
+          {t("elicitation.decline")}
+        </button>
+        <button class="btn cancel" disabled={submitting} onclick={handleCancel}>
+          {t("elicitation.cancel")}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<style>
+  .elicitation-block {
+    border-radius: 0.75rem;
+    border: 1px solid var(--accent);
+    background: var(--bg-card);
+    padding: 0.6rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .message {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--fg);
+  }
+
+  .close-btn {
+    background: none;
+    border: none;
+    color: var(--fg-dim);
+    cursor: pointer;
+    font-size: 0.8rem;
+    line-height: 1;
+    padding: 0.15rem 0.3rem;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+  .close-btn:hover:not(:disabled) {
+    background: var(--bg);
+  }
+  .close-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .field-label {
+    font-size: 0.75rem;
+    color: var(--fg-dim);
+  }
+
+  .required-mark {
+    color: var(--recording);
+    margin-inline-start: 0.15rem;
+  }
+
+  .field-input {
+    border-radius: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.85rem;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+  }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    color: var(--fg);
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.2rem;
+  }
+
+  .btn {
+    border-radius: 0.5rem;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .btn.accept {
+    border-color: var(--accent);
+    color: var(--accent-hi, var(--accent));
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+
+  .btn.decline,
+  .btn.cancel {
+    border-color: var(--recording);
+    color: var(--recording);
+  }
+</style>

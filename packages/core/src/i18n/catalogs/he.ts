@@ -340,4 +340,9 @@ export const he: Catalog = {
   "permission.allowAlways": "אשר תמיד",
   "permission.reject": "דחה",
   "permission.pending": "ממתין להחלטה",
+  // ─── elicitation ─── (slice-elicitation-ui)
+  "elicitation.accept": "שלח",
+  "elicitation.decline": "דחה",
+  "elicitation.cancel": "ביטול",
+  "elicitation.required": "שדה חובה",
 }

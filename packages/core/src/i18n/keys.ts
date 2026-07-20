@@ -349,6 +349,11 @@ export type MessageKey =
   | "permission.allowAlways"
   | "permission.reject"
   | "permission.pending"
+  // ─── elicitation ─── (slice-elicitation-ui)
+  | "elicitation.accept"
+  | "elicitation.decline"
+  | "elicitation.cancel"
+  | "elicitation.required"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
