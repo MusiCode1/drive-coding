@@ -14,17 +14,32 @@
  */
 import type { Client, SessionNotification } from "@agentclientprotocol/sdk"
 
+/** נגזר מ-SDK — לא shape מותאם; drift אפס. ר' docs/plans/slice-permission-ui-basic.md §4 Commit 0. */
+type PermissionParams = Parameters<Client["requestPermission"]>[0]
+type PermissionResponse = Awaited<ReturnType<Client["requestPermission"]>>
+
 export function createClientImpl(opts: {
   onUpdate: (n: SessionNotification) => void
   /** ─── slice FE-normalization: קבלת ext notifications (כולל _drive/capabilities) ─── */
   onExtNotification?: (method: string, params: Record<string, unknown>) => void
+  /**
+   * ─── slice-permission-ui-basic: בקשת הרשאה חיה ─── אם מסופק, requestPermission
+   * מאציל אליו את ההחלטה (round-trip ל-UI). ללא handler → auto-allow הקיים (ללא שינוי
+   * התנהגות ברירת-מחדל — regression test מכסה זאת).
+   */
+  onRequestPermission?: (params: PermissionParams) => Promise<PermissionResponse>
 }): Client {
   return {
     /**
-     * Auto-allow_once: מעדיף allow_once > allow_always > הראשון שאינו reject > האפשרות הראשונה.
-     * Slices עתידיים יוסיפו פרומפט UI לאישור משתמש.
+     * אם onRequestPermission סופק (UI חי) → מאציל אליו.
+     * אחרת: Auto-allow_once — מעדיף allow_once > allow_always > הראשון שאינו reject >
+     * האפשרות הראשונה. (ברירת המחדל ההיסטורית, נשמרת ללא UI.)
      */
     async requestPermission(params) {
+      if (opts.onRequestPermission) {
+        return await opts.onRequestPermission(params)
+      }
+
       const byKind = (k: string) => params.options.find((o) => o.kind === k)
       const chosen =
         byKind("allow_once") ??
