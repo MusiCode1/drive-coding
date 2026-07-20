@@ -13,7 +13,8 @@
  */
 
 import { type IntervalHistogram, monitorEventLoopDelay } from "node:perf_hooks"
-import type { AgentRegistry } from "@drive-coding/core"
+import os from "node:os"
+import { deriveMachineStats, type AgentRegistry } from "@drive-coding/core"
 import type { Hono } from "hono"
 
 // Single process-wide histogram, enabled once. reset() per poll = rolling window.
@@ -58,6 +59,13 @@ export function registerHealthHttp(
     }
     h.reset() // rolling window: next poll reports lag since this moment
 
+    const machine = deriveMachineStats({
+      totalMemBytes: os.totalmem(),
+      freeMemBytes: os.freemem(),
+      loadAvg1: os.loadavg()[0] ?? 0, // ב-Windows loadavg() מחזיר [0,0,0] — memPct עדיין תקף
+      cpuCount: os.cpus().length,
+    })
+
     const all = await deps.registry.list()
     const list = all.map((a) => {
       const rt = deps.connectionRegistry.getRuntimeInfo(a.id)
@@ -81,6 +89,7 @@ export function registerHealthHttp(
         heapTotalMB: bToMb(mem.heapTotal),
         externalMB: bToMb(mem.external),
       },
+      machine,
       agents: {
         total: list.length,
         busy: list.filter((x) => x.busy).length,
