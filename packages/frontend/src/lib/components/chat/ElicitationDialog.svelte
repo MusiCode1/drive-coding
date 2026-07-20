@@ -49,24 +49,25 @@ const fields = $derived(
 const message = $derived(params.message)
 
 // ─── ערכי הטופס — store נפרד פר-kind (type-safety על bind:value/bind:checked) ───
-let textValues = $state<Record<string, string>>({})
-let numberValues = $state<Record<string, number | undefined>>({})
-let boolValues = $state<Record<string, boolean>>({})
-
-// אתחול/איפוס הערכים בכל שינוי fields (בקשה חדשה — mount ראשוני או supersede).
-$effect(() => {
-  const nextText: Record<string, string> = {}
-  const nextNumber: Record<string, number | undefined> = {}
-  const nextBool: Record<string, boolean> = {}
-  for (const f of fields) {
-    if (f.kind === "boolean") nextBool[f.key] = false
-    else if (f.kind === "number") nextNumber[f.key] = undefined
-    else nextText[f.key] = ""
+// ⚠️ אתחול **סינכרוני** (לפני ה-paint הראשון) כדי ש-bind:value/bind:checked לעולם לא יקבל
+// undefined — Svelte 5 מסרב לכרוך undefined ל-$bindable עם default (Select `value=$bindable("")`),
+// וזה קרס את ה-dialog ב-mount על שדות select → pendingElicitation תקוע לנצח (calev NO-GO r2).
+// supersede/בקשה-חדשה מטופל ע"י `{#key session.pendingElicitation}` ב-ChatBubbles (remount נקי).
+function initValues(fs: ReturnType<typeof mapElicitationFields>) {
+  const text: Record<string, string> = {}
+  const num: Record<string, number | undefined> = {}
+  const bool: Record<string, boolean> = {}
+  for (const f of fs) {
+    if (f.kind === "boolean") bool[f.key] = false
+    else if (f.kind === "number") num[f.key] = undefined
+    else text[f.key] = ""
   }
-  textValues = nextText
-  numberValues = nextNumber
-  boolValues = nextBool
-})
+  return { text, num, bool }
+}
+const _init = initValues(isFormElicitation(params) ? mapElicitationFields(params.requestedSchema) : [])
+let textValues = $state<Record<string, string>>(_init.text)
+let numberValues = $state<Record<string, number | undefined>>(_init.num)
+let boolValues = $state<Record<string, boolean>>(_init.bool)
 
 // mode לא-נתמך (url/custom — §2 out of scope) → פתור מיידית כ-cancel, אין UI לרנדר.
 $effect(() => {

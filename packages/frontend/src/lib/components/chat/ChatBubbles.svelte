@@ -59,13 +59,16 @@ $effect(() => {
   />
 {/if}
 <!-- slice-elicitation-ui: אותו מקום כמו PermissionRequestBlock — inline, אחרי ה-Virtualizer -->
+<!-- {#key} → כל בקשה חדשה/supersede מקבלת instance טרי עם אתחול-ערכים סינכרוני (calev NO-GO r2 fix) -->
 {#if session.pendingElicitation}
-  <ElicitationDialog
-    params={session.pendingElicitation.params}
-    onResolve={(content) => session.resolveElicitation(content)}
-    onDecline={() => session.cancelElicitation("decline")}
-    onCancel={() => session.cancelElicitation("cancel")}
-  />
+  {#key session.pendingElicitation}
+    <ElicitationDialog
+      params={session.pendingElicitation.params}
+      onResolve={(content) => session.resolveElicitation(content)}
+      onDecline={() => session.cancelElicitation("decline")}
+      onCancel={() => session.cancelElicitation("cancel")}
+    />
+  {/key}
 {/if}
 {#if session.bubbles.length === 0}
   <div class="empty">{t("chat.empty")}</div>
