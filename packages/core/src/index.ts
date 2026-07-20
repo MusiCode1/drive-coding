@@ -12,3 +12,5 @@ export * from "./voice/sentence-boundary"
 export * from "./voice/translation-prompt"
 // ─── image ─── (slice-image-paste)
 export * from "./image/resize-plan"
+// ─── system ───
+export * from "./system/machine-stats"
