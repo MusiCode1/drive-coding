@@ -300,6 +300,11 @@ export async function createAcpClient(
     protocolVersion: 1,
     clientCapabilities: {
       fs: { readTextFile: false, writeTextFile: false },
+      // slice elicitation-ui (B): מכריזים על תמיכה ב-form elicitation כדי שהסוכן
+      // *ירשה לעצמו לשלוח* elicitation/create. בלי זה, ה-claude-agent-acp bridge
+      // מוסיף את AskUserQuestion ל-disallowedTools ולא רושם MCP-elicitation forwarding
+      // → הפיצ'ר לא-נגיש end-to-end (calev NO-GO). `{}` = נתמך. url דחוי (mode:form בלבד).
+      elicitation: { form: {} },
     },
     clientInfo: { name: "drive-coding", version: "0.2.0" },
   })
