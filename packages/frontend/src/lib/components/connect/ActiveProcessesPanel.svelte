@@ -111,7 +111,9 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
 
 <section class="active-panel">
   <div class="panel-header">
-    <span class="panel-title">{t("connect.agents.title")}</span>
+    <span class="panel-title">
+      {t("connect.agents.title")}{activeAgents.agents.length > 0 ? ` (${activeAgents.agents.length})` : ""}
+    </span>
     <button
       type="button"
       class="refresh-btn"
