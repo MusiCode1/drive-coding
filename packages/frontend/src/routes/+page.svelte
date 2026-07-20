@@ -230,6 +230,9 @@ async function handleRecentSelect(project: RecentProject) {
     min-height: 0; /* קריטי — בלי זה flex-child לא מתכווץ ולא נגלל */
     overflow-y: auto; /* עיצוב ה-scrollbar עצמו מגיע ממחלקת chat-scroll שעל האלמנט */
     padding: 4rem 1rem 1rem;
+    /* slice connect-panel-resize (Commit 2.5): inset ל-scrollIntoView של ידית הגרירה —
+       הידית מעוגנת לתחתית ה-body(=ראש ה-footer), לכן הערך אינו-תלוי בגובה ה-footer המדויק. */
+    scroll-padding-bottom: 5rem;
   }
 
   .connect-footer {

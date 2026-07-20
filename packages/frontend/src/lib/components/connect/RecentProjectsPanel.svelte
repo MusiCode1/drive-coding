@@ -8,11 +8,12 @@
  * slice: connect-recent-projects
  * דפוס: חיקוי ActiveProcessesPanel (אחידות ויזואלית).
  */
+import { onMount } from "svelte"
 import type { RecentProject } from "$lib/adapters/recent-projects"
-import { getRecentProjects, getI18n, getSettings } from "$lib/context"
+import { getI18n, getRecentProjects, getSettings } from "$lib/context"
 import { formatRelativeTime } from "$lib/util/formatting"
 import { basename } from "$lib/util/path"
-import { onMount } from "svelte"
+import { resizeDrag } from "$lib/util/resize-drag"
 
 interface Props {
   onSelect: (project: RecentProject) => void
@@ -24,6 +25,9 @@ const recent = getRecentProjects()
 const i18n = getI18n()
 const t = i18n.t
 const settings = getSettings()
+
+let dragHeight = $state<number | null>(null)
+let handleEl = $state<HTMLDivElement | null>(null)
 
 onMount(() => {
   void recent.refresh()
@@ -65,7 +69,10 @@ onMount(() => {
         {recent.loading ? "…" : t("connect.recent.empty")}
       </div>
     {:else}
-      <ul class="project-list chat-scroll">
+      <ul
+        class="project-list chat-scroll"
+        style="max-height: {dragHeight ?? settings.recentPanelHeight}px"
+      >
         {#each recent.projects as project (project.cwd)}
           <li class="project-row">
             <button
@@ -97,6 +104,24 @@ onMount(() => {
           </li>
         {/each}
       </ul>
+      <div
+        class="resize-handle"
+        bind:this={handleEl}
+        use:resizeDrag={{
+          getStart: () => settings.recentPanelHeight,
+          onMove: (px) => {
+            dragHeight = px
+            handleEl?.scrollIntoView({ block: "nearest" })
+          },
+          onEnd: (px) => {
+            settings.setRecentPanelHeight(px)
+            dragHeight = null
+          },
+        }}
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label={t("connect.panel.resizeHandle")}
+      ></div>
     {/if}
   {/if}
 </section>
@@ -182,8 +207,34 @@ onMount(() => {
     list-style: none;
     margin: 0;
     padding: 0;
-    max-height: 16rem; /* גובה קבוע ~4-5 שורות */
     overflow-y: auto;
+  }
+
+  /* ידית גרירה לשינוי גובה — slice connect-panel-resize */
+  .resize-handle {
+    height: 10px;
+    cursor: ns-resize;
+    touch-action: none;
+    position: relative;
+  }
+
+  .resize-handle::after {
+    content: "";
+    position: absolute;
+    inset-inline: 40%;
+    top: 50%;
+    height: 3px;
+    transform: translateY(-50%);
+    border-radius: 2px;
+    /* גלוי-תמיד (לא hover-only) — במובייל אין hover, וגריפ hover-only היה בלתי-נראה
+       כשגוללים אליו (slice connect-panel-resize, Commit 2.5, DoD #12) */
+    background: var(--border-str);
+    transition: background 0.15s;
+  }
+
+  .resize-handle:hover::after,
+  .resize-handle:active::after {
+    background: var(--accent);
   }
 
   .project-row {

@@ -343,6 +343,8 @@ export type MessageKey =
   | "projectPrompt.label"
   | "projectPrompt.placeholder"
   | "projectPrompt.hint"
+  // ─── panel resize handle ─── (slice connect-panel-resize)
+  | "connect.panel.resizeHandle"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

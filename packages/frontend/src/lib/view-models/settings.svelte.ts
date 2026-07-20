@@ -60,6 +60,9 @@ type Persisted = {
   // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
   // מפה: cwd → טקסט הפרומפט (מתווסף להוראות ברירת-המחדל של הסוכן, ר' provider/connection).
   projectSystemPrompt: Record<string, string>
+  // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize)
+  recentPanelHeight: number
+  activePanelHeight: number
 }
 
 const DEFAULTS: Persisted = {
@@ -98,6 +101,9 @@ const DEFAULTS: Persisted = {
   geminiVoice: DEFAULT_GEMINI_VOICE,
   // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
   projectSystemPrompt: {},
+  // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize) — 256px = 16rem, זהה להתנהגות היום
+  recentPanelHeight: 256,
+  activePanelHeight: 256,
 }
 
 function load(): Persisted {
@@ -193,6 +199,10 @@ export class Settings {
   // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
   projectSystemPrompt = $state<Record<string, string>>(DEFAULTS.projectSystemPrompt)
 
+  // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize)
+  recentPanelHeight = $state<number>(DEFAULTS.recentPanelHeight)
+  activePanelHeight = $state<number>(DEFAULTS.activePanelHeight)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -229,6 +239,9 @@ export class Settings {
     this.geminiVoice = loaded.geminiVoice
     // ─── פרומפט-מערכת פר-פרויקט ───
     this.projectSystemPrompt = loaded.projectSystemPrompt
+    // ─── גובה פאנלים נגרר ───
+    this.recentPanelHeight = loaded.recentPanelHeight
+    this.activePanelHeight = loaded.activePanelHeight
   }
 
   // ─── טופס חיבור ───
@@ -478,6 +491,18 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize)
+
+  setRecentPanelHeight = (px: number): void => {
+    this.recentPanelHeight = px
+    this.#persist()
+  }
+
+  setActivePanelHeight = (px: number): void => {
+    this.activePanelHeight = px
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -502,6 +527,8 @@ export class Settings {
       suppressLeaveWarning: this.suppressLeaveWarning,
       geminiVoice: this.geminiVoice,
       projectSystemPrompt: this.projectSystemPrompt,
+      recentPanelHeight: this.recentPanelHeight,
+      activePanelHeight: this.activePanelHeight,
     })
   }
 }
