@@ -5,7 +5,6 @@ import { onMount, untrack } from "svelte"
 import { connectAgent } from "$lib/actions/connect-agent"
 import { fetchServerOptions } from "$lib/adapters/options"
 import type { RecentProject } from "$lib/adapters/recent-projects"
-import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import ActiveProcessesPanel from "$lib/components/connect/ActiveProcessesPanel.svelte"
 import RecentProjectsPanel from "$lib/components/connect/RecentProjectsPanel.svelte"
 import LanguageSelect from "$lib/components/settings/LanguageSelect.svelte"
@@ -183,11 +182,6 @@ async function handleRecentSelect(project: RecentProject) {
             <FolderIcon size={18} strokeWidth={1.75} />
           </button>
         </div>
-      </label>
-
-      <label>
-        <span>{t("chat.voicePicker.label")}</span>
-        <VoicePicker />
       </label>
     </form>
 
