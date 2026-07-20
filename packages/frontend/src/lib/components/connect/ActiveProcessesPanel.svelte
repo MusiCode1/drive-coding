@@ -118,7 +118,7 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
       type="button"
       class="refresh-btn"
       disabled={activeAgents.loading}
-      onclick={() => void activeAgents.refresh()}
+      onclick={() => { void activeAgents.refresh(); void refreshMachine() }}
       title={t("connect.agents.refresh")}
       aria-label={t("connect.agents.refresh")}
     >
