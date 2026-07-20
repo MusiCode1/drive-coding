@@ -8,9 +8,10 @@
  * slice: active-processes-icons
  */
 import type { AgentPublic } from "@drive-coding/core"
-import { getActiveAgents, getI18n } from "$lib/context"
+import { getActiveAgents, getI18n, getSettings } from "$lib/context"
 import { formatRelativeTime } from "$lib/util/formatting"
 import { basename } from "$lib/util/path"
+import { resizeDrag } from "$lib/util/resize-drag"
 import Trash2Icon from "@lucide/svelte/icons/trash-2"
 import PlugIcon from "@lucide/svelte/icons/plug"
 
@@ -23,6 +24,10 @@ const { onReconnect }: Props = $props()
 const activeAgents = getActiveAgents()
 const i18n = getI18n()
 const t = i18n.t
+const settings = getSettings()
+
+let dragHeight = $state<number | null>(null)
+let handleEl = $state<HTMLDivElement | null>(null)
 
 // אישור kill — מזהה ה-agent שמחכה לאישור שנייה
 let confirmingId = $state<string | null>(null)
@@ -112,7 +117,10 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
       {t("connect.agents.empty")}
     </div>
   {:else}
-    <ul class="agent-list chat-scroll">
+    <ul
+      class="agent-list chat-scroll"
+      style="max-height: {dragHeight ?? settings.activePanelHeight}px"
+    >
       {#each activeAgents.agents as agent (agent.id)}
         <li class="agent-row">
           <div class="agent-top">
@@ -184,6 +192,24 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
         </li>
       {/each}
     </ul>
+    <div
+      class="resize-handle"
+      bind:this={handleEl}
+      use:resizeDrag={{
+        getStart: () => settings.activePanelHeight,
+        onMove: (px) => {
+          dragHeight = px
+          handleEl?.scrollIntoView({ block: "nearest" })
+        },
+        onEnd: (px) => {
+          settings.setActivePanelHeight(px)
+          dragHeight = null
+        },
+      }}
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label={t("connect.panel.resizeHandle")}
+    ></div>
   {/if}
 </section>
 
@@ -245,8 +271,33 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     list-style: none;
     margin: 0;
     padding: 0;
-    max-height: 16rem;
     overflow-y: auto;
+  }
+
+  /* ידית גרירה לשינוי גובה — slice connect-panel-resize */
+  .resize-handle {
+    height: 10px;
+    cursor: ns-resize;
+    touch-action: none;
+    position: relative;
+  }
+
+  .resize-handle::after {
+    content: "";
+    position: absolute;
+    inset-inline: 40%;
+    top: 50%;
+    height: 3px;
+    transform: translateY(-50%);
+    border-radius: 2px;
+    /* גלוי-תמיד (לא hover-only) — במובייל אין hover */
+    background: var(--border-str);
+    transition: background 0.15s;
+  }
+
+  .resize-handle:hover::after,
+  .resize-handle:active::after {
+    background: var(--accent);
   }
 
   .agent-row {
