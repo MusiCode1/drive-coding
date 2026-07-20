@@ -7,12 +7,14 @@
  *
  * slice: active-processes-icons
  */
-import type { AgentPublic } from "@drive-coding/core"
+import type { AgentPublic, MachineStats } from "@drive-coding/core"
 import { getActiveAgents, getI18n } from "$lib/context"
 import { formatRelativeTime } from "$lib/util/formatting"
 import { basename } from "$lib/util/path"
+import { getMachineStats } from "$lib/adapters/system-api"
 import Trash2Icon from "@lucide/svelte/icons/trash-2"
 import PlugIcon from "@lucide/svelte/icons/plug"
+import MachineStatsBar from "./MachineStatsBar.svelte"
 
 interface Props {
   onReconnect: (agent: AgentPublic) => void
@@ -28,11 +30,26 @@ const t = i18n.t
 let confirmingId = $state<string | null>(null)
 let confirmTimer = $state<ReturnType<typeof setTimeout> | null>(null)
 
+// מדדי-מכונה (RAM/CPU) — poll קיים 12s, בית ב-MachineStatsBar (slice be-machine-stats)
+let machine = $state<MachineStats | null>(null)
+
+function refreshMachine() {
+  getMachineStats()
+    .then((m) => {
+      machine = m
+    })
+    .catch(() => {
+      // כישלון שקט — המחוון פשוט לא יתעדכן; לא לשבור את הפאנל
+    })
+}
+
 // C12: auto-refresh כל ~12s; לא מרענן אם הפאנל מוסתר (document.hidden)
 $effect(() => {
+  void refreshMachine() // fetch ראשוני מיידי ב-mount
   const interval = setInterval(() => {
     if (typeof document !== "undefined" && document.hidden) return
     void activeAgents.refresh()
+    void refreshMachine()
   }, 12_000)
   return () => clearInterval(interval)
 })
@@ -106,6 +123,8 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
       ↺
     </button>
   </div>
+
+  <MachineStatsBar stats={machine} />
 
   {#if activeAgents.agents.length === 0}
     <div class="empty-state">

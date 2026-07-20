@@ -343,6 +343,10 @@ export type MessageKey =
   | "projectPrompt.label"
   | "projectPrompt.placeholder"
   | "projectPrompt.hint"
+  // ─── machine-stats ─── (slice-be-machine-stats)
+  | "connect.machine.memory"
+  | "connect.machine.cpu"
+  | "connect.machine.label"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

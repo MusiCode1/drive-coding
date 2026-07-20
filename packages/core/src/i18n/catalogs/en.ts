@@ -338,4 +338,8 @@ export const en: Catalog = {
   "projectPrompt.label": "Project system prompt",
   "projectPrompt.placeholder": "e.g. Always reply concisely, and open every answer in Hebrew...",
   "projectPrompt.hint": "Appended to the agent's default instructions. Takes effect from the next session.",
+  // ─── machine-stats ─── (slice-be-machine-stats)
+  "connect.machine.memory": "Memory",
+  "connect.machine.cpu": "CPU",
+  "connect.machine.label": "Machine load",
 }
