@@ -111,95 +111,103 @@ async function handleRecentSelect(project: RecentProject) {
 </script>
 
 <main class="connect">
-  <h1>{t("connect.title")}</h1>
-  <p class="subtitle">{t("connect.subtitle")}</p>
+  <div class="connect-body chat-scroll">
+    <h1>{t("connect.title")}</h1>
+    <p class="subtitle">{t("connect.subtitle")}</p>
 
-  <ActiveProcessesPanel onReconnect={handleReconnect} />
+    <ActiveProcessesPanel onReconnect={handleReconnect} />
 
-  <!-- connect-recent-projects: רשימת תיקיות אחרונות — מ-GET /api/projects (registry) -->
-  <RecentProjectsPanel onSelect={handleRecentSelect} />
+    <!-- connect-recent-projects: רשימת תיקיות אחרונות — מ-GET /api/projects (registry) -->
+    <RecentProjectsPanel onSelect={handleRecentSelect} />
 
-  <form onsubmit={onSubmit}>
-    <label>
-      <span>{t("settings.language.label")}</span>
-      <LanguageSelect />
-    </label>
+    <form id="connect-form" onsubmit={onSubmit}>
+      <label>
+        <span>{t("settings.language.label")}</span>
+        <LanguageSelect />
+      </label>
 
-    <label>
-      <span class="cli-label-row">
-        {t("connect.cli.label")}
-        {#if cliAvailability.loading}
-          <Loader2Icon size={14} class="animate-spin" style="color:var(--fg-dim)" aria-hidden="true" />
-          <span class="cli-hint">{t("connect.cli.loading")}</span>
-        {:else if cliAvailability.error}
-          <!-- §2/§6/§9 Q3: fallback = מציג הכול + אינדיקציה חלשה (לא באנר חוסם) -->
-          <span class="cli-hint">{t("connect.cli.showAll")}</span>
-        {/if}
-      </span>
-      <!-- Select.value נשאר cliKind גם אם הוא disabled ב-options (למקרה reconnect) —
-           כל ה-CLI_KINDS מוצגים תמיד; מי שלא available מקבל disabled פר-option (§1, §4 Commit 2). -->
-      <Select
-        value={cliKind}
-        options={CLI_KINDS.map((k) => ({
-          value: k,
-          label: k,
-          disabled: !cliAvailability.available.includes(k),
-          description: cliAvailability.available.includes(k)
-            ? null
-            : t("connect.cli.notInstalled"),
-        }))}
-        title={t("connect.cli.label")}
-        ariaLabel={t("connect.cli.label")}
-        disabled={session.status === "connecting"}
-        onchange={(v) => (cliKind = v as CliKind)}
-      />
-    </label>
-
-    <label>
-      <span>{t("connect.cwd.label")}</span>
-      <!-- C15: dir מפורש לפי locale (לא dir="auto" — שמושפע מתוכן הנתיב).
-           כפתור תיקייה עם order:-1 תמיד = ראשון בflex.
-           RTL (עברית): flex מימין לשמאל → ראשון=ימין ויזואלי. ✓
-           LTR (אנגלית): flex משמאל לימין → ראשון=שמאל ויזואלי. ✓ -->
-      <div class="cwd-row" dir={isRtl ? "rtl" : "ltr"}>
-        <input
-          type="text"
-          bind:value={cwd}
-          placeholder={t("connect.cwd.placeholder")}
-          dir="ltr"
+      <label>
+        <span class="cli-label-row">
+          {t("connect.cli.label")}
+          {#if cliAvailability.loading}
+            <Loader2Icon size={14} class="animate-spin" style="color:var(--fg-dim)" aria-hidden="true" />
+            <span class="cli-hint">{t("connect.cli.loading")}</span>
+          {:else if cliAvailability.error}
+            <!-- §2/§6/§9 Q3: fallback = מציג הכול + אינדיקציה חלשה (לא באנר חוסם) -->
+            <span class="cli-hint">{t("connect.cli.showAll")}</span>
+          {/if}
+        </span>
+        <!-- Select.value נשאר cliKind גם אם הוא disabled ב-options (למקרה reconnect) —
+             כל ה-CLI_KINDS מוצגים תמיד; מי שלא available מקבל disabled פר-option (§1, §4 Commit 2). -->
+        <Select
+          value={cliKind}
+          options={CLI_KINDS.map((k) => ({
+            value: k,
+            label: k,
+            disabled: !cliAvailability.available.includes(k),
+            description: cliAvailability.available.includes(k)
+              ? null
+              : t("connect.cli.notInstalled"),
+          }))}
+          title={t("connect.cli.label")}
+          ariaLabel={t("connect.cli.label")}
           disabled={session.status === "connecting"}
+          onchange={(v) => (cliKind = v as CliKind)}
         />
-        <!-- C15: order:-1 → תמיד ראשון בflex: LTR=שמאל, RTL=ימין -->
-        <button
-          type="button"
-          class="folder-btn"
-          style="order: -1"
-          onclick={() => modals.openFolder()}
-          disabled={session.status === "connecting"}
-          aria-label={t("settings.folder.pick")}
-          title={t("settings.folder.pick")}
-        >
-          <FolderIcon size={18} strokeWidth={1.75} />
-        </button>
+      </label>
+
+      <label>
+        <span>{t("connect.cwd.label")}</span>
+        <!-- C15: dir מפורש לפי locale (לא dir="auto" — שמושפע מתוכן הנתיב).
+             כפתור תיקייה עם order:-1 תמיד = ראשון בflex.
+             RTL (עברית): flex מימין לשמאל → ראשון=ימין ויזואלי. ✓
+             LTR (אנגלית): flex משמאל לימין → ראשון=שמאל ויזואלי. ✓ -->
+        <div class="cwd-row" dir={isRtl ? "rtl" : "ltr"}>
+          <input
+            type="text"
+            bind:value={cwd}
+            placeholder={t("connect.cwd.placeholder")}
+            dir="ltr"
+            disabled={session.status === "connecting"}
+          />
+          <!-- C15: order:-1 → תמיד ראשון בflex: LTR=שמאל, RTL=ימין -->
+          <button
+            type="button"
+            class="folder-btn"
+            style="order: -1"
+            onclick={() => modals.openFolder()}
+            disabled={session.status === "connecting"}
+            aria-label={t("settings.folder.pick")}
+            title={t("settings.folder.pick")}
+          >
+            <FolderIcon size={18} strokeWidth={1.75} />
+          </button>
+        </div>
+      </label>
+
+      <label>
+        <span>{t("chat.voicePicker.label")}</span>
+        <VoicePicker />
+      </label>
+    </form>
+
+    {#if session.error}
+      <div class="error" role="alert">
+        <strong>{t("connect.error.prefix")}</strong>
+        {session.error}
       </div>
-    </label>
+    {/if}
+  </div>
 
-    <label>
-      <span>{t("chat.voicePicker.label")}</span>
-      <VoicePicker />
-    </label>
-
-    <button type="submit" disabled={!cwd.trim() || session.status === "connecting"}>
+  <div class="connect-footer">
+    <button
+      type="submit"
+      form="connect-form"
+      disabled={!cwd.trim() || session.status === "connecting"}
+    >
       {session.status === "connecting" ? t("connect.submitting") : t("connect.submit")}
     </button>
-  </form>
-
-  {#if session.error}
-    <div class="error" role="alert">
-      <strong>{t("connect.error.prefix")}</strong>
-      {session.error}
-    </div>
-  {/if}
+  </div>
 </main>
 
 <!-- C10: בורר תיקיות (מרונדר כאן כי דף החיבור אינו עטוף ב-AppShell) -->
@@ -211,14 +219,36 @@ async function handleRecentSelect(project: RecentProject) {
 <LoadingModal open={session.status === "connecting" || session.isLoadingHistory} />
 
 <style>
-  /* גובה מלא + גלילה פנימית: ה-body הוא overflow:hidden (app.css), ודף החיבור
-     אינו עטוף ב-AppShell, לכן הוא חייב לגלול בעצמו — אחרת התוכן נחתך במסכים נמוכים. */
+  /* גובה מלא: ה-body הוא overflow:hidden (app.css), ודף החיבור אינו עטוף ב-AppShell,
+     לכן הוא חייב לנהל את הגובה שלו בעצמו. הגלילה עברה ל-.connect-body — הכפתור
+     ב-.connect-footer נשאר מוצמד לתחתית ולא נגלל איתה (slice: connect-screen-layout). */
   .connect {
     max-width: 420px;
     height: 100dvh;
-    overflow-y: auto;
     margin: 0 auto;
-    padding: 4rem 1rem;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .connect-body {
+    flex: 1 1 auto;
+    min-height: 0; /* קריטי — בלי זה flex-child לא מתכווץ ולא נגלל */
+    overflow-y: auto; /* עיצוב ה-scrollbar עצמו מגיע ממחלקת chat-scroll שעל האלמנט */
+    padding: 4rem 1rem 1rem;
+  }
+
+  .connect-footer {
+    flex-shrink: 0;
+    padding: 0.75rem 1rem;
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); /* notch/home-indicator בנייד */
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+
+  .connect-footer button {
+    width: 100%;
+    margin-top: 0; /* מבטל את margin-top:0.5rem של כלל ה-button הגנרי */
   }
 
   h1 {
