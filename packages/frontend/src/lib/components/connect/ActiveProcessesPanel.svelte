@@ -112,7 +112,7 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
       {t("connect.agents.empty")}
     </div>
   {:else}
-    <ul class="agent-list">
+    <ul class="agent-list chat-scroll">
       {#each activeAgents.agents as agent (agent.id)}
         <li class="agent-row">
           <div class="agent-top">
@@ -245,6 +245,8 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     list-style: none;
     margin: 0;
     padding: 0;
+    max-height: 16rem;
+    overflow-y: auto;
   }
 
   .agent-row {
