@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 // packages/release/scripts/build.mjs
 // Builds the release bundle:
-//   1. Builds the frontend (bun run --filter @drive-coding/frontend build)
+//   1. Builds the frontend — package-manager-AGNOSTIC: runs the workspace `build`
+//      script with the PM the *project* declares (packageManager field / lockfile),
+//      so this works whoever invokes it (node/bun/pnpm, or a `prepack` under npm).
 //   2. Copies frontend/build → release/frontend-dist/
 //   3. Copies backend/plugins  → release/plugins/
-//   4. Bundles the backend bin with bun build (core+provider-contract inline)
+//   4. Bundles the backend bin with `bun build` — this step is bun-SPECIFIC (it is a
+//      bun-targeted bundle: `#!/usr/bin/env bun`, uses `Bun.*`). If we ever target
+//      Deno etc., only this step changes.
 //
 // Run via: node scripts/build.mjs  (or triggered automatically by prepack/npm pack)
 
@@ -12,6 +16,8 @@ import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import path from "node:path"
+import { detect } from "package-manager-detector/detect"
+import { runFilterArgs, runPm } from "../../../scripts/pm.mjs"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -35,19 +41,21 @@ const releasePlugins = path.join(releaseDir, "plugins")
 const releaseDist = path.join(releaseDir, "dist")
 const releaseBinOut = path.join(releaseDist, "drive-coding.js")
 
-// Resolve bun from PATH (override via BUN_BIN). This project is bun-only since
-// 2026-07-19 (pnpm-lock removed; `pnpm --filter` now aborts with "This project is
-// configured to use bun"). We invoke bun directly rather than via pm.mjs/detectPm
-// because detectPm() falls back to pnpm when run under plain `node scripts/build.mjs`
-// with no PM user-agent (the documented RELEASING.md path) — which would re-break here.
+// `bun` for the step-4 bundler (override via BUN_BIN). Step 4 is intentionally
+// bun-specific (see header) — unlike step 1, which follows the project's declared PM.
 const bunBin = process.env.BUN_BIN ?? "bun"
 
-// Step 1: Build frontend
-console.log("[build] Step 1: building frontend…")
-execFileSync(bunBin, ["run", "--filter", "@drive-coding/frontend", "build"], {
-  cwd: repoRoot,
-  stdio: "inherit",
-})
+// Step 1: Build frontend with the project's declared package manager.
+// `detect()` (package-manager-detector) reads the packageManager field + lockfile,
+// so it returns the PM the repo is set up for — bun here — regardless of who invoked
+// this script (a `prepack` under `npm publish` reports npm as the user-agent, but the
+// build must still run under bun). Falls back to bun if detection somehow yields nothing.
+const KNOWN_PM = ["bun", "pnpm", "npm", "yarn"]
+const detected = (await detect())?.name
+const pm = KNOWN_PM.includes(detected) ? detected : "bun"
+console.log(`[build] Step 1: building frontend (pm: ${pm})…`)
+const [feCmd, feArgs] = runFilterArgs("@drive-coding/frontend", "build", pm)
+runPm(feCmd, feArgs, { cwd: repoRoot, stdio: "inherit" })
 
 // Step 2: Copy frontend/build → release/frontend-dist
 console.log("[build] Step 2: copying frontend-dist…")

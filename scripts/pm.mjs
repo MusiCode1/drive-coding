@@ -11,14 +11,36 @@
 // dc-launch.mjs: the BE bin is `#!/usr/bin/env bun` and uses `Bun.*`, so it is
 // always spawned with a literal `bun` regardless of the launching PM/runtime.
 import { spawnSync } from "node:child_process"
+import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
 /** @typedef {"bun" | "pnpm" | "npm" | "yarn"} Pm */
 
 /**
+ * The PM the project itself declares, from the `packageManager` field (the source of
+ * truth corepack and `package-manager-detector`'s `detect()` both read). Read
+ * synchronously so `detectPm` can stay sync for its callers. Returns undefined if the
+ * field is missing/unparseable/non-PM.
+ * @returns {Pm | undefined}
+ */
+function declaredPm() {
+  try {
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))
+    const name = pkg.packageManager?.split("@")[0]
+    if (name === "bun" || name === "pnpm" || name === "yarn" || name === "npm") return name
+  } catch {
+    // no/unreadable root package.json — fall through
+  }
+  return undefined
+}
+
+/**
  * Detect the package manager from `npm_config_user_agent`.
  * Examples: "bun/1.3.14 npm/? node/v24 ..." · "pnpm/10.0.0 npm/? node/v22 ...".
- * Fallback: bun runtime → "bun", else "pnpm" (the project's historical default).
+ * Fallback (no PM user-agent — bare `node`/`bun` running a script): honor the
+ * project's declared `packageManager` field rather than *guessing* a PM (the old
+ * code assumed "pnpm", which broke once the repo went bun-only). Last resort: the
+ * current runtime if it is itself a PM (bun), else npm (always present).
  * @param {string} [ua]
  * @returns {Pm}
  */
@@ -27,7 +49,7 @@ export function detectPm(ua = process.env.npm_config_user_agent ?? "") {
   if (ua.startsWith("pnpm")) return "pnpm"
   if (ua.startsWith("yarn")) return "yarn"
   if (ua.startsWith("npm")) return "npm"
-  return process.versions.bun ? "bun" : "pnpm"
+  return declaredPm() ?? (process.versions.bun ? "bun" : "npm")
 }
 
 /**
