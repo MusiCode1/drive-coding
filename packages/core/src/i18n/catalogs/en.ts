@@ -338,33 +338,24 @@ export const en: Catalog = {
   "projectPrompt.label": "Project system prompt",
   "projectPrompt.placeholder": "e.g. Always reply concisely, and open every answer in Hebrew...",
   "projectPrompt.hint": "Appended to the agent's default instructions. Takes effect from the next session.",
-<<<<<<< HEAD
-<<<<<<< HEAD
   // ─── panel resize handle ─── (slice connect-panel-resize)
   "connect.panel.resizeHandle": "Drag to resize",
   // ─── machine-stats ─── (slice-be-machine-stats)
   "connect.machine.memory": "Memory",
   "connect.machine.cpu": "CPU",
   "connect.machine.label": "Machine load",
-=======
   // ─── session delete ─── (slice session-delete)
   "session.delete": "Delete",
   "session.deleteConfirm": "Sure? Delete session",
->>>>>>> slice/session-delete
-=======
   // ─── permission ─── (slice-permission-ui-basic)
   "permission.title": "Permission request",
   "permission.allowOnce": "Allow once",
   "permission.allowAlways": "Always allow",
   "permission.reject": "Reject",
   "permission.pending": "Awaiting decision",
-<<<<<<< HEAD
->>>>>>> slice/permission-ui-basic
-=======
   // ─── elicitation ─── (slice-elicitation-ui)
   "elicitation.accept": "Submit",
   "elicitation.decline": "Decline",
   "elicitation.cancel": "Cancel",
   "elicitation.required": "Required",
->>>>>>> slice/elicitation-ui
 }

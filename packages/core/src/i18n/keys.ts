@@ -343,35 +343,26 @@ export type MessageKey =
   | "projectPrompt.label"
   | "projectPrompt.placeholder"
   | "projectPrompt.hint"
-<<<<<<< HEAD
-<<<<<<< HEAD
   // ─── panel resize handle ─── (slice connect-panel-resize)
   | "connect.panel.resizeHandle"
   // ─── machine-stats ─── (slice-be-machine-stats)
   | "connect.machine.memory"
   | "connect.machine.cpu"
   | "connect.machine.label"
-=======
   // ─── session delete ─── (slice session-delete)
   | "session.delete"
   | "session.deleteConfirm"
->>>>>>> slice/session-delete
-=======
   // ─── permission ─── (slice-permission-ui-basic)
   | "permission.title"
   | "permission.allowOnce"
   | "permission.allowAlways"
   | "permission.reject"
   | "permission.pending"
-<<<<<<< HEAD
->>>>>>> slice/permission-ui-basic
-=======
   // ─── elicitation ─── (slice-elicitation-ui)
   | "elicitation.accept"
   | "elicitation.decline"
   | "elicitation.cancel"
   | "elicitation.required"
->>>>>>> slice/elicitation-ui
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
