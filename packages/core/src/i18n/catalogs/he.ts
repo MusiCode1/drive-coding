@@ -335,6 +335,7 @@ export const he: Catalog = {
   "projectPrompt.placeholder": "לדוגמה: תמיד ענה בקצרה, ופתח כל תשובה בעברית...",
   "projectPrompt.hint": "מתווסף להוראות ברירת-המחדל של הסוכן. השינוי חל מהסשן הבא.",
 <<<<<<< HEAD
+<<<<<<< HEAD
   // ─── panel resize handle ─── (slice connect-panel-resize)
   "connect.panel.resizeHandle": "גרור לשינוי גובה",
   // ─── machine-stats ─── (slice-be-machine-stats)
@@ -346,4 +347,12 @@ export const he: Catalog = {
   "session.delete": "מחק",
   "session.deleteConfirm": "בטוח? מחיקת סשן",
 >>>>>>> slice/session-delete
+=======
+  // ─── permission ─── (slice-permission-ui-basic)
+  "permission.title": "בקשת הרשאה",
+  "permission.allowOnce": "אשר פעם",
+  "permission.allowAlways": "אשר תמיד",
+  "permission.reject": "דחה",
+  "permission.pending": "ממתין להחלטה",
+>>>>>>> slice/permission-ui-basic
 }

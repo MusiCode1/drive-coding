@@ -47,6 +47,8 @@ import type {
   ToolLocation,
   UserBubble,
 } from "$lib/types/bubble"
+// ─── slice-permission-ui-basic: טיפוסי בקשת-הרשאה (view-model layer, נגזרים מ-SDK) ───
+import type { PermissionParams, PermissionResponse } from "$lib/types/permission"
 // ─── slice leave-running-background ───
 import { isBypassMode } from "$lib/util/permission-mode"
 import type { Settings } from "$lib/view-models/settings.svelte"
@@ -184,6 +186,18 @@ export class AgentSession {
   isLoadingHistory = $state(false)
   /** טקסט הפרומפט האחרון שנשלח על ידי המשתמש — משמש את ה-Speaker להקשר עבור קריינות. */
   lastUserMessage = $state("")
+
+  // ─── slice-permission-ui-basic: בקשת הרשאה חיה (agent→client, ממתינה לתשובה) ───
+  /**
+   * בקשת הרשאה ממתינה מהסוכן — pending יחיד (בקשה שנייה סוגרת את הקודמת כ-cancelled).
+   * null = אין בקשה פעילה. ה-UI (PermissionRequestBlock) מרנדר inline כשזה לא-null.
+   * `resolve` הוא ה-resolver של ה-Promise שהוחזר ל-`createClientImpl.requestPermission` —
+   * חובה לפתור אותו בכל נקודה ש-#client מתאפס, אחרת ה-turn נתקע (§4 Commit 2, הסיכון #1).
+   */
+  pendingPermission = $state<{
+    params: PermissionParams
+    resolve: (r: PermissionResponse) => void
+  } | null>(null)
 
   // ─── slice 23: session config ─── (תוספתי)
   /** אפשרויות config של הסשן הפתוח — מאוכלס מתגובת newSession/loadSession. */
@@ -595,6 +609,9 @@ export class AgentSession {
       await this.#transport.closeAndWait()
       this.#client = null
       this.#transport = null
+      // slice-permission-ui-basic: #client התאפס — פתור pending כ-cancelled (הסיכון #1,
+      // §4 Commit 2). אחרת בקשת-הרשאה ממתינה נשארת תלויה כש-WS נופל באמצע reconnect.
+      this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
     }
     const reuseId = await this.#findReusableAgent()
     if (reuseId !== null) {
@@ -630,6 +647,8 @@ export class AgentSession {
       }
       this.#client = null
       this.#transport = null // slice ws-reconnect-fix-nbug2: נקה אחרי סגירה
+      // slice-permission-ui-basic: #client התאפס — פתור pending כ-cancelled (הסיכון #1).
+      this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
       if (this.status === "connecting" || this.status === "connected") {
         this.#setStatus("disconnected") // מאפס מצב שהשאיר warm-fail; עובר את guard 217
       }
@@ -662,6 +681,9 @@ export class AgentSession {
     for (let attempt = 0; attempt <= AgentSession.#MED8_MAX_RETRIES; attempt++) {
       this.#client = null
       this.#transport = null // slice ws-reconnect-fix-nbug2: איפוס iteration (WS החי כבר סגור ב-#doReconnect)
+      // slice-permission-ui-basic: #client התאפס — פתור pending כ-cancelled (הסיכון #1).
+      // idempotent (no-op בסבבי retry נוספים אחרי שכבר נפתר בסבב הראשון).
+      this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
       const proto = location.protocol === "https:" ? "wss:" : "ws:"
       const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
       this.#transport = transport // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
@@ -712,7 +734,11 @@ export class AgentSession {
         // createAttachedAcpClient (סינכרוני) מדלג על initialize; loadSession עובד על process חי.
         this.#client = createAttachedAcpClient(
           transport,
-          { onUpdate: this.#onSessionUpdate, onExtNotification: this.#onExtNotification },
+          {
+            onUpdate: this.#onSessionUpdate,
+            onExtNotification: this.#onExtNotification,
+            onRequestPermission: this.#onRequestPermission,
+          },
           { capabilities: ATTACHED_CAPS_FALLBACK },
         )
         this.#ext = createExtClient(this.#client)
@@ -738,6 +764,10 @@ export class AgentSession {
         // שגיאת handshake/loadSession — נקה ונפול ל-cold
         this.#client = null
         this.#transport = null // slice ws-reconnect-fix-nbug2: נקה אחרי כשל warm
+        // slice-permission-ui-basic: כיסוי-קצה — אם requestPermission הגיע במהלך הניסיון
+        // הכושל הזה (בין יצירת #client ל-throw), ו-זה הניסיון האחרון בלולאה (אין
+        // top-of-loop הבא שיפתור), חובה לפתור כאן כדי לא להשאיר Promise תלוי.
+        this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
         transport.close()
         return false
       }
@@ -794,6 +824,7 @@ export class AgentSession {
       this.#client = await createAcpClient(transport, {
         onUpdate: this.#onSessionUpdate,
         onExtNotification: this.#onExtNotification,
+        onRequestPermission: this.#onRequestPermission,
       })
       this.#ext = createExtClient(this.#client)
       const m = this.#sessionMeta()
@@ -872,6 +903,60 @@ export class AgentSession {
   /** ה-CLI של הסשן הפעיל (claude/opencode/codex), או null כשאין סשן. slice cli-name-in-chat. */
   get cliKind(): CliKind | null {
     return this.#cliKind
+  }
+
+  // ─── slice-permission-ui-basic: בקשת הרשאה חיה ──────────────────────────────
+  // תשתית גנרית ניתנת-לשכפול (callback + Promise round-trip) — slice B (elicitation)
+  // ישכפל את הדפוס הזה ל-onCreateElicitation. ר' docs/plans/slice-permission-ui-basic.md §3.
+
+  /**
+   * callback שמוזרק ל-createClientImpl.onRequestPermission (בשלושת ה-call-sites: attach,
+   * loadSession, #warmReconnect). מוחזר Promise שנפתר כש-resolvePermission/cancelPermission
+   * נקראים, או כש-#client מתאפס (כל נקודות ה-teardown — ר' #resolvePendingPermission).
+   */
+  #onRequestPermission = (params: PermissionParams): Promise<PermissionResponse> => {
+    return new Promise<PermissionResponse>((resolve) => {
+      // pending יחיד — בקשה שנייה סוגרת את הקודמת כ-cancelled (החלטת המשתמשת, §4 Commit 2).
+      if (this.pendingPermission) {
+        this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
+      }
+      // הגנה: bypass לא אמור לשלוח בקשת הרשאה כלל (הסוכן עוקף) — אך אם בכל זאת הגיעה
+      // (race/CLI לא-סטנדרטי), auto-allow כדי לא לתקוע turn בלי UI רלוונטי.
+      if (this.bypassActive) {
+        const byKind = (k: string) => params.options.find((o) => o.kind === k)
+        const chosen = byKind("allow_once") ?? byKind("allow_always") ?? params.options[0]
+        resolve(
+          chosen
+            ? { outcome: { outcome: "selected", optionId: chosen.optionId } }
+            : { outcome: { outcome: "cancelled" } },
+        )
+        return
+      }
+      this.pendingPermission = { params, resolve }
+    })
+  }
+
+  /** המשתמש בחר אפשרות — פותר את ה-Promise הממתין עם ה-optionId שנבחר. */
+  resolvePermission = (optionId: string): void => {
+    this.#resolvePendingPermission({ outcome: { outcome: "selected", optionId } })
+  }
+
+  /** המשתמש ביטל/דחה בלי לבחור אפשרות ספציפית — פותר כ-cancelled. */
+  cancelPermission = (): void => {
+    this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
+  }
+
+  /**
+   * helper מרוכז — נקודת-פתרון יחידה ל-pendingPermission. idempotent (no-op אם null).
+   * ⚠️ **חובה** לקרוא מכל נקודה ש-#client מתאפס/הסשן נסגר, אחרת Promise דולף + turn תקוע
+   * (הסיכון #1 של הסלייס): #cleanup (מכסה detach+leaveRunning), cancelTurn,
+   * #doReconnect/#coldReconnect/#warmReconnect (3 נתיבי reconnect).
+   */
+  #resolvePendingPermission(response: PermissionResponse): void {
+    const pending = this.pendingPermission
+    if (!pending) return
+    pending.resolve(response)
+    this.pendingPermission = null
   }
 
   // ─── פרומפטים (prompting) ────────────────────────────────────
@@ -989,6 +1074,7 @@ export class AgentSession {
       this.#client = await createAcpClient(transport, {
         onUpdate: this.#onSessionUpdate,
         onExtNotification: this.#onExtNotification,
+        onRequestPermission: this.#onRequestPermission,
       })
       this.#ext = createExtClient(this.#client)
 
@@ -1060,6 +1146,9 @@ export class AgentSession {
       await this.#transport.closeAndWait()
       this.#client = null
       this.#transport = null
+      // slice-permission-ui-basic: #client התאפס — פתור pending כ-cancelled (הסיכון #1).
+      // אותו דפוס בדיוק כמו #doReconnect (סגירת transport חי לפני reconnect).
+      this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
     }
     this.#sessionId = input.sessionId
     this.cwd = input.cwd
@@ -1508,6 +1597,9 @@ export class AgentSession {
    */
   cancelTurn = async (): Promise<void> => {
     if (this.turnState === "idle") return
+    // slice-permission-ui-basic: ביטול תור באמצע בקשת-הרשאה ממתינה → פתור כ-cancelled.
+    // נתיב עצמאי — לא עובר דרך #cleanup (הסיכון #1, §4 Commit 2).
+    this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
     if (!this.#client || !this.#sessionId) return
     try {
       await this.#client.cancel(this.#sessionId)
@@ -1600,6 +1692,9 @@ export class AgentSession {
       // כבר סגור
     }
     this.#client = null
+    // slice-permission-ui-basic: #client התאפס — פתור pending כ-cancelled (הסיכון #1).
+    // מכסה detach() + leaveRunning() (שניהם מנתבים ל-#cleanup) + attach/loadSession כשל.
+    this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
     this.#ext = null // slice FE-normalization: נקה facade
     this.#capabilities = null // slice FE-normalization: נקה capabilities (חיבור חדש = caps חדשים)
     this.contextUsage = null // slice session-budget-meter: נקה context-usage (חיבור חדש = caps חדשים)

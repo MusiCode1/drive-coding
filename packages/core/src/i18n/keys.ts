@@ -344,6 +344,7 @@ export type MessageKey =
   | "projectPrompt.placeholder"
   | "projectPrompt.hint"
 <<<<<<< HEAD
+<<<<<<< HEAD
   // ─── panel resize handle ─── (slice connect-panel-resize)
   | "connect.panel.resizeHandle"
   // ─── machine-stats ─── (slice-be-machine-stats)
@@ -355,6 +356,14 @@ export type MessageKey =
   | "session.delete"
   | "session.deleteConfirm"
 >>>>>>> slice/session-delete
+=======
+  // ─── permission ─── (slice-permission-ui-basic)
+  | "permission.title"
+  | "permission.allowOnce"
+  | "permission.allowAlways"
+  | "permission.reject"
+  | "permission.pending"
+>>>>>>> slice/permission-ui-basic
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

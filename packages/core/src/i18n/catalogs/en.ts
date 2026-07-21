@@ -339,6 +339,7 @@ export const en: Catalog = {
   "projectPrompt.placeholder": "e.g. Always reply concisely, and open every answer in Hebrew...",
   "projectPrompt.hint": "Appended to the agent's default instructions. Takes effect from the next session.",
 <<<<<<< HEAD
+<<<<<<< HEAD
   // ─── panel resize handle ─── (slice connect-panel-resize)
   "connect.panel.resizeHandle": "Drag to resize",
   // ─── machine-stats ─── (slice-be-machine-stats)
@@ -350,4 +351,12 @@ export const en: Catalog = {
   "session.delete": "Delete",
   "session.deleteConfirm": "Sure? Delete session",
 >>>>>>> slice/session-delete
+=======
+  // ─── permission ─── (slice-permission-ui-basic)
+  "permission.title": "Permission request",
+  "permission.allowOnce": "Allow once",
+  "permission.allowAlways": "Always allow",
+  "permission.reject": "Reject",
+  "permission.pending": "Awaiting decision",
+>>>>>>> slice/permission-ui-basic
 }

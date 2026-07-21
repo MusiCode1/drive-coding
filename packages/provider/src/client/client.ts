@@ -21,6 +21,7 @@
  *   - Auto-reconnect — לא מטופל באף שכבה. ה-UI מציג פרומפט "רענן".
  */
 import type {
+  Client,
   ClientSideConnection as ClientSideConnectionType,
   NewSessionRequest,
   SessionNotification,
@@ -129,10 +130,19 @@ export type AcpClient = {
   extMethod(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>>
 }
 
+/** נגזר מ-SDK — לא shape מותאם; drift אפס. ר' docs/plans/slice-permission-ui-basic.md §4 Commit 0. */
+type PermissionParams = Parameters<Client["requestPermission"]>[0]
+type PermissionResponse = Awaited<ReturnType<Client["requestPermission"]>>
+
 export type AcpClientCallbacks = {
   onUpdate: (n: SessionNotification) => void
   /** ─── slice FE-normalization: קבלת ext notifications (כולל _drive/capabilities) ─── */
   onExtNotification?: (method: string, params: Record<string, unknown>) => void
+  /**
+   * ─── slice-permission-ui-basic: בקשת הרשאה חיה ─── ללא handler → auto-allow (client-impl.ts).
+   * דפוס גנרי ניתן-לשכפול — slice B (elicitation) ישכפל אותו ל-onCreateElicitation.
+   */
+  onRequestPermission?: (params: PermissionParams) => Promise<PermissionResponse>
 }
 
 // ─── helper פרטי: בונה את ה-facade המשותף לשני הנתיבים ────────────────────────
@@ -276,6 +286,7 @@ export async function createAcpClient(
   const client = createClientImpl({
     onUpdate: callbacks.onUpdate,
     onExtNotification: callbacks.onExtNotification,
+    onRequestPermission: callbacks.onRequestPermission,
   })
   const conn = new ClientSideConnection((_agent) => client, stream)
 
@@ -392,6 +403,7 @@ export function createAttachedAcpClient(
   const client = createClientImpl({
     onUpdate: callbacks.onUpdate,
     onExtNotification: callbacks.onExtNotification,
+    onRequestPermission: callbacks.onRequestPermission,
   })
   const conn = new ClientSideConnection((_agent) => client, stream)
 
