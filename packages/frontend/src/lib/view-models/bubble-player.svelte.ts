@@ -112,7 +112,13 @@ export class BubblePlayer {
       }
       this.#segId = bubbleId
       const run = async () => {
-        const stream = await provider.synthesize({ text, voiceId, modelId, signal: abortCtrl.signal })
+        const stream = await provider.synthesize({
+          text,
+          voiceId,
+          modelId,
+          signal: abortCtrl.signal,
+          directing: { pace: this.#settings.geminiPace, tone: this.#settings.geminiTone },
+        })
         await this.#sink.prepareSegment(bubbleId, stream, abortCtrl, { format: provider.format })
         await this.#sink.play(bubbleId)
       }

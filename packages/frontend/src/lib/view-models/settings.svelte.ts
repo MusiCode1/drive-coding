@@ -15,6 +15,7 @@
 
 import type { CliKind } from "@drive-coding/core"
 import { DEFAULT_LOCALE, detectLocale, type Locale } from "@drive-coding/core/i18n"
+import type { SpeechPace, SpeechTone } from "@drive-coding/core/voice/tts-types"
 import { listVoices, type Voice } from "../adapters/voice/voices"
 import { setBeUrlBase } from "../util/be-url"
 import { DEFAULT_GEMINI_VOICE } from "../adapters/voice/voices-gemini"
@@ -63,6 +64,9 @@ type Persisted = {
   // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize)
   recentPanelHeight: number
   activePanelHeight: number
+  // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
+  geminiPace: SpeechPace
+  geminiTone: SpeechTone
 }
 
 const DEFAULTS: Persisted = {
@@ -104,6 +108,9 @@ const DEFAULTS: Persisted = {
   // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize) — 256px = 16rem, זהה להתנהגות היום
   recentPanelHeight: 256,
   activePanelHeight: 256,
+  // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
+  geminiPace: "normal",
+  geminiTone: "neutral",
 }
 
 function load(): Persisted {
@@ -203,6 +210,10 @@ export class Settings {
   recentPanelHeight = $state<number>(DEFAULTS.recentPanelHeight)
   activePanelHeight = $state<number>(DEFAULTS.activePanelHeight)
 
+  // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
+  geminiPace = $state<SpeechPace>(DEFAULTS.geminiPace)
+  geminiTone = $state<SpeechTone>(DEFAULTS.geminiTone)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -242,6 +253,9 @@ export class Settings {
     // ─── גובה פאנלים נגרר ───
     this.recentPanelHeight = loaded.recentPanelHeight
     this.activePanelHeight = loaded.activePanelHeight
+    // ─── בימוי Gemini ───
+    this.geminiPace = loaded.geminiPace
+    this.geminiTone = loaded.geminiTone
   }
 
   // ─── טופס חיבור ───
@@ -503,6 +517,18 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
+
+  setGeminiPace = (v: SpeechPace): void => {
+    this.geminiPace = v
+    this.#persist()
+  }
+
+  setGeminiTone = (v: SpeechTone): void => {
+    this.geminiTone = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -529,6 +555,8 @@ export class Settings {
       projectSystemPrompt: this.projectSystemPrompt,
       recentPanelHeight: this.recentPanelHeight,
       activePanelHeight: this.activePanelHeight,
+      geminiPace: this.geminiPace,
+      geminiTone: this.geminiTone,
     })
   }
 }
