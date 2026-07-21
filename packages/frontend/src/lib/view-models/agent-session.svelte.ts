@@ -777,7 +777,10 @@ export class AgentSession {
         )
         this.#ext = createExtClient(this.#client)
         // ─── slice reconnect-bubble-merge: הקפא את התצוגה לפני ה-replay ───
-        this.#displaySnapshot = this.bubbles
+        // idempotent — כדי ש-retry (MED-8) לא ידרוס snapshot טוב ב-[] שנשאר מניסיון קודם
+        // (INVARIANT: ה-snapshot חייב לשרוד את כל ה-reconnect, כולל כשלים/backoff/warm→cold —
+        // ר' באג preview 2026-07-22: שחרור ב-finally גם בכשל מחק את ההודעות).
+        if (this.#displaySnapshot === null) this.#displaySnapshot = this.bubbles
         this.bubbles = []
         this.isLoadingHistory = true
         try {
@@ -791,8 +794,8 @@ export class AgentSession {
         } finally {
           this.isLoadingHistory = false
           this.#setTurnState("idle") // replay מסתיים — reset turnState (replay אינו תור). מתאם ל-loadSession/switchSession; בלעדיו אינדיקטור "המודל פועל" נתקע אחרי warm-reconnect (ה-turn-tracker observe על frames משוחזרים)
-          // ─── slice reconnect-bubble-merge: חשוף את הרשימה הטרייה (הצלחה או כישלון) ───
-          this.#displaySnapshot = null
+          // הערה: אין שחרור snapshot כאן — זה רץ גם בכשל (throw). השחרור עצמו קורה
+          // רק בהצלחה, ב-#setStatus (chokepoint משותף ל-warm/cold — ר' שם).
         }
         // replace:true — אותו דגם כמו switchSession:327 (fix-409 מוזג ב-8f59ec3)
         await notifySessionAttached(agentId, this.#sessionId!, { replace: true }).catch(() => {})
@@ -1723,12 +1726,19 @@ export class AgentSession {
    * נקודת-mutation יחידה ל-status. כל שינוי status עובר דרך כאן.
    * מנגן audio cue ב-transitions רלוונטיים (slice 6). אין $effect — קריאה מפורשת.
    * idempotent: אם next === prev — לא מנגן cue (אין transition).
+   *
+   * slice reconnect-bubble-merge (fix preview 2026-07-22): chokepoint יחיד לשחרור
+   * ה-frozen-display snapshot של warm-reconnect. מעבר ל-"connected" = reconnect/load
+   * הצליח בפועל (warm ~799 וגם cold דרך loadSession ~1200 עוברים דרך כאן) — רק אז
+   * מותר לחשוף renderBubbles מחדש. אם #displaySnapshot כבר null (אין replay בעיצומו) —
+   * no-op. כשל (status="error"/retry) לא מגיע לכאן — ה-snapshot נשאר קפוא (INVARIANT).
    */
   #setStatus(next: AgentSessionStatus): void {
     const prev = this.status
     if (next === prev) return
     this.status = next
     if (next === "error") this.#cues?.play("error")
+    if (next === "connected") this.#displaySnapshot = null
   }
 
   // ─── msr-v2: setter ל-turnState ───

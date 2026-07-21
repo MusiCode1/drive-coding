@@ -13,6 +13,11 @@
  *      renderBubbles === bubbles (חשוף, לא קפוא).
  *   3. regression: session חדש (לפני כל attach) — isReconnectReplay=false כברירת מחדל,
  *      renderBubbles === bubbles.
+ *   4. (fix preview 2026-07-22, DoD#11): loadSession נכשל (throw/ACP closed) →
+ *      renderBubbles עדיין מחזיר את הבועות הישנות (לא [], לא נעלמות). ה-snapshot
+ *      לא משתחרר בכשל — רק בהצלחה.
+ *   5. (fix preview 2026-07-22, DoD#12): אחרי כשל — ניסיון-חוזר שמצליח משחרר את
+ *      ה-snapshot ומגלה את הרשימה הטרייה (chokepoint משותף ל-warm/cold ב-#setStatus).
  */
 
 import { beforeEach, describe, expect, test, vi } from "vitest"
@@ -118,6 +123,63 @@ describe("AgentSession — frozen display snapshot ב-warm-reconnect (Commit 1)"
   test("regression: session חדש — isReconnectReplay=false, renderBubbles===bubbles", () => {
     const session = new AgentSession()
     expect(session.isReconnectReplay).toBe(false)
+    expect(session.renderBubbles).toBe(session.bubbles)
+  })
+
+  test("BUG preview 2026-07-22 (DoD#11): loadSession נכשל → renderBubbles נשאר על הבועות הישנות (לא נעלם ל-[])", async () => {
+    const session = new AgentSession()
+    const oldBubbles = [makeMessage("old-1", "hello")]
+    session.bubbles = oldBubbles
+
+    // loadSession זורק — מדמה "ACP connection closed" בזמן ניתוק-מתמשך
+    mockAttachedClient.loadSession.mockReset()
+    mockAttachedClient.loadSession.mockRejectedValueOnce(new Error("ACP connection closed"))
+
+    await session.attachToLiveAgent({
+      agentId: "agent-1",
+      sessionId: "sess-1",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+
+    // warm נכשל (throw בלי 1008 → ניסיון יחיד) → attachToLiveAgent קובע error
+    expect(session.status).toBe("error")
+    expect(session.bubbles).toEqual([]) // append path כבר איפס — כצפוי
+    // ← זה הבאג: לפני התיקון ה-finally שחרר את ה-snapshot גם בכשל, אז renderBubbles===[]
+    expect(session.renderBubbles).toEqual(oldBubbles)
+    expect(session.isReconnectReplay).toBe(true) // עדיין קפוא — לא reveal בכשל
+  })
+
+  test("DoD#12: אחרי כשל — ניסיון-חוזר שמצליח משחרר את ה-snapshot (chokepoint משותף warm/cold)", async () => {
+    const session = new AgentSession()
+    const oldBubbles = [makeMessage("old-1", "hello")]
+    session.bubbles = oldBubbles
+
+    mockAttachedClient.loadSession.mockReset()
+    mockAttachedClient.loadSession.mockRejectedValueOnce(new Error("ACP connection closed"))
+
+    await session.attachToLiveAgent({
+      agentId: "agent-1",
+      sessionId: "sess-1",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+    expect(session.status).toBe("error")
+    expect(session.renderBubbles).toEqual(oldBubbles) // עדיין קפוא אחרי הכשל הראשון
+
+    // ניסיון-חוזר מצליח (warm שני, מדמה גם warm→cold מבחינת ה-chokepoint המשותף ב-#setStatus)
+    mockAttachedClient.loadSession.mockReset()
+    mockAttachedClient.loadSession.mockResolvedValueOnce({ sessionId: "sess-1" })
+
+    await session.attachToLiveAgent({
+      agentId: "agent-1",
+      sessionId: "sess-1",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+
+    expect(session.status).toBe("connected")
+    expect(session.isReconnectReplay).toBe(false) // עכשיו כן משתחרר — הצליח
     expect(session.renderBubbles).toBe(session.bubbles)
   })
 })
