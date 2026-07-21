@@ -7,8 +7,8 @@ describe("detectPm", () => {
   it("pnpm UA → pnpm", () => expect(detectPm("pnpm/10.0.0 npm/? node/v22 linux x64")).toBe("pnpm"))
   it("npm UA → npm", () => expect(detectPm("npm/10.0.0 node/v22 linux x64")).toBe("npm"))
   it("yarn UA → yarn", () => expect(detectPm("yarn/4.0.0 npm/? node/v22 linux x64")).toBe("yarn"))
-  it("empty UA → runtime fallback", () =>
-    expect(detectPm("")).toBe(process.versions.bun ? "bun" : "pnpm"))
+  it("empty UA → declared packageManager (this repo: bun), not a guess", () =>
+    expect(detectPm("")).toBe("bun"))
 })
 
 describe("runAllArgs", () => {
