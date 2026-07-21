@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // packages/release/scripts/build.mjs
 // Builds the release bundle:
-//   1. Builds the frontend (pnpm --filter @drive-coding/frontend build)
+//   1. Builds the frontend (bun run --filter @drive-coding/frontend build)
 //   2. Copies frontend/build → release/frontend-dist/
 //   3. Copies backend/plugins  → release/plugins/
 //   4. Bundles the backend bin with bun build (core+provider-contract inline)
@@ -35,9 +35,16 @@ const releasePlugins = path.join(releaseDir, "plugins")
 const releaseDist = path.join(releaseDir, "dist")
 const releaseBinOut = path.join(releaseDist, "drive-coding.js")
 
+// Resolve bun from PATH (override via BUN_BIN). This project is bun-only since
+// 2026-07-19 (pnpm-lock removed; `pnpm --filter` now aborts with "This project is
+// configured to use bun"). We invoke bun directly rather than via pm.mjs/detectPm
+// because detectPm() falls back to pnpm when run under plain `node scripts/build.mjs`
+// with no PM user-agent (the documented RELEASING.md path) — which would re-break here.
+const bunBin = process.env.BUN_BIN ?? "bun"
+
 // Step 1: Build frontend
 console.log("[build] Step 1: building frontend…")
-execFileSync("pnpm", ["--filter", "@drive-coding/frontend", "build"], {
+execFileSync(bunBin, ["run", "--filter", "@drive-coding/frontend", "build"], {
   cwd: repoRoot,
   stdio: "inherit",
 })
@@ -64,9 +71,6 @@ cpSync(backendPlugins, releasePlugins, { recursive: true })
 console.log("[build] Step 4: bundling with bun build…")
 rmSync(releaseDist, { recursive: true, force: true })
 mkdirSync(releaseDist, { recursive: true })
-
-// Resolve bun from common locations if not in PATH
-const bunBin = process.env.BUN_BIN ?? "bun"
 
 execFileSync(
   bunBin,
