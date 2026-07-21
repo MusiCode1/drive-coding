@@ -358,5 +358,13 @@ export const en: Catalog = {
   "permission.allowAlways": "Always allow",
   "permission.reject": "Reject",
   "permission.pending": "Awaiting decision",
+<<<<<<< HEAD
 >>>>>>> slice/permission-ui-basic
+=======
+  // ─── elicitation ─── (slice-elicitation-ui)
+  "elicitation.accept": "Submit",
+  "elicitation.decline": "Decline",
+  "elicitation.cancel": "Cancel",
+  "elicitation.required": "Required",
+>>>>>>> slice/elicitation-ui
 }

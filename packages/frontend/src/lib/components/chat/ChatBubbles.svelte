@@ -18,6 +18,7 @@
 import { Virtualizer, type VirtualizerHandle } from "virtua/svelte"
 import { getChatScroll, getI18n, getSession } from "$lib/context"
 import BubbleRenderer from "./BubbleRenderer.svelte"
+import ElicitationDialog from "./ElicitationDialog.svelte"
 import PermissionRequestBlock from "./PermissionRequestBlock.svelte"
 import PlanChecklist from "./PlanChecklist.svelte"
 import StatusBubble from "./StatusBubble.svelte"
@@ -56,6 +57,18 @@ $effect(() => {
     onResolve={(optionId) => session.resolvePermission(optionId)}
     onCancel={() => session.cancelPermission()}
   />
+{/if}
+<!-- slice-elicitation-ui: אותו מקום כמו PermissionRequestBlock — inline, אחרי ה-Virtualizer -->
+<!-- {#key} → כל בקשה חדשה/supersede מקבלת instance טרי עם אתחול-ערכים סינכרוני (calev NO-GO r2 fix) -->
+{#if session.pendingElicitation}
+  {#key session.pendingElicitation}
+    <ElicitationDialog
+      params={session.pendingElicitation.params}
+      onResolve={(content) => session.resolveElicitation(content)}
+      onDecline={() => session.cancelElicitation("decline")}
+      onCancel={() => session.cancelElicitation("cancel")}
+    />
+  {/key}
 {/if}
 {#if session.bubbles.length === 0}
   <div class="empty">{t("chat.empty")}</div>
