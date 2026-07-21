@@ -29,6 +29,7 @@ import { tick } from "svelte"
 import {
   createAgent,
   deleteAgent,
+  getAgent,
   listAgents,
   notifySessionAttached,
 } from "$lib/adapters/agents-api"
@@ -71,6 +72,10 @@ const IMAGE_INPUT_ENABLED = true
 // NormalizedCapabilities מגיע מ-_drive/capabilities (BE) — לא מושפע.
 const ATTACHED_CAPS_FALLBACK = {} as AcpClient["capabilities"]
 
+// ─── slice plan-todo-list Commit 1: reducer טהור + טיפוסים ─── (additive)
+import { EMPTY_PLAN_STORE, type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
+// ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
+import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 // ─── slice FE-normalization: ייבוא ─── (additive)
 // import type בלבד — NormalizedCapabilities מ-subpath ./types (pure, ללא spawn-core).
 // ⚠️ אל תייבא value מ-@drive-coding/provider/host → יגרור spawn-core → vite crash.
@@ -83,10 +88,6 @@ import {
   parseClaudeSdkMessage,
   reduceSubagent,
 } from "./claude-subagent-parse"
-// ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
-import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
-// ─── slice plan-todo-list Commit 1: reducer טהור + טיפוסים ─── (additive)
-import { EMPTY_PLAN_STORE, type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
 
 /**
  * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries
@@ -518,11 +519,12 @@ export class AgentSession {
   }
   /**
    * @internal קורא ישירות ל-#handleUnexpectedClose (slice surface-real-error Commit 1:
-   * anti-clobber gate-test). מזמן pageHidden=true (stub document ב-beforeEach) לפני
-   * construct — כדי שהענף "disconnected" ירוץ ולא #scheduleReconnect (async מודלף).
+   * anti-clobber gate-test; Commit 3: הפך ל-async בגלל best-effort getAgent). מזמן
+   * pageHidden=true (stub document ב-beforeEach) לפני construct — כדי שהענף
+   * "disconnected" ירוץ ולא #scheduleReconnect (async מודלף).
    */
-  _handleUnexpectedCloseForTest(code: number, reason: string): void {
-    this.#handleUnexpectedClose(code, reason)
+  _handleUnexpectedCloseForTest(code: number, reason: string): Promise<void> {
+    return this.#handleUnexpectedClose(code, reason)
   }
 
   // ─── slice ws-reconnect-infra: reconnect helpers ────────────────────────────
@@ -560,12 +562,21 @@ export class AgentSession {
    * מטפל בסגירת WS לא צפויה (לא detach, לא 1000/1001).
    * רקע → disconnected (ממתין ל-reconnect ידני); פוקוס → backoff אוטומטי.
    */
-  #handleUnexpectedClose(code: number, reason: string): void {
+  async #handleUnexpectedClose(code: number, reason: string): Promise<void> {
     // anti-clobber (slice surface-real-error, Commit 1, §4/§9 Q1): אם כבר מוצגת שגיאה
     // ספציפית (attach/loadSession/switchSession/newSession catch) — אל תדרוס אותה
     // ב-"WS closed" הגנרי. status="error" נקבע רק ע"י אותם catch-ים.
     if (this.status === "error" && this.error) return
-    this.error = `WS closed (${code}): ${reason || "no reason"}`
+    // best-effort crash-path (slice surface-real-error Commit 3): ה-child אולי קרס
+    // עם סיבה ידועה (ENOENT/credit/native-binary) — describeCrash ב-BE כותב crashReason.
+    // null-guard (אביגיל #1): this.agentId הוא $state<string|null> — getAgent דורש string.
+    // בלי agentId אין מה למשוך → fallback מיידי ל-WS closed (בלי network call).
+    const info = this.agentId ? await getAgent(this.agentId).catch(() => null) : null
+    if (info?.agent.status === "crashed" && info.agent.crashReason) {
+      this.error = info.agent.crashReason
+    } else {
+      this.error = `WS closed (${code}): ${reason || "no reason"}`
+    }
     if (this.#pageHidden) {
       this.#setStatus("disconnected") // רקע — לא אוטו
       return
@@ -756,7 +767,7 @@ export class AgentSession {
       transport.onClose((code, reason) => {
         if (this.#detached) return
         if (this.#tearingDown) return // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
-        if (code !== 1000 && code !== 1001) this.#handleUnexpectedClose(code, reason)
+        if (code !== 1000 && code !== 1001) void this.#handleUnexpectedClose(code, reason)
       })
 
       try {
@@ -850,7 +861,7 @@ export class AgentSession {
         if (this.#detached) return
         if (this.#tearingDown) return // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
         if (code !== 1000 && code !== 1001) {
-          this.#handleUnexpectedClose(code, reason)
+          void this.#handleUnexpectedClose(code, reason)
         }
       })
       await transport.waitForOpen()
@@ -1157,7 +1168,7 @@ export class AgentSession {
         if (this.#detached) return
         if (this.#tearingDown) return // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
         if (code !== 1000 && code !== 1001) {
-          this.#handleUnexpectedClose(code, reason)
+          void this.#handleUnexpectedClose(code, reason)
         }
       })
       await transport.waitForOpen()

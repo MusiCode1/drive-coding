@@ -7,7 +7,7 @@
  *  - לוגיקת ה-timeout עצמה מכוסה ב-with-timeout.test.ts (core).
  *  - כאן בודקים: fetch נקרא נכון, timeout דוחה, חתימות שמורות.
  */
-import { describe, expect, it, vi, beforeEach } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("@drive-coding/core/async/with-timeout", () => ({
   withTimeout: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock("$lib/util/be-url", () => ({
 }))
 
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
-import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "./agents-api"
+import { createAgent, deleteAgent, getAgent, listAgents, notifySessionAttached } from "./agents-api"
 
 const mockWithTimeout = withTimeout as ReturnType<typeof vi.fn>
 
@@ -82,9 +82,9 @@ describe("createAgent", () => {
   it("timeout — withTimeout זורק → createAgent זורק", async () => {
     mockWithTimeout.mockRejectedValue(new Error("createAgent timeout 10000ms"))
 
-    await expect(
-      createAgent({ cwd: "/tmp", cliKind: "opencode" }),
-    ).rejects.toThrow("createAgent timeout 10000ms")
+    await expect(createAgent({ cwd: "/tmp", cliKind: "opencode" })).rejects.toThrow(
+      "createAgent timeout 10000ms",
+    )
   })
 
   it("שגיאת HTTP — fetch מחזיר ok=false → זורק עם status", async () => {
@@ -98,9 +98,9 @@ describe("createAgent", () => {
       }),
     )
 
-    await expect(
-      createAgent({ cwd: "/tmp", cliKind: "opencode" }),
-    ).rejects.toThrow("createAgent failed: 500 internal error")
+    await expect(createAgent({ cwd: "/tmp", cliKind: "opencode" })).rejects.toThrow(
+      "createAgent failed: 500 internal error",
+    )
   })
 })
 
@@ -224,5 +224,53 @@ describe("notifySessionAttached", () => {
     await expect(notifySessionAttached("ag1", "sess1")).rejects.toThrow(
       "notifySessionAttached timeout 10000ms",
     )
+  })
+})
+
+// ─── getAgent ──────────────────────────────────────────────────────────────────
+// slice surface-real-error Commit 3: מרחיב את getAgent להחזיר crashReason (§4).
+
+describe("getAgent", () => {
+  it("happy path — status רגיל, בלי crashReason", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ agent: { cwd: "/tmp", status: "ready" } }),
+      }),
+    )
+
+    const result = await getAgent("agent-1")
+
+    expect(result).toEqual({ agent: { cwd: "/tmp", status: "ready" } })
+  })
+
+  it("status=crashed עם crashReason — מוחזר כחלק מה-agent", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          agent: { cwd: "/tmp", status: "crashed", crashReason: "ENOENT: binary not found" },
+        }),
+      }),
+    )
+
+    const result = await getAgent("agent-2")
+
+    expect(result.agent.crashReason).toBe("ENOENT: binary not found")
+    expect(result.agent.status).toBe("crashed")
+  })
+
+  it("שגיאת HTTP — ok=false → זורק עם status", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+      }),
+    )
+
+    await expect(getAgent("missing-agent")).rejects.toThrow("getAgent failed: 404")
   })
 })
