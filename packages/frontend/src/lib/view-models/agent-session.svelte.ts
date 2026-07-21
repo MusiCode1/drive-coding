@@ -53,6 +53,8 @@ import type { ElicitationParams, ElicitationResponse } from "$lib/types/elicitat
 import type { PermissionParams, PermissionResponse } from "$lib/types/permission"
 // ─── slice leave-running-background ───
 import { isBypassMode } from "$lib/util/permission-mode"
+// ─── slice surface-real-error: עדיפות data.details→data.message→message→String(e) ───
+import { formatAcpError } from "$lib/view-models/format-acp-error"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 // ─── image-attach kill-switch ─── (slice-image-paste Commit 2)
@@ -514,6 +516,14 @@ export class AgentSession {
   _doReconnectForTest(): Promise<void> {
     return this.#doReconnect()
   }
+  /**
+   * @internal קורא ישירות ל-#handleUnexpectedClose (slice surface-real-error Commit 1:
+   * anti-clobber gate-test). מזמן pageHidden=true (stub document ב-beforeEach) לפני
+   * construct — כדי שהענף "disconnected" ירוץ ולא #scheduleReconnect (async מודלף).
+   */
+  _handleUnexpectedCloseForTest(code: number, reason: string): void {
+    this.#handleUnexpectedClose(code, reason)
+  }
 
   // ─── slice ws-reconnect-infra: reconnect helpers ────────────────────────────
 
@@ -551,6 +561,10 @@ export class AgentSession {
    * רקע → disconnected (ממתין ל-reconnect ידני); פוקוס → backoff אוטומטי.
    */
   #handleUnexpectedClose(code: number, reason: string): void {
+    // anti-clobber (slice surface-real-error, Commit 1, §4/§9 Q1): אם כבר מוצגת שגיאה
+    // ספציפית (attach/loadSession/switchSession/newSession catch) — אל תדרוס אותה
+    // ב-"WS closed" הגנרי. status="error" נקבע רק ע"י אותם catch-ים.
+    if (this.status === "error" && this.error) return
     this.error = `WS closed (${code}): ${reason || "no reason"}`
     if (this.#pageHidden) {
       this.#setStatus("disconnected") // רקע — לא אוטו
@@ -867,8 +881,7 @@ export class AgentSession {
       // ─── slice-restore-last-config: החל בחירות אחרונות (אחרי connected — חובה) ───
       await this.#applyRememberedConfig()
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      this.error = msg
+      this.error = formatAcpError(e)
       this.#setStatus("error")
       this.#cleanup()
     }
@@ -1181,8 +1194,7 @@ export class AgentSession {
 
       this.#setStatus("connected")
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      this.error = `loadSession failed: ${msg}`
+      this.error = `loadSession failed: ${formatAcpError(e)}`
       this.#setTurnState("idle") // NBug3: throw מוקדם (createAgent/waitForOpen) — ה-finally הפנימי לא רץ
       this.#setStatus("error")
       this.#cleanup()
@@ -1305,8 +1317,7 @@ export class AgentSession {
 
       this.#setStatus("connected")
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      this.error = `switchSession failed: ${msg}`
+      this.error = `switchSession failed: ${formatAcpError(e)}`
       this.#setTurnState("idle") // NBug3: throw מוקדם — ה-finally הפנימי אולי לא רץ
       this.#setStatus("error")
       // לא #cleanup — החיבור עדיין תקין; רק הטעינה נכשלה. השאר את ה-#client חי.
@@ -1361,8 +1372,7 @@ export class AgentSession {
       // ─── slice-restore-last-config: החל בחירות אחרונות (אחרי connected — חובה) ───
       await this.#applyRememberedConfig()
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      this.error = `newSession failed: ${msg}`
+      this.error = `newSession failed: ${formatAcpError(e)}`
       this.#setStatus("error")
       // לא #cleanup — החיבור עדיין תקין; רק יצירת הסשן נכשלה. השאר את ה-#client חי.
     }
