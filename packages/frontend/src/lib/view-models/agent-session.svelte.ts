@@ -1887,6 +1887,19 @@ export class AgentSession {
       return
     }
 
+    // ─── slice session-titles Commit 0: session_info_update (ACP תקני) ─────
+    // לא נושא content.text — חובה לטפל בו לפני ה-gate `if (!text) return`.
+    // semantics עקבי עם ה-keep-on-undefined הקיים ב-sessionTitle setter paths (:999, :1114).
+    if (update.sessionUpdate === "session_info_update") {
+      // SessionInfoUpdate: title?: string | null; updatedAt?: string | null (types.gen.d.ts:3905)
+      const title = (update as { title?: string | null }).title
+      if (title === null)
+        this.sessionTitle = "" // null = clear (לפי הסכמה)
+      else if (typeof title === "string") this.sessionTitle = title
+      // undefined → keep-on-undefined (עקבי עם loadSession :999 / :1114)
+      return
+    }
+
     // §11: dispatch לפי contentType לפני ה-gate — כך user_message_chunk עם image/audio/resource_link
     // לא נזרק בשקט. ה-gate למטה חל רק על agent_message_chunk ו-agent_thought_chunk (text-only).
     const messageId = update.messageId ?? null
