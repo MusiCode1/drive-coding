@@ -8,6 +8,9 @@
  *
  * pageHidden=true (כמו agent-session.error-surface.test.svelte.ts) — עוקף
  * #scheduleReconnect כדי לא להצית async מודלף/network אמיתי דרך #runReconnectLoop.
+ *
+ * עודכן ב-Commit 4 (calev-heavy §10.2): ה-anti-clobber guard עבר מ-`status==="error"`
+ * ל-flag ייעודי `#errorSurfaced` — טסט האנטי-קלובר כאן מדמה זאת דרך _setErrorSurfacedForTest.
  */
 
 import { beforeEach, describe, expect, test, vi } from "vitest"
@@ -85,12 +88,14 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
     expect(getAgentMock).not.toHaveBeenCalled()
   })
 
-  test("anti-clobber (Commit 1) שורד גם עם המסלול ה-async: getAgent לא נקרא אם כבר יש error", async () => {
+  test("anti-clobber (Commit 1, flag ב-Commit 4/calev-heavy §10.2) שורד גם עם המסלול ה-async: getAgent לא נקרא אם כבר יש שגיאה טרמינלית", async () => {
     const session = new AgentSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any).agentId = "agent-4"
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setStatusForTest("error")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._setErrorSurfacedForTest(true) // מדמה attach/loadSession catch טרמינלי
     session.error = "specific error from attach catch"
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

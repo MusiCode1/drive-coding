@@ -232,6 +232,7 @@ describe("notifySessionAttached", () => {
 
 describe("getAgent", () => {
   it("happy path — status רגיל, בלי crashReason", async () => {
+    mockWithTimeout.mockImplementation(passthroughWithTimeout)
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -243,9 +244,15 @@ describe("getAgent", () => {
     const result = await getAgent("agent-1")
 
     expect(result).toEqual({ agent: { cwd: "/tmp", status: "ready" } })
+    expect(mockWithTimeout).toHaveBeenCalledWith(
+      expect.any(Function),
+      10000,
+      expect.objectContaining({ label: "getAgent" }),
+    )
   })
 
   it("status=crashed עם crashReason — מוחזר כחלק מה-agent", async () => {
+    mockWithTimeout.mockImplementation(passthroughWithTimeout)
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -263,6 +270,7 @@ describe("getAgent", () => {
   })
 
   it("שגיאת HTTP — ok=false → זורק עם status", async () => {
+    mockWithTimeout.mockImplementation(passthroughWithTimeout)
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -272,5 +280,31 @@ describe("getAgent", () => {
     )
 
     await expect(getAgent("missing-agent")).rejects.toThrow("getAgent failed: 404")
+  })
+
+  it("מקבל signal חיצוני ומעביר אותו ל-withTimeout", async () => {
+    mockWithTimeout.mockImplementation(passthroughWithTimeout)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ agent: { cwd: "/tmp", status: "ready" } }),
+      }),
+    )
+
+    const ac = new AbortController()
+    await getAgent("agent-3", ac.signal)
+
+    expect(mockWithTimeout).toHaveBeenCalledWith(
+      expect.any(Function),
+      10000,
+      expect.objectContaining({ signal: ac.signal }),
+    )
+  })
+
+  it("timeout — withTimeout זורק → getAgent זורק (Commit 4, calev §10.1)", async () => {
+    mockWithTimeout.mockRejectedValue(new Error("getAgent timeout 10000ms"))
+
+    await expect(getAgent("agent-4")).rejects.toThrow("getAgent timeout 10000ms")
   })
 })

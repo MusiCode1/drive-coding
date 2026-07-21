@@ -65,11 +65,20 @@ export async function listAgents(signal?: AbortSignal): Promise<AgentPublic[]> {
  * `describeCrash` ב-BE כש-status="crashed"). צרכן: `#handleUnexpectedClose` בסלייס
  * surface-real-error, Commit 3 — best-effort לזיהוי child-crash (ENOENT/credit/וכו')
  * אחרי סגירת WS לא-צפויה, כדי להציג את הסיבה האמיתית במקום "WS closed" גנרי.
+ *
+ * עטוף ב-withTimeout (calev-heavy §10.1, Commit 4): קריאה חשופה בלי timeout הייתה
+ * חוסמת את ה-reconnect אם ה-BE תקוע/לא-נגיש — `#handleUnexpectedClose` ממתין ל-getAgent
+ * לפני `#scheduleReconnect()`, ו-`.catch()` לא עוזר ל-hang.
  */
 export async function getAgent(
   agentId: string,
+  signal?: AbortSignal,
 ): Promise<{ agent: { cwd: string; status: string; crashReason?: string } }> {
-  const res = await fetch(beUrl(`/api/agents/${agentId}`))
+  const res = await withTimeout(
+    (s) => fetch(beUrl(`/api/agents/${agentId}`), { signal: s }),
+    AGENTS_API_TIMEOUT_MS,
+    { signal, label: "getAgent" },
+  )
   if (!res.ok) {
     throw new Error(`getAgent failed: ${res.status}`)
   }
