@@ -69,6 +69,10 @@ const IMAGE_INPUT_ENABLED = true
 // NormalizedCapabilities מגיע מ-_drive/capabilities (BE) — לא מושפע.
 const ATTACHED_CAPS_FALLBACK = {} as AcpClient["capabilities"]
 
+// ─── slice plan-todo-list Commit 1: reducer טהור + טיפוסים ─── (additive)
+import { EMPTY_PLAN_STORE, type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
+// ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
+import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 // ─── slice FE-normalization: ייבוא ─── (additive)
 // import type בלבד — NormalizedCapabilities מ-subpath ./types (pure, ללא spawn-core).
 // ⚠️ אל תייבא value מ-@drive-coding/provider/host → יגרור spawn-core → vite crash.
@@ -81,10 +85,6 @@ import {
   parseClaudeSdkMessage,
   reduceSubagent,
 } from "./claude-subagent-parse"
-// ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
-import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
-// ─── slice plan-todo-list Commit 1: reducer טהור + טיפוסים ─── (additive)
-import { EMPTY_PLAN_STORE, type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
 
 /**
  * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries
@@ -178,6 +178,9 @@ export class AgentSession {
   turnState = $state<TurnState>("idle")
   error = $state<string | null>(null)
   bubbles = $state<Bubble[]>([])
+  // ─── slice reconnect-bubble-merge: frozen display בזמן warm-reconnect replay ───
+  /** לא-null רק בזמן warm-reconnect replay (#warmReconnect) — מקפיא את התצוגה על הרשימה הישנה. */
+  #displaySnapshot = $state<Bubble[] | null>(null)
   agentId = $state<string | null>(null)
   cwd = $state<string | null>(null)
   // ─── slice ws-reconnect-infra: reconnect state ─── (INVASIVE — מאושר)
@@ -252,6 +255,17 @@ export class AgentSession {
   quota = $state<QuotaSnapshot | null>(null)
   /** True בזמן בקשת `refreshQuota()` פעילה. */
   quotaLoading = $state(false)
+
+  // ─── slice reconnect-bubble-merge: render-consumers (additive) ───
+  /** רשימת התצוגה. בזמן warm-reconnect replay מוקפאת ל-snapshot; אחרת = live bubbles. */
+  get renderBubbles(): Bubble[] {
+    return this.#displaySnapshot ?? this.bubbles
+  }
+
+  /** true רק בזמן warm-reconnect replay (התצוגה קפואה). לא נדלק בטעינה ראשונית/switchSession. */
+  get isReconnectReplay(): boolean {
+    return this.#displaySnapshot !== null
+  }
 
   // ─── image-attach: capability gating ─── (slice-image-paste, additive)
   /**
@@ -762,6 +776,8 @@ export class AgentSession {
           { capabilities: ATTACHED_CAPS_FALLBACK },
         )
         this.#ext = createExtClient(this.#client)
+        // ─── slice reconnect-bubble-merge: הקפא את התצוגה לפני ה-replay ───
+        this.#displaySnapshot = this.bubbles
         this.bubbles = []
         this.isLoadingHistory = true
         try {
@@ -775,6 +791,8 @@ export class AgentSession {
         } finally {
           this.isLoadingHistory = false
           this.#setTurnState("idle") // replay מסתיים — reset turnState (replay אינו תור). מתאם ל-loadSession/switchSession; בלעדיו אינדיקטור "המודל פועל" נתקע אחרי warm-reconnect (ה-turn-tracker observe על frames משוחזרים)
+          // ─── slice reconnect-bubble-merge: חשוף את הרשימה הטרייה (הצלחה או כישלון) ───
+          this.#displaySnapshot = null
         }
         // replace:true — אותו דגם כמו switchSession:327 (fix-409 מוזג ב-8f59ec3)
         await notifySessionAttached(agentId, this.#sessionId!, { replace: true }).catch(() => {})

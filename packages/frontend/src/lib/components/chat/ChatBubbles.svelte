@@ -40,7 +40,7 @@ $effect(() => {
   <Virtualizer
     bind:this={handle}
     scrollRef={chatScroll.scrollEl}
-    data={session.bubbles}
+    data={session.renderBubbles}
     getKey={stableBubbleKey}
     startMargin={80}
   >
@@ -71,7 +71,7 @@ $effect(() => {
     />
   {/key}
 {/if}
-{#if session.bubbles.length === 0}
+{#if session.renderBubbles.length === 0}
   <div class="empty">{t("chat.empty")}</div>
 {/if}
 
