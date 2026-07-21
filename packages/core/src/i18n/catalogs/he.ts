@@ -334,10 +334,16 @@ export const he: Catalog = {
   "projectPrompt.label": "פרומפט מערכת לפרויקט",
   "projectPrompt.placeholder": "לדוגמה: תמיד ענה בקצרה, ופתח כל תשובה בעברית...",
   "projectPrompt.hint": "מתווסף להוראות ברירת-המחדל של הסוכן. השינוי חל מהסשן הבא.",
+<<<<<<< HEAD
   // ─── panel resize handle ─── (slice connect-panel-resize)
   "connect.panel.resizeHandle": "גרור לשינוי גובה",
   // ─── machine-stats ─── (slice-be-machine-stats)
   "connect.machine.memory": "זיכרון",
   "connect.machine.cpu": "מעבד",
   "connect.machine.label": "עומס מכונה",
+=======
+  // ─── session delete ─── (slice session-delete)
+  "session.delete": "מחק",
+  "session.deleteConfirm": "בטוח? מחיקת סשן",
+>>>>>>> slice/session-delete
 }

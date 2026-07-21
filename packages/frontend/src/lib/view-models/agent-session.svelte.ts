@@ -240,6 +240,18 @@ export class AgentSession {
     )
   }
 
+  // ─── slice session-delete: capability gating ─── (additive)
+  /**
+   * האם הסוכן מכריז `sessionCapabilities.delete` — raw ACP caps (`#client.capabilities`),
+   * **לא** NormalizedCapabilities (capability סטנדרטי של הפרוטוקול, אחיד בין ספקים —
+   * הנרמול שמור לחוץ-פרוטוקוליים בלבד. החלטת המשתמשת 2026-07-20).
+   * ⚠️ warm-reattach: אין initialize טרי → `#client` נוצר עם `ATTACHED_CAPS_FALLBACK` ריק →
+   * false עד connect קר חדש. מקובל ל-MVP (עקבי עם המגבלה הידועה של `supportsImageInput`).
+   */
+  get supportsSessionDelete(): boolean {
+    return this.#client?.capabilities?.sessionCapabilities?.delete != null
+  }
+
   // ─── slice FE-normalization: capabilities + gating ─── (additive)
 
   /**
@@ -1448,6 +1460,42 @@ export class AgentSession {
     } finally {
       this.sessionsLoading = false
     }
+  }
+
+  // ─── slice session-delete: מחיקת סשן (session/delete) ─── (תוספתי)
+  /**
+   * מוחק session מ-`session/list` (store/persistence) דרך ACP `session/delete` — **לא**
+   * הורג את ה-process (זה נעשה בנפרד ע"י `DELETE /api/agents/:id`, מסלול שונה — §1 הבריף).
+   * no-op אם אין חיבור פעיל (`#client===null`) — גם הכפתור אמור להיות מוסתר (gate).
+   *
+   * אם הסשן הנמחק הוא הסשן הפעיל (`#sessionId`) → `detach()` (ניווט-החוצה, עקבי עם
+   * `onDisconnect` הקיים ב-`SessionOptionsPanel`) — אין טעם להשאיר תהליך חי לסשן שכבר לא
+   * קיים ב-`session/list`; ה-UI (route) מגיב ל-`status` שהופך ל-`idle` ומנווט.
+   *
+   * -32601 (method not found — הכפתור לא אמור להופיע בכלל אם ה-gate תקין, אבל defensive)
+   * מטופל בעדינות כמו `listSessions` — לא נזרק ל-UI כשגיאה.
+   */
+  /**
+   * מוחק סשן מ-`session/list`. מחזיר `true` אם נמחק הסשן ה**פעיל** — כדי שהקומפוננטה
+   * תנווט החוצה (`goto("/")`), עקבי עם דפוס `onDisconnect`/`doLeaveRunning` שבו הניווט
+   * חי בשכבת הקומפוננטה ולא ב-VM. (calev NO-GO fix: DoD #7 — active-delete השאיר /chat ריק.)
+   */
+  deleteSession = async (sessionId: string): Promise<boolean> => {
+    if (this.#client === null) return false
+    try {
+      await this.#client.deleteSession(sessionId)
+    } catch (e) {
+      if ((e as { code?: number }).code === -32601) return false // הכפתור מוסתר; defensive no-op
+      this.sessionsError = e instanceof Error ? e.message : String(e)
+      return false
+    }
+    // הסרה אופטימית — ה-ACP call כבר אישר את המחיקה, אין צורך בעוד round-trip (listSessions(true)).
+    this.sessions = this.sessions.filter((s) => s.sessionId !== sessionId)
+    const wasActive = sessionId === this.#sessionId
+    if (wasActive) {
+      this.detach() // מנקה גם sessions/sessionsLoaded/sessionsError — עקבי עם onDisconnect
+    }
+    return wasActive // הקומפוננטה מנווטת החוצה כשזה true
   }
 
   // ─── הקלטות (recordings) ─── (יתווסף ב-slice 10)
