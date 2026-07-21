@@ -880,13 +880,26 @@ export class AgentSession {
 
   /** יציאה מהסשן בלי להרוג את הסוכן ב-BE — ה-child שורד (ws-agent.ts:126),
    *  ה-WS נסגר, ה-VM מתאפס ל-idle. מאפשר reconnect/חזרה דרך רשימת-התהליכים.
-   *  ⚠️ סנכרן גוף זה מול detach() אם detach() משתנה — ההבדל היחיד: cleanup({keepAgent:true}). */
-  leaveRunning = (): void => {
+   *  ⚠️ סנכרן גוף זה מול detach() אם detach() משתנה. הבדלים מ-detach: cleanup({keepAgent:true})
+   *  + flush של permission ה-pending לפני הסגירה (למטה). */
+  leaveRunning = async (): Promise<void> => {
     this.#detached = true
     this.#clearReconnectTimer()
     this.#reconnecting = false
     this.reconnectAttempt = 0
-    this.#cleanup({ keepAgent: true }) // ← ההבדל היחיד מ-detach
+    // slice-permission-ui-basic fix (calev NO-GO — "יציאה בלי כיבוי" תקעה את הסוכן):
+    // ב-keepAgent ה-agent שורד וממתין לתשובת permission. חייבים למסור לו cancelled *לפני*
+    // סגירת ה-WS. #resolvePendingPermission פותר את ה-Promise, אבל השליחה בפועל היא microtask;
+    // setTimeout(0) (macrotask) נותן ל-ws.send לרוץ בזמן שה-WS עוד פתוח, ואז #cleanup סוגר.
+    // (detach לא נפגע — הוא הורג את ה-agent, אין מי שממתין.)
+    // slice-elicitation-ui: אותו טיפול גם ל-elicitation ה-pending — ה-agent ששרד ממתין
+    // לתשובת unstable_createElicitation; חייבים למסור לו cancel לפני סגירת ה-WS.
+    if (this.pendingPermission || this.pendingElicitation) {
+      this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
+      this.#resolvePendingElicitation({ action: "cancel" })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    this.#cleanup({ keepAgent: true }) // ← ההבדל מ-detach
     this.#setStatus("idle")
     this.error = null
     this.bubbles = []
@@ -1705,6 +1718,13 @@ export class AgentSession {
     // keepAgent=true = leaveRunning — FE מודיע ל-BE שהוא עוזב מרצון.
     // ה-BE מקבל $/detach → markDetached מיד → reconnect-ghost נסגר מיידית
     // (במקום לחכות ל-sweep של ה-WS אחרי 60s).
+    // slice-permission-ui-basic: פתור pending כ-cancelled **לפני** סגירת ה-#client — אחרת
+    // התשובה נשלחת על חיבור סגור ואובדת. קריטי ל-keepAgent (leaveRunning) שבו ה-agent שורד
+    // וממתין לתשובה; leaveRunning גם ממתין ל-flush (setTimeout 0) לפני שמגיע לכאן. מכסה
+    // detach() (agent נהרג ממילא) + attach/loadSession כשל.
+    this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
+    // slice-elicitation-ui: אותו דפוס — פתור גם elicitation ה-pending לפני close.
+    this.#resolvePendingElicitation({ action: "cancel" })
     if (opts?.keepAgent && this.#transport) {
       this.#transport.sendRaw(`${JSON.stringify({ jsonrpc: "2.0", method: "$/detach" })}\n`)
     }
@@ -1714,11 +1734,6 @@ export class AgentSession {
       // כבר סגור
     }
     this.#client = null
-    // slice-permission-ui-basic: #client התאפס — פתור pending כ-cancelled (הסיכון #1).
-    // מכסה detach() + leaveRunning() (שניהם מנתבים ל-#cleanup) + attach/loadSession כשל.
-    this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
-    // slice-elicitation-ui: אותו דפוס — מכסה אותם 3 נתיבים לשאלה מובנת ממתינה.
-    this.#resolvePendingElicitation({ action: "cancel" })
     this.#ext = null // slice FE-normalization: נקה facade
     this.#capabilities = null // slice FE-normalization: נקה capabilities (חיבור חדש = caps חדשים)
     this.contextUsage = null // slice session-budget-meter: נקה context-usage (חיבור חדש = caps חדשים)
