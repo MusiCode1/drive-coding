@@ -363,6 +363,19 @@ export type MessageKey =
   | "elicitation.decline"
   | "elicitation.cancel"
   | "elicitation.required"
+  // ─── gemini directing (קצב/טון) ─── (slice-gemini-tts-directing)
+  | "settings.geminiPace.label"
+  | "settings.geminiPace.verySlow"
+  | "settings.geminiPace.slow"
+  | "settings.geminiPace.normal"
+  | "settings.geminiPace.fast"
+  | "settings.geminiPace.veryFast"
+  | "settings.geminiTone.label"
+  | "settings.geminiTone.neutral"
+  | "settings.geminiTone.calm"
+  | "settings.geminiTone.energetic"
+  | "settings.geminiTone.formal"
+  | "settings.geminiTone.casual"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

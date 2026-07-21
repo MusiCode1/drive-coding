@@ -358,4 +358,17 @@ export const en: Catalog = {
   "elicitation.decline": "Decline",
   "elicitation.cancel": "Cancel",
   "elicitation.required": "Required",
+  // ─── gemini directing (pace/tone) ─── (slice-gemini-tts-directing)
+  "settings.geminiPace.label": "Speech pace",
+  "settings.geminiPace.verySlow": "Very slow",
+  "settings.geminiPace.slow": "Slow",
+  "settings.geminiPace.normal": "Normal",
+  "settings.geminiPace.fast": "Fast",
+  "settings.geminiPace.veryFast": "Very fast",
+  "settings.geminiTone.label": "Tone",
+  "settings.geminiTone.neutral": "Neutral",
+  "settings.geminiTone.calm": "Calm",
+  "settings.geminiTone.energetic": "Energetic",
+  "settings.geminiTone.formal": "Formal",
+  "settings.geminiTone.casual": "Casual",
 }
