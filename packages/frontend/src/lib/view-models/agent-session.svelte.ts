@@ -633,6 +633,13 @@ export class AgentSession {
       this.#setStatus("disconnected")
       return
     }
+    // slice reconnect-bubble-merge, תיקון-במקום 2 (calev NO-GO r2 2026-07-22): הקפא
+    // כאן — בראש #doReconnect — ולא בתוך #warmReconnect. בניתוק-רשת מוחלט גם
+    // #findReusableAgent (listAgents) נכשל → מדלגים על warm לגמרי ונכנסים ישר ל-cold;
+    // הקפאה שהייתה רק בתוך #warmReconnect לא כיסתה את הנתיב הזה → coldReconnect איפס
+    // את bubbles ל-[] בלי snapshot → המסך התרוקן. כאן זה מכסה warm, warm→cold, וגם
+    // cold-ישיר. idempotent — לא דורס snapshot טוב שנשאר מניסיון קודם/backoff.
+    if (this.#displaySnapshot === null) this.#displaySnapshot = this.bubbles
     // NBug2 root: סגור WS חי והמתן לאישור לפני warm
     if (this.#transport) {
       await this.#transport.closeAndWait()
@@ -776,11 +783,9 @@ export class AgentSession {
           { capabilities: ATTACHED_CAPS_FALLBACK },
         )
         this.#ext = createExtClient(this.#client)
-        // ─── slice reconnect-bubble-merge: הקפא את התצוגה לפני ה-replay ───
-        // idempotent — כדי ש-retry (MED-8) לא ידרוס snapshot טוב ב-[] שנשאר מניסיון קודם
-        // (INVARIANT: ה-snapshot חייב לשרוד את כל ה-reconnect, כולל כשלים/backoff/warm→cold —
-        // ר' באג preview 2026-07-22: שחרור ב-finally גם בכשל מחק את ההודעות).
-        if (this.#displaySnapshot === null) this.#displaySnapshot = this.bubbles
+        // slice reconnect-bubble-merge, תיקון-במקום 2: ההקפאה עצמה עברה לקריאה
+        // (#doReconnect / attachToLiveAgent) — לא כאן. #warmReconnect לבדו לא מכסה
+        // ניתוק-רשת מוחלט שמדלג עליו לגמרי (ר' calev NO-GO r2 2026-07-22).
         this.bubbles = []
         this.isLoadingHistory = true
         try {
@@ -1256,6 +1261,10 @@ export class AgentSession {
     this.cwd = input.cwd
     this.#cliKind = input.cliKind
     this.sessionTitle = "" // slice session-title: process חי בלי title → fallback ל-"drive-coding"
+    // slice reconnect-bubble-merge, תיקון-במקום 2: מסלול-attach הזה קורא ל-#warmReconnect
+    // ישירות, בלי לעבור דרך #doReconnect — לכן ההקפאה (שעברה לראש #doReconnect) לא
+    // הייתה מכסה אותו. הקפא גם כאן (idempotent, כמו ב-#doReconnect).
+    if (this.#displaySnapshot === null) this.#displaySnapshot = this.bubbles
     const ok = await this.#warmReconnect(input.agentId)
     if (!ok) {
       this.error = "reconnect failed: agent no longer available"

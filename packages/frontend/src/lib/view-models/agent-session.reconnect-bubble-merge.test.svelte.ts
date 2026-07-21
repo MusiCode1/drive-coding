@@ -18,6 +18,11 @@
  *      לא משתחרר בכשל — רק בהצלחה.
  *   5. (fix preview 2026-07-22, DoD#12): אחרי כשל — ניסיון-חוזר שמצליח משחרר את
  *      ה-snapshot ומגלה את הרשימה הטרייה (chokepoint משותף ל-warm/cold ב-#setStatus).
+ *   6. (תיקון-במקום 2, calev NO-GO r2 2026-07-22, DoD#12b): ניתוק-רשת מוחלט —
+ *      listAgents() (#findReusableAgent) נכשל → #doReconnect מדלג על warm לגמרי
+ *      ונכנס ישר ל-cold-ישיר → loadSession (createAgent) נכשל גם הוא → renderBubbles
+ *      עדיין מחזיר את הבועות הישנות (לא []). זה הבאג שה-fix הראשון (9c0ac8f, שהקפיא
+ *      רק בתוך #warmReconnect) לא כיסה — ההקפאה עברה לראש #doReconnect.
  */
 
 import { beforeEach, describe, expect, test, vi } from "vitest"
@@ -181,5 +186,35 @@ describe("AgentSession — frozen display snapshot ב-warm-reconnect (Commit 1)"
     expect(session.status).toBe("connected")
     expect(session.isReconnectReplay).toBe(false) // עכשיו כן משתחרר — הצליח
     expect(session.renderBubbles).toBe(session.bubbles)
+  })
+
+  test("BUG calev NO-GO r2 (DoD#12b): ניתוק-רשת מוחלט → cold-ישיר → renderBubbles נשאר על הבועות הישנות", async () => {
+    const session = new AgentSession()
+    const oldBubbles = [makeMessage("old-1", "hello")]
+    session.bubbles = oldBubbles
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._setSessionContextForTest({
+      sessionId: "sess-1",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+
+    // ניתוק-רשת מוחלט: גם listAgents (#findReusableAgent) וגם createAgent (בתוך
+    // #coldReconnect→loadSession) נכשלים — "Failed to fetch". #findReusableAgent
+    // בולע את השגיאה ומחזיר null → #doReconnect מדלג על warm לגמרי ונכנס ישר ל-cold.
+    const { listAgents, createAgent } = await import("$lib/adapters/agents-api")
+    vi.mocked(listAgents).mockRejectedValueOnce(new Error("Failed to fetch"))
+    vi.mocked(createAgent).mockRejectedValueOnce(new Error("Failed to fetch"))
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (session as any)._doReconnectForTest()
+
+    // loadSession (הקוד הקיים, לא-נוגעים) עדיין מאפס bubbles=[] בתחילתו — כצפוי.
+    expect(session.status).toBe("error")
+    expect(session.bubbles).toEqual([])
+    // ← זה הבאג: לפני התיקון (הקפאה רק בתוך #warmReconnect) renderBubbles===[] כאן,
+    // כי cold-ישיר מדלג על #warmReconnect לגמרי ואף אחד לא הקפיא.
+    expect(session.renderBubbles).toEqual(oldBubbles)
+    expect(session.isReconnectReplay).toBe(true) // עדיין קפוא — לא reveal בכשל
   })
 })
