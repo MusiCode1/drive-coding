@@ -340,4 +340,18 @@ export const he: Catalog = {
   "connect.machine.memory": "זיכרון",
   "connect.machine.cpu": "מעבד",
   "connect.machine.label": "עומס מכונה",
+  // ─── session delete ─── (slice session-delete)
+  "session.delete": "מחק",
+  "session.deleteConfirm": "בטוח? מחיקת סשן",
+  // ─── permission ─── (slice-permission-ui-basic)
+  "permission.title": "בקשת הרשאה",
+  "permission.allowOnce": "אשר פעם",
+  "permission.allowAlways": "אשר תמיד",
+  "permission.reject": "דחה",
+  "permission.pending": "ממתין להחלטה",
+  // ─── elicitation ─── (slice-elicitation-ui)
+  "elicitation.accept": "שלח",
+  "elicitation.decline": "דחה",
+  "elicitation.cancel": "ביטול",
+  "elicitation.required": "שדה חובה",
 }

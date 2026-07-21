@@ -21,7 +21,10 @@
  *   - Auto-reconnect — לא מטופל באף שכבה. ה-UI מציג פרומפט "רענן".
  */
 import type {
+  Client,
   ClientSideConnection as ClientSideConnectionType,
+  CreateElicitationRequest,
+  CreateElicitationResponse,
   NewSessionRequest,
   SessionNotification,
   SetSessionConfigOptionResponse,
@@ -96,6 +99,12 @@ export type AcpClient = {
     _meta?: AcpRequestMeta
   }): ReturnType<ClientSideConnection["loadSession"]>
   listSessions(): ReturnType<ClientSideConnection["listSessions"]>
+  // ─── slice session-delete: Commit 0 ───
+  /**
+   * מוחק session מ-`session/list` (store/persistence) — **לא** הורג את ה-process.
+   * זמין רק אם הסוכן מכריז `sessionCapabilities.delete` (raw capabilities, `client.capabilities`).
+   */
+  deleteSession(sessionId: string): Promise<void>
   // ─── slice-image-paste: Commit 4a — backward-compatible (string עדיין עובד) ───
   prompt(
     sessionId: string,
@@ -123,10 +132,32 @@ export type AcpClient = {
   extMethod(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>>
 }
 
+/** נגזר מ-SDK — לא shape מותאם; drift אפס. ר' docs/plans/slice-permission-ui-basic.md §4 Commit 0. */
+type PermissionParams = Parameters<Client["requestPermission"]>[0]
+type PermissionResponse = Awaited<ReturnType<Client["requestPermission"]>>
+
+/**
+ * ─── slice-elicitation-ui: elicitation/create ─── ייבוא ישיר (לא Parameters<Client[...]>
+ * — unstable_createElicitation אופציונלי על Client → נכשל ב-TS2344). ר' docs/plans/
+ * slice-elicitation-ui.md §4 Commit 0.
+ */
+type ElicitationParams = CreateElicitationRequest
+type ElicitationResponse = CreateElicitationResponse
+
 export type AcpClientCallbacks = {
   onUpdate: (n: SessionNotification) => void
   /** ─── slice FE-normalization: קבלת ext notifications (כולל _drive/capabilities) ─── */
   onExtNotification?: (method: string, params: Record<string, unknown>) => void
+  /**
+   * ─── slice-permission-ui-basic: בקשת הרשאה חיה ─── ללא handler → auto-allow (client-impl.ts).
+   * דפוס גנרי ניתן-לשכפול — slice B (elicitation) ישכפל אותו ל-onCreateElicitation.
+   */
+  onRequestPermission?: (params: PermissionParams) => Promise<PermissionResponse>
+  /**
+   * ─── slice-elicitation-ui: שאלה מובנת חיה ─── מחקה את onRequestPermission. ללא handler
+   * → default `{action:"cancel"}` (client-impl.ts).
+   */
+  onCreateElicitation?: (params: ElicitationParams) => Promise<ElicitationResponse>
 }
 
 // ─── helper פרטי: בונה את ה-facade המשותף לשני הנתיבים ────────────────────────
@@ -173,6 +204,15 @@ function buildAcpClientFacade(
      */
     async listSessions() {
       return conn.listSessions({})
+    },
+
+    // ─── slice session-delete: Commit 0 ───
+    /**
+     * מוחק session (session/list). `DeleteSessionResponse` הוא `{}` אפקטיבית → מחזירים void.
+     * עשוי לזרוק -32601 אם ה-CLI אינו תומך ביכולת delete — הקורא (VM) מטפל.
+     */
+    async deleteSession(sessionId: string): Promise<void> {
+      await conn.deleteSession({ sessionId })
     },
 
     /** שולח פרומפט (טקסט או blocks מולטימודלי) ב-session הנתון */
@@ -261,6 +301,8 @@ export async function createAcpClient(
   const client = createClientImpl({
     onUpdate: callbacks.onUpdate,
     onExtNotification: callbacks.onExtNotification,
+    onRequestPermission: callbacks.onRequestPermission,
+    onCreateElicitation: callbacks.onCreateElicitation,
   })
   const conn = new ClientSideConnection((_agent) => client, stream)
 
@@ -273,6 +315,11 @@ export async function createAcpClient(
     protocolVersion: 1,
     clientCapabilities: {
       fs: { readTextFile: false, writeTextFile: false },
+      // slice elicitation-ui (B): מכריזים על תמיכה ב-form elicitation כדי שהסוכן
+      // *ירשה לעצמו לשלוח* elicitation/create. בלי זה, ה-claude-agent-acp bridge
+      // מוסיף את AskUserQuestion ל-disallowedTools ולא רושם MCP-elicitation forwarding
+      // → הפיצ'ר לא-נגיש end-to-end (calev NO-GO). `{}` = נתמך. url דחוי (mode:form בלבד).
+      elicitation: { form: {} },
     },
     clientInfo: { name: "drive-coding", version: "0.2.0" },
   })
@@ -377,6 +424,8 @@ export function createAttachedAcpClient(
   const client = createClientImpl({
     onUpdate: callbacks.onUpdate,
     onExtNotification: callbacks.onExtNotification,
+    onRequestPermission: callbacks.onRequestPermission,
+    onCreateElicitation: callbacks.onCreateElicitation,
   })
   const conn = new ClientSideConnection((_agent) => client, stream)
 

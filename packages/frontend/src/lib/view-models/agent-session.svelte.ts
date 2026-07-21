@@ -47,6 +47,10 @@ import type {
   ToolLocation,
   UserBubble,
 } from "$lib/types/bubble"
+// ─── slice-elicitation-ui: טיפוסי שאלה מובנת (view-model layer, נגזרים מ-SDK) ───
+import type { ElicitationParams, ElicitationResponse } from "$lib/types/elicitation"
+// ─── slice-permission-ui-basic: טיפוסי בקשת-הרשאה (view-model layer, נגזרים מ-SDK) ───
+import type { PermissionParams, PermissionResponse } from "$lib/types/permission"
 // ─── slice leave-running-background ───
 import { isBypassMode } from "$lib/util/permission-mode"
 import type { Settings } from "$lib/view-models/settings.svelte"
@@ -185,6 +189,31 @@ export class AgentSession {
   /** טקסט הפרומפט האחרון שנשלח על ידי המשתמש — משמש את ה-Speaker להקשר עבור קריינות. */
   lastUserMessage = $state("")
 
+  // ─── slice-permission-ui-basic: בקשת הרשאה חיה (agent→client, ממתינה לתשובה) ───
+  /**
+   * בקשת הרשאה ממתינה מהסוכן — pending יחיד (בקשה שנייה סוגרת את הקודמת כ-cancelled).
+   * null = אין בקשה פעילה. ה-UI (PermissionRequestBlock) מרנדר inline כשזה לא-null.
+   * `resolve` הוא ה-resolver של ה-Promise שהוחזר ל-`createClientImpl.requestPermission` —
+   * חובה לפתור אותו בכל נקודה ש-#client מתאפס, אחרת ה-turn נתקע (§4 Commit 2, הסיכון #1).
+   */
+  pendingPermission = $state<{
+    params: PermissionParams
+    resolve: (r: PermissionResponse) => void
+  } | null>(null)
+
+  // ─── slice-elicitation-ui: שאלה מובנת חיה (agent→client, ממתינה לתשובה) ───
+  /**
+   * שאלה מובנת ממתינה מהסוכן — pending יחיד (בקשה שנייה סוגרת את הקודמת כ-cancelled).
+   * null = אין בקשה פעילה. ה-UI (ElicitationDialog) מרנדר inline כשזה לא-null.
+   * `resolve` הוא ה-resolver של ה-Promise שהוחזר ל-`createClientImpl.unstable_createElicitation`
+   * — חובה לפתור אותו בכל נקודה ש-#client מתאפס, אחרת ה-turn נתקע (מחקה pendingPermission —
+   * הסיכון #1 יורש מ-A1). ר' docs/plans/slice-elicitation-ui.md §4 Commit 2.
+   */
+  pendingElicitation = $state<{
+    params: ElicitationParams
+    resolve: (r: ElicitationResponse) => void
+  } | null>(null)
+
   // ─── slice 23: session config ─── (תוספתי)
   /** אפשרויות config של הסשן הפתוח — מאוכלס מתגובת newSession/loadSession. */
   configOptions = $state<SessionConfigOption[]>([])
@@ -238,6 +267,18 @@ export class AgentSession {
       (this.#client?.capabilities?.promptCapabilities?.image === true ||
         this.#capabilities?.image === true)
     )
+  }
+
+  // ─── slice session-delete: capability gating ─── (additive)
+  /**
+   * האם הסוכן מכריז `sessionCapabilities.delete` — raw ACP caps (`#client.capabilities`),
+   * **לא** NormalizedCapabilities (capability סטנדרטי של הפרוטוקול, אחיד בין ספקים —
+   * הנרמול שמור לחוץ-פרוטוקוליים בלבד. החלטת המשתמשת 2026-07-20).
+   * ⚠️ warm-reattach: אין initialize טרי → `#client` נוצר עם `ATTACHED_CAPS_FALLBACK` ריק →
+   * false עד connect קר חדש. מקובל ל-MVP (עקבי עם המגבלה הידועה של `supportsImageInput`).
+   */
+  get supportsSessionDelete(): boolean {
+    return this.#client?.capabilities?.sessionCapabilities?.delete != null
   }
 
   // ─── slice FE-normalization: capabilities + gating ─── (additive)
@@ -583,6 +624,11 @@ export class AgentSession {
       await this.#transport.closeAndWait()
       this.#client = null
       this.#transport = null
+      // slice-permission-ui-basic: #client התאפס — פתור pending כ-cancelled (הסיכון #1,
+      // §4 Commit 2). אחרת בקשת-הרשאה ממתינה נשארת תלויה כש-WS נופל באמצע reconnect.
+      this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
+      // slice-elicitation-ui: אותו דפוס בדיוק — פתור שאלה מובנת ממתינה כ-cancel.
+      this.#resolvePendingElicitation({ action: "cancel" })
     }
     const reuseId = await this.#findReusableAgent()
     if (reuseId !== null) {
@@ -618,6 +664,9 @@ export class AgentSession {
       }
       this.#client = null
       this.#transport = null // slice ws-reconnect-fix-nbug2: נקה אחרי סגירה
+      // slice-permission-ui-basic: #client התאפס — פתור pending כ-cancelled (הסיכון #1).
+      this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
+      this.#resolvePendingElicitation({ action: "cancel" })
       if (this.status === "connecting" || this.status === "connected") {
         this.#setStatus("disconnected") // מאפס מצב שהשאיר warm-fail; עובר את guard 217
       }
@@ -650,6 +699,10 @@ export class AgentSession {
     for (let attempt = 0; attempt <= AgentSession.#MED8_MAX_RETRIES; attempt++) {
       this.#client = null
       this.#transport = null // slice ws-reconnect-fix-nbug2: איפוס iteration (WS החי כבר סגור ב-#doReconnect)
+      // slice-permission-ui-basic: #client התאפס — פתור pending כ-cancelled (הסיכון #1).
+      // idempotent (no-op בסבבי retry נוספים אחרי שכבר נפתר בסבב הראשון).
+      this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
+      this.#resolvePendingElicitation({ action: "cancel" })
       const proto = location.protocol === "https:" ? "wss:" : "ws:"
       const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
       this.#transport = transport // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
@@ -700,7 +753,12 @@ export class AgentSession {
         // createAttachedAcpClient (סינכרוני) מדלג על initialize; loadSession עובד על process חי.
         this.#client = createAttachedAcpClient(
           transport,
-          { onUpdate: this.#onSessionUpdate, onExtNotification: this.#onExtNotification },
+          {
+            onUpdate: this.#onSessionUpdate,
+            onExtNotification: this.#onExtNotification,
+            onRequestPermission: this.#onRequestPermission,
+            onCreateElicitation: this.#onCreateElicitation,
+          },
           { capabilities: ATTACHED_CAPS_FALLBACK },
         )
         this.#ext = createExtClient(this.#client)
@@ -726,6 +784,11 @@ export class AgentSession {
         // שגיאת handshake/loadSession — נקה ונפול ל-cold
         this.#client = null
         this.#transport = null // slice ws-reconnect-fix-nbug2: נקה אחרי כשל warm
+        // slice-permission-ui-basic: כיסוי-קצה — אם requestPermission הגיע במהלך הניסיון
+        // הכושל הזה (בין יצירת #client ל-throw), ו-זה הניסיון האחרון בלולאה (אין
+        // top-of-loop הבא שיפתור), חובה לפתור כאן כדי לא להשאיר Promise תלוי.
+        this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
+        this.#resolvePendingElicitation({ action: "cancel" })
         transport.close()
         return false
       }
@@ -782,6 +845,8 @@ export class AgentSession {
       this.#client = await createAcpClient(transport, {
         onUpdate: this.#onSessionUpdate,
         onExtNotification: this.#onExtNotification,
+        onRequestPermission: this.#onRequestPermission,
+        onCreateElicitation: this.#onCreateElicitation,
       })
       this.#ext = createExtClient(this.#client)
       const m = this.#sessionMeta()
@@ -827,13 +892,26 @@ export class AgentSession {
 
   /** יציאה מהסשן בלי להרוג את הסוכן ב-BE — ה-child שורד (ws-agent.ts:126),
    *  ה-WS נסגר, ה-VM מתאפס ל-idle. מאפשר reconnect/חזרה דרך רשימת-התהליכים.
-   *  ⚠️ סנכרן גוף זה מול detach() אם detach() משתנה — ההבדל היחיד: cleanup({keepAgent:true}). */
-  leaveRunning = (): void => {
+   *  ⚠️ סנכרן גוף זה מול detach() אם detach() משתנה. הבדלים מ-detach: cleanup({keepAgent:true})
+   *  + flush של permission ה-pending לפני הסגירה (למטה). */
+  leaveRunning = async (): Promise<void> => {
     this.#detached = true
     this.#clearReconnectTimer()
     this.#reconnecting = false
     this.reconnectAttempt = 0
-    this.#cleanup({ keepAgent: true }) // ← ההבדל היחיד מ-detach
+    // slice-permission-ui-basic fix (calev NO-GO — "יציאה בלי כיבוי" תקעה את הסוכן):
+    // ב-keepAgent ה-agent שורד וממתין לתשובת permission. חייבים למסור לו cancelled *לפני*
+    // סגירת ה-WS. #resolvePendingPermission פותר את ה-Promise, אבל השליחה בפועל היא microtask;
+    // setTimeout(0) (macrotask) נותן ל-ws.send לרוץ בזמן שה-WS עוד פתוח, ואז #cleanup סוגר.
+    // (detach לא נפגע — הוא הורג את ה-agent, אין מי שממתין.)
+    // slice-elicitation-ui: אותו טיפול גם ל-elicitation ה-pending — ה-agent ששרד ממתין
+    // לתשובת unstable_createElicitation; חייבים למסור לו cancel לפני סגירת ה-WS.
+    if (this.pendingPermission || this.pendingElicitation) {
+      this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
+      this.#resolvePendingElicitation({ action: "cancel" })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    this.#cleanup({ keepAgent: true }) // ← ההבדל מ-detach
     this.#setStatus("idle")
     this.error = null
     this.bubbles = []
@@ -860,6 +938,104 @@ export class AgentSession {
   /** ה-CLI של הסשן הפעיל (claude/opencode/codex), או null כשאין סשן. slice cli-name-in-chat. */
   get cliKind(): CliKind | null {
     return this.#cliKind
+  }
+
+  // ─── slice-permission-ui-basic: בקשת הרשאה חיה ──────────────────────────────
+  // תשתית גנרית ניתנת-לשכפול (callback + Promise round-trip) — slice B (elicitation)
+  // ישכפל את הדפוס הזה ל-onCreateElicitation. ר' docs/plans/slice-permission-ui-basic.md §3.
+
+  /**
+   * callback שמוזרק ל-createClientImpl.onRequestPermission (בשלושת ה-call-sites: attach,
+   * loadSession, #warmReconnect). מוחזר Promise שנפתר כש-resolvePermission/cancelPermission
+   * נקראים, או כש-#client מתאפס (כל נקודות ה-teardown — ר' #resolvePendingPermission).
+   */
+  #onRequestPermission = (params: PermissionParams): Promise<PermissionResponse> => {
+    return new Promise<PermissionResponse>((resolve) => {
+      // pending יחיד — בקשה שנייה סוגרת את הקודמת כ-cancelled (החלטת המשתמשת, §4 Commit 2).
+      if (this.pendingPermission) {
+        this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
+      }
+      // הגנה: bypass לא אמור לשלוח בקשת הרשאה כלל (הסוכן עוקף) — אך אם בכל זאת הגיעה
+      // (race/CLI לא-סטנדרטי), auto-allow כדי לא לתקוע turn בלי UI רלוונטי.
+      if (this.bypassActive) {
+        const byKind = (k: string) => params.options.find((o) => o.kind === k)
+        const chosen = byKind("allow_once") ?? byKind("allow_always") ?? params.options[0]
+        resolve(
+          chosen
+            ? { outcome: { outcome: "selected", optionId: chosen.optionId } }
+            : { outcome: { outcome: "cancelled" } },
+        )
+        return
+      }
+      this.pendingPermission = { params, resolve }
+    })
+  }
+
+  /** המשתמש בחר אפשרות — פותר את ה-Promise הממתין עם ה-optionId שנבחר. */
+  resolvePermission = (optionId: string): void => {
+    this.#resolvePendingPermission({ outcome: { outcome: "selected", optionId } })
+  }
+
+  /** המשתמש ביטל/דחה בלי לבחור אפשרות ספציפית — פותר כ-cancelled. */
+  cancelPermission = (): void => {
+    this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
+  }
+
+  /**
+   * helper מרוכז — נקודת-פתרון יחידה ל-pendingPermission. idempotent (no-op אם null).
+   * ⚠️ **חובה** לקרוא מכל נקודה ש-#client מתאפס/הסשן נסגר, אחרת Promise דולף + turn תקוע
+   * (הסיכון #1 של הסלייס): #cleanup (מכסה detach+leaveRunning), cancelTurn,
+   * #doReconnect/#coldReconnect/#warmReconnect (3 נתיבי reconnect).
+   */
+  #resolvePendingPermission(response: PermissionResponse): void {
+    const pending = this.pendingPermission
+    if (!pending) return
+    pending.resolve(response)
+    this.pendingPermission = null
+  }
+
+  // ─── slice-elicitation-ui: שאלה מובנת חיה ──────────────────────────────
+  // מחקה 1:1 את בלוק בקשת ההרשאה שמעלה (§3 בבריף — client.ts:137 השאיר עוגן מפורש
+  // לשכפול). ר' docs/plans/slice-elicitation-ui.md §4 Commit 2.
+
+  /**
+   * callback שמוזרק ל-createClientImpl.onCreateElicitation (בשלושת ה-call-sites: attach,
+   * loadSession, #warmReconnect). מוחזר Promise שנפתר כש-resolveElicitation/cancelElicitation
+   * נקראים, או כש-#client מתאפס (כל נקודות ה-teardown — ר' #resolvePendingElicitation).
+   * בניגוד ל-#onRequestPermission — אין כאן bypass auto-allow (לא רלוונטי לשאלות מובנות;
+   * לא בסקופ הבריף).
+   */
+  #onCreateElicitation = (params: ElicitationParams): Promise<ElicitationResponse> => {
+    return new Promise<ElicitationResponse>((resolve) => {
+      // pending יחיד — בקשה שנייה סוגרת את הקודמת כ-cancel (מחקה את דפוס ה-permission).
+      if (this.pendingElicitation) {
+        this.#resolvePendingElicitation({ action: "cancel" })
+      }
+      this.pendingElicitation = { params, resolve }
+    })
+  }
+
+  /** המשתמש מילא את הטופס ואישר — פותר את ה-Promise הממתין עם ה-content שהוזן. */
+  resolveElicitation = (content: Record<string, string | number | boolean | string[]>): void => {
+    this.#resolvePendingElicitation({ action: "accept", content })
+  }
+
+  /** המשתמש ביטל/דחה — פותר עם action (decline|cancel). */
+  cancelElicitation = (action: "decline" | "cancel"): void => {
+    this.#resolvePendingElicitation({ action })
+  }
+
+  /**
+   * helper מרוכז — נקודת-פתרון יחידה ל-pendingElicitation. idempotent (no-op אם null).
+   * ⚠️ **חובה** לקרוא מכל נקודה ש-#client מתאפס/הסשן נסגר, אחרת Promise דולף + turn תקוע
+   * (הסיכון #1, יורש מ-A1): #cleanup (מכסה detach+leaveRunning), cancelTurn,
+   * #doReconnect/#coldReconnect/#warmReconnect (3 נתיבי reconnect).
+   */
+  #resolvePendingElicitation(response: ElicitationResponse): void {
+    const pending = this.pendingElicitation
+    if (!pending) return
+    pending.resolve(response)
+    this.pendingElicitation = null
   }
 
   // ─── פרומפטים (prompting) ────────────────────────────────────
@@ -977,6 +1153,8 @@ export class AgentSession {
       this.#client = await createAcpClient(transport, {
         onUpdate: this.#onSessionUpdate,
         onExtNotification: this.#onExtNotification,
+        onRequestPermission: this.#onRequestPermission,
+        onCreateElicitation: this.#onCreateElicitation,
       })
       this.#ext = createExtClient(this.#client)
 
@@ -1048,6 +1226,10 @@ export class AgentSession {
       await this.#transport.closeAndWait()
       this.#client = null
       this.#transport = null
+      // slice-permission-ui-basic: #client התאפס — פתור pending כ-cancelled (הסיכון #1).
+      // אותו דפוס בדיוק כמו #doReconnect (סגירת transport חי לפני reconnect).
+      this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
+      this.#resolvePendingElicitation({ action: "cancel" })
     }
     this.#sessionId = input.sessionId
     this.cwd = input.cwd
@@ -1450,6 +1632,42 @@ export class AgentSession {
     }
   }
 
+  // ─── slice session-delete: מחיקת סשן (session/delete) ─── (תוספתי)
+  /**
+   * מוחק session מ-`session/list` (store/persistence) דרך ACP `session/delete` — **לא**
+   * הורג את ה-process (זה נעשה בנפרד ע"י `DELETE /api/agents/:id`, מסלול שונה — §1 הבריף).
+   * no-op אם אין חיבור פעיל (`#client===null`) — גם הכפתור אמור להיות מוסתר (gate).
+   *
+   * אם הסשן הנמחק הוא הסשן הפעיל (`#sessionId`) → `detach()` (ניווט-החוצה, עקבי עם
+   * `onDisconnect` הקיים ב-`SessionOptionsPanel`) — אין טעם להשאיר תהליך חי לסשן שכבר לא
+   * קיים ב-`session/list`; ה-UI (route) מגיב ל-`status` שהופך ל-`idle` ומנווט.
+   *
+   * -32601 (method not found — הכפתור לא אמור להופיע בכלל אם ה-gate תקין, אבל defensive)
+   * מטופל בעדינות כמו `listSessions` — לא נזרק ל-UI כשגיאה.
+   */
+  /**
+   * מוחק סשן מ-`session/list`. מחזיר `true` אם נמחק הסשן ה**פעיל** — כדי שהקומפוננטה
+   * תנווט החוצה (`goto("/")`), עקבי עם דפוס `onDisconnect`/`doLeaveRunning` שבו הניווט
+   * חי בשכבת הקומפוננטה ולא ב-VM. (calev NO-GO fix: DoD #7 — active-delete השאיר /chat ריק.)
+   */
+  deleteSession = async (sessionId: string): Promise<boolean> => {
+    if (this.#client === null) return false
+    try {
+      await this.#client.deleteSession(sessionId)
+    } catch (e) {
+      if ((e as { code?: number }).code === -32601) return false // הכפתור מוסתר; defensive no-op
+      this.sessionsError = e instanceof Error ? e.message : String(e)
+      return false
+    }
+    // הסרה אופטימית — ה-ACP call כבר אישר את המחיקה, אין צורך בעוד round-trip (listSessions(true)).
+    this.sessions = this.sessions.filter((s) => s.sessionId !== sessionId)
+    const wasActive = sessionId === this.#sessionId
+    if (wasActive) {
+      this.detach() // מנקה גם sessions/sessionsLoaded/sessionsError — עקבי עם onDisconnect
+    }
+    return wasActive // הקומפוננטה מנווטת החוצה כשזה true
+  }
+
   // ─── הקלטות (recordings) ─── (יתווסף ב-slice 10)
 
   // ─── msr-v2: cancelTurn ─── (additive)
@@ -1460,6 +1678,11 @@ export class AgentSession {
    */
   cancelTurn = async (): Promise<void> => {
     if (this.turnState === "idle") return
+    // slice-permission-ui-basic: ביטול תור באמצע בקשת-הרשאה ממתינה → פתור כ-cancelled.
+    // נתיב עצמאי — לא עובר דרך #cleanup (הסיכון #1, §4 Commit 2).
+    this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
+    // slice-elicitation-ui: אותו דפוס — ביטול תור באמצע שאלה מובנת ממתינה → פתור כ-cancel.
+    this.#resolvePendingElicitation({ action: "cancel" })
     if (!this.#client || !this.#sessionId) return
     try {
       await this.#client.cancel(this.#sessionId)
@@ -1543,6 +1766,13 @@ export class AgentSession {
     // keepAgent=true = leaveRunning — FE מודיע ל-BE שהוא עוזב מרצון.
     // ה-BE מקבל $/detach → markDetached מיד → reconnect-ghost נסגר מיידית
     // (במקום לחכות ל-sweep של ה-WS אחרי 60s).
+    // slice-permission-ui-basic: פתור pending כ-cancelled **לפני** סגירת ה-#client — אחרת
+    // התשובה נשלחת על חיבור סגור ואובדת. קריטי ל-keepAgent (leaveRunning) שבו ה-agent שורד
+    // וממתין לתשובה; leaveRunning גם ממתין ל-flush (setTimeout 0) לפני שמגיע לכאן. מכסה
+    // detach() (agent נהרג ממילא) + attach/loadSession כשל.
+    this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
+    // slice-elicitation-ui: אותו דפוס — פתור גם elicitation ה-pending לפני close.
+    this.#resolvePendingElicitation({ action: "cancel" })
     if (opts?.keepAgent && this.#transport) {
       this.#transport.sendRaw(`${JSON.stringify({ jsonrpc: "2.0", method: "$/detach" })}\n`)
     }
@@ -1884,6 +2114,19 @@ export class AgentSession {
         size: u.size,
         cost: u.cost ?? this.contextUsage?.cost,
       }
+      return
+    }
+
+    // ─── slice session-titles Commit 0: session_info_update (ACP תקני) ─────
+    // לא נושא content.text — חובה לטפל בו לפני ה-gate `if (!text) return`.
+    // semantics עקבי עם ה-keep-on-undefined הקיים ב-sessionTitle setter paths (:999, :1114).
+    if (update.sessionUpdate === "session_info_update") {
+      // SessionInfoUpdate: title?: string | null; updatedAt?: string | null (types.gen.d.ts:3905)
+      const title = (update as { title?: string | null }).title
+      if (title === null)
+        this.sessionTitle = "" // null = clear (לפי הסכמה)
+      else if (typeof title === "string") this.sessionTitle = title
+      // undefined → keep-on-undefined (עקבי עם loadSession :999 / :1114)
       return
     }
 

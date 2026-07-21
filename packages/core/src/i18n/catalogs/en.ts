@@ -344,4 +344,18 @@ export const en: Catalog = {
   "connect.machine.memory": "Memory",
   "connect.machine.cpu": "CPU",
   "connect.machine.label": "Machine load",
+  // ─── session delete ─── (slice session-delete)
+  "session.delete": "Delete",
+  "session.deleteConfirm": "Sure? Delete session",
+  // ─── permission ─── (slice-permission-ui-basic)
+  "permission.title": "Permission request",
+  "permission.allowOnce": "Allow once",
+  "permission.allowAlways": "Always allow",
+  "permission.reject": "Reject",
+  "permission.pending": "Awaiting decision",
+  // ─── elicitation ─── (slice-elicitation-ui)
+  "elicitation.accept": "Submit",
+  "elicitation.decline": "Decline",
+  "elicitation.cancel": "Cancel",
+  "elicitation.required": "Required",
 }

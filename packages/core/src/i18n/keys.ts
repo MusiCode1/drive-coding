@@ -349,6 +349,20 @@ export type MessageKey =
   | "connect.machine.memory"
   | "connect.machine.cpu"
   | "connect.machine.label"
+  // ─── session delete ─── (slice session-delete)
+  | "session.delete"
+  | "session.deleteConfirm"
+  // ─── permission ─── (slice-permission-ui-basic)
+  | "permission.title"
+  | "permission.allowOnce"
+  | "permission.allowAlways"
+  | "permission.reject"
+  | "permission.pending"
+  // ─── elicitation ─── (slice-elicitation-ui)
+  | "elicitation.accept"
+  | "elicitation.decline"
+  | "elicitation.cancel"
+  | "elicitation.required"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

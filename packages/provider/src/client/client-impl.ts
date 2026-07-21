@@ -12,19 +12,55 @@
  * המודול הזה הוא לוגיקה טהורה — ללא I/O, ללא DOM, ללא Node APIs. נעשה בו שימוש גם
  * ב-FE (browser WS transport) וגם בכל ACP client עתידי בצד ה-BE.
  */
-import type { Client, SessionNotification } from "@agentclientprotocol/sdk"
+import type {
+  Client,
+  CreateElicitationRequest,
+  CreateElicitationResponse,
+  SessionNotification,
+} from "@agentclientprotocol/sdk"
+
+/** נגזר מ-SDK — לא shape מותאם; drift אפס. ר' docs/plans/slice-permission-ui-basic.md §4 Commit 0. */
+type PermissionParams = Parameters<Client["requestPermission"]>[0]
+type PermissionResponse = Awaited<ReturnType<Client["requestPermission"]>>
+
+/**
+ * ─── slice-elicitation-ui: elicitation/create ─── נגזר מ-SDK דרך ייבוא ישיר (לא
+ * Parameters<Client["unstable_createElicitation"]>) — השדה אופציונלי על Client, לכן
+ * Parameters<...> נכשל ב-TS2344 (כולל undefined). CreateElicitationRequest/Response
+ * מיוצאים מ-root ה-SDK (אין subpath /schema ב-exports map). ר' docs/plans/
+ * slice-elicitation-ui.md §4 Commit 0.
+ */
+type ElicitationParams = CreateElicitationRequest
+type ElicitationResponse = CreateElicitationResponse
 
 export function createClientImpl(opts: {
   onUpdate: (n: SessionNotification) => void
   /** ─── slice FE-normalization: קבלת ext notifications (כולל _drive/capabilities) ─── */
   onExtNotification?: (method: string, params: Record<string, unknown>) => void
+  /**
+   * ─── slice-permission-ui-basic: בקשת הרשאה חיה ─── אם מסופק, requestPermission
+   * מאציל אליו את ההחלטה (round-trip ל-UI). ללא handler → auto-allow הקיים (ללא שינוי
+   * התנהגות ברירת-מחדל — regression test מכסה זאת).
+   */
+  onRequestPermission?: (params: PermissionParams) => Promise<PermissionResponse>
+  /**
+   * ─── slice-elicitation-ui: שאלה מובנת חיה ─── אם מסופק, unstable_createElicitation
+   * מאציל אליו את ההחלטה (round-trip ל-UI, מחקה onRequestPermission). ללא handler →
+   * default `{action:"cancel"}` (כי היום אין UI; לא לתקוע turn / לזרוק method-not-found).
+   */
+  onCreateElicitation?: (params: ElicitationParams) => Promise<ElicitationResponse>
 }): Client {
   return {
     /**
-     * Auto-allow_once: מעדיף allow_once > allow_always > הראשון שאינו reject > האפשרות הראשונה.
-     * Slices עתידיים יוסיפו פרומפט UI לאישור משתמש.
+     * אם onRequestPermission סופק (UI חי) → מאציל אליו.
+     * אחרת: Auto-allow_once — מעדיף allow_once > allow_always > הראשון שאינו reject >
+     * האפשרות הראשונה. (ברירת המחדל ההיסטורית, נשמרת ללא UI.)
      */
     async requestPermission(params) {
+      if (opts.onRequestPermission) {
+        return await opts.onRequestPermission(params)
+      }
+
       const byKind = (k: string) => params.options.find((o) => o.kind === k)
       const chosen =
         byKind("allow_once") ??
@@ -40,6 +76,15 @@ export function createClientImpl(opts: {
 
     async sessionUpdate(notification) {
       opts.onUpdate(notification)
+    },
+
+    // ─── slice-elicitation-ui: unstable_createElicitation ───
+    // אם onCreateElicitation סופק (UI חי) → מאציל אליו. אחרת → default cancel (לא לתקוע turn).
+    async unstable_createElicitation(params: ElicitationParams): Promise<ElicitationResponse> {
+      if (opts.onCreateElicitation) {
+        return await opts.onCreateElicitation(params)
+      }
+      return { action: "cancel" }
     },
 
     // ─── slice FE-normalization: extNotification ───
