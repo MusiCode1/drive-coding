@@ -252,12 +252,14 @@ async function handleRecentSelect(project: RecentProject) {
     margin: 0 0 0.25rem;
     font-size: 1.6rem;
     font-weight: 600;
+    text-align: center;
   }
 
   .subtitle {
     margin: 0 0 2rem;
     color: var(--fg-dim);
     font-size: 0.95rem;
+    text-align: center;
   }
 
   form {

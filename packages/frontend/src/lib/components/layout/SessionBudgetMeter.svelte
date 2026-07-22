@@ -15,7 +15,8 @@ import { getI18n, getSession } from "$lib/context"
 import SessionBudgetPopover from "./SessionBudgetPopover.svelte"
 
 const session = getSession()
-const t = getI18n().t
+const i18n = getI18n()
+const t = i18n.t
 
 let open = $state(false)
 
@@ -49,6 +50,7 @@ function handleOpenChange(next: boolean): void {
       <Popover.Content
         sideOffset={6}
         align="end"
+        dir={i18n.dir}
         class="z-50 w-72 max-w-[92vw] max-h-[70dvh] overflow-y-auto rounded-xl border shadow-xl p-3"
         style="background:var(--bg-elev); border-color:var(--border)"
       >

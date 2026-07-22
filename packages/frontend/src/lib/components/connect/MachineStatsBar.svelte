@@ -44,6 +44,7 @@ const usedGb = $derived(stats ? (stats.usedMemMB / 1024).toFixed(1) : "")
   .machine-bar {
     display: flex;
     align-items: center;
+    justify-content: center;
     flex-wrap: wrap;
     gap: 0.4rem;
     padding: 0.45rem 0.9rem;

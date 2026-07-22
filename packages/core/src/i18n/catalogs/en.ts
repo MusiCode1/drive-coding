@@ -10,7 +10,7 @@ import type { Catalog } from "../keys.js"
  */
 export const en: Catalog = {
   // ─── connect ─── (slice 0)
-  "connect.title": "drive-coding v2",
+  "connect.title": "Drive Coding",
   "connect.subtitle": "Connect to a CLI agent",
   "connect.cli.label": "CLI",
   // slice cli-availability
