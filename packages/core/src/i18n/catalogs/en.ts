@@ -337,7 +337,8 @@ export const en: Catalog = {
   // ─── projectPrompt ─── (slice project-system-prompt)
   "projectPrompt.label": "Project system prompt",
   "projectPrompt.placeholder": "e.g. Always reply concisely, and open every answer in Hebrew...",
-  "projectPrompt.hint": "Appended to the agent's default instructions. Takes effect from the next session.",
+  "projectPrompt.hint":
+    "Appended to the agent's default instructions. Takes effect from the next session.",
   // ─── panel resize handle ─── (slice connect-panel-resize)
   "connect.panel.resizeHandle": "Drag to resize",
   // ─── machine-stats ─── (slice-be-machine-stats)
@@ -358,4 +359,6 @@ export const en: Catalog = {
   "elicitation.decline": "Decline",
   "elicitation.cancel": "Cancel",
   "elicitation.required": "Required",
+  // ─── reconnect takeover ─── (slice reconnect-ws-takeover)
+  "session.openedElsewhere": "This session was opened elsewhere",
 }

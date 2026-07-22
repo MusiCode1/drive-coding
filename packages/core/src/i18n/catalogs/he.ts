@@ -297,7 +297,7 @@ export const he: Catalog = {
   "settings.ttsStatus.quota.used": "נוצל",
   "settings.ttsStatus.quota.limitLabel": "מכסה",
   "settings.ttsStatus.quota.overage": "חריגה",
-  "settings.ttsStatus.usage.label": "שימוש (סה\"כ מאז ההפעלה)",
+  "settings.ttsStatus.usage.label": 'שימוש (סה"כ מאז ההפעלה)',
   "settings.ttsStatus.usage.elevenlabs": "ElevenLabs",
   "settings.ttsStatus.usage.gemini": "Gemini",
   "settings.ttsStatus.usage.cache": "מטמון",
@@ -354,4 +354,6 @@ export const he: Catalog = {
   "elicitation.decline": "דחה",
   "elicitation.cancel": "ביטול",
   "elicitation.required": "שדה חובה",
+  // ─── reconnect takeover ─── (slice reconnect-ws-takeover)
+  "session.openedElsewhere": "הסשן נפתח במקום אחר",
 }

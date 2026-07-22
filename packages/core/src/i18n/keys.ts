@@ -363,6 +363,8 @@ export type MessageKey =
   | "elicitation.decline"
   | "elicitation.cancel"
   | "elicitation.required"
+  // ─── reconnect takeover ─── (slice reconnect-ws-takeover)
+  | "session.openedElsewhere"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
