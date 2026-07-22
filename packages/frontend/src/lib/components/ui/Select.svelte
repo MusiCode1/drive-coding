@@ -35,7 +35,7 @@ export interface SelectGroup {
 import { Dialog, Popover } from "bits-ui"
 import CheckIcon from "@lucide/svelte/icons/check"
 import ChevronDownIcon from "@lucide/svelte/icons/chevron-down"
-import { getResponsive } from "$lib/context"
+import { getResponsive, getI18n } from "$lib/context"
 
 interface Props {
   value?: string
@@ -63,6 +63,7 @@ let {
 }: Props = $props()
 
 const responsive = getResponsive()
+const i18n = getI18n()
 
 let open = $state(false)
 
@@ -216,6 +217,7 @@ const triggerClass = $derived(
       <Popover.Content
         sideOffset={6}
         align="start"
+        dir={i18n.dir}
         class="z-50 max-h-[60dvh] w-(--bits-floating-anchor-width) max-w-[92vw] flex flex-col rounded-xl border shadow-xl overflow-hidden"
         style="background:var(--bg-elev); border-color:var(--border)"
       >
