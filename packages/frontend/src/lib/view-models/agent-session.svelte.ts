@@ -740,7 +740,7 @@ export class AgentSession {
         cwd = this.cwd,
         cliKind = this.#cliKind
       if (sid === null || cwd === null || cliKind === null) return
-      await this.loadSession({ sessionId: sid, cwd, cliKind })
+      await this.loadSession({ sessionId: sid, cwd, cliKind }, { preserveContextOnError: true })
     } finally {
       this.#tearingDown = false // שחרר אחרי שה-WS החדש פעיל
     }
@@ -758,6 +758,11 @@ export class AgentSession {
    */
   #warmReconnect = async (agentId: string): Promise<boolean> => {
     this.#detached = false
+    // slice reconnect-recovery: reset #errorSurfaced (כמו כל נתיב-חיבור אחר —
+    // attach:886/loadSession:1189/attachToLiveAgent:1295) — בלי זה, ניסיון warm
+    // עתידי שמצליח לא מנקה את הדגל, וguard 601 חוסם שקט auto-reconnect עתידי
+    // על סשן בריא (אביגיל r2 🔴).
+    this.#errorSurfaced = false
     this.#setStatus("connecting") // ל-warm מותר — לא עובר דרך loadSession של ה-VM
 
     for (let attempt = 0; attempt <= AgentSession.#MED8_MAX_RETRIES; attempt++) {
@@ -1175,12 +1180,17 @@ export class AgentSession {
    * דומה ל-attach() אך קורא ל-loadSession במקום ל-newSession.
    * לאחר ההשלמה, המצב הוא "connected" והסשן מוכן עבור sendPrompt.
    */
-  loadSession = async (input: {
-    sessionId: string
-    cwd: string
-    cliKind: CliKind
-    title?: string // ← slice session-title: תוספתי (קוראים קיימים לא נשברים)
-  }): Promise<void> => {
+  loadSession = async (
+    input: {
+      sessionId: string
+      cwd: string
+      cliKind: CliKind
+      title?: string // ← slice session-title: תוספתי (קוראים קיימים לא נשברים)
+    },
+    // slice reconnect-recovery: preserveContextOnError — רק #coldReconnect מעביר true.
+    // בטעינה-ראשונית/switchSession/newSession (בלי opts) — התנהגות ללא שינוי (#cleanup מלא).
+    opts?: { preserveContextOnError?: boolean },
+  ): Promise<void> => {
     if (this.status === "connecting" || this.status === "connected") {
       throw new Error(`cannot loadSession in status ${this.status}`)
     }
@@ -1253,10 +1263,21 @@ export class AgentSession {
       this.#setStatus("connected")
     } catch (e) {
       this.error = `loadSession failed: ${formatAcpError(e)}`
-      this.#errorSurfaced = true // calev-heavy §10.2: כשל טרמינלי — #cleanup הורג את ה-WS
       this.#setTurnState("idle") // NBug3: throw מוקדם (createAgent/waitForOpen) — ה-finally הפנימי לא רץ
-      this.#setStatus("error")
-      this.#cleanup()
+      // slice reconnect-recovery: נתיב-השימור (cold-reconnect שנכשל) — לא #cleanup() מלא
+      // (שהיה מוחק #sessionId/agentId ותוקע את reconnect() ב-early-return). שומר את
+      // הקשר-הסשן כדי שלחיצת reconnect הבאה תמצא #sessionId ותנסה שוב (§3 diagram).
+      if (opts?.preserveContextOnError) {
+        this.#errorSurfaced = true // חובה: ה-WS close אסינכרוני ורץ *אחרי* ש-#coldReconnect
+        // מאפס #tearingDown=false → guard 601 (#errorSurfaced) הוא מה שמונע clobber+
+        // auto-reconnect על ה-async close (אביגיל r3 🔴).
+        this.#cleanup({ keepContext: true }) // teardown מלא (pending/#ext/#client/#transport) — בלי לאפס #sessionId/agentId
+        this.#setStatus("disconnected") // מציג כפתור reconnect; reconnect() לא-early-return (context נשמר)
+      } else {
+        this.#errorSurfaced = true // calev-heavy §10.2: כשל טרמינלי — #cleanup הורג את ה-WS
+        this.#setStatus("error")
+        this.#cleanup()
+      }
     }
   }
 
@@ -1841,7 +1862,7 @@ export class AgentSession {
     this.planStore = EMPTY_PLAN_STORE
   }
 
-  #cleanup(opts?: { keepAgent?: boolean }): void {
+  #cleanup(opts?: { keepAgent?: boolean; keepContext?: boolean }): void {
     // לכוד את ה-agentId לפני האיפוס — צריך אותו ל-deleteAgent.
     const agentId = this.agentId
     // נקה timer של tail-debounce (msr-v2 — NBug1 opencode)
@@ -1883,14 +1904,20 @@ export class AgentSession {
     // slice subagent-tool-nesting: נקה מיפוי-קינון (חיבור חדש = מיפוי חדש)
     this.#subagentToolCallParents = new Map()
     this.#transport = null // slice ws-reconnect-fix-nbug2: נקה ref
-    this.#sessionId = null
-    this.agentId = null
+    // slice reconnect-recovery: keepContext משמר #sessionId/agentId כדי ש-reconnect()
+    // הציבורי לא יעשה early-return אחרי כשל cold-reconnect (§4 Commit 0).
+    if (!opts?.keepContext) {
+      this.#sessionId = null
+      this.agentId = null
+    }
     // הורג את ה-bridge בצד ה-BE. ה-BE לא הורג את ה-child בסגירת WS לבד
     // (ws-agent.ts:126 — בכוונה, לאפשר reconnect עתידי), לכן ה-FE אחראי
     // לבקש מחיקה מפורשת. fire-and-forget — לא חוסם, לא זורק (cleanup רץ גם
     // ב-error path; ראה sessions.ts:71 לאותו דפוס).
     // ─── slice leave-running-background: keepAgent=true → לא הורג (ה-child שורד) ───
-    if (!opts?.keepAgent && agentId) void deleteAgent(agentId).catch(() => {})
+    // slice reconnect-recovery: keepContext גם מונע deleteAgent — ה-agent אמור לשרוד
+    // ל-reattach (#coldReconnect:749 מטפל במחיקת ה-agent הישן בנפרד, אחרי הצלחה).
+    if (!opts?.keepAgent && !opts?.keepContext && agentId) void deleteAgent(agentId).catch(() => {})
   }
 
   #mapToolContent(raw: unknown): ToolContent[] {

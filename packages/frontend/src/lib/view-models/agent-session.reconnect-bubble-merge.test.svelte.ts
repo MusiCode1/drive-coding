@@ -210,7 +210,10 @@ describe("AgentSession — frozen display snapshot ב-warm-reconnect (Commit 1)"
     await (session as any)._doReconnectForTest()
 
     // loadSession (הקוד הקיים, לא-נוגעים) עדיין מאפס bubbles=[] בתחילתו — כצפוי.
-    expect(session.status).toBe("error")
+    // slice reconnect-recovery: #coldReconnect מעביר preserveContextOnError:true —
+    // נתיב-השימור קובע status="disconnected" (לא "error", §9 Q2) כדי שכפתור ה-reconnect
+    // יופיע ואפשר יהיה לנסות שוב (#sessionId/cwd/#cliKind נשמרים — reconnect() לא early-return).
+    expect(session.status).toBe("disconnected")
     expect(session.bubbles).toEqual([])
     // ← זה הבאג: לפני התיקון (הקפאה רק בתוך #warmReconnect) renderBubbles===[] כאן,
     // כי cold-ישיר מדלג על #warmReconnect לגמרי ואף אחד לא הקפיא.
