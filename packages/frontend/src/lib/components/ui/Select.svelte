@@ -150,8 +150,8 @@ const triggerClass = $derived(
         >
           <span class="flex flex-col min-w-0 gap-0.5">
             <span class="line-clamp-2 text-start" dir="auto">{item.label}</span>
-            {#if firstLine(item.description)}
-              <span class="line-clamp-2 text-[11px] leading-snug text-start" style="color:var(--fg-dim)" dir="auto">{firstLine(item.description)}</span>
+            {#if item.description?.trim()}
+              <span class="text-[11px] leading-snug text-start whitespace-pre-wrap" style="color:var(--fg-dim)" dir="auto">{item.description.trim()}</span>
             {/if}
           </span>
           {#if item.value === value}
