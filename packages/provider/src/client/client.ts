@@ -10,8 +10,12 @@
  *    המוכנות מוכחת על-ידי תגובת ה-ACP עצמה — אין frame handshake סינתטי.
  *    אם אין תגובה בתוך INIT_TIMEOUT_MS → סוגר transport, זורק timeout.
  *
- * auth_required: אם initialize זורקת עם data.code === "auth_required",
- * זורק מחדש עם kind = "auth_required" כדי שה-UI יציג הודעת "<cli> auth login".
+ * auth_required: אם initialize/authenticate זורקים עם data.code === "auth_required",
+ * זורק מחדש עם kind = "auth_required" + authMethods מובנה (ר' slice auth-guidance §3
+ * Commit 0) — ה-UI בונה את הדרכת-האימות מהם, לא ממחרוזת קשיחה.
+ *
+ * authMethods: מפורסמים ב-initialize, נחשפים על ה-facade (client.authMethods) — []
+ * ב-warm reattach (createAttachedAcpClient מדלג initialize).
  *
  * החלטות מחזור חיים מחוץ למודול זה:
  *   - Heartbeat / NAT keepalive — עניין ספציפי לתעבורה. תעבורת WS
@@ -21,6 +25,7 @@
  *   - Auto-reconnect — לא מטופל באף שכבה. ה-UI מציג פרומפט "רענן".
  */
 import type {
+  AuthMethod,
   Client,
   ClientSideConnection as ClientSideConnectionType,
   CreateElicitationRequest,
@@ -89,6 +94,10 @@ export type AcpClientOptions = {
 export type AcpClient = {
   conn: ClientSideConnection
   capabilities: Awaited<ReturnType<ClientSideConnection["initialize"]>>["agentCapabilities"]
+  // ─── slice auth-guidance: Commit 0 — captured from initialize (cold path); [] on
+  // warm reattach (createAttachedAcpClient skips initialize — no authMethods to capture) ───
+  /** authMethods advertised by the agent at initialize. `[]` if none offered or unavailable. */
+  authMethods: ReadonlyArray<AuthMethod>
   newSession(opts: {
     cwd: string
     _meta?: AcpRequestMeta
@@ -171,10 +180,12 @@ function buildAcpClientFacade(
   conn: ClientSideConnection,
   transport: AcpTransport,
   capabilities: AcpClient["capabilities"],
+  authMethods: AcpClient["authMethods"],
 ): AcpClient {
   return {
     conn,
     capabilities,
+    authMethods,
 
     /** יוצר session ACP חדש */
     async newSession(opts: { cwd: string; _meta?: AcpRequestMeta }) {
@@ -343,13 +354,17 @@ export async function createAcpClient(
     if (initTimer !== undefined) clearTimeout(initTimer)
   } catch (e) {
     if (initTimer !== undefined) clearTimeout(initTimer)
-    // שגיאת auth_required — זורק מחדש עם kind ל-UI
+    // שגיאת auth_required — זורק מחדש עם kind + authMethods ל-UI (structured — לא string
+    // עם "<cli>" מילולי; ר' slice auth-guidance §3 Commit 0). initResult לא הוקצה בנתיב
+    // הזה (ההקצאה למעלה נזרקה) → authMethods: [] תמיד (אין מה ללכוד).
     if (isAuthRequiredError(e)) {
       const authErr = new Error(
-        `ACP agent requires authentication: ${e.message ?? "auth_required"}. ` +
-          `Run in shell: '<cli> auth login'.`,
+        `ACP agent requires authentication: ${e.message ?? "auth_required"}`,
       )
-      ;(authErr as Error & { kind?: string }).kind = "auth_required"
+      ;(authErr as Error & { kind?: string; authMethods?: ReadonlyArray<AuthMethod> }).kind =
+        "auth_required"
+      ;(authErr as Error & { kind?: string; authMethods?: ReadonlyArray<AuthMethod> }).authMethods =
+        []
       transport.close()
       throw authErr
     }
@@ -370,10 +385,13 @@ export async function createAcpClient(
       if (isAuthRequiredError(e)) {
         transport.close()
         const authErr = new Error(
-          `ACP agent authentication failed (methodId: ${authMethodId}): ${e.message ?? String(e)}. ` +
-            `Run in shell: '<cli> auth login'.`,
+          `ACP agent authentication failed (methodId: ${authMethodId}): ${e.message ?? String(e)}`,
         )
-        ;(authErr as Error & { kind?: string }).kind = "auth_required"
+        ;(authErr as Error & { kind?: string; authMethods?: ReadonlyArray<AuthMethod> }).kind =
+          "auth_required"
+        ;(
+          authErr as Error & { kind?: string; authMethods?: ReadonlyArray<AuthMethod> }
+        ).authMethods = initResult.authMethods ?? []
         throw authErr
       }
       const err = e as { message?: string }
@@ -383,7 +401,12 @@ export async function createAcpClient(
     }
   }
 
-  return buildAcpClientFacade(conn, transport, initResult.agentCapabilities)
+  return buildAcpClientFacade(
+    conn,
+    transport,
+    initResult.agentCapabilities,
+    initResult.authMethods ?? [],
+  )
 }
 
 // ─── slice warm-reattach-skip-init: נתיב warm reattach ───────────────────────
@@ -432,5 +455,6 @@ export function createAttachedAcpClient(
   // capabilities מבחוץ (ברירת-מחדל: אובייקט ריק — raw caps משמש רק supportsImageInput הרדום)
   const capabilities = options.capabilities ?? ({} as AcpClient["capabilities"])
 
-  return buildAcpClientFacade(conn, transport, capabilities)
+  // ─── slice auth-guidance: warm reattach מדלג initialize → אין authMethods ללכוד ───
+  return buildAcpClientFacade(conn, transport, capabilities, [])
 }
