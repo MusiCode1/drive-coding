@@ -60,16 +60,29 @@ export async function listAgents(signal?: AbortSignal): Promise<AgentPublic[]> {
   return body.agents
 }
 
-// TODO(review-fixes-2): getAgent — אין צרכן בקוד כרגע (grep ב-2026-06-02). לבדוק אם
-// מישהו משתמש בזה לפני שמשקיעים בו timeout/error-handling (F4). אם dead — למחוק בסבב נפרד.
+/**
+ * מושך מידע על agent בודד (GET /api/agents/:id) — כולל `crashReason` (מאוכלס ע"י
+ * `describeCrash` ב-BE כש-status="crashed"). צרכן: `#handleUnexpectedClose` בסלייס
+ * surface-real-error, Commit 3 — best-effort לזיהוי child-crash (ENOENT/credit/וכו')
+ * אחרי סגירת WS לא-צפויה, כדי להציג את הסיבה האמיתית במקום "WS closed" גנרי.
+ *
+ * עטוף ב-withTimeout (calev-heavy §10.1, Commit 4): קריאה חשופה בלי timeout הייתה
+ * חוסמת את ה-reconnect אם ה-BE תקוע/לא-נגיש — `#handleUnexpectedClose` ממתין ל-getAgent
+ * לפני `#scheduleReconnect()`, ו-`.catch()` לא עוזר ל-hang.
+ */
 export async function getAgent(
   agentId: string,
-): Promise<{ agent: { cwd: string; status: string } }> {
-  const res = await fetch(beUrl(`/api/agents/${agentId}`))
+  signal?: AbortSignal,
+): Promise<{ agent: { cwd: string; status: string; crashReason?: string } }> {
+  const res = await withTimeout(
+    (s) => fetch(beUrl(`/api/agents/${agentId}`), { signal: s }),
+    AGENTS_API_TIMEOUT_MS,
+    { signal, label: "getAgent" },
+  )
   if (!res.ok) {
     throw new Error(`getAgent failed: ${res.status}`)
   }
-  return (await res.json()) as { agent: { cwd: string; status: string } }
+  return (await res.json()) as { agent: { cwd: string; status: string; crashReason?: string } }
 }
 
 export async function notifySessionAttached(
@@ -92,8 +105,7 @@ export async function notifySessionAttached(
 
 export async function deleteAgent(agentId: string): Promise<void> {
   const res = await withTimeout(
-    (s) =>
-      fetch(beUrl(`/api/agents/${agentId}`), { method: "DELETE", signal: s }),
+    (s) => fetch(beUrl(`/api/agents/${agentId}`), { method: "DELETE", signal: s }),
     AGENTS_API_TIMEOUT_MS,
     { label: "deleteAgent" },
   )
@@ -104,10 +116,7 @@ export async function deleteAgent(agentId: string): Promise<void> {
 }
 
 /** משנה את דגל הנעיצה (persistent) של agent. */
-export async function setAgentPersistent(
-  agentId: string,
-  persistent: boolean,
-): Promise<void> {
+export async function setAgentPersistent(agentId: string, persistent: boolean): Promise<void> {
   const res = await withTimeout(
     (s) =>
       fetch(beUrl(`/api/agents/${agentId}/persistent`), {

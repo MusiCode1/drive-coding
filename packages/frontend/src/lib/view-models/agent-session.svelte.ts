@@ -29,6 +29,7 @@ import { tick } from "svelte"
 import {
   createAgent,
   deleteAgent,
+  getAgent,
   listAgents,
   notifySessionAttached,
 } from "$lib/adapters/agents-api"
@@ -53,6 +54,8 @@ import type { ElicitationParams, ElicitationResponse } from "$lib/types/elicitat
 import type { PermissionParams, PermissionResponse } from "$lib/types/permission"
 // ─── slice leave-running-background ───
 import { isBypassMode } from "$lib/util/permission-mode"
+// ─── slice surface-real-error: עדיפות data.details→data.message→message→String(e) ───
+import { formatAcpError } from "$lib/view-models/format-acp-error"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 // ─── image-attach kill-switch ─── (slice-image-paste Commit 2)
@@ -69,6 +72,10 @@ const IMAGE_INPUT_ENABLED = true
 // NormalizedCapabilities מגיע מ-_drive/capabilities (BE) — לא מושפע.
 const ATTACHED_CAPS_FALLBACK = {} as AcpClient["capabilities"]
 
+// ─── slice plan-todo-list Commit 1: reducer טהור + טיפוסים ─── (additive)
+import { EMPTY_PLAN_STORE, type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
+// ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
+import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 // ─── slice FE-normalization: ייבוא ─── (additive)
 // import type בלבד — NormalizedCapabilities מ-subpath ./types (pure, ללא spawn-core).
 // ⚠️ אל תייבא value מ-@drive-coding/provider/host → יגרור spawn-core → vite crash.
@@ -81,10 +88,6 @@ import {
   parseClaudeSdkMessage,
   reduceSubagent,
 } from "./claude-subagent-parse"
-// ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
-import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
-// ─── slice plan-todo-list Commit 1: reducer טהור + טיפוסים ─── (additive)
-import { EMPTY_PLAN_STORE, type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
 
 /**
  * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries
@@ -408,6 +411,15 @@ export class AgentSession {
    * שונה מ-#detached: detach=סיום סופי; tearingDown=מעבר זמני בתוך cold.
    */
   #tearingDown = false
+  /**
+   * True רק אחרי catch **טרמינלי** (attach/loadSession — שם #cleanup רץ / ה-agent מת).
+   * anti-clobber guard ב-#handleUnexpectedClose (calev-heavy §10.2, Commit 4): במקור
+   * ה-guard היה `status==="error"`, אבל switchSession/newSession גם קובעים status="error"
+   * ומשאירים את ה-WS חי (בלי #cleanup) — כשל שם לא אמור להשתיק reconnect אם ה-WS נופל
+   * מאוחר יותר. הדגל מוצת רק בכשל טרמינלי, ומתאפס בתחילת כל מתודת-חיבור (attach/
+   * loadSession/switchSession/newSession/attachToLiveAgent) כדי שסשן חדש לא ייתקע.
+   */
+  #errorSurfaced = false
   // ─── slice ws-reconnect-infra: reconnect internals ───
   /** ה-cliKind של ה-attach/loadSession האחרון — נדרש ל-cold reconnect.
    * $state כדי שה-getter הציבורי יהיה ריאקטיבי (slice cli-name-in-chat). */
@@ -428,6 +440,14 @@ export class AgentSession {
   }
   /** @internal */ _setTearingDownForTest(v: boolean): void {
     this.#tearingDown = v
+  }
+  /**
+   * @internal מזריק את #errorSurfaced ישירות (calev-heavy §10.2, Commit 4) — מאפשר
+   * לטסטים לדמות מצב "כשל טרמינלי כבר הוצג" (attach/loadSession) בלי לעבור דרך
+   * ה-catch המלא (createAgent/WS/ACP handshake מלא).
+   */
+  _setErrorSurfacedForTest(v: boolean): void {
+    this.#errorSurfaced = v
   }
   /**
    * @internal slice session-budget-meter Commit 4 — מזריק #mockQuota ישירות לטסט,
@@ -514,6 +534,15 @@ export class AgentSession {
   _doReconnectForTest(): Promise<void> {
     return this.#doReconnect()
   }
+  /**
+   * @internal קורא ישירות ל-#handleUnexpectedClose (slice surface-real-error Commit 1:
+   * anti-clobber gate-test; Commit 3: הפך ל-async בגלל best-effort getAgent). מזמן
+   * pageHidden=true (stub document ב-beforeEach) לפני construct — כדי שהענף
+   * "disconnected" ירוץ ולא #scheduleReconnect (async מודלף).
+   */
+  _handleUnexpectedCloseForTest(code: number, reason: string): Promise<void> {
+    return this.#handleUnexpectedClose(code, reason)
+  }
 
   // ─── slice ws-reconnect-infra: reconnect helpers ────────────────────────────
 
@@ -550,8 +579,22 @@ export class AgentSession {
    * מטפל בסגירת WS לא צפויה (לא detach, לא 1000/1001).
    * רקע → disconnected (ממתין ל-reconnect ידני); פוקוס → backoff אוטומטי.
    */
-  #handleUnexpectedClose(code: number, reason: string): void {
-    this.error = `WS closed (${code}): ${reason || "no reason"}`
+  async #handleUnexpectedClose(code: number, reason: string): Promise<void> {
+    // anti-clobber (slice surface-real-error, Commit 1; הוחלף ל-flag ב-calev-heavy §10.2,
+    // Commit 4): אם כבר הוצגה שגיאה טרמינלית (attach/loadSession catch — #cleanup רץ /
+    // agent מת) — אל תדרוס אותה ב-"WS closed" הגנרי. switchSession/newSession *לא* מדליקים
+    // את הדגל — הם משאירים WS חי, ו-drop מאוחר יותר צריך כן להצית reconnect.
+    if (this.#errorSurfaced && this.error) return
+    // best-effort crash-path (slice surface-real-error Commit 3): ה-child אולי קרס
+    // עם סיבה ידועה (ENOENT/credit/native-binary) — describeCrash ב-BE כותב crashReason.
+    // null-guard (אביגיל #1): this.agentId הוא $state<string|null> — getAgent דורש string.
+    // בלי agentId אין מה למשוך → fallback מיידי ל-WS closed (בלי network call).
+    const info = this.agentId ? await getAgent(this.agentId).catch(() => null) : null
+    if (info?.agent.status === "crashed" && info.agent.crashReason) {
+      this.error = info.agent.crashReason
+    } else {
+      this.error = `WS closed (${code}): ${reason || "no reason"}`
+    }
     if (this.#pageHidden) {
       this.#setStatus("disconnected") // רקע — לא אוטו
       return
@@ -742,7 +785,7 @@ export class AgentSession {
       transport.onClose((code, reason) => {
         if (this.#detached) return
         if (this.#tearingDown) return // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
-        if (code !== 1000 && code !== 1001) this.#handleUnexpectedClose(code, reason)
+        if (code !== 1000 && code !== 1001) void this.#handleUnexpectedClose(code, reason)
       })
 
       try {
@@ -814,6 +857,7 @@ export class AgentSession {
     }
     this.#setStatus("connecting")
     this.error = null
+    this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
     this.bubbles = []
     this.#detached = false
 
@@ -836,7 +880,7 @@ export class AgentSession {
         if (this.#detached) return
         if (this.#tearingDown) return // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
         if (code !== 1000 && code !== 1001) {
-          this.#handleUnexpectedClose(code, reason)
+          void this.#handleUnexpectedClose(code, reason)
         }
       })
       await transport.waitForOpen()
@@ -867,8 +911,8 @@ export class AgentSession {
       // ─── slice-restore-last-config: החל בחירות אחרונות (אחרי connected — חובה) ───
       await this.#applyRememberedConfig()
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      this.error = msg
+      this.error = formatAcpError(e)
+      this.#errorSurfaced = true // calev-heavy §10.2: כשל טרמינלי — #cleanup הורג את ה-WS
       this.#setStatus("error")
       this.#cleanup()
     }
@@ -1116,6 +1160,7 @@ export class AgentSession {
     }
     this.#setStatus("connecting")
     this.error = null
+    this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
     this.bubbles = []
     this.#detached = false
 
@@ -1144,7 +1189,7 @@ export class AgentSession {
         if (this.#detached) return
         if (this.#tearingDown) return // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
         if (code !== 1000 && code !== 1001) {
-          this.#handleUnexpectedClose(code, reason)
+          void this.#handleUnexpectedClose(code, reason)
         }
       })
       await transport.waitForOpen()
@@ -1181,8 +1226,8 @@ export class AgentSession {
 
       this.#setStatus("connected")
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      this.error = `loadSession failed: ${msg}`
+      this.error = `loadSession failed: ${formatAcpError(e)}`
+      this.#errorSurfaced = true // calev-heavy §10.2: כשל טרמינלי — #cleanup הורג את ה-WS
       this.#setTurnState("idle") // NBug3: throw מוקדם (createAgent/waitForOpen) — ה-finally הפנימי לא רץ
       this.#setStatus("error")
       this.#cleanup()
@@ -1221,6 +1266,7 @@ export class AgentSession {
   }): Promise<void> => {
     this.error = null // אביגיל: #warmReconnect מאפס bubbles אך לא error — נקה כדי
     // שלא יישאר error ישן אחרי re-attach מוצלח.
+    this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
     // דפנסיבי: סגור חיבור קיים (אם המשתמש כבר מחובר ל-agent אחר)
     if (this.#transport) {
       await this.#transport.closeAndWait()
@@ -1275,6 +1321,7 @@ export class AgentSession {
     this.#resetTurnTracking() // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
     this.#setStatus("connecting")
     this.error = null
+    this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
     this.bubbles = []
 
     try {
@@ -1305,11 +1352,12 @@ export class AgentSession {
 
       this.#setStatus("connected")
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      this.error = `switchSession failed: ${msg}`
+      this.error = `switchSession failed: ${formatAcpError(e)}`
       this.#setTurnState("idle") // NBug3: throw מוקדם — ה-finally הפנימי אולי לא רץ
       this.#setStatus("error")
       // לא #cleanup — החיבור עדיין תקין; רק הטעינה נכשלה. השאר את ה-#client חי.
+      // calev-heavy §10.2: לא מדליק #errorSurfaced — ה-WS נשאר חי; drop מאוחר יותר
+      // צריך כן להצית reconnect (במקום להיתקע על ההודעה הישנה).
     }
   }
 
@@ -1339,6 +1387,7 @@ export class AgentSession {
 
     this.#setStatus("connecting")
     this.error = null
+    this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
     this.bubbles = []
     this.sessionTitle = "" // slice session-title: סשן חדש = אין כותרת
 
@@ -1361,10 +1410,11 @@ export class AgentSession {
       // ─── slice-restore-last-config: החל בחירות אחרונות (אחרי connected — חובה) ───
       await this.#applyRememberedConfig()
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      this.error = `newSession failed: ${msg}`
+      this.error = `newSession failed: ${formatAcpError(e)}`
       this.#setStatus("error")
       // לא #cleanup — החיבור עדיין תקין; רק יצירת הסשן נכשלה. השאר את ה-#client חי.
+      // calev-heavy §10.2: לא מדליק #errorSurfaced — ה-WS נשאר חי; drop מאוחר יותר
+      // צריך כן להצית reconnect (במקום להיתקע על ההודעה הישנה).
     }
   }
 
