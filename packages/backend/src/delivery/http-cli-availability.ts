@@ -11,7 +11,8 @@
  */
 
 import type { CliKind, CliSpec } from "@drive-coding/core"
-import { CLI_KINDS, CLI_SPECS, detectAvailableClis } from "@drive-coding/core"
+import { CLI_KINDS, CLI_SPECS } from "@drive-coding/core"
+import { detectAvailableClis } from "@drive-coding/core/cli-availability"
 import { getCliSpec } from "@drive-coding/provider/config"
 import type { Hono } from "hono"
 

@@ -1,7 +1,5 @@
 export * from "./cwd-hash"
 export * from "./cwd-validate"
-export * from "./cli-resolve"
-export * from "./cli-availability"
 export type * from "./ports"
 export * from "./schemas"
 export * from "./ui/markdown"
