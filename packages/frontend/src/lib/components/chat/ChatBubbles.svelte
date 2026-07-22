@@ -17,6 +17,7 @@
  */
 import { Virtualizer, type VirtualizerHandle } from "virtua/svelte"
 import { getChatScroll, getI18n, getSession } from "$lib/context"
+import { stableBubbleKey } from "$lib/util/bubble-key"
 import BubbleRenderer from "./BubbleRenderer.svelte"
 import ElicitationDialog from "./ElicitationDialog.svelte"
 import PermissionRequestBlock from "./PermissionRequestBlock.svelte"
@@ -39,8 +40,8 @@ $effect(() => {
   <Virtualizer
     bind:this={handle}
     scrollRef={chatScroll.scrollEl}
-    data={session.bubbles}
-    getKey={(b) => b.id}
+    data={session.renderBubbles}
+    getKey={stableBubbleKey}
     startMargin={80}
   >
     {#snippet children(bubble)}
@@ -70,7 +71,7 @@ $effect(() => {
     />
   {/key}
 {/if}
-{#if session.bubbles.length === 0}
+{#if session.renderBubbles.length === 0}
   <div class="empty">{t("chat.empty")}</div>
 {/if}
 

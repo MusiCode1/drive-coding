@@ -181,6 +181,9 @@ export class AgentSession {
   turnState = $state<TurnState>("idle")
   error = $state<string | null>(null)
   bubbles = $state<Bubble[]>([])
+  // ─── slice reconnect-bubble-merge: frozen display בזמן warm-reconnect replay ───
+  /** לא-null רק בזמן warm-reconnect replay (#warmReconnect) — מקפיא את התצוגה על הרשימה הישנה. */
+  #displaySnapshot = $state<Bubble[] | null>(null)
   agentId = $state<string | null>(null)
   cwd = $state<string | null>(null)
   // ─── slice ws-reconnect-infra: reconnect state ─── (INVASIVE — מאושר)
@@ -255,6 +258,17 @@ export class AgentSession {
   quota = $state<QuotaSnapshot | null>(null)
   /** True בזמן בקשת `refreshQuota()` פעילה. */
   quotaLoading = $state(false)
+
+  // ─── slice reconnect-bubble-merge: render-consumers (additive) ───
+  /** רשימת התצוגה. בזמן warm-reconnect replay מוקפאת ל-snapshot; אחרת = live bubbles. */
+  get renderBubbles(): Bubble[] {
+    return this.#displaySnapshot ?? this.bubbles
+  }
+
+  /** true רק בזמן warm-reconnect replay (התצוגה קפואה). לא נדלק בטעינה ראשונית/switchSession. */
+  get isReconnectReplay(): boolean {
+    return this.#displaySnapshot !== null
+  }
 
   // ─── image-attach: capability gating ─── (slice-image-paste, additive)
   /**
@@ -662,6 +676,13 @@ export class AgentSession {
       this.#setStatus("disconnected")
       return
     }
+    // slice reconnect-bubble-merge, תיקון-במקום 2 (calev NO-GO r2 2026-07-22): הקפא
+    // כאן — בראש #doReconnect — ולא בתוך #warmReconnect. בניתוק-רשת מוחלט גם
+    // #findReusableAgent (listAgents) נכשל → מדלגים על warm לגמרי ונכנסים ישר ל-cold;
+    // הקפאה שהייתה רק בתוך #warmReconnect לא כיסתה את הנתיב הזה → coldReconnect איפס
+    // את bubbles ל-[] בלי snapshot → המסך התרוקן. כאן זה מכסה warm, warm→cold, וגם
+    // cold-ישיר. idempotent — לא דורס snapshot טוב שנשאר מניסיון קודם/backoff.
+    if (this.#displaySnapshot === null) this.#displaySnapshot = this.bubbles
     // NBug2 root: סגור WS חי והמתן לאישור לפני warm
     if (this.#transport) {
       await this.#transport.closeAndWait()
@@ -805,6 +826,9 @@ export class AgentSession {
           { capabilities: ATTACHED_CAPS_FALLBACK },
         )
         this.#ext = createExtClient(this.#client)
+        // slice reconnect-bubble-merge, תיקון-במקום 2: ההקפאה עצמה עברה לקריאה
+        // (#doReconnect / attachToLiveAgent) — לא כאן. #warmReconnect לבדו לא מכסה
+        // ניתוק-רשת מוחלט שמדלג עליו לגמרי (ר' calev NO-GO r2 2026-07-22).
         this.bubbles = []
         this.isLoadingHistory = true
         try {
@@ -818,6 +842,8 @@ export class AgentSession {
         } finally {
           this.isLoadingHistory = false
           this.#setTurnState("idle") // replay מסתיים — reset turnState (replay אינו תור). מתאם ל-loadSession/switchSession; בלעדיו אינדיקטור "המודל פועל" נתקע אחרי warm-reconnect (ה-turn-tracker observe על frames משוחזרים)
+          // הערה: אין שחרור snapshot כאן — זה רץ גם בכשל (throw). השחרור עצמו קורה
+          // רק בהצלחה, ב-#setStatus (chokepoint משותף ל-warm/cold — ר' שם).
         }
         // replace:true — אותו דגם כמו switchSession:327 (fix-409 מוזג ב-8f59ec3)
         await notifySessionAttached(agentId, this.#sessionId!, { replace: true }).catch(() => {})
@@ -1281,6 +1307,10 @@ export class AgentSession {
     this.cwd = input.cwd
     this.#cliKind = input.cliKind
     this.sessionTitle = "" // slice session-title: process חי בלי title → fallback ל-"drive-coding"
+    // slice reconnect-bubble-merge, תיקון-במקום 2: מסלול-attach הזה קורא ל-#warmReconnect
+    // ישירות, בלי לעבור דרך #doReconnect — לכן ההקפאה (שעברה לראש #doReconnect) לא
+    // הייתה מכסה אותו. הקפא גם כאן (idempotent, כמו ב-#doReconnect).
+    if (this.#displaySnapshot === null) this.#displaySnapshot = this.bubbles
     const ok = await this.#warmReconnect(input.agentId)
     if (!ok) {
       this.error = "reconnect failed: agent no longer available"
@@ -1755,12 +1785,19 @@ export class AgentSession {
    * נקודת-mutation יחידה ל-status. כל שינוי status עובר דרך כאן.
    * מנגן audio cue ב-transitions רלוונטיים (slice 6). אין $effect — קריאה מפורשת.
    * idempotent: אם next === prev — לא מנגן cue (אין transition).
+   *
+   * slice reconnect-bubble-merge (fix preview 2026-07-22): chokepoint יחיד לשחרור
+   * ה-frozen-display snapshot של warm-reconnect. מעבר ל-"connected" = reconnect/load
+   * הצליח בפועל (warm ~799 וגם cold דרך loadSession ~1200 עוברים דרך כאן) — רק אז
+   * מותר לחשוף renderBubbles מחדש. אם #displaySnapshot כבר null (אין replay בעיצומו) —
+   * no-op. כשל (status="error"/retry) לא מגיע לכאן — ה-snapshot נשאר קפוא (INVARIANT).
    */
   #setStatus(next: AgentSessionStatus): void {
     const prev = this.status
     if (next === prev) return
     this.status = next
     if (next === "error") this.#cues?.play("error")
+    if (next === "connected") this.#displaySnapshot = null
   }
 
   // ─── msr-v2: setter ל-turnState ───
