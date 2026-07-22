@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 // packages/release/scripts/build.mjs
 // Builds the release bundle:
 //   1. Builds the frontend — package-manager-AGNOSTIC: runs the workspace `build`
@@ -6,16 +7,27 @@
 //      so this works whoever invokes it (node/bun/pnpm, or a `prepack` under npm).
 //   2. Copies frontend/build → release/frontend-dist/
 //   3. Copies backend/plugins  → release/plugins/
-//   4. Bundles the backend bin with `bun build` — this step is bun-SPECIFIC (it is a
-//      bun-targeted bundle: `#!/usr/bin/env bun`, uses `Bun.*`). If we ever target
-//      Deno etc., only this step changes.
+//   4. Bundles the backend bin with `bun build --target=node` — bun is only the
+//      *bundler* here; the OUTPUT is a Node-runnable bundle (`#!/usr/bin/env node`),
+//      so the published package works under BOTH `npx` (Node) and `bunx` (Bun). The
+//      runtime is already Node-compatible (@hono/node-server, ws, node:* builtins);
+//      the only `Bun.*` call (Bun.file) lives behind isBinary() — dead code in this
+//      bundle, live only in the separate `bun build --compile` binary (build-binary.mjs).
 //
 // Run via: node scripts/build.mjs  (or triggered automatically by prepack/npm pack)
 
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs"
 import { execFileSync } from "node:child_process"
-import { fileURLToPath } from "node:url"
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { detect } from "package-manager-detector/detect"
 import { runFilterArgs, runPm } from "../../../scripts/pm.mjs"
 
@@ -27,14 +39,7 @@ const repoRoot = path.resolve(__dirname, "../../..")
 
 const frontendBuild = path.join(repoRoot, "packages", "frontend", "build")
 const backendPlugins = path.join(repoRoot, "packages", "backend", "plugins")
-const backendBinEntry = path.join(
-  repoRoot,
-  "packages",
-  "backend",
-  "src",
-  "bin",
-  "drive-coding.ts",
-)
+const backendBinEntry = path.join(repoRoot, "packages", "backend", "src", "bin", "drive-coding.ts")
 
 const releaseFrontendDist = path.join(releaseDir, "frontend-dist")
 const releasePlugins = path.join(releaseDir, "plugins")
@@ -75,8 +80,9 @@ console.log("[build] Step 3: copying plugins…")
 rmSync(releasePlugins, { recursive: true, force: true })
 cpSync(backendPlugins, releasePlugins, { recursive: true })
 
-// Step 4: Bundle backend bin with bun build (core + provider-contract inline)
-console.log("[build] Step 4: bundling with bun build…")
+// Step 4: Bundle backend bin with `bun build --target=node` (core + provider-contract inline).
+// --target=node → a Node-runnable bundle so `npx drive-coding` works, not only `bunx`.
+console.log("[build] Step 4: bundling with bun build (--target=node)…")
 rmSync(releaseDist, { recursive: true, force: true })
 mkdirSync(releaseDist, { recursive: true })
 
@@ -85,7 +91,7 @@ execFileSync(
   [
     "build",
     backendBinEntry,
-    "--target=bun",
+    "--target=node",
     "--external",
     "pino",
     "--external",
@@ -95,6 +101,21 @@ execFileSync(
   ],
   { stdio: "inherit" },
 )
+
+// Step 4b: rewrite the shebang to node. bun preserves the ENTRY file's source
+// shebang (`#!/usr/bin/env bun` — correct for running raw TS in dev), but the
+// published bundle must launch under Node so `npx drive-coding` doesn't require
+// bun on the user's PATH. Only the first line is touched; the harmless `// @bun`
+// pragma on line 2 is a plain comment under Node.
+const bundleText = readFileSync(releaseBinOut, "utf8")
+if (!bundleText.startsWith("#!/usr/bin/env bun\n")) {
+  throw new Error(
+    `[build] FATAL: expected bundle to start with '#!/usr/bin/env bun' shebang to rewrite, ` +
+      `got: ${JSON.stringify(bundleText.slice(0, 40))}. bun's shebang behaviour may have changed.`,
+  )
+}
+writeFileSync(releaseBinOut, bundleText.replace("#!/usr/bin/env bun\n", "#!/usr/bin/env node\n"))
+console.log("[build] Step 4b: rewrote shebang → #!/usr/bin/env node")
 
 // Guard: the bundle must exist, and NO sourcemap may leak into dist/.
 // bun 1.3.14 has a bug where `bun build --sourcemap --outfile <p>` ignores

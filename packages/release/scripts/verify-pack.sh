@@ -18,12 +18,32 @@ VERSION="$(node -p "require('./package.json').version")"
 TGZ="$(pwd)/drive-coding-${VERSION}.tgz"
 
 # ---- Step 1: tarball structure checks ----
+# NB: list the archive ONCE into a variable and grep THAT — never `tar … | grep -q`.
+# Under `set -o pipefail`, `grep -q` short-circuits on the first match and closes the
+# pipe while `tar` is still decompressing (14MB) → `tar` gets SIGPIPE → non-zero exit
+# → pipefail fails the pipeline → a FALSE "missing file" even when the file is present.
 echo "[verify] checking tarball contents..."
-tar -tzf "$TGZ" | grep -q 'package/dist/drive-coding.js'     || { echo "FAIL: missing dist/drive-coding.js"; exit 1; }
-tar -tzf "$TGZ" | grep -q 'package/frontend-dist/index.html' || { echo "FAIL: missing frontend-dist/index.html"; exit 1; }
-tar -tzf "$TGZ" | grep -q 'package/plugins/'                 || { echo "FAIL: missing plugins/"; exit 1; }
-tar -tzf "$TGZ" | grep -qE 'node_modules|\.pnpm|provider-abstraction' && { echo "FAIL: workspace/git leak in tarball"; exit 1; } || true
+LIST="$(tar -tzf "$TGZ")"
+grep -q 'package/dist/drive-coding.js'     <<<"$LIST" || { echo "FAIL: missing dist/drive-coding.js"; exit 1; }
+grep -q 'package/frontend-dist/index.html' <<<"$LIST" || { echo "FAIL: missing frontend-dist/index.html"; exit 1; }
+grep -q 'package/plugins/'                 <<<"$LIST" || { echo "FAIL: missing plugins/"; exit 1; }
+grep -qE 'node_modules|\.pnpm|provider-abstraction' <<<"$LIST" && { echo "FAIL: workspace/git leak in tarball"; exit 1; } || true
 echo "[verify] tarball structure OK ✓"
+
+# ---- Step 1b: shebang MUST be node, not bun ----
+# The bundle is built with `bun build --target=node` + a shebang rewrite so the
+# package runs under BOTH `npx` (Node) and `bunx` (Bun). A `#!/usr/bin/env bun`
+# shebang here would break `npx drive-coding` on any machine without bun on PATH
+# (the exact bug this guards against — the old bun-target build shipped it).
+# Extract the single file to disk first (no `… | head` — same SIGPIPE/pipefail trap).
+SHEBANG_TMP="$(mktemp)"
+tar -xzf "$TGZ" -O package/dist/drive-coding.js > "$SHEBANG_TMP" 2>/dev/null
+SHEBANG="$(sed -n '1p' "$SHEBANG_TMP")"
+rm -f "$SHEBANG_TMP"
+[ "$SHEBANG" = "#!/usr/bin/env node" ] || {
+  echo "FAIL: dist/drive-coding.js shebang is '$SHEBANG' (expected '#!/usr/bin/env node' — npx would break)"; exit 1;
+}
+echo "[verify] shebang is #!/usr/bin/env node ✓ (npx-safe)"
 
 # ---- Step 2: clean install via bun add ----
 TMP="$(mktemp -d)"
@@ -64,10 +84,39 @@ AGENTS_BODY=$(curl -fsS "http://localhost:$PORT/api/agents" 2>/dev/null || true)
 echo "GET /api/agents → $AGENTS_BODY"
 echo "$AGENTS_BODY" | grep -q '"agents"' || { echo "FAIL: /api/agents did not return {agents:...}"; exit 1; }
 
+# ---- Step 5: real-Node smoke test (the npx path) ----
+# Guards that the bundle boots under REAL Node, not only under bun. `npx drive-coding`
+# runs the bin with Node — if any bun-only runtime API leaked into a live code path,
+# it would crash here. Skipped (not failed) when no real Node is on PATH, since some
+# dev boxes only have bun (where `node` is a shim → `bun --version`-style banner).
+NODE_BIN="${VERIFY_NODE_BIN:-node}"
+IS_REAL_NODE=0
+if command -v "$NODE_BIN" >/dev/null 2>&1; then
+  # A real Node prints "vX.Y.Z"; a bun shim does not.
+  NODE_V="$("$NODE_BIN" --version 2>/dev/null || true)"
+  case "$NODE_V" in v[0-9]*) IS_REAL_NODE=1 ;; esac
+fi
+if [ "$IS_REAL_NODE" = "1" ]; then
+  NODE_PORT="${VERIFY_NODE_PORT:-4013}"
+  echo "[verify] real Node $NODE_V found — booting under Node on port $NODE_PORT (npx path)..."
+  env -u FE_STATIC_DIR PORT="$NODE_PORT" "$NODE_BIN" node_modules/drive-coding/dist/drive-coding.js &
+  NODE_PID=$!
+  sleep 4
+  NODE_HTTP=$(curl -fsS -o /dev/null -w "%{http_code}" "http://localhost:$NODE_PORT/" || true)
+  kill "$NODE_PID" 2>/dev/null || true
+  echo "GET / (Node) → $NODE_HTTP"
+  [ "$NODE_HTTP" = "200" ] || { echo "FAIL: Node boot GET / returned $NODE_HTTP (expected 200 — npx path broken)"; exit 1; }
+  echo "[verify] Node boot OK ✓ (npx-safe)"
+else
+  echo "[verify] SKIP real-Node smoke test — no real Node on PATH (set VERIFY_NODE_BIN to a real node to enable)"
+fi
+
 echo ""
 echo "[verify] ALL CHECKS PASSED ✓"
 echo "  - tarball structure: dist/ frontend-dist/ plugins/ present, no leak"
+echo "  - dist shebang = #!/usr/bin/env node (npx-safe)"
 echo "  - bun add \$TGZ → exit 0"
 echo "  - node_modules/.bin/drive-coding exists"
-echo "  - GET / → 200"
+echo "  - GET / → 200 (bunx)"
 echo "  - GET /api/agents → {agents:...}"
+if [ "$IS_REAL_NODE" = "1" ]; then echo "  - GET / → 200 (real Node / npx path)"; fi
