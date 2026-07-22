@@ -16,6 +16,8 @@ const i18n = getI18n()
 const t = $derived(i18n.t)
 </script>
 
+<!-- itemAlign="center": בורר-השפה הוא חריג — he/en מעורבב-כיוון, לכן יישור-מרכז שרירותי
+     (per-content לא הגיוני כאן). ר' Select.svelte prop itemAlign. -->
 <Select
   value={i18n.locale}
   options={[
@@ -23,5 +25,6 @@ const t = $derived(i18n.t)
     { value: "en", label: t("settings.language.en") },
   ]}
   title={t("settings.language.label")}
+  itemAlign="center"
   onchange={(v) => i18n.setLocale(v as Locale)}
 />

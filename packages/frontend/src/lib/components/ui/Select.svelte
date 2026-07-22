@@ -35,7 +35,7 @@ export interface SelectGroup {
 import { Dialog, Popover } from "bits-ui"
 import CheckIcon from "@lucide/svelte/icons/check"
 import ChevronDownIcon from "@lucide/svelte/icons/chevron-down"
-import { getResponsive, getI18n } from "$lib/context"
+import { getResponsive } from "$lib/context"
 
 interface Props {
   value?: string
@@ -47,6 +47,13 @@ interface Props {
   ariaLabel?: string
   /** קומפקטי: trigger ברוחב תוכן (inline) במקום מלא. ברירת מחדל מלא. */
   compact?: boolean
+  /**
+   * יישור פריטים ברשימה:
+   *  - "auto" (ברירת מחדל): כל פריט מיושר לפי שפת-התוכן שלו (`dir="auto"`) — שמות
+   *    אנגליים (מודלים/CLIs) נקראים משמאל, עברית מימין. זה ה"סדר לפי שפה".
+   *  - "center": יישור-מרכז שרירותי — לבוררים שבהם per-content לא הגיוני (בורר-שפה he/en).
+   */
+  itemAlign?: "auto" | "center"
   onchange?: (value: string) => void
 }
 
@@ -59,11 +66,11 @@ let {
   disabled = false,
   ariaLabel,
   compact = false,
+  itemAlign = "auto",
   onchange,
 }: Props = $props()
 
 const responsive = getResponsive()
-const i18n = getI18n()
 
 let open = $state(false)
 
@@ -141,18 +148,22 @@ const triggerClass = $derived(
         </div>
       {/if}
       {#each g.items as item (item.value)}
+        <!-- dir="auto" על ה-row כולו → הפריט (label+desc+checkmark) מסתדר לפי שפת-התוכן:
+             שם אנגלי → LTR (label בהתחלה-שמאל, ✓ בסוף-ימין); עברית → RTL. ב-center מבטלים
+             את ה-auto ומיישרים למרכז (בורר-שפה). -->
         <button
           type="button"
           disabled={item.disabled}
-          class="rounded-lg px-3 py-3 text-sm flex items-start justify-between gap-2 text-start hover:bg-white/5 disabled:opacity-40"
+          dir={itemAlign === "center" ? "ltr" : "auto"}
+          class="rounded-lg px-3 py-3 text-sm flex items-start gap-2 hover:bg-white/5 disabled:opacity-40 {itemAlign === 'center' ? 'justify-between' : 'justify-between text-start'}"
           style="color:var(--fg)"
           class:is-selected={item.value === value}
           onclick={() => pick(item.value)}
         >
-          <span class="flex flex-col min-w-0 gap-0.5">
-            <span class="line-clamp-2 text-start" dir="auto">{item.label}</span>
+          <span class="flex flex-col min-w-0 gap-0.5 {itemAlign === 'center' ? 'flex-1 text-center' : ''}">
+            <span class="line-clamp-2" dir="auto">{item.label}</span>
             {#if item.description?.trim()}
-              <span class="text-[11px] leading-snug text-start whitespace-pre-wrap" style="color:var(--fg-dim)" dir="auto">{item.description.trim()}</span>
+              <span class="text-[11px] leading-snug whitespace-pre-wrap" style="color:var(--fg-dim)" dir="auto">{item.description.trim()}</span>
             {/if}
           </span>
           {#if item.value === value}
@@ -214,11 +225,12 @@ const triggerClass = $derived(
       {@render triggerInner()}
     </Popover.Trigger>
     <Popover.Portal>
+      <!-- אין dir כפוי על ה-Content — כל פריט מסתדר לפי שפת-התוכן (dir="auto" על ה-row).
+           min-w מבטיח רוחב קריא גם כשה-trigger צר (fix: "Google/Ger..." נחתך במובייל/עמודה צרה). -->
       <Popover.Content
         sideOffset={6}
         align="start"
-        dir={i18n.dir}
-        class="z-50 max-h-[60dvh] w-(--bits-floating-anchor-width) max-w-[92vw] flex flex-col rounded-xl border shadow-xl overflow-hidden"
+        class="z-50 max-h-[60dvh] w-(--bits-floating-anchor-width) min-w-[16rem] max-w-[92vw] flex flex-col rounded-xl border shadow-xl overflow-hidden"
         style="background:var(--bg-elev); border-color:var(--border)"
       >
         {@render list(false)}
