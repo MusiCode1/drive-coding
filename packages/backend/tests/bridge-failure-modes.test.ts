@@ -246,7 +246,13 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
       child.emit("exit", 127)
 
       await new Promise((r) => setTimeout(r, 20))
-      expect(crashSpy).toHaveBeenCalledWith("agent-exit", { exitCode: 127, signal: null })
+      // Commit 1 (surface-crash-stderr): notifyCrash now also carries the captured
+      // stderr lines (empty here — no stderr was emitted in this scenario).
+      expect(crashSpy).toHaveBeenCalledWith("agent-exit", {
+        exitCode: 127,
+        signal: null,
+        stderr: [],
+      })
       // After crash, conn removed from registry
       expect(reg.get("agent-exit")).toBeUndefined()
 
@@ -296,7 +302,13 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
       // Registry should not have this conn in its map after crash
       expect(reg.get("agent-x")).toBeUndefined()
       // crash handler was called
-      expect(crashSpy).toHaveBeenCalledWith("agent-x", { exitCode: 127, signal: null })
+      // Commit 1 (surface-crash-stderr): notifyCrash now also carries the captured
+      // stderr lines — here the "command not found\n" chunk emitted before exit.
+      expect(crashSpy).toHaveBeenCalledWith("agent-x", {
+        exitCode: 127,
+        signal: null,
+        stderr: ["command not found"],
+      })
 
       await monitor.stopAndAssertClean()
     })
