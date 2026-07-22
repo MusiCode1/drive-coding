@@ -8,13 +8,14 @@
  * slice: active-processes-icons
  */
 import type { AgentPublic, MachineStats } from "@drive-coding/core"
+import PlugIcon from "@lucide/svelte/icons/plug"
+import Trash2Icon from "@lucide/svelte/icons/trash-2"
+import { reconnectState } from "$lib/adapters/reconnect-state"
+import { getMachineStats } from "$lib/adapters/system-api"
 import { getActiveAgents, getI18n, getSettings } from "$lib/context"
 import { formatRelativeTime } from "$lib/util/formatting"
 import { basename } from "$lib/util/path"
 import { resizeDrag } from "$lib/util/resize-drag"
-import { getMachineStats } from "$lib/adapters/system-api"
-import Trash2Icon from "@lucide/svelte/icons/trash-2"
-import PlugIcon from "@lucide/svelte/icons/plug"
 import MachineStatsBar from "./MachineStatsBar.svelte"
 
 interface Props {
@@ -34,6 +35,11 @@ let handleEl = $state<HTMLDivElement | null>(null)
 // אישור kill — מזהה ה-agent שמחכה לאישור שנייה
 let confirmingId = $state<string | null>(null)
 let confirmTimer = $state<ReturnType<typeof setTimeout> | null>(null)
+
+// אישור takeover — state נפרד מ-confirmingId (של Kill), אחרת קליק-Kill
+// וקליק-takeover על אותו agent.id מתנגשים (slice reconnect-ws-takeover Commit 2).
+let takeoverConfirmingId = $state<string | null>(null)
+let takeoverConfirmTimer = $state<ReturnType<typeof setTimeout> | null>(null)
 
 // מדדי-מכונה (RAM/CPU) — poll קיים 12s, בית ב-MachineStatsBar (slice be-machine-stats)
 let machine = $state<MachineStats | null>(null)
@@ -109,8 +115,45 @@ function handleKill(id: string) {
   }
 }
 
-function isReconnectDisabled(agent: AgentPublic): boolean {
-  return !agent.acpSessionId || agent.attached === true
+// לחיצה על כפתור ה-Reconnect — דפוס 2-קליקים ל-takeover (עקבי ויזואלית עם ה-Kill
+// שלמעלה, אבל state-אישור נפרד: takeoverConfirmingId, לא confirmingId).
+function handleReconnectClick(agent: AgentPublic) {
+  const state = reconnectState(agent)
+  if (state === "disabled") return
+  if (state === "reconnect") {
+    onReconnect(agent)
+    return
+  }
+  // state === "takeover"
+  if (takeoverConfirmingId === agent.id) {
+    // לחיצה שנייה — בצע את ה-takeover
+    if (takeoverConfirmTimer !== null) {
+      clearTimeout(takeoverConfirmTimer)
+      takeoverConfirmTimer = null
+    }
+    takeoverConfirmingId = null
+    onReconnect(agent)
+  } else {
+    // לחיצה ראשונה — בקש אישור
+    if (takeoverConfirmTimer !== null) clearTimeout(takeoverConfirmTimer)
+    takeoverConfirmingId = agent.id
+    takeoverConfirmTimer = setTimeout(() => {
+      takeoverConfirmingId = null
+      takeoverConfirmTimer = null
+    }, 3000)
+  }
+}
+
+// title 3-דרכי: disabled (אין סשן) / takeover (בשימוש, ממתין ל-2-קליקים) / reconnect רגיל.
+function reconnectTitle(agent: AgentPublic): string {
+  const state = reconnectState(agent)
+  if (state === "disabled") return t("connect.agents.noSession")
+  if (state === "takeover") {
+    return takeoverConfirmingId === agent.id
+      ? t("connect.agents.takeOverConfirm")
+      : t("connect.agents.takeOver")
+  }
+  return t("connect.agents.reconnect")
 }
 </script>
 
@@ -165,17 +208,23 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
             </div>
 
             <div class="agent-actions">
-            <!-- Reconnect -->
-            <button
-              type="button"
-              class="action-btn icon-btn reconnect-btn"
-              disabled={isReconnectDisabled(agent)}
-              onclick={() => onReconnect(agent)}
-              title={isReconnectDisabled(agent) ? t("connect.agents.inUse") : t("connect.agents.reconnect")}
-              aria-label={t("connect.agents.reconnect")}
-            >
-              <PlugIcon size={16} strokeWidth={1.75} />
-            </button>
+            <!-- Reconnect / Take over -->
+            <div class="reconnect-wrap">
+              <button
+                type="button"
+                class="action-btn icon-btn reconnect-btn"
+                class:confirming={takeoverConfirmingId === agent.id}
+                disabled={reconnectState(agent) === "disabled"}
+                onclick={() => handleReconnectClick(agent)}
+                title={reconnectTitle(agent)}
+                aria-label={t("connect.agents.reconnect")}
+              >
+                <PlugIcon size={16} strokeWidth={1.75} />
+              </button>
+              {#if takeoverConfirmingId === agent.id}
+                <span class="takeover-confirm-tip" role="status">{t("connect.agents.takeOverConfirm")}</span>
+              {/if}
+            </div>
 
             <!-- Kill -->
             <div class="kill-wrap">
@@ -473,6 +522,35 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     align-items: center;
     justify-content: center;
     padding: 0.3rem;
+  }
+
+  .reconnect-wrap {
+    position: relative;
+  }
+
+  /* takeover 2-click confirm — עיצוב עקבי ל-.kill-btn.confirming/.kill-confirm-tip,
+     צבע accent (לא danger-red) כי זו לא פעולה הרסנית. */
+  .reconnect-btn.confirming {
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .takeover-confirm-tip {
+    position: absolute;
+    bottom: calc(100% + 5px);
+    inset-inline-start: 0;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    padding: 0.2rem 0.45rem;
+    border-radius: 5px;
+    pointer-events: none;
+    z-index: 20;
+    animation: tip-pop 0.12s ease-out both;
   }
 
   .kill-wrap {

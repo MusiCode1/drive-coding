@@ -208,6 +208,10 @@ export type MessageKey =
   | "connect.agents.kill"
   | "connect.agents.killConfirm"
   | "connect.agents.inUse"
+  // ─── reconnect-ws-takeover Commit 2 ─── (panel takeover-affordance)
+  | "connect.agents.takeOver"
+  | "connect.agents.takeOverConfirm"
+  | "connect.agents.noSession"
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   | "connect.agents.working"
   // ─── agent-last-message-ui ─── (slice agent-last-message-ui)

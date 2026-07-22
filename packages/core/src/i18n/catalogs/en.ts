@@ -203,6 +203,10 @@ export const en: Catalog = {
   "connect.agents.kill": "Kill",
   "connect.agents.killConfirm": "Sure?",
   "connect.agents.inUse": "Open in another tab",
+  // ─── reconnect-ws-takeover Commit 2 ─── (panel takeover-affordance)
+  "connect.agents.takeOver": "Take over",
+  "connect.agents.takeOverConfirm": "Open elsewhere — take over?",
+  "connect.agents.noSession": "No active session",
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   "connect.agents.working": "working…",
   // ─── agent-last-message-ui ─── (slice agent-last-message-ui)

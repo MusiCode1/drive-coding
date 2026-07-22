@@ -198,6 +198,10 @@ export const he: Catalog = {
   "connect.agents.kill": "הרוג",
   "connect.agents.killConfirm": "בטוח?",
   "connect.agents.inUse": "פעיל בכרטיסייה אחרת",
+  // ─── reconnect-ws-takeover Commit 2 ─── (panel takeover-affordance)
+  "connect.agents.takeOver": "השתלט",
+  "connect.agents.takeOverConfirm": "פתוח במקום אחר — להשתלט?",
+  "connect.agents.noSession": "אין סשן פעיל",
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   "connect.agents.working": "עובד…",
   // ─── agent-last-message-ui ─── (slice agent-last-message-ui)
