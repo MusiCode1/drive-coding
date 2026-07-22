@@ -20,9 +20,14 @@
  *
  * מקרי קצה:
  *   - סוכן לא נמצא → סוגר close(1008, "agent not found")
- *   - MED-8: טאב שני לאותו agentId → סוגר close(1008, "agent in use by another tab")
+ *   - MED-8 → takeover (slice reconnect-ws-takeover, תיקון-שורש): WS חדש לאותו agentId
+ *     לא נדחה יותר — הוא **מדיח** את הישן (close TAKEOVER_CODE) ומתחבר warm לאותו
+ *     agent חי (נפילה-דרך ל-attach הרגיל). מונע cold-respawn (deleteAndKill) שהרג
+ *     תור פעיל בניתוק-רשת לא-חלק. ר' docs/decisions/drive-coding.md §2026-07-22.
  *   - crash → סוגר feWs.close(1011, "bridge closed")
  *   - סגירת feWs → ניקוי (unsub + detach), לא להרוג את ה-child (conn.close לא נקרא)
+ *     — guard-ממוקד ב-detach(): רק ה-state המשותף (activeFeWs/markDetached) מוגן
+ *     מפני takeover-race; unsub/unsubCrash הפרטיים-ל-ws תמיד רצים.
  */
 
 import { createLogger } from "@drive-coding/core/log"
@@ -31,6 +36,12 @@ import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 
 const log = createLogger("backend.ws.agent")
+
+// slice reconnect-ws-takeover: application close code — dedicated (not 1000/1006/1008/1011)
+// so the FE can distinguish "evicted by a newer connection" from a real drop and skip
+// auto-reconnect (prevents an infinite takeover ping-pong between two tabs/devices).
+// ⚠️ Must match TAKEOVER_CLOSE_CODE in packages/frontend/src/lib/view-models/agent-session.svelte.ts.
+export const TAKEOVER_CODE = 4409
 
 // ─── סוגים ────────────────────────────────────────────────────────────────────
 
@@ -70,22 +81,27 @@ export function createAgentWsHandler(deps: {
   return function onConnect(feWs: WebSocket, agentId: string): void {
     const childLog = log.child({ agentId })
 
-    // שומר MED-8
+    // שומר MED-8 → takeover (slice reconnect-ws-takeover, תיקון-שורש): WS חדש **מדיח**
+    // את הישן במקום להידחות. מונע: ניתוק-רשת לא-חלק → feWs ישן half-open → הישן היה
+    // דוחה את החדש ב-1008 → FE נופל ל-cold-respawn → deleteAndKill הורג את התור הפעיל.
     const existing = activeFeWs.get(agentId)
     if (existing) {
-      // observability (reconnect-ghost, נדיר): מעשירים את הדחייה כדי לאבחן כשזה קורה —
-      // האם ה-WS הישן חי (readyState=1=OPEN → tab-שני-אמיתי) או רפאים (2=CLOSING/3=CLOSED,
-      // או ping ישן → קליינט-מת שה-close/sweep עוד לא ניקה). readyState 0=CONNECTING/1=OPEN.
-      // תוספת-לוג בלבד — אותה זרימת-בקרה (close 1008 + return). השורש (takeover) = slice נפרד.
+      // observability: מאבחנים האם ה-WS הישן חי (readyState=1=OPEN → tab-שני-אמיתי)
+      // או רפאים (2=CLOSING/3=CLOSED, או ping ישן → קליינט-מת). readyState 0=CONNECTING/1=OPEN.
       childLog.warn(
         {
           existingReadyState: existing.ws.readyState,
           msSinceLastPing: Date.now() - existing.lastPingAt,
         },
-        "second tab rejected",
+        "taking over — evicting existing feWs",
       )
-      feWs.close(1008, "agent in use by another tab")
-      return
+      // הדח את הישן. קוד ייעודי (לא 1000/1006/1008/1011) — ה-FE מזהה אותו ולא מנסה
+      // reconnect (מונע ping-pong: הישן ידיח את החדש בחזרה).
+      existing.ws.close(TAKEOVER_CODE, "taken over by new connection")
+      // נפול-דרך (בכוונה, בלי return) ל-attach הרגיל של feWs החדש למטה. ה-detach() של
+      // הישן ירוץ async (כשה-close event שלו יגיע) — עד אז activeFeWs.set (למטה, לפני
+      // ה-return מהפונקציה הזו) כבר יחליף את הערך, וה-guard ב-detach() ידלג על הניקוי
+      // של ה-state המשותף (takeover race — §4 Commit 0 בבריף).
     }
 
     // presence check: האם agent קיים ב-connectionRegistry?
@@ -180,8 +196,15 @@ export function createAgentWsHandler(deps: {
           "WS error — detaching pipe",
         )
       else childLog.info({}, "WS disconnect — detaching pipe")
-      activeFeWs.delete(agentId)
-      deps.connectionRegistry.markDetached(agentId)
+      // takeover-race guard (slice reconnect-ws-takeover, §4 Commit 0): שני סוגי ניקוי —
+      // (א) state משותף (activeFeWs/markDetached) — מוגן: אם feWs זה כבר הוחלף ע"י takeover
+      // (activeFeWs מצביע על ws אחר), אין לדרוס את הרישום של ה-WS החדש/חי.
+      // (ב) פרטי-ל-ws (unsub/unsubCrash) — תמיד רץ: מנקה את ה-subscriber של ה-WS הזה
+      // בדיוק, בלי קשר לתקפות ה-state המשותף.
+      if (activeFeWs.get(agentId)?.ws === feWs) {
+        activeFeWs.delete(agentId)
+        deps.connectionRegistry.markDetached(agentId)
+      }
       unsub()
       unsubCrash()
       // חשוב: לעולם לא conn.close() — ה-connection שורד התנתקות של ה-FE
