@@ -26,22 +26,22 @@ const methods = $derived(authMethods.map(describeAuthMethod))
 
 {#if methods.length > 0}
   <div class="auth-guidance" role="region" aria-label={t("authGuidance.heading")}>
-    <strong>{t("authGuidance.heading")}{cliKind ? ` ${cliKind}` : ""}</strong>
+    <strong dir="auto">{t("authGuidance.heading")}{cliKind ? ` ${cliKind}` : ""}</strong>
     <ul>
       {#each methods as m (m.id)}
         <li>
-          <div class="method-name">{m.name}</div>
+          <div class="method-name" dir="auto">{m.name}</div>
           {#if m.kind === "env_var"}
-            <div class="method-detail">
+            <div class="method-detail" dir="auto">
               {t("authGuidance.envVar.setLabel")} {m.varNames.join(", ")}
             </div>
             {#if m.link}
-              <a href={m.link} target="_blank" rel="noopener noreferrer">
+              <a href={m.link} target="_blank" rel="noopener noreferrer" dir="auto">
                 {t("authGuidance.envVar.linkLabel")}
               </a>
             {/if}
           {:else if m.description}
-            <div class="method-detail">{m.description}</div>
+            <div class="method-detail" dir="auto">{m.description}</div>
           {/if}
         </li>
       {/each}
