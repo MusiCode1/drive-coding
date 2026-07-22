@@ -363,6 +363,10 @@ export type MessageKey =
   | "elicitation.decline"
   | "elicitation.cancel"
   | "elicitation.required"
+  // ─── auth guidance ─── (slice auth-guidance)
+  | "authGuidance.heading"
+  | "authGuidance.envVar.setLabel"
+  | "authGuidance.envVar.linkLabel"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

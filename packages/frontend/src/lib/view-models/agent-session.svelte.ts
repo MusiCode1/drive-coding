@@ -11,6 +11,7 @@
  */
 
 import type {
+  AuthMethod,
   AvailableCommand,
   SessionConfigOption,
   SessionModeState,
@@ -180,6 +181,9 @@ export class AgentSession {
   /** מה המודל עושה בתור הנוכחי. idle = אין תור פעיל. */
   turnState = $state<TurnState>("idle")
   error = $state<string | null>(null)
+  // ─── slice auth-guidance: authMethods שנלכדו מ-initialize (client.authMethods) ───
+  /** [] = אין כשל-auth ידוע / warm-reattach (מדלג initialize) / CLI לא מפרסם authMethods. */
+  authMethods = $state<ReadonlyArray<AuthMethod>>([])
   bubbles = $state<Bubble[]>([])
   // ─── slice reconnect-bubble-merge: frozen display בזמן warm-reconnect replay ───
   /** לא-null רק בזמן warm-reconnect replay (#warmReconnect) — מקפיא את התצוגה על הרשימה הישנה. */
@@ -888,6 +892,7 @@ export class AgentSession {
     }
     this.#setStatus("connecting")
     this.error = null
+    this.authMethods = [] // slice auth-guidance: נקה לפני חיבור חדש — נלכד מחדש אחרי createAcpClient
     this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
     this.bubbles = []
     this.#detached = false
@@ -923,6 +928,7 @@ export class AgentSession {
         onRequestPermission: this.#onRequestPermission,
         onCreateElicitation: this.#onCreateElicitation,
       })
+      this.authMethods = this.#client.authMethods // slice auth-guidance: ללכידה בכשל session/new/prompt מאוחר יותר
       this.#ext = createExtClient(this.#client)
       const m = this.#sessionMeta()
       const sessionResult = await this.#client.newSession({
@@ -1168,7 +1174,9 @@ export class AgentSession {
     } catch (err: unknown) {
       this.#turnEnded = true
       this.#setTurnState("idle")
-      this.error = `prompt failed: ${err instanceof Error ? err.message : String(err)}`
+      // slice auth-guidance: formatAcpError (data.details→data.message→message) במקום
+      // err.message הגולמי — היה מציג "Internal error" גנרי (claude: auth_required).
+      this.error = `prompt failed: ${formatAcpError(err)}`
       this.#setStatus("error")
     }
   }
@@ -1196,6 +1204,7 @@ export class AgentSession {
     }
     this.#setStatus("connecting")
     this.error = null
+    this.authMethods = [] // slice auth-guidance: נקה לפני חיבור חדש — נלכד מחדש אחרי createAcpClient
     this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
     this.bubbles = []
     this.#detached = false
@@ -1237,6 +1246,7 @@ export class AgentSession {
         onRequestPermission: this.#onRequestPermission,
         onCreateElicitation: this.#onCreateElicitation,
       })
+      this.authMethods = this.#client.authMethods // slice auth-guidance: ללכידה בכשל loadSession/prompt מאוחר יותר
       this.#ext = createExtClient(this.#client)
 
       // ── קריאה ל-loadSession במקום ל-newSession ──
