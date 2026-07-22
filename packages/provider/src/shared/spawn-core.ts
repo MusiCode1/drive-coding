@@ -186,7 +186,7 @@ export function createSpawnCore(hooks?: SpawnCoreHooks): SpawnCore {
       childLog.info({ code, signal }, "child exit")
       if (store.has(bridgeId)) {
         store.delete(bridgeId)
-        notifyCrash(bridgeId, { exitCode: code, signal: signal ?? null })
+        notifyCrash(bridgeId, { exitCode: code, signal: signal ?? null, stderr: [...stderrLines] })
       }
     })
 

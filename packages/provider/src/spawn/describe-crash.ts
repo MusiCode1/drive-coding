@@ -23,6 +23,13 @@ export type BridgeCrashInfo = {
   readonly signal: NodeJS.Signals | string | null
   /** מאוכלס כאשר הקריסה נובעת מ-child.on("error") — spawn ENOENT וכו' */
   readonly spawnError?: { readonly code?: string; readonly message: string }
+  /**
+   * stderr שנלכד עד רגע ה-exit (spawn-core). אופציונלי — backward-compatible;
+   * consumers שלא מזינים אותו ממשיכים לקבל [] (ראה describeCrash קורא). מאוכלס
+   * רק ב-connectSpawn (spawned CLIs); claude/codex in-process לא עוברים דרך
+   * spawn-core, ולכן לא מקבלים שדה זה (ראה scope בבריף surface-crash-stderr).
+   */
+  readonly stderr?: readonly string[]
 }
 
 const STDERR_REASON_MAX_LEN = 200

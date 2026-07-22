@@ -102,7 +102,7 @@ export function createAgentOrchestrator(deps: {
     try {
       const existing = await deps.registry.get(agentId)
       if (existing && existing.status !== "closed") {
-        const crashReason = describeCrash(info, [])
+        const crashReason = describeCrash(info, info.stderr ?? [])
         await deps.registry.update(agentId, { status: "crashed", crashReason })
         log.warn(
           { agentId, exitCode: info.exitCode, signal: info.signal, crashReason },
