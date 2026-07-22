@@ -1,20 +1,21 @@
 <script lang="ts">
-import { CLI_KINDS, type CliKind, type AgentPublic } from "@drive-coding/core"
-import { goto } from "$app/navigation"
+import { type AgentPublic, CLI_KINDS, type CliKind } from "@drive-coding/core"
+import FolderIcon from "@lucide/svelte/icons/folder"
+import Loader2Icon from "@lucide/svelte/icons/loader-2"
 import { onMount, untrack } from "svelte"
+import { goto } from "$app/navigation"
 import { connectAgent } from "$lib/actions/connect-agent"
 import { fetchServerOptions } from "$lib/adapters/options"
 import type { RecentProject } from "$lib/adapters/recent-projects"
+import AuthGuidance from "$lib/components/AuthGuidance.svelte"
 import ActiveProcessesPanel from "$lib/components/connect/ActiveProcessesPanel.svelte"
 import RecentProjectsPanel from "$lib/components/connect/RecentProjectsPanel.svelte"
+import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
+import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
+import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
 import LanguageSelect from "$lib/components/settings/LanguageSelect.svelte"
 import Select from "$lib/components/ui/Select.svelte"
-import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
-import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
-import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
-import FolderIcon from "@lucide/svelte/icons/folder"
-import Loader2Icon from "@lucide/svelte/icons/loader-2"
-import { getI18n, getSession, getSettings, getModals, getActiveAgents } from "$lib/context"
+import { getActiveAgents, getI18n, getModals, getSession, getSettings } from "$lib/context"
 import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
 
 const settings = getSettings()
@@ -190,6 +191,8 @@ async function handleRecentSelect(project: RecentProject) {
         <strong>{t("connect.error.prefix")}</strong>
         {session.error}
       </div>
+      <!-- slice auth-guidance: הדרכת-אימות ספציפית-ל-CLI (מתחת ל-error, רק כשיש authMethods) -->
+      <AuthGuidance cliKind={session.cliKind} authMethods={session.authMethods} />
     {/if}
   </div>
 

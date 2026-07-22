@@ -4,10 +4,11 @@
  */
 import { onMount } from "svelte"
 import { goto } from "$app/navigation"
-import { getSession } from "$lib/context"
-import AppShell from "$lib/components/layout/AppShell.svelte"
+import AuthGuidance from "$lib/components/AuthGuidance.svelte"
 import ChatBubbles from "$lib/components/chat/ChatBubbles.svelte"
 import RecordFooter from "$lib/components/chat/RecordFooter.svelte"
+import AppShell from "$lib/components/layout/AppShell.svelte"
+import { getSession } from "$lib/context"
 
 const session = getSession()
 
@@ -59,6 +60,8 @@ onMount(() => {
       >
         {session.error}
       </div>
+      <!-- slice auth-guidance: הדרכת-אימות ספציפית-ל-CLI (מתחת ל-error, רק כשיש authMethods) -->
+      <AuthGuidance cliKind={session.cliKind} authMethods={session.authMethods} />
     {/if}
 
     {#snippet footer()}

@@ -354,4 +354,8 @@ export const he: Catalog = {
   "elicitation.decline": "דחה",
   "elicitation.cancel": "ביטול",
   "elicitation.required": "שדה חובה",
+  // ─── auth guidance ─── (slice auth-guidance)
+  "authGuidance.heading": "איך להתחבר עם",
+  "authGuidance.envVar.setLabel": "הגדר:",
+  "authGuidance.envVar.linkLabel": "קבלת פרטי-גישה",
 }

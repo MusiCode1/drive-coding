@@ -358,4 +358,8 @@ export const en: Catalog = {
   "elicitation.decline": "Decline",
   "elicitation.cancel": "Cancel",
   "elicitation.required": "Required",
+  // ─── auth guidance ─── (slice auth-guidance)
+  "authGuidance.heading": "How to authenticate with",
+  "authGuidance.envVar.setLabel": "Set:",
+  "authGuidance.envVar.linkLabel": "Get credentials",
 }
