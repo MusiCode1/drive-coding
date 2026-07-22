@@ -64,6 +64,9 @@ function initValues(fs: ReturnType<typeof mapElicitationFields>) {
   }
   return { text, num, bool }
 }
+// svelte-ignore state_referenced_locally -- params is immutable-per-instance: parent ChatBubbles.svelte
+// wraps this component in {#key session.pendingElicitation} (calev NO-GO r2 fix), so this one-time
+// read is intentional (seeding the initial $state values, not a reactive dependency).
 const _init = initValues(isFormElicitation(params) ? mapElicitationFields(params.requestedSchema) : [])
 let textValues = $state<Record<string, string>>(_init.text)
 let numberValues = $state<Record<string, number | undefined>>(_init.num)
