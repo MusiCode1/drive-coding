@@ -98,6 +98,8 @@ vi.mock("$lib/adapters/agents-api", () => ({
   deleteAgent: vi.fn().mockResolvedValue(undefined),
   notifySessionAttached: vi.fn().mockResolvedValue(undefined),
   listAgents: vi.fn().mockResolvedValue([]),
+  // slice session-title-in-process-list: #pushTitleToServer קורא ל-patchAgent
+  patchAgent: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock("$lib/adapters/sessions", () => ({

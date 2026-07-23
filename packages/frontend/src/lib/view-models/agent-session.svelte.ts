@@ -33,6 +33,7 @@ import {
   getAgent,
   listAgents,
   notifySessionAttached,
+  patchAgent,
 } from "$lib/adapters/agents-api"
 // ─── slice sessions-inline: ייבוא טיפוס + normalize ───
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
@@ -1266,6 +1267,7 @@ export class AgentSession {
       }
       this.#sessionId = input.sessionId
       this.sessionTitle = input.title ?? this.sessionTitle // keep-on-undefined: reconnect לא מאפס
+      this.#pushTitleToServer(this.sessionTitle) // slice session-title-in-process-list
 
       // 4. הודע ל-BE (זהה ל-attach, מאמץ מיטבי)
       await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
@@ -1402,6 +1404,7 @@ export class AgentSession {
       this.#sessionId = input.sessionId
       this.cwd = input.cwd
       this.sessionTitle = input.title ?? this.sessionTitle // keep-on-undefined
+      this.#pushTitleToServer(this.sessionTitle) // slice session-title-in-process-list
 
       // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים)
       // replace:true — warm switch מכוון, מאפשר דריסת sessionId קיים (עוקף guard MED-9)
@@ -1808,6 +1811,19 @@ export class AgentSession {
   /** _meta לפי ה-CLI הנוכחי. claude → thinking-display; אחר → undefined (אגנוסטי). */
   #sessionMeta(): Record<string, unknown> | undefined {
     return this.#cliKind === "claude" ? CLAUDE_SESSION_META : undefined
+  }
+
+  // ─── slice session-title-in-process-list: דחיפת title ל-BE ───
+
+  /**
+   * דוחף את כותרת-הסשן הנוכחית ל-BE (PATCH /api/agents/:id) כדי שרשימת "תהליכים
+   * פעילים" תציג אותה. best-effort — כשל דחיפה לא שובר UI (הכותרת המקומית כבר עודכנה
+   * ב-this.sessionTitle לפני הקריאה). client הוא הבעלים — ה-BE שכבת-אחסון טיפשה.
+   */
+  #pushTitleToServer(title: string): void {
+    const id = this.agentId
+    if (!id || !title) return // אין agentId / כותרת ריקה → דלג
+    void patchAgent(id, { title }).catch(() => {})
   }
 
   // ─── slice 6: setter מרכז ─── (additive — מנתב את כל ה-status writes)
@@ -2247,9 +2263,12 @@ export class AgentSession {
     if (update.sessionUpdate === "session_info_update") {
       // SessionInfoUpdate: title?: string | null; updatedAt?: string | null (types.gen.d.ts:3905)
       const title = (update as { title?: string | null }).title
-      if (title === null)
+      if (title === null) {
         this.sessionTitle = "" // null = clear (לפי הסכמה)
-      else if (typeof title === "string") this.sessionTitle = title
+      } else if (typeof title === "string") {
+        this.sessionTitle = title
+        this.#pushTitleToServer(this.sessionTitle) // slice session-title-in-process-list
+      }
       // undefined → keep-on-undefined (עקבי עם loadSession :999 / :1114)
       return
     }
