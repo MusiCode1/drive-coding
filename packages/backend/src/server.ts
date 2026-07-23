@@ -6,6 +6,7 @@ import { serveStatic } from "@hono/node-server/serve-static"
 import { Hono } from "hono"
 import { WebSocketServer } from "ws"
 import { isBinary } from "./binary.js"
+import { preferPathClaudeExecutable } from "./config/prefer-path-cli.js"
 import { isTransientSocketError } from "./delivery/transient-socket-error.js"
 import { safeUrlPathname } from "./delivery/url-safe.js"
 import { resolveTls } from "./tls.js"
@@ -229,6 +230,8 @@ agentWss.on("connection", (ws, req) => {
 
   onAgentConnect(ws, agentId)
 })
+
+preferPathClaudeExecutable()
 
 const port = Number(process.env.PORT ?? 4000)
 const hostname = process.env.DRIVE_CODING_HOST ?? "127.0.0.1"
