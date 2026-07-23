@@ -115,6 +115,32 @@ export async function deleteAgent(agentId: string): Promise<void> {
   }
 }
 
+/**
+ * עדכון שדות-משתמש של agent דרך PATCH גנרי (כרגע: title). best-effort אצל הקורא.
+ * (slice session-title-in-process-list)
+ */
+export async function patchAgent(
+  agentId: string,
+  patch: { title?: string | null },
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await withTimeout(
+    (s) =>
+      fetch(beUrl(`/api/agents/${agentId}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+        signal: s,
+      }),
+    AGENTS_API_TIMEOUT_MS,
+    { signal, label: "patchAgent" },
+  )
+  if (!res.ok) {
+    const body = await res.text().catch(() => "")
+    throw new Error(`patchAgent failed: ${res.status} ${body}`)
+  }
+}
+
 /** משנה את דגל הנעיצה (persistent) של agent. */
 export async function setAgentPersistent(agentId: string, persistent: boolean): Promise<void> {
   const res = await withTimeout(
