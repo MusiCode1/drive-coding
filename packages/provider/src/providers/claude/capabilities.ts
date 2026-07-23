@@ -30,6 +30,9 @@ interface RawAgentCapabilities {
  *   without limits yet still returns { snapshot: null } — that's a valid, supported
  *   response, not unsupported. Store-level (query-access.ts), like rename/thinkingTokens —
  *   not declared in the initialize frame, so not gated on caps?.
+ * - fork: true — slice session-fork-ui. unstable_forkSession is available via the
+ *   claude-agent-acp bridge, which declares sessionCapabilities.fork in its initialize
+ *   response. Claude-only (the only source of `fork:true` — static caps stay conservative).
  */
 export function mapClaudeCapabilities(raw: unknown): NormalizedCapabilities {
   const caps = (raw as { agentCapabilities?: RawAgentCapabilities } | null)?.agentCapabilities
@@ -45,5 +48,6 @@ export function mapClaudeCapabilities(raw: unknown): NormalizedCapabilities {
     // image: safe default; slice reattach-state-sync's init-frame tap (extractPromptCaps)
     // is the source of truth, not a per-provider hardcode.
     image: false,
+    fork: true,
   }
 }

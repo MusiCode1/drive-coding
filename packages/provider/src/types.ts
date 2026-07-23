@@ -43,6 +43,13 @@ export interface NormalizedCapabilities {
    * Slice reattach-state-sync Commit 1 — see extractPromptCaps (core).
    */
   image: boolean
+  /**
+   * unstable_forkSession available if agent advertises sessionCapabilities.fork.
+   * Optional (not required like the other flags): only claude's dynamic caps
+   * (mapClaudeCapabilities) sets it; everything else (other providers, static
+   * fallback caps) omits it — undefined means "not supported", zero cascade.
+   */
+  fork?: boolean
 }
 
 /**

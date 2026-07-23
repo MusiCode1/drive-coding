@@ -107,6 +107,17 @@ export type AcpClient = {
     sessionId: string
     _meta?: AcpRequestMeta
   }): ReturnType<ClientSideConnection["loadSession"]>
+  // ─── slice session-fork-ui: Commit 0 ───
+  /**
+   * מפצל (fork) session קיים ל-session **חדש** שממשיך מאותה נקודה — ה-session המקורי
+   * נשאר שלם. שונה מ-`loadSession` (טוען/ממשיך את *אותו* id). `unstable_` — experimental API,
+   * זמין רק אם ה-agent מכריז `sessionCapabilities.fork` (ר' `NormalizedCapabilities.fork`).
+   */
+  forkSession(opts: {
+    cwd: string
+    sessionId: string
+    _meta?: AcpRequestMeta
+  }): ReturnType<ClientSideConnection["unstable_forkSession"]>
   listSessions(): ReturnType<ClientSideConnection["listSessions"]>
   // ─── slice session-delete: Commit 0 ───
   /**
@@ -202,6 +213,20 @@ function buildAcpClientFacade(
      */
     async loadSession(opts: { cwd: string; sessionId: string; _meta?: AcpRequestMeta }) {
       return conn.loadSession({
+        sessionId: opts.sessionId,
+        cwd: opts.cwd,
+        mcpServers: [],
+        ...(opts._meta != null && { _meta: opts._meta }),
+      })
+    },
+
+    // ─── slice session-fork-ui: Commit 0 ───
+    /**
+     * מפצל session קיים ל-session חדש (מראה של loadSession — mcpServers:[] קבוע).
+     * עשוי לזרוק -32601 אם ה-CLI אינו תומך ביכולת fork (ר' `NormalizedCapabilities.fork`).
+     */
+    async forkSession(opts: { cwd: string; sessionId: string; _meta?: AcpRequestMeta }) {
+      return conn.unstable_forkSession({
         sessionId: opts.sessionId,
         cwd: opts.cwd,
         mcpServers: [],
