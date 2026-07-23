@@ -155,6 +155,42 @@ export function registerAgentsHttp(
     return c.json({ ok: true })
   })
 
+  /**
+   * PATCH /api/agents/:id — עדכון גנרי (whitelist) של שדות-משתמש. כרגע: title בלבד.
+   * (slice session-title-in-process-list) — ה-BE שכבת-אחסון טיפשה, לא מפענח wire בעצמו;
+   * ה-client (agent-session VM) דוחף לכאן את הכותרת שקיבל מ-session_info_update.
+   *
+   * ⚠️ הגנת-גנריות load-bearing (אביגיל אימתה אמפירית) — שתי שכבות, לא אחת:
+   * (א) `.onUndeclaredKey("reject")` על ה-schema — דוחה body עם מפתחות זרים (400).
+   * (ב) extract מפורש ל-`registry.update` — **אף פעם לא** spread של body/parsed גולמי,
+   *     כי `registry.update` ב-runtime מבצע `{ ...existing, ...patch }` בלי סינון
+   *     (ה-Pick ב-ports.ts הוא type-only). בלי שתי השכבות, PATCH {title, status:"crashed"}
+   *     היה דורס את ה-status.
+   */
+  const PatchAgentInput = type({ "title?": "string | null" }).onUndeclaredKey("reject")
+
+  app.patch("/api/agents/:id", async (c) => {
+    const id = c.req.param("id")
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ error: "invalid json" }, 400)
+    }
+    const parsed = PatchAgentInput(body)
+    if (parsed instanceof type.errors) {
+      return c.json({ error: parsed.summary }, 400)
+    }
+    const agent = await deps.registry.get(id)
+    if (!agent) return c.json({ error: "agent not found" }, 404)
+    // guard: title absent (undefined) → no-op, שלא לנקות כותרת קיימת בטעות.
+    // title: null = clear מכוון (הסכמה מתירה); string = set.
+    if (parsed.title !== undefined) {
+      await deps.registry.update(id, { title: parsed.title })
+    }
+    return c.json({ ok: true })
+  })
+
   // POST /api/agents/:id/persistent — נעיצה: { persistent: boolean }
   app.post("/api/agents/:id/persistent", async (c) => {
     const id = c.req.param("id")
