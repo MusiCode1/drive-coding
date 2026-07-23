@@ -369,6 +369,9 @@ export type MessageKey =
   | "elicitation.required"
   // ─── reconnect takeover ─── (slice reconnect-ws-takeover)
   | "session.openedElsewhere"
+  // ─── reconnect-ws-takeover Commit 3 ─── (טבעת-חיבור פר-סשן, ActiveProcessesPanel)
+  | "connect.agents.connected"
+  | "connect.agents.disconnected"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

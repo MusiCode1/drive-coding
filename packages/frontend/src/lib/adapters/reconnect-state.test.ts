@@ -3,7 +3,7 @@
  * 3 המצבים של reconnectState לפי §4 Commit 2 של הבריף.
  */
 import { describe, expect, it } from "vitest"
-import { reconnectState } from "./reconnect-state"
+import { hasConnectionRing, reconnectState } from "./reconnect-state"
 
 describe("reconnectState", () => {
   it('אין acpSessionId → "disabled"', () => {
@@ -18,5 +18,16 @@ describe("reconnectState", () => {
   it('acpSessionId + לא attached → "reconnect"', () => {
     expect(reconnectState({ acpSessionId: "sess-1", attached: false })).toBe("reconnect")
     expect(reconnectState({ acpSessionId: "sess-1", attached: undefined })).toBe("reconnect")
+  })
+})
+
+describe("hasConnectionRing", () => {
+  it("attached===true → true", () => {
+    expect(hasConnectionRing({ attached: true })).toBe(true)
+  })
+
+  it("attached===false/undefined → false", () => {
+    expect(hasConnectionRing({ attached: false })).toBe(false)
+    expect(hasConnectionRing({ attached: undefined })).toBe(false)
   })
 })

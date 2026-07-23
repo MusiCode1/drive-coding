@@ -360,4 +360,7 @@ export const he: Catalog = {
   "elicitation.required": "שדה חובה",
   // ─── reconnect takeover ─── (slice reconnect-ws-takeover)
   "session.openedElsewhere": "הסשן נפתח במקום אחר",
+  // ─── reconnect-ws-takeover Commit 3 ─── (טבעת-חיבור פר-סשן, ActiveProcessesPanel)
+  "connect.agents.connected": "מחובר",
+  "connect.agents.disconnected": "לא מחובר",
 }

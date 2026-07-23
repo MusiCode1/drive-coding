@@ -365,4 +365,7 @@ export const en: Catalog = {
   "elicitation.required": "Required",
   // ─── reconnect takeover ─── (slice reconnect-ws-takeover)
   "session.openedElsewhere": "This session was opened elsewhere",
+  // ─── reconnect-ws-takeover Commit 3 ─── (טבעת-חיבור פר-סשן, ActiveProcessesPanel)
+  "connect.agents.connected": "Connected",
+  "connect.agents.disconnected": "Disconnected",
 }

@@ -10,7 +10,7 @@
 import type { AgentPublic, MachineStats } from "@drive-coding/core"
 import PlugIcon from "@lucide/svelte/icons/plug"
 import Trash2Icon from "@lucide/svelte/icons/trash-2"
-import { reconnectState } from "$lib/adapters/reconnect-state"
+import { hasConnectionRing, reconnectState } from "$lib/adapters/reconnect-state"
 import { getMachineStats } from "$lib/adapters/system-api"
 import { getActiveAgents, getI18n, getSettings } from "$lib/context"
 import { formatRelativeTime } from "$lib/util/formatting"
@@ -144,6 +144,13 @@ function handleReconnectClick(agent: AgentPublic) {
   }
 }
 
+// a11y ל-status-dot — ממד-חיבור נפרד ממצב-התהליך (הצבע). slice
+// reconnect-ws-takeover Commit 3 (3b): טבעת סביב ה-dot כש-attached===true,
+// בלי לגעת בצבע (שנשאר agent.status). ראה hasConnectionRing.
+function connectionTitle(agent: AgentPublic): string {
+  return hasConnectionRing(agent) ? t("connect.agents.connected") : t("connect.agents.disconnected")
+}
+
 // title 3-דרכי: disabled (אין סשן) / takeover (בשימוש, ממתין ל-2-קליקים) / reconnect רגיל.
 function reconnectTitle(agent: AgentPublic): string {
   const state = reconnectState(agent)
@@ -189,7 +196,13 @@ function reconnectTitle(agent: AgentPublic): string {
         <li class="agent-row">
           <div class="agent-top">
             <div class="agent-info">
-              <span class="status-dot" style="background:{statusColor(agent.status)}"></span>
+              <span
+                class="status-dot"
+                class:attached={hasConnectionRing(agent)}
+                style="background:{statusColor(agent.status)}"
+                title={connectionTitle(agent)}
+                aria-label={connectionTitle(agent)}
+              ></span>
               <span class="cli-badge">{agent.cliKind}</span>
               <span class="folder-name" title={agent.cwd}><bdi>{basename(agent.cwd)}</bdi></span>
               {#if agent.busy}
@@ -208,40 +221,39 @@ function reconnectTitle(agent: AgentPublic): string {
             </div>
 
             <div class="agent-actions">
-            <!-- Reconnect / Take over -->
-            <div class="reconnect-wrap">
-              <button
-                type="button"
-                class="action-btn icon-btn reconnect-btn"
-                class:confirming={takeoverConfirmingId === agent.id}
-                disabled={reconnectState(agent) === "disabled"}
-                onclick={() => handleReconnectClick(agent)}
-                title={reconnectTitle(agent)}
-                aria-label={t("connect.agents.reconnect")}
-              >
-                <PlugIcon size={16} strokeWidth={1.75} />
-              </button>
+            <!-- Reconnect / Take over — מצב-אישור מתרחב inline (לא tooltip מרחף,
+                 slice reconnect-ws-takeover Commit 3 (3a): tooltip מוחלט נחתך
+                 ע"י .agent-list{overflow-y:auto} שגם חותך אופקית; הרחבה inline
+                 נשארת בזרימה הרגילה של השורה ולא נחתכת). -->
+            <button
+              type="button"
+              class="action-btn icon-btn reconnect-btn"
+              class:confirming={takeoverConfirmingId === agent.id}
+              disabled={reconnectState(agent) === "disabled"}
+              onclick={() => handleReconnectClick(agent)}
+              title={reconnectTitle(agent)}
+              aria-label={reconnectTitle(agent)}
+            >
+              <PlugIcon size={16} strokeWidth={1.75} />
               {#if takeoverConfirmingId === agent.id}
-                <span class="takeover-confirm-tip" role="status">{t("connect.agents.takeOverConfirm")}</span>
+                <span class="confirm-label" role="status">{t("connect.agents.takeOverConfirm")}</span>
               {/if}
-            </div>
+            </button>
 
             <!-- Kill -->
-            <div class="kill-wrap">
-              <button
-                type="button"
-                class="action-btn icon-btn kill-btn"
-                class:confirming={confirmingId === agent.id}
-                onclick={() => handleKill(agent.id)}
-                title={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
-                aria-label={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
-              >
-                <Trash2Icon size={16} strokeWidth={1.75} />
-              </button>
+            <button
+              type="button"
+              class="action-btn icon-btn kill-btn"
+              class:confirming={confirmingId === agent.id}
+              onclick={() => handleKill(agent.id)}
+              title={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
+              aria-label={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
+            >
+              <Trash2Icon size={16} strokeWidth={1.75} />
               {#if confirmingId === agent.id}
-                <span class="kill-confirm-tip" role="status">{t("connect.agents.killConfirm")}</span>
+                <span class="confirm-label" role="status">{t("connect.agents.killConfirm")}</span>
               {/if}
-            </div>
+            </button>
             </div>
           </div>
 
@@ -428,6 +440,15 @@ function reconnectTitle(agent: AgentPublic): string {
     flex-shrink: 0;
   }
 
+  /* טבעת-חיבור (3b, slice reconnect-ws-takeover Commit 3) — ממד נפרד מהצבע
+     (מצב-תהליך). רווח בצבע-הרקע ואז טבעת accent, כדי שהטבעת תיראה גם כש-
+     הצבע עצמו כבר accent (ready/busy). */
+  .status-dot.attached {
+    box-shadow:
+      0 0 0 2px var(--bg-elev),
+      0 0 0 4px var(--accent);
+  }
+
   .cli-badge {
     background: var(--border);
     color: var(--fg);
@@ -524,37 +545,29 @@ function reconnectTitle(agent: AgentPublic): string {
     padding: 0.3rem;
   }
 
-  .reconnect-wrap {
-    position: relative;
+  /* אישור 2-קליקים (kill/takeover) — הכפתור מתרחב inline ומציג את הטקסט
+     בתוכו, בלי tooltip מרחף (slice reconnect-ws-takeover Commit 3, 3a:
+     tooltip מוחלט נחתך ע"י .agent-list{overflow-y:auto} שגם חותך אופקית —
+     הרחבה בזרימה הרגילה לא נחתכת). */
+  .icon-btn.confirming {
+    padding-inline: 0.5rem;
+    gap: 0.35rem;
   }
 
-  /* takeover 2-click confirm — עיצוב עקבי ל-.kill-btn.confirming/.kill-confirm-tip,
-     צבע accent (לא danger-red) כי זו לא פעולה הרסנית. */
+  .confirm-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    animation: label-pop 0.12s ease-out both;
+  }
+
+  /* takeover 2-click confirm — עיצוב עקבי ל-.kill-btn.confirming, צבע accent
+     (לא danger-red) כי זו לא פעולה הרסנית. */
   .reconnect-btn.confirming {
     background: color-mix(in srgb, var(--accent) 15%, transparent);
     border-color: var(--accent);
     color: var(--accent);
     font-weight: 600;
-  }
-
-  .takeover-confirm-tip {
-    position: absolute;
-    bottom: calc(100% + 5px);
-    inset-inline-start: 0;
-    background: var(--accent);
-    color: #fff;
-    font-size: 0.72rem;
-    font-weight: 600;
-    white-space: nowrap;
-    padding: 0.2rem 0.45rem;
-    border-radius: 5px;
-    pointer-events: none;
-    z-index: 20;
-    animation: tip-pop 0.12s ease-out both;
-  }
-
-  .kill-wrap {
-    position: relative;
   }
 
   .kill-btn {
@@ -575,24 +588,8 @@ function reconnectTitle(agent: AgentPublic): string {
     font-weight: 600;
   }
 
-  .kill-confirm-tip {
-    position: absolute;
-    bottom: calc(100% + 5px);
-    inset-inline-end: 0;
-    background: rgba(200, 40, 40, 0.88);
-    color: #fff;
-    font-size: 0.72rem;
-    font-weight: 600;
-    white-space: nowrap;
-    padding: 0.2rem 0.45rem;
-    border-radius: 5px;
-    pointer-events: none;
-    z-index: 20;
-    animation: tip-pop 0.12s ease-out both;
-  }
-
-  @keyframes tip-pop {
-    from { opacity: 0; transform: scale(0.85) translateY(3px); }
+  @keyframes label-pop {
+    from { opacity: 0; transform: scale(0.85) translateY(1px); }
     to   { opacity: 1; transform: scale(1)    translateY(0);   }
   }
 

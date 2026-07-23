@@ -22,3 +22,14 @@ export function reconnectState(
   if (agent.attached === true) return "takeover"
   return "reconnect"
 }
+
+/**
+ * hasConnectionRing — predicate טהור: האם להציג טבעת-חיבור סביב ה-status-dot
+ * ב-ActiveProcessesPanel (slice reconnect-ws-takeover, Commit 3 — 3b).
+ *
+ * ממד נפרד מ-statusColor (מצב-תהליך): הצבע נשאר accent/dim/recording לפי
+ * agent.status; הטבעת מציינת חיבור (attached===true) בלבד, ללא קשר לצבע.
+ */
+export function hasConnectionRing(agent: Pick<AgentPublic, "attached">): boolean {
+  return agent.attached === true
+}
