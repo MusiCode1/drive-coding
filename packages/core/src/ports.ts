@@ -24,7 +24,9 @@ export interface AgentRegistry {
   /** עדכון סטטוס / פרטי bridge / סיבת קריסה / נעיצה. זורק שגיאה אם id לא קיים. */
   update(
     id: string,
-    patch: Partial<Pick<Agent, "status" | "bridgePort" | "acpSessionId" | "crashReason" | "persistent">>,
+    patch: Partial<
+      Pick<Agent, "status" | "bridgePort" | "acpSessionId" | "crashReason" | "persistent" | "title">
+    >,
   ): Promise<Agent>
 
   /** הסרה. זורק שגיאה אם לא קיים. */

@@ -95,6 +95,9 @@ export const Agent = type({
   "crashReason?": "string",
   // נעיצה (slice active-agents): נשמר לתאימות; ה-reaper הוסר — כרגע ללא אפקט (no-op). ברירת מחדל false.
   "persistent?": "boolean",
+  // כותרת-הסשן (slice session-title-in-process-list): נדחפת ע"י ה-client שפתח את הסשן
+  // (מקור: session_info_update ACP). runtime-only — נאבד ב-restart. null = ניקוי מכוון.
+  "title?": "string | null",
 })
 export type Agent = typeof Agent.infer
 
@@ -122,6 +125,8 @@ export const AgentPublic = type({
   // slice agent-last-message-at: epoch-ms של הפלט האחרון שהסוכן שלח (כל sessionUpdate).
   // שים לב: epoch-ms (number), בשונה מ-createdAt שהוא ISO string. runtime-only — נאבד ב-restart.
   "lastMessageAt?": "number | null",
+  // כותרת-הסשן (slice session-title-in-process-list): נדחפת ע"י ה-client שפתח את הסשן. runtime-only.
+  "title?": "string | null",
 })
 export type AgentPublic = typeof AgentPublic.infer
 
@@ -162,6 +167,9 @@ export function toAgentPublic(agent: Agent): AgentPublic {
   }
   if (agent.persistent !== undefined) {
     pub.persistent = agent.persistent
+  }
+  if (agent.title !== undefined) {
+    pub.title = agent.title
   }
   return pub
 }
