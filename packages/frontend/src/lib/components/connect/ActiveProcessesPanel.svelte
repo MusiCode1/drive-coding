@@ -149,6 +149,10 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
               <span class="status-dot" style="background:{statusColor(agent.status)}"></span>
               <span class="cli-badge">{agent.cliKind}</span>
               <span class="folder-name" title={agent.cwd}><bdi>{basename(agent.cwd)}</bdi></span>
+              {#if agent.title}
+                <span class="meta-sep">·</span>
+                <span class="session-title" title={agent.title}><bdi>{agent.title}</bdi></span>
+              {/if}
               {#if agent.busy}
                 <span class="meta-sep">·</span>
                 <span class="busy-indicator" aria-label={t("connect.agents.working")}>
@@ -397,6 +401,18 @@ function isReconnectDisabled(agent: AgentPublic): boolean {
     text-overflow: ellipsis;
     white-space: nowrap;
     flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  /* כותרת-הסשן (slice session-title-in-process-list) — תוכן-משתמש (עברית/אנגלית/
+     מעורב), ה-<bdi> ללא כפיית direction (בשונה מ-folder-name/cwd-full שהם נתיבים) —
+     כיוון לפי-תוכן. */
+  .session-title {
+    color: var(--fg-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1 1 auto;
     min-width: 0;
   }
 
