@@ -12,6 +12,7 @@
 
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 import type { MessageKey } from "@drive-coding/core/i18n"
+import GitForkIcon from "@lucide/svelte/icons/git-fork"
 import LogOutIcon from "@lucide/svelte/icons/log-out"
 import PowerIcon from "@lucide/svelte/icons/power"
 import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
@@ -218,6 +219,17 @@ async function selectSession(info: { sessionId: string; cwd: string; title?: str
  */
 async function onNewSession() {
   await session.newSession({ cliKind: settings.cliKind })
+  uiShell.closeSheet()
+  await goto("/chat")
+}
+
+/**
+ * פיצול (fork) הsession הנוכחי — session **חדש** שממשיך מאותה נקודה,
+ * הsession המקורי נשאר שלם. מגודר ב-session.supports.fork (claude בלבד היום).
+ * warm — אותו agentId, ללא detach/respawn (כמו onNewSession/selectSession).
+ */
+async function onForkSession() {
+  await session.forkSession()
   uiShell.closeSheet()
   await goto("/chat")
 }
@@ -506,6 +518,19 @@ $effect(() => {
   >
     ＋ {t("sidebar.newSession")}
   </button>
+
+  <!-- פיצול (fork) הsession הנוכחי — gated ב-fork capability (claude בלבד היום) -->
+  {#if session.supports.fork}
+  <button
+    class="shrink-0 flex items-center gap-1.5 text-start rounded-lg p-2.5 text-[13px] font-medium border border-dashed disabled:opacity-40 disabled:cursor-not-allowed"
+    style="border-color:var(--border); color:var(--accent)"
+    disabled={session.status !== "connected"}
+    onclick={onForkSession}
+  >
+    <GitForkIcon size={14} strokeWidth={1.75} />
+    {t("sidebar.forkSession")}
+  </button>
+  {/if}
 
   <!-- רשימת סשנים inline — בלי scroll/flex-1 פנימי: גוללת יחד עם אזור הגלילה המאוחד -->
   <div class="flex flex-col gap-2">

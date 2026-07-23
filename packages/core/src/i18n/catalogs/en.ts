@@ -169,6 +169,8 @@ export const en: Catalog = {
   "sidebar.sessions": "Sessions",
   "sidebar.refresh": "Refresh",
   "sidebar.newSession": "New session",
+  // ─── session-fork-ui: פיצול session ─── (תוספתי)
+  "sidebar.forkSession": "Fork session",
   // ─── cli-name-in-chat ─── (slice cli-name-in-chat)
   "sidebar.runningOn": "Running on",
   "sheet.handle": "Drag to open",

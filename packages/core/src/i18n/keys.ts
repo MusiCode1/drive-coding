@@ -174,6 +174,8 @@ export type MessageKey =
   | "sidebar.sessions"
   | "sidebar.refresh"
   | "sidebar.newSession"
+  // ─── session-fork-ui: פיצול session ─── (תוספתי)
+  | "sidebar.forkSession"
   // ─── cli-name-in-chat ─── (slice cli-name-in-chat)
   | "sidebar.runningOn"
   | "sheet.handle"

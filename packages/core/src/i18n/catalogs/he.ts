@@ -164,6 +164,8 @@ export const he: Catalog = {
   "sidebar.sessions": "סשנים",
   "sidebar.refresh": "רענן",
   "sidebar.newSession": "סשן חדש",
+  // ─── session-fork-ui: פיצול session ─── (תוספתי)
+  "sidebar.forkSession": "פצל סשן",
   // ─── cli-name-in-chat ─── (slice cli-name-in-chat)
   "sidebar.runningOn": "פועל על",
   "sheet.handle": "גרור לפתיחה",

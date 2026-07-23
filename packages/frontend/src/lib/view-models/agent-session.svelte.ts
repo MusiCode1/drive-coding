@@ -1482,6 +1482,63 @@ export class AgentSession {
     }
   }
 
+  // ─── slice session-fork-ui: פיצול session ─── (תוספתי)
+
+  /**
+   * מפצל (fork) את הsession הנוכחי לsession **חדש** שממשיך מאותה נקודה —
+   * הsession המקורי נשאר שלם. שונה מ-switchSession/loadSession (ממשיכים *אותו* id):
+   * כאן ה-id החדש מגיע מתגובת forkSession (מראה של newSession — id לא ידוע מראש).
+   *
+   * דורש #client + #sessionId + cwd פעילים (הpanel מציג את הכפתור רק כש-connected
+   * ו-session.supports.fork). אותו agentId — warm, ללא detach/respawn (כמו switchSession).
+   * מגודר ב-NormalizedCapabilities.fork (claude בלבד היום).
+   */
+  forkSession = async (): Promise<void> => {
+    if (this.#client === null || this.#sessionId === null || this.cwd === null) return
+    if (this.status !== "connected") {
+      throw new Error(`cannot forkSession in status ${this.status}`)
+    }
+
+    this.#resetTurnTracking() // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
+    this.#setStatus("connecting")
+    this.error = null
+    this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
+    this.bubbles = []
+
+    try {
+      this.isLoadingHistory = true // ה-session החדש עשוי לשאת היסטוריה מהמקור — כמו loadSession
+      let result: Awaited<ReturnType<AcpClient["forkSession"]>>
+      try {
+        const m = this.#sessionMeta()
+        result = await this.#client.forkSession({
+          cwd: this.cwd,
+          sessionId: this.#sessionId,
+          ...(m && { _meta: m }),
+        })
+      } finally {
+        this.isLoadingHistory = false
+        this.#setTurnState("idle") // NBug3: replay מסתיים — reset turnState
+      }
+      const newId = result.sessionId ?? null
+      if (!newId) throw new Error("forkSession returned no sessionId")
+      this.#captureSessionConfig(result)
+      this.#sessionId = newId
+
+      // הודע ל-BE על הsession החדש (best-effort, אותו agentId הקיים)
+      // replace:true — מעבר מכוון לsession אחר על אותו agent, עוקף guard MED-9.
+      if (this.agentId) {
+        await notifySessionAttached(this.agentId, newId, { replace: true }).catch(() => {})
+      }
+
+      this.#setStatus("connected")
+    } catch (e) {
+      this.error = `forkSession failed: ${formatAcpError(e)}`
+      this.#setTurnState("idle") // NBug3: throw מוקדם — ה-finally הפנימי אולי לא רץ
+      this.#setStatus("error")
+      // לא #cleanup — החיבור עדיין תקין; רק הפיצול נכשל. השאר את ה-#client חי.
+    }
+  }
+
   // ─── slice 4: עזרי הקשר לקריינות ─── (תוספתי)
 
   /**
