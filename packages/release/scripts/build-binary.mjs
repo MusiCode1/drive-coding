@@ -53,7 +53,7 @@ const bunBin = resolveBun()
 
 // Step 1: Build frontend
 console.log("[build-binary] Step 1: building frontend…")
-execFileSync("pnpm", ["--filter", "@drive-coding/frontend", "build"], {
+execFileSync("bun", ["run", "--filter", "@drive-coding/frontend", "build"], {
   cwd: repoRoot,
   stdio: "inherit",
   shell: isWindows,
