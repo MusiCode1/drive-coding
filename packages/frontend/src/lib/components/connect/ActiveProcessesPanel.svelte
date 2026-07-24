@@ -10,6 +10,7 @@
 import type { AgentPublic, MachineStats } from "@drive-coding/core"
 import PlugIcon from "@lucide/svelte/icons/plug"
 import Trash2Icon from "@lucide/svelte/icons/trash-2"
+import { Popover } from "bits-ui"
 import { hasConnectionRing, reconnectState } from "$lib/adapters/reconnect-state"
 import { getMachineStats } from "$lib/adapters/system-api"
 import { getActiveAgents, getI18n, getSettings } from "$lib/context"
@@ -95,24 +96,38 @@ function statusColor(status: AgentPublic["status"]): string {
   }
 }
 
+// מבטל מצב-אישור Kill (טיימר + state) — משמש גם ע"י handleKill (לחיצה שנייה /
+// לחיצה ראשונה על מחרוזת חדשה) וגם ע"י onOpenChange של ה-Popover (סגירה חיצונית:
+// Escape / קליק מחוץ לתוסף — bits-ui, ראה תיעוד ה-tooltip-portal למטה).
+function cancelKillConfirm() {
+  if (confirmTimer !== null) {
+    clearTimeout(confirmTimer)
+    confirmTimer = null
+  }
+  confirmingId = null
+}
+
 function handleKill(id: string) {
   if (confirmingId === id) {
     // לחיצה שנייה — בצע
-    if (confirmTimer !== null) {
-      clearTimeout(confirmTimer)
-      confirmTimer = null
-    }
-    confirmingId = null
+    cancelKillConfirm()
     void activeAgents.kill(id)
   } else {
-    // לחיצה ראשונה — בקש אישור
+    // לחיצה ראשונה — בקש אישור (פותח את ה-tooltip המרחף, ר' Popover.Root למטה)
     if (confirmTimer !== null) clearTimeout(confirmTimer)
     confirmingId = id
-    confirmTimer = setTimeout(() => {
-      confirmingId = null
-      confirmTimer = null
-    }, 3000)
+    confirmTimer = setTimeout(cancelKillConfirm, 3000)
   }
+}
+
+// מבטל מצב-אישור takeover — מקביל ל-cancelKillConfirm, state נפרד (ר' הערה
+// בהגדרת takeoverConfirmingId למעלה).
+function cancelTakeoverConfirm() {
+  if (takeoverConfirmTimer !== null) {
+    clearTimeout(takeoverConfirmTimer)
+    takeoverConfirmTimer = null
+  }
+  takeoverConfirmingId = null
 }
 
 // לחיצה על כפתור ה-Reconnect — דפוס 2-קליקים ל-takeover (עקבי ויזואלית עם ה-Kill
@@ -127,20 +142,13 @@ function handleReconnectClick(agent: AgentPublic) {
   // state === "takeover"
   if (takeoverConfirmingId === agent.id) {
     // לחיצה שנייה — בצע את ה-takeover
-    if (takeoverConfirmTimer !== null) {
-      clearTimeout(takeoverConfirmTimer)
-      takeoverConfirmTimer = null
-    }
-    takeoverConfirmingId = null
+    cancelTakeoverConfirm()
     onReconnect(agent)
   } else {
     // לחיצה ראשונה — בקש אישור
     if (takeoverConfirmTimer !== null) clearTimeout(takeoverConfirmTimer)
     takeoverConfirmingId = agent.id
-    takeoverConfirmTimer = setTimeout(() => {
-      takeoverConfirmingId = null
-      takeoverConfirmTimer = null
-    }, 3000)
+    takeoverConfirmTimer = setTimeout(cancelTakeoverConfirm, 3000)
   }
 }
 
@@ -221,39 +229,83 @@ function reconnectTitle(agent: AgentPublic): string {
             </div>
 
             <div class="agent-actions">
-            <!-- Reconnect / Take over — מצב-אישור מתרחב inline (לא tooltip מרחף,
-                 slice reconnect-ws-takeover Commit 3 (3a): tooltip מוחלט נחתך
-                 ע"י .agent-list{overflow-y:auto} שגם חותך אופקית; הרחבה inline
-                 נשארת בזרימה הרגילה של השורה ולא נחתכת). -->
-            <button
-              type="button"
-              class="action-btn icon-btn reconnect-btn"
-              class:confirming={takeoverConfirmingId === agent.id}
-              disabled={reconnectState(agent) === "disabled"}
-              onclick={() => handleReconnectClick(agent)}
-              title={reconnectTitle(agent)}
-              aria-label={reconnectTitle(agent)}
+            <!-- Reconnect / Take over — tooltip מרחף מעל הכפתור, מרונדר ב-
+                 Popover.Portal (bits-ui) כדי לא להיחתך ע"י .agent-list{overflow-y:auto}
+                 (slice reconnect-ws-takeover Commit 3, 3a redo 2026-07-23: היה
+                 inline-expand, הוחזר ל-tooltip מרחף לפי החלטת-משתמשת, הפעם דרך
+                 portal — תקדים: SessionBudgetMeter.svelte). ה-Popover.Root נשלט
+                 לגמרי ע"י takeoverConfirmingId (לא bind:open) — הקליק עצמו מנוהל
+                 ע"י handleReconnectClick (מכונת ה-2-קליקים); ה-onclick על ה-<button>
+                 (בתוך snippet child, אחרי הפריסה של props) דורס את ה-toggle
+                 הפנימי של bits כדי שלא יתנגש. onOpenChange מטפל רק בסגירה חיצונית
+                 (Escape / קליק מחוץ). -->
+            <Popover.Root
+              open={takeoverConfirmingId === agent.id}
+              onOpenChange={(next) => { if (!next && takeoverConfirmingId === agent.id) cancelTakeoverConfirm() }}
             >
-              <PlugIcon size={16} strokeWidth={1.75} />
-              {#if takeoverConfirmingId === agent.id}
-                <span class="confirm-label" role="status">{t("connect.agents.takeOverConfirm")}</span>
-              {/if}
-            </button>
+              <Popover.Trigger>
+                {#snippet child({ props })}
+                  <button
+                    {...props}
+                    type="button"
+                    class="action-btn icon-btn reconnect-btn"
+                    class:confirming={takeoverConfirmingId === agent.id}
+                    disabled={reconnectState(agent) === "disabled"}
+                    onclick={() => handleReconnectClick(agent)}
+                    title={reconnectTitle(agent)}
+                    aria-label={reconnectTitle(agent)}
+                  >
+                    <PlugIcon size={16} strokeWidth={1.75} />
+                  </button>
+                {/snippet}
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content
+                  side="top"
+                  sideOffset={5}
+                  trapFocus={false}
+                  dir={i18n.dir}
+                  class="takeover-confirm-tip"
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                >
+                  <span role="status">{t("connect.agents.takeOverConfirm")}</span>
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
 
-            <!-- Kill -->
-            <button
-              type="button"
-              class="action-btn icon-btn kill-btn"
-              class:confirming={confirmingId === agent.id}
-              onclick={() => handleKill(agent.id)}
-              title={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
-              aria-label={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
+            <!-- Kill — אותו דפוס tooltip-portal כמו למעלה, state נפרד (confirmingId). -->
+            <Popover.Root
+              open={confirmingId === agent.id}
+              onOpenChange={(next) => { if (!next && confirmingId === agent.id) cancelKillConfirm() }}
             >
-              <Trash2Icon size={16} strokeWidth={1.75} />
-              {#if confirmingId === agent.id}
-                <span class="confirm-label" role="status">{t("connect.agents.killConfirm")}</span>
-              {/if}
-            </button>
+              <Popover.Trigger>
+                {#snippet child({ props })}
+                  <button
+                    {...props}
+                    type="button"
+                    class="action-btn icon-btn kill-btn"
+                    class:confirming={confirmingId === agent.id}
+                    onclick={() => handleKill(agent.id)}
+                    title={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
+                    aria-label={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
+                  >
+                    <Trash2Icon size={16} strokeWidth={1.75} />
+                  </button>
+                {/snippet}
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content
+                  side="top"
+                  sideOffset={5}
+                  trapFocus={false}
+                  dir={i18n.dir}
+                  class="kill-confirm-tip"
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                >
+                  <span role="status">{t("connect.agents.killConfirm")}</span>
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
             </div>
           </div>
 
@@ -545,22 +597,6 @@ function reconnectTitle(agent: AgentPublic): string {
     padding: 0.3rem;
   }
 
-  /* אישור 2-קליקים (kill/takeover) — הכפתור מתרחב inline ומציג את הטקסט
-     בתוכו, בלי tooltip מרחף (slice reconnect-ws-takeover Commit 3, 3a:
-     tooltip מוחלט נחתך ע"י .agent-list{overflow-y:auto} שגם חותך אופקית —
-     הרחבה בזרימה הרגילה לא נחתכת). */
-  .icon-btn.confirming {
-    padding-inline: 0.5rem;
-    gap: 0.35rem;
-  }
-
-  .confirm-label {
-    font-size: 0.72rem;
-    font-weight: 600;
-    white-space: nowrap;
-    animation: label-pop 0.12s ease-out both;
-  }
-
   /* takeover 2-click confirm — עיצוב עקבי ל-.kill-btn.confirming, צבע accent
      (לא danger-red) כי זו לא פעולה הרסנית. */
   .reconnect-btn.confirming {
@@ -588,8 +624,44 @@ function reconnectTitle(agent: AgentPublic): string {
     font-weight: 600;
   }
 
-  @keyframes label-pop {
-    from { opacity: 0; transform: scale(0.85) translateY(1px); }
+  /* tooltip מרחף (kill/takeover 2-click confirm) — מרונדר ע"י Popover.Content
+     (bits-ui) בתוך Popover.Portal, כלומר ב-DOM מחוץ ל-ActiveProcessesPanel.svelte
+     (ולכן מחוץ ל-.agent-list{overflow-y:auto} החותך). :global() נדרש כי הקלאס
+     הזה מיושם על אלמנט שנוצר בקומפוננטה אחרת (popover-content.svelte של bits-ui),
+     לא נכתב ישירות ב-template של הקובץ הזה — סקופ ה-CSS הרגיל של Svelte לא
+     תופס אותו (slice reconnect-ws-takeover Commit 3, 3a redo 2026-07-23).
+     המיקום מעל הכפתור מנוהל ע"י floating-ui (side="top" ב-Popover.Content) —
+     אין עוד position:absolute/bottom ידני כמו בגרסה הקודמת (לפני Commit 3). */
+  :global(.takeover-confirm-tip) {
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    padding: 0.2rem 0.45rem;
+    border-radius: 5px;
+    z-index: 50;
+    pointer-events: none;
+    animation: tip-pop 0.12s ease-out both;
+  }
+
+  :global(.kill-confirm-tip) {
+    background: rgba(200, 40, 40, 0.88);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    padding: 0.2rem 0.45rem;
+    border-radius: 5px;
+    z-index: 50;
+    pointer-events: none;
+    animation: tip-pop 0.12s ease-out both;
+  }
+
+  /* -global- כי ה-animation מוחל דרך :global() למעלה — שם ה-keyframes חייב
+     להישאר לא-מסוקפ כדי ש-Svelte לא ישנה אותו לשם מוסתר-hash שלא יתאים. */
+  @keyframes -global-tip-pop {
+    from { opacity: 0; transform: scale(0.85) translateY(3px); }
     to   { opacity: 1; transform: scale(1)    translateY(0);   }
   }
 
