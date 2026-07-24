@@ -376,6 +376,19 @@ export type MessageKey =
   // ─── reconnect-ws-takeover Commit 3 ─── (טבעת-חיבור פר-סשן, ActiveProcessesPanel)
   | "connect.agents.connected"
   | "connect.agents.disconnected"
+  // ─── gemini directing (קצב/טון) ─── (slice-gemini-tts-directing)
+  | "settings.geminiPace.label"
+  | "settings.geminiPace.verySlow"
+  | "settings.geminiPace.slow"
+  | "settings.geminiPace.normal"
+  | "settings.geminiPace.fast"
+  | "settings.geminiPace.veryFast"
+  | "settings.geminiTone.label"
+  | "settings.geminiTone.neutral"
+  | "settings.geminiTone.calm"
+  | "settings.geminiTone.energetic"
+  | "settings.geminiTone.formal"
+  | "settings.geminiTone.casual"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

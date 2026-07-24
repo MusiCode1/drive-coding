@@ -23,6 +23,7 @@ import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
 import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { ttsStatus } from "$lib/view-models/tts-status.svelte"
 import { ttsReasonMessage } from "$lib/util/tts-reason"
+import GeminiDirectingControls from "./GeminiDirectingControls.svelte"
 import LanguageSelect from "./LanguageSelect.svelte"
 import PalettePicker from "./PalettePicker.svelte"
 import SettingsCard from "./SettingsCard.svelte"
@@ -172,6 +173,7 @@ $effect(() => {
         <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.geminiVoice.label")}</span>
         <GeminiVoicePicker />
       </label>
+      <GeminiDirectingControls />
     {/if}
 
     <!-- toggles — מוקאפ שורות 626-643 -->

@@ -367,4 +367,17 @@ export const he: Catalog = {
   // ─── reconnect-ws-takeover Commit 3 ─── (טבעת-חיבור פר-סשן, ActiveProcessesPanel)
   "connect.agents.connected": "מחובר",
   "connect.agents.disconnected": "לא מחובר",
+  // ─── gemini directing (קצב/טון) ─── (slice-gemini-tts-directing)
+  "settings.geminiPace.label": "קצב דיבור",
+  "settings.geminiPace.verySlow": "איטי מאוד",
+  "settings.geminiPace.slow": "איטי",
+  "settings.geminiPace.normal": "רגיל",
+  "settings.geminiPace.fast": "מהיר",
+  "settings.geminiPace.veryFast": "מהיר מאוד",
+  "settings.geminiTone.label": "טון",
+  "settings.geminiTone.neutral": "ניטרלי",
+  "settings.geminiTone.calm": "רגוע",
+  "settings.geminiTone.energetic": "אנרגטי",
+  "settings.geminiTone.formal": "רשמי",
+  "settings.geminiTone.casual": "יומיומי",
 }

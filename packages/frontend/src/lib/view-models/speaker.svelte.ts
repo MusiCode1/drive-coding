@@ -421,6 +421,7 @@ export class Speaker {
         modelId,
         messageId: job.messageId,
         signal: job.abort.signal,
+        directing: { pace: this.#settings.geminiPace, tone: this.#settings.geminiTone },
       })
       await this.#audioStream.prepareSegment(job.segmentId, stream, job.abort, {
         messageId: job.messageId,
