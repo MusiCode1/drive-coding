@@ -208,6 +208,10 @@ export type MessageKey =
   | "connect.agents.kill"
   | "connect.agents.killConfirm"
   | "connect.agents.inUse"
+  // ─── reconnect-ws-takeover Commit 2 ─── (panel takeover-affordance)
+  | "connect.agents.takeOver"
+  | "connect.agents.takeOverConfirm"
+  | "connect.agents.noSession"
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   | "connect.agents.working"
   // ─── agent-last-message-ui ─── (slice agent-last-message-ui)
@@ -367,6 +371,11 @@ export type MessageKey =
   | "authGuidance.heading"
   | "authGuidance.envVar.setLabel"
   | "authGuidance.envVar.linkLabel"
+  // ─── reconnect takeover ─── (slice reconnect-ws-takeover)
+  | "session.openedElsewhere"
+  // ─── reconnect-ws-takeover Commit 3 ─── (טבעת-חיבור פר-סשן, ActiveProcessesPanel)
+  | "connect.agents.connected"
+  | "connect.agents.disconnected"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

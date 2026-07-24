@@ -198,6 +198,10 @@ export const he: Catalog = {
   "connect.agents.kill": "הרוג",
   "connect.agents.killConfirm": "בטוח?",
   "connect.agents.inUse": "פעיל בכרטיסייה אחרת",
+  // ─── reconnect-ws-takeover Commit 2 ─── (panel takeover-affordance)
+  "connect.agents.takeOver": "השתלט",
+  "connect.agents.takeOverConfirm": "פתוח במקום אחר — להשתלט?",
+  "connect.agents.noSession": "אין סשן פעיל",
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   "connect.agents.working": "עובד…",
   // ─── agent-last-message-ui ─── (slice agent-last-message-ui)
@@ -297,7 +301,7 @@ export const he: Catalog = {
   "settings.ttsStatus.quota.used": "נוצל",
   "settings.ttsStatus.quota.limitLabel": "מכסה",
   "settings.ttsStatus.quota.overage": "חריגה",
-  "settings.ttsStatus.usage.label": "שימוש (סה\"כ מאז ההפעלה)",
+  "settings.ttsStatus.usage.label": 'שימוש (סה"כ מאז ההפעלה)',
   "settings.ttsStatus.usage.elevenlabs": "ElevenLabs",
   "settings.ttsStatus.usage.gemini": "Gemini",
   "settings.ttsStatus.usage.cache": "מטמון",
@@ -358,4 +362,9 @@ export const he: Catalog = {
   "authGuidance.heading": "איך להתחבר עם",
   "authGuidance.envVar.setLabel": "הגדר:",
   "authGuidance.envVar.linkLabel": "קבלת פרטי-גישה",
+  // ─── reconnect takeover ─── (slice reconnect-ws-takeover)
+  "session.openedElsewhere": "הסשן נפתח במקום אחר",
+  // ─── reconnect-ws-takeover Commit 3 ─── (טבעת-חיבור פר-סשן, ActiveProcessesPanel)
+  "connect.agents.connected": "מחובר",
+  "connect.agents.disconnected": "לא מחובר",
 }

@@ -19,6 +19,12 @@ import type {
   UsageUpdate,
 } from "@agentclientprotocol/sdk"
 import type { CliKind } from "@drive-coding/core"
+// ─── slice reconnect-ws-takeover: תרגום נקודתי להודעת "נפתח במקום אחר" ───
+// ה-VM לרוב לא מייבא t() (i18n שייך לשכבת-הרכיב — ר' #appendUserPlaceholder), אבל
+// `error` הוא string גולמי שמוצג as-is (routes/+page.svelte:191, לא עובר t() ברכיב) —
+// כמו הודעות "WS closed (...)" הקיימות. חייב לעבור דרך core/i18n (לא Hebrew ליטרלי
+// בקוד — lint:i18n אוכף), ולא להשתמש ב-I18nVM (לא מוזרק ל-VM הזה).
+import { createI18n, detectLocale } from "@drive-coding/core/i18n"
 import {
   type AcpClient,
   createAcpClient,
@@ -593,6 +599,13 @@ export class AgentSession {
   static readonly #BACKOFF_MS = [1000, 2000, 4000, 8000, 16000]
   static readonly #MED8_RETRY_MS = 250
   static readonly #MED8_MAX_RETRIES = 3
+  /**
+   * slice reconnect-ws-takeover: קוד close ייעודי — WS זה **הודח** ע"י חיבור חדש לאותו
+   * agent (BE ws-agent.ts takeover, §3 architecture diagram). טרמינל: **אין**
+   * #scheduleReconnect — אחרת הישן ינסה reconnect ↔ ידיח את החדש בחזרה (ping-pong אינסופי).
+   * ⚠️ חייב להתאים ל-TAKEOVER_CODE ב-packages/backend/src/delivery/ws-agent.ts.
+   */
+  static readonly #TAKEOVER_CLOSE_CODE = 4409
 
   /**
    * מטפל בסגירת WS לא צפויה (לא detach, לא 1000/1001).
@@ -604,6 +617,16 @@ export class AgentSession {
     // agent מת) — אל תדרוס אותה ב-"WS closed" הגנרי. switchSession/newSession *לא* מדליקים
     // את הדגל — הם משאירים WS חי, ו-drop מאוחר יותר צריך כן להצית reconnect.
     if (this.#errorSurfaced && this.error) return
+    // takeover (slice reconnect-ws-takeover, §4 Commit 1): טרמינלי — WS אחר "ניצח" ומחזיק
+    // את ה-agent החי. שים לב: בודקים את זה **לפני** getAgent — אין סיבה לשאול על crash
+    // (ה-agent חי וב-attach מאת ה-WS החדש); ואין #scheduleReconnect (מונע ping-pong).
+    if (code === AgentSession.#TAKEOVER_CLOSE_CODE) {
+      this.error = createI18n({ locale: this.#settings?.locale ?? detectLocale() }).t(
+        "session.openedElsewhere",
+      )
+      this.#setStatus("disconnected")
+      return
+    }
     // best-effort crash-path (slice surface-real-error Commit 3): ה-child אולי קרס
     // עם סיבה ידועה (ENOENT/credit/native-binary) — describeCrash ב-BE כותב crashReason.
     // null-guard (אביגיל #1): this.agentId הוא $state<string|null> — getAgent דורש string.

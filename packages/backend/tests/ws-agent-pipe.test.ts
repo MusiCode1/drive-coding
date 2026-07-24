@@ -25,7 +25,7 @@ import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { WebSocket } from "ws"
 import type { ConnectionRegistry } from "../src/acp/connection-registry.js"
-import { createAgentWsHandler } from "../src/delivery/ws-agent.js"
+import { createAgentWsHandler, TAKEOVER_CODE } from "../src/delivery/ws-agent.js"
 
 // ─── Mock ProviderConnection ──────────────────────────────────────────────────
 
@@ -35,16 +35,21 @@ function makeMockConn(pid = 12345): {
   triggerCrash: () => void
   writeSpy: ReturnType<typeof vi.fn>
 } {
-  let lineCallback: ((line: string) => void) | null = null
+  // slice reconnect-ws-takeover: real conn.wire.onLine supports multiple simultaneous
+  // subscribers (stream-bridge.test.ts "multiple onLine subscribers"). During a takeover,
+  // the old feWs's onLine subscriber and the new feWs's onLine subscriber briefly coexist
+  // (old detach()'s unsub() runs async, after the new one already subscribed) — a single
+  // shared `lineCallback` variable would let the old unsub() wipe out the new subscriber.
+  const lineListeners = new Set<(line: string) => void>()
   let crashCallback: (() => void) | null = null
   const writeSpy = vi.fn((_line: string) => true)
 
   const conn: ProviderConnection = {
     wire: {
       onLine(cb) {
-        lineCallback = cb
+        lineListeners.add(cb)
         return () => {
-          lineCallback = null
+          lineListeners.delete(cb)
         }
       },
       write: writeSpy,
@@ -75,7 +80,9 @@ function makeMockConn(pid = 12345): {
 
   return {
     conn,
-    pushLine: (line: string) => lineCallback?.(line),
+    pushLine: (line: string) => {
+      for (const cb of lineListeners) cb(line)
+    },
     triggerCrash: () => crashCallback?.({ exitCode: 1, signal: null } as never),
     writeSpy,
   }
@@ -213,23 +220,77 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
     expect(sent).toContain(`${line}\n`)
   })
 
-  it("MED-8: second tab same agentId → close(1008, 'agent in use by another tab')", () => {
+  // ─── takeover (slice reconnect-ws-takeover) ─────────────────────────────────
+  // MED-8 root fix: the old reject-with-1008 behavior is replaced by takeover —
+  // the NEW WS evicts the OLD one (close TAKEOVER_CODE) and warm-attaches to the
+  // same live agent, instead of being rejected itself. See §3 architecture diagram.
+
+  it("takeover: second connection evicts the first (close TAKEOVER_CODE), attach falls through", () => {
     const { conn } = makeMockConn()
     const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
-    const { connectionRegistry } = makeMockConnectionRegistry(conn)
+    const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
 
     const onConnect = createAgentWsHandler({ orchestrator, connectionRegistry })
-    const { ws: ws1 } = makeMockFeWs()
+    const { ws: ws1, closeArgs: close1 } = makeMockFeWs()
     const { ws: ws2, closeArgs: close2 } = makeMockFeWs()
 
     onConnect(ws1, "dup-agent")
     onConnect(ws2, "dup-agent")
 
-    expect(close2).toHaveLength(1)
+    // old (ws1) is evicted with the dedicated takeover code — not 1008/1006/1000
+    expect(close1).toHaveLength(1)
     // biome-ignore lint/style/noNonNullAssertion: guarded by toHaveLength
-    expect(close2[0]![0]).toBe(1008)
-    // biome-ignore lint/style/noNonNullAssertion: guarded by toHaveLength
-    expect(close2[0]![1]).toContain("agent in use by another tab")
+    expect(close1[0]![0]).toBe(TAKEOVER_CODE)
+
+    // ws2 is NOT rejected — it falls through to normal attach
+    expect(close2).toHaveLength(0)
+
+    // both attaches ran (markAttached called for ws1's initial attach, then ws2's takeover attach)
+    expect(markAttachedSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it("takeover race: old close-handler does not clobber the new attach's shared state", async () => {
+    const { conn } = makeMockConn()
+    const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
+    const { connectionRegistry, markDetachedSpy } = makeMockConnectionRegistry(conn)
+
+    const onConnect = createAgentWsHandler({ orchestrator, connectionRegistry })
+    const { ws: ws1 } = makeMockFeWs()
+    const { ws: ws2 } = makeMockFeWs()
+
+    onConnect(ws1, "race-agent")
+    onConnect(ws2, "race-agent") // evicts ws1 synchronously (ws1.close(TAKEOVER_CODE) called)
+
+    // simulate the real "close" event that a WS actually emits some time after .close() —
+    // this is the race: ws1's detach() runs AFTER ws2 already attached (activeFeWs.set + markAttached).
+    ws1.emit("close")
+    await new Promise((r) => setTimeout(r, 20))
+
+    // guard must have skipped the shared-state clear (activeFeWs/markDetached) for ws1's
+    // stale detach — ws2 is still the live attachment, so no markDetached should fire.
+    expect(markDetachedSpy).not.toHaveBeenCalled()
+  })
+
+  it("takeover race: frame from child after takeover reaches the NEW feWs, not the evicted one", async () => {
+    const { conn, pushLine } = makeMockConn()
+    const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
+    const { connectionRegistry } = makeMockConnectionRegistry(conn)
+
+    const onConnect = createAgentWsHandler({ orchestrator, connectionRegistry })
+    const { ws: ws1, sent: sent1 } = makeMockFeWs()
+    const { ws: ws2, sent: sent2 } = makeMockFeWs()
+
+    onConnect(ws1, "frame-agent")
+    onConnect(ws2, "frame-agent") // takeover
+    ws1.emit("close") // old close-handler fires (unsub of ws1's onLine subscriber)
+    await new Promise((r) => setTimeout(r, 20))
+
+    const line = JSON.stringify({ jsonrpc: "2.0", method: "test", params: { turn: "survives" } })
+    pushLine(line)
+    await new Promise((r) => setTimeout(r, 20))
+
+    expect(sent2).toContain(`${line}\n`)
+    expect(sent1).not.toContain(`${line}\n`)
   })
 
   it("child exit (onCrash) → feWs.close(1011, 'bridge closed')", async () => {
