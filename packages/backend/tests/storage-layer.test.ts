@@ -89,6 +89,43 @@ describe("createProjectsRegistry", () => {
     const projects = await reg.getProjects()
     expect(projects[0]?.lastSessionId).toBe("sess-abc-123")
   })
+
+  // ─── removeCwd (slice recent-projects-controls) ──────────────────────────────
+
+  it("removeCwd removes a project from getProjects", async () => {
+    const reg = createProjectsRegistry(tmpDir)
+    await reg.recordCwd("/proj/secret", "opencode")
+
+    await reg.removeCwd("/proj/secret")
+
+    const projects = await reg.getProjects()
+    expect(projects).toHaveLength(0)
+  })
+
+  it("a removed project returns after a subsequent recordCwd", async () => {
+    const reg = createProjectsRegistry(tmpDir)
+    await reg.recordCwd("/proj/secret", "opencode")
+    await reg.removeCwd("/proj/secret")
+
+    // חיבור חוזר לאותו cwd — הרשומה נוצרת מחדש ומוחזרת
+    await reg.recordCwd("/proj/secret", "opencode")
+
+    const projects = await reg.getProjects()
+    expect(projects).toHaveLength(1)
+    expect(projects[0]?.cwd).toBe("/proj/secret")
+  })
+
+  it("removeCwd on unknown cwd is a no-op", async () => {
+    const reg = createProjectsRegistry(tmpDir)
+    await reg.recordCwd("/proj/known", "opencode")
+
+    // לא אמור לזרוק ולא לשנות שום דבר
+    await expect(reg.removeCwd("/proj/unknown")).resolves.toBeUndefined()
+
+    const projects = await reg.getProjects()
+    expect(projects).toHaveLength(1)
+    expect(projects[0]?.cwd).toBe("/proj/known")
+  })
 })
 
 // ─── recordings-store ─────────────────────────────────────────────────────────

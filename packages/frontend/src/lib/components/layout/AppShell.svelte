@@ -22,19 +22,27 @@
  *   - noteUserIntent: מסופק ל-bridge → ToolBubble/ThoughtBubble קוראים על toggle
  *   - turn-boundary: בועת user חדשה → following=true + קפיצה (גובר על hold)
  */
-import { getModelStatus, getResponsive, getSession, getI18n, getChatScroll } from "$lib/context"
-import { computeScrollEdges, shouldFollowJump } from "$lib/util/scroll-follow"
-import AppHeader from "./AppHeader.svelte"
-import Sidebar from "./Sidebar.svelte"
-import BottomSheet from "./BottomSheet.svelte"
-// ─── redesign-6: modals (SessionsDialog הוסר ב-slice sessions-inline — סשנים עכשיו inline) ───
-import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
-// ─── content-viewer ─── (slice content-viewer)
-import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
+
 // ─── redesign-7: smart-scroll ───
 import ArrowDownIcon from "@lucide/svelte/icons/arrow-down"
+// ─── content-viewer ─── (slice content-viewer)
+import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
+// ─── redesign-6: modals (SessionsDialog הוסר ב-slice sessions-inline — סשנים עכשיו inline) ───
+import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
+// ─── ui-session-polish: loading spinner modal ───
+import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
+import { getChatScroll, getI18n, getModelStatus, getResponsive, getSession } from "$lib/context"
+import type { Bubble } from "$lib/types/bubble"
+import { stableBubbleKey } from "$lib/util/bubble-key"
+import { computeScrollEdges, shouldFollowJump } from "$lib/util/scroll-follow"
+import AppHeader from "./AppHeader.svelte"
+import BottomSheet from "./BottomSheet.svelte"
+import Sidebar from "./Sidebar.svelte"
 
-let { children, footer }: {
+let {
+  children,
+  footer,
+}: {
   children: import("svelte").Snippet
   footer?: import("svelte").Snippet
 } = $props()
@@ -54,8 +62,8 @@ $effect(() => {
 })
 
 // ─── batched follow state (slice chat-virtualization) ───
-let following = $state(true)   // true = עוקב אחרי תחתית; false = hold
-let lastJumpAt = 0             // timestamp הקפיצה התוכניתית האחרונה
+let following = $state(true) // true = עוקב אחרי תחתית; false = hold
+let lastJumpAt = 0 // timestamp הקפיצה התוכניתית האחרונה
 
 // ─── user-intent window (Commit 3) ───
 // userIntentUntil: timestamp עד מתי scroll ידני תקף (600ms אחרי אחרון)
@@ -132,7 +140,7 @@ function checkEdges(): void {
  */
 function jumpToBottom(): void {
   const handle = chatScroll.handle
-  const len = session.bubbles.length
+  const len = session.renderBubbles.length
   if (handle && len > 0) {
     handle.scrollToIndex(len - 1, { align: "end" })
   } else if (scrollEl) {
@@ -232,13 +240,14 @@ $effect(() => {
   }
 })
 
-// $effect על session.bubbles — floor-tail edge: מבטיח שאחרי שה-stream שוקט
+// $effect על session.renderBubbles — floor-tail edge: מבטיח שאחרי שה-stream שוקט
 // (ResizeObserver יורה שוב), הקפיצה האחרונה תסתיים
+// (renderBubbles — לא bubbles: בזמן warm-reconnect replay התצוגה קפואה, ה-effect לא צריך
+// להגיב ל-rebuild הנסתר, slice reconnect-bubble-merge)
 $effect(() => {
-  const _bubbleCount = session.bubbles.length
-  const last = session.bubbles[session.bubbles.length - 1]
-  const _segCount =
-    last !== undefined && last.kind !== "tool" ? last.segments.length : 0
+  const _bubbleCount = session.renderBubbles.length
+  const last = session.renderBubbles[session.renderBubbles.length - 1]
+  const _segCount = last !== undefined && last.kind !== "tool" ? last.segments.length : 0
   const _lastSegLen =
     last !== undefined && last.kind !== "tool"
       ? (last.segments[last.segments.length - 1]?.text.length ?? 0)
@@ -258,22 +267,41 @@ $effect(() => {
 
 // ─── turn-boundary (Commit 3) ───
 // בועת user חדשה → force-follow ON + קפיצה (גובר על hold)
-let lastSeenUserBubbleId = ""
+// slice reconnect-bubble-merge: מפתח-הזיהוי עבר מ-.id ל-stableBubbleKey (ids מתחדשים
+// ב-reveal של warm-reconnect → .id היה חוטף משתמש-שגלל-למעלה לתחתית, DoD#7).
+let lastSeenUserBubbleKey = ""
+let wasReconnectReplay = false
 $effect(() => {
-  // מצא את הbועה האחרונה עם kind==="user"
-  let lastUserBubble: { id: string; kind: string } | undefined
-  for (let i = session.bubbles.length - 1; i >= 0; i--) {
-    const b = session.bubbles[i]
+  // מצא את הbועה האחרונה עם kind==="user" (renderBubbles — קפוא בזמן warm-reconnect replay)
+  let lastUserBubble: Bubble | undefined
+  for (let i = session.renderBubbles.length - 1; i >= 0; i--) {
+    const b = session.renderBubbles[i]
     if (b !== undefined && b.kind === "user") {
       lastUserBubble = b
       break
     }
   }
+  const key = lastUserBubble ? stableBubbleKey(lastUserBubble) : ""
+
+  // ─── reveal-guard ספציפי-ל-reconnect (אביגיל r2/r3) ───
+  // במעבר isReconnectReplay: true→false (רגע ה-reveal של warm-reconnect בלבד) — רק
+  // re-seed את המפתח, בלי following=true/jumpToBottom(). לא isLoadingHistory — הוא true
+  // גם בטעינה-ראשונית/switchSession ששם דווקא רוצים לקפוץ (DoD#8); רק isReconnectReplay
+  // מבחין ב-warm-reconnect. ממוקם לפני ה-`if (!lastUserBubble) return` כדי שגם reveal של
+  // תור-סוכן-בלבד (אין בועת-user) יעשה re-seed.
+  const isReplay = session.isReconnectReplay
+  if (wasReconnectReplay && !isReplay) {
+    wasReconnectReplay = isReplay
+    lastSeenUserBubbleKey = key
+    return
+  }
+  wasReconnectReplay = isReplay
+
   if (!lastUserBubble) return
-  if (lastUserBubble.id === lastSeenUserBubbleId) return
+  if (key === lastSeenUserBubbleKey) return
 
   // בועת user חדשה — force-follow
-  lastSeenUserBubbleId = lastUserBubble.id
+  lastSeenUserBubbleKey = key
   following = true
   jumpToBottom()
 })
@@ -347,4 +375,6 @@ $effect(() => {
   <FolderPickerDialog />
   <!-- content-viewer (slice content-viewer) -->
   <ContentViewerDialog />
+  <!-- ui-session-polish: loading spinner during session connect or history render -->
+  <LoadingModal open={session.status === "connecting" || session.isLoadingHistory} />
 </div>

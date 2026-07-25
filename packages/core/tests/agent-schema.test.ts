@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Agent, CreateAgentInput, toAgentPublic } from "../src"
+import { Agent, AgentPublic, CLI_KINDS, CreateAgentInput, toAgentPublic } from "../src"
 
 describe("CreateAgentInput", () => {
   it("accepts valid input", () => {
@@ -26,10 +26,15 @@ describe("CreateAgentInput", () => {
   })
 
   it("accepts all valid cliKinds", () => {
-    for (const kind of ["opencode", "claude", "gemini", "codex"] as const) {
+    for (const kind of CLI_KINDS) {
       const result = CreateAgentInput({ cliKind: kind, cwd: "/foo" })
       expect(result).not.toHaveProperty("summary")
     }
+  })
+
+  it("CLI_KINDS includes cursor and grok", () => {
+    expect(CLI_KINDS).toContain("cursor")
+    expect(CLI_KINDS).toContain("grok")
   })
 
   it("accepts modelOverride as string", () => {
@@ -168,6 +173,77 @@ describe("toAgentPublic — persistent field (slice active-agents)", () => {
     const pub = toAgentPublic(agent)
     expect(pub).not.toHaveProperty("persistent")
     // existing test: toEqual still passes (no extra fields)
+    expect(pub).toEqual(agent)
+  })
+})
+
+// slice session-title-in-process-list: title field
+describe("AgentPublic — title field", () => {
+  it("accepts title as string", () => {
+    const result = AgentPublic({
+      id: "550e8400-e29b-41d4-a716-446655440006",
+      cliKind: "opencode",
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready",
+      createdAt: "2026-05-16T05:00:00.000Z",
+      title: "מה זה TypeScript",
+    })
+    expect(result).not.toHaveProperty("summary")
+  })
+
+  it("accepts title as null", () => {
+    const result = AgentPublic({
+      id: "550e8400-e29b-41d4-a716-446655440007",
+      cliKind: "opencode",
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready",
+      createdAt: "2026-05-16T05:00:00.000Z",
+      title: null,
+    })
+    expect(result).not.toHaveProperty("summary")
+  })
+
+  it("accepts agent without title (optional)", () => {
+    const result = AgentPublic({
+      id: "550e8400-e29b-41d4-a716-446655440008",
+      cliKind: "opencode",
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready",
+      createdAt: "2026-05-16T05:00:00.000Z",
+    })
+    expect(result).not.toHaveProperty("summary")
+  })
+})
+
+describe("toAgentPublic — title field (slice session-title-in-process-list)", () => {
+  it("copies title from agent to pub", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440009",
+      cliKind: "opencode" as const,
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T05:00:00.000Z",
+      title: "מה זה TypeScript",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub.title).toBe("מה זה TypeScript")
+  })
+
+  it("omits title from pub when not set on agent", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440010",
+      cliKind: "gemini" as const,
+      cwd: "/project",
+      modelOverride: "gemini-pro",
+      status: "busy" as const,
+      createdAt: "2026-05-16T10:00:00.000Z",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub).not.toHaveProperty("title")
     expect(pub).toEqual(agent)
   })
 })

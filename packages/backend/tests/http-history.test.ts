@@ -80,6 +80,72 @@ describe("GET /api/projects", () => {
   })
 })
 
+// ─── DELETE /api/projects ────────────────────────────────────────────────────
+
+describe("DELETE /api/projects", () => {
+  beforeEach(async () => {
+    tmpDir = await makeTmpDir()
+  })
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true })
+  })
+
+  function makeApp() {
+    const app = new Hono()
+    const projectsRegistry = createProjectsRegistry(tmpDir)
+    registerProjectsHttp(app, { projectsRegistry })
+    return { app, projectsRegistry }
+  }
+
+  it("removes a project (204) and GET no longer returns it", async () => {
+    const { app, projectsRegistry } = makeApp()
+    await projectsRegistry.recordCwd("/home/user/proj", "opencode")
+
+    const delRes = await app.request("/api/projects", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cwd: "/home/user/proj" }),
+    })
+    expect(delRes.status).toBe(204)
+
+    const getRes = await app.request("/api/projects")
+    const body = await getRes.json()
+    expect(body.projects).toHaveLength(0)
+  })
+
+  it("removed project returns after recordCwd (new-entry semantics)", async () => {
+    const { app, projectsRegistry } = makeApp()
+    await projectsRegistry.recordCwd("/home/user/proj", "opencode")
+
+    // מחק את הרשומה
+    await app.request("/api/projects", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cwd: "/home/user/proj" }),
+    })
+
+    // חיבור מחדש → רשומה חדשה
+    await projectsRegistry.recordCwd("/home/user/proj", "opencode")
+
+    const getRes = await app.request("/api/projects")
+    const body = await getRes.json()
+    expect(body.projects).toHaveLength(1)
+    expect(body.projects[0].cwd).toBe("/home/user/proj")
+  })
+
+  it("returns 400 when cwd is missing from body", async () => {
+    const { app } = makeApp()
+
+    const res = await app.request("/api/projects", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    })
+    expect(res.status).toBe(400)
+  })
+})
+
 // ─── /api/recordings/:id ─────────────────────────────────────────────────────
 
 describe("GET /api/recordings/:id", () => {
@@ -212,6 +278,7 @@ describe("GET /api/fs/browse", () => {
     await mkdir(join(base, "visible"))
     await mkdir(join(base, "node_modules"))
     await mkdir(join(base, ".git"))
+    await mkdir(join(base, ".config"))
     try {
       const { app } = makeAppRestricted(base)
       const res = await app.request(`/api/fs/browse?path=${encodeURIComponent(base)}`)
@@ -221,6 +288,7 @@ describe("GET /api/fs/browse", () => {
       expect(names).toContain("visible")
       expect(names).not.toContain("node_modules")
       expect(names).not.toContain(".git")
+      expect(names).not.toContain(".config")
     } finally {
       await rm(base, { recursive: true, force: true })
     }
@@ -232,6 +300,7 @@ describe("GET /api/fs/browse", () => {
     await mkdir(join(base, "visible"))
     await mkdir(join(base, "node_modules"))
     await mkdir(join(base, ".git"))
+    await mkdir(join(base, ".config"))
     try {
       const { app } = makeAppRestricted(base)
       const res = await app.request(
@@ -243,6 +312,7 @@ describe("GET /api/fs/browse", () => {
       expect(names).toContain("visible")
       expect(names).toContain("node_modules")
       expect(names).toContain(".git")
+      expect(names).toContain(".config")
     } finally {
       await rm(base, { recursive: true, force: true })
     }

@@ -8,28 +8,29 @@
  * msr-v2: כפתור ▶ אם recordingId קיים.
  *
  * ui-polish-batch C3: כפתור העתקה + timestamp.
- * ui-polish-batch C4: markdown ל-joinSegmentText.
- * ui-polish-batch C5: :global(pre),:global(code){direction:ltr;text-align:left}
+ * ui-polish-batch C4: markdown ל-joinSegmentText → MarkdownContent.
  *
- * ─── redesign-5 (C4) ───
+ * ─── slice/markdown-content-unify (Commit 1) — CSS עבר ל-MarkdownContent ───
  */
 import type { UserBubble } from "$lib/types/bubble"
-import { getBubblePlayer, getI18n, getSpeaker } from "$lib/context"
+import { getBubblePlayer, getContentViewer, getI18n, getSpeaker } from "$lib/context"
 import Avatar from "$lib/components/chat/Avatar.svelte"
 import { joinSegmentText } from "./bubble-rendering"
-import { renderMarkdown } from "$lib/util/markdown"
 import { copyToClipboard } from "$lib/util/clipboard"
 import { formatTime } from "$lib/util/formatting"
+import MarkdownContent from "./MarkdownContent.svelte"
 import PlayIcon from "@lucide/svelte/icons/play"
 import SquareIcon from "@lucide/svelte/icons/square"
 import CopyIcon from "@lucide/svelte/icons/copy"
 import CheckIcon from "@lucide/svelte/icons/check"
+import PaperclipIcon from "@lucide/svelte/icons/paperclip"
 
 let { bubble }: { bubble: UserBubble } = $props()
 const t = getI18n().t
 const bubblePlayer = getBubblePlayer()
 // C10: גייט על speaker.enabled — מסתיר כפתור ▶ כשמושתק
 const speaker = getSpeaker()
+const viewer = getContentViewer()
 
 const isPlaying = $derived(bubblePlayer.playingBubbleId === bubble.id)
 
@@ -53,12 +54,52 @@ async function handleCopy() {
 <div class="flex gap-2 self-start max-w-[85%] min-w-0 items-end group">
   <Avatar kind="user" />
   <div class="bubble-wrapper min-w-0 flex-1">
+    <!-- תמונות מצורפות (slice-image-paste Commit 3) -->
+    {#if bubble.attachments && bubble.attachments.length > 0}
+      <div class="flex flex-wrap gap-1.5 mb-1">
+        {#each bubble.attachments as att, i (i)}
+          <button
+            class="user-image-btn"
+            onclick={() => viewer.show({ kind: "image", src: `data:${att.mimeType};base64,${att.dataBase64}`, alt: "" })}
+            aria-label={t("contentViewer.expand")}
+            title={t("contentViewer.expand")}
+          >
+            <img
+              src="data:{att.mimeType};base64,{att.dataBase64}"
+              alt=""
+              class="max-h-40 max-w-[12rem] rounded-xl object-contain border"
+              style="border-color:var(--border)"
+            />
+          </button>
+        {/each}
+      </div>
+    {/if}
+    <!-- §11.3א: placeholder chips לתוכן לא-טקסטואלי מ-replay (resource_link / audio / resource) -->
+    {#if bubble.contentPlaceholders && bubble.contentPlaceholders.length > 0}
+      <div class="flex flex-wrap gap-1.5 mb-1">
+        {#each bubble.contentPlaceholders as ph, i (i)}
+          {#if ph.kind === "resource_link"}
+            <span
+              class="content-chip"
+              title={t("chat.content.attachedFile")}
+              aria-label={t("chat.content.attachedFile")}
+            >
+              <PaperclipIcon size={12} strokeWidth={2} />
+              {ph.label}
+            </span>
+          {:else}
+            <span class="content-chip" title={t("chat.content.unsupported")} aria-label={t("chat.content.unsupported")}>
+              {t("chat.content.unsupported")}
+            </span>
+          {/if}
+        {/each}
+      </div>
+    {/if}
     <div
       class="px-3.5 py-2.5 rounded-2xl rounded-es-sm text-sm leading-relaxed min-w-0 max-w-full overflow-hidden break-words"
       style="background:var(--bubble-user); {isPlaying ? 'outline:2px solid var(--accent); outline-offset:1px' : ''}"
-      dir="auto"
     >
-      {@html renderMarkdown(joinSegmentText(bubble.segments))}
+      <MarkdownContent text={joinSegmentText(bubble.segments)} />
       <!-- כופה ריאקטיביות -->
       <span class="hidden">{bubble.segments.length}</span>
     </div>
@@ -142,37 +183,6 @@ async function handleCopy() {
     }
   }
 
-  /* C5: code blocks כיוון LTR */
-  :global(pre), :global(code) { direction: ltr; text-align: left; }
-  /* chat-render-polish: GFM tables */
-  div :global(table) {
-    border-collapse: collapse; margin: 0.4em 0; font-size: 0.92em;
-    display: block; overflow-x: auto; max-width: 100%;
-  }
-  div :global(th), div :global(td) {
-    border: 1px solid var(--border); padding: 0.3em 0.55em; text-align: start;
-  }
-  div :global(th) { background: rgba(0,0,0,0.18); font-weight: 700; }
-  /* markdown — code ארוך נשבר במקום לגלוש מהבועה */
-  div :global(code) {
-    font-family: ui-monospace, monospace;
-    font-size: 0.88em;
-    background: rgba(0,0,0,0.2);
-    padding: 0.1em 0.3em;
-    border-radius: 3px;
-    overflow-wrap: anywhere;
-  }
-  div :global(pre) {
-    background: rgba(0,0,0,0.28);
-    padding: 0.6rem 0.8rem;
-    border-radius: 6px;
-    margin: 0.4em 0;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    overflow-x: auto;
-  }
-  div :global(pre code) { background: none; padding: 0; font-size: 0.85em; }
-
   .hidden { display: none; }
   .action-btn {
     flex-shrink: 0;
@@ -190,4 +200,30 @@ async function handleCopy() {
     padding: 0;
   }
   .action-btn:hover { opacity: 1; }
+
+  /* §12: lightbox לתמונת-משתמש */
+  .user-image-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    display: inline-flex;
+  }
+
+  /* §11.3א: chip לתוכן לא-טקסטואלי מ-replay */
+  .content-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--fg-dim);
+    max-width: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 </style>

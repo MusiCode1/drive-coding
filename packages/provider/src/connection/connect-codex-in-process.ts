@@ -1,0 +1,282 @@
+/**
+ * connect-codex-in-process.ts — connectCodexInProcess: ProviderConnection wrapping
+ * the codex ACP agent in-process via the @musicode1/codex-acp fork.
+ *
+ * Architecture:
+ *   FE ←[wire: string onLine/write]→ PassThrough pair ←[NDJSON]→ startAcpServer(codex)
+ *
+ * Key difference from connectInProcess (claude):
+ *   - codex fork uses Node NDJSON streams (createJsonStream over Readable/Writable),
+ *     NOT Web Streams AnyMessage objects.
+ *   - Therefore we do NOT use createStreamBridge (which is an ACP-SDK Web Streams adapter).
+ *   - Wire bridge is simpler: PassThrough ↔ string lines, split on '\n'.
+ *
+ * onFrame/turn: same as connectInProcess — decodeWireLine + createTurnTracker.
+ * capabilities: staticCapsFor("codex") — static, no runtime discovery.
+ * ext: undefined — codex has no ext channel.
+ * pid: null — the codex child is managed inside startAcpServer (not directly visible).
+ *
+ * close(): serverIn.end() → triggers readable.on("close") inside startAcpServer,
+ * which kills codex child after 2s (built into the fork).
+ */
+
+import * as os from "node:os"
+import * as path from "node:path"
+import { PassThrough } from "node:stream"
+import { extractPromptCaps } from "@drive-coding/core/acp/extract-prompt-caps"
+import { resolveCliBinary } from "@drive-coding/core/cli-resolve"
+import { startAcpServer } from "@musicode1/codex-acp/lib"
+import { createTurnTracker } from "../shared/turn-tracker.js"
+import { decodeWireLine } from "../shared/wire-decode.js"
+import type { BridgeCrashInfo } from "../spawn/index.js"
+import type { NormalizedCapabilities } from "../types.js"
+import { staticCapsFor } from "./capabilities-static.js"
+import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
+
+/**
+ * resolveCodexPath — finds the native codex binary using resolveCliBinary.
+ *
+ * Resolution order (via resolveCliBinary):
+ *   1. CODEX_PATH env var (explicit override).
+ *   2. PATH scan (with PATHEXT on Windows).
+ *   3. pm-global-bins (~/.bun/bin, npm global, ~/.local/bin, /usr/local/bin, etc.).
+ *   4. Known codex install locations per platform.
+ *   5. undefined — startAcpServer will attempt its bundled binary (works on Linux/Termux,
+ *      broken on Windows; calev verifies the no-CODEX_PATH case out-of-box).
+ */
+export function resolveCodexPath(): string | undefined {
+  const home = os.homedir()
+  return resolveCliBinary({
+    bin: "codex",
+    envVar: "CODEX_PATH",
+    knownPaths: [
+      // Windows: OpenAI Codex typical install locations
+      path.join(home, "AppData", "Local", "Programs", "OpenAI", "Codex", "bin"),
+      path.join(home, "AppData", "Local", "Programs", "OpenAI", "Codex"),
+      // WinGet links
+      path.join(home, "AppData", "Local", "Microsoft", "WinGet", "Links"),
+      // npm global bin (common on Windows with npm -g install)
+      path.join(home, "AppData", "Roaming", "npm"),
+      // Scoop
+      path.join(home, "scoop", "shims"),
+      // Linux/macOS: nvm / volta / asdf shims (often not in PATH in non-interactive shells)
+      path.join(home, ".volta", "bin"),
+      path.join(home, ".nvm", "bin"),
+    ],
+  })
+}
+
+export async function connectCodexInProcess(opts: ConnectOpts): Promise<ProviderConnection> {
+  // Listeners for onFrame — broadcast decoded frames.
+  const frameListeners = new Set<(f: WireFrame) => void>()
+
+  // turn-tracker — pull-based busy indicator.
+  const tracker = createTurnTracker()
+
+  // onChange: last busy state emitted (used to detect transitions).
+  let lastBusy = false
+  const changeListeners = new Set<(busy: boolean) => void>()
+
+  /** Emit onChange if busy state changed since last frame. */
+  function emitBusyChange(): void {
+    const nowBusy = tracker.isBusy(Date.now())
+    if (nowBusy !== lastBusy) {
+      lastBusy = nowBusy
+      for (const cb of changeListeners) {
+        try {
+          cb(nowBusy)
+        } catch {
+          /* listener must not break the pipe */
+        }
+      }
+    }
+  }
+
+  /** Decode a raw line and emit to frameListeners. */
+  function handleLine(dir: "in" | "out", rawLine: string): void {
+    const normalized = rawLine.endsWith("\n") ? rawLine.slice(0, -1) : rawLine
+    if (normalized.length === 0) return
+    const s = decodeWireLine(normalized)
+
+    // turn-tracker: observed on dir="in" only (agent→FE, matches bridge-manager convention).
+    if (dir === "in") {
+      tracker.observe(s, Date.now())
+      emitBusyChange()
+
+      // slice reattach-state-sync Commit 1 — tap the initialize response for the real
+      // promptCapabilities (structural: responseKind==="result" + agentCapabilities present).
+      const promptCaps = extractPromptCaps(s.parsed)
+      if (promptCaps) {
+        caps = { ...caps, image: promptCaps.image === true }
+      }
+    }
+
+    // Derive type label (same as connectInProcess/connectSpawn).
+    const type =
+      s.sessionUpdate ?? s.method ?? s.responseKind ?? (s.unparsed ? "unparsed" : "unknown")
+
+    const frame: WireFrame = {
+      dir,
+      type,
+      id: s.id,
+      raw: normalized,
+      parsed: s.parsed,
+    }
+
+    for (const cb of frameListeners) {
+      try {
+        cb(frame)
+      } catch {
+        /* listener must not break the pipe */
+      }
+    }
+  }
+
+  // onCrash listeners — codex child is managed by startAcpServer.
+  // We detect "crash" by watching serverOut close event.
+  const crashListeners = new Set<(info: BridgeCrashInfo) => void>()
+
+  // PassThrough pair:
+  //   serverIn  — FE→agent (we write lines here; startAcpServer reads from it)
+  //   serverOut — agent→FE (startAcpServer writes lines here; we read from it)
+  const serverIn = new PassThrough()
+  const serverOut = new PassThrough()
+
+  // Start the codex ACP server in-process.
+  // modelOverride is intentionally NOT passed — model selection is FE-driven via the wire
+  // (session/new params / setSessionModel). codex does not accept modelOverride in opts.
+  // systemPrompt (slice project-system-prompt): opts.config → codex-acp ממזג ל-thread/start
+  // config (startAcpServer, dist/lib.js:29014). developer_instructions מתווסף (append-equivalent)
+  // ל-base של codex — בניגוד ל-instructions שמחליף אותו. אומת חי 2026-07-19: codex כיבד את
+  // developer_instructions (ZQX_CDX_7).
+  const codexPath = resolveCodexPath()
+  startAcpServer(serverIn, serverOut, {
+    codexPath,
+    config: opts.systemPrompt ? { developer_instructions: opts.systemPrompt } : undefined,
+  })
+
+  // Line buffer for serverOut — accumulate bytes until '\n'.
+  let lineBuffer = ""
+
+  // Closed flag — used to prevent double-close.
+  let closed = false
+
+  // Wire line listeners (agent→FE direction).
+  const lineListeners = new Set<(line: string) => void>()
+
+  // Subscribe to serverOut data events — split by '\n' and emit lines.
+  serverOut.on("data", (chunk: Buffer | string) => {
+    lineBuffer += typeof chunk === "string" ? chunk : chunk.toString("utf8")
+    let idx: number
+    while ((idx = lineBuffer.indexOf("\n")) !== -1) {
+      const line = lineBuffer.slice(0, idx)
+      lineBuffer = lineBuffer.slice(idx + 1)
+      if (line.length === 0) continue
+      // Emit to all line listeners (wire.onLine subscribers).
+      for (const cb of lineListeners) {
+        try {
+          cb(line)
+        } catch {
+          /* listener must not break the pipe */
+        }
+      }
+      // Tap for onFrame (dir="in" = agent→FE direction).
+      handleLine("in", line)
+    }
+  })
+
+  // onCrash: notify when serverOut closes unexpectedly.
+  serverOut.on("close", () => {
+    if (closed) return
+    const info: BridgeCrashInfo = { exitCode: null, signal: null }
+    for (const cb of crashListeners) {
+      try {
+        cb(info)
+      } catch {
+        /* listener must not break the pipe */
+      }
+    }
+  })
+
+  // Build the wire interface.
+  const wire: ProviderConnection["wire"] = {
+    onLine(cb: (line: string) => void): () => void {
+      lineListeners.add(cb)
+      return () => {
+        lineListeners.delete(cb)
+      }
+    },
+    write(line: string): boolean {
+      if (closed) return false
+      // Tap FE→agent direction for onFrame (dir="out").
+      handleLine("out", line)
+      // Write NDJSON line to serverIn (with newline terminator).
+      const data = line.endsWith("\n") ? line : `${line}\n`
+      return serverIn.write(data)
+    },
+  }
+
+  // caps: staticCapsFor("codex") — static baseline. mutable — slice reattach-state-sync
+  // Commit 1: the init-frame tap (handleLine, dir="in") updates `image` in place once it
+  // observes a real initialize response.
+  let caps = staticCapsFor("codex")
+
+  const connection: ProviderConnection = {
+    wire,
+    get capabilities(): NormalizedCapabilities {
+      return caps
+    },
+
+    onFrame(cb: (f: WireFrame) => void): () => void {
+      frameListeners.add(cb)
+      return () => {
+        frameListeners.delete(cb)
+      }
+    },
+
+    turn: {
+      isBusy(): boolean {
+        return tracker.isBusy(Date.now())
+      },
+      lastActivityAt(): number | null {
+        return tracker.getLastActivityAt()
+      },
+      onChange(cb: (busy: boolean) => void): () => void {
+        changeListeners.add(cb)
+        return () => {
+          changeListeners.delete(cb)
+        }
+      },
+    },
+
+    onCrash(cb: (info: BridgeCrashInfo) => void): () => void {
+      crashListeners.add(cb)
+      return () => {
+        crashListeners.delete(cb)
+      }
+    },
+
+    async close(): Promise<void> {
+      if (closed) return
+      closed = true
+      // Closing serverIn signals end-of-stream to startAcpServer.
+      // The fork's readable.on("close") handler will then kill the codex child after 2s.
+      serverIn.end()
+      // Clear all listeners.
+      frameListeners.clear()
+      changeListeners.clear()
+      crashListeners.clear()
+      lineListeners.clear()
+    },
+
+    ext: undefined,
+
+    // pid: null — the codex child process is managed inside startAcpServer,
+    // not directly accessible from this side.
+    get pid(): null {
+      return null
+    },
+  }
+
+  return connection
+}

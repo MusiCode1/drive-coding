@@ -14,6 +14,8 @@
  * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
  */
 import "../app.css"
+import { page } from "$app/state"
+import { env } from "$env/dynamic/public"
 import type { Locale } from "@drive-coding/core/i18n"
 import {
   setActiveAgents,
@@ -25,6 +27,7 @@ import {
   setMic,
   setModals,
   setModelStatus,
+  setRecentProjects,
   setResponsive,
   setSession,
   setSettings,
@@ -37,6 +40,7 @@ import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { CuesEngine } from "$lib/engines/cues"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
+import { RecentProjects } from "$lib/view-models/recent-projects.svelte"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { BubblePlayer } from "$lib/view-models/bubble-player.svelte"
 import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
@@ -49,6 +53,7 @@ import { ResponsiveVM } from "$lib/view-models/responsive.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
 import { Speaker } from "$lib/view-models/speaker.svelte"
 import { ThemeVM } from "$lib/view-models/theme.svelte"
+import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { UiShellVM } from "$lib/view-models/ui-shell.svelte"
 
 let { children } = $props()
@@ -103,6 +108,15 @@ const contentViewer = new ContentViewerVM()
 // ─── active-agents ─── (slice active-agents-widget — בלתי-תלוי)
 const activeAgents = new ActiveAgents()
 
+// ─── recent-projects ─── (slice connect-recent-projects — בלתי-תלוי)
+const recentProjects = new RecentProjects()
+
+// ─── tts-capabilities ─── (slice tts-provider-availability, Commit 3 — race-fix)
+// מקדים את בדיקת הזמינות לפני שה-$effect ב-VoicePicker מופעל.
+// refresh() non-blocking (void) — אין await. ה-$effect reactive ב-VoicePicker
+// יתעורר אוטומטית כשcaps יתעדכן.
+void ttsCapabilities.refresh()
+
 // ─── wake-lock ─── (Track C — drive-first chrome)
 const wakeLock = new WakeLockEngine()
 $effect(() => {
@@ -122,6 +136,18 @@ $effect(() => {
   document.documentElement.lang = loc
 })
 
+// ─── document title ─── (slice app-title-build-env)
+// base מ-env (נצרב ב-build); fallback "Drive Coding" אם ה-var חסר (dev-server בלי FE_ENV).
+const baseTitle = env.PUBLIC_APP_TITLE || "Drive Coding"
+const titleContext = $derived.by(() => {
+  const p = page.url.pathname
+  if (p.startsWith("/settings")) return i18n.t("appTitle.settings")
+  if (p.startsWith("/chat")) return session.sessionTitle?.trim() || null
+  if (p === "/") return i18n.t("appTitle.sessions")
+  return null
+})
+const docTitle = $derived(titleContext ? `${baseTitle} • ${titleContext}` : baseTitle)
+
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
@@ -138,6 +164,7 @@ setUiShell(uiShell)
 setModals(modals)
 setContentViewer(contentViewer)
 setActiveAgents(activeAgents)
+setRecentProjects(recentProjects)
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)
 const chatScroll = $state<ChatScrollBridge>({ scrollEl: null, handle: null })
@@ -149,5 +176,9 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
   ;(window as any).__session = session
 }
 </script>
+
+<svelte:head>
+  <title>{docTitle}</title>
+</svelte:head>
 
 {@render children?.()}

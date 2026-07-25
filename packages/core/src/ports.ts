@@ -1,6 +1,6 @@
 import type { PromptResponse, SessionNotification } from "@agentclientprotocol/sdk"
 import type { Result } from "neverthrow"
-import type { BridgeCrashInfo } from "provider-contract/acp"
+import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
 import type { Agent, CliKind, CreateAgentInput } from "./schemas"
 
 export type { BridgeCrashInfo, PromptResponse, SessionNotification }
@@ -24,7 +24,9 @@ export interface AgentRegistry {
   /** עדכון סטטוס / פרטי bridge / סיבת קריסה / נעיצה. זורק שגיאה אם id לא קיים. */
   update(
     id: string,
-    patch: Partial<Pick<Agent, "status" | "bridgePort" | "acpSessionId" | "crashReason" | "persistent">>,
+    patch: Partial<
+      Pick<Agent, "status" | "bridgePort" | "acpSessionId" | "crashReason" | "persistent" | "title">
+    >,
   ): Promise<Agent>
 
   /** הסרה. זורק שגיאה אם לא קיים. */

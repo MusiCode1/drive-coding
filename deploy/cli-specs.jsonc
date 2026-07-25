@@ -1,0 +1,14 @@
+// cli-specs.jsonc — CLI env shaping per cliKind (loaded by loadCliSpecsOverride via CLI_SPECS_FILE).
+// claude in-process: exclude api.anthropic.com from OneCLI (proxy + key placeholder),
+// so claude authenticates via subscription OAuth (~/.claude) instead of the gateway (401).
+// Applies only to the claude child process — the BE (TTS proxy for ElevenLabs/Google) is untouched.
+{
+  "claude": {
+    "unsetEnv": ["ANTHROPIC_API_KEY"],
+    "setEnv": { "NO_PROXY": "api.anthropic.com", "no_proxy": "api.anthropic.com" }
+  }
+  // Cursor CLI (agent.cmd) is often not on PATH — override the bin to the full path:
+  // "cursor": { "bin": "C:/Users/<you>/AppData/Local/cursor-agent/agent.cmd" }
+  // Grok Build — binary often under ~/.grok/bin (not always on PATH):
+  // "grok": { "bin": "C:/Users/<you>/.grok/bin/grok.exe" }
+}

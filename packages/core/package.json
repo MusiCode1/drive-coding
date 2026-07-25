@@ -1,6 +1,6 @@
 {
   "name": "@drive-coding/core",
-  "version": "0.0.0",
+  "version": "0.21.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -18,16 +18,20 @@
     },
     "./cwd-hash": "./src/cwd-hash.ts",
     "./cwd-validate": "./src/cwd-validate.ts",
+    "./cli-resolve": "./src/cli-resolve.ts",
     "./async/*": "./src/async/*.ts",
-    "./config/*": "./src/config/*.ts"
+    "./acp/*": "./src/acp/*.ts",
+    "./config/*": "./src/config/*.ts",
+    "./tts/*": "./src/tts/*.ts",
+    "./usage/*": "./src/usage/*.ts"
   },
   "scripts": {
     "build": "tsc --build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "provider-contract": "git+https://github.com/MusiCode1/provider-abstraction.git#main",
-    "@agentclientprotocol/sdk": "^0.21.1",
+    "@drive-coding/provider": "workspace:*",
+    "@agentclientprotocol/sdk": "^1.2.1",
     "arktype": "^2.0.0",
     "marked": "^18.0.3",
     "neverthrow": "^8.0.0",

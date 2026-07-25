@@ -1,19 +1,22 @@
 <script lang="ts">
-import { CLI_KINDS, type CliKind, type AgentPublic } from "@drive-coding/core"
-import { goto } from "$app/navigation"
+import { type AgentPublic, CLI_KINDS, type CliKind } from "@drive-coding/core"
+import FolderIcon from "@lucide/svelte/icons/folder"
+import Loader2Icon from "@lucide/svelte/icons/loader-2"
 import { onMount, untrack } from "svelte"
+import { goto } from "$app/navigation"
 import { connectAgent } from "$lib/actions/connect-agent"
 import { fetchServerOptions } from "$lib/adapters/options"
-import { listSessionsForCwd, type SessionInfo } from "$lib/adapters/sessions"
-import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
-import SessionPicker from "$lib/components/connect/SessionPicker.svelte"
+import type { RecentProject } from "$lib/adapters/recent-projects"
+import AuthGuidance from "$lib/components/AuthGuidance.svelte"
 import ActiveProcessesPanel from "$lib/components/connect/ActiveProcessesPanel.svelte"
+import RecentProjectsPanel from "$lib/components/connect/RecentProjectsPanel.svelte"
+import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
+import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
+import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
 import LanguageSelect from "$lib/components/settings/LanguageSelect.svelte"
 import Select from "$lib/components/ui/Select.svelte"
-import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
-import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
-import FolderIcon from "@lucide/svelte/icons/folder"
-import { getI18n, getSession, getSettings, getModals, getActiveAgents } from "$lib/context"
+import { getActiveAgents, getI18n, getModals, getSession, getSettings } from "$lib/context"
+import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
 
 const settings = getSettings()
 const session = getSession()
@@ -21,6 +24,11 @@ const modals = getModals()
 const i18n = getI18n()
 const t = i18n.t
 const activeAgents = getActiveAgents()
+// slice cli-availability (re-scope): מציג את כל ה-CLI_KINDS תמיד, ומשבית (disabled)
+// את מי שלא מותקן בפועל בסביבת ה-BE — לא מסתיר (§1).
+// available מאותחל ל-CLI_KINDS המלא (race-safe) ונופל חזרה אליו אם ה-endpoint נכשל (§2, §6) —
+// בשני המצבים (loading/error) זה שקול ל"הכל enabled" כי disabled נגזר מ-!available.includes(k).
+const cliAvailability = new CliAvailability()
 
 let cliKind = $state<CliKind>(settings.cliKind)
 let cwd = $state(settings.lastCwd)
@@ -31,13 +39,7 @@ let cwd = $state(settings.lastCwd)
 // עדכן רק אם cwd עדיין ריק (המשתמש לא הקליד בינתיים).
 onMount(() => {
   void activeAgents.refresh()
-
-  // sessions-autoload: טעינה אוטומטית של סשנים — רק אם יש cwd מוכר מ-lastCwd
-  // (לא משתמש חדש / cwd ריק). spawn יקר → רק כשסביר שהמשתמש יחזור לאותה תיקייה.
-  // onMount רץ פעם אחת per mount — guard טבעי, אין צורך בדגל נוסף.
-  if (settings.lastCwd && cwd.trim()) {
-    void loadSessions()
-  }
+  void cliAvailability.load()
 
   fetchServerOptions()
     .then((opts) => {
@@ -79,47 +81,6 @@ $effect(() => {
 // dir="auto" הוסר: היה מושפע מתוכן הנתיב (LTR) ולא מה-locale.
 const isRtl = $derived(settings.locale === "he")
 
-// ─── state עבור תפריט בחירת סשן (session picker) ───
-let sessions = $state<SessionInfo[]>([])
-let sessionsLoading = $state(false)
-let sessionsError = $state<string | null>(null)
-let selectedSessionId = $state<string | null>(null)
-
-// ─── DEV-only: mock fixtures (static/fixtures/*.json) — דיבוג עיצוב ללא ACP ───
-// MODE !== "production" → פעיל גם ב-dev build, חסום+tree-shaken ב-production.
-const MOCK_FIXTURES: SessionInfo[] = import.meta.env.MODE !== "production"
-  ? [
-      ["claude-demo", "config + descriptions (claude)"],
-      ["greeting", "שיחה קצרה (3 בועות)"],
-      ["tool-spill", "בינוני — הרבה הודעות (25)"],
-      ["phone-tunnel", "בינוני מאוזן (39)"],
-      ["mitm", "ארוך — בלוקי קוד (180)"],
-      ["salary-prev", "ארוך — הרבה כלים (189)"],
-      ["salary-attendance", "ארוך מאוד (209)"],
-    ].map(([name, label]) => ({
-      sessionId: `mock:${name}`,
-      cwd: "/mock",
-      title: `🧪 MOCK: ${label}`,
-      updatedAt: "",
-    }))
-  : []
-
-async function loadSessions() {
-  sessionsLoading = true
-  sessionsError = null
-  sessions = []
-  selectedSessionId = null
-  try {
-    sessions = await listSessionsForCwd(cwd.trim(), cliKind)
-  } catch (e) {
-    sessionsError = e instanceof Error ? e.message : String(e)
-  } finally {
-    // ב-dev: הצג את ה-mock fixtures בראש הרשימה (גם אם הטעינה האמיתית נכשלה)
-    sessions = [...MOCK_FIXTURES, ...sessions]
-    sessionsLoading = false
-  }
-}
-
 async function handleReconnect(agent: AgentPublic) {
   if (!agent.acpSessionId) return
   settings.setCliKind(agent.cliKind)
@@ -137,128 +98,171 @@ async function handleReconnect(agent: AgentPublic) {
 async function onSubmit(e: SubmitEvent) {
   e.preventDefault()
   if (!cwd.trim()) return
-  if (selectedSessionId !== null) {
-    settings.setCliKind(cliKind)
-    settings.setLastCwd(cwd.trim())
-    const selected = sessions.find((s) => s.sessionId === selectedSessionId)
-    await session.loadSession({ sessionId: selectedSessionId, cwd: cwd.trim(), cliKind, title: selected?.title ?? "" })
-    if (session.status === "connected") {
-      await goto("/chat")
-    }
-  } else {
-    await connectAgent({ cliKind, cwd: cwd.trim(), session, settings })
-  }
+  await connectAgent({ cliKind, cwd: cwd.trim(), session, settings })
+}
+
+// connect-recent-projects: לחיצה על תיקייה אחרונה → חיבור ישיר (סשן חדש).
+// connectAgent מבצע setCliKind/setLastCwd ו-goto("/chat") פנימית.
+async function handleRecentSelect(project: RecentProject) {
+  cliKind = project.kind
+  cwd = project.cwd
+  await connectAgent({ cliKind: project.kind, cwd: project.cwd, session, settings })
 }
 </script>
 
 <main class="connect">
-  <h1>{t("connect.title")}</h1>
-  <p class="subtitle">{t("connect.subtitle")}</p>
+  <div class="connect-body chat-scroll">
+    <h1>{t("connect.title")}</h1>
+    <p class="subtitle">{t("connect.subtitle")}</p>
 
-  <ActiveProcessesPanel onReconnect={handleReconnect} />
+    <ActiveProcessesPanel onReconnect={handleReconnect} />
 
-  <form onsubmit={onSubmit}>
-    <label>
-      <span>{t("settings.language.label")}</span>
-      <LanguageSelect />
-    </label>
+    <!-- connect-recent-projects: רשימת תיקיות אחרונות — מ-GET /api/projects (registry) -->
+    <RecentProjectsPanel onSelect={handleRecentSelect} />
 
-    <label>
-      <span>{t("connect.cli.label")}</span>
-      <Select
-        value={cliKind}
-        options={CLI_KINDS.map((k) => ({ value: k, label: k }))}
-        title={t("connect.cli.label")}
-        ariaLabel={t("connect.cli.label")}
-        disabled={session.status === "connecting"}
-        onchange={(v) => (cliKind = v as CliKind)}
-      />
-    </label>
+    <form id="connect-form" onsubmit={onSubmit}>
+      <label>
+        <span>{t("settings.language.label")}</span>
+        <LanguageSelect />
+      </label>
 
-    <label>
-      <span>{t("connect.cwd.label")}</span>
-      <!-- C15: dir מפורש לפי locale (לא dir="auto" — שמושפע מתוכן הנתיב).
-           כפתור תיקייה עם order:-1 תמיד = ראשון בflex.
-           RTL (עברית): flex מימין לשמאל → ראשון=ימין ויזואלי. ✓
-           LTR (אנגלית): flex משמאל לימין → ראשון=שמאל ויזואלי. ✓ -->
-      <div class="cwd-row" dir={isRtl ? "rtl" : "ltr"}>
-        <input
-          type="text"
-          bind:value={cwd}
-          placeholder={t("connect.cwd.placeholder")}
-          dir="ltr"
+      <label>
+        <span class="cli-label-row">
+          {t("connect.cli.label")}
+          {#if cliAvailability.loading}
+            <Loader2Icon size={14} class="animate-spin" style="color:var(--fg-dim)" aria-hidden="true" />
+            <span class="cli-hint">{t("connect.cli.loading")}</span>
+          {:else if cliAvailability.error}
+            <!-- §2/§6/§9 Q3: fallback = מציג הכול + אינדיקציה חלשה (לא באנר חוסם) -->
+            <span class="cli-hint">{t("connect.cli.showAll")}</span>
+          {/if}
+        </span>
+        <!-- Select.value נשאר cliKind גם אם הוא disabled ב-options (למקרה reconnect) —
+             כל ה-CLI_KINDS מוצגים תמיד; מי שלא available מקבל disabled פר-option (§1, §4 Commit 2). -->
+        <Select
+          value={cliKind}
+          options={CLI_KINDS.map((k) => ({
+            value: k,
+            label: k,
+            disabled: !cliAvailability.available.includes(k),
+            description: cliAvailability.available.includes(k)
+              ? null
+              : t("connect.cli.notInstalled"),
+          }))}
+          title={t("connect.cli.label")}
+          ariaLabel={t("connect.cli.label")}
           disabled={session.status === "connecting"}
+          onchange={(v) => (cliKind = v as CliKind)}
         />
-        <!-- C15: order:-1 → תמיד ראשון בflex: LTR=שמאל, RTL=ימין -->
-        <button
-          type="button"
-          class="folder-btn"
-          style="order: -1"
-          onclick={() => modals.openFolder()}
-          disabled={session.status === "connecting"}
-          aria-label={t("settings.folder.pick")}
-          title={t("settings.folder.pick")}
-        >
-          <FolderIcon size={18} strokeWidth={1.75} />
-        </button>
+      </label>
+
+      <label>
+        <span>{t("connect.cwd.label")}</span>
+        <!-- C15: dir מפורש לפי locale (לא dir="auto" — שמושפע מתוכן הנתיב).
+             כפתור תיקייה עם order:-1 תמיד = ראשון בflex.
+             RTL (עברית): flex מימין לשמאל → ראשון=ימין ויזואלי. ✓
+             LTR (אנגלית): flex משמאל לימין → ראשון=שמאל ויזואלי. ✓ -->
+        <div class="cwd-row" dir={isRtl ? "rtl" : "ltr"}>
+          <input
+            type="text"
+            bind:value={cwd}
+            placeholder={t("connect.cwd.placeholder")}
+            dir="ltr"
+            disabled={session.status === "connecting"}
+          />
+          <!-- C15: order:-1 → תמיד ראשון בflex: LTR=שמאל, RTL=ימין -->
+          <button
+            type="button"
+            class="folder-btn"
+            style="order: -1"
+            onclick={() => modals.openFolder()}
+            disabled={session.status === "connecting"}
+            aria-label={t("settings.folder.pick")}
+            title={t("settings.folder.pick")}
+          >
+            <FolderIcon size={18} strokeWidth={1.75} />
+          </button>
+        </div>
+      </label>
+    </form>
+
+    {#if session.error}
+      <div class="error" role="alert">
+        <strong>{t("connect.error.prefix")}</strong>
+        {session.error}
       </div>
-    </label>
+      <!-- slice auth-guidance: הדרכת-אימות ספציפית-ל-CLI (מתחת ל-error, רק כשיש authMethods) -->
+      <AuthGuidance cliKind={session.cliKind} authMethods={session.authMethods} />
+    {/if}
+  </div>
 
-    <SessionPicker
-      {cwd}
-      {cliKind}
-      {sessions}
-      loading={sessionsLoading}
-      error={sessionsError}
-      {selectedSessionId}
-      onload={loadSessions}
-      onselect={(id) => { selectedSessionId = id }}
-    />
-
-    <label>
-      <span>{t("chat.voicePicker.label")}</span>
-      <VoicePicker />
-    </label>
-
-    <button type="submit" disabled={!cwd.trim() || session.status === "connecting"}>
+  <div class="connect-footer">
+    <button
+      type="submit"
+      form="connect-form"
+      disabled={!cwd.trim() || session.status === "connecting"}
+    >
       {session.status === "connecting" ? t("connect.submitting") : t("connect.submit")}
     </button>
-  </form>
-
-  {#if session.error}
-    <div class="error" role="alert">
-      <strong>{t("connect.error.prefix")}</strong>
-      {session.error}
-    </div>
-  {/if}
+  </div>
 </main>
 
 <!-- C10: בורר תיקיות (מרונדר כאן כי דף החיבור אינו עטוף ב-AppShell) -->
-<FolderPickerDialog />
+<!-- folder-picker-fixes: startPath={cwd} → הבורר נפתח בנתיב שהוזן ידנית -->
+<FolderPickerDialog startPath={cwd} />
 <!-- content-viewer (slice content-viewer — כמו FolderPickerDialog: מסך connect אינו עטוף ב-AppShell) -->
 <ContentViewerDialog />
+<!-- ui-session-polish fix5-extend: מודאל-טעינה גם ב-connect ראשוני + reconnect + רינדור היסטוריה -->
+<LoadingModal open={session.status === "connecting" || session.isLoadingHistory} />
 
 <style>
-  /* גובה מלא + גלילה פנימית: ה-body הוא overflow:hidden (app.css), ודף החיבור
-     אינו עטוף ב-AppShell, לכן הוא חייב לגלול בעצמו — אחרת התוכן נחתך במסכים נמוכים. */
+  /* גובה מלא: ה-body הוא overflow:hidden (app.css), ודף החיבור אינו עטוף ב-AppShell,
+     לכן הוא חייב לנהל את הגובה שלו בעצמו. הגלילה עברה ל-.connect-body — הכפתור
+     ב-.connect-footer נשאר מוצמד לתחתית ולא נגלל איתה (slice: connect-screen-layout). */
   .connect {
     max-width: 420px;
     height: 100dvh;
-    overflow-y: auto;
     margin: 0 auto;
-    padding: 4rem 1rem;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .connect-body {
+    flex: 1 1 auto;
+    min-height: 0; /* קריטי — בלי זה flex-child לא מתכווץ ולא נגלל */
+    overflow-y: auto; /* עיצוב ה-scrollbar עצמו מגיע ממחלקת chat-scroll שעל האלמנט */
+    padding: 4rem 1rem 1rem;
+    /* slice connect-panel-resize (Commit 2.5): inset ל-scrollIntoView של ידית הגרירה —
+       הידית מעוגנת לתחתית ה-body(=ראש ה-footer), לכן הערך אינו-תלוי בגובה ה-footer המדויק. */
+    scroll-padding-bottom: 5rem;
+  }
+
+  .connect-footer {
+    flex-shrink: 0;
+    padding: 0.75rem 1rem;
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); /* notch/home-indicator בנייד */
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+
+  .connect-footer button {
+    width: 100%;
+    margin-top: 0; /* מבטל את margin-top:0.5rem של כלל ה-button הגנרי */
   }
 
   h1 {
     margin: 0 0 0.25rem;
     font-size: 1.6rem;
     font-weight: 600;
+    text-align: center;
   }
 
   .subtitle {
     margin: 0 0 2rem;
     color: var(--fg-dim);
     font-size: 0.95rem;
+    text-align: center;
   }
 
   form {
@@ -275,6 +279,19 @@ async function onSubmit(e: SubmitEvent) {
 
   label > span {
     font-size: 0.85rem;
+    color: var(--fg-dim);
+  }
+
+  /* slice cli-availability: ספינר-טעינה / אינדיקציית-fallback ליד תווית ה-dropdown */
+  .cli-label-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .cli-hint {
+    font-size: 0.75rem;
+    font-weight: 400;
     color: var(--fg-dim);
   }
 

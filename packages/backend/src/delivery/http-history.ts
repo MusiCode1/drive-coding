@@ -14,7 +14,7 @@
  */
 
 import { readdir, realpath } from "node:fs/promises"
-import { relative, resolve } from "node:path"
+import { join, relative, resolve } from "node:path"
 import type { Hono } from "hono"
 import type { ProjectsRegistry } from "../app/projects-registry.js"
 import type { RecordingsStore } from "../app/recordings-store.js"
@@ -31,6 +31,17 @@ export function registerProjectsHttp(
   app.get("/api/projects", async (c) => {
     const projects = await deps.projectsRegistry.getProjects()
     return c.json({ projects })
+  })
+
+  // DELETE /api/projects  { cwd }  → מוחק את הרשומה לגמרי
+  // slice: recent-projects-controls
+  // עיצוב: cwd מכיל תווים מיוחדים (: ב-Windows, \, /) → body במקום path-param
+  app.delete("/api/projects", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { cwd?: unknown }
+    const cwd = typeof body.cwd === "string" ? body.cwd : ""
+    if (!cwd) return c.json({ error: "cwd required" }, 400)
+    await deps.projectsRegistry.removeCwd(cwd)
+    return c.body(null, 204)
   })
 }
 
@@ -100,7 +111,30 @@ export function registerRecordingsPostHttp(
 
 // ─── /api/fs/browse ───────────────────────────────────────────────────────────
 
-const HIDDEN_PREFIXES = [".git", ".opencode", ".svelte-kit", "node_modules", ".pnpm"]
+// שמות-רעש שאינם מתחילים בנקודה אך נחשבים "מוסתרים" כברירת-מחדל.
+const NOISE_DIRS = new Set<string>(["node_modules"])
+
+/**
+ * "מוסתר" = שם שמתחיל בנקודה (קונבנציית Unix) או שם-רעש מוכר.
+ *
+ * ⚠️ נקודת-הרחבה (כוונת-תכנון): החתימה async ומקבלת dirent+fullPath **בכוונה** — כדי
+ * שזיהוי תכונת-hidden של Windows (FILE_ATTRIBUTE_HIDDEN, שאינה נגזרת מהשם) ייכנס כאן
+ * בעתיד בלי לגעת בלולאת-הסינון. כיום אין IO בפועל; ה-Promise נפתר מיד.
+ * ה-Windows-detection עצמו = slice נפרד (`slice-windows-hidden-attr`, ראה docs/plans/slice-folder-picker-fixes.md §2)
+ * כי הוא דורש תלות native / shell-out per-entry — הכרעה שלא שייכת לתיקון-הבאג הזה.
+ */
+async function isHiddenEntry(
+  dirent: import("node:fs").Dirent<string>,
+  fullPath: string,
+): Promise<boolean> {
+  if (dirent.name.startsWith(".")) return true // Unix convention
+  if (NOISE_DIRS.has(dirent.name)) return true
+  // ── extension point: Windows FILE_ATTRIBUTE_HIDDEN ──
+  // TODO(slice-windows-hidden-attr): קרא את תכונת ה-hidden של ה-OS על fullPath כאן.
+  // כיום no-op על שמות שאינם dot → תיקיות מוסתרות-ב-attribute ב-Windows עדיין מוצגות.
+  void fullPath
+  return false
+}
 
 /**
  * בודק אם נתיב הוא absolute — cross-platform.
@@ -175,8 +209,18 @@ export function registerFsBrowseHttp(
       return c.json({ error: "cannot read directory" }, 500)
     }
 
-    const entries = dirents
-      .filter((d) => showHidden || !HIDDEN_PREFIXES.some((prefix) => d.name.startsWith(prefix)))
+    // showHidden=true → דלג לגמרי (אין צורך לחשב hidden, ובעתיד גם חוסך IO)
+    const visibleDirents = showHidden
+      ? dirents
+      : (
+          await Promise.all(
+            dirents.map(async (d) => ({ d, hidden: await isHiddenEntry(d, join(real, d.name)) })),
+          )
+        )
+          .filter((x) => !x.hidden)
+          .map((x) => x.d)
+
+    const entries = visibleDirents
       .map((d) => ({
         name: d.name,
         isDir: d.isDirectory() || d.isSymbolicLink(), // מתייחס לסימלינקים כניתנים לניווט

@@ -15,8 +15,11 @@
 
 import type { CliKind } from "@drive-coding/core"
 import { DEFAULT_LOCALE, detectLocale, type Locale } from "@drive-coding/core/i18n"
+import type { SpeechPace, SpeechTone } from "@drive-coding/core/voice/tts-types"
 import { listVoices, type Voice } from "../adapters/voice/voices"
 import { setBeUrlBase } from "../util/be-url"
+import { DEFAULT_GEMINI_VOICE } from "../adapters/voice/voices-gemini"
+import { ttsCapabilities } from "./capabilities.svelte"
 
 const STORAGE_KEY = "drive-coding-v2-settings"
 
@@ -49,6 +52,21 @@ type Persisted = {
   lastConfig: Record<string, Record<string, string | boolean>>
   // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
   ttsProvider: "elevenlabs" | "google"
+  // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
+  recentCollapsed: boolean
+  // ─── leave-running (runtime-gate fixes) ───
+  suppressLeaveWarning: boolean
+  // ─── קול Gemini ─── (V4b-gemini-voice-picker)
+  geminiVoice: string
+  // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
+  // מפה: cwd → טקסט הפרומפט (מתווסף להוראות ברירת-המחדל של הסוכן, ר' provider/connection).
+  projectSystemPrompt: Record<string, string>
+  // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize)
+  recentPanelHeight: number
+  activePanelHeight: number
+  // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
+  geminiPace: SpeechPace
+  geminiTone: SpeechTone
 }
 
 const DEFAULTS: Persisted = {
@@ -79,6 +97,20 @@ const DEFAULTS: Persisted = {
   lastConfig: {},
   // ─── TTS provider ─── (V4a) — ברירת מחדל = ElevenLabs (Q1=לא flip)
   ttsProvider: "elevenlabs" as const,
+  // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
+  recentCollapsed: false,
+  // ─── leave-running (runtime-gate fixes) ───
+  suppressLeaveWarning: false,
+  // ─── קול Gemini ─── (V4b-gemini-voice-picker)
+  geminiVoice: DEFAULT_GEMINI_VOICE,
+  // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
+  projectSystemPrompt: {},
+  // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize) — 256px = 16rem, זהה להתנהגות היום
+  recentPanelHeight: 256,
+  activePanelHeight: 256,
+  // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
+  geminiPace: "normal",
+  geminiTone: "neutral",
 }
 
 function load(): Persisted {
@@ -163,6 +195,25 @@ export class Settings {
   // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
   ttsProvider = $state<"elevenlabs" | "google">(DEFAULTS.ttsProvider)
 
+  // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
+  recentCollapsed = $state<boolean>(DEFAULTS.recentCollapsed)
+  // ─── leave-running (runtime-gate fixes) ───
+  suppressLeaveWarning = $state<boolean>(DEFAULTS.suppressLeaveWarning)
+
+  // ─── קול Gemini ─── (V4b-gemini-voice-picker)
+  geminiVoice = $state<string>(DEFAULTS.geminiVoice)
+
+  // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
+  projectSystemPrompt = $state<Record<string, string>>(DEFAULTS.projectSystemPrompt)
+
+  // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize)
+  recentPanelHeight = $state<number>(DEFAULTS.recentPanelHeight)
+  activePanelHeight = $state<number>(DEFAULTS.activePanelHeight)
+
+  // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
+  geminiPace = $state<SpeechPace>(DEFAULTS.geminiPace)
+  geminiTone = $state<SpeechTone>(DEFAULTS.geminiTone)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -191,6 +242,20 @@ export class Settings {
     this.lastConfig = loaded.lastConfig
     // ─── TTS provider ───
     this.ttsProvider = loaded.ttsProvider
+    // ─── תיקיות אחרונות ───
+    this.recentCollapsed = loaded.recentCollapsed
+    // ─── leave-running ───
+    this.suppressLeaveWarning = loaded.suppressLeaveWarning
+    // ─── קול Gemini ───
+    this.geminiVoice = loaded.geminiVoice
+    // ─── פרומפט-מערכת פר-פרויקט ───
+    this.projectSystemPrompt = loaded.projectSystemPrompt
+    // ─── גובה פאנלים נגרר ───
+    this.recentPanelHeight = loaded.recentPanelHeight
+    this.activePanelHeight = loaded.activePanelHeight
+    // ─── בימוי Gemini ───
+    this.geminiPace = loaded.geminiPace
+    this.geminiTone = loaded.geminiTone
   }
 
   // ─── טופס חיבור ───
@@ -223,6 +288,14 @@ export class Settings {
    * הקורא (VoicePicker) מפעיל פעם אחת ב-mount עטוף ב-untrack. שגיאות → voicesError.
    */
   loadVoices = async (force = false): Promise<void> => {
+    // Commit 3 capability-gate (הגנה שנייה, סינכרונית — לקוראים אחרים מחוץ ל-VoicePicker).
+    // undefined caps → optimistic → לא חוסם (test-7 ממשיך לעבוד בלי שינוי).
+    // available===false → 0 בקשות ל-ElevenLabs.
+    // אין await כאן — Guard הסינכרוני (voicesLoading) בשורה הבאה נשאר שלם.
+    if (!ttsCapabilities.isAvailable("elevenlabs")) {
+      this.#clearVoicesRetry()
+      return
+    }
     if (this.voicesLoading) return
     // טעינה מוצלחת קיימת — אל תטען שוב.
     if (this.availableVoices.length > 0 && this.voicesError === null) return
@@ -256,6 +329,8 @@ export class Settings {
 
   /** מתזמן נסיון חוזר עם exponential backoff, עד תקרת הנסיונות. */
   #scheduleVoicesRetry(): void {
+    // Commit 3: אל תתזמן retry אם ElevenLabs לא-זמין (מניעת retry-loop על מפתח שרוף).
+    if (!ttsCapabilities.isAvailable("elevenlabs")) return
     if (this.#voicesRetries >= Settings.#VOICES_MAX_RETRIES) return
     const delay = Math.min(
       Settings.#VOICES_BASE_DELAY_MS * 2 ** this.#voicesRetries,
@@ -393,6 +468,67 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
+
+  setRecentCollapsed = (v: boolean): void => {
+    this.recentCollapsed = v
+    this.#persist()
+  }
+
+  // ─── leave-running (runtime-gate fixes) ───
+
+  setSuppressLeaveWarning = (v: boolean): void => {
+    this.suppressLeaveWarning = v
+    this.#persist()
+  }
+
+  // ─── קול Gemini ─── (V4b-gemini-voice-picker)
+
+  setGeminiVoice = (v: string): void => {
+    this.geminiVoice = v
+    this.#persist()
+  }
+
+  // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
+
+  /** מחזיר את הפרומפט השמור לפרויקט הנתון (cwd), או מחרוזת ריקה אם אין. */
+  getProjectPrompt = (cwd: string): string => {
+    return this.projectSystemPrompt[cwd] ?? ""
+  }
+
+  /** שומר את הפרומפט עבור cwd נתון. object-replacement (immutable) לשמירת reactivity. */
+  setProjectPrompt = (cwd: string, text: string): void => {
+    this.projectSystemPrompt = {
+      ...this.projectSystemPrompt,
+      [cwd]: text,
+    }
+    this.#persist()
+  }
+
+  // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize)
+
+  setRecentPanelHeight = (px: number): void => {
+    this.recentPanelHeight = px
+    this.#persist()
+  }
+
+  setActivePanelHeight = (px: number): void => {
+    this.activePanelHeight = px
+    this.#persist()
+  }
+
+  // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
+
+  setGeminiPace = (v: SpeechPace): void => {
+    this.geminiPace = v
+    this.#persist()
+  }
+
+  setGeminiTone = (v: SpeechTone): void => {
+    this.geminiTone = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -413,6 +549,14 @@ export class Settings {
       enterToSend: this.enterToSend,
       lastConfig: this.lastConfig,
       ttsProvider: this.ttsProvider,
+      recentCollapsed: this.recentCollapsed,
+      suppressLeaveWarning: this.suppressLeaveWarning,
+      geminiVoice: this.geminiVoice,
+      projectSystemPrompt: this.projectSystemPrompt,
+      recentPanelHeight: this.recentPanelHeight,
+      activePanelHeight: this.activePanelHeight,
+      geminiPace: this.geminiPace,
+      geminiTone: this.geminiTone,
     })
   }
 }

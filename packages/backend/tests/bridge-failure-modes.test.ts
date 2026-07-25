@@ -15,13 +15,15 @@
  *
  * This file locks in the desired behavior at every layer where the failure
  * can leak:
- *   - `createBridgeManager().spawn` rejects cleanly on every failure mode
- *   - `createBridgeManager().spawn` propagates the rejection without
+ *   - `createConnectionRegistry().connect` rejects cleanly on every failure mode
+ *   - `createConnectionRegistry().connect` propagates the rejection without
  *     leaving stray listeners on the lost child
  *   - `createAgentOrchestrator().createAndSpawn` returns an error to the
  *     HTTP caller and marks the agent crashed
  *   - **no `uncaughtException` or `unhandledRejection` fires during any of
  *     the above** — this is the actual regression that crashes the BE.
+ *
+ * CUT-3b-ii: bridge-manager replaced by connection-registry.
  *
  * If a future refactor reintroduces a path where spawn errors escape to
  * `uncaughtException`, one of these tests will fail.
@@ -165,7 +167,7 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
     vi.restoreAllMocks()
   })
 
-  describe("at bridge-manager layer", () => {
+  describe("at connection-registry layer (CUT-3b-ii)", () => {
     it("rejects cleanly when spawn throws synchronously (Bun ENOENT edge case)", async () => {
       const monitor = withUncaughtMonitor()
       monitor.start()
@@ -177,12 +179,10 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
       })
       spawnBehavior = { kind: "throw-sync", error: enoent }
 
-      const { createBridgeManager } = await import("../src/acp/bridge-manager")
-      const mgr = createBridgeManager()
+      const { createConnectionRegistry } = await import("../src/acp/connection-registry")
+      const reg = createConnectionRegistry()
 
-      await expect(
-        mgr.spawn("agent-fail", { cliKind: "opencode", cwd: "/tmp", modelOverride: null }),
-      ).rejects.toThrow(/ENOENT/)
+      await expect(reg.connect("agent-fail", "opencode", { cwd: "/tmp" })).rejects.toThrow(/ENOENT/)
 
       await monitor.stopAndAssertClean()
     })
@@ -193,12 +193,12 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
 
       spawnBehavior = { kind: "no-pid" }
 
-      const { createBridgeManager } = await import("../src/acp/bridge-manager")
-      const mgr = createBridgeManager()
+      const { createConnectionRegistry } = await import("../src/acp/connection-registry")
+      const reg = createConnectionRegistry()
 
-      await expect(
-        mgr.spawn("agent-nopid", { cliKind: "opencode", cwd: "/tmp", modelOverride: null }),
-      ).rejects.toThrow(/no pid/)
+      await expect(reg.connect("agent-nopid", "opencode", { cwd: "/tmp" })).rejects.toThrow(
+        /no pid/,
+      )
 
       await monitor.stopAndAssertClean()
     })
@@ -208,24 +208,18 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
       monitor.start()
 
       const enoent = Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" })
-      // async-error: pid exists but then error fires async
-      // In new bridge-manager, spawn with pid succeeds synchronously but error fires later.
-      // The manager should survive without uncaught errors.
+      // async-error: pid exists but then error fires async.
+      // connect() succeeds (pid=12345 returned), then crash fires async.
+      // The registry registers the error handler before the error fires,
+      // so it should handle it cleanly — no uncaught escape.
       spawnBehavior = { kind: "async-error", error: enoent, delayMs: 5 }
 
-      const { createBridgeManager } = await import("../src/acp/bridge-manager")
-      const mgr = createBridgeManager()
+      const { createConnectionRegistry } = await import("../src/acp/connection-registry")
+      const reg = createConnectionRegistry()
 
-      // spawn succeeds (pid=12345 returned), but then async error fires.
-      // The manager registers the error handler before the error fires,
-      // so it should handle it cleanly (remove from store + notify crash).
-      const spawnPromise = mgr.spawn("agent-async-err", {
-        cliKind: "opencode",
-        cwd: "/tmp",
-        modelOverride: null,
-      })
-      // Spawn should resolve (pid is set), then crash event fires
-      await spawnPromise.catch(() => {})
+      const connectPromise = reg.connect("agent-async-err", "opencode", { cwd: "/tmp" })
+      // connect should resolve (pid is set), then crash event fires
+      await connectPromise.catch(() => {})
 
       // Give the async error time to fire
       await new Promise((r) => setTimeout(r, 50))
@@ -233,18 +227,18 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
       await monitor.stopAndAssertClean()
     })
 
-    it("handles child exit cleanly (marks as crashed, no uncaught)", async () => {
+    it("handles child exit cleanly (notifies crash listener, no uncaught)", async () => {
       const monitor = withUncaughtMonitor()
       monitor.start()
 
       spawnBehavior = { kind: "success", port: 7100 }
 
-      const { createBridgeManager } = await import("../src/acp/bridge-manager")
-      const mgr = createBridgeManager()
+      const { createConnectionRegistry } = await import("../src/acp/connection-registry")
+      const reg = createConnectionRegistry()
       const crashSpy = vi.fn()
-      mgr.onCrash(crashSpy)
+      reg.onCrash(crashSpy)
 
-      await mgr.spawn("agent-exit", { cliKind: "opencode", cwd: "/tmp", modelOverride: null })
+      await reg.connect("agent-exit", "opencode", { cwd: "/tmp" })
 
       // Simulate unexpected exit
       const { spawn } = await import("node:child_process")
@@ -252,37 +246,39 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
       child.emit("exit", 127)
 
       await new Promise((r) => setTimeout(r, 20))
-      expect(crashSpy).toHaveBeenCalledWith("agent-exit", { exitCode: 127, signal: null })
-      expect(mgr.get("agent-exit")).toBeNull()
-      expect(mgr.list()).toHaveLength(0)
+      // Commit 1 (surface-crash-stderr): notifyCrash now also carries the captured
+      // stderr lines (empty here — no stderr was emitted in this scenario).
+      expect(crashSpy).toHaveBeenCalledWith("agent-exit", {
+        exitCode: 127,
+        signal: null,
+        stderr: [],
+      })
+      // After crash, conn removed from registry
+      expect(reg.get("agent-exit")).toBeUndefined()
 
       await monitor.stopAndAssertClean()
     })
 
-    it("createBridgeManager().spawn — propagates ENOENT cleanly, no leak", async () => {
+    it("connectionRegistry.connect — propagates ENOENT cleanly, no leak", async () => {
       const monitor = withUncaughtMonitor()
       monitor.start()
 
       const enoent = Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" })
       spawnBehavior = { kind: "throw-sync", error: enoent }
 
-      const { createBridgeManager } = await import("../src/acp/bridge-manager")
-      const mgr = createBridgeManager()
+      const { createConnectionRegistry } = await import("../src/acp/connection-registry")
+      const reg = createConnectionRegistry()
 
-      await expect(
-        mgr.spawn("agent-fail", { cliKind: "opencode", cwd: "/tmp", modelOverride: null }),
-      ).rejects.toThrow()
+      await expect(reg.connect("agent-fail", "opencode", { cwd: "/tmp" })).rejects.toThrow()
 
       await monitor.stopAndAssertClean()
     })
 
-    it("createBridgeManager — child exit removes bridge from store, no uncaught", async () => {
+    it("connection-registry — child exit removes conn from map, no uncaught", async () => {
       const monitor = withUncaughtMonitor()
       monitor.start()
 
       // exit-before-port: pid=12345 exists, but child exits quickly.
-      // In the new in-process bridge-manager, spawn() succeeds synchronously
-      // (pid is valid), and then the exit event fires and removes from store.
       spawnBehavior = {
         kind: "exit-before-port",
         code: 127,
@@ -290,34 +286,35 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
         delayMs: 5,
       }
 
-      const { createBridgeManager } = await import("../src/acp/bridge-manager")
-      const mgr = createBridgeManager()
+      const { createConnectionRegistry } = await import("../src/acp/connection-registry")
+      const reg = createConnectionRegistry()
       const crashSpy = vi.fn()
-      mgr.onCrash(crashSpy)
+      reg.onCrash(crashSpy)
 
-      // Spawn should succeed (pid is set)
-      const handle = await mgr.spawn("agent-x", {
-        cliKind: "opencode",
-        cwd: "/tmp",
-        modelOverride: null,
-      })
-      expect(handle.pid).toBe(12345)
-      expect(mgr.get("agent-x")).not.toBeNull()
+      // connect should succeed (pid is set)
+      const conn = await reg.connect("agent-x", "opencode", { cwd: "/tmp" })
+      expect(conn.pid).toBe(12345)
+      expect(reg.get("agent-x")).not.toBeUndefined()
 
       // Wait for exit to fire
       await new Promise((r) => setTimeout(r, 50))
 
-      // Manager should not have this bridge in its store after exit
-      expect(mgr.get("agent-x")).toBeNull()
-      expect(mgr.list()).toHaveLength(0)
+      // Registry should not have this conn in its map after crash
+      expect(reg.get("agent-x")).toBeUndefined()
       // crash handler was called
-      expect(crashSpy).toHaveBeenCalledWith("agent-x", { exitCode: 127, signal: null })
+      // Commit 1 (surface-crash-stderr): notifyCrash now also carries the captured
+      // stderr lines — here the "command not found\n" chunk emitted before exit.
+      expect(crashSpy).toHaveBeenCalledWith("agent-x", {
+        exitCode: 127,
+        signal: null,
+        stderr: ["command not found"],
+      })
 
       await monitor.stopAndAssertClean()
     })
 
     it("does not leak uncaught errors when late async error fires after entry removed", async () => {
-      // This is the trickiest case: spawn resolves (pid is set, entry in store),
+      // This is the trickiest case: connect resolves (pid is set, entry in map),
       // and THEN an async error event fires — the registered error handler
       // must swallow it without any uncaught escape.
       const monitor = withUncaughtMonitor()
@@ -325,13 +322,13 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
 
       spawnBehavior = { kind: "success", port: 7100 }
 
-      const { createBridgeManager } = await import("../src/acp/bridge-manager")
-      const mgr = createBridgeManager()
+      const { createConnectionRegistry } = await import("../src/acp/connection-registry")
+      const reg = createConnectionRegistry()
 
-      await mgr.spawn("agent-late-err", { cliKind: "opencode", cwd: "/tmp", modelOverride: null })
+      await reg.connect("agent-late-err", "opencode", { cwd: "/tmp" })
 
-      // Delete entry from store (simulate kill)
-      await mgr.kill("agent-late-err")
+      // Remove entry from map (simulate close/kill)
+      await reg.close("agent-late-err")
 
       // Now fire a late error on the child — should NOT escape
       const { spawn } = await import("node:child_process")
@@ -348,13 +345,27 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
       const monitor = withUncaughtMonitor()
       monitor.start()
 
-      const enoent = Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" })
-      spawnBehavior = { kind: "throw-sync", error: enoent }
-
-      const { createBridgeManager } = await import("../src/acp/bridge-manager")
       const { createAgentOrchestrator } = await import("../src/app/agent-orchestrator")
+      // biome-ignore lint/suspicious/noExplicitAny: test stub
+      type CrashCb = (agentId: string, info: any) => void
+      const crashListeners: CrashCb[] = []
 
-      const mgr = createBridgeManager()
+      // connectionRegistry mock: connect() always throws (simulates spawn failure)
+      // biome-ignore lint/suspicious/noExplicitAny: test stub
+      const connectionRegistry: any = {
+        connect: vi.fn(async (_agentId: string) => {
+          throw Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" })
+        }),
+        get: vi.fn(() => undefined),
+        markAttached: vi.fn(),
+        markDetached: vi.fn(),
+        getRuntimeInfo: vi.fn(() => null),
+        close: vi.fn(async () => {}),
+        onCrash: vi.fn((cb: CrashCb) => {
+          crashListeners.push(cb)
+          return () => {}
+        }),
+      }
 
       // Minimal registry stub
       const agents = new Map<string, { id: string; status: string; cwd: string; cliKind: string }>()
@@ -386,7 +397,7 @@ describe("F-1 regression: bridge spawn failures must not crash the BE", () => {
       }
 
       // biome-ignore lint/suspicious/noExplicitAny: test stub
-      const orch = createAgentOrchestrator({ registry: registry as any, bridgeManager: mgr })
+      const orch = createAgentOrchestrator({ registry: registry as any, connectionRegistry })
 
       await expect(
         orch.createAndSpawn({ cliKind: "opencode", cwd: "/tmp", modelOverride: null }),

@@ -14,16 +14,18 @@
 
 import type { TtsProvider, TtsRequest } from "@drive-coding/core/voice/tts-types"
 import { base64ToBytes } from "./base64"
+import { buildGeminiDirecting } from "./gemini-directing"
 import { googleGenAi } from "./sdks"
 
 export const geminiTts: TtsProvider = {
   format: "pcm",
   async synthesize(req: TtsRequest): Promise<ReadableStream<Uint8Array>> {
     const voiceName = req.voiceId || "Kore"
+    const text = buildGeminiDirecting(req) // req נושא { text, directing }
 
     const iter = await googleGenAi().models.generateContentStream({
       model: req.modelId ?? "gemini-3.1-flash-tts-preview",
-      contents: [{ parts: [{ text: req.text }] }],
+      contents: [{ parts: [{ text }] }],
       config: {
         responseModalities: ["AUDIO"],
         speechConfig: {

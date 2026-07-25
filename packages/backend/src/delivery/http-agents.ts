@@ -13,6 +13,8 @@ const CreateAgentInputFull = type({
   cwd: "string >= 1",
   "modelOverride?": "string | null",
   "existingSessionId?": "string | null",
+  // slice project-system-prompt: פרומפט-מערכת פר-פרויקט, מתווסף (append) בתוך provider (§3).
+  "systemPrompt?": "string | null",
 })
 
 export function registerAgentsHttp(
@@ -22,10 +24,14 @@ export function registerAgentsHttp(
     orchestrator: AgentOrchestrator
     projectsRegistry?: ProjectsRegistry
     // אופציונלי בכוונה — call-sites קיימים בטסט לא מעבירים אותו (slice active-agents)
+    // pid: number | null — in-process connections (claude) have no child process (CUT-3b-iii-2).
     bridgeManager?: {
-      getRuntimeInfo(
-        id: string,
-      ): { pid: number; attached: boolean; busy: boolean; lastMessageAt: number | null } | null
+      getRuntimeInfo(id: string): {
+        pid: number | null
+        attached: boolean
+        busy: boolean
+        lastMessageAt: number | null
+      } | null
     }
   },
 ): void {
@@ -126,7 +132,12 @@ export function registerAgentsHttp(
     if (!agent) return c.json({ error: "agent not found" }, 404)
 
     // שומר MED-9: חוסם דריסה לא-מכוונת. warm switch מצהיר replace:true ועוקף ביודעין.
-    if (replace !== true && agent.status === "ready" && agent.acpSessionId && agent.acpSessionId !== sessionId) {
+    if (
+      replace !== true &&
+      agent.status === "ready" &&
+      agent.acpSessionId &&
+      agent.acpSessionId !== sessionId
+    ) {
       return c.json({ error: "agent already attached to a different session" }, 409)
     }
 
@@ -141,6 +152,42 @@ export function registerAgentsHttp(
       await deps.projectsRegistry.recordSession(agent.cwd, sessionId)
     }
 
+    return c.json({ ok: true })
+  })
+
+  /**
+   * PATCH /api/agents/:id — עדכון גנרי (whitelist) של שדות-משתמש. כרגע: title בלבד.
+   * (slice session-title-in-process-list) — ה-BE שכבת-אחסון טיפשה, לא מפענח wire בעצמו;
+   * ה-client (agent-session VM) דוחף לכאן את הכותרת שקיבל מ-session_info_update.
+   *
+   * ⚠️ הגנת-גנריות load-bearing (אביגיל אימתה אמפירית) — שתי שכבות, לא אחת:
+   * (א) `.onUndeclaredKey("reject")` על ה-schema — דוחה body עם מפתחות זרים (400).
+   * (ב) extract מפורש ל-`registry.update` — **אף פעם לא** spread של body/parsed גולמי,
+   *     כי `registry.update` ב-runtime מבצע `{ ...existing, ...patch }` בלי סינון
+   *     (ה-Pick ב-ports.ts הוא type-only). בלי שתי השכבות, PATCH {title, status:"crashed"}
+   *     היה דורס את ה-status.
+   */
+  const PatchAgentInput = type({ "title?": "string | null" }).onUndeclaredKey("reject")
+
+  app.patch("/api/agents/:id", async (c) => {
+    const id = c.req.param("id")
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ error: "invalid json" }, 400)
+    }
+    const parsed = PatchAgentInput(body)
+    if (parsed instanceof type.errors) {
+      return c.json({ error: parsed.summary }, 400)
+    }
+    const agent = await deps.registry.get(id)
+    if (!agent) return c.json({ error: "agent not found" }, 404)
+    // guard: title absent (undefined) → no-op, שלא לנקות כותרת קיימת בטעות.
+    // title: null = clear מכוון (הסכמה מתירה); string = set.
+    if (parsed.title !== undefined) {
+      await deps.registry.update(id, { title: parsed.title })
+    }
     return c.json({ ok: true })
   })
 

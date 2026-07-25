@@ -25,6 +25,15 @@ export class I18nVM {
     return this.#settings.locale
   }
 
+  /**
+   * כיוון-טקסט לפי locale — משמש ל-Popover.Content (fix5: bits-ui מגדיר ברירת-מחדל
+   * dir="ltr" ל-Popover, לא יורש rtl מ-<html>). מקור-יחיד: "he" הוא ה-locale ה-RTL
+   * היחיד בקטלוג (עקבי עם RTL_LOCALES ב-+layout.svelte:130).
+   */
+  get dir(): "rtl" | "ltr" {
+    return this.locale === "he" ? "rtl" : "ltr"
+  }
+
   #i18n = $derived<I18n>(createI18n({ locale: this.locale }))
 
   /**

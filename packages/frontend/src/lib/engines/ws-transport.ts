@@ -16,7 +16,7 @@
  * close() / ה-WS נסגר מהצד השני → ה-heartbeat נעצר, ה-onClose listeners מופעלים.
  */
 
-import type { AcpTransport } from "provider-contract/acp"
+import type { AcpTransport } from "@drive-coding/provider/transport"
 import { wsToWebStreams } from "./ws-to-streams.js"
 
 const HEARTBEAT_INTERVAL_MS = 25_000
@@ -75,6 +75,21 @@ export class WsAcpTransport implements AcpTransport {
         once: true,
       })
     })
+  }
+
+  /**
+   * שולח frame גולמי (JSON-RPC notification) על ה-WS.
+   * fire-and-forget — נכשל בשקט אם WS לא פתוח.
+   * משמש לשליחת $/detach לפני סגירה (slice be-shutdown-hardening Commit 3).
+   */
+  sendRaw(data: string): void {
+    try {
+      if (this.#ws.readyState === WebSocket.OPEN) {
+        this.#ws.send(data)
+      }
+    } catch {
+      // WS כבר סגור — לא-קריטי
+    }
   }
 
   close(): void {

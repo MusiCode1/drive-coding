@@ -7,18 +7,24 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/home/user/projects/drive-coding/main
 Environment=PORT=4000
+Environment=DRIVE_CODING_HOST=127.0.0.1
 Environment=FE_STATIC_DIR=/home/user/projects/drive-coding/main/packages/frontend/build
-# No FE_ENV → defaults to prod in vite.config.ts: clean "drive-coding" title,
-# no source maps. See slice cache-headers-version §D.
+# No FE_ENV → defaults to prod in vite.config.ts (slice app-title-build-env):
+# title = "Drive Coding" (no badge), source maps OFF (clean public bundle).
 # CORS: CF Pages (legacy) + localhost + ה-CF tunnel הציבורי של main (drive-coding).
 Environment=CORS_ORIGINS=https://drive-coding.pages.dev,http://localhost:4000,https://drive-coding.example.com
 # opencode has its own Anthropic OAuth — strip OneCLI's proxy/placeholder vars
 # that would otherwise break opencode's auth (see scripts/opencode-clean.sh).
 Environment=OPENCODE_BIN=/home/user/projects/drive-coding/main/scripts/opencode-clean.sh
-# ExecStartPre מסנכרן תלויות ובונה את ה-FE רק אם חסר (build-if-missing).
+# ExecStartPre מסנכרן תלויות ובונה את ה-FE אם חסר או לא-עדכני (build-if-stale:
+# משווה את הגרסה ב-build/_app/version.json מול HEAD, בונה מחדש אם שונה).
 # רענון FE שוטף: השתמש ב-`pnpm fe:build` בלי restart — הסוכנים החיים שורדים.
 # restart שמור לשינויי BE בלבד.
-ExecStartPre=/bin/bash -lc 'source /home/user/.config/shell/shared-env.sh && pnpm install --frozen-lockfile && node scripts/dc-build-fe.mjs --if-missing'
+ExecStartPre=/bin/bash -lc 'source /home/user/.config/shell/shared-env.sh && pnpm install --frozen-lockfile && node scripts/dc-build-fe.mjs --if-stale'
+# claude in-process authenticates via subscription OAuth (~/.claude), not via OneCLI gateway.
+# This file declares the exclusion of api.anthropic.com from OneCLI (proxy + key placeholder),
+# scoped to the claude child process only — BE process.env (TTS proxy) is untouched.
+Environment=CLI_SPECS_FILE=/home/user/projects/drive-coding/main/deploy/cli-specs.jsonc
 # systemd gives a minimal PATH — source shared env for onecli/bun/node/fnm.
 ExecStart=/bin/bash -c 'source /home/user/.config/shell/shared-env.sh && exec onecli run --agent voice-acp -- bun packages/backend/src/server.ts'
 TimeoutStartSec=300
@@ -28,6 +34,6 @@ RestartSec=2
 [Install]
 WantedBy=default.target
 
-# הסביבה הציבורית: https://drive-coding.example.com (CF tunnel home-server,
-# token-based, id fed5a59e... → ingress drive-coding.example.com → 192.168.x.x:4000).
+# הסביבה הציבורית: https://drive-coding.example.com (CF tunnel home-server).
+# ה-BE מאזין ל-loopback בלבד; ingress חייב להיות drive-coding.example.com → http://localhost:4000.
 # ה-routing מנוהל דרך CF API (PUT cfd_tunnel configurations), לא config מקומי.

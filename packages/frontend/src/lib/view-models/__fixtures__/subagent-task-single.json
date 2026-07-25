@@ -1,0 +1,2564 @@
+[
+  {
+    "tRel": 0,
+    "dir": "out",
+    "channel": "acp",
+    "type": "initialize",
+    "frame": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize",
+      "params": {
+        "protocolVersion": 1,
+        "clientCapabilities": {},
+        "clientInfo": {
+          "name": "spike",
+          "version": "0.0.0"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 6,
+    "dir": "in",
+    "channel": "acp",
+    "type": "result",
+    "frame": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "_meta": {
+            "claudeCode": {
+              "promptQueueing": true
+            }
+          },
+          "promptCapabilities": {
+            "image": true,
+            "embeddedContext": true
+          },
+          "mcpCapabilities": {
+            "http": true,
+            "sse": true
+          },
+          "auth": {
+            "logout": {}
+          },
+          "loadSession": true,
+          "sessionCapabilities": {
+            "additionalDirectories": {},
+            "close": {},
+            "delete": {},
+            "fork": {},
+            "list": {},
+            "resume": {}
+          }
+        },
+        "agentInfo": {
+          "name": "@agentclientprotocol/claude-agent-acp",
+          "title": "Claude Agent",
+          "version": "0.58.1"
+        },
+        "authMethods": []
+      }
+    }
+  },
+  {
+    "tRel": 52,
+    "dir": "out",
+    "channel": "acp",
+    "type": "session/new",
+    "frame": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "method": "session/new",
+      "params": {
+        "cwd": "/tmp/CWD",
+        "mcpServers": [],
+        "_meta": {
+          "claudeCode": {
+            "options": {
+              "forwardSubagentText": true
+            },
+            "emitRawSDKMessages": [
+              {
+                "type": "system",
+                "subtype": "task_started"
+              },
+              {
+                "type": "system",
+                "subtype": "task_progress"
+              },
+              {
+                "type": "system",
+                "subtype": "task_notification"
+              },
+              {
+                "type": "system",
+                "subtype": "task_updated"
+              },
+              {
+                "type": "assistant"
+              },
+              {
+                "type": "user"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "tRel": 1124,
+    "dir": "in",
+    "channel": "acp",
+    "type": "result",
+    "frame": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "sessionId": "SESSION",
+        "modes": {
+          "currentModeId": "default",
+          "availableModes": [
+            {
+              "id": "auto",
+              "name": "Auto",
+              "description": "Use a model classifier to approve/deny permission prompts"
+            },
+            {
+              "id": "default",
+              "name": "Manual",
+              "description": "Standard behavior, prompts for dangerous operations"
+            },
+            {
+              "id": "acceptEdits",
+              "name": "Accept Edits",
+              "description": "Auto-accept file edit operations"
+            },
+            {
+              "id": "plan",
+              "name": "Plan Mode",
+              "description": "Planning mode, no actual tool execution"
+            },
+            {
+              "id": "dontAsk",
+              "name": "Don't Ask",
+              "description": "Don't prompt for permissions, deny if not pre-approved"
+            },
+            {
+              "id": "bypassPermissions",
+              "name": "Bypass Permissions",
+              "description": "Bypass all permission checks"
+            }
+          ]
+        },
+        "configOptions": [
+          {
+            "id": "mode",
+            "name": "Mode",
+            "description": "Session permission mode",
+            "category": "mode",
+            "type": "select",
+            "currentValue": "default",
+            "options": [
+              {
+                "value": "auto",
+                "name": "Auto",
+                "description": "Use a model classifier to approve/deny permission prompts"
+              },
+              {
+                "value": "default",
+                "name": "Manual",
+                "description": "Standard behavior, prompts for dangerous operations"
+              },
+              {
+                "value": "acceptEdits",
+                "name": "Accept Edits",
+                "description": "Auto-accept file edit operations"
+              },
+              {
+                "value": "plan",
+                "name": "Plan Mode",
+                "description": "Planning mode, no actual tool execution"
+              },
+              {
+                "value": "dontAsk",
+                "name": "Don't Ask",
+                "description": "Don't prompt for permissions, deny if not pre-approved"
+              },
+              {
+                "value": "bypassPermissions",
+                "name": "Bypass Permissions",
+                "description": "Bypass all permission checks"
+              }
+            ]
+          },
+          {
+            "id": "model",
+            "name": "Model",
+            "description": "AI model to use",
+            "category": "model",
+            "type": "select",
+            "currentValue": "default",
+            "options": [
+              {
+                "value": "default",
+                "name": "Default (recommended)",
+                "description": "Opus 4.8 with 1M context · Best for everyday, complex tasks"
+              },
+              {
+                "value": "opus[1m]",
+                "name": "Opus",
+                "description": "Opus 4.8 with 1M context · Best for everyday, complex tasks"
+              },
+              {
+                "value": "claude-fable-5[1m]",
+                "name": "Fable",
+                "description": "Fable 5 · Most capable for your hardest and longest-running tasks"
+              },
+              {
+                "value": "sonnet",
+                "name": "Sonnet",
+                "description": "Sonnet 5 · Efficient for routine tasks"
+              },
+              {
+                "value": "haiku",
+                "name": "Haiku",
+                "description": "Haiku 4.5 · Fastest for quick answers"
+              }
+            ]
+          },
+          {
+            "id": "effort",
+            "name": "Effort",
+            "description": "Available effort levels for this model",
+            "category": "thought_level",
+            "type": "select",
+            "currentValue": "default",
+            "options": [
+              {
+                "value": "default",
+                "name": "Default"
+              },
+              {
+                "value": "low",
+                "name": "Low"
+              },
+              {
+                "value": "medium",
+                "name": "Medium"
+              },
+              {
+                "value": "high",
+                "name": "High"
+              },
+              {
+                "value": "xhigh",
+                "name": "Xhigh"
+              },
+              {
+                "value": "max",
+                "name": "Max"
+              }
+            ]
+          },
+          {
+            "id": "fast",
+            "name": "Fast mode",
+            "description": "Faster responses on supported models",
+            "category": "model_config",
+            "type": "select",
+            "currentValue": "off",
+            "options": [
+              {
+                "value": "on",
+                "name": "On"
+              },
+              {
+                "value": "off",
+                "name": "Off"
+              }
+            ]
+          },
+          {
+            "id": "agent",
+            "name": "Agent",
+            "description": "Main-thread agent persona",
+            "type": "select",
+            "currentValue": "default",
+            "options": [
+              {
+                "value": "default",
+                "name": "Default",
+                "description": "Standard Claude Code agent"
+              },
+              {
+                "value": "avigail",
+                "name": "avigail",
+                "description": "Plan verifier — bug-hunts in a brief before it goes to the executor, validating factual claims against the real codebase.\n"
+              },
+              {
+                "value": "calev",
+                "name": "calev",
+                "description": "Runtime verifier — checks phase or light end-of-slice behavior against the original brief in a real environment.\n"
+              },
+              {
+                "value": "calev-heavy",
+                "name": "calev-heavy",
+                "description": "Runtime verifier — heavy tier for complexity 8+ slices, covering visual review, E2E flows, edge cases, regressions, and pattern classification.\n"
+              },
+              {
+                "value": "eliezer",
+                "name": "eliezer",
+                "description": "Implementation agent — executes a verified brief phase-by-phase in the assigned worktree, following the testing strategy chosen by the planner.\n"
+              },
+              {
+                "value": "mordechai",
+                "name": "mordechai",
+                "description": "Strategic planner — writes detailed briefs, reviews brief verification reports, dispatches executors/verifiers, and is the only role authorized to merge after explicit user approval.\n"
+              },
+              {
+                "value": "yetro",
+                "name": "yetro",
+                "description": "Orchestrator — runs the nightly slice queue automatically, dispatches executors, polls outcomes, runs verifiers, archives passing briefs, and writes a morning summary.\n"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "tRel": 1125,
+    "dir": "out",
+    "channel": "acp",
+    "type": "session/prompt",
+    "frame": {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "method": "session/prompt",
+      "params": {
+        "sessionId": "SESSION",
+        "prompt": [
+          {
+            "type": "text",
+            "text": "Use the Task tool to launch a general-purpose subagent. Tell the subagent to do exactly this: (1) print the sentence 'STEP ONE SPIKE_SUBAGENT_MARK', (2) use the Bash tool to run: echo hello-from-subagent, (3) print the sentence 'STEP TWO done'. After the subagent finishes, reply with a one-line summary of what it did."
+          }
+        ]
+      }
+    }
+  },
+  {
+    "tRel": 1135,
+    "dir": "in",
+    "channel": "acp",
+    "type": "available_commands_update",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "sessionUpdate": "available_commands_update",
+          "availableCommands": [
+            {
+              "name": "brief-driven-slices",
+              "description": "Brief-driven slice workflow — שיטת עבודה לפרויקטי קוד שמחלקת התקדמות\nל-slices קטנים, כל אחד עם brief מפורט שכותב מרדכי (planner/Opus), מאומת\nלפני handoff ע\"י אביגיל (plan-verifier), מבוצע ע\"י אליעזר (executor) ב-worktree\nייעודי, ומאומת בסוף ע\"י כלב (runtime-verifier). יתרו מריץ queue לילי אוטומטי.\nמנגנון worktrees מאפשר שרשור slices תלויים ללא merge ל-dev עד הבוקר.\n\nהשיטה התפתחה אחרי שניסיון של \"TDD עם Sonnet אוטונומי\" כשל ב-Slice 9\nשל voice-acp (114 טסטים ירוקים, 19 באגים בפועל). הצורה הנוכחית הוכיחה\nאת עצמה ב-5 slices רצופים ב-voice-acp (28-29/5/2026) — אפס באגים ב-verification.\n\nטען את הסקיל כשמתכננים סבב פיתוח חדש, כשכותבים brief ל-אליעזר,\nכשמדispatching ל-sub-agent מבצע, או כשמעדכנים template/recommendations.\n\nTriggers:\n- \"אני רוצה לתכנן slice\", \"בוא נכתוב brief\", \"תכין תוכנית לסבב\"\n- \"נדispatch ל-executor\", \"תפעיל verifier\", \"הפעל plan-verifier\"\n- \"תכין worktree לפי הקונבנציה\", \"פתח worktree לסליס\"\n- \"תעדכן את ה-patterns אחרי הסליס\", \"case study חדש\"\n- \"Opus מתכנן Sonnet מבצע\", \"planner-executor\", \"Tama\"\n- \"מרדכי\", \"יתרו\", \"אליעזר\", \"אביגיל\", \"כלב\"\n- \"queue לילי\", \"orchestration\", \"שרשור worktrees\"\n\nAnti-triggers (אל תטען):\n- שאלות one-off על git worktrees ללא slice\n- debug של בעיה ספציפית שלא חלק מ-slice (user)",
+              "input": null
+            },
+            {
+              "name": "cass",
+              "description": "Search, inspect, export, and cite local coding-agent session history with the cass CLI. Use when Codex or another agent needs to find prior work, read previous Codex/Claude/Cursor/Gemini/OpenCode/Aider/ChatGPT sessions, open context around a search hit, export a clean conversation without tool calls, or build a cited handoff pack from previous agent sessions. (user)",
+              "input": null
+            },
+            {
+              "name": "commit",
+              "description": "Structured git commit workflow for this user's projects. Includes:\npre-flight `npm run check` (or `/watch-check`), Walkthrough doc update,\nselective `git add` (no blanket adds), one git command at a time\n(no chained `&&`), commit-message style, and Hebrew commit messages.\n\nUse when the user asks to:\n- \"commit\", \"make a commit\", \"תעשה קומיט\", \"תקמט\"\n- \"commit and push\" (this skill handles commit; push only if asked)\n- Wrap up a feature / fix and record it in git\n- Run the standard pre-commit checks before committing\n\nThis is NOT a generic git wrapper — it enforces a specific multi-step\nworkflow (check → walkthrough → status → diff → add → commit) and uses\nHebrew for commit messages. Do not use for one-off `git commit` calls\nwhere the user just wants a quick commit.\n\nTriggers when user mentions:\n- \"commit\", \"קומיט\", \"תקמט\", \"תעשה קומיט\"\n- \"מקדם\" (in development context)\n- \"סיימתי, תשמור\" (user)",
+              "input": null
+            },
+            {
+              "name": "dev-conventions",
+              "description": "מוסכמות הפיתוח האישיות של המשתמש: בחירת stack (SvelteKit 5 + Tailwind 4 + Vite+,\nפריסה ל-Cloudflare, Python עם uv), כללי קומפוננטות Svelte (מיקום, הפרדת לוגיקה,\nשמות קבצים), חובת `AGENTS.md` בכל פרויקט, איסור מחרוזות עברית קשיחות בקוד,\nוחובת שימוש בסקילים `commit` ו-`update-walkthrough`.\n\n**חובה לטעון את הסקיל הזה בכל אחד מהמקרים הבאים:**\n- בתחילת כל סשן עבודה על פרויקט פיתוח\n- לפני התחלת פרויקט חדש\n- לפני כתיבת קוד חדש בקובץ Svelte / TypeScript / Python\n- לפני יצירת קומפוננטה / route / מודול חדש\n- לפני קבלת החלטות ארכיטקטורה (היכן למקם קובץ, איך לשמות אותו, איזה כלי לבחור)\n\nTriggers when user mentions:\n- \"פרויקט חדש\", \"התחל פרויקט\", \"new project\", \"scaffold\"\n- \"צור קומפוננטה\", \"create component\", \"add route\"\n- \"Svelte\", \"SvelteKit\", \"Tailwind\"\n- \"איפה לשים את הקובץ\", \"מה השם של\", \"where should this go\"\n- כל פעם שמתחילים לעבוד על קוד בפרויקט של המשתמש (user)",
+              "input": null
+            },
+            {
+              "name": "hebrew-layout-fixer",
+              "description": "Fix Hebrew text that was mistyped with the English keyboard layout (including\nwith Caps Lock active). Uses a deterministic EN→HE per-key mapping —\ncharacter-by-character, not language translation.\n\nExample:\n- Input:  `vrcv pgnho`\n- Output: `הרבה פעמים`\n\nUse when the user provides:\n- Latin-character text that has no English meaning but matches Hebrew\n  typing patterns (lots of `qwerty`-row letters, no real words)\n- A copy-paste they meant to write in Hebrew but the layout was English\n- An explicit request to \"fix the keyboard layout\" / \"תקן את העברית\" /\n  \"המר עברית באנגלית\"\n\nTriggers when user mentions:\n- \"תקן את העברית\", \"המר אנגלית לעברית במקלדת\"\n- \"I typed in the wrong layout\"\n- \"fix keyboard layout\", \"wrong layout\"\n- Pastes garbled Latin text that is clearly mistyped Hebrew\n  (e.g. `akuo`, `aug`, `vrcv` — patterns of QWERTY keys with no English meaning)\n\nDo NOT use for:\n- Actual English-to-Hebrew translation\n- Mixed Hebrew/English content\n- RTL display issues (use `rtl-adaptation` instead) (user)",
+              "input": null
+            },
+            {
+              "name": "linux-gui-browser",
+              "description": "REQUIRES the `playwright-cli` skill — load both together.\n\nOperates a real browser inside a remote GUI container (linux-gui) via playwright-cli\nover SSH. This skill covers ONLY the SSH wrapper / linux-gui specifics; the actual\nplaywright-cli command surface lives in the `playwright-cli` skill.\n\nUse when the user asks to:\n- Browse / interact with a website on the linux-gui container\n- Solve a CAPTCHA manually in a real GUI browser\n- Test a site with a real Google / signed-in profile\n- Automate browser tasks where headless detection is a blocker\n- Run anti-bot bypass flows (Cloudflare, DataDome, etc.) with a visible browser\n\nTriggers when user mentions:\n- \"linux-gui\"\n- \"דפדפן בקונטיינר\"\n- \"הדפדפן שב-GUI\"\n- \"הדפדפן ב-GUI Linux\" (user)",
+              "input": null
+            },
+            {
+              "name": "pico-tunnels",
+              "description": "Expose a local server to the internet via the Pico ecosystem (pico.sh) — primarily\nthe tuns.sh SSH tunneling service, but also pgs.sh (static hosting), prose.sh (blog),\npipe.sh (pub/sub), pastes.sh (text snippets). Use when the user asks to:\n\n- Share a localhost URL on the web (\"פתח מנהרה\", \"share localhost\", \"tunnel\")\n- Use tuns.sh / pico.sh by name\n- Preview a running dev server from another device or send a public URL to someone\n- Publish a static site, a blog post, or a paste through the Pico services\n\nThis skill prefers SSH-based Pico tunnels over cloudflared/ngrok when the key is\navailable at `~/.ssh/pico` or `$PICO_SSH_KEY`. (user)",
+              "input": null
+            },
+            {
+              "name": "planner-executor-research",
+              "description": "Research and accumulated findings on the \"large model plans, medium model executes\" agent workflow (e.g. Opus plans → Sonnet implements). Documents recurring failure patterns of the executor agent, brief-template improvements that prevent the predictable ones, and the role of a separate verifier agent for what remains.\nThis is a research / retrospective skill — case studies + synthesized patterns, not a step-by-step workflow. Load it when:\n- About to write a brief for a slice/feature that will be handed off to an\n  executor agent (Sonnet, Haiku, etc.)\n- Reviewing failed / buggy work from an executor agent and trying to\n  understand what went wrong\n- Updating brief templates or DoD checklists - Designing a verifier agent's prompt - Adding a new case study from a slice that just shipped\nTriggers when user mentions: - \"planner-executor\", \"Opus plans Sonnet executes\" - \"אופוס מתכנן, סונט מבצע\", \"מודל גדול מתכנן\" - \"verifier agent\", \"סוכן ביקורת\", \"סוכן verifier\" - \"מה Sonnet שוב פספס\", \"למה זה לא נתפס בטסטים\" - Reviewing a buggy slice that just finished implementation (user)",
+              "input": null
+            },
+            {
+              "name": "playwright-cli",
+              "description": "Browser automation via the @playwright/cli npm package. Use for: navigating\nwebsites, filling forms, taking screenshots, scraping content, testing web\napps, end-to-end flows, evaluating JS in a page, intercepting requests,\nrecording video/traces, and working with logged-in sessions.\n\nSpecial use case — ANTI-DETECTION MODE: when a target site blocks\nautomation (Cloudflare, Akamai, DataDome, PerimeterX, bot.sannysoft.com,\nSuno, etc.), this skill provides `pw-clean.sh` to launch Chrome without\nPlaywright's automation flags and attach via CDP.\n\nThis is a THIN layer over the @playwright/cli skill bundled with the npm\npackage — that bundled skill has the full command reference and MUST be\nread before issuing commands.\n\nTriggers when user mentions:\n- \"playwright\", \"playwright-cli\", \"browser automation\"\n- \"anti-detection\", \"stealth browser\", \"bypass bot detection\"\n- \"Cloudflare bypass\", \"automation blocked\"\n- \"headed browser\", \"real Chrome\", \"CDP attach\" (user)",
+              "input": null
+            },
+            {
+              "name": "recoll-vault-search",
+              "description": "Full-text search inside the user's Obsidian vault using recollq CLI. Use this skill when the user asks to find notes by content, search for a topic across the vault, or locate a document whose name is unknown but whose content is partially remembered. Also use it to audit the vault — e.g. \"find all notes that mention WireGuard\" or \"which notes talk about rclone?\". recollq searches the indexed content of Markdown files; plocate searches by filename. Use recollq for content, plocate for filenames.\n⚠️  BETA: recollq is set up but still in early testing. PDF, image and audio files are not indexed (missing helpers). The index may be stale — run `recollindex -c ~/.recoll` to refresh before a critical search. (user)",
+              "input": null
+            },
+            {
+              "name": "rtl-adaptation",
+              "description": "Adapt an existing LTR-only web UI to support RTL languages (Hebrew, Arabic).\nCovers CSS logical properties, Tailwind logical classes, `dir` attributes,\ndirection-aware animations, and automated lint/E2E protection tests.\n\nUse when the user asks to:\n- Add RTL / Hebrew / Arabic support to a web app\n- Translate or localize a UI to Hebrew or Arabic\n- Fix RTL layout bugs (sidebar slides wrong way, switch flips, terminal\n  text reverses parentheses, dropdown headers stay right-aligned)\n- Replace physical CSS / Tailwind classes (`left`, `pr-*`, `ml-*`) with\n  logical equivalents (`inset-inline-start`, `pe-*`, `ms-*`)\n- Add `dir=\"auto\"` / `dir=\"ltr\"` to mixed-content elements\n- Set up CSS / Tailwind lint tests that prevent regression of physical\n  properties\n\nTriggers when user mentions:\n- \"RTL\", \"right-to-left\", \"ימין לשמאל\"\n- \"Hebrew support\", \"Arabic support\", \"תמיכה בעברית\"\n- \"logical properties\", \"logical classes\", \"ps-/pe-/ms-/me-\"\n- \"dir attribute\", \"direction\"\n- \"sidebar slides wrong direction\" (user)",
+              "input": null
+            },
+            {
+              "name": "scheduler",
+              "description": "Create and manage scheduled opencode tasks using systemd user timers.\nAll units use the prefix `opencode-sched-`. Supports OnCalendar expressions\n(daily, hourly, weekly, custom times) and one-shot timers.\n\nUse when the user asks to:\n- Schedule a recurring prompt / task (\"every morning at 8\", \"כל יום ב-9\")\n- Set up a periodic check (\"check the PR every hour\", \"בדוק את החיבור פעם ביום\")\n- Run a daily/weekly report\n- List, view, edit, or delete existing scheduled jobs\n- Build a cron-like job that invokes opencode\n\nTriggers when user mentions:\n- \"schedule\", \"scheduled\", \"תזמן\", \"תזמון\", \"תזכורת חוזרת\"\n- \"every day at\", \"every hour\", \"כל יום ב-\", \"כל שעה\"\n- \"cron\", \"systemd timer\", \"OnCalendar\"\n- \"recurring task\", \"periodic check\"\n- \"list scheduled jobs\", \"תזכורות שלי\"\n\nDo NOT use for one-off `at` commands or non-opencode jobs (use systemd /\nshell directly). (user)",
+              "input": null
+            },
+            {
+              "name": "Svelte-MCP",
+              "description": "Comprehensive Svelte 5 and SvelteKit documentation lookup via the Svelte MCP\nserver. Use this skill BEFORE writing or reviewing any Svelte / SvelteKit\ncode — the MCP server has the canonical, up-to-date docs (runes, snippets,\n$state/$derived/$effect, the new event syntax, SvelteKit routing, etc.).\n\nUse when the user asks to:\n- Write, review, or refactor Svelte 5 / SvelteKit code\n- Migrate code from Svelte 3/4 to Svelte 5 (runes, event handlers, slots → snippets)\n- Debug Svelte-specific issues (reactivity, stores, hydration, SSR)\n- Set up SvelteKit features (routes, layouts, hooks, form actions, load functions)\n- Look up the correct syntax for a Svelte API (`$state`, `$props`, `$effect`,\n  `bind:`, `use:`, transitions, animations)\n- Build a new Svelte component or app\n\nAlways start with the `list-sections` MCP tool to discover relevant docs,\nthen `get-documentation` for the specific section needed.\n\nTriggers when user mentions:\n- \"Svelte\", \"SvelteKit\", \"Svelte 5\", \"סוולט\"\n- \"runes\", \"$state\", \"$derived\", \"$effect\", \"$props\"\n- \"snippets\", \"{#snippet}\", \"{@render}\"\n- \"load function\", \"form action\", \"+page.svelte\", \"+layout\" (user)",
+              "input": null
+            },
+            {
+              "name": "transcribe-recordings",
+              "description": "Transcribe audio / video recordings to Markdown using Gemini CLI. Handles\npersonal voice memos, lectures, shiurim, meetings, podcasts, and any spoken\ncontent. Includes chunking for long recordings, local copies (avoids hangs\non rclone/Google Drive mounts), and clear chunk boundary markers for review.\n\nUse when the user asks to:\n- Transcribe an audio / video file (\"תמלל את ההקלטה\", \"transcribe this\")\n- Convert a voice memo / shiur / lecture to text\n- Produce a written transcript of a meeting or podcast\n- Generate Markdown from a long recording (with chapters / chunks)\n- Get text output of a video file's audio track\n\nSupported formats: MP3, M4A, WAV, OGG, FLAC, MP4, MKV, MOV, WebM, and any\nformat ffmpeg can read (it transcodes if needed).\n\nTwo prompt modes:\n- \"Personal\" — for shiurim, lectures, voice memos (uses careful Hebrew prompt)\n- \"General\" — for meetings, podcasts, any neutral content\n\nTriggers when user mentions:\n- \"transcribe\", \"תמלל\", \"תמלול\", \"תמליל\"\n- \"speech to text\", \"audio to text\", \"video to text\"\n- \"voice memo\", \"הקלטה\", \"שיעור\", \"shiur\"\n- References to `.mp3`/`.m4a`/`.wav`/`.mp4`/`.mkv` etc. in context of \"what does it say\"\n\nAlways uses Gemini CLI with `@/path/to/file` (NOT tool reads — Gemini API\nrejects audio MIME in tool responses). See body for full pitfall list. (user)",
+              "input": null
+            },
+            {
+              "name": "update-walkthrough",
+              "description": "Update the project's development log (Walkthrough) — a structured Markdown\nfile that records project progress in chronological order. Used to keep\nliving documentation of what changed, why, and any open issues.\n\nProject-specific changes go to `docs/walkthrough.md` inside the relevant\nproject directory. Cross-project / monorepo-wide changes go to the root\n`docs/` directory.\n\nUse when the user asks to:\n- \"update the walkthrough\", \"עדכן את ה-Walkthrough\", \"עדכן יומן פיתוח\"\n- Record what was just changed in the project log\n- Add an entry before committing (the `commit` skill calls this)\n- Document a new feature, fix, or architectural decision in the log\n\nTriggers when user mentions:\n- \"walkthrough\", \"וולקת'רו\", \"וולקת'רואו\"\n- \"יומן פיתוח\", \"תיעוד התקדמות\"\n- \"/update_walkthrough\" (slash command) (user)",
+              "input": null
+            },
+            {
+              "name": "deep-research",
+              "description": "Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report. (dynamic workflow)",
+              "input": null
+            },
+            {
+              "name": "design-sync",
+              "description": "Push a React design system to claude.ai/design. This runs a converter that bundles the real component code (from Storybook or a bare package) and uploads it. Use when the user runs /design-sync or says \"sync my design system to Claude Design\".",
+              "input": {
+                "hint": "[<project hint, e.g. \"Acme DS\">]"
+              }
+            },
+            {
+              "name": "dataviz",
+              "description": "Use this skill whenever you are about to create ANY chart, graph, plot, dashboard, or data visualization, in ANY output medium — an HTML or React artifact, inline SVG, plotting code in any library (matplotlib, plotly, d3, Recharts, …), an image/PNG you will render and upload, or a chart shared into Slack. Read it BEFORE writing the first line of chart code, choosing chart colors, building a stat tile / meter / KPI row, or laying out a dashboard. Produces visualizations that read as one system — elegant, accessible, consistent in light and dark — using a brand-neutral placeholder palette you swap for your own. Teaches a design-system-agnostic method: a form heuristic, a color formula with a runnable validator, mark specs, and interaction rules. A validated default palette is documented in `references/palette.md` — swap that file's values for your brand's. Triggers on: \"chart\", \"graph\", \"plot\", \"data viz\", \"visualization\", \"dashboard\", \"analytics\", \"visualize data\", \"categorical colors\", \"sequential / diverging palette\", \"stat tile\", \"sparkline\", \"heatmap\", \"legend\", \"axis\", \"tooltip\", \"chart colors\", \"color by series\".",
+              "input": null
+            },
+            {
+              "name": "update-config",
+              "description": "Use this skill to configure the Claude Code harness via settings.json. Automated behaviors (\"from now on when X\", \"each time X\", \"whenever X\", \"before/after X\") require hooks configured in settings.json - the harness executes these, not Claude, so memory/preferences cannot fulfill them. Also use for: permissions (\"allow X\", \"add permission\", \"move permission to\"), env vars (\"set X=Y\"), hook troubleshooting, or any changes to settings.json/settings.local.json files. Examples: \"allow npm commands\", \"add bq permission to global settings\", \"move permission to user settings\", \"set DEBUG=true\", \"when claude stops show X\". For simple settings like theme/model, suggest the /config command.",
+              "input": null
+            },
+            {
+              "name": "verify",
+              "description": "Verify that a code change actually does what it's supposed to by exercising it end-to-end and observing behavior — drive the affected flow, not just tests or typecheck. Run before committing nontrivial changes; bootstraps this repo's project verify skill if none exists yet. Don't invoke it on a diff that only touches tests, docs, or other code with no runtime surface to drive (a change to product source always has one) — there's nothing to observe.",
+              "input": null
+            },
+            {
+              "name": "debug",
+              "description": "Enable debug logging for this session and help diagnose issues",
+              "input": {
+                "hint": "[issue description]"
+              }
+            },
+            {
+              "name": "code-review",
+              "description": "Review the current diff for correctness bugs and reuse/simplification/efficiency cleanups at the given effort level (low/medium: fewer, high-confidence findings; high→max: broader coverage, may include uncertain findings; ultra: deep multi-agent review in the cloud). Pass --comment to post findings as inline PR comments, or --fix to apply the findings to the working tree after the review.",
+              "input": {
+                "hint": "[low|medium|high|xhigh|max|ultra] [--fix] [--comment] [<target>]"
+              }
+            },
+            {
+              "name": "simplify",
+              "description": "Review the changed code for reuse, simplification, efficiency, and altitude cleanups, then apply the fixes. Quality only — it does not hunt for bugs; use /code-review for that.",
+              "input": {
+                "hint": "[<target>]"
+              }
+            },
+            {
+              "name": "batch",
+              "description": "Research and plan a large-scale change, then execute it in parallel across 5–30 isolated worktree agents that each open a PR.",
+              "input": {
+                "hint": "<instruction>"
+              }
+            },
+            {
+              "name": "fewer-permission-prompts",
+              "description": "Scan your transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to project .claude/settings.json to reduce permission prompts.",
+              "input": null
+            },
+            {
+              "name": "doctor",
+              "description": "Health-check the user's Claude Code setup and fix issues: diagnose installation health — what the `claude doctor` terminal diagnostics cover — from local data (duplicate or leftover installs, PATH, unparseable settings files, broken or colliding agent definitions); find unused skills, MCP servers, and plugins versus their context cost and disable dead weight; deduplicate local CLAUDE.md files against checked-in ones; trim checked-in CLAUDE.md files by cutting content a session could derive from the codebase (directory layouts, tech-stack lists, architecture overviews) while keeping gotchas, rationale, and non-standard conventions; migrate always-loaded CLAUDE.md guidance into lazy skills and nested CLAUDE.md files; flag slow hooks and context-heavy extensions; check the installed version is current; make auto mode the default permission mode; and pre-approve frequently denied read-only commands. Use when the user asks for a doctor run, checkup, audit, tune-up, or cleanup of their Claude Code setup or configuration.",
+              "input": null
+            },
+            {
+              "name": "loop",
+              "description": "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace.",
+              "input": {
+                "hint": "[interval] [prompt]"
+              }
+            },
+            {
+              "name": "schedule",
+              "description": "Create, update, list, or run scheduled cloud agents (routines) that execute on a cron schedule.",
+              "input": null
+            },
+            {
+              "name": "claude-api",
+              "description": "Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, tool use, MCP, agents, caching, token counting, model migration.\nTRIGGER — read BEFORE opening the target file; don't skip because it \"looks like a one-liner\" — whenever: the prompt names Claude/Anthropic in any form (Claude, Anthropic, Fable, Opus, Sonnet, Haiku, `anthropic`, `@anthropic-ai`, `claude-*`, `us.anthropic.*`, `[1m]`); the user asks about an LLM (pricing/model choice/limits/caching) — never answer from memory; OR the task is LLM-shaped with provider unstated (agent/MCP/tool-definition/multi-agent/RAG/LLM-judge/computer-use; generate/summarize/extract/classify/rewrite/converse over NL; debugging refusals/cutoffs/streaming/tool-calls/tokens).\nSKIP only when another provider is being worked on (overrides all triggers): OpenAI/GPT/Gemini/Llama/Mistral/Cohere/Ollama named in the query; OR `grep -rE 'openai|langchain_openai|google.generativeai|genai|mistralai|cohere|ollama'` over the project hits (run this grep FIRST if no provider named — don't Read the file).",
+              "input": null
+            },
+            {
+              "name": "run",
+              "description": "Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library).",
+              "input": null
+            },
+            {
+              "name": "run-skill-generator",
+              "description": "Author or improve the run-<unit> skill — a per-project skill that tells agents how to build, launch, and drive this project's app. Use when the user asks to set up the project, get it running, write run instructions, or verify build/run steps work from a clean environment.",
+              "input": null
+            },
+            {
+              "name": "agents",
+              "description": "(removed) Ask Claude to create/manage subagents, or edit .claude/agents/",
+              "input": null
+            },
+            {
+              "name": "color",
+              "description": "Set the prompt bar color for this session",
+              "input": {
+                "hint": "[red|blue|green|yellow|purple|orange|pink|cyan|default]"
+              }
+            },
+            {
+              "name": "compact",
+              "description": "Free up context by summarizing the conversation so far",
+              "input": {
+                "hint": "<optional custom summarization instructions>"
+              }
+            },
+            {
+              "name": "config",
+              "description": "Set a setting by key",
+              "input": {
+                "hint": "key=value"
+              }
+            },
+            {
+              "name": "context",
+              "description": "Show current context usage",
+              "input": null
+            },
+            {
+              "name": "effort",
+              "description": "Set effort level for model usage",
+              "input": {
+                "hint": "<low|medium|high|xhigh|max|ultracode|auto>"
+              }
+            },
+            {
+              "name": "fast",
+              "description": "Toggle fast mode (Opus 4.8)",
+              "input": {
+                "hint": "[on|off]"
+              }
+            },
+            {
+              "name": "heapdump",
+              "description": "Dump the JS heap to ~/Desktop",
+              "input": null
+            },
+            {
+              "name": "init",
+              "description": "Initialize a new CLAUDE.md file with codebase documentation",
+              "input": null
+            },
+            {
+              "name": "mcp",
+              "description": "Manage MCP servers",
+              "input": {
+                "hint": "[reconnect|enable|disable [<server>|all]]"
+              }
+            },
+            {
+              "name": "model",
+              "description": "Set the AI model for Claude Code",
+              "input": {
+                "hint": "<model>"
+              }
+            },
+            {
+              "name": "__remote-workflow",
+              "description": "Run the workflow script delivered in this session environment (server-launched sessions only)",
+              "input": null
+            },
+            {
+              "name": "reload-skills",
+              "description": "Pick up skills added or changed on disk during this session",
+              "input": null
+            },
+            {
+              "name": "rename",
+              "description": "Rename the current conversation",
+              "input": {
+                "hint": "[name]"
+              }
+            },
+            {
+              "name": "review",
+              "description": "Review a GitHub pull request; for your working diff use /code-review",
+              "input": {
+                "hint": "[pr number]"
+              }
+            },
+            {
+              "name": "security-review",
+              "description": "Complete a security review of the pending changes on the current branch",
+              "input": null
+            },
+            {
+              "name": "usage-credits",
+              "description": "Configure usage credits to keep working when you hit a limit",
+              "input": null
+            },
+            {
+              "name": "extra-usage",
+              "description": "Renamed to /usage-credits",
+              "input": null
+            },
+            {
+              "name": "usage",
+              "description": "Show session cost, plan usage, and what's contributing to your limits",
+              "input": null
+            },
+            {
+              "name": "insights",
+              "description": "Generate a report analyzing your Claude Code sessions",
+              "input": null
+            },
+            {
+              "name": "recap",
+              "description": "Generate a one-line session recap now",
+              "input": null
+            },
+            {
+              "name": "goal",
+              "description": "Set a goal — keep working until the condition is met",
+              "input": null
+            },
+            {
+              "name": "design",
+              "description": "Grant or revoke Claude agent access to your Design projects",
+              "input": {
+                "hint": "consent | revoke"
+              }
+            },
+            {
+              "name": "design-consent",
+              "description": "Grant Claude agent access to your Design projects",
+              "input": null
+            },
+            {
+              "name": "design-revoke",
+              "description": "Revoke Claude agent access to your Design projects",
+              "input": null
+            },
+            {
+              "name": "team-onboarding",
+              "description": "Help teammates ramp on Claude Code with a guide from your usage",
+              "input": null
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "tRel": 2343,
+    "dir": "in",
+    "channel": "acp",
+    "type": "usage_update",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 27205,
+          "size": 1000000
+        }
+      }
+    }
+  },
+  {
+    "tRel": 2344,
+    "dir": "in",
+    "channel": "acp",
+    "type": "agent_message_chunk",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": "I"
+          },
+          "messageId": "msg_011CcvgaY59uLu4kYsQxWDuS"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 2759,
+    "dir": "in",
+    "channel": "acp",
+    "type": "usage_update",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 27205,
+          "size": 1000000,
+          "_meta": {
+            "_claude/rateLimit": {
+              "status": "allowed",
+              "resetsAt": 1783801800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "tRel": 2887,
+    "dir": "in",
+    "channel": "acp",
+    "type": "agent_message_chunk",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": "'ll launch a general-purpose subagent with those exact instructions."
+          },
+          "messageId": "msg_011CcvgaY59uLu4kYsQxWDuS"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 2888,
+    "dir": "in",
+    "channel": "raw",
+    "type": "_claude/sdkMessage",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "_claude/sdkMessage",
+      "params": {
+        "sessionId": "SESSION",
+        "message": {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Use the Task tool to launch a general-purpose subagent. Tell the subagent to do exactly this: (1) print the sentence 'STEP ONE SPIKE_SUBAGENT_MARK', (2) use the Bash tool to run: echo hello-from-subagent, (3) print the sentence 'STEP TWO done'. After the subagent finishes, reply with a one-line summary of what it did."
+              }
+            ]
+          },
+          "session_id": "SESSION",
+          "parent_tool_use_id": null,
+          "uuid": "c749163a-a760-4e9f-9c2c-494b8d31d8ea",
+          "timestamp": "2026-07-11T17:42:32.452Z",
+          "isReplay": true
+        }
+      }
+    }
+  },
+  {
+    "tRel": 2892,
+    "dir": "in",
+    "channel": "raw",
+    "type": "_claude/sdkMessage",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "_claude/sdkMessage",
+      "params": {
+        "sessionId": "SESSION",
+        "message": {
+          "type": "assistant",
+          "message": {
+            "model": "claude-opus-4-8",
+            "id": "msg_011CcvgaY59uLu4kYsQxWDuS",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "I'll launch a general-purpose subagent with those exact instructions."
+              }
+            ],
+            "stop_reason": null,
+            "stop_sequence": null,
+            "stop_details": null,
+            "usage": {
+              "input_tokens": 2,
+              "cache_creation_input_tokens": 12031,
+              "cache_read_input_tokens": 15171,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 12031
+              },
+              "output_tokens": 1,
+              "service_tier": "standard",
+              "inference_geo": "not_available"
+            },
+            "diagnostics": null,
+            "context_management": null
+          },
+          "parent_tool_use_id": null,
+          "session_id": "SESSION",
+          "uuid": "ec7a627a-4af5-4ceb-b771-fbf576deb3dc",
+          "request_id": "req_011CcvgaWvCeLRAXYnEkE94f"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 2893,
+    "dir": "in",
+    "channel": "acp",
+    "type": "tool_call",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "_meta": {
+            "claudeCode": {
+              "toolName": "Agent"
+            }
+          },
+          "toolCallId": "toolu_01GiSAsvUBjALq1WGBB2xQ1K",
+          "sessionUpdate": "tool_call",
+          "rawInput": {},
+          "status": "pending",
+          "title": "Task",
+          "kind": "think",
+          "content": []
+        }
+      }
+    }
+  },
+  {
+    "tRel": 4877,
+    "dir": "in",
+    "channel": "raw",
+    "type": "_claude/sdkMessage",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "_claude/sdkMessage",
+      "params": {
+        "sessionId": "SESSION",
+        "message": {
+          "type": "assistant",
+          "message": {
+            "model": "claude-opus-4-8",
+            "id": "msg_011CcvgaY59uLu4kYsQxWDuS",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_01GiSAsvUBjALq1WGBB2xQ1K",
+                "name": "Agent",
+                "input": {
+                  "description": "Run marked steps",
+                  "prompt": "Do exactly these three things in order:\n\n1. Print the sentence: STEP ONE SPIKE_SUBAGENT_MARK\n2. Use the Bash tool to run: echo hello-from-subagent\n3. Print the sentence: STEP TWO done\n\nThen report that you completed all three steps.",
+                  "subagent_type": "general-purpose",
+                  "run_in_background": false
+                },
+                "caller": {
+                  "type": "direct"
+                }
+              }
+            ],
+            "stop_reason": null,
+            "stop_sequence": null,
+            "stop_details": null,
+            "usage": {
+              "input_tokens": 2,
+              "cache_creation_input_tokens": 12031,
+              "cache_read_input_tokens": 15171,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 12031
+              },
+              "output_tokens": 1,
+              "service_tier": "standard",
+              "inference_geo": "not_available"
+            },
+            "diagnostics": null,
+            "context_management": null
+          },
+          "parent_tool_use_id": null,
+          "session_id": "SESSION",
+          "uuid": "0a624a29-35b4-462c-9768-e8af0dbbea8b",
+          "request_id": "req_011CcvgaWvCeLRAXYnEkE94f"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 4877,
+    "dir": "in",
+    "channel": "acp",
+    "type": "tool_call_update",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "_meta": {
+            "claudeCode": {
+              "toolName": "Agent"
+            }
+          },
+          "toolCallId": "toolu_01GiSAsvUBjALq1WGBB2xQ1K",
+          "sessionUpdate": "tool_call_update",
+          "rawInput": {
+            "description": "Run marked steps",
+            "prompt": "Do exactly these three things in order:\n\n1. Print the sentence: STEP ONE SPIKE_SUBAGENT_MARK\n2. Use the Bash tool to run: echo hello-from-subagent\n3. Print the sentence: STEP TWO done\n\nThen report that you completed all three steps.",
+            "subagent_type": "general-purpose",
+            "run_in_background": false
+          },
+          "title": "Run marked steps",
+          "kind": "think",
+          "content": [
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "Do exactly these three things in order:\n\n1. Print the sentence: STEP ONE SPIKE_SUBAGENT_MARK\n2. Use the Bash tool to run: echo hello-from-subagent\n3. Print the sentence: STEP TWO done\n\nThen report that you completed all three steps."
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "tRel": 4885,
+    "dir": "in",
+    "channel": "raw",
+    "type": "_claude/sdkMessage",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "_claude/sdkMessage",
+      "params": {
+        "sessionId": "SESSION",
+        "message": {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "ad36e85f15e4a56a9",
+          "tool_use_id": "toolu_01GiSAsvUBjALq1WGBB2xQ1K",
+          "description": "Run marked steps",
+          "subagent_type": "general-purpose",
+          "task_type": "local_agent",
+          "prompt": "Do exactly these three things in order:\n\n1. Print the sentence: STEP ONE SPIKE_SUBAGENT_MARK\n2. Use the Bash tool to run: echo hello-from-subagent\n3. Print the sentence: STEP TWO done\n\nThen report that you completed all three steps.",
+          "uuid": "a3e45257-7a30-4fc4-85f6-4efd34b5d834",
+          "session_id": "SESSION"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 4899,
+    "dir": "in",
+    "channel": "raw",
+    "type": "_claude/sdkMessage",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "_claude/sdkMessage",
+      "params": {
+        "sessionId": "SESSION",
+        "message": {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Do exactly these three things in order:\n\n1. Print the sentence: STEP ONE SPIKE_SUBAGENT_MARK\n2. Use the Bash tool to run: echo hello-from-subagent\n3. Print the sentence: STEP TWO done\n\nThen report that you completed all three steps."
+              }
+            ]
+          },
+          "parent_tool_use_id": "toolu_01GiSAsvUBjALq1WGBB2xQ1K",
+          "session_id": "SESSION",
+          "uuid": "30b3fc48-3277-4052-946c-38d3be2b081a",
+          "timestamp": "2026-07-11T17:42:36.147Z",
+          "subagent_type": "general-purpose",
+          "task_description": "Run marked steps"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 4909,
+    "dir": "in",
+    "channel": "acp",
+    "type": "usage_update",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 27453,
+          "size": 1000000
+        }
+      }
+    }
+  },
+  {
+    "tRel": 7172,
+    "dir": "in",
+    "channel": "raw",
+    "type": "_claude/sdkMessage",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "_claude/sdkMessage",
+      "params": {
+        "sessionId": "SESSION",
+        "message": {
+          "type": "assistant",
+          "message": {
+            "model": "claude-opus-4-8",
+            "id": "msg_011CcvgaoeHP4THA5mhYBAMq",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "I'll do these three steps in order.\n\nSTEP ONE SPIKE_SUBAGENT_MARK"
+              }
+            ],
+            "stop_reason": null,
+            "stop_sequence": null,
+            "stop_details": null,
+            "usage": {
+              "input_tokens": 2,
+              "cache_creation_input_tokens": 11452,
+              "cache_read_input_tokens": 5585,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 11452,
+                "ephemeral_1h_input_tokens": 0
+              },
+              "output_tokens": 1,
+              "service_tier": "standard",
+              "inference_geo": "not_available"
+            },
+            "diagnostics": null,
+            "context_management": null
+          },
+          "parent_tool_use_id": "toolu_01GiSAsvUBjALq1WGBB2xQ1K",
+          "session_id": "SESSION",
+          "uuid": "737bfab1-a259-4c34-8a1c-3f735fa4dd73",
+          "request_id": "req_011CcvganhEFVCD7TRS6o8a8",
+          "subagent_type": "general-purpose",
+          "task_description": "Run marked steps"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 7409,
+    "dir": "in",
+    "channel": "raw",
+    "type": "_claude/sdkMessage",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "_claude/sdkMessage",
+      "params": {
+        "sessionId": "SESSION",
+        "message": {
+          "type": "system",
+          "subtype": "task_progress",
+          "task_id": "ad36e85f15e4a56a9",
+          "tool_use_id": "toolu_01GiSAsvUBjALq1WGBB2xQ1K",
+          "description": "Running Echo test string",
+          "subagent_type": "general-purpose",
+          "usage": {
+            "total_tokens": 17041,
+            "tool_uses": 1,
+            "duration_ms": 2523
+          },
+          "last_tool_name": "Bash",
+          "uuid": "da843ecd-1bac-428e-ab6c-7e0572b270a4",
+          "session_id": "SESSION"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 7417,
+    "dir": "in",
+    "channel": "raw",
+    "type": "_claude/sdkMessage",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "_claude/sdkMessage",
+      "params": {
+        "sessionId": "SESSION",
+        "message": {
+          "type": "assistant",
+          "message": {
+            "model": "claude-opus-4-8",
+            "id": "msg_011CcvgaoeHP4THA5mhYBAMq",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_01RcvmgbihnkJJnFJnk9ksRc",
+                "name": "Bash",
+                "input": {
+                  "command": "echo hello-from-subagent",
+                  "description": "Echo test string"
+                },
+                "caller": {
+                  "type": "direct"
+                }
+              }
+            ],
+            "stop_reason": null,
+            "stop_sequence": null,
+            "stop_details": null,
+            "usage": {
+              "input_tokens": 2,
+              "cache_creation_input_tokens": 11452,
+              "cache_read_input_tokens": 5585,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 11452,
+                "ephemeral_1h_input_tokens": 0
+              },
+              "output_tokens": 1,
+              "service_tier": "standard",
+              "inference_geo": "not_available"
+            },
+            "diagnostics": null,
+            "context_management": null
+          },
+          "parent_tool_use_id": "toolu_01GiSAsvUBjALq1WGBB2xQ1K",
+          "session_id": "SESSION",
+          "uuid": "dd868875-cd4a-4176-99af-424ca47c2627",
+          "request_id": "req_011CcvganhEFVCD7TRS6o8a8",
+          "subagent_type": "general-purpose",
+          "task_description": "Run marked steps"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 7419,
+    "dir": "in",
+    "channel": "acp",
+    "type": "tool_call",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "_meta": {
+            "claudeCode": {
+              "toolName": "Bash",
+              "parentToolUseId": "toolu_01GiSAsvUBjALq1WGBB2xQ1K"
+            }
+          },
+          "toolCallId": "toolu_01RcvmgbihnkJJnFJnk9ksRc",
+          "sessionUpdate": "tool_call",
+          "rawInput": {
+            "command": "echo hello-from-subagent",
+            "description": "Echo test string"
+          },
+          "status": "pending",
+          "title": "echo hello-from-subagent",
+          "kind": "execute",
+          "content": [
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "Echo test string"
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "tRel": 7583,
+    "dir": "in",
+    "channel": "acp",
+    "type": "tool_call_update",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "_meta": {
+            "claudeCode": {
+              "toolResponse": {
+                "stdout": "hello-from-subagent",
+                "stderr": "",
+                "interrupted": false,
+                "isImage": false,
+                "noOutputExpected": false
+              },
+              "toolName": "Bash"
+            }
+          },
+          "toolCallId": "toolu_01RcvmgbihnkJJnFJnk9ksRc",
+          "sessionUpdate": "tool_call_update"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 7593,
+    "dir": "in",
+    "channel": "raw",
+    "type": "_claude/sdkMessage",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "_claude/sdkMessage",
+      "params": {
+        "sessionId": "SESSION",
+        "message": {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_01RcvmgbihnkJJnFJnk9ksRc",
+                "type": "tool_result",
+                "content": "hello-from-subagent",
+                "is_error": false
+              }
+            ]
+          },
+          "parent_tool_use_id": "toolu_01GiSAsvUBjALq1WGBB2xQ1K",
+          "session_id": "SESSION",
+          "uuid": "b5d9aa99-6ea0-47e7-a60d-d24d4e1254ff",
+          "timestamp": "2026-07-11T17:42:38.856Z",
+          "subagent_type": "general-purpose",
+          "task_description": "Run marked steps"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 7594,
+    "dir": "in",
+    "channel": "acp",
+    "type": "tool_call_update",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "_meta": {
+            "claudeCode": {
+              "toolName": "Bash",
+              "parentToolUseId": "toolu_01GiSAsvUBjALq1WGBB2xQ1K"
+            }
+          },
+          "toolCallId": "toolu_01RcvmgbihnkJJnFJnk9ksRc",
+          "sessionUpdate": "tool_call_update",
+          "status": "completed",
+          "rawOutput": "hello-from-subagent",
+          "content": [
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "```console\nhello-from-subagent\n```"
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "tRel": 9932,
+    "dir": "in",
+    "channel": "raw",
+    "type": "_claude/sdkMessage",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "_claude/sdkMessage",
+      "params": {
+        "sessionId": "SESSION",
+        "message": {
+          "type": "assistant",
+          "message": {
+            "model": "claude-opus-4-8",
+            "id": "msg_011Ccvgb19L8cS8F4be1evKw",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "STEP TWO done\n\nAll three steps completed:\n1. Printed \"STEP ONE SPIKE_SUBAGENT_MARK\"\n2. Ran `echo hello-from-subagent` via Bash (output: hello-from-subagent)\n3. Printed \"STEP TWO done\""
+              }
+            ],
+            "stop_reason": null,
+            "stop_sequence": null,
+            "stop_details": null,
+            "usage": {
+              "input_tokens": 2,
+              "cache_creation_input_tokens": 1392,
+              "cache_read_input_tokens": 17037,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 1392,
+                "ephemeral_1h_input_tokens": 0
+              },
+              "output_tokens": 1,
+              "service_tier": "standard",
+              "inference_geo": "not_available"
+            },
+            "diagnostics": null,
+            "context_management": null
+          },
+          "parent_tool_use_id": "toolu_01GiSAsvUBjALq1WGBB2xQ1K",
+          "session_id": "SESSION",
+          "uuid": "81c25419-ce07-4135-a501-909cd26c3ff8",
+          "request_id": "req_011CcvgazEWf5r4n5DEw7wnB",
+          "subagent_type": "general-purpose",
+          "task_description": "Run marked steps"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 9951,
+    "dir": "in",
+    "channel": "raw",
+    "type": "_claude/sdkMessage",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "_claude/sdkMessage",
+      "params": {
+        "sessionId": "SESSION",
+        "message": {
+          "type": "system",
+          "subtype": "task_updated",
+          "task_id": "ad36e85f15e4a56a9",
+          "patch": {
+            "status": "completed",
+            "end_time": 1783791761217
+          },
+          "uuid": "a51a3eda-9ef2-4157-aba9-96694a1fe444",
+          "session_id": "SESSION"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 9952,
+    "dir": "in",
+    "channel": "raw",
+    "type": "_claude/sdkMessage",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "_claude/sdkMessage",
+      "params": {
+        "sessionId": "SESSION",
+        "message": {
+          "type": "system",
+          "subtype": "task_notification",
+          "task_id": "ad36e85f15e4a56a9",
+          "tool_use_id": "toolu_01GiSAsvUBjALq1WGBB2xQ1K",
+          "status": "completed",
+          "output_file": "/tmp/claude-1001/-tmp-dc-spike-subagent-PWcSja/92590197-3db6-409f-a471-93ebe4fb817f/tasks/ad36e85f15e4a56a9.output",
+          "summary": "STEP TWO done\n\nAll three steps completed:\n1. Printed \"STEP ONE SPIKE_SUBAGENT_MARK\"\n2. Ran `echo hello-from-subagent` via Bash (output: hello-from-subagent)\n3. Printed \"STEP TWO done\"",
+          "usage": {
+            "total_tokens": 18434,
+            "tool_uses": 1,
+            "duration_ms": 5069
+          },
+          "uuid": "b1625e19-0a01-44da-86d2-13b8d5d9cb24",
+          "session_id": "SESSION"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 9956,
+    "dir": "in",
+    "channel": "acp",
+    "type": "tool_call_update",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "_meta": {
+            "claudeCode": {
+              "toolResponse": {
+                "status": "completed",
+                "prompt": "Do exactly these three things in order:\n\n1. Print the sentence: STEP ONE SPIKE_SUBAGENT_MARK\n2. Use the Bash tool to run: echo hello-from-subagent\n3. Print the sentence: STEP TWO done\n\nThen report that you completed all three steps.",
+                "agentId": "ad36e85f15e4a56a9",
+                "agentType": "general-purpose",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "STEP TWO done\n\nAll three steps completed:\n1. Printed \"STEP ONE SPIKE_SUBAGENT_MARK\"\n2. Ran `echo hello-from-subagent` via Bash (output: hello-from-subagent)\n3. Printed \"STEP TWO done\""
+                  }
+                ],
+                "resolvedModel": "claude-opus-4-8[1m]",
+                "totalDurationMs": 5070,
+                "totalTokens": 18528,
+                "totalToolUseCount": 1,
+                "usage": {
+                  "input_tokens": 2,
+                  "cache_creation_input_tokens": 1392,
+                  "cache_read_input_tokens": 17037,
+                  "output_tokens": 97,
+                  "server_tool_use": {
+                    "web_search_requests": 0,
+                    "web_fetch_requests": 0
+                  },
+                  "service_tier": "standard",
+                  "cache_creation": {
+                    "ephemeral_1h_input_tokens": 0,
+                    "ephemeral_5m_input_tokens": 1392
+                  },
+                  "inference_geo": "not_available",
+                  "iterations": [
+                    {
+                      "input_tokens": 2,
+                      "output_tokens": 97,
+                      "cache_read_input_tokens": 17037,
+                      "cache_creation_input_tokens": 1392,
+                      "cache_creation": {
+                        "ephemeral_5m_input_tokens": 1392,
+                        "ephemeral_1h_input_tokens": 0
+                      },
+                      "type": "message"
+                    }
+                  ],
+                  "speed": "standard"
+                },
+                "toolStats": {
+                  "readCount": 0,
+                  "searchCount": 0,
+                  "bashCount": 1,
+                  "editFileCount": 0,
+                  "linesAdded": 0,
+                  "linesRemoved": 0,
+                  "otherToolCount": 0
+                }
+              },
+              "toolName": "Agent"
+            }
+          },
+          "toolCallId": "toolu_01GiSAsvUBjALq1WGBB2xQ1K",
+          "sessionUpdate": "tool_call_update"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 9965,
+    "dir": "in",
+    "channel": "raw",
+    "type": "_claude/sdkMessage",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "_claude/sdkMessage",
+      "params": {
+        "sessionId": "SESSION",
+        "message": {
+          "type": "user",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "tool_use_id": "toolu_01GiSAsvUBjALq1WGBB2xQ1K",
+                "type": "tool_result",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "STEP TWO done\n\nAll three steps completed:\n1. Printed \"STEP ONE SPIKE_SUBAGENT_MARK\"\n2. Ran `echo hello-from-subagent` via Bash (output: hello-from-subagent)\n3. Printed \"STEP TWO done\""
+                  },
+                  {
+                    "type": "text",
+                    "text": "agentId: ad36e85f15e4a56a9 (use SendMessage with to: 'ad36e85f15e4a56a9', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_tokens: 18528\ntool_uses: 1\nduration_ms: 5070</usage>"
+                  }
+                ]
+              }
+            ]
+          },
+          "parent_tool_use_id": null,
+          "session_id": "SESSION",
+          "uuid": "cbd4ca12-1561-4ae3-a8e9-42a74b64725d",
+          "timestamp": "2026-07-11T17:42:41.228Z",
+          "tool_use_result": {
+            "status": "completed",
+            "prompt": "Do exactly these three things in order:\n\n1. Print the sentence: STEP ONE SPIKE_SUBAGENT_MARK\n2. Use the Bash tool to run: echo hello-from-subagent\n3. Print the sentence: STEP TWO done\n\nThen report that you completed all three steps.",
+            "agentId": "ad36e85f15e4a56a9",
+            "agentType": "general-purpose",
+            "content": [
+              {
+                "type": "text",
+                "text": "STEP TWO done\n\nAll three steps completed:\n1. Printed \"STEP ONE SPIKE_SUBAGENT_MARK\"\n2. Ran `echo hello-from-subagent` via Bash (output: hello-from-subagent)\n3. Printed \"STEP TWO done\""
+              }
+            ],
+            "resolvedModel": "claude-opus-4-8[1m]",
+            "totalDurationMs": 5070,
+            "totalTokens": 18528,
+            "totalToolUseCount": 1,
+            "usage": {
+              "input_tokens": 2,
+              "cache_creation_input_tokens": 1392,
+              "cache_read_input_tokens": 17037,
+              "output_tokens": 97,
+              "server_tool_use": {
+                "web_search_requests": 0,
+                "web_fetch_requests": 0
+              },
+              "service_tier": "standard",
+              "cache_creation": {
+                "ephemeral_1h_input_tokens": 0,
+                "ephemeral_5m_input_tokens": 1392
+              },
+              "inference_geo": "not_available",
+              "iterations": [
+                {
+                  "input_tokens": 2,
+                  "output_tokens": 97,
+                  "cache_read_input_tokens": 17037,
+                  "cache_creation_input_tokens": 1392,
+                  "cache_creation": {
+                    "ephemeral_5m_input_tokens": 1392,
+                    "ephemeral_1h_input_tokens": 0
+                  },
+                  "type": "message"
+                }
+              ],
+              "speed": "standard"
+            },
+            "toolStats": {
+              "readCount": 0,
+              "searchCount": 0,
+              "bashCount": 1,
+              "editFileCount": 0,
+              "linesAdded": 0,
+              "linesRemoved": 0,
+              "otherToolCount": 0
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "tRel": 9967,
+    "dir": "in",
+    "channel": "acp",
+    "type": "tool_call_update",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "_meta": {
+            "claudeCode": {
+              "toolName": "Agent"
+            }
+          },
+          "toolCallId": "toolu_01GiSAsvUBjALq1WGBB2xQ1K",
+          "sessionUpdate": "tool_call_update",
+          "status": "completed",
+          "rawOutput": [
+            {
+              "type": "text",
+              "text": "STEP TWO done\n\nAll three steps completed:\n1. Printed \"STEP ONE SPIKE_SUBAGENT_MARK\"\n2. Ran `echo hello-from-subagent` via Bash (output: hello-from-subagent)\n3. Printed \"STEP TWO done\""
+            },
+            {
+              "type": "text",
+              "text": "agentId: ad36e85f15e4a56a9 (use SendMessage with to: 'ad36e85f15e4a56a9', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_tokens: 18528\ntool_uses: 1\nduration_ms: 5070</usage>"
+            }
+          ],
+          "content": [
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "STEP TWO done\n\nAll three steps completed:\n1. Printed \"STEP ONE SPIKE_SUBAGENT_MARK\"\n2. Ran `echo hello-from-subagent` via Bash (output: hello-from-subagent)\n3. Printed \"STEP TWO done\""
+              }
+            },
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "agentId: ad36e85f15e4a56a9 (use SendMessage with to: 'ad36e85f15e4a56a9', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_tokens: 18528\ntool_uses: 1\nduration_ms: 5070</usage>"
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "tRel": 11204,
+    "dir": "in",
+    "channel": "acp",
+    "type": "usage_update",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 27658,
+          "size": 1000000
+        }
+      }
+    }
+  },
+  {
+    "tRel": 11204,
+    "dir": "in",
+    "channel": "acp",
+    "type": "agent_message_chunk",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": "The"
+          },
+          "messageId": "msg_011CcvgbBf72RUKff12iMGrX"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 11749,
+    "dir": "in",
+    "channel": "acp",
+    "type": "agent_message_chunk",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": " subagent printed \"STEP ONE SPIKE_SUBAGENT_MARK\", ran `echo hello-from-subagent` via Bash (output: `h"
+          },
+          "messageId": "msg_011CcvgbBf72RUKff12iMGrX"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 12122,
+    "dir": "in",
+    "channel": "acp",
+    "type": "agent_message_chunk",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": "ello-from-subagent`), and printed \"STEP TWO done\" — all three steps completed successfully."
+          },
+          "messageId": "msg_011CcvgbBf72RUKff12iMGrX"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 12122,
+    "dir": "in",
+    "channel": "raw",
+    "type": "_claude/sdkMessage",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "_claude/sdkMessage",
+      "params": {
+        "sessionId": "SESSION",
+        "message": {
+          "type": "assistant",
+          "message": {
+            "model": "claude-opus-4-8",
+            "id": "msg_011CcvgbBf72RUKff12iMGrX",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "The subagent printed \"STEP ONE SPIKE_SUBAGENT_MARK\", ran `echo hello-from-subagent` via Bash (output: `hello-from-subagent`), and printed \"STEP TWO done\" — all three steps completed successfully."
+              }
+            ],
+            "stop_reason": null,
+            "stop_sequence": null,
+            "stop_details": null,
+            "usage": {
+              "input_tokens": 2,
+              "cache_creation_input_tokens": 453,
+              "cache_read_input_tokens": 27202,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 453
+              },
+              "output_tokens": 1,
+              "service_tier": "standard",
+              "inference_geo": "not_available"
+            },
+            "diagnostics": null,
+            "context_management": null
+          },
+          "parent_tool_use_id": null,
+          "session_id": "SESSION",
+          "uuid": "36ae2ad1-c910-4f01-9331-93b3aaf8a1ea",
+          "request_id": "req_011CcvgbANiEKYteVdCf6tuG"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 12145,
+    "dir": "in",
+    "channel": "acp",
+    "type": "usage_update",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 27745,
+          "size": 1000000
+        }
+      }
+    }
+  },
+  {
+    "tRel": 12150,
+    "dir": "in",
+    "channel": "acp",
+    "type": "usage_update",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 27745,
+          "size": 1000000,
+          "cost": {
+            "amount": 0.25211849999999997,
+            "currency": "USD"
+          }
+        }
+      }
+    }
+  },
+  {
+    "tRel": 12150,
+    "dir": "in",
+    "channel": "acp",
+    "type": "result",
+    "frame": {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "result": {
+        "stopReason": "end_turn",
+        "usage": {
+          "inputTokens": 4,
+          "outputTokens": 337,
+          "cachedReadTokens": 42373,
+          "cachedWriteTokens": 12484,
+          "totalTokens": 55198
+        }
+      }
+    }
+  },
+  {
+    "tRel": 12154,
+    "dir": "in",
+    "channel": "acp",
+    "type": "session_info_update",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "sessionUpdate": "session_info_update",
+          "title": "Launch subagent with task instructions",
+          "updatedAt": "2026-07-11T17:42:41.293Z"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 12175,
+    "dir": "out",
+    "channel": "acp",
+    "type": "session/load",
+    "frame": {
+      "jsonrpc": "2.0",
+      "id": 4,
+      "method": "session/load",
+      "params": {
+        "sessionId": "SESSION",
+        "cwd": "/tmp/CWD",
+        "mcpServers": []
+      }
+    }
+  },
+  {
+    "tRel": 12181,
+    "dir": "in",
+    "channel": "acp",
+    "type": "user_message_chunk",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "sessionUpdate": "user_message_chunk",
+          "content": {
+            "type": "text",
+            "text": "Use the Task tool to launch a general-purpose subagent. Tell the subagent to do exactly this: (1) print the sentence 'STEP ONE SPIKE_SUBAGENT_MARK', (2) use the Bash tool to run: echo hello-from-subagent, (3) print the sentence 'STEP TWO done'. After the subagent finishes, reply with a one-line summary of what it did."
+          },
+          "messageId": "c749163a-a760-4e9f-9c2c-494b8d31d8ea"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 12181,
+    "dir": "in",
+    "channel": "acp",
+    "type": "agent_message_chunk",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "content": {
+            "type": "text",
+            "text": "I'll launch a general-purpose subagent with those exact instructions."
+          },
+          "messageId": "msg_011CcvgaY59uLu4kYsQxWDuS"
+        }
+      }
+    }
+  },
+  {
+    "tRel": 12181,
+    "dir": "in",
+    "channel": "acp",
+    "type": "tool_call",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "_meta": {
+            "claudeCode": {
+              "toolName": "Agent"
+            }
+          },
+          "toolCallId": "toolu_01GiSAsvUBjALq1WGBB2xQ1K",
+          "sessionUpdate": "tool_call",
+          "rawInput": {
+            "description": "Run marked steps",
+            "prompt": "Do exactly these three things in order:\n\n1. Print the sentence: STEP ONE SPIKE_SUBAGENT_MARK\n2. Use the Bash tool to run: echo hello-from-subagent\n3. Print the sentence: STEP TWO done\n\nThen report that you completed all three steps.",
+            "subagent_type": "general-purpose",
+            "run_in_background": false
+          },
+          "status": "pending",
+          "title": "Run marked steps",
+          "kind": "think",
+          "content": [
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "Do exactly these three things in order:\n\n1. Print the sentence: STEP ONE SPIKE_SUBAGENT_MARK\n2. Use the Bash tool to run: echo hello-from-subagent\n3. Print the sentence: STEP TWO done\n\nThen report that you completed all three steps."
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "tRel": 12181,
+    "dir": "in",
+    "channel": "acp",
+    "type": "tool_call_update",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "_meta": {
+            "claudeCode": {
+              "toolName": "Agent"
+            }
+          },
+          "toolCallId": "toolu_01GiSAsvUBjALq1WGBB2xQ1K",
+          "sessionUpdate": "tool_call_update",
+          "status": "completed",
+          "rawOutput": [
+            {
+              "type": "text",
+              "text": "STEP TWO done\n\nAll three steps completed:\n1. Printed \"STEP ONE SPIKE_SUBAGENT_MARK\"\n2. Ran `echo hello-from-subagent` via Bash (output: hello-from-subagent)\n3. Printed \"STEP TWO done\""
+            },
+            {
+              "type": "text",
+              "text": "agentId: ad36e85f15e4a56a9 (use SendMessage with to: 'ad36e85f15e4a56a9', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_tokens: 18528\ntool_uses: 1\nduration_ms: 5070</usage>"
+            }
+          ],
+          "content": [
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "STEP TWO done\n\nAll three steps completed:\n1. Printed \"STEP ONE SPIKE_SUBAGENT_MARK\"\n2. Ran `echo hello-from-subagent` via Bash (output: hello-from-subagent)\n3. Printed \"STEP TWO done\""
+              }
+            },
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "agentId: ad36e85f15e4a56a9 (use SendMessage with to: 'ad36e85f15e4a56a9', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_tokens: 18528\ntool_uses: 1\nduration_ms: 5070</usage>"
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "tRel": 12182,
+    "dir": "in",
+    "channel": "acp",
+    "type": "result",
+    "frame": {
+      "jsonrpc": "2.0",
+      "id": 4,
+      "result": {
+        "sessionId": "SESSION",
+        "modes": {
+          "currentModeId": "default",
+          "availableModes": [
+            {
+              "id": "auto",
+              "name": "Auto",
+              "description": "Use a model classifier to approve/deny permission prompts"
+            },
+            {
+              "id": "default",
+              "name": "Manual",
+              "description": "Standard behavior, prompts for dangerous operations"
+            },
+            {
+              "id": "acceptEdits",
+              "name": "Accept Edits",
+              "description": "Auto-accept file edit operations"
+            },
+            {
+              "id": "plan",
+              "name": "Plan Mode",
+              "description": "Planning mode, no actual tool execution"
+            },
+            {
+              "id": "dontAsk",
+              "name": "Don't Ask",
+              "description": "Don't prompt for permissions, deny if not pre-approved"
+            },
+            {
+              "id": "bypassPermissions",
+              "name": "Bypass Permissions",
+              "description": "Bypass all permission checks"
+            }
+          ]
+        },
+        "configOptions": [
+          {
+            "id": "mode",
+            "name": "Mode",
+            "description": "Session permission mode",
+            "category": "mode",
+            "type": "select",
+            "currentValue": "default",
+            "options": [
+              {
+                "value": "auto",
+                "name": "Auto",
+                "description": "Use a model classifier to approve/deny permission prompts"
+              },
+              {
+                "value": "default",
+                "name": "Manual",
+                "description": "Standard behavior, prompts for dangerous operations"
+              },
+              {
+                "value": "acceptEdits",
+                "name": "Accept Edits",
+                "description": "Auto-accept file edit operations"
+              },
+              {
+                "value": "plan",
+                "name": "Plan Mode",
+                "description": "Planning mode, no actual tool execution"
+              },
+              {
+                "value": "dontAsk",
+                "name": "Don't Ask",
+                "description": "Don't prompt for permissions, deny if not pre-approved"
+              },
+              {
+                "value": "bypassPermissions",
+                "name": "Bypass Permissions",
+                "description": "Bypass all permission checks"
+              }
+            ]
+          },
+          {
+            "id": "model",
+            "name": "Model",
+            "description": "AI model to use",
+            "category": "model",
+            "type": "select",
+            "currentValue": "default",
+            "options": [
+              {
+                "value": "default",
+                "name": "Default (recommended)",
+                "description": "Opus 4.8 with 1M context · Best for everyday, complex tasks"
+              },
+              {
+                "value": "opus[1m]",
+                "name": "Opus",
+                "description": "Opus 4.8 with 1M context · Best for everyday, complex tasks"
+              },
+              {
+                "value": "claude-fable-5[1m]",
+                "name": "Fable",
+                "description": "Fable 5 · Most capable for your hardest and longest-running tasks"
+              },
+              {
+                "value": "sonnet",
+                "name": "Sonnet",
+                "description": "Sonnet 5 · Efficient for routine tasks"
+              },
+              {
+                "value": "haiku",
+                "name": "Haiku",
+                "description": "Haiku 4.5 · Fastest for quick answers"
+              }
+            ]
+          },
+          {
+            "id": "effort",
+            "name": "Effort",
+            "description": "Available effort levels for this model",
+            "category": "thought_level",
+            "type": "select",
+            "currentValue": "default",
+            "options": [
+              {
+                "value": "default",
+                "name": "Default"
+              },
+              {
+                "value": "low",
+                "name": "Low"
+              },
+              {
+                "value": "medium",
+                "name": "Medium"
+              },
+              {
+                "value": "high",
+                "name": "High"
+              },
+              {
+                "value": "xhigh",
+                "name": "Xhigh"
+              },
+              {
+                "value": "max",
+                "name": "Max"
+              }
+            ]
+          },
+          {
+            "id": "fast",
+            "name": "Fast mode",
+            "description": "Faster responses on supported models",
+            "category": "model_config",
+            "type": "select",
+            "currentValue": "off",
+            "options": [
+              {
+                "value": "on",
+                "name": "On"
+              },
+              {
+                "value": "off",
+                "name": "Off"
+              }
+            ]
+          },
+          {
+            "id": "agent",
+            "name": "Agent",
+            "description": "Main-thread agent persona",
+            "type": "select",
+            "currentValue": "default",
+            "options": [
+              {
+                "value": "default",
+                "name": "Default",
+                "description": "Standard Claude Code agent"
+              },
+              {
+                "value": "avigail",
+                "name": "avigail",
+                "description": "Plan verifier — bug-hunts in a brief before it goes to the executor, validating factual claims against the real codebase.\n"
+              },
+              {
+                "value": "calev",
+                "name": "calev",
+                "description": "Runtime verifier — checks phase or light end-of-slice behavior against the original brief in a real environment.\n"
+              },
+              {
+                "value": "calev-heavy",
+                "name": "calev-heavy",
+                "description": "Runtime verifier — heavy tier for complexity 8+ slices, covering visual review, E2E flows, edge cases, regressions, and pattern classification.\n"
+              },
+              {
+                "value": "eliezer",
+                "name": "eliezer",
+                "description": "Implementation agent — executes a verified brief phase-by-phase in the assigned worktree, following the testing strategy chosen by the planner.\n"
+              },
+              {
+                "value": "mordechai",
+                "name": "mordechai",
+                "description": "Strategic planner — writes detailed briefs, reviews brief verification reports, dispatches executors/verifiers, and is the only role authorized to merge after explicit user approval.\n"
+              },
+              {
+                "value": "yetro",
+                "name": "yetro",
+                "description": "Orchestrator — runs the nightly slice queue automatically, dispatches executors, polls outcomes, runs verifiers, archives passing briefs, and writes a morning summary.\n"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "tRel": 12183,
+    "dir": "in",
+    "channel": "acp",
+    "type": "available_commands_update",
+    "frame": {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "SESSION",
+        "update": {
+          "sessionUpdate": "available_commands_update",
+          "availableCommands": [
+            {
+              "name": "brief-driven-slices",
+              "description": "Brief-driven slice workflow — שיטת עבודה לפרויקטי קוד שמחלקת התקדמות\nל-slices קטנים, כל אחד עם brief מפורט שכותב מרדכי (planner/Opus), מאומת\nלפני handoff ע\"י אביגיל (plan-verifier), מבוצע ע\"י אליעזר (executor) ב-worktree\nייעודי, ומאומת בסוף ע\"י כלב (runtime-verifier). יתרו מריץ queue לילי אוטומטי.\nמנגנון worktrees מאפשר שרשור slices תלויים ללא merge ל-dev עד הבוקר.\n\nהשיטה התפתחה אחרי שניסיון של \"TDD עם Sonnet אוטונומי\" כשל ב-Slice 9\nשל voice-acp (114 טסטים ירוקים, 19 באגים בפועל). הצורה הנוכחית הוכיחה\nאת עצמה ב-5 slices רצופים ב-voice-acp (28-29/5/2026) — אפס באגים ב-verification.\n\nטען את הסקיל כשמתכננים סבב פיתוח חדש, כשכותבים brief ל-אליעזר,\nכשמדispatching ל-sub-agent מבצע, או כשמעדכנים template/recommendations.\n\nTriggers:\n- \"אני רוצה לתכנן slice\", \"בוא נכתוב brief\", \"תכין תוכנית לסבב\"\n- \"נדispatch ל-executor\", \"תפעיל verifier\", \"הפעל plan-verifier\"\n- \"תכין worktree לפי הקונבנציה\", \"פתח worktree לסליס\"\n- \"תעדכן את ה-patterns אחרי הסליס\", \"case study חדש\"\n- \"Opus מתכנן Sonnet מבצע\", \"planner-executor\", \"Tama\"\n- \"מרדכי\", \"יתרו\", \"אליעזר\", \"אביגיל\", \"כלב\"\n- \"queue לילי\", \"orchestration\", \"שרשור worktrees\"\n\nAnti-triggers (אל תטען):\n- שאלות one-off על git worktrees ללא slice\n- debug של בעיה ספציפית שלא חלק מ-slice (user)",
+              "input": null
+            },
+            {
+              "name": "cass",
+              "description": "Search, inspect, export, and cite local coding-agent session history with the cass CLI. Use when Codex or another agent needs to find prior work, read previous Codex/Claude/Cursor/Gemini/OpenCode/Aider/ChatGPT sessions, open context around a search hit, export a clean conversation without tool calls, or build a cited handoff pack from previous agent sessions. (user)",
+              "input": null
+            },
+            {
+              "name": "commit",
+              "description": "Structured git commit workflow for this user's projects. Includes:\npre-flight `npm run check` (or `/watch-check`), Walkthrough doc update,\nselective `git add` (no blanket adds), one git command at a time\n(no chained `&&`), commit-message style, and Hebrew commit messages.\n\nUse when the user asks to:\n- \"commit\", \"make a commit\", \"תעשה קומיט\", \"תקמט\"\n- \"commit and push\" (this skill handles commit; push only if asked)\n- Wrap up a feature / fix and record it in git\n- Run the standard pre-commit checks before committing\n\nThis is NOT a generic git wrapper — it enforces a specific multi-step\nworkflow (check → walkthrough → status → diff → add → commit) and uses\nHebrew for commit messages. Do not use for one-off `git commit` calls\nwhere the user just wants a quick commit.\n\nTriggers when user mentions:\n- \"commit\", \"קומיט\", \"תקמט\", \"תעשה קומיט\"\n- \"מקדם\" (in development context)\n- \"סיימתי, תשמור\" (user)",
+              "input": null
+            },
+            {
+              "name": "dev-conventions",
+              "description": "מוסכמות הפיתוח האישיות של המשתמש: בחירת stack (SvelteKit 5 + Tailwind 4 + Vite+,\nפריסה ל-Cloudflare, Python עם uv), כללי קומפוננטות Svelte (מיקום, הפרדת לוגיקה,\nשמות קבצים), חובת `AGENTS.md` בכל פרויקט, איסור מחרוזות עברית קשיחות בקוד,\nוחובת שימוש בסקילים `commit` ו-`update-walkthrough`.\n\n**חובה לטעון את הסקיל הזה בכל אחד מהמקרים הבאים:**\n- בתחילת כל סשן עבודה על פרויקט פיתוח\n- לפני התחלת פרויקט חדש\n- לפני כתיבת קוד חדש בקובץ Svelte / TypeScript / Python\n- לפני יצירת קומפוננטה / route / מודול חדש\n- לפני קבלת החלטות ארכיטקטורה (היכן למקם קובץ, איך לשמות אותו, איזה כלי לבחור)\n\nTriggers when user mentions:\n- \"פרויקט חדש\", \"התחל פרויקט\", \"new project\", \"scaffold\"\n- \"צור קומפוננטה\", \"create component\", \"add route\"\n- \"Svelte\", \"SvelteKit\", \"Tailwind\"\n- \"איפה לשים את הקובץ\", \"מה השם של\", \"where should this go\"\n- כל פעם שמתחילים לעבוד על קוד בפרויקט של המשתמש (user)",
+              "input": null
+            },
+            {
+              "name": "hebrew-layout-fixer",
+              "description": "Fix Hebrew text that was mistyped with the English keyboard layout (including\nwith Caps Lock active). Uses a deterministic EN→HE per-key mapping —\ncharacter-by-character, not language translation.\n\nExample:\n- Input:  `vrcv pgnho`\n- Output: `הרבה פעמים`\n\nUse when the user provides:\n- Latin-character text that has no English meaning but matches Hebrew\n  typing patterns (lots of `qwerty`-row letters, no real words)\n- A copy-paste they meant to write in Hebrew but the layout was English\n- An explicit request to \"fix the keyboard layout\" / \"תקן את העברית\" /\n  \"המר עברית באנגלית\"\n\nTriggers when user mentions:\n- \"תקן את העברית\", \"המר אנגלית לעברית במקלדת\"\n- \"I typed in the wrong layout\"\n- \"fix keyboard layout\", \"wrong layout\"\n- Pastes garbled Latin text that is clearly mistyped Hebrew\n  (e.g. `akuo`, `aug`, `vrcv` — patterns of QWERTY keys with no English meaning)\n\nDo NOT use for:\n- Actual English-to-Hebrew translation\n- Mixed Hebrew/English content\n- RTL display issues (use `rtl-adaptation` instead) (user)",
+              "input": null
+            },
+            {
+              "name": "linux-gui-browser",
+              "description": "REQUIRES the `playwright-cli` skill — load both together.\n\nOperates a real browser inside a remote GUI container (linux-gui) via playwright-cli\nover SSH. This skill covers ONLY the SSH wrapper / linux-gui specifics; the actual\nplaywright-cli command surface lives in the `playwright-cli` skill.\n\nUse when the user asks to:\n- Browse / interact with a website on the linux-gui container\n- Solve a CAPTCHA manually in a real GUI browser\n- Test a site with a real Google / signed-in profile\n- Automate browser tasks where headless detection is a blocker\n- Run anti-bot bypass flows (Cloudflare, DataDome, etc.) with a visible browser\n\nTriggers when user mentions:\n- \"linux-gui\"\n- \"דפדפן בקונטיינר\"\n- \"הדפדפן שב-GUI\"\n- \"הדפדפן ב-GUI Linux\" (user)",
+              "input": null
+            },
+            {
+              "name": "pico-tunnels",
+              "description": "Expose a local server to the internet via the Pico ecosystem (pico.sh) — primarily\nthe tuns.sh SSH tunneling service, but also pgs.sh (static hosting), prose.sh (blog),\npipe.sh (pub/sub), pastes.sh (text snippets). Use when the user asks to:\n\n- Share a localhost URL on the web (\"פתח מנהרה\", \"share localhost\", \"tunnel\")\n- Use tuns.sh / pico.sh by name\n- Preview a running dev server from another device or send a public URL to someone\n- Publish a static site, a blog post, or a paste through the Pico services\n\nThis skill prefers SSH-based Pico tunnels over cloudflared/ngrok when the key is\navailable at `~/.ssh/pico` or `$PICO_SSH_KEY`. (user)",
+              "input": null
+            },
+            {
+              "name": "planner-executor-research",
+              "description": "Research and accumulated findings on the \"large model plans, medium model executes\" agent workflow (e.g. Opus plans → Sonnet implements). Documents recurring failure patterns of the executor agent, brief-template improvements that prevent the predictable ones, and the role of a separate verifier agent for what remains.\nThis is a research / retrospective skill — case studies + synthesized patterns, not a step-by-step workflow. Load it when:\n- About to write a brief for a slice/feature that will be handed off to an\n  executor agent (Sonnet, Haiku, etc.)\n- Reviewing failed / buggy work from an executor agent and trying to\n  understand what went wrong\n- Updating brief templates or DoD checklists - Designing a verifier agent's prompt - Adding a new case study from a slice that just shipped\nTriggers when user mentions: - \"planner-executor\", \"Opus plans Sonnet executes\" - \"אופוס מתכנן, סונט מבצע\", \"מודל גדול מתכנן\" - \"verifier agent\", \"סוכן ביקורת\", \"סוכן verifier\" - \"מה Sonnet שוב פספס\", \"למה זה לא נתפס בטסטים\" - Reviewing a buggy slice that just finished implementation (user)",
+              "input": null
+            },
+            {
+              "name": "playwright-cli",
+              "description": "Browser automation via the @playwright/cli npm package. Use for: navigating\nwebsites, filling forms, taking screenshots, scraping content, testing web\napps, end-to-end flows, evaluating JS in a page, intercepting requests,\nrecording video/traces, and working with logged-in sessions.\n\nSpecial use case — ANTI-DETECTION MODE: when a target site blocks\nautomation (Cloudflare, Akamai, DataDome, PerimeterX, bot.sannysoft.com,\nSuno, etc.), this skill provides `pw-clean.sh` to launch Chrome without\nPlaywright's automation flags and attach via CDP.\n\nThis is a THIN layer over the @playwright/cli skill bundled with the npm\npackage — that bundled skill has the full command reference and MUST be\nread before issuing commands.\n\nTriggers when user mentions:\n- \"playwright\", \"playwright-cli\", \"browser automation\"\n- \"anti-detection\", \"stealth browser\", \"bypass bot detection\"\n- \"Cloudflare bypass\", \"automation blocked\"\n- \"headed browser\", \"real Chrome\", \"CDP attach\" (user)",
+              "input": null
+            },
+            {
+              "name": "recoll-vault-search",
+              "description": "Full-text search inside the user's Obsidian vault using recollq CLI. Use this skill when the user asks to find notes by content, search for a topic across the vault, or locate a document whose name is unknown but whose content is partially remembered. Also use it to audit the vault — e.g. \"find all notes that mention WireGuard\" or \"which notes talk about rclone?\". recollq searches the indexed content of Markdown files; plocate searches by filename. Use recollq for content, plocate for filenames.\n⚠️  BETA: recollq is set up but still in early testing. PDF, image and audio files are not indexed (missing helpers). The index may be stale — run `recollindex -c ~/.recoll` to refresh before a critical search. (user)",
+              "input": null
+            },
+            {
+              "name": "rtl-adaptation",
+              "description": "Adapt an existing LTR-only web UI to support RTL languages (Hebrew, Arabic).\nCovers CSS logical properties, Tailwind logical classes, `dir` attributes,\ndirection-aware animations, and automated lint/E2E protection tests.\n\nUse when the user asks to:\n- Add RTL / Hebrew / Arabic support to a web app\n- Translate or localize a UI to Hebrew or Arabic\n- Fix RTL layout bugs (sidebar slides wrong way, switch flips, terminal\n  text reverses parentheses, dropdown headers stay right-aligned)\n- Replace physical CSS / Tailwind classes (`left`, `pr-*`, `ml-*`) with\n  logical equivalents (`inset-inline-start`, `pe-*`, `ms-*`)\n- Add `dir=\"auto\"` / `dir=\"ltr\"` to mixed-content elements\n- Set up CSS / Tailwind lint tests that prevent regression of physical\n  properties\n\nTriggers when user mentions:\n- \"RTL\", \"right-to-left\", \"ימין לשמאל\"\n- \"Hebrew support\", \"Arabic support\", \"תמיכה בעברית\"\n- \"logical properties\", \"logical classes\", \"ps-/pe-/ms-/me-\"\n- \"dir attribute\", \"direction\"\n- \"sidebar slides wrong direction\" (user)",
+              "input": null
+            },
+            {
+              "name": "scheduler",
+              "description": "Create and manage scheduled opencode tasks using systemd user timers.\nAll units use the prefix `opencode-sched-`. Supports OnCalendar expressions\n(daily, hourly, weekly, custom times) and one-shot timers.\n\nUse when the user asks to:\n- Schedule a recurring prompt / task (\"every morning at 8\", \"כל יום ב-9\")\n- Set up a periodic check (\"check the PR every hour\", \"בדוק את החיבור פעם ביום\")\n- Run a daily/weekly report\n- List, view, edit, or delete existing scheduled jobs\n- Build a cron-like job that invokes opencode\n\nTriggers when user mentions:\n- \"schedule\", \"scheduled\", \"תזמן\", \"תזמון\", \"תזכורת חוזרת\"\n- \"every day at\", \"every hour\", \"כל יום ב-\", \"כל שעה\"\n- \"cron\", \"systemd timer\", \"OnCalendar\"\n- \"recurring task\", \"periodic check\"\n- \"list scheduled jobs\", \"תזכורות שלי\"\n\nDo NOT use for one-off `at` commands or non-opencode jobs (use systemd /\nshell directly). (user)",
+              "input": null
+            },
+            {
+              "name": "Svelte-MCP",
+              "description": "Comprehensive Svelte 5 and SvelteKit documentation lookup via the Svelte MCP\nserver. Use this skill BEFORE writing or reviewing any Svelte / SvelteKit\ncode — the MCP server has the canonical, up-to-date docs (runes, snippets,\n$state/$derived/$effect, the new event syntax, SvelteKit routing, etc.).\n\nUse when the user asks to:\n- Write, review, or refactor Svelte 5 / SvelteKit code\n- Migrate code from Svelte 3/4 to Svelte 5 (runes, event handlers, slots → snippets)\n- Debug Svelte-specific issues (reactivity, stores, hydration, SSR)\n- Set up SvelteKit features (routes, layouts, hooks, form actions, load functions)\n- Look up the correct syntax for a Svelte API (`$state`, `$props`, `$effect`,\n  `bind:`, `use:`, transitions, animations)\n- Build a new Svelte component or app\n\nAlways start with the `list-sections` MCP tool to discover relevant docs,\nthen `get-documentation` for the specific section needed.\n\nTriggers when user mentions:\n- \"Svelte\", \"SvelteKit\", \"Svelte 5\", \"סוולט\"\n- \"runes\", \"$state\", \"$derived\", \"$effect\", \"$props\"\n- \"snippets\", \"{#snippet}\", \"{@render}\"\n- \"load function\", \"form action\", \"+page.svelte\", \"+layout\" (user)",
+              "input": null
+            },
+            {
+              "name": "transcribe-recordings",
+              "description": "Transcribe audio / video recordings to Markdown using Gemini CLI. Handles\npersonal voice memos, lectures, shiurim, meetings, podcasts, and any spoken\ncontent. Includes chunking for long recordings, local copies (avoids hangs\non rclone/Google Drive mounts), and clear chunk boundary markers for review.\n\nUse when the user asks to:\n- Transcribe an audio / video file (\"תמלל את ההקלטה\", \"transcribe this\")\n- Convert a voice memo / shiur / lecture to text\n- Produce a written transcript of a meeting or podcast\n- Generate Markdown from a long recording (with chapters / chunks)\n- Get text output of a video file's audio track\n\nSupported formats: MP3, M4A, WAV, OGG, FLAC, MP4, MKV, MOV, WebM, and any\nformat ffmpeg can read (it transcodes if needed).\n\nTwo prompt modes:\n- \"Personal\" — for shiurim, lectures, voice memos (uses careful Hebrew prompt)\n- \"General\" — for meetings, podcasts, any neutral content\n\nTriggers when user mentions:\n- \"transcribe\", \"תמלל\", \"תמלול\", \"תמליל\"\n- \"speech to text\", \"audio to text\", \"video to text\"\n- \"voice memo\", \"הקלטה\", \"שיעור\", \"shiur\"\n- References to `.mp3`/`.m4a`/`.wav`/`.mp4`/`.mkv` etc. in context of \"what does it say\"\n\nAlways uses Gemini CLI with `@/path/to/file` (NOT tool reads — Gemini API\nrejects audio MIME in tool responses). See body for full pitfall list. (user)",
+              "input": null
+            },
+            {
+              "name": "update-walkthrough",
+              "description": "Update the project's development log (Walkthrough) — a structured Markdown\nfile that records project progress in chronological order. Used to keep\nliving documentation of what changed, why, and any open issues.\n\nProject-specific changes go to `docs/walkthrough.md` inside the relevant\nproject directory. Cross-project / monorepo-wide changes go to the root\n`docs/` directory.\n\nUse when the user asks to:\n- \"update the walkthrough\", \"עדכן את ה-Walkthrough\", \"עדכן יומן פיתוח\"\n- Record what was just changed in the project log\n- Add an entry before committing (the `commit` skill calls this)\n- Document a new feature, fix, or architectural decision in the log\n\nTriggers when user mentions:\n- \"walkthrough\", \"וולקת'רו\", \"וולקת'רואו\"\n- \"יומן פיתוח\", \"תיעוד התקדמות\"\n- \"/update_walkthrough\" (slash command) (user)",
+              "input": null
+            },
+            {
+              "name": "deep-research",
+              "description": "Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report. (dynamic workflow)",
+              "input": null
+            },
+            {
+              "name": "design-sync",
+              "description": "Push a React design system to claude.ai/design. This runs a converter that bundles the real component code (from Storybook or a bare package) and uploads it. Use when the user runs /design-sync or says \"sync my design system to Claude Design\".",
+              "input": {
+                "hint": "[<project hint, e.g. \"Acme DS\">]"
+              }
+            },
+            {
+              "name": "dataviz",
+              "description": "Use this skill whenever you are about to create ANY chart, graph, plot, dashboard, or data visualization, in ANY output medium — an HTML or React artifact, inline SVG, plotting code in any library (matplotlib, plotly, d3, Recharts, …), an image/PNG you will render and upload, or a chart shared into Slack. Read it BEFORE writing the first line of chart code, choosing chart colors, building a stat tile / meter / KPI row, or laying out a dashboard. Produces visualizations that read as one system — elegant, accessible, consistent in light and dark — using a brand-neutral placeholder palette you swap for your own. Teaches a design-system-agnostic method: a form heuristic, a color formula with a runnable validator, mark specs, and interaction rules. A validated default palette is documented in `references/palette.md` — swap that file's values for your brand's. Triggers on: \"chart\", \"graph\", \"plot\", \"data viz\", \"visualization\", \"dashboard\", \"analytics\", \"visualize data\", \"categorical colors\", \"sequential / diverging palette\", \"stat tile\", \"sparkline\", \"heatmap\", \"legend\", \"axis\", \"tooltip\", \"chart colors\", \"color by series\".",
+              "input": null
+            },
+            {
+              "name": "update-config",
+              "description": "Use this skill to configure the Claude Code harness via settings.json. Automated behaviors (\"from now on when X\", \"each time X\", \"whenever X\", \"before/after X\") require hooks configured in settings.json - the harness executes these, not Claude, so memory/preferences cannot fulfill them. Also use for: permissions (\"allow X\", \"add permission\", \"move permission to\"), env vars (\"set X=Y\"), hook troubleshooting, or any changes to settings.json/settings.local.json files. Examples: \"allow npm commands\", \"add bq permission to global settings\", \"move permission to user settings\", \"set DEBUG=true\", \"when claude stops show X\". For simple settings like theme/model, suggest the /config command.",
+              "input": null
+            },
+            {
+              "name": "verify",
+              "description": "Verify that a code change actually does what it's supposed to by exercising it end-to-end and observing behavior — drive the affected flow, not just tests or typecheck. Run before committing nontrivial changes; bootstraps this repo's project verify skill if none exists yet. Don't invoke it on a diff that only touches tests, docs, or other code with no runtime surface to drive (a change to product source always has one) — there's nothing to observe.",
+              "input": null
+            },
+            {
+              "name": "debug",
+              "description": "Enable debug logging for this session and help diagnose issues",
+              "input": {
+                "hint": "[issue description]"
+              }
+            },
+            {
+              "name": "code-review",
+              "description": "Review the current diff for correctness bugs and reuse/simplification/efficiency cleanups at the given effort level (low/medium: fewer, high-confidence findings; high→max: broader coverage, may include uncertain findings; ultra: deep multi-agent review in the cloud). Pass --comment to post findings as inline PR comments, or --fix to apply the findings to the working tree after the review.",
+              "input": {
+                "hint": "[low|medium|high|xhigh|max|ultra] [--fix] [--comment] [<target>]"
+              }
+            },
+            {
+              "name": "simplify",
+              "description": "Review the changed code for reuse, simplification, efficiency, and altitude cleanups, then apply the fixes. Quality only — it does not hunt for bugs; use /code-review for that.",
+              "input": {
+                "hint": "[<target>]"
+              }
+            },
+            {
+              "name": "batch",
+              "description": "Research and plan a large-scale change, then execute it in parallel across 5–30 isolated worktree agents that each open a PR.",
+              "input": {
+                "hint": "<instruction>"
+              }
+            },
+            {
+              "name": "fewer-permission-prompts",
+              "description": "Scan your transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to project .claude/settings.json to reduce permission prompts.",
+              "input": null
+            },
+            {
+              "name": "doctor",
+              "description": "Health-check the user's Claude Code setup and fix issues: diagnose installation health — what the `claude doctor` terminal diagnostics cover — from local data (duplicate or leftover installs, PATH, unparseable settings files, broken or colliding agent definitions); find unused skills, MCP servers, and plugins versus their context cost and disable dead weight; deduplicate local CLAUDE.md files against checked-in ones; trim checked-in CLAUDE.md files by cutting content a session could derive from the codebase (directory layouts, tech-stack lists, architecture overviews) while keeping gotchas, rationale, and non-standard conventions; migrate always-loaded CLAUDE.md guidance into lazy skills and nested CLAUDE.md files; flag slow hooks and context-heavy extensions; check the installed version is current; make auto mode the default permission mode; and pre-approve frequently denied read-only commands. Use when the user asks for a doctor run, checkup, audit, tune-up, or cleanup of their Claude Code setup or configuration.",
+              "input": null
+            },
+            {
+              "name": "loop",
+              "description": "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace.",
+              "input": {
+                "hint": "[interval] [prompt]"
+              }
+            },
+            {
+              "name": "schedule",
+              "description": "Create, update, list, or run scheduled cloud agents (routines) that execute on a cron schedule.",
+              "input": null
+            },
+            {
+              "name": "claude-api",
+              "description": "Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, tool use, MCP, agents, caching, token counting, model migration.\nTRIGGER — read BEFORE opening the target file; don't skip because it \"looks like a one-liner\" — whenever: the prompt names Claude/Anthropic in any form (Claude, Anthropic, Fable, Opus, Sonnet, Haiku, `anthropic`, `@anthropic-ai`, `claude-*`, `us.anthropic.*`, `[1m]`); the user asks about an LLM (pricing/model choice/limits/caching) — never answer from memory; OR the task is LLM-shaped with provider unstated (agent/MCP/tool-definition/multi-agent/RAG/LLM-judge/computer-use; generate/summarize/extract/classify/rewrite/converse over NL; debugging refusals/cutoffs/streaming/tool-calls/tokens).\nSKIP only when another provider is being worked on (overrides all triggers): OpenAI/GPT/Gemini/Llama/Mistral/Cohere/Ollama named in the query; OR `grep -rE 'openai|langchain_openai|google.generativeai|genai|mistralai|cohere|ollama'` over the project hits (run this grep FIRST if no provider named — don't Read the file).",
+              "input": null
+            },
+            {
+              "name": "run",
+              "description": "Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library).",
+              "input": null
+            },
+            {
+              "name": "run-skill-generator",
+              "description": "Author or improve the run-<unit> skill — a per-project skill that tells agents how to build, launch, and drive this project's app. Use when the user asks to set up the project, get it running, write run instructions, or verify build/run steps work from a clean environment.",
+              "input": null
+            },
+            {
+              "name": "agents",
+              "description": "(removed) Ask Claude to create/manage subagents, or edit .claude/agents/",
+              "input": null
+            },
+            {
+              "name": "color",
+              "description": "Set the prompt bar color for this session",
+              "input": {
+                "hint": "[red|blue|green|yellow|purple|orange|pink|cyan|default]"
+              }
+            },
+            {
+              "name": "compact",
+              "description": "Free up context by summarizing the conversation so far",
+              "input": {
+                "hint": "<optional custom summarization instructions>"
+              }
+            },
+            {
+              "name": "config",
+              "description": "Set a setting by key",
+              "input": {
+                "hint": "key=value"
+              }
+            },
+            {
+              "name": "context",
+              "description": "Show current context usage",
+              "input": null
+            },
+            {
+              "name": "effort",
+              "description": "Set effort level for model usage",
+              "input": {
+                "hint": "<low|medium|high|xhigh|max|ultracode|auto>"
+              }
+            },
+            {
+              "name": "fast",
+              "description": "Toggle fast mode (Opus 4.8)",
+              "input": {
+                "hint": "[on|off]"
+              }
+            },
+            {
+              "name": "heapdump",
+              "description": "Dump the JS heap to ~/Desktop",
+              "input": null
+            },
+            {
+              "name": "init",
+              "description": "Initialize a new CLAUDE.md file with codebase documentation",
+              "input": null
+            },
+            {
+              "name": "mcp",
+              "description": "Manage MCP servers",
+              "input": {
+                "hint": "[reconnect|enable|disable [<server>|all]]"
+              }
+            },
+            {
+              "name": "model",
+              "description": "Set the AI model for Claude Code",
+              "input": {
+                "hint": "<model>"
+              }
+            },
+            {
+              "name": "__remote-workflow",
+              "description": "Run the workflow script delivered in this session environment (server-launched sessions only)",
+              "input": null
+            },
+            {
+              "name": "reload-skills",
+              "description": "Pick up skills added or changed on disk during this session",
+              "input": null
+            },
+            {
+              "name": "rename",
+              "description": "Rename the current conversation",
+              "input": {
+                "hint": "[name]"
+              }
+            },
+            {
+              "name": "review",
+              "description": "Review a GitHub pull request; for your working diff use /code-review",
+              "input": {
+                "hint": "[pr number]"
+              }
+            },
+            {
+              "name": "security-review",
+              "description": "Complete a security review of the pending changes on the current branch",
+              "input": null
+            },
+            {
+              "name": "usage-credits",
+              "description": "Configure usage credits to keep working when you hit a limit",
+              "input": null
+            },
+            {
+              "name": "extra-usage",
+              "description": "Renamed to /usage-credits",
+              "input": null
+            },
+            {
+              "name": "usage",
+              "description": "Show session cost, plan usage, and what's contributing to your limits",
+              "input": null
+            },
+            {
+              "name": "insights",
+              "description": "Generate a report analyzing your Claude Code sessions",
+              "input": null
+            },
+            {
+              "name": "recap",
+              "description": "Generate a one-line session recap now",
+              "input": null
+            },
+            {
+              "name": "goal",
+              "description": "Set a goal — keep working until the condition is met",
+              "input": null
+            },
+            {
+              "name": "design",
+              "description": "Grant or revoke Claude agent access to your Design projects",
+              "input": {
+                "hint": "consent | revoke"
+              }
+            },
+            {
+              "name": "design-consent",
+              "description": "Grant Claude agent access to your Design projects",
+              "input": null
+            },
+            {
+              "name": "design-revoke",
+              "description": "Revoke Claude agent access to your Design projects",
+              "input": null
+            },
+            {
+              "name": "team-onboarding",
+              "description": "Help teammates ramp on Claude Code with a guide from your usage",
+              "input": null
+            }
+          ]
+        }
+      }
+    }
+  }
+]

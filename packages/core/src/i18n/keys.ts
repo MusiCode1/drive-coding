@@ -24,6 +24,11 @@ export type MessageKey =
   | "connect.title"
   | "connect.subtitle"
   | "connect.cli.label"
+  // slice cli-availability: מצב טעינה + fallback ב-dropdown הספקים
+  | "connect.cli.loading"
+  | "connect.cli.showAll"
+  // slice cli-availability (re-scope): תווית ל-option disabled בדropdown (לא מותקן)
+  | "connect.cli.notInstalled"
   | "connect.cwd.label"
   | "connect.cwd.placeholder"
   | "connect.submit"
@@ -71,6 +76,15 @@ export type MessageKey =
   | "chat.tool.terminal"
   | "chat.tool.diff.added"
   | "chat.tool.diff.removed"
+  // ─── subagent-bubble ─── (slice subagent-transcript-render)
+  | "chat.subagent.status.pending"
+  | "chat.subagent.status.in_progress"
+  | "chat.subagent.status.completed"
+  | "chat.subagent.status.failed"
+  | "chat.subagent.status.unknown"
+  | "chat.subagent.prompt"
+  | "chat.subagent.summary"
+  | "chat.subagent.transcript"
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)
@@ -143,6 +157,7 @@ export type MessageKey =
   | "settings.toggle.carMode"
   | "settings.reset"
   | "settings.saveOpen"
+  | "settings.version"
   // ─── language ─── (rtl-ltr-bidi)
   | "settings.language.label"
   | "settings.language.he"
@@ -159,6 +174,8 @@ export type MessageKey =
   | "sidebar.sessions"
   | "sidebar.refresh"
   | "sidebar.newSession"
+  // ─── cli-name-in-chat ─── (slice cli-name-in-chat)
+  | "sidebar.runningOn"
   | "sheet.handle"
   // ─── bubble-play ─── (msr-v2)
   | "bubble.play"
@@ -191,6 +208,10 @@ export type MessageKey =
   | "connect.agents.kill"
   | "connect.agents.killConfirm"
   | "connect.agents.inUse"
+  // ─── reconnect-ws-takeover Commit 2 ─── (panel takeover-affordance)
+  | "connect.agents.takeOver"
+  | "connect.agents.takeOverConfirm"
+  | "connect.agents.noSession"
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   | "connect.agents.working"
   // ─── agent-last-message-ui ─── (slice agent-last-message-ui)
@@ -212,6 +233,162 @@ export type MessageKey =
   | "settings.ttsProvider.label"
   | "settings.ttsProvider.elevenlabs"
   | "settings.ttsProvider.gemini"
+  // ─── image-attach tray ─── (slice-image-paste)
+  | "attach.addImage"
+  | "attach.remove"
+  // ─── image-paste replay (§11) — placeholder for non-text ContentBlocks ───
+  // chat.content.attachedFile: param-less (label raw from data, no interpolation needed)
+  | "chat.content.attachedFile"
+  | "chat.content.unsupported"
+  // ─── recent-projects ─── (slice connect-recent-projects)
+  | "connect.recent.title"
+  | "connect.recent.empty"
+  | "connect.recent.refresh"
+  // ─── recent-projects controls ─── (slice recent-projects-controls)
+  | "connect.recent.remove"
+  | "connect.recent.collapse"
+  | "connect.recent.expand"
+  // ─── leave-running (slice leave-running-background) ───
+  | "session.leaveRunning" // תווית כפתור "צא — השאר רץ" (חדש)
+  | "session.closeSession" // title כפתור הכיבוי-המלא (Power) — מבדיל מ-leaveRunning
+  | "session.leaveWarning.title"
+  | "session.leaveWarning.body" // "הריצה תיעצר ברגע שתגיע בקשת-הרשאה..."
+  | "session.leaveWarning.confirm"
+  | "session.leaveWarning.cancel"
+  | "session.leaveWarning.dontShowAgain"
+  // ─── thinking-tokens ─── (slice FEAT-thinking-live)
+  | "agentOptions.thinking.label" // תווית הפקד "חשיבה" / "Thinking"
+  | "agentOptions.thinking.off" // ערך כבוי
+  | "agentOptions.thinking.low" // ערך נמוך (4000)
+  | "agentOptions.thinking.medium" // ערך בינוני (8000)
+  | "agentOptions.thinking.high" // ערך גבוה (16000)
+  // ─── gemini voice picker ─── (V4b-gemini-voice-picker)
+  | "settings.geminiVoice.label"
+  | "settings.geminiVoice.desc.Zephyr"
+  | "settings.geminiVoice.desc.Puck"
+  | "settings.geminiVoice.desc.Charon"
+  | "settings.geminiVoice.desc.Kore"
+  | "settings.geminiVoice.desc.Fenrir"
+  | "settings.geminiVoice.desc.Leda"
+  | "settings.geminiVoice.desc.Orus"
+  | "settings.geminiVoice.desc.Aoede"
+  | "settings.geminiVoice.desc.Callirrhoe"
+  | "settings.geminiVoice.desc.Autonoe"
+  | "settings.geminiVoice.desc.Enceladus"
+  | "settings.geminiVoice.desc.Iapetus"
+  | "settings.geminiVoice.desc.Umbriel"
+  | "settings.geminiVoice.desc.Algieba"
+  | "settings.geminiVoice.desc.Despina"
+  | "settings.geminiVoice.desc.Erinome"
+  | "settings.geminiVoice.desc.Algenib"
+  | "settings.geminiVoice.desc.Rasalgethi"
+  | "settings.geminiVoice.desc.Laomedeia"
+  | "settings.geminiVoice.desc.Achernar"
+  | "settings.geminiVoice.desc.Alnilam"
+  | "settings.geminiVoice.desc.Schedar"
+  | "settings.geminiVoice.desc.Gacrux"
+  | "settings.geminiVoice.desc.Pulcherrima"
+  | "settings.geminiVoice.desc.Achird"
+  | "settings.geminiVoice.desc.Zubenelgenubi"
+  | "settings.geminiVoice.desc.Vindemiatrix"
+  | "settings.geminiVoice.desc.Sadachbia"
+  | "settings.geminiVoice.desc.Sadaltager"
+  | "settings.geminiVoice.desc.Sulafat"
+  // ─── tts-provider-availability ─── (slice tts-provider-availability)
+  | "settings.ttsProvider.unavailable"
+  | "settings.ttsProvider.fallbackNotice"
+  | "settings.ttsProvider.allUnavailable"
+  // ─── tts-status-ui ─── (slice tts-status-ui)
+  | "settings.ttsStatus.title"
+  | "settings.ttsStatus.loading"
+  | "settings.ttsStatus.reason.quota"
+  | "settings.ttsStatus.reason.noKey"
+  | "settings.ttsStatus.reason.forbidden"
+  | "settings.ttsStatus.reason.error"
+  | "settings.ttsStatus.quota.label"
+  | "settings.ttsStatus.quota.exhausted"
+  | "settings.ttsStatus.quota.used"
+  | "settings.ttsStatus.quota.limitLabel"
+  | "settings.ttsStatus.quota.overage"
+  | "settings.ttsStatus.usage.label"
+  | "settings.ttsStatus.usage.elevenlabs"
+  | "settings.ttsStatus.usage.gemini"
+  | "settings.ttsStatus.usage.cache"
+  | "settings.ttsStatus.usage.cost"
+  | "settings.ttsStatus.usage.notAvailable"
+  | "settings.ttsStatus.refresh"
+  // ─── ui-session-polish ─── (slice ui-session-polish)
+  | "session.copyId"
+  | "modal.loading.session"
+  // ─── app-title ─── (slice app-title-build-env)
+  | "appTitle.settings"
+  | "appTitle.sessions"
+  // ─── slash commands ─── (slice-slash-commands)
+  | "slash.commandsList"
+  // ─── session budget meter ─── (slice session-budget-meter)
+  | "sessionBudget.trigger"
+  | "sessionBudget.title"
+  | "sessionBudget.context.heading"
+  | "sessionBudget.context.cost"
+  | "sessionBudget.quota.heading"
+  | "sessionBudget.quota.loading"
+  | "sessionBudget.quota.unavailable"
+  | "sessionBudget.quota.used"
+  | "sessionBudget.quota.of"
+  | "sessionBudget.quota.resetsIn"
+  // ─── plan ─── (slice plan-todo-list)
+  | "plan.title"
+  | "plan.status.pending"
+  | "plan.status.in_progress"
+  | "plan.status.completed"
+  | "plan.openMarkdown"
+  | "plan.file.label"
+  // ─── projectPrompt ─── (slice project-system-prompt)
+  | "projectPrompt.label"
+  | "projectPrompt.placeholder"
+  | "projectPrompt.hint"
+  // ─── panel resize handle ─── (slice connect-panel-resize)
+  | "connect.panel.resizeHandle"
+  // ─── machine-stats ─── (slice-be-machine-stats)
+  | "connect.machine.memory"
+  | "connect.machine.cpu"
+  | "connect.machine.label"
+  // ─── session delete ─── (slice session-delete)
+  | "session.delete"
+  | "session.deleteConfirm"
+  // ─── permission ─── (slice-permission-ui-basic)
+  | "permission.title"
+  | "permission.allowOnce"
+  | "permission.allowAlways"
+  | "permission.reject"
+  | "permission.pending"
+  // ─── elicitation ─── (slice-elicitation-ui)
+  | "elicitation.accept"
+  | "elicitation.decline"
+  | "elicitation.cancel"
+  | "elicitation.required"
+  // ─── auth guidance ─── (slice auth-guidance)
+  | "authGuidance.heading"
+  | "authGuidance.envVar.setLabel"
+  | "authGuidance.envVar.linkLabel"
+  // ─── reconnect takeover ─── (slice reconnect-ws-takeover)
+  | "session.openedElsewhere"
+  // ─── reconnect-ws-takeover Commit 3 ─── (טבעת-חיבור פר-סשן, ActiveProcessesPanel)
+  | "connect.agents.connected"
+  | "connect.agents.disconnected"
+  // ─── gemini directing (קצב/טון) ─── (slice-gemini-tts-directing)
+  | "settings.geminiPace.label"
+  | "settings.geminiPace.verySlow"
+  | "settings.geminiPace.slow"
+  | "settings.geminiPace.normal"
+  | "settings.geminiPace.fast"
+  | "settings.geminiPace.veryFast"
+  | "settings.geminiTone.label"
+  | "settings.geminiTone.neutral"
+  | "settings.geminiTone.calm"
+  | "settings.geminiTone.energetic"
+  | "settings.geminiTone.formal"
+  | "settings.geminiTone.casual"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

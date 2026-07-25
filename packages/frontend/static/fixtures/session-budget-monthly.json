@@ -1,0 +1,19 @@
+{
+  "updates": [
+    { "sessionUpdate": "usage_update", "used": 25000, "size": 200000 }
+  ],
+  "mockState": {
+    "capabilities": { "usage": true },
+    "quota": {
+      "provider": "synthetic",
+      "windows": [
+        {
+          "id": "monthly",
+          "period": { "kind": "calendar", "unit": "month" },
+          "consumption": { "kind": "absolute", "used": 40, "limit": 100, "unit": "requests" },
+          "resetsAtMs": null
+        }
+      ]
+    }
+  }
+}

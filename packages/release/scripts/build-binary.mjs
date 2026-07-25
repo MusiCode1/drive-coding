@@ -2,7 +2,7 @@
 
 // packages/release/scripts/build-binary.mjs
 // Builds a self-contained binary via bun build --compile.
-//   1. Build the frontend (pnpm --filter @drive-coding/frontend-v2 build)
+//   1. Build the frontend (pnpm --filter @drive-coding/frontend build)
 //   2. Codegen fe-manifest.gen.ts  ← Glob(frontend-dist/**/*):
 //        import f0 from "<rel>" with { type:"file" }  ...
 //        export const FE: Record<string,string> = { "/…": f0, … }
@@ -53,7 +53,7 @@ const bunBin = resolveBun()
 
 // Step 1: Build frontend
 console.log("[build-binary] Step 1: building frontend…")
-execFileSync("pnpm", ["--filter", "@drive-coding/frontend-v2", "build"], {
+execFileSync("bun", ["run", "--filter", "@drive-coding/frontend", "build"], {
   cwd: repoRoot,
   stdio: "inherit",
   shell: isWindows,

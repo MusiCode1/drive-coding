@@ -6,9 +6,14 @@ import type { Catalog } from "../keys.js"
  */
 export const he: Catalog = {
   // ─── connect ─── (slice 0)
-  "connect.title": "drive-coding v2",
+  "connect.title": "Drive Coding",
   "connect.subtitle": "חבר ל-CLI agent",
   "connect.cli.label": "CLI",
+  // slice cli-availability
+  "connect.cli.loading": "בודק זמינות…",
+  "connect.cli.showAll": "לא ניתן לבדוק זמינות — מוצגים כל ה-CLIs",
+  // slice cli-availability (re-scope)
+  "connect.cli.notInstalled": "(לא מותקן)",
   "connect.cwd.label": "תיקיית עבודה",
   "connect.cwd.placeholder": "/home/user/projects/X",
   "connect.submit": "חבר",
@@ -60,6 +65,15 @@ export const he: Catalog = {
   "chat.tool.terminal": "טרמינל",
   "chat.tool.diff.added": "נוסף",
   "chat.tool.diff.removed": "הוסר",
+  // ─── subagent-bubble ─── (slice subagent-transcript-render)
+  "chat.subagent.status.pending": "ממתין",
+  "chat.subagent.status.in_progress": "בתהליך",
+  "chat.subagent.status.completed": "הושלם",
+  "chat.subagent.status.failed": "נכשל",
+  "chat.subagent.status.unknown": "לא ידוע",
+  "chat.subagent.prompt": "משימה",
+  "chat.subagent.summary": "סיכום",
+  "chat.subagent.transcript": "פעילות תת-סוכן",
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)
@@ -133,6 +147,7 @@ export const he: Catalog = {
   "settings.toggle.carMode": "מצב רכב (Play בבלוטוס = הקלטה)",
   "settings.reset": "איפוס",
   "settings.saveOpen": "שמור ופתח",
+  "settings.version": "גרסה:",
   // ─── language ─── (rtl-ltr-bidi)
   "settings.language.label": "שפת ממשק",
   "settings.language.he": "עברית",
@@ -149,6 +164,8 @@ export const he: Catalog = {
   "sidebar.sessions": "סשנים",
   "sidebar.refresh": "רענן",
   "sidebar.newSession": "סשן חדש",
+  // ─── cli-name-in-chat ─── (slice cli-name-in-chat)
+  "sidebar.runningOn": "פועל על",
   "sheet.handle": "גרור לפתיחה",
   // ─── bubble-play ─── (msr-v2)
   "bubble.play": "השמע",
@@ -181,6 +198,10 @@ export const he: Catalog = {
   "connect.agents.kill": "הרוג",
   "connect.agents.killConfirm": "בטוח?",
   "connect.agents.inUse": "פעיל בכרטיסייה אחרת",
+  // ─── reconnect-ws-takeover Commit 2 ─── (panel takeover-affordance)
+  "connect.agents.takeOver": "השתלט",
+  "connect.agents.takeOverConfirm": "פתוח במקום אחר — להשתלט?",
+  "connect.agents.noSession": "אין סשן פעיל",
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   "connect.agents.working": "עובד…",
   // ─── agent-last-message-ui ─── (slice agent-last-message-ui)
@@ -202,4 +223,161 @@ export const he: Catalog = {
   "settings.ttsProvider.label": "ספק TTS",
   "settings.ttsProvider.elevenlabs": "ElevenLabs",
   "settings.ttsProvider.gemini": "Gemini",
+  // ─── image-attach tray ─── (slice-image-paste)
+  "attach.addImage": "הוסף תמונה",
+  "attach.remove": "הסר",
+  // ─── image-paste replay (§11) — placeholder for non-text ContentBlocks ───
+  "chat.content.attachedFile": "קובץ מצורף",
+  "chat.content.unsupported": "תוכן לא-נתמך",
+  // ─── recent-projects ─── (slice connect-recent-projects)
+  "connect.recent.title": "תיקיות אחרונות",
+  "connect.recent.empty": "אין תיקיות אחרונות",
+  "connect.recent.refresh": "רענן",
+  // ─── recent-projects controls ─── (slice recent-projects-controls)
+  "connect.recent.remove": "הסר מהרשימה",
+  "connect.recent.collapse": "כווץ",
+  "connect.recent.expand": "הרחב",
+  // ─── leave-running (slice leave-running-background) ───
+  "session.leaveRunning": "צא — השאר רץ",
+  "session.closeSession": "כבה לגמרי את התהליך",
+  "session.leaveWarning.title": "הסוכן ימשיך לרוץ",
+  "session.leaveWarning.body":
+    "הריצה תיעצר ברגע שתגיע בקשת-הרשאה, כי הדפדפן הוא ה-ACP client. למנוע תקיעה: עבור למצב עקיפת-הרשאות לפני שתצא.",
+  "session.leaveWarning.confirm": "צא בכל זאת",
+  "session.leaveWarning.cancel": "ביטול",
+  "session.leaveWarning.dontShowAgain": "אל תציג הודעה זו שוב",
+  // ─── thinking-tokens ─── (slice FEAT-thinking-live)
+  "agentOptions.thinking.label": "חשיבה",
+  "agentOptions.thinking.off": "כבוי",
+  "agentOptions.thinking.low": "נמוך",
+  "agentOptions.thinking.medium": "בינוני",
+  "agentOptions.thinking.high": "גבוה",
+  // ─── gemini voice picker ─── (V4b-gemini-voice-picker)
+  // תיאורים דו-לשוניים: "<En> · <תרגום-עברי>" (לפי brief V4b §4 Commit 2)
+  "settings.geminiVoice.label": "קול Gemini",
+  "settings.geminiVoice.desc.Zephyr": "Bright · בהיר",
+  "settings.geminiVoice.desc.Puck": "Upbeat · עליז",
+  "settings.geminiVoice.desc.Charon": "Informative · אינפורמטיבי",
+  "settings.geminiVoice.desc.Kore": "Firm · תקיף",
+  "settings.geminiVoice.desc.Fenrir": "Excitable · נלהב",
+  "settings.geminiVoice.desc.Leda": "Youthful · צעיר",
+  "settings.geminiVoice.desc.Orus": "Firm · תקיף",
+  "settings.geminiVoice.desc.Aoede": "Breezy · קליל",
+  "settings.geminiVoice.desc.Callirrhoe": "Easy-going · נינוח",
+  "settings.geminiVoice.desc.Autonoe": "Bright · בהיר",
+  "settings.geminiVoice.desc.Enceladus": "Breathy · נשימתי",
+  "settings.geminiVoice.desc.Iapetus": "Clear · צלול",
+  "settings.geminiVoice.desc.Umbriel": "Easy-going · נינוח",
+  "settings.geminiVoice.desc.Algieba": "Smooth · חלק",
+  "settings.geminiVoice.desc.Despina": "Smooth · חלק",
+  "settings.geminiVoice.desc.Erinome": "Clear · צלול",
+  "settings.geminiVoice.desc.Algenib": "Gravelly · גרגרי",
+  "settings.geminiVoice.desc.Rasalgethi": "Informative · אינפורמטיבי",
+  "settings.geminiVoice.desc.Laomedeia": "Upbeat · עליז",
+  "settings.geminiVoice.desc.Achernar": "Soft · עדין",
+  "settings.geminiVoice.desc.Alnilam": "Firm · תקיף",
+  "settings.geminiVoice.desc.Schedar": "Even · מאוזן",
+  "settings.geminiVoice.desc.Gacrux": "Mature · בוגר",
+  "settings.geminiVoice.desc.Pulcherrima": "Forward · ישיר",
+  "settings.geminiVoice.desc.Achird": "Friendly · ידידותי",
+  "settings.geminiVoice.desc.Zubenelgenubi": "Casual · ספונטני",
+  "settings.geminiVoice.desc.Vindemiatrix": "Gentle · עדין",
+  "settings.geminiVoice.desc.Sadachbia": "Lively · חי",
+  "settings.geminiVoice.desc.Sadaltager": "Knowledgeable · בקיא",
+  "settings.geminiVoice.desc.Sulafat": "Warm · חם",
+  // ─── tts-provider-availability ─── (slice tts-provider-availability)
+  "settings.ttsProvider.unavailable": "ספק זה אינו זמין (חסר מפתח או מפתח לא תקף)",
+  "settings.ttsProvider.fallbackNotice": "עברנו לספק הזמין",
+  "settings.ttsProvider.allUnavailable": "אין ספק TTS זמין — בדוק מפתחות",
+  // ─── tts-status-ui ─── (slice tts-status-ui)
+  "settings.ttsStatus.title": "מצב TTS",
+  "settings.ttsStatus.loading": "טוען...",
+  "settings.ttsStatus.reason.quota": "המכסה מוצתה",
+  "settings.ttsStatus.reason.noKey": "חסר מפתח",
+  "settings.ttsStatus.reason.forbidden": "מפתח לא מורשה",
+  "settings.ttsStatus.reason.error": "שגיאת חיבור",
+  "settings.ttsStatus.quota.label": "מכסת ElevenLabs",
+  "settings.ttsStatus.quota.exhausted": "מוצה",
+  "settings.ttsStatus.quota.used": "נוצל",
+  "settings.ttsStatus.quota.limitLabel": "מכסה",
+  "settings.ttsStatus.quota.overage": "חריגה",
+  "settings.ttsStatus.usage.label": 'שימוש (סה"כ מאז ההפעלה)',
+  "settings.ttsStatus.usage.elevenlabs": "ElevenLabs",
+  "settings.ttsStatus.usage.gemini": "Gemini",
+  "settings.ttsStatus.usage.cache": "מטמון",
+  "settings.ttsStatus.usage.cost": "עלות משוערת",
+  "settings.ttsStatus.usage.notAvailable": "—",
+  "settings.ttsStatus.refresh": "רענן",
+  // ─── ui-session-polish ─── (slice ui-session-polish)
+  "session.copyId": "העתק מזהה סשן",
+  "modal.loading.session": "טוען סשן…",
+  // ─── app-title ─── (slice app-title-build-env)
+  "appTitle.settings": "הגדרות",
+  "appTitle.sessions": "סשנים",
+  // ─── slash commands ─── (slice-slash-commands)
+  "slash.commandsList": "רשימת פקודות slash",
+  // ─── session budget meter ─── (slice session-budget-meter)
+  "sessionBudget.trigger": "תקציב הסשן",
+  "sessionBudget.title": "תקציב סשן",
+  "sessionBudget.context.heading": "הקשר",
+  "sessionBudget.context.cost": "עלות",
+  "sessionBudget.quota.heading": "מכסה",
+  "sessionBudget.quota.loading": "טוען…",
+  "sessionBudget.quota.unavailable": "אין נתוני מכסה",
+  "sessionBudget.quota.used": "נוצל",
+  "sessionBudget.quota.of": "מתוך",
+  "sessionBudget.quota.resetsIn": "מתאפס",
+  // ─── plan ─── (slice plan-todo-list)
+  "plan.title": "תוכנית",
+  "plan.status.pending": "ממתין",
+  "plan.status.in_progress": "בתהליך",
+  "plan.status.completed": "הושלם",
+  "plan.openMarkdown": "פתח תוכנית",
+  "plan.file.label": "קובץ תוכנית",
+  // ─── projectPrompt ─── (slice project-system-prompt)
+  "projectPrompt.label": "פרומפט מערכת לפרויקט",
+  "projectPrompt.placeholder": "לדוגמה: תמיד ענה בקצרה, ופתח כל תשובה בעברית...",
+  "projectPrompt.hint": "מתווסף להוראות ברירת-המחדל של הסוכן. השינוי חל מהסשן הבא.",
+  // ─── panel resize handle ─── (slice connect-panel-resize)
+  "connect.panel.resizeHandle": "גרור לשינוי גובה",
+  // ─── machine-stats ─── (slice-be-machine-stats)
+  "connect.machine.memory": "זיכרון",
+  "connect.machine.cpu": "מעבד",
+  "connect.machine.label": "עומס מכונה",
+  // ─── session delete ─── (slice session-delete)
+  "session.delete": "מחק",
+  "session.deleteConfirm": "בטוח? מחיקת סשן",
+  // ─── permission ─── (slice-permission-ui-basic)
+  "permission.title": "בקשת הרשאה",
+  "permission.allowOnce": "אשר פעם",
+  "permission.allowAlways": "אשר תמיד",
+  "permission.reject": "דחה",
+  "permission.pending": "ממתין להחלטה",
+  // ─── elicitation ─── (slice-elicitation-ui)
+  "elicitation.accept": "שלח",
+  "elicitation.decline": "דחה",
+  "elicitation.cancel": "ביטול",
+  "elicitation.required": "שדה חובה",
+  // ─── auth guidance ─── (slice auth-guidance)
+  "authGuidance.heading": "איך להתחבר עם",
+  "authGuidance.envVar.setLabel": "הגדר:",
+  "authGuidance.envVar.linkLabel": "קבלת פרטי-גישה",
+  // ─── reconnect takeover ─── (slice reconnect-ws-takeover)
+  "session.openedElsewhere": "הסשן נפתח במקום אחר",
+  // ─── reconnect-ws-takeover Commit 3 ─── (טבעת-חיבור פר-סשן, ActiveProcessesPanel)
+  "connect.agents.connected": "מחובר",
+  "connect.agents.disconnected": "לא מחובר",
+  // ─── gemini directing (קצב/טון) ─── (slice-gemini-tts-directing)
+  "settings.geminiPace.label": "קצב דיבור",
+  "settings.geminiPace.verySlow": "איטי מאוד",
+  "settings.geminiPace.slow": "איטי",
+  "settings.geminiPace.normal": "רגיל",
+  "settings.geminiPace.fast": "מהיר",
+  "settings.geminiPace.veryFast": "מהיר מאוד",
+  "settings.geminiTone.label": "טון",
+  "settings.geminiTone.neutral": "ניטרלי",
+  "settings.geminiTone.calm": "רגוע",
+  "settings.geminiTone.energetic": "אנרגטי",
+  "settings.geminiTone.formal": "רשמי",
+  "settings.geminiTone.casual": "יומיומי",
 }

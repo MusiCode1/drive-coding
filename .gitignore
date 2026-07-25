@@ -37,3 +37,18 @@ docs-for-llm/
 # FE build staging dirs (atomic swap — slice-fe-build-decouple)
 packages/frontend/.build-staging/
 packages/frontend/.build-old/
+
+# Worktrees live under .worktrees/ (each is its own checkout — never track as gitlink)
+.worktrees/
+.tmp/
+
+# Local-only logs / raw wire-captures / research artifacts (never in repo).
+# Canonical censored fixtures live under the relevant package; this is raw material.
+.research/
+**/.localappdata/**
+.localappdata/
+
+# docs/ הועבר ל-docs-repo (private, משותף בין פרויקטים)
+docs/
+docs-for-llm
+@Vendor/

@@ -9,19 +9,29 @@
  * ─── redesign-3 (חיווט dropdowns) ───
  * ─── slice sessions-inline: סשנים inline (מחליף SessionsDialog) ───
  */
-import { untrack } from "svelte"
-import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
-import LogOutIcon from "@lucide/svelte/icons/log-out"
-import Volume2Icon from "@lucide/svelte/icons/volume-2"
-import VolumeXIcon from "@lucide/svelte/icons/volume-x"
-import SettingsIcon from "@lucide/svelte/icons/settings"
-import { goto } from "$app/navigation"
-import { page } from "$app/state"
-import { getI18n, getSession, getSpeaker, getResponsive, getUiShell, getSettings } from "$lib/context"
-import Select, { type SelectOption, type SelectGroup } from "$lib/components/ui/Select.svelte"
-import SessionCard from "$lib/components/modals/SessionCard.svelte"
+
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 import type { MessageKey } from "@drive-coding/core/i18n"
+import LogOutIcon from "@lucide/svelte/icons/log-out"
+import PowerIcon from "@lucide/svelte/icons/power"
+import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
+import SettingsIcon from "@lucide/svelte/icons/settings"
+import Volume2Icon from "@lucide/svelte/icons/volume-2"
+import VolumeXIcon from "@lucide/svelte/icons/volume-x"
+import { Dialog as BitsDialog } from "bits-ui"
+import { untrack } from "svelte"
+import { goto } from "$app/navigation"
+import { page } from "$app/state"
+import SessionCard from "$lib/components/modals/SessionCard.svelte"
+import Select, { type SelectGroup, type SelectOption } from "$lib/components/ui/Select.svelte"
+import {
+  getI18n,
+  getResponsive,
+  getSession,
+  getSettings,
+  getSpeaker,
+  getUiShell,
+} from "$lib/context"
 
 const t = getI18n().t
 const session = getSession()
@@ -39,6 +49,33 @@ function onDisconnect() {
   goto("/")
 }
 
+// ─── slice session-delete: מחיקת הסשן הפעיל מנווטת החוצה (עקבי עם onDisconnect) ───
+async function onDeleteSession(id: string) {
+  const wasActive = await session.deleteSession(id)
+  if (wasActive) goto("/") // אחרת נשארים על /chat עם עמוד ריק (calev NO-GO fix, DoD #7)
+}
+
+// ─── slice leave-running-background: יציאה בלי להרוג ───
+let leaveConfirmOpen = $state(false)
+let dontShowAgain = $state(false)
+
+function onLeaveRunning() {
+  if (session.bypassActive || settings.suppressLeaveWarning || session.turnState === "idle") {
+    doLeaveRunning() // bypass / suppressed / אין תור פעיל → צא ישר
+  } else {
+    leaveConfirmOpen = true // לא-bypass + תור פעיל → אזהר קודם
+  }
+}
+
+function doLeaveRunning() {
+  if (dontShowAgain) {
+    settings.setSuppressLeaveWarning(true)
+  }
+  leaveConfirmOpen = false
+  session.leaveRunning()
+  goto("/")
+}
+
 // ⚙ toggle (מובייל): ב-/settings → חזרה ל-/chat, אחרת → פתיחה + סגירת ה-sheet.
 function toggleSettings() {
   if (onSettings) {
@@ -48,6 +85,31 @@ function toggleSettings() {
     goto("/settings")
   }
 }
+
+// ─── slice FEAT-thinking-live: thinking tokens control ───
+
+/** ערכי thinking: off=null, low=4000, medium=8000, high=16000 */
+const THINKING_VALUES: Record<string, number | null> = {
+  off: null,
+  low: 4000,
+  medium: 8000,
+  high: 16000,
+}
+
+let thinkingLevel = $state<string>("off")
+
+async function onThinkingChange(v: string) {
+  thinkingLevel = v
+  const n = THINKING_VALUES[v] ?? null
+  await session.setThinkingTokens(n)
+}
+
+const thinkingOptions = $derived([
+  { value: "off", label: t("agentOptions.thinking.off") },
+  { value: "low", label: t("agentOptions.thinking.low") },
+  { value: "medium", label: t("agentOptions.thinking.medium") },
+  { value: "high", label: t("agentOptions.thinking.high") },
+])
 
 // ─── helper — flatten select options (groups → flat list) ───
 type SelectOpt = { value: string; name: string; description?: string | null }
@@ -60,7 +122,8 @@ function flattenSelectOptions(option: SessionConfigOption): SelectOpt[] {
 
 const toSelectOptions = (
   items: { value: string; name: string; description?: string | null }[],
-): SelectOption[] => items.map((o) => ({ value: o.value, label: o.name, description: o.description }))
+): SelectOption[] =>
+  items.map((o) => ({ value: o.value, label: o.name, description: o.description }))
 
 // מודלים: אם ה-modelId מכיל "/" (למשל "anthropic/claude-..") → קבץ לפי החלק
 // שלפני ה-slash (הספק). אם אף אחד לא מכיל "/" → רשימה שטוחה (בלי קיבוץ).
@@ -83,7 +146,7 @@ const modelGroups = $derived.by<SelectGroup[] | undefined>(() => {
 
 /** configOptions שאינם model/mode */
 const extraOptions = $derived(
-  session.configOptions.filter((o) => o.category !== "model" && o.category !== "mode")
+  session.configOptions.filter((o) => o.category !== "model" && o.category !== "mode"),
 )
 
 /**
@@ -120,10 +183,10 @@ const modeLabel = $derived.by(() => {
 /** האם יש אפשרויות סוכן/מודל להציג */
 const hasAgentOptions = $derived(
   (session.models?.availableModels?.length ?? 0) > 0 ||
-  session.configOptions.some((o) => o.category === "model") ||
-  (session.modes?.availableModes?.length ?? 0) > 0 ||
-  session.configOptions.some((o) => o.category === "mode") ||
-  extraOptions.length > 0
+    session.configOptions.some((o) => o.category === "model") ||
+    (session.modes?.availableModes?.length ?? 0) > 0 ||
+    session.configOptions.some((o) => o.category === "mode") ||
+    extraOptions.length > 0,
 )
 
 // ─── event handlers ───
@@ -143,7 +206,7 @@ async function selectSession(info: { sessionId: string; cwd: string; title?: str
     sessionId: info.sessionId,
     cwd: info.cwd,
     cliKind: settings.cliKind,
-    title: info.title ?? "",   // ← slice session-title: העבר title ל-switchSession
+    title: info.title ?? "", // ← slice session-title: העבר title ל-switchSession
   })
   uiShell.closeSheet()
   await goto("/chat")
@@ -173,16 +236,27 @@ $effect(() => {
 })
 </script>
 
-<!-- שורת פעולות עליונה: נתק · השתק · ⚙ — בראש בכל המצבים (redesign-fix) -->
-<!-- סדר DOM: disconnect ראשון = ימני ביותר ב-RTL -->
+<!-- שורת פעולות עליונה: נתק · השאר-רץ · השתק · ⚙ — בראש בכל המצבים (redesign-fix) -->
+<!-- סדר DOM ב-RTL: disconnect=ימני-קיצוני, leave-running משמאלו, audio, settings -->
 <div class="flex items-center gap-2 shrink-0">
-  <!-- disconnect -->
+  <!-- disconnect (הורג) — אדום, ימני-קיצוני ב-RTL -->
   <button
     class="flex-1 flex items-center justify-center gap-2 px-2.5 py-2 rounded-lg text-[13px] border"
     style="border-color:var(--border); color:var(--recording)"
     onclick={onDisconnect}
-    aria-label={t("header.disconnect")}
-    title={t("header.disconnect")}
+    aria-label={t("session.closeSession")}
+    title={t("session.closeSession")}
+  >
+    <PowerIcon size={16} strokeWidth={1.75} />
+  </button>
+
+  <!-- leave-running (לא הורג) — ניטרלי, icon-only -->
+  <button
+    class="flex-1 flex items-center justify-center gap-2 px-2.5 py-2 rounded-lg text-[13px] border"
+    style="border-color:var(--border); color:var(--fg-dim)"
+    onclick={onLeaveRunning}
+    aria-label={t("session.leaveRunning")}
+    title={t("session.leaveRunning")}
   >
     <LogOutIcon size={16} strokeWidth={1.75} />
   </button>
@@ -215,9 +289,58 @@ $effect(() => {
   </button>
 </div>
 
+<!-- ─── modal אזהרה: leaveRunning כשלא-bypass ─── -->
+<BitsDialog.Root bind:open={leaveConfirmOpen}>
+  <BitsDialog.Portal>
+    <BitsDialog.Overlay
+      class="fixed inset-0 z-50 bg-black/60"
+    />
+    <BitsDialog.Content
+      class="fixed left-1/2 top-1/2 z-50 w-[90vw] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl p-5 shadow-xl flex flex-col gap-4"
+      style="background:var(--surface); border:1px solid var(--border)"
+    >
+      <BitsDialog.Title class="text-base font-semibold" style="color:var(--fg)">
+        {t("session.leaveWarning.title")}
+      </BitsDialog.Title>
+      <p class="text-[13px] leading-relaxed" style="color:var(--fg-dim)">
+        {t("session.leaveWarning.body")}
+      </p>
+      <label class="flex items-center gap-2 text-[13px]" style="color:var(--fg-dim)">
+        <input type="checkbox" class="cursor-pointer" bind:checked={dontShowAgain} />
+        {t("session.leaveWarning.dontShowAgain")}
+      </label>
+      <div class="flex gap-2 justify-end">
+        <BitsDialog.Close
+          class="px-3 py-2 rounded-lg text-[13px] border"
+          style="border-color:var(--border); color:var(--fg-dim)"
+        >
+          {t("session.leaveWarning.cancel")}
+        </BitsDialog.Close>
+        <button
+          class="px-3 py-2 rounded-lg text-[13px]"
+          style="background:var(--accent); color:var(--bg)"
+          onclick={doLeaveRunning}
+        >
+          {t("session.leaveWarning.confirm")}
+        </button>
+      </div>
+    </BitsDialog.Content>
+  </BitsDialog.Portal>
+</BitsDialog.Root>
+
 <!-- אזור גלילה מאוחד: אפשרויות סוכן + סשנים. הגלילה מתחילה מכאן (מסקשן אפשרויות סוכן),
      כך שכשהגובה קטן ראש הרשימה לא נחתך אלא נגלל. שורת הפעולות מעל נשארת קבועה (shrink-0). -->
 <div class="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto chat-scroll -mx-1 px-1">
+
+<!-- ─── cli-name-in-chat: שם ה-CLI מעל אפשרויות סוכן ─── -->
+{#if session.cliKind}
+  <div class="flex items-center gap-2 px-1 shrink-0 text-[11px]" style="color:var(--fg-dim)">
+    <span class="uppercase tracking-wider font-semibold">{t("sidebar.runningOn")}</span>
+    <span class="px-2 py-0.5 rounded-md font-mono font-semibold"
+          style="background:var(--bg-card); border:1px solid var(--border); color:var(--fg)"
+          dir="ltr">{session.cliKind}</span>
+  </div>
+{/if}
 
 <!-- אפשרויות סוכן — מחווט מ-redesign-3 -->
 <div class="flex flex-col gap-2.5 shrink-0">
@@ -288,6 +411,20 @@ $effect(() => {
       {/if}
     </div>
 
+    <!-- thinking-tokens — gated על capabilities -->
+    {#if session.supports.thinkingTokens}
+    <label class="flex flex-col gap-1">
+      <span class="text-[11px] px-1" style="color:var(--fg-dim)">{t("agentOptions.thinking.label")}</span>
+      <Select
+        value={thinkingLevel}
+        options={thinkingOptions}
+        title={t("agentOptions.thinking.label")}
+        ariaLabel={t("agentOptions.thinking.label")}
+        onchange={onThinkingChange}
+      />
+    </label>
+    {/if}
+
     <!-- שאר configOptions (לא model/mode) -->
     {#each extraOptions as opt (opt.id)}
       {#if opt.type === "select"}
@@ -322,6 +459,25 @@ $effect(() => {
     <div class="text-[12px] opacity-40 px-1">{modeLabel}: —</div>
   {/if}
 </div>
+
+<!-- ─── פרומפט מערכת פר-פרויקט ─── (slice project-system-prompt) -->
+{#if session.cwd}
+<div class="flex flex-col gap-1.5 shrink-0">
+  <div class="text-[11px] font-semibold uppercase tracking-wider px-1" style="color:var(--fg-dim)">
+    {t("projectPrompt.label")}
+  </div>
+  <textarea
+    class="w-full rounded-lg px-2.5 py-2 text-[13px] resize-y outline-none border"
+    style="background:var(--bg-card); border-color:var(--border); color:var(--fg); min-height:4.5em"
+    dir="auto"
+    rows={3}
+    placeholder={t("projectPrompt.placeholder")}
+    value={settings.getProjectPrompt(session.cwd)}
+    onchange={(e) => settings.setProjectPrompt(session.cwd ?? "", (e.target as HTMLTextAreaElement).value)}
+  ></textarea>
+  <div class="text-[11px] px-1" style="color:var(--fg-dim)">{t("projectPrompt.hint")}</div>
+</div>
+{/if}
 
 <!-- סשנים — inline (slice sessions-inline: מחליף SessionsDialog) -->
 <div class="flex flex-col gap-2 shrink-0">
@@ -359,7 +515,12 @@ $effect(() => {
       <div class="text-[12px] px-1" style="color:var(--recording)">{t("modal.sessions.error")}: {session.sessionsError}</div>
     {:else}
       {#each session.sessions as s (s.sessionId)}
-        <SessionCard session={s} isActive={false} onSelect={() => selectSession(s)} />
+        <SessionCard
+          session={s}
+          isActive={false}
+          onSelect={() => selectSession(s)}
+          onDelete={session.supportsSessionDelete ? onDeleteSession : undefined}
+        />
       {/each}
     {/if}
   </div>

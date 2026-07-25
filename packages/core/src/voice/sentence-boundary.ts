@@ -36,6 +36,11 @@ export function splitIntoSentences(buffer: string, opts: SplitOptions = {}): Spl
   const maxChars = opts.maxChars ?? 200
   const locale = opts.locale ?? "he"
 
+  // TTS-only: תווי-כיווניות נחוצים לתצוגה (הבועות מרונדרות מ-bubble.segments המקוריים),
+  // אך משבשים את TERMINATOR_RE ומנפחים את ספירת-maxChars. הסרתם כאן בטוחה — הטקסט זורם רק ל-TTS.
+  // טווח: LRM/RLM (200E/200F) + embeddings (202A-202E) + isolates (2066-2069). לא ניקוד.
+  buffer = buffer.replace(/[‎‏‪-‮⁦-⁩]/g, "")
+
   if (buffer.length === 0) return { sentences: [], remaining: "" }
 
   const sentenceSegmenter = new Intl.Segmenter(locale, { granularity: "sentence" })
@@ -62,18 +67,21 @@ export function splitIntoSentences(buffer: string, opts: SplitOptions = {}): Spl
       const isLastSeg = sj === segs.length - 1
       const seg = segs[sj] ?? ""
 
-      if (isLastPara && isLastSeg && !isMulti) {
-        // חוצץ של פסקה בודדת: מחייב את המקטע האחרון רק אם יש לו סמן סיום.
-        // אחרת מחביא אותו בתור `remaining`.
+      if (isLastPara && isLastSeg) {
+        // הפסקה האחרונה עדיין בזרימה (אין \n\n אחריה) — מטפלים בה כמו פסקה-בודדת:
+        // מחייבים את המקטע האחרון רק אם יש לו סמן סיום.
+        // אחרת מוחזק כ-`remaining`, מה שמונע חיתוך-אמצע-מילה.
+        // פסקאות שאינן-אחרונות (בוגרות ע"י \n\n) מחויבות במלואן;
+        // הפסקה האחרונה עוד בזרימה → זנבה הלא-מסתיים מוחזק כ-remaining
+        // (מונע חיתוך-אמצע-מילה).
         if (TERMINATOR_RE.test(seg)) {
           completed.push(seg)
         } else {
           remaining = seg
         }
       } else {
-        // חוצץ מרובה-פסקאות מחייב את הכל (שבירת פסקה היא
-        // אות חזק של "אישור המשתמש"), וגם מקטעים שאינם-אחרונים של הפסקה
-        // האחרונה מחויבים באופן דומה.
+        // מקטעים שאינם-אחרונים של הפסקה האחרונה, או כל מקטע בפסקאות בוגרות
+        // (שיש \n\n אחריהן) — מחויבים במלואם.
         completed.push(seg)
       }
     }

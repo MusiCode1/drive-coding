@@ -25,22 +25,43 @@ export type CliSpec = {
   readonly unsetEnv?: readonly string[]
   /** משתני-סביבה להוספה/דריסה ב-child לפני spawn. */
   readonly setEnv?: Readonly<Record<string, string>>
+  /**
+   * שם משתנה-סביבה שדורס את ה-bin (למשל OPENCODE_BIN — D14, Proxmox).
+   * נצרך ע"י detectAvailableClis (slice cli-availability) כדי שגילוי הזמינות
+   * יכבד את אותו סדר-עדיפויות כמו getCliCommand.
+   */
+  readonly envVar?: string
+  /**
+   * הבינארי לבדיקת-זמינות (detectAvailableClis, slice cli-availability) כשהוא שונה
+   * מ-`bin` (ה-spawn-bin). claude/codex רצים in-process אבל ה-spawn-bin שלהם `npx`
+   * (legacy) — detectBin מפריד את בדיקת-הזמינות מבדיקת-ה-npx. ספק ללא detectBin
+   * משתמש ב-bin (spawned CLIs, ללא שינוי).
+   */
+  readonly detectBin?: string
 }
 
 export const CLI_SPECS = {
-  opencode: { bin: "opencode", args: ["acp"], supportsModelFlag: false },
+  opencode: { bin: "opencode", args: ["acp"], supportsModelFlag: false, envVar: "OPENCODE_BIN" },
   claude: {
     bin: "npx",
     args: ["-y", "@agentclientprotocol/claude-agent-acp@latest"],
     supportsModelFlag: true,
+    detectBin: "claude",
   },
   gemini: { bin: "gemini", args: ["--acp"], supportsModelFlag: true },
   codex: {
     bin: "npx",
     args: ["-y", "@zed-industries/codex-acp@latest"],
     supportsModelFlag: true,
+    detectBin: "codex",
   },
   qoder: { bin: "qodercli", args: ["--acp"], supportsModelFlag: true },
+  cursor: { bin: "agent", args: ["acp"], supportsModelFlag: false },
+  grok: {
+    bin: "grok",
+    args: ["--no-auto-update", "agent", "stdio"],
+    supportsModelFlag: false, // חובה false — ר' טבלת argv ב-docs/plans/slice-cursor-acp.md §-1
+  },
 } as const satisfies Record<string, CliSpec>
 
 // רשימת השמות נגזרת ממפתחות ה-specs — אין כפילות.
@@ -74,6 +95,9 @@ export const Agent = type({
   "crashReason?": "string",
   // נעיצה (slice active-agents): נשמר לתאימות; ה-reaper הוסר — כרגע ללא אפקט (no-op). ברירת מחדל false.
   "persistent?": "boolean",
+  // כותרת-הסשן (slice session-title-in-process-list): נדחפת ע"י ה-client שפתח את הסשן
+  // (מקור: session_info_update ACP). runtime-only — נאבד ב-restart. null = ניקוי מכוון.
+  "title?": "string | null",
 })
 export type Agent = typeof Agent.infer
 
@@ -101,6 +125,8 @@ export const AgentPublic = type({
   // slice agent-last-message-at: epoch-ms של הפלט האחרון שהסוכן שלח (כל sessionUpdate).
   // שים לב: epoch-ms (number), בשונה מ-createdAt שהוא ISO string. runtime-only — נאבד ב-restart.
   "lastMessageAt?": "number | null",
+  // כותרת-הסשן (slice session-title-in-process-list): נדחפת ע"י ה-client שפתח את הסשן. runtime-only.
+  "title?": "string | null",
 })
 export type AgentPublic = typeof AgentPublic.infer
 
@@ -111,6 +137,9 @@ export const CreateAgentInput = type({
   "modelOverride?": "string | null",
   // Slice 8a: טעינת session ACP קיים דרך session/load במקום newSession
   "existingSessionId?": "string",
+  // slice project-system-prompt: פרומפט-מערכת פר-פרויקט, מתווסף (append) להוראות ברירת-המחדל.
+  // גנרי — הצורה הספציפית-לספק נכתבת רק בקובץ-הספק (provider/connection).
+  "systemPrompt?": "string | null",
 })
 export type CreateAgentInput = typeof CreateAgentInput.infer
 
@@ -138,6 +167,9 @@ export function toAgentPublic(agent: Agent): AgentPublic {
   }
   if (agent.persistent !== undefined) {
     pub.persistent = agent.persistent
+  }
+  if (agent.title !== undefined) {
+    pub.title = agent.title
   }
   return pub
 }

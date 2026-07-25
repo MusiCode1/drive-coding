@@ -21,6 +21,7 @@ import type { Settings } from "./settings.svelte"
 import type { Bubble } from "$lib/types/bubble"
 import { playUserRecording } from "$lib/adapters/voice/play-bubble"
 import { resolveTts } from "$lib/adapters/voice/tts-resolve"
+import { ttsCapabilities } from "./capabilities.svelte"
 import { AudioStream } from "$lib/engines/audio-stream"
 import { PcmAudioStream } from "$lib/engines/pcm-audio-stream"
 import { RoutingAudioSink } from "$lib/engines/routing-audio-sink"
@@ -93,13 +94,31 @@ export class BubblePlayer {
         cleanup()
         return
       }
+      // V4b: העברת geminiVoice לresolveTts
       const { provider, voiceId, modelId } = resolveTts(
         this.#settings.ttsProvider,
         this.#settings.voiceId,
+        this.#settings.geminiVoice,
       )
+      // Commit 4 capability-gate: אל תנסה synthesize לספק לא-זמין.
+      // undefined caps → optimistic (true) → ממשיך. available===false → דלג.
+      if (!ttsCapabilities.isAvailable(this.#settings.ttsProvider)) {
+        cleanup()
+        console.warn("[BubblePlayer] TTS provider unavailable, skipping bubble", {
+          provider: this.#settings.ttsProvider,
+          bubbleId,
+        })
+        return
+      }
       this.#segId = bubbleId
       const run = async () => {
-        const stream = await provider.synthesize({ text, voiceId, modelId, signal: abortCtrl.signal })
+        const stream = await provider.synthesize({
+          text,
+          voiceId,
+          modelId,
+          signal: abortCtrl.signal,
+          directing: { pace: this.#settings.geminiPace, tone: this.#settings.geminiTone },
+        })
         await this.#sink.prepareSegment(bubbleId, stream, abortCtrl, { format: provider.format })
         await this.#sink.play(bubbleId)
       }

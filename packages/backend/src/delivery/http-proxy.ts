@@ -2,6 +2,7 @@
  * http-proxy.ts — פרוקסי HTTP שקוף עבור Google + ElevenLabs.
  *
  * Slice 10 Phase 1. עודכן ב-Slice 24 (client-keyed proxy cache).
+ * עודכן ב-Slice tts-usage-metering (usage metering taps).
  *
  * נתיבים (Routes):
  *   /proxy/google/*      → https://generativelanguage.googleapis.com/*
@@ -16,6 +17,9 @@
  *   4. עבור בקשות הניתנות לשמירה במטמון: בודק מטמון קודם; בחוסר (miss), מפצל את
  *      תגובת ה-body למטמון ברקע תוך כדי הזרמה ל-FE.
  *   5. עבור בקשות שלא נשמרות במטמון: העברה שקופה.
+ *   6. Slice tts-usage-metering: שני taps נפרדים לספירת שימוש:
+ *      - ElevenLabs cacheable: cache-hit (cost=0) + cache-miss (chars מ-request body)
+ *      - Gemini uncacheable: tee חדש על transparent-forward → extractGeminiUsage מ-response SSE
  *
  * שילוב OneCLI: כשהשרת רץ דרך `onecli run --agent voice-acp`,
  * קריאות ה-fetch היוצאות עוברות דרך HTTPS_PROXY של OneCLI שמחליף את
@@ -24,20 +28,26 @@
 
 import * as path from "node:path"
 import { createLogger } from "@drive-coding/core/log"
+import { extractElevenLabsChars } from "@drive-coding/core/usage/extract"
+import { createGeminiUsageAccumulator } from "@drive-coding/core/usage/gemini-usage-accumulator"
+import { elevenLabsCostUsd, geminiCostUsd } from "@drive-coding/core/usage/pricing"
 import type { Hono } from "hono"
+import type { UsageStore } from "../usage/usage-store.js"
+import { boundedCollector } from "./bounded-collect.js"
+import type { MemoryGuard } from "./memory-guard.js"
+import { resolveProviderAuth } from "./proxy-auth.js"
 import {
   computeCacheKey,
   createProxyCache,
   isCacheableRequest,
   sanitizeCacheKey,
 } from "./proxy-cache.js"
-import { resolveProviderAuth } from "./proxy-auth.js"
 
 const log = createLogger("backend.proxy")
 
 // ─── מיפוי ספקים ─────────────────────────────────────────────────────────────
 
-const PROXY_HOSTS: Record<string, string> = {
+export const PROXY_HOSTS: Record<string, string> = {
   google: "https://generativelanguage.googleapis.com",
   elevenlabs: "https://api.elevenlabs.io",
 }
@@ -56,11 +66,23 @@ function getCache(cacheBaseDir: string) {
 
 // ─── רישום ─────────────────────────────────────────────────────────────
 
-export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {}): void {
+export function registerProxyHttp(
+  app: Hono,
+  opts: { cacheBaseDir?: string; usageStore?: UsageStore; memoryGuard?: MemoryGuard } = {},
+): void {
   const cacheBaseDir = opts.cacheBaseDir ?? path.resolve("data/cache/proxy")
   const proxyCache = getCache(cacheBaseDir)
+  // usageStore is optional — no-op when absent (existing tests unaffected)
+  const usageStore = opts.usageStore
+  const { memoryGuard } = opts
 
   app.all("/proxy/:provider/*", async (c) => {
+    // Defense-in-depth: if RSS exceeds budget, shed load rather than OOM.
+    // The TransformStream approach (Commits 1+2) is the primary fix; this is a watchdog.
+    if (memoryGuard?.overBudget()) {
+      log.warn({}, "proxy: memory over budget, returning 503")
+      return c.json({ error: "server memory pressure, retry" }, 503)
+    }
     const provider = c.req.param("provider")
     const upstreamBase = PROXY_HOSTS[provider]
     if (!upstreamBase) {
@@ -106,6 +128,13 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
       const cached = await proxyCache.get(cacheKey)
       if (cached) {
         log.info({ provider, path: pathSuffix }, "proxy cache hit")
+
+        // Usage tap: ElevenLabs cache-hit — request++ / cacheHits++ / cost=$0
+        // Gemini is never cacheable (uncacheable path), so this branch is ElevenLabs only.
+        if (usageStore && provider === "elevenlabs") {
+          usageStore.record({ ts: Date.now(), provider: "elevenlabs", cached: true, costUsd: 0 })
+        }
+
         return new Response(cached.body, {
           status: 200,
           headers: {
@@ -124,10 +153,7 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
     if (auth) headers.set(auth.name, auth.value)
 
     // ── העברה ל-upstream ──────────────────────────────────────────────────
-    log.info(
-      { provider, path: pathSuffix, cacheable: cacheKey !== null },
-      "proxy → upstream",
-    )
+    log.info({ provider, path: pathSuffix, cacheable: cacheKey !== null }, "proxy → upstream")
 
     let res: Response
     try {
@@ -147,10 +173,7 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
     // אבל ה-FE רואה 401/400/500 מ-elevenlabs/google והשרת היה
     // שקט עד עכשיו. מבצע לוג כדי שבעיות הרשאות / מכסה יהיו גלויות.
     if (!res.ok) {
-      log.warn(
-        { provider, path: pathSuffix, status: res.status },
-        "proxy upstream non-2xx",
-      )
+      log.warn({ provider, path: pathSuffix, status: res.status }, "proxy upstream non-2xx")
     }
 
     // ── הרכבת headers לתגובה ────────────────────────────────────────────────
@@ -163,30 +186,132 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
     sanitizedHeaders.delete("content-encoding")
     sanitizedHeaders.delete("content-length")
 
-    // ── פיצול למטמון בהצלחה ──────────────────────────────────────────────
+    // ── Cache-miss path: bounded TransformStream collector ───────────────────
+    // Replaces tee+cacheStreamInBackground: tee() had no backpressure → OOM risk
+    // when audio was larger than RAM budget.
+    //
+    // New approach: TransformStream collects chunks up to PROXY_CACHE_MAX_ENTRY_BYTES (8MB).
+    // Above the cap: truncated=true → skip cache write (audio too large to cache).
+    // The client stream is always fully served regardless of cap.
+    //
+    // Slice 24: פענח meta מהלקוח (אם נשלח)
     if (cacheKey && res.ok && res.body) {
-      const [toClient, toCache] = res.body.tee()
       const contentType = sanitizedHeaders.get("content-type") ?? "application/octet-stream"
 
-      // Slice 24: פענח meta מהלקוח (אם נשלח)
       let meta: Record<string, unknown> | undefined
       if (clientMetaRaw) {
         try {
           meta = JSON.parse(clientMetaRaw) as Record<string, unknown>
           // שמור את ה-key הקריא ב-meta לצורך מחיקה סלקטיבית עתידית
-          meta["_clientKey"] = clientKey
+          meta._clientKey = clientKey
         } catch {
-          // meta לא תקין — התעלם
+          // meta invalid — ignore
         }
       }
 
-      // שמירה במטמון ברקע — אל תמתין
-      cacheStreamInBackground(proxyCache, cacheKey, toCache, contentType, meta).catch((e) => {
-        log.warn({ err: e, cacheKey }, "background cache write failed")
+      const collector = boundedCollector()
+      const capturedProxyCache = proxyCache
+      const capturedCacheKey = cacheKey
+      const capturedMeta = meta
+
+      const cacheTap = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          try {
+            collector.push(chunk)
+          } catch {
+            // fail-safe: tap errors never break the client stream
+          }
+          controller.enqueue(chunk)
+        },
+        flush() {
+          const { bytes, truncated } = collector.done()
+          if (truncated) {
+            log.debug(
+              { cacheKey: capturedCacheKey },
+              "cache tap: entry exceeded cap, skipping write",
+            )
+            return
+          }
+          // Write to cache in the background — flush() itself must be synchronous
+          capturedProxyCache
+            .set(capturedCacheKey, {
+              body: bytes,
+              headers: { contentType },
+              meta: capturedMeta,
+            })
+            .catch((e) => {
+              log.warn({ err: e, cacheKey: capturedCacheKey }, "background cache write failed")
+            })
+        },
       })
 
+      // Usage tap: ElevenLabs cache-miss — chars from request body, cost calculated
+      // This branch only runs for cacheable requests (ElevenLabs TTS stream, Gemini generateContent).
+      // Gemini streamGenerateContent is NOT cacheable → handled below in transparent-forward.
+      if (usageStore && provider === "elevenlabs" && body) {
+        const chars = extractElevenLabsChars(body)
+        const costUsd = elevenLabsCostUsd(chars)
+        usageStore.record({
+          ts: Date.now(),
+          provider: "elevenlabs",
+          cached: false,
+          chars,
+          costUsd,
+        })
+      }
+
       sanitizedHeaders.set("x-cache", "miss")
-      return new Response(toClient, {
+      return new Response(res.body.pipeThrough(cacheTap), {
+        status: res.status,
+        headers: sanitizedHeaders,
+      })
+    }
+
+    // ── Gemini streamGenerateContent: TransformStream peek for usage metering ──
+    // Gemini TTS (:streamGenerateContent?alt=sse) is not cacheable — arrives here.
+    // Replaces tee+readStreamInBackground: TransformStream is client-paced (no buffering
+    // of unread branch). The accumulator extracts usageMetadata inline on each chunk;
+    // flush() records usage after the last chunk. Zero audio retention.
+    //
+    // Note: flush() is NOT called on client abort — usage may not be recorded for
+    // cancelled requests. This is acceptable (fail-safe: miss a metric vs crash).
+    if (
+      usageStore &&
+      provider === "google" &&
+      pathSuffix.includes(":streamGenerateContent") &&
+      res.ok &&
+      res.body
+    ) {
+      const acc = createGeminiUsageAccumulator()
+      const capturedUsageStore = usageStore
+      const tap = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          try {
+            acc.push(chunk)
+          } catch {
+            // tap fail-safe: never break the client stream
+          }
+          controller.enqueue(chunk)
+        },
+        flush() {
+          try {
+            const u = acc.result()
+            const costUsd = geminiCostUsd(u.inputTokens, u.audioTokens)
+            capturedUsageStore.record({
+              ts: Date.now(),
+              provider: "google",
+              cached: false,
+              inputTokens: u.inputTokens,
+              audioTokens: u.audioTokens,
+              costUsd,
+            })
+          } catch {
+            // metering is non-critical — never break on record failure
+          }
+        },
+      })
+
+      return new Response(res.body.pipeThrough(tap), {
         status: res.status,
         headers: sanitizedHeaders,
       })
@@ -198,37 +323,4 @@ export function registerProxyHttp(app: Hono, opts: { cacheBaseDir?: string } = {
       headers: sanitizedHeaders,
     })
   })
-}
-
-// ─── כתיבה למטמון ברקע ───────────────────────────────────────────────────
-
-async function cacheStreamInBackground(
-  cache: ReturnType<typeof createProxyCache>,
-  key: string,
-  stream: ReadableStream<Uint8Array>,
-  contentType: string,
-  meta?: Record<string, unknown>,
-): Promise<void> {
-  const chunks: Uint8Array[] = []
-  const reader = stream.getReader()
-  try {
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
-      if (value) chunks.push(value)
-    }
-
-    // מזג את כל ה-chunks ל-Uint8Array אחד
-    const totalLength = chunks.reduce((s, c) => s + c.length, 0)
-    const merged = new Uint8Array(totalLength)
-    let offset = 0
-    for (const chunk of chunks) {
-      merged.set(chunk, offset)
-      offset += chunk.length
-    }
-
-    await cache.set(key, { body: merged, headers: { contentType }, meta })
-  } catch {
-    // תגובה חלקית — דלג על המטמון, אל תעשה כלום
-  }
 }

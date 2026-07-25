@@ -22,7 +22,9 @@ links to).
 - SvelteKit + adapter-static (frontend)
 - ArkType (schemas), neverthrow (Result)
 - Vitest (tests), Biome (lint+format)
-- pnpm workspaces
+- bun workspaces (**bun-only since 2026-07-19** — the old `pnpm` choice was forced by a
+  vite plugin that didn't support bun at the time; that constraint has since lifted and
+  the vite/sveltekit build is verified under bun. `pnpm-lock.yaml` removed.)
 
 ## Structure
 
@@ -48,18 +50,43 @@ The current slice roadmap is `packages/frontend/docs/slices.md`.
 - No `any` — use `unknown` + ArkType to refine.
 - No deep `null` — `T | undefined` or Option pattern.
 
+## Versioning — מספור גרסאות (טקס מיזוג)
+
+> ה-bump קורה **בכל מיזוג ל-dev** (לא בכל commit) — חלק מטקס-המיזוג של מרדכי, אחרי calev GO + אישור משתמשת.
+
+**מודל הגרסאות:**
+- **`package.json` (root) = המספר הראשי** — הגרסה המוצגת ב-FE (`v{semver} ({git SHA})` בהגדרות). מקור-אמת יחיד לתצוגה.
+- **`packages/release` = זהה ל-root תמיד** — זו החבילה המפורסמת ל-npm (`drive-coding`); מסונכרנת ל-root בכל bump.
+- **`packages/{backend,core,frontend}` = גרסאות עצמאיות** — לכל אחת מונה משלה; עולה **רק כשהחבילה נגעה** במיזוג.
+
+**בכל מיזוג, מרדכי מריץ** (אחרי ה-merge, לפני push):
+```bash
+# <level> לפי אופי ה-PR: patch (fix) · minor (feature) · major (breaking)
+# [pkg...] = שמות החבילות תחת packages/ שנגעו במיזוג (backend/core/frontend)
+node scripts/bump-version.mjs <level> [pkg...]
+git commit -am "chore(release): vX.Y.Z"
+git push origin dev
+```
+- ה-script מעלה את **root** ב-`<level>`, **מסנכרן `packages/release`** = root, **ומעלה כל `pkg` שנמסר** ב-`<level>`.
+- רמת ה-bump: bug→`patch` · feature backward-compatible→`minor` · breaking (API/חוזה/התנהגות)→`major`.
+- (`scripts/bump-version.mjs` נוצר ב-slice `cache-version`. עד שיוטמע — bump ידני באותו עיקרון.)
+
 ## Commands
 
 ```bash
-pnpm install
-pnpm dev              # all packages
-pnpm test             # all tests
-pnpm typecheck
-pnpm lint             # Biome
-pnpm lint:i18n        # scripts/lint-no-hebrew-in-code.sh — blocks Hebrew in code
-pnpm format
-pnpm hooks:install    # one-time: set core.hooksPath=.githooks (runs pre-commit lint)
+bun install
+bun run dev           # all packages
+bun run test          # all tests
+bun run typecheck
+bun run lint          # Biome
+bun run lint:i18n     # scripts/lint-no-hebrew-in-code.sh — blocks Hebrew in code
+bun run format
+bun run hooks:install # one-time: set core.hooksPath=.githooks (runs pre-commit lint)
 ```
+
+> **Per-package commands** stay PM-agnostic via `node scripts/pm.mjs run-filter <pkg> <script>`
+> (it detects bun from the user-agent). Scattered `pnpm --filter …` mentions elsewhere in the
+> docs are legacy; prefer `bun run --filter` / `pm.mjs`. Full docs sweep tracked as follow-up.
 
 ## Running & serving locally
 
@@ -70,6 +97,41 @@ pnpm hooks:install    # one-time: set core.hooksPath=.githooks (runs pre-commit 
 For the full build/serve flow (dev vs. production-like single-origin via
 `FE_STATIC_DIR`), HTTPS tunneling, and Windows blockers/workarounds (onecli/bun,
 opencode → use CLI=claude), see [`docs/running-locally.md`](docs/running-locally.md).
+
+### Preview rules — showing the user a build to verify
+
+> **Preview is a hard pre-merge gate.** מרדכי **never** merges anything before the
+> **user has seen and OK'd a live preview** with their own eyes. calev GO (especially
+> a static-only GO) is **not** a substitute — a green report never replaces the user
+> looking at a running build. Every merge is preceded by: build → serve → user views →
+> user approves → merge.
+
+When an agent (calev runtime-gate, or any "look at this and confirm" moment) serves
+the FE for the **user** to inspect, follow these rules:
+
+1. **Preview = a production build, never HMR.** Do **not** hand the user the Vite dev
+   server (`pnpm dev` / HMR) as a "preview". Build first
+   (`pnpm --filter @drive-coding/frontend build`) and serve the built output
+   (production-like single-origin via `FE_STATIC_DIR`, per `docs/running-locally.md`).
+   HMR is for the executor's own inner loop — it is **not** what we show the user.
+
+2. **Where the agent runs decides the URL:**
+   - **Agent runs on the user's own machine** → a `localhost` preview URL is enough
+     (secure-context Web APIs work over `http://localhost`).
+   - **Agent runs on a remote host** (e.g. the `cli-agents` box / `ufw`) → `localhost`
+     is unreachable for the user, and plain `http://` breaks the secure-context APIs
+     (`getUserMedia`, `AudioWorklet`). You **must** expose an **HTTPS tunnel** and give
+     the user the tunnel URL. Use the **pico + `tuns`** HTTPS tunnel (see
+     `docs/running-locally.md` for the exact command). Never ask the user to open a
+     plain-`http://` external address.
+
+3. **Hand over a URL the user can actually open over HTTPS** — that is the deliverable
+   of a preview, not a "it builds" report.
+
+> **TODO (after `ui-session-polish` is merged):** make the preview target
+> **environment-variable driven** (localhost vs. tunnel, and the tunnel URL) so the
+> serve flow is config-driven instead of decided ad-hoc per run. Tracked as a
+> follow-up; document the env var here once implemented.
 
 ## Git hooks
 
@@ -112,13 +174,13 @@ the first worktree, 4001 for the second, etc.
 # Worktree A — BE on 4000, FE Vite proxies → 4000 (default)
 cd .worktrees/slice-X
 PORT=4000 onecli run --agent voice-acp -- bun --watch src/server.ts
-pnpm --filter @drive-coding/frontend-v2 dev
+pnpm --filter @drive-coding/frontend dev
 # (no env var needed — FE defaults to BE_PORT=4000)
 
 # Worktree B — BE on 4001, FE Vite proxies → 4001
 cd .worktrees/slice-Y
 PORT=4001 onecli run --agent voice-acp -- bun --watch src/server.ts
-BE_PORT=4001 pnpm --filter @drive-coding/frontend-v2 dev
+BE_PORT=4001 pnpm --filter @drive-coding/frontend dev
 ```
 
 Each worktree's FE will get a different OS-assigned Vite port — no conflict

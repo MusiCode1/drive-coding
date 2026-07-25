@@ -67,6 +67,19 @@ export function createProjectsRegistry(baseDir: string) {
       await persist(updated)
     },
 
+    /**
+     * מוחק תיקייה מרשימת הפרויקטים לגמרי.
+     * אם ה-cwd אינו קיים — no-op (filter פשוט לא משנה כלום).
+     * חיבור חוזר לאחר מכן דרך recordCwd יוצר רשומה חדשה וה-cwd חוזר לרשימה.
+     * slice: recent-projects-controls
+     */
+    async removeCwd(cwd: string): Promise<void> {
+      const projects = await load()
+      const updated = projects.filter((p) => p.cwd !== cwd)
+      if (updated.length === projects.length) return // לא היה שינוי — no-op
+      await persist(updated)
+    },
+
     /** מחזיר את כל הפרויקטים המוכרים, ממוינים לפי lastSeen יורד (הכי חדש ראשון). */
     async getProjects(): Promise<readonly ProjectEntry[]> {
       const projects = await load()
