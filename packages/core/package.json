@@ -19,6 +19,7 @@
     "./cwd-hash": "./src/cwd-hash.ts",
     "./cwd-validate": "./src/cwd-validate.ts",
     "./cli-resolve": "./src/cli-resolve.ts",
+    "./cli-availability": "./src/cli-availability.ts",
     "./async/*": "./src/async/*.ts",
     "./acp/*": "./src/acp/*.ts",
     "./config/*": "./src/config/*.ts",
