@@ -83,13 +83,16 @@ const isRtl = $derived(settings.locale === "he")
 
 async function handleReconnect(agent: AgentPublic) {
   if (!agent.acpSessionId) return
-  settings.setCliKind(agent.cliKind)
+  // open-cli-registry: AgentPublic.cliKind הוא CliId (string) כי ה-BE תומך ב-CLIs מהקונפ'.
+  // ה-FE עדיין מציע רק את המובנים, ולכן כל סוכן שהוא פוגש הוא CliKind בפועל.
+  // ה-narrow הזה נופל בסלייס open-cli-registry-fe, כשהדרופדאון ייפתח.
+  settings.setCliKind(agent.cliKind as CliKind)
   settings.setLastCwd(agent.cwd)
   await session.attachToLiveAgent({
     agentId: agent.id,
     sessionId: agent.acpSessionId,
     cwd: agent.cwd,
-    cliKind: agent.cliKind,
+    cliKind: agent.cliKind as CliKind,
   })
   if (session.status === "connected") { await goto("/chat") }
   // if status==="error" — stay on /, VM set this.error
