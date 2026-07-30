@@ -3,15 +3,23 @@ import { getCliCommand, getCliSpec } from "./src/config/cli-config"
 
 describe("getCliCommand", () => {
   const origEnv = process.env.OPENCODE_BIN
+  const origCliSpecsFile = process.env.CLI_SPECS_FILE
 
   beforeEach(() => {
     process.env.OPENCODE_BIN = undefined
     delete process.env.OPENCODE_BIN
+    vi.resetModules()
+    // בידוד מקובץ-הקונפ' האמיתי של המשתמש (~/.config/drive-coding/cli-specs.jsonc) —
+    // הצבה מפורשת לנתיב לא-קיים, לא delete (delete נופל בחזרה ל-homedir(), שזה ההפך
+    // מבידוד — ר' cli-config-file.ts:29 ותיעוד ב-describe הבא).
+    process.env.CLI_SPECS_FILE = "NO_OVERRIDE_FILE"
   })
 
   afterEach(() => {
     if (origEnv === undefined) delete process.env.OPENCODE_BIN
     else process.env.OPENCODE_BIN = origEnv
+    if (origCliSpecsFile === undefined) delete process.env.CLI_SPECS_FILE
+    else process.env.CLI_SPECS_FILE = origCliSpecsFile
   })
 
   it('opencode → { bin: "opencode", args: ["acp"] }', () => {

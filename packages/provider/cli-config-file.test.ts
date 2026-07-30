@@ -182,4 +182,59 @@ describe("loadCliSpecsOverride", () => {
 
     expect(result["opencode"]?.bin).toBe("/custom/opencode")
   })
+
+  // --- CLI_SPECS_JSON (open-cli-registry C0) ---
+
+  it("7. CLI_SPECS_JSON בלבד → מיושם כ-override", async () => {
+    process.env.CLI_SPECS_JSON = JSON.stringify({ claude: { bin: "/inline/claude" } })
+    process.env.CLI_SPECS_FILE = "/tmp/does-not-exist-specs-99999.jsonc"
+
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+
+    expect(result["claude"]?.bin).toBe("/inline/claude")
+  })
+
+  it("8. קובץ בלבד (רגרסיה — בלי CLI_SPECS_JSON)", async () => {
+    const content = JSON.stringify({ gemini: { bin: "/file/gemini" } })
+    const filePath = writeTmpFile(content)
+    process.env.CLI_SPECS_FILE = filePath
+    delete process.env.CLI_SPECS_JSON
+
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+
+    expect(result["gemini"]?.bin).toBe("/file/gemini")
+  })
+
+  it("9. שניהם → CLI_SPECS_JSON גובר per-key, שאר הקובץ נשאר", async () => {
+    const fileContent = JSON.stringify({
+      opencode: { bin: "/file/opencode" },
+      gemini: { bin: "/file/gemini" },
+    })
+    const filePath = writeTmpFile(fileContent)
+    process.env.CLI_SPECS_FILE = filePath
+    process.env.CLI_SPECS_JSON = JSON.stringify({ opencode: { bin: "/inline/opencode" } })
+
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+
+    expect(result["opencode"]?.bin).toBe("/inline/opencode")
+    expect(result["gemini"]?.bin).toBe("/file/gemini")
+  })
+
+  it("10. CLI_SPECS_JSON שבור → {} + warning, בלי לזרוק (הקובץ עדיין חל)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const fileContent = JSON.stringify({ opencode: { bin: "/file/opencode" } })
+    const filePath = writeTmpFile(fileContent)
+    process.env.CLI_SPECS_FILE = filePath
+    process.env.CLI_SPECS_JSON = "{ not valid json }"
+
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+
+    expect(result["opencode"]?.bin).toBe("/file/opencode")
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
 })
