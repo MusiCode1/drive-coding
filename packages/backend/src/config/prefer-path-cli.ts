@@ -1,4 +1,6 @@
-import { resolveCliBinary } from "@drive-coding/core"
+// subpath, לא הברל: slice build-types-hygiene C1 הסיר את `export * from "./cli-resolve"`
+// מהברל של core (node-taint שדלף ל-bundle של ה-FE). יבוא מהברל כאן שבר את boot ה-BE.
+import { resolveCliBinary } from "@drive-coding/core/cli-resolve"
 
 /**
  * Prefer a `claude` on PATH over the SDK's embedded (platform-specific) binary.
