@@ -15,8 +15,15 @@ describe("CreateAgentInput", () => {
     expect(result).toHaveProperty("summary")
   })
 
-  it("rejects invalid cliKind", () => {
-    const result = CreateAgentInput({ cliKind: "vim", cwd: "/foo" } as never)
+  // slice open-cli-registry: cliKind הורחב ל-CliId (string) — הסכימה כבר לא דוחה
+  // kind לא-מוכר; הדחייה עברה לולידציית ה-HTTP (getEffectiveCliSpecs, http-agents.ts).
+  it("accepts a cliKind unknown to the built-in registry (rejection moved to HTTP)", () => {
+    const result = CreateAgentInput({ cliKind: "vim", cwd: "/foo" })
+    expect(result).not.toHaveProperty("summary")
+  })
+
+  it("rejects empty cliKind", () => {
+    const result = CreateAgentInput({ cliKind: "", cwd: "/foo" })
     expect(result).toHaveProperty("summary")
   })
 

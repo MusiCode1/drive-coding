@@ -1,6 +1,5 @@
-import type { CliSpec } from "@drive-coding/core"
-import { CLI_SPECS } from "@drive-coding/core"
-import type { BridgeKind } from "../spawn/types.js"
+import type { CliKind, CliSpec } from "@drive-coding/core"
+import { CLI_KINDS, CLI_SPECS } from "@drive-coding/core"
 import { loadCliSpecsOverride } from "./cli-config-file.js"
 
 /**
@@ -24,7 +23,7 @@ export type CliCommand = {
  * מקבל kind כ-string (לא BridgeKind) — כי הקובץ יכול להגדיר override לכל מפתח.
  */
 export function getCliSpec(kind: string, env?: NodeJS.ProcessEnv): CliSpec | undefined {
-  const base: CliSpec | undefined = CLI_SPECS[kind as BridgeKind]
+  const base: CliSpec | undefined = CLI_SPECS[kind as CliKind]
   const override = loadCliSpecsOverride(env)[kind]
 
   // אם אין base ואין override — לא ידוע
@@ -52,10 +51,36 @@ export function getCliSpec(kind: string, env?: NodeJS.ProcessEnv): CliSpec | und
   }
 }
 
-export function getCliCommand(kind: BridgeKind, modelOverride?: string | null): CliCommand {
-  const spec = CLI_SPECS[kind]
+/**
+ * המובנים ⊕ הקונפ'. המפתחות = כל ה-CLIs שהמערכת מכירה בזמן-ריצה.
+ */
+export function getEffectiveCliSpecs(env?: NodeJS.ProcessEnv): Record<string, CliSpec> {
+  const result: Record<string, CliSpec> = {}
+  for (const kind of CLI_KINDS) {
+    const spec = getCliSpec(kind, env)
+    if (spec !== undefined) result[kind] = spec
+  }
+  for (const kind of Object.keys(loadCliSpecsOverride(env))) {
+    if (result[kind] !== undefined) continue
+    const spec = getCliSpec(kind, env)
+    if (spec !== undefined) result[kind] = spec
+  }
+  return result
+}
+
+/**
+ * שמות בלבד. סדר: המובנים לפי סדר CLI_SPECS, ואז החדשים מהקונפ' לפי סדר הופעתם.
+ */
+export function getEffectiveCliKinds(env?: NodeJS.ProcessEnv): string[] {
+  const override = loadCliSpecsOverride(env)
+  const newKinds = Object.keys(override).filter((kind) => !(kind in CLI_SPECS))
+  return [...CLI_KINDS, ...newKinds]
+}
+
+export function getCliCommand(kind: string, modelOverride?: string | null): CliCommand {
+  const spec = getCliSpec(kind, process.env)
   if (spec === undefined) {
-    throw new Error(`Unsupported BridgeKind: ${kind}`)
+    throw new Error(`Unknown cliKind: ${kind}`)
   }
 
   // טוען override מהקובץ (memoized)
