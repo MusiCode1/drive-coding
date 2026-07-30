@@ -1,4 +1,5 @@
-import { type AgentRegistry, CliKind, toAgentPublic, validateCwd } from "@drive-coding/core"
+import { type AgentRegistry, CliId, toAgentPublic, validateCwd } from "@drive-coding/core"
+import { getCliSpec, getEffectiveCliKinds } from "@drive-coding/provider/config"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import type { AgentOrchestrator } from "../app/agent-orchestrator"
@@ -9,7 +10,7 @@ import type { ProjectsRegistry } from "../app/projects-registry"
  * עבור טעינת סשן ב-Slice 8a. מוגדר כאן כי זה מרחיב את סכימת הליבה.
  */
 const CreateAgentInputFull = type({
-  cliKind: CliKind,
+  cliKind: CliId,
   cwd: "string >= 1",
   "modelOverride?": "string | null",
   "existingSessionId?": "string | null",
@@ -59,6 +60,13 @@ export function registerAgentsHttp(
     const parsed = CreateAgentInputFull(body)
     if (parsed instanceof type.errors) {
       return c.json({ error: parsed.summary }, 400)
+    }
+
+    if (getCliSpec(parsed.cliKind, process.env) === undefined) {
+      return c.json(
+        { error: `unknown cliKind: ${parsed.cliKind}`, known: getEffectiveCliKinds() },
+        400,
+      )
     }
 
     // מאמת נתיב cwd — דוחה נתיבים בקידוד כפול, בתי NUL, נתיבים יחסיים, וכו'.

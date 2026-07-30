@@ -12,11 +12,14 @@
  *     and http-agents reads it (§9#2 from brief).
  *   - wireRecorder session opened in connect, closed in close/onCrash cleanup.
  *   - onFrame registered once per connection in connect (in+out) — not duplicated.
- *   - Routing (CUT-3b-iii-2): cliKind==="claude" → connectInProcess; else → connectSpawn.
+ *   - Routing (CUT-3b-iii-2 + open-cli-registry C3): IN_PROCESS_CONNECTORS map (claude/codex)
+ *     → else connectSpawn (opencode/gemini/qoder/any CLI from cli-specs.jsonc).
  *     pid may be null for in-process connections; getRuntimeInfo handles this gracefully.
  */
 
+import type { CliKind } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
+import { loadCliSpecsOverride } from "@drive-coding/provider/config"
 import type { ConnectOpts, ProviderConnection } from "@drive-coding/provider/connection"
 import {
   connectCodexInProcess,
@@ -28,6 +31,19 @@ import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
 import type { WireRecorder, WireSession } from "../delivery/wire-recorder.js"
 
 const wireLog = createLogger("backend.acp.wire")
+const cfgLog = createLogger("backend.acp.config")
+
+// satisfies שומר על שני הליטרלים: טעות-כתיב כאן משנה ניתוב, וחייבת להיתפס בקומפילציה.
+const IN_PROCESS_CONNECTORS = {
+  claude: connectInProcess,
+  codex: connectCodexInProcess,
+} satisfies Partial<Record<CliKind, (opts: ConnectOpts) => Promise<ProviderConnection>>>
+
+/** override מכוון ל-CLI in-process ידרוס bin/args בשקט — הם לא נקראים כלל שם. */
+function overrideHasBinOrArgs(kind: string): boolean {
+  const o = loadCliSpecsOverride()[kind]
+  return o?.bin !== undefined || o?.args !== undefined
+}
 
 type ConnEntry = {
   conn: ProviderConnection
@@ -121,17 +137,17 @@ export function createConnectionRegistry(opts?: {
       try {
         const rec = wireRecorder?.open(agentId) ?? { record() {}, close() {} }
 
-        // ── Routing (CUT-3b-iii-2 + codex-inprocess): ──
-        // claude → connectInProcess (acp-sdk Web Streams, Model 2)
-        // codex  → connectCodexInProcess (NDJSON PassThrough, startAcpServer fork)
-        // else   → connectSpawn (opencode/gemini/qoder)
-        // cliKinds: opencode/claude/gemini/codex/qoder/cursor/grok (core/src/schemas/agent.ts).
-        const conn =
-          cliKind === "claude"
-            ? await connectInProcess(connectOpts)
-            : cliKind === "codex"
-              ? await connectCodexInProcess(connectOpts)
-              : await connectSpawn(cliKind, connectOpts)
+        // ── Routing (CUT-3b-iii-2 + codex-inprocess + open-cli-registry): ──
+        // in-process (claude/codex) → IN_PROCESS_CONNECTORS map
+        // else                      → connectSpawn (opencode/gemini/qoder/כל CLI מהקונפ')
+        if (cliKind in IN_PROCESS_CONNECTORS && overrideHasBinOrArgs(cliKind)) {
+          // override.bin/args are silently ignored here — in-process connectors don't call getCliCommand.
+          cfgLog.warn({ cliKind }, "cli-specs override.bin/args ignored for in-process cliKind")
+        }
+        const inProcess = IN_PROCESS_CONNECTORS[cliKind as keyof typeof IN_PROCESS_CONNECTORS]
+        const conn = inProcess
+          ? await inProcess(connectOpts)
+          : await connectSpawn(cliKind, connectOpts)
 
         // #7 — DELETE הגיע בזמן ה-spawn? סגור מיָד ואל תרשום (מונע child אלמותי).
         // אין await בין הבדיקה הזו ל-map.set למטה — זה מה שסוגר את חלון-הרייס.
