@@ -14,7 +14,8 @@ import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svel
 import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
 import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
 import LanguageSelect from "$lib/components/settings/LanguageSelect.svelte"
-import Select from "$lib/components/ui/Select.svelte"
+import CliBadge from "$lib/components/ui/CliBadge.svelte"
+import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
 import { getActiveAgents, getCliAvailability, getI18n, getModals, getSession, getSettings } from "$lib/context"
 import { cliDisplayName } from "$lib/util/cli-display"
 import { resolveCliKind } from "$lib/util/resolve-cli-kind"
@@ -173,7 +174,11 @@ async function handleRecentSelect(project: RecentProject) {
           ariaLabel={t("connect.cli.label")}
           disabled={session.status === "connecting"}
           onchange={(v) => (cliKind = v)}
-        />
+        >
+          {#snippet icon(opt: SelectOption)}
+            <CliBadge id={opt.value} logo={cliAvailability.details[opt.value]?.logo} variant="icon" />
+          {/snippet}
+        </Select>
       </label>
 
       <label>
