@@ -115,13 +115,17 @@ $effect(() => {
     max-width: 10rem;
   }
 
+  /* Commit 4 (בקשת משתמשת אחרי פריוויו): הוגדל 1rem→1.5rem — span (מונוגרמה)
+     ו-img (לוגו) חייבים להישאר **זהים** (אותה class בדיוק) כדי שהמעבר
+     לוגו↔מונוגרמה לא יזיז פיקסל. font-size הותאם (0.6rem→0.85rem) כדי
+     שהאותיות ימשיכו להתאים לעיגול הגדול יותר. */
   .cli-badge-monogram {
     display: grid;
     place-items: center;
-    width: 1rem;
-    height: 1rem;
+    width: 1.5rem;
+    height: 1.5rem;
     border-radius: 50%;
-    font-size: 0.6rem;
+    font-size: 0.85rem;
     font-weight: 700;
     flex-shrink: 0;
     line-height: 1;
