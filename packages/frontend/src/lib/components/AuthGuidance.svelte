@@ -7,12 +7,11 @@
  * ר' docs/plans/slice-auth-guidance.md §3 Commit 1.
  */
 import type { AuthMethod } from "@agentclientprotocol/sdk"
-import type { CliKind } from "@drive-coding/core"
 import { getI18n } from "$lib/context"
 import { describeAuthMethod } from "$lib/util/auth-guidance"
 
 interface Props {
-  cliKind: CliKind | null
+  cliKind: string | null
   authMethods: ReadonlyArray<AuthMethod>
 }
 

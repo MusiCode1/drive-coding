@@ -1,5 +1,5 @@
 <script lang="ts">
-import { type AgentPublic, CLI_KINDS, type CliKind } from "@drive-coding/core"
+import type { AgentPublic } from "@drive-coding/core"
 import FolderIcon from "@lucide/svelte/icons/folder"
 import Loader2Icon from "@lucide/svelte/icons/loader-2"
 import { onMount, untrack } from "svelte"
@@ -16,6 +16,7 @@ import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
 import LanguageSelect from "$lib/components/settings/LanguageSelect.svelte"
 import Select from "$lib/components/ui/Select.svelte"
 import { getActiveAgents, getI18n, getModals, getSession, getSettings } from "$lib/context"
+import { resolveCliKind } from "$lib/util/resolve-cli-kind"
 import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
 
 const settings = getSettings()
@@ -24,13 +25,15 @@ const modals = getModals()
 const i18n = getI18n()
 const t = i18n.t
 const activeAgents = getActiveAgents()
-// slice cli-availability (re-scope): מציג את כל ה-CLI_KINDS תמיד, ומשבית (disabled)
-// את מי שלא מותקן בפועל בסביבת ה-BE — לא מסתיר (§1).
-// available מאותחל ל-CLI_KINDS המלא (race-safe) ונופל חזרה אליו אם ה-endpoint נכשל (§2, §6) —
-// בשני המצבים (loading/error) זה שקול ל"הכל enabled" כי disabled נגזר מ-!available.includes(k).
+// slice open-cli-registry-fe (Commit 2): מקור-האמת לאפשרויות הדרופדאון הוא
+// cliAvailability.registry — הרג'יסטרי האפקטיבי מהשרת (מובנים + הרחבות-קונפ'), לא
+// עוד קבוע זמן-קומפילציה. משבית (disabled) את מי שלא מותקן בפועל — לא מסתיר (§1).
+// registry מאותחל ל-CLI_KINDS המלא (race-safe seed ב-VM) ונופל חזרה אליו אם
+// ה-endpoint נכשל (§2, §6) — בשני המצבים (loading/error) זה שקול ל"הכל enabled" כי
+// disabled נגזר מ-!available.includes(k).
 const cliAvailability = new CliAvailability()
 
-let cliKind = $state<CliKind>(settings.cliKind)
+let cliKind = $state<string>(settings.cliKind)
 let cwd = $state(settings.lastCwd)
 
 // Slice 24: אכלס cwd מה-homeDir של השרת אם אין ערך שמור ולא הוקלד
@@ -39,7 +42,13 @@ let cwd = $state(settings.lastCwd)
 // עדכן רק אם cwd עדיין ריק (המשתמש לא הקליד בינתיים).
 onMount(() => {
   void activeAgents.refresh()
-  void cliAvailability.load()
+  // open-cli-registry-fe (Commit 4): אחרי שהרג'יסטרי נטען, נפילה ל-cliKind תקף אם
+  // הערך השמור (localStorage, דרך settings.cliKind) מיושן — CLI שהוסר מהקונפ'.
+  // לא נוגע ב-localStorage: רק ה-state המקומי מתוקן; אם המשתמש יתחבר, connectAgent
+  // ישמור את הערך התקף החדש (§4 C4 — "אל תמחק את הערך מ-localStorage").
+  void cliAvailability.load().then(() => {
+    cliKind = resolveCliKind(cliKind, cliAvailability.registry, cliAvailability.available)
+  })
 
   fetchServerOptions()
     .then((opts) => {
@@ -83,16 +92,13 @@ const isRtl = $derived(settings.locale === "he")
 
 async function handleReconnect(agent: AgentPublic) {
   if (!agent.acpSessionId) return
-  // open-cli-registry: AgentPublic.cliKind הוא CliId (string) כי ה-BE תומך ב-CLIs מהקונפ'.
-  // ה-FE עדיין מציע רק את המובנים, ולכן כל סוכן שהוא פוגש הוא CliKind בפועל.
-  // ה-narrow הזה נופל בסלייס open-cli-registry-fe, כשהדרופדאון ייפתח.
-  settings.setCliKind(agent.cliKind as CliKind)
+  settings.setCliKind(agent.cliKind)
   settings.setLastCwd(agent.cwd)
   await session.attachToLiveAgent({
     agentId: agent.id,
     sessionId: agent.acpSessionId,
     cwd: agent.cwd,
-    cliKind: agent.cliKind as CliKind,
+    cliKind: agent.cliKind,
   })
   if (session.status === "connected") { await goto("/chat") }
   // if status==="error" — stay on /, VM set this.error
@@ -106,10 +112,16 @@ async function onSubmit(e: SubmitEvent) {
 
 // connect-recent-projects: לחיצה על תיקייה אחרונה → חיבור ישיר (סשן חדש).
 // connectAgent מבצע setCliKind/setLastCwd ו-goto("/chat") פנימית.
+// open-cli-registry-fe (Commit 5): project.kind עלול להיות ריק (recent-projects.ts:47,
+// כש-BE לא החזיר kind) או CLI שהוסר מהקונפ' — אסור להשמות אותו ישירות ל-cliKind
+// (בדיוק התבנית ש-C4 טיפל בה ב-onMount, ש-calev שיחזר כאן: טריגר ה-Select נשאר
+// ריק חזותית אחרי כשל 400). מעביר דרך אותו resolveCliKind ומשתמש בערך התקף גם
+// לתצוגה המקומית וגם ל-connectAgent — כדי שלא ננסה להתחבר עם kind שכבר ידוע כלא-תקף.
 async function handleRecentSelect(project: RecentProject) {
-  cliKind = project.kind
+  const resolvedKind = resolveCliKind(project.kind, cliAvailability.registry, cliAvailability.available)
+  cliKind = resolvedKind
   cwd = project.cwd
-  await connectAgent({ cliKind: project.kind, cwd: project.cwd, session, settings })
+  await connectAgent({ cliKind: resolvedKind, cwd: project.cwd, session, settings })
 }
 </script>
 
@@ -141,10 +153,11 @@ async function handleRecentSelect(project: RecentProject) {
           {/if}
         </span>
         <!-- Select.value נשאר cliKind גם אם הוא disabled ב-options (למקרה reconnect) —
-             כל ה-CLI_KINDS מוצגים תמיד; מי שלא available מקבל disabled פר-option (§1, §4 Commit 2). -->
+             האפשרויות מגיעות מ-cliAvailability.registry (הרג'יסטרי מהשרת, מונע-שרת);
+             מי שלא available מקבל disabled פר-option (§1, §4 Commit 2). -->
         <Select
           value={cliKind}
-          options={CLI_KINDS.map((k) => ({
+          options={cliAvailability.registry.map((k) => ({
             value: k,
             label: k,
             disabled: !cliAvailability.available.includes(k),
@@ -155,7 +168,7 @@ async function handleRecentSelect(project: RecentProject) {
           title={t("connect.cli.label")}
           ariaLabel={t("connect.cli.label")}
           disabled={session.status === "connecting"}
-          onchange={(v) => (cliKind = v as CliKind)}
+          onchange={(v) => (cliKind = v)}
         />
       </label>
 

@@ -1,10 +1,11 @@
 /**
- * cli-availability.ts — adapter עבור GET /api/cli-availability (slice cli-availability).
+ * cli-availability.ts — adapter עבור GET /api/cli-availability (slice cli-availability;
+ * הורחב ל-string ב-slice open-cli-registry-fe, Commit 1 — היישר לחוזה של core
+ * (`core/src/cli-availability.ts:22-25`), שכבר `readonly string[]` / `Record<string, …>`).
  *
  * מביא אילו CLIs מותקנים בסביבת הריצה של השרת, כדי שה-dropdown ב-`/` יסנן אליהם.
  */
 
-import type { CliKind } from "@drive-coding/core"
 import { beUrl } from "$lib/util/be-url"
 
 export type CliAvailabilityDetails = {
@@ -14,8 +15,8 @@ export type CliAvailabilityDetails = {
 }
 
 export type CliAvailabilityResult = {
-  available: CliKind[]
-  details: Record<CliKind, CliAvailabilityDetails>
+  available: string[]
+  details: Record<string, CliAvailabilityDetails>
 }
 
 /**

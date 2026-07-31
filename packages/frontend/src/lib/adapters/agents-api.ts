@@ -5,7 +5,7 @@
  * ללא ניסיונות חוזרים, ללא וולידציית סכמה — נתיב מהיר ל-v2.
  */
 
-import type { AgentPublic, CliKind } from "@drive-coding/core"
+import type { AgentPublic } from "@drive-coding/core"
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
 import { beUrl } from "$lib/util/be-url"
 
@@ -13,7 +13,7 @@ const AGENTS_API_TIMEOUT_MS = 10000 // קריאות API קצרות; BE מקומ�
 
 export type CreateAgentInput = {
   cwd: string
-  cliKind: CliKind
+  cliKind: string
   modelOverride?: string | null
   existingSessionId?: string
   // slice project-system-prompt: פרומפט-מערכת פר-פרויקט, מתווסף (append) בתוך provider.
