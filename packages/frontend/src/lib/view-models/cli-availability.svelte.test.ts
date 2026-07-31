@@ -48,7 +48,7 @@ describe("CliAvailability.load() — success", () => {
     mockFetch.mockResolvedValue({
       available: ["opencode", "cursor"],
       details: {
-        opencode: { found: true, source: "path" },
+        opencode: { found: true, source: "path", displayName: "OpenCode" },
         cursor: { found: true, source: "path" },
         // kind שאינו ב-CLI_KINDS (מהקונפ') — מדמה את הרג'יסטרי האפקטיבי מה-BE
         pi: { found: false, source: "not-found" },
@@ -116,5 +116,31 @@ describe("CliAvailability.load() — fallback on failure", () => {
     expect(vm.error).toBe("boom")
     expect(vm.available).toEqual([...CLI_KINDS])
     expect(vm.registry).toEqual([...CLI_KINDS])
+  })
+})
+
+// ─── ready — נפתר אחרי load() הראשון (slice cli-branding, Commit 1) ───────────
+// C3 נשען על זה: routes/+layout.svelte קורא load() פעם אחת, ו-+page.svelte ממתין
+// ל-ready במקום לקרוא load() בעצמו.
+describe("CliAvailability.ready", () => {
+  it("נפתר אחרי load() מוצלח", async () => {
+    mockFetch.mockResolvedValue({
+      available: ["opencode"],
+      details: { opencode: { found: true, source: "path" } },
+    })
+    const vm = new CliAvailability()
+
+    await vm.load()
+
+    await expect(vm.ready).resolves.toBeUndefined()
+  })
+
+  it("נפתר גם כשה-fetch נכשל (finally, לא try) — אין unhandled-rejection", async () => {
+    mockFetch.mockRejectedValue(new Error("boom"))
+    const vm = new CliAvailability()
+
+    await vm.load()
+
+    await expect(vm.ready).resolves.toBeUndefined()
   })
 })
