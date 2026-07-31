@@ -15,9 +15,9 @@ import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte
 import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
 import LanguageSelect from "$lib/components/settings/LanguageSelect.svelte"
 import Select from "$lib/components/ui/Select.svelte"
-import { getActiveAgents, getI18n, getModals, getSession, getSettings } from "$lib/context"
+import { getActiveAgents, getCliAvailability, getI18n, getModals, getSession, getSettings } from "$lib/context"
+import { cliDisplayName } from "$lib/util/cli-display"
 import { resolveCliKind } from "$lib/util/resolve-cli-kind"
-import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
 
 const settings = getSettings()
 const session = getSession()
@@ -31,7 +31,9 @@ const activeAgents = getActiveAgents()
 // registry מאותחל ל-CLI_KINDS המלא (race-safe seed ב-VM) ונופל חזרה אליו אם
 // ה-endpoint נכשל (§2, §6) — בשני המצבים (loading/error) זה שקול ל"הכל enabled" כי
 // disabled נגזר מ-!available.includes(k).
-const cliAvailability = new CliAvailability()
+// slice cli-branding (Commit 3): ה-VM עבר ל-+layout.svelte (כניסה ישירה ל-/chat חייבת
+// גם היא רג'יסטרי מאוכלס) — כאן רק צורכים אותו דרך context, לא יוצרים מופע חדש.
+const cliAvailability = getCliAvailability()
 
 let cliKind = $state<string>(settings.cliKind)
 let cwd = $state(settings.lastCwd)
@@ -46,7 +48,9 @@ onMount(() => {
   // הערך השמור (localStorage, דרך settings.cliKind) מיושן — CLI שהוסר מהקונפ'.
   // לא נוגע ב-localStorage: רק ה-state המקומי מתוקן; אם המשתמש יתחבר, connectAgent
   // ישמור את הערך התקף החדש (§4 C4 — "אל תמחק את הערך מ-localStorage").
-  void cliAvailability.load().then(() => {
+  // slice cli-branding (Commit 3): ה-load() עצמו רץ ב-+layout.svelte (בעלים יחיד) —
+  // כאן רק ממתינים ל-ready (נפתר תמיד, גם בכשל — ר' cli-availability.svelte.ts).
+  void cliAvailability.ready.then(() => {
     cliKind = resolveCliKind(cliKind, cliAvailability.registry, cliAvailability.available)
   })
 
@@ -159,7 +163,7 @@ async function handleRecentSelect(project: RecentProject) {
           value={cliKind}
           options={cliAvailability.registry.map((k) => ({
             value: k,
-            label: k,
+            label: cliDisplayName(k, cliAvailability.details[k]?.displayName),
             disabled: !cliAvailability.available.includes(k),
             description: cliAvailability.available.includes(k)
               ? null

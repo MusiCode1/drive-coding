@@ -23,8 +23,10 @@ import { untrack } from "svelte"
 import { goto } from "$app/navigation"
 import { page } from "$app/state"
 import SessionCard from "$lib/components/modals/SessionCard.svelte"
+import CliBadge from "$lib/components/ui/CliBadge.svelte"
 import Select, { type SelectGroup, type SelectOption } from "$lib/components/ui/Select.svelte"
 import {
+  getCliAvailability,
   getI18n,
   getResponsive,
   getSession,
@@ -35,6 +37,8 @@ import {
 
 const t = getI18n().t
 const session = getSession()
+// slice cli-branding (Commit 3): displayName ב-"רץ על" — ה-panel חסר-props ל-CLI
+const cliAvailability = getCliAvailability()
 // ─── redesign-fix: disconnect + audio הועברו מ-AppHeader (פדיון חוב redesign-2/3) ───
 const speaker = getSpeaker()
 // ─── redesign-fix: ⚙ במובייל יורד ל-sheet; navigation toggle כמו ב-AppHeader ───
@@ -334,11 +338,14 @@ $effect(() => {
 
 <!-- ─── cli-name-in-chat: שם ה-CLI מעל אפשרויות סוכן ─── -->
 {#if session.cliKind}
+  {@const cliKind = session.cliKind}
   <div class="flex items-center gap-2 px-1 shrink-0 text-[11px]" style="color:var(--fg-dim)">
     <span class="uppercase tracking-wider font-semibold">{t("sidebar.runningOn")}</span>
     <span class="px-2 py-0.5 rounded-md font-mono font-semibold"
           style="background:var(--bg-card); border:1px solid var(--border); color:var(--fg)"
-          dir="ltr">{session.cliKind}</span>
+          dir="ltr">
+      <CliBadge id={cliKind} displayName={cliAvailability.details[cliKind]?.displayName} variant="inline" />
+    </span>
   </div>
 {/if}
 
