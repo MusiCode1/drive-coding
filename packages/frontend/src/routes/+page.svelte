@@ -1,5 +1,5 @@
 <script lang="ts">
-import { type AgentPublic, CLI_KINDS, type CliKind } from "@drive-coding/core"
+import { type AgentPublic, type CliKind } from "@drive-coding/core"
 import FolderIcon from "@lucide/svelte/icons/folder"
 import Loader2Icon from "@lucide/svelte/icons/loader-2"
 import { onMount, untrack } from "svelte"
@@ -24,10 +24,12 @@ const modals = getModals()
 const i18n = getI18n()
 const t = i18n.t
 const activeAgents = getActiveAgents()
-// slice cli-availability (re-scope): מציג את כל ה-CLI_KINDS תמיד, ומשבית (disabled)
-// את מי שלא מותקן בפועל בסביבת ה-BE — לא מסתיר (§1).
-// available מאותחל ל-CLI_KINDS המלא (race-safe) ונופל חזרה אליו אם ה-endpoint נכשל (§2, §6) —
-// בשני המצבים (loading/error) זה שקול ל"הכל enabled" כי disabled נגזר מ-!available.includes(k).
+// slice open-cli-registry-fe (Commit 2): מקור-האמת לאפשרויות הדרופדאון הוא
+// cliAvailability.registry — הרג'יסטרי האפקטיבי מהשרת (מובנים + הרחבות-קונפ'), לא
+// עוד קבוע זמן-קומפילציה. משבית (disabled) את מי שלא מותקן בפועל — לא מסתיר (§1).
+// registry מאותחל ל-CLI_KINDS המלא (race-safe seed ב-VM) ונופל חזרה אליו אם
+// ה-endpoint נכשל (§2, §6) — בשני המצבים (loading/error) זה שקול ל"הכל enabled" כי
+// disabled נגזר מ-!available.includes(k).
 const cliAvailability = new CliAvailability()
 
 let cliKind = $state<CliKind>(settings.cliKind)
@@ -141,10 +143,11 @@ async function handleRecentSelect(project: RecentProject) {
           {/if}
         </span>
         <!-- Select.value נשאר cliKind גם אם הוא disabled ב-options (למקרה reconnect) —
-             כל ה-CLI_KINDS מוצגים תמיד; מי שלא available מקבל disabled פר-option (§1, §4 Commit 2). -->
+             האפשרויות מגיעות מ-cliAvailability.registry (הרג'יסטרי מהשרת, מונע-שרת);
+             מי שלא available מקבל disabled פר-option (§1, §4 Commit 2). -->
         <Select
           value={cliKind}
-          options={CLI_KINDS.map((k) => ({
+          options={cliAvailability.registry.map((k) => ({
             value: k,
             label: k,
             disabled: !cliAvailability.available.includes(k),
