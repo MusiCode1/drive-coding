@@ -10,12 +10,11 @@
  */
 
 import { goto } from "$app/navigation"
-import type { CliKind } from "@drive-coding/core"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 export async function connectAgent(params: {
-  cliKind: CliKind
+  cliKind: string
   cwd: string
   session: AgentSession
   settings: Settings

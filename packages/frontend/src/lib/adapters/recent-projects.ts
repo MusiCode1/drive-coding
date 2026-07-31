@@ -7,13 +7,12 @@
  * slice: connect-recent-projects
  */
 
-import type { CliKind } from "@drive-coding/core"
 import { beUrl } from "$lib/util/be-url"
 
 /** רשומת פרויקט מ-GET /api/projects (משקף את ProjectEntry של ה-BE). */
 export type RecentProject = {
   cwd: string
-  kind: CliKind
+  kind: string
   lastSeen: string // ISO 8601
   lastSessionId?: string
 }
@@ -44,7 +43,8 @@ function normalizeRecentProject(p: unknown): RecentProject {
   const item = p as Record<string, unknown>
   return {
     cwd: String(item["cwd"] ?? ""),
-    kind: String(item["kind"] ?? "claude") as CliKind,
+    // ⚠️ ברירת-המחדל "claude" ממציאה ספק כשאין kind — נשאר לטיפול ב-Commit 4 (§9 Q2).
+    kind: String(item["kind"] ?? "claude"),
     lastSeen: String(item["lastSeen"] ?? ""),
     lastSessionId: item["lastSessionId"] ? String(item["lastSessionId"]) : undefined,
   }

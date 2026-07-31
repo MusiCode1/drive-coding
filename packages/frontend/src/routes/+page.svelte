@@ -1,5 +1,5 @@
 <script lang="ts">
-import { type AgentPublic, type CliKind } from "@drive-coding/core"
+import type { AgentPublic } from "@drive-coding/core"
 import FolderIcon from "@lucide/svelte/icons/folder"
 import Loader2Icon from "@lucide/svelte/icons/loader-2"
 import { onMount, untrack } from "svelte"
@@ -32,7 +32,7 @@ const activeAgents = getActiveAgents()
 // disabled נגזר מ-!available.includes(k).
 const cliAvailability = new CliAvailability()
 
-let cliKind = $state<CliKind>(settings.cliKind)
+let cliKind = $state<string>(settings.cliKind)
 let cwd = $state(settings.lastCwd)
 
 // Slice 24: אכלס cwd מה-homeDir של השרת אם אין ערך שמור ולא הוקלד
@@ -85,16 +85,13 @@ const isRtl = $derived(settings.locale === "he")
 
 async function handleReconnect(agent: AgentPublic) {
   if (!agent.acpSessionId) return
-  // open-cli-registry: AgentPublic.cliKind הוא CliId (string) כי ה-BE תומך ב-CLIs מהקונפ'.
-  // ה-FE עדיין מציע רק את המובנים, ולכן כל סוכן שהוא פוגש הוא CliKind בפועל.
-  // ה-narrow הזה נופל בסלייס open-cli-registry-fe, כשהדרופדאון ייפתח.
-  settings.setCliKind(agent.cliKind as CliKind)
+  settings.setCliKind(agent.cliKind)
   settings.setLastCwd(agent.cwd)
   await session.attachToLiveAgent({
     agentId: agent.id,
     sessionId: agent.acpSessionId,
     cwd: agent.cwd,
-    cliKind: agent.cliKind as CliKind,
+    cliKind: agent.cliKind,
   })
   if (session.status === "connected") { await goto("/chat") }
   // if status==="error" — stay on /, VM set this.error
@@ -158,7 +155,7 @@ async function handleRecentSelect(project: RecentProject) {
           title={t("connect.cli.label")}
           ariaLabel={t("connect.cli.label")}
           disabled={session.status === "connecting"}
-          onchange={(v) => (cliKind = v as CliKind)}
+          onchange={(v) => (cliKind = v)}
         />
       </label>
 

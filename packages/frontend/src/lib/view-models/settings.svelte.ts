@@ -13,12 +13,11 @@
  * הרלוונטי ללא מתודת set שכותבת ל-localStorage.
  */
 
-import type { CliKind } from "@drive-coding/core"
 import { DEFAULT_LOCALE, detectLocale, type Locale } from "@drive-coding/core/i18n"
 import type { SpeechPace, SpeechTone } from "@drive-coding/core/voice/tts-types"
 import { listVoices, type Voice } from "../adapters/voice/voices"
-import { setBeUrlBase } from "../util/be-url"
 import { DEFAULT_GEMINI_VOICE } from "../adapters/voice/voices-gemini"
+import { setBeUrlBase } from "../util/be-url"
 import { ttsCapabilities } from "./capabilities.svelte"
 
 const STORAGE_KEY = "drive-coding-v2-settings"
@@ -26,7 +25,8 @@ const STORAGE_KEY = "drive-coding-v2-settings"
 const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL" // Sarah, ElevenLabs
 
 type Persisted = {
-  cliKind: CliKind
+  /** open-cli-registry-fe: string (לא CliKind) — כל kind ברג'יסטרי האפקטיבי, כולל קונפ'. */
+  cliKind: string
   lastCwd: string
   voiceId: string
   beUrl: string
@@ -148,7 +148,7 @@ function save(s: Persisted): void {
 
 export class Settings {
   // ─── טופס חיבור ───
-  cliKind = $state<CliKind>(DEFAULTS.cliKind)
+  cliKind = $state<string>(DEFAULTS.cliKind)
   lastCwd = $state(DEFAULTS.lastCwd)
 
   // ─── קול ───
@@ -260,7 +260,7 @@ export class Settings {
 
   // ─── טופס חיבור ───
 
-  setCliKind = (k: CliKind): void => {
+  setCliKind = (k: string): void => {
     this.cliKind = k
     this.#persist()
   }

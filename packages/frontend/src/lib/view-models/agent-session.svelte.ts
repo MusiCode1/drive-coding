@@ -18,7 +18,6 @@ import type {
   SessionNotification,
   UsageUpdate,
 } from "@agentclientprotocol/sdk"
-import type { CliKind } from "@drive-coding/core"
 // ─── slice reconnect-ws-takeover: תרגום נקודתי להודעת "נפתח במקום אחר" ───
 // ה-VM לרוב לא מייבא t() (i18n שייך לשכבת-הרכיב — ר' #appendUserPlaceholder), אבל
 // `error` הוא string גולמי שמוצג as-is (routes/+page.svelte:191, לא עובר t() ברכיב) —
@@ -448,7 +447,7 @@ export class AgentSession {
   // ─── slice ws-reconnect-infra: reconnect internals ───
   /** ה-cliKind של ה-attach/loadSession האחרון — נדרש ל-cold reconnect.
    * $state כדי שה-getter הציבורי יהיה ריאקטיבי (slice cli-name-in-chat). */
-  #cliKind = $state<CliKind | null>(null)
+  #cliKind = $state<string | null>(null)
   /** True כשה-document.hidden (הדף ברקע). */
   #pageHidden = false
   /** טיימר לניסיון reconnect הבא. */
@@ -504,7 +503,7 @@ export class AgentSession {
   /**
    * @internal מגדיר #sessionId + cwd + #cliKind ישירות — כדי ש-reconnect() לא יחזור מוקדם.
    */
-  _setSessionContextForTest(ctx: { sessionId: string; cwd: string; cliKind: CliKind }): void {
+  _setSessionContextForTest(ctx: { sessionId: string; cwd: string; cliKind: string }): void {
     this.#sessionId = ctx.sessionId
     this.cwd = ctx.cwd
     this.#cliKind = ctx.cliKind
@@ -906,7 +905,7 @@ export class AgentSession {
    */
   attach = async (input: {
     cwd: string
-    cliKind: CliKind
+    cliKind: string
     // slice project-system-prompt: פרומפט-מערכת פר-פרויקט. הקורא (action connectAgent)
     // שולף אותו מ-Settings לפי cwd — ה-VM עצמו לא מחזיק Settings (שכבתיות, §9 Q1).
     systemPrompt?: string | null
@@ -1041,7 +1040,7 @@ export class AgentSession {
   }
 
   /** ה-CLI של הסשן הפעיל (claude/opencode/codex), או null כשאין סשן. slice cli-name-in-chat. */
-  get cliKind(): CliKind | null {
+  get cliKind(): string | null {
     return this.#cliKind
   }
 
@@ -1216,7 +1215,7 @@ export class AgentSession {
     input: {
       sessionId: string
       cwd: string
-      cliKind: CliKind
+      cliKind: string
       title?: string // ← slice session-title: תוספתי (קוראים קיימים לא נשברים)
     },
     // slice reconnect-recovery: preserveContextOnError — רק #coldReconnect מעביר true.
@@ -1344,7 +1343,7 @@ export class AgentSession {
     agentId: string
     sessionId: string
     cwd: string
-    cliKind: CliKind
+    cliKind: string
   }): Promise<void> => {
     this.error = null // אביגיל: #warmReconnect מאפס bubbles אך לא error — נקה כדי
     // שלא יישאר error ישן אחרי re-attach מוצלח.
@@ -1388,7 +1387,7 @@ export class AgentSession {
   switchSession = async (input: {
     sessionId: string
     cwd: string
-    cliKind: CliKind
+    cliKind: string
     title?: string // ← slice session-title: תוספתי
   }): Promise<void> => {
     // אין חיבור פעיל → נתיב כבד (דפנסיבי; ה-panel מוצג רק עם חיבור)
@@ -1459,7 +1458,7 @@ export class AgentSession {
    * אותה לוגיקת warm: אותו #client, אותו agentId, ללא detach/respawn.
    * למה לא detach+attach: detach הורג bridge + גורם ל-race "WS closed (1005)" + spawn מיותר.
    */
-  newSession = async (input: { cwd?: string; cliKind: CliKind }): Promise<void> => {
+  newSession = async (input: { cwd?: string; cliKind: string }): Promise<void> => {
     const cwd = input.cwd ?? this.cwd
     // אין חיבור פעיל → נתיב כבד (דפנסיבי; ה-panel מוצג רק עם חיבור)
     if (this.#client === null) {
