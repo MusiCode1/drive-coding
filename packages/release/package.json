@@ -1,6 +1,6 @@
 {
   "name": "drive-coding",
-  "version": "0.27.1",
+  "version": "0.28.0",
   "description": "AI-powered coding assistant — single-command server + web UI for ACP coding agents",
   "license": "MIT",
   "type": "module",
