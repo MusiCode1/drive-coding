@@ -29,7 +29,7 @@ const methods = $derived(authMethods.map(describeAuthMethod))
 
 {#if methods.length > 0}
   <div class="auth-guidance" role="region" aria-label={t("authGuidance.heading")}>
-    <strong dir="auto">{t("authGuidance.heading")}{#if cliKind} <CliBadge id={cliKind} displayName={cliAvailability.details[cliKind]?.displayName} variant="inline" />{/if}</strong>
+    <strong dir="auto">{t("authGuidance.heading")}{#if cliKind}{" "}<CliBadge id={cliKind} displayName={cliAvailability.details[cliKind]?.displayName} variant="inline" />{/if}</strong>
     <ul>
       {#each methods as m (m.id)}
         <li>
