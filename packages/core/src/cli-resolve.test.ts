@@ -166,6 +166,65 @@ describe("resolveCliBinary: knownPaths", () => {
   })
 })
 
+// ─── absolute/relative path in `bin` ──────────────────────────────────────────
+
+describe("resolveCliBinary: absolute/relative path in bin", () => {
+  afterEach(() => {
+    vi.clearAllMocks()
+    vi.unstubAllEnvs()
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+  })
+
+  it("returns absolute path as-is when it exists", () => {
+    const absPath = "/home/user/.local/bin/cline-acp-patched"
+    vi.stubEnv("PATHEXT", "")
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === absPath)
+
+    const result = resolveCliBinary({ bin: absPath })
+    expect(result).toBe(absPath)
+  })
+
+  it("returns undefined when absolute path does not exist", () => {
+    const absPath = "/home/user/.local/bin/nonexistent-cli"
+    vi.stubEnv("PATHEXT", "")
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+
+    const result = resolveCliBinary({ bin: absPath })
+    expect(result).toBeUndefined()
+  })
+
+  it("resolves ./relative path when it exists", () => {
+    const relPath = "./bin/mycli"
+    vi.stubEnv("PATHEXT", "")
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === relPath)
+
+    const result = resolveCliBinary({ bin: relPath })
+    expect(result).toBe(relPath)
+  })
+
+  it("regression: plain binary name still resolves via PATH scan", () => {
+    const fakeDir = "/fake/bin"
+    const expectedPath = path.join(fakeDir, "codex")
+
+    vi.stubEnv("PATH", fakeDir)
+    vi.stubEnv("PATHEXT", "")
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === expectedPath)
+
+    const result = resolveCliBinary({ bin: "codex" })
+    expect(result).toBe(expectedPath)
+  })
+
+  it("regression: envVar still takes precedence over absolute path in bin", () => {
+    const absPath = "/home/user/.local/bin/cline-acp-patched"
+    vi.stubEnv("MY_CLI_PATH", "/env/override/mycli")
+    vi.stubEnv("PATHEXT", "")
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === absPath)
+
+    const result = resolveCliBinary({ bin: absPath, envVar: "MY_CLI_PATH" })
+    expect(result).toBe("/env/override/mycli")
+  })
+})
+
 // ─── miss → undefined ─────────────────────────────────────────────────────────
 
 describe("resolveCliBinary: miss returns undefined", () => {

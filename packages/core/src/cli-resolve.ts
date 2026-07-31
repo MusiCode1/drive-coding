@@ -41,6 +41,20 @@ export function resolveCliBinary(
   // Candidate extensions: on Windows check PATHEXT; elsewhere bare binary only.
   const extensions = getCandidateExtensions(env)
 
+  // נתיב מוחלט/יחסי-מפורש ב-bin: אין מה לחפש — בדוק קיום ישירות.
+  // (path.join(dir, "/abs") מייצר זבל, ולכן סריקת ה-PATH לעולם לא תמצא נתיב מוחלט.)
+  if (path.isAbsolute(spec.bin) || spec.bin.startsWith("./") || spec.bin.startsWith("../")) {
+    if (fs.existsSync(spec.bin)) return spec.bin
+    // Windows: נתיב מוחלט **ללא סיומת** — נסה את מועמדי PATHEXT (.cmd/.exe/…),
+    // בדיוק כמו סריקת ה-PATH.
+    // (הדוגמה ל-cursor ב-deploy/cli-specs.jsonc כבר נושאת .cmd ולכן נתפסת בשורה שמעל;
+    //  הענף הזה מכסה את מי שיכתוב נתיב ללא סיומת — נפוץ כשמעתיקים נתיב מ-PowerShell.)
+    for (const ext of extensions) {
+      if (ext && fs.existsSync(spec.bin + ext)) return spec.bin + ext
+    }
+    return undefined
+  }
+
   // 2. PATH scan
   const rawPath = env["PATH"] ?? ""
   const dirs = rawPath.split(path.delimiter).filter(Boolean)
