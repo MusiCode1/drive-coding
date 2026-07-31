@@ -85,7 +85,7 @@ onMount(() => {
               onclick={() => onSelect(project)}
             >
               <div class="project-top">
-                <CliBadge id={project.kind} displayName={cliAvailability.details[project.kind]?.displayName} variant="badge" />
+                <CliBadge id={project.kind} displayName={cliAvailability.details[project.kind]?.displayName} logo={cliAvailability.details[project.kind]?.logo} variant="badge" />
                 <span class="folder-name" title={project.cwd}><bdi>{basename(project.cwd)}</bdi></span>
                 {#if project.lastSeen}
                   <span class="meta-sep">·</span>

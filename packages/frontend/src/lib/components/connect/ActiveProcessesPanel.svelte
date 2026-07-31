@@ -215,7 +215,7 @@ function reconnectTitle(agent: AgentPublic): string {
                 title={connectionTitle(agent)}
                 aria-label={connectionTitle(agent)}
               ></span>
-              <CliBadge id={agent.cliKind} displayName={cliAvailability.details[agent.cliKind]?.displayName} variant="badge" />
+              <CliBadge id={agent.cliKind} displayName={cliAvailability.details[agent.cliKind]?.displayName} logo={cliAvailability.details[agent.cliKind]?.logo} variant="badge" />
               <span class="folder-name" title={agent.cwd}><bdi>{basename(agent.cwd)}</bdi></span>
               {#if agent.title}
                 <span class="meta-sep">·</span>

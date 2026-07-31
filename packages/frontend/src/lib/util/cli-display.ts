@@ -40,3 +40,17 @@ export function cliColorHue(id: string): number {
   }
   return Math.abs(hash) % 360
 }
+
+/**
+ * מפתח יציב לזיהוי "איזה לוגו מוצג כרגע" (slice cli-logo-serving, Commit 1).
+ *
+ * <CliBadge> משתמש בזה כדי לאפס את `failed` (נפילה למונוגרמה) כש-id או logo
+ * משתנים — אחרת, אחרי החלפת CLI שבור אחד, ה-fallback ל-monogram "דבק"
+ * לצמיתות גם ל-CLI הבא (בג #4 שאביגיל תפסה — DoD #9 בודק מחיקה, לא החלפה).
+ *
+ * NUL (`\0`) כמפריד — לא תו-רגיל שיכול להופיע ב-id/logo — כדי למנוע התנגשות
+ * שרשור מקרית: id="a"+logo="bc" לעולם לא יתנגש עם id="ab"+logo="c".
+ */
+export function cliLogoKey(id: string, logo: string | undefined): string {
+  return `${id}\0${logo ?? ""}`
+}
