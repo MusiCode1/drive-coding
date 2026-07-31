@@ -13,7 +13,8 @@ import Trash2Icon from "@lucide/svelte/icons/trash-2"
 import { Popover } from "bits-ui"
 import { hasConnectionRing, reconnectState } from "$lib/adapters/reconnect-state"
 import { getMachineStats } from "$lib/adapters/system-api"
-import { getActiveAgents, getI18n, getSettings } from "$lib/context"
+import CliBadge from "$lib/components/ui/CliBadge.svelte"
+import { getActiveAgents, getCliAvailability, getI18n, getSettings } from "$lib/context"
 import { formatRelativeTime } from "$lib/util/formatting"
 import { basename } from "$lib/util/path"
 import { resizeDrag } from "$lib/util/resize-drag"
@@ -29,6 +30,9 @@ const activeAgents = getActiveAgents()
 const i18n = getI18n()
 const t = i18n.t
 const settings = getSettings()
+// slice cli-branding (Commit 3): הרכיב חסר-props ל-displayName של ה-CLI, לכן צורך
+// את cliAvailability בעצמו (אין "מלמעלה" להעביר prop — ר' brief §4 C3).
+const cliAvailability = getCliAvailability()
 
 let dragHeight = $state<number | null>(null)
 let handleEl = $state<HTMLDivElement | null>(null)
@@ -211,7 +215,7 @@ function reconnectTitle(agent: AgentPublic): string {
                 title={connectionTitle(agent)}
                 aria-label={connectionTitle(agent)}
               ></span>
-              <span class="cli-badge">{agent.cliKind}</span>
+              <CliBadge id={agent.cliKind} displayName={cliAvailability.details[agent.cliKind]?.displayName} variant="badge" />
               <span class="folder-name" title={agent.cwd}><bdi>{basename(agent.cwd)}</bdi></span>
               {#if agent.title}
                 <span class="meta-sep">·</span>
@@ -503,16 +507,6 @@ function reconnectTitle(agent: AgentPublic): string {
     box-shadow:
       0 0 0 2px var(--bg-elev),
       0 0 0 4px var(--accent);
-  }
-
-  .cli-badge {
-    background: var(--border);
-    color: var(--fg);
-    padding: 0.1rem 0.35rem;
-    border-radius: 4px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    flex-shrink: 0;
   }
 
   /* שם התיקייה (basename) — בולט בשורה העליונה */

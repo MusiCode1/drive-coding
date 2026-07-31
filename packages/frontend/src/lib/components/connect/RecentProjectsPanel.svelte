@@ -10,7 +10,8 @@
  */
 import { onMount } from "svelte"
 import type { RecentProject } from "$lib/adapters/recent-projects"
-import { getI18n, getRecentProjects, getSettings } from "$lib/context"
+import CliBadge from "$lib/components/ui/CliBadge.svelte"
+import { getCliAvailability, getI18n, getRecentProjects, getSettings } from "$lib/context"
 import { formatRelativeTime } from "$lib/util/formatting"
 import { basename } from "$lib/util/path"
 import { resizeDrag } from "$lib/util/resize-drag"
@@ -25,6 +26,9 @@ const recent = getRecentProjects()
 const i18n = getI18n()
 const t = i18n.t
 const settings = getSettings()
+// slice cli-branding (Commit 3): הרכיב חסר-props ל-displayName של ה-CLI, לכן צורך
+// את cliAvailability בעצמו (אין "מלמעלה" להעביר prop — ר' brief §4 C3).
+const cliAvailability = getCliAvailability()
 
 let dragHeight = $state<number | null>(null)
 let handleEl = $state<HTMLDivElement | null>(null)
@@ -81,7 +85,7 @@ onMount(() => {
               onclick={() => onSelect(project)}
             >
               <div class="project-top">
-                <span class="cli-badge">{project.kind}</span>
+                <CliBadge id={project.kind} displayName={cliAvailability.details[project.kind]?.displayName} variant="badge" />
                 <span class="folder-name" title={project.cwd}><bdi>{basename(project.cwd)}</bdi></span>
                 {#if project.lastSeen}
                   <span class="meta-sep">·</span>
@@ -317,17 +321,6 @@ onMount(() => {
   .meta-sep {
     color: var(--fg-dim);
     opacity: 0.5;
-  }
-
-  /* badge סוג-CLI — זהה ל-ActiveProcessesPanel */
-  .cli-badge {
-    background: var(--border);
-    color: var(--fg);
-    padding: 0.1rem 0.35rem;
-    border-radius: 4px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    flex-shrink: 0;
   }
 
   /* שם התיקייה (basename) — בולט בשורה העליונה */

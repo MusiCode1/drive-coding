@@ -7,7 +7,8 @@
  * ר' docs/plans/slice-auth-guidance.md §3 Commit 1.
  */
 import type { AuthMethod } from "@agentclientprotocol/sdk"
-import { getI18n } from "$lib/context"
+import CliBadge from "$lib/components/ui/CliBadge.svelte"
+import { getCliAvailability, getI18n } from "$lib/context"
 import { describeAuthMethod } from "$lib/util/auth-guidance"
 
 interface Props {
@@ -19,13 +20,16 @@ const { cliKind, authMethods }: Props = $props()
 
 const i18n = getI18n()
 const t = i18n.t
+// slice cli-branding (Commit 3): הרכיב חסר-prop ל-displayName (cliKind גרידא) —
+// צורך את cliAvailability בעצמו, כמו ActiveProcessesPanel/RecentProjectsPanel.
+const cliAvailability = getCliAvailability()
 
 const methods = $derived(authMethods.map(describeAuthMethod))
 </script>
 
 {#if methods.length > 0}
   <div class="auth-guidance" role="region" aria-label={t("authGuidance.heading")}>
-    <strong dir="auto">{t("authGuidance.heading")}{cliKind ? ` ${cliKind}` : ""}</strong>
+    <strong dir="auto">{t("authGuidance.heading")}{#if cliKind}{" "}<CliBadge id={cliKind} displayName={cliAvailability.details[cliKind]?.displayName} variant="inline" />{/if}</strong>
     <ul>
       {#each methods as m (m.id)}
         <li>

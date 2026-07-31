@@ -17,6 +17,10 @@ export interface CliAvailabilityDetails {
   found: boolean
   path?: string
   source: "path" | "override" | "not-found"
+  /** שם-תצוגה (slice cli-branding). מגיע מ-spec.displayName, לא תלוי ב-found. */
+  displayName?: string
+  /** נתיב-לוגו (slice cli-branding). מגיע מ-spec.logo, לא תלוי ב-found; לא מוגש עדיין. */
+  logo?: string
 }
 
 export interface CliAvailabilityResult {
@@ -59,7 +63,23 @@ export function detectAvailableClis(
         : "path"
       : "not-found"
 
-    details[kind] = found ? { found, path: resolved, source } : { found, source }
+    // displayName/logo (slice cli-branding): מגיעים מה-spec, לא תלויים ב-found —
+    // מיתוג עצמאי מזמינות. אתר הפליטה הוא טרנרי (found ? {…} : {…}), לא spread
+    // מותנה (זה חי ב-cli-config.ts) — לכן שני הענפים כוללים אותם מפורשות.
+    details[kind] = found
+      ? {
+          found,
+          path: resolved,
+          source,
+          ...(spec.displayName !== undefined ? { displayName: spec.displayName } : {}),
+          ...(spec.logo !== undefined ? { logo: spec.logo } : {}),
+        }
+      : {
+          found,
+          source,
+          ...(spec.displayName !== undefined ? { displayName: spec.displayName } : {}),
+          ...(spec.logo !== undefined ? { logo: spec.logo } : {}),
+        }
     if (found) available.push(kind)
   }
 

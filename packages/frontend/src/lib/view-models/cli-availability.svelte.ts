@@ -25,6 +25,16 @@ export class CliAvailability {
   registry = $state<string[]>([...CLI_KINDS])
   /** פרטי-זמינות פר-kind, ל-description/tooltip. */
   details = $state<Record<string, CliAvailabilityDetails>>({})
+  /** נפתר אחרי ה-load() הראשון (הצלחה או כשל). לצרכנים שצריכים registry מאוכלס. */
+  readonly ready: Promise<void>
+
+  #resolveReady!: () => void
+
+  constructor() {
+    this.ready = new Promise((resolve) => {
+      this.#resolveReady = resolve
+    })
+  }
 
   load = async (): Promise<void> => {
     this.loading = true
@@ -42,6 +52,7 @@ export class CliAvailability {
       this.details = {}
     } finally {
       this.loading = false
+      this.#resolveReady()
     }
   }
 }

@@ -335,3 +335,113 @@ describe("registry אפקטיבי (getEffectiveCliKinds/Specs + getCliCommand ע
     }
   })
 })
+
+// ─── displayName + logo (slice cli-branding, Commit 0) ───────────────────────
+// ארבע התחנות: CliSpec → MutableOverride → validateOverride → getCliSpec spread.
+// שדה שעובר 3/4 נעלם בשקט (envVar/detectBin הם הבאג החי) — לכן הטסטים כאן בודקים
+// ישירות את getCliSpec, לא רק את loadCliSpecsOverride.
+describe("getCliSpec — displayName + logo (Commit 0, cli-branding)", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    delete process.env.OPENCODE_BIN
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    delete process.env.CLI_SPECS_FILE
+    delete process.env.OPENCODE_BIN
+  })
+
+  it("1. displayName מהקונפ' מגיע ל-getCliSpec", async () => {
+    const fs = await import("node:fs")
+    const os = await import("node:os")
+    const path = await import("node:path")
+    const filePath = path.join(os.tmpdir(), `cli-branding-test-${Date.now()}.jsonc`)
+    fs.writeFileSync(filePath, JSON.stringify({ gemini: { displayName: "Gemini" } }))
+    process.env.CLI_SPECS_FILE = filePath
+    try {
+      const { getCliSpec } = await import("./src/config/cli-config.js")
+      const result = getCliSpec("gemini")
+      expect(result?.displayName).toBe("Gemini")
+    } finally {
+      fs.unlinkSync(filePath)
+    }
+  })
+
+  it("2. חסר displayName → undefined", async () => {
+    process.env.CLI_SPECS_FILE = "NO_OVERRIDE_FILE"
+    const { getCliSpec } = await import("./src/config/cli-config.js")
+    const result = getCliSpec("gemini")
+    expect(result?.displayName).toBeUndefined()
+  })
+
+  it("3. displayName לא-string → warn + מדולג", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const fs = await import("node:fs")
+    const os = await import("node:os")
+    const path = await import("node:path")
+    const filePath = path.join(os.tmpdir(), `cli-branding-test-${Date.now()}.jsonc`)
+    fs.writeFileSync(filePath, JSON.stringify({ gemini: { displayName: 123 } }))
+    process.env.CLI_SPECS_FILE = filePath
+    try {
+      const { getCliSpec } = await import("./src/config/cli-config.js")
+      const result = getCliSpec("gemini")
+      expect(result?.displayName).toBeUndefined()
+      expect(warnSpy).toHaveBeenCalled()
+    } finally {
+      fs.unlinkSync(filePath)
+      warnSpy.mockRestore()
+    }
+  })
+
+  it("4. logo מהקונפ' מגיע ל-getCliSpec", async () => {
+    const fs = await import("node:fs")
+    const os = await import("node:os")
+    const path = await import("node:path")
+    const filePath = path.join(os.tmpdir(), `cli-branding-test-${Date.now()}.jsonc`)
+    fs.writeFileSync(filePath, JSON.stringify({ gemini: { logo: "/tmp/gemini.png" } }))
+    process.env.CLI_SPECS_FILE = filePath
+    try {
+      const { getCliSpec } = await import("./src/config/cli-config.js")
+      const result = getCliSpec("gemini")
+      expect(result?.logo).toBe("/tmp/gemini.png")
+    } finally {
+      fs.unlinkSync(filePath)
+    }
+  })
+
+  it("5. חסר logo → undefined", async () => {
+    process.env.CLI_SPECS_FILE = "NO_OVERRIDE_FILE"
+    const { getCliSpec } = await import("./src/config/cli-config.js")
+    const result = getCliSpec("gemini")
+    expect(result?.logo).toBeUndefined()
+  })
+
+  it("6. logo לא-string → warn + מדולג", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const fs = await import("node:fs")
+    const os = await import("node:os")
+    const path = await import("node:path")
+    const filePath = path.join(os.tmpdir(), `cli-branding-test-${Date.now()}.jsonc`)
+    fs.writeFileSync(filePath, JSON.stringify({ gemini: { logo: 42 } }))
+    process.env.CLI_SPECS_FILE = filePath
+    try {
+      const { getCliSpec } = await import("./src/config/cli-config.js")
+      const result = getCliSpec("gemini")
+      expect(result?.logo).toBeUndefined()
+      expect(warnSpy).toHaveBeenCalled()
+    } finally {
+      fs.unlinkSync(filePath)
+      warnSpy.mockRestore()
+    }
+  })
+
+  it("7. רגרסיה: 7 המובנים ללא שינוי (בלי displayName/logo)", async () => {
+    process.env.CLI_SPECS_FILE = "NO_OVERRIDE_FILE"
+    const { getCliCommand } = await import("./src/config/cli-config.js")
+    expect(getCliCommand("opencode")).toEqual({ bin: "opencode", args: ["acp"] })
+    expect(getCliCommand("cursor")).toEqual({ bin: "agent", args: ["acp"] })
+    expect(getCliCommand("grok")).toEqual({ bin: "grok", args: ["--no-auto-update", "agent", "stdio"] })
+    expect(getCliCommand("qoder")).toEqual({ bin: "qodercli", args: ["--acp"] })
+  })
+})

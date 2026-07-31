@@ -21,6 +21,7 @@ import {
   setActiveAgents,
   setBubblePlayer,
   setChatScroll,
+  setCliAvailability,
   setContentViewer,
   setCues,
   setI18n,
@@ -40,6 +41,7 @@ import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { CuesEngine } from "$lib/engines/cues"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
+import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
 import { RecentProjects } from "$lib/view-models/recent-projects.svelte"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { BubblePlayer } from "$lib/view-models/bubble-player.svelte"
@@ -111,6 +113,12 @@ const activeAgents = new ActiveAgents()
 // ─── recent-projects ─── (slice connect-recent-projects — בלתי-תלוי)
 const recentProjects = new RecentProjects()
 
+// ─── cli-availability ─── (slice cli-branding, Commit 3 — הועבר מ-+page.svelte כדי
+// שכניסה ישירה ל-/chat (רענון, deep-link) גם היא תטען את הרג'יסטרי; ר' brief §4 C3.
+// load() רץ פעם אחת לכל טעינת-אפליקציה (שינוי-סמנטיקה מכוון, ר' "סטיות" בסוף המסמך).
+const cliAvailability = new CliAvailability()
+void cliAvailability.load()
+
 // ─── tts-capabilities ─── (slice tts-provider-availability, Commit 3 — race-fix)
 // מקדים את בדיקת הזמינות לפני שה-$effect ב-VoicePicker מופעל.
 // refresh() non-blocking (void) — אין await. ה-$effect reactive ב-VoicePicker
@@ -165,6 +173,7 @@ setModals(modals)
 setContentViewer(contentViewer)
 setActiveAgents(activeAgents)
 setRecentProjects(recentProjects)
+setCliAvailability(cliAvailability)
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)
 const chatScroll = $state<ChatScrollBridge>({ scrollEl: null, handle: null })

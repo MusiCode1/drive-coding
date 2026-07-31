@@ -48,6 +48,18 @@ export function getCliSpec(kind: string, env?: NodeJS.ProcessEnv): CliSpec | und
     // ייעודי (כמו envVar). בלי זה, detectAvailableClis מקבל spec ללא detectBin עבור
     // claude/codex ונופל בחזרה ל-bin=npx — התיקון מנוטרל בשקט.
     ...(base?.detectBin !== undefined ? { detectBin: base.detectBin } : {}),
+    // displayName (slice cli-branding): override גובר על base.
+    ...(override?.displayName !== undefined
+      ? { displayName: override.displayName }
+      : base?.displayName !== undefined
+        ? { displayName: base.displayName }
+        : {}),
+    // logo (slice cli-branding): נכנס לחוט; ההגשה בפועל בסלייס cli-logo-serving.
+    ...(override?.logo !== undefined
+      ? { logo: override.logo }
+      : base?.logo !== undefined
+        ? { logo: base.logo }
+        : {}),
   }
 }
 

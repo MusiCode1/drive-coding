@@ -164,3 +164,47 @@ describe("detectAvailableClis: defaults", () => {
     expect(result.available).toEqual([])
   })
 })
+
+// ─── displayName + logo (slice cli-branding, Commit 1) ───────────────────────
+// אתר-הפליטה (:62 בקוד) הוא טרנרי (found ? {…} : {…}) — לא spread מותנה כמו
+// ב-cli-config.ts. שני הטסטים בודקים גם כשה-CLI found וגם כשלא — שני הענפים
+// חייבים להעביר את השדות אם הם קיימים ב-spec.
+describe("detectAvailableClis: displayName + logo", () => {
+  const brandedSpecs = {
+    pi: {
+      bin: "pi-cli",
+      args: [],
+      supportsModelFlag: false,
+      displayName: "Pi",
+      logo: "/tmp/pi.png",
+    },
+  } as unknown as Record<CliKind, CliSpec>
+
+  it("found=true → displayName+logo מועברים מה-spec", () => {
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/fake/bin/pi-cli")
+
+    const result = detectAvailableClis(brandedSpecs, env)
+
+    expect(result.details.pi).toMatchObject({ displayName: "Pi", logo: "/tmp/pi.png" })
+  })
+
+  it("found=false → displayName+logo עדיין מועברים מה-spec (זמינות ומיתוג עצמאיים)", () => {
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+
+    const result = detectAvailableClis(brandedSpecs, env)
+
+    expect(result.details.pi).toMatchObject({ displayName: "Pi", logo: "/tmp/pi.png" })
+  })
+
+  it("spec ללא displayName/logo → השדות נעדרים (לא undefined מפורש)", () => {
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+
+    const result = detectAvailableClis(specs, env)
+
+    expect(result.details.claude).not.toHaveProperty("displayName")
+    expect(result.details.claude).not.toHaveProperty("logo")
+  })
+})

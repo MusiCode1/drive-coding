@@ -14,6 +14,7 @@
 import { createContext } from "svelte"
 import type { AgentSession } from "./view-models/agent-session.svelte"
 import type { ChatScrollBridge } from "./types/chat-scroll"
+import type { CliAvailability } from "./view-models/cli-availability.svelte"
 import type { I18nVM } from "./view-models/i18n.svelte"
 import type { Mic } from "./view-models/mic.svelte"
 import type { ResponsiveVM } from "./view-models/responsive.svelte"
@@ -82,3 +83,6 @@ export const [getContentViewer, setContentViewer] = createContext<ContentViewerV
 
 // ─── recent-projects ─── (slice connect-recent-projects)
 export const [getRecentProjects, setRecentProjects] = createContext<RecentProjects>()
+
+// ─── cli-availability ─── (slice cli-branding, Commit 3)
+export const [getCliAvailability, setCliAvailability] = createContext<CliAvailability>()

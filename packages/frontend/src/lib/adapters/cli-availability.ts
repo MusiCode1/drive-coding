@@ -12,6 +12,10 @@ export type CliAvailabilityDetails = {
   found: boolean
   path?: string
   source: "path" | "override" | "not-found"
+  /** שם-תצוגה (slice cli-branding). חסר → ה-FE מציג את המזהה. */
+  displayName?: string
+  /** נתיב-לוגו (slice cli-branding). נקרא בלבד; ההגשה בסלייס cli-logo-serving. */
+  logo?: string
 }
 
 export type CliAvailabilityResult = {
