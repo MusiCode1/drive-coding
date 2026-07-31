@@ -38,6 +38,10 @@ export type CliSpec = {
    * משתמש ב-bin (spawned CLIs, ללא שינוי).
    */
   readonly detectBin?: string
+  /** שם-תצוגה. חסר → ה-FE מציג את המזהה. */
+  readonly displayName?: string
+  /** נתיב לקובץ-לוגו. נקרא בסכימה ועובר על החוט; ההגשה בסלייס cli-logo-serving. */
+  readonly logo?: string
 }
 
 export const CLI_SPECS = {

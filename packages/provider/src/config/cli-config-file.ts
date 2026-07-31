@@ -55,6 +55,8 @@ type MutableOverride = {
   supportsModelFlag?: boolean
   unsetEnv?: string[]
   setEnv?: Record<string, string>
+  displayName?: string
+  logo?: string
 }
 
 /**
@@ -126,6 +128,26 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
       console.warn(
         `[cli-config-file] override["${kind}"].setEnv must be Record<string,string> — skipping field`,
       )
+    }
+  }
+
+  // displayName: string
+  if ("displayName" in obj) {
+    if (typeof obj["displayName"] === "string") {
+      result.displayName = obj["displayName"]
+    } else {
+      console.warn(
+        `[cli-config-file] override["${kind}"].displayName must be a string — skipping field`,
+      )
+    }
+  }
+
+  // logo: string
+  if ("logo" in obj) {
+    if (typeof obj["logo"] === "string") {
+      result.logo = obj["logo"]
+    } else {
+      console.warn(`[cli-config-file] override["${kind}"].logo must be a string — skipping field`)
     }
   }
 
