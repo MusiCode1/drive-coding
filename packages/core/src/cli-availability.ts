@@ -20,28 +20,32 @@ export interface CliAvailabilityDetails {
 }
 
 export interface CliAvailabilityResult {
-  available: readonly CliKind[]
-  details: Readonly<Record<CliKind, CliAvailabilityDetails>>
+  available: readonly string[]
+  details: Readonly<Record<string, CliAvailabilityDetails>>
 }
 
 /**
- * מגלה אילו CLI_KINDS זמינים בסביבת הריצה.
- * @param specs מיפוי CliKind → CliSpec (ברירת מחדל CLI_SPECS; ה-backend מעביר מיפוי
+ * מגלה אילו CLIs זמינים בסביבת הריצה — כולל כאלה מהקונפ' שהפרויקט לא מכיר (slice
+ * open-cli-registry: specs/overrideKinds/available/details הורחבו ל-string; שלושת
+ * ה-locals הפנימיים (available/details/הלולאה) נשארים מוקלדים CliKind בכוונה —
+ * חצי-הרחבה שוברת, ר' תיעוד-הבריף).
+ * @param specs מיפוי kind → CliSpec (ברירת מחדל CLI_SPECS; ה-backend מעביר מיפוי
  *   ממוזג עם override קובץ, כדי ש-core ישאר טהור ולא ייגע בקבצים).
  * @param env process.env אופציונלי (למען טסטים; ברירת מחדל process.env בתוך resolveCliBinary).
  * @param overrideKinds רשימת kind-ים שה-bin שלהם מגיע מ-override — עבורם envVar מדולג
  *   כדי לשקף את סדר העדיפויות של getCliCommand (override.bin קודם ל-envVar).
  */
 export function detectAvailableClis(
-  specs: Readonly<Record<CliKind, CliSpec>> = CLI_SPECS,
+  specs: Readonly<Record<string, CliSpec>> = CLI_SPECS,
   env?: NodeJS.ProcessEnv,
-  overrideKinds?: readonly CliKind[],
+  overrideKinds?: readonly string[],
 ): CliAvailabilityResult {
   const available: CliKind[] = []
   const details = {} as Record<CliKind, CliAvailabilityDetails>
 
   for (const kind of Object.keys(specs) as CliKind[]) {
     const spec = specs[kind]
+    if (spec === undefined) continue
     const isOverride = overrideKinds?.includes(kind) ?? false
 
     const resolved = isOverride

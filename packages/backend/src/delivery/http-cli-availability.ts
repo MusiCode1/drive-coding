@@ -11,21 +11,22 @@
  */
 
 import type { CliKind, CliSpec } from "@drive-coding/core"
-import { CLI_KINDS, CLI_SPECS } from "@drive-coding/core"
+import { CLI_SPECS } from "@drive-coding/core"
 import { detectAvailableClis } from "@drive-coding/core/cli-availability"
-import { getCliSpec } from "@drive-coding/provider/config"
+import { getCliSpec, getEffectiveCliKinds } from "@drive-coding/provider/config"
 import type { Hono } from "hono"
 
 export function registerCliAvailabilityHttp(app: Hono): void {
-  // GET /api/cli-availability — { available: CliKind[], details: Record<CliKind, ...> }
+  // GET /api/cli-availability — { available: string[], details: Record<string, ...> }
   app.get("/api/cli-availability", (c) => {
-    const mergedSpecs = {} as Record<CliKind, CliSpec>
-    const overrideKinds: CliKind[] = []
+    const mergedSpecs: Record<string, CliSpec> = {}
+    const overrideKinds: string[] = []
 
-    for (const kind of CLI_KINDS) {
+    for (const kind of getEffectiveCliKinds(process.env)) {
       const spec = getCliSpec(kind, process.env)
-      if (spec === undefined) continue // לא אמור לקרות — יש base לכל kind ב-CLI_KINDS
-      if (spec.bin !== CLI_SPECS[kind].bin) overrideKinds.push(kind)
+      if (spec === undefined) continue
+      const base = CLI_SPECS[kind as CliKind]
+      if (base === undefined || spec.bin !== base.bin) overrideKinds.push(kind)
       mergedSpecs[kind] = spec
     }
 

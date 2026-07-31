@@ -3,15 +3,23 @@ import { getCliCommand, getCliSpec } from "./src/config/cli-config"
 
 describe("getCliCommand", () => {
   const origEnv = process.env.OPENCODE_BIN
+  const origCliSpecsFile = process.env.CLI_SPECS_FILE
 
   beforeEach(() => {
     process.env.OPENCODE_BIN = undefined
     delete process.env.OPENCODE_BIN
+    vi.resetModules()
+    // בידוד מקובץ-הקונפ' האמיתי של המשתמש (~/.config/drive-coding/cli-specs.jsonc) —
+    // הצבה מפורשת לנתיב לא-קיים, לא delete (delete נופל בחזרה ל-homedir(), שזה ההפך
+    // מבידוד — ר' cli-config-file.ts:29 ותיעוד ב-describe הבא).
+    process.env.CLI_SPECS_FILE = "NO_OVERRIDE_FILE"
   })
 
   afterEach(() => {
     if (origEnv === undefined) delete process.env.OPENCODE_BIN
     else process.env.OPENCODE_BIN = origEnv
+    if (origCliSpecsFile === undefined) delete process.env.CLI_SPECS_FILE
+    else process.env.CLI_SPECS_FILE = origCliSpecsFile
   })
 
   it('opencode → { bin: "opencode", args: ["acp"] }', () => {
@@ -230,6 +238,98 @@ describe("getCliCommand with override", () => {
       const result = cmd("gemini", "gemini-2.5-pro")
       // args דרוסים + --model בסוף
       expect(result.args).toEqual(["--acp", "--foo", "--model", "gemini-2.5-pro"])
+    } finally {
+      fs.unlinkSync(filePath)
+    }
+  })
+})
+
+// ─── הרג'יסטרי האפקטיבי — CliId (slice open-cli-registry, Commit 2) ───────────
+// כל טסט כאן קורא קובץ-קונפ' (ישיר או דרך CLI_SPECS), ולכן חייב בידוד מלא:
+// vi.resetModules() + הצבת CLI_SPECS_FILE + import() דינמי בתוך הטסט.
+
+describe("registry אפקטיבי (getEffectiveCliKinds/Specs + getCliCommand על CLI מהקונפ')", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    process.env.CLI_SPECS_FILE = "NO_OVERRIDE_FILE"
+    delete process.env.OPENCODE_BIN
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    delete process.env.CLI_SPECS_FILE
+    delete process.env.OPENCODE_BIN
+  })
+
+  it("1. getCliCommand('mycli') מקונפ' → ה-bin/args שלה", async () => {
+    const fs = await import("node:fs")
+    const os = await import("node:os")
+    const path = await import("node:path")
+    const filePath = path.join(os.tmpdir(), `cli-registry-test-${Date.now()}.jsonc`)
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({ mycli: { bin: "opencode", args: ["acp"], supportsModelFlag: false } }),
+    )
+    process.env.CLI_SPECS_FILE = filePath
+    try {
+      const { getCliCommand: cmd } = await import("./src/config/cli-config.js")
+      const result = cmd("mycli")
+      expect(result.bin).toBe("opencode")
+      expect(result.args).toEqual(["acp"])
+    } finally {
+      fs.unlinkSync(filePath)
+    }
+  })
+
+  it("2. getCliCommand('nope') → זורק (לא קיים בשום מקום)", async () => {
+    const { getCliCommand: cmd } = await import("./src/config/cli-config.js")
+    expect(() => cmd("nope")).toThrow("Unknown cliKind: nope")
+  })
+
+  it("3. getEffectiveCliKinds() בלי קונפ' = CLI_KINDS", async () => {
+    const { getEffectiveCliKinds } = await import("./src/config/cli-config.js")
+    const { CLI_KINDS } = await import("@drive-coding/core")
+    expect(getEffectiveCliKinds()).toEqual([...CLI_KINDS])
+  })
+
+  it("4. getEffectiveCliKinds() עם קונפ' → כולל את ה-CLI החדש", async () => {
+    const fs = await import("node:fs")
+    const os = await import("node:os")
+    const path = await import("node:path")
+    const filePath = path.join(os.tmpdir(), `cli-registry-test-${Date.now()}.jsonc`)
+    fs.writeFileSync(filePath, JSON.stringify({ mycli: { bin: "opencode", args: ["acp"] } }))
+    process.env.CLI_SPECS_FILE = filePath
+    try {
+      const { getEffectiveCliKinds } = await import("./src/config/cli-config.js")
+      const kinds = getEffectiveCliKinds()
+      expect(kinds).toContain("mycli")
+      expect(kinds).toContain("opencode")
+    } finally {
+      fs.unlinkSync(filePath)
+    }
+  })
+
+  it("5. רגרסיה: 7 המובנים מחזירים אותו {bin,args} בלי קונפ'", async () => {
+    const { getCliCommand: cmd } = await import("./src/config/cli-config.js")
+    expect(cmd("opencode")).toEqual({ bin: "opencode", args: ["acp"] })
+    expect(cmd("cursor")).toEqual({ bin: "agent", args: ["acp"] })
+    expect(cmd("grok")).toEqual({ bin: "grok", args: ["--no-auto-update", "agent", "stdio"] })
+    expect(cmd("qoder")).toEqual({ bin: "qodercli", args: ["--acp"] })
+  })
+
+  it("6. override.supportsModelFlag על CLI מובנה נכנס לתוקף", async () => {
+    const fs = await import("node:fs")
+    const os = await import("node:os")
+    const path = await import("node:path")
+    const filePath = path.join(os.tmpdir(), `cli-registry-test-${Date.now()}.jsonc`)
+    // cursor: supportsModelFlag=false ב-CLI_SPECS. override הופך אותו ל-true.
+    fs.writeFileSync(filePath, JSON.stringify({ cursor: { supportsModelFlag: true } }))
+    process.env.CLI_SPECS_FILE = filePath
+    try {
+      const { getCliCommand: cmd } = await import("./src/config/cli-config.js")
+      const result = cmd("cursor", "some-model")
+      expect(result.args).toContain("--model")
+      expect(result.args).toContain("some-model")
     } finally {
       fs.unlinkSync(filePath)
     }

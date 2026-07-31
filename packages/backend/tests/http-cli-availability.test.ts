@@ -153,6 +153,30 @@ describe("GET /api/cli-availability — override gateway (bin: cli-specs.jsonc �
     })
   })
 
+  it("CLI defined only in cli-specs.jsonc (open-cli-registry gateway — getEffectiveCliKinds, not CLI_KINDS)", async () => {
+    const uniqueBin = `custom-mycli-${Date.now()}`
+    fs.writeFileSync(path.join(binDir, uniqueBin), "")
+    fs.writeFileSync(overrideFile, JSON.stringify({ mycli: { bin: uniqueBin, args: [] } }))
+    process.env.CLI_SPECS_FILE = overrideFile
+    vi.stubEnv("PATH", binDir)
+    vi.stubEnv("PATHEXT", "")
+
+    const app = await makeApp()
+    const res = await app.request("/api/cli-availability")
+    const body = (await res.json()) as {
+      available: string[]
+      details: Record<string, { found: boolean; path?: string; source: string }>
+    }
+
+    // mycli has no base in CLI_SPECS — it's config-only, so it must always count as "override".
+    expect(body.available).toContain("mycli")
+    expect(body.details.mycli).toEqual({
+      found: true,
+      path: path.join(binDir, uniqueBin),
+      source: "override",
+    })
+  })
+
   it("override.bin missing → source 'not-found', excluded from available", async () => {
     const uniqueBin = `nonexistent-cli-availability-${Date.now()}`
     fs.writeFileSync(overrideFile, JSON.stringify({ opencode: { bin: uniqueBin } }))

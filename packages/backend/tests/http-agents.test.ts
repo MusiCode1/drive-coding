@@ -115,7 +115,7 @@ describe("HTTP /api/agents", () => {
       expect(res.status).toBe(400)
     })
 
-    it("rejects invalid cliKind", async () => {
+    it("rejects unknown cliKind (open-cli-registry: not in the effective registry, not a schema failure)", async () => {
       const { app } = makeApp()
       const res = await app.request("/api/agents", {
         method: "POST",
@@ -123,6 +123,9 @@ describe("HTTP /api/agents", () => {
         body: JSON.stringify({ cliKind: "vim", cwd: "/foo" }),
       })
       expect(res.status).toBe(400)
+      const body = await res.json()
+      expect(body).toHaveProperty("known")
+      expect(Array.isArray(body.known)).toBe(true)
     })
 
     it("creates with modelOverride", async () => {
@@ -549,7 +552,12 @@ describe("HTTP /api/agents", () => {
 
       const bridgeManager = {
         // slice agent-busy-indicator: busy נוסף ל-return type
-        getRuntimeInfo: vi.fn((_id: string) => ({ pid: 12345, attached: true, busy: false, lastMessageAt: null })),
+        getRuntimeInfo: vi.fn((_id: string) => ({
+          pid: 12345,
+          attached: true,
+          busy: false,
+          lastMessageAt: null,
+        })),
       }
 
       registerAgentsHttp(app, { registry, orchestrator, bridgeManager })

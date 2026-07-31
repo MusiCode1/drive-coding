@@ -68,8 +68,19 @@ export const CLI_SPECS = {
 export const CLI_KINDS = Object.keys(CLI_SPECS) as readonly (keyof typeof CLI_SPECS)[]
 
 // arktype enum נבנה מרשימת המקור — נשאר מסונכרן אוטומטית.
+// שימוש: רשימות-ליטרלים מוגנות בקומפילציה (למשל ניתוב in-process/spawn). נשאר
+// סגור במכוון (הכרעת "דרך-הביניים", slice open-cli-registry) — לא נרחב, כי
+// טעות-כתיב בליטרל cliKind (כמו "cluade") צריכה להיתפס בקומפילציה, לא בזמן-ריצה.
 export const CliKind = type.enumerated(...CLI_KINDS)
 export type CliKind = keyof typeof CLI_SPECS
+
+/**
+ * טיפוס ה-wire וה-spawn של זהות-CLI. מחרוזת חופשית — הרשימה הקבילה נקבעת בזמן-ריצה
+ * מהרג'יסטרי האפקטיבי (CLI_SPECS ⊕ cli-specs.jsonc), לא בקומפילציה.
+ * להבדיל מ-`CliKind`, שהוא union סגור של המובנים ומשמש לרשימות-ליטרלים מוגנות.
+ */
+export type CliId = string
+export const CliId = type("string >= 1")
 
 // מכונת מצבים (State machine) של סטטוס
 // starting: בתהליך spawn (Slice 3+)
@@ -83,7 +94,7 @@ export type AgentStatus = typeof AgentStatus.infer
 // פנימי — מיועד ל-backend בלבד
 export const Agent = type({
   id: "string.uuid",
-  cliKind: CliKind,
+  cliKind: CliId,
   cwd: "string",
   modelOverride: "string | null",
   status: AgentStatus,
@@ -104,7 +115,7 @@ export type Agent = typeof Agent.infer
 // פומבי — מה שה-frontend מקבל
 export const AgentPublic = type({
   id: "string.uuid",
-  cliKind: CliKind,
+  cliKind: CliId,
   cwd: "string",
   modelOverride: "string | null",
   status: AgentStatus,
@@ -132,7 +143,7 @@ export type AgentPublic = typeof AgentPublic.infer
 
 // קלט ל-POST /api/agents
 export const CreateAgentInput = type({
-  cliKind: CliKind,
+  cliKind: CliId,
   cwd: "string >= 1",
   "modelOverride?": "string | null",
   // Slice 8a: טעינת session ACP קיים דרך session/load במקום newSession
