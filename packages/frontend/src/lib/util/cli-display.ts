@@ -54,3 +54,16 @@ export function cliColorHue(id: string): number {
 export function cliLogoKey(id: string, logo: string | undefined): string {
   return `${id}\0${logo ?? ""}`
 }
+
+/**
+ * true אם ה-`logo` הוא URL מרוחק (http/https), ולא נתיב-קובץ מקומי (slice
+ * cli-logo-serving, Commit 3).
+ *
+ * <CliBadge> משתמש בזה כדי להחליט בין `<img src={logo}>` ישיר (הדפדפן מושך את
+ * ה-URL בעצמו) לבין `<img src={beUrl(`/api/cli-logo/${id}`)}>` (הזרמה דרך ה-BE,
+ * לנתיבי-קובץ). ה-BE **אף פעם** לא מושך URL מרוחק בעצמו — זה היה הופך את
+ * ה-endpoint לproxy עם משטח-SSRF.
+ */
+export function isRemoteLogo(logo: string): boolean {
+  return /^https?:\/\//i.test(logo)
+}

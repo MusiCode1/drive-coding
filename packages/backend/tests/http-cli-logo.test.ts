@@ -50,6 +50,27 @@ describe("GET /api/cli-logo/:cliId", () => {
     expect(res.status).toBe(404)
   })
 
+  it("logo is a remote URL (http/https) → 404 via explicit guard, never resolved as a file path (SSRF, Commit 3)", async () => {
+    // אם אין guard מפורש, "https://example.com/logo.png" ייפתר כנתיב-יחסי (resolve
+    // עושה string-join, לא URL-parsing) ל-`<workDir>/https:/example.com/logo.png` —
+    // סיומת .png מותרת. יוצרים בכוונה קובץ אמיתי שם: בלי guard מפורש הבקשה הייתה
+    // מצליחה (200); עם ה-guard חייבת ליפול ל-404 **לפני** כל ניסיון resolve/realpath.
+    const accidentalPath = join(workDir, "https:", "example.com", "logo.png")
+    await mkdir(join(workDir, "https:", "example.com"), { recursive: true })
+    await writeFile(accidentalPath, Buffer.from([1, 2, 3]))
+    await writeSpecsFile({
+      pi: {
+        bin: "npx",
+        args: ["-y", "pi-acp"],
+        supportsModelFlag: false,
+        logo: "https://example.com/logo.png",
+      },
+    })
+    const app = await makeApp()
+    const res = await app.request("/api/cli-logo/pi")
+    expect(res.status).toBe(404)
+  })
+
   it("CLI without logo → 404", async () => {
     await writeSpecsFile({
       pi: { bin: "npx", args: ["-y", "pi-acp"], supportsModelFlag: false, displayName: "Pi" },

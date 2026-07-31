@@ -5,7 +5,7 @@
  * רכיב חדש לגמרי, כולל הטיפול בשם לא-לטיני/emoji.
  */
 import { describe, expect, it } from "vitest"
-import { cliColorHue, cliDisplayName, cliLogoKey, cliMonogram } from "./cli-display"
+import { cliColorHue, cliDisplayName, cliLogoKey, cliMonogram, isRemoteLogo } from "./cli-display"
 
 describe("cliDisplayName", () => {
   it("displayName קיים → מוחזר כמו שהוא", () => {
@@ -97,5 +97,35 @@ describe("cliLogoKey (slice cli-logo-serving, Commit 1)", () => {
   it("אין התנגשות-שרשור מקרית: (id='a',logo='bc') שונה מ-(id='ab',logo='c')", () => {
     // שרשור נאיבי (id+logo) היה מייצר "abc" משני הצדדים — המפריד מונע התנגשות זו.
     expect(cliLogoKey("a", "bc")).not.toBe(cliLogoKey("ab", "c"))
+  })
+})
+
+describe("isRemoteLogo (slice cli-logo-serving, Commit 3)", () => {
+  it("https:// → true", () => {
+    expect(isRemoteLogo("https://example.com/logo.png")).toBe(true)
+  })
+
+  it("http:// → true", () => {
+    expect(isRemoteLogo("http://example.com/logo.png")).toBe(true)
+  })
+
+  it("HTTPS:// (uppercase) → true — case-insensitive", () => {
+    expect(isRemoteLogo("HTTPS://example.com/logo.png")).toBe(true)
+  })
+
+  it("נתיב מוחלט → false", () => {
+    expect(isRemoteLogo("/abs/path.png")).toBe(false)
+  })
+
+  it("נתיב יחסי → false", () => {
+    expect(isRemoteLogo("./rel.png")).toBe(false)
+  })
+
+  it("מחרוזת ריקה → false", () => {
+    expect(isRemoteLogo("")).toBe(false)
+  })
+
+  it("file:/// → false — לא http", () => {
+    expect(isRemoteLogo("file:///x")).toBe(false)
   })
 })

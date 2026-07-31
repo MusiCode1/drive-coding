@@ -13,6 +13,12 @@
  * ה-realpath כאן הוא פתרון-נתיב + בדיקת-קיום בלבד, לא הגנת-traversal.
  * traversal ב-logo (../../etc/passwd) מגיע מהקונפ' המהימן, לא מהבקשה — לא באג אבטחה,
  * אבל עדיין עובר את בדיקות הסיומת/גודל הרגילות (ולכן במקרה הנפוץ ייכשל 415/404).
+ *
+ * 🔴 לוגו מרוחק (Commit 3, בקשת משתמשת): אם `spec.logo` הוא URL (http/https) —
+ * ה-endpoint הזה **אף פעם** לא מנסה לפתור/למשוך אותו. הדפדפן (ה-FE) מושך URL
+ * מרוחק ישירות (`isRemoteLogo()` ב-`cli-display.ts`, `<img src={logo}>`). אם
+ * בקשה עדיין מגיעה לכאן עם logo מרוחק — 404 מפורש **לפני** כל resolve/realpath,
+ * כדי לא לפתוח משטח-SSRF (ה-BE לעולם לא מושך URL מטעם ה-client).
  */
 
 import { readFile, realpath, stat } from "node:fs/promises"
@@ -44,6 +50,15 @@ export function registerCliLogoHttp(app: Hono): void {
     const logo = spec.logo
     if (logo === undefined) {
       return c.json({ error: "CLI has no logo" }, 404)
+    }
+
+    // 🔴 guard מפורש (Commit 3) — לוגו מרוחק (http/https) לא אמור להגיע לכאן
+    // בכלל (ה-FE מציג אותו ישירות דרך <img src={logo}>, ר' isRemoteLogo ב-FE),
+    // אבל אל תסמוך על כך. **אין לנסות לפתור URL כנתיב-קובץ** — זה היה מייצר
+    // path מוזר (resolve עושה string-join, לא URL-parsing) ופתח משטח-SSRF
+    // בעקיפין אם מתישהו יתווסף sniffing/fetch. עצור כאן, לפני resolve/realpath.
+    if (/^https?:\/\//i.test(logo)) {
+      return c.json({ error: "remote logo URLs are not served by the backend" }, 404)
     }
 
     // הנתיב לעולם לא מגיע מהבקשה — רק מ-spec.logo (הקונפ' המהימן).
