@@ -1,6 +1,7 @@
 <script lang="ts">
 /**
- * CliBadge — תצוגת CLI מאוחדת (slice cli-branding, Commit 2).
+ * CliBadge — תצוגת CLI מאוחדת (slice cli-branding, Commit 2; לוגו — slice
+ * cli-logo-serving, Commit 1).
  *
  * מחליף 5 אתרי-קוד ששילבו הצגת מזהה-CLI גולמי + 2 בלוקי CSS `.cli-badge` משוכפלים
  * מילה-במילה (ActiveProcessesPanel/RecentProjectsPanel). מציג displayName אם הוצהר
@@ -8,36 +9,90 @@
  *
  * "badge" = צ'יפ קומפקטי — מאמץ את ה-CSS הקיים של .cli-badge + עיגול-מונוגרמה בדפוס
  * של Avatar.svelte (BG/FG עם color-mix, גוון מ-cliColorHue). "inline" = טקסט בלבד,
- * לשימוש בתוך כותרת/משפט קיים (SessionOptionsPanel, AuthGuidance).
+ * לשימוש בתוך כותרת/משפט קיים (SessionOptionsPanel, AuthGuidance). "icon" = לוגו-או-
+ * מונוגרמה בלבד, בלי טקסט — לשימוש כ-snippet של אייקון בתוך רכיבים אחרים (Select
+ * בדרופדאון, slice cli-logo-serving Commit 2) שכבר מרנדרים את התווית בעצמם.
  *
  * §9 Q2: אין ולידציית-אורך ל-displayName בסכימה — המיטיגציה כאן: max-width +
  * text-overflow:ellipsis על התווית.
+ *
+ * לוגו (slice cli-logo-serving): `logo` הוא prop אופציונלי — קורא שלא מעביר אותו
+ * מקבל מונוגרמה תמיד (fail-safe, לא כשל שקט של "בלי כלום"). כשקיים, `<img>` מוגש
+ * מ-`/api/cli-logo/:id` (id-keyed, ר' §3 בבריף) דרך `beUrl()` — לא נתיב-שורש קשיח,
+ * כי בפריסת CF Pages ה-BE יושב על origin אחר ונתיב קשיח ייכשל תמיד. `onerror` →
+ * `failed=true` → נפילה חזרה למונוגרמה, בלי שגיאה גלויה למשתמש.
+ *
+ * לוגו מרוחק (Commit 3, בקשת משתמשת): אם `logo` הוא URL (`http://`/`https://`,
+ * `isRemoteLogo()`) — הדפדפן מושך אותו **ישירות** (`<img src={logo}>`), לא דרך
+ * ה-BE. ה-BE לעולם לא מושך URL מרוחק מטעם ה-client — זה משטח-SSRF.
  */
-import { cliColorHue, cliDisplayName, cliMonogram } from "$lib/util/cli-display"
+import { beUrl } from "$lib/util/be-url"
+import {
+  cliColorHue,
+  cliDisplayName,
+  cliLogoKey,
+  cliMonogram,
+  isRemoteLogo,
+} from "$lib/util/cli-display"
 
 interface Props {
   id: string
   displayName?: string | undefined
-  /** "badge" = צ'יפ קומפקטי (רשימות) · "inline" = טקסט בלבד (כותרות) */
-  variant?: "badge" | "inline"
+  /** נתיב-לוגו מוצהר (cli-specs.jsonc). חסר → תמיד מונוגרמה. */
+  logo?: string | undefined
+  /** "badge" = צ'יפ קומפקטי (רשימות) · "inline" = טקסט בלבד (כותרות) · "icon" = לוגו/מונוגרמה בלבד */
+  variant?: "badge" | "inline" | "icon"
 }
 
-const { id, displayName, variant = "badge" }: Props = $props()
+const { id, displayName, logo, variant = "badge" }: Props = $props()
 
 const label = $derived(cliDisplayName(id, displayName))
 const monogram = $derived(cliMonogram(label))
 const hue = $derived(cliColorHue(id))
 const monogramBg = $derived(`color-mix(in srgb, hsl(${hue} 70% 55%) 22%, transparent)`)
 const monogramFg = $derived(`hsl(${hue} 70% 45%)`)
+// 🔴 logo מרוחק (http/https, slice cli-logo-serving Commit 3) → הדפדפן מושך
+// ישירות מה-URL. logo מקומי (נתיב-קובץ) → דרך ה-BE (id-keyed, §3 בבריף). ה-BE
+// **אף פעם** לא נוגע ב-URLs מרוחקים — אחרת ה-endpoint הופך ל-proxy עם משטח-SSRF.
+const logoUrl = $derived(
+  logo ? (isRemoteLogo(logo) ? logo : beUrl(`/api/cli-logo/${id}`)) : undefined,
+)
+
+// 🔴 `failed` חייב להתאפס כש-id/logo משתנים — אחרת אחרי החלפת CLI שבור אחד,
+// הנפילה-למונוגרמה "דבקה" גם ל-CLI הבא (לא רק לזה שבאמת נכשל). cliLogoKey
+// יוצר מפתח יציב מ-(id,logo); ה-$effect רץ בכל שינוי שלו ומאפס את failed.
+const logoKey = $derived(cliLogoKey(id, logo))
+let failed = $state(false)
+$effect(() => {
+  logoKey
+  failed = false
+})
 </script>
 
 {#if variant === "badge"}
   <span class="cli-badge">
+    {#if logoUrl && !failed}
+      <img
+        class="cli-badge-monogram"
+        src={logoUrl}
+        alt=""
+        onerror={() => (failed = true)}
+      />
+    {:else}
+      <span class="cli-badge-monogram" style="background:{monogramBg}; color:{monogramFg}"
+        >{monogram}</span
+      >
+    {/if}
+    <span class="cli-badge-label" dir="auto">{label}</span>
+  </span>
+{:else if variant === "icon"}
+  {#if logoUrl && !failed}
+    <img class="cli-badge-monogram" src={logoUrl} alt="" onerror={() => (failed = true)} />
+  {:else}
     <span class="cli-badge-monogram" style="background:{monogramBg}; color:{monogramFg}"
       >{monogram}</span
     >
-    <span class="cli-badge-label" dir="auto">{label}</span>
-  </span>
+  {/if}
 {:else}
   <span dir="auto">{label}</span>
 {/if}
@@ -60,16 +115,28 @@ const monogramFg = $derived(`hsl(${hue} 70% 45%)`)
     max-width: 10rem;
   }
 
+  /* Commit 4 (בקשת משתמשת אחרי פריוויו): הוגדל 1rem→1.5rem — span (מונוגרמה)
+     ו-img (לוגו) חייבים להישאר **זהים** (אותה class בדיוק) כדי שהמעבר
+     לוגו↔מונוגרמה לא יזיז פיקסל. font-size הותאם (0.6rem→0.85rem) כדי
+     שהאותיות ימשיכו להתאים לעיגול הגדול יותר. */
   .cli-badge-monogram {
     display: grid;
     place-items: center;
-    width: 1rem;
-    height: 1rem;
+    width: 1.5rem;
+    height: 1.5rem;
     border-radius: 50%;
-    font-size: 0.6rem;
+    font-size: 0.85rem;
     font-weight: 700;
     flex-shrink: 0;
     line-height: 1;
+  }
+
+  /* 🔴 img.cli-badge-monogram (slice cli-logo-serving) — אותה class בדיוק
+     כמו המונוגרמה (span), אז width/height/border-radius/flex-shrink כבר
+     זהים ולא זזים פיקסל במעבר לוגו↔מונוגרמה. object-fit:contain הוא הנוסף
+     היחיד — קובץ ה-fixture הוא 64px, בלי זה התמונה הייתה שוברת את ה-badge. */
+  img.cli-badge-monogram {
+    object-fit: contain;
   }
 
   /* §9 Q2 — מיטיגציה לשם ארוך: אין ולידציית-אורך בסכימה, אז חיתוך זול פה. */

@@ -35,6 +35,7 @@ export interface SelectGroup {
 import { Dialog, Popover } from "bits-ui"
 import CheckIcon from "@lucide/svelte/icons/check"
 import ChevronDownIcon from "@lucide/svelte/icons/chevron-down"
+import type { Snippet } from "svelte"
 import { getResponsive } from "$lib/context"
 
 interface Props {
@@ -55,6 +56,12 @@ interface Props {
    */
   itemAlign?: "auto" | "center"
   onchange?: (value: string) => void
+  /**
+   * רנדור אופציונלי של אייקון לכל אופציה (slice cli-logo-serving, Commit 2).
+   * חסר → אין אייקון, בדיוק ההתנהגות הקודמת (9 צרכנים קיימים, כולם בלי icon —
+   * חייב להישאר זהה חזותית, כולל ה-trigger).
+   */
+  icon?: Snippet<[SelectOption]>
 }
 
 let {
@@ -68,6 +75,7 @@ let {
   compact = false,
   itemAlign = "auto",
   onchange,
+  icon,
 }: Props = $props()
 
 const responsive = getResponsive()
@@ -80,9 +88,12 @@ const renderGroups = $derived<SelectGroup[]>(
 )
 
 const allItems = $derived(renderGroups.flatMap((g) => g.items))
-const selectedLabel = $derived(
-  allItems.find((i) => i.value === value)?.label ?? placeholder,
-)
+// האופציה הנבחרת — היה מחושב 3 פעמים בנפרד (selectedLabel/selectedDescription/
+// selectedDescriptionFull); derived אחד מנקה את הכפילות וגם נדרש ל-icon ב-trigger
+// (slice cli-logo-serving, Commit 2) — triggerInner מקבל רק selectedLabel (מחרוזת),
+// לא item שלם, אז ה-icon בטריגר צריך את ה-item עצמו.
+const selectedItem = $derived(allItems.find((i) => i.value === value))
+const selectedLabel = $derived(selectedItem?.label ?? placeholder)
 
 // תקציר: השורה הראשונה בלבד של ה-description (התיאורים מה-CLI רב-שורתיים — השורה
 // הראשונה היא התקציר). חיתוך נוסף ל-2 שורות נעשה ב-CSS (line-clamp).
@@ -93,13 +104,9 @@ function firstLine(d?: string | null): string {
 }
 
 // תיאור הבחירה הנוכחית — מוצג מתחת ל-trigger (ריק → לא מוצג, no-op לבוררים בלי תיאור).
-const selectedDescription = $derived(
-  firstLine(allItems.find((i) => i.value === value)?.description),
-)
+const selectedDescription = $derived(firstLine(selectedItem?.description))
 // התיאור המלא (כל השורות) — נחשף ב-hover (title) וב-expand (לחיצה).
-const selectedDescriptionFull = $derived(
-  (allItems.find((i) => i.value === value)?.description ?? "").trim(),
-)
+const selectedDescriptionFull = $derived((selectedItem?.description ?? "").trim())
 // יש מה לפרוס: יותר משורה אחת (רב-שורתי), או שורה ראשונה ארוכה (כנראה נחתכת ב-clamp).
 const canExpandDesc = $derived(
   selectedDescriptionFull !== selectedDescription || selectedDescription.length > 45,
@@ -129,6 +136,10 @@ const triggerClass = $derived(
 <!-- ───────── snippets משותפים ───────── -->
 
 {#snippet triggerInner()}
+  <!-- selectedItem — לא רק selectedLabel (מחרוזת) — כי icon.(item) צריך את ה-item
+       השלם (slice cli-logo-serving, Commit 2). icon חסר → {@render icon?.(...)}
+       הוא no-op, בדיוק ההתנהגות הקודמת. -->
+  {#if selectedItem}{@render icon?.(selectedItem)}{/if}
   <span class="truncate min-w-0" dir="auto">{selectedLabel}</span>
   <ChevronDownIcon size={15} style="color:var(--fg-dim)" class="shrink-0" />
 {/snippet}
@@ -160,6 +171,7 @@ const triggerClass = $derived(
           class:is-selected={item.value === value}
           onclick={() => pick(item.value)}
         >
+          {@render icon?.(item)}
           <span class="flex flex-col min-w-0 gap-0.5 {itemAlign === 'center' ? 'flex-1 text-center' : ''}">
             <span class="line-clamp-2" dir="auto">{item.label}</span>
             {#if item.description?.trim()}

@@ -40,3 +40,30 @@ export function cliColorHue(id: string): number {
   }
   return Math.abs(hash) % 360
 }
+
+/**
+ * מפתח יציב לזיהוי "איזה לוגו מוצג כרגע" (slice cli-logo-serving, Commit 1).
+ *
+ * <CliBadge> משתמש בזה כדי לאפס את `failed` (נפילה למונוגרמה) כש-id או logo
+ * משתנים — אחרת, אחרי החלפת CLI שבור אחד, ה-fallback ל-monogram "דבק"
+ * לצמיתות גם ל-CLI הבא (בג #4 שאביגיל תפסה — DoD #9 בודק מחיקה, לא החלפה).
+ *
+ * NUL (`\0`) כמפריד — לא תו-רגיל שיכול להופיע ב-id/logo — כדי למנוע התנגשות
+ * שרשור מקרית: id="a"+logo="bc" לעולם לא יתנגש עם id="ab"+logo="c".
+ */
+export function cliLogoKey(id: string, logo: string | undefined): string {
+  return `${id}\0${logo ?? ""}`
+}
+
+/**
+ * true אם ה-`logo` הוא URL מרוחק (http/https), ולא נתיב-קובץ מקומי (slice
+ * cli-logo-serving, Commit 3).
+ *
+ * <CliBadge> משתמש בזה כדי להחליט בין `<img src={logo}>` ישיר (הדפדפן מושך את
+ * ה-URL בעצמו) לבין `<img src={beUrl(`/api/cli-logo/${id}`)}>` (הזרמה דרך ה-BE,
+ * לנתיבי-קובץ). ה-BE **אף פעם** לא מושך URL מרוחק בעצמו — זה היה הופך את
+ * ה-endpoint לproxy עם משטח-SSRF.
+ */
+export function isRemoteLogo(logo: string): boolean {
+  return /^https?:\/\//i.test(logo)
+}
