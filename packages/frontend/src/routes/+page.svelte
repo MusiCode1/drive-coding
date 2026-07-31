@@ -112,10 +112,16 @@ async function onSubmit(e: SubmitEvent) {
 
 // connect-recent-projects: לחיצה על תיקייה אחרונה → חיבור ישיר (סשן חדש).
 // connectAgent מבצע setCliKind/setLastCwd ו-goto("/chat") פנימית.
+// open-cli-registry-fe (Commit 5): project.kind עלול להיות ריק (recent-projects.ts:47,
+// כש-BE לא החזיר kind) או CLI שהוסר מהקונפ' — אסור להשמות אותו ישירות ל-cliKind
+// (בדיוק התבנית ש-C4 טיפל בה ב-onMount, ש-calev שיחזר כאן: טריגר ה-Select נשאר
+// ריק חזותית אחרי כשל 400). מעביר דרך אותו resolveCliKind ומשתמש בערך התקף גם
+// לתצוגה המקומית וגם ל-connectAgent — כדי שלא ננסה להתחבר עם kind שכבר ידוע כלא-תקף.
 async function handleRecentSelect(project: RecentProject) {
-  cliKind = project.kind
+  const resolvedKind = resolveCliKind(project.kind, cliAvailability.registry, cliAvailability.available)
+  cliKind = resolvedKind
   cwd = project.cwd
-  await connectAgent({ cliKind: project.kind, cwd: project.cwd, session, settings })
+  await connectAgent({ cliKind: resolvedKind, cwd: project.cwd, session, settings })
 }
 </script>
 
