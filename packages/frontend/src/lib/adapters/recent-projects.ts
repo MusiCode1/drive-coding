@@ -43,8 +43,11 @@ function normalizeRecentProject(p: unknown): RecentProject {
   const item = p as Record<string, unknown>
   return {
     cwd: String(item["cwd"] ?? ""),
-    // ⚠️ ברירת-המחדל "claude" ממציאה ספק כשאין kind — נשאר לטיפול ב-Commit 4 (§9 Q2).
-    kind: String(item["kind"] ?? "claude"),
+    // open-cli-registry-fe (Commit 4, §9 Q2): "claude" כברירת-מחדל המציא ספק שלא
+    // התקבל מה-BE. "" אינה CLI אמיתי ולא תוצג כבחירה שגויה — אם השדה חסר, cliKind
+    // המקומי ב-+page.svelte יעבור דרך resolveCliKind (Commit 4) בפעם הבאה שהעמוד
+    // נטען מחדש; הזרימה הזו (recent project click) לא עוברת נפילה נוספת בסלייס הזה.
+    kind: String(item["kind"] ?? ""),
     lastSeen: String(item["lastSeen"] ?? ""),
     lastSessionId: item["lastSessionId"] ? String(item["lastSessionId"]) : undefined,
   }

@@ -16,6 +16,7 @@ import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
 import LanguageSelect from "$lib/components/settings/LanguageSelect.svelte"
 import Select from "$lib/components/ui/Select.svelte"
 import { getActiveAgents, getI18n, getModals, getSession, getSettings } from "$lib/context"
+import { resolveCliKind } from "$lib/util/resolve-cli-kind"
 import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
 
 const settings = getSettings()
@@ -41,7 +42,13 @@ let cwd = $state(settings.lastCwd)
 // עדכן רק אם cwd עדיין ריק (המשתמש לא הקליד בינתיים).
 onMount(() => {
   void activeAgents.refresh()
-  void cliAvailability.load()
+  // open-cli-registry-fe (Commit 4): אחרי שהרג'יסטרי נטען, נפילה ל-cliKind תקף אם
+  // הערך השמור (localStorage, דרך settings.cliKind) מיושן — CLI שהוסר מהקונפ'.
+  // לא נוגע ב-localStorage: רק ה-state המקומי מתוקן; אם המשתמש יתחבר, connectAgent
+  // ישמור את הערך התקף החדש (§4 C4 — "אל תמחק את הערך מ-localStorage").
+  void cliAvailability.load().then(() => {
+    cliKind = resolveCliKind(cliKind, cliAvailability.registry, cliAvailability.available)
+  })
 
   fetchServerOptions()
     .then((opts) => {
