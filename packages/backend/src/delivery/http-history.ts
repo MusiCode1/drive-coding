@@ -141,8 +141,12 @@ async function isHiddenEntry(
  * ב-Unix: מתחיל ב-"/"
  * ב-Windows: כונן (C:\) או UNC (\\)
  * משמש לבדיקת containment עם path.relative.
+ *
+ * מיוצא (slice cli-logo-serving) — נצרך גם ע"י http-cli-logo.ts לפתרון נתיב-לוגו
+ * יחסי/מוחלט. אל תשכפל את המימוש ואל תשתמש ב-path.isAbsolute — הגרסה הזו מטפלת
+ * גם ב-drive של Windows וב-UNC.
  */
-function isAbsolutePath(p: string): boolean {
+export function isAbsolutePath(p: string): boolean {
   return p.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(p) || p.startsWith("\\\\")
 }
 

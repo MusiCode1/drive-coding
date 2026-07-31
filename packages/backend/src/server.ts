@@ -58,6 +58,7 @@ import { parseCorsOrigins } from "./delivery/cors-config.js"
 import { registerHttp } from "./delivery/http.js"
 import { registerAgentsHttp } from "./delivery/http-agents.js"
 import { registerCliAvailabilityHttp } from "./delivery/http-cli-availability.js"
+import { registerCliLogoHttp } from "./delivery/http-cli-logo.js"
 import { registerHealthHttp } from "./delivery/http-health.js"
 import { registerClientLogHttp } from "./delivery/http-client-log.js"
 import {
@@ -141,6 +142,9 @@ registerUsageHttp(app, { usageStore })
 
 // Slice cli-availability: מסנן dropdown הספקים ב-FE לפי CLIs מותקנים בפועל
 registerCliAvailabilityHttp(app)
+
+// Slice cli-logo-serving: מגיש קובץ-לוגו CLI לפי id (id-keyed, ר' §3 בבריף)
+registerCliLogoHttp(app)
 
 // Slice 20: serve the built static FE (single-origin local prod).
 // Binary mode: serve from embedded FE manifest (assets in $bunfs, no disk reads).
