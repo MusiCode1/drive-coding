@@ -3,3 +3,4 @@
  * ─── slice session-state-reducer ───
  */
 export * from "./types"
+export * from "./reduce"
