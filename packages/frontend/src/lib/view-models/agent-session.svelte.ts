@@ -81,6 +81,11 @@ const ATTACHED_CAPS_FALLBACK = {} as AcpClient["capabilities"]
 
 // ─── slice plan-todo-list Commit 1: reducer טהור + טיפוסים ─── (additive)
 import { EMPTY_PLAN_STORE, type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
+// ─── slice session-state-reducer C4: reduce + types ─── (additive)
+import { reduce, createInitialSessionState, type SessionState } from "@drive-coding/core/session"
+// ─── slice session-state-reducer C4: FE patch applicator + mappers ─── (additive)
+import { applyPatchMutable } from "$lib/session/apply-patch-mutable"
+import { mapToolContent, mapLocations } from "$lib/session/map-tool-content"
 // ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
 import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 // ─── slice FE-normalization: ייבוא ─── (additive)
@@ -191,6 +196,8 @@ export class AgentSession {
   /** [] = אין כשל-auth ידוע / warm-reattach (מדלג initialize) / CLI לא מפרסם authMethods. */
   authMethods = $state<ReadonlyArray<AuthMethod>>([])
   bubbles = $state<Bubble[]>([])
+  // ─── slice session-state-reducer C4: מצב SessionState פנימי (base ל-reduce) ─── (additive)
+  sessionState = $state<SessionState>(createInitialSessionState({ sessionId: null }))
   // ─── slice reconnect-bubble-merge: frozen display בזמן warm-reconnect replay ───
   /** לא-null רק בזמן warm-reconnect replay (#warmReconnect) — מקפיא את התצוגה על הרשימה הישנה. */
   #displaySnapshot = $state<Bubble[] | null>(null)
@@ -421,8 +428,6 @@ export class AgentSession {
   /** ref ל-transport הפעיל — נשמר בכל יצירת transport, מנוקה עם #client. */
   #transport: WsAcpTransport | null = null
   #sessionId: string | null = null
-  /** חיפוש בסיבוכיות O(1) עבור tool_call_update לפי toolCallId. מ-Slice 4. */
-  #toolBubbleByCallId: Map<string, ToolBubble> = new Map()
   /**
    * הערך הוא True בין detach() ל-attach() הבא. משתיק
    * שגיאות `WS closed (1005)` מזויפות מאירועי onClose שמופעלים לאחר שהמשתמש
@@ -1968,80 +1973,6 @@ export class AgentSession {
     if (!opts?.keepAgent && !opts?.keepContext && agentId) void deleteAgent(agentId).catch(() => {})
   }
 
-  #mapToolContent(raw: unknown): ToolContent[] {
-    if (!Array.isArray(raw)) return []
-    const out: ToolContent[] = []
-    for (const item of raw) {
-      if (typeof item !== "object" || item === null) continue
-      const t = (item as { type?: string }).type
-      if (t === "content") {
-        // { type:"content", content: ContentBlock }
-        const cb = (item as { content?: { type?: string; text?: string } }).content
-        if (cb?.type === "text" && typeof cb.text === "string") {
-          out.push({ type: "text", text: cb.text })
-        } else if (
-          // chat-render-polish: ACP ImageContent — { type:"image", data:base64, mimeType }
-          cb?.type === "image" &&
-          typeof (cb as { data?: unknown }).data === "string" &&
-          typeof (cb as { mimeType?: unknown }).mimeType === "string" &&
-          (cb as { mimeType: string }).mimeType.startsWith("image/")
-        ) {
-          const img = cb as { data: string; mimeType: string }
-          out.push({ type: "image", data: img.data, mimeType: img.mimeType })
-        } else if (cb?.type === "resource") {
-          // chat-render-polish: EmbeddedResource { resource: { blob, mimeType, uri } } — רק blob עם image/*
-          const r = (cb as { resource?: { blob?: unknown; mimeType?: unknown } }).resource
-          if (
-            typeof r?.blob === "string" &&
-            typeof r.mimeType === "string" &&
-            r.mimeType.startsWith("image/")
-          ) {
-            out.push({ type: "image", data: r.blob, mimeType: r.mimeType })
-          } else {
-            out.push({ type: "other", raw: item })
-          }
-        } else {
-          out.push({ type: "other", raw: item })
-        }
-      } else if (t === "diff") {
-        const d = item as { path?: string; oldText?: string | null; newText?: string }
-        if (typeof d.path === "string" && typeof d.newText === "string") {
-          out.push({
-            type: "diff",
-            path: d.path,
-            oldText: d.oldText ?? undefined,
-            newText: d.newText,
-          })
-        } else {
-          out.push({ type: "other", raw: item })
-        }
-      } else if (t === "terminal") {
-        const term = item as { terminalId?: string }
-        if (typeof term.terminalId === "string") {
-          out.push({ type: "terminal", terminalId: term.terminalId })
-        } else {
-          out.push({ type: "other", raw: item })
-        }
-      } else {
-        out.push({ type: "other", raw: item })
-      }
-    }
-    return out
-  }
-
-  #mapLocations(raw: unknown): ToolLocation[] {
-    if (!Array.isArray(raw)) return []
-    const out: ToolLocation[] = []
-    for (const item of raw) {
-      if (typeof item !== "object" || item === null) continue
-      const l = item as { path?: string; line?: number }
-      if (typeof l.path === "string") {
-        out.push({ path: l.path, line: l.line })
-      }
-    }
-    return out
-  }
-
   /**
    * DEV-only: טוען fixture של updates גולמיים ומזרים אותם דרך #onSessionUpdate —
    * בדיוק כמו loadSession אמיתי (אותו ממיר, אותו status flow). מקור: static/fixtures/<name>.json.
@@ -2167,7 +2098,7 @@ export class AgentSession {
     }
   }
 
-  /** מפעיל אירועי-תת-סוכן שהמתינו ל-Task ToolBubble הזה (נקרא מ-#handleToolCall). */
+  /** מפעיל אירועי-תת-סוכן שהמתינו ל-Task ToolBubble הזה (נקרא מ-#applyToolCall). */
   #flushPendingSubagentEvents(toolCallId: string): void {
     if (this.#pendingByParent.length === 0) return
     const matching = this.#pendingByParent.filter((p) => p.parentId === toolCallId)
@@ -2213,7 +2144,7 @@ export class AgentSession {
       if (parentToolUseId !== undefined) {
         this.#handleSubagentToolCall(update, parentToolUseId)
       } else {
-        this.#handleToolCall(update)
+        this.#applyToolCall(update)
       }
       return
     }
@@ -2223,7 +2154,14 @@ export class AgentSession {
       if (update.toolCallId !== undefined && this.#subagentToolCallParents.has(update.toolCallId)) {
         this.#handleSubagentToolCallUpdate(update)
       } else {
-        this.#handleToolCallUpdate(update)
+        // סדר חובה: turnState פר-pending/in_progress לפני ה-no-op guard (idx===-1) של reduce (אביגיל #4)
+        if (update.status === "pending" || update.status === "in_progress") {
+          this.#setTurnState("calling-tool")
+          if (this.#turnEnded) this.#scheduleIdle()
+        }
+        const { state: nextState, patches } = reduce(this.sessionState, notification.update)
+        this.sessionState = nextState
+        applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
       }
       return
     }
@@ -2314,7 +2252,10 @@ export class AgentSession {
           }
         | undefined
       if (content?.type === "text") {
-        this.#appendChunk("user", content.text ?? "", messageId)
+        // סימון user_message_chunk טקסטואלי דרך reduce (replay מהיסטוריה)
+        const { state: nextState, patches } = reduce(this.sessionState, notification.update)
+        this.sessionState = nextState
+        applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
       } else if (
         content?.type === "image" &&
         content.data !== undefined &&
@@ -2344,102 +2285,41 @@ export class AgentSession {
       this.#setTurnState("responding")
       // מעקף opencode #17505: tail אחרי RESP → תזמן idle מחדש. gemini/claude: #turnEnded=false → לא פועל.
       if (this.#turnEnded) this.#scheduleIdle()
-      this.#appendChunk("message", text, messageId)
+      const { state: nextState1, patches: patches1 } = reduce(this.sessionState, notification.update)
+      this.sessionState = nextState1
+      applyPatchMutable(this.bubbles, patches1, { mapToolContent, mapLocations })
     } else if (update.sessionUpdate === "agent_thought_chunk") {
       this.#setTurnState("thinking")
       if (this.#turnEnded) this.#scheduleIdle()
-      this.#appendChunk("thought", text, messageId)
+      const { state: nextState2, patches: patches2 } = reduce(this.sessionState, notification.update)
+      this.sessionState = nextState2
+      applyPatchMutable(this.bubbles, patches2, { mapToolContent, mapLocations })
     }
   }
 
-  // ─── slice 4: מטפלים עבור קריאות לכלים (tool call handlers) ────────────────────────────
+  // ─── slice session-state-reducer C4: מתודת-עזר ל-tool_call create (reduce + patches + flush + turnState) ───
 
-  #handleToolCall(update: {
-    toolCallId?: string
-    title?: string
-    kind?: string
-    rawInput?: unknown
-    rawOutput?: unknown
-    status?: ToolCall["status"]
-    content?: unknown[] | null
-    locations?: unknown[] | null
-  }): void {
-    if (update.toolCallId === undefined) return
-    // סכמת ACP: התראה tool_call דורשת toolCallId + title. ה-title עלול להיות undefined
-    // בפועל אם הסוכן שולח התראה מינימלית, לכן יש לסגת בצורה עדינה.
-    const bubble: ToolBubble = {
-      id: crypto.randomUUID(),
-      kind: "tool",
-      messageId: null,
-      createdAt: Date.now(),
-      toolCall: {
-        toolCallId: update.toolCallId,
-        // השם שווה ל-kind אם זמין, אחרת title. משמש פנימית + עבור הפרומפט של narrate.
-        name: update.kind ?? update.title ?? "tool",
-        kind: update.kind,
-        args: update.rawInput ?? {},
-        // הסטטוס הוא אופציונלי ב-tool_call ראשוני; כברירת מחדל "pending"
-        status: update.status ?? "pending",
-        title: update.title,
-        narration: undefined,
-        result: update.rawOutput,
-        content: update.content != null ? this.#mapToolContent(update.content) : undefined,
-        locations: update.locations != null ? this.#mapLocations(update.locations) : undefined,
-      },
-      segments: [],
+  /**
+   * #applyToolCall — מיישג tool_call create דרך reduce + applyPatchMutable.
+   * קרוא משני מקומות: (1) dispatch tool_call של #onSessionUpdate (non-subagent),
+   * (2) fallback של #handleSubagentToolCall (אב לא נמצא — אביגיל r4 #1).
+   */
+  #applyToolCall(update: Record<string, unknown>): void {
+    const { state: nextState, patches } = reduce(this.sessionState, { ...update, sessionUpdate: "tool_call" })
+    this.sessionState = nextState
+    applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
+    // flush pending subagent events for this toolCallId (slice subagent-transcript-data-v2)
+    if (typeof update.toolCallId === "string") {
+      this.#flushPendingSubagentEvents(update.toolCallId)
     }
-    this.bubbles.push(bubble)
-    this.#toolBubbleByCallId.set(update.toolCallId, bubble)
-    // slice subagent-transcript-data-v2: אם זה ה-Task tool_call — פרוק אירועים שהמתינו לו.
-    this.#flushPendingSubagentEvents(update.toolCallId)
-    // msr-v2: עדכן turnState
+    // turnState תמיד calling-tool ללא תנאי (create, לא update)
     this.#setTurnState("calling-tool")
     if (this.#turnEnded) this.#scheduleIdle()
   }
 
-  #handleToolCallUpdate(update: {
-    toolCallId?: string
-    status?: ToolCall["status"]
-    rawInput?: unknown
-    rawOutput?: unknown
-    kind?: string
-    title?: string
-    content?: unknown[] | null
-    locations?: unknown[] | null
-  }): void {
-    if (update.toolCallId === undefined) return
-    // msr-v2: pending/in_progress → calling-tool
-    if (update.status === "pending" || update.status === "in_progress") {
-      this.#setTurnState("calling-tool")
-      if (this.#turnEnded) this.#scheduleIdle()
-    }
-    const idx = this.bubbles.findIndex(
-      (b) => b.kind === "tool" && b.toolCall.toolCallId === update.toolCallId,
-    )
-    if (idx === -1) return
-    const old = this.bubbles[idx] as ToolBubble
-    // Svelte 5: החלף את האובייקט בשלמותו (ולא מוטציה במקום) כדי להפעיל ריאקטיביות.
-    // שדה rawInput ממוזג כאן כי סוכני ACP (למשל opencode) לרוב שולחים
-    // הודעת tool_call מינימלית תחילה (ללא rawInput או ריק) והפקודה האמיתית
-    // מגיעה ב-tool_call_update — ראה ToolCallUpdate.rawInput במפרט ACP.
-    const newToolCall: ToolCall = {
-      ...old.toolCall,
-      ...(update.status !== undefined && { status: update.status }),
-      ...(update.rawInput !== undefined && { args: update.rawInput }),
-      ...(update.rawOutput !== undefined && { result: update.rawOutput }),
-      ...(update.kind !== undefined && { kind: update.kind }),
-      ...(update.title !== undefined && { title: update.title }),
-      ...(update.content !== undefined && {
-        content: update.content === null ? undefined : this.#mapToolContent(update.content),
-      }),
-      ...(update.locations !== undefined && {
-        locations: update.locations === null ? undefined : this.#mapLocations(update.locations),
-      }),
-    }
-    this.bubbles[idx] = { ...old, toolCall: newToolCall }
-    // שמור על ה-Map מסונכרן (מצביע לאובייקט ה-bubble החדש)
-    this.#toolBubbleByCallId.set(update.toolCallId, this.bubbles[idx] as ToolBubble)
-  }
+  // ─── slice subagent-tool-nesting: כלים מקוננים של תת-סוכן ─────────────────────────
+
+  /**
 
   // ─── slice subagent-tool-nesting: כלים מקוננים של תת-סוכן ─────────────────────────
 
@@ -2467,8 +2347,8 @@ export class AgentSession {
     )
     const parent = parentIdx === -1 ? undefined : this.bubbles[parentIdx]
     if (parent === undefined || parent.kind !== "tool") {
-      // fallback (אביגיל) — בועת-Task אב לא נמצאה: עדיף כלי top-level על כלי נעלם.
-      this.#handleToolCall(update)
+      // fallback (אביגיל r4 #1) — בועת-Task אב לא נמצאה: עדיף כלי top-level על כלי נעלם.
+      this.#applyToolCall(update as Record<string, unknown>)
       return
     }
 
@@ -2486,8 +2366,8 @@ export class AgentSession {
         title: update.title,
         narration: undefined,
         result: update.rawOutput,
-        content: update.content != null ? this.#mapToolContent(update.content) : undefined,
-        locations: update.locations != null ? this.#mapLocations(update.locations) : undefined,
+        content: update.content != null ? mapToolContent(update.content) : undefined,
+        locations: update.locations != null ? mapLocations(update.locations) : undefined,
       },
       segments: [],
     }
@@ -2546,10 +2426,10 @@ export class AgentSession {
       ...(update.kind !== undefined && { kind: update.kind }),
       ...(update.title !== undefined && { title: update.title }),
       ...(update.content !== undefined && {
-        content: update.content === null ? undefined : this.#mapToolContent(update.content),
+        content: update.content === null ? undefined : mapToolContent(update.content),
       }),
       ...(update.locations !== undefined && {
-        locations: update.locations === null ? undefined : this.#mapLocations(update.locations),
+        locations: update.locations === null ? undefined : mapLocations(update.locations),
       }),
     }
     const newChild: ToolBubble = { ...oldChild, toolCall: newToolCall }
@@ -2557,57 +2437,6 @@ export class AgentSession {
     newSubFrames[childIdx] = newChild
     this.bubbles[parentIdx] = { ...parent, subFrames: newSubFrames }
   }
-
-  #appendChunk(kind: "message" | "thought" | "user", text: string, messageId: string | null): void {
-    const last = this.bubbles[this.bubbles.length - 1]
-    // קבץ יחד רק כאשר: (א) מאותו סוג, וגם (ב) מזהה הודעה (messageId) תואם.
-    // אם messageId הוא null (Gemini ACP, שאינו שולח messageId) — קבץ לפי kind בלבד.
-    const canGroup =
-      last !== undefined &&
-      last.kind === kind &&
-      (messageId !== null
-        ? last.messageId === messageId // יש messageId → קבץ לפי מזהה (Claude)
-        : last.messageId === null) // אין messageId → קבץ לפי kind (Gemini)
-
-    if (canGroup && last !== undefined) {
-      const seg: Segment = { id: crypto.randomUUID(), text }
-      // last הוא מסוג MessageBubble | ThoughtBubble | UserBubble — לכולם יש מערכי segments
-      if (last.kind === "message") {
-        ;(last as MessageBubble).segments.push(seg)
-      } else if (last.kind === "thought") {
-        ;(last as ThoughtBubble).segments.push(seg)
-      } else if (last.kind === "user") {
-        ;(last as UserBubble).segments.push(seg)
-      }
-    } else {
-      const newBubble: MessageBubble | ThoughtBubble | UserBubble =
-        kind === "message"
-          ? {
-              id: crypto.randomUUID(),
-              kind: "message",
-              messageId,
-              createdAt: Date.now(),
-              segments: [{ id: crypto.randomUUID(), text }],
-            }
-          : kind === "thought"
-            ? {
-                id: crypto.randomUUID(),
-                kind: "thought",
-                messageId,
-                createdAt: Date.now(),
-                segments: [{ id: crypto.randomUUID(), text }],
-              }
-            : {
-                id: crypto.randomUUID(),
-                kind: "user",
-                messageId,
-                createdAt: Date.now(),
-                segments: [{ id: crypto.randomUUID(), text }],
-              }
-      this.bubbles.push(newBubble)
-    }
-  }
-
   /**
    * §11: מצרף image-attachment לבועת-user — קיבוץ לפי messageId כמו #appendChunk.
    *
