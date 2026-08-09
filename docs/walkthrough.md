@@ -1,5 +1,52 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 (slice view-switch, C1)
+
+### slice view-switch — C1: contract-tests משותפים בין local ל-remote
+
+`packages/frontend/src/lib/session/__contract__/session-view-contract.ts` (חדש) —
+`ContractHarness` (הטיפוס המדויק מהבריף) + `PatchBuffer` (reader יחיד +
+תור-FIFO פנימי: `nextPatches(n)` צורך מה-buffer, `waitForTotalAtLeast(n)`
+ממתין בלי לצרוך — כדי ש-`settle`/`emitUpdate`/`emitPermission` לא יבלעו
+patches שהאסרציה בטסט אחר-כך קוראת) + `describeSessionViewContract()`
+עם 8 ההתנהגויות מהבריף.
+
+`packages/frontend/src/lib/session/session-view.contract.test.ts` (חדש) —
+קורא ל-`describeSessionViewContract` פעמיים: `local` (LocalSessionView +
+mock AcpClient, `await view.newSession()` לפני הכל) ו-`remote`
+(RemoteSessionView + mock fetch/SSE). ⚠️ ה-remote harness מריץ את `reduce`/
+`applyPendingRequest`/`clearPendingRequest`/`applyTurnEnd` **מ-core** על
+`shadowState` כדי לגזור patches אמיתיים (לא מפוברקים ידנית) — התנהגות 3
+(קיבוץ chunks) בודקת בפועל את ה-view, לא את ה-harness. כל patch נדחף
+כ-SSE frame בודד (`event: patch`) ועובר `PatchSchema` דרך `SSEReader` כמו
+בפרודקשן — versions עולים ממש כי הם נגזרים מ-`shadowState.version` שמתקדם
+עם כל patch. + טבלת-הסטייה: session-mgmt methods דוחים (reject, לא throw
+סינכרוני), `prompt(PromptBlocks)` זורק ב-remote בלבד, כשל HTTP (5xx) נדחה
+לא נבלע, `respond()` עם id לא-מוכר הוא no-op שקט בשני המימושים.
+
+מלכודת שנתקלתי בה (לא בבריף, לא בהיקף התיקון): `AcpClientCallbacks` **אינו**
+re-exported מ-`@drive-coding/provider/client` (יש ב-`client.ts` אבל לא
+ב-`client/index.ts`) — פער קיים-מראש שכבר שובר typecheck ב-3 קבצים
+(`local-session-view.ts`, `local-session-view.test.ts`,
+`agent-session.integration.test.svelte.ts`, DELTA-CHECK מול `3e7d9c5`:
+15 שגיאות ב-baseline, לא קשור ל-S6). כדי לא להוסיף שגיאת typecheck רביעית
+מאותו סוג, `session-view.contract.test.ts` גוזר את טיפוס ה-callbacks
+structurally מחתימת ה-constructor של `LocalSessionView` (`Parameters<...>`)
+במקום לייבא את הסמל השבור. לא תוקן בפועל (מחוץ להיקף — לא backend/core,
+אבל גם לא מוזכר בבריף; דיווח בלבד).
+
+#### בדיקות
+
+`bunx vitest run packages/frontend/src/lib/session/session-view.contract.test.ts`:
+20/20 ירוק (8 התנהגויות × 2 harnesses + 4 טבלת-סטייה) — עברו **בניסיון
+הראשון**, כי LocalSessionView/RemoteSessionView שני המימושים כבר קיימים
+ומוכנים משלבים קודמים (session-view-port, remote-session-view,
+session-host-pending-surface). `bunx vitest run packages/frontend`:
+808/809 (הכשל היחיד — `formatting.test.ts` calendar-month, pre-existing,
+לא-קשור, לא נגעתי בקובץ). typecheck: DELTA-CHECK מול `3e7d9c5` — 15 שגיאות
+ב-baseline, 15 אחרי (אפס חדשות). `biome check` על שני הקבצים החדשים: נקי
+(אחרי autofix של format/import-order + תיקון ידני ל-2 `noNonNullAssertion`).
+
 ## 2026-08-09 21:05
 
 ### slice session-host-pending-surface — hotfix: waiting לפני add-message (avigail, post-GO)
