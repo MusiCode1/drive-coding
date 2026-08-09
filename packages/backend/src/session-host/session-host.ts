@@ -17,6 +17,7 @@
  *
  * ─── slice session-host-core C2+C4 (TDD + integration) ───
  * ─── slice session-host-pending-surface C2+C3+C4 (TDD + integration) ───
+ * ─── slice session-host-pending-surface hotfix: waiting-before-add-message order ───
  */
 
 import type {
@@ -419,18 +420,31 @@ export async function createSessionHostFromConnection(
     // ── C3: turn boundaries — mirrors LocalSessionView.prompt/cancel (waiting
     // לפני ה-await, idle בשני הענפים), עם סטייה אחת מוצהרת: שתי הפליטות (הצלחה
     // וגם cancel) מגודרות ב-`turn === turnSeq` — "התור שלי עדיין הנוכחי". ─────
+    //
+    // ⚠️ hotfix (אחרי C4, avigail): הסדר הוא waiting **לפני** add-message —
+    // ההפך מהניסוח המקורי של "מלכודת ג'" ("הסדר הזה בטוח", לא "הכרחי"). הסיבה
+    // לא הייתה מספר-ה-patches (שניהם עדיין שני emit נפרדים — ReadableStream לא
+    // מאחד enqueue-ים סמוכים לקריאה אחת, אין "batch" אמיתי על ה-wire) אלא
+    // **הערך שנצפה ביניהם**: ה-FE מסנכרן turnState פר-patch. בסדר הישן
+    // (add-message ואז waiting) הסנכרון הראשון קורא turnState שעדיין `idle`,
+    // ורק הסנכרון השני (אחרי ה-patch השני) מעלה אותו ל-`waiting` — הבהוב
+    // `waiting → idle → waiting` שמצית flush מזויף של סוף-תור ב-Speaker
+    // וצליל-חשיבה כפול. בסדר החדש שני הסנכרונים רואים `waiting`:
+    // apply-patch.ts's add-message branch גוזר turnState מ-role, ול-role:"user"
+    // (תמיד המקרה כאן) הוא **משמר** את הערך הקיים — כלומר add-message שמגיע
+    // *אחרי* waiting לא דורס אותו. אותה עובדה בדיוק (role=user = no-op)
+    // שהפכה את הסדר הישן ל"בטוח" הופכת את הסדר החדש ל"מתקן".
     async prompt(
       sessionId: string,
       content: string,
       meta?: Record<string, unknown>,
     ): Promise<void> {
+      const turn = ++turnSeq
+      emit(applyTurnStart(currentState)) // 1. waiting — לפני ה-await, ולפני add-message (hotfix)
       const msg = synthesizeUserMessage(currentState, content, meta)
       const applied = applyUserMessage(currentState, msg)
       currentState = applied.state
-      emitPatches(applied.patches) // 1. add-message (מלכודת ג' — חייב להיות ראשון)
-
-      const turn = ++turnSeq
-      emit(applyTurnStart(currentState)) // 2. waiting — לפני ה-await
+      emitPatches(applied.patches) // 2. add-message — role="user" משמר waiting (מלכודת ג')
       try {
         await client.prompt(sessionId, content)
         if (turn === turnSeq) emit(applyTurnEnd(currentState)) // 3א. הצלחה

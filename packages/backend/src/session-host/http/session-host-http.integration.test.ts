@@ -323,9 +323,9 @@ describe("session-host HTTP end-to-end (real host + real broadcaster + real rout
     await promptPromise
 
     // 4 frames: snapshot@v2 (already turnState=waiting) → 2 replayed patches
-    // (add-message v1, waiting v2 — both buffered before this subscriber
-    // connected, both dropped by the version<=snapshot guard) → the live
-    // idle+lastTurnError patch (v3) that only arrives after rejectPrompt.
+    // (waiting v1, add-message v2 — hotfix order, both buffered before this
+    // subscriber connected, both dropped by the version<=snapshot guard) →
+    // the live idle+lastTurnError patch (v3) that only arrives after rejectPrompt.
     const frames = await readSseFrames(res, 4, 300)
     const finalState = computeFinalClientState(frames)
     expect(finalState.turnState).toBe("idle")

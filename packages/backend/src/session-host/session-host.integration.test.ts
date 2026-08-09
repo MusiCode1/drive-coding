@@ -18,6 +18,7 @@
 
 import type { SessionNotification } from "@agentclientprotocol/sdk"
 import type { Patch } from "@drive-coding/core/session"
+import { applyPatch } from "@drive-coding/core/session"
 import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
@@ -562,7 +563,7 @@ describe("createSessionHostFromConnection", () => {
   // ─── slice session-host-pending-surface C3: turn boundaries (prompt/cancel) ───
 
   describe("C3 — turn boundaries: host.prompt", () => {
-    it("emits three patches in order: add-message → waiting → idle; turnState is 'waiting' in between", async () => {
+    it("emits three patches in order: waiting → add-message → idle; turnState is 'waiting' in between", async () => {
       const { host, mockClient } = await setup()
       const d = deferred<void>()
       ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => d.promise)
@@ -570,10 +571,16 @@ describe("createSessionHostFromConnection", () => {
 
       const promptPromise = host.prompt("s1", "hello")
 
+      // hotfix (post-C4, avigail): waiting is emitted BEFORE add-message — the
+      // reverse of the original "trap #3" ordering. See the comment above
+      // host.prompt in session-host.ts for the full rationale: this is what
+      // prevents the FE's per-patch turnState sync from observing a spurious
+      // waiting→idle→waiting flicker (double thinking-chime, phantom
+      // end-of-turn flush in Speaker).
       const p1 = await reader.read()
-      expect(p1.value?.op).toBe("add-message")
+      expect(p1.value).toMatchObject({ op: "update-session", changes: { turnState: "waiting" } })
       const p2 = await reader.read()
-      expect(p2.value).toMatchObject({ op: "update-session", changes: { turnState: "waiting" } })
+      expect(p2.value?.op).toBe("add-message")
       expect(host.state.turnState).toBe("waiting") // held here — client.prompt hasn't resolved yet
 
       d.resolve(undefined)
@@ -583,6 +590,43 @@ describe("createSessionHostFromConnection", () => {
 
       await promptPromise
       expect(mockClient.prompt).toHaveBeenCalledWith("s1", "hello")
+    })
+
+    it("hotfix regression guard: turnState never dips back to 'idle' between the waiting and add-message patches", async () => {
+      // This is the test that prevents the ordering from silently flipping back
+      // (add-message before waiting) in a future edit — see session-host.ts's
+      // comment above host.prompt for why that would reintroduce the flicker.
+      const { host, mockClient } = await setup()
+      const d = deferred<void>()
+      ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => d.promise)
+      const reader = host.patches.getReader()
+      const seenTurnStates: string[] = []
+
+      // ⚠️ Captured BEFORE calling prompt(): host.prompt() runs synchronously
+      // through both emit() calls before its first real await (client.prompt),
+      // so `host.state` already reflects BOTH patches by the time prompt()
+      // returns control — reading it afterwards would silently start the
+      // simulation from the already-final state and never be able to observe
+      // an "idle" regression, defeating the point of this test.
+      let state = host.state
+      const promptPromise = host.prompt("s1", "hello")
+
+      // Apply each of the first two patches exactly as a real client would
+      // (core applyPatch), recording turnState after each one — this is what
+      // AgentSession#syncFromViewState reads per-patch on the FE.
+      const p1 = await reader.read()
+      state = applyPatch(state, p1.value!)
+      seenTurnStates.push(state.turnState)
+      const p2 = await reader.read()
+      state = applyPatch(state, p2.value!)
+      seenTurnStates.push(state.turnState)
+
+      expect(seenTurnStates).toEqual(["waiting", "waiting"]) // never "idle" in between
+      expect(seenTurnStates).not.toContain("idle")
+
+      reader.releaseLock()
+      d.resolve(undefined)
+      await promptPromise
     })
 
     it("turnState returns to idle after a turn, and a new turn raises it to waiting again (ratchet closed)", async () => {

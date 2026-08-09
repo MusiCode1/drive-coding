@@ -1,5 +1,66 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 21:05
+
+### slice session-host-pending-surface — hotfix: waiting לפני add-message (avigail, post-GO)
+
+אחרי calev GO 12/12, avigail מצאה באג ב-C3: `host.prompt` פלט `add-message`
+ואז `waiting` כשני `emit`/`emitPatches` נפרדים. **ניסיון תיקון ראשון (שנחסם
+בעצמי, ר' למטה) הציע למזג את שתי הקריאות ל-emit אחת** — נבדק אמפירית
+ונמצא לא-משנה-כלום: `ReadableStreamDefaultReader.read()` **תמיד** מחזיר
+chunk אחד לקריאה, גם כששני `enqueue()` קרו סינכרונית מאותה קריאת פונקציה,
+ו-`PatchesBroadcaster`/`events.ts`/`SSEReader`/`RemoteSessionView#applyIncoming`
+כולם מעבדים patch-אחד-בכל-פעם ללא תלות בקיבוץ במקור. "batch" על ה-wire
+לא קיים בארכיטקטורה הנוכחית — מיזוג הקריאות היה משנה אפס.
+
+**התיקון האמיתי**: **הפוך את הסדר**. `apply-patch.ts`'s `add-message` branch
+גוזר `turnState` מ-`role`, ול-`role:"user"` (המקרה תמיד כאן) הוא **משמר**
+את הערך הקיים ("מלכודת ג'" — הכלל נוסח כ"הסדר [add-message→waiting] בטוח",
+לא "הכרחי"). אותה עובדה בדיוק הופכת גם את הסדר ההפוך ל**בטוח** — ומתקנת:
+אם `waiting` נפלט **קודם**, ה-`add-message` שאחריו (role=user) לא דורס אותו.
+שני הסנכרונים שה-FE מריץ (`#syncFromViewState` פר-patch) רואים `waiting`
+במקום `idle` ואז `waiting` — סוגר את ה-flicker (צליל-חשיבה כפול,
+flush מזויף של סוף-תור ב-Speaker).
+
+#### מה בוצע?
+
+**packages/backend/src/session-host/session-host.ts** — `host.prompt`:
+`emit(applyTurnStart(currentState))` (waiting) עכשיו **לפני**
+`synthesizeUserMessage`/`applyUserMessage`/`emitPatches` (add-message).
+תגובה אטומית לא אפשרית כאן (op types שונים — `add-message` אינו יכול לשאת
+`changes.turnState`, ואסור להוסיף `Patch` op חדש) — שני emits נפרדים
+נשארים, רק הסדר התהפך. הערת-הקוד מעל `prompt` עודכנה במלואה: מתארת את
+הבאג המקורי, למה מיזוג-ה-emit לא היה עוזר, ולמה ההיפוך כן.
+
+#### אימות (לפי בקשת מרדכי, לפני קיבוע)
+
+1. **אין צרכן שתלוי בסדר add-message-לפני-waiting** — `apply-patch-mutable.ts`
+   (ה-FE) אין לו `case "update-session"` בכלל (bubbles לא מתעדכנים מ-patch
+   הזה); `turnState` מגיע אך ורק דרך `#syncFromViewState(view.state)`, לא
+   דרך הפאץ' עצמו. הטסט היחיד ב-FE שקושר `add-message`+patch נוסף
+   (`remote-session-view.integration.test.svelte.ts`) בונה `Patch`-ים ידנית
+   דרך mock SSE, לא דרך `session-host.ts`, ולא נוגע ב-`waiting` כלל.
+2. **הנתיב המקומי לא מושפע** — `LocalSessionView.prompt` (FE) מנוהל בנפרד
+   לגמרי, אינו קורא ל-`session-host.ts`.
+3. **טסט-רגרסיה חדש** — ר' למטה.
+
+#### בדיקות
+
+`session-host.integration.test.ts`: הטסט "emits three patches in order"
+עודכן לסדר `waiting → add-message → idle`. **טסט חדש** — "hotfix regression
+guard": מדמה בדיוק את מה ש-`#syncFromViewState` עושה (`applyPatch` פר-patch,
+רישום `turnState` אחרי כל אחד), ומאמת `["waiting","waiting"]` — **אף פעם לא
+"idle" ביניהם**. ⚠️ אומת אמפירית: **הרצתי את הטסט מול הסדר הישן** (שחזור
+זמני, לא-מקובע) — נכשל כצפוי (`["idle","waiting"]`), ואז שוחזר הסדר החדש —
+ירוק. זה מוכיח שהטסט תופס רגרסיה אמיתית, לא ניסוח ריק.
+`bunx vitest run session-host.integration.test.ts`: 43/43 ירוק (היה 42;
++1 טסט-רגרסיה). `bunx vitest run session-host/`: 144/144. `bunx vitest run
+backend+frontend/session+core/session`: 847/847 (למעט `https-serve.test.ts`
+pre-existing לא-קשור). typecheck: DELTA-CHECK מול `ac376e8` — אפס שגיאות
+חדשות. `lint:i18n`: נקי.
+
+**הענף קפוא סופית מכאן.**
+
 ## 2026-08-09 20:27
 
 ### slice session-host-pending-surface — C5: אינטגרציה קצה-לקצה (BE) — הסלייס הושלם
