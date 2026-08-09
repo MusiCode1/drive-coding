@@ -50,5 +50,6 @@ packages/frontend/.build-old/
 
 # docs/ הועבר ל-docs-repo (private, משותף בין פרויקטים)
 docs/
+!packages/frontend/docs/
 docs-for-llm
 @Vendor/

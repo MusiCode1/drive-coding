@@ -1,5 +1,55 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 (slice view-switch, C4 — סוף הסלייס)
+
+### slice view-switch — C4: preview חי בשני המצבים + runbook + באג אמיתי שנתפס ותוקן
+
+`.gitignore` — הוספתי `!packages/frontend/docs/` **אחרי שורה 52** (`docs/`, השורה
+השנייה מתוך שתי שורות `docs/` בקובץ — השורה הראשונה ב-34 הייתה נדרסת ע"י 52).
+אומת **לפני** ה-commit: `git check-ignore -v packages/frontend/docs/preview-view-switch.md`
+חוזר ריק (exit 1) — הקובץ trackable. `docs/other.md`/`docs-for-llm/...` נשארים
+IGNORED (אין דליפה).
+
+`packages/frontend/docs/preview-view-switch.md` (חדש) — runbook: פקודות build+serve
+(`PORT=4100`, ⛔ לא 4000)+tunnel, שני ה-URL-ים מאותו build, צ'ק-ליסט 9 סעיפים,
+known-gaps (10 פריטים), שלושת ערוצי-הכשל (השלישי — מוות SSE — מוצהר known-gap
+מפורש), Q5 פתוחה.
+
+#### 🔴 באג אמיתי שנמצא רק ב-preview (לא ב-C1/C2, לא ב-unit tests)
+
+בנייה + serve על `PORT=4100` + מנהרת HTTPS (`pico`/`tuns.sh`,
+`https://musicode-drive-coding-view-switch.nue.tuns.sh`) — ניסיון ראשון ב-remote
+נכשל: `attachRemote` לא ניווט ל-`/chat` בכלל. `curl` ישיר לאותו `/api/agents/:id/events`
+עבד מושלם עם `sessionId` אמיתי מיידי — ההבדל היחיד היה שה-curl קיבל `baseUrl` בלי
+לוכסן-סוגר, וה-FE האמיתי (דרך `beUrl("")` → `location.origin` **עם** לוכסן-סוגר)
+ייצר `//api/agents/...` (לוכסן כפול) ב-`RemoteSessionView`. C1/C2 test suites לא
+תפסו כי אף טסט לא הרכיב URL דרך `beUrl("")` האמיתי עם `location` אמיתי — תמיד הזריקו
+`baseUrl` מפורש נקי. **תוקן**: `create-session-view.ts` — `.replace(/\/$/, "")` על
+ה-baseUrl לפני השרשור, + 2 טסטי-רגרסיה חדשים (`baseUrl` מפורש עם לוכסן-סוגר,
+ו-`beUrl("")` עם `location` מדומה עם לוכסן-סוגר — שניהם מוודאים אין `//api/agents`).
+בנוי מחדש, נפרס מחדש, ונבדק אמפירית שוב — **עבד מושלם**.
+
+#### אימות אמפירי (playwright דרך ה-tunnel, claude CLI אמיתי)
+
+- **local**: חיבור אוטומטי מ-"תיקיות אחרונות" (`dev` worktree) → `/chat` → פרומפט
+  "Reply with exactly the single word: pong" → תשובה זורמת חוזרת בזמן-אמת → בועת-משתמש
+  **פעם אחת** (screenshot: `local-chat.png`).
+- **remote** (`?sessionTransport=remote`): **אותו flow בדיוק**, אחרי התיקון — ניווט
+  ל-`/chat?sessionTransport=remote`, פרומפט זהה, תשובה חוזרת, בועת-משתמש פעם אחת
+  (מסונתזת בשרת — screenshot: `remote-chat.png`). config panel מציג פחות אפשרויות
+  מ-local (known-gap מתועד: `modes`/`models`-based selects לא מוצגים ב-remote).
+- **onecli לא היה מותקן** בסביבת ה-executor — שרתתי עם `bun src/server.ts` ישיר
+  (התקדים: onecli נחוץ רק ל-TTS proxy, ר' `running-locally.md`). **TTS (סעיף 7
+  בצ'ק-ליסט) לא נבדק** בריצה הזו — יתר 8 הסעיפים שנבדקו עברו; 4 (tool call/permission/
+  cancel) ו-8 (מעבר local↔remote) לא אוטומטו — דורשים עין אנושית.
+- **DoD**: `bunx vitest run packages/frontend`: 850/851 (הכשל היחיד — `formatting.test.ts`
+  calendar-month, pre-existing לא-קשור; +2 טסטים חדשים מהתיקון). typecheck: DELTA-CHECK
+  מול `3e7d9c5` — 15/15 (אפס חדשות). `lint:i18n`: נקי.
+
+**זו נקודת-העצירה האנושית היחידה בכל התוכנית** — הפרסום נשאר חי (BE על 4100,
+tunnel על `https://musicode-drive-coding-view-switch.nue.tuns.sh`) עד שמרדכי/המשתמשת
+מסיימים לבדוק, ואז ינותקו. Q5 (ברירת-מחדל local/remote) נשארת פתוחה למרדכי.
+
 ## 2026-08-09 (slice view-switch, C3) — 🎯 phase-verify
 
 ### slice view-switch — C3: חיווט remote מקצה-לקצה ב-`agent-session.svelte.ts`
