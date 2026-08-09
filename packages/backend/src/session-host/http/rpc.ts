@@ -1,0 +1,81 @@
+/**
+ * rpc.ts — POST /api/agents/:id/rpc (S4 C3).
+ *
+ * Dispatches RPC calls to the ExtendedSessionHost.
+ * Returns 202 Accepted with {version} — does NOT wait for agent response.
+ *
+ * Supported methods:
+ *   - prompt    — host.prompt(sessionId, content, meta?)
+ *   - cancel    — host.cancel(sessionId)
+ *   - setMode   — host.setMode(modeId)
+ *   - setConfigOption — host.setConfigOption(configId, value)
+ *   - extMethod — host.extMethod(method, params)
+ *
+ * Returns 404 if connection not found (registry.getOrCreateHost returns undefined).
+ * Returns 202 Accepted with {version: host.state.version} on success.
+ *
+ * ─── slice session-host-http C3 (TDD) ───
+ */
+
+import type { Hono } from "hono"
+import type { AgentSessionRegistry } from "../registry.js"
+
+/**
+ * registerRpcRoute — registers POST /api/agents/:id/rpc on the Hono app.
+ */
+export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): void {
+  app.post("/api/agents/:id/rpc", async (c) => {
+    const agentId = c.req.param("id")
+
+    // Look up or create host
+    const result = await registry.getOrCreateHost(agentId)
+    if (!result) {
+      return c.json({ error: "Agent connection not found" }, 404)
+    }
+    const { host } = result
+
+    // Parse request body
+    const body = await c.req.json() as Record<string, unknown>
+    const method = body.method as string | undefined
+    const params = (body.params ?? {}) as Record<string, unknown>
+
+    // Dispatch to host method
+    switch (method) {
+      case "prompt": {
+        const sessionId = params.sessionId as string
+        const content = params.content as string
+        const meta = params.meta as Record<string, unknown> | undefined
+        await host.prompt(sessionId, content, meta)
+        break
+      }
+      case "cancel": {
+        const sessionId = params.sessionId as string
+        await host.cancel(sessionId)
+        break
+      }
+      case "setMode": {
+        const modeId = params.modeId as string
+        await host.setMode(modeId)
+        break
+      }
+      case "setConfigOption": {
+        const configId = params.configId as string
+        const value = params.value as string | boolean
+        await host.setConfigOption(configId, value)
+        break
+      }
+      case "extMethod": {
+        const extMethodName = params.method as string
+        const extParams = (params.params ?? {}) as Record<string, unknown>
+        await host.extMethod(extMethodName, extParams)
+        break
+      }
+      default: {
+        return c.json({ error: `Unknown method: ${String(method)}` }, 400)
+      }
+    }
+
+    // 202 Accepted — fire and forget; version for client sync
+    return c.json({ version: host.state.version }, 202)
+  })
+}
