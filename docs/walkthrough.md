@@ -1,5 +1,42 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 17:33
+
+### slice remote-session-view — calev-heavy round 2 fix: finding #1 (unknown patch op)
+
+calev-heavy round 2 verdict: **PARTIAL**, DoD 15/16. כל 9 ממצאי round 1 אומתו
+כמתוקנים באמת (61 טענות מול Hono/registry/broadcaster/SSE אמיתיים) — אבל סבב
+התיקון עצמו הכניס 2 חוסמים חדשים (מטא-תופעה 2: "המתקן מייצר את הממצא הבא").
+commit זה סוגר ממצא #1 (בלוקר, לא נגרם ע"י round 1 — קדם לו).
+
+#### מה בוצע?
+
+**1. packages/core/src/session/apply-patch.ts**
+
+- **finding #1 (blocker) — op לא-מוכר מוחק את `view.state` ל-`undefined`**: ה-switch
+  היה exhaustive רק ביחס לטיפוס Patch המוצהר; `sse-reader.ts` מפרש wire data עם
+  `JSON.parse(...) as Patch` — cast לא-מאומת. BE חדש יותר ששולח op שה-FE הזה לא
+  מכיר (version skew — התרחיש הכי סביר לפער production) היה נופל מקצה ה-switch
+  ומחזיר `undefined` בשקט, מוחק את כל ה-state. תוקן: `default: return state` —
+  op לא-מוכר הוא no-op, לא מעדכן אפילו את `version` (עקבי עם דפוס ה-no-op הקיים
+  כבר ב-`append-segment`/`update-tool` כש-`targetId` לא נמצא)
+
+**2. packages/frontend/src/lib/session/remote-session-view.ts**
+
+- הגנה כפולה (defense-in-depth, זול ולא חופף לתיקון הראשי): `#applyIncoming`
+  בודקת ש-`applyPatch` לא מחזירה ערך falsy לפני שמשייכת אותו ל-`#state`; `#drainPatches`
+  עוטפת כל קריאה ל-`#applyIncoming` ב-try/catch כדי שפאץ' יחיד לא יהרוג את כל
+  ה-loop (הוא רץ כ-`void this.#drainPatches(...)` — fire-and-forget, אז throw
+  לא-נתפס היה הופך ל-unhandled rejection שקט וממית את כל הפאצ'ים הבאים)
+
+#### בדיקות
+
+- `apply-patch.test.ts`: טסט חדש — op לא-מוכר מחזיר את אותו state reference,
+  לא מעדכן version (17 סה"כ, 16→17)
+- `remote-session-view.test.ts`: טסט חדש — patch עם op לא-מוכר לא הורג את הזרם,
+  ה-patch התקין שאחריו עדיין מגיע ומעדכן state (34 סה"כ)
+- typecheck נקי (core + frontend); lint נקי
+
 ## 2026-08-09 17:06
 
 ### slice remote-session-view — calev-heavy round 1 fix: L10 (typecheck accuracy)

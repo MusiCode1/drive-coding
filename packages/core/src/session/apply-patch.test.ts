@@ -2,10 +2,10 @@
  * apply-patch.test.ts — TDD for applyPatch(state, patch) → SessionState (pure, immutable).
  * ─── slice session-state-reducer C2 (TDD) ───
  */
-import { describe, it, expect } from "vitest"
+import { describe, expect, it } from "vitest"
 import { applyPatch } from "./apply-patch"
+import type { Patch, SessionMessage, SessionState } from "./types"
 import { createInitialSessionState } from "./types"
-import type { SessionState, SessionMessage, Patch } from "./types"
 
 function mkState(overrides?: Partial<SessionState>): SessionState {
   return { ...createInitialSessionState({ sessionId: null }), ...overrides }
@@ -245,5 +245,21 @@ describe("applyPatch — update-session (C1)", () => {
     const patch: Patch = { version: 1, op: "update-session", changes: { title: "New" } }
     applyPatch(s, patch)
     expect(s.title).toBe("") // original unchanged
+  })
+})
+
+// ─── calev-heavy remote-session-view round 2 finding #1: unknown op is a no-op ───
+
+describe("applyPatch — unknown op (version skew defense)", () => {
+  it("returns state unchanged for an op outside the declared Patch union", () => {
+    const s = mkState({ title: "before" } as Partial<SessionState>)
+    // Simulates a newer BE emitting an op this build doesn't know — the wire
+    // consumer casts unvalidated JSON `as Patch`, so this is reachable at runtime
+    // even though it's not a valid Patch at the type level.
+    const unknownPatch = { version: 99, op: "update-quota", quota: { used: 1 } } as unknown as Patch
+    const s2 = applyPatch(s, unknownPatch)
+    expect(s2).toBe(s) // same reference — a true no-op, not a fresh (still-valid) copy
+    expect(s2.title).toBe("before")
+    expect(s2.version).toBe(0) // version NOT bumped — nothing was actually applied
   })
 })

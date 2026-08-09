@@ -174,7 +174,15 @@ export class RemoteSessionView implements SessionView {
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        this.#applyIncoming(value)
+        try {
+          this.#applyIncoming(value)
+        } catch {
+          // calev-heavy round 2 finding #1: a single unexpected/malformed patch
+          // (e.g. wire version skew) must not kill the whole drain loop — `void
+          // this.#drainPatches(...)` is fire-and-forget, so an uncaught throw here
+          // would become a silent unhandled rejection and every subsequent patch
+          // would be lost forever. Skip this one patch, keep draining.
+        }
       }
     } finally {
       reader.releaseLock()
@@ -189,7 +197,12 @@ export class RemoteSessionView implements SessionView {
     // Applying them again duplicates messages/segments (measured: "hello"+" world"
     // appearing twice after one server-side drop). Skip anything already applied.
     if (patch.version <= this.#lastVersion) return
-    this.#state = applyPatch(this.#state, patch)
+    const nextState = applyPatch(this.#state, patch)
+    // calev-heavy round 2 finding #1: applyPatch's default case now no-ops on an
+    // unknown op (core fix), but this is defense-in-depth against #state ever
+    // becoming nullish — never let a single patch wipe the whole view state.
+    if (!nextState) return
+    this.#state = nextState
     this.#lastVersion = patch.version
     this.#advanceWaterMark(patch)
     this.#emit([patch])

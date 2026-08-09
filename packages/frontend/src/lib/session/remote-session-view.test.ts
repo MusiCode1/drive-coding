@@ -217,6 +217,35 @@ describe("RemoteSessionView — connect()", () => {
     const msg = view.state.messages.find((m) => m.id === "m_0")
     expect(msg && msg.role !== "tool" ? msg.segments.map((s) => s.text) : []).toEqual(["once"])
   })
+
+  // ─── round 2 finding #1: unknown patch op must not wipe state / kill the stream ───
+
+  it("round 2 #1: an unknown patch op is a no-op — state survives, later patches still arrive", async () => {
+    const snapshot = makeSnapshot({ title: "before" })
+    const unknownOpPatch = { version: 1, op: "update-quota", quota: { used: 1 } }
+    const goodPatch = makePatch(2, { op: "update-session", changes: { title: "after" } })
+    const mockFetch = makeMockFetch({
+      keepOpen: true,
+      events: [
+        { event: "snapshot", data: JSON.stringify(snapshot) },
+        { event: "patch", data: JSON.stringify(unknownOpPatch) },
+        { event: "patch", data: JSON.stringify(goodPatch) },
+      ],
+    })
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    await view.connect()
+
+    // both patches are still forwarded to the VM (applyPatchMutable also safely
+    // no-ops on an unrecognized op — no crash risk there); what matters is that
+    // core state is untouched by the unknown one and the good patch after it
+    // still applies normally (the stream is NOT dead).
+    const results = await readNPatchArrays(view.patches, 2)
+
+    expect(view.state).not.toBeUndefined()
+    expect(view.state.title).toBe("after")
+    expect(results[0]?.[0]).toMatchObject({ version: 1, op: "update-quota" })
+    expect(results[1]?.[0]).toMatchObject({ version: 2, op: "update-session" })
+  })
 })
 
 // ── RPC methods ───────────────────────────────────────────────────────────────

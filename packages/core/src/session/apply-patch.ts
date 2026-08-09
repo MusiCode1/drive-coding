@@ -6,7 +6,7 @@
  *
  * ─── slice session-state-reducer C2 (TDD) ───
  */
-import type { SessionState, SessionMessage, Patch, TurnStateValue } from "./types"
+import type { Patch, SessionMessage, SessionState, TurnStateValue } from "./types"
 
 /** גוזר nextSeq מ-id בצורת prefix_<n> (m_3 → 4, s_0 → 1). */
 function nextSeqFrom(id: string): number {
@@ -66,8 +66,18 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
       const nextSegSeq = Math.max(state.nextSegmentSeq, nextSeqFrom(patch.segment.id))
       // C1: derive turnState from the message role (mirrors reduce logic)
       const newTurnStateSeg: TurnStateValue =
-        old.role === "thought" ? "thinking" : old.role === "assistant" ? "responding" : state.turnState
-      return { ...state, version: patch.version, messages, nextSegmentSeq: nextSegSeq, turnState: newTurnStateSeg }
+        old.role === "thought"
+          ? "thinking"
+          : old.role === "assistant"
+            ? "responding"
+            : state.turnState
+      return {
+        ...state,
+        version: patch.version,
+        messages,
+        nextSegmentSeq: nextSegSeq,
+        turnState: newTurnStateSeg,
+      }
     }
 
     case "update-tool": {
@@ -102,6 +112,18 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
         version: patch.version,
         ...patch.changes,
       }
+    }
+
+    default: {
+      // calev-heavy remote-session-view round 2 finding #1: the switch was
+      // exhaustive over the *declared* Patch union but had no terminal branch —
+      // wire consumers (SSEReader) parse frames with `JSON.parse(...) as Patch`,
+      // an unvalidated cast. A newer BE emitting an `op` this build doesn't know
+      // (version skew — the single most likely FE/BE divergence in production)
+      // fell off the end of the switch and returned `undefined`, wiping state.
+      // Unknown ops are a no-op: keep state unchanged, don't bump version (we
+      // didn't actually apply anything).
+      return state
     }
   }
 }
