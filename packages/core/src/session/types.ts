@@ -6,6 +6,7 @@
  *
  * ─── slice session-state-reducer C0 (TDD) ───
  * ─── slice session-view-port C1 (TDD): הרחבת SessionState + meta + helpers ───
+ * ─── slice session-host-pending-surface C1 (TDD): +lastTurnError · pending/turn helpers ───
  */
 
 import type {
@@ -169,6 +170,11 @@ export type SessionState = {
   title: string
   /** פקודות slash שהספק חשף (available_commands_update). */
   commands: AvailableCommand[]
+  /**
+   * שגיאת התור האחרון. null = התור האחרון הצליח / בוטל / טרם היה תור.
+   * ─── slice session-host-pending-surface C1 ───
+   */
+  lastTurnError: { message: string; at: number } | null
 }
 
 // ─── Patches ───
@@ -209,6 +215,7 @@ export type Patch =
           | "pending"
           | "capabilities"
           | "quota"
+          | "lastTurnError"
         >
       >
     }
@@ -234,6 +241,7 @@ export function createInitialSessionState({ sessionId }: { sessionId: string | n
     quota: null,
     title: "",
     commands: [],
+    lastTurnError: null,
   }
 }
 
@@ -286,6 +294,92 @@ export function applyUserMessage(
       nextMessageSeq: state.nextMessageSeq + 1,
       nextSegmentSeq: nextSegSeq,
     },
+    patches: [patch],
+  }
+}
+
+// ─── slice session-host-pending-surface C1: pending + turn-boundary helpers ───
+
+export type PendingKind = "permission" | "elicitation"
+
+/** מכניס בקשה ממתינה ל-state ומחזיר את ה-patch המשדר אותה. טהור. */
+export function applyPendingRequest(
+  state: SessionState,
+  entry:
+    | { kind: "permission"; value: PendingPermission }
+    | { kind: "elicitation"; value: PendingElicitation },
+): { state: SessionState; patches: Patch[] } {
+  const newVersion = state.version + 1
+  // מלכודת א' (spread לא deep-merge ב-applyPatch): pending חייב לשאת את שני השדות תמיד.
+  const newPending = { ...state.pending, [entry.kind]: entry.value }
+  const patch: Patch = {
+    version: newVersion,
+    op: "update-session",
+    changes: { pending: newPending },
+  }
+  return {
+    state: { ...state, version: newVersion, pending: newPending },
+    patches: [patch],
+  }
+}
+
+/** מנקה בקשה ממתינה **רק אם ה-requestId עדיין הנוכחי**; אחרת no-op מוחלט. */
+export function clearPendingRequest(
+  state: SessionState,
+  kind: PendingKind,
+  requestId: number,
+): { state: SessionState; patches: Patch[] } {
+  const current = state.pending[kind]
+  if (!current || current.requestId !== requestId) {
+    return { state, patches: [] }
+  }
+  const newVersion = state.version + 1
+  const newPending = { ...state.pending, [kind]: null }
+  const patch: Patch = {
+    version: newVersion,
+    op: "update-session",
+    changes: { pending: newPending },
+  }
+  return {
+    state: { ...state, version: newVersion, pending: newPending },
+    patches: [patch],
+  }
+}
+
+/** תחילת תור: turnState="waiting" ומנקה lastTurnError. no-op אם שניהם כבר במצב הזה. */
+export function applyTurnStart(state: SessionState): { state: SessionState; patches: Patch[] } {
+  if (state.turnState === "waiting" && state.lastTurnError === null) {
+    return { state, patches: [] }
+  }
+  const newVersion = state.version + 1
+  const changes = { turnState: "waiting" as const, lastTurnError: null }
+  const patch: Patch = { version: newVersion, op: "update-session", changes }
+  return {
+    state: { ...state, version: newVersion, ...changes },
+    patches: [patch],
+  }
+}
+
+/**
+ * סיום תור: turnState="idle" + lastTurnError (האובייקט אם נכשל, null אם הצליח/בוטל).
+ * patch אחד אטומי לשני השדות. no-op אם שניהם כבר במצב הזה.
+ *
+ * ⚠️ error מגיע בנוי במלואו, כולל at — העוזר אינו קורא לשעון.
+ * 🔴 applyTurnEnd(state) בלי שגיאה על state שכבר idle הוא no-op גמור — אינו מאפס
+ * lastTurnError קיים (מונע מחיקה בשקט ע"י cancel שאחרי תור שנכשל — ר' C1 כלל 3).
+ */
+export function applyTurnEnd(
+  state: SessionState,
+  error?: { message: string; at: number },
+): { state: SessionState; patches: Patch[] } {
+  if (error === undefined && state.turnState === "idle") {
+    return { state, patches: [] }
+  }
+  const newVersion = state.version + 1
+  const changes = { turnState: "idle" as const, lastTurnError: error ?? null }
+  const patch: Patch = { version: newVersion, op: "update-session", changes }
+  return {
+    state: { ...state, version: newVersion, ...changes },
     patches: [patch],
   }
 }

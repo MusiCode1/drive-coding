@@ -1,6 +1,52 @@
 # Walkthrough — drive-coding
 
-## 2026-08-09 18:04
+## 2026-08-09 19:55
+
+### slice session-host-pending-surface — C1: עוזרים טהורים ב-core (pending + turn-boundary)
+
+C1 מתוך `session-host-pending-surface` (r13, אימות אביגיל READY): שכבת-ההצפה
+מעל `PendingRequests` — ארבעה עוזרים טהורים ב-`core/src/session/types.ts`
+שיאפשרו ל-`SessionHost` (C2+C3) לפרסם `pending`/`turnState`/`lastTurnError`
+כ-patches, במקום להחזיק אותם רק בזיכרון הפנימי.
+
+#### מה בוצע?
+
+**packages/core/src/session/types.ts**
+
+- שדה חדש ב-`SessionState`: `lastTurnError: { message: string; at: number } | null`
+  — ערוץ שגיאה נפרד מ-`status` (מצב-חיבור, לא מצב-תור). נוסף ל-`Pick` של
+  `update-session` ואותחל ל-`null` ב-`createInitialSessionState`.
+- `applyPendingRequest(state, {kind, value})` — מכניס בקשה ממתינה, פולט patch
+  יחיד שנושא **את שני שדות `pending`** תמיד (spread מלא — `applyPatch`
+  ב-`update-session` עושה spread לא deep-merge; patch חלקי היה מוחק את ה-sibling).
+- `clearPendingRequest(state, kind, requestId)` — מנקה **רק** אם ה-`requestId`
+  עדיין הנוכחי; אחרת no-op גמור (guard נגד בקשה שנדרסה).
+- `applyTurnStart(state)` — `turnState:"waiting"` + מאפס `lastTurnError`; no-op
+  אם שניהם כבר במצב הזה.
+- `applyTurnEnd(state, error?)` — `turnState:"idle"` + `lastTurnError` (patch
+  אטומי אחד לשני השדות). 🔴 חריג מכוון: `applyTurnEnd(state)` **בלי** שגיאה
+  על state שכבר `idle` הוא no-op גמור — **אינו מאפס** `lastTurnError` קיים
+  (מונע מ-`cancel` על תור-לא-פעיל למחוק בשקט שגיאה מתור קודם). `error` מגיע
+  בנוי במלואו כולל `at` — העוזר **אינו** קורא לשעון (`Date.now()` ייבנה
+  ב-`host.prompt`, שכבת ה-IO, ב-C3).
+
+לא נוסף `Patch` op חדש (`update-session` כבר נושא `pending`+`turnState`).
+לא נכתב עוזר גנרי `applySessionChanges` — ארבעה עוזרים צרים, כל אחד עם החוזה
+שלו (עוזר גנרי מזמין patch חלקי של `pending`).
+
+#### בדיקות (TDD — קודם טסט)
+
+`packages/core/src/session/types.test.ts` — 26 טסטים חדשים (co-located,
+מוסכמת המודול): שני kinds בו-זמנית · דריסה + version+1 פעמיים · ניקוי על id
+נוכחי/ישן/slot ריק · no-op על מצב זהה (ארבעת העוזרים) · השרדות `lastTurnError`
+דרך `applyTurnEnd()` ללא שגיאה על state שכבר `idle` · round-trip
+`applyPatch(state, patch) ≡ state המוחזר` לכל אחד מארבעת העוזרים.
+`bunx vitest run packages/core/src/session/types.test.ts`: 44/44 ירוק.
+`bunx vitest run packages/core`: 806/806 ירוק (אין רגרסיה).
+typecheck: DELTA-CHECK מול `ac376e8` (64 שגיאות baseline, לא-קשורות ל-slice
+זה — pre-existing) — אפס שגיאות חדשות.
+
+
 
 ### slice remote-session-view — calev-heavy round 3 fix: root-cause wire validation (S5 freeze after this)
 

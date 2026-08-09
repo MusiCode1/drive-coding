@@ -2,17 +2,24 @@
  * types.test.ts — TDD for SessionState shapes + deterministic id policy (C0).
  * Complexity 9/10 slice: session-state-reducer.
  */
-import { describe, it, expect } from "vitest"
+import { describe, expect, it } from "vitest"
+import { applyPatch } from "./apply-patch"
 import {
-  type SessionState,
-  type SessionMessage,
-  type SessionSegment,
-  type SessionToolCall,
-  type Patch,
+  applyPendingRequest,
+  applyTurnEnd,
+  applyTurnStart,
+  applyUserMessage,
+  clearPendingRequest,
   createInitialSessionState,
   INITIAL_SESSION_STATE,
+  type Patch,
+  type PendingElicitation,
+  type PendingPermission,
+  type SessionMessage,
+  type SessionSegment,
+  type SessionState,
+  type SessionToolCall,
   synthesizeUserMessage,
-  applyUserMessage,
 } from "./types"
 
 describe("createInitialSessionState", () => {
@@ -296,5 +303,161 @@ describe("applyUserMessage (C1)", () => {
     const msg = synthesizeUserMessage(s, "Hi")
     applyUserMessage(s, msg)
     expect(s.messages).toHaveLength(0)
+  })
+})
+
+// ─── slice session-host-pending-surface C1: pending + turn-boundary helpers ───
+
+describe("SessionState.lastTurnError field", () => {
+  it("createInitialSessionState initializes lastTurnError to null", () => {
+    const s = createInitialSessionState({ sessionId: null })
+    expect(s.lastTurnError).toBeNull()
+  })
+})
+
+const permA: PendingPermission = { requestId: 0, params: {} as never }
+const permB: PendingPermission = { requestId: 1, params: {} as never }
+const elicA: PendingElicitation = { requestId: 0, params: {} as never }
+
+describe("applyPendingRequest", () => {
+  it("permission: sets pending.permission, leaves elicitation null, single patch, version+1", () => {
+    const s = createInitialSessionState({ sessionId: null })
+    const { state, patches } = applyPendingRequest(s, { kind: "permission", value: permA })
+    expect(state.pending.permission).toEqual(permA)
+    expect(state.pending.elicitation).toBeNull()
+    expect(patches).toHaveLength(1)
+    expect(state.version).toBe(s.version + 1)
+  })
+
+  it("elicitation: sets pending.elicitation, existing permission survives", () => {
+    const s0 = createInitialSessionState({ sessionId: null })
+    const withPerm = applyPendingRequest(s0, { kind: "permission", value: permA }).state
+    const { state, patches } = applyPendingRequest(withPerm, { kind: "elicitation", value: elicA })
+    expect(state.pending.elicitation).toEqual(elicA)
+    expect(state.pending.permission).toEqual(permA)
+    expect(patches).toHaveLength(1)
+  })
+
+  it("two permission requests in a row: second overwrites, version bumps twice", () => {
+    const s0 = createInitialSessionState({ sessionId: null })
+    const s1 = applyPendingRequest(s0, { kind: "permission", value: permA }).state
+    const s2 = applyPendingRequest(s1, { kind: "permission", value: permB }).state
+    expect(s2.pending.permission).toEqual(permB)
+    expect(s2.version).toBe(s0.version + 2)
+  })
+
+  it("round-trip: applyPatch(state, patch) equals the returned state", () => {
+    const s0 = createInitialSessionState({ sessionId: null })
+    const { state, patches } = applyPendingRequest(s0, { kind: "permission", value: permA })
+    expect(applyPatch(s0, patches[0]!)).toEqual(state)
+  })
+})
+
+describe("clearPendingRequest", () => {
+  it("current id → clears to null + emits patch", () => {
+    const s0 = createInitialSessionState({ sessionId: null })
+    const withPerm = applyPendingRequest(s0, { kind: "permission", value: permA }).state
+    const { state, patches } = clearPendingRequest(withPerm, "permission", 0)
+    expect(state.pending.permission).toBeNull()
+    expect(patches).toHaveLength(1)
+  })
+
+  it("old (stale) id → no-op: zero patches, same state, same version", () => {
+    const s0 = createInitialSessionState({ sessionId: null })
+    const s1 = applyPendingRequest(s0, { kind: "permission", value: permA }).state
+    const s2 = applyPendingRequest(s1, { kind: "permission", value: permB }).state
+    const { state, patches } = clearPendingRequest(s2, "permission", 0)
+    expect(patches).toHaveLength(0)
+    expect(state).toBe(s2)
+    expect(state.version).toBe(s2.version)
+  })
+
+  it("null slot → no-op: zero patches", () => {
+    const s0 = createInitialSessionState({ sessionId: null })
+    const { state, patches } = clearPendingRequest(s0, "permission", 0)
+    expect(patches).toHaveLength(0)
+    expect(state).toBe(s0)
+  })
+
+  it("round-trip: applyPatch(state, patch) equals the returned state", () => {
+    const s0 = createInitialSessionState({ sessionId: null })
+    const withPerm = applyPendingRequest(s0, { kind: "permission", value: permA }).state
+    const { state, patches } = clearPendingRequest(withPerm, "permission", 0)
+    expect(applyPatch(withPerm, patches[0]!)).toEqual(state)
+  })
+})
+
+describe("applyTurnStart", () => {
+  it("on idle → patch + version+1, lastTurnError reset to null", () => {
+    const s0 = createInitialSessionState({ sessionId: null })
+    const withError = applyTurnEnd(
+      { ...s0, turnState: "waiting" },
+      { message: "boom", at: 1 },
+    ).state
+    const { state, patches } = applyTurnStart(withError)
+    expect(state.turnState).toBe("waiting")
+    expect(state.lastTurnError).toBeNull()
+    expect(patches).toHaveLength(1)
+    expect(state.version).toBe(withError.version + 1)
+  })
+
+  it("on state already waiting with no error → zero patches (no-op)", () => {
+    const s0 = { ...createInitialSessionState({ sessionId: null }), turnState: "waiting" as const }
+    const { state, patches } = applyTurnStart(s0)
+    expect(patches).toHaveLength(0)
+    expect(state).toBe(s0)
+  })
+
+  it("round-trip: applyPatch(state, patch) equals the returned state", () => {
+    const s0 = createInitialSessionState({ sessionId: null })
+    const { state, patches } = applyTurnStart(s0)
+    expect(applyPatch(s0, patches[0]!)).toEqual(state)
+  })
+})
+
+describe("applyTurnEnd", () => {
+  it("no error, on state in waiting → turnState idle, lastTurnError null", () => {
+    const s0 = { ...createInitialSessionState({ sessionId: null }), turnState: "waiting" as const }
+    const { state, patches } = applyTurnEnd(s0)
+    expect(state.turnState).toBe("idle")
+    expect(state.lastTurnError).toBeNull()
+    expect(patches).toHaveLength(1)
+  })
+
+  it("🔴 no error, on state already idle carrying lastTurnError → zero patches, error survives", () => {
+    const s0 = { ...createInitialSessionState({ sessionId: null }), turnState: "waiting" as const }
+    const withError = applyTurnEnd(s0, { message: "boom", at: 1 }).state
+    expect(withError.turnState).toBe("idle")
+    const { state, patches } = applyTurnEnd(withError)
+    expect(patches).toHaveLength(0)
+    expect(state).toBe(withError)
+    expect(state.lastTurnError).toEqual({ message: "boom", at: 1 })
+  })
+
+  it("with error → single atomic patch carrying both fields", () => {
+    const s0 = { ...createInitialSessionState({ sessionId: null }), turnState: "waiting" as const }
+    const { state, patches } = applyTurnEnd(s0, { message: "boom", at: 1 })
+    expect(patches).toHaveLength(1)
+    expect(state.turnState).toBe("idle")
+    expect(state.lastTurnError?.message).toBe("boom")
+  })
+
+  it("with error on state already idle without error → DOES emit a patch (error is a change)", () => {
+    const s0 = createInitialSessionState({ sessionId: null }) // turnState idle, lastTurnError null
+    const { state, patches } = applyTurnEnd(s0, { message: "boom", at: 1 })
+    expect(patches).toHaveLength(1)
+    expect(state.lastTurnError?.message).toBe("boom")
+  })
+
+  it("round-trip (success case): applyPatch(state, patch) equals the returned state", () => {
+    const s0 = { ...createInitialSessionState({ sessionId: null }), turnState: "waiting" as const }
+    const { state, patches } = applyTurnEnd(s0)
+    expect(applyPatch(s0, patches[0]!)).toEqual(state)
+  })
+
+  it("round-trip (error case): applyPatch(state, patch) equals the returned state", () => {
+    const s0 = { ...createInitialSessionState({ sessionId: null }), turnState: "waiting" as const }
+    const { state, patches } = applyTurnEnd(s0, { message: "boom", at: 1 })
+    expect(applyPatch(s0, patches[0]!)).toEqual(state)
   })
 })
