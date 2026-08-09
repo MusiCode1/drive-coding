@@ -10,7 +10,7 @@
  *   - prompt/cancel/setMode/setConfigOption/setSessionModel: POST /rpc עם sessionId
  *   - extMethod (fire-and-forget): POST /rpc, ack
  *   - extMethod (_drive/getQuota — צריך return value): throws "not supported in remote mode"
- *   - respond(): גוזר kind מ-state.pending (permission עדיפות)
+ *   - respond(): התאמה מדויקת מ-state.pending; id לא-מוכר = no-op
  *   - session management methods (newSession/loadSession/listSessions/deleteSession): throw
  *   - close(): סוגר SSE reader
  *
@@ -18,6 +18,8 @@
  *   - water-mark advances on append-segment patches
  *   - reconnect mid-turn: snapshot.version > lastVersion → reset patch + water-mark reset
  *   - reconnect: snapshot.version <= lastVersion → skip (no reset patch)
+ *
+ * ─── slice session-host-pending-surface C4: respond() routing + JSDoc ───
  */
 
 import type { Patch, SessionState } from "@drive-coding/core/session"
@@ -482,12 +484,20 @@ describe("RemoteSessionView — respond()", () => {
     expect(captured).toMatchObject({ kind: "elicitation", requestId: 3 })
   })
 
-  it("prefers permission when both pending share the same requestId", async () => {
+  // slice session-host-pending-surface C4: the "prefers permission when both
+  // pending share the same requestId" test used to live here — it described a
+  // state that's no longer reachable in production once the BE moves to a
+  // single shared requestId counter (session-host.ts C4): two different kinds
+  // can never carry the same id. A test that only exercises an impossible
+  // state is debt, not coverage — replaced below with the opposite: distinct
+  // ids route to the correct kind each, exactly (no fallback).
+
+  it("elicitation still routes correctly even while a permission with a different id is pending", async () => {
     let captured: unknown
     const snapshot = makeSnapshot({
       pending: {
         permission: { requestId: 5, params: {} as never },
-        elicitation: { requestId: 5, params: {} as never },
+        elicitation: { requestId: 6, params: {} as never },
       },
     })
     const mockFetch = makeMockFetch({
@@ -497,9 +507,27 @@ describe("RemoteSessionView — respond()", () => {
     const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
     await view.connect()
 
-    await view.respond(5, {})
+    await view.respond(6, {})
 
-    expect(captured).toMatchObject({ kind: "permission", requestId: 5 })
+    expect(captured).toMatchObject({ kind: "elicitation", requestId: 6 })
+  })
+
+  it("respond() on an unknown requestId is a silent no-op — no HTTP request sent", async () => {
+    const snapshot = makeSnapshot({
+      pending: {
+        permission: { requestId: 7, params: {} as never },
+        elicitation: null,
+      },
+    })
+    const mockFetch = makeMockFetch({
+      events: [{ event: "snapshot", data: JSON.stringify(snapshot) }],
+    })
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    await view.connect()
+
+    const callsBefore = (mockFetch as ReturnType<typeof vi.fn>).mock.calls.length
+    await view.respond(999, {}) // no pending request carries this id
+    expect((mockFetch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsBefore)
   })
 })
 

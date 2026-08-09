@@ -523,7 +523,7 @@ describe("createSessionHostFromConnection", () => {
       expect(host.state.pending.elicitation).toBeNull()
     })
 
-    it("two kinds pending simultaneously — the regression the spread bug would break", async () => {
+    it("two kinds pending simultaneously, with distinct ids (C4: shared requestId counter) — the regression the spread bug would break", async () => {
       const { host, callbacks } = await setup()
       const permParams = {
         sessionId: "s1",
@@ -542,15 +542,17 @@ describe("createSessionHostFromConnection", () => {
       await readOnePatch(host.patches)
 
       // Both pending at once — neither overwrote the other (trap #1: a partial spread
-      // would have wiped one of them to undefined instead of null).
+      // would have wiped one of them to undefined instead of null). AND their ids are
+      // globally unique (C4: a single shared counter, not two independent ones) — this
+      // is what lets the client route a reply unambiguously by requestId alone.
       expect(host.state.pending.permission).toEqual({ requestId: 0, params: permParams })
-      expect(host.state.pending.elicitation).toEqual({ requestId: 0, params: elicParams })
+      expect(host.state.pending.elicitation).toEqual({ requestId: 1, params: elicParams })
 
       host.respondPermission(0, { outcome: { outcome: "selected", optionId: "allow" } })
       await permResponse
-      expect(host.state.pending.elicitation).toEqual({ requestId: 0, params: elicParams })
+      expect(host.state.pending.elicitation).toEqual({ requestId: 1, params: elicParams })
 
-      host.respondElicitation(0, { action: "accept", content: {} })
+      host.respondElicitation(1, { action: "accept", content: {} })
       await elicResponse
       expect(host.state.pending.permission).toBeNull()
       expect(host.state.pending.elicitation).toBeNull()

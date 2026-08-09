@@ -5,8 +5,11 @@
  *
  * Body: { kind: "permission" | "elicitation", requestId: number, result: unknown }
  *
- * Kind discriminator is required because permissionSeq and elicitationSeq
- * both start at 0 — requestId alone is not unique across both types.
+ * Kind discriminator is required — permission and elicitation are two separate
+ * PendingRequests maps (kind routes between them), even though `requestId` is
+ * now (slice session-host-pending-surface C4) a single shared counter that is
+ * unique across both types. `kind` stays required regardless: it's what tells
+ * this route which map to look the id up in.
  *
  * Returns:
  *   - 404 if host not found (not an active connection)
@@ -14,6 +17,7 @@
  *     (respondPermission / respondElicitation return void)
  *
  * ─── slice session-host-http C4 (TDD) ───
+ * ─── slice session-host-pending-surface C4: JSDoc-only — shared requestId counter ───
  */
 
 import type { Hono } from "hono"
@@ -33,22 +37,16 @@ export function registerReplyRoute(app: Hono, registry: AgentSessionRegistry): v
     }
 
     // Parse body
-    const body = await c.req.json() as Record<string, unknown>
+    const body = (await c.req.json()) as Record<string, unknown>
     const kind = body.kind as "permission" | "elicitation"
     const requestId = body.requestId as number
     const result = body.result
 
     // Dispatch by kind
     if (kind === "permission") {
-      host.respondPermission(
-        requestId,
-        result as Parameters<typeof host.respondPermission>[1],
-      )
+      host.respondPermission(requestId, result as Parameters<typeof host.respondPermission>[1])
     } else if (kind === "elicitation") {
-      host.respondElicitation(
-        requestId,
-        result as Parameters<typeof host.respondElicitation>[1],
-      )
+      host.respondElicitation(requestId, result as Parameters<typeof host.respondElicitation>[1])
     } else {
       return c.json({ error: `Unknown kind: ${String(body.kind)}` }, 400)
     }

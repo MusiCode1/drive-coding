@@ -15,6 +15,7 @@
  * state עצמו מתעדכן דרך applyPatch (core, טהור/immutable) — לא כותבים applyPatch חדש.
  *
  * ─── slice remote-session-view C2+C3 (TDD) ───
+ * ─── slice session-host-pending-surface C4: respond() — exact routing, no fallback ───
  */
 
 import {
@@ -359,8 +360,12 @@ export class RemoteSessionView implements SessionView {
   // ─── Reply (permission/elicitation) ───
 
   /**
-   * גוזר kind מ-state.pending: permission נבדק ראשון (עדיפות ב-edge case נדיר
-   * שבו שניהם pending עם אותו requestId — תואם ל-reply.ts:30 warning).
+   * גוזר kind מ-state.pending: התאמה מדויקת, בלי fallback.
+   *
+   * slice session-host-pending-surface C4: ה-BE מקצה requestId ממונה משותף
+   * יחיד (session-host.ts) — שני kinds לעולם לא חולקים id, אז אין כאן מקום
+   * ל"עדיפות". id שלא תואם אף pending קיים הוא no-op שקט (כמו
+   * LocalSessionView.respond) — לא נשלחת שום בקשה.
    */
   async respond(requestId: number, result: unknown): Promise<void> {
     const kind =
@@ -368,7 +373,8 @@ export class RemoteSessionView implements SessionView {
         ? "permission"
         : this.#state.pending.elicitation?.requestId === requestId
           ? "elicitation"
-          : "permission"
+          : undefined
+    if (kind === undefined) return // no-op שקט — id לא תואם אף pending קיים
     await this.#post(this.#replyUrl(), { kind, requestId, result })
   }
 

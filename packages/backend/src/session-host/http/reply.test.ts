@@ -11,10 +11,12 @@
  *   - requestId + result passed correctly
  *   - silent no-op on unknown requestId (no 404, respond*() is void)
  *   - 400 for unknown kind
+ *
+ * ─── slice session-host-pending-surface C4: comment-only — shared requestId counter ───
  */
 
-import { describe, expect, it, vi } from "vitest"
 import { Hono } from "hono"
+import { describe, expect, it, vi } from "vitest"
 import type { AgentSessionRegistry } from "../registry.js"
 import type { ExtendedSessionHost } from "../session-host.js"
 import { registerReplyRoute } from "./reply.js"
@@ -41,7 +43,11 @@ function makeMockHost(): ExtendedSessionHost {
 function makeMockRegistry(host?: ExtendedSessionHost): AgentSessionRegistry {
   return {
     getHost: vi.fn().mockReturnValue(host),
-    getOrCreateHost: vi.fn().mockResolvedValue(host ? { host, broadcaster: { subscribe: vi.fn(), unsubscribe: vi.fn() } } : undefined),
+    getOrCreateHost: vi
+      .fn()
+      .mockResolvedValue(
+        host ? { host, broadcaster: { subscribe: vi.fn(), unsubscribe: vi.fn() } } : undefined,
+      ),
     getBroadcaster: vi.fn().mockReturnValue(undefined),
     unregisterHost: vi.fn(),
   }
@@ -174,7 +180,10 @@ describe("POST /api/agents/:id/reply", () => {
 
   describe("kind discriminator", () => {
     it("requestId 0 for permission uses respondPermission (not respondElicitation)", async () => {
-      // permissionSeq and elicitationSeq both start at 0 — kind is required
+      // slice session-host-pending-surface C4: requestId is now a single shared
+      // counter (unique across both kinds) — but `kind` is still required here,
+      // since permission/elicitation are two separate PendingRequests maps and
+      // `kind` is what routes between them, not what disambiguates the id.
       const host = makeMockHost()
       const registry = makeMockRegistry(host)
       const app = makeApp(registry)

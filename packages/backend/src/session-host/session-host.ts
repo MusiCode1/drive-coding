@@ -319,14 +319,17 @@ export async function createSessionHostFromConnection(
   }
 
   // ── PendingRequests for permission + elicitation ──────────────────────────
+  // slice session-host-pending-surface C4: מונה requestId משותף יחיד — לא שני
+  // מונים נפרדים שכל אחד מתחיל ב-0. שני ה-PendingRequests נשארים שתי מפות
+  // נפרדות (kind עדיין נדרש ב-POST /reply), אבל ה-id עצמו ייחודי גלובלית
+  // בתוך ה-host — זה מה שהופך את הניתוב בצד ה-FE לחד-משמעי (מלכודת ב').
 
-  let permissionSeq = 0
+  let nextRequestId = 0
   const permPending = createPendingRequests<RequestPermissionResponse>({
     timeoutMs: permissionTimeoutMs,
     defaultValue: { outcome: { outcome: "cancelled" } },
   })
 
-  let elicitationSeq = 0
   const elicitPending = createPendingRequests<CreateElicitationResponse>({
     timeoutMs: elicitationTimeoutMs,
     defaultValue: { action: "cancel" },
@@ -347,7 +350,7 @@ export async function createSessionHostFromConnection(
   async function handleRequestPermission(
     params: RequestPermissionRequest,
   ): Promise<RequestPermissionResponse> {
-    const requestId = permissionSeq++
+    const requestId = nextRequestId++
     const applied = applyPendingRequest(currentState, {
       kind: "permission",
       value: { requestId, params },
@@ -366,7 +369,7 @@ export async function createSessionHostFromConnection(
   async function handleCreateElicitation(
     params: CreateElicitationRequest,
   ): Promise<CreateElicitationResponse> {
-    const requestId = elicitationSeq++
+    const requestId = nextRequestId++
     const applied = applyPendingRequest(currentState, {
       kind: "elicitation",
       value: { requestId, params },

@@ -1,5 +1,55 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 20:19
+
+### slice session-host-pending-surface — C4: מונה requestId משותף (BE+FE)
+
+C4 סוגר מלכודת ב' מהבריף: `permissionSeq`/`elicitationSeq` שניהם התחילו ב-0,
+ו-`RemoteSessionView.respond()` גזר `kind` בעצמו עם fallback ל-`"permission"`.
+ברגע ש-C2 הפך "שני kinds pending בו-זמנית" למצב נתמך, ה-fallback הזה היה
+שולח תשובת-elicitation כ-`kind:"permission"` — no-op שקט, דיאלוג שלא נסגר
+עד timeout.
+
+#### מה בוצע?
+
+**packages/backend/src/session-host/session-host.ts** — `permissionSeq`
+ו-`elicitationSeq` הוחלפו במונה **משותף יחיד**: `let nextRequestId = 0`,
+משמש גם ב-`handleRequestPermission` וגם ב-`handleCreateElicitation`. שני
+ה-`PendingRequests` (`permPending`/`elicitPending`) נשארים שתי מפות נפרדות
+— `kind` עדיין נדרש ב-`POST /reply` כדי לנתב ביניהן — אבל ה-id עצמו ייחודי
+גלובלית בתוך ה-host.
+
+**packages/frontend/src/lib/session/remote-session-view.ts** — `respond()`:
+הוסר ה-fallback ל-`"permission"`; id שלא תואם אף `pending` קיים הוא **no-op
+שקט** (מיישר קו עם `LocalSessionView.respond`). זה **חריג-ה-FE היחיד**
+שהבריף התיר — מתודה אחת + הטסטים שלה בלבד; שום קובץ/מתודה FE אחרים לא
+נגעו.
+
+**ניקוי תיעוד (C4-ג, ללא שינוי לוגי)**:
+- `reply.ts` — JSDoc בראש הקובץ: המשפט "permissionSeq/elicitationSeq שניהם
+  מתחילים ב-0" הוחלף בהסבר שה-`kind` עדיין נדרש (שתי מפות נפרדות), למרות
+  שה-`requestId` עצמו כבר ייחודי.
+- `reply.test.ts:176-177` — אותה הערה מיושנת עודכנה בטסט "kind discriminator".
+- `remote-session-view.test.ts` — הטסט **`"prefers permission when both
+  pending share the same requestId"`** תואר מצב שהפך בלתי-אפשרי (שני kinds
+  לעולם לא חולקים id תחת מונה משותף) — **הוחלף** בטסט שמאמת את ההפך: ids
+  שונים מנתבים במדויק, גם כששניהם pending יחד. נוסף טסט חדש ל-no-op על id
+  לא-מוכר. ה-JSDoc בראש הקובץ עודכן מ"permission עדיפות" ל"התאמה מדויקת;
+  id לא-מוכר = no-op".
+
+#### בדיקות
+
+`session-host.integration.test.ts`: עודכן הטסט "two kinds pending
+simultaneously" — permission ואז elicitation מקבלים ids **שונים** (0 ו-1,
+לא שניהם 0), שניהם pending בו-זמנית. `remote-session-view.test.ts`: טסט
+ניתוב-elicitation עם permission-id שונה pending לצידו, וטסט no-op חדש
+(סופר קריאות ל-fetch לפני/אחרי — אין בקשת HTTP כלל).
+`bunx vitest run session-host.integration.test.ts`: 42/42 ירוק.
+`bunx vitest run session-host/`: 139/139. `bunx vitest run
+remote-session-view.test.ts`: 35/35. `bunx vitest run session-host packages/
+frontend/src/lib/session`: 214/214 ירוק. typecheck: DELTA-CHECK מול
+`ac376e8` — אפס שגיאות חדשות (רק היסטי שורה בשגיאות baseline קיימות).
+
 ## 2026-08-09 20:10
 
 ### slice session-host-pending-surface — C3: גבולות-תור + ראוט לא-חוסם (TDD)
