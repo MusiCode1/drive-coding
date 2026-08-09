@@ -1,5 +1,47 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 15:55
+
+### slice remote-session-view — C2: RemoteSessionView (TDD)
+
+C2 מממש `RemoteSessionView` — מחלקה שמממשת את `SessionView` port (12 מתודות + 2
+properties) ומתחברת ל-SessionHost בשרת דרך HTTP+SSE (S4 routes).
+
+#### מה בוצע?
+
+**1. packages/frontend/src/lib/session/remote-session-view.ts (חדש)**
+
+- `constructor(agentId, baseUrl, opts?)` — `opts._fetch`/`opts._sleep`/`opts.headers` מוזרקים גם
+  ל-SSEReader הפנימי וגם לקריאות RPC/reply (testability אחידה)
+- `connect()` (מתודת lifecycle נוספת, לא חלק מ-SessionView port) — מתחבר ל-SSE, קורא
+  snapshot, שומר `sessionId`, מתחיל `#drainPatches` ברקע
+- `state` — מתעדכן בכל patch נכנס דרך `applyPatch` מ-core (טהור/immutable) — **לא נכתב
+  applyPatch חדש**
+- `patches: ReadableStream<Patch[]>` — עוטף כל Patch בודד מ-SSEReader ל-`[patch]`
+- Session management (`newSession`/`loadSession`/`listSessions`/`deleteSession`) —
+  זורקות `"not supported in remote mode — backend manages sessions"` (הbackend מנהל sessions)
+- RPC methods (`prompt`/`cancel`/`setMode`/`setConfigOption`/`setSessionModel`) —
+  `POST /api/agents/:id/rpc` עם `{method, params: {sessionId, ...}}`
+- `extMethod` — `_drive/getQuota` (דורש return value) זורק `"not supported in remote mode
+  — use state instead"`; שאר ה-methods נשלחות fire-and-forget (ack)
+- `respond(requestId, result)` — גוזר `kind` מ-`state.pending` (permission נבדק ראשון,
+  מעדיף אותו ב-edge case של requestId זהה) → `POST /api/agents/:id/reply`
+- `close()` — סוגר את ה-SSEReader + patches controller
+
+#### בדיקות
+
+- `remote-session-view.test.ts`: 17 טסטים עוברים ✅ (mock fetch שמתפצל לפי URL —
+  `/events`→SSE frames, `/rpc`→202, `/reply`→200; כולל `afterEach` שסוגר כל view
+  שנוצר, כדי למנוע את אותה תקלת רקע-לא-נסגר שתוקנה ב-C1)
+  - connect(): snapshot → state + sessionId
+  - patches: עטיפה ל-[patch] + עדכון state דרך applyPatch
+  - כל RPC method שולחת POST /rpc נכון עם sessionId
+  - extMethod: fire-and-forget מול return-value (throw)
+  - respond(): גזירת kind (permission/elicitation/עדיפות-permission)
+  - session management methods: throw
+  - close(): לא זורק גם לפני connect()
+- typecheck נקי (0 שגיאות חדשות); lint (biome) נקי
+
 ## 2026-08-09 15:45
 
 ### slice remote-session-view — C1: SSE reader (TDD)
