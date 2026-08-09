@@ -1,5 +1,38 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 17:37
+
+### slice remote-session-view — calev-heavy round 2 fix: findings #2+#3 (connect() lifecycle)
+
+שני החוסמים שנולדו מתיקון M8 עצמו (round 1) — מטא-תופעה 2 בפעולה. תוקנים
+יחד כי הם באותן שורות בדיוק (`connect()`/`close()`).
+
+#### מה בוצע?
+
+**packages/frontend/src/lib/session/remote-session-view.ts**
+
+- **finding #2 (blocker) — `connect()` ממחזר promise שנדחה לתמיד**: כישלון חולף
+  בחיבור הראשון (BE עוד לא עלה — 503, או network blip) היה מרעיל את ה-view
+  לצמיתות: כל ניסיון חוזר קיבל את אותה דחייה, בלי לשלוח אף בקשת HTTP. `SSEReader`
+  לא מנסה שוב על כישלון החיבור הראשוני — ה-exponential backoff מתחיל רק **אחרי**
+  `#connectOnce` מוצלח. תוקן: `#connectPromise` ממוחזרת **רק להצלחה** — ב-`.catch`
+  מאפסים אותה לפני שהשגיאה מוזרקת הלאה, כך שניסיון חוזר יפתח חיבור אמיתי
+- **finding #3 (regression, אותו commit) — `connect()` אחרי `close()` no-op שקט**:
+  `close()` לא ניקתה את `#connectPromise`, אז `connect()` אחרי סגירה החזירה את
+  ה-promise המוצלח הישן — נראה מחובר, בלי לפתוח שום stream. הוכרע (משתי
+  האפשרויות שמרדכי הציע): שגיאה מפורשת, לא ניקוי-ופתיחה-מחדש — כי `patches`
+  הוא `ReadableStream` יחיד שנוצר ב-constructor וה-controller שלו כבר נסגר
+  סופית ב-`close()`; "לנקות ולפתוח מחדש" היה דורש גם לבנות מחדש את ה-stream
+  הזה (מורכבות/סיכון נוסף שלא הוצדק). `close()` היא עכשיו טרמינלית — עקבי עם
+  `LocalSessionView` ועם ה-contract ב-`session-view.ts`: view חדש = instance חדש
+
+#### בדיקות
+
+- `remote-session-view.test.ts`: 2 טסטים חדשים — retry אחרי כישלון חולף מצליח
+  (503→200, בקשת HTTP אמיתית שנייה, לא replay של הדחייה), `connect()` אחרי
+  `close()` זורק שגיאה מפורשת ולא פותח stream חדש (34 סה"כ)
+- typecheck נקי; lint נקי
+
 ## 2026-08-09 17:33
 
 ### slice remote-session-view — calev-heavy round 2 fix: finding #1 (unknown patch op)

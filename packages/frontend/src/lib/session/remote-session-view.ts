@@ -114,6 +114,8 @@ export class RemoteSessionView implements SessionView {
 
   /** @internal M8 — memoizes the in-flight/completed connect() call (see below). */
   #connectPromise: Promise<void> | null = null
+  /** @internal round-2 finding #3 — set by close(); connect() rejects explicitly after. */
+  #isClosed = false
 
   /**
    * מתחבר ל-SSE, מאחזר snapshot (כולל sessionId), ומתחיל להאזין ל-patches.
@@ -123,10 +125,31 @@ export class RemoteSessionView implements SessionView {
    * ומכפילה כל patch נכנס. מדוד: `segments=["once","once"]`. תוקן: `connect()`
    * ממוחזרת — קריאה שנייה (גם אחרי שהראשונה כבר הסתיימה) מחזירה את אותה הבטחה,
    * ולעולם לא פותחת חיבור שני.
+   *
+   * calev-heavy round 2 finding #2: אותו תיקון היה ממחזר גם promise **שנדחה** —
+   * כישלון חולף בחיבור הראשון (BE עוד לא עלה) היה מרעיל את ה-view לצמיתות, כי כל
+   * ניסיון חוזר קיבל את אותה דחייה בלי לשלוח אף בקשת HTTP. תוקן: memoization רק
+   * להצלחה — על דחייה, `#connectPromise` מתאפס כדי שניסיון חוזר יפתח חיבור אמיתי.
+   *
+   * calev-heavy round 2 finding #3: `connect()` אחרי `close()` היה no-op שקט
+   * (מחזיר promise מוצלח ישן בלי לפתוח שום stream). תוקן: זורק שגיאה מפורשת —
+   * view סגור הוא terminal; לחיבור חדש יש לבנות instance חדש (תואם ל-LocalSessionView
+   * ול-contract של close() ב-session-view.ts, ונמנע מהמורכבות של שחזור ה-patches
+   * stream שכבר נסגר סופית).
    */
   async connect(): Promise<void> {
+    if (this.#isClosed) {
+      throw new Error(
+        "RemoteSessionView: connect() called after close() — construct a new instance",
+      )
+    }
     if (this.#connectPromise) return this.#connectPromise
-    this.#connectPromise = this.#doConnect()
+    this.#connectPromise = this.#doConnect().catch((err: unknown) => {
+      // Only successful connections are memoized — a transient failure must not
+      // permanently poison this instance (round 2 finding #2).
+      this.#connectPromise = null
+      throw err
+    })
     return this.#connectPromise
   }
 
@@ -143,6 +166,9 @@ export class RemoteSessionView implements SessionView {
    * מבטל pending permission/elicitation כ-cancelled (חוזה SessionView.close —
    * avigail plan-gate r3 #10) לפני הניתוק, דרך respond() (POST /reply) — הbackend
    * הוא שמחזיק את ה-pending האמיתי, ה-remote view רק משדר את הביטול אליו.
+   *
+   * טרמינלי (round 2 finding #3): אחרי close(), connect() זורק — לא ניתן לפתוח
+   * מחדש את אותו instance.
    */
   async close(): Promise<void> {
     const { permission, elicitation } = this.#state.pending
@@ -158,6 +184,7 @@ export class RemoteSessionView implements SessionView {
     }
     // מנקה pending מקומית — הופך close() לאידמפוטנטי (קריאה חוזרת לא תשלח /reply שוב).
     this.#state = { ...this.#state, pending: { permission: null, elicitation: null } }
+    this.#isClosed = true
     this.#reader.close()
     try {
       this.#patchesCtrl?.close()

@@ -246,6 +246,47 @@ describe("RemoteSessionView — connect()", () => {
     expect(results[0]?.[0]).toMatchObject({ version: 1, op: "update-quota" })
     expect(results[1]?.[0]).toMatchObject({ version: 2, op: "update-session" })
   })
+
+  // ─── round 2 finding #2: connect() must not memoize a rejected promise ───
+
+  it("round 2 #2: a transient connect() failure does not permanently poison the view — retry succeeds", async () => {
+    let call = 0
+    const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+      if (!url.includes("/events")) return jsonResponse({ ok: true })
+      call++
+      if (call === 1) {
+        return { ok: false, status: 503 } as unknown as Response
+      }
+      return sseResponse([{ event: "snapshot", data: JSON.stringify(makeSnapshot()) }], {
+        keepOpen: true,
+      })
+    })
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+
+    await expect(view.connect()).rejects.toThrow("503")
+    // retry must make a real HTTP request, not replay the same rejection
+    await expect(view.connect()).resolves.toBeUndefined()
+    expect(call).toBe(2)
+    expect(view.state.sessionId).toBe("sess-1")
+  })
+
+  // ─── round 2 finding #3: connect() after close() must not silently no-op ───
+
+  it("round 2 #3: connect() after close() throws explicitly instead of silently no-op-ing", async () => {
+    const mockFetch = makeMockFetch({ keepOpen: true })
+    const view = new RemoteSessionView("agent-1", "http://be.local", {
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
+    await view.connect()
+    await view.close()
+
+    await expect(view.connect()).rejects.toThrow(/closed|construct a new instance/i)
+    // no new /events request was made for the post-close attempt
+    const calls = (mockFetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
+    const eventsCalls = calls.filter(([url]) => typeof url === "string" && url.includes("/events"))
+    expect(eventsCalls).toHaveLength(1)
+  })
 })
 
 // ── RPC methods ───────────────────────────────────────────────────────────────
