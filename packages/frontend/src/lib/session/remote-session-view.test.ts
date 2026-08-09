@@ -23,7 +23,11 @@
 import type { Patch, SessionState } from "@drive-coding/core/session"
 import { createInitialSessionState } from "@drive-coding/core/session"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { RemoteSessionView, type RemoteSessionViewOptions } from "./remote-session-view.js"
+import {
+  createRemoteSessionView,
+  RemoteSessionView,
+  type RemoteSessionViewOptions,
+} from "./remote-session-view.js"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -259,6 +263,18 @@ describe("RemoteSessionView — RPC methods", () => {
       "not supported in remote mode",
     )
   })
+
+  it("prompt() with PromptBlocks (non-string content) throws — BE only accepts string (avigail #7)", async () => {
+    let called = false
+    const mockFetch = makeMockFetch({ onRpc: () => (called = true) })
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    await view.connect()
+
+    await expect(view.prompt([{ type: "text", text: "hi" }] as never)).rejects.toThrow(
+      "not supported in remote mode",
+    )
+    expect(called).toBe(false)
+  })
 })
 
 // ── respond() ─────────────────────────────────────────────────────────────────
@@ -370,6 +386,59 @@ describe("RemoteSessionView — close()", () => {
       _sleep: noSleep,
     })
     await expect(view.close()).resolves.toBeUndefined()
+  })
+
+  it("cancels a pending permission via POST /reply before disconnecting (avigail #10)", async () => {
+    let captured: unknown
+    const snapshot = makeSnapshot({
+      pending: { permission: { requestId: 4, params: {} as never }, elicitation: null },
+    })
+    const mockFetch = makeMockFetch({
+      events: [{ event: "snapshot", data: JSON.stringify(snapshot) }],
+      onReply: (b) => (captured = b),
+    })
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    await view.connect()
+
+    await view.close()
+
+    expect(captured).toMatchObject({
+      kind: "permission",
+      requestId: 4,
+      result: { outcome: { outcome: "cancelled" } },
+    })
+  })
+
+  it("cancels a pending elicitation via POST /reply before disconnecting (avigail #10)", async () => {
+    let captured: unknown
+    const snapshot = makeSnapshot({
+      pending: { permission: null, elicitation: { requestId: 8, params: {} as never } },
+    })
+    const mockFetch = makeMockFetch({
+      events: [{ event: "snapshot", data: JSON.stringify(snapshot) }],
+      onReply: (b) => (captured = b),
+    })
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    await view.connect()
+
+    await view.close()
+
+    expect(captured).toMatchObject({
+      kind: "elicitation",
+      requestId: 8,
+      result: { action: "cancel" },
+    })
+  })
+
+  it("does not POST /reply on close() when nothing is pending", async () => {
+    let replyCalled = false
+    const mockFetch = makeMockFetch({ onReply: () => (replyCalled = true) })
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    await view.connect()
+
+    await view.close()
+
+    expect(replyCalled).toBe(false)
   })
 })
 
@@ -495,5 +564,22 @@ describe("RemoteSessionView — reconnect mid-turn", () => {
 
     // no synthetic reset patch was injected — only the real update-session patch
     expect(results[0]?.[0]).toMatchObject({ op: "update-session", version: 4 })
+  })
+})
+
+// ── C4: factory ────────────────────────────────────────────────────────────────
+
+describe("createRemoteSessionView()", () => {
+  it("returns a RemoteSessionView instance that connects and works end-to-end", async () => {
+    const mockFetch = makeMockFetch({})
+    const view = createRemoteSessionView("agent-1", "http://be.local", {
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
+    activeViews.push(view)
+
+    expect(view).toBeInstanceOf(RemoteSessionView)
+    await view.connect()
+    expect(view.state.sessionId).toBe("sess-1")
   })
 })

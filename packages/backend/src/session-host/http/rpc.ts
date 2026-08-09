@@ -10,11 +10,13 @@
  *   - setMode   — host.setMode(modeId)
  *   - setConfigOption — host.setConfigOption(configId, value)
  *   - extMethod — host.extMethod(method, params)
+ *   - setSessionModel — host.setSessionModel(model)  (slice remote-session-view C4)
  *
  * Returns 404 if connection not found (registry.getOrCreateHost returns undefined).
  * Returns 202 Accepted with {version: host.state.version} on success.
  *
  * ─── slice session-host-http C3 (TDD) ───
+ * ─── slice remote-session-view C4: + setSessionModel (TDD) ───
  */
 
 import type { Hono } from "hono"
@@ -35,7 +37,7 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
     const { host } = result
 
     // Parse request body
-    const body = await c.req.json() as Record<string, unknown>
+    const body = (await c.req.json()) as Record<string, unknown>
     const method = body.method as string | undefined
     const params = (body.params ?? {}) as Record<string, unknown>
 
@@ -68,6 +70,11 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
         const extMethodName = params.method as string
         const extParams = (params.params ?? {}) as Record<string, unknown>
         await host.extMethod(extMethodName, extParams)
+        break
+      }
+      case "setSessionModel": {
+        const model = params.model as string
+        await host.setSessionModel(model)
         break
       }
       default: {

@@ -121,8 +121,26 @@ export class RemoteSessionView implements SessionView {
     void this.#drainPatches(patches)
   }
 
-  /** סוגר את חיבור ה-SSE ומפנה משאבים. */
+  /**
+   * סוגר את חיבור ה-SSE ומפנה משאבים.
+   * מבטל pending permission/elicitation כ-cancelled (חוזה SessionView.close —
+   * avigail plan-gate r3 #10) לפני הניתוק, דרך respond() (POST /reply) — הbackend
+   * הוא שמחזיק את ה-pending האמיתי, ה-remote view רק משדר את הביטול אליו.
+   */
   async close(): Promise<void> {
+    const { permission, elicitation } = this.#state.pending
+    if (permission) {
+      await this.respond(permission.requestId, { outcome: { outcome: "cancelled" } }).catch(() => {
+        // best-effort — ה-SSE כבר בדרך להיסגר, לא חוסמים את הסגירה על כשל reply
+      })
+    }
+    if (elicitation) {
+      await this.respond(elicitation.requestId, { action: "cancel" }).catch(() => {
+        // best-effort
+      })
+    }
+    // מנקה pending מקומית — הופך close() לאידמפוטנטי (קריאה חוזרת לא תשלח /reply שוב).
+    this.#state = { ...this.#state, pending: { permission: null, elicitation: null } }
     this.#reader.close()
     try {
       this.#patchesCtrl?.close()
@@ -213,7 +231,17 @@ export class RemoteSessionView implements SessionView {
 
   // ─── RPC methods ───
 
+  /**
+   * שולח prompt. רק string נתמך ב-remote mode — הbackend (rpc.ts:46) עושה
+   * `params.content as string` בלי serialization אמיתי, כך ש-PromptBlocks (מערך)
+   * היה נשבר בשקט (avigail plan-gate r3 #7: היה נכנס כטקסט לא-תקין ל-segment).
+   * הרחבת ה-BE לתמוך ב-PromptBlocks שייכת ל-S4 (לא לסלייס הזה) — לכן זורקים כאן
+   * במקום לשלוח מידע פגום.
+   */
   async prompt(content: string | PromptBlocks, meta?: Record<string, unknown>): Promise<void> {
+    if (typeof content !== "string") {
+      throw new Error("RemoteSessionView: PromptBlocks not supported in remote mode — text only")
+    }
     await this.#rpc("prompt", { sessionId: this.#sessionId, content, meta })
   }
 
@@ -288,6 +316,22 @@ export class RemoteSessionView implements SessionView {
       return undefined
     }
   }
+}
+
+// ─── Factory ───
+
+/**
+ * createRemoteSessionView — נוחות ליצירת RemoteSessionView.
+ * סינכרוני בכוונה (תואם ל-brief C4) — הקורא (S6, טרם נבנה) אחראי לקרוא
+ * ל-connect() בעצמו לפני שימוש; זה אינו נחווט כאן (avigail plan-gate r3 #11,
+ * מרדכי: "זה נסגר ב-S6, לא אצלך").
+ */
+export function createRemoteSessionView(
+  agentId: string,
+  baseUrl: string,
+  opts?: RemoteSessionViewOptions,
+): RemoteSessionView {
+  return new RemoteSessionView(agentId, baseUrl, opts)
 }
 
 // ─── Re-export for convenience ───

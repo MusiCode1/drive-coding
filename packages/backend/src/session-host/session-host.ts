@@ -25,17 +25,17 @@ import type {
   RequestPermissionResponse,
   SessionNotification,
 } from "@agentclientprotocol/sdk"
+import type { Patch, SessionState } from "@drive-coding/core/session"
+import {
+  applyUserMessage,
+  createInitialSessionState,
+  reduce,
+  synthesizeUserMessage,
+} from "@drive-coding/core/session"
 import type { AcpClient, AcpClientCallbacks, AcpClientOptions } from "@drive-coding/provider/client"
 import { createAcpClient } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { AcpTransport } from "@drive-coding/provider/transport"
-import type { SessionState, Patch } from "@drive-coding/core/session"
-import {
-  createInitialSessionState,
-  reduce,
-  synthesizeUserMessage,
-  applyUserMessage,
-} from "@drive-coding/core/session"
 import { createInProcessAcpTransport } from "./in-process-acp-transport.js"
 import { createPendingRequests } from "./pending-requests.js"
 
@@ -66,11 +66,7 @@ export type SessionHost = {
    * emits the add-message patch, then forwards to client.prompt.
    * meta is opaque (passthrough §9); stored in message.meta.
    */
-  prompt(
-    sessionId: string,
-    content: string,
-    meta?: Record<string, unknown>,
-  ): Promise<void>
+  prompt(sessionId: string, content: string, meta?: Record<string, unknown>): Promise<void>
 
   /** Delegates to AcpClient.newSession */
   newSession(opts: { cwd: string; _meta?: Record<string, unknown> }): Promise<{ sessionId: string }>
@@ -230,6 +226,14 @@ export type ExtendedSessionHost = SessionHost & {
    * S4: exposed via POST /api/agents/:id/rpc {method:"extMethod"}
    */
   extMethod(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>>
+
+  /**
+   * Set the model for the active session.
+   * Requires an active session — throws if currentState.sessionId is null.
+   * Delegates to AcpClient.setSessionModel({sessionId, modelId}).
+   * slice remote-session-view C4: exposed via POST /api/agents/:id/rpc {method:"setSessionModel"}
+   */
+  setSessionModel(model: string): Promise<void>
 }
 
 /**
@@ -367,14 +371,14 @@ export async function createSessionHostFromConnection(
     },
 
     async newSession(opts: { cwd: string; _meta?: Record<string, unknown> }) {
-      const result = await client.newSession(opts) as { sessionId: string }
+      const result = (await client.newSession(opts)) as { sessionId: string }
       // Update currentState.sessionId so setMode/setConfigOption can use it
       currentState = { ...currentState, sessionId: result.sessionId }
       return result
     },
 
     async loadSession(opts: { cwd: string; sessionId: string; _meta?: Record<string, unknown> }) {
-      const result = await client.loadSession(opts) as { sessionId: string }
+      const result = (await client.loadSession(opts)) as { sessionId: string }
       // Update currentState.sessionId so setMode/setConfigOption can use it
       currentState = { ...currentState, sessionId: result.sessionId }
       return result
@@ -402,8 +406,16 @@ export async function createSessionHostFromConnection(
       await client.setSessionConfigOption({ sessionId: currentState.sessionId, configId, value })
     },
 
-    async extMethod(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+    async extMethod(
+      method: string,
+      params: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> {
       return client.extMethod(method, params)
+    },
+
+    async setSessionModel(model: string): Promise<void> {
+      if (!currentState.sessionId) throw new Error("No session")
+      await client.setSessionModel({ sessionId: currentState.sessionId, modelId: model })
     },
   }
 }

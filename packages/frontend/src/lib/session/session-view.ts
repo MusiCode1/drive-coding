@@ -2,12 +2,13 @@
  * session-view.ts — SessionView port.
  *
  * ה-port מגדיר את ה-contract שה-VM צורך (C3) ו-LocalSessionView מממש (C2).
- * RemoteSessionView (S5) יממש אותו באמצעות WS לשרת ייעודי.
+ * RemoteSessionView (S5) מממש אותו באמצעות HTTP+SSE ל-SessionHost בשרת (לא WS —
+ * EventSource לא תומך ב-POST/headers, ולכן fetch+ReadableStream + reconnect ידני).
  *
  * ─── slice session-view-port C2 ───
  */
 
-import type { SessionState, Patch } from "@drive-coding/core/session"
+import type { Patch, SessionState } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import type { SessionInfo } from "$lib/adapters/sessions"
 
@@ -16,7 +17,7 @@ import type { SessionInfo } from "$lib/adapters/sessions"
  *
  * שני מימושים:
  * - LocalSessionView (C2): עוטף AcpClient + WsAcpTransport — in-process.
- * - RemoteSessionView (S5): WS לשרת SessionManager — out-of-process.
+ * - RemoteSessionView (S5): HTTP+SSE ל-SessionHost בשרת — out-of-process.
  *
  * ה-VM (C3) מקבל SessionView ב-DI ואינו יודע על המימוש.
  */

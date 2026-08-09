@@ -1,7 +1,7 @@
 /**
  * rpc.test.ts — TDD tests for POST /api/agents/:id/rpc (C3).
  *
- * Testing: tdd (brief §C3)
+ * Testing: tdd (brief §C3; slice remote-session-view C4 extends with setSessionModel)
  *
  * Tests:
  *   - 404 if connection not found
@@ -11,15 +11,16 @@
  *   - setMode: calls host.setMode
  *   - setConfigOption: calls host.setConfigOption
  *   - extMethod: calls host.extMethod
+ *   - setSessionModel: calls host.setSessionModel (slice remote-session-view C4)
  *   - 400 for unknown method
  */
 
-import { describe, expect, it, vi } from "vitest"
-import { Hono } from "hono"
 import type { SessionState } from "@drive-coding/core/session"
 import { createInitialSessionState } from "@drive-coding/core/session"
-import type { AgentSessionRegistry } from "../registry.js"
+import { Hono } from "hono"
+import { describe, expect, it, vi } from "vitest"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
+import type { AgentSessionRegistry } from "../registry.js"
 import type { ExtendedSessionHost } from "../session-host.js"
 import { registerRpcRoute } from "./rpc.js"
 
@@ -39,6 +40,7 @@ function makeMockHost(state: SessionState): ExtendedSessionHost {
     cancel: vi.fn().mockResolvedValue(undefined),
     setMode: vi.fn().mockResolvedValue(undefined),
     setConfigOption: vi.fn().mockResolvedValue(undefined),
+    setSessionModel: vi.fn().mockResolvedValue(undefined),
     extMethod: vi.fn().mockResolvedValue({ result: "ok" }),
     respondPermission: vi.fn(),
     respondElicitation: vi.fn(),
@@ -52,7 +54,10 @@ function makeMockBroadcaster(): PatchesBroadcaster {
   }
 }
 
-function makeMockRegistry(host?: ExtendedSessionHost, broadcaster?: PatchesBroadcaster): AgentSessionRegistry {
+function makeMockRegistry(
+  host?: ExtendedSessionHost,
+  broadcaster?: PatchesBroadcaster,
+): AgentSessionRegistry {
   const entry = host && broadcaster ? { host, broadcaster } : undefined
   return {
     getHost: vi.fn().mockReturnValue(host),
@@ -84,7 +89,10 @@ describe("POST /api/agents/:id/rpc", () => {
       const registry = makeMockRegistry() // getOrCreateHost returns undefined
       const app = makeApp(registry)
 
-      const res = await postRpc(app, "missing-agent", { method: "cancel", params: { sessionId: "s1" } })
+      const res = await postRpc(app, "missing-agent", {
+        method: "cancel",
+        params: { sessionId: "s1" },
+      })
       expect(res.status).toBe(404)
     })
   })
@@ -108,10 +116,28 @@ describe("POST /api/agents/:id/rpc", () => {
       const registry = makeMockRegistry(host, makeMockBroadcaster())
       const app = makeApp(registry)
 
-      const res = await postRpc(app, "agent-1", { method: "setMode", params: { modeId: "compact" } })
+      const res = await postRpc(app, "agent-1", {
+        method: "setMode",
+        params: { modeId: "compact" },
+      })
       expect(res.status).toBe(202)
       const json = await res.json()
       expect(json.version).toBe(5)
+    })
+
+    it("returns 202 with {version} for setSessionModel", async () => {
+      const state = makeMockState(9)
+      const host = makeMockHost(state)
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "setSessionModel",
+        params: { model: "claude-opus" },
+      })
+      expect(res.status).toBe(202)
+      const json = await res.json()
+      expect(json.version).toBe(9)
     })
   })
 
@@ -193,6 +219,18 @@ describe("POST /api/agents/:id/rpc", () => {
         params: { method: "_drive/custom", params: { n: 42 } },
       })
       expect(host.extMethod).toHaveBeenCalledWith("_drive/custom", { n: 42 })
+    })
+
+    it("setSessionModel: calls host.setSessionModel with model", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      await postRpc(app, "agent-1", {
+        method: "setSessionModel",
+        params: { model: "claude-opus" },
+      })
+      expect(host.setSessionModel).toHaveBeenCalledWith("claude-opus")
     })
   })
 

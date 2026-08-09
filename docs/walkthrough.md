@@ -1,5 +1,78 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 16:22
+
+### slice remote-session-view — C4: setSessionModel + rpc switch + factory + אינטגרציה (TDD)
+
+C4 סוגר את ה-slice: מוסיף `setSessionModel` ל-`ExtendedSessionHost` והרחבת ה-rpc
+switch (S4), factory ל-`RemoteSessionView`, ובדיקת אינטגרציה VM+RemoteSessionView
+מלאה. גם סוגר שני findings של avigail (plan-gate r3) שהיו רלוונטיים ל-scope הזה.
+
+#### מה בוצע?
+
+**1. packages/backend/src/session-host/session-host.ts**
+
+- `ExtendedSessionHost` מקבל `setSessionModel(model: string): Promise<void>` —
+  אותו דפוס כמו `setMode`/`setConfigOption` (זורק `"No session"` אם אין
+  `currentState.sessionId`, מאציל ל-`client.setSessionModel({sessionId, modelId})`)
+
+**2. packages/backend/src/session-host/http/rpc.ts**
+
+- `case "setSessionModel"` נוסף ל-switch — קורא `host.setSessionModel(params.model)`.
+  **לא** נוסף `newSession`/`loadSession` — יצירת session נשארת אוטומטית ב-BE
+  (הכרעה 1), לא route (תיאום עם S6 שגם נוגע ב-switch הזה)
+
+**3. packages/frontend/src/lib/session/remote-session-view.ts (הרחבה)**
+
+- `createRemoteSessionView(agentId, baseUrl, opts?)` — factory סינכרוני (תואם brief
+  C4); **לא** קורא ל-`connect()` — זה תפקיד S6 (avigail #11, מרדכי: "לא אצלך")
+- `close()`: לפני ניתוק ה-SSE, מבטל pending permission/elicitation דרך `respond()`
+  (POST /reply) עם `{outcome:{outcome:"cancelled"}}`/`{action:"cancel"}` — סוגר את
+  פער-החוזה מול הפורט (avigail #10: SessionView.close() מחויב לבטל pending).
+  מנקה גם את ה-pending המקומי אחרי כן — הופך את `close()` לאידמפוטנטי
+- `prompt()`: זורק `"not supported in remote mode"` אם `content` הוא `PromptBlocks`
+  (לא string) — ה-BE (`rpc.ts:46`) עושה `as string` בלי serialization אמיתי, אז
+  מערך היה נכנס כטקסט פגום ל-segment בשקט (avigail #7). הרחבת ה-BE לתמוך
+  ב-PromptBlocks שייכת ל-S4 (מחוץ לסקופ הסלייס) — לכן חוסמים ב-FE במקום לשלוח
+  מידע פגום
+- `session-view.ts`: תוקן docstring מיושן שאמר RemoteSessionView ישתמש ב-WS
+  (avigail #19 — מיושן אחרי החלטת ה-SSE)
+
+**4. packages/frontend/src/lib/view-models/remote-session-view.integration.test.svelte.ts (חדש)**
+
+- מראה את הצינור המלא: RemoteSessionView (mock HTTP+SSE) → VM (`AgentSession`) —
+  מקביל ל-`agent-session.integration.test.svelte.ts` (LocalSessionView) אבל
+  דרך remote transport
+- **תקלה שאובחנה ותוקנה תוך כדי כתיבת הבדיקה**: mock SSE streams שסוגרים את
+  עצמם (`ctrl.close()`) מיד אחרי snapshot, בשילוב עם `_sleep: noSleep` (מיידי) +
+  `await delay(20)` אמיתי (setTimeout) בטסט — יצרו בדיוק את ה-reconnect-loop
+  האינסופי שאובחן ותוקן ב-C1 (`sse-reader.test.ts`), אבל הפעם עם **זמן-קיר אמיתי**
+  לרוץ בו → OOM (heap crash) של worker ה-vitest. תוקן: `sseBody`/`sseResponse`
+  מקבלים `keepOpen` (ברירת מחדל `true`) — מדמה חיבור SSE אמיתי שנשאר פתוח
+  (`reader.read()` פשוט ממתין) עד ל-`view.close()`, במקום להיסגר מיד ולהפעיל
+  reconnect. `keepOpen:false` נשמר רק לטסט שבכוונה מדמה ניתוק (ואז החיבור השני
+  אחריו כן נשאר פתוח, כדי לא לחזור על הלולאה)
+- 4 טסטים: sync title מ-snapshot patches, add-message+append-segment → bubbles
+  דרך `applyPatchMutable`, prompt() נושא sessionId אמיתי מה-BE (לא מומצא),
+  reconnect mid-turn → bubbles משקפים את ה-reset patch ולא נתונים ישנים
+
+**ידוע ומתועד כ-scope-מחוץ**: `state.pending`/`state.status` לא מסונכרנים ל-VM
+(`#syncFromViewState`) — `respond()` לא ניתן להפעלה קצה-לקצה דרך ה-VM עדיין
+(avigail negative-space #8). ה-Speaker water-mark (C3) עדיין ללא צרכן (נדחה
+ל-slice נפרד, הכרעה 2). לא נגעתי ב-VM/Speaker בהתאם להנחיית מרדכי.
+
+#### בדיקות
+
+- `rpc.test.ts`: 2 טסטים חדשים (202+delegation ל-setSessionModel)
+- `remote-session-view.test.ts`: 5 טסטים חדשים — prompt() PromptBlocks throw,
+  close() מבטל permission/elicitation pending, close() לא שולח /reply כשאין
+  pending, factory (30 סה"כ)
+- `remote-session-view.integration.test.svelte.ts`: 4 טסטים חדשים
+- כל טסטי `session-host/*` + `session/*` + `view-models/*` הרלוונטיים: ירוקים
+- typecheck: אפס שגיאות חדשות (ה-baseline הקיים — AcpClientCallbacks,
+  mock-session-view fixture, Response-type ב-בדיקות backend — pre-existing,
+  לא קשור); lint נקי; lint:i18n נקי
+
 ## 2026-08-09 16:10
 
 ### slice remote-session-view — הכרעה 1: יצירת session אוטומטית ב-BE
