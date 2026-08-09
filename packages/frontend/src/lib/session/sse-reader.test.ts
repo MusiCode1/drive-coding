@@ -1,0 +1,348 @@
+/**
+ * sse-reader.test.ts — TDD עבור SSEReader (C1).
+ *
+ * Testing: tdd (brief §C1)
+ *
+ * Tests:
+ *   - snapshot parsing from event: snapshot frame
+ *   - headers forwarded to fetch
+ *   - fetch failure throws
+ *   - patch emission from event: patch frames
+ *   - non-patch/snapshot events are ignored
+ *   - reconnect after stream end: onReconnected called with new snapshot
+ *   - exponential backoff: 1s → 2s → 4s → 8s
+ *   - backoff capped at 30s
+ *   - delay resets to 1s after successful reconnect
+ */
+
+import type { Patch, SessionState } from "@drive-coding/core/session"
+import { createInitialSessionState } from "@drive-coding/core/session"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { SSEReader, type SSEReaderOptions } from "./sse-reader.js"
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+const encoder = new TextEncoder()
+
+/**
+ * Tracks every SSEReader created via `newReader()` so `afterEach` can close
+ * it — otherwise the background reconnect loop (`#runLoop`) keeps running
+ * after the test ends. With a no-op `_sleep` and a mock `fetch` that
+ * resolves instantly, an un-closed reader spins in a tight microtask loop
+ * forever and starves the vitest worker (observed: worker never settles,
+ * "Timeout terminating forks worker").
+ */
+const activeReaders: SSEReader[] = []
+
+function newReader(url: string, opts: SSEReaderOptions = {}): SSEReader {
+  const reader = new SSEReader(url, opts)
+  activeReaders.push(reader)
+  return reader
+}
+
+afterEach(() => {
+  for (const reader of activeReaders) reader.close()
+  activeReaders.length = 0
+})
+
+/** Build a ReadableStream<Uint8Array> that emits the given SSE frames and closes. */
+function makeSSEBody(frames: Array<{ event: string; data: string }>): ReadableStream<Uint8Array> {
+  const text = frames.map((f) => `event: ${f.event}\ndata: ${f.data}\n\n`).join("")
+  return new ReadableStream({
+    start(ctrl) {
+      ctrl.enqueue(encoder.encode(text))
+      ctrl.close()
+    },
+  })
+}
+
+function makeSSEResponse(frames: Array<{ event: string; data: string }>): Response {
+  return {
+    ok: true,
+    status: 200,
+    body: makeSSEBody(frames),
+  } as unknown as Response
+}
+
+function makeSnapshot(sessionId = "sess-1"): SessionState {
+  return createInitialSessionState({ sessionId })
+}
+
+function makePatch(version = 1): Patch {
+  return { version, op: "update-session", changes: { status: "connected" } }
+}
+
+/** Read exactly n patches from a stream (or fewer if the stream closes). */
+async function readNPatches(patches: ReadableStream<Patch>, n: number): Promise<Patch[]> {
+  const reader = patches.getReader()
+  const results: Patch[] = []
+  try {
+    for (let i = 0; i < n; i++) {
+      const { value, done } = await reader.read()
+      if (done) break
+      if (value !== undefined) results.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  return results
+}
+
+const noSleep = (): Promise<void> => Promise.resolve()
+
+// ── snapshot ──────────────────────────────────────────────────────────────────
+
+describe("SSEReader — connect() snapshot", () => {
+  it("returns snapshot from event: snapshot frame", async () => {
+    const snapshot = makeSnapshot("sess-42")
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(makeSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]))
+
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+    const { snapshot: result } = await reader.connect()
+
+    expect(result.sessionId).toBe("sess-42")
+    expect(result.version).toBe(snapshot.version)
+  })
+
+  it("passes URL and headers to fetch", async () => {
+    const snapshot = makeSnapshot()
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(makeSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]))
+
+    const reader = newReader("/api/agents/a1/events", {
+      headers: { Authorization: "Bearer tok" },
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
+    await reader.connect()
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/agents/a1/events",
+      expect.objectContaining({ headers: { Authorization: "Bearer tok" } }),
+    )
+  })
+
+  it("throws when fetch returns non-ok response", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 404 } as Response)
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+
+    await expect(reader.connect()).rejects.toThrow("404")
+  })
+
+  it("throws when response has no body", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, body: null } as Response)
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+
+    await expect(reader.connect()).rejects.toThrow()
+  })
+})
+
+// ── patches stream ────────────────────────────────────────────────────────────
+
+describe("SSEReader — patches stream", () => {
+  it("emits patches from event: patch frames", async () => {
+    const snapshot = makeSnapshot()
+    const p1 = makePatch(1)
+    const p2 = makePatch(2)
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      makeSSEResponse([
+        { event: "snapshot", data: JSON.stringify(snapshot) },
+        { event: "patch", data: JSON.stringify(p1) },
+        { event: "patch", data: JSON.stringify(p2) },
+      ]),
+    )
+
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+    const { patches } = await reader.connect()
+
+    const results = await readNPatches(patches, 2)
+    expect(results[0]).toMatchObject({ version: 1, op: "update-session" })
+    expect(results[1]).toMatchObject({ version: 2, op: "update-session" })
+  })
+
+  it("ignores non-patch, non-snapshot events", async () => {
+    const snapshot = makeSnapshot()
+    const patch = makePatch(3)
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      makeSSEResponse([
+        { event: "snapshot", data: JSON.stringify(snapshot) },
+        { event: "heartbeat", data: "{}" },
+        { event: "patch", data: JSON.stringify(patch) },
+      ]),
+    )
+
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+    const { patches } = await reader.connect()
+
+    const results = await readNPatches(patches, 1)
+    expect(results[0]).toMatchObject({ version: 3 })
+  })
+})
+
+// ── reconnect ─────────────────────────────────────────────────────────────────
+
+describe("SSEReader — reconnect", () => {
+  it("calls onReconnected with new snapshot after stream ends, resumes patches", async () => {
+    const snapshot1 = makeSnapshot("sess-1")
+    const snapshot2 = makeSnapshot("sess-2")
+    const patch = makePatch(5)
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot1) }]),
+      )
+      .mockResolvedValueOnce(
+        makeSSEResponse([
+          { event: "snapshot", data: JSON.stringify(snapshot2) },
+          { event: "patch", data: JSON.stringify(patch) },
+        ]),
+      )
+
+    const reconnectedSnapshots: SessionState[] = []
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+    reader.onReconnected = (s) => reconnectedSnapshots.push(s)
+
+    const { patches } = await reader.connect()
+    const results = await readNPatches(patches, 1)
+
+    expect(reconnectedSnapshots).toHaveLength(1)
+    expect(reconnectedSnapshots[0]?.sessionId).toBe("sess-2")
+    expect(results[0]).toMatchObject({ version: 5 })
+  })
+
+  it("retries with exponential backoff: 1s → 2s → 4s → 8s on failures", async () => {
+    const sleepDelays: number[] = []
+    const mockSleep = (ms: number): Promise<void> => {
+      sleepDelays.push(ms)
+      return Promise.resolve()
+    }
+
+    const snapshot = makeSnapshot()
+    const patch = makePatch(99)
+
+    let call = 0
+    const mockFetch = vi.fn().mockImplementation(() => {
+      call++
+      if (call === 1) {
+        // Initial connection — snapshot only (stream ends)
+        return Promise.resolve(
+          makeSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]),
+        )
+      }
+      if (call <= 4) {
+        // Reconnect attempts 1–3: fail
+        return Promise.reject(new Error("network error"))
+      }
+      // Reconnect attempt 4: success with patch
+      return Promise.resolve(
+        makeSSEResponse([
+          { event: "snapshot", data: JSON.stringify(snapshot) },
+          { event: "patch", data: JSON.stringify(patch) },
+        ]),
+      )
+    })
+
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: mockSleep })
+    const { patches } = await reader.connect()
+
+    const results = await readNPatches(patches, 1)
+    expect(results[0]).toMatchObject({ version: 99 })
+    // Delays: initial stream ends → 1s, fail→2s, fail→4s, fail→8s, success
+    expect(sleepDelays).toEqual([1000, 2000, 4000, 8000])
+  })
+
+  it("caps backoff at 30s", async () => {
+    const sleepDelays: number[] = []
+    const mockSleep = (ms: number): Promise<void> => {
+      sleepDelays.push(ms)
+      return Promise.resolve()
+    }
+
+    const snapshot = makeSnapshot()
+    const patch = makePatch(1)
+
+    let call = 0
+    const mockFetch = vi.fn().mockImplementation(() => {
+      call++
+      if (call === 1) {
+        return Promise.resolve(
+          makeSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]),
+        )
+      }
+      if (call <= 7) {
+        return Promise.reject(new Error("network error"))
+      }
+      return Promise.resolve(
+        makeSSEResponse([
+          { event: "snapshot", data: JSON.stringify(snapshot) },
+          { event: "patch", data: JSON.stringify(patch) },
+        ]),
+      )
+    })
+
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: mockSleep })
+    const { patches } = await reader.connect()
+
+    await readNPatches(patches, 1)
+    // After 6 failures: 1s, 2s, 4s, 8s, 16s, 30s(capped), 30s(capped)
+    expect(sleepDelays[4]).toBe(16000)
+    expect(sleepDelays[5]).toBe(30000)
+    expect(sleepDelays[6]).toBe(30000)
+  })
+
+  it("resets delay to 1s after successful reconnect", async () => {
+    const sleepDelays: number[] = []
+    const mockSleep = (ms: number): Promise<void> => {
+      sleepDelays.push(ms)
+      return Promise.resolve()
+    }
+
+    const snapshot = makeSnapshot()
+    const patch2 = makePatch(2)
+
+    let call = 0
+    const mockFetch = vi.fn().mockImplementation(() => {
+      call++
+      if (call === 1) {
+        // Initial: snapshot only
+        return Promise.resolve(
+          makeSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]),
+        )
+      }
+      if (call === 2) {
+        // First reconnect: fail
+        return Promise.reject(new Error("network error"))
+      }
+      if (call === 3) {
+        // Second reconnect: success but stream ends immediately
+        return Promise.resolve(
+          makeSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]),
+        )
+      }
+      // Third reconnect: success with patch
+      return Promise.resolve(
+        makeSSEResponse([
+          { event: "snapshot", data: JSON.stringify(snapshot) },
+          { event: "patch", data: JSON.stringify(patch2) },
+        ]),
+      )
+    })
+
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: mockSleep })
+    const { patches } = await reader.connect()
+
+    await readNPatches(patches, 1)
+    // initial end → 1s sleep, delay→2s, fail →
+    // 2s sleep, delay→4s, success (call 3, stream ends) → delay reset to 1s →
+    // 1s sleep, delay→2s, success (call 4) → patch emitted
+    expect(sleepDelays[0]).toBe(1000)
+    expect(sleepDelays[1]).toBe(2000)
+    expect(sleepDelays[2]).toBe(1000) // reset after success
+  })
+})

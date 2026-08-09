@@ -1,5 +1,45 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 15:45
+
+### slice remote-session-view — C1: SSE reader (TDD)
+
+C1 מממש את `SSEReader` — קורא SSE מ-`GET /api/agents/:id/events` דרך fetch + ReadableStream (לא EventSource, שלא תומך ב-POST/headers), עם reconnect ידני (exponential backoff).
+
+#### מה בוצע?
+
+**1. packages/frontend/src/lib/session/sse-reader.ts (חדש)**
+
+- `readSSEFrames(body)` — async generator שמנתח SSE framing (event:/data:/empty-line) מ-`ReadableStream<Uint8Array>`, משחרר reader lock ב-finally
+- `SSEReader` class:
+  - `constructor(url, { headers?, _fetch?, _sleep? })` — `_fetch`/`_sleep` ל-testability
+  - `connect(): Promise<{snapshot, patches: ReadableStream<Patch>}>` — מתחבר, קורא frame-zero (`event: snapshot`) בחובה, מחזיר patches stream ארוך-טווח
+  - `onReconnected?: (snapshot) => void` — callback אחרי reconnect מוצלח
+  - reconnect ידני: `#runLoop` רץ ברקע, exponential backoff 1s→2s→4s→...→30s (cap), reset ל-1s אחרי הצלחה
+  - `close()` — עוצר את ה-reconnect loop וסוגר את ה-controller
+
+#### תקלה שאובחנה ותוקנה (מהריצה הקודמת שנתקעה)
+
+הריצה הקודמת (09/08 10:59) הפסיקה כי `sse-reader.test.ts` נתקע: 124 שניות, "Tests (10)" אך 0 בוצעו, `Worker exited unexpectedly`.
+
+**אבחון**: אף טסט לא קרא ל-`reader.close()`. `#runLoop` (הרקע, לא-מחכה — `void this.#runLoop(...)`) ממשיך לרוץ אחרי שהטסט סיים לקרוא patches. עם `_sleep: noSleep` (=`Promise.resolve()` מיידי) ו-mock fetch שגם הוא resolves מיידית, ה-reconnect loop נכנס ל-loop הדוק אינסופי של microtasks (sleep מיידי → fetch מיידי → כישלון/reconnect → חוזר חלילה) — אף פעם לא מגיע ל-idle, ה-worker של vitest לא מצליח לזהות סיום ונתקע ב-timeout.
+
+**תיקון**: הוספת helper `newReader()` שעוקב אחרי כל reader שנוצר בטסט + `afterEach` גלובלי שקורא `close()` לכולם. אחרי `close()`, `#closed=true` נבדק בכמה נקודות עצירה ב-loop (לפני/אחרי כל fetch, בתוך drainFrames), כך שהloop נעצר תוך מספר מיקרו-טאסקים בודדים. המימוש עצמו (`sse-reader.ts`) לא שונה — הבעיה הייתה אך ורק בטסטים שלא ניקו אחריהם.
+
+#### בדיקות
+
+- `sse-reader.test.ts`: 10 טסטים עוברים ✅ (327ms, היה תקוע לפני התיקון)
+  - snapshot parsing מ-`event: snapshot`
+  - headers מועברים ל-fetch
+  - fetch נכשל → throw; body ריק → throw
+  - patches מ-`event: patch`; אירועים אחרים מתעלמים
+  - reconnect אחרי סיום stream: `onReconnected` נקרא עם snapshot חדש, patches ממשיכים
+  - exponential backoff: 1s→2s→4s→8s
+  - cap ב-30s
+  - reset ל-1s אחרי reconnect מוצלח
+- typecheck נקי (אפס שגיאות ב-sse-reader.ts; ה-baseline האדום הקיים ב-backend/frontend — AcpClientCallbacks, in-process-acp-transport mocks — לא קשור, pre-existing)
+- lint (biome + i18n) נקי
+
 ## 2026-08-11 10:30
 
 ### slice session-host-http — C5: State route + wiring (TDD)
