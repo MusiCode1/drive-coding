@@ -287,4 +287,74 @@ describe("createSessionHostFromConnection", () => {
       expect(response.action).toBe("cancel")
     })
   })
+
+  describe("S4 extensions — setMode / setConfigOption / extMethod", () => {
+    it("setMode delegates to client.setSessionMode with currentState.sessionId", async () => {
+      const { host, mockClient } = await setup()
+
+      // Establish a sessionId via newSession (returns { sessionId: 's1' } from mockClient)
+      await host.newSession({ cwd: "/test" })
+
+      await host.setMode("compact")
+
+      expect(mockClient.setSessionMode).toHaveBeenCalledWith({
+        sessionId: "s1",
+        modeId: "compact",
+      })
+    })
+
+    it("setMode throws 'No session' when sessionId is null", async () => {
+      const { host } = await setup()
+      // No session started — sessionId is null
+      await expect(host.setMode("compact")).rejects.toThrow("No session")
+    })
+
+    it("setConfigOption delegates to client.setSessionConfigOption with string value", async () => {
+      const { host, mockClient } = await setup()
+
+      await host.newSession({ cwd: "/test" })
+
+      await host.setConfigOption("model", "claude-3-5-sonnet")
+
+      expect(mockClient.setSessionConfigOption).toHaveBeenCalledWith({
+        sessionId: "s1",
+        configId: "model",
+        value: "claude-3-5-sonnet",
+      })
+    })
+
+    it("setConfigOption delegates to client.setSessionConfigOption with boolean value", async () => {
+      const { host, mockClient } = await setup()
+
+      await host.newSession({ cwd: "/test" })
+
+      await host.setConfigOption("verbose", true)
+
+      expect(mockClient.setSessionConfigOption).toHaveBeenCalledWith({
+        sessionId: "s1",
+        configId: "verbose",
+        value: true,
+      })
+    })
+
+    it("setConfigOption throws 'No session' when sessionId is null", async () => {
+      const { host } = await setup()
+      await expect(host.setConfigOption("model", "x")).rejects.toThrow("No session")
+    })
+
+    it("extMethod delegates to client.extMethod with method + params", async () => {
+      const { host, mockClient } = await setup()
+
+      await host.extMethod("_drive/custom", { foo: "bar", n: 42 })
+
+      expect(mockClient.extMethod).toHaveBeenCalledWith("_drive/custom", { foo: "bar", n: 42 })
+    })
+
+    it("extMethod works without an active sessionId (no null-guard needed)", async () => {
+      const { host, mockClient } = await setup()
+      // extMethod does NOT require a sessionId (no guard)
+      await expect(host.extMethod("_drive/ping", {})).resolves.not.toThrow()
+      expect(mockClient.extMethod).toHaveBeenCalled()
+    })
+  })
 })

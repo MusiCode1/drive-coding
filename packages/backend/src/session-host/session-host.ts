@@ -190,8 +190,9 @@ export type SessionHostFromConnOptions = {
 }
 
 /**
- * ExtendedSessionHost — SessionHost + methods for responding to pending agent requests.
- * S4 will expose these via HTTP endpoints (the UI calls respondPermission when user decides).
+ * ExtendedSessionHost — SessionHost + methods for responding to pending agent requests
+ * and for driving session configuration.
+ * S4 exposes these via HTTP endpoints.
  */
 export type ExtendedSessionHost = SessionHost & {
   /**
@@ -206,6 +207,29 @@ export type ExtendedSessionHost = SessionHost & {
    * requestId is a sequential counter assigned internally.
    */
   respondElicitation(requestId: number, response: CreateElicitationResponse): void
+
+  /**
+   * Set the session mode (e.g. "auto", "compact").
+   * Requires an active session — throws if currentState.sessionId is null.
+   * S4: exposed via POST /api/agents/:id/rpc {method:"setMode"}
+   */
+  setMode(modeId: string): Promise<void>
+
+  /**
+   * Set a session config option.
+   * Requires an active session — throws if currentState.sessionId is null.
+   * value: string | boolean (matches AcpClient.setSessionConfigOption)
+   * S4: exposed via POST /api/agents/:id/rpc {method:"setConfigOption"}
+   */
+  setConfigOption(configId: string, value: string | boolean): Promise<void>
+
+  /**
+   * Call an extension method on the agent.
+   * Does NOT require an active session (no sessionId guard).
+   * params: Record<string, unknown> (matches AcpClient.extMethod)
+   * S4: exposed via POST /api/agents/:id/rpc {method:"extMethod"}
+   */
+  extMethod(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>>
 }
 
 /**
@@ -343,11 +367,17 @@ export async function createSessionHostFromConnection(
     },
 
     async newSession(opts: { cwd: string; _meta?: Record<string, unknown> }) {
-      return client.newSession(opts) as Promise<{ sessionId: string }>
+      const result = await client.newSession(opts) as { sessionId: string }
+      // Update currentState.sessionId so setMode/setConfigOption can use it
+      currentState = { ...currentState, sessionId: result.sessionId }
+      return result
     },
 
     async loadSession(opts: { cwd: string; sessionId: string; _meta?: Record<string, unknown> }) {
-      return client.loadSession(opts) as Promise<{ sessionId: string }>
+      const result = await client.loadSession(opts) as { sessionId: string }
+      // Update currentState.sessionId so setMode/setConfigOption can use it
+      currentState = { ...currentState, sessionId: result.sessionId }
+      return result
     },
 
     async cancel(sessionId: string) {
@@ -360,6 +390,20 @@ export async function createSessionHostFromConnection(
 
     respondElicitation(requestId: number, response: CreateElicitationResponse): void {
       elicitPending.respond(requestId, response)
+    },
+
+    async setMode(modeId: string): Promise<void> {
+      if (!currentState.sessionId) throw new Error("No session")
+      await client.setSessionMode({ sessionId: currentState.sessionId, modeId })
+    },
+
+    async setConfigOption(configId: string, value: string | boolean): Promise<void> {
+      if (!currentState.sessionId) throw new Error("No session")
+      await client.setSessionConfigOption({ sessionId: currentState.sessionId, configId, value })
+    },
+
+    async extMethod(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+      return client.extMethod(method, params)
     },
   }
 }
