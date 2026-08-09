@@ -1,5 +1,26 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 16:57
+
+### slice remote-session-view — calev-heavy round 1 fix: M4 (HTTP errors swallowed)
+
+#### מה בוצע?
+
+**packages/frontend/src/lib/session/remote-session-view.ts**
+
+- **M4 (major) — כל שגיאות ה-HTTP נבלעות**: `#post` לא בדקה `res.ok` — 404/400/500
+  נחשבו הצלחה. מדוד: `setMode` שגרם ל-500 "הצליח" מנקודת המבט של הקורא; prompt
+  שנכשל היה נראה כתקיעה למשתמשת, לא כשגיאה (שגיאות רשת כן התפשטו — fetch עצמו
+  היה דוחה — רק שכבת ה-HTTP נבלעה). תוקן: `#post` זורקת `Error` עם ה-status אם
+  `!res.ok`
+
+#### בדיקות
+
+- `remote-session-view.test.ts`: 2 טסטים חדשים — setMode זורק על 500, prompt
+  זורק על 404 (30 סה"כ, 28→30)
+- כל `packages/frontend/src/lib/session/` + `view-models/`: 378 טסטים ירוקים
+- typecheck נקי; lint נקי
+
 ## 2026-08-09 16:56
 
 ### slice remote-session-view — calev-heavy round 1 fix: B3 (malformed SSE frame)

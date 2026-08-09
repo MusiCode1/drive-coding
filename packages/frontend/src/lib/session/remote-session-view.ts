@@ -329,12 +329,22 @@ export class RemoteSessionView implements SessionView {
     return res
   }
 
+  /**
+   * calev-heavy M4: never checked `res.ok` — a 404/400/500 was silently treated as
+   * success. Measured: setMode that caused a 500 on the BE "succeeded" from the
+   * caller's point of view. A failed prompt would look like a hang to the user,
+   * not an error. Network errors already propagate (fetch rejects); only the HTTP
+   * layer was swallowed.
+   */
   async #post(url: string, body: unknown): Promise<unknown> {
     const res = await this.#doFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...this.#headers },
       body: JSON.stringify(body),
     })
+    if (!res.ok) {
+      throw new Error(`RemoteSessionView: POST ${url} failed with status ${res.status}`)
+    }
     if (!res.json) return undefined
     try {
       return await res.json()

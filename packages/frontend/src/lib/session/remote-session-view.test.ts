@@ -289,6 +289,48 @@ describe("RemoteSessionView — RPC methods", () => {
     )
     expect(called).toBe(false)
   })
+
+  // ─── calev-heavy M4: HTTP errors must not be swallowed ───
+
+  it("M4: setMode() throws when the BE responds with a non-2xx status (e.g. 500)", async () => {
+    const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes("/events")) {
+        return sseResponse([{ event: "snapshot", data: JSON.stringify(makeSnapshot()) }])
+      }
+      if (url.includes("/rpc")) {
+        return {
+          ok: false,
+          status: 500,
+          json: () => Promise.resolve({ error: "boom" }),
+        } as unknown as Response
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    })
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    await view.connect()
+
+    await expect(view.setMode("compact")).rejects.toThrow("500")
+  })
+
+  it("M4: prompt() throws on 404 (host not found)", async () => {
+    const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes("/events")) {
+        return sseResponse([{ event: "snapshot", data: JSON.stringify(makeSnapshot()) }])
+      }
+      if (url.includes("/rpc")) {
+        return {
+          ok: false,
+          status: 404,
+          json: () => Promise.resolve({ error: "not found" }),
+        } as unknown as Response
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    })
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    await view.connect()
+
+    await expect(view.prompt("hi")).rejects.toThrow("404")
+  })
 })
 
 // ── respond() ─────────────────────────────────────────────────────────────────
