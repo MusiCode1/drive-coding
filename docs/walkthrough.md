@@ -1,5 +1,88 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 (slice view-switch, C3) — 🎯 phase-verify
+
+### slice view-switch — C3: חיווט remote מקצה-לקצה ב-`agent-session.svelte.ts`
+
+עריכות נקודתיות (לא ענפי-`return`), כולן מותנות ב-`#view !== null` — אפס שינוי-התנהגות
+ב-local (מאומת בטסט רגרסיה מפורש, ר' למטה).
+
+**`attachRemote`** (חדשה) — guard-כפילות **לפני** `#cleanup()` (הפוך = הרסני: היה הורג
+agent+host+child לפני שהוא זורק); `#cleanup()` מפרק `#view` קיים; בלוק-איפוס + איפוס
+`#answeredPermissionId`/`#answeredElicitationId`; `createAgent` (HTTP) → `agentId` מוצב
+מיד; `createRemoteView` (SSE); כשל-מהיר על `sessionId==null` → `close()`+`#cleanup()`;
+`#consumeViewPatches` מכמת בזהות (`this.#view !== view` → `break`) — ממצא 1 מהבריף
+(patches מ-view ישן שהיה נשאר לנצח מנתב אל VM חדש). כל שלבי ה-HTTP/SSE עטופים
+ב-`try/catch` — כשל לא משאיר `status="connecting"` לנצח.
+
+**`sendPrompt`** — guard `!#view && (!#client||!#sessionId)`; בועה אופטימית מדולגת
+ב-remote (השרת מסנתז); 🔴 `#turnEnded`/`#setTurnState("idle")` **הועברו לענף ה-local
+בלבד** — ב-remote `view.prompt()` נפתר עם ה-202, לא סוף התור; סיום מגיע מ-patches.
+`catch` משותף — `#setStatus("error")` **local בלבד** (ב-remote היה נועל `sendPrompt`
+לצמיתות). תמונה-בלבד ב-remote → error+return מיידי (לא מחרוזת ריקה); טקסט+attachments
+→ אזהרה, ממשיכים עם טקסט בלבד.
+
+**`cancelTurn`** — רק הבלוק האמצעי מנותב לפי `#view`; שני ה-`#resolvePending*`
+ו-`#setTurnState("idle")` נשארים משותפים (היו נדלגים בענף-מוקדם — דיאלוג תקוע).
+
+**`applyConfigOption`** — guard view-aware; ב-remote מחקה את שלושת שלבי ה-resolution
+של `#applyConfigToClient` (id → category עבור mode/model → fallback ישיר); `applied`
+מותנה, `persist` (`settings.setLastConfig`) רץ רק אז.
+
+**חסימת 4 נתיבי-WS** — `loadSession`/`switchSession`/`newSession`/`attachToLiveAgent`
+מקבלים `if (this.#view) return` בראשם (הראשון פותח `createAgent`+WS; השאר עלולים
+לפתוח WS מקביל ל-SessionHost).
+
+**`leaveRunning`** — ב-remote = detach מלא (`#cleanup()` בלי `keepAgent`) — אחרת
+agent+host+child נשארים חיים בלי בעלים (`attachToLiveAgent` חסום ב-remote, אין דרך
+לחזור).
+
+**`#syncFromViewState`** — שני שדות חדשים, שני helpers פרטיים (`#syncPendingPermission`/
+`#syncPendingElicitation`): ארבעה מצבים (null / patch-מעופש / כבר-פתוח / בנה-מחדש),
+`requestId` אופציונלי על `pendingPermission`/`pendingElicitation` (❌ אין `#open*Id`).
+ה-shim מסמן אופטימית (`#answeredPermissionId = id`) ומבטל בכשל (מכומת בזהות+זמן:
+`#tearingDown || #view!==view` → skip — מונע כתיבת-רפאים על סשן הבא). `lastTurnError`
+→ `session.error` דו-כיווני עם `#errorFromTurn` (ניקוי ממוקד — אזהרה ממקור אחר שורדת).
+
+**`#cleanup`** — `void this.#view?.close().catch(()=>{})` + `this.#view=null` +
+איפוס `#answered*Id` (מרחב-ids פר-host, לא פר-VM).
+
+**`connect-agent.ts`** — נקודת-ההזרקה היחידה של `sessionTransport`: `?sessionTransport=`
+נשמר ל-`sessionStorage`, `resolveSessionTransport({query,stored,env})`, מנתב ל-`attach`/
+`attachRemote`, `goto("/chat?sessionTransport=remote")` ב-remote.
+
+#### מלכודת-לינט שנתקלתי בה (לא בבריף, לא ב-scope לתקן) — 🔴 emoji שובר את `lint:i18n`
+
+`scripts/lint-no-hebrew-in-code.mjs`'s `stripJsdocBlocks` בונה `out=[...text]` (מערך
+code-point-aware, `spread`) אבל כותב אליו לפי אינדקסים שנספרו כ-UTF-16 code units
+(`text.indexOf`/`text.length`). 🔴 (`U+1F534`) הוא astral — surrogate pair (2 units,
+1 code point) — desync מצטבר. baseline כבר הכיל 2 מופעי 🔴 בלי בעיה (מזל: הקורוזיה
+נחתה על whitespace); הוספתי 4 נוספים (כולל `🔴🔴` כפול) וה-desync חצה סף וחשף
+Hebrew אמיתי כ"קוד" ב-11 מקומות רחוקים משם (שקר-חיובי גורף). **תוקן** — לא בעריכת
+הסקריפט המשותף (מחוץ ל-scope), אלא בהחלפת ה-🔴 שלי ל-⚠️ (BMP, single-unit, כבר
+בשימוש מוכח בקובץ). `bash scripts/lint-no-hebrew-in-code.sh` חוזר נקי אחרי ההחלפה.
+
+#### בדיקות
+
+`agent-session.remote.test.svelte.ts` (חדש, 22 טסטים) — sendPrompt (string ל-view,
+בלי בועה, waiting נשאר, patch idle מוריד, HTTP-כשל→error לא status, תמונה-בלבד,
+טקסט+attachments), cancelTurn (resolve pendings+view.cancel+idle), applyConfigOption
+(mode/model/configId-קיים/unknown-skip), pending sync (guard-זהות + patch-מעופש לא
+פותח מחדש + שני השדות יחד), lastTurnError (סנכרון+ניקוי ממוקד+לא-מנקה מקור-אחר),
+attachRemote (כשל-מהיר sessionId=null + flow-מלא עם persist), WS paths blocked,
+`#cleanup` teardown+guard-זהות, **+3 טסטי-רגרסיה מפורשים** (local: attach+sendPrompt
+בועה+idle, catch מציב status=error, cancelTurn). `MockSessionView` (`__fixtures__/`)
+הורחב תוספתית: `applyAndEmit(patch)` מריץ `applyPatch` (core) לסימולציית
+update-session patches (pending/turnState/lastTurnError) — אותה טכניקה כמו ה-remote
+harness ב-C1 (`applyPendingRequest`/`clearPendingRequest`/`applyTurnStart`/
+`applyTurnEnd` מ-core, לא patches מפוברקים ידנית).
+
+`bunx vitest run packages/frontend`: 848/849 (הכשל היחיד — `formatting.test.ts`
+calendar-month, pre-existing לא-קשור). typecheck: DELTA-CHECK מול `3e7d9c5` — 15/15
+(אפס חדשות). `lint:i18n`: נקי (אחרי תיקון ה-🔴 למעלה). `biome check` על כל הקבצים
+שנגעתי בהם: נקי מ-errors (11 warnings של `noNonNullAssertion` בטסט החדש — לא חוסמות,
+תואם לסגנון קבצי-טסט אחרים בפרויקט).
+
 ## 2026-08-09 (slice view-switch, C2)
 
 ### slice view-switch — C2: דגל בחירת-מימוש (`sessionTransport`) + factory

@@ -5,12 +5,23 @@
  * חושף `fireUpdate(update)` לסימולציה של session/update events.
  *
  * ─── slice session-view-port C3 (test helper) ───
+ * ─── slice view-switch C3 (additive): applyAndEmit — patches ש-reduce לא מכיר ───
+ * (pending/turnState/lastTurnError) מגיעים ב-remote דרך update-session patches, לא
+ * דרך session/update wire events. reduce() לא בונה אותם — applyAndEmit מריץ applyPatch
+ * (core, טהור) על patch שהטסט בונה בעצמו (בד"כ עם applyPendingRequest/clearPendingRequest/
+ * applyTurnEnd מ-core, כמו ה-remote harness ב-C1) ודוחף אותו ל-stream.
  */
-import { reduce, createInitialSessionState, type SessionState, type Patch } from "@drive-coding/core/session"
-import type { SessionView } from "$lib/session/session-view"
-import type { SessionInfo } from "$lib/adapters/sessions"
+import {
+  applyPatch,
+  createInitialSessionState,
+  type Patch,
+  reduce,
+  type SessionState,
+} from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { vi } from "vitest"
+import type { SessionInfo } from "$lib/adapters/sessions"
+import type { SessionView } from "$lib/session/session-view"
 
 export class MockSessionView implements SessionView {
   // ─── state (plain object, updated by fireUpdate) ───
@@ -21,7 +32,8 @@ export class MockSessionView implements SessionView {
   readonly patches: ReadableStream<Patch[]>
 
   // Track calls for assertions
-  readonly promptMock = vi.fn<[string | PromptBlocks, Record<string, unknown>?], Promise<void>>()
+  readonly promptMock = vi
+    .fn<[string | PromptBlocks, Record<string, unknown>?], Promise<void>>()
     .mockResolvedValue(undefined)
   readonly cancelMock = vi.fn().mockResolvedValue(undefined)
   readonly newSessionMock = vi.fn().mockResolvedValue(undefined)
@@ -62,6 +74,21 @@ export class MockSessionView implements SessionView {
   }
 
   /**
+   * מחיל patch (applyPatch, core) על ה-state ודוחף אותו ל-stream — לסימולציית
+   * update-session patches (pending/turnState/lastTurnError) שאין ל-reduce מושג
+   * עליהם (ר' slice view-switch C1: אותה טכניקה בדיוק כמו ה-remote contract harness).
+   */
+  applyAndEmit(patch: Patch): void {
+    const next = applyPatch(this.state, patch)
+    if (next) this.state = next
+    try {
+      this.#controller?.enqueue([patch])
+    } catch {
+      // stream closed
+    }
+  }
+
+  /**
    * מגדיר sessionId (מדמה חיבור מוצלח).
    */
   connect(sessionId: string): void {
@@ -77,15 +104,37 @@ export class MockSessionView implements SessionView {
   prompt(content: string | PromptBlocks, meta?: Record<string, unknown>): Promise<void> {
     return this.promptMock(content, meta)
   }
-  cancel(): Promise<void> { return this.cancelMock() }
-  respond(requestId: number, result: unknown): Promise<void> { return this.respondMock(requestId, result) }
-  setMode(mode: string): Promise<void> { return this.setModeMock(mode) }
-  setConfigOption(key: string, value: unknown): Promise<void> { return this.setConfigOptionMock(key, value) }
-  extMethod(method: string, params: unknown): Promise<unknown> { return this.extMethodMock(method, params) }
-  newSession(): Promise<void> { return this.newSessionMock() }
-  loadSession(sessionId: string): Promise<void> { return this.loadSessionMock(sessionId) }
-  listSessions(): Promise<SessionInfo[]> { return this.listSessionsMock() }
-  deleteSession(sessionId: string): Promise<void> { return this.deleteSessionMock(sessionId) }
-  setSessionModel(model: string): Promise<void> { return this.setSessionModelMock(model) }
-  close(): Promise<void> { return this.closeMock() }
+  cancel(): Promise<void> {
+    return this.cancelMock()
+  }
+  respond(requestId: number, result: unknown): Promise<void> {
+    return this.respondMock(requestId, result)
+  }
+  setMode(mode: string): Promise<void> {
+    return this.setModeMock(mode)
+  }
+  setConfigOption(key: string, value: unknown): Promise<void> {
+    return this.setConfigOptionMock(key, value)
+  }
+  extMethod(method: string, params: unknown): Promise<unknown> {
+    return this.extMethodMock(method, params)
+  }
+  newSession(): Promise<void> {
+    return this.newSessionMock()
+  }
+  loadSession(sessionId: string): Promise<void> {
+    return this.loadSessionMock(sessionId)
+  }
+  listSessions(): Promise<SessionInfo[]> {
+    return this.listSessionsMock()
+  }
+  deleteSession(sessionId: string): Promise<void> {
+    return this.deleteSessionMock(sessionId)
+  }
+  setSessionModel(model: string): Promise<void> {
+    return this.setSessionModelMock(model)
+  }
+  close(): Promise<void> {
+    return this.closeMock()
+  }
 }
