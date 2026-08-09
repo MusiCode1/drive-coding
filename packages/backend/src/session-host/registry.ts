@@ -103,6 +103,19 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     const conn = connectionRegistry.get(agentId)
     if (!conn) return undefined
 
+    // calev-heavy round 2 finding #5: cwd is validated BEFORE creating the host +
+    // broadcaster. The old order created a real ACP host (and a broadcaster that
+    // had already started draining host.patches) on the missing-cwd path, then
+    // threw — orphaning both with no disposal. Production hosts always start with
+    // sessionId:null (createInitialSessionState), so cwd is always required in
+    // practice; validating up front is cheap and fail-fast.
+    const cwd = connectionRegistry.getCwd(agentId)
+    if (!cwd) {
+      throw new Error(
+        `AgentSessionRegistry: no cwd registered for agentId ${agentId} — cannot auto-create session`,
+      )
+    }
+
     // Create host + broadcaster
     const host = await _createHostFn(conn)
     const broadcaster = _createBroadcasterFn(host.patches)
@@ -111,12 +124,6 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     // כך שה-snapshot הראשון (SSE frame-zero) כבר נושא sessionId אמיתי.
     // אם כבר יש sessionId (למשל host הוזרק מוכן-לשימוש בבדיקות) — לא יוצרים שוב.
     if (!host.state.sessionId) {
-      const cwd = connectionRegistry.getCwd(agentId)
-      if (!cwd) {
-        throw new Error(
-          `AgentSessionRegistry: no cwd registered for agentId ${agentId} — cannot auto-create session`,
-        )
-      }
       await host.newSession({ cwd })
     }
 

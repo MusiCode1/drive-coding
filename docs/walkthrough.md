@@ -1,5 +1,30 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 17:38
+
+### slice remote-session-view — calev-heavy round 2 fix: finding #5 (orphaned host)
+
+#### מה בוצע?
+
+**packages/backend/src/session-host/registry.ts**
+
+- **finding #5 (minor, זול) — `doCreate` יוצר host + broadcaster לפני בדיקת ה-cwd**:
+  בנתיב הכשל (cwd חסר) כבר נוצרו host ACP אמיתי + broadcaster שכבר התחיל לנקז
+  את `host.patches` — שניהם ננטשים בלי dispose. תוקן: בדיקת ה-cwd עוברת ל-**לפני**
+  יצירת ה-host/broadcaster (fail-fast) — production hosts תמיד מתחילים עם
+  `sessionId: null` (`createInitialSessionState`), אז cwd תמיד נדרש בפועל; טסט
+  עם sessionId מוזרק-מראש (test-only) פשוט לא היה צריך אותו, אבל בדיקה מוקדמת
+  זולה ולא פוגעת בשום מסלול אמיתי
+
+#### בדיקות
+
+- `registry.test.ts`: טסט חדש — כש-cwd חסר, `_createHostFn`/`_createBroadcasterFn`
+  **לא נקראות בכלל** (18 סה"כ, 17→18)
+- typecheck נקי; lint נקי
+
+**כל 4 הממצאים של calev-heavy round 2 (2 blockers + 1 regression + 1 minor)
+טופלו.** שולח שוב calev-heavy לאימות חוזר (round 3).
+
 ## 2026-08-09 17:37
 
 ### slice remote-session-view — calev-heavy round 2 fix: findings #2+#3 (connect() lifecycle)

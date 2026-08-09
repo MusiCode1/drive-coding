@@ -296,6 +296,27 @@ describe("AgentSessionRegistry", () => {
       await expect(registry.getOrCreateHost("agent-1")).rejects.toThrow("no cwd registered")
     })
 
+    // ─── calev-heavy round 2 finding #5: no orphaned host on the missing-cwd path ───
+
+    it("does not create a host/broadcaster at all when cwd is missing (fail-fast, no orphan)", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      ;(connectionRegistry.getCwd as ReturnType<typeof vi.fn>).mockReturnValue(undefined)
+      const createHostFn = vi.fn().mockResolvedValue(makeMockHost(null))
+      const createBroadcasterFn = vi.fn().mockReturnValue(makeMockBroadcaster())
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: createHostFn,
+        _createBroadcasterFn: createBroadcasterFn,
+      })
+
+      await expect(registry.getOrCreateHost("agent-1")).rejects.toThrow("no cwd registered")
+
+      expect(createHostFn).not.toHaveBeenCalled()
+      expect(createBroadcasterFn).not.toHaveBeenCalled()
+    })
+
     it("does not auto-create a session again on the second (cached) getOrCreateHost call", async () => {
       const conn = makeMockConnection()
       const connectionRegistry = makeMockConnectionRegistry(conn)
