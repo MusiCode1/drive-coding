@@ -6,7 +6,7 @@
  *
  * ─── slice session-state-reducer C2 (TDD) ───
  */
-import type { SessionState, SessionMessage, Patch } from "./types"
+import type { SessionState, SessionMessage, Patch, TurnStateValue } from "./types"
 
 /** גוזר nextSeq מ-id בצורת prefix_<n> (m_3 → 4, s_0 → 1). */
 function nextSeqFrom(id: string): number {
@@ -31,12 +31,22 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
           nextSegSeq = Math.max(nextSegSeq, nextSeqFrom(seg.id))
         }
       }
+      // C1: derive turnState from the message role (mirrors reduce logic)
+      const newTurnStateMsg: TurnStateValue =
+        patch.message.role === "tool"
+          ? "calling-tool"
+          : patch.message.role === "thought"
+            ? "thinking"
+            : patch.message.role === "assistant"
+              ? "responding"
+              : state.turnState // user = no change
       return {
         ...state,
         version: patch.version,
         messages: [...state.messages, patch.message],
         nextMessageSeq: nextMsgSeq,
         nextSegmentSeq: nextSegSeq,
+        turnState: newTurnStateMsg,
       }
     }
 
@@ -54,7 +64,10 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
       messages[idx] = updatedMsg
       // update segment counter
       const nextSegSeq = Math.max(state.nextSegmentSeq, nextSeqFrom(patch.segment.id))
-      return { ...state, version: patch.version, messages, nextSegmentSeq: nextSegSeq }
+      // C1: derive turnState from the message role (mirrors reduce logic)
+      const newTurnStateSeg: TurnStateValue =
+        old.role === "thought" ? "thinking" : old.role === "assistant" ? "responding" : state.turnState
+      return { ...state, version: patch.version, messages, nextSegmentSeq: nextSegSeq, turnState: newTurnStateSeg }
     }
 
     case "update-tool": {
@@ -79,6 +92,15 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
         messages: patch.messages,
         nextMessageSeq: patch.nextMessageSeq,
         nextSegmentSeq: patch.nextSegmentSeq,
+      }
+    }
+
+    case "update-session": {
+      // C1: merge metadata changes into state (immutable)
+      return {
+        ...state,
+        version: patch.version,
+        ...patch.changes,
       }
     }
   }

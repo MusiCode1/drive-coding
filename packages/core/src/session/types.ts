@@ -5,13 +5,78 @@
  * ids דטרמיניסטיים: m_<seq> / s_<seq> — לעולם לא crypto.randomUUID (browser global + לא-דטרמיניסטי).
  *
  * ─── slice session-state-reducer C0 (TDD) ───
+ * ─── slice session-view-port C1 (TDD): הרחבת SessionState + meta + helpers ───
  */
+
+import type {
+  AvailableCommand,
+  SessionConfigOption,
+  RequestPermissionRequest,
+  CreateElicitationRequest,
+} from "@agentclientprotocol/sdk"
+import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
+
+// ─── Re-exports from ACP SDK (used in SessionState fields) ───
+export type { AvailableCommand, SessionConfigOption }
+// ─── Re-export from provider (used in SessionState.quota) ───
+export type { QuotaSnapshot }
+
+// ─── Session lifecycle status ───
+
+export type SessionStatus = "idle" | "connecting" | "connected" | "error" | "disconnected"
+
+// ─── Turn state — what the model is doing in the current turn ───
+
+export type TurnStateValue = "idle" | "waiting" | "thinking" | "responding" | "calling-tool"
+
+// ─── Pending requests (bridged from AcpClient callbacks to state) ───
+
+export type PendingPermission = {
+  requestId: number
+  /** RequestPermissionRequest from ACP SDK — opaque to core consumers */
+  params: RequestPermissionRequest
+}
+
+export type PendingElicitation = {
+  requestId: number
+  /** CreateElicitationRequest from ACP SDK — opaque to core consumers */
+  params: CreateElicitationRequest
+}
+
+// ─── Session capabilities ───
+
+export type SessionCapabilities = {
+  mcp: boolean
+  compact: boolean
+  commands: boolean
+  usage: boolean
+  configOptions: boolean
+  rename: boolean
+  thinkingTokens: boolean
+  image: boolean
+}
+
+// ─── Session modes ───
+
+export type SessionModes = {
+  /** SessionMode[] from ACP SDK — opaque to core (not inspected here) */
+  availableModes: unknown[]
+  currentModeId: string
+} | null
+
+// ─── Session usage (context window utilization) ───
+
+export type SessionUsage = {
+  used: number
+  size: number
+  cost?: number
+}
 
 // ─── Roles ───
 
 export type SessionRole = "user" | "thought" | "assistant" | "tool"
 
-// ─── Segments ───
+// ─���─ Segments ───
 
 export type SessionSegment = {
   id: string
@@ -43,6 +108,7 @@ export type SessionToolCall = {
  *
  * שדה `id` = m_<seq> (דטרמיניסטי).
  * שדה `messageId` = מזהה-הספק של ACP (string | null) — משמש ל-grouping, לא ל-identity.
+ * שדה `meta` — תיק אטום אופציונלי; core לא מפרש את תוכנו. נדרש ל-meta passthrough (§9).
  */
 export type SessionMessage =
   | {
@@ -50,15 +116,17 @@ export type SessionMessage =
       role: "user" | "thought" | "assistant"
       messageId: string | null
       segments: SessionSegment[]
+      meta?: Record<string, unknown>
     }
   | {
       id: string
       role: "tool"
       messageId: null
       toolCall: SessionToolCall
+      meta?: Record<string, unknown>
     }
 
-// ─── State ───
+// ��── State ───
 
 export type SessionState = {
   /** מונה-על; כל reduce / applyPatch מעלה ב-1 */
@@ -69,6 +137,38 @@ export type SessionState = {
   nextMessageSeq: number
   /** מונה דטרמיניסטי ל-ids של segments (s_<n>) */
   nextSegmentSeq: number
+
+  // ─── C1: session lifecycle + metadata fields ───
+
+  /** סטטוס חיבור הסשן. */
+  status: SessionStatus
+  /** מה המודל עושה בתור הנוכחי — נגזר מ-wire events ב-reduce. */
+  turnState: TurnStateValue
+  /** בקשות ממתינות שהגיעו מה-Agent (permission / elicitation). */
+  pending: {
+    permission: PendingPermission | null
+    elicitation: PendingElicitation | null
+  }
+  /** יכולות הסשן מ-_drive/capabilities (NormalizedCapabilities). null = טרם התקבל. */
+  capabilities: SessionCapabilities | null
+  /** מצב ה-modes הזמינים + הנוכחי. null = טרם קיבלנו מידע. */
+  modes: SessionModes
+  /** אפשרויות config של הסשן הפתוח. */
+  configOptions: SessionConfigOption[]
+  /**
+   * ניצול חלון-הקונטקסט + עלות מ-usage_update (wire-driven).
+   * null = טרם התקבל update בסשן הנוכחי.
+   */
+  contextUsage: SessionUsage | null
+  /**
+   * Snapshot מכסה גנרי מ-_drive/getQuota (fetch-driven, לא wire).
+   * LocalSessionView קורא refreshQuota() ומעדכן שדה זה.
+   */
+  quota: QuotaSnapshot | null
+  /** כותרת הסשן. "" = אין כותרת (סשן חדש) או null מה-wire. */
+  title: string
+  /** פקודות slash שהספק חשף (available_commands_update). */
+  commands: AvailableCommand[]
 }
 
 // ─── Patches ───
@@ -78,6 +178,9 @@ export type SessionState = {
  *
  * ⚠️ targetId נושא את ה-id הסינתטי (m_<seq>), לא את messageId של ACP.
  * אביגיל #3: ToolBubble.messageId תמיד null — התאמה על targetId בלבד מונחת.
+ *
+ * update-session (C1): עדכון שדות מטא-מידע (title, commands, modes, configOptions,
+ * contextUsage, status, turnState, pending, capabilities, quota).
  */
 export type Patch =
   | { version: number; op: "append-segment"; targetId: string; segment: SessionSegment }
@@ -90,10 +193,29 @@ export type Patch =
       nextMessageSeq: number
       nextSegmentSeq: number
     }
+  | {
+      version: number
+      op: "update-session"
+      changes: Partial<
+        Pick<
+          SessionState,
+          | "title"
+          | "commands"
+          | "modes"
+          | "configOptions"
+          | "contextUsage"
+          | "status"
+          | "turnState"
+          | "pending"
+          | "capabilities"
+          | "quota"
+        >
+      >
+    }
 
 // ─── Helpers ───
 
-/** יוצר SessionState ריק עם sessionId נתון. */
+/** יוצר SessionState ריק עם sessionId נתון + ברירות-מחדל לכל השדות (כולל C1). */
 export function createInitialSessionState({ sessionId }: { sessionId: string | null }): SessionState {
   return {
     version: 0,
@@ -101,8 +223,69 @@ export function createInitialSessionState({ sessionId }: { sessionId: string | n
     messages: [],
     nextMessageSeq: 0,
     nextSegmentSeq: 0,
+    // C1 fields
+    status: "idle",
+    turnState: "idle",
+    pending: { permission: null, elicitation: null },
+    capabilities: null,
+    modes: null,
+    configOptions: [],
+    contextUsage: null,
+    quota: null,
+    title: "",
+    commands: [],
   }
 }
 
 /** קבוע נוחות — state ריק. */
 export const INITIAL_SESSION_STATE: SessionState = createInitialSessionState({ sessionId: null })
+
+// ─── C1: User message helpers ───
+
+/**
+ * synthesizeUserMessage — בונה SessionMessage עם role=user, תוכן טקסטואלי,
+ * ו-meta אופציונלי. משתמש ב-state.nextMessageSeq/nextSegmentSeq לids דטרמיניסטיים.
+ * אינו מעדכן את ה-state — יש לקרוא ל-applyUserMessage אחריו.
+ */
+export function synthesizeUserMessage(
+  state: SessionState,
+  content: string,
+  meta?: Record<string, unknown>,
+): SessionMessage {
+  const msgId = `m_${state.nextMessageSeq}`
+  const segId = `s_${state.nextSegmentSeq}`
+  return {
+    id: msgId,
+    role: "user",
+    messageId: null,
+    segments: [{ id: segId, text: content }],
+    ...(meta !== undefined && { meta }),
+  }
+}
+
+/**
+ * applyUserMessage — מחיל add-message patch על state (immutable).
+ * מחזיר { state: SessionState; patches: Patch[] } — אותה צורה כמו reduce.
+ * נועד ל-S3 (meta passthrough): synthesizeUserMessage → applyUserMessage → LocalSessionView.prompt().
+ */
+export function applyUserMessage(
+  state: SessionState,
+  msg: SessionMessage,
+): { state: SessionState; patches: Patch[] } {
+  const newVersion = state.version + 1
+  const patch: Patch = { version: newVersion, op: "add-message", message: msg }
+  let nextSegSeq = state.nextSegmentSeq
+  if (msg.role !== "tool") {
+    nextSegSeq += msg.segments.length
+  }
+  return {
+    state: {
+      ...state,
+      version: newVersion,
+      messages: [...state.messages, msg],
+      nextMessageSeq: state.nextMessageSeq + 1,
+      nextSegmentSeq: nextSegSeq,
+    },
+    patches: [patch],
+  }
+}

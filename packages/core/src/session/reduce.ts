@@ -7,7 +7,7 @@
  *
  * ─── slice session-state-reducer C1 (TDD) ───
  */
-import type { SessionState, SessionMessage, SessionSegment, SessionToolCall, Patch } from "./types"
+import type { SessionState, SessionMessage, SessionSegment, SessionToolCall, Patch, SessionModes, SessionUsage } from "./types"
 
 // ─── internal helpers ───
 
@@ -63,6 +63,10 @@ function handleTextChunk(
   const last = state.messages[state.messages.length - 1]
   const newVersion = state.version + 1
 
+  // C1: derive turnState from content role (user_message_chunk = replay, no change)
+  const newTurnState =
+    role === "thought" ? "thinking" : role === "assistant" ? "responding" : state.turnState
+
   if (canGroupWith(last, role, messageId)) {
     // append-segment
     const seg: SessionSegment = { id: nextSegId(state.nextSegmentSeq), text }
@@ -85,6 +89,7 @@ function handleTextChunk(
         version: newVersion,
         messages,
         nextSegmentSeq: state.nextSegmentSeq + 1,
+        turnState: newTurnState,
       },
       patches: [patch],
     }
@@ -107,6 +112,7 @@ function handleTextChunk(
         messages: [...state.messages, msg],
         nextMessageSeq: state.nextMessageSeq + 1,
         nextSegmentSeq: state.nextSegmentSeq + 1,
+        turnState: newTurnState,
       },
       patches: [patch],
     }
@@ -164,6 +170,7 @@ function handleToolCall(
       version: newVersion,
       messages: [...state.messages, msg],
       nextMessageSeq: state.nextMessageSeq + 1,
+      turnState: "calling-tool",  // C1: tool_call → 'calling-tool'
     },
     patches: [patch],
   }
@@ -269,7 +276,67 @@ export function reduce(
     return handleToolCallUpdate(state, u)
   }
 
-  // everything else (plan, usage_update, current_mode_update, etc.) → no-op
-  // (ה-VM ממשיך לטפל בהם ישירות)
+  // ─── C1: metadata handlers ───
+
+  // session_info_update → update title
+  if (sessionUpdate === "session_info_update") {
+    const title = u.title
+    if (title === undefined) return { state, patches: [] } // keep-on-undefined
+    const newTitle = title === null ? "" : typeof title === "string" ? title : state.title
+    if (newTitle === state.title && title !== null) return { state, patches: [] }
+    const newVersion = state.version + 1
+    const newState: SessionState = { ...state, version: newVersion, title: newTitle }
+    const patch: Patch = { version: newVersion, op: "update-session", changes: { title: newTitle } }
+    return { state: newState, patches: [patch] }
+  }
+
+  // available_commands_update → update commands
+  if (sessionUpdate === "available_commands_update") {
+    const cmds = Array.isArray(u.availableCommands) ? u.availableCommands : []
+    const newVersion = state.version + 1
+    const newState: SessionState = { ...state, version: newVersion, commands: cmds }
+    const patch: Patch = { version: newVersion, op: "update-session", changes: { commands: cmds } }
+    return { state: newState, patches: [patch] }
+  }
+
+  // current_mode_update → update modes.currentModeId (preserve availableModes)
+  if (sessionUpdate === "current_mode_update") {
+    const modeId = u.currentModeId
+    if (typeof modeId !== "string") return { state, patches: [] }
+    const newModes: NonNullable<SessionModes> = {
+      availableModes: state.modes?.availableModes ?? [],
+      currentModeId: modeId,
+    }
+    const newVersion = state.version + 1
+    const newState: SessionState = { ...state, version: newVersion, modes: newModes }
+    const patch: Patch = { version: newVersion, op: "update-session", changes: { modes: newModes } }
+    return { state: newState, patches: [patch] }
+  }
+
+  // config_option_update → update configOptions
+  if (sessionUpdate === "config_option_update") {
+    const opts = Array.isArray(u.configOptions) ? u.configOptions : []
+    const newVersion = state.version + 1
+    const newState: SessionState = { ...state, version: newVersion, configOptions: opts }
+    const patch: Patch = { version: newVersion, op: "update-session", changes: { configOptions: opts } }
+    return { state: newState, patches: [patch] }
+  }
+
+  // usage_update → update contextUsage (anti-flicker: preserve previous cost)
+  if (sessionUpdate === "usage_update") {
+    const uu = u as { used?: unknown; size?: unknown; cost?: unknown }
+    if (typeof uu.used !== "number" || typeof uu.size !== "number") return { state, patches: [] }
+    const newUsage: SessionUsage = {
+      used: uu.used,
+      size: uu.size,
+      cost: typeof uu.cost === "number" ? uu.cost : state.contextUsage?.cost,
+    }
+    const newVersion = state.version + 1
+    const newState: SessionState = { ...state, version: newVersion, contextUsage: newUsage }
+    const patch: Patch = { version: newVersion, op: "update-session", changes: { contextUsage: newUsage } }
+    return { state: newState, patches: [patch] }
+  }
+
+  // plan → no-op (handled in VM)
   return { state, patches: [] }
 }

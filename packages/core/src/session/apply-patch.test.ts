@@ -192,3 +192,58 @@ describe("applyPatch — reset", () => {
     expect(s2.messages[0]).toEqual(msg)
   })
 })
+
+// ─── C1: update-session patches ───
+
+describe("applyPatch — update-session (C1)", () => {
+  it("updates title", () => {
+    const s = mkState()
+    const patch: Patch = { version: 1, op: "update-session", changes: { title: "New Title" } }
+    const s2 = applyPatch(s, patch)
+    expect(s2.title).toBe("New Title")
+    expect(s2.version).toBe(1)
+  })
+
+  it("updates contextUsage", () => {
+    const s = mkState()
+    const patch: Patch = {
+      version: 1,
+      op: "update-session",
+      changes: { contextUsage: { used: 100, size: 1000 } },
+    }
+    const s2 = applyPatch(s, patch)
+    expect(s2.contextUsage?.used).toBe(100)
+    expect(s2.contextUsage?.size).toBe(1000)
+  })
+
+  it("updates commands", () => {
+    const s = mkState()
+    const cmds = [{ name: "run", description: "Run" }]
+    const patch: Patch = {
+      version: 1,
+      op: "update-session",
+      changes: { commands: cmds },
+    }
+    const s2 = applyPatch(s, patch)
+    expect(s2.commands).toEqual(cmds)
+  })
+
+  it("partial update only changes specified fields", () => {
+    const s = mkState({ title: "Old" } as Partial<SessionState>)
+    const patch: Patch = {
+      version: 1,
+      op: "update-session",
+      changes: { contextUsage: { used: 50, size: 500 } },
+    }
+    const s2 = applyPatch(s, patch)
+    expect(s2.title).toBe("Old") // unchanged
+    expect(s2.contextUsage?.used).toBe(50)
+  })
+
+  it("does not mutate original state", () => {
+    const s = mkState()
+    const patch: Patch = { version: 1, op: "update-session", changes: { title: "New" } }
+    applyPatch(s, patch)
+    expect(s.title).toBe("") // original unchanged
+  })
+})

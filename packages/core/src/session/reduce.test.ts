@@ -383,19 +383,147 @@ describe("reduce — non-handled events", () => {
     expect(patches).toEqual([])
     expect(state).toBe(s)
   })
+})
 
-  it("usage_update → no-op (handled in VM)", () => {
+// ─── C1: new metadata handlers ───
+
+describe("reduce — session_info_update (C1)", () => {
+  it("sets title on session_info_update", () => {
     const s = mkState()
-    const { state, patches } = reduce(s, { sessionUpdate: "usage_update", used: 100, size: 1000 })
-    expect(patches).toEqual([])
-    expect(state).toBe(s)
+    const { state, patches } = reduce(s, { sessionUpdate: "session_info_update", title: "My Session" })
+    expect(state.title).toBe("My Session")
+    expect(patches).toHaveLength(1)
+    if (patches[0]!.op === "update-session") {
+      expect(patches[0]!.changes.title).toBe("My Session")
+    }
   })
 
-  it("current_mode_update → no-op", () => {
+  it("clears title when null", () => {
+    const s: SessionState = { ...mkState(), title: "Old Title" }
+    const { state } = reduce(s, { sessionUpdate: "session_info_update", title: null })
+    expect(state.title).toBe("")
+  })
+
+  it("keeps title unchanged when title is undefined", () => {
+    const s: SessionState = { ...mkState(), title: "Kept" }
+    const { state } = reduce(s, { sessionUpdate: "session_info_update" })
+    expect(state.title).toBe("Kept")
+  })
+})
+
+describe("reduce — available_commands_update (C1)", () => {
+  it("sets commands", () => {
     const s = mkState()
-    const { state, patches } = reduce(s, { sessionUpdate: "current_mode_update", currentModeId: "default" })
-    expect(patches).toEqual([])
+    const cmds = [{ name: "create_plan", description: "Creates a plan", input: null }]
+    const { state, patches } = reduce(s, {
+      sessionUpdate: "available_commands_update",
+      availableCommands: cmds,
+    })
+    expect(state.commands).toEqual(cmds)
+    expect(patches[0]!.op).toBe("update-session")
+  })
+
+  it("sets empty commands when not array", () => {
+    const s: SessionState = { ...mkState(), commands: [{ name: "run", description: "run" }] }
+    const { state } = reduce(s, {
+      sessionUpdate: "available_commands_update",
+      availableCommands: "invalid",
+    })
+    expect(state.commands).toEqual([])
+  })
+})
+
+describe("reduce — current_mode_update (C1)", () => {
+  it("sets modes.currentModeId", () => {
+    const s = mkState()
+    const { state, patches } = reduce(s, { sessionUpdate: "current_mode_update", currentModeId: "fast" })
+    expect(state.modes?.currentModeId).toBe("fast")
+    expect(state.modes?.availableModes).toEqual([])
+    expect(patches[0]!.op).toBe("update-session")
+  })
+
+  it("preserves availableModes when updating currentModeId", () => {
+    const s: SessionState = {
+      ...mkState(),
+      modes: { availableModes: [{ id: "fast", name: "Fast" }], currentModeId: "slow" },
+    }
+    const { state } = reduce(s, { sessionUpdate: "current_mode_update", currentModeId: "fast" })
+    expect(state.modes?.currentModeId).toBe("fast")
+    expect(state.modes?.availableModes).toHaveLength(1)
+  })
+
+  it("no-op if currentModeId is not a string", () => {
+    const s = mkState()
+    const { state, patches } = reduce(s, { sessionUpdate: "current_mode_update", currentModeId: 123 })
     expect(state).toBe(s)
+    expect(patches).toEqual([])
+  })
+})
+
+describe("reduce — config_option_update (C1)", () => {
+  it("sets configOptions", () => {
+    const s = mkState()
+    const opts = [{ id: "model", type: "select", name: "Model", currentValue: "gpt4" }]
+    const { state, patches } = reduce(s, {
+      sessionUpdate: "config_option_update",
+      configOptions: opts,
+    })
+    expect(state.configOptions).toEqual(opts)
+    expect(patches[0]!.op).toBe("update-session")
+  })
+
+  it("sets empty configOptions when not array", () => {
+    const s = mkState()
+    const { state } = reduce(s, { sessionUpdate: "config_option_update", configOptions: "invalid" })
+    expect(state.configOptions).toEqual([])
+  })
+})
+
+describe("reduce — usage_update (C1)", () => {
+  it("sets contextUsage from usage_update", () => {
+    const s = mkState()
+    const { state, patches } = reduce(s, { sessionUpdate: "usage_update", used: 100, size: 1000 })
+    expect(state.contextUsage?.used).toBe(100)
+    expect(state.contextUsage?.size).toBe(1000)
+    expect(patches[0]!.op).toBe("update-session")
+  })
+
+  it("preserves previous cost when new update omits it (anti-flicker)", () => {
+    const s: SessionState = { ...mkState(), contextUsage: { used: 50, size: 1000, cost: 0.05 } }
+    const { state } = reduce(s, { sessionUpdate: "usage_update", used: 100, size: 1000 })
+    expect(state.contextUsage?.cost).toBe(0.05)
+  })
+
+  it("accepts cost when provided", () => {
+    const s = mkState()
+    const { state } = reduce(s, { sessionUpdate: "usage_update", used: 100, size: 1000, cost: 0.1 })
+    expect(state.contextUsage?.cost).toBe(0.1)
+  })
+})
+
+describe("reduce — turnState derived from content type (C1)", () => {
+  it("agent_thought_chunk → turnState 'thinking'", () => {
+    const s = mkState()
+    const { state } = reduce(s, makeChunk("agent_thought_chunk", "Thinking...", "t-1"))
+    expect(state.turnState).toBe("thinking")
+  })
+
+  it("agent_message_chunk → turnState 'responding'", () => {
+    const s = mkState()
+    const { state } = reduce(s, makeChunk("agent_message_chunk", "Hello", "m-1"))
+    expect(state.turnState).toBe("responding")
+  })
+
+  it("tool_call → turnState 'calling-tool'", () => {
+    const s = mkState()
+    const { state } = reduce(s, { sessionUpdate: "tool_call", toolCallId: "tc-1", rawInput: {} })
+    expect(state.turnState).toBe("calling-tool")
+  })
+
+  it("user_message_chunk → no turnState change (replay, not live turn)", () => {
+    const s: SessionState = { ...mkState(), turnState: "idle" }
+    const { state } = reduce(s, makeChunk("user_message_chunk", "Hi", "u-1"))
+    expect(state.turnState).toBe("idle")
   })
 })
 
