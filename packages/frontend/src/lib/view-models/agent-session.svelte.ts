@@ -64,6 +64,9 @@ import { isBypassMode } from "$lib/util/permission-mode"
 // ─── slice surface-real-error: עדיפות data.details→data.message→message→String(e) ───
 import { formatAcpError } from "$lib/view-models/format-acp-error"
 import type { Settings } from "$lib/view-models/settings.svelte"
+// ─── slice session-view-port C3: SessionView DI ───
+import type { SessionView } from "$lib/session/session-view"
+import type { SessionState } from "@drive-coding/core/session"
 
 // ─── image-attach kill-switch ─── (slice-image-paste Commit 2)
 // Commit 4b הפך ל-true — שליחה מולטימודלית פעילה.
@@ -174,10 +177,17 @@ export class AgentSession {
   readonly #cues?: CuesEngine
   // ─── slice-restore-last-config: settings injection (אופציונלי — no-op אם נעדר) ───
   readonly #settings?: Settings
+  // ─── slice session-view-port C3: SessionView DI (אופציונלי — C4 יעביר אל זה בכל attach/loadSession) ───
+  #view: SessionView | null = null
 
-  constructor(opts?: { cues?: CuesEngine; settings?: Settings }) {
+  constructor(opts?: { view?: SessionView; cues?: CuesEngine; settings?: Settings }) {
     this.#cues = opts?.cues
     this.#settings = opts?.settings
+    // ─── slice session-view-port C3: אם view הוזרק ─── (additive)
+    if (opts?.view) {
+      this.#view = opts.view
+      void this.#consumeViewPatches(opts.view)
+    }
     // ─── slice ws-reconnect-infra: visibility tracking ───
     if (typeof document !== "undefined") {
       this.#pageHidden = document.hidden
@@ -459,6 +469,57 @@ export class AgentSession {
   #reconnectTimer: ReturnType<typeof setTimeout> | undefined
   /** Guard למניעת שתי לולאות reconnect מקבילות. */
   #reconnecting = false
+
+  // ─── slice session-view-port C3: SessionView patch consumer ───
+
+  /**
+   * קורא מ-view.patches ומעדכן bubbles + metadata ב-VM.
+   * רץ ברקע (אסינכרוני) ב-loop אינסופיני עד שה-stream נסגר.
+   * כל batch patches: עדכון bubbles ביעד (applyPatchMutable) + סינכון metadata.
+   */
+  async #consumeViewPatches(view: SessionView): Promise<void> {
+    const reader = view.patches.getReader()
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const patches = value ?? []
+        if (patches.length === 0) continue
+        // targeted bubble update (אין O(n²) mapping)
+        applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
+        // sync metadata from view.state
+        this.#syncFromViewState(view.state)
+      }
+    } catch {
+      // stream נסגר או בוטל — תקין
+    } finally {
+      try { reader.releaseLock() } catch { /* */ }
+    }
+  }
+
+  /**
+   * מסנכן שדות metadata מ-SessionState (ישיר) לשדות ה-$state של ה-VM.
+   * נקרא אחרי כל batch patches מ-view.patches.
+   */
+  #syncFromViewState(viewState: SessionState): void {
+    // turnState (נגזר מסוג patch ב-reduce)
+    const vt = viewState.turnState as TurnState
+    if (vt !== this.turnState) this.#setTurnState(vt)
+    // title
+    if (viewState.title !== this.sessionTitle) this.sessionTitle = viewState.title
+    // contextUsage (אופציונלי — אפסר לאמץ ל-UsageUpdate סטרקטורלית)
+    if (viewState.contextUsage !== this.contextUsage) {
+      this.contextUsage = viewState.contextUsage as typeof this.contextUsage
+    }
+    // commands
+    this.availableCommands = viewState.commands as typeof this.availableCommands
+    // modes
+    this.modes = viewState.modes as typeof this.modes
+    // configOptions
+    this.configOptions = viewState.configOptions as typeof this.configOptions
+    // quota
+    if (viewState.quota !== this.quota) this.quota = viewState.quota
+  }
 
   // ─── DEV-only test helpers (tree-shaken from prod) ───
   /** @internal */ _setStatusForTest(s: AgentSessionStatus): void {
