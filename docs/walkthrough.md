@@ -1,5 +1,72 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 16:55
+
+### slice remote-session-view — calev-heavy round 1 fix: B1+B2+M6 (reconnect correctness)
+
+calev-heavy verified את slice remote-session-view נגד routes אמיתיים (Hono +
+registry + broadcaster אמיתיים, RemoteSessionView אמיתי כלקוח) — **NO-GO**,
+DoD 11/16, 3 blockers + 3 major. סבב זה סוגר 3 מהם שמרדכי ביקש לתקן יחד
+(B1+B2 ממסכים זה את זה בבדיקה מול BE אמיתי).
+
+#### מה בוצע?
+
+**1. packages/frontend/src/lib/session/remote-session-view.ts**
+
+- **B1 (blocker) — כפילות תעתיק אחרי reconnect**: `PatchesBroadcaster.subscribe()`
+  (`patches-broadcaster.ts:96-122`) משחזר עד 64 patches מה-ring buffer לכל מנוי
+  חדש — כולל reconnect, וגם connect ראשון אם patches קרו לפני שהלקוח התחבר.
+  אלה כבר משוקפים ב-snapshot. `#applyIncoming` הייתה מחילה כל patch נכנס בלי
+  לבדוק גרסה → כפילות מדודות (msgs=1→2, segs=2→4). תוקן: `if (patch.version <=
+  #lastVersion) return` בתחילת `#applyIncoming` — דילוג שקט על patches שכבר
+  מיושמים
+- **B2 (blocker) — reset patch משליך מטא-דאטה**: `applyPatch` case `"reset"`
+  (core) נוגע רק ב-`messages`/`nextMessageSeq`/`nextSegmentSeq`. `#handleReconnected`
+  הייתה מפעילה `applyPatch(state, resetPatch)` — משאירה `status`/`turnState`/
+  `pending`/`title`/וכו' מהמצב הישן. משמעות מדודה: permission שעלתה בזמן ניתוק
+  לא הוצגה לעולם. תוקן לפי המלצת מרדכי/כלב: `#handleReconnected` **מחליפה את
+  `#state` כולו מה-snapshot** (`this.#state = snapshot`), לא applyPatch חלקי.
+  עדיין פולטת `reset` patch דרך `patches` כדי שה-VM יבנה מחדש bubbles
+- **M6 (major) — sessionId מת אחרי restart של BE**: `version` הוא מונה פר-host
+  שמתאפס אחרי restart — ההשוואה `snapshot.version <= #lastVersion` לא אמינה
+  לבד (יכולה להיות נמוכה מזו הישנה). תוקן: משווים גם `sessionId` —
+  `sessionChanged = snapshot.sessionId !== #sessionId`; אם ה-session השתנה,
+  מחליפים תמיד בלי קשר ל-version, ומרעננים `#sessionId` (שלא התעדכן קודם בכלל
+  אחרי reconnect — גם זה חלק מ-M6)
+
+**2. packages/frontend/src/lib/session/remote-session-view.test.ts**
+
+- `sseBody`/`sseResponse` מקבלים `keepOpen` (ברירת מחדל `false`, שומר על
+  ההתנהגות הקיימת) — לטסטים חדשים שצריכים לדמות "חיבור יציב" אחרי reconnect
+  בלי לגרום ל-reconnect-storm נוסף (אותו תיקון keepOpen שנעשה ב-C4 integration
+  test)
+- **תקלה שאובחנה ותוקנה תוך כדי כתיבת בדיקת B1**: הטסט הקיים "snapshot.version
+  \> lastVersion..." בנה `patch1` עם `version:1` — **אותה גרסה בדיוק** כמו
+  `snapshot1.version:1` שהוא בא אחריו. זה fixture-בג לטנטי: לפני תיקון B1, הקוד
+  הישן החיל כל patch נכנס בלי תלות בגרסה אז זה מעולם לא נחשף. אחרי B1, ה-patch
+  (version=1 == lastVersion=1) נחשב "כבר-יושם" ונדלג בשקט — `#lastVersion` לא
+  התעדכן, מה שגרם ל-reconnect-loop אינסופי (אותו OOM שאובחן ב-C1/C4: `noSleep`
+  מיידי + mock שסוגר סטרים מיד → הבדיקה מחכה לפאץ' שני שלעולם לא מגיע, ובינתיים
+  ה-loop ברקע רץ ללא הפוגה). תוקן: `patch1.version` הוגדל ל-2 (גרסת-state אחרי
+  ה-patch לא יכולה להיות שווה לגרסת ה-snapshot שהוא בא אחריו) + `keepOpen: true`
+  לתגובת ה-reconnect למניעת loop נוסף
+- 3 טסטים חדשים: B1 (דילוג על patches משוכפלים מ-ring-buffer replay, כולל
+  אימות ה-state הסופי ללא כפילות), B2 (permission ממשיך להיות pending אחרי
+  reconnect — full-state-replace, לא reset חלקי), M6 (sessionId מתרענן +
+  version נמוך יותר מתקבל אחרי session חדש)
+
+#### בדיקות
+
+- `remote-session-view.test.ts`: 28 טסטים עוברים (25→28, +3)
+- `sse-reader.test.ts` + `remote-session-view.integration.test.svelte.ts`: ירוקים,
+  לא הושפעו
+- כל `packages/frontend/src/lib/session/` + `view-models/`: 375 טסטים ירוקים
+- typecheck נקי (0 שגיאות חדשות); lint נקי
+
+**נשאר לסבב הבא** (calev-heavy round 1, לא טופל כאן): B3 (frame פגום הורג
+reader), M4 (שגיאות HTTP נבלעות), M5 (race ב-getOrCreateHost), M7/M8 (medium —
+AbortController + connect() re-entrant), L10 (2 שגיאות typecheck חדשות ב-rpc.test.ts).
+
 ## 2026-08-09 16:22
 
 ### slice remote-session-view — C4: setSessionModel + rpc switch + factory + אינטגרציה (TDD)

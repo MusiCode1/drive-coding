@@ -53,18 +53,32 @@ afterEach(() => {
 
 const noSleep = (): Promise<void> => Promise.resolve()
 
-function sseBody(frames: Array<{ event: string; data: string }>): ReadableStream<Uint8Array> {
+/**
+ * sseBody — builds a mock SSE body. `keepOpen` (default false, matching the existing
+ * tests in this file which close the view right after reading — see C1's diagnosis)
+ * leaves the stream open instead of auto-closing, matching a real SSE connection that
+ * stays open until disconnect. Needed by any test that keeps a reconnected connection
+ * "steady" without triggering yet another reconnect (see B1 dedup test below — same
+ * fix as remote-session-view.integration.test.svelte.ts).
+ */
+function sseBody(
+  frames: Array<{ event: string; data: string }>,
+  opts: { keepOpen?: boolean } = {},
+): ReadableStream<Uint8Array> {
   const text = frames.map((f) => `event: ${f.event}\ndata: ${f.data}\n\n`).join("")
   return new ReadableStream({
     start(ctrl) {
       ctrl.enqueue(encoder.encode(text))
-      ctrl.close()
+      if (!opts.keepOpen) ctrl.close()
     },
   })
 }
 
-function sseResponse(frames: Array<{ event: string; data: string }>): Response {
-  return { ok: true, status: 200, body: sseBody(frames) } as unknown as Response
+function sseResponse(
+  frames: Array<{ event: string; data: string }>,
+  opts: { keepOpen?: boolean } = {},
+): Response {
+  return { ok: true, status: 200, body: sseBody(frames, opts) } as unknown as Response
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -475,7 +489,13 @@ describe("RemoteSessionView — Speaker water-mark", () => {
 describe("RemoteSessionView — reconnect mid-turn", () => {
   it("snapshot.version > lastVersion after reconnect → emits reset patch + resets water-mark", async () => {
     const snapshot1 = makeSnapshot({ version: 1 })
-    const patch1 = makePatch(1, {
+    // version must be > snapshot1.version (2, not 1) — a patch's version is the
+    // resulting state version AFTER it's applied, so it can't equal the snapshot
+    // it follows. This was a latent test-fixture bug: the pre-B1-dedup code applied
+    // every incoming patch unconditionally, so it went unnoticed; the B1 fix (skip
+    // patch.version <= #lastVersion) correctly treats version:1 as already-applied
+    // and would otherwise silently drop this patch, breaking the read count below.
+    const patch1 = makePatch(2, {
       op: "append-segment",
       targetId: "m_0",
       segment: { id: "s_0", text: "x" },
@@ -517,8 +537,11 @@ describe("RemoteSessionView — reconnect mid-turn", () => {
           ]),
         )
       }
-      // reconnect: newer snapshot
-      return Promise.resolve(sseResponse([{ event: "snapshot", data: JSON.stringify(snapshot2) }]))
+      // reconnect: newer snapshot — stays open so the test doesn't trigger yet
+      // another reconnect after this one settles.
+      return Promise.resolve(
+        sseResponse([{ event: "snapshot", data: JSON.stringify(snapshot2) }], { keepOpen: true }),
+      )
     })
 
     const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
@@ -564,6 +587,162 @@ describe("RemoteSessionView — reconnect mid-turn", () => {
 
     // no synthetic reset patch was injected — only the real update-session patch
     expect(results[0]?.[0]).toMatchObject({ op: "update-session", version: 4 })
+  })
+
+  // ─── calev-heavy B1: dedup replayed patches by version ───
+
+  it("B1: skips patches already reflected in the reconnect snapshot (ring-buffer replay dedup)", async () => {
+    const addMsg: Patch = {
+      version: 1,
+      op: "add-message",
+      message: { id: "m_0", role: "assistant", messageId: "p1", segments: [] },
+    }
+    const appendSeg1: Patch = {
+      version: 2,
+      op: "append-segment",
+      targetId: "m_0",
+      segment: { id: "s_0", text: "hello" },
+    }
+    const appendSeg2: Patch = {
+      version: 3,
+      op: "append-segment",
+      targetId: "m_0",
+      segment: { id: "s_1", text: " world" },
+    }
+    const freshPatch = makePatch(4, { op: "update-session", changes: { title: "still fresh" } })
+
+    // PatchesBroadcaster.subscribe() replays up to 64 buffered patches to every new
+    // subscriber — the reconnect snapshot ALREADY reflects v1-v3, but the wire still
+    // resends v1-v3 as patch frames too (this is what production actually does).
+    const snapshotAfterReconnect = makeSnapshot({
+      version: 3,
+      messages: [
+        {
+          id: "m_0",
+          role: "assistant",
+          messageId: "p1",
+          segments: [
+            { id: "s_0", text: "hello" },
+            { id: "s_1", text: " world" },
+          ],
+        },
+      ],
+      nextMessageSeq: 1,
+      nextSegmentSeq: 2,
+    })
+
+    let call = 0
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (!url.includes("/events")) return Promise.resolve(jsonResponse({ ok: true }))
+      call++
+      if (call === 1) {
+        // first connection: 3 genuinely-new patches, then the stream ends → reconnect
+        return Promise.resolve(
+          sseResponse([
+            { event: "snapshot", data: JSON.stringify(makeSnapshot({ version: 0 })) },
+            { event: "patch", data: JSON.stringify(addMsg) },
+            { event: "patch", data: JSON.stringify(appendSeg1) },
+            { event: "patch", data: JSON.stringify(appendSeg2) },
+          ]),
+        )
+      }
+      // reconnect: snapshot already reflects v1-v3, PLUS the ring-buffer replays
+      // v1-v3 again as patch frames, THEN one genuinely-new patch (v4). Stays open
+      // (keepOpen) so the test doesn't trigger yet another reconnect after v4.
+      return Promise.resolve(
+        sseResponse(
+          [
+            { event: "snapshot", data: JSON.stringify(snapshotAfterReconnect) },
+            { event: "patch", data: JSON.stringify(addMsg) },
+            { event: "patch", data: JSON.stringify(appendSeg1) },
+            { event: "patch", data: JSON.stringify(appendSeg2) },
+            { event: "patch", data: JSON.stringify(freshPatch) },
+          ],
+          { keepOpen: true },
+        ),
+      )
+    })
+
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    await view.connect()
+
+    // 3 genuine patches from connection 1, then the 3 replayed duplicates must be
+    // silently skipped — the 4th read must be the fresh v4 patch, not a repeat of v1.
+    const results = await readNPatchArrays(view.patches, 4)
+
+    expect(results).toHaveLength(4)
+    expect(results[3]?.[0]).toMatchObject({ version: 4, op: "update-session" })
+    // final state reflects each segment exactly once — not duplicated
+    const msg = view.state.messages.find((m) => m.id === "m_0")
+    expect(msg && msg.role !== "tool" ? msg.segments : []).toEqual([
+      { id: "s_0", text: "hello" },
+      { id: "s_1", text: " world" },
+    ])
+  })
+
+  // ─── calev-heavy B2+M6: full state replacement + sessionId refresh ───
+
+  it("B2: reconnect carries pending permission through (full state replace, not partial reset)", async () => {
+    const snapshot1 = makeSnapshot({ version: 1 })
+    const snapshotWithPending = makeSnapshot({
+      version: 5,
+      pending: { permission: { requestId: 9, params: {} as never }, elicitation: null },
+      title: "Restored Title",
+    })
+
+    let call = 0
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (!url.includes("/events")) return Promise.resolve(jsonResponse({ ok: true }))
+      call++
+      if (call === 1) {
+        return Promise.resolve(
+          sseResponse([{ event: "snapshot", data: JSON.stringify(snapshot1) }]),
+        )
+      }
+      // reconnect: newer snapshot carries a pending permission that arose while
+      // disconnected — a partial `reset` patch (messages-only) would drop it.
+      return Promise.resolve(
+        sseResponse([{ event: "snapshot", data: JSON.stringify(snapshotWithPending) }], {
+          keepOpen: true,
+        }),
+      )
+    })
+
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    await view.connect()
+    await readNPatchArrays(view.patches, 1) // the synthetic reset patch from reconnect
+
+    expect(view.state.pending.permission).toMatchObject({ requestId: 9 })
+    expect(view.state.title).toBe("Restored Title")
+  })
+
+  it("M6: refreshes sessionId and accepts a lower version after a BE restart (new session)", async () => {
+    const snapshotBeforeRestart = makeSnapshot({ sessionId: "sess-100-1", version: 50 })
+    const snapshotAfterRestart = makeSnapshot({ sessionId: "sess-200-1", version: 2 })
+
+    let call = 0
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (!url.includes("/events")) return Promise.resolve(jsonResponse({ ok: true }))
+      call++
+      if (call === 1) {
+        return Promise.resolve(
+          sseResponse([{ event: "snapshot", data: JSON.stringify(snapshotBeforeRestart) }]),
+        )
+      }
+      // BE restarted: brand-new host, brand-new (lower) version counter, new sessionId.
+      return Promise.resolve(
+        sseResponse([{ event: "snapshot", data: JSON.stringify(snapshotAfterRestart) }], {
+          keepOpen: true,
+        }),
+      )
+    })
+
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    await view.connect()
+    await readNPatchArrays(view.patches, 1) // the synthetic reset patch from reconnect
+
+    expect(view.state.sessionId).toBe("sess-200-1")
+    expect(view.state.version).toBe(2)
   })
 })
 

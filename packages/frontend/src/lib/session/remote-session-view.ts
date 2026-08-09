@@ -165,6 +165,13 @@ export class RemoteSessionView implements SessionView {
   }
 
   #applyIncoming(patch: Patch): void {
+    // calev-heavy B1: PatchesBroadcaster.subscribe() replays up to 64 buffered patches
+    // to every new subscriber — including reconnects, and even the very first connect
+    // if patches happened before this client attached. Those patches are already
+    // reflected in the snapshot (frame-zero) / in whatever #lastVersion already covers.
+    // Applying them again duplicates messages/segments (measured: "hello"+" world"
+    // appearing twice after one server-side drop). Skip anything already applied.
+    if (patch.version <= this.#lastVersion) return
     this.#state = applyPatch(this.#state, patch)
     this.#lastVersion = patch.version
     this.#advanceWaterMark(patch)
@@ -190,11 +197,29 @@ export class RemoteSessionView implements SessionView {
     this.#lastReadSegmentIndex = msg.segments.length - 1
   }
 
-  // ─── C3: reconnect mid-turn — reset patch מה-snapshot אם פספסנו נתונים ───
+  // ─── C3: reconnect mid-turn — full state replacement אם פספסנו נתונים ───
 
+  /**
+   * calev-heavy B2+M6 (מרדכי: "הפשוט ביותר הוא ש-reconnect יחליף את כל ה-state
+   * מה-snapshot, לא reset חלקי"):
+   *
+   * B2 — ה-`reset` patch op (core apply-patch.ts) נושא רק messages/nextMessageSeq/
+   * nextSegmentSeq; שאר השדות (status/turnState/pending/modes/configOptions/title/
+   * contextUsage/quota) לא נגעים. מדד: פרמישן שעלתה בזמן שהחיבור נותק אף פעם לא
+   * מוצגת (state.pending נשאר מהמצב הישן) — ה-UI תקוע עד ה-timeout. הפתרון: **מחליפים
+   * את #state כולו מה-snapshot** (לא applyPatch על reset חלקי) — עדיין פולטים reset
+   * patch דרך patches כדי שה-VM יבנה מחדש את ה-bubbles מ-snapshot.messages.
+   *
+   * M6 — version הוא מונה פר-host (מתאפס אחרי restart של ה-BE). ההשוואה
+   * `snapshot.version <= #lastVersion` לא אמינה לבד אחרי restart (version חדש
+   * יכול להיות *נמוך* מהישן). משווים גם sessionId: אם ה-snapshot מגיע מ-session
+   * אחר (BE restart יצר session חדש) — מחליפים תמיד, בלי קשר ל-version, ומרעננים
+   * את #sessionId (שלא התעדכן קודם אחרי reconnect).
+   */
   #handleReconnected(snapshot: SessionState): void {
-    if (snapshot.version <= this.#lastVersion) {
-      // כבר מעודכן — לא פספסנו כלום, ממשיכים מה-water-mark הקיים.
+    const sessionChanged = snapshot.sessionId !== this.#sessionId
+    if (!sessionChanged && snapshot.version <= this.#lastVersion) {
+      // אותו session, כבר מעודכן — לא פספסנו כלום.
       return
     }
     const resetPatch: Patch = {
@@ -204,7 +229,8 @@ export class RemoteSessionView implements SessionView {
       nextMessageSeq: snapshot.nextMessageSeq,
       nextSegmentSeq: snapshot.nextSegmentSeq,
     }
-    this.#state = applyPatch(this.#state, resetPatch)
+    this.#state = snapshot
+    this.#sessionId = snapshot.sessionId
     this.#lastVersion = snapshot.version
     this.#lastReadMessageId = null
     this.#lastReadSegmentIndex = 0
