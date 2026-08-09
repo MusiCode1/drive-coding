@@ -64,7 +64,7 @@ Hebrew אמיתי כ"קוד" ב-11 מקומות רחוקים משם (שקר-חי
 
 #### בדיקות
 
-`agent-session.remote.test.svelte.ts` (חדש, 22 טסטים) — sendPrompt (string ל-view,
+`agent-session.remote.test.svelte.ts` (חדש, 21 טסטים) — sendPrompt (string ל-view,
 בלי בועה, waiting נשאר, patch idle מוריד, HTTP-כשל→error לא status, תמונה-בלבד,
 טקסט+attachments), cancelTurn (resolve pendings+view.cancel+idle), applyConfigOption
 (mode/model/configId-קיים/unknown-skip), pending sync (guard-זהות + patch-מעופש לא
