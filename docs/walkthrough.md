@@ -1,5 +1,42 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 (slice view-switch, C2)
+
+### slice view-switch — C2: דגל בחירת-מימוש (`sessionTransport`) + factory
+
+`packages/frontend/src/lib/session/session-transport.ts` (חדש) —
+`resolveSessionTransport({query, stored, env})`: טהור (בלי `window`/`location`),
+קדימות **נעולה** `query ← stored ← env ← "local"`, נורמליזציה case-insensitive
+אחרי trim, ערך לא-מוכר יורד לרמה הבאה (❌ לא זורק). השם `sessionTransport`
+במפורש — לא `sessionMode` (תפוס בדומיין ה-config של ה-CLI).
+
+`packages/frontend/vite.config.ts` — שורה תוספתית (התקדים: בלוק `PUBLIC_APP_TITLE`
+שכבר קיים שם): `process.env.PUBLIC_SESSION_TRANSPORT = process.env.FE_SESSION_TRANSPORT
+?? "local"`, **לפני** ה-plugin של SvelteKit. הקריאה תהיה דרך `$env/dynamic/public`
+ב-C3 (`connect-agent.ts`) — לא `$env/static/public` (אין לו export בשם `env`).
+
+`packages/frontend/src/lib/session/create-session-view.ts` (חדש) —
+`createRemoteView({agentId, baseUrl?, ...RemoteSessionViewOptions?})`: עוטפת
+את `createRemoteSessionView` הקיים + `await connect()`. חתימות לא-תואמות:
+כאן `baseUrl` אופציונלי, שם פרמטר-מיקום נדרש — העטיפה מספקת `baseUrl ?? beUrl("")`
+(same-origin, תקדים `agents-api.ts`). הרחבתי את הטיפוס להכיל גם
+`Partial<RemoteSessionViewOptions>` (headers/`_fetch`/`_sleep`) — תוספתי,
+לא סוטה מהחתימה המינימלית של הבריף (`{agentId, baseUrl?}` עדיין קריאה תקינה),
+ומאפשר הזרקת mock fetch בטסטים בלי לחשוף hook נפרד.
+
+**בסוף C2 שום דבר בפרודקשן עדיין לא צורך את הדגל** — `connect-agent.ts` עדיין
+קורא רק ל-`attach()` (C3 יחווט).
+
+#### בדיקות
+
+`session-transport.test.ts`: 17/17 — טבלת-אמת מלאה (8 קומבינציות קדימות +
+3 נורמליזציה + 6 ערכים-לא-תקינים, כולל אמוג'י שלא זורק). `create-session-view.test.ts`:
+2/2 — בונה + מחובר (`connect()` רץ), ו-`baseUrl` אופציונלי נופל ל-`beUrl("")`.
+`bunx vitest run packages/frontend/src/lib/session`: 114/114 ירוק (8 קבצים).
+typecheck: DELTA-CHECK מול `3e7d9c5` — 15/15 (אפס חדשות). `lint:i18n`: נקי
+(`*.test.ts` פטור מהבדיקה — Hebrew ב-`it()`/`describe()` שם מותר; רק
+`session-view-contract.ts` שאינו `.test.ts` דרש תרגום ל-C1).
+
 ## 2026-08-09 (slice view-switch, C1)
 
 ### slice view-switch — C1: contract-tests משותפים בין local ל-remote
