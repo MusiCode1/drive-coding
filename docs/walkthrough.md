@@ -1,5 +1,62 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 20:27
+
+### slice session-host-pending-surface — C5: אינטגרציה קצה-לקצה (BE) — הסלייס הושלם
+
+C5 סוגר את השרשרת: host אמיתי + `PatchesBroadcaster` אמיתי + כל 4 ראוטי
+ה-HTTP (events/rpc/reply/state), בלי mocks של הרישום עצמו. אין קובץ קיים
+שעושה זאת — `events.test.ts`/`reply.test.ts`/`rpc.test.ts` כולם ממקקים
+registry+host, ו-`session-host.integration.test.ts` לא נוגע ב-HTTP כלל.
+קריטריון-ההצלחה כאן BE-side בלבד: patches, snapshot, `POST /reply` —
+נמדדים בטסטים ובתעבורת SSE, **לא במסך** (אין ל-`RemoteSessionView` צרכן
+בפרודקשן — S6 יחווט את זה).
+
+#### מה בוצע?
+
+**קובץ חדש** — `packages/backend/src/session-host/http/session-host-http.integration.test.ts`:
+`setup()` בונה `ExtendedSessionHost` **אמיתי** (`createSessionHostFromConnection`
+עם `AcpClient` ממוקק בלבד — אותה טכניקה כמו `session-host.integration.test.ts`,
+כדי לעקוף את handshake ה-ACP האמיתי) + `PatchesBroadcaster` **אמיתי**
+(`createPatchesBroadcaster(host.patches)`), מאוחדים תחת `AgentSessionRegistry`
+בנוי-ביד לסוכן יחיד, ומחוברים ל-4 הראוטים האמיתיים דרך
+`registerSessionHostHttp` על `Hono` אמיתי.
+
+`computeFinalClientState(frames)` — עוזר-טסט שמדמה את מה שלקוח SSE אמיתי
+מחשב: snapshot כבסיס, ואז כל patch עם `version` **גדול ממש** מ-`version`
+ה-snapshot (אותו drop-guard שנחת ב-`remote-session-view.ts`, calev-heavy
+round 2). זה בדיוק "המצב הסופי אחרי ה-replay" שהבריף דורש — לא frame-אפס —
+כי `broadcaster.subscribe()` משחזר עד 64 patches מה-ring-buffer **אחרי**
+ה-snapshot (`events.ts`: subscribe לפני snapshot, אבל ה-frames בפועל
+יוצאים snapshot-קודם).
+
+**עקיפת שני פערי-טיפוסים pre-existing** (לא תוקנו — known-gaps, רק
+נמנעה הוספת מופעים חדשים שלהם ל-DELTA-CHECK): `MockResponse` מקומי
+(תקדים `rpc.test.ts`, calev-heavy L10 — `app.request()` מתנגש עם global
+`Response` תחת `types:["bun"]`), ו-`CapturedCallbacks` שנגזר מ-
+`SessionHostFromConnOptions["_createAcpClient"]` במקום לייבא
+`AcpClientCallbacks` בשם (שאינו מיוצא מ-`@drive-coding/provider/client`
+— אותו פער שכבר קיים ב-`session-host.ts`/`session-host.integration.test.ts`).
+
+#### בדיקות
+
+4 טסטים: (א) לקוח שמתחבר באמצע בקשת-הרשאה ממתינה מקבל, אחרי ה-replay,
+`pending.permission` נכון (frame-אפס כבר מספיק כאן — `host.state` כבר
+משקף את זה ב-register-then-snapshot); (ב) `POST /reply` סוגר את המעגל —
+שני מנויים עצמאיים, שניהם מקבלים patch-ניקוי עם אותו `requestId`, אחרי
+3 frames (snapshot + patch-set משוחזר + patch-clear חי); (ג) תור מלא
+(`waiting`→`idle`) נצפה נכון אצל מנוי שהצטרף באמצע התור; (ד) תור שנכשל
+מגיע למנוי-שהצטרף-באמצע עם `lastTurnError`, אחרי 4 frames (snapshot +
+2 patches משוחזרים + patch-כשל חי).
+`bunx vitest run session-host-http.integration.test.ts`: 4/4 ירוק.
+`bunx vitest run packages/backend/src/session-host`: 143/143 ירוק.
+`bunx vitest run packages/backend`: 641/641 ירוק (למעט `https-serve.test.ts`
+— pre-existing, לא-קשור). typecheck: DELTA-CHECK מול `ac376e8` — אפס
+שגיאות חדשות. `lint:i18n`: נקי.
+
+**הסלייס הושלם — 5/5 checkpoints.** commits: `189c4db` (C1) · `ebc7d5f`
+(C2) · `cfa013a` (C3) · `c3648d4` (C4) · הקומיט הבא יסגור C5.
+
 ## 2026-08-09 20:19
 
 ### slice session-host-pending-surface — C4: מונה requestId משותף (BE+FE)
