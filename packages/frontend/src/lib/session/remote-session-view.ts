@@ -14,7 +14,7 @@
  * ההחלה הממוקדת על Bubble[] (consumeViewPatches/applyPatchMutable, S1/S2) — לא כאן.
  * state עצמו מתעדכן דרך applyPatch (core, טהור/immutable) — לא כותבים applyPatch חדש.
  *
- * ─── slice remote-session-view C2 (TDD) ───
+ * ─── slice remote-session-view C2+C3 (TDD) ───
  */
 
 import {
@@ -66,6 +66,12 @@ export class RemoteSessionView implements SessionView {
   #patchesCtrl: ReadableStreamDefaultController<Patch[]> | null = null
   readonly patches: ReadableStream<Patch[]>
 
+  // ─── C3: Speaker water-mark (§8.1) — מונע הקראה כפולה אחרי reconnect ───
+  #lastReadMessageId: string | null = null
+  #lastReadSegmentIndex = 0
+  /** גרסת ה-patch/snapshot האחרונה שהוחלה על state — לצורך השוואה ב-reconnect mid-turn. */
+  #lastVersion = 0
+
   constructor(agentId: string, baseUrl: string, opts: RemoteSessionViewOptions = {}) {
     this.#agentId = agentId
     this.#baseUrl = baseUrl
@@ -79,6 +85,7 @@ export class RemoteSessionView implements SessionView {
       _fetch: opts._fetch,
       _sleep: opts._sleep,
     })
+    this.#reader.onReconnected = this.#handleReconnected.bind(this)
 
     this.patches = new ReadableStream<Patch[]>({
       start: (ctrl) => {
@@ -93,6 +100,16 @@ export class RemoteSessionView implements SessionView {
     return this.#state
   }
 
+  // ─── C3: water-mark getters (Speaker consumes these) ───
+
+  get lastReadMessageId(): string | null {
+    return this.#lastReadMessageId
+  }
+
+  get lastReadSegmentIndex(): number {
+    return this.#lastReadSegmentIndex
+  }
+
   // ─── Lifecycle ───
 
   /** מתחבר ל-SSE, מאחזר snapshot (כולל sessionId), ומתחיל להאזין ל-patches. */
@@ -100,6 +117,7 @@ export class RemoteSessionView implements SessionView {
     const { snapshot, patches } = await this.#reader.connect()
     this.#state = snapshot
     this.#sessionId = snapshot.sessionId
+    this.#lastVersion = snapshot.version
     void this.#drainPatches(patches)
   }
 
@@ -130,6 +148,8 @@ export class RemoteSessionView implements SessionView {
 
   #applyIncoming(patch: Patch): void {
     this.#state = applyPatch(this.#state, patch)
+    this.#lastVersion = patch.version
+    this.#advanceWaterMark(patch)
     this.#emit([patch])
   }
 
@@ -139,6 +159,38 @@ export class RemoteSessionView implements SessionView {
     } catch {
       // stream cancelled by consumer — ignore
     }
+  }
+
+  // ─── C3: Speaker water-mark ───
+
+  /** כשמגיע append-segment — מקדם את ה-water-mark (מסמן להקראה). */
+  #advanceWaterMark(patch: Patch): void {
+    if (patch.op !== "append-segment") return
+    const msg = this.#state.messages.find((m) => m.id === patch.targetId)
+    if (!msg || msg.role === "tool") return
+    this.#lastReadMessageId = msg.id
+    this.#lastReadSegmentIndex = msg.segments.length - 1
+  }
+
+  // ─── C3: reconnect mid-turn — reset patch מה-snapshot אם פספסנו נתונים ───
+
+  #handleReconnected(snapshot: SessionState): void {
+    if (snapshot.version <= this.#lastVersion) {
+      // כבר מעודכן — לא פספסנו כלום, ממשיכים מה-water-mark הקיים.
+      return
+    }
+    const resetPatch: Patch = {
+      version: snapshot.version,
+      op: "reset",
+      messages: snapshot.messages,
+      nextMessageSeq: snapshot.nextMessageSeq,
+      nextSegmentSeq: snapshot.nextSegmentSeq,
+    }
+    this.#state = applyPatch(this.#state, resetPatch)
+    this.#lastVersion = snapshot.version
+    this.#lastReadMessageId = null
+    this.#lastReadSegmentIndex = 0
+    this.#emit([resetPatch])
   }
 
   // ─── Session management — backend manages sessions ───

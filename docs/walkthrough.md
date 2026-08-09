@@ -1,5 +1,39 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 15:58
+
+### slice remote-session-view — C3: Speaker water-mark + reconnect mid-turn (TDD)
+
+C3 מוסיף ל-`RemoteSessionView` את ה-Speaker water-mark (§8.1) ואת reconnect
+mid-turn — מונע הקראה כפולה כשה-SSE מתנתק ומתחבר מחדש.
+
+#### מה בוצע?
+
+**1. packages/frontend/src/lib/session/remote-session-view.ts (הרחבה)**
+
+- `#lastReadMessageId: string | null` + `#lastReadSegmentIndex: number` — water-mark,
+  חשופים כ-getters ציבוריים (`lastReadMessageId`/`lastReadSegmentIndex`) לצריכה ע"י Speaker
+  (טרם נבנה — slice נפרד)
+- `#advanceWaterMark(patch)` — כל `append-segment` patch שמוחל על state מקדם את ה-water-mark
+  ל-`{messageId, segmentIndex}` של הסגמנט האחרון שנוסף (= "מסומן להקראה")
+- `#lastVersion` — עוקב אחרי הגרסה האחרונה שהוחלה (מ-snapshot הראשוני + מכל patch)
+- `#handleReconnected(snapshot)` — מחובר ל-`SSEReader.onReconnected`:
+  - `snapshot.version <= lastVersion` → מדלג (לא פספסנו כלום, ה-water-mark הקיים תקף,
+    ממשיכים לקבל patches חדשים מה-stream המחודש כרגיל)
+  - `snapshot.version > lastVersion` → בונה `reset` patch מה-snapshot
+    (`{op:'reset', messages, nextMessageSeq, nextSegmentSeq}`), מחיל אותו על `state` דרך
+    `applyPatch` (core — לא נכתב applyPatch חדש), פולט אותו דרך `patches`, ומאפס את
+    ה-water-mark ל-`lastReadMessageId=null, lastReadSegmentIndex=0` (החלטה מפורשת של
+    מרדכי — לאחר reset מלא של המסרים, הבסיס הבטוח היחיד הוא "הכל טרם נקרא")
+
+#### בדיקות
+
+- `remote-session-view.test.ts`: 3 טסטים חדשים (20 סה"כ, כולם עוברים ✅, 416ms)
+  - water-mark מתקדם על append-segment
+  - reconnect mid-turn עם `version` גבוה יותר → reset patch נפלט + water-mark מתאפס
+  - reconnect עם `version` זהה/נמוך יותר → אין reset patch, רק patches רגילים ממשיכים
+- typecheck נקי; lint נקי
+
 ## 2026-08-09 15:55
 
 ### slice remote-session-view — C2: RemoteSessionView (TDD)

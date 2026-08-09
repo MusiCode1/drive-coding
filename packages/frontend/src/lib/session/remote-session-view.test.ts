@@ -1,9 +1,9 @@
 /**
- * remote-session-view.test.ts — TDD עבור RemoteSessionView (C2).
+ * remote-session-view.test.ts — TDD עבור RemoteSessionView (C2 + C3).
  *
- * Testing: tdd (brief §C2)
+ * Testing: tdd (brief §C2, §C3)
  *
- * Tests:
+ * C2 tests:
  *   - connect(): fetches SSE, sets state from snapshot + sessionId
  *   - state updates as SSE patches stream in (via applyPatch מ-core)
  *   - patches: wraps each SSEReader Patch ל-[patch] array
@@ -13,6 +13,11 @@
  *   - respond(): גוזר kind מ-state.pending (permission עדיפות)
  *   - session management methods (newSession/loadSession/listSessions/deleteSession): throw
  *   - close(): סוגר SSE reader
+ *
+ * C3 tests:
+ *   - water-mark advances on append-segment patches
+ *   - reconnect mid-turn: snapshot.version > lastVersion → reset patch + water-mark reset
+ *   - reconnect: snapshot.version <= lastVersion → skip (no reset patch)
  */
 
 import type { Patch, SessionState } from "@drive-coding/core/session"
@@ -365,5 +370,130 @@ describe("RemoteSessionView — close()", () => {
       _sleep: noSleep,
     })
     await expect(view.close()).resolves.toBeUndefined()
+  })
+})
+
+// ── C3: Speaker water-mark ────────────────────────────────────────────────────
+
+describe("RemoteSessionView — Speaker water-mark", () => {
+  it("advances lastReadMessageId/lastReadSegmentIndex on append-segment patches", async () => {
+    const snapshot = makeSnapshot({
+      messages: [{ id: "m_0", role: "assistant", messageId: "prov-1", segments: [] }],
+      nextMessageSeq: 1,
+    })
+    const patch = makePatch(1, {
+      op: "append-segment",
+      targetId: "m_0",
+      segment: { id: "s_0", text: "hello" },
+    })
+    const mockFetch = makeMockFetch({
+      events: [
+        { event: "snapshot", data: JSON.stringify(snapshot) },
+        { event: "patch", data: JSON.stringify(patch) },
+      ],
+    })
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    await view.connect()
+    await readNPatchArrays(view.patches, 1)
+
+    expect(view.lastReadMessageId).toBe("m_0")
+    expect(view.lastReadSegmentIndex).toBe(0)
+  })
+})
+
+// ── C3: reconnect mid-turn ─────────────────────────────────────────────────────
+
+describe("RemoteSessionView — reconnect mid-turn", () => {
+  it("snapshot.version > lastVersion after reconnect → emits reset patch + resets water-mark", async () => {
+    const snapshot1 = makeSnapshot({ version: 1 })
+    const patch1 = makePatch(1, {
+      op: "append-segment",
+      targetId: "m_0",
+      segment: { id: "s_0", text: "x" },
+    })
+    // second connection ends immediately (stream closes) → triggers reconnect
+    const newMessages = [
+      {
+        id: "m_0",
+        role: "assistant" as const,
+        messageId: "p1",
+        segments: [
+          { id: "s_0", text: "x" },
+          { id: "s_1", text: "y" },
+        ],
+      },
+    ]
+    const snapshot2 = makeSnapshot({
+      version: 5,
+      messages: newMessages,
+      nextMessageSeq: 1,
+      nextSegmentSeq: 2,
+    })
+
+    let call = 0
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (!url.includes("/events")) return Promise.resolve(jsonResponse({ ok: true }))
+      call++
+      if (call === 1) {
+        return Promise.resolve(
+          sseResponse([
+            {
+              event: "snapshot",
+              data: JSON.stringify({
+                ...snapshot1,
+                messages: [{ id: "m_0", role: "assistant", messageId: "p1", segments: [] }],
+              }),
+            },
+            { event: "patch", data: JSON.stringify(patch1) },
+          ]),
+        )
+      }
+      // reconnect: newer snapshot
+      return Promise.resolve(sseResponse([{ event: "snapshot", data: JSON.stringify(snapshot2) }]))
+    })
+
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    await view.connect()
+
+    // drain: 1 append-segment patch, then 1 synthetic reset patch after reconnect
+    const results = await readNPatchArrays(view.patches, 2)
+
+    expect(results[1]?.[0]).toMatchObject({ op: "reset", version: 5 })
+    expect(view.state.version).toBe(5)
+    expect(view.lastReadMessageId).toBeNull()
+    expect(view.lastReadSegmentIndex).toBe(0)
+  })
+
+  it("snapshot.version <= lastVersion after reconnect → skips (no reset patch)", async () => {
+    const snapshot = makeSnapshot({ version: 3 })
+
+    let call = 0
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (!url.includes("/events")) return Promise.resolve(jsonResponse({ ok: true }))
+      call++
+      if (call === 1) {
+        return Promise.resolve(sseResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]))
+      }
+      if (call === 2) {
+        // reconnect with same version — no new data
+        return Promise.resolve(sseResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]))
+      }
+      // subsequent reconnect: emit a real patch so the test can observe progress
+      const patch = makePatch(4, { op: "update-session", changes: { title: "after-reconnect" } })
+      return Promise.resolve(
+        sseResponse([
+          { event: "snapshot", data: JSON.stringify(snapshot) },
+          { event: "patch", data: JSON.stringify(patch) },
+        ]),
+      )
+    })
+
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    await view.connect()
+
+    const results = await readNPatchArrays(view.patches, 1)
+
+    // no synthetic reset patch was injected — only the real update-session patch
+    expect(results[0]?.[0]).toMatchObject({ op: "update-session", version: 4 })
   })
 })
