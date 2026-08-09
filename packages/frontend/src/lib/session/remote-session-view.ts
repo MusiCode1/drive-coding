@@ -112,8 +112,25 @@ export class RemoteSessionView implements SessionView {
 
   // ─── Lifecycle ───
 
-  /** מתחבר ל-SSE, מאחזר snapshot (כולל sessionId), ומתחיל להאזין ל-patches. */
+  /** @internal M8 — memoizes the in-flight/completed connect() call (see below). */
+  #connectPromise: Promise<void> | null = null
+
+  /**
+   * מתחבר ל-SSE, מאחזר snapshot (כולל sessionId), ומתחיל להאזין ל-patches.
+   *
+   * calev-heavy M8: לא הייתה re-entrant — קריאה שנייה (בטעות, למשל מ-double-mount
+   * ב-Svelte) הייתה יוצרת חיבור SSE שני + `#drainPatches` שני על אותו state,
+   * ומכפילה כל patch נכנס. מדוד: `segments=["once","once"]`. תוקן: `connect()`
+   * ממוחזרת — קריאה שנייה (גם אחרי שהראשונה כבר הסתיימה) מחזירה את אותה הבטחה,
+   * ולעולם לא פותחת חיבור שני.
+   */
   async connect(): Promise<void> {
+    if (this.#connectPromise) return this.#connectPromise
+    this.#connectPromise = this.#doConnect()
+    return this.#connectPromise
+  }
+
+  async #doConnect(): Promise<void> {
     const { snapshot, patches } = await this.#reader.connect()
     this.#state = snapshot
     this.#sessionId = snapshot.sessionId

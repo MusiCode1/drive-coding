@@ -1,5 +1,37 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 17:04
+
+### slice remote-session-view — calev-heavy round 1 fix: M7+M8 (lifecycle hygiene)
+
+#### מה בוצע?
+
+**packages/frontend/src/lib/session/sse-reader.ts**
+
+- **M7 (medium) — `close()` לא מבטל את בקשת ה-SSE**: אין `AbortController`, ה-socket
+  נשאר established אחרי close(). תוקן: `#connectOnce` יוצרת `AbortController` חדש
+  לכל fetch, מעבירה `signal` ל-`_fetch`; `close()` קוראת ל-`abort()` — גם משחררת
+  את החיבור מיד וגם מבטלת `reader.read()` תלוי אם היה כזה
+
+**packages/frontend/src/lib/session/remote-session-view.ts**
+
+- **M8 (medium) — `connect()` לא re-entrant**: קריאה שנייה (למשל double-mount ב-Svelte)
+  הייתה פותחת חיבור SSE שני + `#drainPatches` שני על אותו state → כפילות
+  patches. מדוד: `segments=["once","once"]`. תוקן: `connect()` ממוחזרת דרך
+  `#connectPromise` — כל קריאה (כולל אחרי שהראשונה כבר הסתיימה) מחזירה את אותה
+  הבטחה, בלי לפתוח חיבור נוסף
+
+#### בדיקות
+
+- `sse-reader.test.ts`: טסט חדש — `close()` מפעיל `AbortSignal.aborted` (12 סה"כ, 11→12)
+- `remote-session-view.test.ts`: טסט חדש — שתי קריאות מקבילות ל-`connect()` →
+  fetch יחיד ל-`/events`, אין כפילות segments (31 סה"כ, 30→31); הוספת `keepOpen`
+  ל-`makeMockFetch` (לא רק ל-`sseBody`/`sseResponse` הישירים)
+- **אגב תיקון M8**: הטסט הראשוני נכשל (2 fetch calls במקום 1) — לא בגלל באג ב-M8,
+  אלא כי שכחתי `keepOpen: true` ב-fixture (אותה תבנית חוזרת שכבר תוקנה ב-C1/C4/B1) —
+  ה-stream נסגר מיד וגרם ל-reconnect לגיטימי, לא קשור ל-re-entrancy. תוקן ב-fixture
+- typecheck נקי (0 שגיאות חדשות); lint נקי
+
 ## 2026-08-09 16:59
 
 ### slice remote-session-view — calev-heavy round 1 fix: M5 (getOrCreateHost race)

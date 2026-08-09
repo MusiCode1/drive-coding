@@ -104,6 +104,12 @@ export class SSEReader {
   readonly #doFetch: (url: string, init?: RequestInit) => Promise<Response>
   readonly #sleep: (ms: number) => Promise<void>
   #closed = false
+  // calev-heavy M7: close() didn't abort the in-flight fetch — the underlying
+  // socket/request stayed established (leaked) until the server eventually
+  // noticed the client was gone (or never did). Aborting on close() releases it
+  // immediately, and also unblocks any pending body reader.read() (which is what
+  // makes close() actually stop an active connection promptly, not just future ones).
+  #abortController: AbortController | null = null
 
   constructor(url: string, opts: SSEReaderOptions = {}) {
     this.#url = url
@@ -140,9 +146,10 @@ export class SSEReader {
     return { snapshot, patches }
   }
 
-  /** Stop reconnect attempts and close the patches stream. */
+  /** Stop reconnect attempts, abort any in-flight request, and close the patches stream. */
   close(): void {
     this.#closed = true
+    this.#abortController?.abort()
   }
 
   // ── internals ──────────────────────────────────────────────────────────────
@@ -155,7 +162,11 @@ export class SSEReader {
     snapshot: SessionState
     frames: AsyncGenerator<SSEFrame>
   }> {
-    const res = await this.#doFetch(this.#url, { headers: this.#headers })
+    this.#abortController = new AbortController()
+    const res = await this.#doFetch(this.#url, {
+      headers: this.#headers,
+      signal: this.#abortController.signal,
+    })
     if (!res.ok) {
       throw new Error(`SSEReader: fetch failed with status ${res.status}`)
     }

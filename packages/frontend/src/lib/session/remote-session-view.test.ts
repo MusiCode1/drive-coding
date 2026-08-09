@@ -105,6 +105,8 @@ function makePatch(version: number, overrides: Partial<Patch> = {}): Patch {
  */
 function makeMockFetch(opts: {
   events?: Array<{ event: string; data: string }>
+  /** Keep the SSE stream open (default false — matches this file's existing tests). */
+  keepOpen?: boolean
   onRpc?: (body: unknown) => void
   onReply?: (body: unknown) => void
 }): (url: string, init?: RequestInit) => Promise<Response> {
@@ -112,6 +114,7 @@ function makeMockFetch(opts: {
     if (url.includes("/events")) {
       return sseResponse(
         opts.events ?? [{ event: "snapshot", data: JSON.stringify(makeSnapshot()) }],
+        { keepOpen: opts.keepOpen },
       )
     }
     if (url.includes("/rpc")) {
@@ -180,6 +183,39 @@ describe("RemoteSessionView — connect()", () => {
     expect(results[0]).toEqual([patch])
     expect(view.state.title).toBe("hello")
     expect(view.state.version).toBe(1)
+  })
+
+  it("M8 (calev-heavy): connect() is re-entrant — a second call does not open a second SSE connection", async () => {
+    const snapshot = makeSnapshot()
+    const patch = makePatch(1, {
+      op: "append-segment",
+      targetId: "m_0",
+      segment: { id: "s_0", text: "once" },
+    })
+    const mockFetch = makeMockFetch({
+      keepOpen: true,
+      events: [
+        {
+          event: "snapshot",
+          data: JSON.stringify({
+            ...snapshot,
+            messages: [{ id: "m_0", role: "assistant", messageId: "p1", segments: [] }],
+          }),
+        },
+        { event: "patch", data: JSON.stringify(patch) },
+      ],
+    })
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+
+    // two concurrent connect() calls — must not open two SSE connections / drain loops
+    await Promise.all([view.connect(), view.connect()])
+    await readNPatchArrays(view.patches, 1)
+
+    const calls = (mockFetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
+    const eventsCalls = calls.filter(([url]) => typeof url === "string" && url.includes("/events"))
+    expect(eventsCalls).toHaveLength(1)
+    const msg = view.state.messages.find((m) => m.id === "m_0")
+    expect(msg && msg.role !== "tool" ? msg.segments.map((s) => s.text) : []).toEqual(["once"])
   })
 })
 

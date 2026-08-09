@@ -125,6 +125,25 @@ describe("SSEReader — connect() snapshot", () => {
     )
   })
 
+  it("M7 (calev-heavy): close() aborts the in-flight fetch via AbortSignal", async () => {
+    const snapshot = makeSnapshot()
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(makeSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]))
+
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+    await reader.connect()
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit]
+    const signal = init.signal as AbortSignal
+    expect(signal).toBeInstanceOf(AbortSignal)
+    expect(signal.aborted).toBe(false)
+
+    reader.close()
+
+    expect(signal.aborted).toBe(true)
+  })
+
   it("throws when fetch returns non-ok response", async () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 404 } as Response)
     const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
