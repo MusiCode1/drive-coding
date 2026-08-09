@@ -1,5 +1,5 @@
 /**
- * session-host.ts — SessionHost (C2).
+ * session-host.ts — SessionHost (C2) + createSessionHostFromConnection (C4).
  *
  * ACP client wrapper that holds SessionState and runs reduce on every
  * session/update notification. Exposes:
@@ -8,15 +8,27 @@
  *   - prompt(sessionId, content, meta?)  — synthesizes user message before client.prompt
  *   - newSession / loadSession / cancel  — delegate to AcpClient
  *
- * createSessionHost accepts a `createClient` factory (dependency injection):
- *   - In production: wraps createAcpClient + InProcessAcpTransport
- *   - In tests: returns a mock AcpClient, captures callbacks
+ * C2: createSessionHost — takes `createClient` factory (injectable for tests).
  *
- * ─── slice session-host-core C2 (TDD) ───
+ * C4: createSessionHostFromConnection — takes a ProviderConnection and wires:
+ *   - InProcessAcpTransport (conn.wire + conn.onCrash)
+ *   - AcpClient with PendingRequests for permission + elicitation
+ *   - Extended SessionHost API: respondPermission / respondElicitation
+ *
+ * ─── slice session-host-core C2+C4 (TDD + integration) ───
  */
 
-import type { SessionNotification } from "@agentclientprotocol/sdk"
-import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
+import type {
+  CreateElicitationRequest,
+  CreateElicitationResponse,
+  RequestPermissionRequest,
+  RequestPermissionResponse,
+  SessionNotification,
+} from "@agentclientprotocol/sdk"
+import type { AcpClient, AcpClientCallbacks, AcpClientOptions } from "@drive-coding/provider/client"
+import { createAcpClient } from "@drive-coding/provider/client"
+import type { ProviderConnection } from "@drive-coding/provider/connection"
+import type { AcpTransport } from "@drive-coding/provider/transport"
 import type { SessionState, Patch } from "@drive-coding/core/session"
 import {
   createInitialSessionState,
@@ -24,8 +36,10 @@ import {
   synthesizeUserMessage,
   applyUserMessage,
 } from "@drive-coding/core/session"
+import { createInProcessAcpTransport } from "./in-process-acp-transport.js"
+import { createPendingRequests } from "./pending-requests.js"
 
-// ─── Public API ─────────────────────────────────────────────────────────────
+// ─── C2: createSessionHost ───────────────────────────────────────────────────
 
 export type SessionHostDeps = {
   /**
@@ -72,8 +86,6 @@ export type SessionHost = {
   cancel(sessionId: string): Promise<void>
 }
 
-// ─── Factory ─────────────────────────────────────────────────────────────────
-
 /**
  * createSessionHost — constructs a SessionHost.
  * Calls deps.createClient with the internal update callback (AcpClientCallbacks).
@@ -83,7 +95,7 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
   // Internal mutable state (replaced on each update — immutable pattern)
   let currentState: SessionState = createInitialSessionState({ sessionId: null })
 
-  // Patches stream: we use a BYOB-style controller to push patches
+  // Patches stream
   let patchController: ReadableStreamDefaultController<Patch> | null = null
 
   const patchStream = new ReadableStream<Patch>({
@@ -112,15 +124,11 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
     emitPatches(result.patches)
   }
 
-  // Build callbacks — will be passed to createClient
   const callbacks: AcpClientCallbacks = {
     onUpdate: handleUpdate,
   }
 
-  // Create the AcpClient (may be real or mocked)
   const client = await deps.createClient(callbacks)
-
-  // ─── SessionHost implementation ───────────────────────────────────────────
 
   return {
     get state(): SessionState {
@@ -134,15 +142,10 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
       content: string,
       meta?: Record<string, unknown>,
     ): Promise<void> {
-      // 1. Synthesize user message with meta (opaque passthrough)
       const msg = synthesizeUserMessage(currentState, content, meta)
-
-      // 2. Apply to state + emit patch
       const result = applyUserMessage(currentState, msg)
       currentState = result.state
       emitPatches(result.patches)
-
-      // 3. Forward prompt to ACP client
       await client.prompt(sessionId, content)
     },
 
@@ -156,6 +159,207 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
 
     async cancel(sessionId: string) {
       await client.cancel(sessionId)
+    },
+  }
+}
+
+// ─── C4: createSessionHostFromConnection ─────────────────────────────────────
+
+/** Default timeout for permission/elicitation requests (30 seconds) */
+const DEFAULT_PERMISSION_TIMEOUT_MS = 30_000
+
+/** Default timeout for elicitation requests */
+const DEFAULT_ELICITATION_TIMEOUT_MS = 30_000
+
+export type SessionHostFromConnOptions = {
+  /** ACP initialize timeout (passed to createAcpClient). */
+  initTimeoutMs?: number
+  /** Timeout for requestPermission before auto-deny. Default: 30s */
+  permissionTimeoutMs?: number
+  /** Timeout for elicitation before auto-cancel. Default: 30s */
+  elicitationTimeoutMs?: number
+  /**
+   * For testing: override createAcpClient.
+   * In production: omit to use the real createAcpClient.
+   */
+  _createAcpClient?: (
+    transport: AcpTransport,
+    callbacks: AcpClientCallbacks,
+    opts?: AcpClientOptions,
+  ) => Promise<AcpClient>
+}
+
+/**
+ * ExtendedSessionHost — SessionHost + methods for responding to pending agent requests.
+ * S4 will expose these via HTTP endpoints (the UI calls respondPermission when user decides).
+ */
+export type ExtendedSessionHost = SessionHost & {
+  /**
+   * Respond to a pending permission request.
+   * requestId is a sequential counter (0, 1, 2...) assigned internally.
+   * UI reads host.state.pending.permission.requestId to know which id to respond to.
+   */
+  respondPermission(requestId: number, response: RequestPermissionResponse): void
+
+  /**
+   * Respond to a pending elicitation request.
+   * requestId is a sequential counter assigned internally.
+   */
+  respondElicitation(requestId: number, response: CreateElicitationResponse): void
+}
+
+/**
+ * createSessionHostFromConnection — production factory.
+ *
+ * Wires:
+ *   1. InProcessAcpTransport (conn.wire + conn.onCrash → AcpTransport byte-transport)
+ *   2. createAcpClient with permission + elicitation callbacks backed by PendingRequests
+ *   3. SessionHost (reduce + broadcast + user message synthesis)
+ *
+ * Returns ExtendedSessionHost with respondPermission / respondElicitation methods.
+ */
+export async function createSessionHostFromConnection(
+  conn: ProviderConnection,
+  opts: SessionHostFromConnOptions = {},
+): Promise<ExtendedSessionHost> {
+  const {
+    initTimeoutMs,
+    permissionTimeoutMs = DEFAULT_PERMISSION_TIMEOUT_MS,
+    elicitationTimeoutMs = DEFAULT_ELICITATION_TIMEOUT_MS,
+    _createAcpClient = createAcpClient,
+  } = opts
+
+  // Internal mutable state (same pattern as createSessionHost)
+  let currentState: SessionState = createInitialSessionState({ sessionId: null })
+  let patchController: ReadableStreamDefaultController<Patch> | null = null
+
+  const patchStream = new ReadableStream<Patch>({
+    start(controller) {
+      patchController = controller
+    },
+    cancel() {
+      patchController = null
+    },
+  })
+
+  function emitPatches(patches: Patch[]): void {
+    if (!patchController) return
+    for (const p of patches) {
+      try {
+        patchController.enqueue(p)
+      } catch {
+        // controller closed — ignore
+      }
+    }
+  }
+
+  function handleUpdate(notification: SessionNotification): void {
+    const result = reduce(currentState, notification.update)
+    currentState = result.state
+    emitPatches(result.patches)
+  }
+
+  // ── PendingRequests for permission + elicitation ──────────────────────────
+
+  let permissionSeq = 0
+  const permPending = createPendingRequests<RequestPermissionResponse>({
+    timeoutMs: permissionTimeoutMs,
+    defaultValue: { outcome: { outcome: "cancelled" } },
+  })
+
+  let elicitationSeq = 0
+  const elicitPending = createPendingRequests<CreateElicitationResponse>({
+    timeoutMs: elicitationTimeoutMs,
+    defaultValue: { action: "cancel" },
+  })
+
+  // ── Transport + AcpClient ─────────────────────────────────────────────────
+
+  const transport = createInProcessAcpTransport({
+    wire: conn.wire,
+    onCrash: conn.onCrash.bind(conn),
+  })
+
+  const clientOpts: AcpClientOptions = {}
+  if (initTimeoutMs !== undefined) {
+    clientOpts.initTimeoutMs = initTimeoutMs
+  }
+
+  async function handleRequestPermission(
+    params: RequestPermissionRequest,
+  ): Promise<RequestPermissionResponse> {
+    const requestId = permissionSeq++
+    return permPending.request(requestId)
+  }
+
+  async function handleCreateElicitation(
+    params: CreateElicitationRequest,
+  ): Promise<CreateElicitationResponse> {
+    const requestId = elicitationSeq++
+    return elicitPending.request(requestId)
+  }
+
+  const callbacks: AcpClientCallbacks = {
+    onUpdate: handleUpdate,
+    onRequestPermission: handleRequestPermission,
+    onCreateElicitation: handleCreateElicitation,
+  }
+
+  const client = await _createAcpClient(transport, callbacks, clientOpts)
+
+  // ── Register transport.onClose → session status disconnect ───────────────
+  // When the underlying connection crashes, update state to "disconnected".
+  // This ensures host.state.status reflects the connection lifecycle.
+  transport.onClose((_code, _reason) => {
+    const result = reduce(currentState, {
+      sessionUpdate: "turn_end",
+    })
+    // Update status to disconnected regardless of reduce result
+    currentState = {
+      ...result.state,
+      status: "disconnected" as const,
+    }
+  })
+
+  // ── ExtendedSessionHost ───────────────────────────────────────────────────
+
+  return {
+    get state(): SessionState {
+      return currentState
+    },
+
+    patches: patchStream,
+
+    async prompt(
+      sessionId: string,
+      content: string,
+      meta?: Record<string, unknown>,
+    ): Promise<void> {
+      const msg = synthesizeUserMessage(currentState, content, meta)
+      const result = applyUserMessage(currentState, msg)
+      currentState = result.state
+      emitPatches(result.patches)
+      await client.prompt(sessionId, content)
+    },
+
+    async newSession(opts: { cwd: string; _meta?: Record<string, unknown> }) {
+      return client.newSession(opts) as Promise<{ sessionId: string }>
+    },
+
+    async loadSession(opts: { cwd: string; sessionId: string; _meta?: Record<string, unknown> }) {
+      return client.loadSession(opts) as Promise<{ sessionId: string }>
+    },
+
+    async cancel(sessionId: string) {
+      await client.cancel(sessionId)
+    },
+
+    respondPermission(requestId: number, response: RequestPermissionResponse): void {
+      permPending.respond(requestId, response)
+    },
+
+    respondElicitation(requestId: number, response: CreateElicitationResponse): void {
+      elicitPending.respond(requestId, response)
     },
   }
 }
