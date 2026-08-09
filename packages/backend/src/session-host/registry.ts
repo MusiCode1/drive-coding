@@ -21,6 +21,18 @@
  * §5.1). לכן ברגע שה-host נוצר (lazy, בקריאה הראשונה) — הוא מקבל session אוטומטית
  * מ-host.newSession({cwd}), כך שה-snapshot הראשון שה-SSE שולח כבר נושא sessionId
  * אמיתי. cwd מגיע מ-connectionRegistry.getCwd(agentId) (נשמר ב-connect() המקורי).
+ *
+ * In-flight memoization (calev-heavy M5, slice remote-session-view fix round 1):
+ * getOrCreateHost is async with TWO awaits (_createHostFn + host.newSession) before
+ * `map.set` — two concurrent callers for the same agentId (e.g. two browser tabs
+ * opening the SSE connection at once) would each race through both awaits, each
+ * creating its own host + calling host.newSession() (a real ACP session on the
+ * agent!) before either one reaches `map.set`. Measured: hostCreations=3,
+ * newSession=3 for 2 concurrent callers, and the SSE stream one caller subscribed
+ * to belonged to an orphaned host that never received further patches. Fixed with
+ * the same pattern as connection-registry.ts's dedup guard ("no await between the
+ * check and the registration") — an agentId → Promise<HostEntry | undefined> map
+ * so concurrent callers share the same in-flight creation.
  */
 
 import type { ProviderConnection } from "@drive-coding/provider/connection"
@@ -82,6 +94,36 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
   } = deps
 
   const map = new Map<string, HostEntry>()
+  // M5: in-flight creation promises — dedups concurrent getOrCreateHost(agentId)
+  // callers so only one host + one ACP session get created per agentId.
+  const inFlight = new Map<string, Promise<HostEntry | undefined>>()
+
+  async function doCreate(agentId: string): Promise<HostEntry | undefined> {
+    // Look up connection
+    const conn = connectionRegistry.get(agentId)
+    if (!conn) return undefined
+
+    // Create host + broadcaster
+    const host = await _createHostFn(conn)
+    const broadcaster = _createBroadcasterFn(host.patches)
+
+    // Auto session creation (הכרעה 1): ה-host נולד בלי session — ניצור אחד עכשיו
+    // כך שה-snapshot הראשון (SSE frame-zero) כבר נושא sessionId אמיתי.
+    // אם כבר יש sessionId (למשל host הוזרק מוכן-לשימוש בבדיקות) — לא יוצרים שוב.
+    if (!host.state.sessionId) {
+      const cwd = connectionRegistry.getCwd(agentId)
+      if (!cwd) {
+        throw new Error(
+          `AgentSessionRegistry: no cwd registered for agentId ${agentId} — cannot auto-create session`,
+        )
+      }
+      await host.newSession({ cwd })
+    }
+
+    const entry: HostEntry = { host, broadcaster }
+    map.set(agentId, entry)
+    return entry
+  }
 
   return {
     getHost(agentId: string): ExtendedSessionHost | undefined {
@@ -93,30 +135,16 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       const existing = map.get(agentId)
       if (existing) return existing
 
-      // Look up connection
-      const conn = connectionRegistry.get(agentId)
-      if (!conn) return undefined
+      // Return the in-flight creation promise if one is already running — no
+      // await happens between this check and inFlight.set below (M5 guard).
+      const existingInFlight = inFlight.get(agentId)
+      if (existingInFlight) return existingInFlight
 
-      // Create host + broadcaster
-      const host = await _createHostFn(conn)
-      const broadcaster = _createBroadcasterFn(host.patches)
-
-      // Auto session creation (הכרעה 1): ה-host נולד בלי session — ניצור אחד עכשיו
-      // כך שה-snapshot הראשון (SSE frame-zero) כבר נושא sessionId אמיתי.
-      // אם כבר יש sessionId (למשל host הוזרק מוכן-לשימוש בבדיקות) — לא יוצרים שוב.
-      if (!host.state.sessionId) {
-        const cwd = connectionRegistry.getCwd(agentId)
-        if (!cwd) {
-          throw new Error(
-            `AgentSessionRegistry: no cwd registered for agentId ${agentId} — cannot auto-create session`,
-          )
-        }
-        await host.newSession({ cwd })
-      }
-
-      const entry: HostEntry = { host, broadcaster }
-      map.set(agentId, entry)
-      return entry
+      const promise = doCreate(agentId).finally(() => {
+        inFlight.delete(agentId)
+      })
+      inFlight.set(agentId, promise)
+      return promise
     },
 
     getBroadcaster(agentId: string): PatchesBroadcaster | undefined {

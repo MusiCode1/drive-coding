@@ -217,6 +217,35 @@ describe("AgentSessionRegistry", () => {
       expect(createHostFn).toHaveBeenCalledTimes(2)
     })
 
+    // ─── calev-heavy M5: concurrent getOrCreateHost(agentId) must not race ───
+
+    it("M5: two concurrent calls for the same agentId create exactly one host + one session", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      const mockHost = makeMockHost(null)
+      // simulate real async work — a tick between "start creating" and "resolved",
+      // wide enough for a second concurrent caller to race in without the fix
+      const createHostFn = vi
+        .fn()
+        .mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(mockHost), 0)))
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: createHostFn,
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      const [r1, r2] = await Promise.all([
+        registry.getOrCreateHost("agent-1"),
+        registry.getOrCreateHost("agent-1"),
+      ])
+
+      expect(createHostFn).toHaveBeenCalledTimes(1)
+      expect(mockHost.newSession).toHaveBeenCalledTimes(1)
+      expect(r1).toBe(r2)
+      expect(r1?.host).toBe(mockHost)
+    })
+
     // ─── slice remote-session-view, הכרעה 1: auto session creation ───
 
     it("auto-creates a session via host.newSession({cwd}) when host has no sessionId", async () => {

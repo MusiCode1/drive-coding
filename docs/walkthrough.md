@@ -1,5 +1,33 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 16:59
+
+### slice remote-session-view — calev-heavy round 1 fix: M5 (getOrCreateHost race)
+
+#### מה בוצע?
+
+**packages/backend/src/session-host/registry.ts**
+
+- **M5 (major) — `getOrCreateHost` בלי memoization ל-in-flight**: `map.set`
+  קורה אחרי **שני** `await` (`_createHostFn` + `host.newSession`). מדוד: שתי
+  בקשות מקבילות → `hostCreations=3, newSession=3, same host=false` — broadcaster
+  שה-SSE נרשם אליו שייך ל-host יתום שלעולם לא יקבל patch. הרייס היה קיים חלקית
+  ב-S4; הכרעה 1 הרחיבה את החלון והוסיפה session ACP אמיתי לכל קורא מתחרה. תוקן
+  בדפוס של `connection-registry.ts` ("אין await בין הבדיקה ל-רישום"): מפה
+  `agentId → Promise<HostEntry | undefined>` (`inFlight`) — קוראים מתחרים
+  לאותו agentId משתפים את אותה הבטחת-יצירה. `getOrCreateHost` נשאר סינכרוני
+  לגמרי עד `inFlight.set` (בלי await ביניים), כך שקריאות עוקבות סינכרוניות
+  (כמו `Promise.all([...])`) תמיד ימצאו את ה-in-flight promise של הקודמת
+
+#### בדיקות
+
+- `registry.test.ts`: טסט חדש — שתי קריאות מקבילות ל-`getOrCreateHost` עם אותו
+  agentId (עם `_createHostFn` שממתין tick אמיתי כדי לדמות race) → `_createHostFn`
+  ו-`host.newSession` נקראים בדיוק פעם אחת, שני הקוראים מקבלים את אותו entry
+  (17 סה"כ, 16→17)
+- כל `packages/backend/src/session-host/`: 107 טסטים ירוקים
+- typecheck נקי; lint נקי
+
 ## 2026-08-09 16:57
 
 ### slice remote-session-view — calev-heavy round 1 fix: M4 (HTTP errors swallowed)
