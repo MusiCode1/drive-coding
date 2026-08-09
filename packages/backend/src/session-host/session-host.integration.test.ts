@@ -52,6 +52,21 @@ async function readOnePatchSync(stream: ReadableStream<Patch>): Promise<Patch> {
   }
 }
 
+/** promise נשלטת — לבקרת תזמון client.prompt/client.cancel בטסטים של גבולות-תור (C3). */
+function deferred<T>(): {
+  promise: Promise<T>
+  resolve: (v: T) => void
+  reject: (e: unknown) => void
+} {
+  let resolve!: (v: T) => void
+  let reject!: (e: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 // ── mock helpers ─────────────────────────────────────────────────────────────
 
 function makeMockAcpClient(overrides: Partial<AcpClient> = {}): AcpClient {
@@ -539,6 +554,285 @@ describe("createSessionHostFromConnection", () => {
       await elicResponse
       expect(host.state.pending.permission).toBeNull()
       expect(host.state.pending.elicitation).toBeNull()
+    })
+  })
+
+  // ─── slice session-host-pending-surface C3: turn boundaries (prompt/cancel) ───
+
+  describe("C3 — turn boundaries: host.prompt", () => {
+    it("emits three patches in order: add-message → waiting → idle; turnState is 'waiting' in between", async () => {
+      const { host, mockClient } = await setup()
+      const d = deferred<void>()
+      ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => d.promise)
+      const reader = host.patches.getReader()
+
+      const promptPromise = host.prompt("s1", "hello")
+
+      const p1 = await reader.read()
+      expect(p1.value?.op).toBe("add-message")
+      const p2 = await reader.read()
+      expect(p2.value).toMatchObject({ op: "update-session", changes: { turnState: "waiting" } })
+      expect(host.state.turnState).toBe("waiting") // held here — client.prompt hasn't resolved yet
+
+      d.resolve(undefined)
+      const p3 = await reader.read()
+      expect(p3.value).toMatchObject({ op: "update-session", changes: { turnState: "idle" } })
+      reader.releaseLock()
+
+      await promptPromise
+      expect(mockClient.prompt).toHaveBeenCalledWith("s1", "hello")
+    })
+
+    it("turnState returns to idle after a turn, and a new turn raises it to waiting again (ratchet closed)", async () => {
+      const { host, mockClient } = await setup()
+      const d = deferred<void>()
+      ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => d.promise)
+
+      const p1 = host.prompt("s1", "first")
+      expect(host.state.turnState).toBe("waiting")
+      d.resolve(undefined)
+      await p1
+      expect(host.state.turnState).toBe("idle")
+
+      const d2 = deferred<void>()
+      ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => d2.promise)
+      const p2 = host.prompt("s1", "second")
+      expect(host.state.turnState).toBe("waiting")
+      d2.resolve(undefined)
+      await p2
+      expect(host.state.turnState).toBe("idle")
+    })
+
+    it("failed turn: emits a single idle patch carrying lastTurnError; host.prompt still throws to the direct caller", async () => {
+      const { host, mockClient } = await setup()
+      const err = { message: "Internal error", data: { details: "actual reason" } }
+      ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockRejectedValue(err)
+
+      const reader = host.patches.getReader()
+      const promptPromise = host.prompt("s1", "boom")
+
+      await reader.read() // add-message
+      await reader.read() // waiting
+      await expect(promptPromise).rejects.toBe(err)
+      const failPatch = await reader.read()
+      reader.releaseLock()
+
+      expect(failPatch.value).toMatchObject({
+        op: "update-session",
+        changes: { turnState: "idle" },
+      })
+      expect(host.state.turnState).toBe("idle")
+      expect(host.state.lastTurnError?.message).toBe("actual reason") // msgOf priority: data.details
+    })
+
+    it("a successful turn after a failed one clears lastTurnError (via applyTurnStart)", async () => {
+      const { host, mockClient } = await setup()
+      ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error("first fails"),
+      )
+      await expect(host.prompt("s1", "first")).rejects.toThrow("first fails")
+      expect(host.state.lastTurnError?.message).toBe("first fails")
+
+      ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined)
+      await host.prompt("s1", "second")
+      expect(host.state.lastTurnError).toBeNull()
+    })
+
+    it("prompt failure without cancellation writes lastTurnError", async () => {
+      const { host, mockClient } = await setup()
+      ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("network down"))
+
+      await expect(host.prompt("s1", "x")).rejects.toThrow("network down")
+      expect(host.state.lastTurnError?.message).toBe("network down")
+    })
+
+    it("two overlapping prompts: A resolving after B started emits nothing for A; B's waiting survives", async () => {
+      const { host, mockClient } = await setup()
+      const dA = deferred<void>()
+      const dB = deferred<void>()
+      const promptMock = mockClient.prompt as ReturnType<typeof vi.fn>
+      promptMock.mockImplementationOnce(() => dA.promise)
+      promptMock.mockImplementationOnce(() => dB.promise)
+
+      const pA = host.prompt("s1", "A")
+      const pB = host.prompt("s1", "B")
+      expect(host.state.turnState).toBe("waiting")
+
+      dA.resolve(undefined)
+      await pA
+      // A must not have emitted an idle patch — the state-level check is the assertion
+      // (a phantom emit from A would flip this back to "idle").
+      expect(host.state.turnState).toBe("waiting") // still B's waiting — A didn't touch it
+
+      dB.resolve(undefined)
+      await pB
+      expect(host.state.turnState).toBe("idle")
+    })
+  })
+
+  describe("C3 — turn boundaries: host.cancel", () => {
+    it("cancel during an active turn emits idle without lastTurnError", async () => {
+      const { host, mockClient } = await setup()
+      const dPrompt = deferred<void>()
+      ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => dPrompt.promise)
+
+      const promptPromise = host.prompt("s1", "hi")
+      expect(host.state.turnState).toBe("waiting")
+
+      await host.cancel("s1")
+      expect(host.state.turnState).toBe("idle")
+      expect(host.state.lastTurnError).toBeNull()
+
+      dPrompt.reject(new Error("cancelled by agent"))
+      await promptPromise.catch(() => {})
+    })
+
+    it("client.cancel itself throwing is swallowed — cancel still emits idle, no lastTurnError", async () => {
+      const { host, mockClient } = await setup()
+      const dPrompt = deferred<void>()
+      ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => dPrompt.promise)
+      ;(mockClient.cancel as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("cancel RPC failed"),
+      )
+
+      const promptPromise = host.prompt("s1", "hi")
+      await host.cancel("s1")
+      expect(host.state.turnState).toBe("idle")
+      expect(host.state.lastTurnError).toBeNull()
+
+      dPrompt.reject(new Error("cancelled"))
+      await promptPromise.catch(() => {})
+    })
+
+    it("cancel on an already-idle state emits zero patches (distinguished from client.cancel throwing)", async () => {
+      const { host } = await setup()
+      expect(host.state.turnState).toBe("idle")
+
+      const reader = host.patches.getReader()
+      await host.cancel("s1")
+      const race = await Promise.race([
+        reader.read().then(() => "patch" as const),
+        new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 50)),
+      ])
+      reader.releaseLock()
+      expect(race).toBe("timeout") // no patch arrived — full no-op
+    })
+
+    it("two consecutive cancels: the second is a no-op", async () => {
+      const { host, mockClient } = await setup()
+      const dPrompt = deferred<void>()
+      ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => dPrompt.promise)
+
+      const promptPromise = host.prompt("s1", "hi")
+      await host.cancel("s1")
+      expect(host.state.turnState).toBe("idle")
+
+      const versionAfterFirstCancel = host.state.version
+      await host.cancel("s1")
+      expect(host.state.version).toBe(versionAfterFirstCancel) // second cancel: no-op, no version bump
+
+      dPrompt.reject(new Error("cancelled"))
+      await promptPromise.catch(() => {})
+    })
+
+    it("cancel then a new prompt that fails: lastTurnError IS written (the stale cancel marker does not apply)", async () => {
+      const { host, mockClient } = await setup()
+      const dFirst = deferred<void>()
+      ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementationOnce(() => dFirst.promise)
+
+      const firstPrompt = host.prompt("s1", "first")
+      await host.cancel("s1")
+      dFirst.reject(new Error("cancelled"))
+      await firstPrompt.catch(() => {})
+      expect(host.state.lastTurnError).toBeNull() // cancellation is not a failure
+
+      ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error("second fails for real"),
+      )
+      await expect(host.prompt("s1", "second")).rejects.toThrow("second fails for real")
+      expect(host.state.lastTurnError?.message).toBe("second fails for real")
+    })
+
+    it("cancel when no active turn is a full no-op — an existing lastTurnError survives", async () => {
+      const { host, mockClient } = await setup()
+      ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("boom"))
+      await expect(host.prompt("s1", "x")).rejects.toThrow("boom")
+      expect(host.state.lastTurnError?.message).toBe("boom")
+
+      const versionBefore = host.state.version
+      await host.cancel("s1") // no active turn — must not wipe lastTurnError
+      expect(host.state.version).toBe(versionBefore)
+      expect(host.state.lastTurnError?.message).toBe("boom")
+    })
+  })
+
+  describe("C3 — cancel-tail semantics (the one guard: turn === turnSeq)", () => {
+    it("a late chunk before the in-flight prompt resolves closes the tail with an idle patch", async () => {
+      const { host, callbacks, mockClient } = await setup()
+      const dPrompt = deferred<void>()
+      ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => dPrompt.promise)
+
+      const promptPromise = host.prompt("s1", "hi")
+      await host.cancel("s1") // first idle emission
+      expect(host.state.turnState).toBe("idle")
+
+      // a late chunk arrives before the in-flight prompt resolves — raises the ratchet
+      callbacks.onUpdate(
+        makeSessionNotification({
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "late" },
+        }),
+      )
+      expect(host.state.turnState).toBe("responding")
+
+      dPrompt.resolve(undefined) // the in-flight prompt now resolves (ACP resolves prompt on cancel)
+      await promptPromise
+      // the second, unguarded-by-cancelledTurn emission cleans the tail
+      expect(host.state.turnState).toBe("idle")
+    })
+
+    it("no late update ⇒ prompt resolving after cancel is a full no-op (already idle)", async () => {
+      const { host, mockClient } = await setup()
+      const dPrompt = deferred<void>()
+      ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => dPrompt.promise)
+
+      const promptPromise = host.prompt("s1", "hi")
+      await host.cancel("s1")
+      const versionAfterCancel = host.state.version
+
+      dPrompt.resolve(undefined)
+      await promptPromise
+      expect(host.state.turnState).toBe("idle")
+      expect(host.state.version).toBe(versionAfterCancel) // no-op — nothing raised the ratchet
+    })
+
+    it("scenario 2 — a new prompt while cancel is in flight: B's waiting survives", async () => {
+      const { host, mockClient } = await setup()
+      const dPromptA = deferred<void>()
+      const dCancel = deferred<void>()
+      const dPromptB = deferred<void>()
+      const promptMock = mockClient.prompt as ReturnType<typeof vi.fn>
+      promptMock.mockImplementationOnce(() => dPromptA.promise)
+      ;(mockClient.cancel as ReturnType<typeof vi.fn>).mockImplementation(() => dCancel.promise)
+
+      const promptA = host.prompt("s1", "A") // turn 1 → waiting
+      const cancelCall = host.cancel("s1") // marks cancelledTurn=1, awaits client.cancel (pending)
+
+      promptMock.mockImplementationOnce(() => dPromptB.promise)
+      const promptB = host.prompt("s1", "B") // turn 2 → waiting (turnSeq now 2)
+      expect(host.state.turnState).toBe("waiting")
+
+      dCancel.resolve(undefined) // cancel's client.cancel resolves; turn(1) !== turnSeq(2) → no emit
+      await cancelCall
+      expect(host.state.turnState).toBe("waiting") // B's waiting survived
+
+      dPromptA.resolve(undefined) // A resolves; turn(1) !== turnSeq(2) → no emit
+      await promptA
+      expect(host.state.turnState).toBe("waiting") // still B's waiting
+
+      dPromptB.resolve(undefined)
+      await promptB
+      expect(host.state.turnState).toBe("idle")
     })
   })
 

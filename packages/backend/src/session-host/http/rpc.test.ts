@@ -13,6 +13,8 @@
  *   - extMethod: calls host.extMethod
  *   - setSessionModel: calls host.setSessionModel (slice remote-session-view C4)
  *   - 400 for unknown method
+ *
+ * ─── slice session-host-pending-surface C3-ד (TDD): non-blocking prompt/cancel ───
  */
 
 import type { SessionState } from "@drive-coding/core/session"
@@ -258,6 +260,114 @@ describe("POST /api/agents/:id/rpc", () => {
 
       const res = await postRpc(app, "agent-1", { method: "bogus", params: {} })
       expect(res.status).toBe(400)
+    })
+  })
+
+  describe("invalid JSON body", () => {
+    it("returns 400 when the body is not valid JSON", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = (await app.request(`/api/agents/agent-1/rpc`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{not valid json",
+      })) as unknown as MockResponse
+      expect(res.status).toBe(400)
+    })
+  })
+
+  // ─── slice session-host-pending-surface C3-ד: non-blocking prompt/cancel ───
+
+  describe("prompt/cancel: non-blocking (202 immediately, ArkType validation, no unhandled rejection)", () => {
+    it("prompt: returns 202 before host.prompt resolves (never-resolving mock)", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => new Promise(() => {}))
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "prompt",
+        params: { sessionId: "s1", content: "hi" },
+      })
+      expect(res.status).toBe(202)
+    })
+
+    it("prompt: missing sessionId/content → 400 (ArkType), host.prompt never called", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "prompt", params: { sessionId: "s1" } })
+      expect(res.status).toBe(400)
+      expect(host.prompt).not.toHaveBeenCalled()
+    })
+
+    it("host.prompt that rejects produces no unhandled rejection and no 500", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.prompt as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("turn failed"))
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const rejections: unknown[] = []
+      const onRejection = (reason: unknown): void => {
+        rejections.push(reason)
+      }
+      process.on("unhandledRejection", onRejection)
+      try {
+        const res = await postRpc(app, "agent-1", {
+          method: "prompt",
+          params: { sessionId: "s1", content: "hi" },
+        })
+        expect(res.status).toBe(202)
+        // let the fire-and-forget .catch settle before asserting
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      } finally {
+        process.off("unhandledRejection", onRejection)
+      }
+      expect(rejections).toHaveLength(0)
+    })
+
+    it("cancel: returns 202 before host.cancel resolves (never-resolving mock)", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.cancel as ReturnType<typeof vi.fn>).mockImplementation(() => new Promise(() => {}))
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "cancel", params: { sessionId: "s1" } })
+      expect(res.status).toBe(202)
+    })
+
+    it("cancel: missing sessionId → 400 (ArkType), host.cancel never called", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "cancel", params: {} })
+      expect(res.status).toBe(400)
+      expect(host.cancel).not.toHaveBeenCalled()
+    })
+
+    it("host.cancel that rejects produces no unhandled rejection and no 500", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.cancel as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("cancel failed"))
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const rejections: unknown[] = []
+      const onRejection = (reason: unknown): void => {
+        rejections.push(reason)
+      }
+      process.on("unhandledRejection", onRejection)
+      try {
+        const res = await postRpc(app, "agent-1", { method: "cancel", params: { sessionId: "s1" } })
+        expect(res.status).toBe(202)
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      } finally {
+        process.off("unhandledRejection", onRejection)
+      }
+      expect(rejections).toHaveLength(0)
     })
   })
 })

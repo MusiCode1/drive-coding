@@ -29,6 +29,8 @@ import type {
 import type { Patch, SessionState } from "@drive-coding/core/session"
 import {
   applyPendingRequest,
+  applyTurnEnd,
+  applyTurnStart,
   applyUserMessage,
   clearPendingRequest,
   createInitialSessionState,
@@ -290,6 +292,32 @@ export async function createSessionHostFromConnection(
     emitPatches(result.patches)
   }
 
+  // ── C3: turn boundaries ─────────────────────────────────────────────────
+  // turnSeq — מקודם רק ב-prompt (תור חדש). cancelledTurn — מסומן (❌ לא מקודם)
+  // ע"י cancel, ומשפיע רק על מטען-השגיאה — לעולם לא על הפליטה עצמה.
+  let turnSeq = 0
+  let cancelledTurn = -1
+
+  /** מיישם {state,patches} על currentState + פולט — עוזר-IO מקומי. */
+  function emit(r: { state: SessionState; patches: Patch[] }): void {
+    currentState = r.state
+    emitPatches(r.patches)
+  }
+
+  /** אותה קדימות כמו formatAcpError ב-FE: data.details → data.message → message → String(e). */
+  function msgOf(err: unknown): string {
+    if (err && typeof err === "object") {
+      const e = err as { message?: unknown; data?: unknown }
+      if (e.data && typeof e.data === "object") {
+        const data = e.data as { details?: unknown; message?: unknown }
+        if (typeof data.details === "string" && data.details.length > 0) return data.details
+        if (typeof data.message === "string" && data.message.length > 0) return data.message
+      }
+      if (typeof e.message === "string" && e.message.length > 0) return e.message
+    }
+    return String(err)
+  }
+
   // ── PendingRequests for permission + elicitation ──────────────────────────
 
   let permissionSeq = 0
@@ -385,16 +413,33 @@ export async function createSessionHostFromConnection(
 
     patches: patchStream,
 
+    // ── C3: turn boundaries — mirrors LocalSessionView.prompt/cancel (waiting
+    // לפני ה-await, idle בשני הענפים), עם סטייה אחת מוצהרת: שתי הפליטות (הצלחה
+    // וגם cancel) מגודרות ב-`turn === turnSeq` — "התור שלי עדיין הנוכחי". ─────
     async prompt(
       sessionId: string,
       content: string,
       meta?: Record<string, unknown>,
     ): Promise<void> {
       const msg = synthesizeUserMessage(currentState, content, meta)
-      const result = applyUserMessage(currentState, msg)
-      currentState = result.state
-      emitPatches(result.patches)
-      await client.prompt(sessionId, content)
+      const applied = applyUserMessage(currentState, msg)
+      currentState = applied.state
+      emitPatches(applied.patches) // 1. add-message (מלכודת ג' — חייב להיות ראשון)
+
+      const turn = ++turnSeq
+      emit(applyTurnStart(currentState)) // 2. waiting — לפני ה-await
+      try {
+        await client.prompt(sessionId, content)
+        if (turn === turnSeq) emit(applyTurnEnd(currentState)) // 3א. הצלחה
+      } catch (err) {
+        if (turn === turnSeq) {
+          // cancelledTurn הוא סימון בלבד: משפיע רק על מטען-השגיאה, לעולם לא
+          // על הפליטה (הגדר כבר לעיל היא turn === turnSeq, ובה בלבד).
+          const error = turn === cancelledTurn ? undefined : { message: msgOf(err), at: Date.now() }
+          emit(applyTurnEnd(currentState, error)) // 3ב.
+        }
+        throw err // rethrow — הקורא הישיר עדיין רואה את השגיאה
+      }
     },
 
     async newSession(opts: { cwd: string; _meta?: Record<string, unknown> }) {
@@ -412,7 +457,14 @@ export async function createSessionHostFromConnection(
     },
 
     async cancel(sessionId: string) {
-      await client.cancel(sessionId)
+      const turn = turnSeq // מסמן, ❌ לא מקדם
+      cancelledTurn = turn
+      try {
+        await client.cancel(sessionId)
+      } catch {
+        // best-effort — תואם ל-local
+      }
+      if (turn === turnSeq) emit(applyTurnEnd(currentState)) // אותה גדר בדיוק כמו ב-prompt
     },
 
     respondPermission(requestId: number, response: RequestPermissionResponse): void {

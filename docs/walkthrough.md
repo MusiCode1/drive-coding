@@ -1,6 +1,65 @@
 # Walkthrough — drive-coding
 
-## 2026-08-09 20:01
+## 2026-08-09 20:10
+
+### slice session-host-pending-surface — C3: גבולות-תור + ראוט לא-חוסם (TDD)
+
+C3 סוגר את "פער ב'" מהבריף: `turnState` היה ratchet חד-כיווני בשרת (עולה,
+לעולם לא יורד), ובמקביל `rpc.ts` סתר את התיעוד של עצמו והחזיק את חיבור ה-HTTP
+פתוח לאורך תור שלם. שני התיקונים באו יחד באותו checkpoint — פריט אחד, לא שניים
+(פליטת גבולות-תור בלי ראוט לא-חוסם היא חצי-פתרון מזיק).
+
+#### מה בוצע?
+
+**packages/backend/src/session-host/session-host.ts** — `prompt`/`cancel` ב-
+`createSessionHostFromConnection` בלבד (`createSessionHost` הפשוט **לא השתנה**):
+
+- `prompt`: `add-message` → `applyTurnStart` (waiting, לפני ה-await) → `await
+  client.prompt` → `applyTurnEnd` בהצלחה או בכשל (`try/catch`, לא `finally` —
+  כשל חייב להיבדל מהצלחה). `host.prompt` **עדיין זורק** לקורא הישיר.
+- `cancel`: מסמן `cancelledTurn = turnSeq` (❌ לא מקדם), `await client.cancel`
+  (best-effort, catch ריק), ואז פולט `idle` **באותה גדר בדיוק** כמו ב-prompt.
+- 🔴 **הגדר היחידה: `turn === turnSeq`** — בשתי הפליטות (הצלחה/כשל ב-prompt,
+  והפליטה ב-cancel). `cancelledTurn` הוא סימון בלבד שמשפיע **רק** על מטען-
+  השגיאה (`turn === cancelledTurn ⇒ error = undefined`) — לעולם לא על הפליטה
+  עצמה. זו הסמנטיקה שסגרה את "זנב-הביטול": ה-`prompt` שנפתר אחרי `cancel`
+  פולט `idle` שוב, בלי גדר עליו — זו הפליטה שמנקה צ'אנק מאוחר שהרים את ה-ratchet
+  בין הביטול להיפתרות (בדיוק כמו ב-`LocalSessionView`, ששם קורות שתי פליטות
+  `idle` בביטול).
+- `msgOf(err)`: עוזר IO מקומי, אותה קדימות כמו `formatAcpError` ב-FE
+  (`data.details → data.message → message → String(e)`).
+
+**packages/backend/src/session-host/http/rpc.ts** — `prompt`/`cancel` הפכו
+ללא-חוסמים: ולידציית ArkType (`PromptParams`/`CancelParams`, תקדים
+`delivery/http-agents.ts`) על הפרמטרים (כשל סינכרוני → 400, כמו קודם), ואז
+`void host.prompt(...).catch(log.warn)` בלי `await` — 202 חוזר מיד. ה-`.catch`
+הוא רשת-ביטחון ללוג בלבד (מונע unhandledRejection) — לא `() => {}` ריק, כי
+כשל-ביצוע כבר עבר לערוץ ה-state (`lastTurnError`). `c.req.json()` עטוף
+try/catch → 400 על JSON לא-תקין. `createLogger("backend.session-host.rpc")`
+— הלוגר הראשון בתיקיית `session-host/`.
+
+#### בדיקות (TDD)
+
+`session-host.integration.test.ts` — 15 טסטים חדשים בשלושה describe blocks
+(`host.prompt` / `host.cancel` / cancel-tail semantics), עם `deferred()` promises
+לבקרת תזמון `client.prompt`/`client.cancel`: שלושה patches בסדר עם `waiting`
+ביניהם · ה-ratchet נסגר (idle→waiting→idle) · כשל פולט patch יחיד עם
+`lastTurnError` (ו-`msgOf` priority: `data.details`) · תור מוצלח אחרי כשל
+מנקה `lastTurnError` · זנב-הביטול (שני תרחישים: צ'אנק מאוחר מרים ⇒ patch שני
+מנקה; שום דבר לא הרים ⇒ no-op) · תרחיש 2 (prompt חדש בזמן שהביטול באוויר —
+waiting של B שורד) · cancel על תור פעיל/idle/כפול · client.cancel שזורק
+(נבלע, idle כרגיל) · שני prompts חופפים.
+`rpc.test.ts` — 8 טסטים חדשים: 202 לפני שה-Promise נפתר (mock שלא נפתר) ·
+400 על פרמטרים חסרים (ArkType) · host.prompt/cancel שזורקים לא מייצרים
+unhandledRejection ולא 500 (נבדק עם listener זמני על `process`) · JSON לא-תקין
+→ 400.
+`bunx vitest run session-host.integration.test.ts rpc.test.ts`: 62/62 ירוק.
+`bunx vitest run packages/backend/src/session-host`: 139/139 ירוק.
+`bunx vitest run packages/backend`: 626/626 ירוק (חוץ מ-`https-serve.test.ts`
+— כשל pre-existing לא-קשור, Windows path בסביבת ה-CI). typecheck: DELTA-CHECK
+מול `ac376e8` — אפס שגיאות חדשות.
+
+
 
 ### slice session-host-pending-surface — C2: הצפת pending ב-SessionHost (TDD)
 
