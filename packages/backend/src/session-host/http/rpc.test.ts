@@ -73,12 +73,28 @@ function makeApp(registry: AgentSessionRegistry): Hono {
   return app
 }
 
-async function postRpc(app: Hono, agentId: string, body: unknown): Promise<Response> {
-  return app.request(`/api/agents/${agentId}/rpc`, {
+/**
+ * MockResponse — structural subset of Response actually used by the tests below.
+ *
+ * calev-heavy L10: `app.request()` (Hono) declares its return type in terms of the
+ * ambient global `Response`, which in this package's tsconfig (`types: ["bun"]`)
+ * conflicts with DOM lib's `Response` — every `.status`/`.json()` access on the
+ * result was a TS2339 error (pre-existing in this same file before this slice;
+ * the setSessionModel tests below added 2 more instances of the identical error by
+ * following the existing pattern — that's what L10 flagged as "+2 new errors").
+ * Fixing the project-wide type conflict is out of scope here (touches global
+ * tsconfig, not this slice). This local structural type sidesteps the ambiguous
+ * `Response` name entirely for the one function that needs it.
+ */
+type MockResponse = { status: number; json(): Promise<{ version?: number; error?: string }> }
+
+async function postRpc(app: Hono, agentId: string, body: unknown): Promise<MockResponse> {
+  const res = await app.request(`/api/agents/${agentId}/rpc`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   })
+  return res as unknown as MockResponse
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────

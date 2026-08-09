@@ -1,5 +1,32 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 17:06
+
+### slice remote-session-view — calev-heavy round 1 fix: L10 (typecheck accuracy)
+
+#### מה בוצע?
+
+**packages/backend/src/session-host/http/rpc.test.ts**
+
+- **L10 (minor אבל "תקן ואל תצהיר") — +2 שגיאות typecheck חדשות ב-C4**: commit
+  `8a8cc46` הצהיר "typecheck נקי (0 שגיאות חדשות)" — לא מדויק. הטסטים החדשים
+  ל-`setSessionModel` הוסיפו 2 מופעים נוספים לאותה שגיאה שיטתית שכבר קיימת בקובץ
+  הזה: `app.request()` (Hono) מוגדר במונחי `Response` הגלובלי, שמתנגש עם
+  `types: ["bun"]` בטיפוסי הpackage — כל `res.status`/`res.json()` הוא TS2339.
+  תיקון פרויקטלי (tsconfig גלובלי) מחוץ להיקף. תוקן מקומית: `postRpc` מקבל טיפוס
+  מבני `MockResponse` (`{status, json()}`) שעוקף את השם `Response` המתנגש —
+  זה תיקן גם את 6 המופעים הקיימים-מראש באותו קובץ (לא רק את ה-2 החדשים)
+
+#### תוצאה
+
+- typecheck ב-backend: 72→**64** שגיאות — שיפור **נטו** גם מול ה-baseline
+  המקורי (70, לפני שהתחיל הslice)
+- `rpc.test.ts`: 13 טסטים ירוקים; `session-host/*`: 107 טסטים ירוקים
+- lint נקי
+
+**כל 9 הממצאים של calev-heavy round 1 (3 blockers + 3 major + 2 medium + 1
+minor) טופלו.** שולח שוב calev-heavy לאימות חוזר.
+
 ## 2026-08-09 17:04
 
 ### slice remote-session-view — calev-heavy round 1 fix: M7+M8 (lifecycle hygiene)
