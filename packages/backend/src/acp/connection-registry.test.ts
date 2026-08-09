@@ -95,6 +95,26 @@ describe("connection-registry — basic Map operations", () => {
     expect(reg.get("agent-3")).toBeUndefined()
   })
 
+  it("getCwd returns undefined for unknown agentId", () => {
+    const reg = createConnectionRegistry()
+    expect(reg.getCwd("unknown")).toBeUndefined()
+  })
+
+  it("getCwd returns the cwd passed to connect", async () => {
+    const reg = createConnectionRegistry()
+    const cwd = os.tmpdir()
+    await reg.connect("agent-cwd", "opencode", { cwd })
+    expect(reg.getCwd("agent-cwd")).toBe(cwd)
+    await reg.close("agent-cwd")
+  })
+
+  it("getCwd returns undefined after close (no Map leak)", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("agent-cwd-2", "opencode", { cwd: os.tmpdir() })
+    await reg.close("agent-cwd-2")
+    expect(reg.getCwd("agent-cwd-2")).toBeUndefined()
+  })
+
   it("getRuntimeInfo returns null after close (no Map leak)", async () => {
     const reg = createConnectionRegistry()
     await reg.connect("agent-4", "opencode", { cwd: os.tmpdir() })

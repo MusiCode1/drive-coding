@@ -15,18 +15,18 @@
  * (InMemoryAgentRegistry) already used in server.ts.
  *
  * ─── slice session-host-http C1 (TDD) ───
+ *
+ * Auto session creation (slice remote-session-view, הכרעה 1, 2026-08-09):
+ * ה-FE ב-remote mode אסור לו ליזום newSession/loadSession (הbackend מנהל sessions,
+ * §5.1). לכן ברגע שה-host נוצר (lazy, בקריאה הראשונה) — הוא מקבל session אוטומטית
+ * מ-host.newSession({cwd}), כך שה-snapshot הראשון שה-SSE שולח כבר נושא sessionId
+ * אמיתי. cwd מגיע מ-connectionRegistry.getCwd(agentId) (נשמר ב-connect() המקורי).
  */
 
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
-import {
-  createSessionHostFromConnection,
-  type ExtendedSessionHost,
-} from "./session-host.js"
-import {
-  createPatchesBroadcaster,
-  type PatchesBroadcaster,
-} from "./patches-broadcaster.js"
+import { createPatchesBroadcaster, type PatchesBroadcaster } from "./patches-broadcaster.js"
+import { createSessionHostFromConnection, type ExtendedSessionHost } from "./session-host.js"
 
 type HostEntry = {
   host: ExtendedSessionHost
@@ -100,6 +100,19 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       // Create host + broadcaster
       const host = await _createHostFn(conn)
       const broadcaster = _createBroadcasterFn(host.patches)
+
+      // Auto session creation (הכרעה 1): ה-host נולד בלי session — ניצור אחד עכשיו
+      // כך שה-snapshot הראשון (SSE frame-zero) כבר נושא sessionId אמיתי.
+      // אם כבר יש sessionId (למשל host הוזרק מוכן-לשימוש בבדיקות) — לא יוצרים שוב.
+      if (!host.state.sessionId) {
+        const cwd = connectionRegistry.getCwd(agentId)
+        if (!cwd) {
+          throw new Error(
+            `AgentSessionRegistry: no cwd registered for agentId ${agentId} — cannot auto-create session`,
+          )
+        }
+        await host.newSession({ cwd })
+      }
 
       const entry: HostEntry = { host, broadcaster }
       map.set(agentId, entry)

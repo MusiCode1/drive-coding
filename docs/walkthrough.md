@@ -1,5 +1,43 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 16:10
+
+### slice remote-session-view — הכרעה 1: יצירת session אוטומטית ב-BE
+
+אביגיל (plan-gate r3) זיהתה בלוקר: אין מקור ל-`sessionId` ב-remote mode —
+`RemoteSessionView` אסור לו לקרוא ל-`newSession`/`loadSession` (הbackend מנהל
+sessions), אבל שום קוד ב-backend לא קרא להן בפועל, אז ה-snapshot הראשון היה
+מגיע עם `sessionId: null` וכל RPC היה נשלח שבור. מרדכי הכריע (עם המשתמשת):
+**ה-BE יוצר את ה-session בעצמו** ברגע שה-host נוצר — לא route חדש, לא יוזמה
+מה-דפדפן. `newSession`/`loadSession` **לא** נוספו ל-rpc switch.
+
+#### מה בוצע?
+
+**1. packages/backend/src/acp/connection-registry.ts (הרחבה אדיטיבית)**
+
+- `ConnEntry` מקבל שדה חדש `cwd: string` — נשמר מ-`connectOpts.cwd` ב-`connect()`
+  (היה זמין שם תמיד, פשוט לא נשמר)
+- `ConnectionRegistry` מקבל מתודה חדשה `getCwd(agentId): string | undefined`
+- אין שינוי לחתימות קיימות (`connect`/`get`/וכו') — תוספת טהורה
+
+**2. packages/backend/src/session-host/registry.ts (`AgentSessionRegistry.getOrCreateHost`)**
+
+- אחרי יצירת ה-host (lazy, בקריאה הראשונה): אם `host.state.sessionId` ריק —
+  קורא ל-`host.newSession({cwd})` עם `cwd` מ-`connectionRegistry.getCwd(agentId)`
+- אם אין cwd רשום (לא אמור לקרות בפועל — cwd תמיד נשמר ב-connect) → זורק שגיאה
+  ברורה במקום לשלוח `cwd: undefined` הלאה בשקט
+- קריאה חוזרת ל-`getOrCreateHost` (cache hit) לא יוצרת session שוב — ה-early-return
+  על `map.get(agentId)` קורה **לפני** בדיקת ה-sessionId
+
+#### בדיקות
+
+- `connection-registry.test.ts`: 3 טסטים חדשים (19 סה"כ) — `getCwd` undefined לא-ידוע,
+  `getCwd` מחזיר את ה-cwd שנמסר ל-connect, `getCwd` מתאפס אחרי close
+- `session-host/registry.test.ts`: 4 טסטים חדשים (16 סה"כ) — auto-create עם cwd נכון,
+  לא יוצר שוב אם כבר יש sessionId, זורק אם אין cwd רשום, לא יוצר שוב ב-cache hit
+- typecheck נקי (0 שגיאות חדשות — ה-baseline האדום הקיים ב-`session-host.ts`/
+  `in-process-acp-transport.test.ts` לא קשור, pre-existing); lint נקי; lint:i18n נקי
+
 ## 2026-08-09 15:58
 
 ### slice remote-session-view — C3: Speaker water-mark + reconnect mid-turn (TDD)

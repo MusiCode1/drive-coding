@@ -50,6 +50,12 @@ type ConnEntry = {
   attached: boolean
   rec: WireSession
   unsubs: Array<() => void>
+  /**
+   * cwd מ-ConnectOpts שנמסר ל-connect() — נשמר כאן כי ConnEntry לא נשא אותו קודם
+   * (slice remote-session-view, הכרעה 1: יצירת session אוטומטית ב-BE צריכה cwd
+   * בנקודה שבה אין עוד ConnectOpts זמין — session-host/registry.ts).
+   */
+  cwd: string
 }
 
 export type ConnectionRegistry = {
@@ -64,6 +70,12 @@ export type ConnectionRegistry = {
   ): Promise<ProviderConnection>
 
   get(agentId: string): ProviderConnection | undefined
+
+  /**
+   * getCwd — cwd שנמסר ל-connect() עבור agentId זה, או undefined אם לא רשום.
+   * נדרש ל-session-host/registry.ts (יצירת session אוטומטית — slice remote-session-view).
+   */
+  getCwd(agentId: string): string | undefined
 
   /** list — כל ה-agentIds החיים (לכיבוי-מסודר). */
   list(): string[]
@@ -192,6 +204,7 @@ export function createConnectionRegistry(opts?: {
           attached: false,
           rec,
           unsubs: [unsubFrame, unsubCrash],
+          cwd: connectOpts.cwd,
         })
 
         return conn
@@ -202,6 +215,10 @@ export function createConnectionRegistry(opts?: {
 
     get(agentId) {
       return map.get(agentId)?.conn
+    },
+
+    getCwd(agentId) {
+      return map.get(agentId)?.cwd
     },
 
     list() {

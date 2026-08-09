@@ -12,12 +12,12 @@
  *   - lifecycle: creates broadcaster alongside host (one per host)
  */
 
-import { describe, expect, it, vi } from "vitest"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
+import { describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
-import type { ExtendedSessionHost } from "./session-host.js"
 import type { PatchesBroadcaster } from "./patches-broadcaster.js"
 import { createAgentSessionRegistry } from "./registry.js"
+import type { ExtendedSessionHost } from "./session-host.js"
 
 // ── mock helpers ──────────────────────────────────────────────────────────────
 
@@ -44,6 +44,7 @@ function makeMockConnectionRegistry(conn?: ProviderConnection): ConnectionRegist
   return {
     connect: vi.fn(),
     get: vi.fn().mockReturnValue(conn),
+    getCwd: vi.fn().mockReturnValue("/tmp/mock-cwd"),
     list: vi.fn().mockReturnValue([]),
     markAttached: vi.fn(),
     markDetached: vi.fn(),
@@ -53,12 +54,12 @@ function makeMockConnectionRegistry(conn?: ProviderConnection): ConnectionRegist
   } as unknown as ConnectionRegistry
 }
 
-function makeMockHost(): ExtendedSessionHost {
+function makeMockHost(sessionId: string | null = null): ExtendedSessionHost {
   const patches = new ReadableStream<import("@drive-coding/core/session").Patch>({
     start() {},
   })
   return {
-    state: { version: 0 } as ExtendedSessionHost["state"],
+    state: { version: 0, sessionId } as ExtendedSessionHost["state"],
     patches,
     prompt: vi.fn().mockResolvedValue(undefined),
     newSession: vi.fn().mockResolvedValue({ sessionId: "s1" }),
@@ -213,6 +214,73 @@ describe("AgentSessionRegistry", () => {
 
       expect(r1?.host).not.toBe(r2?.host)
       expect(createHostFn).toHaveBeenCalledTimes(2)
+    })
+
+    // ─── slice remote-session-view, הכרעה 1: auto session creation ───
+
+    it("auto-creates a session via host.newSession({cwd}) when host has no sessionId", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      const mockHost = makeMockHost(null)
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(mockHost),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      await registry.getOrCreateHost("agent-1")
+
+      expect(mockHost.newSession).toHaveBeenCalledWith({ cwd: "/tmp/mock-cwd" })
+      expect(connectionRegistry.getCwd).toHaveBeenCalledWith("agent-1")
+    })
+
+    it("does not call host.newSession again if host already has a sessionId", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      const mockHost = makeMockHost("already-connected-session")
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(mockHost),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      await registry.getOrCreateHost("agent-1")
+
+      expect(mockHost.newSession).not.toHaveBeenCalled()
+    })
+
+    it("throws if no cwd is registered for agentId (cannot auto-create session)", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      ;(connectionRegistry.getCwd as ReturnType<typeof vi.fn>).mockReturnValue(undefined)
+      const mockHost = makeMockHost(null)
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(mockHost),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      await expect(registry.getOrCreateHost("agent-1")).rejects.toThrow("no cwd registered")
+    })
+
+    it("does not auto-create a session again on the second (cached) getOrCreateHost call", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      const mockHost = makeMockHost(null)
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(mockHost),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      await registry.getOrCreateHost("agent-1")
+      await registry.getOrCreateHost("agent-1")
+
+      expect(mockHost.newSession).toHaveBeenCalledTimes(1)
     })
   })
 
