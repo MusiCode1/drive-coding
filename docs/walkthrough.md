@@ -1,6 +1,45 @@
 # Walkthrough — drive-coding
 
-## 2026-08-09 19:55
+## 2026-08-09 20:01
+
+### slice session-host-pending-surface — C2: הצפת pending ב-SessionHost (TDD)
+
+C2: `handleRequestPermission`/`handleCreateElicitation` ב-
+`createSessionHostFromConnection` (`session-host.ts`) עכשיו כותבים ל-
+`currentState.pending` ופולטים patch, במקום להשליך את `params` ולהחזיק
+Promise בזיכרון בלבד — סוגר את "פער א'" מהבריף (בקשת-הרשאה נתקעת בשקט
+ב-remote, כי אף לקוח לא נודע שנשאלה שאלה).
+
+#### מה בוצע?
+
+**packages/backend/src/session-host/session-host.ts**
+
+- שני ה-handlers עוברים על אותו דפוס: `applyPendingRequest` בכניסה (כותב
+  `{requestId, params}` ל-`state.pending` + פולט patch), ואז `await
+  <pending>.request(requestId)` בתוך `try`, עם `clearPendingRequest` ב-
+  `finally` (מכסה גם `respond()` וגם timeout-עם-default במקום אחד אחד,
+  בלי לשנות את `pending-requests.ts` — עבר GO ב-S3).
+- `respondPermission`/`respondElicitation` **לא השתנו** — הניקוי מגיע דרך
+  ה-`finally`; ניקוי כפול היה נותן שני patches ושתי קפיצות version על
+  אירוע אחד.
+- concurrency: guard `requestId === current` ב-`clearPendingRequest` —
+  בקשה שנייה מאותו kind דורסת את הראשונה בסלוט, וה-`finally` של הראשונה
+  (שרואה id ישן) הוא no-op — לא מנקה את מה ששייך לשנייה.
+
+#### בדיקות (TDD)
+
+`packages/backend/src/session-host/session-host.integration.test.ts` (⚠️ לא
+`session-host.test.ts` — לפקטורי הפשוט אין `PendingRequests`) — 9 טסטים
+חדשים בשני describe blocks (`C2 — permission requests…` /
+`C2 — elicitation requests…`): set+patch יחיד · respond מנקה+patch שני ·
+timeout מנקה+patch (fake timers) · שתי בקשות חופפות (השנייה דורסת, סיום
+הראשונה לא מנקה) · שני kinds pending בו-זמנית (הרגרסיה ש-spread חלקי היה
+שובר). `bunx vitest run session-host.integration.test.ts`: 27/27 ירוק (18
+קיימים + 9 חדשים, כולם שרדו ללא שינוי). `bunx vitest run
+packages/backend/src/session-host`: 117/117 ירוק. typecheck: DELTA-CHECK
+מול `ac376e8` — אפס שגיאות חדשות (רק היסט שורה בשגיאת baseline קיימת).
+
+
 
 ### slice session-host-pending-surface — C1: עוזרים טהורים ב-core (pending + turn-boundary)
 

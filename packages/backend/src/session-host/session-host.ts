@@ -16,6 +16,7 @@
  *   - Extended SessionHost API: respondPermission / respondElicitation
  *
  * ─── slice session-host-core C2+C4 (TDD + integration) ───
+ * ─── slice session-host-pending-surface C2+C3+C4 (TDD + integration) ───
  */
 
 import type {
@@ -27,7 +28,9 @@ import type {
 } from "@agentclientprotocol/sdk"
 import type { Patch, SessionState } from "@drive-coding/core/session"
 import {
+  applyPendingRequest,
   applyUserMessage,
+  clearPendingRequest,
   createInitialSessionState,
   reduce,
   synthesizeUserMessage,
@@ -317,14 +320,38 @@ export async function createSessionHostFromConnection(
     params: RequestPermissionRequest,
   ): Promise<RequestPermissionResponse> {
     const requestId = permissionSeq++
-    return permPending.request(requestId)
+    const applied = applyPendingRequest(currentState, {
+      kind: "permission",
+      value: { requestId, params },
+    })
+    currentState = applied.state
+    emitPatches(applied.patches)
+    try {
+      return await permPending.request(requestId)
+    } finally {
+      const cleared = clearPendingRequest(currentState, "permission", requestId)
+      currentState = cleared.state
+      emitPatches(cleared.patches) // [] אם כבר נדרס — no-op
+    }
   }
 
   async function handleCreateElicitation(
     params: CreateElicitationRequest,
   ): Promise<CreateElicitationResponse> {
     const requestId = elicitationSeq++
-    return elicitPending.request(requestId)
+    const applied = applyPendingRequest(currentState, {
+      kind: "elicitation",
+      value: { requestId, params },
+    })
+    currentState = applied.state
+    emitPatches(applied.patches)
+    try {
+      return await elicitPending.request(requestId)
+    } finally {
+      const cleared = clearPendingRequest(currentState, "elicitation", requestId)
+      currentState = cleared.state
+      emitPatches(cleared.patches) // [] אם כבר נדרס — no-op
+    }
   }
 
   const callbacks: AcpClientCallbacks = {

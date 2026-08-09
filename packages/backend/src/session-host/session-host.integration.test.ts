@@ -12,15 +12,45 @@
  *   - Permission timeout with default deny
  *
  * Uses injectable _createAcpClient dep to avoid the ACP initialize handshake complexity.
+ *
+ * ─── slice session-host-pending-surface C2+C3 (integration) ───
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { SessionNotification } from "@agentclientprotocol/sdk"
-import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
-import type { ProviderConnection } from "@drive-coding/provider/connection"
+import type { Patch } from "@drive-coding/core/session"
 import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
+import type { ProviderConnection } from "@drive-coding/provider/connection"
+import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
 import type { AcpTransport } from "@drive-coding/provider/transport"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createSessionHostFromConnection } from "./session-host.js"
+
+/** קורא patch יחיד מהזרם, עם timeout — לטסטים שלא מריצים fake timers. */
+async function readOnePatch(stream: ReadableStream<Patch>): Promise<Patch> {
+  const reader = stream.getReader()
+  try {
+    const result = await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 200)),
+    ])
+    if (result.done) throw new Error("stream closed before patch arrived")
+    return result.value
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+/** קורא patch יחיד מהזרם, ללא race על טיימר אמיתי — לטסטים תחת vi.useFakeTimers(). */
+async function readOnePatchSync(stream: ReadableStream<Patch>): Promise<Patch> {
+  const reader = stream.getReader()
+  try {
+    const result = await reader.read()
+    if (result.done) throw new Error("stream closed before patch arrived")
+    return result.value
+  } finally {
+    reader.releaseLock()
+  }
+}
 
 // ── mock helpers ─────────────────────────────────────────────────────────────
 
@@ -137,12 +167,12 @@ describe("createSessionHostFromConnection", () => {
   describe("wiring", () => {
     it("creates a transport that subscribes to conn.wire.onLine", async () => {
       const { conn } = await setup()
-      expect((conn.wire.onLine as ReturnType<typeof vi.fn>)).toHaveBeenCalled()
+      expect(conn.wire.onLine as ReturnType<typeof vi.fn>).toHaveBeenCalled()
     })
 
     it("creates a transport that subscribes to conn.onCrash", async () => {
       const { conn } = await setup()
-      expect((conn.onCrash as ReturnType<typeof vi.fn>)).toHaveBeenCalled()
+      expect(conn.onCrash as ReturnType<typeof vi.fn>).toHaveBeenCalled()
     })
 
     it("calls _createAcpClient with the transport and callbacks", async () => {
@@ -159,10 +189,12 @@ describe("createSessionHostFromConnection", () => {
     it("session_info_update → title changes in host.state", async () => {
       const { host, callbacks } = await setup()
 
-      callbacks.onUpdate(makeSessionNotification({
-        sessionUpdate: "session_info_update",
-        title: "From Connection",
-      }))
+      callbacks.onUpdate(
+        makeSessionNotification({
+          sessionUpdate: "session_info_update",
+          title: "From Connection",
+        }),
+      )
 
       expect(host.state.title).toBe("From Connection")
     })
@@ -171,8 +203,12 @@ describe("createSessionHostFromConnection", () => {
       const { host, callbacks } = await setup()
 
       const v0 = host.state.version
-      callbacks.onUpdate(makeSessionNotification({ sessionUpdate: "session_info_update", title: "A" }))
-      callbacks.onUpdate(makeSessionNotification({ sessionUpdate: "session_info_update", title: "B" }))
+      callbacks.onUpdate(
+        makeSessionNotification({ sessionUpdate: "session_info_update", title: "A" }),
+      )
+      callbacks.onUpdate(
+        makeSessionNotification({ sessionUpdate: "session_info_update", title: "B" }),
+      )
 
       expect(host.state.version).toBe(v0 + 2)
     })
@@ -182,10 +218,12 @@ describe("createSessionHostFromConnection", () => {
 
       const reader = host.patches.getReader()
 
-      callbacks.onUpdate(makeSessionNotification({
-        sessionUpdate: "session_info_update",
-        title: "Patch Test",
-      }))
+      callbacks.onUpdate(
+        makeSessionNotification({
+          sessionUpdate: "session_info_update",
+          title: "Patch Test",
+        }),
+      )
 
       const result = await Promise.race([
         reader.read(),
@@ -271,7 +309,7 @@ describe("createSessionHostFromConnection", () => {
   describe("elicitation requests → PendingRequests", () => {
     it("onCreateElicitation defaults to cancel when not responded", async () => {
       vi.useFakeTimers()
-      const { callbacks } = await setup(100, 100)  // elicitationTimeoutMs=100
+      const { callbacks } = await setup(100, 100) // elicitationTimeoutMs=100
 
       const responsePromise = callbacks.onCreateElicitation!({
         sessionId: "s1",
@@ -285,6 +323,222 @@ describe("createSessionHostFromConnection", () => {
 
       const response = await responsePromise
       expect(response.action).toBe("cancel")
+    })
+  })
+
+  // ─── slice session-host-pending-surface C2: pending surfaced in state + patches ───
+
+  describe("C2 — permission requests surfaced via state.pending + patches", () => {
+    it("onRequestPermission sets state.pending.permission and emits one patch", async () => {
+      const { host, callbacks } = await setup()
+      const params = {
+        sessionId: "s1",
+        toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
+        options: [],
+      } as Parameters<typeof callbacks.onRequestPermission>[0]
+
+      const responsePromise = callbacks.onRequestPermission!(params)
+
+      expect(host.state.pending.permission).toEqual({ requestId: 0, params })
+      const patch = await readOnePatch(host.patches)
+      expect(patch.op).toBe("update-session")
+
+      // drain — respond so the promise doesn't dangle
+      host.respondPermission(0, { outcome: { outcome: "cancelled" } })
+      await responsePromise
+    })
+
+    it("respondPermission resolves the promise, clears pending, and emits a second patch", async () => {
+      const { host, callbacks } = await setup()
+      const params = {
+        sessionId: "s1",
+        toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
+        options: [],
+      } as Parameters<typeof callbacks.onRequestPermission>[0]
+
+      const responsePromise = callbacks.onRequestPermission!(params)
+      await readOnePatch(host.patches) // the "set" patch
+
+      host.respondPermission(0, { outcome: { outcome: "selected", optionId: "allow" } })
+      const response = await responsePromise
+      expect(response.outcome.outcome).toBe("selected")
+      expect(host.state.pending.permission).toBeNull()
+
+      const clearPatch = await readOnePatch(host.patches)
+      expect(clearPatch.op).toBe("update-session")
+    })
+
+    it("timeout: resolves with default AND clears pending AND emits the clear patch", async () => {
+      vi.useFakeTimers()
+      const { host, callbacks } = await setup(100)
+      const params = {
+        sessionId: "s1",
+        toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
+        options: [],
+      } as Parameters<typeof callbacks.onRequestPermission>[0]
+
+      const responsePromise = callbacks.onRequestPermission!(params)
+      await readOnePatchSync(host.patches) // the "set" patch
+
+      vi.advanceTimersByTime(101)
+      vi.useRealTimers()
+
+      const response = await responsePromise
+      expect(response.outcome.outcome).toBe("cancelled")
+      expect(host.state.pending.permission).toBeNull()
+    })
+
+    it("two overlapping permission requests: slot holds the second; the first's finally does not clear it", async () => {
+      const { host, callbacks } = await setup()
+      const paramsA = {
+        sessionId: "s1",
+        toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
+        options: [],
+      } as Parameters<typeof callbacks.onRequestPermission>[0]
+      const paramsB = {
+        sessionId: "s1",
+        toolCall: { toolCallId: "tc2", name: "run_bash", status: "pending" },
+        options: [],
+      } as Parameters<typeof callbacks.onRequestPermission>[0]
+
+      const responseA = callbacks.onRequestPermission!(paramsA)
+      await readOnePatch(host.patches) // set A (requestId=0)
+      const responseB = callbacks.onRequestPermission!(paramsB)
+      await readOnePatch(host.patches) // set B (requestId=1) — overwrites the slot
+
+      expect(host.state.pending.permission).toEqual({ requestId: 1, params: paramsB })
+
+      // Respond to A (stale requestId=0) — its `finally` must NOT clear B's slot.
+      host.respondPermission(0, { outcome: { outcome: "cancelled" } })
+      await responseA
+      expect(host.state.pending.permission).toEqual({ requestId: 1, params: paramsB })
+
+      // Respond to B — this is the one that actually clears the slot.
+      host.respondPermission(1, { outcome: { outcome: "selected", optionId: "allow" } })
+      await responseB
+      expect(host.state.pending.permission).toBeNull()
+    })
+  })
+
+  describe("C2 — elicitation requests surfaced via state.pending + patches", () => {
+    it("onCreateElicitation sets state.pending.elicitation and emits one patch", async () => {
+      const { host, callbacks } = await setup()
+      const params = {
+        sessionId: "s1",
+        requestId: 1,
+        schema: { type: "object", properties: {} },
+      } as Parameters<typeof callbacks.onCreateElicitation>[0]
+
+      const responsePromise = callbacks.onCreateElicitation!(params)
+
+      expect(host.state.pending.elicitation).toEqual({ requestId: 0, params })
+      const patch = await readOnePatch(host.patches)
+      expect(patch.op).toBe("update-session")
+
+      host.respondElicitation(0, { action: "cancel" })
+      await responsePromise
+    })
+
+    it("respondElicitation resolves the promise, clears pending, and emits a second patch", async () => {
+      const { host, callbacks } = await setup()
+      const params = {
+        sessionId: "s1",
+        requestId: 1,
+        schema: { type: "object", properties: {} },
+      } as Parameters<typeof callbacks.onCreateElicitation>[0]
+
+      const responsePromise = callbacks.onCreateElicitation!(params)
+      await readOnePatch(host.patches)
+
+      host.respondElicitation(0, { action: "accept", content: {} })
+      const response = await responsePromise
+      expect(response.action).toBe("accept")
+      expect(host.state.pending.elicitation).toBeNull()
+
+      const clearPatch = await readOnePatch(host.patches)
+      expect(clearPatch.op).toBe("update-session")
+    })
+
+    it("timeout: resolves with default AND clears pending AND emits the clear patch", async () => {
+      vi.useFakeTimers()
+      const { host, callbacks } = await setup(5000, 100)
+      const params = {
+        sessionId: "s1",
+        requestId: 1,
+        schema: { type: "object", properties: {} },
+      } as Parameters<typeof callbacks.onCreateElicitation>[0]
+
+      const responsePromise = callbacks.onCreateElicitation!(params)
+      await readOnePatchSync(host.patches)
+
+      vi.advanceTimersByTime(101)
+      vi.useRealTimers()
+
+      const response = await responsePromise
+      expect(response.action).toBe("cancel")
+      expect(host.state.pending.elicitation).toBeNull()
+    })
+
+    it("two overlapping elicitation requests: slot holds the second; the first's finally does not clear it", async () => {
+      const { host, callbacks } = await setup()
+      const paramsA = {
+        sessionId: "s1",
+        requestId: 1,
+        schema: { type: "object", properties: {} },
+      } as Parameters<typeof callbacks.onCreateElicitation>[0]
+      const paramsB = {
+        sessionId: "s1",
+        requestId: 2,
+        schema: { type: "object", properties: {} },
+      } as Parameters<typeof callbacks.onCreateElicitation>[0]
+
+      const responseA = callbacks.onCreateElicitation!(paramsA)
+      await readOnePatch(host.patches)
+      const responseB = callbacks.onCreateElicitation!(paramsB)
+      await readOnePatch(host.patches)
+
+      expect(host.state.pending.elicitation).toEqual({ requestId: 1, params: paramsB })
+
+      host.respondElicitation(0, { action: "cancel" })
+      await responseA
+      expect(host.state.pending.elicitation).toEqual({ requestId: 1, params: paramsB })
+
+      host.respondElicitation(1, { action: "accept", content: {} })
+      await responseB
+      expect(host.state.pending.elicitation).toBeNull()
+    })
+
+    it("two kinds pending simultaneously — the regression the spread bug would break", async () => {
+      const { host, callbacks } = await setup()
+      const permParams = {
+        sessionId: "s1",
+        toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
+        options: [],
+      } as Parameters<typeof callbacks.onRequestPermission>[0]
+      const elicParams = {
+        sessionId: "s1",
+        requestId: 1,
+        schema: { type: "object", properties: {} },
+      } as Parameters<typeof callbacks.onCreateElicitation>[0]
+
+      const permResponse = callbacks.onRequestPermission!(permParams)
+      await readOnePatch(host.patches)
+      const elicResponse = callbacks.onCreateElicitation!(elicParams)
+      await readOnePatch(host.patches)
+
+      // Both pending at once — neither overwrote the other (trap #1: a partial spread
+      // would have wiped one of them to undefined instead of null).
+      expect(host.state.pending.permission).toEqual({ requestId: 0, params: permParams })
+      expect(host.state.pending.elicitation).toEqual({ requestId: 0, params: elicParams })
+
+      host.respondPermission(0, { outcome: { outcome: "selected", optionId: "allow" } })
+      await permResponse
+      expect(host.state.pending.elicitation).toEqual({ requestId: 0, params: elicParams })
+
+      host.respondElicitation(0, { action: "accept", content: {} })
+      await elicResponse
+      expect(host.state.pending.permission).toBeNull()
+      expect(host.state.pending.elicitation).toBeNull()
     })
   })
 
