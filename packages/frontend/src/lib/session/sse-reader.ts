@@ -225,7 +225,17 @@ export class SSEReader {
     this.#closeCtrl(ctrl)
   }
 
-  /** Drain patch frames into the controller until the generator is exhausted. */
+  /**
+   * Drain patch frames into the controller until the generator is exhausted.
+   *
+   * calev-heavy B3: JSON.parse and ctrl.enqueue used to share one try/catch, so a
+   * single malformed frame (bad JSON on the wire) was indistinguishable from "the
+   * consumer closed the controller" — both set #closed=true and killed the reader
+   * permanently (measured: one bad frame → every subsequent patch silently lost,
+   * no reconnect, no error surfaced). The two failure modes are separated below:
+   * a parse error just skips that one frame (draining continues); an enqueue
+   * error is the real "consumer is gone" signal that should stop the reader.
+   */
   async #drainFrames(
     frames: AsyncGenerator<SSEFrame>,
     ctrl: ReadableStreamDefaultController<Patch>,
@@ -233,14 +243,22 @@ export class SSEReader {
     try {
       for await (const frame of frames) {
         if (this.#closed) return
-        if (frame.event === "patch") {
-          try {
-            ctrl.enqueue(JSON.parse(frame.data) as Patch)
-          } catch {
-            // Controller closed by consumer — stop
-            this.#closed = true
-            return
-          }
+        if (frame.event !== "patch") continue
+
+        let parsed: Patch
+        try {
+          parsed = JSON.parse(frame.data) as Patch
+        } catch {
+          // Malformed frame on the wire — skip it, keep draining subsequent frames.
+          continue
+        }
+
+        try {
+          ctrl.enqueue(parsed)
+        } catch {
+          // Controller closed by consumer — stop
+          this.#closed = true
+          return
         }
       }
     } catch {

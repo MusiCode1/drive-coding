@@ -182,6 +182,28 @@ describe("SSEReader — patches stream", () => {
     const results = await readNPatches(patches, 1)
     expect(results[0]).toMatchObject({ version: 3 })
   })
+
+  it("B3 (calev-heavy): a malformed JSON frame is skipped, not fatal — later patches still arrive", async () => {
+    const snapshot = makeSnapshot()
+    const goodPatch = makePatch(9)
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      makeSSEResponse([
+        { event: "snapshot", data: JSON.stringify(snapshot) },
+        { event: "patch", data: "{not valid json" },
+        { event: "patch", data: JSON.stringify(goodPatch) },
+      ]),
+    )
+
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+    const { patches } = await reader.connect()
+
+    // Only the well-formed patch is ever enqueued — the malformed one is skipped,
+    // not confused with "consumer closed the controller" (which would have set
+    // #closed=true and silently dropped this good patch too, forever).
+    const results = await readNPatches(patches, 1)
+    expect(results[0]).toMatchObject({ version: 9 })
+  })
 })
 
 // ── reconnect ─────────────────────────────────────────────────────────────────

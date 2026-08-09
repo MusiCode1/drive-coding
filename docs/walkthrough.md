@@ -1,5 +1,28 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 16:56
+
+### slice remote-session-view — calev-heavy round 1 fix: B3 (malformed SSE frame)
+
+#### מה בוצע?
+
+**packages/frontend/src/lib/session/sse-reader.ts**
+
+- **B3 (blocker) — frame פגום הורג את ה-reader לצמיתות**: `#drainFrames` עטפה
+  גם את `JSON.parse` וגם את `ctrl.enqueue` באותו try/catch — כל שגיאה (כולל
+  JSON שבור) פורשה כ-"controller closed by consumer" → `#closed=true; return`.
+  מדוד: JSON פגום אחד → אין reconnect, אין שגיאה, כל ה-patches הבאים אובדים
+  בשקט. תוקן: שני try/catch נפרדים — כשל ב-`JSON.parse` מדלג רק על ה-frame
+  הבודד (`continue`, ממשיך לנקז); כשל ב-`ctrl.enqueue` (הצרכן סגר את ה-stream)
+  הוא הסימן האמיתי לעצור
+
+#### בדיקות
+
+- `sse-reader.test.ts`: טסט חדש — frame פגום מדולג, patch תקין שאחריו עדיין
+  מגיע (11 סה"כ, 10→11)
+- כל `packages/frontend/src/lib/session/`: 66 טסטים ירוקים
+- typecheck נקי; lint נקי
+
 ## 2026-08-09 16:55
 
 ### slice remote-session-view — calev-heavy round 1 fix: B1+B2+M6 (reconnect correctness)
