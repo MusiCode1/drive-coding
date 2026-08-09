@@ -14,7 +14,8 @@
  * ─── slice remote-session-view C1 (TDD) ───
  */
 
-import type { Patch, SessionState } from "@drive-coding/core/session"
+import { type Patch, PatchSchema, type SessionState } from "@drive-coding/core/session"
+import { type } from "arktype"
 
 // ─── SSE frame parsing ────────────────────────────────────────────────────────
 
@@ -246,6 +247,15 @@ export class SSEReader {
    * no reconnect, no error surfaced). The two failure modes are separated below:
    * a parse error just skips that one frame (draining continues); an enqueue
    * error is the real "consumer is gone" signal that should stop the reader.
+   *
+   * calev-heavy round 3 (root-cause fix): the parsed JSON was cast `as Patch`
+   * with zero runtime validation — the actual wire boundary. Three separate
+   * round 2/3 findings (unknown op wiping RemoteSessionView#state, #lastVersion
+   * advancing for garbage it only "saw" rather than a patch it actually applied)
+   * were all downstream symptoms of trusting this cast. Validated here with
+   * PatchSchema (ArkType) before a patch is ever enqueued — an invalid patch
+   * never reaches the consumer at all, so its version can never be used for
+   * anything.
    */
   async #drainFrames(
     frames: AsyncGenerator<SSEFrame>,
@@ -256,16 +266,25 @@ export class SSEReader {
         if (this.#closed) return
         if (frame.event !== "patch") continue
 
-        let parsed: Patch
+        let raw: unknown
         try {
-          parsed = JSON.parse(frame.data) as Patch
+          raw = JSON.parse(frame.data)
         } catch {
-          // Malformed frame on the wire — skip it, keep draining subsequent frames.
+          // Malformed JSON on the wire — skip it, keep draining subsequent frames.
+          continue
+        }
+
+        const validated = PatchSchema(raw)
+        if (validated instanceof type.errors) {
+          // Well-formed JSON, but not a valid Patch (e.g. an `op` this build
+          // doesn't know — BE/FE version skew). Skip it — never enqueued, so
+          // its version never influences the consumer's dedup tracking.
+          console.warn(`SSEReader: invalid patch on wire, skipping — ${validated.summary}`)
           continue
         }
 
         try {
-          ctrl.enqueue(parsed)
+          ctrl.enqueue(validated as Patch)
         } catch {
           // Controller closed by consumer — stop
           this.#closed = true

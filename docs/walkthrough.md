@@ -1,5 +1,59 @@
 # Walkthrough — drive-coding
 
+## 2026-08-09 18:04
+
+### slice remote-session-view — calev-heavy round 3 fix: root-cause wire validation (S5 freeze after this)
+
+calev-heavy round 3 verdict: **GO** (DoD 15/16 + 1 נדחה בהחלטה). כל 4 ממצאי
+round 2 אומתו כסגורים בריצה, 27 בדיקות רגרסיה ירוקות, אפס פגמים חדשים.
+מרדכי ביקש סבב אחרון וממוקד: שלושת הממצאים הקלים שנותרו הם **שאריות של שורש
+אחד** — `JSON.parse(...) as Patch` הלא-מאומת ב-`sse-reader.ts`. סבב זה מתקן
+את השורש, לא את הסימפטומים בנפרד. **אחריו S5 קופא** — slice אחר ממתין
+בבעלות בלעדית על `remote-session-view.ts` וקובץ הטסט שלו.
+
+#### מה בוצע?
+
+**1. packages/core/src/session/patch-schema.ts (חדש)**
+
+- `PatchSchema` — סכימת ArkType ל-`Patch`, ולידציה בגבול-הפענוח. קלה בכוונה על
+  שדות מקוננים/אטומים (`toolCall` פנימי, `update-session.changes`, `message.meta`)
+  — התפקיד הוא לדחות צורות זבל/op לא-מוכר, לא לאמת מחדש את כל סכימת ה-SessionState
+- מיוצא דרך `session/index.ts`
+
+**2. packages/frontend/src/lib/session/sse-reader.ts**
+
+- `#drainFrames`: אחרי `JSON.parse` (לא משתנה — B3 מ-round 1), התוצאה עוברת
+  דרך `PatchSchema` **לפני** `ctrl.enqueue`. patch לא-תקין (למשל op לא-מוכר —
+  בדיוק התרחיש שכלב מדד) נרשם כ-`console.warn` ו**לא נכנס לזרם בכלל** — הצרכן
+  (`RemoteSessionView`) אף פעם לא רואה אותו, אז `#lastVersion` אף פעם לא
+  מושפע ממנו. זה סוגר את שלושת הממצאים:
+  1. `#lastVersion` כבר לא יכול לעקוב אחרי patches "שנראו" ולא "הוחלו" — הוא
+     פשוט לא רואה patches לא-תקינים בכלל
+  2. אין עוד "שקט" סביב patch לא-תקין — הוא מקבל אזהרה מפורשת בגבול הכניסה,
+     במקום להיבלע איפשהו בהמשך הזרימה
+  3. `#lastVersion` לא מוקצה יותר מ-`patch.version` לא-מאומת — הוא תמיד מוקצה
+     רק מ-patch שכבר עבר ולידציה
+
+**3. packages/frontend/src/lib/session/remote-session-view.ts**
+
+- `#drainPatches`'s catch (round 2 finding #1 — הגנת-עומק): נשאר (נכון שpatch
+  שחומק מ-ולידציה לא יהרוג את ה-loop), אבל עכשיו רושם `console.warn` עם
+  השגיאה במקום לבלוע בשקט — אם משהו מגיע לכאן בכלל, זה כבר לא-צפוי (הולידציה
+  ב-SSEReader כבר תפסה את המקרה הידוע), אז שווה להיות גלוי
+
+#### בדיקות
+
+- `patch-schema.test.ts` (חדש): 11 טסטים — כל 5 ה-ops התקינים מתקבלים, op
+  לא-מוכר/שדה חסר/טיפוס שגוי/ערך לא-אובייקט נדחים
+- `sse-reader.test.ts`: טסט חדש — patch עם op לא-מוכר נדחה בגבול ה-wire, אף
+  פעם לא נכנס ל-stream; patch תקין שאחריו מגיע כרגיל (13 סה"כ, 12→13)
+- `remote-session-view.test.ts`: עדכון הטסט מ-round 2 finding #1 — עכשיו
+  patch לא-תקין נעצר לגמרי ב-SSEReader (לא מגיע ל-RemoteSessionView כלל),
+  אז רק ה-patch התקין מגיע (היה 2, עכשיו 1 — משקף את התיקון הטוב יותר)
+- typecheck נקי (core + frontend); lint נקי; lint:i18n נקי
+- כל `packages/core/src/session/` + `packages/frontend/src/lib/session/` +
+  `view-models/`: 495 טסטים ירוקים
+
 ## 2026-08-09 17:38
 
 ### slice remote-session-view — calev-heavy round 2 fix: finding #5 (orphaned host)

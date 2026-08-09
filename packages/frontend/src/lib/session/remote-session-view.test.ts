@@ -235,16 +235,16 @@ describe("RemoteSessionView — connect()", () => {
     const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
     await view.connect()
 
-    // both patches are still forwarded to the VM (applyPatchMutable also safely
-    // no-ops on an unrecognized op — no crash risk there); what matters is that
-    // core state is untouched by the unknown one and the good patch after it
-    // still applies normally (the stream is NOT dead).
-    const results = await readNPatchArrays(view.patches, 2)
+    // round 3 root-cause fix: SSEReader now validates patches at the wire
+    // boundary (PatchSchema) before ever enqueueing them — the unknown-op patch
+    // never reaches RemoteSessionView at all, so only the good patch arrives.
+    // (Defense-in-depth in applyPatch/#applyIncoming/#drainPatches from round 2
+    // still stands for any patch that somehow slips past validation.)
+    const results = await readNPatchArrays(view.patches, 1)
 
     expect(view.state).not.toBeUndefined()
     expect(view.state.title).toBe("after")
-    expect(results[0]?.[0]).toMatchObject({ version: 1, op: "update-quota" })
-    expect(results[1]?.[0]).toMatchObject({ version: 2, op: "update-session" })
+    expect(results[0]?.[0]).toMatchObject({ version: 2, op: "update-session" })
   })
 
   // ─── round 2 finding #2: connect() must not memoize a rejected promise ───

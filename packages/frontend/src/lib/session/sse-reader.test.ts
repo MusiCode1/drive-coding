@@ -223,6 +223,30 @@ describe("SSEReader — patches stream", () => {
     const results = await readNPatches(patches, 1)
     expect(results[0]).toMatchObject({ version: 9 })
   })
+
+  it("round 3 (calev-heavy, root-cause fix): a well-formed-JSON but invalid Patch (unknown op) is rejected by PatchSchema, never enqueued", async () => {
+    const snapshot = makeSnapshot()
+    // valid JSON, but `op` is not one of the five known Patch variants — the
+    // exact scenario calev measured (BE/FE version skew).
+    const unknownOpPatch = { version: 1, op: "update-quota", quota: { used: 1 } }
+    const goodPatch = makePatch(2)
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      makeSSEResponse([
+        { event: "snapshot", data: JSON.stringify(snapshot) },
+        { event: "patch", data: JSON.stringify(unknownOpPatch) },
+        { event: "patch", data: JSON.stringify(goodPatch) },
+      ]),
+    )
+
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+    const { patches } = await reader.connect()
+
+    // The invalid patch is rejected at the wire boundary and never reaches the
+    // consumer — only the well-formed patch arrives.
+    const results = await readNPatches(patches, 1)
+    expect(results[0]).toMatchObject({ version: 2 })
+  })
 })
 
 // ── reconnect ─────────────────────────────────────────────────────────────────

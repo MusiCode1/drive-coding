@@ -203,12 +203,17 @@ export class RemoteSessionView implements SessionView {
         if (done) break
         try {
           this.#applyIncoming(value)
-        } catch {
+        } catch (err) {
           // calev-heavy round 2 finding #1: a single unexpected/malformed patch
-          // (e.g. wire version skew) must not kill the whole drain loop — `void
-          // this.#drainPatches(...)` is fire-and-forget, so an uncaught throw here
-          // would become a silent unhandled rejection and every subsequent patch
-          // would be lost forever. Skip this one patch, keep draining.
+          // must not kill the whole drain loop — `void this.#drainPatches(...)`
+          // is fire-and-forget, so an uncaught throw here would become a silent
+          // unhandled rejection and every subsequent patch would be lost forever.
+          // Skip this one patch, keep draining. calev-heavy round 3: staying
+          // silent here was itself wrong — SSEReader now validates patches before
+          // they even reach this point (round 3 root-cause fix), so reaching this
+          // catch means something unexpected slipped through; log it so it's not
+          // invisible.
+          console.warn("RemoteSessionView: error applying patch, skipping", err)
         }
       }
     } finally {

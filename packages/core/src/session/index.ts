@@ -3,6 +3,8 @@
  * ─── slice session-state-reducer ───
  * ─── slice session-view-port C1: new types + helpers ───
  */
-export * from "./types"
-export * from "./reduce"
+
 export * from "./apply-patch"
+export * from "./patch-schema"
+export * from "./reduce"
+export * from "./types"
