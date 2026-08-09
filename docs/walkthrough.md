@@ -1,5 +1,51 @@
 # Walkthrough — drive-coding
 
+## 2026-08-11 10:30
+
+### slice session-host-http — C5: State route + wiring (TDD)
+
+C5 משלים את slice session-host-http עם `GET /api/agents/:id/state` + wiring של 4 ה-routes ל-server.ts דרך `registerSessionHostHttp` / `createAndRegisterSessionHostHttp`.
+
+#### מה בוצע?
+
+**1. packages/backend/src/session-host/http/rpc.ts + rpc.test.ts (C3, 10 tests)**
+
+- `registerRpcRoute`: dispatch prompt/cancel/setMode/setConfigOption/extMethod
+- 202 Accepted {version} לכל method (אסינכרוני)
+- 404 אם connection לא קיים; 400 ל-method לא מוכר
+
+**2. packages/backend/src/session-host/http/reply.ts + reply.test.ts (C4, 5 tests)**
+
+- `registerReplyRoute`: kind discriminator (permission/elicitation)
+- 404 אם host לא קיים; 200 תמיד (respond*() void, silent no-op)
+
+**3. packages/backend/src/session-host/http/state.ts + state.test.ts (C5, 4 tests)**
+
+- `registerStateRoute`: one-shot snapshot (GET /api/agents/:id/state)
+- 404 אם host לא קיים; 200 + JSON snapshot
+
+**4. packages/backend/src/session-host/http/index.ts (C5)**
+
+- `registerSessionHostHttp` — מייצא ומחבר את 4 ה-routes
+- `createAndRegisterSessionHostHttp` — convenience: יוצר AgentSessionRegistry + רושם routes
+
+**5. packages/backend/src/server.ts (C5)**
+
+- הוספת `createAndRegisterSessionHostHttp(app, connectionRegistry)` — 4 routes חיים בשרת
+
+#### נתונים
+
+| Checkpoint | Commit | Tests |
+|---|---|---|
+| C3: RPC route | 6249b11 | 10 TDD |
+| C4: Reply route | 4a3c8bd | 5 TDD |
+| C5: State + wiring | (זה) | 4 TDD |
+
+- Tests C3-C5: 19 passed
+- typecheck: נקי
+
+---
+
 ## 2026-08-11 10:20
 
 ### slice session-host-http — C1: הרחבת S3 + AgentSessionRegistry + PatchesBroadcaster (TDD)

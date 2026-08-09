@@ -68,6 +68,7 @@ import {
   registerRecordingsPostHttp,
 } from "./delivery/http-history.js"
 import { registerHttpOptions } from "./delivery/http-options.js"
+import { createAndRegisterSessionHostHttp } from "./session-host/http/index.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
 import { registerTtsCapabilitiesHttp } from "./delivery/http-tts-capabilities.js"
 import { registerUsageHttp } from "./delivery/http-usage.js"
@@ -145,6 +146,9 @@ registerCliAvailabilityHttp(app)
 
 // Slice cli-logo-serving: מגיש קובץ-לוגו CLI לפי id (id-keyed, ר' §3 בבריף)
 registerCliLogoHttp(app)
+
+// S4 session-host-http: 4 routes — GET /events, POST /rpc, POST /reply, GET /state
+createAndRegisterSessionHostHttp(app, connectionRegistry)
 
 // Slice 20: serve the built static FE (single-origin local prod).
 // Binary mode: serve from embedded FE manifest (assets in $bunfs, no disk reads).
