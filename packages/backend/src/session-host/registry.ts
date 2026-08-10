@@ -185,7 +185,17 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     async getOrCreateHost(agentId: string): Promise<HostEntry | undefined> {
       // Return existing entry if already created
       const existing = map.get(agentId)
-      if (existing) return existing
+      if (existing) {
+        // slice remote-warm-reconnect C2b: liveness check — ה-connection אולי מת
+        // (crash/DELETE) אחרי שה-host נוצר. בלי הניקוי, GET /events היה מחזיר 200
+        // עם host מת + snapshot ישן, וה-FE "מתחבר" לסשן מת (פרומפטים נכשלים רק
+        // בהמשך). מסירים את ה-entry ומחזירים undefined → 404 → fail-fast ב-VM.
+        if (!connectionRegistry.get(agentId)) {
+          map.delete(agentId) // = unregisterHost (מכאן אי אפשר לקרוא לו — בתוך ה-object literal)
+          return undefined
+        }
+        return existing
+      }
 
       // Return the in-flight creation promise if one is already running — no
       // await happens between this check and inFlight.set below (M5 guard).

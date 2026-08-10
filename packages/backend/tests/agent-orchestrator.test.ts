@@ -485,6 +485,75 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
     )
   })
 
+  // ─── slice remote-warm-reconnect C2b: ניקוי session-hosts ב-delete/crash ───
+
+  describe("sessionHostRegistry cleanup (slice remote-warm-reconnect C2b)", () => {
+    it("deleteAndKill unregisters the session host immediately", async () => {
+      const { registry } = makeRegistry()
+      const { reg } = makeConnectionRegistry()
+      const unregisterHost = vi.fn()
+      const orch = createAgentOrchestrator({
+        registry,
+        connectionRegistry: reg,
+        sessionHostRegistry: { unregisterHost },
+      })
+
+      const result = await orch.createAndSpawn({
+        cliKind: "opencode",
+        cwd: "/tmp",
+        modelOverride: null,
+      })
+
+      await orch.deleteAndKill(result.agentId)
+
+      expect(unregisterHost).toHaveBeenCalledTimes(1)
+      expect(unregisterHost).toHaveBeenCalledWith(result.agentId)
+    })
+
+    it("crash handler unregisters the session host", async () => {
+      let capturedHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
+      const { registry } = makeRegistry()
+      const { reg } = makeConnectionRegistry({
+        onCrashCapture: (h) => {
+          capturedHandler = h
+        },
+      })
+      const unregisterHost = vi.fn()
+      const orch = createAgentOrchestrator({
+        registry,
+        connectionRegistry: reg,
+        sessionHostRegistry: { unregisterHost },
+      })
+
+      const result = await orch.createAndSpawn({
+        cliKind: "opencode",
+        cwd: "/tmp",
+        modelOverride: null,
+      })
+
+      capturedHandler?.(result.agentId, { exitCode: 1, signal: null })
+      await new Promise((r) => setImmediate(r))
+      await new Promise((r) => setImmediate(r))
+
+      expect(unregisterHost).toHaveBeenCalledWith(result.agentId)
+    })
+
+    it("deleteAndKill without sessionHostRegistry (optional dep) — unchanged, no throw", async () => {
+      const { registry } = makeRegistry()
+      const { reg, closeMock } = makeConnectionRegistry()
+      const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+      const result = await orch.createAndSpawn({
+        cliKind: "opencode",
+        cwd: "/tmp",
+        modelOverride: null,
+      })
+
+      await expect(orch.deleteAndKill(result.agentId)).resolves.toBeUndefined()
+      expect(closeMock).toHaveBeenCalledWith(result.agentId)
+    })
+  })
+
   // removed in slice 10 phase 4 — old tests for getSession, ACP session creation
   describe.skip("OLD: session management (removed in Slice 10 Phase 4)", () => {
     it("createAndSpawn success → session created", () => {})

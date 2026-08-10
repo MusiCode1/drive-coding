@@ -126,6 +126,9 @@ const orchestrator = createAgentOrchestrator({
   registry,
   connectionRegistry,
   projectsRegistry,
+  // slice remote-warm-reconnect C2b: ניקוי hosts ב-delete/crash. אפשרי רק כי
+  // agentSessionRegistry נוצר למעלה (לפני ה-orchestrator) — ר' ההערה שם.
+  sessionHostRegistry: agentSessionRegistry,
 })
 
 // נתיבי HTTP

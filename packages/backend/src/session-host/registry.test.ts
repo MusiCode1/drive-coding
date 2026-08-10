@@ -545,4 +545,60 @@ describe("AgentSessionRegistry", () => {
       expect(result?.host).toBe(mockHost)
     })
   })
+
+  // ─── slice remote-warm-reconnect C2b: liveness (אין hosts יתומים) ──────────
+
+  describe("liveness check (slice remote-warm-reconnect C2b)", () => {
+    it("dead connection → getOrCreateHost returns undefined AND clears the stale entry", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      const mockHost = makeMockHost()
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(mockHost),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      // host נוצר בזמן שה-connection חי
+      await registry.getOrCreateHost("agent-1")
+      expect(registry.getHost("agent-1")).toBe(mockHost)
+
+      // ה-connection מת (crash/DELETE) — connectionRegistry.get מחזיר undefined
+      ;(connectionRegistry.get as ReturnType<typeof vi.fn>).mockReturnValue(undefined)
+
+      await expect(registry.getOrCreateHost("agent-1")).resolves.toBeUndefined()
+      // ה-entry נמחק מהמפה — לא נשאר host יתום
+      expect(registry.getHost("agent-1")).toBeUndefined()
+      expect(registry.getBroadcaster("agent-1")).toBeUndefined()
+    })
+
+    it("after dead-conn cleanup, a revived connection gets a fresh host", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      const firstHost = makeMockHost()
+      const secondHost = makeMockHost()
+      const createHostFn = vi
+        .fn()
+        .mockResolvedValueOnce(firstHost)
+        .mockResolvedValueOnce(secondHost)
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: createHostFn,
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      await registry.getOrCreateHost("agent-1")
+      ;(connectionRegistry.get as ReturnType<typeof vi.fn>).mockReturnValue(undefined)
+      await registry.getOrCreateHost("agent-1") // מנקה את ה-entry המת
+
+      // connection חוזר — נוצר host חדש (לא הישן-המת)
+      ;(connectionRegistry.get as ReturnType<typeof vi.fn>).mockReturnValue(conn)
+      const result = await registry.getOrCreateHost("agent-1")
+
+      expect(result?.host).toBe(secondHost)
+      expect(createHostFn).toHaveBeenCalledTimes(2)
+    })
+  })
 })
