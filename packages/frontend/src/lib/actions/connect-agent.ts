@@ -16,7 +16,7 @@
 
 import { goto } from "$app/navigation"
 import { env } from "$env/dynamic/public"
-import { resolveSessionTransport } from "$lib/session/session-transport"
+import { readSessionTransport } from "$lib/session/session-transport-read"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
@@ -29,15 +29,9 @@ export async function connectAgent(params: {
   params.settings.setCliKind(params.cliKind)
   params.settings.setLastCwd(params.cwd)
 
-  // `?sessionTransport=` לא שורד goto("/chat")/refresh — נשמר ל-sessionStorage כדי
-  // שהמשתמשת לא תתחבר ב-local בלי לדעת באמצע ה-preview (C4).
-  const q = new URLSearchParams(location.search).get("sessionTransport")
-  if (q) sessionStorage.setItem("sessionTransport", q)
-  const transport = resolveSessionTransport({
-    query: q,
-    stored: sessionStorage.getItem("sessionTransport"),
-    env: env.PUBLIC_SESSION_TRANSPORT,
-  })
+  // slice remote-warm-reconnect C4: פתירת הדגל עברה לפונקציה משותפת (אותו קוד בדיוק
+  // ששימש את +page.svelte:handleReconnect) — query ← stored ← env, + שמירה ל-sessionStorage.
+  const transport = readSessionTransport(env.PUBLIC_SESSION_TRANSPORT)
 
   if (transport === "remote") {
     await params.session.attachRemote({ cwd: params.cwd, cliKind: params.cliKind })
