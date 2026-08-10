@@ -388,4 +388,122 @@ describe("AgentSessionRegistry", () => {
       expect(() => registry.unregisterHost("unknown")).not.toThrow()
     })
   })
+
+  // ─── slice remote-warm-reconnect C1: onSessionAttached ─────────────────────
+
+  describe("onSessionAttached (slice remote-warm-reconnect C1)", () => {
+    /**
+     * host שנולד בלי session וש-newSession שלו מעדכן state.sessionId — כמו
+     * production (session-host.ts:467). makeMockHost הרגיל לא עושה את זה
+     * (ה-newSession שם מחזיר sessionId בלי לגעת ב-state), אז לנתיב יצירת
+     * ה-session צריך mock ייעודי.
+     */
+    function makeAutoSessionHost(): ExtendedSessionHost {
+      const host = makeMockHost(null)
+      ;(host.newSession as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        host.state.sessionId = "sess-auto-created"
+        return { sessionId: "sess-auto-created" }
+      })
+      return host
+    }
+
+    it("calls onSessionAttached with (agentId, real host sessionId) on first creation", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      const onSessionAttached = vi.fn()
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(makeAutoSessionHost()),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+        onSessionAttached,
+      })
+
+      await registry.getOrCreateHost("agent-1")
+
+      expect(onSessionAttached).toHaveBeenCalledTimes(1)
+      expect(onSessionAttached).toHaveBeenCalledWith("agent-1", "sess-auto-created")
+    })
+
+    it("also reports for an injected-ready host (call sits after the if block, not inside)", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      const onSessionAttached = vi.fn()
+      const mockHost = makeMockHost("injected-session")
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(mockHost),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+        onSessionAttached,
+      })
+
+      await registry.getOrCreateHost("agent-1")
+
+      expect(mockHost.newSession).not.toHaveBeenCalled()
+      expect(onSessionAttached).toHaveBeenCalledTimes(1)
+      expect(onSessionAttached).toHaveBeenCalledWith("agent-1", "injected-session")
+    })
+
+    it("a throwing onSessionAttached does not fail host creation (warn + continue)", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      const mockHost = makeAutoSessionHost()
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(mockHost),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+        onSessionAttached: vi.fn().mockRejectedValue(new Error("agents registry down")),
+      })
+
+      const result = await registry.getOrCreateHost("agent-1")
+
+      expect(result?.host).toBe(mockHost)
+      expect(registry.getHost("agent-1")).toBe(mockHost)
+    })
+
+    it("notifySessionAttached delegates to the callback; without a callback it is a quiet no-op", async () => {
+      const onSessionAttached = vi.fn()
+      const registry = createAgentSessionRegistry({
+        connectionRegistry: makeMockConnectionRegistry(),
+        onSessionAttached,
+      })
+
+      await registry.notifySessionAttached("agent-9", "sess-9")
+      expect(onSessionAttached).toHaveBeenCalledWith("agent-9", "sess-9")
+
+      const bare = createAgentSessionRegistry({
+        connectionRegistry: makeMockConnectionRegistry(),
+      })
+      await expect(bare.notifySessionAttached("agent-9", "sess-9")).resolves.toBeUndefined()
+    })
+
+    it("M5 unaffected: two concurrent callers → callback called exactly once", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      const mockHost = makeAutoSessionHost()
+      // real async work — wide enough for a second caller to race in without the M5 guard
+      const createHostFn = vi
+        .fn()
+        .mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(mockHost), 0)))
+      const onSessionAttached = vi.fn()
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: createHostFn,
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+        onSessionAttached,
+      })
+
+      const [r1, r2] = await Promise.all([
+        registry.getOrCreateHost("agent-1"),
+        registry.getOrCreateHost("agent-1"),
+      ])
+
+      expect(onSessionAttached).toHaveBeenCalledTimes(1)
+      expect(onSessionAttached).toHaveBeenCalledWith("agent-1", "sess-auto-created")
+      expect(r1).toBe(r2)
+    })
+  })
 })

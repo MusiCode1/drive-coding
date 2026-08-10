@@ -36,9 +36,20 @@
  */
 
 import type { ProviderConnection } from "@drive-coding/provider/connection"
+import { createLogger } from "@drive-coding/core/log"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { createPatchesBroadcaster, type PatchesBroadcaster } from "./patches-broadcaster.js"
 import { createSessionHostFromConnection, type ExtendedSessionHost } from "./session-host.js"
+
+const log = createLogger("backend.session-host.registry")
+
+/**
+ * slice remote-warm-reconnect C1: נקרא כש-host מצרף session (יצירה או host מוזרק-מוכן).
+ * server.ts מזריק כאן את העדכון לרג'יסטרי הסוכנים (status:"ready" + acpSessionId) —
+ * ב-remote mode אף אחד אחר לא כותב acpSessionId (POST /session-attached נקרא רק מנתיבים
+ * מקומיים), ובלי זה הסוכן תקוע על status:"starting" וכפתור ה-reconnect disabled.
+ */
+export type OnSessionAttached = (agentId: string, sessionId: string) => Promise<void> | void
 
 type HostEntry = {
   host: ExtendedSessionHost
@@ -70,6 +81,12 @@ export type AgentSessionRegistry = {
    * No-op if agentId is not registered.
    */
   unregisterHost(agentId: string): void
+
+  /**
+   * slice remote-warm-reconnect C1: מעביר ל-onSessionAttached שהוזרק (no-op אם לא הוזרק).
+   * נחוץ לסלייס ההמשך (loadSession ב-rpc) — שם ה-session נוצר/נטען מחוץ ל-doCreate.
+   */
+  notifySessionAttached(agentId: string, sessionId: string): Promise<void>
 }
 
 type AgentSessionRegistryDeps = {
@@ -84,6 +101,12 @@ type AgentSessionRegistryDeps = {
    * Receives host.patches and returns a PatchesBroadcaster.
    */
   _createBroadcasterFn?: (patches: ExtendedSessionHost["patches"]) => PatchesBroadcaster
+  /**
+   * slice remote-warm-reconnect C1 (אופציונלי): נקרא בתום doCreate, אחרי ש-session
+   * צורף (נוצר או הוזרק-מוכן) — ר' OnSessionAttached. כשל בו נבלע (log.warn):
+   * הסשן עצמו עובד; תצוגה ישנה בפאנל עדיפה על חיבור שבור.
+   */
+  onSessionAttached?: OnSessionAttached
 }
 
 export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): AgentSessionRegistry {
@@ -127,6 +150,18 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       await host.newSession({ cwd })
     }
 
+    // slice remote-warm-reconnect C1: דיווח על ה-session — אחרי ה-if block כולו
+    // (בכוונה לא בתוכו): גם host מוזרק-מוכן (נתיב טסטים/המשך) חייב לדווח.
+    // sessionId null (newSession לא עדכן state — לא אמור לקרות ב-production) → אין מה לדווח.
+    const attachedSessionId = host.state.sessionId
+    if (attachedSessionId) {
+      try {
+        await deps.onSessionAttached?.(agentId, attachedSessionId)
+      } catch (err) {
+        log.warn({ err, agentId }, "onSessionAttached failed — host creation continues")
+      }
+    }
+
     const entry: HostEntry = { host, broadcaster }
     map.set(agentId, entry)
     return entry
@@ -160,6 +195,10 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
 
     unregisterHost(agentId: string): void {
       map.delete(agentId)
+    },
+
+    async notifySessionAttached(agentId: string, sessionId: string): Promise<void> {
+      await deps.onSessionAttached?.(agentId, sessionId)
     },
   }
 }

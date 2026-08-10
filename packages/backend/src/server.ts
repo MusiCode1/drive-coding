@@ -51,6 +51,7 @@ process.on("unhandledRejection", (reason) => {
 import { cors } from "hono/cors"
 import { createConnectionRegistry } from "./acp/connection-registry.js"
 import { createInMemoryAgentRegistry } from "./agents/registry.js"
+import type { BridgeKind } from "@drive-coding/core"
 import { createAgentOrchestrator } from "./app/agent-orchestrator.js"
 import { createProjectsRegistry } from "./app/projects-registry.js"
 import { createRecordingsStore } from "./app/recordings-store.js"
@@ -97,6 +98,29 @@ const wireRecorder = createWireRecorder({
 const connectionRegistry = createConnectionRegistry({ wireRecorder })
 const projectsRegistry = createProjectsRegistry(ensureStateSubdir("cache"))
 const recordingsStore = createRecordingsStore(ensureStateSubdir("recordings"))
+
+// S4 session-host-http: 4 routes — GET /events, POST /rpc, POST /reply, GET /state
+// slice remote-warm-reconnect C1: תופסים את הרג'יסטרי (קודם נזרק ב-:151) — C2/C2b
+// מעבירים אותו ל-ws-agent (guard) ול-orchestrator (ניקוי hosts ב-delete/crash).
+const agentSessionRegistry = createAndRegisterSessionHostHttp(app, connectionRegistry, {
+  onSessionAttached: async (agentId, sessionId) => {
+    // בדיוק מה ש-POST /api/agents/:id/session-attached עושה (http-agents.ts) —
+    // ה-endpoint ההוא נקרא רק מנתיבים מקומיים; ב-remote ה-SessionHost הוא שמצרף
+    // את ה-session (אוטומטית ב-doCreate), אז הוא מדווח ישירות דרך ה-callback הזה.
+    //
+    // הכרעת MED-9: ה-callback הפנימי עוקף את guard ה-409 (http-agents.ts:142-150)
+    // **בכוונה** — ב-remote ה-host הוא authoritative לגבי ה-session שלו.
+    const agent = await registry.get(agentId)
+    if (!agent || agent.status === "closed") {
+      // race מול DELETE (deleteAndKill) — warn ודילוג, לא throw (הסשן חי; הפאנל יישאר ישן).
+      log.warn({ agentId, sessionId }, "onSessionAttached: agent missing or closed — skipped")
+      return
+    }
+    await registry.update(agentId, { status: "ready", acpSessionId: sessionId })
+    await projectsRegistry.recordCwd(agent.cwd, agent.cliKind as BridgeKind)
+    await projectsRegistry.recordSession(agent.cwd, sessionId)
+  },
+})
 
 const orchestrator = createAgentOrchestrator({
   registry,
@@ -147,8 +171,7 @@ registerCliAvailabilityHttp(app)
 // Slice cli-logo-serving: מגיש קובץ-לוגו CLI לפי id (id-keyed, ר' §3 בבריף)
 registerCliLogoHttp(app)
 
-// S4 session-host-http: 4 routes — GET /events, POST /rpc, POST /reply, GET /state
-createAndRegisterSessionHostHttp(app, connectionRegistry)
+// (session-host routes נרשמים למעלה — ליד יצירת agentSessionRegistry, לפני ה-orchestrator)
 
 // Slice 20: serve the built static FE (single-origin local prod).
 // Binary mode: serve from embedded FE manifest (assets in $bunfs, no disk reads).

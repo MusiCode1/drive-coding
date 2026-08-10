@@ -12,7 +12,7 @@
 
 import type { Hono } from "hono"
 import type { ConnectionRegistry } from "../../acp/connection-registry.js"
-import { createAgentSessionRegistry } from "../registry.js"
+import { createAgentSessionRegistry, type OnSessionAttached } from "../registry.js"
 import { registerEventsRoute } from "./events.js"
 import { registerRpcRoute } from "./rpc.js"
 import { registerReplyRoute } from "./reply.js"
@@ -43,12 +43,19 @@ export function registerSessionHostHttp(
 /**
  * createAndRegisterSessionHostHttp — convenience: creates registry + registers routes.
  * For server.ts wiring: pass connectionRegistry to build the AgentSessionRegistry.
+ *
+ * slice remote-warm-reconnect C1: opts.onSessionAttached מועבר לרג'יסטרי — ה-host
+ * מדווח את ה-session שלו לרג'יסטרי הסוכנים (ב-remote אף אחד אחר לא כותב acpSessionId).
  */
 export function createAndRegisterSessionHostHttp(
   app: Hono,
   connectionRegistry: ConnectionRegistry,
+  opts: { onSessionAttached?: OnSessionAttached } = {},
 ): ReturnType<typeof createAgentSessionRegistry> {
-  const agentSessionRegistry = createAgentSessionRegistry({ connectionRegistry })
+  const agentSessionRegistry = createAgentSessionRegistry({
+    connectionRegistry,
+    onSessionAttached: opts.onSessionAttached,
+  })
   registerSessionHostHttp(app, { agentSessionRegistry })
   return agentSessionRegistry
 }

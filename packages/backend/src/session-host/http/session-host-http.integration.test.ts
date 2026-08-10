@@ -134,6 +134,7 @@ async function setup(): Promise<{
     getOrCreateHost: async (id) => (id === AGENT_ID ? { host, broadcaster } : undefined),
     getBroadcaster: (id) => (id === AGENT_ID ? broadcaster : undefined),
     unregisterHost: () => {},
+    notifySessionAttached: async () => {},
   }
 
   const app = new Hono()
