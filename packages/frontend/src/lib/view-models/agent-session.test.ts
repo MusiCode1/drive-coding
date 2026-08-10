@@ -18,8 +18,7 @@ import type { AcpClient } from "@drive-coding/provider/client"
 import type { Bubble, MessageBubble, ThoughtBubble, UserBubble } from "$lib/types/bubble"
 
 // ─── Module-level mocks ───────────────────────────────────────────────────────
-
-/** Captured callback from createAcpClient — invoked in tests to simulate updates. */
+import { stableBubbleKey } from "$lib/util/bubble-key"
 let onSessionUpdate: ((notification: unknown) => void) | null = null
 
 vi.mock("@drive-coding/provider/client", async (importActual) => {
@@ -195,6 +194,39 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     const bubble = session.bubbles[0] as UserBubble
     expect(bubble.kind).toBe("user")
     expect(bubble.segments.map((s) => s.text).join("")).toBe("first second")
+  })
+
+  it("019fed5d scenario: interleaved chunks with same messageId → zero duplicate keys in stableBubbleKey", () => {
+    expect(onSessionUpdate).not.toBeNull()
+    onSessionUpdate?.(msgChunk("part 1", "msg-019fed5d"))
+    onSessionUpdate?.(thoughtChunk("thinking...", "msg-019fed5d"))
+    onSessionUpdate?.(msgChunk("part 2", "msg-019fed5d"))
+
+    expect(session.bubbles).toHaveLength(3)
+    const keys = session.renderBubbles.map(stableBubbleKey)
+    const uniqueKeys = new Set(keys)
+    expect(keys.length).toBe(3)
+    expect(uniqueKeys.size).toBe(3)
+  })
+
+  it("sendPrompt + user_message_chunk with messageId → attaches messageId to optimistic UserBubble", () => {
+    expect(onSessionUpdate).not.toBeNull()
+    // 1. sendPrompt creates optimistic UserBubble (messageId = null)
+    session.bubbles.push({
+      id: "opt-1",
+      kind: "user",
+      messageId: null,
+      createdAt: Date.now(),
+      segments: [{ id: "seg-1", text: "my prompt" }],
+    })
+
+    // 2. ACP sends user_message_chunk with messageId
+    onSessionUpdate?.(userChunk("my prompt", "acp-msg-1"))
+
+    expect(session.bubbles).toHaveLength(1)
+    const bubble = session.bubbles[0] as UserBubble
+    expect(bubble.messageId).toBe("acp-msg-1")
+    expect(bubble.segments).toHaveLength(2)
   })
 })
 

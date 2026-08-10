@@ -53,14 +53,31 @@ describe("stableBubbleKey", () => {
     expect(stableBubbleKey(user)).toBe("user:i:user-123")
   })
 
-  it("שתי בועות עם אותו (kind,messageId) מקבלות אותו מפתח (קלט לא-תקין; מתועד)", () => {
-    const a = makeMessage("shared", "a")
-    const b = makeMessage("shared", "b")
-    expect(stableBubbleKey(a)).toBe(stableBubbleKey(b))
+  it("שתי בועות מופרדות עם אותו (kind,messageId) מקבלות מפתחות ייחודיים (מונע each_key_duplicate)", () => {
+    const a = makeMessage("shared", "msg-a")
+    const b = makeMessage("shared", "msg-b")
+    expect(stableBubbleKey(a)).not.toBe(stableBubbleKey(b))
+    expect(stableBubbleKey(a)).toBe("message:m:shared:msg-a")
+    expect(stableBubbleKey(b)).toBe("message:m:shared:msg-b")
   })
 
-  it("message עם messageId מבוסס על messageId (לא id)", () => {
+  it("message עם messageId מבוסס על messageId ו-id", () => {
     const bubble: Bubble = makeMessage("stable-id", "random-1")
-    expect(stableBubbleKey(bubble)).toBe("message:m:stable-id")
+    expect(stableBubbleKey(bubble)).toBe("message:m:stable-id:random-1")
+  })
+
+  it("מערך בועות עם כפילויות messageId אינו מייצר אף מפתח כפול (dupes.length === 0)", () => {
+    const bubbles: Bubble[] = [
+      makeUser("msg-1", "u1"),
+      makeMessage("msg-1", "m1"),
+      makeTool("call-1", "t1"),
+      makeMessage("msg-1", "m2"),
+      makeThought("msg-1", "th1"),
+      makeMessage("msg-1", "m3"),
+    ]
+    const keys = bubbles.map(stableBubbleKey)
+    const uniqueKeys = new Set(keys)
+    expect(keys.length).toBe(bubbles.length)
+    expect(uniqueKeys.size).toBe(bubbles.length)
   })
 })

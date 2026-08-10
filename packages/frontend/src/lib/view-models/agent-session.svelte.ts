@@ -42,6 +42,7 @@ import {
 } from "$lib/adapters/agents-api"
 // ─── slice sessions-inline: ייבוא טיפוס + normalize ───
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
+import { safeUUID } from "$lib/util/uuid"
 import type { CuesEngine } from "$lib/engines/cues"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
 import type {
@@ -1174,11 +1175,11 @@ export class AgentSession {
 
     // אופטימי (optimistic): הוסף בועת משתמש מיד
     const userBubble: UserBubble = {
-      id: crypto.randomUUID(),
+      id: safeUUID(),
       kind: "user",
       messageId: null,
       createdAt: Date.now(),
-      segments: [{ id: crypto.randomUUID(), text }],
+      segments: [{ id: safeUUID(), text }],
       ...(opts?.recordingId !== undefined ? { recordingId: opts.recordingId } : {}),
       // ─── slice-image-paste Commit 4b: attachments לבועה אופטימית ───
       ...(atts.length > 0
@@ -2303,6 +2304,15 @@ export class AgentSession {
       // נשלח על ידי הסוכן במהלך ניגון מחדש של ההיסטוריה מ-loadSession (לפי מפרט ACP
       // סעיף §session-setup#loading-sessions). לעולם לא מגיע בתורים חיים —
       // אלה מקורם מ-sendPrompt ואנחנו מוסיפים להם את הבועה האופטימית שם.
+      if (messageId !== null) {
+        for (let i = this.bubbles.length - 1; i >= 0; i--) {
+          const b = this.bubbles[i]
+          if (b !== undefined && b.kind === "user" && (b.messageId === messageId || b.messageId === null)) {
+            if (b.messageId === null) b.messageId = messageId
+            break
+          }
+        }
+      }
       const content = update.content as
         | {
             type?: string
@@ -2368,7 +2378,7 @@ export class AgentSession {
     // סכמת ACP: התראה tool_call דורשת toolCallId + title. ה-title עלול להיות undefined
     // בפועל אם הסוכן שולח התראה מינימלית, לכן יש לסגת בצורה עדינה.
     const bubble: ToolBubble = {
-      id: crypto.randomUUID(),
+      id: safeUUID(),
       kind: "tool",
       messageId: null,
       createdAt: Date.now(),
@@ -2473,7 +2483,7 @@ export class AgentSession {
     }
 
     const childBubble: ToolBubble = {
-      id: crypto.randomUUID(),
+      id: safeUUID(),
       kind: "tool",
       messageId: null,
       createdAt: Date.now(),
@@ -2570,7 +2580,7 @@ export class AgentSession {
         : last.messageId === null) // אין messageId → קבץ לפי kind (Gemini)
 
     if (canGroup && last !== undefined) {
-      const seg: Segment = { id: crypto.randomUUID(), text }
+      const seg: Segment = { id: safeUUID(), text }
       // last הוא מסוג MessageBubble | ThoughtBubble | UserBubble — לכולם יש מערכי segments
       if (last.kind === "message") {
         ;(last as MessageBubble).segments.push(seg)
@@ -2583,26 +2593,26 @@ export class AgentSession {
       const newBubble: MessageBubble | ThoughtBubble | UserBubble =
         kind === "message"
           ? {
-              id: crypto.randomUUID(),
+              id: safeUUID(),
               kind: "message",
               messageId,
               createdAt: Date.now(),
-              segments: [{ id: crypto.randomUUID(), text }],
+              segments: [{ id: safeUUID(), text }],
             }
           : kind === "thought"
             ? {
-                id: crypto.randomUUID(),
+                id: safeUUID(),
                 kind: "thought",
                 messageId,
                 createdAt: Date.now(),
-                segments: [{ id: crypto.randomUUID(), text }],
+                segments: [{ id: safeUUID(), text }],
               }
             : {
-                id: crypto.randomUUID(),
+                id: safeUUID(),
                 kind: "user",
                 messageId,
                 createdAt: Date.now(),
-                segments: [{ id: crypto.randomUUID(), text }],
+                segments: [{ id: safeUUID(), text }],
               }
       this.bubbles.push(newBubble)
     }
@@ -2631,7 +2641,7 @@ export class AgentSession {
       userBubble.attachments = [...(userBubble.attachments ?? []), attachment]
     } else {
       const newBubble: UserBubble = {
-        id: crypto.randomUUID(),
+        id: safeUUID(),
         kind: "user",
         messageId,
         createdAt: Date.now(),
@@ -2665,7 +2675,7 @@ export class AgentSession {
       userBubble.contentPlaceholders = [...(userBubble.contentPlaceholders ?? []), ph]
     } else {
       const newBubble: UserBubble = {
-        id: crypto.randomUUID(),
+        id: safeUUID(),
         kind: "user",
         messageId,
         createdAt: Date.now(),

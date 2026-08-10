@@ -7,7 +7,7 @@
  *   2. מריץ `splitIntoSentences` לחילוץ משפטים שלמים
  *   3. מכניס לתור TTS job לכל משפט
  *   4. לולאת ה-fetch מכבדת lookahead של LOOKAHEAD fetches מקביליים
- *   5. כל fetch שהושלם מועבר ל-`Player` דרך `AudioStream`
+import { safeUUID } from "$lib/util/uuid"
  *
  * מחשבות עוברות תרגום Gemini לעברית לפני TTS. הודעות מושמעות כמות שהן
  * (הסוכן כבר מקבל הוראה להגיב בעברית).
@@ -327,11 +327,11 @@ export class Speaker {
     bubbleId?: string,
   ): void {
     if (text.length === 0) return
-    const bid = bubbleId ?? messageId ?? crypto.randomUUID()
+    const bid = bubbleId ?? messageId ?? safeUUID()
     // slice 22: הקצה orderKey דטרמיניסטי — seq יציב פר-bubble, segmentIndex עולה
     const orderKey = this.#orderAlloc.next(bid)
     this.#jobs.push({
-      segmentId: crypto.randomUUID(),
+      segmentId: safeUUID(),
       kind,
       messageId,
       text,
@@ -487,7 +487,7 @@ export class Speaker {
       const orderKey = this.#orderAlloc.next(bid)
 
       this.#jobs.push({
-        segmentId: crypto.randomUUID(),
+        segmentId: safeUUID(),
         kind: "tool",
         messageId: null,
         text: "", // יתמלא ב-#narrateForJob
