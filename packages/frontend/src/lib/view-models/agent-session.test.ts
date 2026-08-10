@@ -228,6 +228,26 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     expect(bubble.messageId).toBe("acp-msg-1")
     expect(bubble.segments).toHaveLength(2)
   })
+
+  it("standalone whitespace-only chunks (\n) do not create empty message bubbles when canGroup is false", () => {
+    expect(onSessionUpdate).not.toBeNull()
+    onSessionUpdate?.(msgChunk("hello", "m1"))
+    // Simulate tool call inserting a non-groupable bubble
+    session.bubbles.push({
+      id: "t1",
+      kind: "tool",
+      messageId: null,
+      createdAt: Date.now(),
+      segments: [],
+      toolCall: { toolCallId: "call-1", name: "read", status: "completed" },
+    })
+
+    // Standalone newline chunk after tool call
+    onSessionUpdate?.(msgChunk("\n", "m1"))
+
+    // Should NOT create a 3rd bubble just for "\n"
+    expect(session.bubbles).toHaveLength(2)
+  })
 })
 
 // ─── Integration: newSession (warm new-session) ────────────────────────────────

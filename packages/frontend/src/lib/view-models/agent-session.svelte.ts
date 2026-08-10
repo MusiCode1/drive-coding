@@ -2578,7 +2578,6 @@ export class AgentSession {
       (messageId !== null
         ? last.messageId === messageId // יש messageId → קבץ לפי מזהה (Claude)
         : last.messageId === null) // אין messageId → קבץ לפי kind (Gemini)
-
     if (canGroup && last !== undefined) {
       const seg: Segment = { id: safeUUID(), text }
       // last הוא מסוג MessageBubble | ThoughtBubble | UserBubble — לכולם יש מערכי segments
@@ -2590,6 +2589,9 @@ export class AgentSession {
         ;(last as UserBubble).segments.push(seg)
       }
     } else {
+      // אם לא ניתן לקבץ והמקטע מכיל רווחים/ירידות שורה בלבד — אל תפתח בועה ריקה חדשה
+      if (text.trim() === "") return
+
       const newBubble: MessageBubble | ThoughtBubble | UserBubble =
         kind === "message"
           ? {
