@@ -81,8 +81,9 @@ local → **ללא שינוי**. guard `!agent.acpSessionId` נשאר (מאוכ�
 
 - סוויטות הבריף: `vitest run packages/backend/src/session-host packages/backend/tests
   packages/frontend/src/lib/session packages/frontend/src/lib/view-models` — 875 עברו;
-  הכשל היחיד (`https-serve.test.ts`) **pre-existing** (מאומת גם על base; סביבתי —
-  binding/TLS בסנדבוקס).
+  הכשל היחיד (`https-serve.test.ts`) **pre-existing** (מאומת גם על base — הקובץ
+  byte-identical; הסיבה: hardcoded Windows paths, `:85-87` — BUN_PATH/ROOT של
+  `D:/...`, לא בעיית binding/TLS כפי שנכתב כאן קודם; תוקן אחרי הערת כלב).
 - **אפס שינוי בנתיב local**: כל 6 סוויטות ה-reconnect המקומיות
   (agent-session.reconnect*, reconnect-bubble-merge, adapters/reconnect-state) — 46/46
   ירוקים, והקבצים עצמם **לא נגעו** (diff ריק מול base).
@@ -92,6 +93,9 @@ local → **ללא שינוי**. guard `!agent.acpSessionId` נשאר (מאוכ�
 - `lint:i18n` נקי. biome על 22 הקבצים שנגעו: בדיוק אותם ממצאים כמו base (כולם
   pre-existing: noNonNullAssertion בטסטים, noRedeclare SessionState וכו') — אפס חדשים;
   2 הפרות פורמט שהוספתי תוקנו ב-`biome format --write`.
+- הערת שקיפות (כלב): קומיט C4 (`1cf48ce`) כולל גם פירמוט biome קוסמטי ב-
+  `+page.svelte` (פיצול יבוא/שורות — אפס שינוי לוגיקה, אומת שורה-שורה) שלא צוין
+  בדוח המבצע המקורי.
 - known-gap נשאר נעול: `leaveRunning` ב-remote עדיין detach מלא (החלטה נפרדת, ר' בריף).
 - הערה לסקופ עתידי: `attached` תמיד false ב-remote → הפאנל מציג "reconnect" ולא
   "takeover" גם כש-WS חי בלשונית אחרת — חסר מקור-מידע; לא בסקופ (מתועד בבריף).
