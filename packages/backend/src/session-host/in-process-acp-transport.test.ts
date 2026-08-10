@@ -5,7 +5,7 @@
  *
  * Tests:
  *   - readable: lines from onLine arrive as Uint8Array chunks with \n suffix
- *   - writable: Uint8Array written triggers conn.wire.write (with \n handling)
+ *   - writable: Uint8Array written triggers conn.wire.write (re-adds \n — NDJSON child framing)
  *   - writable: line-buffer/split on \n — SDK chunks may be multi-line or partial
  *   - close(): after close, no more writes or callbacks
  *   - onClose: maps to conn.onCrash — BridgeCrashInfo → (code, reason) adapter
@@ -104,7 +104,10 @@ describe("InProcessAcpTransport", () => {
   })
 
   describe("writable — Uint8Array → conn.wire.write with line-buffering", () => {
-    it("writes a single complete line to conn.wire.write (strips trailing \\n from SDK write)", async () => {
+    // חוזה ה-wire של spawn (spawn-core.writeStdin כותב verbatim, "wrapper normalizes")
+    // מחייב שורה מסיימת-\n — בדיוק כמו הנתיב המקומי (ws-agent.ts:170 מוסיף \n במפורש).
+    // בלי ה-\n ה-CLI (readline/NDJSON) לא רואה שורה שלמה → initialize נתקע.
+    it("writes a single complete line to conn.wire.write with \\n terminator", async () => {
       const mock = makeMockConnection()
       const transport = createInProcessAcpTransport({ wire: mock, onCrash: mock.onCrash })
 
@@ -112,7 +115,7 @@ describe("InProcessAcpTransport", () => {
       await writer.write(enc.encode('{"method":"prompt"}\n'))
       await writer.releaseLock()
 
-      expect(mock.write).toHaveBeenCalledWith('{"method":"prompt"}')
+      expect(mock.write).toHaveBeenCalledWith('{"method":"prompt"}\n')
     })
 
     it("buffers a partial chunk and flushes when \\n arrives in next write", async () => {
@@ -126,7 +129,7 @@ describe("InProcessAcpTransport", () => {
       await writer.releaseLock()
 
       expect(mock.write).toHaveBeenCalledTimes(1)
-      expect(mock.write).toHaveBeenCalledWith('{"method":"x"}')
+      expect(mock.write).toHaveBeenCalledWith('{"method":"x"}\n')
     })
 
     it("handles multiple lines in a single chunk", async () => {
@@ -138,8 +141,8 @@ describe("InProcessAcpTransport", () => {
       await writer.releaseLock()
 
       expect(mock.write).toHaveBeenCalledTimes(2)
-      expect(mock.write).toHaveBeenNthCalledWith(1, '{"id":1}')
-      expect(mock.write).toHaveBeenNthCalledWith(2, '{"id":2}')
+      expect(mock.write).toHaveBeenNthCalledWith(1, '{"id":1}\n')
+      expect(mock.write).toHaveBeenNthCalledWith(2, '{"id":2}\n')
     })
   })
 

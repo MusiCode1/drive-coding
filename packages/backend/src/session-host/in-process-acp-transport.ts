@@ -78,14 +78,14 @@ export function createInProcessAcpTransport(deps: InProcessAcpTransportDeps): Ac
         const line = lineBuffer.slice(0, nlIndex)
         lineBuffer = lineBuffer.slice(nlIndex + 1)
         if (line.length > 0) {
-          deps.wire.write(line)
+          deps.wire.write(line + "\n")
         }
       }
     },
     close() {
       // flush any remaining partial line (shouldn't happen with well-formed NDJSON)
       if (lineBuffer.length > 0) {
-        deps.wire.write(lineBuffer)
+        deps.wire.write(lineBuffer + "\n")
         lineBuffer = ""
       }
     },
