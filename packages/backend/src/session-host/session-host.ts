@@ -477,9 +477,19 @@ export async function createSessionHostFromConnection(
     },
 
     async loadSession(opts: { cwd: string; sessionId: string; _meta?: Record<string, unknown> }) {
-      const result = (await client.loadSession(opts)) as { sessionId: string }
+      const result = (await client.loadSession(opts)) as { sessionId: string; configOptions?: unknown[] }
       // Update currentState.sessionId so setMode/setConfigOption can use it
-      currentState = { ...currentState, sessionId: result.sessionId }
+      // Also capture configOptions from session/load response (capabilities.ts:17)
+      const configOptions = Array.isArray(result.configOptions) ? result.configOptions : []
+      currentState = { ...currentState, sessionId: result.sessionId, configOptions }
+      if (configOptions.length > 0) {
+        emitPatches([{
+          version: currentState.version + 1,
+          op: "update-session",
+          changes: { configOptions },
+        }])
+        currentState = { ...currentState, version: currentState.version + 1 }
+      }
       return result
     },
 
