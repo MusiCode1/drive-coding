@@ -18,6 +18,7 @@
  * ─── slice session-host-core C2+C4 (TDD + integration) ───
  * ─── slice session-host-pending-surface C2+C3+C4 (TDD + integration) ───
  * ─── slice session-host-pending-surface hotfix: waiting-before-add-message order ───
+ * ─── slice remote-session-mgmt C1+C2 (TDD): list/delete passthrough, loadSession as switch ───
  */
 
 import type {
@@ -240,6 +241,29 @@ export type ExtendedSessionHost = SessionHost & {
    * slice remote-session-view C4: exposed via POST /api/agents/:id/rpc {method:"setSessionModel"}
    */
   setSessionModel(model: string): Promise<void>
+
+  // ─── slice remote-session-mgmt C1: session list/delete + capabilities ───
+
+  /**
+   * Passthrough to client.listSessions() — the raw ACP response ({sessions, nextCursor?}).
+   * JSON-RPC errors propagate AS-IS (including code -32601) — the rpc route maps them.
+   * S4: exposed via POST /api/agents/:id/rpc {method:"listSessions"}
+   */
+  listSessions(): Promise<Record<string, unknown>>
+
+  /**
+   * Passthrough to client.deleteSession(sessionId).
+   * JSON-RPC errors propagate AS-IS (including code -32601) — the rpc route maps them.
+   * S4: exposed via POST /api/agents/:id/rpc {method:"deleteSession"}
+   */
+  deleteSession(sessionId: string): Promise<void>
+
+  /**
+   * Raw agentCapabilities from initialize (client.capabilities) — includes
+   * sessionCapabilities.delete/list (SDK types.gen.d.ts:1471/:1608). The rpc route
+   * ships them in the listSessions response so the FE can gate the delete button.
+   */
+  readonly agentCapabilities: AcpClient["capabilities"]
 }
 
 /**
@@ -532,6 +556,21 @@ export async function createSessionHostFromConnection(
     async setSessionModel(model: string): Promise<void> {
       if (!currentState.sessionId) throw new Error("No session")
       await client.setSessionModel({ sessionId: currentState.sessionId, modelId: model })
+    },
+    // ─── slice remote-session-mgmt C1: session list/delete + capabilities ───
+    // Passthroughs — JSON-RPC errors (incl. code -32601) propagate AS-IS; the rpc
+    // route maps them. No wrapping/absorbing here.
+
+    async listSessions(): Promise<Record<string, unknown>> {
+      return (await client.listSessions()) as Record<string, unknown>
+    },
+
+    async deleteSession(sessionId: string): Promise<void> {
+      await client.deleteSession(sessionId)
+    },
+
+    get agentCapabilities(): AcpClient["capabilities"] {
+      return client.capabilities
     },
   }
 }

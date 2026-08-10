@@ -144,11 +144,15 @@ function makeSessionNotification(update: Record<string, unknown>): SessionNotifi
 
 // ── test setup ────────────────────────────────────────────────────────────────
 
-async function setup(permissionTimeoutMs = 5000, elicitationTimeoutMs = 5000) {
+async function setup(
+  permissionTimeoutMs = 5000,
+  elicitationTimeoutMs = 5000,
+  clientOverrides: Partial<AcpClient> = {},
+) {
   const { conn, _triggerLine, _triggerCrash } = makeMockConnection()
   let capturedCallbacks: AcpClientCallbacks | undefined
   let capturedTransport: AcpTransport | undefined
-  const mockClient = makeMockAcpClient()
+  const mockClient = makeMockAcpClient(clientOverrides)
 
   const host = await createSessionHostFromConnection(conn, {
     permissionTimeoutMs,
@@ -950,5 +954,60 @@ describe("createSessionHostFromConnection", () => {
       await expect(host.extMethod("_drive/ping", {})).resolves.not.toThrow()
       expect(mockClient.extMethod).toHaveBeenCalled()
     })
+  })
+})
+// ─── slice remote-session-mgmt C1: list/delete passthrough + capabilities ───
+
+describe("createSessionHostFromConnection — remote-session-mgmt C1", () => {
+  it("listSessions returns exactly what client.listSessions returns (passthrough)", async () => {
+    const raw = {
+      sessions: [{ sessionId: "s-1", cwd: "/a" }, { sessionId: "s-2", cwd: "/b" }],
+      nextCursor: "cur-9",
+    }
+    const { host, mockClient } = await setup(5000, 5000, {
+      listSessions: vi.fn().mockResolvedValue(raw),
+    })
+
+    const result = await host.listSessions()
+
+    expect(result).toEqual(raw)
+    expect(mockClient.listSessions).toHaveBeenCalledTimes(1)
+  })
+
+  it("deleteSession passes the sessionId through to client.deleteSession", async () => {
+    const { host, mockClient } = await setup()
+
+    await host.deleteSession("sess-to-delete")
+
+    expect(mockClient.deleteSession).toHaveBeenCalledWith("sess-to-delete")
+    expect(mockClient.deleteSession).toHaveBeenCalledTimes(1)
+  })
+
+  it("deleteSession propagates a JSON-RPC error AS-IS — code -32601 is preserved, not absorbed", async () => {
+    const rpcError = Object.assign(new Error("Method not found"), { code: -32601 })
+    const { host, mockClient } = await setup(5000, 5000, {
+      deleteSession: vi.fn().mockRejectedValue(rpcError),
+    })
+
+    // The error must surface with its code intact — the rpc route maps on `.code`.
+    await expect(host.deleteSession("s-x")).rejects.toMatchObject({ code: -32601 })
+  })
+
+  it("listSessions propagates a JSON-RPC error AS-IS — code -32601 is preserved, not absorbed", async () => {
+    const rpcError = Object.assign(new Error("Method not found"), { code: -32601 })
+    const { host, mockClient } = await setup(5000, 5000, {
+      listSessions: vi.fn().mockRejectedValue(rpcError),
+    })
+
+    await expect(host.listSessions()).rejects.toMatchObject({ code: -32601 })
+  })
+
+  it("agentCapabilities exposes client.capabilities (raw agentCapabilities)", async () => {
+    const caps = { sessionCapabilities: { delete: {} } }
+    const { host } = await setup(5000, 5000, {
+      capabilities: caps as AcpClient["capabilities"],
+    })
+
+    expect(host.agentCapabilities).toEqual(caps)
   })
 })
