@@ -242,7 +242,12 @@ agentWss.on("error", (err) => procLog.warn({ src: "agentWss", err }, "wss error"
 
 const echoHandler = createEchoWsHandler()
 // CUT-3b-ii: connectionRegistry מחליף bridgeManager ב-ws-agent
-const onAgentConnect = createAgentWsHandler({ orchestrator, connectionRegistry })
+// slice remote-warm-reconnect C2: sessionHostRegistry → דחיית WS כש-host חי על הסוכן
+const onAgentConnect = createAgentWsHandler({
+  orchestrator,
+  connectionRegistry,
+  sessionHostRegistry: agentSessionRegistry,
+})
 
 echoWss.on("connection", (ws) => {
   echoHandler(ws)

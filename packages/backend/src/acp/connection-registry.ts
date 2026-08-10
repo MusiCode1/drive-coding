@@ -84,6 +84,13 @@ export type ConnectionRegistry = {
   markDetached(agentId: string): void
 
   /**
+   * isAttached — האם יש לקוח WS מקומי חי על agentId (markAttached בלי markDetached).
+   * slice remote-warm-reconnect C2: ה-session-host registry מסרב ליצור host לסוכן
+   * attached — שני לקוחות ACP על אותו wire = השחתת סשן.
+   */
+  isAttached(agentId: string): boolean
+
+  /**
    * getRuntimeInfo — composes conn.turn + conn.pid + attached-state.
    * Returns null if agentId not in registry.
    * pid may be null for in-process connections (e.g. claude in-process, CUT-3b-iii-2).
@@ -233,6 +240,10 @@ export function createConnectionRegistry(opts?: {
     markDetached(agentId) {
       const e = map.get(agentId)
       if (e) e.attached = false
+    },
+
+    isAttached(agentId) {
+      return map.get(agentId)?.attached ?? false
     },
 
     getRuntimeInfo(agentId) {

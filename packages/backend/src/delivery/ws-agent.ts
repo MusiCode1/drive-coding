@@ -64,6 +64,13 @@ const STALE_MS = 60_000 // 2+ פעימות שהוחמצו (FE שולח כל 25s)
 export function createAgentWsHandler(deps: {
   orchestrator: AgentOrchestrator
   connectionRegistry: ConnectionRegistry
+  /**
+   * slice remote-warm-reconnect C2 (כיוון WS→host, אופציונלי): אם יש SessionHost חי
+   * על הסוכן — דחה את ה-WS. שני לקוחות ACP על אותו conn.wire (שניהם onLine + write)
+   * = השחתת סשן; ה-host הוא הבעלים של ה-wire. אופציונלי — נתיב local בלי host
+   * ממשיך בדיוק כמו קודם (כולל הטסטים הקיימים שלא מזריקים את ה-dep).
+   */
+  sessionHostRegistry?: { getHost(agentId: string): unknown }
 }): (ws: WebSocket, agentId: string) => void {
   // MED-8: חיבור FE WS פעיל אחד לכל agentId — מונע התנגשות מצב ACP בטאב שני
   // הרחבה מ-Commit 2: {ws, lastPingAt} לניהול sweep
@@ -109,6 +116,15 @@ export function createAgentWsHandler(deps: {
     if (!conn) {
       childLog.warn({}, "agent not found")
       feWs.close(1008, "agent not found")
+      return
+    }
+
+    // slice remote-warm-reconnect C2 (WS→host): host חי על ה-agent ⇒ ה-wire תפוס —
+    // WS מקביל היה כותב קריאות ACP שניות לתוך אותו צינור (השחתה). סוגרים ב-1008
+    // (policy violation) אחרי ה-presence check ולפני activeFeWs.set/markAttached.
+    if (deps.sessionHostRegistry?.getHost(agentId)) {
+      childLog.warn({}, "session host active on this agent — rejecting WS attach")
+      feWs.close(1008, "session-host-active")
       return
     }
 

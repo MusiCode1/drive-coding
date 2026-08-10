@@ -121,6 +121,7 @@ function makeConnectionRegistry(
     get: vi.fn(() => undefined),
     markAttached: vi.fn(),
     markDetached: vi.fn(),
+    isAttached: vi.fn(() => false),
     getRuntimeInfo: vi.fn(() => null),
     close: closeMock,
     onCrash(handler) {

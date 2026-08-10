@@ -40,7 +40,7 @@ function makeMockConnection(): ProviderConnection {
   } as unknown as ProviderConnection
 }
 
-function makeMockConnectionRegistry(conn?: ProviderConnection): ConnectionRegistry {
+function makeMockConnectionRegistry(conn?: ProviderConnection, attached = false): ConnectionRegistry {
   return {
     connect: vi.fn(),
     get: vi.fn().mockReturnValue(conn),
@@ -48,6 +48,7 @@ function makeMockConnectionRegistry(conn?: ProviderConnection): ConnectionRegist
     list: vi.fn().mockReturnValue([]),
     markAttached: vi.fn(),
     markDetached: vi.fn(),
+    isAttached: vi.fn().mockReturnValue(attached),
     getRuntimeInfo: vi.fn().mockReturnValue(null),
     close: vi.fn().mockResolvedValue(undefined),
     onCrash: vi.fn(() => () => {}),
@@ -504,6 +505,44 @@ describe("AgentSessionRegistry", () => {
       expect(onSessionAttached).toHaveBeenCalledTimes(1)
       expect(onSessionAttached).toHaveBeenCalledWith("agent-1", "sess-auto-created")
       expect(r1).toBe(r2)
+    })
+  })
+
+  // ─── slice remote-warm-reconnect C2: guard host→WS ─────────────────────────
+
+  describe("attached-agent refusal (slice remote-warm-reconnect C2)", () => {
+    it("refuses to create a host for a locally-attached agent (WS owns the wire)", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn, /* attached */ true)
+      const createHostFn = vi.fn().mockResolvedValue(makeMockHost())
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: createHostFn,
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      const result = await registry.getOrCreateHost("agent-1")
+
+      expect(result).toBeUndefined() // → route יחזיר 404
+      expect(createHostFn).not.toHaveBeenCalled() // host לא נוצר בכלל
+      expect(registry.getHost("agent-1")).toBeUndefined()
+    })
+
+    it("creates a host normally when the agent is not attached (regression)", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn, /* attached */ false)
+      const mockHost = makeMockHost()
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(mockHost),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      const result = await registry.getOrCreateHost("agent-1")
+
+      expect(result?.host).toBe(mockHost)
     })
   })
 })

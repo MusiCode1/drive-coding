@@ -110,6 +110,7 @@ function makeMockConnectionRegistry(conn: ProviderConnection | null): {
     markAttached: markAttachedSpy,
     markDetached: markDetachedSpy,
     getRuntimeInfo: vi.fn(() => null),
+    isAttached: vi.fn(() => false),
     close: vi.fn(async () => {}),
     onCrash: vi.fn(() => () => {}),
   }
@@ -326,5 +327,67 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
 
     // conn.close must NOT be called — child survives FE disconnect
     expect(conn.close).not.toHaveBeenCalled()
+  })
+
+  // ─── slice remote-warm-reconnect C2: guard WS→host ─────────────────────────
+
+  describe("sessionHostRegistry guard (C2)", () => {
+    it("agent with a live session host → close(1008, 'session-host-active'), no pipe attached", async () => {
+      const { conn, writeSpy } = makeMockConn()
+      const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
+      const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
+      // SessionHost חי על הסוכן — getHost מחזיר אובייקט (לא undefined)
+      const sessionHostRegistry = { getHost: vi.fn(() => ({})) }
+
+      const onConnect = createAgentWsHandler({ orchestrator, connectionRegistry, sessionHostRegistry })
+      const { ws, closeArgs } = makeMockFeWs()
+
+      onConnect(ws, "hosted-agent")
+
+      expect(closeArgs).toHaveLength(1)
+      // biome-ignore lint/style/noNonNullAssertion: guarded by toHaveLength
+      expect(closeArgs[0]![0]).toBe(1008)
+      // biome-ignore lint/style/noNonNullAssertion: guarded by toHaveLength
+      expect(closeArgs[0]![1]).toBe("session-host-active")
+      // אין pipe: לא markAttached, לא העברת הודעות ל-wire
+      expect(markAttachedSpy).not.toHaveBeenCalled()
+      ws.emit("message", JSON.stringify({ jsonrpc: "2.0", method: "initialize" }))
+      await new Promise((r) => setTimeout(r, 20))
+      expect(writeSpy).not.toHaveBeenCalled()
+    })
+
+    it("no host + no sessionHostRegistry dep → existing behavior unchanged (regression)", async () => {
+      const { conn, writeSpy } = makeMockConn()
+      const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
+      const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
+
+      // בלי sessionHostRegistry בכלל — הנתיב הקיים
+      const onConnect = createAgentWsHandler({ orchestrator, connectionRegistry })
+      const { ws, closeArgs } = makeMockFeWs()
+
+      onConnect(ws, "plain-agent")
+
+      expect(closeArgs).toHaveLength(0)
+      expect(markAttachedSpy).toHaveBeenCalledTimes(1)
+      ws.emit("message", JSON.stringify({ jsonrpc: "2.0", method: "initialize" }))
+      await new Promise((r) => setTimeout(r, 20))
+      expect(writeSpy).toHaveBeenCalled()
+    })
+
+    it("sessionHostRegistry present but getHost returns undefined → attach proceeds (no host)", async () => {
+      const { conn } = makeMockConn()
+      const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
+      const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
+      const sessionHostRegistry = { getHost: vi.fn(() => undefined) }
+
+      const onConnect = createAgentWsHandler({ orchestrator, connectionRegistry, sessionHostRegistry })
+      const { ws, closeArgs } = makeMockFeWs()
+
+      onConnect(ws, "no-host-agent")
+
+      expect(closeArgs).toHaveLength(0)
+      expect(markAttachedSpy).toHaveBeenCalledTimes(1)
+      expect(sessionHostRegistry.getHost).toHaveBeenCalledWith("no-host-agent")
+    })
   })
 })

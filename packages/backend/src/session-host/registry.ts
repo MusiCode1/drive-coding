@@ -126,6 +126,16 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     const conn = connectionRegistry.get(agentId)
     if (!conn) return undefined
 
+    // slice remote-warm-reconnect C2 (כיוון host→WS): סוכן עם לקוח WS מקומי חי
+    // (attached) — מסרבים ליצור host. התרחיש שנחסם: סוכן מחובר מקומית בלשונית אחת
+    // + משתמשת עם דגל remote לוחצת reconnect בלשונית אחרת — ה-host היה נבנה על
+    // אותו wire שה-WS צורך (שני לקוחות ACP = השחתה). סימטרי ל-guard ב-ws-agent.
+    // return undefined → ה-route מחזיר 404 (agent connection not found).
+    if (connectionRegistry.isAttached(agentId)) {
+      log.warn({ agentId }, "agent is locally attached (WS) — refusing to create a session host")
+      return undefined
+    }
+
     // calev-heavy round 2 finding #5: cwd is validated BEFORE creating the host +
     // broadcaster. The old order created a real ACP host (and a broadcaster that
     // had already started draining host.patches) on the missing-cwd path, then
