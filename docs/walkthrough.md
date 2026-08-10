@@ -1,5 +1,101 @@
 # Walkthrough — drive-coding
 
+## 2026-08-11 (slice remote-warm-reconnect — סוף הסלייס)
+
+### slice remote-warm-reconnect — כפתור "התחברות מחדש" עובד ב-Remote Mode (HTTP+SSE)
+
+Base: `slice/view-switch` tip `ec95f93`. ענף: `slice/remote-warm-reconnect`, worktree
+`.worktrees/remote-warm-reconnect`. 5 קומיטים (C1, C2, C2b, C3, C4) + קומיט תיעוד זה.
+
+#### C1 — ה-host מדווח session לרג'יסטרי (שורש בעיה 1: הכפתור היה disabled)
+
+`packages/backend/src/session-host/registry.ts` — dep אופציונלי חדש
+`onSessionAttached?: (agentId, sessionId) => Promise<void> | void` + מתודה ציבורית
+`notifySessionAttached` (delegation; no-op בלי callback — נחוצה לסלייס ההמשך, loadSession
+ב-rpc). הקריאה ב-`doCreate` **אחרי** בלוק יצירת ה-session (לא בתוכו) — גם host
+מוזרק-מוכן מדווח; עטופה ב-try/catch + `log.warn`: כשל בדיווח לא מפיל יצירת host
+(הסשן עובד; פאנל ישן עדיף על חיבור שבור). guard קטן נוסף: sessionId null → אין מה
+לדווח (host.state.sessionId הוא `string | null` — ב-production newSession תמיד ממלא).
+
+`packages/backend/src/session-host/http/index.ts` — `createAndRegisterSessionHostHttp`
+מקבל `opts.onSessionAttached` ומעביר לרג'יסטרי. `packages/backend/src/server.ts` —
+הרג'יסטרי **נתפס** (קודם נזרק) והועבר **מעל** יצירת ה-orchestrator (מאפשר את C2b
+כ-dep לבנאי, בלי setter post-construction); ה-callback משכפל בדיוק את
+`POST /session-attached` (status:"ready" + acpSessionId + projectsRegistry.recordCwd/
+recordSession), כולל דילוג-warn על סוכן חסר/closed (race מול DELETE). **הכרעת MED-9
+מתועדת שם בהערה**: ה-callback הפנימי עוקף את guard ה-409 **בכוונה** — ב-remote ה-host
+הוא authoritative. ה-endpoint הקיים לא נגע.
+
+#### C2 — guard דו-כיווני: לכל היותר לקוח ACP אחד לכל wire (שורש בעיה 2)
+
+כיוון WS→host: `ws-agent.ts` — dep אופציונלי `sessionHostRegistry?: { getHost }`;
+אחרי ה-presence check ולפני `activeFeWs.set`, אם יש host חי →
+`close(1008, "session-host-active")` + warn + return. כיוון host→WS:
+`connection-registry.ts` — getter חדש `isAttached(agentId)`; `registry.ts` (session-host)
+— `doCreate` מסרב (return undefined → 404) אם הסוכן attached מקומית. שני הכיוונים
+חוסמים את אותה השחתה (שני לקוחות ACP על אותו conn.wire). אפס שינוי לנתיב local:
+כל הקוראים הקיימים לא מעבירים את ה-deps החדשים (מכוסה ע"י הטסטים הקיימים שלא שונו).
+
+#### C2b — lifecycle: אין hosts יתומים
+
+`registry.ts` — liveness check ב-`getOrCreateHost`: entry קיים אבל
+`connectionRegistry.get` undefined (crash/DELETE) → מסיר את ה-entry ומחזיר undefined
+(→ 404, בלי 200 עם host מת ו-snapshot ישן). `agent-orchestrator.ts` — dep אופציונלי
+`sessionHostRegistry?: { unregisterHost }`; קריאה ב-`deleteAndKill` (לפני close)
+וב-crash handler (ראשון, לפני עדכון ה-status) — סוגרים את החלון שה-liveness-check
+ה-lazy לבדו משאיר. server.ts מעביר את הרג'יסטרי (אפשרי בזכות ההזזה מ-C1).
+
+#### C3 — FE: attachRemoteToLiveAgent + hydration
+
+`remote-session-view.ts` — ב-`#doConnect` (חיבור ראשון בלבד): אם ל-snapshot יש
+messages, נפלט patch `{op:"reset"}` סינתטי **ישירות דרך `#emit`** (כמו
+`#handleReconnected`), `version = snapshot.version`, בלי לגעת ב-`#lastVersion`,
+**לפני** `#drainPatches` — סדר דטרמיניסטי בערוץ ה-VM. ❌ לא דרך `#applyIncoming`
+(ה-watermark היה חוסם). בלי זה הבועות היו נשארות ריקות ב-reconnect (כל ההיסטוריה
+ב-snapshot, ו-`#consumeViewPatches` בונה bubbles רק מ-patches).
+
+`agent-session.svelte.ts` — מתודה חדשה `attachRemoteToLiveAgent({agentId, cwd,
+cliKind})` = שלבי `attachRemote` פחות createAgent (ה-host קיים ב-BE; snapshot הוא
+מקור-האמת ל-sessionId, לא הקלט מהפאנל). guard-כפילות **לפני** #cleanup (אותו סדר
+קריטי), איפוס מרחב ה-ids של pending, `createRemoteView({agentId})`, כשל-מהיר על
+sessionId null, `#view` + `#consumeViewPatches` (guard זהות), connected; הכל עטוף
+try/catch. ❌ בלי notifySessionAttached (ה-BE דיווח ב-C1), ❌ בלי שינוי ב-attachRemote/
+attachToLiveAgent/#warmReconnect.
+
+🔴 **סטייה מודעת מהבריף (מתועדת בקוד ובטסטים)**: נתיבי הכשל (כשל-מהיר + catch)
+קוראים `#cleanup({ keepAgent: true })` ולא `#cleanup()` סתם — `#cleanup()` רגיל קורא
+`deleteAgent(agentId)`, והיה **הורג את הסוכן החי של המשתמשת** שאנחנו מתחברים אליו
+(ב-attachRemote המחיקה נכונה כי הסוכן נוצר באותה מתודה; כאן הסוכן שייך למשתמשת).
+בנוסף: כשל-חולף (רשת/503) לא מוחק סוכן בריא — המשתמשת יכולה לנסות שוב.
+
+#### C4 — FE: ניתוב ב-+page.svelte (route layer, לא VM — עקרון C3-ז נשמר)
+
+`$lib/session/session-transport-read.ts` (חדש) — `readSessionTransport(envValue)`:
+פתירת הדגל נמשכה **מילה-במילה** מ-connect-agent.ts:33-41 (query ← stored ← env +
+שמירת query ל-sessionStorage). env מוזרק כפרמטר (בלי יבוא `$env/dynamic/public` —
+אין alias ב-vitest). connect-agent.ts עבר להשתמש בה (התנהגות זהה). `handleReconnect`
+ב-+page.svelte: remote → `attachRemoteToLiveAgent` + `goto("/chat?sessionTransport=remote")`;
+local → **ללא שינוי**. guard `!agent.acpSessionId` נשאר (מאוכלס גם ב-remote אחרי C1).
+
+#### אימות
+
+- סוויטות הבריף: `vitest run packages/backend/src/session-host packages/backend/tests
+  packages/frontend/src/lib/session packages/frontend/src/lib/view-models` — 875 עברו;
+  הכשל היחיד (`https-serve.test.ts`) **pre-existing** (מאומת גם על base; סביבתי —
+  binding/TLS בסנדבוקס).
+- **אפס שינוי בנתיב local**: כל 6 סוויטות ה-reconnect המקומיות
+  (agent-session.reconnect*, reconnect-bubble-merge, adapters/reconnect-state) — 46/46
+  ירוקים, והקבצים עצמם **לא נגעו** (diff ריק מול base).
+- typecheck DELTA מול `ec95f93`: backend (tsc) 68/68 — אפס שגיאות חדשות; frontend
+  (svelte-check) 15/15 — אפס חדשות. (ב-base יש שגיאות pre-existing; שווה-ערך אחרי
+  נרמול מספרי-שורה.)
+- `lint:i18n` נקי. biome על 22 הקבצים שנגעו: בדיוק אותם ממצאים כמו base (כולם
+  pre-existing: noNonNullAssertion בטסטים, noRedeclare SessionState וכו') — אפס חדשים;
+  2 הפרות פורמט שהוספתי תוקנו ב-`biome format --write`.
+- known-gap נשאר נעול: `leaveRunning` ב-remote עדיין detach מלא (החלטה נפרדת, ר' בריף).
+- הערה לסקופ עתידי: `attached` תמיד false ב-remote → הפאנל מציג "reconnect" ולא
+  "takeover" גם כש-WS חי בלשונית אחרת — חסר מקור-מידע; לא בסקופ (מתועד בבריף).
+
 ## 2026-08-09 (slice view-switch, C4 — סוף הסלייס)
 
 ### slice view-switch — C4: preview חי בשני המצבים + runbook + באג אמיתי שנתפס ותוקן

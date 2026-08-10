@@ -339,7 +339,11 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
       // SessionHost חי על הסוכן — getHost מחזיר אובייקט (לא undefined)
       const sessionHostRegistry = { getHost: vi.fn(() => ({})) }
 
-      const onConnect = createAgentWsHandler({ orchestrator, connectionRegistry, sessionHostRegistry })
+      const onConnect = createAgentWsHandler({
+        orchestrator,
+        connectionRegistry,
+        sessionHostRegistry,
+      })
       const { ws, closeArgs } = makeMockFeWs()
 
       onConnect(ws, "hosted-agent")
@@ -380,7 +384,11 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
       const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
       const sessionHostRegistry = { getHost: vi.fn(() => undefined) }
 
-      const onConnect = createAgentWsHandler({ orchestrator, connectionRegistry, sessionHostRegistry })
+      const onConnect = createAgentWsHandler({
+        orchestrator,
+        connectionRegistry,
+        sessionHostRegistry,
+      })
       const { ws, closeArgs } = makeMockFeWs()
 
       onConnect(ws, "no-host-agent")

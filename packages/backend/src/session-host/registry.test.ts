@@ -40,7 +40,10 @@ function makeMockConnection(): ProviderConnection {
   } as unknown as ProviderConnection
 }
 
-function makeMockConnectionRegistry(conn?: ProviderConnection, attached = false): ConnectionRegistry {
+function makeMockConnectionRegistry(
+  conn?: ProviderConnection,
+  attached = false,
+): ConnectionRegistry {
   return {
     connect: vi.fn(),
     get: vi.fn().mockReturnValue(conn),
