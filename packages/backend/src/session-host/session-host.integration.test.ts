@@ -1011,3 +1011,310 @@ describe("createSessionHostFromConnection — remote-session-mgmt C1", () => {
     expect(host.agentCapabilities).toEqual(caps)
   })
 })
+// ─── slice remote-session-mgmt C2: loadSession as switch ───
+
+describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSession as switch", () => {
+  function notif(sessionId: string, update: Record<string, unknown>): SessionNotification {
+    return { sessionId, update: update as SessionNotification["update"] }
+  }
+
+  function chunkOf(sessionId: string, text: string): SessionNotification {
+    return notif(sessionId, {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text },
+    })
+  }
+
+  function permParams(sessionId: string): Parameters<
+    NonNullable<AcpClientCallbacks["onRequestPermission"]>
+  >[0] {
+    return {
+      sessionId,
+      toolCall: { toolCallId: "tc-x", name: "run_bash", status: "pending" },
+      options: [],
+    } as Parameters<NonNullable<AcpClientCallbacks["onRequestPermission"]>>[0]
+  }
+
+  function elicitParams(sessionId: string): Parameters<
+    NonNullable<AcpClientCallbacks["onCreateElicitation"]>
+  >[0] {
+    return {
+      sessionId,
+      requestId: 1,
+      schema: { type: "object", properties: {} },
+    } as Parameters<NonNullable<AcpClientCallbacks["onCreateElicitation"]>>[0]
+  }
+
+  /** Reads every patch currently buffered on the stream (30ms quiet timeout). */
+  async function drainBuffered(stream: ReadableStream<Patch>): Promise<Patch[]> {
+    const out: Patch[] = []
+    const reader = stream.getReader()
+    try {
+      for (;;) {
+        const res = await Promise.race([
+          reader.read(),
+          new Promise<{ done: true; value: undefined }>((r) =>
+            setTimeout(() => r({ done: true, value: undefined }), 30),
+          ),
+        ])
+        if (res.done) break
+        out.push(res.value)
+      }
+    } finally {
+      reader.releaseLock()
+    }
+    return out
+  }
+
+  it("reset is emitted BEFORE every replay/CLI-response patch and zeroes messages", async () => {
+    const { host, mockClient, callbacks } = await setup()
+    await host.newSession({ cwd: "/a" }) // session A = "s1" (mock)
+    callbacks.onUpdate(chunkOf("s1", "old history"))
+    expect(host.state.messages).toHaveLength(1)
+    await readOnePatch(host.patches) // drain the seeded add-message
+
+    const dLoad = deferred<{ sessionId: string }>()
+    ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockImplementation(() => dLoad.promise)
+    const switchPromise = host.loadSession({ cwd: "/b", sessionId: "s2" })
+
+    // First patch emitted by loadSession is the reset (no pending → no cleanup patch)
+    const reset = await readOnePatch(host.patches)
+    expect(reset).toMatchObject({ op: "reset", messages: [] })
+    expect(host.state.messages).toEqual([])
+
+    // A replay patch of the new session arrives during the await — AFTER the reset
+    callbacks.onUpdate(chunkOf("s2", "new history"))
+    const replay = await readOnePatch(host.patches)
+    expect(replay.op).toBe("add-message")
+
+    dLoad.resolve({ sessionId: "s2" })
+    await switchPromise
+
+    // The success update-session patch comes last — after the replay
+    const success = await readOnePatch(host.patches)
+    expect(success).toMatchObject({
+      op: "update-session",
+      changes: { turnState: "idle", lastTurnError: null },
+    })
+    expect(host.state.messages).toHaveLength(1)
+  })
+
+  it("turnSeq++: a turn active at switch time that ends afterwards does NOT land applyTurnEnd/lastTurnError on the new session", async () => {
+    const { host, mockClient } = await setup()
+    await host.newSession({ cwd: "/a" })
+
+    const dPrompt = deferred<void>()
+    ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => dPrompt.promise)
+    const promptPromise = host.prompt("s1", "in-flight turn")
+    expect(host.state.turnState).toBe("waiting")
+
+    const dLoad = deferred<{ sessionId: string }>()
+    ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockImplementation(() => dLoad.promise)
+    const switchPromise = host.loadSession({ cwd: "/b", sessionId: "s2" })
+
+    dLoad.resolve({ sessionId: "s2" })
+    await switchPromise
+    expect(host.state.turnState).toBe("idle") // from the success patch
+
+    // The stale turn ends after the switch — it must not emit on the new session
+    const versionAfterSwitch = host.state.version
+    dPrompt.reject(new Error("old turn crashed"))
+    await promptPromise.catch(() => {})
+    expect(host.state.version).toBe(versionAfterSwitch) // no applyTurnEnd landed
+    expect(host.state.turnState).toBe("idle")
+    expect(host.state.lastTurnError).toBeNull() // the old turn's error did not land
+  })
+
+  it("sessionId filter: old-session updates during the await are dropped; new-session replay enters", async () => {
+    const { host, mockClient, callbacks } = await setup()
+    await host.newSession({ cwd: "/a" }) // A = "s1"
+
+    const dLoad = deferred<{ sessionId: string }>()
+    ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockImplementation(() => dLoad.promise)
+    const switchPromise = host.loadSession({ cwd: "/b", sessionId: "s2" })
+    await readOnePatch(host.patches) // drain the reset
+
+    callbacks.onUpdate(chunkOf("s1", "STALE TAIL")) // dropped (s1 ≠ s2)
+    callbacks.onUpdate(chunkOf("s2", "fresh replay")) // passes (s2 === s2)
+
+    expect(host.state.messages).toHaveLength(1)
+    const msg = host.state.messages[0]
+    expect(msg?.role).toBe("assistant")
+    if (msg && msg.role !== "tool") {
+      expect(msg.segments[0]?.text).toBe("fresh replay")
+    }
+
+    dLoad.resolve({ sessionId: "s2" })
+    await switchPromise
+    expect(host.state.messages).toHaveLength(1) // no stale tail slipped in later
+  })
+
+  it("flip-before-await: sessionId is flipped BEFORE client.loadSession runs (state snapshot mid-await)", async () => {
+    const { host, mockClient } = await setup()
+    await host.newSession({ cwd: "/a" }) // A = "s1"
+
+    let sessionIdSeenDuringAwait: string | null = "sentinel-not-captured"
+    ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      sessionIdSeenDuringAwait = host.state.sessionId // snapshot while inside the await
+      return { sessionId: "s2" }
+    })
+
+    await host.loadSession({ cwd: "/b", sessionId: "s2" })
+
+    expect(sessionIdSeenDuringAwait).toBe("s2") // already flipped before the CLI call
+  })
+
+  it("request_permission from the outgoing session during the transition is answered cancelled, never opens pending, and does not advance nextRequestId", async () => {
+    const { host, mockClient, callbacks } = await setup()
+    await host.newSession({ cwd: "/a" }) // A = "s1"
+
+    const dLoad = deferred<{ sessionId: string }>()
+    ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockImplementation(() => dLoad.promise)
+    const switchPromise = host.loadSession({ cwd: "/b", sessionId: "s2" })
+
+    // Permission from the OLD session during the await — default answered immediately
+    const staleResponse = await callbacks.onRequestPermission!(permParams("s1"))
+    expect(staleResponse.outcome.outcome).toBe("cancelled")
+    expect(host.state.pending.permission).toBeNull()
+
+    dLoad.resolve({ sessionId: "s2" })
+    await switchPromise
+
+    // Proof nextRequestId was NOT advanced: a new-session permission gets id 0
+    const freshPromise = callbacks.onRequestPermission!(permParams("s2"))
+    expect(host.state.pending.permission?.requestId).toBe(0)
+    host.respondPermission(0, { outcome: { outcome: "cancelled" } })
+    await freshPromise
+  })
+
+  it("create_elicitation from the outgoing session during the transition is answered cancel (same guard)", async () => {
+    const { host, mockClient, callbacks } = await setup()
+    await host.newSession({ cwd: "/a" }) // A = "s1"
+
+    const dLoad = deferred<{ sessionId: string }>()
+    ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockImplementation(() => dLoad.promise)
+    const switchPromise = host.loadSession({ cwd: "/b", sessionId: "s2" })
+
+    const staleResponse = await callbacks.onCreateElicitation!(elicitParams("s1"))
+    expect(staleResponse.action).toBe("cancel")
+    expect(host.state.pending.elicitation).toBeNull()
+
+    dLoad.resolve({ sessionId: "s2" })
+    await switchPromise
+  })
+
+  it("an open pending at switch time is closed cancelled (clear patch BEFORE the reset) and absent from the new state", async () => {
+    const { host, mockClient, callbacks } = await setup()
+    await host.newSession({ cwd: "/a" }) // A = "s1"
+
+    const permPromise = callbacks.onRequestPermission!(permParams("s1"))
+    await readOnePatch(host.patches) // drain the "pending opened" patch
+    expect(host.state.pending.permission).not.toBeNull()
+
+    const dLoad = deferred<{ sessionId: string }>()
+    ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockImplementation(() => dLoad.promise)
+    const switchPromise = host.loadSession({ cwd: "/b", sessionId: "s2" })
+
+    // The pending promise resolves with the cancelled default
+    const response = await permPromise
+    expect(response.outcome.outcome).toBe("cancelled")
+
+    // Patch order: the cleanup patch (pending cleared) precedes the reset — allowed
+    const clearPatch = await readOnePatch(host.patches)
+    expect(clearPatch.op).toBe("update-session")
+    const clearChanges = (clearPatch as Extract<Patch, { op: "update-session" }>).changes
+    expect(clearChanges.pending?.permission).toBeNull()
+    const resetPatch = await readOnePatch(host.patches)
+    expect(resetPatch.op).toBe("reset")
+
+    dLoad.resolve({ sessionId: "s2" })
+    await switchPromise
+    expect(host.state.pending.permission).toBeNull()
+    expect(host.state.pending.elicitation).toBeNull()
+  })
+
+  it("success: sessionId flipped + turnState idle + lastTurnError null (reset does not clear it; the success patch does)", async () => {
+    const { host, mockClient } = await setup()
+    await host.newSession({ cwd: "/a" })
+
+    // Seed lastTurnError with a failed turn
+    ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("boom"))
+    await host.prompt("s1", "x").catch(() => {})
+    expect(host.state.lastTurnError?.message).toBe("boom")
+
+    ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+      sessionId: "s2",
+      configOptions: [
+        { id: "verbosity", name: "Verbosity", category: "other", type: "boolean", value: false },
+      ],
+    })
+    const result = await host.loadSession({ cwd: "/b", sessionId: "s2" })
+
+    expect(host.state.sessionId).toBe("s2")
+    expect(host.state.turnState).toBe("idle")
+    expect(host.state.lastTurnError).toBeNull()
+    expect(host.state.configOptions).toHaveLength(1) // configOptions captured
+    expect(result).toEqual({ sessionId: "s2", version: host.state.version })
+  })
+
+  it("sessionId is NOT re-written from the CLI response — the flip is the only forward write", async () => {
+    const { host, mockClient } = await setup()
+    await host.newSession({ cwd: "/a" })
+
+    ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+      sessionId: "DIFFERENT-FROM-REQUEST",
+    })
+    const result = await host.loadSession({ cwd: "/b", sessionId: "s2" })
+
+    expect(host.state.sessionId).toBe("s2") // ❌ not "DIFFERENT-FROM-REQUEST"
+    expect(result.sessionId).toBe("s2")
+  })
+
+  it("failure: sessionId rolls back, a SECOND reset is emitted, versions stay monotonic (watermark simulation), and the error is rethrown", async () => {
+    const { host, mockClient, callbacks } = await setup()
+    await host.newSession({ cwd: "/a" }) // A = "s1"
+
+    const loadError = Object.assign(new Error("session not found"), { code: -32000 })
+    ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockRejectedValue(loadError)
+
+    const watermarkBefore = host.state.version
+    const switchPromise = host.loadSession({ cwd: "/b", sessionId: "s2" })
+
+    // The FE receives part of the replay during the await (its watermark advances)
+    callbacks.onUpdate(chunkOf("s2", "partial replay"))
+
+    await expect(switchPromise).rejects.toBe(loadError) // the error is rethrown
+
+    // sessionId rolled back; state emptied + idle (second reset + idle patch)
+    expect(host.state.sessionId).toBe("s1")
+    expect(host.state.messages).toEqual([])
+    expect(host.state.turnState).toBe("idle")
+
+    // Monotonicity — watermark simulation: NO emitted patch may sit at/below the
+    // FE's running watermark (a snapshot restore would rewind the counter and
+    // fail this loop — every future patch would then be dropped by the FE).
+    const emitted = await drainBuffered(host.patches)
+    let watermark = watermarkBefore
+    for (const p of emitted) {
+      expect(p.version).toBeGreaterThan(watermark)
+      watermark = p.version
+    }
+    // Exact failure sequence: reset → replay add-message → second reset → idle
+    expect(emitted.map((p) => p.op)).toEqual([
+      "reset",
+      "add-message",
+      "reset",
+      "update-session",
+    ])
+  })
+
+  it("host-level cwd: opts.cwd passes through to client.loadSession as-is", async () => {
+    const { host, mockClient } = await setup()
+    await host.newSession({ cwd: "/a" })
+
+    ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sessionId: "s2" })
+    await host.loadSession({ cwd: "/custom/dir", sessionId: "s2" })
+
+    expect(mockClient.loadSession).toHaveBeenCalledWith({ cwd: "/custom/dir", sessionId: "s2" })
+  })
+})

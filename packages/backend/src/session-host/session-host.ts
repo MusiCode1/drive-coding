@@ -28,8 +28,9 @@ import type {
   RequestPermissionResponse,
   SessionNotification,
 } from "@agentclientprotocol/sdk"
-import type { Patch, SessionState } from "@drive-coding/core/session"
+import type { Patch, SessionConfigOption, SessionState } from "@drive-coding/core/session"
 import {
+  applyPatch,
   applyPendingRequest,
   applyTurnEnd,
   applyTurnStart,
@@ -197,7 +198,20 @@ export type SessionHostFromConnOptions = {
  * and for driving session configuration.
  * S4 exposes these via HTTP endpoints.
  */
-export type ExtendedSessionHost = SessionHost & {
+export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & {
+  /**
+   * slice remote-session-mgmt C2: loadSession as a SWITCH (not a bare delegate).
+   * Order: turnSeq++ → pending cleanup → full-state reset → sessionId flip
+   * (BEFORE the await) → await client.loadSession. Success: one update-session
+   * {configOptions?, turnState:"idle", lastTurnError:null}. Failure: rollback
+   * sessionId ONLY + a second monotonic reset + idle + rethrow (❌ no snapshot
+   * restore — versions never rewind; see C2 step 8).
+   */
+  loadSession(opts: {
+    cwd: string
+    sessionId: string
+    _meta?: Record<string, unknown>
+  }): Promise<{ sessionId: string; version: number }>
   /**
    * Respond to a pending permission request.
    * requestId is a sequential counter (0, 1, 2...) assigned internally.
@@ -312,6 +326,16 @@ export async function createSessionHostFromConnection(
   }
 
   function handleUpdate(notification: SessionNotification): void {
+    // ─── slice remote-session-mgmt C2 step 5: sessionId filter ───
+    // During a switch (loadSession) the flip already points currentState at the
+    // NEW session before the await, so the new session's replay passes (B===B)
+    // while the outgoing session's tails are dropped (A≠B). Defensive fallbacks:
+    // a notification lacking sessionId (required per SDK types.gen.d.ts:3409) or
+    // a host with no session yet (currentState.sessionId===null) passes through.
+    const sid = notification.sessionId as string | undefined
+    if (sid !== undefined && currentState.sessionId !== null && sid !== currentState.sessionId) {
+      return
+    }
     const result = reduce(currentState, notification.update)
     currentState = result.state
     emitPatches(result.patches)
@@ -375,6 +399,12 @@ export async function createSessionHostFromConnection(
   async function handleRequestPermission(
     params: RequestPermissionRequest,
   ): Promise<RequestPermissionResponse> {
+    // slice remote-session-mgmt C2 step 5 (one-line guard): a permission from the
+    // outgoing session during a switch is answered with the existing default
+    // (cancelled) — skips nextRequestId++, never enters pending (consistent w/ step 2).
+    if (currentState.sessionId !== null && params.sessionId !== currentState.sessionId) {
+      return { outcome: { outcome: "cancelled" } }
+    }
     const requestId = nextRequestId++
     const applied = applyPendingRequest(currentState, {
       kind: "permission",
@@ -394,6 +424,17 @@ export async function createSessionHostFromConnection(
   async function handleCreateElicitation(
     params: CreateElicitationRequest,
   ): Promise<CreateElicitationResponse> {
+    // slice remote-session-mgmt C2 step 5 (guard) — mirrors handleRequestPermission.
+    // CreateElicitationRequest is an SDK union: request-scoped elicitations carry
+    // no sessionId → defensive fallback (pass through), same as handleUpdate.
+    const elicitSessionId = (params as { sessionId?: string }).sessionId
+    if (
+      elicitSessionId !== undefined &&
+      currentState.sessionId !== null &&
+      elicitSessionId !== currentState.sessionId
+    ) {
+      return { action: "cancel" }
+    }
     const requestId = nextRequestId++
     const applied = applyPendingRequest(currentState, {
       kind: "elicitation",
@@ -500,21 +541,123 @@ export async function createSessionHostFromConnection(
       return result
     },
 
-    async loadSession(opts: { cwd: string; sessionId: string; _meta?: Record<string, unknown> }) {
-      const result = (await client.loadSession(opts)) as { sessionId: string; configOptions?: unknown[] }
-      // Update currentState.sessionId so setMode/setConfigOption can use it
-      // Also capture configOptions from session/load response (capabilities.ts:17)
-      const configOptions = Array.isArray(result.configOptions) ? result.configOptions : []
-      currentState = { ...currentState, sessionId: result.sessionId, configOptions }
-      if (configOptions.length > 0) {
-        emitPatches([{
-          version: currentState.version + 1,
-          op: "update-session",
-          changes: { configOptions },
-        }])
-        currentState = { ...currentState, version: currentState.version + 1 }
+    // ─── slice remote-session-mgmt C2: loadSession as a SWITCH ───
+    // Mandatory order (brief C2):
+    //  1. turnSeq++ + cancelledTurn=-1 — cancels every open turn of the outgoing
+    //     session: turnSeq advances only in prompt, so a stale turn ending AFTER
+    //     the switch would otherwise land applyTurnEnd/lastTurnError on the new
+    //     session (the `turn === turnSeq` guard alone does not protect).
+    //  2. Pending cleanup — open permission/elicitation answered with their
+    //     cancelled defaults (respond resolves the promise + clears the timer;
+    //     clearPendingRequest inside the handler's finally clears the state and
+    //     emits the clear patch, legitimately BEFORE the reset).
+    //  3. Reset on the full state via pure core applyPatch + emit (❌ no manual
+    //     version bump — applyPatch owns it).
+    //  4. Flip sessionId BEFORE the await — otherwise the step-5 filter would
+    //     drop the new session's replay (arriving during the await; streamHistory
+    //     runs inside the CLI's loadSession handler) and let in old-session tails.
+    //  5. (sessionId filter in handleUpdate + guards in the permission/elicitation
+    //     handlers — see above.)
+    //  6. await client.loadSession.
+    //  7. Success: capture configOptions + ONE update-session
+    //     {configOptions?, turnState:"idle", lastTurnError:null} — idle because
+    //     the replay ends in an assistant message (derives "responding");
+    //     lastTurnError:null because reset does not clear it and the outgoing
+    //     session's "prompt failed" banner must not survive. ❌ sessionId is NOT
+    //     re-written from the response — the flip (4) and the rollback (8) are
+    //     the ONLY sessionId writes (overlapping switches could otherwise revert).
+    //  8. Failure: rollback sessionId ONLY. ❌ NO snapshot restore — it would
+    //     rewind the version counter and every future patch would be dropped at
+    //     the FE watermark (remote-session-view.ts #applyIncoming). Instead: a
+    //     SECOND reset at a continuing version (monotonic — passes the watermark
+    //     and realigns the FE, which already got part of the replay, with the
+    //     empty host) + turnState:"idle" + rethrow (route → 502 → VM error).
+    //     Documented edge: the rendered history is gone — the user picks a session
+    //     again; the CLI's data is untouched.
+    async loadSession(opts: {
+      cwd: string
+      sessionId: string
+      _meta?: Record<string, unknown>
+    }): Promise<{ sessionId: string; version: number }> {
+      // 1. Invalidate turns of the outgoing session.
+      turnSeq++
+      cancelledTurn = -1
+
+      // 2. Pending cleanup (cancelled defaults; the clear patches land before the
+      //    reset — the one legitimate pre-reset emission).
+      const openPermission = currentState.pending.permission
+      const openElicitation = currentState.pending.elicitation
+      if (openPermission) {
+        permPending.respond(openPermission.requestId, { outcome: { outcome: "cancelled" } })
       }
-      return result
+      if (openElicitation) {
+        elicitPending.respond(openElicitation.requestId, { action: "cancel" })
+      }
+      if (openPermission || openElicitation) {
+        // One microtask: let the handlers' finally (clearPendingRequest + emit)
+        // land before the reset so the patch order stays deterministic.
+        await Promise.resolve()
+      }
+
+      // 3. Reset the full state.
+      const oldSessionId = currentState.sessionId
+      const resetPatch: Patch = {
+        op: "reset",
+        version: currentState.version + 1,
+        messages: [],
+        nextMessageSeq: 0,
+        nextSegmentSeq: 0,
+      }
+      currentState = applyPatch(currentState, resetPatch)
+      emitPatches([resetPatch])
+
+      // 4. Flip sessionId BEFORE the await (see the long comment above).
+      currentState = { ...currentState, sessionId: opts.sessionId }
+
+      // 6.
+      try {
+        const result = (await client.loadSession(opts)) as {
+          sessionId: string
+          configOptions?: unknown[]
+        }
+
+        // 7. Success — one update-session patch.
+        const configOptions = (
+          Array.isArray(result.configOptions) ? result.configOptions : []
+        ) as SessionConfigOption[]
+        const updatePatch: Patch = {
+          op: "update-session",
+          version: currentState.version + 1,
+          changes: {
+            turnState: "idle",
+            lastTurnError: null,
+            ...(configOptions.length > 0 ? { configOptions } : {}),
+          },
+        }
+        currentState = applyPatch(currentState, updatePatch)
+        emitPatches([updatePatch])
+        return { sessionId: opts.sessionId, version: currentState.version }
+      } catch (err) {
+        // 8. Failure — rollback sessionId only + second monotonic reset + idle.
+        currentState = { ...currentState, sessionId: oldSessionId }
+        const resetPatch2: Patch = {
+          op: "reset",
+          version: currentState.version + 1,
+          messages: [],
+          nextMessageSeq: 0,
+          nextSegmentSeq: 0,
+        }
+        currentState = applyPatch(currentState, resetPatch2)
+        emitPatches([resetPatch2])
+        const idlePatch: Patch = {
+          op: "update-session",
+          version: currentState.version + 1,
+          changes: { turnState: "idle" },
+        }
+        currentState = applyPatch(currentState, idlePatch)
+        emitPatches([idlePatch])
+        throw err
+      }
     },
 
     async cancel(sessionId: string) {
