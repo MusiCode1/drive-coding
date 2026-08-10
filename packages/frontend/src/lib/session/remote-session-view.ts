@@ -159,6 +159,23 @@ export class RemoteSessionView implements SessionView {
     this.#state = snapshot
     this.#sessionId = snapshot.sessionId
     this.#lastVersion = snapshot.version
+    // ─── slice remote-warm-reconnect C3: hydration ───
+    // חיבור ראשון יכול לשאת את כל ההיסטוריה (warm reconnect ל-host קיים; ב-attachRemote
+    // רגיל ה-snapshot ריק). פולטים patch reset סינתטי מה-snapshot כדי שה-VM יבנה
+    // bubbles — בדיוק הטכניקה של #handleReconnected למטה.
+    // ⚠️ קונקרטי: ישירות דרך #emit (לא #applyIncoming — ה-watermark היה חוסם כל
+    // גרסה), version = snapshot.version (בלי לגעת ב-#lastVersion, כבר מעודכן),
+    // **לפני** #drainPatches — סדר דטרמיניסטי בערוץ ה-VM. רגרסיה: "היסטוריה לא מוכפלת".
+    if (snapshot.messages.length > 0) {
+      const resetPatch: Patch = {
+        version: snapshot.version,
+        op: "reset",
+        messages: snapshot.messages,
+        nextMessageSeq: snapshot.nextMessageSeq,
+        nextSegmentSeq: snapshot.nextSegmentSeq,
+      }
+      this.#emit([resetPatch])
+    }
     void this.#drainPatches(patches)
   }
 

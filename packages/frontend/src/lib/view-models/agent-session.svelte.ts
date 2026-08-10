@@ -1228,6 +1228,81 @@ export class AgentSession {
     }
   }
 
+  // ─── slice remote-warm-reconnect C3: attachRemoteToLiveAgent ───
+
+  /**
+   * חיבור-מחדש במצב remote לסוכן **חי** (warm reconnect מהפאנל): שלבי attachRemote
+   * פחות createAgent — ה-host כבר קיים ב-BE (נוצר ב-attachRemote המקורי), ו-getOrCreateHost
+   * מחזיר אותו בלי ליצור סשן חדש. מקור-האמת ל-sessionId הוא ה-snapshot (frame-zero של
+   * GET /events), לא agent.acpSessionId מהפאנל (עלול להיות ישן). ❌ בלי WS, ❌ בלי
+   * createAgent, ❌ בלי notifySessionAttached (ה-BE הוא הבעלים — דווח ב-C1).
+   * הערה: this.#sessionId נשאר null — עקבי עם attachRemote (נתיבי WS חסומים ב-#view
+   * ו-reconnect() ממילא early-return); זו התנהגות צפויה, לא באג.
+   */
+  attachRemoteToLiveAgent = async (input: {
+    agentId: string
+    cwd: string
+    cliKind: string
+  }): Promise<void> => {
+    // 0. ⚠️⚠️ קודם guard-הכפילות, ורק אחריו #cleanup() — אותו סדר קריטי כמו attachRemote
+    // (חיבור-חוזר במצב connected היה הורג חיבור קיים לפני שהוא זורק).
+    if (this.status === "connecting" || this.status === "connected") {
+      throw new Error(`cannot attach in status ${this.status}`)
+    }
+    // 0ב. פרק חיבור קיים דרך #cleanup() — לא ידנית.
+    this.#cleanup()
+
+    // 1. בלוק-איפוס זהה ל-attachRemote + איפוס מרחב-ה-ids של pending (guard-זהות)
+    this.error = null
+    this.authMethods = []
+    this.#errorSurfaced = false
+    this.bubbles = []
+    this.#detached = false
+    this.#answeredPermissionId = null
+    this.#answeredElicitationId = null
+
+    // 2. #setStatus מנגן cue ומאפס #displaySnapshot. agentId/cwd/cliKind מ-input
+    // (agentId מוצב לפני ה-try — #cleanup בכשל מוחק לפיו; כאן בלי keepContext).
+    this.#setStatus("connecting")
+    this.agentId = input.agentId
+    this.cwd = input.cwd
+    this.#cliKind = input.cliKind
+
+    try {
+      // 3. ללא createAgent — ה-host קיים ב-BE. createRemoteView כבר קורא connect()
+      // בעצמו (memoized, M8); החתימה מקבלת אובייקט opts (התקדים attachRemote:1204).
+      const view = await createRemoteView({ agentId: input.agentId })
+
+      // 4. כשל-מהיר: sessionId מה-snapshot (מקור-האמת). ⚠️ סטייה מודעת מהבריף:
+      // keepAgent:true — #cleanup() רגיל קורא deleteAgent(agentId), והיה הורג את
+      // הסוכן **החי** שאנחנו מתחברים אליו (ב-attachRemote הסוכן נוצר באותה מתודה
+      // ולכן מחיקה נכונה; כאן הסוכן שייך למשתמשת וחייב לשרוד כשל).
+      if (view.state.sessionId == null) {
+        await view.close()
+        this.#cleanup({ keepAgent: true })
+        this.error = "remote mode: backend did not provide a sessionId"
+        this.#errorSurfaced = true
+        this.#setStatus("error")
+        return
+      }
+
+      // 5. #consumeViewPatches מכמת בזהות (this.#view !== view → break) — כמו attachRemote.
+      this.#view = view
+      void this.#consumeViewPatches(view)
+
+      // 6.
+      this.#setStatus("connected")
+      // 7. ❌ אין WsAcpTransport/#client/#transport, ❌ אין #scheduleReconnect
+    } catch (e) {
+      // 8. כל השלבים עטופים — כשל לא משאיר status:"connecting" לנצח. keepAgent:true —
+      // ר' שלב 4: הסוכן החי ב-BE שורד גם כשל-חולף (רשת/503), המשתמשת יכולה לנסות שוב.
+      this.#cleanup({ keepAgent: true })
+      this.error = formatAcpError(e)
+      this.#errorSurfaced = true
+      this.#setStatus("error")
+    }
+  }
+
   detach = (): void => {
     this.#detached = true // ‏לפני ה-cleanup — ‏ה-WS close fires async
     // ─── slice ws-reconnect-infra: ביטול לולאת reconnect ───

@@ -22,7 +22,7 @@
  * ─── slice session-host-pending-surface C4: respond() routing + JSDoc ───
  */
 
-import type { Patch, SessionState } from "@drive-coding/core/session"
+import type { Patch, SessionMessage, SessionState } from "@drive-coding/core/session"
 import { createInitialSessionState } from "@drive-coding/core/session"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
@@ -288,6 +288,99 @@ describe("RemoteSessionView — connect()", () => {
     const calls = (mockFetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
     const eventsCalls = calls.filter(([url]) => typeof url === "string" && url.includes("/events"))
     expect(eventsCalls).toHaveLength(1)
+  })
+})
+
+// ── hydration בחיבור ראשון (warm reconnect — slice remote-warm-reconnect C3) ──
+
+describe("RemoteSessionView — hydration on first connect (slice remote-warm-reconnect C3)", () => {
+  /** מוודא שאין עוד פליטות בערוץ — כשל-כפילות: reset שני היה מכפיל את ההיסטוריה ב-VM. */
+  async function expectNoMoreEmissions(patches: ReadableStream<Patch[]>, ms = 50): Promise<void> {
+    const reader = patches.getReader()
+    try {
+      const result = await Promise.race([
+        reader.read(),
+        new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), ms)),
+      ])
+      expect(result).toBe("timeout")
+    } finally {
+      reader.releaseLock()
+    }
+  }
+
+  it("snapshot with history → emits exactly one synthetic reset patch (no duplication)", async () => {
+    const messages: SessionMessage[] = [
+      { id: "m_0", role: "user", messageId: null, segments: [{ id: "s_0", text: "hello" }] },
+      {
+        id: "m_1",
+        role: "assistant",
+        messageId: "p1",
+        segments: [{ id: "s_1", text: "hi there" }],
+      },
+    ]
+    const snapshot = makeSnapshot({ version: 7, messages, nextMessageSeq: 2, nextSegmentSeq: 2 })
+    const mockFetch = makeMockFetch({
+      keepOpen: true,
+      events: [{ event: "snapshot", data: JSON.stringify(snapshot) }],
+    })
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+
+    await view.connect()
+    const results = await readNPatchArrays(view.patches, 1)
+
+    expect(results).toHaveLength(1)
+    expect(results[0]?.[0]).toMatchObject({
+      op: "reset",
+      version: 7,
+      nextMessageSeq: 2,
+      nextSegmentSeq: 2,
+    })
+    const emitted = results[0]?.[0]
+    expect(emitted && emitted.op === "reset" ? emitted.messages : []).toEqual(messages)
+    // פעם אחת בלבד — אין reset שני בערוץ (רגרסיית כפילות)
+    await expectNoMoreEmissions(view.patches)
+    // state עצמו נשאר ה-snapshot (הפליטה לא משנה state)
+    expect(view.state.sessionId).toBe("sess-1")
+    expect(view.state.messages).toHaveLength(2)
+  })
+
+  it("empty snapshot (fresh attachRemote) → no spurious reset patch", async () => {
+    const snapshot = makeSnapshot({ version: 0 }) // messages: []
+    const mockFetch = makeMockFetch({
+      keepOpen: true,
+      events: [{ event: "snapshot", data: JSON.stringify(snapshot) }],
+    })
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+
+    await view.connect()
+
+    await expectNoMoreEmissions(view.patches)
+  })
+
+  it("reset patch precedes live patches (deterministic order in the VM channel)", async () => {
+    const snapshot = makeSnapshot({
+      version: 3,
+      messages: [{ id: "m_0", role: "assistant", messageId: "p1", segments: [] }],
+    })
+    const livePatch = makePatch(4, {
+      op: "append-segment",
+      targetId: "m_0",
+      segment: { id: "s_0", text: "live" },
+    })
+    const mockFetch = makeMockFetch({
+      keepOpen: true,
+      events: [
+        { event: "snapshot", data: JSON.stringify(snapshot) },
+        { event: "patch", data: JSON.stringify(livePatch) },
+      ],
+    })
+    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+
+    await view.connect()
+    const results = await readNPatchArrays(view.patches, 2)
+
+    expect(results[0]?.[0]?.op).toBe("reset") // hydration קודם — נפלט לפני drainPatches
+    expect(results[1]?.[0]).toMatchObject({ op: "append-segment", version: 4 })
   })
 })
 
@@ -723,10 +816,14 @@ describe("RemoteSessionView — reconnect mid-turn", () => {
     const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
     await view.connect()
 
-    // drain: 1 append-segment patch, then 1 synthetic reset patch after reconnect
-    const results = await readNPatchArrays(view.patches, 2)
+    // drain (slice remote-warm-reconnect C3 hydration): ה-snapshot של החיבור הראשון
+    // נושא message אחד ⇒ reset הידרציה (v1), אחריו ה-append-segment (v2), ואז
+    // ה-reset הסינתטי של ה-reconnect (v5).
+    const results = await readNPatchArrays(view.patches, 3)
 
-    expect(results[1]?.[0]).toMatchObject({ op: "reset", version: 5 })
+    expect(results[0]?.[0]).toMatchObject({ op: "reset", version: 1 }) // hydration
+    expect(results[1]?.[0]).toMatchObject({ op: "append-segment", version: 2 })
+    expect(results[2]?.[0]).toMatchObject({ op: "reset", version: 5 })
     expect(view.state.version).toBe(5)
     expect(view.lastReadMessageId).toBeNull()
     expect(view.lastReadSegmentIndex).toBe(0)

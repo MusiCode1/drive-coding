@@ -26,6 +26,7 @@ import {
 } from "@drive-coding/core/session"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { createAgent, deleteAgent, notifySessionAttached } from "$lib/adapters/agents-api"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 // ─── Module-level mocks (חייבים להיות לפני import AgentSession — נדרש לרגרסיית ה-local) ───
@@ -425,6 +426,148 @@ describe("AgentSession — attachRemote fast-fail", () => {
     await agent.applyConfigOption("mode", "ask")
 
     expect(settings.setLastConfig).toHaveBeenCalledWith("claude", "mode", "ask")
+  })
+})
+
+// ── attachRemoteToLiveAgent — warm reconnect ב-remote (slice remote-warm-reconnect C3) ──
+
+describe("AgentSession — attachRemoteToLiveAgent", () => {
+  /** SSE body עם snapshot — אותו דפוס כמו טסטי attachRemote למעלה (keepOpen). */
+  function sseFetchFor(
+    snapshot: unknown,
+    extra?: { onReply?: (body: unknown) => void },
+  ): {
+    fetchMock: ReturnType<typeof vi.fn>
+  } {
+    const encoder = new TextEncoder()
+    const sseText = `event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/events")) {
+        const body = new ReadableStream<Uint8Array>({
+          start(ctrl) {
+            ctrl.enqueue(encoder.encode(sseText))
+            // keepOpen — לא סוגרים כדי לא להצית reconnect-loop עם setTimeout אמיתי
+          },
+        })
+        return { ok: true, status: 200, body } as unknown as Response
+      }
+      if (String(url).includes("/reply")) {
+        extra?.onReply?.(init?.body ? JSON.parse(init.body as string) : undefined)
+        return { ok: true, status: 200, json: async () => ({ ok: true }) } as unknown as Response
+      }
+      return { ok: true, status: 200, json: async () => ({ ok: true }) } as unknown as Response
+    })
+    return { fetchMock }
+  }
+
+  it("success: view created with the agentId — no createAgent — bubbles populated with the exact history", async () => {
+    const messages = [
+      { id: "m_0", role: "user", messageId: null, segments: [{ id: "s_0", text: "what is up" }] },
+      {
+        id: "m_1",
+        role: "assistant",
+        messageId: "p1",
+        segments: [{ id: "s_1", text: "hello back" }],
+      },
+    ]
+    const snapshot = {
+      ...createInitialSessionState({ sessionId: "warm-sess-1" }),
+      version: 9,
+      messages,
+      nextMessageSeq: 2,
+      nextSegmentSeq: 2,
+    }
+    const { fetchMock } = sseFetchFor(snapshot)
+    vi.stubGlobal("fetch", fetchMock)
+    vi.mocked(createAgent).mockClear()
+    vi.mocked(notifySessionAttached).mockClear()
+
+    const agent = new AgentSession()
+    await agent.attachRemoteToLiveAgent({ agentId: "live-agent-1", cwd: "/ws", cliKind: "claude" })
+
+    expect(agent.status).toBe("connected")
+    expect(agent.agentId).toBe("live-agent-1") // מ-input, לא מ-createAgent
+    expect(agent.cwd).toBe("/ws")
+    expect(createAgent).not.toHaveBeenCalled() // ❌ בלי createAgent — ה-host קיים ב-BE
+    expect(notifySessionAttached).not.toHaveBeenCalled() // ❌ ה-BE הוא הבעלים (דווח ב-C1)
+
+    // hydration: ה-bubbles מאוכלסים בדיוק-ההיסטוריה מה-snapshot (reset patch אחד)
+    await delay()
+    expect(agent.bubbles).toHaveLength(2)
+    expect(agent.bubbles[0]).toMatchObject({
+      kind: "user",
+      id: "m_0",
+      segments: [{ id: "s_0", text: "what is up" }],
+    })
+    expect(agent.bubbles[1]).toMatchObject({
+      kind: "message",
+      id: "m_1",
+      segments: [{ id: "s_1", text: "hello back" }],
+    })
+    // רגרסיית כפילות חייבת להיכשל רועשת: כל message בדיוק פעם אחת
+    expect(agent.bubbles.filter((b) => b.id === "m_0")).toHaveLength(1)
+    expect(agent.bubbles.filter((b) => b.id === "m_1")).toHaveLength(1)
+  })
+
+  it("snapshot without sessionId → fast-fail: error surfaced, status=error, view closed", async () => {
+    // pending permission ב-snapshot — close() שולח POST /reply עם cancelled; זה
+    // ה-side-effect המדיד שה-view נסגר (close מבצע round-trip של ביטול pending).
+    const replyBodies: unknown[] = []
+    const snapshot = {
+      ...createInitialSessionState({ sessionId: null }),
+      pending: { permission: { requestId: 9, params: {} }, elicitation: null },
+    }
+    const { fetchMock } = sseFetchFor(snapshot, { onReply: (b) => replyBodies.push(b) })
+    vi.stubGlobal("fetch", fetchMock)
+    vi.mocked(createAgent).mockClear()
+    vi.mocked(deleteAgent).mockClear()
+
+    const agent = new AgentSession()
+    await agent.attachRemoteToLiveAgent({ agentId: "live-agent-2", cwd: "/ws", cliKind: "claude" })
+
+    expect(agent.status).toBe("error")
+    expect(agent.error).toContain("did not provide a sessionId")
+    expect(createAgent).not.toHaveBeenCalled()
+    // view.close() רץ — ה-pending בוטל דרך POST /reply
+    expect(replyBodies).toContainEqual(
+      expect.objectContaining({ kind: "permission", requestId: 9 }),
+    )
+    // הסוכן החי שרד: keepAgent — deleteAgent לא נקרא (סטייה מתועדת מהבריף)
+    expect(deleteAgent).not.toHaveBeenCalled()
+  })
+
+  it("duplication guard: status connected → throws, and no cleanup runs before the throw", async () => {
+    const view = new MockSessionView()
+    view.connect("remote-sess-guard")
+    const agent = new AgentSession({ view })
+    agent._setStatusForTest("connected")
+
+    await expect(
+      agent.attachRemoteToLiveAgent({ agentId: "x", cwd: "/ws", cliKind: "claude" }),
+    ).rejects.toThrow(/cannot attach/)
+
+    // אין cleanup לפני ה-throw — ה-view הקודם לא נסגר, ה-status לא נדרס
+    expect(view.closeMock).not.toHaveBeenCalled()
+    expect(agent.status).toBe("connected")
+  })
+
+  it("connect failure → status=error (not stuck on connecting), cleanup runs, live agent survives", async () => {
+    // 503 מ-GET /events → SSEReader זורק → catch של attachRemoteToLiveAgent
+    const fetchMock = vi.fn(
+      async (_url: string) => ({ ok: false, status: 503 }) as unknown as Response,
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    vi.mocked(deleteAgent).mockClear()
+    vi.mocked(createAgent).mockClear()
+
+    const agent = new AgentSession()
+    await agent.attachRemoteToLiveAgent({ agentId: "live-agent-3", cwd: "/ws", cliKind: "claude" })
+
+    expect(agent.status).toBe("error")
+    expect(agent.error).toContain("503")
+    expect(agent.agentId).toBeNull() // #cleanup רץ (איפוס agentId)
+    expect(createAgent).not.toHaveBeenCalled()
+    expect(deleteAgent).not.toHaveBeenCalled() // keepAgent — הסוכן החי לא נמחק בכשל-חולף
   })
 })
 
