@@ -67,8 +67,9 @@ cwd=`/home/user/Projects/drive-coding/dev`) — לא תחליף לעיניים �
 
 ## known-gaps ב-remote (מחוץ לצ'ק-ליסט — מתועדים, לא נסגרים ב-S6)
 
-- **רשימת-סשנים ריקה** — `newSession`/`loadSession`/`listSessions`/`deleteSession`
-  דוחים; ה-BE מנהל sessions, ה-FE לא.
+> הפער "רשימת-סשנים ריקה" נסגר ב-slice remote-session-mgmt: רשימה/טעינה/מחיקה
+> עובדות דרך ה-SessionHost; `newSession` נשאר BE-owned (חיבור חדש דרך createAgent).
+
 - **אין תמונות מודבקות** — `RemoteSessionView.prompt` תומך בטקסט בלבד
   (`PromptBlocks` זורק).
 - **אין נגינה-חוזרת של הקלטת-המשתמש** — Speaker water-mark (getters קיימים,

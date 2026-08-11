@@ -1,5 +1,92 @@
 # Walkthrough — drive-coding
 
+## 2026-08-11 (slice remote-session-mgmt — ניהול סשנים ב-remote ל-parity עם local)
+
+### slice remote-session-mgmt — רשימת סשנים, החלפה חיה ומחיקה ב-Remote Mode
+
+Base: `slice/remote-warm-reconnect` tip `6f73684`. ענף: `slice/remote-session-mgmt`,
+worktree `.worktrees/remote-session-mgmt`. 5 קומיטים (C1–C5) + קומיט תיעוד זה.
+
+#### C1 — SessionHost חושף list/delete + יכולות
+
+`session-host.ts` — שלושה members חדשים ב-`ExtendedSessionHost`, כולם passthrough דק
+ל-AcpClient: `listSessions()`, `deleteSession(sessionId)`, `readonly agentCapabilities`
+(= `client.capabilities` מה-initialize, כולל `sessionCapabilities.delete/list`). שגיאות
+JSON-RPC — כולל `code: -32601` — עוברות **כמו שהן**; הראוט (C3) ממפה. 5 טסטים
+אינטגרטיביים (passthrough, שמירת code בשתי המתודות, חשיפת caps).
+
+#### C2 — loadSession כ-switch (הצ'קפוינט הקריטי)
+
+`session-host.ts` — שמונת השלבים בסדר המחייב: (1) `turnSeq++` + `cancelledTurn=-1`
+(תור ישן שמסתיים אחרי ההחלפה לא מנחית applyTurnEnd/lastTurnError על הסשן החדש);
+(2) ניקוי pending פתוח ב-cancelled + flush מיקרוטסק אחד כדי שה-clear patch יינחת
+**לפני** ה-reset; (3) reset על כל ה-state דרך `applyPatch` הטהור (❌ בלי bump ידני
+של version); (4) **flip sessionId לפני ה-await**; (5) פילטר sessionId קבוע
+ב-handleUpdate + guards ב-handlers של permission/elicitation (default מיידי, בלי
+`nextRequestId++`, בלי כניסה ל-pending); (6) await; (7) הצלחה: update-session **אחד**
+`{configOptions?, turnState:"idle", lastTurnError:null}` + החזרת `{sessionId, version}`
+— sessionId **לא** נכתב מהתשובה; (8) כשל: rollback sessionId בלבד + reset **שני**
+בגרסה ממשיכה + idle + rethrow — ❌ אין שחזור snapshot (מונוטוניות גרסאות תמיד).
+החתימה צומצמה ל-`Omit<SessionHost,"loadSession">` + חתימה מעודנת שמחזירה version.
+11 טסטים חדשים, כולל סימולציית watermark (כל patch עולה על כל קודמיו — שחזור
+snapshot היה נכשל כאן) ו-capture של state **בתוך** ה-await (flip-before-await).
+
+🔴 **סטייה מודעת (מתועדת בקוד)**: הפילטר וה-guards הם null-safe כלפי
+`currentState.sessionId` (host לפני יצירת סשן — notifications עוברות, כמו קודם).
+בלי זה טסטי האינטגרציה הקיימים (ששואבים updates לפני newSession) נשברים; בחלון
+היצירה האמיתי אין notifications ממילא, ובמעבר עצמו ה-sessionId תמיד מוצב.
+
+#### C3 — שלושה מיפויים blocking ב-rpc + getCwd לרג'יסטרי
+
+`rpc.ts` — `listSessions` → `200 {sessions, sessionCapabilities}` (round-trip אחד
+ליכולות); `loadSession` → cwd מ-`params.cwd ?? registry.getCwd(agentId)`, חסר לגמרי
+→ 400, הצלחה → `200 {sessionId, version}` + `notifySessionAttached` (catch+warn, לא
+מפיל), כשל → `502 {error, code?}`; `deleteSession` → `-32601` ממפה ל-`200 {ok:false,
+unsupported:true}` (לא 500). ⚠️ `return` מפורש בכל case — `break` היה נופל ל-202
+המשותף. `codeOf/messageOf` קוראים `(e as {code?:number}).code` בבטחה (לא בהכרח Error).
+`registry.ts` — `getCwd(agentId)` passthrough ל-connectionRegistry. 24 טסטים חדשים
+(19 unit + 5 אינטגרציה אמיתיים: host+route).
+
+#### C4 — RemoteSessionView מממש את השלוש
+
+`remote-session-view.ts` — `listSessions` (נרמול + שמירת sessionCapabilities),
+`loadSession(sessionId, cwd?)` (מעדכן את **שני** מקורות ה-sessionId: `#sessionId`
+וגם `#state.sessionId`), `deleteSession` (`{unsupported:true}` → זריקה עם
+`code:-32601`), `newSession` נשאר זורק, + getter `supportsSessionDelete` (false עד
+התשובה הראשונה). `#post` כעת מפרסר גוף שגיאה: זורק עם `.code` + סטטוס תמיד בהודעה
+(רגרסיות M4 "500"/"404" נשמרות). contract tests עודכנו כנדרש; 9 טסטים ייעודיים.
+
+#### C5 — הרחבת port + סניפי #view ב-VM
+
+`session-view.ts` — `readonly supportsSessionDelete` + `loadSession(sessionId, cwd?)`
+על ה-port; ארבעת המממשים עודכנו (LocalSessionView: `cwd ?? #cwd` + caps מ-`#client`;
+שני ה-mocks). ב-VM: getter view-aware; סניף `#view` ב-listSessions (נרמול ב-view;
+‎-32601 → רשימה ריקה, sessionsError נשאר null — בדיוק כמו local) וב-deleteSession
+(אותו טיפול -32601, אותה הסרה אופטימית, אותה wasActive→detach); `switchSession` —
+ה-`return` הגורף הוחלף בנתיב remote: guard סידורי (`status!=="connected" ||
+isLoadingHistory` → throw) → `view.loadSession(sessionId, cwd)` → הצבה ישירה של
+`#sessionId` (#syncFromViewState לא מסנכרן sessionId) → parity עם local: cwd +
+title keep-on-undefined + `#pushTitleToServer` → finally `isLoadingHistory=false`
+(משתיק TTS בזמן ה-replay). הנתיבים המקומיים — byte-identical. 10 טסטים חדשים;
+בנוסף תוקנו generics ישנים של `vi.fn` ב-fixture לצורת vitest-4 (חתך 6 שגיאות
+svelte-check קיימות).
+
+#### אימות
+
+- סוויטות הבריף: core/session + backend/session-host + backend/tests +
+  frontend/session + frontend/view-models — ירוקות (הכשל היחיד: `https-serve.test.ts`
+  — סביבתי, hardcoded Windows path; מתועד עוד מהסלייס הקודם).
+- typecheck DELTA: backend 68→66, frontend svelte-check 15→9 — אפס שגיאות חדשות
+  בשני הצדדים (8 קיימות נחתכו).
+- lint:i18n עובר (commit hook + ריצה ידנית).
+
+#### פערי פרשנות מול הבריף (מתועדים)
+
+- "רשימה ריקה + sessionsError עדין" (DoD): פורש כ"sessionsError נשאר null כדי
+  שהרשימה הריקה תרונדר" — בדיוק כמו local; הצבת הודעה הייתה מסתירה את הרשימה
+  (הפאנל מציג error במקום רשימה) וסותרת את "בדיוק כמו הנתיב הקיים".
+- מספרי השורות של הבריף ל-VM הם מ-tip ישן (ec95f93); העבודה לפי משמעות.
+
 ## 2026-08-11 (slice remote-warm-reconnect — סוף הסלייס)
 
 ### slice remote-warm-reconnect — כפתור "התחברות מחדש" עובד ב-Remote Mode (HTTP+SSE)
