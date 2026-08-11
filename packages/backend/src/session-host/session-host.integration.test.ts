@@ -985,7 +985,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C1", () => {
 
   it("deleteSession propagates a JSON-RPC error AS-IS — code -32601 is preserved, not absorbed", async () => {
     const rpcError = Object.assign(new Error("Method not found"), { code: -32601 })
-    const { host, mockClient } = await setup(5000, 5000, {
+    const { host } = await setup(5000, 5000, {
       deleteSession: vi.fn().mockRejectedValue(rpcError),
     })
 
@@ -995,7 +995,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C1", () => {
 
   it("listSessions propagates a JSON-RPC error AS-IS — code -32601 is preserved, not absorbed", async () => {
     const rpcError = Object.assign(new Error("Method not found"), { code: -32601 })
-    const { host, mockClient } = await setup(5000, 5000, {
+    const { host } = await setup(5000, 5000, {
       listSessions: vi.fn().mockRejectedValue(rpcError),
     })
 

@@ -368,7 +368,8 @@ export class RemoteSessionView implements SessionView {
     this.#sessionCapabilities =
       (res?.sessionCapabilities as { delete?: unknown; [key: string]: unknown } | null | undefined) ??
       null
-    const raw = Array.isArray(res?.sessions) ? (res!.sessions as unknown[]) : []
+    const sessions = res?.sessions
+    const raw = Array.isArray(sessions) ? (sessions as unknown[]) : []
     return raw.map(normalizeSessionInfo)
   }
 

@@ -67,11 +67,6 @@ function messageOf(e: unknown): string {
   return String(e)
 }
 
-function jsonRpcErrorPayload(e: unknown): { error: string; code?: number } {
-  const code = codeOf(e)
-  return code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code }
-}
-
 /**
  * registerRpcRoute — registers POST /api/agents/:id/rpc on the Hono app.
  */
