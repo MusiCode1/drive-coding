@@ -70,6 +70,7 @@ function makeMockRegistry(
     getBroadcaster: vi.fn().mockReturnValue(broadcaster),
     unregisterHost: vi.fn(),
     notifySessionAttached: vi.fn().mockResolvedValue(undefined),
+    getCwd: vi.fn().mockReturnValue(undefined),
   }
 }
 
@@ -372,6 +373,248 @@ describe("POST /api/agents/:id/rpc", () => {
         process.off("unhandledRejection", onRejection)
       }
       expect(rejections).toHaveLength(0)
+    })
+  })
+  // ─── slice remote-session-mgmt C3: blocking listSessions/loadSession/deleteSession ───
+
+  describe("listSessions (blocking, real result)", () => {
+    it("returns 200 with {sessions, sessionCapabilities} — explicit return, not 202", async () => {
+      const host = makeMockHost(makeMockState(11))
+      ;(host.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({
+        sessions: [{ sessionId: "s1" }, { sessionId: "s2" }],
+      })
+      ;(host as unknown as { agentCapabilities: unknown }).agentCapabilities = {
+        sessionCapabilities: { delete: {} },
+      }
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "listSessions", params: {} })
+      expect(res.status).toBe(200)
+      const json = (await res.json()) as unknown as {
+        sessions: unknown[]
+        sessionCapabilities: unknown
+      }
+      expect(json.sessions).toEqual([{ sessionId: "s1" }, { sessionId: "s2" }])
+      expect(json.sessionCapabilities).toEqual({ delete: {} })
+      expect(host.listSessions).toHaveBeenCalledTimes(1)
+    })
+
+    it("missing sessions in the host result → sessions:[] ; missing capabilities → null", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({})
+      ;(host as unknown as { agentCapabilities: unknown }).agentCapabilities = undefined
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "listSessions", params: {} })
+      expect(res.status).toBe(200)
+      const json = (await res.json()) as unknown as {
+        sessions: unknown[]
+        sessionCapabilities: unknown
+      }
+      expect(json.sessions).toEqual([])
+      expect(json.sessionCapabilities).toBeNull()
+    })
+
+    it("host.listSessions rejecting → 502 with {error, code}", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.listSessions as ReturnType<typeof vi.fn>).mockRejectedValue(
+        Object.assign(new Error("Method not found"), { code: -32601 }),
+      )
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "listSessions", params: {} })
+      expect(res.status).toBe(502)
+      const json = (await res.json()) as unknown as { error: string; code: number }
+      expect(json.code).toBe(-32601)
+      expect(json.error).toBe("Method not found")
+    })
+  })
+
+  describe("loadSession (blocking, cwd resolution, notifySessionAttached)", () => {
+    it("happy path: 200 {sessionId, version}; cwd from params passed to host; notifySessionAttached called", async () => {
+      const host = makeMockHost(makeMockState(13))
+      ;(host.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        sessionId: "sess-9",
+        version: 13,
+      })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "loadSession",
+        params: { sessionId: "sess-9", cwd: "/from/params" },
+      })
+      expect(res.status).toBe(200)
+      const json = (await res.json()) as unknown as { sessionId: string; version: number }
+      expect(json.sessionId).toBe("sess-9")
+      expect(json.version).toBe(13)
+      expect(host.loadSession).toHaveBeenCalledWith({ cwd: "/from/params", sessionId: "sess-9" })
+      expect(registry.notifySessionAttached).toHaveBeenCalledWith("agent-1", "sess-9")
+    })
+
+    it("cwd missing in params → falls back to registry.getCwd", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        sessionId: "sess-9",
+        version: 1,
+      })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      ;(registry.getCwd as ReturnType<typeof vi.fn>).mockReturnValue("/fallback-cwd")
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "loadSession",
+        params: { sessionId: "sess-9" },
+      })
+      expect(res.status).toBe(200)
+      expect(registry.getCwd).toHaveBeenCalledWith("agent-1")
+      expect(host.loadSession).toHaveBeenCalledWith({ cwd: "/fallback-cwd", sessionId: "sess-9" })
+    })
+
+    it("cwd missing in params AND registry.getCwd undefined → 400 'no cwd available'", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      ;(registry.getCwd as ReturnType<typeof vi.fn>).mockReturnValue(undefined)
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "loadSession",
+        params: { sessionId: "sess-9" },
+      })
+      expect(res.status).toBe(400)
+      const json = (await res.json()) as unknown as { error: string }
+      expect(json.error).toBe("no cwd available")
+      expect(host.loadSession).not.toHaveBeenCalled()
+    })
+
+    it("missing sessionId in params → 400 (ArkType), host.loadSession never called", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "loadSession", params: { cwd: "/x" } })
+      expect(res.status).toBe(400)
+      expect(host.loadSession).not.toHaveBeenCalled()
+    })
+
+    it("host.loadSession rejecting → 502 with {error, code}; notifySessionAttached NOT called", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.loadSession as ReturnType<typeof vi.fn>).mockRejectedValue(
+        Object.assign(new Error("load failed"), { code: -32000 }),
+      )
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "loadSession",
+        params: { sessionId: "s", cwd: "/x" },
+      })
+      expect(res.status).toBe(502)
+      const json = (await res.json()) as unknown as { error: string; code: number }
+      expect(json.code).toBe(-32000)
+      expect(registry.notifySessionAttached).not.toHaveBeenCalled()
+    })
+
+    it("notifySessionAttached rejecting does NOT fail the switch (catch+warn) → still 200", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        sessionId: "sess-9",
+        version: 1,
+      })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      ;(registry.notifySessionAttached as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("registry down"),
+      )
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "loadSession",
+        params: { sessionId: "sess-9", cwd: "/x" },
+      })
+      expect(res.status).toBe(200)
+    })
+  })
+
+  describe("deleteSession (blocking, -32601 graceful)", () => {
+    it("happy path: 200 {ok:true}; passes sessionId to host", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "deleteSession",
+        params: { sessionId: "sess-del" },
+      })
+      expect(res.status).toBe(200)
+      const json = (await res.json()) as unknown as { ok: boolean }
+      expect(json.ok).toBe(true)
+      expect(host.deleteSession).toHaveBeenCalledWith("sess-del")
+    })
+
+    it("-32601 (unsupported) → 200 {ok:false, unsupported:true}, NOT 500", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.deleteSession as ReturnType<typeof vi.fn>).mockRejectedValue(
+        Object.assign(new Error("Method not found"), { code: -32601 }),
+      )
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "deleteSession",
+        params: { sessionId: "sess-del" },
+      })
+      expect(res.status).toBe(200)
+      const json = (await res.json()) as unknown as { ok: boolean; unsupported: boolean }
+      expect(json.ok).toBe(false)
+      expect(json.unsupported).toBe(true)
+    })
+
+    it("non-32601 error → 502 with {error, code}", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.deleteSession as ReturnType<typeof vi.fn>).mockRejectedValue(
+        Object.assign(new Error("disk full"), { code: -32000 }),
+      )
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "deleteSession",
+        params: { sessionId: "sess-del" },
+      })
+      expect(res.status).toBe(502)
+      const json = (await res.json()) as unknown as { error: string; code: number }
+      expect(json.code).toBe(-32000)
+    })
+
+    it("missing sessionId → 400 (ArkType), host.deleteSession never called", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "deleteSession", params: {} })
+      expect(res.status).toBe(400)
+      expect(host.deleteSession).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("202 stays only for the six original methods", () => {
+    it.each([
+      ["prompt", { sessionId: "s1", content: "hi" }],
+      ["cancel", { sessionId: "s1" }],
+      ["setMode", { modeId: "auto" }],
+      ["setConfigOption", { configId: "k", value: true }],
+      ["extMethod", { method: "_drive/x", params: {} }],
+      ["setSessionModel", { model: "m" }],
+    ])("%s still returns 202", async (method, params) => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method, params })
+      expect(res.status).toBe(202)
     })
   })
 })

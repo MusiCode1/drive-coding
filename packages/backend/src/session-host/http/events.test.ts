@@ -72,6 +72,7 @@ function makeMockRegistry(opts: {
     getBroadcaster: vi.fn().mockReturnValue(broadcaster),
     unregisterHost: vi.fn(),
     notifySessionAttached: vi.fn().mockResolvedValue(undefined),
+    getCwd: vi.fn().mockReturnValue(undefined),
   }
 }
 

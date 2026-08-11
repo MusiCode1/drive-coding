@@ -135,6 +135,7 @@ async function setup(): Promise<{
     getBroadcaster: (id) => (id === AGENT_ID ? broadcaster : undefined),
     unregisterHost: () => {},
     notifySessionAttached: async () => {},
+    getCwd: (id) => (id === AGENT_ID ? "/connection/cwd" : undefined),
   }
 
   const app = new Hono()
@@ -331,5 +332,91 @@ describe("session-host HTTP end-to-end (real host + real broadcaster + real rout
     const finalState = computeFinalClientState(frames)
     expect(finalState.turnState).toBe("idle")
     expect(finalState.lastTurnError?.message).toBe("agent crashed")
+  })
+})
+// ─── slice remote-session-mgmt C3: list/load/delete over the real route ───
+
+type RpcResponse = { status: number; json(): Promise<unknown> }
+
+async function postRpcIntegration(app: Hono, body: unknown): Promise<RpcResponse> {
+  const res = await app.request(`/api/agents/${AGENT_ID}/rpc`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  return res as unknown as RpcResponse
+}
+
+describe("session-host HTTP — remote-session-mgmt C3 (real host + real route)", () => {
+  it("listSessions returns 200 {sessions, sessionCapabilities} from the real host", async () => {
+    const { app, mockClient } = await setup()
+    ;(mockClient.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({
+      sessions: [{ sessionId: "s1", cwd: "/connection/cwd" }],
+    })
+
+    const res = await postRpcIntegration(app, { method: "listSessions", params: {} })
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { sessions: unknown[]; sessionCapabilities: unknown }
+    expect(json.sessions).toEqual([{ sessionId: "s1", cwd: "/connection/cwd" }])
+    // mock client capabilities {} → sessionCapabilities absent → null
+    expect(json.sessionCapabilities).toBeNull()
+  })
+
+  it("loadSession over the route switches the real host's session and returns {sessionId, version}", async () => {
+    const { app, host, mockClient } = await setup()
+    await host.newSession({ cwd: "/connection/cwd" }) // attach session "s1"
+    ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sessionId: "s2" })
+
+    const res = await postRpcIntegration(app, {
+      method: "loadSession",
+      params: { sessionId: "s2", cwd: "/other/dir" },
+    })
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { sessionId: string; version: number }
+    expect(json.sessionId).toBe("s2")
+    expect(json.version).toBe(host.state.version)
+    expect(host.state.sessionId).toBe("s2") // the switch landed on the real host
+    expect(mockClient.loadSession).toHaveBeenCalledWith({ cwd: "/other/dir", sessionId: "s2" })
+  })
+
+  it("loadSession without params.cwd falls back to registry.getCwd (the connection's cwd)", async () => {
+    const { app, host, mockClient } = await setup()
+    await host.newSession({ cwd: "/connection/cwd" })
+
+    const res = await postRpcIntegration(app, {
+      method: "loadSession",
+      params: { sessionId: "s2" },
+    })
+    expect(res.status).toBe(200)
+    expect(mockClient.loadSession).toHaveBeenCalledWith({
+      cwd: "/connection/cwd",
+      sessionId: "s2",
+    })
+  })
+
+  it("deleteSession happy path over the route → {ok:true}", async () => {
+    const { app, mockClient } = await setup()
+
+    const res = await postRpcIntegration(app, {
+      method: "deleteSession",
+      params: { sessionId: "s1" },
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    expect(mockClient.deleteSession).toHaveBeenCalledWith("s1")
+  })
+
+  it("deleteSession: -32601 from the CLI → 200 {ok:false, unsupported:true} (graceful, not 500)", async () => {
+    const { app, mockClient } = await setup()
+    ;(mockClient.deleteSession as ReturnType<typeof vi.fn>).mockRejectedValue(
+      Object.assign(new Error("Method not found"), { code: -32601 }),
+    )
+
+    const res = await postRpcIntegration(app, {
+      method: "deleteSession",
+      params: { sessionId: "s-x" },
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: false, unsupported: true })
   })
 })

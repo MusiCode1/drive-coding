@@ -2,18 +2,19 @@
  * rpc.ts — POST /api/agents/:id/rpc (S4 C3).
  *
  * Dispatches RPC calls to the ExtendedSessionHost.
- * Returns 202 Accepted with {version} — does NOT wait for agent response.
  *
- * Supported methods:
- *   - prompt    — host.prompt(sessionId, content, meta?)
- *   - cancel    — host.cancel(sessionId)
- *   - setMode   — host.setMode(modeId)
- *   - setConfigOption — host.setConfigOption(configId, value)
- *   - extMethod — host.extMethod(method, params)
- *   - setSessionModel — host.setSessionModel(model)  (slice remote-session-view C4)
+ * Fire-and-forget methods — 202 Accepted with {version}, no result body:
+ *   - prompt / cancel / setMode / setConfigOption / extMethod / setSessionModel
+ *
+ * Blocking methods with a REAL result (slice remote-session-mgmt C3) — the FE
+ * needs the list/confirmation. Each case below returns EXPLICITLY (200/400/502):
+ * a `break` would fall through to the shared `return c.json({version}, 202)`
+ * and break the contract.
+ *   - listSessions  → 200 {sessions, sessionCapabilities} | 502 {error, code?}
+ *   - loadSession   → 200 {sessionId, version} | 400 (bad params / no cwd) | 502
+ *   - deleteSession → 200 {ok:true} | 200 {ok:false, unsupported:true} (-32601) | 502
  *
  * Returns 404 if connection not found (registry.getOrCreateHost returns undefined).
- * Returns 202 Accepted with {version: host.state.version} on success.
  *
  * ⚠️ prompt/cancel are non-blocking (slice session-host-pending-surface C3-ד):
  * a synchronous launch failure (bad params, unknown method) stays an ordinary
@@ -25,6 +26,7 @@
  * ─── slice session-host-http C3 (TDD) ───
  * ─── slice remote-session-view C4: + setSessionModel (TDD) ───
  * ─── slice session-host-pending-surface C3-ד (TDD): non-blocking prompt/cancel + ArkType ───
+ * ─── slice remote-session-mgmt C3 (TDD): blocking listSessions/loadSession/deleteSession ───
  */
 
 import { createLogger } from "@drive-coding/core/log"
@@ -42,6 +44,33 @@ const PromptParams = type({
   "meta?": { "[string]": "unknown" },
 })
 const CancelParams = type({ sessionId: "string" })
+const LoadSessionParams = type({ sessionId: "string", "cwd?": "string" })
+const DeleteSessionParams = type({ sessionId: "string" })
+
+// ─── slice remote-session-mgmt C3: JSON-RPC error mapping ───
+// A JSON-RPC error is not necessarily an Error instance — the `code` sits on a
+// thrown object (same shape the VM reads, agent-session.svelte.ts). Read safely.
+
+function codeOf(e: unknown): number | undefined {
+  if (typeof e === "object" && e !== null) {
+    const code = (e as { code?: unknown }).code
+    if (typeof code === "number") return code
+  }
+  return undefined
+}
+
+function messageOf(e: unknown): string {
+  if (typeof e === "object" && e !== null) {
+    const message = (e as { message?: unknown }).message
+    if (typeof message === "string" && message.length > 0) return message
+  }
+  return String(e)
+}
+
+function jsonRpcErrorPayload(e: unknown): { error: string; code?: number } {
+  const code = codeOf(e)
+  return code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code }
+}
 
 /**
  * registerRpcRoute — registers POST /api/agents/:id/rpc on the Hono app.
@@ -105,6 +134,69 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
         const model = params.model as string
         await host.setSessionModel(model)
         break
+      }
+      // ─── slice remote-session-mgmt C3: BLOCKING mappings with a real result ───
+      // ⚠️ each case `return`s explicitly (200/400/502). A `break` here would fall
+      // through to the shared `return c.json({version}, 202)` below and break the
+      // contract — the FE needs the list/confirmation in the body.
+      case "listSessions": {
+        try {
+          const r = await host.listSessions()
+          const sessions = Array.isArray(r.sessions) ? r.sessions : []
+          return c.json(
+            {
+              sessions,
+              sessionCapabilities: host.agentCapabilities?.sessionCapabilities ?? null,
+            },
+            200,
+          )
+        } catch (e) {
+          const code = codeOf(e)
+          return c.json(
+            code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
+            502,
+          )
+        }
+      }
+      case "loadSession": {
+        const p = LoadSessionParams(params)
+        if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
+        const cwd = p.cwd ?? registry.getCwd(agentId)
+        if (!cwd) return c.json({ error: "no cwd available" }, 400)
+        try {
+          const r = await host.loadSession({ cwd, sessionId: p.sessionId })
+          // The agents registry must learn the newly-attached session
+          // (status/acpSessionId — remote-warm-reconnect plumbing). catch+warn:
+          // a reporting failure must not fail the switch itself.
+          try {
+            await registry.notifySessionAttached(agentId, r.sessionId)
+          } catch (err) {
+            log.warn({ err, agentId }, "notifySessionAttached after loadSession failed")
+          }
+          return c.json({ sessionId: r.sessionId, version: host.state.version }, 200)
+        } catch (e) {
+          const code = codeOf(e)
+          return c.json(
+            code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
+            502,
+          )
+        }
+      }
+      case "deleteSession": {
+        const p = DeleteSessionParams(params)
+        if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
+        try {
+          await host.deleteSession(p.sessionId)
+          return c.json({ ok: true }, 200)
+        } catch (e) {
+          // -32601 (CLI without delete capability) → graceful, like local
+          if (codeOf(e) === -32601) return c.json({ ok: false, unsupported: true }, 200)
+          const code = codeOf(e)
+          return c.json(
+            code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
+            502,
+          )
+        }
       }
       default: {
         return c.json({ error: `Unknown method: ${String(method)}` }, 400)

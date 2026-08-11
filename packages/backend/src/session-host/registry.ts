@@ -87,6 +87,11 @@ export type AgentSessionRegistry = {
    * נחוץ לסלייס ההמשך (loadSession ב-rpc) — שם ה-session נוצר/נטען מחוץ ל-doCreate.
    */
   notifySessionAttached(agentId: string, sessionId: string): Promise<void>
+  /**
+   * slice remote-session-mgmt C3: passthrough ל-connectionRegistry.getCwd(agentId).
+   * נחוץ ל-loadSession ב-rpc — fallback כש-params.cwd לא נשלח מה-FE.
+   */
+  getCwd(agentId: string): string | undefined
 }
 
 type AgentSessionRegistryDeps = {
@@ -219,6 +224,9 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
 
     async notifySessionAttached(agentId: string, sessionId: string): Promise<void> {
       await deps.onSessionAttached?.(agentId, sessionId)
+    },
+    getCwd(agentId: string): string | undefined {
+      return connectionRegistry.getCwd(agentId)
     },
   }
 }
