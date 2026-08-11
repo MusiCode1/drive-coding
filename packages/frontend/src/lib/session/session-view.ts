@@ -69,15 +69,23 @@ export interface SessionView {
 
   /**
    * טוען session ACP קיים לפי sessionId.
-   * cwd/cliKind נקבעו בבנייה.
+   * cwd/cliKind נקבעו בבנייה; cwd אופציונלי — כשנמסר, מחליף את cwd החיבור
+   * (slice remote-session-mgmt C5: ה-cwd של הסשן הנבחר עובר עד ה-CLI, parity עם local).
    */
-  loadSession(sessionId: string): Promise<void>
+  loadSession(sessionId: string, cwd?: string): Promise<void>
 
   /** מחזיר רשימת sessions הזמינים. */
   listSessions(): Promise<SessionInfo[]>
 
   /** מוחק session. */
   deleteSession(sessionId: string): Promise<void>
+
+  /**
+   * האם הסשן הנוכחי תומך במחיקה (sessionCapabilities.delete).
+   * local: raw client capabilities; remote: מתשובת listSessions (false עד התשובה
+   * הראשונה). slice remote-session-mgmt C5 — ה-port חושף, ה-VM צורך.
+   */
+  readonly supportsSessionDelete: boolean
 
   /** מחליף מודל לסשן הפעיל. */
   setSessionModel(model: string): Promise<void>

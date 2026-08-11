@@ -18,6 +18,7 @@ import type { PromptBlocks } from "@drive-coding/provider/client"
 class MockSessionView implements SessionView {
   readonly state = createInitialSessionState({ sessionId: null })
   readonly patches: ReadableStream<Patch[]> = new ReadableStream<Patch[]>()
+  readonly supportsSessionDelete = false
 
   prompt(_content: string | PromptBlocks, _meta?: Record<string, unknown>): Promise<void> {
     return Promise.resolve()
@@ -28,7 +29,7 @@ class MockSessionView implements SessionView {
   setConfigOption(_key: string, _value: unknown): Promise<void> { return Promise.resolve() }
   extMethod(_method: string, _params: unknown): Promise<unknown> { return Promise.resolve(null) }
   newSession(): Promise<void> { return Promise.resolve() }
-  loadSession(_sessionId: string): Promise<void> { return Promise.resolve() }
+  loadSession(_sessionId: string, _cwd?: string): Promise<void> { return Promise.resolve() }
   listSessions(): Promise<SessionInfo[]> { return Promise.resolve([]) }
   deleteSession(_sessionId: string): Promise<void> { return Promise.resolve() }
   setSessionModel(_model: string): Promise<void> { return Promise.resolve() }

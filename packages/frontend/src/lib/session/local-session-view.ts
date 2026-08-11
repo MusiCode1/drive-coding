@@ -248,11 +248,13 @@ export class LocalSessionView implements SessionView {
 
   /**
    * טוען session ACP קיים לפי sessionId.
+   * cwd אופציונלי (slice remote-session-mgmt C5): כשנמסר — מחליף את cwd החיבור;
+   * אחרת cwd החיבור המקורי (#cwd).
    */
-  async loadSession(sessionId: string): Promise<void> {
+  async loadSession(sessionId: string, cwd?: string): Promise<void> {
     this.#state = { ...this.#state, status: "connecting" }
     this.#client = await this.#createClientFn(this.#makeCallbacks())
-    await this.#client.loadSession({ sessionId, cwd: this.#cwd })
+    await this.#client.loadSession({ sessionId, cwd: cwd ?? this.#cwd })
     this.#sessionId = sessionId
     this.#state = { ...this.#state, status: "connected", sessionId }
     await this.#refreshQuota()
@@ -316,6 +318,15 @@ export class LocalSessionView implements SessionView {
   async deleteSession(sessionId: string): Promise<void> {
     if (!this.#client) throw new Error("LocalSessionView: not connected")
     await this.#client.deleteSession(sessionId)
+  }
+
+  /**
+   * slice remote-session-mgmt C5: האם הסוכן מכריז sessionCapabilities.delete —
+   * raw ACP caps מה-initialize (אותו ביטוי בדיוק כמו ה-VM, agent-session.svelte.ts).
+   * false עד שיש client חי בלי יכולת delete מוצהרת.
+   */
+  get supportsSessionDelete(): boolean {
+    return this.#client?.capabilities?.sessionCapabilities?.delete != null
   }
 
   async setSessionModel(model: string): Promise<void> {

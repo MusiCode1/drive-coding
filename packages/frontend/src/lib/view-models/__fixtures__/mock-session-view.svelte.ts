@@ -27,13 +27,17 @@ export class MockSessionView implements SessionView {
   // ─── state (plain object, updated by fireUpdate) ───
   state: SessionState = $state(createInitialSessionState({ sessionId: null }))
 
+  // ─── slice remote-session-mgmt C5: port extension — supportsSessionDelete ───
+  // Mutable so tests can toggle the capability; the VM getter must follow it.
+  supportsSessionDelete = $state(false)
+
   // ─── patches stream ───
   #controller: ReadableStreamDefaultController<Patch[]> | null = null
   readonly patches: ReadableStream<Patch[]>
 
   // Track calls for assertions
   readonly promptMock = vi
-    .fn<[string | PromptBlocks, Record<string, unknown>?], Promise<void>>()
+    .fn<(content: string | PromptBlocks, meta?: Record<string, unknown>) => Promise<void>>()
     .mockResolvedValue(undefined)
   readonly cancelMock = vi.fn().mockResolvedValue(undefined)
   readonly newSessionMock = vi.fn().mockResolvedValue(undefined)
@@ -43,7 +47,7 @@ export class MockSessionView implements SessionView {
   readonly setModeMock = vi.fn().mockResolvedValue(undefined)
   readonly setConfigOptionMock = vi.fn().mockResolvedValue(undefined)
   readonly extMethodMock = vi.fn().mockResolvedValue(undefined)
-  readonly listSessionsMock = vi.fn<[], Promise<SessionInfo[]>>().mockResolvedValue([])
+  readonly listSessionsMock = vi.fn<() => Promise<SessionInfo[]>>().mockResolvedValue([])
   readonly deleteSessionMock = vi.fn().mockResolvedValue(undefined)
   readonly setSessionModelMock = vi.fn().mockResolvedValue(undefined)
 
@@ -122,8 +126,8 @@ export class MockSessionView implements SessionView {
   newSession(): Promise<void> {
     return this.newSessionMock()
   }
-  loadSession(sessionId: string): Promise<void> {
-    return this.loadSessionMock(sessionId)
+  loadSession(sessionId: string, cwd?: string): Promise<void> {
+    return this.loadSessionMock(sessionId, cwd)
   }
   listSessions(): Promise<SessionInfo[]> {
     return this.listSessionsMock()

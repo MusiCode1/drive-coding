@@ -328,9 +328,14 @@ export class AgentSession {
    * הנרמול שמור לחוץ-פרוטוקוליים בלבד. החלטת המשתמשת 2026-07-20).
    * ⚠️ warm-reattach: אין initialize טרי → `#client` נוצר עם `ATTACHED_CAPS_FALLBACK` ריק →
    * false עד connect קר חדש. מקובל ל-MVP (עקבי עם המגבלה הידועה של `supportsImageInput`).
+   *
+   * slice remote-session-mgmt C5: ב-remote המקור הוא ה-view (sessionCapabilities
+   * מתשובת listSessions — false עד התשובה הראשונה).
    */
   get supportsSessionDelete(): boolean {
-    return this.#client?.capabilities?.sessionCapabilities?.delete != null
+    return this.#view
+      ? this.#view.supportsSessionDelete
+      : this.#client?.capabilities?.sessionCapabilities?.delete != null
   }
 
   // ─── slice FE-normalization: capabilities + gating ─── (additive)
@@ -1762,8 +1767,34 @@ export class AgentSession {
     cliKind: string
     title?: string // ← slice session-title: תוספתי
   }): Promise<void> => {
-    // ─── slice view-switch C3-ה: חסימת נתיבי-WS ב-remote ───
-    if (this.#view) return
+    // ─── slice remote-session-mgmt C5: remote switch through the SessionHost ───
+    // (replaces the blanket view-switch C3-ה block — the WS-opening paths stay
+    // blocked; the switch itself now goes through view.loadSession → rpc).
+    if (this.#view) {
+      // serial guard on entry — the local path blocks on status !== connected;
+      // without this guard overlapping switches would interleave steps on the host.
+      if (this.status !== "connected" || this.isLoadingHistory) {
+        throw new Error(`cannot switchSession in status ${this.status}`)
+      }
+      this.error = null // parity with the local path — a stale error must not survive
+      this.isLoadingHistory = true // silences TTS during the replay (like local)
+      try {
+        await this.#view.loadSession(input.sessionId, input.cwd)
+        // Direct assignment — #syncFromViewState does NOT sync sessionId; cannot rely on it.
+        this.#sessionId = input.sessionId
+        // Parity with the local success path: cwd + title (the BE reset preserves
+        // the old title — without this assignment session A's title would stay)
+        // + push to the server.
+        this.cwd = input.cwd
+        this.sessionTitle = input.title ?? this.sessionTitle // keep-on-undefined
+        this.#pushTitleToServer(this.sessionTitle)
+      } catch (e) {
+        this.error = `switchSession failed: ${formatAcpError(e)}`
+      } finally {
+        this.isLoadingHistory = false
+      }
+      return
+    }
     // אין חיבור פעיל → נתיב כבד (דפנסיבי; ה-panel מוצג רק עם חיבור)
     if (this.#client === null) {
       return this.loadSession(input)
@@ -2152,6 +2183,31 @@ export class AgentSession {
    *  בחירת סשן נעשית מתוך הסשן הפעיל דרך SessionOptionsPanel.)
    */
   listSessions = async (force = false): Promise<void> => {
+    // ─── slice remote-session-mgmt C5: remote path — view.listSessions ───
+    if (this.#view) {
+      if (this.sessionsLoading) return
+      if (this.#sessionsLoaded && !force) return
+      this.sessionsLoading = true
+      this.sessionsError = null
+      try {
+        // already normalized in the view (RemoteSessionView.listSessions)
+        this.sessions = await this.#view.listSessions()
+        this.#sessionsLoaded = true
+      } catch (e) {
+        // -32601 = the CLI doesn't support listing → empty list, not an error
+        // (exactly like the local path; sessionsError stays null so the empty
+        // list renders — the DoD's "gentle" handling, no crash).
+        if ((e as { code?: number }).code === -32601) {
+          this.sessions = []
+          this.#sessionsLoaded = true
+        } else {
+          this.sessionsError = e instanceof Error ? e.message : String(e)
+        }
+      } finally {
+        this.sessionsLoading = false
+      }
+      return
+    }
     if (this.#client === null) return // אין חיבור — לא טוענים פה
     if (this.sessionsLoading) return
     if (this.#sessionsLoaded && !force) return
@@ -2194,6 +2250,23 @@ export class AgentSession {
    * חי בשכבת הקומפוננטה ולא ב-VM. (calev NO-GO fix: DoD #7 — active-delete השאיר /chat ריק.)
    */
   deleteSession = async (sessionId: string): Promise<boolean> => {
+    // ─── slice remote-session-mgmt C5: remote path — view.deleteSession ───
+    if (this.#view) {
+      try {
+        await this.#view.deleteSession(sessionId)
+      } catch (e) {
+        if ((e as { code?: number }).code === -32601) return false // button hidden; defensive no-op
+        this.sessionsError = e instanceof Error ? e.message : String(e)
+        return false
+      }
+      // optimistic removal — same as local (the rpc already confirmed the delete)
+      this.sessions = this.sessions.filter((s) => s.sessionId !== sessionId)
+      const wasActive = sessionId === this.#sessionId
+      if (wasActive) {
+        this.detach() // navigates out — same wasActive logic as local
+      }
+      return wasActive
+    }
     if (this.#client === null) return false
     try {
       await this.#client.deleteSession(sessionId)

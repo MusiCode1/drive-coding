@@ -662,3 +662,146 @@ describe("regression — local path unchanged (#view === null)", () => {
     expect(agent.turnState).toBe("idle")
   })
 })
+// ─── slice remote-session-mgmt C5: session management through the #view ───
+
+describe("AgentSession + remote view — session management via #view (remote-session-mgmt C5)", () => {
+  let view: MockSessionView
+  let agent: AgentSession
+
+  beforeEach(() => {
+    view = new MockSessionView()
+    view.connect("remote-sess-mgmt")
+    agent = new AgentSession({ view })
+    agent._setStatusForTest("connected")
+  })
+
+  it("listSessions through the view populates sessions (normalized in the view)", async () => {
+    view.listSessionsMock.mockResolvedValueOnce([
+      { sessionId: "s-1", cwd: "/a", title: "A", updatedAt: "" },
+      { sessionId: "s-2", cwd: "/b", title: "B", updatedAt: "" },
+    ])
+
+    await agent.listSessions()
+
+    expect(view.listSessionsMock).toHaveBeenCalledTimes(1)
+    expect(agent.sessions).toHaveLength(2)
+    expect(agent.sessions[0]?.sessionId).toBe("s-1")
+    expect(agent.sessionsError).toBeNull()
+  })
+
+  it("listSessions with -32601 → empty list, sessionsError stays gentle/null (like local, no crash)", async () => {
+    view.listSessionsMock.mockRejectedValueOnce(
+      Object.assign(new Error("Method not found"), { code: -32601 }),
+    )
+
+    await agent.listSessions()
+
+    expect(agent.sessions).toEqual([])
+    // Gentle handling (DoD): no scary error — the empty list renders.
+    expect(agent.sessionsError).toBeNull()
+  })
+
+  it("listSessions with a generic error → sessionsError is set", async () => {
+    view.listSessionsMock.mockRejectedValueOnce(new Error("network down"))
+
+    await agent.listSessions()
+
+    expect(agent.sessionsError).toContain("network down")
+  })
+
+  it("deleteSession with -32601 → false (graceful no-op, button hidden)", async () => {
+    view.deleteSessionMock.mockRejectedValueOnce(
+      Object.assign(new Error("unsupported"), { code: -32601 }),
+    )
+
+    await expect(agent.deleteSession("s-x")).resolves.toBe(false)
+    expect(agent.sessionsError).toBeNull()
+  })
+
+  it("deleteSession success removes optimistically; deleting the ACTIVE session detaches (wasActive)", async () => {
+    // constructor DI does not sync #sessionId from the view — set it explicitly
+    agent._setSessionContextForTest({
+      sessionId: "remote-sess-mgmt",
+      cwd: "/a",
+      cliKind: "claude",
+    })
+    // Make the active session appear in the list.
+    view.listSessionsMock.mockResolvedValueOnce([
+      { sessionId: "remote-sess-mgmt", cwd: "/a", title: "", updatedAt: "" },
+      { sessionId: "other", cwd: "/b", title: "", updatedAt: "" },
+    ])
+    await agent.listSessions()
+    expect(agent.sessions).toHaveLength(2)
+
+    // Deleting a NON-active session → optimistic removal, no detach
+    await expect(agent.deleteSession("other")).resolves.toBe(false)
+    expect(agent.sessions).toHaveLength(1)
+    expect(view.closeMock).not.toHaveBeenCalled()
+
+    // Deleting the ACTIVE session → wasActive true → detach() (view closed;
+    // detach also clears sessions — same as local's onDisconnect pattern)
+    await expect(agent.deleteSession("remote-sess-mgmt")).resolves.toBe(true)
+    expect(view.closeMock).toHaveBeenCalled()
+  })
+
+  it("supportsSessionDelete follows the view's getter (true and false)", () => {
+    expect(agent.supportsSessionDelete).toBe(false)
+    view.supportsSessionDelete = true
+    expect(agent.supportsSessionDelete).toBe(true)
+    view.supportsSessionDelete = false
+    expect(agent.supportsSessionDelete).toBe(false)
+  })
+
+  it("switchSession calls view.loadSession WITH cwd and syncs sessionId + cwd + title", async () => {
+    await agent.switchSession({
+      sessionId: "s-target",
+      cwd: "/target/cwd",
+      cliKind: "claude",
+      title: "Target Title",
+    })
+
+    expect(view.loadSessionMock).toHaveBeenCalledWith("s-target", "/target/cwd")
+    expect(agent.cwd).toBe("/target/cwd")
+    expect(agent.sessionTitle).toBe("Target Title")
+    expect(agent.isLoadingHistory).toBe(false)
+    // #sessionId synced — proven via deleteSession wasActive on the new session
+    await expect(agent.deleteSession("s-target")).resolves.toBe(true)
+  })
+
+  it("switchSession failure populates session.error and resets isLoadingHistory", async () => {
+    view.loadSessionMock.mockRejectedValueOnce(
+      new Error("RemoteSessionView: POST .../rpc failed with status 502"),
+    )
+
+    await agent.switchSession({ sessionId: "s-bad", cwd: "/x", cliKind: "claude" })
+
+    expect(agent.error).toContain("switchSession failed")
+    expect(agent.isLoadingHistory).toBe(false)
+  })
+
+  it("switchSession while another switch is in flight is blocked (serial guard)", async () => {
+    let releaseLoad!: () => void
+    view.loadSessionMock.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (releaseLoad = resolve)),
+    )
+
+    const first = agent.switchSession({ sessionId: "s-1", cwd: "/a", cliKind: "claude" })
+    // isLoadingHistory is true while the first switch awaits — the second must be blocked.
+    await expect(
+      agent.switchSession({ sessionId: "s-2", cwd: "/b", cliKind: "claude" }),
+    ).rejects.toThrow(/cannot switchSession/)
+
+    releaseLoad()
+    await first
+    expect(view.loadSessionMock).toHaveBeenCalledTimes(1) // the blocked switch never loaded
+  })
+
+  it("switchSession when not connected is blocked (serial guard)", async () => {
+    agent._setStatusForTest("idle")
+
+    await expect(
+      agent.switchSession({ sessionId: "s-x", cwd: "/x", cliKind: "claude" }),
+    ).rejects.toThrow(/cannot switchSession/)
+    expect(view.loadSessionMock).not.toHaveBeenCalled()
+  })
+})
