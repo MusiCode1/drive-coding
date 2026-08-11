@@ -248,7 +248,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
     rpcStatus?: number
   }): (url: string, init?: RequestInit) => Promise<Response> {
     const encoder = new TextEncoder()
-    return vi.fn().mockImplementation(async (url: string) => {
+    return vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
       if (url.includes("/events")) {
         const frames = opts.events ?? [
           {
@@ -260,12 +260,44 @@ describe("SessionView deviation table — remote-only behaviors", () => {
         const body = new ReadableStream<Uint8Array>({
           start(ctrl) {
             ctrl.enqueue(encoder.encode(text))
-            ctrl.close()
+            // keepOpen — a closing stream would spin the no-sleep reconnect loop
+            // and #handleReconnected would keep resetting state to the snapshot
+            // (the C4 session-mgmt assertions need state to stay put).
           },
         })
         return { ok: true, status: 200, body } as unknown as Response
       }
       if (url.includes("/rpc")) {
+        // slice remote-session-mgmt C4: the three blocking mappings answer with
+        // real bodies; the six fire-and-forget methods keep the 202 {version}.
+        const rawBody = init?.body ? JSON.parse(init.body as string) : undefined
+        const rpcMethod = (rawBody as { method?: string } | undefined)?.method
+        if (rpcMethod === "listSessions") {
+          return {
+            ok: true,
+            status: 200,
+            json: () =>
+              Promise.resolve({
+                sessions: [{ sessionId: "s-9", cwd: "/w", title: "Listed" }],
+                sessionCapabilities: { delete: {} },
+              }),
+          } as unknown as Response
+        }
+        if (rpcMethod === "loadSession") {
+          const params = (rawBody as { params?: { sessionId?: string } }).params
+          return {
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ sessionId: params?.sessionId ?? "s", version: 2 }),
+          } as unknown as Response
+        }
+        if (rpcMethod === "deleteSession") {
+          return {
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ ok: true }),
+          } as unknown as Response
+        }
         const status = opts.rpcStatus ?? 202
         return {
           ok: status < 300,
@@ -287,7 +319,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
     activeViews.length = 0
   })
 
-  it("newSession/loadSession/listSessions/deleteSession reject (not a synchronous throw)", async () => {
+  it("newSession still rejects; loadSession/listSessions/deleteSession perform real RPCs (remote-session-mgmt C4)", async () => {
     const view = new RemoteSessionView("a1", "http://be.local", {
       _fetch: mockFetchFor({}),
       _sleep: () => Promise.resolve(),
@@ -295,10 +327,21 @@ describe("SessionView deviation table — remote-only behaviors", () => {
     activeViews.push(view)
     await view.connect()
 
+    // ❌ newSession stays unsupported (session creation is BE-owned)
     await expect(view.newSession()).rejects.toThrow("not supported in remote mode")
-    await expect(view.loadSession("s")).rejects.toThrow("not supported in remote mode")
-    await expect(view.listSessions()).rejects.toThrow("not supported in remote mode")
-    await expect(view.deleteSession("s")).rejects.toThrow("not supported in remote mode")
+
+    // loadSession — resolves and updates BOTH sessionId sources from the answer
+    await expect(view.loadSession("s-new", "/w")).resolves.toBeUndefined()
+    expect(view.state.sessionId).toBe("s-new")
+
+    // listSessions — normalized sessions + capabilities captured (delete gating)
+    await expect(view.listSessions()).resolves.toEqual([
+      { sessionId: "s-9", cwd: "/w", title: "Listed", updatedAt: "" },
+    ])
+    expect(view.supportsSessionDelete).toBe(true)
+
+    // deleteSession — resolves on {ok:true}
+    await expect(view.deleteSession("s-9")).resolves.toBeUndefined()
   })
 
   it("prompt(PromptBlocks) throws -- text only is supported in remote mode", async () => {

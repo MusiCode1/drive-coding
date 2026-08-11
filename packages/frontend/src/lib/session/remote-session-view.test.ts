@@ -624,9 +624,10 @@ describe("RemoteSessionView — respond()", () => {
   })
 })
 
-// ── session management methods (throw — backend manages sessions) ────────────
+// ── session management — newSession still throws; list/load/delete are real RPCs ──
+// (slice remote-session-mgmt C4)
 
-describe("RemoteSessionView — session management methods throw", () => {
+describe("RemoteSessionView — newSession still throws", () => {
   it("newSession() throws", async () => {
     const view = newView("agent-1", "http://be.local", {
       _fetch: makeMockFetch({}),
@@ -634,29 +635,201 @@ describe("RemoteSessionView — session management methods throw", () => {
     })
     await expect(view.newSession()).rejects.toThrow("not supported in remote mode")
   })
+})
+// ─── slice remote-session-mgmt C4: listSessions/loadSession/deleteSession ───
 
-  it("loadSession() throws", async () => {
+describe("RemoteSessionView — session management over rpc (C4)", () => {
+  /** Method-aware /rpc mock for the three blocking mappings. */
+  function rpcFetchFor(opts: {
+    listSessionsBody?: unknown
+    listSessionsStatus?: number
+    loadSessionBody?: unknown
+    deleteSessionBody?: unknown
+    onRpc?: (body: unknown) => void
+  }): (url: string, init?: RequestInit) => Promise<Response> {
+    return vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.includes("/events")) {
+        // keepOpen: a closing stream would spin the noSleep reconnect loop and
+        // #handleReconnected would keep resetting #state to the snapshot.
+        return sseResponse(
+          [{ event: "snapshot", data: JSON.stringify(makeSnapshot()) }],
+          { keepOpen: true },
+        )
+      }
+      if (url.includes("/rpc")) {
+        const body = init?.body ? JSON.parse(init.body as string) : undefined
+        opts.onRpc?.(body)
+        const method = (body as { method?: string })?.method
+        if (method === "listSessions") {
+          const status = opts.listSessionsStatus ?? 200
+          return jsonResponse(opts.listSessionsBody ?? { sessions: [] }, status)
+        }
+        if (method === "loadSession") {
+          return jsonResponse(opts.loadSessionBody ?? { sessionId: "sess-2", version: 5 })
+        }
+        if (method === "deleteSession") {
+          return jsonResponse(opts.deleteSessionBody ?? { ok: true })
+        }
+        return jsonResponse({ version: 1 }, 202)
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    })
+  }
+
+  it("listSessions: sends method + normalizes sessions + stores sessionCapabilities", async () => {
+    const seen: unknown[] = []
     const view = newView("agent-1", "http://be.local", {
-      _fetch: makeMockFetch({}),
+      _fetch: rpcFetchFor({
+        listSessionsBody: {
+          sessions: [
+            { sessionId: "a", cwd: "/a", title: "A" },
+            { sessionId: "b", cwd: "/b" },
+          ],
+          sessionCapabilities: { delete: {} },
+        },
+        onRpc: (b) => seen.push(b),
+      }),
       _sleep: noSleep,
     })
-    await expect(view.loadSession("s-1")).rejects.toThrow("not supported in remote mode")
+    await view.connect()
+
+    const sessions = await view.listSessions()
+
+    expect(seen[0]).toMatchObject({ method: "listSessions" })
+    expect(sessions).toEqual([
+      { sessionId: "a", cwd: "/a", title: "A", updatedAt: "" },
+      { sessionId: "b", cwd: "/b", title: "", updatedAt: "" },
+    ])
+    expect(view.supportsSessionDelete).toBe(true)
   })
 
-  it("listSessions() throws", async () => {
+  it("supportsSessionDelete is false before any listSessions answer", async () => {
     const view = newView("agent-1", "http://be.local", {
-      _fetch: makeMockFetch({}),
+      _fetch: rpcFetchFor({}),
       _sleep: noSleep,
     })
-    await expect(view.listSessions()).rejects.toThrow("not supported in remote mode")
+    await view.connect()
+    expect(view.supportsSessionDelete).toBe(false)
   })
 
-  it("deleteSession() throws", async () => {
+  it("supportsSessionDelete is false when capabilities lack delete", async () => {
     const view = newView("agent-1", "http://be.local", {
-      _fetch: makeMockFetch({}),
+      _fetch: rpcFetchFor({
+        listSessionsBody: { sessions: [], sessionCapabilities: { list: {} } },
+      }),
       _sleep: noSleep,
     })
-    await expect(view.deleteSession("s-1")).rejects.toThrow("not supported in remote mode")
+    await view.connect()
+    await view.listSessions()
+    expect(view.supportsSessionDelete).toBe(false)
+  })
+
+  it("listSessions: a 502 carrying code -32601 rejects with the code on the error", async () => {
+    const view = newView("agent-1", "http://be.local", {
+      _fetch: rpcFetchFor({
+        listSessionsStatus: 502,
+        listSessionsBody: { error: "Method not found", code: -32601 },
+      }),
+      _sleep: noSleep,
+    })
+    await view.connect()
+
+    const err = await view.listSessions().then(
+      () => null,
+      (e) => e,
+    )
+    expect(err).toBeInstanceOf(Error)
+    expect((err as { code?: number }).code).toBe(-32601)
+    expect((err as Error).message).toContain("502")
+  })
+
+  it("loadSession: updates #sessionId and state.sessionId from the answer; sends cwd when provided", async () => {
+    const seen: unknown[] = []
+    const view = newView("agent-1", "http://be.local", {
+      _fetch: rpcFetchFor({
+        loadSessionBody: { sessionId: "sess-42", version: 7 },
+        onRpc: (b) => seen.push(b),
+      }),
+      _sleep: noSleep,
+    })
+    await view.connect()
+    expect(view.state.sessionId).toBe("sess-1") // from the snapshot
+
+    await view.loadSession("sess-42", "/custom/cwd")
+
+    expect(seen[0]).toMatchObject({
+      method: "loadSession",
+      params: { sessionId: "sess-42", cwd: "/custom/cwd" },
+    })
+    expect(view.state.sessionId).toBe("sess-42")
+  })
+
+  it("loadSession: omits cwd from params when not provided", async () => {
+    const seen: unknown[] = []
+    const view = newView("agent-1", "http://be.local", {
+      _fetch: rpcFetchFor({
+        loadSessionBody: { sessionId: "sess-42", version: 7 },
+        onRpc: (b) => seen.push(b),
+      }),
+      _sleep: noSleep,
+    })
+    await view.connect()
+
+    await view.loadSession("sess-42")
+
+    expect((seen[0] as { params: Record<string, unknown> }).params).toEqual({
+      sessionId: "sess-42",
+    })
+  })
+
+  it("deleteSession: resolves on {ok:true}", async () => {
+    const seen: unknown[] = []
+    const view = newView("agent-1", "http://be.local", {
+      _fetch: rpcFetchFor({ onRpc: (b) => seen.push(b) }),
+      _sleep: noSleep,
+    })
+    await view.connect()
+
+    await expect(view.deleteSession("sess-x")).resolves.toBeUndefined()
+    expect(seen[0]).toMatchObject({
+      method: "deleteSession",
+      params: { sessionId: "sess-x" },
+    })
+  })
+
+  it("deleteSession: {unsupported:true} rejects with code -32601 (VM handles gracefully like local)", async () => {
+    const view = newView("agent-1", "http://be.local", {
+      _fetch: rpcFetchFor({ deleteSessionBody: { ok: false, unsupported: true } }),
+      _sleep: noSleep,
+    })
+    await view.connect()
+
+    const err = await view.deleteSession("sess-x").then(
+      () => null,
+      (e) => e,
+    )
+    expect((err as { code?: number }).code).toBe(-32601)
+  })
+
+  it("a 502 on deleteSession rejects — not swallowed (M4 applies)", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes("/events")) {
+        return sseResponse([{ event: "snapshot", data: JSON.stringify(makeSnapshot()) }])
+      }
+      if (url.includes("/rpc")) {
+        return jsonResponse({ error: "disk full", code: -32000 }, 502)
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    })
+    const view = newView("agent-1", "http://be.local", { _fetch: fetchMock, _sleep: noSleep })
+    await view.connect()
+
+    const err = await view.deleteSession("sess-x").then(
+      () => null,
+      (e) => e,
+    )
+    expect((err as Error).message).toContain("502")
+    expect((err as { code?: number }).code).toBe(-32000)
   })
 })
 

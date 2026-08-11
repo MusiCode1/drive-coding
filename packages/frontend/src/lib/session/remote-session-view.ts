@@ -6,8 +6,9 @@
  * - POST /api/agents/:id/rpc     — prompt/cancel/setMode/setConfigOption/setSessionModel/extMethod
  * - POST /api/agents/:id/reply   — respond ל-permission/elicitation
  *
- * Session management (newSession/loadSession/listSessions/deleteSession) זורקות —
- * ה-backend מנהל sessions (§5.1 lifecycle), ה-FE לא.
+ * Session management (slice remote-session-mgmt C4): listSessions/loadSession/
+ * deleteSession go through the BE rpc (blocking mappings, real results);
+ * newSession still throws — session creation stays BE-owned (§5.1).
  *
  * Reactivity: RemoteSessionView רק מתחזק state + מזרים patches (עוטף כל Patch בודד
  * מ-SSEReader ל-[patch] כדי להתאים ל-VM's ReadableStream<Patch[]>). ה-VM עושה את
@@ -25,7 +26,7 @@ import {
   type SessionState,
 } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
-import type { SessionInfo } from "$lib/adapters/sessions"
+import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import type { SessionView } from "./session-view.js"
 import { SSEReader } from "./sse-reader.js"
 
@@ -62,6 +63,12 @@ export class RemoteSessionView implements SessionView {
 
   #state: SessionState
   #sessionId: string | null = null
+  /**
+   * slice remote-session-mgmt C4: raw sessionCapabilities from the listSessions
+   * response (the BE ships them on that one round-trip). `supportsSessionDelete`
+   * derives from them — false until the first listSessions answer.
+   */
+  #sessionCapabilities: { delete?: unknown; [key: string]: unknown } | null = null
 
   // ─── patches stream (עטוף — Patch בודד מ-SSEReader → [patch]) ───
   #patchesCtrl: ReadableStreamDefaultController<Patch[]> | null = null
@@ -317,22 +324,75 @@ export class RemoteSessionView implements SessionView {
     this.#emit([resetPatch])
   }
 
-  // ─── Session management — backend manages sessions ───
+  // ─── Session management — slice remote-session-mgmt C4 ───
 
+  /**
+   * ❌ newSession stays throwing (documented): creating a session means a fresh
+   * connection through createAgent — out of this slice's scope.
+   */
   newSession(): Promise<void> {
     return Promise.reject(new Error(NOT_SUPPORTED_SESSION_MGMT))
   }
 
-  loadSession(_sessionId: string): Promise<void> {
-    return Promise.reject(new Error(NOT_SUPPORTED_SESSION_MGMT))
+  /**
+   * Switches the active session through the BE (host.loadSession — switch
+   * semantics). cwd is optional: sent only when provided; the route falls back
+   * to the connection's cwd (400 if neither).
+   *
+   * Both sessionId sources are updated from the rpc response: #sessionId and
+   * #state.sessionId (sessionId is not in update-session's fields — without the
+   * state write it would stay stale across the switch).
+   */
+  async loadSession(sessionId: string, cwd?: string): Promise<void> {
+    const res = (await this.#rpc("loadSession", {
+      sessionId,
+      ...(cwd && { cwd }),
+    })) as { sessionId?: unknown } | undefined
+    const attached =
+      typeof res?.sessionId === "string" && res.sessionId.length > 0 ? res.sessionId : sessionId
+    this.#sessionId = attached
+    this.#state = { ...this.#state, sessionId: attached }
   }
 
-  listSessions(): Promise<SessionInfo[]> {
-    return Promise.reject(new Error(NOT_SUPPORTED_SESSION_MGMT))
+  /**
+   * Lists sessions + captures sessionCapabilities (delete gating) in one
+   * round-trip. Sessions are normalized here (like LocalSessionView) — the VM
+   * consumes them as-is. A -32601 (CLI without list capability) surfaces as an
+   * error carrying `.code` (#post parses the 502 body) → the VM degrades to an
+   * empty list gracefully instead of showing a generic "502".
+   */
+  async listSessions(): Promise<SessionInfo[]> {
+    const res = (await this.#rpc("listSessions", {})) as
+      | { sessions?: unknown; sessionCapabilities?: unknown }
+      | undefined
+    this.#sessionCapabilities =
+      (res?.sessionCapabilities as { delete?: unknown; [key: string]: unknown } | null | undefined) ??
+      null
+    const raw = Array.isArray(res?.sessions) ? (res!.sessions as unknown[]) : []
+    return raw.map(normalizeSessionInfo)
   }
 
-  deleteSession(_sessionId: string): Promise<void> {
-    return Promise.reject(new Error(NOT_SUPPORTED_SESSION_MGMT))
+  /** The delete capability, as advertised by the last listSessions answer. */
+  get supportsSessionDelete(): boolean {
+    return this.#sessionCapabilities?.delete != null
+  }
+
+  /**
+   * Deletes a session. The BE maps -32601 to `{ok:false, unsupported:true}` —
+   * re-thrown with `code: -32601` so the VM handles it gracefully exactly like
+   * local (button hidden / false return).
+   */
+  async deleteSession(sessionId: string): Promise<void> {
+    const res = (await this.#rpc("deleteSession", { sessionId })) as
+      | { ok?: unknown; unsupported?: unknown }
+      | undefined
+    if (res?.unsupported === true) {
+      const err = new Error(
+        "RemoteSessionView: deleteSession is not supported by this CLI",
+      ) as Error & { code: number }
+      err.code = -32601
+      throw err
+    }
   }
 
   // ─── RPC methods ───
@@ -420,6 +480,11 @@ export class RemoteSessionView implements SessionView {
    * caller's point of view. A failed prompt would look like a hang to the user,
    * not an error. Network errors already propagate (fetch rejects); only the HTTP
    * layer was swallowed.
+   *
+   * slice remote-session-mgmt C4: on !ok the body IS parsed now — the BE ships
+   * 502 {error, code?} for CLI failures (e.g. -32601). Without parsing, the VM
+   * would show a generic "502" instead of handling unsupported methods
+   * gracefully. `.code` is attached to the thrown error when numeric.
    */
   async #post(url: string, body: unknown): Promise<unknown> {
     const res = await this.#doFetch(url, {
@@ -428,7 +493,23 @@ export class RemoteSessionView implements SessionView {
       body: JSON.stringify(body),
     })
     if (!res.ok) {
-      throw new Error(`RemoteSessionView: POST ${url} failed with status ${res.status}`)
+      let payload: { error?: unknown; code?: unknown } | undefined
+      if (res.json) {
+        try {
+          payload = (await res.json()) as { error?: unknown; code?: unknown }
+        } catch {
+          payload = undefined
+        }
+      }
+      const detail =
+        payload && typeof payload.error === "string" && payload.error.length > 0
+          ? ` (${payload.error})`
+          : ""
+      const err = new Error(
+        `RemoteSessionView: POST ${url} failed with status ${res.status}${detail}`,
+      ) as Error & { code?: number }
+      if (payload && typeof payload.code === "number") err.code = payload.code
+      throw err
     }
     if (!res.json) return undefined
     try {
