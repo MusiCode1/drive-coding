@@ -67,6 +67,20 @@ export function registerEventsRoute(app: Hono, registry: AgentSessionRegistry): 
       // Subscribe FIRST so no patches are missed between snapshot + subscribe
       const patchStream = broadcaster.subscribe()
 
+      // slice ownership-handoff C4b: HTTP keepalive — touch lastSeenAt and send
+      // SSE comment every 30s so the HTTP owner doesn't expire during a long stream.
+      // The TTL is 90s; 30s keeps us safely within it without hammering the clock.
+      // /state intentionally does NOT touch: it's a read-only polling endpoint and
+      // touching it would allow a dead frontend that only polls state to hold ownership.
+      const KEEPALIVE_INTERVAL_MS = 30_000
+      const keepaliveTimer = setInterval(() => {
+        registry.touchOwner(agentId)
+        // SSE comment — keeps connection alive through proxies, no-op for clients
+        s.write(": keepalive\n\n").catch(() => {
+          clearInterval(keepaliveTimer)
+        })
+      }, KEEPALIVE_INTERVAL_MS)
+
       // Then read snapshot and send as frame-zero with epoch as SSE id
       const snapshot = host.state
       await s.write(
@@ -94,6 +108,7 @@ export function registerEventsRoute(app: Hono, registry: AgentSessionRegistry): 
       } catch {
         // Client disconnected or stream errored — clean up below
       } finally {
+        clearInterval(keepaliveTimer)
         reader.releaseLock()
         broadcaster.unsubscribe(patchStream)
         void streamEndedByTakeover // used above — suppress unused warning

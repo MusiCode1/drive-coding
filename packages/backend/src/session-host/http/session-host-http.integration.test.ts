@@ -138,6 +138,7 @@ async function setup(): Promise<{
     notifySessionAttached: async () => {},
     getCwd: (id) => (id === AGENT_ID ? "/connection/cwd" : undefined),
     getEpoch: (_id) => 0,
+    touchOwner: (_id) => {},
   }
 
   const app = new Hono()

@@ -76,6 +76,7 @@ function makeMockRegistry(opts: {
     notifySessionAttached: vi.fn().mockResolvedValue(undefined),
     getCwd: vi.fn().mockReturnValue(undefined),
     getEpoch: vi.fn().mockReturnValue(0),
+    touchOwner: vi.fn(),
   }
 }
 

@@ -105,6 +105,11 @@ export type AgentSessionRegistry = {
    * Returns the ownership generation counter (0 for unknown agentId).
    */
   getEpoch(agentId: string): number
+  /**
+   * slice ownership-handoff C4b: passthrough to connectionRegistry.touchOwner(agentId).
+   * Updates lastSeenAt for HTTP-owned agents. No-op for WS-owned or unknown.
+   */
+  touchOwner(agentId: string): void
 }
 
 type AgentSessionRegistryDeps = {
@@ -140,6 +145,16 @@ type AgentSessionRegistryDeps = {
    * Injected from server.ts via AgentOrchestrator/AgentRegistry.
    */
   getAcpSessionId?: (agentId: string) => string | undefined
+  /**
+   * slice ownership-handoff C4b: HTTP ownership TTL (ms). Default: 90_000ms.
+   * Exposed for tests to set a short TTL without real delays.
+   */
+  _httpOwnerTtlMs?: number
+  /**
+   * slice ownership-handoff C4b: sweep interval (ms). Default: 30_000ms.
+   * Exposed for tests to control sweep timing.
+   */
+  _httpSweepMs?: number
 }
 
 export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): AgentSessionRegistry {
@@ -155,6 +170,36 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
   // M5: in-flight creation promises — dedups concurrent getOrCreateHost(agentId)
   // callers so only one host + one ACP session get created per agentId.
   const inFlight = new Map<string, Promise<HostEntry | undefined>>()
+
+  // slice ownership-handoff C4b: HTTP ownership TTL sweep.
+  // HTTP owners must send keepalive (touchOwner) within TTL_MS or lose ownership.
+  // On expiry: dispose + unregisterHost + markDetached (NOT deleteAndKill, NOT epoch++).
+  const HTTP_OWNER_TTL_MS = deps._httpOwnerTtlMs ?? 90_000 // 90s default
+  const HTTP_SWEEP_MS = deps._httpSweepMs ?? 30_000 // sweep every 30s
+  const httpSweep = setInterval(() => {
+    const now = Date.now()
+    for (const [agentId] of map) {
+      const lastSeen = connectionRegistry.getLastSeenAt(agentId)
+      if (lastSeen === null) continue // not HTTP-owned (WS or no owner)
+      if (now - lastSeen <= HTTP_OWNER_TTL_MS) continue
+      // Stale HTTP owner — evict without killing agent or incrementing epoch
+      log.info({ agentId, staleMs: now - lastSeen }, "HTTP owner stale — releasing ownership")
+      const entry = map.get(agentId)
+      if (entry) {
+        entry.host.dispose().catch((err: unknown) => {
+          log.warn({ err, agentId }, "dispose error during HTTP TTL sweep")
+        })
+      }
+      // unregisterHost removes from map and calls markDetached (if http-owned)
+      // unregisterHost is defined below; we call it directly on the returned object
+      // so we use the internal map.delete + connectionRegistry.markDetached pattern
+      map.delete(agentId)
+      if (connectionRegistry.getOwner(agentId)?.via === "http") {
+        connectionRegistry.markDetached(agentId)
+      }
+    }
+  }, HTTP_SWEEP_MS)
+  httpSweep.unref() // don't prevent process exit
 
   async function doCreate(agentId: string): Promise<HostEntry | undefined> {
     // Look up connection
@@ -304,6 +349,9 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     },
     getEpoch(agentId: string): number {
       return connectionRegistry.getEpoch(agentId)
+    },
+    touchOwner(agentId: string): void {
+      connectionRegistry.touchOwner(agentId)
     },
   }
 }

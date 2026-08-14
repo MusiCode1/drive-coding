@@ -81,6 +81,12 @@ type ConnEntry = {
    * בנקודה שבה אין עוד ConnectOpts זמין — session-host/registry.ts).
    */
   cwd: string
+  /**
+   * slice ownership-handoff C4b: last time the HTTP owner sent a request.
+   * Separate from Owner.since (ownership transition time).
+   * Updated by touchOwner(); null when no owner or owner is WS (WS has its own keepalive).
+   */
+  lastSeenAt: number | null
 }
 
 export type ConnectionRegistry = {
@@ -161,6 +167,18 @@ export type ConnectionRegistry = {
   getRuntimeInfo(
     agentId: string,
   ): { pid: number | null; attached: boolean; busy: boolean; lastMessageAt: number | null; via: "ws" | "http" | null } | null
+
+  /**
+   * slice ownership-handoff C4b: update lastSeenAt for an HTTP-owned agent.
+   * No-op if agentId not found or owner is not http.
+   */
+  touchOwner(agentId: string): void
+
+  /**
+   * slice ownership-handoff C4b: returns the lastSeenAt for an HTTP-owned agent,
+   * or null if not found / WS-owned / no owner.
+   */
+  getLastSeenAt(agentId: string): number | null
 
   /**
    * close — kill child + remove from Map + close wireRecorder session.
@@ -276,6 +294,7 @@ export function createConnectionRegistry(opts?: {
           rec,
           unsubs: [unsubFrame, unsubCrash],
           cwd: connectOpts.cwd,
+          lastSeenAt: null,
         })
         return conn
       } finally {
@@ -300,6 +319,8 @@ export function createConnectionRegistry(opts?: {
       e.owner = { via, since: Date.now() }
       e.ownershipEpoch++
       e.attached = true
+      // slice ownership-handoff C4b: initialize lastSeenAt on HTTP ownership acquisition
+      e.lastSeenAt = via === "http" ? Date.now() : null
     },
 
     markAttached(agentId) {
@@ -329,6 +350,18 @@ export function createConnectionRegistry(opts?: {
 
     getEpoch(agentId) {
       return map.get(agentId)?.ownershipEpoch ?? 0
+    },
+
+    touchOwner(agentId) {
+      const e = map.get(agentId)
+      if (!e || e.owner?.via !== "http") return
+      e.lastSeenAt = Date.now()
+    },
+
+    getLastSeenAt(agentId) {
+      const e = map.get(agentId)
+      if (!e || e.owner?.via !== "http") return null
+      return e.lastSeenAt
     },
 
     isOwnedByWs(agentId) {
