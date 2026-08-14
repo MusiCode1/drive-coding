@@ -69,8 +69,12 @@ export function createAgentWsHandler(deps: {
    * על הסוכן — דחה את ה-WS. שני לקוחות ACP על אותו conn.wire (שניהם onLine + write)
    * = השחתת סשן; ה-host הוא הבעלים של ה-wire. אופציונלי — נתיב local בלי host
    * ממשיך בדיוק כמו קודם (כולל הטסטים הקיימים שלא מזריקים את ה-dep).
+   *
+   * slice handoff-foundations C3: הוחלף מ-getHost ל-isHeld. getHost בדק רק את
+   * ה-map, ולא ראה יצירה ב-flight (בין ה-await הראשון ל-map.set). isHeld בודק
+   * גם map.has וגם inFlight.has — סוגר את חלון המרוץ.
    */
-  sessionHostRegistry?: { getHost(agentId: string): unknown }
+  sessionHostRegistry?: { isHeld(agentId: string): boolean }
 }): (ws: WebSocket, agentId: string) => void {
   // MED-8: חיבור FE WS פעיל אחד לכל agentId — מונע התנגשות מצב ACP בטאב שני
   // הרחבה מ-Commit 2: {ws, lastPingAt} לניהול sweep
@@ -122,7 +126,9 @@ export function createAgentWsHandler(deps: {
     // slice remote-warm-reconnect C2 (WS→host): host חי על ה-agent ⇒ ה-wire תפוס —
     // WS מקביל היה כותב קריאות ACP שניות לתוך אותו צינור (השחתה). סוגרים ב-1008
     // (policy violation) אחרי ה-presence check ולפני activeFeWs.set/markAttached.
-    if (deps.sessionHostRegistry?.getHost(agentId)) {
+    // slice handoff-foundations C3: isHeld (not getHost) — סוגר את חלון המרוץ
+    // שבו getHost מחזיר undefined כי ה-host ביצירה (בין await ל-map.set).
+    if (deps.sessionHostRegistry?.isHeld(agentId)) {
       childLog.warn({}, "session host active on this agent — rejecting WS attach")
       feWs.close(1008, "session-host-active")
       return

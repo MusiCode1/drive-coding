@@ -64,6 +64,14 @@ export type AgentSessionRegistry = {
   getHost(agentId: string): ExtendedSessionHost | undefined
 
   /**
+   * slice handoff-foundations C3: is the agentId "held" — either a host is
+   * already registered (map.has) OR a creation is in-flight (inFlight.has).
+   * Visible to WS so it can reject during the creation window, closing the
+   * race where WS calls getHost (which only checks map) and gets undefined
+   * while doCreate is between the first await and map.set.
+   */
+  isHeld(agentId: string): boolean
+  /**
    * getOrCreateHost — async lazy creation.
    * - If host already exists → returns {host, broadcaster}
    * - If connection not found in connectionRegistry → returns undefined
@@ -159,35 +167,48 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     }
 
     // Create host + broadcaster
+    // slice handoff-foundations C3: if newSession fails below, the host is
+    // already subscribed to the wire (created by _createHostFn). A bare
+    // inFlight cleanup would leave an orphan host listening — WS could then
+    // attach and corrupt the pipe. Rollback MUST call host.dispose() to
+    // remove the crash subscription and close the patches stream.
     const host = await _createHostFn(conn)
-    const broadcaster = _createBroadcasterFn(host.patches)
+    try {
+      const broadcaster = _createBroadcasterFn(host.patches)
 
-    // Auto session creation (הכרעה 1): ה-host נולד בלי session — ניצור אחד עכשיו
-    // כך שה-snapshot הראשון (SSE frame-zero) כבר נושא sessionId אמיתי.
-    // אם כבר יש sessionId (למשל host הוזרק מוכן-לשימוש בבדיקות) — לא יוצרים שוב.
-    if (!host.state.sessionId) {
-      await host.newSession({ cwd })
-    }
-
-    // slice remote-warm-reconnect C1: דיווח על ה-session — אחרי ה-if block כולו
-    // (בכוונה לא בתוכו): גם host מוזרק-מוכן (נתיב טסטים/המשך) חייב לדווח.
-    // sessionId null (newSession לא עדכן state — לא אמור לקרות ב-production) → אין מה לדווח.
-    const attachedSessionId = host.state.sessionId
-    if (attachedSessionId) {
-      try {
-        await deps.onSessionAttached?.(agentId, attachedSessionId)
-      } catch (err) {
-        log.warn({ err, agentId }, "onSessionAttached failed — host creation continues")
+      // Auto session creation (הכרעה 1): ה-host נולד בלי session — ניצור אחד עכשיו
+      // כך שה-snapshot הראשון (SSE frame-zero) כבר נושא sessionId אמיתי.
+      // אם כבר יש sessionId (למשל host הוזרק מוכן-לשימוש בבדיקות) — לא יוצרים שוב.
+      if (!host.state.sessionId) {
+        await host.newSession({ cwd })
       }
+
+      // slice remote-warm-reconnect C1: דיווח על ה-session — אחרי ה-if block כולו
+      // (בכוונה לא בתוכו): גם host מוזרק-מוכן (נתיב טסטים/המשך) חייב לדווח.
+      // sessionId null (newSession לא עדכן state — לא אמור לקרות ב-production) → אין מה לדווח.
+      const attachedSessionId = host.state.sessionId
+      if (attachedSessionId) {
+        try {
+          await deps.onSessionAttached?.(agentId, attachedSessionId)
+        } catch (err) {
+          log.warn({ err, agentId }, "onSessionAttached failed — host creation continues")
+        }
+      }
+
+      // slice ownership-truth C2: ה-host נוצר בהצלחה — סמן בעלות http.
+      // זה הופך את attached ל-true, כך שה-FE רואה את הסוכן כתפוס (takeover ring).
+      connectionRegistry.markOwned(agentId, "http")
+
+      const entry: HostEntry = { host, broadcaster }
+      map.set(agentId, entry)
+      return entry
+    } catch (err) {
+      // slice handoff-foundations C3: rollback — dispose the orphan host so its
+      // crash subscription is removed and patches stream is terminated. Without
+      // this, WS could attach to the wire while the orphan host is still listening.
+      host.dispose()
+      throw err
     }
-
-    // slice ownership-truth C2: ה-host נוצר בהצלחה — סמן בעלות http.
-    // זה הופך את attached ל-true, כך שה-FE רואה את הסוכן כתפוס (takeover ring).
-    connectionRegistry.markOwned(agentId, "http")
-
-    const entry: HostEntry = { host, broadcaster }
-    map.set(agentId, entry)
-    return entry
   }
 
   return {
@@ -195,6 +216,11 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       return map.get(agentId)?.host
     },
 
+    // slice handoff-foundations C3: visible to WS so it can reject during
+    // the creation window (between the first await and map.set).
+    isHeld(agentId: string): boolean {
+      return map.has(agentId) || inFlight.has(agentId)
+    },
     async getOrCreateHost(agentId: string): Promise<HostEntry | undefined> {
       // Return existing entry if already created
       const existing = map.get(agentId)

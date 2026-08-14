@@ -698,3 +698,118 @@ describe("AgentSessionRegistry", () => {
     })
   })
 })
+
+// ─── slice handoff-foundations C3: reservation + rollback ─────────────────────
+
+describe("AgentSessionRegistry — reservation + rollback (handoff-foundations C3)", () => {
+  // DoD 7: isHeld returns true during the creation window (in-flight)
+  it("isHeld returns true while getOrCreateHost is in-flight (creation window)", async () => {
+    const conn = makeMockConnection()
+    const connectionRegistry = makeMockConnectionRegistry(conn)
+    const mockHost = makeMockHost(null)
+    // Delay host creation so we can check isHeld during the window
+    let resolveCreate!: () => void
+    const createHostFn = vi.fn().mockImplementation(() => {
+      return new Promise((resolve) => {
+        resolveCreate = () => resolve(mockHost)
+      })
+    })
+
+    const registry = createAgentSessionRegistry({
+      connectionRegistry,
+      _createHostFn: createHostFn,
+      _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+    })
+
+    // Start creation — don't await yet
+    const createPromise = registry.getOrCreateHost("agent-1")
+
+    // Flush microtasks so the promise is in-flight
+    await Promise.resolve()
+
+    // isHeld must be true during the creation window
+    expect(registry.isHeld("agent-1")).toBe(true)
+
+    // Complete creation
+    resolveCreate!()
+    await createPromise
+
+    // After creation, isHeld is still true (host is in the map now)
+    expect(registry.isHeld("agent-1")).toBe(true)
+  })
+
+  it("isHeld returns false for an unknown agentId", () => {
+    const registry = createAgentSessionRegistry({
+      connectionRegistry: makeMockConnectionRegistry(),
+    })
+    expect(registry.isHeld("unknown")).toBe(false)
+  })
+
+  it("isHeld returns false after unregisterHost", async () => {
+    const conn = makeMockConnection()
+    const connectionRegistry = makeMockConnectionRegistry(conn)
+    const registry = createAgentSessionRegistry({
+      connectionRegistry,
+      _createHostFn: vi.fn().mockResolvedValue(makeMockHost()),
+      _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+    })
+
+    await registry.getOrCreateHost("agent-1")
+    expect(registry.isHeld("agent-1")).toBe(true)
+
+    registry.unregisterHost("agent-1")
+    expect(registry.isHeld("agent-1")).toBe(false)
+  })
+
+  // DoD 8: rollback calls host.dispose() on newSession failure
+  it("rollback calls host.dispose() when newSession fails (not just inFlight cleanup)", async () => {
+    const conn = makeMockConnection()
+    const connectionRegistry = makeMockConnectionRegistry(conn)
+    const mockHost = makeMockHost(null)
+    // newSession fails — simulates a real ACP session creation failure
+    ;(mockHost.newSession as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("newSession failed"))
+
+    const disposeSpy = mockHost.dispose as ReturnType<typeof vi.fn>
+
+    const registry = createAgentSessionRegistry({
+      connectionRegistry,
+      _createHostFn: vi.fn().mockResolvedValue(mockHost),
+      _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+    })
+
+    await expect(registry.getOrCreateHost("agent-1")).rejects.toThrow("newSession failed")
+
+    // The host was disposed — crash subscription removed, patches terminated
+    expect(disposeSpy).toHaveBeenCalledTimes(1)
+
+    // isHeld is false — the reservation was cleaned up
+    expect(registry.isHeld("agent-1")).toBe(false)
+    expect(registry.getHost("agent-1")).toBeUndefined()
+  })
+
+  // DoD 9: inFlight still works — two concurrent callers create exactly one host
+  it("inFlight still works: two concurrent calls create exactly one host (regression)", async () => {
+    const conn = makeMockConnection()
+    const connectionRegistry = makeMockConnectionRegistry(conn)
+    const mockHost = makeMockHost(null)
+    const createHostFn = vi
+      .fn()
+      .mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(mockHost), 0)))
+
+    const registry = createAgentSessionRegistry({
+      connectionRegistry,
+      _createHostFn: createHostFn,
+      _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+    })
+
+    const [r1, r2] = await Promise.all([
+      registry.getOrCreateHost("agent-1"),
+      registry.getOrCreateHost("agent-1"),
+    ])
+
+    expect(createHostFn).toHaveBeenCalledTimes(1)
+    expect(mockHost.newSession).toHaveBeenCalledTimes(1)
+    expect(r1).toBe(r2)
+    expect(r1?.host).toBe(mockHost)
+  })
+})

@@ -336,8 +336,8 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
       const { conn, writeSpy } = makeMockConn()
       const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
       const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
-      // SessionHost חי על הסוכן — getHost מחזיר אובייקט (לא undefined)
-      const sessionHostRegistry = { getHost: vi.fn(() => ({})) }
+      // SessionHost חי על הסוכן — isHeld מחזיר true
+      const sessionHostRegistry = { isHeld: vi.fn(() => true) }
 
       const onConnect = createAgentWsHandler({
         orchestrator,
@@ -378,11 +378,11 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
       expect(writeSpy).toHaveBeenCalled()
     })
 
-    it("sessionHostRegistry present but getHost returns undefined → attach proceeds (no host)", async () => {
+    it("sessionHostRegistry present but isHeld returns false → attach proceeds (no host)", async () => {
       const { conn } = makeMockConn()
       const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
       const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
-      const sessionHostRegistry = { getHost: vi.fn(() => undefined) }
+      const sessionHostRegistry = { isHeld: vi.fn(() => false) }
 
       const onConnect = createAgentWsHandler({
         orchestrator,
@@ -395,7 +395,71 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
 
       expect(closeArgs).toHaveLength(0)
       expect(markAttachedSpy).toHaveBeenCalledTimes(1)
-      expect(sessionHostRegistry.getHost).toHaveBeenCalledWith("no-host-agent")
+      expect(sessionHostRegistry.isHeld).toHaveBeenCalledWith("no-host-agent")
     })
+  })
+})
+
+// ─── slice handoff-foundations C3: WS rejected during creation window ─────────
+
+describe("ws-agent — isHeld during creation window (handoff-foundations C3)", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "warn").mockImplementation(() => {})
+    vi.spyOn(console, "error").mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // DoD 10: the critical end-to-end test. isHeld must be called (not getHost)
+  // so WS is rejected while a host is being created (in-flight, not yet in map).
+  it("WS is rejected with 1008 when isHeld returns true (creation in-flight)", () => {
+    const { conn, writeSpy } = makeMockConn()
+    const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
+    const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
+    // isHeld returns true — simulates a host creation in-flight
+    const sessionHostRegistry = { isHeld: vi.fn(() => true) }
+
+    const onConnect = createAgentWsHandler({
+      orchestrator,
+      connectionRegistry,
+      sessionHostRegistry,
+    })
+    const { ws, closeArgs } = makeMockFeWs()
+
+    onConnect(ws, "creating-agent")
+
+    // WS must be rejected with session-host-active
+    expect(closeArgs).toHaveLength(1)
+    // biome-ignore lint/style/noNonNullAssertion: guarded by toHaveLength
+    expect(closeArgs[0]![0]).toBe(1008)
+    // biome-ignore lint/style/noNonNullAssertion: guarded by toHaveLength
+    expect(closeArgs[0]![1]).toBe("session-host-active")
+    // isHeld was called (not getHost)
+    expect(sessionHostRegistry.isHeld).toHaveBeenCalledWith("creating-agent")
+    // No pipe attached
+    expect(markAttachedSpy).not.toHaveBeenCalled()
+    ws.emit("message", JSON.stringify({ jsonrpc: "2.0", method: "initialize" }))
+    expect(writeSpy).not.toHaveBeenCalled()
+  })
+
+  it("WS attaches when isHeld returns false (no host, no in-flight creation)", () => {
+    const { conn, writeSpy } = makeMockConn()
+    const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
+    const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
+    const sessionHostRegistry = { isHeld: vi.fn(() => false) }
+
+    const onConnect = createAgentWsHandler({
+      orchestrator,
+      connectionRegistry,
+      sessionHostRegistry,
+    })
+    const { ws, closeArgs } = makeMockFeWs()
+
+    onConnect(ws, "free-agent")
+
+    expect(closeArgs).toHaveLength(0)
+    expect(markAttachedSpy).toHaveBeenCalledTimes(1)
   })
 })
