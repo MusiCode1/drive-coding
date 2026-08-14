@@ -47,6 +47,7 @@ function makeMockHost(): ExtendedSessionHost {
 function makeMockRegistry(host?: ExtendedSessionHost): AgentSessionRegistry {
   return {
     getHost: vi.fn().mockReturnValue(host),
+    isHeld: vi.fn().mockReturnValue(Boolean(host)),
     getOrCreateHost: vi
       .fn()
       .mockResolvedValue(

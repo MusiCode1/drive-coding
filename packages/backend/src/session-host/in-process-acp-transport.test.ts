@@ -18,14 +18,16 @@ import { createInProcessAcpTransport } from "./in-process-acp-transport.js"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+// ⚠️ חתימות מדויקות ולא ReturnType<typeof vi.fn> — הטרנספורט דורש
+// onLine/write/onCrash בחתימה ספציפית, ו-Mock גנרי אינו assignable אליה.
 type MockWire = {
-  onLine: ReturnType<typeof vi.fn>
-  write: ReturnType<typeof vi.fn>
+  onLine: ((cb: (line: string) => void) => () => void) & ReturnType<typeof vi.fn>
+  write: ((line: string) => boolean) & ReturnType<typeof vi.fn>
   _triggerLine: (line: string) => void
 }
 
 type MockOnCrash = {
-  onCrash: ReturnType<typeof vi.fn>
+  onCrash: ((cb: (info: BridgeCrashInfo) => void) => () => void) & ReturnType<typeof vi.fn>
   _triggerCrash: (info: BridgeCrashInfo) => void
 }
 

@@ -67,6 +67,7 @@ function makeMockRegistry(
   const entry = host && broadcaster ? { host, broadcaster } : undefined
   return {
     getHost: vi.fn().mockReturnValue(host),
+    isHeld: vi.fn().mockReturnValue(Boolean(host)),
     getOrCreateHost: vi.fn().mockResolvedValue(entry),
     getBroadcaster: vi.fn().mockReturnValue(broadcaster),
     unregisterHost: vi.fn(),
