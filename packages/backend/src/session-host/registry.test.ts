@@ -51,7 +51,11 @@ function makeMockConnectionRegistry(
     list: vi.fn().mockReturnValue([]),
     markAttached: vi.fn(),
     markDetached: vi.fn(),
+    markOwned: vi.fn(),
     isAttached: vi.fn().mockReturnValue(attached),
+    getOwner: vi.fn().mockReturnValue(null),
+    getEpoch: vi.fn().mockReturnValue(0),
+    isOwnedByWs: vi.fn().mockReturnValue(attached),
     getRuntimeInfo: vi.fn().mockReturnValue(null),
     close: vi.fn().mockResolvedValue(undefined),
     onCrash: vi.fn(() => () => {}),
@@ -517,7 +521,7 @@ describe("AgentSessionRegistry", () => {
   // ─── slice remote-warm-reconnect C2: guard host→WS ─────────────────────────
 
   describe("attached-agent refusal (slice remote-warm-reconnect C2)", () => {
-    it("refuses to create a host for a locally-attached agent (WS owns the wire)", async () => {
+    it("refuses to create a host for a WS-owned agent (WS holds the wire)", async () => {
       const conn = makeMockConnection()
       const connectionRegistry = makeMockConnectionRegistry(conn, /* attached */ true)
       const createHostFn = vi.fn().mockResolvedValue(makeMockHost())
@@ -605,6 +609,91 @@ describe("AgentSessionRegistry", () => {
 
       expect(result?.host).toBe(secondHost)
       expect(createHostFn).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  // ─── slice ownership-truth C2: host registers/releases ownership ──────────
+
+  describe("ownership registration (slice ownership-truth C2)", () => {
+    it("doCreate marks ownership as http after successful host creation", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn, /* attached */ false)
+      const markOwnedSpy = connectionRegistry.markOwned as ReturnType<typeof vi.fn>
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(makeMockHost()),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      await registry.getOrCreateHost("agent-own-1")
+
+      expect(markOwnedSpy).toHaveBeenCalledWith("agent-own-1", "http")
+    })
+
+    it("unregisterHost calls markDetached when owner is http", () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      // Simulate http ownership
+      ;(connectionRegistry.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        via: "http",
+        since: Date.now(),
+      })
+      const markDetachedSpy = connectionRegistry.markDetached as ReturnType<typeof vi.fn>
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(makeMockHost()),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      // Create then unregister
+      // Need to set map entry — use getOrCreateHost
+      // But we need isOwnedByWs=false for creation to succeed (already set via attached=false)
+      // Actually the mock's isOwnedByWs returns attached (false), so creation succeeds
+      // But markOwned is a mock — it doesn't actually set owner. So getOwner mock is what matters.
+      // We already set getOwner to return http. After unregister:
+      registry.unregisterHost("test-agent")
+
+      expect(markDetachedSpy).toHaveBeenCalledWith("test-agent")
+    })
+
+    it("unregisterHost does NOT call markDetached when owner is ws (not http)", () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      // Simulate WS ownership — unregisterHost should NOT clear it
+      ;(connectionRegistry.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        via: "ws",
+        since: Date.now(),
+      })
+      const markDetachedSpy = connectionRegistry.markDetached as ReturnType<typeof vi.fn>
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(makeMockHost()),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      registry.unregisterHost("test-agent-ws")
+
+      expect(markDetachedSpy).not.toHaveBeenCalled()
+    })
+
+    it("unregisterHost does NOT call markDetached when owner is null", () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      // getOwner already returns null by default
+      const markDetachedSpy = connectionRegistry.markDetached as ReturnType<typeof vi.fn>
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(makeMockHost()),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      registry.unregisterHost("test-agent-null")
+
+      expect(markDetachedSpy).not.toHaveBeenCalled()
     })
   })
 })

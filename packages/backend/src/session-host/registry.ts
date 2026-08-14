@@ -136,8 +136,12 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     // + משתמשת עם דגל remote לוחצת reconnect בלשונית אחרת — ה-host היה נבנה על
     // אותו wire שה-WS צורך (שני לקוחות ACP = השחתה). סימטרי ל-guard ב-ws-agent.
     // return undefined → ה-route מחזיר 404 (agent connection not found).
-    if (connectionRegistry.isAttached(agentId)) {
-      log.warn({ agentId }, "agent is locally attached (WS) — refusing to create a session host")
+    // slice ownership-truth C2: ה-guard שואל "האם WS מחזיק את הצינור" ספציפית.
+    // isAttached כבר לא מספיק כי attached מציין בעלות מכל טרנספורט (ws או http).
+    // אם http מחזיק (session-host פעיל) — זה בסדר, נחזיר host קיים מ-getOrCreateHost.
+    // אם ws מחזיק — שני לקוחות ACP על אותו wire = השחתה, ולכן דוחים.
+    if (connectionRegistry.isOwnedByWs(agentId)) {
+      log.warn({ agentId }, "agent is owned by WS — refusing to create a session host")
       return undefined
     }
 
@@ -176,6 +180,10 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
         log.warn({ err, agentId }, "onSessionAttached failed — host creation continues")
       }
     }
+
+    // slice ownership-truth C2: ה-host נוצר בהצלחה — סמן בעלות http.
+    // זה הופך את attached ל-true, כך שה-FE רואה את הסוכן כתפוס (takeover ring).
+    connectionRegistry.markOwned(agentId, "http")
 
     const entry: HostEntry = { host, broadcaster }
     map.set(agentId, entry)
@@ -219,6 +227,12 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     },
 
     unregisterHost(agentId: string): void {
+      // slice ownership-truth C2: שחרר בעלות — אך רק אם הבעלים הוא http.
+      // אחרת שחרור host היה מוחק בעלות WS שאינה שלו (WS יכול להיות הבעלים אם
+      // הוא השתלט על host קודם — שלב ב', אך השמירה כאן מונעת תקלות עתידיות).
+      if (connectionRegistry.getOwner(agentId)?.via === "http") {
+        connectionRegistry.markDetached(agentId)
+      }
       map.delete(agentId)
     },
 
