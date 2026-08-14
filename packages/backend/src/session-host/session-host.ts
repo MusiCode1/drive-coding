@@ -97,7 +97,7 @@ export type SessionHost = {
    *   - transport crash subscriptions are removed (ExtendedSessionHost only)
    * Does NOT touch conn/child/connectionRegistry — the agent stays alive.
    */
-  dispose(): void
+  dispose(): Promise<void>
 }
 
 /**
@@ -148,7 +148,7 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
 
   const client = await deps.createClient(callbacks)
 
-  function dispose(): void {
+  async function dispose(): Promise<void> {
     if (disposed) return // idempotent
     disposed = true
     // Terminate the patches stream — readers get done=true.
@@ -518,13 +518,21 @@ export async function createSessionHostFromConnection(
     }
   })
 
-  // ── slice handoff-foundations C1: dispose ──────────────────────────────────
-  // Idempotent. Closes the transport (removes crash subs + readable), terminates
-  // the patches stream, and marks the host as closed so all I/O is rejected.
+  // ── slice handoff-foundations C1 + ownership-handoff C1b: dispose ──────────
+  // Idempotent. Resolves pending requests (cancelled) before closing transport,
+  // with a tick so responses flush before close. Closes the transport (removes
+  // crash subs + readable), terminates the patches stream.
   // Does NOT touch conn/child/connectionRegistry — the agent stays alive.
-  function dispose(): void {
+  async function dispose(): Promise<void> {
     if (disposed) return
     disposed = true
+    // C1b: resolve all pending permission/elicitation as cancelled BEFORE closing
+    // transport, so the SDK can write the cancellation response to the wire.
+    permPending.respondAll({ outcome: { outcome: "cancelled" } })
+    elicitPending.respondAll({ action: "cancel" })
+    // Tick: let the resolved promises' .then() callbacks flush their wire writes
+    // before transport.close() tears down the writable side.
+    await new Promise<void>((r) => setTimeout(r, 0))
     transport.close()
     // Terminate the patches stream — readers get done=true.
     if (patchController) {

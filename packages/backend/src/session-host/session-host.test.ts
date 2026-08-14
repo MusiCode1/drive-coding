@@ -278,7 +278,7 @@ describe("SessionHost — dispose() (handoff-foundations C1)", () => {
     const { host, callbacks } = await setup()
     const versionBefore = host.state.version
 
-    host.dispose()
+    await host.dispose()
 
     callbacks.onUpdate(makeSessionUpdate({ sessionUpdate: "session_info_update", title: "Z" }))
 
@@ -290,15 +290,15 @@ describe("SessionHost — dispose() (handoff-foundations C1)", () => {
   it("dispose: calling dispose twice does not throw", async () => {
     const { host } = await setup()
 
-    expect(() => host.dispose()).not.toThrow()
-    expect(() => host.dispose()).not.toThrow()
+    await expect(host.dispose()).resolves.toBeUndefined()
+    await expect(host.dispose()).resolves.toBeUndefined()
   })
 
   // DoD 4: all I/O is rejected after dispose
   it("dispose: prompt throws after dispose", async () => {
     const { host } = await setup()
 
-    host.dispose()
+    await host.dispose()
 
     await expect(host.prompt("s1", "hello")).rejects.toThrow("disposed")
   })
@@ -306,7 +306,7 @@ describe("SessionHost — dispose() (handoff-foundations C1)", () => {
   it("dispose: newSession throws after dispose", async () => {
     const { host } = await setup()
 
-    host.dispose()
+    await host.dispose()
 
     await expect(host.newSession({ cwd: "/test" })).rejects.toThrow("disposed")
   })
@@ -314,7 +314,7 @@ describe("SessionHost — dispose() (handoff-foundations C1)", () => {
   it("dispose: loadSession throws after dispose", async () => {
     const { host } = await setup()
 
-    host.dispose()
+    await host.dispose()
 
     await expect(host.loadSession({ cwd: "/test", sessionId: "abc" })).rejects.toThrow("disposed")
   })
@@ -322,7 +322,7 @@ describe("SessionHost — dispose() (handoff-foundations C1)", () => {
   it("dispose: cancel throws after dispose", async () => {
     const { host } = await setup()
 
-    host.dispose()
+    await host.dispose()
 
     await expect(host.cancel("s1")).rejects.toThrow("disposed")
   })
@@ -331,7 +331,7 @@ describe("SessionHost — dispose() (handoff-foundations C1)", () => {
   it("dispose: patches stream terminates (done=true on next read)", async () => {
     const { host } = await setup()
 
-    host.dispose()
+    await host.dispose()
 
     const reader = host.patches.getReader()
     const { done } = await reader.read()

@@ -206,7 +206,7 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       // slice handoff-foundations C3: rollback — dispose the orphan host so its
       // crash subscription is removed and patches stream is terminated. Without
       // this, WS could attach to the wire while the orphan host is still listening.
-      host.dispose()
+      await host.dispose()
       throw err
     }
   }

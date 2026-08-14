@@ -1331,7 +1331,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
 
     expect(host.state.status).not.toBe("disconnected")
 
-    host.dispose()
+    await host.dispose()
 
     // Trigger a crash on the connection — the host should not react
     _triggerCrash({ exitCode: 1, signal: null })
@@ -1346,7 +1346,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   it("dispose: conn.close is NOT called (agent survives)", async () => {
     const { host, conn } = await setup()
 
-    host.dispose()
+    await host.dispose()
 
     expect(conn.close).not.toHaveBeenCalled()
   })
@@ -1355,15 +1355,15 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   it("dispose: idempotent — calling twice does not throw", async () => {
     const { host } = await setup()
 
-    expect(() => host.dispose()).not.toThrow()
-    expect(() => host.dispose()).not.toThrow()
+    await expect(host.dispose()).resolves.toBeUndefined()
+    await expect(host.dispose()).resolves.toBeUndefined()
   })
 
   // DoD 4: all I/O rejected after dispose
   it("dispose: prompt throws after dispose", async () => {
     const { host } = await setup()
 
-    host.dispose()
+    await host.dispose()
 
     await expect(host.prompt("s1", "hello")).rejects.toThrow("disposed")
   })
@@ -1371,7 +1371,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   it("dispose: newSession throws after dispose", async () => {
     const { host } = await setup()
 
-    host.dispose()
+    await host.dispose()
 
     await expect(host.newSession({ cwd: "/test" })).rejects.toThrow("disposed")
   })
@@ -1379,7 +1379,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   it("dispose: cancel throws after dispose", async () => {
     const { host } = await setup()
 
-    host.dispose()
+    await host.dispose()
 
     await expect(host.cancel("s1")).rejects.toThrow("disposed")
   })
@@ -1388,7 +1388,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
     const { host } = await setup()
     await host.newSession({ cwd: "/a" })
 
-    host.dispose()
+    await host.dispose()
 
     await expect(host.setMode("auto")).rejects.toThrow("disposed")
   })
@@ -1396,7 +1396,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   it("dispose: extMethod throws after dispose", async () => {
     const { host } = await setup()
 
-    host.dispose()
+    await host.dispose()
 
     await expect(host.extMethod("_drive/ping", {})).rejects.toThrow("disposed")
   })
@@ -1404,7 +1404,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   it("dispose: listSessions throws after dispose", async () => {
     const { host } = await setup()
 
-    host.dispose()
+    await host.dispose()
 
     await expect(host.listSessions()).rejects.toThrow("disposed")
   })
@@ -1412,7 +1412,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   it("dispose: deleteSession throws after dispose", async () => {
     const { host } = await setup()
 
-    host.dispose()
+    await host.dispose()
 
     await expect(host.deleteSession("s1")).rejects.toThrow("disposed")
   })
@@ -1420,7 +1420,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   it("dispose: respondPermission is a no-op after dispose (no throw)", async () => {
     const { host } = await setup()
 
-    host.dispose()
+    await host.dispose()
 
     expect(() => host.respondPermission(0, { outcome: { outcome: "cancelled" } })).not.toThrow()
   })
@@ -1428,7 +1428,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   it("dispose: respondElicitation is a no-op after dispose (no throw)", async () => {
     const { host } = await setup()
 
-    host.dispose()
+    await host.dispose()
 
     expect(() => host.respondElicitation(0, { action: "cancel" })).not.toThrow()
   })
@@ -1437,7 +1437,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   it("dispose: patches stream terminates (done=true on next read)", async () => {
     const { host } = await setup()
 
-    host.dispose()
+    await host.dispose()
 
     const reader = host.patches.getReader()
     const { done } = await reader.read()
@@ -1451,7 +1451,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
     await host.newSession({ cwd: "/a" })
     const versionBefore = host.state.version
 
-    host.dispose()
+    await host.dispose()
 
     callbacks.onUpdate({
       sessionId: "s1",
@@ -1467,7 +1467,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
     const { host, callbacks } = await setup()
     await host.newSession({ cwd: "/a" })
 
-    host.dispose()
+    await host.dispose()
 
     const response = await callbacks.onRequestPermission!({
       sessionId: "s1",
@@ -1483,7 +1483,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
     const { host, callbacks } = await setup()
     await host.newSession({ cwd: "/a" })
 
-    host.dispose()
+    await host.dispose()
 
     const response = await callbacks.onCreateElicitation!({
       sessionId: "s1",
@@ -1491,6 +1491,46 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
       schema: { type: "object", properties: {} },
     } as Parameters<typeof callbacks.onCreateElicitation>[0])
 
+    expect(response.action).toBe("cancel")
+  })
+})
+
+// ─── slice ownership-handoff C1b: dispose resolves pending requests ───────────
+
+describe("createSessionHostFromConnection — dispose() resolves pending (ownership-handoff C1b)", () => {
+  it("dispose: pending permission request resolves as cancelled before transport.close", async () => {
+    const { host, callbacks } = await setup()
+    await host.newSession({ cwd: "/a" })
+
+    // Start a permission request — it will be pending until dispose resolves it
+    const permissionPromise = callbacks.onRequestPermission!({
+      sessionId: host.state.sessionId!,
+      requestId: 0,
+      kind: "permission",
+      message: "allow?",
+    } as Parameters<typeof callbacks.onRequestPermission>[0])
+
+    // dispose should resolve the pending request as cancelled
+    const disposePromise = host.dispose()
+
+    // Both should resolve without hanging
+    const [response] = await Promise.all([permissionPromise, disposePromise])
+    expect(response.outcome.outcome).toBe("cancelled")
+  })
+
+  it("dispose: pending elicitation request resolves as cancel before transport.close", async () => {
+    const { host, callbacks } = await setup()
+    await host.newSession({ cwd: "/a" })
+
+    const elicitationPromise = callbacks.onCreateElicitation!({
+      sessionId: host.state.sessionId!,
+      requestId: 1,
+      schema: { type: "object", properties: {} },
+    } as Parameters<typeof callbacks.onCreateElicitation>[0])
+
+    const disposePromise = host.dispose()
+
+    const [response] = await Promise.all([elicitationPromise, disposePromise])
     expect(response.action).toBe("cancel")
   })
 })

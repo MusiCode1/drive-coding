@@ -44,7 +44,7 @@ function makeMockHost(state: SessionState): ExtendedSessionHost {
     respondElicitation: vi.fn(),
     listSessions: vi.fn().mockResolvedValue({}),
     deleteSession: vi.fn().mockResolvedValue(undefined),
-    dispose: vi.fn(),
+    dispose: vi.fn().mockResolvedValue(undefined),
     agentCapabilities: {},
   }
 }
@@ -189,7 +189,7 @@ describe("GET /api/agents/:id/events", () => {
         respondElicitation: vi.fn(),
         listSessions: vi.fn().mockResolvedValue({}),
         deleteSession: vi.fn().mockResolvedValue(undefined),
-        dispose: vi.fn(),
+        dispose: vi.fn().mockResolvedValue(undefined),
         agentCapabilities: {},
       }
 
