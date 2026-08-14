@@ -49,8 +49,15 @@ bt=$(tests_failed "$B/test.txt"); at=$(tests_failed "$A/test.txt")
 lint_ids "$B/lint.txt" > "$B/ids.txt"; lint_ids "$A/lint.txt" > "$A/ids.txt"
 newids=$(comm -13 "$B/ids.txt" "$A/ids.txt" || true)
 if [ -n "$newids" ]; then
-  echo "ℹ️  דיאגנוסטיקות lint שלא היו בבסיס:"; echo "$newids"
-  echo "   → הזזות-שורה בקבצים שנערכו הן רעש צפוי. כלל *חדש* = רגרסיה. הכרע ידנית."
+  echo "ℹ️  דיאגנוסטיקות lint שלא היו בבסיס (ייתכן שהן הזזות-שורה):"; echo "$newids"
+fi
+# ⚠️ הזזת-שורה של אותו כלל באותו קובץ = רעש. **כלל חדש בקובץ** = רגרסיה, ומפיל.
+pairs() { sed -E 's/:[0-9]+:[0-9]+ / /' "$1" | sort -u; }
+pairs "$B/ids.txt" > "$B/pairs.txt"; pairs "$A/ids.txt" > "$A/pairs.txt"
+newpairs=$(comm -13 "$B/pairs.txt" "$A/pairs.txt" || true)
+if [ -n "$newpairs" ]; then
+  say "כללי lint חדשים (קובץ+כלל שלא היו בבסיס):"
+  echo "$newpairs"
 fi
 bfe=$(fe_errors "$B/fe.txt"); afe=$(fe_errors "$A/fe.txt")
 [ -n "$afe" ] || say "frontend typecheck לא הפיק שורת סיכום"
