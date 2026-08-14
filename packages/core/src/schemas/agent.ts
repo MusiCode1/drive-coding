@@ -135,6 +135,9 @@ export const AgentPublic = type({
   // runtime enrichment (מאוכלס ב-GET /api/agents handler, לא ב-toAgentPublic):
   "pid?": "number",
   "attached?": "boolean",
+  // slice ownership-truth C3: איזה טרנספורט מחזיק את הצינור ("ws" | "http"), או null.
+  // runtime-only — מאוכלס ב-GET /api/agents handler, לא ב-toAgentPublic.
+  "attachedVia?": "'ws' | 'http'",
   // slice agent-busy-indicator: true כשיש turn פעיל (debounce-שקט)
   "busy?": "boolean",
   // slice agent-last-message-at: epoch-ms של הפלט האחרון שהסוכן שלח (כל sessionUpdate).

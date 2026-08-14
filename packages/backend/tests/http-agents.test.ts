@@ -551,12 +551,12 @@ describe("HTTP /api/agents", () => {
       }
 
       const bridgeManager = {
-        // slice agent-busy-indicator: busy נוסף ל-return type
         getRuntimeInfo: vi.fn((_id: string) => ({
           pid: 12345,
           attached: true,
           busy: false,
           lastMessageAt: null,
+          via: "ws" as const,
         })),
       }
 
@@ -570,16 +570,22 @@ describe("HTTP /api/agents", () => {
       expect(agentData).toBeDefined()
       expect(agentData.pid).toBe(12345)
       expect(agentData.attached).toBe(true)
+      expect(agentData.attachedVia).toBe("ws")
     })
 
-    it("does not include pid/attached when bridgeManager not provided (existing call-sites)", async () => {
-      // The 2 existing makeApp() call-sites do not pass bridgeManager — guard ?. handles this
+    it("includes runtime fields with defaults when bridgeManager not provided", async () => {
+      // slice ownership-truth C3: explicit 5-field mapping — bridgeManager absent → defaults.
+      // Previously (spread) absent bridgeManager meant no pid/attached keys at all.
+      // Now the explicit mapping always includes them with safe defaults.
       const { app, registry } = makeApp()
       await registry.create({ cliKind: "opencode", cwd: "/x" })
       const res = await app.request("/api/agents")
       const body = await res.json()
-      expect(body.agents[0]).not.toHaveProperty("pid")
-      expect(body.agents[0]).not.toHaveProperty("attached")
+      expect(body.agents[0].pid).toBeNull()
+      expect(body.agents[0].attached).toBe(false)
+      expect(body.agents[0].busy).toBe(false)
+      expect(body.agents[0].lastMessageAt).toBeNull()
+      expect(body.agents[0].attachedVia).toBeUndefined()
     })
   })
 })

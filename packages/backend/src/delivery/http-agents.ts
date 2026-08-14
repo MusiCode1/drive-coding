@@ -32,17 +32,27 @@ export function registerAgentsHttp(
         attached: boolean
         busy: boolean
         lastMessageAt: number | null
+        via: "ws" | "http" | null
       } | null
     }
   },
 ): void {
-  // GET /api/agents — רשימה (מועשרת ב-pid+attached אם bridgeManager זמין)
+  // GET /api/agents — רשימה (מועשרת ב-pid+attached+via אם bridgeManager זמין)
+  // slice ownership-truth C3: מיפוי מפורש ומלא של 5 שדות — לא spread.
+  // spread היה מוחק שדות קיימים אם getRuntimeInfo לא היה מחזיר את כולם.
   app.get("/api/agents", async (c) => {
     const all = await deps.registry.list()
     return c.json({
       agents: all.map((a) => {
         const rt = deps.bridgeManager?.getRuntimeInfo(a.id)
-        return { ...toAgentPublic(a), ...(rt ?? {}) }
+        return {
+          ...toAgentPublic(a),
+          pid: rt?.pid ?? null,
+          attached: rt?.attached ?? false,
+          busy: rt?.busy ?? false,
+          lastMessageAt: rt?.lastMessageAt ?? null,
+          attachedVia: rt?.via,
+        }
       }),
     })
   })
