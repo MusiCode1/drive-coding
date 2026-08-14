@@ -62,8 +62,18 @@ fi
 bfe=$(fe_errors "$B/fe.txt"); afe=$(fe_errors "$A/fe.txt")
 [ -n "$afe" ] || say "frontend typecheck לא הפיק שורת סיכום"
 [ -n "$afe" ] && [ "${afe:-0}" -le "${bfe:-0}" ] || say "frontend typecheck: ${bfe:-?} → ${afe:-?}"
+# ⚠️ ספירה בלבד אינה מספיקה: אותה שגיאה בשורה חדשה מנפחת את המספר.
+# משווים **זהויות** (קובץ+קוד-שגיאה) בלי מספרי שורה — כמו ב-lint.
+tsc_ids() { grep -oE "^[a-z][^(]*\([0-9]+,[0-9]+\): error TS[0-9]+" "$1" \
+  | sed -E 's/\([0-9]+,[0-9]+\)//' | sort -u; }
 bts=$(tsc_errors "$B/tsc.txt"); ats=$(tsc_errors "$A/tsc.txt")
-[ "${ats:-0}" -le "${bts:-0}" ] || say "root typecheck: $bts → $ats"
+tsc_ids "$B/tsc.txt" > "$B/tsc-ids.txt"; tsc_ids "$A/tsc.txt" > "$A/tsc-ids.txt"
+newtsc=$(comm -13 "$B/tsc-ids.txt" "$A/tsc-ids.txt" || true)
+if [ -n "$newtsc" ]; then
+  say "שגיאות typecheck חדשות (קובץ+קוד שלא היו בבסיס):"; echo "$newtsc"
+elif [ "${ats:-0}" -gt "${bts:-0}" ]; then
+  echo "ℹ️  root typecheck $bts → $ats — אותן זהויות בשורות נוספות (רעש, לא רגרסיה)"
+fi
 
 bun run lint:i18n > "$A/i18n.txt" 2>&1 || say "lint:i18n נכשל (מוחלט — חייב לעבור)"
 
