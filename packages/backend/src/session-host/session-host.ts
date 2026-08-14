@@ -41,7 +41,7 @@ import {
   synthesizeUserMessage,
 } from "@drive-coding/core/session"
 import type { AcpClient, AcpClientCallbacks, AcpClientOptions } from "@drive-coding/provider/client"
-import { createAcpClient } from "@drive-coding/provider/client"
+import { createAcpClient, createAttachedAcpClient } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { AcpTransport } from "@drive-coding/provider/transport"
 import { createInProcessAcpTransport } from "./in-process-acp-transport.js"
@@ -216,6 +216,12 @@ export type SessionHostFromConnOptions = {
   /** Timeout for elicitation before auto-cancel. Default: 30s */
   elicitationTimeoutMs?: number
   /**
+   * slice ownership-handoff C4: warm reattach — agent already initialized.
+   * Uses createAttachedAcpClient (skips initialize) + loadSession (restores state).
+   * Omit for cold start (normal path: createAcpClient + newSession).
+   */
+  warmReattach?: { acpSessionId: string; cwd: string }
+  /**
    * For testing: override createAcpClient.
    * In production: omit to use the real createAcpClient.
    */
@@ -331,6 +337,7 @@ export async function createSessionHostFromConnection(
     initTimeoutMs,
     permissionTimeoutMs = DEFAULT_PERMISSION_TIMEOUT_MS,
     elicitationTimeoutMs = DEFAULT_ELICITATION_TIMEOUT_MS,
+    warmReattach,
     _createAcpClient = createAcpClient,
   } = opts
 
@@ -501,7 +508,10 @@ export async function createSessionHostFromConnection(
     onCreateElicitation: handleCreateElicitation,
   }
 
-  const client = await _createAcpClient(transport, callbacks, clientOpts)
+  // slice ownership-handoff C4: warm reattach skips initialize (agent already running)
+  const client: AcpClient = warmReattach
+    ? createAttachedAcpClient(transport, callbacks)
+    : await _createAcpClient(transport, callbacks, clientOpts)
 
   // ── Register transport.onClose → session status disconnect ───────────────
   // When the underlying connection crashes, update state to "disconnected".

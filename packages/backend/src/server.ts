@@ -70,6 +70,7 @@ import {
 } from "./delivery/http-history.js"
 import { registerHttpOptions } from "./delivery/http-options.js"
 import { createAndRegisterSessionHostHttp } from "./session-host/http/index.js"
+import { createEvictionController } from "./delivery/eviction-controller.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
 import { registerTtsCapabilitiesHttp } from "./delivery/http-tts-capabilities.js"
 import { registerUsageHttp } from "./delivery/http-usage.js"
@@ -99,6 +100,14 @@ const connectionRegistry = createConnectionRegistry({ wireRecorder })
 const projectsRegistry = createProjectsRegistry(ensureStateSubdir("cache"))
 const recordingsStore = createRecordingsStore(ensureStateSubdir("recordings"))
 
+// slice ownership-handoff C4: eviction controller — shared between ws-agent (fills)
+// and agentSessionRegistry (calls evictAndWait for HTTP→WS takeover).
+const evictionController = createEvictionController()
+
+// slice ownership-handoff C4: sync acpSessionId cache for warm reattach.
+// Updated by onSessionAttached (same source of truth as registry.update acpSessionId).
+const acpSessionIdCache = new Map<string, string>()
+
 // S4 session-host-http: 4 routes — GET /events, POST /rpc, POST /reply, GET /state
 // slice remote-warm-reconnect C1: תופסים את הרג'יסטרי (קודם נזרק ב-:151) — C2/C2b
 // מעבירים אותו ל-ws-agent (guard) ול-orchestrator (ניקוי hosts ב-delete/crash).
@@ -117,9 +126,15 @@ const agentSessionRegistry = createAndRegisterSessionHostHttp(app, connectionReg
       return
     }
     await registry.update(agentId, { status: "ready", acpSessionId: sessionId })
+    acpSessionIdCache.set(agentId, sessionId)
     await projectsRegistry.recordCwd(agent.cwd, agent.cliKind as BridgeKind)
     await projectsRegistry.recordSession(agent.cwd, sessionId)
   },
+  evictionController,
+  // slice ownership-handoff C4: warm reattach — sync cache of agentId→acpSessionId
+  // maintained by onSessionAttached. Returns the last known acpSessionId, allowing
+  // the HTTP host to call loadSession instead of newSession after WS eviction.
+  getAcpSessionId: (agentId) => acpSessionIdCache.get(agentId),
 })
 
 const orchestrator = createAgentOrchestrator({
@@ -250,6 +265,7 @@ const onAgentConnect = createAgentWsHandler({
   orchestrator,
   connectionRegistry,
   sessionHostRegistry: agentSessionRegistry,
+  evictionController,
 })
 
 echoWss.on("connection", (ws) => {
@@ -267,7 +283,11 @@ agentWss.on("connection", (ws, req) => {
   const match = pathname.match(/^\/ws\/agent\/([^/]+)$/)
   const agentId = match?.[1] ?? ""
 
-  onAgentConnect(ws, agentId)
+  onAgentConnect(ws, agentId).catch((err) => {
+    // async errors (e.g. evictAndWait timeout) — log and close
+    ws.close(1011, "internal error")
+    procLog.error({ err, agentId }, "onAgentConnect async error")
+  })
 })
 
 preferPathClaudeExecutable()

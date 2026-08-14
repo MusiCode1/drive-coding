@@ -50,11 +50,27 @@ export function registerSessionHostHttp(
 export function createAndRegisterSessionHostHttp(
   app: Hono,
   connectionRegistry: ConnectionRegistry,
-  opts: { onSessionAttached?: OnSessionAttached } = {},
+  opts: {
+    onSessionAttached?: OnSessionAttached
+    /**
+     * slice ownership-handoff C4: eviction controller for HTTP→WS takeover.
+     * Injected from server.ts; allows registry to evict an active WS before
+     * creating an HTTP host on the same agent.
+     */
+    evictionController?: Parameters<typeof createAgentSessionRegistry>[0]["evictionController"]
+    /**
+     * slice ownership-handoff C4: resolve acpSessionId for warm reattach.
+     * Injected from server.ts via AgentRegistry; allows HTTP host to loadSession
+     * instead of newSession when taking over from a WS-owned agent.
+     */
+    getAcpSessionId?: (agentId: string) => string | undefined
+  } = {},
 ): ReturnType<typeof createAgentSessionRegistry> {
   const agentSessionRegistry = createAgentSessionRegistry({
     connectionRegistry,
     onSessionAttached: opts.onSessionAttached,
+    evictionController: opts.evictionController,
+    getAcpSessionId: opts.getAcpSessionId,
   })
   registerSessionHostHttp(app, { agentSessionRegistry })
   return agentSessionRegistry

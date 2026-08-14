@@ -332,12 +332,16 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
   // ─── slice remote-warm-reconnect C2: guard WS→host ─────────────────────────
 
   describe("sessionHostRegistry guard (C2)", () => {
-    it("agent with a live session host → close(1008, 'session-host-active'), no pipe attached", async () => {
+    it("isHeld=true but no host (in-flight) → close(1008, 'session-host-active'), no pipe attached", async () => {
       const { conn, writeSpy } = makeMockConn()
       const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
       const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
-      // SessionHost חי על הסוכן — isHeld מחזיר true
-      const sessionHostRegistry = { isHeld: vi.fn(() => true) }
+      // In-flight creation: isHeld true but getHost returns undefined
+      const sessionHostRegistry = {
+        isHeld: vi.fn(() => true),
+        getHost: vi.fn(() => undefined),
+        unregisterHost: vi.fn(),
+      }
 
       const onConnect = createAgentWsHandler({
         orchestrator,
@@ -346,7 +350,7 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
       })
       const { ws, closeArgs } = makeMockFeWs()
 
-      onConnect(ws, "hosted-agent")
+      await onConnect(ws, "hosted-agent")
 
       expect(closeArgs).toHaveLength(1)
       // biome-ignore lint/style/noNonNullAssertion: guarded by toHaveLength
@@ -358,6 +362,37 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
       ws.emit("message", JSON.stringify({ jsonrpc: "2.0", method: "initialize" }))
       await new Promise((r) => setTimeout(r, 20))
       expect(writeSpy).not.toHaveBeenCalled()
+    })
+
+    it("isHeld=true with live host (C4 WS→host eviction) → dispose + fall-through", async () => {
+      const { conn } = makeMockConn()
+      const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
+      const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
+      const mockHost = {
+        dispose: vi.fn().mockResolvedValue(undefined),
+      }
+      const sessionHostRegistry = {
+        isHeld: vi.fn(() => true),
+        getHost: vi.fn(() => mockHost),
+        unregisterHost: vi.fn(),
+      }
+
+      const onConnect = createAgentWsHandler({
+        orchestrator,
+        connectionRegistry,
+        sessionHostRegistry,
+      })
+      const { ws, closeArgs } = makeMockFeWs()
+
+      await onConnect(ws, "hosted-agent")
+
+      // host was disposed and unregistered
+      expect(mockHost.dispose).toHaveBeenCalledTimes(1)
+      expect(sessionHostRegistry.unregisterHost).toHaveBeenCalledWith("hosted-agent")
+      // WS fell through to normal attach — NOT closed with 1008
+      expect(closeArgs.filter(a => a[0] === 1008)).toHaveLength(0)
+      // markAttached called (epoch incremented via fall-through)
+      expect(markAttachedSpy).toHaveBeenCalledTimes(1)
     })
 
     it("no host + no sessionHostRegistry dep → existing behavior unchanged (regression)", async () => {
@@ -382,7 +417,11 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
       const { conn } = makeMockConn()
       const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
       const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
-      const sessionHostRegistry = { isHeld: vi.fn(() => false) }
+      const sessionHostRegistry = {
+        isHeld: vi.fn(() => false),
+        getHost: vi.fn(() => undefined),
+        unregisterHost: vi.fn(),
+      }
 
       const onConnect = createAgentWsHandler({
         orchestrator,
@@ -391,7 +430,7 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
       })
       const { ws, closeArgs } = makeMockFeWs()
 
-      onConnect(ws, "no-host-agent")
+      await onConnect(ws, "no-host-agent")
 
       expect(closeArgs).toHaveLength(0)
       expect(markAttachedSpy).toHaveBeenCalledTimes(1)
@@ -414,12 +453,16 @@ describe("ws-agent — isHeld during creation window (handoff-foundations C3)", 
 
   // DoD 10: the critical end-to-end test. isHeld must be called (not getHost)
   // so WS is rejected while a host is being created (in-flight, not yet in map).
-  it("WS is rejected with 1008 when isHeld returns true (creation in-flight)", () => {
+  it("WS is rejected with 1008 when isHeld returns true (creation in-flight)", async () => {
     const { conn, writeSpy } = makeMockConn()
     const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
     const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
     // isHeld returns true — simulates a host creation in-flight
-    const sessionHostRegistry = { isHeld: vi.fn(() => true) }
+    const sessionHostRegistry = {
+      isHeld: vi.fn(() => true),
+      getHost: vi.fn(() => undefined), // no host yet (in-flight)
+      unregisterHost: vi.fn(),
+    }
 
     const onConnect = createAgentWsHandler({
       orchestrator,
@@ -428,7 +471,7 @@ describe("ws-agent — isHeld during creation window (handoff-foundations C3)", 
     })
     const { ws, closeArgs } = makeMockFeWs()
 
-    onConnect(ws, "creating-agent")
+    await onConnect(ws, "creating-agent")
 
     // WS must be rejected with session-host-active
     expect(closeArgs).toHaveLength(1)
@@ -448,7 +491,11 @@ describe("ws-agent — isHeld during creation window (handoff-foundations C3)", 
     const { conn, writeSpy } = makeMockConn()
     const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
     const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
-    const sessionHostRegistry = { isHeld: vi.fn(() => false) }
+    const sessionHostRegistry = {
+      isHeld: vi.fn(() => false),
+      getHost: vi.fn(() => undefined),
+      unregisterHost: vi.fn(),
+    }
 
     const onConnect = createAgentWsHandler({
       orchestrator,

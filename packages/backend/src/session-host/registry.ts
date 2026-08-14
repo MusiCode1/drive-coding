@@ -111,9 +111,10 @@ type AgentSessionRegistryDeps = {
   connectionRegistry: ConnectionRegistry
   /**
    * Injectable for tests — defaults to createSessionHostFromConnection.
-   * Receives the ProviderConnection and returns a Promise<ExtendedSessionHost>.
+   * Receives the ProviderConnection and options, returns Promise<ExtendedSessionHost>.
+   * slice ownership-handoff C4: opts includes optional warmReattach for warm path.
    */
-  _createHostFn?: (conn: ProviderConnection) => Promise<ExtendedSessionHost>
+  _createHostFn?: (conn: ProviderConnection, opts?: import("../session-host/session-host.js").SessionHostFromConnOptions) => Promise<ExtendedSessionHost>
   /**
    * Injectable for tests — defaults to createPatchesBroadcaster.
    * Receives host.patches and returns a PatchesBroadcaster.
@@ -125,13 +126,29 @@ type AgentSessionRegistryDeps = {
    * הסשן עצמו עובד; תצוגה ישנה בפאנל עדיפה על חיבור שבור.
    */
   onSessionAttached?: OnSessionAttached
+  /**
+   * slice ownership-handoff C4: eviction controller — evicts active WS before
+   * HTTP host creation, waits for full detach (unsub + unsubCrash).
+   * Optional — without it, WS-owned agents return undefined (pre-C4 behavior).
+   */
+  evictionController?: {
+    evictAndWait(agentId: string, code: number, timeoutMs?: number): Promise<void>
+  }
+  /**
+   * slice ownership-handoff C4: resolve acpSessionId for warm reattach.
+   * Returns the current ACP session ID for an agent, or undefined for cold start.
+   * Injected from server.ts via AgentOrchestrator/AgentRegistry.
+   */
+  getAcpSessionId?: (agentId: string) => string | undefined
 }
 
 export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): AgentSessionRegistry {
   const {
     connectionRegistry,
-    _createHostFn = (conn) => createSessionHostFromConnection(conn),
+    _createHostFn = (conn, opts) => createSessionHostFromConnection(conn, opts),
     _createBroadcasterFn = (patches) => createPatchesBroadcaster(patches),
+    evictionController,
+    getAcpSessionId,
   } = deps
 
   const map = new Map<string, HostEntry>()
@@ -144,18 +161,23 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     const conn = connectionRegistry.get(agentId)
     if (!conn) return undefined
 
-    // slice remote-warm-reconnect C2 (כיוון host→WS): סוכן עם לקוח WS מקומי חי
-    // (attached) — מסרבים ליצור host. התרחיש שנחסם: סוכן מחובר מקומית בלשונית אחת
-    // + משתמשת עם דגל remote לוחצת reconnect בלשונית אחרת — ה-host היה נבנה על
-    // אותו wire שה-WS צורך (שני לקוחות ACP = השחתה). סימטרי ל-guard ב-ws-agent.
-    // return undefined → ה-route מחזיר 404 (agent connection not found).
-    // slice ownership-truth C2: ה-guard שואל "האם WS מחזיק את הצינור" ספציפית.
-    // isAttached כבר לא מספיק כי attached מציין בעלות מכל טרנספורט (ws או http).
-    // אם http מחזיק (session-host פעיל) — זה בסדר, נחזיר host קיים מ-getOrCreateHost.
-    // אם ws מחזיק — שני לקוחות ACP על אותו wire = השחתה, ולכן דוחים.
+    // slice ownership-truth C2: guard — WS owns the wire.
+    // slice ownership-handoff C4: when evictionController is available, evict the
+    // WS and wait for full detach before proceeding (HTTP takeover).
+    // Without evictionController (pre-C4 or tests): still refuse — return undefined.
     if (connectionRegistry.isOwnedByWs(agentId)) {
-      log.warn({ agentId }, "agent is owned by WS — refusing to create a session host")
-      return undefined
+      if (!evictionController) {
+        log.warn({ agentId }, "agent is owned by WS — refusing to create a session host")
+        return undefined
+      }
+      log.info({ agentId }, "agent owned by WS — evicting for HTTP takeover")
+      try {
+        await evictionController.evictAndWait(agentId, 4409)
+      } catch (err) {
+        // Eviction timed out or WS failed to detach — cannot take the wire safely
+        log.error({ err, agentId }, "evictAndWait failed — refusing host creation")
+        return undefined
+      }
     }
 
     // calev-heavy round 2 finding #5: cwd is validated BEFORE creating the host +
@@ -171,21 +193,28 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       )
     }
 
+    // slice ownership-handoff C4: resolve acpSessionId for warm reattach.
+    // If the agent has an active ACP session (was WS-owned), use warm path
+    // (createAttachedAcpClient + loadSession) instead of cold (createAcpClient + newSession).
+    const acpSessionId = getAcpSessionId?.(agentId)
+
     // Create host + broadcaster
-    // slice handoff-foundations C3: if newSession fails below, the host is
-    // already subscribed to the wire (created by _createHostFn). A bare
-    // inFlight cleanup would leave an orphan host listening — WS could then
-    // attach and corrupt the pipe. Rollback MUST call host.dispose() to
-    // remove the crash subscription and close the patches stream.
-    const host = await _createHostFn(conn)
+    // slice handoff-foundations C3: if session creation fails below, the host is
+    // already subscribed to the wire (created by _createHostFn). Rollback MUST call
+    // host.dispose() to remove the crash subscription and close the patches stream.
+    const hostOpts = acpSessionId ? { warmReattach: { acpSessionId, cwd } } : undefined
+    const host = await _createHostFn(conn, hostOpts)
     try {
       const broadcaster = _createBroadcasterFn(host.patches)
 
-      // Auto session creation (הכרעה 1): ה-host נולד בלי session — ניצור אחד עכשיו
-      // כך שה-snapshot הראשון (SSE frame-zero) כבר נושא sessionId אמיתי.
-      // אם כבר יש sessionId (למשל host הוזרק מוכן-לשימוש בבדיקות) — לא יוצרים שוב.
+      // Session init: warm reattach uses loadSession; cold uses newSession.
+      // Skip if host already has a sessionId (injected-ready host in tests).
       if (!host.state.sessionId) {
-        await host.newSession({ cwd })
+        if (acpSessionId) {
+          await host.loadSession({ cwd, sessionId: acpSessionId })
+        } else {
+          await host.newSession({ cwd })
+        }
       }
 
       // slice remote-warm-reconnect C1: דיווח על ה-session — אחרי ה-if block כולו
