@@ -169,7 +169,9 @@ describe("AgentSessionRegistry", () => {
 
       await registry.getOrCreateHost("agent-1")
 
-      expect(createHostFn).toHaveBeenCalledWith(conn)
+      // slice ownership-handoff C4: _createHostFn מקבל עכשיו גם opts
+      // (acpSessionId למסלול warm). הבדיקה על ה-conn בלבד.
+      expect(createHostFn).toHaveBeenCalledWith(conn, undefined)
     })
 
     it("creates broadcaster with host.patches", async () => {
