@@ -40,9 +40,27 @@ function makeMockConnection(): ProviderConnection {
   } as unknown as ProviderConnection
 }
 
+/**
+ * makeTouchState — מצב-חיות אמיתי ל-mock: `touch()` כותב את הזמן הנוכחי,
+ * `get()` מחזיר את מה שנכתב. בלי זה טסט "touchOwner מונע פקיעה" עובר תמיד.
+ */
+function makeTouchState(initial: number | null = null) {
+  let last: number | null = initial
+  return {
+    touch: vi.fn(() => {
+      last = Date.now()
+    }),
+    get: vi.fn(() => last),
+    _set: (v: number | null) => {
+      last = v
+    },
+  }
+}
+
 function makeMockConnectionRegistry(
   conn?: ProviderConnection,
   attached = false,
+  touchState = makeTouchState(),
 ): ConnectionRegistry {
   return {
     connect: vi.fn(),
@@ -52,10 +70,12 @@ function makeMockConnectionRegistry(
     markAttached: vi.fn(),
     markDetached: vi.fn(),
     markOwned: vi.fn(),
-    // slice ownership-handoff C4b: מנגנון החיות. mock עם שעון אמיתי —
-    // sweep משווה מול Date.now(), ולכן ברירת המחדל היא "נראה עכשיו".
-    touchOwner: vi.fn(),
-    getLastSeenAt: vi.fn().mockImplementation(() => Date.now()),
+    // slice ownership-handoff C4b: ה-mock מחזיק **מצב אמיתי** —
+    // ⚠️ mock ש-getLastSeenAt שלו מחזיר Date.now() בכל קריאה הופך כל טסט-חיות
+    // ל-false-positive: now-lastSeen=0 תמיד, גם אם touchOwner הוא no-op.
+    // (כלב NO-GO). כאן touchOwner **כותב** ו-getLastSeenAt **קורא**.
+    touchOwner: touchState.touch,
+    getLastSeenAt: touchState.get,
     isAttached: vi.fn().mockReturnValue(attached),
     getOwner: vi.fn().mockReturnValue(null),
     getEpoch: vi.fn().mockReturnValue(0),
@@ -252,11 +272,10 @@ describe("AgentSessionRegistry", () => {
       vi.useFakeTimers()
       try {
         const conn = makeMockConnection()
-        const connectionRegistry = makeMockConnectionRegistry(conn)
+        // נראה לאחרונה הרבה לפני ה-TTL ⇒ פקוע
+        const touchState = makeTouchState(Date.now() - 10_000)
+        const connectionRegistry = makeMockConnectionRegistry(conn, false, touchState)
         const mockHost = makeMockHost()
-        // הבעלים "נראה לאחרונה" הרבה לפני ה-TTL ⇒ פקוע
-        const staleAt = Date.now() - 10_000
-        ;(connectionRegistry.getLastSeenAt as ReturnType<typeof vi.fn>).mockReturnValue(staleAt)
 
         const registry = createAgentSessionRegistry({
           connectionRegistry,
@@ -280,11 +299,14 @@ describe("AgentSessionRegistry", () => {
       }
     })
 
+    // ⚠️ הטסט הזה חייב להיכשל אם touchOwner הוא no-op — לכן ה-mock מחזיק מצב
+    // אמיתי, ומתחיל **פקוע**. רק ה-touch מציל אותו. (כלב NO-GO)
     it("http liveness: touchOwner keeps the owner alive past the TTL", async () => {
       vi.useFakeTimers()
       try {
         const conn = makeMockConnection()
-        const connectionRegistry = makeMockConnectionRegistry(conn)
+        const touchState = makeTouchState(Date.now() - 10_000) // מתחיל פקוע
+        const connectionRegistry = makeMockConnectionRegistry(conn, false, touchState)
         const mockHost = makeMockHost()
 
         const registry = createAgentSessionRegistry({
@@ -296,8 +318,9 @@ describe("AgentSessionRegistry", () => {
         })
 
         await registry.getOrCreateHost("agent-1")
+        registry.touchOwner("agent-1") // touch ראשון מיד — מרענן את המצב הפקוע
 
-        // נוגעים כל 40ms — מתחת ל-TTL
+        // נוגעים כל 40ms — מתחת ל-TTL של 100ms
         for (let i = 0; i < 6; i++) {
           await vi.advanceTimersByTimeAsync(40)
           registry.touchOwner("agent-1")
