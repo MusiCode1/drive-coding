@@ -15,6 +15,7 @@
  */
 import "../app.css"
 import { page } from "$app/state"
+import { normalizeSessionTransport } from "$lib/session/session-transport"
 import { env } from "$env/dynamic/public"
 import type { Locale } from "@drive-coding/core/i18n"
 import {
@@ -156,6 +157,15 @@ const titleContext = $derived.by(() => {
 })
 const docTitle = $derived(titleContext ? `${baseTitle} • ${titleContext}` : baseTitle)
 
+// ─── session-transport override ─── (slice transport-polish C3)
+// עקיפה מ-URL: ?sessionTransport=ws/http → נכתב מנורמל ל-sessionStorage (חיה בטאב).
+// קריאה+נרמול+כתיבה בלבד — לא נוגע ב-attach/detach/reconnect/VM. שינוי הדגל משפיע
+// על החיבור הבא בלבד; סשן חי ממשיך בטרנספורט שלו. $effect לא רץ ב-SSR → גישה לאחסון בטוחה.
+$effect(() => {
+  const q = page.url.searchParams.get("sessionTransport")
+  const normalized = normalizeSessionTransport(q)
+  if (normalized) sessionStorage.setItem("sessionTransport", normalized)
+})
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
