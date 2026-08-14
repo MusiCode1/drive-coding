@@ -1,3 +1,53 @@
+## 2026-08-14 (slice transport-polish — טרמינולוגיה + עקיפה + מתג)
+
+### slice transport-polish — ws/http + שתי שכבות אחסון + Select בהגדרות
+
+Base: `slice/remote-session-mgmt` tip (14 קומיטים קדימה מ-`slice/view-switch`).
+ענף: `slice/transport-polish`, worktree `.worktrees/transport-polish`.
+5 קומיטים (C1–C5) — C1 כבר בוצע וקומט לפני ה-rebase.
+
+#### C1 — השכבה הטהורה (TDD, קומט 74a3e41)
+
+`session-transport.ts` — union `SessionTransport = "ws" | "http"`,
+`normalizeSessionTransport` מיוצא, שדה `override` חדש ב-resolver, 33 טסטים.
+
+#### C2 — נרמול לפני שמירה + חיווי שני המקורות
+
+`session-transport-read.ts` — נרמול לפני כתיבה ל-sessionStorage (זבל לא נשמר);
+חתימה חדשה `readSessionTransport({ env, stored })` — שני מקורות: sessionStorage
+(עקיפה) ו-settings (העדפה). 11 טסטים.
+
+`connect-agent.ts` + `+page.svelte:handleReconnect` — `remote`→`http`, `local`→`ws`,
+ניווט ל-`/chat?sessionTransport=http`. `vite.config.ts` — ברירת-מחדל `ws`.
+
+`settings.svelte.ts` — שדה `sessionTransport: SessionTransport | null` (DEFAULTS=null)
+נוסף מוקדם כדי ש-connect-agent/+page.svelte יקומפלו; ה-UI Select הגיע ב-C4.
+
+#### C3 — עקיפה מכל עמוד
+
+`+layout.svelte` — `$effect` שעוקב אחר `page.url.searchParams`, מנרמל, וכותב
+ל-sessionStorage. קריאה+נרמול+כתיבה בלבד — לא נוגע ב-attach/detach/reconnect/VM.
+
+#### C4 — Select בהגדרות
+
+`SettingsScreen.svelte` — `<Select>` תחת "מתקדם" עם תוויות WebSocket/HTTP.
+מציג את האפקטיבי כשהעדפה null (`resolveSessionTransport({ stored: null, env })`).
+`keys.ts` + `catalogs/{he,en}.ts` — 3 מפתחות חדשים.
+
+#### C5 — תיעוד
+
+`walkthrough.md` (כאן) + `preview-view-switch.md` — עדכון טרמינולוגיה וסמנטיקת
+אחסון: שתי שכבות (עקיפה=sessionStorage, העדפה=localStorage), קדימות מלאה.
+
+#### שתי שכבות אחסון (§3)
+
+| שכבה | איפה | חיים | מי כותב |
+|---|---|---|---|
+| עקיפה | sessionStorage (מפתח `sessionTransport`) | הטאב | C2, C3 |
+| העדפה | localStorage (שדה ב-settings) | קבועה | C4 |
+
+קדימות: query ← sessionStorage (עקיפה) ← localStorage (העדפה) ← env ← "ws".
+
 # Walkthrough — drive-coding
 
 ## 2026-08-11 (slice remote-session-mgmt — ניהול סשנים ב-remote ל-parity עם local)

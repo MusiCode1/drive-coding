@@ -1,6 +1,6 @@
 # Preview runbook — slice view-switch
 
-FE שרץ בשני מצבים — `local` (הנתיב הקיים, ברירת-מחדל) ו-`remote`
+FE שרץ בשני מצבים — `ws` (הנתיב הקיים, ברירת-מחדל) ו-`http`
 (`RemoteSessionView` → BE `SessionHost` דרך HTTP+SSE) — נבנה **פעם אחת**
 (production build), ונבדק דרך **שני URL-ים** מאותו build.
 
@@ -37,12 +37,18 @@ ssh -i ~/.ssh/pico -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30
 
 | מצב | URL |
 |-----|-----|
-| local (ברירת-מחדל) | `<base>/` |
-| remote | `<base>/?sessionTransport=remote` |
+| ws (ברירת-מחדל) | `<base>/` |
+| http | `<base>/?sessionTransport=http` |
 
-`?sessionTransport=` נשמר ל-`sessionStorage` בחיבור הראשון (`connect-agent.ts`) —
-שורד `goto("/chat")` ו-refresh. **חובה ללחוץ "נתק" לפני חזרה ל-`/`** — ניווט לבד לא
-מנתק, וניסיון-חיבור חוזר יידחה עם `cannot attach in status connected`.
+שתי שכבות אחסון (slice transport-polish §3):
+- **עקיפה** — `?sessionTransport=` נשמר ל-`sessionStorage` (חיה בטאב, נכתבת גם
+  מ-`+layout.svelte` `$effect`). נעלמת בטאב חדש. ערך זבל לא נשמר (נרמול לפני כתיבה).
+- **העדפה** — מתג בהגדרות נשמר ל-`localStorage` (קבועה). `null` = אין העדפה →
+  env נבחר. ערך ממשי גובר על env.
+
+קדימות: query ← sessionStorage (עקיפה) ← localStorage (העדפה) ← env ← "ws".
+**חובה ללחוץ "נתק" לפני חזרה ל-`/`** — ניווט לבד לא מנתק, וניסיון-חיבור חוזר
+יידחה עם `cannot attach in status connected`.
 
 ## צ'ק-ליסט
 
