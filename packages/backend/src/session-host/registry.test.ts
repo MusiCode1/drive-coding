@@ -52,6 +52,10 @@ function makeMockConnectionRegistry(
     markAttached: vi.fn(),
     markDetached: vi.fn(),
     markOwned: vi.fn(),
+    // slice ownership-handoff C4b: מנגנון החיות. mock עם שעון אמיתי —
+    // sweep משווה מול Date.now(), ולכן ברירת המחדל היא "נראה עכשיו".
+    touchOwner: vi.fn(),
+    getLastSeenAt: vi.fn().mockImplementation(() => Date.now()),
     isAttached: vi.fn().mockReturnValue(attached),
     getOwner: vi.fn().mockReturnValue(null),
     getEpoch: vi.fn().mockReturnValue(0),
@@ -172,6 +176,137 @@ describe("AgentSessionRegistry", () => {
       // slice ownership-handoff C4: _createHostFn מקבל עכשיו גם opts
       // (acpSessionId למסלול warm). הבדיקה על ה-conn בלבד.
       expect(createHostFn).toHaveBeenCalledWith(conn, undefined)
+    })
+
+    // ─── slice ownership-handoff C4 (post-calev): מסלול warm ─────────────────
+    // כלב NO-GO #2: הקוד היה נכון אך לא נבדק. שלושת הטסטים האלה מוכיחים
+    // ש-getAcpSessionId זורם ל-_createHostFn כ-warmReattach, ושהמסלול הקר
+    // נשמר כשאין sessionId.
+
+    it("warm path: getAcpSessionId → _createHostFn receives warmReattach opts", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      const mockHost = makeMockHost()
+      const createHostFn = vi.fn().mockResolvedValue(mockHost)
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        getAcpSessionId: () => "sess-warm-1",
+        _createHostFn: createHostFn,
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      await registry.getOrCreateHost("agent-1")
+
+      expect(createHostFn).toHaveBeenCalledWith(
+        conn,
+        expect.objectContaining({
+          warmReattach: expect.objectContaining({ acpSessionId: "sess-warm-1" }),
+        }),
+      )
+    })
+
+    it("warm path: calls loadSession (NOT newSession) when acpSessionId exists", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      const mockHost = makeMockHost()
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        getAcpSessionId: () => "sess-warm-2",
+        _createHostFn: vi.fn().mockResolvedValue(mockHost),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      await registry.getOrCreateHost("agent-1")
+
+      expect(mockHost.loadSession).toHaveBeenCalled()
+      expect(mockHost.newSession).not.toHaveBeenCalled()
+    })
+
+    it("cold path preserved: no acpSessionId → newSession, no warmReattach opts", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      const mockHost = makeMockHost()
+      const createHostFn = vi.fn().mockResolvedValue(mockHost)
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        getAcpSessionId: () => undefined,
+        _createHostFn: createHostFn,
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      await registry.getOrCreateHost("agent-1")
+
+      expect(createHostFn).toHaveBeenCalledWith(conn, undefined)
+      expect(mockHost.newSession).toHaveBeenCalled()
+      expect(mockHost.loadSession).not.toHaveBeenCalled()
+    })
+
+    // ─── slice ownership-handoff C4b (post-calev): מנגנון החיות ─────────────
+    // כלב NO-GO #3: _httpOwnerTtlMs/_httpSweepMs נחשפו לטסטים ואיש לא השתמש בהם.
+    // 🔴 הדרישה הקשיחה: פקיעה משחררת בעלות — ולעולם לא נוגעת בסוכן.
+
+    it("http liveness: stale owner is released (dispose + markDetached), agent NOT killed", async () => {
+      vi.useFakeTimers()
+      try {
+        const conn = makeMockConnection()
+        const connectionRegistry = makeMockConnectionRegistry(conn)
+        const mockHost = makeMockHost()
+        // הבעלים "נראה לאחרונה" הרבה לפני ה-TTL ⇒ פקוע
+        const staleAt = Date.now() - 10_000
+        ;(connectionRegistry.getLastSeenAt as ReturnType<typeof vi.fn>).mockReturnValue(staleAt)
+
+        const registry = createAgentSessionRegistry({
+          connectionRegistry,
+          _createHostFn: vi.fn().mockResolvedValue(mockHost),
+          _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+          _httpOwnerTtlMs: 100,
+          _httpSweepMs: 20,
+        })
+
+        await registry.getOrCreateHost("agent-1")
+        expect(registry.isHeld("agent-1")).toBe(true)
+
+        await vi.advanceTimersByTimeAsync(300)
+
+        // הבעלות שוחררה, והצינור פונה
+        expect(mockHost.dispose).toHaveBeenCalled()
+        // 🔴 הגבול הקשיח — הסוכן חי
+        expect(conn.close).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("http liveness: touchOwner keeps the owner alive past the TTL", async () => {
+      vi.useFakeTimers()
+      try {
+        const conn = makeMockConnection()
+        const connectionRegistry = makeMockConnectionRegistry(conn)
+        const mockHost = makeMockHost()
+
+        const registry = createAgentSessionRegistry({
+          connectionRegistry,
+          _createHostFn: vi.fn().mockResolvedValue(mockHost),
+          _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+          _httpOwnerTtlMs: 100,
+          _httpSweepMs: 20,
+        })
+
+        await registry.getOrCreateHost("agent-1")
+
+        // נוגעים כל 40ms — מתחת ל-TTL
+        for (let i = 0; i < 6; i++) {
+          await vi.advanceTimersByTimeAsync(40)
+          registry.touchOwner("agent-1")
+        }
+
+        expect(mockHost.dispose).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
     })
 
     it("creates broadcaster with host.patches", async () => {
