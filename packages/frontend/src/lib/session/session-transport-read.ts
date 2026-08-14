@@ -14,11 +14,8 @@
  * ו-env/stored מוזרקים כפרמטרים (בלי יבוא $env/dynamic/public — לא זמין ב-vitest).
  */
 
-import {
-  normalizeSessionTransport,
-  resolveSessionTransport,
-  type SessionTransport,
-} from "./session-transport.js"
+import type { SessionTransport } from "./session-transport.js"
+import { normalizeSessionTransport, resolveSessionTransport } from "./session-transport.js"
 
 /**
  * פותר את דגל sessionTransport: query ← override(sessionStorage) ←
@@ -42,4 +39,3 @@ export function readSessionTransport(input: {
     env: input.env,
   })
 }
-
