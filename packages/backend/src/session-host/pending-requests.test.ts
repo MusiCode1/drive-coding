@@ -120,3 +120,57 @@ describe("PendingRequests", () => {
     })
   })
 })
+
+// ─── slice handoff-foundations C2: respondAll() ───────────────────────────────
+
+describe("respondAll() (handoff-foundations C2)", () => {
+  it("resolves all three concurrent pending requests with the given value", async () => {
+    const pending = createPendingRequests({ timeoutMs: 5000 })
+
+    const p1 = pending.request(10)
+    const p2 = pending.request(20)
+    const p3 = pending.request(30)
+
+    pending.respondAll({ action: "deny" })
+
+    const [r1, r2, r3] = await Promise.all([p1, p2, p3])
+    expect(r1).toEqual({ action: "deny" })
+    expect(r2).toEqual({ action: "deny" })
+    expect(r3).toEqual({ action: "deny" })
+  })
+
+  it("clears timers (no timeout fires after respondAll)", async () => {
+    vi.useFakeTimers()
+    const pending = createPendingRequests({ timeoutMs: 100 })
+
+    const p1 = pending.request(1)
+    const p2 = pending.request(2)
+
+    pending.respondAll({ action: "cancel" })
+
+    await Promise.all([p1, p2])
+
+    // Advance past timeout — no unhandled rejection
+    vi.advanceTimersByTime(200)
+    vi.useRealTimers()
+  })
+
+  it("calling respondAll on an empty map is a no-op (idempotent)", () => {
+    const pending = createPendingRequests({ timeoutMs: 5000 })
+
+    expect(() => pending.respondAll({ action: "cancel" })).not.toThrow()
+  })
+
+  it("respond after respondAll for the same id is a no-op (no double-resolve)", async () => {
+    const pending = createPendingRequests({ timeoutMs: 5000 })
+
+    const p1 = pending.request(42)
+    pending.respondAll({ action: "deny" })
+    const result = await p1
+
+    expect(result).toEqual({ action: "deny" })
+
+    // respond for the same id should be a no-op
+    expect(() => pending.respond(42, { action: "allow" })).not.toThrow()
+  })
+})

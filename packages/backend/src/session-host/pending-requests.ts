@@ -39,6 +39,14 @@ export type PendingRequests<T = unknown> = {
    * If requestId is unknown (already timed out or never registered), no-op.
    */
   respond(requestId: number, result: T): void
+
+  /**
+   * slice handoff-foundations C2: resolve ALL pending requests with the given
+   * value. Iterates over the internal map (not SessionState.pending, which
+   * holds only the last of each kind). Clears timers. Idempotent — a second
+   * call is a no-op (map is empty).
+   */
+  respondAll(result: T): void
 }
 
 type PendingEntry<T> = {
@@ -92,5 +100,18 @@ export function createPendingRequests<T>(options: PendingRequestsOptions<T>): Pe
     entry.resolve(result)
   }
 
-  return { request, respond }
+  // slice handoff-foundations C2: resolve ALL pending from the map itself
+  // (not SessionState.pending, which holds only the last of each kind).
+  // Clears timers. Idempotent — empty map = no-op.
+  function respondAll(result: T): void {
+    for (const [requestId, entry] of map) {
+      if (entry.settled) continue
+      entry.settled = true
+      clearTimeout(entry.timer)
+      map.delete(requestId)
+      entry.resolve(result)
+    }
+  }
+
+  return { request, respond, respondAll }
 }
