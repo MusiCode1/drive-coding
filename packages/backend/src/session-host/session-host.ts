@@ -513,6 +513,15 @@ export async function createSessionHostFromConnection(
     ? createAttachedAcpClient(transport, callbacks)
     : await _createAcpClient(transport, callbacks, clientOpts)
 
+  // ── slice http-usable C1: capabilities → SessionState ────────────────────
+  // 🔴 חייב להיות **אחרי** יצירת ה-client: תגובת ה-initialize מחליפה את אובייקט
+  // היכולות (provider/connection/spawn.ts). העתקה מוקדמת שומרת ערך שקרי.
+  // למה בכלל: ב-remote אין #client ב-FE, ו-_drive/capabilities נשלח רק מ-ws-agent,
+  // ולכן supportsImageInput היה false תמיד ב-HTTP. ה-snapshot נושא את זה.
+  if (conn.capabilities) {
+    currentState = { ...currentState, capabilities: conn.capabilities }
+  }
+
   // ── Register transport.onClose → session status disconnect ───────────────
   // When the underlying connection crashes, update state to "disconnected".
   // This ensures host.state.status reflects the connection lifecycle.

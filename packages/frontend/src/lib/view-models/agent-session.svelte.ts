@@ -560,6 +560,14 @@ export class AgentSession {
     this.configOptions = viewState.configOptions as typeof this.configOptions
     // quota
     if (viewState.quota !== this.quota) this.quota = viewState.quota
+    // ─── slice http-usable C1: capabilities from SessionState → #capabilities ───
+    // In remote there is no #client, and _drive/capabilities is only sent by
+    // ws-agent — so supportsImageInput was always false over HTTP. The BE now
+    // fills state.capabilities and the snapshot carries it; this is where it
+    // lands in the VM. null = not received yet → never clobber an existing value.
+    if (viewState.capabilities !== null && viewState.capabilities !== this.#capabilities) {
+      this.#capabilities = viewState.capabilities as NormalizedCapabilities
+    }
 
     // ─── slice view-switch C3-ו.1: pending (permission + elicitation) — guard-זהות ───
     this.#syncPendingPermission(viewState.pending.permission, view)
@@ -1370,11 +1378,22 @@ export class AgentSession {
     // keepAgent:true היה מותיר agent+SessionHost+child חיים בלי בעלים ובלי דרך לחזור
     // אליהם מהנתיב המרוחק (אין attachToLiveAgent ל-remote — חסום, ר' C3-ה). known-gap:
     // "השארת סוכן רץ" אינה נתמכת ב-remote ב-S6 (מתועד ב-runbook C4).
-    if (this.#view) {
-      this.#cleanup()
-    } else {
-      this.#cleanup({ keepAgent: true }) // ← ההבדל מ-detach
-    }
+    // ─── slice http-usable C2: unify — keepAgent on both transports ───────────
+    // Reported bug: leaving without shutdown actually closed the session. The old
+    // remote branch called #cleanup(), i.e. killed the agent. The original reason
+    // (view-switch C3) was valid then: there was no way back to a remote agent, so
+    // keepAgent would orphan it. attachRemoteToLiveAgent now returns to it, and
+    // phase B2 added eviction. The host stays registered on purpose (lifecycle
+    // decision A) — it does not leak a second ACP client, and returning is simple.
+    // unregisterHost alone would have been unsafe.
+    //
+    // הנימוק המקורי (view-switch C3-ה2) היה נכון בזמנו: לא הייתה דרך לחזור
+    // לסוכן מרוחק, אז keepAgent היה מייתם אותו. **זה כבר לא נכון** —
+    // attachRemoteToLiveAgent מחזיר אליו, ושלב ב2 נתן את הפינוי.
+    //
+    // ה-host נשאר רשום בכוונה (הכרעת lifecycle, גישה א) — הוא אינו מדליף
+    // לקוח ACP שני, והחזרה אליו פשוטה. unregisterHost לבדו היה מסוכן.
+    this.#cleanup({ keepAgent: true })
     this.#setStatus("idle")
     this.error = null
     this.bubbles = []
