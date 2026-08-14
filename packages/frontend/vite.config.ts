@@ -33,13 +33,13 @@ const SOURCEMAP =
 // See root AGENTS.md → Ports + "Running parallel worktrees" if exists.
 const BE_PORT = Number(process.env.BE_PORT ?? 4000)
 
-// ─── slice view-switch C2: session-transport build-env plumbing ───────────────
-// FE_SESSION_TRANSPORT ∈ { "local" | "remote" } (default "local" — resolveSessionTransport's
+// ─── slice view-switch C2 / transport-polish C2: session-transport build-env plumbing ───
+// FE_SESSION_TRANSPORT ∈ { "ws" | "http" } (default "ws" — resolveSessionTransport's
 // own env-level fallback). Exposed as PUBLIC_SESSION_TRANSPORT so $env/dynamic/public can
 // read it at runtime (same precedent as PUBLIC_APP_TITLE above — must be set before the
 // SvelteKit plugin reads the environment). ⚠️ $env/static/public has no `env` export —
 // breaks the build; use $env/dynamic/public only (see +layout.svelte).
-process.env.PUBLIC_SESSION_TRANSPORT = process.env.FE_SESSION_TRANSPORT ?? "local"
+process.env.PUBLIC_SESSION_TRANSPORT = process.env.FE_SESSION_TRANSPORT ?? "ws"
 
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],

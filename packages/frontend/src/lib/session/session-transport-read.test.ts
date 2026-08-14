@@ -1,8 +1,10 @@
 /**
- * session-transport-read.test.ts — readSessionTransport (slice remote-warm-reconnect C4).
+ * session-transport-read.test.ts — readSessionTransport (slice remote-warm-reconnect C4
+ * · slice transport-polish C2).
  *
- * הקדימות עצמה (query ← stored ← env) טסוטת ב-session-transport.test.ts — כאן
- * נבדקת שכבת-הדבק: קריאת location.search/sessionStorage + שמירת ה-query param.
+ * הקדימות עצמה (query ← override ← stored ← env ← "ws") טסוטת ב-session-transport.test.ts
+ * — כאן נבדקת שכבת-הדבק: קריאת location.search/sessionStorage + שמירת ה-query param
+ * המנורמל. שני מקורות: sessionStorage (override) + stored (העדפה מ-localStorage).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -26,43 +28,62 @@ afterEach(() => {
 })
 
 describe("readSessionTransport", () => {
-  it("no query, no stored, no env → local", () => {
-    expect(readSessionTransport(undefined)).toBe("local")
+  it("no query, no stored, no env → ws", () => {
+    expect(readSessionTransport({})).toBe("ws")
   })
 
-  it("query=remote → resolves remote AND persists to sessionStorage", () => {
+  it("query=remote → resolves http AND persists http to sessionStorage", () => {
     vi.stubGlobal("location", { search: "?sessionTransport=remote" })
-    expect(readSessionTransport(undefined)).toBe("remote")
-    expect(stores.get("sessionTransport")).toBe("remote")
+    expect(readSessionTransport({})).toBe("http")
+    expect(stores.get("sessionTransport")).toBe("http")
   })
 
-  it("stored only → resolves from storage (survives goto/refresh)", () => {
-    stores.set("sessionTransport", "remote")
-    expect(readSessionTransport(undefined)).toBe("remote")
+  it("override (sessionStorage) only → resolves from override", () => {
+    stores.set("sessionTransport", "http")
+    expect(readSessionTransport({})).toBe("http")
   })
 
-  it("env only → resolves from env", () => {
-    expect(readSessionTransport("remote")).toBe("remote")
+  it("env only → resolves from env (when no override/stored)", () => {
+    expect(readSessionTransport({ env: "http" })).toBe("http")
   })
 
-  it("query overrides stored (and updates storage)", () => {
-    stores.set("sessionTransport", "remote")
-    vi.stubGlobal("location", { search: "?sessionTransport=local" })
-    expect(readSessionTransport(undefined)).toBe("local")
-    expect(stores.get("sessionTransport")).toBe("local")
+  it("query overrides override (and updates storage)", () => {
+    stores.set("sessionTransport", "http")
+    vi.stubGlobal("location", { search: "?sessionTransport=ws" })
+    expect(readSessionTransport({})).toBe("ws")
+    expect(stores.get("sessionTransport")).toBe("ws")
   })
 
-  it("locked precedence: stored beats env when no query", () => {
-    stores.set("sessionTransport", "remote")
-    expect(readSessionTransport("local")).toBe("remote")
+  it("locked precedence: override beats env when no query", () => {
+    stores.set("sessionTransport", "http")
+    expect(readSessionTransport({ env: "ws" })).toBe("http")
   })
 
-  it("garbage query is persisted (overwrites stored) — exact connect-agent.ts parity", () => {
-    // שים לב: בדיוק כמו connect-agent.ts המקורי — `if (q) setItem` שומר את ה-query
-    // גם כשהוא זבל, ולכן דורס את ה-stored. התוצאה: query זבל + stored-שנדרס זבל → local.
-    stores.set("sessionTransport", "remote")
-    vi.stubGlobal("location", { search: "?sessionTransport=bogus" })
-    expect(readSessionTransport(undefined)).toBe("local")
-    expect(stores.get("sessionTransport")).toBe("bogus")
+  it("garbage query is NOT persisted (does not overwrite override)", () => {
+    stores.set("sessionTransport", "http")
+    vi.stubGlobal("location", { search: "?sessionTransport=banana" })
+    // banana → normalize → null → לא נשמר. override (http) שורד.
+    expect(readSessionTransport({})).toBe("http")
+    expect(stores.get("sessionTransport")).toBe("http")
+  })
+
+  it("stored (preference) beats env when no override/query", () => {
+    expect(readSessionTransport({ stored: "http", env: "ws" })).toBe("http")
+  })
+
+  it("override beats stored (preference)", () => {
+    stores.set("sessionTransport", "http")
+    expect(readSessionTransport({ stored: "ws" })).toBe("http")
+  })
+
+  it("canonicalization before write — ?sessionTransport=REMOTE  → http persisted", () => {
+    vi.stubGlobal("location", { search: "?sessionTransport=REMOTE%20" })
+    expect(readSessionTransport({})).toBe("http")
+    expect(stores.get("sessionTransport")).toBe("http")
+  })
+
+  it("env selected when preference is null", () => {
+    // stored=null → הקדימות ממשיכה ל-env. שומר את באג r3 #1.
+    expect(readSessionTransport({ stored: null, env: "http" })).toBe("http")
   })
 })

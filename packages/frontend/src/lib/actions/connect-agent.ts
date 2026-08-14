@@ -2,15 +2,15 @@
  * connect-agent.ts — מנהל את תהליך החיבור (connect flow).
  *
  * 1. שומר את ערכי הטופס לתוך ההגדרות (כדי שיישמרו).
- * 2. פותר את דגל sessionTransport (query ← stored ← env ← local) ומצרף את ה-session
- *    במצב המתאים (attach מקומי / attachRemote מרוחק).
+ * 2. פותר את דגל sessionTransport (query ← override ← stored ← env ← "ws") ומצרף את ה-session
+ *    במצב המתאים (attach מקומי ws / attachRemote http).
  * 3. מנווט אל /chat במקרה של הצלחה.
  *
  * זוהי Action (ולא מתודה על Settings או AgentSession) מכיוון שהיא משלבת
  * מספר view-models יחד עם ניווט — דוגמה קלאסית לעניין חוצה שכבות.
  *
  * ─── slice view-switch C3-ז: נקודת-ההזרקה היחידה של sessionTransport ─── (additive)
- * ❌ אל תפזר `if (transport === "remote")` מחוץ לקובץ הזה — כל הניתוב האחר ב-VM
+ * ❌ אל תפזר `if (transport === "http")` מחוץ לקובץ הזה — כל הניתוב האחר ב-VM
  * הוא לפי `#view !== null`, לא לפי הדגל (הדגל בנקודה אחת).
  */
 
@@ -29,11 +29,15 @@ export async function connectAgent(params: {
   params.settings.setCliKind(params.cliKind)
   params.settings.setLastCwd(params.cwd)
 
-  // slice remote-warm-reconnect C4: פתירת הדגל עברה לפונקציה משותפת (אותו קוד בדיוק
-  // ששימש את +page.svelte:handleReconnect) — query ← stored ← env, + שמירה ל-sessionStorage.
-  const transport = readSessionTransport(env.PUBLIC_SESSION_TRANSPORT)
+  // slice remote-warm-reconnect C4 / transport-polish C2: פתירת הדגל עברה לפונקציה
+  // המשותפת — query ← override(sessionStorage) ← stored(settings) ← env ← "ws",
+  // + שמירת ה-query המנורמל ל-sessionStorage (זבל לא נשמר).
+  const transport = readSessionTransport({
+    env: env.PUBLIC_SESSION_TRANSPORT,
+    stored: params.settings.sessionTransport,
+  })
 
-  if (transport === "remote") {
+  if (transport === "http") {
     await params.session.attachRemote({ cwd: params.cwd, cliKind: params.cliKind })
     // ⚠️ systemPrompt אינו נתמך ב-remote (attachRemote אין לו פרמטר כזה) — known-gap מתועד.
   } else {
@@ -47,7 +51,7 @@ export async function connectAgent(params: {
   }
 
   if (params.session.status === "connected") {
-    await goto(transport === "remote" ? "/chat?sessionTransport=remote" : "/chat")
+    await goto(transport === "http" ? "/chat?sessionTransport=http" : "/chat")
   }
   // במקרה של שגיאה, ה-session VM כבר הגדיר status="error" + הודעת שגיאה.
   // דף החיבור ירנדר את זה — ללא ניווט.

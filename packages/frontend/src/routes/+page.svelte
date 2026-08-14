@@ -105,30 +105,27 @@ $effect(() => {
 const isRtl = $derived(settings.locale === "he")
 
 async function handleReconnect(agent: AgentPublic) {
-  // guard נשאר (ר' בריף C4): אחרי C1 השדה מאוכלס גם ב-remote; אם בכל זאת חסר — אין טעם לנסות.
-  if (!agent.acpSessionId) return
-  settings.setCliKind(agent.cliKind)
-  settings.setLastCwd(agent.cwd)
+  // ─── slice remote-warm-reconnect C4 / transport-polish C2: ניתוב לפי דגל sessionTransport ───
+  // פתירת הדגל דרך הפונקציה המשותפת — query ← override(sessionStorage) ←
+  // stored(settings) ← env ← "ws". http → warm reconnect דרך SSE
+  // (attachRemoteToLiveAgent, בלי WS); ws → הנתיב הקיים (attachToLiveAgent).
+  const transport = readSessionTransport({
+    env: env.PUBLIC_SESSION_TRANSPORT,
+    stored: settings.sessionTransport,
+  })
 
-  // ─── slice remote-warm-reconnect C4: ניתוב לפי דגל sessionTransport ───
-  // פתירת הדגל בדיוק כמו connect-agent.ts (query ← stored ← env), דרך הפונקציה
-  // המשותפת. remote → warm reconnect דרך SSE (attachRemoteToLiveAgent, בלי WS);
-  // local → הנתיב הקיים ללא שינוי (attachToLiveAgent).
-  const transport = readSessionTransport(env.PUBLIC_SESSION_TRANSPORT)
-
-  if (transport === "remote") {
+  if (transport === "http") {
     await session.attachRemoteToLiveAgent({
       agentId: agent.id,
       cwd: agent.cwd,
       cliKind: agent.cliKind,
     })
     if (session.status === "connected") {
-      await goto("/chat?sessionTransport=remote")
+      await goto("/chat?sessionTransport=http")
     }
     // if status==="error" — stay on /, VM set this.error
     return
   }
-
   await session.attachToLiveAgent({
     agentId: agent.id,
     sessionId: agent.acpSessionId,
@@ -138,7 +135,6 @@ async function handleReconnect(agent: AgentPublic) {
   if (session.status === "connected") {
     await goto("/chat")
   }
-  // if status==="error" — stay on /, VM set this.error
 }
 
 async function onSubmit(e: SubmitEvent) {

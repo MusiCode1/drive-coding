@@ -14,6 +14,7 @@
  */
 
 import { DEFAULT_LOCALE, detectLocale, type Locale } from "@drive-coding/core/i18n"
+import { type SessionTransport } from "$lib/session/session-transport"
 import type { SpeechPace, SpeechTone } from "@drive-coding/core/voice/tts-types"
 import { listVoices, type Voice } from "../adapters/voice/voices"
 import { DEFAULT_GEMINI_VOICE } from "../adapters/voice/voices-gemini"
@@ -67,6 +68,9 @@ type Persisted = {
   // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
   geminiPace: SpeechPace
   geminiTone: SpeechTone
+  // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4)
+  // null = לא נבחרה העדפה → קדימות ממשיכה ל-env. ws/http כותב דרך ה-Select בהגדרות.
+  sessionTransport: SessionTransport | null
 }
 
 const DEFAULTS: Persisted = {
@@ -108,9 +112,10 @@ const DEFAULTS: Persisted = {
   // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize) — 256px = 16rem, זהה להתנהגות היום
   recentPanelHeight: 256,
   activePanelHeight: 256,
-  // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
   geminiPace: "normal",
   geminiTone: "neutral",
+  // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4) — null = env נבחר
+  sessionTransport: null,
 }
 
 function load(): Persisted {
@@ -214,6 +219,9 @@ export class Settings {
   geminiPace = $state<SpeechPace>(DEFAULTS.geminiPace)
   geminiTone = $state<SpeechTone>(DEFAULTS.geminiTone)
 
+  // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4)
+  sessionTransport = $state<SessionTransport | null>(DEFAULTS.sessionTransport)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -253,9 +261,9 @@ export class Settings {
     // ─── גובה פאנלים נגרר ───
     this.recentPanelHeight = loaded.recentPanelHeight
     this.activePanelHeight = loaded.activePanelHeight
-    // ─── בימוי Gemini ───
-    this.geminiPace = loaded.geminiPace
     this.geminiTone = loaded.geminiTone
+    // ─── טרנספורט סשן ─── (slice transport-polish C4)
+    this.sessionTransport = loaded.sessionTransport
   }
 
   // ─── טופס חיבור ───
@@ -529,6 +537,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── טרנספורט סשן ─── (slice transport-polish C4)
+
+  setSessionTransport = (v: SessionTransport | null): void => {
+    this.sessionTransport = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -557,6 +572,7 @@ export class Settings {
       activePanelHeight: this.activePanelHeight,
       geminiPace: this.geminiPace,
       geminiTone: this.geminiTone,
+      sessionTransport: this.sessionTransport,
     })
   }
 }
