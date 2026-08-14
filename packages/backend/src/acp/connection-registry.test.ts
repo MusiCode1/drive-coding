@@ -207,6 +207,128 @@ describe("connection-registry — getRuntimeInfo composition", () => {
   })
 })
 
+describe("connection-registry — ownership epoch (slice ownership-truth C1)", () => {
+  let cleanupEnv: (() => void) | null = null
+
+  beforeEach(() => {
+    cleanupEnv = useScript(ALIVE_SCRIPT)
+  })
+
+  afterEach(async () => {
+    cleanupEnv?.()
+    cleanupEnv = null
+  })
+
+  it("epoch starts at 0 and is 0 for unknown agentId", async () => {
+    const reg = createConnectionRegistry()
+    expect(reg.getEpoch("unknown")).toBe(0)
+    await reg.connect("ep-1", "opencode", { cwd: os.tmpdir() })
+    expect(reg.getEpoch("ep-1")).toBe(0)
+    await reg.close("ep-1")
+  })
+
+  it("epoch rises by 1 on null→owner (markOwned)", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-2", "opencode", { cwd: os.tmpdir() })
+    reg.markOwned("ep-2", "http")
+    expect(reg.getEpoch("ep-2")).toBe(1)
+    await reg.close("ep-2")
+  })
+
+  it("epoch rises on owner→owner transition (not just null→owner)", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-3", "opencode", { cwd: os.tmpdir() })
+    reg.markOwned("ep-3", "ws")
+    expect(reg.getEpoch("ep-3")).toBe(1)
+    reg.markOwned("ep-3", "http")
+    expect(reg.getEpoch("ep-3")).toBe(2)
+    await reg.close("ep-3")
+  })
+
+  it("🔴 epoch does NOT decrease on markDetached — survives release", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-4", "opencode", { cwd: os.tmpdir() })
+    reg.markOwned("ep-4", "ws")
+    expect(reg.getEpoch("ep-4")).toBe(1)
+    reg.markDetached("ep-4")
+    expect(reg.getEpoch("ep-4")).toBe(1) // still 1 — not reset
+    await reg.close("ep-4")
+  })
+
+  it("epoch continues to rise after detach+re-own", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-5", "opencode", { cwd: os.tmpdir() })
+    reg.markOwned("ep-5", "ws")
+    reg.markDetached("ep-5")
+    reg.markOwned("ep-5", "http")
+    expect(reg.getEpoch("ep-5")).toBe(2) // 1 (first own) + 1 (re-own after detach)
+    await reg.close("ep-5")
+  })
+
+  it("getOwner returns null initially, then the owner after markOwned", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-6", "opencode", { cwd: os.tmpdir() })
+    expect(reg.getOwner("ep-6")).toBeNull()
+    reg.markOwned("ep-6", "http")
+    const owner = reg.getOwner("ep-6")
+    expect(owner).not.toBeNull()
+    expect(owner!.via).toBe("http")
+    expect(typeof owner!.since).toBe("number")
+    await reg.close("ep-6")
+  })
+
+  it("getOwner returns null after markDetached", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-7", "opencode", { cwd: os.tmpdir() })
+    reg.markOwned("ep-7", "ws")
+    reg.markDetached("ep-7")
+    expect(reg.getOwner("ep-7")).toBeNull()
+    await reg.close("ep-7")
+  })
+
+  it("isOwnedByWs: true only when owner.via === 'ws'", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-8", "opencode", { cwd: os.tmpdir() })
+    expect(reg.isOwnedByWs("ep-8")).toBe(false)
+    reg.markOwned("ep-8", "http")
+    expect(reg.isOwnedByWs("ep-8")).toBe(false)
+    reg.markOwned("ep-8", "ws")
+    expect(reg.isOwnedByWs("ep-8")).toBe(true)
+    reg.markDetached("ep-8")
+    expect(reg.isOwnedByWs("ep-8")).toBe(false)
+    await reg.close("ep-8")
+  })
+
+  it("markAttached is alias for markOwned(id, 'ws') — sets owner via 'ws'", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-9", "opencode", { cwd: os.tmpdir() })
+    reg.markAttached("ep-9")
+    const owner = reg.getOwner("ep-9")
+    expect(owner).not.toBeNull()
+    expect(owner!.via).toBe("ws")
+    expect(reg.isOwnedByWs("ep-9")).toBe(true)
+    expect(reg.getEpoch("ep-9")).toBe(1)
+    await reg.close("ep-9")
+  })
+
+  it("attached === (owner !== null) invariant holds across transitions", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-10", "opencode", { cwd: os.tmpdir() })
+    // Initially: attached=false, owner=null
+    expect(reg.isAttached("ep-10")).toBe(false)
+    expect(reg.getOwner("ep-10")).toBeNull()
+    // After markOwned: attached=true, owner≠null
+    reg.markOwned("ep-10", "http")
+    expect(reg.isAttached("ep-10")).toBe(true)
+    expect(reg.getOwner("ep-10")).not.toBeNull()
+    // After markDetached: attached=false, owner=null
+    reg.markDetached("ep-10")
+    expect(reg.isAttached("ep-10")).toBe(false)
+    expect(reg.getOwner("ep-10")).toBeNull()
+    await reg.close("ep-10")
+  })
+})
+
 describe("connection-registry — onCrash aggregate (NBug Map-leak)", () => {
   let cleanupEnv: (() => void) | null = null
 

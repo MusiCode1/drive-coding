@@ -45,9 +45,34 @@ function overrideHasBinOrArgs(kind: string): boolean {
   return o?.bin !== undefined || o?.args !== undefined
 }
 
+/**
+ * slice ownership-truth C1: ownership record.
+ * `via` identifies which transport holds the pipe — "ws" or "http".
+ * `since` is epoch-ms of the last ownership transition (for observability).
+ * A single ownership slot (not two booleans) enforces transport exclusivity
+ * structurally — it is impossible to represent ws=true AND http=true.
+ */
+export type Owner = {
+  via: "ws" | "http"
+  since: number
+}
 type ConnEntry = {
   conn: ProviderConnection
   attached: boolean
+  /**
+   * slice ownership-truth C1: who owns the pipe, and in which generation.
+   * Invariant: attached === (owner !== null) — kept consistent by
+   * markOwned/markDetached. owner is null when no transport holds the pipe.
+   */
+  owner: Owner | null
+  /**
+   * slice ownership-truth C1: ownership generation counter.
+   * Rises by 1 on every null→owner AND owner→owner transition.
+   * Never decreases. **Survives markDetached** (owner→null does NOT reset it)
+   * because it lives on ConnEntry, not inside Owner — so the last generation
+   * is always available for diagnostics even after release.
+   */
+  ownershipEpoch: number
   rec: WireSession
   unsubs: Array<() => void>
   /**
@@ -80,24 +105,62 @@ export type ConnectionRegistry = {
   /** list — כל ה-agentIds החיים (לכיבוי-מסודר). */
   list(): string[]
 
-  markAttached(agentId: string): void
+  /**
+   * slice ownership-truth C1: mark the pipe as owned by a transport.
+   * Sets owner, increments ownershipEpoch (both null→owner and owner→owner),
+   * and synchronizes attached=true. Keeping `via` in a single ownership slot
+   * enforces transport exclusivity structurally.
+   */
+  markOwned(agentId: string, via: "ws" | "http"): void
+
+  /**
+   * slice ownership-truth C1: release ownership. Clears owner (→null) and
+   * synchronizes attached=false. ownershipEpoch is NOT reset — it survives
+   * release (lives on ConnEntry, not inside Owner).
+   */
   markDetached(agentId: string): void
 
   /**
-   * isAttached — האם יש לקוח WS מקומי חי על agentId (markAttached בלי markDetached).
+   * slice ownership-truth C1: alias for markOwned(agentId, "ws").
+   * Kept for backward compatibility — ws-agent.ts and tests call this.
+   */
+  markAttached(agentId: string): void
+
+  /**
+   * isAttached — האם יש לקוח חי על agentId (מכל טרנספורט, לא רק WS).
    * slice remote-warm-reconnect C2: ה-session-host registry מסרב ליצור host לסוכן
    * attached — שני לקוחות ACP על אותו wire = השחתת סשן.
+   * slice ownership-truth C2: ל-guard הספציפי-ל-WS ראה isOwnedByWs.
    */
   isAttached(agentId: string): boolean
 
   /**
-   * getRuntimeInfo — composes conn.turn + conn.pid + attached-state.
+   * slice ownership-truth C1: returns the current owner, or null if released.
+   */
+  getOwner(agentId: string): Owner | null
+
+  /**
+   * slice ownership-truth C1: returns the ownership generation counter.
+   * Starts at 0, rises by 1 on each ownership transition, never decreases.
+   * Returns 0 for unknown agentId.
+   */
+  getEpoch(agentId: string): number
+
+  /**
+   * slice ownership-truth C2: האם הבעלים הנוכחי הוא WS ספציפית.
+   * ה-guard ב-session-host/registry שואל "האם WS מחזיק את הצינור" —
+   * isAttached כבר לא עונה על זה כי attached מציין בעלות מכל טרנספורט.
+   */
+  isOwnedByWs(agentId: string): boolean
+  /**
+   * getRuntimeInfo — composes conn.turn + conn.pid + attached-state + ownership via.
    * Returns null if agentId not in registry.
    * pid may be null for in-process connections (e.g. claude in-process, CUT-3b-iii-2).
+   * slice ownership-truth C3: now also returns `via` from the owner record.
    */
   getRuntimeInfo(
     agentId: string,
-  ): { pid: number | null; attached: boolean; busy: boolean; lastMessageAt: number | null } | null
+  ): { pid: number | null; attached: boolean; busy: boolean; lastMessageAt: number | null; via: "ws" | "http" | null } | null
 
   /**
    * close — kill child + remove from Map + close wireRecorder session.
@@ -205,15 +268,15 @@ export function createConnectionRegistry(opts?: {
           }
           cleanup(agentId)
         })
-
         map.set(agentId, {
           conn,
           attached: false,
+          owner: null,
+          ownershipEpoch: 0,
           rec,
           unsubs: [unsubFrame, unsubCrash],
           cwd: connectOpts.cwd,
         })
-
         return conn
       } finally {
         pending.delete(agentId)
@@ -231,19 +294,45 @@ export function createConnectionRegistry(opts?: {
     list() {
       return [...map.keys()]
     },
+    markOwned(agentId, via) {
+      const e = map.get(agentId)
+      if (!e) return
+      e.owner = { via, since: Date.now() }
+      e.ownershipEpoch++
+      e.attached = true
+    },
 
     markAttached(agentId) {
+      // alias for markOwned(agentId, "ws") — backward compat (ws-agent.ts, tests)
       const e = map.get(agentId)
-      if (e) e.attached = true
+      if (!e) return
+      e.owner = { via: "ws", since: Date.now() }
+      e.ownershipEpoch++
+      e.attached = true
     },
 
     markDetached(agentId) {
       const e = map.get(agentId)
-      if (e) e.attached = false
+      if (!e) return
+      e.owner = null
+      e.attached = false
+      // ownershipEpoch deliberately NOT decremented — it survives release (C1 §3)
     },
 
     isAttached(agentId) {
       return map.get(agentId)?.attached ?? false
+    },
+
+    getOwner(agentId) {
+      return map.get(agentId)?.owner ?? null
+    },
+
+    getEpoch(agentId) {
+      return map.get(agentId)?.ownershipEpoch ?? 0
+    },
+
+    isOwnedByWs(agentId) {
+      return map.get(agentId)?.owner?.via === "ws"
     },
 
     getRuntimeInfo(agentId) {
@@ -256,6 +345,7 @@ export function createConnectionRegistry(opts?: {
         attached: e.attached,
         busy: e.conn.turn.isBusy(),
         lastMessageAt: e.conn.turn.lastActivityAt(),
+        via: e.owner?.via ?? null,
       }
     },
 
