@@ -393,6 +393,8 @@ export type MessageKey =
   | "settings.geminiTone.energetic"
   | "settings.geminiTone.formal"
   | "settings.geminiTone.casual"
+  // ─── ownership-truth (slice ownership-truth C5) ───
+  | "session.heldByOtherTransport"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

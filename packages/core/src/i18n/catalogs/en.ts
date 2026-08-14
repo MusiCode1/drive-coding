@@ -389,4 +389,5 @@ export const en: Catalog = {
   "settings.geminiTone.energetic": "Energetic",
   "settings.geminiTone.formal": "Formal",
   "settings.geminiTone.casual": "Casual",
+  "session.heldByOtherTransport": "This session is open elsewhere (other transport). Do not reconnect directly — take over.",
 }

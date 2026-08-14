@@ -814,6 +814,16 @@ export class AgentSession {
       this.#setStatus("disconnected")
       return
     }
+    // slice ownership-truth C5: 1008 + "session-host-active" — הסוכן תפוס ע"י
+    // מסלול אחר (HTTP/session-host). טרמינלי כמו takeover: אין reconnect (הוא
+    // לעולם לא יצליח בשלב א'), הצג הודעה מובנתת.
+    if (code === 1008 && reason === "session-host-active") {
+      this.error = createI18n({ locale: this.#settings?.locale ?? detectLocale() }).t(
+        "session.heldByOtherTransport",
+      )
+      this.#setStatus("disconnected")
+      return
+    }
     // best-effort crash-path (slice surface-real-error Commit 3): ה-child אולי קרס
     // עם סיבה ידועה (ENOENT/credit/native-binary) — describeCrash ב-BE כותב crashReason.
     // null-guard (אביגיל #1): this.agentId הוא $state<string|null> — getAgent דורש string.
@@ -1015,6 +1025,17 @@ export class AgentSession {
         // ה-WS נסגר/נכשל לפני open. 1008 = MED-8 (retry); אחר = כשל warm → cold.
         transport.close()
         const code = closeResult && "closed" in closeResult ? closeResult.code : 0
+        const reason = closeResult && "closed" in closeResult ? closeResult.reason : ""
+        // slice ownership-truth C5: 1008 + "session-host-active" = הסוכן תפוס ע"י
+        // מסלול אחר (HTTP/session-host). ניסיון חוזר לעולם לא יצליח בשלב א' — אל תבזבז
+        // retries. הצג הודעה מובנת וצא (לא cold — אין טעם לנסות cold גם).
+        if (code === 1008 && reason === "session-host-active") {
+          this.error = createI18n({ locale: this.#settings?.locale ?? detectLocale() }).t(
+            "session.heldByOtherTransport",
+          )
+          this.#setStatus("disconnected")
+          return false
+        }
         if (code === 1008 && attempt < AgentSession.#MED8_MAX_RETRIES) {
           await new Promise((r) => setTimeout(r, AgentSession.#MED8_RETRY_MS))
           continue // MED-8 — נסה שוב

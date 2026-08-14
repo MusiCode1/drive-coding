@@ -384,4 +384,5 @@ export const he: Catalog = {
   "settings.geminiTone.energetic": "אנרגטי",
   "settings.geminiTone.formal": "רשמי",
   "settings.geminiTone.casual": "יומיומי",
+  "session.heldByOtherTransport": "הסשן פתוח במקום אחר (מסלול אחר). אין להתחבר ישירות — נא להשתלט.",
 }
