@@ -479,16 +479,20 @@ describe("RemoteSessionView — RPC methods", () => {
     )
   })
 
-  it("prompt() with PromptBlocks (non-string content) throws — BE only accepts string (avigail #7)", async () => {
-    let called = false
-    const mockFetch = makeMockFetch({ onRpc: () => (called = true) })
+  // ─── slice remote-images C1 (TDD) ───
+  it("prompt() with PromptBlocks — passes blocks to RPC without throwing", async () => {
+    let capturedParams: unknown = null
+    const mockFetch = makeMockFetch({ onRpc: (params) => { capturedParams = params } })
     const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
     await view.connect()
 
-    await expect(view.prompt([{ type: "text", text: "hi" }] as never)).rejects.toThrow(
-      "not supported in remote mode",
-    )
-    expect(called).toBe(false)
+    const blocks = [{ type: "image", mimeType: "image/png", data: "abc" }]
+    await view.prompt(blocks as never)
+
+    expect(capturedParams).toMatchObject({
+      method: "prompt",
+      params: { content: blocks },
+    })
   })
 
   // ─── calev-heavy M4: HTTP errors must not be swallowed ───

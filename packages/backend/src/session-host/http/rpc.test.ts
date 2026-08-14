@@ -338,6 +338,50 @@ describe("POST /api/agents/:id/rpc", () => {
       expect(rejections).toHaveLength(0)
     })
 
+    // ─── slice remote-images C1 (TDD) ───
+    it("prompt: content as PromptBlocks array → 202, host.prompt called with blocks", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+      const blocks = [
+        { type: "image", mimeType: "image/png", data: "abc" },
+        { type: "text", text: "describe" },
+      ]
+
+      const res = await postRpc(app, "agent-1", {
+        method: "prompt",
+        params: { sessionId: "s1", content: blocks },
+      })
+      expect(res.status).toBe(202)
+      expect(host.prompt).toHaveBeenCalledWith("s1", blocks, undefined)
+    })
+
+    it("prompt: invalid block (type='video') → 400, host.prompt never called", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "prompt",
+        params: { sessionId: "s1", content: [{ type: "video", data: "x" }] },
+      })
+      expect(res.status).toBe(400)
+      expect(host.prompt).not.toHaveBeenCalled()
+    })
+
+    it("prompt: image block missing 'data' → 400, host.prompt never called", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "prompt",
+        params: { sessionId: "s1", content: [{ type: "image", mimeType: "image/png" }] },
+      })
+      expect(res.status).toBe(400)
+      expect(host.prompt).not.toHaveBeenCalled()
+    })
+
     it("cancel: returns 202 before host.cancel resolves (never-resolving mock)", async () => {
       const host = makeMockHost(makeMockState())
       ;(host.cancel as ReturnType<typeof vi.fn>).mockImplementation(() => new Promise(() => {}))

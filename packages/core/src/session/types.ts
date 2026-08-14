@@ -11,6 +11,7 @@
 
 import type {
   AvailableCommand,
+  ContentBlock,
   SessionConfigOption,
   RequestPermissionRequest,
   CreateElicitationRequest,
@@ -257,16 +258,23 @@ export const INITIAL_SESSION_STATE: SessionState = createInitialSessionState({ s
  */
 export function synthesizeUserMessage(
   state: SessionState,
-  content: string,
+  content: string | ContentBlock[],
   meta?: Record<string, unknown>,
 ): SessionMessage {
   const msgId = `m_${state.nextMessageSeq}`
   const segId = `s_${state.nextSegmentSeq}`
+  // C2 will split blocks into text segments + image attachments.
+  // For now: extract text from blocks, or use string directly.
+  const text = typeof content === "string"
+    ? content
+    : content.filter((b): b is ContentBlock & { type: "text" } => b.type === "text")
+             .map((b) => b.text)
+             .join("") || ""
   return {
     id: msgId,
     role: "user",
     messageId: null,
-    segments: [{ id: segId, text: content }],
+    segments: [{ id: segId, text }],
     ...(meta !== undefined && { meta }),
   }
 }

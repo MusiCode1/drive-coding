@@ -399,16 +399,10 @@ export class RemoteSessionView implements SessionView {
   // ─── RPC methods ───
 
   /**
-   * שולח prompt. רק string נתמך ב-remote mode — הbackend (rpc.ts:46) עושה
-   * `params.content as string` בלי serialization אמיתי, כך ש-PromptBlocks (מערך)
-   * היה נשבר בשקט (avigail plan-gate r3 #7: היה נכנס כטקסט לא-תקין ל-segment).
-   * הרחבת ה-BE לתמוך ב-PromptBlocks שייכת ל-S4 (לא לסלייס הזה) — לכן זורקים כאן
-   * במקום לשלוח מידע פגום.
+   * שולח prompt. string או PromptBlocks — passthrough ל-rpc.ts שמקבל את שניהם
+   * לאחר slice remote-images C1.
    */
   async prompt(content: string | PromptBlocks, meta?: Record<string, unknown>): Promise<void> {
-    if (typeof content !== "string") {
-      throw new Error("RemoteSessionView: PromptBlocks not supported in remote mode — text only")
-    }
     await this.#rpc("prompt", { sessionId: this.#sessionId, content, meta })
   }
 

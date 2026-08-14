@@ -226,6 +226,40 @@ describe("SessionHost", () => {
       const msg = host.state.messages[0]
       expect(msg?.meta).toBeUndefined()
     })
+
+    // ─── slice remote-images C1 (TDD) ───
+    it("prompt with PromptBlocks array — adds user message and forwards blocks to client", async () => {
+      const { host, mock } = await setup()
+      const blocks = [
+        { type: "image" as const, mimeType: "image/png", data: "abc123" },
+        { type: "text" as const, text: "describe this" },
+      ]
+
+      await host.prompt("test-session-id", blocks)
+
+      expect(host.state.messages).toHaveLength(1)
+      const msg = host.state.messages[0]
+      expect(msg?.role).toBe("user")
+      expect(mock.prompt).toHaveBeenCalledWith("test-session-id", blocks)
+    })
+
+    it("prompt with PromptBlocks — emits add-message patch", async () => {
+      const { host } = await setup()
+      const blocks = [{ type: "text" as const, text: "hi" }]
+
+      const reader = host.patches.getReader()
+      await host.prompt("test-session-id", blocks)
+
+      const result = await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 100)),
+      ])
+      reader.releaseLock()
+
+      expect(result.done).toBe(false)
+      const patch = result.value as Patch
+      expect(patch.op).toBe("add-message")
+    })
   })
 
   describe("delegate methods", () => {

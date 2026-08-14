@@ -32,15 +32,28 @@
 import { createLogger } from "@drive-coding/core/log"
 import { type } from "arktype"
 import type { Hono } from "hono"
+import type { PromptBlocks } from "@drive-coding/provider/client"
 import type { AgentSessionRegistry } from "../registry.js"
 
 const log = createLogger("backend.session-host.rpc")
 
 // ⚠️ "meta?": "object" מסיק object | undefined — tsc דוחה את ההעברה ל-
 // host.prompt(meta?: Record<string, unknown>). "[string]": "unknown" עוקף זאת.
+//
+// ─── slice remote-images C1: PromptBlocks ContentBlock schema ───
+// חמשת הווריאנטים לפי SDK schema/types.gen.d.ts:236. annotations/_meta לא
+// צריכים הצהרה — ArkType משמר מפתחות לא-מוצהרים (נבדק בהרצה).
+const TextBlock         = type({ type: "'text'",          text: "string" })
+const ImageBlock        = type({ type: "'image'",         mimeType: "string", data: "string" })
+const AudioBlock        = type({ type: "'audio'",         mimeType: "string", data: "string" })
+const ResourceLinkBlock = type({ type: "'resource_link'", name: "string",     uri: "string" })
+const ResourceBlock     = type({ type: "'resource'",      resource: "object" })
+const ContentBlockSchema = TextBlock.or(ImageBlock).or(AudioBlock).or(ResourceLinkBlock).or(ResourceBlock)
+const PromptContent = ContentBlockSchema.array()
+
 const PromptParams = type({
   sessionId: "string",
-  content: "string",
+  content: type("string").or(PromptContent),
   "meta?": { "[string]": "unknown" },
 })
 const CancelParams = type({ sessionId: "string" })
@@ -99,7 +112,7 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
       case "prompt": {
         const p = PromptParams(params)
         if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
-        void host.prompt(p.sessionId, p.content, p.meta).catch((e) => {
+        void host.prompt(p.sessionId, p.content as string | PromptBlocks, p.meta).catch((e) => {
           log.warn({ err: e }, "prompt turn failed") // ← state already carries lastTurnError
         })
         break // no await — 202 immediately, as the JSDoc above already promises

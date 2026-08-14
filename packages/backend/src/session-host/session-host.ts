@@ -40,7 +40,7 @@ import {
   reduce,
   synthesizeUserMessage,
 } from "@drive-coding/core/session"
-import type { AcpClient, AcpClientCallbacks, AcpClientOptions } from "@drive-coding/provider/client"
+import type { AcpClient, AcpClientCallbacks, AcpClientOptions, PromptBlocks } from "@drive-coding/provider/client"
 import { createAcpClient, createAttachedAcpClient } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { AcpTransport } from "@drive-coding/provider/transport"
@@ -74,7 +74,7 @@ export type SessionHost = {
    * emits the add-message patch, then forwards to client.prompt.
    * meta is opaque (passthrough §9); stored in message.meta.
    */
-  prompt(sessionId: string, content: string, meta?: Record<string, unknown>): Promise<void>
+  prompt(sessionId: string, content: string | PromptBlocks, meta?: Record<string, unknown>): Promise<void>
 
   /** Delegates to AcpClient.newSession */
   newSession(opts: { cwd: string; _meta?: Record<string, unknown> }): Promise<{ sessionId: string }>
@@ -173,7 +173,7 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
 
     async prompt(
       sessionId: string,
-      content: string,
+      content: string | PromptBlocks,
       meta?: Record<string, unknown>,
     ): Promise<void> {
       if (disposed) throw new Error("SessionHost disposed")
@@ -593,7 +593,7 @@ export async function createSessionHostFromConnection(
     // שהפכה את הסדר הישן ל"בטוח" הופכת את הסדר החדש ל"מתקן".
     async prompt(
       sessionId: string,
-      content: string,
+      content: string | PromptBlocks,
       meta?: Record<string, unknown>,
     ): Promise<void> {
       if (disposed) throw new Error("SessionHost disposed")
@@ -608,8 +608,6 @@ export async function createSessionHostFromConnection(
         if (turn === turnSeq) emit(applyTurnEnd(currentState)) // 3א. הצלחה
       } catch (err) {
         if (turn === turnSeq) {
-          // cancelledTurn הוא סימון בלבד: משפיע רק על מטען-השגיאה, לעולם לא
-          // על הפליטה (הגדר כבר לעיל היא turn === turnSeq, ובה בלבד).
           const error = turn === cancelledTurn ? undefined : { message: msgOf(err), at: Date.now() }
           emit(applyTurnEnd(currentState, error)) // 3ב.
         }

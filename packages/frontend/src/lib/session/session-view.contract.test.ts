@@ -344,7 +344,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
     await expect(view.deleteSession("s-9")).resolves.toBeUndefined()
   })
 
-  it("prompt(PromptBlocks) throws -- text only is supported in remote mode", async () => {
+  it("prompt(PromptBlocks) passes blocks to RPC without throwing (slice remote-images C1)", async () => {
     const view = new RemoteSessionView("a1", "http://be.local", {
       _fetch: mockFetchFor({}),
       _sleep: () => Promise.resolve(),
@@ -352,9 +352,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
     activeViews.push(view)
     await view.connect()
 
-    await expect(view.prompt([{ type: "text", text: "hi" }] as never)).rejects.toThrow(
-      "not supported in remote mode",
-    )
+    await expect(view.prompt([{ type: "text", text: "hi" }] as never)).resolves.toBeUndefined()
   })
 
   it("an HTTP failure (5xx) on any RPC is rejected -- not silently swallowed", async () => {
