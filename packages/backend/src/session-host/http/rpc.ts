@@ -30,9 +30,9 @@
  */
 
 import { createLogger } from "@drive-coding/core/log"
+import type { PromptBlocks } from "@drive-coding/provider/client"
 import { type } from "arktype"
 import type { Hono } from "hono"
-import type { PromptBlocks } from "@drive-coding/provider/client"
 import type { AgentSessionRegistry } from "../registry.js"
 
 const log = createLogger("backend.session-host.rpc")
