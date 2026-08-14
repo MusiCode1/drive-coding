@@ -281,7 +281,7 @@ $effect(() => {
       break
     }
   }
-  const key = lastUserBubble ? stableBubbleKey(lastUserBubble) : ""
+  const key = lastUserBubble ? stableBubbleKey(lastUserBubble, session.renderBubbles) : ""
 
   // ─── reveal-guard ספציפי-ל-reconnect (אביגיל r2/r3) ───
   // במעבר isReconnectReplay: true→false (רגע ה-reveal של warm-reconnect בלבד) — רק

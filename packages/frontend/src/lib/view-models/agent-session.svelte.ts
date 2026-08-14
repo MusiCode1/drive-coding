@@ -155,6 +155,13 @@ export type AgentSessionStatus =
 /** מה המודל עושה בתור הנוכחי. מופרד מ-status (חיבור) — §1 ב-brief. */
 export type TurnState = "idle" | "waiting" | "thinking" | "responding" | "calling-tool"
 
+function isBlankTextBubble(b: Bubble): boolean {
+  return (
+    (b.kind === "message" || b.kind === "thought") &&
+    b.segments.map((s) => s.text).join("").trim() === ""
+  )
+}
+
 /**
  * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
  *
@@ -273,7 +280,10 @@ export class AgentSession {
   // ─── slice reconnect-bubble-merge: render-consumers (additive) ───
   /** רשימת התצוגה. בזמן warm-reconnect replay מוקפאת ל-snapshot; אחרת = live bubbles. */
   get renderBubbles(): Bubble[] {
-    return this.#displaySnapshot ?? this.bubbles
+    const list = this.#displaySnapshot ?? this.bubbles
+    // בועות message/thought ריקות (רק whitespace) — חור ויזואלי אחרי tool.
+    // אם אין כאלה מחזירים את אותו reference (reconnect tests + virtua).
+    return list.some(isBlankTextBubble) ? list.filter((b) => !isBlankTextBubble(b)) : list
   }
 
   /** true רק בזמן warm-reconnect replay (התצוגה קפואה). לא נדלק בטעינה ראשונית/switchSession. */

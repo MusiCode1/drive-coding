@@ -7,7 +7,6 @@
  *   2. מריץ `splitIntoSentences` לחילוץ משפטים שלמים
  *   3. מכניס לתור TTS job לכל משפט
  *   4. לולאת ה-fetch מכבדת lookahead של LOOKAHEAD fetches מקביליים
-import { safeUUID } from "$lib/util/uuid"
  *
  * מחשבות עוברות תרגום Gemini לעברית לפני TTS. הודעות מושמעות כמות שהן
  * (הסוכן כבר מקבל הוראה להגיב בעברית).
@@ -36,6 +35,7 @@ import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
 import { OrderAllocator, type OrderKey } from "@drive-coding/core/voice/tts-queue"
 import { untrack } from "svelte"
 import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
+import { safeUUID } from "$lib/util/uuid"
 import { narrate } from "../adapters/voice/narrate"
 import { translate } from "../adapters/voice/translate"
 import { resolveTts } from "../adapters/voice/tts-resolve"
