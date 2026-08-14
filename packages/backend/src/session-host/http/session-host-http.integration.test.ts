@@ -137,6 +137,7 @@ async function setup(): Promise<{
     unregisterHost: () => {},
     notifySessionAttached: async () => {},
     getCwd: (id) => (id === AGENT_ID ? "/connection/cwd" : undefined),
+    getEpoch: (_id) => 0,
   }
 
   const app = new Hono()

@@ -53,7 +53,8 @@ function makeMockRegistry(host?: ExtendedSessionHost): AgentSessionRegistry {
       .mockResolvedValue(
         host ? { host, broadcaster: { subscribe: vi.fn(), unsubscribe: vi.fn() } } : undefined,
       ),
-    getCwd: vi.fn().mockReturnValue(undefined),
+    getCwd: vi.fn(),
+    getEpoch: vi.fn().mockReturnValue(0),
     getBroadcaster: vi.fn().mockReturnValue(undefined),
     unregisterHost: vi.fn(),
     notifySessionAttached: vi.fn().mockResolvedValue(undefined),

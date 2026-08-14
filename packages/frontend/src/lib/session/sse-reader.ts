@@ -5,8 +5,9 @@
  * מתחבר עם fetch + ReadableStream, מנתח SSE framing ידנית.
  *
  * Protocol:
- *   event: snapshot\ndata: <JSON SessionState>\n\n  ← frame-zero (חייב להיות ראשון)
- *   event: patch\ndata: <JSON Patch>\n\n            ← עדכונים שוטפים
+ *   event: snapshot\nid: <epoch>\ndata: <JSON SessionState>\n\n  ← frame-zero (חייב להיות ראשון)
+ *   event: patch\ndata: <JSON Patch>\n\n                        ← עדכונים שוטפים
+ *   event: taken-over\nid: <new-epoch>\ndata: {}\n\n            ← terminal: stop reconnecting
  *
  * Reconnect: exponential backoff (1s, 2s, 4s, ..., max 30s).
  * On reconnect: calls onReconnected(newSnapshot) before resuming patches.
@@ -99,6 +100,11 @@ export class SSEReader {
    * Set before calling connect().
    */
   onReconnected?: (snapshot: SessionState) => void
+  /**
+   * slice ownership-handoff C3: called when the server sends taken-over event.
+   * After this, #closed is set to true and no reconnect is attempted.
+   */
+  onTakenOver?: () => void
 
   readonly #url: string
   readonly #headers: Record<string, string>
@@ -264,6 +270,12 @@ export class SSEReader {
     try {
       for await (const frame of frames) {
         if (this.#closed) return
+        // slice ownership-handoff C3: taken-over signals a terminal end — stop reconnecting
+        if (frame.event === "taken-over") {
+          this.#closed = true
+          this.onTakenOver?.()
+          return
+        }
         if (frame.event !== "patch") continue
 
         let raw: unknown

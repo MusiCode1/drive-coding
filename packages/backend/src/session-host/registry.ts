@@ -100,6 +100,11 @@ export type AgentSessionRegistry = {
    * נחוץ ל-loadSession ב-rpc — fallback כש-params.cwd לא נשלח מה-FE.
    */
   getCwd(agentId: string): string | undefined
+  /**
+   * slice ownership-handoff C3: passthrough to connectionRegistry.getEpoch(agentId).
+   * Returns the ownership generation counter (0 for unknown agentId).
+   */
+  getEpoch(agentId: string): number
 }
 
 type AgentSessionRegistryDeps = {
@@ -267,6 +272,9 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     },
     getCwd(agentId: string): string | undefined {
       return connectionRegistry.getCwd(agentId)
+    },
+    getEpoch(agentId: string): number {
+      return connectionRegistry.getEpoch(agentId)
     },
   }
 }

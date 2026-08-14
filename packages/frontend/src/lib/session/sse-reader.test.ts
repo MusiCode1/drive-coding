@@ -411,3 +411,69 @@ describe("SSEReader — reconnect", () => {
     expect(sleepDelays[2]).toBe(1000) // reset after success
   })
 })
+
+// ── slice ownership-handoff C3: taken-over event handling ──────────────────
+
+describe("SSEReader — taken-over event (ownership-handoff C3)", () => {
+  it("stops reconnecting after receiving taken-over event", async () => {
+    const snapshot = makeSnapshot()
+    let callCount = 0
+
+    const mockFetch = vi.fn().mockImplementation(() => {
+      callCount++
+      return Promise.resolve(
+        makeSSEResponse([
+          { event: "snapshot", data: JSON.stringify(snapshot) },
+          { event: "taken-over", data: "{}" },
+        ]),
+      )
+    })
+
+    const reader = newReader("/api/events", {
+      _fetch: mockFetch,
+      _sleep: () => Promise.resolve(),
+    })
+    const { patches } = await reader.connect()
+
+    // Drain until the stream closes (taken-over stops the loop)
+    const r = patches.getReader()
+    let done = false
+    while (!done) {
+      const result = await r.read()
+      done = result.done
+    }
+    r.releaseLock()
+
+    // Only 1 fetch call — no reconnect after taken-over
+    expect(callCount).toBe(1)
+  })
+
+  it("calls onTakenOver callback when taken-over event received", async () => {
+    const snapshot = makeSnapshot()
+    const onTakenOver = vi.fn()
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      makeSSEResponse([
+        { event: "snapshot", data: JSON.stringify(snapshot) },
+        { event: "taken-over", data: "{}" },
+      ]),
+    )
+
+    const reader = newReader("/api/events", {
+      _fetch: mockFetch,
+      _sleep: () => Promise.resolve(),
+    })
+    reader.onTakenOver = onTakenOver
+    const { patches } = await reader.connect()
+
+    const r = patches.getReader()
+    let done = false
+    while (!done) {
+      const result = await r.read()
+      done = result.done
+    }
+    r.releaseLock()
+
+    expect(onTakenOver).toHaveBeenCalledTimes(1)
+  })
+})

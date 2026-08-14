@@ -75,6 +75,7 @@ function makeMockRegistry(opts: {
     unregisterHost: vi.fn(),
     notifySessionAttached: vi.fn().mockResolvedValue(undefined),
     getCwd: vi.fn().mockReturnValue(undefined),
+    getEpoch: vi.fn().mockReturnValue(0),
   }
 }
 
@@ -262,6 +263,122 @@ describe("GET /api/agents/:id/events", () => {
       const json = JSON.parse(dataLine!.slice("data: ".length))
       expect(json.version).toBe(1)
       expect(json.op).toBe("update-session")
+    })
+  })
+})
+
+// ── slice ownership-handoff C3: epoch guard + taken-over ─────────────────────
+
+describe("GET /api/agents/:id/events — ownership-handoff C3", () => {
+  describe("epoch guard", () => {
+    it("returns 409 when client epoch is less than server epoch (stale client)", async () => {
+      const state = makeMockState()
+      const host = makeMockHost(state)
+      const broadcaster = makeMockBroadcaster()
+      const registry = makeMockRegistry({ host, broadcaster })
+      // Simulate server epoch = 2
+      ;(registry.getEpoch as ReturnType<typeof vi.fn>).mockReturnValue(2)
+      const app = makeApp(registry)
+
+      const res = await app.request("/api/agents/agent-1/events?epoch=1")
+      expect(res.status).toBe(409)
+      // Stale check must happen BEFORE getOrCreateHost
+      expect(registry.getOrCreateHost).not.toHaveBeenCalled()
+    })
+
+    it("does not reject when client epoch equals server epoch", async () => {
+      const state = makeMockState()
+      const host = makeMockHost(state)
+      const broadcaster = makeMockBroadcaster()
+      const registry = makeMockRegistry({ host, broadcaster })
+      ;(registry.getEpoch as ReturnType<typeof vi.fn>).mockReturnValue(1)
+      const app = makeApp(registry)
+
+      const res = await app.request("/api/agents/agent-1/events?epoch=1")
+      expect(res.status).toBe(200)
+    })
+
+    it("proceeds normally without ?epoch query param", async () => {
+      const state = makeMockState()
+      const host = makeMockHost(state)
+      const broadcaster = makeMockBroadcaster()
+      const registry = makeMockRegistry({ host, broadcaster })
+      ;(registry.getEpoch as ReturnType<typeof vi.fn>).mockReturnValue(5)
+      const app = makeApp(registry)
+
+      const res = await app.request("/api/agents/agent-1/events")
+      expect(res.status).toBe(200)
+    })
+  })
+
+  describe("snapshot frame-zero carries epoch as SSE id", () => {
+    it("snapshot frame includes id: <epoch>", async () => {
+      const state = makeMockState({ title: "EpochTest" })
+      const host = makeMockHost(state)
+      const broadcaster = makeMockBroadcaster()
+      const registry = makeMockRegistry({ host, broadcaster })
+      ;(registry.getEpoch as ReturnType<typeof vi.fn>).mockReturnValue(3)
+      const app = makeApp(registry)
+
+      const res = await app.request("/api/agents/agent-1/events")
+      const events = await readSseEvents(res, 1, 200)
+
+      expect(events.length).toBeGreaterThanOrEqual(1)
+      const first = events[0]!
+      expect(first).toContain("event: snapshot")
+      expect(first).toContain("id: 3")
+    })
+  })
+
+  describe("taken-over event when broadcaster ends with higher epoch", () => {
+    it("sends taken-over event when broadcaster closes and epoch advanced", async () => {
+      const state = makeMockState()
+      const host = makeMockHost(state)
+
+      let ctrl!: ReadableStreamDefaultController<Patch>
+      const patchStream = new ReadableStream<Patch>({ start(c) { ctrl = c } })
+      const broadcaster = makeMockBroadcaster(patchStream)
+
+      const registry = makeMockRegistry({ host, broadcaster })
+      // epoch starts at 1, advances to 2 when broadcaster closes (simulating takeover)
+      let callCount = 0
+      ;(registry.getEpoch as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        callCount++
+        return callCount === 1 ? 1 : 2 // first call (snapshot time) = 1, second (after close) = 2
+      })
+      const app = makeApp(registry)
+
+      const res = await app.request("/api/agents/agent-1/events")
+
+      // Close the broadcaster after a tick (simulates host.dispose())
+      setTimeout(() => ctrl.close(), 10)
+
+      const events = await readSseEvents(res, 2, 300)
+      const takenOver = events.find((e) => e.includes("event: taken-over"))
+      expect(takenOver).toBeDefined()
+      expect(takenOver).toContain("id: 2")
+    })
+
+    it("does NOT send taken-over when broadcaster closes with same epoch (e.g. expiry, not takeover)", async () => {
+      const state = makeMockState()
+      const host = makeMockHost(state)
+
+      let ctrl!: ReadableStreamDefaultController<Patch>
+      const patchStream = new ReadableStream<Patch>({ start(c) { ctrl = c } })
+      const broadcaster = makeMockBroadcaster(patchStream)
+
+      const registry = makeMockRegistry({ host, broadcaster })
+      // epoch stays at 1 throughout (no takeover)
+      ;(registry.getEpoch as ReturnType<typeof vi.fn>).mockReturnValue(1)
+      const app = makeApp(registry)
+
+      const res = await app.request("/api/agents/agent-1/events")
+
+      setTimeout(() => ctrl.close(), 10)
+
+      const events = await readSseEvents(res, 2, 300)
+      const takenOver = events.find((e) => e.includes("event: taken-over"))
+      expect(takenOver).toBeUndefined()
     })
   })
 })
