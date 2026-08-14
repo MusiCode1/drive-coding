@@ -155,13 +155,6 @@ export type AgentSessionStatus =
 /** מה המודל עושה בתור הנוכחי. מופרד מ-status (חיבור) — §1 ב-brief. */
 export type TurnState = "idle" | "waiting" | "thinking" | "responding" | "calling-tool"
 
-function isBlankTextBubble(b: Bubble): boolean {
-  return (
-    (b.kind === "message" || b.kind === "thought") &&
-    b.segments.map((s) => s.text).join("").trim() === ""
-  )
-}
-
 /**
  * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
  *
@@ -280,10 +273,7 @@ export class AgentSession {
   // ─── slice reconnect-bubble-merge: render-consumers (additive) ───
   /** רשימת התצוגה. בזמן warm-reconnect replay מוקפאת ל-snapshot; אחרת = live bubbles. */
   get renderBubbles(): Bubble[] {
-    const list = this.#displaySnapshot ?? this.bubbles
-    // בועות message/thought ריקות (רק whitespace) — חור ויזואלי אחרי tool.
-    // אם אין כאלה מחזירים את אותו reference (reconnect tests + virtua).
-    return list.some(isBlankTextBubble) ? list.filter((b) => !isBlankTextBubble(b)) : list
+    return this.#displaySnapshot ?? this.bubbles
   }
 
   /** true רק בזמן warm-reconnect replay (התצוגה קפואה). לא נדלק בטעינה ראשונית/switchSession. */
@@ -2385,6 +2375,15 @@ export class AgentSession {
     locations?: unknown[] | null
   }): void {
     if (update.toolCallId === undefined) return
+    // אותו toolCallId = אותו כלי (חוזה ACP). שידור-חוזר / מילוי-פרטים כ-tool_call
+    // שני → עדכון הבועה הקיימת, לא push (מפתח tool:t:<id> כפול → each_key_duplicate).
+    // בודקים את this.bubbles (רשימת התצוגה), לא את ה-Map — ה-Map נשאר אחרי bubbles=[].
+    if (
+      this.bubbles.some((b) => b.kind === "tool" && b.toolCall.toolCallId === update.toolCallId)
+    ) {
+      this.#handleToolCallUpdate(update)
+      return
+    }
     // סכמת ACP: התראה tool_call דורשת toolCallId + title. ה-title עלול להיות undefined
     // בפועל אם הסוכן שולח התראה מינימלית, לכן יש לסגת בצורה עדינה.
     const bubble: ToolBubble = {

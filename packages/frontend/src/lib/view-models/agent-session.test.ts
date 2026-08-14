@@ -15,7 +15,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { AcpClient } from "@drive-coding/provider/client"
-import type { Bubble, MessageBubble, ThoughtBubble, UserBubble } from "$lib/types/bubble"
+import type { MessageBubble, ThoughtBubble, ToolBubble, UserBubble } from "$lib/types/bubble"
 
 // ─── Module-level mocks ───────────────────────────────────────────────────────
 import { stableBubbleKey } from "$lib/util/bubble-key"
@@ -103,6 +103,18 @@ function userChunk(text: string, messageId: string | null): unknown {
       sessionUpdate: "user_message_chunk",
       content: { type: "text", text },
       messageId,
+    },
+  }
+}
+
+function toolCall(id: string, title: string): unknown {
+  return {
+    update: {
+      sessionUpdate: "tool_call",
+      toolCallId: id,
+      title,
+      kind: "read",
+      status: "pending",
     },
   }
 }
@@ -233,22 +245,19 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     ])
   })
 
-  it("renderBubbles drops blank message/thought bubbles but keeps the same array when none are blank", () => {
+  it("second tool_call with the same toolCallId updates the existing bubble (no duplicate key)", () => {
     expect(onSessionUpdate).not.toBeNull()
-    onSessionUpdate?.(msgChunk("hello", "m1"))
-    const live = session.bubbles
-    expect(session.renderBubbles).toBe(live)
+    onSessionUpdate?.(toolCall("call-1", "Read"))
+    onSessionUpdate?.(toolCall("call-1", "Read file"))
 
-    session.bubbles.push({
-      id: "blank",
-      kind: "message",
-      messageId: "m1",
-      createdAt: Date.now(),
-      segments: [{ id: "s", text: "\n" }],
-    })
-    expect(session.renderBubbles).not.toBe(session.bubbles)
-    expect(session.renderBubbles).toHaveLength(1)
-    expect(session.renderBubbles[0]?.id).not.toBe("blank")
+    expect(session.bubbles).toHaveLength(1)
+    const bubble = session.bubbles[0] as ToolBubble
+    expect(bubble.kind).toBe("tool")
+    expect(bubble.toolCall.toolCallId).toBe("call-1")
+    expect(bubble.toolCall.title).toBe("Read file")
+    const list = session.renderBubbles
+    const keys = list.map((b) => stableBubbleKey(b, list))
+    expect(new Set(keys).size).toBe(keys.length)
   })
 
   it("sendPrompt + user_message_chunk with messageId → attaches messageId to optimistic UserBubble", () => {

@@ -110,4 +110,13 @@ describe("stableBubbleKey", () => {
       "message:m:msg-1:n3",
     ])
   })
+
+  it("בועה שאינה ב-siblings נופלת ל-kind:i:id ולא מתנגשת עם המופע שכן ברשימה", () => {
+    const a = makeMessage("shared", "msg-a")
+    const b = makeMessage("shared", "msg-b")
+    expect(stableBubbleKey(a, [a])).toBe("message:m:shared")
+    expect(stableBubbleKey(b, [a])).toBe("message:i:msg-b")
+    expect(stableBubbleKey(b, [a])).not.toBe(stableBubbleKey(a, [a]))
+    expect(stableBubbleKey(b, [])).toBe("message:i:msg-b")
+  })
 })
