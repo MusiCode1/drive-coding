@@ -14,8 +14,8 @@
  */
 
 import { DEFAULT_LOCALE, detectLocale, type Locale } from "@drive-coding/core/i18n"
-import type { SessionTransport } from "$lib/session/session-transport"
 import type { SpeechPace, SpeechTone } from "@drive-coding/core/voice/tts-types"
+import type { SessionTransport } from "$lib/session/session-transport"
 import { listVoices, type Voice } from "../adapters/voice/voices"
 import { DEFAULT_GEMINI_VOICE } from "../adapters/voice/voices-gemini"
 import { setBeUrlBase } from "../util/be-url"
