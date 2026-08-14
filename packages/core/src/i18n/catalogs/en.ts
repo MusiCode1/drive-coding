@@ -228,6 +228,10 @@ export const en: Catalog = {
   "settings.ttsProvider.label": "TTS provider",
   "settings.ttsProvider.elevenlabs": "ElevenLabs",
   "settings.ttsProvider.gemini": "Gemini",
+  // ─── session transport ─── (slice transport-polish C4)
+  "settings.sessionTransport.label": "Session transport",
+  "settings.sessionTransport.ws": "WebSocket",
+  "settings.sessionTransport.http": "HTTP",
   // ─── image-attach tray ─── (slice-image-paste)
   "attach.addImage": "Add image",
   "attach.remove": "Remove",

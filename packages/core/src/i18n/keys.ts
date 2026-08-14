@@ -233,6 +233,10 @@ export type MessageKey =
   | "settings.ttsProvider.label"
   | "settings.ttsProvider.elevenlabs"
   | "settings.ttsProvider.gemini"
+  // ─── session transport ─── (slice transport-polish C4)
+  | "settings.sessionTransport.label"
+  | "settings.sessionTransport.ws"
+  | "settings.sessionTransport.http"
   // ─── image-attach tray ─── (slice-image-paste)
   | "attach.addImage"
   | "attach.remove"

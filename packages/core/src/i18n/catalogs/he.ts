@@ -223,6 +223,10 @@ export const he: Catalog = {
   "settings.ttsProvider.label": "ספק TTS",
   "settings.ttsProvider.elevenlabs": "ElevenLabs",
   "settings.ttsProvider.gemini": "Gemini",
+  // ─── session transport ─── (slice transport-polish C4)
+  "settings.sessionTransport.label": "טרנספורט סשן",
+  "settings.sessionTransport.ws": "WebSocket",
+  "settings.sessionTransport.http": "HTTP",
   // ─── image-attach tray ─── (slice-image-paste)
   "attach.addImage": "הוסף תמונה",
   "attach.remove": "הסר",
