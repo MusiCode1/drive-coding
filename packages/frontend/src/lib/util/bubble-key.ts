@@ -14,18 +14,24 @@ import type { Bubble } from "$lib/types/bubble"
  * message/thought/user עם messageId → `${kind}:m:${messageId}` או `:n{k}`
  * tool → `${kind}:t:${toolCall.toolCallId}`
  * fallback (messageId=null, לא-tool: Gemini/user חי) → `${kind}:i:${id}`
+ * בועה עם messageId שאינה ב-siblings → `${kind}:i:${id}` (לא מנחשים מפתח מתנגש)
  */
 export function stableBubbleKey(b: Bubble, siblings: readonly Bubble[]): string {
   if (b.kind === "tool") return `${b.kind}:t:${b.toolCall.toolCallId}`
   if (b.messageId === null) return `${b.kind}:i:${b.id}`
 
   let n = 0
+  let found = false
   for (const x of siblings) {
     if (x.kind === b.kind && x.messageId === b.messageId) {
       n++
-      if (x.id === b.id) break
+      if (x.id === b.id) {
+        found = true
+        break
+      }
     }
   }
+  if (!found) return `${b.kind}:i:${b.id}`
   if (n <= 1) return `${b.kind}:m:${b.messageId}`
   return `${b.kind}:m:${b.messageId}:n${n}`
 }
