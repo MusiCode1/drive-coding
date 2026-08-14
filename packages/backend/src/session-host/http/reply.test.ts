@@ -39,6 +39,7 @@ function makeMockHost(): ExtendedSessionHost {
     respondElicitation: vi.fn(),
     listSessions: vi.fn().mockResolvedValue({}),
     deleteSession: vi.fn().mockResolvedValue(undefined),
+    dispose: vi.fn(),
     agentCapabilities: {},
   }
 }

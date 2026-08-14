@@ -158,6 +158,31 @@ describe("InProcessAcpTransport", () => {
       reader.releaseLock()
       expect(done).toBe(true)
     })
+
+    // slice handoff-foundations C1 DoD 1: close() removes crash subscriptions.
+    // Previously onClose() discarded the unsubscribe handle — the crash listener
+    // was orphaned at registration. Now close() must remove it.
+    it("close() removes crash subscriptions registered via onClose (crash no longer fires)", () => {
+      const mock = makeMockConnection()
+      const transport = createInProcessAcpTransport({ wire: mock, onCrash: mock.onCrash })
+
+      const onCloseCb = vi.fn()
+      transport.onClose(onCloseCb)
+
+      transport.close()
+
+      // After close, a crash must NOT reach the onClose callback
+      mock._triggerCrash({ exitCode: 1, signal: null })
+      expect(onCloseCb).not.toHaveBeenCalled()
+    })
+
+    it("close() is idempotent — calling twice does not throw", () => {
+      const mock = makeMockConnection()
+      const transport = createInProcessAcpTransport({ wire: mock, onCrash: mock.onCrash })
+
+      expect(() => transport.close()).not.toThrow()
+      expect(() => transport.close()).not.toThrow()
+    })
   })
 
   describe("onClose — adapter: conn.onCrash → (code?, reason?)", () => {

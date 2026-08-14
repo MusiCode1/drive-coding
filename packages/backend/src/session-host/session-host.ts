@@ -88,6 +88,16 @@ export type SessionHost = {
 
   /** Delegates to AcpClient.cancel */
   cancel(sessionId: string): Promise<void>
+
+  /**
+   * slice handoff-foundations C1: dispose — release all host-side resources.
+   * Idempotent. After dispose:
+   *   - the host is marked closed (all I/O rejected)
+   *   - host.patches stream is terminated (done=true on next read)
+   *   - transport crash subscriptions are removed (ExtendedSessionHost only)
+   * Does NOT touch conn/child/connectionRegistry — the agent stays alive.
+   */
+  dispose(): void
 }
 
 /**
@@ -98,6 +108,9 @@ export type SessionHost = {
 export async function createSessionHost(deps: SessionHostDeps): Promise<SessionHost> {
   // Internal mutable state (replaced on each update — immutable pattern)
   let currentState: SessionState = createInitialSessionState({ sessionId: null })
+
+  // slice handoff-foundations C1: disposed flag — once set, all I/O is rejected.
+  let disposed = false
 
   // Patches stream
   let patchController: ReadableStreamDefaultController<Patch> | null = null
@@ -123,6 +136,7 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
   }
 
   function handleUpdate(notification: SessionNotification): void {
+    if (disposed) return // slice handoff-foundations C1: no updates after dispose
     const result = reduce(currentState, notification.update)
     currentState = result.state
     emitPatches(result.patches)
@@ -134,6 +148,20 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
 
   const client = await deps.createClient(callbacks)
 
+  function dispose(): void {
+    if (disposed) return // idempotent
+    disposed = true
+    // Terminate the patches stream — readers get done=true.
+    if (patchController) {
+      try {
+        patchController.close()
+      } catch {
+        // already closed
+      }
+      patchController = null
+    }
+  }
+
   return {
     get state(): SessionState {
       return currentState
@@ -141,11 +169,14 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
 
     patches: patchStream,
 
+    dispose,
+
     async prompt(
       sessionId: string,
       content: string,
       meta?: Record<string, unknown>,
     ): Promise<void> {
+      if (disposed) throw new Error("SessionHost disposed")
       const msg = synthesizeUserMessage(currentState, content, meta)
       const result = applyUserMessage(currentState, msg)
       currentState = result.state
@@ -154,14 +185,16 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
     },
 
     async newSession(opts: { cwd: string; _meta?: Record<string, unknown> }) {
+      if (disposed) throw new Error("SessionHost disposed")
       return client.newSession(opts) as Promise<{ sessionId: string }>
     },
 
     async loadSession(opts: { cwd: string; sessionId: string; _meta?: Record<string, unknown> }) {
+      if (disposed) throw new Error("SessionHost disposed")
       return client.loadSession(opts) as Promise<{ sessionId: string }>
     },
-
     async cancel(sessionId: string) {
+      if (disposed) throw new Error("SessionHost disposed")
       await client.cancel(sessionId)
     },
   }
@@ -305,6 +338,9 @@ export async function createSessionHostFromConnection(
   let currentState: SessionState = createInitialSessionState({ sessionId: null })
   let patchController: ReadableStreamDefaultController<Patch> | null = null
 
+  // slice handoff-foundations C1: disposed flag — once set, all I/O is rejected.
+  let disposed = false
+
   const patchStream = new ReadableStream<Patch>({
     start(controller) {
       patchController = controller
@@ -326,6 +362,8 @@ export async function createSessionHostFromConnection(
   }
 
   function handleUpdate(notification: SessionNotification): void {
+    // slice handoff-foundations C1: no updates after dispose
+    if (disposed) return
     // ─── slice remote-session-mgmt C2 step 5: sessionId filter ───
     // During a switch (loadSession) the flip already points currentState at the
     // NEW session before the await, so the new session's replay passes (B===B)
@@ -399,6 +437,9 @@ export async function createSessionHostFromConnection(
   async function handleRequestPermission(
     params: RequestPermissionRequest,
   ): Promise<RequestPermissionResponse> {
+    // slice handoff-foundations C1: reject after dispose — resolving would make
+    // the SDK write a response to the wire.
+    if (disposed) return { outcome: { outcome: "cancelled" } }
     // slice remote-session-mgmt C2 step 5 (one-line guard): a permission from the
     // outgoing session during a switch is answered with the existing default
     // (cancelled) — skips nextRequestId++, never enters pending (consistent w/ step 2).
@@ -424,6 +465,9 @@ export async function createSessionHostFromConnection(
   async function handleCreateElicitation(
     params: CreateElicitationRequest,
   ): Promise<CreateElicitationResponse> {
+    // slice handoff-foundations C1: reject after dispose — resolving would make
+    // the SDK write a response to the wire.
+    if (disposed) return { action: "cancel" }
     // slice remote-session-mgmt C2 step 5 (guard) — mirrors handleRequestPermission.
     // CreateElicitationRequest is an SDK union: request-scoped elicitations carry
     // no sessionId → defensive fallback (pass through), same as handleUpdate.
@@ -463,6 +507,7 @@ export async function createSessionHostFromConnection(
   // When the underlying connection crashes, update state to "disconnected".
   // This ensures host.state.status reflects the connection lifecycle.
   transport.onClose((_code, _reason) => {
+    if (disposed) return // slice handoff-foundations C1: no state changes after dispose
     const result = reduce(currentState, {
       sessionUpdate: "turn_end",
     })
@@ -473,6 +518,25 @@ export async function createSessionHostFromConnection(
     }
   })
 
+  // ── slice handoff-foundations C1: dispose ──────────────────────────────────
+  // Idempotent. Closes the transport (removes crash subs + readable), terminates
+  // the patches stream, and marks the host as closed so all I/O is rejected.
+  // Does NOT touch conn/child/connectionRegistry — the agent stays alive.
+  function dispose(): void {
+    if (disposed) return
+    disposed = true
+    transport.close()
+    // Terminate the patches stream — readers get done=true.
+    if (patchController) {
+      try {
+        patchController.close()
+      } catch {
+        // already closed
+      }
+      patchController = null
+    }
+  }
+
   // ── ExtendedSessionHost ───────────────────────────────────────────────────
 
   return {
@@ -482,6 +546,7 @@ export async function createSessionHostFromConnection(
 
     patches: patchStream,
 
+    dispose,
     // ── C3: turn boundaries — mirrors LocalSessionView.prompt/cancel (waiting
     // לפני ה-await, idle בשני הענפים), עם סטייה אחת מוצהרת: שתי הפליטות (הצלחה
     // וגם cancel) מגודרות ב-`turn === turnSeq` — "התור שלי עדיין הנוכחי". ─────
@@ -504,6 +569,7 @@ export async function createSessionHostFromConnection(
       content: string,
       meta?: Record<string, unknown>,
     ): Promise<void> {
+      if (disposed) throw new Error("SessionHost disposed")
       const turn = ++turnSeq
       emit(applyTurnStart(currentState)) // 1. waiting — לפני ה-await, ולפני add-message (hotfix)
       const msg = synthesizeUserMessage(currentState, content, meta)
@@ -525,6 +591,7 @@ export async function createSessionHostFromConnection(
     },
 
     async newSession(opts: { cwd: string; _meta?: Record<string, unknown> }) {
+      if (disposed) throw new Error("SessionHost disposed")
       const result = (await client.newSession(opts)) as { sessionId: string; configOptions?: unknown[] }
       // Update currentState.sessionId so setMode/setConfigOption can use it
       // Also capture configOptions from session/new response (capabilities.ts:17)
@@ -579,6 +646,7 @@ export async function createSessionHostFromConnection(
       sessionId: string
       _meta?: Record<string, unknown>
     }): Promise<{ sessionId: string; version: number }> {
+      if (disposed) throw new Error("SessionHost disposed")
       // 1. Invalidate turns of the outgoing session.
       turnSeq++
       cancelledTurn = -1
@@ -661,6 +729,7 @@ export async function createSessionHostFromConnection(
     },
 
     async cancel(sessionId: string) {
+      if (disposed) throw new Error("SessionHost disposed")
       const turn = turnSeq // מסמן, ❌ לא מקדם
       cancelledTurn = turn
       try {
@@ -672,19 +741,23 @@ export async function createSessionHostFromConnection(
     },
 
     respondPermission(requestId: number, response: RequestPermissionResponse): void {
+      if (disposed) return // slice handoff-foundations C1: no-op after dispose
       permPending.respond(requestId, response)
     },
 
     respondElicitation(requestId: number, response: CreateElicitationResponse): void {
+      if (disposed) return // slice handoff-foundations C1: no-op after dispose
       elicitPending.respond(requestId, response)
     },
 
     async setMode(modeId: string): Promise<void> {
+      if (disposed) throw new Error("SessionHost disposed")
       if (!currentState.sessionId) throw new Error("No session")
       await client.setSessionMode({ sessionId: currentState.sessionId, modeId })
     },
 
     async setConfigOption(configId: string, value: string | boolean): Promise<void> {
+      if (disposed) throw new Error("SessionHost disposed")
       if (!currentState.sessionId) throw new Error("No session")
       await client.setSessionConfigOption({ sessionId: currentState.sessionId, configId, value })
     },
@@ -693,10 +766,12 @@ export async function createSessionHostFromConnection(
       method: string,
       params: Record<string, unknown>,
     ): Promise<Record<string, unknown>> {
+      if (disposed) throw new Error("SessionHost disposed")
       return client.extMethod(method, params)
     },
 
     async setSessionModel(model: string): Promise<void> {
+      if (disposed) throw new Error("SessionHost disposed")
       if (!currentState.sessionId) throw new Error("No session")
       await client.setSessionModel({ sessionId: currentState.sessionId, modelId: model })
     },
@@ -705,10 +780,12 @@ export async function createSessionHostFromConnection(
     // route maps them. No wrapping/absorbing here.
 
     async listSessions(): Promise<Record<string, unknown>> {
+      if (disposed) throw new Error("SessionHost disposed")
       return (await client.listSessions()) as Record<string, unknown>
     },
 
     async deleteSession(sessionId: string): Promise<void> {
+      if (disposed) throw new Error("SessionHost disposed")
       await client.deleteSession(sessionId)
     },
 

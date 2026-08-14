@@ -1318,3 +1318,179 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     expect(mockClient.loadSession).toHaveBeenCalledWith({ cwd: "/custom/dir", sessionId: "s2" })
   })
 })
+
+// ─── slice handoff-foundations C1: dispose() integration ──────────────────────
+
+describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)", () => {
+  // DoD 2: crash event does not reach host after dispose.
+  // The transport registers a crash listener via onClose. After dispose()
+  // (which calls transport.close()), a crash must NOT trigger the host's
+  // onClose handler (which would set status to "disconnected").
+  it("dispose: crash event does not reach host (no status change to disconnected)", async () => {
+    const { host, conn, _triggerCrash } = await setup()
+
+    expect(host.state.status).not.toBe("disconnected")
+
+    host.dispose()
+
+    // Trigger a crash on the connection — the host should not react
+    _triggerCrash({ exitCode: 1, signal: null })
+
+    // Flush microtasks
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(host.state.status).not.toBe("disconnected")
+  })
+
+  // DoD 5: the agent survives dispose — conn.close is NOT called.
+  it("dispose: conn.close is NOT called (agent survives)", async () => {
+    const { host, conn } = await setup()
+
+    host.dispose()
+
+    expect(conn.close).not.toHaveBeenCalled()
+  })
+
+  // DoD 3: dispose is idempotent
+  it("dispose: idempotent — calling twice does not throw", async () => {
+    const { host } = await setup()
+
+    expect(() => host.dispose()).not.toThrow()
+    expect(() => host.dispose()).not.toThrow()
+  })
+
+  // DoD 4: all I/O rejected after dispose
+  it("dispose: prompt throws after dispose", async () => {
+    const { host } = await setup()
+
+    host.dispose()
+
+    await expect(host.prompt("s1", "hello")).rejects.toThrow("disposed")
+  })
+
+  it("dispose: newSession throws after dispose", async () => {
+    const { host } = await setup()
+
+    host.dispose()
+
+    await expect(host.newSession({ cwd: "/test" })).rejects.toThrow("disposed")
+  })
+
+  it("dispose: cancel throws after dispose", async () => {
+    const { host } = await setup()
+
+    host.dispose()
+
+    await expect(host.cancel("s1")).rejects.toThrow("disposed")
+  })
+
+  it("dispose: setMode throws after dispose", async () => {
+    const { host } = await setup()
+    await host.newSession({ cwd: "/a" })
+
+    host.dispose()
+
+    await expect(host.setMode("auto")).rejects.toThrow("disposed")
+  })
+
+  it("dispose: extMethod throws after dispose", async () => {
+    const { host } = await setup()
+
+    host.dispose()
+
+    await expect(host.extMethod("_drive/ping", {})).rejects.toThrow("disposed")
+  })
+
+  it("dispose: listSessions throws after dispose", async () => {
+    const { host } = await setup()
+
+    host.dispose()
+
+    await expect(host.listSessions()).rejects.toThrow("disposed")
+  })
+
+  it("dispose: deleteSession throws after dispose", async () => {
+    const { host } = await setup()
+
+    host.dispose()
+
+    await expect(host.deleteSession("s1")).rejects.toThrow("disposed")
+  })
+
+  it("dispose: respondPermission is a no-op after dispose (no throw)", async () => {
+    const { host } = await setup()
+
+    host.dispose()
+
+    expect(() => host.respondPermission(0, { outcome: { outcome: "cancelled" } })).not.toThrow()
+  })
+
+  it("dispose: respondElicitation is a no-op after dispose (no throw)", async () => {
+    const { host } = await setup()
+
+    host.dispose()
+
+    expect(() => host.respondElicitation(0, { action: "cancel" })).not.toThrow()
+  })
+
+  // DoD 11: host.patches stream terminates after dispose
+  it("dispose: patches stream terminates (done=true on next read)", async () => {
+    const { host } = await setup()
+
+    host.dispose()
+
+    const reader = host.patches.getReader()
+    const { done } = await reader.read()
+    reader.releaseLock()
+    expect(done).toBe(true)
+  })
+
+  // DoD 4 (extended): onUpdate is ignored after dispose
+  it("dispose: onUpdate is ignored after dispose (no state changes)", async () => {
+    const { host, callbacks } = await setup()
+    await host.newSession({ cwd: "/a" })
+    const versionBefore = host.state.version
+
+    host.dispose()
+
+    callbacks.onUpdate({
+      sessionId: "s1",
+      update: { sessionUpdate: "session_info_update", title: "Z" } as SessionNotification["update"],
+    })
+
+    expect(host.state.version).toBe(versionBefore)
+    expect(host.state.title).not.toBe("Z")
+  })
+
+  // DoD 4 (crash handler): onRequestPermission returns cancelled default after dispose
+  it("dispose: onRequestPermission returns cancelled default after dispose", async () => {
+    const { host, callbacks } = await setup()
+    await host.newSession({ cwd: "/a" })
+
+    host.dispose()
+
+    const response = await callbacks.onRequestPermission!({
+      sessionId: "s1",
+      toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
+      options: [],
+    } as Parameters<typeof callbacks.onRequestPermission>[0])
+
+    expect(response.outcome.outcome).toBe("cancelled")
+  })
+
+  // DoD 4 (crash handler): onCreateElicitation returns cancel default after dispose
+  it("dispose: onCreateElicitation returns cancel default after dispose", async () => {
+    const { host, callbacks } = await setup()
+    await host.newSession({ cwd: "/a" })
+
+    host.dispose()
+
+    const response = await callbacks.onCreateElicitation!({
+      sessionId: "s1",
+      requestId: 1,
+      schema: { type: "object", properties: {} },
+    } as Parameters<typeof callbacks.onCreateElicitation>[0])
+
+    expect(response.action).toBe("cancel")
+  })
+})

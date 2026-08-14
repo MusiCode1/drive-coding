@@ -266,3 +266,76 @@ describe("SessionHost", () => {
     })
   })
 })
+
+// ─── slice handoff-foundations C1: dispose() ──────────────────────────────────
+
+describe("SessionHost — dispose() (handoff-foundations C1)", () => {
+  // DoD 2: dispose removes crash subscription — crash event does not reach host.
+  // In createSessionHost (no transport), this is tested as: onUpdate is ignored
+  // after dispose (the host-side equivalent of "crash does not reach host").
+  // The full crash-subscription test is in session-host.integration.test.ts.
+  it("dispose: onUpdate is ignored after dispose (no state changes)", async () => {
+    const { host, callbacks } = await setup()
+    const versionBefore = host.state.version
+
+    host.dispose()
+
+    callbacks.onUpdate(makeSessionUpdate({ sessionUpdate: "session_info_update", title: "Z" }))
+
+    expect(host.state.version).toBe(versionBefore)
+    expect(host.state.title).not.toBe("Z")
+  })
+
+  // DoD 3: dispose is idempotent
+  it("dispose: calling dispose twice does not throw", async () => {
+    const { host } = await setup()
+
+    expect(() => host.dispose()).not.toThrow()
+    expect(() => host.dispose()).not.toThrow()
+  })
+
+  // DoD 4: all I/O is rejected after dispose
+  it("dispose: prompt throws after dispose", async () => {
+    const { host } = await setup()
+
+    host.dispose()
+
+    await expect(host.prompt("s1", "hello")).rejects.toThrow("disposed")
+  })
+
+  it("dispose: newSession throws after dispose", async () => {
+    const { host } = await setup()
+
+    host.dispose()
+
+    await expect(host.newSession({ cwd: "/test" })).rejects.toThrow("disposed")
+  })
+
+  it("dispose: loadSession throws after dispose", async () => {
+    const { host } = await setup()
+
+    host.dispose()
+
+    await expect(host.loadSession({ cwd: "/test", sessionId: "abc" })).rejects.toThrow("disposed")
+  })
+
+  it("dispose: cancel throws after dispose", async () => {
+    const { host } = await setup()
+
+    host.dispose()
+
+    await expect(host.cancel("s1")).rejects.toThrow("disposed")
+  })
+
+  // DoD 11: host.patches stream terminates (done=true on next read)
+  it("dispose: patches stream terminates (done=true on next read)", async () => {
+    const { host } = await setup()
+
+    host.dispose()
+
+    const reader = host.patches.getReader()
+    const { done } = await reader.read()
+    reader.releaseLock()
+    expect(done).toBe(true)
+  })
+})

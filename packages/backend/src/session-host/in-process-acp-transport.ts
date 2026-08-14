@@ -95,6 +95,13 @@ export function createInProcessAcpTransport(deps: InProcessAcpTransportDeps): Ac
   })
 
   // ── close ────────────────────────────────────────────────────────────────
+  // slice handoff-foundations C1: close() now also removes crash subscriptions.
+  // Previously, onClose() called deps.onCrash(cb) and discarded the returned
+  // unsubscribe — the handle was lost the moment it was registered, leaving
+  // an orphan crash listener that could never be removed. Now we collect all
+  // crash unsubs and clean them up here.
+  const crashUnsubs: Array<() => void> = []
+
   function close(): void {
     if (unsubLine) {
       unsubLine()
@@ -108,6 +115,15 @@ export function createInProcessAcpTransport(deps: InProcessAcpTransportDeps): Ac
       }
       readableController = null
     }
+    // Remove all crash subscriptions registered via onClose().
+    for (const unsub of crashUnsubs) {
+      try {
+        unsub()
+      } catch {
+        // already unsubscribed
+      }
+    }
+    crashUnsubs.length = 0
   }
 
   // ── onClose: adapter BridgeCrashInfo → (code: number, reason: string) ───
@@ -115,12 +131,16 @@ export function createInProcessAcpTransport(deps: InProcessAcpTransportDeps): Ac
   // onClose(code: number, reason: string). We adapt:
   //   exitCode → code (fall back to 1 if null + signal present)
   //   signal   → reason (if no exitCode)
+  //
+  // slice handoff-foundations C1: save the returned unsubscribe so close()
+  // can remove it. Without this the crash listener was orphaned at registration.
   function onClose(cb: (code: number, reason: string) => void): void {
-    deps.onCrash((info: BridgeCrashInfo) => {
+    const unsub = deps.onCrash((info: BridgeCrashInfo) => {
       const code = info.exitCode !== null ? info.exitCode : info.signal !== null ? 1 : 0
       const reason = info.signal !== null ? String(info.signal) : ""
       cb(code, reason)
     })
+    crashUnsubs.push(unsub)
   }
 
   return { readable, writable, close, onClose }
