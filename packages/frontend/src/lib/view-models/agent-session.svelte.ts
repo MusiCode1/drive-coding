@@ -530,6 +530,15 @@ export class AgentSession {
    */
   async #consumeViewPatches(view: SessionView): Promise<void> {
     const reader = view.patches.getReader()
+    // ─── slice empty-session-sync ───
+    // סנכרון ראשוני מה-snapshot, **לפני** הלולאה.
+    // הסנכרון שבתוך הלולאה מותנה ב-patches, וסשן **חדש** הוא ריק: אין הודעות,
+    // ולכן אין reset patch, ולכן `continue` — ו-#syncFromViewState לא נקרא לעולם.
+    // התוצאה למשתמשת: אין מוד, אין מודל (configOptions), ואין כפתור תמונה
+    // (capabilities) — עד שנטענת היסטוריה שמייצרת patches.
+    // ⚠️ זה חייב לרוץ גם כש-view.state ריק — הוא נושא את המטא-דאטה בלי קשר
+    // למספר ההודעות.
+    this.#syncFromViewState(view.state)
     try {
       while (true) {
         const { done, value } = await reader.read()

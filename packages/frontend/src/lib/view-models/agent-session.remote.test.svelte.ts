@@ -117,10 +117,7 @@ describe("AgentSession + remote view — sendPrompt", () => {
   it("reaches the view as PromptBlocks, meta undefined, no local bubble, sets waiting", async () => {
     await agent.sendPrompt("hello there")
 
-    expect(view.promptMock).toHaveBeenCalledWith(
-      [{ type: "text", text: "hello there" }],
-      undefined,
-    )
+    expect(view.promptMock).toHaveBeenCalledWith([{ type: "text", text: "hello there" }], undefined)
     expect(agent.bubbles).toHaveLength(0) // ה-BE מסנתז את בועת-המשתמש — לא כאן
     // 🔴 turnState נשאר waiting אחרי שה-promise נפתר — ה-202 אינו סוף התור
     expect(agent.turnState).toBe("waiting")
@@ -166,7 +163,10 @@ describe("AgentSession + remote view — sendPrompt", () => {
     })
 
     expect(view.promptMock).toHaveBeenCalledWith(
-      [{ type: "text", text: "hello" }, { type: "image", mimeType: "image/png", data: "AA==" }],
+      [
+        { type: "text", text: "hello" },
+        { type: "image", mimeType: "image/png", data: "AA==" },
+      ],
       undefined,
     )
     expect(agent.error).toBeNull() // r3: no warning
@@ -469,6 +469,45 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
     })
     return { fetchMock }
   }
+
+  // ── slice empty-session-sync ──
+  // סשן **חדש** הוא ריק ⇒ אין reset patch ⇒ הסנכרון שבתוך לולאת ה-patches
+  // לא רץ לעולם. התוצאה: אין מוד/מודל ואין כפתור תמונה, עד שנטענת היסטוריה.
+  // דווח ע"י המשתמשת ב-2026-08-15.
+  it("empty session snapshot still syncs metadata (configOptions + capabilities)", async () => {
+    const configOptions = [
+      { id: "mode", name: "Mode", category: "mode", currentValue: "manual", availableValues: [] },
+      { id: "model", name: "Model", category: "model", currentValue: "opus", availableValues: [] },
+    ]
+    const snapshot = {
+      ...createInitialSessionState({ sessionId: "fresh-1" }),
+      version: 3,
+      // ⚠️ ללא messages — זה כל העניין. סשן חדש.
+      configOptions,
+      capabilities: {
+        mcp: false,
+        compact: false,
+        commands: false,
+        usage: false,
+        configOptions: true,
+        rename: false,
+        thinkingTokens: false,
+        image: true,
+        systemPrompt: false,
+      },
+    }
+    const { fetchMock } = sseFetchFor(snapshot)
+    vi.stubGlobal("fetch", fetchMock)
+
+    const agent = new AgentSession()
+    await agent.attachRemoteToLiveAgent({ agentId: "fresh", cwd: "/ws", cliKind: "claude" })
+    await delay()
+
+    expect(agent.bubbles).toHaveLength(0) // באמת ריק
+    expect(agent.configOptions).toHaveLength(2) // ⚠️ מוד ומודל
+    expect(agent.capabilities?.image).toBe(true) // ⚠️ כפתור התמונה
+    expect(agent.supportsImageInput).toBe(true)
+  })
 
   // ── slice http-state-gaps C4 ──
   // refreshQuota ב-remote היה **מוחק** את המכסה: אין #ext (הוא נבנה מעל #client
@@ -875,5 +914,4 @@ describe("AgentSession + remote view — session management via #view (remote-se
     ).rejects.toThrow(/cannot switchSession/)
     expect(view.loadSessionMock).not.toHaveBeenCalled()
   })
-
 })
