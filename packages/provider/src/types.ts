@@ -43,6 +43,14 @@ export interface NormalizedCapabilities {
    * Slice reattach-state-sync Commit 1 — see extractPromptCaps (core).
    */
   image: boolean
+  /**
+   * Static declaration — NOT discovered at runtime via ACP.
+   * true = this provider reads opts.systemPrompt and injects it into the session
+   * (claude via _meta.systemPrompt.append, codex via config.developer_instructions).
+   * All other providers (spawn-based, default) silently ignore systemPrompt → false.
+   * Like `rename`, this is a known static fact about the provider, not a wire-measured cap.
+   */
+  systemPrompt: boolean
 }
 
 /**

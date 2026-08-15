@@ -338,6 +338,8 @@ export const he: Catalog = {
   "projectPrompt.label": "פרומפט מערכת לפרויקט",
   "projectPrompt.placeholder": "לדוגמה: תמיד ענה בקצרה, ופתח כל תשובה בעברית...",
   "projectPrompt.hint": "מתווסף להוראות ברירת-המחדל של הסוכן. השינוי חל מהסשן הבא.",
+  // ─── projectPrompt capability warning ─── (slice systemprompt-capability)
+  "projectPrompt.unsupported": "ספק זה אינו תומך בפרומפט מערכת פר-פרויקט.",
   // ─── panel resize handle ─── (slice connect-panel-resize)
   "connect.panel.resizeHandle": "גרור לשינוי גובה",
   // ─── machine-stats ─── (slice-be-machine-stats)

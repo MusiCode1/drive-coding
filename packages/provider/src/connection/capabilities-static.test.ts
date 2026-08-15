@@ -63,4 +63,33 @@ describe("staticCapsFor", () => {
     expect(caps.rename).toBe(false)
     expect(caps.thinkingTokens).toBe(false)
   })
+
+  // DoD #6: default → false (כל CLI לא-מוכר)
+  it("default (unknown cli): systemPrompt=false", () => {
+    // biome-ignore lint/suspicious/noExplicitAny: testing unknown cliKind
+    const caps = staticCapsFor("unknown-cli-xyz" as any)
+    expect(caps.systemPrompt).toBe(false)
+  })
+
+  // DoD #7: codex → true, claude-spawn → false
+  it("codex: systemPrompt=true", () => {
+    expect(staticCapsFor("codex").systemPrompt).toBe(true)
+  })
+
+  it("claude (spawn fallback): systemPrompt=false", () => {
+    expect(staticCapsFor("claude").systemPrompt).toBe(false)
+  })
+
+  // DoD #8: opencode, cursor, grok → false
+  it("opencode: systemPrompt=false", () => {
+    expect(staticCapsFor("opencode").systemPrompt).toBe(false)
+  })
+
+  it("cursor: systemPrompt=false", () => {
+    expect(staticCapsFor("cursor").systemPrompt).toBe(false)
+  })
+
+  it("grok: systemPrompt=false", () => {
+    expect(staticCapsFor("grok").systemPrompt).toBe(false)
+  })
 })

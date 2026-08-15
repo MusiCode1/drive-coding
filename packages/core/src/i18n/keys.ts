@@ -347,6 +347,8 @@ export type MessageKey =
   | "projectPrompt.label"
   | "projectPrompt.placeholder"
   | "projectPrompt.hint"
+  // ─── projectPrompt capability warning ─── (slice systemprompt-capability)
+  | "projectPrompt.unsupported"
   // ─── panel resize handle ─── (slice connect-panel-resize)
   | "connect.panel.resizeHandle"
   // ─── machine-stats ─── (slice-be-machine-stats)

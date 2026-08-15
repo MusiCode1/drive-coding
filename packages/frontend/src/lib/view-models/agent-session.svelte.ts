@@ -319,6 +319,26 @@ export class AgentSession {
     return this.#capabilities
   }
 
+  /**
+   * showsSystemPromptWarning — האם להציג את אזהרת חוסר-התמיכה בפרומפט-פרויקט.
+   *
+   * ─── slice systemprompt-capability ───
+   * **שלושה מצבים, לא שניים** (ממצא אביגיל):
+   * - `capabilities === null` — טרם ידוע ⇒ **שקט**. לא אזהרה ולא הבטחה.
+   * - `systemPrompt === true`  — נתמך ⇒ שקט.
+   * - `systemPrompt === false` — לא נתמך ⇒ אזהרה.
+   *
+   * ⚠️ **לא להשתמש כאן ב-`supports`** — הוא מחזיר all-false כשהיכולות טרם
+   * הגיעו, ולכן היה מציג אזהרת-שווא ב-claude/codex בכל חיבור וחיבור-מחדש.
+   *
+   * ⚠️ **התנאי חי כאן ולא בתבנית** כדי שבדיקת-מוטציה תוכל לתפוס אותו:
+   * טסט שמעתיק את התנאי לרכיב-fixture עובר גם כשקוד הייצור שבור (ממצא כלב).
+   */
+  get showsSystemPromptWarning(): boolean {
+    const caps = this.#capabilities
+    return caps !== null && caps.systemPrompt === false
+  }
+
   /** Test hook ל-spike: כמה raw Claude SDK ext notifications התקבלו בחיבור הנוכחי. */
   get claudeRawSdkMessageCount(): number {
     return this.#claudeRawSdkMessageCount
@@ -339,6 +359,7 @@ export class AgentSession {
         rename: false,
         thinkingTokens: false,
         image: false,
+        systemPrompt: false,
       }
     )
   }
@@ -2089,6 +2110,7 @@ export class AgentSession {
             rename: false,
             thinkingTokens: false,
             image: false,
+            systemPrompt: false,
             ...data.mockState.capabilities,
           }
         }
