@@ -1,5 +1,36 @@
 ## 2026-08-15 (slice remote-images — תמונות ב-HTTP)
 
+### slice http-state-gaps — מוד ומכסה בערוץ-המצב
+
+ענף: `slice/http-state-gaps`, worktree `.worktrees/http-state-gaps`.
+
+שני באגים שדווחו ב-HTTP: שינוי מוד חזר לערך הישן אחרי יציאה וחזרה, ומכסת
+claude לא הופיעה. שניהם היו אותה צורה — מצב שחי רק בלקוח ב-WS, ובלי בית בשרת.
+
+**מה השתנה:**
+
+- `SessionHost.setConfigOption` קולט את `configOptions[]` שה-CLI מחזיר ופולט
+  `update-session`. קודם התשובה נזרקה, וערוץ-המצב לא ידע שמשהו קרה.
+- `loadSession` **מותנה בזהות הסשן**: אותו `sessionId` ⇒ הערך הקיים מנצח
+  (תשובת ה-load נמדדה כמיושנת ב-54 מתוך 92 הקלטות). `sessionId` שונה ⇒
+  תשובת ה-load מנצחת, ו-`quota` מתאפס — אחרת מכסת הסשן הקודם נשארת מוצגת,
+  כי `reset` דווקא משמר אותה.
+- ה-BE קורא `_drive/getQuota` וכותב ל-`state.quota`, רק כאשר
+  **`conn.capabilities.usage === true`** (היכולת המנורמלת; ל-`client.capabilities`
+  הגולמי אין שדה כזה). עם timeout, dedupe לפי דור, guard נגד תשובה מאוחרת,
+  וולידציה של `{snapshot}`. `snapshot: null` הוא תשובה תקינה — "אין מגבלות".
+- ב-FE: `refreshQuota` יוצא מוקדם ב-remote (אין שם `#ext`, והמשך הריצה היה
+  דורס מכסה תקינה ב-`null`), ו-`attachRemoteToLiveAgent` משים את `#sessionId`
+  מהסנאפשוט — הוא קרא אותו לכשל-המהיר אך לא שמר אותו, ולכן בחזרה לסוכן חי
+  כל מה שמותנה ב-sessionId מת בשקט.
+
+**מגבלה ידועה:** `#syncFromViewState` נקרא רק בתוך לולאת ה-patches. סנאפשוט
+של סשן **ריק** אינו מייצר patch, ולכן מטא-דאטה ממנו לא מסונכרן. בפועל חזרה
+לסשן היא תמיד עם היסטוריה, וה-BE פולט patch כשהוא כותב מכסה — אז המסלול
+מכוסה. אם יידרש סשן ריק עם מטא-דאטה, זה המקום להסתכל בו.
+
+---
+
 ### slice remote-images — PromptBlocks בשלוש שכבות + attachments ב-core
 
 Base: `slice/http-usable` @ `1182153`.
