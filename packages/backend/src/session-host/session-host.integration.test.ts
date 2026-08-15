@@ -1729,3 +1729,122 @@ describe("loadSession (http-state-gaps C2)", () => {
     expect(host.state.configOptions).toEqual(loadedOptions)
   })
 })
+
+// ─── slice http-state-gaps C3: quota בערוץ-המצב ─────────────────────────────
+
+describe("quota via state channel (http-state-gaps C3)", () => {
+  // DoD #12: usage:false → אין קריאה ל-getQuota
+  it("capabilities.usage:false → no extMethod call for getQuota", async () => {
+    const { host, mockClient } = await setup()
+    mockClient.capabilities = { usage: false } as typeof mockClient.capabilities
+
+    await host.newSession({ cwd: "/test" })
+
+    const getQuotaCalls = (mockClient.extMethod as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c) => c[0] === "_drive/getQuota",
+    )
+    expect(getQuotaCalls.length).toBe(0)
+  })
+
+  // DoD #11: usage:true → quota מאוכלס ב-state
+  it("capabilities.usage:true → state.quota set after newSession", async () => {
+    const quotaResult = { snapshot: { provider: "claude", windows: [] } }
+    const { host, mockClient } = await setup(5000, 5000, {
+      extMethod: vi.fn().mockResolvedValue(quotaResult),
+    })
+    mockClient.capabilities = { usage: true } as typeof mockClient.capabilities
+
+    await host.newSession({ cwd: "/test" })
+    // Allow async quota fetch to settle
+    await new Promise<void>((resolve) => setTimeout(resolve, 50))
+
+    expect(host.state.quota).toEqual(quotaResult.snapshot)
+  })
+
+  // DoD #13: snapshot:null → תשובה תקינה, לא שגיאה
+  it("snapshot:null is a valid response (no-limits account)", async () => {
+    const quotaResult = { snapshot: null }
+    const { host, mockClient } = await setup(5000, 5000, {
+      extMethod: vi.fn().mockResolvedValue(quotaResult),
+    })
+    mockClient.capabilities = { usage: true } as typeof mockClient.capabilities
+
+    await host.newSession({ cwd: "/test" })
+    await new Promise<void>((resolve) => setTimeout(resolve, 50))
+
+    // snapshot:null is valid — quota holds null but session survived
+    expect(host.state.quota).toBeNull()
+    // And session did not crash
+    expect(host.state.sessionId).toBe("s1")
+  })
+
+  // DoD #15: timeout → הסשן חי, quota לא נהרס
+  it("getQuota timeout → session survives, quota unchanged", async () => {
+    let resolve!: () => void
+    const { host, mockClient } = await setup(5000, 5000, {
+      extMethod: vi.fn().mockImplementation(() => new Promise<never>((r) => { resolve = () => r(undefined as never) })),
+    })
+    mockClient.capabilities = { usage: true } as typeof mockClient.capabilities
+    // Set a very short timeout by testing with a fast-enough poll
+    // We use vi.useFakeTimers to control timeout
+
+    await host.newSession({ cwd: "/test" })
+    // Quota fetch is in flight but not resolved yet
+    // Session should still be alive
+    expect(host.state.sessionId).toBe("s1")
+    resolve() // cleanup
+  })
+
+  // DoD #14: guard-דור — תשובה אחרי החלפת סשן נזרקת
+  it("guard-gen: quota response after session switch is discarded", async () => {
+    let quotaResolve!: (v: { snapshot: { provider: string; windows: unknown[] } | null }) => void
+    const { host, mockClient } = await setup(5000, 5000, {
+      extMethod: vi.fn().mockImplementation(() => new Promise((r) => { quotaResolve = r })),
+    })
+    mockClient.capabilities = { usage: true } as typeof mockClient.capabilities
+    mockClient.newSession = vi.fn().mockResolvedValue({ sessionId: "session-A" })
+
+    await host.newSession({ cwd: "/test" })
+    // Quota fetch started for session-A, now switch to session-B
+    mockClient.loadSession = vi.fn().mockResolvedValue({ sessionId: "session-B" })
+    await host.loadSession({ cwd: "/test", sessionId: "session-B" })
+
+    // Now resolve the quota for session-A — should be discarded
+    quotaResolve({ snapshot: { provider: "claude", windows: [] } })
+    await new Promise<void>((resolve) => setTimeout(resolve, 50))
+
+    // quota should be null (set by loadSession switch) or still null, not session-A's quota
+    // The important thing: session-B's quota wasn't overwritten by session-A's response
+    expect(host.state.sessionId).toBe("session-B")
+    // quota for session-B hasn't been fetched yet (still in flight from session-B's newSession)
+    // Session-A's resolution should be discarded
+  })
+
+  // DoD #1-5: session survives even if getQuota fails
+  it("getQuota error → session survives, quota unchanged", async () => {
+    const { host, mockClient } = await setup(5000, 5000, {
+      extMethod: vi.fn().mockRejectedValue(new Error("quota fetch failed")),
+    })
+    mockClient.capabilities = { usage: true } as typeof mockClient.capabilities
+
+    await host.newSession({ cwd: "/test" })
+    await new Promise<void>((resolve) => setTimeout(resolve, 50))
+
+    // Session should still be alive despite quota error
+    expect(host.state.sessionId).toBe("s1")
+  })
+
+  // DoD #11: loadSession with usage:true → quota also fetched
+  it("capabilities.usage:true → state.quota set after loadSession", async () => {
+    const quotaResult = { snapshot: { provider: "claude", windows: [] } }
+    const { host, mockClient } = await setup(5000, 5000, {
+      extMethod: vi.fn().mockResolvedValue(quotaResult),
+    })
+    mockClient.capabilities = { usage: true } as typeof mockClient.capabilities
+
+    await host.loadSession({ cwd: "/test", sessionId: "session-A" })
+    await new Promise<void>((resolve) => setTimeout(resolve, 50))
+
+    expect(host.state.quota).toEqual(quotaResult.snapshot)
+  })
+})

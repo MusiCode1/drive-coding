@@ -44,6 +44,7 @@ import type { AcpClient, AcpClientCallbacks, AcpClientOptions, PromptBlocks } fr
 import { createAcpClient, createAttachedAcpClient } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { AcpTransport } from "@drive-coding/provider/transport"
+import { parseExtResult } from "@drive-coding/provider/extensions"
 import { createInProcessAcpTransport } from "./in-process-acp-transport.js"
 import { createPendingRequests } from "./pending-requests.js"
 
@@ -429,6 +430,58 @@ export async function createSessionHostFromConnection(
     defaultValue: { action: "cancel" },
   })
 
+  // ── slice http-state-gaps C3: quota via state channel ───────────────────────
+  // generation counter: incremented on every session start; used to discard
+  // quota responses that arrive after a session switch or dispose.
+  let quotaGeneration = 0
+  // dedupe: at most one in-flight getQuota call at any time.
+  let quotaFetchInFlight = false
+  // timeout: abort getQuota if the CLI does not respond within this window.
+  const QUOTA_FETCH_TIMEOUT_MS = 5_000
+
+  /**
+   * Fires an async getQuota call after a successful session start/load.
+   * Non-blocking: does NOT await here — caller proceeds immediately.
+   * Five invariants (brief §5/C3):
+   *   1. Not part of newSession/loadSession success condition.
+   *   2. Timeout: race against QUOTA_FETCH_TIMEOUT_MS.
+   *   3. Guard-gen: response arriving after session switch or dispose is discarded.
+   *   4. Dedupe: only one in-flight call at a time.
+   *   5. Validate { snapshot } shape before writing to state.
+   */
+  function startQuotaFetch(sessionId: string): void {
+    // condition 4: dedupe
+    if (quotaFetchInFlight) return
+    // condition: only when capabilities.usage === true
+    if (!client.capabilities?.usage) return
+    quotaFetchInFlight = true
+    const gen = quotaGeneration
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("getQuota timeout")), QUOTA_FETCH_TIMEOUT_MS),
+    )
+    const fetchPromise = client.extMethod("_drive/getQuota", { sessionId })
+    Promise.race([fetchPromise, timeoutPromise])
+      .then((raw) => {
+        // condition 5: validate { snapshot } shape
+        const validated = parseExtResult("_drive/getQuota", raw)
+        // condition 3: guard-gen — discard if session changed or disposed
+        if (disposed || quotaGeneration !== gen) return
+        const patch: Patch = {
+          op: "update-session",
+          version: currentState.version + 1,
+          changes: { quota: validated.snapshot },
+        }
+        currentState = applyPatch(currentState, patch)
+        emitPatches([patch])
+      })
+      .catch(() => {
+        // error or timeout — session survives, quota unchanged (condition 1)
+      })
+      .finally(() => {
+        quotaFetchInFlight = false
+      })
+  }
+
   // ── Transport + AcpClient ─────────────────────────────────────────────────
 
   const transport = createInProcessAcpTransport({
@@ -630,6 +683,9 @@ export async function createSessionHostFromConnection(
         }])
         currentState = { ...currentState, version: currentState.version + 1 }
       }
+      // slice http-state-gaps C3: advance generation + fire quota fetch (non-blocking)
+      quotaGeneration++
+      startQuotaFetch(result.sessionId as string)
       return result
     },
 
@@ -741,6 +797,9 @@ export async function createSessionHostFromConnection(
         }
         currentState = applyPatch(currentState, updatePatch)
         emitPatches([updatePatch])
+        // slice http-state-gaps C3: advance generation + fire quota fetch (non-blocking)
+        quotaGeneration++
+        startQuotaFetch(opts.sessionId)
         return { sessionId: opts.sessionId, version: currentState.version }
       } catch (err) {
         // 8. Failure — rollback sessionId only + second monotonic reset + idle.
