@@ -270,6 +270,7 @@ $effect(() => {
 // slice reconnect-bubble-merge: מפתח-הזיהוי עבר מ-.id ל-stableBubbleKey (ids מתחדשים
 // ב-reveal של warm-reconnect → .id היה חוטף משתמש-שגלל-למעלה לתחתית, DoD#7).
 let lastSeenUserBubbleKey = ""
+let lastSeenUserBubbleId = ""
 let wasReconnectReplay = false
 $effect(() => {
   // מצא את הbועה האחרונה עם kind==="user" (renderBubbles — קפוא בזמן warm-reconnect replay)
@@ -281,7 +282,7 @@ $effect(() => {
       break
     }
   }
-  const key = lastUserBubble ? stableBubbleKey(lastUserBubble) : ""
+  const key = lastUserBubble ? stableBubbleKey(lastUserBubble, session.renderBubbles) : ""
 
   // ─── reveal-guard ספציפי-ל-reconnect (אביגיל r2/r3) ───
   // במעבר isReconnectReplay: true→false (רגע ה-reveal של warm-reconnect בלבד) — רק
@@ -293,15 +294,22 @@ $effect(() => {
   if (wasReconnectReplay && !isReplay) {
     wasReconnectReplay = isReplay
     lastSeenUserBubbleKey = key
+    lastSeenUserBubbleId = lastUserBubble?.id ?? ""
     return
   }
   wasReconnectReplay = isReplay
 
   if (!lastUserBubble) return
   if (key === lastSeenUserBubbleKey) return
+  // אותה בועה, רק נחתם messageId (user:i:<uuid> → user:m:<id>) — לא תור חדש, לא לקפוץ.
+  if (lastUserBubble.id === lastSeenUserBubbleId) {
+    lastSeenUserBubbleKey = key
+    return
+  }
 
   // בועת user חדשה — force-follow
   lastSeenUserBubbleKey = key
+  lastSeenUserBubbleId = lastUserBubble.id
   following = true
   jumpToBottom()
 })

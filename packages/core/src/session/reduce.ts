@@ -7,7 +7,15 @@
  *
  * ─── slice session-state-reducer C1 (TDD) ───
  */
-import type { SessionState, SessionMessage, SessionSegment, SessionToolCall, Patch, SessionModes, SessionUsage } from "./types"
+import type {
+  Patch,
+  SessionMessage,
+  SessionModes,
+  SessionSegment,
+  SessionState,
+  SessionToolCall,
+  SessionUsage,
+} from "./types"
 
 // ─── internal helpers ───
 
@@ -94,6 +102,14 @@ function handleTextChunk(
       patches: [patch],
     }
   } else {
+    // ─── מיזוג dev → שרשרת ה-HTTP ───
+    // dev תיקן זאת ב-4506229 בתוך AgentSession.#appendChunk, מתודה שהשרשרת
+    // הסירה. הבאג עצמו נשאר: `!text` למעלה מסנן מחרוזת ריקה בלבד, ומחרוזת
+    // של רווחים היא truthy — ולכן מקטע-רווחים שאי-אפשר לקבץ היה פותח בועה
+    // ריקה חדשה. כאן זה גם נכון יותר מהמקור: התיקון יושב ב-core ולכן חל
+    // על שני המסלולים, לא רק על ה-FE.
+    if (text.trim() === "") return { state, patches: [] }
+
     // add-message
     const msgId = nextMsgId(state.nextMessageSeq)
     const segId = nextSegId(state.nextSegmentSeq)
@@ -126,6 +142,16 @@ function handleToolCall(
   const toolCallId = update.toolCallId
   if (typeof toolCallId !== "string") return { state, patches: [] }
 
+  // ─── מיזוג dev → שרשרת ה-HTTP ───
+  // dev תיקן זאת ב-cb1021a ("מניעת כפילויות מפתחות ב-Virtualizer"). ספק ששולח
+  // `tool_call` פעמיים עם אותו toolCallId — במקום tool_call_update — היה יוצר
+  // בועה שנייה, ואיתה **מפתח כפול** ב-Virtualizer. השרשרת החליפה את המימוש
+  // ב-FE ולכן התיקון לא עבר. כאן הוא יושב ב-core ⇒ חל על שני המסלולים.
+  const existingIdx = state.messages.findIndex(
+    (m) => m.role === "tool" && m.toolCall.toolCallId === toolCallId,
+  )
+  if (existingIdx !== -1) return handleToolCallUpdate(state, update)
+
   const name =
     typeof update.kind === "string"
       ? update.kind
@@ -147,8 +173,7 @@ function handleToolCall(
         : "pending",
     title: typeof update.title === "string" ? update.title : undefined,
     result: update.rawOutput,
-    content:
-      Array.isArray(update.content) && update.content !== null ? update.content : undefined,
+    content: Array.isArray(update.content) && update.content !== null ? update.content : undefined,
     locations:
       Array.isArray(update.locations) && update.locations !== null ? update.locations : undefined,
   }
@@ -170,7 +195,7 @@ function handleToolCall(
       version: newVersion,
       messages: [...state.messages, msg],
       nextMessageSeq: state.nextMessageSeq + 1,
-      turnState: "calling-tool",  // C1: tool_call → 'calling-tool'
+      turnState: "calling-tool", // C1: tool_call → 'calling-tool'
     },
     patches: [patch],
   }
@@ -207,10 +232,20 @@ function handleToolCallUpdate(
   if (typeof update.kind === "string") partial.kind = update.kind
   if (typeof update.title === "string") partial.title = update.title
   if (update.content !== undefined) {
-    partial.content = update.content === null ? undefined : Array.isArray(update.content) ? update.content : undefined
+    partial.content =
+      update.content === null
+        ? undefined
+        : Array.isArray(update.content)
+          ? update.content
+          : undefined
   }
   if (update.locations !== undefined) {
-    partial.locations = update.locations === null ? undefined : Array.isArray(update.locations) ? update.locations : undefined
+    partial.locations =
+      update.locations === null
+        ? undefined
+        : Array.isArray(update.locations)
+          ? update.locations
+          : undefined
   }
 
   const newToolCall: SessionToolCall = { ...old.toolCall, ...partial }
@@ -318,7 +353,11 @@ export function reduce(
     const opts = Array.isArray(u.configOptions) ? u.configOptions : []
     const newVersion = state.version + 1
     const newState: SessionState = { ...state, version: newVersion, configOptions: opts }
-    const patch: Patch = { version: newVersion, op: "update-session", changes: { configOptions: opts } }
+    const patch: Patch = {
+      version: newVersion,
+      op: "update-session",
+      changes: { configOptions: opts },
+    }
     return { state: newState, patches: [patch] }
   }
 
@@ -333,7 +372,11 @@ export function reduce(
     }
     const newVersion = state.version + 1
     const newState: SessionState = { ...state, version: newVersion, contextUsage: newUsage }
-    const patch: Patch = { version: newVersion, op: "update-session", changes: { contextUsage: newUsage } }
+    const patch: Patch = {
+      version: newVersion,
+      op: "update-session",
+      changes: { contextUsage: newUsage },
+    }
     return { state: newState, patches: [patch] }
   }
 

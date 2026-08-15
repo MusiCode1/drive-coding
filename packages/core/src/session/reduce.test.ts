@@ -7,10 +7,10 @@
  *
  * ─── slice session-state-reducer C1 (TDD) ───
  */
-import { describe, it, expect } from "vitest"
+import { describe, expect, it } from "vitest"
 import { reduce } from "./reduce"
+import type { Patch, SessionState } from "./types"
 import { createInitialSessionState } from "./types"
-import type { SessionState, Patch } from "./types"
 
 // ─── helpers ───
 
@@ -23,11 +23,7 @@ function notification(update: unknown): { update: unknown } {
   return { update }
 }
 
-function makeChunk(
-  sessionUpdate: string,
-  text: string,
-  messageId: string | null = null,
-): object {
+function makeChunk(sessionUpdate: string, text: string, messageId: string | null = null): object {
   return { sessionUpdate, content: { type: "text", text }, messageId }
 }
 
@@ -125,7 +121,10 @@ describe("reduce — agent_message_chunk", () => {
   it("thought_chunk after message_chunk → new bubble (kind change)", () => {
     const s = mkState()
     const { state: s1 } = reduce(s, makeChunk("agent_message_chunk", "Hi", "msg-1"))
-    const { state: s2, patches } = reduce(s1, makeChunk("agent_thought_chunk", "Thinking...", "msg-1"))
+    const { state: s2, patches } = reduce(
+      s1,
+      makeChunk("agent_thought_chunk", "Thinking...", "msg-1"),
+    )
     expect(patches[0]!.op).toBe("add-message")
     expect(s2.messages).toHaveLength(2)
     expect(s2.messages[1]!.role).toBe("thought")
@@ -390,7 +389,10 @@ describe("reduce — non-handled events", () => {
 describe("reduce — session_info_update (C1)", () => {
   it("sets title on session_info_update", () => {
     const s = mkState()
-    const { state, patches } = reduce(s, { sessionUpdate: "session_info_update", title: "My Session" })
+    const { state, patches } = reduce(s, {
+      sessionUpdate: "session_info_update",
+      title: "My Session",
+    })
     expect(state.title).toBe("My Session")
     expect(patches).toHaveLength(1)
     if (patches[0]!.op === "update-session") {
@@ -436,7 +438,10 @@ describe("reduce — available_commands_update (C1)", () => {
 describe("reduce — current_mode_update (C1)", () => {
   it("sets modes.currentModeId", () => {
     const s = mkState()
-    const { state, patches } = reduce(s, { sessionUpdate: "current_mode_update", currentModeId: "fast" })
+    const { state, patches } = reduce(s, {
+      sessionUpdate: "current_mode_update",
+      currentModeId: "fast",
+    })
     expect(state.modes?.currentModeId).toBe("fast")
     expect(state.modes?.availableModes).toEqual([])
     expect(patches[0]!.op).toBe("update-session")
@@ -454,7 +459,10 @@ describe("reduce — current_mode_update (C1)", () => {
 
   it("no-op if currentModeId is not a string", () => {
     const s = mkState()
-    const { state, patches } = reduce(s, { sessionUpdate: "current_mode_update", currentModeId: 123 })
+    const { state, patches } = reduce(s, {
+      sessionUpdate: "current_mode_update",
+      currentModeId: 123,
+    })
     expect(state).toBe(s)
     expect(patches).toEqual([])
   })
@@ -566,5 +574,29 @@ describe("reduce — immutability", () => {
     reduce(s, makeChunk("agent_message_chunk", "Hi", "msg-1"))
     expect(s.messages).toBe(originalMessages) // still the same empty array reference
     expect(s.messages).toHaveLength(0)
+  })
+})
+
+// ─── מיזוג dev → שרשרת ה-HTTP: סינון מקטעי-רווח ───
+// dev תיקן זאת ב-4506229 בתוך AgentSession.#appendChunk — מתודה שהשרשרת הסירה,
+// ולכן התיקון היה נופל בשקט במיזוג. הבאג עצמו נשאר בשרשרת: `!text` מסנן מחרוזת
+// ריקה בלבד, ומחרוזת של רווחים היא truthy.
+
+describe("reduce — מקטע רווחים בלבד אינו פותח בועה חדשה", () => {
+  it("whitespace-only chunk that cannot group → no patch, no message", () => {
+    const s = mkState()
+    const { state, patches } = reduce(s, makeChunk("agent_message_chunk", "   \n  ", "msg-1"))
+    expect(patches).toHaveLength(0)
+    expect(state.messages).toHaveLength(0)
+    expect(state.nextMessageSeq).toBe(0) // לא בוזבז מזהה
+  })
+
+  it("whitespace-only chunk that CAN group is still appended (רווח בין מילים)", () => {
+    const s = mkState()
+    const first = reduce(s, makeChunk("agent_message_chunk", "Hello", "msg-1"))
+    const second = reduce(first.state, makeChunk("agent_message_chunk", " ", "msg-1"))
+    expect(second.patches).toHaveLength(1) // מקובץ — לא נפגע
+    const msg = second.state.messages[0]!
+    if (msg.role !== "tool") expect(msg.segments).toHaveLength(2)
   })
 })

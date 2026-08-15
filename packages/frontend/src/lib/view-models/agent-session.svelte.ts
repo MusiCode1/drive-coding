@@ -66,6 +66,7 @@ import type { ElicitationParams, ElicitationResponse } from "$lib/types/elicitat
 import type { PermissionParams, PermissionResponse } from "$lib/types/permission"
 // ─── slice leave-running-background ───
 import { isBypassMode } from "$lib/util/permission-mode"
+import { safeUUID } from "$lib/util/uuid"
 // ─── slice surface-real-error: עדיפות data.details→data.message→message→String(e) ───
 import { formatAcpError } from "$lib/view-models/format-acp-error"
 import type { Settings } from "$lib/view-models/settings.svelte"
@@ -1558,7 +1559,6 @@ export class AgentSession {
     const atts = opts?.attachments ?? []
     if (!text.trim() && atts.length === 0) return
 
-
     // Slice 4: לכידה לטובת הקשר הקריינות
     this.lastUserMessage = text
 
@@ -1571,11 +1571,11 @@ export class AgentSession {
     // ─── slice view-switch C3-ב.3: אופטימי רק ב-local — ב-remote ה-BE מסנתז את בועת-המשתמש ───
     if (!this.#view) {
       const userBubble: UserBubble = {
-        id: crypto.randomUUID(),
+        id: safeUUID(),
         kind: "user",
         messageId: null,
         createdAt: Date.now(),
-        segments: [{ id: crypto.randomUUID(), text }],
+        segments: [{ id: safeUUID(), text }],
         ...(opts?.recordingId !== undefined ? { recordingId: opts.recordingId } : {}),
         // ─── slice-image-paste Commit 4b: attachments לבועה אופטימית ───
         ...(atts.length > 0
@@ -1586,7 +1586,6 @@ export class AgentSession {
     }
     this.#setTurnState("waiting")
     this.#resetTurnTracking() // תחילת תור — #turnEnded=false + נקה טיימר יתום
-
 
     try {
       // ⚠️ אין meta ב-scope של sendPrompt — נבנה כאן, אחרת tsc נופל על Cannot find name
@@ -2794,6 +2793,19 @@ export class AgentSession {
       // נשלח על ידי הסוכן במהלך ניגון מחדש של ההיסטוריה מ-loadSession (לפי מפרט ACP
       // סעיף §session-setup#loading-sessions). לעולם לא מגיע בתורים חיים —
       // אלה מקורם מ-sendPrompt ואנחנו מוסיפים להם את הבועה האופטימית שם.
+      if (messageId !== null) {
+        for (let i = this.bubbles.length - 1; i >= 0; i--) {
+          const b = this.bubbles[i]
+          if (
+            b !== undefined &&
+            b.kind === "user" &&
+            (b.messageId === messageId || b.messageId === null)
+          ) {
+            if (b.messageId === null) b.messageId = messageId
+            break
+          }
+        }
+      }
       const content = update.content as
         | {
             type?: string
@@ -2915,7 +2927,7 @@ export class AgentSession {
     }
 
     const childBubble: ToolBubble = {
-      id: crypto.randomUUID(),
+      id: safeUUID(),
       kind: "tool",
       messageId: null,
       createdAt: Date.now(),
@@ -2999,6 +3011,7 @@ export class AgentSession {
     newSubFrames[childIdx] = newChild
     this.bubbles[parentIdx] = { ...parent, subFrames: newSubFrames }
   }
+
   /**
    * §11: מצרף image-attachment לבועת-user — קיבוץ לפי messageId כמו #appendChunk.
    *
@@ -3022,7 +3035,7 @@ export class AgentSession {
       userBubble.attachments = [...(userBubble.attachments ?? []), attachment]
     } else {
       const newBubble: UserBubble = {
-        id: crypto.randomUUID(),
+        id: safeUUID(),
         kind: "user",
         messageId,
         createdAt: Date.now(),
@@ -3056,7 +3069,7 @@ export class AgentSession {
       userBubble.contentPlaceholders = [...(userBubble.contentPlaceholders ?? []), ph]
     } else {
       const newBubble: UserBubble = {
-        id: crypto.randomUUID(),
+        id: safeUUID(),
         kind: "user",
         messageId,
         createdAt: Date.now(),

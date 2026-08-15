@@ -48,7 +48,7 @@ export default defineConfig({
   },
   server: {
     // port: OS-assigned. Vite prints chosen port at startup.
-    allowedHosts: [".tuns.sh", ".trycloudflare.com", "localhost"],
+    allowedHosts: true,
     proxy: {
       "/api": `http://localhost:${BE_PORT}`,
       "/proxy": `http://localhost:${BE_PORT}`,

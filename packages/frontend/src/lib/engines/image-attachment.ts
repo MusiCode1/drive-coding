@@ -1,10 +1,9 @@
+import { safeUUID } from "$lib/util/uuid"
+
 /**
- * image-attachment engine — לכידה, דחיסה, ו-base64 לתמונות מהמשתמש.
- *
- * Browser-only: משתמש ב-createImageBitmap / OffscreenCanvas / canvas.toBlob.
- * צורך את planResize מ-@drive-coding/core (מתמטיקה טהורה).
- *
- * ─── image ─── (slice-image-paste Commit 1)
+ * image-attachment engine — capture, compress, and base64 for user images.
+ * Browser-only: uses createImageBitmap / OffscreenCanvas / canvas.toBlob.
+ * Uses planResize from @drive-coding/core.
  */
 import { planResize } from "@drive-coding/core"
 
@@ -75,7 +74,7 @@ export async function fileToImageAttachment(file: File | Blob): Promise<ImageAtt
   const previewUrl = URL.createObjectURL(resultBlob)
 
   return {
-    id: crypto.randomUUID(),
+    id: safeUUID(),
     mimeType: resultMimeType,
     dataBase64,
     previewUrl,

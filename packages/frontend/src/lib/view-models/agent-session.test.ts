@@ -13,13 +13,14 @@
  *   - null msg → null user → 2 bubbles (kind changes)
  *   - user with messageId="x" × 2 → 1 bubble with 2 segments (existing behavior preserved)
  */
-import { beforeEach, describe, expect, it, vi } from "vitest"
+
 import type { AcpClient } from "@drive-coding/provider/client"
-import type { Bubble, MessageBubble, ThoughtBubble, UserBubble } from "$lib/types/bubble"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+import type { MessageBubble, ThoughtBubble, ToolBubble, UserBubble } from "$lib/types/bubble"
 
 // ─── Module-level mocks ───────────────────────────────────────────────────────
+import { stableBubbleKey } from "$lib/util/bubble-key"
 
-/** Captured callback from createAcpClient — invoked in tests to simulate updates. */
 let onSessionUpdate: ((notification: unknown) => void) | null = null
 
 vi.mock("@drive-coding/provider/client", async (importActual) => {
@@ -108,6 +109,18 @@ function userChunk(text: string, messageId: string | null): unknown {
   }
 }
 
+function toolCall(id: string, title: string): unknown {
+  return {
+    update: {
+      sessionUpdate: "tool_call",
+      toolCallId: id,
+      title,
+      kind: "read",
+      status: "pending",
+    },
+  }
+}
+
 // ─── Test suite ───────────────────────────────────────────────────────────────
 
 describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () => {
@@ -172,8 +185,12 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     expect(session.bubbles[1]!.kind).toBe("thought")
     expect(session.bubbles[2]!.kind).toBe("message")
     expect((session.bubbles[0] as MessageBubble).segments.map((s) => s.text).join("")).toBe("hello")
-    expect((session.bubbles[1] as ThoughtBubble).segments.map((s) => s.text).join("")).toBe("thinking")
-    expect((session.bubbles[2] as MessageBubble).segments.map((s) => s.text).join("")).toBe(" world")
+    expect((session.bubbles[1] as ThoughtBubble).segments.map((s) => s.text).join("")).toBe(
+      "thinking",
+    )
+    expect((session.bubbles[2] as MessageBubble).segments.map((s) => s.text).join("")).toBe(
+      " world",
+    )
   })
 
   it("null msg → null user → 2 bubbles (kind changes)", () => {
@@ -196,6 +213,104 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     expect(bubble.kind).toBe("user")
     expect(bubble.segments.map((s) => s.text).join("")).toBe("first second")
   })
+
+  it("019fed5d scenario: interleaved chunks with same messageId → zero duplicate keys in stableBubbleKey", () => {
+    expect(onSessionUpdate).not.toBeNull()
+    onSessionUpdate?.(msgChunk("part 1", "msg-019fed5d"))
+    onSessionUpdate?.(thoughtChunk("thinking...", "msg-019fed5d"))
+    onSessionUpdate?.(msgChunk("part 2", "msg-019fed5d"))
+
+    expect(session.bubbles).toHaveLength(3)
+    const list = session.renderBubbles
+    const keys = list.map((b) => stableBubbleKey(b, list))
+    const uniqueKeys = new Set(keys)
+    expect(keys.length).toBe(3)
+    expect(uniqueKeys.size).toBe(3)
+    expect(keys).toEqual([
+      "message:m:msg-019fed5d",
+      "thought:m:msg-019fed5d",
+      "message:m:msg-019fed5d:n2",
+    ])
+  })
+
+  it("message → tool → message with same messageId → second message gets :n2", () => {
+    expect(onSessionUpdate).not.toBeNull()
+    onSessionUpdate?.(msgChunk("before tool", "m1"))
+    // ⚠️ מיזוג dev → שרשרת: הגרסה של dev דחפה בועת-כלי ידנית ל-session.bubbles.
+    // בשרשרת המצב מונע מ-core, ודחיפה ידנית עוקפת אותו — canGroupWith היה רואה
+    // את הודעת "before tool" כאחרונה ומקבץ, כלומר הטסט בדק את ה-harness ולא
+    // את הקוד. כאן הכלי עובר במסלול האמיתי, בדיוק כמו בייצור.
+    onSessionUpdate?.(toolCall("call-1", "read"))
+    onSessionUpdate?.(msgChunk("after tool", "m1"))
+
+    const list = session.renderBubbles
+    expect(list).toHaveLength(3)
+    expect(list.map((b) => stableBubbleKey(b, list))).toEqual([
+      "message:m:m1",
+      "tool:t:call-1",
+      "message:m:m1:n2",
+    ])
+  })
+
+  it("second tool_call with the same toolCallId updates the existing bubble (no duplicate key)", () => {
+    expect(onSessionUpdate).not.toBeNull()
+    onSessionUpdate?.(toolCall("call-1", "Read"))
+    onSessionUpdate?.(toolCall("call-1", "Read file"))
+
+    expect(session.bubbles).toHaveLength(1)
+    const bubble = session.bubbles[0] as ToolBubble
+    expect(bubble.kind).toBe("tool")
+    expect(bubble.toolCall.toolCallId).toBe("call-1")
+    expect(bubble.toolCall.title).toBe("Read file")
+    const list = session.renderBubbles
+    const keys = list.map((b) => stableBubbleKey(b, list))
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  // ⚠️ מיזוג dev → שרשרת ה-HTTP — הטסט שוכתב, והכוונה נשמרה.
+  //
+  // dev בדק: בועה אופטימית שנדחפה ידנית + user_message_chunk ⇒ בועה אחת.
+  // זה היה נכון לארכיטקטורה שלו, שבה שתיהן חיו באותו מערך (#appendChunk).
+  // בשרשרת הבועה האופטימית היא FE-בלבד ו-core אינו יודע עליה, ולכן ההנחה
+  // אינה מתקיימת — וגם **אינה נדרשת**: נמדד על 201 הקלטות ש-user_message_chunk
+  // מגיע **רק ב-replay של session/load**, אף פעם לא בתור חי. ב-replay מגיע
+  // patch מסוג reset שבונה את הבועות מחדש מ-core, כך שאין כפילות.
+  //
+  // מה שנשמר כאן הוא מה ש-dev באמת הגן עליו: **אין מפתחות כפולים**.
+  it("user_message_chunk chunks with the same messageId group into one bubble (no duplicate keys)", () => {
+    expect(onSessionUpdate).not.toBeNull()
+    onSessionUpdate?.(userChunk("my ", "acp-msg-1"))
+    onSessionUpdate?.(userChunk("prompt", "acp-msg-1"))
+
+    expect(session.bubbles).toHaveLength(1)
+    const bubble = session.bubbles[0] as UserBubble
+    expect(bubble.messageId).toBe("acp-msg-1")
+    expect(bubble.segments).toHaveLength(2)
+
+    const list = session.renderBubbles
+    const keys = list.map((b) => stableBubbleKey(b, list))
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  it("standalone whitespace-only chunks (\n) do not create empty message bubbles when canGroup is false", () => {
+    expect(onSessionUpdate).not.toBeNull()
+    onSessionUpdate?.(msgChunk("hello", "m1"))
+    // Simulate tool call inserting a non-groupable bubble
+    session.bubbles.push({
+      id: "t1",
+      kind: "tool",
+      messageId: null,
+      createdAt: Date.now(),
+      segments: [],
+      toolCall: { toolCallId: "call-1", name: "read", args: undefined, status: "completed" },
+    })
+
+    // Standalone newline chunk after tool call
+    onSessionUpdate?.(msgChunk("\n", "m1"))
+
+    // Should NOT create a 3rd bubble just for "\n"
+    expect(session.bubbles).toHaveLength(2)
+  })
 })
 
 // ─── Integration: newSession (warm new-session) ────────────────────────────────
@@ -213,7 +328,9 @@ describe("AgentSession.newSession", () => {
 
   it("warm path: calls #client.newSession, clears bubbles, updates sessionId via ACP response", async () => {
     const { createAcpClient } = await import("@drive-coding/provider/client")
-    const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<typeof createAcpClient>)
+    const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<
+      typeof createAcpClient
+    >)
     // הוסף בועה קיימת כדי לאמת שהיא נמחקת
     session.bubbles = [{ id: "old", kind: "user", messageId: null, createdAt: 0, segments: [] }]
 
@@ -229,11 +346,9 @@ describe("AgentSession.newSession", () => {
 
     await session.newSession({ cliKind: "opencode" })
 
-    expect(notifySessionAttached).toHaveBeenCalledWith(
-      "test-agent",
-      "test-session",
-      { replace: true },
-    )
+    expect(notifySessionAttached).toHaveBeenCalledWith("test-agent", "test-session", {
+      replace: true,
+    })
   })
 
   it("fallback: #client===null (no prior attach) → calls attach", async () => {
@@ -289,7 +404,9 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
     const session = new AgentSession()
     await session.attach({ cwd: "/proj", cliKind: "claude" })
 
-    const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<typeof createAcpClient>)
+    const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<
+      typeof createAcpClient
+    >)
     expect(mockClient.newSession).toHaveBeenCalledWith({
       cwd: "/proj",
       _meta: EXPECTED_META,
@@ -302,7 +419,9 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
     const session = new AgentSession()
     await session.attach({ cwd: "/tmp", cliKind: "opencode" })
 
-    const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<typeof createAcpClient>)
+    const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<
+      typeof createAcpClient
+    >)
     expect(mockClient.newSession).toHaveBeenCalledWith({ cwd: "/tmp" })
   })
 
@@ -312,7 +431,9 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
     const session = new AgentSession()
     await session.loadSession({ sessionId: "sess-1", cwd: "/proj", cliKind: "claude" })
 
-    const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<typeof createAcpClient>)
+    const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<
+      typeof createAcpClient
+    >)
     expect(mockClient.loadSession).toHaveBeenCalledWith({
       sessionId: "sess-1",
       cwd: "/proj",
@@ -326,7 +447,9 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
     const session = new AgentSession()
     await session.loadSession({ sessionId: "sess-2", cwd: "/tmp", cliKind: "opencode" })
 
-    const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<typeof createAcpClient>)
+    const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<
+      typeof createAcpClient
+    >)
     expect(mockClient.loadSession).toHaveBeenCalledWith({ sessionId: "sess-2", cwd: "/tmp" })
   })
 })
@@ -378,7 +501,12 @@ describe("AgentSession.sessionTitle (slice-session-title-header)", () => {
 
   it("loadSession with title sets sessionTitle", async () => {
     const session = new AgentSession()
-    await session.loadSession({ sessionId: "sess-1", cwd: "/proj", cliKind: "opencode", title: "פיקדון" })
+    await session.loadSession({
+      sessionId: "sess-1",
+      cwd: "/proj",
+      cliKind: "opencode",
+      title: "פיקדון",
+    })
 
     expect(session.sessionTitle).toBe("פיקדון")
   })
@@ -386,7 +514,12 @@ describe("AgentSession.sessionTitle (slice-session-title-header)", () => {
   it("keep-on-undefined: loadSession without title preserves existing sessionTitle", async () => {
     const session = new AgentSession()
     // קודם: קבע title
-    await session.loadSession({ sessionId: "sess-1", cwd: "/proj", cliKind: "opencode", title: "פיקדון" })
+    await session.loadSession({
+      sessionId: "sess-1",
+      cwd: "/proj",
+      cliKind: "opencode",
+      title: "פיקדון",
+    })
     expect(session.sessionTitle).toBe("פיקדון")
 
     // סמלץ #coldReconnect — מאפס status ל-disconnected ומריץ loadSession בלי title

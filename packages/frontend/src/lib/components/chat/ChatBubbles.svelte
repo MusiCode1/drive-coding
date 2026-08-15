@@ -41,7 +41,7 @@ $effect(() => {
     bind:this={handle}
     scrollRef={chatScroll.scrollEl}
     data={session.renderBubbles}
-    getKey={stableBubbleKey}
+    getKey={(b) => stableBubbleKey(b, session.renderBubbles)}
     startMargin={80}
   >
     {#snippet children(bubble)}
