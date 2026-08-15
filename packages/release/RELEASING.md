@@ -32,3 +32,28 @@ walkthrough) במקום את ה-bundle הבנוי — ה-`files` whitelist קי�
    בדיקה חד-פעמית מלאה: `bunx drive-coding@latest --version` בתיקייה זמנית
    מחוץ למונו-רפו.
 8. **Git tag**: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+
+---
+
+## ⚠️ שני ה-builds מוחקים את `dist/` זה של זה
+
+`scripts/build.mjs` ו-`scripts/build-binary.mjs` שניהם מריצים
+`rmSync(releaseDist, { recursive: true })` בתחילתם.
+⇒ **כל build מוחק את התוצר של האחר.**
+
+### הסדר המחייב: בנדל קודם, בינארי אחריו
+
+```bash
+cd packages/release
+
+# 1. בנה את הבנדל (dist/drive-coding.js) ופרסם ל-npm
+node scripts/build.mjs
+npm publish --access public          # dist/drive-coding.js קיים כאן
+
+# 2. רק אחרי npm publish — בנה את הבינארי (מוחק את dist/ ובונה מחדש)
+node scripts/build-binary.mjs
+./dist/drive-coding --version        # צריך להחזיר את הגרסה מ-package.json
+```
+
+**אסור לבנות בינארי לפני `npm publish`** — זה ימחק את `dist/drive-coding.js`
+שה-`files` whitelist מצפה לו, ו-`npm publish` יכשל (או יפרסם חבילה ריקה).
