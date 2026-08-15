@@ -44,7 +44,7 @@ describe("teeAcpCallbacks", () => {
     const primary = makeCallbacks()
     primary.onUpdate.mockImplementation(() => order.push("primary"))
     const observer = makeObserver()
-    observer.onUpdate!.mockImplementation(() => order.push("observer"))
+    observer.onUpdate.mockImplementation(() => order.push("observer"))
 
     const teed = teeAcpCallbacks(primary, observer)
     teed.onUpdate?.({ update: {} } as never)
@@ -58,9 +58,9 @@ describe("teeAcpCallbacks", () => {
   it("onExtNotification מגיע לשניהם, primary ראשון", () => {
     const order: string[] = []
     const primary = makeCallbacks()
-    primary.onExtNotification!.mockImplementation((m: string) => order.push(`p:${m}`))
+    primary.onExtNotification.mockImplementation((m: string) => order.push(`p:${m}`))
     const observer = makeObserver()
-    observer.onExtNotification!.mockImplementation((m: string) => order.push(`o:${m}`))
+    observer.onExtNotification.mockImplementation((m: string) => order.push(`o:${m}`))
 
     const teed = teeAcpCallbacks(primary, observer)
     teed.onExtNotification?.("_drive/capabilities", { mock: true })
@@ -71,7 +71,7 @@ describe("teeAcpCallbacks", () => {
   it("throw של ה-observer אינו מגיע ל-VM — ה-primary כבר רץ", () => {
     const primary = makeCallbacks()
     const observer = makeObserver()
-    observer.onUpdate!.mockImplementation(() => {
+    observer.onUpdate.mockImplementation(() => {
       throw new Error("observer exploded")
     })
 
@@ -83,7 +83,7 @@ describe("teeAcpCallbacks", () => {
   it("throw של ה-observer ב-onExtNotification אינו מגיע ל-VM", () => {
     const primary = makeCallbacks()
     const observer = makeObserver()
-    observer.onExtNotification!.mockImplementation(() => {
+    observer.onExtNotification.mockImplementation(() => {
       throw new Error("observer exploded")
     })
 

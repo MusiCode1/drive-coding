@@ -47,8 +47,11 @@ import type { CuesEngine } from "$lib/engines/cues"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
 // ─── slice view-switch C3: createRemoteView (attachRemote) ─── (additive)
 import { createRemoteView } from "$lib/session/create-session-view"
+// ─── slice local-view-wiring: LocalSessionView + tee ───
+import { LocalSessionView } from "$lib/session/local-session-view"
 // ─── slice session-view-port C3: SessionView DI ───
 import type { SessionView } from "$lib/session/session-view"
+import { teeAcpCallbacks } from "$lib/session/tee-acp-callbacks"
 import type {
   Bubble,
   MessageBubble,
@@ -182,6 +185,13 @@ export class AgentSession {
   readonly #settings?: Settings
   // ─── slice session-view-port C3: SessionView DI (אופציונלי — C4 יעביר אל זה בכל attach/loadSession) ───
   #view: SessionView | null = null
+  /**
+   * slice local-view-wiring C3: ה-view המקומי, מטופס. `#view` מחזיק **את אותו אובייקט**
+   * (בשביל `#cleanup`), אבל רק דרך השדה הזה קוראים ל-dispose/adopt/observerCallbacks —
+   * `session-view.ts:94` (החוזה) מכריז close() בלבד, והטיפוס שלו שולל dispose.
+   * ⚠️ לא `as LocalSessionView` על `#view` — הוא ישקר בשקט אם view של remote יגיע לשם.
+   */
+  #localView: LocalSessionView | null = null
   /**
    * slice local-view-wiring C1: ה-view **כמתג-מצב**. `#view !== null` נשא נטל כפול —
    * "יש אובייקט" **וגם** "אנחנו ב-remote". 15 אתרים קראו אותו כמתג. עכשיו המתג הוא
@@ -569,6 +579,64 @@ export class AgentSession {
         applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
         // sync metadata from view.state
         this.#syncFromViewState(view.state)
+      }
+    } catch {
+      // stream נסגר או בוטל — תקין
+    } finally {
+      try {
+        reader.releaseLock()
+      } catch {
+        /* */
+      }
+    }
+  }
+
+  // ─── slice local-view-wiring C3: קשירה ואימוץ מקומיים (brief §4.3-§4.5) ───
+
+  /**
+   * שלב א' — **לפני** יצירת הלקוח (ה-callbacks קופאים ביצירתו — §2.5): משחרר את
+   * הקודם (`#localView.dispose()`, לא close — הלקוח משותף), בונה view חדש, **מציב
+   * אותו ב-#localView וב-#view מיד** (סוגר את חלון-היתום של attach/loadSession
+   * שנכשלים אחריו — §4.5), מפעיל את הניקוז (קורא-ריק — §4.5: patching כפול היה
+   * מכפיל בועות), ומחזיר אותו כדי לעטוף ב-tee.
+   */
+  #bindLocalView(): LocalSessionView {
+    this.#localView?.dispose()
+    const view = new LocalSessionView({
+      cwd: this.cwd ?? "",
+      cliKind: this.#cliKind ?? "",
+    })
+    this.#localView = view
+    this.#view = view
+    void this.#drainViewPatches(view)
+    return view
+  }
+
+  /**
+   * שלב ב' — **אחרי** יצירת הלקוח, **לפני** כל קריאה שמזרימה היסטוריה (§4.4):
+   * מאמץ את הלקוח אל ה-view (מאפס את state ה-view לסשן החדש). נקודות 4/5
+   * (switchSession/newSession מקומיים) קוראות לו עם אותו לקוח — בלי dispose ובלי
+   * בנייה מחדש (ה-tee קפוא על ה-view שנוצר ביצירת הלקוח — §4.3).
+   */
+  #adoptLocalView(client: AcpClient, sessionId: string): void {
+    this.#localView?.adopt({ client, sessionId })
+  }
+
+  /**
+   * הניקוז המקומי — קורא-ריק על view.patches (**לא** #consumeViewPatches): ב-local
+   * ה-VM הוא הצרכן היחיד של bubbles (primary handler), והדרינה/סינכרון מ-state
+   * של ה-view היו מכפילים בועות ומדרסים quota. lifecycle: dispose/close סוגרים
+   * את ה-controller ⇒ read() נפתר done ⇒ הלולאה יוצאת. אין מונה-דור (§4.5 —
+   * await read() תלוי אינו ניתן להפקעה מבחוץ).
+   */
+  async #drainViewPatches(view: SessionView): Promise<void> {
+    const reader = view.patches.getReader()
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (this.#view !== view) break // זהות — view הוחלף/אופס
+        void value // קורא-ריק: patches נצרכים כדי למנוע backpressure
       }
     } catch {
       // stream נסגר או בוטל — תקין
@@ -1114,21 +1182,27 @@ export class AgentSession {
 
       try {
         this.agentId = agentId
-        // ─── slice warm-reattach-skip-init: דילוג על initialize ב-warm reattach ───
-        // createAcpClient שולח initialize — Codex על process חי זורק "Already initialized"
-        // → catch → transport.close() → #handleUnexpectedClose → warm שוב → לולאת סוקטים.
-        // createAttachedAcpClient (סינכרוני) מדלג על initialize; loadSession עובד על process חי.
+        // slice local-view-wiring C3: bind **פר-לקוח** — בתוך לולאת ה-retry, לפני
+        // כל createAttachedAcpClient (§4.3). כל סיבוב משחרר את ה-view של הסיבוב הקודם
+        // (dispose). warm מדלג על initialize בכוונה (באג Codex "Already initialized").
+        const localView = this.#bindLocalView()
         this.#client = createAttachedAcpClient(
           transport,
-          {
-            onUpdate: this.#onSessionUpdate,
-            onExtNotification: this.#onExtNotification,
-            onRequestPermission: this.#onRequestPermission,
-            onCreateElicitation: this.#onCreateElicitation,
-          },
+          teeAcpCallbacks(
+            {
+              onUpdate: this.#onSessionUpdate,
+              onExtNotification: this.#onExtNotification,
+              onRequestPermission: this.#onRequestPermission,
+              onCreateElicitation: this.#onCreateElicitation,
+            },
+            localView.observerCallbacks,
+          ),
           { capabilities: ATTACHED_CAPS_FALLBACK },
         )
         this.#ext = createExtClient(this.#client)
+        // slice local-view-wiring C3 — נקודת-אימוץ 3: sessionId ידוע (this.#sessionId),
+        // מיד אחרי יצירת הלקוח ולפני ה-try של ה-replay.
+        this.#adoptLocalView(this.#client, this.#sessionId!)
         // slice reconnect-bubble-merge, תיקון-במקום 2: ההקפאה עצמה עברה לקריאה
         // (#doReconnect / attachToLiveAgent) — לא כאן. #warmReconnect לבדו לא מכסה
         // ניתוק-רשת מוחלט שמדלג עליו לגמרי (ר' calev NO-GO r2 2026-07-22).
@@ -1216,12 +1290,22 @@ export class AgentSession {
       await transport.waitForOpen()
 
       // 3. לחיצת יד של ACP + סשן חדש
-      this.#client = await createAcpClient(transport, {
-        onUpdate: this.#onSessionUpdate,
-        onExtNotification: this.#onExtNotification,
-        onRequestPermission: this.#onRequestPermission,
-        onCreateElicitation: this.#onCreateElicitation,
-      })
+      // slice local-view-wiring C3: ה-view חייב להתקיים **לפני** createAcpClient
+      // (ה-callbacks קופאים ביצירתו) וה-sessionId מגיע אחריה — שני שלבים: bind+tee כאן,
+      // adopt אחרי newSession (§4.3).
+      const localView = this.#bindLocalView()
+      this.#client = await createAcpClient(
+        transport,
+        teeAcpCallbacks(
+          {
+            onUpdate: this.#onSessionUpdate,
+            onExtNotification: this.#onExtNotification,
+            onRequestPermission: this.#onRequestPermission,
+            onCreateElicitation: this.#onCreateElicitation,
+          },
+          localView.observerCallbacks,
+        ),
+      )
       this.authMethods = this.#client.authMethods // slice auth-guidance: ללכידה בכשל session/new/prompt מאוחר יותר
       this.#ext = createExtClient(this.#client)
       const m = this.#sessionMeta()
@@ -1233,6 +1317,9 @@ export class AgentSession {
       if (!this.#sessionId) {
         throw new Error("newSession returned no sessionId")
       }
+      // slice local-view-wiring C3 — נקודת-אימוץ 1: אחרי newSession (sessionId מהתשובה;
+      // אין היסטוריה לאבד — §4.4) ולפני captureSessionConfig (שמאפס שדות VM, לא state-view).
+      this.#adoptLocalView(this.#client, this.#sessionId)
       this.#captureSessionConfig(sessionResult) // slice 23: לכוד config מה-session
 
       // 4. תגיד ל-BE לאיזה sessionId התחברנו (מאמץ מיטבי - best-effort)
@@ -1729,14 +1816,26 @@ export class AgentSession {
       await transport.waitForOpen()
 
       // 3. לחיצת יד של ACP (זהה ל-attach)
-      this.#client = await createAcpClient(transport, {
-        onUpdate: this.#onSessionUpdate,
-        onExtNotification: this.#onExtNotification,
-        onRequestPermission: this.#onRequestPermission,
-        onCreateElicitation: this.#onCreateElicitation,
-      })
+      // slice local-view-wiring C3: bind+tee לפני יצירת הלקוח; adopt **לפני** loadSession —
+      // ההיסטוריה המשוחזרת מגיעה תוך כדי ה-await, ואימוץ אחריו מוחק אותה (§2.6/§4.4).
+      const localView = this.#bindLocalView()
+      this.#client = await createAcpClient(
+        transport,
+        teeAcpCallbacks(
+          {
+            onUpdate: this.#onSessionUpdate,
+            onExtNotification: this.#onExtNotification,
+            onRequestPermission: this.#onRequestPermission,
+            onCreateElicitation: this.#onCreateElicitation,
+          },
+          localView.observerCallbacks,
+        ),
+      )
       this.authMethods = this.#client.authMethods // slice auth-guidance: ללכידה בכשל loadSession/prompt מאוחר יותר
       this.#ext = createExtClient(this.#client)
+      // slice local-view-wiring C3 — נקודת-אימוץ 2: sessionId ידוע (input.sessionId),
+      // מיד אחרי יצירת הלקוח ולפני ה-try של ה-replay.
+      this.#adoptLocalView(this.#client, input.sessionId)
 
       // ── קריאה ל-loadSession במקום ל-newSession ──
       // השתק את ה-TTS של ה-Speaker במהלך ניגון מחדש של ההיסטוריה (slice 4: replay-quiet).
@@ -1907,6 +2006,11 @@ export class AgentSession {
     this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
     this.bubbles = []
 
+    // slice local-view-wiring C3 — נקודת-אימוץ 4: **אותו לקוח**, בלי dispose ובלי
+    // בנייה מחדש (ה-tee קפוא על ה-view שנוצר ביצירת הלקוח — §4.3). adopt לפני ה-replay:
+    // ההיסטוריה מגיעה תוך כדי loadSession, ואימוץ אחריו מוחק אותה (§4.4).
+    this.#adoptLocalView(this.#client, input.sessionId)
+
     try {
       this.isLoadingHistory = true
       try {
@@ -1984,6 +2088,9 @@ export class AgentSession {
       if (!newId) throw new Error("newSession returned no sessionId")
       this.#sessionId = newId
       this.cwd = cwd
+      // slice local-view-wiring C3 — נקודת-אימוץ 5: **אותו לקוח**, בלי rebuild; אחרי
+      // newSession (sessionId מהתשובה; סשן חדש = אין היסטוריה לאבד — §4.4).
+      this.#adoptLocalView(this.#client, newId)
       this.#captureSessionConfig(result)
 
       // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים).
@@ -2543,6 +2650,7 @@ export class AgentSession {
     // חגורת-ביטחון בלבד — close() תופס בפנים את שתי קריאות ה-respond.
     void this.#view?.close().catch(() => {})
     this.#view = null
+    this.#localView = null // slice local-view-wiring C3: איפוס כפול לצד #view (§4.3)
     this.#isRemote = false // slice local-view-wiring C1: איפוס מתג-המצב לצד איפוס ה-view
     // ─── slice view-switch C3-ו: מרחב-ה-ids של pending הוא פר-host, לא פר-VM ───
     // בלי איפוס — הדיאלוג הראשון של הסשן המרוחק הבא באותו טאב מדוכא בשקט (id 0 "כבר נענה").
