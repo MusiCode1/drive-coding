@@ -1,3 +1,87 @@
+## 2026-08-15 (slice local-view-wiring S1 — LocalSessionView חי במסלול ה-WS)
+
+### slice local-view-wiring — חיבור LocalSessionView בשלושת אתרי-הלקוח
+
+ענף: `slice/local-view-wiring`, worktree `.worktrees/local-view`, base `4224039`.
+בריף: `dev/docs/plans/brief-local-view-wiring.md` (r5.1).
+
+**S1 מתוך תוכנית איחוד התעבורות (S2 ימחק את ההסתעפויות, S3 יוציא את ה-ext
+ל-port).** ה-VM מחזיק LocalSessionView **חי** גם במסלול ה-WS — state מתעדכן
+כולל היסטוריה משוחזרת — בלי לשנות התנהגות: `#client` נשאר המסלול הפעיל.
+
+#### למה adopt ולא factory (§2.2)
+
+שלוש רגליים בלתי-תלויות: (1) ל-local יש שתי דרכי-יצירה — `createAcpClient`
+(attach/loadSession) ו-`createAttachedAcpClient` (warm, מדלג על initialize
+בכוונה); ל-view אין מושג על ההבחנה. (2) ה-VM צריך את גוף-התשובה מ-
+newSession/loadSession (`#captureSessionConfig`), ו-`view.newSession()` מחזיר
+void. (3) ה-view יורה getQuota בכל newSession/loadSession בלי gate ליכולת.
+⇒ **ה-VM יוצר, ה-view מאמץ** — `adopt({client, sessionId})` (C2).
+
+#### למה dispose ולא close (§2.4)
+
+`LocalSessionView.close()` קורא `client.close()` = `transport.close()`. ב-local
+ה-view וה-VM חולקים את אותו לקוח — close היה הורג את ה-WS החי (הפלטר
+`code !== 1000/1001` מדכא את ה-reconnect ⇒ מוות שקט). ⇒ `dispose()` (C2):
+סוגר את ה-controller (⇒ ה-drain מסיים) ומנתק את המצביע, **בלי** לגעת בלקוח.
+`close()` הקיים נשאר — ה-remote משתמש בו (`#cleanup:2522`, carve-out מתועד
+בבריף §4.6: שם הסוקט כבר מת כשהתור מגיע ל-close).
+
+#### #isRemote במקום #view-כמצב (C1)
+
+`#view !== null` נשא שתי משמעויות; 15 אתרים קראו אותו כמתג (רובם return
+שקט — צורת-הכשל של חמשת הבאגים שכבר תוקנו). C1 פירק: `#isRemote` = מתג;
+`#remoteView()` = getter פרטי יחיד שכל 15 האתרים עוברים דרכו; אתרי
+זהות/מחזור-חיים נשארו על `#view`. רה-פקטור טהור — 0 שינויים בטסטים.
+
+#### הקשירה והאימוץ (C3)
+
+שני שלבים: `#bindLocalView()` **לפני** `createAcpClient` (ה-callbacks קופאים
+ביצירתו) — בונה view, מציב אותו ב-`#localView` **וב-`#view` מיד** (סוגר את
+חלון-היתום), מתחיל את הניקוז, מחזיר לעטיפה ב-`teeAcpCallbacks`; `#adoptLocalView()`
+**אחרי** יצירת הלקוח ו**לפני** כל קריאה שמזרימה היסטוריה (הרפליי מגיע תוך כדי
+ה-`await` — אימוץ אחריו מוחק אותו). אתרי-יצירה: attach · loadSession (מכסה
+cold) · #warmReconnect (bind פר-לקוח בתוך לולאת ה-retry). נקודות-אימוץ: 1/5
+אחרי newSession (sessionId מהתשובה), 2/3/4 לפני הרפליי (sessionId ידוע);
+4/5 — אותו לקוח, **בלי** dispose/בנייה מחדש (ה-tee קפוא על ה-view שנוצר
+ביצירת הלקוח).
+
+הניקוז המקומי (`#drainViewPatches`) הוא **קורא-ריק** על `view.patches` — לא
+`#consumeViewPatches`: patching כפול (ה-VM עושה reduce+apply לבדו) היה מכפיל
+בועות ודורס quota. אין מונה-דור (§4.5): `await read()` תלוי אינו ניתן להפקעה;
+הסגירה היא דרך ה-controller (dispose/close).
+
+#### לווי
+
+- `packages/provider/src/client/index.ts`: re-export ל-`AcpClientCallbacks`
+  (פער מתועד — ה-tee החדש תלוי בו; טיפוס-בלבד). תוצאת-לוואי: הבשיל 31 שגיאות
+  טיפוס קיימות ב-backend session-host integration tests (Parameters<optional>
+  + קאסטים ל-SDK types) — תוקנו טיפוס-בלבד (NonNullable + as unknown as);
+  268 טסטים ירוקים, root typecheck: 3 זהויות פחות מהבסיס, אפס חדשות.
+- FE typecheck ירד 10→4 שגיאות (כולן pre-existing).
+
+#### בדיקות
+
+- contract: 8 על שני המימושים, כמו היום (168 ב-session/).
+- DoD 8-17: 19 טסטים חדשים (`agent-session.local-view.test.svelte.ts`):
+  לקוח אחד · ארבעת המסלולים ששקטו עובדים · ה-WS שורד · ההיסטוריה שורדת ·
+  הניקוז מסתיים (כולל סיבוב retry MED-8 וכשל-attach אחרי bind) · ששת
+  הצעדים · בועה אחת · הרשאה לא מוכפלת · observer מבודד.
+- מוטציות (DoD 19): adopt בונה לקוח שני → נופל · isRemote=תמיד true → נופל ·
+  dispose=close → נופל. שלושתן ירוקות-על-המוטציה.
+- שער §6 (`scripts/dod-check.sh check`): ✅ אין רגרסיה. suite: 211 קבצים,
+  2 כישלונות סביבתיים pre-existing (https-serve Windows-path, formatting
+  Hebrew-Intl), 0 חדשים.
+
+#### מה נשאר ל-S2/S3
+
+S2: מחיקת 15 ההסתעפויות · העברת הצריכה ל-view. S3: `#ext` אל ה-port.
+חוב מתועד (בריף §8, לא מתוקן כאן): `dispose` מדלג על ביטול pending · `adopt`
+מאפס state בלי לרוקן את תור ה-patches. `#loadMockSession` (DEV-only) נשאר
+מחוץ ל-scope — אינו מקבל view.
+
+---
+
 ## 2026-08-15 (slice remote-images — תמונות ב-HTTP)
 
 ### slice http-state-gaps — מוד ומכסה בערוץ-המצב
