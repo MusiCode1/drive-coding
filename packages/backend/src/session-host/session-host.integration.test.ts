@@ -1770,10 +1770,9 @@ describe("quota via state channel (http-state-gaps C3)", () => {
   // DoD #11: usage:true → quota מאוכלס ב-state
   it("capabilities.usage:true → state.quota set after newSession", async () => {
     const quotaResult = { snapshot: { provider: "claude", windows: [] } }
-    const { conn, host, mockClient } = await setup(5000, 5000, {
+    const { host, mockClient } = await setup(5000, 5000, {
       extMethod: vi.fn().mockResolvedValue(quotaResult),
-    })
-    conn.capabilities = { usage: true } as typeof conn.capabilities
+    }, { usage: true })
 
     await host.newSession({ cwd: "/test" })
     // Allow async quota fetch to settle
@@ -1785,10 +1784,9 @@ describe("quota via state channel (http-state-gaps C3)", () => {
   // DoD #13: snapshot:null → תשובה תקינה, לא שגיאה
   it("snapshot:null is a valid response (no-limits account)", async () => {
     const quotaResult = { snapshot: null }
-    const { conn, host, mockClient } = await setup(5000, 5000, {
+    const { host, mockClient } = await setup(5000, 5000, {
       extMethod: vi.fn().mockResolvedValue(quotaResult),
-    })
-    conn.capabilities = { usage: true } as typeof conn.capabilities
+    }, { usage: true })
 
     await host.newSession({ cwd: "/test" })
     await new Promise<void>((resolve) => setTimeout(resolve, 50))
@@ -1802,10 +1800,9 @@ describe("quota via state channel (http-state-gaps C3)", () => {
   // DoD #15: timeout → הסשן חי, quota לא נהרס
   it("getQuota timeout → session survives, quota unchanged", async () => {
     let resolve!: () => void
-    const { conn, host, mockClient } = await setup(5000, 5000, {
+    const { host, mockClient } = await setup(5000, 5000, {
       extMethod: vi.fn().mockImplementation(() => new Promise<never>((r) => { resolve = () => r(undefined as never) })),
-    })
-    conn.capabilities = { usage: true } as typeof conn.capabilities
+    }, { usage: true })
     // Set a very short timeout by testing with a fast-enough poll
     // We use vi.useFakeTimers to control timeout
 
@@ -1819,10 +1816,9 @@ describe("quota via state channel (http-state-gaps C3)", () => {
   // DoD #14: guard-דור — תשובה אחרי החלפת סשן נזרקת
   it("guard-gen: quota response after session switch is discarded", async () => {
     let quotaResolve!: (v: { snapshot: { provider: string; windows: unknown[] } | null }) => void
-    const { conn, host, mockClient } = await setup(5000, 5000, {
+    const { host, mockClient } = await setup(5000, 5000, {
       extMethod: vi.fn().mockImplementation(() => new Promise((r) => { quotaResolve = r })),
-    })
-    conn.capabilities = { usage: true } as typeof conn.capabilities
+    }, { usage: true })
     mockClient.newSession = vi.fn().mockResolvedValue({ sessionId: "session-A" })
 
     await host.newSession({ cwd: "/test" })
@@ -1843,10 +1839,9 @@ describe("quota via state channel (http-state-gaps C3)", () => {
 
   // DoD #1-5: session survives even if getQuota fails
   it("getQuota error → session survives, quota unchanged", async () => {
-    const { conn, host, mockClient } = await setup(5000, 5000, {
+    const { host, mockClient } = await setup(5000, 5000, {
       extMethod: vi.fn().mockRejectedValue(new Error("quota fetch failed")),
-    })
-    conn.capabilities = { usage: true } as typeof conn.capabilities
+    }, { usage: true })
 
     await host.newSession({ cwd: "/test" })
     await new Promise<void>((resolve) => setTimeout(resolve, 50))
@@ -1858,10 +1853,9 @@ describe("quota via state channel (http-state-gaps C3)", () => {
   // DoD #11: loadSession with usage:true → quota also fetched
   it("capabilities.usage:true → state.quota set after loadSession", async () => {
     const quotaResult = { snapshot: { provider: "claude", windows: [] } }
-    const { conn, host, mockClient } = await setup(5000, 5000, {
+    const { host, mockClient } = await setup(5000, 5000, {
       extMethod: vi.fn().mockResolvedValue(quotaResult),
-    })
-    conn.capabilities = { usage: true } as typeof conn.capabilities
+    }, { usage: true })
 
     await host.loadSession({ cwd: "/test", sessionId: "session-A" })
     await new Promise<void>((resolve) => setTimeout(resolve, 50))
@@ -1887,8 +1881,7 @@ describe("quota via state channel (http-state-gaps C3)", () => {
       extMethod,
       newSession: vi.fn().mockResolvedValue({ sessionId: "sA" }),
       loadSession: vi.fn().mockResolvedValue({ sessionId: "sB" }),
-    })
-    conn.capabilities = { usage: true } as typeof conn.capabilities
+    }, { usage: true })
 
     await host.newSession({ cwd: "/test" }) // session A — fetch hangs
     await host.loadSession({ sessionId: "sB", cwd: "/test" }) // switch to B
