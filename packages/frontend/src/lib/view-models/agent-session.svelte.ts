@@ -339,6 +339,7 @@ export class AgentSession {
         rename: false,
         thinkingTokens: false,
         image: false,
+        systemPrompt: false,
       }
     )
   }
@@ -2089,6 +2090,7 @@ export class AgentSession {
             rename: false,
             thinkingTokens: false,
             image: false,
+            systemPrompt: false,
             ...data.mockState.capabilities,
           }
         }

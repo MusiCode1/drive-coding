@@ -45,5 +45,7 @@ export function mapClaudeCapabilities(raw: unknown): NormalizedCapabilities {
     // image: safe default; slice reattach-state-sync's init-frame tap (extractPromptCaps)
     // is the source of truth, not a per-provider hardcode.
     image: false,
+    // claude injects opts.systemPrompt via _meta.systemPrompt.append (connect-in-process.ts)
+    systemPrompt: true,
   }
 }
