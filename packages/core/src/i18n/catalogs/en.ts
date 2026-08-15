@@ -347,6 +347,8 @@ export const en: Catalog = {
   "projectPrompt.placeholder": "e.g. Always reply concisely, and open every answer in Hebrew...",
   "projectPrompt.hint":
     "Appended to the agent's default instructions. Takes effect from the next session.",
+  // ─── projectPrompt capability warning ─── (slice systemprompt-capability)
+  "projectPrompt.unsupported": "This provider does not support a project system prompt.",
   // ─── panel resize handle ─── (slice connect-panel-resize)
   "connect.panel.resizeHandle": "Drag to resize",
   // ─── machine-stats ─── (slice-be-machine-stats)
