@@ -39,7 +39,9 @@ for k in test lint fe tsc; do [ -s "$B/$k.txt" ] || { echo "❌ אין baseline 
 
 bn=$(files_total "$B/test.txt"); an=$(files_total "$A/test.txt")
 [ -n "$an" ] || say "אין שורת סיכום בטסטים — הריצה קרסה (rc=$(cat $A/test.rc))"
-[ -n "$an" ] && [ "$an" = "$bn" ] || say "ספירת קבצים: $bn → ${an:-?} (איסוף חלקי? הרץ שוב)"
+# רק ירידה היא כשל. עלייה = קובץ טסט חדש שהסלייס הוסיף — זו המטרה, לא רגרסיה.
+# (הבדיקה נועדה לתפוס איסוף חלקי מעומס מקביל, שמתבטא תמיד בפחות קבצים.)
+[ -n "$an" ] && [ "${an:-0}" -ge "$bn" ] || say "ספירת קבצים ירדה: $bn → ${an:-?} (איסוף חלקי? הרץ שוב)"
 [ -n "$EXPECT_FILES" ] && [ "${an:-0}" != "$EXPECT_FILES" ] && say "ספירה ${an:-?} ≠ הצפוי $EXPECT_FILES"
 bf=$(files_failed "$B/test.txt"); af=$(files_failed "$A/test.txt")
 [ "${af:-0}" -le "${bf:-0}" ] || say "קבצים כושלים: ${bf:-0} → ${af:-0}"
