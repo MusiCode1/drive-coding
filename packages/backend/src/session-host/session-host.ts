@@ -784,7 +784,18 @@ export async function createSessionHostFromConnection(
     async setConfigOption(configId: string, value: string | boolean): Promise<void> {
       if (disposed) throw new Error("SessionHost disposed")
       if (!currentState.sessionId) throw new Error("No session")
-      await client.setSessionConfigOption({ sessionId: currentState.sessionId, configId, value })
+      // slice http-state-gaps C1: capture configOptions from CLI response (last-write-wins)
+      const result = await client.setSessionConfigOption({ sessionId: currentState.sessionId, configId, value })
+      const configOptions = Array.isArray(result?.configOptions) ? (result.configOptions as SessionConfigOption[]) : null
+      if (configOptions !== null) {
+        const patch: Patch = {
+          op: "update-session",
+          version: currentState.version + 1,
+          changes: { configOptions },
+        }
+        currentState = applyPatch(currentState, patch)
+        emitPatches([patch])
+      }
     },
 
     async extMethod(

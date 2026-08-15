@@ -373,3 +373,4 @@ describe("SessionHost — dispose() (handoff-foundations C1)", () => {
     expect(done).toBe(true)
   })
 })
+

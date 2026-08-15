@@ -1534,3 +1534,98 @@ describe("createSessionHostFromConnection — dispose() resolves pending (owners
     expect(response.action).toBe("cancel")
   })
 })
+
+// ─── slice http-state-gaps C1: setConfigOption רושם תוצאה ───────────────────
+
+async function drainPatches(host: { patches: ReadableStream<import("@drive-coding/core/session").Patch> }): Promise<import("@drive-coding/core/session").Patch[]> {
+  const reader = host.patches.getReader()
+  const patches: import("@drive-coding/core/session").Patch[] = []
+  let done = false
+  while (!done) {
+    const result = await Promise.race([
+      reader.read(),
+      new Promise<{ done: true; value: undefined }>((resolve) =>
+        setTimeout(() => resolve({ done: true, value: undefined }), 10),
+      ),
+    ])
+    if (result.done) {
+      done = true
+    } else {
+      patches.push(result.value as import("@drive-coding/core/session").Patch)
+    }
+  }
+  reader.releaseLock()
+  return patches
+}
+
+describe("setConfigOption (http-state-gaps C1)", () => {
+  it("emits update-session patch with configOptions from CLI response", async () => {
+    const configOptions = [{ id: "mode", current: "auto", choices: ["auto", "manual"] }]
+    const { host } = await setup(5000, 5000, {
+      setSessionConfigOption: vi.fn().mockResolvedValue({ configOptions }),
+    })
+    await host.newSession({ cwd: "/test" })
+    await drainPatches(host)
+
+    await host.setConfigOption("mode", "auto")
+
+    const patches = await drainPatches(host)
+    const updatePatch = patches.find((p) => p.op === "update-session")
+    expect(updatePatch).toBeDefined()
+    if (updatePatch?.op === "update-session") {
+      expect(updatePatch.changes.configOptions).toEqual(configOptions)
+    }
+  })
+
+  it("updates state.configOptions after setConfigOption", async () => {
+    const configOptions = [{ id: "mode", current: "auto", choices: ["auto", "manual"] }]
+    const { host } = await setup(5000, 5000, {
+      setSessionConfigOption: vi.fn().mockResolvedValue({ configOptions }),
+    })
+    await host.newSession({ cwd: "/test" })
+
+    await host.setConfigOption("mode", "auto")
+
+    expect(host.state.configOptions).toEqual(configOptions)
+  })
+
+  it("does not emit patch when CLI response has no configOptions", async () => {
+    const { host } = await setup(5000, 5000, {
+      setSessionConfigOption: vi.fn().mockResolvedValue({}),
+    })
+    await host.newSession({ cwd: "/test" })
+    const versionBefore = host.state.version
+
+    await host.setConfigOption("mode", "auto")
+
+    expect(host.state.version).toBe(versionBefore)
+  })
+
+  it("does not throw when CLI response has no configOptions", async () => {
+    const { host } = await setup(5000, 5000, {
+      setSessionConfigOption: vi.fn().mockResolvedValue({}),
+    })
+    await host.newSession({ cwd: "/test" })
+
+    await expect(host.setConfigOption("mode", "auto")).resolves.toBeUndefined()
+  })
+
+  it("last-write-wins: later setConfigOption overwrites earlier configOptions", async () => {
+    const opts1 = [{ id: "mode", current: "manual", choices: ["auto", "manual"] }]
+    const opts2 = [{ id: "mode", current: "auto", choices: ["auto", "manual"] }]
+    let callCount = 0
+    const { host } = await setup(5000, 5000, {
+      setSessionConfigOption: vi.fn().mockImplementation(() => {
+        callCount++
+        if (callCount === 1) return Promise.resolve({ configOptions: opts1 })
+        return Promise.resolve({ configOptions: opts2 })
+      }),
+    })
+    await host.newSession({ cwd: "/test" })
+
+    await host.setConfigOption("mode", "manual")
+    await host.setConfigOption("mode", "auto")
+
+    expect(host.state.configOptions).toEqual(opts2)
+  })
+})
