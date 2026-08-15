@@ -320,7 +320,7 @@ export class AgentSession {
   }
 
   /**
-   * showsSystemPromptWarning — האם להציג את אזהרת "הספק אינו תומך בפרומפט-פרויקט".
+   * showsSystemPromptWarning — האם להציג את אזהרת חוסר-התמיכה בפרומפט-פרויקט.
    *
    * ─── slice systemprompt-capability ───
    * **שלושה מצבים, לא שניים** (ממצא אביגיל):
@@ -331,7 +331,7 @@ export class AgentSession {
    * ⚠️ **לא להשתמש כאן ב-`supports`** — הוא מחזיר all-false כשהיכולות טרם
    * הגיעו, ולכן היה מציג אזהרת-שווא ב-claude/codex בכל חיבור וחיבור-מחדש.
    *
-   * 🔴 **התנאי חי כאן ולא ב-template** כדי שבדיקת-מוטציה תוכל לתפוס אותו:
+   * ⚠️ **התנאי חי כאן ולא בתבנית** כדי שבדיקת-מוטציה תוכל לתפוס אותו:
    * טסט שמעתיק את התנאי לרכיב-fixture עובר גם כשקוד הייצור שבור (ממצא כלב).
    */
   get showsSystemPromptWarning(): boolean {
