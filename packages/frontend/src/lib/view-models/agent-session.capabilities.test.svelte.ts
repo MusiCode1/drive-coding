@@ -111,6 +111,7 @@ function makeCapabilities(overrides: Partial<NormalizedCapabilities> = {}): Norm
     rename: false,
     thinkingTokens: false,
     image: false,
+    systemPrompt: false,
     ...overrides,
   }
 }
