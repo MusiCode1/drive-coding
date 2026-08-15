@@ -34,6 +34,13 @@ const isWindows = process.platform === "win32"
 const binaryName = isWindows ? "drive-coding.exe" : "drive-coding"
 const releaseBinOut = path.join(releaseDist, binaryName)
 
+// Read version from release/package.json — this is the canonical published version.
+// JSON.stringify is required: without it, 0.28.2 is parsed as a numeric expression (0.28),
+// and the build silently bakes the wrong version into the binary with no error or warning.
+const releaseVersion = JSON.parse(
+  readFileSync(path.join(releaseDir, "package.json"), "utf8"),
+).version
+
 // Resolve the bun executable: explicit override → search PATH → default install dir.
 // Don't hardcode ~/.bun/bin — bun may live elsewhere (e.g. D:\ProgramsAndApps\Bun\bin).
 function resolveBun() {
@@ -142,6 +149,8 @@ execFileSync(
     "--compile",
     "--define",
     "__IS_BINARY__=true",
+    "--define",
+    `__BUILD_VERSION__=${JSON.stringify(releaseVersion)}`,
     "--asset-naming=[dir]/[name].[ext]",
     "--target=bun",
     backendBinEntry,
