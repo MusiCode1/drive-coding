@@ -483,7 +483,7 @@ $effect(() => {
     onchange={(e) => settings.setProjectPrompt(session.cwd ?? "", (e.target as HTMLTextAreaElement).value)}
   ></textarea>
   <div class="text-[11px] px-1" style="color:var(--fg-dim)">{t("projectPrompt.hint")}</div>
-  {#if session.capabilities !== null && !session.capabilities.systemPrompt}
+  {#if session.showsSystemPromptWarning}
     <div class="text-[11px] px-1" style="color:var(--accent)">{t("projectPrompt.unsupported")}</div>
   {/if}
 </div>
