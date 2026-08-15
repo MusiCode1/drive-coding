@@ -465,6 +465,29 @@ describe("DoD 12 — הניקוז (קורא-ריק על view.patches) מסתיי
     await vi.waitFor(() => expect(unadoptedView.drainEnded).toBe(true))
     expect(vh.state.client.newSession).not.toHaveBeenCalled() // לא אומץ — session/never הרץ
   })
+
+  // ─── (ד) תיקון-במקום: calev ממצא 3 · freebuff ממצא 1 ───
+  // ה-warm **נפתח** (bind+adopt רצו) ואז loadSession נכשל. זה **לא** מקרה (ב):
+  // שם ה-WS לא נפתח כלל וה-bind לא הגיע. כאן ה-catch של #warmReconnect חייב
+  // לשחרר בעצמו — ל-attachToLiveAgent אין fallback קר שיכסה עליו.
+  it("(ד) warm שנפתח ואז loadSession נכשל: ה-catch משחרר, ה-drain יוצא, אין view יתום", async () => {
+    vh.state.loadSessionMock.mockRejectedValueOnce(new Error("load failed after open"))
+    const session = new AgentSession()
+
+    await session.attachToLiveAgent({
+      agentId: "agent-live",
+      sessionId: "sess-warm",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+
+    expect(vh.state.createCount.attached).toBe(1) // ה-WS אכן נפתח והלקוח נוצר
+    expect(getViews().length).toBe(1) // bind רץ — יש view
+    expect(session.status).toBe("error") // אין fallback קר במסלול הזה
+
+    // 🔴 הליבה: בלי dispose ב-catch, ה-read() נשאר תלוי לנצח.
+    await vi.waitFor(() => expect(lastView().drainEnded).toBe(true))
+  })
 })
 
 // ─── DoD 13 — ששת הצעדים מסביב ללקוח ─────────────────────────────────────────

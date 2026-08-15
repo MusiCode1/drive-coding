@@ -1235,6 +1235,16 @@ export class AgentSession {
         // top-of-loop הבא שיפתור), חובה לפתור כאן כדי לא להשאיר Promise תלוי.
         this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
         this.#resolvePendingElicitation({ action: "cancel" })
+        // ─── slice local-view-wiring, תיקון-במקום (calev ממצא 3 · freebuff ממצא 1) ───
+        // ⚠️ הסיבוב הזה כבר קרא #bindLocalView (פתח patch-stream + drain) ו-#adoptLocalView.
+        // בלי שחרור כאן, ה-controller לא נסגר, ה-drain נתקע על read() **לנצח**,
+        // וה-view מחזיק מצביע ללקוח מת.
+        // #doReconnect מסתיר את זה (נופל ל-cold → loadSession → #bindLocalView שמשחרר),
+        // אבל **ל-attachToLiveAgent אין fallback קר** — שם הדליפה שורדת עד detach.
+        // dispose ולא close: הלקוח משותף (§4.2). כאן הוא ממילא מת, אבל הכלל אחיד.
+        this.#localView?.dispose()
+        this.#localView = null
+        this.#view = null
         transport.close()
         return false
       }
