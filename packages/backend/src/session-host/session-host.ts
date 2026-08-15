@@ -693,7 +693,9 @@ export async function createSessionHostFromConnection(
       }
 
       // 3. Reset the full state.
+      // slice http-state-gaps C2: capture configOptions BEFORE reset (for same-session merge)
       const oldSessionId = currentState.sessionId
+      const preResetConfigOptions = currentState.configOptions
       const resetPatch: Patch = {
         op: "reset",
         version: currentState.version + 1,
@@ -715,17 +717,27 @@ export async function createSessionHostFromConnection(
         }
 
         // 7. Success — one update-session patch.
-        const configOptions = (
+        // slice http-state-gaps C2: same session → existing wins (last C1-recorded value
+        // is more recent than stale load response); different session → load wins + quota reset.
+        const loadedConfigOptions = (
           Array.isArray(result.configOptions) ? result.configOptions : []
         ) as SessionConfigOption[]
+        const isSameSession = opts.sessionId === oldSessionId
+        const mergedConfigOptions = isSameSession
+          ? loadedConfigOptions.map((opt) => {
+              const existing = preResetConfigOptions.find((e) => e.id === opt.id)
+              return existing !== undefined ? existing : opt
+            })
+          : loadedConfigOptions
+        const baseChanges = {
+          turnState: "idle" as const,
+          lastTurnError: null,
+          ...(mergedConfigOptions.length > 0 ? { configOptions: mergedConfigOptions } : {}),
+        }
         const updatePatch: Patch = {
           op: "update-session",
           version: currentState.version + 1,
-          changes: {
-            turnState: "idle",
-            lastTurnError: null,
-            ...(configOptions.length > 0 ? { configOptions } : {}),
-          },
+          changes: isSameSession ? baseChanges : { ...baseChanges, quota: null },
         }
         currentState = applyPatch(currentState, updatePatch)
         emitPatches([updatePatch])
