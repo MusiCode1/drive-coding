@@ -443,7 +443,10 @@ export async function createSessionHostFromConnection(
   // generation counter: incremented on every session start; used to discard
   // quota responses that arrive after a session switch or dispose.
   let quotaGeneration = 0
-  // dedupe: the generation whose fetch has already been started. -1 = none.
+  // dedupe: the generation of the fetch currently IN FLIGHT. -1 = none in flight.
+  // ⚠️ Cleared when the call settles — otherwise this degrades into "once per
+  // generation" and suppresses every later refresh of the same session
+  // (calev finding 8).
   let quotaFetchGeneration = -1
   // timeout: abort getQuota if the CLI does not respond within this window.
   const QUOTA_FETCH_TIMEOUT_MS = 5_000
@@ -493,6 +496,10 @@ export async function createSessionHostFromConnection(
       })
       .catch(() => {
         // error or timeout — session survives, quota unchanged (condition 1)
+      })
+      .finally(() => {
+        // release the in-flight slot only if no newer generation claimed it
+        if (quotaFetchGeneration === gen) quotaFetchGeneration = -1
       })
   }
 
@@ -672,7 +679,13 @@ export async function createSessionHostFromConnection(
       emitPatches(applied.patches) // 2. add-message — role="user" משמר waiting (מלכודת ג')
       try {
         await client.prompt(sessionId, content)
-        if (turn === turnSeq) emit(applyTurnEnd(currentState)) // 3א. הצלחה
+        if (turn === turnSeq) {
+          emit(applyTurnEnd(currentState)) // 3א. הצלחה
+          // slice http-state-gaps C3: refresh quota at turn end — the brief asked for
+          // it and it was missing (calev finding 7). A turn is exactly when usage
+          // changes. Non-blocking, and guarded by the same generation/in-flight rules.
+          if (currentState.sessionId) startQuotaFetch(currentState.sessionId)
+        }
       } catch (err) {
         if (turn === turnSeq) {
           const error = turn === cancelledTurn ? undefined : { message: msgOf(err), at: Date.now() }
@@ -750,6 +763,11 @@ export async function createSessionHostFromConnection(
       // 1. Invalidate turns of the outgoing session.
       turnSeq++
       cancelledTurn = -1
+      // slice http-state-gaps: invalidate the outgoing session's quota fetch HERE,
+      // before any await. Advancing it only after client.loadSession resolves left a
+      // window where session A's quota response passed the guard and was written onto
+      // session B's state (calev finding 9).
+      quotaGeneration++
 
       // 2. Pending cleanup (cancelled defaults; the clear patches land before the
       //    reset — the one legitimate pre-reset emission).
@@ -816,8 +834,7 @@ export async function createSessionHostFromConnection(
         }
         currentState = applyPatch(currentState, updatePatch)
         emitPatches([updatePatch])
-        // slice http-state-gaps C3: advance generation + fire quota fetch (non-blocking)
-        quotaGeneration++
+        // slice http-state-gaps C3: the generation already advanced at entry (above).
         startQuotaFetch(opts.sessionId)
         return { sessionId: opts.sessionId, version: currentState.version }
       } catch (err) {

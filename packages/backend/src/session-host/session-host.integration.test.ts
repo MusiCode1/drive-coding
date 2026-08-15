@@ -1702,28 +1702,19 @@ describe("loadSession (http-state-gaps C2)", () => {
 
   // DoD #9: החלפת סשן → quota מתאפס ל-null
   it("session switch: quota is reset to null", async () => {
-    const { host, conn, mockClient, callbacks } = await setup()
+    // ⚠️ שוכתב: הגרסה הקודמת התחילה עם quota=null ולא זרעה מכסה של סשן א' —
+    // ולכן עברה גם אילו ההחלפה לא איפסה דבר (ממצא כלב 3). כאן המכסה נזרעת
+    // דרך המנגנון האמיתי של C3 לפני ההחלפה.
+    const { host, mockClient } = await setup(
+      5000,
+      5000,
+      { extMethod: vi.fn().mockResolvedValue(QUOTA_A) },
+      { usage: true },
+    )
     await host.newSession({ cwd: "/test" })
-    // Inject quota into state via session update notification
-    callbacks.onUpdate({
-      sessionId: host.state.sessionId!,
-      update: { sessionUpdate: "session_info_update" } as Parameters<typeof callbacks.onUpdate>[0]["update"],
-    })
-    // Set quota directly via update-session via update notification
-    // We need to simulate quota being set - use the state update callback path
-    // Trigger an update that sets quota (simulate via onUpdate with a fake update)
-    // Actually we need to set quota via state patch - for test purposes use the fact
-    // that loadSession in a *new host* will be a session switch from null
-    // For this test: set up quota via direct state manipulation via onUpdate
-    // Since SessionState.quota is set via update-session, simulate that path
-    // Actually: the simplest test is to start with sessionId=null and do a loadSession
-    // which is a "new host" scenario. But we want to test switching from A to B.
-    // Better approach: test that after switching, quota is null in state.
+    await new Promise((r) => setTimeout(r, 20))
+    expect(host.state.quota).toEqual(QUOTA_A.snapshot) // ⚠️ תנאי-סף: באמת נזרעה
 
-    // Set quota via C3's mechanism (which doesn't exist yet), so we simulate
-    // the quota being present via a workaround: check that after session switch,
-    // state.quota is null (it starts as null in createInitialSessionState,
-    // so as long as we don't set it, it will remain null — which is the same result)
     mockClient.loadSession = vi.fn().mockResolvedValue({
       sessionId: "session-B",
       configOptions: [],
@@ -1732,6 +1723,7 @@ describe("loadSession (http-state-gaps C2)", () => {
 
     expect(host.state.quota).toBeNull()
   })
+
 
   // DoD #10: host חדש → תשובת ה-load נכנסת במלואה
   it("fresh host (no prior session): load response configOptions applied in full", async () => {
@@ -1891,5 +1883,60 @@ describe("quota via state channel (http-state-gaps C3)", () => {
     const calls = extMethod.mock.calls.filter((c) => c[0] === "_drive/getQuota")
     expect(calls.length).toBe(2) // one per session — B must not be skipped
     expect(host.state.quota).toEqual(QUOTA_B.snapshot)
+  })
+
+  // ── תיקוני ממצאי כלב 7-9 ──
+
+  it("calev-9: a quota response from session A arriving DURING B's load is discarded", async () => {
+    // הדור התקדם רק אחרי ש-client.loadSession חזר ⇒ תשובת א' שהגיעה באמצע
+    // הטעינה עברה את המשמר ונכתבה על ב'. הדור מתקדם עכשיו בכניסה.
+    let resolveA: ((v: unknown) => void) | undefined
+    let releaseLoad: (() => void) | undefined
+    const extMethod = vi.fn().mockImplementation((m: string) => {
+      if (m !== "_drive/getQuota") return Promise.resolve({})
+      if (resolveA === undefined) return new Promise((res) => { resolveA = res })
+      // ⚠️ הקריאה של ב' נשארת תלויה בכוונה: אחרת היא הייתה דורסת את הכתיבה
+      // השגויה של א', והטסט היה עובר גם עם הבאג. הבאג הוא כתיבה **זמנית**.
+      return new Promise(() => {})
+    })
+    const { host, mockClient } = await setup(5000, 5000, { extMethod }, { usage: true })
+    await host.newSession({ cwd: "/test" }) // א' — הקריאה תלויה
+    await new Promise((r) => setTimeout(r, 10))
+    expect(host.state.quota).toBeNull() // תנאי-סף: א' עדיין תלויה, לא נכתבה
+
+    mockClient.loadSession = vi.fn().mockImplementation(
+      () => new Promise((res) => {
+        releaseLoad = () => res({ sessionId: "session-B", configOptions: [] })
+      }),
+    )
+    const loading = host.loadSession({ cwd: "/test", sessionId: "session-B" })
+    await new Promise((r) => setTimeout(r, 5))
+    resolveA?.(QUOTA_A) // א' עונה **באמצע** טעינת ב'
+    await new Promise((r) => setTimeout(r, 5))
+    // ⚠️ הבדיקה חייבת לקרות **כאן**, לפני שהטעינה מסתיימת: ה-update-session
+    // של החלפת-הסשן מאפס quota ממילא, ולכן המצב הסופי נקי גם עם הבאג.
+    // הפגם הוא הכתיבה הזמנית, והרגע הזה הוא היחיד שבו רואים אותה.
+    expect(host.state.quota).toBeNull()
+    releaseLoad?.()
+    await loading
+    await new Promise((r) => setTimeout(r, 20))
+
+    expect(host.state.quota).toBeNull() // ⚠️ הליבה: א' לא נכתב על ב' בשום רגע
+  })
+
+  it("calev-8: the in-flight slot is released, so the same session can refresh again", async () => {
+    // quotaFetchGeneration לא התאפס ⇒ קריאה אחת לכל דור, לא אחת בטיסה.
+    const extMethod = vi.fn().mockResolvedValue(QUOTA_A)
+    const { host } = await setup(5000, 5000, { extMethod }, { usage: true })
+    await host.newSession({ cwd: "/test" })
+    await new Promise((r) => setTimeout(r, 20))
+    const afterFirst = extMethod.mock.calls.filter((c) => c[0] === "_drive/getQuota").length
+    expect(afterFirst).toBe(1)
+
+    await host.prompt("s1", "hi") // סוף-תור → רענון נוסף באותו סשן
+    await new Promise((r) => setTimeout(r, 20))
+
+    const afterTurn = extMethod.mock.calls.filter((c) => c[0] === "_drive/getQuota").length
+    expect(afterTurn).toBeGreaterThan(afterFirst) // ⚠️ לא דוכא
   })
 })
