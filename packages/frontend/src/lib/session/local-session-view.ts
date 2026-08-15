@@ -16,27 +16,23 @@
  * ─── slice session-view-port C2 (TDD) ───
  */
 
-import {
-  reduce,
-  createInitialSessionState,
-  type SessionState,
-  type Patch,
-} from "@drive-coding/core/session"
 import type {
-  AcpClient,
-  AcpClientCallbacks,
-  PromptBlocks,
-} from "@drive-coding/provider/client"
-import type { PermissionParams, PermissionResponse } from "$lib/types/permission"
-import type { ElicitationParams, ElicitationResponse } from "$lib/types/elicitation"
-import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
-import { createExtClient } from "$lib/adapters/ext"
-import type { SessionView } from "./session-view"
-import type {
-  RequestPermissionRequest,
   CreateElicitationRequest,
+  RequestPermissionRequest,
   SessionNotification,
 } from "@agentclientprotocol/sdk"
+import {
+  createInitialSessionState,
+  type Patch,
+  reduce,
+  type SessionState,
+} from "@drive-coding/core/session"
+import type { AcpClient, AcpClientCallbacks, PromptBlocks } from "@drive-coding/provider/client"
+import { createExtClient } from "$lib/adapters/ext"
+import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
+import type { ElicitationParams, ElicitationResponse } from "$lib/types/elicitation"
+import type { PermissionParams, PermissionResponse } from "$lib/types/permission"
+import type { SessionView } from "./session-view"
 
 // ─── Takeover close code (סוגר דליפה #3) ───
 /** ⚠️ חייב להתאים ל-TAKEOVER_CODE ב-packages/backend/src/delivery/ws-agent.ts. */
@@ -99,6 +95,45 @@ export class LocalSessionView implements SessionView {
 
   get state(): SessionState {
     return this.#state
+  }
+
+  // ─── slice local-view-wiring C2: adopt · dispose · observerCallbacks (TDD) ───
+
+  /**
+   * ה-callbacks שה-observer (ה-VM) צריך. **קריאה בלבד** — מחזירי-ערך
+   * (onRequestPermission/onCreateElicitation) אינם כאן: שני עונים = תשובה כפולה.
+   */
+  get observerCallbacks(): Pick<AcpClientCallbacks, "onUpdate" | "onExtNotification"> {
+    return {
+      onUpdate: this.#onUpdate.bind(this),
+      onExtNotification: this.#onExtNotification.bind(this),
+    }
+  }
+
+  /**
+   * מאמץ לקוח שה-VM יצר (ה-VM יוצר, ה-view מאמץ — brief §2.2). **מאפס** את ה-state —
+   * כל קריאה היא סשן/חיבור חדש. ⚠️ אינו יורה getQuota (של ה-VM לעשות אם צריך), ואינו
+   * סוגר/משחרר לקוח קודם — ה-VM מנהל את הלקוח; כאן רק מצביע + state.
+   */
+  adopt(input: { client: AcpClient; sessionId: string }): void {
+    this.#client = input.client
+    this.#sessionId = input.sessionId
+    this.#state = createInitialSessionState({ sessionId: input.sessionId })
+  }
+
+  /**
+   * משחרר את ה-view **בלי לגעת בלקוח**: סוגר את ה-controller (⇒ ה-drain מסיים ב-done)
+   * ומנתק את המצביע. ⚠️ **dispose ≠ close** — close() קורא client.close()
+   * (= transport.close()), ובמסלול המקומי הלקוח משותף עם ה-VM; close היה הורג את ה-WS.
+   */
+  dispose(): void {
+    this.#client = null
+    this.#sessionId = null
+    try {
+      this.#controller?.close()
+    } catch {
+      // כבר סגור/מבוטל
+    }
   }
 
   // ─── Default client factory (production wiring — C4) ───
