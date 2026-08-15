@@ -144,6 +144,24 @@ function makeSessionNotification(update: Record<string, unknown>): SessionNotifi
 
 // ── test setup ────────────────────────────────────────────────────────────────
 
+
+// slice http-state-gaps C3-fix: valid QuotaSnapshot fixtures (schema.ts:42-53).
+const mkQuota = (id: string, usedPct: number) => ({
+  snapshot: {
+    provider: "claude",
+    windows: [
+      {
+        id,
+        period: { kind: "calendar" as const, unit: "month" as const },
+        consumption: { kind: "percentage" as const, usedPct },
+        resetsAtMs: null,
+      },
+    ],
+  },
+})
+const QUOTA_A = mkQuota("w1", 99)
+const QUOTA_B = mkQuota("w2", 42)
+
 async function setup(
   permissionTimeoutMs = 5000,
   elicitationTimeoutMs = 5000,
@@ -1846,5 +1864,36 @@ describe("quota via state channel (http-state-gaps C3)", () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 50))
 
     expect(host.state.quota).toEqual(quotaResult.snapshot)
+  })
+
+  // slice http-state-gaps C3-fix: dedupe must not starve the NEXT session.
+  // The guard-generation discards a late response from the previous session;
+  // the dedupe flag must not also block the new session's own fetch.
+  it("session switch while a quota fetch is in flight: the new session still gets its quota", async () => {
+    let resolveFirst: ((v: unknown) => void) | undefined
+    const extMethod = vi.fn().mockImplementation((method: string) => {
+      if (method !== "_drive/getQuota") return Promise.resolve({})
+      if (resolveFirst === undefined) {
+        return new Promise((res) => {
+          resolveFirst = res
+        })
+      }
+      return Promise.resolve(QUOTA_B)
+    })
+    const { host } = await setup(5000, 5000, {
+      extMethod,
+      capabilities: { usage: true } as unknown as AcpClient["capabilities"],
+      newSession: vi.fn().mockResolvedValue({ sessionId: "sA" }),
+      loadSession: vi.fn().mockResolvedValue({ sessionId: "sB" }),
+    })
+
+    await host.newSession({ cwd: "/test" }) // session A — fetch hangs
+    await host.loadSession({ sessionId: "sB", cwd: "/test" }) // switch to B
+    resolveFirst?.(QUOTA_A) // A answers late
+    await new Promise((r) => setTimeout(r, 20))
+
+    const calls = extMethod.mock.calls.filter((c) => c[0] === "_drive/getQuota")
+    expect(calls.length).toBe(2) // one per session — B must not be skipped
+    expect(host.state.quota).toEqual(QUOTA_B.snapshot)
   })
 })

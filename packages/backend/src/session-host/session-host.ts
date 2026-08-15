@@ -434,8 +434,8 @@ export async function createSessionHostFromConnection(
   // generation counter: incremented on every session start; used to discard
   // quota responses that arrive after a session switch or dispose.
   let quotaGeneration = 0
-  // dedupe: at most one in-flight getQuota call at any time.
-  let quotaFetchInFlight = false
+  // dedupe: the generation whose fetch has already been started. -1 = none.
+  let quotaFetchGeneration = -1
   // timeout: abort getQuota if the CLI does not respond within this window.
   const QUOTA_FETCH_TIMEOUT_MS = 5_000
 
@@ -450,11 +450,16 @@ export async function createSessionHostFromConnection(
    *   5. Validate { snapshot } shape before writing to state.
    */
   function startQuotaFetch(sessionId: string): void {
-    // condition 4: dedupe
-    if (quotaFetchInFlight) return
+    // condition 4: dedupe — one in-flight call per generation.
+    // ⚠️ Must be scoped to the CURRENT generation. A plain boolean starves the
+    // next session: switch A→B while A's fetch hangs, and B's fetch is skipped
+    // entirely — B never gets quota, because A's late answer is then discarded
+    // by the guard-generation. Dedupe suppresses duplicates WITHIN a session;
+    // it must never suppress a different session.
+    if (quotaFetchGeneration === quotaGeneration) return
+    quotaFetchGeneration = quotaGeneration
     // condition: only when capabilities.usage === true
     if (!client.capabilities?.usage) return
-    quotaFetchInFlight = true
     const gen = quotaGeneration
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("getQuota timeout")), QUOTA_FETCH_TIMEOUT_MS),
@@ -477,9 +482,7 @@ export async function createSessionHostFromConnection(
       .catch(() => {
         // error or timeout — session survives, quota unchanged (condition 1)
       })
-      .finally(() => {
-        quotaFetchInFlight = false
-      })
+
   }
 
   // ── Transport + AcpClient ─────────────────────────────────────────────────
