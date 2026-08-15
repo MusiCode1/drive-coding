@@ -470,6 +470,67 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
     return { fetchMock }
   }
 
+  // ── slice http-state-gaps C4 ──
+  // refreshQuota ב-remote היה **מוחק** את המכסה: אין #ext (הוא נבנה מעל #client
+  // שאינו קיים ב-remote), ולכן #doRefreshQuota נפל ל-`quota = null` ודרס ערך
+  // תקין שהגיע מה-snapshot. הטסט מוודא שהערך שורד.
+  it("C4: refreshQuota in remote does NOT wipe quota that arrived from the state channel", async () => {
+    const quota = {
+      provider: "claude",
+      windows: [
+        {
+          id: "w1",
+          period: { kind: "calendar" as const, unit: "month" as const },
+          consumption: { kind: "percentage" as const, usedPct: 37 },
+          resetsAtMs: null,
+        },
+      ],
+    }
+    const snapshot = {
+      ...createInitialSessionState({ sessionId: "sess-q" }),
+      version: 9,
+      // ⚠️ חייבת להיות היסטוריה: #syncFromViewState נקרא רק בתוך לולאת ה-patches,
+      // וסנאפשוט של סשן ריק אינו מייצר reset patch ⇒ שום מטא-דאטה לא מסונכרן.
+      // חזרה לסשן היא ממילא תמיד עם היסטוריה, אז זה גם המצב המציאותי.
+      messages: [
+        { id: "m_0", role: "user", messageId: null, segments: [{ id: "s_0", text: "hi" }] },
+      ],
+      nextMessageSeq: 1,
+      nextSegmentSeq: 1,
+      // ⚠️ capabilities חייב להיות מלא — אובייקט חלקי מפיל את ולידציית הסנאפשוט
+      // והוא נדחה בשלמותו. וגם: בלי usage:true, refreshQuota יוצא מוקדם
+      // והטסט היה עובר מעצמו בלי לבדוק כלום.
+      capabilities: {
+        mcp: false,
+        compact: false,
+        commands: false,
+        usage: true,
+        configOptions: false,
+        rename: false,
+        thinkingTokens: false,
+        image: false,
+      },
+      quota,
+    }
+    const { fetchMock } = sseFetchFor(snapshot)
+    vi.stubGlobal("fetch", fetchMock)
+
+    const agent = new AgentSession()
+    await agent.attachRemoteToLiveAgent({ agentId: "live-q", cwd: "/ws", cliKind: "claude" })
+    await delay()
+
+    // ⚠️ טענה ישירה: בלעדיה, הסרת ההשמה ל-#sessionId לא נתפסת — refreshQuota
+    // פשוט יוצא מוקדם, המכסה שורדת, והטסט עובר מהסיבה הלא-נכונה.
+    expect(agent._sessionIdForTest()).toBe("sess-q")
+    expect(agent.quota).toEqual(quota) // הגיע מהמצב
+
+    await agent.refreshQuota() // פתיחת הפופאובר
+    await delay()
+
+    expect(agent.quota).toEqual(quota) // ⚠️ שרד — זו כל הבדיקה
+    expect(agent.quotaLoading).toBe(false)
+  })
+
   it("success: view created with the agentId — no createAgent — bubbles populated with the exact history", async () => {
     const messages = [
       { id: "m_0", role: "user", messageId: null, segments: [{ id: "s_0", text: "what is up" }] },
@@ -814,4 +875,5 @@ describe("AgentSession + remote view — session management via #view (remote-se
     ).rejects.toThrow(/cannot switchSession/)
     expect(view.loadSessionMock).not.toHaveBeenCalled()
   })
+
 })

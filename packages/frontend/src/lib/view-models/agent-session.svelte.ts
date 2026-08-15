@@ -652,6 +652,14 @@ export class AgentSession {
   }
 
   // ─── DEV-only test helpers (tree-shaken from prod) ───
+  /**
+   * @internal slice http-state-gaps C4 — קריאה בלבד, לטסטים.
+   * #sessionId אינו חשוף, ולכן השמה שגויה שלו לא ניתנת לתפיסה בטסט.
+   */
+  _sessionIdForTest(): string | null {
+    return this.#sessionId
+  }
+
   /** @internal */ _setStatusForTest(s: AgentSessionStatus): void {
     this.#setStatus(s)
   }
@@ -1319,6 +1327,14 @@ export class AgentSession {
         this.#setStatus("error")
         return
       }
+
+      // ─── slice http-state-gaps C4: #sessionId מהסנאפשוט ───
+      // ⚠️ המתודה קראה את view.state.sessionId לכשל-המהיר אך **לא השימה אותו**.
+      // ⇒ אחרי חזרה לסוכן חי, #sessionId נשאר null, וכל מה שמותנה בו מת בשקט —
+      // refreshQuota יוצא בשורה הראשונה ולעולם לא מרענן. נמדד, לא הונח.
+      // שאר מסלולי ה-remote (attachToLiveAgent :1767, switchSession :1813,
+      // newSession :1921) כן משימים; זה היה החריג.
+      this.#sessionId = view.state.sessionId
 
       // 5. #consumeViewPatches מכמת בזהות (this.#view !== view → break) — כמו attachRemote.
       this.#view = view
@@ -2109,6 +2125,17 @@ export class AgentSession {
       this.#mockQuota !== undefined
 
     if (!isMockWithSnapshot && !this.supports.usage) return
+
+    // ─── slice http-state-gaps C4: ב-remote המכסה מגיעה מערוץ-המצב ───
+    // ⚠️ בלי היציאה הזו, refreshQuota לא רק "לא מביא" — הוא **מוחק**:
+    // ב-remote אין #ext (הוא נבנה מעל #client שאינו קיים שם), ולכן
+    // #doRefreshQuota נופל ל-`quota = null` ודורס ערך תקין שכבר הגיע
+    // מ-#syncFromViewState. ⇒ גם עם ה-BE מתוקן, המשתמשת לא תראה כלום.
+    // ב-remote ה-BE קורא getQuota וכותב ל-state; ה-FE רק צורך.
+    if (this.#view && !isMockWithSnapshot) {
+      this.quotaLoading = false
+      return
+    }
 
     if (this.#quotaFetchInFlight) {
       await this.#quotaFetchInFlight
