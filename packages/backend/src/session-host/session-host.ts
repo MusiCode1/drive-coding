@@ -40,11 +40,16 @@ import {
   reduce,
   synthesizeUserMessage,
 } from "@drive-coding/core/session"
-import type { AcpClient, AcpClientCallbacks, AcpClientOptions, PromptBlocks } from "@drive-coding/provider/client"
+import type {
+  AcpClient,
+  AcpClientCallbacks,
+  AcpClientOptions,
+  PromptBlocks,
+} from "@drive-coding/provider/client"
 import { createAcpClient, createAttachedAcpClient } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
-import type { AcpTransport } from "@drive-coding/provider/transport"
 import { parseExtResult } from "@drive-coding/provider/extensions"
+import type { AcpTransport } from "@drive-coding/provider/transport"
 import { createInProcessAcpTransport } from "./in-process-acp-transport.js"
 import { createPendingRequests } from "./pending-requests.js"
 
@@ -75,7 +80,11 @@ export type SessionHost = {
    * emits the add-message patch, then forwards to client.prompt.
    * meta is opaque (passthrough §9); stored in message.meta.
    */
-  prompt(sessionId: string, content: string | PromptBlocks, meta?: Record<string, unknown>): Promise<void>
+  prompt(
+    sessionId: string,
+    content: string | PromptBlocks,
+    meta?: Record<string, unknown>,
+  ): Promise<void>
 
   /** Delegates to AcpClient.newSession */
   newSession(opts: { cwd: string; _meta?: Record<string, unknown> }): Promise<{ sessionId: string }>
@@ -458,8 +467,11 @@ export async function createSessionHostFromConnection(
     // it must never suppress a different session.
     if (quotaFetchGeneration === quotaGeneration) return
     quotaFetchGeneration = quotaGeneration
-    // condition: only when capabilities.usage === true
-    if (!client.capabilities?.usage) return
+    // condition: only when capabilities.usage === true.
+    // conn.capabilities is NormalizedCapabilities (has `usage`); client.capabilities
+    // is the raw ACP AgentCapabilities and has no such field — reading it there is
+    // a type error and would always be undefined.
+    if (!conn.capabilities?.usage) return
     const gen = quotaGeneration
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("getQuota timeout")), QUOTA_FETCH_TIMEOUT_MS),
@@ -482,7 +494,6 @@ export async function createSessionHostFromConnection(
       .catch(() => {
         // error or timeout — session survives, quota unchanged (condition 1)
       })
-
   }
 
   // ── Transport + AcpClient ─────────────────────────────────────────────────
@@ -673,17 +684,22 @@ export async function createSessionHostFromConnection(
 
     async newSession(opts: { cwd: string; _meta?: Record<string, unknown> }) {
       if (disposed) throw new Error("SessionHost disposed")
-      const result = (await client.newSession(opts)) as { sessionId: string; configOptions?: unknown[] }
+      const result = (await client.newSession(opts)) as {
+        sessionId: string
+        configOptions?: unknown[]
+      }
       // Update currentState.sessionId so setMode/setConfigOption can use it
       // Also capture configOptions from session/new response (capabilities.ts:17)
       const configOptions = Array.isArray(result.configOptions) ? result.configOptions : []
       currentState = { ...currentState, sessionId: result.sessionId, configOptions }
       if (configOptions.length > 0) {
-        emitPatches([{
-          version: currentState.version + 1,
-          op: "update-session",
-          changes: { configOptions },
-        }])
+        emitPatches([
+          {
+            version: currentState.version + 1,
+            op: "update-session",
+            changes: { configOptions },
+          },
+        ])
         currentState = { ...currentState, version: currentState.version + 1 }
       }
       // slice http-state-gaps C3: advance generation + fire quota fetch (non-blocking)
@@ -859,8 +875,14 @@ export async function createSessionHostFromConnection(
       if (disposed) throw new Error("SessionHost disposed")
       if (!currentState.sessionId) throw new Error("No session")
       // slice http-state-gaps C1: capture configOptions from CLI response (last-write-wins)
-      const result = await client.setSessionConfigOption({ sessionId: currentState.sessionId, configId, value })
-      const configOptions = Array.isArray(result?.configOptions) ? (result.configOptions as SessionConfigOption[]) : null
+      const result = await client.setSessionConfigOption({
+        sessionId: currentState.sessionId,
+        configId,
+        value,
+      })
+      const configOptions = Array.isArray(result?.configOptions)
+        ? (result.configOptions as SessionConfigOption[])
+        : null
       if (configOptions !== null) {
         const patch: Patch = {
           op: "update-session",

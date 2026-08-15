@@ -90,7 +90,7 @@ function makeMockAcpClient(overrides: Partial<AcpClient> = {}): AcpClient {
   } as unknown as AcpClient
 }
 
-function makeMockConnection(): {
+function makeMockConnection(connCapabilities?: unknown): {
   conn: ProviderConnection
   _triggerLine: (line: string) => void
   _triggerCrash: (info: BridgeCrashInfo) => void
@@ -109,7 +109,9 @@ function makeMockConnection(): {
       }),
       write: vi.fn(() => true),
     },
-    capabilities: {} as ProviderConnection["capabilities"],
+    // ⚠️ NormalizedCapabilities (יש בו `usage`) — לא AgentCapabilities הגולמי
+    // של ה-client. הקריאה ל-getQuota מותנית **בזה**, ולא ב-client.capabilities.
+    capabilities: (connCapabilities ?? {}) as ProviderConnection["capabilities"],
     onFrame: vi.fn(() => () => {}),
     turn: {
       isBusy: vi.fn(() => false),
@@ -166,8 +168,9 @@ async function setup(
   permissionTimeoutMs = 5000,
   elicitationTimeoutMs = 5000,
   clientOverrides: Partial<AcpClient> = {},
+  connCapabilities?: unknown,
 ) {
-  const { conn, _triggerLine, _triggerCrash } = makeMockConnection()
+  const { conn, _triggerLine, _triggerCrash } = makeMockConnection(connCapabilities)
   let capturedCallbacks: AcpClientCallbacks | undefined
   let capturedTransport: AcpTransport | undefined
   const mockClient = makeMockAcpClient(clientOverrides)
@@ -225,7 +228,7 @@ describe("createSessionHostFromConnection", () => {
 
   describe("state updates via onUpdate", () => {
     it("session_info_update → title changes in host.state", async () => {
-      const { host, callbacks } = await setup()
+      const { host, conn, callbacks } = await setup()
 
       callbacks.onUpdate(
         makeSessionNotification({
@@ -238,7 +241,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("multiple updates increment version", async () => {
-      const { host, callbacks } = await setup()
+      const { host, conn, callbacks } = await setup()
 
       const v0 = host.state.version
       callbacks.onUpdate(
@@ -252,7 +255,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("patches stream emits patches for each update", async () => {
-      const { host, callbacks } = await setup()
+      const { host, conn, callbacks } = await setup()
 
       const reader = host.patches.getReader()
 
@@ -277,7 +280,7 @@ describe("createSessionHostFromConnection", () => {
 
   describe("user message synthesis + meta passthrough", () => {
     it("prompt() adds user message to state with meta", async () => {
-      const { host } = await setup()
+      const { host, conn } = await setup()
       const meta = { agentId: "a1" }
 
       await host.prompt("s1", "hello from conn", meta)
@@ -288,7 +291,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("prompt() calls mockClient.prompt", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
 
       await host.prompt("s1", "test content")
 
@@ -298,7 +301,7 @@ describe("createSessionHostFromConnection", () => {
 
   describe("permission requests → PendingRequests", () => {
     it("onRequestPermission creates a pending request resolved by respondPermission", async () => {
-      const { host, callbacks } = await setup()
+      const { host, conn, callbacks } = await setup()
 
       // Simulate incoming permission request (called by ACP SDK internally)
       const responsePromise = callbacks.onRequestPermission!({
@@ -368,7 +371,7 @@ describe("createSessionHostFromConnection", () => {
 
   describe("C2 — permission requests surfaced via state.pending + patches", () => {
     it("onRequestPermission sets state.pending.permission and emits one patch", async () => {
-      const { host, callbacks } = await setup()
+      const { host, conn, callbacks } = await setup()
       const params = {
         sessionId: "s1",
         toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
@@ -387,7 +390,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("respondPermission resolves the promise, clears pending, and emits a second patch", async () => {
-      const { host, callbacks } = await setup()
+      const { host, conn, callbacks } = await setup()
       const params = {
         sessionId: "s1",
         toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
@@ -427,7 +430,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("two overlapping permission requests: slot holds the second; the first's finally does not clear it", async () => {
-      const { host, callbacks } = await setup()
+      const { host, conn, callbacks } = await setup()
       const paramsA = {
         sessionId: "s1",
         toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
@@ -460,7 +463,7 @@ describe("createSessionHostFromConnection", () => {
 
   describe("C2 — elicitation requests surfaced via state.pending + patches", () => {
     it("onCreateElicitation sets state.pending.elicitation and emits one patch", async () => {
-      const { host, callbacks } = await setup()
+      const { host, conn, callbacks } = await setup()
       const params = {
         sessionId: "s1",
         requestId: 1,
@@ -478,7 +481,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("respondElicitation resolves the promise, clears pending, and emits a second patch", async () => {
-      const { host, callbacks } = await setup()
+      const { host, conn, callbacks } = await setup()
       const params = {
         sessionId: "s1",
         requestId: 1,
@@ -518,7 +521,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("two overlapping elicitation requests: slot holds the second; the first's finally does not clear it", async () => {
-      const { host, callbacks } = await setup()
+      const { host, conn, callbacks } = await setup()
       const paramsA = {
         sessionId: "s1",
         requestId: 1,
@@ -547,7 +550,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("two kinds pending simultaneously, with distinct ids (C4: shared requestId counter) — the regression the spread bug would break", async () => {
-      const { host, callbacks } = await setup()
+      const { host, conn, callbacks } = await setup()
       const permParams = {
         sessionId: "s1",
         toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
@@ -586,7 +589,7 @@ describe("createSessionHostFromConnection", () => {
 
   describe("C3 — turn boundaries: host.prompt", () => {
     it("emits three patches in order: waiting → add-message → idle; turnState is 'waiting' in between", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
       const d = deferred<void>()
       ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => d.promise)
       const reader = host.patches.getReader()
@@ -618,7 +621,7 @@ describe("createSessionHostFromConnection", () => {
       // This is the test that prevents the ordering from silently flipping back
       // (add-message before waiting) in a future edit — see session-host.ts's
       // comment above host.prompt for why that would reintroduce the flicker.
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
       const d = deferred<void>()
       ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => d.promise)
       const reader = host.patches.getReader()
@@ -652,7 +655,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("turnState returns to idle after a turn, and a new turn raises it to waiting again (ratchet closed)", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
       const d = deferred<void>()
       ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => d.promise)
 
@@ -672,7 +675,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("failed turn: emits a single idle patch carrying lastTurnError; host.prompt still throws to the direct caller", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
       const err = { message: "Internal error", data: { details: "actual reason" } }
       ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockRejectedValue(err)
 
@@ -694,7 +697,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("a successful turn after a failed one clears lastTurnError (via applyTurnStart)", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
       ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
         new Error("first fails"),
       )
@@ -707,7 +710,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("prompt failure without cancellation writes lastTurnError", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
       ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("network down"))
 
       await expect(host.prompt("s1", "x")).rejects.toThrow("network down")
@@ -715,7 +718,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("two overlapping prompts: A resolving after B started emits nothing for A; B's waiting survives", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
       const dA = deferred<void>()
       const dB = deferred<void>()
       const promptMock = mockClient.prompt as ReturnType<typeof vi.fn>
@@ -740,7 +743,7 @@ describe("createSessionHostFromConnection", () => {
 
   describe("C3 — turn boundaries: host.cancel", () => {
     it("cancel during an active turn emits idle without lastTurnError", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
       const dPrompt = deferred<void>()
       ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => dPrompt.promise)
 
@@ -756,7 +759,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("client.cancel itself throwing is swallowed — cancel still emits idle, no lastTurnError", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
       const dPrompt = deferred<void>()
       ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => dPrompt.promise)
       ;(mockClient.cancel as ReturnType<typeof vi.fn>).mockRejectedValue(
@@ -773,7 +776,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("cancel on an already-idle state emits zero patches (distinguished from client.cancel throwing)", async () => {
-      const { host } = await setup()
+      const { host, conn } = await setup()
       expect(host.state.turnState).toBe("idle")
 
       const reader = host.patches.getReader()
@@ -787,7 +790,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("two consecutive cancels: the second is a no-op", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
       const dPrompt = deferred<void>()
       ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => dPrompt.promise)
 
@@ -804,7 +807,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("cancel then a new prompt that fails: lastTurnError IS written (the stale cancel marker does not apply)", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
       const dFirst = deferred<void>()
       ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementationOnce(() => dFirst.promise)
 
@@ -822,7 +825,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("cancel when no active turn is a full no-op — an existing lastTurnError survives", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
       ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("boom"))
       await expect(host.prompt("s1", "x")).rejects.toThrow("boom")
       expect(host.state.lastTurnError?.message).toBe("boom")
@@ -860,7 +863,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("no late update ⇒ prompt resolving after cancel is a full no-op (already idle)", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
       const dPrompt = deferred<void>()
       ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(() => dPrompt.promise)
 
@@ -875,7 +878,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("scenario 2 — a new prompt while cancel is in flight: B's waiting survives", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
       const dPromptA = deferred<void>()
       const dCancel = deferred<void>()
       const dPromptB = deferred<void>()
@@ -906,7 +909,7 @@ describe("createSessionHostFromConnection", () => {
 
   describe("S4 extensions — setMode / setConfigOption / extMethod", () => {
     it("setMode delegates to client.setSessionMode with currentState.sessionId", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
 
       // Establish a sessionId via newSession (returns { sessionId: 's1' } from mockClient)
       await host.newSession({ cwd: "/test" })
@@ -920,13 +923,13 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("setMode throws 'No session' when sessionId is null", async () => {
-      const { host } = await setup()
+      const { host, conn } = await setup()
       // No session started — sessionId is null
       await expect(host.setMode("compact")).rejects.toThrow("No session")
     })
 
     it("setConfigOption delegates to client.setSessionConfigOption with string value", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
 
       await host.newSession({ cwd: "/test" })
 
@@ -940,7 +943,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("setConfigOption delegates to client.setSessionConfigOption with boolean value", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
 
       await host.newSession({ cwd: "/test" })
 
@@ -954,12 +957,12 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("setConfigOption throws 'No session' when sessionId is null", async () => {
-      const { host } = await setup()
+      const { host, conn } = await setup()
       await expect(host.setConfigOption("model", "x")).rejects.toThrow("No session")
     })
 
     it("extMethod delegates to client.extMethod with method + params", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
 
       await host.extMethod("_drive/custom", { foo: "bar", n: 42 })
 
@@ -967,7 +970,7 @@ describe("createSessionHostFromConnection", () => {
     })
 
     it("extMethod works without an active sessionId (no null-guard needed)", async () => {
-      const { host, mockClient } = await setup()
+      const { host, conn, mockClient } = await setup()
       // extMethod does NOT require a sessionId (no guard)
       await expect(host.extMethod("_drive/ping", {})).resolves.not.toThrow()
       expect(mockClient.extMethod).toHaveBeenCalled()
@@ -993,7 +996,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C1", () => {
   })
 
   it("deleteSession passes the sessionId through to client.deleteSession", async () => {
-    const { host, mockClient } = await setup()
+    const { host, conn, mockClient } = await setup()
 
     await host.deleteSession("sess-to-delete")
 
@@ -1085,7 +1088,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
   }
 
   it("reset is emitted BEFORE every replay/CLI-response patch and zeroes messages", async () => {
-    const { host, mockClient, callbacks } = await setup()
+    const { host, conn, mockClient, callbacks } = await setup()
     await host.newSession({ cwd: "/a" }) // session A = "s1" (mock)
     callbacks.onUpdate(chunkOf("s1", "old history"))
     expect(host.state.messages).toHaveLength(1)
@@ -1118,7 +1121,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
   })
 
   it("turnSeq++: a turn active at switch time that ends afterwards does NOT land applyTurnEnd/lastTurnError on the new session", async () => {
-    const { host, mockClient } = await setup()
+    const { host, conn, mockClient } = await setup()
     await host.newSession({ cwd: "/a" })
 
     const dPrompt = deferred<void>()
@@ -1144,7 +1147,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
   })
 
   it("sessionId filter: old-session updates during the await are dropped; new-session replay enters", async () => {
-    const { host, mockClient, callbacks } = await setup()
+    const { host, conn, mockClient, callbacks } = await setup()
     await host.newSession({ cwd: "/a" }) // A = "s1"
 
     const dLoad = deferred<{ sessionId: string }>()
@@ -1168,7 +1171,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
   })
 
   it("flip-before-await: sessionId is flipped BEFORE client.loadSession runs (state snapshot mid-await)", async () => {
-    const { host, mockClient } = await setup()
+    const { host, conn, mockClient } = await setup()
     await host.newSession({ cwd: "/a" }) // A = "s1"
 
     let sessionIdSeenDuringAwait: string | null = "sentinel-not-captured"
@@ -1183,7 +1186,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
   })
 
   it("request_permission from the outgoing session during the transition is answered cancelled, never opens pending, and does not advance nextRequestId", async () => {
-    const { host, mockClient, callbacks } = await setup()
+    const { host, conn, mockClient, callbacks } = await setup()
     await host.newSession({ cwd: "/a" }) // A = "s1"
 
     const dLoad = deferred<{ sessionId: string }>()
@@ -1206,7 +1209,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
   })
 
   it("create_elicitation from the outgoing session during the transition is answered cancel (same guard)", async () => {
-    const { host, mockClient, callbacks } = await setup()
+    const { host, conn, mockClient, callbacks } = await setup()
     await host.newSession({ cwd: "/a" }) // A = "s1"
 
     const dLoad = deferred<{ sessionId: string }>()
@@ -1222,7 +1225,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
   })
 
   it("an open pending at switch time is closed cancelled (clear patch BEFORE the reset) and absent from the new state", async () => {
-    const { host, mockClient, callbacks } = await setup()
+    const { host, conn, mockClient, callbacks } = await setup()
     await host.newSession({ cwd: "/a" }) // A = "s1"
 
     const permPromise = callbacks.onRequestPermission!(permParams("s1"))
@@ -1252,7 +1255,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
   })
 
   it("success: sessionId flipped + turnState idle + lastTurnError null (reset does not clear it; the success patch does)", async () => {
-    const { host, mockClient } = await setup()
+    const { host, conn, mockClient } = await setup()
     await host.newSession({ cwd: "/a" })
 
     // Seed lastTurnError with a failed turn
@@ -1276,7 +1279,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
   })
 
   it("sessionId is NOT re-written from the CLI response — the flip is the only forward write", async () => {
-    const { host, mockClient } = await setup()
+    const { host, conn, mockClient } = await setup()
     await host.newSession({ cwd: "/a" })
 
     ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -1289,7 +1292,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
   })
 
   it("failure: sessionId rolls back, a SECOND reset is emitted, versions stay monotonic (watermark simulation), and the error is rethrown", async () => {
-    const { host, mockClient, callbacks } = await setup()
+    const { host, conn, mockClient, callbacks } = await setup()
     await host.newSession({ cwd: "/a" }) // A = "s1"
 
     const loadError = Object.assign(new Error("session not found"), { code: -32000 })
@@ -1327,7 +1330,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
   })
 
   it("host-level cwd: opts.cwd passes through to client.loadSession as-is", async () => {
-    const { host, mockClient } = await setup()
+    const { host, conn, mockClient } = await setup()
     await host.newSession({ cwd: "/a" })
 
     ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sessionId: "s2" })
@@ -1371,7 +1374,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
 
   // DoD 3: dispose is idempotent
   it("dispose: idempotent — calling twice does not throw", async () => {
-    const { host } = await setup()
+    const { host, conn } = await setup()
 
     await expect(host.dispose()).resolves.toBeUndefined()
     await expect(host.dispose()).resolves.toBeUndefined()
@@ -1379,7 +1382,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
 
   // DoD 4: all I/O rejected after dispose
   it("dispose: prompt throws after dispose", async () => {
-    const { host } = await setup()
+    const { host, conn } = await setup()
 
     await host.dispose()
 
@@ -1387,7 +1390,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   })
 
   it("dispose: newSession throws after dispose", async () => {
-    const { host } = await setup()
+    const { host, conn } = await setup()
 
     await host.dispose()
 
@@ -1395,7 +1398,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   })
 
   it("dispose: cancel throws after dispose", async () => {
-    const { host } = await setup()
+    const { host, conn } = await setup()
 
     await host.dispose()
 
@@ -1403,7 +1406,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   })
 
   it("dispose: setMode throws after dispose", async () => {
-    const { host } = await setup()
+    const { host, conn } = await setup()
     await host.newSession({ cwd: "/a" })
 
     await host.dispose()
@@ -1412,7 +1415,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   })
 
   it("dispose: extMethod throws after dispose", async () => {
-    const { host } = await setup()
+    const { host, conn } = await setup()
 
     await host.dispose()
 
@@ -1420,7 +1423,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   })
 
   it("dispose: listSessions throws after dispose", async () => {
-    const { host } = await setup()
+    const { host, conn } = await setup()
 
     await host.dispose()
 
@@ -1428,7 +1431,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   })
 
   it("dispose: deleteSession throws after dispose", async () => {
-    const { host } = await setup()
+    const { host, conn } = await setup()
 
     await host.dispose()
 
@@ -1436,7 +1439,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   })
 
   it("dispose: respondPermission is a no-op after dispose (no throw)", async () => {
-    const { host } = await setup()
+    const { host, conn } = await setup()
 
     await host.dispose()
 
@@ -1444,7 +1447,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
   })
 
   it("dispose: respondElicitation is a no-op after dispose (no throw)", async () => {
-    const { host } = await setup()
+    const { host, conn } = await setup()
 
     await host.dispose()
 
@@ -1453,7 +1456,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
 
   // DoD 11: host.patches stream terminates after dispose
   it("dispose: patches stream terminates (done=true on next read)", async () => {
-    const { host } = await setup()
+    const { host, conn } = await setup()
 
     await host.dispose()
 
@@ -1465,7 +1468,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
 
   // DoD 4 (extended): onUpdate is ignored after dispose
   it("dispose: onUpdate is ignored after dispose (no state changes)", async () => {
-    const { host, callbacks } = await setup()
+    const { host, conn, callbacks } = await setup()
     await host.newSession({ cwd: "/a" })
     const versionBefore = host.state.version
 
@@ -1482,7 +1485,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
 
   // DoD 4 (crash handler): onRequestPermission returns cancelled default after dispose
   it("dispose: onRequestPermission returns cancelled default after dispose", async () => {
-    const { host, callbacks } = await setup()
+    const { host, conn, callbacks } = await setup()
     await host.newSession({ cwd: "/a" })
 
     await host.dispose()
@@ -1498,7 +1501,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
 
   // DoD 4 (crash handler): onCreateElicitation returns cancel default after dispose
   it("dispose: onCreateElicitation returns cancel default after dispose", async () => {
-    const { host, callbacks } = await setup()
+    const { host, conn, callbacks } = await setup()
     await host.newSession({ cwd: "/a" })
 
     await host.dispose()
@@ -1517,7 +1520,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
 
 describe("createSessionHostFromConnection — dispose() resolves pending (ownership-handoff C1b)", () => {
   it("dispose: pending permission request resolves as cancelled before transport.close", async () => {
-    const { host, callbacks } = await setup()
+    const { host, conn, callbacks } = await setup()
     await host.newSession({ cwd: "/a" })
 
     // Start a permission request — it will be pending until dispose resolves it
@@ -1537,7 +1540,7 @@ describe("createSessionHostFromConnection — dispose() resolves pending (owners
   })
 
   it("dispose: pending elicitation request resolves as cancel before transport.close", async () => {
-    const { host, callbacks } = await setup()
+    const { host, conn, callbacks } = await setup()
     await host.newSession({ cwd: "/a" })
 
     const elicitationPromise = callbacks.onCreateElicitation!({
@@ -1655,7 +1658,7 @@ describe("loadSession (http-state-gaps C2)", () => {
   it("same session reload: existing configOptions survive (existing wins)", async () => {
     const existingOptions = [{ id: "mode", type: "select" as const, name: "Mode", currentValue: "auto", options: [{ id: "auto", name: "auto" }, { id: "manual", name: "manual" }] }]
     const staleOptions = [{ id: "mode", type: "select" as const, name: "Mode", currentValue: "manual", options: [{ id: "auto", name: "auto" }, { id: "manual", name: "manual" }] }]
-    const { host, mockClient } = await setup()
+    const { host, conn, mockClient } = await setup()
     // First: newSession sets up the session with configOptions
     mockClient.newSession = vi.fn().mockResolvedValue({
       sessionId: "session-A",
@@ -1678,7 +1681,7 @@ describe("loadSession (http-state-gaps C2)", () => {
   it("session switch: load response wins (no cross-session contamination)", async () => {
     const sessionAOptions = [{ id: "mode", type: "select" as const, name: "Mode", currentValue: "auto", options: [{ id: "auto", name: "auto" }, { id: "manual", name: "manual" }] }]
     const sessionBOptions = [{ id: "mode", type: "select" as const, name: "Mode", currentValue: "manual", options: [{ id: "auto", name: "auto" }, { id: "manual", name: "manual" }] }]
-    const { host, mockClient } = await setup()
+    const { host, conn, mockClient } = await setup()
     // Start with session A
     mockClient.newSession = vi.fn().mockResolvedValue({
       sessionId: "session-A",
@@ -1699,7 +1702,7 @@ describe("loadSession (http-state-gaps C2)", () => {
 
   // DoD #9: החלפת סשן → quota מתאפס ל-null
   it("session switch: quota is reset to null", async () => {
-    const { host, mockClient, callbacks } = await setup()
+    const { host, conn, mockClient, callbacks } = await setup()
     await host.newSession({ cwd: "/test" })
     // Inject quota into state via session update notification
     callbacks.onUpdate({
@@ -1736,7 +1739,7 @@ describe("loadSession (http-state-gaps C2)", () => {
       { id: "mode", type: "select" as const, name: "Mode", currentValue: "manual", options: [{ id: "auto", name: "auto" }, { id: "manual", name: "manual" }] },
       { id: "model", type: "select" as const, name: "Model", currentValue: "claude-3", options: [{ id: "claude-3", name: "claude-3" }, { id: "claude-4", name: "claude-4" }] },
     ]
-    const { host, mockClient } = await setup()
+    const { host, conn, mockClient } = await setup()
     // No newSession — load directly (fresh host, sessionId=null)
     mockClient.loadSession = vi.fn().mockResolvedValue({
       sessionId: "session-A",
@@ -1753,7 +1756,7 @@ describe("loadSession (http-state-gaps C2)", () => {
 describe("quota via state channel (http-state-gaps C3)", () => {
   // DoD #12: usage:false → אין קריאה ל-getQuota
   it("capabilities.usage:false → no extMethod call for getQuota", async () => {
-    const { host, mockClient } = await setup()
+    const { host, conn, mockClient } = await setup()
     mockClient.capabilities = { usage: false } as typeof mockClient.capabilities
 
     await host.newSession({ cwd: "/test" })
@@ -1767,10 +1770,10 @@ describe("quota via state channel (http-state-gaps C3)", () => {
   // DoD #11: usage:true → quota מאוכלס ב-state
   it("capabilities.usage:true → state.quota set after newSession", async () => {
     const quotaResult = { snapshot: { provider: "claude", windows: [] } }
-    const { host, mockClient } = await setup(5000, 5000, {
+    const { conn, host, mockClient } = await setup(5000, 5000, {
       extMethod: vi.fn().mockResolvedValue(quotaResult),
     })
-    mockClient.capabilities = { usage: true } as typeof mockClient.capabilities
+    conn.capabilities = { usage: true } as typeof conn.capabilities
 
     await host.newSession({ cwd: "/test" })
     // Allow async quota fetch to settle
@@ -1782,10 +1785,10 @@ describe("quota via state channel (http-state-gaps C3)", () => {
   // DoD #13: snapshot:null → תשובה תקינה, לא שגיאה
   it("snapshot:null is a valid response (no-limits account)", async () => {
     const quotaResult = { snapshot: null }
-    const { host, mockClient } = await setup(5000, 5000, {
+    const { conn, host, mockClient } = await setup(5000, 5000, {
       extMethod: vi.fn().mockResolvedValue(quotaResult),
     })
-    mockClient.capabilities = { usage: true } as typeof mockClient.capabilities
+    conn.capabilities = { usage: true } as typeof conn.capabilities
 
     await host.newSession({ cwd: "/test" })
     await new Promise<void>((resolve) => setTimeout(resolve, 50))
@@ -1799,10 +1802,10 @@ describe("quota via state channel (http-state-gaps C3)", () => {
   // DoD #15: timeout → הסשן חי, quota לא נהרס
   it("getQuota timeout → session survives, quota unchanged", async () => {
     let resolve!: () => void
-    const { host, mockClient } = await setup(5000, 5000, {
+    const { conn, host, mockClient } = await setup(5000, 5000, {
       extMethod: vi.fn().mockImplementation(() => new Promise<never>((r) => { resolve = () => r(undefined as never) })),
     })
-    mockClient.capabilities = { usage: true } as typeof mockClient.capabilities
+    conn.capabilities = { usage: true } as typeof conn.capabilities
     // Set a very short timeout by testing with a fast-enough poll
     // We use vi.useFakeTimers to control timeout
 
@@ -1816,10 +1819,10 @@ describe("quota via state channel (http-state-gaps C3)", () => {
   // DoD #14: guard-דור — תשובה אחרי החלפת סשן נזרקת
   it("guard-gen: quota response after session switch is discarded", async () => {
     let quotaResolve!: (v: { snapshot: { provider: string; windows: unknown[] } | null }) => void
-    const { host, mockClient } = await setup(5000, 5000, {
+    const { conn, host, mockClient } = await setup(5000, 5000, {
       extMethod: vi.fn().mockImplementation(() => new Promise((r) => { quotaResolve = r })),
     })
-    mockClient.capabilities = { usage: true } as typeof mockClient.capabilities
+    conn.capabilities = { usage: true } as typeof conn.capabilities
     mockClient.newSession = vi.fn().mockResolvedValue({ sessionId: "session-A" })
 
     await host.newSession({ cwd: "/test" })
@@ -1840,10 +1843,10 @@ describe("quota via state channel (http-state-gaps C3)", () => {
 
   // DoD #1-5: session survives even if getQuota fails
   it("getQuota error → session survives, quota unchanged", async () => {
-    const { host, mockClient } = await setup(5000, 5000, {
+    const { conn, host, mockClient } = await setup(5000, 5000, {
       extMethod: vi.fn().mockRejectedValue(new Error("quota fetch failed")),
     })
-    mockClient.capabilities = { usage: true } as typeof mockClient.capabilities
+    conn.capabilities = { usage: true } as typeof conn.capabilities
 
     await host.newSession({ cwd: "/test" })
     await new Promise<void>((resolve) => setTimeout(resolve, 50))
@@ -1855,10 +1858,10 @@ describe("quota via state channel (http-state-gaps C3)", () => {
   // DoD #11: loadSession with usage:true → quota also fetched
   it("capabilities.usage:true → state.quota set after loadSession", async () => {
     const quotaResult = { snapshot: { provider: "claude", windows: [] } }
-    const { host, mockClient } = await setup(5000, 5000, {
+    const { conn, host, mockClient } = await setup(5000, 5000, {
       extMethod: vi.fn().mockResolvedValue(quotaResult),
     })
-    mockClient.capabilities = { usage: true } as typeof mockClient.capabilities
+    conn.capabilities = { usage: true } as typeof conn.capabilities
 
     await host.loadSession({ cwd: "/test", sessionId: "session-A" })
     await new Promise<void>((resolve) => setTimeout(resolve, 50))
@@ -1880,12 +1883,12 @@ describe("quota via state channel (http-state-gaps C3)", () => {
       }
       return Promise.resolve(QUOTA_B)
     })
-    const { host } = await setup(5000, 5000, {
+    const { host, conn } = await setup(5000, 5000, {
       extMethod,
-      capabilities: { usage: true } as unknown as AcpClient["capabilities"],
       newSession: vi.fn().mockResolvedValue({ sessionId: "sA" }),
       loadSession: vi.fn().mockResolvedValue({ sessionId: "sB" }),
     })
+    conn.capabilities = { usage: true } as typeof conn.capabilities
 
     await host.newSession({ cwd: "/test" }) // session A — fetch hangs
     await host.loadSession({ sessionId: "sB", cwd: "/test" }) // switch to B
