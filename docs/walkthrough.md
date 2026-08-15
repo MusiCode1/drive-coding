@@ -1,3 +1,39 @@
+## 2026-08-15 (slice remote-images — תמונות ב-HTTP)
+
+### slice remote-images — PromptBlocks בשלוש שכבות + attachments ב-core
+
+Base: `slice/http-usable` @ `1182153`.
+ענף: `slice/remote-images`, worktree `.worktrees/remote-images`.
+3 קומיטים (C1–C3).
+
+#### C1 — הצינור: PromptBlocks בשלוש שכבות (קומיט 41de193, fa2120d)
+
+`session-host.ts` (×2 מימושים) — חתימת `prompt(sessionId, content: string | PromptBlocks, meta?)`.
+`rpc.ts` — `ContentBlockSchema` עם חמשת וריאנטי ArkType; `content: string | PromptContent`.
+`remote-session-view.ts` — הסרת ה-throw "PromptBlocks not supported", passthrough.
+`core/session/types.ts` — `synthesizeUserMessage` מקבל `string | ContentBlock[]` (הרחבה).
+טסטים: 7 טסטים חדשים (session-host, rpc, remote-session-view, contract).
+DoD: exit=0 ✅
+
+#### C2 — attachments ב-core + חיבור ה-FE (קומיט 6efa91a)
+
+`core/session/types.ts` — שדה `attachments?` על וריאנט `user` של `SessionMessage`;
+`synthesizeUserMessage` מפצל: image blocks → `attachments`, text blocks → `segments`.
+`core/session/patch-schema.ts` — `AttachmentSchema` + הצהרת `"attachments?"` (היגיינה).
+`apply-patch-mutable.ts` — `sessionMsgToBubble` מעביר `attachments` לבועה (שורה אחת).
+`agent-session.svelte.ts` — מחיקת guard "תמונה-בלבד ב-remote", מחיקת אזהרה "sent as text only",
+`prompt(content, meta)` במקום `prompt(text, meta)`.
+טסטים: 5 טסטים חדשים (types.test, apply-patch-mutable.test, agent-session.remote.test).
+DoD: exit=0 ✅
+
+#### C3 — תיעוד (קומיט זה)
+
+עדכון `docs/walkthrough.md` — תמונות נתמכות בשני המסלולים (HTTP + WS);
+הבועה נוצרת ב-FE local בלבד (ה-BE מסנתז via `synthesizeUserMessage`).
+
+חריגות: אין. הבריף בוצע כלשונו (r3).
+בדיקות: 12 טסטים חדשים, כל הטסטים עוברים (כישלונות pre-existing: formatting, https-serve).
+
 ## 2026-08-14 (slice transport-polish — טרמינולוגיה + עקיפה + מתג)
 
 ### slice transport-polish — ws/http + שתי שכבות אחסון + Select בהגדרות
