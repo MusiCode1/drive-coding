@@ -119,6 +119,8 @@ export type SessionMessage =
       messageId: string | null
       segments: SessionSegment[]
       meta?: Record<string, unknown>
+      /** slice remote-images C2 — תמונות שנשלחו עם הפרומפט. אופציונלי ו-additive. */
+      attachments?: { mimeType: string; dataBase64: string }[]
     }
   | {
       id: string
@@ -263,18 +265,31 @@ export function synthesizeUserMessage(
 ): SessionMessage {
   const msgId = `m_${state.nextMessageSeq}`
   const segId = `s_${state.nextSegmentSeq}`
-  // C2 will split blocks into text segments + image attachments.
-  // For now: extract text from blocks, or use string directly.
-  const text = typeof content === "string"
-    ? content
-    : content.filter((b): b is ContentBlock & { type: "text" } => b.type === "text")
-             .map((b) => b.text)
-             .join("") || ""
+
+  if (typeof content === "string") {
+    return {
+      id: msgId,
+      role: "user",
+      messageId: null,
+      segments: [{ id: segId, text: content }],
+      ...(meta !== undefined && { meta }),
+    }
+  }
+
+  // PromptBlocks: text blocks → segments, image blocks → attachments
+  const textBlocks = content.filter((b): b is ContentBlock & { type: "text" } => b.type === "text")
+  const imageBlocks = content.filter(
+    (b): b is ContentBlock & { type: "image"; data: string; mimeType: string } => b.type === "image",
+  )
+  const segments = textBlocks.map((b, i) => ({ id: `${segId}_${i}`, text: b.text }))
+  const attachments = imageBlocks.map((b) => ({ mimeType: b.mimeType, dataBase64: b.data }))
+
   return {
     id: msgId,
     role: "user",
     messageId: null,
-    segments: [{ id: segId, text }],
+    segments,
+    ...(attachments.length > 0 && { attachments }),
     ...(meta !== undefined && { meta }),
   }
 }

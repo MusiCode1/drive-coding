@@ -21,12 +21,14 @@ import { type } from "arktype"
 
 const SessionSegmentSchema = type({ id: "string", text: "string" })
 
+const AttachmentSchema = type({ mimeType: "string", dataBase64: "string" })
 const SessionMessageSchema = type({
   id: "string",
   role: "'user'|'thought'|'assistant'",
   messageId: "string | null",
   segments: SessionSegmentSchema.array(),
   "meta?": "object",
+  "attachments?": AttachmentSchema.array(),
 }).or({
   id: "string",
   role: "'tool'",

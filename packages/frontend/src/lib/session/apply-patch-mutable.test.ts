@@ -339,3 +339,28 @@ describe("applyPatchMutable — mappers injection", () => {
     }
   })
 })
+
+// ─── slice remote-images C2 (TDD): attachments בבועה ───
+describe("sessionMsgToBubble — attachments passthrough (remote-images C2)", () => {
+  it("user message with attachments → bubble.attachments set", () => {
+    const attachments = [{ mimeType: "image/png", dataBase64: "abc123" }]
+    // Build a message manually with attachments (as if core placed them there)
+    const msg: SessionMessage = {
+      id: "m_0",
+      role: "user",
+      messageId: null,
+      segments: [],
+      attachments,
+    }
+    const addPatch: Patch = { version: 1, op: "add-message", message: msg }
+    const bubbles: Bubble[] = []
+    applyPatchMutable(bubbles, [addPatch], {
+      mapToolContent: stubMapToolContent,
+      mapLocations: stubMapLocations,
+    })
+
+    const bubble = bubbles[0] as UserBubble
+    expect(bubble.kind).toBe("user")
+    expect(bubble.attachments).toEqual(attachments)
+  })
+})

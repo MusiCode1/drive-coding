@@ -114,10 +114,13 @@ describe("AgentSession + remote view — sendPrompt", () => {
     agent._setStatusForTest("connected")
   })
 
-  it("reaches the view as a plain string, meta undefined, no local bubble, sets waiting", async () => {
+  it("reaches the view as PromptBlocks, meta undefined, no local bubble, sets waiting", async () => {
     await agent.sendPrompt("hello there")
 
-    expect(view.promptMock).toHaveBeenCalledWith("hello there", undefined)
+    expect(view.promptMock).toHaveBeenCalledWith(
+      [{ type: "text", text: "hello there" }],
+      undefined,
+    )
     expect(agent.bubbles).toHaveLength(0) // ה-BE מסנתז את בועת-המשתמש — לא כאן
     // 🔴 turnState נשאר waiting אחרי שה-promise נפתר — ה-202 אינו סוף התור
     expect(agent.turnState).toBe("waiting")
@@ -145,21 +148,28 @@ describe("AgentSession + remote view — sendPrompt", () => {
     expect(agent.status).toBe("connected")
   })
 
-  it("image-only send in remote mode does not POST an empty string", async () => {
+  // ─── slice remote-images C2: image support (r3) ───
+  it("image-only send in remote mode — sends PromptBlocks with image block (r3: supported)", async () => {
     await agent.sendPrompt("", { attachments: [{ mimeType: "image/png", dataBase64: "AA==" }] })
 
-    expect(view.promptMock).not.toHaveBeenCalled()
-    expect(agent.error).toContain("attachments are not supported in remote mode")
-    expect(agent.turnState).toBe("idle") // אין #setTurnState("waiting") לפני ה-return המוקדם
+    expect(view.promptMock).toHaveBeenCalledWith(
+      [{ type: "image", mimeType: "image/png", data: "AA==" }],
+      undefined,
+    )
+    expect(agent.error).toBeNull() // r3: no error — images supported in remote
+    expect(agent.turnState).toBe("waiting")
   })
 
-  it("text + attachments in remote mode warns and continues with text only", async () => {
+  it("text + attachments in remote mode — sends PromptBlocks without warning (r3)", async () => {
     await agent.sendPrompt("hello", {
       attachments: [{ mimeType: "image/png", dataBase64: "AA==" }],
     })
 
-    expect(view.promptMock).toHaveBeenCalledWith("hello", undefined)
-    expect(agent.error).toContain("attachments are not supported in remote mode")
+    expect(view.promptMock).toHaveBeenCalledWith(
+      [{ type: "text", text: "hello" }, { type: "image", mimeType: "image/png", data: "AA==" }],
+      undefined,
+    )
+    expect(agent.error).toBeNull() // r3: no warning
   })
 })
 

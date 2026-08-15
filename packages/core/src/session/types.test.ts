@@ -271,6 +271,31 @@ describe("synthesizeUserMessage (C1)", () => {
     const msg = synthesizeUserMessage(s, "Hi")
     expect(msg.meta).toBeUndefined()
   })
+
+  // ─── slice remote-images C2 (TDD) ───
+  it("image ContentBlock → attachments in user message, no segment", () => {
+    const s = createInitialSessionState({ sessionId: null })
+    const blocks = [{ type: "image" as const, mimeType: "image/png", data: "abc123" }]
+    const msg = synthesizeUserMessage(s, blocks)
+    expect(msg.role).toBe("user")
+    if (msg.role !== "tool") {
+      expect(msg.segments).toHaveLength(0)
+      expect(msg.attachments).toEqual([{ mimeType: "image/png", dataBase64: "abc123" }])
+    }
+  })
+
+  it("mixed text + image blocks → segment from text, attachment from image", () => {
+    const s = createInitialSessionState({ sessionId: null })
+    const blocks = [
+      { type: "image" as const, mimeType: "image/jpeg", data: "imgdata" },
+      { type: "text" as const, text: "describe this" },
+    ]
+    const msg = synthesizeUserMessage(s, blocks)
+    if (msg.role !== "tool") {
+      expect(msg.segments[0]?.text).toBe("describe this")
+      expect(msg.attachments).toEqual([{ mimeType: "image/jpeg", dataBase64: "imgdata" }])
+    }
+  })
 })
 
 describe("applyUserMessage (C1)", () => {

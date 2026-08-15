@@ -57,6 +57,7 @@ function sessionMsgToBubble(msg: SessionMessage, mappers: PatchMappers): Bubble 
     messageId: msg.messageId,
     createdAt: 0,
     segments: msg.segments,
+    ...(kind === "user" && "attachments" in msg && msg.attachments != null && { attachments: msg.attachments }),
   } as Bubble
 }
 

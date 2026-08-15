@@ -1542,13 +1542,6 @@ export class AgentSession {
     const atts = opts?.attachments ?? []
     if (!text.trim() && atts.length === 0) return
 
-    // ─── slice view-switch C3-ב.6: תמונה-בלבד ב-remote — מחרוזת ריקה ל-BE, אסור ───
-    // ה-guard למעלה מעביר את המקרה הזה (atts.length>0); בלי חסימה נקודתית זו remote
-    // היה שולח content:"" ל-BE. יציאה **לפני** #setTurnState/#resetTurnTracking/RPC.
-    if (this.#view && !text.trim() && atts.length > 0) {
-      this.error = "attachments are not supported in remote mode"
-      return
-    }
 
     // Slice 4: לכידה לטובת הקשר הקריינות
     this.lastUserMessage = text
@@ -1578,16 +1571,12 @@ export class AgentSession {
     this.#setTurnState("waiting")
     this.#resetTurnTracking() // תחילת תור — #turnEnded=false + נקה טיימר יתום
 
-    // ─── slice view-switch C3-ב.6: טקסט + attachments ב-remote — אזהרה, ממשיכים עם טקסט בלבד ───
-    if (this.#view && atts.length > 0) {
-      this.error = "attachments are not supported in remote mode — sent as text only"
-    }
 
     try {
       // ⚠️ אין meta ב-scope של sendPrompt — נבנה כאן, אחרת tsc נופל על Cannot find name
       const meta = opts?.recordingId !== undefined ? { recordingId: opts.recordingId } : undefined
       if (this.#view) {
-        await this.#view.prompt(text, meta)
+        await this.#view.prompt(content, meta)
         // ⚠️ סיום-התור **לא** מסומן כאן — ה-202 אינו סוף התור. ב-remote view.prompt()
         // נפתר מיד עם ה-202 (ה-route הלא-חוסם); סיום-התור מגיע מה-patches
         // (applyTurnEnd, slice הבסיס) → #syncFromViewState → #setTurnState.
