@@ -139,6 +139,7 @@ async function setup(): Promise<{
     getCwd: (id) => (id === AGENT_ID ? "/connection/cwd" : undefined),
     getEpoch: (_id) => 0,
     touchOwner: (_id) => {},
+    getRuntimeInfo: (_id) => null,
   }
 
   const app = new Hono()

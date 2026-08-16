@@ -207,6 +207,11 @@ export function createAgentWsHandler(deps: {
           // עדכן lastPingAt (sweep detection — Commit 2)
           const entry = activeFeWs.get(agentId)
           if (entry) entry.lastPingAt = Date.now()
+          // slice liveness C1: WS feeds the unified ownership stamp. touchOwner is
+          // transport-agnostic now — a WS $/ping and an HTTP presence both update
+          // the same lastSeenAt (the unified sweep skips WS via the explicit via
+          // check; this stamp is what a WS→HTTP handoff or a mixed client reports).
+          deps.connectionRegistry.touchOwner(agentId)
           feWs.send(`${JSON.stringify({ jsonrpc: "2.0", method: "$/pong" })}\n`)
           return
         }

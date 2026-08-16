@@ -82,9 +82,12 @@ type ConnEntry = {
    */
   cwd: string
   /**
-   * slice ownership-handoff C4b: last time the HTTP owner sent a request.
+   * slice ownership-handoff C4b + slice liveness C1: last time the owner sent a
+   * liveness signal (WS $/ping or HTTP presence).
    * Separate from Owner.since (ownership transition time).
-   * Updated by touchOwner(); null when no owner or owner is WS (WS has its own keepalive).
+   * Updated by touchOwner(); null when there is no owner. Transport-agnostic —
+   * the unified sweep in session-host/registry.ts decides transport on its own
+   * (via the explicit `via` check), never from lastSeenAt's null-ness.
    */
   lastSeenAt: number | null
 }
@@ -169,14 +172,14 @@ export type ConnectionRegistry = {
   ): { pid: number | null; attached: boolean; busy: boolean; lastMessageAt: number | null; via: "ws" | "http" | null } | null
 
   /**
-   * slice ownership-handoff C4b: update lastSeenAt for an HTTP-owned agent.
-   * No-op if agentId not found or owner is not http.
+   * slice liveness C1: update lastSeenAt for any owned agent (ws or http).
+   * No-op if agentId not found or no owner.
    */
   touchOwner(agentId: string): void
 
   /**
-   * slice ownership-handoff C4b: returns the lastSeenAt for an HTTP-owned agent,
-   * or null if not found / WS-owned / no owner.
+   * slice liveness C1: returns the lastSeenAt for any owned agent (ws or http),
+   * or null if not found / no owner.
    */
   getLastSeenAt(agentId: string): number | null
 
@@ -319,8 +322,9 @@ export function createConnectionRegistry(opts?: {
       e.owner = { via, since: Date.now() }
       e.ownershipEpoch++
       e.attached = true
-      // slice ownership-handoff C4b: initialize lastSeenAt on HTTP ownership acquisition
-      e.lastSeenAt = via === "http" ? Date.now() : null
+      // slice liveness C1: initialize lastSeenAt on any ownership acquisition —
+      // transport-agnostic (the unified sweep decides transport via `via`, §2.1).
+      e.lastSeenAt = Date.now()
     },
 
     markAttached(agentId) {
@@ -330,6 +334,8 @@ export function createConnectionRegistry(opts?: {
       e.owner = { via: "ws", since: Date.now() }
       e.ownershipEpoch++
       e.attached = true
+      // slice liveness C1: WS also gets a lastSeenAt stamp (fed by $/ping → touchOwner).
+      e.lastSeenAt = Date.now()
     },
 
     markDetached(agentId) {
@@ -354,13 +360,13 @@ export function createConnectionRegistry(opts?: {
 
     touchOwner(agentId) {
       const e = map.get(agentId)
-      if (!e || e.owner?.via !== "http") return
+      if (!e?.owner) return
       e.lastSeenAt = Date.now()
     },
 
     getLastSeenAt(agentId) {
       const e = map.get(agentId)
-      if (!e || e.owner?.via !== "http") return null
+      if (!e?.owner) return null
       return e.lastSeenAt
     },
 

@@ -329,6 +329,51 @@ describe("connection-registry — ownership epoch (slice ownership-truth C1)", (
   })
 })
 
+describe("connection-registry — liveness stamp (slice liveness C1)", () => {
+  let cleanupEnv: (() => void) | null = null
+
+  beforeEach(() => {
+    cleanupEnv = useScript(ALIVE_SCRIPT)
+  })
+
+  afterEach(async () => {
+    cleanupEnv?.()
+    cleanupEnv = null
+  })
+
+  it("touchOwner is transport-agnostic: updates lastSeenAt for WS and HTTP", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("live-1", "opencode", { cwd: os.tmpdir() })
+
+    // no owner yet → null
+    expect(reg.getLastSeenAt("live-1")).toBeNull()
+
+    // WS owner (markAttached) → stamp exists; touchOwner keeps it fresh
+    reg.markAttached("live-1")
+    expect(reg.getLastSeenAt("live-1")).not.toBeNull()
+    reg.touchOwner("live-1")
+    expect(reg.getLastSeenAt("live-1")).not.toBeNull()
+
+    // HTTP owner (markOwned) → stamp exists; touchOwner keeps it fresh
+    reg.markOwned("live-1", "http")
+    expect(reg.getLastSeenAt("live-1")).not.toBeNull()
+    reg.touchOwner("live-1")
+    expect(reg.getLastSeenAt("live-1")).not.toBeNull()
+
+    await reg.close("live-1")
+  })
+
+  it("getLastSeenAt is null after markDetached (no owner)", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("live-2", "opencode", { cwd: os.tmpdir() })
+    reg.markOwned("live-2", "http")
+    expect(reg.getLastSeenAt("live-2")).not.toBeNull()
+    reg.markDetached("live-2")
+    expect(reg.getLastSeenAt("live-2")).toBeNull()
+    await reg.close("live-2")
+  })
+})
+
 describe("connection-registry — onCrash aggregate (NBug Map-leak)", () => {
   let cleanupEnv: (() => void) | null = null
 

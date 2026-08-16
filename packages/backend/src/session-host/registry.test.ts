@@ -61,6 +61,7 @@ function makeMockConnectionRegistry(
   conn?: ProviderConnection,
   attached = false,
   touchState = makeTouchState(),
+  owner: { via: "ws" | "http"; since: number } | null = null,
 ): ConnectionRegistry {
   return {
     connect: vi.fn(),
@@ -77,7 +78,7 @@ function makeMockConnectionRegistry(
     touchOwner: touchState.touch,
     getLastSeenAt: touchState.get,
     isAttached: vi.fn().mockReturnValue(attached),
-    getOwner: vi.fn().mockReturnValue(null),
+    getOwner: vi.fn().mockReturnValue(owner),
     getEpoch: vi.fn().mockReturnValue(0),
     isOwnedByWs: vi.fn().mockReturnValue(attached),
     getRuntimeInfo: vi.fn().mockReturnValue(null),
@@ -274,7 +275,10 @@ describe("AgentSessionRegistry", () => {
         const conn = makeMockConnection()
         // נראה לאחרונה הרבה לפני ה-TTL ⇒ פקוע
         const touchState = makeTouchState(Date.now() - 10_000)
-        const connectionRegistry = makeMockConnectionRegistry(conn, false, touchState)
+        const connectionRegistry = makeMockConnectionRegistry(conn, false, touchState, {
+          via: "http",
+          since: Date.now(),
+        })
         const mockHost = makeMockHost()
 
         const registry = createAgentSessionRegistry({
@@ -306,7 +310,10 @@ describe("AgentSessionRegistry", () => {
       try {
         const conn = makeMockConnection()
         const touchState = makeTouchState(Date.now() - 10_000) // מתחיל פקוע
-        const connectionRegistry = makeMockConnectionRegistry(conn, false, touchState)
+        const connectionRegistry = makeMockConnectionRegistry(conn, false, touchState, {
+          via: "http",
+          since: Date.now(),
+        })
         const mockHost = makeMockHost()
 
         const registry = createAgentSessionRegistry({
@@ -327,6 +334,43 @@ describe("AgentSessionRegistry", () => {
         }
 
         expect(mockHost.dispose).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    // 🔴 DoD 7 — slice liveness C1 §2.1: הסויפ המאוחד **לעולם לא** מפנה בעלי-WS.
+    // גם אם ה-WS לא דיווח 200ש׳ (lastSeen פקוע) — ה-WS הוא סימן-החיים של עצמו
+    // (sweep של סוקטים ב-ws-agent.ts, תפקיד נפרד). בלי בדיקת-התעבורה המפורשת
+    // (getOwner().via !== "http") הטסט הזה היה נכשל — touchOwner אגנוסטי גרם
+    // ל-getLastSeenAt להחזיר מספר גם ל-WS. (mutant 21ב).
+    it("🔴 sweep does NOT evict a WS owner even with a stale stamp", async () => {
+      vi.useFakeTimers()
+      try {
+        const conn = makeMockConnection()
+        const touchState = makeTouchState(Date.now() - 10_000) // פקוע
+        // attached=false ⇒ יצירת ה-host מותרת; owner={via:"ws"} ⇒ הסויפ חייב לדלג
+        // על בעל-ה-WS הזה (הבדיקה המפורשת של התעבורה, §2.1).
+        const connectionRegistry = makeMockConnectionRegistry(conn, false, touchState, {
+          via: "ws",
+          since: Date.now(),
+        })
+        const mockHost = makeMockHost()
+
+        const registry = createAgentSessionRegistry({
+          connectionRegistry,
+          _createHostFn: vi.fn().mockResolvedValue(mockHost),
+          _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+          _httpOwnerTtlMs: 100,
+          _httpSweepMs: 20,
+        })
+
+        await registry.getOrCreateHost("agent-1")
+
+        await vi.advanceTimersByTimeAsync(300)
+
+        expect(mockHost.dispose).not.toHaveBeenCalled()
+        expect(registry.getHost("agent-1")).toBe(mockHost)
       } finally {
         vi.useRealTimers()
       }

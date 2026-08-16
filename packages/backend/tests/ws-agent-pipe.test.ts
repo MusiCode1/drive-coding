@@ -111,6 +111,8 @@ function makeMockConnectionRegistry(conn: ProviderConnection | null): {
     markDetached: markDetachedSpy,
     getRuntimeInfo: vi.fn(() => null),
     isAttached: vi.fn(() => false),
+    // slice liveness C1: WS feeds touchOwner on $/ping.
+    touchOwner: vi.fn(),
     close: vi.fn(async () => {}),
     onCrash: vi.fn(() => () => {}),
   }

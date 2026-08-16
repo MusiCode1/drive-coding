@@ -75,6 +75,7 @@ function makeMockRegistry(
     getCwd: vi.fn(),
     getEpoch: vi.fn().mockReturnValue(0),
     touchOwner: vi.fn(),
+    getRuntimeInfo: vi.fn().mockReturnValue(null),
   }
 }
 
