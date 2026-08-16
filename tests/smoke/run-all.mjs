@@ -10,7 +10,8 @@
  *      smoke convention in README.md).
  *   4. Prints a per-test summary, then a final aggregate `RESULT: {...}`.
  *
- * Sequential rationale: see Q4 in docs/plans/testing-coverage.md.
+ * Sequential, not parallel: the BE accumulates sessions and does not scale
+ * under concurrent smoke runs.
  *
  * Pre-conditions: BE on :4000 (via OneCLI) + FE on :5173. Each child smoke
  * inherits this env, so no special handling here.

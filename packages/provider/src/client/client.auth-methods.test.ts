@@ -3,7 +3,6 @@
  * (captured from `initialize`), and attach `authMethods` to the auth_required error object
  * (replaces the previous hardcoded `<cli>` string — see client.ts throw-sites).
  *
- * Slice auth-guidance, Commit 0 — ר' docs/plans/slice-auth-guidance.md §3 Commit 0.
  *
  * Tests (per brief):
  *   1. initResult with authMethods → client.authMethods returns them (roundtrip, incl. type field)

@@ -61,7 +61,7 @@ export function buildPromptParam(content: string | PromptBlocks): PromptBlocks {
 
 const DEFAULT_INIT_TIMEOUT_MS = 10_000
 
-// סדר-עדיפות לפי המדידה החיה ב-docs/plans/slice-cursor-acp.md §-1:
+// סדר-עדיפות לפי מדידה חיה מול ה-CLIs:
 // grok = cached_token/grok.com, cursor = cursor_login.
 // אין xai.api_key בפועל — לא להוסיף methodId שלא נצפה.
 const PREFERRED = ["cached_token", "grok.com", "cursor_login"] as const
@@ -78,8 +78,8 @@ export function resolveAuthMethodId(
 /**
  * מזהה שגיאת auth_required אמיתית (data.code === "auth_required") — בניגוד לכל שגיאה
  * אחרת (כמו -32603 "not implemented" של opencode, שמכריז authMethods בלי ליישם authenticate).
- * משותף ל-catch של initialize וגם authenticate — ר' docs/plans/slice-cursor-acp.md §4 Commit 1
- * (תוקן אחרי calev NO-GO — הגרסה המקורית סגרה transport על כל כישלון authenticate ושברה opencode).
+ * משותף ל-catch של initialize וגם authenticate. הגרסה המקורית סגרה transport על כל
+ * כישלון authenticate — מה ששבר את opencode, ולכן ההבחנה הזו חייבת להישאר.
  */
 function isAuthRequiredError(e: unknown): e is { data?: { code?: string }; message?: string } {
   const err = e as { data?: { code?: string } }
@@ -141,7 +141,7 @@ export type AcpClient = {
   extMethod(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>>
 }
 
-/** נגזר מ-SDK — לא shape מותאם; drift אפס. ר' docs/plans/slice-permission-ui-basic.md §4 Commit 0. */
+/** נגזר מ-SDK — לא shape מותאם; drift אפס. */
 type PermissionParams = Parameters<Client["requestPermission"]>[0]
 type PermissionResponse = Awaited<ReturnType<Client["requestPermission"]>>
 

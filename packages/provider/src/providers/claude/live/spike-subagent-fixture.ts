@@ -1,5 +1,5 @@
 /**
- * spike-subagent-fixture.ts — Gate-1 spike (docs/plans/spike-subagent-transcript-fixture.md).
+ * spike-subagent-fixture.ts — Gate-1 spike.
  *
  * Drives connectInProcess against the REAL claude CLI, enables the raw-SDK channel
  * (emitRawSDKMessages + forwardSubagentText), forces a Task/subagent, and captures

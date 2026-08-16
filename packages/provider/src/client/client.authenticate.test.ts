@@ -4,7 +4,6 @@
  * fallback to the first offered authMethod otherwise. No authenticate call when
  * authMethods is empty/missing (opencode/gemini/qoder/claude/codex must not break).
  *
- * slice-cursor-acp Commit 1 — ר' docs/plans/slice-cursor-acp.md §4 Commit 1.
  *
  * Tests (per brief, mock transport):
  *   1. authMethods: [{ id: "cached_token" }] → authenticate sent with methodId "cached_token"
@@ -19,8 +18,7 @@
  *   + priority ordering: PREFERRED wins over array order
  *   + resolveAuthMethodId pure-function coverage (priority + fallback + empty)
  *
- * תוקן אחרי calev phase-verification NO-GO (2026-07-11) — ר' docs/plans/slice-cursor-acp.md
- * §4 Commit 1 (🔴) ו-reports/drive-coding/cursor-acp-calev.md. opencode מכריז authMethods
+ * תוקן אחרי שנתפס ב-verification: opencode מכריז authMethods
  * לא-ריק אבל לא מיישם authenticate RPC בפועל — היה שובר את opencode בפועל.
  */
 

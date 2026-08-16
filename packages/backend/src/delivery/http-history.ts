@@ -120,7 +120,7 @@ const NOISE_DIRS = new Set<string>(["node_modules"])
  * ⚠️ נקודת-הרחבה (כוונת-תכנון): החתימה async ומקבלת dirent+fullPath **בכוונה** — כדי
  * שזיהוי תכונת-hidden של Windows (FILE_ATTRIBUTE_HIDDEN, שאינה נגזרת מהשם) ייכנס כאן
  * בעתיד בלי לגעת בלולאת-הסינון. כיום אין IO בפועל; ה-Promise נפתר מיד.
- * ה-Windows-detection עצמו = slice נפרד (`slice-windows-hidden-attr`, ראה docs/plans/slice-folder-picker-fixes.md §2)
+ * ה-Windows-detection עצמו נדחה לסלייס נפרד
  * כי הוא דורש תלות native / shell-out per-entry — הכרעה שלא שייכת לתיקון-הבאג הזה.
  */
 async function isHiddenEntry(

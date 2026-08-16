@@ -4,7 +4,6 @@
  * כשיש error **וגם** authMethods לא-ריק (רק ב-claude, שאין לו authMethods, לא מוצג פאנל —
  * ה-error של formatAcpError מספיק). תצוגה בלבד — בלי authenticate אינטראקטיבי (זה auth-flows).
  *
- * ר' docs/plans/slice-auth-guidance.md §3 Commit 1.
  */
 import type { AuthMethod } from "@agentclientprotocol/sdk"
 import CliBadge from "$lib/components/ui/CliBadge.svelte"

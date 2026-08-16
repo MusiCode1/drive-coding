@@ -16,7 +16,6 @@ type PluginEntry = string
  * (מוגדר על-ידי הqaller ב-childEnv של bridge-manager).
  * ממזג עם OPENCODE_CONFIG_CONTENT הקיים של המשתמש, אם ישנו.
  *
- * ראה `docs/audio-friendly-prompt-plan.md` §7 וה-brief של slice-14.
  * Commit 3 של windows-adaptation: tuple → string-plugin (opencode 1.2.27 compat).
  */
 export function buildOpencodeConfigContent(existingEnv: string | undefined): string {

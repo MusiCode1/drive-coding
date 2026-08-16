@@ -3,7 +3,6 @@
  *
  * Pure function — no mocks needed.
  *
- * Behaviors documented in `docs/behaviors.md` (MARKDOWN-1..MARKDOWN-8).
  */
 
 import { describe, expect, test } from "vitest"

@@ -2,7 +2,7 @@
  * claude-subagent-parse.ts — שכבת-נתונים טהורה לתעתיק תת-סוכן (slice subagent-transcript-data-v2, B1).
  *
  * מקור: `_claude/sdkMessage` ext notification (raw Claude Agent SDK messages), דרך
- * `#onExtNotification` ב-agent-session.svelte.ts. ר' docs/plans/slice-subagent-transcript-data-v2.md.
+ * `#onExtNotification` ב-agent-session.svelte.ts.
  *
  * שלושה חלקים טהורים (ללא IO, ללא Date.now()/random בזמן ריצה של הטסטים):
  *   1. `parseClaudeSdkMessage` — unknown → ClaudeSubagentEvent (guards ממוקדים, לא `as SDKMessage`).

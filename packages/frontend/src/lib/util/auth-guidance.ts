@@ -7,7 +7,6 @@
  * AuthMethodAgent has **no `type` field** — it's the untagged fallback. Narrowing must
  * check `"type" in m` (never `m.type === "agent"` — TS2678, the literal doesn't exist).
  *
- * Slice auth-guidance, Commit 1 — ר' docs/plans/slice-auth-guidance.md §3 Commit 1.
  */
 
 import type { AuthMethod } from "@agentclientprotocol/sdk"

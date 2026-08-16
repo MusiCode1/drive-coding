@@ -19,7 +19,7 @@ import type {
   SessionNotification,
 } from "@agentclientprotocol/sdk"
 
-/** נגזר מ-SDK — לא shape מותאם; drift אפס. ר' docs/plans/slice-permission-ui-basic.md §4 Commit 0. */
+/** נגזר מ-SDK — לא shape מותאם; drift אפס. */
 type PermissionParams = Parameters<Client["requestPermission"]>[0]
 type PermissionResponse = Awaited<ReturnType<Client["requestPermission"]>>
 

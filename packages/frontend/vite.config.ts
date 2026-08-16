@@ -9,7 +9,7 @@ import { defineConfig } from "vite"
 // FE_PREVIEW_LABEL: a preview-subject tag so several preview tabs are distinguishable.
 // The env badge (Dev/Preview) + label are PREFIXED before "Drive Coding" so they stay
 // visible when the browser truncates a narrow tab. e.g. "Preview · title+cli · Drive Coding".
-// prod has no badge → plain "Drive Coding". See docs/running-locally.md.
+// prod has no badge → plain "Drive Coding".
 type FeEnv = "dev" | "preview" | "prod"
 const FE_ENV = (process.env.FE_ENV ?? "prod") as FeEnv
 const BADGES: Record<FeEnv, string> = { dev: "Dev", preview: "Preview", prod: "" }
