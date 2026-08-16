@@ -1,7 +1,7 @@
 /**
  * elicitation.ts — טיפוסי view + מיפוי `requestedSchema.properties` → שדות-form לרינדור.
  *
- * לוגיקה טהורה (ללא IO/DOM) — ר' docs/plans/slice-elicitation-ui.md §4 Commit 1.
+ * לוגיקה טהורה (ללא IO/DOM).
  * מחקה את permission.ts (mapPermissionOptions) — התשתית המשותפת שA1 הניחה.
  */
 import type {

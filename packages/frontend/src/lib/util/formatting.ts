@@ -67,7 +67,7 @@ export function formatRelativeTime(epochMs: number, locale: string, now?: number
  * formatRelativeTime clamp-ת diff שלילי (timestamp עתידי) ל-0 ("עכשיו") —
  * זו התנהגות אנטי-flicker נכונה לצרכני-העבר הקיימים שלה (הודעות/session picker),
  * אך שגויה ל-"בעוד N דקות" של איפוס-מכסה עתידי. הרחבתה הייתה משנה behavior
- * קיים (invasive, parallel-safe-code §2) ומפרה את ה-DoD "clock skew → now" של
+ * קיים (שינוי invasive בקובץ משותף) ומפרה את ה-DoD "clock skew → now" של
  * צרכניה הקיימים. formatTimeUntil הוא לכן פונקציה נפרדת עם סמנטיקת-סימן הפוכה
  * (future-relative, לא past-relative) — לא near-duplicate מקרי.
  */

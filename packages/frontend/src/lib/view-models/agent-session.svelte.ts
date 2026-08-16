@@ -101,7 +101,7 @@ import {
  * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries
  * ומבקש raw SDK frames ל-spike של subagent transcript.
  * Opus 4.7+ שינה default ל-display:"omitted"; זה מבקש "summarized" מפורשות.
- * provider-agnostic: ה-key claudeCode מתעלם ע"י ספקים אחרים. ר' decisions/voice-acp.md.
+ * provider-agnostic: ה-key claudeCode מתעלם ע"י ספקים אחרים.
  */
 const CLAUDE_SESSION_META = {
   claudeCode: {
@@ -156,7 +156,7 @@ export type AgentSessionStatus =
 export type TurnState = "idle" | "waiting" | "thinking" | "responding" | "calling-tool"
 
 /**
- * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
+ * ─── עיצוב תוספתי בטוח למקביליות ───
  *
  * הוספת מתודה חדשה ל-AgentSession:
  *   - שינויי State (שדות `$state`) → פולשני (INVASIVE). עצור ושאל את Tama.
@@ -224,7 +224,7 @@ export class AgentSession {
    * null = אין בקשה פעילה. ה-UI (ElicitationDialog) מרנדר inline כשזה לא-null.
    * `resolve` הוא ה-resolver של ה-Promise שהוחזר ל-`createClientImpl.unstable_createElicitation`
    * — חובה לפתור אותו בכל נקודה ש-#client מתאפס, אחרת ה-turn נתקע (מחקה pendingPermission —
-   * הסיכון #1 יורש מ-A1). ר' docs/plans/slice-elicitation-ui.md §4 Commit 2.
+   * הסיכון #1 יורש מ-A1).
    */
   pendingElicitation = $state<{
     params: ElicitationParams
@@ -1047,7 +1047,7 @@ export class AgentSession {
 
   // ─── slice-permission-ui-basic: בקשת הרשאה חיה ──────────────────────────────
   // תשתית גנרית ניתנת-לשכפול (callback + Promise round-trip) — slice B (elicitation)
-  // ישכפל את הדפוס הזה ל-onCreateElicitation. ר' docs/plans/slice-permission-ui-basic.md §3.
+  // ישכפל את הדפוס הזה ל-onCreateElicitation.
 
   /**
    * callback שמוזרק ל-createClientImpl.onRequestPermission (בשלושת ה-call-sites: attach,
@@ -1100,8 +1100,7 @@ export class AgentSession {
   }
 
   // ─── slice-elicitation-ui: שאלה מובנת חיה ──────────────────────────────
-  // מחקה 1:1 את בלוק בקשת ההרשאה שמעלה (§3 בבריף — client.ts:137 השאיר עוגן מפורש
-  // לשכפול). ר' docs/plans/slice-elicitation-ui.md §4 Commit 2.
+  // מחקה 1:1 את בלוק בקשת ההרשאה שמעלה (client.ts השאיר עוגן מפורש לשכפול).
 
   /**
    * callback שמוזרק ל-createClientImpl.onCreateElicitation (בשלושת ה-call-sites: attach,

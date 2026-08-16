@@ -4,7 +4,7 @@
  * מחזיר homeDir מהשרת.
  * homeDir משמש כברירת מחדל לשדה cwd ב-connect page כשאין ערך שמור ב-localStorage.
  * (היסטורי: החזיר גם models+projects — נמחקו 2026-07-10, היו dead payload.
- *  ר' decisions/drive-coding.md + packages/backend/src/delivery/http-options.ts.)
+ *  המקביל בצד השרת: packages/backend/src/delivery/http-options.ts.)
  */
 
 import { beUrl } from "$lib/util/be-url"

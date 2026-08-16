@@ -2,8 +2,6 @@
  * auth-guidance.test.ts — TDD: describeAuthMethod pure function.
  * Discriminates ACP AuthMethod (env_var/terminal/agent — agent has NO `type` field,
  * the untagged fallback) into a rendering-friendly shape for AuthGuidance.svelte.
- *
- * Slice auth-guidance, Commit 1 — ר' docs/plans/slice-auth-guidance.md §3 Commit 1.
  */
 
 import type { AuthMethod } from "@agentclientprotocol/sdk"

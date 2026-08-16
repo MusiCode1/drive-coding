@@ -64,7 +64,9 @@ export const CLI_SPECS = {
   grok: {
     bin: "grok",
     args: ["--no-auto-update", "agent", "stdio"],
-    supportsModelFlag: false, // חובה false — ר' טבלת argv ב-docs/plans/slice-cursor-acp.md §-1
+    // חובה false: getCliCommand מוסיף --model בסוף, ו-`grok agent stdio --model X`
+    // נכשל ב-exit 2 (רק `grok agent --model X stdio` עובד). נמדד חי, Grok Build 0.2.93.
+    supportsModelFlag: false,
   },
 } as const satisfies Record<string, CliSpec>
 

@@ -2,12 +2,18 @@
  * מודל Bubble — משותף בין view-models, קומפוננטות וה-Speaker.
  *
  * איחוד מובחן (Discriminated union) לפי `kind`. כל סוג (variant) נושא בדיוק את השדות
- * שהוא צריך; צרכנים שלא צריכים שדה מסוים פשוט לא ניגשים אליו. ראה
- * את `docs-for-llm/frontend/bubble-model.md` להסבר המלא.
+ * שהוא צריך; צרכנים שלא צריכים שדה מסוים פשוט לא ניגשים אליו.
  *
  * ב-slice 2 אנו משתמשים ב-`user`, `message`, `thought`. סוג ה-`tool` מוצהר עכשיו כדי
  * שסלייסים מאוחרים יותר יוכלו להשתמש בו ללא רפקטור אטומי נוסף (כלל זהב
  * #5: אין "תאימות לאחור במקום").
+ *
+ * ⚠️ **אל תרחיב את המודל הדרגתית** — כלומר אל תתלה שדה חדש על הטיפוס הקרוב ביותר
+ * בכל פעם שמגיע צורך. זה בדיוק הדפוס שיצר ב-FE הישן את `messages` + `bubbles`
+ * הכפולים ואת `segmentCache` שמעולם לא אוכלס. הכלל: מודל מחושב פעם אחת קדימה עם
+ * כל השדות הצפויים, ומי שלא צריך שדה עדיין פשוט **לא מציב** אותו. שדות אופציונליים
+ * על variant הם לגיטימיים כשהם נגזרים מהתכנון הזה (`recordingId`, `attachments`,
+ * `subFrames`); מה שאסור הוא להוסיף אותם אד-הוק כתחליף לחשיבה על המודל.
  */
 
 export type Segment = {
@@ -75,7 +81,7 @@ export type ToolContent = ToolContentText | ToolContentDiff | ToolContentTermina
 export type ToolLocation = { path: string; line?: number }
 
 // ─── slice subagent-transcript-data-v2: תעתיק תת-סוכן (additive) ───
-// שכבת-נתונים בלבד — B1. אין רינדור (B2). ר' docs/plans/slice-subagent-transcript-data-v2.md §4.
+// שכבת-נתונים בלבד — אין רינדור.
 
 /** מצב תת-הסוכן, נגזר ממקורות _claude/sdkMessage (task_started/progress/notification/updated). */
 export type SubagentTaskStatus = "pending" | "in_progress" | "completed" | "failed" | "unknown"

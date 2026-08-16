@@ -2,8 +2,6 @@
  * client.cursor-ext.test.ts — TDD: safe auto-answers for Cursor's blocking ACP extensions,
  * so a turn does not stall waiting on a UI we don't have yet (MVP).
  *
- * slice-cursor-acp Commit 1 — ר' docs/plans/slice-cursor-acp.md §4 Commit 1.
- *
  * Tests:
  *   1. "cursor/ask_question" → { outcome: { outcome: "skipped" } }
  *   2. "cursor/create_plan"  → { outcome: { outcome: "accepted" } }

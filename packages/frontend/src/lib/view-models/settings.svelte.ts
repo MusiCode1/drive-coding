@@ -1,7 +1,7 @@
 /**
  * Settings — העדפות המשתמש. נשמר (Persists) ל-localStorage.
  *
- * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
+ * ─── עיצוב תוספתי בטוח למקביליות ───
  *
  * הוספת שדה שמור חדש:
  *   1. הוסף אותו בסוף הטיפוס `Persisted` למטה.
