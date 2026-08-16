@@ -10,7 +10,7 @@
  * slice: cli-availability
  */
 
-import { resolveCliBinaryCached } from "./cli-resolve.js"
+import { type BinaryCache, resolveCliBinaryCached } from "./cli-resolve.js"
 import type { CliKind, CliSpec } from "./schemas/agent.js"
 import { CLI_SPECS } from "./schemas/agent.js"
 
@@ -39,11 +39,16 @@ export interface CliAvailabilityResult {
  * @param env process.env אופציונלי (למען טסטים; ברירת מחדל process.env בתוך resolveCliBinary).
  * @param overrideKinds רשימת kind-ים שה-bin שלהם מגיע מ-override — עבורם envVar מדולג
  *   כדי לשקף את סדר העדיפויות של getCliCommand (override.bin קודם ל-envVar).
+ * @param cache מטמון פתירת-בינאריים **בבעלות הקורא** (AGENTS.md: אין state ב-core).
+ *   ⚠️ ברירת-המחדל היא Map **טרי ולא-משותף** — נכון, אבל אז הגילוי וה-spawn פותרים
+ *   בנפרד. כדי שיתלכדו (המטרה של slice cli-bin-resolution-unify), הקליפה חייבת
+ *   להעביר את **אותו** מופע שמשמש את `getCliCommand` — ר' `getBinaryCache()` ב-provider.
  */
 export function detectAvailableClis(
   specs: Readonly<Record<string, CliSpec>> = CLI_SPECS,
-  env?: NodeJS.ProcessEnv,
+  env: NodeJS.ProcessEnv = process.env,
   overrideKinds?: readonly string[],
+  cache: BinaryCache = new Map(),
 ): CliAvailabilityResult {
   const available: CliKind[] = []
   const details = {} as Record<CliKind, CliAvailabilityDetails>
@@ -55,7 +60,7 @@ export function detectAvailableClis(
 
     // isOverride: המשתמשת כתבה bin מפורש בקונפיג — בחרה בינארי, אין לנחש fallbacks.
     const resolved = isOverride
-      ? resolveCliBinaryCached({ bin: spec.bin }, env)
+      ? resolveCliBinaryCached({ bin: spec.bin }, env, cache)
       : resolveCliBinaryCached(
           {
             bin: spec.detectBin ?? spec.bin,
@@ -63,6 +68,7 @@ export function detectAvailableClis(
             ...(spec.fallbackBins ? { fallbackBins: spec.fallbackBins } : {}),
           },
           env,
+          cache,
         )
 
     const found = resolved !== undefined

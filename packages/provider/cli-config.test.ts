@@ -1,4 +1,4 @@
-import { resolveCliBinaryCached } from "@drive-coding/core/cli-resolve"
+import { type BinaryCache, resolveCliBinaryCached } from "@drive-coding/core/cli-resolve"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { getCliCommand, getCliSpec } from "./src/config/cli-config"
 
@@ -10,8 +10,17 @@ import { getCliCommand, getCliSpec } from "./src/config/cli-config"
  * הפונקציה הזו משתמשת באותו resolver ש-getCliCommand קורא לו בפועל, ולכן
  * מוכיחה שהחיווט תקין בלי לקבע איפה בדיוק הבינארי יושב.
  */
+// מטמון בבעלות-הטסט (AGENTS.md: אין state ב-core; המטמון עובר כפרמטר).
+const testCache: BinaryCache = new Map()
+
 function expectedResolvedBin(bin: string, fallbackBins?: readonly string[]): string {
-  return resolveCliBinaryCached({ bin, ...(fallbackBins ? { fallbackBins } : {}) }) ?? bin
+  return (
+    resolveCliBinaryCached(
+      { bin, ...(fallbackBins ? { fallbackBins } : {}) },
+      process.env,
+      testCache,
+    ) ?? bin
+  )
 }
 
 describe("getCliCommand", () => {

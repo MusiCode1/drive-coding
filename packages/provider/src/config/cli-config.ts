@@ -1,6 +1,6 @@
 import type { CliKind, CliSpec } from "@drive-coding/core"
 import { CLI_KINDS, CLI_SPECS } from "@drive-coding/core"
-import { resolveCliBinaryCached } from "@drive-coding/core/cli-resolve"
+import { type BinaryCache, resolveCliBinaryCached } from "@drive-coding/core/cli-resolve"
 import { loadCliSpecsOverride } from "./cli-config-file.js"
 
 /**
@@ -16,6 +16,18 @@ import { loadCliSpecsOverride } from "./cli-config-file.js"
 export type CliCommand = {
   readonly bin: string // נתיב הרצה או שם
   readonly args: ReadonlyArray<string>
+}
+
+// ─── מטמון פתירת-בינאריים — בבעלות הקליפה ───────────────────────────────────────
+// AGENTS.md: "packages/core/ — pure logic, no IO" · "Functional core / imperative shell".
+// core מקבל את המטמון כפרמטר ואינו מחזיק state; **המופע חי כאן**, ב-provider,
+// לצד ה-memoization הקיים של cli-config-file.ts.
+// מופע יחיד = הגילוי וה-spawn רואים בדיוק את אותם נתיבים.
+const binaryCache: BinaryCache = new Map()
+
+/** המטמון המשותף. ה-backend מעביר אותו ל-detectAvailableClis כדי שגילוי ו-spawn יתלכדו. */
+export function getBinaryCache(): BinaryCache {
+  return binaryCache
 }
 
 /**
@@ -140,6 +152,7 @@ export function getCliCommand(
       ...(fromOverride ? {} : spec.fallbackBins ? { fallbackBins: spec.fallbackBins } : {}),
     },
     env,
+    binaryCache,
   )
   // לא נמצא → מחזירים את השם כמות שהוא, בדיוק כמו היום. זה משמר את הודעת-השגיאה
   // הקיימת (describe-crash / ENOENT) ולא מוסיף failure mode חדש.

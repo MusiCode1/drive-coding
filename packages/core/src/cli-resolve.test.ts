@@ -8,7 +8,7 @@
  */
 
 import * as path from "node:path"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest"
 
 // Mock node:fs before importing the module under test.
 vi.mock("node:fs", () => ({
@@ -17,7 +17,7 @@ vi.mock("node:fs", () => ({
 
 import * as fs from "node:fs"
 // Import after mock is set up.
-import { invalidateBinaryCache, resolveCliBinary, resolveCliBinaryCached } from "./cli-resolve.js"
+import { type BinaryCache, resolveCliBinary, resolveCliBinaryCached } from "./cli-resolve.js"
 
 // ─── env-override ──────────────────────────────────────────────────────────────
 
@@ -247,11 +247,18 @@ describe("resolveCliBinary: miss returns undefined", () => {
 // ─── fallbackBins + resolveCliBinaryCached (slice cli-bin-resolution-unify) ───
 
 describe("resolveCliBinaryCached", () => {
+  // המטמון בבעלות הקורא (AGENTS.md: אין state ב-core) — Map טרי לכל טסט,
+  // ולכן אין יותר מה "לאפס" גלובלית.
+  let cache: BinaryCache
+
+  beforeEach(() => {
+    cache = new Map()
+  })
+
   afterEach(() => {
     vi.clearAllMocks()
     vi.unstubAllEnvs()
     vi.mocked(fs.existsSync).mockReturnValue(false)
-    invalidateBinaryCache()
   })
 
   // #1 — fallbackBins ריק/חסר → זהה לחלוטין לקיים (regression)
@@ -262,7 +269,7 @@ describe("resolveCliBinaryCached", () => {
     vi.stubEnv("PATHEXT", "")
     vi.mocked(fs.existsSync).mockImplementation((p) => p === expectedPath)
 
-    expect(resolveCliBinaryCached({ bin: "codex" })).toBe(expectedPath)
+    expect(resolveCliBinaryCached({ bin: "codex" }, process.env, cache)).toBe(expectedPath)
   })
 
   // #2 — רק cursor-agent קיים + fallbackBins:["cursor-agent"] → נמצא (הבאג המקורי)
@@ -273,7 +280,7 @@ describe("resolveCliBinaryCached", () => {
     vi.stubEnv("PATHEXT", "")
     vi.mocked(fs.existsSync).mockImplementation((p) => p === fallbackPath)
 
-    const result = resolveCliBinaryCached({ bin: "agent", fallbackBins: ["cursor-agent"] })
+    const result = resolveCliBinaryCached({ bin: "agent", fallbackBins: ["cursor-agent"] }, process.env, cache)
     expect(result).toBe(fallbackPath)
   })
 
@@ -286,7 +293,7 @@ describe("resolveCliBinaryCached", () => {
     vi.stubEnv("PATHEXT", "")
     vi.mocked(fs.existsSync).mockImplementation((p) => p === primaryPath || p === fallbackPath)
 
-    const result = resolveCliBinaryCached({ bin: "agent", fallbackBins: ["cursor-agent"] })
+    const result = resolveCliBinaryCached({ bin: "agent", fallbackBins: ["cursor-agent"] }, process.env, cache)
     expect(result).toBe(primaryPath)
   })
 
@@ -300,7 +307,7 @@ describe("resolveCliBinaryCached", () => {
     vi.stubEnv("PATHEXT", "")
     vi.mocked(fs.existsSync).mockImplementation((p) => p === fallbackPath || p === primaryPath)
 
-    const result = resolveCliBinaryCached({ bin: "agent", fallbackBins: ["cursor-agent"] })
+    const result = resolveCliBinaryCached({ bin: "agent", fallbackBins: ["cursor-agent"] }, process.env, cache)
     expect(result).toBe(primaryPath)
   })
 
@@ -315,7 +322,7 @@ describe("resolveCliBinaryCached", () => {
       bin: "agent",
       envVar: "MY_CLI_PATH",
       fallbackBins: ["cursor-agent"],
-    })
+    }, process.env, cache)
     expect(result).toBe("/env/override/agent")
   })
 
@@ -327,10 +334,10 @@ describe("resolveCliBinaryCached", () => {
     vi.stubEnv("PATHEXT", "")
     vi.mocked(fs.existsSync).mockImplementation((p) => p === expectedPath)
 
-    expect(resolveCliBinaryCached({ bin: "codex" })).toBe(expectedPath)
+    expect(resolveCliBinaryCached({ bin: "codex" }, process.env, cache)).toBe(expectedPath)
 
     vi.mocked(fs.existsSync).mockClear()
-    expect(resolveCliBinaryCached({ bin: "codex" })).toBe(expectedPath)
+    expect(resolveCliBinaryCached({ bin: "codex" }, process.env, cache)).toBe(expectedPath)
     expect(vi.mocked(fs.existsSync)).toHaveBeenCalledTimes(1)
   })
 
@@ -340,11 +347,11 @@ describe("resolveCliBinaryCached", () => {
     vi.stubEnv("PATHEXT", "")
     vi.mocked(fs.existsSync).mockReturnValue(false)
 
-    expect(resolveCliBinaryCached({ bin: "codex" })).toBeUndefined()
+    expect(resolveCliBinaryCached({ bin: "codex" }, process.env, cache)).toBeUndefined()
 
     const expectedPath = path.join("/fake/bin", "codex")
     vi.mocked(fs.existsSync).mockImplementation((p) => p === expectedPath)
-    expect(resolveCliBinaryCached({ bin: "codex" })).toBe(expectedPath)
+    expect(resolveCliBinaryCached({ bin: "codex" }, process.env, cache)).toBe(expectedPath)
   })
 
   // #8 — אימות-על-hit: קריאה 1 → נמצא; "מחיקת" הקובץ (toggle ה-mock); קריאה 2 → undefined
@@ -355,16 +362,16 @@ describe("resolveCliBinaryCached", () => {
     vi.stubEnv("PATHEXT", "")
     vi.mocked(fs.existsSync).mockImplementation((p) => p === expectedPath)
 
-    expect(resolveCliBinaryCached({ bin: "codex" })).toBe(expectedPath)
+    expect(resolveCliBinaryCached({ bin: "codex" }, process.env, cache)).toBe(expectedPath)
 
     vi.mocked(fs.existsSync).mockReturnValue(false)
-    expect(resolveCliBinaryCached({ bin: "codex" })).toBeUndefined()
+    expect(resolveCliBinaryCached({ bin: "codex" }, process.env, cache)).toBeUndefined()
   })
 
-  // #9 — invalidateBinaryCache() → הקריאה הבאה פותרת מחדש
-  it("invalidateBinaryCache() forces a full re-resolution on the next call", () => {
+  // #9 — ניקוי המטמון (בבעלות הקורא) → הקריאה הבאה פותרת מחדש
+  it("clearing the caller-owned cache forces a full re-resolution on the next call", () => {
     // שני תיקיות PATH — הראשונה ריקה, השנייה עם ה-binary. כך הסריקה המלאה
-    // (אחרי invalidation) קוראת ל-existsSync לפחות פעמיים (miss dir1 + hit dir2),
+    // (אחרי הניקוי) קוראת ל-existsSync לפחות פעמיים (miss dir1 + hit dir2),
     // בעוד ש-cache-hit תמיד קורא פעם אחת בלבד (טסט #6) — ההבדל ניתן להבחנה.
     const dir1 = "/fake/bin1"
     const dir2 = "/fake/bin2"
@@ -373,12 +380,12 @@ describe("resolveCliBinaryCached", () => {
     vi.stubEnv("PATHEXT", "")
     vi.mocked(fs.existsSync).mockImplementation((p) => p === expectedPath)
 
-    expect(resolveCliBinaryCached({ bin: "codex" })).toBe(expectedPath)
+    expect(resolveCliBinaryCached({ bin: "codex" }, process.env, cache)).toBe(expectedPath)
 
-    invalidateBinaryCache()
+    cache.clear() // ← הבעלים מנקה. אין יותר invalidateBinaryCache()
     vi.mocked(fs.existsSync).mockClear()
-    expect(resolveCliBinaryCached({ bin: "codex" })).toBe(expectedPath)
-    // after invalidation this is a full re-scan, not a single hit-check call.
+    expect(resolveCliBinaryCached({ bin: "codex" }, process.env, cache)).toBe(expectedPath)
+    // after clearing, this is a full re-scan — not a single hit-check call.
     expect(vi.mocked(fs.existsSync).mock.calls.length).toBeGreaterThan(1)
   })
 
@@ -392,10 +399,10 @@ describe("resolveCliBinaryCached", () => {
     vi.stubEnv("PATH", dirA)
     vi.stubEnv("PATHEXT", "")
     vi.mocked(fs.existsSync).mockImplementation((p) => p === pathA)
-    expect(resolveCliBinaryCached({ bin: "codex" })).toBe(pathA)
+    expect(resolveCliBinaryCached({ bin: "codex" }, process.env, cache)).toBe(pathA)
 
     vi.stubEnv("PATH", dirB)
     vi.mocked(fs.existsSync).mockImplementation((p) => p === pathB)
-    expect(resolveCliBinaryCached({ bin: "codex" })).toBe(pathB)
+    expect(resolveCliBinaryCached({ bin: "codex" }, process.env, cache)).toBe(pathB)
   })
 })

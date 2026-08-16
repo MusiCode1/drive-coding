@@ -119,9 +119,15 @@ function searchBinAllLocations(
   return undefined
 }
 
-// ─── resolveCliBinaryCached — lazy, positive-only, module-level (slice cli-bin-resolution-unify) ──
+// ─── resolveCliBinaryCached — lazy, positive-only, caller-owned cache ────────────
+//
+// AGENTS.md: "packages/core/ — pure logic, no IO" · "Functional core / imperative
+// shell". מטמון הוא state, ולכן הוא **לא** יושב כאן ברמת-המודול — הקורא מחזיק אותו
+// ומעביר אותו. הקליפה (provider/backend) היא שמחזיקה את המופע.
+// זה גם מייתר `invalidateBinaryCache()`: מי שמחזיק את ה-Map מנקה אותו בעצמו.
 
-const binaryCache = new Map<string, string>()
+/** מטמון פתירת-בינאריים בבעלות הקורא. מפתח: ר' `buildCacheKey`. */
+export type BinaryCache = Map<string, string>
 
 /**
  * מפתח המטמון חייב לכלול כל מה שה-resolver קורא, אחרת יוחזר נתיב שגוי כשהסביבה
@@ -151,25 +157,25 @@ function buildCacheKey(spec: CliResolveSpec, env: NodeJS.ProcessEnv): string {
  */
 export function resolveCliBinaryCached(
   spec: CliResolveSpec,
+  // env: ברירת-מחדל זהה ל-resolveCliBinary — לא זה מה שתוקן כאן.
   env: NodeJS.ProcessEnv = process.env,
+  // cache: **חובה, בלי ברירת-מחדל.** מטמון הוא state ולכן בבעלות הקורא.
+  // ברירת-מחדל `new Map()` הייתה מטמון-ריק בכל קריאה — פונקציה בשם "Cached"
+  // שאינה ממטמנת דבר, בשקט. עדיף לכפות על הקורא להצהיר מי הבעלים.
+  cache: BinaryCache,
 ): string | undefined {
   const key = buildCacheKey(spec, env)
-  const cached = binaryCache.get(key)
+  const cached = cache.get(key)
   if (cached !== undefined) {
     if (fs.existsSync(cached)) return cached
-    binaryCache.delete(key)
+    cache.delete(key)
   }
 
   const resolved = resolveCliBinary(spec, env)
   if (resolved !== undefined) {
-    binaryCache.set(key, resolved)
+    cache.set(key, resolved)
   }
   return resolved
-}
-
-/** מאפס את המטמון כולו. ייצרך ע"י cli-specs-hot-reload. */
-export function invalidateBinaryCache(): void {
-  binaryCache.clear()
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
