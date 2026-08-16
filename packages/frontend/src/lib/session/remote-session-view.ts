@@ -39,6 +39,8 @@ const NOT_SUPPORTED_EXT_RETURN_VALUE = "not supported in remote mode — use sta
 export type RemoteSessionViewOptions = {
   /** HTTP headers לכל בקשה (auth וכו'). */
   headers?: Record<string, string>
+  /** slice liveness C4: hook חיצוני כשה-SSE מתחבר מחדש (ניקוי באנר presence). */
+  onSseReconnected?: () => void
   /** @internal לבדיקות — override global fetch. */
   _fetch?: (url: string, init?: RequestInit) => Promise<Response>
   /** @internal לבדיקות — override setTimeout-based sleep (מועבר ל-SSEReader). */
@@ -58,6 +60,7 @@ export class RemoteSessionView implements SessionView {
   readonly #agentId: string
   readonly #baseUrl: string
   readonly #headers: Record<string, string>
+  readonly #onSseReconnected?: () => void
   readonly #doFetch: (url: string, init?: RequestInit) => Promise<Response>
   readonly #reader: SSEReader
 
@@ -84,6 +87,7 @@ export class RemoteSessionView implements SessionView {
     this.#agentId = agentId
     this.#baseUrl = baseUrl
     this.#headers = opts.headers ?? {}
+    this.#onSseReconnected = opts.onSseReconnected
     this.#doFetch = opts._fetch ?? ((u, init) => globalThis.fetch(u, init))
     // replaced on connect() by the SSE snapshot — this is just a safe pre-connect default
     this.#state = createInitialSessionState({ sessionId: null })
@@ -322,6 +326,7 @@ export class RemoteSessionView implements SessionView {
     this.#lastReadMessageId = null
     this.#lastReadSegmentIndex = 0
     this.#emit([resetPatch])
+    this.#onSseReconnected?.()
   }
 
   // ─── Session management — slice remote-session-mgmt C4 ───

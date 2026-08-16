@@ -397,6 +397,10 @@ export type MessageKey =
   | "settings.geminiTone.casual"
   // ─── ownership-truth (slice ownership-truth C5) ───
   | "session.heldByOtherTransport"
+  // ─── liveness (slice liveness C4) ───
+  | "session.reconnecting"
+  | "session.cloudflareBlocked"
+  | "session.cloudflareRefresh"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

@@ -387,4 +387,8 @@ export const he: Catalog = {
   "settings.geminiTone.formal": "רשמי",
   "settings.geminiTone.casual": "יומיומי",
   "session.heldByOtherTransport": "הסשן פתוח במקום אחר (מסלול אחר). אין להתחבר ישירות — נא להשתלט.",
+  // ─── liveness (slice liveness C4) ───
+  "session.reconnecting": "מנסה להתחבר…",
+  "session.cloudflareBlocked": "החיבור נחסם. ייתכן ש-Cloudflare דורש אימות.",
+  "session.cloudflareRefresh": "רענון",
 }

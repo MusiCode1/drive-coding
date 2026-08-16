@@ -774,6 +774,18 @@ export class AgentSession {
     return this.#sessionId
   }
 
+  // ─── slice liveness C4: SSE reconnect → ניקוי באנר presence (לא נוגע ב-session.error) ───
+  #sseReconnectedListener: (() => void) | null = null
+
+  setSseReconnectedListener(listener: (() => void) | null): void {
+    this.#sseReconnectedListener = listener
+  }
+
+  #remoteViewOpts(): { onSseReconnected?: () => void } {
+    const listener = this.#sseReconnectedListener
+    return listener ? { onSseReconnected: () => listener() } : {}
+  }
+
   /** @internal */ _setStatusForTest(s: AgentSessionStatus): void {
     this.#setStatus(s)
   }
@@ -1386,7 +1398,7 @@ export class AgentSession {
       this.agentId = agentId
 
       // 4.
-      const view = await createRemoteView({ agentId })
+      const view = await createRemoteView({ agentId, ...this.#remoteViewOpts() })
 
       // 5. כשל-מהיר: אם ה-BE לא סיפק sessionId — סגור + #cleanup (agent/host/child כבר
       // נוצרו בשלב 3; close() לבדו לא מוחק את ה-agent, רק #cleanup עושה זאת).
@@ -1457,7 +1469,7 @@ export class AgentSession {
     try {
       // 3. ללא createAgent — ה-host קיים ב-BE. createRemoteView כבר קורא connect()
       // בעצמו (memoized, M8); החתימה מקבלת אובייקט opts (התקדים attachRemote:1204).
-      const view = await createRemoteView({ agentId: input.agentId })
+      const view = await createRemoteView({ agentId: input.agentId, ...this.#remoteViewOpts() })
 
       // 4. כשל-מהיר: sessionId מה-snapshot (מקור-האמת). ⚠️ סטייה מודעת מהבריף:
       // keepAgent:true — #cleanup() רגיל קורא deleteAgent(agentId), והיה הורג את
