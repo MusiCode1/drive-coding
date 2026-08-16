@@ -3,7 +3,7 @@
  *
  * איחוד מובחן (Discriminated union) לפי `kind`. כל סוג (variant) נושא בדיוק את השדות
  * שהוא צריך; צרכנים שלא צריכים שדה מסוים פשוט לא ניגשים אליו. ראה
- * את `packages/frontend/docs/bubble-model.md` להסבר המלא.
+ * את `docs-for-llm/frontend/bubble-model.md` להסבר המלא.
  *
  * ב-slice 2 אנו משתמשים ב-`user`, `message`, `thought`. סוג ה-`tool` מוצהר עכשיו כדי
  * שסלייסים מאוחרים יותר יוכלו להשתמש בו ללא רפקטור אטומי נוסף (כלל זהב

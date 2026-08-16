@@ -22,7 +22,7 @@ Two consequences that catch people out:
    and must be committed separately from `~/Projects/docs-repo`.
 2. `.gitignore` blocks both `/docs/` (line 38) and `/docs-for-llm` (line 41), so a stray
    `docs/` is silently ignored rather than committed — you will not get a warning. Both
-   patterns are **root-anchored**, so `packages/frontend/docs/` stays tracked normally.
+   patterns are **root-anchored**, so a `packages/<pkg>/docs/` would not be swept up.
 
 > **This repo has been public since 2026-08-16.** Anything that does reach a tracked
 > file is published. `docs/` is reserved for future **human-facing** documentation
@@ -63,7 +63,7 @@ The legacy `packages/frontend/` (accumulated chaos, 989-line route) was deleted 
 this `dev` branch on 2026-05-28. It still exists on the `main` branch for reference
 and can be checked out there if needed.
 
-The current slice roadmap is `packages/frontend/docs/slices.md`.
+The current slice roadmap is `docs-for-llm/frontend/slices.md`.
 
 ## Conventions
 
@@ -301,7 +301,7 @@ public clone. Paths under `packages/` are real files here.
 | **FE five golden rules** (the short, injected version) | `packages/frontend/AGENTS.md` | canonical (design-principles expands it) |
 | **UX spec** — drive-first, colors, mic states, bubbles, car mode | `docs-for-llm/frontend-spec.md` | canonical |
 | **FE↔BE protocol, schemas, ports** | `docs-for-llm/vnext-spec.md` | canonical (§8.5 slices is OBSOLETE) |
-| **The current slice roadmap** | `packages/frontend/docs/slices.md` | **source of truth** for slice order |
+| **The current slice roadmap** | `docs-for-llm/frontend/slices.md` | **source of truth** for slice order |
 | **Additive design** for shared files (parallel agent work) | `docs-for-llm/conventions/parallel-safe-code.md` | canonical — read BEFORE touching `context.ts`, `+layout.svelte`, `i18n/keys.ts`, `chat/+page.svelte` |
 | **Per-slice rationale** (why the code looks the way it does) | `docs-for-llm/decisions/voice-acp.md` | living log (written by מרדכי) |
 | **How to write a slice plan** (handoff to executor) | `docs-for-llm/plans/README.md` | canonical |

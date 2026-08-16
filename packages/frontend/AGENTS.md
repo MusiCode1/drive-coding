@@ -156,7 +156,7 @@ User (voice) → Mic → text → AgentSession → text → Agent (ACP)
 
 ## slice הבא — slice 4: Bubble polish
 
-ראה `docs/slices.md` לטבלת ה-slices המלאה.
+ראה `docs-for-llm/frontend/slices.md` לטבלת ה-slices המלאה.
 
 **מה כולל:**
 - Markdown rendering ב-message bubbles.
