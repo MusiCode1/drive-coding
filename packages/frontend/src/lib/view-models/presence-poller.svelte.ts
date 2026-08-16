@@ -9,6 +9,7 @@
 import { notifySessionAttached, postPresence } from "$lib/adapters/agents-api"
 import { beUrl } from "$lib/util/be-url"
 import { diagnosedRefresh, isCloudflareChallenge } from "$lib/util/cloudflare-detect"
+import { connInfo, connWarn } from "$lib/util/conn-log"
 import {
   initPageVisibility,
   isPageHidden,
@@ -95,6 +96,8 @@ export class PresencePoller {
   }
 
   clearBanner(): void {
+    // רק על מעבר — clearBanner נקרא בכל tick מוצלח, ויומן בכל 12ש׳ הוא רעש.
+    if (this.banner !== null) connInfo("banner-cleared", { was: this.banner })
     this.banner = null
     this.#failureSince = null
     this.#cloudflare = false
@@ -186,7 +189,14 @@ export class PresencePoller {
   }
 
   #applyBanner(): void {
-    this.banner = this.#cloudflare ? "cloudflare" : "reconnecting"
+    const next = this.#cloudflare ? "cloudflare" : "reconnecting"
+    if (this.banner !== next) {
+      connWarn("banner", {
+        kind: next,
+        sinceMs: this.#failureSince ? Date.now() - this.#failureSince : 0,
+      })
+    }
+    this.banner = next
   }
 }
 

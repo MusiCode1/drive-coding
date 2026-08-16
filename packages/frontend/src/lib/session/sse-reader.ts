@@ -17,6 +17,7 @@
 
 import { type Patch, PatchSchema, type SessionState } from "@drive-coding/core/session"
 import { type } from "arktype"
+import { connInfo, connWarn } from "$lib/util/conn-log"
 
 // ─── SSE frame parsing ────────────────────────────────────────────────────────
 
@@ -214,6 +215,11 @@ export class SSEReader {
 
     // Reconnect loop
     let delay = 1000
+    // סבב-תיקונים liveness: היומן [conn] נוסף כאן ולא רק במסלול ה-WS. ניתוק
+    // ב-HTTP לא עובר ב-#handleUnexpectedClose בכלל, ולכן הקונסולה נשארה שקטה
+    // לגמרי בזמן ניתוק אמיתי — נתפס חי בפריוויו. זה הזרם היחיד שרואה את
+    // הניתוק בנתיב ה-HTTP, אז כאן מקומו.
+    connWarn("sse-lost", { url: this.#url })
 
     while (!this.#closed) {
       await this.#sleep(delay)
@@ -228,6 +234,7 @@ export class SSEReader {
 
         // Reset delay after successful connection
         delay = 1000
+        connInfo("sse-reconnected", { url: this.#url, version: snapshot.version })
 
         // Notify about the new snapshot
         this.onReconnected?.(snapshot)
@@ -235,8 +242,10 @@ export class SSEReader {
         // Drain patches from the reconnected connection
         await this.#drainFrames(newFrames, ctrl)
         // Stream ended cleanly — loop to reconnect again
+        connWarn("sse-lost", { url: this.#url })
       } catch {
         // Connection failed — continue with next retry (delay already doubled)
+        connWarn("sse-retry", { url: this.#url, nextInMs: delay })
       }
     }
 
