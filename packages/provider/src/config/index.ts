@@ -1,3 +1,6 @@
+// invalidateBinaryCache (slice cli-bin-resolution-unify): re-export חוצה-חבילה —
+// ייצרך ע"י cli-specs-hot-reload. אין צרכן ב-slice הזה.
+export { invalidateBinaryCache } from "@drive-coding/core/cli-resolve"
 export type { CliCommand } from "./cli-config.js"
 export {
   getCliCommand,
