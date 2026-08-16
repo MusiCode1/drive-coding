@@ -268,7 +268,26 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     // already subscribed to the wire (created by _createHostFn). Rollback MUST call
     // host.dispose() to remove the crash subscription and close the patches stream.
     const hostOpts = acpSessionId ? { warmReattach: { acpSessionId, cwd } } : undefined
-    const host = await _createHostFn(conn, hostOpts)
+    // 🔴 הקשר-אבחון (2026-08-16): יצירת ה-host היא שמריצה את ה-ACP initialize,
+    // ולכן כאן נופלות פקיעות ה-initialize/authenticate. עד עכשיו השגיאה עלתה מכאן
+    // **בלי שום סימן זיהוי**: נתקלנו בשני כשלים חיים ולא הצלחנו לקבוע בדיעבד
+    // איזה CLI נכשל בכלל. שורת-הקשר אחת מייתרת חקירה שלמה.
+    let host: Awaited<ReturnType<typeof _createHostFn>>
+    try {
+      host = await _createHostFn(conn, hostOpts)
+    } catch (err) {
+      log.error(
+        {
+          err,
+          agentId,
+          cliKind: connectionRegistry.getCliKind(agentId) ?? "unknown",
+          cwd,
+          warmReattach: Boolean(acpSessionId),
+        },
+        "session-host creation failed (ACP handshake)",
+      )
+      throw err
+    }
     try {
       const broadcaster = _createBroadcasterFn(host.patches)
 

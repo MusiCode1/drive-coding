@@ -85,6 +85,15 @@ type ConnEntry = {
    */
   cwd: string
   /**
+   * cliKind מ-connect() — נשמר לצורך **הקשר-אבחון בלבד**.
+   *
+   * 🔴 למה: כשה-initialize נכשל (timeout / ילד שלא עלה), שורת-השגיאה לא נשאה
+   * שום סימן זיהוי של הספק, ולכן אי אפשר היה לדעת בדיעבד איזה CLI נכשל —
+   * נתקלנו בזה חי ב-2026-08-16 ולא הצלחנו לשחזר מי היה שם. ⇒ כל תקלת-spawn
+   * הייתה חסרת-שם.
+   */
+  cliKind: string
+  /**
    * slice ownership-handoff C4b + slice liveness C1: last time the owner sent a
    * liveness signal (WS $/ping or HTTP presence).
    * Separate from Owner.since (ownership transition time).
@@ -113,6 +122,9 @@ export type ConnectionRegistry = {
    * נדרש ל-session-host/registry.ts (יצירת session אוטומטית — slice remote-session-view).
    */
   getCwd(agentId: string): string | undefined
+
+  /** getCliKind — הספק שנרשם ל-agentId, להקשר-אבחון בשורות-שגיאה. */
+  getCliKind(agentId: string): string | undefined
 
   /** list — כל ה-agentIds החיים (לכיבוי-מסודר). */
   list(): string[]
@@ -309,6 +321,7 @@ export function createConnectionRegistry(opts?: {
           rec,
           unsubs: [unsubFrame, unsubCrash],
           cwd: connectOpts.cwd,
+          cliKind,
           lastSeenAt: null,
         })
         return conn
@@ -323,6 +336,10 @@ export function createConnectionRegistry(opts?: {
 
     getCwd(agentId) {
       return map.get(agentId)?.cwd
+    },
+
+    getCliKind(agentId) {
+      return map.get(agentId)?.cliKind
     },
 
     list() {
