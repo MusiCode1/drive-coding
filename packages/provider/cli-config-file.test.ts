@@ -237,4 +237,40 @@ describe("loadCliSpecsOverride", () => {
     expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
   })
+
+  it("11. $schema key in file → ignored, no warning, not treated as CLI kind", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const content = JSON.stringify({
+      $schema: "https://drive-coding.dev/schemas/cli-specs.schema.json",
+      opencode: { bin: "/custom/opencode" },
+    })
+    const filePath = writeTmpFile(content)
+    process.env.CLI_SPECS_FILE = filePath
+    delete process.env.CLI_SPECS_JSON
+
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+
+    expect(result["$schema"]).toBeUndefined()
+    expect(result["opencode"]?.bin).toBe("/custom/opencode")
+    expect(warnSpy).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+
+  it("12. $schema key in CLI_SPECS_JSON → ignored, no warning", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    process.env.CLI_SPECS_JSON = JSON.stringify({
+      $schema: "https://drive-coding.dev/schemas/cli-specs.schema.json",
+      claude: { bin: "/inline/claude" },
+    })
+    process.env.CLI_SPECS_FILE = "/tmp/does-not-exist-specs-88888.jsonc"
+
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+
+    expect(result["$schema"]).toBeUndefined()
+    expect(result["claude"]?.bin).toBe("/inline/claude")
+    expect(warnSpy).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
 })
