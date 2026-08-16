@@ -1,3 +1,35 @@
+## 2026-08-16 (slice liveness — סימן-חיים אחד + TTL 10 דקות + חיווי ניתוק)
+
+ענף: `slice/liveness`, worktree `.worktrees/liveness`, base `slice/local-view-wiring`
+(`dc82e3f`). בריף: `dev/docs/plans/brief-liveness.md` (r4).
+
+**הנחת-היסוד שתוקנה:** כתיבת-SSE "מצליחה תמיד" (hono בולע שגיאות) ⇒ טיימר
+ה-keepalive בשרת היה קוד-מת והבעלות לא פגה לעולם. **סימן-החיים היחיד שאינו ניתן
+לזיוף = "הלקוח שלח משהו לאחרונה"**: WS מדווח ב-`$/ping`, HTTP מדווח ב-`POST
+presence`, ושניהם נוגעים באותה חותמת (`touchOwner` אגנוסטי).
+
+- C1: sweep מאוחד עם בדיקת-תעבורה **מפורשת** (`via !== "http"`) — בלי זה
+  פינוי בעלי-WS שקט; `HTTP_OWNER_TTL_MS` 90s → 10 דקות (מונע churn ברקע).
+- C2: מטמון-תשובה ~1.5s ל-`/api/agents`/`diag`/`health`/`presence`, מתבטל
+  ב-`markOwned`/`markDetached`; `no-store` נקודתי בלבד (לא גורף — cli-logo).
+- C3: סקר presence ברמת ה-layout (שורד את הסשן), שקט ברקע, מיידי בפוקוס,
+  לקיחת-בעלות מחדש דרך `notifySessionAttached` כש-`attached=false`.
+- C4: שלושה ממדי חיבור (`running`/`connected`/`resumable`) במקום `attached`
+  יחיד; באנר ניתוק **נפרד מ-`session.error`** — לא מוחק `crashReason`;
+  חתימת Cloudflare → רענון מאובחן. `sse-reader.ts` — לא נגע (diff ריק).
+
+**סבב-תיקונים (פריוויו חי):** הבאנר נימחק ברגע שה-WS נפל (`inSession` נשען על
+`connected` בלבד, ו-cleanup של `$effect` ניגב באנר בכל שינוי status) —
+תוקן כך ש"בסשן" = connected **או** disconnected, וה-`stop()` עבר ל-`$effect`
+נפרד. `tick` קודם השתתק ב-`status!==connected` (return סתמי) — עכשיו ניתוק-
+טרנספורט מזין את אותו מנגנון-ההשהיה (5ש׳ חסד → באנר).
+
+**תיקון שער-DoD (הקומיט הזה):** ה-FE typecheck קיבל שגיאה חמישית — קאסט
+`as Response` על אובייקט-פייק ב-`classifyPresenceError` נחשב "mistake" ע"י
+TS. תוקן ל-`as unknown as Response` (החזרה ל-4 השגיאות הקיימות-בבסיס).
+בנוסף: ניקוי קוד-מת ב-`PresencePoller` (`#wasHidden` + `becameVisible` —
+נקראו מעולם לא) וארגון-ייבואים (שער ה-lint).
+
 ## 2026-08-15 (slice local-view-wiring S1 — LocalSessionView חי במסלול ה-WS)
 
 ### slice local-view-wiring — חיבור LocalSessionView בשלושת אתרי-הלקוח

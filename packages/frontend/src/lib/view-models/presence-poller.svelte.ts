@@ -212,7 +212,7 @@ export function classifyPresenceError(err: unknown): { cloudflare: boolean } {
       ? ({
           status,
           headers: { get: () => null },
-        } as Response)
+        } as unknown as Response)
       : null
   return { cloudflare: isCloudflareChallenge(fakeRes, body) }
 }
