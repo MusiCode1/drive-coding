@@ -184,9 +184,7 @@ export type ConnectionRegistry = {
    * slice liveness C4: now also returns `lastSeenAt` (the liveness stamp) so the
    * FE can derive the "connected" dimension — `attached` alone is fakeable.
    */
-  getRuntimeInfo(
-    agentId: string,
-  ): {
+  getRuntimeInfo(agentId: string): {
     pid: number | null
     attached: boolean
     busy: boolean

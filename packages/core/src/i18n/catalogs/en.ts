@@ -395,5 +395,6 @@ export const en: Catalog = {
   // ─── liveness (slice liveness C4) ───
   "session.reconnecting": "Trying to reconnect…",
   "session.cloudflareBlocked": "Connection blocked. Cloudflare may require verification.",
+  "session.turnStalled": "No response from the agent for a while. It may still be working — or it may have stopped without saying so.",
   "session.cloudflareRefresh": "Refresh",
 }

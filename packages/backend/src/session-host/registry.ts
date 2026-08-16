@@ -35,8 +35,8 @@
  * so concurrent callers share the same in-flight creation.
  */
 
-import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { createLogger } from "@drive-coding/core/log"
+import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { createPatchesBroadcaster, type PatchesBroadcaster } from "./patches-broadcaster.js"
 import { createSessionHostFromConnection, type ExtendedSessionHost } from "./session-host.js"
@@ -132,7 +132,10 @@ type AgentSessionRegistryDeps = {
    * Receives the ProviderConnection and options, returns Promise<ExtendedSessionHost>.
    * slice ownership-handoff C4: opts includes optional warmReattach for warm path.
    */
-  _createHostFn?: (conn: ProviderConnection, opts?: import("../session-host/session-host.js").SessionHostFromConnOptions) => Promise<ExtendedSessionHost>
+  _createHostFn?: (
+    conn: ProviderConnection,
+    opts?: import("../session-host/session-host.js").SessionHostFromConnOptions,
+  ) => Promise<ExtendedSessionHost>
   /**
    * Injectable for tests — defaults to createPatchesBroadcaster.
    * Receives host.patches and returns a PatchesBroadcaster.

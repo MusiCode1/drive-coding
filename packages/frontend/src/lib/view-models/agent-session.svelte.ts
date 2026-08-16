@@ -44,6 +44,15 @@ import {
 // ─── slice sessions-inline: ייבוא טיפוס + normalize ───
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import type { CuesEngine } from "$lib/engines/cues"
+// ─── slice leave-running-background ───
+import {
+  evaluateTurn,
+  initialTurnActivity,
+  onActivity,
+  onTurnEnded,
+  onTurnStarted,
+  type TurnActivityState,
+} from "$lib/engines/turn-watchdog"
 import { WsAcpTransport } from "$lib/engines/ws-transport"
 // ─── slice view-switch C3: createRemoteView (attachRemote) ─── (additive)
 import { createRemoteView } from "$lib/session/create-session-view"
@@ -67,7 +76,6 @@ import type {
 import type { ElicitationParams, ElicitationResponse } from "$lib/types/elicitation"
 // ─── slice-permission-ui-basic: טיפוסי בקשת-הרשאה (view-model layer, נגזרים מ-SDK) ───
 import type { PermissionParams, PermissionResponse } from "$lib/types/permission"
-// ─── slice leave-running-background ───
 import { connInfo, connWarn } from "$lib/util/conn-log"
 import { isBypassMode } from "$lib/util/permission-mode"
 import { safeUUID } from "$lib/util/uuid"
@@ -222,6 +230,8 @@ export class AgentSession {
       document.addEventListener("visibilitychange", () => {
         this.#pageHidden = document.hidden
       })
+      // watchdog §2 — רק בדפדפן. בטסטים/SSR אין טיימר רקע שידלוף.
+      this.#startStallWatch()
     }
   }
 
@@ -658,6 +668,7 @@ export class AgentSession {
     // ─── slice view-switch C3-ו: view נלכד פעם אחת — משמש את ה-shim של pending למטה ───
     const view = this.#view
     if (!view) return
+    this.#noteAgentActivity() // watchdog §2 — מסלול HTTP (batch patches)
     // turnState (נגזר מסוג patch ב-reduce) — ✅ ללא תנאי, ה-BE הוא הסמכות (isSpuriousIdle בוטל)
     const vt = viewState.turnState as TurnState
     if (vt !== this.turnState) this.#setTurnState(vt)
@@ -2640,6 +2651,60 @@ export class AgentSession {
     this.turnState = next
     // cue thinking: רק על מעבר idle→waiting (תחילת תור חדש)
     if (prev === "idle" && next === "waiting") this.#cues?.play("thinking")
+    // ─── watchdog לתור (slice liveness §2) ───
+    // הנקודה היחידה שבה תור באמת נפתח/נסגר, ולכן כאן מסונכרן מצב-הפעילות.
+    if (prev === "idle") {
+      this.#turnActivity = onTurnStarted(Date.now())
+      this.turnStalled = false
+    } else if (next === "idle") {
+      this.#turnActivity = onTurnEnded()
+      this.turnStalled = false
+    }
+  }
+
+  // ─── watchdog לתור ─── (slice liveness §2)
+  /**
+   * חיווי בלבד: התור פעיל ולא הגיע ממנו דבר זמן רב. **אינו מבטל** — הפעולה
+   * נשארת בידי המשתמשת (כפתור-הביטול הקיים). ר' `engines/turn-watchdog.ts`
+   * להסבר מלא, כולל למה הקריטריון הוא "אין פעילות" ולא "אין טקסט".
+   */
+  turnStalled = $state(false)
+  #turnActivity: TurnActivityState = initialTurnActivity()
+  #stallTimer: ReturnType<typeof setInterval> | undefined
+
+  /**
+   * פעילות מהסוכן. נקרא משני הטרנספורטים (WS ו-HTTP) — לכן הוא כאן ב-VM
+   * ולא באחד מהם. **כל** פריים נחשב, לא רק טקסט.
+   */
+  #noteAgentActivity(): void {
+    this.#turnActivity = onActivity(this.#turnActivity, Date.now())
+    if (this.turnStalled) this.turnStalled = false
+  }
+
+  /** מריץ את ההערכה מדי 5ש׳. הליבה טהורה; זה רק השעון סביבה. */
+  #startStallWatch(): void {
+    if (this.#stallTimer !== undefined) return
+    this.#stallTimer = setInterval(() => {
+      const verdict = evaluateTurn(this.#turnActivity, Date.now())
+      if (verdict.kind === "ok") {
+        if (this.turnStalled) this.turnStalled = false
+        return
+      }
+      if (!this.turnStalled) {
+        this.turnStalled = true
+        connWarn("turn-stalled", { silentMs: verdict.silentMs, kind: verdict.kind })
+      }
+      // give-up: משחרר את ההמתנה שלנו בלבד. **אין** session/cancel לסוכן —
+      // הכרעה מפורשת: הקוד לא מבטל תור מדעתו.
+      if (verdict.kind === "give-up") this.#setTurnState("idle")
+    }, 5_000)
+  }
+
+  #stopStallWatch(): void {
+    if (this.#stallTimer !== undefined) {
+      clearInterval(this.#stallTimer)
+      this.#stallTimer = undefined
+    }
   }
 
   // ─── פרטי ─────────────────────────────────────
@@ -2676,6 +2741,10 @@ export class AgentSession {
       clearTimeout(this.#idleTimer)
       this.#idleTimer = null
     }
+    // watchdog §2 — אין תור בלי סשן.
+    this.#stopStallWatch()
+    this.#turnActivity = onTurnEnded()
+    this.turnStalled = false
     // ─── slice be-shutdown-hardening Commit 3: $/detach לפני סגירה מכוונת ───
     // keepAgent=true = leaveRunning — FE מודיע ל-BE שהוא עוזב מרצון.
     // ה-BE מקבל $/detach → markDetached מיד → reconnect-ghost נסגר מיידית
@@ -2883,6 +2952,7 @@ export class AgentSession {
   }
 
   #onSessionUpdate = (notification: SessionNotification): void => {
+    this.#noteAgentActivity() // watchdog §2 — מסלול WS (כל session/update)
     // מעטפת ACP: צורה של { sessionId, update: { sessionUpdate, content, messageId, ... } }
     // ה-messageId נמצא על אובייקט ה-update החיצוני (הרחבה לא יציבה של ACP).
     const update = notification.update as {

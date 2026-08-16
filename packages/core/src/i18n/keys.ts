@@ -400,6 +400,7 @@ export type MessageKey =
   // ─── liveness (slice liveness C4) ───
   | "session.reconnecting"
   | "session.cloudflareBlocked"
+  | "session.turnStalled"
   | "session.cloudflareRefresh"
 
 /**

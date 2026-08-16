@@ -390,5 +390,6 @@ export const he: Catalog = {
   // ─── liveness (slice liveness C4) ───
   "session.reconnecting": "מנסה להתחבר…",
   "session.cloudflareBlocked": "החיבור נחסם. ייתכן ש-Cloudflare דורש אימות.",
+  "session.turnStalled": "לא הגיע כלום מהסוכן זמן רב. ייתכן שהוא עדיין עובד — וייתכן שעצר בלי לומר.",
   "session.cloudflareRefresh": "רענון",
 }

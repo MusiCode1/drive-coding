@@ -3,11 +3,15 @@
  * DisconnectBanner — באנר ניתוק מבוסס-presence בלבד (slice liveness C4).
  * נפרד מ-session.error — לא מוחק crashReason וכו'.
  */
-import { getI18n, getPresencePoller } from "$lib/context"
+import { getI18n, getPresencePoller, getSession } from "$lib/context"
 
 const i18n = getI18n()
 const t = i18n.t
 const poller = getPresencePoller()
+// slice liveness §2 — חיווי תור ששקע. נפרד מהבאנר של הניתוק: זה לא מצב-חיבור
+// (החיבור בסדר גמור) אלא סוכן ששותק. מוצג רק כשאין באנר-ניתוק, כדי לא לערום
+// שתי הודעות זו על זו כשהרשת נפלה באמצע תור.
+const session = getSession()
 </script>
 
 {#if poller.banner === "reconnecting"}
@@ -28,6 +32,14 @@ const poller = getPresencePoller()
       {t("session.cloudflareRefresh")}
     </button>
   </div>
+{:else if session.turnStalled}
+  <div
+    class="disconnect-banner stalled"
+    role="status"
+    aria-live="polite"
+  >
+    {t("session.turnStalled")}
+  </div>
 {/if}
 
 <style>
@@ -43,6 +55,12 @@ const poller = getPresencePoller()
     flex-wrap: wrap;
     align-items: center;
     gap: 0.75rem;
+  }
+
+  /* גוון מאופק יותר מהניתוק: זו הודעה, לא תקלה — הסוכן אולי עדיין עובד. */
+  .disconnect-banner.stalled {
+    background: rgba(255, 165, 0, 0.07);
+    border-style: dashed;
   }
 
   .refresh-btn {
