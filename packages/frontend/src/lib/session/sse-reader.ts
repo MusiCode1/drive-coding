@@ -289,20 +289,33 @@ export class SSEReader {
       throw new Error("SSEReader: response has no body")
     }
 
+    // 🔴 הגלאי חייב לרוץ כבר כאן — אם ה-snapshot לא מגיע לעולם, ההמתנה למטה
+    // תלויה לנצח וזה בדיוק המצב שהוא נועד לשבור. אבל מכאן והלאה **כל** מסלול
+    // יציאה חייב לעצור אותו, ולכן ה-try/catch.
     this.#startStaleWatch()
-    const frames = readSSEFrames(res.body, () => this.#markAlive())
+    try {
+      const frames = readSSEFrames(res.body, () => this.#markAlive())
 
-    // Advance past any non-snapshot frames to find the required snapshot frame-zero
-    let next = await frames.next()
-    while (!next.done && next.value.event !== "snapshot") {
-      next = await frames.next()
-    }
-    if (next.done || next.value.event !== "snapshot") {
-      throw new Error("SSEReader: no snapshot frame received")
-    }
+      // Advance past any non-snapshot frames to find the required snapshot frame-zero
+      let next = await frames.next()
+      while (!next.done && next.value.event !== "snapshot") {
+        next = await frames.next()
+      }
+      if (next.done || next.value.event !== "snapshot") {
+        throw new Error("SSEReader: no snapshot frame received")
+      }
 
-    const snapshot = JSON.parse(next.value.data) as SessionState
-    return { snapshot, frames }
+      const snapshot = JSON.parse(next.value.data) as SessionState
+      return { snapshot, frames }
+    } catch (err) {
+      // ⚠️ שני מאמתים עצמאיים תפסו כאן דליפה (אביגיל §7 · כלב, מוכח אמפירית:
+      // intervalsStarted=1 · intervalsCleared=0). בלי העצירה הזו: במסלול
+      // connect() הראשוני הטיימר דולף לנצח, ובמסלול ה-reconnect הוא שורד את
+      // כל ה-backoff — והגארד ב-#startStaleWatch מונע התחלה-מחדש, כך שהטיימר
+      // הישן היה מסוגל לבטל דווקא את החיבור **החדש**.
+      this.#stopStaleWatch()
+      throw err
+    }
   }
 
   /**

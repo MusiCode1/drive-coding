@@ -600,3 +600,106 @@ describe("SSEReader — 404/410 הוא מצב סופי, לא תקלת-רשת", (
     expect(mockFetch.mock.calls.length).toBeGreaterThan(before) // ועדיין מנסה
   })
 })
+
+// ── גלאי-השתיקה ──────────────────────────────────────────────────────────────
+
+/**
+ * 🔴 שני מאמתים עצמאיים (אביגיל §7 · כלב, בהוכחה אמפירית) תפסו שהגלאי מתחיל
+ * **לפני** ההמתנה ל-snapshot, ואם ה-connect נכשל אחר-כך איש אינו עוצר אותו:
+ * במסלול הראשוני הטיימר דולף לנצח, ובמסלול ה-reconnect הוא שורד את כל
+ * ה-backoff — והגארד מונע התחלה-מחדש, כך שהטיימר הישן מסוגל לבטל דווקא את
+ * החיבור החדש. הפיצ'ר גם לא היה מכוסה כלל.
+ */
+describe("SSEReader — גלאי-שתיקה", () => {
+  /** סופר טיימרים כדי לתפוס דליפה — הדפוס שבו כלב הוכיח את הבאג. */
+  function countingTimers() {
+    const realSet = globalThis.setInterval
+    const realClear = globalThis.clearInterval
+    let started = 0
+    let cleared = 0
+    // biome-ignore lint/suspicious/noExplicitAny: החלפת גלובלים לצורך ספירה
+    globalThis.setInterval = ((fn: any, ms?: any) => {
+      started++
+      return realSet(fn, ms)
+      // biome-ignore lint/suspicious/noExplicitAny: כנ"ל
+    }) as any
+    // biome-ignore lint/suspicious/noExplicitAny: כנ"ל
+    globalThis.clearInterval = ((id: any) => {
+      cleared++
+      return realClear(id)
+      // biome-ignore lint/suspicious/noExplicitAny: כנ"ל
+    }) as any
+    return {
+      get started() {
+        return started
+      },
+      get cleared() {
+        return cleared
+      },
+      restore() {
+        globalThis.setInterval = realSet
+        globalThis.clearInterval = realClear
+      },
+    }
+  }
+
+  it("🔴 חיבור שנכשל אחרי תחילת הגלאי אינו מותיר טיימר דולף", async () => {
+    // תגובת-200 שהזרם שלה נסגר בלי snapshot — בדיוק המקרה שכלב תיאר.
+    const bodyNoSnapshot = new ReadableStream<Uint8Array>({
+      start(ctrl) {
+        ctrl.enqueue(encoder.encode("event: patch\ndata: {}\n\n"))
+        ctrl.close()
+      },
+    })
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, body: bodyNoSnapshot } as Response)
+
+    const timers = countingTimers()
+    try {
+      const reader = new SSEReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+      await expect(reader.connect()).rejects.toThrow(/no snapshot/)
+      // ⚠️ הטענה: נוקה **בלי** שאיש קרא ל-close(). לפני התיקון: started=1, cleared=0.
+      expect(timers.started).toBeGreaterThan(0)
+      expect(timers.cleared).toBe(timers.started)
+    } finally {
+      timers.restore()
+    }
+  })
+
+  it("שתיקה ארוכה משוברת את החיבור — והבדיקה משווה חותמות, לא סופרת תקתוקים", async () => {
+    vi.useFakeTimers()
+    try {
+      const snapshot = makeSnapshot()
+      let clock = 0
+      // זרם ש**נשאר פתוח ושותק** אחרי ה-snapshot — חיבור מת בשקט.
+      const silentBody = new ReadableStream<Uint8Array>({
+        start(ctrl) {
+          ctrl.enqueue(encoder.encode(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`))
+          // ואז — שום דבר. הזרם אינו נסגר.
+        },
+      })
+      const aborted: boolean[] = []
+      const mockFetch = vi.fn().mockImplementation((_u: string, init?: RequestInit) => {
+        init?.signal?.addEventListener("abort", () => aborted.push(true))
+        return Promise.resolve({ ok: true, status: 200, body: silentBody } as Response)
+      })
+
+      const reader = newReader("/api/events", {
+        _fetch: mockFetch,
+        _sleep: noSleep,
+        _now: () => clock,
+      })
+      await reader.connect()
+
+      // קופצים קדימה בזמן **בלי** שהטיימר תיקתק בינתיים — בדיוק מה שקורה
+      // לכרטיסייה קפואה. מונה-תקתוקים לא היה מגיב כאן; השוואת-חותמות כן.
+      clock = 10 * 60 * 1000
+      await vi.advanceTimersByTimeAsync(11_000)
+
+      expect(aborted.length).toBeGreaterThan(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
