@@ -120,6 +120,7 @@ export type AgentSessionRegistry = {
     attached: boolean
     busy: boolean
     lastMessageAt: number | null
+    lastSeenAt: number | null
     via: "ws" | "http" | null
   } | null
 }

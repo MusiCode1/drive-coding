@@ -29,6 +29,7 @@ import {
   setMic,
   setModals,
   setModelStatus,
+  setPresencePoller,
   setRecentProjects,
   setResponsive,
   setSession,
@@ -58,6 +59,8 @@ import { Speaker } from "$lib/view-models/speaker.svelte"
 import { ThemeVM } from "$lib/view-models/theme.svelte"
 import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { UiShellVM } from "$lib/view-models/ui-shell.svelte"
+import { PresencePoller } from "$lib/view-models/presence-poller.svelte"
+import { isPageHidden } from "$lib/util/page-visibility.svelte"
 
 let { children } = $props()
 
@@ -126,6 +129,11 @@ void cliAvailability.load()
 // יתעורר אוטומטית כשcaps יתעדכן.
 void ttsCapabilities.refresh()
 
+// ─── presence-poller ─── (slice liveness C3 — חי לכל אורך הסשן, גם כשהפאנל סגור)
+const presencePoller = new PresencePoller(session)
+presencePoller.init()
+session.setSseReconnectedListener(() => presencePoller.onSseReconnected())
+
 // ─── wake-lock ─── (Track C — drive-first chrome)
 const wakeLock = new WakeLockEngine()
 $effect(() => {
@@ -166,6 +174,15 @@ $effect(() => {
   const normalized = normalizeSessionTransport(q)
   if (normalized) sessionStorage.setItem("sessionTransport", normalized)
 })
+
+// ─── presence sync ─── (slice liveness C3)
+$effect(() => {
+  const inSession = session.status === "connected"
+  const agentId = session.agentId
+  const hidden = isPageHidden()
+  presencePoller.sync({ inSession, agentId, hidden })
+  return () => presencePoller.stop()
+})
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
@@ -184,6 +201,7 @@ setContentViewer(contentViewer)
 setActiveAgents(activeAgents)
 setRecentProjects(recentProjects)
 setCliAvailability(cliAvailability)
+setPresencePoller(presencePoller)
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)
 const chatScroll = $state<ChatScrollBridge>({ scrollEl: null, handle: null })

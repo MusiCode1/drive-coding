@@ -169,10 +169,19 @@ export type ConnectionRegistry = {
    * Returns null if agentId not in registry.
    * pid may be null for in-process connections (e.g. claude in-process, CUT-3b-iii-2).
    * slice ownership-truth C3: now also returns `via` from the owner record.
+   * slice liveness C4: now also returns `lastSeenAt` (the liveness stamp) so the
+   * FE can derive the "connected" dimension — `attached` alone is fakeable.
    */
   getRuntimeInfo(
     agentId: string,
-  ): { pid: number | null; attached: boolean; busy: boolean; lastMessageAt: number | null; via: "ws" | "http" | null } | null
+  ): {
+    pid: number | null
+    attached: boolean
+    busy: boolean
+    lastMessageAt: number | null
+    lastSeenAt: number | null
+    via: "ws" | "http" | null
+  } | null
 
   /**
    * slice liveness C1: update lastSeenAt for any owned agent (ws or http).
@@ -393,6 +402,7 @@ export function createConnectionRegistry(opts?: {
         attached: e.attached,
         busy: e.conn.turn.isBusy(),
         lastMessageAt: e.conn.turn.lastActivityAt(),
+        lastSeenAt: e.lastSeenAt,
         via: e.owner?.via ?? null,
       }
     },

@@ -143,6 +143,10 @@ export const AgentPublic = type({
   // slice agent-last-message-at: epoch-ms של הפלט האחרון שהסוכן שלח (כל sessionUpdate).
   // שים לב: epoch-ms (number), בשונה מ-createdAt שהוא ISO string. runtime-only — נאבד ב-restart.
   "lastMessageAt?": "number | null",
+  // slice liveness C4: epoch-ms של סימן-החיים האחרון (WS $/ping או HTTP presence).
+  // null = אין בעלים. runtime-only — נאבד ב-restart. ה-FE גוזר ממנו את ממד ה"מחובר"
+  // (attached לבדו כבר אינו מספיק — סוקט פתוח ניתן לזיוף, §2 בבריף).
+  "lastSeenAt?": "number | null",
   // כותרת-הסשן (slice session-title-in-process-list): נדחפת ע"י ה-client שפתח את הסשן. runtime-only.
   "title?": "string | null",
 })

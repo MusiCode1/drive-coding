@@ -34,6 +34,7 @@ export function registerAgentsHttp(
         attached: boolean
         busy: boolean
         lastMessageAt: number | null
+        lastSeenAt: number | null
         via: "ws" | "http" | null
       } | null
     }
@@ -58,6 +59,7 @@ export function registerAgentsHttp(
           attached: rt?.attached ?? false,
           busy: rt?.busy ?? false,
           lastMessageAt: rt?.lastMessageAt ?? null,
+          lastSeenAt: rt?.lastSeenAt ?? null,
           attachedVia: rt?.via,
         }
       }),
