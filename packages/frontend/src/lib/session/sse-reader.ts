@@ -81,10 +81,26 @@ export type SSEReaderOptions = {
   _fetch?: (url: string, init?: RequestInit) => Promise<Response>
   /** @internal For testing — override setTimeout-based sleep. */
   _sleep?: (ms: number) => Promise<void>
+  /** @internal For testing — override the clock used to measure connection lifetime. */
+  _now?: () => number
 }
 
 /** Maximum reconnect delay (ms). */
 const MAX_BACKOFF_MS = 30_000
+
+/**
+ * כמה זמן חיבור חייב לשרוד כדי שייחשב "הצלחה" לצורך איפוס ה-backoff.
+ *
+ * 🔴 נצפה חי (2026-08-16, ניתוק-קשה): `connectOnce` הצליח, ה-snapshot התקבל,
+ * והחיבור נסגר **מיד** (`ERR_CONNECTION_CLOSED`). מכיוון שה-delay אופס ברגע
+ * שהחיבור נפתח — לפני שידוע אם ישרוד — נוצרה לולאה צמודה: ניסיון כל שנייה,
+ * בלי שום הסלמה, לנצח. בלוג נראו שני `sse-reconnected version=111` רצופים
+ * עם `nextInMs=2000` ביניהם, בעוד כשלים *אמיתיים* כן הסלימו עד 16000.
+ *
+ * ⇒ שרת שמקבל-וסוגר (502 של Cloudflare · LB באמצע דיפלוי · פרוקסי שנופל)
+ * הוא בדיוק המקרה שבו backoff נחוץ, והוא היחיד שבו הוא לא פעל.
+ */
+const STABLE_CONNECTION_MS = 10_000
 
 /**
  * SSEReader — reads an SSE endpoint using fetch + ReadableStream.
@@ -111,6 +127,7 @@ export class SSEReader {
   readonly #headers: Record<string, string>
   readonly #doFetch: (url: string, init?: RequestInit) => Promise<Response>
   readonly #sleep: (ms: number) => Promise<void>
+  readonly #now: () => number
   #closed = false
   // calev-heavy M7: close() didn't abort the in-flight fetch — the underlying
   // socket/request stayed established (leaked) until the server eventually
@@ -124,6 +141,7 @@ export class SSEReader {
     this.#headers = opts.headers ?? {}
     this.#doFetch = opts._fetch ?? ((u, init) => globalThis.fetch(u, init))
     this.#sleep = opts._sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
+    this.#now = opts._now ?? (() => Date.now())
   }
 
   /**
@@ -232,8 +250,7 @@ export class SSEReader {
         const { snapshot, frames: newFrames } = await this.#connectOnce()
         if (this.#closed) break
 
-        // Reset delay after successful connection
-        delay = 1000
+        const openedAt = this.#now()
         connInfo("sse-reconnected", { url: this.#url, version: snapshot.version })
 
         // Notify about the new snapshot
@@ -241,8 +258,13 @@ export class SSEReader {
 
         // Drain patches from the reconnected connection
         await this.#drainFrames(newFrames, ctrl)
-        // Stream ended cleanly — loop to reconnect again
-        connWarn("sse-lost", { url: this.#url })
+
+        // ⚠️ איפוס ה-backoff רק לחיבור ש**שרד**, לא לכל אחד שנפתח. חיבור
+        // שנסגר מיד אחרי ה-snapshot אינו הצלחה — הוא בדיוק התסמין שבגללו
+        // ה-backoff קיים (ר' STABLE_CONNECTION_MS).
+        const lastedMs = this.#now() - openedAt
+        if (lastedMs >= STABLE_CONNECTION_MS) delay = 1000
+        connWarn("sse-lost", { url: this.#url, lastedMs })
       } catch {
         // Connection failed — continue with next retry (delay already doubled)
         connWarn("sse-retry", { url: this.#url, nextInMs: delay })
