@@ -22,8 +22,6 @@ type PluginEntry = string
  *   - `~/.config/opencode/plugins/`: היה חל **גם** על opencode הרגיל בטרמינל של
  *     המשתמש, מחוץ לאפליקציה — פלט בלי emoji ובלי markdown בעבודה רגילה שלו.
  * ה-env var מועבר רק ל-sub-process שאנחנו מולידים, ולכן אינו דולף החוצה.
- *
- * Commit 3 של windows-adaptation: tuple → string-plugin (opencode 1.2.27 compat).
  */
 export function buildOpencodeConfigContent(existingEnv: string | undefined): string {
   // קובץ הפלאגין נמצא במיקום קבוע ביחס לקובץ מקור זה.

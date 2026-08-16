@@ -7,7 +7,8 @@
  *   2. צור את components/chat/bubbles/<NewKind>Bubble.svelte.
  *   3. הוסף ענף `{:else if bubble.kind === "newkind"}` למטה.
  *
- * לפי parallel-safe-code.md טכניקה #2 (switch dispatcher ברכיב leaf קצה).
+ * switch dispatcher ברכיב leaf קצה — כל סוג-בועה חדש נוגע רק בענף שלו,
+ * כך ששני slices מקבילים לא מתנגשים באותן שורות.
  *
  * ─── slice/subagent-transcript-render (Commit 1) — ענף tool מתפצל ל-SubagentBubble/ToolBubble ───
  * prop `depth` — מונע recursion runaway ב-Task-בתוך-Task (SubagentBubble מעביר depth+1;

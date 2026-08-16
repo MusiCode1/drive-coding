@@ -3,10 +3,10 @@
  *
  * Pure function — no mocks needed.
  *
- * The `MARKDOWN-n` labels on the test names are IDs from the project's behavior
- * catalogue — a shared contract, not local bookkeeping. Do not renumber them.
- * 1–7 are covered here; 8 (used by both live and history) is intentionally absent,
- * as that behaviour is frontend-only.
+ * The `MARKDOWN-n` labels are stable IDs, not local numbering: an out-of-repo
+ * coverage map keys off them to record which behaviour is tested where, so
+ * renumbering silently breaks that mapping. 1–7 are covered here. 8 is absent on
+ * purpose — it concerns a behaviour that now lives only in the frontend.
  */
 
 import { describe, expect, test } from "vitest"

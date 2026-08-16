@@ -101,7 +101,7 @@ import {
  * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries
  * ומבקש raw SDK frames ל-spike של subagent transcript.
  * Opus 4.7+ שינה default ל-display:"omitted"; זה מבקש "summarized" מפורשות.
- * provider-agnostic: ה-key claudeCode מתעלם ע"י ספקים אחרים. ר' decisions/voice-acp.md.
+ * provider-agnostic: ה-key claudeCode מתעלם ע"י ספקים אחרים.
  */
 const CLAUDE_SESSION_META = {
   claudeCode: {

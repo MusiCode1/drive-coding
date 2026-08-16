@@ -120,8 +120,8 @@ const NOISE_DIRS = new Set<string>(["node_modules"])
  * ⚠️ נקודת-הרחבה (כוונת-תכנון): החתימה async ומקבלת dirent+fullPath **בכוונה** — כדי
  * שזיהוי תכונת-hidden של Windows (FILE_ATTRIBUTE_HIDDEN, שאינה נגזרת מהשם) ייכנס כאן
  * בעתיד בלי לגעת בלולאת-הסינון. כיום אין IO בפועל; ה-Promise נפתר מיד.
- * ה-Windows-detection עצמו נדחה לסלייס נפרד
- * כי הוא דורש תלות native / shell-out per-entry — הכרעה שלא שייכת לתיקון-הבאג הזה.
+ * ה-Windows-detection עצמו נדחה: הוא דורש תלות native או shell-out לכל רשומה,
+ * והכרעה כזו רחבה מדי לתיקון שהקובץ הזה עושה. ר' ה-TODO בגוף הפונקציה.
  */
 async function isHiddenEntry(
   dirent: import("node:fs").Dirent<string>,
