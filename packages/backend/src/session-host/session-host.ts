@@ -699,7 +699,10 @@ export async function createSessionHostFromConnection(
       if (disposed) throw new Error("SessionHost disposed")
       const result = (await client.newSession(opts)) as {
         sessionId: string
-        configOptions?: unknown[]
+        // הסוכן הוא הסמכות על ה-configOptions שלו, והם נשמרים ב-currentState
+        // כפי שהם. המיזוג מ-dev הידק את הטיפוסים, ולכן ההצהרה מפורשת כאן
+        // במקום `unknown[]` שנשפך אל תוך SessionState.
+        configOptions?: SessionConfigOption[]
       }
       // Update currentState.sessionId so setMode/setConfigOption can use it
       // Also capture configOptions from session/new response (capabilities.ts:17)

@@ -1,8 +1,8 @@
 import type { Catalog } from "../keys.js"
 
 /**
- * קטלוג עברית. הוסף מפתחות חדשים בבלוקי domain למטה — ראה
- * docs/conventions/parallel-safe-code.md (טכניקה #4: קטלוגים append-only).
+ * קטלוג עברית. הוסף מפתחות חדשים בבלוקי domain למטה. הקטלוג append-only כדי
+ * ששני slices שמוסיפים מפתחות במקביל ינחתו בבלוקים שונים ויתמזגו בלי קונפליקט.
  */
 export const he: Catalog = {
   // ─── connect ─── (slice 0)
@@ -387,4 +387,9 @@ export const he: Catalog = {
   "settings.geminiTone.formal": "רשמי",
   "settings.geminiTone.casual": "יומיומי",
   "session.heldByOtherTransport": "הסשן פתוח במקום אחר (מסלול אחר). אין להתחבר ישירות — נא להשתלט.",
+  // ─── liveness (slice liveness C4) ───
+  "session.reconnecting": "מנסה להתחבר…",
+  "session.cloudflareBlocked": "החיבור נחסם. ייתכן ש-Cloudflare דורש אימות.",
+  "session.turnStalled": "לא הגיע כלום מהסוכן זמן רב. ייתכן שהוא עדיין עובד — וייתכן שעצר בלי לומר.",
+  "session.cloudflareRefresh": "רענון",
 }

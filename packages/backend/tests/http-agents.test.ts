@@ -1,8 +1,14 @@
 import { Hono } from "hono"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createInMemoryAgentRegistry } from "../src/agents/registry"
 import type { AgentOrchestrator, CreateAndSpawnResult } from "../src/app/agent-orchestrator"
 import { registerAgentsHttp } from "../src/delivery/http-agents"
+// slice liveness C2: ה-http-cache הוא module-level — מנקים בין טסטים כדי שלא ידלוף.
+import { httpCacheInvalidateAll } from "../src/delivery/http-cache"
+
+beforeEach(() => {
+  httpCacheInvalidateAll()
+})
 
 function makeApp() {
   const app = new Hono()
@@ -41,6 +47,8 @@ describe("HTTP /api/agents", () => {
       const { app } = makeApp()
       const res = await app.request("/api/agents")
       expect(res.status).toBe(200)
+      // slice liveness C2: no-store נקודתי על GET /api/agents.
+      expect(res.headers.get("Cache-Control")).toBe("no-store")
       const body = await res.json()
       expect(body).toEqual({ agents: [] })
     })

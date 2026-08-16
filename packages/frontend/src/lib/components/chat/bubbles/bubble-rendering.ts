@@ -15,7 +15,6 @@ export function visibleThoughtSegments<T extends ThoughtSegment>(segments: T[]):
  * B1 קובע `toolCall.task` על task_started, ו-`subFrames` נבנה lazily על ה-frame
  * הראשון של התעתיק. סמן משולב תופס את ה-Task ברגע שאחד מהשניים מאוכלס
  * (task קודם, בדרך-כלל) — subFrames לבדו שביר (מחמיץ Task שקיבל רק task_started).
- * ר' slice-subagent-transcript-render.md §2/§5 Commit 1.
  */
 export function isSubagentTask(bubble: ToolBubble): boolean {
   return bubble.toolCall.task !== undefined || bubble.subFrames !== undefined

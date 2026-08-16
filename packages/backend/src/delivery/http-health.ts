@@ -16,6 +16,8 @@ import { type IntervalHistogram, monitorEventLoopDelay } from "node:perf_hooks"
 import os from "node:os"
 import { deriveMachineStats, type AgentRegistry } from "@drive-coding/core"
 import type { Hono } from "hono"
+// slice liveness C2: short response cache + no-store on GET /api/diag.
+import { httpCacheGet, httpCacheSet } from "./http-cache.js"
 
 // Single process-wide histogram, enabled once. reset() per poll = rolling window.
 let eld: IntervalHistogram | undefined
@@ -48,6 +50,12 @@ export function registerHealthHttp(
   const startedAt = Date.now()
 
   app.get("/api/diag", async (c) => {
+    c.header("Cache-Control", "no-store")
+    // slice liveness C2: מטמון קצר (1.5ש׳). על cache-hit מדלגים גם על h.reset() —
+    // ההיסטוגרמה ממשיכה לצבור את החלון המלא (טוב יותר מסקר-כל-בקשה).
+    const cached = httpCacheGet("diag")
+    if (cached !== undefined) return c.json(cached)
+
     const now = Date.now()
     const mem = process.memoryUsage()
 
@@ -79,7 +87,7 @@ export function registerHealthHttp(
       }
     })
 
-    return c.json({
+    const body = {
       ts: now,
       uptimeMs: now - startedAt,
       eventLoop,
@@ -95,6 +103,8 @@ export function registerHealthHttp(
         busy: list.filter((x) => x.busy).length,
         list,
       },
-    })
+    }
+    httpCacheSet("diag", body)
+    return c.json(body)
   })
 }

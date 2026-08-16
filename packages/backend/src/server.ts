@@ -90,6 +90,17 @@ app.use("*", cors({ origin: parseCorsOrigins(process.env.CORS_ORIGINS), credenti
 const registry = createInMemoryAgentRegistry()
 
 // wire-recorder: פעיל כש-WIRE_RECORD=1; אחרת no-op (אפס IO, אפס overhead)
+//
+// ⚠️ BUG ידוע (טרם תוקן, 2026-08-15) — הבדיקה כאן היא truthiness על מחרוזת,
+// ולא השוואה ל-"1". `load-config.ts:212` כותב אקטיבית WIRE_RECORD="0" כשההקלטה
+// **כבויה** בקונפיג, ו-"0" הוא truthy ב-JS — כלומר כיבוי ההקלטה דרך הקונפיג
+// מדליק אותה. הצורה הנכונה היא `=== "1"`, בדיוק כמו ב-`load-config.ts:114`.
+// לא מתוקן כאן כדי לא לשנות התנהגות מחוץ ל-slice ייעודי.
+//
+// ⚠️ אין cap / rotation / pruning ב-`wire-recorder.ts`. היעד הוא
+// `~/.config/drive-coding/wire-recordings/` — **מחוץ לריפו**, כך ש-.gitignore
+// ו-`git worktree remove` לא נוגעים בו. בין 2026-07-12 ל-2026-08-15 זה הצטבר
+// ל-3.2G ב-773 קבצים (קובץ בודד הגיע ל-617MB) ומילא את הדיסק.
 const wireRecorder = createWireRecorder({
   dir: process.env.WIRE_RECORD ? ensureStateSubdir("wire-recordings") : null,
 })

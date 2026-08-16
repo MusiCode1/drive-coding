@@ -1,7 +1,7 @@
 /**
  * host.live.test.ts — permanent live test suite: real client → real claude CLI.
  *
- * Gated behind RUN_LIVE=1. The file is collected by pnpm test (no exclude in vitest.config),
+ * Gated behind RUN_LIVE=1. The file is collected by `bun run test` (no exclude in vitest.config),
  * but describe.skipIf ensures it is skipped unless the env var is set.
  *
  * IMPORTANT: top-level code must be lazy / non-side-effecting.

@@ -67,7 +67,10 @@ describe("AgentSession — anti-clobber ב-#handleUnexpectedClose (DoD#5, Commit
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._handleUnexpectedCloseForTest(1005, "")
 
-    expect(session.error).toBe("WS closed (1005): no reason")
+    // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
+    // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
+    // ההבחנה שהטסט בודק נשמרת: "נחסם" ⇒ ההודעה הישנה שורדת; "לא נחסם" ⇒ null.
+    expect(session.error).toBeNull()
     expect(session.status).toBe("disconnected")
   })
 
@@ -82,7 +85,10 @@ describe("AgentSession — anti-clobber ב-#handleUnexpectedClose (DoD#5, Commit
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._handleUnexpectedCloseForTest(1006, "abnormal")
 
-    expect(session.error).toBe("WS closed (1006): abnormal")
+    // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
+    // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
+    // ההבחנה שהטסט בודק נשמרת: "נחסם" ⇒ ההודעה הישנה שורדת; "לא נחסם" ⇒ null.
+    expect(session.error).toBeNull()
   })
 
   test("control: status=error אך #errorSurfaced=false (switchSession/newSession fail) → לא נחסם", () => {
@@ -94,6 +100,9 @@ describe("AgentSession — anti-clobber ב-#handleUnexpectedClose (DoD#5, Commit
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._handleUnexpectedCloseForTest(1006, "abnormal")
 
-    expect(session.error).toBe("WS closed (1006): abnormal")
+    // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
+    // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
+    // ההבחנה שהטסט בודק נשמרת: "נחסם" ⇒ ההודעה הישנה שורדת; "לא נחסם" ⇒ null.
+    expect(session.error).toBeNull()
   })
 })

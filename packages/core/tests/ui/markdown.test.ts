@@ -3,7 +3,10 @@
  *
  * Pure function — no mocks needed.
  *
- * Behaviors documented in `docs/behaviors.md` (MARKDOWN-1..MARKDOWN-8).
+ * The `MARKDOWN-n` labels are stable IDs, not local numbering: an out-of-repo
+ * coverage map keys off them to record which behaviour is tested where, so
+ * renumbering silently breaks that mapping. 1–7 are covered here. 8 is absent on
+ * purpose — it concerns a behaviour that now lives only in the frontend.
  */
 
 import { describe, expect, test } from "vitest"

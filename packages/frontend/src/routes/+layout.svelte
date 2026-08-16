@@ -3,7 +3,7 @@
  * Composition root — מאתחל (instantiates) את כל ה-view-models הראשיים ומחבר
  * אותם לקונטקסט. זהו המקום היחיד באפליקציה שבו קוראים ל-`new <VM>()`.
  *
- * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
+ * ─── עיצוב תוספתי בטוח למקביליות ───
  *
  * הוספת VM חדש:
  *   1. הוסף `import { Foo } from "$lib/view-models/foo.svelte"` לייבואים.
@@ -29,6 +29,7 @@ import {
   setMic,
   setModals,
   setModelStatus,
+  setPresencePoller,
   setRecentProjects,
   setResponsive,
   setSession,
@@ -58,6 +59,8 @@ import { Speaker } from "$lib/view-models/speaker.svelte"
 import { ThemeVM } from "$lib/view-models/theme.svelte"
 import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { UiShellVM } from "$lib/view-models/ui-shell.svelte"
+import { PresencePoller } from "$lib/view-models/presence-poller.svelte"
+import { isPageHidden } from "$lib/util/page-visibility.svelte"
 
 let { children } = $props()
 
@@ -126,6 +129,11 @@ void cliAvailability.load()
 // יתעורר אוטומטית כשcaps יתעדכן.
 void ttsCapabilities.refresh()
 
+// ─── presence-poller ─── (slice liveness C3 — חי לכל אורך הסשן, גם כשהפאנל סגור)
+const presencePoller = new PresencePoller(session)
+presencePoller.init()
+session.setSseReconnectedListener(() => presencePoller.onSseReconnected())
+
 // ─── wake-lock ─── (Track C — drive-first chrome)
 const wakeLock = new WakeLockEngine()
 $effect(() => {
@@ -166,6 +174,26 @@ $effect(() => {
   const normalized = normalizeSessionTransport(q)
   if (normalized) sessionStorage.setItem("sessionTransport", normalized)
 })
+
+// ─── presence sync ─── (slice liveness C3)
+// סבב-תיקונים liveness — שני תיקונים בבלוק הקטן הזה:
+//
+// 1. `inSession` היה `status === "connected"`. ⇒ ברגע שה-WS נפל, sync קיבל
+//    `inSession:false` → stop() → clearBanner(), והבאנר נמחק **בדיוק** ברגע
+//    שנועד להופיע. הבאנר לא יכול להיות בעל-הבית של מצב-החיבור אם הוא נהרס
+//    בניתוק. "בסשן" = connected **או** disconnected (ניתוק חולף); "error"
+//    ו-"idle" נשארים בחוץ — הראשון טרמינלי (session.error מציג אותו), השני אין בו סשן.
+// 2. `return () => stop()` רץ לפני **כל** הרצה-מחדש של ה-$effect, לא רק בפירוק —
+//    כלומר כל שינוי ב-status/agentId/hidden ניגב את הבאנר ואת מונה-הכשלים.
+//    הפירוק עבר ל-$effect נפרד בלי קריאות ריאקטיביות, שרץ פעם אחת.
+$effect(() => {
+  const status = session.status
+  const inSession = status === "connected" || status === "disconnected"
+  const agentId = session.agentId
+  const hidden = isPageHidden()
+  presencePoller.sync({ inSession, agentId, hidden })
+})
+$effect(() => () => presencePoller.dispose())
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
@@ -184,6 +212,7 @@ setContentViewer(contentViewer)
 setActiveAgents(activeAgents)
 setRecentProjects(recentProjects)
 setCliAvailability(cliAvailability)
+setPresencePoller(presencePoller)
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)
 const chatScroll = $state<ChatScrollBridge>({ scrollEl: null, handle: null })

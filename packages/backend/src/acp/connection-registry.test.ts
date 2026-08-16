@@ -18,6 +18,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { httpCacheGet, httpCacheInvalidateAll, httpCacheSet } from "../delivery/http-cache.js"
 import { createConnectionRegistry } from "./connection-registry.js"
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -326,6 +327,78 @@ describe("connection-registry — ownership epoch (slice ownership-truth C1)", (
     expect(reg.isAttached("ep-10")).toBe(false)
     expect(reg.getOwner("ep-10")).toBeNull()
     await reg.close("ep-10")
+  })
+})
+
+describe("connection-registry — liveness stamp (slice liveness C1)", () => {
+  let cleanupEnv: (() => void) | null = null
+
+  beforeEach(() => {
+    cleanupEnv = useScript(ALIVE_SCRIPT)
+  })
+
+  afterEach(async () => {
+    cleanupEnv?.()
+    cleanupEnv = null
+  })
+
+  it("touchOwner is transport-agnostic: updates lastSeenAt for WS and HTTP", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("live-1", "opencode", { cwd: os.tmpdir() })
+
+    // no owner yet → null
+    expect(reg.getLastSeenAt("live-1")).toBeNull()
+
+    // ⚠️ אימות עצמאי (מרדכי): הגרסה הקודמת בדקה `not.toBeNull()` לפני **ואחרי**
+    // touchOwner — אבל החותמת כבר הוצבה ע"י markAttached/markOwned. ⇒ touchOwner
+    // שהוא no-op היה עובר את הטסט. אומת במוטציה: החזרת
+    // `if (e.owner?.via !== "http") return` השאירה 309/309 ירוקים.
+    // ⇒ הבדיקה חייבת להיות ש**הערך התקדם**, אחרת DoD 6 אינו מכוסה.
+
+    // WS owner (markAttached) → touchOwner **מקדם** את החותמת
+    reg.markAttached("live-1")
+    const wsBefore = reg.getLastSeenAt("live-1")
+    expect(wsBefore).not.toBeNull()
+    await new Promise((r) => setTimeout(r, 5))
+    reg.touchOwner("live-1")
+    expect(reg.getLastSeenAt("live-1")).toBeGreaterThan(wsBefore as number)
+
+    // HTTP owner (markOwned) → אותו דבר
+    reg.markOwned("live-1", "http")
+    const httpBefore = reg.getLastSeenAt("live-1")
+    expect(httpBefore).not.toBeNull()
+    await new Promise((r) => setTimeout(r, 5))
+    reg.touchOwner("live-1")
+    expect(reg.getLastSeenAt("live-1")).toBeGreaterThan(httpBefore as number)
+
+    await reg.close("live-1")
+  })
+
+  it("getLastSeenAt is null after markDetached (no owner)", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("live-2", "opencode", { cwd: os.tmpdir() })
+    reg.markOwned("live-2", "http")
+    expect(reg.getLastSeenAt("live-2")).not.toBeNull()
+    reg.markDetached("live-2")
+    expect(reg.getLastSeenAt("live-2")).toBeNull()
+    await reg.close("live-2")
+  })
+
+  // 🔴 DoD 12 — slice liveness C2: שינוי-בעלות מבטל את מטמון התגובה.
+  it("markOwned/markDetached invalidate the HTTP response cache", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("cache-1", "opencode", { cwd: os.tmpdir() })
+
+    httpCacheSet("agents", { agents: [] })
+    reg.markOwned("cache-1", "http")
+    expect(httpCacheGet("agents")).toBeUndefined()
+
+    httpCacheSet("agents", { agents: [] })
+    reg.markDetached("cache-1")
+    expect(httpCacheGet("agents")).toBeUndefined()
+
+    httpCacheInvalidateAll()
+    await reg.close("cache-1")
   })
 })
 

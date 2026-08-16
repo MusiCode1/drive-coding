@@ -139,6 +139,7 @@ async function setup(): Promise<{
     getCwd: (id) => (id === AGENT_ID ? "/connection/cwd" : undefined),
     getEpoch: (_id) => 0,
     touchOwner: (_id) => {},
+    getRuntimeInfo: (_id) => null,
   }
 
   const app = new Hono()
@@ -231,7 +232,7 @@ describe("session-host HTTP end-to-end (real host + real broadcaster + real rout
       sessionId: "s1",
       toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
       options: [],
-    } as Parameters<typeof callbacks.onRequestPermission>[0])
+    } as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0])
 
     // give the broadcaster's background drain loop a tick to pick up the patch
     await new Promise((resolve) => setTimeout(resolve, 10))
@@ -258,7 +259,7 @@ describe("session-host HTTP end-to-end (real host + real broadcaster + real rout
       sessionId: "s1",
       toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
       options: [],
-    } as Parameters<typeof callbacks.onRequestPermission>[0])
+    } as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0])
     await new Promise((resolve) => setTimeout(resolve, 10))
 
     // Two independent subscribers, both connected before the reply.

@@ -165,6 +165,82 @@ describe("detectAvailableClis: defaults", () => {
   })
 })
 
+// ─── fallbackBins (slice cli-bin-resolution-unify, Commit 1) ─────────────────
+
+describe("detectAvailableClis: fallbackBins", () => {
+  it("spec without fallbackBins → identical to existing behaviour (regression, all kinds)", () => {
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/fake/bin/claude-cli")
+
+    const result = detectAvailableClis(specs, env)
+
+    expect(result.available).toContain("claude")
+    expect(result.details.claude).toEqual({
+      found: true,
+      path: "/fake/bin/claude-cli",
+      source: "path",
+    })
+  })
+
+  it("only the alt name is on PATH → available includes the kind, details.path points to it", () => {
+    const cursorSpecs = {
+      cursor: {
+        bin: "agent",
+        args: ["acp"],
+        supportsModelFlag: false,
+        fallbackBins: ["cursor-agent"],
+      },
+    } as unknown as Record<CliKind, CliSpec>
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/fake/bin/cursor-agent")
+
+    const result = detectAvailableClis(cursorSpecs, env)
+
+    expect(result.available).toContain("cursor")
+    expect(result.details.cursor).toEqual({
+      found: true,
+      path: "/fake/bin/cursor-agent",
+      source: "path",
+    })
+  })
+
+  it("isOverride=true + fallbackBins on base → the fallback is not tried", () => {
+    const cursorSpecs = {
+      cursor: {
+        bin: "agent",
+        args: ["acp"],
+        supportsModelFlag: false,
+        fallbackBins: ["cursor-agent"],
+      },
+    } as unknown as Record<CliKind, CliSpec>
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    // only the fallback name exists — under override, it must NOT be tried.
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/fake/bin/cursor-agent")
+
+    const result = detectAvailableClis(cursorSpecs, env, ["cursor"])
+
+    expect(result.available).not.toContain("cursor")
+    expect(result.details.cursor).toEqual({ found: false, source: "not-found" })
+  })
+
+  it("detectBin still wins over bin (regression — claude/codex unaffected by fallbackBins wiring)", () => {
+    const detectBinSpecs = {
+      claude: { bin: "npx", args: [], supportsModelFlag: true, detectBin: "claude" },
+    } as unknown as Record<CliKind, CliSpec>
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/fake/bin/claude")
+
+    const result = detectAvailableClis(detectBinSpecs, env)
+
+    expect(result.available).toContain("claude")
+    expect(result.details.claude).toEqual({
+      found: true,
+      path: "/fake/bin/claude",
+      source: "path",
+    })
+  })
+})
+
 // ─── displayName + logo (slice cli-branding, Commit 1) ───────────────────────
 // אתר-הפליטה (:62 בקוד) הוא טרנרי (found ? {…} : {…}) — לא spread מותנה כמו
 // ב-cli-config.ts. שני הטסטים בודקים גם כשה-CLI found וגם כשלא — שני הענפים

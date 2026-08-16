@@ -4,7 +4,7 @@
  * צמד אחד לכל view-model ראשי. השתמש ב-`set*` בנקודת ההרכבה (composition root)
  * (+layout.svelte) וב-`get*` בכל רכיב שתחתיו.
  *
- * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
+ * ─── עיצוב תוספתי בטוח למקביליות ───
  *
  * הוספת צמד VM חדש: הוסף בלוק `// ─── <domain> ───` חדש בסוף
  * הקובץ. אל תערוך בלוקים קיימים. ייבואים הולכים לבלוק הייבוא
@@ -30,6 +30,7 @@ import type { ActiveAgents } from "./view-models/active-agents.svelte"
 import type { BubblePlayer } from "./view-models/bubble-player.svelte"
 import type { ContentViewerVM } from "./view-models/content-viewer.svelte"
 import type { RecentProjects } from "./view-models/recent-projects.svelte"
+import type { PresencePoller } from "./view-models/presence-poller.svelte"
 
 // ─── i18n ──────────────────────────────────────────
 export const [getI18n, setI18n] = createContext<I18nVM>()
@@ -86,3 +87,6 @@ export const [getRecentProjects, setRecentProjects] = createContext<RecentProjec
 
 // ─── cli-availability ─── (slice cli-branding, Commit 3)
 export const [getCliAvailability, setCliAvailability] = createContext<CliAvailability>()
+
+// ─── presence-poller ─── (slice liveness C3)
+export const [getPresencePoller, setPresencePoller] = createContext<PresencePoller>()

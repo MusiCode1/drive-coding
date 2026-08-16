@@ -1,5 +1,5 @@
 /**
- * spike-subagent-fixture.ts — Gate-1 spike (docs/plans/spike-subagent-transcript-fixture.md).
+ * spike-subagent-fixture.ts — Gate-1 spike.
  *
  * Drives connectInProcess against the REAL claude CLI, enables the raw-SDK channel
  * (emitRawSDKMessages + forwardSubagentText), forces a Task/subagent, and captures
@@ -7,7 +7,11 @@
  *
  * Run:  cd packages/provider && bun run src/providers/claude/live/spike-subagent-fixture.ts
  *
- * Output: writes raw capture to OUT (below) and prints §9 analysis to stdout.
+ * Output: writes raw capture to OUT (below) and prints an analysis to stdout:
+ *   - frame counts and a type histogram per channel (ACP vs _claude/sdkMessage)
+ *   - nesting check: are all parent_tool_use_id values also ACP toolCallIds?
+ *   - replay check: does session/load re-emit the raw ext channel, or is the
+ *     subagent transcript live-only? (this one decides whether persistence is needed)
  * NOT a vitest test — a one-shot investigative harness.
  */
 
@@ -112,7 +116,7 @@ async function main(): Promise<void> {
   const sessionId = sessionResult.sessionId as string
   console.log(`[spike] session=${sessionId}`)
 
-  // 3) prompt that FORCES a Task/subagent, multi-step (§4)
+  // 3) prompt that FORCES a Task/subagent, multi-step
   const prompt =
     "Use the Task tool to launch a general-purpose subagent. Tell the subagent to do exactly this: " +
     "(1) print the sentence 'STEP ONE SPIKE_SUBAGENT_MARK', " +
@@ -129,7 +133,7 @@ async function main(): Promise<void> {
   )) as Record<string, unknown>
   console.log(`[spike] prompt done, stopReason=${String(promptResult?.stopReason)}`)
 
-  // 4) Q7 — does session/load replay the raw ext channel? capture a marker window.
+  // 4) does session/load replay the raw ext channel? capture a marker window.
   const beforeLoad = cap.length
   try {
     await sendRequest(conn, nextId(), "session/load", { sessionId, cwd, mcpServers: [] }, 60_000)
@@ -146,7 +150,7 @@ async function main(): Promise<void> {
   await writeFile(OUT, cap.map((c) => JSON.stringify(c)).join("\n") + "\n", "utf8")
   console.log(`\n[spike] wrote ${cap.length} frames → ${OUT}`)
 
-  // ── inline §9 analysis ──
+  // ── inline analysis ──
   const parseRaw = (c: Cap) => {
     try {
       return JSON.parse(c.raw) as Record<string, unknown>
@@ -159,7 +163,7 @@ async function main(): Promise<void> {
 
   const acp = cap.filter((c) => !isSdkMsg(c))
   const raw = cap.filter(isSdkMsg)
-  console.log(`\n===== §9 ANALYSIS =====`)
+  console.log(`\n===== ANALYSIS =====`)
   console.log(`channels: acp=${acp.length}  raw(_claude/sdkMessage)=${raw.length}`)
 
   // type histogram per channel
@@ -199,13 +203,13 @@ async function main(): Promise<void> {
   console.log(`\nparent_tool_use_id values seen (raw):`, [...parents])
   console.log(`ACP toolCallId values seen:`, [...toolCallIds])
   console.log(
-    `Q4 correlation — parents ⊆ toolCallIds?`,
+    `nesting — parents ⊆ toolCallIds?`,
     [...parents].every((p) => toolCallIds.has(p)),
   )
 
-  // Q7 replay
+  // replay check
   console.log(
-    `\nQ7 session/load replay — frames after load=${loadFrames.length}, of which raw=${loadFrames.filter(isSdkMsg).length}`,
+    `\nsession/load replay — frames after load=${loadFrames.length}, of which raw=${loadFrames.filter(isSdkMsg).length}`,
   )
   console.log(`===== END ANALYSIS =====`)
 }

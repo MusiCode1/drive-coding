@@ -186,6 +186,7 @@ export function loadCliSpecsOverride(env?: NodeJS.ProcessEnv): CliSpecsOverride 
     if (inlineParsed !== null && typeof inlineParsed === "object" && !Array.isArray(inlineParsed)) {
       const map = inlineParsed as Record<string, unknown>
       for (const [kind, value] of Object.entries(map)) {
+        if (kind.startsWith("$")) continue // $schema and other JSON meta-keys — not CLI kinds
         inlineSpecs[kind] = validateOverride(kind, value)
       }
     } else if (inlineParsed !== null) {
@@ -223,6 +224,7 @@ export function loadCliSpecsOverride(env?: NodeJS.ProcessEnv): CliSpecsOverride 
         } else {
           const map = parsed as Record<string, unknown>
           for (const [kind, value] of Object.entries(map)) {
+            if (kind.startsWith("$")) continue // $schema and other JSON meta-keys — not CLI kinds
             fileSpecs[kind] = validateOverride(kind, value)
           }
         }

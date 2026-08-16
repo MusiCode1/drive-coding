@@ -1,11 +1,12 @@
 /**
  * http/index.ts — exports registerSessionHostHttp (S4 C5).
  *
- * Wires all 4 session-host HTTP routes to a Hono app:
+ * Wires all 5 session-host HTTP routes to a Hono app:
  *   GET  /api/agents/:id/events — SSE snapshot→patches
  *   POST /api/agents/:id/rpc    — 202 Accepted, method dispatch
  *   POST /api/agents/:id/reply  — kind discriminator (permission/elicitation)
  *   GET  /api/agents/:id/state  — one-shot snapshot (debug/health)
+ *   POST /api/agents/:id/presence — liveness heartbeat (slice liveness C1)
  *
  * ─── slice session-host-http C5 ───
  */
@@ -14,8 +15,9 @@ import type { Hono } from "hono"
 import type { ConnectionRegistry } from "../../acp/connection-registry.js"
 import { createAgentSessionRegistry, type OnSessionAttached } from "../registry.js"
 import { registerEventsRoute } from "./events.js"
-import { registerRpcRoute } from "./rpc.js"
+import { registerPresenceRoute } from "./presence.js"
 import { registerReplyRoute } from "./reply.js"
+import { registerRpcRoute } from "./rpc.js"
 import { registerStateRoute } from "./state.js"
 
 export type RegisterSessionHostHttpOpts = {
@@ -38,6 +40,7 @@ export function registerSessionHostHttp(
   registerRpcRoute(app, agentSessionRegistry)
   registerReplyRoute(app, agentSessionRegistry)
   registerStateRoute(app, agentSessionRegistry)
+  registerPresenceRoute(app, agentSessionRegistry)
 }
 
 /**

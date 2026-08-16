@@ -11,7 +11,7 @@
  * לעולם אל תשלב עברית (או כל טקסט UI אחר) ישירות בקוד. סקריפט ה-lint
  * `scripts/lint-no-hebrew-in-code.sh` אוכף זאת.
  *
- * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
+ * ─── עיצוב תוספתי בטוח למקביליות ───
  * שני slices שמוסיפים מפתחות נוחתים בבלוקים שונים → git auto-merge.
  */
 
@@ -397,6 +397,11 @@ export type MessageKey =
   | "settings.geminiTone.casual"
   // ─── ownership-truth (slice ownership-truth C5) ───
   | "session.heldByOtherTransport"
+  // ─── liveness (slice liveness C4) ───
+  | "session.reconnecting"
+  | "session.cloudflareBlocked"
+  | "session.turnStalled"
+  | "session.cloudflareRefresh"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

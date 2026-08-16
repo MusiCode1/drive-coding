@@ -6,14 +6,20 @@
  * (WS חדש מדיח ישן, ראה ws-agent.ts), כך שסוכן "בשימוש" (attached===true)
  * כבר לא צריך להיות disabled — הכפתור מאפשר ליזום takeover.
  *
- * 3-מצבי (לא boolean) כי גם ה-title בפאנל 3-דרכי:
- *  - "disabled"  — אין acpSessionId בכלל (אין למה להתחבר)
- *  - "takeover"  — יש acpSessionId + הסוכן attached במקום אחר (דורש אישור)
- *  - "reconnect" — יש acpSessionId + לא attached (reconnect רגיל, ללא אישור)
+ * slice liveness C4: hasConnectionRing משתמש בממד "מחובר" (attached + lastSeenAt טרי),
+ * לא ב-attached בלבד (§2 — סוקט פתוח ניתן לזיוף).
  */
 import type { AgentPublic } from "@drive-coding/core"
+import {
+  isAgentConnected,
+  isAgentResumable,
+  isAgentRunning,
+  type LivenessAgent,
+} from "./liveness-state"
 
 export type ReconnectState = "disabled" | "reconnect" | "takeover"
+
+export { isAgentConnected, isAgentResumable, isAgentRunning }
 
 export function reconnectState(
   agent: Pick<AgentPublic, "acpSessionId" | "attached">,
@@ -25,11 +31,9 @@ export function reconnectState(
 
 /**
  * hasConnectionRing — predicate טהור: האם להציג טבעת-חיבור סביב ה-status-dot
- * ב-ActiveProcessesPanel (slice reconnect-ws-takeover, Commit 3 — 3b).
- *
- * ממד נפרד מ-statusColor (מצב-תהליך): הצבע נשאר accent/dim/recording לפי
- * agent.status; הטבעת מציינת חיבור (attached===true) בלבד, ללא קשר לצבע.
+ * ב-ActiveProcessesPanel (slice reconnect-ws-takeover, Commit 3 — 3b;
+ * slice liveness C4 — ממד connected).
  */
-export function hasConnectionRing(agent: Pick<AgentPublic, "attached">): boolean {
-  return agent.attached === true
+export function hasConnectionRing(agent: LivenessAgent, now = Date.now()): boolean {
+  return isAgentConnected(agent, now)
 }

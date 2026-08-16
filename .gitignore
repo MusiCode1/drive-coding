@@ -31,8 +31,18 @@ docs/*-verification-report.md
 # docs/ (briefs, decisions, walkthrough) עבר ל-docs-repo (private, משותף בין
 # פרויקטים). docs-for-llm/ הוא Junction (Windows) / symlink (Linux) לעותק
 # המקומי של docs-repo/drive-coding — לא תוכן אמיתי בריפו הזה.
-docs/
-docs-for-llm/
+#
+# ה-/ המוביל מעגן את התבנית לשורש הריפו בלבד. בלי העיגון, git מתעלם מכל
+# תיקיית docs/ בכל עומק — למשל packages/<pkg>/docs/ — וקובץ חדש שם נחסם
+# בשקט בלי אזהרה.
+# /docs/* ולא /docs/ — git **אינו** מאפשר להחזיר קובץ שתיקיית-האב שלו מוחרגת.
+# עם /docs/ הקובץ הציבורי היחיד למטה היה נחסם בשקט, בלי שום אזהרה.
+/docs/*
+# תיעוד ציבורי מיועד-לבני-אדם — נשאר בריפו הזה במפורש.
+!/docs/configuration.md
+# בלי / בסוף — docs-for-llm הוא סימלינק, וגit מתייחס לסימלינק כקובץ.
+# תבנית שמסתיימת ב-/ מתאימה לספריות בלבד ולא הייתה חוסמת אותו.
+/docs-for-llm
 
 # FE build staging dirs (atomic swap — slice-fe-build-decouple)
 packages/frontend/.build-staging/
@@ -48,9 +58,9 @@ packages/frontend/.build-old/
 **/.localappdata/**
 .localappdata/
 
-# docs/ הועבר ל-docs-repo (private, משותף בין פרויקטים)
-docs/
+# 🔴 כאן ישבו סימני-קונפליקט לא-פתורים (<<<<<<< / ======= / >>>>>>>) ששרדו
+# מיזוג קודם. git מתייחס אליהם כאל תבניות רגילות, ולכן שום דבר לא התלונן —
+# בזמן ש-`docs/` בלי עיגון חסם כל תיקיית docs בכל עומק. הכלל היחיד מוגדר למעלה.
 !packages/frontend/docs/
-docs-for-llm
 @Vendor/
 docs/plans/

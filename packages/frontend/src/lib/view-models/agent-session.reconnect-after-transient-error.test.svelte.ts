@@ -59,7 +59,10 @@ describe("AgentSession — reconnect אחרי כשל switchSession/newSession ח
     await (session as any)._handleUnexpectedCloseForTest(1006, "abnormal closure")
 
     // ההודעה הישנה הוחלפה — anti-clobber לא חסם (לא #errorSurfaced)
-    expect(session.error).toBe("WS closed (1006): abnormal closure")
+    // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
+    // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
+    // ההבחנה שהטסט בודק נשמרת: "נחסם" ⇒ ההודעה הישנה שורדת; "לא נחסם" ⇒ null.
+    expect(session.error).toBeNull()
     // reconnect אכן מוצת: #scheduleReconnect קובע status="disconnected" באופן סינכרוני
     // (לפני תחילת ה-backoff loop) — מוכיח שלא נתקענו על status="error".
     expect(session.status).toBe("disconnected")
@@ -74,7 +77,10 @@ describe("AgentSession — reconnect אחרי כשל switchSession/newSession ח
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (session as any)._handleUnexpectedCloseForTest(1011, "server error")
 
-    expect(session.error).toBe("WS closed (1011): server error")
+    // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
+    // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
+    // ההבחנה שהטסט בודק נשמרת: "נחסם" ⇒ ההודעה הישנה שורדת; "לא נחסם" ⇒ null.
+    expect(session.error).toBeNull()
     expect(session.status).toBe("disconnected")
   })
 

@@ -94,9 +94,11 @@ function makeMockConnectionRegistry(conn: ProviderConnection | null): {
   connectionRegistry: ConnectionRegistry
   markAttachedSpy: ReturnType<typeof vi.fn>
   markDetachedSpy: ReturnType<typeof vi.fn>
+  touchOwnerSpy: ReturnType<typeof vi.fn>
 } {
   const markAttachedSpy = vi.fn()
   const markDetachedSpy = vi.fn()
+  const touchOwnerSpy = vi.fn() // slice liveness C1: WS feeds touchOwner on $/ping (DoD 8)
 
   const connectionRegistry: ConnectionRegistry = {
     connect: vi.fn(
@@ -111,11 +113,13 @@ function makeMockConnectionRegistry(conn: ProviderConnection | null): {
     markDetached: markDetachedSpy,
     getRuntimeInfo: vi.fn(() => null),
     isAttached: vi.fn(() => false),
+    // slice liveness C1: WS feeds touchOwner on $/ping.
+    touchOwner: touchOwnerSpy,
     close: vi.fn(async () => {}),
     onCrash: vi.fn(() => () => {}),
   }
 
-  return { connectionRegistry, markAttachedSpy, markDetachedSpy }
+  return { connectionRegistry, markAttachedSpy, markDetachedSpy, touchOwnerSpy }
 }
 
 // ─── Mock FE WebSocket ────────────────────────────────────────────────────────
@@ -189,7 +193,7 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
   it("$/ping keepalive → replies $/pong and does NOT forward to conn.wire.write", async () => {
     const { conn, writeSpy } = makeMockConn()
     const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
-    const { connectionRegistry } = makeMockConnectionRegistry(conn)
+    const { connectionRegistry, touchOwnerSpy } = makeMockConnectionRegistry(conn)
 
     const onConnect = createAgentWsHandler({ orchestrator, connectionRegistry })
     const { ws, sent } = makeMockFeWs()
@@ -202,6 +206,9 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
 
     expect(sent).toContain(`${JSON.stringify({ jsonrpc: "2.0", method: "$/pong" })}\n`)
     expect(writeSpy).not.toHaveBeenCalled()
+    // slice liveness C1 (DoD 8): ה-ping הנכנס מזין את חותמת-הבעלות — אותו
+    // סימן-חיים שגם HTTP מדווח דרכו (`touchOwner` אגנוסטי, sweep בודק via).
+    expect(touchOwnerSpy).toHaveBeenCalledWith("ping-agent")
   })
 
   it("child.stdout line forwarded to FE with \\n preserved (NDJSON delimiter)", async () => {

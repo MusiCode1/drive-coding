@@ -35,8 +35,8 @@
  * so concurrent callers share the same in-flight creation.
  */
 
-import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { createLogger } from "@drive-coding/core/log"
+import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { createPatchesBroadcaster, type PatchesBroadcaster } from "./patches-broadcaster.js"
 import { createSessionHostFromConnection, type ExtendedSessionHost } from "./session-host.js"
@@ -106,10 +106,23 @@ export type AgentSessionRegistry = {
    */
   getEpoch(agentId: string): number
   /**
-   * slice ownership-handoff C4b: passthrough to connectionRegistry.touchOwner(agentId).
-   * Updates lastSeenAt for HTTP-owned agents. No-op for WS-owned or unknown.
+   * slice liveness C1: passthrough to connectionRegistry.touchOwner(agentId).
+   * Updates lastSeenAt for any owned agent (ws or http). No-op if no owner.
    */
   touchOwner(agentId: string): void
+  /**
+   * slice liveness C1: passthrough to connectionRegistry.getRuntimeInfo(agentId).
+   * Used by POST …/presence to report the agent's runtime state (attached/via/pid)
+   * so the FE can detect ownership loss without a second endpoint.
+   */
+  getRuntimeInfo(agentId: string): {
+    pid: number | null
+    attached: boolean
+    busy: boolean
+    lastMessageAt: number | null
+    lastSeenAt: number | null
+    via: "ws" | "http" | null
+  } | null
 }
 
 type AgentSessionRegistryDeps = {
@@ -119,7 +132,10 @@ type AgentSessionRegistryDeps = {
    * Receives the ProviderConnection and options, returns Promise<ExtendedSessionHost>.
    * slice ownership-handoff C4: opts includes optional warmReattach for warm path.
    */
-  _createHostFn?: (conn: ProviderConnection, opts?: import("../session-host/session-host.js").SessionHostFromConnOptions) => Promise<ExtendedSessionHost>
+  _createHostFn?: (
+    conn: ProviderConnection,
+    opts?: import("../session-host/session-host.js").SessionHostFromConnOptions,
+  ) => Promise<ExtendedSessionHost>
   /**
    * Injectable for tests — defaults to createPatchesBroadcaster.
    * Receives host.patches and returns a PatchesBroadcaster.
@@ -171,16 +187,23 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
   // callers so only one host + one ACP session get created per agentId.
   const inFlight = new Map<string, Promise<HostEntry | undefined>>()
 
-  // slice ownership-handoff C4b: HTTP ownership TTL sweep.
-  // HTTP owners must send keepalive (touchOwner) within TTL_MS or lose ownership.
-  // On expiry: dispose + unregisterHost + markDetached (NOT deleteAndKill, NOT epoch++).
-  const HTTP_OWNER_TTL_MS = deps._httpOwnerTtlMs ?? 90_000 // 90s default
+  // slice ownership-handoff C4b + slice liveness C1: unified ownership TTL sweep.
+  // Owners must send a liveness signal (WS $/ping or HTTP presence → touchOwner)
+  // within TTL_MS or lose ownership. On expiry: dispose + unregisterHost +
+  // markDetached (NOT deleteAndKill, NOT epoch++).
+  // 🔴 slice liveness C1 §2.1: the transport check is EXPLICIT — a WS owner must
+  // never be evicted here (WS has its own socket sweep in ws-agent.ts, a different
+  // role). Detecting "WS" indirectly via `getLastSeenAt() === null` no longer
+  // works now that touchOwner is transport-agnostic (a WS owner also has a stamp).
+  const HTTP_OWNER_TTL_MS = deps._httpOwnerTtlMs ?? 600_000 // 10 min (slice liveness C1 §3.1.1)
   const HTTP_SWEEP_MS = deps._httpSweepMs ?? 30_000 // sweep every 30s
   const httpSweep = setInterval(() => {
     const now = Date.now()
     for (const [agentId] of map) {
+      // 🔴 explicit transport guard — without it, WS owners get evicted here (DoD 7).
+      if (connectionRegistry.getOwner(agentId)?.via !== "http") continue
       const lastSeen = connectionRegistry.getLastSeenAt(agentId)
-      if (lastSeen === null) continue // not HTTP-owned (WS or no owner)
+      if (lastSeen === null) continue
       if (now - lastSeen <= HTTP_OWNER_TTL_MS) continue
       // Stale HTTP owner — evict without killing agent or incrementing epoch
       log.info({ agentId, staleMs: now - lastSeen }, "HTTP owner stale — releasing ownership")
@@ -248,7 +271,30 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     // already subscribed to the wire (created by _createHostFn). Rollback MUST call
     // host.dispose() to remove the crash subscription and close the patches stream.
     const hostOpts = acpSessionId ? { warmReattach: { acpSessionId, cwd } } : undefined
-    const host = await _createHostFn(conn, hostOpts)
+    // 🔴 הקשר-אבחון (2026-08-16): יצירת ה-host היא שמריצה את ה-ACP initialize,
+    // ולכן כאן נופלות פקיעות ה-initialize/authenticate. עד עכשיו השגיאה עלתה מכאן
+    // **בלי שום סימן זיהוי**: נתקלנו בשני כשלים חיים ולא הצלחנו לקבוע בדיעבד
+    // איזה CLI נכשל בכלל. שורת-הקשר אחת מייתרת חקירה שלמה.
+    let host: Awaited<ReturnType<typeof _createHostFn>>
+    try {
+      host = await _createHostFn(conn, hostOpts)
+    } catch (err) {
+      // ⚠️ שדות שטוחים, לא אובייקט-השגיאה. השגיאה של auth נושאת `kind`,
+      // `authMethods` וסמל פנימי — והעברתה כ-`err` השתיקה את השורה כולה
+      // בשקט (נתפס כאן בבדיקה חיה: אפס שורות מה-ns הזה, בזמן שהשגיאה כן עלתה).
+      // ⇒ שורת-אבחון שנבלעת היא גרועה מאין-שורה, כי היא נראית כמו "לא קרה כלום".
+      log.error(
+        {
+          agentId,
+          cliKind: connectionRegistry.getCliKind(agentId) ?? "unknown",
+          cwd,
+          warmReattach: Boolean(acpSessionId),
+          reason: err instanceof Error ? err.message : String(err),
+        },
+        "session-host creation failed (ACP handshake)",
+      )
+      throw err
+    }
     try {
       const broadcaster = _createBroadcasterFn(host.patches)
 
@@ -352,6 +398,9 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     },
     touchOwner(agentId: string): void {
       connectionRegistry.touchOwner(agentId)
+    },
+    getRuntimeInfo(agentId: string) {
+      return connectionRegistry.getRuntimeInfo(agentId)
     },
   }
 }

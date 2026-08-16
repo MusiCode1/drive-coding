@@ -8,7 +8,7 @@
  *   הפתעות אם טסט עתידי אי פעם ישתמש ישירות ב-`$state`. זה גם הופך את
  *   ה-glob של הכללה (include glob) בקובץ vitest.config.ts לפשוט יותר.
  *
- * כיסוי (ממופה ל-docs/plans/testing-coverage.md סעיף §4 Commit 5 טסטים 1–7):
+ * כיסוי:
  *   1. ברירת המחדל voiceId = שרה (Sarah) כש-localStorage ריק.
  *   2. המתודה setVoiceId כותבת ל-localStorage.
  *   3. פעולת New Settings() קוראת את ה-voiceId השמור.

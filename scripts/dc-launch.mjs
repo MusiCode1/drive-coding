@@ -18,7 +18,7 @@ execFileSync(process.execPath, [dcBuildFe, "--if-stale"], { stdio: "inherit", cw
 
 const binEntry = path.join(repoRoot, "packages/backend/src/bin/drive-coding.ts")
 
-// Forward any CLI flags to the bin (e.g. `pnpm start -- --https --config app.jsonc`).
+// Forward any CLI flags to the bin (e.g. `bun run start -- --https --config app.jsonc`).
 // process.argv: [node, dc-launch.mjs, ...userFlags] → slice(2) keeps the user flags.
 const forwardedArgs = process.argv.slice(2)
 

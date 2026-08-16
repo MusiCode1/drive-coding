@@ -1,6 +1,5 @@
 /**
  * elicitation.test.ts — TDD: מיפוי `requestedSchema.properties` → view-model לרינדור.
- * ר' docs/plans/slice-elicitation-ui.md §4 Commit 1.
  *
  * Tests:
  *   1. string בלי enum → text field, label=key (בלי title).

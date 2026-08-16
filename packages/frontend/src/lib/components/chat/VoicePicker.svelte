@@ -10,8 +10,8 @@
  * הזמינות נקבעת על ידי ttsCapabilities.caps (reactive). כשלון משאיר
  * את ה-voiceId הנוכחי כאפשרות חלופית (fallback) כדי שתהליך ה-TTS לא יישבר.
  *
- * לפי parallel-safe-code.md, ה-VM (View Model) מחזיק את הנתונים; הרכיב הזה
- * הוא קצה (leaf) דק שקורא + כותב שדה אחד בלבד.
+ * ה-VM (View Model) מחזיק את הנתונים; הרכיב הזה הוא קצה (leaf) דק שקורא
+ * וכותב שדה אחד בלבד — כך שני slices שנוגעים בו במקביל לא מתנגשים.
  *
  * Commit 3 (capability-gate): ה-$effect ריאקטיבי ל-caps; loadVoices נקרא רק כש-
  * caps ידוע + elevenlabs.available===true → 0 בקשות לספק לא-זמין.

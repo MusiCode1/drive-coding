@@ -159,3 +159,43 @@ export async function setAgentPersistent(agentId: string, persistent: boolean): 
     throw new Error(`setAgentPersistent failed: ${res.status} ${body}`)
   }
 }
+
+/**
+ * postPresence — POST /api/agents/:id/presence (slice liveness C3).
+ *
+ * סימן-החיים היחיד שאינו ניתן לזיוף (§2 בבריף): ה-FE שולח heartbeat אחד בכל
+ * מחזור-גלוי. התגובה נושאת את מצב-הבעלות (agent.attached / agent.via) כדי שה-FE
+ * יזהה אובדן-בעלות ויחזור אליו, ואת מדדי-המכונה. timeout קצר (לא ממתינים ל-10ש׳
+ * של קריאות API רגילות — heartbeat כושל חייב להיכשל מהר כדי שהבאנר יופיע בזמן).
+ */
+export type PresenceResponse = {
+  ok: boolean
+  agent: {
+    pid: number | null
+    attached: boolean
+    busy: boolean
+    lastMessageAt: number | null
+    lastSeenAt: number | null
+    via: "ws" | "http" | null
+  } | null
+  machine: unknown
+}
+
+const PRESENCE_TIMEOUT_MS = 5000
+
+export async function postPresence(agentId: string, signal?: AbortSignal): Promise<PresenceResponse> {
+  const res = await withTimeout(
+    (s) =>
+      fetch(beUrl(`/api/agents/${agentId}/presence`), {
+        method: "POST",
+        signal: s,
+      }),
+    PRESENCE_TIMEOUT_MS,
+    { signal, label: "postPresence" },
+  )
+  if (!res.ok) {
+    const body = await res.text().catch(() => "")
+    throw new Error(`postPresence failed: ${res.status} ${body}`)
+  }
+  return (await res.json()) as PresenceResponse
+}

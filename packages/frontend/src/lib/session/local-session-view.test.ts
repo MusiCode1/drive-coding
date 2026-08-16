@@ -14,10 +14,11 @@
  *
  * ─── slice session-view-port C2 (TDD) ───
  */
-import { beforeEach, describe, it, expect, vi } from "vitest"
-import { LocalSessionView } from "./local-session-view"
-import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
+
 import type { Patch } from "@drive-coding/core/session"
+import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+import { LocalSessionView } from "./local-session-view"
 
 // ─── Test helpers ───
 
@@ -278,9 +279,11 @@ describe("LocalSessionView — pending permission bridging (C2)", () => {
       options: [{ optionId: "allow_once", name: "Allow", kind: "allow_once" }],
     }
 
-    let resolved: unknown = undefined
+    let resolved: unknown
     const permPromise = capturedCbs!.onRequestPermission!(fakeParams as never)
-    permPromise.then((r) => { resolved = r })
+    permPromise.then((r) => {
+      resolved = r
+    })
 
     const requestId = view.state.pending.permission!.requestId
     const fakeResponse = { outcome: { outcome: "selected", optionId: "allow_once" } }
@@ -313,7 +316,10 @@ describe("LocalSessionView — pending elicitation bridging (C2)", () => {
       sessionId: "s-test",
       mode: "form",
       message: "What is your name?",
-      requestedSchema: { properties: { name: { type: "string", title: "Name" } }, required: ["name"] },
+      requestedSchema: {
+        properties: { name: { type: "string", title: "Name" } },
+        required: ["name"],
+      },
     }
 
     void capturedCbs!.onCreateElicitation?.(fakeParams as never)
@@ -342,9 +348,11 @@ describe("LocalSessionView — pending elicitation bridging (C2)", () => {
       requestedSchema: { properties: {}, required: [] },
     }
 
-    let resolved: unknown = undefined
+    let resolved: unknown
     const elicPromise = capturedCbs!.onCreateElicitation!(fakeParams as never)
-    elicPromise.then((r) => { resolved = r })
+    elicPromise.then((r) => {
+      resolved = r
+    })
 
     const requestId = view.state.pending.elicitation!.requestId
     const fakeResponse = { action: "accept", content: { name: "Alice" } }
@@ -442,9 +450,11 @@ describe("LocalSessionView — close (C2)", () => {
       toolCall: {},
       options: [{ optionId: "allow_once", name: "Allow", kind: "allow_once" }],
     }
-    let permResolved: unknown = undefined
+    let permResolved: unknown
     const permPromise = capturedCbs!.onRequestPermission!(fakeParams as never)
-    permPromise.then((r) => { permResolved = r })
+    permPromise.then((r) => {
+      permResolved = r
+    })
 
     await view.close()
 
@@ -455,5 +465,148 @@ describe("LocalSessionView — close (C2)", () => {
     // Client closed
     expect(mock.client.close).toHaveBeenCalled()
     expect(view.state.status).toBe("disconnected")
+  })
+})
+
+// ─── slice local-view-wiring C2: adopt · dispose · observerCallbacks (TDD) ───
+
+describe("LocalSessionView — adopt (C2)", () => {
+  it("adopt מאפס את ה-state ומציב sessionId/client", async () => {
+    const mock = createMockClient()
+    const view = new LocalSessionView({
+      cwd: "/workspace",
+      cliKind: "claude",
+      createClient: async () => mock.client,
+    })
+    // טען סשן והזרם היסטוריה — כדי שיהיה state לא-ריק
+    await view.loadSession("old-session")
+    const cbs = view.observerCallbacks
+    cbs.onUpdate?.({
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "old history" },
+        messageId: "m-old",
+      },
+    } as never)
+    expect(view.state.messages).toHaveLength(1)
+    expect(view.state.sessionId).toBe("old-session")
+
+    view.adopt({ client: mock.client, sessionId: "new-session" })
+
+    expect(view.state.sessionId).toBe("new-session")
+    expect(view.state.messages).toHaveLength(0)
+    expect(view.state.status).toBe("idle")
+    expect(view.state.turnState).toBe("idle")
+    expect(view.state.pending).toEqual({ permission: null, elicitation: null })
+  })
+
+  it("adopt אינו יורה getQuota על החוט (extMethod לא נקרא)", async () => {
+    const mock = createMockClient()
+    const view = new LocalSessionView({
+      cwd: "/workspace",
+      cliKind: "claude",
+      createClient: async () => mock.client,
+    })
+    await view.newSession() // מקבילה: newSession כן יורה getQuota
+    expect(mock.client.extMethod).toHaveBeenCalledWith(
+      "_drive/getQuota",
+      expect.objectContaining({ sessionId: "s-test" }),
+    )
+
+    view.adopt({ client: mock.client, sessionId: "adopted" })
+
+    expect(mock.client.extMethod).toHaveBeenCalledTimes(1) // adopt לא הוסיף אף קריאה
+  })
+})
+
+describe("LocalSessionView — dispose (C2)", () => {
+  it("dispose אינו קורא ל-client.close() — הלקוח משותף עם ה-VM במסלול המקומי", async () => {
+    const mock = createMockClient()
+    const view = new LocalSessionView({
+      cwd: "/workspace",
+      cliKind: "claude",
+      createClient: async () => mock.client,
+    })
+    await view.newSession()
+    view.adopt({ client: mock.client, sessionId: "s" })
+
+    // spy לאחר adopt — לוודא שהקריאה הבאה היא של dispose, לא של close
+    const closeSpy = vi.spyOn(mock.client, "close")
+    view.dispose()
+
+    expect(closeSpy).not.toHaveBeenCalled()
+  })
+
+  it("dispose סוגר את ה-controller — ה-reader מסיים ב-done", async () => {
+    const mock = createMockClient()
+    const view = new LocalSessionView({
+      cwd: "/workspace",
+      cliKind: "claude",
+      createClient: async () => mock.client,
+    })
+    await view.newSession()
+    view.adopt({ client: mock.client, sessionId: "s" })
+
+    const reader = view.patches.getReader()
+    view.dispose()
+
+    const { done } = await reader.read()
+    expect(done).toBe(true)
+    reader.releaseLock()
+  })
+
+  it("dispose מנתק את מצביע הלקוח — קריאה ל-prompt אחריו נכשלת ב'not connected'", async () => {
+    const mock = createMockClient()
+    const view = new LocalSessionView({
+      cwd: "/workspace",
+      cliKind: "claude",
+      createClient: async () => mock.client,
+    })
+    await view.newSession()
+    view.adopt({ client: mock.client, sessionId: "s" })
+
+    view.dispose()
+
+    await expect(view.prompt("hello")).rejects.toThrow("not connected")
+  })
+})
+
+describe("LocalSessionView — observerCallbacks (C2)", () => {
+  it("חושף רק onUpdate + onExtNotification — מחזירי-הערך אינם שם", async () => {
+    const mock = createMockClient()
+    const view = new LocalSessionView({
+      cwd: "/workspace",
+      cliKind: "claude",
+      createClient: async () => mock.client,
+    })
+
+    const cbs = view.observerCallbacks
+    expect(typeof cbs.onUpdate).toBe("function")
+    expect(typeof cbs.onExtNotification).toBe("function")
+    // אין כאן שני עונים לבקשות-חוזרות-ערך
+    expect((cbs as unknown as Record<string, unknown>).onRequestPermission).toBeUndefined()
+    expect((cbs as unknown as Record<string, unknown>).onCreateElicitation).toBeUndefined()
+  })
+
+  it("update דרך observerCallbacks מעדכן את state של ה-view", async () => {
+    const mock = createMockClient()
+    const view = new LocalSessionView({
+      cwd: "/workspace",
+      cliKind: "claude",
+      createClient: async () => mock.client,
+    })
+    await view.newSession()
+    view.adopt({ client: mock.client, sessionId: "s" })
+
+    view.observerCallbacks.onUpdate?.({
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "observed" },
+        messageId: "m-1",
+      },
+    } as never)
+
+    expect(view.state.messages).toHaveLength(1)
+    expect(view.state.messages[0]!.role).toBe("assistant")
   })
 })

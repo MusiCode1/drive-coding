@@ -93,6 +93,9 @@ const LEVEL_VALUES: Record<Level, number> = {
 
 function isEnabled(level: Level, ns: string): boolean {
   if (_config.level === "silent") return false
+  // traceNs — נרשם בכל רמה, **בנוסף** למסלול הרגיל ולא במקומו. זה מה שמאפשר
+  // ל-LOG_WIRE לתת מעקב-חוט מלא בלי להשתיק את שאר ה-BE (ר' types.ts).
+  if (_config.traceNs && isEnabledForNs(ns, _config.traceNs)) return true
   if (LEVEL_VALUES[level] < LEVEL_VALUES[_config.level]) return false
   return isEnabledForNs(ns, _config.ns)
 }

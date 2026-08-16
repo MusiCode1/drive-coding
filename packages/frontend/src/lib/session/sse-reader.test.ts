@@ -399,16 +399,71 @@ describe("SSEReader — reconnect", () => {
       )
     })
 
-    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: mockSleep })
+    // שעון שמתקדם 15 שניות בכל קריאה ⇒ כל חיבור "שרד" מעל הסף.
+    const advancingNow = (() => {
+      let t = 0
+      return () => {
+        t += 15_000
+        return t
+      }
+    })()
+
+    const reader = newReader("/api/events", {
+      _fetch: mockFetch,
+      _sleep: mockSleep,
+      _now: advancingNow,
+    })
     const { patches } = await reader.connect()
 
     await readNPatches(patches, 1)
     // initial end → 1s sleep, delay→2s, fail →
-    // 2s sleep, delay→4s, success (call 3, stream ends) → delay reset to 1s →
+    // 2s sleep, delay→4s, success (call 3, שרד 15ש׳) → delay reset to 1s →
     // 1s sleep, delay→2s, success (call 4) → patch emitted
     expect(sleepDelays[0]).toBe(1000)
     expect(sleepDelays[1]).toBe(2000)
-    expect(sleepDelays[2]).toBe(1000) // reset after success
+    expect(sleepDelays[2]).toBe(1000) // reset — אבל רק כי החיבור החזיק
+  })
+
+  it("🔴 חיבור מרצד (נפתח ונסגר מיד) ממשיך להסלים ולא מאפס", async () => {
+    // נצפה חי 2026-08-16 (ניתוק-קשה): `sse-reconnected version=111` פעמיים
+    // ברצף, `nextInMs=2000` ביניהם — שרת שקיבל וסגר מיד יצר לולאה של ניסיון
+    // כל 2ש׳ בלי הסלמה. שעון קפוא ⇒ כל חיבור "חי" 0ms ⇒ אסור שיאפס.
+    const sleepDelays: number[] = []
+    const mockSleep = (ms: number): Promise<void> => {
+      sleepDelays.push(ms)
+      return Promise.resolve()
+    }
+
+    const snapshot = makeSnapshot()
+    const patch = makePatch(7)
+
+    let call = 0
+    const mockFetch = vi.fn().mockImplementation(() => {
+      call++
+      // כל חיבור מצליח — ומת מיד אחרי ה-snapshot. חמש פעמים.
+      if (call <= 5) {
+        return Promise.resolve(
+          makeSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]),
+        )
+      }
+      return Promise.resolve(
+        makeSSEResponse([
+          { event: "snapshot", data: JSON.stringify(snapshot) },
+          { event: "patch", data: JSON.stringify(patch) },
+        ]),
+      )
+    })
+
+    const reader = newReader("/api/events", {
+      _fetch: mockFetch,
+      _sleep: mockSleep,
+      _now: () => 0, // שעון קפוא — אף חיבור לא שורד את הסף
+    })
+    const { patches } = await reader.connect()
+
+    await readNPatches(patches, 1)
+    // 🔴 לפני התיקון זה היה [1000, 1000, 1000, 1000, 1000] — לולאה צמודה לנצח.
+    expect(sleepDelays.slice(0, 5)).toEqual([1000, 2000, 4000, 8000, 16000])
   })
 })
 

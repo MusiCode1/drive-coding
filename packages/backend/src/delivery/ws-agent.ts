@@ -23,7 +23,7 @@
  *   - MED-8 → takeover (slice reconnect-ws-takeover, תיקון-שורש): WS חדש לאותו agentId
  *     לא נדחה יותר — הוא **מדיח** את הישן (close TAKEOVER_CODE) ומתחבר warm לאותו
  *     agent חי (נפילה-דרך ל-attach הרגיל). מונע cold-respawn (deleteAndKill) שהרג
- *     תור פעיל בניתוק-רשת לא-חלק. ר' docs/decisions/drive-coding.md §2026-07-22.
+ *     תור פעיל בניתוק-רשת לא-חלק.
  *   - crash → סוגר feWs.close(1011, "bridge closed")
  *   - סגירת feWs → ניקוי (unsub + detach), לא להרוג את ה-child (conn.close לא נקרא)
  *     — guard-ממוקד ב-detach(): רק ה-state המשותף (activeFeWs/markDetached) מוגן
@@ -207,6 +207,11 @@ export function createAgentWsHandler(deps: {
           // עדכן lastPingAt (sweep detection — Commit 2)
           const entry = activeFeWs.get(agentId)
           if (entry) entry.lastPingAt = Date.now()
+          // slice liveness C1: WS feeds the unified ownership stamp. touchOwner is
+          // transport-agnostic now — a WS $/ping and an HTTP presence both update
+          // the same lastSeenAt (the unified sweep skips WS via the explicit via
+          // check; this stamp is what a WS→HTTP handoff or a mixed client reports).
+          deps.connectionRegistry.touchOwner(agentId)
           feWs.send(`${JSON.stringify({ jsonrpc: "2.0", method: "$/pong" })}\n`)
           return
         }

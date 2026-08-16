@@ -12,6 +12,14 @@ export type LogEntry = {
 export type LogConfig = {
   level: Level
   ns: string // תבנית CSV; "*" כברירת מחדל
+  /**
+   * מרחבי-שם שנרשמים **בכל רמה**, בנוסף ל-ns/level הרגילים ומבלי להחליף אותם.
+   *
+   * 🔴 נולד מבאג אמיתי: `LOG_WIRE=acp` היה **דורס** את `ns` ל-"backend.acp.wire.*",
+   * וכך מכבה בשקט את כל שאר הלוגים של ה-BE. קיצור-דרך שנועד להוסיף נראוּת הסיר
+   * אותה, וכשל-spawn אמיתי נשאר בלי שום שורה שתסביר אותו.
+   */
+  traceNs?: string
   format: "pretty" | "json" | "both"
   remote?: boolean
 }

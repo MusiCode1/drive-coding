@@ -42,6 +42,12 @@ export type CliSpec = {
   readonly displayName?: string
   /** נתיב לקובץ-לוגו. נקרא בסכימה ועובר על החוט; ההגשה בסלייס cli-logo-serving. */
   readonly logo?: string
+  /**
+   * שמות-חלופה לבינארי, לצד `bin`. נבדקים רק אם `bin` (או `detectBin`) לא נמצא.
+   * cursor: המתקין יוצר `agent` (חדש) ו-`cursor-agent` (מורשת) — התקנה ישנה
+   * מחזיקה רק את השני. ר' slice-cli-bin-resolution-unify §0.
+   */
+  readonly fallbackBins?: readonly string[]
 }
 
 export const CLI_SPECS = {
@@ -60,11 +66,18 @@ export const CLI_SPECS = {
     detectBin: "codex",
   },
   qoder: { bin: "qodercli", args: ["--acp"], supportsModelFlag: true },
-  cursor: { bin: "agent", args: ["acp"], supportsModelFlag: false },
+  cursor: {
+    bin: "agent",
+    fallbackBins: ["cursor-agent"],
+    args: ["acp"],
+    supportsModelFlag: false,
+  },
   grok: {
     bin: "grok",
     args: ["--no-auto-update", "agent", "stdio"],
-    supportsModelFlag: false, // חובה false — ר' טבלת argv ב-docs/plans/slice-cursor-acp.md §-1
+    // חובה false: getCliCommand מוסיף --model בסוף, ו-`grok agent stdio --model X`
+    // נכשל ב-exit 2 (רק `grok agent --model X stdio` עובד). נמדד חי, Grok Build 0.2.93.
+    supportsModelFlag: false,
   },
 } as const satisfies Record<string, CliSpec>
 
@@ -143,6 +156,10 @@ export const AgentPublic = type({
   // slice agent-last-message-at: epoch-ms של הפלט האחרון שהסוכן שלח (כל sessionUpdate).
   // שים לב: epoch-ms (number), בשונה מ-createdAt שהוא ISO string. runtime-only — נאבד ב-restart.
   "lastMessageAt?": "number | null",
+  // slice liveness C4: epoch-ms של סימן-החיים האחרון (WS $/ping או HTTP presence).
+  // null = אין בעלים. runtime-only — נאבד ב-restart. ה-FE גוזר ממנו את ממד ה"מחובר"
+  // (attached לבדו כבר אינו מספיק — סוקט פתוח ניתן לזיוף, §2 בבריף).
+  "lastSeenAt?": "number | null",
   // כותרת-הסשן (slice session-title-in-process-list): נדחפת ע"י ה-client שפתח את הסשן. runtime-only.
   "title?": "string | null",
 })

@@ -5,8 +5,8 @@ import type { Catalog } from "../keys.js"
  * נשלח ממשק משתמש באנגלית בפועל. הקטלוג חייב להיות שלם (כל המפתחות
  * נוכחים) כדי שמערכת הטיפוסים תוכל לאכוף כיסוי בזמן קומפילציה.
  *
- * הוסף מפתחות חדשים בבלוקי domain למטה — ראה
- * docs/conventions/parallel-safe-code.md (טכניקה #4: קטלוגים append-only).
+ * הוסף מפתחות חדשים בבלוקי domain למטה. הקטלוג append-only כדי ששני slices
+ * שמוסיפים מפתחות במקביל ינחתו בבלוקים שונים ויתמזגו בלי קונפליקט.
  */
 export const en: Catalog = {
   // ─── connect ─── (slice 0)
@@ -392,4 +392,9 @@ export const en: Catalog = {
   "settings.geminiTone.formal": "Formal",
   "settings.geminiTone.casual": "Casual",
   "session.heldByOtherTransport": "This session is open elsewhere (other transport). Do not reconnect directly — take over.",
+  // ─── liveness (slice liveness C4) ───
+  "session.reconnecting": "Trying to reconnect…",
+  "session.cloudflareBlocked": "Connection blocked. Cloudflare may require verification.",
+  "session.turnStalled": "No response from the agent for a while. It may still be working — or it may have stopped without saying so.",
+  "session.cloudflareRefresh": "Refresh",
 }

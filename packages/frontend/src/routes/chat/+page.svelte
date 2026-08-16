@@ -8,6 +8,7 @@ import AuthGuidance from "$lib/components/AuthGuidance.svelte"
 import ChatBubbles from "$lib/components/chat/ChatBubbles.svelte"
 import RecordFooter from "$lib/components/chat/RecordFooter.svelte"
 import AppShell from "$lib/components/layout/AppShell.svelte"
+import DisconnectBanner from "$lib/components/session/DisconnectBanner.svelte"
 import { getSession } from "$lib/context"
 
 const session = getSession()
@@ -51,6 +52,8 @@ onMount(() => {
 {#if session.status !== "idle"}
   <AppShell>
     <ChatBubbles />
+
+    <DisconnectBanner />
 
     {#if session.error}
       <div

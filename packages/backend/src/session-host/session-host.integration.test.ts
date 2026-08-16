@@ -310,9 +310,9 @@ describe("createSessionHostFromConnection", () => {
           toolCallId: "tc1",
           name: "run_bash",
           status: "pending",
-        } as Parameters<typeof callbacks.onRequestPermission>[0]["toolCall"],
+        } as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0]["toolCall"],
         options: [],
-      } as Parameters<typeof callbacks.onRequestPermission>[0])
+      } as unknown as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0])
 
       // The host should have a pending permission (requestId = 0)
       // Respond to it
@@ -334,9 +334,9 @@ describe("createSessionHostFromConnection", () => {
           toolCallId: "tc2",
           name: "run_bash",
           status: "pending",
-        } as Parameters<typeof callbacks.onRequestPermission>[0]["toolCall"],
+        } as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0]["toolCall"],
         options: [],
-      } as Parameters<typeof callbacks.onRequestPermission>[0])
+      } as unknown as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0])
 
       vi.advanceTimersByTime(101)
       vi.useRealTimers()
@@ -356,7 +356,7 @@ describe("createSessionHostFromConnection", () => {
         sessionId: "s1",
         requestId: 1,
         schema: { type: "object", properties: {} },
-      } as Parameters<typeof callbacks.onCreateElicitation>[0])
+      } as unknown as Parameters<NonNullable<typeof callbacks.onCreateElicitation>>[0])
 
       // Default value resolves immediately on timeout
       vi.advanceTimersByTime(101)
@@ -376,7 +376,7 @@ describe("createSessionHostFromConnection", () => {
         sessionId: "s1",
         toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
         options: [],
-      } as Parameters<typeof callbacks.onRequestPermission>[0]
+      } as unknown as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0]
 
       const responsePromise = callbacks.onRequestPermission!(params)
 
@@ -395,7 +395,7 @@ describe("createSessionHostFromConnection", () => {
         sessionId: "s1",
         toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
         options: [],
-      } as Parameters<typeof callbacks.onRequestPermission>[0]
+      } as unknown as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0]
 
       const responsePromise = callbacks.onRequestPermission!(params)
       await readOnePatch(host.patches) // the "set" patch
@@ -416,7 +416,7 @@ describe("createSessionHostFromConnection", () => {
         sessionId: "s1",
         toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
         options: [],
-      } as Parameters<typeof callbacks.onRequestPermission>[0]
+      } as unknown as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0]
 
       const responsePromise = callbacks.onRequestPermission!(params)
       await readOnePatchSync(host.patches) // the "set" patch
@@ -435,12 +435,12 @@ describe("createSessionHostFromConnection", () => {
         sessionId: "s1",
         toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
         options: [],
-      } as Parameters<typeof callbacks.onRequestPermission>[0]
+      } as unknown as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0]
       const paramsB = {
         sessionId: "s1",
         toolCall: { toolCallId: "tc2", name: "run_bash", status: "pending" },
         options: [],
-      } as Parameters<typeof callbacks.onRequestPermission>[0]
+      } as unknown as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0]
 
       const responseA = callbacks.onRequestPermission!(paramsA)
       await readOnePatch(host.patches) // set A (requestId=0)
@@ -468,7 +468,7 @@ describe("createSessionHostFromConnection", () => {
         sessionId: "s1",
         requestId: 1,
         schema: { type: "object", properties: {} },
-      } as Parameters<typeof callbacks.onCreateElicitation>[0]
+      } as unknown as Parameters<NonNullable<typeof callbacks.onCreateElicitation>>[0]
 
       const responsePromise = callbacks.onCreateElicitation!(params)
 
@@ -486,7 +486,7 @@ describe("createSessionHostFromConnection", () => {
         sessionId: "s1",
         requestId: 1,
         schema: { type: "object", properties: {} },
-      } as Parameters<typeof callbacks.onCreateElicitation>[0]
+      } as unknown as Parameters<NonNullable<typeof callbacks.onCreateElicitation>>[0]
 
       const responsePromise = callbacks.onCreateElicitation!(params)
       await readOnePatch(host.patches)
@@ -507,7 +507,7 @@ describe("createSessionHostFromConnection", () => {
         sessionId: "s1",
         requestId: 1,
         schema: { type: "object", properties: {} },
-      } as Parameters<typeof callbacks.onCreateElicitation>[0]
+      } as unknown as Parameters<NonNullable<typeof callbacks.onCreateElicitation>>[0]
 
       const responsePromise = callbacks.onCreateElicitation!(params)
       await readOnePatchSync(host.patches)
@@ -526,12 +526,12 @@ describe("createSessionHostFromConnection", () => {
         sessionId: "s1",
         requestId: 1,
         schema: { type: "object", properties: {} },
-      } as Parameters<typeof callbacks.onCreateElicitation>[0]
+      } as unknown as Parameters<NonNullable<typeof callbacks.onCreateElicitation>>[0]
       const paramsB = {
         sessionId: "s1",
         requestId: 2,
         schema: { type: "object", properties: {} },
-      } as Parameters<typeof callbacks.onCreateElicitation>[0]
+      } as unknown as Parameters<NonNullable<typeof callbacks.onCreateElicitation>>[0]
 
       const responseA = callbacks.onCreateElicitation!(paramsA)
       await readOnePatch(host.patches)
@@ -555,12 +555,12 @@ describe("createSessionHostFromConnection", () => {
         sessionId: "s1",
         toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
         options: [],
-      } as Parameters<typeof callbacks.onRequestPermission>[0]
+      } as unknown as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0]
       const elicParams = {
         sessionId: "s1",
         requestId: 1,
         schema: { type: "object", properties: {} },
-      } as Parameters<typeof callbacks.onCreateElicitation>[0]
+      } as unknown as Parameters<NonNullable<typeof callbacks.onCreateElicitation>>[0]
 
       const permResponse = callbacks.onRequestPermission!(permParams)
       await readOnePatch(host.patches)
@@ -1053,7 +1053,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
       sessionId,
       toolCall: { toolCallId: "tc-x", name: "run_bash", status: "pending" },
       options: [],
-    } as Parameters<NonNullable<AcpClientCallbacks["onRequestPermission"]>>[0]
+    } as unknown as Parameters<NonNullable<AcpClientCallbacks["onRequestPermission"]>>[0]
   }
 
   function elicitParams(sessionId: string): Parameters<
@@ -1063,7 +1063,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
       sessionId,
       requestId: 1,
       schema: { type: "object", properties: {} },
-    } as Parameters<NonNullable<AcpClientCallbacks["onCreateElicitation"]>>[0]
+    } as unknown as Parameters<NonNullable<AcpClientCallbacks["onCreateElicitation"]>>[0]
   }
 
   /** Reads every patch currently buffered on the stream (30ms quiet timeout). */
@@ -1494,7 +1494,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
       sessionId: "s1",
       toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
       options: [],
-    } as Parameters<typeof callbacks.onRequestPermission>[0])
+    } as unknown as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0])
 
     expect(response.outcome.outcome).toBe("cancelled")
   })
@@ -1510,7 +1510,7 @@ describe("createSessionHostFromConnection — dispose() (handoff-foundations C1)
       sessionId: "s1",
       requestId: 1,
       schema: { type: "object", properties: {} },
-    } as Parameters<typeof callbacks.onCreateElicitation>[0])
+    } as unknown as Parameters<NonNullable<typeof callbacks.onCreateElicitation>>[0])
 
     expect(response.action).toBe("cancel")
   })
@@ -1529,7 +1529,7 @@ describe("createSessionHostFromConnection — dispose() resolves pending (owners
       requestId: 0,
       kind: "permission",
       message: "allow?",
-    } as Parameters<typeof callbacks.onRequestPermission>[0])
+    } as unknown as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0])
 
     // dispose should resolve the pending request as cancelled
     const disposePromise = host.dispose()
@@ -1547,7 +1547,7 @@ describe("createSessionHostFromConnection — dispose() resolves pending (owners
       sessionId: host.state.sessionId!,
       requestId: 1,
       schema: { type: "object", properties: {} },
-    } as Parameters<typeof callbacks.onCreateElicitation>[0])
+    } as unknown as Parameters<NonNullable<typeof callbacks.onCreateElicitation>>[0])
 
     const disposePromise = host.dispose()
 

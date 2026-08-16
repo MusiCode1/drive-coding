@@ -52,6 +52,7 @@ function makeMockRegistry(host?: ExtendedSessionHost): AgentSessionRegistry {
     getCwd: vi.fn(),
     getEpoch: vi.fn().mockReturnValue(0),
     touchOwner: vi.fn(),
+    getRuntimeInfo: vi.fn().mockReturnValue(null),
     getBroadcaster: vi.fn().mockReturnValue(undefined),
     unregisterHost: vi.fn(),
     notifySessionAttached: vi.fn().mockResolvedValue(undefined),
@@ -87,7 +88,9 @@ describe("GET /api/agents/:id/state", () => {
       const res = await app.request("/api/agents/agent-1/state")
       expect(res.status).toBe(200)
 
-      const json = await res.json()
+      // `res.json()` הוא unknown אחרי המיזוג מ-dev (טיפוסי Bun מחמירים יותר) —
+      // הצהרה מפורשת במקום גישה על unknown.
+      const json = (await res.json()) as { title?: string; version?: number }
       expect(json.title).toBe("My Session")
       expect(json.version).toBe(42)
     })

@@ -3,15 +3,39 @@
 ## Project
 
 Voice-first hands-free interface for ACP-compatible CLI agents.
-See the documentation map below. Start with `docs/design-principles.md`.
+See the documentation map below. Start with `docs-for-llm/design-principles.md`.
+
+## Where documentation lives — everything goes to `docs-for-llm/`, never to `docs/`
+
+**Every brief, decision, walkthrough, plan and verification report is written to
+`docs-for-llm/` and nowhere else.** Do not create a `docs/` directory in this repo.
+
+`docs-for-llm/` is a **symlink to a separate private repo**, shared across projects:
+
+```
+docs-for-llm  ->  ~/Projects/docs-repo/drive-coding      (branch: master)
+```
+
+Two consequences that catch people out:
+
+1. Writing there writes to *that* repo. It will **not** appear in `git status` here,
+   and must be committed separately from `~/Projects/docs-repo`.
+2. `.gitignore` blocks both `/docs/` (line 38) and `/docs-for-llm` (line 41), so a stray
+   `docs/` is silently ignored rather than committed — you will not get a warning. Both
+   patterns are **root-anchored**, so a `packages/<pkg>/docs/` would not be swept up.
+
+> **This repo has been public since 2026-08-16.** Anything that does reach a tracked
+> file is published. `docs/` is reserved for future **human-facing** documentation
+> (getting-started, architecture, configuration, troubleshooting) in the public repo.
+> Until that exists, nothing goes into `docs/`.
 
 ## Long-term planning
 
-`docs/roadmap.md` is the **master long-term roadmap** — vision, work tracks, and
+`docs-for-llm/roadmap.md` is the **master long-term roadmap** — vision, work tracks, and
 milestones — and the single source of truth above the specific roadmaps
 (provider / voice / frontend). **Any non-immediate planning belongs there:** before
 proposing or starting work that is not an immediate task, check it against
-`docs/roadmap.md`, and record new long-term plans inside it (or in a sub-roadmap it
+`docs-for-llm/roadmap.md`, and record new long-term plans inside it (or in a sub-roadmap it
 links to).
 
 ## Stack
@@ -39,7 +63,7 @@ The legacy `packages/frontend/` (accumulated chaos, 989-line route) was deleted 
 this `dev` branch on 2026-05-28. It still exists on the `main` branch for reference
 and can be checked out there if needed.
 
-The current slice roadmap is `packages/frontend/docs/slices.md`.
+The current slice roadmap is `docs-for-llm/frontend/slices.md`.
 
 ## Conventions
 
@@ -85,8 +109,10 @@ bun run hooks:install # one-time: set core.hooksPath=.githooks (runs pre-commit 
 ```
 
 > **Per-package commands** stay PM-agnostic via `node scripts/pm.mjs run-filter <pkg> <script>`
-> (it detects bun from the user-agent). Scattered `pnpm --filter …` mentions elsewhere in the
-> docs are legacy; prefer `bun run --filter` / `pm.mjs`. Full docs sweep tracked as follow-up.
+> (it detects bun from the user-agent), or directly as `bun run --filter <pkg> <script>`.
+> The docs were swept to bun on 2026-08-16 — the only remaining `pnpm` mentions are in
+> `scripts/pm.mjs` + its tests (where pnpm is one of four supported PMs) and in
+> `package.json`'s `pnpm.overrides` key, which **bun does read** (it lands in `bun.lock`).
 
 ## Running & serving locally
 
@@ -96,7 +122,7 @@ bun run hooks:install # one-time: set core.hooksPath=.githooks (runs pre-commit 
 
 For the full build/serve flow (dev vs. production-like single-origin via
 `FE_STATIC_DIR`), HTTPS tunneling, and Windows blockers/workarounds (onecli/bun,
-opencode → use CLI=claude), see [`docs/running-locally.md`](docs/running-locally.md).
+opencode → use CLI=claude), see `docs-for-llm/running-locally.md`.
 
 ### Preview rules — showing the user a build to verify
 
@@ -110,9 +136,9 @@ When an agent (calev runtime-gate, or any "look at this and confirm" moment) ser
 the FE for the **user** to inspect, follow these rules:
 
 1. **Preview = a production build, never HMR.** Do **not** hand the user the Vite dev
-   server (`pnpm dev` / HMR) as a "preview". Build first
-   (`pnpm --filter @drive-coding/frontend build`) and serve the built output
-   (production-like single-origin via `FE_STATIC_DIR`, per `docs/running-locally.md`).
+   server (`bun run dev` / HMR) as a "preview". Build first
+   (`bun run --filter @drive-coding/frontend build`) and serve the built output
+   (production-like single-origin via `FE_STATIC_DIR`, per `docs-for-llm/running-locally.md`).
    HMR is for the executor's own inner loop — it is **not** what we show the user.
 
 2. **Where the agent runs decides the URL:**
@@ -122,7 +148,7 @@ the FE for the **user** to inspect, follow these rules:
      is unreachable for the user, and plain `http://` breaks the secure-context APIs
      (`getUserMedia`, `AudioWorklet`). You **must** expose an **HTTPS tunnel** and give
      the user the tunnel URL. Use the **pico + `tuns`** HTTPS tunnel (see
-     `docs/running-locally.md` for the exact command). Never ask the user to open a
+     `docs-for-llm/running-locally.md` for the exact command). Never ask the user to open a
      plain-`http://` external address.
 
 3. **Hand over a URL the user can actually open over HTTPS** — that is the deliverable
@@ -135,7 +161,7 @@ the FE for the **user** to inspect, follow these rules:
 
 ## Git hooks
 
-After clone, run `pnpm hooks:install` once. It sets `core.hooksPath=.githooks/`
+After clone, run `bun run hooks:install` once. It sets `core.hooksPath=.githooks/`
 so `.githooks/pre-commit` runs the i18n lint before every commit. To skip a
 specific commit (rare): `git commit --no-verify`.
 
@@ -155,7 +181,7 @@ Don't pollute the project root with worktree directories. The two long-lived
 worktrees `dev/` and `main/` (at the project root) are the exception, not the rule.
 Any new branch for a slice / bugfix / experiment goes under `.worktrees/`.
 
-After `cd .worktrees/<name>`, run `pnpm install && pnpm hooks:install`.
+After `cd .worktrees/<name>`, run `bun install && bun run hooks:install`.
 
 ## Ports
 
@@ -174,13 +200,13 @@ the first worktree, 4001 for the second, etc.
 # Worktree A — BE on 4000, FE Vite proxies → 4000 (default)
 cd .worktrees/slice-X
 PORT=4000 onecli run --agent voice-acp -- bun --watch src/server.ts
-pnpm --filter @drive-coding/frontend dev
+bun run --filter @drive-coding/frontend dev
 # (no env var needed — FE defaults to BE_PORT=4000)
 
 # Worktree B — BE on 4001, FE Vite proxies → 4001
 cd .worktrees/slice-Y
 PORT=4001 onecli run --agent voice-acp -- bun --watch src/server.ts
-BE_PORT=4001 pnpm --filter @drive-coding/frontend dev
+BE_PORT=4001 bun run --filter @drive-coding/frontend dev
 ```
 
 Each worktree's FE will get a different OS-assigned Vite port — no conflict
@@ -190,7 +216,7 @@ on the FE side. Tunnels (if used) point at each FE's specific Vite port.
 
 The BE proxy at `/proxy/elevenlabs/*` and `/proxy/google/*` requires API
 credentials injected by the OneCLI gateway. **Do NOT start the BE with a
-plain `pnpm` command** — every TTS/translate call will return 401/400.
+plain `bun` command** — every TTS/translate call will return 401/400.
 
 ```bash
 # ✅ Correct
@@ -198,7 +224,7 @@ cd packages/backend
 onecli run --agent voice-acp -- bun --watch src/server.ts
 
 # ❌ Wrong — works for boot, fails on every proxy request
-pnpm --filter @drive-coding/backend dev
+bun run --filter @drive-coding/backend dev
 ```
 
 ### Running BE with CORS for deployed CF Pages FE
@@ -212,7 +238,7 @@ CORS_ORIGINS="https://drive-coding.pages.dev,http://localhost:4000" \
   PORT=4000 onecli run --agent voice-acp -- bun --watch src/server.ts
 ```
 
-See `docs/deploy-cf-pages.md` for full deploy instructions and known limitations
+See `docs-for-llm/deploy-cf-pages.md` for full deploy instructions and known limitations
 (mixed-content + Private Network Access).
 
 The `voice-acp` OneCLI agent injects `xi-api-key` for `api.elevenlabs.io`
@@ -266,16 +292,22 @@ the detail. Open the right one before writing code.
 
 | If you need… | Open | Status |
 |--------------|------|--------|
-| **Code design rules** — layers, what an "engine" is, when to use `$effect` vs a method, state-machine pattern, primary-vs-derived VMs | `docs/design-principles.md` §1-5 | **canonical** |
-| **The 50 architectural decisions (D1-D50)** | `docs/design-principles.md` §6 | **canonical** |
+Paths below starting with `docs-for-llm/` live in the **private docs-repo** (see the
+section at the top) — they are not files in this repo, and are unreachable from a
+public clone. Paths under `packages/` are real files here.
+
+| If you need… | Open | Status |
+|--------------|------|--------|
+| **Code design rules** — layers, what an "engine" is, when to use `$effect` vs a method, state-machine pattern, primary-vs-derived VMs | `docs-for-llm/design-principles.md` §1-5 | **canonical** |
+| **The 50 architectural decisions (D1-D50)** | `docs-for-llm/design-principles.md` §6 | **canonical** |
 | **FE five golden rules** (the short, injected version) | `packages/frontend/AGENTS.md` | canonical (design-principles expands it) |
-| **UX spec** — drive-first, colors, mic states, bubbles, car mode | `docs/frontend-spec.md` | canonical |
-| **FE↔BE protocol, schemas, ports** | `docs/vnext-spec.md` | canonical (§8.5 slices is OBSOLETE) |
-| **The current slice roadmap** | `packages/frontend/docs/slices.md` | **source of truth** for slice order |
-| **Additive design** for shared files (parallel agent work) | `docs/conventions/parallel-safe-code.md` | canonical — read BEFORE touching `context.ts`, `+layout.svelte`, `i18n/keys.ts`, `chat/+page.svelte` |
-| **Per-slice rationale** (why the code looks the way it does) | `docs/decisions/voice-acp.md` | living log (written by מרדכי) |
-| **How to write a slice plan** (handoff to executor) | `docs/plans/README.md` | canonical |
-| **Planning history** — *how* we reached D1-D50, mental model, competitor/library research | `docs/vnext-planning.md`, `docs/vnext-research.md` | **historical** (not maintained) |
+| **UX spec** — drive-first, colors, mic states, bubbles, car mode | `docs-for-llm/frontend-spec.md` | canonical |
+| **FE↔BE protocol, schemas, ports** | `docs-for-llm/vnext-spec.md` | canonical (§8.5 slices is OBSOLETE) |
+| **The current slice roadmap** | `docs-for-llm/frontend/slices.md` | **source of truth** for slice order |
+| **Additive design** for shared files (parallel agent work) | `docs-for-llm/conventions/parallel-safe-code.md` | canonical — read BEFORE touching `context.ts`, `+layout.svelte`, `i18n/keys.ts`, `chat/+page.svelte` |
+| **Per-slice rationale** (why the code looks the way it does) | `docs-for-llm/decisions/voice-acp.md` | living log (written by מרדכי) |
+| **How to write a slice plan** (handoff to executor) | `docs-for-llm/plans/README.md` | canonical |
+| **Planning history** — *how* we reached D1-D50, mental model, competitor/library research | `docs-for-llm/vnext-planning.md`, `docs-for-llm/vnext-research.md` | **historical** (not maintained) |
 
 > **Reading order for a new code task:** `design-principles.md` (rules) →
 > `frontend/AGENTS.md` (FE golden rules) → the relevant spec (`frontend-spec.md` §X)

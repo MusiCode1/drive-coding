@@ -1,17 +1,18 @@
 /**
  * cli-availability.ts — pure discovery of which CLI_KINDS are installed locally.
  *
- * Reuses resolveCliBinary (fs.existsSync + env only, no spawn). Does not run the CLI —
- * only checks binary existence, mirroring the priority order of getCliCommand
- * (override.bin > envVar > PATH/pm-global-bins/knownPaths) so a CLI reachable through
- * an override isn't wrongly filtered out.
+ * Reuses resolveCliBinaryCached (fs.existsSync + env only, no spawn — cached so repeat
+ * discovery calls don't re-scan PATH). Does not run the CLI — only checks binary
+ * existence, mirroring the priority order of getCliCommand (override.bin > envVar >
+ * PATH/pm-global-bins/knownPaths/fallbackBins) so a CLI reachable through an override
+ * isn't wrongly filtered out.
  *
  * slice: cli-availability
  */
 
+import { type BinaryCache, resolveCliBinaryCached } from "./cli-resolve.js"
 import type { CliKind, CliSpec } from "./schemas/agent.js"
 import { CLI_SPECS } from "./schemas/agent.js"
-import { resolveCliBinary } from "./cli-resolve.js"
 
 export interface CliAvailabilityDetails {
   found: boolean
@@ -38,11 +39,16 @@ export interface CliAvailabilityResult {
  * @param env process.env אופציונלי (למען טסטים; ברירת מחדל process.env בתוך resolveCliBinary).
  * @param overrideKinds רשימת kind-ים שה-bin שלהם מגיע מ-override — עבורם envVar מדולג
  *   כדי לשקף את סדר העדיפויות של getCliCommand (override.bin קודם ל-envVar).
+ * @param cache מטמון פתירת-בינאריים **בבעלות הקורא** (AGENTS.md: אין state ב-core).
+ *   ⚠️ ברירת-המחדל היא Map **טרי ולא-משותף** — נכון, אבל אז הגילוי וה-spawn פותרים
+ *   בנפרד. כדי שיתלכדו (המטרה של slice cli-bin-resolution-unify), הקליפה חייבת
+ *   להעביר את **אותו** מופע שמשמש את `getCliCommand` — ר' `getBinaryCache()` ב-provider.
  */
 export function detectAvailableClis(
   specs: Readonly<Record<string, CliSpec>> = CLI_SPECS,
-  env?: NodeJS.ProcessEnv,
+  env: NodeJS.ProcessEnv = process.env,
   overrideKinds?: readonly string[],
+  cache: BinaryCache = new Map(),
 ): CliAvailabilityResult {
   const available: CliKind[] = []
   const details = {} as Record<CliKind, CliAvailabilityDetails>
@@ -52,9 +58,18 @@ export function detectAvailableClis(
     if (spec === undefined) continue
     const isOverride = overrideKinds?.includes(kind) ?? false
 
+    // isOverride: המשתמשת כתבה bin מפורש בקונפיג — בחרה בינארי, אין לנחש fallbacks.
     const resolved = isOverride
-      ? resolveCliBinary({ bin: spec.bin }, env)
-      : resolveCliBinary({ bin: spec.detectBin ?? spec.bin, envVar: spec.envVar }, env)
+      ? resolveCliBinaryCached({ bin: spec.bin }, env, cache)
+      : resolveCliBinaryCached(
+          {
+            bin: spec.detectBin ?? spec.bin,
+            envVar: spec.envVar,
+            ...(spec.fallbackBins ? { fallbackBins: spec.fallbackBins } : {}),
+          },
+          env,
+          cache,
+        )
 
     const found = resolved !== undefined
     const source: CliAvailabilityDetails["source"] = found

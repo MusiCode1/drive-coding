@@ -28,6 +28,9 @@ import {
   decodeWireLine,
 } from "@drive-coding/provider/connection"
 import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
+// slice liveness C2: ownership transitions invalidate the HTTP response cache
+// (otherwise /api/agents would keep serving attached:true after an eviction).
+import { httpCacheInvalidateAll } from "../delivery/http-cache.js"
 import type { WireRecorder, WireSession } from "../delivery/wire-recorder.js"
 
 const wireLog = createLogger("backend.acp.wire")
@@ -82,9 +85,21 @@ type ConnEntry = {
    */
   cwd: string
   /**
-   * slice ownership-handoff C4b: last time the HTTP owner sent a request.
+   * cliKind מ-connect() — נשמר לצורך **הקשר-אבחון בלבד**.
+   *
+   * 🔴 למה: כשה-initialize נכשל (timeout / ילד שלא עלה), שורת-השגיאה לא נשאה
+   * שום סימן זיהוי של הספק, ולכן אי אפשר היה לדעת בדיעבד איזה CLI נכשל —
+   * נתקלנו בזה חי ב-2026-08-16 ולא הצלחנו לשחזר מי היה שם. ⇒ כל תקלת-spawn
+   * הייתה חסרת-שם.
+   */
+  cliKind: string
+  /**
+   * slice ownership-handoff C4b + slice liveness C1: last time the owner sent a
+   * liveness signal (WS $/ping or HTTP presence).
    * Separate from Owner.since (ownership transition time).
-   * Updated by touchOwner(); null when no owner or owner is WS (WS has its own keepalive).
+   * Updated by touchOwner(); null when there is no owner. Transport-agnostic —
+   * the unified sweep in session-host/registry.ts decides transport on its own
+   * (via the explicit `via` check), never from lastSeenAt's null-ness.
    */
   lastSeenAt: number | null
 }
@@ -107,6 +122,9 @@ export type ConnectionRegistry = {
    * נדרש ל-session-host/registry.ts (יצירת session אוטומטית — slice remote-session-view).
    */
   getCwd(agentId: string): string | undefined
+
+  /** getCliKind — הספק שנרשם ל-agentId, להקשר-אבחון בשורות-שגיאה. */
+  getCliKind(agentId: string): string | undefined
 
   /** list — כל ה-agentIds החיים (לכיבוי-מסודר). */
   list(): string[]
@@ -163,20 +181,27 @@ export type ConnectionRegistry = {
    * Returns null if agentId not in registry.
    * pid may be null for in-process connections (e.g. claude in-process, CUT-3b-iii-2).
    * slice ownership-truth C3: now also returns `via` from the owner record.
+   * slice liveness C4: now also returns `lastSeenAt` (the liveness stamp) so the
+   * FE can derive the "connected" dimension — `attached` alone is fakeable.
    */
-  getRuntimeInfo(
-    agentId: string,
-  ): { pid: number | null; attached: boolean; busy: boolean; lastMessageAt: number | null; via: "ws" | "http" | null } | null
+  getRuntimeInfo(agentId: string): {
+    pid: number | null
+    attached: boolean
+    busy: boolean
+    lastMessageAt: number | null
+    lastSeenAt: number | null
+    via: "ws" | "http" | null
+  } | null
 
   /**
-   * slice ownership-handoff C4b: update lastSeenAt for an HTTP-owned agent.
-   * No-op if agentId not found or owner is not http.
+   * slice liveness C1: update lastSeenAt for any owned agent (ws or http).
+   * No-op if agentId not found or no owner.
    */
   touchOwner(agentId: string): void
 
   /**
-   * slice ownership-handoff C4b: returns the lastSeenAt for an HTTP-owned agent,
-   * or null if not found / WS-owned / no owner.
+   * slice liveness C1: returns the lastSeenAt for any owned agent (ws or http),
+   * or null if not found / no owner.
    */
   getLastSeenAt(agentId: string): number | null
 
@@ -294,6 +319,7 @@ export function createConnectionRegistry(opts?: {
           rec,
           unsubs: [unsubFrame, unsubCrash],
           cwd: connectOpts.cwd,
+          cliKind,
           lastSeenAt: null,
         })
         return conn
@@ -310,6 +336,10 @@ export function createConnectionRegistry(opts?: {
       return map.get(agentId)?.cwd
     },
 
+    getCliKind(agentId) {
+      return map.get(agentId)?.cliKind
+    },
+
     list() {
       return [...map.keys()]
     },
@@ -319,8 +349,11 @@ export function createConnectionRegistry(opts?: {
       e.owner = { via, since: Date.now() }
       e.ownershipEpoch++
       e.attached = true
-      // slice ownership-handoff C4b: initialize lastSeenAt on HTTP ownership acquisition
-      e.lastSeenAt = via === "http" ? Date.now() : null
+      // slice liveness C1: initialize lastSeenAt on any ownership acquisition —
+      // transport-agnostic (the unified sweep decides transport via `via`, §2.1).
+      e.lastSeenAt = Date.now()
+      // slice liveness C2: ownership changed → cached attached/via answers are stale.
+      httpCacheInvalidateAll()
     },
 
     markAttached(agentId) {
@@ -330,6 +363,10 @@ export function createConnectionRegistry(opts?: {
       e.owner = { via: "ws", since: Date.now() }
       e.ownershipEpoch++
       e.attached = true
+      // slice liveness C1: WS also gets a lastSeenAt stamp (fed by $/ping → touchOwner).
+      e.lastSeenAt = Date.now()
+      // slice liveness C2: ownership changed → cached attached/via answers are stale.
+      httpCacheInvalidateAll()
     },
 
     markDetached(agentId) {
@@ -338,6 +375,8 @@ export function createConnectionRegistry(opts?: {
       e.owner = null
       e.attached = false
       // ownershipEpoch deliberately NOT decremented — it survives release (C1 §3)
+      // slice liveness C2: ownership changed → cached attached/via answers are stale.
+      httpCacheInvalidateAll()
     },
 
     isAttached(agentId) {
@@ -354,13 +393,13 @@ export function createConnectionRegistry(opts?: {
 
     touchOwner(agentId) {
       const e = map.get(agentId)
-      if (!e || e.owner?.via !== "http") return
+      if (!e?.owner) return
       e.lastSeenAt = Date.now()
     },
 
     getLastSeenAt(agentId) {
       const e = map.get(agentId)
-      if (!e || e.owner?.via !== "http") return null
+      if (!e?.owner) return null
       return e.lastSeenAt
     },
 
@@ -378,6 +417,7 @@ export function createConnectionRegistry(opts?: {
         attached: e.attached,
         busy: e.conn.turn.isBusy(),
         lastMessageAt: e.conn.turn.lastActivityAt(),
+        lastSeenAt: e.lastSeenAt,
         via: e.owner?.via ?? null,
       }
     },
