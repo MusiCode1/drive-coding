@@ -14,6 +14,7 @@
  * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
  */
 import "../app.css"
+import { onDestroy, onMount } from "svelte"
 import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
 import type { Locale } from "@drive-coding/core/i18n"
@@ -38,8 +39,10 @@ import {
   setVoiceMode,
 } from "$lib/context"
 import type { ChatScrollBridge } from "$lib/types/chat-scroll"
+import { beWsUrl } from "$lib/util/be-url"
 import { CuesEngine } from "$lib/engines/cues"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
+import { createConfigChangeSocket } from "$lib/engines/config-change-socket"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
 import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
 import { RecentProjects } from "$lib/view-models/recent-projects.svelte"
@@ -184,6 +187,16 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
   // biome-ignore lint/suspicious/noExplicitAny: dev debug hook
   ;(window as any).__session = session
 }
+
+// ─── config-change-socket ─── (slice cli-specs-hot-reload)
+// Wiring only: the socket, lifecycle and reconnect live in the engine (golden rule
+// forbids WebSocket in routes). Here we only create it and pass the callback.
+const configSocket = createConfigChangeSocket({
+  url: beWsUrl("/ws/echo"),
+  onConfigChanged: () => void cliAvailability.reload(),
+})
+onMount(() => configSocket.start())
+onDestroy(() => configSocket.stop())
 </script>
 
 <svelte:head>
