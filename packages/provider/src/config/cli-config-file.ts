@@ -9,9 +9,10 @@
  * memoized — נקרא פעם אחת לכל תהליך (lazy).
  */
 
+import { EventEmitter } from "node:events"
 import * as fs from "node:fs"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import type { CliSpec } from "@drive-coding/core"
 
 /** ערך override — כל השדות אופציונליים (merge חלקי לתוך spec קיים). */
@@ -156,6 +157,72 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
 
 // memoization — מוחזק ברמת המודול
 let _cached: CliSpecsOverride | null = null
+
+// ─── cache invalidation + file watcher (slice cli-specs-hot-reload) ──────────
+// Single reset point: the watcher and the reload endpoint call invalidateCache()
+// only — never `_cached = null` directly, or the emit would not fire and the
+// change would not be broadcast to the FE.
+
+const DEBOUNCE_MS = 150
+const changeEmitter = new EventEmitter()
+
+let watcher: fs.FSWatcher | null = null
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+/** Clears the memoized override and emits to listeners — the only broadcast path. */
+export function invalidateCache(): void {
+  _cached = null
+  changeEmitter.emit("config-change")
+}
+
+/** Registers a config-change listener; lazily starts the watcher on first use. Returns unsubscribe. */
+export function onConfigChange(callback: () => void): () => void {
+  changeEmitter.on("config-change", callback)
+  startWatching()
+  return () => {
+    changeEmitter.off("config-change", callback)
+  }
+}
+
+function startWatching(): void {
+  if (watcher !== null) return
+  const filePath = resolveCliSpecsPath()
+  const dir = dirname(filePath)
+  // fs.watch on a missing directory throws ENOENT synchronously — guard before watching.
+  if (!fs.existsSync(dir)) return
+  try {
+    watcher = fs.watch(dir, { persistent: false }, (_eventType, filename) => {
+      // Directory-level watch fires for other files in the same dir too
+      // (cache/, recordings/, wire-recordings/, usage/). React only to the config file.
+      if (filename !== null && filename !== basename(filePath)) return
+      scheduleInvalidate()
+    })
+    watcher.unref()
+  } catch {
+    // fs.watch can fail on NFS/Docker — the manual reload endpoint is the fallback.
+    watcher = null
+  }
+}
+
+function scheduleInvalidate(): void {
+  if (debounceTimer !== null) return
+  debounceTimer = setTimeout(() => {
+    debounceTimer = null
+    invalidateCache()
+  }, DEBOUNCE_MS)
+}
+
+/** Closes the watcher (SIGTERM/SIGINT). Safe to call when no watcher is running. */
+export function stopWatching(): void {
+  if (debounceTimer !== null) {
+    clearTimeout(debounceTimer)
+    debounceTimer = null
+  }
+  if (watcher !== null) {
+    watcher.close()
+    watcher = null
+  }
+}
 
 /**
  * טוען ומפענח את קובץ ה-override.
