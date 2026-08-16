@@ -13,7 +13,7 @@
 import type { CliKind, CliSpec } from "@drive-coding/core"
 import { CLI_SPECS } from "@drive-coding/core"
 import { detectAvailableClis } from "@drive-coding/core/cli-availability"
-import { getCliSpec, getEffectiveCliKinds } from "@drive-coding/provider/config"
+import { getBinaryCache, getCliSpec, getEffectiveCliKinds } from "@drive-coding/provider/config"
 import type { Hono } from "hono"
 
 export function registerCliAvailabilityHttp(app: Hono): void {
@@ -30,7 +30,7 @@ export function registerCliAvailabilityHttp(app: Hono): void {
       mergedSpecs[kind] = spec
     }
 
-    const result = detectAvailableClis(mergedSpecs, process.env, overrideKinds)
+    const result = detectAvailableClis(mergedSpecs, process.env, overrideKinds, getBinaryCache())
     return c.json(result)
   })
 }

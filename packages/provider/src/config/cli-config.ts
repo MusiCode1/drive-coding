@@ -1,5 +1,6 @@
 import type { CliKind, CliSpec } from "@drive-coding/core"
 import { CLI_KINDS, CLI_SPECS } from "@drive-coding/core"
+import { type BinaryCache, resolveCliBinaryCached } from "@drive-coding/core/cli-resolve"
 import { loadCliSpecsOverride } from "./cli-config-file.js"
 
 /**
@@ -15,6 +16,18 @@ import { loadCliSpecsOverride } from "./cli-config-file.js"
 export type CliCommand = {
   readonly bin: string // נתיב הרצה או שם
   readonly args: ReadonlyArray<string>
+}
+
+// ─── מטמון פתירת-בינאריים — בבעלות הקליפה ───────────────────────────────────────
+// AGENTS.md: "packages/core/ — pure logic, no IO" · "Functional core / imperative shell".
+// core מקבל את המטמון כפרמטר ואינו מחזיק state; **המופע חי כאן**, ב-provider,
+// לצד ה-memoization הקיים של cli-config-file.ts.
+// מופע יחיד = הגילוי וה-spawn רואים בדיוק את אותם נתיבים.
+const binaryCache: BinaryCache = new Map()
+
+/** המטמון המשותף. ה-backend מעביר אותו ל-detectAvailableClis כדי שגילוי ו-spawn יתלכדו. */
+export function getBinaryCache(): BinaryCache {
+  return binaryCache
 }
 
 /**
@@ -48,6 +61,13 @@ export function getCliSpec(kind: string, env?: NodeJS.ProcessEnv): CliSpec | und
     // ייעודי (כמו envVar). בלי זה, detectAvailableClis מקבל spec ללא detectBin עבור
     // claude/codex ונופל בחזרה ל-bin=npx — התיקון מנוטרל בשקט.
     ...(base?.detectBin !== undefined ? { detectBin: base.detectBin } : {}),
+    // fallbackBins (slice cli-bin-resolution-unify): מה-base בלבד (אין לו שדה
+    // override), ורק אם override לא הגדיר bin — override.bin מבטל fallbackBins,
+    // בשונה מ-detectBin שנשמר תמיד. המשתמשת שכתבה bin מפורש בחרה בינארי; אין
+    // לנחש חלופות עבורה.
+    ...(override?.bin === undefined && base?.fallbackBins !== undefined
+      ? { fallbackBins: base.fallbackBins }
+      : {}),
     // displayName (slice cli-branding): override גובר על base.
     ...(override?.displayName !== undefined
       ? { displayName: override.displayName }
@@ -89,14 +109,18 @@ export function getEffectiveCliKinds(env?: NodeJS.ProcessEnv): string[] {
   return [...CLI_KINDS, ...newKinds]
 }
 
-export function getCliCommand(kind: string, modelOverride?: string | null): CliCommand {
-  const spec = getCliSpec(kind, process.env)
+export function getCliCommand(
+  kind: string,
+  modelOverride?: string | null,
+  env: NodeJS.ProcessEnv = process.env,
+): CliCommand {
+  const spec = getCliSpec(kind, env)
   if (spec === undefined) {
     throw new Error(`Unknown cliKind: ${kind}`)
   }
 
   // טוען override מהקובץ (memoized)
-  const override = loadCliSpecsOverride()[kind]
+  const override = loadCliSpecsOverride(env)[kind]
 
   // args: override.args גובר על spec.args
   const baseArgs = override?.args ?? spec.args
@@ -114,17 +138,30 @@ export function getCliCommand(kind: string, modelOverride?: string | null): CliC
     bin = override.bin
   } else if (kind === "opencode") {
     // OPENCODE_BIN נפתר בזמן הקריאה — D14 (Proxmox)
-    bin = process.env.OPENCODE_BIN ?? spec.bin
+    bin = env.OPENCODE_BIN ?? spec.bin
   } else {
     bin = spec.bin
   }
 
+  // bin resolution שלב 2 (slice cli-bin-resolution-unify): השם שנבחר → נתיב מוחלט.
+  // fallbackBins מועברים רק כשה-bin לא הגיע מ-override (המשתמשת בחרה בינארי מפורש).
+  const fromOverride = override?.bin !== undefined
+  const resolved = resolveCliBinaryCached(
+    {
+      bin,
+      ...(fromOverride ? {} : spec.fallbackBins ? { fallbackBins: spec.fallbackBins } : {}),
+    },
+    env,
+    binaryCache,
+  )
+  // לא נמצא → מחזירים את השם כמות שהוא, בדיוק כמו היום. זה משמר את הודעת-השגיאה
+  // הקיימת (describe-crash / ENOENT) ולא מוסיף failure mode חדש.
+  bin = resolved ?? bin
+
   // Commit 4 (windows-adaptation): OPENCODE_ARGS env override — נחוץ ל-tests cross-platform.
   // JSON array, למשל: OPENCODE_ARGS='["-e","process.stdin.resume()"]'
   const finalArgs: ReadonlyArray<string> =
-    kind === "opencode" && process.env.OPENCODE_ARGS
-      ? (JSON.parse(process.env.OPENCODE_ARGS) as string[])
-      : args
+    kind === "opencode" && env.OPENCODE_ARGS ? (JSON.parse(env.OPENCODE_ARGS) as string[]) : args
 
   return { bin, args: finalArgs }
 }

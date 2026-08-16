@@ -42,6 +42,12 @@ export type CliSpec = {
   readonly displayName?: string
   /** נתיב לקובץ-לוגו. נקרא בסכימה ועובר על החוט; ההגשה בסלייס cli-logo-serving. */
   readonly logo?: string
+  /**
+   * שמות-חלופה לבינארי, לצד `bin`. נבדקים רק אם `bin` (או `detectBin`) לא נמצא.
+   * cursor: המתקין יוצר `agent` (חדש) ו-`cursor-agent` (מורשת) — התקנה ישנה
+   * מחזיקה רק את השני. ר' slice-cli-bin-resolution-unify §0.
+   */
+  readonly fallbackBins?: readonly string[]
 }
 
 export const CLI_SPECS = {
@@ -60,7 +66,12 @@ export const CLI_SPECS = {
     detectBin: "codex",
   },
   qoder: { bin: "qodercli", args: ["--acp"], supportsModelFlag: true },
-  cursor: { bin: "agent", args: ["acp"], supportsModelFlag: false },
+  cursor: {
+    bin: "agent",
+    fallbackBins: ["cursor-agent"],
+    args: ["acp"],
+    supportsModelFlag: false,
+  },
   grok: {
     bin: "grok",
     args: ["--no-auto-update", "agent", "stdio"],
