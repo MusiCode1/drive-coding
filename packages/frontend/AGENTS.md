@@ -85,7 +85,7 @@ adapters/       — I/O. פונקציות שמחזירות Promises.
 
 ## Parallel-safe additive design
 
-ל-`docs/conventions/parallel-safe-code.md` יש קונבנציה מחייבת לשינויים
+ל-`docs-for-llm/conventions/parallel-safe-code.md` יש קונבנציה מחייבת לשינויים
 בקבצים משותפים (`context.ts`, `+layout.svelte`, `chat/+page.svelte`,
 `i18n/keys.ts`, וכל קובץ שצפוי להיגעת ב-2+ slices עתידיים).
 
@@ -163,7 +163,7 @@ User (voice) → Mic → text → AgentSession → text → Agent (ACP)
 - Thought bubbles עם 💭 prefix + dashed border + italic.
 - Tool bubbles collapsible עם status dots.
 - RTL alignment (user ימין, agent שמאל).
-- ראה `docs/frontend-spec.md §7` לפרטי עיצוב.
+- ראה `docs-for-llm/frontend-spec.md §7` לפרטי עיצוב.
 
 ---
 

@@ -2,7 +2,7 @@
 
 > **‎סטטוס**: ‎חי, ‎עדכון 2026-05-28.
 > **‎תפקיד**: ‎מקור-אמת ‎יחיד לסדר ה-slices של ‎`packages/frontend/`.
-> **‎מחליף**: ‎`docs/frontend-reorganization-plan.md` ‎(הועבר ל-archive) ‎+ ‎חלק §8.5 ב-`docs/vnext-spec.md` (סומן obsolete).
+> **‎מחליף**: ‎`docs-for-llm/frontend-reorganization-plan.md` ‎(הועבר ל-archive) ‎+ ‎חלק §8.5 ב-`docs-for-llm/vnext-spec.md` (סומן obsolete).
 >
 > **שינוי 2026-05-28**: נוסף slice 0.5 (i18n) ושונה סדר ה-slices אחרי בדיקת ‎מסמכי ‎התכנון.
 > ‎ראה §"סדר ‎ה-slices ‎— ‎נימוקים".
@@ -11,7 +11,7 @@
 
 ## ‎רקע ‎— ‎למה ‎יש מסמך ‎חדש
 
-‎עד 2026-05-27 ‎הפיתוח התנהל ב-`packages/frontend/` ‎לפי `docs/vnext-spec.md` ‎(10 slices). ‎ה-slices מומשו (1-10) ‎אבל הקוד הצטבר לכאוס:
+‎עד 2026-05-27 ‎הפיתוח התנהל ב-`packages/frontend/` ‎לפי `docs-for-llm/vnext-spec.md` ‎(10 slices). ‎ה-slices מומשו (1-10) ‎אבל הקוד הצטבר לכאוס:
 ‎- ‎`agent/[id]/+page.svelte` = ‎989 ‎שורות.
 ‎- ‎`messages` ‎ו-`bubbles` ‎שתי מערכות מקבילות באותו store.
 ‎- ‎4 ‎מערכות localStorage עצמאיות.
@@ -27,15 +27,15 @@
 
 | ‎שאלה | ‎לאיזה ‎מסמך לפנות |
 |------|-------------------|
-| ‎עקרונות UX (drive-first, ‎car mode, ‎mic states) | ‎`docs/frontend-spec.md` |
-| ‎D1-D50 ‎(החלטות ‎ארכיטקטוניות) | ‎`docs/design-principles.md §6` |
-| ‎פרוטוקול BE↔FE, ‎schemas | ‎`docs/vnext-spec.md` §3-6 (§8.5 obsolete) |
+| ‎עקרונות UX (drive-first, ‎car mode, ‎mic states) | ‎`docs-for-llm/frontend-spec.md` |
+| ‎D1-D50 ‎(החלטות ‎ארכיטקטוניות) | ‎`docs-for-llm/design-principles.md §6` |
+| ‎פרוטוקול BE↔FE, ‎schemas | ‎`docs-for-llm/vnext-spec.md` §3-6 (§8.5 obsolete) |
 | ‎ACP protocol, ‎transport-agnostic client | ‎`packages/core/src/acp/` ‎+ tests |
-| ‎Behaviors checklist (feature parity) | ‎`docs/behaviors-coverage.md` |
+| ‎Behaviors checklist (feature parity) | ‎`docs-for-llm/behaviors-coverage.md` |
 | ‎5 ‎חוקי זהב ל-v2 | ‎`packages/frontend-v2/AGENTS.md` |
 | ‎ה-slice הבא לביצוע | ‎המסמך הזה (§ ‎"slice הבא") |
-| ‎פיצ'רים ‎שנדחו | ‎`docs/future-features.md` |
-| ‎חוב ‎ידוע (i18n) | ‎`docs/i18n-gap-report.md` |
+| ‎פיצ'רים ‎שנדחו | ‎`docs-for-llm/future-features.md` |
+| ‎חוב ‎ידוע (i18n) | ‎`docs-for-llm/i18n-gap-report.md` |
 
 ---
 
@@ -225,7 +225,7 @@ Slice 3+   💭 מתוכנן  ראה ‎טבלה ‎למטה
 
 ‎מתבצע ‎ב-`OPENCODE_CONFIG_CONTENT` env var ‎ב-spawn (‎עוקף את ‎ה-cwd ‎של ‎המשתמשת).
 
-‎ראה ‎`docs/audio-friendly-prompt-plan.md` ‎לתכנון מלא ‎— ‎8 ‎פסקאות, ‎כולל ‎חלופות שנשללו ‎והטמעה ב-CodeNomad כ-reference.
+‎ראה ‎`docs-for-llm/audio-friendly-prompt-plan.md` ‎לתכנון מלא ‎— ‎8 ‎פסקאות, ‎כולל ‎חלופות שנשללו ‎והטמעה ב-CodeNomad כ-reference.
 
 ### Slice 13 ‎— Cutover
 
@@ -237,12 +237,12 @@ Slice 3+   💭 מתוכנן  ראה ‎טבלה ‎למטה
 
 | ‎פיצ'ר | ‎סיבה לדחייה | ‎מקור |
 |--------|---------------|--------|
-| ‎Thought voice ‎(קול שני למחשבות) | ‎לא דחוף | `docs/future-features.md` |
-| ‎VAD + ‎Gemini interrupt | ‎מורכב מאוד, ‎דורש POC נפרד | ‎`docs/future-features.md` |
-| ‎Permission UI (voice + click) | ‎yolo mode עובד | ‎`docs/future-features.md` |
-| ‎Replay nav buttons (⏮/⏭) | ‎נחמד, ‎לא ‎חיוני | ‎`docs/archive/v1/plan.md` משימה Q |
-| ‎Wake word | ‎דורש POC נפרד | ‎`docs/vnext-planning.md` Q11 |
-| ‎Multi-tenant / auth | ‎אישה ‎יחידה ‎(D11) | ‎`docs/vnext-planning.md` |
+| ‎Thought voice ‎(קול שני למחשבות) | ‎לא דחוף | `docs-for-llm/future-features.md` |
+| ‎VAD + ‎Gemini interrupt | ‎מורכב מאוד, ‎דורש POC נפרד | ‎`docs-for-llm/future-features.md` |
+| ‎Permission UI (voice + click) | ‎yolo mode עובד | ‎`docs-for-llm/future-features.md` |
+| ‎Replay nav buttons (⏮/⏭) | ‎נחמד, ‎לא ‎חיוני | ‎`docs-for-llm/archive/v1/plan.md` משימה Q |
+| ‎Wake word | ‎דורש POC נפרד | ‎`docs-for-llm/vnext-planning.md` Q11 |
+| ‎Multi-tenant / auth | ‎אישה ‎יחידה ‎(D11) | ‎`docs-for-llm/vnext-planning.md` |
 | ‎Mobile/Desktop builds | ‎web בלבד ב-v2 | — |
 
 ---
