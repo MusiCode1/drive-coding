@@ -18,7 +18,7 @@
 import type { Patch, SessionState } from "@drive-coding/core/session"
 import { createInitialSessionState } from "@drive-coding/core/session"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { SSEReader, type SSEReaderOptions } from "./sse-reader.js"
+import { SSEGoneError, SSEReader, type SSEReaderOptions } from "./sse-reader.js"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -530,5 +530,73 @@ describe("SSEReader — taken-over event (ownership-handoff C3)", () => {
     r.releaseLock()
 
     expect(onTakenOver).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ── סטטוס סופי: הסשן איננו ────────────────────────────────────────────────────
+
+/**
+ * 🔴 הבאג שהוליד את הבלוק הזה (2026-08-17, דיווח המשתמשת): כשהסשן נעלם
+ * מהשרת, כל ניסיון-חיבור החזיר 404 — ו-404 נפל לאותו `catch` כמו תקלת-רשת
+ * חולפת. התוצאה: ניסיון-חוזר **אינסופי ושקט** מול הריק, בזמן שה-UI מציג
+ * "חי" ורשימת ההודעות קפואה. ל-SSEReader כלל לא היה ערוץ-דיווח כלפי מעלה
+ * מלבד onReconnected, כלומר הוא לא היה **מסוגל** לספר שמשהו נגמר.
+ */
+describe("SSEReader — 404/410 הוא מצב סופי, לא תקלת-רשת", () => {
+  it("404 בחיבור הראשון זורק SSEGoneError (ולא Error גנרי)", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 404 } as Response)
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+
+    await expect(reader.connect()).rejects.toBeInstanceOf(SSEGoneError)
+  })
+
+  it("404 אחרי ניתוק: onLost נקרא, והניסיונות **נעצרים**", async () => {
+    const snapshot = makeSnapshot()
+    const mockFetch = vi
+      .fn()
+      // חיבור ראשון תקין, ואז הזרם נסגר
+      .mockResolvedValueOnce(
+        makeSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]),
+      )
+      // ומכאן — הסשן איננו
+      .mockResolvedValue({ ok: false, status: 404 } as Response)
+
+    const lost: unknown[] = []
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+    reader.onLost = (info) => lost.push(info)
+
+    await reader.connect()
+    // לתת ללולאת ה-reconnect לרוץ. עם _sleep ריק, מספר microtasks מספיק —
+    // ואם הסטטוס הסופי לא נעצר, הלולאה תמשיך להסתובב ו-fetch יזנק.
+    for (let i = 0; i < 50; i++) await Promise.resolve()
+
+    expect(lost).toEqual([{ reason: "gone", status: 404 }])
+
+    // ⚠️ הטענה האמיתית: הלולאה נעצרה. עוד סבב microtasks לא מוסיף קריאות.
+    const callsAfterStop = mockFetch.mock.calls.length
+    for (let i = 0; i < 50; i++) await Promise.resolve()
+    expect(mockFetch.mock.calls.length).toBe(callsAfterStop)
+  })
+
+  it("500 **כן** ממשיך לנסות — הוא תקלה חולפת, לא סשן שנעלם", async () => {
+    const snapshot = makeSnapshot()
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]),
+      )
+      .mockResolvedValue({ ok: false, status: 500 } as Response)
+
+    const lost: unknown[] = []
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+    reader.onLost = (info) => lost.push(info)
+
+    await reader.connect()
+    for (let i = 0; i < 30; i++) await Promise.resolve()
+    const before = mockFetch.mock.calls.length
+    for (let i = 0; i < 30; i++) await Promise.resolve()
+
+    expect(lost).toEqual([]) // לא "אבוד"
+    expect(mockFetch.mock.calls.length).toBeGreaterThan(before) // ועדיין מנסה
   })
 })

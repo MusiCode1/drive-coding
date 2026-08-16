@@ -26,8 +26,18 @@ type SSEFrame = { event: string; data: string }
 /**
  * readSSEFrames — async generator that yields parsed SSE frames from a body stream.
  * Handles CRLF and LF line endings. Releases reader lock on completion/error.
+ *
+ * 🔴 `onBytes` נקרא על **כל** הגעת-בתים, לפני כל פירוש — וזו הנקודה כולה.
+ * ה-keepalive של השרת הוא הערת-SSE (`: keepalive`), ושורה שמתחילה ב-`:` אינה
+ * נופלת לאף אחד משלושת הענפים למטה (`event:` · `data:` · שורה ריקה) ⇒ היא
+ * **נזרקת בשקט ואינה הופכת ל-SSEFrame לעולם**. גלאי-חיוּת שהיה יושב על
+ * הפריימים לא היה רואה keepalive אף פעם, והיה יורה התראת-שווא בכל שקט
+ * לגיטימי מעל 30 שניות. סימן-החיים חייב לשבת כאן, ברמת התעבורה.
  */
-async function* readSSEFrames(body: ReadableStream<Uint8Array>): AsyncGenerator<SSEFrame> {
+async function* readSSEFrames(
+  body: ReadableStream<Uint8Array>,
+  onBytes?: () => void,
+): AsyncGenerator<SSEFrame> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ""
@@ -38,6 +48,7 @@ async function* readSSEFrames(body: ReadableStream<Uint8Array>): AsyncGenerator<
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
+      onBytes?.()
       buffer += decoder.decode(value, { stream: true })
 
       // Split on LF; keep the last incomplete line in the buffer
@@ -103,6 +114,41 @@ const MAX_BACKOFF_MS = 30_000
 const STABLE_CONNECTION_MS = 10_000
 
 /**
+ * ה-keepalive שהשרת פולט (`events.ts` — `KEEPALIVE_INTERVAL_MS`). משוכפל כאן
+ * בכוונה: זו הנחה על **התנהגות השרת**, ואם הוא ישתנה הסף כאן חייב להשתנות איתו.
+ */
+const SERVER_KEEPALIVE_MS = 30_000
+/** 2.5 מחזורי-keepalive — סובלני לאיבוד אחד, לא לשניים. */
+const STALE_AFTER_MS = SERVER_KEEPALIVE_MS * 2.5
+/**
+ * כל כמה זמן נבדק ההפרש. ⚠️ **הבדיקה משווה חותמות ואינה סופרת תקתוקים** —
+ * כרטיסייה קפואה מקפיאה גם את ה-`setInterval`, ולכן מונה-תקתוקים היה מתעורר
+ * ומאמין שהכל תקין. השוואת-חותמות רואה ביקיצה "הבתים האחרונים הגיעו לפני
+ * 12 דקות" ומגיבה מיד. זה מה שהופך את הגלאי לרלוונטי למקרה של שינת-כרטיסייה.
+ */
+const STALE_CHECK_MS = 10_000
+
+/** סטטוסים שמשמעם "הסשן איננו" — ניסיון חוזר לא יעזור לעולם. */
+const TERMINAL_STATUSES: ReadonlySet<number> = new Set([404, 410])
+
+/**
+ * הזרם נגמר סופית — הסשן איננו בשרת. **אינו** שגיאת-רשת, ואסור לנסות שוב.
+ * ⚠️ עד לסלייס הזה 404 ותקלת-רשת חולפת נפלו לאותו `catch`, ולכן לקוח שאיבד
+ * את הסשן ניסה שוב לנצח בשקט וה-UI נשאר על "חי".
+ */
+export class SSEGoneError extends Error {
+  readonly status: number
+  constructor(status: number, url: string) {
+    super(`SSEReader: session is gone (HTTP ${status}) at ${url}`)
+    this.name = "SSEGoneError"
+    this.status = status
+  }
+}
+
+/** למה הזרם נגמר סופית. `gone` = השרת ענה שהסשן איננו. */
+export type SSELostReason = { reason: "gone"; status: number }
+
+/**
  * SSEReader — reads an SSE endpoint using fetch + ReadableStream.
  *
  * Usage:
@@ -122,6 +168,12 @@ export class SSEReader {
    * After this, #closed is set to true and no reconnect is attempted.
    */
   onTakenOver?: () => void
+  /**
+   * 🔴 נקרא כשהזרם נגמר **סופית** ואין טעם לנסות שוב. עד לסלייס הזה לא היה
+   * ל-`SSEReader` שום ערוץ-דיווח כלפי מעלה מלבד `onReconnected` — כלומר הוא
+   * פיזית לא היה מסוגל לספר ל-VM שמשהו נגמר, וה-UI נשאר על המצב האחרון.
+   */
+  onLost?: (info: SSELostReason) => void
 
   readonly #url: string
   readonly #headers: Record<string, string>
@@ -135,6 +187,9 @@ export class SSEReader {
   // immediately, and also unblocks any pending body reader.read() (which is what
   // makes close() actually stop an active connection promptly, not just future ones).
   #abortController: AbortController | null = null
+  /** חותמת הגעת-הבתים האחרונה. הבסיס להשוואה, ולא מונה-תקתוקים. */
+  #lastByteAt = 0
+  #staleTimer: ReturnType<typeof setInterval> | null = null
 
   constructor(url: string, opts: SSEReaderOptions = {}) {
     this.#url = url
@@ -175,10 +230,40 @@ export class SSEReader {
   /** Stop reconnect attempts, abort any in-flight request, and close the patches stream. */
   close(): void {
     this.#closed = true
+    this.#stopStaleWatch()
     this.#abortController?.abort()
   }
 
   // ── internals ──────────────────────────────────────────────────────────────
+
+  /** מסמן הגעת-בתים. נקרא מ-`readSSEFrames` לפני כל פירוש. */
+  #markAlive(): void {
+    this.#lastByteAt = this.#now()
+  }
+
+  /**
+   * גלאי-שתיקה. ביטול ה-fetch גורם ל-`reader.read()` לדחות ⇒ `#drainFrames`
+   * מסיים ⇒ לולאת ה-reconnect מרימה חיבור חדש. כלומר הגלאי אינו "מדווח על
+   * מוות" אלא **הופך שתיקה אילמת לניתוק מפורש**, שהמנגנון הקיים כבר יודע לטפל בו.
+   */
+  #startStaleWatch(): void {
+    if (this.#staleTimer !== null) return
+    this.#markAlive()
+    this.#staleTimer = setInterval(() => {
+      if (this.#closed) return
+      const sinceMs = this.#now() - this.#lastByteAt
+      if (sinceMs < STALE_AFTER_MS) return
+      connWarn("sse-stale", { url: this.#url, sinceMs })
+      this.#markAlive() // לא לירות שוב ושוב על אותה שתיקה
+      this.#abortController?.abort()
+    }, STALE_CHECK_MS)
+  }
+
+  #stopStaleWatch(): void {
+    if (this.#staleTimer === null) return
+    clearInterval(this.#staleTimer)
+    this.#staleTimer = null
+  }
 
   /**
    * connectOnce — opens one SSE connection, reads until snapshot frame, returns
@@ -194,13 +279,18 @@ export class SSEReader {
       signal: this.#abortController.signal,
     })
     if (!res.ok) {
+      // 404/410 = הסשן איננו. ניסיון חוזר לא ייצור אותו מחדש.
+      if (TERMINAL_STATUSES.has(res.status)) {
+        throw new SSEGoneError(res.status, this.#url)
+      }
       throw new Error(`SSEReader: fetch failed with status ${res.status}`)
     }
     if (!res.body) {
       throw new Error("SSEReader: response has no body")
     }
 
-    const frames = readSSEFrames(res.body)
+    this.#startStaleWatch()
+    const frames = readSSEFrames(res.body, () => this.#markAlive())
 
     // Advance past any non-snapshot frames to find the required snapshot frame-zero
     let next = await frames.next()
@@ -225,6 +315,9 @@ export class SSEReader {
   ): Promise<void> {
     // Drain initial connection patches
     await this.#drainFrames(frames, ctrl)
+    // ⚠️ עוצרים בין חיבורים: בזמן ה-backoff אין בתים **בדין**, וגלאי שממשיך
+    // לרוץ שם היה יורה התראות-שווא לאורך כל הניתוק.
+    this.#stopStaleWatch()
 
     if (this.#closed) {
       this.#closeCtrl(ctrl)
@@ -258,6 +351,7 @@ export class SSEReader {
 
         // Drain patches from the reconnected connection
         await this.#drainFrames(newFrames, ctrl)
+        this.#stopStaleWatch()
 
         // ⚠️ איפוס ה-backoff רק לחיבור ש**שרד**, לא לכל אחד שנפתח. חיבור
         // שנסגר מיד אחרי ה-snapshot אינו הצלחה — הוא בדיוק התסמין שבגללו
@@ -265,12 +359,22 @@ export class SSEReader {
         const lastedMs = this.#now() - openedAt
         if (lastedMs >= STABLE_CONNECTION_MS) delay = 1000
         connWarn("sse-lost", { url: this.#url, lastedMs })
-      } catch {
+      } catch (err) {
+        // 🔴 עד לסלייס הזה כל שגיאה נפלה לאותו ענף — כולל 404 שמשמעו שהסשן
+        // איננו. התוצאה: ניסיון-חוזר אינסופי ושקט מול הריק, בזמן שה-UI מציג
+        // "חי". סטטוס סופי נעצר כאן ומדווח כלפי מעלה.
+        if (err instanceof SSEGoneError) {
+          this.#closed = true
+          connWarn("sse-gone", { url: this.#url, status: err.status })
+          this.onLost?.({ reason: "gone", status: err.status })
+          break
+        }
         // Connection failed — continue with next retry (delay already doubled)
         connWarn("sse-retry", { url: this.#url, nextInMs: delay })
       }
     }
 
+    this.#stopStaleWatch()
     this.#closeCtrl(ctrl)
   }
 
