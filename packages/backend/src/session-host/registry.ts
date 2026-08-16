@@ -279,13 +279,17 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     try {
       host = await _createHostFn(conn, hostOpts)
     } catch (err) {
+      // ⚠️ שדות שטוחים, לא אובייקט-השגיאה. השגיאה של auth נושאת `kind`,
+      // `authMethods` וסמל פנימי — והעברתה כ-`err` השתיקה את השורה כולה
+      // בשקט (נתפס כאן בבדיקה חיה: אפס שורות מה-ns הזה, בזמן שהשגיאה כן עלתה).
+      // ⇒ שורת-אבחון שנבלעת היא גרועה מאין-שורה, כי היא נראית כמו "לא קרה כלום".
       log.error(
         {
-          err,
           agentId,
           cliKind: connectionRegistry.getCliKind(agentId) ?? "unknown",
           cwd,
           warmReattach: Boolean(acpSessionId),
+          reason: err instanceof Error ? err.message : String(err),
         },
         "session-host creation failed (ACP handshake)",
       )
