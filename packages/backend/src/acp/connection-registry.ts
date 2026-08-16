@@ -40,9 +40,15 @@ const IN_PROCESS_CONNECTORS = {
 } satisfies Partial<Record<CliKind, (opts: ConnectOpts) => Promise<ProviderConnection>>>
 
 /** override מכוון ל-CLI in-process ידרוס bin/args בשקט — הם לא נקראים כלל שם. */
-function overrideHasBinOrArgs(kind: string): boolean {
+export function overrideHasBinOrArgs(kind: string): boolean {
   const o = loadCliSpecsOverride()[kind]
   return o?.bin !== undefined || o?.args !== undefined
+}
+
+/** override with setEnv/unsetEnv aimed at an in-process CLI — the in-process bridge does not support env vars. */
+export function overrideHasEnv(kind: string): boolean {
+  const o = loadCliSpecsOverride()[kind]
+  return o?.setEnv !== undefined || o?.unsetEnv !== undefined
 }
 
 type ConnEntry = {
@@ -143,6 +149,13 @@ export function createConnectionRegistry(opts?: {
         if (cliKind in IN_PROCESS_CONNECTORS && overrideHasBinOrArgs(cliKind)) {
           // override.bin/args are silently ignored here — in-process connectors don't call getCliCommand.
           cfgLog.warn({ cliKind }, "cli-specs override.bin/args ignored for in-process cliKind")
+        }
+        if (cliKind in IN_PROCESS_CONNECTORS && overrideHasEnv(cliKind)) {
+          // The in-process bridge does not support env vars — this stays true even after a future fix.
+          cfgLog.warn(
+            { cliKind },
+            "cli-specs override env vars are not supported by the in-process bridge",
+          )
         }
         const inProcess = IN_PROCESS_CONNECTORS[cliKind as keyof typeof IN_PROCESS_CONNECTORS]
         const conn = inProcess
