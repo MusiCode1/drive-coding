@@ -176,13 +176,24 @@ $effect(() => {
 })
 
 // ─── presence sync ─── (slice liveness C3)
+// סבב-תיקונים liveness — שני תיקונים בבלוק הקטן הזה:
+//
+// 1. `inSession` היה `status === "connected"`. ⇒ ברגע שה-WS נפל, sync קיבל
+//    `inSession:false` → stop() → clearBanner(), והבאנר נמחק **בדיוק** ברגע
+//    שנועד להופיע. הבאנר לא יכול להיות בעל-הבית של מצב-החיבור אם הוא נהרס
+//    בניתוק. "בסשן" = connected **או** disconnected (ניתוק חולף); "error"
+//    ו-"idle" נשארים בחוץ — הראשון טרמינלי (session.error מציג אותו), השני אין בו סשן.
+// 2. `return () => stop()` רץ לפני **כל** הרצה-מחדש של ה-$effect, לא רק בפירוק —
+//    כלומר כל שינוי ב-status/agentId/hidden ניגב את הבאנר ואת מונה-הכשלים.
+//    הפירוק עבר ל-$effect נפרד בלי קריאות ריאקטיביות, שרץ פעם אחת.
 $effect(() => {
-  const inSession = session.status === "connected"
+  const status = session.status
+  const inSession = status === "connected" || status === "disconnected"
   const agentId = session.agentId
   const hidden = isPageHidden()
   presencePoller.sync({ inSession, agentId, hidden })
-  return () => presencePoller.stop()
 })
+$effect(() => () => presencePoller.dispose())
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)

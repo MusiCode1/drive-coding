@@ -153,6 +153,23 @@ describe("PresencePoller", () => {
     expect(mocks.postPresence).not.toHaveBeenCalled()
   })
 
+  test("טרנספורט שנפל מדליק את הבאנר — בלי POST", async () => {
+    // 🔴 סבב-תיקונים liveness: קודם היה כאן `return` סתמי כש-status!=="connected",
+    // ולכן הבאנר השתתק בדיוק ברגע שנועד להופיע. מוטציה: החזרת ה-`return`
+    // הישן מפילה את הטסט הזה בלבד.
+    const session = makeSession({ status: "disconnected" })
+    const p = new PresencePoller(session)
+    p.sync({ inSession: true, agentId: "agent-1", hidden: false })
+    await Promise.resolve()
+
+    expect(mocks.postPresence).not.toHaveBeenCalled() // אין למי לפנות
+    expect(p.banner).toBeNull() // חסד של 5 שניות — חזרה מהירה עוברת בשקט
+
+    await vi.advanceTimersByTimeAsync(PRESENCE_BANNER_DELAY_MS)
+    expect(p.banner).toBe("reconnecting")
+    p.dispose()
+  })
+
   test("onSseReconnected clears banner", async () => {
     mocks.postPresence.mockRejectedValue(new Error("network down"))
     poller.sync({ inSession: true, agentId: "agent-1", hidden: false })

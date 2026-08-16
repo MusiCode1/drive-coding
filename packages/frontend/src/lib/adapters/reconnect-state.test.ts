@@ -2,6 +2,7 @@
  * reconnect-state.test.ts — סלייס reconnect-ws-takeover Commit 2 + liveness C4.
  */
 import { describe, expect, it } from "vitest"
+import { LIVENESS_FRESH_MS } from "./liveness-state"
 import {
   hasConnectionRing,
   isAgentConnected,
@@ -9,7 +10,6 @@ import {
   isAgentRunning,
   reconnectState,
 } from "./reconnect-state"
-import { LIVENESS_FRESH_MS } from "./liveness-state"
 
 const NOW = 1_700_000_000_000
 

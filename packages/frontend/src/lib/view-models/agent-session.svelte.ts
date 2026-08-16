@@ -68,6 +68,7 @@ import type { ElicitationParams, ElicitationResponse } from "$lib/types/elicitat
 // ─── slice-permission-ui-basic: טיפוסי בקשת-הרשאה (view-model layer, נגזרים מ-SDK) ───
 import type { PermissionParams, PermissionResponse } from "$lib/types/permission"
 // ─── slice leave-running-background ───
+import { connInfo, connWarn } from "$lib/util/conn-log"
 import { isBypassMode } from "$lib/util/permission-mode"
 import { safeUUID } from "$lib/util/uuid"
 // ─── slice surface-real-error: עדיפות data.details→data.message→message→String(e) ───
@@ -974,7 +975,20 @@ export class AgentSession {
     if (info?.agent.status === "crashed" && info.agent.crashReason) {
       this.error = info.agent.crashReason
     } else {
-      this.error = `WS closed (${code}): ${reason || "no reason"}`
+      // סבב-תיקונים liveness: **אין** יותר `this.error = "WS closed (1006): no reason"`.
+      // ניתוק-רשת הוא מצב-חיבור חולף, והבעלים היחיד שלו הוא DisconnectBanner —
+      // שיודע להעלם לבד בחזרה. מחרוזת אדומה-קבועה על המסך גם שיקרה (היא נשארה
+      // אחרי שהחיבור חזר) וגם דרסה את מקומה של הודעה אמיתית.
+      // ⚠️ שלושת הטרמינליים **נשמרים** ב-this.error: crashReason (למעלה),
+      // openedElsewhere ו-heldByOtherTransport (מוקדם יותר במתודה) — הם אינם
+      // חולפים, אין להם התאוששות אוטומטית, ולמשתמש אין דרך אחרת לדעת עליהם.
+      //
+      // וכן — **מנקים**, לא רק נמנעים מלכתוב. קודם המחרוזת הגולמית דרסה שגיאה
+      // חולפת קודמת (`switchSession failed: …`), וזה היה התפקיד הסמוי שלה. בלי
+      // הניקוי היא הייתה נשארת תלויה על המסך לאורך כל הניתוק. טרמינליות מוגנות
+      // ממילא ע"י ה-guard של #errorSurfaced בראש המתודה, שכבר החזיר.
+      this.error = null
+      connWarn("ws-closed", { code, reason: reason || "no reason", agentId: this.agentId })
     }
     if (this.#pageHidden) {
       this.#setStatus("disconnected") // רקע — לא אוטו
@@ -1010,7 +1024,7 @@ export class AgentSession {
       }
       if (this.status === "connected") {
         this.#reconnecting = false
-        this.reconnectAttempt = 0
+        this.reconnectAttempt = 0 // הניקוי עצמו ב-#onReconnectSuccess (בתוך #doReconnect)
         return
       }
     }
@@ -1065,13 +1079,30 @@ export class AgentSession {
     if (reuseId !== null) {
       const ok = await this.#warmReconnect(reuseId)
       if (ok) {
-        if (this.status === "connected") this.reconnectAttempt = 0
+        this.#onReconnectSuccess()
         return
       }
       // warm נכשל (1008 אחרי retries / שגיאת WS/handshake) → נפילה ל-cold
     }
     await this.#coldReconnect()
-    if (this.status === "connected") this.reconnectAttempt = 0
+    this.#onReconnectSuccess()
+  }
+
+  /**
+   * חיבור-מחדש שהצליח — ⇒ **כל** שגיאה שנרשמה בדרך מיושנת בהגדרה.
+   *
+   * סבב-תיקונים liveness: זה השורש של `loadSession failed: Failed to fetch`
+   * שנשאר על המסך אחרי שהחיבור התאושש — ניסיון כושל כתב אותה (:1886) וההצלחה
+   * שאחריו לא ניקתה. הניקוי יושב כאן, בשתי נקודות-ההצלחה של #doReconnect,
+   * ולא בלולאת ה-backoff, כי #doReconnect נקרא גם ישירות (reconnect ידני) —
+   * ניקוי בלולאה בלבד היה מחמיץ בדיוק את המסלול שהמשתמשת נתקלה בו.
+   */
+  #onReconnectSuccess(): void {
+    if (this.status !== "connected") return
+    this.reconnectAttempt = 0
+    this.error = null
+    this.#errorSurfaced = false
+    connInfo("reconnected", { agentId: this.agentId })
   }
 
   /**

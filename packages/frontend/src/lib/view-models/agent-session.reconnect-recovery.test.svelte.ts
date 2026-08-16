@@ -271,12 +271,17 @@ describe("AgentSession — regressions (§4 Commit 0, DoD#5/#6)", () => {
 
     expect(session.status).toBe("connected")
 
-    // הוכחה התנהגותית ש-#errorSurfaced===false: onClose לא-צפוי אחרי warm המוצלח
-    // כן מציג הודעה חדשה (לא נחסם ע"י anti-clobber) — לו #errorSurfaced נשאר true,
-    // ה-error הישן ("old terminal error") היה שורד.
+    // 🔴 סבב-תיקונים liveness — הטענה השתנתה, הכוונה לא.
+    // קודם: ה-close הלא-צפוי היה **דורס** את השגיאה הישנה במחרוזת גולמית
+    // ("WS closed (1006): dropped again"), וזו הייתה ההוכחה ש-anti-clobber לא חסם.
+    // היום המחרוזת הגולמית ירדה מהמסך (הבאנר הוא בעל-הבית), ולכן ההוכחה היא
+    // שהשגיאה הישנה **נעלמה** — warm מוצלח מנקה (#onReconnectSuccess), ו-close
+    // חולף אחריו לא מחזיר אותה. לו #errorSurfaced נשאר true, "old terminal error"
+    // היה שורד את שניהם.
+    expect(session.error).toBeNull() // ניקוי אחרי warm מוצלח
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (session as any)._handleUnexpectedCloseForTest(1006, "dropped again")
-    expect(session.error).toBe("WS closed (1006): dropped again")
+    expect(session.error).toBeNull() // ניתוק חולף — אין מחרוזת גולמית למשתמש
     expect(session.error).not.toBe("old terminal error")
   })
 })

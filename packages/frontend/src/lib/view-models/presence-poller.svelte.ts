@@ -7,9 +7,13 @@
  * banner — state נפרד מ-session.error (לא נוגע ב-crashReason / openedElsewhere).
  */
 import { notifySessionAttached, postPresence } from "$lib/adapters/agents-api"
-import { diagnosedRefresh, isCloudflareChallenge } from "$lib/util/cloudflare-detect"
 import { beUrl } from "$lib/util/be-url"
-import { initPageVisibility, isPageHidden, onPageBecameVisible } from "$lib/util/page-visibility.svelte"
+import { diagnosedRefresh, isCloudflareChallenge } from "$lib/util/cloudflare-detect"
+import {
+  initPageVisibility,
+  isPageHidden,
+  onPageBecameVisible,
+} from "$lib/util/page-visibility.svelte"
 import type { AgentSession } from "./agent-session.svelte"
 
 export const PRESENCE_INTERVAL_MS = 12_000
@@ -32,7 +36,6 @@ export class PresencePoller {
   #unsubVisible: (() => void) | null = null
   #activeAgentId: string | null = null
   #wasActive = false
-  #wasHidden = true
 
   constructor(session: AgentSession) {
     this.#session = session
@@ -69,12 +72,9 @@ export class PresencePoller {
     if (opts.hidden) {
       this.#stopInterval()
       this.#abortInFlight()
-      this.#wasHidden = true
       return
     }
 
-    const becameVisible = this.#wasHidden
-    this.#wasHidden = false
     this.#ensureInterval()
     if (!this.#wasActive) {
       void this.tick("initial")
@@ -85,7 +85,6 @@ export class PresencePoller {
   stop(): void {
     this.#activeAgentId = null
     this.#wasActive = false
-    this.#wasHidden = true
     this.#stopInterval()
     this.#abortInFlight()
     this.clearBanner()
@@ -108,9 +107,17 @@ export class PresencePoller {
   async tick(reason: "interval" | "focus" | "initial"): Promise<void> {
     void reason
     if (isPageHidden()) return
-    if (this.#session.status !== "connected") return
     const agentId = this.#activeAgentId ?? this.#session.agentId
     if (!agentId) return
+    // סבב-תיקונים liveness: טרנספורט שנפל הוא **אותו** מצב-ניתוק שהסקר נועד להציג.
+    // קודם הייתה כאן `return` סתמית, ולכן הבאנר — שאמור להיות בעל-הבית של מצב
+    // החיבור — דווקא **השתתק** ברגע שה-WS נפל, והמסך נשאר עם המחרוזת הגולמית.
+    // ה-POST עצמו מדולג (אין למי לפנות), אבל מנגנון-ההשהיה זהה: 5 שניות של
+    // חסד לפני שמטרידים את המשתמש, כדי שחזרה מהירה תעבור בשקט.
+    if (this.#session.status !== "connected") {
+      this.#handleFailure(new Error("transport disconnected"))
+      return
+    }
     if (this.#inFlight) return
 
     this.#inFlight = true
