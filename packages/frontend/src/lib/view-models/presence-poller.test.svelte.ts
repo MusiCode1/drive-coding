@@ -77,6 +77,11 @@ describe("PresencePoller", () => {
   })
 
   test("focus (visible) triggers immediate tick", async () => {
+    // ⚠️ אימות עצמאי (מרדכי): הגרסה הקודמת קראה `poller.tick("focus")` **ידנית**,
+    // כלומר בדקה שהמתודה עובדת — לא שה**מאזין מחווט אליה**. אומת במוטציה:
+    // הסרת `void this.tick("focus")` מ-`init()` השאירה 9/9 ירוקים.
+    // ⇒ הטסט חייב להסתמך על אירוע-הנראות בלבד. `_setPageHiddenForTest(false)`
+    // מפעיל `notifyVisible()` (page-visibility.svelte.ts:50), ולכן זה מספיק.
     poller.sync({ inSession: true, agentId: "agent-1", hidden: false })
     await Promise.resolve()
     await Promise.resolve()
@@ -84,9 +89,12 @@ describe("PresencePoller", () => {
 
     _setPageHiddenForTest(true)
     poller.sync({ inSession: true, agentId: "agent-1", hidden: true })
+
+    // חזרה לפוקוס — **בלי** קריאה ידנית ל-tick
     _setPageHiddenForTest(false)
     poller.sync({ inSession: true, agentId: "agent-1", hidden: false })
-    await poller.tick("focus")
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
     expect(mocks.postPresence).toHaveBeenCalledTimes(1)
   })
 

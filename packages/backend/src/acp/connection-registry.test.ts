@@ -349,17 +349,27 @@ describe("connection-registry — liveness stamp (slice liveness C1)", () => {
     // no owner yet → null
     expect(reg.getLastSeenAt("live-1")).toBeNull()
 
-    // WS owner (markAttached) → stamp exists; touchOwner keeps it fresh
-    reg.markAttached("live-1")
-    expect(reg.getLastSeenAt("live-1")).not.toBeNull()
-    reg.touchOwner("live-1")
-    expect(reg.getLastSeenAt("live-1")).not.toBeNull()
+    // ⚠️ אימות עצמאי (מרדכי): הגרסה הקודמת בדקה `not.toBeNull()` לפני **ואחרי**
+    // touchOwner — אבל החותמת כבר הוצבה ע"י markAttached/markOwned. ⇒ touchOwner
+    // שהוא no-op היה עובר את הטסט. אומת במוטציה: החזרת
+    // `if (e.owner?.via !== "http") return` השאירה 309/309 ירוקים.
+    // ⇒ הבדיקה חייבת להיות ש**הערך התקדם**, אחרת DoD 6 אינו מכוסה.
 
-    // HTTP owner (markOwned) → stamp exists; touchOwner keeps it fresh
-    reg.markOwned("live-1", "http")
-    expect(reg.getLastSeenAt("live-1")).not.toBeNull()
+    // WS owner (markAttached) → touchOwner **מקדם** את החותמת
+    reg.markAttached("live-1")
+    const wsBefore = reg.getLastSeenAt("live-1")
+    expect(wsBefore).not.toBeNull()
+    await new Promise((r) => setTimeout(r, 5))
     reg.touchOwner("live-1")
-    expect(reg.getLastSeenAt("live-1")).not.toBeNull()
+    expect(reg.getLastSeenAt("live-1")).toBeGreaterThan(wsBefore as number)
+
+    // HTTP owner (markOwned) → אותו דבר
+    reg.markOwned("live-1", "http")
+    const httpBefore = reg.getLastSeenAt("live-1")
+    expect(httpBefore).not.toBeNull()
+    await new Promise((r) => setTimeout(r, 5))
+    reg.touchOwner("live-1")
+    expect(reg.getLastSeenAt("live-1")).toBeGreaterThan(httpBefore as number)
 
     await reg.close("live-1")
   })
