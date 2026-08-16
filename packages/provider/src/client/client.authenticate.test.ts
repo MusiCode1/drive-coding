@@ -4,8 +4,7 @@
  * fallback to the first offered authMethod otherwise. No authenticate call when
  * authMethods is empty/missing (opencode/gemini/qoder/claude/codex must not break).
  *
- *
- * Tests (per brief, mock transport):
+ * Tests (mock transport):
  *   1. authMethods: [{ id: "cached_token" }] → authenticate sent with methodId "cached_token"
  *   2. authMethods: [{ id: "cursor_login" }] → authenticate sent with methodId "cursor_login"
  *   3. authMethods: [] / missing → NO authenticate frame

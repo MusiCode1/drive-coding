@@ -6,7 +6,6 @@
  *   (AuthMethodEnvVar & {type:"env_var"}) | (AuthMethodTerminal & {type:"terminal"}) | AuthMethodAgent
  * AuthMethodAgent has **no `type` field** — it's the untagged fallback. Narrowing must
  * check `"type" in m` (never `m.type === "agent"` — TS2678, the literal doesn't exist).
- *
  */
 
 import type { AuthMethod } from "@agentclientprotocol/sdk"

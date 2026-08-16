@@ -27,8 +27,7 @@ type PermissionResponse = Awaited<ReturnType<Client["requestPermission"]>>
  * ─── slice-elicitation-ui: elicitation/create ─── נגזר מ-SDK דרך ייבוא ישיר (לא
  * Parameters<Client["unstable_createElicitation"]>) — השדה אופציונלי על Client, לכן
  * Parameters<...> נכשל ב-TS2344 (כולל undefined). CreateElicitationRequest/Response
- * מיוצאים מ-root ה-SDK (אין subpath /schema ב-exports map). ר' docs/plans/
- * slice-elicitation-ui.md §4 Commit 0.
+ * מיוצאים מ-root ה-SDK (אין subpath /schema ב-exports map).
  */
 type ElicitationParams = CreateElicitationRequest
 type ElicitationResponse = CreateElicitationResponse

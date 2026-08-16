@@ -16,6 +16,13 @@ type PluginEntry = string
  * (מוגדר על-ידי הqaller ב-childEnv של bridge-manager).
  * ממזג עם OPENCODE_CONFIG_CONTENT הקיים של המשתמש, אם ישנו.
  *
+ * למה env var ולא קובץ פלאגין על הדיסק — שתי החלופות נדחו במפורש:
+ *   - `.opencode/plugins/` ב-cwd: ה-cwd שייך למשתמש, זה הפרויקט שלו. אסור לנו
+ *     לדחוף לתוכו תיקייה סמויה.
+ *   - `~/.config/opencode/plugins/`: היה חל **גם** על opencode הרגיל בטרמינל של
+ *     המשתמש, מחוץ לאפליקציה — פלט בלי emoji ובלי markdown בעבודה רגילה שלו.
+ * ה-env var מועבר רק ל-sub-process שאנחנו מולידים, ולכן אינו דולף החוצה.
+ *
  * Commit 3 של windows-adaptation: tuple → string-plugin (opencode 1.2.27 compat).
  */
 export function buildOpencodeConfigContent(existingEnv: string | undefined): string {

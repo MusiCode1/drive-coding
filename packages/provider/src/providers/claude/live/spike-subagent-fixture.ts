@@ -7,7 +7,8 @@
  *
  * Run:  cd packages/provider && bun run src/providers/claude/live/spike-subagent-fixture.ts
  *
- * Output: writes raw capture to OUT (below) and prints §9 analysis to stdout.
+ * Output: writes raw capture to OUT (below) and prints the frame-shape analysis
+ * to stdout (which channels carried subagent text/thinking/tools, and how they nest).
  * NOT a vitest test — a one-shot investigative harness.
  */
 
