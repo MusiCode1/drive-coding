@@ -217,6 +217,16 @@ export const AudioRecordingSavedMessage = type({
 })
 export type AudioRecordingSavedMessage = typeof AudioRecordingSavedMessage.infer
 
+/**
+ * Broadcast to every echo-WS client when the config changes (fs.watch or POST /api/reload-config).
+ * Slice cli-specs-hot-reload.
+ */
+export const ConfigChangedMessage = type({
+  type: "'config_changed'",
+  timestamp: "number",
+})
+export type ConfigChangedMessage = typeof ConfigChangedMessage.infer
+
 export const ServerMessage = HelloMessage.or(PongMessage)
   .or(ConnectedMessage)
   .or(ThinkingMessage)
@@ -233,5 +243,6 @@ export const ServerMessage = HelloMessage.or(PongMessage)
   .or(HistoryToolCallMessage)
   .or(HistoryDoneMessage)
   .or(AudioRecordingSavedMessage)
+  .or(ConfigChangedMessage)
 
 export type ServerMessage = typeof ServerMessage.infer

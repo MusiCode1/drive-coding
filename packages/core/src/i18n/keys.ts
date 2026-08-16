@@ -29,6 +29,8 @@ export type MessageKey =
   | "connect.cli.showAll"
   // slice cli-availability (re-scope): תווית ל-option disabled בדropdown (לא מותקן)
   | "connect.cli.notInstalled"
+  // slice cli-specs-hot-reload: refresh button label next to the CLI dropdown
+  | "connect.cli.refresh"
   | "connect.cwd.label"
   | "connect.cwd.placeholder"
   | "connect.submit"

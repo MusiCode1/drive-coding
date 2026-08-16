@@ -55,4 +55,20 @@ export class CliAvailability {
       this.#resolveReady()
     }
   }
+
+  /**
+   * Quiet background refresh (no loading spinner). Used by the config-change WS
+   * broadcast and the manual refresh button (slice cli-specs-hot-reload).
+   */
+  reload = async (): Promise<void> => {
+    try {
+      const result = await fetchCliAvailability()
+      this.available = [...result.available]
+      this.details = result.details
+      this.registry = Object.keys(result.details)
+      this.error = null
+    } catch (e) {
+      console.warn("[CliAvailability] reload failed:", e)
+    }
+  }
 }

@@ -17,4 +17,10 @@ export {
   getEffectiveCliSpecs,
 } from "./cli-config.js"
 export type { CliSpecOverride, CliSpecsOverride } from "./cli-config-file.js"
-export { loadCliSpecsOverride, resolveCliSpecsPath } from "./cli-config-file.js"
+export {
+  invalidateCache,
+  loadCliSpecsOverride,
+  onConfigChange,
+  resolveCliSpecsPath,
+  stopWatching,
+} from "./cli-config-file.js"
