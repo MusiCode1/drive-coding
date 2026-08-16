@@ -11,9 +11,15 @@
  */
 
 import { Hono } from "hono"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+import { httpCacheInvalidateAll } from "../../delivery/http-cache.js"
 import type { AgentSessionRegistry } from "../registry.js"
 import { registerPresenceRoute } from "./presence.js"
+
+// המטמון הוא module-level — מנקים בין טסטים כדי שלא ידלוף ביניהם.
+beforeEach(() => {
+  httpCacheInvalidateAll()
+})
 
 // ── mock helpers ──────────────────────────────────────────────────────────────
 
@@ -47,6 +53,7 @@ function makeMockRegistry(): AgentSessionRegistry {
  */
 type MockResponse = {
   status: number
+  headers: { get(name: string): string | null }
   json(): Promise<{ ok: boolean; agent: unknown; machine: unknown }>
 }
 
@@ -124,5 +131,26 @@ describe("POST /api/agents/:id/presence", () => {
 
     const json = (await res.json()) as { agent: { via: string } }
     expect(json.agent.via).toBe("ws")
+  })
+
+  it("sets Cache-Control: no-store (point-specific)", async () => {
+    const registry = makeMockRegistry()
+    const app = makeApp(registry)
+
+    const res = await postPresence(app, "agent-1")
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+  })
+
+  it("🔴 cache: 2 requests in window → touchOwner runs twice but getRuntimeInfo sampled once", async () => {
+    const registry = makeMockRegistry()
+    const app = makeApp(registry)
+
+    await postPresence(app, "agent-1")
+    await postPresence(app, "agent-1")
+
+    // touchOwner הוא תופעת-הלוואי — רץ תמיד, בכל בקשה (החיות).
+    expect(registry.touchOwner).toHaveBeenCalledTimes(2)
+    // getRuntimeInfo (הדגימה) — פעם אחת בלבד (השנייה מהמטמון).
+    expect(registry.getRuntimeInfo).toHaveBeenCalledTimes(1)
   })
 })

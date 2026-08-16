@@ -4,6 +4,8 @@ import { type } from "arktype"
 import type { Hono } from "hono"
 import type { AgentOrchestrator } from "../app/agent-orchestrator"
 import type { ProjectsRegistry } from "../app/projects-registry"
+// slice liveness C2: short response cache + no-store on GET /api/agents.
+import { httpCacheGet, httpCacheSet } from "./http-cache.js"
 
 /**
  * הרחבת צד-שרת בלבד של CreateAgentInput — כולל existingSessionId
@@ -40,9 +42,14 @@ export function registerAgentsHttp(
   // GET /api/agents — רשימה (מועשרת ב-pid+attached+via אם bridgeManager זמין)
   // slice ownership-truth C3: מיפוי מפורש ומלא של 5 שדות — לא spread.
   // spread היה מוחק שדות קיימים אם getRuntimeInfo לא היה מחזיר את כולם.
+  // slice liveness C2: מטמון קצר (1.5ש׳) + no-store נקודתי. המטמון מתבטל
+  // ב-markOwned/markDetached (connection-registry) — אחרת attached:true מעופש.
   app.get("/api/agents", async (c) => {
+    c.header("Cache-Control", "no-store")
+    const cached = httpCacheGet("agents")
+    if (cached !== undefined) return c.json(cached)
     const all = await deps.registry.list()
-    return c.json({
+    const body = {
       agents: all.map((a) => {
         const rt = deps.bridgeManager?.getRuntimeInfo(a.id)
         return {
@@ -54,7 +61,9 @@ export function registerAgentsHttp(
           attachedVia: rt?.via,
         }
       }),
-    })
+    }
+    httpCacheSet("agents", body)
+    return c.json(body)
   })
 
   // POST /api/agents — יצירה דרך orchestrator

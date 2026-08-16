@@ -28,6 +28,9 @@ import {
   decodeWireLine,
 } from "@drive-coding/provider/connection"
 import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
+// slice liveness C2: ownership transitions invalidate the HTTP response cache
+// (otherwise /api/agents would keep serving attached:true after an eviction).
+import { httpCacheInvalidateAll } from "../delivery/http-cache.js"
 import type { WireRecorder, WireSession } from "../delivery/wire-recorder.js"
 
 const wireLog = createLogger("backend.acp.wire")
@@ -325,6 +328,8 @@ export function createConnectionRegistry(opts?: {
       // slice liveness C1: initialize lastSeenAt on any ownership acquisition —
       // transport-agnostic (the unified sweep decides transport via `via`, §2.1).
       e.lastSeenAt = Date.now()
+      // slice liveness C2: ownership changed → cached attached/via answers are stale.
+      httpCacheInvalidateAll()
     },
 
     markAttached(agentId) {
@@ -336,6 +341,8 @@ export function createConnectionRegistry(opts?: {
       e.attached = true
       // slice liveness C1: WS also gets a lastSeenAt stamp (fed by $/ping → touchOwner).
       e.lastSeenAt = Date.now()
+      // slice liveness C2: ownership changed → cached attached/via answers are stale.
+      httpCacheInvalidateAll()
     },
 
     markDetached(agentId) {
@@ -344,6 +351,8 @@ export function createConnectionRegistry(opts?: {
       e.owner = null
       e.attached = false
       // ownershipEpoch deliberately NOT decremented — it survives release (C1 §3)
+      // slice liveness C2: ownership changed → cached attached/via answers are stale.
+      httpCacheInvalidateAll()
     },
 
     isAttached(agentId) {

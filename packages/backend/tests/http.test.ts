@@ -13,6 +13,8 @@ describe("HTTP GET /api/health", () => {
     const app = makeApp()
     const res = await app.request("/api/health")
     expect(res.status).toBe(200)
+    // slice liveness C2: no-store נקודתי (לא גורף — cli-logo שומר על no-cache).
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
     const body = (await res.json()) as { status: string; version: string; uptime: number }
     expect(body.status).toBe("ok")
     // version must be a real semver string, never "unknown" — "unknown" means the binary

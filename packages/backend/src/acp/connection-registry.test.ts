@@ -18,6 +18,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { httpCacheGet, httpCacheInvalidateAll, httpCacheSet } from "../delivery/http-cache.js"
 import { createConnectionRegistry } from "./connection-registry.js"
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -371,6 +372,23 @@ describe("connection-registry — liveness stamp (slice liveness C1)", () => {
     reg.markDetached("live-2")
     expect(reg.getLastSeenAt("live-2")).toBeNull()
     await reg.close("live-2")
+  })
+
+  // 🔴 DoD 12 — slice liveness C2: שינוי-בעלות מבטל את מטמון התגובה.
+  it("markOwned/markDetached invalidate the HTTP response cache", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("cache-1", "opencode", { cwd: os.tmpdir() })
+
+    httpCacheSet("agents", { agents: [] })
+    reg.markOwned("cache-1", "http")
+    expect(httpCacheGet("agents")).toBeUndefined()
+
+    httpCacheSet("agents", { agents: [] })
+    reg.markDetached("cache-1")
+    expect(httpCacheGet("agents")).toBeUndefined()
+
+    httpCacheInvalidateAll()
+    await reg.close("cache-1")
   })
 })
 

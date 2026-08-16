@@ -22,6 +22,9 @@
 import os from "node:os"
 import { deriveMachineStats } from "@drive-coding/core"
 import type { Hono } from "hono"
+// slice liveness C2: the presence response is cached (no-store + short TTL), but
+// touchOwner runs BEFORE any cache short-circuit — the side effect is the point.
+import { httpCacheGet, httpCacheSet } from "../../delivery/http-cache.js"
 import type { AgentSessionRegistry } from "../registry.js"
 
 /**
@@ -34,6 +37,11 @@ export function registerPresenceRoute(app: Hono, registry: AgentSessionRegistry)
     // liveness side effect — always, before anything else (C1 §2).
     registry.touchOwner(agentId)
 
+    c.header("Cache-Control", "no-store")
+    const key = `presence:${agentId}`
+    const cached = httpCacheGet(key)
+    if (cached !== undefined) return c.json(cached)
+
     const agent = registry.getRuntimeInfo(agentId)
     const machine = deriveMachineStats({
       totalMemBytes: os.totalmem(),
@@ -42,6 +50,8 @@ export function registerPresenceRoute(app: Hono, registry: AgentSessionRegistry)
       cpuCount: os.cpus().length,
     })
 
-    return c.json({ ok: true, agent, machine })
+    const body = { ok: true, agent, machine }
+    httpCacheSet(key, body)
+    return c.json(body)
   })
 }

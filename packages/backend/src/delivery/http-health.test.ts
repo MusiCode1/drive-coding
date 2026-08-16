@@ -6,8 +6,14 @@
  */
 
 import { Hono } from "hono"
-import { describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
+import { httpCacheInvalidateAll } from "./http-cache.js"
 import { registerHealthHttp } from "./http-health.js"
+
+// slice liveness C2: ה-http-cache הוא module-level — מנקים בין טסטים.
+beforeEach(() => {
+  httpCacheInvalidateAll()
+})
 
 // ── minimal stubs ─────────────────────────────────────────────────────────────
 
@@ -58,7 +64,13 @@ describe("GET /api/diag", () => {
     })
 
     const res = await app.request("/api/diag")
-    const r = res as unknown as { status: number; json(): Promise<unknown> }
+    const r = res as unknown as {
+      status: number
+      headers: { get(name: string): string | null }
+      json(): Promise<unknown>
+    }
+    // slice liveness C2: no-store נקודתי על /api/diag.
+    expect(r.headers.get("Cache-Control")).toBe("no-store")
     expect(r.status).toBe(200)
 
     const body = (await r.json()) as Record<string, unknown>
