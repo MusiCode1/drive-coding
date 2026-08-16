@@ -2,10 +2,15 @@
 
 **עברית** · [English](./README.md)
 
-ממשק קולי, hands-free, לסוכני-קוד CLI תואמי-ACP (כרגע
-[opencode](https://opencode.ai) ו-Claude Code). פקודה אחת מפעילה שרת backend
-ומגישה את ה-web UI מאותו origin — משוחחים עם סוכן-הקוד מהדפדפן, בנייד או
-במחשב, עם text-to-speech בזרימה ו-push-to-talk.
+ממשק קולי, hands-free, לסוכני-קוד CLI תואמי-ACP. פקודה אחת מפעילה שרת
+backend ומגישה את ה-web UI מאותו origin — משוחחים עם סוכן-הקוד מהדפדפן,
+בנייד או במחשב, עם text-to-speech בזרימה ו-push-to-talk.
+
+שבעה סוכנים מגיעים מובנים — [opencode](https://opencode.ai), Claude Code,
+Gemini CLI, Codex, Qoder, Cursor ו-Grok — והרג'יסטרי פתוח: אפשר להוסיף כל
+CLI אחר שדובר ACP מקובץ הגדרות, בלי שינוי קוד. ראו
+[`deploy/cli-specs.jsonc`](deploy/cli-specs.jsonc) ואת
+[סכימת ה-JSON](deploy/cli-specs.schema.json) שלו.
 
 ## שימוש (בלי clone של הריפו)
 
@@ -18,21 +23,21 @@ bunx drive-coding
 
 ## פיתוח / תרומה לפרויקט
 
-זהו מונו-רפו מבוסס pnpm-workspaces.
+זהו מונו-רפו מבוסס Bun-workspaces.
 
 ```bash
-pnpm install
-pnpm dev              # מריץ backend + frontend במקביל
+bun install
+bun run dev           # מריץ backend + frontend במקביל
 ```
 
 - Backend: http://localhost:4000
 - Frontend (Vite dev): פורט שנקבע אוטומטית, מודפס בהפעלה
 
 ```bash
-pnpm test             # כל הטסטים
-pnpm typecheck
-pnpm lint              # Biome
-pnpm hooks:install     # חד-פעמי: מפעיל hook לבדיקת i18n לפני commit
+bun run test          # כל הטסטים
+bun run typecheck
+bun run lint          # Biome
+bun run hooks:install # חד-פעמי: מפעיל hook לבדיקת i18n לפני commit
 ```
 
 ### מבנה
@@ -43,10 +48,14 @@ pnpm hooks:install     # חד-פעמי: מפעיל hook לבדיקת i18n לפנ
 - `packages/provider/` — שכבת חיבור ACP/CLI אגנוסטית-לספק.
 - `packages/release/` — חבילת ה-npm `drive-coding` המפורסמת (אורזת את כל הנ"ל).
 
-מתחילים מ-[`AGENTS.md`](AGENTS.md) — המפה לשאר התיעוד (ארכיטקטורה, מוסכמות,
-הרצה מקומית, תהליך git worktrees). רקע טכני מורחב:
-[`docs/design-principles.md`](docs/design-principles.md) ו-
-[`docs/roadmap.md`](docs/roadmap.md).
+מתחילים מ-[`AGENTS.md`](AGENTS.md) — מוסכמות, הרצה מקומית ותהליך
+git worktrees.
+
+> **לגבי מסמכי העיצוב המעמיקים:** הערות הארכיטקטורה, ה-roadmap ויומן
+> ההחלטות לכל slice חיים בריפו פרטי נפרד, ולכן נתיבים מהצורה
+> `docs-for-llm/…` שמוזכרים ב-`AGENTS.md` **אינם** חלק מה-clone הזה. אלה
+> הערות-עבודה של הסוכנים שבונים את הפרויקט, לא תיעוד למשתמש — שום דבר
+> שנחוץ כדי להריץ או להשתמש ב-drive-coding אינו מוסתר שם.
 
 ## רישיון
 

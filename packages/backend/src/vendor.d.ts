@@ -22,3 +22,16 @@ declare module "@musicode1/codex-acp/lib" {
     opts?: StartAcpServerOptions,
   ): void
 }
+
+/**
+ * Minimal Bun globals declaration.
+ * We avoid `types: ["bun"]` because bun-types declares `onmessage: never`
+ * which pollutes globalThis and breaks @types/node's fetch types.
+ */
+declare namespace Bun {
+  export function file(path: string | URL): import("node:buffer").Blob
+}
+
+declare var Bun: {
+  file: typeof Bun.file
+}

@@ -1,3 +1,6 @@
+// getBinaryCache (slice cli-bin-resolution-unify): המטמון המשותף לגילוי ול-spawn.
+// ייצרך ע"י cli-specs-hot-reload. אין צרכן ב-slice הזה.
+export { getBinaryCache } from "./cli-config.js"
 export type { CliCommand } from "./cli-config.js"
 export {
   getCliCommand,

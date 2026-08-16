@@ -19,7 +19,7 @@ import type {
   SessionNotification,
 } from "@agentclientprotocol/sdk"
 
-/** נגזר מ-SDK — לא shape מותאם; drift אפס. ר' docs/plans/slice-permission-ui-basic.md §4 Commit 0. */
+/** נגזר מ-SDK — לא shape מותאם; drift אפס. */
 type PermissionParams = Parameters<Client["requestPermission"]>[0]
 type PermissionResponse = Awaited<ReturnType<Client["requestPermission"]>>
 
@@ -27,8 +27,7 @@ type PermissionResponse = Awaited<ReturnType<Client["requestPermission"]>>
  * ─── slice-elicitation-ui: elicitation/create ─── נגזר מ-SDK דרך ייבוא ישיר (לא
  * Parameters<Client["unstable_createElicitation"]>) — השדה אופציונלי על Client, לכן
  * Parameters<...> נכשל ב-TS2344 (כולל undefined). CreateElicitationRequest/Response
- * מיוצאים מ-root ה-SDK (אין subpath /schema ב-exports map). ר' docs/plans/
- * slice-elicitation-ui.md §4 Commit 0.
+ * מיוצאים מ-root ה-SDK (אין subpath /schema ב-exports map).
  */
 type ElicitationParams = CreateElicitationRequest
 type ElicitationResponse = CreateElicitationResponse

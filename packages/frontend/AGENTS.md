@@ -85,7 +85,7 @@ adapters/       — I/O. פונקציות שמחזירות Promises.
 
 ## Parallel-safe additive design
 
-ל-`docs/conventions/parallel-safe-code.md` יש קונבנציה מחייבת לשינויים
+ל-`docs-for-llm/conventions/parallel-safe-code.md` יש קונבנציה מחייבת לשינויים
 בקבצים משותפים (`context.ts`, `+layout.svelte`, `chat/+page.svelte`,
 `i18n/keys.ts`, וכל קובץ שצפוי להיגעת ב-2+ slices עתידיים).
 
@@ -156,14 +156,14 @@ User (voice) → Mic → text → AgentSession → text → Agent (ACP)
 
 ## slice הבא — slice 4: Bubble polish
 
-ראה `docs/slices.md` לטבלת ה-slices המלאה.
+ראה `docs-for-llm/frontend/slices.md` לטבלת ה-slices המלאה.
 
 **מה כולל:**
 - Markdown rendering ב-message bubbles.
 - Thought bubbles עם 💭 prefix + dashed border + italic.
 - Tool bubbles collapsible עם status dots.
 - RTL alignment (user ימין, agent שמאל).
-- ראה `docs/frontend-spec.md §7` לפרטי עיצוב.
+- ראה `docs-for-llm/frontend-spec.md §7` לפרטי עיצוב.
 
 ---
 
@@ -180,13 +180,13 @@ User (voice) → Mic → text → AgentSession → text → Agent (ACP)
 ## פקודות
 
 ```bash
-pnpm install
-pnpm --filter @drive-coding/frontend dev          # port: OS-assigned, see startup log
-pnpm --filter @drive-coding/frontend typecheck
-pnpm --filter @drive-coding/frontend build
+bun install
+bun run --filter @drive-coding/frontend dev          # port: OS-assigned, see startup log
+bun run --filter @drive-coding/frontend typecheck
+bun run --filter @drive-coding/frontend build
 ```
 
-ה-BE רץ נפרד על 4000 (`pnpm --filter @drive-coding/backend dev`).
+ה-BE רץ נפרד על 4000 (`bun run --filter @drive-coding/backend dev`).
 Vite proxy מעביר `/api`, `/proxy`, `/ws` אליו.
 
 ---

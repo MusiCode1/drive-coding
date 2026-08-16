@@ -6,7 +6,7 @@ End-to-end tests that exercise BE + FE + OneCLI gateway with real browser
 ## Why a separate folder
 
 Playwright includes browser binaries (~100 MB). We deliberately keep this
-outside the pnpm workspace so a regular `pnpm install` stays fast. Install
+outside the Bun workspace so a regular `bun install` stays fast. Install
 separately when you actually want to run smoke tests.
 
 ## Setup (one-time per machine)
@@ -27,7 +27,7 @@ cd packages/backend
 onecli run --agent voice-acp -- bun --watch src/server.ts
 
 # Terminal 2 — FE
-pnpm --filter @drive-coding/frontend dev
+bun run --filter @drive-coding/frontend dev
 
 # Terminal 3 — smoke
 cd tests/smoke

@@ -22,9 +22,9 @@ Environment=CORS_ORIGINS=http://localhost:4001,https://drive-coding-dev.example.
 Environment=OPENCODE_BIN=/home/user/projects/drive-coding/dev/scripts/opencode-clean.sh
 # ExecStartPre מסנכרן תלויות ובונה את ה-FE אם חסר או לא-עדכני (build-if-stale:
 # משווה את הגרסה ב-build/_app/version.json מול HEAD, בונה מחדש אם שונה).
-# רענון FE שוטף: השתמש ב-`pnpm fe:build` בלי restart — הסוכנים החיים שורדים.
+# רענון FE שוטף: השתמש ב-`bun run fe:build` בלי restart — הסוכנים החיים שורדים.
 # restart שמור לשינויי BE בלבד.
-ExecStartPre=/bin/bash -lc 'source /home/user/.config/shell/shared-env.sh && pnpm install --frozen-lockfile && node scripts/dc-build-fe.mjs --if-stale'
+ExecStartPre=/bin/bash -lc 'source /home/user/.config/shell/shared-env.sh && bun install --frozen-lockfile && node scripts/dc-build-fe.mjs --if-stale'
 # claude in-process authenticates via subscription OAuth (~/.claude), not via OneCLI gateway.
 # This file declares the exclusion of api.anthropic.com from OneCLI (proxy + key placeholder),
 # scoped to the claude child process only — BE process.env (TTS proxy) is untouched.

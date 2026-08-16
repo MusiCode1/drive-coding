@@ -3,6 +3,7 @@
 // so claude authenticates via subscription OAuth (~/.claude) instead of the gateway (401).
 // Applies only to the claude child process — the BE (TTS proxy for ElevenLabs/Google) is untouched.
 {
+  "$schema": "./cli-specs.schema.json",
   "claude": {
     "unsetEnv": ["ANTHROPIC_API_KEY"],
     "setEnv": { "NO_PROXY": "api.anthropic.com", "no_proxy": "api.anthropic.com" }

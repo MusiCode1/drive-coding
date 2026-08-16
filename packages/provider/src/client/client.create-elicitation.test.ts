@@ -3,8 +3,7 @@
  *
  * `createClientImpl.unstable_createElicitation` מאציל ל-`opts.onCreateElicitation` אם
  * סופק; אחרת default `{action:"cancel"}` (לא לתקוע turn / לא לזרוק method-not-found).
- * מחקה את client.request-permission.test.ts. ר' docs/plans/slice-elicitation-ui.md
- * §4 Commit 0.
+ * מחקה את client.request-permission.test.ts.
  *
  * Tests:
  *   (א) בלי onCreateElicitation → default {action:"cancel"} (לא זורק).

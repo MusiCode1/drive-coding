@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://drive-coding.dev/schemas/cli-specs.schema.json",
+  "title": "drive-coding CLI specs override",
+  "description": "Per-CLI overrides for bin/args/env/displayName/logo. Loaded by loadCliSpecsOverride (packages/provider/src/config/cli-config-file.ts). Keys are CLI kinds (built-in or new); values are partial CliSpec overrides merged on top of CLI_SPECS from @drive-coding/core.",
+  "type": "object",
+  "patternProperties": {
+    "^[a-zA-Z0-9_-]+$": {
+      "$ref": "#/definitions/cliSpecOverride"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Pointer to this JSON Schema (ignored by the runtime parser)."
+    }
+  },
+  "definitions": {
+    "cliSpecOverride": {
+      "type": "object",
+      "description": "Partial CliSpec — every field is optional; unset fields fall back to the built-in CLI_SPECS.",
+      "properties": {
+        "bin": {
+          "type": "string",
+          "description": "Executable path or PATH-resolvable name. Absolute paths are recognized without a symlink (v0.28.0+)."
+        },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Fixed arguments always passed to the CLI."
+        },
+        "supportsModelFlag": {
+          "type": "boolean",
+          "description": "Whether the CLI accepts `--model <id>` on the command line. opencode/omp = false (model override happens via ACP session/new)."
+        },
+        "unsetEnv": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Environment variables to delete from the child process before spawn (e.g. OneCLI proxy/CA vars)."
+        },
+        "setEnv": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Environment variables to set/override on the child process before spawn. On collision with unsetEnv, setEnv wins."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name shown in the FE CLI dropdown. Absent → the CLI kind identifier is used."
+        },
+        "logo": {
+          "type": "string",
+          "description": "Local file path or HTTPS URL to a logo image. Plain HTTP URLs are blocked by the browser (mixed-content). Absent → a deterministic monogram is shown."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

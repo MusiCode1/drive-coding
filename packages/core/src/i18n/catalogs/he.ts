@@ -1,8 +1,8 @@
 import type { Catalog } from "../keys.js"
 
 /**
- * קטלוג עברית. הוסף מפתחות חדשים בבלוקי domain למטה — ראה
- * docs/conventions/parallel-safe-code.md (טכניקה #4: קטלוגים append-only).
+ * קטלוג עברית. הוסף מפתחות חדשים בבלוקי domain למטה. הקטלוג append-only כדי
+ * ששני slices שמוסיפים מפתחות במקביל ינחתו בבלוקים שונים ויתמזגו בלי קונפליקט.
  */
 export const he: Catalog = {
   // ─── connect ─── (slice 0)

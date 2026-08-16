@@ -1,6 +1,5 @@
 /**
  * permission.test.ts — TDD: מיפוי `PermissionParams.options` → view-model לרינדור.
- * ר' docs/plans/slice-permission-ui-basic.md §4 Commit 1.
  *
  * Tests:
  *   1. name/optionId/kind נשמרים כמו-שהם לכל אפשרות.

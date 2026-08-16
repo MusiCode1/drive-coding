@@ -3,7 +3,7 @@
  * Composition root — מאתחל (instantiates) את כל ה-view-models הראשיים ומחבר
  * אותם לקונטקסט. זהו המקום היחיד באפליקציה שבו קוראים ל-`new <VM>()`.
  *
- * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
+ * ─── עיצוב תוספתי בטוח למקביליות ───
  *
  * הוספת VM חדש:
  *   1. הוסף `import { Foo } from "$lib/view-models/foo.svelte"` לייבואים.

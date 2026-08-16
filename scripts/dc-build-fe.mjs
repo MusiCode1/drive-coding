@@ -75,7 +75,7 @@ if (ifStale && indexExists) {
 console.log("[dc-build-fe] starting FE build...")
 
 // 1) Build to staging dir (FE_BUILD_OUT is relative to packages/frontend — adapter-static resolves from there)
-//    PM-agnostic: bun `run --filter … build` on the server, pnpm `--filter … build` on dev.
+//    PM-agnostic via runFilterArgs — bun today; the helper still covers pnpm/npm/yarn.
 const [feCmd, feArgs] = runFilterArgs("@drive-coding/frontend", "build")
 const feCode = runPm(feCmd, feArgs, {
   cwd: repoRoot,

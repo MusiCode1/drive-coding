@@ -2,8 +2,7 @@
  * client.request-permission.test.ts — slice-permission-ui-basic Commit 0.
  *
  * `createClientImpl.requestPermission` מאציל ל-`opts.onRequestPermission` אם סופק;
- * אחרת נשמרת ההתנהגות ההיסטורית (auto-allow_once). ר' docs/plans/slice-permission-ui-basic.md
- * §4 Commit 0.
+ * אחרת נשמרת ההתנהגות ההיסטורית (auto-allow_once).
  *
  * Tests:
  *   (א) בלי onRequestPermission → auto-allow_once (רגרסיה — ההתנהגות הקיימת נשמרת).

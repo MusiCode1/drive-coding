@@ -1,7 +1,7 @@
 /**
  * permission.ts — טיפוסי view + מיפוי `PermissionParams.options` → view-model לרינדור.
  *
- * לוגיקה טהורה (ללא IO/DOM) — ר' docs/plans/slice-permission-ui-basic.md §4 Commit 1.
+ * לוגיקה טהורה (ללא IO/DOM).
  * תשתית משותפת: הדפוס (params → view-model ממוין) מיועד לשכפול ע"י slice B (elicitation).
  */
 import type { Client } from "@agentclientprotocol/sdk"

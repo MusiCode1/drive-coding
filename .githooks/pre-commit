@@ -4,7 +4,7 @@
 # Currently runs only the i18n lint (Hebrew-in-code detector).
 # Add more checks here as the project grows.
 #
-# Installed via: pnpm run hooks:install
+# Installed via: bun run hooks:install
 # (which runs: git config core.hooksPath .githooks)
 #
 # To skip ad hoc: git commit --no-verify
