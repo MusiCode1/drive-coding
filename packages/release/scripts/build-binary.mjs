@@ -2,7 +2,7 @@
 
 // packages/release/scripts/build-binary.mjs
 // Builds a self-contained binary via bun build --compile.
-//   1. Build the frontend (pnpm --filter @drive-coding/frontend build)
+//   1. Build the frontend (bun run --filter @drive-coding/frontend build)
 //   2. Codegen fe-manifest.gen.ts  ← Glob(frontend-dist/**/*):
 //        import f0 from "<rel>" with { type:"file" }  ...
 //        export const FE: Record<string,string> = { "/…": f0, … }
@@ -162,7 +162,7 @@ if (mapLeak.length > 0) {
   throw new Error(`[build-binary] FATAL: sourcemap(s) found in dist/: ${mapLeak.join(", ")}`)
 }
 
-// Step 4: Restore the committed stub so `pnpm typecheck` in dev continues to pass.
+// Step 4: Restore the committed stub so `bun run typecheck` in dev continues to pass.
 // The generated manifest is only needed during `bun build --compile`; the stub
 // is what TypeScript sees in normal dev/CI (no runtime import path needed — the
 // stub's `FE = {}` satisfies type-checking with the Record<string,string> annotation).

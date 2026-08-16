@@ -180,13 +180,13 @@ User (voice) → Mic → text → AgentSession → text → Agent (ACP)
 ## פקודות
 
 ```bash
-pnpm install
-pnpm --filter @drive-coding/frontend dev          # port: OS-assigned, see startup log
-pnpm --filter @drive-coding/frontend typecheck
-pnpm --filter @drive-coding/frontend build
+bun install
+bun run --filter @drive-coding/frontend dev          # port: OS-assigned, see startup log
+bun run --filter @drive-coding/frontend typecheck
+bun run --filter @drive-coding/frontend build
 ```
 
-ה-BE רץ נפרד על 4000 (`pnpm --filter @drive-coding/backend dev`).
+ה-BE רץ נפרד על 4000 (`bun run --filter @drive-coding/backend dev`).
 Vite proxy מעביר `/api`, `/proxy`, `/ws` אליו.
 
 ---

@@ -20,21 +20,21 @@ end-user guide (CLI flags, environment variables, troubleshooting).
 
 ## Develop / contribute
 
-This is a pnpm-workspaces monorepo.
+This is a Bun-workspaces monorepo.
 
 ```bash
-pnpm install
-pnpm dev              # runs backend + frontend in parallel
+bun install
+bun run dev           # runs backend + frontend in parallel
 ```
 
 - Backend: http://localhost:4000
 - Frontend (Vite dev): OS-assigned port, printed on start
 
 ```bash
-pnpm test             # all tests
-pnpm typecheck
-pnpm lint              # Biome
-pnpm hooks:install     # one-time: enables the i18n pre-commit hook
+bun run test          # all tests
+bun run typecheck
+bun run lint          # Biome
+bun run hooks:install # one-time: enables the i18n pre-commit hook
 ```
 
 ### Structure

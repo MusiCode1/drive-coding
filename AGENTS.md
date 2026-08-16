@@ -109,8 +109,10 @@ bun run hooks:install # one-time: set core.hooksPath=.githooks (runs pre-commit 
 ```
 
 > **Per-package commands** stay PM-agnostic via `node scripts/pm.mjs run-filter <pkg> <script>`
-> (it detects bun from the user-agent). Scattered `pnpm --filter …` mentions elsewhere in the
-> docs are legacy; prefer `bun run --filter` / `pm.mjs`. Full docs sweep tracked as follow-up.
+> (it detects bun from the user-agent), or directly as `bun run --filter <pkg> <script>`.
+> The docs were swept to bun on 2026-08-16 — the only remaining `pnpm` mentions are in
+> `scripts/pm.mjs` + its tests (where pnpm is one of four supported PMs) and in
+> `package.json`'s `pnpm.overrides` key, which **bun does read** (it lands in `bun.lock`).
 
 ## Running & serving locally
 
@@ -134,8 +136,8 @@ When an agent (calev runtime-gate, or any "look at this and confirm" moment) ser
 the FE for the **user** to inspect, follow these rules:
 
 1. **Preview = a production build, never HMR.** Do **not** hand the user the Vite dev
-   server (`pnpm dev` / HMR) as a "preview". Build first
-   (`pnpm --filter @drive-coding/frontend build`) and serve the built output
+   server (`bun run dev` / HMR) as a "preview". Build first
+   (`bun run --filter @drive-coding/frontend build`) and serve the built output
    (production-like single-origin via `FE_STATIC_DIR`, per `docs-for-llm/running-locally.md`).
    HMR is for the executor's own inner loop — it is **not** what we show the user.
 
@@ -159,7 +161,7 @@ the FE for the **user** to inspect, follow these rules:
 
 ## Git hooks
 
-After clone, run `pnpm hooks:install` once. It sets `core.hooksPath=.githooks/`
+After clone, run `bun run hooks:install` once. It sets `core.hooksPath=.githooks/`
 so `.githooks/pre-commit` runs the i18n lint before every commit. To skip a
 specific commit (rare): `git commit --no-verify`.
 
@@ -179,7 +181,7 @@ Don't pollute the project root with worktree directories. The two long-lived
 worktrees `dev/` and `main/` (at the project root) are the exception, not the rule.
 Any new branch for a slice / bugfix / experiment goes under `.worktrees/`.
 
-After `cd .worktrees/<name>`, run `pnpm install && pnpm hooks:install`.
+After `cd .worktrees/<name>`, run `bun install && bun run hooks:install`.
 
 ## Ports
 
@@ -198,13 +200,13 @@ the first worktree, 4001 for the second, etc.
 # Worktree A — BE on 4000, FE Vite proxies → 4000 (default)
 cd .worktrees/slice-X
 PORT=4000 onecli run --agent voice-acp -- bun --watch src/server.ts
-pnpm --filter @drive-coding/frontend dev
+bun run --filter @drive-coding/frontend dev
 # (no env var needed — FE defaults to BE_PORT=4000)
 
 # Worktree B — BE on 4001, FE Vite proxies → 4001
 cd .worktrees/slice-Y
 PORT=4001 onecli run --agent voice-acp -- bun --watch src/server.ts
-BE_PORT=4001 pnpm --filter @drive-coding/frontend dev
+BE_PORT=4001 bun run --filter @drive-coding/frontend dev
 ```
 
 Each worktree's FE will get a different OS-assigned Vite port — no conflict
@@ -214,7 +216,7 @@ on the FE side. Tunnels (if used) point at each FE's specific Vite port.
 
 The BE proxy at `/proxy/elevenlabs/*` and `/proxy/google/*` requires API
 credentials injected by the OneCLI gateway. **Do NOT start the BE with a
-plain `pnpm` command** — every TTS/translate call will return 401/400.
+plain `bun` command** — every TTS/translate call will return 401/400.
 
 ```bash
 # ✅ Correct
@@ -222,7 +224,7 @@ cd packages/backend
 onecli run --agent voice-acp -- bun --watch src/server.ts
 
 # ❌ Wrong — works for boot, fails on every proxy request
-pnpm --filter @drive-coding/backend dev
+bun run --filter @drive-coding/backend dev
 ```
 
 ### Running BE with CORS for deployed CF Pages FE

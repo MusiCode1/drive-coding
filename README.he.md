@@ -18,21 +18,21 @@ bunx drive-coding
 
 ## פיתוח / תרומה לפרויקט
 
-זהו מונו-רפו מבוסס pnpm-workspaces.
+זהו מונו-רפו מבוסס Bun-workspaces.
 
 ```bash
-pnpm install
-pnpm dev              # מריץ backend + frontend במקביל
+bun install
+bun run dev           # מריץ backend + frontend במקביל
 ```
 
 - Backend: http://localhost:4000
 - Frontend (Vite dev): פורט שנקבע אוטומטית, מודפס בהפעלה
 
 ```bash
-pnpm test             # כל הטסטים
-pnpm typecheck
-pnpm lint              # Biome
-pnpm hooks:install     # חד-פעמי: מפעיל hook לבדיקת i18n לפני commit
+bun run test          # כל הטסטים
+bun run typecheck
+bun run lint          # Biome
+bun run hooks:install # חד-פעמי: מפעיל hook לבדיקת i18n לפני commit
 ```
 
 ### מבנה
