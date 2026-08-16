@@ -13,8 +13,8 @@
  */
 
 import * as fs from "node:fs"
-import * as path from "node:path"
 import * as os from "node:os"
+import * as path from "node:path"
 
 export interface CliResolveSpec {
   /** Binary name to search for (without extension), e.g. "codex". */
@@ -23,6 +23,11 @@ export interface CliResolveSpec {
   envVar?: string
   /** Per-CLI known locations: full paths or directories. Expanded with ~ and env vars. */
   knownPaths?: string[]
+  /**
+   * שמות-חלופה לאותו CLI (למשל cursor: agent → cursor-agent).
+   * נבדקים **רק אחרי** ש-bin לא נמצא באף מיקום. הסדר = סדר-עדיפות.
+   */
+  fallbackBins?: readonly string[]
 }
 
 /** Returns the full path to the installed binary, or undefined if not found. */
@@ -30,7 +35,8 @@ export function resolveCliBinary(
   spec: CliResolveSpec,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-  // 1. env-override
+  // 1. env-override — נבדק פעם אחת בלבד, לפני הכל. דריסה מפורשת של המשתמשת — לא שם,
+  //    ולכן לא חוזרת על עצמה לכל fallback.
   if (spec.envVar) {
     const envVal = env[spec.envVar]
     if (envVal && envVal.length > 0) {
@@ -41,16 +47,35 @@ export function resolveCliBinary(
   // Candidate extensions: on Windows check PATHEXT; elsewhere bare binary only.
   const extensions = getCandidateExtensions(env)
 
+  // name-major: נסה את spec.bin בכל המיקומים, ורק אם לא נמצא בכלל — כל fallback
+  // בכל המיקומים, בסדר-הופעתו. לא per-location (השם הראשי מנצח גם אם חלופה יושבת
+  // מוקדם יותר ב-PATH).
+  const names = [spec.bin, ...(spec.fallbackBins ?? [])]
+  for (const name of names) {
+    const found = searchBinAllLocations(name, extensions, env, spec.knownPaths)
+    if (found) return found
+  }
+
+  return undefined
+}
+
+/** Searches every location (except envVar) for a single binary name. */
+function searchBinAllLocations(
+  bin: string,
+  extensions: string[],
+  env: NodeJS.ProcessEnv,
+  knownPaths: string[] | undefined,
+): string | undefined {
   // נתיב מוחלט/יחסי-מפורש ב-bin: אין מה לחפש — בדוק קיום ישירות.
   // (path.join(dir, "/abs") מייצר זבל, ולכן סריקת ה-PATH לעולם לא תמצא נתיב מוחלט.)
-  if (path.isAbsolute(spec.bin) || spec.bin.startsWith("./") || spec.bin.startsWith("../")) {
-    if (fs.existsSync(spec.bin)) return spec.bin
+  if (path.isAbsolute(bin) || bin.startsWith("./") || bin.startsWith("../")) {
+    if (fs.existsSync(bin)) return bin
     // Windows: נתיב מוחלט **ללא סיומת** — נסה את מועמדי PATHEXT (.cmd/.exe/…),
     // בדיוק כמו סריקת ה-PATH.
     // (הדוגמה ל-cursor ב-deploy/cli-specs.jsonc כבר נושאת .cmd ולכן נתפסת בשורה שמעל;
     //  הענף הזה מכסה את מי שיכתוב נתיב ללא סיומת — נפוץ כשמעתיקים נתיב מ-PowerShell.)
     for (const ext of extensions) {
-      if (ext && fs.existsSync(spec.bin + ext)) return spec.bin + ext
+      if (ext && fs.existsSync(bin + ext)) return bin + ext
     }
     return undefined
   }
@@ -59,24 +84,24 @@ export function resolveCliBinary(
   const rawPath = env["PATH"] ?? ""
   const dirs = rawPath.split(path.delimiter).filter(Boolean)
   for (const dir of dirs) {
-    const found = findBinInDir(dir, spec.bin, extensions)
+    const found = findBinInDir(dir, bin, extensions)
     if (found) return found
   }
 
   // 3. pm-global-bins
   const globalDirs = getPmGlobalBinDirs(env)
   for (const dir of globalDirs) {
-    const found = findBinInDir(dir, spec.bin, extensions)
+    const found = findBinInDir(dir, bin, extensions)
     if (found) return found
   }
 
   // 4. knownPaths — can be directories or full paths
-  if (spec.knownPaths) {
-    for (const candidate of spec.knownPaths) {
+  if (knownPaths) {
+    for (const candidate of knownPaths) {
       const expanded = expandPath(candidate)
       // If it looks like a full path to the binary (ends with bin name or has extension), try directly
       const baseName = path.basename(expanded).toLowerCase()
-      const binLower = spec.bin.toLowerCase()
+      const binLower = bin.toLowerCase()
       if (
         baseName === binLower ||
         extensions.some((ext) => baseName === `${binLower}${ext.toLowerCase()}`)
@@ -85,13 +110,66 @@ export function resolveCliBinary(
         if (fs.existsSync(expanded)) return expanded
       } else {
         // Treat as directory
-        const found = findBinInDir(expanded, spec.bin, extensions)
+        const found = findBinInDir(expanded, bin, extensions)
         if (found) return found
       }
     }
   }
 
   return undefined
+}
+
+// ─── resolveCliBinaryCached — lazy, positive-only, module-level (slice cli-bin-resolution-unify) ──
+
+const binaryCache = new Map<string, string>()
+
+/**
+ * מפתח המטמון חייב לכלול כל מה שה-resolver קורא, אחרת יוחזר נתיב שגוי כשהסביבה
+ * משתנה: bin · envVar · env[envVar] · fallbackBins · knownPaths · env.PATH ·
+ * env.PATHEXT · env.npm_config_prefix (r2) · os.homedir() (r3 — getPmGlobalBinDirs
+ * גוזר ממנו את כל תיקיות-החיפוש שלו).
+ */
+function buildCacheKey(spec: CliResolveSpec, env: NodeJS.ProcessEnv): string {
+  const envVarValue = spec.envVar ? (env[spec.envVar] ?? "") : ""
+  return [
+    spec.bin,
+    spec.envVar ?? "",
+    envVarValue,
+    (spec.fallbackBins ?? []).join(","),
+    (spec.knownPaths ?? []).join(","),
+    env["PATH"] ?? "",
+    env["PATHEXT"] ?? "",
+    env["npm_config_prefix"] ?? "",
+    os.homedir(),
+  ].join(" ")
+}
+
+/**
+ * עטיפה ממוטמנת ל-resolveCliBinary. חיוביים בלבד — "לא נמצא" לעולם לא נשמר.
+ * על hit: מאמת existsSync; אם הנתיב נעלם, מוחק את הרשומה ופותר מחדש.
+ * אסור realpath — הנתיב נשמר כפי שהוחזר (ר' §0 — תיקיית-גרסה של cursor).
+ */
+export function resolveCliBinaryCached(
+  spec: CliResolveSpec,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  const key = buildCacheKey(spec, env)
+  const cached = binaryCache.get(key)
+  if (cached !== undefined) {
+    if (fs.existsSync(cached)) return cached
+    binaryCache.delete(key)
+  }
+
+  const resolved = resolveCliBinary(spec, env)
+  if (resolved !== undefined) {
+    binaryCache.set(key, resolved)
+  }
+  return resolved
+}
+
+/** מאפס את המטמון כולו. ייצרך ע"י cli-specs-hot-reload. */
+export function invalidateBinaryCache(): void {
+  binaryCache.clear()
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -115,11 +193,7 @@ function getCandidateExtensions(env: NodeJS.ProcessEnv): string[] {
 }
 
 /** Check `<dir>/<bin><ext>` for each extension. Return first existing path. */
-function findBinInDir(
-  dir: string,
-  bin: string,
-  extensions: string[],
-): string | undefined {
+function findBinInDir(dir: string, bin: string, extensions: string[]): string | undefined {
   for (const ext of extensions) {
     const candidate = path.join(dir, `${bin}${ext}`)
     if (fs.existsSync(candidate)) return candidate
