@@ -380,6 +380,16 @@ export function reduce(
     return { state: newState, patches: [patch] }
   }
 
-  // plan → no-op (handled in VM)
-  return { state, patches: [] }
+  // 🔴 כאן היה `return { state, patches: [] }` — כלומר **כל מה שלא זוהה נזרק
+  // בשקט**, ובכללו `plan`/`plan_update`/`plan_removed`. הם מטופלים ב-VM
+  // (`reducePlan`), אבל רק בנתיב ה-updates הגולמיים = WS. ב-HTTP ה-FE מקבל
+  // Patches ⇒ רשימת-המשימות של הסוכן **לא הייתה קיימת שם כלל**.
+  //
+  // עכשיו: מה שלא זוהה נישא הלאה כ-`opaque`, בסדר הנכון, בלי שהליבה תבין
+  // אותו. הצרכן שכן מבין — מטפל. מי שלא — מתעלם.
+  const newVersion = state.version + 1
+  return {
+    state: { ...state, version: newVersion },
+    patches: [{ version: newVersion, op: "opaque", update: u }],
+  }
 }

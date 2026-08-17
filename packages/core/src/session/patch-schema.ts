@@ -67,3 +67,10 @@ export const PatchSchema = type({
     op: "'update-session'",
     changes: "object",
   })
+  // 🔴 עדכון לא-מוכר, נישא כמות שהוא. `unknown` בכוונה — הנקודה כולה היא
+  // שאיננו יודעים מה יש בפנים, ואסור לנו להתנות עליו שום דבר.
+  .or({
+    version: "number",
+    op: "'opaque'",
+    update: "unknown",
+  })

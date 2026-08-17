@@ -192,6 +192,22 @@ export type SessionState = {
  * contextUsage, status, turnState, pending, capabilities, quota).
  */
 export type Patch =
+  /**
+   * 🔴 עדכון שהשרת **לא מבין** — נישא כמות שהוא, בסדר הנכון, ולא נמחק.
+   *
+   * הרקע: `reduce()` הסתיים ב-`return { state, patches: [] }`, כלומר **כל מה
+   * שלא זוהה נזרק בשקט**. הקורבן שנתפס: `plan`/`plan_update`/`plan_removed`
+   * (רשימת-המשימות של הסוכן) מטופלים רק ב-VM, בנתיב ה-updates הגולמיים =
+   * WS בלבד. ב-HTTP ה-FE מקבל Patches ⇒ **רשימת-המשימות לא קיימת שם כלל.**
+   *
+   * ⚠️ אותה מחלקת-כשל של ה-gate `if (!text) return` שזרק 4 מ-5 ContentBlocks
+   * והעלים תמונה בטעינה-מחדש. הדפוס: *"לא מבין"* הפך ל*"זורק"*.
+   *
+   * העיקרון: **להבין מעט, לשאת הכל.** ה-BE מנרמל את המעטפה (זהות · סדר ·
+   * מצב · מי-חייב-תשובה) ואינו מפרש את התוכן — אבל "לא מפרש" ≠ "לא נושא".
+   * ⇒ פיצ'ר חדש ב-CLI מגיע ל-FE **באפס עבודת-BE**, בדיוק כמו בצינור השקוף.
+   */
+  | { version: number; op: "opaque"; update: unknown }
   | { version: number; op: "append-segment"; targetId: string; segment: SessionSegment }
   | { version: number; op: "add-message"; message: SessionMessage }
   | { version: number; op: "update-tool"; targetId: string; toolCall: Partial<SessionToolCall> }
