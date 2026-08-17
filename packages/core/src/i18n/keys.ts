@@ -404,6 +404,7 @@ export type MessageKey =
   | "session.cloudflareBlocked"
   | "session.turnStalled"
   | "session.cloudflareRefresh"
+  | "session.gone"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

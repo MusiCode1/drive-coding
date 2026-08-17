@@ -394,4 +394,5 @@ export const he: Catalog = {
   "session.cloudflareBlocked": "החיבור נחסם. ייתכן ש-Cloudflare דורש אימות.",
   "session.turnStalled": "לא הגיע כלום מהסוכן זמן רב. ייתכן שהוא עדיין עובד — וייתכן שעצר בלי לומר.",
   "session.cloudflareRefresh": "רענון",
+  "session.gone": "הסשן הזה איננו — פתח חדש.",
 }
