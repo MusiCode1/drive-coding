@@ -12,16 +12,15 @@
 import type {
   AvailableCommand,
   ContentBlock,
-  SessionConfigOption,
-  RequestPermissionRequest,
   CreateElicitationRequest,
+  RequestPermissionRequest,
+  SessionConfigOption,
 } from "@agentclientprotocol/sdk"
 import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 
 // ─── Re-exports from ACP SDK (used in SessionState fields) ───
-export type { AvailableCommand, SessionConfigOption }
 // ─── Re-export from provider (used in SessionState.quota) ───
-export type { QuotaSnapshot }
+export type { AvailableCommand, QuotaSnapshot, SessionConfigOption }
 
 // ─── Session lifecycle status ───
 
@@ -242,7 +241,11 @@ export type Patch =
 // ─── Helpers ───
 
 /** יוצר SessionState ריק עם sessionId נתון + ברירות-מחדל לכל השדות (כולל C1). */
-export function createInitialSessionState({ sessionId }: { sessionId: string | null }): SessionState {
+export function createInitialSessionState({
+  sessionId,
+}: {
+  sessionId: string | null
+}): SessionState {
   return {
     version: 0,
     sessionId,
@@ -295,7 +298,8 @@ export function synthesizeUserMessage(
   // PromptBlocks: text blocks → segments, image blocks → attachments
   const textBlocks = content.filter((b): b is ContentBlock & { type: "text" } => b.type === "text")
   const imageBlocks = content.filter(
-    (b): b is ContentBlock & { type: "image"; data: string; mimeType: string } => b.type === "image",
+    (b): b is ContentBlock & { type: "image"; data: string; mimeType: string } =>
+      b.type === "image",
   )
   const segments = textBlocks.map((b, i) => ({ id: `${segId}_${i}`, text: b.text }))
   const attachments = imageBlocks.map((b) => ({ mimeType: b.mimeType, dataBase64: b.data }))
