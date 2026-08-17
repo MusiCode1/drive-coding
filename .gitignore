@@ -52,6 +52,9 @@ packages/frontend/.build-old/
 .worktrees/
 .tmp/
 
+# Executor dispatch artifacts (progress.md / outcome.json) — local only, never push
+.dispatch/
+
 # Local-only logs / raw wire-captures / research artifacts (never in repo).
 # Canonical censored fixtures live under the relevant package; this is raw material.
 .research/

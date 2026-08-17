@@ -6,7 +6,11 @@
  *
  * banner — state נפרד מ-session.error (לא נוגע ב-crashReason / openedElsewhere).
  */
-import { notifySessionAttached, postPresence } from "$lib/adapters/agents-api"
+import {
+  notifySessionAttached,
+  type PresenceResponse,
+  postPresence,
+} from "$lib/adapters/agents-api"
 import { beUrl } from "$lib/util/be-url"
 import { diagnosedRefresh, isCloudflareChallenge } from "$lib/util/cloudflare-detect"
 import { connInfo, connWarn } from "$lib/util/conn-log"
@@ -20,7 +24,7 @@ import type { AgentSession } from "./agent-session.svelte"
 export const PRESENCE_INTERVAL_MS = 12_000
 export const PRESENCE_BANNER_DELAY_MS = 5_000
 
-export type DisconnectBannerKind = "reconnecting" | "cloudflare"
+export type DisconnectBannerKind = "reconnecting" | "cloudflare" | "gone"
 
 export class PresencePoller {
   /** באנר ניתוק — נפרד מ-session.error (§C4, handover decision #2). */
@@ -127,8 +131,14 @@ export class PresencePoller {
     this.#abort = new AbortController()
     try {
       const res = await postPresence(agentId, this.#abort.signal)
+      // ⚠️ הסדר קריטי: `agent === null` נבדק **לפני** clearBanner. הפוך היה
+      // מנקה את הבאנר ואז מציב אותו מחדש — הבהוב, ובחלון שביניהם "הכל תקין".
+      if (res.agent === null || res.agent === undefined) {
+        this.#handleGone()
+        return
+      }
       this.clearBanner()
-      await this.#maybeRetakeOwnership(agentId, res.agent?.attached === true)
+      await this.#maybeRetakeOwnership(agentId, res.agent)
     } catch (err) {
       this.#handleFailure(err)
     } finally {
@@ -161,11 +171,33 @@ export class PresencePoller {
     this.#inFlight = false
   }
 
-  async #maybeRetakeOwnership(agentId: string, attached: boolean): Promise<void> {
-    if (attached) return
+  async #maybeRetakeOwnership(
+    agentId: string,
+    agent: PresenceResponse["agent"],
+  ): Promise<void> {
+    if (agent === null || agent === undefined) return // סוכן שאיננו — אין על מה לתפוס בעלות
+    if (agent.attached) return
     const sessionId = this.#session.sessionState.sessionId
     if (!sessionId) return
     await notifySessionAttached(agentId, sessionId, { replace: true }).catch(() => {})
+  }
+
+  /**
+   * `POST /presence` על סוכן שאינו קיים מחזיר 200 `{ok:true, agent:null}`.
+   * `agent === null` הוא סיגנל ודאי — סוכן שאיננו, לא תקלה חולפת.
+   *
+   * 🔴 אל תעצור את הסקר. `sync()` קורא ל-`#ensureInterval()` ללא תנאי, והעצירה
+   * אינה מחזיקה. הגארד ב-`#applyBanner` הופך סקרים חוזרים ל-no-op על הבאנר.
+   */
+  #handleGone(): void {
+    if (this.banner === "gone") return
+    connWarn("presence-gone", { agentId: this.#activeAgentId })
+    if (this.#bannerTimer !== null) {
+      clearTimeout(this.#bannerTimer)
+      this.#bannerTimer = null
+    }
+    this.#failureSince = null
+    this.banner = "gone"
   }
 
   #handleFailure(err: unknown): void {
@@ -189,6 +221,7 @@ export class PresencePoller {
   }
 
   #applyBanner(): void {
+    if (this.banner === "gone") return // מצב סופי — לא נדרס בהמתנה
     const next = this.#cloudflare ? "cloudflare" : "reconnecting"
     if (this.banner !== next) {
       connWarn("banner", {
