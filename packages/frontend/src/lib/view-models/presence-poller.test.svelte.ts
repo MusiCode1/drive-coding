@@ -181,3 +181,80 @@ describe("PresencePoller", () => {
     expect(poller.banner).toBeNull()
   })
 })
+
+// ── סוכן שאיננו: 200 עם agent:null ──────────────────────────────────────────
+
+/**
+ * 🔴 אביגיל ממצא 1 — הבאג המרכזי שדווח. `POST /presence` על סוכן שאינו קיים
+ * מחזיר **200 `{ok:true, agent:null}`** (יש לזה טסט ייעודי ב-BE), וה-FE נפל
+ * רק על `!res.ok` ⇒ `clearBanner()` רץ ו**אישר בשקר** שהכל תקין, בזמן
+ * שרשימת ההודעות קפואה. זה בדיוק התסמין שדווח.
+ */
+describe("PresencePoller — agent:null הוא סוכן שאיננו", () => {
+  let poller: PresencePoller
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    _resetPageVisibilityForTest()
+    _setPageHiddenForTest(false)
+    mocks.postPresence.mockReset()
+    mocks.notifySessionAttached.mockReset()
+    mocks.notifySessionAttached.mockResolvedValue(undefined)
+    poller = new PresencePoller(makeSession())
+    poller.init()
+  })
+
+  afterEach(() => {
+    poller.dispose()
+    vi.useRealTimers()
+  })
+
+  test("🔴 200 עם agent:null ⇒ באנר 'gone', ולא ניקוי-באנר", async () => {
+    mocks.postPresence.mockResolvedValue({ ok: true, agent: null, machine: null })
+
+    poller.sync({ inSession: true, agentId: "ghost", hidden: false })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(poller.banner).toBe("gone")
+  })
+
+  test("אינו מנסה לתפוס בעלות על סוכן-רפאים", async () => {
+    mocks.postPresence.mockResolvedValue({ ok: true, agent: null, machine: null })
+
+    poller.sync({ inSession: true, agentId: "ghost", hidden: false })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // ⚠️ לפני התיקון: `res.agent?.attached === true` → false → ניסיון-בעלות
+    // כל 12ש׳ עם catch שקט. לולאת-ניסיון-שקטה שנייה.
+    expect(mocks.notifySessionAttached).not.toHaveBeenCalled()
+  })
+
+  test("וגם מפסיק לסקור — אין טעם לשאול על סוכן שאינו קיים", async () => {
+    mocks.postPresence.mockResolvedValue({ ok: true, agent: null, machine: null })
+
+    poller.sync({ inSession: true, agentId: "ghost", hidden: false })
+    await Promise.resolve()
+    await Promise.resolve()
+    mocks.postPresence.mockClear()
+
+    await vi.advanceTimersByTimeAsync(PRESENCE_INTERVAL_MS * 3)
+    expect(mocks.postPresence).not.toHaveBeenCalled()
+  })
+
+  test("סוכן קיים ולא-מחובר — עדיין תופס בעלות (לא נשברה ההתנהגות)", async () => {
+    mocks.postPresence.mockResolvedValue({
+      ok: true,
+      agent: { pid: 1, attached: false, busy: false, lastMessageAt: 1, lastSeenAt: 1, via: "http" },
+      machine: null,
+    })
+
+    poller.sync({ inSession: true, agentId: "agent-1", hidden: false })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(mocks.notifySessionAttached).toHaveBeenCalled()
+    expect(poller.banner).toBeNull()
+  })
+})

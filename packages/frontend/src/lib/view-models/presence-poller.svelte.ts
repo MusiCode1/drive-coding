@@ -6,7 +6,11 @@
  *
  * banner — state נפרד מ-session.error (לא נוגע ב-crashReason / openedElsewhere).
  */
-import { notifySessionAttached, postPresence } from "$lib/adapters/agents-api"
+import {
+  notifySessionAttached,
+  type PresenceResponse,
+  postPresence,
+} from "$lib/adapters/agents-api"
 import { beUrl } from "$lib/util/be-url"
 import { diagnosedRefresh, isCloudflareChallenge } from "$lib/util/cloudflare-detect"
 import { connInfo, connWarn } from "$lib/util/conn-log"
@@ -20,7 +24,12 @@ import type { AgentSession } from "./agent-session.svelte"
 export const PRESENCE_INTERVAL_MS = 12_000
 export const PRESENCE_BANNER_DELAY_MS = 5_000
 
-export type DisconnectBannerKind = "reconnecting" | "cloudflare"
+/**
+ * 🔴 `gone` נוסף ב-slice stream-liveness. עד כה היו רק שני מצבי-כשל, ושניהם
+ * חולפים ("מנסה שוב"). אבל **סוכן שאיננו אינו תקלה חולפת** — והמצב הזה כלל
+ * לא היה מיוצג.
+ */
+export type DisconnectBannerKind = "reconnecting" | "cloudflare" | "gone"
 
 export class PresencePoller {
   /** באנר ניתוק — נפרד מ-session.error (§C4, handover decision #2). */
@@ -127,8 +136,14 @@ export class PresencePoller {
     this.#abort = new AbortController()
     try {
       const res = await postPresence(agentId, this.#abort.signal)
+      // ⚠️ הסדר קריטי: `agent === null` נבדק **לפני** clearBanner. הפוך היה
+      // מנקה את הבאנר ואז מציב אותו מחדש — הבהוב, ובחלון שביניהם "הכל תקין".
+      if (res.agent === null || res.agent === undefined) {
+        this.#handleGone()
+        return
+      }
       this.clearBanner()
-      await this.#maybeRetakeOwnership(agentId, res.agent?.attached === true)
+      await this.#maybeRetakeOwnership(agentId, res.agent)
     } catch (err) {
       this.#handleFailure(err)
     } finally {
@@ -161,11 +176,45 @@ export class PresencePoller {
     this.#inFlight = false
   }
 
-  async #maybeRetakeOwnership(agentId: string, attached: boolean): Promise<void> {
-    if (attached) return
+  /**
+   * 🔴 אביגיל ממצא 1. `#maybeRetakeOwnership` קיבל `res.agent?.attached`, כלומר
+   * `undefined → false` כשהסוכן **איננו** — ואז ניסה לתפוס בעלות על סוכן-רפאים
+   * כל 12 שניות, עם `.catch(() => {})`. זו **לולאת-ניסיון-שקטה שנייה**, זהה
+   * בדפוסה לזו של `sse-reader` שתוקנה ב-commit 1.
+   *
+   * ⚠️ ההבחנה שחסרה: `agent === null` **אינו** "לא-מחובר" — הוא "לא קיים".
+   */
+  async #maybeRetakeOwnership(agentId: string, agent: PresenceResponse["agent"]): Promise<void> {
+    if (agent === null || agent === undefined) return // סוכן שאיננו — אין על מה לתפוס בעלות
+    if (agent.attached) return
     const sessionId = this.#session.sessionState.sessionId
     if (!sessionId) return
     await notifySessionAttached(agentId, sessionId, { replace: true }).catch(() => {})
+  }
+
+  /**
+   * 🔴 הסיגנל שהיה על החוט ולא נצרך.
+   *
+   * `POST /presence` על סוכן שאינו קיים מחזיר **200 `{ok:true, agent:null}`**
+   * (`presence.ts`, עם טסט ייעודי). ה-FE נפל רק על `!res.ok` ⇒ `clearBanner()`
+   * רץ על סוכן-רפאים. כלומר ערוץ-הפינג לא רק "לא ידע" — הוא **אישר בשקר**
+   * שהכל תקין, בזמן שרשימת ההודעות קפואה. זה התסמין שדווח.
+   *
+   * `agent === null` הוא סיגנל **ודאי** בשדה **קיים** — זול וחד יותר מכל
+   * היוריסטיקה על חותמות-זמן.
+   */
+  #handleGone(): void {
+    if (this.banner === "gone") return
+    connWarn("presence-gone", { agentId: this.#activeAgentId })
+    if (this.#bannerTimer !== null) {
+      clearTimeout(this.#bannerTimer)
+      this.#bannerTimer = null
+    }
+    this.#failureSince = null
+    this.banner = "gone"
+    // אין טעם להמשיך לסקור סוכן שאינו קיים.
+    this.#stopInterval()
+    this.#abortInFlight()
   }
 
   #handleFailure(err: unknown): void {
