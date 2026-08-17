@@ -18,13 +18,14 @@
  *
  * ─── slice session-state-reducer C2 (TDD) ───
  */
-import { describe, it, expect } from "vitest"
+
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { reduce } from "./reduce"
+import { describe, expect, it } from "vitest"
 import { applyPatch } from "./apply-patch"
+import { reduce } from "./reduce"
+import type { Patch, SessionState } from "./types"
 import { createInitialSessionState } from "./types"
-import type { SessionState, Patch } from "./types"
 
 // ─── Load fixture ───
 

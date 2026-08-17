@@ -588,6 +588,20 @@ export class AgentSession {
         if (patches.length === 0) continue
         // targeted bubble update (אין O(n²) mapping)
         applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
+        // 🔴 החצי השני של #34. הליבה נושאת עכשיו עדכונים לא-מוכרים כ-`opaque`
+        // במקום לזרוק אותם — אבל נשיאה בלי צרכן היא עדיין שקט. כאן הם מגיעים
+        // לאותו `#onSessionUpdate` שמסלול ה-WS משתמש בו, וכך `reducePlan`
+        // (ושאר המטפלים שחיים רק שם) עובדים **גם ב-HTTP**.
+        //
+        // ⇒ פיצ'ר חדש ב-CLI שהליבה אינה מכירה יגיע ל-FE באפס עבודת-BE, בדיוק
+        // כמו בצינור השקוף — וזה בדיוק היתרון שחששנו שנאבד בנרמול-בשרת.
+        for (const patch of patches) {
+          // ⚠️ `#onSessionUpdate` מקבל **נוטיפיקציה** (`{ sessionId, update }`)
+          // ולא את ה-update הפנימי — אותה עטיפה כמו ב-fixture-replay למטה.
+          if (patch.op === "opaque") {
+            this.#onSessionUpdate({ update: patch.update } as unknown as SessionNotification)
+          }
+        }
         // sync metadata from view.state
         this.#syncFromViewState(view.state)
       }
