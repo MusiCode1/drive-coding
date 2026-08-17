@@ -28,7 +28,13 @@ import {
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import type { SessionView } from "./session-view.js"
-import { SSEReader } from "./sse-reader.js"
+import { type SSELostReason, SSEReader } from "./sse-reader.js"
+
+/**
+ * למה הסשן נגמר סופית — הצורה שה-VM וה-UI צורכים.
+ * `gone` = השרת ענה שהסשן איננו · `taken-over` = לקוח אחר תפס בעלות.
+ */
+export type SessionLostInfo = SSELostReason | { reason: "taken-over" }
 
 /** ext methods שדורשות return value אמיתי — לא נתמכות ב-remote mode (§C2 decision #3). */
 const RETURN_VALUE_EXT_METHODS = new Set<string>(["_drive/getQuota"])
@@ -41,6 +47,14 @@ export type RemoteSessionViewOptions = {
   headers?: Record<string, string>
   /** slice liveness C4: hook חיצוני כשה-SSE מתחבר מחדש (ניקוי באנר presence). */
   onSseReconnected?: () => void
+  /**
+   * 🔴 slice stream-liveness: הזרם נגמר **סופית** — הסשן איננו בשרת, או שמישהו
+   * אחר השתלט עליו. עד לסלייס הזה לא היה שום ערוץ כזה: `onLost` ו-`onTakenOver`
+   * קיימים ב-`SSEReader` ו**לאף אחד מהם לא היה צרכן**, כלומר גם `event:
+   * taken-over` שהשרת שולח בפועל (`events.ts:102`) לא ייצר שום חיווי — המסך
+   * פשוט נשאר על המצב האחרון.
+   */
+  onLost?: (info: SessionLostInfo) => void
   /** @internal לבדיקות — override global fetch. */
   _fetch?: (url: string, init?: RequestInit) => Promise<Response>
   /** @internal לבדיקות — override setTimeout-based sleep (מועבר ל-SSEReader). */
@@ -61,6 +75,9 @@ export class RemoteSessionView implements SessionView {
   readonly #baseUrl: string
   readonly #headers: Record<string, string>
   readonly #onSseReconnected?: () => void
+  readonly #onLost?: (info: SessionLostInfo) => void
+  /** נורה פעם אחת בלבד — `gone` ו-`taken-over` יכולים להגיע שניהם. */
+  #lostFired = false
   readonly #doFetch: (url: string, init?: RequestInit) => Promise<Response>
   readonly #reader: SSEReader
 
@@ -88,6 +105,7 @@ export class RemoteSessionView implements SessionView {
     this.#baseUrl = baseUrl
     this.#headers = opts.headers ?? {}
     this.#onSseReconnected = opts.onSseReconnected
+    this.#onLost = opts.onLost
     this.#doFetch = opts._fetch ?? ((u, init) => globalThis.fetch(u, init))
     // replaced on connect() by the SSE snapshot — this is just a safe pre-connect default
     this.#state = createInitialSessionState({ sessionId: null })
@@ -98,6 +116,11 @@ export class RemoteSessionView implements SessionView {
       _sleep: opts._sleep,
     })
     this.#reader.onReconnected = this.#handleReconnected.bind(this)
+    // 🔴 שני החוטים שהיו מנותקים. `onTakenOver` קיים ב-SSEReader מאז slice
+    // ownership-handoff C3 ומעולם לא חובר — כלומר השרת שלח `event: taken-over`
+    // ואיש לא שמע. `onLost` נוסף ב-commit 1 של הסלייס הזה ונשאר בלי צרכן.
+    this.#reader.onLost = (info) => this.#handleLost(info)
+    this.#reader.onTakenOver = () => this.#handleLost({ reason: "taken-over" })
 
     this.patches = new ReadableStream<Patch[]>({
       start: (ctrl) => {
@@ -307,6 +330,29 @@ export class RemoteSessionView implements SessionView {
    * אחר (BE restart יצר session חדש) — מחליפים תמיד, בלי קשר ל-version, ומרעננים
    * את #sessionId (שלא התעדכן קודם אחרי reconnect).
    */
+  /**
+   * הזרם נגמר סופית. מסמן `status: "disconnected"` ב-state דרך patch רגיל —
+   * כך שכל צרכן שכבר מסתכל על ה-state רואה את זה **בלי חיווט נוסף** — ואז
+   * מודיע כלפי מעלה.
+   *
+   * ⚠️ פעם אחת בלבד: `gone` ו-`taken-over` יכולים להגיע שניהם על אותו ניתוק.
+   */
+  #handleLost(info: SessionLostInfo): void {
+    if (this.#lostFired) return
+    this.#lostFired = true
+
+    const patch: Patch = {
+      version: this.#lastVersion + 1,
+      op: "update-session",
+      changes: { status: "disconnected" },
+    }
+    this.#state = applyPatch(this.#state, patch)
+    this.#lastVersion = patch.version
+    this.#patchesCtrl?.enqueue([patch])
+
+    this.#onLost?.(info)
+  }
+
   #handleReconnected(snapshot: SessionState): void {
     const sessionChanged = snapshot.sessionId !== this.#sessionId
     if (!sessionChanged && snapshot.version <= this.#lastVersion) {
@@ -371,8 +417,10 @@ export class RemoteSessionView implements SessionView {
       | { sessions?: unknown; sessionCapabilities?: unknown }
       | undefined
     this.#sessionCapabilities =
-      (res?.sessionCapabilities as { delete?: unknown; [key: string]: unknown } | null | undefined) ??
-      null
+      (res?.sessionCapabilities as
+        | { delete?: unknown; [key: string]: unknown }
+        | null
+        | undefined) ?? null
     const sessions = res?.sessions
     const raw = Array.isArray(sessions) ? (sessions as unknown[]) : []
     return raw.map(normalizeSessionInfo)

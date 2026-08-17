@@ -29,6 +29,7 @@ import {
   createRemoteSessionView,
   RemoteSessionView,
   type RemoteSessionViewOptions,
+  type SessionLostInfo,
 } from "./remote-session-view.js"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -482,7 +483,11 @@ describe("RemoteSessionView — RPC methods", () => {
   // ─── slice remote-images C1 (TDD) ───
   it("prompt() with PromptBlocks — passes blocks to RPC without throwing", async () => {
     let capturedParams: unknown = null
-    const mockFetch = makeMockFetch({ onRpc: (params) => { capturedParams = params } })
+    const mockFetch = makeMockFetch({
+      onRpc: (params) => {
+        capturedParams = params
+      },
+    })
     const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
     await view.connect()
 
@@ -655,10 +660,9 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
       if (url.includes("/events")) {
         // keepOpen: a closing stream would spin the noSleep reconnect loop and
         // #handleReconnected would keep resetting #state to the snapshot.
-        return sseResponse(
-          [{ event: "snapshot", data: JSON.stringify(makeSnapshot()) }],
-          { keepOpen: true },
-        )
+        return sseResponse([{ event: "snapshot", data: JSON.stringify(makeSnapshot()) }], {
+          keepOpen: true,
+        })
       }
       if (url.includes("/rpc")) {
         const body = init?.body ? JSON.parse(init.body as string) : undefined
@@ -1210,5 +1214,79 @@ describe("createRemoteSessionView()", () => {
     expect(view).toBeInstanceOf(RemoteSessionView)
     await view.connect()
     expect(view.state.sessionId).toBe("sess-1")
+  })
+})
+
+// ── סיום סופי של הזרם ────────────────────────────────────────────────────────
+
+/**
+ * 🔴 אביגיל ממצא 6: `onLost` (מ-commit 1) ו-`onTakenOver` (קיים מאז slice
+ * ownership-handoff C3) — **לשניהם לא היה צרכן**. כלומר גם `event: taken-over`
+ * שהשרת שולח בפועל לא ייצר שום חיווי, והמסך נשאר על המצב האחרון.
+ */
+describe("RemoteSessionView — סיום סופי", () => {
+  function snapshotBody(state: SessionState): ReadableStream<Uint8Array> {
+    const enc = new TextEncoder()
+    return new ReadableStream({
+      start(ctrl) {
+        ctrl.enqueue(enc.encode(`event: snapshot\ndata: ${JSON.stringify(state)}\n\n`))
+        ctrl.close()
+      },
+    })
+  }
+
+  it("404 בזרם ⇒ onLost + status:'disconnected' ב-state", async () => {
+    const initial = createInitialSessionState({ sessionId: "s1" })
+    let call = 0
+    const mockFetch = vi.fn().mockImplementation(() => {
+      call++
+      if (call === 1) return Promise.resolve({ ok: true, status: 200, body: snapshotBody(initial) })
+      return Promise.resolve({ ok: false, status: 404 })
+    })
+
+    const lost: SessionLostInfo[] = []
+    const view = new RemoteSessionView("a1", "http://be", {
+      _fetch: mockFetch as never,
+      _sleep: () => Promise.resolve(),
+      onLost: (i) => lost.push(i),
+    })
+    await view.connect()
+    for (let i = 0; i < 60; i++) await Promise.resolve()
+
+    expect(lost).toEqual([{ reason: "gone", status: 404 }])
+    expect(view.state.status).toBe("disconnected")
+    await view.close()
+  })
+
+  it("taken-over + 404 באותו ניתוק ⇒ נורה פעם אחת בלבד", async () => {
+    const initial = createInitialSessionState({ sessionId: "s1" })
+    const enc = new TextEncoder()
+    // זרם שמוסר snapshot ואז taken-over — ואז ה-fetch הבא מחזיר 404.
+    const body = new ReadableStream<Uint8Array>({
+      start(ctrl) {
+        ctrl.enqueue(enc.encode(`event: snapshot\ndata: ${JSON.stringify(initial)}\n\n`))
+        ctrl.enqueue(enc.encode(`event: taken-over\ndata: {}\n\n`))
+        ctrl.close()
+      },
+    })
+    let call = 0
+    const mockFetch = vi.fn().mockImplementation(() => {
+      call++
+      if (call === 1) return Promise.resolve({ ok: true, status: 200, body })
+      return Promise.resolve({ ok: false, status: 404 })
+    })
+
+    const lost: SessionLostInfo[] = []
+    const view = new RemoteSessionView("a1", "http://be", {
+      _fetch: mockFetch as never,
+      _sleep: () => Promise.resolve(),
+      onLost: (i) => lost.push(i),
+    })
+    await view.connect()
+    for (let i = 0; i < 60; i++) await Promise.resolve()
+
+    // taken-over מגיע ראשון ועוצר את הקורא ⇒ הוא הסיבה שנרשמת, ורק פעם אחת.
+    expect(lost).toEqual([{ reason: "taken-over" }])
+    await view.close()
   })
 })
