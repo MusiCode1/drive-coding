@@ -22,13 +22,15 @@
  */
 
 /** אחרי כמה זמן בלי פעילות בתור פעיל להציג חיווי. */
-export const STALL_NOTICE_MS = 90_000
+import { TURN_STALL_HARD_CAP_MS, TURN_STALL_NOTICE_MS } from "./liveness-thresholds"
+
+export const STALL_NOTICE_MS = TURN_STALL_NOTICE_MS
 
 /**
  * חסם עליון על תור שלא נענה — רשת-ביטחון בלבד, שלא ידלוף לנצח.
  * גם כאן: החסם משחרר את **ההמתנה שלנו**, ואינו שולח `session/cancel` לסוכן.
  */
-export const STALL_HARD_CAP_MS = 600_000
+export const STALL_HARD_CAP_MS = TURN_STALL_HARD_CAP_MS
 
 export type TurnActivityState = {
   /** מתי התור הנוכחי התחיל. null = אין תור פעיל. */

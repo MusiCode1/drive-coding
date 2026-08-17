@@ -17,6 +17,10 @@
 
 import { type Patch, PatchSchema, type SessionState } from "@drive-coding/core/session"
 import { type } from "arktype"
+import {
+  SERVER_KEEPALIVE_MS as SHARED_SERVER_KEEPALIVE_MS,
+  STREAM_STALE_MS,
+} from "$lib/engines/liveness-thresholds"
 import { connInfo, connWarn } from "$lib/util/conn-log"
 
 // ─── SSE frame parsing ────────────────────────────────────────────────────────
@@ -117,9 +121,11 @@ const STABLE_CONNECTION_MS = 10_000
  * ה-keepalive שהשרת פולט (`events.ts` — `KEEPALIVE_INTERVAL_MS`). משוכפל כאן
  * בכוונה: זו הנחה על **התנהגות השרת**, ואם הוא ישתנה הסף כאן חייב להשתנות איתו.
  */
-const SERVER_KEEPALIVE_MS = 30_000
+// ⚠️ הוזז ל-`$lib/engines/liveness-thresholds` — שלושה ספים ישבו בשלושה קבצים
+// וירו על אותו אירוע בלי שאיש ראה אותם יחד (אביגיל ממצא 3).
+const SERVER_KEEPALIVE_MS = SHARED_SERVER_KEEPALIVE_MS
 /** 2.5 מחזורי-keepalive — סובלני לאיבוד אחד, לא לשניים. */
-const STALE_AFTER_MS = SERVER_KEEPALIVE_MS * 2.5
+const STALE_AFTER_MS = STREAM_STALE_MS
 /**
  * כל כמה זמן נבדק ההפרש. ⚠️ **הבדיקה משווה חותמות ואינה סופרת תקתוקים** —
  * כרטיסייה קפואה מקפיאה גם את ה-`setInterval`, ולכן מונה-תקתוקים היה מתעורר

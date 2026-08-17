@@ -11,6 +11,7 @@ import {
   type PresenceResponse,
   postPresence,
 } from "$lib/adapters/agents-api"
+import { PRESENCE_BANNER_DELAY_MS as SHARED_BANNER_DELAY_MS } from "$lib/engines/liveness-thresholds"
 import { beUrl } from "$lib/util/be-url"
 import { diagnosedRefresh, isCloudflareChallenge } from "$lib/util/cloudflare-detect"
 import { connInfo, connWarn } from "$lib/util/conn-log"
@@ -22,7 +23,7 @@ import {
 import type { AgentSession } from "./agent-session.svelte"
 
 export const PRESENCE_INTERVAL_MS = 12_000
-export const PRESENCE_BANNER_DELAY_MS = 5_000
+export const PRESENCE_BANNER_DELAY_MS = SHARED_BANNER_DELAY_MS
 
 /**
  * 🔴 `gone` נוסף ב-slice stream-liveness. עד כה היו רק שני מצבי-כשל, ושניהם
