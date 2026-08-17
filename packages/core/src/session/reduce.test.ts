@@ -44,11 +44,18 @@ describe("reduce — unknown events", () => {
     expect(patches).toEqual([])
   })
 
-  it("unknown sessionUpdate → no-op", () => {
+  /**
+   * ⚠️ ההבחנה שנשמרת כאן: **זבל אינו "עדכון לא-מוכר".**
+   * `null`/`{}`/מספר/מחרוזת — אין להם `sessionUpdate` כמחרוזת, ולכן הם יוצאים
+   * מוקדם ואינם נישאים. רק עדכון **תקין-בצורתו** שאיננו מזהים הופך ל-`opaque`.
+   * לשאת זבל היה הופך את דלת-המילוט לצינור-רעש.
+   */
+  it("sessionUpdate לא-מוכר **נישא** כ-opaque (ולא נזרק)", () => {
     const s = mkState()
-    const { state, patches } = reduce(s, { sessionUpdate: "unknown_type", content: {} })
-    expect(state).toBe(s)
-    expect(patches).toEqual([])
+    const update = { sessionUpdate: "unknown_type", content: {} }
+    const { state, patches } = reduce(s, update)
+    expect(patches).toEqual([{ version: s.version + 1, op: "opaque", update }])
+    expect(state.version).toBe(s.version + 1)
   })
 
   it("non-object update → no-op", () => {
@@ -373,14 +380,53 @@ describe("reduce — tool_call_update", () => {
   })
 })
 
-// ─── non-handled events (plan, usage_update, etc.) → no-op ───
+// ─── עדכונים לא-מוכרים → נישאים כ-opaque, לא נזרקים ───
 
-describe("reduce — non-handled events", () => {
-  it("plan event → no-op (plan is handled in VM)", () => {
+/**
+ * 🔴 הטסטים כאן **קיבעו את הבאג**: הם דרשו `patches: []` לכל עדכון לא-מוכר,
+ * כלומר "מה שאיננו מבינים — נזרק". הקורבן שנתפס בשדה: `plan`/`plan_update`/
+ * `plan_removed` (רשימת-המשימות של הסוכן) מטופלים ב-VM דרך `reducePlan`, אבל
+ * **רק בנתיב ה-updates הגולמיים = WS**. ב-HTTP ה-FE מקבל Patches ⇒
+ * רשימת-המשימות **לא הייתה קיימת שם כלל** (משימה #34).
+ *
+ * ⚠️ אותה מחלקת-כשל של `if (!text) return` שזרק 4 מ-5 ContentBlocks והעלים
+ * תמונה בטעינה-מחדש.
+ *
+ * העיקרון שהוחלף: **להבין מעט, לשאת הכל.**
+ */
+describe("reduce — עדכונים לא-מוכרים", () => {
+  it("🔴 plan נישא כ-opaque במקום להיזרק", () => {
     const s = mkState()
-    const { state, patches } = reduce(s, { sessionUpdate: "plan", entries: [] })
-    expect(patches).toEqual([])
-    expect(state).toBe(s)
+    const update = { sessionUpdate: "plan", entries: [] }
+    const { state, patches } = reduce(s, update)
+
+    expect(patches).toEqual([{ version: s.version + 1, op: "opaque", update }])
+    // ה-state עצמו לא משתנה — הליבה אינה מבינה את התוכן — אבל ה-version
+    // מתקדם כדי שהסדר והדדופ ימשיכו לעבוד.
+    expect(state.version).toBe(s.version + 1)
+    expect(state.messages).toEqual(s.messages)
+  })
+
+  it("גם סוג-עדכון שלא נראה מעולם נישא", () => {
+    const s = mkState()
+    const update = { sessionUpdate: "some_future_thing_from_2027", payload: { a: 1 } }
+    const { patches } = reduce(s, update)
+
+    expect(patches).toHaveLength(1)
+    expect(patches[0]).toMatchObject({ op: "opaque", update })
+  })
+
+  it("התוכן נישא **כמות שהוא** — בלי פירוש ובלי חיתוך", () => {
+    const s = mkState()
+    const update = {
+      sessionUpdate: "plan_update",
+      planId: "p1",
+      entries: [{ content: "שלב", status: "pending" }],
+      _meta: { vendor: "x" },
+    }
+    const { patches } = reduce(s, update)
+    // ⚠️ הטענה: זהות מלאה. כל נרמול כאן הוא בדיוק מה שהעיקרון אוסר.
+    expect((patches[0] as { update: unknown }).update).toEqual(update)
   })
 })
 

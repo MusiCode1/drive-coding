@@ -114,6 +114,13 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
       }
     }
 
+    case "opaque": {
+      // 🔴 אנחנו לא יודעים מה יש בפנים, ולכן **לא נוגעים ב-state** — אבל
+      // ה-version כן מתקדם, כדי שהסדר והדדופ ימשיכו לעבוד. הצרכן שכן מבין
+      // את התוכן (למשל `reducePlan` ב-FE) מטפל בו בעצמו.
+      return { ...state, version: patch.version }
+    }
+
     default: {
       // calev-heavy remote-session-view round 2 finding #1: the switch was
       // exhaustive over the *declared* Patch union but had no terminal branch —

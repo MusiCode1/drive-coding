@@ -915,3 +915,46 @@ describe("AgentSession + remote view — session management via #view (remote-se
     expect(view.loadSessionMock).not.toHaveBeenCalled()
   })
 })
+
+// ── #34: plan מגיע ל-FE גם ב-HTTP ────────────────────────────────────────────
+
+/**
+ * 🔴 רשימת-המשימות של הסוכן (`plan`) מטופלת ב-VM דרך `reducePlan` — אבל רק
+ * בנתיב ה-updates **הגולמיים**, כלומר WS. ב-HTTP ה-VM מקבל `Patch`, והליבה
+ * זרקה כל עדכון שלא זיהתה ⇒ `PlanChecklist` (gated על `planStore.order.length`)
+ * **לעולם לא נראה במסלול HTTP**.
+ *
+ * התיקון בשני חלקים: הליבה נושאת כ-`opaque` (`8bb5d3e`), וה-VM מזרים אותם
+ * לאותו handler שה-WS משתמש בו. הטסט עובר דרך `fireUpdate` — כלומר דרך
+ * `reduce` האמיתי ודרך זרם-ה-patches, בדיוק כמו החוט.
+ */
+describe("AgentSession + remote view — plan דרך opaque (#34)", () => {
+  let view: MockSessionView
+  let agent: AgentSession
+
+  beforeEach(() => {
+    view = new MockSessionView()
+    view.connect("remote-sess-plan")
+    agent = new AgentSession({ view })
+    agent._setStatusForTest("connected")
+  })
+
+  it("🔴 plan שמגיע בזרם-ה-patches ממלא את planStore", async () => {
+    expect(agent.planStore.order).toHaveLength(0)
+
+    view.fireUpdate({
+      sessionUpdate: "plan",
+      entries: [{ content: "לבדוק את הזרם", status: "pending", priority: "high" }],
+    })
+    await vi.waitFor(() => expect(agent.planStore.order.length).toBeGreaterThan(0))
+  })
+
+  it("עדכון שאיש אינו מכיר נישא — ואינו מפיל דבר", async () => {
+    view.fireUpdate({ sessionUpdate: "something_from_2027", payload: { a: 1 } })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(agent.planStore.order).toHaveLength(0)
+    expect(agent.bubbles).toHaveLength(0)
+  })
+})

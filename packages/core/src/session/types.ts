@@ -12,16 +12,15 @@
 import type {
   AvailableCommand,
   ContentBlock,
-  SessionConfigOption,
-  RequestPermissionRequest,
   CreateElicitationRequest,
+  RequestPermissionRequest,
+  SessionConfigOption,
 } from "@agentclientprotocol/sdk"
 import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 
 // ─── Re-exports from ACP SDK (used in SessionState fields) ───
-export type { AvailableCommand, SessionConfigOption }
 // ─── Re-export from provider (used in SessionState.quota) ───
-export type { QuotaSnapshot }
+export type { AvailableCommand, QuotaSnapshot, SessionConfigOption }
 
 // ─── Session lifecycle status ───
 
@@ -192,6 +191,22 @@ export type SessionState = {
  * contextUsage, status, turnState, pending, capabilities, quota).
  */
 export type Patch =
+  /**
+   * 🔴 עדכון שהשרת **לא מבין** — נישא כמות שהוא, בסדר הנכון, ולא נמחק.
+   *
+   * הרקע: `reduce()` הסתיים ב-`return { state, patches: [] }`, כלומר **כל מה
+   * שלא זוהה נזרק בשקט**. הקורבן שנתפס: `plan`/`plan_update`/`plan_removed`
+   * (רשימת-המשימות של הסוכן) מטופלים רק ב-VM, בנתיב ה-updates הגולמיים =
+   * WS בלבד. ב-HTTP ה-FE מקבל Patches ⇒ **רשימת-המשימות לא קיימת שם כלל.**
+   *
+   * ⚠️ אותה מחלקת-כשל של ה-gate `if (!text) return` שזרק 4 מ-5 ContentBlocks
+   * והעלים תמונה בטעינה-מחדש. הדפוס: *"לא מבין"* הפך ל*"זורק"*.
+   *
+   * העיקרון: **להבין מעט, לשאת הכל.** ה-BE מנרמל את המעטפה (זהות · סדר ·
+   * מצב · מי-חייב-תשובה) ואינו מפרש את התוכן — אבל "לא מפרש" ≠ "לא נושא".
+   * ⇒ פיצ'ר חדש ב-CLI מגיע ל-FE **באפס עבודת-BE**, בדיוק כמו בצינור השקוף.
+   */
+  | { version: number; op: "opaque"; update: unknown }
   | { version: number; op: "append-segment"; targetId: string; segment: SessionSegment }
   | { version: number; op: "add-message"; message: SessionMessage }
   | { version: number; op: "update-tool"; targetId: string; toolCall: Partial<SessionToolCall> }
@@ -226,7 +241,11 @@ export type Patch =
 // ─── Helpers ───
 
 /** יוצר SessionState ריק עם sessionId נתון + ברירות-מחדל לכל השדות (כולל C1). */
-export function createInitialSessionState({ sessionId }: { sessionId: string | null }): SessionState {
+export function createInitialSessionState({
+  sessionId,
+}: {
+  sessionId: string | null
+}): SessionState {
   return {
     version: 0,
     sessionId,
@@ -279,7 +298,8 @@ export function synthesizeUserMessage(
   // PromptBlocks: text blocks → segments, image blocks → attachments
   const textBlocks = content.filter((b): b is ContentBlock & { type: "text" } => b.type === "text")
   const imageBlocks = content.filter(
-    (b): b is ContentBlock & { type: "image"; data: string; mimeType: string } => b.type === "image",
+    (b): b is ContentBlock & { type: "image"; data: string; mimeType: string } =>
+      b.type === "image",
   )
   const segments = textBlocks.map((b, i) => ({ id: `${segId}_${i}`, text: b.text }))
   const attachments = imageBlocks.map((b) => ({ mimeType: b.mimeType, dataBase64: b.data }))

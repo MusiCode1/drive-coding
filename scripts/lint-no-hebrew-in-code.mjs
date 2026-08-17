@@ -37,7 +37,7 @@ const ALLOW_PATTERNS = [
   /packages\/core\/src\/i18n\/catalogs\//,
   /\/voice\/.*-prompt\.ts$/,
   /packages\/backend\/src\/prompts\//, // LLM system prompts (slice 14)
-  /\.test(\.\w+)*\.ts$/,  // *.test.ts, *.test.svelte.ts וכו'
+  /\.test(\.\w+)*\.ts$/, // *.test.ts, *.test.svelte.ts וכו'
   /\/tests\//,
   /\/fixtures\//,
   /\/node_modules\//,
@@ -67,7 +67,14 @@ function isAllowed(absPath) {
  * @returns {string}
  */
 function stripJsdocBlocks(text) {
-  const out = [...text]
+  // 🔴 היה `[...text]`, ושם ישב באג שהפיל את הלינטר על כל קובץ עם אמוג׳י.
+  // ה-spread מפרק ל**נקודות-קוד** (אמוג׳י = איבר אחד), בעוד `text[i]`
+  // ו-`text.length` למטה עובדים ב**יחידות UTF-16** (אמוג׳י = זוג surrogate).
+  // ⇒ מהתו הראשון שמחוץ ל-BMP והלאה `out` ו-`text` מוזזים באיבר לכל אמוג׳י,
+  // ו-`out[j] = " "` מרוקן את **המקומות הלא-נכונים**: הערות אינן מנוקות
+  // ושורות תמימות מואשמות. `split("")` מפצל ביחידות UTF-16 ולכן תואם,
+  // ו-`join("")` מרכיב את זוגות ה-surrogate בחזרה נכון.
+  const out = text.split("")
   const n = text.length
   let i = 0
   while (i < n - 1) {
@@ -307,4 +314,4 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 }
 
 // Exported for tests.
-export { stripAllComments, stripJsdocBlocks, scanFile, isAllowed, HEBREW_RE, main }
+export { HEBREW_RE, isAllowed, main, scanFile, stripAllComments, stripJsdocBlocks }
