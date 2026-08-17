@@ -4,6 +4,7 @@
  * נפרד מ-session.error — לא מוחק crashReason וכו'.
  */
 import { getI18n, getPresencePoller, getSession } from "$lib/context"
+import { pickBannerView } from "$lib/engines/disconnect-banner"
 
 const i18n = getI18n()
 const t = i18n.t
@@ -12,9 +13,10 @@ const poller = getPresencePoller()
 // (החיבור בסדר גמור) אלא סוכן ששותק. מוצג רק כשאין באנר-ניתוק, כדי לא לערום
 // שתי הודעות זו על זו כשהרשת נפלה באמצע תור.
 const session = getSession()
+const view = $derived(pickBannerView(poller.banner, session.turnStalled))
 </script>
 
-{#if poller.banner === "reconnecting"}
+{#if view === "reconnecting"}
   <div
     class="disconnect-banner"
     role="status"
@@ -22,7 +24,7 @@ const session = getSession()
   >
     {t("session.reconnecting")}
   </div>
-{:else if poller.banner === "cloudflare"}
+{:else if view === "cloudflare"}
   <div
     class="disconnect-banner"
     role="alert"
@@ -32,7 +34,14 @@ const session = getSession()
       {t("session.cloudflareRefresh")}
     </button>
   </div>
-{:else if session.turnStalled}
+{:else if view === "gone"}
+  <div
+    class="disconnect-banner"
+    role="alert"
+  >
+    {t("session.gone")}
+  </div>
+{:else if view === "turnStalled"}
   <div
     class="disconnect-banner stalled"
     role="status"

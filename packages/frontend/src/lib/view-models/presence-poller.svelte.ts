@@ -11,6 +11,7 @@ import {
   type PresenceResponse,
   postPresence,
 } from "$lib/adapters/agents-api"
+import type { PresenceBanner } from "$lib/engines/disconnect-banner"
 import { beUrl } from "$lib/util/be-url"
 import { diagnosedRefresh, isCloudflareChallenge } from "$lib/util/cloudflare-detect"
 import { connInfo, connWarn } from "$lib/util/conn-log"
@@ -24,7 +25,7 @@ import type { AgentSession } from "./agent-session.svelte"
 export const PRESENCE_INTERVAL_MS = 12_000
 export const PRESENCE_BANNER_DELAY_MS = 5_000
 
-export type DisconnectBannerKind = "reconnecting" | "cloudflare" | "gone"
+export type DisconnectBannerKind = PresenceBanner
 
 export class PresencePoller {
   /** באנר ניתוק — נפרד מ-session.error (§C4, handover decision #2). */
