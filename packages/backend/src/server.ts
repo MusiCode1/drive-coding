@@ -1,10 +1,12 @@
 import "./log-setup.js" // חייב להיות ראשון — מאתחל לוגר לפני כל יבוא אחר
 import { createServer as httpsCreateServer } from "node:https"
 import { createLogger } from "@drive-coding/core/log"
+import type { ServerMessage } from "@drive-coding/core"
+import { onConfigChange, stopWatching } from "@drive-coding/provider/config"
 import { type ServerType, serve } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { Hono } from "hono"
-import { WebSocketServer } from "ws"
+import { WebSocket, WebSocketServer } from "ws"
 import { isBinary } from "./binary.js"
 import { preferPathClaudeExecutable } from "./config/prefer-path-cli.js"
 import { isTransientSocketError } from "./delivery/transient-socket-error.js"
@@ -72,6 +74,7 @@ import { registerHttpOptions } from "./delivery/http-options.js"
 import { createAndRegisterSessionHostHttp } from "./session-host/http/index.js"
 import { createEvictionController } from "./delivery/eviction-controller.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
+import { registerReloadConfigHttp } from "./delivery/http-reload-config.js"
 import { registerTtsCapabilitiesHttp } from "./delivery/http-tts-capabilities.js"
 import { registerUsageHttp } from "./delivery/http-usage.js"
 import { createMemoryGuard } from "./delivery/memory-guard.js"
@@ -197,6 +200,10 @@ registerUsageHttp(app, { usageStore })
 // Slice cli-availability: מסנן dropdown הספקים ב-FE לפי CLIs מותקנים בפועל
 registerCliAvailabilityHttp(app)
 
+// Slice cli-specs-hot-reload: broadcast config changes to FE + manual reload endpoint.
+onConfigChange(() => broadcastConfigChanged())
+registerReloadConfigHttp(app)
+
 // Slice cli-logo-serving: מגיש קובץ-לוגו CLI לפי id (id-keyed, ר' §3 בבריף)
 registerCliLogoHttp(app)
 
@@ -268,6 +275,18 @@ const agentWss = new WebSocketServer({ noServer: true })
 // error listeners על שרתי WS — מונעים throw (unhandled EventEmitter error) על שגיאות רמת-שרת
 echoWss.on("error", (err) => procLog.warn({ src: "echoWss", err }, "wss error"))
 agentWss.on("error", (err) => procLog.warn({ src: "agentWss", err }, "wss error"))
+
+// cli-specs-hot-reload: broadcasts config_changed to every echo-WS client.
+// function declaration (hoisted) — the wiring above runs before echoWss exists.
+function broadcastConfigChanged(): void {
+  const payload: ServerMessage = { type: "config_changed", timestamp: Date.now() }
+  const msg = JSON.stringify(payload)
+  for (const client of echoWss.clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(msg)
+    }
+  }
+}
 
 const echoHandler = createEchoWsHandler()
 // CUT-3b-ii: connectionRegistry מחליף bridgeManager ב-ws-agent
@@ -358,6 +377,7 @@ async function gracefulShutdown(sig: string): Promise<void> {
   force.unref()
   try {
     await Promise.allSettled(connectionRegistry.list().map((id) => connectionRegistry.close(id)))
+    stopWatching()
     echoWss.close()
     agentWss.close()
     usageStore.flushUsageOnShutdown()

@@ -31,3 +31,11 @@ export async function fetchCliAvailability(): Promise<CliAvailabilityResult> {
   if (!res.ok) throw new Error(`/api/cli-availability ${res.status}`)
   return res.json() as Promise<CliAvailabilityResult>
 }
+
+/**
+ * Manual reload backup (slice cli-specs-hot-reload): POST /api/reload-config,
+ * which invalidates the BE cache and broadcasts config_changed back to the FE.
+ */
+export async function postReloadConfig(): Promise<void> {
+  await fetch(beUrl("/api/reload-config"), { method: "POST" })
+}

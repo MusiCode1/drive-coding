@@ -2,6 +2,7 @@
 import type { AgentPublic } from "@drive-coding/core"
 import FolderIcon from "@lucide/svelte/icons/folder"
 import Loader2Icon from "@lucide/svelte/icons/loader-2"
+import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
 import { onMount, untrack } from "svelte"
 import { goto } from "$app/navigation"
 import { env } from "$env/dynamic/public"
@@ -9,6 +10,7 @@ import { readSessionTransport } from "$lib/session/session-transport-read"
 import { connectAgent } from "$lib/actions/connect-agent"
 import { fetchServerOptions } from "$lib/adapters/options"
 import type { RecentProject } from "$lib/adapters/recent-projects"
+import { postReloadConfig } from "$lib/adapters/cli-availability"
 import AuthGuidance from "$lib/components/AuthGuidance.svelte"
 import ActiveProcessesPanel from "$lib/components/connect/ActiveProcessesPanel.svelte"
 import RecentProjectsPanel from "$lib/components/connect/RecentProjectsPanel.svelte"
@@ -160,6 +162,12 @@ async function handleRecentSelect(project: RecentProject) {
   cwd = project.cwd
   await connectAgent({ cliKind: resolvedKind, cwd: project.cwd, session, settings })
 }
+
+// slice cli-specs-hot-reload: manual refresh backup — POST reload + immediate re-fetch.
+async function refreshCliAvailability() {
+  await postReloadConfig()
+  await cliAvailability.reload()
+}
 </script>
 
 <main class="connect">
@@ -188,6 +196,16 @@ async function handleRecentSelect(project: RecentProject) {
             <!-- §2/§6/§9 Q3: fallback = מציג הכול + אינדיקציה חלשה (לא באנר חוסם) -->
             <span class="cli-hint">{t("connect.cli.showAll")}</span>
           {/if}
+          <button
+            type="button"
+            class="cli-refresh-btn"
+            onclick={() => void refreshCliAvailability()}
+            aria-label={t("connect.cli.refresh")}
+            title={t("connect.cli.refresh")}
+            disabled={cliAvailability.loading}
+          >
+            <RefreshCwIcon size={13} strokeWidth={2} />
+          </button>
         </span>
         <!-- Select.value נשאר cliKind גם אם הוא disabled ב-options (למקרה reconnect) —
              האפשרויות מגיעות מ-cliAvailability.registry (הרג'יסטרי מהשרת, מונע-שרת);
@@ -350,6 +368,32 @@ async function handleRecentSelect(project: RecentProject) {
     font-size: 0.75rem;
     font-weight: 400;
     color: var(--fg-dim);
+  }
+
+  /* slice cli-specs-hot-reload: refresh button next to the CLI dropdown */
+  .cli-refresh-btn {
+    margin-top: 0;
+    margin-inline-start: auto;
+    padding: 0;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    background: transparent;
+    border: none;
+    border-radius: 0.375rem;
+    color: var(--fg-dim);
+  }
+
+  .cli-refresh-btn:hover:not(:disabled) {
+    color: var(--fg);
+    background: var(--bg-elev);
+  }
+
+  .cli-refresh-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   /* יישור לגובה ה-Select (px-3 py-2.5 text-sm rounded-xl) — אחידות שורות */
