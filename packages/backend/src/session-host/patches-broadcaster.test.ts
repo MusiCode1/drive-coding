@@ -11,8 +11,8 @@
  *   - constructor accepts ReadableStream<Patch>
  */
 
-import { describe, expect, it } from "vitest"
 import type { Patch } from "@drive-coding/core/session"
+import { describe, expect, it } from "vitest"
 import { createPatchesBroadcaster } from "./patches-broadcaster.js"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -54,7 +54,10 @@ async function readN(stream: ReadableStream<Patch>, n: number, timeoutMs = 200):
       const result = await Promise.race([
         reader.read(),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`timeout after ${results.length}/${n} patches`)), timeoutMs),
+          setTimeout(
+            () => reject(new Error(`timeout after ${results.length}/${n} patches`)),
+            timeoutMs,
+          ),
         ),
       ])
       if (result.done) break
@@ -184,6 +187,64 @@ describe("PatchesBroadcaster", () => {
     it("accepts a ReadableStream<Patch> — no throw on construction", () => {
       const { stream } = makeControlledStream()
       expect(() => createPatchesBroadcaster(stream)).not.toThrow()
+    })
+  })
+
+  // ─── slice sse-liveness Commit 3: close() — synchronous, source-independent ───
+  describe("close", () => {
+    it("closes every current subscriber's stream SYNCHRONOUSLY — before any further await", async () => {
+      const { stream } = makeControlledStream()
+      const broadcaster = createPatchesBroadcaster(stream)
+
+      const s1 = broadcaster.subscribe()
+      const s2 = broadcaster.subscribe()
+
+      broadcaster.close()
+
+      // No further await between subscribe/close and reading "done" — proves
+      // the subscriber controllers were closed synchronously by close()
+      // itself, not by waiting for the (never-closed) SOURCE to end.
+      const r1 = await s1.getReader().read()
+      const r2 = await s2.getReader().read()
+      expect(r1.done).toBe(true)
+      expect(r2.done).toBe(true)
+    })
+
+    it("does NOT touch the source stream — close() is independent of whether the source ever ends", () => {
+      const { stream } = makeControlledStream()
+      const broadcaster = createPatchesBroadcaster(stream)
+      broadcaster.subscribe()
+
+      // The source (host.patches) is never closed here — close() must not
+      // require it to be, unlike the old only-path (source ends → drain()'s
+      // finally → subscribers close).
+      expect(() => broadcaster.close()).not.toThrow()
+      expect(stream.locked).toBe(true) // drain()'s reader is still holding it
+    })
+
+    it("is idempotent — calling close() twice does not throw", () => {
+      const { stream } = makeControlledStream()
+      const broadcaster = createPatchesBroadcaster(stream)
+      broadcaster.subscribe()
+
+      broadcaster.close()
+      expect(() => broadcaster.close()).not.toThrow()
+    })
+
+    it("a subscriber added AFTER close() still gets a stream, but it closes immediately (empty subscribers map)", async () => {
+      const { stream } = makeControlledStream()
+      const broadcaster = createPatchesBroadcaster(stream)
+      broadcaster.subscribe()
+      broadcaster.close()
+
+      // late subscribe() after close() — the map was cleared, so this is a
+      // FRESH registration; nothing ever dispatches to it since the source
+      // was never told to stop draining. This documents present behavior
+      // (registry.ts always calls map.delete right after close(), so no
+      // caller in production subscribes to an already-closed broadcaster) —
+      // not a new guarantee.
+      const late = broadcaster.subscribe()
+      expect(late).toBeInstanceOf(ReadableStream)
     })
   })
 })

@@ -29,6 +29,24 @@ export type PatchesBroadcaster = {
    * No-op if the stream is not currently subscribed.
    */
   unsubscribe(stream: ReadableStream<Patch>): void
+
+  /**
+   * close — slice sse-liveness Commit 3: terminates every current subscriber
+   * stream SYNCHRONOUSLY (same code the background `drain()` loop's `finally`
+   * already runs when the SOURCE ends), without waiting for the source to end.
+   *
+   * Why this exists: `registry.ts`'s `unregisterHost` is called from two
+   * sites (`deleteAndKill`, the crash handler) that never call `host.dispose()`
+   * first — before this method, NOTHING ever ended the broadcaster for those
+   * paths, so GET /events subscribers (and their keepalive timer) leaked
+   * forever. A third site (`ws-agent.ts`'s WS-takeover path) DOES call
+   * `host.dispose()` first, which cascades to the same effect via the source
+   * ending — but only after several extra microtask hops (source read()
+   * resolves → this drain() loop resumes → its finally runs). `close()`
+   * collapses that to ONE hop, callable independently of whether the host
+   * (or its `patches` source) is disposed at all — see `unregisterHost`.
+   */
+  close(): void
 }
 
 /**
@@ -42,10 +60,7 @@ export function createPatchesBroadcaster(source: ReadableStream<Patch>): Patches
   const buffer: Patch[] = []
 
   // Map from stream → controller for active subscribers
-  const subscribers = new Map<
-    ReadableStream<Patch>,
-    ReadableStreamDefaultController<Patch>
-  >()
+  const subscribers = new Map<ReadableStream<Patch>, ReadableStreamDefaultController<Patch>>()
 
   // Dispatch a patch to all subscribers + add to buffer
   function dispatch(patch: Patch): void {
@@ -64,6 +79,20 @@ export function createPatchesBroadcaster(source: ReadableStream<Patch>): Patches
     }
   }
 
+  // Close every current subscriber's controller synchronously and clear the
+  // map. Shared by drain()'s finally (source ended) and the public close()
+  // (slice sse-liveness Commit 3 — caller-triggered, source-independent).
+  function closeAllSubscribers(): void {
+    for (const [, ctrl] of subscribers) {
+      try {
+        ctrl.close()
+      } catch {
+        // Already closed
+      }
+    }
+    subscribers.clear()
+  }
+
   // Drain the source stream in the background
   async function drain(): Promise<void> {
     const reader = source.getReader()
@@ -77,14 +106,7 @@ export function createPatchesBroadcaster(source: ReadableStream<Patch>): Patches
       // Source stream errored or was cancelled — stop draining silently
     } finally {
       // Close all subscriber streams when source ends
-      for (const [, ctrl] of subscribers) {
-        try {
-          ctrl.close()
-        } catch {
-          // Already closed
-        }
-      }
-      subscribers.clear()
+      closeAllSubscribers()
       reader.releaseLock()
     }
   }
@@ -130,6 +152,10 @@ export function createPatchesBroadcaster(source: ReadableStream<Patch>): Patches
       } catch {
         // Already closed
       }
+    },
+
+    close(): void {
+      closeAllSubscribers()
     },
   }
 }

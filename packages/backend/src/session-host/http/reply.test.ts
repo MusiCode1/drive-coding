@@ -49,7 +49,10 @@ function makeMockRegistry(host?: ExtendedSessionHost): AgentSessionRegistry {
   // getOrCreateHost), so this value is unused at runtime — kept type-correct
   // for hygiene (vi.fn() is untyped, so a wrong shape here would pass silently).
   const result: HostResult = host
-    ? { ok: true, entry: { host, broadcaster: { subscribe: vi.fn(), unsubscribe: vi.fn() } } }
+    ? {
+        ok: true,
+        entry: { host, broadcaster: { subscribe: vi.fn(), unsubscribe: vi.fn(), close: vi.fn() } },
+      }
     : { ok: false, reason: "not-found" }
   return {
     getHost: vi.fn().mockReturnValue(host),

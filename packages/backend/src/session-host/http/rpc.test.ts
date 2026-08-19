@@ -57,6 +57,7 @@ function makeMockBroadcaster(): PatchesBroadcaster {
   return {
     subscribe: vi.fn().mockReturnValue(new ReadableStream()),
     unsubscribe: vi.fn(),
+    close: vi.fn(),
   }
 }
 

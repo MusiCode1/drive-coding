@@ -60,9 +60,11 @@ function makeMockBroadcaster(patchStream?: ReadableStream<Patch>): PatchesBroadc
   const stream = patchStream ?? new ReadableStream<Patch>({ start() {} })
   const subscribeFn = vi.fn().mockReturnValue(stream)
   const unsubscribeFn = vi.fn()
+  const closeFn = vi.fn()
   return {
     subscribe: subscribeFn,
     unsubscribe: unsubscribeFn,
+    close: closeFn,
   }
 }
 
@@ -245,6 +247,7 @@ describe("GET /api/agents/:id/events", () => {
           return subscribeStream
         }),
         unsubscribe: vi.fn(),
+        close: vi.fn(),
       }
 
       const host: ExtendedSessionHost = {
