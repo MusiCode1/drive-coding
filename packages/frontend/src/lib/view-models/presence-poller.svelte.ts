@@ -12,6 +12,11 @@ import {
   postPresence,
 } from "$lib/adapters/agents-api"
 import type { PresenceBanner } from "$lib/engines/disconnect-banner"
+// slice sse-liveness Commit 4ב: PRESENCE_INTERVAL_MS/PRESENCE_BANNER_DELAY_MS
+// רוכזו ל-liveness-thresholds.ts (מקום-אחד לכל ספי-החיוּת). מיוצאים-מחדש
+// מכאן, לא נמחקו — 12 assertions ב-presence-poller.test.svelte.ts מייבאים
+// אותם דרך הקובץ הזה.
+import { PRESENCE_BANNER_DELAY_MS, PRESENCE_INTERVAL_MS } from "$lib/engines/liveness-thresholds"
 import { beUrl } from "$lib/util/be-url"
 import { diagnosedRefresh, isCloudflareChallenge } from "$lib/util/cloudflare-detect"
 import { connInfo, connWarn } from "$lib/util/conn-log"
@@ -22,8 +27,7 @@ import {
 } from "$lib/util/page-visibility.svelte"
 import type { AgentSession } from "./agent-session.svelte"
 
-export const PRESENCE_INTERVAL_MS = 12_000
-export const PRESENCE_BANNER_DELAY_MS = 5_000
+export { PRESENCE_BANNER_DELAY_MS, PRESENCE_INTERVAL_MS }
 
 export type DisconnectBannerKind = PresenceBanner
 
@@ -172,10 +176,7 @@ export class PresencePoller {
     this.#inFlight = false
   }
 
-  async #maybeRetakeOwnership(
-    agentId: string,
-    agent: PresenceResponse["agent"],
-  ): Promise<void> {
+  async #maybeRetakeOwnership(agentId: string, agent: PresenceResponse["agent"]): Promise<void> {
     if (agent === null || agent === undefined) return // סוכן שאיננו — אין על מה לתפוס בעלות
     if (agent.attached) return
     const sessionId = this.#session.sessionState.sessionId
