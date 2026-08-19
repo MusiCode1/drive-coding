@@ -12,7 +12,9 @@
  * Design:
  *   - register-then-snapshot: subscribe to broadcaster BEFORE reading state
  *     (prevents race where a patch arrives between snapshot read and subscribe)
- *   - 404 if connection not found (registry.getOrCreateHost returns undefined)
+ *   - 404 if connection not found / dead / WS-owned (registry.getOrCreateHost →
+ *     {ok:false, reason}), or 503 if the reason is "evict-timeout" (transient —
+ *     slice host-result-reason C1)
  *   - Client disconnect: broadcaster.unsubscribe(stream) on ReadableStream cancel
  *   - Epoch guard: if ?epoch= query param is present and LESS THAN current epoch,
  *     returns 409 immediately (BEFORE getOrCreateHost) so a stale reconnect can't
@@ -49,10 +51,14 @@ export function registerEventsRoute(app: Hono, registry: AgentSessionRegistry): 
 
     // Look up or create host + broadcaster
     const result = await registry.getOrCreateHost(agentId)
-    if (!result) {
-      return c.json({ error: "Agent connection not found" }, 404)
+    if (!result.ok) {
+      // slice host-result-reason C1: three of the four failure reasons are final
+      // (not-found / conn-dead / ws-owned) → 404, unchanged. Only evict-timeout
+      // is transient (a stuck WS tab, not a dead agent) → 503.
+      const status = result.reason === "evict-timeout" ? 503 : 404
+      return c.json({ error: "Agent connection not found" }, status)
     }
-    const { host, broadcaster } = result
+    const { host, broadcaster } = result.entry
 
     // Current epoch at connection time — used in snapshot frame-zero id
     const currentEpoch = registry.getEpoch(agentId)

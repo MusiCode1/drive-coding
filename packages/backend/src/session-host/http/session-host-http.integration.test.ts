@@ -132,7 +132,8 @@ async function setup(): Promise<{
   const registry: AgentSessionRegistry = {
     getHost: (id) => (id === AGENT_ID ? host : undefined),
     isHeld: (id) => id === AGENT_ID,
-    getOrCreateHost: async (id) => (id === AGENT_ID ? { host, broadcaster } : undefined),
+    getOrCreateHost: async (id) =>
+      id === AGENT_ID ? { ok: true, entry: { host, broadcaster } } : { ok: false, reason: "not-found" },
     getBroadcaster: (id) => (id === AGENT_ID ? broadcaster : undefined),
     unregisterHost: () => {},
     notifySessionAttached: async () => {},

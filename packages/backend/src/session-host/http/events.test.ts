@@ -4,7 +4,8 @@
  * Testing: tdd (brief §C2)
  *
  * Tests:
- *   - 404 if connection not found (registry.getOrCreateHost returns undefined)
+ *   - 404 if connection not found (registry.getOrCreateHost → {ok:false, reason})
+ *   - 503 if the failure reason is "evict-timeout" (transient — slice host-result-reason C1)
  *   - SSE response headers (Content-Type: text/event-stream)
  *   - snapshot as first frame (event: snapshot)
  *   - patches streamed as subsequent frames (event: patch)
@@ -16,7 +17,7 @@ import { describe, expect, it, vi } from "vitest"
 import { Hono } from "hono"
 import type { Patch, SessionState } from "@drive-coding/core/session"
 import { createInitialSessionState } from "@drive-coding/core/session"
-import type { AgentSessionRegistry } from "../registry.js"
+import type { AgentSessionRegistry, HostResult } from "../registry.js"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
 import type { ExtendedSessionHost } from "../session-host.js"
 import { registerEventsRoute } from "./events.js"
@@ -65,12 +66,19 @@ function makeMockRegistry(opts: {
   broadcaster?: PatchesBroadcaster
 } = {}): AgentSessionRegistry {
   const { host, broadcaster } = opts
-  const entry = host && broadcaster ? { host, broadcaster } : undefined
+  // slice host-result-reason C1: getOrCreateHost now resolves a discriminated
+  // HostResult, not HostEntry | undefined — vi.fn() is untyped (`any`), so
+  // getting this shape wrong would pass typecheck silently and fail at runtime
+  // (result.ok undefined ⇒ treated as failure even on the success path).
+  const result: HostResult =
+    host && broadcaster
+      ? { ok: true, entry: { host, broadcaster } }
+      : { ok: false, reason: "not-found" }
 
   return {
     getHost: vi.fn().mockReturnValue(host),
     isHeld: vi.fn().mockReturnValue(Boolean(host)),
-    getOrCreateHost: vi.fn().mockResolvedValue(entry),
+    getOrCreateHost: vi.fn().mockResolvedValue(result),
     getBroadcaster: vi.fn().mockReturnValue(broadcaster),
     unregisterHost: vi.fn(),
     notifySessionAttached: vi.fn().mockResolvedValue(undefined),
@@ -125,12 +133,44 @@ function makeApp(registry: AgentSessionRegistry): Hono {
 
 describe("GET /api/agents/:id/events", () => {
   describe("404 when connection not found", () => {
-    it("returns 404 if registry.getOrCreateHost returns undefined", async () => {
-      const registry = makeMockRegistry() // getOrCreateHost returns undefined
+    it("returns 404 if registry.getOrCreateHost resolves {ok:false, reason:'not-found'}", async () => {
+      const registry = makeMockRegistry() // getOrCreateHost → {ok:false, reason:"not-found"}
       const app = makeApp(registry)
 
       const res = await app.request("/api/agents/missing-agent/events")
       expect(res.status).toBe(404)
+    })
+  })
+
+  // ─── slice host-result-reason C1: evict-timeout is TRANSIENT → 503, not 404 ───
+  describe("503 when eviction of a stuck WS owner times out", () => {
+    it("returns 503 (not 404) when getOrCreateHost resolves {ok:false, reason:'evict-timeout'}", async () => {
+      const registry = makeMockRegistry()
+      ;(registry.getOrCreateHost as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ok: false,
+        reason: "evict-timeout",
+      })
+      const app = makeApp(registry)
+
+      const res = await app.request("/api/agents/stuck-agent/events")
+      expect(res.status).toBe(503)
+    })
+
+    // slice host-result-reason C1 §6 DoD 4 — mutation check: mapping evict-timeout
+    // back to 404 must fail this test. Documented (not committed) in the brief
+    // report: reverting `result.reason === "evict-timeout" ? 503 : 404` to a
+    // flat `404` turns this assertion red.
+    it("still returns 404 for the three FINAL reasons (not-found/conn-dead/ws-owned) — unchanged", async () => {
+      const registry = makeMockRegistry()
+      for (const reason of ["not-found", "conn-dead", "ws-owned"] as const) {
+        ;(registry.getOrCreateHost as ReturnType<typeof vi.fn>).mockResolvedValue({
+          ok: false,
+          reason,
+        })
+        const app = makeApp(registry)
+        const res = await app.request("/api/agents/some-agent/events")
+        expect(res.status).toBe(404)
+      }
     })
   })
 
