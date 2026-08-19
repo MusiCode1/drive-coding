@@ -180,7 +180,8 @@ type AgentSessionRegistryDeps = {
    */
   getAcpSessionId?: (agentId: string) => string | undefined
   /**
-   * slice ownership-handoff C4b: HTTP ownership TTL (ms). Default: 90_000ms.
+   * slice ownership-handoff C4b: HTTP ownership TTL (ms).
+   * Default: `HTTP_OWNER_TTL_MS` env, else 600_000ms (slice ttl-ownership).
    * Exposed for tests to set a short TTL without real delays.
    */
   _httpOwnerTtlMs?: number
@@ -189,6 +190,28 @@ type AgentSessionRegistryDeps = {
    * Exposed for tests to control sweep timing.
    */
   _httpSweepMs?: number
+}
+
+/** slice ttl-ownership: the default HTTP ownership TTL (10 minutes). */
+export const DEFAULT_HTTP_OWNER_TTL_MS = 600_000
+
+/**
+ * resolveHttpOwnerTtlMs — parses HTTP_OWNER_TTL_MS.
+ *
+ * 🔴 Pure + EXPORTED on purpose: the default path must be executable by a test
+ * without any injected seam. Run-1's lesson (`Illegal invocation`) was a suite
+ * of 30 green tests that all injected a mock and never once ran the default.
+ *
+ * Accepts only a finite, strictly-positive number. Anything else — missing,
+ * blank, NaN, 0, negative, Infinity — falls back to the default.
+ */
+export function resolveHttpOwnerTtlMs(raw: string | undefined): number {
+  if (raw === undefined) return DEFAULT_HTTP_OWNER_TTL_MS
+  const trimmed = raw.trim()
+  if (trimmed === "") return DEFAULT_HTTP_OWNER_TTL_MS
+  const n = Number(trimmed)
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_HTTP_OWNER_TTL_MS
+  return n
 }
 
 export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): AgentSessionRegistry {
@@ -213,31 +236,37 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
   // never be evicted here (WS has its own socket sweep in ws-agent.ts, a different
   // role). Detecting "WS" indirectly via `getLastSeenAt() === null` no longer
   // works now that touchOwner is transport-agnostic (a WS owner also has a stamp).
-  const HTTP_OWNER_TTL_MS = deps._httpOwnerTtlMs ?? 600_000 // 10 min (slice liveness C1 §3.1.1)
+  const HTTP_OWNER_TTL_MS =
+    deps._httpOwnerTtlMs ?? resolveHttpOwnerTtlMs(process.env.HTTP_OWNER_TTL_MS)
   const HTTP_SWEEP_MS = deps._httpSweepMs ?? 30_000 // sweep every 30s
   const httpSweep = setInterval(() => {
     const now = Date.now()
-    for (const [agentId] of map) {
+    for (const [agentId, entry] of map) {
       // 🔴 explicit transport guard — without it, WS owners get evicted here (DoD 7).
       if (connectionRegistry.getOwner(agentId)?.via !== "http") continue
       const lastSeen = connectionRegistry.getLastSeenAt(agentId)
       if (lastSeen === null) continue
       if (now - lastSeen <= HTTP_OWNER_TTL_MS) continue
-      // Stale HTTP owner — evict without killing agent or incrementing epoch
-      log.info({ agentId, staleMs: now - lastSeen }, "HTTP owner stale — releasing ownership")
-      const entry = map.get(agentId)
-      if (entry) {
-        entry.host.dispose().catch((err: unknown) => {
-          log.warn({ err, agentId }, "dispose error during HTTP TTL sweep")
-        })
-      }
-      // unregisterHost removes from map and calls markDetached (if http-owned)
-      // unregisterHost is defined below; we call it directly on the returned object
-      // so we use the internal map.delete + connectionRegistry.markDetached pattern
-      map.delete(agentId)
-      if (connectionRegistry.getOwner(agentId)?.via === "http") {
-        connectionRegistry.markDetached(agentId)
-      }
+      log.info(
+        { agentId, staleMs: now - lastSeen },
+        "HTTP owner stale — releasing ownership (holder retained)",
+      )
+      // 🔴 slice ttl-ownership: ownership and state are two lifecycles.
+      // Expiry releases OWNERSHIP and severs the abandoned stream — the host
+      // and broadcaster STAY in the map, so the next connection is a pure
+      // continuation (no loadSession, no fresh host, no version reset).
+      // Both calls are SYNCHRONOUS and land in the same tick, so their order
+      // does not matter: the next sweep pass (30s later) sees markDetached and
+      // skips this agent via the `via !== "http"` guard, which is what keeps
+      // close() from firing twice. The guarantee is same-tick, not ordering.
+      connectionRegistry.markDetached(agentId)
+      // Sever abandoned SSE subscribers + their keepalive timers. WITHOUT this,
+      // (1) events.ts's read-loop never ends (hono's write() swallows errors —
+      // see §0) so a live client never reconnects and never re-claims, and
+      // (2) the subscriber + its setInterval leak — the exact leak sse-liveness
+      // Commit 3 closed in unregisterHost. close() does NOT end the source:
+      // the broadcaster stays fully usable for the next subscribe().
+      entry.broadcaster.close()
     }
   }, HTTP_SWEEP_MS)
   httpSweep.unref() // don't prevent process exit
@@ -385,6 +414,17 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
           existing.broadcaster.close()
           map.delete(agentId)
           return { ok: false, reason: "conn-dead" }
+        }
+        // 🔴 slice ttl-ownership: re-claim. The TTL sweep now releases ownership
+        // but KEEPS the holder, so a reconnect lands here — and doCreate(), the
+        // only place that ever calls markOwned, no longer runs. Without this,
+        // ownership stays null forever after one expiry: `attached` never
+        // returns to true, touchOwner becomes a no-op (it needs an owner), and
+        // the sweep skips the agent for good (via !== "http").
+        // Guarded on `=== null`: never steal the wire from a WS owner, and
+        // never bump the epoch on an ordinary second connection.
+        if (connectionRegistry.getOwner(agentId) === null) {
+          connectionRegistry.markOwned(agentId, "http")
         }
         return { ok: true, entry: existing }
       }
