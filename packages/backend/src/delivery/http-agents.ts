@@ -1,4 +1,5 @@
-import { type AgentRegistry, CliKind, toAgentPublic, validateCwd } from "@drive-coding/core"
+import { type AgentRegistry, CliId, toAgentPublic, validateCwd } from "@drive-coding/core"
+import { getCliSpec, getEffectiveCliKinds } from "@drive-coding/provider/config"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import type { AgentOrchestrator } from "../app/agent-orchestrator"
@@ -9,10 +10,12 @@ import type { ProjectsRegistry } from "../app/projects-registry"
  * עבור טעינת סשן ב-Slice 8a. מוגדר כאן כי זה מרחיב את סכימת הליבה.
  */
 const CreateAgentInputFull = type({
-  cliKind: CliKind,
+  cliKind: CliId,
   cwd: "string >= 1",
   "modelOverride?": "string | null",
   "existingSessionId?": "string | null",
+  // slice project-system-prompt: פרומפט-מערכת פר-פרויקט, מתווסף (append) בתוך provider (§3).
+  "systemPrompt?": "string | null",
 })
 
 export function registerAgentsHttp(
@@ -57,6 +60,13 @@ export function registerAgentsHttp(
     const parsed = CreateAgentInputFull(body)
     if (parsed instanceof type.errors) {
       return c.json({ error: parsed.summary }, 400)
+    }
+
+    if (getCliSpec(parsed.cliKind, process.env) === undefined) {
+      return c.json(
+        { error: `unknown cliKind: ${parsed.cliKind}`, known: getEffectiveCliKinds() },
+        400,
+      )
     }
 
     // מאמת נתיב cwd — דוחה נתיבים בקידוד כפול, בתי NUL, נתיבים יחסיים, וכו'.
@@ -150,6 +160,42 @@ export function registerAgentsHttp(
       await deps.projectsRegistry.recordSession(agent.cwd, sessionId)
     }
 
+    return c.json({ ok: true })
+  })
+
+  /**
+   * PATCH /api/agents/:id — עדכון גנרי (whitelist) של שדות-משתמש. כרגע: title בלבד.
+   * (slice session-title-in-process-list) — ה-BE שכבת-אחסון טיפשה, לא מפענח wire בעצמו;
+   * ה-client (agent-session VM) דוחף לכאן את הכותרת שקיבל מ-session_info_update.
+   *
+   * ⚠️ הגנת-גנריות load-bearing (אביגיל אימתה אמפירית) — שתי שכבות, לא אחת:
+   * (א) `.onUndeclaredKey("reject")` על ה-schema — דוחה body עם מפתחות זרים (400).
+   * (ב) extract מפורש ל-`registry.update` — **אף פעם לא** spread של body/parsed גולמי,
+   *     כי `registry.update` ב-runtime מבצע `{ ...existing, ...patch }` בלי סינון
+   *     (ה-Pick ב-ports.ts הוא type-only). בלי שתי השכבות, PATCH {title, status:"crashed"}
+   *     היה דורס את ה-status.
+   */
+  const PatchAgentInput = type({ "title?": "string | null" }).onUndeclaredKey("reject")
+
+  app.patch("/api/agents/:id", async (c) => {
+    const id = c.req.param("id")
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ error: "invalid json" }, 400)
+    }
+    const parsed = PatchAgentInput(body)
+    if (parsed instanceof type.errors) {
+      return c.json({ error: parsed.summary }, 400)
+    }
+    const agent = await deps.registry.get(id)
+    if (!agent) return c.json({ error: "agent not found" }, 404)
+    // guard: title absent (undefined) → no-op, שלא לנקות כותרת קיימת בטעות.
+    // title: null = clear מכוון (הסכמה מתירה); string = set.
+    if (parsed.title !== undefined) {
+      await deps.registry.update(id, { title: parsed.title })
+    }
     return c.json({ ok: true })
   })
 

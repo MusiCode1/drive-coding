@@ -23,8 +23,10 @@ import { untrack } from "svelte"
 import { goto } from "$app/navigation"
 import { page } from "$app/state"
 import SessionCard from "$lib/components/modals/SessionCard.svelte"
+import CliBadge from "$lib/components/ui/CliBadge.svelte"
 import Select, { type SelectGroup, type SelectOption } from "$lib/components/ui/Select.svelte"
 import {
+  getCliAvailability,
   getI18n,
   getResponsive,
   getSession,
@@ -35,6 +37,8 @@ import {
 
 const t = getI18n().t
 const session = getSession()
+// slice cli-branding (Commit 3): displayName ב-"רץ על" — ה-panel חסר-props ל-CLI
+const cliAvailability = getCliAvailability()
 // ─── redesign-fix: disconnect + audio הועברו מ-AppHeader (פדיון חוב redesign-2/3) ───
 const speaker = getSpeaker()
 // ─── redesign-fix: ⚙ במובייל יורד ל-sheet; navigation toggle כמו ב-AppHeader ───
@@ -49,15 +53,21 @@ function onDisconnect() {
   goto("/")
 }
 
+// ─── slice session-delete: מחיקת הסשן הפעיל מנווטת החוצה (עקבי עם onDisconnect) ───
+async function onDeleteSession(id: string) {
+  const wasActive = await session.deleteSession(id)
+  if (wasActive) goto("/") // אחרת נשארים על /chat עם עמוד ריק (calev NO-GO fix, DoD #7)
+}
+
 // ─── slice leave-running-background: יציאה בלי להרוג ───
 let leaveConfirmOpen = $state(false)
 let dontShowAgain = $state(false)
 
 function onLeaveRunning() {
-  if (session.bypassActive || settings.suppressLeaveWarning) {
-    doLeaveRunning() // bypass / suppressed → צא ישר
+  if (session.bypassActive || settings.suppressLeaveWarning || session.turnState === "idle") {
+    doLeaveRunning() // bypass / suppressed / אין תור פעיל → צא ישר
   } else {
-    leaveConfirmOpen = true // לא-bypass → אזהר קודם
+    leaveConfirmOpen = true // לא-bypass + תור פעיל → אזהר קודם
   }
 }
 
@@ -326,6 +336,19 @@ $effect(() => {
      כך שכשהגובה קטן ראש הרשימה לא נחתך אלא נגלל. שורת הפעולות מעל נשארת קבועה (shrink-0). -->
 <div class="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto chat-scroll -mx-1 px-1">
 
+<!-- ─── cli-name-in-chat: שם ה-CLI מעל אפשרויות סוכן ─── -->
+{#if session.cliKind}
+  {@const cliKind = session.cliKind}
+  <div class="flex items-center gap-2 px-1 shrink-0 text-[11px]" style="color:var(--fg-dim)">
+    <span class="uppercase tracking-wider font-semibold">{t("sidebar.runningOn")}</span>
+    <span class="px-2 py-0.5 rounded-md font-mono font-semibold"
+          style="background:var(--bg-card); border:1px solid var(--border); color:var(--fg)"
+          dir="ltr">
+      <CliBadge id={cliKind} displayName={cliAvailability.details[cliKind]?.displayName} variant="inline" />
+    </span>
+  </div>
+{/if}
+
 <!-- אפשרויות סוכן — מחווט מ-redesign-3 -->
 <div class="flex flex-col gap-2.5 shrink-0">
   <div class="text-[11px] font-semibold uppercase tracking-wider px-1" style="color:var(--fg-dim)">
@@ -444,6 +467,25 @@ $effect(() => {
   {/if}
 </div>
 
+<!-- ─── פרומפט מערכת פר-פרויקט ─── (slice project-system-prompt) -->
+{#if session.cwd}
+<div class="flex flex-col gap-1.5 shrink-0">
+  <div class="text-[11px] font-semibold uppercase tracking-wider px-1" style="color:var(--fg-dim)">
+    {t("projectPrompt.label")}
+  </div>
+  <textarea
+    class="w-full rounded-lg px-2.5 py-2 text-[13px] resize-y outline-none border"
+    style="background:var(--bg-card); border-color:var(--border); color:var(--fg); min-height:4.5em"
+    dir="auto"
+    rows={3}
+    placeholder={t("projectPrompt.placeholder")}
+    value={settings.getProjectPrompt(session.cwd)}
+    onchange={(e) => settings.setProjectPrompt(session.cwd ?? "", (e.target as HTMLTextAreaElement).value)}
+  ></textarea>
+  <div class="text-[11px] px-1" style="color:var(--fg-dim)">{t("projectPrompt.hint")}</div>
+</div>
+{/if}
+
 <!-- סשנים — inline (slice sessions-inline: מחליף SessionsDialog) -->
 <div class="flex flex-col gap-2 shrink-0">
   <div class="flex items-center justify-between px-1 shrink-0">
@@ -480,7 +522,12 @@ $effect(() => {
       <div class="text-[12px] px-1" style="color:var(--recording)">{t("modal.sessions.error")}: {session.sessionsError}</div>
     {:else}
       {#each session.sessions as s (s.sessionId)}
-        <SessionCard session={s} isActive={false} onSelect={() => selectSession(s)} />
+        <SessionCard
+          session={s}
+          isActive={false}
+          onSelect={() => selectSession(s)}
+          onDelete={session.supportsSessionDelete ? onDeleteSession : undefined}
+        />
       {/each}
     {/if}
   </div>

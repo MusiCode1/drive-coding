@@ -13,7 +13,7 @@ import type { NormalizedCapabilities } from "../../types.js"
  */
 interface RawAgentCapabilities {
   mcpCapabilities?: Record<string, unknown>
-  // compact, usage, commands: NOT declared in initialize
+  // compact, commands: NOT declared in initialize
   // configOptions: comes from session/new, NOT from initialize
 }
 
@@ -22,9 +22,14 @@ interface RawAgentCapabilities {
  *
  * Rules (from brief §3 + findings):
  * - mcp: mcpCapabilities present → true
- * - compact/usage/commands: not declared in initialize → false (runtime features)
+ * - compact/commands: not declared in initialize → false (runtime features)
  * - configOptions: from session/new only; must not be hardcoded true → false here
  * - rename: true — renameSession() is available via @anthropic-ai/claude-agent-sdk (store-level)
+ * - usage: true — slice session-budget-meter Commit 3. Means "claude implements the
+ *   _drive/getQuota handler", NOT "this account has visible rate limits". An account
+ *   without limits yet still returns { snapshot: null } — that's a valid, supported
+ *   response, not unsupported. Store-level (query-access.ts), like rename/thinkingTokens —
+ *   not declared in the initialize frame, so not gated on caps?.
  */
 export function mapClaudeCapabilities(raw: unknown): NormalizedCapabilities {
   const caps = (raw as { agentCapabilities?: RawAgentCapabilities } | null)?.agentCapabilities
@@ -33,9 +38,12 @@ export function mapClaudeCapabilities(raw: unknown): NormalizedCapabilities {
     mcp: caps?.mcpCapabilities != null,
     compact: false,
     commands: false,
-    usage: false,
+    usage: true,
     configOptions: false,
     rename: true,
     thinkingTokens: true,
+    // image: safe default; slice reattach-state-sync's init-frame tap (extractPromptCaps)
+    // is the source of truth, not a per-provider hardcode.
+    image: false,
   }
 }

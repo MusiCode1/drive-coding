@@ -10,8 +10,12 @@
  *    המוכנות מוכחת על-ידי תגובת ה-ACP עצמה — אין frame handshake סינתטי.
  *    אם אין תגובה בתוך INIT_TIMEOUT_MS → סוגר transport, זורק timeout.
  *
- * auth_required: אם initialize זורקת עם data.code === "auth_required",
- * זורק מחדש עם kind = "auth_required" כדי שה-UI יציג הודעת "<cli> auth login".
+ * auth_required: אם initialize/authenticate זורקים עם data.code === "auth_required",
+ * זורק מחדש עם kind = "auth_required" + authMethods מובנה (ר' slice auth-guidance §3
+ * Commit 0) — ה-UI בונה את הדרכת-האימות מהם, לא ממחרוזת קשיחה.
+ *
+ * authMethods: מפורסמים ב-initialize, נחשפים על ה-facade (client.authMethods) — []
+ * ב-warm reattach (createAttachedAcpClient מדלג initialize).
  *
  * החלטות מחזור חיים מחוץ למודול זה:
  *   - Heartbeat / NAT keepalive — עניין ספציפי לתעבורה. תעבורת WS
@@ -21,10 +25,14 @@
  *   - Auto-reconnect — לא מטופל באף שכבה. ה-UI מציג פרומפט "רענן".
  */
 import type {
+  AuthMethod,
+  Client,
+  ClientSideConnection as ClientSideConnectionType,
+  CreateElicitationRequest,
+  CreateElicitationResponse,
   NewSessionRequest,
   SessionNotification,
   SetSessionConfigOptionResponse,
-  SetSessionModelResponse,
   SetSessionModeResponse,
 } from "@agentclientprotocol/sdk"
 import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk"
@@ -34,7 +42,49 @@ import { createClientImpl } from "./client-impl.js"
 /** נגזר מ-SDK — לא shape מותאם; drift אפס. */
 type AcpRequestMeta = NewSessionRequest["_meta"]
 
+// ─── slice-image-paste: PromptBlocks + buildPromptParam ───
+/** projection טהור מה-SDK — ContentBlock[]; drift אפס. */
+type PromptRequest = Parameters<ClientSideConnectionType["prompt"]>[0]
+export type PromptBlocks = PromptRequest["prompt"]
+
+/**
+ * ממיר content (string או PromptBlocks) לפורמט ה-prompt של conn.prompt.
+ * string → [{type:"text",text}]; PromptBlocks → passthrough ישיר.
+ * מיוצאת לטובת unit tests (TDD — Commit 4a).
+ */
+export function buildPromptParam(content: string | PromptBlocks): PromptBlocks {
+  if (typeof content === "string") {
+    return [{ type: "text", text: content }]
+  }
+  return content
+}
+
 const DEFAULT_INIT_TIMEOUT_MS = 10_000
+
+// סדר-עדיפות לפי מדידה חיה מול ה-CLIs:
+// grok = cached_token/grok.com, cursor = cursor_login.
+// אין xai.api_key בפועל — לא להוסיף methodId שלא נצפה.
+const PREFERRED = ["cached_token", "grok.com", "cursor_login"] as const
+
+/** Pick auth method from initialize response — PREFERRED order, then first offered. */
+export function resolveAuthMethodId(
+  authMethods: ReadonlyArray<{ id: string }> | undefined,
+): string | undefined {
+  if (!authMethods?.length) return undefined
+  const ids = new Set(authMethods.map((m) => m.id))
+  return PREFERRED.find((id) => ids.has(id)) ?? authMethods[0]?.id
+}
+
+/**
+ * מזהה שגיאת auth_required אמיתית (data.code === "auth_required") — בניגוד לכל שגיאה
+ * אחרת (כמו -32603 "not implemented" של opencode, שמכריז authMethods בלי ליישם authenticate).
+ * משותף ל-catch של initialize וגם authenticate. הגרסה המקורית סגרה transport על כל
+ * כישלון authenticate — מה ששבר את opencode, ולכן ההבחנה הזו חייבת להישאר.
+ */
+function isAuthRequiredError(e: unknown): e is { data?: { code?: string }; message?: string } {
+  const err = e as { data?: { code?: string } }
+  return err?.data?.code === "auth_required"
+}
 
 export type AcpClientOptions = {
   /** דריסת timeout האתחול. ברירת מחדל: 10 שניות. בבדיקות מעבירים ערך קטן. */
@@ -44,6 +94,10 @@ export type AcpClientOptions = {
 export type AcpClient = {
   conn: ClientSideConnection
   capabilities: Awaited<ReturnType<ClientSideConnection["initialize"]>>["agentCapabilities"]
+  // ─── slice auth-guidance: Commit 0 — captured from initialize (cold path); [] on
+  // warm reattach (createAttachedAcpClient skips initialize — no authMethods to capture) ───
+  /** authMethods advertised by the agent at initialize. `[]` if none offered or unavailable. */
+  authMethods: ReadonlyArray<AuthMethod>
   newSession(opts: {
     cwd: string
     _meta?: AcpRequestMeta
@@ -54,7 +108,17 @@ export type AcpClient = {
     _meta?: AcpRequestMeta
   }): ReturnType<ClientSideConnection["loadSession"]>
   listSessions(): ReturnType<ClientSideConnection["listSessions"]>
-  prompt(sessionId: string, text: string): ReturnType<ClientSideConnection["prompt"]>
+  // ─── slice session-delete: Commit 0 ───
+  /**
+   * מוחק session מ-`session/list` (store/persistence) — **לא** הורג את ה-process.
+   * זמין רק אם הסוכן מכריז `sessionCapabilities.delete` (raw capabilities, `client.capabilities`).
+   */
+  deleteSession(sessionId: string): Promise<void>
+  // ─── slice-image-paste: Commit 4a — backward-compatible (string עדיין עובד) ───
+  prompt(
+    sessionId: string,
+    content: string | PromptBlocks,
+  ): ReturnType<ClientSideConnection["prompt"]>
   cancel(sessionId: string): ReturnType<ClientSideConnection["cancel"]>
   close(): void
 
@@ -67,7 +131,7 @@ export type AcpClient = {
 
   setSessionMode(opts: { sessionId: string; modeId: string }): Promise<SetSessionModeResponse>
 
-  setSessionModel(opts: { sessionId: string; modelId: string }): Promise<SetSessionModelResponse>
+  setSessionModel(opts: { sessionId: string; modelId: string }): Promise<void>
 
   // ─── slice FE-normalization: ext channel ───
   /**
@@ -77,10 +141,31 @@ export type AcpClient = {
   extMethod(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>>
 }
 
+/** נגזר מ-SDK — לא shape מותאם; drift אפס. */
+type PermissionParams = Parameters<Client["requestPermission"]>[0]
+type PermissionResponse = Awaited<ReturnType<Client["requestPermission"]>>
+
+/**
+ * ─── slice-elicitation-ui: elicitation/create ─── ייבוא ישיר (לא Parameters<Client[...]>
+ * — unstable_createElicitation אופציונלי על Client → נכשל ב-TS2344).
+ */
+type ElicitationParams = CreateElicitationRequest
+type ElicitationResponse = CreateElicitationResponse
+
 export type AcpClientCallbacks = {
   onUpdate: (n: SessionNotification) => void
   /** ─── slice FE-normalization: קבלת ext notifications (כולל _drive/capabilities) ─── */
   onExtNotification?: (method: string, params: Record<string, unknown>) => void
+  /**
+   * ─── slice-permission-ui-basic: בקשת הרשאה חיה ─── ללא handler → auto-allow (client-impl.ts).
+   * דפוס גנרי ניתן-לשכפול — slice B (elicitation) ישכפל אותו ל-onCreateElicitation.
+   */
+  onRequestPermission?: (params: PermissionParams) => Promise<PermissionResponse>
+  /**
+   * ─── slice-elicitation-ui: שאלה מובנת חיה ─── מחקה את onRequestPermission. ללא handler
+   * → default `{action:"cancel"}` (client-impl.ts).
+   */
+  onCreateElicitation?: (params: ElicitationParams) => Promise<ElicitationResponse>
 }
 
 // ─── helper פרטי: בונה את ה-facade המשותף לשני הנתיבים ────────────────────────
@@ -94,10 +179,12 @@ function buildAcpClientFacade(
   conn: ClientSideConnection,
   transport: AcpTransport,
   capabilities: AcpClient["capabilities"],
+  authMethods: AcpClient["authMethods"],
 ): AcpClient {
   return {
     conn,
     capabilities,
+    authMethods,
 
     /** יוצר session ACP חדש */
     async newSession(opts: { cwd: string; _meta?: AcpRequestMeta }) {
@@ -129,9 +216,19 @@ function buildAcpClientFacade(
       return conn.listSessions({})
     },
 
-    /** שולח פרומפט טקסטואלי ב-session הנתון */
-    async prompt(sessionId: string, text: string) {
-      return conn.prompt({ sessionId, prompt: [{ type: "text", text }] })
+    // ─── slice session-delete: Commit 0 ───
+    /**
+     * מוחק session (session/list). `DeleteSessionResponse` הוא `{}` אפקטיבית → מחזירים void.
+     * עשוי לזרוק -32601 אם ה-CLI אינו תומך ביכולת delete — הקורא (VM) מטפל.
+     */
+    async deleteSession(sessionId: string): Promise<void> {
+      await conn.deleteSession({ sessionId })
+    },
+
+    /** שולח פרומפט (טקסט או blocks מולטימודלי) ב-session הנתון */
+    // ─── slice-image-paste Commit 4a: backward-compatible (string עדיין עובד) ───
+    async prompt(sessionId: string, content: string | PromptBlocks) {
+      return conn.prompt({ sessionId, prompt: buildPromptParam(content) })
     },
 
     /** מבטל פעולה פעילה ב-session הנתון */
@@ -186,11 +283,12 @@ function buildAcpClientFacade(
     },
 
     /** משנה את המודל של סשן פתוח (unstable API). */
-    async setSessionModel(opts: {
-      sessionId: string
-      modelId: string
-    }): Promise<SetSessionModelResponse> {
-      return conn.unstable_setSessionModel({ sessionId: opts.sessionId, modelId: opts.modelId })
+    async setSessionModel(opts: { sessionId: string; modelId: string }): Promise<void> {
+      await conn.setSessionConfigOption({
+        sessionId: opts.sessionId,
+        configId: "model",
+        value: opts.modelId,
+      })
     },
   }
 }
@@ -213,6 +311,8 @@ export async function createAcpClient(
   const client = createClientImpl({
     onUpdate: callbacks.onUpdate,
     onExtNotification: callbacks.onExtNotification,
+    onRequestPermission: callbacks.onRequestPermission,
+    onCreateElicitation: callbacks.onCreateElicitation,
   })
   const conn = new ClientSideConnection((_agent) => client, stream)
 
@@ -225,6 +325,11 @@ export async function createAcpClient(
     protocolVersion: 1,
     clientCapabilities: {
       fs: { readTextFile: false, writeTextFile: false },
+      // slice elicitation-ui (B): מכריזים על תמיכה ב-form elicitation כדי שהסוכן
+      // *ירשה לעצמו לשלוח* elicitation/create. בלי זה, ה-claude-agent-acp bridge
+      // מוסיף את AskUserQuestion ל-disallowedTools ולא רושם MCP-elicitation forwarding
+      // → הפיצ'ר לא-נגיש end-to-end (calev NO-GO). `{}` = נתמך. url דחוי (mode:form בלבד).
+      elicitation: { form: {} },
     },
     clientInfo: { name: "drive-coding", version: "0.2.0" },
   })
@@ -248,14 +353,17 @@ export async function createAcpClient(
     if (initTimer !== undefined) clearTimeout(initTimer)
   } catch (e) {
     if (initTimer !== undefined) clearTimeout(initTimer)
-    // שגיאת auth_required — זורק מחדש עם kind ל-UI
-    const err = e as { code?: number; data?: { code?: string }; message?: string }
-    if (err?.data?.code === "auth_required") {
+    // שגיאת auth_required — זורק מחדש עם kind + authMethods ל-UI (structured — לא string
+    // עם "<cli>" מילולי; ר' slice auth-guidance §3 Commit 0). initResult לא הוקצה בנתיב
+    // הזה (ההקצאה למעלה נזרקה) → authMethods: [] תמיד (אין מה ללכוד).
+    if (isAuthRequiredError(e)) {
       const authErr = new Error(
-        `ACP agent requires authentication: ${err.message ?? "auth_required"}. ` +
-          `Run in shell: '<cli> auth login'.`,
+        `ACP agent requires authentication: ${e.message ?? "auth_required"}`,
       )
-      ;(authErr as Error & { kind?: string }).kind = "auth_required"
+      ;(authErr as Error & { kind?: string; authMethods?: ReadonlyArray<AuthMethod> }).kind =
+        "auth_required"
+      ;(authErr as Error & { kind?: string; authMethods?: ReadonlyArray<AuthMethod> }).authMethods =
+        []
       transport.close()
       throw authErr
     }
@@ -263,7 +371,41 @@ export async function createAcpClient(
     throw e
   }
 
-  return buildAcpClientFacade(conn, transport, initResult.agentCapabilities)
+  // authenticate גנרי — רק כש-authMethods לא ריק (Cursor: cursor_login, Grok: cached_token/grok.com).
+  // opencode/gemini/qoder/claude/codex לא מציעים authMethods → לא נוגעים כלל, אין רגרסיה.
+  const authMethodId = resolveAuthMethodId(initResult.authMethods)
+  if (authMethodId) {
+    try {
+      await conn.authenticate({ methodId: authMethodId })
+    } catch (e) {
+      // auth_required אמיתי → פאטלי (כמו initialize). כל שגיאה אחרת (כמו -32603
+      // "not implemented" של opencode, שמכריז authMethods בלי ליישם את ה-RPC בפועל)
+      // → לא-פאטלי: log + המשך כאילו authenticate לא נקרא. מונע רגרסיה (calev NO-GO).
+      if (isAuthRequiredError(e)) {
+        transport.close()
+        const authErr = new Error(
+          `ACP agent authentication failed (methodId: ${authMethodId}): ${e.message ?? String(e)}`,
+        )
+        ;(authErr as Error & { kind?: string; authMethods?: ReadonlyArray<AuthMethod> }).kind =
+          "auth_required"
+        ;(
+          authErr as Error & { kind?: string; authMethods?: ReadonlyArray<AuthMethod> }
+        ).authMethods = initResult.authMethods ?? []
+        throw authErr
+      }
+      const err = e as { message?: string }
+      console.warn(
+        `[acp] authenticate(methodId=${authMethodId}) failed non-fatally — agent declared authMethods but RPC not implemented; continuing: ${err?.message ?? String(e)}`,
+      )
+    }
+  }
+
+  return buildAcpClientFacade(
+    conn,
+    transport,
+    initResult.agentCapabilities,
+    initResult.authMethods ?? [],
+  )
 }
 
 // ─── slice warm-reattach-skip-init: נתיב warm reattach ───────────────────────
@@ -304,11 +446,14 @@ export function createAttachedAcpClient(
   const client = createClientImpl({
     onUpdate: callbacks.onUpdate,
     onExtNotification: callbacks.onExtNotification,
+    onRequestPermission: callbacks.onRequestPermission,
+    onCreateElicitation: callbacks.onCreateElicitation,
   })
   const conn = new ClientSideConnection((_agent) => client, stream)
 
   // capabilities מבחוץ (ברירת-מחדל: אובייקט ריק — raw caps משמש רק supportsImageInput הרדום)
   const capabilities = options.capabilities ?? ({} as AcpClient["capabilities"])
 
-  return buildAcpClientFacade(conn, transport, capabilities)
+  // ─── slice auth-guidance: warm reattach מדלג initialize → אין authMethods ללכוד ───
+  return buildAcpClientFacade(conn, transport, capabilities, [])
 }

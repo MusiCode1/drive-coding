@@ -5,7 +5,7 @@
  * No inference, no tokens. Only handshake + ext + structural wiring.
  *
  * DoD coverage:
- * - DoD 2: start() → NormalizedCapabilities (mcp=true, compact/usage/commands=false)
+ * - DoD 2: start() → NormalizedCapabilities (mcp=true, compact/commands=false)
  * - DoD 3: callExt round-trip (no -32601)
  * - DoD 4: close() — no leak (both connections close, no error thrown)
  * - DoD 2 (session): newSession + prompt handlers wired (no -32601 from agentApp side)
@@ -13,6 +13,8 @@
  * - DoD 7: close() after session — activeSessions.dispose() called (no hang)
  * - DoD 3 (rename): capabilities.rename=true after start()
  * - DoD 4 (rename): host.rename is a function (no SDK types in signature)
+ * - slice session-budget-meter Commit 3: capabilities.usage=true (was false) +
+ *   _drive/getQuota routing/validation — see the dedicated describe block below.
  */
 
 import { afterEach, describe, expect, it } from "vitest"
@@ -30,7 +32,7 @@ describe("InProcessHost — initialize only (no session/prompt)", () => {
     }
   })
 
-  it("start() returns NormalizedCapabilities with mcp=true, compact/usage/commands=false", async () => {
+  it("start() returns NormalizedCapabilities with mcp=true, compact/commands=false", async () => {
     host = createClaudeInProcessHost()
     const { capabilities } = await host.start({ cwd: process.cwd() })
 
@@ -40,8 +42,12 @@ describe("InProcessHost — initialize only (no session/prompt)", () => {
 
     // Not declared in initialize (runtime features) → false
     expect(capabilities.compact).toBe(false)
-    expect(capabilities.usage).toBe(false)
     expect(capabilities.commands).toBe(false)
+
+    // slice session-budget-meter Commit 3: usage=true — claude implements _drive/getQuota
+    // (store-level, like rename/thinkingTokens — not gated on the initialize frame).
+    // See "InProcessHost — _drive/getQuota handler" describe block below for the full DoD.
+    expect(capabilities.usage).toBe(true)
 
     // configOptions from session/new only, not hardcoded
     expect(capabilities.configOptions).toBe(false)
@@ -289,5 +295,83 @@ describe("InProcessHost — _drive/setThinkingTokens parseExtParams validation (
     await expect(
       host.callExt("_drive/setThinkingTokens", { sessionId: "nonexistent", n: 8000 }),
     ).rejects.toThrow("Internal error")
+  })
+})
+
+describe("InProcessHost — _drive/getQuota handler (unit, no inference)", () => {
+  /**
+   * slice session-budget-meter Commit 3.
+   * DoD coverage:
+   * - capabilities.usage === true after start() (Commit 3 "Capabilities")
+   * - _drive/getQuota is routed (not -32601) — handler registered
+   * - invalid params rejected before reaching getQuery (validation at the host boundary)
+   * - valid params reach getQuery → "Internal error" (session not found, no live claude call)
+   */
+  let host: InProcessHost | undefined
+
+  afterEach(async () => {
+    if (host) {
+      await host.close()
+      host = undefined
+    }
+  })
+
+  it("start() returns capabilities.usage=true (Commit 3 — implements _drive/getQuota)", async () => {
+    host = createClaudeInProcessHost()
+    const { capabilities } = await host.start({ cwd: process.cwd() })
+    expect(capabilities.usage).toBe(true)
+  })
+
+  it("_drive/getQuota is routed — not -32601 (handler registered)", async () => {
+    host = createClaudeInProcessHost()
+    await host.start({ cwd: process.cwd() })
+
+    await expect(
+      host.callExt("_drive/getQuota", { sessionId: "nonexistent-session" }),
+    ).rejects.toThrow("Internal error")
+
+    let err: Error | undefined
+    try {
+      await host.callExt("_drive/getQuota", { sessionId: "x" })
+    } catch (e) {
+      err = e as Error
+    }
+    expect(err?.message).not.toContain("Method not found")
+  })
+
+  it("invalid params (sessionId missing) → validation error before getQuery", async () => {
+    host = createClaudeInProcessHost()
+    await host.start({ cwd: process.cwd() })
+
+    let err: Error | undefined
+    try {
+      await host.callExt("_drive/getQuota", {})
+    } catch (e) {
+      err = e as Error
+    }
+    expect(err).toBeDefined()
+    expect(err?.message).not.toContain("Internal error")
+  })
+
+  it("invalid params (sessionId not a string) → validation error before getQuery", async () => {
+    host = createClaudeInProcessHost()
+    await host.start({ cwd: process.cwd() })
+
+    let err: Error | undefined
+    try {
+      await host.callExt("_drive/getQuota", { sessionId: 123 })
+    } catch (e) {
+      err = e as Error
+    }
+    expect(err).toBeDefined()
+    expect(err?.message).not.toContain("Internal error")
+  })
+
+  it("_drive/getQuota throws descriptive error when claudeAgent not set (before start())", async () => {
+    host = createClaudeInProcessHost()
+    // Do NOT call start() — claudeAgent will be undefined
+    await expect(
+      host.callExt("_drive/getQuota", { sessionId: "any" }),
+    ).rejects.toThrow("before start")
   })
 })

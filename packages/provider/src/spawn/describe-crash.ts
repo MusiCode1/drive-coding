@@ -23,6 +23,42 @@ export type BridgeCrashInfo = {
   readonly signal: NodeJS.Signals | string | null
   /** מאוכלס כאשר הקריסה נובעת מ-child.on("error") — spawn ENOENT וכו' */
   readonly spawnError?: { readonly code?: string; readonly message: string }
+  /**
+   * stderr שנלכד עד רגע ה-exit (spawn-core). אופציונלי — backward-compatible;
+   * consumers שלא מזינים אותו ממשיכים לקבל [] (ראה describeCrash קורא). מאוכלס
+   * רק ב-connectSpawn (spawned CLIs); claude/codex in-process לא עוברים דרך
+   * spawn-core, ולכן לא מקבלים שדה זה (ראה scope בבריף surface-crash-stderr).
+   */
+  readonly stderr?: readonly string[]
+}
+
+const STDERR_REASON_MAX_LEN = 200
+const STDERR_REASON_LOOKBACK = 30
+
+/**
+ * lastStderrReason — פונקציה טהורה: מחזירה שורת-stderr אחת שסבירה כ"סיבת קריסה".
+ *
+ * heuristic best-effort (לא הבטחה — ראה §5 בבריף):
+ *   1. מעדיפה שורה שמכילה /error|fatal|panic|failed/i מבין ~30 השורות האחרונות.
+ *   2. אחרת — השורה האחרונה הלא-ריקה (מדלגת על ריקות/whitespace).
+ * חתוכה ל-~200 תווים.
+ */
+function lastStderrReason(stderrLines: ReadonlyArray<string>): string | undefined {
+  for (
+    let i = stderrLines.length - 1;
+    i >= 0 && i >= stderrLines.length - STDERR_REASON_LOOKBACK;
+    i--
+  ) {
+    const line = stderrLines[i]?.trim()
+    if (line && /error|fatal|panic|failed/i.test(line)) {
+      return line.slice(0, STDERR_REASON_MAX_LEN)
+    }
+  }
+  for (let i = stderrLines.length - 1; i >= 0; i--) {
+    const line = stderrLines[i]?.trim()
+    if (line) return line.slice(0, STDERR_REASON_MAX_LEN)
+  }
+  return undefined
 }
 
 export function describeCrash(
@@ -42,9 +78,12 @@ export function describeCrash(
   // 3. Signal
   if (info.signal) return `Killed by signal ${info.signal}`
 
-  // 4. קוד יציאה שאינו אפס
+  // 4. קוד יציאה שאינו אפס — צרף את סיבת ה-stderr אם יש (heuristic, §5 בבריף)
   if (info.exitCode !== null && info.exitCode !== 0) {
-    return `Exited with code ${info.exitCode}`
+    const reason = lastStderrReason(stderrLines)
+    return reason
+      ? `Exited with code ${info.exitCode}: ${reason}`
+      : `Exited with code ${info.exitCode}`
   }
 
   // 5. יציאה נקייה או אין מידע — אין סיבה להציג

@@ -2,12 +2,18 @@
  * מודל Bubble — משותף בין view-models, קומפוננטות וה-Speaker.
  *
  * איחוד מובחן (Discriminated union) לפי `kind`. כל סוג (variant) נושא בדיוק את השדות
- * שהוא צריך; צרכנים שלא צריכים שדה מסוים פשוט לא ניגשים אליו. ראה
- * את `packages/frontend/docs/bubble-model.md` להסבר המלא.
+ * שהוא צריך; צרכנים שלא צריכים שדה מסוים פשוט לא ניגשים אליו.
  *
  * ב-slice 2 אנו משתמשים ב-`user`, `message`, `thought`. סוג ה-`tool` מוצהר עכשיו כדי
  * שסלייסים מאוחרים יותר יוכלו להשתמש בו ללא רפקטור אטומי נוסף (כלל זהב
  * #5: אין "תאימות לאחור במקום").
+ *
+ * ⚠️ **אל תרחיב את המודל הדרגתית** — כלומר אל תתלה שדה חדש על הטיפוס הקרוב ביותר
+ * בכל פעם שמגיע צורך. זה בדיוק הדפוס שיצר ב-FE הישן את `messages` + `bubbles`
+ * הכפולים ואת `segmentCache` שמעולם לא אוכלס. הכלל: מודל מחושב פעם אחת קדימה עם
+ * כל השדות הצפויים, ומי שלא צריך שדה עדיין פשוט **לא מציב** אותו. שדות אופציונליים
+ * על variant הם לגיטימיים כשהם נגזרים מהתכנון הזה (`recordingId`, `attachments`,
+ * `subFrames`); מה שאסור הוא להוסיף אותם אד-הוק כתחליף לחשיבה על המודל.
  */
 
 export type Segment = {
@@ -44,6 +50,13 @@ export type UserBubble = BubbleBase & {
    * Commit 4 מאכלס את השדה; Commit 3 רק מרנדר (mock).
    */
   attachments?: { mimeType: string; dataBase64: string }[]
+  /**
+   * slice-image-paste §11.3א — תוכן לא-טקסטואלי מ-replay (resource_link / audio / resource).
+   * הרכיב (UserBubble) אחראי לתרגום הtitle/aria-label דרך t().
+   * ה-VM לא מייבא t ולא כותב מחרוזות-תצוגה — שכבת-הרכיב בלבד.
+   * label: raw data (name/uri) — ללא אינטרפולציה.
+   */
+  contentPlaceholders?: { kind: "resource_link" | "audio" | "resource"; label?: string }[]
 }
 
 export type MessageBubble = BubbleBase & {
@@ -67,6 +80,28 @@ export type ToolContent = ToolContentText | ToolContentDiff | ToolContentTermina
 
 export type ToolLocation = { path: string; line?: number }
 
+// ─── slice subagent-transcript-data-v2: תעתיק תת-סוכן (additive) ───
+// שכבת-נתונים בלבד — אין רינדור.
+
+/** מצב תת-הסוכן, נגזר ממקורות _claude/sdkMessage (task_started/progress/notification/updated). */
+export type SubagentTaskStatus = "pending" | "in_progress" | "completed" | "failed" | "unknown"
+
+/** metadata של Task/תת-סוכן, ממופה על ToolCall.task. הליבה = prompt + summary (value_priority, decisions 2026-07-11). */
+export type TaskMeta = {
+  taskId?: string
+  subagentType?: string
+  prompt?: string
+  summary?: string
+  lastToolName?: string
+  status: SubagentTaskStatus
+}
+
+/**
+ * SubFrame — פריט בתעתיק המקונן (subFrames) של בועת Task.
+ * subset של Bubble — message/thought/tool בלבד (אין UserBubble) — reuse ל-renderer ב-B2.
+ */
+export type SubFrame = MessageBubble | ThoughtBubble | ToolBubble
+
 export type ToolCall = {
   toolCallId: string
   name: string
@@ -83,6 +118,8 @@ export type ToolCall = {
   // ─── slice 16 (ACP content) ───
   content?: ToolContent[]
   locations?: ToolLocation[]
+  /** slice subagent-transcript-data-v2 — metadata של Task/תת-סוכן. undefined = לא-Task tool call. */
+  task?: TaskMeta
 }
 
 export type ToolBubble = BubbleBase & {
@@ -91,6 +128,8 @@ export type ToolBubble = BubbleBase & {
   toolCall: ToolCall
   /** תמיד ריק — שומר על מבנה אחיד מול בועות תוכן עבור האיחוד (union). */
   segments: never[]
+  /** slice subagent-transcript-data-v2 — תעתיק תת-סוכן מקונן. undefined = לא-Task tool call. */
+  subFrames?: SubFrame[]
 }
 
 export type Bubble = UserBubble | MessageBubble | ThoughtBubble | ToolBubble

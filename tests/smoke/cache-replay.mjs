@@ -10,7 +10,7 @@
  * Why we bypass the LLM:
  *   The original brief (§4 Commit 2) considered driving the cache by
  *   sending the same prompt to the agent twice. In practice the LLM is
- *   non-deterministic — `pnpm test` runs of that approach produced 0 hits
+ *   non-deterministic — `bun run test` runs of that approach produced 0 hits
  *   on pass 2, even with prompts like "השב במילה אחת בלבד: אישור". §6
  *   Risk #2 allowed a soft assertion as fallback, but a stricter and
  *   faster path is to issue browser-side `fetch()` calls with identical

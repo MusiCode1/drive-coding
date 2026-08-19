@@ -25,30 +25,79 @@ export type CliSpec = {
   readonly unsetEnv?: readonly string[]
   /** משתני-סביבה להוספה/דריסה ב-child לפני spawn. */
   readonly setEnv?: Readonly<Record<string, string>>
+  /**
+   * שם משתנה-סביבה שדורס את ה-bin (למשל OPENCODE_BIN — D14, Proxmox).
+   * נצרך ע"י detectAvailableClis (slice cli-availability) כדי שגילוי הזמינות
+   * יכבד את אותו סדר-עדיפויות כמו getCliCommand.
+   */
+  readonly envVar?: string
+  /**
+   * הבינארי לבדיקת-זמינות (detectAvailableClis, slice cli-availability) כשהוא שונה
+   * מ-`bin` (ה-spawn-bin). claude/codex רצים in-process אבל ה-spawn-bin שלהם `npx`
+   * (legacy) — detectBin מפריד את בדיקת-הזמינות מבדיקת-ה-npx. ספק ללא detectBin
+   * משתמש ב-bin (spawned CLIs, ללא שינוי).
+   */
+  readonly detectBin?: string
+  /** שם-תצוגה. חסר → ה-FE מציג את המזהה. */
+  readonly displayName?: string
+  /** נתיב לקובץ-לוגו. נקרא בסכימה ועובר על החוט; ההגשה בסלייס cli-logo-serving. */
+  readonly logo?: string
+  /**
+   * שמות-חלופה לבינארי, לצד `bin`. נבדקים רק אם `bin` (או `detectBin`) לא נמצא.
+   * cursor: המתקין יוצר `agent` (חדש) ו-`cursor-agent` (מורשת) — התקנה ישנה
+   * מחזיקה רק את השני. ר' slice-cli-bin-resolution-unify §0.
+   */
+  readonly fallbackBins?: readonly string[]
 }
 
 export const CLI_SPECS = {
-  opencode: { bin: "opencode", args: ["acp"], supportsModelFlag: false },
+  opencode: { bin: "opencode", args: ["acp"], supportsModelFlag: false, envVar: "OPENCODE_BIN" },
   claude: {
     bin: "npx",
     args: ["-y", "@agentclientprotocol/claude-agent-acp@latest"],
     supportsModelFlag: true,
+    detectBin: "claude",
   },
   gemini: { bin: "gemini", args: ["--acp"], supportsModelFlag: true },
   codex: {
     bin: "npx",
     args: ["-y", "@zed-industries/codex-acp@latest"],
     supportsModelFlag: true,
+    detectBin: "codex",
   },
   qoder: { bin: "qodercli", args: ["--acp"], supportsModelFlag: true },
+  cursor: {
+    bin: "agent",
+    fallbackBins: ["cursor-agent"],
+    args: ["acp"],
+    supportsModelFlag: false,
+  },
+  grok: {
+    bin: "grok",
+    args: ["--no-auto-update", "agent", "stdio"],
+    // חובה false: getCliCommand מוסיף --model בסוף, ו-`grok agent stdio --model X`
+    // נכשל ב-exit 2 (רק `grok agent --model X stdio` עובד). נמדד חי, Grok Build 0.2.93.
+    supportsModelFlag: false,
+  },
 } as const satisfies Record<string, CliSpec>
 
 // רשימת השמות נגזרת ממפתחות ה-specs — אין כפילות.
 export const CLI_KINDS = Object.keys(CLI_SPECS) as readonly (keyof typeof CLI_SPECS)[]
 
 // arktype enum נבנה מרשימת המקור — נשאר מסונכרן אוטומטית.
+// שימוש: רשימות-ליטרלים מוגנות בקומפילציה (למשל ניתוב in-process/spawn). נשאר
+// סגור במכוון (הכרעת "דרך-הביניים", slice open-cli-registry) — לא נרחב, כי
+// טעות-כתיב בליטרל cliKind (כמו "cluade") צריכה להיתפס בקומפילציה, לא בזמן-ריצה.
 export const CliKind = type.enumerated(...CLI_KINDS)
 export type CliKind = keyof typeof CLI_SPECS
+
+/**
+ * טיפוס ה-wire וה-spawn של זהות-CLI. מחרוזת חופשית — הרשימה הקבילה נקבעת בזמן-ריצה
+ * מהרג'יסטרי האפקטיבי (CLI_SPECS ⊕ cli-specs.jsonc), לא בקומפילציה.
+ * להבדיל מ-`CliKind`, שהוא union סגור של המובנים ומשמש לרשימות-ליטרלים מוגנות.
+ */
+export type CliId = string
+export const CliId = type("string >= 1")
 
 // מכונת מצבים (State machine) של סטטוס
 // starting: בתהליך spawn (Slice 3+)
@@ -62,7 +111,7 @@ export type AgentStatus = typeof AgentStatus.infer
 // פנימי — מיועד ל-backend בלבד
 export const Agent = type({
   id: "string.uuid",
-  cliKind: CliKind,
+  cliKind: CliId,
   cwd: "string",
   modelOverride: "string | null",
   status: AgentStatus,
@@ -74,13 +123,16 @@ export const Agent = type({
   "crashReason?": "string",
   // נעיצה (slice active-agents): נשמר לתאימות; ה-reaper הוסר — כרגע ללא אפקט (no-op). ברירת מחדל false.
   "persistent?": "boolean",
+  // כותרת-הסשן (slice session-title-in-process-list): נדחפת ע"י ה-client שפתח את הסשן
+  // (מקור: session_info_update ACP). runtime-only — נאבד ב-restart. null = ניקוי מכוון.
+  "title?": "string | null",
 })
 export type Agent = typeof Agent.infer
 
 // פומבי — מה שה-frontend מקבל
 export const AgentPublic = type({
   id: "string.uuid",
-  cliKind: CliKind,
+  cliKind: CliId,
   cwd: "string",
   modelOverride: "string | null",
   status: AgentStatus,
@@ -101,16 +153,21 @@ export const AgentPublic = type({
   // slice agent-last-message-at: epoch-ms של הפלט האחרון שהסוכן שלח (כל sessionUpdate).
   // שים לב: epoch-ms (number), בשונה מ-createdAt שהוא ISO string. runtime-only — נאבד ב-restart.
   "lastMessageAt?": "number | null",
+  // כותרת-הסשן (slice session-title-in-process-list): נדחפת ע"י ה-client שפתח את הסשן. runtime-only.
+  "title?": "string | null",
 })
 export type AgentPublic = typeof AgentPublic.infer
 
 // קלט ל-POST /api/agents
 export const CreateAgentInput = type({
-  cliKind: CliKind,
+  cliKind: CliId,
   cwd: "string >= 1",
   "modelOverride?": "string | null",
   // Slice 8a: טעינת session ACP קיים דרך session/load במקום newSession
   "existingSessionId?": "string",
+  // slice project-system-prompt: פרומפט-מערכת פר-פרויקט, מתווסף (append) להוראות ברירת-המחדל.
+  // גנרי — הצורה הספציפית-לספק נכתבת רק בקובץ-הספק (provider/connection).
+  "systemPrompt?": "string | null",
 })
 export type CreateAgentInput = typeof CreateAgentInput.infer
 
@@ -138,6 +195,9 @@ export function toAgentPublic(agent: Agent): AgentPublic {
   }
   if (agent.persistent !== undefined) {
     pub.persistent = agent.persistent
+  }
+  if (agent.title !== undefined) {
+    pub.title = agent.title
   }
   return pub
 }

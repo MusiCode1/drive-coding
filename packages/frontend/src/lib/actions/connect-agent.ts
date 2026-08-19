@@ -10,12 +10,11 @@
  */
 
 import { goto } from "$app/navigation"
-import type { CliKind } from "@drive-coding/core"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 export async function connectAgent(params: {
-  cliKind: CliKind
+  cliKind: string
   cwd: string
   session: AgentSession
   settings: Settings
@@ -23,7 +22,13 @@ export async function connectAgent(params: {
   params.settings.setCliKind(params.cliKind)
   params.settings.setLastCwd(params.cwd)
 
-  await params.session.attach({ cwd: params.cwd, cliKind: params.cliKind })
+  // slice project-system-prompt: שולף את הפרומפט השמור לפרויקט (cwd) מ-Settings — ה-VM
+  // עצמו לא מחזיק Settings, ה-action (שכבת חוצה-VM) היא המקום הנכון לשלוף (§9 Q1).
+  await params.session.attach({
+    cwd: params.cwd,
+    cliKind: params.cliKind,
+    systemPrompt: params.settings.getProjectPrompt(params.cwd),
+  })
 
   if (params.session.status === "connected") {
     await goto("/chat")

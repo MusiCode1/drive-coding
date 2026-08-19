@@ -371,6 +371,62 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
     expect(agent?.crashReason).toBeUndefined()
   })
 
+  it("crash listener: exit with info.stderr → crashReason contains the stderr line (Commit 1, wiring)", async () => {
+    let capturedHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
+    const { registry, state } = makeRegistry()
+    const { reg } = makeConnectionRegistry({
+      onCrashCapture: (h) => {
+        capturedHandler = h
+      },
+    })
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+    const result = await orch.createAndSpawn({
+      cliKind: "cursor",
+      cwd: "/tmp",
+      modelOverride: null,
+    })
+
+    capturedHandler?.(result.agentId, {
+      exitCode: 1,
+      signal: null,
+      stderr: ["Error: No such device or address (os error 6)"],
+    })
+    await new Promise((r) => setImmediate(r))
+    await new Promise((r) => setImmediate(r))
+
+    const agent = state.get(result.agentId)
+    expect(agent?.status).toBe("crashed")
+    expect(agent?.crashReason).toBe(
+      "Exited with code 1: Error: No such device or address (os error 6)",
+    )
+  })
+
+  it("crash listener: exit without info.stderr field → crashReason falls back to 'Exited with code N' (regression, undefined-safe)", async () => {
+    let capturedHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
+    const { registry, state } = makeRegistry()
+    const { reg } = makeConnectionRegistry({
+      onCrashCapture: (h) => {
+        capturedHandler = h
+      },
+    })
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+    const result = await orch.createAndSpawn({
+      cliKind: "opencode",
+      cwd: "/tmp",
+      modelOverride: null,
+    })
+
+    capturedHandler?.(result.agentId, { exitCode: 1, signal: null })
+    await new Promise((r) => setImmediate(r))
+    await new Promise((r) => setImmediate(r))
+
+    const agent = state.get(result.agentId)
+    expect(agent?.status).toBe("crashed")
+    expect(agent?.crashReason).toBe("Exited with code 1")
+  })
+
   it("createAndSpawn passes modelOverride to connectionRegistry.connect via ConnectOpts", async () => {
     const { registry } = makeRegistry()
     const { reg, connectMock } = makeConnectionRegistry()
@@ -387,6 +443,44 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
       expect.any(String),
       "claude",
       expect.objectContaining({ modelOverride: "model-z" }),
+    )
+  })
+
+  // slice project-system-prompt Commit 1 — thread systemPrompt through core+BE.
+  it("createAndSpawn passes systemPrompt to connectionRegistry.connect via ConnectOpts", async () => {
+    const { registry } = makeRegistry()
+    const { reg, connectMock } = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+    await orch.createAndSpawn({
+      cliKind: "claude",
+      cwd: "/proj",
+      modelOverride: null,
+      systemPrompt: "Always end every reply with QAZ",
+    })
+
+    expect(connectMock).toHaveBeenCalledWith(
+      expect.any(String),
+      "claude",
+      expect.objectContaining({ systemPrompt: "Always end every reply with QAZ" }),
+    )
+  })
+
+  it("createAndSpawn without systemPrompt → connectionRegistry.connect receives systemPrompt: null", async () => {
+    const { registry } = makeRegistry()
+    const { reg, connectMock } = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+    await orch.createAndSpawn({
+      cliKind: "claude",
+      cwd: "/proj",
+      modelOverride: null,
+    })
+
+    expect(connectMock).toHaveBeenCalledWith(
+      expect.any(String),
+      "claude",
+      expect.objectContaining({ systemPrompt: null }),
     )
   })
 

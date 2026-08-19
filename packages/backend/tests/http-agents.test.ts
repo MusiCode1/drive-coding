@@ -115,7 +115,7 @@ describe("HTTP /api/agents", () => {
       expect(res.status).toBe(400)
     })
 
-    it("rejects invalid cliKind", async () => {
+    it("rejects unknown cliKind (open-cli-registry: not in the effective registry, not a schema failure)", async () => {
       const { app } = makeApp()
       const res = await app.request("/api/agents", {
         method: "POST",
@@ -123,6 +123,9 @@ describe("HTTP /api/agents", () => {
         body: JSON.stringify({ cliKind: "vim", cwd: "/foo" }),
       })
       expect(res.status).toBe(400)
+      const body = await res.json()
+      expect(body).toHaveProperty("known")
+      expect(Array.isArray(body.known)).toBe(true)
     })
 
     it("creates with modelOverride", async () => {
@@ -135,6 +138,58 @@ describe("HTTP /api/agents", () => {
       expect(res.status).toBe(201)
       const body = await res.json()
       expect(body.cwd).toBe("/x")
+    })
+
+    // slice project-system-prompt Commit 1 — systemPrompt accepted by CreateAgentInputFull
+    // and forwarded to orchestrator.createAndSpawn.
+    it("creates with systemPrompt — accepted by schema and forwarded to orchestrator", async () => {
+      let received: unknown
+      const app = new Hono()
+      const registry = createInMemoryAgentRegistry()
+      const orchestrator: AgentOrchestrator = {
+        async createAndSpawn(input): Promise<CreateAndSpawnResult> {
+          received = input
+          const agent = await registry.create(input)
+          await registry.update(agent.id, { status: "ready", bridgePort: 7100 })
+          return {
+            agentId: agent.id,
+            cwd: agent.cwd,
+            cliKind: agent.cliKind,
+            wsUrl: `ws://127.0.0.1:7100/`,
+            bridgePort: 7100,
+            status: "spawning",
+          }
+        },
+        async deleteAndKill(id) {
+          await registry.delete(id).catch(() => {})
+        },
+        getBridgePort: vi.fn(() => 7100),
+      }
+      registerAgentsHttp(app, { registry, orchestrator })
+
+      const res = await app.request("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cliKind: "claude",
+          cwd: "/x",
+          systemPrompt: "Always end every reply with QAZ",
+        }),
+      })
+      expect(res.status).toBe(201)
+      expect((received as { systemPrompt?: string | null })?.systemPrompt).toBe(
+        "Always end every reply with QAZ",
+      )
+    })
+
+    it("creates without systemPrompt — omitted (not required)", async () => {
+      const { app } = makeApp()
+      const res = await app.request("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cliKind: "claude", cwd: "/x" }),
+      })
+      expect(res.status).toBe(201)
     })
 
     it("returns 500 if orchestrator throws", async () => {
@@ -381,6 +436,97 @@ describe("HTTP /api/agents", () => {
     })
   })
 
+  // slice session-title-in-process-list: PATCH /api/agents/:id (generic, whitelist: title)
+  describe("PATCH /api/agents/:id", () => {
+    it("sets title → 200 {ok}, and GET /api/agents reflects it", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "מה זה TypeScript" }),
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body).toEqual({ ok: true })
+
+      const listRes = await app.request("/api/agents")
+      const listBody = await listRes.json()
+      const found = listBody.agents.find((a: { id: string }) => a.id === agent.id)
+      expect(found.title).toBe("מה זה TypeScript")
+    })
+
+    it("rejects unknown field (status) — whitelist protects runtime fields", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      await registry.update(agent.id, { status: "ready" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "hi", status: "crashed" }),
+      })
+      expect(res.status).toBe(400)
+
+      // status must remain unchanged — whitelist blocked the whole request
+      const unchanged = await registry.get(agent.id)
+      expect(unchanged?.status).toBe("ready")
+      expect(unchanged?.title).toBeUndefined()
+    })
+
+    it("404 for unknown agent", async () => {
+      const { app } = makeApp()
+      const res = await app.request("/api/agents/ghost", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "hi" }),
+      })
+      expect(res.status).toBe(404)
+    })
+
+    it("invalid json → 400", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: "not json",
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it("title: null clears the title", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      await registry.update(agent.id, { title: "old title" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: null }),
+      })
+      expect(res.status).toBe(200)
+      const updated = await registry.get(agent.id)
+      expect(updated?.title).toBeNull()
+    })
+
+    it("omitted title (empty body) → no-op, existing title preserved", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      await registry.update(agent.id, { title: "keep me" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+      expect(res.status).toBe(200)
+      const updated = await registry.get(agent.id)
+      expect(updated?.title).toBe("keep me")
+    })
+  })
+
   // slice active-agents: GET /api/agents enriched with pid + attached via bridgeManager mock
   describe("GET /api/agents — runtime enrichment (bridgeManager mock)", () => {
     it("returns pid and attached when bridgeManager provided", async () => {
@@ -406,7 +552,12 @@ describe("HTTP /api/agents", () => {
 
       const bridgeManager = {
         // slice agent-busy-indicator: busy נוסף ל-return type
-        getRuntimeInfo: vi.fn((_id: string) => ({ pid: 12345, attached: true, busy: false, lastMessageAt: null })),
+        getRuntimeInfo: vi.fn((_id: string) => ({
+          pid: 12345,
+          attached: true,
+          busy: false,
+          lastMessageAt: null,
+        })),
       }
 
       registerAgentsHttp(app, { registry, orchestrator, bridgeManager })

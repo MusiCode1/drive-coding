@@ -1,12 +1,16 @@
 import "./log-setup.js" // חייב להיות ראשון — מאתחל לוגר לפני כל יבוא אחר
 import { createServer as httpsCreateServer } from "node:https"
 import { createLogger } from "@drive-coding/core/log"
+import type { ServerMessage } from "@drive-coding/core"
+import { onConfigChange, stopWatching } from "@drive-coding/provider/config"
 import { type ServerType, serve } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { Hono } from "hono"
-import { WebSocketServer } from "ws"
+import { WebSocket, WebSocketServer } from "ws"
 import { isBinary } from "./binary.js"
+import { preferPathClaudeExecutable } from "./config/prefer-path-cli.js"
 import { isTransientSocketError } from "./delivery/transient-socket-error.js"
+import { safeUrlPathname } from "./delivery/url-safe.js"
 import { resolveTls } from "./tls.js"
 
 const log = createLogger("backend.server")
@@ -55,6 +59,9 @@ import { createRecordingsStore } from "./app/recordings-store.js"
 import { parseCorsOrigins } from "./delivery/cors-config.js"
 import { registerHttp } from "./delivery/http.js"
 import { registerAgentsHttp } from "./delivery/http-agents.js"
+import { registerCliAvailabilityHttp } from "./delivery/http-cli-availability.js"
+import { registerCliLogoHttp } from "./delivery/http-cli-logo.js"
+import { registerHealthHttp } from "./delivery/http-health.js"
 import { registerClientLogHttp } from "./delivery/http-client-log.js"
 import {
   registerFsBrowseHttp,
@@ -64,8 +71,10 @@ import {
 } from "./delivery/http-history.js"
 import { registerHttpOptions } from "./delivery/http-options.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
+import { registerReloadConfigHttp } from "./delivery/http-reload-config.js"
 import { registerTtsCapabilitiesHttp } from "./delivery/http-tts-capabilities.js"
 import { registerUsageHttp } from "./delivery/http-usage.js"
+import { createMemoryGuard } from "./delivery/memory-guard.js"
 import { createWireRecorder } from "./delivery/wire-recorder.js"
 // הערה: createSessionsCache הוסר — רשימת הסשנים עכשיו מונעת מצד ה-FE דרך ACP WS
 import { createAgentWsHandler } from "./delivery/ws-agent.js"
@@ -81,6 +90,17 @@ app.use("*", cors({ origin: parseCorsOrigins(process.env.CORS_ORIGINS), credenti
 const registry = createInMemoryAgentRegistry()
 
 // wire-recorder: פעיל כש-WIRE_RECORD=1; אחרת no-op (אפס IO, אפס overhead)
+//
+// ⚠️ BUG ידוע (טרם תוקן, 2026-08-15) — הבדיקה כאן היא truthiness על מחרוזת,
+// ולא השוואה ל-"1". `load-config.ts:212` כותב אקטיבית WIRE_RECORD="0" כשההקלטה
+// **כבויה** בקונפיג, ו-"0" הוא truthy ב-JS — כלומר כיבוי ההקלטה דרך הקונפיג
+// מדליק אותה. הצורה הנכונה היא `=== "1"`, בדיוק כמו ב-`load-config.ts:114`.
+// לא מתוקן כאן כדי לא לשנות התנהגות מחוץ ל-slice ייעודי.
+//
+// ⚠️ אין cap / rotation / pruning ב-`wire-recorder.ts`. היעד הוא
+// `~/.config/drive-coding/wire-recordings/` — **מחוץ לריפו**, כך ש-.gitignore
+// ו-`git worktree remove` לא נוגעים בו. בין 2026-07-12 ל-2026-08-15 זה הצטבר
+// ל-3.2G ב-773 קבצים (קובץ בודד הגיע ל-617MB) ומילא את הדיסק.
 const wireRecorder = createWireRecorder({
   dir: process.env.WIRE_RECORD ? ensureStateSubdir("wire-recordings") : null,
 })
@@ -109,6 +129,8 @@ registerAgentsHttp(app, {
   projectsRegistry,
   bridgeManager: connectionRegistry,
 })
+// Slice be-diag-harness: endpoint אבחון עשיר (eventLoop histogram + memory + agents)
+registerHealthHttp(app, { registry, connectionRegistry })
 registerProjectsHttp(app, { projectsRegistry })
 registerRecordingsHttp(app, { recordingsStore })
 registerRecordingsPostHttp(app, { recordingsStore })
@@ -117,14 +139,30 @@ registerFsBrowseHttp(app)
 // Slice tts-usage-metering: usage metering store
 const usageStore = createUsageStore(ensureStateSubdir("usage"))
 
+// Slice proxy-tap-memory: RSS watchdog — defense-in-depth if TransformStream approach fails.
+// Polls RSS every 5s; returns 503 on /proxy/* when over budget (default: 1.5GB).
+// Override threshold with RSS_BUDGET_MB env var.
+const memoryGuard = createMemoryGuard()
+
 // Slice 10: פרוקסי שקוף עבור Google + ElevenLabs (+ usage tap)
 registerProxyHttp(app, {
   cacheBaseDir: ensureStateSubdir("cache", "proxy"),
   usageStore,
+  memoryGuard,
 })
 
 // Slice tts-usage-metering: usage summary endpoint
 registerUsageHttp(app, { usageStore })
+
+// Slice cli-availability: מסנן dropdown הספקים ב-FE לפי CLIs מותקנים בפועל
+registerCliAvailabilityHttp(app)
+
+// Slice cli-specs-hot-reload: broadcast config changes to FE + manual reload endpoint.
+onConfigChange(() => broadcastConfigChanged())
+registerReloadConfigHttp(app)
+
+// Slice cli-logo-serving: מגיש קובץ-לוגו CLI לפי id (id-keyed, ר' §3 בבריף)
+registerCliLogoHttp(app)
 
 // Slice 20: serve the built static FE (single-origin local prod).
 // Binary mode: serve from embedded FE manifest (assets in $bunfs, no disk reads).
@@ -193,6 +231,18 @@ const agentWss = new WebSocketServer({ noServer: true })
 echoWss.on("error", (err) => procLog.warn({ src: "echoWss", err }, "wss error"))
 agentWss.on("error", (err) => procLog.warn({ src: "agentWss", err }, "wss error"))
 
+// cli-specs-hot-reload: broadcasts config_changed to every echo-WS client.
+// function declaration (hoisted) — the wiring above runs before echoWss exists.
+function broadcastConfigChanged(): void {
+  const payload: ServerMessage = { type: "config_changed", timestamp: Date.now() }
+  const msg = JSON.stringify(payload)
+  for (const client of echoWss.clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(msg)
+    }
+  }
+}
+
 const echoHandler = createEchoWsHandler()
 // CUT-3b-ii: connectionRegistry מחליף bridgeManager ב-ws-agent
 const onAgentConnect = createAgentWsHandler({ orchestrator, connectionRegistry })
@@ -202,32 +252,48 @@ echoWss.on("connection", (ws) => {
 })
 
 agentWss.on("connection", (ws, req) => {
-  // חלץ agentId מה-URL
-  const url = new URL(req.url ?? "", `http://localhost`)
-  const match = url.pathname.match(/^\/ws\/agent\/([^/]+)$/)
+  // חלץ agentId מה-URL — defense-in-depth: אחרי upgrade-תקין לא אמור להיות null,
+  // אבל אם כן (target פגום הגיע לכאן בכל-זאת) — סגור בטוח, אל תקרוס.
+  const pathname = safeUrlPathname(req.url)
+  if (pathname === null) {
+    ws.close()
+    return
+  }
+  const match = pathname.match(/^\/ws\/agent\/([^/]+)$/)
   const agentId = match?.[1] ?? ""
 
   onAgentConnect(ws, agentId)
 })
 
+preferPathClaudeExecutable()
+
 const port = Number(process.env.PORT ?? 4000)
+const hostname = process.env.DRIVE_CODING_HOST ?? "127.0.0.1"
 
 const tls = resolveTls(process.env)
 const httpServer: ServerType = tls
-  ? serve({ fetch: app.fetch, port, createServer: httpsCreateServer, serverOptions: tls })
-  : serve({ fetch: app.fetch, port })
+  ? serve({ fetch: app.fetch, hostname, port, createServer: httpsCreateServer, serverOptions: tls })
+  : serve({ fetch: app.fetch, hostname, port })
 
 httpServer.on("upgrade", (req, socket, head) => {
-  const url = new URL(req.url ?? "", `http://localhost`)
+  // safeUrlPathname: עטיפה בטוחה ל-new URL — לעולם לא זורקת.
+  // target פגום (למשל "//[::1") גורם ל-new URL לזרוק TypeError → uncaughtException → exit.
+  // כאן: pathname===null → הרוס סוקט ו-return, ה-BE שורד.
+  const pathname = safeUrlPathname(req.url)
+  if (pathname === null) {
+    log.warn({ url: req.url }, "upgrade: malformed request-target — destroying socket")
+    socket.destroy()
+    return
+  }
 
-  if (url.pathname === "/ws/echo") {
+  if (pathname === "/ws/echo") {
     echoWss.handleUpgrade(req, socket, head, (ws) => {
       echoWss.emit("connection", ws, req)
     })
     return
   }
 
-  if (url.pathname.startsWith("/ws/agent/")) {
+  if (pathname.startsWith("/ws/agent/")) {
     agentWss.handleUpgrade(req, socket, head, (ws) => {
       agentWss.emit("connection", ws, req)
     })
@@ -238,7 +304,36 @@ httpServer.on("upgrade", (req, socket, head) => {
   socket.destroy()
 })
 
-log.info({ port }, "listening")
+log.info({ hostname, port }, "listening")
+
+// ─── Graceful shutdown ────────────────────────────────────────────────────────
+// SIGINT (Ctrl+C) / SIGTERM — סגור חיבורים, הרוג ילדים, צא בצורה מסודרת.
+// force-timeout: אם הכיבוי תקוע (hang) — הכרח יציאה אחרי 8s.
+// usage-store: flush לפני יציאה (נקי יותר מ-SIGINT handler מקביל ב-usage-store).
+let shuttingDown = false
+async function gracefulShutdown(sig: string): Promise<void> {
+  if (shuttingDown) return
+  shuttingDown = true
+  procLog.info({ sig }, "graceful shutdown — closing connections + children")
+  const force = setTimeout(() => {
+    procLog.warn({}, "shutdown timeout — forcing exit")
+    process.exit(0)
+  }, 8000)
+  force.unref()
+  try {
+    await Promise.allSettled(connectionRegistry.list().map((id) => connectionRegistry.close(id)))
+    stopWatching()
+    echoWss.close()
+    agentWss.close()
+    usageStore.flushUsageOnShutdown()
+    await new Promise<void>((r) => httpServer.close(() => r()))
+  } catch (e) {
+    procLog.error({ err: e }, "error during shutdown")
+  }
+  process.exit(0)
+}
+process.on("SIGINT", () => void gracefulShutdown("SIGINT"))
+process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"))
 
 /**
  * הרצה ידנית (dev/debug) — BE על פורט נפרד, משרת FE סטטי, דרך OneCLI:

@@ -1,6 +1,5 @@
 export * from "./cwd-hash"
 export * from "./cwd-validate"
-export * from "./cli-resolve"
 export type * from "./ports"
 export * from "./schemas"
 export * from "./ui/markdown"
@@ -11,3 +10,5 @@ export * from "./voice/sentence-boundary"
 export * from "./voice/translation-prompt"
 // ─── image ─── (slice-image-paste)
 export * from "./image/resize-plan"
+// ─── system ───
+export * from "./system/machine-stats"

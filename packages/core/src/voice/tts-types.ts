@@ -5,12 +5,23 @@
  * ב-core/async/with-timeout.ts. אין browser-global runtime כאן.
  */
 
+/** רמת קצב-דיבור — גנרי; כל ספק מפרש (Gemini→Director's-Notes, ElevenLabs→מתעלם). */
+export type SpeechPace = "very-slow" | "slow" | "normal" | "fast" | "very-fast"
+/** טון-דיבור — גנרי; ר' SpeechPace. */
+export type SpeechTone = "neutral" | "calm" | "energetic" | "formal" | "casual"
+export interface SpeechDirecting {
+  pace?: SpeechPace
+  tone?: SpeechTone
+}
+
 export interface TtsRequest {
   text: string
   voiceId: string
   modelId?: string
   messageId?: string | null
   signal?: AbortSignal
+  /** הנחיות-בימוי אופציונליות. ספקים שלא תומכים (ElevenLabs) מתעלמים. */
+  directing?: SpeechDirecting
 }
 
 export interface TtsProvider {

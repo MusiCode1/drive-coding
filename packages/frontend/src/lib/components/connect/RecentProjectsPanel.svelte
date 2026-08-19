@@ -8,11 +8,13 @@
  * slice: connect-recent-projects
  * דפוס: חיקוי ActiveProcessesPanel (אחידות ויזואלית).
  */
+import { onMount } from "svelte"
 import type { RecentProject } from "$lib/adapters/recent-projects"
-import { getRecentProjects, getI18n, getSettings } from "$lib/context"
+import CliBadge from "$lib/components/ui/CliBadge.svelte"
+import { getCliAvailability, getI18n, getRecentProjects, getSettings } from "$lib/context"
 import { formatRelativeTime } from "$lib/util/formatting"
 import { basename } from "$lib/util/path"
-import { onMount } from "svelte"
+import { resizeDrag } from "$lib/util/resize-drag"
 
 interface Props {
   onSelect: (project: RecentProject) => void
@@ -24,6 +26,12 @@ const recent = getRecentProjects()
 const i18n = getI18n()
 const t = i18n.t
 const settings = getSettings()
+// slice cli-branding (Commit 3): הרכיב חסר-props ל-displayName של ה-CLI, לכן צורך
+// את cliAvailability בעצמו (אין "מלמעלה" להעביר prop — ר' brief §4 C3).
+const cliAvailability = getCliAvailability()
+
+let dragHeight = $state<number | null>(null)
+let handleEl = $state<HTMLDivElement | null>(null)
 
 onMount(() => {
   void recent.refresh()
@@ -65,7 +73,10 @@ onMount(() => {
         {recent.loading ? "…" : t("connect.recent.empty")}
       </div>
     {:else}
-      <ul class="project-list">
+      <ul
+        class="project-list chat-scroll"
+        style="max-height: {dragHeight ?? settings.recentPanelHeight}px"
+      >
         {#each recent.projects as project (project.cwd)}
           <li class="project-row">
             <button
@@ -74,7 +85,7 @@ onMount(() => {
               onclick={() => onSelect(project)}
             >
               <div class="project-top">
-                <span class="cli-badge">{project.kind}</span>
+                <CliBadge id={project.kind} displayName={cliAvailability.details[project.kind]?.displayName} logo={cliAvailability.details[project.kind]?.logo} variant="badge" />
                 <span class="folder-name" title={project.cwd}><bdi>{basename(project.cwd)}</bdi></span>
                 {#if project.lastSeen}
                   <span class="meta-sep">·</span>
@@ -97,6 +108,24 @@ onMount(() => {
           </li>
         {/each}
       </ul>
+      <div
+        class="resize-handle"
+        bind:this={handleEl}
+        use:resizeDrag={{
+          getStart: () => settings.recentPanelHeight,
+          onMove: (px) => {
+            dragHeight = px
+            handleEl?.scrollIntoView({ block: "nearest" })
+          },
+          onEnd: (px) => {
+            settings.setRecentPanelHeight(px)
+            dragHeight = null
+          },
+        }}
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label={t("connect.panel.resizeHandle")}
+      ></div>
     {/if}
   {/if}
 </section>
@@ -182,6 +211,34 @@ onMount(() => {
     list-style: none;
     margin: 0;
     padding: 0;
+    overflow-y: auto;
+  }
+
+  /* ידית גרירה לשינוי גובה — slice connect-panel-resize */
+  .resize-handle {
+    height: 10px;
+    cursor: ns-resize;
+    touch-action: none;
+    position: relative;
+  }
+
+  .resize-handle::after {
+    content: "";
+    position: absolute;
+    inset-inline: 40%;
+    top: 50%;
+    height: 3px;
+    transform: translateY(-50%);
+    border-radius: 2px;
+    /* גלוי-תמיד (לא hover-only) — במובייל אין hover, וגריפ hover-only היה בלתי-נראה
+       כשגוללים אליו (slice connect-panel-resize, Commit 2.5, DoD #12) */
+    background: var(--border-str);
+    transition: background 0.15s;
+  }
+
+  .resize-handle:hover::after,
+  .resize-handle:active::after {
+    background: var(--accent);
   }
 
   .project-row {
@@ -264,17 +321,6 @@ onMount(() => {
   .meta-sep {
     color: var(--fg-dim);
     opacity: 0.5;
-  }
-
-  /* badge סוג-CLI — זהה ל-ActiveProcessesPanel */
-  .cli-badge {
-    background: var(--border);
-    color: var(--fg);
-    padding: 0.1rem 0.35rem;
-    border-radius: 4px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    flex-shrink: 0;
   }
 
   /* שם התיקייה (basename) — בולט בשורה העליונה */

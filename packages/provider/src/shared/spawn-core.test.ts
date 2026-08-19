@@ -80,10 +80,15 @@ describe("spawn-core — hooks and lifecycle", () => {
   afterEach(async () => {
     const waiting: Promise<void>[] = []
     for (const p of spawnedChildren) {
-      if (!p.killed && p.exitCode === null) {
+      // exitCode may still be null if the child was just killed (event hasn't fired yet).
+      // We guard with both p.killed and exitCode — detached children are not marked
+      // p.killed=true when killed externally via killTree(-pid), so we use exitCode only.
+      if (p.exitCode === null) {
         const exitPromise = new Promise<void>((resolve) => {
-          p.once("exit", () => resolve())
-          p.once("error", () => resolve())
+          // Resolve immediately if exit fires, or after a short grace period.
+          const t = setTimeout(() => resolve(), 500)
+          p.once("exit", () => { clearTimeout(t); resolve() })
+          p.once("error", () => { clearTimeout(t); resolve() })
         })
         try {
           p.kill("SIGKILL")
@@ -95,7 +100,7 @@ describe("spawn-core — hooks and lifecycle", () => {
     }
     await Promise.all(waiting)
     spawnedChildren = []
-  })
+  }, 15_000)
 
   it("createSpawnCore returns required interface", () => {
     const core = createSpawnCore()
@@ -349,4 +354,86 @@ describe("spawn-core — hooks and lifecycle", () => {
     expect(crashIds).toContain("crash-1")
     expect(core.get("crash-1")).toBeNull()
   })
+
+  it.skipIf(process.platform === "win32")(
+    "kill-tree kills grandchild (POSIX group kill)",
+    async () => {
+      // Script: spawns a grandchild that sleeps, writes its PID to a temp file, then waits.
+      const pidFile = path.join(os.tmpdir(), `spawn-core-grandchild-pid-${Date.now()}.txt`)
+      const grandchildScript = path.join(os.tmpdir(), "spawn-core-grandchild.mjs")
+      // Grandchild: just sleep
+      fs.writeFileSync(grandchildScript, "setInterval(() => {}, 99999);\n", "utf8")
+
+      // Parent script: spawns grandchild (inherits process group — no detached), writes its PID, then sleeps.
+      // The grandchild will be in the same POSIX process-group as the parent,
+      // so process.kill(-pgid) will kill both parent + grandchild.
+      const parentScript = path.join(os.tmpdir(), "spawn-core-parent.mjs")
+      fs.writeFileSync(
+        parentScript,
+        `import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+const gc = spawn(process.execPath, [${JSON.stringify(grandchildScript)}], { stdio: "ignore" });
+writeFileSync(${JSON.stringify(pidFile)}, String(gc.pid));
+setInterval(() => {}, 99999);
+`,
+        "utf8",
+      )
+
+      const core = createSpawnCore()
+      const cleanup = useScript(parentScript)
+      let child: ChildProcessWithoutNullStreams
+      try {
+        const handle = await core.spawnWithStderr("kill-tree-1", {
+          cliKind: "opencode",
+          cwd: os.tmpdir(),
+          modelOverride: null,
+        })
+        child = handle.child
+        spawnedChildren.push(child)
+      } finally {
+        cleanup()
+      }
+
+      // Wait for grandchild PID to be written (up to 3s)
+      const grandchildPid = await new Promise<number>((resolve, reject) => {
+        const deadline = setTimeout(() => reject(new Error("timeout waiting for grandchild pid")), 3000)
+        const interval = setInterval(() => {
+          try {
+            const raw = fs.readFileSync(pidFile, "utf8").trim()
+            if (raw) {
+              clearInterval(interval)
+              clearTimeout(deadline)
+              resolve(Number(raw))
+            }
+          } catch {
+            /* not yet written */
+          }
+        }, 50)
+      })
+
+      expect(grandchildPid).toBeGreaterThan(0)
+
+      // Verify grandchild is alive
+      expect(() => process.kill(grandchildPid, 0)).not.toThrow()
+
+      // Kill via core.kill (should group-kill)
+      await core.kill("kill-tree-1")
+
+      // Give OS time to propagate the kill
+      await new Promise((r) => setTimeout(r, 200))
+
+      // Grandchild should now be dead (ESRCH = no such process)
+      let grandchildDead = false
+      try {
+        process.kill(grandchildPid, 0)
+      } catch (e) {
+        grandchildDead = (e as NodeJS.ErrnoException).code === "ESRCH"
+      }
+      expect(grandchildDead).toBe(true)
+
+      // Cleanup pid file
+      try { fs.unlinkSync(pidFile) } catch { /* ok */ }
+    },
+    10_000,
+  )
 })

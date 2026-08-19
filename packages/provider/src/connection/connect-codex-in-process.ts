@@ -1,6 +1,6 @@
 /**
  * connect-codex-in-process.ts — connectCodexInProcess: ProviderConnection wrapping
- * the codex ACP agent in-process via the @agentclientprotocol/codex-acp fork.
+ * the codex ACP agent in-process via the @musicode1/codex-acp fork.
  *
  * Architecture:
  *   FE ←[wire: string onLine/write]→ PassThrough pair ←[NDJSON]→ startAcpServer(codex)
@@ -20,16 +20,18 @@
  * which kills codex child after 2s (built into the fork).
  */
 
-import { PassThrough } from "node:stream"
 import * as os from "node:os"
 import * as path from "node:path"
-import { startAcpServer } from "@agentclientprotocol/codex-acp/lib"
+import { PassThrough } from "node:stream"
+import { extractPromptCaps } from "@drive-coding/core/acp/extract-prompt-caps"
 import { resolveCliBinary } from "@drive-coding/core/cli-resolve"
+import { startAcpServer } from "@musicode1/codex-acp/lib"
 import { createTurnTracker } from "../shared/turn-tracker.js"
 import { decodeWireLine } from "../shared/wire-decode.js"
-import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
-import { staticCapsFor } from "./capabilities-static.js"
 import type { BridgeCrashInfo } from "../spawn/index.js"
+import type { NormalizedCapabilities } from "../types.js"
+import { staticCapsFor } from "./capabilities-static.js"
+import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
 
 /**
  * resolveCodexPath — finds the native codex binary using resolveCliBinary.
@@ -100,6 +102,13 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
     if (dir === "in") {
       tracker.observe(s, Date.now())
       emitBusyChange()
+
+      // slice reattach-state-sync Commit 1 — tap the initialize response for the real
+      // promptCapabilities (structural: responseKind==="result" + agentCapabilities present).
+      const promptCaps = extractPromptCaps(s.parsed)
+      if (promptCaps) {
+        caps = { ...caps, image: promptCaps.image === true }
+      }
     }
 
     // Derive type label (same as connectInProcess/connectSpawn).
@@ -136,8 +145,15 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
   // Start the codex ACP server in-process.
   // modelOverride is intentionally NOT passed — model selection is FE-driven via the wire
   // (session/new params / setSessionModel). codex does not accept modelOverride in opts.
+  // systemPrompt (slice project-system-prompt): opts.config → codex-acp ממזג ל-thread/start
+  // config (startAcpServer, dist/lib.js:29014). developer_instructions מתווסף (append-equivalent)
+  // ל-base של codex — בניגוד ל-instructions שמחליף אותו. אומת חי 2026-07-19: codex כיבד את
+  // developer_instructions (ZQX_CDX_7).
   const codexPath = resolveCodexPath()
-  startAcpServer(serverIn, serverOut, { codexPath })
+  startAcpServer(serverIn, serverOut, {
+    codexPath,
+    config: opts.systemPrompt ? { developer_instructions: opts.systemPrompt } : undefined,
+  })
 
   // Line buffer for serverOut — accumulate bytes until '\n'.
   let lineBuffer = ""
@@ -200,12 +216,16 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
     },
   }
 
-  // capabilities: staticCapsFor("codex") — static, no runtime discovery.
-  const capabilities = staticCapsFor("codex")
+  // caps: staticCapsFor("codex") — static baseline. mutable — slice reattach-state-sync
+  // Commit 1: the init-frame tap (handleLine, dir="in") updates `image` in place once it
+  // observes a real initialize response.
+  let caps = staticCapsFor("codex")
 
   const connection: ProviderConnection = {
     wire,
-    capabilities,
+    get capabilities(): NormalizedCapabilities {
+      return caps
+    },
 
     onFrame(cb: (f: WireFrame) => void): () => void {
       frameListeners.add(cb)

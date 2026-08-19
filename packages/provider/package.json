@@ -1,6 +1,6 @@
 {
   "name": "@drive-coding/provider",
-  "version": "0.0.0",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -20,15 +20,14 @@
     "test:live": "RUN_LIVE=1 vitest run --dir src/providers/claude/live"
   },
   "dependencies": {
-    "@agentclientprotocol/codex-acp": "github:MusiCode1/codex-acp#drive-coding",
-    "@agentclientprotocol/sdk": "^0.21.1",
-    "@anthropic-ai/claude-agent-sdk": "0.3.191",
+    "@agentclientprotocol/claude-agent-acp": "^0.58.1",
+    "@musicode1/codex-acp": "^1.0.2",
+    "@agentclientprotocol/sdk": "^1.2.1",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.207",
     "@drive-coding/core": "workspace:*",
     "arktype": "^2.0.0"
   },
   "devDependencies": {
-    "@agentclientprotocol/claude-agent-acp": "^0.52.0",
-    "acp-sdk-v1": "npm:@agentclientprotocol/sdk@1.0.0",
     "@types/node": "^22.0.0",
     "vitest": "^4.0.0"
   }

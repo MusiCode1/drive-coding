@@ -35,6 +35,7 @@ export interface SelectGroup {
 import { Dialog, Popover } from "bits-ui"
 import CheckIcon from "@lucide/svelte/icons/check"
 import ChevronDownIcon from "@lucide/svelte/icons/chevron-down"
+import type { Snippet } from "svelte"
 import { getResponsive } from "$lib/context"
 
 interface Props {
@@ -47,7 +48,20 @@ interface Props {
   ariaLabel?: string
   /** קומפקטי: trigger ברוחב תוכן (inline) במקום מלא. ברירת מחדל מלא. */
   compact?: boolean
+  /**
+   * יישור פריטים ברשימה:
+   *  - "auto" (ברירת מחדל): כל פריט מיושר לפי שפת-התוכן שלו (`dir="auto"`) — שמות
+   *    אנגליים (מודלים/CLIs) נקראים משמאל, עברית מימין. זה ה"סדר לפי שפה".
+   *  - "center": יישור-מרכז שרירותי — לבוררים שבהם per-content לא הגיוני (בורר-שפה he/en).
+   */
+  itemAlign?: "auto" | "center"
   onchange?: (value: string) => void
+  /**
+   * רנדור אופציונלי של אייקון לכל אופציה (slice cli-logo-serving, Commit 2).
+   * חסר → אין אייקון, בדיוק ההתנהגות הקודמת (9 צרכנים קיימים, כולם בלי icon —
+   * חייב להישאר זהה חזותית, כולל ה-trigger).
+   */
+  icon?: Snippet<[SelectOption]>
 }
 
 let {
@@ -59,7 +73,9 @@ let {
   disabled = false,
   ariaLabel,
   compact = false,
+  itemAlign = "auto",
   onchange,
+  icon,
 }: Props = $props()
 
 const responsive = getResponsive()
@@ -72,9 +88,12 @@ const renderGroups = $derived<SelectGroup[]>(
 )
 
 const allItems = $derived(renderGroups.flatMap((g) => g.items))
-const selectedLabel = $derived(
-  allItems.find((i) => i.value === value)?.label ?? placeholder,
-)
+// האופציה הנבחרת — היה מחושב 3 פעמים בנפרד (selectedLabel/selectedDescription/
+// selectedDescriptionFull); derived אחד מנקה את הכפילות וגם נדרש ל-icon ב-trigger
+// (slice cli-logo-serving, Commit 2) — triggerInner מקבל רק selectedLabel (מחרוזת),
+// לא item שלם, אז ה-icon בטריגר צריך את ה-item עצמו.
+const selectedItem = $derived(allItems.find((i) => i.value === value))
+const selectedLabel = $derived(selectedItem?.label ?? placeholder)
 
 // תקציר: השורה הראשונה בלבד של ה-description (התיאורים מה-CLI רב-שורתיים — השורה
 // הראשונה היא התקציר). חיתוך נוסף ל-2 שורות נעשה ב-CSS (line-clamp).
@@ -85,13 +104,9 @@ function firstLine(d?: string | null): string {
 }
 
 // תיאור הבחירה הנוכחית — מוצג מתחת ל-trigger (ריק → לא מוצג, no-op לבוררים בלי תיאור).
-const selectedDescription = $derived(
-  firstLine(allItems.find((i) => i.value === value)?.description),
-)
+const selectedDescription = $derived(firstLine(selectedItem?.description))
 // התיאור המלא (כל השורות) — נחשף ב-hover (title) וב-expand (לחיצה).
-const selectedDescriptionFull = $derived(
-  (allItems.find((i) => i.value === value)?.description ?? "").trim(),
-)
+const selectedDescriptionFull = $derived((selectedItem?.description ?? "").trim())
 // יש מה לפרוס: יותר משורה אחת (רב-שורתי), או שורה ראשונה ארוכה (כנראה נחתכת ב-clamp).
 const canExpandDesc = $derived(
   selectedDescriptionFull !== selectedDescription || selectedDescription.length > 45,
@@ -121,6 +136,10 @@ const triggerClass = $derived(
 <!-- ───────── snippets משותפים ───────── -->
 
 {#snippet triggerInner()}
+  <!-- selectedItem — לא רק selectedLabel (מחרוזת) — כי icon.(item) צריך את ה-item
+       השלם (slice cli-logo-serving, Commit 2). icon חסר → {@render icon?.(...)}
+       הוא no-op, בדיוק ההתנהגות הקודמת. -->
+  {#if selectedItem}{@render icon?.(selectedItem)}{/if}
   <span class="truncate min-w-0" dir="auto">{selectedLabel}</span>
   <ChevronDownIcon size={15} style="color:var(--fg-dim)" class="shrink-0" />
 {/snippet}
@@ -140,18 +159,23 @@ const triggerClass = $derived(
         </div>
       {/if}
       {#each g.items as item (item.value)}
+        <!-- dir="auto" על ה-row כולו → הפריט (label+desc+checkmark) מסתדר לפי שפת-התוכן:
+             שם אנגלי → LTR (label בהתחלה-שמאל, ✓ בסוף-ימין); עברית → RTL. ב-center מבטלים
+             את ה-auto ומיישרים למרכז (בורר-שפה). -->
         <button
           type="button"
           disabled={item.disabled}
-          class="rounded-lg px-3 py-3 text-sm flex items-start justify-between gap-2 text-start hover:bg-white/5 disabled:opacity-40"
+          dir={itemAlign === "center" ? "ltr" : "auto"}
+          class="rounded-lg px-3 py-3 text-sm flex items-start gap-2 hover:bg-white/5 disabled:opacity-40 {itemAlign === 'center' ? 'justify-between' : 'justify-between text-start'}"
           style="color:var(--fg)"
           class:is-selected={item.value === value}
           onclick={() => pick(item.value)}
         >
-          <span class="flex flex-col min-w-0 gap-0.5">
-            <span class="line-clamp-2 text-start" dir="auto">{item.label}</span>
-            {#if firstLine(item.description)}
-              <span class="line-clamp-2 text-[11px] leading-snug text-start" style="color:var(--fg-dim)" dir="auto">{firstLine(item.description)}</span>
+          {@render icon?.(item)}
+          <span class="flex flex-col min-w-0 gap-0.5 {itemAlign === 'center' ? 'flex-1 text-center' : ''}">
+            <span class="line-clamp-2" dir="auto">{item.label}</span>
+            {#if item.description?.trim()}
+              <span class="text-[11px] leading-snug whitespace-pre-wrap" style="color:var(--fg-dim)" dir="auto">{item.description.trim()}</span>
             {/if}
           </span>
           {#if item.value === value}
@@ -213,10 +237,12 @@ const triggerClass = $derived(
       {@render triggerInner()}
     </Popover.Trigger>
     <Popover.Portal>
+      <!-- אין dir כפוי על ה-Content — כל פריט מסתדר לפי שפת-התוכן (dir="auto" על ה-row).
+           min-w מבטיח רוחב קריא גם כשה-trigger צר (fix: "Google/Ger..." נחתך במובייל/עמודה צרה). -->
       <Popover.Content
         sideOffset={6}
         align="start"
-        class="z-50 max-h-[60dvh] w-(--bits-floating-anchor-width) max-w-[92vw] flex flex-col rounded-xl border shadow-xl overflow-hidden"
+        class="z-50 max-h-[60dvh] w-(--bits-floating-anchor-width) min-w-[16rem] max-w-[92vw] flex flex-col rounded-xl border shadow-xl overflow-hidden"
         style="background:var(--bg-elev); border-color:var(--border)"
       >
         {@render list(false)}

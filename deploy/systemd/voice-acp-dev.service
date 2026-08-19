@@ -7,12 +7,14 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/home/user/projects/drive-coding/dev
 Environment=PORT=4001
+Environment=DRIVE_CODING_HOST=127.0.0.1
 Environment=FE_STATIC_DIR=/home/user/projects/drive-coding/dev/packages/frontend/build
-# Deployment profile. vite.config.ts derives from FE_ENV: page title gets a "dev"
-# suffix ("drive-coding dev") and the prod build emits source maps. Per-setting
-# overrides win if set (FE_SOURCEMAP=false / FE_TITLE=...). main leaves FE_ENV
-# unset → defaults to prod (clean title, no source maps). See slice cache-headers-version §D.
-Environment=FE_ENV=dev
+# Deployment profile (slice app-title-build-env).
+# FE_ENV=preview: badge "Preview" in the tab title ("Drive Coding Preview"),
+# source maps ON (debug staging builds). prod (voice-acp-main) leaves FE_ENV
+# unset → "Drive Coding" (clean, no source maps). Local vite dev: use FE_ENV=dev.
+# Overrides: FE_TITLE=<custom> / FE_SOURCEMAP=false|true.
+Environment=FE_ENV=preview
 Environment=LOG_WIRE=ws
 # CORS: localhost (dev port) + ה-CF tunnel הציבורי של dev (drive-coding-dev).
 Environment=CORS_ORIGINS=http://localhost:4001,https://drive-coding-dev.example.com
@@ -20,9 +22,9 @@ Environment=CORS_ORIGINS=http://localhost:4001,https://drive-coding-dev.example.
 Environment=OPENCODE_BIN=/home/user/projects/drive-coding/dev/scripts/opencode-clean.sh
 # ExecStartPre מסנכרן תלויות ובונה את ה-FE אם חסר או לא-עדכני (build-if-stale:
 # משווה את הגרסה ב-build/_app/version.json מול HEAD, בונה מחדש אם שונה).
-# רענון FE שוטף: השתמש ב-`pnpm fe:build` בלי restart — הסוכנים החיים שורדים.
+# רענון FE שוטף: השתמש ב-`bun run fe:build` בלי restart — הסוכנים החיים שורדים.
 # restart שמור לשינויי BE בלבד.
-ExecStartPre=/bin/bash -lc 'source /home/user/.config/shell/shared-env.sh && pnpm install --frozen-lockfile && node scripts/dc-build-fe.mjs --if-stale'
+ExecStartPre=/bin/bash -lc 'source /home/user/.config/shell/shared-env.sh && bun install --frozen-lockfile && node scripts/dc-build-fe.mjs --if-stale'
 # claude in-process authenticates via subscription OAuth (~/.claude), not via OneCLI gateway.
 # This file declares the exclusion of api.anthropic.com from OneCLI (proxy + key placeholder),
 # scoped to the claude child process only — BE process.env (TTS proxy) is untouched.
@@ -36,8 +38,8 @@ RestartSec=2
 [Install]
 WantedBy=default.target
 
-# הסביבה הציבורית: https://drive-coding-dev.example.com (CF tunnel home-server,
-# token-based, id fed5a59e... → ingress drive-coding-dev.example.com → 192.168.x.x:4001).
+# הסביבה הציבורית: https://drive-coding-dev.example.com (CF tunnel home-server).
+# ה-BE מאזין ל-loopback בלבד; ingress חייב להיות drive-coding-dev.example.com → http://localhost:4001.
 # ה-routing מנוהל דרך CF API (PUT cfd_tunnel configurations), לא config מקומי.
 #
 # Drop-in: deploy/systemd/voice-acp-dev.service.d/10-logging.conf widens logging

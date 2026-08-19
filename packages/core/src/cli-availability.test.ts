@@ -1,0 +1,286 @@
+/**
+ * cli-availability.test.ts — TDD tests for detectAvailableClis.
+ *
+ * Tests: PATH-hit → source "path", miss → "not-found", override precedence
+ * (overrideKinds skips envVar), envVar-hit still reports "path" (not a
+ * dedicated "env" source — matches §4 API skeleton), default specs=CLI_SPECS.
+ *
+ * ESM note: vi.mock('node:fs') factory, same pattern as cli-resolve.test.ts
+ * (co-located, PATH mocked via fake env objects passed explicitly).
+ */
+
+import { afterEach, describe, expect, it, vi } from "vitest"
+
+vi.mock("node:fs", () => ({
+  existsSync: vi.fn(() => false),
+}))
+
+import * as fs from "node:fs"
+import { detectAvailableClis } from "./cli-availability.js"
+import type { CliKind, CliSpec } from "./schemas/agent.js"
+
+afterEach(() => {
+  vi.clearAllMocks()
+  vi.mocked(fs.existsSync).mockReturnValue(false)
+})
+
+const specs = {
+  opencode: { bin: "opencode", args: ["acp"], supportsModelFlag: false, envVar: "OPENCODE_BIN" },
+  claude: { bin: "claude-cli", args: [], supportsModelFlag: true },
+} as unknown as Record<CliKind, CliSpec>
+
+describe("detectAvailableClis: PATH scan", () => {
+  it("reports found + source path when binary is on PATH", () => {
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/fake/bin/claude-cli")
+
+    const result = detectAvailableClis(specs, env)
+
+    expect(result.available).toContain("claude")
+    expect(result.details.claude).toEqual({
+      found: true,
+      path: "/fake/bin/claude-cli",
+      source: "path",
+    })
+  })
+
+  it("reports not-found + excludes from available when binary is missing", () => {
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+
+    const result = detectAvailableClis(specs, env)
+
+    expect(result.available).not.toContain("claude")
+    expect(result.details.claude).toEqual({ found: false, source: "not-found" })
+  })
+})
+
+describe("detectAvailableClis: envVar", () => {
+  it("resolves via spec.envVar when set — source is still 'path' (no dedicated env source)", () => {
+    const env = { PATH: "", PATHEXT: "", OPENCODE_BIN: "/custom/opencode" }
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+
+    const result = detectAvailableClis(specs, env)
+
+    expect(result.available).toContain("opencode")
+    expect(result.details.opencode).toEqual({
+      found: true,
+      path: "/custom/opencode",
+      source: "path",
+    })
+  })
+})
+
+describe("detectAvailableClis: overrideKinds", () => {
+  it("ignores envVar and reports source 'override' when kind is in overrideKinds and bin is found", () => {
+    // override.bin replaces spec.bin — simulate by giving specs an already-merged bin,
+    // but envVar must be ignored: PATH has the override bin, envVar points elsewhere unfound.
+    const env = { PATH: "/fake/bin", PATHEXT: "", OPENCODE_BIN: "" }
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/fake/bin/opencode")
+
+    const result = detectAvailableClis(specs, env, ["opencode"])
+
+    expect(result.available).toContain("opencode")
+    expect(result.details.opencode).toEqual({
+      found: true,
+      path: "/fake/bin/opencode",
+      source: "override",
+    })
+  })
+
+  it("reports not-found + source 'not-found' when overrideKind bin is missing", () => {
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+
+    const result = detectAvailableClis(specs, env, ["opencode"])
+
+    expect(result.available).not.toContain("opencode")
+    expect(result.details.opencode).toEqual({ found: false, source: "not-found" })
+  })
+})
+
+describe("detectAvailableClis: detectBin", () => {
+  const detectBinSpecs = {
+    claude: { bin: "npx", args: [], supportsModelFlag: true, detectBin: "claude" },
+  } as unknown as Record<CliKind, CliSpec>
+
+  it("resolves via detectBin (not bin) when detectBin is set — regular branch", () => {
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/fake/bin/claude")
+
+    const result = detectAvailableClis(detectBinSpecs, env)
+
+    expect(result.available).toContain("claude")
+    expect(result.details.claude).toEqual({
+      found: true,
+      path: "/fake/bin/claude",
+      source: "path",
+    })
+  })
+
+  it("does not find via bin (npx) when only detectBin's binary is missing", () => {
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    // only npx exists on PATH, not claude — detectBin must still be checked, not bin.
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/fake/bin/npx")
+
+    const result = detectAvailableClis(detectBinSpecs, env)
+
+    expect(result.available).not.toContain("claude")
+    expect(result.details.claude).toEqual({ found: false, source: "not-found" })
+  })
+
+  it("override branch ignores detectBin and uses spec.bin (override precedence)", () => {
+    const overrideSpecs = {
+      claude: {
+        bin: "claude-override",
+        args: [],
+        supportsModelFlag: true,
+        detectBin: "claude",
+      },
+    } as unknown as Record<CliKind, CliSpec>
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    // only the override bin name exists on PATH — "claude" (detectBin) does not.
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/fake/bin/claude-override")
+
+    const result = detectAvailableClis(overrideSpecs, env, ["claude"])
+
+    expect(result.available).toContain("claude")
+    expect(result.details.claude).toEqual({
+      found: true,
+      path: "/fake/bin/claude-override",
+      source: "override",
+    })
+  })
+})
+
+describe("detectAvailableClis: defaults", () => {
+  it("defaults specs param to CLI_SPECS when not passed", () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+
+    const result = detectAvailableClis()
+
+    // CLI_SPECS has 7 kinds today; all not-found under a clean mocked fs.
+    expect(Object.keys(result.details).length).toBeGreaterThan(0)
+    expect(result.available).toEqual([])
+  })
+})
+
+// ─── fallbackBins (slice cli-bin-resolution-unify, Commit 1) ─────────────────
+
+describe("detectAvailableClis: fallbackBins", () => {
+  it("spec without fallbackBins → identical to existing behaviour (regression, all kinds)", () => {
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/fake/bin/claude-cli")
+
+    const result = detectAvailableClis(specs, env)
+
+    expect(result.available).toContain("claude")
+    expect(result.details.claude).toEqual({
+      found: true,
+      path: "/fake/bin/claude-cli",
+      source: "path",
+    })
+  })
+
+  it("only the alt name is on PATH → available includes the kind, details.path points to it", () => {
+    const cursorSpecs = {
+      cursor: {
+        bin: "agent",
+        args: ["acp"],
+        supportsModelFlag: false,
+        fallbackBins: ["cursor-agent"],
+      },
+    } as unknown as Record<CliKind, CliSpec>
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/fake/bin/cursor-agent")
+
+    const result = detectAvailableClis(cursorSpecs, env)
+
+    expect(result.available).toContain("cursor")
+    expect(result.details.cursor).toEqual({
+      found: true,
+      path: "/fake/bin/cursor-agent",
+      source: "path",
+    })
+  })
+
+  it("isOverride=true + fallbackBins on base → the fallback is not tried", () => {
+    const cursorSpecs = {
+      cursor: {
+        bin: "agent",
+        args: ["acp"],
+        supportsModelFlag: false,
+        fallbackBins: ["cursor-agent"],
+      },
+    } as unknown as Record<CliKind, CliSpec>
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    // only the fallback name exists — under override, it must NOT be tried.
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/fake/bin/cursor-agent")
+
+    const result = detectAvailableClis(cursorSpecs, env, ["cursor"])
+
+    expect(result.available).not.toContain("cursor")
+    expect(result.details.cursor).toEqual({ found: false, source: "not-found" })
+  })
+
+  it("detectBin still wins over bin (regression — claude/codex unaffected by fallbackBins wiring)", () => {
+    const detectBinSpecs = {
+      claude: { bin: "npx", args: [], supportsModelFlag: true, detectBin: "claude" },
+    } as unknown as Record<CliKind, CliSpec>
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/fake/bin/claude")
+
+    const result = detectAvailableClis(detectBinSpecs, env)
+
+    expect(result.available).toContain("claude")
+    expect(result.details.claude).toEqual({
+      found: true,
+      path: "/fake/bin/claude",
+      source: "path",
+    })
+  })
+})
+
+// ─── displayName + logo (slice cli-branding, Commit 1) ───────────────────────
+// אתר-הפליטה (:62 בקוד) הוא טרנרי (found ? {…} : {…}) — לא spread מותנה כמו
+// ב-cli-config.ts. שני הטסטים בודקים גם כשה-CLI found וגם כשלא — שני הענפים
+// חייבים להעביר את השדות אם הם קיימים ב-spec.
+describe("detectAvailableClis: displayName + logo", () => {
+  const brandedSpecs = {
+    pi: {
+      bin: "pi-cli",
+      args: [],
+      supportsModelFlag: false,
+      displayName: "Pi",
+      logo: "/tmp/pi.png",
+    },
+  } as unknown as Record<CliKind, CliSpec>
+
+  it("found=true → displayName+logo מועברים מה-spec", () => {
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    vi.mocked(fs.existsSync).mockImplementation((p) => p === "/fake/bin/pi-cli")
+
+    const result = detectAvailableClis(brandedSpecs, env)
+
+    expect(result.details.pi).toMatchObject({ displayName: "Pi", logo: "/tmp/pi.png" })
+  })
+
+  it("found=false → displayName+logo עדיין מועברים מה-spec (זמינות ומיתוג עצמאיים)", () => {
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+
+    const result = detectAvailableClis(brandedSpecs, env)
+
+    expect(result.details.pi).toMatchObject({ displayName: "Pi", logo: "/tmp/pi.png" })
+  })
+
+  it("spec ללא displayName/logo → השדות נעדרים (לא undefined מפורש)", () => {
+    const env = { PATH: "/fake/bin", PATHEXT: "" }
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+
+    const result = detectAvailableClis(specs, env)
+
+    expect(result.details.claude).not.toHaveProperty("displayName")
+    expect(result.details.claude).not.toHaveProperty("logo")
+  })
+})

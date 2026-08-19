@@ -5,14 +5,21 @@ import type { Catalog } from "../keys.js"
  * נשלח ממשק משתמש באנגלית בפועל. הקטלוג חייב להיות שלם (כל המפתחות
  * נוכחים) כדי שמערכת הטיפוסים תוכל לאכוף כיסוי בזמן קומפילציה.
  *
- * הוסף מפתחות חדשים בבלוקי domain למטה — ראה
- * docs/conventions/parallel-safe-code.md (טכניקה #4: קטלוגים append-only).
+ * הוסף מפתחות חדשים בבלוקי domain למטה. הקטלוג append-only כדי ששני slices
+ * שמוסיפים מפתחות במקביל ינחתו בבלוקים שונים ויתמזגו בלי קונפליקט.
  */
 export const en: Catalog = {
   // ─── connect ─── (slice 0)
-  "connect.title": "drive-coding v2",
+  "connect.title": "Drive Coding",
   "connect.subtitle": "Connect to a CLI agent",
   "connect.cli.label": "CLI",
+  // slice cli-availability
+  "connect.cli.loading": "Checking availability…",
+  "connect.cli.showAll": "Couldn't check availability — showing all CLIs",
+  // slice cli-availability (re-scope)
+  "connect.cli.notInstalled": "(not installed)",
+  // slice cli-specs-hot-reload
+  "connect.cli.refresh": "Refresh",
   "connect.cwd.label": "Working directory",
   "connect.cwd.placeholder": "/home/user/projects/X",
   "connect.submit": "Connect",
@@ -64,6 +71,15 @@ export const en: Catalog = {
   "chat.tool.terminal": "Terminal",
   "chat.tool.diff.added": "Added",
   "chat.tool.diff.removed": "Removed",
+  // ─── subagent-bubble ─── (slice subagent-transcript-render)
+  "chat.subagent.status.pending": "Pending",
+  "chat.subagent.status.in_progress": "In progress",
+  "chat.subagent.status.completed": "Completed",
+  "chat.subagent.status.failed": "Failed",
+  "chat.subagent.status.unknown": "Unknown",
+  "chat.subagent.prompt": "Task",
+  "chat.subagent.summary": "Summary",
+  "chat.subagent.transcript": "Subagent activity",
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)
@@ -155,6 +171,8 @@ export const en: Catalog = {
   "sidebar.sessions": "Sessions",
   "sidebar.refresh": "Refresh",
   "sidebar.newSession": "New session",
+  // ─── cli-name-in-chat ─── (slice cli-name-in-chat)
+  "sidebar.runningOn": "Running on",
   "sheet.handle": "Drag to open",
   // ─── bubble-play ─── (msr-v2)
   "bubble.play": "Play",
@@ -187,6 +205,10 @@ export const en: Catalog = {
   "connect.agents.kill": "Kill",
   "connect.agents.killConfirm": "Sure?",
   "connect.agents.inUse": "Open in another tab",
+  // ─── reconnect-ws-takeover Commit 2 ─── (panel takeover-affordance)
+  "connect.agents.takeOver": "Take over",
+  "connect.agents.takeOverConfirm": "Open elsewhere — take over?",
+  "connect.agents.noSession": "No active session",
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   "connect.agents.working": "working…",
   // ─── agent-last-message-ui ─── (slice agent-last-message-ui)
@@ -211,6 +233,9 @@ export const en: Catalog = {
   // ─── image-attach tray ─── (slice-image-paste)
   "attach.addImage": "Add image",
   "attach.remove": "Remove",
+  // ─── image-paste replay (§11) — placeholder for non-text ContentBlocks ───
+  "chat.content.attachedFile": "Attached file",
+  "chat.content.unsupported": "Unsupported content",
   // ─── recent-projects ─── (slice connect-recent-projects)
   "connect.recent.title": "Recent folders",
   "connect.recent.empty": "No recent folders",
@@ -300,4 +325,77 @@ export const en: Catalog = {
   "settings.ttsStatus.usage.cost": "Est. cost",
   "settings.ttsStatus.usage.notAvailable": "—",
   "settings.ttsStatus.refresh": "Refresh",
+  // ─── ui-session-polish ─── (slice ui-session-polish)
+  "session.copyId": "Copy session ID",
+  "modal.loading.session": "Loading session…",
+  // ─── app-title ─── (slice app-title-build-env)
+  "appTitle.settings": "Settings",
+  "appTitle.sessions": "Sessions",
+  // ─── slash commands ─── (slice-slash-commands)
+  "slash.commandsList": "Slash commands",
+  // ─── session budget meter ─── (slice session-budget-meter)
+  "sessionBudget.trigger": "Session budget",
+  "sessionBudget.title": "Session budget",
+  "sessionBudget.context.heading": "Context",
+  "sessionBudget.context.cost": "Cost",
+  "sessionBudget.quota.heading": "Quota",
+  "sessionBudget.quota.loading": "Loading…",
+  "sessionBudget.quota.unavailable": "No quota data",
+  "sessionBudget.quota.used": "Used",
+  "sessionBudget.quota.of": "of",
+  "sessionBudget.quota.resetsIn": "Resets",
+  // ─── plan ─── (slice plan-todo-list)
+  "plan.title": "Plan",
+  "plan.status.pending": "Pending",
+  "plan.status.in_progress": "In progress",
+  "plan.status.completed": "Completed",
+  "plan.openMarkdown": "Open plan",
+  "plan.file.label": "Plan file",
+  // ─── projectPrompt ─── (slice project-system-prompt)
+  "projectPrompt.label": "Project system prompt",
+  "projectPrompt.placeholder": "e.g. Always reply concisely, and open every answer in Hebrew...",
+  "projectPrompt.hint":
+    "Appended to the agent's default instructions. Takes effect from the next session.",
+  // ─── panel resize handle ─── (slice connect-panel-resize)
+  "connect.panel.resizeHandle": "Drag to resize",
+  // ─── machine-stats ─── (slice-be-machine-stats)
+  "connect.machine.memory": "Memory",
+  "connect.machine.cpu": "CPU",
+  "connect.machine.label": "Machine load",
+  // ─── session delete ─── (slice session-delete)
+  "session.delete": "Delete",
+  "session.deleteConfirm": "Sure? Delete session",
+  // ─── permission ─── (slice-permission-ui-basic)
+  "permission.title": "Permission request",
+  "permission.allowOnce": "Allow once",
+  "permission.allowAlways": "Always allow",
+  "permission.reject": "Reject",
+  "permission.pending": "Awaiting decision",
+  // ─── elicitation ─── (slice-elicitation-ui)
+  "elicitation.accept": "Submit",
+  "elicitation.decline": "Decline",
+  "elicitation.cancel": "Cancel",
+  "elicitation.required": "Required",
+  // ─── auth guidance ─── (slice auth-guidance)
+  "authGuidance.heading": "How to authenticate with",
+  "authGuidance.envVar.setLabel": "Set:",
+  "authGuidance.envVar.linkLabel": "Get credentials",
+  // ─── reconnect takeover ─── (slice reconnect-ws-takeover)
+  "session.openedElsewhere": "This session was opened elsewhere",
+  // ─── reconnect-ws-takeover Commit 3 ─── (טבעת-חיבור פר-סשן, ActiveProcessesPanel)
+  "connect.agents.connected": "Connected",
+  "connect.agents.disconnected": "Disconnected",
+  // ─── gemini directing (pace/tone) ─── (slice-gemini-tts-directing)
+  "settings.geminiPace.label": "Speech pace",
+  "settings.geminiPace.verySlow": "Very slow",
+  "settings.geminiPace.slow": "Slow",
+  "settings.geminiPace.normal": "Normal",
+  "settings.geminiPace.fast": "Fast",
+  "settings.geminiPace.veryFast": "Very fast",
+  "settings.geminiTone.label": "Tone",
+  "settings.geminiTone.neutral": "Neutral",
+  "settings.geminiTone.calm": "Calm",
+  "settings.geminiTone.energetic": "Energetic",
+  "settings.geminiTone.formal": "Formal",
+  "settings.geminiTone.casual": "Casual",
 }

@@ -11,7 +11,7 @@
  * לעולם אל תשלב עברית (או כל טקסט UI אחר) ישירות בקוד. סקריפט ה-lint
  * `scripts/lint-no-hebrew-in-code.sh` אוכף זאת.
  *
- * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
+ * ─── עיצוב תוספתי בטוח למקביליות ───
  * שני slices שמוסיפים מפתחות נוחתים בבלוקים שונים → git auto-merge.
  */
 
@@ -24,6 +24,13 @@ export type MessageKey =
   | "connect.title"
   | "connect.subtitle"
   | "connect.cli.label"
+  // slice cli-availability: מצב טעינה + fallback ב-dropdown הספקים
+  | "connect.cli.loading"
+  | "connect.cli.showAll"
+  // slice cli-availability (re-scope): תווית ל-option disabled בדropdown (לא מותקן)
+  | "connect.cli.notInstalled"
+  // slice cli-specs-hot-reload: refresh button label next to the CLI dropdown
+  | "connect.cli.refresh"
   | "connect.cwd.label"
   | "connect.cwd.placeholder"
   | "connect.submit"
@@ -71,6 +78,15 @@ export type MessageKey =
   | "chat.tool.terminal"
   | "chat.tool.diff.added"
   | "chat.tool.diff.removed"
+  // ─── subagent-bubble ─── (slice subagent-transcript-render)
+  | "chat.subagent.status.pending"
+  | "chat.subagent.status.in_progress"
+  | "chat.subagent.status.completed"
+  | "chat.subagent.status.failed"
+  | "chat.subagent.status.unknown"
+  | "chat.subagent.prompt"
+  | "chat.subagent.summary"
+  | "chat.subagent.transcript"
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)
@@ -160,6 +176,8 @@ export type MessageKey =
   | "sidebar.sessions"
   | "sidebar.refresh"
   | "sidebar.newSession"
+  // ─── cli-name-in-chat ─── (slice cli-name-in-chat)
+  | "sidebar.runningOn"
   | "sheet.handle"
   // ─── bubble-play ─── (msr-v2)
   | "bubble.play"
@@ -192,6 +210,10 @@ export type MessageKey =
   | "connect.agents.kill"
   | "connect.agents.killConfirm"
   | "connect.agents.inUse"
+  // ─── reconnect-ws-takeover Commit 2 ─── (panel takeover-affordance)
+  | "connect.agents.takeOver"
+  | "connect.agents.takeOverConfirm"
+  | "connect.agents.noSession"
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   | "connect.agents.working"
   // ─── agent-last-message-ui ─── (slice agent-last-message-ui)
@@ -216,6 +238,10 @@ export type MessageKey =
   // ─── image-attach tray ─── (slice-image-paste)
   | "attach.addImage"
   | "attach.remove"
+  // ─── image-paste replay (§11) — placeholder for non-text ContentBlocks ───
+  // chat.content.attachedFile: param-less (label raw from data, no interpolation needed)
+  | "chat.content.attachedFile"
+  | "chat.content.unsupported"
   // ─── recent-projects ─── (slice connect-recent-projects)
   | "connect.recent.title"
   | "connect.recent.empty"
@@ -304,6 +330,78 @@ export type MessageKey =
   | "settings.ttsStatus.usage.cost"
   | "settings.ttsStatus.usage.notAvailable"
   | "settings.ttsStatus.refresh"
+  // ─── ui-session-polish ─── (slice ui-session-polish)
+  | "session.copyId"
+  | "modal.loading.session"
+  // ─── app-title ─── (slice app-title-build-env)
+  | "appTitle.settings"
+  | "appTitle.sessions"
+  // ─── slash commands ─── (slice-slash-commands)
+  | "slash.commandsList"
+  // ─── session budget meter ─── (slice session-budget-meter)
+  | "sessionBudget.trigger"
+  | "sessionBudget.title"
+  | "sessionBudget.context.heading"
+  | "sessionBudget.context.cost"
+  | "sessionBudget.quota.heading"
+  | "sessionBudget.quota.loading"
+  | "sessionBudget.quota.unavailable"
+  | "sessionBudget.quota.used"
+  | "sessionBudget.quota.of"
+  | "sessionBudget.quota.resetsIn"
+  // ─── plan ─── (slice plan-todo-list)
+  | "plan.title"
+  | "plan.status.pending"
+  | "plan.status.in_progress"
+  | "plan.status.completed"
+  | "plan.openMarkdown"
+  | "plan.file.label"
+  // ─── projectPrompt ─── (slice project-system-prompt)
+  | "projectPrompt.label"
+  | "projectPrompt.placeholder"
+  | "projectPrompt.hint"
+  // ─── panel resize handle ─── (slice connect-panel-resize)
+  | "connect.panel.resizeHandle"
+  // ─── machine-stats ─── (slice-be-machine-stats)
+  | "connect.machine.memory"
+  | "connect.machine.cpu"
+  | "connect.machine.label"
+  // ─── session delete ─── (slice session-delete)
+  | "session.delete"
+  | "session.deleteConfirm"
+  // ─── permission ─── (slice-permission-ui-basic)
+  | "permission.title"
+  | "permission.allowOnce"
+  | "permission.allowAlways"
+  | "permission.reject"
+  | "permission.pending"
+  // ─── elicitation ─── (slice-elicitation-ui)
+  | "elicitation.accept"
+  | "elicitation.decline"
+  | "elicitation.cancel"
+  | "elicitation.required"
+  // ─── auth guidance ─── (slice auth-guidance)
+  | "authGuidance.heading"
+  | "authGuidance.envVar.setLabel"
+  | "authGuidance.envVar.linkLabel"
+  // ─── reconnect takeover ─── (slice reconnect-ws-takeover)
+  | "session.openedElsewhere"
+  // ─── reconnect-ws-takeover Commit 3 ─── (טבעת-חיבור פר-סשן, ActiveProcessesPanel)
+  | "connect.agents.connected"
+  | "connect.agents.disconnected"
+  // ─── gemini directing (קצב/טון) ─── (slice-gemini-tts-directing)
+  | "settings.geminiPace.label"
+  | "settings.geminiPace.verySlow"
+  | "settings.geminiPace.slow"
+  | "settings.geminiPace.normal"
+  | "settings.geminiPace.fast"
+  | "settings.geminiPace.veryFast"
+  | "settings.geminiTone.label"
+  | "settings.geminiTone.neutral"
+  | "settings.geminiTone.calm"
+  | "settings.geminiTone.energetic"
+  | "settings.geminiTone.formal"
+  | "settings.geminiTone.casual"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

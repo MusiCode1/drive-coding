@@ -14,10 +14,12 @@
  */
 
 import { randomUUID } from "node:crypto"
+import { extractPromptCaps } from "@drive-coding/core/acp/extract-prompt-caps"
 import { createSpawnCore } from "../shared/spawn-core.js"
 import { createTurnTracker } from "../shared/turn-tracker.js"
 import { decodeWireLine } from "../shared/wire-decode.js"
 import type { SpawnBridgeInput } from "../spawn/index.js"
+import type { NormalizedCapabilities } from "../types.js"
 import { staticCapsFor } from "./capabilities-static.js"
 import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
 
@@ -43,6 +45,11 @@ export async function connectSpawn(
   // onChange: last busy state emitted (used to detect transitions).
   let lastBusy = false
   const changeListeners = new Set<(busy: boolean) => void>()
+
+  // caps: staticCapsFor(cliKind) — static baseline. mutable — slice reattach-state-sync
+  // Commit 1: the init-frame tap (onFrame hook below, dir="in") updates `image` in place
+  // once it observes a real initialize response.
+  let caps = staticCapsFor(cliKind)
 
   /** Emit onChange if busy state changed since last frame. */
   function emitBusyChange(): void {
@@ -77,6 +84,13 @@ export async function connectSpawn(
       if (dir === "in") {
         tracker.observe(s, Date.now())
         emitBusyChange()
+
+        // slice reattach-state-sync Commit 1 — tap the initialize response for the real
+        // promptCapabilities (structural: responseKind==="result" + agentCapabilities present).
+        const promptCaps = extractPromptCaps(s.parsed)
+        if (promptCaps) {
+          caps = { ...caps, image: promptCaps.image === true }
+        }
       }
 
       // Derive type label (brief §3ג).
@@ -120,7 +134,9 @@ export async function connectSpawn(
       },
     },
 
-    capabilities: staticCapsFor(cliKind),
+    get capabilities(): NormalizedCapabilities {
+      return caps
+    },
 
     onFrame(cb: (f: WireFrame) => void): () => void {
       frameListeners.add(cb)

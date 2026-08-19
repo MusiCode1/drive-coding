@@ -4,13 +4,15 @@
  * מקור-האמת לסוגים אלה עבר מ-core/src/ports.ts ל-provider/spawn.
  * צרכנים (backend, frontend) מייבאים מ-@drive-coding/provider/spawn.
  *
- * BridgeKind = alias ל-CliKind מ-core (מקור-האמת נשאר ב-core/schemas).
+ * BridgeKind = alias ל-CliId מ-core (מקור-האמת נשאר ב-core/schemas).
  */
-import type { CliKind } from "@drive-coding/core"
+import type { CliId } from "@drive-coding/core"
 
-// BridgeKind = alias ל-CliKind. שם היסטורי (Slice 3) — נשמר לתאימות,
-// אבל מקור-האמת היחיד הוא CLI_KINDS ב-schemas/agent.ts.
-export type BridgeKind = CliKind
+// BridgeKind = alias ל-CliId (slice open-cli-registry: הורחב מ-CliKind — ה-BE
+// באמת מטפל בכל CLI, כולל כאלה מהקונפ' שהפרויקט לא מכיר). שם היסטורי (Slice 3)
+// — נשמר לתאימות, אבל מקור-האמת ל-registry האפקטיבי הוא getEffectiveCliSpecs
+// (packages/provider/src/config).
+export type BridgeKind = CliId
 
 export type SpawnBridgeInput = {
   readonly cliKind: BridgeKind

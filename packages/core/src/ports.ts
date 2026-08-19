@@ -1,7 +1,7 @@
 import type { PromptResponse, SessionNotification } from "@agentclientprotocol/sdk"
 import type { Result } from "neverthrow"
 import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
-import type { Agent, CliKind, CreateAgentInput } from "./schemas"
+import type { Agent, CliId, CreateAgentInput } from "./schemas"
 
 export type { BridgeCrashInfo, PromptResponse, SessionNotification }
 
@@ -24,7 +24,9 @@ export interface AgentRegistry {
   /** עדכון סטטוס / פרטי bridge / סיבת קריסה / נעיצה. זורק שגיאה אם id לא קיים. */
   update(
     id: string,
-    patch: Partial<Pick<Agent, "status" | "bridgePort" | "acpSessionId" | "crashReason" | "persistent">>,
+    patch: Partial<
+      Pick<Agent, "status" | "bridgePort" | "acpSessionId" | "crashReason" | "persistent" | "title">
+    >,
   ): Promise<Agent>
 
   /** הסרה. זורק שגיאה אם לא קיים. */
@@ -33,9 +35,11 @@ export interface AgentRegistry {
 
 // ─── חדש ב-Slice 3 ──────────────────────────────
 
-// BridgeKind = alias ל-CliKind. שם היסטורי (Slice 3) — נשמר לתאימות,
-// אבל מקור-האמת היחיד הוא CLI_KINDS ב-schemas/agent.ts.
-export type BridgeKind = CliKind
+// BridgeKind = alias ל-CliId (slice open-cli-registry: הורחב מ-CliKind — ה-BE
+// באמת מטפל בכל CLI, כולל כאלה מהקונפ' שהפרויקט לא מכיר). שם היסטורי (Slice 3)
+// — נשמר לתאימות, אבל מקור-האמת ל-registry האפקטיבי הוא getEffectiveCliSpecs
+// (packages/provider/src/config).
+export type BridgeKind = CliId
 
 export type SpawnBridgeInput = {
   readonly cliKind: BridgeKind

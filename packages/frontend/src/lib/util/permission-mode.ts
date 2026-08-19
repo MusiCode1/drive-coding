@@ -9,9 +9,12 @@ const BYPASS_MODE_ID: Partial<Record<CliKind, string>> = {
 }
 
 export function isBypassMode(
-  cliKind: CliKind | null,
+  cliKind: string | null,
   currentModeId: string | null | undefined,
 ): boolean {
   if (!cliKind || !currentModeId) return false
-  return BYPASS_MODE_ID[cliKind] === currentModeId
+  // open-cli-registry-fe: cliKind התרחב ל-string (יכול להיות CLI מהקונפ' שלא ב-CliKind).
+  // BYPASS_MODE_ID נשאר מוקלד CliKind בכוונה (בדיקת-שמות) — הצרה מקומית ל-lookup.
+  if (!(cliKind in BYPASS_MODE_ID)) return false
+  return BYPASS_MODE_ID[cliKind as CliKind] === currentModeId
 }

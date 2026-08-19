@@ -1,4 +1,4 @@
 # drive-coding
 
 @AGENTS.md
-@docs/roadmap.md
+@docs-for-llm/roadmap.md

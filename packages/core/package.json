@@ -1,6 +1,6 @@
 {
   "name": "@drive-coding/core",
-  "version": "0.7.0",
+  "version": "0.24.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -19,7 +19,9 @@
     "./cwd-hash": "./src/cwd-hash.ts",
     "./cwd-validate": "./src/cwd-validate.ts",
     "./cli-resolve": "./src/cli-resolve.ts",
+    "./cli-availability": "./src/cli-availability.ts",
     "./async/*": "./src/async/*.ts",
+    "./acp/*": "./src/acp/*.ts",
     "./config/*": "./src/config/*.ts",
     "./tts/*": "./src/tts/*.ts",
     "./usage/*": "./src/usage/*.ts"
@@ -30,7 +32,7 @@
   },
   "dependencies": {
     "@drive-coding/provider": "workspace:*",
-    "@agentclientprotocol/sdk": "^0.21.1",
+    "@agentclientprotocol/sdk": "^1.2.1",
     "arktype": "^2.0.0",
     "marked": "^18.0.3",
     "neverthrow": "^8.0.0",

@@ -1,7 +1,7 @@
 /**
  * host.live.test.ts — permanent live test suite: real client → real claude CLI.
  *
- * Gated behind RUN_LIVE=1. The file is collected by pnpm test (no exclude in vitest.config),
+ * Gated behind RUN_LIVE=1. The file is collected by `bun run test` (no exclude in vitest.config),
  * but describe.skipIf ensures it is skipped unless the env var is set.
  *
  * IMPORTANT: top-level code must be lazy / non-side-effecting.
@@ -12,6 +12,10 @@
  *   2. deterministic round-trip — real claude responds with DRIVE_OK_4242
  *   3. setThinkingTokens ext — callExt returns {ok:true}, prompt after succeeds
  *   4. rename — rename(sessionId, "DC-TEST") reflected in listSessions
+ *   5. getQuota ext (slice session-budget-meter Commit 3) — real session →
+ *      _drive/getQuota → normalized snapshot with windows. Per brief §0
+ *      "ממצא חי מאומת": no raw SDK response is ever stored as a fixture (it
+ *      contains behavioral analytics) — only the normalized shape is asserted.
  */
 
 import { mkdtemp } from "node:fs/promises"
@@ -123,5 +127,46 @@ describe.skipIf(!RUN)("in-process host — live (real client → real claude CLI
     expect(found).toBeDefined()
     const effectiveTitle = found?.customTitle ?? found?.summary
     expect(effectiveTitle).toBe(RENAME_TITLE)
+  }, 30_000)
+
+  // ── Case 5: getQuota ext (slice session-budget-meter Commit 3) ─────────────
+  it("getQuota — real session → _drive/getQuota → normalized snapshot with windows", async () => {
+    const res = await host.callExt("_drive/getQuota", { sessionId })
+
+    // Contract: result is always { snapshot }, never a bare top-level null (brief §2/§6).
+    expect(res).toHaveProperty("snapshot")
+    const snapshot = (res as { snapshot: unknown }).snapshot
+
+    // snapshot:null is a valid response (account with no visible limits) — only assert
+    // shape when limits ARE available, per §0 "ממצא חי מאומת" (rate_limits_available=true
+    // for this account, five_hour + seven_day present).
+    if (snapshot !== null) {
+      const s = snapshot as {
+        provider: string
+        plan?: string
+        windows: Array<{
+          id: string
+          period: unknown
+          consumption: { kind: string; usedPct?: number }
+          resetsAtMs: number | null
+        }>
+      }
+      expect(s.provider).toBe("claude")
+      expect(Array.isArray(s.windows)).toBe(true)
+
+      for (const w of s.windows) {
+        // No provider ID is used to decide the label — but the *content* here
+        // legitimately reads claude-specific window ids because this is the live
+        // test for the claude provider itself (not generic UI code).
+        expect(["five_hour", "seven_day"]).toContain(w.id)
+        expect(w.consumption.kind).toBe("percentage")
+        if (w.consumption.usedPct !== undefined) {
+          expect(w.consumption.usedPct).toBeGreaterThanOrEqual(0)
+          expect(w.consumption.usedPct).toBeLessThanOrEqual(100)
+        }
+        // resetsAtMs is either null or a finite epoch-ms — never NaN (brief Tests).
+        expect(w.resetsAtMs === null || Number.isFinite(w.resetsAtMs)).toBe(true)
+      }
+    }
   }, 30_000)
 })

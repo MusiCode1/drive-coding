@@ -105,6 +105,7 @@ function buildEnvLayer(env: NodeJS.ProcessEnv): Partial<DriveCodingConfig> {
     const p = Number(env.PORT)
     if (!Number.isNaN(p)) layer.port = p
   }
+  if (env.DRIVE_CODING_HOST) layer.host = env.DRIVE_CODING_HOST
   if (env.CORS_ORIGINS) {
     layer.corsOrigins = env.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean)
   }
@@ -171,6 +172,7 @@ function buildFlagLayer(argv: RawArgs, warnings: string[]): Partial<DriveCodingC
     const p = Number(argv["port"])
     if (!Number.isNaN(p)) layer.port = p
   }
+  if (argv["host"]) layer.host = argv["host"] as string
   if (argv["cors-origins"]) {
     layer.corsOrigins = (argv["cors-origins"] as string)
       .split(",")
@@ -203,6 +205,7 @@ function buildEnvPatch(config: DriveCodingConfig): Record<string, string> {
   const patch: Record<string, string> = {}
 
   if (config.port !== undefined) patch["PORT"] = String(config.port)
+  if (config.host !== undefined) patch["DRIVE_CODING_HOST"] = config.host
   if (config.corsOrigins !== undefined) patch["CORS_ORIGINS"] = config.corsOrigins.join(",")
   if (config.feStaticDir !== undefined) patch["FE_STATIC_DIR"] = config.feStaticDir
   if (config.opencodeBin !== undefined) patch["OPENCODE_BIN"] = config.opencodeBin

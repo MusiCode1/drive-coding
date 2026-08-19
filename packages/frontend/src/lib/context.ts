@@ -4,7 +4,7 @@
  * צמד אחד לכל view-model ראשי. השתמש ב-`set*` בנקודת ההרכבה (composition root)
  * (+layout.svelte) וב-`get*` בכל רכיב שתחתיו.
  *
- * ─── עיצוב תוספתי בטוח למקביליות (docs/conventions/parallel-safe-code.md) ───
+ * ─── עיצוב תוספתי בטוח למקביליות ───
  *
  * הוספת צמד VM חדש: הוסף בלוק `// ─── <domain> ───` חדש בסוף
  * הקובץ. אל תערוך בלוקים קיימים. ייבואים הולכים לבלוק הייבוא
@@ -14,6 +14,7 @@
 import { createContext } from "svelte"
 import type { AgentSession } from "./view-models/agent-session.svelte"
 import type { ChatScrollBridge } from "./types/chat-scroll"
+import type { CliAvailability } from "./view-models/cli-availability.svelte"
 import type { I18nVM } from "./view-models/i18n.svelte"
 import type { Mic } from "./view-models/mic.svelte"
 import type { ResponsiveVM } from "./view-models/responsive.svelte"
@@ -86,3 +87,6 @@ export const [getRecentProjects, setRecentProjects] = createContext<RecentProjec
 
 // ─── audio-playlist ─── (slice A4 — shared between Speaker + BubblePlayer)
 export const [getAudioPlaylist, setAudioPlaylist] = createContext<AudioPlaylist>()
+
+// ─── cli-availability ─── (slice cli-branding, Commit 3)
+export const [getCliAvailability, setCliAvailability] = createContext<CliAvailability>()

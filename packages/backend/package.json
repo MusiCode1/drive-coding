@@ -1,6 +1,6 @@
 {
   "name": "@drive-coding/backend",
-  "version": "0.5.0",
+  "version": "0.15.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -15,7 +15,7 @@
   "dependencies": {
     "@drive-coding/provider": "workspace:*",
     "selfsigned": "^2",
-    "@agentclientprotocol/sdk": "^0.21.1",
+    "@agentclientprotocol/sdk": "^1.2.1",
     "@ai-sdk/elevenlabs": "^2.0.33",
     "@ai-sdk/google": "^3.0.75",
     "@ai-sdk/provider": "^3.0.10",

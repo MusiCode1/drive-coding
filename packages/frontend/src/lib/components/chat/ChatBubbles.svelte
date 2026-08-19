@@ -16,8 +16,12 @@
  * {#if chatScroll.scrollEl} מונע mount לפני שה-scrollEl קיים.
  */
 import { Virtualizer, type VirtualizerHandle } from "virtua/svelte"
-import { getI18n, getSession, getChatScroll } from "$lib/context"
+import { getChatScroll, getI18n, getSession } from "$lib/context"
+import { stableBubbleKey } from "$lib/util/bubble-key"
 import BubbleRenderer from "./BubbleRenderer.svelte"
+import ElicitationDialog from "./ElicitationDialog.svelte"
+import PermissionRequestBlock from "./PermissionRequestBlock.svelte"
+import PlanChecklist from "./PlanChecklist.svelte"
 import StatusBubble from "./StatusBubble.svelte"
 
 const session = getSession()
@@ -36,8 +40,8 @@ $effect(() => {
   <Virtualizer
     bind:this={handle}
     scrollRef={chatScroll.scrollEl}
-    data={session.bubbles}
-    getKey={(b) => b.id}
+    data={session.renderBubbles}
+    getKey={(b) => stableBubbleKey(b, session.renderBubbles)}
     startMargin={80}
   >
     {#snippet children(bubble)}
@@ -45,8 +49,29 @@ $effect(() => {
     {/snippet}
   </Virtualizer>
 {/if}
+<PlanChecklist />
 <StatusBubble />
-{#if session.bubbles.length === 0}
+<!-- slice-permission-ui-basic: inline, אחרי ה-Virtualizer (לא בתוך ה-snippet המווירטואל) -->
+{#if session.pendingPermission}
+  <PermissionRequestBlock
+    params={session.pendingPermission.params}
+    onResolve={(optionId) => session.resolvePermission(optionId)}
+    onCancel={() => session.cancelPermission()}
+  />
+{/if}
+<!-- slice-elicitation-ui: אותו מקום כמו PermissionRequestBlock — inline, אחרי ה-Virtualizer -->
+<!-- {#key} → כל בקשה חדשה/supersede מקבלת instance טרי עם אתחול-ערכים סינכרוני (calev NO-GO r2 fix) -->
+{#if session.pendingElicitation}
+  {#key session.pendingElicitation}
+    <ElicitationDialog
+      params={session.pendingElicitation.params}
+      onResolve={(content) => session.resolveElicitation(content)}
+      onDecline={() => session.cancelElicitation("decline")}
+      onCancel={() => session.cancelElicitation("cancel")}
+    />
+  {/key}
+{/if}
+{#if session.renderBubbles.length === 0}
   <div class="empty">{t("chat.empty")}</div>
 {/if}
 

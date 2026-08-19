@@ -17,6 +17,7 @@ Usage:
 
 Options:
   -p, --port <n>                Port to listen on              (env: PORT, default: 4000)
+      --host <addr>             Address to listen on           (env: DRIVE_CODING_HOST, default: 127.0.0.1)
       --opencode-bin <bin>      Agent binary to look for       (env: OPENCODE_BIN, default: opencode)
       --fe-static-dir <dir>     Override served web-UI dir     (env: FE_STATIC_DIR)
       --cors-origins <list>     Comma-separated CORS origins   (env: CORS_ORIGINS)
@@ -35,6 +36,7 @@ prefer --env-file or environment variables for secrets.
 
 Examples:
   drive-coding --port 4100
+  drive-coding --host 0.0.0.0
   drive-coding --config /etc/drive-coding/config.jsonc
   drive-coding --env-file ~/.secrets/drive-coding.env
   drive-coding --opencode-bin /opt/opencode/bin/opencode`
@@ -47,6 +49,7 @@ try {
   ;({ values } = parseArgs({
     options: {
       port: { type: "string", short: "p" },
+      host: { type: "string" },
       "opencode-bin": { type: "string" },
       "fe-static-dir": { type: "string" },
       "cors-origins": { type: "string" },
@@ -93,6 +96,11 @@ if (values.version) {
 // bind to a random port via Number() → NaN in server.ts:143. Reject early.
 if (values.port !== undefined && !/^\d+$/.test(values.port as string)) {
   console.error(`[drive-coding] invalid --port "${values.port as string}" (expected a number)\n`)
+  console.error(HELP)
+  process.exit(1)
+}
+if (values.host !== undefined && (values.host as string).trim() === "") {
+  console.error("[drive-coding] invalid --host (expected a non-empty address)\n")
   console.error(HELP)
   process.exit(1)
 }
@@ -161,6 +169,7 @@ if (!isBinary()) {
 process.env.PORT ??= "4000"
 
 const port = process.env.PORT
+const host = process.env.DRIVE_CODING_HOST ?? "127.0.0.1"
 
 // Preflight: check that the default AI agent (opencode) is reachable.
 // The user may override via OPENCODE_BIN. If missing — warn but do not block
@@ -177,7 +186,7 @@ try {
   )
 }
 
-console.log(`[drive-coding] Starting — http://localhost:${port}`)
+console.log(`[drive-coding] Starting — http://${host}:${port}`)
 
 // This import starts the server (side-effect, rises on-import).
 // Must come AFTER env is set (server.ts reads env on-import).

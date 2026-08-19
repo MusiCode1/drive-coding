@@ -28,6 +28,7 @@ import type { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { Bubble } from "$lib/types/bubble"
 import { playUserRecording } from "$lib/adapters/voice/play-bubble"
 import { resolveTts } from "$lib/adapters/voice/tts-resolve"
+import { ttsCapabilities } from "./capabilities.svelte"
 
 // ─── קבועים לחיתוך משפטים (זהה ל-Speaker) ──────────────────────────────────
 const MIN_CHARS = 20
@@ -115,6 +116,7 @@ export class BubblePlayer {
         this.#playlist.jumpToBubble(bubbleId)
         this.playingBubbleId = bubbleId
       }
+    } else {
       // בועה היסטורית — split + reserveFromText לכל משפט → jumpToBubble
       this.stop()
       this.playingBubbleId = bubbleId
@@ -139,6 +141,15 @@ export class BubblePlayer {
       this.#settings.voiceId,
       this.#settings.geminiVoice,
     )
+    // Commit 4 capability-gate: אל תנסה synthesize לספק לא-זמין.
+    if (!ttsCapabilities.isAvailable(this.#settings.ttsProvider)) {
+      console.warn("[BubblePlayer] TTS provider unavailable, skipping bubble", {
+        provider: this.#settings.ttsProvider,
+        bubbleId,
+      })
+      this.playingBubbleId = null
+      return
+    }
 
     // שלב 1: reserve כל הסגמנטים לפלייליסט (reserve-on-enqueue)
     // nav-retain: כל reserve מקבל refetch thunk עם הטקסט + provider בסקופ (finding #1)
@@ -158,6 +169,7 @@ export class BubblePlayer {
               voiceId,
               modelId,
               signal: freshAc.signal,
+              directing: { pace: this.#settings.geminiPace, tone: this.#settings.geminiTone },
             })
             await this.#playlist.prepareSegmentForBubble(segmentId, stream, freshAc)
             this.#playlist.markReady(segmentId)
@@ -188,6 +200,7 @@ export class BubblePlayer {
           voiceId,
           modelId,
           signal: abortCtrl.signal,
+          directing: { pace: this.#settings.geminiPace, tone: this.#settings.geminiTone },
         })
         // prepareSegment דרך ה-audioStream של ה-playlist (sharedAudioStream מ-+layout)
         // BubblePlayer לא מחזיק ref ל-audioStream — #playlist מחזיק אותו פנימי.

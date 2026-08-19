@@ -1,14 +1,21 @@
 import type { Catalog } from "../keys.js"
 
 /**
- * קטלוג עברית. הוסף מפתחות חדשים בבלוקי domain למטה — ראה
- * docs/conventions/parallel-safe-code.md (טכניקה #4: קטלוגים append-only).
+ * קטלוג עברית. הוסף מפתחות חדשים בבלוקי domain למטה. הקטלוג append-only כדי
+ * ששני slices שמוסיפים מפתחות במקביל ינחתו בבלוקים שונים ויתמזגו בלי קונפליקט.
  */
 export const he: Catalog = {
   // ─── connect ─── (slice 0)
-  "connect.title": "drive-coding v2",
+  "connect.title": "Drive Coding",
   "connect.subtitle": "חבר ל-CLI agent",
   "connect.cli.label": "CLI",
+  // slice cli-availability
+  "connect.cli.loading": "בודק זמינות…",
+  "connect.cli.showAll": "לא ניתן לבדוק זמינות — מוצגים כל ה-CLIs",
+  // slice cli-availability (re-scope)
+  "connect.cli.notInstalled": "(לא מותקן)",
+  // slice cli-specs-hot-reload
+  "connect.cli.refresh": "רענן",
   "connect.cwd.label": "תיקיית עבודה",
   "connect.cwd.placeholder": "/home/user/projects/X",
   "connect.submit": "חבר",
@@ -60,6 +67,15 @@ export const he: Catalog = {
   "chat.tool.terminal": "טרמינל",
   "chat.tool.diff.added": "נוסף",
   "chat.tool.diff.removed": "הוסר",
+  // ─── subagent-bubble ─── (slice subagent-transcript-render)
+  "chat.subagent.status.pending": "ממתין",
+  "chat.subagent.status.in_progress": "בתהליך",
+  "chat.subagent.status.completed": "הושלם",
+  "chat.subagent.status.failed": "נכשל",
+  "chat.subagent.status.unknown": "לא ידוע",
+  "chat.subagent.prompt": "משימה",
+  "chat.subagent.summary": "סיכום",
+  "chat.subagent.transcript": "פעילות תת-סוכן",
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)
@@ -150,6 +166,8 @@ export const he: Catalog = {
   "sidebar.sessions": "סשנים",
   "sidebar.refresh": "רענן",
   "sidebar.newSession": "סשן חדש",
+  // ─── cli-name-in-chat ─── (slice cli-name-in-chat)
+  "sidebar.runningOn": "פועל על",
   "sheet.handle": "גרור לפתיחה",
   // ─── bubble-play ─── (msr-v2)
   "bubble.play": "השמע",
@@ -182,6 +200,10 @@ export const he: Catalog = {
   "connect.agents.kill": "הרוג",
   "connect.agents.killConfirm": "בטוח?",
   "connect.agents.inUse": "פעיל בכרטיסייה אחרת",
+  // ─── reconnect-ws-takeover Commit 2 ─── (panel takeover-affordance)
+  "connect.agents.takeOver": "השתלט",
+  "connect.agents.takeOverConfirm": "פתוח במקום אחר — להשתלט?",
+  "connect.agents.noSession": "אין סשן פעיל",
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   "connect.agents.working": "עובד…",
   // ─── agent-last-message-ui ─── (slice agent-last-message-ui)
@@ -206,6 +228,9 @@ export const he: Catalog = {
   // ─── image-attach tray ─── (slice-image-paste)
   "attach.addImage": "הוסף תמונה",
   "attach.remove": "הסר",
+  // ─── image-paste replay (§11) — placeholder for non-text ContentBlocks ───
+  "chat.content.attachedFile": "קובץ מצורף",
+  "chat.content.unsupported": "תוכן לא-נתמך",
   // ─── recent-projects ─── (slice connect-recent-projects)
   "connect.recent.title": "תיקיות אחרונות",
   "connect.recent.empty": "אין תיקיות אחרונות",
@@ -289,11 +314,83 @@ export const he: Catalog = {
   "settings.ttsStatus.quota.used": "נוצל",
   "settings.ttsStatus.quota.limitLabel": "מכסה",
   "settings.ttsStatus.quota.overage": "חריגה",
-  "settings.ttsStatus.usage.label": "שימוש (סה\"כ מאז ההפעלה)",
+  "settings.ttsStatus.usage.label": 'שימוש (סה"כ מאז ההפעלה)',
   "settings.ttsStatus.usage.elevenlabs": "ElevenLabs",
   "settings.ttsStatus.usage.gemini": "Gemini",
   "settings.ttsStatus.usage.cache": "מטמון",
   "settings.ttsStatus.usage.cost": "עלות משוערת",
   "settings.ttsStatus.usage.notAvailable": "—",
   "settings.ttsStatus.refresh": "רענן",
+  // ─── ui-session-polish ─── (slice ui-session-polish)
+  "session.copyId": "העתק מזהה סשן",
+  "modal.loading.session": "טוען סשן…",
+  // ─── app-title ─── (slice app-title-build-env)
+  "appTitle.settings": "הגדרות",
+  "appTitle.sessions": "סשנים",
+  // ─── slash commands ─── (slice-slash-commands)
+  "slash.commandsList": "רשימת פקודות slash",
+  // ─── session budget meter ─── (slice session-budget-meter)
+  "sessionBudget.trigger": "תקציב הסשן",
+  "sessionBudget.title": "תקציב סשן",
+  "sessionBudget.context.heading": "הקשר",
+  "sessionBudget.context.cost": "עלות",
+  "sessionBudget.quota.heading": "מכסה",
+  "sessionBudget.quota.loading": "טוען…",
+  "sessionBudget.quota.unavailable": "אין נתוני מכסה",
+  "sessionBudget.quota.used": "נוצל",
+  "sessionBudget.quota.of": "מתוך",
+  "sessionBudget.quota.resetsIn": "מתאפס",
+  // ─── plan ─── (slice plan-todo-list)
+  "plan.title": "תוכנית",
+  "plan.status.pending": "ממתין",
+  "plan.status.in_progress": "בתהליך",
+  "plan.status.completed": "הושלם",
+  "plan.openMarkdown": "פתח תוכנית",
+  "plan.file.label": "קובץ תוכנית",
+  // ─── projectPrompt ─── (slice project-system-prompt)
+  "projectPrompt.label": "פרומפט מערכת לפרויקט",
+  "projectPrompt.placeholder": "לדוגמה: תמיד ענה בקצרה, ופתח כל תשובה בעברית...",
+  "projectPrompt.hint": "מתווסף להוראות ברירת-המחדל של הסוכן. השינוי חל מהסשן הבא.",
+  // ─── panel resize handle ─── (slice connect-panel-resize)
+  "connect.panel.resizeHandle": "גרור לשינוי גובה",
+  // ─── machine-stats ─── (slice-be-machine-stats)
+  "connect.machine.memory": "זיכרון",
+  "connect.machine.cpu": "מעבד",
+  "connect.machine.label": "עומס מכונה",
+  // ─── session delete ─── (slice session-delete)
+  "session.delete": "מחק",
+  "session.deleteConfirm": "בטוח? מחיקת סשן",
+  // ─── permission ─── (slice-permission-ui-basic)
+  "permission.title": "בקשת הרשאה",
+  "permission.allowOnce": "אשר פעם",
+  "permission.allowAlways": "אשר תמיד",
+  "permission.reject": "דחה",
+  "permission.pending": "ממתין להחלטה",
+  // ─── elicitation ─── (slice-elicitation-ui)
+  "elicitation.accept": "שלח",
+  "elicitation.decline": "דחה",
+  "elicitation.cancel": "ביטול",
+  "elicitation.required": "שדה חובה",
+  // ─── auth guidance ─── (slice auth-guidance)
+  "authGuidance.heading": "איך להתחבר עם",
+  "authGuidance.envVar.setLabel": "הגדר:",
+  "authGuidance.envVar.linkLabel": "קבלת פרטי-גישה",
+  // ─── reconnect takeover ─── (slice reconnect-ws-takeover)
+  "session.openedElsewhere": "הסשן נפתח במקום אחר",
+  // ─── reconnect-ws-takeover Commit 3 ─── (טבעת-חיבור פר-סשן, ActiveProcessesPanel)
+  "connect.agents.connected": "מחובר",
+  "connect.agents.disconnected": "לא מחובר",
+  // ─── gemini directing (קצב/טון) ─── (slice-gemini-tts-directing)
+  "settings.geminiPace.label": "קצב דיבור",
+  "settings.geminiPace.verySlow": "איטי מאוד",
+  "settings.geminiPace.slow": "איטי",
+  "settings.geminiPace.normal": "רגיל",
+  "settings.geminiPace.fast": "מהיר",
+  "settings.geminiPace.veryFast": "מהיר מאוד",
+  "settings.geminiTone.label": "טון",
+  "settings.geminiTone.neutral": "ניטרלי",
+  "settings.geminiTone.calm": "רגוע",
+  "settings.geminiTone.energetic": "אנרגטי",
+  "settings.geminiTone.formal": "רשמי",
+  "settings.geminiTone.casual": "יומיומי",
 }

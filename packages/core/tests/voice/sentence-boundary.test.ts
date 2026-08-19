@@ -21,10 +21,12 @@ describe("splitIntoSentences — core behaviour", () => {
     expect(remaining).toBe("")
   })
 
-  it("test 4: treats a double-newline as a paragraph boundary even without a period", () => {
+  it("test 4: multi-para requires completed paragraphs (\\n\\n after them); trailing last-para is held in remaining", () => {
+    // before fix: sentences=["שלום","עולם"], remaining=""
+    // after fix: הפסקה האחרונה ("עולם") עדיין בזרימה → מוחזקת כ-remaining
     const { sentences, remaining } = splitIntoSentences("שלום\n\nעולם")
-    expect(sentences).toEqual(["שלום", "עולם"])
-    expect(remaining).toBe("")
+    expect(sentences).toEqual(["שלום"])
+    expect(remaining).toBe("עולם")
   })
 
   it("test 5: merges short raw segments into the next one (minChars=20 default)", () => {
@@ -132,5 +134,150 @@ describe("splitIntoSentences — supporting cases", () => {
     const { sentences, remaining } = splitIntoSentences("done now and this is long. Bye")
     expect(sentences).toEqual(["done now and this is long."])
     expect(remaining).toBe("Bye")
+  })
+})
+
+describe("splitIntoSentences — streaming mid-word safety (commit 0: fix A)", () => {
+  it("streaming: a chunk ending mid-word in a multi-paragraph buffer does NOT emit a mid-word segment", () => {
+    // chunk#1 ends mid-word ("### מ") while the buffer already contains a \n\n
+    const c1 =
+      "טקסט קודם ארוך מספיק כדי להיחשב.\n\n### מ"
+    const c2 =
+      "ה נשאר פתוח (לא חוסם)\n- פריט"
+    let buf = ""
+    const emitted: string[] = []
+    for (const ch of [c1, c2]) {
+      const { sentences, remaining } = splitIntoSentences(buf + ch)
+      for (const s of sentences) emitted.push(s)
+      buf = remaining
+    }
+    // no segment should end with the half-word "### מ" (U+05DE alone)
+    expect(emitted.join(" | ")).not.toMatch(/### מ$/)
+    // the complete word "מה" (U+05DE U+05D4) should appear in some emitted segment
+    expect(emitted.some((s) => s.includes("### מה"))).toBe(true)
+  })
+
+  it("streaming: single-para buffer — trailing unfinished segment is still held in remaining (regression guard)", () => {
+    // single paragraph, no \n\n → remaining-hold already worked before fix A
+    const buf = "טקסט קודם ארוך מספיק כדי להיחשב. חצי"
+    const { sentences, remaining } = splitIntoSentences(buf)
+    // the complete first sentence is emitted
+    expect(sentences.length).toBeGreaterThanOrEqual(1)
+    // the half-word is NOT emitted, it stays in remaining
+    expect(sentences.join(" ")).not.toMatch(/חצי$/)
+    expect(remaining).toMatch(/חצי/)
+  })
+
+  it("streaming: real-world fixtures — words from actual recordings are NOT split mid-word", () => {
+    // Three of the 7 words that were cut mid-word in the live recordings:
+    // "הודעת" (=הודעת), "בוצע" (=בוצע), "השינויים" (=השינויים)
+    const words = ["הודעת", "בוצע", "השינויים"]
+    for (const word of words) {
+      // Simulate: buffer has completed paragraph + \n\n, then second para starts mid-word
+      const half = word.slice(0, Math.ceil(word.length / 2))
+      const rest = word.slice(Math.ceil(word.length / 2))
+      const c1 = "פסקה ראשונה ארוכה מספיק. תוכן.\n\n" + half
+      const c2 = rest + " ועוד תוכן נוסף."
+      let buf = ""
+      const emitted: string[] = []
+      for (const ch of [c1, c2]) {
+        const { sentences, remaining } = splitIntoSentences(buf + ch)
+        for (const s of sentences) emitted.push(s)
+        buf = remaining
+      }
+      const combined = emitted.join(" ") + " " + buf
+      // the whole word should appear somewhere — not split across segments
+      expect(combined).toContain(word)
+      // no emitted segment ends with the partial first half alone
+      expect(emitted.some((s) => s.trimEnd().endsWith(half))).toBe(false)
+    }
+  })
+})
+
+describe("splitIntoSentences — bidi normalization (commit 1: fix B)", () => {
+  // Use \u-escapes for bidi chars to avoid lint:i18n issues and for clarity.
+  // U+200F = RLM (Right-to-Left Mark), U+200E = LRM (Left-to-Right Mark)
+  // U+202B = Right-to-Left Embedding, U+202C = Pop Directional Formatting
+  // U+2066 = Left-to-Right Isolate, U+2069 = Pop Directional Isolate
+  const RLM = "‏"
+  const LRM = "‎"
+
+  it("bidi-1: RLM after terminator does not block sentence emission", () => {
+    // Without normalization, RLM after "." breaks TERMINATOR_RE → sentence held in remaining
+    const input = "משפט ראשון ארוך מספיק להיפלט." + RLM
+    const { sentences, remaining } = splitIntoSentences(input)
+    expect(sentences).toEqual(["משפט ראשון ארוך מספיק להיפלט."])
+    expect(remaining).toBe("")
+  })
+
+  it("bidi-2: RLM followed by space after terminator does not block emission", () => {
+    const input = "משפט ראשון ארוך מספיק להיפלט." + RLM + " "
+    const { sentences, remaining } = splitIntoSentences(input)
+    expect(sentences.length).toBeGreaterThanOrEqual(1)
+    expect(remaining).toBe("")
+  })
+
+  it("bidi-3: control — same sentence without RLM is emitted (no regression)", () => {
+    const input = "משפט ראשון ארוך מספיק להיפלט."
+    const { sentences, remaining } = splitIntoSentences(input)
+    expect(sentences).toEqual(["משפט ראשון ארוך מספיק להיפלט."])
+    expect(remaining).toBe("")
+  })
+
+  it("bidi-4: RLM at start of continuation chunk does NOT appear at start of emitted segment", () => {
+    // Streaming: first chunk emits a sentence, second chunk starts with RLM
+    const c1 = "משפט ראשון ארוך מספיק להיפלט."
+    const c2 = RLM + "משפט שני ארוך מספיק כאן."
+    let buf = ""
+    const emitted: string[] = []
+    for (const ch of [c1, c2]) {
+      const { sentences, remaining } = splitIntoSentences(buf + ch)
+      for (const s of sentences) emitted.push(s)
+      buf = remaining
+    }
+    // No segment should start with a bidi character
+    for (const seg of emitted) {
+      expect(seg.startsWith(RLM)).toBe(false)
+      expect(seg.startsWith(LRM)).toBe(false)
+    }
+  })
+
+  it("bidi-5: Hebrew vowel diacritics (niqqud) are NOT stripped — preserved in output", () => {
+    // Niqqud (U+05B0-U+05C7) must NOT be removed — they help pronunciation
+    const input = "שְלוֹם עוֹלָם. משִפט שֵני ארוך מספיק כאן."
+    // = "שְׁלוֹם עוֹלָם. משפט שני ארוך מספיק כאן." (with niqqud on first word)
+    const { sentences } = splitIntoSentences(input)
+    // should split into 2 sentences (or merge if first is short)
+    expect(sentences.length).toBeGreaterThanOrEqual(1)
+    // niqqud chars must be present in the output
+    expect(sentences.join("")).toMatch(/[ְ-ׇ]/)
+  })
+
+  it("bidi-6: heavy RLM inflation — segments count and size match clean version", () => {
+    // A long sentence with RLM after every space — should not inflate segment count
+    const base = "מילה ".repeat(45).trim() + "."
+    const withRlm = base.replace(/ /g, " " + RLM)
+    const cleanResult = splitIntoSentences(base)
+    const rlmResult = splitIntoSentences(withRlm)
+    // same number of segments
+    expect(rlmResult.sentences.length).toBe(cleanResult.sentences.length)
+    // all segments within maxChars=200
+    for (const s of rlmResult.sentences) {
+      expect(s.length).toBeLessThanOrEqual(200)
+    }
+  })
+
+  it("bidi-7: bilingual text with LRM/RLM around latin — splits correctly, no bidi in output", () => {
+    // "...‎npm run build‏ עובד. משפט הבא ארוך מספיק כאן."
+    const input = "פרויקט הרצה עם " + LRM + "npm run build" + RLM + " עובד. משפט הבא ארוך מספיק כאן."
+    const { sentences, remaining } = splitIntoSentences(input)
+    // at least one sentence emitted (possibly merged if first is short)
+    expect(sentences.length).toBeGreaterThanOrEqual(1)
+    // no bidi chars in any emitted segment
+    const bidiRe = /[‎‏‪-‮⁦-⁩]/
+    for (const s of sentences) {
+      expect(bidiRe.test(s)).toBe(false)
+    }
+    expect(bidiRe.test(remaining)).toBe(false)
   })
 })

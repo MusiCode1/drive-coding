@@ -28,9 +28,31 @@ reports/
 docs/reports/
 docs/*-verification-report.md
 
+# docs/ (briefs, decisions, walkthrough) עבר ל-docs-repo (private, משותף בין
+# פרויקטים). docs-for-llm/ הוא Junction (Windows) / symlink (Linux) לעותק
+# המקומי של docs-repo/drive-coding — לא תוכן אמיתי בריפו הזה.
+#
+# ה-/ המוביל מעגן את התבנית לשורש הריפו בלבד. בלי העיגון, git מתעלם מכל
+# תיקיית docs/ בכל עומק — למשל packages/<pkg>/docs/ — וקובץ חדש שם נחסם
+# בשקט בלי אזהרה.
+/docs/
+# בלי / בסוף — docs-for-llm הוא סימלינק, וגit מתייחס לסימלינק כקובץ.
+# תבנית שמסתיימת ב-/ מתאימה לספריות בלבד ולא הייתה חוסמת אותו.
+/docs-for-llm
+
 # FE build staging dirs (atomic swap — slice-fe-build-decouple)
 packages/frontend/.build-staging/
 packages/frontend/.build-old/
 
 # Worktrees live under .worktrees/ (each is its own checkout — never track as gitlink)
 .worktrees/
+.tmp/
+
+# Local-only logs / raw wire-captures / research artifacts (never in repo).
+# Canonical censored fixtures live under the relevant package; this is raw material.
+.research/
+**/.localappdata/**
+.localappdata/
+
+# (הכלל על docs/ ו-docs-for-llm/ מוגדר למעלה — היה כאן כפל מיותר)
+@Vendor/
