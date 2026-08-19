@@ -1,3 +1,69 @@
+## 2026-08-19 23:27 (slice ttl-ownership — פקיעת-TTL הופכת מהרס לשחרור-בעלות)
+
+ענף: `slice/ttl-ownership`, worktree `.worktrees/ttl-ownership`, base
+`integration/run-ttl-ownership` @ `e475bf0`. בריף:
+`docs-for-llm/plans/brief-ttl-ownership.md` (r5, אימות אביגיל READY).
+
+מימוש הכרעת-העיצוב "בעלות ≠ מחזור-חיי-מצב": פקיעת-TTL של בעלות-HTTP כבר
+לא קוראת `host.dispose()`+`map.delete` — היא משחררת בעלות (`markDetached`)
+ומנתקת מנויי-SSE נטושים (`broadcaster.close()`), אבל משאירה את ה-host
+וה-broadcaster במפה. חיבור-מחדש נופל בענף ה-`existing` של
+`getOrCreateHost`, תובע בעלות מחדש (`markOwned`, מוגן על
+`getOwner()===null`), ו-`doCreate` לא רץ שוב — בלי `loadSession`, בלי
+host חדש, בלי איפוס `version`.
+
+**Commit 1** (`45e77b8`, tdd) — `registry.ts`: גוף ה-`httpSweep` הוחלף
+(הלולאה מקבלת גם `entry`; הוסר `dispose`+`map.delete`; נוסף
+`broadcaster.close()` אחרי `markDetached`, אותו tick); `getOrCreateHost`
+מקבל תביעת-בעלות-מחדש בענף ה-`existing`. שלושה טסטים קיימים שנשענו על
+`mockHost.dispose` כאות-הפקיעה נכתבו מחדש (האות עבר ל-`markDetached`+
+`broadcaster.close`) + עזר `makeStatefulConnReg` (רג'יסטרי בעל-מצב אמיתי —
+נדרש כי שומר-הלולאה `via==="http"` עובר בכל sweep pass) + 6 טסטים חדשים,
+כל אחד עם מוטציה מתועדת בגוף ה-commit.
+
+**Commit 2** (`041978d`, tdd) — `DEFAULT_HTTP_OWNER_TTL_MS`+
+`resolveHttpOwnerTtlMs` (פונקציה טהורה מיוצאת) + חיווט
+`deps._httpOwnerTtlMs ?? resolveHttpOwnerTtlMs(process.env.HTTP_OWNER_TTL_MS)`.
+9 טסטי-טבלה + 2 טסטי נתיב-ברירת-מחדל (בלי `_httpOwnerTtlMs` מוזרק — אחד
+מוודא שה-env אכן נקרא, השני מוודא שברירת-המחדל היא 600_000 ולא ננגסה).
+תיעוד ב-`AGENTS.md` (תת-סעיף "Session-host ownership TTL") ותיקון-נלווה:
+נתיב `data/wire-recordings` המיושן הוחלף בחמישה מופעים (`AGENTS.md` +
+`docs/configuration.md`) לנתיב האמיתי `~/.config/drive-coding/wire-recordings/`.
+
+**Commit 3** (integration) — קובץ חדש
+`packages/backend/src/session-host/ttl-ownership.integration.test.ts`:
+רג'יסטרי אמיתי (`createAgentSessionRegistry`, בלי `_httpOwnerTtlMs` —
+נתיב-ברירת-המחדל, TTL="500" ב-env), broadcaster אמיתי, `registerEventsRoute`
+אמיתי על `Hono()` דרך `app.request()`. ה-`ConnectionRegistry` זיוף בעל-מצב
+עם הסמנטיקה האמיתית. טסט אחד שמכסה את כל שמונה האסרציות: יצירה+עדכון⇒
+`version>0`, snapshot ראשון נושא אותה גרסה, המתנה מעבר ל-TTL ⇒ גוף ה-SSE
+מסתיים בלי `taken-over`, ה-host שורד, הבעלות משתחררת, חיבור שני מקבל אותו
+`sessionId` בלי `loadSession` (ו-`newSession` נקרא פעם אחת בדיוק), והבעלות
+נתבעת מחדש כ-`http`. עזר `makeSseReader` — session קריאה מתמשכת על גוף
+ה-SSE (reader אחד משותף בין קריאת ה-snapshot לבין ההמתנה לסיום הזרם, כי
+`getReader()` שני על אותו body היה זורק).
+
+**שתי נקודות שהבריף ביקש לתעד כאן במפורש**:
+1. תביעת-הבעלות-מחדש (`markOwned`, שמקדם `ownershipEpoch`) מגיעה **משני**
+   הקוראים של `getOrCreateHost` — `http/events.ts` (חיבור-SSE) ו-`http/rpc.ts`
+   (כל קריאת-RPC על סוכן חסר-בעלים). זה רצוי (RPC על סוכן חסר-בעלים = לקוח
+   חי שחזר), ומכוסה בטסט ייעודי ב-Commit 1 (#6, דרך `registerRpcRoute`
+   האמיתי, לא קריאה ישירה לרג'יסטרי).
+2. "זרם שהסתיים בלי פריים `taken-over`" מובטח ב**סדר-הפעולות** (`close()`
+   סינכרוני, ה-`done` נפתר ב-microtask, ותביעה-מחדש דורשת סבב-רשת) —
+   **לא** במבנה. §3.ג של הבריף מפרט את שני הנימוקים הבלתי-תלויים.
+
+**מה זה לא**: השורש של `bugs/41` אומת בקוד ולא שוחזר חי — הבאג נשאר פתוח
+עד שהמשתמש יראה את התסמין נעלם. ר' §5.ג בבריף.
+
+**שערים**: `bun run typecheck` exit 0, `bun run lint:i18n` נקי בכל commit.
+`bunx vitest run packages/backend/src/session-host` — 309/309 (היה 291,
++18 טסטים חדשים — 6+11 ב-registry.test.ts, 1 ב-ttl-ownership.integration.test.ts).
+`bun run test` מלא: `1 failed | 2597 passed | 21 skipped (2619)` — זהה
+לבסיס `1|2579|21` + 18 החדשים, אפס כשלים חדשים (הכשל היחיד הוא
+`formatQuotaPeriod` הידוע, שקדם לסלייס). `git diff --stat e475bf0 --
+packages/frontend` ריק — אין נגיעה ב-FE.
+
 ## 2026-08-16 (slice liveness — סימן-חיים אחד + TTL 10 דקות + חיווי ניתוק)
 
 ענף: `slice/liveness`, worktree `.worktrees/liveness`, base `slice/local-view-wiring`

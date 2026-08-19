@@ -96,16 +96,17 @@ existing key changes how that agent is launched.
 | `LOG_NS` | `*` | Comma-separated namespace filter. `backend.*` includes a subtree; `-noisy.x` excludes (exclusion wins). |
 | `LOG_FORMAT` | `both` | `pretty` (stderr, human) · `json` (stdout, machine) · `both`. |
 | `LOG_WIRE` | *(unset)* | Full ACP frame tracing. `acp` · `ws` · `1` (both). |
-| `WIRE_RECORD` | *(unset)* | `1` records every raw frame to `data/wire-recordings/<agentId>-<ts>.jsonl`. `data/` is gitignored. |
+| `WIRE_RECORD` | *(unset)* | `1` records every raw frame to `~/.config/drive-coding/wire-recordings/<agentId>-<ts>.jsonl`. Outside the repo, so it never enters git. |
 | `HOTPATH_SLOW_MS` | `50` | Log a warning when a hot-path operation exceeds this many milliseconds. |
 | `RSS_BUDGET_MB` | *(built-in)* | Memory ceiling above which the backend starts shedding load. |
+| `HTTP_OWNER_TTL_MS` | `600000` | How long an HTTP owner may go without a liveness signal (`POST /api/agents/:id/presence`) before the backend **releases ownership**. Expiry releases ownership and severs abandoned SSE streams — it does **not** destroy the session host, kill the agent, or reset `version`; the next connection is a continuation. Lowering it (e.g. `5000`) is a **debugging aid**: the frontend's freshness threshold is a separate, hardcoded 10 minutes, so a much lower value here will make the UI's "connected" indicator lag behind the backend's view. |
 
 ### Reading a wire recording
 
 ```bash
 WIRE_RECORD=1 PORT=4000 bun src/server.ts
 # …reproduce the problem, then:
-jq -r 'select(.raw|fromjson|.method=="session/update")' data/wire-recordings/*.jsonl
+jq -r 'select(.raw|fromjson|.method=="session/update")' ~/.config/drive-coding/wire-recordings/*.jsonl
 ```
 
 ### 🔴 A trap that cost us hours
