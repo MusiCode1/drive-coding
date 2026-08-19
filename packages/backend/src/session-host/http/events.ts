@@ -65,8 +65,14 @@ export function registerEventsRoute(
   registry: AgentSessionRegistry,
   opts: RegisterEventsRouteOptions = {},
 ): void {
-  const doSetInterval = opts._setInterval ?? setInterval
-  const doClearInterval = opts._clearInterval ?? clearInterval
+  // slice sse-liveness (NO-GO fix): עטיפה בחץ, לא הפניה חשופה ל-native.
+  // ⚠️ כאן זו **הקשחה, לא תיקון-באג** — ה-BE רץ ב-Node/bun, שבו ה-timers הם
+  // פונקציות רגילות בלי brand-check, וזו const בהיקף-פונקציה ולא שדה-מחלקה.
+  // הצורה נסגרת כדי שלא תשוכפל למקום שבו היא כן שוברת — ב-FE היא הפילה את
+  // כל RemoteSessionView בכרום (`Illegal invocation`, sse-reader.ts:199-200).
+  const doSetInterval = opts._setInterval ?? ((fn: () => void, ms: number) => setInterval(fn, ms))
+  const doClearInterval =
+    opts._clearInterval ?? ((id: ReturnType<typeof setInterval>) => clearInterval(id))
   app.get("/api/agents/:id/events", async (c) => {
     const agentId = c.req.param("id")
 
