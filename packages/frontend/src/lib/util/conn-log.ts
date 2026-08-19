@@ -11,6 +11,26 @@
 /** תג אחיד — `[conn]` נותן `grep`/סינון-קונסול אחד לכל מצב-החיבור. */
 const TAG = "[conn]"
 
+/**
+ * חוצץ-מעגלי של אירועי-חיבור.
+ *
+ * למה: באבחון #41 שרדו בקונסול **שלוש שורות** — ניווט מנקה אותו, ואיתו כל
+ * ההיסטוריה שהייתה מכריעה. החוצץ שורד ניווט ב-SPA ונקרא דרך `__dc.conn()`.
+ */
+export type ConnEvent = { t: number; level: "info" | "warn"; event: string; detail: string }
+const RING_MAX = 200
+const ring: ConnEvent[] = []
+
+function push(level: "info" | "warn", event: string, detail: string): void {
+  ring.push({ t: Date.now(), level, event, detail })
+  if (ring.length > RING_MAX) ring.shift()
+}
+
+/** האירועים האחרונים, החדש בסוף. תמונת-מצב — לא הרפרנס. */
+export function connEvents(): ConnEvent[] {
+  return [...ring]
+}
+
 function fmt(detail?: Record<string, unknown>): string {
   if (!detail) return ""
   return Object.entries(detail)
@@ -21,10 +41,14 @@ function fmt(detail?: Record<string, unknown>): string {
 
 /** מעבר תקין — חיבור, חזרה, סגירה מכוונת. */
 export function connInfo(event: string, detail?: Record<string, unknown>): void {
-  console.info(`${TAG} ${event}`, fmt(detail))
+  const d = fmt(detail)
+  push("info", event, d)
+  console.info(`${TAG} ${event}`, d)
 }
 
 /** נפילה או כשל — מה שהמשתמש **לא** רואה יותר על המסך. */
 export function connWarn(event: string, detail?: Record<string, unknown>): void {
-  console.warn(`${TAG} ${event}`, fmt(detail))
+  const d = fmt(detail)
+  push("warn", event, d)
+  console.warn(`${TAG} ${event}`, d)
 }

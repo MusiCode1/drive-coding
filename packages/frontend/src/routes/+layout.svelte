@@ -16,6 +16,7 @@
 import "../app.css"
 import { onDestroy, onMount } from "svelte"
 import { page } from "$app/state"
+import { installDebugSurface } from "$lib/debug/dc"
 import { normalizeSessionTransport } from "$lib/session/session-transport"
 import { env } from "$env/dynamic/public"
 import type { Locale } from "@drive-coding/core/i18n"
@@ -225,6 +226,13 @@ setChatScroll(chatScroll)
 if (import.meta.env.DEV && typeof window !== "undefined") {
   // biome-ignore lint/suspicious/noExplicitAny: dev debug hook
   ;(window as any).__session = session
+}
+
+// ─── slice debug-surface: משטח-תצפית ב-dev **וגם בפריוויו** ───
+// הגייט הוא PUBLIC_APP_ENV (מ-FE_ENV בזמן-בילד) ולא import.meta.env.DEV,
+// שהוא false בכל בילד — בדיוק הסיבה שה-hook שמעל חסר-תועלת בפריוויו.
+if (__DC_ENABLED__) {
+  void installDebugSurface()
 }
 
 // ─── config-change-socket ─── (slice cli-specs-hot-reload)
