@@ -13,14 +13,19 @@
  *   - client disconnect → broadcaster.unsubscribe called
  */
 
-import { describe, expect, it, vi } from "vitest"
-import { Hono } from "hono"
 import type { Patch, SessionState } from "@drive-coding/core/session"
-import { createInitialSessionState } from "@drive-coding/core/session"
-import type { AgentSessionRegistry, HostResult } from "../registry.js"
+import {
+  createInitialSessionState,
+  STREAM_ALIVE_INTERVAL_MS,
+  StreamAliveNotification,
+} from "@drive-coding/core/session"
+import { type } from "arktype"
+import { Hono } from "hono"
+import { describe, expect, it, vi } from "vitest"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
+import type { AgentSessionRegistry, HostResult } from "../registry.js"
 import type { ExtendedSessionHost } from "../session-host.js"
-import { registerEventsRoute, type RegisterEventsRouteOptions } from "./events.js"
+import { type RegisterEventsRouteOptions, registerEventsRoute } from "./events.js"
 
 // ── mock helpers ──────────────────────────────────────────────────────────────
 
@@ -60,11 +65,9 @@ function makeMockBroadcaster(patchStream?: ReadableStream<Patch>): PatchesBroadc
   }
 }
 
-function makeMockRegistry(opts: {
-  agentId?: string
-  host?: ExtendedSessionHost
-  broadcaster?: PatchesBroadcaster
-} = {}): AgentSessionRegistry {
+function makeMockRegistry(
+  opts: { agentId?: string; host?: ExtendedSessionHost; broadcaster?: PatchesBroadcaster } = {},
+): AgentSessionRegistry {
   const { host, broadcaster } = opts
   // slice host-result-reason C1: getOrCreateHost now resolves a discriminated
   // HostResult, not HostEntry | undefined — vi.fn() is untyped (`any`), so
@@ -255,7 +258,7 @@ describe("GET /api/agents/:id/events", () => {
         cancel: vi.fn().mockResolvedValue(undefined),
         setMode: vi.fn().mockResolvedValue(undefined),
         setConfigOption: vi.fn().mockResolvedValue(undefined),
-    setSessionModel: vi.fn().mockResolvedValue(undefined),
+        setSessionModel: vi.fn().mockResolvedValue(undefined),
         extMethod: vi.fn().mockResolvedValue({}),
         respondPermission: vi.fn(),
         respondElicitation: vi.fn(),
@@ -312,7 +315,9 @@ describe("GET /api/agents/:id/events", () => {
       // Controlled patch stream
       let ctrl!: ReadableStreamDefaultController<Patch>
       const patchStream = new ReadableStream<Patch>({
-        start(c) { ctrl = c },
+        start(c) {
+          ctrl = c
+        },
       })
       const broadcaster = makeMockBroadcaster(patchStream)
       const registry = makeMockRegistry({ host, broadcaster })
@@ -407,7 +412,11 @@ describe("GET /api/agents/:id/events — ownership-handoff C3", () => {
       const host = makeMockHost(state)
 
       let ctrl!: ReadableStreamDefaultController<Patch>
-      const patchStream = new ReadableStream<Patch>({ start(c) { ctrl = c } })
+      const patchStream = new ReadableStream<Patch>({
+        start(c) {
+          ctrl = c
+        },
+      })
       const broadcaster = makeMockBroadcaster(patchStream)
 
       const registry = makeMockRegistry({ host, broadcaster })
@@ -435,7 +444,11 @@ describe("GET /api/agents/:id/events — ownership-handoff C3", () => {
       const host = makeMockHost(state)
 
       let ctrl!: ReadableStreamDefaultController<Patch>
-      const patchStream = new ReadableStream<Patch>({ start(c) { ctrl = c } })
+      const patchStream = new ReadableStream<Patch>({
+        start(c) {
+          ctrl = c
+        },
+      })
       const broadcaster = makeMockBroadcaster(patchStream)
 
       const registry = makeMockRegistry({ host, broadcaster })
@@ -462,7 +475,7 @@ describe("GET /api/agents/:id/events — ownership-handoff C3", () => {
 // synchronously. Default (no opts) = the real global — production unchanged.
 
 describe("keepalive timer (slice host-result-reason C2 — no real-time wait)", () => {
-  it("fires a keepalive comment on each manually-triggered tick", async () => {
+  it("slice sse-liveness Commit 2: fires a visible event: stream-alive frame carrying a valid _drive/streamAlive JSON-RPC notification, with no id:, on each manually-triggered tick", async () => {
     const state = makeMockState()
     const host = makeMockHost(state)
     const broadcaster = makeMockBroadcaster()
@@ -484,7 +497,7 @@ describe("keepalive timer (slice host-result-reason C2 — no real-time wait)", 
     // snapshot write), so `tick` is captured by the time we check it.
     await sse.readUntil((buf) => buf.includes("event: snapshot"))
     expect(_setInterval).toHaveBeenCalledTimes(1)
-    expect(_setInterval).toHaveBeenCalledWith(expect.any(Function), 30_000)
+    expect(_setInterval).toHaveBeenCalledWith(expect.any(Function), STREAM_ALIVE_INTERVAL_MS)
     expect(tick).toBeDefined()
 
     // Fire 3 ticks SYNCHRONOUSLY — no real setTimeout/setInterval elapses.
@@ -495,9 +508,21 @@ describe("keepalive timer (slice host-result-reason C2 — no real-time wait)", 
     tick?.()
 
     const buffer = await sse.readUntil(
-      (buf) => (buf.match(/: keepalive\n\n/g) ?? []).length >= 3,
+      (buf) => (buf.match(/event: stream-alive\n/g) ?? []).length >= 3,
     )
-    expect((buffer.match(/: keepalive\n\n/g) ?? []).length).toBe(3)
+    const frames = buffer.split("\n\n").filter((f) => f.startsWith("event: stream-alive"))
+    expect(frames.length).toBe(3)
+
+    for (const frame of frames) {
+      // no id: line — an id here would make a future Last-Event-ID reconnect
+      // skip patches that were never actually received.
+      expect(frame).not.toContain("id: ")
+      const dataLine = frame.split("\n").find((l) => l.startsWith("data: "))
+      expect(dataLine).toBeDefined()
+      const parsed = JSON.parse(dataLine!.slice("data: ".length))
+      const validated = StreamAliveNotification(parsed)
+      expect(validated instanceof type.errors).toBe(false)
+    }
 
     sse.cancel()
   })

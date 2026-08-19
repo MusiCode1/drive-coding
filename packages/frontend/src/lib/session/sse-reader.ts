@@ -7,6 +7,15 @@
  * Protocol:
  *   event: snapshot\nid: <epoch>\ndata: <JSON SessionState>\n\n  ← frame-zero (חייב להיות ראשון)
  *   event: patch\ndata: <JSON Patch>\n\n                        ← עדכונים שוטפים
+ *   event: stream-alive\ndata: <_drive/streamAlive notification>\n\n  ← slice sse-liveness
+ *                                                                   Commit 2: visible liveness
+ *                                                                   signal (replaces the old,
+ *                                                                   invisible `: keepalive`
+ *                                                                   SSE comment). Ignored by
+ *                                                                   this parser's event-name
+ *                                                                   switch (falls through like
+ *                                                                   any unknown event) until
+ *                                                                   Commit 4 wires the watchdog.
  *   event: taken-over\nid: <new-epoch>\ndata: {}\n\n            ← terminal: stop reconnecting
  *
  * Reconnect: exponential backoff (1s, 2s, 4s, ..., max 30s).
