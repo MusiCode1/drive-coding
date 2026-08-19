@@ -196,8 +196,8 @@ export class SSEReader {
     this.#doFetch = opts._fetch ?? ((u, init) => globalThis.fetch(u, init))
     this.#sleep = opts._sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
     this.#now = opts._now ?? (() => Date.now())
-    this.#doSetInterval = opts._setInterval ?? setInterval
-    this.#doClearInterval = opts._clearInterval ?? clearInterval
+    this.#doSetInterval = opts._setInterval ?? ((fn, ms) => globalThis.setInterval(fn, ms))
+    this.#doClearInterval = opts._clearInterval ?? ((id) => globalThis.clearInterval(id))
     this.#snapshotTimeoutMs = opts._snapshotTimeoutMs ?? SNAPSHOT_TIMEOUT_MS
   }
 

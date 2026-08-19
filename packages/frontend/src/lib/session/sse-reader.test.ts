@@ -1013,6 +1013,72 @@ describe("SSEReader — silence-watchdog (Commit 4)", () => {
   })
 })
 
+// ── slice sse-liveness NO-GO fix: real Chrome brand-check on the PRODUCTION
+// default (no `_setInterval`/`_clearInterval` seam injected) ───────────────
+//
+// Every test above injects `_setInterval`/`_clearInterval` via
+// `makeMockInterval()` — a plain mock object, never Chrome's real
+// `setInterval`/`clearInterval`. That seam is exactly what hid a real
+// production bug from this whole suite (calev NO-GO, 2026-08-19): Chrome's
+// `setInterval`/`clearInterval` are "unforgeable" methods on
+// `WindowOrWorkerGlobalScope` that require `this === window` (brand-check).
+// `this.#doSetInterval = opts._setInterval ?? setInterval` stored a BARE
+// reference; calling it as `this.#doSetInterval(...)` inside a class method
+// passes `this = the SSEReader instance` — not `window` — and Chrome throws
+// `TypeError: Illegal invocation`. jsdom (this suite's real environment,
+// `environment: "node"` per vitest.config.ts — no DOM at all) does NOT
+// enforce this brand-check, so no ordinary unit test can reproduce it. This
+// test instead stubs `globalThis.setInterval`/`clearInterval` with a
+// function that performs the SAME brand-check Chrome does, so the assertion
+// is meaningful without a real browser.
+describe("SSEReader — production timer defaults (no seam injected) — Chrome brand-check regression", () => {
+  it("connect() must not throw 'Illegal invocation' when the silence-watchdog starts, using the REAL (unseamed) setInterval/clearInterval default", async () => {
+    const realSetInterval = globalThis.setInterval
+    const realClearInterval = globalThis.clearInterval
+
+    // Mimics Chrome's unforgeable-method brand-check: throws unless called
+    // with receiver === undefined (a bare call, e.g. `setInterval(...)`
+    // inside a strict-mode class/module) or receiver === globalThis/window
+    // (e.g. `globalThis.setInterval(...)`). A stored bare method reference
+    // invoked as `this.#field(...)` — the pre-fix shape — passes neither and
+    // throws, exactly as Chrome does.
+    const chromeLikeSetInterval = function (this: unknown, fn: () => void, ms?: number) {
+      if (this !== undefined && this !== globalThis) {
+        throw new TypeError("Illegal invocation")
+      }
+      return realSetInterval(fn, ms)
+    } as unknown as typeof setInterval
+    const chromeLikeClearInterval = function (this: unknown, id: unknown) {
+      if (this !== undefined && this !== globalThis) {
+        throw new TypeError("Illegal invocation")
+      }
+      return realClearInterval(id as Parameters<typeof clearInterval>[0])
+    } as unknown as typeof clearInterval
+
+    globalThis.setInterval = chromeLikeSetInterval
+    globalThis.clearInterval = chromeLikeClearInterval
+
+    try {
+      const snapshot = makeSnapshot()
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValue(makeSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]))
+
+      // 🔴 Deliberately NO _setInterval/_clearInterval in opts — exercises the
+      // production default, the exact thing every other test in this file
+      // bypasses via makeMockInterval().
+      const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+
+      await expect(reader.connect()).resolves.toBeDefined()
+
+      reader.close() // must also not throw — exercises the clearInterval default
+    } finally {
+      globalThis.setInterval = realSetInterval
+      globalThis.clearInterval = realClearInterval
+    }
+  })
+})
+
 // ── slice sse-liveness Commit 4: snapshot-wait timeout (מקרה-קצה) ──────────
 
 describe("SSEReader — snapshot-wait timeout (Commit 4)", () => {
