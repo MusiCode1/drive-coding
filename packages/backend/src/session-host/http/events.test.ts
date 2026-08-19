@@ -20,7 +20,7 @@ import { createInitialSessionState } from "@drive-coding/core/session"
 import type { AgentSessionRegistry, HostResult } from "../registry.js"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
 import type { ExtendedSessionHost } from "../session-host.js"
-import { registerEventsRoute } from "./events.js"
+import { registerEventsRoute, type RegisterEventsRouteOptions } from "./events.js"
 
 // ── mock helpers ──────────────────────────────────────────────────────────────
 
@@ -121,11 +121,40 @@ async function readSseEvents(
   return events
 }
 
+/**
+ * Helper: reads raw SSE text off a live response body without ever calling
+ * `reader.cancel()` — used by the keepalive-timer tests below, which need to
+ * read the response in TWO stages (snapshot, then manually-fired keepalive
+ * ticks) over the same underlying stream.
+ */
+function makeRawSseReader(response: Response) {
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+
+  async function readUntil(predicate: (buf: string) => boolean, timeoutMs = 300): Promise<string> {
+    const deadline = Date.now() + timeoutMs
+    while (!predicate(buffer) && Date.now() < deadline) {
+      const result = await Promise.race([
+        reader.read(),
+        new Promise<{ done: true; value: undefined }>((resolve) =>
+          setTimeout(() => resolve({ done: true, value: undefined }), 20),
+        ),
+      ])
+      if (result.done) break
+      if (result.value) buffer += decoder.decode(result.value, { stream: true })
+    }
+    return buffer
+  }
+
+  return { readUntil, cancel: () => reader.cancel() }
+}
+
 // ── test setup ─────────────────────────────────────────────────────────────────
 
-function makeApp(registry: AgentSessionRegistry): Hono {
+function makeApp(registry: AgentSessionRegistry, opts?: RegisterEventsRouteOptions): Hono {
   const app = new Hono()
-  registerEventsRoute(app, registry)
+  registerEventsRoute(app, registry, opts)
   return app
 }
 
@@ -422,5 +451,107 @@ describe("GET /api/agents/:id/events — ownership-handoff C3", () => {
       const takenOver = events.find((e) => e.includes("event: taken-over"))
       expect(takenOver).toBeUndefined()
     })
+  })
+})
+
+// ─── slice host-result-reason C2: keepalive timer seam ────────────────────────
+// The `setInterval`/`clearInterval` in registerEventsRoute are hardcoded
+// globals with no way to test them without waiting real wall-clock time
+// (KEEPALIVE_INTERVAL_MS = 30s). Injecting `_setInterval`/`_clearInterval`
+// (same pattern as SSEReader's `_fetch`/`_sleep`/`_now`) makes both testable
+// synchronously. Default (no opts) = the real global — production unchanged.
+
+describe("keepalive timer (slice host-result-reason C2 — no real-time wait)", () => {
+  it("fires a keepalive comment on each manually-triggered tick", async () => {
+    const state = makeMockState()
+    const host = makeMockHost(state)
+    const broadcaster = makeMockBroadcaster()
+    const registry = makeMockRegistry({ host, broadcaster })
+
+    let tick: (() => void) | undefined
+    const _setInterval = vi.fn((fn: () => void) => {
+      tick = fn
+      return 0 as unknown as ReturnType<typeof setInterval>
+    }) as unknown as typeof setInterval
+    const _clearInterval = vi.fn() as unknown as typeof clearInterval
+
+    const app = makeApp(registry, { _setInterval, _clearInterval })
+    const res = await app.request("/api/agents/agent-1/events")
+    const sse = makeRawSseReader(res)
+
+    // Read past the snapshot — proves the stream callback has already run
+    // registerEventsRoute's doSetInterval(...) call (registered BEFORE the
+    // snapshot write), so `tick` is captured by the time we check it.
+    await sse.readUntil((buf) => buf.includes("event: snapshot"))
+    expect(_setInterval).toHaveBeenCalledTimes(1)
+    expect(_setInterval).toHaveBeenCalledWith(expect.any(Function), 30_000)
+    expect(tick).toBeDefined()
+
+    // Fire 3 ticks SYNCHRONOUSLY — no real setTimeout/setInterval elapses.
+    // If this test needed the real 30s interval to fire 3 times, it would
+    // take 90 real seconds; this takes milliseconds.
+    tick?.()
+    tick?.()
+    tick?.()
+
+    const buffer = await sse.readUntil(
+      (buf) => (buf.match(/: keepalive\n\n/g) ?? []).length >= 3,
+    )
+    expect((buffer.match(/: keepalive\n\n/g) ?? []).length).toBe(3)
+
+    sse.cancel()
+  })
+
+  it("clears the interval in `finally` when the patch stream ends", async () => {
+    const state = makeMockState()
+    const host = makeMockHost(state)
+
+    // Controlled patch stream — same technique as the taken-over tests above
+    // (ctrl.close() ends the route's `while(true) reader.read()` loop, which
+    // is what drives execution into the `finally` block that clears the timer).
+    let ctrl!: ReadableStreamDefaultController<Patch>
+    const patchStream = new ReadableStream<Patch>({
+      start(c) {
+        ctrl = c
+      },
+    })
+    const broadcaster = makeMockBroadcaster(patchStream)
+    const registry = makeMockRegistry({ host, broadcaster })
+
+    const FAKE_TIMER_ID = 42 as unknown as ReturnType<typeof setInterval>
+    const _setInterval = vi.fn(() => FAKE_TIMER_ID) as unknown as typeof setInterval
+    const _clearInterval = vi.fn() as unknown as typeof clearInterval
+
+    const app = makeApp(registry, { _setInterval, _clearInterval })
+    const res = await app.request("/api/agents/agent-1/events")
+    const sse = makeRawSseReader(res)
+
+    await sse.readUntil((buf) => buf.includes("event: snapshot"))
+    expect(_clearInterval).not.toHaveBeenCalled() // still connected
+
+    // End the patch stream (host disposed / connection closed) — this is what
+    // makes the route's reader.read() loop `break` and enter `finally`.
+    ctrl.close()
+    await sse.readUntil(() => false, 100) // pump the reader loop forward
+
+    expect(_clearInterval).toHaveBeenCalledWith(FAKE_TIMER_ID)
+    sse.cancel()
+  })
+
+  it("production default (no opts) uses the real global setInterval/clearInterval — unchanged behavior", async () => {
+    const state = makeMockState()
+    const host = makeMockHost(state)
+    const broadcaster = makeMockBroadcaster()
+    const registry = makeMockRegistry({ host, broadcaster })
+
+    // No _setInterval/_clearInterval passed — makeApp(registry) with no opts.
+    const app = makeApp(registry)
+    const res = await app.request("/api/agents/agent-1/events")
+    const sse = makeRawSseReader(res)
+
+    await sse.readUntil((buf) => buf.includes("event: snapshot"))
+    expect(res.status).toBe(200)
+
+    sse.cancel()
   })
 })
