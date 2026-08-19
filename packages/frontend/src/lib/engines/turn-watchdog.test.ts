@@ -78,4 +78,13 @@ describe("turn-watchdog", () => {
       kind: "give-up",
     })
   })
+
+  // slice sse-liveness Commit 4ב: מספר מוחלט, לא הקבוע המיובא — בניגוד לכל
+  // הטסטים שמעל (שגוזרים assertion מ-STALL_NOTICE_MS/STALL_HARD_CAP_MS ולכן
+  // "זזים" איתם ולעולם לא יכולים לתפוס drift), הטסט הזה נכשל אם הערך המוחלט
+  // באמת משתנה — זו המוטציה בעלת-המטרה שה-DoD דורש.
+  it("🔴 מוטציה: הספים האמיתיים המיובאים הם 90_000/600_000 — לא נגזרים", () => {
+    expect(STALL_NOTICE_MS).toBe(90_000)
+    expect(STALL_HARD_CAP_MS).toBe(600_000)
+  })
 })

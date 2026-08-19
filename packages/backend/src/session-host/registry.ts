@@ -5,7 +5,8 @@
  * Lazy creation: host + broadcaster are created on first getOrCreateHost call.
  *
  * Receives connectionRegistry in constructor — used to look up ProviderConnection
- * by agentId (returns undefined if connection not found → getOrCreateHost returns undefined).
+ * by agentId (connection not found → getOrCreateHost resolves {ok:false, reason:"not-found"};
+ * slice host-result-reason C1 — see HostResult below for all four failure reasons).
  *
  * Ownership:
  *   - Registry creates one PatchesBroadcaster per host
@@ -31,7 +32,7 @@
  * newSession=3 for 2 concurrent callers, and the SSE stream one caller subscribed
  * to belonged to an orphaned host that never received further patches. Fixed with
  * the same pattern as connection-registry.ts's dedup guard ("no await between the
- * check and the registration") — an agentId → Promise<HostEntry | undefined> map
+ * check and the registration") — an agentId → Promise<HostResult> map
  * so concurrent callers share the same in-flight creation.
  */
 
@@ -51,10 +52,24 @@ const log = createLogger("backend.session-host.registry")
  */
 export type OnSessionAttached = (agentId: string, sessionId: string) => Promise<void> | void
 
-type HostEntry = {
+export type HostEntry = {
   host: ExtendedSessionHost
   broadcaster: PatchesBroadcaster
 }
+
+/**
+ * slice host-result-reason C1: why getOrCreateHost could not return a live
+ * HostEntry. Four sources previously collapsed into a single `undefined`
+ * (doCreate: no connection / WS-owned without an evictionController / eviction
+ * timed out; getOrCreateHost's own liveness check: connection died after the
+ * host was created) — and callers translated ALL four to 404 ("agent is
+ * gone"). Three of the four ARE final (not-found / ws-owned / conn-dead). Only
+ * `evict-timeout` is transient (a stuck WS tab, not a dead agent) — callers
+ * map it to 503 instead.
+ */
+export type HostFailureReason = "not-found" | "conn-dead" | "ws-owned" | "evict-timeout"
+
+export type HostResult = { ok: true; entry: HostEntry } | { ok: false; reason: HostFailureReason }
 
 export type AgentSessionRegistry = {
   /**
@@ -73,11 +88,14 @@ export type AgentSessionRegistry = {
   isHeld(agentId: string): boolean
   /**
    * getOrCreateHost — async lazy creation.
-   * - If host already exists → returns {host, broadcaster}
-   * - If connection not found in connectionRegistry → returns undefined
-   * - Otherwise: creates host + broadcaster, registers them, returns {host, broadcaster}
+   * - If host already exists → returns {ok: true, entry: {host, broadcaster}}
+   * - If connection not found in connectionRegistry → {ok: false, reason: "not-found"}
+   * - If the existing host's connection died → {ok: false, reason: "conn-dead"}
+   * - If WS owns the wire (no evictionController) → {ok: false, reason: "ws-owned"}
+   * - If eviction of the WS owner timed out → {ok: false, reason: "evict-timeout"}
+   * - Otherwise: creates host + broadcaster, registers them, returns {ok: true, entry}
    */
-  getOrCreateHost(agentId: string): Promise<HostEntry | undefined>
+  getOrCreateHost(agentId: string): Promise<HostResult>
 
   /**
    * getBroadcaster — returns the existing PatchesBroadcaster for agentId, or undefined.
@@ -185,7 +203,7 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
   const map = new Map<string, HostEntry>()
   // M5: in-flight creation promises — dedups concurrent getOrCreateHost(agentId)
   // callers so only one host + one ACP session get created per agentId.
-  const inFlight = new Map<string, Promise<HostEntry | undefined>>()
+  const inFlight = new Map<string, Promise<HostResult>>()
 
   // slice ownership-handoff C4b + slice liveness C1: unified ownership TTL sweep.
   // Owners must send a liveness signal (WS $/ping or HTTP presence → touchOwner)
@@ -224,27 +242,29 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
   }, HTTP_SWEEP_MS)
   httpSweep.unref() // don't prevent process exit
 
-  async function doCreate(agentId: string): Promise<HostEntry | undefined> {
+  async function doCreate(agentId: string): Promise<HostResult> {
     // Look up connection
     const conn = connectionRegistry.get(agentId)
-    if (!conn) return undefined
+    if (!conn) return { ok: false, reason: "not-found" }
 
     // slice ownership-truth C2: guard — WS owns the wire.
     // slice ownership-handoff C4: when evictionController is available, evict the
     // WS and wait for full detach before proceeding (HTTP takeover).
-    // Without evictionController (pre-C4 or tests): still refuse — return undefined.
+    // Without evictionController (pre-C4 or tests): still refuse.
     if (connectionRegistry.isOwnedByWs(agentId)) {
       if (!evictionController) {
         log.warn({ agentId }, "agent is owned by WS — refusing to create a session host")
-        return undefined
+        return { ok: false, reason: "ws-owned" }
       }
       log.info({ agentId }, "agent owned by WS — evicting for HTTP takeover")
       try {
         await evictionController.evictAndWait(agentId, 4409)
       } catch (err) {
-        // Eviction timed out or WS failed to detach — cannot take the wire safely
+        // slice host-result-reason C1: eviction timed out or WS failed to detach —
+        // cannot take the wire safely. This is TRANSIENT (a stuck WS tab), not a
+        // dead agent — callers map it to 503, not 404.
         log.error({ err, agentId }, "evictAndWait failed — refusing host creation")
-        return undefined
+        return { ok: false, reason: "evict-timeout" }
       }
     }
 
@@ -326,7 +346,7 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
 
       const entry: HostEntry = { host, broadcaster }
       map.set(agentId, entry)
-      return entry
+      return { ok: true, entry }
     } catch (err) {
       // slice handoff-foundations C3: rollback — dispose the orphan host so its
       // crash subscription is removed and patches stream is terminated. Without
@@ -346,19 +366,27 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     isHeld(agentId: string): boolean {
       return map.has(agentId) || inFlight.has(agentId)
     },
-    async getOrCreateHost(agentId: string): Promise<HostEntry | undefined> {
+    async getOrCreateHost(agentId: string): Promise<HostResult> {
       // Return existing entry if already created
       const existing = map.get(agentId)
       if (existing) {
         // slice remote-warm-reconnect C2b: liveness check — ה-connection אולי מת
         // (crash/DELETE) אחרי שה-host נוצר. בלי הניקוי, GET /events היה מחזיר 200
         // עם host מת + snapshot ישן, וה-FE "מתחבר" לסשן מת (פרומפטים נכשלים רק
-        // בהמשך). מסירים את ה-entry ומחזירים undefined → 404 → fail-fast ב-VM.
+        // בהמשך). מסירים את ה-entry ⇒ {ok:false, reason:"conn-dead"} → 404 → fail-fast ב-VM.
         if (!connectionRegistry.get(agentId)) {
-          map.delete(agentId) // = unregisterHost (מכאן אי אפשר לקרוא לו — בתוך ה-object literal)
-          return undefined
+          // = unregisterHost body, minus the markDetached/owner check (מכאן אי
+          // אפשר לקרוא ל-unregisterHost — בתוך ה-object literal). slice
+          // sse-liveness Commit 3: this is a documented second abandonment site
+          // (brief §3, Commit 3, note 2+2ב) — "unify, not just document": it's
+          // the same broadcaster.close() call for the same reason (a dead
+          // connection must not leave a leaked SSE stream + keepalive timer
+          // behind), so it gets the fix too instead of drifting from it.
+          existing.broadcaster.close()
+          map.delete(agentId)
+          return { ok: false, reason: "conn-dead" }
         }
-        return existing
+        return { ok: true, entry: existing }
       }
 
       // Return the in-flight creation promise if one is already running — no
@@ -377,6 +405,14 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       return map.get(agentId)?.broadcaster
     },
 
+    // 🔴 slice sse-liveness Commit 3: MUST stay synchronous (`: void`, no
+    // `await`). This is called from ws-agent.ts in a zero-await window between
+    // `host.dispose()` and `markAttached` (the epoch bump that signals
+    // takeover) — Commit 3ב locks that exact ordering with a real broadcaster.
+    // If this became `async`, the caller would need to `await` it, opening an
+    // await gap right there and silently breaking `taken-over` (the SSE route
+    // would read the OLD epoch before it's bumped). `broadcaster.close()`
+    // closes every subscriber controller synchronously — no `await` needed.
     unregisterHost(agentId: string): void {
       // slice ownership-truth C2: שחרר בעלות — אך רק אם הבעלים הוא http.
       // אחרת שחרור host היה מוחק בעלות WS שאינה שלו (WS יכול להיות הבעלים אם
@@ -384,6 +420,15 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       if (connectionRegistry.getOwner(agentId)?.via === "http") {
         connectionRegistry.markDetached(agentId)
       }
+      // slice sse-liveness Commit 3: terminate the broadcaster BEFORE removing
+      // the entry — two of the three call sites (deleteAndKill, the crash
+      // handler in agent-orchestrator.ts) never call host.dispose() first, so
+      // without this nothing ever ended the SSE stream for them: the keepalive
+      // timer (registerEventsRoute's setInterval) leaked forever, and a client
+      // reconnecting mid-session got a dead host with a stale snapshot instead
+      // of a clean 404/taken-over.
+      const entry = map.get(agentId)
+      entry?.broadcaster.close()
       map.delete(agentId)
     },
 

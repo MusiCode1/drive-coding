@@ -7,6 +7,15 @@
  * Protocol:
  *   event: snapshot\nid: <epoch>\ndata: <JSON SessionState>\n\n  ← frame-zero (חייב להיות ראשון)
  *   event: patch\ndata: <JSON Patch>\n\n                        ← עדכונים שוטפים
+ *   event: stream-alive\ndata: <_drive/streamAlive notification>\n\n  ← slice sse-liveness
+ *                                                                   Commit 2: visible liveness
+ *                                                                   signal (replaces the old,
+ *                                                                   invisible `: keepalive`
+ *                                                                   SSE comment). Ignored by
+ *                                                                   this parser's event-name
+ *                                                                   switch (falls through like
+ *                                                                   any unknown event) until
+ *                                                                   Commit 4 wires the watchdog.
  *   event: taken-over\nid: <new-epoch>\ndata: {}\n\n            ← terminal: stop reconnecting
  *
  * Reconnect: exponential backoff (1s, 2s, 4s, ..., max 30s).
@@ -17,6 +26,7 @@
 
 import { type Patch, PatchSchema, type SessionState } from "@drive-coding/core/session"
 import { type } from "arktype"
+import { SSE_WATCHDOG_THRESHOLD_MS } from "$lib/engines/liveness-thresholds"
 import { connInfo, connWarn } from "$lib/util/conn-log"
 
 // ─── SSE frame parsing ────────────────────────────────────────────────────────
@@ -83,10 +93,44 @@ export type SSEReaderOptions = {
   _sleep?: (ms: number) => Promise<void>
   /** @internal For testing — override the clock used to measure connection lifetime. */
   _now?: () => number
+  /**
+   * @internal For testing — override the silence-watchdog's timer scheduler.
+   * slice sse-liveness Commit 4a/4: same seam pattern as `_fetch`/`_sleep`/
+   * `_now` — default = the real global, so production is unchanged.
+   */
+  _setInterval?: typeof setInterval
+  /** @internal For testing — override the silence-watchdog's timer cancel. */
+  _clearInterval?: typeof clearInterval
+  /**
+   * @internal For testing — override the snapshot-wait bound (default
+   * `SNAPSHOT_TIMEOUT_MS`). Deliberately a plain number, not a `_sleep`-style
+   * function seam: reusing `_sleep` here would make the timeout win EVERY
+   * race instantly in the many existing tests that mock `_sleep` as an
+   * instant no-op (it represents backoff delay, not this). A real (but tiny,
+   * test-only) delay lets the timeout test use REAL timers instead of
+   * `vi.useFakeTimers()` racing a `Promise.race` across several `await`
+   * hops — a combination that produced spurious `PromiseRejectionHandled
+   * Warning` noise (harmless per Node's own docs, but still noise) in this
+   * exact codebase/runtime combination.
+   */
+  _snapshotTimeoutMs?: number
 }
 
 /** Maximum reconnect delay (ms). */
 const MAX_BACKOFF_MS = 30_000
+
+/**
+ * slice sse-liveness Commit 4: bounded wait for the `snapshot` frame-zero. A
+ * connection that opens successfully (fetch resolves ok) but never sends
+ * `snapshot` — a misbehaving proxy, or a host that accepts the request and
+ * writes nothing — used to hang `#connectOnce` FOREVER: outside the patches
+ * loop entirely, so the silence-watchdog below can never see it, and (for the
+ * very first connection) before `#runLoop` even exists, so nothing would
+ * ever retry. Unrelated to `SSE_WATCHDOG_THRESHOLD_MS` (that one bounds
+ * silence on an ALREADY-open stream, after the snapshot) — this bounds the
+ * initial handshake itself, so it's deliberately much shorter.
+ */
+const SNAPSHOT_TIMEOUT_MS = 15_000
 
 /**
  * כמה זמן חיבור חייב לשרוד כדי שייחשב "הצלחה" לצורך איפוס ה-backoff.
@@ -128,6 +172,9 @@ export class SSEReader {
   readonly #doFetch: (url: string, init?: RequestInit) => Promise<Response>
   readonly #sleep: (ms: number) => Promise<void>
   readonly #now: () => number
+  readonly #doSetInterval: typeof setInterval
+  readonly #doClearInterval: typeof clearInterval
+  readonly #snapshotTimeoutMs: number
   #closed = false
   // calev-heavy M7: close() didn't abort the in-flight fetch — the underlying
   // socket/request stayed established (leaked) until the server eventually
@@ -136,12 +183,22 @@ export class SSEReader {
   // makes close() actually stop an active connection promptly, not just future ones).
   #abortController: AbortController | null = null
 
+  // ─── slice sse-liveness Commit 4: silence-watchdog ─────────────────────────
+  // Timestamp of the last frame received on the CURRENT connection (heartbeat
+  // OR patch — traffic is traffic, §Commit 4 of the brief). Only meaningful
+  // while `#watchdogTimer` is running (i.e. while a connection is open).
+  #lastFrameAt = 0
+  #watchdogTimer: ReturnType<typeof setInterval> | null = null
+
   constructor(url: string, opts: SSEReaderOptions = {}) {
     this.#url = url
     this.#headers = opts.headers ?? {}
     this.#doFetch = opts._fetch ?? ((u, init) => globalThis.fetch(u, init))
     this.#sleep = opts._sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
     this.#now = opts._now ?? (() => Date.now())
+    this.#doSetInterval = opts._setInterval ?? ((fn, ms) => globalThis.setInterval(fn, ms))
+    this.#doClearInterval = opts._clearInterval ?? ((id) => globalThis.clearInterval(id))
+    this.#snapshotTimeoutMs = opts._snapshotTimeoutMs ?? SNAPSHOT_TIMEOUT_MS
   }
 
   /**
@@ -154,6 +211,10 @@ export class SSEReader {
 
     // Initial connection — must receive snapshot as first frame
     const { snapshot, frames } = await this.#connectOnce()
+    // slice sse-liveness Commit 4: the watchdog only ever ticks AFTER a
+    // snapshot was received — never during the snapshot wait itself (bounded
+    // separately, above) and never during backoff (below, §runLoop).
+    this.#startWatchdog()
 
     // Long-lived patches stream — drained by background loop
     let patchCtrl!: ReadableStreamDefaultController<Patch>
@@ -162,7 +223,10 @@ export class SSEReader {
         patchCtrl = ctrl
       },
       cancel: () => {
-        this.#closed = true
+        // slice sse-liveness Commit 4: routed through #setClosed — one of the
+        // (now five) sites that set #closed=true; the watchdog must stop here
+        // too, not just in close(), or it keeps ticking on a cancelled reader.
+        this.#setClosed()
       },
     })
 
@@ -174,7 +238,7 @@ export class SSEReader {
 
   /** Stop reconnect attempts, abort any in-flight request, and close the patches stream. */
   close(): void {
-    this.#closed = true
+    this.#setClosed()
     this.#abortController?.abort()
   }
 
@@ -194,25 +258,76 @@ export class SSEReader {
       signal: this.#abortController.signal,
     })
     if (!res.ok) {
-      throw new Error(`SSEReader: fetch failed with status ${res.status}`)
+      // slice sse-liveness Commit 3ג: carries `status` as a real field (not just
+      // baked into the message string) so #runLoop's catch can branch on it —
+      // 404 is a FINAL state (the agent is gone), 500/503 are not. The message
+      // text is left unchanged (still contains "404" etc.) — an existing test
+      // (`rejects.toThrow("404")` on the initial connection) asserts on it.
+      const err = new Error(`SSEReader: fetch failed with status ${res.status}`) as Error & {
+        status: number
+      }
+      err.status = res.status
+      throw err
     }
     if (!res.body) {
       throw new Error("SSEReader: response has no body")
     }
 
     const frames = readSSEFrames(res.body)
-
-    // Advance past any non-snapshot frames to find the required snapshot frame-zero
-    let next = await frames.next()
-    while (!next.done && next.value.event !== "snapshot") {
-      next = await frames.next()
-    }
-    if (next.done || next.value.event !== "snapshot") {
-      throw new Error("SSEReader: no snapshot frame received")
-    }
-
-    const snapshot = JSON.parse(next.value.data) as SessionState
+    const snapshot = await this.#waitForSnapshot(frames)
     return { snapshot, frames }
+  }
+
+  /**
+   * waitForSnapshot — advances past any non-snapshot frames to find the
+   * required snapshot frame-zero, bounded by `SNAPSHOT_TIMEOUT_MS` (see its
+   * doc comment for why: a connection that never sends `snapshot` used to
+   * hang here forever, invisible to both the watchdog and — on the initial
+   * connection — the reconnect loop).
+   *
+   * ⚠️ Deliberately uses the RAW global `setTimeout`/`clearTimeout`, not the
+   * `#sleep` seam: `#sleep` is mocked as an INSTANT no-op in almost every
+   * test in this file (it represents backoff delay, which tests skip) — if
+   * this raced against `this.#sleep(SNAPSHOT_TIMEOUT_MS)`, the timeout branch
+   * would win EVERY race immediately, breaking every existing test. The raw
+   * timer is safe here because `advance` below always resolves within a few
+   * microtasks in every test that isn't specifically testing this timeout
+   * (which uses `vi.useFakeTimers()` to fast-forward it) — the real 15s timer
+   * never actually fires, and is always cleared once the race settles.
+   */
+  async #waitForSnapshot(frames: AsyncGenerator<SSEFrame>): Promise<SessionState> {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    const timeout = (async (): Promise<never> => {
+      await new Promise<void>((resolve) => {
+        timeoutId = setTimeout(resolve, this.#snapshotTimeoutMs)
+      })
+      throw new Error("SSEReader: timed out waiting for snapshot frame")
+    })()
+    const advance = (async (): Promise<SessionState> => {
+      let next = await frames.next()
+      while (!next.done && next.value.event !== "snapshot") {
+        next = await frames.next()
+      }
+      if (next.done || next.value.event !== "snapshot") {
+        throw new Error("SSEReader: no snapshot frame received")
+      }
+      return JSON.parse(next.value.data) as SessionState
+    })()
+    // Both sides get a no-op `.catch` attached IMMEDIATELY (same tick, before
+    // racing) — whichever one LOSES the race may still reject later on its
+    // own (e.g. `advance` rejecting after `close()` aborts, post-timeout;
+    // or — in principle — `timeout` firing after `advance` already won).
+    // `Promise.race` never attaches a handler to the losing side, so without
+    // this a later rejection is "unhandled" even though nothing is meant to
+    // observe it anymore. `Promise.race([advance, timeout])` below still
+    // independently determines the actual return value.
+    advance.catch(() => {})
+    timeout.catch(() => {})
+    try {
+      return await Promise.race([advance, timeout])
+    } finally {
+      clearTimeout(timeoutId)
+    }
   }
 
   /**
@@ -225,6 +340,10 @@ export class SSEReader {
   ): Promise<void> {
     // Drain initial connection patches
     await this.#drainFrames(frames, ctrl)
+    // slice sse-liveness Commit 4: the connection just ended (drainFrames
+    // always returns normally, never throws — see its doc comment) — no
+    // watchdog while there's no open connection to watch.
+    this.#stopWatchdog()
 
     if (this.#closed) {
       this.#closeCtrl(ctrl)
@@ -249,6 +368,9 @@ export class SSEReader {
       try {
         const { snapshot, frames: newFrames } = await this.#connectOnce()
         if (this.#closed) break
+        // slice sse-liveness Commit 4: snapshot received — watchdog resumes.
+        // Symmetric with the "no watchdog during backoff" stop above.
+        this.#startWatchdog()
 
         const openedAt = this.#now()
         connInfo("sse-reconnected", { url: this.#url, version: snapshot.version })
@@ -258,6 +380,7 @@ export class SSEReader {
 
         // Drain patches from the reconnected connection
         await this.#drainFrames(newFrames, ctrl)
+        this.#stopWatchdog() // connection ended — see the symmetric call above
 
         // ⚠️ איפוס ה-backoff רק לחיבור ש**שרד**, לא לכל אחד שנפתח. חיבור
         // שנסגר מיד אחרי ה-snapshot אינו הצלחה — הוא בדיוק התסמין שבגללו
@@ -265,7 +388,28 @@ export class SSEReader {
         const lastedMs = this.#now() - openedAt
         if (lastedMs >= STABLE_CONNECTION_MS) delay = 1000
         connWarn("sse-lost", { url: this.#url, lastedMs })
-      } catch {
+      } catch (err) {
+        // slice sse-liveness Commit 3ג: 404 mid-reconnect is a FINAL state, not
+        // a transient failure. Three of the four backend reasons for 404 ARE
+        // final (connection not found / dead / ws-owned-without-eviction); the
+        // fourth (evict-timeout — a stuck WS tab) is 503, which falls through
+        // to the retry branch below like any other transient failure. Without
+        // this, a deleted agent's tab hammers GET /events every 30s forever
+        // (backoff caps at 30s and never resets — every attempt fails
+        // identically) — see brief §3, Commit 3ג. Only the STATUS matters
+        // here, never the message text (unlike the guard in the initial
+        // #connectOnce() rejection, this branch never surfaces to a test via
+        // `.toThrow()`).
+        const status =
+          err instanceof Error ? (err as Error & { status?: number }).status : undefined
+        if (status === 404) {
+          // slice sse-liveness Commit 4: routed through #setClosed (harmless
+          // no-op on the watchdog here — it was never started for a failed
+          // #connectOnce — but keeps all five #closed=true sites consistent).
+          this.#setClosed()
+          connWarn("sse-gone", { url: this.#url })
+          break
+        }
         // Connection failed — continue with next retry (delay already doubled)
         connWarn("sse-retry", { url: this.#url, nextInMs: delay })
       }
@@ -301,9 +445,14 @@ export class SSEReader {
     try {
       for await (const frame of frames) {
         if (this.#closed) return
+        // slice sse-liveness Commit 4: EVERY frame counts as traffic — heartbeat
+        // (stream-alive) AND patch alike (§Commit 4 of the brief: "תעבורה היא
+        // תעבורה"). Touched before the event-kind branching below so an
+        // unrecognized future event type still resets the watchdog too.
+        this.#touchWatchdog()
         // slice ownership-handoff C3: taken-over signals a terminal end — stop reconnecting
         if (frame.event === "taken-over") {
-          this.#closed = true
+          this.#setClosed() // slice sse-liveness Commit 4: was a bare #closed=true
           this.onTakenOver?.()
           return
         }
@@ -329,8 +478,9 @@ export class SSEReader {
         try {
           ctrl.enqueue(validated as Patch)
         } catch {
-          // Controller closed by consumer — stop
-          this.#closed = true
+          // Controller closed by consumer — stop. slice sse-liveness Commit 4:
+          // routed through #setClosed (was a bare #closed=true).
+          this.#setClosed()
           return
         }
       }
@@ -345,5 +495,74 @@ export class SSEReader {
     } catch {
       // Already closed
     }
+  }
+
+  // ─── slice sse-liveness Commit 4: silence-watchdog ─────────────────────────
+  //
+  // The server already emits a visible liveness signal every 30s (Commit 2's
+  // `event: stream-alive`) — but nothing ever CONSUMED it: a stream that stays
+  // open and goes silent never triggers `#drainFrames` to end, so `#runLoop`'s
+  // reconnect logic (already complete — backoff, onReconnected, stable-
+  // connection reset) never runs. This watchdog is the missing trigger: it
+  // tracks the timestamp of the last frame RECEIVED (any frame — heartbeat or
+  // patch), and if too much time passes with nothing arriving, it aborts the
+  // in-flight request WITHOUT setting `#closed` — the exact same shape as an
+  // unexpected network drop, so it flows through the SAME reconnect path that
+  // already exists, unchanged.
+
+  /**
+   * setClosed — the ONE place that sets `#closed = true`. Centralizes the
+   * (now five) call sites that used to set it directly and each forgot to
+   * also stop the watchdog: `cancel()`, `close()`, `taken-over`,
+   * `ctrl.enqueue` throwing, and the 404-mid-reconnect final state (Commit
+   * 3ג). A watchdog left running past any of these keeps ticking forever —
+   * "מרעיב את ה-worker של vitest" in tests, and a real leaked timer in
+   * production.
+   */
+  #setClosed(): void {
+    this.#closed = true
+    this.#stopWatchdog()
+  }
+
+  /**
+   * startWatchdog — called ONLY after a snapshot was actually received (both
+   * on the initial connect and on every successful reconnect — never during
+   * the snapshot wait itself, and never during backoff: "בזמן ה-backoff אין
+   * זרם בדין; גלאי שירוץ שם יפעיל abort על חיבור שעוד לא נולד").
+   *
+   * Idempotent: always clears any previous timer first, so a stray double-
+   * call can't leak a second interval.
+   */
+  #startWatchdog(): void {
+    this.#stopWatchdog()
+    this.#lastFrameAt = this.#now()
+    // Ticks at the SAME cadence as the threshold itself — deliberately reuses
+    // SSE_WATCHDOG_THRESHOLD_MS instead of introducing a second, separate
+    // "how often do we check" magic number. Worst-case detection latency is
+    // just under 2x the threshold (a silence that starts right after a tick
+    // is caught on the NEXT tick) — acceptable for a last-resort backstop
+    // whose only alternative today is an infinite hang.
+    this.#watchdogTimer = this.#doSetInterval(() => {
+      const silentMs = this.#now() - this.#lastFrameAt
+      if (silentMs < SSE_WATCHDOG_THRESHOLD_MS) return
+      connWarn("sse-silent", { url: this.#url, silentMs })
+      // Abort WITHOUT #closed — #drainFrames's catch-all swallows the abort
+      // error and returns normally (see its doc comment), #runLoop sees
+      // #closed is still false, and falls straight into the existing
+      // reconnect loop. Three lines, no new reconnect logic.
+      this.#abortController?.abort()
+    }, SSE_WATCHDOG_THRESHOLD_MS)
+  }
+
+  #stopWatchdog(): void {
+    if (this.#watchdogTimer !== null) {
+      this.#doClearInterval(this.#watchdogTimer)
+      this.#watchdogTimer = null
+    }
+  }
+
+  /** Called on EVERY frame drained — heartbeat and patch alike (traffic is traffic). */
+  #touchWatchdog(): void {
+    this.#lastFrameAt = this.#now()
   }
 }

@@ -9,11 +9,11 @@
  *   - version is included in the response
  */
 
-import { describe, expect, it, vi } from "vitest"
-import { Hono } from "hono"
 import type { SessionState } from "@drive-coding/core/session"
 import { createInitialSessionState } from "@drive-coding/core/session"
-import type { AgentSessionRegistry } from "../registry.js"
+import { Hono } from "hono"
+import { describe, expect, it, vi } from "vitest"
+import type { AgentSessionRegistry, HostResult } from "../registry.js"
 import type { ExtendedSessionHost } from "../session-host.js"
 import { registerStateRoute } from "./state.js"
 
@@ -45,10 +45,19 @@ function makeMockHost(state: SessionState): ExtendedSessionHost {
 }
 
 function makeMockRegistry(host?: ExtendedSessionHost): AgentSessionRegistry {
+  // slice host-result-reason C1: state.ts route uses getHost() only (not
+  // getOrCreateHost), so this value is unused at runtime — kept type-correct
+  // for hygiene (vi.fn() is untyped, so a wrong shape here would pass silently).
+  const result: HostResult = host
+    ? {
+        ok: true,
+        entry: { host, broadcaster: { subscribe: vi.fn(), unsubscribe: vi.fn(), close: vi.fn() } },
+      }
+    : { ok: false, reason: "not-found" }
   return {
     getHost: vi.fn().mockReturnValue(host),
     isHeld: vi.fn().mockReturnValue(Boolean(host)),
-    getOrCreateHost: vi.fn().mockResolvedValue(host ? { host, broadcaster: { subscribe: vi.fn(), unsubscribe: vi.fn() } } : undefined),
+    getOrCreateHost: vi.fn().mockResolvedValue(result),
     getCwd: vi.fn(),
     getEpoch: vi.fn().mockReturnValue(0),
     touchOwner: vi.fn(),

@@ -22,7 +22,7 @@ import { createInitialSessionState } from "@drive-coding/core/session"
 import { Hono } from "hono"
 import { describe, expect, it, vi } from "vitest"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
-import type { AgentSessionRegistry } from "../registry.js"
+import type { AgentSessionRegistry, HostResult } from "../registry.js"
 import type { ExtendedSessionHost } from "../session-host.js"
 import { registerRpcRoute } from "./rpc.js"
 
@@ -57,6 +57,7 @@ function makeMockBroadcaster(): PatchesBroadcaster {
   return {
     subscribe: vi.fn().mockReturnValue(new ReadableStream()),
     unsubscribe: vi.fn(),
+    close: vi.fn(),
   }
 }
 
@@ -64,11 +65,18 @@ function makeMockRegistry(
   host?: ExtendedSessionHost,
   broadcaster?: PatchesBroadcaster,
 ): AgentSessionRegistry {
-  const entry = host && broadcaster ? { host, broadcaster } : undefined
+  // slice host-result-reason C1: getOrCreateHost now resolves a discriminated
+  // HostResult, not HostEntry | undefined — vi.fn() is untyped (`any`), so
+  // getting this shape wrong would pass typecheck silently and fail at runtime
+  // (result.ok undefined ⇒ treated as failure even on the success path).
+  const result: HostResult =
+    host && broadcaster
+      ? { ok: true, entry: { host, broadcaster } }
+      : { ok: false, reason: "not-found" }
   return {
     getHost: vi.fn().mockReturnValue(host),
     isHeld: vi.fn().mockReturnValue(Boolean(host)),
-    getOrCreateHost: vi.fn().mockResolvedValue(entry),
+    getOrCreateHost: vi.fn().mockResolvedValue(result),
     getBroadcaster: vi.fn().mockReturnValue(broadcaster),
     unregisterHost: vi.fn(),
     notifySessionAttached: vi.fn().mockResolvedValue(undefined),
@@ -113,8 +121,8 @@ async function postRpc(app: Hono, agentId: string, body: unknown): Promise<MockR
 
 describe("POST /api/agents/:id/rpc", () => {
   describe("404 when connection not found", () => {
-    it("returns 404 if registry.getOrCreateHost returns undefined", async () => {
-      const registry = makeMockRegistry() // getOrCreateHost returns undefined
+    it("returns 404 if registry.getOrCreateHost resolves {ok:false, reason:'not-found'}", async () => {
+      const registry = makeMockRegistry() // getOrCreateHost → {ok:false, reason:"not-found"}
       const app = makeApp(registry)
 
       const res = await postRpc(app, "missing-agent", {
@@ -122,6 +130,43 @@ describe("POST /api/agents/:id/rpc", () => {
         params: { sessionId: "s1" },
       })
       expect(res.status).toBe(404)
+    })
+  })
+
+  // ─── slice host-result-reason C1: evict-timeout is TRANSIENT → 503, not 404 ───
+  describe("503 when eviction of a stuck WS owner times out", () => {
+    it("returns 503 (not 404) when getOrCreateHost resolves {ok:false, reason:'evict-timeout'}", async () => {
+      const registry = makeMockRegistry()
+      ;(registry.getOrCreateHost as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ok: false,
+        reason: "evict-timeout",
+      })
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "stuck-agent", {
+        method: "cancel",
+        params: { sessionId: "s1" },
+      })
+      expect(res.status).toBe(503)
+    })
+
+    // slice host-result-reason C1 §6 DoD 4 — mutation check: reverting the
+    // `result.reason === "evict-timeout" ? 503 : 404` mapping to a flat `404`
+    // turns this assertion red (documented, not committed).
+    it("still returns 404 for the three FINAL reasons (not-found/conn-dead/ws-owned) — unchanged", async () => {
+      const registry = makeMockRegistry()
+      for (const reason of ["not-found", "conn-dead", "ws-owned"] as const) {
+        ;(registry.getOrCreateHost as ReturnType<typeof vi.fn>).mockResolvedValue({
+          ok: false,
+          reason,
+        })
+        const app = makeApp(registry)
+        const res = await postRpc(app, "some-agent", {
+          method: "cancel",
+          params: { sessionId: "s1" },
+        })
+        expect(res.status).toBe(404)
+      }
     })
   })
 
