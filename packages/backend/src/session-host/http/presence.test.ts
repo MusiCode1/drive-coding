@@ -27,7 +27,9 @@ function makeMockRegistry(): AgentSessionRegistry {
   return {
     getHost: vi.fn().mockReturnValue(undefined),
     isHeld: vi.fn().mockReturnValue(false),
-    getOrCreateHost: vi.fn().mockResolvedValue(undefined),
+    // slice host-result-reason C1: presence.ts never calls getOrCreateHost —
+    // kept type-correct for hygiene (unused at runtime by this route).
+    getOrCreateHost: vi.fn().mockResolvedValue({ ok: false, reason: "not-found" }),
     getBroadcaster: vi.fn().mockReturnValue(undefined),
     unregisterHost: vi.fn(),
     notifySessionAttached: vi.fn().mockResolvedValue(undefined),

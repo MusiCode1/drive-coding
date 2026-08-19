@@ -14,7 +14,9 @@
  *   - loadSession   → 200 {sessionId, version} | 400 (bad params / no cwd) | 502
  *   - deleteSession → 200 {ok:true} | 200 {ok:false, unsupported:true} (-32601) | 502
  *
- * Returns 404 if connection not found (registry.getOrCreateHost returns undefined).
+ * Returns 404 if connection not found (registry.getOrCreateHost → {ok:false}),
+ * except reason:"evict-timeout" (a stuck WS tab, not a dead agent) → 503
+ * (slice host-result-reason C1).
  *
  * ⚠️ prompt/cancel are non-blocking (slice session-host-pending-surface C3-ד):
  * a synchronous launch failure (bad params, unknown method) stays an ordinary
@@ -89,10 +91,13 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
 
     // Look up or create host
     const result = await registry.getOrCreateHost(agentId)
-    if (!result) {
-      return c.json({ error: "Agent connection not found" }, 404)
+    if (!result.ok) {
+      // slice host-result-reason C1: evict-timeout is transient (a stuck WS tab,
+      // not a dead agent) → 503. The other three reasons are final → 404, unchanged.
+      const status = result.reason === "evict-timeout" ? 503 : 404
+      return c.json({ error: "Agent connection not found" }, status)
     }
-    const { host } = result
+    const { host } = result.entry
     // slice ownership-handoff C4b: touch lastSeenAt — rpc extends HTTP ownership TTL
     registry.touchOwner(agentId)
 

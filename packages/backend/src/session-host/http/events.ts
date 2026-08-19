@@ -12,7 +12,9 @@
  * Design:
  *   - register-then-snapshot: subscribe to broadcaster BEFORE reading state
  *     (prevents race where a patch arrives between snapshot read and subscribe)
- *   - 404 if connection not found (registry.getOrCreateHost returns undefined)
+ *   - 404 if connection not found / dead / WS-owned (registry.getOrCreateHost →
+ *     {ok:false, reason}), or 503 if the reason is "evict-timeout" (transient —
+ *     slice host-result-reason C1)
  *   - Client disconnect: broadcaster.unsubscribe(stream) on ReadableStream cancel
  *   - Epoch guard: if ?epoch= query param is present and LESS THAN current epoch,
  *     returns 409 immediately (BEFORE getOrCreateHost) so a stale reconnect can't
@@ -22,6 +24,7 @@
  *
  * ─── slice session-host-http C2 (TDD) ───
  * ─── slice ownership-handoff C3 ───
+ * ─── slice host-result-reason C1 (503 on evict-timeout) + C2 (keepalive timer seam) ───
  */
 
 import type { Hono } from "hono"
@@ -29,9 +32,29 @@ import { stream } from "hono/streaming"
 import type { AgentSessionRegistry } from "../registry.js"
 
 /**
+ * slice host-result-reason C2: the keepalive `setInterval` was hardcoded inside
+ * `stream()`'s callback, with no way to test that it fires (or that it's
+ * cleared) without waiting real wall-clock time. Same seam pattern as
+ * `SSEReader`'s `_fetch`/`_sleep`/`_now` (packages/frontend/src/lib/session/sse-reader.ts):
+ * default = the real global, so production is byte-for-byte unchanged.
+ */
+export type RegisterEventsRouteOptions = {
+  /** @internal For testing — override the keepalive timer's scheduler. */
+  _setInterval?: typeof setInterval
+  /** @internal For testing — override the keepalive timer's cancel. */
+  _clearInterval?: typeof clearInterval
+}
+
+/**
  * registerEventsRoute — registers GET /api/agents/:id/events on the Hono app.
  */
-export function registerEventsRoute(app: Hono, registry: AgentSessionRegistry): void {
+export function registerEventsRoute(
+  app: Hono,
+  registry: AgentSessionRegistry,
+  opts: RegisterEventsRouteOptions = {},
+): void {
+  const doSetInterval = opts._setInterval ?? setInterval
+  const doClearInterval = opts._clearInterval ?? clearInterval
   app.get("/api/agents/:id/events", async (c) => {
     const agentId = c.req.param("id")
 
@@ -49,10 +72,14 @@ export function registerEventsRoute(app: Hono, registry: AgentSessionRegistry): 
 
     // Look up or create host + broadcaster
     const result = await registry.getOrCreateHost(agentId)
-    if (!result) {
-      return c.json({ error: "Agent connection not found" }, 404)
+    if (!result.ok) {
+      // slice host-result-reason C1: three of the four failure reasons are final
+      // (not-found / conn-dead / ws-owned) → 404, unchanged. Only evict-timeout
+      // is transient (a stuck WS tab, not a dead agent) → 503.
+      const status = result.reason === "evict-timeout" ? 503 : 404
+      return c.json({ error: "Agent connection not found" }, status)
     }
-    const { host, broadcaster } = result
+    const { host, broadcaster } = result.entry
 
     // Current epoch at connection time — used in snapshot frame-zero id
     const currentEpoch = registry.getEpoch(agentId)
@@ -76,7 +103,7 @@ export function registerEventsRoute(app: Hono, registry: AgentSessionRegistry): 
       // /state intentionally does NOT touch: it's a read-only polling endpoint and
       // touching it would allow a dead frontend that only polls state to hold ownership.
       const KEEPALIVE_INTERVAL_MS = 30_000
-      const keepaliveTimer = setInterval(() => {
+      const keepaliveTimer = doSetInterval(() => {
         // SSE comment — keeps connection alive through proxies, no-op for clients
         void s.write(": keepalive\n\n")
       }, KEEPALIVE_INTERVAL_MS)
@@ -108,7 +135,7 @@ export function registerEventsRoute(app: Hono, registry: AgentSessionRegistry): 
       } catch {
         // Client disconnected or stream errored — clean up below
       } finally {
-        clearInterval(keepaliveTimer)
+        doClearInterval(keepaliveTimer)
         reader.releaseLock()
         broadcaster.unsubscribe(patchStream)
         void streamEndedByTakeover // used above — suppress unused warning
