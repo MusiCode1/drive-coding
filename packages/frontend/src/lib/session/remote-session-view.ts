@@ -27,6 +27,8 @@ import {
 } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
+import { registerView, unregisterView, type ViewDebugInfo } from "$lib/debug/session-registry"
+import { connWarn } from "$lib/util/conn-log"
 import type { SessionView } from "./session-view.js"
 import { SSEReader } from "./sse-reader.js"
 
@@ -92,6 +94,7 @@ export class RemoteSessionView implements SessionView {
   constructor(agentId: string, baseUrl: string, opts: RemoteSessionViewOptions = {}) {
     this.#agentId = agentId
     this.#baseUrl = baseUrl
+    registerView(this) // תצפית בלבד — ר' debug/session-registry.ts
     this.#headers = opts.headers ?? {}
     this.#onSseReconnected = opts.onSseReconnected
     this.#doFetch = opts._fetch ?? ((u, init) => globalThis.fetch(u, init))
@@ -117,6 +120,23 @@ export class RemoteSessionView implements SessionView {
 
   get state(): SessionState {
     return this.#state
+  }
+
+  /**
+   * תמונת-מצב שטוחה לניפוי. **קריאה-בלבד** — אף פעם לא רפרנס חי.
+   * `lastVersion` הוא הנתון שחסם את אבחון #41 במשך שעה: פרטי, ובלי שום
+   * מסלול להוציאו בבילד פריוויו.
+   */
+  debugInfo(): ViewDebugInfo {
+    return {
+      agentId: this.#agentId,
+      sessionId: this.#sessionId,
+      lastVersion: this.#lastVersion,
+      messages: this.#state.messages.length,
+      status: this.#state.status,
+      turnState: this.#state.turnState,
+      closed: this.#isClosed,
+    }
   }
 
   // ─── C3: water-mark getters (Speaker consumes these) ───
@@ -221,6 +241,7 @@ export class RemoteSessionView implements SessionView {
     // מנקה pending מקומית — הופך close() לאידמפוטנטי (קריאה חוזרת לא תשלח /reply שוב).
     this.#state = { ...this.#state, pending: { permission: null, elicitation: null } }
     this.#isClosed = true
+    unregisterView(this)
     this.#reader.close()
     try {
       this.#patchesCtrl?.close()
@@ -318,6 +339,17 @@ export class RemoteSessionView implements SessionView {
     const sessionChanged = snapshot.sessionId !== this.#sessionId
     if (!sessionChanged && snapshot.version <= this.#lastVersion) {
       // אותו session, כבר מעודכן — לא פספסנו כלום.
+      //
+      // 🔴 …אלא אם ה-host נבנה מחדש: אז ה-snapshot מגיע עם version **נמוך**
+      // (‏replay גס יותר מ-streaming — ר' bugs/41), וכל תוכן חדש נזרק **בשקט**.
+      // הזעקה אינה מתקנת — היא הופכת כשל-שקט לכשל-נראה.
+      if (snapshot.version < this.#lastVersion) {
+        connWarn("sse-version-regression", {
+          got: snapshot.version,
+          have: this.#lastVersion,
+          sessionId: snapshot.sessionId,
+        })
+      }
       return
     }
     const resetPatch: Patch = {
