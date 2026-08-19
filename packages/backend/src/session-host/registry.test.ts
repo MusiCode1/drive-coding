@@ -16,8 +16,8 @@ import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import type { PatchesBroadcaster } from "./patches-broadcaster.js"
-import { createAgentSessionRegistry } from "./registry.js"
 import type { HostEntry, HostResult } from "./registry.js"
+import { createAgentSessionRegistry } from "./registry.js"
 import type { ExtendedSessionHost } from "./session-host.js"
 
 // slice host-result-reason C1: getOrCreateHost now returns a discriminated
@@ -125,6 +125,7 @@ function makeMockBroadcaster(): PatchesBroadcaster {
   return {
     subscribe: vi.fn().mockReturnValue(new ReadableStream()),
     unsubscribe: vi.fn(),
+    close: vi.fn(),
   }
 }
 
@@ -611,6 +612,31 @@ describe("AgentSessionRegistry", () => {
       expect(registry.getBroadcaster("agent-1")).toBeUndefined()
     })
 
+    // slice sse-liveness Commit 3: the actual DoD — before this, unregisterHost
+    // only ever did map.delete(); nothing terminated the SSE stream for the two
+    // call sites (deleteAndKill, the crash handler) that never call
+    // host.dispose() first. Without a real broadcaster in the loop this test
+    // would pass "by construction" (a mocked close() always succeeds) — its
+    // value is asserting the CALL happened at all, which the pre-fix code
+    // never did.
+    it("closes the broadcaster (terminates the SSE stream) — this is the DoD, not just map removal", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      const broadcaster = makeMockBroadcaster()
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(makeMockHost()),
+        _createBroadcasterFn: vi.fn().mockReturnValue(broadcaster),
+      })
+
+      await registry.getOrCreateHost("agent-1")
+      expect(broadcaster.close).not.toHaveBeenCalled()
+
+      registry.unregisterHost("agent-1")
+      expect(broadcaster.close).toHaveBeenCalledTimes(1)
+    })
+
     it("is a no-op for an unknown agentId (no throw)", () => {
       const registry = createAgentSessionRegistry({
         connectionRegistry: makeMockConnectionRegistry(),
@@ -1036,7 +1062,9 @@ describe("AgentSessionRegistry — reservation + rollback (handoff-foundations C
     const connectionRegistry = makeMockConnectionRegistry(conn)
     const mockHost = makeMockHost(null)
     // newSession fails — simulates a real ACP session creation failure
-    ;(mockHost.newSession as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("newSession failed"))
+    ;(mockHost.newSession as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("newSession failed"),
+    )
 
     const disposeSpy = mockHost.dispose as ReturnType<typeof vi.fn>
 

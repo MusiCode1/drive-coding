@@ -19,16 +19,15 @@
  * מאפסת את השעון, וזה מכוון: זה מה שמונע התרעות-שווא על תור שחושב.
  *
  * טהור — שעון מוזרק, בלי טיימרים משלו. הקורא מזין `now` ומקבל החלטה.
+ *
+ * slice sse-liveness Commit 4ב: שני הספים למטה רוכזו ל-`liveness-thresholds.ts`
+ * (מקום-אחד לכל ספי-החיוּת). **מיוצאים-מחדש** מכאן, לא נמחקו — 9 assertions
+ * ב-`turn-watchdog.test.ts` מייבאים אותם דרך הקובץ הזה.
  */
 
-/** אחרי כמה זמן בלי פעילות בתור פעיל להציג חיווי. */
-export const STALL_NOTICE_MS = 90_000
+import { STALL_HARD_CAP_MS, STALL_NOTICE_MS } from "./liveness-thresholds.js"
 
-/**
- * חסם עליון על תור שלא נענה — רשת-ביטחון בלבד, שלא ידלוף לנצח.
- * גם כאן: החסם משחרר את **ההמתנה שלנו**, ואינו שולח `session/cancel` לסוכן.
- */
-export const STALL_HARD_CAP_MS = 600_000
+export { STALL_HARD_CAP_MS, STALL_NOTICE_MS }
 
 export type TurnActivityState = {
   /** מתי התור הנוכחי התחיל. null = אין תור פעיל. */

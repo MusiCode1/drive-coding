@@ -45,6 +45,12 @@ export type RemoteSessionViewOptions = {
   _fetch?: (url: string, init?: RequestInit) => Promise<Response>
   /** @internal לבדיקות — override setTimeout-based sleep (מועבר ל-SSEReader). */
   _sleep?: (ms: number) => Promise<void>
+  /**
+   * @internal לבדיקות — override השעון שמודד אורך-חיי-חיבור (מועבר ל-SSEReader).
+   * slice sse-liveness Commit 4: היה חסר — בלעדיו אי-אפשר לבדוק את הגלאי
+   * (וגם לא STABLE_CONNECTION_MS) מהשכבה הזו, רק ישירות על SSEReader.
+   */
+  _now?: () => number
 }
 
 /**
@@ -96,6 +102,7 @@ export class RemoteSessionView implements SessionView {
       headers: this.#headers,
       _fetch: opts._fetch,
       _sleep: opts._sleep,
+      _now: opts._now,
     })
     this.#reader.onReconnected = this.#handleReconnected.bind(this)
 
@@ -371,8 +378,10 @@ export class RemoteSessionView implements SessionView {
       | { sessions?: unknown; sessionCapabilities?: unknown }
       | undefined
     this.#sessionCapabilities =
-      (res?.sessionCapabilities as { delete?: unknown; [key: string]: unknown } | null | undefined) ??
-      null
+      (res?.sessionCapabilities as
+        | { delete?: unknown; [key: string]: unknown }
+        | null
+        | undefined) ?? null
     const sessions = res?.sessions
     const raw = Array.isArray(sessions) ? (sessions as unknown[]) : []
     return raw.map(normalizeSessionInfo)

@@ -69,9 +69,7 @@ export type HostEntry = {
  */
 export type HostFailureReason = "not-found" | "conn-dead" | "ws-owned" | "evict-timeout"
 
-export type HostResult =
-  | { ok: true; entry: HostEntry }
-  | { ok: false; reason: HostFailureReason }
+export type HostResult = { ok: true; entry: HostEntry } | { ok: false; reason: HostFailureReason }
 
 export type AgentSessionRegistry = {
   /**
@@ -377,7 +375,15 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
         // עם host מת + snapshot ישן, וה-FE "מתחבר" לסשן מת (פרומפטים נכשלים רק
         // בהמשך). מסירים את ה-entry ⇒ {ok:false, reason:"conn-dead"} → 404 → fail-fast ב-VM.
         if (!connectionRegistry.get(agentId)) {
-          map.delete(agentId) // = unregisterHost (מכאן אי אפשר לקרוא לו — בתוך ה-object literal)
+          // = unregisterHost body, minus the markDetached/owner check (מכאן אי
+          // אפשר לקרוא ל-unregisterHost — בתוך ה-object literal). slice
+          // sse-liveness Commit 3: this is a documented second abandonment site
+          // (brief §3, Commit 3, note 2+2ב) — "unify, not just document": it's
+          // the same broadcaster.close() call for the same reason (a dead
+          // connection must not leave a leaked SSE stream + keepalive timer
+          // behind), so it gets the fix too instead of drifting from it.
+          existing.broadcaster.close()
+          map.delete(agentId)
           return { ok: false, reason: "conn-dead" }
         }
         return { ok: true, entry: existing }
@@ -399,6 +405,14 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       return map.get(agentId)?.broadcaster
     },
 
+    // 🔴 slice sse-liveness Commit 3: MUST stay synchronous (`: void`, no
+    // `await`). This is called from ws-agent.ts in a zero-await window between
+    // `host.dispose()` and `markAttached` (the epoch bump that signals
+    // takeover) — Commit 3ב locks that exact ordering with a real broadcaster.
+    // If this became `async`, the caller would need to `await` it, opening an
+    // await gap right there and silently breaking `taken-over` (the SSE route
+    // would read the OLD epoch before it's bumped). `broadcaster.close()`
+    // closes every subscriber controller synchronously — no `await` needed.
     unregisterHost(agentId: string): void {
       // slice ownership-truth C2: שחרר בעלות — אך רק אם הבעלים הוא http.
       // אחרת שחרור host היה מוחק בעלות WS שאינה שלו (WS יכול להיות הבעלים אם
@@ -406,6 +420,15 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       if (connectionRegistry.getOwner(agentId)?.via === "http") {
         connectionRegistry.markDetached(agentId)
       }
+      // slice sse-liveness Commit 3: terminate the broadcaster BEFORE removing
+      // the entry — two of the three call sites (deleteAndKill, the crash
+      // handler in agent-orchestrator.ts) never call host.dispose() first, so
+      // without this nothing ever ended the SSE stream for them: the keepalive
+      // timer (registerEventsRoute's setInterval) leaked forever, and a client
+      // reconnecting mid-session got a dead host with a stale snapshot instead
+      // of a clean 404/taken-over.
+      const entry = map.get(agentId)
+      entry?.broadcaster.close()
       map.delete(agentId)
     },
 
