@@ -467,6 +467,83 @@ describe("SSEReader — reconnect", () => {
   })
 })
 
+// ── slice sse-liveness Commit 3ג: 404 is a final state mid-reconnect ───────────
+
+/**
+ * The reconnect loop's background `#runLoop` is fire-and-forget (`void
+ * this.#runLoop(...)` — connect() doesn't await it). With a mocked `_sleep`
+ * that resolves instantly, the loop's own microtask chain still needs a real
+ * tick to fully settle before assertions run.
+ */
+function flushAsync(): Promise<void> {
+  return new Promise((r) => setTimeout(r, 20))
+}
+
+describe("SSEReader — 404 mid-reconnect is final, 500/503 are not (Commit 3ג)", () => {
+  it("stops retrying after a 404 during the reconnect loop — no further fetch attempts", async () => {
+    const snapshot = makeSnapshot()
+
+    let call = 0
+    const mockFetch = vi.fn().mockImplementation(() => {
+      call++
+      if (call === 1) {
+        // Initial connection succeeds, stream ends immediately (no patches) —
+        // falls into the reconnect loop.
+        return Promise.resolve(
+          makeSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]),
+        )
+      }
+      // Every reconnect attempt is met with 404 — the agent is gone.
+      return Promise.resolve({ ok: false, status: 404 } as Response)
+    })
+
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+    await reader.connect()
+    await flushAsync()
+
+    // Exactly ONE reconnect attempt (call 2) — the 404 on it stops the loop
+    // permanently. Without the fix, this would keep growing (every 30s in
+    // production, or on every instant `noSleep()` tick here — a tight loop).
+    expect(call).toBe(2)
+
+    // A second flush proves the loop really stopped, not just paused.
+    await flushAsync()
+    expect(call).toBe(2)
+  })
+
+  it("keeps retrying through 503 (evict-timeout — transient) and 500 (generic) — reaches a patch on eventual success", async () => {
+    const snapshot = makeSnapshot()
+    const patch = makePatch(1)
+
+    let call = 0
+    const mockFetch = vi.fn().mockImplementation(() => {
+      call++
+      if (call === 1) {
+        return Promise.resolve(
+          makeSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]),
+        )
+      }
+      if (call === 2) return Promise.resolve({ ok: false, status: 503 } as Response)
+      if (call === 3) return Promise.resolve({ ok: false, status: 500 } as Response)
+      return Promise.resolve(
+        makeSSEResponse([
+          { event: "snapshot", data: JSON.stringify(snapshot) },
+          { event: "patch", data: JSON.stringify(patch) },
+        ]),
+      )
+    })
+
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+    const { patches } = await reader.connect()
+
+    const results = await readNPatches(patches, 1)
+    expect(results[0]).toMatchObject({ version: 1 })
+    // initial + 503 + 500 + success — proves it kept retrying through BOTH
+    // transient statuses instead of stopping like it does on 404.
+    expect(call).toBe(4)
+  })
+})
+
 // ── slice ownership-handoff C3: taken-over event handling ──────────────────
 
 describe("SSEReader — taken-over event (ownership-handoff C3)", () => {

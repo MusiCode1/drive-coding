@@ -203,7 +203,16 @@ export class SSEReader {
       signal: this.#abortController.signal,
     })
     if (!res.ok) {
-      throw new Error(`SSEReader: fetch failed with status ${res.status}`)
+      // slice sse-liveness Commit 3ג: carries `status` as a real field (not just
+      // baked into the message string) so #runLoop's catch can branch on it —
+      // 404 is a FINAL state (the agent is gone), 500/503 are not. The message
+      // text is left unchanged (still contains "404" etc.) — an existing test
+      // (`rejects.toThrow("404")` on the initial connection) asserts on it.
+      const err = new Error(`SSEReader: fetch failed with status ${res.status}`) as Error & {
+        status: number
+      }
+      err.status = res.status
+      throw err
     }
     if (!res.body) {
       throw new Error("SSEReader: response has no body")
@@ -274,7 +283,25 @@ export class SSEReader {
         const lastedMs = this.#now() - openedAt
         if (lastedMs >= STABLE_CONNECTION_MS) delay = 1000
         connWarn("sse-lost", { url: this.#url, lastedMs })
-      } catch {
+      } catch (err) {
+        // slice sse-liveness Commit 3ג: 404 mid-reconnect is a FINAL state, not
+        // a transient failure. Three of the four backend reasons for 404 ARE
+        // final (connection not found / dead / ws-owned-without-eviction); the
+        // fourth (evict-timeout — a stuck WS tab) is 503, which falls through
+        // to the retry branch below like any other transient failure. Without
+        // this, a deleted agent's tab hammers GET /events every 30s forever
+        // (backoff caps at 30s and never resets — every attempt fails
+        // identically) — see brief §3, Commit 3ג. Only the STATUS matters
+        // here, never the message text (unlike the guard in the initial
+        // #connectOnce() rejection, this branch never surfaces to a test via
+        // `.toThrow()`).
+        const status =
+          err instanceof Error ? (err as Error & { status?: number }).status : undefined
+        if (status === 404) {
+          this.#closed = true
+          connWarn("sse-gone", { url: this.#url })
+          break
+        }
         // Connection failed — continue with next retry (delay already doubled)
         connWarn("sse-retry", { url: this.#url, nextInMs: delay })
       }
