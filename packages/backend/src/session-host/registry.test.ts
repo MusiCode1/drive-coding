@@ -19,7 +19,7 @@ import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { registerRpcRoute } from "./http/rpc.js"
 import type { PatchesBroadcaster } from "./patches-broadcaster.js"
 import type { HostEntry, HostResult } from "./registry.js"
-import { createAgentSessionRegistry } from "./registry.js"
+import { createAgentSessionRegistry, resolveHttpOwnerTtlMs } from "./registry.js"
 import type { ExtendedSessionHost } from "./session-host.js"
 
 // slice host-result-reason C1: getOrCreateHost now returns a discriminated
@@ -1353,5 +1353,95 @@ describe("AgentSessionRegistry — reservation + rollback (handoff-foundations C
     expect(mockHost.newSession).toHaveBeenCalledTimes(1)
     expect(r1).toBe(r2)
     expect(unwrap(r1).host).toBe(mockHost)
+  })
+})
+
+// ─── slice ttl-ownership Commit 2: HTTP_OWNER_TTL_MS from env ────────────────
+
+describe("resolveHttpOwnerTtlMs", () => {
+  const cases: Array<[string | undefined, number]> = [
+    [undefined, 600_000],
+    ["", 600_000],
+    ["   ", 600_000],
+    ["abc", 600_000],
+    ["0", 600_000],
+    ["-5", 600_000],
+    ["Infinity", 600_000],
+    ["5000", 5000],
+    ["1.5e4", 15000],
+  ]
+
+  for (const [raw, expected] of cases) {
+    it(`resolveHttpOwnerTtlMs(${JSON.stringify(raw)}) → ${expected}`, () => {
+      expect(resolveHttpOwnerTtlMs(raw)).toBe(expected)
+    })
+  }
+
+  // 🔴 default path: NO _httpOwnerTtlMs injected — the sweep must honour
+  // process.env.HTTP_OWNER_TTL_MS directly. Run-1's lesson (`Illegal
+  // invocation`) was a suite of green tests that all injected a mock and
+  // never once ran the default path.
+  it("🔴 default path: with no _httpOwnerTtlMs, the sweep honours HTTP_OWNER_TTL_MS from the env", async () => {
+    vi.useFakeTimers()
+    const prev = process.env.HTTP_OWNER_TTL_MS
+    process.env.HTTP_OWNER_TTL_MS = "50"
+    try {
+      const conn = makeMockConnection()
+      const touchState = makeTouchState(Date.now() - 10_000) // already stale
+      const connectionRegistry = makeMockConnectionRegistry(conn, false, touchState, {
+        via: "http",
+        since: Date.now(),
+      })
+      const mockHost = makeMockHost()
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(mockHost),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+        _httpSweepMs: 20, // only the TTL comes from env — sweep interval still injected
+      })
+
+      await registry.getOrCreateHost("agent-1")
+      await vi.advanceTimersByTimeAsync(300)
+
+      expect(connectionRegistry.markDetached).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+      if (prev === undefined) delete process.env.HTTP_OWNER_TTL_MS
+      else process.env.HTTP_OWNER_TTL_MS = prev
+    }
+  })
+
+  // 🔴 the guard against "an accidentally tiny default" — a mutation of
+  // DEFAULT_HTTP_OWNER_TTL_MS to 600 MUST fail this.
+  it("🔴 default path: with the env unset, the default is 600_000 (a 100s-stale owner is NOT released)", async () => {
+    vi.useFakeTimers()
+    const prev = process.env.HTTP_OWNER_TTL_MS
+    delete process.env.HTTP_OWNER_TTL_MS
+    try {
+      const conn = makeMockConnection()
+      const touchState = makeTouchState(Date.now() - 100_000)
+      const connectionRegistry = makeMockConnectionRegistry(conn, false, touchState, {
+        via: "http",
+        since: Date.now(),
+      })
+      const mockHost = makeMockHost()
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(mockHost),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+        _httpSweepMs: 20,
+      })
+
+      await registry.getOrCreateHost("agent-1")
+      await vi.advanceTimersByTimeAsync(300)
+
+      expect(connectionRegistry.markDetached).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+      if (prev === undefined) delete process.env.HTTP_OWNER_TTL_MS
+      else process.env.HTTP_OWNER_TTL_MS = prev
+    }
   })
 })

@@ -180,7 +180,8 @@ type AgentSessionRegistryDeps = {
    */
   getAcpSessionId?: (agentId: string) => string | undefined
   /**
-   * slice ownership-handoff C4b: HTTP ownership TTL (ms). Default: 90_000ms.
+   * slice ownership-handoff C4b: HTTP ownership TTL (ms).
+   * Default: `HTTP_OWNER_TTL_MS` env, else 600_000ms (slice ttl-ownership).
    * Exposed for tests to set a short TTL without real delays.
    */
   _httpOwnerTtlMs?: number
@@ -189,6 +190,28 @@ type AgentSessionRegistryDeps = {
    * Exposed for tests to control sweep timing.
    */
   _httpSweepMs?: number
+}
+
+/** slice ttl-ownership: the default HTTP ownership TTL (10 minutes). */
+export const DEFAULT_HTTP_OWNER_TTL_MS = 600_000
+
+/**
+ * resolveHttpOwnerTtlMs — parses HTTP_OWNER_TTL_MS.
+ *
+ * 🔴 Pure + EXPORTED on purpose: the default path must be executable by a test
+ * without any injected seam. Run-1's lesson (`Illegal invocation`) was a suite
+ * of 30 green tests that all injected a mock and never once ran the default.
+ *
+ * Accepts only a finite, strictly-positive number. Anything else — missing,
+ * blank, NaN, 0, negative, Infinity — falls back to the default.
+ */
+export function resolveHttpOwnerTtlMs(raw: string | undefined): number {
+  if (raw === undefined) return DEFAULT_HTTP_OWNER_TTL_MS
+  const trimmed = raw.trim()
+  if (trimmed === "") return DEFAULT_HTTP_OWNER_TTL_MS
+  const n = Number(trimmed)
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_HTTP_OWNER_TTL_MS
+  return n
 }
 
 export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): AgentSessionRegistry {
@@ -213,7 +236,8 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
   // never be evicted here (WS has its own socket sweep in ws-agent.ts, a different
   // role). Detecting "WS" indirectly via `getLastSeenAt() === null` no longer
   // works now that touchOwner is transport-agnostic (a WS owner also has a stamp).
-  const HTTP_OWNER_TTL_MS = deps._httpOwnerTtlMs ?? 600_000 // 10 min (slice liveness C1 §3.1.1)
+  const HTTP_OWNER_TTL_MS =
+    deps._httpOwnerTtlMs ?? resolveHttpOwnerTtlMs(process.env.HTTP_OWNER_TTL_MS)
   const HTTP_SWEEP_MS = deps._httpSweepMs ?? 30_000 // sweep every 30s
   const httpSweep = setInterval(() => {
     const now = Date.now()
