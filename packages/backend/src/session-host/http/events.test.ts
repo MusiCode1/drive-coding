@@ -23,6 +23,7 @@ import { type } from "arktype"
 import { Hono } from "hono"
 import { describe, expect, it, vi } from "vitest"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
+import { createPatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry, HostResult } from "../registry.js"
 import type { ExtendedSessionHost } from "../session-host.js"
 import { type RegisterEventsRouteOptions, registerEventsRoute } from "./events.js"
@@ -420,18 +421,31 @@ describe("GET /api/agents/:id/events — ownership-handoff C3", () => {
       const broadcaster = makeMockBroadcaster(patchStream)
 
       const registry = makeMockRegistry({ host, broadcaster })
-      // epoch starts at 1, advances to 2 when broadcaster closes (simulating takeover)
-      let callCount = 0
-      ;(registry.getEpoch as ReturnType<typeof vi.fn>).mockImplementation(() => {
-        callCount++
-        return callCount === 1 ? 1 : 2 // first call (snapshot time) = 1, second (after close) = 2
-      })
+      // 🔴 sse-liveness r7: this used to be a callCount-based mock ("first call
+      // =1, second call =2") that IMPLICITLY assumed the epoch had already
+      // advanced by the time the route re-reads it — a test that cannot fail
+      // even if that ordering assumption breaks in production (see Commit 3ב
+      // below, which locks the REAL ordering with a real broadcaster instead
+      // of faking it here). This test is scoped narrower on purpose: it only
+      // exercises events.ts's OWN branching logic — "IF the epoch read after
+      // `done` is higher than the epoch read at connection time, THEN emit
+      // taken-over with the new epoch" — via a mutable flag driven explicitly
+      // by the test, not by an opaque call count.
+      let epochAdvanced = false
+      ;(registry.getEpoch as ReturnType<typeof vi.fn>).mockImplementation(() =>
+        epochAdvanced ? 2 : 1,
+      )
       const app = makeApp(registry)
 
       const res = await app.request("/api/agents/agent-1/events")
 
-      // Close the broadcaster after a tick (simulates host.dispose())
-      setTimeout(() => ctrl.close(), 10)
+      // Close the broadcaster after a tick (simulates host.dispose()) — epoch
+      // is bumped in the SAME tick, mirroring the real caller (ws-agent.ts:
+      // unregisterHost then markAttached, no await between them).
+      setTimeout(() => {
+        epochAdvanced = true
+        ctrl.close()
+      }, 10)
 
       const events = await readSseEvents(res, 2, 300)
       const takenOver = events.find((e) => e.includes("event: taken-over"))
@@ -464,6 +478,107 @@ describe("GET /api/agents/:id/events — ownership-handoff C3", () => {
       const takenOver = events.find((e) => e.includes("event: taken-over"))
       expect(takenOver).toBeUndefined()
     })
+  })
+})
+
+// ─── slice sse-liveness Commit 3ב: taken-over ordering — real broadcaster ─────
+// cascade, no epoch-order mock.
+//
+// "לא תיקון — נעילה" (brief §3, Commit 3ב): `taken-over` already works TODAY,
+// via a real but UNDOCUMENTED microtask race — `unregisterHost` (called with
+// zero `await`s before the epoch bump, ws-agent.ts) synchronously triggers
+// `patches-broadcaster.ts`'s real `drain()` cascade once the source ends, and
+// that cascade happens to resolve BEFORE the epoch bump's own continuation
+// gets a turn. The mock above (`makeMockBroadcaster`) can never prove this —
+// it fakes the broadcaster entirely. These two tests use a REAL
+// `createPatchesBroadcaster` over a controllable source stream, and drive
+// `getEpoch` from a plain mutable flag (not a call-counting mock) so nothing
+// here can pass "by construction" — only by the real ordering actually holding.
+describe("Commit 3ב (sse-liveness): taken-over ordering — real broadcaster, no order-mock", () => {
+  /**
+   * A host whose `dispose()` mimics the ONE thing session-host.ts's real
+   * dispose() does that matters here — closing `patches`' controller (the
+   * mechanism that lets `PatchesBroadcaster`'s `drain()` loop see `done` and
+   * cascade to closing every subscriber). Standing up a full ACP handshake
+   * (`createSessionHostFromConnection`) would exercise the same cascade with
+   * none of the ordering properties different — irrelevant to what's being
+   * locked here.
+   */
+  function makeDisposableHost(state: SessionState): ExtendedSessionHost {
+    let ctrl!: ReadableStreamDefaultController<Patch>
+    const patches = new ReadableStream<Patch>({
+      start(c) {
+        ctrl = c
+      },
+    })
+    return {
+      ...makeMockHost(state),
+      patches,
+      dispose: vi.fn(async () => {
+        try {
+          ctrl.close()
+        } catch {
+          // already closed
+        }
+      }),
+    }
+  }
+
+  it("real dispose() (awaited) → unregisterHost → SYNCHRONOUS epoch bump (no await between the last two) — taken-over arrives with the new epoch", async () => {
+    const state = makeMockState()
+    const host = makeDisposableHost(state)
+    const broadcaster = createPatchesBroadcaster(host.patches)
+
+    let epoch = 1
+    const registry = makeMockRegistry({ host, broadcaster })
+    ;(registry.getEpoch as ReturnType<typeof vi.fn>).mockImplementation(() => epoch)
+
+    const app = makeApp(registry)
+    const res = await app.request("/api/agents/agent-1/events")
+    const sse = makeRawSseReader(res)
+    await sse.readUntil((buf) => buf.includes("event: snapshot"))
+    // give the route's subscriber loop a tick to actually reach its pending
+    // reader.read() (same pattern as the mocked taken-over tests above).
+    await new Promise((r) => setTimeout(r, 10))
+
+    // ── the real ws-agent.ts sequence being locked: dispose (already awaited
+    // by the caller) → unregisterHost → epoch bump, ZERO awaits between the
+    // last two. ──
+    await host.dispose()
+    registry.unregisterHost("agent-1")
+    epoch = 2
+
+    const buffer = await sse.readUntil((buf) => buf.includes("event: taken-over"), 300)
+    expect(buffer).toContain("event: taken-over")
+
+    sse.cancel()
+  })
+
+  it("🔴 מוטציה: await מלאכותי בין unregisterHost לעדכון ה-epoch שובר את הסדר — taken-over לא נשלח", async () => {
+    const state = makeMockState()
+    const host = makeDisposableHost(state)
+    const broadcaster = createPatchesBroadcaster(host.patches)
+
+    let epoch = 1
+    const registry = makeMockRegistry({ host, broadcaster })
+    ;(registry.getEpoch as ReturnType<typeof vi.fn>).mockImplementation(() => epoch)
+
+    const app = makeApp(registry)
+    const res = await app.request("/api/agents/agent-1/events")
+    const sse = makeRawSseReader(res)
+    await sse.readUntil((buf) => buf.includes("event: snapshot"))
+    await new Promise((r) => setTimeout(r, 10))
+
+    await host.dispose()
+    registry.unregisterHost("agent-1")
+    // 🔴 the mutation — an artificial await where the real code has none.
+    await new Promise((r) => setTimeout(r, 0))
+    epoch = 2
+
+    const buffer = await sse.readUntil((buf) => buf.includes("event: taken-over"), 150)
+    expect(buffer).not.toContain("event: taken-over")
+
+    sse.cancel()
   })
 })
 
