@@ -64,6 +64,78 @@ function makeSSEResponse(frames: Array<{ event: string; data: string }>): Respon
   } as unknown as Response
 }
 
+/**
+ * makeAbortableSSEBody — like `makeSSEBody`, but the returned stream actually
+ * honors `init.signal`: `makeSSEBody`/`makeSSEResponse` above IGNORE it
+ * entirely — `sse-reader.test.ts` here and `remote-session-view.test.ts`'s
+ * `sseBody(frames, {keepOpen})` fixture (which THIS one is lifted/extended
+ * from — same "don't auto-close the stream" technique) — so `close()`'s
+ * `AbortController.abort()` never actually unblocks a pending
+ * `reader.read()` inside `readSSEFrames`. Real fetch/undici behavior on an
+ * aborted request is to REJECT the pending body read with an AbortError —
+ * mimicked here via `controller.error(...)`.
+ *
+ * slice sse-liveness Commit 4a.
+ */
+function makeAbortableSSEBody(
+  frames: Array<{ event: string; data: string }>,
+  opts: { keepOpen?: boolean } = {},
+  signal?: AbortSignal,
+): ReadableStream<Uint8Array> {
+  const text = frames.map((f) => `event: ${f.event}\ndata: ${f.data}\n\n`).join("")
+  let ctrl!: ReadableStreamDefaultController<Uint8Array>
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) {
+      ctrl = c
+      ctrl.enqueue(encoder.encode(text))
+      if (!opts.keepOpen) ctrl.close()
+    },
+  })
+  signal?.addEventListener("abort", () => {
+    try {
+      ctrl.error(new DOMException("The operation was aborted.", "AbortError"))
+    } catch {
+      // already closed/errored
+    }
+  })
+  return stream
+}
+
+function makeAbortableSSEResponse(
+  frames: Array<{ event: string; data: string }>,
+  opts: { keepOpen?: boolean } = {},
+  signal?: AbortSignal,
+): Response {
+  return {
+    ok: true,
+    status: 200,
+    body: makeAbortableSSEBody(frames, opts, signal),
+  } as unknown as Response
+}
+
+/**
+ * makeControlledClock — a genuinely externally-advanced fake clock: `now()`
+ * returns whatever `advance()` last set it to, and reading it never itself
+ * moves time forward (unlike the old `advancingNow` counter below, which adds
+ * a fixed step on EVERY call — including calls that don't represent real
+ * elapsed time). New in Commit 4a for Commit 4's watchdog tests, which will
+ * call `#now()` far more often than the two call-sites (`openedAt`/`lastedMs`)
+ * that exist today — a per-read auto-incrementing fake would corrupt THEIR
+ * elapsed-time measurements. See the "resets delay to 1s" test below for why
+ * the OLD counter-based `advancingNow` is intentionally left as-is (r7: "זו
+ * היגיינה, לא חסם" — hygiene, not a blocker — rewriting it risks the exact
+ * live regression it locks: `STABLE_CONNECTION_MS`, 2026-08-16).
+ */
+function makeControlledClock(start = 0): { now: () => number; advance: (ms: number) => void } {
+  let t = start
+  return {
+    now: () => t,
+    advance: (ms: number) => {
+      t += ms
+    },
+  }
+}
+
 function makeSnapshot(sessionId = "sess-1"): SessionState {
   return createInitialSessionState({ sessionId })
 }
@@ -89,6 +161,84 @@ async function readNPatches(patches: ReadableStream<Patch>, n: number): Promise<
 }
 
 const noSleep = (): Promise<void> => Promise.resolve()
+
+// ── slice sse-liveness Commit 4a: abortable SSE body fixture ───────────────────
+// Fixture-level tests (not through SSEReader) — proves makeAbortableSSEBody
+// actually unblocks a pending read on abort, the exact gap that made Commit
+// 4's DoD ("a silent stream ⇒ abort ⇒ #connectOnce is called again")
+// unwritable: makeSSEBody/makeSSEResponse ignore init.signal entirely.
+
+describe("test fixture — makeAbortableSSEBody (Commit 4a)", () => {
+  it("aborting the signal rejects a pending read on a keepOpen body", async () => {
+    const ac = new AbortController()
+    const body = makeAbortableSSEBody(
+      [{ event: "snapshot", data: "{}" }],
+      { keepOpen: true },
+      ac.signal,
+    )
+    const reader = body.getReader()
+    await reader.read() // drains the one enqueued chunk — the next read() is pending
+
+    const pending = reader.read()
+    ac.abort()
+
+    await expect(pending).rejects.toThrow("aborted")
+  })
+
+  it("control case: keepOpen without a signal never resolves on its own — shows why the fix matters", async () => {
+    const body = makeAbortableSSEBody([{ event: "snapshot", data: "{}" }], { keepOpen: true })
+    const reader = body.getReader()
+    await reader.read()
+
+    const outcome = await Promise.race([
+      reader.read().then(() => "resolved" as const),
+      new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 50)),
+    ])
+    expect(outcome).toBe("timeout")
+  })
+
+  it("wired end-to-end through SSEReader (makeAbortableSSEResponse + real _fetch signal): close() on an otherwise-silent, still-open stream does not hang the background loop", async () => {
+    const snapshot = makeSnapshot()
+    const mockFetch = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      return Promise.resolve(
+        makeAbortableSSEResponse(
+          [{ event: "snapshot", data: JSON.stringify(snapshot) }],
+          { keepOpen: true }, // stays open — nothing but abort would ever end #drainFrames
+          init?.signal,
+        ),
+      )
+    })
+
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+    await reader.connect()
+
+    // Without the fixture honoring `signal`, this would hang the background
+    // #drainFrames forever (a `keepOpen` body with no abort-awareness never
+    // ends on its own) — the test itself would then time out.
+    reader.close()
+    await new Promise((r) => setTimeout(r, 20))
+    // Reaching this line at all (not timing out) is the proof — close()'s
+    // abort actually unblocked the pending read.
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("test fixture — makeControlledClock (Commit 4a)", () => {
+  it("now() returns the last value set by advance() — reading it never itself advances time", () => {
+    const clock = makeControlledClock()
+    expect(clock.now()).toBe(0)
+    expect(clock.now()).toBe(0) // a second read — unlike the old advancingNow — does NOT move time
+    clock.advance(5_000)
+    expect(clock.now()).toBe(5_000)
+    clock.advance(2_000)
+    expect(clock.now()).toBe(7_000)
+  })
+
+  it("starts from a custom base when given one", () => {
+    const clock = makeControlledClock(1_000)
+    expect(clock.now()).toBe(1_000)
+  })
+})
 
 // ── snapshot ──────────────────────────────────────────────────────────────────
 
@@ -400,6 +550,20 @@ describe("SSEReader — reconnect", () => {
     })
 
     // שעון שמתקדם 15 שניות בכל קריאה ⇒ כל חיבור "שרד" מעל הסף.
+    //
+    // 🟡 slice sse-liveness Commit 4a — left as a per-call counter on purpose
+    // (NOT replaced with `makeControlledClock`, added above for Commit 4's own
+    // tests). r7's own re-check found the risk overstated ("זו היגיינה, לא
+    // חסם" — no existing assertion here can flip from extra #now() calls,
+    // since the predicate is `lastedMs >= STABLE_CONNECTION_MS` and more calls
+    // only INCREASE lastedMs). What blocks a safe rewrite: `openedAt`/`lastedMs`
+    // are read back-to-back with no externally-observable hook between them (no
+    // `_sleep` call happens inside a no-patches `#drainFrames`) — an
+    // externally-advanced clock can't be made to move between those two exact
+    // reads without one, so a literal rewrite would make `lastedMs` collapse to
+    // 0 and silently invert this test's outcome for call 3 (the exact
+    // 2026-08-16 flapping-connection regression this test locks). Not worth
+    // that risk for a change r7 itself downgraded to non-blocking.
     const advancingNow = (() => {
       let t = 0
       return () => {
