@@ -18,6 +18,7 @@
 import type { Patch, SessionState } from "@drive-coding/core/session"
 import { createInitialSessionState } from "@drive-coding/core/session"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { SSE_WATCHDOG_THRESHOLD_MS } from "$lib/engines/liveness-thresholds"
 import { SSEReader, type SSEReaderOptions } from "./sse-reader.js"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -133,6 +134,83 @@ function makeControlledClock(start = 0): { now: () => number; advance: (ms: numb
     advance: (ms: number) => {
       t += ms
     },
+  }
+}
+
+/**
+ * makeControllableSSEBody — a raw byte stream the TEST can push individual
+ * SSE frames into incrementally (unlike makeSSEBody/makeAbortableSSEBody,
+ * which enqueue everything upfront in `start()`). Needed for the Commit 4
+ * watchdog tests, which need to simulate heartbeats arriving OVER TIME on an
+ * already-open connection — honors `signal` the same way makeAbortableSSEBody
+ * does (AbortError on the pending read).
+ */
+function makeControllableSSEBody(signal?: AbortSignal): {
+  body: ReadableStream<Uint8Array>
+  push: (frame: { event: string; data: string }) => void
+  close: () => void
+} {
+  let ctrl!: ReadableStreamDefaultController<Uint8Array>
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      ctrl = c
+    },
+  })
+  signal?.addEventListener("abort", () => {
+    try {
+      ctrl.error(new DOMException("The operation was aborted.", "AbortError"))
+    } catch {
+      // already closed/errored
+    }
+  })
+  return {
+    body,
+    push: (frame) => {
+      try {
+        ctrl.enqueue(encoder.encode(`event: ${frame.event}\ndata: ${frame.data}\n\n`))
+      } catch {
+        // already closed/errored
+      }
+    },
+    close: () => {
+      try {
+        ctrl.close()
+      } catch {
+        // already closed
+      }
+    },
+  }
+}
+
+/**
+ * makeMockInterval — captures every `setInterval`/`clearInterval` call so
+ * tests can manually fire the watchdog's tick (`tick()`) and assert on how
+ * many timers are currently active (`activeCount()`) — the "zero timers
+ * after close()/taken-over" DoD.
+ */
+function makeMockInterval(): {
+  _setInterval: typeof setInterval
+  _clearInterval: typeof clearInterval
+  tick: () => void
+  activeCount: () => number
+} {
+  let nextId = 0
+  const active = new Set<number>()
+  let latestCallback: (() => void) | undefined
+  const _setInterval = ((fn: () => void) => {
+    nextId++
+    active.add(nextId)
+    latestCallback = fn
+    return nextId as unknown as ReturnType<typeof setInterval>
+  }) as unknown as typeof setInterval
+  const _clearInterval = ((id: unknown) => {
+    active.delete(id as number)
+  }) as unknown as typeof clearInterval
+  return {
+    _setInterval,
+    _clearInterval,
+    tick: () => latestCallback?.(),
+    activeCount: () => active.size,
   }
 }
 
@@ -771,5 +849,201 @@ describe("SSEReader — taken-over event (ownership-handoff C3)", () => {
     r.releaseLock()
 
     expect(onTakenOver).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ── slice sse-liveness Commit 4: the silence-watchdog ───────────────────────
+
+describe("SSEReader — silence-watchdog (Commit 4)", () => {
+  it("a stream with ONLY heartbeats (stream-alive frames) stays alive past the threshold — the watchdog never fires", async () => {
+    const snapshot = makeSnapshot()
+    const controllable = makeControllableSSEBody()
+    const mockFetch = vi.fn().mockImplementation(() => {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        body: controllable.body,
+      } as unknown as Response)
+    })
+
+    const clock = makeControlledClock()
+    const interval = makeMockInterval()
+    const reader = newReader("/api/events", {
+      _fetch: mockFetch,
+      _sleep: noSleep,
+      _now: clock.now,
+      _setInterval: interval._setInterval,
+      _clearInterval: interval._clearInterval,
+    })
+
+    controllable.push({ event: "snapshot", data: JSON.stringify(snapshot) })
+    await reader.connect()
+
+    // 3 heartbeats, each arriving just under the threshold — each one must
+    // reset the watchdog so the NEXT tick (at the full threshold) never fires.
+    for (let i = 0; i < 3; i++) {
+      clock.advance(SSE_WATCHDOG_THRESHOLD_MS - 1)
+      controllable.push({
+        event: "stream-alive",
+        data: JSON.stringify({ jsonrpc: "2.0", method: "_drive/streamAlive", params: {} }),
+      })
+      await new Promise((r) => setTimeout(r, 0)) // let #drainFrames actually process the pushed frame
+      interval.tick()
+    }
+
+    expect(mockFetch).toHaveBeenCalledTimes(1) // never reconnected — the watchdog never aborted
+  })
+
+  it("🔴 a completely silent stream ⇒ watchdog aborts ⇒ #connectOnce is called again — this is the proof the reconnect thread is pulled", async () => {
+    const snapshot = makeSnapshot()
+    let call = 0
+    const mockFetch = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      call++
+      return Promise.resolve(
+        makeAbortableSSEResponse(
+          [{ event: "snapshot", data: JSON.stringify(snapshot) }],
+          { keepOpen: true }, // stays open, sends nothing more — total silence
+          init?.signal,
+        ),
+      )
+    })
+
+    const clock = makeControlledClock()
+    const interval = makeMockInterval()
+    const reader = newReader("/api/events", {
+      _fetch: mockFetch,
+      _sleep: noSleep,
+      _now: clock.now,
+      _setInterval: interval._setInterval,
+      _clearInterval: interval._clearInterval,
+    })
+
+    await reader.connect()
+    expect(call).toBe(1)
+
+    clock.advance(SSE_WATCHDOG_THRESHOLD_MS) // silence for exactly the threshold
+    interval.tick() // manually fire the watchdog's periodic check
+
+    // Let the abort's rejection propagate through #drainFrames's catch-all and
+    // into #runLoop's reconnect branch (real macrotask/microtask settle).
+    await new Promise((r) => setTimeout(r, 20))
+
+    expect(call).toBe(2) // #connectOnce was called again
+  })
+
+  it("backoff פעיל (בין ניסיונות, בלי חיבור פתוח) ⇒ הגלאי אינו רץ — אפס טיימרים פעילים", async () => {
+    const snapshot = makeSnapshot()
+    let call = 0
+    const mockFetch = vi.fn().mockImplementation(() => {
+      call++
+      if (call === 1) {
+        // Initial: snapshot only, stream ends immediately — falls into backoff.
+        return Promise.resolve(
+          makeSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]),
+        )
+      }
+      // Never resolves again in this test — proves nothing but the reconnect
+      // loop's own sleep/retry drives further attempts (no stray watchdog).
+      return new Promise<Response>(() => {})
+    })
+
+    const interval = makeMockInterval()
+    const reader = newReader("/api/events", {
+      _fetch: mockFetch,
+      _sleep: noSleep,
+      _setInterval: interval._setInterval,
+      _clearInterval: interval._clearInterval,
+    })
+
+    await reader.connect()
+    // Let #drainFrames end (initial connection had no patches) and
+    // #stopWatchdog run, before the loop settles into its backoff sleep.
+    await new Promise((r) => setTimeout(r, 20))
+
+    expect(interval.activeCount()).toBe(0)
+  })
+
+  it("close() leaves zero active watchdog timers", async () => {
+    const snapshot = makeSnapshot()
+    const mockFetch = vi.fn().mockResolvedValue(
+      makeAbortableSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }], {
+        keepOpen: true,
+      }),
+    )
+    const interval = makeMockInterval()
+    const reader = newReader("/api/events", {
+      _fetch: mockFetch,
+      _sleep: noSleep,
+      _setInterval: interval._setInterval,
+      _clearInterval: interval._clearInterval,
+    })
+    await reader.connect()
+    expect(interval.activeCount()).toBe(1) // watchdog running while the connection is open
+
+    reader.close()
+    expect(interval.activeCount()).toBe(0)
+  })
+
+  it("taken-over leaves zero active watchdog timers", async () => {
+    const snapshot = makeSnapshot()
+    const mockFetch = vi.fn().mockResolvedValue(
+      makeSSEResponse([
+        { event: "snapshot", data: JSON.stringify(snapshot) },
+        { event: "taken-over", data: "{}" },
+      ]),
+    )
+    const interval = makeMockInterval()
+    const reader = newReader("/api/events", {
+      _fetch: mockFetch,
+      _sleep: noSleep,
+      _setInterval: interval._setInterval,
+      _clearInterval: interval._clearInterval,
+    })
+    const { patches } = await reader.connect()
+
+    const r = patches.getReader()
+    let done = false
+    while (!done) {
+      const result = await r.read()
+      done = result.done
+    }
+    r.releaseLock()
+
+    expect(interval.activeCount()).toBe(0)
+  })
+})
+
+// ── slice sse-liveness Commit 4: snapshot-wait timeout (מקרה-קצה) ──────────
+
+describe("SSEReader — snapshot-wait timeout (Commit 4)", () => {
+  it("a connection that opens but never sends snapshot times out within the bound instead of hanging forever — connect() rejects, not a silent death", async () => {
+    // A tiny REAL timeout via `_snapshotTimeoutMs` (not vi.useFakeTimers() +
+    // advanceTimersByTimeAsync racing a Promise.race across several `await`
+    // hops — that combination produced spurious `PromiseRejectionHandled
+    // Warning` noise in this exact codebase/runtime, harmless per Node's own
+    // docs but still noise the DoD gate shouldn't have to tolerate).
+    const mockFetch = vi.fn().mockResolvedValue(makeAbortableSSEResponse([], { keepOpen: true }))
+    const reader = newReader("/api/events", {
+      _fetch: mockFetch,
+      _sleep: noSleep,
+      _snapshotTimeoutMs: 5,
+    })
+
+    await expect(reader.connect()).rejects.toThrow("timed out waiting for snapshot")
+  })
+
+  it("does not fire when the snapshot arrives comfortably within the (tiny, test-only) bound", async () => {
+    const snapshot = makeSnapshot()
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(makeSSEResponse([{ event: "snapshot", data: JSON.stringify(snapshot) }]))
+    const reader = newReader("/api/events", {
+      _fetch: mockFetch,
+      _sleep: noSleep,
+      _snapshotTimeoutMs: 5,
+    })
+
+    const { snapshot: result } = await reader.connect()
+    expect(result.sessionId).toBe(snapshot.sessionId)
   })
 })
