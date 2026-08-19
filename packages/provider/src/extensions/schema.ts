@@ -52,6 +52,15 @@ export const QuotaSnapshot = type({
   windows: QuotaWindow.array(),
 })
 
+// ─── cross-reference: `_drive/streamAlive` lives in `core/session`, not here ──
+// `_drive/*` is split across two packages, and that split is intentional (not an
+// oversight): the ext methods below are provider extensions — request/response
+// pairs routed to the CLI and back. `_drive/streamAlive` (packages/core/src/
+// session/stream-alive.ts) is a fire-and-forget SSE liveness notification of our
+// own transport (BE SSE route → FE SSEReader) — it never touches a CLI, and its
+// only consumer is backend code that cannot import `provider` (layering). See the
+// comment at the top of stream-alive.ts for the full reasoning.
+//
 /** Unified registry of ext methods. Each entry: { params, result } ArkType schemas. */
 export const extMethods = {
   "_drive/setThinkingTokens": {

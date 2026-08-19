@@ -7,4 +7,5 @@
 export * from "./apply-patch"
 export * from "./patch-schema"
 export * from "./reduce"
+export * from "./stream-alive"
 export * from "./types"
