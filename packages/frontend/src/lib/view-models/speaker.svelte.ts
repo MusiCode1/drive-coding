@@ -123,7 +123,7 @@ export class Speaker implements SegmentOwner {
   /** קריאות tool שכבר סוּפרו או דולגו בכוונה (השמעה חוזרת של היסטוריה / כשל narrate). */
   #processedNarrationCallIds: Set<string> = new Set()
   /** slice 22: מקצה orderKey לבועות. לוגיקה ב-core (נבדק unit). */
-  readonly #orderAlloc = new OrderAllocator()
+  readonly #orderAlloc: OrderAllocator
 
   // מוגדר על ידי הבנאי — נשמר כדי שה-destroy() יוכל לעצור את ה-effect.
   #disposeEffect: (() => void) | null = null
@@ -138,7 +138,9 @@ export class Speaker implements SegmentOwner {
      */
     playlist: AudioPlaylist
     audioStream: AudioSink
+    orderAlloc: OrderAllocator
   }) {
+    this.#orderAlloc = opts.orderAlloc
     this.#session = opts.session
     this.#settings = opts.settings
     this.#cues = opts.cues
@@ -349,7 +351,7 @@ export class Speaker implements SegmentOwner {
     // slice 22: הקצה orderKey דטרמיניסטי — seq יציב פר-bubble, segmentIndex עולה
     const orderKey = this.#orderAlloc.next(bid)
     // A2 (אביגיל #2): extract segmentId לפני push כדי להעביר ל-reserve
-    const segmentId = crypto.randomUUID()
+    const segmentId = safeUUID()
     this.#jobs.push({
       segmentId,
       kind,
@@ -567,7 +569,7 @@ export class Speaker implements SegmentOwner {
       const bid = bubble.id
       const orderKey = this.#orderAlloc.next(bid)
       // A2 (אביגיל #2): extract segmentId לפני push כדי להעביר ל-reserve
-      const segmentId = crypto.randomUUID()
+      const segmentId = safeUUID()
 
       this.#jobs.push({
         segmentId,
