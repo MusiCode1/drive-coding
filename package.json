@@ -20,7 +20,8 @@
     "lint:rtl": "node scripts/lint-no-physical-classes.mjs",
     "format": "biome format --write .",
     "hooks:install": "git config core.hooksPath .githooks",
-    "fe:build": "node scripts/dc-build-fe.mjs",
+    "worktrees:prune": "node scripts/prune-worktrees.mjs",
+  "fe:build": "node scripts/dc-build-fe.mjs",
     "fe:build:if-missing": "node scripts/dc-build-fe.mjs --if-missing",
     "fe:build:if-stale": "node scripts/dc-build-fe.mjs --if-stale"
   },
