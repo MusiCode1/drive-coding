@@ -1,6 +1,6 @@
 {
   "name": "drive-coding",
-  "version": "0.30.0",
+  "version": "0.31.0",
   "private": true,
   "type": "module",
   "packageManager": "bun@1.3.14",
@@ -21,7 +21,7 @@
     "format": "biome format --write .",
     "hooks:install": "git config core.hooksPath .githooks",
     "worktrees:prune": "node scripts/prune-worktrees.mjs",
-  "fe:build": "node scripts/dc-build-fe.mjs",
+    "fe:build": "node scripts/dc-build-fe.mjs",
     "fe:build:if-missing": "node scripts/dc-build-fe.mjs --if-missing",
     "fe:build:if-stale": "node scripts/dc-build-fe.mjs --if-stale"
   },
