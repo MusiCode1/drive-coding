@@ -17,6 +17,7 @@
 import type { OrderKey } from "@drive-coding/core/voice/tts-queue"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AudioPlaylist } from "./audio-playlist.svelte"
+import { flush, installSyncInvariantChecks } from "./audio-playlist-invariants"
 import type { AudioSink } from "./audio-sink"
 
 // ─── Mock AudioSink ──────────────────────────────────────────────────────────
@@ -24,11 +25,17 @@ import type { AudioSink } from "./audio-sink"
 type MockSink = AudioSink & {
   playOrder: string[]
   resolvePlay: (segmentId: string) => void
+  preparedSegments: Set<string>
+  bufferedSegments: Set<string>
+  isComplete: (id: string) => boolean
+  noteBuffered: (segmentId: string) => void
 }
 
 function makeMockSink(): MockSink {
   const playOrder: string[] = []
   const playResolvers = new Map<string, () => void>()
+  const preparedSegments = new Set<string>()
+  const bufferedSegments = new Set<string>()
 
   const resolvePlay = (segmentId: string) => {
     const r = playResolvers.get(segmentId)
@@ -41,8 +48,14 @@ function makeMockSink(): MockSink {
   const sink: MockSink = {
     playOrder,
     resolvePlay,
-    prepareSegment: async () => {
-      // no-op — ב-A2 prepareSegment נקרא מ-Speaker, לא מ-AudioPlaylist
+    preparedSegments,
+    bufferedSegments,
+    noteBuffered: (segmentId: string) => {
+      bufferedSegments.add(segmentId)
+    },
+    isComplete: (id: string) => preparedSegments.has(id),
+    prepareSegment: async (segmentId: string) => {
+      preparedSegments.add(segmentId)
     },
     play: (segmentId) => {
       playOrder.push(segmentId)
@@ -92,6 +105,8 @@ describe("AudioPlaylist", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     playlist.reserve("s0", key(0), "bubble-0")
     playlist.reserve("s1", key(1), "bubble-1")
 
@@ -99,14 +114,14 @@ describe("AudioPlaylist", () => {
     playlist.markReady("s1")
 
     // נאפשר מהלך: #playLoop התחיל ומחכה ל-s0
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     // s0 עדיין לא התנגן (ממתין ל-markReady)
     expect(sink.playOrder).toEqual([])
 
     // עכשיו s0 מגיע
     playlist.markReady("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     // s0 אמור להיות ראשון בתור ניגון
     expect(sink.playOrder.length).toBeGreaterThanOrEqual(1)
@@ -114,13 +129,13 @@ describe("AudioPlaylist", () => {
 
     // פתור play של s0 ואפשר s1 לנגן
     sink.resolvePlay("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(sink.playOrder.length).toBeGreaterThanOrEqual(2)
     expect(sink.playOrder[1]).toBe("s1")
 
     sink.resolvePlay("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(playlist.state).toBe("idle")
   })
@@ -132,6 +147,8 @@ describe("AudioPlaylist", () => {
     const TIMEOUT = 500
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: TIMEOUT })
 
+    installSyncInvariantChecks(playlist, sink)
+
     playlist.reserve("s0", key(0), "bubble-0")
     playlist.reserve("s1", key(1), "bubble-1")
 
@@ -139,7 +156,7 @@ describe("AudioPlaylist", () => {
     playlist.markReady("s1")
 
     // ממתינים ל-s0 עוד לא הגיע
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     expect(sink.playOrder).toEqual([]) // עדיין מחכה ל-s0
 
     // מקדמים את הזמן מעבר ל-timeout
@@ -153,7 +170,7 @@ describe("AudioPlaylist", () => {
     expect(sink.playOrder[0]).toBe("s1")
 
     sink.resolvePlay("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(playlist.state).toBe("idle")
   })
@@ -164,6 +181,8 @@ describe("AudioPlaylist", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     playlist.reserve("s0", key(0), "bubble-0")
     playlist.reserve("s1", key(1), "bubble-1")
 
@@ -171,7 +190,7 @@ describe("AudioPlaylist", () => {
 
     // s0 נכשל
     playlist.markError("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     // s0 לא ניגן (error)
     expect(sink.playOrder).not.toContain("s0")
@@ -184,7 +203,7 @@ describe("AudioPlaylist", () => {
     expect(s0Item?.state).toBe("error")
 
     sink.resolvePlay("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(playlist.state).toBe("idle")
   })
@@ -195,15 +214,17 @@ describe("AudioPlaylist", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     playlist.reserve("s0", key(0), "bubble-0")
     playlist.reserve("s1", key(1), "bubble-1")
 
     // ממתין ל-s0 שלא יגיע
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     // עוצר את ה-playlist
     playlist.stop()
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     // אחרי stop — items ריק, state=idle
     expect(playlist.items).toEqual([])
@@ -220,24 +241,26 @@ describe("AudioPlaylist", () => {
     const onStart = vi.fn()
     const playlist = new AudioPlaylist(sink, onStart, { reserveTimeoutMs: 1000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     playlist.reserve("s0", key(0), "bubble-0")
     playlist.markReady("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(onStart).toHaveBeenCalledTimes(1)
     sink.resolvePlay("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(playlist.state).toBe("idle")
 
     // שני reserve נוסף — onStart נקרא שוב (idle→playing חדש)
     playlist.reserve("s1", key(1), "bubble-1")
     playlist.markReady("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(onStart).toHaveBeenCalledTimes(2)
     sink.resolvePlay("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
   })
 
   // ── Test 6: sorted-insert — reserve מחוץ לסדר ───────────────────────────
@@ -245,6 +268,8 @@ describe("AudioPlaylist", () => {
   it("reserve מחוץ לסדר כרונולוגי → items ממוינים לפי orderKey", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 1000 })
+
+    installSyncInvariantChecks(playlist, sink)
 
     // הכנסה בסדר הפוך
     playlist.reserve("s2", key(2), "bubble-2")
@@ -262,25 +287,27 @@ describe("AudioPlaylist", () => {
     const onStart = vi.fn()
     const playlist = new AudioPlaylist(sink, onStart, { reserveTimeoutMs: 1000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     playlist.reserve("s0", key(0), "bubble-0")
     playlist.markReady("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     // s0 בניגון — הוסף s1 תוך כדי
     playlist.reserve("s1", key(1), "bubble-1")
     playlist.markReady("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     // onPlaybackStart נקרא פעם אחת בלבד (re-entrancy guard)
     expect(onStart).toHaveBeenCalledTimes(1)
 
     // פתור s0 → s1 ינגן
     sink.resolvePlay("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(sink.playOrder).toContain("s1")
     sink.resolvePlay("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(playlist.state).toBe("idle")
   })
@@ -291,18 +318,20 @@ describe("AudioPlaylist", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     playlist.reserve("s0", key(0), "bubble-0")
     playlist.reserve("s1", key(1), "bubble-1")
     playlist.markReady("s0")
     playlist.markReady("s1")
 
     // אפשר ל-playLoop להתחיל ולהגיע ל-play(s0)
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     expect(sink.playOrder).toContain("s0")
 
     // סיים s0 — loop מתקדם ל-s1
     sink.resolvePlay("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     // pause לפני שs1 מתחיל (s1 עדיין "ready" — עשוי כבר להתחיל, תלוי ב-tick)
     // הבדיקה: אחרי pause, transport=paused
@@ -314,11 +343,11 @@ describe("AudioPlaylist", () => {
     expect(playlist.transport).toBe("playing")
 
     // s1 אמור לנגן
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     expect(sink.playOrder).toContain("s1")
 
     sink.resolvePlay("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     expect(playlist.state).toBe("idle")
   })
 
@@ -328,11 +357,13 @@ describe("AudioPlaylist", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     playlist.reserve("s0", key(0), "bubble-0")
     playlist.reserve("s1", key(1), "bubble-1")
     playlist.markReady("s0")
     playlist.markReady("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     // pause כשs0 מתנגן
     playlist.pause()
@@ -340,7 +371,7 @@ describe("AudioPlaylist", () => {
 
     // stop בזמן pause — שחרר waitForResume ויצא
     playlist.stop()
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(playlist.transport).toBe("stopped")
     expect(playlist.state).toBe("idle")
@@ -353,12 +384,14 @@ describe("AudioPlaylist", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     // ריצה ראשונה
     playlist.reserve("s0", key(0), "bubble-0")
     playlist.markReady("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     sink.resolvePlay("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     // עצור
     playlist.stop()
@@ -369,11 +402,11 @@ describe("AudioPlaylist", () => {
     expect(playlist.transport).toBe("playing") // אופס ע"י reserve()
 
     playlist.markReady("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(sink.playOrder).toContain("s1")
     sink.resolvePlay("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(playlist.state).toBe("idle")
   })

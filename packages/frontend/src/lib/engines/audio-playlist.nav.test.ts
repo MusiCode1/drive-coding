@@ -25,6 +25,7 @@
 import type { OrderKey } from "@drive-coding/core/voice/tts-queue"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AudioPlaylist } from "./audio-playlist.svelte"
+import { flush, installSyncInvariantChecks } from "./audio-playlist-invariants"
 import type { AudioSink, SegmentOpts } from "./audio-sink"
 
 // ─── Mock AudioSink ──────────────────────────────────────────────────────────
@@ -36,7 +37,9 @@ type MockSink = AudioSink & {
   cancelledSegments: string[]
   /** nav-retain: מחקה isComplete — true אחרי שה-segment נוגן לפחות פעם אחת */
   completedSegments: Set<string>
+  bufferedSegments: Set<string>
   isComplete: (id: string) => boolean
+  noteBuffered: (segmentId: string) => void
 }
 
 function makeMockSink(): MockSink {
@@ -45,6 +48,7 @@ function makeMockSink(): MockSink {
   const preparedSegments = new Set<string>()
   const cancelledSegments: string[] = []
   const completedSegments = new Set<string>()
+  const bufferedSegments = new Set<string>()
 
   const resolvePlay = (segmentId: string) => {
     completedSegments.add(segmentId) // mark as complete when resolved
@@ -61,6 +65,10 @@ function makeMockSink(): MockSink {
     preparedSegments,
     cancelledSegments,
     completedSegments,
+    bufferedSegments,
+    noteBuffered: (segmentId: string) => {
+      bufferedSegments.add(segmentId)
+    },
     isComplete: (id: string) => completedSegments.has(id),
     prepareSegment: async (
       segmentId: string,
@@ -116,6 +124,8 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     playlist.reserve("s0", key(0), "bubble-A")
     playlist.reserve("s1", key(1), "bubble-A")
     playlist.reserve("s2", key(2), "bubble-A")
@@ -125,14 +135,14 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     playlist.markReady("s2")
 
     // אפשר ל-playLoop להתחיל ולנגן s0
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     expect(sink.playOrder).toContain("s0")
 
     // next() בזמן שs0 מנגן → s1 יתנגן במקום
     playlist.next()
     // נדרש מספר microtask ticks: cancel→race-resolve→#playWithNav-returns→#playLoop-continues→s1-play
     // כל await מייצר microtask — נותנים מספיק ticks לכל ה-chain
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
@@ -143,12 +153,12 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     expect(sink.playOrder).toContain("s1")
 
     sink.resolvePlay("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     // s2 — ממשיך לנגן בסדר
     expect(sink.playOrder).toContain("s2")
     sink.resolvePlay("s2")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(playlist.state).toBe("idle")
   })
@@ -159,24 +169,26 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     playlist.reserve("s0", key(0), "bubble-A")
     playlist.reserve("s1", key(1), "bubble-A")
 
     playlist.markReady("s0")
     playlist.markReady("s1")
 
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     expect(sink.playOrder).toContain("s0")
 
     // s0 סיים — isComplete=true (completedSegments.add("s0") ב-resolvePlay)
     sink.resolvePlay("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     expect(sink.playOrder).toContain("s1")
 
     // prev() בזמן s1 מנגן → cursor חוזר ל-s0 (done, isComplete=true)
     playlist.prev()
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
@@ -188,10 +200,10 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     expect(s0Plays.length).toBeGreaterThanOrEqual(2) // ניגן פעמיים (חי + אחרי prev)
 
     sink.resolvePlay("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     sink.resolvePlay("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
   })
 
   // ── Test 3: jumpTo(index) — קפיצה לindex ──────────────────────────────────
@@ -199,6 +211,8 @@ describe("AudioPlaylist — ניווט (A4)", () => {
   it("jumpTo(2) ב-3-item playlist → s2 מתנגן ראשון", async () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    installSyncInvariantChecks(playlist, sink)
 
     playlist.reserve("s0", key(0), "bubble-A")
     playlist.reserve("s1", key(1), "bubble-A")
@@ -208,24 +222,24 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     playlist.markReady("s1")
     playlist.markReady("s2")
 
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     // s0 מתחיל לנגן
     expect(sink.playOrder).toContain("s0")
 
     // קפוץ ל-s2
     playlist.jumpTo(2)
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     // s2 מסומן reserved (בגלל cancel ב-navigate); צריך markReady שוב
     const s2Item = playlist.items.find((it) => it.segmentId === "s2")
     expect(s2Item?.state).toBe("reserved")
 
     playlist.markReady("s2")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(sink.playOrder).toContain("s2")
     sink.resolvePlay("s2")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(playlist.state).toBe("idle")
   })
@@ -235,6 +249,8 @@ describe("AudioPlaylist — ניווט (A4)", () => {
   it("jumpToBubble('bubble-B') → cursor קופץ ל-item הראשון של bubble-B", async () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    installSyncInvariantChecks(playlist, sink)
 
     // bubble-A: s0, s1; bubble-B: s2, s3
     playlist.reserve("s0", key(0), "bubble-A")
@@ -247,27 +263,27 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     playlist.markReady("s2")
     playlist.markReady("s3")
 
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     expect(sink.playOrder).toContain("s0")
 
     // קפוץ ל-bubble-B (index 2)
     playlist.jumpToBubble("bubble-B")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     // s2 חוזר ל-reserved (cancel); צריך markReady שוב
     const s2Item = playlist.items.find((it) => it.segmentId === "s2")
     expect(s2Item?.state).toBe("reserved")
 
     playlist.markReady("s2")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(sink.playOrder).toContain("s2")
     sink.resolvePlay("s2")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(sink.playOrder).toContain("s3")
     sink.resolvePlay("s3")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(playlist.state).toBe("idle")
   })
@@ -277,6 +293,8 @@ describe("AudioPlaylist — ניווט (A4)", () => {
   it("prepareSegmentForBubble + reserve + markReady → item מתנגן", async () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    installSyncInvariantChecks(playlist, sink)
 
     // reserve item חדש עם bubbleId
     playlist.reserve("s-bubble", key(0), "bubble-history")
@@ -289,11 +307,11 @@ describe("AudioPlaylist — ניווט (A4)", () => {
 
     // markReady → יתחיל לנגן
     playlist.markReady("s-bubble")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(sink.playOrder).toContain("s-bubble")
     sink.resolvePlay("s-bubble")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(playlist.state).toBe("idle")
   })
@@ -304,6 +322,8 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     // s0: done (כבר ניגן ו-resolvePlay נקרא → isComplete=true)
     // s1: נמצא ב-playing
     playlist.reserve("s0", key(0), "bubble-A")
@@ -312,19 +332,19 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     playlist.markReady("s0")
     playlist.markReady("s1")
 
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     // s0 מנגן
     expect(sink.playOrder).toContain("s0")
     // s0 מסיים — isComplete=true
     sink.resolvePlay("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
 
     // s1 מנגן
     expect(sink.playOrder).toContain("s1")
     // prev() לפני שs1 מסיים
     playlist.prev()
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
@@ -335,10 +355,10 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     expect(s0Plays.length).toBeGreaterThanOrEqual(2)
 
     sink.resolvePlay("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     sink.resolvePlay("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
   })
 
   // ── Test 7: cursor getter חשוף ─────────────────────────────────────────────
@@ -347,26 +367,28 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     playlist.reserve("s0", key(0), "bubble-A")
     playlist.reserve("s1", key(1), "bubble-A")
     playlist.markReady("s0")
     playlist.markReady("s1")
 
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     expect(sink.playOrder).toContain("s0")
     expect(playlist.cursor).toBe(0)
 
     playlist.next()
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     // cursor עבר ל-1
     expect(playlist.cursor).toBe(1)
 
     playlist.markReady("s1") // re-fetch
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     sink.resolvePlay("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     expect(playlist.state).toBe("idle")
   })
 
@@ -380,6 +402,8 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     playlist.reserve("s0", key(0), "bubble-A")
     playlist.reserve("s1", key(1), "bubble-A")
     playlist.reserve("s2", key(2), "bubble-A")
@@ -389,16 +413,16 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     playlist.markReady("s2")
 
     // הניגון מתחיל
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     expect(sink.playOrder).toContain("s0")
 
     // ניגן s0 + s1 עד סיום
     sink.resolvePlay("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     expect(sink.playOrder).toContain("s1")
     sink.resolvePlay("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     // s2 מתנגן עכשיו
     expect(sink.playOrder).toContain("s2")
@@ -406,7 +430,7 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     // s1 עכשיו done (ניגן וסיים). נחזור אליו עם prev()
     // prev() ל-s1 (done) — לפי ה-retain: צריך לנגן מיידית בלי markReady
     playlist.prev()
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
@@ -419,7 +443,7 @@ describe("AudioPlaylist — ניווט (A4)", () => {
 
     sink.resolvePlay("s1")
     sink.resolvePlay("s2")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
   })
 
   // ── Test 9: item שנווט אליו (done) → לא מאופס ל-reserved, מנגן מחדש ──────────
@@ -427,6 +451,8 @@ describe("AudioPlaylist — ניווט (A4)", () => {
   it("(retain-9) prev ל-done item — לא מאופס ל-reserved (retain-replay, לא re-fetch)", async () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    installSyncInvariantChecks(playlist, sink)
 
     playlist.reserve("s0", key(0), "bubble-A")
     playlist.reserve("s1", key(1), "bubble-A")
@@ -436,14 +462,14 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     playlist.markReady("s1")
     playlist.markReady("s2")
 
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     // ניגן s0 + s1 עד סיום
     sink.resolvePlay("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     expect(sink.playOrder).toContain("s1")
     sink.resolvePlay("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     // s2 מתנגן
     expect(sink.playOrder).toContain("s2")
@@ -456,7 +482,7 @@ describe("AudioPlaylist — ניווט (A4)", () => {
 
     // prev() → s1. בקוד החדש: s1 isComplete=true → אל ישנה ל-reserved
     playlist.prev()
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
@@ -472,7 +498,7 @@ describe("AudioPlaylist — ניווט (A4)", () => {
 
     sink.resolvePlay("s1")
     sink.resolvePlay("s2")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
   })
 
   // ── Test 10: skip-cancel — cancel נקרא על item ב-loading ──────────────────
@@ -480,6 +506,8 @@ describe("AudioPlaylist — ניווט (A4)", () => {
   it("(retain-10) skip (next) על item ב-loading → sink.cancel נקרא", async () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 30000 })
+
+    installSyncInvariantChecks(playlist, sink)
 
     // s0: ready מיד. s1: loading (fetch ארוך בכוונה — reserveTimeoutMs גדול)
     playlist.reserve("s0", key(0), "bubble-A")
@@ -490,11 +518,11 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     playlist.markReady("s0")
     // s1 נשאר reserved/loading
 
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     // s0 מתנגן
     expect(sink.playOrder).toContain("s0")
     sink.resolvePlay("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     // עכשיו #playLoop מחכה על s1 (loading/reserved) — timeout 30s
 
@@ -502,7 +530,7 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     // בקוד החדש: skip-cancel — isComplete(s1)=false → cancel נקרא
     // בקוד הישן: cancel תמיד קורה על הנוכחי (s0, כבר done)
     playlist.next()
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
@@ -516,10 +544,10 @@ describe("AudioPlaylist — ניווט (A4)", () => {
 
     // s2 מתנגן (אחרי skip s1)
     playlist.markReady("s2") // re-mark (בקוד הישן jump reset אותו)
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     sink.resolvePlay("s2")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
   })
 
   // ── Test 11: idle-park — ניווט אחרי שה-loop הגיע לסוף ─────────────────────
@@ -528,18 +556,20 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     playlist.reserve("s0", key(0), "bubble-A")
     playlist.reserve("s1", key(1), "bubble-A")
 
     playlist.markReady("s0")
     playlist.markReady("s1")
 
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     sink.resolvePlay("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     sink.resolvePlay("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
 
     // #playLoop הגיע לסוף הפלייליסט
@@ -548,7 +578,7 @@ describe("AudioPlaylist — ניווט (A4)", () => {
 
     // prev() אחרי סוף → s1 (done) צריך לנגן שוב
     playlist.prev()
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
@@ -560,7 +590,7 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     expect(s1Plays.length).toBeGreaterThanOrEqual(2)
 
     sink.resolvePlay("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
   })
 
   // ── Test 12: refetch thunk נקרא על reserved-ללא-fetch ─────────────────────
@@ -570,6 +600,8 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     // החיצוני של Speaker, ולא להפעיל refetch. refetch שמור ל-item שנזרק ב-skip-cancel.
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    installSyncInvariantChecks(playlist, sink)
 
     let refetchCount = 0
     const owner = {
@@ -584,7 +616,7 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     playlist.reserve("s1", key(1), "bubble-A")
     playlist.markReady("s1")
 
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
 
     // ✅ הליבה: s0 reserved אך needsRefetch כבוי → refetch לא נקרא
@@ -592,17 +624,17 @@ describe("AudioPlaylist — ניווט (A4)", () => {
 
     // הזרם החי מגיע (כמו Speaker.#fetchJob) → markReady חיצוני, לא refetch
     playlist.markReady("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
 
     expect(refetchCount).toBe(0) // עדיין 0 — אף פעם לא refetch על reserved רגיל
     expect(sink.playOrder).toContain("s0")
 
     sink.resolvePlay("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     sink.resolvePlay("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
   })
 
   // ── lifecycle commit 1: SegmentOwner + invalidate ───────────────────────────
@@ -610,6 +642,9 @@ describe("AudioPlaylist — ניווט (A4)", () => {
   it("(lifecycle-1) invalidate נקרא על skip-cancel", async () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    installSyncInvariantChecks(playlist, sink)
+
     const invalidate = vi.fn()
     const owner = { refetch: vi.fn(), invalidate }
 
@@ -617,9 +652,9 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     playlist.reserve("s1", key(1), "bubble-A")
     playlist.markReady("s1")
 
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     playlist.next()
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     await Promise.resolve()
 
@@ -629,12 +664,15 @@ describe("AudioPlaylist — ניווט (A4)", () => {
   it("(lifecycle-2) markReady מאוחר אחרי invalidate — לא הופך ל-ready", async () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    installSyncInvariantChecks(playlist, sink)
+
     const owner = { refetch: vi.fn(), invalidate: vi.fn() }
 
     playlist.reserve("s0", key(0), "bubble-A", owner)
     playlist.reserve("s1", key(1), "bubble-A")
     playlist.next()
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     playlist.markReady("s0")
     const item = playlist.items.find((it) => it.segmentId === "s0")
@@ -644,6 +682,9 @@ describe("AudioPlaylist — ניווט (A4)", () => {
   it("(lifecycle-3) invalidate על completed — לא נקרא", async () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    installSyncInvariantChecks(playlist, sink)
+
     const invalidate = vi.fn()
     const owner = { refetch: vi.fn(), invalidate }
 
@@ -653,10 +694,10 @@ describe("AudioPlaylist — ניווט (A4)", () => {
 
     playlist.reserve("s1", key(1), "bubble-A")
     playlist.markReady("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     playlist.next()
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(invalidate).not.toHaveBeenCalled()
   })
@@ -666,14 +707,16 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     playlist.reserve("s0", key(0), "bubble-A")
     playlist.markReady("s0")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     playlist.stop()
     playlist.reserve("s1", key(1), "bubble-A")
     playlist.markReady("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     await Promise.resolve()
     await Promise.resolve()
 
@@ -684,16 +727,18 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     for (let i = 0; i < 5; i++) {
       playlist.reserve(`s${i}`, key(i), "bubble-A")
       playlist.markReady(`s${i}`)
     }
 
     // Advance playLoop through s0..s3 so cursor lands on s4 (playing).
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     for (let i = 0; i < 4; i++) {
       sink.resolvePlay(`s${i}`)
-      await vi.advanceTimersByTimeAsync(0)
+      await flush(playlist, sink)
     }
     expect(playlist.cursor).toBe(4)
 
@@ -701,11 +746,11 @@ describe("AudioPlaylist — ניווט (A4)", () => {
       playlist.items.filter((it) => it.state === "playing").length
 
     playlist.prev()
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     expect(playingCount()).toBeLessThanOrEqual(1)
 
     playlist.prev()
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
     expect(playingCount()).toBeLessThanOrEqual(1)
   })
 
@@ -713,18 +758,20 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
+    installSyncInvariantChecks(playlist, sink)
+
     playlist.reserve("s0", key(0), "bubble-A")
     playlist.reserve("s1", key(2), "bubble-A")
     playlist.markReady("s0")
     playlist.markReady("s1")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     const playingId = playlist.items[playlist.cursor]?.segmentId
     expect(playingId).toBe("s0")
 
     playlist.reserve("sX", key(1), "bubble-A")
     playlist.markReady("sX")
-    await vi.advanceTimersByTimeAsync(0)
+    await flush(playlist, sink)
 
     expect(playlist.items[playlist.cursor]?.segmentId).toBe(playingId)
   })
