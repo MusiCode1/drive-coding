@@ -174,7 +174,24 @@ the worktree **directory omits it** (a slash would nest a subdir). Create one wi
 git worktree add .worktrees/<name> -b slice/<name> dev   # branch: slice/<name> | dir: .worktrees/<name>
 ```
 
-Cleanup after merge (worktrees pile up otherwise): `git worktree remove .worktrees/<name>`,
+Cleanup after merge (worktrees pile up otherwise — we hit 34 at once):
+
+```bash
+bun run worktrees:prune                                    # dry-run vs. dev
+bun run worktrees:prune -- --base integration/release-next # dry-run vs. an integration branch
+bun run worktrees:prune -- --apply --delete-branches       # perform
+```
+
+**It is a dry-run unless you pass `--apply`.** It removes only worktrees that pass
+all three checks: the ref is contained in a `--base`, the tree is clean, and **no
+live process has its cwd inside** — that last one is the reason the script exists,
+because `git worktree remove` does not check it. Removing a worktree out from under
+a running BE takes its `FE_STATIC_DIR` with it. `--keep <name>` spares one by name.
+
+On Windows there is no `/proc`, so the process check cannot run: `--apply` refuses
+unless you also pass `--no-process-check`.
+
+By hand, if you must: `git worktree remove .worktrees/<name>`,
 `git branch -d slice/<name>`, `git worktree prune`.
 
 Don't pollute the project root with worktree directories. The two long-lived
