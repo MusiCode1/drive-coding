@@ -572,12 +572,15 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
 
     let refetchCount = 0
-    const thunk = () => {
-      refetchCount++
+    const owner = {
+      refetch: () => {
+        refetchCount++
+      },
+      invalidate: () => {},
     }
 
-    // s0: reserved עם thunk (הזרם החי בדרך — לא נזרק). s1: ready.
-    playlist.reserve("s0", key(0), "bubble-A", thunk)
+    // s0: reserved עם owner (הזרם החי בדרך — לא נזרק). s1: ready.
+    playlist.reserve("s0", key(0), "bubble-A", owner)
     playlist.reserve("s1", key(1), "bubble-A")
     playlist.markReady("s1")
 
@@ -601,4 +604,61 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     sink.resolvePlay("s1")
     await vi.advanceTimersByTimeAsync(0)
   })
+
+  // ── lifecycle commit 1: SegmentOwner + invalidate ───────────────────────────
+
+  it("(lifecycle-1) invalidate נקרא על skip-cancel", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+    const invalidate = vi.fn()
+    const owner = { refetch: vi.fn(), invalidate }
+
+    playlist.reserve("s0", key(0), "bubble-A", owner)
+    playlist.reserve("s1", key(1), "bubble-A")
+    playlist.markReady("s1")
+
+    await vi.advanceTimersByTimeAsync(0)
+    playlist.next()
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(invalidate).toHaveBeenCalledWith("s0")
+  })
+
+  it("(lifecycle-2) markReady מאוחר אחרי invalidate — לא הופך ל-ready", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+    const owner = { refetch: vi.fn(), invalidate: vi.fn() }
+
+    playlist.reserve("s0", key(0), "bubble-A", owner)
+    playlist.reserve("s1", key(1), "bubble-A")
+    playlist.next()
+    await vi.advanceTimersByTimeAsync(0)
+
+    playlist.markReady("s0")
+    const item = playlist.items.find((it) => it.segmentId === "s0")
+    expect(item?.state).toBe("reserved")
+  })
+
+  it("(lifecycle-3) invalidate על completed — לא נקרא", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+    const invalidate = vi.fn()
+    const owner = { refetch: vi.fn(), invalidate }
+
+    playlist.reserve("s0", key(0), "bubble-A", owner)
+    playlist.markReady("s0")
+    sink.completedSegments.add("s0")
+
+    playlist.reserve("s1", key(1), "bubble-A")
+    playlist.markReady("s1")
+    await vi.advanceTimersByTimeAsync(0)
+
+    playlist.next()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(invalidate).not.toHaveBeenCalled()
+  })
+
 })

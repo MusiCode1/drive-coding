@@ -40,7 +40,7 @@ import { narrate } from "../adapters/voice/narrate"
 import { translate } from "../adapters/voice/translate"
 import { resolveTts } from "../adapters/voice/tts-resolve"
 import type { AudioSink } from "../engines/audio-sink"
-import type { AudioPlaylist } from "../engines/audio-playlist.svelte"
+import type { AudioPlaylist, SegmentOwner } from "../engines/audio-playlist.svelte"
 import type { CuesEngine } from "../engines/cues"
 import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
@@ -81,7 +81,7 @@ type BubbleState = {
   buffer: string
 }
 
-export class Speaker {
+export class Speaker implements SegmentOwner {
   // ui-polish-batch C8: מאותחל מ-settings.muted (false = מופעל, true = מושתק)
   enabled: boolean = $state(true)
 
@@ -363,7 +363,7 @@ export class Speaker {
     // A2: reserve-on-enqueue — הסגמנט נכנס לפלייליסט מיד (לפני fetch)
     // A4: העבר bubbleId (bid) כדי ש-PlaylistItem יכיל אותו לניווט jumpToBubble
     // nav-retain: refetch thunk — מאפשר re-fetch בביקור מפורש אחרי skip
-    this.#player.reserve(segmentId, orderKey, bid, () => this.refetchSegment(segmentId))
+    this.#player.reserve(segmentId, orderKey, bid, this)
     this.#pendingCount += 1
   }
 
@@ -373,10 +373,28 @@ export class Speaker {
    * מוצא את ה-TtsJob לפי segmentId, יוצר AbortController חדש (finding #5),
    * מאפס status=pending ומריץ את לולאת ה-fetch.
    */
+  refetch(segmentId: string): void {
+    this.refetchSegment(segmentId)
+  }
+
+  invalidate(segmentId: string): void {
+    const job = this.#jobs.find((j) => j.segmentId === segmentId)
+    if (job === undefined) return
+    if (job.status === "pending") {
+      if (this.#pendingCount > 0) this.#pendingCount -= 1
+    }
+    if (job.status === "pending" || job.status === "fetching") {
+      job.status = "stale"
+    }
+  }
+
   refetchSegment(segmentId: string): void {
     const job = this.#jobs.find((j) => j.segmentId === segmentId)
     if (job === undefined) return
-    if (job.status === "fetching" || job.status === "ready") return // fetch כבר בדרך
+    if (job.status === "fetching" || job.status === "ready") return // fetch חי
+    if (job.status === "stale") {
+      job.abort = new AbortController()
+    }
     job.abort = new AbortController() // finding #5: abort חדש (הישן כבר בוצע)
     job.status = "pending"
     this.#pendingCount += 1
@@ -565,7 +583,7 @@ export class Speaker {
       // A2: reserve-on-enqueue
       // A4: העבר bubbleId כדי ש-PlaylistItem יכיל אותו לניווט jumpToBubble
       // nav-retain: refetch thunk — re-fetch בביקור מפורש אחרי skip
-      this.#player.reserve(segmentId, orderKey, bid, () => this.refetchSegment(segmentId))
+      this.#player.reserve(segmentId, orderKey, bid, this)
       this.#pendingCount += 1
       this.#pumpFetchLoop()
     }
@@ -650,7 +668,7 @@ export class Speaker {
     // slice 6: reset משני — לcancel/toggle-off (לא רץ בסוף תור רגיל)
     this.#spokeThisTurn = false
     for (const job of this.#jobs) {
-      if (job.status === "fetching" || job.status === "pending") {
+      if (job.status === "fetching" || job.status === "pending" || job.status === "stale") {
         try {
           job.abort.abort()
         } catch {

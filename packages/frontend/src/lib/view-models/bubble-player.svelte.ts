@@ -24,7 +24,7 @@ import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
 import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import type { AgentSession } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
-import type { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
+import type { AudioPlaylist, SegmentOwner } from "$lib/engines/audio-playlist.svelte"
 import type { Bubble } from "$lib/types/bubble"
 import { playUserRecording } from "$lib/adapters/voice/play-bubble"
 import { resolveTts } from "$lib/adapters/voice/tts-resolve"
@@ -34,7 +34,7 @@ import { ttsCapabilities } from "./capabilities.svelte"
 const MIN_CHARS = 20
 const MAX_CHARS = 200
 
-export class BubblePlayer {
+export class BubblePlayer implements SegmentOwner {
   playingBubbleId: string | null = $state(null)
 
   readonly #session: AgentSession
@@ -45,6 +45,7 @@ export class BubblePlayer {
   #abortCtrl: AbortController | null = null
   /** A4: OrderAllocator לסגמנטים שלנו — seq נפרד מ-Speaker. */
   readonly #orderAlloc = new OrderAllocator()
+  readonly #refetchBySegment = new Map<string, () => void>()
 
   constructor(opts: { session: AgentSession; settings: Settings; playlist: AudioPlaylist }) {
     this.#session = opts.session
@@ -159,8 +160,7 @@ export class BubblePlayer {
       const orderKey = this.#orderAlloc.next(bubbleId)
       const partText = parts[i]
       if (partText === undefined) continue
-      const refetch = () => {
-        // refetch thunk: synthesize מחדש עם AbortController חדש
+      this.#refetchBySegment.set(segmentId, () => {
         const freshAc = new AbortController()
         void (async () => {
           try {
@@ -181,8 +181,8 @@ export class BubblePlayer {
             }
           }
         })()
-      }
-      this.#playlist.reserve(segmentId, orderKey, bubbleId, refetch)
+      })
+      this.#playlist.reserve(segmentId, orderKey, bubbleId, this)
       segmentIds.push(segmentId)
     }
 
@@ -228,6 +228,14 @@ export class BubblePlayer {
   }
 
   /** עוצר כל ניגון פעיל. */
+  refetch(segmentId: string): void {
+    this.#refetchBySegment.get(segmentId)?.()
+  }
+
+  invalidate(_segmentId: string): void {
+    // BubblePlayer: אין TtsJob table — invalidate הוא no-op (מונה-דור ב-playlist)
+  }
+
   stop(): void {
     if (this.#abortCtrl) {
       this.#abortCtrl.abort()

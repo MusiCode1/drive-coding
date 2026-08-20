@@ -31,6 +31,12 @@
 import { compareOrderKey, type OrderKey } from "@drive-coding/core/voice/tts-queue"
 import type { AudioSink } from "./audio-sink"
 
+export interface SegmentOwner {
+  refetch(segmentId: string): void
+  /** הפלייליסט זרק את החוצץ / ה-fetch ננטש — המצב שאצלך התיישן. */
+  invalidate(segmentId: string): void
+}
+
 export type PlaylistItemState =
   | "reserved"
   | "loading"
@@ -51,7 +57,9 @@ export type PlaylistItem = {
    * נקרא כש-item נמצא ב-reserved ללא fetch חי (דולג ב-skip-cancel, נכשל).
    * owner מעביר אותו ב-reserve(); מייצר stream→prepareSegment→markReady/markError.
    */
-  refetch?: () => void
+  owner?: SegmentOwner
+  /** דור fetch — נקבע לפני refetch; markReady מיושן אם invalidate הקדים. */
+  fetchEpoch?: number
   /**
    * nav-retain fix: אמת רק כשה-item **נזרק** (skip-cancel) או נכשל וצריך סינתוז-מחדש.
    * item שנוצר ב-reserve() רגיל (זרם חי) — הדגל כבוי; ה-fetch החי מגיע דרך Speaker.
@@ -93,6 +101,8 @@ export class AudioPlaylist {
   // nav-retain fix: resolver נפרד ל-idle-park. חייב להיות נפרד מ-#navResolve
   // (של #playWithNav) — אחרת reserve() בזמן נגינה פעילה יקטע את ה-play-race → קקפוניה.
   #parkResolve: (() => void) | null = null
+  /** מונה-דור ל-markReady מאוחר אחרי invalidate. */
+  #segmentEpoch: Map<string, number> = new Map()
 
   constructor(
     audioStream: AudioSink,
@@ -110,6 +120,18 @@ export class AudioPlaylist {
    */
   setOnPlaybackStart(cb: () => void): void {
     this.#onPlaybackStart = cb
+  }
+
+  #bumpSegmentEpoch(segmentId: string): void {
+    this.#segmentEpoch.set(segmentId, (this.#segmentEpoch.get(segmentId) ?? 0) + 1)
+  }
+
+  #notifyOwnerInvalidate(segmentId: string, owner?: SegmentOwner): void {
+    if (owner !== undefined) {
+      this.#bumpSegmentEpoch(segmentId)
+      owner.invalidate(segmentId)
+    }
+    this.#itemResolvers.get(segmentId)?.()
   }
 
   /**
@@ -132,7 +154,7 @@ export class AudioPlaylist {
    * A4: bubbleId — מזהה הבועה שממנה נגזר הסגמנט (לניווט jumpToBubble).
    * nav-retain: refetch? — thunk לסינתוז-מחדש (owner-agnostic).
    */
-  reserve(segmentId: string, orderKey: OrderKey, bubbleId: string, refetch?: () => void): void {
+  reserve(segmentId: string, orderKey: OrderKey, bubbleId: string, owner?: SegmentOwner): void {
     // A3: תור חדש אחרי stop — חזור למצב ניגון
     if (this.transport === "stopped") {
       this.transport = "playing"
@@ -143,7 +165,8 @@ export class AudioPlaylist {
       segmentId,
       state: "reserved",
       bubbleId,
-      refetch,
+      owner,
+      fetchEpoch: this.#segmentEpoch.get(segmentId) ?? 0,
     }
     // sorted-insert לפי compareOrderKey
     let i = this.items.length
@@ -173,6 +196,10 @@ export class AudioPlaylist {
    */
   markReady(segmentId: string): void {
     const item = this.items.find((it) => it.segmentId === segmentId)
+    const epoch = this.#segmentEpoch.get(segmentId) ?? 0
+    if (item !== undefined && (item.fetchEpoch ?? 0) < epoch) {
+      return
+    }
     if (item !== undefined && (item.state === "reserved" || item.state === "loading")) {
       item.state = "ready"
     }
@@ -315,6 +342,7 @@ export class AudioPlaylist {
         ) {
           currentItem.state = "reserved"
           currentItem.needsRefetch = true // נזרק → ביקור עתידי יסנתז מחדש
+          this.#notifyOwnerInvalidate(currentItem.segmentId, currentItem.owner)
         }
       }
       // אם currentComplete===true: item נשאר כמו שהוא (done/ready — buffer שמור ב-sink)
@@ -343,11 +371,20 @@ export class AudioPlaylist {
           ) {
             targetItem.state = "reserved"
             targetItem.needsRefetch = true // נזרק (לא ממומש) → סינתוז-מחדש בביקור
+            this.#notifyOwnerInvalidate(targetItem.segmentId, targetItem.owner)
           }
         }
         // אם targetComplete===true (done/ready עם buffer שמור): נשאר — replay ב-#playLoop
       }
       // next (resetTarget=false): שום שינוי — ready/done → replay מיידי; reserved/loading → ממתין
+    }
+
+    // done/error בלי buffer — אין replay; החזר ל-reserved לביקור עתידי
+    const landed = this.items[newIndex]
+    if (landed !== undefined && (landed.state === "done" || landed.state === "error") && !this.#isComplete(landed.segmentId)) {
+      landed.state = "reserved"
+      landed.needsRefetch = true
+      this.#notifyOwnerInvalidate(landed.segmentId, landed.owner)
     }
 
     // (3) cursor חדש
@@ -498,9 +535,10 @@ export class AudioPlaylist {
         if (item.state === "reserved" || item.state === "loading") {
           // nav-retain fix: קרא refetch **רק** ל-item שנזרק (needsRefetch), לא ל-item
           // רגיל שה-fetch החי שלו בדרך (דרך Speaker.#pumpFetchLoop). אחרת = סופת-fetch.
-          if (item.state === "reserved" && item.needsRefetch === true && item.refetch !== undefined) {
+          if (item.state === "reserved" && item.needsRefetch === true && item.owner !== undefined) {
             item.needsRefetch = false // חד-פעמי — מונע לולאת refetch
-            item.refetch()
+            item.fetchEpoch = this.#segmentEpoch.get(item.segmentId) ?? 0
+            item.owner.refetch(item.segmentId)
             // המשך לחכות ב-#waitForItem (refetch קורא markReady async)
           }
 
@@ -552,7 +590,12 @@ export class AudioPlaylist {
           // A4: בדוק אם ניווט שינה את ה-cursor בזמן ה-play
           const navigated = this.items[this.#cursor]?.segmentId !== item.segmentId
           if (!navigated) {
-            item.state = "done"
+            if (this.#isComplete(item.segmentId)) {
+              item.state = "done"
+            } else {
+              item.state = "reserved"
+              item.needsRefetch = true
+            }
             this.currentSegmentId = null
             this.#cursor++
           } else {
