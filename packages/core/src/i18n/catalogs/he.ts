@@ -27,6 +27,7 @@ export const he: Catalog = {
   "chat.bubble.thought": "מחשבה",
   "chat.bubble.agent": "סוכן",
   "chat.empty": "התחל לכתוב למטה…",
+  "chat.error.dismiss": "סגור שגיאה",
   "chat.prompt.placeholder": "כתוב prompt…",
   "chat.send": "שלח",
   "chat.disconnect": "נתק",

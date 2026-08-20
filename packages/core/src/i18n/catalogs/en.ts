@@ -31,6 +31,7 @@ export const en: Catalog = {
   "chat.bubble.thought": "Thought",
   "chat.bubble.agent": "Agent",
   "chat.empty": "Start typing below…",
+  "chat.error.dismiss": "Dismiss error",
   "chat.prompt.placeholder": "Type a prompt…",
   "chat.send": "Send",
   "chat.disconnect": "Disconnect",
