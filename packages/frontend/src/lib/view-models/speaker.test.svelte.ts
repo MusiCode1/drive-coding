@@ -6,6 +6,7 @@ import { tick } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { Settings } from "./settings.svelte"
 import { Speaker } from "./speaker.svelte"
+import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { AudioSink } from "$lib/engines/audio-sink"
 import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
@@ -114,6 +115,7 @@ function createHarness(initial?: MessageBubble[], extraSession?: Partial<AgentSe
     settings,
     playlist,
     audioStream: sink,
+    orderAlloc: new OrderAllocator(),
   })
   return { speaker, playlist, sink, destroy: () => speaker.destroy() }
 }

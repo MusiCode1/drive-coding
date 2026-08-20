@@ -661,4 +661,43 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     expect(invalidate).not.toHaveBeenCalled()
   })
 
+
+  it("(lifecycle-4b) stop()+reserve() → loop אחד בלבד", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    playlist.reserve("s0", key(0), "bubble-A")
+    playlist.markReady("s0")
+    await vi.advanceTimersByTimeAsync(0)
+
+    playlist.stop()
+    playlist.reserve("s1", key(1), "bubble-A")
+    playlist.markReady("s1")
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(sink.playOrder.filter((id) => id === "s1").length).toBeLessThanOrEqual(1)
+  })
+
+  it("(lifecycle-4c) insert לפני cursor בזמן ניגון — cursor עוקב אחרי segmentId", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    playlist.reserve("s0", key(0), "bubble-A")
+    playlist.reserve("s1", key(2), "bubble-A")
+    playlist.markReady("s0")
+    playlist.markReady("s1")
+    await vi.advanceTimersByTimeAsync(0)
+
+    const playingId = playlist.items[playlist.cursor]?.segmentId
+    expect(playingId).toBe("s0")
+
+    playlist.reserve("sX", key(1), "bubble-A")
+    playlist.markReady("sX")
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(playlist.items[playlist.cursor]?.segmentId).toBe(playingId)
+  })
+
 })
