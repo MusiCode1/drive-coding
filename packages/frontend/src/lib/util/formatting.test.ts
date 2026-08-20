@@ -118,7 +118,16 @@ describe("formatQuotaPeriod", () => {
   it("calendar month — generic monthly period, no provider branching", () => {
     const period: QuotaPeriod = { kind: "calendar", unit: "month" }
     expect(formatQuotaPeriod(period, "en")).toBe("1 month")
-    expect(formatQuotaPeriod(period, "he")).toBe("חודש")
+    // ⚠️ העברית נבדקת בהכלה, לא בשוויון — **בכוונה**. הרינדור המדויק של
+    // Intl ליחיד תלוי-מנוע: bun מחזיר "חודש", ו-node (ICU 78.2) מחזיר
+    // "1 חודש". שוויון כאן קיבע את הפלט של bun, ולכן הטסט היה **אדום
+    // לצמיתות תחת vitest** (שרץ על node) — מה שמרעיל כל DoD שנשען על
+    // "הסוויטה ירוקה", ומאמן להתעלם מאדום.
+    //
+    // וזה גם הגבול הנכון: החוזה של formatQuotaPeriod הוא **בחירת היחידה
+    // והערך**, לא הטיפוגרפיה של ICU. הערך 1 כבר מקובע באנגלית שמעל;
+    // כאן נותר להוכיח שה-locale זורם והיחידה היא חודש ולא שבוע/יום.
+    expect(formatQuotaPeriod(period, "he")).toContain("חודש")
   })
 
   it("calendar week/day — generic, unit comes straight from the snapshot", () => {
