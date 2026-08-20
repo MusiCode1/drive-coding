@@ -103,6 +103,8 @@ export class AudioPlaylist {
   #parkResolve: (() => void) | null = null
   /** מונה-דור ל-markReady מאוחר אחרי invalidate. */
   #segmentEpoch: Map<string, number> = new Map()
+  /** מונע #playLoop כפול אחרי stop(). */
+  #loopGeneration = 0
 
   constructor(
     audioStream: AudioSink,
@@ -143,8 +145,9 @@ export class AudioPlaylist {
     segmentId: string,
     stream: ReadableStream<Uint8Array>,
     ac: AbortController,
+    opts?: import("./audio-sink").SegmentOpts,
   ): Promise<void> {
-    return this.#audioStream.prepareSegment(segmentId, stream, ac)
+    return this.#audioStream.prepareSegment(segmentId, stream, ac, opts)
   }
 
   /**
@@ -176,6 +179,11 @@ export class AudioPlaylist {
       i--
     }
     this.items.splice(i, 0, newItem)
+
+    // lifecycle 4c: הכנסה לפני/ב-cursor בזמן ניגון — הזז cursor כדי להמשיך להצביע על אותו segmentId
+    if (this.#playing && i <= this.#cursor) {
+      this.#cursor += 1
+    }
 
     if (!this.#playing) {
       void this.#playLoop()
@@ -416,6 +424,7 @@ export class AudioPlaylist {
    * A3: מוסיף transport="stopped".
    */
   stop(): void {
+    this.#loopGeneration += 1
     this.#stopped = true
     this.transport = "stopped"
     // שחרר pause אם תקוע
@@ -459,6 +468,7 @@ export class AudioPlaylist {
 
   async #playLoop(): Promise<void> {
     if (this.#playing) return
+    const loopGen = ++this.#loopGeneration
     this.#playing = true
     this.state = "playing"
     this.#onPlaybackStart?.()
@@ -467,17 +477,17 @@ export class AudioPlaylist {
       // A4: cursor הוא עכשיו שדה $state (#cursor) — לא local variable.
       // אתחל ל-0 בהתחלת loop חדש (stop() מאפס, reserve() מחדש מתחיל מ-0).
       this.#cursor = 0
+      const isDeadLoop = () => this.#loopGeneration !== loopGen
       while (true) {
-        // בדוק stop() שנקרא תוך כדי await
-        if (this.#stopped) break
+        if (isDeadLoop()) break
 
         // A3: אם paused — ממתין עד resume() או stop()
         if (this.transport === "paused") {
           await this.#waitForResume()
-          if (this.#stopped) break
+          if (isDeadLoop()) break
         }
         // A3: אם stopped (stop() נקרא בזמן pause) — יציאה
-        if (this.transport === "stopped" || this.#stopped) break
+        if (this.transport === "stopped" || isDeadLoop()) break
 
         // nav-retain: idle-park — כשמגיעים לסוף הפלייליסט ממתינים על navSignal
         if (this.#cursor >= this.items.length) {
@@ -486,7 +496,7 @@ export class AudioPlaylist {
           this.currentSegmentId = null
           // ממתינים — #playing נשאר true כדי ש-next()/prev() יוכלו לפעול
           await this.#waitForNav()
-          if (this.#stopped) break
+          if (isDeadLoop()) break
           // ניווט/reserve חזר — state חוזר ל-playing, callback מופעל מחדש
           this.state = "playing"
           this.#onPlaybackStart?.()
@@ -507,10 +517,10 @@ export class AudioPlaylist {
           // A3: בדוק pause לפני play
           if (this.transport === "paused") {
             await this.#waitForResume()
-            if (this.#stopped) break
+            if (isDeadLoop()) break
           }
           const transportAfterResume = this.transport as AudioPlaylistTransport
-          if (transportAfterResume === "stopped" || this.#stopped) break
+          if (transportAfterResume === "stopped" || isDeadLoop()) break
 
           item.state = "playing"
           this.currentSegmentId = item.segmentId
@@ -519,7 +529,7 @@ export class AudioPlaylist {
           } catch {
             // בוטל / שגיאה → דלג
           }
-          if (this.#stopped) break
+          if (isDeadLoop()) break
           // בדוק אם ניווט שינה cursor
           const navigated = this.items[this.#cursor]?.segmentId !== item.segmentId
           if (!navigated) {
@@ -544,7 +554,7 @@ export class AudioPlaylist {
 
           // המתן עד שה-item ישתנה (markReady/markError) או timeout
           const resolved = await this.#waitForItem(item.segmentId)
-          if (this.#stopped) break // stop() נקרא תוך כדי המתנה
+          if (isDeadLoop()) break // stop() נקרא תוך כדי המתנה
           // A4: בדוק אם ניווט שינה את ה-cursor בזמן ה-await
           if (this.items[this.#cursor]?.segmentId !== item.segmentId) {
             continue
@@ -573,10 +583,10 @@ export class AudioPlaylist {
           // A3: בדוק pause שוב לפני play
           if (this.transport === "paused") {
             await this.#waitForResume()
-            if (this.#stopped) break
+            if (isDeadLoop()) break
           }
           const transportAfterResume = this.transport as AudioPlaylistTransport
-          if (transportAfterResume === "stopped" || this.#stopped) break
+          if (transportAfterResume === "stopped" || isDeadLoop()) break
 
           item.state = "playing"
           this.currentSegmentId = item.segmentId
@@ -586,7 +596,7 @@ export class AudioPlaylist {
           } catch {
             // MIN-5: בוטל / שגיאה → דלג, המשך לבא בתור (best-effort)
           }
-          if (this.#stopped) break // stop() נקרא תוך כדי play
+          if (isDeadLoop()) break // stop() נקרא תוך כדי play
           // A4: בדוק אם ניווט שינה את ה-cursor בזמן ה-play
           const navigated = this.items[this.#cursor]?.segmentId !== item.segmentId
           if (!navigated) {
@@ -609,9 +619,11 @@ export class AudioPlaylist {
         this.#cursor++
       }
     } finally {
-      this.#playing = false
-      this.state = "idle"
-      this.currentSegmentId = null
+      if (this.#loopGeneration === loopGen) {
+        this.#playing = false
+        this.state = "idle"
+        this.currentSegmentId = null
+      }
       // A3: אפס pause resolver אם נשאר (לא צפוי — הגנה)
       this.#pauseResolve = null
       // A4: אפס nav resolver אם נשאר (הגנה)

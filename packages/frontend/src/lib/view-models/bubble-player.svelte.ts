@@ -28,6 +28,7 @@ import type { AudioPlaylist, SegmentOwner } from "$lib/engines/audio-playlist.sv
 import type { Bubble } from "$lib/types/bubble"
 import { playUserRecording } from "$lib/adapters/voice/play-bubble"
 import { resolveTts } from "$lib/adapters/voice/tts-resolve"
+import { safeUUID } from "$lib/util/uuid"
 import { ttsCapabilities } from "./capabilities.svelte"
 
 // ─── קבועים לחיתוך משפטים (זהה ל-Speaker) ──────────────────────────────────
@@ -44,10 +45,11 @@ export class BubblePlayer implements SegmentOwner {
   #audioEl: HTMLAudioElement | null = null
   #abortCtrl: AbortController | null = null
   /** A4: OrderAllocator לסגמנטים שלנו — seq נפרד מ-Speaker. */
-  readonly #orderAlloc = new OrderAllocator()
+  readonly #orderAlloc: OrderAllocator
   readonly #refetchBySegment = new Map<string, () => void>()
 
-  constructor(opts: { session: AgentSession; settings: Settings; playlist: AudioPlaylist }) {
+  constructor(opts: { session: AgentSession; settings: Settings; playlist: AudioPlaylist; orderAlloc: OrderAllocator }) {
+    this.#orderAlloc = opts.orderAlloc
     this.#session = opts.session
     this.#settings = opts.settings
     this.#playlist = opts.playlist
@@ -57,6 +59,17 @@ export class BubblePlayer implements SegmentOwner {
    * לחיצה שנייה על אותה בועה → עוצר. אחרת מנגן.
    * no-op אם turnState !== "idle" (§9 Q3 — שמור guard כמו היום).
    */
+  #bubbleHasPlayableItems(bubbleId: string): boolean {
+    return this.#playlist.items.some(
+      (it) =>
+        it.bubbleId === bubbleId &&
+        (it.state === "ready" ||
+          it.state === "playing" ||
+          it.state === "done" ||
+          (it.state === "reserved" && it.needsRefetch === true)),
+    )
+  }
+
   toggle(bubbleId: string): void {
     // no-op אם הסוכן עדיין עונה (§9 Q3)
     if (this.#session.turnState !== "idle") return
@@ -132,9 +145,9 @@ export class BubblePlayer implements SegmentOwner {
    * §9 Q2 נעול: prev/jump תמיד re-fetch (cancel מוחק sink) — כאן כל הסגמנטים חדשים.
    */
   async #reserveAndPlay(bubbleId: string, text: string, abortCtrl: AbortController): Promise<void> {
-    const { sentences } = splitIntoSentences(text, { minChars: MIN_CHARS, maxChars: MAX_CHARS })
+    const { sentences, remaining } = splitIntoSentences(text, { minChars: MIN_CHARS, maxChars: MAX_CHARS })
     // אם אין משפטים (טקסט קצר) — השתמש בטקסט המלא כסגמנט אחד
-    const parts = sentences.length > 0 ? sentences : [text.trim()]
+    const parts = sentences.length > 0 ? [...sentences, ...(remaining.trim() ? [remaining.trim()] : [])] : [text.trim()]
 
     // V4b: העברת geminiVoice לresolveTts (נשמר מ-dev בזמן reconcile)
     const { provider, voiceId, modelId } = resolveTts(
@@ -156,7 +169,7 @@ export class BubblePlayer implements SegmentOwner {
     // nav-retain: כל reserve מקבל refetch thunk עם הטקסט + provider בסקופ (finding #1)
     const segmentIds: string[] = []
     for (let i = 0; i < parts.length; i++) {
-      const segmentId = crypto.randomUUID()
+      const segmentId = safeUUID()
       const orderKey = this.#orderAlloc.next(bubbleId)
       const partText = parts[i]
       if (partText === undefined) continue
@@ -171,7 +184,7 @@ export class BubblePlayer implements SegmentOwner {
               signal: freshAc.signal,
               directing: { pace: this.#settings.geminiPace, tone: this.#settings.geminiTone },
             })
-            await this.#playlist.prepareSegmentForBubble(segmentId, stream, freshAc)
+            await this.#playlist.prepareSegmentForBubble(segmentId, stream, freshAc, { format: provider.format })
             this.#playlist.markReady(segmentId)
           } catch {
             if (freshAc.signal.aborted) {
@@ -209,7 +222,7 @@ export class BubblePlayer implements SegmentOwner {
         // prepareSegment דרך ה-audioStream של ה-playlist (sharedAudioStream מ-+layout)
         // BubblePlayer לא מחזיק ref ל-audioStream — #playlist מחזיק אותו פנימי.
         // נעשה זאת דרך wrapper method חדש ב-AudioPlaylist.
-        await this.#playlist.prepareSegmentForBubble(segId, stream, abortCtrl)
+        await this.#playlist.prepareSegmentForBubble(segId, stream, abortCtrl, { format: provider.format })
         this.#playlist.markReady(segId)
       } catch {
         if (abortCtrl.signal.aborted) {
@@ -237,6 +250,7 @@ export class BubblePlayer implements SegmentOwner {
   }
 
   stop(): void {
+    this.#playlist.stop()
     if (this.#abortCtrl) {
       this.#abortCtrl.abort()
       this.#abortCtrl = null
