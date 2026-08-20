@@ -41,6 +41,7 @@ export type MessageKey =
   | "chat.bubble.thought"
   | "chat.bubble.agent"
   | "chat.empty"
+  | "chat.error.dismiss"
   | "chat.prompt.placeholder"
   | "chat.send"
   | "chat.disconnect"
