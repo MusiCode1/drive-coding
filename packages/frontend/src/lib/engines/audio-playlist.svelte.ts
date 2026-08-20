@@ -352,8 +352,11 @@ export class AudioPlaylist {
           currentItem.needsRefetch = true // נזרק → ביקור עתידי יסנתז מחדש
           this.#notifyOwnerInvalidate(currentItem.segmentId, currentItem.owner)
         }
+      } else if (currentItem.state === "playing") {
+        // #45: complete segment still marked playing when navigating away
+        currentItem.state = "done"
       }
-      // אם currentComplete===true: item נשאר כמו שהוא (done/ready — buffer שמור ב-sink)
+      // אם currentComplete===true && done/ready: item נשאר (buffer שמור ב-sink)
     }
 
     // (2) item היעד

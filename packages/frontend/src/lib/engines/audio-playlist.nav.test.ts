@@ -680,6 +680,35 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     expect(sink.playOrder.filter((id) => id === "s1").length).toBeLessThanOrEqual(1)
   })
 
+  it("(#45) at most one playing item after consecutive prev() while replaying", async () => {
+    const sink = makeMockSink()
+    const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    for (let i = 0; i < 5; i++) {
+      playlist.reserve(`s${i}`, key(i), "bubble-A")
+      playlist.markReady(`s${i}`)
+    }
+
+    // Advance playLoop through s0..s3 so cursor lands on s4 (playing).
+    await vi.advanceTimersByTimeAsync(0)
+    for (let i = 0; i < 4; i++) {
+      sink.resolvePlay(`s${i}`)
+      await vi.advanceTimersByTimeAsync(0)
+    }
+    expect(playlist.cursor).toBe(4)
+
+    const playingCount = () =>
+      playlist.items.filter((it) => it.state === "playing").length
+
+    playlist.prev()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(playingCount()).toBeLessThanOrEqual(1)
+
+    playlist.prev()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(playingCount()).toBeLessThanOrEqual(1)
+  })
+
   it("(lifecycle-4c) insert לפני cursor בזמן ניגון — cursor עוקב אחרי segmentId", async () => {
     const sink = makeMockSink()
     const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
