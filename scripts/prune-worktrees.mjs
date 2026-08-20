@@ -4,7 +4,8 @@
 // ‏**ברירת המחדל היא dry-run** — מדפיס תוכנית ולא נוגע בכלום. --apply מבצע.
 //
 //   --base <ref>        ref שמכיל את העבודה. ניתן לחזור. ברירת מחדל: dev
-//   --keep <name>       שם worktree שלא ייגע בו. ניתן לחזור.
+//   --keep <name>       שם worktree (basename) שלא ייגע בו. ניתן לחזור.
+//                       ⚠️ התאמה לפי basename — שני worktrees בעלי אותו שם ייתפסו שניהם.
 //   --apply             בצע בפועל (בלי זה: dry-run)
 //   --delete-branches   מחק גם את הענף (git branch -d — מסרב לענף לא-מוזג)
 //   --no-process-check  דלג על סריקת /proc (נדרש מחוץ ללינוקס)
@@ -19,7 +20,20 @@
 // — ה-FE (FE_STATIC_DIR) נעלם, וה-BE ממשיך להאזין ומגיש 404.
 
 import { execFileSync } from "node:child_process"
-import { readdirSync, readFileSync, realpathSync } from "node:fs"
+import { readdirSync, realpathSync } from "node:fs"
+import path from "node:path"
+
+/**
+ * האם `child` הוא `parent` או תחתיו — **חוצה-פלטפורמות**.
+ * ⚠️ `child.startsWith(`${parent}/`)` נראה שקול והוא לא: ב-Windows המפריד הוא
+ * `\\`, ולכן ההשוואה לא מתקיימת לעולם ל-subdir. נמדד חי על Windows 10.0.26200:
+ * הרצה מ-`<worktree>\sub` **לא** הדליקה את שומר ה-cwd, וה-worktree שעומדים בו
+ * נכנס לרשימת-המחיקה. path.relative פותר את זה בלי לגעת במפרידים.
+ */
+const isInside = (parent, child) => {
+  const rel = path.relative(parent, child)
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))
+}
 
 const argv = process.argv.slice(2)
 const flag = (name) => argv.includes(name)
@@ -88,9 +102,20 @@ function worktrees() {
   // מוציא מהרשימה worktree אקראי — כאן זה היה debug-surface, שדווקא חייב הגנה
   // מסיבה אחרת לגמרי (תהליך חי). נתפס ב-dry-run.
   const main = all[0]?.bare ? null : all[0]
-  return all
+  const rest = all
     .filter((w) => !w.bare && w !== main)
     .map((w) => ({ ...w, ref: w.branch ?? w.head, name: w.path.split("/").filter(Boolean).pop() }))
+  // שני worktrees יכולים לחלוק basename (למשל .worktrees/x מול dev/.worktrees/x).
+  // ‏`--keep` תופס את שניהם — מכוון, זו הכיוון הבטוח — אבל שתי שורות זהות בפלט
+  // הן שקר קטן. לשמות מתנגשים מציגים שני מקטעי-נתיב.
+  // ⚠️ `label` לתצוגה בלבד. ‏`name` **חייב** להישאר ה-basename, כי הוא מה
+  // ש-`--keep` משווה מולו; שינויו כאן היה הופך `--keep` לשקט-ולא-תופס.
+  const seen = new Map()
+  for (const w of rest) seen.set(w.name, (seen.get(w.name) ?? 0) + 1)
+  for (const w of rest) {
+    w.label = seen.get(w.name) > 1 ? w.path.split("/").filter(Boolean).slice(-2).join("/") : w.name
+  }
+  return rest
 }
 
 const busy = processCheck ? busyDirs() : new Set()
@@ -105,23 +130,33 @@ const plan = []
 const skipped = []
 
 for (const wt of worktrees()) {
-  const real = realpathSync(wt.path)
-  const skip = (why) => skipped.push({ name: wt.name, why })
+  const skip = (why) => skipped.push({ label: wt.label, why })
+
+  // ⚠️ הרישום שורד `rm -rf` על התיקייה. זה מצב שכיח דווקא בריפו מוזנח — וכל
+  // גישה למסלול שאיננו (realpath/status) זורקת ENOENT ומפילה את הריצה כולה.
+  // `git worktree prune` בסוף --apply מנקה בדיוק את אלה.
+  let real
+  try {
+    real = realpathSync(wt.path)
+  } catch {
+    skip("path is gone — prune will clear the entry")
+    continue
+  }
 
   if (keep.has(wt.name)) skip("--keep")
   else if (wt.branch && bases.includes(wt.branch)) skip("is a base ref")
-  else if (here === real || here.startsWith(`${real}/`)) skip("cwd is inside it")
+  else if (isInside(real, here)) skip("cwd is inside it")
   else if (!bases.some((b) => gitOk("merge-base", "--is-ancestor", wt.ref, b)))
     skip(`not contained in ${bases.join(" / ")}`)
   else if (git("-C", wt.path, "status", "--porcelain") !== "") skip("uncommitted changes")
-  else if (busy !== null && [...busy].some((c) => c === real || c.startsWith(`${real}/`)))
+  else if (busy !== null && [...busy].some((c) => isInside(real, c)))
     skip("a live process sits inside")
   else plan.push(wt)
 }
 
-for (const s of skipped) console.log(`  skip  ${s.name.padEnd(36)} ${s.why}`)
+for (const s of skipped) console.log(`  skip  ${s.label.padEnd(36)} ${s.why}`)
 console.log(`\n${apply ? "removing" : "would remove"} ${plan.length} worktree(s):`)
-for (const wt of plan) console.log(`  ${apply ? "✓" : "-"} ${wt.name.padEnd(36)} ${wt.ref}`)
+for (const wt of plan) console.log(`  ${apply ? "✓" : "-"} ${wt.label.padEnd(36)} ${wt.ref}`)
 
 if (!apply) {
   console.log("\ndry-run — nothing was touched. re-run with --apply to perform.")
@@ -134,7 +169,7 @@ for (const wt of plan) {
     git("worktree", "remove", wt.path)
   } catch (e) {
     failed++
-    console.error(`  ✗ ${wt.name}: ${String(e.message).split("\n")[0]}`)
+    console.error(`  ✗ ${wt.label}: ${String(e.message).split("\n")[0]}`)
     continue
   }
   // git branch -d מסרב בעצמו לענף שאינו מוזג — לכן אין כאן בדיקה משלנו.
