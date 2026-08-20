@@ -17,12 +17,24 @@ import { Mp3Segment } from "./segments/mp3-segment"
 import { PcmSegment } from "./segments/pcm-segment"
 import type { PlayableSegment } from "./segments/playable-segment"
 
+export type SegmentFactory = (
+  segmentId: string,
+  stream: ReadableStream<Uint8Array>,
+  ac: AbortController,
+  opts?: import("./audio-sink").SegmentOpts,
+) => PlayableSegment
+
 export class PlayableSink implements AudioSink {
   #segments = new Map<string, PlayableSegment>()
   #ctx: AudioContext | null = null
   // nav-retain fix: ה-segment שמתנגן כרגע. play() של segment אחר עוצר אותו קודם —
   // בלי זה, ניווט (prev/next) מתחיל segment חדש בעוד הקודם עדיין משמיע → קקפוניה.
   #current: PlayableSegment | null = null
+  readonly #segmentFactory?: SegmentFactory
+
+  constructor(segmentFactory?: SegmentFactory) {
+    this.#segmentFactory = segmentFactory
+  }
 
   #getCtx(): AudioContext {
     if (!this.#ctx) {
@@ -38,7 +50,9 @@ export class PlayableSink implements AudioSink {
     opts?: SegmentOpts,
   ): Promise<void> {
     let seg: PlayableSegment
-    if (opts?.format === "pcm") {
+    if (this.#segmentFactory !== undefined) {
+      seg = this.#segmentFactory(segmentId, stream, ac, opts)
+    } else if (opts?.format === "pcm") {
       const ctx = this.#getCtx()
       seg = new PcmSegment(segmentId, ctx)
     } else {
@@ -68,9 +82,7 @@ export class PlayableSink implements AudioSink {
   }
 
   resume(): void {
-    for (const seg of this.#segments.values()) {
-      seg.resume()
-    }
+    this.#current?.resume()
   }
 
   /**
