@@ -192,6 +192,19 @@ export class AudioPlaylist {
   }
 
   /**
+   * Fetch ננטש (ניווט/עצירה) — הפריט נשאר reserved וניתן לשחזור.
+   * משחרר resolver תלוי כדי שלא ימתין 20 שניות.
+   */
+  markAbandoned(segmentId: string): void {
+    const item = this.items.find((it) => it.segmentId === segmentId)
+    if (item !== undefined) {
+      item.state = "reserved"
+      item.needsRefetch = true
+    }
+    this.#itemResolvers.get(segmentId)?.()
+  }
+
+  /**
    * A3: השהיית ניגון. transport=paused; מאציל ל-AudioSink; #playLoop ממתין.
    * state נשאר "playing" (יש תוכן פעיל — Speaker.get state לא משתנה).
    * ⚠️ לאמת חי: pause לא גורם ל-ended/error שמדלג.
@@ -504,7 +517,11 @@ export class AudioPlaylist {
             this.#cursor++
             continue
           }
-          // לאחר המתנה — בדוק מחדש
+          // markAbandoned משאיר reserved+needsRefetch — חזור לענף reserved (refetch)
+          const stateAfterWait = item.state
+          if (stateAfterWait === "reserved" && item.needsRefetch === true) {
+            continue
+          }
         }
 
         // re-read state אחרי await (TypeScript לא מצר את ה-state אחרי await)

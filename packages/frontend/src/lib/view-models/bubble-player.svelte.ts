@@ -174,7 +174,11 @@ export class BubblePlayer {
             await this.#playlist.prepareSegmentForBubble(segmentId, stream, freshAc)
             this.#playlist.markReady(segmentId)
           } catch {
-            this.#playlist.markError(segmentId)
+            if (freshAc.signal.aborted) {
+              this.#playlist.markAbandoned(segmentId)
+            } else {
+              this.#playlist.markError(segmentId)
+            }
           }
         })()
       }
@@ -192,7 +196,7 @@ export class BubblePlayer {
       if (segId === undefined) return
       try {
         if (abortCtrl.signal.aborted) {
-          this.#playlist.markError(segId)
+          this.#playlist.markAbandoned(segId)
           return
         }
         const stream = await provider.synthesize({
@@ -208,7 +212,11 @@ export class BubblePlayer {
         await this.#playlist.prepareSegmentForBubble(segId, stream, abortCtrl)
         this.#playlist.markReady(segId)
       } catch {
-        this.#playlist.markError(segId)
+        if (abortCtrl.signal.aborted) {
+          this.#playlist.markAbandoned(segId)
+        } else {
+          this.#playlist.markError(segId)
+        }
       }
     })
 

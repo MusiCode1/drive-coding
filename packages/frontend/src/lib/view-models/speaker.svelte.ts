@@ -51,7 +51,15 @@ const MIN_CHARS = 20
 const MAX_CHARS = 200
 const LOOKAHEAD = 2
 
-export type TtsJobStatus = "pending" | "fetching" | "ready" | "error"
+export type TtsJobStatus = "pending" | "fetching" | "ready" | "error" | "stale"
+
+/** תוצאת #fetchJob — כל מסלול חייב לדווח (אין return שקט). */
+export type FetchOutcome =
+  | { kind: "ready" }
+  /** ננטש ביוזמת הפלייליסט (ניווט/עצירה) — הפריט נשאר reserved וניתן לשחזור. */
+  | { kind: "abandoned" }
+  /** כשל אמיתי — markError, הפריט מדולג. */
+  | { kind: "error"; reason: "narration-null" | "provider-unavailable" | "synthesize-failed" }
 
 export type TtsJob = {
   segmentId: string
@@ -381,14 +389,32 @@ export class Speaker {
       if (job === undefined) break
       job.status = "fetching"
       this.#activeFetches += 1
-      void this.#fetchJob(job).finally(() => {
-        this.#activeFetches -= 1
-        this.#pumpFetchLoop()
-      })
+      void this.#fetchJob(job)
+        .then((outcome) => {
+          this.#applyFetchOutcome(job.segmentId, outcome)
+        })
+        .finally(() => {
+          this.#activeFetches -= 1
+          this.#pumpFetchLoop()
+        })
     }
   }
 
-  async #fetchJob(job: TtsJob): Promise<void> {
+  #applyFetchOutcome(segmentId: string, outcome: FetchOutcome): void {
+    switch (outcome.kind) {
+      case "ready":
+        this.#player.markReady(segmentId)
+        break
+      case "error":
+        this.#player.markError(segmentId)
+        break
+      case "abandoned":
+        this.#player.markAbandoned(segmentId)
+        break
+    }
+  }
+
+  async #fetchJob(job: TtsJob): Promise<FetchOutcome> {
     try {
       let text = job.text
 
@@ -418,14 +444,14 @@ export class Speaker {
         const narrationText = await this.#narrateForJob(job)
         if (narrationText === null) {
           job.status = "error"
-          return
+          return { kind: "error", reason: "narration-null" }
         }
         text = narrationText
       }
 
       if (job.abort.signal.aborted) {
         job.status = "error"
-        return
+        return { kind: "abandoned" }
       }
 
       // V4a-unify: בחר ספק דרך resolveTts (מקור-אמת יחיד); V4b: העברת geminiVoice
@@ -442,7 +468,7 @@ export class Speaker {
           provider: this.#settings.ttsProvider,
           id: job.segmentId,
         })
-        return
+        return { kind: "error", reason: "provider-unavailable" }
       }
       // slice 22: חשב textHash על הטקסט שמסונתז (provenance)
       const textHash = await cacheKeyFor(text, voiceId, modelId)
@@ -460,18 +486,20 @@ export class Speaker {
         textHash,
         format: provider.format,
       })
-      // A2: markReady — הסגמנט מוכן ב-AudioSink; #playLoop יתחיל לנגן
-      this.#player.markReady(job.segmentId)
       job.status = "ready"
+      return { kind: "ready" }
     } catch (e) {
+      if (job.abort.signal.aborted) {
+        job.status = "error"
+        return { kind: "abandoned" }
+      }
       // MIN-5: דלג + המשך, אל תזרוק.
       job.status = "error"
-      // A2: markError — הסגמנט נכשל; #playLoop ידלג
-      this.#player.markError(job.segmentId)
       console.warn("TTS job failed, skipping segment", {
         id: job.segmentId,
         err: e instanceof Error ? e.message : String(e),
       })
+      return { kind: "error", reason: "synthesize-failed" }
     } finally {
       // msr-v2: הפחת ספירה (job הסתיים — גם אם שגיאה)
       if (this.#pendingCount > 0) this.#pendingCount -= 1
