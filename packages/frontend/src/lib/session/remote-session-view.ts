@@ -3,7 +3,8 @@
  *
  * מתחבר ל-SessionHost בשרת דרך HTTP+SSE (S4 routes):
  * - GET  /api/agents/:id/events  — SSE snapshot+patches (דרך SSEReader)
- * - POST /api/agents/:id/rpc     — prompt/cancel/setMode/setConfigOption/setSessionModel/extMethod
+ * - POST /api/agents/:id/rpc     — session/prompt · session/cancel · session/set_mode
+ *                                  session/set_config_option · _drive/ext · _drive/set_session_model
  * - POST /api/agents/:id/reply   — respond ל-permission/elicitation
  *
  * Session management (slice remote-session-mgmt C4): listSessions/loadSession/
@@ -23,6 +24,7 @@ import {
   applyPatch,
   createInitialSessionState,
   type Patch,
+  RPC_METHODS,
   type SessionState,
 } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
@@ -388,7 +390,7 @@ export class RemoteSessionView implements SessionView {
    * state write it would stay stale across the switch).
    */
   async loadSession(sessionId: string, cwd?: string): Promise<void> {
-    const res = (await this.#rpc("loadSession", {
+    const res = (await this.#rpc(RPC_METHODS.loadSession, {
       sessionId,
       ...(cwd && { cwd }),
     })) as { sessionId?: unknown } | undefined
@@ -406,7 +408,7 @@ export class RemoteSessionView implements SessionView {
    * empty list gracefully instead of showing a generic "502".
    */
   async listSessions(): Promise<SessionInfo[]> {
-    const res = (await this.#rpc("listSessions", {})) as
+    const res = (await this.#rpc(RPC_METHODS.listSessions, {})) as
       | { sessions?: unknown; sessionCapabilities?: unknown }
       | undefined
     this.#sessionCapabilities =
@@ -430,7 +432,7 @@ export class RemoteSessionView implements SessionView {
    * local (button hidden / false return).
    */
   async deleteSession(sessionId: string): Promise<void> {
-    const res = (await this.#rpc("deleteSession", { sessionId })) as
+    const res = (await this.#rpc(RPC_METHODS.deleteSession, { sessionId })) as
       | { ok?: unknown; unsupported?: unknown }
       | undefined
     if (res?.unsupported === true) {
@@ -449,30 +451,34 @@ export class RemoteSessionView implements SessionView {
    * לאחר slice remote-images C1.
    */
   async prompt(content: string | PromptBlocks, meta?: Record<string, unknown>): Promise<void> {
-    await this.#rpc("prompt", { sessionId: this.#sessionId, content, meta })
+    await this.#rpc(RPC_METHODS.prompt, { sessionId: this.#sessionId, content, meta })
   }
 
   async cancel(): Promise<void> {
-    await this.#rpc("cancel", { sessionId: this.#sessionId })
+    await this.#rpc(RPC_METHODS.cancel, { sessionId: this.#sessionId })
   }
 
   async setMode(mode: string): Promise<void> {
-    await this.#rpc("setMode", { sessionId: this.#sessionId, modeId: mode })
+    await this.#rpc(RPC_METHODS.setMode, { sessionId: this.#sessionId, modeId: mode })
   }
 
   async setConfigOption(key: string, value: unknown): Promise<void> {
-    await this.#rpc("setConfigOption", { sessionId: this.#sessionId, configId: key, value })
+    await this.#rpc(RPC_METHODS.setConfigOption, {
+      sessionId: this.#sessionId,
+      configId: key,
+      value,
+    })
   }
 
   async setSessionModel(model: string): Promise<void> {
-    await this.#rpc("setSessionModel", { sessionId: this.#sessionId, model })
+    await this.#rpc(RPC_METHODS.setSessionModel, { sessionId: this.#sessionId, model })
   }
 
   async extMethod(method: string, params: unknown): Promise<unknown> {
     if (RETURN_VALUE_EXT_METHODS.has(method)) {
       throw new Error(NOT_SUPPORTED_EXT_RETURN_VALUE)
     }
-    return this.#rpc("extMethod", { sessionId: this.#sessionId, method, params })
+    return this.#rpc(RPC_METHODS.extMethod, { sessionId: this.#sessionId, method, params })
   }
 
   // ─── Reply (permission/elicitation) ───

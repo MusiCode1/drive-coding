@@ -21,6 +21,7 @@ import {
   createInitialSessionState,
   type Patch,
   type PendingKind,
+  RPC_METHODS,
   reduce,
   type SessionState,
 } from "@drive-coding/core/session"
@@ -47,11 +48,16 @@ function createMockAcpClient(outboundLog: Array<{ method: string; params: unknow
   return {
     newSession: vi.fn().mockResolvedValue({ sessionId: "s-contract" }),
     loadSession: vi.fn().mockResolvedValue({}),
+    // ⚠️ התוויות כאן קנוניות **בכוונה**, ולא "כדי שהטסט יעבור". ה-harness
+    // המרוחק דוחף את גוף-החוט האמיתי; המקומי דוחף תווית מסונתזת. אם השתיים
+    // אינן מדברות אותו אוצר-מילים, כל קיבוע ב-contract המשותף נעשה
+    // תלוי-תעבורה — וזה בדיוק מה ש-contract משותף אמור למנוע.
+    // וזו גם התווית הנכונה: החוט-לספק במסלול המקומי **הוא** session/prompt.
     prompt: vi.fn(async (sessionId: string, content: unknown) => {
-      outboundLog.push({ method: "prompt", params: { sessionId, content } })
+      outboundLog.push({ method: RPC_METHODS.prompt, params: { sessionId, content } })
     }),
     cancel: vi.fn(async (sessionId: string) => {
-      outboundLog.push({ method: "cancel", params: { sessionId } })
+      outboundLog.push({ method: RPC_METHODS.cancel, params: { sessionId } })
     }),
     extMethod: vi.fn().mockResolvedValue({ snapshot: null }),
     listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
@@ -272,7 +278,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
         // real bodies; the six fire-and-forget methods keep the 202 {version}.
         const rawBody = init?.body ? JSON.parse(init.body as string) : undefined
         const rpcMethod = (rawBody as { method?: string } | undefined)?.method
-        if (rpcMethod === "listSessions") {
+        if (rpcMethod === RPC_METHODS.listSessions) {
           return {
             ok: true,
             status: 200,
@@ -283,7 +289,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
               }),
           } as unknown as Response
         }
-        if (rpcMethod === "loadSession") {
+        if (rpcMethod === RPC_METHODS.loadSession) {
           const params = (rawBody as { params?: { sessionId?: string } }).params
           return {
             ok: true,
@@ -291,7 +297,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
             json: () => Promise.resolve({ sessionId: params?.sessionId ?? "s", version: 2 }),
           } as unknown as Response
         }
-        if (rpcMethod === "deleteSession") {
+        if (rpcMethod === RPC_METHODS.deleteSession) {
           return {
             ok: true,
             status: 200,

@@ -18,8 +18,12 @@
  * ─── slice remote-session-view C4 (integration) ───
  */
 
-import type { Patch, SessionState } from "@drive-coding/core/session"
-import { createInitialSessionState } from "@drive-coding/core/session"
+import {
+  createInitialSessionState,
+  type Patch,
+  RPC_METHODS,
+  type SessionState,
+} from "@drive-coding/core/session"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { RemoteSessionView } from "$lib/session/remote-session-view.js"
 import { AgentSession } from "./agent-session.svelte.js"
@@ -185,7 +189,7 @@ describe("VM + RemoteSessionView integration (C4)", () => {
     await view.prompt("hi from VM")
 
     expect(captured).toMatchObject({
-      method: "prompt",
+      method: RPC_METHODS.prompt,
       params: { sessionId: "int-sess-1", content: "hi from VM" },
     })
     // VM itself doesn't need to change for this — it's the same SessionView port

@@ -12,7 +12,7 @@
  */
 
 import type { SessionNotification } from "@agentclientprotocol/sdk"
-import type { Patch } from "@drive-coding/core/session"
+import { type Patch, RPC_METHODS } from "@drive-coding/core/session"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { SessionView } from "../session-view.js"
 
@@ -200,7 +200,7 @@ export function describeSessionViewContract(
       await h.view.prompt("hello there")
       expect(h.outbound()).toContainEqual(
         expect.objectContaining({
-          method: "prompt",
+          method: RPC_METHODS.prompt,
           params: expect.objectContaining({ content: "hello there" }),
         }),
       )

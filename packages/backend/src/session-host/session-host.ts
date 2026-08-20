@@ -277,7 +277,7 @@ export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & {
   /**
    * Set the session mode (e.g. "auto", "compact").
    * Requires an active session — throws if currentState.sessionId is null.
-   * S4: exposed via POST /api/agents/:id/rpc {method:"setMode"}
+   * S4: exposed via POST /api/agents/:id/rpc {method:"session/set_mode"}
    */
   setMode(modeId: string): Promise<void>
 
@@ -285,7 +285,7 @@ export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & {
    * Set a session config option.
    * Requires an active session — throws if currentState.sessionId is null.
    * value: string | boolean (matches AcpClient.setSessionConfigOption)
-   * S4: exposed via POST /api/agents/:id/rpc {method:"setConfigOption"}
+   * S4: exposed via POST /api/agents/:id/rpc {method:"session/set_config_option"}
    */
   setConfigOption(configId: string, value: string | boolean): Promise<void>
 
@@ -293,7 +293,7 @@ export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & {
    * Call an extension method on the agent.
    * Does NOT require an active session (no sessionId guard).
    * params: Record<string, unknown> (matches AcpClient.extMethod)
-   * S4: exposed via POST /api/agents/:id/rpc {method:"extMethod"}
+   * S4: exposed via POST /api/agents/:id/rpc {method:"_drive/ext"}
    */
   extMethod(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>>
 
@@ -301,7 +301,7 @@ export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & {
    * Set the model for the active session.
    * Requires an active session — throws if currentState.sessionId is null.
    * Delegates to AcpClient.setSessionModel({sessionId, modelId}).
-   * slice remote-session-view C4: exposed via POST /api/agents/:id/rpc {method:"setSessionModel"}
+   * slice remote-session-view C4: exposed via POST /api/agents/:id/rpc {method:"_drive/set_session_model"}
    */
   setSessionModel(model: string): Promise<void>
 
@@ -310,14 +310,14 @@ export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & {
   /**
    * Passthrough to client.listSessions() — the raw ACP response ({sessions, nextCursor?}).
    * JSON-RPC errors propagate AS-IS (including code -32601) — the rpc route maps them.
-   * S4: exposed via POST /api/agents/:id/rpc {method:"listSessions"}
+   * S4: exposed via POST /api/agents/:id/rpc {method:"session/list"}
    */
   listSessions(): Promise<Record<string, unknown>>
 
   /**
    * Passthrough to client.deleteSession(sessionId).
    * JSON-RPC errors propagate AS-IS (including code -32601) — the rpc route maps them.
-   * S4: exposed via POST /api/agents/:id/rpc {method:"deleteSession"}
+   * S4: exposed via POST /api/agents/:id/rpc {method:"session/delete"}
    */
   deleteSession(sessionId: string): Promise<void>
 
