@@ -84,12 +84,50 @@ describe("behaviour parity with the Python implementation", () => {
     }
   }
 
-  it.skipIf(!existsSync(py))(
-    "JS and Python agree on the real repo (exit code)",
-    () => {
-      const jsRes = run("node", [mjs])
-      const pyRes = run("python3", [py])
-      expect(jsRes.code).toBe(pyRes.code)
-    },
-  )
+  it.skipIf(!existsSync(py))("JS and Python agree on the real repo (exit code)", () => {
+    const jsRes = run("node", [mjs])
+    const pyRes = run("python3", [py])
+    expect(jsRes.code).toBe(pyRes.code)
+  })
+})
+
+describe("באג #19 — תו מחוץ ל-BMP הזיז את כל האינדקסים", () => {
+  /**
+   * 🔴 `stripJsdocBlocks` בנה `out` ב-spread (**נקודות-קוד**) והשתמש ב-
+   * `text[i]`/`text.length` (**יחידות UTF-16**). מכל אמוג\u05f3י והלאה השניים
+   * מוזזים באיבר, והריקון פוגע במקומות הלא-נכונים.
+   *
+   * ⚠️ **ההיסט חייב להצטבר כדי לפגוע** — אמוג\u05f3י בודד אינו מספיק. בשניים
+   * ומעלה הריקון חורג ומוחק את ה-`/` הראשון של `//` שאחריו; מכונת-המצבים
+   * רואה `/` בודד, לא מזהה הערת-שורה, והעברית דולפת כאילו הייתה קוד.
+   *
+   * במקרה האמיתי שהוליד את זה (`sse-reader.ts`): **24 שורות תמימות הואשמו**.
+   */
+  function withEmojiBlocks(n) {
+    const blocks = Array.from({ length: n }, (_, i) => `/**\n * \u{1F534} הערה ${i}\n */`).join(
+      "\n",
+    )
+    return [
+      blocks,
+      "/**",
+      " * בלוק אחרון",
+      " */",
+      "// הערה בשורה עם עברית",
+      "const a = 1",
+      "export default a",
+    ].join("\n")
+  }
+
+  it("🔴 שני אמוג\u05f3ים ומעלה — הערת-השורה שאחריהם אינה מואשמת", () => {
+    expect(hebrewInCode(withEmojiBlocks(2))).toBe(false)
+  })
+
+  it("וההיסט מצטבר — גם בשמונה", () => {
+    expect(hebrewInCode(withEmojiBlocks(8))).toBe(false)
+  })
+
+  it("ועדיין תופס עברית אמיתית במחרוזת שאחרי אמוג\u05f3ים", () => {
+    const src = [withEmojiBlocks(3), 'const msg = "שלום"'].join("\n")
+    expect(hebrewInCode(src)).toBe(true)
+  })
 })

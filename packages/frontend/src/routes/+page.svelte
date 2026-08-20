@@ -5,6 +5,8 @@ import Loader2Icon from "@lucide/svelte/icons/loader-2"
 import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
 import { onMount, untrack } from "svelte"
 import { goto } from "$app/navigation"
+import { env } from "$env/dynamic/public"
+import { readSessionTransport } from "$lib/session/session-transport-read"
 import { connectAgent } from "$lib/actions/connect-agent"
 import { fetchServerOptions } from "$lib/adapters/options"
 import type { RecentProject } from "$lib/adapters/recent-projects"
@@ -18,7 +20,14 @@ import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
 import LanguageSelect from "$lib/components/settings/LanguageSelect.svelte"
 import CliBadge from "$lib/components/ui/CliBadge.svelte"
 import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
-import { getActiveAgents, getCliAvailability, getI18n, getModals, getSession, getSettings } from "$lib/context"
+import {
+  getActiveAgents,
+  getCliAvailability,
+  getI18n,
+  getModals,
+  getSession,
+  getSettings,
+} from "$lib/context"
 import { cliDisplayName } from "$lib/util/cli-display"
 import { resolveCliKind } from "$lib/util/resolve-cli-kind"
 
@@ -98,17 +107,36 @@ $effect(() => {
 const isRtl = $derived(settings.locale === "he")
 
 async function handleReconnect(agent: AgentPublic) {
-  if (!agent.acpSessionId) return
-  settings.setCliKind(agent.cliKind)
-  settings.setLastCwd(agent.cwd)
+  // ─── slice remote-warm-reconnect C4 / transport-polish C2: ניתוב לפי דגל sessionTransport ───
+  // פתירת הדגל דרך הפונקציה המשותפת — query ← override(sessionStorage) ←
+  // stored(settings) ← env ← "ws". http → warm reconnect דרך SSE
+  // (attachRemoteToLiveAgent, בלי WS); ws → הנתיב הקיים (attachToLiveAgent).
+  const transport = readSessionTransport({
+    env: env.PUBLIC_SESSION_TRANSPORT,
+    stored: settings.sessionTransport,
+  })
+
+  if (transport === "http") {
+    await session.attachRemoteToLiveAgent({
+      agentId: agent.id,
+      cwd: agent.cwd,
+      cliKind: agent.cliKind,
+    })
+    if (session.status === "connected") {
+      await goto("/chat?sessionTransport=http")
+    }
+    // if status==="error" — stay on /, VM set this.error
+    return
+  }
   await session.attachToLiveAgent({
     agentId: agent.id,
     sessionId: agent.acpSessionId,
     cwd: agent.cwd,
     cliKind: agent.cliKind,
   })
-  if (session.status === "connected") { await goto("/chat") }
-  // if status==="error" — stay on /, VM set this.error
+  if (session.status === "connected") {
+    await goto("/chat")
+  }
 }
 
 async function onSubmit(e: SubmitEvent) {
@@ -125,7 +153,11 @@ async function onSubmit(e: SubmitEvent) {
 // ריק חזותית אחרי כשל 400). מעביר דרך אותו resolveCliKind ומשתמש בערך התקף גם
 // לתצוגה המקומית וגם ל-connectAgent — כדי שלא ננסה להתחבר עם kind שכבר ידוע כלא-תקף.
 async function handleRecentSelect(project: RecentProject) {
-  const resolvedKind = resolveCliKind(project.kind, cliAvailability.registry, cliAvailability.available)
+  const resolvedKind = resolveCliKind(
+    project.kind,
+    cliAvailability.registry,
+    cliAvailability.available,
+  )
   cliKind = resolvedKind
   cwd = project.cwd
   await connectAgent({ cliKind: resolvedKind, cwd: project.cwd, session, settings })

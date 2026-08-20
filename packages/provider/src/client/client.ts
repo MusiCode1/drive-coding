@@ -86,6 +86,40 @@ function isAuthRequiredError(e: unknown): e is { data?: { code?: string }; messa
   return err?.data?.code === "auth_required"
 }
 
+/** סימון על שגיאות שנוצרו ע"י `withTimeout` — כדי להבחין בהן מכשל-RPC אמיתי. */
+const TIMEOUT_MARK = Symbol.for("drive-coding.acp.timeout")
+
+/** האם השגיאה היא פקיעת-זמן שלנו (ולא תשובת-שגיאה מהסוכן). */
+export function isTimeoutError(e: unknown): e is Error {
+  return Boolean((e as Record<symbol, unknown> | null)?.[TIMEOUT_MARK])
+}
+
+/**
+ * עוטף הבטחה ב-race מול שעון. הדפוס היה משוכפל ב-initialize; הוצא החוצה כשנוסף
+ * timeout ל-authenticate, כדי ששניהם יתנהגו זהה.
+ *
+ * ⚠️ `p.catch(() => {})` חיוני: אם ה-race נחתך ע"י ה-timeout, הדחייה המקורית
+ * נשארת בלי מטפל ומייצרת unhandled-rejection. הדחייה עדיין נצפית ע"י ה-race עצמו.
+ */
+async function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  p.catch(() => {})
+  try {
+    return await Promise.race([
+      p,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          const err = new Error(message) as Error & Record<symbol, unknown>
+          err[TIMEOUT_MARK] = true
+          reject(err)
+        }, ms)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
 export type AcpClientOptions = {
   /** דריסת timeout האתחול. ברירת מחדל: 10 שניות. בבדיקות מעבירים ערך קטן. */
   initTimeoutMs?: number
@@ -372,16 +406,36 @@ export async function createAcpClient(
   }
 
   // authenticate גנרי — רק כש-authMethods לא ריק (Cursor: cursor_login, Grok: cached_token/grok.com).
-  // opencode/gemini/qoder/claude/codex לא מציעים authMethods → לא נוגעים כלל, אין רגרסיה.
+  // ⚠️ הערה קודמת כאן טענה ש-"opencode/gemini/qoder/claude/codex לא מציעים authMethods".
+  // זה **התיישן**: qoder מציע `qodercli-login`, וההנחה הזו היא שהסתירה את הבאג למטה.
+  // אל תסמכו על רשימה כזו — היא מתיישנת בכל שדרוג של ספק.
   const authMethodId = resolveAuthMethodId(initResult.authMethods)
   if (authMethodId) {
     try {
-      await conn.authenticate({ methodId: authMethodId })
+      // 🔴 timeout על authenticate (2026-08-16). `qodercli --acp` מכריז
+      // `qodercli-login` **ולא עונה לעולם** (אומת בצינור חשוף, בלי ה-BE) → הסשן
+      // נתלה ללא-חסם, בלי שגיאה ובלי חיווי.
+      //
+      // התובנה שקובעת את העיצוב: **אימות אינטראקטיבי לא יכול להצליח כאן בכלל.**
+      // ה-CLI מופעל headless מתחת ל-BE — אין TTY, אין דפדפן, ואין דרך שהמשתמשת
+      // תשלים כניסה בתוך התהליך. ⇒ ל-timeout אין תפקיד של "לתת לאימות זמן"; הוא
+      // קיים כדי להפוך תלייה אינסופית להודעה שאפשר לפעול לפיה. לכן כל ערך סופי
+      // עדיף, ונבחר אותו ערך כמו initialize לשם עקביות.
+      await withTimeout(
+        conn.authenticate({ methodId: authMethodId }),
+        initTimeoutMs,
+        `ACP authenticate timeout after ${initTimeoutMs}ms (methodId: ${authMethodId}) — the agent advertised this auth method but never answered. Interactive sign-in cannot complete here (headless, no TTY/browser); sign in with the CLI directly first.`,
+      )
     } catch (e) {
       // auth_required אמיתי → פאטלי (כמו initialize). כל שגיאה אחרת (כמו -32603
       // "not implemented" של opencode, שמכריז authMethods בלי ליישם את ה-RPC בפועל)
       // → לא-פאטלי: log + המשך כאילו authenticate לא נקרא. מונע רגרסיה (calev NO-GO).
-      if (isAuthRequiredError(e)) {
+      //
+      // ⚠️ **פקיעה אינה אף אחד מהשניים, ולכן היא נבדקת ראשונה.** להמשיך אחריה
+      // (הענף הלא-פאטלי) רק ידחה את הכישלון ל-session/new עם פחות מידע. היא
+      // מטופלת כ-auth_required — וזה מפעיל את AuthGuidance הקיים ב-FE, שמציג
+      // למשתמשת את שיטות-האימות עם התיאור של הספק עצמו. אפס UI חדש.
+      if (isTimeoutError(e) || isAuthRequiredError(e)) {
         transport.close()
         const authErr = new Error(
           `ACP agent authentication failed (methodId: ${authMethodId}): ${e.message ?? String(e)}`,

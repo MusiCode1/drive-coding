@@ -94,9 +94,11 @@ function makeMockConnectionRegistry(conn: ProviderConnection | null): {
   connectionRegistry: ConnectionRegistry
   markAttachedSpy: ReturnType<typeof vi.fn>
   markDetachedSpy: ReturnType<typeof vi.fn>
+  touchOwnerSpy: ReturnType<typeof vi.fn>
 } {
   const markAttachedSpy = vi.fn()
   const markDetachedSpy = vi.fn()
+  const touchOwnerSpy = vi.fn() // slice liveness C1: WS feeds touchOwner on $/ping (DoD 8)
 
   const connectionRegistry: ConnectionRegistry = {
     connect: vi.fn(
@@ -110,11 +112,14 @@ function makeMockConnectionRegistry(conn: ProviderConnection | null): {
     markAttached: markAttachedSpy,
     markDetached: markDetachedSpy,
     getRuntimeInfo: vi.fn(() => null),
+    isAttached: vi.fn(() => false),
+    // slice liveness C1: WS feeds touchOwner on $/ping.
+    touchOwner: touchOwnerSpy,
     close: vi.fn(async () => {}),
     onCrash: vi.fn(() => () => {}),
   }
 
-  return { connectionRegistry, markAttachedSpy, markDetachedSpy }
+  return { connectionRegistry, markAttachedSpy, markDetachedSpy, touchOwnerSpy }
 }
 
 // ─── Mock FE WebSocket ────────────────────────────────────────────────────────
@@ -188,7 +193,7 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
   it("$/ping keepalive → replies $/pong and does NOT forward to conn.wire.write", async () => {
     const { conn, writeSpy } = makeMockConn()
     const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
-    const { connectionRegistry } = makeMockConnectionRegistry(conn)
+    const { connectionRegistry, touchOwnerSpy } = makeMockConnectionRegistry(conn)
 
     const onConnect = createAgentWsHandler({ orchestrator, connectionRegistry })
     const { ws, sent } = makeMockFeWs()
@@ -201,6 +206,9 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
 
     expect(sent).toContain(`${JSON.stringify({ jsonrpc: "2.0", method: "$/pong" })}\n`)
     expect(writeSpy).not.toHaveBeenCalled()
+    // slice liveness C1 (DoD 8): ה-ping הנכנס מזין את חותמת-הבעלות — אותו
+    // סימן-חיים שגם HTTP מדווח דרכו (`touchOwner` אגנוסטי, sweep בודק via).
+    expect(touchOwnerSpy).toHaveBeenCalledWith("ping-agent")
   })
 
   it("child.stdout line forwarded to FE with \\n preserved (NDJSON delimiter)", async () => {
@@ -326,5 +334,186 @@ describe("ws-agent in-process pipe (CUT-3b-ii)", () => {
 
     // conn.close must NOT be called — child survives FE disconnect
     expect(conn.close).not.toHaveBeenCalled()
+  })
+
+  // ─── slice remote-warm-reconnect C2: guard WS→host ─────────────────────────
+
+  describe("sessionHostRegistry guard (C2)", () => {
+    it("isHeld=true but no host (in-flight) → close(1008, 'session-host-active'), no pipe attached", async () => {
+      const { conn, writeSpy } = makeMockConn()
+      const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
+      const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
+      // In-flight creation: isHeld true but getHost returns undefined
+      const sessionHostRegistry = {
+        isHeld: vi.fn(() => true),
+        getHost: vi.fn(() => undefined),
+        unregisterHost: vi.fn(),
+      }
+
+      const onConnect = createAgentWsHandler({
+        orchestrator,
+        connectionRegistry,
+        sessionHostRegistry,
+      })
+      const { ws, closeArgs } = makeMockFeWs()
+
+      await onConnect(ws, "hosted-agent")
+
+      expect(closeArgs).toHaveLength(1)
+      // biome-ignore lint/style/noNonNullAssertion: guarded by toHaveLength
+      expect(closeArgs[0]![0]).toBe(1008)
+      // biome-ignore lint/style/noNonNullAssertion: guarded by toHaveLength
+      expect(closeArgs[0]![1]).toBe("session-host-active")
+      // אין pipe: לא markAttached, לא העברת הודעות ל-wire
+      expect(markAttachedSpy).not.toHaveBeenCalled()
+      ws.emit("message", JSON.stringify({ jsonrpc: "2.0", method: "initialize" }))
+      await new Promise((r) => setTimeout(r, 20))
+      expect(writeSpy).not.toHaveBeenCalled()
+    })
+
+    it("isHeld=true with live host (C4 WS→host eviction) → dispose + fall-through", async () => {
+      const { conn } = makeMockConn()
+      const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
+      const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
+      const mockHost = {
+        dispose: vi.fn().mockResolvedValue(undefined),
+      }
+      const sessionHostRegistry = {
+        isHeld: vi.fn(() => true),
+        getHost: vi.fn(() => mockHost),
+        unregisterHost: vi.fn(),
+      }
+
+      const onConnect = createAgentWsHandler({
+        orchestrator,
+        connectionRegistry,
+        sessionHostRegistry,
+      })
+      const { ws, closeArgs } = makeMockFeWs()
+
+      await onConnect(ws, "hosted-agent")
+
+      // host was disposed and unregistered
+      expect(mockHost.dispose).toHaveBeenCalledTimes(1)
+      expect(sessionHostRegistry.unregisterHost).toHaveBeenCalledWith("hosted-agent")
+      // WS fell through to normal attach — NOT closed with 1008
+      expect(closeArgs.filter(a => a[0] === 1008)).toHaveLength(0)
+      // markAttached called (epoch incremented via fall-through)
+      expect(markAttachedSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it("no host + no sessionHostRegistry dep → existing behavior unchanged (regression)", async () => {
+      const { conn, writeSpy } = makeMockConn()
+      const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
+      const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
+
+      // בלי sessionHostRegistry בכלל — הנתיב הקיים
+      const onConnect = createAgentWsHandler({ orchestrator, connectionRegistry })
+      const { ws, closeArgs } = makeMockFeWs()
+
+      onConnect(ws, "plain-agent")
+
+      expect(closeArgs).toHaveLength(0)
+      expect(markAttachedSpy).toHaveBeenCalledTimes(1)
+      ws.emit("message", JSON.stringify({ jsonrpc: "2.0", method: "initialize" }))
+      await new Promise((r) => setTimeout(r, 20))
+      expect(writeSpy).toHaveBeenCalled()
+    })
+
+    it("sessionHostRegistry present but isHeld returns false → attach proceeds (no host)", async () => {
+      const { conn } = makeMockConn()
+      const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
+      const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
+      const sessionHostRegistry = {
+        isHeld: vi.fn(() => false),
+        getHost: vi.fn(() => undefined),
+        unregisterHost: vi.fn(),
+      }
+
+      const onConnect = createAgentWsHandler({
+        orchestrator,
+        connectionRegistry,
+        sessionHostRegistry,
+      })
+      const { ws, closeArgs } = makeMockFeWs()
+
+      await onConnect(ws, "no-host-agent")
+
+      expect(closeArgs).toHaveLength(0)
+      expect(markAttachedSpy).toHaveBeenCalledTimes(1)
+      expect(sessionHostRegistry.isHeld).toHaveBeenCalledWith("no-host-agent")
+    })
+  })
+})
+
+// ─── slice handoff-foundations C3: WS rejected during creation window ─────────
+
+describe("ws-agent — isHeld during creation window (handoff-foundations C3)", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "warn").mockImplementation(() => {})
+    vi.spyOn(console, "error").mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // DoD 10: the critical end-to-end test. isHeld must be called (not getHost)
+  // so WS is rejected while a host is being created (in-flight, not yet in map).
+  it("WS is rejected with 1008 when isHeld returns true (creation in-flight)", async () => {
+    const { conn, writeSpy } = makeMockConn()
+    const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
+    const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
+    // isHeld returns true — simulates a host creation in-flight
+    const sessionHostRegistry = {
+      isHeld: vi.fn(() => true),
+      getHost: vi.fn(() => undefined), // no host yet (in-flight)
+      unregisterHost: vi.fn(),
+    }
+
+    const onConnect = createAgentWsHandler({
+      orchestrator,
+      connectionRegistry,
+      sessionHostRegistry,
+    })
+    const { ws, closeArgs } = makeMockFeWs()
+
+    await onConnect(ws, "creating-agent")
+
+    // WS must be rejected with session-host-active
+    expect(closeArgs).toHaveLength(1)
+    // biome-ignore lint/style/noNonNullAssertion: guarded by toHaveLength
+    expect(closeArgs[0]![0]).toBe(1008)
+    // biome-ignore lint/style/noNonNullAssertion: guarded by toHaveLength
+    expect(closeArgs[0]![1]).toBe("session-host-active")
+    // isHeld was called (not getHost)
+    expect(sessionHostRegistry.isHeld).toHaveBeenCalledWith("creating-agent")
+    // No pipe attached
+    expect(markAttachedSpy).not.toHaveBeenCalled()
+    ws.emit("message", JSON.stringify({ jsonrpc: "2.0", method: "initialize" }))
+    expect(writeSpy).not.toHaveBeenCalled()
+  })
+
+  it("WS attaches when isHeld returns false (no host, no in-flight creation)", () => {
+    const { conn, writeSpy } = makeMockConn()
+    const orchestrator = { getBridgePort: vi.fn(() => 0) } as never
+    const { connectionRegistry, markAttachedSpy } = makeMockConnectionRegistry(conn)
+    const sessionHostRegistry = {
+      isHeld: vi.fn(() => false),
+      getHost: vi.fn(() => undefined),
+      unregisterHost: vi.fn(),
+    }
+
+    const onConnect = createAgentWsHandler({
+      orchestrator,
+      connectionRegistry,
+      sessionHostRegistry,
+    })
+    const { ws, closeArgs } = makeMockFeWs()
+
+    onConnect(ws, "free-agent")
+
+    expect(closeArgs).toHaveLength(0)
+    expect(markAttachedSpy).toHaveBeenCalledTimes(1)
   })
 })

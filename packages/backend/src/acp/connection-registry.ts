@@ -28,6 +28,9 @@ import {
   decodeWireLine,
 } from "@drive-coding/provider/connection"
 import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
+// slice liveness C2: ownership transitions invalidate the HTTP response cache
+// (otherwise /api/agents would keep serving attached:true after an eviction).
+import { httpCacheInvalidateAll } from "../delivery/http-cache.js"
 import type { WireRecorder, WireSession } from "../delivery/wire-recorder.js"
 
 const wireLog = createLogger("backend.acp.wire")
@@ -51,11 +54,60 @@ export function overrideHasEnv(kind: string): boolean {
   return o?.setEnv !== undefined || o?.unsetEnv !== undefined
 }
 
+/**
+ * slice ownership-truth C1: ownership record.
+ * `via` identifies which transport holds the pipe — "ws" or "http".
+ * `since` is epoch-ms of the last ownership transition (for observability).
+ * A single ownership slot (not two booleans) enforces transport exclusivity
+ * structurally — it is impossible to represent ws=true AND http=true.
+ */
+export type Owner = {
+  via: "ws" | "http"
+  since: number
+}
 type ConnEntry = {
   conn: ProviderConnection
   attached: boolean
+  /**
+   * slice ownership-truth C1: who owns the pipe, and in which generation.
+   * Invariant: attached === (owner !== null) — kept consistent by
+   * markOwned/markDetached. owner is null when no transport holds the pipe.
+   */
+  owner: Owner | null
+  /**
+   * slice ownership-truth C1: ownership generation counter.
+   * Rises by 1 on every null→owner AND owner→owner transition.
+   * Never decreases. **Survives markDetached** (owner→null does NOT reset it)
+   * because it lives on ConnEntry, not inside Owner — so the last generation
+   * is always available for diagnostics even after release.
+   */
+  ownershipEpoch: number
   rec: WireSession
   unsubs: Array<() => void>
+  /**
+   * cwd מ-ConnectOpts שנמסר ל-connect() — נשמר כאן כי ConnEntry לא נשא אותו קודם
+   * (slice remote-session-view, הכרעה 1: יצירת session אוטומטית ב-BE צריכה cwd
+   * בנקודה שבה אין עוד ConnectOpts זמין — session-host/registry.ts).
+   */
+  cwd: string
+  /**
+   * cliKind מ-connect() — נשמר לצורך **הקשר-אבחון בלבד**.
+   *
+   * 🔴 למה: כשה-initialize נכשל (timeout / ילד שלא עלה), שורת-השגיאה לא נשאה
+   * שום סימן זיהוי של הספק, ולכן אי אפשר היה לדעת בדיעבד איזה CLI נכשל —
+   * נתקלנו בזה חי ב-2026-08-16 ולא הצלחנו לשחזר מי היה שם. ⇒ כל תקלת-spawn
+   * הייתה חסרת-שם.
+   */
+  cliKind: string
+  /**
+   * slice ownership-handoff C4b + slice liveness C1: last time the owner sent a
+   * liveness signal (WS $/ping or HTTP presence).
+   * Separate from Owner.since (ownership transition time).
+   * Updated by touchOwner(); null when there is no owner. Transport-agnostic —
+   * the unified sweep in session-host/registry.ts decides transport on its own
+   * (via the explicit `via` check), never from lastSeenAt's null-ness.
+   */
+  lastSeenAt: number | null
 }
 
 export type ConnectionRegistry = {
@@ -71,20 +123,93 @@ export type ConnectionRegistry = {
 
   get(agentId: string): ProviderConnection | undefined
 
+  /**
+   * getCwd — cwd שנמסר ל-connect() עבור agentId זה, או undefined אם לא רשום.
+   * נדרש ל-session-host/registry.ts (יצירת session אוטומטית — slice remote-session-view).
+   */
+  getCwd(agentId: string): string | undefined
+
+  /** getCliKind — הספק שנרשם ל-agentId, להקשר-אבחון בשורות-שגיאה. */
+  getCliKind(agentId: string): string | undefined
+
   /** list — כל ה-agentIds החיים (לכיבוי-מסודר). */
   list(): string[]
 
-  markAttached(agentId: string): void
+  /**
+   * slice ownership-truth C1: mark the pipe as owned by a transport.
+   * Sets owner, increments ownershipEpoch (both null→owner and owner→owner),
+   * and synchronizes attached=true. Keeping `via` in a single ownership slot
+   * enforces transport exclusivity structurally.
+   */
+  markOwned(agentId: string, via: "ws" | "http"): void
+
+  /**
+   * slice ownership-truth C1: release ownership. Clears owner (→null) and
+   * synchronizes attached=false. ownershipEpoch is NOT reset — it survives
+   * release (lives on ConnEntry, not inside Owner).
+   */
   markDetached(agentId: string): void
 
   /**
-   * getRuntimeInfo — composes conn.turn + conn.pid + attached-state.
+   * slice ownership-truth C1: alias for markOwned(agentId, "ws").
+   * Kept for backward compatibility — ws-agent.ts and tests call this.
+   */
+  markAttached(agentId: string): void
+
+  /**
+   * isAttached — האם יש לקוח חי על agentId (מכל טרנספורט, לא רק WS).
+   * slice remote-warm-reconnect C2: ה-session-host registry מסרב ליצור host לסוכן
+   * attached — שני לקוחות ACP על אותו wire = השחתת סשן.
+   * slice ownership-truth C2: ל-guard הספציפי-ל-WS ראה isOwnedByWs.
+   */
+  isAttached(agentId: string): boolean
+
+  /**
+   * slice ownership-truth C1: returns the current owner, or null if released.
+   */
+  getOwner(agentId: string): Owner | null
+
+  /**
+   * slice ownership-truth C1: returns the ownership generation counter.
+   * Starts at 0, rises by 1 on each ownership transition, never decreases.
+   * Returns 0 for unknown agentId.
+   */
+  getEpoch(agentId: string): number
+
+  /**
+   * slice ownership-truth C2: האם הבעלים הנוכחי הוא WS ספציפית.
+   * ה-guard ב-session-host/registry שואל "האם WS מחזיק את הצינור" —
+   * isAttached כבר לא עונה על זה כי attached מציין בעלות מכל טרנספורט.
+   */
+  isOwnedByWs(agentId: string): boolean
+  /**
+   * getRuntimeInfo — composes conn.turn + conn.pid + attached-state + ownership via.
    * Returns null if agentId not in registry.
    * pid may be null for in-process connections (e.g. claude in-process, CUT-3b-iii-2).
+   * slice ownership-truth C3: now also returns `via` from the owner record.
+   * slice liveness C4: now also returns `lastSeenAt` (the liveness stamp) so the
+   * FE can derive the "connected" dimension — `attached` alone is fakeable.
    */
-  getRuntimeInfo(
-    agentId: string,
-  ): { pid: number | null; attached: boolean; busy: boolean; lastMessageAt: number | null } | null
+  getRuntimeInfo(agentId: string): {
+    pid: number | null
+    attached: boolean
+    busy: boolean
+    lastMessageAt: number | null
+    lastSeenAt: number | null
+    via: "ws" | "http" | null
+  } | null
+
+  /**
+   * slice liveness C1: update lastSeenAt for any owned agent (ws or http).
+   * No-op if agentId not found or no owner.
+   */
+  touchOwner(agentId: string): void
+
+  /**
+   * slice liveness C1: returns the lastSeenAt for any owned agent (ws or http),
+   * or null if not found / no owner.
+   */
+  getLastSeenAt(agentId: string): number | null
 
   /**
    * close — kill child + remove from Map + close wireRecorder session.
@@ -199,14 +324,17 @@ export function createConnectionRegistry(opts?: {
           }
           cleanup(agentId)
         })
-
         map.set(agentId, {
           conn,
           attached: false,
+          owner: null,
+          ownershipEpoch: 0,
           rec,
           unsubs: [unsubFrame, unsubCrash],
+          cwd: connectOpts.cwd,
+          cliKind,
+          lastSeenAt: null,
         })
-
         return conn
       } finally {
         pending.delete(agentId)
@@ -217,18 +345,79 @@ export function createConnectionRegistry(opts?: {
       return map.get(agentId)?.conn
     },
 
+    getCwd(agentId) {
+      return map.get(agentId)?.cwd
+    },
+
+    getCliKind(agentId) {
+      return map.get(agentId)?.cliKind
+    },
+
     list() {
       return [...map.keys()]
     },
+    markOwned(agentId, via) {
+      const e = map.get(agentId)
+      if (!e) return
+      e.owner = { via, since: Date.now() }
+      e.ownershipEpoch++
+      e.attached = true
+      // slice liveness C1: initialize lastSeenAt on any ownership acquisition —
+      // transport-agnostic (the unified sweep decides transport via `via`, §2.1).
+      e.lastSeenAt = Date.now()
+      // slice liveness C2: ownership changed → cached attached/via answers are stale.
+      httpCacheInvalidateAll()
+    },
 
     markAttached(agentId) {
+      // alias for markOwned(agentId, "ws") — backward compat (ws-agent.ts, tests)
       const e = map.get(agentId)
-      if (e) e.attached = true
+      if (!e) return
+      e.owner = { via: "ws", since: Date.now() }
+      e.ownershipEpoch++
+      e.attached = true
+      // slice liveness C1: WS also gets a lastSeenAt stamp (fed by $/ping → touchOwner).
+      e.lastSeenAt = Date.now()
+      // slice liveness C2: ownership changed → cached attached/via answers are stale.
+      httpCacheInvalidateAll()
     },
 
     markDetached(agentId) {
       const e = map.get(agentId)
-      if (e) e.attached = false
+      if (!e) return
+      e.owner = null
+      e.attached = false
+      // ownershipEpoch deliberately NOT decremented — it survives release (C1 §3)
+      // slice liveness C2: ownership changed → cached attached/via answers are stale.
+      httpCacheInvalidateAll()
+    },
+
+    isAttached(agentId) {
+      return map.get(agentId)?.attached ?? false
+    },
+
+    getOwner(agentId) {
+      return map.get(agentId)?.owner ?? null
+    },
+
+    getEpoch(agentId) {
+      return map.get(agentId)?.ownershipEpoch ?? 0
+    },
+
+    touchOwner(agentId) {
+      const e = map.get(agentId)
+      if (!e?.owner) return
+      e.lastSeenAt = Date.now()
+    },
+
+    getLastSeenAt(agentId) {
+      const e = map.get(agentId)
+      if (!e?.owner) return null
+      return e.lastSeenAt
+    },
+
+    isOwnedByWs(agentId) {
+      return map.get(agentId)?.owner?.via === "ws"
     },
 
     getRuntimeInfo(agentId) {
@@ -241,6 +430,8 @@ export function createConnectionRegistry(opts?: {
         attached: e.attached,
         busy: e.conn.turn.isBusy(),
         lastMessageAt: e.conn.turn.lastActivityAt(),
+        lastSeenAt: e.lastSeenAt,
+        via: e.owner?.via ?? null,
       }
     },
 

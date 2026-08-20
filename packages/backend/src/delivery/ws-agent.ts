@@ -34,6 +34,7 @@ import { createLogger } from "@drive-coding/core/log"
 import type { WebSocket } from "ws"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
+import type { EvictionController } from "./eviction-controller.js"
 
 const log = createLogger("backend.ws.agent")
 
@@ -64,7 +65,31 @@ const STALE_MS = 60_000 // 2+ פעימות שהוחמצו (FE שולח כל 25s)
 export function createAgentWsHandler(deps: {
   orchestrator: AgentOrchestrator
   connectionRegistry: ConnectionRegistry
-}): (ws: WebSocket, agentId: string) => void {
+  /**
+   * slice remote-warm-reconnect C2 (כיוון WS→host, אופציונלי): אם יש SessionHost חי
+   * על הסוכן — דחה את ה-WS. שני לקוחות ACP על אותו conn.wire (שניהם onLine + write)
+   * = השחתת סשן; ה-host הוא הבעלים של ה-wire. אופציונלי — נתיב local בלי host
+   * ממשיך בדיוק כמו קודם (כולל הטסטים הקיימים שלא מזריקים את ה-dep).
+   *
+   * slice handoff-foundations C3: הוחלף מ-getHost ל-isHeld. getHost בדק רק את
+   * ה-map, ולא ראה יצירה ב-flight (בין ה-await הראשון ל-map.set). isHeld בודק
+   * גם map.has וגם inFlight.has — סוגר את חלון המרוץ.
+   */
+  sessionHostRegistry?: {
+    isHeld(agentId: string): boolean
+    /**
+     * slice ownership-handoff C4: used for WS→host eviction.
+     * When WS arrives and HTTP host is active: dispose + unregister + fall-through.
+     */
+    getHost(agentId: string): { dispose(): Promise<void> } | undefined
+    unregisterHost(agentId: string): void
+  }
+  /**
+   * slice ownership-handoff C4: eviction controller — registers this WS so
+   * the HTTP side can call evictAndWait when it needs to take the wire.
+   */
+  evictionController?: EvictionController
+}): (ws: WebSocket, agentId: string) => Promise<void> {
   // MED-8: חיבור FE WS פעיל אחד לכל agentId — מונע התנגשות מצב ACP בטאב שני
   // הרחבה מ-Commit 2: {ws, lastPingAt} לניהול sweep
   const activeFeWs = new Map<string, { ws: WebSocket; lastPingAt: number }>()
@@ -78,7 +103,7 @@ export function createAgentWsHandler(deps: {
   }, 20_000)
   sweep.unref()
 
-  return function onConnect(feWs: WebSocket, agentId: string): void {
+  return async function onConnect(feWs: WebSocket, agentId: string): Promise<void> {
     const childLog = log.child({ agentId })
 
     // שומר MED-8 → takeover (slice reconnect-ws-takeover, תיקון-שורש): WS חדש **מדיח**
@@ -112,9 +137,34 @@ export function createAgentWsHandler(deps: {
       return
     }
 
+    // slice remote-warm-reconnect C2 (WS→host): host active on the agent.
+    // slice ownership-handoff C4: instead of rejecting WS, evict the HTTP host
+    // (dispose + unregisterHost) and fall through to normal attach.
+    // slice handoff-foundations C3: isHeld (not getHost) — also covers in-flight creation.
+    if (deps.sessionHostRegistry?.isHeld(agentId)) {
+      const host = deps.sessionHostRegistry.getHost(agentId)
+      if (host) {
+        childLog.info({}, "WS→host eviction: disposing HTTP host and taking over")
+        // dispose resolves pending + closes transport (C1b). unregisterHost removes
+        // from map + releases http ownership. Fall-through calls markAttached (epoch++).
+        await host.dispose()
+        deps.sessionHostRegistry.unregisterHost(agentId)
+        // Fall through to normal attach below — markAttached will mark WS ownership.
+      } else {
+        // In-flight creation (isHeld but no host yet) — reject to avoid race
+        childLog.warn({}, "session host in-flight for this agent — rejecting WS attach")
+        feWs.close(1008, "session-host-active")
+        return
+      }
+    }
+
     activeFeWs.set(agentId, { ws: feWs, lastPingAt: Date.now() })
     deps.connectionRegistry.markAttached(agentId)
     childLog.info({ pid: conn.pid }, "WS connect → pipe attached")
+
+    // slice ownership-handoff C4: register with eviction controller so HTTP can
+    // evict this WS (evictAndWait) when it needs to take the wire.
+    const evictionReg = deps.evictionController?.register(agentId, feWs)
 
     // ── capability delivery (CUT-3b-iii-2): שלח _drive/capabilities ל-FE ────────
     // conn.capabilities נגיש מיד אחרי connect (static per-provider).
@@ -157,6 +207,11 @@ export function createAgentWsHandler(deps: {
           // עדכן lastPingAt (sweep detection — Commit 2)
           const entry = activeFeWs.get(agentId)
           if (entry) entry.lastPingAt = Date.now()
+          // slice liveness C1: WS feeds the unified ownership stamp. touchOwner is
+          // transport-agnostic now — a WS $/ping and an HTTP presence both update
+          // the same lastSeenAt (the unified sweep skips WS via the explicit via
+          // check; this stamp is what a WS→HTTP handoff or a mixed client reports).
+          deps.connectionRegistry.touchOwner(agentId)
           feWs.send(`${JSON.stringify({ jsonrpc: "2.0", method: "$/pong" })}\n`)
           return
         }
@@ -207,6 +262,9 @@ export function createAgentWsHandler(deps: {
       }
       unsub()
       unsubCrash()
+      // slice ownership-handoff C4: notify eviction controller that detach is complete
+      // (unsub + unsubCrash done). This resolves evictAndWait on the HTTP side.
+      evictionReg?.notifyDetached()
       // חשוב: לעולם לא conn.close() — ה-connection שורד התנתקות של ה-FE
     }
 

@@ -96,10 +96,20 @@ export function createAgentOrchestrator(deps: {
   registry: AgentRegistry
   connectionRegistry: ConnectionRegistry
   projectsRegistry?: ProjectsRegistry
+  /**
+   * slice remote-warm-reconnect C2b (אופציונלי): רישום ה-hosts של ה-session-host.
+   * deleteAndKill וה-crash handler מסירים את ה-host מיד — אחרת GET /events ממשיך
+   * להגיש host מת עם snapshot ישן (ה-liveness check ב-getOrCreateHost מכסה גם
+   * lazy, אבל כאן סוגרים את החלון במיידי). אופציונלי — טסטים/נתיבים בלי host.
+   */
+  sessionHostRegistry?: { unregisterHost(agentId: string): void }
 }): AgentOrchestrator {
   // מאזין התרסקויות: כש-connection מת, סמן סוכן כ-crashed + עדכן registry.
   deps.connectionRegistry.onCrash(async (agentId, info: BridgeCrashInfo) => {
     try {
+      // slice remote-warm-reconnect C2b: crash ⇒ ה-host מת ⇒ unregister מיד
+      // (GET /events יחזיר 404 במקום 200 עם snapshot ישן).
+      deps.sessionHostRegistry?.unregisterHost(agentId)
       const existing = await deps.registry.get(agentId)
       if (existing && existing.status !== "closed") {
         const crashReason = describeCrash(info, info.stderr ?? [])
@@ -196,6 +206,9 @@ export function createAgentOrchestrator(deps: {
 
     async deleteAndKill(id: string): Promise<void> {
       log.info({ agentId: id }, "deleteAndKill")
+      // slice remote-warm-reconnect C2b: הסרת host מיד (לפני close) — אין חלון
+      // שבו GET /events מחזיר host של סוכן שנמחק.
+      deps.sessionHostRegistry?.unregisterHost(id)
 
       try {
         await deps.registry.update(id, { status: "closed" })

@@ -111,6 +111,7 @@ function makeCapabilities(overrides: Partial<NormalizedCapabilities> = {}): Norm
     rename: false,
     thinkingTokens: false,
     image: false,
+    systemPrompt: false,
     ...overrides,
   }
 }
@@ -211,5 +212,30 @@ describe("AgentSession — capabilities ingestion (FE-normalization)", () => {
 
     expect(session.claudeRawSdkMessageCount).toBe(2)
     expect(session.capabilities).toBeNull()
+  })
+
+  // ─── slice systemprompt-capability — DoD #9: שלושת המצבים ───
+  // ⚠️ הטסט הקודם רינדר רכיב-fixture שהעתיק את התנאי ידנית, ולכן עבר גם כשקוד
+  // הייצור היה שבור (ממצא כלב, בדיקת-מוטציה). כאן נבדק ה-getter של הייצור עצמו.
+
+  it("showsSystemPromptWarning is false while capabilities are still unknown", async () => {
+    await session.attach({ cwd: "/some/cwd", cliKind: "claude" })
+
+    expect(session.capabilities).toBeNull()
+    expect(session.showsSystemPromptWarning).toBe(false)
+  })
+
+  it("showsSystemPromptWarning is true when the provider does not support it", async () => {
+    await session.attach({ cwd: "/some/cwd", cliKind: "opencode" })
+    simulateCaps({ systemPrompt: false })
+
+    expect(session.showsSystemPromptWarning).toBe(true)
+  })
+
+  it("showsSystemPromptWarning is false when the provider supports it", async () => {
+    await session.attach({ cwd: "/some/cwd", cliKind: "claude" })
+    simulateCaps({ systemPrompt: true })
+
+    expect(session.showsSystemPromptWarning).toBe(false)
   })
 })

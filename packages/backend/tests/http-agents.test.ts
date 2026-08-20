@@ -1,8 +1,14 @@
 import { Hono } from "hono"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createInMemoryAgentRegistry } from "../src/agents/registry"
 import type { AgentOrchestrator, CreateAndSpawnResult } from "../src/app/agent-orchestrator"
 import { registerAgentsHttp } from "../src/delivery/http-agents"
+// slice liveness C2: ה-http-cache הוא module-level — מנקים בין טסטים כדי שלא ידלוף.
+import { httpCacheInvalidateAll } from "../src/delivery/http-cache"
+
+beforeEach(() => {
+  httpCacheInvalidateAll()
+})
 
 function makeApp() {
   const app = new Hono()
@@ -41,6 +47,8 @@ describe("HTTP /api/agents", () => {
       const { app } = makeApp()
       const res = await app.request("/api/agents")
       expect(res.status).toBe(200)
+      // slice liveness C2: no-store נקודתי על GET /api/agents.
+      expect(res.headers.get("Cache-Control")).toBe("no-store")
       const body = await res.json()
       expect(body).toEqual({ agents: [] })
     })
@@ -551,12 +559,12 @@ describe("HTTP /api/agents", () => {
       }
 
       const bridgeManager = {
-        // slice agent-busy-indicator: busy נוסף ל-return type
         getRuntimeInfo: vi.fn((_id: string) => ({
           pid: 12345,
           attached: true,
           busy: false,
           lastMessageAt: null,
+          via: "ws" as const,
         })),
       }
 
@@ -570,16 +578,22 @@ describe("HTTP /api/agents", () => {
       expect(agentData).toBeDefined()
       expect(agentData.pid).toBe(12345)
       expect(agentData.attached).toBe(true)
+      expect(agentData.attachedVia).toBe("ws")
     })
 
-    it("does not include pid/attached when bridgeManager not provided (existing call-sites)", async () => {
-      // The 2 existing makeApp() call-sites do not pass bridgeManager — guard ?. handles this
+    it("includes runtime fields with defaults when bridgeManager not provided", async () => {
+      // slice ownership-truth C3: explicit 5-field mapping — bridgeManager absent → defaults.
+      // Previously (spread) absent bridgeManager meant no pid/attached keys at all.
+      // Now the explicit mapping always includes them with safe defaults.
       const { app, registry } = makeApp()
       await registry.create({ cliKind: "opencode", cwd: "/x" })
       const res = await app.request("/api/agents")
       const body = await res.json()
-      expect(body.agents[0]).not.toHaveProperty("pid")
-      expect(body.agents[0]).not.toHaveProperty("attached")
+      expect(body.agents[0].pid).toBeNull()
+      expect(body.agents[0].attached).toBe(false)
+      expect(body.agents[0].busy).toBe(false)
+      expect(body.agents[0].lastMessageAt).toBeNull()
+      expect(body.agents[0].attachedVia).toBeUndefined()
     })
   })
 })

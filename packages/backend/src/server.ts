@@ -53,6 +53,7 @@ process.on("unhandledRejection", (reason) => {
 import { cors } from "hono/cors"
 import { createConnectionRegistry } from "./acp/connection-registry.js"
 import { createInMemoryAgentRegistry } from "./agents/registry.js"
+import type { BridgeKind } from "@drive-coding/core"
 import { createAgentOrchestrator } from "./app/agent-orchestrator.js"
 import { createProjectsRegistry } from "./app/projects-registry.js"
 import { createRecordingsStore } from "./app/recordings-store.js"
@@ -70,6 +71,8 @@ import {
   registerRecordingsPostHttp,
 } from "./delivery/http-history.js"
 import { registerHttpOptions } from "./delivery/http-options.js"
+import { createAndRegisterSessionHostHttp } from "./session-host/http/index.js"
+import { createEvictionController } from "./delivery/eviction-controller.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
 import { registerReloadConfigHttp } from "./delivery/http-reload-config.js"
 import { registerTtsCapabilitiesHttp } from "./delivery/http-tts-capabilities.js"
@@ -111,10 +114,50 @@ const connectionRegistry = createConnectionRegistry({ wireRecorder })
 const projectsRegistry = createProjectsRegistry(ensureStateSubdir("cache"))
 const recordingsStore = createRecordingsStore(ensureStateSubdir("recordings"))
 
+// slice ownership-handoff C4: eviction controller — shared between ws-agent (fills)
+// and agentSessionRegistry (calls evictAndWait for HTTP→WS takeover).
+const evictionController = createEvictionController()
+
+// slice ownership-handoff C4: sync acpSessionId cache for warm reattach.
+// Updated by onSessionAttached (same source of truth as registry.update acpSessionId).
+const acpSessionIdCache = new Map<string, string>()
+
+// S4 session-host-http: 4 routes — GET /events, POST /rpc, POST /reply, GET /state
+// slice remote-warm-reconnect C1: תופסים את הרג'יסטרי (קודם נזרק ב-:151) — C2/C2b
+// מעבירים אותו ל-ws-agent (guard) ול-orchestrator (ניקוי hosts ב-delete/crash).
+const agentSessionRegistry = createAndRegisterSessionHostHttp(app, connectionRegistry, {
+  onSessionAttached: async (agentId, sessionId) => {
+    // בדיוק מה ש-POST /api/agents/:id/session-attached עושה (http-agents.ts) —
+    // ה-endpoint ההוא נקרא רק מנתיבים מקומיים; ב-remote ה-SessionHost הוא שמצרף
+    // את ה-session (אוטומטית ב-doCreate), אז הוא מדווח ישירות דרך ה-callback הזה.
+    //
+    // הכרעת MED-9: ה-callback הפנימי עוקף את guard ה-409 (http-agents.ts:142-150)
+    // **בכוונה** — ב-remote ה-host הוא authoritative לגבי ה-session שלו.
+    const agent = await registry.get(agentId)
+    if (!agent || agent.status === "closed") {
+      // race מול DELETE (deleteAndKill) — warn ודילוג, לא throw (הסשן חי; הפאנל יישאר ישן).
+      log.warn({ agentId, sessionId }, "onSessionAttached: agent missing or closed — skipped")
+      return
+    }
+    await registry.update(agentId, { status: "ready", acpSessionId: sessionId })
+    acpSessionIdCache.set(agentId, sessionId)
+    await projectsRegistry.recordCwd(agent.cwd, agent.cliKind as BridgeKind)
+    await projectsRegistry.recordSession(agent.cwd, sessionId)
+  },
+  evictionController,
+  // slice ownership-handoff C4: warm reattach — sync cache of agentId→acpSessionId
+  // maintained by onSessionAttached. Returns the last known acpSessionId, allowing
+  // the HTTP host to call loadSession instead of newSession after WS eviction.
+  getAcpSessionId: (agentId) => acpSessionIdCache.get(agentId),
+})
+
 const orchestrator = createAgentOrchestrator({
   registry,
   connectionRegistry,
   projectsRegistry,
+  // slice remote-warm-reconnect C2b: ניקוי hosts ב-delete/crash. אפשרי רק כי
+  // agentSessionRegistry נוצר למעלה (לפני ה-orchestrator) — ר' ההערה שם.
+  sessionHostRegistry: agentSessionRegistry,
 })
 
 // נתיבי HTTP
@@ -163,6 +206,8 @@ registerReloadConfigHttp(app)
 
 // Slice cli-logo-serving: מגיש קובץ-לוגו CLI לפי id (id-keyed, ר' §3 בבריף)
 registerCliLogoHttp(app)
+
+// (session-host routes נרשמים למעלה — ליד יצירת agentSessionRegistry, לפני ה-orchestrator)
 
 // Slice 20: serve the built static FE (single-origin local prod).
 // Binary mode: serve from embedded FE manifest (assets in $bunfs, no disk reads).
@@ -245,7 +290,13 @@ function broadcastConfigChanged(): void {
 
 const echoHandler = createEchoWsHandler()
 // CUT-3b-ii: connectionRegistry מחליף bridgeManager ב-ws-agent
-const onAgentConnect = createAgentWsHandler({ orchestrator, connectionRegistry })
+// slice remote-warm-reconnect C2: sessionHostRegistry → דחיית WS כש-host חי על הסוכן
+const onAgentConnect = createAgentWsHandler({
+  orchestrator,
+  connectionRegistry,
+  sessionHostRegistry: agentSessionRegistry,
+  evictionController,
+})
 
 echoWss.on("connection", (ws) => {
   echoHandler(ws)
@@ -262,7 +313,11 @@ agentWss.on("connection", (ws, req) => {
   const match = pathname.match(/^\/ws\/agent\/([^/]+)$/)
   const agentId = match?.[1] ?? ""
 
-  onAgentConnect(ws, agentId)
+  onAgentConnect(ws, agentId).catch((err) => {
+    // async errors (e.g. evictAndWait timeout) — log and close
+    ws.close(1011, "internal error")
+    procLog.error({ err, agentId }, "onAgentConnect async error")
+  })
 })
 
 preferPathClaudeExecutable()

@@ -47,8 +47,15 @@ function makeAutoRespondTransport(opts: {
    * "reject-auth-required" → error עם data.code === "auth_required" (פאטלי, כמו קודם).
    * "reject-not-implemented" → error -32603 בלי data.code === "auth_required" (מדמה opencode;
    *   לא-פאטלי אחרי התיקון).
+   * "silent" → **לא עונה בכלל**. מדמה את `qodercli --acp` כפי שנמדד חי (2026-08-16):
+   *   מכריז `qodercli-login` ואז שותק לנצח. לפני ה-timeout זה תלה את createAcpClient
+   *   ללא-חסם, ומכאן "הסשן לא נפתח" בלי שום שגיאה.
    */
-  authenticateBehavior?: "success" | "reject-auth-required" | "reject-not-implemented"
+  authenticateBehavior?:
+    | "success"
+    | "reject-auth-required"
+    | "reject-not-implemented"
+    | "silent"
 }) {
   const writtenMessages: WrittenMessage[] = []
   const dec = new TextDecoder()
@@ -89,6 +96,8 @@ function makeAutoRespondTransport(opts: {
               data: { code: "auth_required" },
             },
           })
+        } else if (opts.authenticateBehavior === "silent") {
+          // שתיקה מכוונת — אין pushIn. זה בדיוק מה ש-qoder עושה.
         } else if (opts.authenticateBehavior === "reject-not-implemented") {
           // מדמה opencode חי: -32603, בלי data.code === "auth_required".
           pushIn({
@@ -242,6 +251,36 @@ describe("createAcpClient — generic authenticate after initialize", () => {
     expect(caught).toBeDefined()
     expect(caught?.kind).toBe("auth_required")
     expect(isClosed()).toBe(true)
+  })
+
+  it("8. 🔴 qoder: authenticate שותק → פוקע כ-auth_required (ולא תלייה אינסופית)", async () => {
+    // נמדד חי 2026-08-16: `qodercli --acp` מכריז qodercli-login ואינו עונה לעולם.
+    // לפני התיקון createAcpClient היה תלוי כאן ללא-חסם, והמשתמשת ראתה מסך ריק.
+    //
+    // החוזה: פקיעה **פאטלית וכ-auth_required** — לא הענף הלא-פאטלי של opencode.
+    // להמשיך אחרי פקיעה רק היה דוחה את הכישלון ל-session/new עם פחות מידע;
+    // ו-auth_required הוא מה שמפעיל את AuthGuidance ב-FE.
+    const { transport, isClosed } = makeAutoRespondTransport({
+      authMethods: [{ id: "qodercli-login", name: "Use qodercli login" } as { id: string }],
+      authenticateBehavior: "silent",
+    })
+
+    let caught: (Error & { kind?: string; authMethods?: ReadonlyArray<{ id: string }> }) | undefined
+    const t0 = Date.now()
+    try {
+      await createAcpClient(transport, () => {}, { initTimeoutMs: 120 })
+    } catch (e) {
+      caught = e as typeof caught
+    }
+
+    expect(caught).toBeDefined()
+    expect(caught?.kind).toBe("auth_required")
+    // ה-authMethods מצורפים — בלעדיהם AuthGuidance לא מרנדר כלום.
+    expect(caught?.authMethods?.[0]?.id).toBe("qodercli-login")
+    expect(isClosed()).toBe(true)
+    // ההוכחה שזו פקיעה ולא כשל מיידי, ושהיא חסומה: לא תלייה ולא מיידי.
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(100)
+    expect(Date.now() - t0).toBeLessThan(5000)
   })
 })
 

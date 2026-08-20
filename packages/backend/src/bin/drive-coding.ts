@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { parseArgs } from "node:util"
-import { isBinary } from "../binary.js"
+import { buildVersion, isBinary } from "../binary.js"
 import { loadConfig, parseEnvFile } from "../config/load-config.js"
 
 // ---------------------------------------------------------------------------
@@ -76,18 +76,24 @@ if (values.help) {
   process.exit(0)
 }
 
-// --version: read from package.json relative to import.meta.dirname
-// release: dist/ → ../package.json (release package, 0.1.0)
-// dev:     src/bin → ../../package.json (backend, 0.0.0 — acceptable)
+// --version: binary gets version injected at compile time (buildVersion()).
+// bundle/dev fall back to reading from package.json on disk.
+// release: dist/ → ../package.json (release package)
+// dev:     src/bin → ../../package.json (backend)
 if (values.version) {
-  const pkgCandidates = [
-    path.resolve(import.meta.dirname, "../package.json"),
-    path.resolve(import.meta.dirname, "../../package.json"),
-  ]
-  const pkgPath = pkgCandidates.find(existsSync)
-  const version = pkgPath
-    ? ((JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: string }).version ?? "unknown")
-    : "unknown"
+  const compiled = buildVersion()
+  const version =
+    compiled ??
+    (() => {
+      const pkgCandidates = [
+        path.resolve(import.meta.dirname, "../package.json"),
+        path.resolve(import.meta.dirname, "../../package.json"),
+      ]
+      const pkgPath = pkgCandidates.find(existsSync)
+      return pkgPath
+        ? ((JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: string }).version ?? "unknown")
+        : "unknown"
+    })()
   console.log(version)
   process.exit(0)
 }

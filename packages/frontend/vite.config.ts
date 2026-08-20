@@ -25,6 +25,15 @@ const BASE_TITLE = process.env.FE_TITLE ?? `${PREFIX}Drive Coding`
 //  (b) $env/dynamic/public.PUBLIC_APP_TITLE is available at runtime.
 // Must be set before the SvelteKit plugin reads the environment.
 process.env.PUBLIC_APP_TITLE = BASE_TITLE
+// ─── slice debug-surface: אותה תבנית, בשביל הגייט של window.__dc ───
+// ⚠️ `import.meta.env.DEV` הוא **false בכל בילד** (כולל build:preview), ולכן הוא
+// גייט חסר-תועלת למשטח-ניפוי שאמור לחיות בפריוויו. הגייט הנכון הוא FE_ENV.
+process.env.PUBLIC_APP_ENV = FE_ENV
+// ⚠️ `$env/dynamic/public` נקרא בזמן-**ריצה** ⇒ תנאי עליו אינו ניתן-לגזימה,
+// והקוד נשאר בבנדל גם ב-prod (נמדד: אותו hash בדיוק בשני הבילדים).
+// לכן הגייט של __dc הוא `define` — קבוע-בילד שמתחלף בליטרל true/false,
+// ו-esbuild/rollup גוזמים את הענף. תקדים: `--define __IS_BINARY__` ב-roadmap.
+const DC_ENABLED = FE_ENV !== "prod"
 // source-maps: explicit FE_SOURCEMAP wins; otherwise ON for non-prod envs.
 const SOURCEMAP =
   process.env.FE_SOURCEMAP != null ? process.env.FE_SOURCEMAP === "true" : FE_ENV !== "prod"
@@ -33,7 +42,16 @@ const SOURCEMAP =
 // See root AGENTS.md → Ports + "Running parallel worktrees" if exists.
 const BE_PORT = Number(process.env.BE_PORT ?? 4000)
 
+// ─── slice view-switch C2 / transport-polish C2: session-transport build-env plumbing ───
+// FE_SESSION_TRANSPORT ∈ { "ws" | "http" } (default "ws" — resolveSessionTransport's
+// own env-level fallback). Exposed as PUBLIC_SESSION_TRANSPORT so $env/dynamic/public can
+// read it at runtime (same precedent as PUBLIC_APP_TITLE above — must be set before the
+// SvelteKit plugin reads the environment). ⚠️ $env/static/public has no `env` export —
+// breaks the build; use $env/dynamic/public only (see +layout.svelte).
+process.env.PUBLIC_SESSION_TRANSPORT = process.env.FE_SESSION_TRANSPORT ?? "ws"
+
 export default defineConfig({
+  define: { __DC_ENABLED__: JSON.stringify(DC_ENABLED) },
   plugins: [tailwindcss(), sveltekit()],
   build: {
     sourcemap: SOURCEMAP,

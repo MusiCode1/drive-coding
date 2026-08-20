@@ -27,6 +27,7 @@ export const he: Catalog = {
   "chat.bubble.thought": "מחשבה",
   "chat.bubble.agent": "סוכן",
   "chat.empty": "התחל לכתוב למטה…",
+  "chat.error.dismiss": "סגור שגיאה",
   "chat.prompt.placeholder": "כתוב prompt…",
   "chat.send": "שלח",
   "chat.disconnect": "נתק",
@@ -225,6 +226,10 @@ export const he: Catalog = {
   "settings.ttsProvider.label": "ספק TTS",
   "settings.ttsProvider.elevenlabs": "ElevenLabs",
   "settings.ttsProvider.gemini": "Gemini",
+  // ─── session transport ─── (slice transport-polish C4)
+  "settings.sessionTransport.label": "טרנספורט סשן",
+  "settings.sessionTransport.ws": "WebSocket",
+  "settings.sessionTransport.http": "HTTP",
   // ─── image-attach tray ─── (slice-image-paste)
   "attach.addImage": "הוסף תמונה",
   "attach.remove": "הסר",
@@ -340,6 +345,8 @@ export const he: Catalog = {
   "projectPrompt.label": "פרומפט מערכת לפרויקט",
   "projectPrompt.placeholder": "לדוגמה: תמיד ענה בקצרה, ופתח כל תשובה בעברית...",
   "projectPrompt.hint": "מתווסף להוראות ברירת-המחדל של הסוכן. השינוי חל מהסשן הבא.",
+  // ─── projectPrompt capability warning ─── (slice systemprompt-capability)
+  "projectPrompt.unsupported": "ספק זה אינו תומך בפרומפט מערכת פר-פרויקט.",
   // ─── panel resize handle ─── (slice connect-panel-resize)
   "connect.panel.resizeHandle": "גרור לשינוי גובה",
   // ─── machine-stats ─── (slice-be-machine-stats)
@@ -382,4 +389,11 @@ export const he: Catalog = {
   "settings.geminiTone.energetic": "אנרגטי",
   "settings.geminiTone.formal": "רשמי",
   "settings.geminiTone.casual": "יומיומי",
+  "session.heldByOtherTransport": "הסשן פתוח במקום אחר (מסלול אחר). אין להתחבר ישירות — נא להשתלט.",
+  // ─── liveness (slice liveness C4) ───
+  "session.reconnecting": "מנסה להתחבר…",
+  "session.cloudflareBlocked": "החיבור נחסם. ייתכן ש-Cloudflare דורש אימות.",
+  "session.turnStalled": "לא הגיע כלום מהסוכן זמן רב. ייתכן שהוא עדיין עובד — וייתכן שעצר בלי לומר.",
+  "session.cloudflareRefresh": "רענון",
+  "session.gone": "הסשן הזה איננו — פתח חדש.",
 }

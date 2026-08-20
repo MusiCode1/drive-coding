@@ -207,6 +207,16 @@ After `cd .worktrees/<name>`, run `bun install && bun run hooks:install`.
   port at startup. The proxy to `/api`, `/proxy`, `/ws` defaults to BE on 4000,
   override with `BE_PORT=<n>` env var passed to Vite.
 
+### Session-host ownership TTL
+
+- **`HTTP_OWNER_TTL_MS`** — how long an HTTP owner may go without a liveness
+  signal (`POST /api/agents/:id/presence` → `touchOwner`) before the backend
+  **releases ownership**. Default `600000` (10 min). Expiry releases ownership
+  and severs abandoned SSE streams — it does **not** destroy the session host,
+  kill the agent, or reset `version`; the next connection is a continuation.
+  Set it low (e.g. `HTTP_OWNER_TTL_MS=5000`) to exercise the path without a
+  10-minute wait. The sweep interval itself is fixed at 30s.
+
 ### Running parallel worktrees
 
 To run multiple BE+FE pairs simultaneously (e.g. two executor agents in two
@@ -279,10 +289,10 @@ FE disconnect/reconnect cycles (unlike the previous `ws-agent` location).
   `debug` → `{dir,type,id}`; `trace` → full decoded frame. Best for watching traffic
   inline with the rest of the BE log timeline.
 - **`WIRE_RECORD=1`** — records **every raw frame** to
-  `data/wire-recordings/<agentId>-<ts>.jsonl` — one `{ts,dir,raw}` line per frame,
-  a clean file per child lifetime (not per WS connection — slice wire-observability-bridge).
+  `~/.config/drive-coding/wire-recordings/<agentId>-<ts>.jsonl` — one `{ts,dir,raw}` line
+  per frame, a clean file per child lifetime (not per WS connection — slice wire-observability-bridge).
   Best for offline analysis of anomalies (empty chunks, duplicate ids) with `jq`. Works live too:
-  `tail -f data/wire-recordings/*.jsonl | jq`.
+  `tail -f ~/.config/drive-coding/wire-recordings/*.jsonl | jq`.
 
 ```bash
 # record a session — Windows: bun direct (onecli can't spawn bun; TTS proxy unneeded here)
@@ -290,10 +300,10 @@ cd packages/backend
 WIRE_RECORD=1 PORT=4000 bun src/server.ts
 # ...connect an agent + prompt, then analyze. e.g. every thought-chunk text
 # (we found claude sends them ALL empty — an upstream ACP-adapter issue, BE is transparent):
-jq -r 'select(.raw|fromjson|.params.update.sessionUpdate=="agent_thought_chunk") | (.raw|fromjson|.params.update.content.text)' data/wire-recordings/*.jsonl
+jq -r 'select(.raw|fromjson|.params.update.sessionUpdate=="agent_thought_chunk") | (.raw|fromjson|.params.update.content.text)' ~/.config/drive-coding/wire-recordings/*.jsonl
 ```
 
-`data/` is gitignored — recordings never enter git.
+The recordings live outside the repo, so they never enter git.
 
 ## What NOT to do
 

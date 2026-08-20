@@ -41,6 +41,7 @@ export type MessageKey =
   | "chat.bubble.thought"
   | "chat.bubble.agent"
   | "chat.empty"
+  | "chat.error.dismiss"
   | "chat.prompt.placeholder"
   | "chat.send"
   | "chat.disconnect"
@@ -235,6 +236,10 @@ export type MessageKey =
   | "settings.ttsProvider.label"
   | "settings.ttsProvider.elevenlabs"
   | "settings.ttsProvider.gemini"
+  // ─── session transport ─── (slice transport-polish C4)
+  | "settings.sessionTransport.label"
+  | "settings.sessionTransport.ws"
+  | "settings.sessionTransport.http"
   // ─── image-attach tray ─── (slice-image-paste)
   | "attach.addImage"
   | "attach.remove"
@@ -349,6 +354,8 @@ export type MessageKey =
   | "projectPrompt.label"
   | "projectPrompt.placeholder"
   | "projectPrompt.hint"
+  // ─── projectPrompt capability warning ─── (slice systemprompt-capability)
+  | "projectPrompt.unsupported"
   // ─── panel resize handle ─── (slice connect-panel-resize)
   | "connect.panel.resizeHandle"
   // ─── machine-stats ─── (slice-be-machine-stats)
@@ -391,6 +398,14 @@ export type MessageKey =
   | "settings.geminiTone.energetic"
   | "settings.geminiTone.formal"
   | "settings.geminiTone.casual"
+  // ─── ownership-truth (slice ownership-truth C5) ───
+  | "session.heldByOtherTransport"
+  // ─── liveness (slice liveness C4) ───
+  | "session.reconnecting"
+  | "session.cloudflareBlocked"
+  | "session.turnStalled"
+  | "session.cloudflareRefresh"
+  | "session.gone"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

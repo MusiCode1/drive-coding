@@ -31,6 +31,7 @@ export const en: Catalog = {
   "chat.bubble.thought": "Thought",
   "chat.bubble.agent": "Agent",
   "chat.empty": "Start typing below…",
+  "chat.error.dismiss": "Dismiss error",
   "chat.prompt.placeholder": "Type a prompt…",
   "chat.send": "Send",
   "chat.disconnect": "Disconnect",
@@ -230,6 +231,10 @@ export const en: Catalog = {
   "settings.ttsProvider.label": "TTS provider",
   "settings.ttsProvider.elevenlabs": "ElevenLabs",
   "settings.ttsProvider.gemini": "Gemini",
+  // ─── session transport ─── (slice transport-polish C4)
+  "settings.sessionTransport.label": "Session transport",
+  "settings.sessionTransport.ws": "WebSocket",
+  "settings.sessionTransport.http": "HTTP",
   // ─── image-attach tray ─── (slice-image-paste)
   "attach.addImage": "Add image",
   "attach.remove": "Remove",
@@ -345,6 +350,8 @@ export const en: Catalog = {
   "projectPrompt.placeholder": "e.g. Always reply concisely, and open every answer in Hebrew...",
   "projectPrompt.hint":
     "Appended to the agent's default instructions. Takes effect from the next session.",
+  // ─── projectPrompt capability warning ─── (slice systemprompt-capability)
+  "projectPrompt.unsupported": "This provider does not support a project system prompt.",
   // ─── panel resize handle ─── (slice connect-panel-resize)
   "connect.panel.resizeHandle": "Drag to resize",
   // ─── machine-stats ─── (slice-be-machine-stats)
@@ -387,4 +394,11 @@ export const en: Catalog = {
   "settings.geminiTone.energetic": "Energetic",
   "settings.geminiTone.formal": "Formal",
   "settings.geminiTone.casual": "Casual",
+  "session.heldByOtherTransport": "This session is open elsewhere (other transport). Do not reconnect directly — take over.",
+  // ─── liveness (slice liveness C4) ───
+  "session.reconnecting": "Trying to reconnect…",
+  "session.cloudflareBlocked": "Connection blocked. Cloudflare may require verification.",
+  "session.turnStalled": "No response from the agent for a while. It may still be working — or it may have stopped without saying so.",
+  "session.cloudflareRefresh": "Refresh",
+  "session.gone": "This session is gone — open a new one.",
 }

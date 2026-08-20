@@ -16,6 +16,7 @@ import { getMachineStats } from "$lib/adapters/system-api"
 import CliBadge from "$lib/components/ui/CliBadge.svelte"
 import { getActiveAgents, getCliAvailability, getI18n, getSettings } from "$lib/context"
 import { formatRelativeTime } from "$lib/util/formatting"
+import { isPageHidden } from "$lib/util/page-visibility.svelte"
 import { basename } from "$lib/util/path"
 import { resizeDrag } from "$lib/util/resize-drag"
 import MachineStatsBar from "./MachineStatsBar.svelte"
@@ -59,11 +60,11 @@ function refreshMachine() {
     })
 }
 
-// C12: auto-refresh כל ~12s; לא מרענן אם הפאנל מוסתר (document.hidden)
+// C12: auto-refresh כל ~12s; לא מרענן אם הפאנל מוסתר (page-visibility משותף, slice liveness C3)
 $effect(() => {
   void refreshMachine() // fetch ראשוני מיידי ב-mount
   const interval = setInterval(() => {
-    if (typeof document !== "undefined" && document.hidden) return
+    if (isPageHidden()) return
     void activeAgents.refresh()
     void refreshMachine()
   }, 12_000)

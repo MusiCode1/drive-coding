@@ -22,6 +22,7 @@
     "./cli-availability": "./src/cli-availability.ts",
     "./async/*": "./src/async/*.ts",
     "./acp/*": "./src/acp/*.ts",
+    "./session": "./src/session/index.ts",
     "./config/*": "./src/config/*.ts",
     "./tts/*": "./src/tts/*.ts",
     "./usage/*": "./src/usage/*.ts"

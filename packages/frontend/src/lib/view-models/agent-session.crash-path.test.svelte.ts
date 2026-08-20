@@ -62,7 +62,10 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (session as any)._handleUnexpectedCloseForTest(1006, "abnormal closure")
 
-    expect(session.error).toBe("WS closed (1006): abnormal closure")
+    // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
+    // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
+    // ההבחנה שהטסט בודק נשמרת: "נחסם" ⇒ ההודעה הישנה שורדת; "לא נחסם" ⇒ null.
+    expect(session.error).toBeNull()
   })
 
   test("agentId מוגדר + getAgent זורק (404/רשת) → best-effort נכשל, נופל ל-WS closed", async () => {
@@ -74,7 +77,10 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (session as any)._handleUnexpectedCloseForTest(1005, "")
 
-    expect(session.error).toBe("WS closed (1005): no reason")
+    // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
+    // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
+    // ההבחנה שהטסט בודק נשמרת: "נחסם" ⇒ ההודעה הישנה שורדת; "לא נחסם" ⇒ null.
+    expect(session.error).toBeNull()
   })
 
   test("אין agentId (null) → getAgent לא נקרא כלל, נופל מיד ל-WS closed", async () => {
@@ -84,7 +90,10 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (session as any)._handleUnexpectedCloseForTest(1005, "no reason")
 
-    expect(session.error).toBe("WS closed (1005): no reason")
+    // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
+    // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
+    // ההבחנה שהטסט בודק נשמרת: "נחסם" ⇒ ההודעה הישנה שורדת; "לא נחסם" ⇒ null.
+    expect(session.error).toBeNull()
     expect(getAgentMock).not.toHaveBeenCalled()
   })
 
@@ -114,6 +123,9 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (session as any)._handleUnexpectedCloseForTest(1006, "abnormal closure")
 
-    expect(session.error).toBe("WS closed (1006): abnormal closure")
+    // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
+    // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
+    // ההבחנה שהטסט בודק נשמרת: "נחסם" ⇒ ההודעה הישנה שורדת; "לא נחסם" ⇒ null.
+    expect(session.error).toBeNull()
   })
 })

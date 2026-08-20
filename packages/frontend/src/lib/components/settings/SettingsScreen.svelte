@@ -10,10 +10,11 @@
  * זמינים מחוץ ל-Settings (דף החיבור / SessionOptionsPanel), כך שהם מיותרים כאן.
  *
  * כפתורי איפוס ושמור.
- *
  * ─── settings-redesign (redesign-3) · redesign-fix · V4a (TTS provider) · tts-provider-availability ───
  */
+import { env } from "$env/dynamic/public"
 import { onMount } from "svelte"
+import { resolveSessionTransport, type SessionTransport } from "$lib/session/session-transport"
 import { version } from "$app/environment"
 import { goto } from "$app/navigation"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
@@ -127,7 +128,22 @@ $effect(() => {
   }, 3000)
   return () => clearTimeout(timer)
 })
+
+// ─── session transport ─── (slice transport-polish C4)
+// העדפה קבועה (localStorage). null = לא נבחרה → env נבחר. בחירה ידנית גוברת על env.
+// ה-Select מציג את האפקטיבי לסשן הבי (resolveSessionTransport({ stored: null, env }))
+// כשההעדפה null — לא את העקיפה (sessionStorage), שגוברת רק בטאב הזה.
+const sessionTransportOptions = $derived<SelectOption[]>([
+  { value: "ws", label: t("settings.sessionTransport.ws") },
+  { value: "http", label: t("settings.sessionTransport.http") },
+])
+
+const sessionTransportDisplay = $derived(
+  settings.sessionTransport ??
+    resolveSessionTransport({ stored: null, env: env.PUBLIC_SESSION_TRANSPORT }),
+)
 </script>
+
 
 <section
   class="flex flex-col flex-1 min-h-0 overflow-y-auto chat-scroll px-4 pt-20 pb-8 w-full max-w-2xl mx-auto"
@@ -267,6 +283,18 @@ $effect(() => {
     </label>
   </SettingsCard>
 
+  <!-- כרטיס מתקדם — טרנספורט סשן (slice transport-polish C4) -->
+  <SettingsCard title={t("settings.sessionTransport.label")}>
+    <label class="flex flex-col gap-1.5">
+      <span class="text-[13px]" style="color:var(--fg-dim)">{t("settings.sessionTransport.label")}</span>
+      <Select
+        options={sessionTransportOptions}
+        value={sessionTransportDisplay}
+        title={t("settings.sessionTransport.label")}
+        onchange={(v) => settings.setSessionTransport(v as SessionTransport)}
+      />
+    </label>
+  </SettingsCard>
   <!-- גרסה — (cache-version slice) -->
   <p class="text-center text-[11px] mt-4" style="color:var(--fg-muted)" dir="ltr">
     {t("settings.version")} {version}

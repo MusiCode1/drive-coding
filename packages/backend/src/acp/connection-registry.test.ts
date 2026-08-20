@@ -18,6 +18,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { httpCacheGet, httpCacheInvalidateAll, httpCacheSet } from "../delivery/http-cache.js"
 import { createConnectionRegistry } from "./connection-registry.js"
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -93,6 +94,26 @@ describe("connection-registry — basic Map operations", () => {
     await reg.connect("agent-3", "opencode", { cwd: os.tmpdir() })
     await reg.close("agent-3")
     expect(reg.get("agent-3")).toBeUndefined()
+  })
+
+  it("getCwd returns undefined for unknown agentId", () => {
+    const reg = createConnectionRegistry()
+    expect(reg.getCwd("unknown")).toBeUndefined()
+  })
+
+  it("getCwd returns the cwd passed to connect", async () => {
+    const reg = createConnectionRegistry()
+    const cwd = os.tmpdir()
+    await reg.connect("agent-cwd", "opencode", { cwd })
+    expect(reg.getCwd("agent-cwd")).toBe(cwd)
+    await reg.close("agent-cwd")
+  })
+
+  it("getCwd returns undefined after close (no Map leak)", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("agent-cwd-2", "opencode", { cwd: os.tmpdir() })
+    await reg.close("agent-cwd-2")
+    expect(reg.getCwd("agent-cwd-2")).toBeUndefined()
   })
 
   it("getRuntimeInfo returns null after close (no Map leak)", async () => {
@@ -184,6 +205,200 @@ describe("connection-registry — getRuntimeInfo composition", () => {
     const info = reg.getRuntimeInfo("rt-2")
     expect(info?.busy).toBe(false)
     await reg.close("rt-2")
+  })
+})
+
+describe("connection-registry — ownership epoch (slice ownership-truth C1)", () => {
+  let cleanupEnv: (() => void) | null = null
+
+  beforeEach(() => {
+    cleanupEnv = useScript(ALIVE_SCRIPT)
+  })
+
+  afterEach(async () => {
+    cleanupEnv?.()
+    cleanupEnv = null
+  })
+
+  it("epoch starts at 0 and is 0 for unknown agentId", async () => {
+    const reg = createConnectionRegistry()
+    expect(reg.getEpoch("unknown")).toBe(0)
+    await reg.connect("ep-1", "opencode", { cwd: os.tmpdir() })
+    expect(reg.getEpoch("ep-1")).toBe(0)
+    await reg.close("ep-1")
+  })
+
+  it("epoch rises by 1 on null→owner (markOwned)", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-2", "opencode", { cwd: os.tmpdir() })
+    reg.markOwned("ep-2", "http")
+    expect(reg.getEpoch("ep-2")).toBe(1)
+    await reg.close("ep-2")
+  })
+
+  it("epoch rises on owner→owner transition (not just null→owner)", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-3", "opencode", { cwd: os.tmpdir() })
+    reg.markOwned("ep-3", "ws")
+    expect(reg.getEpoch("ep-3")).toBe(1)
+    reg.markOwned("ep-3", "http")
+    expect(reg.getEpoch("ep-3")).toBe(2)
+    await reg.close("ep-3")
+  })
+
+  it("🔴 epoch does NOT decrease on markDetached — survives release", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-4", "opencode", { cwd: os.tmpdir() })
+    reg.markOwned("ep-4", "ws")
+    expect(reg.getEpoch("ep-4")).toBe(1)
+    reg.markDetached("ep-4")
+    expect(reg.getEpoch("ep-4")).toBe(1) // still 1 — not reset
+    await reg.close("ep-4")
+  })
+
+  it("epoch continues to rise after detach+re-own", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-5", "opencode", { cwd: os.tmpdir() })
+    reg.markOwned("ep-5", "ws")
+    reg.markDetached("ep-5")
+    reg.markOwned("ep-5", "http")
+    expect(reg.getEpoch("ep-5")).toBe(2) // 1 (first own) + 1 (re-own after detach)
+    await reg.close("ep-5")
+  })
+
+  it("getOwner returns null initially, then the owner after markOwned", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-6", "opencode", { cwd: os.tmpdir() })
+    expect(reg.getOwner("ep-6")).toBeNull()
+    reg.markOwned("ep-6", "http")
+    const owner = reg.getOwner("ep-6")
+    expect(owner).not.toBeNull()
+    expect(owner!.via).toBe("http")
+    expect(typeof owner!.since).toBe("number")
+    await reg.close("ep-6")
+  })
+
+  it("getOwner returns null after markDetached", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-7", "opencode", { cwd: os.tmpdir() })
+    reg.markOwned("ep-7", "ws")
+    reg.markDetached("ep-7")
+    expect(reg.getOwner("ep-7")).toBeNull()
+    await reg.close("ep-7")
+  })
+
+  it("isOwnedByWs: true only when owner.via === 'ws'", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-8", "opencode", { cwd: os.tmpdir() })
+    expect(reg.isOwnedByWs("ep-8")).toBe(false)
+    reg.markOwned("ep-8", "http")
+    expect(reg.isOwnedByWs("ep-8")).toBe(false)
+    reg.markOwned("ep-8", "ws")
+    expect(reg.isOwnedByWs("ep-8")).toBe(true)
+    reg.markDetached("ep-8")
+    expect(reg.isOwnedByWs("ep-8")).toBe(false)
+    await reg.close("ep-8")
+  })
+
+  it("markAttached is alias for markOwned(id, 'ws') — sets owner via 'ws'", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-9", "opencode", { cwd: os.tmpdir() })
+    reg.markAttached("ep-9")
+    const owner = reg.getOwner("ep-9")
+    expect(owner).not.toBeNull()
+    expect(owner!.via).toBe("ws")
+    expect(reg.isOwnedByWs("ep-9")).toBe(true)
+    expect(reg.getEpoch("ep-9")).toBe(1)
+    await reg.close("ep-9")
+  })
+
+  it("attached === (owner !== null) invariant holds across transitions", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("ep-10", "opencode", { cwd: os.tmpdir() })
+    // Initially: attached=false, owner=null
+    expect(reg.isAttached("ep-10")).toBe(false)
+    expect(reg.getOwner("ep-10")).toBeNull()
+    // After markOwned: attached=true, owner≠null
+    reg.markOwned("ep-10", "http")
+    expect(reg.isAttached("ep-10")).toBe(true)
+    expect(reg.getOwner("ep-10")).not.toBeNull()
+    // After markDetached: attached=false, owner=null
+    reg.markDetached("ep-10")
+    expect(reg.isAttached("ep-10")).toBe(false)
+    expect(reg.getOwner("ep-10")).toBeNull()
+    await reg.close("ep-10")
+  })
+})
+
+describe("connection-registry — liveness stamp (slice liveness C1)", () => {
+  let cleanupEnv: (() => void) | null = null
+
+  beforeEach(() => {
+    cleanupEnv = useScript(ALIVE_SCRIPT)
+  })
+
+  afterEach(async () => {
+    cleanupEnv?.()
+    cleanupEnv = null
+  })
+
+  it("touchOwner is transport-agnostic: updates lastSeenAt for WS and HTTP", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("live-1", "opencode", { cwd: os.tmpdir() })
+
+    // no owner yet → null
+    expect(reg.getLastSeenAt("live-1")).toBeNull()
+
+    // ⚠️ אימות עצמאי (מרדכי): הגרסה הקודמת בדקה `not.toBeNull()` לפני **ואחרי**
+    // touchOwner — אבל החותמת כבר הוצבה ע"י markAttached/markOwned. ⇒ touchOwner
+    // שהוא no-op היה עובר את הטסט. אומת במוטציה: החזרת
+    // `if (e.owner?.via !== "http") return` השאירה 309/309 ירוקים.
+    // ⇒ הבדיקה חייבת להיות ש**הערך התקדם**, אחרת DoD 6 אינו מכוסה.
+
+    // WS owner (markAttached) → touchOwner **מקדם** את החותמת
+    reg.markAttached("live-1")
+    const wsBefore = reg.getLastSeenAt("live-1")
+    expect(wsBefore).not.toBeNull()
+    await new Promise((r) => setTimeout(r, 5))
+    reg.touchOwner("live-1")
+    expect(reg.getLastSeenAt("live-1")).toBeGreaterThan(wsBefore as number)
+
+    // HTTP owner (markOwned) → אותו דבר
+    reg.markOwned("live-1", "http")
+    const httpBefore = reg.getLastSeenAt("live-1")
+    expect(httpBefore).not.toBeNull()
+    await new Promise((r) => setTimeout(r, 5))
+    reg.touchOwner("live-1")
+    expect(reg.getLastSeenAt("live-1")).toBeGreaterThan(httpBefore as number)
+
+    await reg.close("live-1")
+  })
+
+  it("getLastSeenAt is null after markDetached (no owner)", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("live-2", "opencode", { cwd: os.tmpdir() })
+    reg.markOwned("live-2", "http")
+    expect(reg.getLastSeenAt("live-2")).not.toBeNull()
+    reg.markDetached("live-2")
+    expect(reg.getLastSeenAt("live-2")).toBeNull()
+    await reg.close("live-2")
+  })
+
+  // 🔴 DoD 12 — slice liveness C2: שינוי-בעלות מבטל את מטמון התגובה.
+  it("markOwned/markDetached invalidate the HTTP response cache", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("cache-1", "opencode", { cwd: os.tmpdir() })
+
+    httpCacheSet("agents", { agents: [] })
+    reg.markOwned("cache-1", "http")
+    expect(httpCacheGet("agents")).toBeUndefined()
+
+    httpCacheSet("agents", { agents: [] })
+    reg.markDetached("cache-1")
+    expect(httpCacheGet("agents")).toBeUndefined()
+
+    httpCacheInvalidateAll()
+    await reg.close("cache-1")
   })
 })
 

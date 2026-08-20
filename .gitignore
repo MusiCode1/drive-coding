@@ -35,7 +35,11 @@ docs/*-verification-report.md
 # ה-/ המוביל מעגן את התבנית לשורש הריפו בלבד. בלי העיגון, git מתעלם מכל
 # תיקיית docs/ בכל עומק — למשל packages/<pkg>/docs/ — וקובץ חדש שם נחסם
 # בשקט בלי אזהרה.
-/docs/
+# /docs/* ולא /docs/ — git **אינו** מאפשר להחזיר קובץ שתיקיית-האב שלו מוחרגת.
+# עם /docs/ הקובץ הציבורי היחיד למטה היה נחסם בשקט, בלי שום אזהרה.
+/docs/*
+# תיעוד ציבורי מיועד-לבני-אדם — נשאר בריפו הזה במפורש.
+!/docs/configuration.md
 # בלי / בסוף — docs-for-llm הוא סימלינק, וגit מתייחס לסימלינק כקובץ.
 # תבנית שמסתיימת ב-/ מתאימה לספריות בלבד ולא הייתה חוסמת אותו.
 /docs-for-llm
@@ -48,11 +52,18 @@ packages/frontend/.build-old/
 .worktrees/
 .tmp/
 
+# Executor dispatch artifacts (progress.md / outcome.json) — local only, never push
+.dispatch/
+
 # Local-only logs / raw wire-captures / research artifacts (never in repo).
 # Canonical censored fixtures live under the relevant package; this is raw material.
 .research/
 **/.localappdata/**
 .localappdata/
 
-# (הכלל על docs/ ו-docs-for-llm/ מוגדר למעלה — היה כאן כפל מיותר)
+# 🔴 כאן ישבו סימני-קונפליקט לא-פתורים (<<<<<<< / ======= / >>>>>>>) ששרדו
+# מיזוג קודם. git מתייחס אליהם כאל תבניות רגילות, ולכן שום דבר לא התלונן —
+# בזמן ש-`docs/` בלי עיגון חסם כל תיקיית docs בכל עומק. הכלל היחיד מוגדר למעלה.
+!packages/frontend/docs/
 @Vendor/
+docs/plans/

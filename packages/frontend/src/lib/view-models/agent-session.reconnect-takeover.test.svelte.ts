@@ -76,7 +76,10 @@ describe("AgentSession — takeover close code (slice reconnect-ws-takeover, Com
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (session as any)._handleUnexpectedCloseForTest(1006, "abnormal closure")
 
-    expect(session.error).toBe("WS closed (1006): abnormal closure")
+    // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
+    // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
+    // ההבחנה שהטסט בודק נשמרת: "נחסם" ⇒ ההודעה הישנה שורדת; "לא נחסם" ⇒ null.
+    expect(session.error).toBeNull()
     expect(session.status).toBe("disconnected")
     // reconnect כן מוצת: reconnectAttempt הועלה ל-1 סינכרונית (בניגוד למקרה 4409 למעלה).
     expect(session.reconnectAttempt).toBe(1)

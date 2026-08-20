@@ -16,6 +16,8 @@
 import "../app.css"
 import { onDestroy, onMount } from "svelte"
 import { page } from "$app/state"
+import { installDebugSurface } from "$lib/debug/dc"
+import { normalizeSessionTransport } from "$lib/session/session-transport"
 import { env } from "$env/dynamic/public"
 import type { Locale } from "@drive-coding/core/i18n"
 import {
@@ -29,6 +31,7 @@ import {
   setMic,
   setModals,
   setModelStatus,
+  setPresencePoller,
   setRecentProjects,
   setResponsive,
   setSession,
@@ -60,6 +63,8 @@ import { Speaker } from "$lib/view-models/speaker.svelte"
 import { ThemeVM } from "$lib/view-models/theme.svelte"
 import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { UiShellVM } from "$lib/view-models/ui-shell.svelte"
+import { PresencePoller } from "$lib/view-models/presence-poller.svelte"
+import { isPageHidden } from "$lib/util/page-visibility.svelte"
 
 let { children } = $props()
 
@@ -128,6 +133,11 @@ void cliAvailability.load()
 // יתעורר אוטומטית כשcaps יתעדכן.
 void ttsCapabilities.refresh()
 
+// ─── presence-poller ─── (slice liveness C3 — חי לכל אורך הסשן, גם כשהפאנל סגור)
+const presencePoller = new PresencePoller(session)
+presencePoller.init()
+session.setSseReconnectedListener(() => presencePoller.onSseReconnected())
+
 // ─── wake-lock ─── (Track C — drive-first chrome)
 const wakeLock = new WakeLockEngine()
 $effect(() => {
@@ -159,6 +169,35 @@ const titleContext = $derived.by(() => {
 })
 const docTitle = $derived(titleContext ? `${baseTitle} • ${titleContext}` : baseTitle)
 
+// ─── session-transport override ─── (slice transport-polish C3)
+// עקיפה מ-URL: ?sessionTransport=ws/http → נכתב מנורמל ל-sessionStorage (חיה בטאב).
+// קריאה+נרמול+כתיבה בלבד — לא נוגע ב-attach/detach/reconnect/VM. שינוי הדגל משפיע
+// על החיבור הבא בלבד; סשן חי ממשיך בטרנספורט שלו. $effect לא רץ ב-SSR → גישה לאחסון בטוחה.
+$effect(() => {
+  const q = page.url.searchParams.get("sessionTransport")
+  const normalized = normalizeSessionTransport(q)
+  if (normalized) sessionStorage.setItem("sessionTransport", normalized)
+})
+
+// ─── presence sync ─── (slice liveness C3)
+// סבב-תיקונים liveness — שני תיקונים בבלוק הקטן הזה:
+//
+// 1. `inSession` היה `status === "connected"`. ⇒ ברגע שה-WS נפל, sync קיבל
+//    `inSession:false` → stop() → clearBanner(), והבאנר נמחק **בדיוק** ברגע
+//    שנועד להופיע. הבאנר לא יכול להיות בעל-הבית של מצב-החיבור אם הוא נהרס
+//    בניתוק. "בסשן" = connected **או** disconnected (ניתוק חולף); "error"
+//    ו-"idle" נשארים בחוץ — הראשון טרמינלי (session.error מציג אותו), השני אין בו סשן.
+// 2. `return () => stop()` רץ לפני **כל** הרצה-מחדש של ה-$effect, לא רק בפירוק —
+//    כלומר כל שינוי ב-status/agentId/hidden ניגב את הבאנר ואת מונה-הכשלים.
+//    הפירוק עבר ל-$effect נפרד בלי קריאות ריאקטיביות, שרץ פעם אחת.
+$effect(() => {
+  const status = session.status
+  const inSession = status === "connected" || status === "disconnected"
+  const agentId = session.agentId
+  const hidden = isPageHidden()
+  presencePoller.sync({ inSession, agentId, hidden })
+})
+$effect(() => () => presencePoller.dispose())
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
@@ -177,6 +216,7 @@ setContentViewer(contentViewer)
 setActiveAgents(activeAgents)
 setRecentProjects(recentProjects)
 setCliAvailability(cliAvailability)
+setPresencePoller(presencePoller)
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)
 const chatScroll = $state<ChatScrollBridge>({ scrollEl: null, handle: null })
@@ -186,6 +226,13 @@ setChatScroll(chatScroll)
 if (import.meta.env.DEV && typeof window !== "undefined") {
   // biome-ignore lint/suspicious/noExplicitAny: dev debug hook
   ;(window as any).__session = session
+}
+
+// ─── slice debug-surface: משטח-תצפית ב-dev **וגם בפריוויו** ───
+// הגייט הוא PUBLIC_APP_ENV (מ-FE_ENV בזמן-בילד) ולא import.meta.env.DEV,
+// שהוא false בכל בילד — בדיוק הסיבה שה-hook שמעל חסר-תועלת בפריוויו.
+if (__DC_ENABLED__) {
+  void installDebugSurface()
 }
 
 // ─── config-change-socket ─── (slice cli-specs-hot-reload)

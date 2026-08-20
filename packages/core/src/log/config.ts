@@ -104,7 +104,6 @@ export function parseEnvConfig(): LogConfig {
   // קיצור דרך LOG_WIRE
   const wireMode = process.env.LOG_WIRE
   if (wireMode) {
-    config.level = "trace"
     const wireNs: Record<string, string> = {
       acp: "backend.acp.wire.*",
       ws: "backend.ws.wire.*",
@@ -112,7 +111,11 @@ export function parseEnvConfig(): LogConfig {
     }
     const addNs = wireNs[wireMode] ?? ""
     if (addNs) {
-      config.ns = config.ns === "*" ? addNs : `${config.ns},${addNs}`
+      // ⚠️ **מוסיף, לא דורס.** הגרסה הקודמת עשתה
+      // `config.ns = config.ns === "*" ? addNs : ...` — כלומר כיבתה את כל שאר
+      // ה-namespaces. traceNs חי לצד ns ולא במקומו, וגם ה-level הגלובלי כבר
+      // אינו נדרס ל-trace (אחרת כל ה-BE היה מציף ב-trace).
+      config.traceNs = addNs
     }
   }
 

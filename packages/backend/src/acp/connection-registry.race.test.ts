@@ -54,6 +54,7 @@ function makeConnStub(): ProviderConnection & { close: ReturnType<typeof vi.fn> 
       rename: false,
       thinkingTokens: false,
       image: false,
+      systemPrompt: false,
     },
     onFrame: () => () => {},
     turn: { isBusy: () => false, lastActivityAt: () => null, onChange: () => () => {} },
