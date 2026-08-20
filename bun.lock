@@ -15,7 +15,7 @@
     },
     "packages/backend": {
       "name": "@drive-coding/backend",
-      "version": "0.11.1",
+      "version": "0.15.0",
       "bin": {
         "drive-coding": "./src/bin/drive-coding.ts",
       },
@@ -44,7 +44,7 @@
     },
     "packages/core": {
       "name": "@drive-coding/core",
-      "version": "0.18.0",
+      "version": "0.24.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "^1.2.1",
         "@drive-coding/provider": "workspace:*",
@@ -57,7 +57,7 @@
     },
     "packages/frontend": {
       "name": "@drive-coding/frontend",
-      "version": "0.22.0",
+      "version": "0.28.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "^1.2.1",
         "@ai-sdk/google": "^3.0.75",
@@ -82,6 +82,7 @@
         "@tailwindcss/vite": "^4.3.0",
         "@types/dompurify": "^3.2.0",
         "cross-env": "^7.0.3",
+        "fast-check": "4.8.0",
         "svelte": "^5.0.0",
         "svelte-check": "^4.0.0",
         "tailwindcss": "^4.3.0",
@@ -90,7 +91,7 @@
     },
     "packages/provider": {
       "name": "@drive-coding/provider",
-      "version": "0.6.0",
+      "version": "0.10.0",
       "dependencies": {
         "@agentclientprotocol/claude-agent-acp": "^0.58.1",
         "@agentclientprotocol/sdk": "^1.2.1",
@@ -106,7 +107,7 @@
     },
     "packages/release": {
       "name": "drive-coding",
-      "version": "0.24.2",
+      "version": "0.30.0",
       "bin": {
         "drive-coding": "dist/drive-coding.js",
       },
