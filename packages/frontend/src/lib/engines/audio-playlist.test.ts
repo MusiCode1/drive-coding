@@ -10,7 +10,7 @@
  *   6. sorted-insert
  *   7. re-entrancy guard
  *
- * mock AudioSink: play() מחזיר Promise שמתממש רק כשקוראים לו resolvePlay(segmentId).
+ * mock AudioSink: play() resolves via resolvePlay(); isComplete after markReady or prepareSegment.
  * WebAudio לא נגעת — בדיקה טהורה של לוגיקת ה-playlist.
  */
 
@@ -53,7 +53,7 @@ function makeMockSink(): MockSink {
     noteBuffered: (segmentId: string) => {
       bufferedSegments.add(segmentId)
     },
-    isComplete: (id: string) => preparedSegments.has(id),
+    isComplete: (id: string) => preparedSegments.has(id) || bufferedSegments.has(id),
     prepareSegment: async (segmentId: string) => {
       preparedSegments.add(segmentId)
     },
@@ -64,7 +64,8 @@ function makeMockSink(): MockSink {
       })
     },
     cancel: (segmentId) => {
-      // פתור play promise אם תקוע, כדי שלא ינעל את הטסט
+      preparedSegments.delete(segmentId)
+      bufferedSegments.delete(segmentId)
       resolvePlay(segmentId)
     },
     clear: () => {

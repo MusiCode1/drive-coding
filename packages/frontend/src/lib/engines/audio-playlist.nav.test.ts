@@ -18,7 +18,7 @@
  *  12. refetch thunk: reserved-ללא-fetch → refetch() נקרא
  *
  * mock AudioSink: play() מחזיר Promise שמתממש רק כשקוראים לו resolvePlay(segmentId).
- * isComplete() — mock: מחזיר true אחרי play הראשון (שדה preparedSegments).
+ * isComplete() — mock: true after markReady (buffered) or resolvePlay (played); cancel clears.
  * WebAudio לא נגעת — בדיקה טהורה של לוגיקת ה-playlist.
  */
 
@@ -69,7 +69,7 @@ function makeMockSink(): MockSink {
     noteBuffered: (segmentId: string) => {
       bufferedSegments.add(segmentId)
     },
-    isComplete: (id: string) => completedSegments.has(id),
+    isComplete: (id: string) => completedSegments.has(id) || bufferedSegments.has(id),
     prepareSegment: async (
       segmentId: string,
       _stream: ReadableStream<Uint8Array>,
@@ -86,7 +86,9 @@ function makeMockSink(): MockSink {
     },
     cancel: (segmentId: string) => {
       cancelledSegments.push(segmentId)
-      // פתור play promise אם תקוע — cancel מסמן סיום מוקדם
+      completedSegments.delete(segmentId)
+      bufferedSegments.delete(segmentId)
+      preparedSegments.delete(segmentId)
       const r = playResolvers.get(segmentId)
       if (r !== undefined) {
         r()
@@ -230,13 +232,7 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     playlist.jumpTo(2)
     await flush(playlist, sink)
 
-    // s2 מסומן reserved (בגלל cancel ב-navigate); צריך markReady שוב
-    const s2Item = playlist.items.find((it) => it.segmentId === "s2")
-    expect(s2Item?.state).toBe("reserved")
-
-    playlist.markReady("s2")
-    await flush(playlist, sink)
-
+    // nav-retain + isComplete on ready: s2 replays immediately after jump
     expect(sink.playOrder).toContain("s2")
     sink.resolvePlay("s2")
     await flush(playlist, sink)
@@ -270,13 +266,7 @@ describe("AudioPlaylist — ניווט (A4)", () => {
     playlist.jumpToBubble("bubble-B")
     await flush(playlist, sink)
 
-    // s2 חוזר ל-reserved (cancel); צריך markReady שוב
-    const s2Item = playlist.items.find((it) => it.segmentId === "s2")
-    expect(s2Item?.state).toBe("reserved")
-
-    playlist.markReady("s2")
-    await flush(playlist, sink)
-
+    // nav-retain + isComplete on ready: s2 replays immediately after jumpToBubble
     expect(sink.playOrder).toContain("s2")
     sink.resolvePlay("s2")
     await flush(playlist, sink)

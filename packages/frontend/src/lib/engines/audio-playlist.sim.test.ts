@@ -50,7 +50,7 @@ function makeSimSink(): SimSink {
     noteBuffered: (segmentId: string) => {
       bufferedSegments.add(segmentId)
     },
-    isComplete: (id: string) => completedSegments.has(id),
+    isComplete: (id: string) => completedSegments.has(id) || bufferedSegments.has(id),
     prepareSegment: async (segmentId: string) => {
       preparedSegments.add(segmentId)
     },
@@ -61,6 +61,9 @@ function makeSimSink(): SimSink {
       })
     },
     cancel: (segmentId: string) => {
+      completedSegments.delete(segmentId)
+      bufferedSegments.delete(segmentId)
+      preparedSegments.delete(segmentId)
       const r = playResolvers.get(segmentId)
       if (r !== undefined) {
         r()
