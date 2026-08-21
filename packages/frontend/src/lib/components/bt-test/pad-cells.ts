@@ -51,10 +51,7 @@ export const PAD_CELLS: readonly PadCell[] = [
  * ‏`lit === true` ‏**‏רק** ‏כאשר `cell.button !== null` ‏והוא שווה ל-`hot` ‏או ל-`flash`.
  * ‏תא אינרטי מחזיר `lit: false` ‏**‏תמיד**, ‏בלי תלות בקלט.
  */
-export function padCellStates(
-  hot: BtButton | null,
-  flash: BtButton | null,
-): PadCellState[] {
+export function padCellStates(hot: BtButton | null, flash: BtButton | null): PadCellState[] {
   return PAD_CELLS.map((cell) => ({
     ...cell,
     lit: cell.button !== null && (cell.button === hot || cell.button === flash),

@@ -5,7 +5,7 @@
  * ‏מונוטונית מאותה חותמת. ‏כל טסט כאן מכוון לאחד השערים שהיו חסרים.
  */
 import { describe, expect, it, vi } from "vitest"
-import { RecProbe, type RecorderLike, type RecProbeCue, type RecProbeRow } from "./rec-probe.js"
+import { type RecorderLike, RecProbe, type RecProbeCue, type RecProbeRow } from "./rec-probe.js"
 
 /** ‏שעון-מונה. ‏🔴 ‏חייב **‏להתקדם** — ‏עם שעון קבוע מוטציות H ‏ו-I ‏שורדות. */
 function makeClock(step = 100) {
