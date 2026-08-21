@@ -18,20 +18,30 @@ import {
   getI18n,
   getModelStatus,
   getResponsive,
+  getSession,
   getVoiceMode,
 } from "$lib/context"
 
 const t = getI18n().t
 const voiceMode = getVoiceMode()
 const modelStatus = getModelStatus()
+const session = getSession()
 const playlist = getAudioPlaylist()
 const responsive = getResponsive()
 
-const showStopRun = $derived(
-  modelStatus.phase === "thinking" ||
-    modelStatus.phase === "responding" ||
-    modelStatus.phase === "calling-tool",
-)
+/**
+ * ─── slice stop-run-visibility ───
+ * 🔴 **היה מבוסס על `modelStatus.phase`, וזו הייתה טעות-שכבה.**
+ *
+ * ‏`phase` הוא **סיכום-תצוגה**, והוא מעדיף במכוון את `"speaking"` על פני
+ * הכול (`model-status.svelte.ts` — השורה הראשונה בנגזרת). כלומר בזמן שהסוכן
+ * עונה וה-TTS מקריא — הרגע הפעיל ביותר של הריצה — ה-phase הוא `"speaking"`,
+ * והתנאי הישן (thinking/responding/calling-tool) יצא **כבוי**. הכפתור נעלם
+ * בדיוק כשהכי צריך אותו, והופיע רק בחשיבה ובכלים. דווח מהשדה.
+ *
+ * ⇒ נראוּת ביטול-הריצה היא **עובדה על הסשן**, לא תצוגה: יש תור פעיל או אין.
+ */
+const showStopRun = $derived(session.turnState !== "idle")
 
 /** הרצועה מוצגת ⇔ יש מה לשלוט בו */
 const showDock = $derived(showStopRun || playlist.items.length > 0)
