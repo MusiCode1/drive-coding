@@ -42,7 +42,7 @@ const stateClass = $derived(STATE_CLASS[voiceMode.state])
 
 function onClick() {
   if (voiceMode.state === "speaking" || voiceMode.state === "thinking") {
-    voiceMode.cancel()
+    voiceMode.cancelRun()
     return
   }
   if (voiceMode.state === "transcribing" || voiceMode.state === "cancelling") return
@@ -86,7 +86,7 @@ function onClick() {
         border: none;
         cursor: pointer;
       "
-      onclick={() => voiceMode.cancel()}
+      onclick={() => voiceMode.cancelRun()}
       aria-label={t("mic.stop")}
     >
       <SquareIcon size={14} strokeWidth={2.5} />

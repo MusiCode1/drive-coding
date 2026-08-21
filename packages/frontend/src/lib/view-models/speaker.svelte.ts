@@ -40,11 +40,8 @@ import { narrate } from "../adapters/voice/narrate"
 import { translate } from "../adapters/voice/translate"
 import { resolveTts } from "../adapters/voice/tts-resolve"
 import type { AudioSink } from "../engines/audio-sink"
-import { AudioStream } from "../engines/audio-stream"
+import type { AudioPlaylist, SegmentOwner } from "../engines/audio-playlist.svelte"
 import type { CuesEngine } from "../engines/cues"
-import { PcmAudioStream } from "../engines/pcm-audio-stream"
-import { Player } from "../engines/player.svelte"
-import { RoutingAudioSink } from "../engines/routing-audio-sink"
 import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
 import type { Settings } from "./settings.svelte"
 import { ttsCapabilities } from "./capabilities.svelte"
@@ -54,7 +51,15 @@ const MIN_CHARS = 20
 const MAX_CHARS = 200
 const LOOKAHEAD = 2
 
-export type TtsJobStatus = "pending" | "fetching" | "ready" | "error"
+export type TtsJobStatus = "pending" | "fetching" | "ready" | "error" | "stale"
+
+/** תוצאת #fetchJob — כל מסלול חייב לדווח (אין return שקט). */
+export type FetchOutcome =
+  | { kind: "ready" }
+  /** ננטש ביוזמת הפלייליסט (ניווט/עצירה) — הפריט נשאר reserved וניתן לשחזור. */
+  | { kind: "abandoned" }
+  /** כשל אמיתי — markError, הפריט מדולג. */
+  | { kind: "error"; reason: "narration-null" | "provider-unavailable" | "synthesize-failed" }
 
 export type TtsJob = {
   segmentId: string
@@ -76,14 +81,14 @@ type BubbleState = {
   buffer: string
 }
 
-export class Speaker {
+export class Speaker implements SegmentOwner {
   // ui-polish-batch C8: מאותחל מ-settings.muted (false = מופעל, true = מושתק)
   enabled: boolean = $state(true)
 
   readonly #session: AgentSession
   readonly #settings: Settings
   readonly #audioStream: AudioSink
-  readonly #player: Player
+  readonly #player: AudioPlaylist
   readonly #cues?: CuesEngine
   // slice 6: guard — מונע ניגון חוזר של cue "speaking" באותו תור (re-entry סדרתי)
   #spokeThisTurn = false
@@ -118,22 +123,37 @@ export class Speaker {
   /** קריאות tool שכבר סוּפרו או דולגו בכוונה (השמעה חוזרת של היסטוריה / כשל narrate). */
   #processedNarrationCallIds: Set<string> = new Set()
   /** slice 22: מקצה orderKey לבועות. לוגיקה ב-core (נבדק unit). */
-  readonly #orderAlloc = new OrderAllocator()
+  readonly #orderAlloc: OrderAllocator
 
   // מוגדר על ידי הבנאי — נשמר כדי שה-destroy() יוכל לעצור את ה-effect.
   #disposeEffect: (() => void) | null = null
 
-  constructor(opts: { session: AgentSession; settings: Settings; cues?: CuesEngine }) {
+  constructor(opts: {
+    session: AgentSession
+    settings: Settings
+    cues?: CuesEngine
+    /**
+     * A4: פלייליסט משותף + sink — יוצרים ב-+layout ומוזרקים גם לBubblePlayer.
+     * ה-Speaker עוד מחזיק ref ל-audioStream (לצרכי prepareSegment + clear).
+     */
+    playlist: AudioPlaylist
+    audioStream: AudioSink
+    orderAlloc: OrderAllocator
+  }) {
+    this.#orderAlloc = opts.orderAlloc
     this.#session = opts.session
     this.#settings = opts.settings
     this.#cues = opts.cues
     // ui-polish-batch C8: אתחל enabled מ-settings.muted + סנכרן cues
     this.enabled = !opts.settings.muted
     if (opts.cues) opts.cues.enabled = !opts.settings.muted
-    this.#audioStream = new RoutingAudioSink(new AudioStream(), new PcmAudioStream())
-    // slice 6: onPlaybackStart callback — נקרא פעם אחת כש-Player עובר idle→playing.
-    // guard #spokeThisTurn מונע re-entry סדרתי בתוך אותו תור (LOOKAHEAD=2 + async fetches).
-    this.#player = new Player(this.#audioStream, () => {
+    // A4: audioStream + playlist מוזרקים מ-+layout (לא נוצרים כאן)
+    this.#audioStream = opts.audioStream
+    this.#player = opts.playlist
+    // A4: רשום callback onPlaybackStart (cue "speaking") —
+    // dependency order ב-+layout מחייב שה-playlist נוצר לפני Speaker,
+    // אז Speaker מרשם את ה-callback בעצמו אחרי init.
+    this.#player.setOnPlaybackStart(() => {
       if (this.#spokeThisTurn) return
       this.#spokeThisTurn = true
       this.#cues?.play("speaking")
@@ -330,8 +350,10 @@ export class Speaker {
     const bid = bubbleId ?? messageId ?? safeUUID()
     // slice 22: הקצה orderKey דטרמיניסטי — seq יציב פר-bubble, segmentIndex עולה
     const orderKey = this.#orderAlloc.next(bid)
+    // A2 (אביגיל #2): extract segmentId לפני push כדי להעביר ל-reserve
+    const segmentId = safeUUID()
     this.#jobs.push({
-      segmentId: safeUUID(),
+      segmentId,
       kind,
       messageId,
       text,
@@ -340,7 +362,45 @@ export class Speaker {
       bubbleId,
       orderKey,
     })
+    // A2: reserve-on-enqueue — הסגמנט נכנס לפלייליסט מיד (לפני fetch)
+    // A4: העבר bubbleId (bid) כדי ש-PlaylistItem יכיל אותו לניווט jumpToBubble
+    // nav-retain: refetch thunk — מאפשר re-fetch בביקור מפורש אחרי skip
+    this.#player.reserve(segmentId, orderKey, bid, this)
     this.#pendingCount += 1
+  }
+
+  /**
+   * nav-retain: refetch thunk שמועבר ל-PlaylistItem.
+   * נקרא ע"י AudioPlaylist כשמנווטים ל-item reserved (שדולג/נכשל).
+   * מוצא את ה-TtsJob לפי segmentId, יוצר AbortController חדש (finding #5),
+   * מאפס status=pending ומריץ את לולאת ה-fetch.
+   */
+  refetch(segmentId: string): void {
+    this.refetchSegment(segmentId)
+  }
+
+  invalidate(segmentId: string): void {
+    const job = this.#jobs.find((j) => j.segmentId === segmentId)
+    if (job === undefined) return
+    if (job.status === "pending") {
+      if (this.#pendingCount > 0) this.#pendingCount -= 1
+    }
+    if (job.status === "pending" || job.status === "fetching") {
+      job.status = "stale"
+    }
+  }
+
+  refetchSegment(segmentId: string): void {
+    const job = this.#jobs.find((j) => j.segmentId === segmentId)
+    if (job === undefined) return
+    if (job.status === "fetching" || job.status === "ready") return // fetch חי
+    if (job.status === "stale") {
+      job.abort = new AbortController()
+    }
+    job.abort = new AbortController() // finding #5: abort חדש (הישן כבר בוצע)
+    job.status = "pending"
+    this.#pendingCount += 1
+    this.#pumpFetchLoop()
   }
 
   #pumpFetchLoop(): void {
@@ -349,14 +409,32 @@ export class Speaker {
       if (job === undefined) break
       job.status = "fetching"
       this.#activeFetches += 1
-      void this.#fetchJob(job).finally(() => {
-        this.#activeFetches -= 1
-        this.#pumpFetchLoop()
-      })
+      void this.#fetchJob(job)
+        .then((outcome) => {
+          this.#applyFetchOutcome(job.segmentId, outcome)
+        })
+        .finally(() => {
+          this.#activeFetches -= 1
+          this.#pumpFetchLoop()
+        })
     }
   }
 
-  async #fetchJob(job: TtsJob): Promise<void> {
+  #applyFetchOutcome(segmentId: string, outcome: FetchOutcome): void {
+    switch (outcome.kind) {
+      case "ready":
+        this.#player.markReady(segmentId)
+        break
+      case "error":
+        this.#player.markError(segmentId)
+        break
+      case "abandoned":
+        this.#player.markAbandoned(segmentId)
+        break
+    }
+  }
+
+  async #fetchJob(job: TtsJob): Promise<FetchOutcome> {
     try {
       let text = job.text
 
@@ -386,14 +464,14 @@ export class Speaker {
         const narrationText = await this.#narrateForJob(job)
         if (narrationText === null) {
           job.status = "error"
-          return
+          return { kind: "error", reason: "narration-null" }
         }
         text = narrationText
       }
 
       if (job.abort.signal.aborted) {
         job.status = "error"
-        return
+        return { kind: "abandoned" }
       }
 
       // V4a-unify: בחר ספק דרך resolveTts (מקור-אמת יחיד); V4b: העברת geminiVoice
@@ -410,7 +488,7 @@ export class Speaker {
           provider: this.#settings.ttsProvider,
           id: job.segmentId,
         })
-        return
+        return { kind: "error", reason: "provider-unavailable" }
       }
       // slice 22: חשב textHash על הטקסט שמסונתז (provenance)
       const textHash = await cacheKeyFor(text, voiceId, modelId)
@@ -428,15 +506,20 @@ export class Speaker {
         textHash,
         format: provider.format,
       })
-      this.#player.addSegment(job.segmentId, job.orderKey)
       job.status = "ready"
+      return { kind: "ready" }
     } catch (e) {
+      if (job.abort.signal.aborted) {
+        job.status = "error"
+        return { kind: "abandoned" }
+      }
       // MIN-5: דלג + המשך, אל תזרוק.
       job.status = "error"
       console.warn("TTS job failed, skipping segment", {
         id: job.segmentId,
         err: e instanceof Error ? e.message : String(e),
       })
+      return { kind: "error", reason: "synthesize-failed" }
     } finally {
       // msr-v2: הפחת ספירה (job הסתיים — גם אם שגיאה)
       if (this.#pendingCount > 0) this.#pendingCount -= 1
@@ -485,9 +568,11 @@ export class Speaker {
       // דרך אותו OrderAllocator — לכן ה-seq של ה-tool נכון יחסית למשפטים סביבו.
       const bid = bubble.id
       const orderKey = this.#orderAlloc.next(bid)
+      // A2 (אביגיל #2): extract segmentId לפני push כדי להעביר ל-reserve
+      const segmentId = safeUUID()
 
       this.#jobs.push({
-        segmentId: safeUUID(),
+        segmentId,
         kind: "tool",
         messageId: null,
         text: "", // יתמלא ב-#narrateForJob
@@ -497,6 +582,10 @@ export class Speaker {
         toolCallId: tc.toolCallId,
         orderKey,
       })
+      // A2: reserve-on-enqueue
+      // A4: העבר bubbleId כדי ש-PlaylistItem יכיל אותו לניווט jumpToBubble
+      // nav-retain: refetch thunk — re-fetch בביקור מפורש אחרי skip
+      this.#player.reserve(segmentId, orderKey, bid, this)
       this.#pendingCount += 1
       this.#pumpFetchLoop()
     }
@@ -581,7 +670,7 @@ export class Speaker {
     // slice 6: reset משני — לcancel/toggle-off (לא רץ בסוף תור רגיל)
     this.#spokeThisTurn = false
     for (const job of this.#jobs) {
-      if (job.status === "fetching" || job.status === "pending") {
+      if (job.status === "fetching" || job.status === "pending" || job.status === "stale") {
         try {
           job.abort.abort()
         } catch {

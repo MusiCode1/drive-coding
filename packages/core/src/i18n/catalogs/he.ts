@@ -253,6 +253,18 @@ export const he: Catalog = {
   "session.leaveWarning.confirm": "צא בכל זאת",
   "session.leaveWarning.cancel": "ביטול",
   "session.leaveWarning.dontShowAgain": "אל תציג הודעה זו שוב",
+  // ─── playbackControls ─── (slice B1-controls-ui)
+  "playbackControls.stopRun": "עצור ריצה",
+  "playbackControls.stopRun.thinking": "עצור ריצה",
+  "playbackControls.stopRun.responding": "עצור תגובה",
+  "playbackControls.stopRun.callingTool": "עצור כלי",
+  "playbackControls.stopPlayback": "עצור השמעה",
+  "playbackControls.pause": "השהה",
+  "playbackControls.resume": "המשך",
+  "playbackControls.prev": "קודם",
+  "playbackControls.next": "הבא",
+  "playbackControls.dock": "בקרת השמעה",
+  "playbackControls.interrupted": "התור נקטע",
   // ─── thinking-tokens ─── (slice FEAT-thinking-live)
   "agentOptions.thinking.label": "חשיבה",
   "agentOptions.thinking.off": "כבוי",

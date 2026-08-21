@@ -31,7 +31,14 @@ import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svel
 import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
 // ─── ui-session-polish: loading spinner modal ───
 import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
-import { getChatScroll, getI18n, getModelStatus, getResponsive, getSession } from "$lib/context"
+import {
+  getAudioPlaylist,
+  getChatScroll,
+  getI18n,
+  getModelStatus,
+  getResponsive,
+  getSession,
+} from "$lib/context"
 import type { Bubble } from "$lib/types/bubble"
 import { stableBubbleKey } from "$lib/util/bubble-key"
 import { computeScrollEdges, shouldFollowJump } from "$lib/util/scroll-follow"
@@ -50,7 +57,16 @@ let {
 const responsive = getResponsive()
 const session = getSession()
 const modelStatus = getModelStatus()
+const playlist = getAudioPlaylist()
 const t = getI18n().t
+
+/** control-dock: האם רצועת הבקרה מוצגת ( mirrors PlaybackControls showDock ). */
+const ribbonVisible = $derived(
+  modelStatus.phase === "thinking" ||
+    modelStatus.phase === "responding" ||
+    modelStatus.phase === "calling-tool" ||
+    playlist.items.length > 0,
+)
 
 // scroll node — ה-AppShell הוא owner (חוק זהב #4)
 let scrollEl = $state<HTMLElement | null>(null)
@@ -263,6 +279,19 @@ $effect(() => {
   }, 320)
 
   return () => clearTimeout(timer)
+})
+
+// control-dock commit 0: הופעת/היעלמות הרצועה מקצרת את viewport הגלילה.
+// maybeJump() לא מספיק (סף 72px > גובה הרצועה 56px; sentinelMargin 48 < 56 ⇒ JumpDown שגוי).
+// jumpToBottom() מותנה ב-following, אחרי שהפריסה התייצבה (תקדים: setTimeout 320ms).
+$effect(() => {
+  void ribbonVisible
+
+  const ribbonFollowTimer = setTimeout(() => {
+    if (following) jumpToBottom()
+  }, 320)
+
+  return () => clearTimeout(ribbonFollowTimer)
 })
 
 // ─── turn-boundary (Commit 3) ───

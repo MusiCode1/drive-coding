@@ -22,6 +22,7 @@ import { env } from "$env/dynamic/public"
 import type { Locale } from "@drive-coding/core/i18n"
 import {
   setActiveAgents,
+  setAudioPlaylist,
   setBubblePlayer,
   setChatScroll,
   setCliAvailability,
@@ -42,7 +43,10 @@ import {
   setVoiceMode,
 } from "$lib/context"
 import type { ChatScrollBridge } from "$lib/types/chat-scroll"
-import { beWsUrl } from "$lib/util/be-url"
+import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
+import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
+import { PlayableSink } from "$lib/engines/playable-sink"
+import { beWsUrl } from "$lib/util/be-url" 
 import { CuesEngine } from "$lib/engines/cues"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { createConfigChangeSocket } from "$lib/engines/config-change-socket"
@@ -83,8 +87,18 @@ const cues = new CuesEngine()
 // slice-restore-last-config: settings מוזרק לסשן כדי לשמור config פר-CLI
 const session = new AgentSession({ cues, settings })
 
-// ─── speaker ─── (תלוי ב-session + settings + cues)
-const speaker = new Speaker({ session, settings, cues })
+// ─── audio-playlist ─── (A4 — entity משותף בין Speaker ו-BubblePlayer)
+// AudioSink נוצר כאן — Speaker מחזיק ref אליו (prepareSegment/clear).
+// AudioPlaylist נוצר לפני Speaker כי Speaker מקבל אותו כ-dependency.
+const sharedAudioStream = new PlayableSink()
+const sharedOrderAlloc = new OrderAllocator()
+// onPlaybackStart: cue "speaking" — guard #spokeThisTurn ב-Speaker
+// (Speaker יגדיר callback דרך onPlaybackStart בלבד — לא מוגדר כאן ישירות,
+//  כי Speaker צריך לבדוק #spokeThisTurn שלו. פתרון: Speaker ירשום callback לאחר init.)
+const audioPlaylist = new AudioPlaylist(sharedAudioStream)
+
+// ─── speaker ─── (תלוי ב-session + settings + cues + audioPlaylist)
+const speaker = new Speaker({ session, settings, cues, playlist: audioPlaylist, audioStream: sharedAudioStream, orderAlloc: sharedOrderAlloc })
 
 // ─── mic ─── (slice 3 — תלוי ב-session + cues)
 const mic = new Mic({ session, cues })
@@ -95,8 +109,9 @@ const voiceMode = new VoiceMode({ mic, session, speaker })
 // ─── model-status ─── (msr-v2 — תלוי ב-session + speaker)
 const modelStatus = new ModelStatus({ session, speaker })
 
-// ─── bubble-player ─── (msr-v2 — תלוי ב-session + settings)
-const bubblePlayer = new BubblePlayer({ session, settings })
+// ─── bubble-player ─── (msr-v2 — תלוי ב-session + settings + audioPlaylist)
+// A4: playlist משותף עם Speaker — BubblePlayer יאוחד ב-Commit 3
+const bubblePlayer = new BubblePlayer({ session, settings, playlist: audioPlaylist, orderAlloc: sharedOrderAlloc })
 
 // ─── car-mode ─── (slice 7)
 
@@ -204,6 +219,7 @@ setSettings(settings)
 setCues(cues)
 setSession(session)
 setSpeaker(speaker)
+setAudioPlaylist(audioPlaylist)
 setMic(mic)
 setVoiceMode(voiceMode)
 setModelStatus(modelStatus)

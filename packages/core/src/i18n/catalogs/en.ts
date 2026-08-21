@@ -258,6 +258,18 @@ export const en: Catalog = {
   "session.leaveWarning.confirm": "Leave anyway",
   "session.leaveWarning.cancel": "Cancel",
   "session.leaveWarning.dontShowAgain": "Don't show this message again",
+  // ─── playbackControls ─── (slice B1-controls-ui)
+  "playbackControls.stopRun": "Stop run",
+  "playbackControls.stopRun.thinking": "Stop run",
+  "playbackControls.stopRun.responding": "Stop response",
+  "playbackControls.stopRun.callingTool": "Stop tool",
+  "playbackControls.stopPlayback": "Stop playback",
+  "playbackControls.pause": "Pause",
+  "playbackControls.resume": "Resume",
+  "playbackControls.prev": "Previous",
+  "playbackControls.next": "Next",
+  "playbackControls.dock": "Playback controls",
+  "playbackControls.interrupted": "Turn interrupted",
   // ─── thinking-tokens ─── (slice FEAT-thinking-live)
   "agentOptions.thinking.label": "Thinking",
   "agentOptions.thinking.off": "Off",

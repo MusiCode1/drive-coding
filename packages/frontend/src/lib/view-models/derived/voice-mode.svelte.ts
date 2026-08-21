@@ -65,16 +65,22 @@ export class VoiceMode {
   }
 
   /**
-   * ביטול פעולת הקלטה / TTS / בקשה שרצה כרגע.
-   * נקרא על ידי ה-MicButton כשהמצב הוא "speaking" או "thinking",
-   * וייקרא גם על ידי כפתור הביטול ב-slice 7.
+   * A3: עצירת השמעה בלבד — לא נוגע בריצת הסוכן ולא ב-mic.
+   * B1 יחבר לכפתור stop השמעה.
    */
-  cancel(): void {
+  stopPlayback(): void {
+    this.#speaker.stop()
+  }
+
+  /**
+   * A3: עצירת הסוכן + ההשמעה (החלטה #3 מ-brief).
+   * מגדיר isCancelling=true → state="cancelling" → מאפס ב-$effect כש-idle.
+   */
+  cancelRun(): void {
     this.isCancelling = true
     this.#mic.cancel()
-    // Speaker.stop() היא מתודה תוספתית (additive) שנוספה בקומִיט הזה — ראה speaker.svelte.ts
     this.#speaker.stop()
-    // msr-v2: ACP cancel — עוצר את הסוכן ומחזיר turnState=idle (תיקון X-מהבהב)
     void this.#session.cancelTurn()
   }
+
 }
