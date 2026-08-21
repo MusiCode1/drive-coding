@@ -207,7 +207,7 @@ export class Speaker implements SegmentOwner {
 
         // ── כתיבות (לא-נעקבות) ─────────────────────────────────────────
         untrack(() => {
-          this.#processBubbles(bubbles, enabled, isLoadingHistory, speakThoughts)
+          this.#processBubbles(bubbles, enabled, isLoadingHistory, speakThoughts, turnState)
           this.#processToolBubbles(bubbles, enabled, isLoadingHistory, narrateTools)
           this.#handleStatusTransition(status, turnState, enabled, speakThoughts)
           this.#prevStatus = status
@@ -257,6 +257,8 @@ export class Speaker implements SegmentOwner {
     enabled: boolean,
     isLoadingHistory: boolean,
     speakThoughts: boolean,
+    /** ─── slice tts-tail-after-idle ─── נדרש כדי לזהות "התור כבר נגמר". */
+    turnState: TurnState,
   ): void {
     // Slice 4: בזמן ש-loadSession() משחזר היסטוריה, מסמן בועות כמעובדות
     // ללא הכנסת TTS jobs לתור. ה-effect רץ מחדש ברגע שה-isLoadingHistory → false,
@@ -335,6 +337,29 @@ export class Speaker implements SegmentOwner {
         heldBack = lastSentence
       }
       state.speakPending = heldBack + remaining
+
+      // ─── slice tts-tail-after-idle ───
+      // 🔴 **התור כבר הסתיים? אין מי שיפלוש אחרינו — לפלוש כאן.**
+      //
+      // דווח מהשדה: "שומעים את ההודעה, לא שומעים את סופה". השורש הוא מרוץ:
+      // ב-HTTP הפריים `state_update: idle` והצ'אנק האחרון יכולים להגיע
+      // ב**אותה מנה**, וה-flush של סוף-התור רץ ב-`$effect` נפרד מהזרימה.
+      // אם הוא מקדים — הוא מפלט חוצץ שעדיין חסר את הזנב, והזנב שמגיע
+      // אחריו נתקע לנצח: `justFinished` יורה **פעם אחת בלבד**
+      // (`#prevTurnState !== "idle" && turnState === "idle"`).
+      //
+      // ⇒ כשהתור כבר idle, כל שארית היא **סופית** — אין טעם להמתין לטקסט
+      //   שיצטרף אליה, כי לא יבוא. פולטים מיָד.
+      if (turnState === "idle") {
+        const finalTail = (
+          state.speakPending + toSpeakable(state.buffer, this.#speakableLabels())
+        ).trim()
+        state.buffer = ""
+        state.speakPending = ""
+        if (finalTail.length > 0) {
+          this.#enqueue(bubble.kind, bubble.messageId, finalTail, bubble.id)
+        }
+      }
 
       for (const sentence of sentences) {
         this.#enqueue(bubble.kind, bubble.messageId, sentence, bubble.id)
