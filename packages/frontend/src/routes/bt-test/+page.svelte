@@ -43,6 +43,7 @@
   } from "$lib/engines/media-session-keepalive.js"
   import { CuesEngine } from "$lib/engines/cues.js"
   import { Recorder } from "$lib/engines/recorder.js"
+  import { RecProbe } from "$lib/engines/rec-probe.js"
   import { WakeLockEngine } from "$lib/engines/wake-lock.js"
 
   const LOG_CAP = 2000
@@ -78,7 +79,6 @@
   let audioPlaying = $state(false)
   let cmdCount = $state(0)
   let suppressedCount = $state(0)
-  let recStartMs = 0
   const recorder = new Recorder()
   const cues = new CuesEngine()
   const wakeLock = new WakeLockEngine()
@@ -88,6 +88,18 @@
   const vis = (): "visible" | "hidden" =>
     typeof document !== "undefined" && document.visibilityState === "hidden" ? "hidden" : "visible"
   const nowMs = () => Math.round(performance.now() - pageStart)
+
+  // ⚠️ ‏חייב לשבת **‏אחרי** ‏`nowMs` — ‏הוא `const` ‏חץ, ‏ובנייה מעליו היא
+  // ‏`ReferenceError` ‏ב-TDZ ‏בטעינת הדף. ‏אף שער קיים לא היה תופס את זה.
+  const recProbe = new RecProbe({
+    recorder,
+    now: nowMs,
+    onRow: (row) => pushRow(row),
+    onStartFailed: () => {
+      recordProbe = false
+    },
+    onCue: (cue) => cues.play(cue),
+  })
 
   function pushRow(partial: Omit<BtLogRow, "id" | "t" | "visibility"> & { t?: number }) {
     rows = [{ id: ++rowSeq, t: partial.t ?? nowMs(), visibility: vis(), ...partial }, ...rows]
@@ -107,34 +119,7 @@
     setTimeout(() => {
       if (flash === cmd.button) flash = null
     }, 250)
-    if (recordProbe) void handleProbe(cmd)
-  }
-
-  async function handleProbe(cmd: BtCommand) {
-    if (cmd.button === "center") return
-    if (cmd.button === "next") {
-      try {
-        recStartMs = nowMs()
-        await recorder.start()
-        cues.play("recordingStart")
-        pushRow({ kind: "rec", detail: "recording started" })
-      } catch (e: unknown) {
-        recordProbe = false
-        pushRow({ kind: "err", detail: e instanceof Error ? e.message : String(e) })
-      }
-    } else {
-      try {
-        const { blob, mimeType } = await recorder.stop()
-        cues.play("recordingStop")
-        pushRow({
-          kind: "rec",
-          detail: "recording stopped",
-          data: { ms: nowMs() - recStartMs, bytes: blob.size, mimeType },
-        })
-      } catch (e: unknown) {
-        pushRow({ kind: "err", detail: e instanceof Error ? e.message : String(e) })
-      }
-    }
+    if (recordProbe) void recProbe.handle(cmd.button)
   }
 
   function setWake(on: boolean) {
