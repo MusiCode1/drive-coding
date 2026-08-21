@@ -35,19 +35,39 @@ const INLINE_CODE_MAX = 24
 /** ‏URL חשוף — לא בתוך תחביר-קישור. */
 const BARE_URL = /https?:\/\/[^\s<>()[\]]+/g
 
-export function toSpeakable(text: string, labels: SpeakableLabels): string {
+/**
+ * ⚠️ **גדר חוקית חייבת לפתוח שורה.** ``` בתוך מחרוזת באמצע שורה
+ * (`text.indexOf("` + "```" + `")`) **אינה** גדר — וספירתה ככזו מפרקת את כל
+ * הזיווג: הבלוק הראשון נסגר מוקדם, השני נפתח באמצע קוד, והתוצאה היא גם
+ * דליפת-קוד להקראה וגם בליעת טקסט תמים שביניהם. נשמע בפועל.
+ */
+const FENCE_LINE = /^[ \t]{0,3}```/gm
+
+export type SpeakableOpts = {
+  /**
+   * ⚠️ **חובה בזרימה.** בלעדיו `toSpeakable` מסיים ב-`trim()`, ועל חוצץ
+   * שגדל הוא אוכל את הרווח שלפני ה-chunk הבא — אחרי מספיק chunks המילים
+   * נדבקות ("הנההסברקצר"). נמדד ב-`speakable-stream.test.ts`.
+   */
+  stream?: boolean
+}
+
+export function toSpeakable(text: string, labels: SpeakableLabels, opts?: SpeakableOpts): string {
   let out = text
 
   // ─── 1. בלוקי-קוד מגודרים ───
   // ⚠️ **ראשון, ולפני כל השאר.** בתוך בלוק-קוד יש URL-ים, כוכביות ותחביר
   // שנראה כמו מרקדאון; אם נעבד אותם קודם, נשנה טקסט שעומד להימחק ממילא,
   // ובמקרה הרע נשבור את גבול-הבלוק עצמו.
-  out = out.replace(/```([^\n`]*)\n?([\s\S]*?)```/g, (_m, lang: string) => {
-    const l = lang.trim().split(/\s+/)[0] ?? ""
-    return l.length > 0 ? ` ${labels.codeBlockWithLang(l)} ` : ` ${labels.codeBlock} `
-  })
+  out = out.replace(
+    /^[ \t]{0,3}```([^\n`]*)\n([\s\S]*?)^[ \t]{0,3}```[ \t]*$/gm,
+    (_m, lang: string) => {
+      const l = lang.trim().split(/\s+/)[0] ?? ""
+      return l.length > 0 ? ` ${labels.codeBlockWithLang(l)} ` : ` ${labels.codeBlock} `
+    },
+  )
   // בלוק שנפתח ולא נסגר (זרימה חיה — הסוגר עוד לא הגיע)
-  out = out.replace(/```([^\n`]*)\n[\s\S]*$/g, (_m, lang: string) => {
+  out = out.replace(/^[ \t]{0,3}```([^\n`]*)\n[\s\S]*$/m, (_m, lang: string) => {
     const l = lang.trim().split(/\s+/)[0] ?? ""
     return l.length > 0 ? ` ${labels.codeBlockWithLang(l)} ` : ` ${labels.codeBlock} `
   })
@@ -85,7 +105,8 @@ export function toSpeakable(text: string, labels: SpeakableLabels): string {
   out = out.replace(/[ \t]+\n/g, "\n")
   out = out.replace(/\n[ \t]+/g, "\n")
   out = out.replace(/\n{3,}/g, "\n\n")
-  return out.trim()
+  // ⚠️ בזרימה **אין** trim — ר' SpeakableOpts.stream.
+  return opts?.stream === true ? out : out.trim()
 }
 
 /**
@@ -105,15 +126,16 @@ export function toSpeakable(text: string, labels: SpeakableLabels): string {
  */
 export function splitAtOpenFence(text: string): { ready: string; held: string } {
   // מספר גדרות אי-זוגי ⇒ האחרונה פתוחה.
+  // ⚠️ **רק גדרות שפותחות שורה.** ``` בתוך מחרוזת אינה גדר; ספירתה ככזו
+  // הזיזה את כל הזיווג ודלפה קוד להקראה.
   let idx = -1
   let count = 0
-  let from = 0
+  FENCE_LINE.lastIndex = 0
   for (;;) {
-    const at = text.indexOf("```", from)
-    if (at === -1) break
+    const m = FENCE_LINE.exec(text)
+    if (m === null) break
     count++
-    idx = at
-    from = at + 3
+    idx = m.index + (m[0].length - 3)
   }
   if (count % 2 === 0) return { ready: text, held: "" }
   return { ready: text.slice(0, idx), held: text.slice(idx) }

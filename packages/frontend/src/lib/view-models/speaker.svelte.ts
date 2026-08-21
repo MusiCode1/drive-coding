@@ -313,7 +313,7 @@ export class Speaker implements SegmentOwner {
       state.buffer += newChunks
       const { ready, held } = splitAtOpenFence(state.buffer)
       const { sentences, remaining } = splitIntoSentences(
-        toSpeakable(ready, this.#speakableLabels()),
+        toSpeakable(ready, this.#speakableLabels(), { stream: true }),
         { minChars: MIN_CHARS, maxChars: MAX_CHARS },
       )
       state.buffer = remaining + held
