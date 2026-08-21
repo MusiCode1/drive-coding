@@ -1,200 +1,239 @@
 <script lang="ts">
 /**
- * PlaybackControls — בקרת השמעה+ריצה לפי phase.
+ * PlaybackControls — רצועת בקרה מעוגנת מעל RecordFooter (control-dock).
  *
- * phase=thinking/responding/calling-tool → [עצור ריצה] (cancelRun)
- * phase=speaking/pending-tts            → [⏹][⏸/▶][⏮][⏭]
+ * ארבעה תאים שווים: עצור · קודם · השהה/המשך · הבא.
+ * "עצור ריצה" מחליף "עצור השמעה" בתא הראשון — רוחב קבוע, בלי קפיצת-פריסה.
  *
- * RTL: כל כפתור משתמש בקלאסים לוגיים (inline-start/end, ms-/me-).
- * גדלים: ≥44px tap target (hands-free / drive-first).
- *
- * ─── B1-controls-ui ───
+ * ─── control-dock ───
  */
 import SquareIcon from "@lucide/svelte/icons/square"
 import PauseIcon from "@lucide/svelte/icons/pause"
 import PlayIcon from "@lucide/svelte/icons/play"
 import SkipBackIcon from "@lucide/svelte/icons/skip-back"
 import SkipForwardIcon from "@lucide/svelte/icons/skip-forward"
-import { getI18n, getVoiceMode, getModelStatus, getAudioPlaylist } from "$lib/context"
+import {
+  getAudioPlaylist,
+  getI18n,
+  getModelStatus,
+  getResponsive,
+  getVoiceMode,
+} from "$lib/context"
 
 const t = getI18n().t
 const voiceMode = getVoiceMode()
 const modelStatus = getModelStatus()
 const playlist = getAudioPlaylist()
+const responsive = getResponsive()
 
-// ── מצבי רינדור ──────────────────────────────────────────────────────────────
-
-/** האם אנחנו בשלב שמחייב כפתור "עצור ריצה" */
 const showStopRun = $derived(
   modelStatus.phase === "thinking" ||
-  modelStatus.phase === "responding" ||
-  modelStatus.phase === "calling-tool"
+    modelStatus.phase === "responding" ||
+    modelStatus.phase === "calling-tool",
 )
 
-/**
- * האם אנחנו בשלב שמחייב כפתורי השמעה.
- * nav-retain (Commit 3): גם כשהפלייליסט קיים (items>0) — כדי שניווט אחרי-סוף יעבוד.
- * idle-park מחזיר state="idle" → phase אינו "speaking" — בלי תנאי השני הכפתורים היו נעלמים.
- */
-const showPlaybackControls = $derived(
-  modelStatus.phase === "speaking" ||
-  modelStatus.phase === "pending-tts" ||
-  playlist.items.length > 0
-)
+/** הרצועה מוצגת ⇔ יש מה לשלוט בו */
+const showDock = $derived(showStopRun || playlist.items.length > 0)
 
-/** תווית פר-phase לכפתור עצור-ריצה */
-const stopRunLabel = $derived.by(() => {
-  if (modelStatus.phase === "thinking")      return t("playbackControls.stopRun.thinking")
-  if (modelStatus.phase === "responding")    return t("playbackControls.stopRun.responding")
-  if (modelStatus.phase === "calling-tool")  return t("playbackControls.stopRun.callingTool")
-  return t("playbackControls.stopRun")
+const stopLabel = $derived.by(() => {
+  if (showStopRun) {
+    if (modelStatus.phase === "thinking") return t("playbackControls.stopRun.thinking")
+    if (modelStatus.phase === "responding") return t("playbackControls.stopRun.responding")
+    if (modelStatus.phase === "calling-tool") return t("playbackControls.stopRun.callingTool")
+    return t("playbackControls.stopRun")
+  }
+  return t("playbackControls.stopPlayback")
 })
 
-/** האם transport בהשהייה (לבחור ⏸ או ▶) */
 const isPaused = $derived(playlist.transport === "paused")
 
-/**
- * nav-retain (Commit 3): כפתורי next/prev — disable רק כשאין לאן לנווט.
- * הband-aid הקודם (isCurrentLoading) הוסר: ניווט ל-item ממומש הוא מיָדי (אין latency-glitch).
- * disabled על פי גבולות בלבד: אין items (<2), או אין prev/next ברור.
- * isPlaylistIdle נשמר כ-guard כשאין פלייליסט כלל (stop() נוקה את items).
- */
-const isPlaylistIdle = $derived(playlist.items.length === 0)
-const isNavDisabled = $derived(isPlaylistIdle || playlist.items.length < 2)
+/** ⏸/▶ — לפי playlist.state (לא isNavDisabled / currentSegmentId). */
+const isTransportEnabled = $derived(playlist.state === "playing")
+
+const isNavDisabled = $derived(playlist.items.length === 0 || playlist.items.length < 2)
+
+function onStop(): void {
+  if (showStopRun) voiceMode.cancelRun()
+  else voiceMode.stopPlayback()
+}
 </script>
 
-{#if showStopRun}
-  <!-- כפתור עצור-ריצה (thinking/responding/calling-tool) -->
-  <div class="playback-controls" role="group" aria-label={t("playbackControls.stopRun")}>
-    <button
-      class="ctrl-btn ctrl-btn--stop-run"
-      onclick={() => voiceMode.cancelRun()}
-      aria-label={stopRunLabel}
-      title={stopRunLabel}
-    >
-      <SquareIcon size={18} strokeWidth={2} />
-      <span class="ctrl-label">{stopRunLabel}</span>
-    </button>
+<!-- shrink-0 על השורש — כמו RecordFooter; בלי זה 56px נמחצים תחת לחץ flex. -->
+<footer
+  class="playback-dock-footer relative shrink-0 flex justify-center px-4"
+  class:mic-plain={responsive.isMobile}
+  class:is-collapsed={!showDock}
+>
+  <div class="mic-card playback-dock-card w-full max-w-3xl min-w-0">
+    <div class="dock-pane" class:is-visible={showDock}>
+      <div class="dock-pane-inner">
+        <!-- dir=ltr: בקרת-תעבורה (⏮ שמאל, ⏭ ימין) — מוסכמת נגנים, לא כיוון טקסט.
+             חריג RTL מודע; אל תהפוך לפי locale. -->
+        <div
+          class="controls-grid"
+          role="group"
+          dir="ltr"
+          aria-label={t("playbackControls.dock")}
+        >
+          <button
+            type="button"
+            class="ctrl-cell"
+            class:ctrl-cell--stop-run={showStopRun}
+            onclick={onStop}
+            aria-label={stopLabel}
+            title={stopLabel}
+          >
+            <SquareIcon size={24} strokeWidth={2} />
+          </button>
+
+          <button
+            type="button"
+            class="ctrl-cell"
+            onclick={() => playlist.prev()}
+            disabled={isNavDisabled}
+            aria-label={t("playbackControls.prev")}
+            title={t("playbackControls.prev")}
+          >
+            <SkipBackIcon size={24} strokeWidth={2} />
+          </button>
+
+          {#if isPaused}
+            <button
+              type="button"
+              class="ctrl-cell ctrl-cell--accent"
+              onclick={() => playlist.resume()}
+              disabled={!isTransportEnabled}
+              aria-label={t("playbackControls.resume")}
+              title={t("playbackControls.resume")}
+            >
+              <PlayIcon size={24} strokeWidth={2} />
+            </button>
+          {:else}
+            <button
+              type="button"
+              class="ctrl-cell"
+              onclick={() => playlist.pause()}
+              disabled={!isTransportEnabled}
+              aria-label={t("playbackControls.pause")}
+              title={t("playbackControls.pause")}
+            >
+              <PauseIcon size={24} strokeWidth={2} />
+            </button>
+          {/if}
+
+          <button
+            type="button"
+            class="ctrl-cell"
+            onclick={() => playlist.next()}
+            disabled={isNavDisabled}
+            aria-label={t("playbackControls.next")}
+            title={t("playbackControls.next")}
+          >
+            <SkipForwardIcon size={24} strokeWidth={2} />
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
-{:else if showPlaybackControls}
-  <!-- כפתורי השמעה (speaking/pending-tts) -->
-  <div class="playback-controls" role="group" aria-label={t("playbackControls.stopPlayback")}>
-    <!-- ⏹ עצור השמעה -->
-    <button
-      class="ctrl-btn"
-      onclick={() => voiceMode.stopPlayback()}
-      aria-label={t("playbackControls.stopPlayback")}
-      title={t("playbackControls.stopPlayback")}
-    >
-      <SquareIcon size={18} strokeWidth={2} />
-    </button>
-
-    <!-- ⏮ קודם -->
-    <button
-      class="ctrl-btn"
-      onclick={() => playlist.prev()}
-      disabled={isNavDisabled}
-      aria-label={t("playbackControls.prev")}
-      title={t("playbackControls.prev")}
-    >
-      <SkipBackIcon size={18} strokeWidth={2} />
-    </button>
-
-    <!-- ⏸/▶ השהה/המשך -->
-    {#if isPaused}
-      <button
-        class="ctrl-btn ctrl-btn--accent"
-        onclick={() => playlist.resume()}
-        aria-label={t("playbackControls.resume")}
-        title={t("playbackControls.resume")}
-      >
-        <PlayIcon size={18} strokeWidth={2} />
-      </button>
-    {:else}
-      <button
-        class="ctrl-btn"
-        onclick={() => playlist.pause()}
-        disabled={isNavDisabled}
-        aria-label={t("playbackControls.pause")}
-        title={t("playbackControls.pause")}
-      >
-        <PauseIcon size={18} strokeWidth={2} />
-      </button>
-    {/if}
-
-    <!-- ⏭ הבא -->
-    <button
-      class="ctrl-btn"
-      onclick={() => playlist.next()}
-      disabled={isNavDisabled}
-      aria-label={t("playbackControls.next")}
-      title={t("playbackControls.next")}
-    >
-      <SkipForwardIcon size={18} strokeWidth={2} />
-    </button>
-  </div>
-{/if}
+</footer>
 
 <style>
-  .playback-controls {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    /* logical: ms = margin-inline-start */
-    margin-inline-start: 0.5rem;
+  .playback-dock-card {
+    /* יחידה אחת עם RecordFooter — רק פינות עליונות; תחתית שטוחה */
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+    border-bottom: none;
+    padding: 0;
   }
 
-  .ctrl-btn {
+  /* כשהרצועה מעל וגלויה — RecordFooter מאבד פינות/מסגרת עליונה (יחידה ויזואלית) */
+  :global(.playback-dock-footer:not(.is-collapsed) + footer .mic-card) {
+    border-start-start-radius: 0;
+    border-start-end-radius: 0;
+    border-top: none;
+    box-shadow: none;
+  }
+
+  .dock-pane {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity 0.3s ease,
+      grid-template-rows 0.3s ease 0.3s,
+      visibility 0s linear 0.6s;
+  }
+
+  .dock-pane-inner {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .dock-pane.is-visible {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition:
+      grid-template-rows 0.3s ease,
+      opacity 0.3s ease 0.3s,
+      visibility 0s linear 0s;
+  }
+
+  .controls-grid {
+    --touch-target-lg: 56px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .ctrl-cell {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.3rem;
-    /* ≥44px tap target (hands-free / drive-first) */
-    min-width: 44px;
-    min-height: 44px;
-    padding: 0 0.5rem;
+    min-width: var(--touch-target-lg);
+    min-height: var(--touch-target-lg);
     border: 1px solid var(--border);
-    border-radius: 0.5rem;
+    border-radius: 0.625rem;
     background: var(--bg-card);
     color: var(--fg-dim);
     cursor: pointer;
-    font-size: 0.78rem;
-    transition: background 0.15s, color 0.15s;
+    transition: background 0.15s, color 0.15s, opacity 0.15s;
   }
 
-  .ctrl-btn:hover:not(:disabled) {
+  .ctrl-cell:hover:not(:disabled) {
     background: var(--bg-hover, var(--border));
     color: var(--fg);
   }
 
-  .ctrl-btn:disabled {
-    opacity: 0.4;
+  .ctrl-cell:disabled {
+    opacity: 0.35;
     cursor: not-allowed;
   }
 
-  .ctrl-btn--accent {
+  .ctrl-cell--accent {
     background: var(--accent);
     color: white;
     border-color: var(--accent);
   }
 
-  .ctrl-btn--accent:hover:not(:disabled) {
+  .ctrl-cell--accent:hover:not(:disabled) {
     filter: brightness(1.1);
   }
 
-  .ctrl-btn--stop-run {
-    /* הדגשה קלה לכפתור עצור-ריצה */
+  .ctrl-cell--stop-run:not(:disabled) {
     border-color: var(--recording, #e53e3e);
     color: var(--recording, #e53e3e);
   }
 
-  .ctrl-btn--stop-run:hover:not(:disabled) {
+  .ctrl-cell--stop-run:hover:not(:disabled) {
     background: color-mix(in srgb, var(--recording, #e53e3e) 12%, transparent);
   }
 
-  .ctrl-label {
-    font-size: 0.78rem;
-    font-weight: 500;
-    white-space: nowrap;
+  .is-collapsed {
+    pointer-events: none;
   }
 </style>

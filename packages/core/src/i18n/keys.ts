@@ -268,6 +268,7 @@ export type MessageKey =
   | "playbackControls.resume"
   | "playbackControls.prev"
   | "playbackControls.next"
+  | "playbackControls.dock"
   | "playbackControls.interrupted"
   // ─── thinking-tokens ─── (slice FEAT-thinking-live)
   | "agentOptions.thinking.label" // תווית הפקד "חשיבה" / "Thinking"

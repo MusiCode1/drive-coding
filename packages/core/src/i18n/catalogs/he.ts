@@ -258,6 +258,7 @@ export const he: Catalog = {
   "playbackControls.resume": "המשך",
   "playbackControls.prev": "קודם",
   "playbackControls.next": "הבא",
+  "playbackControls.dock": "בקרת השמעה",
   "playbackControls.interrupted": "התור נקטע",
   // ─── thinking-tokens ─── (slice FEAT-thinking-live)
   "agentOptions.thinking.label": "חשיבה",

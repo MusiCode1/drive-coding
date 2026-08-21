@@ -263,6 +263,7 @@ export const en: Catalog = {
   "playbackControls.resume": "Resume",
   "playbackControls.prev": "Previous",
   "playbackControls.next": "Next",
+  "playbackControls.dock": "Playback controls",
   "playbackControls.interrupted": "Turn interrupted",
   // ─── thinking-tokens ─── (slice FEAT-thinking-live)
   "agentOptions.thinking.label": "Thinking",
