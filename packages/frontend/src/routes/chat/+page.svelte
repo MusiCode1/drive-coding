@@ -59,7 +59,10 @@ onMount(() => {
   // מיפוי: קדימה=הקלט/שלח (toggle) · אחורה=בטל · מרכז=עצור הקראה.
   //
   // 🔴 חריגה מכוונת מחוק-זהב #1 (`packages/frontend/AGENTS.md`) בארבעה סעיפים:
-  //    מאזיני window · polling · ייבוא engine ל-route · הפעלת cues מה-route.
+  //    מאזיני window · polling · ייבוא **ויצירת** engine ל-route (`new BtRemoteEngine()`)
+  //    · הפעלת cues מה-route.
+  //    (הערה: מאזין `beforeunload` שמעליו הוא הפרה **קודמת** של אותו חוק,
+  //     מ-slice leave-running-background — לא נספרת כאן.)
   //    ובנוסף — חריגה חמישית: תקציב 150 השורות.
   //    למה כאן ולא ב-VM: השלט הוא **קלט גלובלי** שאינו שייך לאף entity — הוא
   //    מתרגם מקשים לפעולות על שלושה VMs שונים (Mic · BubblePlayer · Cues).
