@@ -52,6 +52,14 @@ export type BtStats = {
   preholdsAbsorbed: number
   preholdTimeouts: number
   preholdGapFlushes: number
+  /**
+   * ‏burst רב-פולסי שנסגר ב**‏שתיקה** ‏ולא ב-`up` — ‏כלומר ייתכן שהכפתור עדיין היה
+   * ‏לחוץ, ‏ושהלחיצה תמשיך ל-burst נוסף ⇒ ‏שתי `hold` ‏על לחיצה פיזית אחת.
+   * 🔴 **‏המסלול השני לפליטה-כפולה**, ‏שאינו עובר דרך prehold ‏ולכן אינו נספר
+   * ‏ב-`preholdGapFlushes`. ‏נתפס ע"י כלב (‏ממצא 1) ‏בהפסקה >250ms ‏באמצע burst.
+   * ‏ר' §3 "‏השארית שנשארת פתוחה" — ‏שני המונים יחד מכסים את שני המסלולים.
+   */
+  burstGapCloses: number
   orphanUps: number
 }
 
@@ -116,6 +124,7 @@ export class BtRemoteEngine {
     preholdsAbsorbed: 0,
     preholdTimeouts: 0,
     preholdGapFlushes: 0,
+    burstGapCloses: 0,
     orphanUps: 0,
   }
 
@@ -220,6 +229,7 @@ export class BtRemoteEngine {
       preholdsAbsorbed: 0,
       preholdTimeouts: 0,
       preholdGapFlushes: 0,
+      burstGapCloses: 0,
       orphanUps: 0,
     }
   }
@@ -320,6 +330,10 @@ export class BtRemoteEngine {
     }
 
     const gesture: BtGesture = burst.pulses > 1 || holdMs >= HOLD_THRESHOLD_MS ? "hold" : "tap"
+
+    // ‏burst רב-פולסי שנגמר בשתיקה ולא ב-`up`: ‏הכפתור אולי עדיין לחוץ. ‏מונה בלבד —
+    // ‏אין כאן שינוי-התנהגות, ‏רק הפיכת העמימות לנראית בייצוא (‏כלב, ‏ממצא 1).
+    if (closedBy === "gap" && burst.pulses > 1) this.#stats.burstGapCloses++
 
     return this.#emit({
       button: burst.button,

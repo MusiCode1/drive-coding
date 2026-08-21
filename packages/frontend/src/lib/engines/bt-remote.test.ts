@@ -208,6 +208,30 @@ describe("bt-remote", () => {
     expect(pendingHold[0]?.wouldBeHold).toBe(true)
   })
 
+  // ‏המסלול השני לפליטה-כפולה, ‏שכלב תפס (‏ממצא 1): ‏הפסקה >250ms ‏באמצע burst
+  // ‏רב-פולסי סוגרת אותו ב-"gap" ‏ופולטת `hold` ‏**‏בלי לעבור דרך prehold** ⇒
+  // ‏`preholdGapFlushes` ‏נשאר 0. ‏בלי מונה משלו, ‏הלחיצה הכפולה בלתי-נראית בייצוא.
+  it("counts a multi-pulse burst that ends in silence rather than an UP", () => {
+    const engine = new BtRemoteEngine()
+    engine.ingestKey({ type: "down", code: "MediaPlayPause", at: 0 })
+    engine.ingestKey({ type: "down", code: "MediaPlayPause", at: 50 })
+    // ‏הפסקה ארוכה מ-BURST_GAP_MS ‏בזמן שהכפתור עדיין לחוץ
+    const flushed = engine.tick(50 + BURST_GAP_MS + TICK_INTERVAL_MS)
+    expect(flushed).toHaveLength(1)
+    expect(flushed[0]?.gesture).toBe("hold")
+    expect(flushed[0]?.closedBy).toBe("gap")
+
+    // ‏הלחיצה ממשיכה ⇒ ‏burst שני (‏רב-פולסי) ⇒ ‏`hold` ‏שנייה על אותה לחיצה פיזית
+    engine.ingestKey({ type: "down", code: "MediaPlayPause", at: 500 })
+    engine.ingestKey({ type: "down", code: "MediaPlayPause", at: 550 })
+    const second = engine.ingestKey({ type: "up", code: "MediaPlayPause", at: 700 })
+    expect(second?.gesture).toBe("hold")
+
+    // ‏שתי `hold` ‏על לחיצה אחת — ‏ו**‏המונה רואה את זה**.
+    expect(engine.stats.preholdGapFlushes).toBe(0)
+    expect(engine.stats.burstGapCloses).toBe(1)
+  })
+
   it("exports timing constants", () => {
     expect(BURST_GAP_MS).toBe(250)
     expect(HOLD_THRESHOLD_MS).toBe(400)
