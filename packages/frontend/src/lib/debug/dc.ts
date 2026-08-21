@@ -12,6 +12,7 @@
  */
 
 import { connEvents } from "$lib/util/conn-log"
+import { type PlaybackDebugInfo, playbackDebugInfo } from "./playback-registry"
 import { listViews, type ViewDebugInfo } from "./session-registry"
 
 type ServerState = { version: number; messages: number } | { error: string }
@@ -56,6 +57,8 @@ async function diff() {
 
 export type DcSurface = {
   diff: typeof diff
+  /** ─── slice playback-observability ─── מצב מנוע-ההשמעה. */
+  playback: () => PlaybackDebugInfo
   session: () => ViewDebugInfo | ViewDebugInfo[] | null
   instances: () => number
   conn: (n?: number) => ReturnType<typeof connEvents>
@@ -66,21 +69,29 @@ export function installDebugSurface(): void {
   if (typeof window === "undefined") return
   const surface: DcSurface = {
     diff,
+    playback: playbackDebugInfo,
     session: () => {
       const v = listViews()
       // noUncheckedIndexedAccess: v[0] הוא T|undefined גם כשהאורך 1
-      return v.length === 0 ? null : (v.length === 1 ? (v[0] ?? null) : v)
+      return v.length === 0 ? null : v.length === 1 ? (v[0] ?? null) : v
     },
     /** יותר מ-1 ⇒ ממצא: מופע כפול אחרי reconnect. */
     instances: () => listViews().length,
     conn: (n = 40) => connEvents().slice(-n),
     dump: async () =>
       JSON.stringify(
-        { at: new Date().toISOString(), diff: await diff(), conn: connEvents().slice(-60) },
+        {
+          at: new Date().toISOString(),
+          diff: await diff(),
+          playback: playbackDebugInfo(),
+          conn: connEvents().slice(-60),
+        },
         null,
         1,
       ),
   }
   ;(window as unknown as { __dc: DcSurface }).__dc = surface
-  console.info("[dc] debug surface ready: __dc.diff() · __dc.session() · __dc.conn() · __dc.dump()")
+  console.info(
+    "[dc] debug surface ready: __dc.diff() · __dc.playback() · __dc.session() · __dc.conn() · __dc.dump()",
+  )
 }

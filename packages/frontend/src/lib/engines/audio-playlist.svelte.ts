@@ -29,6 +29,7 @@
  */
 
 import { compareOrderKey, type OrderKey } from "@drive-coding/core/voice/tts-queue"
+import { type PlaylistDebugInfo, registerPlaylist } from "$lib/debug/playback-registry"
 import type { AudioSink } from "./audio-sink"
 
 export interface SegmentOwner {
@@ -114,12 +115,35 @@ export class AudioPlaylist {
     this.#audioStream = audioStream
     this.#onPlaybackStart = onPlaybackStart
     this.#reserveTimeoutMs = opts?.reserveTimeoutMs ?? 20_000
+    registerPlaylist(this)
   }
 
   /**
    * A4: מאפשר ל-Speaker לרשום callback אחרי יצירת ה-playlist (dependency order ב-+layout).
    * נקרא פעם אחת מ-Speaker constructor כשה-playlist הגיע מבחוץ.
    */
+  /**
+   * ─── slice playback-observability ───
+   * תמונת-מצב שטוחה לצורך תצפית. **אינה חלק מה-API** — אף קוד-מוצר לא קורא לה.
+   *
+   * ⭐ הזוג `cursor`/`items` הוא המאבחן: כשהם שווים הלולאה חונה בסוף הרשימה,
+   * ואם פריט חדש נוסף והם **נשארו** שווים — זה בדיוק הבאג שגרם לשקט מהתור
+   * השני (ר' `audio-playlist.lifecycle.test.ts`).
+   */
+  debugInfo(): PlaylistDebugInfo {
+    const byState: Record<string, number> = {}
+    for (const it of this.items) byState[it.state] = (byState[it.state] ?? 0) + 1
+    return {
+      cursor: this.#cursor,
+      items: this.items.length,
+      looping: this.#playing,
+      transport: this.transport,
+      state: this.state,
+      currentSegmentId: this.currentSegmentId,
+      byState,
+    }
+  }
+
   setOnPlaybackStart(cb: () => void): void {
     this.#onPlaybackStart = cb
   }

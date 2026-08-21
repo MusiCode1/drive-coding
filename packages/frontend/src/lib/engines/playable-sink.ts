@@ -12,6 +12,7 @@
  * AudioContext משותף לכל PcmSegments (לא נוצר כאן — lazy ב-getCtx).
  */
 
+import { registerSink, type SinkDebugInfo } from "$lib/debug/playback-registry"
 import type { AudioSink, SegmentOpts } from "./audio-sink"
 import { Mp3Segment } from "./segments/mp3-segment"
 import { PcmSegment } from "./segments/pcm-segment"
@@ -30,10 +31,27 @@ export class PlayableSink implements AudioSink {
   // nav-retain fix: ה-segment שמתנגן כרגע. play() של segment אחר עוצר אותו קודם —
   // בלי זה, ניווט (prev/next) מתחיל segment חדש בעוד הקודם עדיין משמיע → קקפוניה.
   #current: PlayableSegment | null = null
+  #currentId: string | null = null
   readonly #segmentFactory?: SegmentFactory
+  /** ─── slice playback-observability ─── כמה סגמנטים באמת נוגנו. */
+  #playedCount = 0
 
   constructor(segmentFactory?: SegmentFactory) {
     this.#segmentFactory = segmentFactory
+    registerSink(this)
+  }
+
+  /**
+   * ─── slice playback-observability ───
+   * ⭐ `prepared` מול `played` הוא היחס שחשף את הבאג: הבייטים הגיעו והתפענחו
+   * (prepared עלה לאלפים) בעוד `played` נעצר. תצפית בלבד.
+   */
+  debugInfo(): SinkDebugInfo {
+    return {
+      prepared: this.#segments.size,
+      played: this.#playedCount,
+      currentSegmentId: this.#currentId,
+    }
   }
 
   #getCtx(): AudioContext {
@@ -64,6 +82,7 @@ export class PlayableSink implements AudioSink {
   }
 
   async play(segmentId: string): Promise<void> {
+    this.#playedCount += 1 // slice playback-observability: נמדד מול #segments.size
     const seg = this.#segments.get(segmentId)
     if (!seg) throw new Error(`PlayableSink: no segment ${segmentId}`)
     // nav-retain fix: עצור את ה-segment הקודם (שומר buffer ל-replay) לפני שמתחילים חדש.
@@ -71,6 +90,7 @@ export class PlayableSink implements AudioSink {
       this.#current.stop()
     }
     this.#current = seg
+    this.#currentId = segmentId
     return seg.play()
   }
 
