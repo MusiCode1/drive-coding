@@ -87,3 +87,34 @@ export function toSpeakable(text: string, labels: SpeakableLabels): string {
   out = out.replace(/\n{3,}/g, "\n\n")
   return out.trim()
 }
+
+/**
+ * מפריד טקסט-זורם לחלק **בטוח-לעיבוד** ולחלק שיש להחזיק.
+ *
+ * ─── slice tts-speakable-text, תיקון-זרימה ───
+ *
+ * 🔴 **הבאג שזה מתקן.** ‏`toSpeakable` הופעל על ה-**דלתא** הנכנסת, ובלוק-קוד
+ * מגיע פרוס על עשרות chunks — אף אחד מהם אינו מכיל את **שני** הגדרים, ולכן
+ * הרגקס לעולם לא התאים והקוד נקרא מילה במילה. הטסטים עברו כי הזינו טקסט שלם.
+ *
+ * ⇒ מעבדים את ה**חוצץ המצטבר**, ומחזיקים גדר-פתוחה: כל עוד הבלוק לא נסגר,
+ * המפצל אסור לו לראות את תוכנו — אחרת נקודות ושורות שבתוך הקוד ייחתכו
+ * כמשפטים וייצאו להקראה לפני שנדע שהם קוד.
+ *
+ * בסוף-תור מפלטים את מה שהוחזק דרך `toSpeakable`, שיודע לטפל בגדר שלא נסגרה.
+ */
+export function splitAtOpenFence(text: string): { ready: string; held: string } {
+  // מספר גדרות אי-זוגי ⇒ האחרונה פתוחה.
+  let idx = -1
+  let count = 0
+  let from = 0
+  for (;;) {
+    const at = text.indexOf("```", from)
+    if (at === -1) break
+    count++
+    idx = at
+    from = at + 3
+  }
+  if (count % 2 === 0) return { ready: text, held: "" }
+  return { ready: text.slice(0, idx), held: text.slice(idx) }
+}

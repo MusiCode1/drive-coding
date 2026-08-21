@@ -4,7 +4,7 @@
  * ⚠️ הקיבוע הוא על **מה שנשמע**, לא על תווים: הטקסט נשאר, הסימנים יורדים.
  */
 import { describe, expect, it } from "vitest"
-import { type SpeakableLabels, toSpeakable } from "./speakable.js"
+import { type SpeakableLabels, splitAtOpenFence, toSpeakable } from "./speakable.js"
 
 const L: SpeakableLabels = {
   codeBlock: "[code]",
@@ -80,5 +80,37 @@ describe("toSpeakable — שלמות", () => {
 
   it("מחרוזת ריקה אינה מפילה", () => {
     expect(s("")).toBe("")
+  })
+})
+
+describe("splitAtOpenFence — זרימה חיה", () => {
+  // 🔴 זה הבאג שנשמע בפועל: הקוד הוקרא מאויית, כי כל chunk בנפרד לא הכיל
+  // גדר-סוגרת ולכן `toSpeakable` לא זיהה בלוק כלל.
+  it("גדר פתוחה — התוכן מוחזק ולא יוצא להקראה", () => {
+    const { ready, held } = splitAtOpenFence("הנה קוד:\n```ts\nconst a = 1")
+    expect(ready).toBe("הנה קוד:\n")
+    expect(held).toBe("```ts\nconst a = 1")
+  })
+
+  it("גדר סגורה — הכול מוכן", () => {
+    const txt = "לפני\n```ts\nconst a = 1\n```\nאחרי"
+    expect(splitAtOpenFence(txt)).toEqual({ ready: txt, held: "" })
+  })
+
+  it("בלי גדרות כלל — הכול מוכן", () => {
+    expect(splitAtOpenFence("סתם טקסט.")).toEqual({ ready: "סתם טקסט.", held: "" })
+  })
+
+  it("בלוק סגור ואז אחד פתוח — רק השני מוחזק", () => {
+    const { ready, held } = splitAtOpenFence("a\n```js\nx\n```\nb\n```py\ny")
+    expect(ready).toBe("a\n```js\nx\n```\nb\n")
+    expect(held).toBe("```py\ny")
+  })
+
+  // ⚠️ החזקה בלי שחרור היא דליפה: אם הבלוק לעולם לא ייסגר, `toSpeakable`
+  // בסוף-התור הוא זה שמטפל בו (יש לו ענף לגדר שלא נסגרה).
+  it("מה שמוחזק עדיין מצטמצם נכון כשמפלטים אותו", () => {
+    const { held } = splitAtOpenFence("```python\nimport os")
+    expect(s(held)).toBe("[code python]")
   })
 })

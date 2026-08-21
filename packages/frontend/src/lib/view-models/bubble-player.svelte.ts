@@ -20,16 +20,18 @@
  * אין $effect — toggle הוא method ישיר (§8.10).
  */
 
+import { createI18n, detectLocale } from "@drive-coding/core/i18n"
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
-import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
-import type { AgentSession } from "./agent-session.svelte"
-import type { Settings } from "./settings.svelte"
-import type { AudioPlaylist, SegmentOwner } from "$lib/engines/audio-playlist.svelte"
-import type { Bubble } from "$lib/types/bubble"
+import { toSpeakable } from "@drive-coding/core/voice/speakable"
+import type { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import { playUserRecording } from "$lib/adapters/voice/play-bubble"
 import { resolveTts } from "$lib/adapters/voice/tts-resolve"
+import type { AudioPlaylist, SegmentOwner } from "$lib/engines/audio-playlist.svelte"
+import type { Bubble } from "$lib/types/bubble"
 import { safeUUID } from "$lib/util/uuid"
+import type { AgentSession } from "./agent-session.svelte"
 import { ttsCapabilities } from "./capabilities.svelte"
+import type { Settings } from "./settings.svelte"
 
 // ─── קבועים לחיתוך משפטים (זהה ל-Speaker) ──────────────────────────────────
 const MIN_CHARS = 20
@@ -48,7 +50,12 @@ export class BubblePlayer implements SegmentOwner {
   readonly #orderAlloc: OrderAllocator
   readonly #refetchBySegment = new Map<string, () => void>()
 
-  constructor(opts: { session: AgentSession; settings: Settings; playlist: AudioPlaylist; orderAlloc: OrderAllocator }) {
+  constructor(opts: {
+    session: AgentSession
+    settings: Settings
+    playlist: AudioPlaylist
+    orderAlloc: OrderAllocator
+  }) {
     this.#orderAlloc = opts.orderAlloc
     this.#session = opts.session
     this.#settings = opts.settings
@@ -144,10 +151,35 @@ export class BubblePlayer implements SegmentOwner {
    * split → reserve → prepareSegment → markReady לכל משפט → jumpToBubble.
    * §9 Q2 נעול: prev/jump תמיד re-fetch (cancel מוחק sink) — כאן כל הסגמנטים חדשים.
    */
+  /** אותו דפוס כמו ב-Speaker: createI18n לפי settings.locale, בלי תלות-בנאי חדשה. */
+  #t(key: Parameters<ReturnType<typeof createI18n>["t"]>[0]): string {
+    return createI18n({ locale: this.#settings.locale ?? detectLocale() }).t(key)
+  }
+
   async #reserveAndPlay(bubbleId: string, text: string, abortCtrl: AbortController): Promise<void> {
-    const { sentences, remaining } = splitIntoSentences(text, { minChars: MIN_CHARS, maxChars: MAX_CHARS })
+    // ─── slice tts-speakable-text ───
+    // ⚠️ **מסלול נפרד מה-Speaker, וצריך את הצמצום בעצמו.** ‏BubblePlayer
+    // מקריא בועה **קיימת**, ולכן הוא לא עובר דרך החוצץ הזורם — ובלי השורה
+    // הזו לחיצה על ▶ מאייתת קוד גם אחרי שהזרימה החיה תוקנה. נמצא בזכות
+    // שאלת המשתמש ("בהשמעת הודעה קיימת זה עובד אותו דבר?").
+    //
+    // ⚠️ ואין כאן `splitAtOpenFence`, **במכוון**: הטקסט כאן **שלם**, ואין
+    // גדר שממתינה להיסגר. החזקה כאן הייתה בולעת בלוק אחרון לתמיד.
+    const speakable = toSpeakable(text, {
+      codeBlock: this.#t("speakable.codeBlock"),
+      codeBlockWithLang: (lang) => `${this.#t("speakable.codeBlock")} ${lang}`,
+      link: this.#t("speakable.link"),
+      image: this.#t("speakable.image"),
+    })
+    const { sentences, remaining } = splitIntoSentences(speakable, {
+      minChars: MIN_CHARS,
+      maxChars: MAX_CHARS,
+    })
     // אם אין משפטים (טקסט קצר) — השתמש בטקסט המלא כסגמנט אחד
-    const parts = sentences.length > 0 ? [...sentences, ...(remaining.trim() ? [remaining.trim()] : [])] : [text.trim()]
+    const parts =
+      sentences.length > 0
+        ? [...sentences, ...(remaining.trim() ? [remaining.trim()] : [])]
+        : [speakable.trim()]
 
     // V4b: העברת geminiVoice לresolveTts (נשמר מ-dev בזמן reconcile)
     const { provider, voiceId, modelId } = resolveTts(
@@ -184,7 +216,9 @@ export class BubblePlayer implements SegmentOwner {
               signal: freshAc.signal,
               directing: { pace: this.#settings.geminiPace, tone: this.#settings.geminiTone },
             })
-            await this.#playlist.prepareSegmentForBubble(segmentId, stream, freshAc, { format: provider.format })
+            await this.#playlist.prepareSegmentForBubble(segmentId, stream, freshAc, {
+              format: provider.format,
+            })
             this.#playlist.markReady(segmentId)
           } catch {
             if (freshAc.signal.aborted) {
@@ -222,7 +256,9 @@ export class BubblePlayer implements SegmentOwner {
         // prepareSegment דרך ה-audioStream של ה-playlist (sharedAudioStream מ-+layout)
         // BubblePlayer לא מחזיק ref ל-audioStream — #playlist מחזיק אותו פנימי.
         // נעשה זאת דרך wrapper method חדש ב-AudioPlaylist.
-        await this.#playlist.prepareSegmentForBubble(segId, stream, abortCtrl, { format: provider.format })
+        await this.#playlist.prepareSegmentForBubble(segId, stream, abortCtrl, {
+          format: provider.format,
+        })
         this.#playlist.markReady(segId)
       } catch {
         if (abortCtrl.signal.aborted) {

@@ -33,7 +33,11 @@ import { DEFAULT_VOICE_CONFIG } from "@drive-coding/core/voice/capabilities"
 import type { NarrateContext, ToolCallForNarrate } from "@drive-coding/core/voice/narration-prompt"
 import { select } from "@drive-coding/core/voice/select"
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
-import { type SpeakableLabels, toSpeakable } from "@drive-coding/core/voice/speakable"
+import {
+  type SpeakableLabels,
+  splitAtOpenFence,
+  toSpeakable,
+} from "@drive-coding/core/voice/speakable"
 import type { OrderAllocator, OrderKey } from "@drive-coding/core/voice/tts-queue"
 import { untrack } from "svelte"
 import { registerSpeaker, type SpeakerDebugInfo } from "$lib/debug/playback-registry"
@@ -298,15 +302,21 @@ export class Speaker implements SegmentOwner {
       }
 
       // ─── slice tts-speakable-text ───
-      // ⚠️ **לפני הפיצול, לא אחריו.** בלוק-קוד בן 40 שורות שמפוצל קודם הופך
-      // ל-15 מקטעי-TTS שכולם ייקראו מילה במילה וימלאו את התור; אחרי הצמצום
-      // הוא מקטע אחד בן שתי מילים. זה גם התוכן וגם אורך-התור.
-      state.buffer += toSpeakable(newChunks, this.#speakableLabels())
-      const { sentences, remaining } = splitIntoSentences(state.buffer, {
-        minChars: MIN_CHARS,
-        maxChars: MAX_CHARS,
-      })
-      state.buffer = remaining
+      // ⚠️ **על החוצץ המצטבר, לא על הדלתא.** גרסה קודמת הריצה את הצמצום על
+      // `newChunks` — והוא נכשל בשקט: בלוק-קוד מגיע פרוס על עשרות chunks,
+      // אף אחד מהם אינו מכיל את **שני** הגדרים, ולכן הרגקס לא התאים והקוד
+      // הוקרא מילה במילה. נשמע בפועל. הטסטים עברו כי הזינו טקסט שלם.
+      //
+      // ⚠️ וגדר-פתוחה **מוחזקת**: כל עוד הבלוק לא נסגר אסור למפצל לראות את
+      // תוכנו, אחרת נקודות ושורות שבתוך הקוד ייחתכו כמשפטים ויֵצאו להקראה
+      // לפני שנדע שהם קוד. מה שמוחזק משתחרר ב-flush של סוף-התור.
+      state.buffer += newChunks
+      const { ready, held } = splitAtOpenFence(state.buffer)
+      const { sentences, remaining } = splitIntoSentences(
+        toSpeakable(ready, this.#speakableLabels()),
+        { minChars: MIN_CHARS, maxChars: MAX_CHARS },
+      )
+      state.buffer = remaining + held
 
       for (const sentence of sentences) {
         this.#enqueue(bubble.kind, bubble.messageId, sentence, bubble.id)
@@ -341,8 +351,12 @@ export class Speaker implements SegmentOwner {
           state.buffer = ""
           continue
         }
-        this.#enqueue(bubble.kind, bubble.messageId, state.buffer.trim(), bubble.id)
+        // ⚠️ גם כאן — הזנב יכול להיות בלוק שלא נסגר (הסוכן סיים באמצע גדר),
+        // ובלי הצמצום הוא ייקרא מילה במילה. `toSpeakable` מטפל בגדר-פתוחה.
+        const tail = toSpeakable(state.buffer, this.#speakableLabels()).trim()
         state.buffer = ""
+        if (tail.length === 0) continue
+        this.#enqueue(bubble.kind, bubble.messageId, tail, bubble.id)
       }
       this.#pumpFetchLoop()
     }
