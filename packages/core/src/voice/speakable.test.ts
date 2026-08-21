@@ -188,3 +188,30 @@ describe("toSpeakable — הסוגרת עם טקסט אחריה", () => {
     expect(s2("````\ncode\n````")).not.toContain("`")
   })
 })
+
+// ─── code review #2 (2026-08-21) ────────────────────────────────────────
+describe("splitStreamable — כוכבית היא כפל, לא הדגשה", () => {
+  // 🔴 אותה טעות בדיוק כמו ב-`[`, שהוספתי בעצמי סבב אחר כך.
+  // ‏probe של ה-review: "The result of 2 * 3 …" הזרים רק "The result of 2".
+  for (const txt of ["The result of 2 * 3 is six.", "מכפילים 4 * 5 ומקבלים.", "a * b * c."]) {
+    it(`"${txt}" — זורם`, () => {
+      expect(splitStreamable(txt)).toEqual({ ready: txt, held: "" })
+    })
+  }
+
+  it("הדגשה כפולה שטרם נסגרה — עדיין מוחזקת", () => {
+    expect(splitStreamable("זה **חשוב מא").held).toBe("זה **חשוב מא")
+  })
+})
+
+describe("toSpeakable — קו-תחתון אינו הדגשה", () => {
+  // 🔴 `foo_bar_baz` → `foobarbaz`, ובאופן **לא-עקבי**: זרימה ושחזור-בועה
+  // חתכו במקומות שונים לפי גבולי ה-chunk.
+  it("מזהה עם קווים-תחתונים נשמר", () => {
+    expect(s("קרא ל-foo_bar_baz עכשיו.")).toBe("קרא ל-foo_bar_baz עכשיו.")
+  })
+
+  it("הדגשה בכוכביות עדיין עובדת", () => {
+    expect(s("זה *מודגש* וזהו.")).toBe("זה מודגש וזהו.")
+  })
+})

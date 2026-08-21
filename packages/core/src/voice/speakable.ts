@@ -126,7 +126,10 @@ export function toSpeakable(text: string, labels: SpeakableLabels, opts?: Speaka
   out = out.replace(/^\s{0,3}#{1,6}\s+/gm, "")
   out = out.replace(/^\s{0,3}>\s?/gm, "")
   out = out.replace(/(\*\*|__)(.+?)\1/g, "$2")
-  out = out.replace(/(\*|_)(?!\s)(.+?)(?<!\s)\1/g, "$2")
+  // ⚠️ **`_` ירד מרשימת סימני-ההדגשה.** `foo_bar_baz` הפך ל-`foobarbaz`,
+  // ובאופן **לא-עקבי**: זרימה חיה ושחזור-בועה חתכו במקומות שונים לפי גבולי
+  // ה-chunk. קו-תחתון במזהי-קוד שכיח בהרבה מ-`_הדגשה_` בטקסט שלנו.
+  out = out.replace(/\*(?!\s)(.+?)(?<!\s)\*/g, "$1")
   out = out.replace(/~~(.+?)~~/g, "$1")
 
   // ─── 7. ניקוי רווחים שנוצרו מההחלפות ───
@@ -210,10 +213,14 @@ export function splitStreamable(text: string): { ready: string; held: string } {
   // כ-`**המשפט… סיום.` — הפותח נשאר, הסוגר נעלם. הדגשה שנחתכה בין chunks
   // עוברת כשני חצאים, וכל חצי מעובד לחוד. זה בולט דווקא **בזנב**, כי שם
   // נופלים גבולות-ה-chunk האחרונים.
+  // ⚠️ **רק `**` ו-`~~` — לא כוכבית בודדת.**
+  //
+  // 🔴 אותה טעות בדיוק כמו ב-`[`: כוכבית אינה סימן-הדגשה, היא סימן-כפל.
+  // ‏`"The result of 2 * 3"` הקפיא את כל שארית ההודעה עד סוף-התור (אומת
+  // ב-probe של ה-review). וכשהיא כן הדגשה — `*טקסט*` — המחיר של החמצה
+  // הוא כוכבית אחת שנשמעת, לעומת הודעה שלמה שלא זורמת.
   const openEmphasis =
-    (tail.match(/\*\*/g)?.length ?? 0) % 2 === 1 ||
-    (tail.match(/~~/g)?.length ?? 0) % 2 === 1 ||
-    (tail.replace(/\*\*/g, "").match(/\*/g)?.length ?? 0) % 2 === 1
+    (tail.match(/\*\*/g)?.length ?? 0) % 2 === 1 || (tail.match(/~~/g)?.length ?? 0) % 2 === 1
   const startsBacktick = /^[ \t]{0,3}`/.test(tail)
   const openInline = startsBacktick || (tail.match(/`/g)?.length ?? 0) % 2 === 1
   // 🔴 **`[` אינו סימן של קישור — הוא סימן של סוגר-מרובע.**

@@ -253,3 +253,24 @@ describe("Speaker — invalidate/refetch", () => {
     spy.mockRestore()
   })
 })
+
+describe("Speaker — סדר-הפליטה בסיום-תור", () => {
+  // 🔴 **הרגרסיה שהחזרתי בעצמי.** ה-idle-flush נכתב כדי שהזנב **יישמע**,
+  // והוא פלט אותו **לפני** לולאת המשפטים שמתחתיו — ‏`OrderAllocator` מקצה
+  // `segmentIndex` עולה לפי סדר הקריאה, ולכן הזנב קיבל מפתח **נמוך** מהם
+  // והפלייליסט השמיע אותו **ראשון**. "הסוף לא נשמע" הפך ל"סוף נשמע ראשון".
+  //
+  // הקיבוע הוא על ה-`orderKey`, לא על הטקסט: הוא מה שקובע סדר-השמעה.
+  it("מפתחות-הסדר עולים מונוטונית — הזנב אחרון", async () => {
+    active = createHarness([messageBubble("משפט ראשון שלם ומספיק ארוך. משפט שני שלם וארוך. וזנב")])
+    await flush()
+    const keys = active.playlist.items.map((it) => it.orderKey)
+    for (let i = 1; i < keys.length; i++) {
+      const prev = keys[i - 1]!
+      const cur = keys[i]!
+      const ascending =
+        cur.seq > prev.seq || (cur.seq === prev.seq && cur.segmentIndex > prev.segmentIndex)
+      expect(ascending).toBe(true)
+    }
+  })
+})

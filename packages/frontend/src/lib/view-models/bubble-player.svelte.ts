@@ -243,11 +243,7 @@ export class BubblePlayer implements SegmentOwner {
       segmentIds.push(segmentId)
     }
 
-    // שלב 2: קפוץ לתחילת הבועה (הסגמנט הראשון שלה)
-    // playlist מתחיל לנגן אחרי #playLoop — jumpToBubble אם כבר playing
-    this.#playlist.jumpToBubble(bubbleId)
-
-    // שלב 3: fetch כל סגמנט ב-parallel (כמו Speaker.#pumpFetchLoop)
+    // שלב 2: fetch כל סגמנט ב-parallel (כמו Speaker.#pumpFetchLoop)
     const fetchPromises = parts.map(async (part, i) => {
       const segId = segmentIds[i]
       if (segId === undefined) return
@@ -279,6 +275,15 @@ export class BubblePlayer implements SegmentOwner {
       }
     })
 
+    // ⚠️ **הקפיצה אחרי שיגור ה-fetches, לא לפניו.**
+    //
+    // 🔴 `#navigate` מסמן את פריט-היעד `needsRefetch = true` כשהוא אינו
+    // שלם — וכשהקפיצה קדמה ל-fetch, הפריט **תמיד** לא היה שלם. אז
+    // `#playLoop` קרא `owner.refetch()`, והמשפט הראשון סונתז **פעמיים
+    // במקביל**; ה-`prepareSegment` השני פירק את הראשון — כלומר חתך את
+    // המשפט באמצע מילה. אומת ב-probe של ה-review.
+    this.#playlist.jumpToBubble(bubbleId)
+
     await Promise.allSettled(fetchPromises)
     // ⚠️ **אין כאן איפוס של `playingBubbleId`.**
     //
@@ -286,19 +291,12 @@ export class BubblePlayer implements SegmentOwner {
     // לא השמעה. האיפוס כאן כיבה את חיווי-הניגון וגם את מסלול
     // "לחיצה-שנייה-עוצרת" **באמצע** ההשמעה, כי הפלייליסט רק אז מתחיל.
     // מי שמסיים באמת הוא הפלייליסט; האיפוס נשאר ל-`stop()` ולניווט.
-    this.#pruneRefetch(segmentIds)
-  }
-
-  /**
-   * ⚠️ `#refetchBySegment` נצבר ולעולם לא נוקה (אומת: אפס `delete`/`clear`
-   * בקובץ) — כלומר כל משפט שהוקרא אי-פעם נשאר מוצמד לסגירה שמחזיקה את
-   * ה-bubble. גדילה בלתי-חסומה לאורך סשן ארוך.
-   */
-  #pruneRefetch(keep: string[]): void {
-    const alive = new Set(keep)
-    for (const id of [...this.#refetchBySegment.keys()]) {
-      if (!alive.has(id)) this.#refetchBySegment.delete(id)
-    }
+    // ⚠️ **מנקים רק את שלנו.** גרסה קודמת קראה `#pruneRefetch(segmentIds)`
+    // שמחקה כל מפתח שאינו ברשימה **שלנו** — כולל thunks שהפעלה **חדשה**
+    // יותר כבר רשמה. השמעה A ואז B: הפרונינג המאוחר של A מחק את אלה של B,
+    // ואז `refetch` על B הפך ל-no-op שקט → המתנה של 20 שניות → `skipped`.
+    // אומת ב-code review.
+    for (const id of segmentIds) this.#refetchBySegment.delete(id)
   }
 
   /** עוצר כל ניגון פעיל. */

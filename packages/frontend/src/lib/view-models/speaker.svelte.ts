@@ -273,6 +273,10 @@ export class Speaker implements SegmentOwner {
         }
         state.processedSegments = bubble.segments.length
         state.buffer = ""
+        // ⚠️ **גם `speakPending`.** הוא חדש, וכל אתר שמנקה `buffer` בלבד
+        // משאיר טקסט מעובד שיֵאמר בתור הבא. ההערות בענפים האלה כבר הצהירו
+        // את הכוונה — הקוד פשוט הפסיק לקיים אותה.
+        state.speakPending = ""
       }
       return
     }
@@ -291,6 +295,7 @@ export class Speaker implements SegmentOwner {
       if (bubble.kind === "thought" && !speakThoughts) {
         state.processedSegments = segArr.length
         state.buffer = ""
+        state.speakPending = "" // ר' ההערה למעלה
         continue
       }
 
@@ -305,6 +310,7 @@ export class Speaker implements SegmentOwner {
       if (!enabled) {
         // מושלך — כשמופעל שוב לאחר מכן לא רוצים לשגר תוכן ישן.
         state.buffer = ""
+        state.speakPending = ""
         continue
       }
 
@@ -333,7 +339,16 @@ export class Speaker implements SegmentOwner {
       // ⇒ עדיף פרגמנט שאולי לא ייאמר מאשר זנב שנעלם.
       state.speakPending = remaining
 
+      for (const sentence of sentences) {
+        this.#enqueue(bubble.kind, bubble.messageId, sentence, bubble.id)
+      }
+
       // ─── slice tts-tail-after-idle ───
+      // ⚠️ **אחרי לולאת המשפטים, לא לפניה.** ‏`OrderAllocator` מקצה
+      // `segmentIndex` עולה לפי סדר הקריאה — ולכן פליטת הזנב לפני הלולאה
+      // נתנה לו מפתח **נמוך** מהמשפטים שקדמו לו, והפלייליסט השמיע אותו
+      // **ראשון**. תיקון ה"סוף לא נשמע" הפך ל"סוף נשמע ראשון". נתפס
+      // ב-code review, בדיוק במקרה שבשבילו נכתב.
       // 🔴 **התור כבר הסתיים? אין מי שיפלוש אחרינו — לפלוש כאן.**
       //
       // `justFinished` יורה **פעם אחת בלבד** (מעבר `!== idle` → `idle`).
@@ -346,17 +361,13 @@ export class Speaker implements SegmentOwner {
       // במקום אחר לגמרי (בדיקת ה-`[`). מוחזר.
       if (turnState === "idle") {
         const finalTail = (
-          state.speakPending + toSpeakable(state.buffer, this.#speakableLabels())
+          state.speakPending + toSpeakable(state.buffer, this.#speakableLabels(), { stream: true })
         ).trim()
         state.buffer = ""
         state.speakPending = ""
         if (finalTail.length > 0) {
           this.#enqueue(bubble.kind, bubble.messageId, finalTail, bubble.id)
         }
-      }
-
-      for (const sentence of sentences) {
-        this.#enqueue(bubble.kind, bubble.messageId, sentence, bubble.id)
       }
     }
     this.#pumpFetchLoop()
@@ -392,8 +403,12 @@ export class Speaker implements SegmentOwner {
         // ⚠️ גם כאן — הזנב יכול להיות בלוק שלא נסגר (הסוכן סיים באמצע גדר),
         // ובלי הצמצום הוא ייקרא מילה במילה. `toSpeakable` מטפל בגדר-פתוחה.
         // הזנב = מה שכבר עובר + מה שנשאר גולמי (למשל גדר שלא נסגרה).
+        // ⚠️ `{ stream: true }` — בלעדיו ה-trim של `toSpeakable` אוכל את
+        // הרווח **שבין** `speakPending` לשארית הגולמית: "…2" + " * 3" הפך
+        // ל-"2* 3". זה בדיוק מה ש-`SpeakableOpts.stream` נועד למנוע, ושני
+        // מוקדי ה-flush פספסו אותו. ה-trim היחיד הוא על התוצאה המחוברת.
         const tail = (
-          state.speakPending + toSpeakable(state.buffer, this.#speakableLabels())
+          state.speakPending + toSpeakable(state.buffer, this.#speakableLabels(), { stream: true })
         ).trim()
         state.buffer = ""
         state.speakPending = ""
@@ -820,6 +835,9 @@ export class Speaker implements SegmentOwner {
       }
       state.processedSegments = bubble.segments.length
       state.buffer = ""
+      // ⚠️ `#stopAndClear` — בלי זה, טקסט מעובד מתור **שבוטל או הושתק**
+      // נאמר בתור הבא.
+      state.speakPending = ""
       this.#bubbleStates.set(bubble.id, state)
     }
   }
