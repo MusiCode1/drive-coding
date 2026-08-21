@@ -27,8 +27,10 @@ function mockMediaSession(
   overrides: Partial<MediaSessionLike> & {
     throwOn?: Set<MediaSessionAction>
   } = {},
-): MediaSessionLike & { handlers: Map<MediaSessionAction, (() => void) | null> } {
-  const handlers = new Map<MediaSessionAction, (() => void) | null>()
+): MediaSessionLike & {
+  handlers: Map<MediaSessionAction, ((details: MediaSessionActionDetails) => void) | null>
+} {
+  const handlers = new Map<MediaSessionAction, ((details: MediaSessionActionDetails) => void) | null>()
   const throwOn = overrides.throwOn ?? new Set<MediaSessionAction>()
   return {
     handlers,
@@ -105,7 +107,7 @@ describe("media-session-keepalive", () => {
     keepalive.registerActionHandlers(onAction)
     const handler = ms.handlers.get("pause")
     expect(handler).toBeTypeOf("function")
-    handler?.()
+    handler?.({ action: "pause" } as MediaSessionActionDetails)
     expect(onAction).toHaveBeenCalledWith("pause", 42)
     expect(audio.play).toHaveBeenCalled()
     expect(ms.playbackState).toBe("playing")

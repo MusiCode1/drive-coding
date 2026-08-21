@@ -169,7 +169,9 @@ export class BtRemoteEngine {
         })
         this.#preholds.delete(code)
         this.#stats.preholdTimeouts++
-        out.push(cmd)
+        // ‏`#emit` ‏עשוי לדכא (dedup ‏חוצה-ערוצים) ‏ולהחזיר null — ‏המונה סופר את
+        // ‏אירוע-התקרה עצמו, ‏אבל רק פקודה שנפלטה בפועל נכנסת לפלט.
+        if (cmd) out.push(cmd)
       }
     }
 
