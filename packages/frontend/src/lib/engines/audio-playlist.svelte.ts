@@ -180,8 +180,24 @@ export class AudioPlaylist {
     }
     this.items.splice(i, 0, newItem)
 
-    // lifecycle 4c: הכנסה לפני/ב-cursor בזמן ניגון — הזז cursor כדי להמשיך להצביע על אותו segmentId
-    if (this.#playing && i <= this.#cursor) {
+    // lifecycle 4c: הכנסה לפני/ב-cursor בזמן ניגון — הזז cursor כדי להמשיך
+    // להצביע על אותו segmentId.
+    //
+    // 🔴 **`wasParked` הוא התיקון.** בלעדיו התנאי `i <= #cursor` נדלק גם
+    // ב-idle-park, ושם הוא הרסני: בפארק `#cursor === items.length` (אין item
+    // נוכחי), ההזמנה החדשה נדחפת **בדיוק** במיקום ה-cursor, ולכן `i <= #cursor`
+    // מתקיים — וה-cursor נדחף אחת קדימה, מעבר לפריט שזה עתה נוסף. הלולאה
+    // מתעוררת, בודקת `#cursor >= items.length`, ומיָדית חונה שוב. **לנצח.**
+    //
+    // התסמין: התור הראשון מתנגן, וכל תור אחריו שקט. נמדד חי (Edge/Android,
+    // 21/08): `AudioBufferSourceNode.start` נקרא 655 פעמים ואז אפס, בעוד
+    // `createBuffer` המשיך לאלפים — הבייטים הגיעו, אף אחד לא ניגן אותם.
+    // אפס שגיאות, אפס אזהרות; לכן זה נראה כמו "תקלה רגעית".
+    //
+    // ההזזה נכונה רק כשה-cursor מצביע על item **קיים** שנדחף ימינה.
+    // הוספה בסוף אינה דוחפת דבר — היא בדיוק מה שהלולאה ממתינה לו.
+    const wasParked = this.#cursor >= this.items.length - 1
+    if (this.#playing && !wasParked && i <= this.#cursor) {
       this.#cursor += 1
     }
 
@@ -392,7 +408,11 @@ export class AudioPlaylist {
 
     // done/error בלי buffer — אין replay; החזר ל-reserved לביקור עתידי
     const landed = this.items[newIndex]
-    if (landed !== undefined && (landed.state === "done" || landed.state === "error") && !this.#isComplete(landed.segmentId)) {
+    if (
+      landed !== undefined &&
+      (landed.state === "done" || landed.state === "error") &&
+      !this.#isComplete(landed.segmentId)
+    ) {
       landed.state = "reserved"
       landed.needsRefetch = true
       this.#notifyOwnerInvalidate(landed.segmentId, landed.owner)
@@ -513,10 +533,7 @@ export class AudioPlaylist {
         }
 
         // nav-retain: item done/ready + isComplete → replay מיידי
-        if (
-          (item.state === "done" || item.state === "ready") &&
-          this.#isComplete(item.segmentId)
-        ) {
+        if ((item.state === "done" || item.state === "ready") && this.#isComplete(item.segmentId)) {
           // A3: בדוק pause לפני play
           if (this.transport === "paused") {
             await this.#waitForResume()
