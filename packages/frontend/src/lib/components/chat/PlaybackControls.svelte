@@ -7,11 +7,12 @@
  *
  * ─── control-dock ───
  */
-import SquareIcon from "@lucide/svelte/icons/square"
+import OctagonXIcon from "@lucide/svelte/icons/octagon-x"
 import PauseIcon from "@lucide/svelte/icons/pause"
 import PlayIcon from "@lucide/svelte/icons/play"
 import SkipBackIcon from "@lucide/svelte/icons/skip-back"
 import SkipForwardIcon from "@lucide/svelte/icons/skip-forward"
+import SquareIcon from "@lucide/svelte/icons/square"
 import {
   getAudioPlaylist,
   getI18n,
@@ -35,14 +36,22 @@ const showStopRun = $derived(
 /** הרצועה מוצגת ⇔ יש מה לשלוט בו */
 const showDock = $derived(showStopRun || playlist.items.length > 0)
 
-const stopLabel = $derived.by(() => {
-  if (showStopRun) {
-    if (modelStatus.phase === "thinking") return t("playbackControls.stopRun.thinking")
-    if (modelStatus.phase === "responding") return t("playbackControls.stopRun.responding")
-    if (modelStatus.phase === "calling-tool") return t("playbackControls.stopRun.callingTool")
-    return t("playbackControls.stopRun")
-  }
-  return t("playbackControls.stopPlayback")
+/**
+ * ─── slice stop-split ───
+ * 🔴 **היה כאן כפתור אחד עם שתי משמעויות.** אותו אייקון-ריבוע קרא ל-
+ * `cancelRun()` כשהסוכן פעיל ול-`stopPlayback()` כשלא — וההבדל היה
+ * `showStopRun`, מצב שאינו נראה למשתמש. כלומר לחיצה על "עצור" כדי
+ * **להשתיק** ביטלה את **ההרצה**, בדיוק ברגע שבו יש קול ולכן בדיוק כשמושיטים
+ * אליו יד. דווח מהשדה ("לוחץ סטופ ואז זה לא חוזר בפרומפט הבא").
+ *
+ * עכשיו: תא-התעבורה הוא **תמיד השתקה**, וביטול-ההרצה הוא תא נפרד שמופיע
+ * רק כשיש הרצה — שני אייקונים, שתי תוויות, ואין מצב סמוי שמחליף משמעות.
+ */
+const stopRunLabel = $derived.by(() => {
+  if (modelStatus.phase === "thinking") return t("playbackControls.stopRun.thinking")
+  if (modelStatus.phase === "responding") return t("playbackControls.stopRun.responding")
+  if (modelStatus.phase === "calling-tool") return t("playbackControls.stopRun.callingTool")
+  return t("playbackControls.stopRun")
 })
 
 const isPaused = $derived(playlist.transport === "paused")
@@ -52,9 +61,14 @@ const isTransportEnabled = $derived(playlist.state === "playing")
 
 const isNavDisabled = $derived(playlist.items.length === 0 || playlist.items.length < 2)
 
-function onStop(): void {
-  if (showStopRun) voiceMode.cancelRun()
-  else voiceMode.stopPlayback()
+/** ‏השתקה בלבד — לעולם אינה נוגעת בהרצה. */
+function onStopPlayback(): void {
+  voiceMode.stopPlayback()
+}
+
+/** ‏ביטול ההרצה (ומשתיק אגב כך). תא נפרד, אייקון נפרד, אדום. */
+function onCancelRun(): void {
+  voiceMode.cancelRun()
 }
 </script>
 
@@ -71,17 +85,30 @@ function onStop(): void {
              חריג RTL מודע; אל תהפוך לפי locale. -->
         <div
           class="controls-grid"
+          class:controls-grid--with-run={showStopRun}
           role="group"
           dir="ltr"
           aria-label={t("playbackControls.dock")}
         >
+          {#if showStopRun}
+            <button
+              type="button"
+              class="ctrl-cell ctrl-cell--stop-run"
+              onclick={onCancelRun}
+              aria-label={stopRunLabel}
+              title={stopRunLabel}
+            >
+              <OctagonXIcon size={24} strokeWidth={2} />
+            </button>
+          {/if}
+
           <button
             type="button"
             class="ctrl-cell"
-            class:ctrl-cell--stop-run={showStopRun}
-            onclick={onStop}
-            aria-label={stopLabel}
-            title={stopLabel}
+            onclick={onStopPlayback}
+            disabled={playlist.items.length === 0}
+            aria-label={t("playbackControls.stopPlayback")}
+            title={t("playbackControls.stopPlayback")}
           >
             <SquareIcon size={24} strokeWidth={2} />
           </button>
@@ -188,6 +215,13 @@ function onStop(): void {
     grid-template-columns: repeat(4, 1fr);
     gap: 0.5rem;
     padding: 0.5rem 0.75rem;
+  }
+
+  /* ─── slice stop-split ───
+     תא חמישי כשהסוכן רץ. התאים מתכווצים במקום לגלוש — 56px הוא יעד-המגע
+     המינימלי, ולכן `1fr` עם `min-width` על התא ולא רוחב קבוע. */
+  .controls-grid--with-run {
+    grid-template-columns: repeat(5, 1fr);
   }
 
   .ctrl-cell {
