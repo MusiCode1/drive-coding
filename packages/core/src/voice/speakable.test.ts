@@ -116,6 +116,21 @@ describe("splitStreamable — זרימה חיה", () => {
     expect(held).toBe("קרא ל-`useSta")
   })
 
+  // 🔴 נמדד בשדה: המשפט האחרון נכנס לתור כ-`**המשפט… סיום.` — הפותח נשאר
+  // והסוגר נעלם, כי ההדגשה נחתכה בין chunks ושני החצאים עובדו לחוד.
+  it("הדגשה שטרם נסגרה — מוחזקת", () => {
+    const { ready, held } = splitStreamable("זה **חשוב מא")
+    expect(ready).toBe("")
+    expect(held).toBe("זה **חשוב מא")
+  })
+
+  it("הדגשה סגורה — לא מוחזקת", () => {
+    expect(splitStreamable("זה **חשוב** ותו לא.")).toEqual({
+      ready: "זה **חשוב** ותו לא.",
+      held: "",
+    })
+  })
+
   it("קישור שטרם נסגר — מוחזק", () => {
     const { held } = splitStreamable("ראה [את התיע")
     expect(held).toBe("ראה [את התיע")

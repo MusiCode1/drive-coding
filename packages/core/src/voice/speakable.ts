@@ -211,11 +211,19 @@ export function splitStreamable(text: string): { ready: string; held: string } {
   // ⚠️ שורה שמתחילה בגרש-אחורי היא **או** קוד-inline **או** גדר שטרם
   // הושלמה (``` בדרך). שתיהן חייבות להיסגר לפני עיבוד: שתי גרשיים בלבד
   // אינן מזוהות כגדר, עוברות הלאה, והגדר נחתכת לשניים — הקוד דלף.
+  // ⚠️ **סימני-הדגשה נספרים גם הם.** נמדד בשדה: המשפט האחרון נכנס לתור
+  // כ-`**המשפט… סיום.` — הפותח נשאר, הסוגר נעלם. הדגשה שנחתכה בין chunks
+  // עוברת כשני חצאים, וכל חצי מעובד לחוד. זה בולט דווקא **בזנב**, כי שם
+  // נופלים גבולות-ה-chunk האחרונים.
+  const openEmphasis =
+    (tail.match(/\*\*/g)?.length ?? 0) % 2 === 1 ||
+    (tail.match(/~~/g)?.length ?? 0) % 2 === 1 ||
+    (tail.replace(/\*\*/g, "").match(/\*/g)?.length ?? 0) % 2 === 1
   const startsBacktick = /^[ \t]{0,3}`/.test(tail)
   const openInline = startsBacktick || (tail.match(/`/g)?.length ?? 0) % 2 === 1
   const lastOpen = Math.max(tail.lastIndexOf("["), tail.lastIndexOf("!["))
   const openLink = lastOpen !== -1 && !/\]\([^)]*\)/.test(tail.slice(lastOpen))
-  if (!openInline && !openLink) return { ready: text, held: "" }
+  if (!openInline && !openLink && !openEmphasis) return { ready: text, held: "" }
   if (nl === -1) return { ready: "", held: text }
   return { ready: text.slice(0, nl + 1), held: tail }
 }
