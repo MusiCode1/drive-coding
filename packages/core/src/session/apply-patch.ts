@@ -50,6 +50,30 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
       }
     }
 
+    // ─── slice acp-v2-reduce: upsert של הודעה שלמה (ACP v2) ───
+    case "set-message": {
+      const idx = state.messages.findIndex((m) => m.id === patch.targetId)
+      // ⚠️ יעד שנעלם אינו שגיאה שיש לזרוק עליה — הוא no-op. אותו כלל כמו
+      // append-segment/update-tool מתחת: patch שהקדים או איחר את היעד שלו
+      // אסור לו להפיל את הזרם כולו.
+      if (idx === -1) return state
+      let nextSegSeq = state.nextSegmentSeq
+      if (patch.message.role !== "tool") {
+        for (const seg of patch.message.segments) {
+          nextSegSeq = Math.max(nextSegSeq, nextSeqFrom(seg.id))
+        }
+      }
+      const messages = [...state.messages]
+      messages[idx] = patch.message
+      return {
+        ...state,
+        version: patch.version,
+        messages,
+        nextMessageSeq: Math.max(state.nextMessageSeq, nextSeqFrom(patch.message.id)),
+        nextSegmentSeq: nextSegSeq,
+      }
+    }
+
     case "append-segment": {
       const idx = state.messages.findIndex((m) => m.id === patch.targetId)
       if (idx === -1) return state

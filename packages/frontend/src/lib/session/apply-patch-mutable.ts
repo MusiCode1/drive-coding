@@ -38,13 +38,9 @@ function sessionMsgToBubble(msg: SessionMessage, mappers: PatchMappers): Bubble 
         title: msg.toolCall.title,
         result: msg.toolCall.result,
         content:
-          msg.toolCall.content != null
-            ? mappers.mapToolContent(msg.toolCall.content)
-            : undefined,
+          msg.toolCall.content != null ? mappers.mapToolContent(msg.toolCall.content) : undefined,
         locations:
-          msg.toolCall.locations != null
-            ? mappers.mapLocations(msg.toolCall.locations)
-            : undefined,
+          msg.toolCall.locations != null ? mappers.mapLocations(msg.toolCall.locations) : undefined,
       },
       segments: [],
     } satisfies ToolBubble
@@ -57,7 +53,9 @@ function sessionMsgToBubble(msg: SessionMessage, mappers: PatchMappers): Bubble 
     messageId: msg.messageId,
     createdAt: 0,
     segments: msg.segments,
-    ...(kind === "user" && "attachments" in msg && msg.attachments != null && { attachments: msg.attachments }),
+    ...(kind === "user" &&
+      "attachments" in msg &&
+      msg.attachments != null && { attachments: msg.attachments }),
   } as Bubble
 }
 
@@ -79,6 +77,17 @@ export function applyPatchMutable(
     switch (patch.op) {
       case "add-message": {
         bubbles.push(sessionMsgToBubble(patch.message, mappers))
+        break
+      }
+
+      // ─── slice acp-v2-reduce ───
+      // ⚠️ **object-replacement, לא מוטציה של השדות.** בועה שמוחלפת בשלמותה
+      // חייבת להיות אובייקט חדש, אחרת ה-`{#key}`/הזיהוי ב-Virtualizer עלול
+      // להחזיק את הישן. זהו בדיוק הדפוס של update-tool מתחת.
+      case "set-message": {
+        const idx = bubbles.findIndex((b) => b.id === patch.targetId)
+        if (idx === -1) break
+        bubbles[idx] = sessionMsgToBubble(patch.message, mappers)
         break
       }
 
@@ -127,7 +136,11 @@ export function applyPatchMutable(
 
       case "reset": {
         // מחיקה + אכלוס (מוטציה על אותו מערך — $state proxy נשמר)
-        bubbles.splice(0, bubbles.length, ...patch.messages.map((m) => sessionMsgToBubble(m, mappers)))
+        bubbles.splice(
+          0,
+          bubbles.length,
+          ...patch.messages.map((m) => sessionMsgToBubble(m, mappers)),
+        )
         break
       }
     }
