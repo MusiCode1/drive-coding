@@ -173,3 +173,64 @@ describe("AudioPlaylist — התאוששות בין תורים", () => {
     expect(sink.playOrder).toEqual(["p0", "p1"])
   })
 })
+
+describe("AudioPlaylist — יתומים, וסדר-ההשמעה", () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  // 🔴 נמדד חי בטלפון (21/08): `cursor: 4 / items: 4` עם
+  // `byState: {done: 3, ready: 1}` — פריט מוכן שאיש לא ניגן. באג #47.
+  it("זנב שנוסף בסוף אחרי שהלולאה חנתה — מתנגן", async () => {
+    const sink = makeMockSink()
+    const pl = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    await playOneTurn(pl, sink, "m0", 0)
+    await playOneTurn(pl, sink, "m1", 1)
+    expect(sink.playOrder).toEqual(["m0", "m1"])
+
+    // הזנב של m1 מגיע אחרי שהתור נסגר — ממוין אחרון, ולכן מותר וצריך.
+    pl.reserve("tail1", { seq: 1, segmentIndex: 1 }, "b-m1")
+    await settle()
+    await sink.prepareSegment("tail1", new ReadableStream(), new AbortController())
+    pl.markReady("tail1")
+    await settle()
+    sink.resolvePlay("tail1")
+    await settle()
+
+    expect(sink.playOrder).toEqual(["m0", "m1", "tail1"])
+  })
+
+  // ⚠️ **הכלל שהמשתמש הגדיר, והוא ההפך מהאינטואיציה הראשונה שלי.**
+  // "אם התחלנו כבר את קטע 33, לעולם לא לחזור ל-32."
+  //
+  // כתבתי כאן קודם טסט שציפה שיתום כזה **כן** ינוגן — וזו הייתה טעות:
+  // השמעת משפט מוקדם אחרי שמאוחר ממנו כבר נשמע היא ערבוב-סדר, וזה גרוע
+  // מהשמטה. הלולאה אוספת יתומים **קדימה בלבד**, מעבר לגבוה שכבר נוגן.
+  it("יתום שממוין לפני מה שכבר נוגן — נזנח, ולא מערבב סדר", async () => {
+    const sink = makeMockSink()
+    const pl = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 1000 })
+
+    await playOneTurn(pl, sink, "later", 5)
+    expect(sink.playOrder).toEqual(["later"])
+
+    // מגיע קטע שממוין **לפני** מה שכבר הושמע.
+    pl.reserve("stale", { seq: 1, segmentIndex: 0 }, "b-stale")
+    await settle()
+    await sink.prepareSegment("stale", new ReadableStream(), new AbortController())
+    pl.markReady("stale")
+    await vi.advanceTimersByTimeAsync(1500)
+    await settle()
+
+    expect(sink.playOrder).toEqual(["later"])
+  })
+
+  it("קטע שכבר נוגן אינו מושמע שוב בזחילה קדימה", async () => {
+    // נמדד: `a, x, a` — חזרה אחורה השמיעה שוב את מה שנוגן בדרך.
+    const sink = makeMockSink()
+    const pl = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 1000 })
+    await playOneTurn(pl, sink, "one", 0)
+    await playOneTurn(pl, sink, "two", 1)
+    await settle()
+    expect(sink.playOrder).toEqual(["one", "two"])
+  })
+})

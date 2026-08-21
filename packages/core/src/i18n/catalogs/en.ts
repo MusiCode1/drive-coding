@@ -141,6 +141,7 @@ export const en: Catalog = {
   "record.reconnecting": "Reconnecting…",
   "record.reconnectAttempt": "attempt",
   "mic.stop": "Stop",
+  "mic.discard": "Discard recording",
   // ─── settings-redesign ─── (redesign-3)
   "settings.connection": "Connection",
   "settings.voiceSpeech": "Voice & Speech",
@@ -406,11 +407,13 @@ export const en: Catalog = {
   "settings.geminiTone.energetic": "Energetic",
   "settings.geminiTone.formal": "Formal",
   "settings.geminiTone.casual": "Casual",
-  "session.heldByOtherTransport": "This session is open elsewhere (other transport). Do not reconnect directly — take over.",
+  "session.heldByOtherTransport":
+    "This session is open elsewhere (other transport). Do not reconnect directly — take over.",
   // ─── liveness (slice liveness C4) ───
   "session.reconnecting": "Trying to reconnect…",
   "session.cloudflareBlocked": "Connection blocked. Cloudflare may require verification.",
-  "session.turnStalled": "No response from the agent for a while. It may still be working — or it may have stopped without saying so.",
+  "session.turnStalled":
+    "No response from the agent for a while. It may still be working — or it may have stopped without saying so.",
   "session.cloudflareRefresh": "Refresh",
   "session.gone": "This session is gone — open a new one.",
 }

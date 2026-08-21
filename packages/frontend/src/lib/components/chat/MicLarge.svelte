@@ -10,10 +10,11 @@
  *
  * ─── record-footer (redesign-4) ───
  */
-import MicIcon from "@lucide/svelte/icons/mic"
-import Volume2Icon from "@lucide/svelte/icons/volume-2"
-import SquareIcon from "@lucide/svelte/icons/square"
+
 import Loader2Icon from "@lucide/svelte/icons/loader-2"
+import MicIcon from "@lucide/svelte/icons/mic"
+import SquareIcon from "@lucide/svelte/icons/square"
+import Volume2Icon from "@lucide/svelte/icons/volume-2"
 import XIcon from "@lucide/svelte/icons/x"
 import { getI18n, getMic, getVoiceMode } from "$lib/context"
 import type { VoiceModeState } from "$lib/view-models/derived/voice-mode.svelte"
@@ -32,19 +33,24 @@ const STATE_CLASS: Record<VoiceModeState, string> = {
   cancelling: "flash-state",
 }
 
-const isDisabled = $derived(
-  voiceMode.state === "transcribing" || voiceMode.state === "cancelling"
-)
+const isDisabled = $derived(voiceMode.state === "transcribing" || voiceMode.state === "cancelling")
 
 const showStop = $derived(voiceMode.state === "speaking")
+/** ─── slice mic-record-only ─── ביטול ההקלטה בלי לשלוח. */
+const showDiscard = $derived(voiceMode.state === "recording")
 
 const stateClass = $derived(STATE_CLASS[voiceMode.state])
 
+/**
+ * ─── slice mic-record-only ───
+ * 🔴 **היה כאן `cancelRun()`** כשהמצב `speaking`/`thinking` — כלומר לחיצה על
+ * המיקרופון בזמן שהסוכן עונה **ביטלה את ההרצה** במקום להתחיל הקלטה. זה
+ * הפתיע, כי כפתור-מיקרופון אומר דבר אחד: להקליט.
+ *
+ * עכשיו הוא **תמיד** לחצן-הקלטה: לחיצה מתחילה, לחיצה נוספת מסיימת ושולחת.
+ * ביטול-ההרצה חי אך ורק ברצועת-הבקרה (⊗), במקום שבו הוא מוצהר.
+ */
 function onClick() {
-  if (voiceMode.state === "speaking" || voiceMode.state === "thinking") {
-    voiceMode.cancelRun()
-    return
-  }
   if (voiceMode.state === "transcribing" || voiceMode.state === "cancelling") return
   void mic.toggle()
 }
@@ -86,10 +92,33 @@ function onClick() {
         border: none;
         cursor: pointer;
       "
-      onclick={() => voiceMode.cancelRun()}
+      onclick={() => voiceMode.stopPlayback()}
       aria-label={t("mic.stop")}
     >
       <SquareIcon size={14} strokeWidth={2.5} />
+    </button>
+  {/if}
+
+  <!-- ─── slice mic-record-only ───
+       ביטול-הקלטה: זורק את מה שהוקלט ואינו שולח. נפרד מהמיקרופון עצמו,
+       שסיום-לחיצה בו **כן** שולח. -->
+  {#if showDiscard}
+    <button
+      class="absolute rounded-full flex items-center justify-center"
+      style="
+        inset-inline-end: calc(50% + 60px);
+        bottom: 0;
+        width: 36px; height: 36px;
+        background: var(--fg-muted);
+        color: var(--bg);
+        border: none;
+        cursor: pointer;
+      "
+      onclick={() => mic.cancel()}
+      aria-label={t("mic.discard")}
+      title={t("mic.discard")}
+    >
+      <XIcon size={16} strokeWidth={2.5} />
     </button>
   {/if}
 

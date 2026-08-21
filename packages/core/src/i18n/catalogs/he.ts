@@ -136,6 +136,7 @@ export const he: Catalog = {
   "record.reconnecting": "מתחבר מחדש…",
   "record.reconnectAttempt": "ניסיון",
   "mic.stop": "עצור",
+  "mic.discard": "בטל הקלטה",
   // ─── settings-redesign ─── (redesign-3)
   "settings.connection": "חיבור",
   "settings.voiceSpeech": "קול ודיבור",
@@ -405,7 +406,8 @@ export const he: Catalog = {
   // ─── liveness (slice liveness C4) ───
   "session.reconnecting": "מנסה להתחבר…",
   "session.cloudflareBlocked": "החיבור נחסם. ייתכן ש-Cloudflare דורש אימות.",
-  "session.turnStalled": "לא הגיע כלום מהסוכן זמן רב. ייתכן שהוא עדיין עובד — וייתכן שעצר בלי לומר.",
+  "session.turnStalled":
+    "לא הגיע כלום מהסוכן זמן רב. ייתכן שהוא עדיין עובד — וייתכן שעצר בלי לומר.",
   "session.cloudflareRefresh": "רענון",
   "session.gone": "הסשן הזה איננו — פתח חדש.",
 }

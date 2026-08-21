@@ -146,6 +146,7 @@ export type MessageKey =
   | "record.reconnecting"
   | "record.reconnectAttempt"
   | "mic.stop"
+  | "mic.discard"
   // ─── settings-redesign ─── (redesign-3)
   | "settings.connection"
   | "settings.voiceSpeech"

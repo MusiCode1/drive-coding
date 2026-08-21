@@ -285,3 +285,10 @@ onDestroy(() => configSocket.stop())
 </svelte:head>
 
 {@render children?.()}
+
+<!-- ─── slice playback-observability ───
+     ⚠️ אחרי ה-children, מחוץ לכל מכל — `position: fixed` בתוך מכל עם
+     `transform`/`filter` היה נצמד למכל ולא ל-viewport. -->
+{#if __DC_ENABLED__ || dcOptIn}
+  <PlaybackDebugPanel />
+{/if}

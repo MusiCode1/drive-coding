@@ -98,6 +98,12 @@ export class AudioPlaylist {
   // A4: cursor כשדה $state — מאפשר next/prev/jumpTo לשנות אותו מחוץ ל-#playLoop.
   // #navSignal/resolver — מעיר את ה-#playLoop מה-await play הנוכחי בעת ניווט.
   #cursor: number = $state(0)
+  /**
+   * ─── slice playlist-no-orphans ───
+   * האינדקס שאליו הגענו **בכוונה** (ניווט או איסוף-יתום). רק שם פריט
+   * `done` מנוגן שוב; בזחילה קדימה `done` נחצה בלי להישמע.
+   */
+  #jumpTarget: number | null = null
   #navResolve: (() => void) | null = null
   // nav-retain fix: resolver נפרד ל-idle-park. חייב להיות נפרד מ-#navResolve
   // (של #playWithNav) — אחרת reserve() בזמן נגינה פעילה יקטע את ה-play-race → קקפוניה.
@@ -195,6 +201,10 @@ export class AudioPlaylist {
       owner,
       fetchEpoch: this.#segmentEpoch.get(segmentId) ?? 0,
     }
+    // ⚠️ נקבע **לפני** ה-splice: האם ה-cursor מצביע על item קיים, או שהוא
+    // כבר מעבר לסוף (idle-park). שתי המצבים דורשים טיפול הפוך.
+    const pointedAtLiveItem = this.#cursor < this.items.length
+
     // sorted-insert לפי compareOrderKey
     let i = this.items.length
     while (i > 0) {
@@ -204,24 +214,22 @@ export class AudioPlaylist {
     }
     this.items.splice(i, 0, newItem)
 
-    // lifecycle 4c: הכנסה לפני/ב-cursor בזמן ניגון — הזז cursor כדי להמשיך
-    // להצביע על אותו segmentId.
+    // lifecycle 4c + slice playlist-no-orphans: הזזת ה-cursor בהכנסה.
     //
-    // 🔴 **`wasParked` הוא התיקון.** בלעדיו התנאי `i <= #cursor` נדלק גם
-    // ב-idle-park, ושם הוא הרסני: בפארק `#cursor === items.length` (אין item
-    // נוכחי), ההזמנה החדשה נדחפת **בדיוק** במיקום ה-cursor, ולכן `i <= #cursor`
-    // מתקיים — וה-cursor נדחף אחת קדימה, מעבר לפריט שזה עתה נוסף. הלולאה
-    // מתעוררת, בודקת `#cursor >= items.length`, ומיָדית חונה שוב. **לנצח.**
+    // 🔴 **שני מקרים הפוכים, ותנאי אחד לא יכול לשרת את שניהם.**
     //
-    // התסמין: התור הראשון מתנגן, וכל תור אחריו שקט. נמדד חי (Edge/Android,
-    // 21/08): `AudioBufferSourceNode.start` נקרא 655 פעמים ואז אפס, בעוד
-    // `createBuffer` המשיך לאלפים — הבייטים הגיעו, אף אחד לא ניגן אותם.
-    // אפס שגיאות, אפס אזהרות; לכן זה נראה כמו "תקלה רגעית".
+    //  (א) הכנסה **לפני** ה-cursor — הפריטים אחריה נדחפים ימינה, ולכן ה-cursor
+    //      חייב לזוז כדי להמשיך להצביע על אותו segment. אחרת הוא מצביע על
+    //      פריט שכבר נוגן — ו**משמיע אותו שוב** (נמדד: `m0, m1, m1`).
     //
-    // ההזזה נכונה רק כשה-cursor מצביע על item **קיים** שנדחף ימינה.
-    // הוספה בסוף אינה דוחפת דבר — היא בדיוק מה שהלולאה ממתינה לו.
-    const wasParked = this.#cursor >= this.items.length - 1
-    if (this.#playing && !wasParked && i <= this.#cursor) {
+    //  (ב) הוספה **בסוף** בזמן idle-park — שם `#cursor === items.length`,
+    //      כלומר הוא אינו מצביע על כלום. הזזה כאן דוחפת אותו מעבר לפריט שזה
+    //      עתה נוסף, הלולאה מתעוררת, רואה `cursor >= items` וחונה שוב.
+    //      לנצח. זה היה הבאג "התור הראשון מתנגן וכל תור אחריו שקט".
+    //
+    // ⇒ המבחן אינו "האם חונים" אלא **על מה ה-cursor מצביע**: הכנסה לפניו
+    //   תמיד מזיזה; הכנסה **בו** מזיזה רק אם יש שם item חי.
+    if (this.#playing && (i < this.#cursor || (i === this.#cursor && pointedAtLiveItem))) {
       this.#cursor += 1
     }
 
@@ -444,6 +452,8 @@ export class AudioPlaylist {
 
     // (3) cursor חדש
     this.#cursor = newIndex
+    // slice playlist-no-orphans: הגעה **מכוונת** — כאן `done` מנוגן שוב.
+    this.#jumpTarget = newIndex
 
     // (4) פתור signals — גם play-race (#navResolve, לקטיעת ה-play הנוכחי)
     //     וגם park (#parkResolve), כי ניווט יכול לקרות בזמן נגינה או בזמן idle-park.
@@ -536,6 +546,42 @@ export class AudioPlaylist {
         // A3: אם stopped (stop() נקרא בזמן pause) — יציאה
         if (this.transport === "stopped" || isDeadLoop()) break
 
+        // ─── slice playlist-no-orphans ───
+        // 🔴 **לפני שחונים — לסרוק אחורה אחרי פריט שלא נוגן.**
+        //
+        // ‏`reserve()` עושה הכנסה **ממוינת** לפי `orderKey`, ולכן פריט שמגיע
+        // מאוחר יכול לנחות **מאחורי** ה-cursor (למשל זנב של בועת-מחשבה
+        // ש-seq שלה נמוך מבועת-ההודעה שכבר נוגנה). ה-cursor נע קדימה בלבד
+        // ⇒ הפריט הזה **לעולם לא ינוגן**, בשקט מוחלט.
+        //
+        // נמדד חי (‏21/08, טלפון): `cursor: 4 / items: 4` עם
+        // `byState: {done: 3, ready: 1}` — פריט מוכן, יתום מאחורי ה-cursor.
+        // זה הבאג "המשפט האחרון בכל הודעה אינו מוקרא" (#47).
+        //
+        // ⚠️ הסריקה מתקנת את ה**אינווריאנטה** ולא מסלול-הכנסה מסוים: כל דרך
+        // עתידית שתכניס פריט מאחורי ה-cursor תירפא כאן מעצמה.
+        if (this.#cursor >= this.items.length) {
+          // ⚠️ **רק יתום שאחריו לא נוגן דבר.** אם התחלנו כבר קטע 33, אסור
+          // לחזור ל-32 — השמעתו עכשיו תהיה מחוץ לסדר, וזה גרוע מהשמטתו.
+          // אבל אם 32 נוגן, התקדמנו, ו-33 נשאר `ready` — 33 כן צריך להישמע.
+          // ⇒ הגבול הוא האינדקס הגבוה ביותר שכבר נוגן.
+          let lastPlayed = -1
+          for (let k = 0; k < this.items.length; k++) {
+            const st = this.items[k]?.state
+            if (st === "done" || st === "playing") lastPlayed = k
+          }
+          const orphan = this.items.findIndex(
+            (it, k) =>
+              k > lastPlayed &&
+              (it.state === "reserved" || it.state === "loading" || it.state === "ready"),
+          )
+          if (orphan !== -1) {
+            this.#cursor = orphan
+            this.#jumpTarget = orphan
+            continue
+          }
+        }
+
         // nav-retain: idle-park — כשמגיעים לסוף הפלייליסט ממתינים על navSignal
         if (this.#cursor >= this.items.length) {
           // state=idle כדי שמחוון "מדבר" לא יישאר ב-speaking
@@ -557,7 +603,13 @@ export class AudioPlaylist {
         }
 
         // nav-retain: item done/ready + isComplete → replay מיידי
-        if ((item.state === "done" || item.state === "ready") && this.#isComplete(item.segmentId)) {
+        // ⚠️ `done` מנוגן-מחדש **רק בהגעה מכוונת**. בלי זה, חזרה אחורה
+        // לאיסוף יתום הייתה משמיעה שוב כל מה שנוגן בדרך (נמדד: `a, x, a`).
+        if (
+          (item.state === "ready" ||
+            (item.state === "done" && this.#cursor === this.#jumpTarget)) &&
+          this.#isComplete(item.segmentId)
+        ) {
           // A3: בדוק pause לפני play
           if (this.transport === "paused") {
             await this.#waitForResume()

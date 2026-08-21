@@ -67,8 +67,10 @@ const gap = $derived(info?.sink != null ? info.sink.prepared - info.sink.played 
 
 <style>
   .dbg {
+    /* ⚠️ **למעלה ולא למטה.** במובייל התחתית תפוסה ע"י RecordFooter
+       ורצועת-הבקרה, והפאנל היה מתחתם ובלתי-נראה — בדיוק המצב שדווח. */
     position: fixed;
-    inset-block-end: 0.25rem;
+    inset-block-start: 0.25rem;
     inset-inline-start: 0.25rem;
     z-index: 9999;
     font: 11px/1.35 ui-monospace, monospace;
