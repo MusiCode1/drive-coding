@@ -1,22 +1,20 @@
 <script lang="ts">
 /**
- * StatusBubble — בועת-סטטוס transient + PlaybackControls.
+ * StatusBubble — בועת-סטטוס transient (חיווי בלבד).
  *
  * מציגה את ה-phase הנוכחי של המודל (waiting/thinking/responding/calling-tool/pending-tts/speaking).
  * אינה חלק מ-session.bubbles — מופיעה מעל הרשימה בזמן אמת.
  * phase === null → לא מרנדרת דבר.
  *
- * B1: מרנדרת PlaybackControls לצד ה-label בכל phase שאינו null/waiting.
+ * control-dock: בקרת השמעה עברה ל-footer (אח של RecordFooter).
  *
  * ─── msr-v2 / B1-controls-ui ───
  */
-import { getAudioPlaylist, getI18n, getModelStatus, getSession } from "$lib/context"
+import { getI18n, getModelStatus, getSession } from "$lib/context"
 import type { ModelPhase } from "$lib/view-models/derived/model-status.svelte"
-import PlaybackControls from "./PlaybackControls.svelte"
 
 const modelStatus = getModelStatus()
 const session = getSession()
-const playlist = getAudioPlaylist()
 const t = getI18n().t
 
 const phaseKey: Record<NonNullable<ModelPhase>, Parameters<typeof t>[0]> = {
@@ -30,11 +28,6 @@ const phaseKey: Record<NonNullable<ModelPhase>, Parameters<typeof t>[0]> = {
 
 /** חיווי turnInterrupted — נעלם אחרי שה-phase חוזר ל-null (תור הבא) */
 const showInterrupted = $derived(session.turnInterrupted && modelStatus.phase === null)
-
-/** nav-retain commit 3: כפתורים גם ב-idle-park (items>0) בלי phase. */
-const showPlaybackControls = $derived(
-  (modelStatus.phase !== null && modelStatus.phase !== "waiting") || playlist.items.length > 0,
-)
 </script>
 
 {#if modelStatus.phase !== null}
@@ -57,18 +50,7 @@ const showPlaybackControls = $derived(
   </div>
 {/if}
 
-{#if showPlaybackControls}
-  <div class="playback-controls-row">
-    <PlaybackControls />
-  </div>
-{/if}
-
 <style>
-  .playback-controls-row {
-    align-self: flex-end;
-    max-width: 78%;
-  }
-
   .status-bubble {
     display: inline-flex;
     align-items: center;

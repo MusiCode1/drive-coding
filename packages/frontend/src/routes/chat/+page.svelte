@@ -6,6 +6,7 @@ import { onMount } from "svelte"
 import { goto } from "$app/navigation"
 import AuthGuidance from "$lib/components/AuthGuidance.svelte"
 import ChatBubbles from "$lib/components/chat/ChatBubbles.svelte"
+import PlaybackControls from "$lib/components/chat/PlaybackControls.svelte"
 import RecordFooter from "$lib/components/chat/RecordFooter.svelte"
 import AppShell from "$lib/components/layout/AppShell.svelte"
 import { getSession } from "$lib/context"
@@ -65,6 +66,7 @@ onMount(() => {
     {/if}
 
     {#snippet footer()}
+      <PlaybackControls />
       <RecordFooter />
     {/snippet}
   </AppShell>
