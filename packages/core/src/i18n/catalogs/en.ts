@@ -142,6 +142,10 @@ export const en: Catalog = {
   "record.reconnectAttempt": "attempt",
   "mic.stop": "Stop",
   "mic.discard": "Discard recording",
+  "speakable.codeBlock": "code block",
+
+  "speakable.link": "link",
+  "speakable.image": "image",
   // ─── settings-redesign ─── (redesign-3)
   "settings.connection": "Connection",
   "settings.voiceSpeech": "Voice & Speech",

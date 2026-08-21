@@ -27,24 +27,26 @@
  *     עוברות דרך `untrack` בזהירות (learnings 2026-05-16).
  */
 
+import { createI18n, detectLocale } from "@drive-coding/core/i18n"
 import { cacheKeyFor } from "@drive-coding/core/voice/cache-key"
 import { DEFAULT_VOICE_CONFIG } from "@drive-coding/core/voice/capabilities"
 import type { NarrateContext, ToolCallForNarrate } from "@drive-coding/core/voice/narration-prompt"
 import { select } from "@drive-coding/core/voice/select"
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
-import { OrderAllocator, type OrderKey } from "@drive-coding/core/voice/tts-queue"
+import { type SpeakableLabels, toSpeakable } from "@drive-coding/core/voice/speakable"
+import type { OrderAllocator, OrderKey } from "@drive-coding/core/voice/tts-queue"
 import { untrack } from "svelte"
 import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
 import { safeUUID } from "$lib/util/uuid"
 import { narrate } from "../adapters/voice/narrate"
 import { translate } from "../adapters/voice/translate"
 import { resolveTts } from "../adapters/voice/tts-resolve"
-import type { AudioSink } from "../engines/audio-sink"
 import type { AudioPlaylist, SegmentOwner } from "../engines/audio-playlist.svelte"
+import type { AudioSink } from "../engines/audio-sink"
 import type { CuesEngine } from "../engines/cues"
 import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
-import type { Settings } from "./settings.svelte"
 import { ttsCapabilities } from "./capabilities.svelte"
+import type { Settings } from "./settings.svelte"
 
 const TARGET_LANG = "he" as const
 const MIN_CHARS = 20
@@ -293,7 +295,11 @@ export class Speaker implements SegmentOwner {
         continue
       }
 
-      state.buffer += newChunks
+      // ─── slice tts-speakable-text ───
+      // ⚠️ **לפני הפיצול, לא אחריו.** בלוק-קוד בן 40 שורות שמפוצל קודם הופך
+      // ל-15 מקטעי-TTS שכולם ייקראו מילה במילה וימלאו את התור; אחרי הצמצום
+      // הוא מקטע אחד בן שתי מילים. זה גם התוכן וגם אורך-התור.
+      state.buffer += toSpeakable(newChunks, this.#speakableLabels())
       const { sentences, remaining } = splitIntoSentences(state.buffer, {
         minChars: MIN_CHARS,
         maxChars: MAX_CHARS,
@@ -401,6 +407,24 @@ export class Speaker implements SegmentOwner {
     job.status = "pending"
     this.#pendingCount += 1
     this.#pumpFetchLoop()
+  }
+
+  /**
+   * תוויות ההקראה מ-i18n — השפה נשארת בשכבת-ה-i18n, לא בליבה הטהורה.
+   * ⚠️ אותו דפוס כמו `agent-session.svelte.ts` (‏`createI18n` לפי
+   * `settings.locale`) — כדי לא להוסיף תלות-בנאי חדשה ל-Speaker, שהיא
+   * שינוי invasive שנוגע בכל אתרי-הבנייה ובכל המוקים.
+   */
+  #speakableLabels(): SpeakableLabels {
+    const t = createI18n({ locale: this.#settings.locale ?? detectLocale() }).t
+    return {
+      codeBlock: t("speakable.codeBlock"),
+      // ⚠️ הרכבה ולא אינטרפולציה — `t()` מקבל מפתח בלבד (‏i18n/index.ts:32),
+      // ושינוי החתימה שלו בשביל תווית אחת הוא שינוי invasive בקובץ משותף.
+      codeBlockWithLang: (lang) => `${t("speakable.codeBlock")} ${lang}`,
+      link: t("speakable.link"),
+      image: t("speakable.image"),
+    }
   }
 
   #pumpFetchLoop(): void {

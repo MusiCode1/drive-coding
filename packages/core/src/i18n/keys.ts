@@ -147,6 +147,10 @@ export type MessageKey =
   | "record.reconnectAttempt"
   | "mic.stop"
   | "mic.discard"
+  // ─── speakable (slice tts-speakable-text) — מה שנאמר במקום קוד/קישור ───
+  | "speakable.codeBlock"
+  | "speakable.link"
+  | "speakable.image"
   // ─── settings-redesign ─── (redesign-3)
   | "settings.connection"
   | "settings.voiceSpeech"

@@ -137,6 +137,10 @@ export const he: Catalog = {
   "record.reconnectAttempt": "ניסיון",
   "mic.stop": "עצור",
   "mic.discard": "בטל הקלטה",
+  "speakable.codeBlock": "בלוק קוד",
+
+  "speakable.link": "קישור",
+  "speakable.image": "תמונה",
   // ─── settings-redesign ─── (redesign-3)
   "settings.connection": "חיבור",
   "settings.voiceSpeech": "קול ודיבור",
