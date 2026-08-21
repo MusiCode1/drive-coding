@@ -62,6 +62,10 @@ const gap = $derived(info?.sink != null ? info.sink.prepared - info.sink.played 
             awaiting TTS: {info.speaker.inFlight}/{info.speaker.lookahead} · queued {info.speaker
               .queued}
           </div>
+          <!-- ⭐ מה שנשלח בפועל — מבדיל בין "לא נכנס", "דולג" ו-"נוגן ולא נשמע". -->
+          {#each info.speaker.recent.slice(0, 4) as txt, i (i)}
+            <div class="seg" dir="auto">· {txt}</div>
+          {/each}
         {/if}
         {#if info.sink}
           <div class:warn={gap > 3}>
@@ -97,6 +101,13 @@ const gap = $derived(info?.sink != null ? info.sink.prepared - info.sink.played 
   }
   .body {
     color: var(--fg-muted);
+  }
+  .seg {
+    opacity: 0.75;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 58vw;
   }
   .warn {
     color: #e5484d;

@@ -35,7 +35,7 @@ import { select } from "@drive-coding/core/voice/select"
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
 import {
   type SpeakableLabels,
-  splitAtOpenFence,
+  splitStreamable,
   toSpeakable,
 } from "@drive-coding/core/voice/speakable"
 import type { OrderAllocator, OrderKey } from "@drive-coding/core/voice/tts-queue"
@@ -85,7 +85,10 @@ export type TtsJob = {
 
 type BubbleState = {
   processedSegments: number
+  /** טקסט **גולמי** שטרם עובר. לעולם לא מכיל תוצר של `toSpeakable`. */
   buffer: string
+  /** טקסט **מעובד** שטרם השלים משפט. לעולם לא מעובד שוב. */
+  speakPending: string
 }
 
 export class Speaker implements SegmentOwner {
@@ -114,6 +117,8 @@ export class Speaker implements SegmentOwner {
   #bubbleStates: Map<string, BubbleState> = new Map()
   #jobs: TtsJob[] = []
   #activeFetches = 0
+  /** ─── slice playback-observability ─── טבעת של הטקסטים האחרונים שנשלחו. */
+  #recentTexts: string[] = []
   /** msr-v2: ספירת jobs ממתינים + בהבאה — reactive ($state) כדי ש-hasPendingNarration יהיה reactive. */
   #pendingCount = $state(0)
 
@@ -261,7 +266,7 @@ export class Speaker implements SegmentOwner {
         if (bubble.kind !== "message" && bubble.kind !== "thought") continue
         let state = this.#bubbleStates.get(bubble.id)
         if (state === undefined) {
-          state = { processedSegments: 0, buffer: "" }
+          state = { processedSegments: 0, buffer: "", speakPending: "" }
           this.#bubbleStates.set(bubble.id, state)
         }
         state.processedSegments = bubble.segments.length
@@ -278,7 +283,7 @@ export class Speaker implements SegmentOwner {
       const segArr = bubble.segments
       let state = this.#bubbleStates.get(bubble.id)
       if (state === undefined) {
-        state = { processedSegments: 0, buffer: "" }
+        state = { processedSegments: 0, buffer: "", speakPending: "" }
         this.#bubbleStates.set(bubble.id, state)
       }
       if (bubble.kind === "thought" && !speakThoughts) {
@@ -302,21 +307,34 @@ export class Speaker implements SegmentOwner {
       }
 
       // ─── slice tts-speakable-text ───
-      // ⚠️ **על החוצץ המצטבר, לא על הדלתא.** גרסה קודמת הריצה את הצמצום על
-      // `newChunks` — והוא נכשל בשקט: בלוק-קוד מגיע פרוס על עשרות chunks,
-      // אף אחד מהם אינו מכיל את **שני** הגדרים, ולכן הרגקס לא התאים והקוד
-      // הוקרא מילה במילה. נשמע בפועל. הטסטים עברו כי הזינו טקסט שלם.
+      // ⚠️ **שני חוצצים, וזה העיקר.** `buffer` נשאר **גולמי לנצח**; טקסט
+      // מעובד לעולם לא חוזר אליו. `speakPending` מחזיק טקסט שכבר עובר
+      // ומחכה להשלים משפט.
       //
-      // ⚠️ וגדר-פתוחה **מוחזקת**: כל עוד הבלוק לא נסגר אסור למפצל לראות את
-      // תוכנו, אחרת נקודות ושורות שבתוך הקוד ייחתכו כמשפטים ויֵצאו להקראה
-      // לפני שנדע שהם קוד. מה שמוחזק משתחרר ב-flush של סוף-התור.
+      // 🔴 גרסה קודמת החזירה טקסט מעובד לחוצץ ועיבדה אותו שוב — וכל סיבוב
+      // שבר מבנה במקום אחר: ה-`trim` אכל את הרווח שלפני ה-chunk הבא
+      // (מילים נדבקו), והשרשור איבד את השורה-החדשה שלפני הגדר הבאה (הקוד
+      // דלף להקראה). כאן כל קטע-גולמי מעובד **בדיוק פעם אחת**.
       state.buffer += newChunks
-      const { ready, held } = splitAtOpenFence(state.buffer)
-      const { sentences, remaining } = splitIntoSentences(
-        toSpeakable(ready, this.#speakableLabels(), { stream: true }),
-        { minChars: MIN_CHARS, maxChars: MAX_CHARS },
-      )
-      state.buffer = remaining + held
+      const { ready, held } = splitStreamable(state.buffer)
+      state.buffer = held
+      if (ready.length > 0) {
+        state.speakPending += toSpeakable(ready, this.#speakableLabels(), { stream: true })
+      }
+      const { sentences, remaining } = splitIntoSentences(state.speakPending, {
+        minChars: MIN_CHARS,
+        maxChars: MAX_CHARS,
+      })
+      // ⚠️ פרגמנט קצר-מהרצפה בזנב ממתין לטקסט שאחריו במקום להישלח לבד:
+      // ‏Gemini **אינו מקריא** פרגמנט כזה (נמדד — נכנס לתור, סונתז, נוגן,
+      // לא נשמע). כאן זה בטוח, כי `speakPending` הוא כבר טקסט מעובד.
+      const lastSentence = sentences[sentences.length - 1]
+      let heldBack = ""
+      if (lastSentence !== undefined && lastSentence.trim().length < MIN_CHARS) {
+        sentences.pop()
+        heldBack = lastSentence
+      }
+      state.speakPending = heldBack + remaining
 
       for (const sentence of sentences) {
         this.#enqueue(bubble.kind, bubble.messageId, sentence, bubble.id)
@@ -342,19 +360,24 @@ export class Speaker implements SegmentOwner {
     const justFinished = this.#prevTurnState !== "idle" && turnState === "idle"
     if (justFinished && enabled) {
       for (const [bubbleId, state] of this.#bubbleStates) {
-        if (state.buffer.trim().length === 0) continue
+        if (state.buffer.trim().length === 0 && state.speakPending.trim().length === 0) continue
         const bubble = this.#session.bubbles.find((b) => b.id === bubbleId)
         if (bubble === undefined) continue
         if (bubble.kind !== "message" && bubble.kind !== "thought") continue
         // redesign-3 / slice 9a: אל תפלוש buffer של thought כשהקראת מחשבות כבויה.
         if (bubble.kind === "thought" && !speakThoughts) {
           state.buffer = ""
+          state.speakPending = ""
           continue
         }
         // ⚠️ גם כאן — הזנב יכול להיות בלוק שלא נסגר (הסוכן סיים באמצע גדר),
         // ובלי הצמצום הוא ייקרא מילה במילה. `toSpeakable` מטפל בגדר-פתוחה.
-        const tail = toSpeakable(state.buffer, this.#speakableLabels()).trim()
+        // הזנב = מה שכבר עובר + מה שנשאר גולמי (למשל גדר שלא נסגרה).
+        const tail = (
+          state.speakPending + toSpeakable(state.buffer, this.#speakableLabels())
+        ).trim()
         state.buffer = ""
+        state.speakPending = ""
         if (tail.length === 0) continue
         this.#enqueue(bubble.kind, bubble.messageId, tail, bubble.id)
       }
@@ -389,6 +412,9 @@ export class Speaker implements SegmentOwner {
     // nav-retain: refetch thunk — מאפשר re-fetch בביקור מפורש אחרי skip
     this.#player.reserve(segmentId, orderKey, bid, this)
     this.#pendingCount += 1
+    // תצפית בלבד — טבעת קצרה, מוגבלת באורך כדי לא להחזיק תמלילים שלמים.
+    this.#recentTexts.push(text.slice(0, 60))
+    if (this.#recentTexts.length > 8) this.#recentTexts.shift()
   }
 
   /**
@@ -453,6 +479,7 @@ export class Speaker implements SegmentOwner {
       inFlight: this.#activeFetches,
       queued: this.#jobs.filter((j) => j.status === "pending").length,
       lookahead: LOOKAHEAD,
+      recent: [...this.#recentTexts].reverse(),
     }
   }
 
@@ -743,6 +770,7 @@ export class Speaker implements SegmentOwner {
       const state = this.#bubbleStates.get(bubble.id) ?? {
         processedSegments: 0,
         buffer: "",
+        speakPending: "",
       }
       state.processedSegments = bubble.segments.length
       state.buffer = ""

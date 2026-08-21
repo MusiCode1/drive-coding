@@ -11,31 +11,40 @@
  */
 import { describe, expect, it } from "vitest"
 import { splitIntoSentences } from "./sentence-boundary.js"
-import { type SpeakableLabels, splitAtOpenFence, toSpeakable } from "./speakable.js"
+import { type SpeakableLabels, splitStreamable, toSpeakable } from "./speakable.js"
 
 const L: SpeakableLabels = {
   codeBlock: "[code]",
-  codeBlockWithLang: (l) => `[code ${l}]`,
+  // ⚠️ **חייב לשקף את הפרודקשן**: שם התווית נבנית כ-`${codeBlock} ${lang}`,
+  // כלומר `codeBlock` הוא **תחילית** שלה. פיקסטורה שבנתה מחרוזת אחרת
+  // ("[code ts]") הסתירה באג אמיתי במעבר-ההדבקה, שמזהה לפי התחילית.
+  codeBlockWithLang: (l) => `[code] ${l}`,
   link: "[link]",
   image: "[image]",
 }
 
 /** מדמה בדיוק את הלולאה ב-`speaker.svelte.ts#handleStreamingBubbles`. */
+/** מדמה בדיוק את הלולאה ב-`speaker.svelte.ts#handleStreamingBubbles`. */
 function streamThrough(text: string, chunkSize: number): string[] {
-  let buffer = ""
+  let raw = ""
+  let pending = ""
   const spoken: string[] = []
   for (let i = 0; i < text.length; i += chunkSize) {
-    buffer += text.slice(i, i + chunkSize)
-    const { ready, held } = splitAtOpenFence(buffer)
-    const { sentences, remaining } = splitIntoSentences(toSpeakable(ready, L, { stream: true }), {
-      minChars: 40,
-      maxChars: 200,
-    })
+    raw += text.slice(i, i + chunkSize)
+    const { ready, held } = splitStreamable(raw)
+    raw = held
+    if (ready.length > 0) pending += toSpeakable(ready, L, { stream: true })
+    const { sentences, remaining } = splitIntoSentences(pending, { minChars: 20, maxChars: 200 })
+    const last = sentences[sentences.length - 1]
+    let heldBack = ""
+    if (last !== undefined && last.trim().length < 20) {
+      sentences.pop()
+      heldBack = last
+    }
     spoken.push(...sentences)
-    buffer = remaining + held
+    pending = heldBack + remaining
   }
-  // flush סוף-תור
-  const tail = toSpeakable(buffer, L).trim()
+  const tail = (pending + toSpeakable(raw, L)).trim()
   if (tail.length > 0) spoken.push(tail)
   return spoken
 }
@@ -44,7 +53,7 @@ const MSG = [
   "שלום. הנה הסבר קצר על המודול החדש, שאמור להישמע במלואו.",
   "",
   "```typescript",
-  "export function splitAtOpenFence(text: string) {",
+  "export function splitStreamable(text: string) {",
   "  const at = text.indexOf('```')",
   "  return { ready: text.slice(0, at) }",
   "}",
@@ -78,13 +87,38 @@ describe("הזרמה ב-chunks — כפי שזה קורה בפועל", () => {
     it(`chunk=${size}: שום שורת-קוד אינה נשמעת`, () => {
       const spoken = streamThrough(MSG, size).join(" ")
       for (const forbidden of [
-        "export function splitAtOpenFence",
+        "export function splitStreamable",
         "text.indexOf",
         "text.slice",
         "bun run test",
       ]) {
         expect(spoken).not.toContain(forbidden)
       }
+    })
+  }
+})
+
+describe("התווית עצמה — נשמעת או נבלעת?", () => {
+  // 🔴 **הקיבוע שנולד ממדידה בשדה.** כשהתווית נשלחה כמקטע-TTS **עצמאי**,
+  // Gemini לא הקריא אותה — המקטע נכנס לתור, סונתז ונוגן (אומת בטלפון:
+  // `done`, אפס `skipped`) ובכל זאת לא נשמע. ⇒ התווית חייבת להיות **חלק
+  // ממשפט**, לא מקטע לעצמה.
+  for (const size of [1, 7, 64, 500]) {
+    it(`chunk=${size}: התווית לעולם אינה מקטע עצמאי`, () => {
+      for (const seg of streamThrough(MSG, size)) {
+        const bare = seg.trim()
+        expect(bare).not.toMatch(/^\[code[^\]]*\]$/)
+      }
+    })
+  }
+
+  // דווח מהשדה: הקוד מדולג יפה, אבל **המילים "בלוק קוד" לא נשמעות בכלל**.
+  // הצמצום עובד; השאלה היא מה קורה לתווית אחרי הפיצול למשפטים.
+  for (const size of [1, 7, 64, 500]) {
+    it(`chunk=${size}: התווית מגיעה להקראה`, () => {
+      const spoken = streamThrough(MSG, size)
+      console.log(`chunk=${size} SPOKEN:`, JSON.stringify(spoken))
+      expect(spoken.join(" ")).toContain("[code")
     })
   }
 })

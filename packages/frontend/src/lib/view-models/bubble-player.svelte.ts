@@ -180,6 +180,16 @@ export class BubblePlayer implements SegmentOwner {
       sentences.length > 0
         ? [...sentences, ...(remaining.trim() ? [remaining.trim()] : [])]
         : [speakable.trim()]
+    // ⚠️ אותו כלל כמו ב-Speaker, בגרסת טקסט-שלם: פרגמנט קצר-מהרצפה בזנב
+    // אינו נשלח לבד (Gemini לא מקריא פרגמנט כזה — נמדד). כאן אין "טקסט
+    // שיבוא אחריו", ולכן הוא מצטרף ל**קודם** ולא לבא.
+    if (parts.length > 1) {
+      const tail = parts[parts.length - 1]
+      if (tail !== undefined && tail.trim().length < MIN_CHARS) {
+        parts.pop()
+        parts[parts.length - 1] = `${parts[parts.length - 1]} ${tail.trim()}`
+      }
+    }
 
     // V4b: העברת geminiVoice לresolveTts (נשמר מ-dev בזמן reconcile)
     const { provider, voiceId, modelId } = resolveTts(

@@ -4,11 +4,14 @@
  * ⚠️ הקיבוע הוא על **מה שנשמע**, לא על תווים: הטקסט נשאר, הסימנים יורדים.
  */
 import { describe, expect, it } from "vitest"
-import { type SpeakableLabels, splitAtOpenFence, toSpeakable } from "./speakable.js"
+import { type SpeakableLabels, splitStreamable, toSpeakable } from "./speakable.js"
 
 const L: SpeakableLabels = {
   codeBlock: "[code]",
-  codeBlockWithLang: (l) => `[code ${l}]`,
+  // ⚠️ **חייב לשקף את הפרודקשן**: שם התווית נבנית כ-`${codeBlock} ${lang}`,
+  // כלומר `codeBlock` הוא **תחילית** שלה. פיקסטורה שבנתה מחרוזת אחרת
+  // ("[code] ts") הסתירה באג אמיתי במעבר-ההדבקה, שמזהה לפי התחילית.
+  codeBlockWithLang: (l) => `[code] ${l}`,
   link: "[link]",
   image: "[image]",
 }
@@ -16,7 +19,10 @@ const s = (t: string) => toSpeakable(t, L)
 
 describe("toSpeakable — קוד", () => {
   it("בלוק מגודר עם שפה → תווית עם שם השפה", () => {
-    expect(s("לפני\n```ts\nconst a = 1\nconst b = 2\n```\nאחרי")).toBe("לפני\n[code ts]\nאחרי")
+    // ⚠️ **התווית נדבקת לשכן ואינה פסקה לעצמה** — זו הכוונה, לא תופעת-לוואי.
+    // תווית לבדה הופכת למקטע-TTS עצמאי, ו-Gemini אינו מקריא פרגמנט כזה
+    // (נמדד בטלפון: נכנס לתור, סונתז, נוגן, לא נשמע).
+    expect(s("לפני\n```ts\nconst a = 1\nconst b = 2\n```\nאחרי")).toBe("לפני [code] ts אחרי")
   })
 
   it("בלוק בלי שפה → תווית גנרית", () => {
@@ -25,7 +31,7 @@ describe("toSpeakable — קוד", () => {
 
   // 🔴 המקרה של זרימה חיה: הסוגר עוד לא הגיע, ובלעדיו הבלוק כולו היה נקרא.
   it("בלוק שנפתח ולא נסגר — עדיין לא נקרא מילה במילה", () => {
-    expect(s("הנה:\n```python\nimport os\nfor x in y:")).toBe("הנה:\n[code python]")
+    expect(s("הנה:\n```python\nimport os\nfor x in y:")).toBe("הנה: [code] python")
   })
 
   it("קוד-inline קצר נשאר; ארוך הופך לתווית", () => {
@@ -69,7 +75,7 @@ describe("toSpeakable — מרקדאון", () => {
   // 🔴 בתוך בלוק-קוד יש תחביר שנראה כמו מרקדאון. אם נעבד אותו קודם —
   // נשנה טקסט שעומד להימחק, ובמקרה הרע נשבור את גבול-הבלוק.
   it("תחביר בתוך בלוק-קוד אינו מתפרש", () => {
-    expect(s("```js\nconst url = 'https://x.com'\n// **bold**\n```")).toBe("[code js]")
+    expect(s("```js\nconst url = 'https://x.com'\n// **bold**\n```")).toBe("[code] js")
   })
 })
 
@@ -83,26 +89,40 @@ describe("toSpeakable — שלמות", () => {
   })
 })
 
-describe("splitAtOpenFence — זרימה חיה", () => {
+describe("splitStreamable — זרימה חיה", () => {
   // 🔴 זה הבאג שנשמע בפועל: הקוד הוקרא מאויית, כי כל chunk בנפרד לא הכיל
   // גדר-סוגרת ולכן `toSpeakable` לא זיהה בלוק כלל.
   it("גדר פתוחה — התוכן מוחזק ולא יוצא להקראה", () => {
-    const { ready, held } = splitAtOpenFence("הנה קוד:\n```ts\nconst a = 1")
+    const { ready, held } = splitStreamable("הנה קוד:\n```ts\nconst a = 1")
     expect(ready).toBe("הנה קוד:\n")
     expect(held).toBe("```ts\nconst a = 1")
   })
 
-  it("גדר סגורה — הכול מוכן", () => {
+  // ⚠️ **מוחזק רק מה שיש בו תחביר פתוח.** גרסה קודמת החזיקה כל שורה
+  // חלקית — והודעה חד-פסקתית (אין בה `\n` עד הסוף) לא הוקראה כלל עד
+  // סוף-התור. נתפס ע"י `speaker.test.svelte.ts`.
+  it("גדר סגורה וטקסט נקי אחריה — הכול מוכן", () => {
     const txt = "לפני\n```ts\nconst a = 1\n```\nאחרי"
-    expect(splitAtOpenFence(txt)).toEqual({ ready: txt, held: "" })
+    expect(splitStreamable(txt)).toEqual({ ready: txt, held: "" })
   })
 
-  it("בלי גדרות כלל — הכול מוכן", () => {
-    expect(splitAtOpenFence("סתם טקסט.")).toEqual({ ready: "סתם טקסט.", held: "" })
+  it("שורה אחת בלי סיום ובלי תחביר פתוח — מוכנה, לא מוחזקת", () => {
+    expect(splitStreamable("סתם טקסט.")).toEqual({ ready: "סתם טקסט.", held: "" })
   })
 
-  it("בלוק סגור ואז אחד פתוח — רק השני מוחזק", () => {
-    const { ready, held } = splitAtOpenFence("a\n```js\nx\n```\nb\n```py\ny")
+  it("קוד-inline שטרם נסגר — מוחזק", () => {
+    const { ready, held } = splitStreamable("קרא ל-`useSta")
+    expect(ready).toBe("")
+    expect(held).toBe("קרא ל-`useSta")
+  })
+
+  it("קישור שטרם נסגר — מוחזק", () => {
+    const { held } = splitStreamable("ראה [את התיע")
+    expect(held).toBe("ראה [את התיע")
+  })
+
+  it("בלוק סגור ואז אחד פתוח — מוחזק מהגדר הפתוחה", () => {
+    const { ready, held } = splitStreamable("a\n```js\nx\n```\nb\n```py\ny")
     expect(ready).toBe("a\n```js\nx\n```\nb\n")
     expect(held).toBe("```py\ny")
   })
@@ -110,7 +130,7 @@ describe("splitAtOpenFence — זרימה חיה", () => {
   // ⚠️ החזקה בלי שחרור היא דליפה: אם הבלוק לעולם לא ייסגר, `toSpeakable`
   // בסוף-התור הוא זה שמטפל בו (יש לו ענף לגדר שלא נסגרה).
   it("מה שמוחזק עדיין מצטמצם נכון כשמפלטים אותו", () => {
-    const { held } = splitAtOpenFence("```python\nimport os")
-    expect(s(held)).toBe("[code python]")
+    const { held } = splitStreamable("```python\nimport os")
+    expect(s(held)).toBe("[code] python")
   })
 })
