@@ -55,6 +55,14 @@ const gap = $derived(info?.sink != null ? info.sink.prepared - info.sink.played 
               .join(" ")}
           </div>
         {/if}
+        {#if info.speaker}
+          <!-- ⭐ מה שמבדיל "ממתין ל-TTS" מ-"נזנח": פריט ב-reserved יכול להיות
+               כל אחד מהשניים, וה-inFlight הוא ההבחנה. -->
+          <div class:warn={info.speaker.inFlight === 0 && (info.playlist?.byState.reserved ?? 0) > 0}>
+            awaiting TTS: {info.speaker.inFlight}/{info.speaker.lookahead} · queued {info.speaker
+              .queued}
+          </div>
+        {/if}
         {#if info.sink}
           <div class:warn={gap > 3}>
             sink: prepared {info.sink.prepared} · played {info.sink.played}

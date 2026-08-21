@@ -39,19 +39,32 @@ export type SinkDebugInfo = {
   currentSegmentId: string | null
 }
 
+/** תמונת-מצב של ה-Speaker — צד ה-**אחזור**, לפני שהאודיו קיים. */
+export type SpeakerDebugInfo = {
+  /** ⭐ כמה סגמנטים ממתינים **לתשובת TTS ברגע זה** (fetch באוויר). */
+  inFlight: number
+  /** כמה עוד בתור-האחזור וטרם יצאו. */
+  queued: number
+  /** תקרת המקביליות — `inFlight` לא יעלה עליה. */
+  lookahead: number
+}
+
 export type PlaybackDebugInfo = {
   /** ‏**תמיד 1** — `+layout` מזריק מופע יחיד ל-Speaker ול-BubblePlayer.
    *  מוצג במפורש דווקא מפני שזו קביעה שיכולה להישבר בשקט במיזוג. */
   playlists: number
   playlist: PlaylistDebugInfo | null
   sink: SinkDebugInfo | null
+  speaker: SpeakerDebugInfo | null
 }
 
 export type DebuggablePlaylist = { debugInfo(): PlaylistDebugInfo }
 export type DebuggableSink = { debugInfo(): SinkDebugInfo }
+export type DebuggableSpeaker = { debugInfo(): SpeakerDebugInfo }
 
 const playlists = new Set<DebuggablePlaylist>()
 let sink: DebuggableSink | null = null
+let speaker: DebuggableSpeaker | null = null
 
 export function registerPlaylist(p: DebuggablePlaylist): void {
   playlists.add(p)
@@ -62,6 +75,9 @@ export function unregisterPlaylist(p: DebuggablePlaylist): void {
 export function registerSink(s: DebuggableSink): void {
   sink = s
 }
+export function registerSpeaker(s: DebuggableSpeaker): void {
+  speaker = s
+}
 
 export function playbackDebugInfo(): PlaybackDebugInfo {
   const first = [...playlists][0]
@@ -69,5 +85,6 @@ export function playbackDebugInfo(): PlaybackDebugInfo {
     playlists: playlists.size,
     playlist: first ? first.debugInfo() : null,
     sink: sink ? sink.debugInfo() : null,
+    speaker: speaker ? speaker.debugInfo() : null,
   }
 }

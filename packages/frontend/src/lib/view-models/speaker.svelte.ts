@@ -36,6 +36,7 @@ import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
 import { type SpeakableLabels, toSpeakable } from "@drive-coding/core/voice/speakable"
 import type { OrderAllocator, OrderKey } from "@drive-coding/core/voice/tts-queue"
 import { untrack } from "svelte"
+import { registerSpeaker, type SpeakerDebugInfo } from "$lib/debug/playback-registry"
 import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
 import { safeUUID } from "$lib/util/uuid"
 import { narrate } from "../adapters/voice/narrate"
@@ -205,6 +206,7 @@ export class Speaker implements SegmentOwner {
         })
       })
     })
+    registerSpeaker(this)
   }
 
   /**
@@ -424,6 +426,19 @@ export class Speaker implements SegmentOwner {
       codeBlockWithLang: (lang) => `${t("speakable.codeBlock")} ${lang}`,
       link: t("speakable.link"),
       image: t("speakable.image"),
+    }
+  }
+
+  /**
+   * ─── slice playback-observability ───
+   * ⭐ `inFlight` הוא מה שחסר כדי לקרוא את התור נכון: פריט ב-`reserved`
+   * יכול להיות "ממתין ל-TTS" או "נזנח" — והמספר הזה מבדיל ביניהם.
+   */
+  debugInfo(): SpeakerDebugInfo {
+    return {
+      inFlight: this.#activeFetches,
+      queued: this.#jobs.filter((j) => j.status === "pending").length,
+      lookahead: LOOKAHEAD,
     }
   }
 
