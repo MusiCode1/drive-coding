@@ -268,6 +268,11 @@ export class AudioPlaylist {
    */
   markError(segmentId: string): void {
     const item = this.items.find((it) => it.segmentId === segmentId)
+    // ⚠️ **אותו שומר-epoch כמו ב-`markReady`.** בלעדיו כשל **מאוחר** של
+    // fetch שכבר בוטל (`invalidate`) הופך פריט שהוזמן-מחדש ל-`error` —
+    // ו-`error` מדולג גם ע"י `#playLoop` וגם ע"י סורק-היתומים. לצמיתות.
+    const epoch = this.#segmentEpoch.get(segmentId) ?? 0
+    if (item !== undefined && (item.fetchEpoch ?? 0) < epoch) return
     if (item !== undefined && (item.state === "reserved" || item.state === "loading")) {
       item.state = "error"
     }
@@ -279,6 +284,10 @@ export class AudioPlaylist {
    * משחרר resolver תלוי כדי שלא ימתין 20 שניות.
    */
   markAbandoned(segmentId: string): void {
+    // ⚠️ שומר-epoch — ר' `markError`. תוצאה של fetch מבוטל לא תיגע בהזמנה חדשה.
+    const staleEpoch = this.#segmentEpoch.get(segmentId) ?? 0
+    const existing = this.items.find((it) => it.segmentId === segmentId)
+    if (existing !== undefined && (existing.fetchEpoch ?? 0) < staleEpoch) return
     const item = this.items.find((it) => it.segmentId === segmentId)
     if (item !== undefined) {
       item.state = "reserved"

@@ -280,9 +280,24 @@ export class BubblePlayer implements SegmentOwner {
     })
 
     await Promise.allSettled(fetchPromises)
-    // cleanup אחרי שכל הסגמנטים סיימו — playlist ממשיך בעצמו
-    if (!abortCtrl.signal.aborted) {
-      this.playingBubbleId = null
+    // ⚠️ **אין כאן איפוס של `playingBubbleId`.**
+    //
+    // ‏`fetchPromises` הן `prepareSegment` + `markReady` — כלומר **סינתזה**,
+    // לא השמעה. האיפוס כאן כיבה את חיווי-הניגון וגם את מסלול
+    // "לחיצה-שנייה-עוצרת" **באמצע** ההשמעה, כי הפלייליסט רק אז מתחיל.
+    // מי שמסיים באמת הוא הפלייליסט; האיפוס נשאר ל-`stop()` ולניווט.
+    this.#pruneRefetch(segmentIds)
+  }
+
+  /**
+   * ⚠️ `#refetchBySegment` נצבר ולעולם לא נוקה (אומת: אפס `delete`/`clear`
+   * בקובץ) — כלומר כל משפט שהוקרא אי-פעם נשאר מוצמד לסגירה שמחזיקה את
+   * ה-bubble. גדילה בלתי-חסומה לאורך סשן ארוך.
+   */
+  #pruneRefetch(keep: string[]): void {
+    const alive = new Set(keep)
+    for (const id of [...this.#refetchBySegment.keys()]) {
+      if (!alive.has(id)) this.#refetchBySegment.delete(id)
     }
   }
 

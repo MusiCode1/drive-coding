@@ -76,15 +76,29 @@ export class PlayableSink implements AudioSink {
     } else {
       seg = new Mp3Segment(segmentId)
     }
+    // ⚠️ **דריסה מפרקת קודם.** בלי זה, הזמנה-מחדש של אותו segmentId
+    // משאירה את הישן חי: `MediaSource`/object-URL/AudioContext-nodes ללא
+    // מפנה — דליפה שקטה שגדלה עם כל refetch. אומת בקוד.
+    const prev = this.#segments.get(segmentId)
+    if (prev !== undefined) {
+      if (this.#current === prev) {
+        this.#current = null
+        this.#currentId = null
+      }
+      prev.dispose()
+    }
     this.#segments.set(segmentId, seg)
     seg.prepare(stream, ac)
     // prepareSegment מחזיר מיד (stream נצרך ברקע)
   }
 
   async play(segmentId: string): Promise<void> {
-    this.#playedCount += 1 // slice playback-observability: נמדד מול #segments.size
     const seg = this.#segments.get(segmentId)
+    // ⚠️ **המונה אחרי הבדיקה.** הוא היה השורה הראשונה, ולכן ספר גם ניסיונות
+    // שנזרקו — והפאנל הציג `played` מנופח שאינו מייצג השמעות. תצפית שמשקרת
+    // גרועה מהיעדר תצפית.
     if (!seg) throw new Error(`PlayableSink: no segment ${segmentId}`)
+    this.#playedCount += 1
     // nav-retain fix: עצור את ה-segment הקודם (שומר buffer ל-replay) לפני שמתחילים חדש.
     if (this.#current && this.#current !== seg) {
       this.#current.stop()
@@ -119,7 +133,11 @@ export class PlayableSink implements AudioSink {
   cancel(segmentId: string): void {
     const seg = this.#segments.get(segmentId)
     if (!seg) return
-    if (this.#current === seg) this.#current = null
+    if (this.#current === seg) {
+      this.#current = null
+      // ⚠️ `#currentId` נשכח כאן, והפאנל דיווח על segment **מפורק** כ"מתנגן".
+      this.#currentId = null
+    }
     seg.dispose()
     this.#segments.delete(segmentId)
   }
@@ -131,5 +149,6 @@ export class PlayableSink implements AudioSink {
     }
     this.#segments.clear()
     this.#current = null
+    this.#currentId = null
   }
 }

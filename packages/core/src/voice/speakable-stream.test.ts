@@ -35,14 +35,10 @@ function streamThrough(text: string, chunkSize: number): string[] {
     raw = held
     if (ready.length > 0) pending += toSpeakable(ready, L, { stream: true })
     const { sentences, remaining } = splitIntoSentences(pending, { minChars: 20, maxChars: 200 })
-    const last = sentences[sentences.length - 1]
-    let heldBack = ""
-    if (last !== undefined && last.trim().length < 20) {
-      sentences.pop()
-      heldBack = last
-    }
+    // ⚠️ **בלי עיכוב-זנב.** גרסה קודמת החזיקה מקטע קצר לסיבוב הבא, וזה
+    // עיכב בדיוק את הזנב — התסמין שנמדד: "שומעים את ההודעה, לא את סופה".
     spoken.push(...sentences)
-    pending = heldBack + remaining
+    pending = remaining
   }
   const tail = (pending + toSpeakable(raw, L)).trim()
   if (tail.length > 0) spoken.push(tail)

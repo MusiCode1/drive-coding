@@ -234,3 +234,40 @@ describe("AudioPlaylist — יתומים, וסדר-ההשמעה", () => {
     expect(sink.playOrder).toEqual(["one", "two"])
   })
 })
+
+describe("AudioPlaylist — שומר-epoch על markError/markAbandoned", () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  // 🔴 code review: `markReady` מוגן ב-epoch, ‏`markError`/`markAbandoned` לא.
+  //
+  // ⚠️ **ההנחה הראשונה שלי הייתה שגויה, והטסט הפריך אותה:** חשבתי
+  // ש-`markAbandoned` מעלה epoch. הוא לא — רק `#notifyOwnerInvalidate`
+  // מעלה, והוא נקרא **אך ורק מתוך `#navigate`** (שלושה מוקדים). לכן
+  // התרחיש האמיתי הוא **ניווט**, ורק כך הטסט בודק משהו אמיתי.
+  it("כשל מאוחר של fetch שבוטל בניווט אינו הורג את הפריט", async () => {
+    const sink = makeMockSink()
+    const pl = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+
+    // ⚠️ **owner חובה כאן.** `#notifyOwnerInvalidate` מעלה epoch **רק אם
+    // `owner !== undefined`** — בלעדיו ה-epoch לעולם לא זז, והטסט היה
+    // "נכשל" על תרחיש שאינו קיים. גם זו הנחה שלי שהטסט הפריך.
+    const owner = { refetch: vi.fn(), invalidate: vi.fn() }
+    pl.reserve("s0", key(0), "b0", owner)
+    pl.reserve("s1", key(1), "b1", owner)
+    await settle()
+    pl.markReady("s0")
+    await settle()
+
+    // ניווט קדימה בזמן ש-s0 מנגן ואינו שלם → invalidate → epoch עולה
+    pl.next()
+    await settle()
+
+    // ה-fetch הישן של s0 נכשל **עכשיו**, אחרי שה-epoch כבר התקדם
+    pl.markError("s0")
+    await settle()
+
+    const item = pl.items.find((it) => it.segmentId === "s0")
+    expect(item?.state).not.toBe("error")
+  })
+})

@@ -2,15 +2,16 @@
  * @vitest-environment jsdom
  * speaker.test.svelte.ts — TDD ל-Commit 0: FetchOutcome + markAbandoned.
  */
+
+import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import { tick } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { Settings } from "./settings.svelte"
-import { Speaker } from "./speaker.svelte"
-import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { AudioSink } from "$lib/engines/audio-sink"
-import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
 import type { MessageBubble } from "$lib/types/bubble"
+import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
+import { Settings } from "./settings.svelte"
+import { Speaker } from "./speaker.svelte"
 
 const mockSynthesize = vi.fn()
 const mockIsAvailable = vi.fn(() => true)
@@ -215,5 +216,40 @@ describe("Speaker.#fetchJob — FetchOutcome (commit 0)", () => {
     const item = active.playlist.items[0]
     expect(item?.state).not.toBe("error")
     markReadySpy.mockRestore()
+  })
+})
+
+// ─── רגרסיות מ-code review (2026-08-21) ────────────────────────────────
+describe("Speaker — invalidate/refetch", () => {
+  // 🔴 שני כשלים **מנוגדים** באותה נקודה, ולכן שני קיבועים:
+  //
+  //  (א) `invalidate` לא הוריד `ready` → refetch נחסם → הפלייליסט המתין
+  //      20 שניות ואז `skipped`. משפט נעלם אחרי המתנה ארוכה.
+  //  (ב) התיקון הראשון שלי התיר refetch ל-`ready` — והפלייליסט קורא
+  //      `refetch` יותר מפעם אחת, אז `markReady` נקרא **5 פעמים**.
+  //
+  // הכלל: `invalidate` מוריד ל-`stale`; `refetch` לא נוגע ב-`ready`.
+  it("job מוכן שלא בוטל — refetch אינו יוצר fetch נוסף", async () => {
+    const spy = vi.spyOn(AudioPlaylist.prototype, "markReady")
+    active = createHarness([messageBubble(LONG_TEXT)])
+    await flush()
+    const before = spy.mock.calls.length
+    active.speaker.refetch(active.playlist.items[0]!.segmentId)
+    await flush()
+    expect(spy.mock.calls.length).toBe(before)
+    spy.mockRestore()
+  })
+
+  it("אחרי invalidate — refetch כן יוצר fetch חדש", async () => {
+    const spy = vi.spyOn(AudioPlaylist.prototype, "markReady")
+    active = createHarness([messageBubble(LONG_TEXT)])
+    await flush()
+    const id = active.playlist.items[0]!.segmentId
+    const before = spy.mock.calls.length
+    active.speaker.invalidate(id)
+    active.speaker.refetch(id)
+    await flush()
+    expect(spy.mock.calls.length).toBeGreaterThan(before)
+    spy.mockRestore()
   })
 })

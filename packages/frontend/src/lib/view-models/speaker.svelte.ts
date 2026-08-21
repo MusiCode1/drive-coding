@@ -257,7 +257,7 @@ export class Speaker implements SegmentOwner {
     enabled: boolean,
     isLoadingHistory: boolean,
     speakThoughts: boolean,
-    /** ─── slice tts-tail-after-idle ─── נדרש כדי לזהות "התור כבר נגמר". */
+    /** נדרש כדי לזהות "התור כבר נגמר" — ר' ה-flush בסוף הלולאה. */
     turnState: TurnState,
   ): void {
     // Slice 4: בזמן ש-loadSession() משחזר היסטוריה, מסמן בועות כמעובדות
@@ -327,29 +327,23 @@ export class Speaker implements SegmentOwner {
         minChars: MIN_CHARS,
         maxChars: MAX_CHARS,
       })
-      // ⚠️ פרגמנט קצר-מהרצפה בזנב ממתין לטקסט שאחריו במקום להישלח לבד:
-      // ‏Gemini **אינו מקריא** פרגמנט כזה (נמדד — נכנס לתור, סונתז, נוגן,
-      // לא נשמע). כאן זה בטוח, כי `speakPending` הוא כבר טקסט מעובד.
-      const lastSentence = sentences[sentences.length - 1]
-      let heldBack = ""
-      if (lastSentence !== undefined && lastSentence.trim().length < MIN_CHARS) {
-        sentences.pop()
-        heldBack = lastSentence
-      }
-      state.speakPending = heldBack + remaining
+      // ⚠️ **אין כאן עיכוב.** גרסה קודמת החזיקה מקטע קצר-מהרצפה לסיבוב הבא
+      // (כדי ש-Gemini לא יקבל פרגמנט בודד) — וזה עיכב **בדיוק את הזנב**,
+      // שהוא הקצר ביותר. התסמין: "שומעים את ההודעה, לא את סופה". מדוד.
+      // ⇒ עדיף פרגמנט שאולי לא ייאמר מאשר זנב שנעלם.
+      state.speakPending = remaining
 
       // ─── slice tts-tail-after-idle ───
       // 🔴 **התור כבר הסתיים? אין מי שיפלוש אחרינו — לפלוש כאן.**
       //
-      // דווח מהשדה: "שומעים את ההודעה, לא שומעים את סופה". השורש הוא מרוץ:
+      // `justFinished` יורה **פעם אחת בלבד** (מעבר `!== idle` → `idle`).
       // ב-HTTP הפריים `state_update: idle` והצ'אנק האחרון יכולים להגיע
-      // ב**אותה מנה**, וה-flush של סוף-התור רץ ב-`$effect` נפרד מהזרימה.
-      // אם הוא מקדים — הוא מפלט חוצץ שעדיין חסר את הזנב, והזנב שמגיע
-      // אחריו נתקע לנצח: `justFinished` יורה **פעם אחת בלבד**
-      // (`#prevTurnState !== "idle" && turnState === "idle"`).
+      // באותה מנה, וה-flush רץ ב-`$effect` נפרד מהזרימה. אם הוא מקדים,
+      // הזנב שמגיע אחריו נתקע לנצח. זה #47.
       //
-      // ⇒ כשהתור כבר idle, כל שארית היא **סופית** — אין טעם להמתין לטקסט
-      //   שיצטרף אליה, כי לא יבוא. פולטים מיָד.
+      // ⚠️ הסרתי את זה פעם אחת בחשד שגוי (חשבתי שהוא מרוקן חוצץ בין
+      // הודעות) — והריוויו הראה שההסרה **החזירה** את הבאג. השורש היה
+      // במקום אחר לגמרי (בדיקת ה-`[`). מוחזר.
       if (turnState === "idle") {
         const finalTail = (
           state.speakPending + toSpeakable(state.buffer, this.#speakableLabels())
@@ -452,25 +446,52 @@ export class Speaker implements SegmentOwner {
     this.refetchSegment(segmentId)
   }
 
+  /**
+   * הפריט נזנח — ה-fetch שלו כבר אינו רלוונטי.
+   *
+   * ⚠️ **מבטל את ה-fetch החי, לא רק מסמן.** גרסה קודמת רק שינתה `status`,
+   * וה-fetch המשיך לרוץ ברקע: כשהוא נגמר הוא קרא `markReady`/`markError`
+   * על פריט שכבר הוזמן-מחדש, והפך אותו ל-`error` לצמיתות.
+   */
   invalidate(segmentId: string): void {
     const job = this.#jobs.find((j) => j.segmentId === segmentId)
     if (job === undefined) return
     if (job.status === "pending") {
       if (this.#pendingCount > 0) this.#pendingCount -= 1
     }
-    if (job.status === "pending" || job.status === "fetching") {
+    // ⚠️ **`ready` נכלל.** ‏`invalidate` הוא ההודעה ש"הסגמנט אינו שמיש
+    // עוד" — ה-sink פירק אותו. job שנשאר `ready` היה חוסם כל refetch
+    // עתידי, והפלייליסט המתין את מלוא 20 השניות של `#reserveTimeoutMs`
+    // ואז סימן `skipped`. משפט שלם נעלם אחרי המתנה ארוכה.
+    if (job.status === "pending" || job.status === "fetching" || job.status === "ready") {
       job.status = "stale"
+      try {
+        job.abort.abort()
+      } catch {
+        // כבר בוטל
+      }
     }
   }
 
   refetchSegment(segmentId: string): void {
     const job = this.#jobs.find((j) => j.segmentId === segmentId)
     if (job === undefined) return
-    if (job.status === "fetching" || job.status === "ready") return // fetch חי
-    if (job.status === "stale") {
-      job.abort = new AbortController()
-    }
-    job.abort = new AbortController() // finding #5: abort חדש (הישן כבר בוצע)
+
+    // ⚠️ **‏`ready` נחסם — וזו לא הצנזורה שגרמה לבאג.**
+    //
+    // ניסיון ראשון שלי התיר refetch ל-job מוכן, וזו הייתה רגרסיה: הפלייליסט
+    // קורא `refetch` יותר מפעם אחת, וכל קריאה ייצרה fetch נוסף — `markReady`
+    // נקרא **חמש פעמים** במקום אחת (נתפס ב-`speaker.test.svelte.ts`).
+    //
+    // המקום הנכון הוא `invalidate()`, שמוריד `ready` ל-`stale` כשה-sink
+    // באמת איבד את הסגמנט. ‏job שנשאר `ready` **אינו** זקוק ל-fetch.
+    if (job.status === "fetching" || job.status === "ready") return
+
+    // ⚠️ **בלי אתחול-כפול של ה-abort.** הענף המת `if (status === "stale")`
+    // הציב controller חדש ואז השורה שאחריו הציבה עוד אחד — ה-fetch הקודם
+    // נשאר מחזיק את השני-לפני-אחרון ולא היה לו איך לדעת שבוטל. עכשיו
+    // `invalidate()` מבטל בעצמו, וכאן רק פותחים דף חדש.
+    job.abort = new AbortController()
     job.status = "pending"
     this.#pendingCount += 1
     this.#pumpFetchLoop()

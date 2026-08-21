@@ -52,6 +52,13 @@ export type SpeakableOpts = {
   stream?: boolean
 }
 
+/** תווית אחת, נקודה אחת — שני מסלולי-הגדר השתמשו בהעתק זהה. */
+function labelFor(lang: string, labels: SpeakableLabels): string {
+  // ⚠️ גרשיים מנוקים: גדר של ארבע גרשיים משאירה אחת ב-lang, והיא דלפה להקראה.
+  const l = lang.replace(/`/g, "").trim().split(/\s+/)[0] ?? ""
+  return l.length > 0 ? ` ${labels.codeBlockWithLang(l)} ` : ` ${labels.codeBlock} `
+}
+
 export function toSpeakable(text: string, labels: SpeakableLabels, opts?: SpeakableOpts): string {
   let out = text
 
@@ -67,32 +74,20 @@ export function toSpeakable(text: string, labels: SpeakableLabels, opts?: Speaka
   // בטלפון — המקטע נכנס לתור, סונתז ונוגן (`done`, אפס `skipped`) ובכל
   // זאת לא נשמע: המודל התייחס אליה כמטא-טקסט ולא כתוכן. אותה משפחה של
   // preamble-leak, בכיוון ההפוך. ⇒ כשהיא חלק ממשפט אמיתי, היא נאמרת.
+  // 🔴 **הסוגרת מקבלת גם טקסט אחריה** (`[^\n]*` ולא `[ \t]*`).
+  // הסיבה: `FENCE_LINE` — שלפיו `splitStreamable` **סופר** גדרות — מתאים
+  // לכל שורה שפותחת ב-```, בלי קשר למה שאחריה. הרגקס כאן היה מחמיר יותר,
+  // ולכן ``` (סוף) נספר כגדר אך **לא הותאם כסוגרת** — הזוג לא נסגר, ענף
+  // הגדר-הפתוחה למטה בלע `[\s\S]*$`, וכל הטקסט שאחרי הבלוק **נמחק**.
+  // אומת בריוויו. ⇒ הגדרה **אחת** ל"שורת-גדר", לשני המקומות.
   out = out.replace(
-    /^[ \t]{0,3}```([^\n`]*)\n([\s\S]*?)^[ \t]{0,3}```[ \t]*$/gm,
-    (_m, lang: string) => {
-      const l = lang.trim().split(/\s+/)[0] ?? ""
-      return l.length > 0 ? ` ${labels.codeBlockWithLang(l)} ` : ` ${labels.codeBlock} `
-    },
+    /^[ \t]{0,3}```([^\n]*)\n([\s\S]*?)^[ \t]{0,3}```[^\n]*$/gm,
+    (_m, lang: string) => labelFor(lang, labels),
   )
   // בלוק שנפתח ולא נסגר (זרימה חיה — הסוגר עוד לא הגיע)
-  out = out.replace(/^[ \t]{0,3}```([^\n`]*)\n[\s\S]*$/m, (_m, lang: string) => {
-    const l = lang.trim().split(/\s+/)[0] ?? ""
-    return l.length > 0 ? ` ${labels.codeBlockWithLang(l)} ` : ` ${labels.codeBlock} `
-  })
-
-  // ⚠️ **הדבקת התווית לשכן — מעבר נפרד, ובכוונה אחרי כל הגדרות.**
-  //
-  // ניסיון קודם בלע את השורות הריקות **בתוך** רגקס-הגדר עצמו, וזה שבר את
-  // העיגון-לשורה של הגדר **הבאה**: היא נדבקה לטקסט שלפניה, `^` הפסיק
-  // להתאים, והקוד שלה דלף להקראה. ⇒ מפרידים: קודם מזהים גדרות (עיגון
-  // שלם), ורק אז מדביקים.
-  //
-  // 🔴 ולמה בכלל: תווית לבדה בשורה הופכת למקטע-TTS עצמאי, ו-Gemini **לא
-  // מקריא** פרגמנט כזה — נמדד בטלפון (נכנס לתור, סונתז, נוגן, לא נשמע).
-  {
-    const cb = labels.codeBlock.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-    out = out.replace(new RegExp(`\\n+[ \\t]*(${cb}[^\\n]*?)[ \\t]*\\n+`, "g"), " $1 ")
-  }
+  out = out.replace(/^[ \t]{0,3}```([^\n]*)\n[\s\S]*$/m, (_m, lang: string) =>
+    labelFor(lang, labels),
+  )
 
   // ─── 1ב. הדבקת התווית לשכן ───
   // ⚠️ **מעבר נפרד, אחרי שכל הגדרות זוהו.** בליעת השורות בתוך רגקס-הגדר
@@ -221,8 +216,25 @@ export function splitStreamable(text: string): { ready: string; held: string } {
     (tail.replace(/\*\*/g, "").match(/\*/g)?.length ?? 0) % 2 === 1
   const startsBacktick = /^[ \t]{0,3}`/.test(tail)
   const openInline = startsBacktick || (tail.match(/`/g)?.length ?? 0) % 2 === 1
-  const lastOpen = Math.max(tail.lastIndexOf("["), tail.lastIndexOf("!["))
-  const openLink = lastOpen !== -1 && !/\]\([^)]*\)/.test(tail.slice(lastOpen))
+  // 🔴 **`[` אינו סימן של קישור — הוא סימן של סוגר-מרובע.**
+  //
+  // הגרסה הקודמת בדקה "יש `[` שאחריו אין `](…)`" והסיקה קישור-פתוח. אבל
+  // `סעיף [3]`, `מערך[0]`, `[א] ראשית` — כולם `[` שאינם קישור, וכולם
+  // הדליקו את הדגל. ומכיוון שההחזקה בינארית, **הודעה שלמה עם `[` בודד לא
+  // זרמה כלל**: היא נצברה עד סוף-התור ונפלטה כגוש אחד, ולפעמים אבדה.
+  // זה היה השורש של חמישה סבבי-רדיפה. אותר ב-code review.
+  //
+  // ⚠️ והטסט שלי אישר את ההנחה במקום להפריך אותה: הוא בדק `[` ש**כן**
+  // מתחיל קישור, ולא את המקרה השכיח בהרבה.
+  //
+  // קישור פתוח הוא **רק** אחד משניים:
+  //   [ בלי ] אחריו        →  "ראה [את התיע"
+  //   ]( בלי ) סוגר        →  "[טקסט](https://exa"
+  const lastBracket = tail.lastIndexOf("[")
+  const unclosedBracket = lastBracket !== -1 && !tail.includes("]", lastBracket)
+  const lastParen = tail.lastIndexOf("](")
+  const unclosedParen = lastParen !== -1 && !tail.includes(")", lastParen)
+  const openLink = unclosedBracket || unclosedParen
   if (!openInline && !openLink && !openEmphasis) return { ready: text, held: "" }
   if (nl === -1) return { ready: "", held: text }
   return { ready: text.slice(0, nl + 1), held: tail }
