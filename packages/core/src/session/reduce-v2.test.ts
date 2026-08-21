@@ -133,15 +133,21 @@ describe("reduce v2 — whole-message upsert", () => {
     expect(m.attachments).toEqual([{ mimeType: "image/png", dataBase64: "AAA" }])
   })
 
-  it("a message with no usable content is still a no-op, not an empty bubble", () => {
-    const s = mkState()
-    const { state, patches } = reduce(s, {
+  // ⚠️ **הטסט הזה התהפך אחרי שה-round-trip הפריך את ההנחה שמאחוריו.**
+  // הוא קיבע ש-`content: []` הוא no-op ("לא לייצר בועה ריקה"). בפועל זה גרם
+  // להודעה קיימת **להיעלם ב-snapshot**, כי ה-state מחזיק גם הודעות שעדיין
+  // ריקות. ‏`AgentMessage.content` אופציונלי ב-v2 בדיוק כדי לבטא "קיימת,
+  // וכרגע ריקה". חשש-הבועה-הריקה נשאר מטופל במסלול ה-chunks, שם הוא באמת
+  // נוצר — chunk של רווחים אינו הודעה; `agent_message` הוא כן.
+  it("an empty message is still a message — dropping it would lose a bubble", () => {
+    const { state, patches } = reduce(mkState(), {
       sessionUpdate: "agent_message",
       messageId: "M1",
       content: [],
     })
-    expect(patches).toEqual([])
-    expect(state).toBe(s)
+    expect(patches[0]!.op).toBe("add-message")
+    expect(state.messages).toHaveLength(1)
+    expect(textOf(state.messages[0])).toBe("")
   })
 
   it("a missing messageId is not a message", () => {

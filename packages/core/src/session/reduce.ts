@@ -286,6 +286,26 @@ function handleToolCallUpdate(
 // את הענפים האלה הוא **החוט הפנימי שלנו** אחרי צעד 3, שבו ה-BE פולט
 // `session/update` בצורת-v2 אל ה-FE.
 
+/**
+ * ה-`messageId` **לאחסון** — לא זה ששימש להתאמה.
+ *
+ * הפולט שלנו נאלץ להמציא מזהה כש-`messageId` היה `null` (‏v2 דורש אחד), ומחזיר
+ * את המקורי ב-`_meta`. בלי הקריאה הזו הצד המקבל היה שומר את המזהה המומצא,
+ * וה-round-trip היה יוצא **שקול אך לא שווה** — הבדל שמתגלה בדיוק כשמישהו
+ * משווה מצבים בין הצדדים.
+ */
+function storedMessageId(u: Record<string, unknown>, matched: string | null): string | null {
+  const meta =
+    typeof u._meta === "object" && u._meta !== null
+      ? (u._meta as Record<string, unknown>)
+      : undefined
+  if (meta !== undefined && "_drive/messageId" in meta) {
+    const v = meta["_drive/messageId"]
+    return typeof v === "string" ? v : null
+  }
+  return matched
+}
+
 /** ContentBlock[] → {טקסט מצטבר, קבצים מצורפים}. אפס-זריקה: מה שאינו טקסט נשמר. */
 function splitContentBlocks(blocks: unknown): {
   text: string
@@ -321,8 +341,17 @@ function handleWholeMessage(
   if (messageId === null) return { state, patches: [] }
 
   const { text, attachments } = splitContentBlocks(u.content)
-  // הודעה בלי שום תוכן שמיש אינה בועה ריקה — היא לא-כלום.
-  if (!text && attachments.length === 0) return { state, patches: [] }
+  // ⚠️ **הודעה ריקה היא עדיין הודעה, ואינה no-op.**
+  //
+  // גרסה קודמת של השורה הזו דחתה `content: []` כדי לא לייצר בועה ריקה — וזה
+  // היה שגוי: `AgentMessage.content` הוא אופציונלי ב-v2, ומשמעותו "הודעה
+  // בזהות הזו קיימת, וכרגע ריקה". הדחייה גרמה להודעה **להיעלם ב-snapshot**
+  // (נתפס בטסט ה-round-trip), כלומר בדיוק הזריקה השקטה שהסלייס הזה קיים כדי
+  // לסגור.
+  //
+  // חשש-הבועה-הריקה נשאר מטופל היכן שהוא באמת נוצר — במסלול ה-**chunks**
+  // (`handleTextChunk`, שם `!text` עדיין חוסם), ובדרישה ל-`messageId` מתחת.
+  // ‏chunk של רווחים אינו הודעה; `agent_message` הוא כן.
 
   const idx = state.messages.findIndex((m) => m.role === role && m.messageId === messageId)
   const newVersion = state.version + 1
@@ -338,7 +367,7 @@ function handleWholeMessage(
     const msg: SessionMessage = {
       id: nextMsgId(state.nextMessageSeq),
       role,
-      messageId,
+      messageId: storedMessageId(u, messageId),
       segments,
       ...(attachments.length > 0 ? { attachments } : {}),
     }
@@ -389,6 +418,21 @@ function handleStateUpdate(
   u: Record<string, unknown>,
 ): { state: SessionState; patches: Patch[] } {
   const s = u.state
+  const rawMeta = typeof u._meta === "object" && u._meta !== null ? u._meta : {}
+  const fine = (rawMeta as Record<string, unknown>)["_drive/turnState"]
+
+  // ⚠️ הרזולוציה העדינה גוברת כשהיא שם. הפולט שלנו (`to-session-update.ts`)
+  // מטביע אותה ב-`_meta` דווקא מפני ש-`state_update` מכיר שלוש דרגות ואנחנו
+  // חמש; כשהיא קיימת היא סמכותית, ואין צורך בהיגיון-הרצפה שמתחת.
+  if (typeof fine === "string" && RUNNING_SUBSTATES.has(fine as TurnStateValue)) {
+    if (state.turnState === fine) return { state, patches: [] }
+    const newVersion = state.version + 1
+    const turnState = fine as TurnStateValue
+    return {
+      state: { ...state, version: newVersion, turnState },
+      patches: [{ version: newVersion, op: "update-session", changes: { turnState } }],
+    }
+  }
 
   if (s === "running" || s === "requires_action") {
     if (RUNNING_SUBSTATES.has(state.turnState)) return { state, patches: [] }
@@ -492,7 +536,7 @@ export function reduce(
     const content = u.content as Record<string, unknown> | undefined
     if (content?.type !== "text") return { state, patches: [] }
     const text = typeof content.text === "string" ? content.text : ""
-    const messageId = toStringOrNull(u.messageId)
+    const messageId = storedMessageId(u as Record<string, unknown>, toStringOrNull(u.messageId))
     const role: "user" | "thought" | "assistant" =
       sessionUpdate === "user_message_chunk"
         ? "user"
@@ -520,6 +564,40 @@ export function reduce(
   // ─── ACP v2: מצב-התור ───
   if (sessionUpdate === "state_update") {
     return handleStateUpdate(state, u)
+  }
+
+  // ─── ההרחבות שלנו: מה שאין לו בית ב-ACP ───
+  //
+  // ⚠️ שתי אלה נושאות את הפער בין "מצב סשן" אצלנו לבין מה ש-ACP מכיר.
+  // הן מסומנות `_drive/` לפי הקונבנציה של הפרוטוקול עצמו להרחבה
+  // תלוית-מימוש, כדי שקורא-החוט יראה מיד שהן אינן קנוניות.
+  if (sessionUpdate === "_drive/session_update") {
+    // status · pending · capabilities · quota. הבולט שבהם הוא `pending`:
+    // ב-ACP הרשאה היא **בקשה**, לא שדה — אצלנו היא הפכה למצב מפני
+    // שבקשה-ותשובה אינה חוצה SSE. בלי הפריים הזה, דיאלוג-ההרשאה פשוט
+    // לא היה חוזר אחרי reconnect.
+    const changes = u.changes
+    if (typeof changes !== "object" || changes === null) return { state, patches: [] }
+    const c = changes as Partial<SessionState>
+    const newVersion = state.version + 1
+    return {
+      state: { ...state, ...c, version: newVersion },
+      patches: [{ version: newVersion, op: "update-session", changes: c }],
+    }
+  }
+
+  if (sessionUpdate === "_drive/reset") {
+    // ל-ACP אין מקבילה: שם החלפת-סשן היא חיבור חדש. אצלנו הזרם שורד את
+    // ההחלפה ולכן היא חייבת לנסוע בו. אין מטען — שני מוקדי-הפליטה ב-
+    // `session-host.ts` (796, 847) פולטים `messages: []` תמיד, כלומר
+    // reset הוא **ניקוי** ולא החלפה, ומה שאחריו בונה מחדש.
+    const newVersion = state.version + 1
+    return {
+      state: { ...state, version: newVersion, messages: [], nextMessageSeq: 0, nextSegmentSeq: 0 },
+      patches: [
+        { version: newVersion, op: "reset", messages: [], nextMessageSeq: 0, nextSegmentSeq: 0 },
+      ],
+    }
   }
 
   // tool

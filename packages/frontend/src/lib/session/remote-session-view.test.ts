@@ -26,9 +26,9 @@ import {
   createInitialSessionState,
   type Patch,
   RPC_METHODS,
-  type SessionMessage,
   type SessionState,
 } from "@drive-coding/core/session"
+import { toWireText } from "@drive-coding/core/session/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   createRemoteSessionView,
@@ -60,6 +60,7 @@ afterEach(() => {
 
 const noSleep = (): Promise<void> => Promise.resolve()
 
+
 /**
  * sseBody — builds a mock SSE body. `keepOpen` (default false, matching the existing
  * tests in this file which close the view right after reading — see C1's diagnosis)
@@ -72,7 +73,7 @@ function sseBody(
   frames: Array<{ event: string; data: string }>,
   opts: { keepOpen?: boolean } = {},
 ): ReadableStream<Uint8Array> {
-  const text = frames.map((f) => `event: ${f.event}\ndata: ${f.data}\n\n`).join("")
+  const text = toWireText(frames)
   return new ReadableStream({
     start(ctrl) {
       ctrl.enqueue(encoder.encode(text))

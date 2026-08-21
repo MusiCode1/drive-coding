@@ -10,6 +10,7 @@
  */
 
 import { createInitialSessionState } from "@drive-coding/core/session"
+import { toWireText } from "@drive-coding/core/session/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { createRemoteView } from "./create-session-view.js"
 import { RemoteSessionView } from "./remote-session-view.js"
@@ -18,7 +19,7 @@ const encoder = new TextEncoder()
 
 function sseResponse(): Response {
   const snapshot = createInitialSessionState({ sessionId: "sess-1" })
-  const text = `event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`
+  const text = toWireText([{ event: "snapshot", data: JSON.stringify(snapshot) }])
   const body = new ReadableStream<Uint8Array>({
     start(ctrl) {
       ctrl.enqueue(encoder.encode(text))

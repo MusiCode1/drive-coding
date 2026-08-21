@@ -25,7 +25,8 @@
     "./session": "./src/session/index.ts",
     "./config/*": "./src/config/*.ts",
     "./tts/*": "./src/tts/*.ts",
-    "./usage/*": "./src/usage/*.ts"
+    "./usage/*": "./src/usage/*.ts",
+    "./session/testing": "./src/session/__testing__/wire-fixtures.ts"
   },
   "scripts": {
     "build": "tsc --build",

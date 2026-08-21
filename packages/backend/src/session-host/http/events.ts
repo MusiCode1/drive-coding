@@ -1,11 +1,11 @@
 /**
  * events.ts — GET /api/agents/:id/events (S4 C2).
  *
- * SSE endpoint: streams SessionState snapshot (frame-zero) then patches.
+ * SSE endpoint: streams a coalesced snapshot (frame-zero) then live updates.
  *
  * Protocol:
- *   event: snapshot\nid: <epoch>\ndata: <JSON state>\n\n
- *   event: patch\ndata: <JSON patch>\n\n
+ *   event: snapshot\nid: <version>\ndata: {sessionId, version, epoch, updates[]}\n\n
+ *   event: update\nid: <version>\ndata: <JSON-RPC batch of session/update>\n\n
  *   event: stream-alive\ndata: <_drive/streamAlive JSON-RPC notification>\n\n
  *   ...
  *   event: taken-over\nid: <new-epoch>\ndata: {}\n\n
@@ -32,12 +32,30 @@
  *      design (only `event:`/`data:` lines become frames), so a client could
  *      never use it as a liveness signal despite the server emitting it every
  *      30s (see stream-alive.ts for the full "why"). ───
+ * ─── slice acp-wire-session-update: `Patch` יורד מהחוט ───
+ *
+ * מה שנוסע עכשיו הוא `session/update` קנוני, עטוף ב-JSON-RPC notification.
+ * ‏`Patch` נשאר טיפוס פנימי משני צדי החוט — ה-FE מקפל את ה-updates ב-`reduce`
+ * ומקבל ממנו Patches להחלה מוטבילית — אבל אף Patch אינו חוצה תהליכים.
+ *
+ * ⚠️ **‏`data` הוא תמיד מערך** — כלומר **batch של JSON-RPC 2.0**, שהוא מבנה
+ * קנוני של הפרוטוקול ולא המצאה שלנו. הסיבה: patch יחיד יכול להתפצל לכמה
+ * updates (‏`update-session` עם title+commands = שניים), וכולם חולקים את
+ * אותו `version`. לשלוח אותם כפריימים נפרדים היה שובר את סינון-החפיפה של
+ * ה-FE (`version <= lastVersion`), שהיה מוחק את השני והשלישי. ⇒ הפריים הוא
+ * יחידת-המעבר האטומית, וה-`id:` שלו הוא ה-`version` שלה.
+ * ───
  */
 
 import {
+  applyPatch,
+  type SessionState,
   STREAM_ALIVE_EVENT,
   STREAM_ALIVE_INTERVAL_MS,
   STREAM_ALIVE_METHOD,
+  serializeFrame,
+  snapshotFrame,
+  updateFrame,
 } from "@drive-coding/core/session"
 import type { Hono } from "hono"
 import { stream } from "hono/streaming"
@@ -133,9 +151,17 @@ export function registerEventsRoute(
         )
       }, STREAM_ALIVE_INTERVAL_MS)
 
-      // Then read snapshot and send as frame-zero with epoch as SSE id
+      // ── frame-zero ────────────────────────────────────────────────────────
+      // 🟢 **הכיווץ יוצא טבעית ואינו מנגנון.** ה-CLI הזרים 71 chunks; ה-state
+      // מחזיק הודעה אחת; ולכן ה-snapshot הוא הודעה אחת. הלקוח אינו יכול
+      // להבחין בהבדל, ולכן אין צורך בשום קוד-כיווץ נפרד.
+      //
+      // ⚠️ ה-`id:` הוא ה-**version** ולא ה-epoch. ה-epoch עבר לגוף ההודעה: הוא
+      // מזהה **מי מחזיק בזרם**, וה-version מזהה **איפה אנחנו ברצף** — שני
+      // מונים שונים לגמרי, ורק השני הוא מה ש-`Last-Event-ID` יצטרך.
       const snapshot = host.state
-      await s.write(`event: snapshot\nid: ${currentEpoch}\ndata: ${JSON.stringify(snapshot)}\n\n`)
+      let view: SessionState = snapshot
+      await s.write(serializeFrame(snapshotFrame(snapshot, currentEpoch)))
 
       // Stream patches from broadcaster
       const reader = patchStream.getReader()
@@ -153,7 +179,16 @@ export function registerEventsRoute(
             }
             break
           }
-          await s.write(`event: patch\ndata: ${JSON.stringify(patch)}\n\n`)
+          // ⚠️ **מקפלים עותק-מצב מקומי, ולא קוראים `host.state`.**
+          // ‏`append-segment`/`update-tool` נושאים `targetId` בלבד, וסוג-ה-update
+          // נגזר מה-role של היעד — כלומר המיפוי חייב את ה-state **שאחרי אותו
+          // patch בדיוק**. ‏`host.state` יכול כבר לרוץ קדימה (patches נוספים,
+          // ואפילו `reset` שמוחק את היעד), ואז המיפוי היה מחזיר ריק — כלומר
+          // זריקה שקטה. העלות היא spread אחד לכל patch, וזה בדיוק מה שה-FE
+          // ממילא עושה בצד השני.
+          view = applyPatch(view, patch)
+          const frame = updateFrame(view, patch)
+          if (frame !== null) await s.write(serializeFrame(frame))
         }
       } catch {
         // Client disconnected or stream errored — clean up below

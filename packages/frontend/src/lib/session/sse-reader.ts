@@ -5,8 +5,8 @@
  * מתחבר עם fetch + ReadableStream, מנתח SSE framing ידנית.
  *
  * Protocol:
- *   event: snapshot\nid: <epoch>\ndata: <JSON SessionState>\n\n  ← frame-zero (חייב להיות ראשון)
- *   event: patch\ndata: <JSON Patch>\n\n                        ← עדכונים שוטפים
+ *   event: snapshot\nid: <version>\ndata: {sessionId,version,epoch,updates[]}  ← frame-zero
+ *   event: update\nid: <version>\ndata: <JSON-RPC batch של session/update>   ← עדכונים שוטפים
  *   event: stream-alive\ndata: <_drive/streamAlive notification>\n\n  ← slice sse-liveness
  *                                                                   Commit 2: visible liveness
  *                                                                   signal (replaces the old,
@@ -24,14 +24,72 @@
  * ─── slice remote-session-view C1 (TDD) ───
  */
 
-import { type Patch, PatchSchema, type SessionState } from "@drive-coding/core/session"
-import { type } from "arktype"
+import {
+  createInitialSessionState,
+  reduce,
+  type SessionState,
+  type WireSessionUpdate,
+} from "@drive-coding/core/session"
 import { SSE_WATCHDOG_THRESHOLD_MS } from "$lib/engines/liveness-thresholds"
 import { connInfo, connWarn } from "$lib/util/conn-log"
 
 // ─── SSE frame parsing ────────────────────────────────────────────────────────
 
-type SSEFrame = { event: string; data: string }
+/**
+ * יחידת-המעבר על החוט — ‏slice acp-wire-session-update.
+ *
+ * ⚠️ **מערך, לא update יחיד.** מעבר-מצב אחד בשרת (patch אחד) יכול להתפצל
+ * לכמה `session/update` — למשל `update-session` עם title+commands. כולם
+ * חולקים את אותו `version`, ולכן פיצולם לפריימים נפרדים היה שובר את
+ * סינון-החפיפה (`version <= lastVersion`) שהיה מוחק את השני והשלישי.
+ * ⇒ הפריים הוא היחידה האטומית; ה-`version` שלו מגיע משורת ה-`id:`.
+ */
+export type WireUpdateBatch = { version: number; updates: WireSessionUpdate[] }
+
+/** גוף ה-snapshot (frame-zero). */
+type WireSnapshot = {
+  sessionId: string | null
+  version: number
+  updates: WireSessionUpdate[]
+}
+
+/**
+ * מחלץ את ה-updates מ-batch של JSON-RPC.
+ *
+ * ⚠️ **הוולידציה כאן רופפת במכוון, וזה לא רשלנות.** קודמתה (`PatchSchema`)
+ * יכלה להיות הדוקה כי `Patch` הוא טיפוס סגור שלנו; `session/update` הוא
+ * משטח **פתוח** — הפרוטוקול עצמו מצהיר שערכי `sessionUpdate` לא-מוכרים
+ * שמורים לווריאנטים עתידיים, וזה בדיוק מה שנושא את `plan` דרך ה-BE בלי
+ * שיבין אותו. סכימה הדוקה כאן הייתה **מוחקת** אותם — אותה מחלקת-כשל
+ * שהתיקון `opaque` נועד לסגור. ⇒ נבדק רק המסגור: מערך, ובכל איבר
+ * `params.update` שהוא אובייקט עם `sessionUpdate` מחרוזתי.
+ */
+function extractUpdates(raw: unknown): WireSessionUpdate[] | null {
+  if (!Array.isArray(raw)) return null
+  const out: WireSessionUpdate[] = []
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) return null
+    const params = (item as { params?: unknown }).params
+    if (typeof params !== "object" || params === null) return null
+    const update = (params as { update?: unknown }).update
+    if (typeof update !== "object" || update === null) return null
+    if (typeof (update as { sessionUpdate?: unknown }).sessionUpdate !== "string") return null
+    out.push(update as WireSessionUpdate)
+  }
+  return out
+}
+
+/** מקפל את ה-snapshot למצב. ה-`version` נלקח מהשרת, לא מספירת ה-updates. */
+function foldSnapshot(snap: WireSnapshot): SessionState {
+  let state = createInitialSessionState({ sessionId: snap.sessionId ?? "" })
+  for (const u of snap.updates) state = reduce(state, u).state
+  // ⚠️ **דריסה מכוונת.** `reduce` מעלה מונה מקומי לכל update, אבל ה-`version`
+  // הוא מונה של **השרת** — הוא מה שסימון-החפיפה של הלקוח נמדד מולו. ספירה
+  // מקומית הייתה מייצרת בדיוק את רגרסיית-הגרסה שבאג #41 נבנה סביבה.
+  return { ...state, sessionId: snap.sessionId, version: snap.version }
+}
+
+type SSEFrame = { event: string; data: string; id: string }
 
 /**
  * readSSEFrames — async generator that yields parsed SSE frames from a body stream.
@@ -43,6 +101,9 @@ async function* readSSEFrames(body: ReadableStream<Uint8Array>): AsyncGenerator<
   let buffer = ""
   let currentEvent = ""
   let currentData = ""
+  // slice acp-wire-session-update: ה-`id:` נקרא עכשיו, כי הוא נושא את
+  // ה-`version` — שירד מגוף ה-patch אל שורת-המסגור. עד כה הוא פשוט נזרק.
+  let currentId = ""
 
   try {
     while (true) {
@@ -62,13 +123,16 @@ async function* readSSEFrames(body: ReadableStream<Uint8Array>): AsyncGenerator<
           currentEvent = line.slice(6).trim()
         } else if (line.startsWith("data:")) {
           currentData += line.slice(5).trim()
+        } else if (line.startsWith("id:")) {
+          currentId = line.slice(3).trim()
         } else if (line === "") {
           // Empty line → dispatch event
           if (currentEvent && currentData) {
-            yield { event: currentEvent, data: currentData }
+            yield { event: currentEvent, data: currentData, id: currentId }
           }
           currentEvent = ""
           currentData = ""
+          currentId = ""
         }
       }
     }
@@ -152,7 +216,7 @@ const STABLE_CONNECTION_MS = 10_000
  * Usage:
  *   const reader = new SSEReader('/api/agents/a1/events', { headers: {...} })
  *   const { snapshot, patches } = await reader.connect()
- *   // patches is ReadableStream<Patch> — individual patches
+ *   // patches is ReadableStream<WireUpdateBatch> — individual patches
  *   reader.close()  // when done
  */
 export class SSEReader {
@@ -206,7 +270,7 @@ export class SSEReader {
    * Returns the initial snapshot and a long-lived patches stream.
    * The patches stream survives reconnects (automatic exponential backoff).
    */
-  async connect(): Promise<{ snapshot: SessionState; patches: ReadableStream<Patch> }> {
+  async connect(): Promise<{ snapshot: SessionState; updates: ReadableStream<WireUpdateBatch> }> {
     this.#closed = false
 
     // Initial connection — must receive snapshot as first frame
@@ -217,8 +281,8 @@ export class SSEReader {
     this.#startWatchdog()
 
     // Long-lived patches stream — drained by background loop
-    let patchCtrl!: ReadableStreamDefaultController<Patch>
-    const patches = new ReadableStream<Patch>({
+    let patchCtrl!: ReadableStreamDefaultController<WireUpdateBatch>
+    const updates = new ReadableStream<WireUpdateBatch>({
       start: (ctrl) => {
         patchCtrl = ctrl
       },
@@ -233,7 +297,7 @@ export class SSEReader {
     // Background loop: drain initial frames, then reconnect-loop
     void this.#runLoop(frames, patchCtrl)
 
-    return { snapshot, patches }
+    return { snapshot, updates }
   }
 
   /** Stop reconnect attempts, abort any in-flight request, and close the patches stream. */
@@ -311,7 +375,7 @@ export class SSEReader {
       if (next.done || next.value.event !== "snapshot") {
         throw new Error("SSEReader: no snapshot frame received")
       }
-      return JSON.parse(next.value.data) as SessionState
+      return foldSnapshot(JSON.parse(next.value.data) as WireSnapshot)
     })()
     // Both sides get a no-op `.catch` attached IMMEDIATELY (same tick, before
     // racing) — whichever one LOSES the race may still reject later on its
@@ -336,7 +400,7 @@ export class SSEReader {
    */
   async #runLoop(
     frames: AsyncGenerator<SSEFrame>,
-    ctrl: ReadableStreamDefaultController<Patch>,
+    ctrl: ReadableStreamDefaultController<WireUpdateBatch>,
   ): Promise<void> {
     // Drain initial connection patches
     await this.#drainFrames(frames, ctrl)
@@ -440,7 +504,7 @@ export class SSEReader {
    */
   async #drainFrames(
     frames: AsyncGenerator<SSEFrame>,
-    ctrl: ReadableStreamDefaultController<Patch>,
+    ctrl: ReadableStreamDefaultController<WireUpdateBatch>,
   ): Promise<void> {
     try {
       for await (const frame of frames) {
@@ -456,7 +520,7 @@ export class SSEReader {
           this.onTakenOver?.()
           return
         }
-        if (frame.event !== "patch") continue
+        if (frame.event !== "update") continue
 
         let raw: unknown
         try {
@@ -466,17 +530,22 @@ export class SSEReader {
           continue
         }
 
-        const validated = PatchSchema(raw)
-        if (validated instanceof type.errors) {
-          // Well-formed JSON, but not a valid Patch (e.g. an `op` this build
-          // doesn't know — BE/FE version skew). Skip it — never enqueued, so
-          // its version never influences the consumer's dedup tracking.
-          console.warn(`SSEReader: invalid patch on wire, skipping — ${validated.summary}`)
+        const updates = extractUpdates(raw)
+        if (updates === null) {
+          console.warn("SSEReader: malformed session/update batch on wire, skipping")
+          continue
+        }
+        // ⚠️ ה-`version` מגיע מ-`id:` ולא מהגוף. פריים בלי `id` תקין אינו
+        // ניתן לסינון-חפיפה, ולכן הוא מסוכן יותר מפריים חסר — הוא היה
+        // נספר כ-0 ונדחה לנצח מול כל watermark. ⇒ לדלג במפורש.
+        const version = Number(frame.id)
+        if (!Number.isFinite(version)) {
+          console.warn("SSEReader: update frame without a usable id, skipping")
           continue
         }
 
         try {
-          ctrl.enqueue(validated as Patch)
+          ctrl.enqueue({ version, updates })
         } catch {
           // Controller closed by consumer — stop. slice sse-liveness Commit 4:
           // routed through #setClosed (was a bare #closed=true).
@@ -489,7 +558,7 @@ export class SSEReader {
     }
   }
 
-  #closeCtrl(ctrl: ReadableStreamDefaultController<Patch>): void {
+  #closeCtrl(ctrl: ReadableStreamDefaultController<WireUpdateBatch>): void {
     try {
       ctrl.close()
     } catch {

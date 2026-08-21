@@ -24,6 +24,7 @@ import {
   RPC_METHODS,
   type SessionState,
 } from "@drive-coding/core/session"
+import { toWireText } from "@drive-coding/core/session/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { RemoteSessionView } from "$lib/session/remote-session-view.js"
 import { AgentSession } from "./agent-session.svelte.js"
@@ -58,7 +59,7 @@ function sseBody(
   opts: { keepOpen?: boolean } = {},
 ): ReadableStream<Uint8Array> {
   const { keepOpen = true } = opts
-  const text = frames.map((f) => `event: ${f.event}\ndata: ${f.data}\n\n`).join("")
+  const text = toWireText(frames)
   return new ReadableStream({
     start(ctrl) {
       ctrl.enqueue(encoder.encode(text))

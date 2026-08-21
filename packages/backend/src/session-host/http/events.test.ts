@@ -306,8 +306,15 @@ describe("GET /api/agents/:id/events", () => {
       const dataLine = first.split("\n").find((l) => l.startsWith("data: "))
       expect(dataLine).toBeDefined()
       const json = JSON.parse(dataLine!.slice("data: ".length))
-      expect(json.title).toBe("Hello World")
+      // ─── slice acp-wire-session-update ───
+      // ה-snapshot אינו `SessionState` גולמי יותר אלא **רצף `session/update`**.
+      // ‏`version` נשאר בשורש (הוא מונה-תעבורה, לא מצב-סשן); `title` נוסע
+      // בתוך `session_info_update` — כלומר כפי שהפרוטוקול מבטא אותו.
       expect(json.version).toBe(5)
+      const info = (json.updates as Array<Record<string, unknown>>).find(
+        (u) => u.sessionUpdate === "session_info_update",
+      )
+      expect(info?.title).toBe("Hello World")
     })
   })
 
@@ -337,12 +344,22 @@ describe("GET /api/agents/:id/events", () => {
       const events = await readSseEvents(res, 2, 300)
       expect(events.length).toBeGreaterThanOrEqual(2)
 
-      const patchEvent = events.find((e) => e.includes("event: patch"))
-      expect(patchEvent).toBeDefined()
-      const dataLine = patchEvent!.split("\n").find((l) => l.startsWith("data: "))
-      const json = JSON.parse(dataLine!.slice("data: ".length))
-      expect(json.version).toBe(1)
-      expect(json.op).toBe("update-session")
+      // ─── slice acp-wire-session-update ───
+      // הפריים הוא `event: update`, ה-`version` יושב ב-`id:`, וה-`data` הוא
+      // **batch של JSON-RPC** — patch אחד יכול להתפצל לכמה `session/update`.
+      const updateEvent = events.find((e) => e.includes("event: update"))
+      expect(updateEvent).toBeDefined()
+      expect(updateEvent).toContain("id: 1")
+      const dataLine = updateEvent!.split("\n").find((l) => l.startsWith("data: "))
+      const batch = JSON.parse(dataLine!.slice("data: ".length)) as Array<{
+        jsonrpc: string
+        method: string
+        params: { update: { sessionUpdate: string; title?: string } }
+      }>
+      expect(batch[0]!.jsonrpc).toBe("2.0")
+      expect(batch[0]!.method).toBe("session/update")
+      expect(batch[0]!.params.update.sessionUpdate).toBe("session_info_update")
+      expect(batch[0]!.params.update.title).toBe("Updated")
     })
   })
 })
@@ -406,7 +423,11 @@ describe("GET /api/agents/:id/events — ownership-handoff C3", () => {
       expect(events.length).toBeGreaterThanOrEqual(1)
       const first = events[0]!
       expect(first).toContain("event: snapshot")
-      expect(first).toContain("id: 3")
+      // ⚠️ ה-`id:` הוא ה-**version** ולא ה-epoch. שני מונים שונים: ה-epoch
+      // אומר *מי מחזיק בזרם*, וה-version אומר *איפה אנחנו ברצף* — ורק השני
+      // הוא מה ש-`Last-Event-ID` יוכל להמשיך ממנו. ה-epoch עבר לגוף ההודעה.
+      const epochData = first.split("\n").find((l) => l.startsWith("data: "))!
+      expect(JSON.parse(epochData.slice("data: ".length)).epoch).toBe(3)
     })
   })
 

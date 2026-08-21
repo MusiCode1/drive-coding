@@ -15,11 +15,15 @@
  *   - delay resets to 1s after successful reconnect
  */
 
-import type { Patch, SessionState } from "@drive-coding/core/session"
-import { createInitialSessionState } from "@drive-coding/core/session"
+import {
+  createInitialSessionState,
+  type Patch,
+  type SessionState,
+} from "@drive-coding/core/session"
+import { toWireText } from "@drive-coding/core/session/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { SSE_WATCHDOG_THRESHOLD_MS } from "$lib/engines/liveness-thresholds"
-import { SSEReader, type SSEReaderOptions } from "./sse-reader.js"
+import { SSEReader, type SSEReaderOptions, type WireUpdateBatch } from "./sse-reader.js"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -48,7 +52,7 @@ afterEach(() => {
 
 /** Build a ReadableStream<Uint8Array> that emits the given SSE frames and closes. */
 function makeSSEBody(frames: Array<{ event: string; data: string }>): ReadableStream<Uint8Array> {
-  const text = frames.map((f) => `event: ${f.event}\ndata: ${f.data}\n\n`).join("")
+  const text = toWireText(frames)
   return new ReadableStream({
     start(ctrl) {
       ctrl.enqueue(encoder.encode(text))
@@ -83,7 +87,7 @@ function makeAbortableSSEBody(
   opts: { keepOpen?: boolean } = {},
   signal?: AbortSignal,
 ): ReadableStream<Uint8Array> {
-  const text = frames.map((f) => `event: ${f.event}\ndata: ${f.data}\n\n`).join("")
+  const text = toWireText(frames)
   let ctrl!: ReadableStreamDefaultController<Uint8Array>
   const stream = new ReadableStream<Uint8Array>({
     start(c) {
@@ -167,7 +171,9 @@ function makeControllableSSEBody(signal?: AbortSignal): {
     body,
     push: (frame) => {
       try {
-        ctrl.enqueue(encoder.encode(`event: ${frame.event}\ndata: ${frame.data}\n\n`))
+        // slice acp-wire-session-update: דרך אותו מסגור בדיוק כמו makeSSEBody,
+        // אחרת הטסטים האלה מדמים חוט שאינו קיים.
+        ctrl.enqueue(encoder.encode(toWireText([frame])))
       } catch {
         // already closed/errored
       }
@@ -222,10 +228,20 @@ function makePatch(version = 1): Patch {
   return { version, op: "update-session", changes: { status: "connected" } }
 }
 
-/** Read exactly n patches from a stream (or fewer if the stream closes). */
-async function readNPatches(patches: ReadableStream<Patch>, n: number): Promise<Patch[]> {
+/**
+ * Read exactly n update-batches from the stream (or fewer if it closes).
+ *
+ * ─── slice acp-wire-session-update ───
+ * ה-reader מפיק עכשיו **batch** של `session/update` ולא `Patch` יחיד. הקיבוץ
+ * אינו נוחות: patch אחד בשרת יכול להתפצל לכמה updates שכולם חולקים `version`,
+ * וה-batch הוא מה ששומר על כך שהם מגיעים כיחידה אחת.
+ */
+async function readNBatches(
+  patches: ReadableStream<WireUpdateBatch>,
+  n: number,
+): Promise<WireUpdateBatch[]> {
   const reader = patches.getReader()
-  const results: Patch[] = []
+  const results: WireUpdateBatch[] = []
   try {
     for (let i = 0; i < n; i++) {
       const { value, done } = await reader.read()
@@ -404,11 +420,16 @@ describe("SSEReader — patches stream", () => {
     )
 
     const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
-    const { patches } = await reader.connect()
+    const { updates } = await reader.connect()
 
-    const results = await readNPatches(patches, 2)
-    expect(results[0]).toMatchObject({ version: 1, op: "update-session" })
-    expect(results[1]).toMatchObject({ version: 2, op: "update-session" })
+    const results = await readNBatches(updates, 2)
+    // ה-`version` מגיע משורת ה-`id:` של SSE, לא מגוף ההודעה — זה השינוי
+    // המבני של הסלייס. התוכן הוא `session/update` קנוני.
+    expect(results[0]!.version).toBe(1)
+    expect(results[1]!.version).toBe(2)
+    // ה-fixture משנה `status`, ו-`status` **אינו מצב-סשן ב-ACP** — ולכן הוא
+    // נוסע תחת התחילית שמסמנת "זה שלנו". בדיוק הדוגמה שהתחילית קיימת בשבילה.
+    expect(results[0]!.updates[0]).toMatchObject({ sessionUpdate: "_drive/session_update" })
   })
 
   it("ignores non-patch, non-snapshot events", async () => {
@@ -424,9 +445,9 @@ describe("SSEReader — patches stream", () => {
     )
 
     const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
-    const { patches } = await reader.connect()
+    const { updates } = await reader.connect()
 
-    const results = await readNPatches(patches, 1)
+    const results = await readNBatches(updates, 1)
     expect(results[0]).toMatchObject({ version: 3 })
   })
 
@@ -443,37 +464,70 @@ describe("SSEReader — patches stream", () => {
     )
 
     const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
-    const { patches } = await reader.connect()
+    const { updates } = await reader.connect()
 
     // Only the well-formed patch is ever enqueued — the malformed one is skipped,
     // not confused with "consumer closed the controller" (which would have set
     // #closed=true and silently dropped this good patch too, forever).
-    const results = await readNPatches(patches, 1)
+    const results = await readNBatches(updates, 1)
     expect(results[0]).toMatchObject({ version: 9 })
   })
 
-  it("round 3 (calev-heavy, root-cause fix): a well-formed-JSON but invalid Patch (unknown op) is rejected by PatchSchema, never enqueued", async () => {
+  // ⚠️ **הטסט הזה התהפך, וזה העיקר שבו** (slice acp-wire-session-update).
+  //
+  // קודמו קיבע ש-op לא-מוכר **נדחה ולא נכנס לתור**, וזה היה נכון: `Patch`
+  // הוא טיפוס סגור שלנו, ולכן op זר פירושו skew בין builds.
+  //
+  // ‏`session/update` הוא משטח **פתוח**: הפרוטוקול מצהיר במפורש שערכי
+  // `sessionUpdate` לא-מוכרים שמורים לווריאנטים עתידיים, וזה בדיוק המנגנון
+  // שמעביר `plan` דרך ה-BE בלי שיבין אותו. ⇒ דחייה כאן הייתה **משחזרת את
+  // הבאג** שה-`opaque` נועד לסגור: "לא מבין" חוזר להיות "זורק".
+  //
+  // מה שנשאר נכון לדחות הוא **מסגור** שבור — לא תוכן זר.
+  it("an unknown sessionUpdate is CARRIED, not rejected — the wire is an open surface", async () => {
     const snapshot = makeSnapshot()
-    // valid JSON, but `op` is not one of the five known Patch variants — the
-    // exact scenario calev measured (BE/FE version skew).
-    const unknownOpPatch = { version: 1, op: "update-quota", quota: { used: 1 } }
+    const future = { sessionUpdate: "some_future_variant", whatever: true }
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      makeSSEResponse([
+        { event: "snapshot", data: JSON.stringify(snapshot) },
+        {
+          event: "update",
+          data: JSON.stringify([
+            {
+              jsonrpc: "2.0",
+              method: "session/update",
+              params: { sessionId: "s", update: future },
+            },
+          ]),
+        },
+      ]),
+    )
+
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+    const { updates } = await reader.connect()
+
+    const results = await readNBatches(updates, 1)
+    expect(results[0]!.updates[0]).toEqual(future)
+  })
+
+  it("a batch that is not JSON-RPC shaped IS rejected — framing is still validated", async () => {
+    const snapshot = makeSnapshot()
     const goodPatch = makePatch(2)
 
     const mockFetch = vi.fn().mockResolvedValue(
       makeSSEResponse([
         { event: "snapshot", data: JSON.stringify(snapshot) },
-        { event: "patch", data: JSON.stringify(unknownOpPatch) },
+        { event: "update", data: JSON.stringify({ not: "an array" }) },
         { event: "patch", data: JSON.stringify(goodPatch) },
       ]),
     )
 
     const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
-    const { patches } = await reader.connect()
+    const { updates } = await reader.connect()
 
-    // The invalid patch is rejected at the wire boundary and never reaches the
-    // consumer — only the well-formed patch arrives.
-    const results = await readNPatches(patches, 1)
-    expect(results[0]).toMatchObject({ version: 2 })
+    const results = await readNBatches(updates, 1)
+    expect(results[0]!.version).toBe(2)
   })
 })
 
@@ -501,8 +555,8 @@ describe("SSEReader — reconnect", () => {
     const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
     reader.onReconnected = (s) => reconnectedSnapshots.push(s)
 
-    const { patches } = await reader.connect()
-    const results = await readNPatches(patches, 1)
+    const { updates } = await reader.connect()
+    const results = await readNBatches(updates, 1)
 
     expect(reconnectedSnapshots).toHaveLength(1)
     expect(reconnectedSnapshots[0]?.sessionId).toBe("sess-2")
@@ -542,9 +596,9 @@ describe("SSEReader — reconnect", () => {
     })
 
     const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: mockSleep })
-    const { patches } = await reader.connect()
+    const { updates } = await reader.connect()
 
-    const results = await readNPatches(patches, 1)
+    const results = await readNBatches(updates, 1)
     expect(results[0]).toMatchObject({ version: 99 })
     // Delays: initial stream ends → 1s, fail→2s, fail→4s, fail→8s, success
     expect(sleepDelays).toEqual([1000, 2000, 4000, 8000])
@@ -580,9 +634,9 @@ describe("SSEReader — reconnect", () => {
     })
 
     const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: mockSleep })
-    const { patches } = await reader.connect()
+    const { updates } = await reader.connect()
 
-    await readNPatches(patches, 1)
+    await readNBatches(updates, 1)
     // After 6 failures: 1s, 2s, 4s, 8s, 16s, 30s(capped), 30s(capped)
     expect(sleepDelays[4]).toBe(16000)
     expect(sleepDelays[5]).toBe(30000)
@@ -655,9 +709,9 @@ describe("SSEReader — reconnect", () => {
       _sleep: mockSleep,
       _now: advancingNow,
     })
-    const { patches } = await reader.connect()
+    const { updates } = await reader.connect()
 
-    await readNPatches(patches, 1)
+    await readNBatches(updates, 1)
     // initial end → 1s sleep, delay→2s, fail →
     // 2s sleep, delay→4s, success (call 3, שרד 15ש׳) → delay reset to 1s →
     // 1s sleep, delay→2s, success (call 4) → patch emitted
@@ -701,9 +755,9 @@ describe("SSEReader — reconnect", () => {
       _sleep: mockSleep,
       _now: () => 0, // שעון קפוא — אף חיבור לא שורד את הסף
     })
-    const { patches } = await reader.connect()
+    const { updates } = await reader.connect()
 
-    await readNPatches(patches, 1)
+    await readNBatches(updates, 1)
     // 🔴 לפני התיקון זה היה [1000, 1000, 1000, 1000, 1000] — לולאה צמודה לנצח.
     expect(sleepDelays.slice(0, 5)).toEqual([1000, 2000, 4000, 8000, 16000])
   })
@@ -776,9 +830,9 @@ describe("SSEReader — 404 mid-reconnect is final, 500/503 are not (Commit 3ג)
     })
 
     const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
-    const { patches } = await reader.connect()
+    const { updates } = await reader.connect()
 
-    const results = await readNPatches(patches, 1)
+    const results = await readNBatches(updates, 1)
     expect(results[0]).toMatchObject({ version: 1 })
     // initial + 503 + 500 + success — proves it kept retrying through BOTH
     // transient statuses instead of stopping like it does on 404.
@@ -807,10 +861,10 @@ describe("SSEReader — taken-over event (ownership-handoff C3)", () => {
       _fetch: mockFetch,
       _sleep: () => Promise.resolve(),
     })
-    const { patches } = await reader.connect()
+    const { updates } = await reader.connect()
 
     // Drain until the stream closes (taken-over stops the loop)
-    const r = patches.getReader()
+    const r = updates.getReader()
     let done = false
     while (!done) {
       const result = await r.read()
@@ -838,9 +892,9 @@ describe("SSEReader — taken-over event (ownership-handoff C3)", () => {
       _sleep: () => Promise.resolve(),
     })
     reader.onTakenOver = onTakenOver
-    const { patches } = await reader.connect()
+    const { updates } = await reader.connect()
 
-    const r = patches.getReader()
+    const r = updates.getReader()
     let done = false
     while (!done) {
       const result = await r.read()
@@ -999,9 +1053,9 @@ describe("SSEReader — silence-watchdog (Commit 4)", () => {
       _setInterval: interval._setInterval,
       _clearInterval: interval._clearInterval,
     })
-    const { patches } = await reader.connect()
+    const { updates } = await reader.connect()
 
-    const r = patches.getReader()
+    const r = updates.getReader()
     let done = false
     while (!done) {
       const result = await r.read()
