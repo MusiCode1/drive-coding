@@ -10,7 +10,8 @@ import RecordFooter from "$lib/components/chat/RecordFooter.svelte"
 import AppShell from "$lib/components/layout/AppShell.svelte"
 import DisconnectBanner from "$lib/components/session/DisconnectBanner.svelte"
 import { getI18n, getSession, getMic, getBubblePlayer, getCues } from "$lib/context"
-import { BtRemoteEngine, TICK_INTERVAL_MS, buttonForKeyCode } from "$lib/engines/bt-remote.js"
+import { BtRemoteEngine, TICK_INTERVAL_MS, buttonForKeyCode, type BtCommand } from "$lib/engines/bt-remote.js"
+import { btChatAction, PROBE_CUE_GAP_MS } from "$lib/engines/bt-chat-actions.js"
 
 const session = getSession()
 const mic = getMic()
@@ -52,25 +53,50 @@ onMount(() => {
   }
   window.addEventListener("beforeunload", onBeforeUnload)
 
-  // ─── שלט BT (D-pad) — חיווט קדמי ידני, 2026-08-22 ───
-  // ⚠️ זמני ובכוונה מחוץ למסלול-הסלייסים: המשתמש ביקש שימוש חי בנסיעה,
-  //    "גם אם יהיו באגים". ערוץ KEY בלבד ⇒ עובד רק כשהטאב בחזית והמסך דלוק.
-  //    המדידה של 21/08 הוכיחה שזה לא דורש חימוש ולא לולאת-אודיו.
-  //    מיפוי: קדימה=הקלט/שלח (toggle) · אחורה=בטל · מרכז=עצור הקראה.
+  // ─── שלט BT (D-pad) — חיווט קדמי, 2026-08-22 ───
+  // ערוץ KEY בלבד ⇒ עובד רק כשהטאב בחזית והמסך דלוק. המדידה של 21/08
+  // הוכיחה שזה לא דורש חימוש ולא לולאת-אודיו.
+  // מיפוי: קדימה=הקלט/שלח (toggle) · אחורה=בטל · מרכז=עצור הקראה.
+  //
+  // 🔴 חריגה מכוונת מחוק-זהב #1 (`packages/frontend/AGENTS.md`) בארבעה סעיפים:
+  //    מאזיני window · polling · ייבוא **ויצירת** engine ל-route (`new BtRemoteEngine()`)
+  //    · הפעלת cues מה-route.
+  //    (הערה: מאזין `beforeunload` שמעליו הוא הפרה **קודמת** של אותו חוק,
+  //     מ-slice leave-running-background — לא נספרת כאן.)
+  //    ובנוסף — חריגה חמישית: תקציב 150 השורות.
+  //    למה כאן ולא ב-VM: השלט הוא **קלט גלובלי** שאינו שייך לאף entity — הוא
+  //    מתרגם מקשים לפעולות על שלושה VMs שונים (Mic · BubblePlayer · Cues).
+  //    תקדים לחריגה **מוצהרת** יש ב-`/bt-test` וב-`/wake-word-test`, אבל
+  //    ⚠️ **הסיבה שם שונה**: הם routes אבחון standalone; זה route-מוצר.
+  //    Follow-up: אם החיווט יורחב מעבר לצ'אט — מקומו ב-VM ייעודי.
   const bt = new BtRemoteEngine()
 
-  function runCommand(cmd: { button: string; gesture: string }) {
-    if (cmd.gesture === "hold") {
-      // בדיקת-שמע בנהיגה: האם החזקה נקלטת על קדימה/אחורה, ולא רק על המרכז.
-      // אין פעולה — רק צליל, כדי שאפשר יהיה לענות על זה בלי להסתכל במסך.
-      // עולה גליסנדו = קדימה · יורד = אחורה · המרכז שותק (כבר נמדד).
-      if (cmd.button === "next") cues.play("thinking")
-      else if (cmd.button === "prev") cues.play("speaking")
-      return
+  // המיפוי עצמו חי ב-`bt-chat-actions.ts` (טהור ובר-בדיקה) — כאן רק ביצוע.
+  // ⚠️ ההחזקות הן **מכשיר-מדידה זמני**, לא פיצ'ר: הן עונות על השאלה אם ההחזקה
+  //    נקלטת על קדימה/אחורה. ביפ **כפול** כי ביפ יחיד זהה לצליל שהאפליקציה
+  //    מנגנת מעצמה. 🔴 דורש שההשתקה תהיה כבויה — אחרת המדידה שקטה ומטעה.
+  function runCommand(cmd: BtCommand) {
+    const action = btChatAction(cmd)
+    switch (action.kind) {
+      case "mic-toggle":
+        // ללא await במכוון: toggle() ממתין לתעתיק+שליחה, ו-await כאן היה
+        // מסדר לחיצת-ביטול שתגיע באמצע מאחורי התעתיק. תרחיש אמיתי בנהיגה.
+        void mic.toggle()
+        break
+      case "mic-cancel":
+        mic.cancel()
+        break
+      case "playback-stop":
+        bubblePlayer.stop()
+        break
+      case "probe-cue":
+        for (let i = 0; i < action.repeat; i++) {
+          setTimeout(() => cues.play(action.cue), i * PROBE_CUE_GAP_MS)
+        }
+        break
+      case "none":
+        break
     }
-    if (cmd.button === "next") void mic.toggle()
-    else if (cmd.button === "prev") mic.cancel()
-    else if (cmd.button === "center") bubblePlayer.stop()
   }
 
   function onKey(e: KeyboardEvent) {
