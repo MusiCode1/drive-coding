@@ -2,57 +2,42 @@
 /**
  * MicLarge — לחצן mic גדול 110px עם state visual (redesign-4).
  *
- * State → color: מאמץ את מיפוי .mic-rec/.mic-speak מ-app.css הקיים.
- * State → icon: Lucide (לא אמוג'י כמו MicButton הישן) — מפה חדשה.
- *
- * מוקאפ: שורות 447-456, 452 (stop צף absolute, רק ב-speaking).
- * onClick: כמו MicButton — cancel() ב-speaking/thinking, mic.toggle() ב-idle/recording.
+ * מיקרופון טהור: לחיצה תמיד מתחילה/מסיימת הקלטה (startTalking — כולל barge-in).
+ * כפתור עצור-ריצה (OctagonX) מופיע לצדו כשיש ריצה פעילה.
+ * כפתור בטל-הקלטה (X) מופיע בצד השני בזמן recording.
  *
  * ─── record-footer (redesign-4) ───
+ * ─── slice control-roles ───
  */
 
 import Loader2Icon from "@lucide/svelte/icons/loader-2"
 import MicIcon from "@lucide/svelte/icons/mic"
-import SquareIcon from "@lucide/svelte/icons/square"
-import Volume2Icon from "@lucide/svelte/icons/volume-2"
+import OctagonXIcon from "@lucide/svelte/icons/octagon-x"
 import XIcon from "@lucide/svelte/icons/x"
-import { getI18n, getMic, getVoiceMode } from "$lib/context"
-import type { VoiceModeState } from "$lib/view-models/derived/voice-mode.svelte"
+import { getI18n, getMic, getModelStatus, getVoiceMode } from "$lib/context"
+import type { MicState } from "$lib/view-models/mic.svelte"
 
 const mic = getMic()
 const voiceMode = getVoiceMode()
+const modelStatus = getModelStatus()
 const t = getI18n().t
 
-// מיפוי state → CSS class (שמות class מ-app.css)
-const STATE_CLASS: Record<VoiceModeState, string> = {
+const STATE_CLASS: Record<MicState, string> = {
   idle: "",
   recording: "mic-rec",
   transcribing: "spin-state",
-  thinking: "spin-state",
-  speaking: "mic-speak",
-  cancelling: "flash-state",
 }
 
-const isDisabled = $derived(voiceMode.state === "transcribing" || voiceMode.state === "cancelling")
+const isDisabled = $derived(mic.state === "transcribing")
 
-const showStop = $derived(voiceMode.state === "speaking")
 /** ─── slice mic-record-only ─── ביטול ההקלטה בלי לשלוח. */
-const showDiscard = $derived(voiceMode.state === "recording")
+const showDiscard = $derived(mic.state === "recording")
 
-const stateClass = $derived(STATE_CLASS[voiceMode.state])
+const stateClass = $derived(STATE_CLASS[mic.state])
 
-/**
- * ─── slice mic-record-only ───
- * 🔴 **היה כאן `cancelRun()`** כשהמצב `speaking`/`thinking` — כלומר לחיצה על
- * המיקרופון בזמן שהסוכן עונה **ביטלה את ההרצה** במקום להתחיל הקלטה. זה
- * הפתיע, כי כפתור-מיקרופון אומר דבר אחד: להקליט.
- *
- * עכשיו הוא **תמיד** לחצן-הקלטה: לחיצה מתחילה, לחיצה נוספת מסיימת ושולחת.
- * ביטול-ההרצה חי אך ורק ברצועת-הבקרה (⊗), במקום שבו הוא מוצהר.
- */
 function onClick() {
-  if (voiceMode.state === "transcribing" || voiceMode.state === "cancelling") return
-  void mic.toggle()
+  if (mic.state === "transcribing") return
+  void voiceMode.startTalking()
 }
 </script>
 
@@ -64,25 +49,19 @@ function onClick() {
     class:disabled={isDisabled}
     onclick={onClick}
     disabled={isDisabled}
-    aria-label={t(`voiceMode.status.${voiceMode.state}`)}
+    aria-label={t(`voiceMode.status.${mic.state}`)}
   >
-    {#if voiceMode.state === "idle"}
+    {#if mic.state === "idle" || mic.state === "recording"}
       <MicIcon size={40} strokeWidth={1.5} />
-    {:else if voiceMode.state === "recording"}
-      <MicIcon size={40} strokeWidth={1.5} />
-    {:else if voiceMode.state === "speaking"}
-      <Volume2Icon size={40} strokeWidth={1.5} />
-    {:else if voiceMode.state === "transcribing" || voiceMode.state === "thinking"}
+    {:else if mic.state === "transcribing"}
       <Loader2Icon size={40} strokeWidth={1.5} class="animate-spin" />
-    {:else if voiceMode.state === "cancelling"}
-      <XIcon size={40} strokeWidth={1.5} />
     {/if}
   </button>
 
-  <!-- stop button — צף absolute, רק ב-speaking (מוקאפ 452) -->
-  {#if showStop}
+  {#if modelStatus.isRunActive}
     <button
       class="absolute rounded-full flex items-center justify-center text-xs font-semibold"
+      class:flash-state={voiceMode.isCancelling}
       style="
         inset-inline-start: calc(50% + 60px);
         bottom: 0;
@@ -92,16 +71,16 @@ function onClick() {
         border: none;
         cursor: pointer;
       "
-      onclick={() => voiceMode.stopPlayback()}
-      aria-label={t("mic.stop")}
+      onclick={() => voiceMode.cancelRun()}
+      disabled={voiceMode.isCancelling}
+      aria-label={t(modelStatus.stopRunLabelKey)}
     >
-      <SquareIcon size={14} strokeWidth={2.5} />
+      <OctagonXIcon size={16} strokeWidth={2.5} />
     </button>
   {/if}
 
   <!-- ─── slice mic-record-only ───
-       ביטול-הקלטה: זורק את מה שהוקלט ואינו שולח. נפרד מהמיקרופון עצמו,
-       שסיום-לחיצה בו **כן** שולח. -->
+       ביטול-הקלטה: זורק את מה שהוקלט ואינו שולח. -->
   {#if showDiscard}
     <button
       class="absolute rounded-full flex items-center justify-center"
@@ -130,7 +109,6 @@ function onClick() {
       role="alert"
     >
       {t(mic.error)}
-      <!-- כפתור "נסה שוב" — רק כשיש blob שמור (תמלול נכשל, ניתן לנסות שוב) -->
       {#if mic.error === "mic.error.transcribe" && mic.canRetry}
         <button
           class="block mx-auto mt-1 px-2 py-0.5 rounded text-[11px] font-medium border"
@@ -145,7 +123,6 @@ function onClick() {
 </div>
 
 <style>
-  /* spin animation עבור transcribing/thinking */
   :global(.animate-spin) {
     animation: spin 1s linear infinite;
   }

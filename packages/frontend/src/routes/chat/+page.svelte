@@ -10,12 +10,13 @@ import PlaybackControls from "$lib/components/chat/PlaybackControls.svelte"
 import RecordFooter from "$lib/components/chat/RecordFooter.svelte"
 import AppShell from "$lib/components/layout/AppShell.svelte"
 import DisconnectBanner from "$lib/components/session/DisconnectBanner.svelte"
-import { getI18n, getSession, getMic, getBubblePlayer, getCues } from "$lib/context"
+import { getI18n, getSession, getMic, getBubblePlayer, getCues, getVoiceMode } from "$lib/context"
 import { BtRemoteEngine, TICK_INTERVAL_MS, buttonForKeyCode, type BtCommand } from "$lib/engines/bt-remote.js"
 import { btChatAction, PROBE_CUE_GAP_MS } from "$lib/engines/bt-chat-actions.js"
 
 const session = getSession()
 const mic = getMic()
+const voiceMode = getVoiceMode()
 const bubblePlayer = getBubblePlayer()
 const cues = getCues()
 const i18n = getI18n()
@@ -82,7 +83,7 @@ onMount(() => {
       case "mic-toggle":
         // ללא await במכוון: toggle() ממתין לתעתיק+שליחה, ו-await כאן היה
         // מסדר לחיצת-ביטול שתגיע באמצע מאחורי התעתיק. תרחיש אמיתי בנהיגה.
-        void mic.toggle()
+        void voiceMode.startTalking()
         break
       case "mic-cancel":
         mic.cancel()
