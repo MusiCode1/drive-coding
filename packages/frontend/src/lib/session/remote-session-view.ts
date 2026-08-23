@@ -25,6 +25,7 @@ import {
   createInitialSessionState,
   type Patch,
   RPC_METHODS,
+  reduce,
   type SessionState,
 } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
@@ -32,6 +33,7 @@ import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import { registerView, unregisterView, type ViewDebugInfo } from "$lib/debug/session-registry"
 import { connWarn } from "$lib/util/conn-log"
 import type { SessionView } from "./session-view.js"
+import type { WireUpdateBatch } from "./sse-reader"
 import { SSEReader } from "./sse-reader.js"
 
 /** ext methods שדורשות return value אמיתי — לא נתמכות ב-remote mode (§C2 decision #3). */
@@ -195,7 +197,7 @@ export class RemoteSessionView implements SessionView {
   }
 
   async #doConnect(): Promise<void> {
-    const { snapshot, patches } = await this.#reader.connect()
+    const { snapshot, updates } = await this.#reader.connect()
     this.#state = snapshot
     this.#sessionId = snapshot.sessionId
     this.#lastVersion = snapshot.version
@@ -216,7 +218,7 @@ export class RemoteSessionView implements SessionView {
       }
       this.#emit([resetPatch])
     }
-    void this.#drainPatches(patches)
+    void this.#drainUpdates(updates)
   }
 
   /**
@@ -254,8 +256,8 @@ export class RemoteSessionView implements SessionView {
 
   // ─── Incoming patches: apply to state (core applyPatch) + wrap + emit ───
 
-  async #drainPatches(patches: ReadableStream<Patch>): Promise<void> {
-    const reader = patches.getReader()
+  async #drainUpdates(updates: ReadableStream<WireUpdateBatch>): Promise<void> {
+    const reader = updates.getReader()
     try {
       while (true) {
         const { done, value } = await reader.read()
@@ -280,23 +282,36 @@ export class RemoteSessionView implements SessionView {
     }
   }
 
-  #applyIncoming(patch: Patch): void {
+  /**
+   * ─── slice acp-wire-session-update ───
+   * מקבל **batch של `session/update`** במקום `Patch` יחיד, ומקפל אותו כאן
+   * ב-`reduce` — אותו reducer בדיוק שמסלול ה-WS משתמש בו. ⇒ שתי התעבורות
+   * מתאחדות על קיפול יחיד, וה-`Patch` נשאר יחידת-ההחלה הפנימית בלבד.
+   */
+  #applyIncoming(batch: WireUpdateBatch): void {
     // calev-heavy B1: PatchesBroadcaster.subscribe() replays up to 64 buffered patches
     // to every new subscriber — including reconnects, and even the very first connect
     // if patches happened before this client attached. Those patches are already
     // reflected in the snapshot (frame-zero) / in whatever #lastVersion already covers.
     // Applying them again duplicates messages/segments (measured: "hello"+" world"
     // appearing twice after one server-side drop). Skip anything already applied.
-    if (patch.version <= this.#lastVersion) return
-    const nextState = applyPatch(this.#state, patch)
-    // calev-heavy round 2 finding #1: applyPatch's default case now no-ops on an
-    // unknown op (core fix), but this is defense-in-depth against #state ever
-    // becoming nullish — never let a single patch wipe the whole view state.
-    if (!nextState) return
-    this.#state = nextState
-    this.#lastVersion = patch.version
-    this.#advanceWaterMark(patch)
-    this.#emit([patch])
+    if (batch.version <= this.#lastVersion) return
+
+    let state = this.#state
+    const produced: Patch[] = []
+    for (const update of batch.updates) {
+      const { state: next, patches } = reduce(state, update)
+      state = next
+      produced.push(...patches)
+    }
+    // ⚠️ **ה-version נדרס לזה של השרת.** `reduce` מקדם מונה מקומי אחד לכל
+    // update, וה-batch יכול להחזיק כמה — ספירה מקומית הייתה מסיטה את המונה
+    // מזה של השרת בהדרגה, ואז כל השוואת-watermark הופכת לשקר. זו בדיוק
+    // רגרסיית-הגרסה שבאג #41 נבנה סביבה.
+    this.#state = { ...state, version: batch.version }
+    this.#lastVersion = batch.version
+    for (const p of produced) this.#advanceWaterMark(p)
+    if (produced.length > 0) this.#emit(produced)
   }
 
   #emit(patches: Patch[]): void {
