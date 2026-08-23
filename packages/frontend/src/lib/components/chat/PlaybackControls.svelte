@@ -15,26 +15,29 @@ import SkipForwardIcon from "@lucide/svelte/icons/skip-forward"
 import SquareIcon from "@lucide/svelte/icons/square"
 import Volume2Icon from "@lucide/svelte/icons/volume-2"
 import VolumeXIcon from "@lucide/svelte/icons/volume-x"
-import {
-  getAudioPlaylist,
-  getI18n,
-  getModelStatus,
-  getResponsive,
-  getSpeaker,
-  getVoiceMode,
-} from "$lib/context"
+import { getAudioPlaylist, getI18n, getResponsive, getSpeaker, getVoiceMode } from "$lib/context"
 
 const t = getI18n().t
 const voiceMode = getVoiceMode()
-const modelStatus = getModelStatus()
 const speaker = getSpeaker()
 const playlist = getAudioPlaylist()
 const responsive = getResponsive()
 
-/** הרצועה מוצגת ⇔ יש מה לשלוט בו, או שההשתקה עצמה צריכה להיות נגישה */
-const showDock = $derived(
-  playlist.items.length > 0 || !speaker.enabled || modelStatus.isRunActive,
-)
+/**
+ * הרצועה מוצגת תמיד בצ'אט.
+ *
+ * הקיפול המקורי (`items.length > 0 || !speaker.enabled || isRunActive`) היה
+ * מעגלי: כשהתור ריק, האודיו דלוק ואין ריצה — הרצועה נעלמה, ואיתה **מתג
+ * ההשתקה שיושב בתוכה**. כלומר בדיוק ברגע שבו רוצים להשתיק *מראש*, לפני
+ * שהסוכן פותח את הפה, לא היה על מה ללחוץ. המוצא היחיד היה
+ * `SessionOptionsPanel` — פאנל, לא הישג-יד בנהיגה.
+ *
+ * ⚠️ `showDock` נשאר משתנה (ולא הוסר) — `AppShell` מראה אותו במפורש
+ * (`control-dock: mirrors PlaybackControls showDock`), והמכניקה של הקיפול
+ * (`.dock-pane` / `.is-collapsed`) נשמרת שלמה כדי שהחזרה לתצוגה-מותנית
+ * תהיה שינוי של ביטוי אחד.
+ */
+const showDock = $derived(true)
 
 const isPaused = $derived(playlist.transport === "paused")
 

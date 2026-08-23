@@ -31,15 +31,7 @@ import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svel
 import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
 // ─── ui-session-polish: loading spinner modal ───
 import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
-import {
-  getAudioPlaylist,
-  getChatScroll,
-  getI18n,
-  getModelStatus,
-  getResponsive,
-  getSession,
-  getSpeaker,
-} from "$lib/context"
+import { getChatScroll, getI18n, getModelStatus, getResponsive, getSession } from "$lib/context"
 import type { Bubble } from "$lib/types/bubble"
 import { stableBubbleKey } from "$lib/util/bubble-key"
 import { computeScrollEdges, shouldFollowJump } from "$lib/util/scroll-follow"
@@ -58,14 +50,14 @@ let {
 const responsive = getResponsive()
 const session = getSession()
 const modelStatus = getModelStatus()
-const playlist = getAudioPlaylist()
-const speaker = getSpeaker()
 const t = getI18n().t
 
-/** control-dock: האם רצועת הבקרה מוצגת ( mirrors PlaybackControls showDock ). */
-const ribbonVisible = $derived(
-  playlist.items.length > 0 || !speaker.enabled || modelStatus.isRunActive,
-)
+/**
+ * control-dock: האם רצועת הבקרה מוצגת ( mirrors PlaybackControls showDock ).
+ * הרצועה קבועה עכשיו — ר' הנימוק המלא ב-`PlaybackControls.svelte`.
+ * ⚠️ שני הביטויים חייבים להישאר זהים; זו הייתה כפילות מלאה גם קודם.
+ */
+const ribbonVisible = $derived(true)
 
 // scroll node — ה-AppShell הוא owner (חוק זהב #4)
 let scrollEl = $state<HTMLElement | null>(null)
