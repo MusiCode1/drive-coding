@@ -300,10 +300,10 @@ describe("session-host HTTP end-to-end (real host + real broadcaster + real rout
     const response = await responsePromise
     expect(response.outcome.outcome).toBe("selected")
 
-    // 3 frames each: snapshot@v1 (already carries pending) → replayed "set" patch
-    // (v1, buffered before this subscriber connected) → live "clear" patch (v2).
-    const framesA = await readSseFrames(resA, 3, 300)
-    const framesB = await readSseFrames(resB, 3, 300)
+    // 2 frames each: snapshot@v1 (already carries pending) → live "clear" patch (v2).
+    // Buffered v1 replay is filtered out by subscribe(snapshot.version).
+    const framesA = await readSseFrames(resA, 2, 300)
+    const framesB = await readSseFrames(resB, 2, 300)
     const finalA = computeFinalClientState(framesA)
     const finalB = computeFinalClientState(framesB)
 
@@ -348,11 +348,9 @@ describe("session-host HTTP end-to-end (real host + real broadcaster + real rout
     rejectPrompt(new Error("agent crashed"))
     await promptPromise
 
-    // 4 frames: snapshot@v2 (already turnState=waiting) → 2 replayed patches
-    // (waiting v1, add-message v2 — hotfix order, both buffered before this
-    // subscriber connected, both dropped by the version<=snapshot guard) →
-    // the live idle+lastTurnError patch (v3) that only arrives after rejectPrompt.
-    const frames = await readSseFrames(res, 4, 300)
+    // 2 frames: snapshot@v2 (already turnState=waiting) → live idle+lastTurnError (v3).
+    // Replayed waiting/add-message patches are filtered by subscribe(snapshot.version).
+    const frames = await readSseFrames(res, 2, 300)
     const finalState = computeFinalClientState(frames)
     expect(finalState.turnState).toBe("idle")
     expect(finalState.lastTurnError?.message).toBe("agent crashed")

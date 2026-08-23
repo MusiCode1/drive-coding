@@ -9,7 +9,7 @@
  *   - SSE response headers (Content-Type: text/event-stream)
  *   - snapshot as first frame (event: snapshot)
  *   - patches streamed as subsequent frames (event: patch)
- *   - register-then-snapshot order (subscribe before snapshot)
+ *   - register-then-snapshot order (snapshot read before filtered subscribe)
  *   - client disconnect → broadcaster.unsubscribe called
  */
 
@@ -234,16 +234,15 @@ describe("GET /api/agents/:id/events", () => {
     })
   })
 
-  describe("register-then-snapshot: subscribe before snapshot", () => {
-    it("calls broadcaster.subscribe before reading host.state (snapshot)", async () => {
+  describe("snapshot-then-filtered-subscribe", () => {
+    it("reads host.state before subscribe, passes snapshot.version, with no await between", async () => {
       const callOrder: string[] = []
-      const state = makeMockState({ title: "Test Session" })
+      const state = makeMockState({ title: "Test Session", version: 7 })
 
-      // Track call order via custom getters
       const subscribeStream = new ReadableStream<Patch>({ start() {} })
       const broadcaster: PatchesBroadcaster = {
-        subscribe: vi.fn().mockImplementation(() => {
-          callOrder.push("subscribe")
+        subscribe: vi.fn().mockImplementation((sinceVersion?: number) => {
+          callOrder.push(`subscribe:${sinceVersion ?? "all"}`)
           return subscribeStream
         }),
         unsubscribe: vi.fn(),
@@ -276,13 +275,13 @@ describe("GET /api/agents/:id/events", () => {
       const app = makeApp(registry)
 
       const res = await app.request("/api/agents/agent-1/events")
-      // Read at least 1 event (the snapshot) to ensure route executed
       await readSseEvents(res, 1, 200)
 
-      const subscribeIdx = callOrder.indexOf("subscribe")
-      const stateIdx = callOrder.indexOf("read-state")
-      expect(subscribeIdx).toBeGreaterThanOrEqual(0)
-      expect(stateIdx).toBeGreaterThan(subscribeIdx) // subscribe BEFORE snapshot
+      const readIdx = callOrder.indexOf("read-state")
+      const subscribeIdx = callOrder.indexOf("subscribe:7")
+      expect(readIdx).toBeGreaterThanOrEqual(0)
+      expect(subscribeIdx).toBeGreaterThan(readIdx)
+      expect(broadcaster.subscribe).toHaveBeenCalledWith(7)
     })
   })
 
