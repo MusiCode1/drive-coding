@@ -313,7 +313,8 @@ For **historical** analysis across both compressed and live files:
 ```bash
 # live tail — after compression, almost every .jsonl left is live or fresh since the timer
 tail -f ~/.config/drive-coding/wire-recordings/*.jsonl | jq
-# full history — -f passes through uncompressed files too
+# full history — -f passes through uncompressed files too. e.g. every thought-chunk text
+# (we found claude sends them ALL empty — an upstream ACP-adapter issue, BE is transparent):
 zstdcat -f ~/.config/drive-coding/wire-recordings/*.jsonl* \
   | jq -r 'select(.raw|fromjson|.params.update.sessionUpdate=="agent_thought_chunk") | (.raw|fromjson|.params.update.content.text)'
 # fast grep on mixed archive
