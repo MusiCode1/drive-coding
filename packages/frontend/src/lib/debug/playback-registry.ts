@@ -63,6 +63,12 @@ export type SpeakerDebugInfo = {
    * בעיות שונות לגמרי עם אותו תסמין.
    */
   recent: string[]
+  /** bubbleId → כמה סגמנטים סומנו כמעובדים. זו המכונה שקובעת מה יוקרא. */
+  bubbleStates: Record<string, number>
+  /** מונה חתכי-היסטוריה שה-Speaker ראה. 0 = מעולם לא זוהתה היסטוריה. */
+  historyEpoch: number
+  /** מאיזו בועה הגיע כל enqueue אחרון — משלים את `recent` שנותן רק טקסט. */
+  recentSources: string[]
 }
 
 export type PlaybackDebugInfo = {

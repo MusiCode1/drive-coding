@@ -7,7 +7,7 @@
  *   - subscribe: returns a ReadableStream per client (fan-out)
  *   - multi-client: each subscriber gets each patch
  *   - unsubscribe: removed client no longer receives patches
- *   - late subscriber gets buffered patches (register-then-snapshot race prevention)
+ *   - late subscriber gets filtered or full buffered replay (subscribe(sinceVersion?))
  *   - constructor accepts ReadableStream<Patch>
  */
 
@@ -159,8 +159,68 @@ describe("PatchesBroadcaster", () => {
     })
   })
 
-  describe("buffering — late subscriber (register-then-snapshot support)", () => {
-    it("late subscriber receives recent patches from buffer", async () => {
+  describe("buffering — late subscriber (filtered replay)", () => {
+    it("sinceVersion at buffer head → zero replay", async () => {
+      const { stream, push } = makeControlledStream()
+      const broadcaster = createPatchesBroadcaster(stream)
+
+      const s1 = broadcaster.subscribe()
+      await new Promise<void>((r) => setTimeout(r, 0))
+      push(makePatch(1))
+      push(makePatch(2))
+      await new Promise<void>((r) => setTimeout(r, 20))
+
+      const s2 = broadcaster.subscribe(2)
+      const r2 = await readAvailable(s2, 30)
+      expect(r2).toHaveLength(0)
+    })
+
+    it("sinceVersion in the middle → tail only", async () => {
+      const { stream, push } = makeControlledStream()
+      const broadcaster = createPatchesBroadcaster(stream)
+
+      broadcaster.subscribe()
+      await new Promise<void>((r) => setTimeout(r, 0))
+      push(makePatch(1))
+      push(makePatch(2))
+      push(makePatch(3))
+      await new Promise<void>((r) => setTimeout(r, 20))
+
+      const s2 = broadcaster.subscribe(1)
+      const r2 = await readN(s2, 2, 100)
+      expect(r2.map((p) => p.version)).toEqual([2, 3])
+    })
+
+    it("without sinceVersion → full buffer (regression)", async () => {
+      const { stream, push } = makeControlledStream()
+      const broadcaster = createPatchesBroadcaster(stream)
+
+      broadcaster.subscribe()
+      await new Promise<void>((r) => setTimeout(r, 0))
+      push(makePatch(1))
+      push(makePatch(2))
+      await new Promise<void>((r) => setTimeout(r, 20))
+
+      const s2 = broadcaster.subscribe()
+      const r2 = await readN(s2, 2, 100)
+      expect(r2.map((p) => p.version)).toEqual([1, 2])
+    })
+
+    it("patch after subscribe arrives for filtered and unfiltered subscribers", async () => {
+      const { stream, push } = makeControlledStream()
+      const broadcaster = createPatchesBroadcaster(stream)
+
+      const filtered = broadcaster.subscribe(5)
+      const full = broadcaster.subscribe()
+      await new Promise<void>((r) => setTimeout(r, 0))
+      push(makePatch(6))
+
+      const [rf, ru] = await Promise.all([readN(filtered, 1), readN(full, 1)])
+      expect(rf[0]?.version).toBe(6)
+      expect(ru[0]?.version).toBe(6)
+    })
+
+    it("late subscriber receives recent patches from buffer when unfiltered", async () => {
       const { stream, push } = makeControlledStream()
       const broadcaster = createPatchesBroadcaster(stream)
 

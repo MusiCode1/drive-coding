@@ -3,7 +3,7 @@
  *
  * Fan-out/tee over a single ReadableStream<Patch>.
  * Maintains a ring-buffer of the last N patches so late subscribers
- * can receive buffered patches (supports the "register-then-snapshot" pattern).
+ * can receive buffered patches (supports filtered replay via `sinceVersion`).
  *
  * The constructor drains the source stream in the background via a shared
  * drain loop — each new patch is dispatched to all current subscribers.
@@ -19,9 +19,10 @@ const BUFFER_SIZE = 64
 export type PatchesBroadcaster = {
   /**
    * subscribe — returns a new ReadableStream<Patch> for this client.
-   * Late subscribers receive buffered patches first, then live ones.
+   * @param sinceVersion — when set, replay only patches with version > sinceVersion;
+   *   when omitted, replay the full buffer (compatibility / sse-resume tail).
    */
-  subscribe(): ReadableStream<Patch>
+  subscribe(sinceVersion?: number): ReadableStream<Patch>
 
   /**
    * unsubscribe — removes the client stream from the fan-out.
@@ -115,7 +116,7 @@ export function createPatchesBroadcaster(source: ReadableStream<Patch>): Patches
   void drain()
 
   return {
-    subscribe(): ReadableStream<Patch> {
+    subscribe(sinceVersion?: number): ReadableStream<Patch> {
       let ctrl!: ReadableStreamDefaultController<Patch>
       const stream = new ReadableStream<Patch>({
         start(controller) {
@@ -132,7 +133,11 @@ export function createPatchesBroadcaster(source: ReadableStream<Patch>): Patches
       subscribers.set(stream, ctrl)
 
       // Replay buffered patches to the new subscriber
-      for (const patch of buffer) {
+      const replay =
+        sinceVersion === undefined
+          ? buffer
+          : buffer.filter((p) => p.version > sinceVersion)
+      for (const patch of replay) {
         try {
           ctrl.enqueue(patch)
         } catch {

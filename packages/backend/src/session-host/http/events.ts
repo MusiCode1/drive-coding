@@ -11,8 +11,8 @@
  *   event: taken-over\nid: <new-epoch>\ndata: {}\n\n
  *
  * Design:
- *   - register-then-snapshot: subscribe to broadcaster BEFORE reading state
- *     (prevents race where a patch arrives between snapshot read and subscribe)
+ *   - snapshot-then-filtered-subscribe: read host.state, then subscribe(snapshot.version)
+ *     so buffered replay excludes patches already in frame-zero (bandwidth + sse-resume prep)
  *   - 404 if connection not found / dead / WS-owned (registry.getOrCreateHost →
  *     {ok:false, reason}), or 503 if the reason is "evict-timeout" (transient —
  *     slice host-result-reason C1)
@@ -126,9 +126,13 @@ export function registerEventsRoute(
     c.header("Connection", "keep-alive")
 
     return stream(c, async (s) => {
-      // ── register-then-snapshot ────────────────────────────────────────────
-      // Subscribe FIRST so no patches are missed between snapshot + subscribe
-      const patchStream = broadcaster.subscribe()
+      // ── snapshot-then-filtered-subscribe ───────────────────────────────────
+      // Read snapshot synchronously, then subscribe with its version so replay
+      // excludes patches already reflected in frame-zero. No await between —
+      // host.state and subscribe() are both synchronous; patches land in buffer
+      // only after drain()'s async read, so nothing races between the two calls.
+      const snapshot = host.state
+      const patchStream = broadcaster.subscribe(snapshot.version)
 
       // slice liveness C1: keepalive keeps the connection alive through proxies.
       // NO touchOwner here — the server-side keepalive timer was a dead liveness
@@ -159,7 +163,10 @@ export function registerEventsRoute(
       // ⚠️ ה-`id:` הוא ה-**version** ולא ה-epoch. ה-epoch עבר לגוף ההודעה: הוא
       // מזהה **מי מחזיק בזרם**, וה-version מזהה **איפה אנחנו ברצף** — שני
       // מונים שונים לגמרי, ורק השני הוא מה ש-`Last-Event-ID` יצטרך.
-      const snapshot = host.state
+      //
+      // ⚠️ **טקסט מכווץ ≠ מונה סגמנטים.** ה-snapshot מכווץ chunks לבלוק-טקסט
+      // (הלקוח אינו יכול להבחין בהבדל בטקסט), אבל `#bubbleStates` עדיין סופר
+      // אינדקסי-סגמנט — reconnect אחרי streaming חי יכול לבלוע תוכן.
       let view: SessionState = snapshot
       await s.write(serializeFrame(snapshotFrame(snapshot, currentEpoch)))
 

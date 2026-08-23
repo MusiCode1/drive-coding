@@ -119,6 +119,10 @@ export class Speaker implements SegmentOwner {
   #activeFetches = 0
   /** ─── slice playback-observability ─── טבעת של הטקסטים האחרונים שנשלחו. */
   #recentTexts: string[] = []
+  /** ─── slice replay-quiet Commit 0 ─── מקבל משמעות ב-Commit 2. */
+  #seenHistoryEpoch = 0
+  /** ─── slice replay-quiet Commit 0 ─── תור מקביל ל-#recentTexts. */
+  #recentSources: string[] = []
   /** msr-v2: ספירת jobs ממתינים + בהבאה — reactive ($state) כדי ש-hasPendingNarration יהיה reactive. */
   #pendingCount = $state(0)
 
@@ -195,6 +199,7 @@ export class Speaker implements SegmentOwner {
         // Slice 4: נעקב כדי ש-$effect ירוץ מחדש כאשר loadSession() מסיים
         // ומנקה את הדגל — מאפשר למקטעים חיים חדשים לזרום ל-TTS.
         const isLoadingHistory = this.#session.isLoadingHistory
+        const historyEpoch = this.#session.historyEpoch ?? 0
         // Slice 4: נועל ריאקטיביות על סטטוס בועת tool + narration כדי להבחין
         // כאשר קריאת tool מושלמת או narration נכתב חזרה.
         const _toolStatus = bubbles
@@ -207,6 +212,7 @@ export class Speaker implements SegmentOwner {
 
         // ── כתיבות (לא-נעקבות) ─────────────────────────────────────────
         untrack(() => {
+          this.#applyHistoryMark(historyEpoch)
           this.#processBubbles(bubbles, enabled, isLoadingHistory, speakThoughts, turnState)
           this.#processToolBubbles(bubbles, enabled, isLoadingHistory, narrateTools)
           this.#handleStatusTransition(status, turnState, enabled, speakThoughts)
@@ -251,6 +257,26 @@ export class Speaker implements SegmentOwner {
   // ──────────────────────────────────────────────────────────────────────
   // פנימיות
   // ──────────────────────────────────────────────────────────────────────
+
+  #applyHistoryMark(epoch: number): void {
+    if (epoch === this.#seenHistoryEpoch) return
+    this.#seenHistoryEpoch = epoch
+    const mark = this.#session.historyMark
+    if (!mark) return
+    for (const [bubbleId, count] of mark.segmentCounts) {
+      const state = this.#bubbleStates.get(bubbleId) ?? {
+        processedSegments: 0,
+        buffer: "",
+        speakPending: "",
+      }
+      if (count <= state.processedSegments) continue
+      state.processedSegments = count
+      state.buffer = ""
+      state.speakPending = ""
+      this.#bubbleStates.set(bubbleId, state)
+    }
+    for (const id of mark.toolCallIds) this.#processedNarrationCallIds.add(id)
+  }
 
   #processBubbles(
     bubbles: AgentSession["bubbles"],
@@ -449,6 +475,10 @@ export class Speaker implements SegmentOwner {
     // תצפית בלבד — טבעת קצרה, מוגבלת באורך כדי לא להחזיק תמלילים שלמים.
     this.#recentTexts.push(text.slice(0, 60))
     if (this.#recentTexts.length > 8) this.#recentTexts.shift()
+    if (bubbleId !== undefined) {
+      this.#recentSources.push(bubbleId)
+      if (this.#recentSources.length > 8) this.#recentSources.shift()
+    }
   }
 
   /**
@@ -541,6 +571,11 @@ export class Speaker implements SegmentOwner {
       queued: this.#jobs.filter((j) => j.status === "pending").length,
       lookahead: LOOKAHEAD,
       recent: [...this.#recentTexts].reverse(),
+      bubbleStates: Object.fromEntries(
+        [...this.#bubbleStates].map(([id, s]) => [id, s.processedSegments]),
+      ),
+      historyEpoch: this.#seenHistoryEpoch,
+      recentSources: [...this.#recentSources].reverse(),
     }
   }
 
