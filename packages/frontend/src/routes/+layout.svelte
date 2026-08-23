@@ -112,7 +112,7 @@ const speaker = new Speaker({
 const mic = new Mic({ session, cues })
 
 // ─── voice-mode ─── (slice 3 — תלוי ב-mic + session + speaker)
-const voiceMode = new VoiceMode({ mic, session, speaker })
+const voiceMode = new VoiceMode({ mic, session, speaker, playlist: audioPlaylist })
 
 // ─── model-status ─── (msr-v2 — תלוי ב-session + speaker)
 const modelStatus = new ModelStatus({ session, speaker })
