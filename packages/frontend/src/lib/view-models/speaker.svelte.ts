@@ -119,6 +119,10 @@ export class Speaker implements SegmentOwner {
   #activeFetches = 0
   /** ─── slice playback-observability ─── טבעת של הטקסטים האחרונים שנשלחו. */
   #recentTexts: string[] = []
+  /** ─── slice replay-quiet Commit 0 ─── מקבל משמעות ב-Commit 2. */
+  #seenHistoryEpoch = 0
+  /** ─── slice replay-quiet Commit 0 ─── תור מקביל ל-#recentTexts. */
+  #recentSources: string[] = []
   /** msr-v2: ספירת jobs ממתינים + בהבאה — reactive ($state) כדי ש-hasPendingNarration יהיה reactive. */
   #pendingCount = $state(0)
 
@@ -449,6 +453,10 @@ export class Speaker implements SegmentOwner {
     // תצפית בלבד — טבעת קצרה, מוגבלת באורך כדי לא להחזיק תמלילים שלמים.
     this.#recentTexts.push(text.slice(0, 60))
     if (this.#recentTexts.length > 8) this.#recentTexts.shift()
+    if (bubbleId !== undefined) {
+      this.#recentSources.push(bubbleId)
+      if (this.#recentSources.length > 8) this.#recentSources.shift()
+    }
   }
 
   /**
@@ -541,6 +549,11 @@ export class Speaker implements SegmentOwner {
       queued: this.#jobs.filter((j) => j.status === "pending").length,
       lookahead: LOOKAHEAD,
       recent: [...this.#recentTexts].reverse(),
+      bubbleStates: Object.fromEntries(
+        [...this.#bubbleStates].map(([id, s]) => [id, s.processedSegments]),
+      ),
+      historyEpoch: this.#seenHistoryEpoch,
+      recentSources: [...this.#recentSources].reverse(),
     }
   }
 
