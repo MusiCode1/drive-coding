@@ -77,6 +77,8 @@ function makeSession(extra?: Partial<AgentSession>): AgentSession {
     status: "idle" as AgentSessionStatus,
     turnState: "idle" as TurnState,
     isLoadingHistory: false,
+    historyEpoch: 0,
+    historyMark: { segmentCounts: new Map(), toolCallIds: [] },
     ...extra,
   } as AgentSession
 }

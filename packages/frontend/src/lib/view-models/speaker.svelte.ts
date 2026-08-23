@@ -199,6 +199,7 @@ export class Speaker implements SegmentOwner {
         // Slice 4: נעקב כדי ש-$effect ירוץ מחדש כאשר loadSession() מסיים
         // ומנקה את הדגל — מאפשר למקטעים חיים חדשים לזרום ל-TTS.
         const isLoadingHistory = this.#session.isLoadingHistory
+        const historyEpoch = this.#session.historyEpoch ?? 0
         // Slice 4: נועל ריאקטיביות על סטטוס בועת tool + narration כדי להבחין
         // כאשר קריאת tool מושלמת או narration נכתב חזרה.
         const _toolStatus = bubbles
@@ -211,6 +212,7 @@ export class Speaker implements SegmentOwner {
 
         // ── כתיבות (לא-נעקבות) ─────────────────────────────────────────
         untrack(() => {
+          this.#applyHistoryMark(historyEpoch)
           this.#processBubbles(bubbles, enabled, isLoadingHistory, speakThoughts, turnState)
           this.#processToolBubbles(bubbles, enabled, isLoadingHistory, narrateTools)
           this.#handleStatusTransition(status, turnState, enabled, speakThoughts)
@@ -255,6 +257,26 @@ export class Speaker implements SegmentOwner {
   // ──────────────────────────────────────────────────────────────────────
   // פנימיות
   // ──────────────────────────────────────────────────────────────────────
+
+  #applyHistoryMark(epoch: number): void {
+    if (epoch === this.#seenHistoryEpoch) return
+    this.#seenHistoryEpoch = epoch
+    const mark = this.#session.historyMark
+    if (!mark) return
+    for (const [bubbleId, count] of mark.segmentCounts) {
+      const state = this.#bubbleStates.get(bubbleId) ?? {
+        processedSegments: 0,
+        buffer: "",
+        speakPending: "",
+      }
+      if (count <= state.processedSegments) continue
+      state.processedSegments = count
+      state.buffer = ""
+      state.speakPending = ""
+      this.#bubbleStates.set(bubbleId, state)
+    }
+    for (const id of mark.toolCallIds) this.#processedNarrationCallIds.add(id)
+  }
 
   #processBubbles(
     bubbles: AgentSession["bubbles"],

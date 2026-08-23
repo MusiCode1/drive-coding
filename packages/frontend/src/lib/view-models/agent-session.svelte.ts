@@ -100,7 +100,7 @@ const ATTACHED_CAPS_FALLBACK = {} as AcpClient["capabilities"]
 // ─── slice plan-todo-list Commit 1: reducer טהור + טיפוסים ─── (additive)
 import { EMPTY_PLAN_STORE, type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
 // ─── slice session-state-reducer C4: reduce + types ─── (additive)
-import { createInitialSessionState, reduce, type SessionState } from "@drive-coding/core/session"
+import { createInitialSessionState, reduce, type Patch, type SessionState } from "@drive-coding/core/session"
 // ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
 import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 // ─── slice FE-normalization: ייבוא ─── (additive)
@@ -110,6 +110,7 @@ import type { NormalizedCapabilities } from "@drive-coding/provider/types"
 import { createExtClient, type ExtClient } from "$lib/adapters/ext"
 // ─── slice session-state-reducer C4: FE patch applicator + mappers ─── (additive)
 import { applyPatchMutable } from "$lib/session/apply-patch-mutable"
+import { historyMarkFromReset, type HistoryMark } from "./history-mark.js"
 import { mapLocations, mapToolContent } from "$lib/session/map-tool-content"
 // ─── slice subagent-transcript-data-v2: פרסר+reducer טהורים (additive) ───
 import {
@@ -257,6 +258,13 @@ export class AgentSession {
   // ─── slice 4: replay guard + narration context ─── (תוספתי)
   /** True בזמן ש-loadSession() מנגן היסטוריה מחדש. ה-Speaker קורא את זה (תחת מעקב) כדי להשתיק TTS. */
   isLoadingHistory = $state(false)
+  /** מונה חתכי-היסטוריה. עולה **פעם אחת** ב-hydration של view חדש. */
+  historyEpoch = $state(0)
+  /** החתך שנלקח באותו רגע. לא-ריאקטיבי בכוונה — נקרא רק כש-historyEpoch משתנה. */
+  #historyMark: HistoryMark = { segmentCounts: new Map(), toolCallIds: [] }
+  get historyMark(): HistoryMark {
+    return this.#historyMark
+  }
   /** טקסט הפרומפט האחרון שנשלח על ידי המשתמש — משמש את ה-Speaker להקשר עבור קריינות. */
   lastUserMessage = $state("")
 
@@ -608,6 +616,7 @@ export class AgentSession {
     // ⚠️ זה חייב לרוץ גם כש-view.state ריק — הוא נושא את המטא-דאטה בלי קשר
     // למספר ההודעות.
     this.#syncFromViewState(view.state)
+    let attachWindow = true
     try {
       while (true) {
         const { done, value } = await reader.read()
@@ -621,6 +630,22 @@ export class AgentSession {
         if (patches.length === 0) continue
         // targeted bubble update (אין O(n²) mapping)
         applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
+        // ─── slice replay-quiet ───
+        // חתך-היסטוריה: רק ה-reset של ה-hydration הוא "הצטרפתי באמצע".
+        // #doConnect פולט אותו דרך #emit **לפני** #drainUpdates
+        // (remote-session-view.ts:209-222) ⇒ הוא תמיד ה-batch הראשון. reset מאוחר
+        // יותר = SSE-reconnect (:372) — מסלול שלא נמדד כפגוע, ולכן שמרנית
+        // איננו נוגעים בו.
+        if (attachWindow) {
+          attachWindow = false
+          const reset = patches.find(
+            (p): p is Extract<Patch, { op: "reset" }> => p.op === "reset",
+          )
+          if (reset) {
+            this.#historyMark = historyMarkFromReset(reset.messages)
+            this.historyEpoch++
+          }
+        }
         // 🔴 החצי השני של #34. הליבה נושאת עכשיו עדכונים לא-מוכרים כ-`opaque`
         // במקום לזרוק אותם — אבל נשיאה בלי צרכן היא עדיין שקט. כאן הם מגיעים
         // לאותו `#onSessionUpdate` שמסלול ה-WS משתמש בו, וכך `reducePlan`

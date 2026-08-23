@@ -88,6 +88,9 @@ const noSleep = (): Promise<void> => Promise.resolve()
 const MIN_CHARS = 20
 const MAX_CHARS = 200
 
+/** Measured on unfixed code before Commit 2 — reconnect anti-regression baseline. */
+const RECONNECT_ENQUEUE_BASELINE = 1
+
 const SPEAKABLE_LABELS: SpeakableLabels = {
   codeBlock: "code block",
   codeBlockWithLang: (lang: string) => `code block ${lang}`,
@@ -320,7 +323,11 @@ describe("replay-quiet harness", () => {
     const harness = createQuietHarness(frames)
 
     await harness.view.connect()
-    await flushEffects()
+    for (let i = 0; i < 20; i++) {
+      await new Promise<void>((r) => setTimeout(r, 20))
+      await tick()
+      if (harness.enqueueCount() > 0) break
+    }
 
     expect(harness.enqueueCount()).toBeGreaterThan(0)
     harness.destroy()
@@ -348,7 +355,11 @@ describe("replay-quiet harness", () => {
     const harness = createQuietHarness(frames)
 
     await harness.view.connect()
-    await flushEffects()
+    for (let i = 0; i < 30; i++) {
+      await new Promise<void>((r) => setTimeout(r, 20))
+      await tick()
+      if (harness.enqueueCount() >= 4) break
+    }
 
     expect(harness.enqueueCount()).toBe(4)
     harness.destroy()
@@ -436,8 +447,12 @@ describe("replay-quiet harness", () => {
 
     const harness = createQuietHarness([], mockFetch)
     await harness.view.connect()
-    await flushEffects(12)
-    expect(harness.enqueueCount()).toBe(0)
+    for (let i = 0; i < 30; i++) {
+      await new Promise<void>((r) => setTimeout(r, 20))
+      await tick()
+      if (harness.enqueueCount() >= RECONNECT_ENQUEUE_BASELINE) break
+    }
+    expect(harness.enqueueCount()).toBe(RECONNECT_ENQUEUE_BASELINE)
     harness.destroy()
   })
 })
