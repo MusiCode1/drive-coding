@@ -38,6 +38,34 @@ export interface SegmentOwner {
   invalidate(segmentId: string): void
 }
 
+/**
+ * ─── slice playback-skip-telemetry ───
+ * **למה סגמנט לא נשמע.** בלי זה `state === "skipped"` אומר *ש*דולג ולא *למה*,
+ * ושלושה באגים שונים לגמרי נראים אותו הדבר.
+ *
+ * 🔴 העיקרון: **השמטה חייבת להיות החלטה, לא היעדר החלטה.** לפני הסלייס הזה
+ * יתום מאחורי ה-cursor פשוט נשאר `ready` לנצח — איש לא ויתר עליו, הלולאה רק
+ * לא חזרה אליו. אירוע שלא קורה אי-אפשר לתעד, ולכן הוספת שדה לבדה לא הספיקה.
+ */
+export type SkipReason =
+  /** ממוין לפני מה שכבר נוגן, והלולאה חנתה. **הבאג שדווח 23/08.** */
+  | "orphan-behind-cursor"
+  /** לא חזר מה-TTS בתוך `reserveTimeoutMs`. **הפיך** — ר' `#reconsider`. */
+  | "reserve-timeout"
+  /** stop()/cancel קטע אותו. */
+  | "cancelled"
+  /** invalidate/refetch הפך אותו למיושן. */
+  | "invalidated"
+
+/** רשומת-יומן. ‏`context` הוא מה שמאפשר לשפוט **בדיעבד** אם ההחלטה הייתה נכונה. */
+export type SkipEvent = {
+  at: number
+  segmentId: string
+  bubbleId: string
+  reason: SkipReason
+  context: { cursor: number; items: number; lastPlayed: number }
+}
+
 export type PlaylistItemState =
   | "reserved"
   | "loading"
@@ -67,12 +95,34 @@ export type PlaylistItem = {
    * בלי הדגל, ה-#playLoop היה קורא refetch() על כל item רגיל → סופת-fetch → קקפוניה/שקט.
    */
   needsRefetch?: boolean
+  /** ─── skip-telemetry ─── למה דולג. `undefined` ⇔ לא דולג. */
+  skipReason?: SkipReason
+  skippedAt?: number
+  /**
+   * ‏`reserve-timeout` בלבד: הפריט **מועמד לאיסוף** אם יחזור.
+   * זה מה שהופך את קיצור ה-timeout ל-6ש' לזול — דילוג הוא כבר לא סופי.
+   */
+  reconsiderable?: boolean
 }
 
 export type AudioPlaylistState = "idle" | "playing"
 
 /** A3: מצב transport — לצד state, לא במקומו (ראה הערה בראש הקובץ). */
 export type AudioPlaylistTransport = "playing" | "paused" | "stopped"
+
+/**
+ * ─── skip-telemetry ───
+ * ‏**6 שניות, לא 20.** נמדד חי (23/08): `LOOKAHEAD = 2` ⇒ ה-fetch של סגמנט N
+ * מתחיל רק אחרי ש-N−2 סיים, ולכן **חלק מההמתנות לגיטימיות**. ‏TTS מחזיר
+ * ב-1–3ש' (‏Gemini ~1ש' ל-first-audio), אז 6 הוא פי-שניים מה-worst-case הסביר.
+ *
+ * 🔴 המספר זול **רק מפני** שדילוג-timeout הפך להפיך (`reconsiderable`).
+ * בלי זה, קיצור מ-20 ל-6 היה מגדיל אובדן-סגמנטים.
+ */
+export const DEFAULT_RESERVE_TIMEOUT_MS = 6_000
+
+/** גודל יומן-הדילוגים. ‏`state` הוא snapshot ונמחק ב-clear; היומן שורד. */
+export const SKIP_LOG_LIMIT = 50
 
 export class AudioPlaylist {
   // ⚠️ A3: state ("idle"|"playing") מ-A2 — **נשאר כפי שהוא!**
@@ -112,6 +162,8 @@ export class AudioPlaylist {
   #segmentEpoch: Map<string, number> = new Map()
   /** מונע #playLoop כפול אחרי stop(). */
   #loopGeneration = 0
+  /** ─── skip-telemetry ─── יומן טבעתי; אחרונים בסוף. */
+  #skipLog: SkipEvent[] = []
 
   constructor(
     audioStream: AudioSink,
@@ -120,7 +172,7 @@ export class AudioPlaylist {
   ) {
     this.#audioStream = audioStream
     this.#onPlaybackStart = onPlaybackStart
-    this.#reserveTimeoutMs = opts?.reserveTimeoutMs ?? 20_000
+    this.#reserveTimeoutMs = opts?.reserveTimeoutMs ?? DEFAULT_RESERVE_TIMEOUT_MS
     registerPlaylist(this)
   }
 
@@ -136,6 +188,52 @@ export class AudioPlaylist {
    * ואם פריט חדש נוסף והם **נשארו** שווים — זה בדיוק הבאג שגרם לשקט מהתור
    * השני (ר' `audio-playlist.lifecycle.test.ts`).
    */
+  /**
+   * ─── skip-telemetry ───
+   * **הופך השמטה להחלטה.** כל ויתור על סגמנט עובר כאן, ורק כאן — כך שיש
+   * בדיוק מקום אחד שכותב `skipReason`, רושם ביומן ומדפיס לוג.
+   *
+   * ⚠️ **אינו משנה סדר-השמעה.** הוא מתעד מה שקרה ממילא. זו הסיבה שאפשר
+   * להכניס אותו לפני שמכריעים איך לתקן את הבאג עצמו.
+   */
+  #markSkipped(item: PlaylistItem, reason: SkipReason, lastPlayed: number): void {
+    if (item.skipReason !== undefined) return // כבר סומן — לא לרשום פעמיים
+    item.state = "skipped"
+    item.skipReason = reason
+    item.skippedAt = Date.now()
+    item.reconsiderable = reason === "reserve-timeout"
+
+    const ev: SkipEvent = {
+      at: item.skippedAt,
+      segmentId: item.segmentId,
+      bubbleId: item.bubbleId,
+      reason,
+      context: { cursor: this.#cursor, items: this.items.length, lastPlayed },
+    }
+    this.#skipLog.push(ev)
+    if (this.#skipLog.length > SKIP_LOG_LIMIT) this.#skipLog.shift()
+
+    // ‏`orphan-behind-cursor` הוא **אובדן שקט** — warn. timeout הוא צפוי — info.
+    const line = `[playlist] skip ${reason} seg=${item.segmentId.slice(0, 8)} bubble=${item.bubbleId.slice(0, 8)} cursor=${ev.context.cursor}/${ev.context.items} lastPlayed=${lastPlayed}`
+    if (reason === "orphan-behind-cursor") console.warn(line)
+    else console.info(line)
+  }
+
+  /** ─── skip-telemetry ─── האינדקס הגבוה שכבר נוגן. משותף ללולאה ולתיעוד. */
+  #lastPlayedIndex(): number {
+    let last = -1
+    for (let k = 0; k < this.items.length; k++) {
+      const st = this.items[k]?.state
+      if (st === "done" || st === "playing") last = k
+    }
+    return last
+  }
+
+  /** ─── skip-telemetry ─── היומן, לצריכת `__dc` וכלי-הדיבוג. */
+  skipLog(): readonly SkipEvent[] {
+    return this.#skipLog
+  }
+
   debugInfo(): PlaylistDebugInfo {
     const byState: Record<string, number> = {}
     for (const it of this.items) byState[it.state] = (byState[it.state] ?? 0) + 1
@@ -147,6 +245,11 @@ export class AudioPlaylist {
       state: this.state,
       currentSegmentId: this.currentSegmentId,
       byState,
+      skipsByReason: this.#skipLog.reduce<Record<string, number>>((acc, e) => {
+        acc[e.reason] = (acc[e.reason] ?? 0) + 1
+        return acc
+      }, {}),
+      recentSkips: this.#skipLog.slice(-5).map((e) => `${e.reason}:${e.segmentId.slice(0, 8)}`),
     }
   }
 
@@ -574,20 +677,32 @@ export class AudioPlaylist {
           // לחזור ל-32 — השמעתו עכשיו תהיה מחוץ לסדר, וזה גרוע מהשמטתו.
           // אבל אם 32 נוגן, התקדמנו, ו-33 נשאר `ready` — 33 כן צריך להישמע.
           // ⇒ הגבול הוא האינדקס הגבוה ביותר שכבר נוגן.
-          let lastPlayed = -1
-          for (let k = 0; k < this.items.length; k++) {
-            const st = this.items[k]?.state
-            if (st === "done" || st === "playing") lastPlayed = k
-          }
-          const orphan = this.items.findIndex(
-            (it, k) =>
-              k > lastPlayed &&
-              (it.state === "reserved" || it.state === "loading" || it.state === "ready"),
-          )
+          const lastPlayed = this.#lastPlayedIndex()
+          const pending = (st: PlaylistItemState): boolean =>
+            st === "reserved" || st === "loading" || st === "ready"
+
+          const orphan = this.items.findIndex((it, k) => k > lastPlayed && pending(it.state))
           if (orphan !== -1) {
             this.#cursor = orphan
             this.#jumpTarget = orphan
             continue
+          }
+
+          // ─── skip-telemetry ───
+          // 🔴 **כאן נולד הבאג שדווח 23/08, וכאן הוא נעשה נראה.**
+          // הגענו לסוף, לא נמצא יתום לאסוף — אבל ייתכן שנשארו פריטים
+          // `pending` **מאחורי** `lastPlayed`. עד עכשיו הם פשוט נשארו
+          // `ready` לנצח: איש לא ויתר עליהם, הלולאה רק לא חזרה.
+          //
+          // ⚠️ **התיעוד אינו משנה את ההתנהגות** — אותם פריטים לא היו
+          // מושמעים גם קודם. הוא רק הופך שתיקה לאמירה, וזה מה שיאפשר
+          // להכריע **עם נתונים** איך לתקן את הבאג עצמו.
+          //
+          // נמדד חי במכשיר המשתמש (23/08): `cursor 60/60`,
+          // `byState {done: 58, ready: 2}`, `inFlight: 0` — שני סגמנטים
+          // מוכנים שלעולם לא ינוגנו, ו-`skipped: 0` שהסתיר את זה.
+          for (const it of this.items) {
+            if (pending(it.state)) this.#markSkipped(it, "orphan-behind-cursor", lastPlayed)
           }
         }
 
@@ -665,8 +780,9 @@ export class AudioPlaylist {
             continue
           }
           if (!resolved) {
-            // timeout
-            item.state = "skipped"
+            // skip-telemetry: היה `item.state = "skipped"` שקט. עכשיו מתועד,
+            // ו-`reconsiderable` הופך אותו למועמד לאיסוף אם יחזור מאוחר.
+            this.#markSkipped(item, "reserve-timeout", this.#lastPlayedIndex())
             this.#cursor++
             continue
           }

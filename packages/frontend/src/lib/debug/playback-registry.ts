@@ -28,6 +28,14 @@ export type PlaylistDebugInfo = {
   currentSegmentId: string | null
   /** פילוח לפי state — `reserved` שנתקע הוא ממצא. */
   byState: Record<string, number>
+  /**
+   * ─── skip-telemetry ───
+   * ⭐ **למה סגמנטים לא נשמעו.** `byState.skipped` אומר כמה; זה אומר למה.
+   * `orphan-behind-cursor` = אובדן שקט (הבאג). `reserve-timeout` = הפיך.
+   */
+  skipsByReason: Record<string, number>
+  /** חמשת האחרונים, `reason:segId` — לזיהוי מהיר בלי לפתוח את היומן. */
+  recentSkips: string[]
 }
 
 /** תמונת-מצב של ה-sink. */
