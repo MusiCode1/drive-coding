@@ -1,0 +1,16 @@
+# Daily wire-recording compression at 05:15 — after nightly-search-index (04:00)
+# and memory-autocommit (04:30), both active on this host.
+#
+# not installed automatically. to install:
+#   cp deploy/systemd/wire-rec-compress.{service,timer} ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now wire-rec-compress.timer
+
+[Unit]
+Description=Daily wire recording compression (05:15)
+
+[Timer]
+OnCalendar=*-*-* 05:15:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

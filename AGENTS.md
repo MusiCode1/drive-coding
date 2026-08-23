@@ -292,15 +292,53 @@ FE disconnect/reconnect cycles (unlike the previous `ws-agent` location).
   `~/.config/drive-coding/wire-recordings/<agentId>-<ts>.jsonl` — one `{ts,dir,raw}` line
   per frame, a clean file per child lifetime (not per WS connection — slice wire-observability-bridge).
   Best for offline analysis of anomalies (empty chunks, duplicate ids) with `jq`. Works live too:
-  `tail -f ~/.config/drive-coding/wire-recordings/*.jsonl | jq`.
+  `tail -f ~/.config/drive-coding/wire-recordings/*.jsonl | jq` — after daily compression,
+  almost every `.jsonl` left in the directory is the live recording or a fresh one since
+  the timer last ran, so this tail is more precise than before, not less.
+
+### Compression (daily maintenance)
+
+A daily timer at **05:15** runs `compress-wire-recordings.mjs --apply`: every **released**
+`.jsonl` is compressed to `.jsonl.zst` (~25× smaller), released zero-byte files are deleted,
+and **no retention caps** are enabled by default. The **live** recording stays an uncompressed
+`.jsonl` — `tail -f` above keeps working unchanged.
+
+An open file is **never** compressed: `zstd --rm` on a file still held by a process loses
+frames silently **and frees no space** (the fd keeps the inode). Detection uses `/proc/*/fd`,
+**not mtime** — the recorder is "always-active for the full child lifetime", so a file can
+sit open for days with no writes and mtime would mislead exactly on the large ones.
+
+For **historical** analysis across both compressed and live files:
+
+```bash
+# live tail — after compression, almost every .jsonl left is live or fresh since the timer
+tail -f ~/.config/drive-coding/wire-recordings/*.jsonl | jq
+# full history — -f passes through uncompressed files too. e.g. every thought-chunk text
+# (we found claude sends them ALL empty — an upstream ACP-adapter issue, BE is transparent):
+zstdcat -f ~/.config/drive-coding/wire-recordings/*.jsonl* \
+  | jq -r 'select(.raw|fromjson|.params.update.sessionUpdate=="agent_thought_chunk") | (.raw|fromjson|.params.update.content.text)'
+# fast grep on mixed archive
+zstdgrep -h '"sessionUpdate":"agent_thought_chunk"' ~/.config/drive-coding/wire-recordings/*.jsonl*
+```
+
+The timer is **not installed automatically**. To install:
+
+```bash
+cp deploy/systemd/wire-rec-compress.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now wire-rec-compress.timer
+```
+
+Manual run (dry-run by default; `-- --apply` to perform):
+
+```bash
+bun run wire-rec:compress          # dry-run
+bun run wire-rec:compress -- --apply
+```
 
 ```bash
 # record a session — Windows: bun direct (onecli can't spawn bun; TTS proxy unneeded here)
 cd packages/backend
 WIRE_RECORD=1 PORT=4000 bun src/server.ts
-# ...connect an agent + prompt, then analyze. e.g. every thought-chunk text
-# (we found claude sends them ALL empty — an upstream ACP-adapter issue, BE is transparent):
-jq -r 'select(.raw|fromjson|.params.update.sessionUpdate=="agent_thought_chunk") | (.raw|fromjson|.params.update.content.text)' ~/.config/drive-coding/wire-recordings/*.jsonl
 ```
 
 The recordings live outside the repo, so they never enter git.

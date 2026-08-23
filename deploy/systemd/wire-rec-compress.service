@@ -1,0 +1,21 @@
+# Wire recording compression — oneshot, triggered by wire-rec-compress.timer.
+# No retention caps enabled here; add --max-age-days 90 or --max-total-mb 2000
+# to ExecStart if desired. Retention runs *before* compression in each run, so
+# a file compressed in that run is never deleted by caps in the same run.
+#
+# not installed automatically. to install:
+#   cp deploy/systemd/wire-rec-compress.{service,timer} ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now wire-rec-compress.timer
+
+[Unit]
+Description=Compress released wire recordings (.jsonl → .jsonl.zst)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/user/Projects/drive-coding/dev
+ExecStart=/bin/bash -lc 'source /home/user/.config/shell/shared-env.sh && node /home/user/Projects/drive-coding/dev/scripts/compress-wire-recordings.mjs --apply'
+TimeoutStartSec=1800
+Nice=10
+IOSchedulingClass=idle
