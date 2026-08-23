@@ -7,6 +7,7 @@
  * ─── msr-v2 ───
  */
 
+import type { MessageKey } from "@drive-coding/core/i18n"
 import type { AgentSession } from "../agent-session.svelte"
 import type { Speaker } from "../speaker.svelte"
 
@@ -36,5 +37,21 @@ export class ModelStatus {
     if (this.#session.turnState === "waiting")                return "waiting"
     if (this.#speaker.enabled && this.#speaker.hasPendingNarration) return "pending-tts"
     return null
+  })
+
+  /** האם יש ריצת-סוכן פעילה שאפשר לבטל. הגדרה אחת לכל צרכני "עצור ריצה". */
+  isRunActive: boolean = $derived.by(() => this.#session.turnState !== "idle")
+
+  /**
+   * מפתח-התווית של כפתור "עצור ריצה" — מקור אחד לשני צרכניו (MicLarge, TypeArea).
+   * לפי turnState ולא לפי phase: phase מחזיר "speaking" ראשון ולכן כמעט תמיד
+   * היה נופל ל-fallback.
+   */
+  stopRunLabelKey: MessageKey = $derived.by(() => {
+    const ts = this.#session.turnState
+    if (ts === "thinking") return "playbackControls.stopRun.thinking"
+    if (ts === "responding") return "playbackControls.stopRun.responding"
+    if (ts === "calling-tool") return "playbackControls.stopRun.callingTool"
+    return "playbackControls.stopRun" // waiting + idle + כל השאר
   })
 }

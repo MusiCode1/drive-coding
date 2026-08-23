@@ -38,6 +38,7 @@ import {
   getModelStatus,
   getResponsive,
   getSession,
+  getSpeaker,
 } from "$lib/context"
 import type { Bubble } from "$lib/types/bubble"
 import { stableBubbleKey } from "$lib/util/bubble-key"
@@ -58,14 +59,12 @@ const responsive = getResponsive()
 const session = getSession()
 const modelStatus = getModelStatus()
 const playlist = getAudioPlaylist()
+const speaker = getSpeaker()
 const t = getI18n().t
 
 /** control-dock: האם רצועת הבקרה מוצגת ( mirrors PlaybackControls showDock ). */
 const ribbonVisible = $derived(
-  modelStatus.phase === "thinking" ||
-    modelStatus.phase === "responding" ||
-    modelStatus.phase === "calling-tool" ||
-    playlist.items.length > 0,
+  playlist.items.length > 0 || !speaker.enabled || modelStatus.isRunActive,
 )
 
 // scroll node — ה-AppShell הוא owner (חוק זהב #4)
