@@ -396,4 +396,13 @@ export const he: Catalog = {
   "session.turnStalled": "לא הגיע כלום מהסוכן זמן רב. ייתכן שהוא עדיין עובד — וייתכן שעצר בלי לומר.",
   "session.cloudflareRefresh": "רענון",
   "session.gone": "הסשן הזה איננו — פתח חדש.",
+  // ─── session-url (slice session-url C2) ───
+  "sessionUrl.resolving": "מתחבר…",
+  "sessionUrl.notFound.title": "סשן לא נמצא",
+  "sessionUrl.notFound.body": "הסשן שביקשת אינו זמין כרגע. ייתכן שהוא נסגר או שהסוכן לא פועל.",
+  "sessionUrl.notFound.back": "חזרה לדף הבית",
+  "sessionUrl.takeover.title": "יש חיבור פעיל",
+  "sessionUrl.takeover.body": "סשן זה מחובר כבר ממכשיר או טאב אחר. להתחבר כאן ינתק את החיבור הקיים.",
+  "sessionUrl.takeover.confirm": "התחבר בכל זאת",
+  "sessionUrl.takeover.cancel": "ביטול",
 }

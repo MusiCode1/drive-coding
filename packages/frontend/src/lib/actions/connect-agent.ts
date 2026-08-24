@@ -9,9 +9,10 @@
  * זוהי Action (ולא מתודה על Settings או AgentSession) מכיוון שהיא משלבת
  * מספר view-models יחד עם ניווט — דוגמה קלאסית לעניין חוצה שכבות.
  *
- * ─── slice view-switch C3-ז: נקודת-ההזרקה היחידה של sessionTransport ─── (additive)
- * ❌ אל תפזר `if (transport === "http")` מחוץ לקובץ הזה — כל הניתוב האחר ב-VM
+ * ─── slice view-switch C3-ז: נקודות ההזרקה של sessionTransport ─── (additive)
+ * ❌ אל תפזר `if (transport === "http")` מחוץ לנקודות אלה — כל הניתוב האחר ב-VM
  * הוא לפי `#view !== null`, לא לפי הדגל (הדגל בנקודה אחת).
+ * נקודות: connect-agent.ts · handleReconnect (+page.svelte) · open-session-url.ts
  */
 
 import { goto } from "$app/navigation"
