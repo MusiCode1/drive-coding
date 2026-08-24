@@ -1651,6 +1651,10 @@ export class AgentSession {
     return this.#cliKind
   }
 
+  get sessionId(): string | null {
+    return this.#sessionId
+  }
+
   // ─── slice-permission-ui-basic: בקשת הרשאה חיה ──────────────────────────────
   // תשתית גנרית ניתנת-לשכפול (callback + Promise round-trip) — slice B (elicitation)
   // ישכפל את הדפוס הזה ל-onCreateElicitation.
