@@ -406,6 +406,15 @@ export type MessageKey =
   | "session.turnStalled"
   | "session.cloudflareRefresh"
   | "session.gone"
+  // ─── session-url (slice session-url C2) ───
+  | "sessionUrl.resolving"
+  | "sessionUrl.notFound.title"
+  | "sessionUrl.notFound.body"
+  | "sessionUrl.notFound.back"
+  | "sessionUrl.takeover.title"
+  | "sessionUrl.takeover.body"
+  | "sessionUrl.takeover.confirm"
+  | "sessionUrl.takeover.cancel"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

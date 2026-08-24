@@ -9,14 +9,16 @@
  * זוהי Action (ולא מתודה על Settings או AgentSession) מכיוון שהיא משלבת
  * מספר view-models יחד עם ניווט — דוגמה קלאסית לעניין חוצה שכבות.
  *
- * ─── slice view-switch C3-ז: נקודת-ההזרקה היחידה של sessionTransport ─── (additive)
- * ❌ אל תפזר `if (transport === "http")` מחוץ לקובץ הזה — כל הניתוב האחר ב-VM
+ * ─── slice view-switch C3-ז: נקודות ההזרקה של sessionTransport ─── (additive)
+ * ❌ אל תפזר `if (transport === "http")` מחוץ לנקודות אלה — כל הניתוב האחר ב-VM
  * הוא לפי `#view !== null`, לא לפי הדגל (הדגל בנקודה אחת).
+ * נקודות: connect-agent.ts · handleReconnect (+page.svelte) · open-session-url.ts
  */
 
 import { goto } from "$app/navigation"
 import { env } from "$env/dynamic/public"
 import { readSessionTransport } from "$lib/session/session-transport-read"
+import { sessionPath } from "$lib/session/session-url"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
@@ -51,7 +53,16 @@ export async function connectAgent(params: {
   }
 
   if (params.session.status === "connected") {
-    await goto(transport === "http" ? "/chat?sessionTransport=http" : "/chat")
+    const sid = params.session.sessionId
+    if (transport === "http") {
+      await goto(
+        sid !== null
+          ? `${sessionPath(params.cliKind, sid)}?sessionTransport=http`
+          : "/chat?sessionTransport=http",
+      )
+    } else {
+      await goto(sid !== null ? sessionPath(params.cliKind, sid) : "/chat")
+    }
   }
   // במקרה של שגיאה, ה-session VM כבר הגדיר status="error" + הודעת שגיאה.
   // דף החיבור ירנדר את זה — ללא ניווט.
