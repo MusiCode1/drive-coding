@@ -225,7 +225,7 @@ describe("openSessionUrl", () => {
     ).toBe("not-found")
   })
 
-  it("returns not-found for warm pick before C4", async () => {
+  it("returns not-found for warm pick when target session missing from list", async () => {
     listAgentsMock.mockResolvedValue([
       makeAgent({
         id: "00000000-0000-4000-8000-000000000001",
@@ -233,6 +233,10 @@ describe("openSessionUrl", () => {
       }),
     ])
     const session = makeSession()
+    session.attachToLiveAgent.mockImplementation(async () => {
+      session.status = "connected"
+    })
+
     expect(
       await openSessionUrl({
         cliKind: "claude",
@@ -241,6 +245,47 @@ describe("openSessionUrl", () => {
         settings: { sessionTransport: null } as never,
       }),
     ).toBe("not-found")
+    expect(session.attachToLiveAgent).toHaveBeenCalled()
+    expect(session.listSessions).toHaveBeenCalledWith(true)
+  })
+
+  it("warm pick attaches then switchSession to target", async () => {
+    listAgentsMock.mockResolvedValue([
+      makeAgent({
+        id: "00000000-0000-4000-8000-000000000012",
+        acpSessionId: "other-session",
+      }),
+    ])
+    const session = makeSession({
+      sessions: [{ sessionId: "sess-target", cwd: "/other", title: "T", updatedAt: "" }],
+    })
+    session.attachToLiveAgent.mockImplementation(async () => {
+      session.status = "connected"
+    })
+    session.switchSession.mockImplementation(async () => {
+      session.sessionId = "sess-target"
+    })
+
+    expect(
+      await openSessionUrl({
+        cliKind: "claude",
+        sessionId: "sess-target",
+        session: session as never,
+        settings: { sessionTransport: null } as never,
+      }),
+    ).toBe("connected")
+    expect(session.attachToLiveAgent).toHaveBeenCalledWith({
+      agentId: "00000000-0000-4000-8000-000000000012",
+      sessionId: "other-session",
+      cwd: "/tmp",
+      cliKind: "claude",
+    })
+    expect(session.switchSession).toHaveBeenCalledWith({
+      sessionId: "sess-target",
+      cwd: "/other",
+      cliKind: "claude",
+      title: "T",
+    })
   })
 
   it("returns needs-takeover when agent attached and not owned by tab", async () => {

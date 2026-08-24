@@ -64,7 +64,7 @@ export async function openSessionUrl(params: {
   const agents = await listAgents()
   const pick = pickSessionHost(agents, cliKind, sessionId)
 
-  if (pick.kind === "none" || pick.kind === "warm") return "not-found"
+  if (pick.kind === "none") return "not-found"
 
   const agent = pick.agent
 
@@ -79,6 +79,9 @@ export async function openSessionUrl(params: {
     stored: settings.sessionTransport,
   })
 
+  const attachSessionId = pick.kind === "exact" ? sessionId : agent.acpSessionId
+  if (!attachSessionId) return "not-found"
+
   if (transport === "http") {
     await session.attachRemoteToLiveAgent({
       agentId: agent.id,
@@ -88,12 +91,34 @@ export async function openSessionUrl(params: {
   } else {
     await session.attachToLiveAgent({
       agentId: agent.id,
-      sessionId,
+      sessionId: attachSessionId,
       cwd: agent.cwd,
       cliKind: agent.cliKind,
     })
   }
 
   if (connectionFailed(session)) return "error"
+
+  if (pick.kind === "warm") {
+    await session.listSessions(true)
+    if (session.sessionsError !== null) return "error"
+
+    const info = session.sessions.find((s) => s.sessionId === sessionId)
+    if (!info) return "not-found"
+
+    try {
+      await session.switchSession({
+        sessionId,
+        cwd: info.cwd,
+        cliKind,
+        title: info.title,
+      })
+    } catch {
+      return "error"
+    }
+
+    if (connectionFailed(session)) return "error"
+  }
+
   return "connected"
 }
