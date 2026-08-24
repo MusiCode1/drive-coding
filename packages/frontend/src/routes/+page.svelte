@@ -7,6 +7,7 @@ import { onMount, untrack } from "svelte"
 import { goto } from "$app/navigation"
 import { env } from "$env/dynamic/public"
 import { readSessionTransport } from "$lib/session/session-transport-read"
+import { sessionPath } from "$lib/session/session-url"
 import { connectAgent } from "$lib/actions/connect-agent"
 import { fetchServerOptions } from "$lib/adapters/options"
 import type { RecentProject } from "$lib/adapters/recent-projects"
@@ -123,11 +124,16 @@ async function handleReconnect(agent: AgentPublic) {
       cliKind: agent.cliKind,
     })
     if (session.status === "connected") {
-      await goto("/chat?sessionTransport=http")
+      await goto(
+        agent.acpSessionId
+          ? `${sessionPath(agent.cliKind, agent.acpSessionId)}?sessionTransport=http`
+          : "/chat?sessionTransport=http",
+      )
     }
     // if status==="error" — stay on /, VM set this.error
     return
   }
+  if (!agent.acpSessionId) return
   await session.attachToLiveAgent({
     agentId: agent.id,
     sessionId: agent.acpSessionId,
@@ -135,7 +141,11 @@ async function handleReconnect(agent: AgentPublic) {
     cliKind: agent.cliKind,
   })
   if (session.status === "connected") {
-    await goto("/chat")
+    await goto(
+      agent.acpSessionId
+        ? sessionPath(agent.cliKind, agent.acpSessionId)
+        : "/chat",
+    )
   }
 }
 

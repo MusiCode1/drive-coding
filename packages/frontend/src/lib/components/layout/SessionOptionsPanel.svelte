@@ -34,6 +34,7 @@ import {
   getSpeaker,
   getUiShell,
 } from "$lib/context"
+import { sessionPath } from "$lib/session/session-url"
 
 const t = getI18n().t
 const session = getSession()
@@ -213,7 +214,7 @@ async function selectSession(info: { sessionId: string; cwd: string; title?: str
     title: info.title ?? "", // ← slice session-title: העבר title ל-switchSession
   })
   uiShell.closeSheet()
-  await goto("/chat")
+  await goto(sessionPath(settings.cliKind, info.sessionId))
 }
 
 /**
@@ -223,7 +224,12 @@ async function selectSession(info: { sessionId: string; cwd: string; title?: str
 async function onNewSession() {
   await session.newSession({ cliKind: settings.cliKind })
   uiShell.closeSheet()
-  await goto("/chat")
+  const sid = session.sessionId
+  if (sid !== null) {
+    await goto(sessionPath(settings.cliKind, sid))
+  } else {
+    await goto("/chat")
+  }
 }
 
 /**
