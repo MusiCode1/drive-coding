@@ -25,7 +25,10 @@ type FixtureEntry = {
   frame: { method?: string; params?: unknown }
 }
 
-const fixturePath = new URL("./__fixtures__/subagent-task-single.json", import.meta.url)
+const fixturePath = new URL(
+  "../../../../core/tests/fixtures/subagent-task-single.json",
+  import.meta.url,
+)
 const fixture: FixtureEntry[] = JSON.parse(readFileSync(fixturePath, "utf-8"))
 
 const TASK_TOOL_CALL_ID = "toolu_01GiSAsvUBjALq1WGBB2xQ1K"
