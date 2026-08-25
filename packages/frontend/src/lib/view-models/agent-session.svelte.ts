@@ -216,9 +216,19 @@ export class AgentSession {
     return this.#isRemote ? this.#view : null
   }
 
-  constructor(opts?: { view?: SessionView; cues?: CuesEngine; settings?: Settings }) {
+  /** @internal For testing — called on every notification entering #onSessionUpdate. */
+  #onUpdateObserved?: (update: unknown) => void
+
+  constructor(opts?: {
+    view?: SessionView
+    cues?: CuesEngine
+    settings?: Settings
+    /** @internal For testing — invoked on **every** notification entering #onSessionUpdate. */
+    _onUpdateObserved?: (update: unknown) => void
+  }) {
     this.#cues = opts?.cues
     this.#settings = opts?.settings
+    this.#onUpdateObserved = opts?._onUpdateObserved
     // ─── slice session-view-port C3: אם view הוזרק ─── (additive)
     if (opts?.view) {
       this.#view = opts.view
@@ -3018,6 +3028,7 @@ export class AgentSession {
   }
 
   #onSessionUpdate = (notification: SessionNotification): void => {
+    this.#onUpdateObserved?.(notification.update)
     this.#noteAgentActivity() // watchdog §2 — מסלול WS (כל session/update)
 
     // מעטפת ACP: צורה של { sessionId, update: { sessionUpdate, content, messageId, ... } }
