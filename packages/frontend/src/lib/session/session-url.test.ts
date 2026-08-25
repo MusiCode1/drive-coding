@@ -1,6 +1,6 @@
 import type { AgentPublic } from "@drive-coding/core/schemas/agent"
 import { describe, expect, it } from "vitest"
-import { pickSessionHost, sessionPath } from "./session-url.js"
+import { pickSessionHost, sessionPath, sessionPathWithTransport } from "./session-url.js"
 
 const PI_SESSION_ID =
   "/home/user/.pi/agent/sessions/--home-user-Vendor-pi-acp-sdk--/2026-08-10T15-38-14-534Z_019fec53-1086-7f1e-81a1-471d53eda92b.jsonl"
@@ -40,6 +40,27 @@ describe("sessionPath", () => {
     expect(sessionPath("opencode", OPENCODE_SESSION_ID)).toBe(
       `/chat/opencode/${OPENCODE_SESSION_ID}`,
     )
+  })
+})
+
+// ─── slice agent-patch-unify C4, ממצא 2: אותה מוסכמה כמו connect-agent.ts / handleReconnect ───
+describe("sessionPathWithTransport", () => {
+  it("http → מצרף ?sessionTransport=http לנתיב הקנוני", () => {
+    expect(sessionPathWithTransport("claude", "abc-123", "http")).toBe(
+      "/chat/claude/abc-123?sessionTransport=http",
+    )
+  })
+
+  it("ws → נתיב עירום, בלי query (כמו היום)", () => {
+    expect(sessionPathWithTransport("claude", "abc-123", "ws")).toBe("/chat/claude/abc-123")
+  })
+
+  it("sessionId=null + http → /chat?sessionTransport=http (fallback, כמו connect-agent.ts)", () => {
+    expect(sessionPathWithTransport("claude", null, "http")).toBe("/chat?sessionTransport=http")
+  })
+
+  it("sessionId=null + ws → /chat בלבד", () => {
+    expect(sessionPathWithTransport("claude", null, "ws")).toBe("/chat")
   })
 })
 

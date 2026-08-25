@@ -199,9 +199,11 @@ describe("listAgents", () => {
 })
 
 // ─── notifySessionAttached ─────────────────────────────────────────────────────
+// slice agent-patch-unify C3: notifySessionAttached מאציל ל-patchAgent (PATCH /api/agents/:id)
+// במקום POST …/session-attached — לכן ה-label של withTimeout הוא "patchAgent" (brief §4 C3, נמדד).
 
 describe("notifySessionAttached", () => {
-  it("happy path — fetch POST, void/fire-and-forget", async () => {
+  it("happy path — PATCH דרך patchAgent, void/fire-and-forget", async () => {
     mockWithTimeout.mockImplementation(passthroughWithTimeout)
     vi.stubGlobal(
       "fetch",
@@ -214,15 +216,15 @@ describe("notifySessionAttached", () => {
     expect(mockWithTimeout).toHaveBeenCalledWith(
       expect.any(Function),
       10000,
-      expect.objectContaining({ label: "notifySessionAttached" }),
+      expect.objectContaining({ label: "patchAgent" }),
     )
   })
 
   it("timeout — withTimeout זורק → notifySessionAttached זורק (caller אמור .catch)", async () => {
-    mockWithTimeout.mockRejectedValue(new Error("notifySessionAttached timeout 10000ms"))
+    mockWithTimeout.mockRejectedValue(new Error("patchAgent timeout 10000ms"))
 
     await expect(notifySessionAttached("ag1", "sess1")).rejects.toThrow(
-      "notifySessionAttached timeout 10000ms",
+      "patchAgent timeout 10000ms",
     )
   })
 })

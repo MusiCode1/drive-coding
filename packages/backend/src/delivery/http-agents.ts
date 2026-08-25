@@ -1,4 +1,11 @@
-import { type AgentRegistry, CliId, toAgentPublic, validateCwd } from "@drive-coding/core"
+import {
+  type Agent,
+  type AgentRegistry,
+  type BridgeKind,
+  CliId,
+  toAgentPublic,
+  validateCwd,
+} from "@drive-coding/core"
 import { getCliSpec, getEffectiveCliKinds } from "@drive-coding/provider/config"
 import { type } from "arktype"
 import type { Hono } from "hono"
@@ -131,72 +138,38 @@ export function registerAgentsHttp(
   })
 
   /**
-   * POST /api/agents/:id/session-attached
-   *
-   * Slice 10 Phase 1: ה-FE קורא לזה אחרי הצלחת ה-ACP handshake.
-   * מעדכן את סטטוס ה-registry ל-"ready", מתעד cwd + sessionId ב-projectsRegistry.
-   *
-   * גוף הבקשה (Body): { sessionId: string, replace?: true }
-   *   replace: כשמורם (warm switch), מאפשר דריסת sessionId קיים. ללא replace → guard MED-9 פעיל.
-   * תגובה (Response): { ok: true }
-   *
-   * שומר MED-9: אם הסוכן כבר "ready" עם acpSessionId אחר → 409 (רק כש-replace !== true).
-   */
-  app.post("/api/agents/:id/session-attached", async (c) => {
-    const agentId = c.req.param("id")
-
-    let body: unknown
-    try {
-      body = await c.req.json()
-    } catch {
-      return c.json({ error: "invalid json" }, 400)
-    }
-
-    const { sessionId, replace } = body as Record<string, unknown>
-    if (typeof sessionId !== "string" || !sessionId) {
-      return c.json({ error: "sessionId is required" }, 400)
-    }
-
-    const agent = await deps.registry.get(agentId)
-    if (!agent) return c.json({ error: "agent not found" }, 404)
-
-    // שומר MED-9: חוסם דריסה לא-מכוונת. warm switch מצהיר replace:true ועוקף ביודעין.
-    if (
-      replace !== true &&
-      agent.status === "ready" &&
-      agent.acpSessionId &&
-      agent.acpSessionId !== sessionId
-    ) {
-      return c.json({ error: "agent already attached to a different session" }, 409)
-    }
-
-    // מסמן כ-ready ומתעד סשן
-    await deps.registry.update(agentId, { status: "ready", acpSessionId: sessionId })
-
-    if (deps.projectsRegistry) {
-      await deps.projectsRegistry.recordCwd(
-        agent.cwd,
-        agent.cliKind as import("@drive-coding/core").BridgeKind,
-      )
-      await deps.projectsRegistry.recordSession(agent.cwd, sessionId)
-    }
-
-    return c.json({ ok: true })
-  })
-
-  /**
-   * PATCH /api/agents/:id — עדכון גנרי (whitelist) של שדות-משתמש. כרגע: title בלבד.
+   * PATCH /api/agents/:id — עדכון גנרי (whitelist) — דלת אחת במקום שלוש
+   * (slice agent-patch-unify): מבטל POST …/session-attached ו-POST …/persistent.
    * (slice session-title-in-process-list) — ה-BE שכבת-אחסון טיפשה, לא מפענח wire בעצמו;
    * ה-client (agent-session VM) דוחף לכאן את הכותרת שקיבל מ-session_info_update.
    *
-   * ⚠️ הגנת-גנריות load-bearing (אביגיל אימתה אמפירית) — שתי שכבות, לא אחת:
+   * ⚠️ הגנת-גנריות load-bearing (אביגיל אימתה אמפירית) — **שלוש** שכבות:
    * (א) `.onUndeclaredKey("reject")` על ה-schema — דוחה body עם מפתחות זרים (400).
-   * (ב) extract מפורש ל-`registry.update` — **אף פעם לא** spread של body/parsed גולמי,
-   *     כי `registry.update` ב-runtime מבצע `{ ...existing, ...patch }` בלי סינון
-   *     (ה-Pick ב-ports.ts הוא type-only). בלי שתי השכבות, PATCH {title, status:"crashed"}
-   *     היה דורס את ה-status.
+   *     שומרת על מחלקה 3 ("לעולם-לא-מ-HTTP": bridgePort, crashReason, id, cliKind,
+   *     createdAt, modelOverride) — אלה קיימים בטיפוס `AgentRegistry.update`, אז בלי
+   *     השכבה הזו לקוח יכול לזייף "הסוכן קרס".
+   * (ב) `status` מוצהר אך **מצומצם לליטרל `"ready"`** — PATCH {status:"crashed"} נדחה
+   *     כבר בסכימה (400). ההגנה עברה מ"בדיקת-מפתח" ל"בדיקת-תחום-ערכים".
+   * (ג) extract מפורש שדה-שדה ל-`registry.update`, **אף פעם לא spread** — וגם:
+   *     מפתח שערכו `undefined` **לעולם אינו נכנס** לאובייקט ה-patch. `registry.update`
+   *     מבצע ב-runtime `{ ...existing, ...patch }` בלי סינון (ה-Pick ב-ports.ts הוא
+   *     type-only, ו-`exactOptionalPropertyTypes` כבוי — המהדר לא תופס את זה).
+   *     בלי שומר-ה-undefined, `PATCH {title}` על agent עם acpSessionId/cwd קיימים
+   *     היה מוחק אותם בשקט (המסלול חי ב-#pushTitleToServer אחרי כל מעבר-סשן).
+   *
+   * שלוש מחלקות-שדה (המודל שמחליף את "מוצהר/לא-מוצהר"):
+   *   שדות-משתמש (title, persistent) — PATCH חופשי, עצמאיים, ללא שומר.
+   *   עובדת-חיבור (acpSessionId + status + cwd) — רק כמקשה אחת, שומר-409, תופעת-לוואי.
+   *   לעולם-לא-מ-HTTP — נדחים ב-400 (שכבה א).
    */
-  const PatchAgentInput = type({ "title?": "string | null" }).onUndeclaredKey("reject")
+  const PatchAgentInput = type({
+    "title?": "string | null",
+    "persistent?": "boolean",
+    "acpSessionId?": "string >= 1",
+    "status?": "'ready'", // D1 — ליטרל, לא string
+    "cwd?": "string >= 1",
+    "replace?": "boolean", // D3 — דגל-בקרה, לעולם לא מגיע ל-registry.update
+  }).onUndeclaredKey("reject")
 
   app.patch("/api/agents/:id", async (c) => {
     const id = c.req.param("id")
@@ -210,32 +183,71 @@ export function registerAgentsHttp(
     if (parsed instanceof type.errors) {
       return c.json({ error: parsed.summary }, 400)
     }
+
+    // D2 — צימוד: status/cwd בלי acpSessionId → 400. "עובדת-חיבור" היא אטומית;
+    // זה מה שחוסם את PATCH {title, status:"ready"} גם אחרי ש-status הפך שדה מוצהר.
+    // חייב לרוץ *לפני* registry.get — אחרת agent לא-קיים היה מחזיר 404 במקום 400
+    // (השער היה נשאר אדום על מימוש נכון — ר' §3.5 סדר-הבדיקות).
+    if (
+      (parsed.status !== undefined || parsed.cwd !== undefined) &&
+      parsed.acpSessionId === undefined
+    ) {
+      return c.json({ error: "status/cwd require acpSessionId" }, 400)
+    }
+
+    // D5 — cwd עובר validateCwd לפני שהוא נוגע ברישום, בדיוק כמו ב-POST /api/agents.
+    // גם זו בדיקה-אחרי-parse שחייבת לרוץ לפני registry.get.
+    let validatedCwd: string | undefined
+    if (parsed.cwd !== undefined) {
+      const cwdResult = validateCwd(parsed.cwd)
+      if (cwdResult.isErr()) {
+        const e = cwdResult.error
+        return c.json({ error: `invalid cwd: ${e.kind}`, detail: e }, 400)
+      }
+      validatedCwd = cwdResult.value
+    }
+
     const agent = await deps.registry.get(id)
     if (!agent) return c.json({ error: "agent not found" }, 404)
+
+    // D3 — שומר MED-9. 🔴 קורא את ה-*סוכן* (agent.status / agent.acpSessionId),
+    // לא את ה-*בקשה* (parsed.status). קריאה הפוכה הייתה פותחת עקיפה: PATCH
+    // {acpSessionId:"hijack"} לבדו (חוקי תחת D2 — הצימוד דורש acpSessionId כשיש
+    // status/cwd, לא להפך) הייתה דורסת סשן קיים במקום לקבל 409.
+    if (
+      parsed.replace !== true &&
+      parsed.acpSessionId !== undefined &&
+      agent.status === "ready" &&
+      agent.acpSessionId &&
+      agent.acpSessionId !== parsed.acpSessionId
+    ) {
+      return c.json({ error: "agent already attached to a different session" }, 409)
+    }
+
+    // D4 — שכבה (ג): extract מפורש שדה-שדה. מפתח שערכו undefined אינו נכנס לפatch.
+    const patch: Partial<Pick<Agent, "title" | "persistent" | "status" | "acpSessionId" | "cwd">> =
+      {}
     // guard: title absent (undefined) → no-op, שלא לנקות כותרת קיימת בטעות.
     // title: null = clear מכוון (הסכמה מתירה); string = set.
-    if (parsed.title !== undefined) {
-      await deps.registry.update(id, { title: parsed.title })
-    }
-    return c.json({ ok: true })
-  })
+    if (parsed.title !== undefined) patch.title = parsed.title
+    if (parsed.persistent !== undefined) patch.persistent = parsed.persistent
+    if (parsed.status !== undefined) patch.status = parsed.status
+    if (parsed.acpSessionId !== undefined) patch.acpSessionId = parsed.acpSessionId
+    if (validatedCwd !== undefined) patch.cwd = validatedCwd
 
-  // POST /api/agents/:id/persistent — נעיצה: { persistent: boolean }
-  app.post("/api/agents/:id/persistent", async (c) => {
-    const id = c.req.param("id")
-    let body: unknown
-    try {
-      body = await c.req.json()
-    } catch {
-      return c.json({ error: "invalid json" }, 400)
+    if (Object.keys(patch).length > 0) {
+      await deps.registry.update(id, patch)
     }
-    const { persistent } = body as Record<string, unknown>
-    if (typeof persistent !== "boolean") {
-      return c.json({ error: "persistent (boolean) is required" }, 400)
+
+    // D7 — תופעות-הלוואי מותנות: יורות רק כש-acpSessionId נוכח (זו עובדת-חיבור),
+    // ועם cwd ?? agent.cwd (ה-PATCH הזה לא בהכרח שינה cwd). בלי התניה, כל
+    // PATCH {title} היה רושם פרויקט ודורס lastSessionId.
+    if (deps.projectsRegistry && parsed.acpSessionId !== undefined) {
+      const effectiveCwd = validatedCwd ?? agent.cwd
+      await deps.projectsRegistry.recordCwd(effectiveCwd, agent.cliKind as BridgeKind)
+      await deps.projectsRegistry.recordSession(effectiveCwd, parsed.acpSessionId)
     }
-    const agent = await deps.registry.get(id)
-    if (!agent) return c.json({ error: "agent not found" }, 404)
-    await deps.registry.update(id, { persistent })
+
     return c.json({ ok: true })
   })
 }

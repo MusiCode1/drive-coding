@@ -412,4 +412,6 @@ export const en: Catalog = {
     "This session is already connected from another device or tab. Connecting here will disconnect it.",
   "sessionUrl.takeover.confirm": "Connect anyway",
   "sessionUrl.takeover.cancel": "Cancel",
+  // ─── agent-patch-unify C4: finding 3 — newSession over remote is not supported yet ─── (message only, no navigation)
+  "session.newSessionUnsupportedRemote": "Starting a new session is not supported yet in remote mode.",
 }
