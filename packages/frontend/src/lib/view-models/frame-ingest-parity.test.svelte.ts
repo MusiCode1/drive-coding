@@ -6,7 +6,8 @@
  *   B — HTTP: patchToSessionUpdates synthesis → RemoteSessionView (snapshot batch)
  *   C — HTTP: patchToSessionUpdates synthesis → RemoteSessionView (drip batches)
  *
- * Subagent nesting is excluded from G2/G3/G4 structure comparisons (BE strips _meta).
+ * G3 compares top-level tool-bubble counts (not flat bubble count — slice meta-passthrough:
+ * HTTP had an extra orphan tool bubble that cancelled WS message duplication on the old G3).
  */
 
 import { readFileSync } from "node:fs"
@@ -177,6 +178,19 @@ function flatMessageTexts(bubbles: Bubble[]): string[] {
   return out
 }
 
+/** Top-level tool bubble shapes including nesting depth — what G3/G5 measure (meta-passthrough). */
+type ToolShape = { toolCallId: string; subFrames: number; isTask: boolean }
+
+function toolShapes(bubbles: Bubble[]): ToolShape[] {
+  return bubbles
+    .filter((b): b is Bubble & { kind: "tool" } => b.kind === "tool")
+    .map((b) => ({
+      toolCallId: b.toolCall.toolCallId,
+      subFrames: b.subFrames?.length ?? 0,
+      isTask: (b.subFrames?.length ?? 0) > 0,
+    }))
+}
+
 function delay(ms = 20): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -301,10 +315,10 @@ describe("frame-ingest parity gate", () => {
     expect(flatShapes(a.bubbles)).toEqual(flatShapes(b.bubbles))
   })
 
-  it("G3 — no duplication: HTTP snapshot bubble count = WS count", async () => {
+  it("G3 — no duplication: HTTP snapshot tool shapes count = WS tool shapes count", async () => {
     const ws = await runWsPath()
     const http = await runHttpPath(snapshotBatches)
-    expect(http.bubbles.length).toBe(ws.bubbles.length)
+    expect(toolShapes(http.bubbles).length).toBe(toolShapes(ws.bubbles).length)
   })
 
   it("G4 — message text in HTTP snapshot ≈ WS", async () => {
@@ -315,5 +329,11 @@ describe("frame-ingest parity gate", () => {
     const wsUnique = [...new Set(flatMessageTexts(ws.bubbles))].sort()
     const httpUnique = [...new Set(flatMessageTexts(http.bubbles))].sort()
     expect(httpUnique).toEqual(wsUnique)
+  })
+
+  it("G5 — HTTP snapshot tool shapes match WS field-for-field", async () => {
+    const ws = await runWsPath()
+    const http = await runHttpPath(snapshotBatches)
+    expect(toolShapes(http.bubbles)).toEqual(toolShapes(ws.bubbles))
   })
 })

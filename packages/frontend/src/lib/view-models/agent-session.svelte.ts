@@ -3095,14 +3095,35 @@ export class AgentSession {
       if (update.toolCallId !== undefined && this.#subagentToolCallParents.has(update.toolCallId)) {
         this.#handleSubagentToolCallUpdate(update)
       } else {
-        // סדר חובה: turnState פר-pending/in_progress לפני ה-no-op guard (idx===-1) של reduce (אביגיל #4)
-        if (update.status === "pending" || update.status === "in_progress") {
-          this.#setTurnState("calling-tool")
-          if (this.#turnEnded) this.#scheduleIdle()
+        // slice meta-passthrough §3(ד): HTTP wire never emits tool_call — nest from _meta on
+        // tool_call_update when the map misses but the parent Task bubble already exists.
+        const parentToolUseId = extractParentToolUseId(notification.update)
+        const parentBubbleExists =
+          parentToolUseId !== undefined &&
+          this.bubbles.some(
+            (b) => b.kind === "tool" && b.toolCall.toolCallId === parentToolUseId,
+          )
+        const childAlreadyTopLevel =
+          update.toolCallId !== undefined &&
+          this.bubbles.some(
+            (b) => b.kind === "tool" && b.toolCall.toolCallId === update.toolCallId,
+          )
+        if (
+          parentToolUseId !== undefined &&
+          parentBubbleExists &&
+          !childAlreadyTopLevel
+        ) {
+          this.#handleSubagentToolCall(update, parentToolUseId)
+        } else {
+          // סדר חובה: turnState פר-pending/in_progress לפני ה-no-op guard (idx===-1) של reduce (אביגיל #4)
+          if (update.status === "pending" || update.status === "in_progress") {
+            this.#setTurnState("calling-tool")
+            if (this.#turnEnded) this.#scheduleIdle()
+          }
+          const { state: nextState, patches } = reduce(this.sessionState, notification.update)
+          this.sessionState = nextState
+          applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
         }
-        const { state: nextState, patches } = reduce(this.sessionState, notification.update)
-        this.sessionState = nextState
-        applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
       }
       return
     }
