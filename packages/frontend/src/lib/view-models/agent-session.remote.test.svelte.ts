@@ -28,7 +28,7 @@ import {
 import { toWireText } from "@drive-coding/core/session/testing"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { createAgent, deleteAgent, notifySessionAttached } from "$lib/adapters/agents-api"
+import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 // ─── Module-level mocks (חייבים להיות לפני import AgentSession — נדרש לרגרסיית ה-local) ───
@@ -438,6 +438,129 @@ describe("AgentSession — attachRemote fast-fail", () => {
     await agent.applyConfigOption("mode", "ask")
 
     expect(settings.setLastConfig).toHaveBeenCalledWith("claude", "mode", "ask")
+  })
+})
+
+// ── attachRemote — cold parity עם ה-WS (slice http-cold-parity, §4 Commit 0) ─────
+
+/**
+ * שער אדום→ירוק לסלייס http-cold-parity. שלושה טסטים (A/B/C) חייבים ליפול על
+ * b0ec7640 מיד; טסט D ירוק על הבסיס מהסיבה הלא-נכונה (#sessionId===null עוצר את
+ * #doReconnect מוקדם) — הוא נופל רק אחרי §4/Commit 1#1-4 (בלי #5), ורק אז מקבל
+ * את השומר שמחזיר אותו לירוק. ר' הבריף §4/Commit 0 + §4/Commit 1#5.
+ */
+describe("AgentSession — attachRemote cold parity (slice http-cold-parity C0)", () => {
+  // 🔴 צורת ACP מקובעת (ר' הבריף §4/Commit 0) — id="claude-mode" (לא "mode") כדי
+  // ש-#isValidChoice יעבור דרך ה-flatten האמיתי של type:"select", לא דרך ה-fallback
+  // המתירני (availableValues בלי type הוא ירוק-שקרי).
+  const ACP_OPTION = {
+    id: "claude-mode",
+    name: "Mode",
+    category: "mode",
+    type: "select",
+    currentValue: "manual",
+    options: [
+      { value: "auto", name: "Auto" },
+      { value: "manual", name: "Manual" },
+    ],
+  }
+
+  function makeSettingsWithLastConfig(): Settings {
+    return {
+      lastConfig: { claude: { "claude-mode": "auto" } },
+      setLastConfig: vi.fn(),
+    } as unknown as Settings
+  }
+
+  /** אותו דפוס fetchMock כמו ב-"attachRemote fast-fail" — SSE keepOpen + לוכד גופי /rpc. */
+  function sseFetchWithRpcCapture(snapshot: unknown): {
+    fetchMock: ReturnType<typeof vi.fn>
+    rpcBodies: unknown[]
+  } {
+    const encoder = new TextEncoder()
+    const sseText = toWireText([{ event: "snapshot", data: JSON.stringify(snapshot) }])
+    const rpcBodies: unknown[] = []
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/events")) {
+        const body = new ReadableStream<Uint8Array>({
+          start(ctrl) {
+            ctrl.enqueue(encoder.encode(sseText))
+            // keepOpen — לא סוגרים כדי לא להצית reconnect-loop עם setTimeout אמיתי
+          },
+        })
+        return { ok: true, status: 200, body } as unknown as Response
+      }
+      if (String(url).includes("/rpc")) {
+        if (init?.body) rpcBodies.push(JSON.parse(init.body as string))
+        return { ok: true, status: 202, json: async () => ({ version: 1 }) } as unknown as Response
+      }
+      return { ok: true, status: 200, json: async () => ({ ok: true }) } as unknown as Response
+    })
+    return { fetchMock, rpcBodies }
+  }
+
+  it("A: agent.sessionId מאמץ את ה-sessionId מה-snapshot אחרי attachRemote", async () => {
+    const snapshot = createInitialSessionState({ sessionId: "probe-sess" })
+    const { fetchMock } = sseFetchWithRpcCapture(snapshot)
+    vi.stubGlobal("fetch", fetchMock)
+
+    const agent = new AgentSession()
+    await agent.attachRemote({ cwd: "/ws", cliKind: "claude" })
+
+    expect(agent.sessionId).toBe("probe-sess")
+  })
+
+  it("B: שחזור-הבחירות שולח RPC אמיתי עם configId+value מהסנאפשוט", async () => {
+    const snapshot = {
+      ...createInitialSessionState({ sessionId: "probe-sess-b" }),
+      configOptions: [ACP_OPTION] as never,
+    }
+    const { fetchMock, rpcBodies } = sseFetchWithRpcCapture(snapshot)
+    vi.stubGlobal("fetch", fetchMock)
+
+    const settings = makeSettingsWithLastConfig()
+    const agent = new AgentSession({ settings })
+    await agent.attachRemote({ cwd: "/ws", cliKind: "claude" })
+    await delay()
+
+    expect(rpcBodies).toContainEqual(
+      expect.objectContaining({
+        params: expect.objectContaining({ configId: "claude-mode", value: "auto" }),
+      }),
+    )
+  })
+
+  it("C: systemPrompt שהועבר ל-attachRemote מגיע ל-createAgent", async () => {
+    const snapshot = createInitialSessionState({ sessionId: "probe-sess-c" })
+    const { fetchMock } = sseFetchWithRpcCapture(snapshot)
+    vi.stubGlobal("fetch", fetchMock)
+    vi.mocked(createAgent).mockClear()
+
+    const agent = new AgentSession()
+    // ⚠️ משתנה, לא object literal inline — כדי שה-excess-property-check לא ייכשל
+    // typecheck על הבסיס (החתימה כאן היא עדיין דו-פרמטרית; ר' subtyping מבני).
+    const input = { cwd: "/ws", cliKind: "claude", systemPrompt: "You are terse and helpful." }
+    await agent.attachRemote(input)
+
+    expect(createAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ systemPrompt: "You are terse and helpful." }),
+    )
+  })
+
+  it("D: reconnect() על סשן remote חי הוא no-op — אין listAgents, status נשאר connected", async () => {
+    const snapshot = createInitialSessionState({ sessionId: "probe-sess-d" })
+    const { fetchMock } = sseFetchWithRpcCapture(snapshot)
+    vi.stubGlobal("fetch", fetchMock)
+    vi.mocked(listAgents).mockClear()
+
+    const agent = new AgentSession()
+    await agent.attachRemote({ cwd: "/ws", cliKind: "claude" })
+    expect(agent.status).toBe("connected")
+
+    await agent.reconnect()
+
+    expect(listAgents).not.toHaveBeenCalled()
+    expect(agent.status).toBe("connected")
   })
 })
 
