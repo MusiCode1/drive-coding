@@ -11,6 +11,7 @@
  * slice/agent-fullwidth: תשובת הסוכן ברוחב מלא — בלי בועה/אווטאר.
  *
  * ─── slice/markdown-content-unify (Commit 1) — CSS עבר ל-MarkdownContent ───
+ * ─── slice/msg-diagrams (Commit 2) — onExpand ל-MarkdownContent → viewer.show({kind:"image"}) ───
  */
 import type { MessageBubble } from "$lib/types/bubble"
 import { getBubblePlayer, getContentViewer, getI18n, getSession, getSpeaker } from "$lib/context"
@@ -66,6 +67,13 @@ async function handleCopy() {
           onOpen: (uri) => viewer.show({ kind: "file", uri }),
           absoluteOnly: true,
         }}
+        onExpand={(svg) =>
+          viewer.show({
+            kind: "image",
+            // encodeURIComponent, לא base64: btoa נופל על טקסט עברי בתרשים
+            // (InvalidCharacterError) — brief §4 Commit 2 סעיף 2.
+            src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+          })}
       />
       <!-- כופה ריאקטיביות של Svelte בעת .segments.push() -->
       <span class="hidden">{bubble.segments.length}</span>
