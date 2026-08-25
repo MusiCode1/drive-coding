@@ -50,7 +50,14 @@ const log = createLogger("backend.session-host.registry")
  * ב-remote mode אף אחד אחר לא כותב acpSessionId (POST /session-attached נקרא רק מנתיבים
  * מקומיים), ובלי זה הסוכן תקוע על status:"starting" וכפתור ה-reconnect disabled.
  */
-export type OnSessionAttached = (agentId: string, sessionId: string) => Promise<void> | void
+// slice agent-patch-unify C2: cwd אופציונלי — מגיע משני אתרי-הקריאה (doCreate,
+// rpc.ts case "loadSession") שכבר מחזיקים אותו; מאפשר ל-server.ts לעדכן את
+// agent.cwd ולתעד ב-projectsRegistry תחת התיקייה הנכונה (§3 — שרשרת ה-cwd).
+export type OnSessionAttached = (
+  agentId: string,
+  sessionId: string,
+  cwd?: string,
+) => Promise<void> | void
 
 export type HostEntry = {
   host: ExtendedSessionHost
@@ -112,7 +119,7 @@ export type AgentSessionRegistry = {
    * slice remote-warm-reconnect C1: מעביר ל-onSessionAttached שהוזרק (no-op אם לא הוזרק).
    * נחוץ לסלייס ההמשך (loadSession ב-rpc) — שם ה-session נוצר/נטען מחוץ ל-doCreate.
    */
-  notifySessionAttached(agentId: string, sessionId: string): Promise<void>
+  notifySessionAttached(agentId: string, sessionId: string, cwd?: string): Promise<void>
   /**
    * slice remote-session-mgmt C3: passthrough ל-connectionRegistry.getCwd(agentId).
    * נחוץ ל-loadSession ב-rpc — fallback כש-params.cwd לא נשלח מה-FE.
@@ -363,7 +370,9 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       const attachedSessionId = host.state.sessionId
       if (attachedSessionId) {
         try {
-          await deps.onSessionAttached?.(agentId, attachedSessionId)
+          // slice agent-patch-unify C2: cwd כבר בהיקף (נמדד — אתר-קריאה שני,
+          // לא רק rpc.ts case "loadSession"). ר' anchor הבא לתיעוד.
+          await deps.onSessionAttached?.(agentId, attachedSessionId, cwd)
         } catch (err) {
           log.warn({ err, agentId }, "onSessionAttached failed — host creation continues")
         }
@@ -472,8 +481,8 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       map.delete(agentId)
     },
 
-    async notifySessionAttached(agentId: string, sessionId: string): Promise<void> {
-      await deps.onSessionAttached?.(agentId, sessionId)
+    async notifySessionAttached(agentId: string, sessionId: string, cwd?: string): Promise<void> {
+      await deps.onSessionAttached?.(agentId, sessionId, cwd)
     },
     getCwd(agentId: string): string | undefined {
       return connectionRegistry.getCwd(agentId)

@@ -528,7 +528,7 @@ describe("POST /api/agents/:id/rpc", () => {
   })
 
   describe("loadSession (blocking, cwd resolution, notifySessionAttached)", () => {
-    it("happy path: 200 {sessionId, version}; cwd from params passed to host; notifySessionAttached called", async () => {
+    it("happy path: 200 {sessionId, version}; cwd from params passed to host and to notifySessionAttached", async () => {
       const host = makeMockHost(makeMockState(13))
       ;(host.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({
         sessionId: "sess-9",
@@ -546,7 +546,9 @@ describe("POST /api/agents/:id/rpc", () => {
       expect(json.sessionId).toBe("sess-9")
       expect(json.version).toBe(13)
       expect(host.loadSession).toHaveBeenCalledWith({ cwd: "/from/params", sessionId: "sess-9" })
-      expect(registry.notifySessionAttached).toHaveBeenCalledWith("agent-1", "sess-9")
+      // slice agent-patch-unify C2: ה-cwd שכבר חושב כאן (מ-params או מ-fallback)
+      // עובר גם ל-notifySessionAttached — זו החוליה שהייתה חסרה בשרשרת ה-cwd (§3).
+      expect(registry.notifySessionAttached).toHaveBeenCalledWith("agent-1", "sess-9", "/from/params")
     })
 
     it("cwd missing in params → falls back to registry.getCwd", async () => {
@@ -566,6 +568,12 @@ describe("POST /api/agents/:id/rpc", () => {
       expect(res.status).toBe(200)
       expect(registry.getCwd).toHaveBeenCalledWith("agent-1")
       expect(host.loadSession).toHaveBeenCalledWith({ cwd: "/fallback-cwd", sessionId: "sess-9" })
+      // ה-cwd שנפתר (fallback, לא params) הוא זה שמגיע ל-notifySessionAttached.
+      expect(registry.notifySessionAttached).toHaveBeenCalledWith(
+        "agent-1",
+        "sess-9",
+        "/fallback-cwd",
+      )
     })
 
     it("cwd missing in params AND registry.getCwd undefined → 400 'no cwd available'", async () => {
