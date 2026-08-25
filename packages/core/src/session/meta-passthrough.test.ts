@@ -10,10 +10,10 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { applyPatch } from "./apply-patch"
 import { reduce } from "./reduce"
+import type { WireSessionUpdate } from "./to-session-update"
 import { patchToSessionUpdates } from "./to-session-update"
 import type { Patch, SessionState } from "./types"
 import { createInitialSessionState } from "./types"
-import type { WireSessionUpdate } from "./to-session-update"
 
 // ─── fixture loading ───
 
@@ -87,10 +87,7 @@ function roundTrip(
 }
 
 /** G-META — every top-level key in input `_meta` must deep-equal in some output update. */
-function missingMetaKeys(
-  input: Record<string, unknown>,
-  wire: WireSessionUpdate[],
-): string[] {
+function missingMetaKeys(input: Record<string, unknown>, wire: WireSessionUpdate[]): string[] {
   const inMeta =
     typeof input._meta === "object" && input._meta !== null
       ? (input._meta as Record<string, unknown>)
@@ -121,10 +118,7 @@ const KNOWN_UNMAPPED: { sessionUpdate: string; key: string; why: string }[] = [
   },
 ]
 
-function missingNonMetaKeys(
-  input: Record<string, unknown>,
-  wire: WireSessionUpdate[],
-): string[] {
+function missingNonMetaKeys(input: Record<string, unknown>, wire: WireSessionUpdate[]): string[] {
   const outKeys = new Set<string>()
   for (const w of wire) {
     for (const k of Object.keys(w)) outKeys.add(k)

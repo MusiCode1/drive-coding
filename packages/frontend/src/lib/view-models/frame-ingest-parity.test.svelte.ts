@@ -41,10 +41,9 @@ const fixturePath = new URL(
 )
 const fixture: FixtureEntry[] = JSON.parse(readFileSync(fixturePath, "utf-8"))
 
+// ‏slice meta-passthrough Commit 5: ‏שני המסלולים צורכים את **‏כל** ‏הפריימים הנכנסים
+// (‏`session/update` ‏**‏וגם** ‏`_claude/sdkMessage`), ‏ולכן אין יותר סינון מוקדם ל-acp בלבד.
 const inbound = fixture.filter((e) => e.dir === "in")
-const acpUpdateEntries = inbound.filter(
-  (e) => e.channel === "acp" && e.frame.method === "session/update",
-)
 const TASK_TOOL_CALL_ID = "toolu_01GiSAsvUBjALq1WGBB2xQ1K"
 
 function rawUpdate(entry: FixtureEntry): unknown {
@@ -113,9 +112,10 @@ class HttpReplayView implements SessionView {
 
 // ─── wire synthesis (BE path: reduce → Patch → patchToSessionUpdates + ext wrapper) ─
 
-function synthesizeWireFromInbound(
-  mode: "snapshot" | "drip",
-): { batches: WireUpdateBatch[]; wireCount: number } {
+function synthesizeWireFromInbound(mode: "snapshot" | "drip"): {
+  batches: WireUpdateBatch[]
+  wireCount: number
+} {
   let state = createInitialSessionState({ sessionId: "parity-test" })
   let version = 0
   const allWire: WireSessionUpdate[] = []
@@ -159,9 +159,8 @@ function synthesizeWireFromInbound(
   return { batches, wireCount: allWire.length }
 }
 
-const { batches: snapshotBatches, wireCount: expectedWireCount } = synthesizeWireFromInbound(
-  "snapshot",
-)
+const { batches: snapshotBatches, wireCount: expectedWireCount } =
+  synthesizeWireFromInbound("snapshot")
 const { batches: dripBatches } = synthesizeWireFromInbound("drip")
 
 // ─── bubble helpers (flat top-level; subFrames excluded per brief §4) ───────

@@ -3,10 +3,10 @@
  * slice meta-passthrough Commit 4.
  */
 
-import { describe, expect, it, vi } from "vitest"
 import type { Patch } from "@drive-coding/core/session"
 import { patchToSessionUpdates } from "@drive-coding/core/session"
 import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
+import { describe, expect, it, vi } from "vitest"
 import { createSessionHost } from "../src/session-host/session-host.js"
 
 function makeMockAcpClient(): AcpClient {
@@ -48,7 +48,10 @@ describe("SessionHost — onExtNotification (meta-passthrough)", () => {
     })
 
     expect(captured?.onExtNotification).toBeTypeOf("function")
-    captured?.onExtNotification?.("_claude/sdkMessage", { type: "task_started", parentToolUseId: "x" })
+    captured?.onExtNotification?.("_claude/sdkMessage", {
+      type: "task_started",
+      parentToolUseId: "x",
+    })
 
     const patches = await drainPatches(host.patches)
     expect(patches).toHaveLength(1)

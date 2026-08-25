@@ -301,9 +301,9 @@ describe("AgentSession — meta-passthrough tool_call_update nesting (approach B
     )
     expect(parent).toBeDefined()
     expect(parent?.subFrames?.length).toBe(1)
-    expect(
-      parent?.subFrames?.[0]?.kind === "tool" && parent.subFrames[0].toolCall.toolCallId,
-    ).toBe("toolu_CHILD")
+    expect(parent?.subFrames?.[0]?.kind === "tool" && parent.subFrames[0].toolCall.toolCallId).toBe(
+      "toolu_CHILD",
+    )
 
     const topLevelChild = session.bubbles.find(
       (b) => b.kind === "tool" && b.toolCall.toolCallId === "toolu_CHILD",

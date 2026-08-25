@@ -83,9 +83,7 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
       const updatedMsg: SessionMessage = {
         ...old,
         segments: [...old.segments, patch.segment],
-        ...(patch.meta !== undefined
-          ? { meta: { ...(old.meta ?? {}), ...patch.meta } }
-          : {}),
+        ...(patch.meta !== undefined ? { meta: { ...(old.meta ?? {}), ...patch.meta } } : {}),
       }
       const messages = [...state.messages]
       messages[idx] = updatedMsg
@@ -116,9 +114,7 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
       const updatedMsg: SessionMessage = {
         ...old,
         toolCall: { ...old.toolCall, ...patch.toolCall },
-        ...(patch.meta !== undefined
-          ? { meta: { ...(old.meta ?? {}), ...patch.meta } }
-          : {}),
+        ...(patch.meta !== undefined ? { meta: { ...(old.meta ?? {}), ...patch.meta } } : {}),
       }
       const messages = [...state.messages]
       messages[idx] = updatedMsg

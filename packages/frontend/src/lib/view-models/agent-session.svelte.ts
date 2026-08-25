@@ -24,7 +24,6 @@ import type {
 // כמו הודעות "WS closed (...)" הקיימות. חייב לעבור דרך core/i18n (לא Hebrew ליטרלי
 // בקוד — lint:i18n אוכף), ולא להשתמש ב-I18nVM (לא מוזרק ל-VM הזה).
 import { createI18n, detectLocale } from "@drive-coding/core/i18n"
-import type { SessionState } from "@drive-coding/core/session"
 import {
   type AcpClient,
   createAcpClient,
@@ -100,7 +99,13 @@ const ATTACHED_CAPS_FALLBACK = {} as AcpClient["capabilities"]
 // ─── slice plan-todo-list Commit 1: reducer טהור + טיפוסים ─── (additive)
 import { EMPTY_PLAN_STORE, type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
 // ─── slice session-state-reducer C4: reduce + types ─── (additive)
-import { applyPatch, createInitialSessionState, reduce, type Patch, type SessionState } from "@drive-coding/core/session"
+import {
+  applyPatch,
+  createInitialSessionState,
+  type Patch,
+  reduce,
+  type SessionState,
+} from "@drive-coding/core/session"
 // ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
 import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 // ─── slice FE-normalization: ייבוא ─── (additive)
@@ -110,7 +115,6 @@ import type { NormalizedCapabilities } from "@drive-coding/provider/types"
 import { createExtClient, type ExtClient } from "$lib/adapters/ext"
 // ─── slice session-state-reducer C4: FE patch applicator + mappers ─── (additive)
 import { applyPatchMutable } from "$lib/session/apply-patch-mutable"
-import { historyMarkFromReset, type HistoryMark } from "./history-mark.js"
 import { mapLocations, mapToolContent } from "$lib/session/map-tool-content"
 // ─── slice subagent-transcript-data-v2: פרסר+reducer טהורים (additive) ───
 import {
@@ -119,6 +123,7 @@ import {
   parseClaudeSdkMessage,
   reduceSubagent,
 } from "./claude-subagent-parse"
+import { type HistoryMark, historyMarkFromReset } from "./history-mark.js"
 
 /**
  * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries
@@ -3112,19 +3117,11 @@ export class AgentSession {
         const parentToolUseId = extractParentToolUseId(notification.update)
         const parentBubbleExists =
           parentToolUseId !== undefined &&
-          this.bubbles.some(
-            (b) => b.kind === "tool" && b.toolCall.toolCallId === parentToolUseId,
-          )
+          this.bubbles.some((b) => b.kind === "tool" && b.toolCall.toolCallId === parentToolUseId)
         const childAlreadyTopLevel =
           update.toolCallId !== undefined &&
-          this.bubbles.some(
-            (b) => b.kind === "tool" && b.toolCall.toolCallId === update.toolCallId,
-          )
-        if (
-          parentToolUseId !== undefined &&
-          parentBubbleExists &&
-          !childAlreadyTopLevel
-        ) {
+          this.bubbles.some((b) => b.kind === "tool" && b.toolCall.toolCallId === update.toolCallId)
+        if (parentToolUseId !== undefined && parentBubbleExists && !childAlreadyTopLevel) {
           this.#handleSubagentToolCall(update, parentToolUseId)
         } else {
           // סדר חובה: turnState פר-pending/in_progress לפני ה-no-op guard (idx===-1) של reduce (אביגיל #4)
@@ -3271,9 +3268,7 @@ export class AgentSession {
       update.sessionUpdate === "agent_thought_chunk"
     ) {
       const text =
-        update.content?.type === "text"
-          ? ((update.content as { text?: string }).text ?? "")
-          : ""
+        update.content?.type === "text" ? ((update.content as { text?: string }).text ?? "") : ""
       if (!text) return
 
       if (update.sessionUpdate === "agent_message_chunk") {
