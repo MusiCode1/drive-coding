@@ -43,6 +43,7 @@ export const PatchSchema = type({
   op: "'append-segment'",
   targetId: "string",
   segment: SessionSegmentSchema,
+  "meta?": "object",
 })
   .or({
     version: "number",
@@ -60,6 +61,7 @@ export const PatchSchema = type({
     op: "'update-tool'",
     targetId: "string",
     toolCall: "object",
+    "meta?": "object",
   })
   .or({
     version: "number",
@@ -72,6 +74,7 @@ export const PatchSchema = type({
     version: "number",
     op: "'update-session'",
     changes: "object",
+    "meta?": "object",
   })
   // 🔴 עדכון לא-מוכר, נישא כמות שהוא. `unknown` בכוונה — הנקודה כולה היא
   // שאיננו יודעים מה יש בפנים, ואסור לנו להתנות עליו שום דבר.
