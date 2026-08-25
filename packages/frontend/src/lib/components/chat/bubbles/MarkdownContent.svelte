@@ -17,6 +17,7 @@
  * ─── slice/markdown-content-unify (Commit 0) ───
  * ─── slice/code-copy-button (Commit 1) — הוספת use:enhanceCodeBlocks ───
  * ─── slice fs-file-proxy (המשך) — prop fileLinks (opt-in) → use:enhanceFileLinks ───
+ * ─── slice msg-media — prop imageCwd → renderMarkdown({ cwd }) ───
  */
 import { renderMarkdown } from "$lib/util/markdown"
 import { getI18n } from "$lib/context"
@@ -26,15 +27,14 @@ import { enhanceFileLinks, type FileLinkParams } from "./enhance-file-links"
 let {
   text,
   variant = "bubble",
+  imageCwd = null,
   fileLinks,
 }: {
   text: string
   variant?: "bubble" | "viewer"
-  /**
-   * opt-in: כשמסופק, נתיבי-קבצים בטקסט הופכים לכפתורים שפותחים את ה-ContentViewer.
-   * מסופק היום מ-UserBubble בלבד — פרוזת-הסוכן היא סלייס נפרד (`path-linkify`).
-   */
-  fileLinks?: Omit<FileLinkParams, "text" | "label">
+  /** Resolves relative paths in markdown images only. Does not affect fileLinks. */
+  imageCwd?: string | null
+  fileLinks?: Omit<FileLinkParams, "text" | "label" | "enabled">
 } = $props()
 
 const t = getI18n().t
@@ -51,7 +51,7 @@ const t = getI18n().t
     onOpen: fileLinks?.onOpen ?? (() => {}),
     label: t("chat.content.attachedFile"),
   }}
->{@html renderMarkdown(text)}</div>
+>{@html renderMarkdown(text, { cwd: imageCwd })}</div>
 
 <style>
   .md-content :global(p) { margin: 0.25em 0; }
@@ -96,6 +96,14 @@ const t = getI18n().t
     margin: 0.4em 0; opacity: 0.9;
   }
   .md-content :global(a) { color: var(--accent); text-decoration: underline; }
+  /* ── slice msg-media: markdown images ── */
+  .md-content :global(img) {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0.4em 0;
+    border-radius: 6px;
+  }
   /* ── slice fs-file-proxy: נתיב-קובץ לחיץ בתוך הטקסט ── */
   .md-content :global(.file-link) {
     color: var(--accent);
