@@ -1115,6 +1115,14 @@ export class AgentSession {
    * כשה-WS כבר מת (auto-reconnect): closeAndWait מתרצה מיד (readyState===CLOSED).
    */
   #doReconnect = async (): Promise<void> => {
+    // slice http-cold-parity: remote חי — יציאה לפני שומר-ה-#sessionId שלמטה. בלי זה,
+    // אימוץ ה-#sessionId (attachRemote) חושף לולאת-backoff ישנה של WS ש"שרדה" באותו
+    // טאב (#cleanup אינו מנקה טיימר/#reconnecting, attachRemote מאפס #detached=false)
+    // ⇒ #findReusableAgent מוצא את סוכן ה-SessionHost לפי acpSessionId ו-#warmReconnect
+    // פותח WS מקביל אל אותו host — "הזרוע הכפולה". בלי #setStatus במכוון:
+    // #runReconnectLoop מסתיים לבד כשהוא רואה status==="connected"; disconnected היה
+    // מסמן סשן remote חי כמנותק. ר' הבריף §4/Commit 1#5 + §6.
+    if (this.#remoteView()) return
     // אין סשן/cwd/cliKind → אין מה לשחזר (מראה את guard של reconnect():649). מונע
     // session/load: null בלולאת auto-reconnect — קורה בטלפון כש-WS נסגר ב-1006 לפני
     // ש-#sessionId נקבע (attach:489 / loadSession:626 קובעים אותו רק בהצלחה).
@@ -1463,7 +1471,11 @@ export class AgentSession {
    * ProviderConnection נוצר ביצירת הסוכן; getOrCreateHost בונה AcpClient משלו על
    * אותו connection — פתיחת WS מקביל ל-SessionHost הייתה "הזרוע הכפולה").
    */
-  attachRemote = async (input: { cwd: string; cliKind: string }): Promise<void> => {
+  attachRemote = async (input: {
+    cwd: string
+    cliKind: string
+    systemPrompt?: string | null
+  }): Promise<void> => {
     // 0. ⚠️⚠️ קודם guard-הכפילות, ורק אחריו #cleanup() — הסדר ההפוך הוא באג הרסני
     // (חיבור-חוזר במצב connected היה הורג agent+host+תת-תהליך חי לפני שהוא זורק).
     if (this.status === "connecting" || this.status === "connected") {
@@ -1491,7 +1503,11 @@ export class AgentSession {
       // 3. HTTP בלבד. מיד אחריו: agentId מוצב — #cleanup מוחק לפיו; אם ההשמה נדחית
       // לשלב 6, כשל-מהיר (שלב 5) וה-catch (שלב 8) קוראים #cleanup() בלי מה למחוק,
       // וה-agent+host+child שנוצרו כאן מדליפים.
-      const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
+      const { agentId } = await createAgent({
+        cwd: input.cwd,
+        cliKind: input.cliKind,
+        systemPrompt: input.systemPrompt,
+      })
       this.agentId = agentId
 
       // 4.
@@ -1508,6 +1524,11 @@ export class AgentSession {
         return
       }
 
+      // slice http-cold-parity: אימוץ ה-sessionId מהסנאפשוט — תקדים חי זהה ב-
+      // attachRemoteToLiveAgent (slice http-state-gaps C4). מיד אחרי בלוק הכשל-המהיר
+      // (שכבר הבטיח view.state.sessionId != null) ולפני this.#view = view.
+      this.#sessionId = view.state.sessionId
+
       // 6.
       this.#view = view
       this.#isRemote = true // slice local-view-wiring C1: view של remote מוצב כאן
@@ -1520,6 +1541,16 @@ export class AgentSession {
       this.error = formatAcpError(e)
       this.#errorSurfaced = true
       this.#setStatus("error")
+    }
+    // slice http-cold-parity: שחזור-בחירות best-effort — בכוונה מחוץ ל-try. גרסה
+    // שמניחה את זה בתוך ה-try הופכת כשל-RPC חולף אחד לחיבור-מוצלח→status="error"+
+    // #cleanup() — הורגת agent+host+child שזה עתה נוצרו. ר' הבריף §4/Commit 1#4.
+    if (this.status === "connected") {
+      try {
+        await this.#applyRememberedConfig()
+      } catch {
+        /* שחזור-בחירות הוא נוחות, לא תנאי-חיבור */
+      }
     }
   }
 
