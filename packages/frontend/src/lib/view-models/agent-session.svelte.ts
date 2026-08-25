@@ -3204,30 +3204,43 @@ export class AgentSession {
       return
     }
 
-    const text =
-      update.content?.type === "text" ? ((update.content as { text?: string }).text ?? "") : ""
-    if (!text) return
+    if (
+      update.sessionUpdate === "agent_message_chunk" ||
+      update.sessionUpdate === "agent_thought_chunk"
+    ) {
+      const text =
+        update.content?.type === "text"
+          ? ((update.content as { text?: string }).text ?? "")
+          : ""
+      if (!text) return
 
-    if (update.sessionUpdate === "agent_message_chunk") {
-      this.#setTurnState("responding")
-      // מעקף opencode #17505: tail אחרי RESP → תזמן idle מחדש. gemini/claude: #turnEnded=false → לא פועל.
-      if (this.#turnEnded) this.#scheduleIdle()
-      const { state: nextState1, patches: patches1 } = reduce(
-        this.sessionState,
-        notification.update,
-      )
-      this.sessionState = nextState1
-      applyPatchMutable(this.bubbles, patches1, { mapToolContent, mapLocations })
-    } else if (update.sessionUpdate === "agent_thought_chunk") {
-      this.#setTurnState("thinking")
-      if (this.#turnEnded) this.#scheduleIdle()
-      const { state: nextState2, patches: patches2 } = reduce(
-        this.sessionState,
-        notification.update,
-      )
-      this.sessionState = nextState2
-      applyPatchMutable(this.bubbles, patches2, { mapToolContent, mapLocations })
+      if (update.sessionUpdate === "agent_message_chunk") {
+        this.#setTurnState("responding")
+        // מעקף opencode #17505: tail אחרי RESP → תזמן idle מחדש. gemini/claude: #turnEnded=false → לא פועל.
+        if (this.#turnEnded) this.#scheduleIdle()
+        const { state: nextState1, patches: patches1 } = reduce(
+          this.sessionState,
+          notification.update,
+        )
+        this.sessionState = nextState1
+        applyPatchMutable(this.bubbles, patches1, { mapToolContent, mapLocations })
+      } else {
+        this.#setTurnState("thinking")
+        if (this.#turnEnded) this.#scheduleIdle()
+        const { state: nextState2, patches: patches2 } = reduce(
+          this.sessionState,
+          notification.update,
+        )
+        this.sessionState = nextState2
+        applyPatchMutable(this.bubbles, patches2, { mapToolContent, mapLocations })
+      }
+      return
     }
+
+    // ── default arm: everything not handled above ──
+    const { state: nextState, patches } = reduce(this.sessionState, notification.update)
+    this.sessionState = nextState
+    applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
   }
 
   // ─── slice session-state-reducer C4: מתודת-עזר ל-tool_call create (reduce + patches + flush + turnState) ───
