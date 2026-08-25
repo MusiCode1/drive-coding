@@ -2146,7 +2146,15 @@ export class AgentSession {
    */
   newSession = async (input: { cwd?: string; cliKind: string }): Promise<void> => {
     // ─── slice view-switch C3-ה: חסימת נתיבי-WS ב-remote ───
-    if (this.#remoteView()) return
+    // slice agent-patch-unify C4, ממצא 3: המימוש ב-remote עצמו אינו ב-scope — המינימום
+    // המוסכם הוא הודעה גלויה (i18n) בלי ניווט, במקום no-op שקט שהשאיר את הפאנל מנווט
+    // בשקט לסשן הנוכחי (sessionId לא משתנה כאן).
+    if (this.#remoteView()) {
+      this.error = createI18n({ locale: this.#settings?.locale ?? detectLocale() }).t(
+        "session.newSessionUnsupportedRemote",
+      )
+      return
+    }
     const cwd = input.cwd ?? this.cwd
     // אין חיבור פעיל → נתיב כבד (דפנסיבי; ה-panel מוצג רק עם חיבור)
     if (this.#client === null) {

@@ -22,6 +22,7 @@ import { Dialog as BitsDialog } from "bits-ui"
 import { untrack } from "svelte"
 import { goto } from "$app/navigation"
 import { page } from "$app/state"
+import { env } from "$env/dynamic/public"
 import SessionCard from "$lib/components/modals/SessionCard.svelte"
 import CliBadge from "$lib/components/ui/CliBadge.svelte"
 import Select, { type SelectGroup, type SelectOption } from "$lib/components/ui/Select.svelte"
@@ -34,7 +35,8 @@ import {
   getSpeaker,
   getUiShell,
 } from "$lib/context"
-import { sessionPath } from "$lib/session/session-url"
+import { readSessionTransport } from "$lib/session/session-transport-read"
+import { sessionPathWithTransport } from "$lib/session/session-url"
 
 const t = getI18n().t
 const session = getSession()
@@ -203,6 +205,19 @@ async function onCheckboxChange(configId: string, e: Event) {
 // ─── slice sessions-inline: טעינת סשנים inline ───
 
 /**
+ * פותר את דגל sessionTransport (query ← override ← stored ← env ← "ws") — אותו עזר
+ * ואותם ארגומנטים כמו connect-agent.ts / handleReconnect (+page.svelte). C4 ממצא 2:
+ * בלי זה, ניווט מהפאנל פולט נתיב עירום, ורענון (F5) אחרי בחירת-סשן ב-http מאבד
+ * את דגל-התעבורה (נופל בחזרה ל-ws בפעם הבאה).
+ */
+function currentTransport() {
+  return readSessionTransport({
+    env: env.PUBLIC_SESSION_TRANSPORT,
+    stored: settings.sessionTransport,
+  })
+}
+
+/**
  * בחירת סשן: switchSession (warm reload על החיבור הקיים) + ניווט ל-/chat.
  * אם אין חיבור (#client === null) — switchSession נופל ל-loadSession הכבד (דפנסיבי).
  */
@@ -214,22 +229,21 @@ async function selectSession(info: { sessionId: string; cwd: string; title?: str
     title: info.title ?? "", // ← slice session-title: העבר title ל-switchSession
   })
   uiShell.closeSheet()
-  await goto(sessionPath(settings.cliKind, info.sessionId))
+  await goto(sessionPathWithTransport(settings.cliKind, info.sessionId, currentTransport()))
 }
 
 /**
  * סשן חדש: warm new-session על החיבור הקיים — ללא detach/respawn.
  * נשאר ב-/chat עם בועות ריקות, מוכן לפרומפט.
+ *
+ * slice agent-patch-unify C4 ממצא 3: ב-remote, newSession() הוא no-op שמציב this.error
+ * (מחרוזת i18n) בלי לשנות sessionId — לא לנווט במקרה הזה (הודעה גלויה בלבד).
  */
 async function onNewSession() {
   await session.newSession({ cliKind: settings.cliKind })
+  if (session.error) return
   uiShell.closeSheet()
-  const sid = session.sessionId
-  if (sid !== null) {
-    await goto(sessionPath(settings.cliKind, sid))
-  } else {
-    await goto("/chat")
-  }
+  await goto(sessionPathWithTransport(settings.cliKind, session.sessionId, currentTransport()))
 }
 
 /**

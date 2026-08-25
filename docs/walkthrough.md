@@ -28,7 +28,7 @@ creation continues") ← `server.ts` (`registry.update` מקבל `cwd` רק כש
 D4, ו-`projectsRegistry` עם `cwd ?? agent.cwd` — D7). verifier-phase אחרי C2
 (§8 בבריף) — כלב: GO, אפס ממצאים.
 
-**C3** (הקומיט הזה, tdd) — חיווט החזית לדלת האחת:
+**C3** (1e9478e8, tdd) — חיווט החזית לדלת האחת:
 - `agents-api.ts`: `notifySessionAttached`/`setAgentPersistent` שומרים שם +
   חתימה ציבורית, גופם עבר לקרוא ל-`patchAgent` (סוג `PatchAgentBody` תואם
   1:1 ל-`PatchAgentInput` ב-BE). `notifySessionAttached` מקבל `opts.cwd?`
@@ -55,6 +55,52 @@ packages/frontend/src/lib/view-models` — 508/508 · `bunx vitest run
 packages/frontend` המלא — 1101/1101 · `bun run lint:i18n` exit 0 ·
 `bunx biome check` על 4 הקבצים ששונו — זהה לבסיס (2 errors / 62 warnings
 טרם-קיימים, 0 חדשים).
+
+**C4** (הקומיט הזה, integration) — שני ממצאי הביקורת:
+- **ממצא 2** (`SessionOptionsPanel.svelte`): `selectSession`/`onNewSession`
+  פלטו נתיב עירום (בלי `?sessionTransport=http`) — F5 אחרי בחירת-סשן ב-http
+  מהפאנל היה נופל בחזרה ל-ws. עזר משותף חדש `sessionPathWithTransport`
+  (`session-url.ts`) — אותה מוסכמה כמו `connect-agent.ts`/`handleReconnect`
+  (`+page.svelte`), לא שוכפל. `currentTransport()` מקומי לרכיב קורא
+  ל-`readSessionTransport` עם אותם ארגומנטים (`env.PUBLIC_SESSION_TRANSPORT`,
+  `settings.sessionTransport`).
+- **ממצא 3** (`agent-session.svelte.ts`, `newSession`): ה-guard
+  `if (this.#remoteView()) return` היה no-op שקט — הפאנל היה מנווט בשקט
+  לסשן הנוכחי. עכשיו מציב `this.error` עם מחרוזת i18n חדשה
+  (`session.newSessionUnsupportedRemote`, נוספה ל-`keys.ts`+שני הקטלוגים)
+  ומחזיר בלי לשנות `#sessionId` — הפאנל (`onNewSession`) בודק `session.error`
+  אחרי ה-`await` ומדלג על הניווט. מימוש `newSession` ב-remote עצמו נשאר
+  מחוץ ל-scope.
+- טסטים חדשים: `session-url.test.ts` (4 מקרים ל-`sessionPathWithTransport`
+  — http/ws × sessionId-נוכח/null) ו-`agent-session.remote.test.svelte.ts`
+  (newSession ב-remote מציב את מחרוזת ה-i18n המדויקת, `status`/`sessionId`
+  לא משתנים).
+
+**אימות חי (פריוויו, C3+C4 יחד)** — build production על 4261
+(`FE_STATIC_DIR` מאומת מול `<title>`+נתיב), דרך playwright-cli בסשן מבודד
+(`-s=eliezer-apu` — המכונה משותפת, הפרופיל `default` תפוס ע"י סוכן אחר):
+- **DoD 10 (ws)**: agent אמיתי ב-`/tmp/probe-dirA` (claude), בחירת סשן אחר
+  מהרשימה ששייך ל-`/home/user/Projects/drive-coding/dev` דרך הפאנל →
+  `curl /api/agents/:id` מאשר `cwd`+`acpSessionId`+`title` עודכנו לפני ה-F5;
+  אחרי `reload()` (+"Connect anyway" על דיאלוג takeover צפוי) התג בכותרת
+  מציג `dev` (לא חוזר ל-`probe-dirA`) וההיסטוריה הנכונה מוצגת.
+- **DoD 11**: בחירת סשן מהפאנל ב-http → הכתובת מכילה `?sessionTransport=http`.
+- **DoD 12**: "סשן חדש" ב-remote → הבאנר "Starting a new session is not
+  supported yet in remote mode." מוצג (`document.body.innerText`), הכתובת
+  לא השתנתה (`/chat?sessionTransport=http` — אין ניווט). Evidence:
+  `/tmp/agent-patch-unify/c4-finding3-error.png`,
+  `/tmp/agent-patch-unify/dod10-ws-f5-correct-folder.png`.
+- **DoD 9 (http)**: לא הורץ מחדש דרך דפדפן — כבר מאומת חי ב-`--live claude`
+  (`probe-agent-patch.sh`, אותה שרשרת BE בדיוק) ובדוח calev C2 (GO).
+- **DoD 6–8**: `probe-agent-patch.sh http://127.0.0.1:4260` exit 0 (רגיל
+  ו-`--live claude`), `POST …/session-attached`/`…/persistent` → 404.
+- ניקוי: תהליכי claude שנוצרו בפריוויו נסגרו (graceful shutdown של ה-BE
+  + kill לתת-תהליך יתום אחד שנשאר), תיקיות `/tmp/eliezer-dir{A,B}` נמחקו.
+
+**שערים (C4)**: `bun run typecheck` (שורש) exit 0 · FE typecheck 9 שגיאות
+(זהה) · `bunx vitest run packages/frontend packages/core` — 1668/1668
+· `bun run lint:i18n` exit 0 · `bunx biome check` על 6 הקבצים ששונו —
+זהה לבסיס (4 errors / 18 warnings טרם-קיימים, 0 חדשים).
 
 ## 2026-08-19 23:27 (slice ttl-ownership — פקיעת-TTL הופכת מהרס לשחרור-בעלות)
 
