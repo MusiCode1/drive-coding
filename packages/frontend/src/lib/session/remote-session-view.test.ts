@@ -26,6 +26,7 @@ import {
   createInitialSessionState,
   type Patch,
   RPC_METHODS,
+  type SessionMessage,
   type SessionState,
 } from "@drive-coding/core/session"
 import { toWireText } from "@drive-coding/core/session/testing"
@@ -346,7 +347,12 @@ describe("RemoteSessionView — hydration on first connect (slice remote-warm-re
       nextSegmentSeq: 2,
     })
     const emitted = results[0]?.[0]
-    expect(emitted && emitted.op === "reset" ? emitted.messages : []).toEqual(messages)
+    const expectedMessages: SessionMessage[] = messages.map((m) =>
+      m.role !== "tool" && m.messageId === null
+        ? { ...m, meta: { "_drive/messageId": null } }
+        : m,
+    )
+    expect(emitted && emitted.op === "reset" ? emitted.messages : []).toEqual(expectedMessages)
     // פעם אחת בלבד — אין reset שני בערוץ (רגרסיית כפילות)
     await expectNoMoreEmissions(view.patches)
     // state עצמו נשאר ה-snapshot (הפליטה לא משנה state)
