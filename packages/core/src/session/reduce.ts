@@ -79,7 +79,23 @@ function handleTextChunk(
 ): { state: SessionState; patches: Patch[] } {
   if (!text) return { state, patches: [] }
 
-  const last = state.messages[state.messages.length - 1]
+  let targetIdx = state.messages.length - 1
+  if (messageId !== null) {
+    while (targetIdx >= 0) {
+      const msg = state.messages[targetIdx]
+      if (msg === undefined) break
+      if (msg.role === "tool") {
+        targetIdx--
+        continue
+      }
+      if (msg.role !== "user" && msg.role !== role && msg.messageId === messageId) {
+        targetIdx--
+        continue
+      }
+      break
+    }
+  }
+  const last = state.messages[targetIdx]
   const newVersion = state.version + 1
 
   // C1: derive turnState from content role (user_message_chunk = replay, no change)
@@ -102,7 +118,7 @@ function handleTextChunk(
       segments: [...last.segments, seg],
     }
     const messages = [...state.messages]
-    messages[messages.length - 1] = updatedMsg
+    messages[targetIdx] = updatedMsg
     return {
       state: {
         ...state,
