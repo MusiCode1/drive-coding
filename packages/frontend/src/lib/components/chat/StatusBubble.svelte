@@ -26,8 +26,10 @@ const phaseKey: Record<NonNullable<ModelPhase>, Parameters<typeof t>[0]> = {
   speaking:      "modelStatus.speaking",
 }
 
-/** חיווי turnInterrupted — נעלם אחרי שה-phase חוזר ל-null (תור הבא) */
-const showInterrupted = $derived(session.turnInterrupted && modelStatus.phase === null)
+// slice drop-a5-watchdog (25/08): חיווי `turnInterrupted` הוסר יחד עם ה-watchdog
+// שהדליק אותו. הוא לא סימן תקלה אמיתית — הוא נדלק על תור בריא, כי ב-HTTP
+// השעון של A5 לא התאפס כלל (kick חי רק ב-`#onSessionUpdate` = מסלול WS).
+// זיהוי תור-ששקע נשאר ב-`engines/turn-watchdog.ts`, שמתריע ואינו קוטע.
 </script>
 
 {#if modelStatus.phase !== null}
@@ -38,15 +40,6 @@ const showInterrupted = $derived(session.turnInterrupted && modelStatus.phase ==
   >
     <span class="dot"></span>
     <span class="label">{t(phaseKey[modelStatus.phase])}</span>
-  </div>
-{:else if showInterrupted}
-  <!-- B1: חיווי נקטע — מופיע כשה-phase חזר ל-null אחרי watchdog -->
-  <div
-    class="status-bubble status-bubble--interrupted"
-    role="status"
-    aria-live="polite"
-  >
-    <span class="label">{t("playbackControls.interrupted")}</span>
   </div>
 {/if}
 
