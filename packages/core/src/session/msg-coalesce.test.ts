@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest"
 import { reduce } from "./reduce"
 import { snapshotFrame } from "./wire-frames"
 import { createInitialSessionState } from "./types"
-import type { SessionState } from "./types"
+import type { SessionMessage, SessionState } from "./types"
 
 function run(us: unknown[]): SessionState {
   let s = createInitialSessionState({ sessionId: "test" })
@@ -42,14 +42,16 @@ const tool = (id: string) => ({
   status: "completed",
 })
 
+function segmentText(m: SessionMessage | undefined): string {
+  return m && m.role !== "tool" ? m.segments.map((g) => g.text).join("") : ""
+}
+
 function assistantBubbles(s: SessionState) {
   return s.messages.filter((m) => m.role === "assistant")
 }
 
 function assistantText(s: SessionState): string {
-  return assistantBubbles(s)
-    .map((m) => m.segments.map((g) => g.text).join(""))
-    .join("")
+  return assistantBubbles(s).map((m) => segmentText(m)).join("")
 }
 
 function thoughtBubbles(s: SessionState) {
@@ -94,8 +96,8 @@ describe("G3 — boundary cases", () => {
     const s = run([ch("A", "X"), tool("t1"), usr("q", "U1"), ch("B", "X")])
     const asst = assistantBubbles(s)
     expect(asst).toHaveLength(2)
-    expect(asst[0]!.segments.map((g) => g.text).join("")).toBe("A")
-    expect(asst[1]!.segments.map((g) => g.text).join("")).toBe("B")
+    expect(asst[0] && segmentText(asst[0])).toBe("A")
+    expect(asst[1] && segmentText(asst[1])).toBe("B")
   })
 
   it("3: different messageId — does NOT merge", () => {
@@ -111,7 +113,7 @@ describe("G3 — boundary cases", () => {
   it("5: thought·tool·thought — merges thought chunks", () => {
     const s = run([th("A", "X"), tool("t1"), th("B", "X")])
     expect(thoughtBubbles(s)).toHaveLength(1)
-    expect(thoughtBubbles(s)[0]!.segments.map((g) => g.text).join("")).toBe("AB")
+    expect(segmentText(thoughtBubbles(s)[0])).toBe("AB")
   })
 
   it("6: foreign assistant between — does NOT merge across", () => {
@@ -157,7 +159,7 @@ describe("G3 — boundary cases", () => {
   it("12: thought merges above assistant of same mid", () => {
     const s = run([th("T1", "X"), ch("A", "X"), th("T2", "X")])
     expect(thoughtBubbles(s)).toHaveLength(1)
-    expect(thoughtBubbles(s)[0]!.segments.map((g) => g.text).join("")).toBe("T1T2")
+    expect(segmentText(thoughtBubbles(s)[0])).toBe("T1T2")
   })
 })
 
@@ -169,7 +171,7 @@ describe("G4 — thought interleaving preserves order", () => {
     expect(assistantBubbles(s)).toHaveLength(1)
     expect(assistantText(s)).toBe("AB")
     expect(thoughtBubbles(s)).toHaveLength(1)
-    expect(thoughtBubbles(s)[0]!.segments.map((g) => g.text).join("")).toBe("T")
+    expect(segmentText(thoughtBubbles(s)[0])).toBe("T")
     expect(nonToolRoles(s)).toEqual(["assistant", "thought"])
   })
 })
