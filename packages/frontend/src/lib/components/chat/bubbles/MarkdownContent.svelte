@@ -16,12 +16,26 @@
  *
  * ─── slice/markdown-content-unify (Commit 0) ───
  * ─── slice/code-copy-button (Commit 1) — הוספת use:enhanceCodeBlocks ───
+ * ─── slice fs-file-proxy (המשך) — prop fileLinks (opt-in) → use:enhanceFileLinks ───
  */
 import { renderMarkdown } from "$lib/util/markdown"
 import { getI18n } from "$lib/context"
 import { enhanceCodeBlocks } from "./enhance-code-blocks"
+import { enhanceFileLinks, type FileLinkParams } from "./enhance-file-links"
 
-let { text, variant = "bubble" }: { text: string; variant?: "bubble" | "viewer" } = $props()
+let {
+  text,
+  variant = "bubble",
+  fileLinks,
+}: {
+  text: string
+  variant?: "bubble" | "viewer"
+  /**
+   * opt-in: כשמסופק, נתיבי-קבצים בטקסט הופכים לכפתורים שפותחים את ה-ContentViewer.
+   * מסופק היום מ-UserBubble בלבד — פרוזת-הסוכן היא סלייס נפרד (`path-linkify`).
+   */
+  fileLinks?: Omit<FileLinkParams, "text" | "label">
+} = $props()
 
 const t = getI18n().t
 </script>
@@ -31,6 +45,12 @@ const t = getI18n().t
   class:viewer={variant === "viewer"}
   dir="auto"
   use:enhanceCodeBlocks={{ text, labelCopy: t("bubble.copy"), labelCopied: t("bubble.copied") }}
+  use:enhanceFileLinks={{
+    text,
+    cwd: fileLinks?.cwd ?? null,
+    onOpen: fileLinks?.onOpen ?? (() => {}),
+    label: t("chat.content.attachedFile"),
+  }}
 >{@html renderMarkdown(text)}</div>
 
 <style>
@@ -76,6 +96,20 @@ const t = getI18n().t
     margin: 0.4em 0; opacity: 0.9;
   }
   .md-content :global(a) { color: var(--accent); text-decoration: underline; }
+  /* ── slice fs-file-proxy: נתיב-קובץ לחיץ בתוך הטקסט ── */
+  .md-content :global(.file-link) {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+
   .md-content :global(hr) { border: none; border-top: 1px solid var(--border); margin: 0.5em 0; }
   /* code blocks כיוון LTR — מניעת ערבוב RTL בקוד */
   .md-content :global(pre), .md-content :global(code) { direction: ltr; text-align: left; }

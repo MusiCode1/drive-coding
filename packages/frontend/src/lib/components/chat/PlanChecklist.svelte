@@ -58,11 +58,18 @@ function openMarkdown(content: string): void {
           {t("plan.openMarkdown")}
         </button>
       {:else if item?.kind === "file"}
-        <!-- PlanFile: placeholder בלבד — תוכן-כקובץ תלוי ב-local-file-proxy עתידי -->
+        <!-- PlanFile: slice fs-file-proxy — כפתור "צפה" פותח ContentViewer (במקום placeholder) -->
         <div class="plan-file" dir="auto">
           <FileTextIcon size={13} strokeWidth={2} />
           <span>{t("plan.file.label")}:</span>
           <span class="plan-file-uri" dir="ltr">{item.uri}</span>
+          <button
+            type="button"
+            class="plan-file-view-btn"
+            onclick={() => viewer.show({ kind: "file", uri: item.uri })}
+          >
+            {t("plan.file.view")}
+          </button>
         </div>
       {/if}
     {/each}
@@ -174,6 +181,21 @@ function openMarkdown(content: string): void {
     font-size: 0.72rem;
     opacity: 0.8;
     word-break: break-all;
+  }
+
+  /* slice fs-file-proxy — כפתור "צפה", אותה תבנית כמו .plan-markdown-btn */
+  .plan-file-view-btn {
+    padding: 0.15rem 0.5rem;
+    border-radius: 0.5rem;
+    font-size: 0.72rem;
+    color: var(--fg-dim);
+    background: var(--bg-elev, var(--bg));
+    border: 1px solid var(--border);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .plan-file-view-btn:hover {
+    color: var(--fg);
   }
 
   @keyframes pulse {

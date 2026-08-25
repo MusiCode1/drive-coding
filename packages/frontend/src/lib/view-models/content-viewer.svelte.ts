@@ -12,6 +12,10 @@
 export type ViewerPayload =
   | { kind: "markdown"; text: string; title?: string }
   | { kind: "image"; src: string; alt?: string }
+  // slice fs-file-proxy — URI מקומי (file:// | נתיב אבסולוטי) שנפתר דרך
+  // GET /api/fs/file. mimeType אופציונלי — כרגע לא בשימוש (FileContentViewer
+  // מזהה סוג לפי Content-Type בתשובת ה-fetch), נשמר לשימוש עתידי.
+  | { kind: "file"; uri: string; title?: string; mimeType?: string }
 
 /**
  * ContentViewerVM — UI-state גלובלי של הדיאלוג fullscreen.

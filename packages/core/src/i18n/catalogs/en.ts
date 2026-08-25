@@ -232,6 +232,9 @@ export const en: Catalog = {
   "contentViewer.title": "View",
   "contentViewer.expand": "Expand",
   "contentViewer.close": "Close",
+  // ─── fs-file-proxy — file viewer (Commit 1) ───
+  "contentViewer.download": "Download/Open",
+  "plan.file.view": "View",
   // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
   "settings.ttsProvider.label": "TTS provider",
   "settings.ttsProvider.elevenlabs": "ElevenLabs",

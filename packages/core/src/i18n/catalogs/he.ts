@@ -227,6 +227,9 @@ export const he: Catalog = {
   "contentViewer.title": "תצוגה",
   "contentViewer.expand": "הרחב",
   "contentViewer.close": "סגור",
+  // ─── fs-file-proxy — file viewer (Commit 1) ───
+  "contentViewer.download": "הורד/פתח",
+  "plan.file.view": "צפה",
   // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
   "settings.ttsProvider.label": "ספק TTS",
   "settings.ttsProvider.elevenlabs": "ElevenLabs",

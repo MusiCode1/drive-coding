@@ -2,12 +2,13 @@
 /**
  * MessageBubble — בועת הסוכן עם Markdown (C4).
  *
- * עיצוב מוקאפ 256-262: self-end, avatar agent, bubble-agent token.
  * Markdown: joinSegmentText → MarkdownContent (CSS מרוכז שם).
  *
  * msr-v2: כפתור ▶ להשמעת TTS.
  *
  * ui-polish-batch C3: כפתור העתקה + timestamp.
+ *
+ * slice/agent-fullwidth: תשובת הסוכן ברוחב מלא — בלי בועה/אווטאר.
  *
  * ─── slice/markdown-content-unify (Commit 1) — CSS עבר ל-MarkdownContent ───
  */
@@ -16,7 +17,6 @@ import { getBubblePlayer, getContentViewer, getI18n, getSpeaker } from "$lib/con
 import { joinSegmentText } from "./bubble-rendering"
 import { copyToClipboard } from "$lib/util/clipboard"
 import { formatTime } from "$lib/util/formatting"
-import Avatar from "$lib/components/chat/Avatar.svelte"
 import MarkdownContent from "./MarkdownContent.svelte"
 import PlayIcon from "@lucide/svelte/icons/play"
 import SquareIcon from "@lucide/svelte/icons/square"
@@ -51,12 +51,11 @@ async function handleCopy() {
 }
 </script>
 
-<div class="flex gap-2 self-end max-w-[85%] min-w-0 items-end flex-row-reverse group">
-  <Avatar kind="agent" />
-  <div class="bubble-wrapper min-w-0 flex-1">
+<div class="group min-w-0 w-full">
+  <div class="bubble-wrapper min-w-0 w-full">
     <div
-      class="px-3.5 py-2.5 rounded-2xl rounded-ee-sm text-sm leading-relaxed min-w-0 max-w-full overflow-hidden break-words"
-      style="background:var(--bubble-agent); {isPlaying ? 'outline:2px solid var(--accent); outline-offset:1px' : ''}"
+      class="content-body text-sm leading-relaxed min-w-0 max-w-full overflow-hidden break-words"
+      class:is-playing={isPlaying}
     >
       <MarkdownContent text={joinSegmentText(bubble.segments)} />
       <!-- כופה ריאקטיביות של Svelte בעת .segments.push() -->
@@ -64,45 +63,44 @@ async function handleCopy() {
     </div>
     <div class="bubble-meta">
       <span class="timestamp">{formatTime(bubble.createdAt)}</span>
-    </div>
-  </div>
-  <!-- כפתורי פעולה: expand + copy + play -->
-  <div class="bubble-actions">
-    <!-- content-viewer: כפתור expand → פתיחת הבועה fullscreen -->
-    <button
-      class="action-btn"
-      onclick={() => viewer.show({ kind: "markdown", text: joinSegmentText(bubble.segments) })}
-      aria-label={t("contentViewer.expand")}
-      title={t("contentViewer.expand")}
-    >
-      <Maximize2Icon size={12} strokeWidth={2} />
-    </button>
-    <button
-      class="action-btn"
-      onclick={handleCopy}
-      aria-label={copied ? t("bubble.copied") : t("bubble.copy")}
-      title={copied ? t("bubble.copied") : t("bubble.copy")}
-    >
-      {#if copied}
-        <CheckIcon size={12} strokeWidth={2} />
-      {:else}
-        <CopyIcon size={12} strokeWidth={2} />
-      {/if}
-    </button>
-    {#if speaker.enabled}
-      <button
-        class="action-btn play-btn"
-        onclick={() => bubblePlayer.toggle(bubble.id)}
-        aria-label={isPlaying ? t("bubble.stop") : t("bubble.play")}
-        title={isPlaying ? t("bubble.stop") : t("bubble.play")}
-      >
-        {#if isPlaying}
-          <SquareIcon size={12} strokeWidth={2} />
-        {:else}
-          <PlayIcon size={12} strokeWidth={2} />
+      <div class="bubble-actions">
+        <!-- content-viewer: כפתור expand → פתיחת הבועה fullscreen -->
+        <button
+          class="action-btn"
+          onclick={() => viewer.show({ kind: "markdown", text: joinSegmentText(bubble.segments) })}
+          aria-label={t("contentViewer.expand")}
+          title={t("contentViewer.expand")}
+        >
+          <Maximize2Icon size={12} strokeWidth={2} />
+        </button>
+        <button
+          class="action-btn"
+          onclick={handleCopy}
+          aria-label={copied ? t("bubble.copied") : t("bubble.copy")}
+          title={copied ? t("bubble.copied") : t("bubble.copy")}
+        >
+          {#if copied}
+            <CheckIcon size={12} strokeWidth={2} />
+          {:else}
+            <CopyIcon size={12} strokeWidth={2} />
+          {/if}
+        </button>
+        {#if speaker.enabled}
+          <button
+            class="action-btn play-btn"
+            onclick={() => bubblePlayer.toggle(bubble.id)}
+            aria-label={isPlaying ? t("bubble.stop") : t("bubble.play")}
+            title={isPlaying ? t("bubble.stop") : t("bubble.play")}
+          >
+            {#if isPlaying}
+              <SquareIcon size={12} strokeWidth={2} />
+            {:else}
+              <PlayIcon size={12} strokeWidth={2} />
+            {/if}
+          </button>
         {/if}
-      </button>
-    {/if}
+      </div>
+    </div>
   </div>
 </div>
 
@@ -111,12 +109,22 @@ async function handleCopy() {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
-    align-items: flex-end;
+    align-items: stretch;
+  }
+
+  .content-body {
+    border-inline-start: 2px solid transparent;
+    padding-inline-start: 0.5rem;
+  }
+
+  .content-body.is-playing {
+    border-inline-start-color: var(--accent);
   }
 
   .bubble-meta {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
     padding-inline-end: 0.25rem;
   }
 
@@ -129,9 +137,8 @@ async function handleCopy() {
 
   .bubble-actions {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 0.25rem;
-    align-self: flex-end;
     /* מוסתר ב-desktop עד hover */
     opacity: 0;
     transition: opacity 0.15s;
