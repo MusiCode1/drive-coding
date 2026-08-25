@@ -1,8 +1,8 @@
 /**
- * frame-ingest-parity.test.svelte.ts — gate G1–G4 for slice frame-ingest-unify.
+ * frame-ingest-parity.test.svelte.ts — gates G1–G6 for frame-ingest + meta-passthrough.
  *
- * Three feeds of the same recorded conversation:
- *   A — WS: raw session/update → #onSessionUpdate (drip)
+ * Three feeds of the same recorded conversation (ACP session/update + _claude/sdkMessage):
+ *   A — WS: raw frames → #onSessionUpdate / #onExtNotification (drip)
  *   B — HTTP: patchToSessionUpdates synthesis → RemoteSessionView (snapshot batch)
  *   C — HTTP: patchToSessionUpdates synthesis → RemoteSessionView (drip batches)
  *
@@ -45,6 +45,7 @@ const inbound = fixture.filter((e) => e.dir === "in")
 const acpUpdateEntries = inbound.filter(
   (e) => e.channel === "acp" && e.frame.method === "session/update",
 )
+const TASK_TOOL_CALL_ID = "toolu_01GiSAsvUBjALq1WGBB2xQ1K"
 
 function rawUpdate(entry: FixtureEntry): unknown {
   return (entry.frame.params as { update: unknown }).update
@@ -110,10 +111,9 @@ class HttpReplayView implements SessionView {
   close = vi.fn().mockResolvedValue(undefined)
 }
 
-// ─── wire synthesis (BE path: reduce → Patch → patchToSessionUpdates) ─────────
+// ─── wire synthesis (BE path: reduce → Patch → patchToSessionUpdates + ext wrapper) ─
 
-function synthesizeWireFromRaw(
-  rawUpdates: unknown[],
+function synthesizeWireFromInbound(
   mode: "snapshot" | "drip",
 ): { batches: WireUpdateBatch[]; wireCount: number } {
   let state = createInitialSessionState({ sessionId: "parity-test" })
@@ -121,17 +121,30 @@ function synthesizeWireFromRaw(
   const allWire: WireSessionUpdate[] = []
   const batches: WireUpdateBatch[] = []
 
-  for (const update of rawUpdates) {
-    const { state: next, patches } = reduce(state, update)
-    const batchWire: WireSessionUpdate[] = []
-    for (const patch of patches) {
-      const applied = applyPatch(state, patch)
-      if (applied) {
-        batchWire.push(...patchToSessionUpdates(applied, patch))
-        state = applied
+  for (const entry of inbound) {
+    let batchWire: WireSessionUpdate[] = []
+
+    if (entry.channel === "acp" && entry.frame.method === "session/update") {
+      const update = rawUpdate(entry)
+      const { state: next, patches } = reduce(state, update)
+      for (const patch of patches) {
+        const applied = applyPatch(state, patch)
+        if (applied) {
+          batchWire.push(...patchToSessionUpdates(applied, patch))
+          state = applied
+        }
       }
+      state = next
+    } else if (entry.channel === "raw" && entry.frame.method === "_claude/sdkMessage") {
+      batchWire.push({
+        sessionUpdate: "_drive/ext_notification",
+        method: "_claude/sdkMessage",
+        params: entry.frame.params as Record<string, unknown>,
+      })
+    } else {
+      continue
     }
-    state = next
+
     version++
     allWire.push(...batchWire)
     if (mode === "drip" && batchWire.length > 0) {
@@ -146,12 +159,10 @@ function synthesizeWireFromRaw(
   return { batches, wireCount: allWire.length }
 }
 
-const rawUpdates = acpUpdateEntries.map(rawUpdate)
-const { batches: snapshotBatches, wireCount: expectedWireCount } = synthesizeWireFromRaw(
-  rawUpdates,
+const { batches: snapshotBatches, wireCount: expectedWireCount } = synthesizeWireFromInbound(
   "snapshot",
 )
-const { batches: dripBatches } = synthesizeWireFromRaw(rawUpdates, "drip")
+const { batches: dripBatches } = synthesizeWireFromInbound("drip")
 
 // ─── bubble helpers (flat top-level; subFrames excluded per brief §4) ───────
 
@@ -198,6 +209,8 @@ function delay(ms = 20): Promise<void> {
 // ─── WS path mocks ──────────────────────────────────────────────────────────
 
 let capturedOnUpdate: ((n: SessionNotification) => void) | null = null
+let capturedOnExtNotification: ((method: string, params: Record<string, unknown>) => void) | null =
+  null
 
 function makeMockClient(): AcpClient {
   return {
@@ -221,8 +234,15 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
   return {
     ...actual,
     createAcpClient: vi.fn(
-      (_transport: unknown, callbacks: { onUpdate: (n: SessionNotification) => void }) => {
+      (
+        _transport: unknown,
+        callbacks: {
+          onUpdate: (n: SessionNotification) => void
+          onExtNotification?: (method: string, params: Record<string, unknown>) => void
+        },
+      ) => {
         capturedOnUpdate = callbacks.onUpdate
+        capturedOnExtNotification = callbacks.onExtNotification ?? null
         return Promise.resolve(makeMockClient())
       },
     ),
@@ -269,10 +289,18 @@ import { AgentSession } from "./agent-session.svelte"
 async function runWsPath(): Promise<{ observed: unknown[]; bubbles: Bubble[] }> {
   const observed: unknown[] = []
   capturedOnUpdate = null
+  capturedOnExtNotification = null
   const agent = new AgentSession({ _onUpdateObserved: (u) => observed.push(u) })
   await agent.attach({ cwd: "/proj", cliKind: "claude" })
-  for (const entry of acpUpdateEntries) {
-    capturedOnUpdate?.(entry.frame.params as SessionNotification)
+  for (const entry of inbound) {
+    if (entry.channel === "acp" && entry.frame.method === "session/update") {
+      capturedOnUpdate?.(entry.frame.params as SessionNotification)
+    } else if (entry.channel === "raw" && entry.frame.method === "_claude/sdkMessage") {
+      capturedOnExtNotification?.(
+        "_claude/sdkMessage",
+        entry.frame.params as Record<string, unknown>,
+      )
+    }
   }
   return { observed, bubbles: [...agent.bubbles] }
 }
@@ -297,6 +325,7 @@ async function runHttpPath(
 describe("frame-ingest parity gate", () => {
   beforeEach(() => {
     capturedOnUpdate = null
+    capturedOnExtNotification = null
     uuidCounter = 0
   })
 
@@ -335,5 +364,20 @@ describe("frame-ingest parity gate", () => {
     const ws = await runWsPath()
     const http = await runHttpPath(snapshotBatches)
     expect(toolShapes(http.bubbles)).toEqual(toolShapes(ws.bubbles))
+  })
+
+  it("G6 — Task bubble carries toolCall.task on both WS and HTTP paths", async () => {
+    const ws = await runWsPath()
+    const http = await runHttpPath(snapshotBatches)
+    const wsTask = ws.bubbles.find(
+      (b) => b.kind === "tool" && b.toolCall.toolCallId === TASK_TOOL_CALL_ID,
+    )
+    const httpTask = http.bubbles.find(
+      (b) => b.kind === "tool" && b.toolCall.toolCallId === TASK_TOOL_CALL_ID,
+    )
+    expect(wsTask?.kind === "tool" && wsTask.toolCall.task).toBeDefined()
+    expect(httpTask?.kind === "tool" && httpTask.toolCall.task).toEqual(
+      wsTask?.kind === "tool" ? wsTask.toolCall.task : undefined,
+    )
   })
 })
