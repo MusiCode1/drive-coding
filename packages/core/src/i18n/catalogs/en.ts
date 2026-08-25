@@ -220,6 +220,8 @@ export const en: Catalog = {
   // ─── chat display prefs ─── (display-toggle-consistency)
   "settings.chatDisplay": "Chat display",
   "settings.toggle.showThoughts": "Show thoughts by default",
+  "settings.toggle.autoLoadRemoteImages":
+    "Load remote images automatically — your browser will fetch any URL the agent emits, which can expose you",
   "settings.toggle.showTools": "Show tools by default",
   // ─── Enter toggle ─── (slice-enter-toggle)
   "settings.toggle.enterToSend": "Enter sends message",

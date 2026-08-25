@@ -20,7 +20,7 @@
  * ─── slice msg-media — prop imageCwd → renderMarkdown({ cwd }) ───
  */
 import { renderMarkdown } from "$lib/util/markdown"
-import { getI18n } from "$lib/context"
+import { getI18n, getSettings } from "$lib/context"
 import { enhanceCodeBlocks } from "./enhance-code-blocks"
 import { enhanceFileLinks, type FileLinkParams } from "./enhance-file-links"
 import { enhanceRemoteImages } from "./enhance-remote-images"
@@ -39,6 +39,8 @@ let {
 } = $props()
 
 const t = getI18n().t
+// slice msg-media — מתג-הכיבוי של click-to-load. ברירת-מחדל false (בטוח).
+const settings = getSettings()
 </script>
 
 <div
@@ -46,7 +48,11 @@ const t = getI18n().t
   class:viewer={variant === "viewer"}
   dir="auto"
   use:enhanceCodeBlocks={{ text, labelCopy: t("bubble.copy"), labelCopied: t("bubble.copied") }}
-  use:enhanceRemoteImages={{ text, label: t("chat.content.loadRemoteImage") }}
+  use:enhanceRemoteImages={{
+    text,
+    label: t("chat.content.loadRemoteImage"),
+    autoLoad: settings.autoLoadRemoteImages,
+  }}
   use:enhanceFileLinks={{
     text,
     cwd: fileLinks?.cwd ?? null,
@@ -121,18 +127,55 @@ const t = getI18n().t
     unicode-bidi: isolate;
   }
 
+  /* ── slice msg-media: chip "טען תמונה" ──
+   * ‏שני תיקונים שנתפסו בפריוויו:
+   *  1. ‏יעד-מגע אמיתי (44px) — ‏אפליקציית-נהיגה; ‏טקסט inline בלי padding
+   *     ‏הוא מה שאי-אפשר לפגוע בו בתנועה.
+   *  2. ‏הבחנה מ-.file-link — ‏שם accent+קו-תחתון פותח **מסמך**; ‏כאן זו תמונה
+   *     ‏ממתינה. ‏לכן chip עם אייקון-תמונה, ‏ובלי קו-תחתון בכלל.
+   * ‏אין direction:ltr — ‏התווית מתורגמת (‏בניגוד ל-.file-link ‏שמציג נתיב). */
   .md-content :global(.remote-image-load) {
-    color: var(--accent);
-    text-decoration: underline;
-    text-decoration-style: dotted;
-    background: none;
-    border: none;
-    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    min-height: 44px;
+    padding: 0.35em 0.85em;
+    margin: 0.15em 0;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-card);
+    color: var(--fg-dim);
     font: inherit;
+    font-size: 0.9em;
+    line-height: 1.2;
+    text-decoration: none;
     cursor: pointer;
-    direction: ltr;
-    unicode-bidi: isolate;
+    vertical-align: middle;
   }
+
+  /* ‏אייקון-תמונה כ-mask → ‏יורש currentColor, ‏ולכן עובד בכל שמונה הפלטות. */
+  .md-content :global(.remote-image-load::before) {
+    content: "";
+    flex: none;
+    width: 1.05em;
+    height: 1.05em;
+    background-color: currentColor;
+    -webkit-mask: var(--icon-image) center / contain no-repeat;
+    mask: var(--icon-image) center / contain no-repeat;
+  }
+
+  .md-content :global(.remote-image-load) {
+    --icon-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Ccircle cx='9' cy='9' r='2'/%3E%3Cpath d='m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21'/%3E%3C/svg%3E");
+  }
+
+  @media (hover: hover) {
+    .md-content :global(.remote-image-load:hover) {
+      color: var(--fg);
+      border-color: var(--accent);
+    }
+  }
+
+  .md-content :global(.remote-image-load:active) { opacity: 0.75; }
 
   .md-content :global(hr) { border: none; border-top: 1px solid var(--border); margin: 0.5em 0; }
   /* code blocks כיוון LTR — מניעת ערבוב RTL בקוד */

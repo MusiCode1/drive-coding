@@ -228,6 +228,8 @@ export type MessageKey =
   | "settings.toggle.showTools"
   // ─── Enter toggle ─── (slice-enter-toggle)
   | "settings.toggle.enterToSend"
+  // slice msg-media — התווית אומרת את הסיכון, לא רק את הפיצ'ר
+  | "settings.toggle.autoLoadRemoteImages"
   // ─── content-viewer ─── (slice content-viewer)
   | "contentViewer.title"
   | "contentViewer.expand"

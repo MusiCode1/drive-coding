@@ -14,6 +14,23 @@ export type RemoteImageParams = {
   text: string
   /** Button label (i18n, passed from MarkdownContent) */
   label: string
+  /**
+   * 🔴 Security control OFF-switch (settings.autoLoadRemoteImages, default false).
+   * true → the image is inserted immediately instead of a click-to-load button,
+   * i.e. the browser fetches whatever URL the agent emitted, by itself.
+   * The user asked for this knob explicitly; the safe value is the default.
+   * Does NOT touch IMG_ALLOW / pass-3c — only the *target* of this action.
+   */
+  autoLoad?: boolean
+}
+
+/** Single place that builds the <img> — used by both autoLoad and the click path. */
+function makeImg(url: string, alt: string): HTMLImageElement {
+  const img = document.createElement("img")
+  img.src = url
+  img.alt = alt
+  img.referrerPolicy = "no-referrer"
+  return img
 }
 
 function isSkipped(node: Node): boolean {
@@ -57,6 +74,13 @@ function enhance(node: HTMLElement, p: RemoteImageParams): void {
 
       const alt = m[1] ?? ""
       const url = m[2] ?? ""
+
+      if (p.autoLoad === true) {
+        frag.append(makeImg(url, alt))
+        cursor = start + m[0].length
+        continue
+      }
+
       const btn = document.createElement("button")
       btn.type = "button"
       btn.className = "remote-image-load"
@@ -84,11 +108,7 @@ export const enhanceRemoteImages: Action<HTMLElement, RemoteImageParams> = (node
     if (src === undefined) return
     ev.preventDefault()
 
-    const img = document.createElement("img")
-    img.src = src
-    img.alt = btn.dataset["remoteAlt"] ?? ""
-    img.referrerPolicy = "no-referrer"
-    btn.replaceWith(img)
+    btn.replaceWith(makeImg(src, btn.dataset["remoteAlt"] ?? ""))
   }
 
   node.addEventListener("click", onClick)

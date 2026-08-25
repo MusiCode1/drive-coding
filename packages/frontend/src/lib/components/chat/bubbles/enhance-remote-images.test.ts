@@ -94,4 +94,34 @@ describe("enhanceRemoteImages", () => {
 
     remoteHandle.destroy?.()
   })
+
+  // ─── slice msg-media (‏תיקון-פריוויו 2): ‏מתג-הכיבוי ───
+  // ‏המתג משנה **‏רק** ‏את היעד של ה-action. ‏ברירת-המחדל היא הענף הבטוח.
+  it("autoLoad omitted → click-to-load button, not an img (safe default)", () => {
+    const { node } = mount("<p>![a](https://evil.example/beacon.png)</p>")
+    expect(node.querySelector("img")).toBeNull()
+    expect(node.querySelector("[data-remote-src]")).not.toBeNull()
+  })
+
+  it("autoLoad:false → still a button", () => {
+    const { node } = mount("<p>![a](https://evil.example/beacon.png)</p>", { autoLoad: false })
+    expect(node.querySelector("img")).toBeNull()
+    expect(node.querySelector("[data-remote-src]")).not.toBeNull()
+  })
+
+  it("autoLoad:true → img inserted immediately, still no-referrer", () => {
+    const { node } = mount("<p>![a](https://example.com/x.png)</p>", { autoLoad: true })
+    const img = node.querySelector("img")
+    expect(img).not.toBeNull()
+    expect(img?.getAttribute("src")).toBe("https://example.com/x.png")
+    expect(img?.getAttribute("alt")).toBe("a")
+    expect(img?.referrerPolicy).toBe("no-referrer")
+    expect(node.querySelector("[data-remote-src]")).toBeNull()
+  })
+
+  it("autoLoad:true does not touch code contexts", () => {
+    const { node } = mount("<p><code>![c](https://example.com/c.png)</code></p>", { autoLoad: true })
+    expect(node.querySelector("img")).toBeNull()
+    expect(node.textContent).toContain("![c](https://example.com/c.png)")
+  })
 })
