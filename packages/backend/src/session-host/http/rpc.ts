@@ -192,7 +192,9 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
           // (status/acpSessionId — remote-warm-reconnect plumbing). catch+warn:
           // a reporting failure must not fail the switch itself.
           try {
-            await registry.notifySessionAttached(agentId, r.sessionId)
+            // slice agent-patch-unify C2: מעביר את ה-cwd שכבר חושב למעלה (params
+            // או fallback) — זו החוליה שהייתה חסרה בשרשרת ה-cwd (§3).
+            await registry.notifySessionAttached(agentId, r.sessionId, cwd)
           } catch (err) {
             log.warn({ err, agentId }, "notifySessionAttached after loadSession failed")
           }

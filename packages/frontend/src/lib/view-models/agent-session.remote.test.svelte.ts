@@ -17,6 +17,7 @@
  * ─── slice view-switch C3 (integration) ───
  */
 
+import { createI18n, detectLocale } from "@drive-coding/core/i18n"
 import {
   applyPendingRequest,
   applyTurnEnd,
@@ -698,6 +699,22 @@ describe("AgentSession + remote view — WS paths are blocked", () => {
 
     // אף אחד מהם לא נגע ב-status/#view — עדיין connected, אין WS
     expect(agent.status).toBe("connected")
+  })
+
+  // slice agent-patch-unify C4, ממצא 3: no-op שקט → הודעה גלויה (i18n), בלי ניווט.
+  // מימוש newSession ב-remote עצמו אינו ב-scope — ר' §2 בבריף.
+  it("newSession sets a visible i18n error in remote mode instead of a silent no-op", async () => {
+    const view = new MockSessionView()
+    view.connect("remote-sess-13")
+    const agent = new AgentSession({ view })
+    agent._setStatusForTest("connected")
+    const sessionIdBefore = agent._getSessionIdForTest()
+
+    await agent.newSession({ cwd: "/ws", cliKind: "claude" })
+
+    expect(agent.error).toBe(createI18n({ locale: detectLocale() }).t("session.newSessionUnsupportedRemote"))
+    expect(agent.status).toBe("connected") // לא נגע ב-status
+    expect(agent._getSessionIdForTest()).toBe(sessionIdBefore) // sessionId לא השתנה — הפאנל לא ינווט
   })
 })
 

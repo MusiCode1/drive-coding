@@ -85,22 +85,22 @@ export async function getAgent(
   return (await res.json()) as { agent: { cwd: string; status: string; crashReason?: string } }
 }
 
+/**
+ * notifySessionAttached — עדכון "עובדת-חיבור" (acpSessionId + cwd אופציונלי) דרך
+ * PATCH הגנרי (slice agent-patch-unify, C3). מבטל את POST …/session-attached — אותה
+ * חתימה ציבורית, גוף מאציל ל-patchAgent. `opts.cwd` נשלח רק בשני אתרים בלבד
+ * (switchSession, newSession — §3.5 D6 בבריף); שאר האתרים משמיטים אותו במכוון.
+ */
 export async function notifySessionAttached(
   agentId: string,
   sessionId: string,
-  opts?: { replace?: boolean },
+  opts?: { replace?: boolean; cwd?: string },
 ): Promise<void> {
-  await withTimeout(
-    (s) =>
-      fetch(beUrl(`/api/agents/${agentId}/session-attached`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, ...(opts?.replace ? { replace: true } : {}) }),
-        signal: s,
-      }),
-    AGENTS_API_TIMEOUT_MS,
-    { label: "notifySessionAttached" },
-  )
+  await patchAgent(agentId, {
+    acpSessionId: sessionId,
+    ...(opts?.replace ? { replace: true } : {}),
+    ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
+  })
 }
 
 export async function deleteAgent(agentId: string): Promise<void> {
@@ -116,12 +116,26 @@ export async function deleteAgent(agentId: string): Promise<void> {
 }
 
 /**
- * עדכון שדות-משתמש של agent דרך PATCH גנרי (כרגע: title). best-effort אצל הקורא.
- * (slice session-title-in-process-list)
+ * הגוף הכולל של ה-PATCH הגנרי (slice agent-patch-unify, C3) — דלת אחת במקום שלוש
+ * (POST …/session-attached, POST …/persistent, PATCH {title}). תואם 1:1 ל-`PatchAgentInput`
+ * ב-http-agents.ts. `replace` הוא דגל-בקרה (D3) — לא שדה-רישום.
+ */
+export type PatchAgentBody = {
+  title?: string | null
+  persistent?: boolean
+  acpSessionId?: string
+  status?: "ready"
+  cwd?: string
+  replace?: boolean
+}
+
+/**
+ * עדכון גנרי של agent דרך PATCH /api/agents/:id — דלת אחת (slice agent-patch-unify).
+ * best-effort אצל הקורא (slice session-title-in-process-list — הדגם הראשון).
  */
 export async function patchAgent(
   agentId: string,
-  patch: { title?: string | null },
+  patch: PatchAgentBody,
   signal?: AbortSignal,
 ): Promise<void> {
   const res = await withTimeout(
@@ -141,23 +155,12 @@ export async function patchAgent(
   }
 }
 
-/** משנה את דגל הנעיצה (persistent) של agent. */
+/**
+ * משנה את דגל הנעיצה (persistent) של agent — שדה-משתמש, דרך PATCH הגנרי
+ * (slice agent-patch-unify, C3). מבטל את POST …/persistent — אותה חתימה ציבורית.
+ */
 export async function setAgentPersistent(agentId: string, persistent: boolean): Promise<void> {
-  const res = await withTimeout(
-    (s) =>
-      fetch(beUrl(`/api/agents/${agentId}/persistent`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ persistent }),
-        signal: s,
-      }),
-    AGENTS_API_TIMEOUT_MS,
-    { label: "setAgentPersistent" },
-  )
-  if (!res.ok) {
-    const body = await res.text().catch(() => "")
-    throw new Error(`setAgentPersistent failed: ${res.status} ${body}`)
-  }
+  await patchAgent(agentId, { persistent })
 }
 
 /**

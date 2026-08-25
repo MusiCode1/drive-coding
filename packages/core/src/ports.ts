@@ -21,11 +21,14 @@ export interface AgentRegistry {
   /** רשימת כל הסוכנים (ללא סינון — אין זהות ב-MVP). */
   list(): Promise<ReadonlyArray<Agent>>
 
-  /** עדכון סטטוס / פרטי bridge / סיבת קריסה / נעיצה. זורק שגיאה אם id לא קיים. */
+  /** עדכון סטטוס / פרטי bridge / סיבת קריסה / נעיצה / cwd. זורק שגיאה אם id לא קיים. */
   update(
     id: string,
     patch: Partial<
-      Pick<Agent, "status" | "bridgePort" | "acpSessionId" | "crashReason" | "persistent" | "title">
+      Pick<
+        Agent,
+        "status" | "bridgePort" | "acpSessionId" | "crashReason" | "persistent" | "title" | "cwd"
+      >
     >,
   ): Promise<Agent>
 

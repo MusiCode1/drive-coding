@@ -910,7 +910,7 @@ describe("AgentSessionRegistry", () => {
       return host
     }
 
-    it("calls onSessionAttached with (agentId, real host sessionId) on first creation", async () => {
+    it("calls onSessionAttached with (agentId, real host sessionId, cwd) on first creation", async () => {
       const conn = makeMockConnection()
       const connectionRegistry = makeMockConnectionRegistry(conn)
       const onSessionAttached = vi.fn()
@@ -925,7 +925,13 @@ describe("AgentSessionRegistry", () => {
       await registry.getOrCreateHost("agent-1")
 
       expect(onSessionAttached).toHaveBeenCalledTimes(1)
-      expect(onSessionAttached).toHaveBeenCalledWith("agent-1", "sess-auto-created")
+      // slice agent-patch-unify C2: cwd (מ-connectionRegistry.getCwd, כבר בהיקף
+      // כאן — נעשה בו שימוש ל-host.newSession/loadSession) עובר גם ל-callback.
+      expect(onSessionAttached).toHaveBeenCalledWith(
+        "agent-1",
+        "sess-auto-created",
+        "/tmp/mock-cwd",
+      )
     })
 
     it("also reports for an injected-ready host (call sits after the if block, not inside)", async () => {
@@ -945,7 +951,7 @@ describe("AgentSessionRegistry", () => {
 
       expect(mockHost.newSession).not.toHaveBeenCalled()
       expect(onSessionAttached).toHaveBeenCalledTimes(1)
-      expect(onSessionAttached).toHaveBeenCalledWith("agent-1", "injected-session")
+      expect(onSessionAttached).toHaveBeenCalledWith("agent-1", "injected-session", "/tmp/mock-cwd")
     })
 
     it("a throwing onSessionAttached does not fail host creation (warn + continue)", async () => {
@@ -966,15 +972,21 @@ describe("AgentSessionRegistry", () => {
       expect(registry.getHost("agent-1")).toBe(mockHost)
     })
 
-    it("notifySessionAttached delegates to the callback; without a callback it is a quiet no-op", async () => {
+    it("notifySessionAttached delegates to the callback (incl. cwd); without a callback it is a quiet no-op", async () => {
       const onSessionAttached = vi.fn()
       const registry = createAgentSessionRegistry({
         connectionRegistry: makeMockConnectionRegistry(),
         onSessionAttached,
       })
 
+      // slice agent-patch-unify C2: rpc.ts case "loadSession" מעביר את ה-cwd
+      // שכבר חושב שם — הפרמטר השלישי כאן הוא הנתיב של אותה שרשרת.
+      await registry.notifySessionAttached("agent-9", "sess-9", "/some/cwd")
+      expect(onSessionAttached).toHaveBeenCalledWith("agent-9", "sess-9", "/some/cwd")
+
+      // בלי cwd (הענף הישן, ללא שינוי) — נשאר undefined, לא הופך למחרוזת ריקה.
       await registry.notifySessionAttached("agent-9", "sess-9")
-      expect(onSessionAttached).toHaveBeenCalledWith("agent-9", "sess-9")
+      expect(onSessionAttached).toHaveBeenCalledWith("agent-9", "sess-9", undefined)
 
       const bare = createAgentSessionRegistry({
         connectionRegistry: makeMockConnectionRegistry(),
@@ -1005,7 +1017,11 @@ describe("AgentSessionRegistry", () => {
       ])
 
       expect(onSessionAttached).toHaveBeenCalledTimes(1)
-      expect(onSessionAttached).toHaveBeenCalledWith("agent-1", "sess-auto-created")
+      expect(onSessionAttached).toHaveBeenCalledWith(
+        "agent-1",
+        "sess-auto-created",
+        "/tmp/mock-cwd",
+      )
       expect(r1).toBe(r2)
     })
   })

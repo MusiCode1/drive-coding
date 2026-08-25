@@ -1709,6 +1709,10 @@ export class AgentSession {
     return this.#cliKind
   }
 
+  get sessionId(): string | null {
+    return this.#sessionId
+  }
+
   // ─── slice-permission-ui-basic: בקשת הרשאה חיה ──────────────────────────────
   // תשתית גנרית ניתנת-לשכפול (callback + Promise round-trip) — slice B (elicitation)
   // ישכפל את הדפוס הזה ל-onCreateElicitation.
@@ -2173,10 +2177,13 @@ export class AgentSession {
 
       // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים)
       // replace:true — warm switch מכוון, מאפשר דריסת sessionId קיים (עוקף guard MED-9)
+      // cwd — §3.5 D6: switchSession מחזיק מקור-אמת ל-cwd (מרשימת-הסשנים) ומשנה תיקייה;
+      // בלי זה registry/projectsRegistry נשארים על ה-cwd הישן אחרי F5 (DoD 9/10).
       if (this.agentId) {
-        await notifySessionAttached(this.agentId, input.sessionId, { replace: true }).catch(
-          () => {},
-        )
+        await notifySessionAttached(this.agentId, input.sessionId, {
+          replace: true,
+          cwd: input.cwd,
+        }).catch(() => {})
       }
 
       this.#setStatus("connected")
@@ -2203,7 +2210,15 @@ export class AgentSession {
    */
   newSession = async (input: { cwd?: string; cliKind: string }): Promise<void> => {
     // ─── slice view-switch C3-ה: חסימת נתיבי-WS ב-remote ───
-    if (this.#remoteView()) return
+    // slice agent-patch-unify C4, ממצא 3: המימוש ב-remote עצמו אינו ב-scope — המינימום
+    // המוסכם הוא הודעה גלויה (i18n) בלי ניווט, במקום no-op שקט שהשאיר את הפאנל מנווט
+    // בשקט לסשן הנוכחי (sessionId לא משתנה כאן).
+    if (this.#remoteView()) {
+      this.error = createI18n({ locale: this.#settings?.locale ?? detectLocale() }).t(
+        "session.newSessionUnsupportedRemote",
+      )
+      return
+    }
     const cwd = input.cwd ?? this.cwd
     // אין חיבור פעיל → נתיב כבד (דפנסיבי; ה-panel מוצג רק עם חיבור)
     if (this.#client === null) {
@@ -2236,8 +2251,9 @@ export class AgentSession {
 
       // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים).
       // replace:true — מעבר מכוון לסשן אחר על אותו agent, עוקף guard MED-9.
+      // cwd — §3.5 D6: newSession החם מחזיק מקור-אמת ל-cwd (מפורש/נגזר מ-input.cwd ?? this.cwd).
       if (this.agentId) {
-        await notifySessionAttached(this.agentId, newId, { replace: true }).catch(() => {})
+        await notifySessionAttached(this.agentId, newId, { replace: true, cwd }).catch(() => {})
       }
 
       this.#setStatus("connected")

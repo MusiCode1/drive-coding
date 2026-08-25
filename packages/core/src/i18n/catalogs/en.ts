@@ -420,4 +420,17 @@ export const en: Catalog = {
     "No response from the agent for a while. It may still be working — or it may have stopped without saying so.",
   "session.cloudflareRefresh": "Refresh",
   "session.gone": "This session is gone — open a new one.",
+  // ─── session-url (slice session-url C2) ───
+  "sessionUrl.resolving": "Connecting…",
+  "sessionUrl.notFound.title": "Session not found",
+  "sessionUrl.notFound.body":
+    "The session you requested is not available. It may have closed or the agent is not running.",
+  "sessionUrl.notFound.back": "Back to home",
+  "sessionUrl.takeover.title": "Active connection",
+  "sessionUrl.takeover.body":
+    "This session is already connected from another device or tab. Connecting here will disconnect it.",
+  "sessionUrl.takeover.confirm": "Connect anyway",
+  "sessionUrl.takeover.cancel": "Cancel",
+  // ─── agent-patch-unify C4: finding 3 — newSession over remote is not supported yet ─── (message only, no navigation)
+  "session.newSessionUnsupportedRemote": "Starting a new session is not supported yet in remote mode.",
 }
