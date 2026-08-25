@@ -341,13 +341,15 @@ describe("AgentSession.newSession", () => {
     expect(session.status).toBe("connected")
   })
 
-  it("calls notifySessionAttached with replace:true", async () => {
+  it("calls notifySessionAttached with replace:true and cwd (D6 — newSession מחזיק מקור-אמת ל-cwd)", async () => {
     const { notifySessionAttached } = await import("$lib/adapters/agents-api")
 
     await session.newSession({ cliKind: "opencode" })
 
+    // cwd נגזר מ-input.cwd ?? this.cwd — כאן "/tmp" (מ-attach ב-beforeEach, אין input.cwd מפורש)
     expect(notifySessionAttached).toHaveBeenCalledWith("test-agent", "test-session", {
       replace: true,
+      cwd: "/tmp",
     })
   })
 

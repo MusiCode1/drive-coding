@@ -1,3 +1,61 @@
+## 2026-08-25 (slice agent-patch-unify — דלת אחת ל-PATCH /api/agents/:id)
+
+ענף: `slice/agent-patch-unify`, worktree `.worktrees/agent-patch-unify`, base
+`integration/run-http-api-reorg` @ `11da4b5f`. בריף:
+`docs-repo/drive-coding/plans/slice-agent-patch-unify.md` (אימות אביגיל: כל 9
+הממצאים תוקנו במקום).
+
+מבטל שלוש דלתות ל-`registry.update` (`POST …/session-attached`,
+`POST …/persistent`, `PATCH {title}`) לטובת `PATCH /api/agents/:id` גנרי אחד,
+תוך שימור הגנת-הגנריות (§3.5: `onUndeclaredKey("reject")` + `status` מצומצם
+לליטרל `"ready"` + extract מפורש עם שומר-`undefined` + שומר-409 שקורא את
+ה-*סוכן* ולא את ה-*בקשה*), ומתקן את שרשרת ה-`cwd` שהייתה נשברת בין
+`loadSession`(rpc) ל-`registry.update` (מעבר-תיקיות לא שרד F5).
+
+**C0** (972e6ca4, none) — חפץ-שער `scripts/probe-agent-patch.sh` (הועתק כלשונו).
+אומת אדום על הבסיס: exit 1, שלוש שורות FAIL.
+
+**C1** (31a30613, tdd) — `http-agents.ts`: `PatchAgentInput` (arktype) עם
+D1–D5 (§3.5), DELETE של שני ה-handlers הישנים (שומר MED-9 ותופעות
+`projectsRegistry` עברו ל-PATCH — לא נמחקו). `ports.ts`: `AgentRegistry.update`
+Pick הורחב ב-`cwd`. שער ירוק: `probe-agent-patch.sh` exit 0.
+
+**C2** (0e8aa45a, tdd) — הזרמת `cwd` דרך `registry.ts`
+(`notifySessionAttached`/`OnSessionAttached` מקבלים `cwd?: string` שלישי,
+Promise<void>|void נשמר) ← `rpc.ts` (`case "loadSession"`) וגם `doCreate`
+(אתר שני שהבריף מנה במפורש — anchor "onSessionAttached failed — host
+creation continues") ← `server.ts` (`registry.update` מקבל `cwd` רק כשסופק —
+D4, ו-`projectsRegistry` עם `cwd ?? agent.cwd` — D7). verifier-phase אחרי C2
+(§8 בבריף) — כלב: GO, אפס ממצאים.
+
+**C3** (הקומיט הזה, tdd) — חיווט החזית לדלת האחת:
+- `agents-api.ts`: `notifySessionAttached`/`setAgentPersistent` שומרים שם +
+  חתימה ציבורית, גופם עבר לקרוא ל-`patchAgent` (סוג `PatchAgentBody` תואם
+  1:1 ל-`PatchAgentInput` ב-BE). `notifySessionAttached` מקבל `opts.cwd?`
+  אופציונלי נוסף.
+- `agent-session.svelte.ts`: `cwd` נוסף ב-**שני אתרים בלבד** לפי D6 —
+  `switchSession` (ענף ה-WS, `input.cwd`) ו-`newSession` החם (המשתנה
+  `cwd = input.cwd ?? this.cwd`). ארבעת האתרים האחרים (`#warmReconnect`,
+  `attach`, `loadSession` הכבד, ו-`presence-poller.svelte.ts`) **לא** שונו —
+  אלה חזרות-הצהרה שעלולות לשדר `cwd` מעופש (הבריף הדגיש זאת במפורש).
+- שני הטסטים שהבריף חזה במפורש עודכנו: `agents-api.test.ts` (label
+  `withTimeout` עבר מ-`"notifySessionAttached"` ל-`"patchAgent"` — תוצאת
+  ההאצלה) ו-`agent-session.test.ts` (הטסט `calls notifySessionAttached with
+  replace:true` עבר על `newSession` — אתר D6 השני — נדרש `cwd: "/tmp"`
+  נוסף להתאמה-מדויקת).
+- שינוי-סמנטיקה (`notifySessionAttached` עבר מ"לא בודק res.ok" ל"זורק
+  דרך `patchAgent`"): אומת ששת אתרי-הקריאה (2× ב-agent-session.svelte.ts
+  D6, 3× נוספים בלתי-D6, 1× ב-presence-poller.svelte.ts) עוטפים ב-
+  `.catch(() => {})` — אין רגרסיה.
+
+**שערים**: `bun run typecheck` (שורש) exit 0 · `bun run --filter
+@drive-coding/frontend typecheck` — 9 שגיאות (זהה לבסיס, 5 קבצים זהים,
+0 חדשות) · `bunx vitest run packages/frontend/src/lib/adapters
+packages/frontend/src/lib/view-models` — 508/508 · `bunx vitest run
+packages/frontend` המלא — 1101/1101 · `bun run lint:i18n` exit 0 ·
+`bunx biome check` על 4 הקבצים ששונו — זהה לבסיס (2 errors / 62 warnings
+טרם-קיימים, 0 חדשים).
+
 ## 2026-08-19 23:27 (slice ttl-ownership — פקיעת-TTL הופכת מהרס לשחרור-בעלות)
 
 ענף: `slice/ttl-ownership`, worktree `.worktrees/ttl-ownership`, base

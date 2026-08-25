@@ -2113,10 +2113,13 @@ export class AgentSession {
 
       // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים)
       // replace:true — warm switch מכוון, מאפשר דריסת sessionId קיים (עוקף guard MED-9)
+      // cwd — §3.5 D6: switchSession מחזיק מקור-אמת ל-cwd (מרשימת-הסשנים) ומשנה תיקייה;
+      // בלי זה registry/projectsRegistry נשארים על ה-cwd הישן אחרי F5 (DoD 9/10).
       if (this.agentId) {
-        await notifySessionAttached(this.agentId, input.sessionId, { replace: true }).catch(
-          () => {},
-        )
+        await notifySessionAttached(this.agentId, input.sessionId, {
+          replace: true,
+          cwd: input.cwd,
+        }).catch(() => {})
       }
 
       this.#setStatus("connected")
@@ -2176,8 +2179,9 @@ export class AgentSession {
 
       // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים).
       // replace:true — מעבר מכוון לסשן אחר על אותו agent, עוקף guard MED-9.
+      // cwd — §3.5 D6: newSession החם מחזיק מקור-אמת ל-cwd (מפורש/נגזר מ-input.cwd ?? this.cwd).
       if (this.agentId) {
-        await notifySessionAttached(this.agentId, newId, { replace: true }).catch(() => {})
+        await notifySessionAttached(this.agentId, newId, { replace: true, cwd }).catch(() => {})
       }
 
       this.#setStatus("connected")
