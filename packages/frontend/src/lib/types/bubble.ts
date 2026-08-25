@@ -56,7 +56,15 @@ export type UserBubble = BubbleBase & {
    * ה-VM לא מייבא t ולא כותב מחרוזות-תצוגה — שכבת-הרכיב בלבד.
    * label: raw data (name/uri) — ללא אינטרפולציה.
    */
-  contentPlaceholders?: { kind: "resource_link" | "audio" | "resource"; label?: string }[]
+  // slice fs-file-proxy (Commit 2): הוספת uri + kind:"file" — additive, לא replacement
+  // (חוק זהב #5). label ממשיך לשמש לתצוגה (name אם קיים); uri משמש ל-fetch
+  // ב-ContentViewer (ph.uri ?? ph.label בצד הרכיב — label יכול להיות ה-uri עצמו
+  // כשאין name).
+  contentPlaceholders?: {
+    kind: "resource_link" | "audio" | "resource" | "file"
+    label?: string
+    uri?: string
+  }[]
 }
 
 export type MessageBubble = BubbleBase & {
@@ -76,7 +84,12 @@ export type ToolContentTerminal = { type: "terminal"; terminalId: string }
 // data = base64 גולמי (ללא "data:" prefix) — הרינדור בונה את ה-data-URI
 export type ToolContentImage = { type: "image"; data: string; mimeType: string }
 export type ToolContentOther = { type: "other"; raw: unknown } // audio/resource/unknown
-export type ToolContent = ToolContentText | ToolContentDiff | ToolContentTerminal | ToolContentImage | ToolContentOther
+export type ToolContent =
+  | ToolContentText
+  | ToolContentDiff
+  | ToolContentTerminal
+  | ToolContentImage
+  | ToolContentOther
 
 export type ToolLocation = { path: string; line?: number }
 
