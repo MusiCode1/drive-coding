@@ -13,6 +13,7 @@
 import MarkdownContent from "$lib/components/chat/bubbles/MarkdownContent.svelte"
 import { getI18n } from "$lib/context"
 import { beUrl } from "$lib/util/be-url"
+import { baseContentType, isRenderableText } from "$lib/util/content-type"
 import { canRenderPdfInline } from "$lib/util/pdf-render-support"
 
 const t = getI18n().t
@@ -20,6 +21,10 @@ const t = getI18n().t
 let { uri, title }: { uri: string; title?: string } = $props()
 
 let contentType = $state("")
+// 🔴 ההשוואות למטה הן על **טיפוס-הבסיס** ולא על הכותרת המלאה. ה-BE מצהיר
+// `text/markdown; charset=utf-8`, והשוואה מדויקת הייתה מפילה כל מסמך לענף
+// ההורדה (ממצא-משתמש חי 25/08).
+const baseType = $derived(baseContentType(contentType))
 let blobUrl = $state("")
 let markdownText = $state("")
 let error = $state("")
@@ -39,7 +44,7 @@ $effect(() => {
     .then(async (r) => {
       const ct = r.headers.get("content-type") ?? ""
       if (!r.ok) throw new Error(`${r.status} ${r.url}`)
-      if (ct === "text/markdown") {
+      if (isRenderableText(ct)) {
         return { ct, kind: "text" as const, text: await r.text() }
       }
       return { ct, kind: "blob" as const, blob: await r.blob() }
@@ -73,16 +78,16 @@ $effect(() => {
   <a href={uri} target="_blank" rel="noreferrer" class="text-link">
     {t("contentViewer.download")} — {error}
   </a>
-{:else if contentType.startsWith("image/")}
+{:else if baseType.startsWith("image/")}
   <img src={blobUrl} class="viewer-image" alt={title ?? t("contentViewer.title")} />
-{:else if contentType === "application/pdf" && canRenderPdfInline()}
+{:else if baseType === "application/pdf" && canRenderPdfInline()}
   <iframe src={blobUrl} class="pdf-frame" title={title ?? t("contentViewer.title")}></iframe>
-{:else if contentType === "application/pdf"}
+{:else if baseType === "application/pdf"}
   <!-- אין תמיכת iframe (למשל iOS Safari) → טאב חדש + קישור-הורדה, לא מסך-לבן -->
   <a href={blobUrl} target="_blank" rel="noreferrer" class="text-link">
     {t("contentViewer.download")}
   </a>
-{:else if contentType === "text/markdown"}
+{:else if isRenderableText(contentType)}
   <MarkdownContent text={markdownText} variant="viewer" />
 {:else if blobUrl}
   <a href={blobUrl} download class="text-link">

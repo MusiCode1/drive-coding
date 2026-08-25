@@ -37,6 +37,37 @@ const EXT_TO_CONTENT_TYPE: Record<string, string> = {
   ".pdf": "application/pdf",
 }
 
+/**
+ * הסוגים שעבורם charset בכלל רלוונטי. `image/svg+xml` **אינו** כאן בכוונה:
+ * פרסר XML מניח UTF-8 בעצמו, ואין סיבה לגעת בו.
+ */
+const TEXT_EXTS = new Set([".md", ".markdown", ".txt"])
+
+/**
+ * 🔴 אנחנו **לא מזהים קידוד**. זיהוי (chardet/ICU) הוא היוריסטיקה שהתקנים
+ * ממליצים להימנע ממנה. אנחנו **מאמתים הצהרה**: שאלת כן/לא דטרמיניסטית —
+ * האם הבתים מרכיבים UTF-8 חוקי. הבתים כבר ביד (נקראו תחת תקרת 8MB) ⇒ אפס IO.
+ *
+ * למה זה בכלל נדרש: `X-Content-Type-Options: nosniff` (למטה) אוסר על הדפדפן
+ * לנחש — ולכן `text/markdown` ללא charset נופל ל-codepage המקומי. זה מה
+ * שהמשתמש ראה חי ב-25/08: מסמך UTF-8 עברי שרונדר כ-windows-1255.
+ */
+function isValidUtf8(bytes: Uint8Array): boolean {
+  // BOM של UTF-16 (FF FE / FE FF) — הצהרה מפורשת שזה **לא** UTF-8.
+  // ה-decoder ה-fatal היה תופס גם אותו, אבל הבדיקה המפורשת מתעדת את הכוונה.
+  const b0 = bytes[0]
+  const b1 = bytes[1]
+  if ((b0 === 0xff && b1 === 0xfe) || (b0 === 0xfe && b1 === 0xff)) return false
+
+  try {
+    // fatal: true → זורק על כל סדרה לא-חוקית. BOM של UTF-8 (EF BB BF) עובר תקין.
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function registerFsFileHttp(
   app: Hono,
   opts: {
@@ -131,8 +162,30 @@ export function registerFsFileHttp(
     // TypeError: ({a:"1"}).filter is not a function ⇒ כל 200 היה נופל ל-500.
     // הבנייה כאן היא Record רגיל + השמה מותנית.
     const bytes = new Uint8Array(await readFile(real))
+
+    // 🔴 מדרג-ה-charset. שלוש תוצאות, ואף אחת מהן אינה ניחוש:
+    //   · לא-טקסט            → הסוג כפי שהוא (תמונות/PDF/SVG לא נוגעים)
+    //   · טקסט + UTF-8 חוקי  → `; charset=utf-8` — **מדידה, לא הנחה**
+    //   · טקסט שאינו UTF-8   → `application/octet-stream`
+    //
+    // הענף השלישי הוא הכרעה, לא פשרה: הכלל הוא כמו של git — בתים שאינם UTF-8
+    // חוקי **אינם טקסט**. השמטת ה-charset לבדה הייתה מחזירה את הדפדפן לניחוש-
+    // לפי-לוקאל, כלומר בדיוק לכשל שאנחנו מתקנים; ואמרנו לו `nosniff` ("אל
+    // תנחש"), אז שלא ננחש גם אנחנו.
+    //
+    // 🔴 והבסיס המכריע לצד-הלקוח: `Response.text()` מפענח UTF-8 **תמיד**
+    // ומתעלם מה-charset (spec של fetch) ⇒ קובץ שאינו UTF-8 יפיק ג'יבריש בענף
+    // הטקסט **בכל מקרה**. לכן ההפניה ל-blob אינה החמרה — היא הדבר היחיד שנותן
+    // למשתמש תוצאה שמישה: קובץ שאפשר לפתוח בכלי שיודע את הקידוד.
+    let effectiveContentType = contentType
+    if (TEXT_EXTS.has(ext)) {
+      effectiveContentType = isValidUtf8(bytes)
+        ? `${contentType}; charset=utf-8`
+        : "application/octet-stream"
+    }
+
     const headers: Record<string, string> = {
-      "Content-Type": contentType,
+      "Content-Type": effectiveContentType,
       // bytes.length ולא size מ-stat — הקובץ יכול להשתנות בין stat ל-readFile.
       "Content-Length": String(bytes.length),
       "Cache-Control": "no-cache",
