@@ -12,6 +12,14 @@ import type { Patch, SessionState } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import type { SessionInfo } from "$lib/adapters/sessions"
 
+/** Single delivery unit from view to VM. Order guaranteed: same channel, same queue. */
+export type ViewEmission = {
+  /** Patches produced from the batch. Advance view state. */
+  patches: Patch[]
+  /** Raw session/update as received from the wire. Empty on synthetic reset. */
+  updates: unknown[]
+}
+
 /**
  * SessionView — port עבור גישה למצב הסשן + methods לניהולו.
  *
@@ -26,14 +34,14 @@ export interface SessionView {
   readonly state: SessionState
 
   /**
-   * ReadableStream<Patch[]> — ערוץ patches לריאקטיביות ממוקדת.
-   * כל frame הוא Patch[] ממרוץ reduce אחד (agent_message_chunk, tool_call, וכו').
-   * ה-VM קורא מזה כדי לעדכן bubbles ממוקד (לא O(n²) mapping מלא).
+   * ReadableStream<ViewEmission> — patch + raw update delivery channel.
+   * Each frame is one ViewEmission from a single reduce batch (agent_message_chunk,
+   * tool_call, etc.). The VM reads this for targeted bubble reactivity.
    *
    * ⚠️ stream חי — הצרכן חייב לקרוא (getReader()) כדי למנוע backpressure.
    * ⚠️ ReadableStream ניתן לצריכה פעם אחת בלבד (לא tee אלא אם צריך).
    */
-  readonly patches: ReadableStream<Patch[]>
+  readonly patches: ReadableStream<ViewEmission>
 
   /**
    * שולח פרומפט (טקסט או PromptBlocks).

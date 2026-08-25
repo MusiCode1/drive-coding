@@ -35,6 +35,7 @@ import {
   RemoteSessionView,
   type RemoteSessionViewOptions,
 } from "./remote-session-view.js"
+import type { ViewEmission } from "./session-view.js"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -140,14 +141,17 @@ function makeMockFetch(opts: {
 }
 
 /** Read exactly n patch-arrays from the wrapped patches stream. */
-async function readNPatchArrays(patches: ReadableStream<Patch[]>, n: number): Promise<Patch[][]> {
+async function readNPatchArrays(
+  patches: ReadableStream<ViewEmission>,
+  n: number,
+): Promise<Patch[][]> {
   const reader = patches.getReader()
   const results: Patch[][] = []
   try {
     for (let i = 0; i < n; i++) {
       const { value, done } = await reader.read()
       if (done) break
-      if (value !== undefined) results.push(value)
+      if (value !== undefined) results.push(value.patches)
     }
   } finally {
     reader.releaseLock()
@@ -301,7 +305,7 @@ describe("RemoteSessionView — connect()", () => {
 
 describe("RemoteSessionView — hydration on first connect (slice remote-warm-reconnect C3)", () => {
   /** מוודא שאין עוד פליטות בערוץ — כשל-כפילות: reset שני היה מכפיל את ההיסטוריה ב-VM. */
-  async function expectNoMoreEmissions(patches: ReadableStream<Patch[]>, ms = 50): Promise<void> {
+  async function expectNoMoreEmissions(patches: ReadableStream<ViewEmission>, ms = 50): Promise<void> {
     const reader = patches.getReader()
     try {
       const result = await Promise.race([

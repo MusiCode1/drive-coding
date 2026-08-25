@@ -22,7 +22,7 @@ import {
 } from "@drive-coding/core/session"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { SessionView } from "$lib/session/session-view"
+import type { SessionView, ViewEmission } from "$lib/session/session-view"
 import type { WireUpdateBatch } from "$lib/session/sse-reader"
 import type { Bubble } from "$lib/types/bubble"
 
@@ -51,13 +51,13 @@ function rawUpdate(entry: FixtureEntry): unknown {
 class HttpReplayView implements SessionView {
   state: SessionState = $state(createInitialSessionState({ sessionId: null }))
 
-  #controller: ReadableStreamDefaultController<Patch[]> | null = null
-  readonly patches: ReadableStream<Patch[]>
+  #controller: ReadableStreamDefaultController<ViewEmission> | null = null
+  readonly patches: ReadableStream<ViewEmission>
   #lastVersion = 0
   supportsSessionDelete = false
 
   constructor() {
-    this.patches = new ReadableStream<Patch[]>({
+    this.patches = new ReadableStream<ViewEmission>({
       start: (controller) => {
         this.#controller = controller
       },
@@ -79,12 +79,14 @@ class HttpReplayView implements SessionView {
     }
     this.state = { ...state, version: batch.version }
     this.#lastVersion = batch.version
-    if (produced.length > 0) this.#emit(produced)
+    if (produced.length > 0 || batch.updates.length > 0) {
+      this.#emit(produced, batch.updates)
+    }
   }
 
-  #emit(patches: Patch[]): void {
+  #emit(patches: Patch[], updates: unknown[] = []): void {
     try {
-      this.#controller?.enqueue(patches)
+      this.#controller?.enqueue({ patches, updates })
     } catch {
       // stream closed
     }

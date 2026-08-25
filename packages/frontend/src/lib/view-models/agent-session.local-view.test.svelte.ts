@@ -14,6 +14,7 @@
 import type { Patch } from "@drive-coding/core/session"
 import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import type { ViewEmission } from "$lib/session/session-view"
 
 // ─── Module-level mocks ───────────────────────────────────────────────────────
 
@@ -160,13 +161,13 @@ vi.mock("$lib/session/local-session-view", async (importActual) => {
         // ה-drain מחזיק את ה-reader היחיד; עוטפים את read() כדי לסמן done.
         // ⚠️ patches הוא readonly-טיפוסית — השמה בזמן-ריצה בלבד (seam של טסט).
         ;(
-          stream as unknown as { getReader: () => ReadableStreamDefaultReader<Patch[]> }
+          stream as unknown as { getReader: () => ReadableStreamDefaultReader<ViewEmission> }
         ).getReader = () => {
           const reader = origGetReader()
           const origRead = reader.read.bind(reader)
           ;(
             reader as unknown as {
-              read: () => Promise<ReadableStreamReadResult<Patch[]>>
+              read: () => Promise<ReadableStreamReadResult<ViewEmission>>
             }
           ).read = async () => {
             const res = await origRead()

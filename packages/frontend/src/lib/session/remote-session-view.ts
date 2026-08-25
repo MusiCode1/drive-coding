@@ -32,7 +32,7 @@ import type { PromptBlocks } from "@drive-coding/provider/client"
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import { registerView, unregisterView, type ViewDebugInfo } from "$lib/debug/session-registry"
 import { connWarn } from "$lib/util/conn-log"
-import type { SessionView } from "./session-view.js"
+import type { SessionView, ViewEmission } from "./session-view.js"
 import type { WireUpdateBatch } from "./sse-reader"
 import { SSEReader } from "./sse-reader.js"
 
@@ -85,9 +85,9 @@ export class RemoteSessionView implements SessionView {
    */
   #sessionCapabilities: { delete?: unknown; [key: string]: unknown } | null = null
 
-  // ─── patches stream (עטוף — Patch בודד מ-SSEReader → [patch]) ───
-  #patchesCtrl: ReadableStreamDefaultController<Patch[]> | null = null
-  readonly patches: ReadableStream<Patch[]>
+  // ─── patches stream (ViewEmission: patches + raw wire updates) ───
+  #patchesCtrl: ReadableStreamDefaultController<ViewEmission> | null = null
+  readonly patches: ReadableStream<ViewEmission>
 
   // ─── C3: Speaker water-mark (§8.1) — מונע הקראה כפולה אחרי reconnect ───
   #lastReadMessageId: string | null = null
@@ -113,7 +113,7 @@ export class RemoteSessionView implements SessionView {
     })
     this.#reader.onReconnected = this.#handleReconnected.bind(this)
 
-    this.patches = new ReadableStream<Patch[]>({
+    this.patches = new ReadableStream<ViewEmission>({
       start: (ctrl) => {
         this.#patchesCtrl = ctrl
       },
@@ -216,7 +216,7 @@ export class RemoteSessionView implements SessionView {
         nextMessageSeq: snapshot.nextMessageSeq,
         nextSegmentSeq: snapshot.nextSegmentSeq,
       }
-      this.#emit([resetPatch])
+      this.#emit([resetPatch], [])
     }
     void this.#drainUpdates(updates)
   }
@@ -311,12 +311,14 @@ export class RemoteSessionView implements SessionView {
     this.#state = { ...state, version: batch.version }
     this.#lastVersion = batch.version
     for (const p of produced) this.#advanceWaterMark(p)
-    if (produced.length > 0) this.#emit(produced)
+    if (produced.length > 0 || batch.updates.length > 0) {
+      this.#emit(produced, batch.updates)
+    }
   }
 
-  #emit(patches: Patch[]): void {
+  #emit(patches: Patch[], updates: unknown[] = []): void {
     try {
-      this.#patchesCtrl?.enqueue(patches)
+      this.#patchesCtrl?.enqueue({ patches, updates })
     } catch {
       // stream cancelled by consumer — ignore
     }
@@ -381,7 +383,7 @@ export class RemoteSessionView implements SessionView {
     this.#lastVersion = snapshot.version
     this.#lastReadMessageId = null
     this.#lastReadSegmentIndex = 0
-    this.#emit([resetPatch])
+    this.#emit([resetPatch], [])
     this.#onSseReconnected?.()
   }
 

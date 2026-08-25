@@ -613,38 +613,41 @@ export class AgentSession {
         // הישן עדיין יכולה למסור batch — guard שבודק רק this.#view !== null היה מעביר
         // אותו אל ה-VM החדש. אותו כלל בדיוק כמו ב-shim (#syncPendingPermission/Elicitation).
         if (this.#view !== view) break
-        const patches = value ?? []
-        if (patches.length === 0) continue
-        // targeted bubble update (אין O(n²) mapping)
-        applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
-        // ─── slice replay-quiet ───
-        // חתך-היסטוריה: רק ה-reset של ה-hydration הוא "הצטרפתי באמצע".
-        // #doConnect פולט אותו דרך #emit **לפני** #drainUpdates
-        // (remote-session-view.ts:209-222) ⇒ הוא תמיד ה-batch הראשון. reset מאוחר
-        // יותר = SSE-reconnect (:372) — מסלול שלא נמדד כפגוע, ולכן שמרנית
-        // איננו נוגעים בו.
-        if (attachWindow) {
-          attachWindow = false
-          const reset = patches.find(
-            (p): p is Extract<Patch, { op: "reset" }> => p.op === "reset",
-          )
-          if (reset) {
-            this.#historyMark = historyMarkFromReset(reset.messages)
-            this.historyEpoch++
+        const emission = value ?? { patches: [], updates: [] }
+        if (emission.patches.length === 0 && emission.updates.length === 0) continue
+        const patches = emission.patches
+        if (patches.length > 0) {
+          // targeted bubble update (אין O(n²) mapping)
+          applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
+          // ─── slice replay-quiet ───
+          // חתך-היסטוריה: רק ה-reset של ה-hydration הוא "הצטרפתי באמצע".
+          // #doConnect פולט אותו דרך #emit **לפני** #drainUpdates
+          // (remote-session-view.ts:209-222) ⇒ הוא תמיד ה-batch הראשון. reset מאוחר
+          // יותר = SSE-reconnect (:372) — מסלול שלא נמדד כפגוע, ולכן שמרנית
+          // איננו נוגעים בו.
+          if (attachWindow) {
+            attachWindow = false
+            const reset = patches.find(
+              (p): p is Extract<Patch, { op: "reset" }> => p.op === "reset",
+            )
+            if (reset) {
+              this.#historyMark = historyMarkFromReset(reset.messages)
+              this.historyEpoch++
+            }
           }
-        }
-        // 🔴 החצי השני של #34. הליבה נושאת עכשיו עדכונים לא-מוכרים כ-`opaque`
-        // במקום לזרוק אותם — אבל נשיאה בלי צרכן היא עדיין שקט. כאן הם מגיעים
-        // לאותו `#onSessionUpdate` שמסלול ה-WS משתמש בו, וכך `reducePlan`
-        // (ושאר המטפלים שחיים רק שם) עובדים **גם ב-HTTP**.
-        //
-        // ⇒ פיצ'ר חדש ב-CLI שהליבה אינה מכירה יגיע ל-FE באפס עבודת-BE, בדיוק
-        // כמו בצינור השקוף — וזה בדיוק היתרון שחששנו שנאבד בנרמול-בשרת.
-        for (const patch of patches) {
-          // ⚠️ `#onSessionUpdate` מקבל **נוטיפיקציה** (`{ sessionId, update }`)
-          // ולא את ה-update הפנימי — אותה עטיפה כמו ב-fixture-replay למטה.
-          if (patch.op === "opaque") {
-            this.#onSessionUpdate({ update: patch.update } as unknown as SessionNotification)
+          // 🔴 החצי השני של #34. הליבה נושאת עכשיו עדכונים לא-מוכרים כ-`opaque`
+          // במקום לזרוק אותם — אבל נשיאה בלי צרכן היא עדיין שקט. כאן הם מגיעים
+          // לאותו `#onSessionUpdate` שמסלול ה-WS משתמש בו, וכך `reducePlan`
+          // (ושאר המטפלים שחיים רק שם) עובדים **גם ב-HTTP**.
+          //
+          // ⇒ פיצ'ר חדש ב-CLI שהליבה אינה מכירה יגיע ל-FE באפס עבודת-BE, בדיוק
+          // כמו בצינור השקוף — וזה בדיוק היתרון שחששנו שנאבד בנרמול-בשרת.
+          for (const patch of patches) {
+            // ⚠️ `#onSessionUpdate` מקבל **נוטיפיקציה** (`{ sessionId, update }`)
+            // ולא את ה-update הפנימי — אותה עטיפה כמו ב-fixture-replay למטה.
+            if (patch.op === "opaque") {
+              this.#onSessionUpdate({ update: patch.update } as unknown as SessionNotification)
+            }
           }
         }
         // sync metadata from view.state
