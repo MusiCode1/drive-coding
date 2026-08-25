@@ -452,11 +452,13 @@ export class AgentSession {
   sessionsError = $state<string | null>(null)
   #sessionsLoaded = false // True אחרי טעינה מוצלחת אחת — cache; force=true מרענן
 
-  // ─── slice-A5-watchdog: watchdog state ───
-  /** אמת אם watchdog אילץ idle (RESP אבד). B1 יכול להציג חיווי. מאופס בתחילת תור הבא. */
-  turnInterrupted = $state(false)
-  #watchdogTimer: ReturnType<typeof setTimeout> | null = null
-  readonly #WATCHDOG_MS = 45_000   // §9 Q1: נדיב מספיק לכלי-שקט ארוך + thinking ארוך
+  // ─── slice drop-a5-watchdog (25/08): `slice-A5-watchdog` הוסר ───
+  // היה טיימר של 45ש' שכפה `idle` והדליק `turnInterrupted`. נמחק, לא כוונן:
+  // ה-kick היחיד שלו ישב ב-`#onSessionUpdate`, ולשם מגיעים ב-HTTP **רק** patches
+  // מסוג `opaque`. ⇒ במסלול ה-HTTP השעון נדרך ב-sendPrompt ולא התאפס לעולם,
+  // וירה 45ש' אחרי הפרומפט גם בזמן שהסוכן משדר. מדידה שבורה, לא סף אגרסיבי.
+  // זיהוי תור-ששקע חי ב-`engines/turn-watchdog.ts` — מתריע, **אינו קוטע**,
+  // ומתאפס בשני המסלולים (`#noteAgentActivity`).
 
   // ─── msr-v2: מעקף opencode #17505 (tail-debounce) ───
   // opencode מחזיר RESP של session/prompt באמצע הזרם — ≈חצי התשובה (tail עד ~5.6ש')
@@ -485,32 +487,7 @@ export class AgentSession {
     }
   }
 
-  // ─── slice-A5-watchdog: watchdog helpers ───
-
-  /**
-   * מאפס את טיימר ה-watchdog. נקרא בראש #onSessionUpdate (לפני כל returns מוקדמים)
-   * וגם בתחילת sendPrompt — כך גם update של כלי-שקט ארוך מאפס ומונע קטיעה שגויה.
-   */
-  #kickWatchdog(): void {
-    if (this.#watchdogTimer !== null) clearTimeout(this.#watchdogTimer)
-    if (this.turnState === "idle") return   // אין תור פעיל — לא מתזמן
-    this.#watchdogTimer = setTimeout(() => {
-      this.#watchdogTimer = null
-      if (this.turnState !== "idle") {
-        // RESP אבד — כפה idle כדי לשחרר את ה-StatusBubble; flush ה-Speaker הקיים יופעל
-        this.turnInterrupted = true
-        this.#setTurnState("idle")
-      }
-    }, this.#WATCHDOG_MS)
-  }
-
-  /** מנקה את ה-watchdog. RESP תקין / cancelTurn / sendPrompt חדש / destroy. */
-  #clearWatchdog(): void {
-    if (this.#watchdogTimer !== null) {
-      clearTimeout(this.#watchdogTimer)
-      this.#watchdogTimer = null
-    }
-  }
+  // ─── slice drop-a5-watchdog: `#kickWatchdog`/`#clearWatchdog` נמחקו ───
 
   #client: AcpClient | null = null
   // ─── slice FE-normalization: ext facade ─── (additive)
@@ -1859,10 +1836,6 @@ export class AgentSession {
     }
     this.#setTurnState("waiting")
     this.#resetTurnTracking() // תחילת תור — #turnEnded=false + נקה טיימר יתום
-    // ─── slice-A5-watchdog: תחילת תור ───
-    this.turnInterrupted = false // מאפס חיווי "נקטע" מהתור הקודם
-    this.#clearWatchdog() // בטל watchdog קודם (לא אמור להיות, אבל defensive)
-    this.#kickWatchdog() // התחל watchdog — waiting state מפעיל
 
     try {
       // ⚠️ אין meta ב-scope של sendPrompt — נבנה כאן, אחרת tsc נופל על Cannot find name
@@ -1882,12 +1855,10 @@ export class AgentSession {
         await client.prompt(sid, content)
         // RESP הגיע — opencode: tail עוד יבוא; gemini/claude: סוף
         this.#turnEnded = true
-        this.#clearWatchdog() // ⬅ מ-playback (A5): RESP תקין — בטל watchdog
         this.#setTurnState("idle") // נכון ל-gemini/claude. opencode: tail יטופל ב-#onSessionUpdate
       }
     } catch (err: unknown) {
       this.#turnEnded = true
-      this.#clearWatchdog()        // שגיאה — גם כן מנקה
       this.#setTurnState("idle")
       // slice auth-guidance: formatAcpError (data.details→data.message→message) במקום
       // err.message הגולמי — היה מציג "Internal error" גנרי (claude: auth_required).
@@ -2688,9 +2659,6 @@ export class AgentSession {
         // best-effort — בכל מקרה נאלץ idle מקומית
       }
     }
-    // ─── slice-A5-watchdog: ניקוי ב-cancel ───
-    this.#clearWatchdog()
-    this.turnInterrupted = false   // cancel מכוון — לא "נקטע"
     this.#setTurnState("idle")
   }
 
@@ -2842,8 +2810,6 @@ export class AgentSession {
     this.#stopStallWatch()
     this.#turnActivity = onTurnEnded()
     this.turnStalled = false
-    // ─── slice-A5-watchdog (playback): ניקוי watchdog ב-destroy ───
-    this.#clearWatchdog()
     // ─── slice be-shutdown-hardening Commit 3: $/detach לפני סגירה מכוונת ───
     // keepAgent=true = leaveRunning — FE מודיע ל-BE שהוא עוזב מרצון.
     // ה-BE מקבל $/detach → markDetached מיד → reconnect-ghost נסגר מיידית
@@ -3053,10 +3019,6 @@ export class AgentSession {
 
   #onSessionUpdate = (notification: SessionNotification): void => {
     this.#noteAgentActivity() // watchdog §2 — מסלול WS (כל session/update)
-    // ─── slice-A5-watchdog (playback): kick ראשון — לפני כל returns מוקדמים ───
-    // קריטי: kick גם על tool_call/tool_call_update/mode/config (לא רק text chunks)
-    // כדי שכלי-שקט ארוך (שרץ דקות בלי text) לא יפעיל watchdog בטעות.
-    this.#kickWatchdog()
 
     // מעטפת ACP: צורה של { sessionId, update: { sessionUpdate, content, messageId, ... } }
     // ה-messageId נמצא על אובייקט ה-update החיצוני (הרחבה לא יציבה של ACP).
