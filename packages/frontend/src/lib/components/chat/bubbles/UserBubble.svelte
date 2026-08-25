@@ -11,6 +11,7 @@
  * ui-polish-batch C4: markdown ל-joinSegmentText → MarkdownContent.
  *
  * ─── slice/markdown-content-unify (Commit 1) — CSS עבר ל-MarkdownContent ───
+ * ─── slice fs-file-proxy (המשך) — נתיב-קובץ שהמשתמש שלח הופך ללחיץ ───
  */
 
 import CheckIcon from "@lucide/svelte/icons/check"
@@ -19,7 +20,7 @@ import PaperclipIcon from "@lucide/svelte/icons/paperclip"
 import PlayIcon from "@lucide/svelte/icons/play"
 import SquareIcon from "@lucide/svelte/icons/square"
 import Avatar from "$lib/components/chat/Avatar.svelte"
-import { getBubblePlayer, getContentViewer, getI18n, getSpeaker } from "$lib/context"
+import { getBubblePlayer, getContentViewer, getI18n, getSession, getSpeaker } from "$lib/context"
 import type { UserBubble } from "$lib/types/bubble"
 import { copyToClipboard } from "$lib/util/clipboard"
 import { formatTime } from "$lib/util/formatting"
@@ -32,6 +33,8 @@ const bubblePlayer = getBubblePlayer()
 // C10: גייט על speaker.enabled — מסתיר כפתור ▶ כשמושתק
 const speaker = getSpeaker()
 const viewer = getContentViewer()
+// slice fs-file-proxy — ה-cwd של הסשן פותר נתיבים יחסיים שהמשתמש שולח
+const session = getSession()
 
 const isPlaying = $derived(bubblePlayer.playingBubbleId === bubble.id)
 
@@ -112,7 +115,13 @@ async function handleCopy() {
       class="px-3.5 py-2.5 rounded-2xl rounded-es-sm text-sm leading-relaxed min-w-0 max-w-full overflow-hidden break-words"
       style="background:var(--bubble-user); {isPlaying ? 'outline:2px solid var(--accent); outline-offset:1px' : ''}"
     >
-      <MarkdownContent text={joinSegmentText(bubble.segments)} />
+      <MarkdownContent
+        text={joinSegmentText(bubble.segments)}
+        fileLinks={{
+          cwd: session.cwd,
+          onOpen: (uri) => viewer.show({ kind: "file", uri }),
+        }}
+      />
       <!-- כופה ריאקטיביות -->
       <span class="hidden">{bubble.segments.length}</span>
     </div>
