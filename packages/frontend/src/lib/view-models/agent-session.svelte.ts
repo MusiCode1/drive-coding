@@ -100,7 +100,7 @@ const ATTACHED_CAPS_FALLBACK = {} as AcpClient["capabilities"]
 // ─── slice plan-todo-list Commit 1: reducer טהור + טיפוסים ─── (additive)
 import { EMPTY_PLAN_STORE, type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
 // ─── slice session-state-reducer C4: reduce + types ─── (additive)
-import { createInitialSessionState, reduce, type SessionState } from "@drive-coding/core/session"
+import { createInitialSessionState, reduce, type Patch, type SessionState } from "@drive-coding/core/session"
 // ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
 import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 // ─── slice FE-normalization: ייבוא ─── (additive)
@@ -110,6 +110,7 @@ import type { NormalizedCapabilities } from "@drive-coding/provider/types"
 import { createExtClient, type ExtClient } from "$lib/adapters/ext"
 // ─── slice session-state-reducer C4: FE patch applicator + mappers ─── (additive)
 import { applyPatchMutable } from "$lib/session/apply-patch-mutable"
+import { historyMarkFromReset, type HistoryMark } from "./history-mark.js"
 import { mapLocations, mapToolContent } from "$lib/session/map-tool-content"
 // ─── slice subagent-transcript-data-v2: פרסר+reducer טהורים (additive) ───
 import {
@@ -257,6 +258,13 @@ export class AgentSession {
   // ─── slice 4: replay guard + narration context ─── (תוספתי)
   /** True בזמן ש-loadSession() מנגן היסטוריה מחדש. ה-Speaker קורא את זה (תחת מעקב) כדי להשתיק TTS. */
   isLoadingHistory = $state(false)
+  /** מונה חתכי-היסטוריה. עולה **פעם אחת** ב-hydration של view חדש. */
+  historyEpoch = $state(0)
+  /** החתך שנלקח באותו רגע. לא-ריאקטיבי בכוונה — נקרא רק כש-historyEpoch משתנה. */
+  #historyMark: HistoryMark = { segmentCounts: new Map(), toolCallIds: [] }
+  get historyMark(): HistoryMark {
+    return this.#historyMark
+  }
   /** טקסט הפרומפט האחרון שנשלח על ידי המשתמש — משמש את ה-Speaker להקשר עבור קריינות. */
   lastUserMessage = $state("")
 
@@ -444,6 +452,12 @@ export class AgentSession {
   sessionsError = $state<string | null>(null)
   #sessionsLoaded = false // True אחרי טעינה מוצלחת אחת — cache; force=true מרענן
 
+  // ─── slice-A5-watchdog: watchdog state ───
+  /** אמת אם watchdog אילץ idle (RESP אבד). B1 יכול להציג חיווי. מאופס בתחילת תור הבא. */
+  turnInterrupted = $state(false)
+  #watchdogTimer: ReturnType<typeof setTimeout> | null = null
+  readonly #WATCHDOG_MS = 45_000   // §9 Q1: נדיב מספיק לכלי-שקט ארוך + thinking ארוך
+
   // ─── msr-v2: מעקף opencode #17505 (tail-debounce) ───
   // opencode מחזיר RESP של session/prompt באמצע הזרם — ≈חצי התשובה (tail עד ~5.6ש')
   // מגיעה אחרי ה-RESP, ודורסת turnState ל-responding אחרי שכבר נקבע idle.
@@ -468,6 +482,33 @@ export class AgentSession {
     if (this.#idleTimer !== null) {
       clearTimeout(this.#idleTimer)
       this.#idleTimer = null
+    }
+  }
+
+  // ─── slice-A5-watchdog: watchdog helpers ───
+
+  /**
+   * מאפס את טיימר ה-watchdog. נקרא בראש #onSessionUpdate (לפני כל returns מוקדמים)
+   * וגם בתחילת sendPrompt — כך גם update של כלי-שקט ארוך מאפס ומונע קטיעה שגויה.
+   */
+  #kickWatchdog(): void {
+    if (this.#watchdogTimer !== null) clearTimeout(this.#watchdogTimer)
+    if (this.turnState === "idle") return   // אין תור פעיל — לא מתזמן
+    this.#watchdogTimer = setTimeout(() => {
+      this.#watchdogTimer = null
+      if (this.turnState !== "idle") {
+        // RESP אבד — כפה idle כדי לשחרר את ה-StatusBubble; flush ה-Speaker הקיים יופעל
+        this.turnInterrupted = true
+        this.#setTurnState("idle")
+      }
+    }, this.#WATCHDOG_MS)
+  }
+
+  /** מנקה את ה-watchdog. RESP תקין / cancelTurn / sendPrompt חדש / destroy. */
+  #clearWatchdog(): void {
+    if (this.#watchdogTimer !== null) {
+      clearTimeout(this.#watchdogTimer)
+      this.#watchdogTimer = null
     }
   }
 
@@ -575,6 +616,7 @@ export class AgentSession {
     // ⚠️ זה חייב לרוץ גם כש-view.state ריק — הוא נושא את המטא-דאטה בלי קשר
     // למספר ההודעות.
     this.#syncFromViewState(view.state)
+    let attachWindow = true
     try {
       while (true) {
         const { done, value } = await reader.read()
@@ -588,6 +630,22 @@ export class AgentSession {
         if (patches.length === 0) continue
         // targeted bubble update (אין O(n²) mapping)
         applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
+        // ─── slice replay-quiet ───
+        // חתך-היסטוריה: רק ה-reset של ה-hydration הוא "הצטרפתי באמצע".
+        // #doConnect פולט אותו דרך #emit **לפני** #drainUpdates
+        // (remote-session-view.ts:209-222) ⇒ הוא תמיד ה-batch הראשון. reset מאוחר
+        // יותר = SSE-reconnect (:372) — מסלול שלא נמדד כפגוע, ולכן שמרנית
+        // איננו נוגעים בו.
+        if (attachWindow) {
+          attachWindow = false
+          const reset = patches.find(
+            (p): p is Extract<Patch, { op: "reset" }> => p.op === "reset",
+          )
+          if (reset) {
+            this.#historyMark = historyMarkFromReset(reset.messages)
+            this.historyEpoch++
+          }
+        }
         // 🔴 החצי השני של #34. הליבה נושאת עכשיו עדכונים לא-מוכרים כ-`opaque`
         // במקום לזרוק אותם — אבל נשיאה בלי צרכן היא עדיין שקט. כאן הם מגיעים
         // לאותו `#onSessionUpdate` שמסלול ה-WS משתמש בו, וכך `reducePlan`
@@ -1797,6 +1855,10 @@ export class AgentSession {
     }
     this.#setTurnState("waiting")
     this.#resetTurnTracking() // תחילת תור — #turnEnded=false + נקה טיימר יתום
+    // ─── slice-A5-watchdog: תחילת תור ───
+    this.turnInterrupted = false // מאפס חיווי "נקטע" מהתור הקודם
+    this.#clearWatchdog() // בטל watchdog קודם (לא אמור להיות, אבל defensive)
+    this.#kickWatchdog() // התחל watchdog — waiting state מפעיל
 
     try {
       // ⚠️ אין meta ב-scope של sendPrompt — נבנה כאן, אחרת tsc נופל על Cannot find name
@@ -1816,10 +1878,12 @@ export class AgentSession {
         await client.prompt(sid, content)
         // RESP הגיע — opencode: tail עוד יבוא; gemini/claude: סוף
         this.#turnEnded = true
+        this.#clearWatchdog() // ⬅ מ-playback (A5): RESP תקין — בטל watchdog
         this.#setTurnState("idle") // נכון ל-gemini/claude. opencode: tail יטופל ב-#onSessionUpdate
       }
     } catch (err: unknown) {
       this.#turnEnded = true
+      this.#clearWatchdog()        // שגיאה — גם כן מנקה
       this.#setTurnState("idle")
       // slice auth-guidance: formatAcpError (data.details→data.message→message) במקום
       // err.message הגולמי — היה מציג "Internal error" גנרי (claude: auth_required).
@@ -2608,6 +2672,9 @@ export class AgentSession {
         // best-effort — בכל מקרה נאלץ idle מקומית
       }
     }
+    // ─── slice-A5-watchdog: ניקוי ב-cancel ───
+    this.#clearWatchdog()
+    this.turnInterrupted = false   // cancel מכוון — לא "נקטע"
     this.#setTurnState("idle")
   }
 
@@ -2759,6 +2826,8 @@ export class AgentSession {
     this.#stopStallWatch()
     this.#turnActivity = onTurnEnded()
     this.turnStalled = false
+    // ─── slice-A5-watchdog (playback): ניקוי watchdog ב-destroy ───
+    this.#clearWatchdog()
     // ─── slice be-shutdown-hardening Commit 3: $/detach לפני סגירה מכוונת ───
     // keepAgent=true = leaveRunning — FE מודיע ל-BE שהוא עוזב מרצון.
     // ה-BE מקבל $/detach → markDetached מיד → reconnect-ghost נסגר מיידית
@@ -2771,7 +2840,8 @@ export class AgentSession {
     // slice-elicitation-ui: אותו דפוס — פתור גם elicitation ה-pending לפני close.
     this.#resolvePendingElicitation({ action: "cancel" })
     if (opts?.keepAgent && this.#transport) {
-      this.#transport.sendRaw(`${JSON.stringify({ jsonrpc: "2.0", method: "$/detach" })}\n`)
+      this.#transport.sendRaw(`${JSON.stringify({ jsonrpc: "2.0", method: "$/detach" })}
+`)
     }
     try {
       this.#client?.close()
@@ -2967,6 +3037,11 @@ export class AgentSession {
 
   #onSessionUpdate = (notification: SessionNotification): void => {
     this.#noteAgentActivity() // watchdog §2 — מסלול WS (כל session/update)
+    // ─── slice-A5-watchdog (playback): kick ראשון — לפני כל returns מוקדמים ───
+    // קריטי: kick גם על tool_call/tool_call_update/mode/config (לא רק text chunks)
+    // כדי שכלי-שקט ארוך (שרץ דקות בלי text) לא יפעיל watchdog בטעות.
+    this.#kickWatchdog()
+
     // מעטפת ACP: צורה של { sessionId, update: { sessionUpdate, content, messageId, ... } }
     // ה-messageId נמצא על אובייקט ה-update החיצוני (הרחבה לא יציבה של ACP).
     const update = notification.update as {

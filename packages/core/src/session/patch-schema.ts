@@ -51,6 +51,12 @@ export const PatchSchema = type({
   })
   .or({
     version: "number",
+    op: "'set-message'",
+    targetId: "string",
+    message: SessionMessageSchema,
+  })
+  .or({
+    version: "number",
     op: "'update-tool'",
     targetId: "string",
     toolCall: "object",

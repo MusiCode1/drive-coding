@@ -15,6 +15,7 @@ import type {
   SessionState,
   SessionToolCall,
   SessionUsage,
+  TurnStateValue,
 } from "./types"
 
 // ─── internal helpers ───
@@ -211,7 +212,18 @@ function handleToolCallUpdate(
   const idx = state.messages.findIndex(
     (m) => m.role === "tool" && m.toolCall.toolCallId === toolCallId,
   )
-  if (idx === -1) return { state, patches: [] }
+  // ─── slice acp-v2-reduce: שינוי-סמנטיקה מכוון ───
+  // 🔴 כאן היה `return { state, patches: [] }` — כלומר עדכון לכלי שטרם נוצר
+  // **נזרק בשקט**, וכלי שהספק דיווח עליו פשוט לא הופיע.
+  //
+  // ב-ACP v2 אין `tool_call` כלל: ה-`tool_call_update` הראשון הוא שיוצר.
+  // ⇒ הענף הזה אינו רק "עמידות" אלא **הסמנטיקה הנכונה של הפרוטוקול**.
+  // וגם ב-v1 הוא נכון יותר: ספק ששולח update לפני create הוא מקרה-קצה
+  // מוכר, וזריקה שקטה היא אותה מחלקת-כשל של ה-gate שהעלים תמונה.
+  //
+  // ⚠️ אין כאן רקורסיה אינסופית: `handleToolCall` מנתב חזרה לכאן רק כשהוא
+  // **מצא** את הכלי, וכאן מנתבים אליו רק כשלא נמצא. כל מסלול צועד פעם אחת.
+  if (idx === -1) return handleToolCall(state, update)
 
   const old = state.messages[idx] as SessionMessage & { role: "tool" }
 
@@ -268,6 +280,237 @@ function handleToolCallUpdate(
   }
 }
 
+// ─── ACP v2 handlers ─────────────────────────────────────────────────────────
+//
+// ⚠️ הכל כאן **תוספתי**. ה-CLI-ים בשטח מדברים v1 וימשיכו לדבר v1; מה שמפעיל
+// את הענפים האלה הוא **החוט הפנימי שלנו** אחרי צעד 3, שבו ה-BE פולט
+// `session/update` בצורת-v2 אל ה-FE.
+
+/**
+ * ה-`messageId` **לאחסון** — לא זה ששימש להתאמה.
+ *
+ * הפולט שלנו נאלץ להמציא מזהה כש-`messageId` היה `null` (‏v2 דורש אחד), ומחזיר
+ * את המקורי ב-`_meta`. בלי הקריאה הזו הצד המקבל היה שומר את המזהה המומצא,
+ * וה-round-trip היה יוצא **שקול אך לא שווה** — הבדל שמתגלה בדיוק כשמישהו
+ * משווה מצבים בין הצדדים.
+ */
+function storedMessageId(u: Record<string, unknown>, matched: string | null): string | null {
+  const meta =
+    typeof u._meta === "object" && u._meta !== null
+      ? (u._meta as Record<string, unknown>)
+      : undefined
+  if (meta !== undefined && "_drive/messageId" in meta) {
+    const v = meta["_drive/messageId"]
+    return typeof v === "string" ? v : null
+  }
+  return matched
+}
+
+/** ContentBlock[] → {טקסט מצטבר, קבצים מצורפים}. אפס-זריקה: מה שאינו טקסט נשמר. */
+function splitContentBlocks(blocks: unknown): {
+  text: string
+  attachments: { mimeType: string; dataBase64: string }[]
+} {
+  const attachments: { mimeType: string; dataBase64: string }[] = []
+  let text = ""
+  if (!Array.isArray(blocks)) return { text, attachments }
+  for (const raw of blocks) {
+    if (typeof raw !== "object" || raw === null) continue
+    const b = raw as Record<string, unknown>
+    if (b.type === "text" && typeof b.text === "string") {
+      text += b.text
+    } else if (b.type === "image" && typeof b.mimeType === "string" && typeof b.data === "string") {
+      attachments.push({ mimeType: b.mimeType, dataBase64: b.data })
+    }
+  }
+  return { text, attachments }
+}
+
+/**
+ * upsert של הודעה שלמה — `agent_message` / `user_message` / `agent_thought`.
+ *
+ * זו היכולת ש-v1 חסר, ובלעדיה snapshot מכווץ אינו ניתן לביטוי בפרוטוקול.
+ * ההתאמה היא לפי `messageId` של ACP; ה-Patch שיוצא כבר מדבר ב-id הסינתטי.
+ */
+function handleWholeMessage(
+  state: SessionState,
+  role: "user" | "thought" | "assistant",
+  u: Record<string, unknown>,
+): { state: SessionState; patches: Patch[] } {
+  const messageId = typeof u.messageId === "string" ? u.messageId : null
+  if (messageId === null) return { state, patches: [] }
+
+  const { text, attachments } = splitContentBlocks(u.content)
+  // ⚠️ **הודעה ריקה היא עדיין הודעה, ואינה no-op.**
+  //
+  // גרסה קודמת של השורה הזו דחתה `content: []` כדי לא לייצר בועה ריקה — וזה
+  // היה שגוי: `AgentMessage.content` הוא אופציונלי ב-v2, ומשמעותו "הודעה
+  // בזהות הזו קיימת, וכרגע ריקה". הדחייה גרמה להודעה **להיעלם ב-snapshot**
+  // (נתפס בטסט ה-round-trip), כלומר בדיוק הזריקה השקטה שהסלייס הזה קיים כדי
+  // לסגור.
+  //
+  // חשש-הבועה-הריקה נשאר מטופל היכן שהוא באמת נוצר — במסלול ה-**chunks**
+  // (`handleTextChunk`, שם `!text` עדיין חוסם), ובדרישה ל-`messageId` מתחת.
+  // ‏chunk של רווחים אינו הודעה; `agent_message` הוא כן.
+
+  const idx = state.messages.findIndex((m) => m.role === role && m.messageId === messageId)
+  const newVersion = state.version + 1
+  const turnState: TurnStateValue =
+    role === "thought" ? "thinking" : role === "assistant" ? "responding" : state.turnState
+
+  // segment יחיד: ההודעה השלמה **היא** הכיווץ. פיצול-מחדש ל-chunks היה
+  // ממציא גבולות שהספק מעולם לא שלח.
+  const segments: SessionSegment[] = text ? [{ id: nextSegId(state.nextSegmentSeq), text }] : []
+  const nextSegmentSeq = state.nextSegmentSeq + (text ? 1 : 0)
+
+  if (idx === -1) {
+    const msg: SessionMessage = {
+      id: nextMsgId(state.nextMessageSeq),
+      role,
+      messageId: storedMessageId(u, messageId),
+      segments,
+      ...(attachments.length > 0 ? { attachments } : {}),
+    }
+    return {
+      state: {
+        ...state,
+        version: newVersion,
+        messages: [...state.messages, msg],
+        nextMessageSeq: state.nextMessageSeq + 1,
+        nextSegmentSeq,
+        turnState,
+      },
+      patches: [{ version: newVersion, op: "add-message", message: msg }],
+    }
+  }
+
+  const old = state.messages[idx] as SessionMessage & { role: "user" | "thought" | "assistant" }
+  const msg: SessionMessage = {
+    ...old,
+    segments,
+    ...(attachments.length > 0 ? { attachments } : {}),
+  }
+  const messages = [...state.messages]
+  messages[idx] = msg
+  return {
+    state: { ...state, version: newVersion, messages, nextSegmentSeq, turnState },
+    patches: [{ version: newVersion, op: "set-message", targetId: old.id, message: msg }],
+  }
+}
+
+/** מצבי-הריצה של v2 שהם "עדיין עובד" — ה-turnState שלנו עדין יותר מהם. */
+const RUNNING_SUBSTATES: ReadonlySet<TurnStateValue> = new Set<TurnStateValue>([
+  "waiting",
+  "thinking",
+  "responding",
+  "calling-tool",
+])
+
+/**
+ * `state_update` — מצב-התור, שב-v1 **אינו נתון שעובר בחוט כלל**.
+ *
+ * ⚠️ המיפוי אינו סימטרי, וזה מכוון: v2 מכיר שלושה מצבים, ואנחנו חמישה.
+ * `running` הוא **רצפה ולא השמה** — אחרת `running` שמגיע באמצע תשובה היה
+ * מחזיר את ה-UI מ"עונה" ל"ממתין".
+ */
+function handleStateUpdate(
+  state: SessionState,
+  u: Record<string, unknown>,
+): { state: SessionState; patches: Patch[] } {
+  const s = u.state
+  const rawMeta = typeof u._meta === "object" && u._meta !== null ? u._meta : {}
+  const fine = (rawMeta as Record<string, unknown>)["_drive/turnState"]
+
+  // ⚠️ הרזולוציה העדינה גוברת כשהיא שם. הפולט שלנו (`to-session-update.ts`)
+  // מטביע אותה ב-`_meta` דווקא מפני ש-`state_update` מכיר שלוש דרגות ואנחנו
+  // חמש; כשהיא קיימת היא סמכותית, ואין צורך בהיגיון-הרצפה שמתחת.
+  if (typeof fine === "string" && RUNNING_SUBSTATES.has(fine as TurnStateValue)) {
+    if (state.turnState === fine) return { state, patches: [] }
+    const newVersion = state.version + 1
+    const turnState = fine as TurnStateValue
+    return {
+      state: { ...state, version: newVersion, turnState },
+      patches: [{ version: newVersion, op: "update-session", changes: { turnState } }],
+    }
+  }
+
+  if (s === "running" || s === "requires_action") {
+    if (RUNNING_SUBSTATES.has(state.turnState)) return { state, patches: [] }
+    const newVersion = state.version + 1
+    return {
+      state: { ...state, version: newVersion, turnState: "waiting" },
+      patches: [{ version: newVersion, op: "update-session", changes: { turnState: "waiting" } }],
+    }
+  }
+
+  if (s === "idle") {
+    // stopReason רגיל = סיום תקין. כל שאר הערכים הם כשל שצריך להיראות —
+    // ⇒ allowlist, לא denylist: ערך חדש שלא נכיר ייחשב כשל ולא ייבלע.
+    const stopReason = typeof u.stopReason === "string" ? u.stopReason : undefined
+    const clean =
+      stopReason === undefined || stopReason === "end_turn" || stopReason === "cancelled"
+    // ⚠️ **החותמת מגיעה מה-frame, לא מכאן.** הקובץ הזה מוצהר טהור בכותרתו
+    // ("אפס Date.now()"), ולכן `reduce` אינו רשאי להמציא זמן — הקליפה היא
+    // שמחזיקה שעון (`session-host.ts:691` מטביע `Date.now()` ב-applyTurnEnd).
+    // ‏ACP שומר את `_meta` בדיוק לזה: *"attach additional metadata"*.
+    // ‏0 = הפולט לא הטביע. ‏`.at` אינו מרונדר בשום מקום ב-FE (רק `.message`),
+    // ולכן אפס-זריקה גובר: עדיף הודעה בלי זמן מאשר לבלוע את השגיאה.
+    const meta = (typeof u._meta === "object" && u._meta !== null ? u._meta : {}) as Record<
+      string,
+      unknown
+    >
+    const at = typeof meta["_drive/at"] === "number" ? (meta["_drive/at"] as number) : 0
+    const lastTurnError = clean ? null : { message: stopReason as string, at }
+    const newVersion = state.version + 1
+    return {
+      state: { ...state, version: newVersion, turnState: "idle", lastTurnError },
+      patches: [
+        {
+          version: newVersion,
+          op: "update-session",
+          changes: { turnState: "idle", lastTurnError },
+        },
+      ],
+    }
+  }
+
+  // v2 שומר ערכי-state לא-מוכרים לווריאנטים עתידיים ⇒ לשאת, לא לזרוק.
+  return opaquePatch(state, u)
+}
+
+/** `tool_call_content_chunk` — פריט-תוכן אחד מתווסף לכלי קיים. */
+function handleToolContentChunk(
+  state: SessionState,
+  u: Record<string, unknown>,
+): { state: SessionState; patches: Patch[] } {
+  const toolCallId = u.toolCallId
+  if (typeof toolCallId !== "string") return opaquePatch(state, u)
+  const idx = state.messages.findIndex(
+    (m) => m.role === "tool" && m.toolCall.toolCallId === toolCallId,
+  )
+  // כלי שאיננו — לשאת, לא לבלוע. הצרכן יחליט.
+  if (idx === -1) return opaquePatch(state, u)
+
+  const old = state.messages[idx] as SessionMessage & { role: "tool" }
+  const content = [...(old.toolCall.content ?? []), u.content]
+  const newVersion = state.version + 1
+  const messages = [...state.messages]
+  messages[idx] = { ...old, toolCall: { ...old.toolCall, content } }
+  return {
+    state: { ...state, version: newVersion, messages },
+    patches: [{ version: newVersion, op: "update-tool", targetId: old.id, toolCall: { content } }],
+  }
+}
+
+/** נושא update לא-מוכר כמות שהוא. מרוכז כאן כי ארבעה מסלולים צריכים אותו. */
+function opaquePatch(state: SessionState, u: unknown): { state: SessionState; patches: Patch[] } {
+  const newVersion = state.version + 1
+  return {
+    state: { ...state, version: newVersion },
+    patches: [{ version: newVersion, op: "opaque", update: u }],
+  }
+}
+
 // ─── main reduce ───
 
 /**
@@ -293,7 +536,7 @@ export function reduce(
     const content = u.content as Record<string, unknown> | undefined
     if (content?.type !== "text") return { state, patches: [] }
     const text = typeof content.text === "string" ? content.text : ""
-    const messageId = toStringOrNull(u.messageId)
+    const messageId = storedMessageId(u as Record<string, unknown>, toStringOrNull(u.messageId))
     const role: "user" | "thought" | "assistant" =
       sessionUpdate === "user_message_chunk"
         ? "user"
@@ -303,12 +546,71 @@ export function reduce(
     return handleTextChunk(state, role, text, messageId)
   }
 
+  // ─── ACP v2: upsert של הודעה שלמה ───
+  if (
+    sessionUpdate === "agent_message" ||
+    sessionUpdate === "agent_thought" ||
+    sessionUpdate === "user_message"
+  ) {
+    const role =
+      sessionUpdate === "user_message"
+        ? "user"
+        : sessionUpdate === "agent_thought"
+          ? "thought"
+          : "assistant"
+    return handleWholeMessage(state, role, u)
+  }
+
+  // ─── ACP v2: מצב-התור ───
+  if (sessionUpdate === "state_update") {
+    return handleStateUpdate(state, u)
+  }
+
+  // ─── ההרחבות שלנו: מה שאין לו בית ב-ACP ───
+  //
+  // ⚠️ שתי אלה נושאות את הפער בין "מצב סשן" אצלנו לבין מה ש-ACP מכיר.
+  // הן מסומנות `_drive/` לפי הקונבנציה של הפרוטוקול עצמו להרחבה
+  // תלוית-מימוש, כדי שקורא-החוט יראה מיד שהן אינן קנוניות.
+  if (sessionUpdate === "_drive/session_update") {
+    // status · pending · capabilities · quota. הבולט שבהם הוא `pending`:
+    // ב-ACP הרשאה היא **בקשה**, לא שדה — אצלנו היא הפכה למצב מפני
+    // שבקשה-ותשובה אינה חוצה SSE. בלי הפריים הזה, דיאלוג-ההרשאה פשוט
+    // לא היה חוזר אחרי reconnect.
+    const changes = u.changes
+    if (typeof changes !== "object" || changes === null) return { state, patches: [] }
+    const c = changes as Partial<SessionState>
+    const newVersion = state.version + 1
+    return {
+      state: { ...state, ...c, version: newVersion },
+      patches: [{ version: newVersion, op: "update-session", changes: c }],
+    }
+  }
+
+  if (sessionUpdate === "_drive/reset") {
+    // ל-ACP אין מקבילה: שם החלפת-סשן היא חיבור חדש. אצלנו הזרם שורד את
+    // ההחלפה ולכן היא חייבת לנסוע בו. אין מטען — שני מוקדי-הפליטה ב-
+    // `session-host.ts` (796, 847) פולטים `messages: []` תמיד, כלומר
+    // reset הוא **ניקוי** ולא החלפה, ומה שאחריו בונה מחדש.
+    const newVersion = state.version + 1
+    return {
+      state: { ...state, version: newVersion, messages: [], nextMessageSeq: 0, nextSegmentSeq: 0 },
+      patches: [
+        { version: newVersion, op: "reset", messages: [], nextMessageSeq: 0, nextSegmentSeq: 0 },
+      ],
+    }
+  }
+
   // tool
   if (sessionUpdate === "tool_call") {
     return handleToolCall(state, u)
   }
   if (sessionUpdate === "tool_call_update") {
     return handleToolCallUpdate(state, u)
+  }
+
+  // ─── ACP v2: פריט-תוכן לכלי ───
+  if (sessionUpdate === "tool_call_content_chunk") {
+    return handleToolContentChunk(state, u)
   }
 
   // ─── C1: metadata handlers ───
@@ -387,9 +689,5 @@ export function reduce(
   //
   // עכשיו: מה שלא זוהה נישא הלאה כ-`opaque`, בסדר הנכון, בלי שהליבה תבין
   // אותו. הצרכן שכן מבין — מטפל. מי שלא — מתעלם.
-  const newVersion = state.version + 1
-  return {
-    state: { ...state, version: newVersion },
-    patches: [{ version: newVersion, op: "opaque", update: u }],
-  }
+  return opaquePatch(state, u)
 }

@@ -136,6 +136,11 @@ export const he: Catalog = {
   "record.reconnecting": "מתחבר מחדש…",
   "record.reconnectAttempt": "ניסיון",
   "mic.stop": "עצור",
+  "mic.discard": "בטל הקלטה",
+  "speakable.codeBlock": "בלוק קוד",
+
+  "speakable.link": "קישור",
+  "speakable.image": "תמונה",
   // ─── settings-redesign ─── (redesign-3)
   "settings.connection": "חיבור",
   "settings.voiceSpeech": "קול ודיבור",
@@ -253,6 +258,18 @@ export const he: Catalog = {
   "session.leaveWarning.confirm": "צא בכל זאת",
   "session.leaveWarning.cancel": "ביטול",
   "session.leaveWarning.dontShowAgain": "אל תציג הודעה זו שוב",
+  // ─── playbackControls ─── (slice B1-controls-ui)
+  "playbackControls.stopRun": "עצור ריצה",
+  "playbackControls.stopRun.thinking": "עצור ריצה",
+  "playbackControls.stopRun.responding": "עצור תגובה",
+  "playbackControls.stopRun.callingTool": "עצור כלי",
+  "playbackControls.stopPlayback": "עצור השמעה",
+  "playbackControls.pause": "השהה",
+  "playbackControls.resume": "המשך",
+  "playbackControls.prev": "קודם",
+  "playbackControls.next": "הבא",
+  "playbackControls.dock": "בקרת השמעה",
+  "playbackControls.interrupted": "התור נקטע",
   // ─── thinking-tokens ─── (slice FEAT-thinking-live)
   "agentOptions.thinking.label": "חשיבה",
   "agentOptions.thinking.off": "כבוי",
@@ -393,7 +410,8 @@ export const he: Catalog = {
   // ─── liveness (slice liveness C4) ───
   "session.reconnecting": "מנסה להתחבר…",
   "session.cloudflareBlocked": "החיבור נחסם. ייתכן ש-Cloudflare דורש אימות.",
-  "session.turnStalled": "לא הגיע כלום מהסוכן זמן רב. ייתכן שהוא עדיין עובד — וייתכן שעצר בלי לומר.",
+  "session.turnStalled":
+    "לא הגיע כלום מהסוכן זמן רב. ייתכן שהוא עדיין עובד — וייתכן שעצר בלי לומר.",
   "session.cloudflareRefresh": "רענון",
   "session.gone": "הסשן הזה איננו — פתח חדש.",
 }

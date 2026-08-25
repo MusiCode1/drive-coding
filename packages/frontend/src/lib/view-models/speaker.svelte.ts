@@ -27,34 +27,46 @@
  *     עוברות דרך `untrack` בזהירות (learnings 2026-05-16).
  */
 
+import { createI18n, detectLocale } from "@drive-coding/core/i18n"
 import { cacheKeyFor } from "@drive-coding/core/voice/cache-key"
 import { DEFAULT_VOICE_CONFIG } from "@drive-coding/core/voice/capabilities"
 import type { NarrateContext, ToolCallForNarrate } from "@drive-coding/core/voice/narration-prompt"
 import { select } from "@drive-coding/core/voice/select"
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
-import { OrderAllocator, type OrderKey } from "@drive-coding/core/voice/tts-queue"
+import {
+  type SpeakableLabels,
+  splitStreamable,
+  toSpeakable,
+} from "@drive-coding/core/voice/speakable"
+import type { OrderAllocator, OrderKey } from "@drive-coding/core/voice/tts-queue"
 import { untrack } from "svelte"
+import { registerSpeaker, type SpeakerDebugInfo } from "$lib/debug/playback-registry"
 import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
 import { safeUUID } from "$lib/util/uuid"
 import { narrate } from "../adapters/voice/narrate"
 import { translate } from "../adapters/voice/translate"
 import { resolveTts } from "../adapters/voice/tts-resolve"
+import type { AudioPlaylist, SegmentOwner } from "../engines/audio-playlist.svelte"
 import type { AudioSink } from "../engines/audio-sink"
-import { AudioStream } from "../engines/audio-stream"
 import type { CuesEngine } from "../engines/cues"
-import { PcmAudioStream } from "../engines/pcm-audio-stream"
-import { Player } from "../engines/player.svelte"
-import { RoutingAudioSink } from "../engines/routing-audio-sink"
 import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
-import type { Settings } from "./settings.svelte"
 import { ttsCapabilities } from "./capabilities.svelte"
+import type { Settings } from "./settings.svelte"
 
 const TARGET_LANG = "he" as const
 const MIN_CHARS = 20
 const MAX_CHARS = 200
 const LOOKAHEAD = 2
 
-export type TtsJobStatus = "pending" | "fetching" | "ready" | "error"
+export type TtsJobStatus = "pending" | "fetching" | "ready" | "error" | "stale"
+
+/** תוצאת #fetchJob — כל מסלול חייב לדווח (אין return שקט). */
+export type FetchOutcome =
+  | { kind: "ready" }
+  /** ננטש ביוזמת הפלייליסט (ניווט/עצירה) — הפריט נשאר reserved וניתן לשחזור. */
+  | { kind: "abandoned" }
+  /** כשל אמיתי — markError, הפריט מדולג. */
+  | { kind: "error"; reason: "narration-null" | "provider-unavailable" | "synthesize-failed" }
 
 export type TtsJob = {
   segmentId: string
@@ -73,17 +85,20 @@ export type TtsJob = {
 
 type BubbleState = {
   processedSegments: number
+  /** טקסט **גולמי** שטרם עובר. לעולם לא מכיל תוצר של `toSpeakable`. */
   buffer: string
+  /** טקסט **מעובד** שטרם השלים משפט. לעולם לא מעובד שוב. */
+  speakPending: string
 }
 
-export class Speaker {
+export class Speaker implements SegmentOwner {
   // ui-polish-batch C8: מאותחל מ-settings.muted (false = מופעל, true = מושתק)
   enabled: boolean = $state(true)
 
   readonly #session: AgentSession
   readonly #settings: Settings
   readonly #audioStream: AudioSink
-  readonly #player: Player
+  readonly #player: AudioPlaylist
   readonly #cues?: CuesEngine
   // slice 6: guard — מונע ניגון חוזר של cue "speaking" באותו תור (re-entry סדרתי)
   #spokeThisTurn = false
@@ -102,6 +117,12 @@ export class Speaker {
   #bubbleStates: Map<string, BubbleState> = new Map()
   #jobs: TtsJob[] = []
   #activeFetches = 0
+  /** ─── slice playback-observability ─── טבעת של הטקסטים האחרונים שנשלחו. */
+  #recentTexts: string[] = []
+  /** ─── slice replay-quiet Commit 0 ─── מקבל משמעות ב-Commit 2. */
+  #seenHistoryEpoch = 0
+  /** ─── slice replay-quiet Commit 0 ─── תור מקביל ל-#recentTexts. */
+  #recentSources: string[] = []
   /** msr-v2: ספירת jobs ממתינים + בהבאה — reactive ($state) כדי ש-hasPendingNarration יהיה reactive. */
   #pendingCount = $state(0)
 
@@ -118,22 +139,37 @@ export class Speaker {
   /** קריאות tool שכבר סוּפרו או דולגו בכוונה (השמעה חוזרת של היסטוריה / כשל narrate). */
   #processedNarrationCallIds: Set<string> = new Set()
   /** slice 22: מקצה orderKey לבועות. לוגיקה ב-core (נבדק unit). */
-  readonly #orderAlloc = new OrderAllocator()
+  readonly #orderAlloc: OrderAllocator
 
   // מוגדר על ידי הבנאי — נשמר כדי שה-destroy() יוכל לעצור את ה-effect.
   #disposeEffect: (() => void) | null = null
 
-  constructor(opts: { session: AgentSession; settings: Settings; cues?: CuesEngine }) {
+  constructor(opts: {
+    session: AgentSession
+    settings: Settings
+    cues?: CuesEngine
+    /**
+     * A4: פלייליסט משותף + sink — יוצרים ב-+layout ומוזרקים גם לBubblePlayer.
+     * ה-Speaker עוד מחזיק ref ל-audioStream (לצרכי prepareSegment + clear).
+     */
+    playlist: AudioPlaylist
+    audioStream: AudioSink
+    orderAlloc: OrderAllocator
+  }) {
+    this.#orderAlloc = opts.orderAlloc
     this.#session = opts.session
     this.#settings = opts.settings
     this.#cues = opts.cues
     // ui-polish-batch C8: אתחל enabled מ-settings.muted + סנכרן cues
     this.enabled = !opts.settings.muted
     if (opts.cues) opts.cues.enabled = !opts.settings.muted
-    this.#audioStream = new RoutingAudioSink(new AudioStream(), new PcmAudioStream())
-    // slice 6: onPlaybackStart callback — נקרא פעם אחת כש-Player עובר idle→playing.
-    // guard #spokeThisTurn מונע re-entry סדרתי בתוך אותו תור (LOOKAHEAD=2 + async fetches).
-    this.#player = new Player(this.#audioStream, () => {
+    // A4: audioStream + playlist מוזרקים מ-+layout (לא נוצרים כאן)
+    this.#audioStream = opts.audioStream
+    this.#player = opts.playlist
+    // A4: רשום callback onPlaybackStart (cue "speaking") —
+    // dependency order ב-+layout מחייב שה-playlist נוצר לפני Speaker,
+    // אז Speaker מרשם את ה-callback בעצמו אחרי init.
+    this.#player.setOnPlaybackStart(() => {
       if (this.#spokeThisTurn) return
       this.#spokeThisTurn = true
       this.#cues?.play("speaking")
@@ -163,6 +199,7 @@ export class Speaker {
         // Slice 4: נעקב כדי ש-$effect ירוץ מחדש כאשר loadSession() מסיים
         // ומנקה את הדגל — מאפשר למקטעים חיים חדשים לזרום ל-TTS.
         const isLoadingHistory = this.#session.isLoadingHistory
+        const historyEpoch = this.#session.historyEpoch ?? 0
         // Slice 4: נועל ריאקטיביות על סטטוס בועת tool + narration כדי להבחין
         // כאשר קריאת tool מושלמת או narration נכתב חזרה.
         const _toolStatus = bubbles
@@ -175,7 +212,8 @@ export class Speaker {
 
         // ── כתיבות (לא-נעקבות) ─────────────────────────────────────────
         untrack(() => {
-          this.#processBubbles(bubbles, enabled, isLoadingHistory, speakThoughts)
+          this.#applyHistoryMark(historyEpoch)
+          this.#processBubbles(bubbles, enabled, isLoadingHistory, speakThoughts, turnState)
           this.#processToolBubbles(bubbles, enabled, isLoadingHistory, narrateTools)
           this.#handleStatusTransition(status, turnState, enabled, speakThoughts)
           this.#prevStatus = status
@@ -183,6 +221,7 @@ export class Speaker {
         })
       })
     })
+    registerSpeaker(this)
   }
 
   /**
@@ -219,11 +258,33 @@ export class Speaker {
   // פנימיות
   // ──────────────────────────────────────────────────────────────────────
 
+  #applyHistoryMark(epoch: number): void {
+    if (epoch === this.#seenHistoryEpoch) return
+    this.#seenHistoryEpoch = epoch
+    const mark = this.#session.historyMark
+    if (!mark) return
+    for (const [bubbleId, count] of mark.segmentCounts) {
+      const state = this.#bubbleStates.get(bubbleId) ?? {
+        processedSegments: 0,
+        buffer: "",
+        speakPending: "",
+      }
+      if (count <= state.processedSegments) continue
+      state.processedSegments = count
+      state.buffer = ""
+      state.speakPending = ""
+      this.#bubbleStates.set(bubbleId, state)
+    }
+    for (const id of mark.toolCallIds) this.#processedNarrationCallIds.add(id)
+  }
+
   #processBubbles(
     bubbles: AgentSession["bubbles"],
     enabled: boolean,
     isLoadingHistory: boolean,
     speakThoughts: boolean,
+    /** נדרש כדי לזהות "התור כבר נגמר" — ר' ה-flush בסוף הלולאה. */
+    turnState: TurnState,
   ): void {
     // Slice 4: בזמן ש-loadSession() משחזר היסטוריה, מסמן בועות כמעובדות
     // ללא הכנסת TTS jobs לתור. ה-effect רץ מחדש ברגע שה-isLoadingHistory → false,
@@ -233,11 +294,15 @@ export class Speaker {
         if (bubble.kind !== "message" && bubble.kind !== "thought") continue
         let state = this.#bubbleStates.get(bubble.id)
         if (state === undefined) {
-          state = { processedSegments: 0, buffer: "" }
+          state = { processedSegments: 0, buffer: "", speakPending: "" }
           this.#bubbleStates.set(bubble.id, state)
         }
         state.processedSegments = bubble.segments.length
         state.buffer = ""
+        // ⚠️ **גם `speakPending`.** הוא חדש, וכל אתר שמנקה `buffer` בלבד
+        // משאיר טקסט מעובד שיֵאמר בתור הבא. ההערות בענפים האלה כבר הצהירו
+        // את הכוונה — הקוד פשוט הפסיק לקיים אותה.
+        state.speakPending = ""
       }
       return
     }
@@ -250,12 +315,13 @@ export class Speaker {
       const segArr = bubble.segments
       let state = this.#bubbleStates.get(bubble.id)
       if (state === undefined) {
-        state = { processedSegments: 0, buffer: "" }
+        state = { processedSegments: 0, buffer: "", speakPending: "" }
         this.#bubbleStates.set(bubble.id, state)
       }
       if (bubble.kind === "thought" && !speakThoughts) {
         state.processedSegments = segArr.length
         state.buffer = ""
+        state.speakPending = "" // ר' ההערה למעלה
         continue
       }
 
@@ -270,18 +336,64 @@ export class Speaker {
       if (!enabled) {
         // מושלך — כשמופעל שוב לאחר מכן לא רוצים לשגר תוכן ישן.
         state.buffer = ""
+        state.speakPending = ""
         continue
       }
 
+      // ─── slice tts-speakable-text ───
+      // ⚠️ **שני חוצצים, וזה העיקר.** `buffer` נשאר **גולמי לנצח**; טקסט
+      // מעובד לעולם לא חוזר אליו. `speakPending` מחזיק טקסט שכבר עובר
+      // ומחכה להשלים משפט.
+      //
+      // 🔴 גרסה קודמת החזירה טקסט מעובד לחוצץ ועיבדה אותו שוב — וכל סיבוב
+      // שבר מבנה במקום אחר: ה-`trim` אכל את הרווח שלפני ה-chunk הבא
+      // (מילים נדבקו), והשרשור איבד את השורה-החדשה שלפני הגדר הבאה (הקוד
+      // דלף להקראה). כאן כל קטע-גולמי מעובד **בדיוק פעם אחת**.
       state.buffer += newChunks
-      const { sentences, remaining } = splitIntoSentences(state.buffer, {
+      const { ready, held } = splitStreamable(state.buffer)
+      state.buffer = held
+      if (ready.length > 0) {
+        state.speakPending += toSpeakable(ready, this.#speakableLabels(), { stream: true })
+      }
+      const { sentences, remaining } = splitIntoSentences(state.speakPending, {
         minChars: MIN_CHARS,
         maxChars: MAX_CHARS,
       })
-      state.buffer = remaining
+      // ⚠️ **אין כאן עיכוב.** גרסה קודמת החזיקה מקטע קצר-מהרצפה לסיבוב הבא
+      // (כדי ש-Gemini לא יקבל פרגמנט בודד) — וזה עיכב **בדיוק את הזנב**,
+      // שהוא הקצר ביותר. התסמין: "שומעים את ההודעה, לא את סופה". מדוד.
+      // ⇒ עדיף פרגמנט שאולי לא ייאמר מאשר זנב שנעלם.
+      state.speakPending = remaining
 
       for (const sentence of sentences) {
         this.#enqueue(bubble.kind, bubble.messageId, sentence, bubble.id)
+      }
+
+      // ─── slice tts-tail-after-idle ───
+      // ⚠️ **אחרי לולאת המשפטים, לא לפניה.** ‏`OrderAllocator` מקצה
+      // `segmentIndex` עולה לפי סדר הקריאה — ולכן פליטת הזנב לפני הלולאה
+      // נתנה לו מפתח **נמוך** מהמשפטים שקדמו לו, והפלייליסט השמיע אותו
+      // **ראשון**. תיקון ה"סוף לא נשמע" הפך ל"סוף נשמע ראשון". נתפס
+      // ב-code review, בדיוק במקרה שבשבילו נכתב.
+      // 🔴 **התור כבר הסתיים? אין מי שיפלוש אחרינו — לפלוש כאן.**
+      //
+      // `justFinished` יורה **פעם אחת בלבד** (מעבר `!== idle` → `idle`).
+      // ב-HTTP הפריים `state_update: idle` והצ'אנק האחרון יכולים להגיע
+      // באותה מנה, וה-flush רץ ב-`$effect` נפרד מהזרימה. אם הוא מקדים,
+      // הזנב שמגיע אחריו נתקע לנצח. זה #47.
+      //
+      // ⚠️ הסרתי את זה פעם אחת בחשד שגוי (חשבתי שהוא מרוקן חוצץ בין
+      // הודעות) — והריוויו הראה שההסרה **החזירה** את הבאג. השורש היה
+      // במקום אחר לגמרי (בדיקת ה-`[`). מוחזר.
+      if (turnState === "idle") {
+        const finalTail = (
+          state.speakPending + toSpeakable(state.buffer, this.#speakableLabels(), { stream: true })
+        ).trim()
+        state.buffer = ""
+        state.speakPending = ""
+        if (finalTail.length > 0) {
+          this.#enqueue(bubble.kind, bubble.messageId, finalTail, bubble.id)
+        }
       }
     }
     this.#pumpFetchLoop()
@@ -304,17 +416,30 @@ export class Speaker {
     const justFinished = this.#prevTurnState !== "idle" && turnState === "idle"
     if (justFinished && enabled) {
       for (const [bubbleId, state] of this.#bubbleStates) {
-        if (state.buffer.trim().length === 0) continue
+        if (state.buffer.trim().length === 0 && state.speakPending.trim().length === 0) continue
         const bubble = this.#session.bubbles.find((b) => b.id === bubbleId)
         if (bubble === undefined) continue
         if (bubble.kind !== "message" && bubble.kind !== "thought") continue
         // redesign-3 / slice 9a: אל תפלוש buffer של thought כשהקראת מחשבות כבויה.
         if (bubble.kind === "thought" && !speakThoughts) {
           state.buffer = ""
+          state.speakPending = ""
           continue
         }
-        this.#enqueue(bubble.kind, bubble.messageId, state.buffer.trim(), bubble.id)
+        // ⚠️ גם כאן — הזנב יכול להיות בלוק שלא נסגר (הסוכן סיים באמצע גדר),
+        // ובלי הצמצום הוא ייקרא מילה במילה. `toSpeakable` מטפל בגדר-פתוחה.
+        // הזנב = מה שכבר עובר + מה שנשאר גולמי (למשל גדר שלא נסגרה).
+        // ⚠️ `{ stream: true }` — בלעדיו ה-trim של `toSpeakable` אוכל את
+        // הרווח **שבין** `speakPending` לשארית הגולמית: "…2" + " * 3" הפך
+        // ל-"2* 3". זה בדיוק מה ש-`SpeakableOpts.stream` נועד למנוע, ושני
+        // מוקדי ה-flush פספסו אותו. ה-trim היחיד הוא על התוצאה המחוברת.
+        const tail = (
+          state.speakPending + toSpeakable(state.buffer, this.#speakableLabels(), { stream: true })
+        ).trim()
         state.buffer = ""
+        state.speakPending = ""
+        if (tail.length === 0) continue
+        this.#enqueue(bubble.kind, bubble.messageId, tail, bubble.id)
       }
       this.#pumpFetchLoop()
     }
@@ -330,8 +455,10 @@ export class Speaker {
     const bid = bubbleId ?? messageId ?? safeUUID()
     // slice 22: הקצה orderKey דטרמיניסטי — seq יציב פר-bubble, segmentIndex עולה
     const orderKey = this.#orderAlloc.next(bid)
+    // A2 (אביגיל #2): extract segmentId לפני push כדי להעביר ל-reserve
+    const segmentId = safeUUID()
     this.#jobs.push({
-      segmentId: safeUUID(),
+      segmentId,
       kind,
       messageId,
       text,
@@ -340,7 +467,116 @@ export class Speaker {
       bubbleId,
       orderKey,
     })
+    // A2: reserve-on-enqueue — הסגמנט נכנס לפלייליסט מיד (לפני fetch)
+    // A4: העבר bubbleId (bid) כדי ש-PlaylistItem יכיל אותו לניווט jumpToBubble
+    // nav-retain: refetch thunk — מאפשר re-fetch בביקור מפורש אחרי skip
+    this.#player.reserve(segmentId, orderKey, bid, this)
     this.#pendingCount += 1
+    // תצפית בלבד — טבעת קצרה, מוגבלת באורך כדי לא להחזיק תמלילים שלמים.
+    this.#recentTexts.push(text.slice(0, 60))
+    if (this.#recentTexts.length > 8) this.#recentTexts.shift()
+    if (bubbleId !== undefined) {
+      this.#recentSources.push(bubbleId)
+      if (this.#recentSources.length > 8) this.#recentSources.shift()
+    }
+  }
+
+  /**
+   * nav-retain: refetch thunk שמועבר ל-PlaylistItem.
+   * נקרא ע"י AudioPlaylist כשמנווטים ל-item reserved (שדולג/נכשל).
+   * מוצא את ה-TtsJob לפי segmentId, יוצר AbortController חדש (finding #5),
+   * מאפס status=pending ומריץ את לולאת ה-fetch.
+   */
+  refetch(segmentId: string): void {
+    this.refetchSegment(segmentId)
+  }
+
+  /**
+   * הפריט נזנח — ה-fetch שלו כבר אינו רלוונטי.
+   *
+   * ⚠️ **מבטל את ה-fetch החי, לא רק מסמן.** גרסה קודמת רק שינתה `status`,
+   * וה-fetch המשיך לרוץ ברקע: כשהוא נגמר הוא קרא `markReady`/`markError`
+   * על פריט שכבר הוזמן-מחדש, והפך אותו ל-`error` לצמיתות.
+   */
+  invalidate(segmentId: string): void {
+    const job = this.#jobs.find((j) => j.segmentId === segmentId)
+    if (job === undefined) return
+    if (job.status === "pending") {
+      if (this.#pendingCount > 0) this.#pendingCount -= 1
+    }
+    // ⚠️ **`ready` נכלל.** ‏`invalidate` הוא ההודעה ש"הסגמנט אינו שמיש
+    // עוד" — ה-sink פירק אותו. job שנשאר `ready` היה חוסם כל refetch
+    // עתידי, והפלייליסט המתין את מלוא 20 השניות של `#reserveTimeoutMs`
+    // ואז סימן `skipped`. משפט שלם נעלם אחרי המתנה ארוכה.
+    if (job.status === "pending" || job.status === "fetching" || job.status === "ready") {
+      job.status = "stale"
+      try {
+        job.abort.abort()
+      } catch {
+        // כבר בוטל
+      }
+    }
+  }
+
+  refetchSegment(segmentId: string): void {
+    const job = this.#jobs.find((j) => j.segmentId === segmentId)
+    if (job === undefined) return
+
+    // ⚠️ **‏`ready` נחסם — וזו לא הצנזורה שגרמה לבאג.**
+    //
+    // ניסיון ראשון שלי התיר refetch ל-job מוכן, וזו הייתה רגרסיה: הפלייליסט
+    // קורא `refetch` יותר מפעם אחת, וכל קריאה ייצרה fetch נוסף — `markReady`
+    // נקרא **חמש פעמים** במקום אחת (נתפס ב-`speaker.test.svelte.ts`).
+    //
+    // המקום הנכון הוא `invalidate()`, שמוריד `ready` ל-`stale` כשה-sink
+    // באמת איבד את הסגמנט. ‏job שנשאר `ready` **אינו** זקוק ל-fetch.
+    if (job.status === "fetching" || job.status === "ready") return
+
+    // ⚠️ **בלי אתחול-כפול של ה-abort.** הענף המת `if (status === "stale")`
+    // הציב controller חדש ואז השורה שאחריו הציבה עוד אחד — ה-fetch הקודם
+    // נשאר מחזיק את השני-לפני-אחרון ולא היה לו איך לדעת שבוטל. עכשיו
+    // `invalidate()` מבטל בעצמו, וכאן רק פותחים דף חדש.
+    job.abort = new AbortController()
+    job.status = "pending"
+    this.#pendingCount += 1
+    this.#pumpFetchLoop()
+  }
+
+  /**
+   * תוויות ההקראה מ-i18n — השפה נשארת בשכבת-ה-i18n, לא בליבה הטהורה.
+   * ⚠️ אותו דפוס כמו `agent-session.svelte.ts` (‏`createI18n` לפי
+   * `settings.locale`) — כדי לא להוסיף תלות-בנאי חדשה ל-Speaker, שהיא
+   * שינוי invasive שנוגע בכל אתרי-הבנייה ובכל המוקים.
+   */
+  #speakableLabels(): SpeakableLabels {
+    const t = createI18n({ locale: this.#settings.locale ?? detectLocale() }).t
+    return {
+      codeBlock: t("speakable.codeBlock"),
+      // ⚠️ הרכבה ולא אינטרפולציה — `t()` מקבל מפתח בלבד (‏i18n/index.ts:32),
+      // ושינוי החתימה שלו בשביל תווית אחת הוא שינוי invasive בקובץ משותף.
+      codeBlockWithLang: (lang) => `${t("speakable.codeBlock")} ${lang}`,
+      link: t("speakable.link"),
+      image: t("speakable.image"),
+    }
+  }
+
+  /**
+   * ─── slice playback-observability ───
+   * ⭐ `inFlight` הוא מה שחסר כדי לקרוא את התור נכון: פריט ב-`reserved`
+   * יכול להיות "ממתין ל-TTS" או "נזנח" — והמספר הזה מבדיל ביניהם.
+   */
+  debugInfo(): SpeakerDebugInfo {
+    return {
+      inFlight: this.#activeFetches,
+      queued: this.#jobs.filter((j) => j.status === "pending").length,
+      lookahead: LOOKAHEAD,
+      recent: [...this.#recentTexts].reverse(),
+      bubbleStates: Object.fromEntries(
+        [...this.#bubbleStates].map(([id, s]) => [id, s.processedSegments]),
+      ),
+      historyEpoch: this.#seenHistoryEpoch,
+      recentSources: [...this.#recentSources].reverse(),
+    }
   }
 
   #pumpFetchLoop(): void {
@@ -349,14 +585,32 @@ export class Speaker {
       if (job === undefined) break
       job.status = "fetching"
       this.#activeFetches += 1
-      void this.#fetchJob(job).finally(() => {
-        this.#activeFetches -= 1
-        this.#pumpFetchLoop()
-      })
+      void this.#fetchJob(job)
+        .then((outcome) => {
+          this.#applyFetchOutcome(job.segmentId, outcome)
+        })
+        .finally(() => {
+          this.#activeFetches -= 1
+          this.#pumpFetchLoop()
+        })
     }
   }
 
-  async #fetchJob(job: TtsJob): Promise<void> {
+  #applyFetchOutcome(segmentId: string, outcome: FetchOutcome): void {
+    switch (outcome.kind) {
+      case "ready":
+        this.#player.markReady(segmentId)
+        break
+      case "error":
+        this.#player.markError(segmentId)
+        break
+      case "abandoned":
+        this.#player.markAbandoned(segmentId)
+        break
+    }
+  }
+
+  async #fetchJob(job: TtsJob): Promise<FetchOutcome> {
     try {
       let text = job.text
 
@@ -386,14 +640,14 @@ export class Speaker {
         const narrationText = await this.#narrateForJob(job)
         if (narrationText === null) {
           job.status = "error"
-          return
+          return { kind: "error", reason: "narration-null" }
         }
         text = narrationText
       }
 
       if (job.abort.signal.aborted) {
         job.status = "error"
-        return
+        return { kind: "abandoned" }
       }
 
       // V4a-unify: בחר ספק דרך resolveTts (מקור-אמת יחיד); V4b: העברת geminiVoice
@@ -410,7 +664,7 @@ export class Speaker {
           provider: this.#settings.ttsProvider,
           id: job.segmentId,
         })
-        return
+        return { kind: "error", reason: "provider-unavailable" }
       }
       // slice 22: חשב textHash על הטקסט שמסונתז (provenance)
       const textHash = await cacheKeyFor(text, voiceId, modelId)
@@ -428,15 +682,20 @@ export class Speaker {
         textHash,
         format: provider.format,
       })
-      this.#player.addSegment(job.segmentId, job.orderKey)
       job.status = "ready"
+      return { kind: "ready" }
     } catch (e) {
+      if (job.abort.signal.aborted) {
+        job.status = "error"
+        return { kind: "abandoned" }
+      }
       // MIN-5: דלג + המשך, אל תזרוק.
       job.status = "error"
       console.warn("TTS job failed, skipping segment", {
         id: job.segmentId,
         err: e instanceof Error ? e.message : String(e),
       })
+      return { kind: "error", reason: "synthesize-failed" }
     } finally {
       // msr-v2: הפחת ספירה (job הסתיים — גם אם שגיאה)
       if (this.#pendingCount > 0) this.#pendingCount -= 1
@@ -485,9 +744,11 @@ export class Speaker {
       // דרך אותו OrderAllocator — לכן ה-seq של ה-tool נכון יחסית למשפטים סביבו.
       const bid = bubble.id
       const orderKey = this.#orderAlloc.next(bid)
+      // A2 (אביגיל #2): extract segmentId לפני push כדי להעביר ל-reserve
+      const segmentId = safeUUID()
 
       this.#jobs.push({
-        segmentId: safeUUID(),
+        segmentId,
         kind: "tool",
         messageId: null,
         text: "", // יתמלא ב-#narrateForJob
@@ -497,6 +758,10 @@ export class Speaker {
         toolCallId: tc.toolCallId,
         orderKey,
       })
+      // A2: reserve-on-enqueue
+      // A4: העבר bubbleId כדי ש-PlaylistItem יכיל אותו לניווט jumpToBubble
+      // nav-retain: refetch thunk — re-fetch בביקור מפורש אחרי skip
+      this.#player.reserve(segmentId, orderKey, bid, this)
       this.#pendingCount += 1
       this.#pumpFetchLoop()
     }
@@ -581,7 +846,7 @@ export class Speaker {
     // slice 6: reset משני — לcancel/toggle-off (לא רץ בסוף תור רגיל)
     this.#spokeThisTurn = false
     for (const job of this.#jobs) {
-      if (job.status === "fetching" || job.status === "pending") {
+      if (job.status === "fetching" || job.status === "pending" || job.status === "stale") {
         try {
           job.abort.abort()
         } catch {
@@ -594,16 +859,33 @@ export class Speaker {
     this.#player.stop()
     this.#audioStream.clear()
     // slice 22: נקה את ה-allocator (seq גלובלי לא מתאפס — מונוטוני בין שיחות)
-    this.#orderAlloc.clear()
+    // 🔴 **לא מנקים את ה-OrderAllocator.**
+    //
+    // דווח מהשדה: "הודעה ישנה נדחפה לסוף, אחרי שלוש ההודעות החדשות".
+    //
+    // המנגנון: `next(bubbleId)` מקצה `seq` **חדש** לכל bubbleId שאינו
+    // במפה, וה-`seq` הגלובלי מונוטוני ולא מתאפס. ⇒ אחרי `clear()`, בועה
+    // **ישנה** שמקבלת עוד מקטע (זנב, refetch, השמעה-חוזרת) מאבדת את ה-seq
+    // המקורי שלה ומקבלת אחד **גבוה מכולם** — ולכן מתנגנת **אחרונה**.
+    //
+    // המפה היא **הזיכרון של סדר-הבועות**, לא מצב-ריצה. עצירה אינה משנה
+    // איזו בועה קדמה לאיזו, ולכן אין סיבה לשכוח זאת. הזיכרון חסום
+    // ממילא ע"י מספר הבועות בשיחה.
+    //
+    // (‏`clear()` נשאר ב-API להחלפת-סשן אמיתית ולבדיקות.)
     // סמן כל בועה קיימת כמעובדת לחלוטין כך שהפעלה מחדש לא תשחזר.
     for (const bubble of this.#session.bubbles) {
       if (bubble.kind !== "message" && bubble.kind !== "thought") continue
       const state = this.#bubbleStates.get(bubble.id) ?? {
         processedSegments: 0,
         buffer: "",
+        speakPending: "",
       }
       state.processedSegments = bubble.segments.length
       state.buffer = ""
+      // ⚠️ `#stopAndClear` — בלי זה, טקסט מעובד מתור **שבוטל או הושתק**
+      // נאמר בתור הבא.
+      state.speakPending = ""
       this.#bubbleStates.set(bubble.id, state)
     }
   }

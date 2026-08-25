@@ -1,22 +1,20 @@
 /**
- * VoiceMode — FSM (מכונת מצבים) נגזרת שמסכמת את ה-mic + session + speaker לכדי
- * מצב תצוגה יחיד עבור רכיב ה-MicButton.
+ * VoiceMode — derived VM for mic control, playback stop, and run cancellation.
  *
- * אינו מחזיק מצב ראשי (primary state) — הוא נגזר משלושה מקורות:
- *   - Mic.state         (הקלטה / תמלול)
- *   - AgentSession.status (חושב)
- *   - Speaker.state     (מדבר)
+ * Role narrowed by slice control-roles: MicLarge reads mic.state directly for
+ * display; this VM exposes startTalking (barge-in), cancelRun, stopPlayback,
+ * and isCancelling for the dedicated stop-run button.
  *
- * isCancelling הוא השדה היחיד שניתן לשינוי: מוגדר על ידי cancel(), מאופס על ידי $effect
- * ברגע שכל המקורות נרגעים חזרה למצב המתנה (idle).
+ * isCancelling resets via $effect when canClearCancelling is true — turnState
+ * and speaker idle only (mic is excluded after R1: cancelRun skips mic.cancel
+ * while recording).
  *
- * בטיחות ריאקטיבית (learnings 2026-05-16):
- *   - $derived.by קורא משלושת המקורות באמצעות getters — אין כתיבות → בטוח.
- *   - ה-$effect ONLY כותב `isCancelling = false` ורק כאשר כל שלושת
- *     התנאים מתקיימים במקביל. ברגע ששקר, התנאי כבר אינו
- *     מתקיים → אין לולאה אינסופית (סיכון #9 במפרט).
+ * Reactive safety (learnings 2026-05-16):
+ *   - $derived.by reads mic/session/speaker via getters — no writes.
+ *   - $effect ONLY clears isCancelling when canClearCancelling is true.
  */
 
+import type { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { Mic } from "../mic.svelte"
 import type { AgentSession } from "../agent-session.svelte"
 import type { Speaker } from "../speaker.svelte"
@@ -33,8 +31,9 @@ export class VoiceMode {
   readonly #mic: Mic
   readonly #session: AgentSession
   readonly #speaker: Speaker
+  readonly #playlist: AudioPlaylist
 
-  /** דגל פנימי — מוגדר על ידי cancel(), מתאפס כשה-FSM חוזר למצב idle */
+  /** דגל פנימי — מוגדר על ידי cancelRun(), מתאפס כש-canClearCancelling */
   isCancelling: boolean = $state(false)
 
   state: VoiceModeState = $derived.by(() => {
@@ -46,35 +45,59 @@ export class VoiceMode {
     return "idle"
   })
 
-  constructor(opts: { mic: Mic; session: AgentSession; speaker: Speaker }) {
+  constructor(opts: { mic: Mic; session: AgentSession; speaker: Speaker; playlist: AudioPlaylist }) {
     this.#mic = opts.mic
     this.#session = opts.session
     this.#speaker = opts.speaker
+    this.#playlist = opts.playlist
 
-    // אפס את isCancelling ברגע שכל המקורות חוזרים למצב idle
     $effect(() => {
-      if (
-        this.isCancelling &&
-        this.#mic.state === "idle" &&
-        this.#session.turnState === "idle" &&
-        this.#speaker.state === "idle"
-      ) {
-        this.isCancelling = false
-      }
+      if (this.isCancelling && this.canClearCancelling) this.isCancelling = false
     })
   }
 
   /**
-   * ביטול פעולת הקלטה / TTS / בקשה שרצה כרגע.
-   * נקרא על ידי ה-MicButton כשהמצב הוא "speaking" או "thinking",
-   * וייקרא גם על ידי כפתור הביטול ב-slice 7.
+   * האם ה-cancel הושלם ⇒ מותר לאפס את isCancelling.
+   * מופרד מה-$effect במכוון: ה-$effect אינו רץ תחת vitest (environment: node),
+   * ולכן זהו המשטח היחיד שבו אפשר להוכיח את (ג) בטסט.
+   * ⚠️ **אינו בודק את ה-mic** — אחרי R1, cancelRun אינו נוגע במיקרופון כשהוא
+   * מקליט, ולכן ה-mic אינו חלק ממה שצריך "להירגע".
    */
-  cancel(): void {
-    this.isCancelling = true
-    this.#mic.cancel()
-    // Speaker.stop() היא מתודה תוספתית (additive) שנוספה בקומִיט הזה — ראה speaker.svelte.ts
+  get canClearCancelling(): boolean {
+    return this.#session.turnState === "idle" && this.#speaker.state === "idle"
+  }
+
+  /**
+   * barge-in — המשתמש רוצה לדבר בזמן שהסוכן מדבר.
+   * עוצר את ההשמעה הנוכחית ומתחיל להקליט.
+   * ⚠️ אינו מבטל את ריצת הסוכן — זו כל הנקודה.
+   * ⚠️ אינו משתיק סגמנטים *חדשים* של ריצה שממשיכה — ר' R6.
+   * ⚠️ עוצר רק כשבאמת נשמע קול: ב-paused אין מה לעצור, ועצירה הייתה
+   *    מוחקת את הפלייליסט המשומר — ר' R8.
+   */
+  async startTalking(): Promise<void> {
+    const audible =
+      this.#speaker.state === "speaking" && this.#playlist.transport === "playing"
+    if (audible) this.#speaker.stop()
+    await this.#mic.toggle()
+  }
+
+  /**
+   * A3: עצירת השמעה בלבד — לא נוגע בריצת הסוכן ולא ב-mic.
+   */
+  stopPlayback(): void {
     this.#speaker.stop()
-    // msr-v2: ACP cancel — עוצר את הסוכן ומחזיר turnState=idle (תיקון X-מהבהב)
+  }
+
+  /**
+   * A3: עצירת הסוכן + ההשמעה.
+   * מגדיר isCancelling=true → מאפס ב-$effect כש-canClearCancelling.
+   */
+  cancelRun(): void {
+    this.isCancelling = true
+    // הקלטה פעילה היא כוונת-משתמש חיה ואינה חלק מהתור שמבוטל
+    if (this.#mic.state !== "recording") this.#mic.cancel()
+    this.#speaker.stop()
     void this.#session.cancelTurn()
   }
 }

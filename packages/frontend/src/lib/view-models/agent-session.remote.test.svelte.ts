@@ -24,6 +24,7 @@ import {
   clearPendingRequest,
   createInitialSessionState,
 } from "@drive-coding/core/session"
+import { toWireText } from "@drive-coding/core/session/testing"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createAgent, deleteAgent, notifySessionAttached } from "$lib/adapters/agents-api"
@@ -383,7 +384,7 @@ describe("AgentSession — attachRemote fast-fail", () => {
   it("fails fast when the BE snapshot carries no sessionId — #cleanup runs, status=error", async () => {
     const encoder = new TextEncoder()
     const snapshot = createInitialSessionState({ sessionId: null })
-    const sseText = `event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`
+    const sseText = toWireText([{ event: "snapshot", data: JSON.stringify(snapshot) }])
     const fetchMock = vi.fn(async (url: string) => {
       if (String(url).includes("/events")) {
         const body = new ReadableStream<Uint8Array>({
@@ -408,7 +409,7 @@ describe("AgentSession — attachRemote fast-fail", () => {
   it("full flow: attachRemote succeeds (real sessionId) → applyConfigOption persists via #cliKind", async () => {
     const encoder = new TextEncoder()
     const snapshot = createInitialSessionState({ sessionId: "remote-sess-full" })
-    const sseText = `event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`
+    const sseText = toWireText([{ event: "snapshot", data: JSON.stringify(snapshot) }])
     const fetchMock = vi.fn(async (url: string) => {
       if (String(url).includes("/events")) {
         const body = new ReadableStream<Uint8Array>({
@@ -450,7 +451,7 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
     fetchMock: ReturnType<typeof vi.fn>
   } {
     const encoder = new TextEncoder()
-    const sseText = `event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`
+    const sseText = toWireText([{ event: "snapshot", data: JSON.stringify(snapshot) }])
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (String(url).includes("/events")) {
         const body = new ReadableStream<Uint8Array>({

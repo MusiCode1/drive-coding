@@ -13,15 +13,16 @@
  *
  * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
  */
+import PlaybackDebugPanel from "$lib/components/debug/PlaybackDebugPanel.svelte"
 import "../app.css"
+import type { Locale } from "@drive-coding/core/i18n"
+import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import { onDestroy, onMount } from "svelte"
 import { page } from "$app/state"
-import { installDebugSurface } from "$lib/debug/dc"
-import { normalizeSessionTransport } from "$lib/session/session-transport"
 import { env } from "$env/dynamic/public"
-import type { Locale } from "@drive-coding/core/i18n"
 import {
   setActiveAgents,
+  setAudioPlaylist,
   setBubblePlayer,
   setChatScroll,
   setCliAvailability,
@@ -41,30 +42,34 @@ import {
   setUiShell,
   setVoiceMode,
 } from "$lib/context"
+import { installDebugSurface } from "$lib/debug/dc"
+import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
+import { createConfigChangeSocket } from "$lib/engines/config-change-socket"
+import { CuesEngine } from "$lib/engines/cues"
+import { PlayableSink } from "$lib/engines/playable-sink"
+import { WakeLockEngine } from "$lib/engines/wake-lock"
+import { normalizeSessionTransport } from "$lib/session/session-transport"
 import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { beWsUrl } from "$lib/util/be-url"
-import { CuesEngine } from "$lib/engines/cues"
-import { WakeLockEngine } from "$lib/engines/wake-lock"
-import { createConfigChangeSocket } from "$lib/engines/config-change-socket"
+import { isPageHidden } from "$lib/util/page-visibility.svelte"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
-import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
-import { RecentProjects } from "$lib/view-models/recent-projects.svelte"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { BubblePlayer } from "$lib/view-models/bubble-player.svelte"
+import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
+import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
+import { ContentViewerVM } from "$lib/view-models/content-viewer.svelte"
 import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
 import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
-import { ContentViewerVM } from "$lib/view-models/content-viewer.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
+import { PresencePoller } from "$lib/view-models/presence-poller.svelte"
+import { RecentProjects } from "$lib/view-models/recent-projects.svelte"
 import { ResponsiveVM } from "$lib/view-models/responsive.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
 import { Speaker } from "$lib/view-models/speaker.svelte"
 import { ThemeVM } from "$lib/view-models/theme.svelte"
-import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { UiShellVM } from "$lib/view-models/ui-shell.svelte"
-import { PresencePoller } from "$lib/view-models/presence-poller.svelte"
-import { isPageHidden } from "$lib/util/page-visibility.svelte"
 
 let { children } = $props()
 
@@ -83,20 +88,43 @@ const cues = new CuesEngine()
 // slice-restore-last-config: settings מוזרק לסשן כדי לשמור config פר-CLI
 const session = new AgentSession({ cues, settings })
 
-// ─── speaker ─── (תלוי ב-session + settings + cues)
-const speaker = new Speaker({ session, settings, cues })
+// ─── audio-playlist ─── (A4 — entity משותף בין Speaker ו-BubblePlayer)
+// AudioSink נוצר כאן — Speaker מחזיק ref אליו (prepareSegment/clear).
+// AudioPlaylist נוצר לפני Speaker כי Speaker מקבל אותו כ-dependency.
+const sharedAudioStream = new PlayableSink()
+const sharedOrderAlloc = new OrderAllocator()
+// onPlaybackStart: cue "speaking" — guard #spokeThisTurn ב-Speaker
+// (Speaker יגדיר callback דרך onPlaybackStart בלבד — לא מוגדר כאן ישירות,
+//  כי Speaker צריך לבדוק #spokeThisTurn שלו. פתרון: Speaker ירשום callback לאחר init.)
+const audioPlaylist = new AudioPlaylist(sharedAudioStream)
+
+// ─── speaker ─── (תלוי ב-session + settings + cues + audioPlaylist)
+const speaker = new Speaker({
+  session,
+  settings,
+  cues,
+  playlist: audioPlaylist,
+  audioStream: sharedAudioStream,
+  orderAlloc: sharedOrderAlloc,
+})
 
 // ─── mic ─── (slice 3 — תלוי ב-session + cues)
 const mic = new Mic({ session, cues })
 
 // ─── voice-mode ─── (slice 3 — תלוי ב-mic + session + speaker)
-const voiceMode = new VoiceMode({ mic, session, speaker })
+const voiceMode = new VoiceMode({ mic, session, speaker, playlist: audioPlaylist })
 
 // ─── model-status ─── (msr-v2 — תלוי ב-session + speaker)
 const modelStatus = new ModelStatus({ session, speaker })
 
-// ─── bubble-player ─── (msr-v2 — תלוי ב-session + settings)
-const bubblePlayer = new BubblePlayer({ session, settings })
+// ─── bubble-player ─── (msr-v2 — תלוי ב-session + settings + audioPlaylist)
+// A4: playlist משותף עם Speaker — BubblePlayer יאוחד ב-Commit 3
+const bubblePlayer = new BubblePlayer({
+  session,
+  settings,
+  playlist: audioPlaylist,
+  orderAlloc: sharedOrderAlloc,
+})
 
 // ─── car-mode ─── (slice 7)
 
@@ -204,6 +232,7 @@ setSettings(settings)
 setCues(cues)
 setSession(session)
 setSpeaker(speaker)
+setAudioPlaylist(audioPlaylist)
 setMic(mic)
 setVoiceMode(voiceMode)
 setModelStatus(modelStatus)
@@ -231,7 +260,12 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
 // ─── slice debug-surface: משטח-תצפית ב-dev **וגם בפריוויו** ───
 // הגייט הוא PUBLIC_APP_ENV (מ-FE_ENV בזמן-בילד) ולא import.meta.env.DEV,
 // שהוא false בכל בילד — בדיוק הסיבה שה-hook שמעל חסר-תועלת בפריוויו.
-if (__DC_ENABLED__) {
+// slice playback-observability: הגייט הוא **או** בזמן-בילד **או** דגל-ריצה.
+// ⚠️ הדגל נחוץ דווקא בייצור: הבאגים שנתפסים בשדה (הקראה שנפסקת אחרי תור
+// שלם) אינם מופיעים ב-dev, ובלי משטח-תצפית מאבחנים אותם בעיוורון. הקוד
+// זעיר, המשטח קריא-בלבד, והנתונים סגורים עד ש-`__dc.enable()` נקרא.
+const dcOptIn = typeof localStorage !== "undefined" && localStorage.getItem("__dc") === "1"
+if (__DC_ENABLED__ || dcOptIn) {
   void installDebugSurface()
 }
 
@@ -251,3 +285,10 @@ onDestroy(() => configSocket.stop())
 </svelte:head>
 
 {@render children?.()}
+
+<!-- ─── slice playback-observability ───
+     ⚠️ אחרי ה-children, מחוץ לכל מכל — `position: fixed` בתוך מכל עם
+     `transform`/`filter` היה נצמד למכל ולא ל-viewport. -->
+{#if __DC_ENABLED__ || dcOptIn}
+  <PlaybackDebugPanel />
+{/if}

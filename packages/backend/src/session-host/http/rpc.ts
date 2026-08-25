@@ -4,15 +4,16 @@
  * Dispatches RPC calls to the ExtendedSessionHost.
  *
  * Fire-and-forget methods — 202 Accepted with {version}, no result body:
- *   - prompt / cancel / setMode / setConfigOption / extMethod / setSessionModel
+ *   - session/prompt · session/cancel · session/set_mode · session/set_config_option
+ *   - _drive/ext · _drive/set_session_model
  *
  * Blocking methods with a REAL result (slice remote-session-mgmt C3) — the FE
  * needs the list/confirmation. Each case below returns EXPLICITLY (200/400/502):
  * a `break` would fall through to the shared `return c.json({version}, 202)`
  * and break the contract.
- *   - listSessions  → 200 {sessions, sessionCapabilities} | 502 {error, code?}
- *   - loadSession   → 200 {sessionId, version} | 400 (bad params / no cwd) | 502
- *   - deleteSession → 200 {ok:true} | 200 {ok:false, unsupported:true} (-32601) | 502
+ *   - session/list   → 200 {sessions, sessionCapabilities} | 502 {error, code?}
+ *   - session/load   → 200 {sessionId, version} | 400 (bad params / no cwd) | 502
+ *   - session/delete → 200 {ok:true} | 200 {ok:false, unsupported:true} (-32601) | 502
  *
  * Returns 404 if connection not found (registry.getOrCreateHost → {ok:false}),
  * except reason:"evict-timeout" (a stuck WS tab, not a dead agent) → 503
@@ -29,9 +30,11 @@
  * ─── slice remote-session-view C4: + setSessionModel (TDD) ───
  * ─── slice session-host-pending-surface C3-ד (TDD): non-blocking prompt/cancel + ArkType ───
  * ─── slice remote-session-mgmt C3 (TDD): blocking listSessions/loadSession/deleteSession ───
+ * ─── slice acp-method-names: שמות קנוניים; השמות הישנים מתקבלים בחלון-מעבר ───
  */
 
 import { createLogger } from "@drive-coding/core/log"
+import { canonicalRpcMethod, RPC_METHODS } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { type } from "arktype"
 import type { Hono } from "hono"
@@ -109,12 +112,17 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
       return c.json({ error: "invalid json" }, 400)
     }
     const body = raw as Record<string, unknown>
-    const method = body.method as string | undefined
+    // slice acp-method-names: שם-המתודה מנורמל לצורתו הקנונית לפני הניתוב.
+    // ⚠️ **שתי הצורות מתקבלות בכוונה.** ה-FE הוא נכס-סטטי מצונן: טאב שנפתח
+    // לפני הפריסה (או PWA שמגיש מהמטמון) ימשיך לשלוח `prompt`. בלי ההקבלה
+    // הוא היה מקבל 400 — כלומר הפרומפט פשוט לא קורה, בלי שום סימן למשתמש.
+    const rawMethod = body.method as string | undefined
+    const method = canonicalRpcMethod(rawMethod)
     const params = (body.params ?? {}) as Record<string, unknown>
 
     // Dispatch to host method
     switch (method) {
-      case "prompt": {
+      case RPC_METHODS.prompt: {
         const p = PromptParams(params)
         if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
         void host.prompt(p.sessionId, p.content as string | PromptBlocks, p.meta).catch((e) => {
@@ -122,30 +130,30 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
         })
         break // no await — 202 immediately, as the JSDoc above already promises
       }
-      case "cancel": {
+      case RPC_METHODS.cancel: {
         const p = CancelParams(params)
         if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
         void host.cancel(p.sessionId).catch((e) => log.warn({ err: e }, "cancel failed"))
         break
       }
-      case "setMode": {
+      case RPC_METHODS.setMode: {
         const modeId = params.modeId as string
         await host.setMode(modeId)
         break
       }
-      case "setConfigOption": {
+      case RPC_METHODS.setConfigOption: {
         const configId = params.configId as string
         const value = params.value as string | boolean
         await host.setConfigOption(configId, value)
         break
       }
-      case "extMethod": {
+      case RPC_METHODS.extMethod: {
         const extMethodName = params.method as string
         const extParams = (params.params ?? {}) as Record<string, unknown>
         await host.extMethod(extMethodName, extParams)
         break
       }
-      case "setSessionModel": {
+      case RPC_METHODS.setSessionModel: {
         const model = params.model as string
         await host.setSessionModel(model)
         break
@@ -154,7 +162,7 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
       // ⚠️ each case `return`s explicitly (200/400/502). A `break` here would fall
       // through to the shared `return c.json({version}, 202)` below and break the
       // contract — the FE needs the list/confirmation in the body.
-      case "listSessions": {
+      case RPC_METHODS.listSessions: {
         try {
           const r = await host.listSessions()
           const sessions = Array.isArray(r.sessions) ? r.sessions : []
@@ -173,7 +181,7 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
           )
         }
       }
-      case "loadSession": {
+      case RPC_METHODS.loadSession: {
         const p = LoadSessionParams(params)
         if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
         const cwd = p.cwd ?? registry.getCwd(agentId)
@@ -197,7 +205,7 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
           )
         }
       }
-      case "deleteSession": {
+      case RPC_METHODS.deleteSession: {
         const p = DeleteSessionParams(params)
         if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
         try {
@@ -214,7 +222,10 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
         }
       }
       default: {
-        return c.json({ error: `Unknown method: ${String(method)}` }, 400)
+        // ⚠️ מדווחים את השם ש**נשלח**, לא את התוצאה המנורמלת (שהיא undefined
+        // בדיוק במקרה הזה) — אחרת ההודעה היא "Unknown method: undefined"
+        // וזורקת את הפרט היחיד שמאפשר לאבחן.
+        return c.json({ error: `Unknown method: ${String(rawMethod)}` }, 400)
       }
     }
 

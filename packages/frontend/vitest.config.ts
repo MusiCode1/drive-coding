@@ -23,6 +23,7 @@ import path from "node:path"
 export default defineConfig({
   plugins: [svelte({ hot: false })],
   resolve: {
+    conditions: ["browser"],
     // `$lib/*` is the SvelteKit alias for `src/lib/*`. SvelteKit sets it
     // up automatically in `dev`/`build`; here we mirror it for tests.
     alias: {

@@ -146,6 +146,11 @@ export type MessageKey =
   | "record.reconnecting"
   | "record.reconnectAttempt"
   | "mic.stop"
+  | "mic.discard"
+  // ─── speakable (slice tts-speakable-text) — מה שנאמר במקום קוד/קישור ───
+  | "speakable.codeBlock"
+  | "speakable.link"
+  | "speakable.image"
   // ─── settings-redesign ─── (redesign-3)
   | "settings.connection"
   | "settings.voiceSpeech"
@@ -263,6 +268,18 @@ export type MessageKey =
   | "session.leaveWarning.confirm"
   | "session.leaveWarning.cancel"
   | "session.leaveWarning.dontShowAgain"
+  // ─── playbackControls ─── (slice B1-controls-ui)
+  | "playbackControls.stopRun"
+  | "playbackControls.stopRun.thinking"
+  | "playbackControls.stopRun.responding"
+  | "playbackControls.stopRun.callingTool"
+  | "playbackControls.stopPlayback"
+  | "playbackControls.pause"
+  | "playbackControls.resume"
+  | "playbackControls.prev"
+  | "playbackControls.next"
+  | "playbackControls.dock"
+  | "playbackControls.interrupted"
   // ─── thinking-tokens ─── (slice FEAT-thinking-live)
   | "agentOptions.thinking.label" // תווית הפקד "חשיבה" / "Thinking"
   | "agentOptions.thinking.off" // ערך כבוי

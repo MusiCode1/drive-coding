@@ -711,4 +711,88 @@ describe("POST /api/agents/:id/rpc", () => {
       expect(res.status).toBe(202)
     })
   })
+  // ─── slice acp-method-names ─────────────────────────────────────────────
+  //
+  // ⚠️ שים לב לכל שאר הקובץ: **הוא לא השתנה.** כל 44 הטסטים שמעל שולחים את
+  // השמות הישנים ועוברים כמות שהם — וזו בדיוק ההוכחה שחלון-המעבר חי, ולא
+  // טענה שצריך להאמין לה. הטסטים כאן מוסיפים את החצי השני.
+  describe("canonical ACP method names", () => {
+    it.each([
+      ["session/prompt", { sessionId: "s1", content: "hi" }],
+      ["session/cancel", { sessionId: "s1" }],
+      ["session/set_mode", { modeId: "auto" }],
+      ["session/set_config_option", { configId: "k", value: true }],
+      ["_drive/ext", { method: "_drive/x", params: {} }],
+      ["_drive/set_session_model", { model: "m" }],
+    ])("%s dispatches and returns 202", async (method, params) => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method, params })
+      expect(res.status).toBe(202)
+    })
+
+    it("session/prompt reaches host.prompt with the same arguments as the legacy name", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      await postRpc(app, "agent-1", {
+        method: "session/prompt",
+        params: { sessionId: "s1", content: "hi" },
+      })
+      expect(host.prompt).toHaveBeenCalledWith("s1", "hi", undefined)
+    })
+
+    it("session/list returns the blocking 200 body, not a 202 ack", async () => {
+      const host = makeMockHost(makeMockState())
+      host.listSessions = vi.fn().mockResolvedValue({ sessions: [{ sessionId: "a" }] })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "session/list", params: {} })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ sessions: [{ sessionId: "a" }] })
+    })
+
+    it("session/delete maps -32601 to the graceful unsupported body", async () => {
+      const host = makeMockHost(makeMockState())
+      host.deleteSession = vi.fn().mockRejectedValue({ code: -32601, message: "nope" })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "session/delete",
+        params: { sessionId: "s1" },
+      })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ ok: false, unsupported: true })
+    })
+
+    // 🔴 הכשל שהתיקון הזה נועד למנוע: השם המנורמל הוא `undefined` בדיוק
+    // כאן, ולכן דיווח שלו במקום השם שנשלח היה מוחק את הפרט היחיד שמאפשר
+    // לאבחן — "Unknown method: undefined".
+    it("an unknown method reports the name the caller actually sent", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "session/teleport", params: {} })
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ error: "Unknown method: session/teleport" })
+    })
+
+    // ⚠️ קלט חיצוני מגיע ישירות לטבלת-ההקבלה. מפתח ירושתי אינו שם-מתודה.
+    it("an inherited Object key is not a method", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      for (const method of ["toString", "constructor", "__proto__"]) {
+        const res = await postRpc(app, "agent-1", { method, params: {} })
+        expect(res.status).toBe(400)
+      }
+    })
+  })
 })

@@ -14,9 +14,10 @@
  */
 import type { AvailableCommand } from "@agentclientprotocol/sdk"
 import ImagePlusIcon from "@lucide/svelte/icons/image-plus"
+import OctagonXIcon from "@lucide/svelte/icons/octagon-x"
 import SendIcon from "@lucide/svelte/icons/send"
 import XIcon from "@lucide/svelte/icons/x"
-import { getI18n, getSession, getSettings } from "$lib/context"
+import { getI18n, getModelStatus, getSession, getSettings, getVoiceMode } from "$lib/context"
 import {
   fileToImageAttachment,
   type ImageAttachment,
@@ -27,6 +28,8 @@ import SlashCommandMenu from "./SlashCommandMenu.svelte"
 
 const session = getSession()
 const settings = getSettings()
+const voiceMode = getVoiceMode()
+const modelStatus = getModelStatus()
 const t = getI18n().t
 
 let promptText = $state("")
@@ -364,6 +367,18 @@ function openFilePicker(): void {
     ></textarea>
     </div>
 
+    <!-- ─── slice control-roles: כפתור עצור-ריצה קבוע (disabled כשאין ריצה) ─── -->
+    <button
+      type="button"
+      disabled={!modelStatus.isRunActive}
+      onclick={() => voiceMode.cancelRun()}
+      class="shrink-0 rounded-xl p-2.5 flex items-center justify-center"
+      class:type-area-stop-run--active={modelStatus.isRunActive}
+      aria-label={t(modelStatus.stopRunLabelKey)}
+    >
+      <OctagonXIcon size={16} strokeWidth={2} />
+    </button>
+
     <!-- ─── slice-image-paste Commit 4b: שכבה 1 — disabled רק אם אין טקסט ואין תמונות ─── -->
     <button
       type="submit"
@@ -377,3 +392,19 @@ function openFilePicker(): void {
   </form>
 
 </div>
+
+<style>
+  button.type-area-stop-run--active:not(:disabled) {
+    border: 1px solid var(--recording);
+    color: var(--recording);
+    background: transparent;
+    cursor: pointer;
+  }
+
+  button.type-area-stop-run--active:disabled {
+    opacity: 0.35;
+    border: 1px solid var(--border);
+    background: transparent;
+    cursor: not-allowed;
+  }
+</style>

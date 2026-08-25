@@ -18,8 +18,13 @@
  * ─── slice remote-session-view C4 (integration) ───
  */
 
-import type { Patch, SessionState } from "@drive-coding/core/session"
-import { createInitialSessionState } from "@drive-coding/core/session"
+import {
+  createInitialSessionState,
+  type Patch,
+  RPC_METHODS,
+  type SessionState,
+} from "@drive-coding/core/session"
+import { toWireText } from "@drive-coding/core/session/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { RemoteSessionView } from "$lib/session/remote-session-view.js"
 import { AgentSession } from "./agent-session.svelte.js"
@@ -54,7 +59,7 @@ function sseBody(
   opts: { keepOpen?: boolean } = {},
 ): ReadableStream<Uint8Array> {
   const { keepOpen = true } = opts
-  const text = frames.map((f) => `event: ${f.event}\ndata: ${f.data}\n\n`).join("")
+  const text = toWireText(frames)
   return new ReadableStream({
     start(ctrl) {
       ctrl.enqueue(encoder.encode(text))
@@ -185,7 +190,7 @@ describe("VM + RemoteSessionView integration (C4)", () => {
     await view.prompt("hi from VM")
 
     expect(captured).toMatchObject({
-      method: "prompt",
+      method: RPC_METHODS.prompt,
       params: { sessionId: "int-sess-1", content: "hi from VM" },
     })
     // VM itself doesn't need to change for this — it's the same SessionView port

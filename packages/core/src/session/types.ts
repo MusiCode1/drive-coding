@@ -209,6 +209,20 @@ export type Patch =
   | { version: number; op: "opaque"; update: unknown }
   | { version: number; op: "append-segment"; targetId: string; segment: SessionSegment }
   | { version: number; op: "add-message"; message: SessionMessage }
+  /**
+   * החלפת הודעה קיימת **בשלמותה**, במקומה בסדר.
+   *
+   * ─── slice acp-v2-reduce ───
+   * נדרש ל-`agent_message`/`user_message`/`agent_thought` של ACP v2, שהם
+   * upsert של הודעה שלמה ולא הוספת-קטע. זו בדיוק היכולת ש-v1 **חסר**, ובלעדיה
+   * snapshot מכווץ אינו ניתן לביטוי בפרוטוקול: השרת שמשחזר מ-`SessionState`
+   * שלו מייצר הודעות שלמות, לא את ה-chunks המקוריים (§2.2 בתוכנית-העל).
+   *
+   * ⚠️ `targetId` הוא ה-id הסינתטי (`m_<seq>`), כמו בשאר ה-ops — **לא**
+   * ה-`messageId` של ACP. ההתאמה לפי messageId נעשית ב-`reduce`, פעם אחת,
+   * ומה שיוצא לחוט כבר מדבר במזהים שלנו.
+   */
+  | { version: number; op: "set-message"; targetId: string; message: SessionMessage }
   | { version: number; op: "update-tool"; targetId: string; toolCall: Partial<SessionToolCall> }
   | {
       version: number

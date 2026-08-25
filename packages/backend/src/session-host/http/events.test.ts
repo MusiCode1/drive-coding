@@ -9,7 +9,7 @@
  *   - SSE response headers (Content-Type: text/event-stream)
  *   - snapshot as first frame (event: snapshot)
  *   - patches streamed as subsequent frames (event: patch)
- *   - register-then-snapshot order (subscribe before snapshot)
+ *   - register-then-snapshot order (snapshot read before filtered subscribe)
  *   - client disconnect → broadcaster.unsubscribe called
  */
 
@@ -234,16 +234,15 @@ describe("GET /api/agents/:id/events", () => {
     })
   })
 
-  describe("register-then-snapshot: subscribe before snapshot", () => {
-    it("calls broadcaster.subscribe before reading host.state (snapshot)", async () => {
+  describe("snapshot-then-filtered-subscribe", () => {
+    it("reads host.state before subscribe, passes snapshot.version, with no await between", async () => {
       const callOrder: string[] = []
-      const state = makeMockState({ title: "Test Session" })
+      const state = makeMockState({ title: "Test Session", version: 7 })
 
-      // Track call order via custom getters
       const subscribeStream = new ReadableStream<Patch>({ start() {} })
       const broadcaster: PatchesBroadcaster = {
-        subscribe: vi.fn().mockImplementation(() => {
-          callOrder.push("subscribe")
+        subscribe: vi.fn().mockImplementation((sinceVersion?: number) => {
+          callOrder.push(`subscribe:${sinceVersion ?? "all"}`)
           return subscribeStream
         }),
         unsubscribe: vi.fn(),
@@ -276,13 +275,13 @@ describe("GET /api/agents/:id/events", () => {
       const app = makeApp(registry)
 
       const res = await app.request("/api/agents/agent-1/events")
-      // Read at least 1 event (the snapshot) to ensure route executed
       await readSseEvents(res, 1, 200)
 
-      const subscribeIdx = callOrder.indexOf("subscribe")
-      const stateIdx = callOrder.indexOf("read-state")
-      expect(subscribeIdx).toBeGreaterThanOrEqual(0)
-      expect(stateIdx).toBeGreaterThan(subscribeIdx) // subscribe BEFORE snapshot
+      const readIdx = callOrder.indexOf("read-state")
+      const subscribeIdx = callOrder.indexOf("subscribe:7")
+      expect(readIdx).toBeGreaterThanOrEqual(0)
+      expect(subscribeIdx).toBeGreaterThan(readIdx)
+      expect(broadcaster.subscribe).toHaveBeenCalledWith(7)
     })
   })
 
@@ -306,8 +305,15 @@ describe("GET /api/agents/:id/events", () => {
       const dataLine = first.split("\n").find((l) => l.startsWith("data: "))
       expect(dataLine).toBeDefined()
       const json = JSON.parse(dataLine!.slice("data: ".length))
-      expect(json.title).toBe("Hello World")
+      // ─── slice acp-wire-session-update ───
+      // ה-snapshot אינו `SessionState` גולמי יותר אלא **רצף `session/update`**.
+      // ‏`version` נשאר בשורש (הוא מונה-תעבורה, לא מצב-סשן); `title` נוסע
+      // בתוך `session_info_update` — כלומר כפי שהפרוטוקול מבטא אותו.
       expect(json.version).toBe(5)
+      const info = (json.updates as Array<Record<string, unknown>>).find(
+        (u) => u.sessionUpdate === "session_info_update",
+      )
+      expect(info?.title).toBe("Hello World")
     })
   })
 
@@ -337,12 +343,22 @@ describe("GET /api/agents/:id/events", () => {
       const events = await readSseEvents(res, 2, 300)
       expect(events.length).toBeGreaterThanOrEqual(2)
 
-      const patchEvent = events.find((e) => e.includes("event: patch"))
-      expect(patchEvent).toBeDefined()
-      const dataLine = patchEvent!.split("\n").find((l) => l.startsWith("data: "))
-      const json = JSON.parse(dataLine!.slice("data: ".length))
-      expect(json.version).toBe(1)
-      expect(json.op).toBe("update-session")
+      // ─── slice acp-wire-session-update ───
+      // הפריים הוא `event: update`, ה-`version` יושב ב-`id:`, וה-`data` הוא
+      // **batch של JSON-RPC** — patch אחד יכול להתפצל לכמה `session/update`.
+      const updateEvent = events.find((e) => e.includes("event: update"))
+      expect(updateEvent).toBeDefined()
+      expect(updateEvent).toContain("id: 1")
+      const dataLine = updateEvent!.split("\n").find((l) => l.startsWith("data: "))
+      const batch = JSON.parse(dataLine!.slice("data: ".length)) as Array<{
+        jsonrpc: string
+        method: string
+        params: { update: { sessionUpdate: string; title?: string } }
+      }>
+      expect(batch[0]!.jsonrpc).toBe("2.0")
+      expect(batch[0]!.method).toBe("session/update")
+      expect(batch[0]!.params.update.sessionUpdate).toBe("session_info_update")
+      expect(batch[0]!.params.update.title).toBe("Updated")
     })
   })
 })
@@ -406,7 +422,11 @@ describe("GET /api/agents/:id/events — ownership-handoff C3", () => {
       expect(events.length).toBeGreaterThanOrEqual(1)
       const first = events[0]!
       expect(first).toContain("event: snapshot")
-      expect(first).toContain("id: 3")
+      // ⚠️ ה-`id:` הוא ה-**version** ולא ה-epoch. שני מונים שונים: ה-epoch
+      // אומר *מי מחזיק בזרם*, וה-version אומר *איפה אנחנו ברצף* — ורק השני
+      // הוא מה ש-`Last-Event-ID` יוכל להמשיך ממנו. ה-epoch עבר לגוף ההודעה.
+      const epochData = first.split("\n").find((l) => l.startsWith("data: "))!
+      expect(JSON.parse(epochData.slice("data: ".length)).epoch).toBe(3)
     })
   })
 

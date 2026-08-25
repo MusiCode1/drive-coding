@@ -18,8 +18,8 @@
  * ─── slice session-host-pending-surface C5 (integration) ───
  */
 
-import type { Patch, SessionState } from "@drive-coding/core/session"
-import { applyPatch } from "@drive-coding/core/session"
+import type { SessionState } from "@drive-coding/core/session"
+import { createInitialSessionState, reduce } from "@drive-coding/core/session"
 import type { AcpClient } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
@@ -154,11 +154,11 @@ async function readSseFrames(
   response: MockResponse,
   expectedFrames: number,
   timeoutMs = 500,
-): Promise<Array<{ event: string; data: unknown }>> {
+): Promise<Array<{ event: string; data: unknown; id: string }>> {
   const reader = response.body!.getReader()
   const decoder = new TextDecoder()
   let buffer = ""
-  const frames: Array<{ event: string; data: unknown }> = []
+  const frames: Array<{ event: string; data: unknown; id: string }> = []
 
   const deadline = Date.now() + timeoutMs
   while (frames.length < expectedFrames && Date.now() < deadline) {
@@ -176,10 +176,14 @@ async function readSseFrames(
       if (!part.trim()) continue
       const eventLine = part.split("\n").find((l) => l.startsWith("event: "))
       const dataLine = part.split("\n").find((l) => l.startsWith("data: "))
+      const idLine = part.split("\n").find((l) => l.startsWith("id: "))
       if (!eventLine || !dataLine) continue
       frames.push({
         event: eventLine.slice("event: ".length),
         data: JSON.parse(dataLine.slice("data: ".length)),
+        // slice acp-wire-session-update: ה-`version` ירד מגוף ההודעה אל
+        // שורת-המסגור, ולכן קורא-הפריימים חייב לשמור אותה.
+        id: idLine === undefined ? "" : idLine.slice("id: ".length),
       })
     }
   }
@@ -199,18 +203,33 @@ async function readSseFrames(
  * exactly like the real client. This is the "final state after replay",
  * per the brief — not frame-zero.
  */
-function computeFinalClientState(frames: Array<{ event: string; data: unknown }>): SessionState {
+function computeFinalClientState(
+  frames: Array<{ event: string; data: unknown; id: string }>,
+): SessionState {
   const first = frames[0]
   if (!first || first.event !== "snapshot") {
     throw new Error("expected the first SSE frame to be a snapshot")
   }
-  let state = first.data as SessionState
-  const snapshotVersion = state.version
+  // ─── slice acp-wire-session-update ───
+  // הלקוח האמיתי אינו מקבל `SessionState` יותר אלא **רצף `session/update`**,
+  // ומקפל אותו ב-`reduce` — אותו reducer שמסלול ה-WS משתמש בו. החיקוי כאן
+  // עודכן לאותה צורה, ולכן הטסט מוכיח עכשיו את השרשרת המלאה:
+  // ‏host אמיתי → broadcaster אמיתי → route אמיתית → הקיפול של הלקוח.
+  const snap = first.data as { sessionId: string | null; version: number; updates: unknown[] }
+  let state = createInitialSessionState({ sessionId: snap.sessionId ?? "" })
+  for (const u of snap.updates) state = reduce(state, u).state
+  state = { ...state, sessionId: snap.sessionId, version: snap.version }
+
+  const snapshotVersion = snap.version
   for (const frame of frames.slice(1)) {
-    if (frame.event !== "patch") continue
-    const patch = frame.data as Patch
-    if (patch.version <= snapshotVersion) continue // drop-guard — already covered by snapshot
-    state = applyPatch(state, patch)
+    if (frame.event !== "update") continue
+    // ה-drop-guard, בדיוק כמו ב-remote-session-view: ה-ring-buffer של
+    // ה-broadcaster משחזר patches ישנים למנוי חדש, והם כבר בתוך ה-snapshot.
+    const version = Number(frame.id)
+    if (!Number.isFinite(version) || version <= snapshotVersion) continue
+    const batch = frame.data as Array<{ params: { update: unknown } }>
+    for (const item of batch) state = reduce(state, item.params.update).state
+    state = { ...state, version }
   }
   return state
 }
@@ -281,10 +300,10 @@ describe("session-host HTTP end-to-end (real host + real broadcaster + real rout
     const response = await responsePromise
     expect(response.outcome.outcome).toBe("selected")
 
-    // 3 frames each: snapshot@v1 (already carries pending) → replayed "set" patch
-    // (v1, buffered before this subscriber connected) → live "clear" patch (v2).
-    const framesA = await readSseFrames(resA, 3, 300)
-    const framesB = await readSseFrames(resB, 3, 300)
+    // 2 frames each: snapshot@v1 (already carries pending) → live "clear" patch (v2).
+    // Buffered v1 replay is filtered out by subscribe(snapshot.version).
+    const framesA = await readSseFrames(resA, 2, 300)
+    const framesB = await readSseFrames(resB, 2, 300)
     const finalA = computeFinalClientState(framesA)
     const finalB = computeFinalClientState(framesB)
 
@@ -329,11 +348,9 @@ describe("session-host HTTP end-to-end (real host + real broadcaster + real rout
     rejectPrompt(new Error("agent crashed"))
     await promptPromise
 
-    // 4 frames: snapshot@v2 (already turnState=waiting) → 2 replayed patches
-    // (waiting v1, add-message v2 — hotfix order, both buffered before this
-    // subscriber connected, both dropped by the version<=snapshot guard) →
-    // the live idle+lastTurnError patch (v3) that only arrives after rejectPrompt.
-    const frames = await readSseFrames(res, 4, 300)
+    // 2 frames: snapshot@v2 (already turnState=waiting) → live idle+lastTurnError (v3).
+    // Replayed waiting/add-message patches are filtered by subscribe(snapshot.version).
+    const frames = await readSseFrames(res, 2, 300)
     const finalState = computeFinalClientState(frames)
     expect(finalState.turnState).toBe("idle")
     expect(finalState.lastTurnError?.message).toBe("agent crashed")

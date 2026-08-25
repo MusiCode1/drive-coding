@@ -354,15 +354,23 @@ describe("reduce — tool_call_update", () => {
     expect(state).toBe(s)
   })
 
-  it("update-tool: tool not found → no-op", () => {
+  // ⚠️ **הטסט הזה הפוך ממה שהיה, וזה מכוון** (slice acp-v2-reduce).
+  // עד כה הוא קיבע `patches: []` — כלומר עדכון לכלי שטרם נוצר נזרק בשקט.
+  // ב-ACP v2 אין `tool_call` כלל: ה-update הראשון הוא שיוצר. שינוי-הסמנטיקה
+  // מתועד ב-`reduce.ts#handleToolCallUpdate`, והכיסוי המלא יושב ב-
+  // `reduce-v2.test.ts`. כאן נשמרת רק העובדה שהוא **אינו** מפיל את הזרם.
+  it("update-tool: an unknown toolCallId now CREATES the tool call (v2 semantics)", () => {
     const s = stateWithTool()
     const { state, patches } = reduce(s, {
       sessionUpdate: "tool_call_update",
       toolCallId: "no-such-tool",
       status: "completed",
     })
-    expect(patches).toEqual([])
-    expect(state).toBe(s)
+    expect(patches[0]!.op).toBe("add-message")
+    expect(state.messages).toHaveLength(2)
+    const created = state.messages[1]!
+    if (created.role !== "tool") throw new Error("expected a tool message")
+    expect(created.toolCall.toolCallId).toBe("no-such-tool")
   })
 
   it("partial update — only provided fields change", () => {
