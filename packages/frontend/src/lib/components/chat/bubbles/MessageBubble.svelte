@@ -63,45 +63,44 @@ async function handleCopy() {
     </div>
     <div class="bubble-meta">
       <span class="timestamp">{formatTime(bubble.createdAt)}</span>
-    </div>
-  </div>
-  <!-- כפתורי פעולה: expand + copy + play -->
-  <div class="bubble-actions">
-    <!-- content-viewer: כפתור expand → פתיחת הבועה fullscreen -->
-    <button
-      class="action-btn"
-      onclick={() => viewer.show({ kind: "markdown", text: joinSegmentText(bubble.segments) })}
-      aria-label={t("contentViewer.expand")}
-      title={t("contentViewer.expand")}
-    >
-      <Maximize2Icon size={12} strokeWidth={2} />
-    </button>
-    <button
-      class="action-btn"
-      onclick={handleCopy}
-      aria-label={copied ? t("bubble.copied") : t("bubble.copy")}
-      title={copied ? t("bubble.copied") : t("bubble.copy")}
-    >
-      {#if copied}
-        <CheckIcon size={12} strokeWidth={2} />
-      {:else}
-        <CopyIcon size={12} strokeWidth={2} />
-      {/if}
-    </button>
-    {#if speaker.enabled}
-      <button
-        class="action-btn play-btn"
-        onclick={() => bubblePlayer.toggle(bubble.id)}
-        aria-label={isPlaying ? t("bubble.stop") : t("bubble.play")}
-        title={isPlaying ? t("bubble.stop") : t("bubble.play")}
-      >
-        {#if isPlaying}
-          <SquareIcon size={12} strokeWidth={2} />
-        {:else}
-          <PlayIcon size={12} strokeWidth={2} />
+      <div class="bubble-actions">
+        <!-- content-viewer: כפתור expand → פתיחת הבועה fullscreen -->
+        <button
+          class="action-btn"
+          onclick={() => viewer.show({ kind: "markdown", text: joinSegmentText(bubble.segments) })}
+          aria-label={t("contentViewer.expand")}
+          title={t("contentViewer.expand")}
+        >
+          <Maximize2Icon size={12} strokeWidth={2} />
+        </button>
+        <button
+          class="action-btn"
+          onclick={handleCopy}
+          aria-label={copied ? t("bubble.copied") : t("bubble.copy")}
+          title={copied ? t("bubble.copied") : t("bubble.copy")}
+        >
+          {#if copied}
+            <CheckIcon size={12} strokeWidth={2} />
+          {:else}
+            <CopyIcon size={12} strokeWidth={2} />
+          {/if}
+        </button>
+        {#if speaker.enabled}
+          <button
+            class="action-btn play-btn"
+            onclick={() => bubblePlayer.toggle(bubble.id)}
+            aria-label={isPlaying ? t("bubble.stop") : t("bubble.play")}
+            title={isPlaying ? t("bubble.stop") : t("bubble.play")}
+          >
+            {#if isPlaying}
+              <SquareIcon size={12} strokeWidth={2} />
+            {:else}
+              <PlayIcon size={12} strokeWidth={2} />
+            {/if}
+          </button>
         {/if}
-      </button>
-    {/if}
+      </div>
+    </div>
   </div>
 </div>
 
@@ -110,7 +109,7 @@ async function handleCopy() {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
-    align-items: flex-end;
+    align-items: stretch;
   }
 
   .content-body {
@@ -124,7 +123,8 @@ async function handleCopy() {
 
   .bubble-meta {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
     padding-inline-end: 0.25rem;
   }
 
@@ -137,9 +137,8 @@ async function handleCopy() {
 
   .bubble-actions {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 0.25rem;
-    align-self: flex-end;
     /* מוסתר ב-desktop עד hover */
     opacity: 0;
     transition: opacity 0.15s;
