@@ -66,7 +66,11 @@ function onOpenChange(open: boolean) {
               MarkdownContent variant="viewer" — כותרות גדולות יותר ל-fullscreen (h1=1.4em).
               renderMarkdown + DOMPurify two-pass + dir="auto" — מנוהל פנימית ב-MarkdownContent.
             -->
-            <MarkdownContent text={viewer.payload.text} variant="viewer" />
+            <MarkdownContent
+              text={viewer.payload.text}
+              variant="viewer"
+              imageCwd={viewer.payload.cwd ?? null}
+            />
           {:else if viewer.payload?.kind === "image"}
             <!--
               Invariant אבטחה (זהה ל-ToolBubble:120): תמונה מוצגת **רק** דרך <img>.

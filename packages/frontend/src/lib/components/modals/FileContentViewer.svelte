@@ -18,6 +18,14 @@ import { canRenderPdfInline } from "$lib/util/pdf-render-support"
 
 const t = getI18n().t
 
+/** Document directory for resolving relative images in opened .md files. */
+function imageCwdFromFileUri(uri: string): string {
+  const path = uri.replace(/^file:\/\//i, "")
+  const slash = path.lastIndexOf("/")
+  const dir = slash >= 0 ? path.slice(0, slash) : ""
+  return dir === "" ? "/" : dir
+}
+
 let { uri, title }: { uri: string; title?: string } = $props()
 
 let contentType = $state("")
@@ -88,7 +96,7 @@ $effect(() => {
     {t("contentViewer.download")}
   </a>
 {:else if isRenderableText(contentType)}
-  <MarkdownContent text={markdownText} variant="viewer" />
+  <MarkdownContent text={markdownText} variant="viewer" imageCwd={imageCwdFromFileUri(uri)} />
 {:else if blobUrl}
   <a href={blobUrl} download class="text-link">
     {t("contentViewer.download")}

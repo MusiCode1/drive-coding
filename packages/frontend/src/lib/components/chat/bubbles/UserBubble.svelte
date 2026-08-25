@@ -117,6 +117,7 @@ async function handleCopy() {
     >
       <MarkdownContent
         text={joinSegmentText(bubble.segments)}
+        imageCwd={session.cwd}
         fileLinks={{
           cwd: session.cwd,
           onOpen: (uri) => viewer.show({ kind: "file", uri }),
