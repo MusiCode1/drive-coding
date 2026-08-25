@@ -475,3 +475,34 @@ describe("Settings — loadVoices", () => {
     expect(s.availableVoices).toEqual(voicesFixture)
   })
 })
+
+describe("Settings — autoLoadRemoteImages (slice msg-media)", () => {
+  // 🔴 ‏זה מתג-כיבוי של בקרת-אבטחה. ‏הטסטים כאן שומרים על התנאי היחיד
+  // ‏שהמשתמש הציב: ‏אפס שינוי-התנהגות בלי פעולה מפורשת שלו.
+  test("default = false when localStorage empty (safe default)", () => {
+    installLocalStorage()
+    const s = new Settings()
+    expect(s.autoLoadRemoteImages).toBe(false)
+  })
+
+  test("backward-compat: existing user without the key stays OFF", () => {
+    const store = installLocalStorage()
+    store.set(
+      STORAGE_KEY,
+      JSON.stringify({ cliKind: "opencode", voiceId: "v1", showThoughts: true, enterToSend: false }),
+    )
+    const s = new Settings()
+    expect(s.autoLoadRemoteImages).toBe(false)
+  })
+
+  test("setAutoLoadRemoteImages(true) persists, and a new instance reads it back", () => {
+    const store = installLocalStorage()
+    const s1 = new Settings()
+    s1.setAutoLoadRemoteImages(true)
+    expect(s1.autoLoadRemoteImages).toBe(true)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.autoLoadRemoteImages).toBe(true)
+    const s2 = new Settings()
+    expect(s2.autoLoadRemoteImages).toBe(true)
+  })
+})

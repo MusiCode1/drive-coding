@@ -228,6 +228,8 @@ export type MessageKey =
   | "settings.toggle.showTools"
   // ─── Enter toggle ─── (slice-enter-toggle)
   | "settings.toggle.enterToSend"
+  // slice msg-media — התווית אומרת את הסיכון, לא רק את הפיצ'ר
+  | "settings.toggle.autoLoadRemoteImages"
   // ─── content-viewer ─── (slice content-viewer)
   | "contentViewer.title"
   | "contentViewer.expand"
@@ -249,6 +251,7 @@ export type MessageKey =
   // ─── image-paste replay (§11) — placeholder for non-text ContentBlocks ───
   // chat.content.attachedFile: param-less (label raw from data, no interpolation needed)
   | "chat.content.attachedFile"
+  | "chat.content.loadRemoteImage"
   | "chat.content.unsupported"
   // ─── recent-projects ─── (slice connect-recent-projects)
   | "connect.recent.title"

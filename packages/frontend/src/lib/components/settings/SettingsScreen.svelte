@@ -248,6 +248,11 @@ const sessionTransportDisplay = $derived(
         onCheckedChange={(v) => settings.setShowTools(v)}
       />
       <SettingToggle
+        label={t("settings.toggle.autoLoadRemoteImages")}
+        checked={settings.autoLoadRemoteImages}
+        onCheckedChange={(v) => settings.setAutoLoadRemoteImages(v)}
+      />
+      <SettingToggle
         label={t("settings.toggle.enterToSend")}
         checked={settings.enterToSend}
         onCheckedChange={(v) => settings.setEnterToSend(v)}

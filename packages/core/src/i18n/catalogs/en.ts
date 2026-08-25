@@ -220,6 +220,8 @@ export const en: Catalog = {
   // ─── chat display prefs ─── (display-toggle-consistency)
   "settings.chatDisplay": "Chat display",
   "settings.toggle.showThoughts": "Show thoughts by default",
+  "settings.toggle.autoLoadRemoteImages":
+    "Load remote images automatically — your browser will fetch any URL the agent emits, which can expose you",
   "settings.toggle.showTools": "Show tools by default",
   // ─── Enter toggle ─── (slice-enter-toggle)
   "settings.toggle.enterToSend": "Enter sends message",
@@ -243,6 +245,7 @@ export const en: Catalog = {
   "attach.remove": "Remove",
   // ─── image-paste replay (§11) — placeholder for non-text ContentBlocks ───
   "chat.content.attachedFile": "Attached file",
+  "chat.content.loadRemoteImage": "Load image",
   "chat.content.unsupported": "Unsupported content",
   // ─── recent-projects ─── (slice connect-recent-projects)
   "connect.recent.title": "Recent folders",
