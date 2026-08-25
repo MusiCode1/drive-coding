@@ -14,6 +14,17 @@
  *
  * `environment: "node"` — Settings doesn't touch the DOM directly. localStorage
  * is mocked per-test via `vi.stubGlobal()`.
+ *
+ * `resolve.conditions: ["browser"]` — slice/msg-diagrams Commit 0ב. Without it,
+ * `mount()` from `svelte` on a `.svelte` component fails with
+ * `lifecycle_function_unavailable — mount(...) is not available on the server`
+ * (Svelte resolves the server-side build by default under vitest/node). This
+ * makes component-mount tests possible (needed for DoD 6 — MessageBubble must be
+ * mounted for real, not just its markdown util). Measured against the full FE
+ * suite before merging: 104 files / 1153 tests, all green (baseline 103/1152) —
+ * see brief-msg-diagrams.md §4 Commit 0ב. If the full suite ever goes red because
+ * of this line — that is an escalation to מרדכי (brief §7 trigger 5), not a fix
+ * to other tests.
  */
 
 import { defineConfig } from "vitest/config"
@@ -28,6 +39,7 @@ export default defineConfig({
     alias: {
       $lib: path.resolve(__dirname, "src/lib"),
     },
+    conditions: ["browser"],
   },
   test: {
     environment: "node",
