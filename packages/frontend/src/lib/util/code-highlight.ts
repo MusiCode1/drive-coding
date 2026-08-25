@@ -85,7 +85,7 @@ export function highlightCode(code: string, lang: string | undefined): string {
 }
 
 /** escape HTML — מונע HTML-injection מקוד גולמי. */
-function escapeHtml(code: string): string {
+export function escapeHtml(code: string): string {
   return code
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

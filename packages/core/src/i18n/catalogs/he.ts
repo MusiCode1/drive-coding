@@ -220,6 +220,8 @@ export const he: Catalog = {
   // ─── תצוגת צ'אט ─── (display-toggle-consistency)
   "settings.chatDisplay": "תצוגת צ'אט",
   "settings.toggle.showThoughts": "הצג מחשבות כברירת מחדל",
+  "settings.toggle.autoLoadRemoteImages":
+    "טען תמונות מרוחקות אוטומטית — הדפדפן יפנה לכל כתובת שהסוכן פלט, וכך עלול לחשוף אותך",
   "settings.toggle.showTools": "הצג כלים כברירת מחדל",
   // ─── Enter toggle ─── (slice-enter-toggle)
   "settings.toggle.enterToSend": "Enter שולח הודעה",
@@ -243,6 +245,7 @@ export const he: Catalog = {
   "attach.remove": "הסר",
   // ─── image-paste replay (§11) — placeholder for non-text ContentBlocks ───
   "chat.content.attachedFile": "קובץ מצורף",
+  "chat.content.loadRemoteImage": "טען תמונה",
   "chat.content.unsupported": "תוכן לא-נתמך",
   // ─── recent-projects ─── (slice connect-recent-projects)
   "connect.recent.title": "תיקיות אחרונות",

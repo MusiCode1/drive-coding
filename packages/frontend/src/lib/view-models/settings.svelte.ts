@@ -48,6 +48,10 @@ type Persisted = {
   showTools: boolean
   // ─── Enter toggle ─── (slice-enter-toggle)
   enterToSend: boolean
+  // ─── תמונות מרוחקות ─── (slice msg-media)
+  // 🔴 כיבוי מכוון של בקרת-אבטחה, בבקשת המשתמש. ON = הדפדפן מושך לבד כל כתובת
+  // שהסוכן פלט (ערוץ הזרקת-פרומפט → דליפה). ברירת-המחדל false = click-to-load.
+  autoLoadRemoteImages: boolean
   // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
   // מפה: cliKind → { configId/category → value }
   lastConfig: Record<string, Record<string, string | boolean>>
@@ -97,6 +101,8 @@ const DEFAULTS: Persisted = {
   showTools: false,
   // ─── Enter toggle ─── (slice-enter-toggle) — ברירת מחדל = התנהגות נוכחית (Enter שולח)
   enterToSend: true,
+  // ─── תמונות מרוחקות ─── (slice msg-media) — ברירת מחדל = בטוח (click-to-load)
+  autoLoadRemoteImages: false,
   // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
   lastConfig: {},
   // ─── TTS provider ─── (V4a) — ברירת מחדל = ElevenLabs (Q1=לא flip)
@@ -194,6 +200,9 @@ export class Settings {
   // ─── Enter toggle ─── (slice-enter-toggle)
   enterToSend = $state<boolean>(DEFAULTS.enterToSend)
 
+  // ─── תמונות מרוחקות ─── (slice msg-media)
+  autoLoadRemoteImages = $state<boolean>(DEFAULTS.autoLoadRemoteImages)
+
   // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
   lastConfig = $state<Record<string, Record<string, string | boolean>>>(DEFAULTS.lastConfig)
 
@@ -246,6 +255,8 @@ export class Settings {
     this.showTools = loaded.showTools
     // ─── Enter toggle ───
     this.enterToSend = loaded.enterToSend
+    // ─── תמונות מרוחקות ───
+    this.autoLoadRemoteImages = loaded.autoLoadRemoteImages
     // ─── config אחרון פר-CLI ───
     this.lastConfig = loaded.lastConfig
     // ─── TTS provider ───
@@ -445,6 +456,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── תמונות מרוחקות ─── (slice msg-media)
+
+  setAutoLoadRemoteImages = (v: boolean): void => {
+    this.autoLoadRemoteImages = v
+    this.#persist()
+  }
+
   // ─── Enter toggle ─── (slice-enter-toggle)
 
   setEnterToSend = (v: boolean): void => {
@@ -562,6 +580,7 @@ export class Settings {
       showThoughts: this.showThoughts,
       showTools: this.showTools,
       enterToSend: this.enterToSend,
+      autoLoadRemoteImages: this.autoLoadRemoteImages,
       lastConfig: this.lastConfig,
       ttsProvider: this.ttsProvider,
       recentCollapsed: this.recentCollapsed,

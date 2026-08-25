@@ -10,7 +10,7 @@
 
 /** payload להצגה ב-ContentViewer. discriminated union — תוספת type עתידית = ענף חדש. */
 export type ViewerPayload =
-  | { kind: "markdown"; text: string; title?: string }
+  | { kind: "markdown"; text: string; title?: string; cwd?: string | null }
   | { kind: "image"; src: string; alt?: string }
   // slice fs-file-proxy — URI מקומי (file:// | נתיב אבסולוטי) שנפתר דרך
   // GET /api/fs/file. mimeType אופציונלי — כרגע לא בשימוש (FileContentViewer
