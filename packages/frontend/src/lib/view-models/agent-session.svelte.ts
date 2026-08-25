@@ -3127,10 +3127,10 @@ export class AgentSession {
         this.#appendUserImage(messageId, { mimeType: content.mimeType, data: content.data })
       } else if (content?.type === "resource_link") {
         // resource_link: מצרף placeholder כדי למנוע איבוד-שקט.
-        // תצוגה מלאה (כתמונה/קישור) — slice local-file-proxy עתידי.
+        // slice fs-file-proxy: תצוגה מלאה (markdown/תמונה/קישור) דרך ContentViewer.
         // §11.3א: i18n שייך לשכבת-הרכיב — ה-VM מצרף סמן מבני בלבד.
         const label = content.name ?? content.uri
-        this.#appendUserPlaceholder(messageId, { kind: "resource_link", label })
+        this.#appendUserPlaceholder(messageId, { kind: "resource_link", label, uri: content.uri })
       } else {
         // audio / resource (EmbeddedResource) / unknown — placeholder (אין יותר איבוד-שקט)
         // §11.3א: הרכיב מתרגם דרך t("chat.content.unsupported") — ה-VM לא כותב מפתח.
@@ -3353,7 +3353,7 @@ export class AgentSession {
    */
   #appendUserPlaceholder(
     messageId: string | null,
-    ph: { kind: "resource_link" | "audio" | "resource"; label?: string },
+    ph: { kind: "resource_link" | "audio" | "resource"; label?: string; uri?: string },
   ): void {
     const last = this.bubbles[this.bubbles.length - 1]
     const canGroup =

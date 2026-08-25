@@ -12,18 +12,19 @@
  *
  * ─── slice/markdown-content-unify (Commit 1) — CSS עבר ל-MarkdownContent ───
  */
-import type { UserBubble } from "$lib/types/bubble"
-import { getBubblePlayer, getContentViewer, getI18n, getSpeaker } from "$lib/context"
-import Avatar from "$lib/components/chat/Avatar.svelte"
-import { joinSegmentText } from "./bubble-rendering"
-import { copyToClipboard } from "$lib/util/clipboard"
-import { formatTime } from "$lib/util/formatting"
-import MarkdownContent from "./MarkdownContent.svelte"
+
+import CheckIcon from "@lucide/svelte/icons/check"
+import CopyIcon from "@lucide/svelte/icons/copy"
+import PaperclipIcon from "@lucide/svelte/icons/paperclip"
 import PlayIcon from "@lucide/svelte/icons/play"
 import SquareIcon from "@lucide/svelte/icons/square"
-import CopyIcon from "@lucide/svelte/icons/copy"
-import CheckIcon from "@lucide/svelte/icons/check"
-import PaperclipIcon from "@lucide/svelte/icons/paperclip"
+import Avatar from "$lib/components/chat/Avatar.svelte"
+import { getBubblePlayer, getContentViewer, getI18n, getSpeaker } from "$lib/context"
+import type { UserBubble } from "$lib/types/bubble"
+import { copyToClipboard } from "$lib/util/clipboard"
+import { formatTime } from "$lib/util/formatting"
+import { joinSegmentText } from "./bubble-rendering"
+import MarkdownContent from "./MarkdownContent.svelte"
 
 let { bubble }: { bubble: UserBubble } = $props()
 const t = getI18n().t
@@ -78,7 +79,19 @@ async function handleCopy() {
     {#if bubble.contentPlaceholders && bubble.contentPlaceholders.length > 0}
       <div class="flex flex-wrap gap-1.5 mb-1">
         {#each bubble.contentPlaceholders as ph, i (i)}
-          {#if ph.kind === "resource_link"}
+          {#if ph.kind === "resource_link" && (ph.uri ?? ph.label)}
+            <!-- slice fs-file-proxy — chip לחיץ, פותח ContentViewer עם kind:"file" -->
+            <button
+              type="button"
+              class="content-chip"
+              title={t("chat.content.attachedFile")}
+              aria-label={t("chat.content.attachedFile")}
+              onclick={() => viewer.show({ kind: "file", uri: (ph.uri ?? ph.label) as string })}
+            >
+              <PaperclipIcon size={12} strokeWidth={2} />
+              {ph.label}
+            </button>
+          {:else if ph.kind === "resource_link"}
             <span
               class="content-chip"
               title={t("chat.content.attachedFile")}
@@ -225,5 +238,11 @@ async function handleCopy() {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* slice fs-file-proxy — chip הפך ל-<button> כשיש uri (ר' תבנית .user-image-btn) */
+  button.content-chip {
+    font: inherit;
+    cursor: pointer;
   }
 </style>

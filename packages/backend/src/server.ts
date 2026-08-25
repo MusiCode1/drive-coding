@@ -1,7 +1,7 @@
 import "./log-setup.js" // חייב להיות ראשון — מאתחל לוגר לפני כל יבוא אחר
 import { createServer as httpsCreateServer } from "node:https"
-import { createLogger } from "@drive-coding/core/log"
 import type { ServerMessage } from "@drive-coding/core"
+import { createLogger } from "@drive-coding/core/log"
 import { onConfigChange, stopWatching } from "@drive-coding/provider/config"
 import { type ServerType, serve } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
@@ -50,20 +50,22 @@ process.on("unhandledRejection", (reason) => {
   process.exit(1)
 })
 
+import type { BridgeKind } from "@drive-coding/core"
 import { cors } from "hono/cors"
 import { createConnectionRegistry } from "./acp/connection-registry.js"
 import { createInMemoryAgentRegistry } from "./agents/registry.js"
-import type { BridgeKind } from "@drive-coding/core"
 import { createAgentOrchestrator } from "./app/agent-orchestrator.js"
 import { createProjectsRegistry } from "./app/projects-registry.js"
 import { createRecordingsStore } from "./app/recordings-store.js"
 import { parseCorsOrigins } from "./delivery/cors-config.js"
+import { createEvictionController } from "./delivery/eviction-controller.js"
 import { registerHttp } from "./delivery/http.js"
 import { registerAgentsHttp } from "./delivery/http-agents.js"
 import { registerCliAvailabilityHttp } from "./delivery/http-cli-availability.js"
 import { registerCliLogoHttp } from "./delivery/http-cli-logo.js"
-import { registerHealthHttp } from "./delivery/http-health.js"
 import { registerClientLogHttp } from "./delivery/http-client-log.js"
+import { registerFsFileHttp } from "./delivery/http-fs-file.js"
+import { registerHealthHttp } from "./delivery/http-health.js"
 import {
   registerFsBrowseHttp,
   registerProjectsHttp,
@@ -71,8 +73,6 @@ import {
   registerRecordingsPostHttp,
 } from "./delivery/http-history.js"
 import { registerHttpOptions } from "./delivery/http-options.js"
-import { createAndRegisterSessionHostHttp } from "./session-host/http/index.js"
-import { createEvictionController } from "./delivery/eviction-controller.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
 import { registerReloadConfigHttp } from "./delivery/http-reload-config.js"
 import { registerTtsCapabilitiesHttp } from "./delivery/http-tts-capabilities.js"
@@ -83,6 +83,7 @@ import { createWireRecorder } from "./delivery/wire-recorder.js"
 import { createAgentWsHandler } from "./delivery/ws-agent.js"
 import { createEchoWsHandler } from "./delivery/ws-echo.js"
 import { ensureStateSubdir } from "./paths.js"
+import { createAndRegisterSessionHostHttp } from "./session-host/http/index.js"
 import { createUsageStore } from "./usage/usage-store.js"
 
 const app = new Hono()
@@ -178,6 +179,7 @@ registerProjectsHttp(app, { projectsRegistry })
 registerRecordingsHttp(app, { recordingsStore })
 registerRecordingsPostHttp(app, { recordingsStore })
 registerFsBrowseHttp(app)
+registerFsFileHttp(app)
 
 // Slice tts-usage-metering: usage metering store
 const usageStore = createUsageStore(ensureStateSubdir("usage"))
