@@ -249,6 +249,7 @@ export type MessageKey =
   // ─── image-paste replay (§11) — placeholder for non-text ContentBlocks ───
   // chat.content.attachedFile: param-less (label raw from data, no interpolation needed)
   | "chat.content.attachedFile"
+  | "chat.content.loadRemoteImage"
   | "chat.content.unsupported"
   // ─── recent-projects ─── (slice connect-recent-projects)
   | "connect.recent.title"

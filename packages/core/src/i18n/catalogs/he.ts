@@ -238,6 +238,7 @@ export const he: Catalog = {
   "attach.remove": "הסר",
   // ─── image-paste replay (§11) — placeholder for non-text ContentBlocks ───
   "chat.content.attachedFile": "קובץ מצורף",
+  "chat.content.loadRemoteImage": "טען תמונה",
   "chat.content.unsupported": "תוכן לא-נתמך",
   // ─── recent-projects ─── (slice connect-recent-projects)
   "connect.recent.title": "תיקיות אחרונות",

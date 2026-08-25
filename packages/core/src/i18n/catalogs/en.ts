@@ -243,6 +243,7 @@ export const en: Catalog = {
   "attach.remove": "Remove",
   // ─── image-paste replay (§11) — placeholder for non-text ContentBlocks ───
   "chat.content.attachedFile": "Attached file",
+  "chat.content.loadRemoteImage": "Load image",
   "chat.content.unsupported": "Unsupported content",
   // ─── recent-projects ─── (slice connect-recent-projects)
   "connect.recent.title": "Recent folders",

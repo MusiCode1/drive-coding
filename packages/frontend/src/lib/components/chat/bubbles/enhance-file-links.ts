@@ -31,7 +31,7 @@ export type FileLinkParams = {
 function isSkipped(node: Node): boolean {
   let el = node.parentElement
   while (el !== null) {
-    if (el.tagName === "PRE" || el.tagName === "A" || el.dataset["fileLink"] !== undefined) {
+    if (el.tagName === "PRE" || el.tagName === "A" || el.dataset["fileLink"] !== undefined || el.dataset["remoteSrc"] !== undefined) {
       return true
     }
     el = el.parentElement

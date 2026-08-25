@@ -23,6 +23,7 @@ import { renderMarkdown } from "$lib/util/markdown"
 import { getI18n } from "$lib/context"
 import { enhanceCodeBlocks } from "./enhance-code-blocks"
 import { enhanceFileLinks, type FileLinkParams } from "./enhance-file-links"
+import { enhanceRemoteImages } from "./enhance-remote-images"
 
 let {
   text,
@@ -45,6 +46,7 @@ const t = getI18n().t
   class:viewer={variant === "viewer"}
   dir="auto"
   use:enhanceCodeBlocks={{ text, labelCopy: t("bubble.copy"), labelCopied: t("bubble.copied") }}
+  use:enhanceRemoteImages={{ text, label: t("chat.content.loadRemoteImage") }}
   use:enhanceFileLinks={{
     text,
     cwd: fileLinks?.cwd ?? null,
@@ -107,6 +109,19 @@ const t = getI18n().t
   }
   /* ── slice fs-file-proxy: נתיב-קובץ לחיץ בתוך הטקסט ── */
   .md-content :global(.file-link) {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+
+  .md-content :global(.remote-image-load) {
     color: var(--accent);
     text-decoration: underline;
     text-decoration-style: dotted;
