@@ -100,7 +100,7 @@ const ATTACHED_CAPS_FALLBACK = {} as AcpClient["capabilities"]
 // ─── slice plan-todo-list Commit 1: reducer טהור + טיפוסים ─── (additive)
 import { EMPTY_PLAN_STORE, type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
 // ─── slice session-state-reducer C4: reduce + types ─── (additive)
-import { createInitialSessionState, reduce, type Patch, type SessionState } from "@drive-coding/core/session"
+import { applyPatch, createInitialSessionState, reduce, type Patch, type SessionState } from "@drive-coding/core/session"
 // ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
 import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 // ─── slice FE-normalization: ייבוא ─── (additive)
@@ -216,9 +216,19 @@ export class AgentSession {
     return this.#isRemote ? this.#view : null
   }
 
-  constructor(opts?: { view?: SessionView; cues?: CuesEngine; settings?: Settings }) {
+  /** @internal For testing — called on every notification entering #onSessionUpdate. */
+  #onUpdateObserved?: (update: unknown) => void
+
+  constructor(opts?: {
+    view?: SessionView
+    cues?: CuesEngine
+    settings?: Settings
+    /** @internal For testing — invoked on **every** notification entering #onSessionUpdate. */
+    _onUpdateObserved?: (update: unknown) => void
+  }) {
     this.#cues = opts?.cues
     this.#settings = opts?.settings
+    this.#onUpdateObserved = opts?._onUpdateObserved
     // ─── slice session-view-port C3: אם view הוזרק ─── (additive)
     if (opts?.view) {
       this.#view = opts.view
@@ -454,9 +464,8 @@ export class AgentSession {
 
   // ─── slice drop-a5-watchdog (25/08): `slice-A5-watchdog` הוסר ───
   // היה טיימר של 45ש' שכפה `idle` והדליק `turnInterrupted`. נמחק, לא כוונן:
-  // ה-kick היחיד שלו ישב ב-`#onSessionUpdate`, ולשם מגיעים ב-HTTP **רק** patches
-  // מסוג `opaque`. ⇒ במסלול ה-HTTP השעון נדרך ב-sendPrompt ולא התאפס לעולם,
-  // וירה 45ש' אחרי הפרומפט גם בזמן שהסוכן משדר. מדידה שבורה, לא סף אגרסיבי.
+  // ה-kick היחיד שלו ישב ב-`#onSessionUpdate`. לפני frame-ingest-unify הגיעו
+  // ב-HTTP רק patches מסוג `opaque`; עכשיו כל session/update חוצה את אותו hook.
   // זיהוי תור-ששקע חי ב-`engines/turn-watchdog.ts` — מתריע, **אינו קוטע**,
   // ומתאפס בשני המסלולים (`#noteAgentActivity`).
 
@@ -603,41 +612,38 @@ export class AgentSession {
         // הישן עדיין יכולה למסור batch — guard שבודק רק this.#view !== null היה מעביר
         // אותו אל ה-VM החדש. אותו כלל בדיוק כמו ב-shim (#syncPendingPermission/Elicitation).
         if (this.#view !== view) break
-        const patches = value ?? []
-        if (patches.length === 0) continue
-        // targeted bubble update (אין O(n²) mapping)
-        applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
-        // ─── slice replay-quiet ───
-        // חתך-היסטוריה: רק ה-reset של ה-hydration הוא "הצטרפתי באמצע".
-        // #doConnect פולט אותו דרך #emit **לפני** #drainUpdates
-        // (remote-session-view.ts:209-222) ⇒ הוא תמיד ה-batch הראשון. reset מאוחר
-        // יותר = SSE-reconnect (:372) — מסלול שלא נמדד כפגוע, ולכן שמרנית
-        // איננו נוגעים בו.
-        if (attachWindow) {
-          attachWindow = false
-          const reset = patches.find(
-            (p): p is Extract<Patch, { op: "reset" }> => p.op === "reset",
-          )
-          if (reset) {
-            this.#historyMark = historyMarkFromReset(reset.messages)
-            this.historyEpoch++
+        const emission = value ?? { patches: [], updates: [] }
+        if (emission.patches.length === 0 && emission.updates.length === 0) continue
+        const patches = emission.patches
+
+        // 1. structural reset → bubbles (hydration / SSE-reconnect)
+        const resetPatches = patches.filter(
+          (p): p is Extract<Patch, { op: "reset" }> => p.op === "reset",
+        )
+        if (resetPatches.length > 0) {
+          applyPatchMutable(this.bubbles, resetPatches, { mapToolContent, mapLocations })
+          for (const patch of resetPatches) {
+            const next = applyPatch(this.sessionState, patch)
+            if (next) this.sessionState = next
+          }
+          if (attachWindow) {
+            attachWindow = false
+            const reset = resetPatches[0]
+            if (reset) {
+              this.#historyMark = historyMarkFromReset(reset.messages)
+              this.historyEpoch++
+            }
           }
         }
-        // 🔴 החצי השני של #34. הליבה נושאת עכשיו עדכונים לא-מוכרים כ-`opaque`
-        // במקום לזרוק אותם — אבל נשיאה בלי צרכן היא עדיין שקט. כאן הם מגיעים
-        // לאותו `#onSessionUpdate` שמסלול ה-WS משתמש בו, וכך `reducePlan`
-        // (ושאר המטפלים שחיים רק שם) עובדים **גם ב-HTTP**.
-        //
-        // ⇒ פיצ'ר חדש ב-CLI שהליבה אינה מכירה יגיע ל-FE באפס עבודת-BE, בדיוק
-        // כמו בצינור השקוף — וזה בדיוק היתרון שחששנו שנאבד בנרמול-בשרת.
-        for (const patch of patches) {
-          // ⚠️ `#onSessionUpdate` מקבל **נוטיפיקציה** (`{ sessionId, update }`)
-          // ולא את ה-update הפנימי — אותה עטיפה כמו ב-fixture-replay למטה.
-          if (patch.op === "opaque") {
-            this.#onSessionUpdate({ update: patch.update } as unknown as SessionNotification)
-          }
+
+        // 2. other patches → view state only (void for bubbles — same as #drainViewPatches)
+        // RemoteSessionView already applied them to view.state in #applyIncoming.
+
+        // 3. all raw wire updates → #onSessionUpdate (WS tee parity)
+        for (const update of emission.updates) {
+          this.#onSessionUpdate({ update } as unknown as SessionNotification)
         }
-        // sync metadata from view.state
+
         this.#syncFromViewState(view.state)
       }
     } catch {
@@ -3018,6 +3024,7 @@ export class AgentSession {
   }
 
   #onSessionUpdate = (notification: SessionNotification): void => {
+    this.#onUpdateObserved?.(notification.update)
     this.#noteAgentActivity() // watchdog §2 — מסלול WS (כל session/update)
 
     // מעטפת ACP: צורה של { sessionId, update: { sessionUpdate, content, messageId, ... } }
@@ -3130,7 +3137,9 @@ export class AgentSession {
         this.sessionTitle = "" // null = clear (לפי הסכמה)
       } else if (typeof title === "string") {
         this.sessionTitle = title
-        this.#pushTitleToServer(this.sessionTitle) // slice session-title-in-process-list
+        if (!this.#isRemote) {
+          this.#pushTitleToServer(this.sessionTitle) // slice session-title-in-process-list
+        }
       }
       // undefined → keep-on-undefined (עקבי עם loadSession :999 / :1114)
       return
@@ -3193,30 +3202,46 @@ export class AgentSession {
       return
     }
 
-    const text =
-      update.content?.type === "text" ? ((update.content as { text?: string }).text ?? "") : ""
-    if (!text) return
+    if (
+      update.sessionUpdate === "agent_message_chunk" ||
+      update.sessionUpdate === "agent_thought_chunk"
+    ) {
+      const text =
+        update.content?.type === "text"
+          ? ((update.content as { text?: string }).text ?? "")
+          : ""
+      if (!text) return
 
-    if (update.sessionUpdate === "agent_message_chunk") {
-      this.#setTurnState("responding")
-      // מעקף opencode #17505: tail אחרי RESP → תזמן idle מחדש. gemini/claude: #turnEnded=false → לא פועל.
-      if (this.#turnEnded) this.#scheduleIdle()
-      const { state: nextState1, patches: patches1 } = reduce(
-        this.sessionState,
-        notification.update,
-      )
-      this.sessionState = nextState1
-      applyPatchMutable(this.bubbles, patches1, { mapToolContent, mapLocations })
-    } else if (update.sessionUpdate === "agent_thought_chunk") {
-      this.#setTurnState("thinking")
-      if (this.#turnEnded) this.#scheduleIdle()
-      const { state: nextState2, patches: patches2 } = reduce(
-        this.sessionState,
-        notification.update,
-      )
-      this.sessionState = nextState2
-      applyPatchMutable(this.bubbles, patches2, { mapToolContent, mapLocations })
+      if (update.sessionUpdate === "agent_message_chunk") {
+        this.#setTurnState("responding")
+        // מעקף opencode #17505: tail אחרי RESP → תזמן idle מחדש. gemini/claude: #turnEnded=false → לא פועל.
+        if (this.#turnEnded) this.#scheduleIdle()
+        const { state: nextState1, patches: patches1 } = reduce(
+          this.sessionState,
+          notification.update,
+        )
+        this.sessionState = nextState1
+        applyPatchMutable(this.bubbles, patches1, { mapToolContent, mapLocations })
+      } else {
+        this.#setTurnState("thinking")
+        if (this.#turnEnded) this.#scheduleIdle()
+        const { state: nextState2, patches: patches2 } = reduce(
+          this.sessionState,
+          notification.update,
+        )
+        this.sessionState = nextState2
+        applyPatchMutable(this.bubbles, patches2, { mapToolContent, mapLocations })
+      }
+      return
     }
+
+    // ── default arm: everything not handled above ──
+    // _drive/reset: patch path owns bubble reset (hydration/SSE have updates:[]).
+    if (update.sessionUpdate === "_drive/reset") return
+
+    const { state: nextState, patches } = reduce(this.sessionState, notification.update)
+    this.sessionState = nextState
+    applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
   }
 
   // ─── slice session-state-reducer C4: מתודת-עזר ל-tool_call create (reduce + patches + flush + turnState) ───

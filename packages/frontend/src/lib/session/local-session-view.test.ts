@@ -184,7 +184,7 @@ describe("LocalSessionView — reduce + patches (C2)", () => {
 
     expect(done).toBe(false)
     expect(value).toBeDefined()
-    expect((value as Patch[])[0]!.op).toBe("add-message")
+    expect(value?.patches[0]!.op).toBe("add-message")
   })
 
   it("metadata update (session_info_update) → state.title updated", async () => {

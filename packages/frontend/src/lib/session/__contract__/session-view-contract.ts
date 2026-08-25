@@ -14,7 +14,7 @@
 import type { SessionNotification } from "@agentclientprotocol/sdk"
 import { type Patch, RPC_METHODS } from "@drive-coding/core/session"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import type { SessionView } from "../session-view.js"
+import type { SessionView, ViewEmission } from "../session-view.js"
 
 // ─── PatchBuffer: reader יחיד + תור-FIFO פנימי ─────────────────────────────────
 //
@@ -24,13 +24,13 @@ import type { SessionView } from "../session-view.js"
 // ⇒ settle()/emitUpdate()/emitPermission() קוראים ל-waitForTotalAtLeast (לא ל-nextPatches),
 //   כדי שה-batch שהם חיכו לו יישאר זמין ל-nextPatches() הבא שהאסרציה בטסט קוראת.
 export class PatchBuffer {
-  readonly #reader: ReadableStreamDefaultReader<Patch[]>
+  readonly #reader: ReadableStreamDefaultReader<ViewEmission>
   readonly #buffer: Patch[][] = []
   #totalPushed = 0
   #waiters: Array<() => void> = []
   #pumpDone: Promise<void>
 
-  constructor(stream: ReadableStream<Patch[]>) {
+  constructor(stream: ReadableStream<ViewEmission>) {
     this.#reader = stream.getReader()
     this.#pumpDone = this.#pump()
   }
@@ -45,7 +45,7 @@ export class PatchBuffer {
         const { done, value } = await this.#reader.read()
         if (done) break
         if (value !== undefined) {
-          this.#buffer.push(value)
+          this.#buffer.push(value.patches)
           this.#totalPushed++
           this.#drainWaiters()
         }
