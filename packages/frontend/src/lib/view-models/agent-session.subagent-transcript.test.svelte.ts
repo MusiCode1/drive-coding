@@ -16,6 +16,7 @@ import { readFileSync } from "node:fs"
 import type { SessionNotification } from "@agentclientprotocol/sdk"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import type { Bubble } from "$lib/types/bubble"
 
 // ─── fixture loading ────────────────────────────────────────────────────────
 
@@ -25,7 +26,10 @@ type FixtureEntry = {
   frame: { method?: string; params?: unknown }
 }
 
-const fixturePath = new URL("./__fixtures__/subagent-task-single.json", import.meta.url)
+const fixturePath = new URL(
+  "../../../../core/tests/fixtures/subagent-task-single.json",
+  import.meta.url,
+)
 const fixture: FixtureEntry[] = JSON.parse(readFileSync(fixturePath, "utf-8"))
 
 const TASK_TOOL_CALL_ID = "toolu_01GiSAsvUBjALq1WGBB2xQ1K"
@@ -240,5 +244,103 @@ describe("AgentSession — subagent transcript replay (slice subagent-transcript
     expect(session.claudeRawSdkMessageCount).toBe(0)
     replay(inbound)
     expect(session.claudeRawSdkMessageCount).toBe(rawSdkEntries.length)
+  })
+})
+
+// ─── slice meta-passthrough Commit 3: approach B on tool_call_update ─────────
+
+function emitSessionUpdate(update: Record<string, unknown>): void {
+  capturedOnUpdate?.({ update } as SessionNotification)
+}
+
+/** Collect every toolCallId in the bubble tree (top-level + subFrames). */
+function allToolCallIds(bubbles: Bubble[]): string[] {
+  const out: string[] = []
+  for (const b of bubbles) {
+    if (b.kind === "tool") {
+      out.push(b.toolCall.toolCallId)
+      for (const sf of b.subFrames ?? []) {
+        if (sf.kind === "tool") out.push(sf.toolCall.toolCallId)
+      }
+    }
+  }
+  return out
+}
+
+describe("AgentSession — meta-passthrough tool_call_update nesting (approach B)", () => {
+  beforeEach(() => {
+    capturedOnUpdate = null
+    capturedExtNotification = null
+    uuidCounter = 0
+  })
+
+  it("tool_call_update child nests via _meta when map misses and parent exists (HTTP path)", async () => {
+    const session = new AgentSession()
+    await session.attach({ cwd: "/proj", cliKind: "claude" })
+
+    emitSessionUpdate({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "toolu_PARENT",
+      title: "Task",
+      kind: "other",
+      status: "in_progress",
+      rawInput: {},
+    })
+    emitSessionUpdate({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "toolu_CHILD",
+      title: "echo hello-from-subagent",
+      kind: "execute",
+      status: "pending",
+      rawInput: {},
+      _meta: { claudeCode: { parentToolUseId: "toolu_PARENT" } },
+    })
+
+    const parent = session.bubbles.find(
+      (b) => b.kind === "tool" && b.toolCall.toolCallId === "toolu_PARENT",
+    )
+    expect(parent).toBeDefined()
+    expect(parent?.subFrames?.length).toBe(1)
+    expect(parent?.subFrames?.[0]?.kind === "tool" && parent.subFrames[0].toolCall.toolCallId).toBe(
+      "toolu_CHILD",
+    )
+
+    const topLevelChild = session.bubbles.find(
+      (b) => b.kind === "tool" && b.toolCall.toolCallId === "toolu_CHILD",
+    )
+    expect(topLevelChild).toBeUndefined()
+  })
+
+  it("out-of-order child→parent→child: toolCallId appears once in the bubble tree", async () => {
+    const session = new AgentSession()
+    await session.attach({ cwd: "/proj", cliKind: "claude" })
+
+    emitSessionUpdate({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "toolu_CHILD",
+      title: "echo",
+      kind: "execute",
+      status: "pending",
+      rawInput: {},
+      _meta: { claudeCode: { parentToolUseId: "toolu_PARENT" } },
+    })
+    emitSessionUpdate({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "toolu_PARENT",
+      title: "Task",
+      kind: "other",
+      status: "in_progress",
+      rawInput: {},
+    })
+    emitSessionUpdate({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "toolu_CHILD",
+      status: "completed",
+      rawOutput: "done",
+      _meta: { claudeCode: { parentToolUseId: "toolu_PARENT" } },
+    })
+
+    const ids = allToolCallIds(session.bubbles)
+    expect(ids.filter((id) => id === "toolu_CHILD")).toHaveLength(1)
   })
 })

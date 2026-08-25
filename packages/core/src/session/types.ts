@@ -207,7 +207,13 @@ export type Patch =
    * ⇒ פיצ'ר חדש ב-CLI מגיע ל-FE **באפס עבודת-BE**, בדיוק כמו בצינור השקוף.
    */
   | { version: number; op: "opaque"; update: unknown }
-  | { version: number; op: "append-segment"; targetId: string; segment: SessionSegment }
+  | {
+      version: number
+      op: "append-segment"
+      targetId: string
+      segment: SessionSegment
+      meta?: Record<string, unknown>
+    }
   | { version: number; op: "add-message"; message: SessionMessage }
   /**
    * החלפת הודעה קיימת **בשלמותה**, במקומה בסדר.
@@ -223,7 +229,13 @@ export type Patch =
    * ומה שיוצא לחוט כבר מדבר במזהים שלנו.
    */
   | { version: number; op: "set-message"; targetId: string; message: SessionMessage }
-  | { version: number; op: "update-tool"; targetId: string; toolCall: Partial<SessionToolCall> }
+  | {
+      version: number
+      op: "update-tool"
+      targetId: string
+      toolCall: Partial<SessionToolCall>
+      meta?: Record<string, unknown>
+    }
   | {
       version: number
       op: "reset"
@@ -250,6 +262,7 @@ export type Patch =
           | "lastTurnError"
         >
       >
+      meta?: Record<string, unknown>
     }
 
 // ─── Helpers ───

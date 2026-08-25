@@ -35,6 +35,15 @@ function toStringOrNull(v: unknown): string | null {
   return typeof v === "string" ? v : null
 }
 
+/** Atomic extraction of provider `_meta` — no key is inspected or interpreted. */
+function metaOf(u: Record<string, unknown>): Record<string, unknown> | undefined {
+  const m = u._meta
+  if (typeof m === "object" && m !== null && Object.keys(m).length > 0) {
+    return m as Record<string, unknown>
+  }
+  return undefined
+}
+
 // ─── אסטרטגיית קיבוץ (מ-#appendChunk) ───
 
 /**
@@ -66,6 +75,7 @@ function handleTextChunk(
   role: "user" | "thought" | "assistant",
   text: string,
   messageId: string | null,
+  meta?: Record<string, unknown>,
 ): { state: SessionState; patches: Patch[] } {
   if (!text) return { state, patches: [] }
 
@@ -84,6 +94,7 @@ function handleTextChunk(
       op: "append-segment",
       targetId: last.id,
       segment: seg,
+      ...(meta !== undefined ? { meta } : {}),
     }
     // update state immutably
     const updatedMsg: SessionMessage = {
@@ -120,6 +131,7 @@ function handleTextChunk(
       role,
       messageId,
       segments: [seg],
+      ...(meta !== undefined ? { meta } : {}),
     }
     const patch: Patch = { version: newVersion, op: "add-message", message: msg }
     return {
@@ -180,11 +192,13 @@ function handleToolCall(
   }
 
   const msgId = nextMsgId(state.nextMessageSeq)
+  const meta = metaOf(update)
   const msg: SessionMessage = {
     id: msgId,
     role: "tool",
     messageId: null,
     toolCall,
+    ...(meta !== undefined ? { meta } : {}),
   }
 
   const newVersion = state.version + 1
@@ -267,11 +281,13 @@ function handleToolCallUpdate(
   messages[idx] = updatedMsg
 
   const newVersion = state.version + 1
+  const meta = metaOf(update)
   const patch: Patch = {
     version: newVersion,
     op: "update-tool",
     targetId: old.id,
     toolCall: partial,
+    ...(meta !== undefined ? { meta } : {}),
   }
 
   return {
@@ -360,6 +376,7 @@ function handleWholeMessage(
 
   // segment יחיד: ההודעה השלמה **היא** הכיווץ. פיצול-מחדש ל-chunks היה
   // ממציא גבולות שהספק מעולם לא שלח.
+  const meta = metaOf(u)
   const segments: SessionSegment[] = text ? [{ id: nextSegId(state.nextSegmentSeq), text }] : []
   const nextSegmentSeq = state.nextSegmentSeq + (text ? 1 : 0)
 
@@ -370,6 +387,7 @@ function handleWholeMessage(
       messageId: storedMessageId(u, messageId),
       segments,
       ...(attachments.length > 0 ? { attachments } : {}),
+      ...(meta !== undefined ? { meta } : {}),
     }
     return {
       state: {
@@ -389,6 +407,7 @@ function handleWholeMessage(
     ...old,
     segments,
     ...(attachments.length > 0 ? { attachments } : {}),
+    ...(meta !== undefined ? { meta: { ...(old.meta ?? {}), ...meta } } : {}),
   }
   const messages = [...state.messages]
   messages[idx] = msg
@@ -417,6 +436,7 @@ function handleStateUpdate(
   state: SessionState,
   u: Record<string, unknown>,
 ): { state: SessionState; patches: Patch[] } {
+  const meta = metaOf(u)
   const s = u.state
   const rawMeta = typeof u._meta === "object" && u._meta !== null ? u._meta : {}
   const fine = (rawMeta as Record<string, unknown>)["_drive/turnState"]
@@ -430,7 +450,14 @@ function handleStateUpdate(
     const turnState = fine as TurnStateValue
     return {
       state: { ...state, version: newVersion, turnState },
-      patches: [{ version: newVersion, op: "update-session", changes: { turnState } }],
+      patches: [
+        {
+          version: newVersion,
+          op: "update-session",
+          changes: { turnState },
+          ...(meta !== undefined ? { meta } : {}),
+        },
+      ],
     }
   }
 
@@ -439,7 +466,14 @@ function handleStateUpdate(
     const newVersion = state.version + 1
     return {
       state: { ...state, version: newVersion, turnState: "waiting" },
-      patches: [{ version: newVersion, op: "update-session", changes: { turnState: "waiting" } }],
+      patches: [
+        {
+          version: newVersion,
+          op: "update-session",
+          changes: { turnState: "waiting" },
+          ...(meta !== undefined ? { meta } : {}),
+        },
+      ],
     }
   }
 
@@ -469,6 +503,7 @@ function handleStateUpdate(
           version: newVersion,
           op: "update-session",
           changes: { turnState: "idle", lastTurnError },
+          ...(meta !== undefined ? { meta } : {}),
         },
       ],
     }
@@ -494,11 +529,20 @@ function handleToolContentChunk(
   const old = state.messages[idx] as SessionMessage & { role: "tool" }
   const content = [...(old.toolCall.content ?? []), u.content]
   const newVersion = state.version + 1
+  const meta = metaOf(u)
   const messages = [...state.messages]
   messages[idx] = { ...old, toolCall: { ...old.toolCall, content } }
   return {
     state: { ...state, version: newVersion, messages },
-    patches: [{ version: newVersion, op: "update-tool", targetId: old.id, toolCall: { content } }],
+    patches: [
+      {
+        version: newVersion,
+        op: "update-tool",
+        targetId: old.id,
+        toolCall: { content },
+        ...(meta !== undefined ? { meta } : {}),
+      },
+    ],
   }
 }
 
@@ -514,10 +558,9 @@ function opaquePatch(state: SessionState, u: unknown): { state: SessionState; pa
 // ─── main reduce ───
 
 /**
- * reduce — טהור. מקבל update גולמי (הצורה של notification.update), מחזיר state חדש + patches.
- * אסור לזרוק — update לא-תקין / חסר-שדות → {state, []} (no-op).
+ * reduceRecognized — dispatch body; may return zero patches for recognized updates.
  */
-export function reduce(
+function reduceRecognized(
   state: SessionState,
   ev: unknown,
 ): { state: SessionState; patches: Patch[] } {
@@ -543,7 +586,7 @@ export function reduce(
         : sessionUpdate === "agent_thought_chunk"
           ? "thought"
           : "assistant"
-    return handleTextChunk(state, role, text, messageId)
+    return handleTextChunk(state, role, text, messageId, metaOf(u))
   }
 
   // ─── ACP v2: upsert של הודעה שלמה ───
@@ -618,21 +661,33 @@ export function reduce(
   // session_info_update → update title
   if (sessionUpdate === "session_info_update") {
     const title = u.title
+    const meta = metaOf(u)
     if (title === undefined) return { state, patches: [] } // keep-on-undefined
     const newTitle = title === null ? "" : typeof title === "string" ? title : state.title
     if (newTitle === state.title && title !== null) return { state, patches: [] }
     const newVersion = state.version + 1
     const newState: SessionState = { ...state, version: newVersion, title: newTitle }
-    const patch: Patch = { version: newVersion, op: "update-session", changes: { title: newTitle } }
+    const patch: Patch = {
+      version: newVersion,
+      op: "update-session",
+      changes: { title: newTitle },
+      ...(meta !== undefined ? { meta } : {}),
+    }
     return { state: newState, patches: [patch] }
   }
 
   // available_commands_update → update commands
   if (sessionUpdate === "available_commands_update") {
     const cmds = Array.isArray(u.availableCommands) ? u.availableCommands : []
+    const meta = metaOf(u)
     const newVersion = state.version + 1
     const newState: SessionState = { ...state, version: newVersion, commands: cmds }
-    const patch: Patch = { version: newVersion, op: "update-session", changes: { commands: cmds } }
+    const patch: Patch = {
+      version: newVersion,
+      op: "update-session",
+      changes: { commands: cmds },
+      ...(meta !== undefined ? { meta } : {}),
+    }
     return { state: newState, patches: [patch] }
   }
 
@@ -640,25 +695,33 @@ export function reduce(
   if (sessionUpdate === "current_mode_update") {
     const modeId = u.currentModeId
     if (typeof modeId !== "string") return { state, patches: [] }
+    const meta = metaOf(u)
     const newModes: NonNullable<SessionModes> = {
       availableModes: state.modes?.availableModes ?? [],
       currentModeId: modeId,
     }
     const newVersion = state.version + 1
     const newState: SessionState = { ...state, version: newVersion, modes: newModes }
-    const patch: Patch = { version: newVersion, op: "update-session", changes: { modes: newModes } }
+    const patch: Patch = {
+      version: newVersion,
+      op: "update-session",
+      changes: { modes: newModes },
+      ...(meta !== undefined ? { meta } : {}),
+    }
     return { state: newState, patches: [patch] }
   }
 
   // config_option_update → update configOptions
   if (sessionUpdate === "config_option_update") {
     const opts = Array.isArray(u.configOptions) ? u.configOptions : []
+    const meta = metaOf(u)
     const newVersion = state.version + 1
     const newState: SessionState = { ...state, version: newVersion, configOptions: opts }
     const patch: Patch = {
       version: newVersion,
       op: "update-session",
       changes: { configOptions: opts },
+      ...(meta !== undefined ? { meta } : {}),
     }
     return { state: newState, patches: [patch] }
   }
@@ -667,6 +730,7 @@ export function reduce(
   if (sessionUpdate === "usage_update") {
     const uu = u as { used?: unknown; size?: unknown; cost?: unknown }
     if (typeof uu.used !== "number" || typeof uu.size !== "number") return { state, patches: [] }
+    const meta = metaOf(u)
     const newUsage: SessionUsage = {
       used: uu.used,
       size: uu.size,
@@ -678,6 +742,7 @@ export function reduce(
       version: newVersion,
       op: "update-session",
       changes: { contextUsage: newUsage },
+      ...(meta !== undefined ? { meta } : {}),
     }
     return { state: newState, patches: [patch] }
   }
@@ -690,4 +755,21 @@ export function reduce(
   // עכשיו: מה שלא זוהה נישא הלאה כ-`opaque`, בסדר הנכון, בלי שהליבה תבין
   // אותו. הצרכן שכן מבין — מטפל. מי שלא — מתעלם.
   return opaquePatch(state, u)
+}
+
+/**
+ * reduce — טהור. מקבל update גולמי (הצורה של notification.update), מחזיר state חדש + patches.
+ * carry-when-nothing-mapped: recognized update with `_meta` but zero patches → opaque.
+ */
+export function reduce(
+  state: SessionState,
+  ev: unknown,
+): { state: SessionState; patches: Patch[] } {
+  if (typeof ev !== "object" || ev === null) return { state, patches: [] }
+  const u = ev as Record<string, unknown>
+  const result = reduceRecognized(state, ev)
+  if (result.patches.length === 0 && metaOf(u) !== undefined) {
+    return opaquePatch(state, u)
+  }
+  return result
 }

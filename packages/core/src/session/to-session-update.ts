@@ -186,7 +186,7 @@ export function patchToSessionUpdates(state: SessionState, patch: Patch): WireSe
     case "append-segment": {
       const target = state.messages.find((m) => m.id === patch.targetId)
       if (!target || target.role === "tool") return []
-      const chunkMeta = midMeta(target)
+      const chunkMeta = mergeMeta(target.meta, patch.meta, midMeta(target))
       return [
         {
           sessionUpdate: CHUNK_KIND[target.role],
@@ -201,6 +201,7 @@ export function patchToSessionUpdates(state: SessionState, patch: Patch): WireSe
       const target = state.messages.find((m) => m.id === patch.targetId)
       if (!target || target.role !== "tool") return []
       const tc = patch.toolCall
+      const outMeta = mergeMeta(target.meta, patch.meta)
       return [
         {
           sessionUpdate: "tool_call_update",
@@ -212,12 +213,24 @@ export function patchToSessionUpdates(state: SessionState, patch: Patch): WireSe
           ...(tc.result !== undefined ? { rawOutput: tc.result } : {}),
           ...(tc.content !== undefined ? { content: tc.content } : {}),
           ...(tc.locations !== undefined ? { locations: tc.locations } : {}),
+          ...(outMeta !== undefined ? { _meta: outMeta } : {}),
         },
       ]
     }
 
-    case "update-session":
-      return changesToUpdates(patch.changes as Record<string, unknown>)
+    case "update-session": {
+      const updates = changesToUpdates(patch.changes as Record<string, unknown>)
+      if (patch.meta === undefined) return updates
+      return updates.map((u) => ({
+        ...u,
+        _meta: mergeMeta(
+          typeof u._meta === "object" && u._meta !== null
+            ? (u._meta as Record<string, unknown>)
+            : undefined,
+          patch.meta,
+        ),
+      }))
+    }
 
     // ‏`reset` הוא החלפת-הסשן, ואין לו מקבילה: ‏ACP פותר את זה בחיבור חדש.
     // אצלנו הזרם שורד את ההחלפה, ולכן היא חייבת לנסוע בו.
