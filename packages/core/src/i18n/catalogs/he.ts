@@ -222,6 +222,9 @@ export const he: Catalog = {
   "contentViewer.title": "תצוגה",
   "contentViewer.expand": "הרחב",
   "contentViewer.close": "סגור",
+  // ─── fs-file-proxy — file viewer (Commit 1) ───
+  "contentViewer.download": "הורד/פתח",
+  "plan.file.view": "צפה",
   // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
   "settings.ttsProvider.label": "ספק TTS",
   "settings.ttsProvider.elevenlabs": "ElevenLabs",
@@ -393,7 +396,8 @@ export const he: Catalog = {
   // ─── liveness (slice liveness C4) ───
   "session.reconnecting": "מנסה להתחבר…",
   "session.cloudflareBlocked": "החיבור נחסם. ייתכן ש-Cloudflare דורש אימות.",
-  "session.turnStalled": "לא הגיע כלום מהסוכן זמן רב. ייתכן שהוא עדיין עובד — וייתכן שעצר בלי לומר.",
+  "session.turnStalled":
+    "לא הגיע כלום מהסוכן זמן רב. ייתכן שהוא עדיין עובד — וייתכן שעצר בלי לומר.",
   "session.cloudflareRefresh": "רענון",
   "session.gone": "הסשן הזה איננו — פתח חדש.",
 }

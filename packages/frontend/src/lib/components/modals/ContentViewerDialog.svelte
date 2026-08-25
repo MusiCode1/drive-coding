@@ -16,8 +16,9 @@
  */
 import XIcon from "@lucide/svelte/icons/x"
 import { Dialog as BitsDialog } from "bits-ui"
-import { getContentViewer, getI18n } from "$lib/context"
 import MarkdownContent from "$lib/components/chat/bubbles/MarkdownContent.svelte"
+import { getContentViewer, getI18n } from "$lib/context"
+import FileContentViewer from "./FileContentViewer.svelte"
 
 const t = getI18n().t
 const viewer = getContentViewer()
@@ -44,7 +45,8 @@ function onOpenChange(open: boolean) {
         <!-- header -->
         <div class="flex items-center justify-between px-4 py-3 border-b shrink-0" style="border-color:var(--border)">
           <BitsDialog.Title class="text-lg font-semibold">
-            {viewer.payload?.kind === "markdown" && viewer.payload.title
+            {(viewer.payload?.kind === "markdown" || viewer.payload?.kind === "file") &&
+            viewer.payload.title
               ? viewer.payload.title
               : t("contentViewer.title")}
           </BitsDialog.Title>
@@ -74,6 +76,12 @@ function onOpenChange(open: boolean) {
               class="viewer-image"
               src={viewer.payload.src}
               alt={viewer.payload.alt ?? t("contentViewer.title")}
+            />
+          {:else if viewer.payload?.kind === "file"}
+            <!-- slice fs-file-proxy — קובץ-רכיב רגיל, לא svelte:component (ר' §4 Commit 1) -->
+            <FileContentViewer
+              uri={viewer.payload.uri}
+              title={viewer.payload.title}
             />
           {/if}
         </div>

@@ -227,6 +227,9 @@ export const en: Catalog = {
   "contentViewer.title": "View",
   "contentViewer.expand": "Expand",
   "contentViewer.close": "Close",
+  // ─── fs-file-proxy — file viewer (Commit 1) ───
+  "contentViewer.download": "Download/Open",
+  "plan.file.view": "View",
   // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
   "settings.ttsProvider.label": "TTS provider",
   "settings.ttsProvider.elevenlabs": "ElevenLabs",
@@ -394,11 +397,13 @@ export const en: Catalog = {
   "settings.geminiTone.energetic": "Energetic",
   "settings.geminiTone.formal": "Formal",
   "settings.geminiTone.casual": "Casual",
-  "session.heldByOtherTransport": "This session is open elsewhere (other transport). Do not reconnect directly — take over.",
+  "session.heldByOtherTransport":
+    "This session is open elsewhere (other transport). Do not reconnect directly — take over.",
   // ─── liveness (slice liveness C4) ───
   "session.reconnecting": "Trying to reconnect…",
   "session.cloudflareBlocked": "Connection blocked. Cloudflare may require verification.",
-  "session.turnStalled": "No response from the agent for a while. It may still be working — or it may have stopped without saying so.",
+  "session.turnStalled":
+    "No response from the agent for a while. It may still be working — or it may have stopped without saying so.",
   "session.cloudflareRefresh": "Refresh",
   "session.gone": "This session is gone — open a new one.",
 }

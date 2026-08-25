@@ -232,6 +232,9 @@ export type MessageKey =
   | "contentViewer.title"
   | "contentViewer.expand"
   | "contentViewer.close"
+  // ─── fs-file-proxy — file viewer (Commit 1) ───
+  | "contentViewer.download"
+  | "plan.file.view"
   // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
   | "settings.ttsProvider.label"
   | "settings.ttsProvider.elevenlabs"
