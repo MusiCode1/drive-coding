@@ -59,6 +59,7 @@ const settings = getSettings()
     onOpen: fileLinks?.onOpen ?? (() => {}),
     label: t("chat.content.attachedFile"),
     enabled: fileLinks !== undefined,
+    absoluteOnly: fileLinks?.absoluteOnly ?? false,
   }}
 >{@html renderMarkdown(text, { cwd: imageCwd })}</div>
 

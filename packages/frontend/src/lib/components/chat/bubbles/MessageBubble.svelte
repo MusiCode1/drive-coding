@@ -58,7 +58,15 @@ async function handleCopy() {
       class="content-body text-sm leading-relaxed min-w-0 max-w-full overflow-hidden break-words"
       class:is-playing={isPlaying}
     >
-      <MarkdownContent text={joinSegmentText(bubble.segments)} imageCwd={session.cwd} />
+      <MarkdownContent
+        text={joinSegmentText(bubble.segments)}
+        imageCwd={session.cwd}
+        fileLinks={{
+          cwd: session.cwd,
+          onOpen: (uri) => viewer.show({ kind: "file", uri }),
+          absoluteOnly: true,
+        }}
+      />
       <!-- כופה ריאקטיביות של Svelte בעת .segments.push() -->
       <span class="hidden">{bubble.segments.length}</span>
     </div>

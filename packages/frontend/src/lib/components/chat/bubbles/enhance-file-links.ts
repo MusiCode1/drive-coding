@@ -23,6 +23,13 @@ export type FileLinkParams = {
   onOpen: (uri: string) => void
   /** aria-label/title לכפתור */
   label: string
+  /**
+   * 🔴 true → רק נתיבים **אבסולוטיים** (`/abs/x.md`, `file:///…`) מלונקקים;
+   * יחסיים מדולגים גם כש-`cwd` קיים. זה המצב בבועת-**הסוכן**: שם נתיב יחסי
+   * הוא מקור ה-false-positives, והדלקתו ממתינה ל-`fs-stat` (אימות-קיום).
+   * ברירת-מחדל false = התנהגות בועת-המשתמש (יחסי נפתר מול ה-cwd).
+   */
+  absoluteOnly?: boolean
   /** Default true. false → action does not linkify at all. */
   enabled?: boolean
 }
@@ -39,6 +46,11 @@ function isSkipped(node: Node): boolean {
   return false
 }
 
+/** אבסולוטי = `file://…` מפורש, או נתיב שמתחיל ב-`/`. `~/…` אינו אבסולוטי לצורך זה. */
+function isAbsoluteToken(raw: string): boolean {
+  return /^file:\/\//i.test(raw) || raw.startsWith("/")
+}
+
 function enhance(node: HTMLElement, p: FileLinkParams): void {
   if (p.enabled === false) return
   const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT)
@@ -53,7 +65,11 @@ function enhance(node: HTMLElement, p: FileLinkParams): void {
 
   for (const textNode of targets) {
     const text = textNode.textContent ?? ""
-    const matches = findFilePathMatches(text).filter((m) => resolveFileUri(m.raw, p.cwd) !== null)
+    const matches = findFilePathMatches(text).filter(
+      (m) =>
+        (p.absoluteOnly !== true || isAbsoluteToken(m.raw)) &&
+        resolveFileUri(m.raw, p.cwd) !== null,
+    )
     if (matches.length === 0) continue
 
     const frag = document.createDocumentFragment()

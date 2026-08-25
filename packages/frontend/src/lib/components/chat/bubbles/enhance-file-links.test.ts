@@ -81,4 +81,37 @@ describe("enhanceFileLinks", () => {
     const { node } = mount("<p>/tmp/a.md</p>", { enabled: false })
     expect(node.querySelector("[data-file-link]")).toBeNull()
   })
+
+  // ─── slice msg-media (‏תיקון-פריוויו 3): ‏בועת-הסוכן ───
+  // §1 ‏של פקודת-המשימה: "‏כשהסוכן מזכיר מסמך — ‏לחיצה פותחת אותו מרונדר, ‏לא כנתיב מת".
+  // ‏בצד הסוכן: ‏אבסולוטי בלבד — ‏יחסי ממתין ל-fs-stat (‏אימות-קיום).
+  it("agent bubble: נתיב אבסולוטי → קישור עם onOpen פעיל", () => {
+    const { node, onOpen } = mount("<p>ראה /home/u/proj/AGENTS.md בבקשה</p>", {
+      absoluteOnly: true,
+    })
+    const btn = node.querySelector<HTMLElement>("[data-file-link]")
+    expect(btn).not.toBeNull()
+    expect(btn?.dataset["fileLink"]).toBe("file:///home/u/proj/AGENTS.md")
+    btn?.click()
+    expect(onOpen).toHaveBeenCalledWith("file:///home/u/proj/AGENTS.md")
+  })
+
+  it("agent bubble: file:/// מפורש → קישור", () => {
+    const { node } = mount("<p>ראה file:///etc/notes.md</p>", { absoluteOnly: true })
+    expect(node.querySelector("[data-file-link]")).not.toBeNull()
+  })
+
+  it("agent bubble: נתיב יחסי → לא קישור, גם כשיש cwd", () => {
+    const { node } = mount("<p>ראה AGENTS.md וגם ./local.md ו-docs/x.md</p>", {
+      absoluteOnly: true,
+    })
+    expect(node.querySelector("[data-file-link]")).toBeNull()
+    expect(node.textContent).toContain("AGENTS.md")
+  })
+
+  it("user bubble (absoluteOnly לא מסופק): יחסי עדיין מלונקק — אין רגרסיה", () => {
+    const { node } = mount("<p>ראה AGENTS.md בבקשה</p>")
+    const btn = node.querySelector<HTMLElement>("[data-file-link]")
+    expect(btn?.dataset["fileLink"]).toBe("file:///home/u/proj/AGENTS.md")
+  })
 })
