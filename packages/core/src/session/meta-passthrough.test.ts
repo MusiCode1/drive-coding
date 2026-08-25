@@ -188,4 +188,28 @@ describe("meta-passthrough", () => {
 
     expect(failures, failures.join("\n")).toEqual([])
   })
+
+  it("G-KEYS — xprovider frames survive carry-when-nothing-mapped", () => {
+    let state = createInitialSessionState({ sessionId: "xprovider-keys" })
+    const failures: string[] = []
+
+    for (const u of RECORDED_XPROVIDER_FRAMES) {
+      const { state: next, wire } = roundTrip(state, u)
+      state = next
+      const missing = missingNonMetaKeys(u, wire)
+      if (missing.length > 0) {
+        failures.push(`${String(u.sessionUpdate)} missing keys: [${missing.join(",")}]`)
+      }
+    }
+
+    expect(failures, failures.join("\n")).toEqual([])
+  })
+
+  it("G-NOFLOOD — patch count grows by at most one on xprovider frames", () => {
+    // Measured on base @ ce892f01: recording=25, xprovider=4 (pi-acp session_info had wire=0).
+    const RECORDING_PATCH_BASELINE = 25
+    const XPROVIDER_PATCH_BASELINE = 4
+    expect(countPatches(recording)).toBe(RECORDING_PATCH_BASELINE)
+    expect(countPatches(RECORDED_XPROVIDER_FRAMES)).toBe(XPROVIDER_PATCH_BASELINE + 1)
+  })
 })
