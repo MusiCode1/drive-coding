@@ -3058,6 +3058,18 @@ export class AgentSession {
     this.#onUpdateObserved?.(notification.update)
     this.#noteAgentActivity() // watchdog §2 — מסלול WS (כל session/update)
 
+    // slice meta-passthrough Commit 4: ext notifications re-enter via HTTP wire wrapper.
+    if (
+      (notification.update as { sessionUpdate?: string }).sessionUpdate ===
+      "_drive/ext_notification"
+    ) {
+      const ext = notification.update as { method?: unknown; params?: unknown }
+      if (typeof ext.method === "string" && typeof ext.params === "object" && ext.params !== null) {
+        this.#onExtNotification(ext.method, ext.params as Record<string, unknown>)
+      }
+      return
+    }
+
     // מעטפת ACP: צורה של { sessionId, update: { sessionUpdate, content, messageId, ... } }
     // ה-messageId נמצא על אובייקט ה-update החיצוני (הרחבה לא יציבה של ACP).
     const update = notification.update as {

@@ -152,8 +152,20 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
     emitPatches(result.patches)
   }
 
+  function handleExtNotification(method: string, params: Record<string, unknown>): void {
+    if (disposed) return
+    const result = reduce(currentState, {
+      sessionUpdate: "_drive/ext_notification",
+      method,
+      params,
+    })
+    currentState = result.state
+    emitPatches(result.patches)
+  }
+
   const callbacks: AcpClientCallbacks = {
     onUpdate: handleUpdate,
+    onExtNotification: handleExtNotification,
   }
 
   const client = await deps.createClient(callbacks)
@@ -396,6 +408,17 @@ export async function createSessionHostFromConnection(
     emitPatches(result.patches)
   }
 
+  function handleExtNotification(method: string, params: Record<string, unknown>): void {
+    if (disposed) return
+    const result = reduce(currentState, {
+      sessionUpdate: "_drive/ext_notification",
+      method,
+      params,
+    })
+    currentState = result.state
+    emitPatches(result.patches)
+  }
+
   // ── C3: turn boundaries ─────────────────────────────────────────────────
   // turnSeq — מקודם רק ב-prompt (תור חדש). cancelledTurn — מסומן (❌ לא מקודם)
   // ע"י cancel, ומשפיע רק על מטען-השגיאה — לעולם לא על הפליטה עצמה.
@@ -580,6 +603,7 @@ export async function createSessionHostFromConnection(
     onUpdate: handleUpdate,
     onRequestPermission: handleRequestPermission,
     onCreateElicitation: handleCreateElicitation,
+    onExtNotification: handleExtNotification,
   }
 
   // slice ownership-handoff C4: warm reattach skips initialize (agent already running)
