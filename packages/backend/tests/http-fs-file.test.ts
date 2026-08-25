@@ -104,13 +104,13 @@ describe("GET /api/fs/file", () => {
     expect(res.status).toBe(413)
   })
 
-  it("8. valid .md → 200 + Content-Type: text/markdown", async () => {
+  it("8. valid .md → 200 + Content-Type: text/markdown; charset=utf-8", async () => {
     const app = makeApp()
     const p = join(workDir, "doc.md")
     await writeFile(p, "# hi")
     const res = await app.request(`/api/fs/file?uri=${encodeURIComponent(p)}`)
     expect(res.status).toBe(200)
-    expect(res.headers.get("content-type")).toBe("text/markdown")
+    expect(res.headers.get("content-type")).toBe("text/markdown; charset=utf-8")
   })
 
   it("9. valid .png → 200 + Content-Type: image/png", async () => {
@@ -211,5 +211,80 @@ describe("GET /api/fs/file", () => {
     const app = makeApp()
     const res = await app.request(`/api/fs/file?uri=${encodeURIComponent("file://relative.md")}`)
     expect(res.status).toBe(400)
+  })
+
+  // ─── charset tier (live user finding 25/08: UTF-8 markdown rendered as
+  // windows-1255 gibberish, because Content-Type carried no charset and
+  // X-Content-Type-Options: nosniff forbids the browser from guessing).
+  //
+  // 🔴 The invariant under test is NOT "detect the encoding". It is
+  // "never declare a charset we have not verified": a yes/no question over
+  // bytes we already hold in memory.
+  it("18. .md with real UTF-8 hebrew → charset=utf-8 declared (the live bug)", async () => {
+    const app = makeApp()
+    const p = join(workDir, "heb.md")
+    await writeFile(p, "# בדיקת קבצים\n", "utf8")
+    const res = await app.request(`/api/fs/file?uri=${encodeURIComponent(p)}`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get("content-type")).toContain("charset=utf-8")
+  })
+
+  it("19. .txt with UTF-8 → text/plain; charset=utf-8", async () => {
+    const app = makeApp()
+    const p = join(workDir, "note.txt")
+    await writeFile(p, "שלום", "utf8")
+    const res = await app.request(`/api/fs/file?uri=${encodeURIComponent(p)}`)
+    expect(res.headers.get("content-type")).toBe("text/plain; charset=utf-8")
+  })
+
+  it("20. .md with UTF-8 BOM → still valid, charset=utf-8", async () => {
+    const app = makeApp()
+    const p = join(workDir, "bom.md")
+    await writeFile(
+      p,
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("# hi", "utf8")]),
+    )
+    const res = await app.request(`/api/fs/file?uri=${encodeURIComponent(p)}`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get("content-type")).toContain("charset=utf-8")
+  })
+
+  it("21. 🔴 .md in windows-1255 → we do NOT lie: no utf-8 declaration, served as bytes", async () => {
+    const app = makeApp()
+    const p = join(workDir, "legacy.md")
+    // "# בדיקה\n" encoded as windows-1255 (ב=0xE1 ד=0xE3 י=0xE9 ק=0xF7 ה=0xE4).
+    // 0xE1 is a 3-byte UTF-8 lead followed by 0xE3, which is not a continuation
+    // byte ⇒ the sequence is definitively not valid UTF-8.
+    await writeFile(p, Buffer.from([0x23, 0x20, 0xe1, 0xe3, 0xe9, 0xf7, 0xe4, 0x0a]))
+    const res = await app.request(`/api/fs/file?uri=${encodeURIComponent(p)}`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get("content-type")).not.toContain("charset=utf-8")
+    expect(res.headers.get("content-type")).not.toContain("text/")
+    expect(res.headers.get("content-type")).toBe("application/octet-stream")
+  })
+
+  it("22. .md in UTF-16LE (BOM ff fe) → not utf-8, served as bytes", async () => {
+    const app = makeApp()
+    const p = join(workDir, "utf16.md")
+    await writeFile(p, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("# hi", "utf16le")]))
+    const res = await app.request(`/api/fs/file?uri=${encodeURIComponent(p)}`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get("content-type")).toBe("application/octet-stream")
+  })
+
+  it("23. binary .png whose bytes are invalid UTF-8 → untouched by the tier", async () => {
+    const app = makeApp()
+    const p = join(workDir, "img.png")
+    await writeFile(p, Buffer.from([0xff, 0xd8, 0xe1, 0xe3]))
+    const res = await app.request(`/api/fs/file?uri=${encodeURIComponent(p)}`)
+    expect(res.headers.get("content-type")).toBe("image/png")
+  })
+
+  it("24. .svg keeps its bare type — XML parsers assume UTF-8, no charset added", async () => {
+    const app = makeApp()
+    const p = join(workDir, "icon.svg")
+    await writeFile(p, "<svg></svg>", "utf8")
+    const res = await app.request(`/api/fs/file?uri=${encodeURIComponent(p)}`)
+    expect(res.headers.get("content-type")).toBe("image/svg+xml")
   })
 })
