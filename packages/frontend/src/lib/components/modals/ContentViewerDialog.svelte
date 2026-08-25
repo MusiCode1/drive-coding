@@ -78,7 +78,7 @@ function onOpenChange(open: boolean) {
               alt={viewer.payload.alt ?? t("contentViewer.title")}
             />
           {:else if viewer.payload?.kind === "file"}
-            <!-- slice fs-file-proxy — קובץ-רכיב רגיל, לא svelte:component (ר' §4 Commit 1) -->
+            <!-- slice fs-file-proxy — קובץ-רכיב רגיל, ייבוא סטטי רגיל (ר' §4 Commit 1) -->
             <FileContentViewer
               uri={viewer.payload.uri}
               title={viewer.payload.title}

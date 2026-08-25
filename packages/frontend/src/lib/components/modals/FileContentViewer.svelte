@@ -3,8 +3,9 @@
  * FileContentViewer — נטען דרך GET /api/fs/file, מציג לפי Content-Type
  * (markdown מרונדר / תמונה / PDF inline-אם-נתמך / קישור-הורדה fallback).
  *
- * 🔴 קובץ-רכיב רגיל, לא snippet ולא svelte:component (ר' §4 Commit 1 בבריף —
- * r2 ניסה <svelte:component this={…}> על snippet, שילוב בלתי-אפשרי).
+ * 🔴 קובץ-רכיב רגיל, לא snippet ולא ה-directive המיוחדת (deprecated ב-Svelte 5)
+ * לרינדור-דינמי-לפי-משתנה (ר' §4 Commit 1 בבריף — r2 ניסה לשלב אותה עם snippet,
+ * שילוב בלתי-אפשרי).
  *
  * ─── slice fs-file-proxy (Commit 1) ───
  */
