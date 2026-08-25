@@ -10,7 +10,18 @@ beforeEach(() => {
   httpCacheInvalidateAll()
 })
 
-function makeApp() {
+// עזר-בדיקה: זיוף projectsRegistry עם ריגול (vi.fn) — עדיף על דיסק אמיתי
+// כדי לבדוק במפורש *האם* ותחת אילו ארגומנטים הוא נקרא (D7).
+function makeFakeProjectsRegistry() {
+  return {
+    recordCwd: vi.fn(async () => {}),
+    recordSession: vi.fn(async () => {}),
+    removeCwd: vi.fn(async () => {}),
+    getProjects: vi.fn(async () => []),
+  }
+}
+
+function makeApp(opts?: { projectsRegistry?: ReturnType<typeof makeFakeProjectsRegistry> }) {
   const app = new Hono()
   const registry = createInMemoryAgentRegistry()
 
@@ -37,7 +48,7 @@ function makeApp() {
     getBridgePort: vi.fn(() => 7100),
   }
 
-  registerAgentsHttp(app, { registry, orchestrator })
+  registerAgentsHttp(app, { registry, orchestrator, projectsRegistry: opts?.projectsRegistry })
   return { app, registry, orchestrator }
 }
 
@@ -256,22 +267,24 @@ describe("HTTP /api/agents", () => {
     })
   })
 
-  describe("POST /api/agents/:id/session-attached", () => {
+  // slice agent-patch-unify C1: שני handlers ישנים (POST session-attached,
+  // POST persistent) בוטלו — הסמנטיקה שלהם הוגרה לכאן, ל-PATCH /api/agents/:id
+  // הגנרי. שינוי-מעטפת: sessionId → acpSessionId (השם שכבר קיים ב-Agent).
+  describe("PATCH /api/agents/:id — attach (migrated from POST session-attached)", () => {
     it("marks agent ready and returns { ok: true }", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
       await registry.update(agent.id, { status: "starting" })
 
-      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
-        method: "POST",
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: "sess-abc123" }),
+        body: JSON.stringify({ acpSessionId: "sess-abc123", status: "ready" }),
       })
       expect(res.status).toBe(200)
       const body = await res.json()
       expect(body).toEqual({ ok: true })
 
-      // Verify registry was updated
       const updated = await registry.get(agent.id)
       expect(updated?.status).toBe("ready")
       expect(updated?.acpSessionId).toBe("sess-abc123")
@@ -279,97 +292,84 @@ describe("HTTP /api/agents", () => {
 
     it("404 for unknown agent", async () => {
       const { app } = makeApp()
-      const res = await app.request("/api/agents/ghost/session-attached", {
-        method: "POST",
+      const res = await app.request("/api/agents/ghost", {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: "s1" }),
+        body: JSON.stringify({ acpSessionId: "s1", status: "ready" }),
       })
       expect(res.status).toBe(404)
     })
 
-    it("400 if sessionId missing", async () => {
-      const { app, registry } = makeApp()
-      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
-      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      })
-      expect(res.status).toBe(400)
-    })
+    // הטסט הישן "400 if sessionId missing" (גוף {}) אינו מהגר 1:1: תחת המודל
+    // המאוחד sessionId (=acpSessionId) אינו נדרש לבדו — {} הוא no-op חוקי
+    // (כמו "omitted title" למטה). הכוונה המקורית — "נסיון-attach בלי מזהה"
+    // — מכוסה ע"י טסטי D2 (status-alone / cwd-alone) בהמשך הקובץ.
 
-    it("409 if agent already ready with different sessionId", async () => {
+    // 🔴 D3 — הטסט הקריטי: {acpSessionId} *בלי* status על agent ready עם
+    // סשן אחר → 409. השומר קורא agent.status/agent.acpSessionId, לא
+    // parsed.status/parsed.acpSessionId. קריאה הפוכה (parsed.status) הייתה
+    // מאפשרת PATCH {acpSessionId:"hijack"} לבדו (חוקי תחת D2) לדרוס בשקט.
+    it("🔴 409: acpSessionId alone (no status) on ready agent with different session — D3 reads agent.*, not parsed.*", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
       await registry.update(agent.id, { status: "ready", acpSessionId: "existing-session" })
 
-      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
-        method: "POST",
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: "different-session" }),
+        body: JSON.stringify({ acpSessionId: "different-session" }), // בכוונה בלי status
       })
       expect(res.status).toBe(409)
+
+      // הרישום נשאר ללא שינוי — השומר חסם לפני שהעדכון נגע ברישום
+      const unchanged = await registry.get(agent.id)
+      expect(unchanged?.acpSessionId).toBe("existing-session")
     })
 
-    it("idempotent: same sessionId on ready agent → 200", async () => {
+    it("idempotent: same acpSessionId (no status) on ready agent → 200", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
       await registry.update(agent.id, { status: "ready", acpSessionId: "same-session" })
 
-      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
-        method: "POST",
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: "same-session" }),
+        body: JSON.stringify({ acpSessionId: "same-session" }),
       })
       expect(res.status).toBe(200)
     })
 
-    it("409 without replace flag: guard MED-9 stays active, registry unchanged", async () => {
+    it("200 with replace:true: warm switch overwrites acpSessionId despite guard", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
       await registry.update(agent.id, { status: "ready", acpSessionId: "session-A" })
 
-      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
-        method: "POST",
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: "session-B" }), // no replace flag
-      })
-      expect(res.status).toBe(409)
-
-      // Registry must remain unchanged — staleness guard worked
-      const unchanged = await registry.get(agent.id)
-      expect(unchanged?.acpSessionId).toBe("session-A")
-    })
-
-    it("200 with replace:true: warm switch overwrites sessionId in registry", async () => {
-      const { app, registry } = makeApp()
-      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
-      await registry.update(agent.id, { status: "ready", acpSessionId: "session-A" })
-
-      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: "session-B", replace: true }),
+        body: JSON.stringify({ acpSessionId: "session-B", replace: true }),
       })
       expect(res.status).toBe(200)
       const body = await res.json()
       expect(body).toEqual({ ok: true })
 
-      // Registry must be updated to the new sessionId
       const updated = await registry.get(agent.id)
       expect(updated?.acpSessionId).toBe("session-B")
       expect(updated?.status).toBe("ready")
     })
   })
 
-  // slice active-agents: POST /api/agents/:id/persistent
-  describe("POST /api/agents/:id/persistent", () => {
+  // slice agent-patch-unify C1: הסמנטיקה של POST persistent הוגרה ל-PATCH.
+  // "missing field → 400" ו-"unknown agent → 404" הישנים מתלכדים עם טסטים
+  // גנריים קיימים ("omitted title (empty body) → no-op", "404 for unknown
+  // agent" למעלה) — לא כפולים במכוון.
+  describe("PATCH /api/agents/:id — persistent (migrated from POST persistent)", () => {
     it("sets persistent: true → 200 { ok: true } and updates registry", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
 
-      const res = await app.request(`/api/agents/${agent.id}/persistent`, {
-        method: "POST",
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ persistent: true }),
       })
@@ -386,8 +386,8 @@ describe("HTTP /api/agents", () => {
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
       await registry.update(agent.id, { persistent: true })
 
-      const res = await app.request(`/api/agents/${agent.id}/persistent`, {
-        method: "POST",
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ persistent: false }),
       })
@@ -400,47 +400,12 @@ describe("HTTP /api/agents", () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
 
-      const res = await app.request(`/api/agents/${agent.id}/persistent`, {
-        method: "POST",
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ persistent: "yes" }),
       })
       expect(res.status).toBe(400)
-    })
-
-    it("missing persistent field → 400", async () => {
-      const { app, registry } = makeApp()
-      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
-
-      const res = await app.request(`/api/agents/${agent.id}/persistent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      })
-      expect(res.status).toBe(400)
-    })
-
-    it("invalid json → 400", async () => {
-      const { app, registry } = makeApp()
-      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
-
-      const res = await app.request(`/api/agents/${agent.id}/persistent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "not json",
-      })
-      expect(res.status).toBe(400)
-    })
-
-    it("unknown agent → 404", async () => {
-      const { app } = makeApp()
-
-      const res = await app.request("/api/agents/ghost/persistent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ persistent: true }),
-      })
-      expect(res.status).toBe(404)
     })
   })
 
@@ -465,7 +430,12 @@ describe("HTTP /api/agents", () => {
       expect(found.title).toBe("מה זה TypeScript")
     })
 
-    it("rejects unknown field (status) — whitelist protects runtime fields", async () => {
+    // 🟢 D1 — status עכשיו מוצהר בסכימה, אבל מצומצם לליטרל "ready". הטסט הזה
+    // שורד כלשונו: "crashed" נדחה (400). שים לב: גוף הבקשה הזה חסר acpSessionId,
+    // ולכן D2 (צימוד) *גם הוא* היה מחזיר 400 בפני עצמו — הטסט הזה מוגן בשתי
+    // שכבות בו-זמנית ולכן **אינו** מבחין לבדו בין M1 (D1) ל-M2 (D2). הבחנה
+    // מבודדת ל-D1 ר' בטסט הבא, שמראה acpSessionId (חוסם את D2) + status:"crashed".
+    it("rejects status:'crashed' — whitelist + D1 both reject (belt and suspenders)", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
       await registry.update(agent.id, { status: "ready" })
@@ -481,6 +451,22 @@ describe("HTTP /api/agents", () => {
       const unchanged = await registry.get(agent.id)
       expect(unchanged?.status).toBe("ready")
       expect(unchanged?.title).toBeUndefined()
+    })
+
+    // 🔴 D1 מבודד מ-D2 — נמדד: גוף עם title+status בלבד (הטסט הקודם) נחסם גם
+    // ע"י D2 (חסר acpSessionId), ולכן M1 (הסרת הליטרל) אינו מפיל אותו. הטסט
+    // הזה, בדיוק כמו שורת status-bad בפרוב, מוסיף acpSessionId כדי לחסום את
+    // D2 ולבודד את D1 — זה הטסט ש-M1 באמת מפיל ברמת ה-unit (לא רק בפרוב).
+    it("🔴 rejects status:'crashed' with acpSessionId present — D1 isolated from D2 (matches probe row status-bad)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acpSessionId: "s1", status: "crashed" }),
+      })
+      expect(res.status).toBe(400)
     })
 
     it("404 for unknown agent", async () => {
@@ -532,6 +518,137 @@ describe("HTTP /api/agents", () => {
       expect(res.status).toBe(200)
       const updated = await registry.get(agent.id)
       expect(updated?.title).toBe("keep me")
+    })
+
+    // מחלקה 3 — "לעולם-לא-מ-HTTP": onUndeclaredKey("reject") נדחית גם אחרי
+    // הצטרפות השדות האופציונליים החדשים. (M6 מסירה את השכבה הזו.)
+    it.each([
+      ["bridgePort", { bridgePort: 9999 }],
+      ["crashReason", { crashReason: "x" }],
+      ["id", { id: "other" }],
+    ])("rejects undeclared field %s → 400 (class-3 whitelist)", async (_label, extra) => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(extra),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    // D2 — צימוד: status/cwd בלי acpSessionId → 400. הבדיקה חייבת לרוץ *לפני*
+    // registry.get — אחרת agent לא-קיים יחזיר 404 במקום 400 (§3.5 סדר-הבדיקות).
+    it("status alone (no acpSessionId) → 400 (D2 coupling)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ready" }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it("cwd alone (no acpSessionId) → 400 (D2 coupling)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd: "/tmp" }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    // D5 — cwd עובר validateCwd, בדיוק כמו ב-POST /api/agents. נתיב יחסי לא-חוקי.
+    it("invalid cwd → 400 (D5 validateCwd)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acpSessionId: "s1", cwd: "relative/not/absolute" }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    // 🔴 D4 — שכבה (ב) היא extract *ושומר-undefined*. PATCH {title} על agent
+    // ready עם acpSessionId+cwd קיימים לא יכול למחוק אותם — registry.update
+    // מבצע spread בלי סינון, ולכן { cwd: undefined } היה מוחק בשקט.
+    it("🔴 PATCH {title} alone does not erase status/acpSessionId/cwd (D4 undefined-guard)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/original" })
+      await registry.update(agent.id, {
+        status: "ready",
+        acpSessionId: "sess-keep",
+        cwd: "/original",
+      })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "x" }),
+      })
+      expect(res.status).toBe(200)
+
+      const updated = await registry.get(agent.id)
+      expect(updated?.title).toBe("x")
+      expect(updated?.status).toBe("ready")
+      expect(updated?.acpSessionId).toBe("sess-keep")
+      expect(updated?.cwd).toBe("/original")
+    })
+
+    // D7 — תופעות-projectsRegistry מותנות בנוכחות acpSessionId (עובדת-חיבור).
+    // PATCH {title} בלבד לא אמור לרשום פרויקט או לדרוס lastSessionId.
+    it("PATCH {title} alone does not touch projectsRegistry (D7 conditional side-effects)", async () => {
+      const projectsRegistry = makeFakeProjectsRegistry()
+      const { app, registry } = makeApp({ projectsRegistry })
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      await registry.update(agent.id, { status: "ready", acpSessionId: "sess-1" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "x" }),
+      })
+      expect(res.status).toBe(200)
+      expect(projectsRegistry.recordCwd).not.toHaveBeenCalled()
+      expect(projectsRegistry.recordSession).not.toHaveBeenCalled()
+    })
+
+    // חלק ב של הפרוב: attach מלא עם cwd → 200, agent.cwd משתנה, ו-projectsRegistry
+    // רושם תחת ה-cwd *החדש* (לא הישן) — זו שרשרת ה-cwd שכל הסלייס נבנה סביבה.
+    it("full attach (acpSessionId+status+cwd) → 200, agent.cwd updated, projectsRegistry recorded under new cwd", async () => {
+      const projectsRegistry = makeFakeProjectsRegistry()
+      const { app, registry } = makeApp({ projectsRegistry })
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/tmp/probe-dirA" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          acpSessionId: "sess-from-dirB",
+          status: "ready",
+          cwd: "/tmp/probe-dirB",
+        }),
+      })
+      expect(res.status).toBe(200)
+
+      const updated = await registry.get(agent.id)
+      expect(updated?.cwd).toBe("/tmp/probe-dirB")
+      expect(updated?.status).toBe("ready")
+      expect(updated?.acpSessionId).toBe("sess-from-dirB")
+
+      expect(projectsRegistry.recordCwd).toHaveBeenCalledWith("/tmp/probe-dirB", "opencode")
+      expect(projectsRegistry.recordSession).toHaveBeenCalledWith(
+        "/tmp/probe-dirB",
+        "sess-from-dirB",
+      )
     })
   })
 
