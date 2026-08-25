@@ -76,4 +76,9 @@ describe("enhanceFileLinks", () => {
     node.querySelector<HTMLElement>("[data-file-link]")?.click()
     expect(onOpen).not.toHaveBeenCalled()
   })
+
+  it("enabled:false — absolute path is not linkified", () => {
+    const { node } = mount("<p>/tmp/a.md</p>", { enabled: false })
+    expect(node.querySelector("[data-file-link]")).toBeNull()
+  })
 })

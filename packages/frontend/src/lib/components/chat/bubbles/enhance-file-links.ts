@@ -23,6 +23,8 @@ export type FileLinkParams = {
   onOpen: (uri: string) => void
   /** aria-label/title לכפתור */
   label: string
+  /** Default true. false → action does not linkify at all. */
+  enabled?: boolean
 }
 
 /** צמתים שבתוכם לא מלנקקים: בלוק-קוד וקישור קיים. inline <code> כן — שם נתיבים באמת נכתבים. */
@@ -38,6 +40,7 @@ function isSkipped(node: Node): boolean {
 }
 
 function enhance(node: HTMLElement, p: FileLinkParams): void {
+  if (p.enabled === false) return
   const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT)
   const targets: Text[] = []
   let cur: Node | null = walker.nextNode()

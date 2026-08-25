@@ -50,6 +50,7 @@ const t = getI18n().t
     cwd: fileLinks?.cwd ?? null,
     onOpen: fileLinks?.onOpen ?? (() => {}),
     label: t("chat.content.attachedFile"),
+    enabled: fileLinks !== undefined,
   }}
 >{@html renderMarkdown(text, { cwd: imageCwd })}</div>
 
