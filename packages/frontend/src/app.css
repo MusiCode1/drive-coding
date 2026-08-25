@@ -34,7 +34,7 @@
     --accent-hi:   #f29b78;
     --accent-soft: rgba(232,132,92,0.15);
     --bubble-user: #2f2419;
-    --bubble-agent:#241d2a;
+    --bubble-agent:#241d2a; /* agent-fullwidth: no active FE consumer — token kept for future use */
     --recording:   #ff5a5a;
     --thinking:    #c98bff;
     --speaking:    #f0b65c;
