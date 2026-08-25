@@ -27,7 +27,8 @@
 
 import katex from "katex"
 import { marked, type Tokens } from "marked"
-import { highlightCode } from "./code-highlight"
+import { escapeHtml, highlightCode } from "./code-highlight"
+import { decideImageSrc } from "./markdown-image-src"
 
 // ─── Sentinel (Private-Use Area) ─────────────────────────────────────────────
 // U+E000 = block placeholder (KaTeX block + code blocks). שורד DOMPurify.
@@ -42,9 +43,13 @@ export const INLINE_SENTINEL = ""
 // נרשם ברמת מודול, מתאפס בכל קריאה ל-parseToHtml.
 // אסור להזיז את marked.use לתוך parseToHtml (יירשום extension מצטבר per-call).
 let currentMap: string[] = []
-// fragmentKinds — מקביל ל-currentMap, מסווג כל index כ-"katex" או "code".
+// fragmentKinds — מקביל ל-currentMap, מסווג כל index כ-"katex" | "code" | "image".
 // עמיד לסדר: code-before-katex מסווג נכון (לא תלוי offset).
-let fragmentKinds: ("katex" | "code")[] = []
+let fragmentKinds: ("katex" | "code" | "image")[] = []
+// currentCwd — נקבע בכל parseToHtml; משמש renderer.image לפתרון נתיבים יחסיים.
+let currentCwd: string | null = null
+
+export type MarkdownRenderOptions = { cwd?: string | null }
 
 // ─── allowlist לשמות שפות ב-class (אבטחה: injection ל-class="language-X") ───
 // רק תווים בטוחים: אותיות, מספרים, מקף, פלוס, hash
@@ -86,6 +91,22 @@ function storeCodePlaceholder(html: string): string {
   return `${BLOCK_SENTINEL}${idx}${BLOCK_SENTINEL}`
 }
 
+function storeImagePlaceholder(html: string): string {
+  const idx = currentMap.length
+  currentMap.push(html)
+  fragmentKinds.push("image")
+  return `${BLOCK_SENTINEL}${idx}${BLOCK_SENTINEL}`
+}
+
+function buildImgPlaceholder(src: string, alt: string, title: string | null | undefined): string {
+  let html = `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"`
+  if (title !== null && title !== undefined && title !== "") {
+    html += ` title="${escapeHtml(title)}"`
+  }
+  html += ">"
+  return storeImagePlaceholder(html)
+}
+
 // ─── marked extension (נרשם פעם אחת ברמת מודול) ──────────────────────────────
 // ⚠️ block לפני inline — $$...$$ ו-\[..\] חייבים להיות ראשונים ברשימה,
 // אחרת $$ עלול להיתפס כ-2× $..$ (finding #3, אמות ע"י אביגיל).
@@ -107,6 +128,17 @@ marked.use({
 
       // ה-sentinel עצמאי (block-level) — pre+code+spans כולם בתוך ה-fragment
       return storeCodePlaceholder(fullBlock)
+    },
+    image(token: Tokens.Image): string {
+      const decision = decideImageSrc(token.href, currentCwd)
+      if (decision.kind === "proxy" || decision.kind === "data") {
+        return buildImgPlaceholder(decision.src, token.text, token.title)
+      }
+      if (decision.kind === "remote") {
+        const alt = token.text.replace(/[[\]]/g, "")
+        return escapeHtml(`![${alt}](${decision.url})`)
+      }
+      return escapeHtml(token.raw)
     },
   },
   extensions: [
@@ -254,14 +286,16 @@ export function normalizeInvisibles(text: string): string {
  *
  * ⚠️ אסור להשתמש ב-html שמוחזר ישירות ב-{@html} — חייב לעבור sanitize ב-renderMarkdown.
  */
-export function parseToHtml(text: string): {
+export function parseToHtml(text: string, opts?: MarkdownRenderOptions): {
   html: string
   katexFragments: string[]
   codeFragments: string[]
-  fragmentKinds: ("katex" | "code")[]
+  imageFragments: string[]
+  fragmentKinds: ("katex" | "code" | "image")[]
 } {
   currentMap = []
   fragmentKinds = []
+  currentCwd = opts?.cwd ?? null
   const normalized = normalizeInvisibles(text)
   const html = marked.parse(normalized, {
     async: false,
@@ -271,5 +305,6 @@ export function parseToHtml(text: string): {
   // סיווג לפי fragmentKinds — עמיד לסדר (code-before-katex נשמר נכון)
   const katexFragments = currentMap.filter((_, i) => fragmentKinds[i] === "katex")
   const codeFragments = currentMap.filter((_, i) => fragmentKinds[i] === "code")
-  return { html, katexFragments, codeFragments, fragmentKinds }
+  const imageFragments = currentMap.filter((_, i) => fragmentKinds[i] === "image")
+  return { html, katexFragments, codeFragments, imageFragments, fragmentKinds }
 }
