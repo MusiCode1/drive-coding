@@ -40,8 +40,13 @@ export async function connectAgent(params: {
   })
 
   if (transport === "http") {
-    await params.session.attachRemote({ cwd: params.cwd, cliKind: params.cliKind })
-    // ⚠️ systemPrompt אינו נתמך ב-remote (attachRemote אין לו פרמטר כזה) — known-gap מתועד.
+    // slice http-cold-parity: attachRemote מקבל systemPrompt כעת — שני הענפים
+    // (http/ws) מעבירים אותו הלאה עם אותו ביטוי בדיוק.
+    await params.session.attachRemote({
+      cwd: params.cwd,
+      cliKind: params.cliKind,
+      systemPrompt: params.settings.getProjectPrompt(params.cwd),
+    })
   } else {
     // slice project-system-prompt: שולף את הפרומפט השמור לפרויקט (cwd) מ-Settings — ה-VM
     // עצמו לא מחזיק Settings, ה-action (שכבת חוצה-VM) היא המקום הנכון לשלוף (§9 Q1).
