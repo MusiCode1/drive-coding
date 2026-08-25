@@ -21,6 +21,10 @@
  * כאן; נמדד ע"י message-bubble-harness.test.ts.
  *
  * שימוש: `mount(MessageBubbleHarness, { target, props: { bubble } })`.
+ * ⚠️ אם הטסט צריך `use:`-actions (למשל enhanceMermaid) כבר רצות — קרא
+ * `flushSync()` (מ-"svelte") מיד אחרי ה-mount. נמצא ב-slice/msg-diagrams
+ * Commit 2: תחת mount() ‏actions אינן רצות סינכרונית עם ה-mount עצמו (effect-flush
+ * נדחה) — `flushSync()` מכריח את זה. ר' message-bubble-mermaid.test.ts.
  */
 
 import {

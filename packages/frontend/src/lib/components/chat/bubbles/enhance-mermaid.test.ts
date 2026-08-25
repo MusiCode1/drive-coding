@@ -138,4 +138,67 @@ describe("enhanceMermaid", () => {
     expect(node.querySelector(".mermaid-diagram")).toBeNull()
     expect(node.textContent).toContain("new content")
   })
+
+  // ─── slice/msg-diagrams (Commit 2) — onExpand + expandLabel ─────────────
+  describe("onExpand — לחיצה על תרשים מוכן → ContentViewer", () => {
+    it("קליק על ה-wrapper קורא ל-onExpand עם ה-SVG המחוטא, ומוסיף role/tabindex/aria-label", async () => {
+      const node = makeNode(mermaidBlock("flowchart TD\n  Expand-->Click"))
+      const render = vi.fn(async () => "<svg><g/></svg>")
+      const onExpand = vi.fn()
+      const action = enhanceMermaid(node, {
+        text: "x",
+        render,
+        onExpand,
+        expandLabel: "הגדל תרשים",
+      })
+
+      let wrapper: HTMLElement | null = null
+      await vi.waitFor(() => {
+        wrapper = node.querySelector<HTMLElement>(".mermaid-diagram")
+        expect(wrapper).not.toBeNull()
+      })
+
+      expect(wrapper?.getAttribute("role")).toBe("button")
+      expect(wrapper?.tabIndex).toBe(0)
+      expect(wrapper?.getAttribute("aria-label")).toBe("הגדל תרשים")
+
+      wrapper?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      expect(onExpand).toHaveBeenCalledTimes(1)
+      expect(onExpand).toHaveBeenCalledWith(expect.stringContaining("<svg>"))
+      action.destroy?.()
+    })
+
+    it("Enter/Space על ה-wrapper גם קוראים ל-onExpand (יעד-מגע נגיש)", async () => {
+      const node = makeNode(mermaidBlock("flowchart TD\n  Keyboard-->Access"))
+      const render = vi.fn(async () => "<svg><g/></svg>")
+      const onExpand = vi.fn()
+      const action = enhanceMermaid(node, { text: "x", render, onExpand })
+
+      let wrapper: HTMLElement | null = null
+      await vi.waitFor(() => {
+        wrapper = node.querySelector<HTMLElement>(".mermaid-diagram")
+        expect(wrapper).not.toBeNull()
+      })
+
+      wrapper?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+      expect(onExpand).toHaveBeenCalledTimes(1)
+      action.destroy?.()
+    })
+
+    it("בלי onExpand — אין role/tabindex/aria-label (התרשים לא לחיץ)", async () => {
+      const node = makeNode(mermaidBlock("flowchart TD\n  No-->Expand"))
+      const render = vi.fn(async () => "<svg><g/></svg>")
+      const action = enhanceMermaid(node, { text: "x", render })
+
+      let wrapper: HTMLElement | null = null
+      await vi.waitFor(() => {
+        wrapper = node.querySelector<HTMLElement>(".mermaid-diagram")
+        expect(wrapper).not.toBeNull()
+      })
+
+      expect(wrapper?.getAttribute("role")).toBeNull()
+      expect(wrapper?.getAttribute("aria-label")).toBeNull()
+      action.destroy?.()
+    })
+  })
 })

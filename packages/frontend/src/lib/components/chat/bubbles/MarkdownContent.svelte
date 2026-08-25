@@ -18,11 +18,13 @@
  * ─── slice/code-copy-button (Commit 1) — הוספת use:enhanceCodeBlocks ───
  * ─── slice fs-file-proxy (המשך) — prop fileLinks (opt-in) → use:enhanceFileLinks ───
  * ─── slice msg-media — prop imageCwd → renderMarkdown({ cwd }) ───
+ * ─── slice/msg-diagrams (Commit 2) — prop onExpand (opt-in) → use:enhanceMermaid ───
  */
 import { renderMarkdown } from "$lib/util/markdown"
 import { getI18n, getSettings } from "$lib/context"
 import { enhanceCodeBlocks } from "./enhance-code-blocks"
 import { enhanceFileLinks, type FileLinkParams } from "./enhance-file-links"
+import { enhanceMermaid } from "./enhance-mermaid"
 import { enhanceRemoteImages } from "./enhance-remote-images"
 
 let {
@@ -30,12 +32,18 @@ let {
   variant = "bubble",
   imageCwd = null,
   fileLinks,
+  onExpand,
 }: {
   text: string
   variant?: "bubble" | "viewer"
   /** Resolves relative paths in markdown images only. Does not affect fileLinks. */
   imageCwd?: string | null
   fileLinks?: Omit<FileLinkParams, "text" | "label" | "enabled">
+  /**
+   * slice/msg-diagrams — לחיצה על תרשים-mermaid מוכן → ContentViewer fullscreen.
+   * אופציונלי: רכיב שלא מעביר אותו — התרשים אצלו פשוט אינו לחיץ (brief §4 Commit 2 סעיף 1).
+   */
+  onExpand?: (svg: string) => void
 } = $props()
 
 const t = getI18n().t
@@ -61,6 +69,7 @@ const settings = getSettings()
     enabled: fileLinks !== undefined,
     absoluteOnly: fileLinks?.absoluteOnly ?? false,
   }}
+  use:enhanceMermaid={{ text, onExpand, expandLabel: t("contentViewer.expand") }}
 >{@html renderMarkdown(text, { cwd: imageCwd })}</div>
 
 <style>
@@ -274,4 +283,23 @@ const settings = getSettings()
   /* addition / deletion (diff) */
   .md-content :global(.hljs-addition)          { color: var(--hl-string); }
   .md-content :global(.hljs-deletion)          { color: var(--hl-keyword); }
+
+  /* ── slice/msg-diagrams: תרשים-mermaid מצויר (brief §4 Commit 2 סעיף 3) ──
+   * direction:ltr כמו pre/code (שורה 183) — תרשים אינו טקסט דו-כיווני.
+   * min-height 44px — יעד-מגע לחיצה באצבע (אפליקציית-נהיגה); התרשים כולו
+   * הוא היעד, לא אייקון קטן. */
+  .md-content :global(.mermaid-diagram) {
+    max-width: 100%;
+    overflow-x: auto;
+    direction: ltr;
+    margin: 0.4em 0;
+    min-height: 44px;
+  }
+  .md-content :global(.mermaid-diagram[role="button"]) {
+    cursor: pointer;
+  }
+  .md-content :global(.mermaid-diagram svg) {
+    max-width: 100%;
+    height: auto;
+  }
 </style>

@@ -29,6 +29,12 @@ export type MermaidParams = {
   text: string
   /** לחיצה על תרשים מוכן → ContentViewer (Commit 2). */
   onExpand?: (svg: string) => void
+  /**
+   * aria-label לתרשים הלחיץ — i18n קיים (`contentViewer.expand`), לא מפתח חדש
+   * (brief §4 Commit 2 סעיף 4). לא חובה: אם onExpand מוגדר בלי label, הכפתור
+   * עדיין לחיץ, רק בלי aria-label.
+   */
+  expandLabel?: string
   /** הזרקה לטסטים בלבד. ברירת-מחדל = מרנדר האמיתי (import דינמי). */
   render?: (code: string, id: string) => Promise<string>
 }
@@ -105,6 +111,7 @@ function applyResult(
   pre: HTMLElement,
   entry: CacheEntry,
   onExpand: MermaidParams["onExpand"],
+  expandLabel: MermaidParams["expandLabel"],
 ): void {
   if (entry.kind === "error") {
     // Commit 1 §6: ה-<pre> נשאר כפי שהוא — רק המצב מתעדכן.
@@ -117,7 +124,18 @@ function applyResult(
   wrapper.dataset.mermaidState = "ready"
   wrapper.innerHTML = entry.svg
   if (onExpand !== undefined) {
+    // Commit 2: יעד-מגע לחיץ (אפליקציית-נהיגה) — role+tabindex+Enter/Space,
+    // לצד click. aria-label ממוחזר מ-contentViewer.expand הקיים (לא מפתח חדש).
     wrapper.onclick = () => onExpand(entry.svg)
+    wrapper.setAttribute("role", "button")
+    wrapper.tabIndex = 0
+    if (expandLabel !== undefined) wrapper.setAttribute("aria-label", expandLabel)
+    wrapper.onkeydown = (ev: KeyboardEvent) => {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault()
+        onExpand(entry.svg)
+      }
+    }
   }
   pre.replaceWith(wrapper)
 }
@@ -128,10 +146,11 @@ function processBlock(
   code: string,
   renderFn: NonNullable<MermaidParams["render"]>,
   onExpand: MermaidParams["onExpand"],
+  expandLabel: MermaidParams["expandLabel"],
 ): void {
   const cached = renderCache.get(code)
   if (cached !== undefined) {
-    applyResult(pre, cached, onExpand)
+    applyResult(pre, cached, onExpand, expandLabel)
     return
   }
 
@@ -145,13 +164,13 @@ function processBlock(
       renderCache.set(code, entry)
       // 🔴 מרוץ-streaming (אביגיל ממצא 9): {@html} עשוי להיות כבר החליף הכל.
       if (!pre.isConnected) return
-      applyResult(pre, entry, onExpand)
+      applyResult(pre, entry, onExpand, expandLabel)
     })
     .catch(() => {
       const entry: CacheEntry = { kind: "error" }
       renderCache.set(code, entry)
       if (!pre.isConnected) return
-      applyResult(pre, entry, onExpand)
+      applyResult(pre, entry, onExpand, expandLabel)
     })
 }
 
@@ -162,7 +181,7 @@ function enhance(node: HTMLElement, params: MermaidParams): void {
     const pre = code.parentElement
     if (pre === null) continue
     const text = code.textContent ?? ""
-    processBlock(pre, text, renderFn, params.onExpand)
+    processBlock(pre, text, renderFn, params.onExpand, params.expandLabel)
   }
 }
 
