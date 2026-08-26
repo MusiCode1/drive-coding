@@ -1,3 +1,21 @@
+## 2026-08-27 01:13
+
+### slice live-contract-gemini — Commit 1: endpoint הנפקת-טוקן
+
+#### מה בוצע?
+
+- `live-gemini-config.ts` — בניית קונפיג-סשן מלא (תואם SESSION_CONFIG בפרוב).
+- `http-live-token.ts` — POST `/api/voice/live/token`, authTokens.create v1alpha.
+- טסטי אינטגרציה: 503 ללא מפתח, 400, tools לא-ריק ב-constraints.
+- `server.ts` — registerLiveTokenHttp.
+
+#### בדיקות
+
+- curl ל-4020 — token + sessionConfig חוזרים.
+- vitest: live-gemini-config + http-live-token — 5/5.
+
+---
+
 ## 2026-08-27 01:10
 
 ### slice live-contract-gemini — Commit 0: חוזה ליבה
