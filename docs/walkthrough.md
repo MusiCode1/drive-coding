@@ -1,3 +1,17 @@
+## 2026-08-27 01:25
+
+### slice live-contract-gemini — סיום
+
+4 commits מעל בסיס 3952f4f9 (+ 2 probe artifacts). calev phase1: GO (0 findings).
+calev-heavy: ממתין.
+
+#### סטיות
+
+- PCM/STT ~20% flake בשער (4/5 pass אחרי timeout fix)
+- usage לפעמים null
+
+---
+
 ## 2026-08-27 01:17
 
 ### slice live-contract-gemini — Commit 3: probe-live-adapter (שער חי)
