@@ -2,7 +2,11 @@
  * sidebar-width.ts — clamp + direction-aware width math for the desktop sidebar.
  *
  * ─── slice sidebar-resize ───
+ *
+ * Reuses the pure `clamp()` already exported by `resize-drag.ts`
+ * (slice connect-panel-resize) rather than re-deriving Math.max/min.
  */
+import { clamp } from "./resize-drag"
 
 export const MIN_REM = 14
 export const MAX_REM = 32
@@ -11,7 +15,7 @@ export const DEFAULT_SIDEBAR_WIDTH_REM = 18
 /** Clamp sidebar width in rem; non-finite values fall back to default. */
 export function clampSidebarWidth(rem: number): number {
   if (!Number.isFinite(rem)) return DEFAULT_SIDEBAR_WIDTH_REM
-  return Math.max(MIN_REM, Math.min(MAX_REM, rem))
+  return clamp(rem, MIN_REM, MAX_REM)
 }
 
 /** Resize sign: LTR expands on +deltaX, RTL expands on -deltaX. */
