@@ -506,3 +506,44 @@ describe("Settings — autoLoadRemoteImages (slice msg-media)", () => {
     expect(s2.autoLoadRemoteImages).toBe(true)
   })
 })
+
+describe("Settings — fe-defaults gate", () => {
+  test("CASE1: new user (no blob) → muted true, screenWakeLock true, sessionTransport http", () => {
+    installLocalStorage()
+    const s = new Settings()
+    expect({ m: s.muted, w: s.screenWakeLock, t: s.sessionTransport }).toEqual({
+      m: true,
+      w: true,
+      t: "http",
+    })
+  })
+
+  test("CASE2: existing blob without the three keys → muted false, screenWakeLock false, sessionTransport null", () => {
+    const store = installLocalStorage()
+    store.set(STORAGE_KEY, JSON.stringify({ cliKind: "opencode", voiceId: "v1" }))
+    const s = new Settings()
+    expect({ m: s.muted, w: s.screenWakeLock, t: s.sessionTransport }).toEqual({
+      m: false,
+      w: false,
+      t: null,
+    })
+  })
+
+  test("CASE3: existing blob with explicit choices → honors parsed values", () => {
+    const store = installLocalStorage()
+    store.set(
+      STORAGE_KEY,
+      JSON.stringify({
+        muted: true,
+        screenWakeLock: false,
+        sessionTransport: "ws",
+      }),
+    )
+    const s = new Settings()
+    expect({ m: s.muted, w: s.screenWakeLock, t: s.sessionTransport }).toEqual({
+      m: true,
+      w: false,
+      t: "ws",
+    })
+  })
+})
