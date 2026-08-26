@@ -186,3 +186,43 @@ describe("loadConfig — empty inputs", () => {
     expect(warnings).toHaveLength(0)
   })
 })
+
+describe("loadConfig — secret keys in config file (loud failure)", () => {
+  it("voice in config file → errors with key name and secrets.json, not the value", () => {
+    const configPath = writeTmpJson({ port: 4100, voice: { elevenLabsKey: "PLACEHOLDER-EL" } })
+    const { errors } = loadConfig({ argv: { config: configPath }, env: {} })
+    const joined = errors.join("\n")
+    expect(errors.length).toBeGreaterThan(0)
+    expect(joined).toContain("elevenLabsKey")
+    expect(joined).toContain("secrets.json")
+    expect(joined).not.toContain("PLACEHOLDER-EL")
+  })
+
+  it("top-level geminiKey in config file → same error shape", () => {
+    const configPath = writeTmpJson({ geminiKey: "PLACEHOLDER-GM" })
+    const { errors } = loadConfig({ argv: { config: configPath }, env: {} })
+    expect(errors.join("\n")).toContain("geminiKey")
+  })
+
+  it("--config-json with voice → errors", () => {
+    const { errors } = loadConfig({
+      argv: { "config-json": JSON.stringify({ voice: { geminiKey: "PLACEHOLDER-GM" } }) },
+      env: {},
+    })
+    expect(errors.length).toBeGreaterThan(0)
+    expect(errors.join("\n")).toContain("--config-json")
+  })
+
+  it("secret via env or flag → errors empty", () => {
+    const r1 = loadConfig({ argv: { "gemini-key": "PLACEHOLDER-GM" }, env: {} })
+    const r2 = loadConfig({ argv: {}, env: { ELEVENLABS_API_KEY: "PLACEHOLDER-EL" } })
+    expect(r1.errors).toEqual([])
+    expect(r2.errors).toEqual([])
+  })
+
+  it("valid config file → errors empty", () => {
+    const configPath = writeTmpJson({ port: 4100 })
+    const { errors } = loadConfig({ argv: { config: configPath }, env: {} })
+    expect(errors).toEqual([])
+  })
+})

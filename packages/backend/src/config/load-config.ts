@@ -38,6 +38,8 @@ export type LoadConfigResult = {
   /** String-ified values to write to process.env. The bin writes these after calling loadConfig. */
   envPatch: Record<string, string>
   warnings: string[]
+  /** Fatal config-file secret violations — bin must exit before applying envPatch. */
+  errors: string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -318,6 +320,66 @@ function buildSecretsEnvPatch(secrets: DriveCodingSecretsType): Record<string, s
 }
 
 // ---------------------------------------------------------------------------
+// Secret-key detection in config file layer (explicit — ArkType strips silently)
+// ---------------------------------------------------------------------------
+
+function formatSecretKeyError(
+  displayKey: string,
+  secretsJsonKey: (typeof SECRET_SPECS)[number]["key"],
+  isConfigJson: boolean,
+  configPath: string,
+  secretsPath: string,
+): string {
+  const spec = SECRET_SPECS.find((s) => s.key === secretsJsonKey)
+  if (!spec) {
+    throw new Error(`missing SECRET_SPECS entry for ${secretsJsonKey}`)
+  }
+  const location = isConfigJson
+    ? "is not allowed in --config-json."
+    : `is not allowed in the config file\n  ${configPath}.`
+  return (
+    `[drive-coding] secret key "${displayKey}" ${location} ` +
+    `Move it to ${secretsPath} as "${secretsJsonKey}" ` +
+    `(or use ${spec.env} / --${spec.flag}). Startup aborted.`
+  )
+}
+
+function detectSecretKeysInFileLayer(
+  fileLayer: Partial<DriveCodingConfig>,
+  argv: RawArgs,
+): string[] {
+  const raw = fileLayer as Record<string, unknown>
+  if (Object.keys(raw).length === 0) {
+    return []
+  }
+
+  const isConfigJson = argv["config-json"] !== undefined
+  const configPath = (argv["config"] as string | undefined) ?? join(getStateDir(), "config.jsonc")
+  const secretsPath = join(getStateDir(), "secrets.json")
+  const errors: string[] = []
+
+  for (const spec of SECRET_SPECS) {
+    if (raw[spec.key] !== undefined) {
+      errors.push(formatSecretKeyError(spec.key, spec.key, isConfigJson, configPath, secretsPath))
+    }
+  }
+
+  const voice = raw["voice"]
+  if (voice !== undefined && typeof voice === "object" && voice !== null && !Array.isArray(voice)) {
+    const voiceObj = voice as Record<string, unknown>
+    for (const spec of SECRET_SPECS) {
+      if (voiceObj[spec.key] !== undefined) {
+        errors.push(
+          formatSecretKeyError(`voice.${spec.key}`, spec.key, isConfigJson, configPath, secretsPath),
+        )
+      }
+    }
+  }
+
+  return errors
+}
+
+// ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
 export function loadConfig(opts: {
@@ -327,6 +389,7 @@ export function loadConfig(opts: {
   const warnings: string[] = []
 
   const fileLayer = buildFileLayer(opts.argv, warnings)
+  const errors = detectSecretKeysInFileLayer(fileLayer, opts.argv)
   const envLayer = buildEnvLayer(opts.env)
   const flagLayer = buildFlagLayer(opts.argv)
 
@@ -342,13 +405,19 @@ export function loadConfig(opts: {
     for (const msg of result.error) {
       warnings.push(`[load-config] validation error: ${msg}`)
     }
-    return { config: {} as DriveCodingConfig, secrets, envPatch: buildSecretsEnvPatch(secrets), warnings }
+    return {
+      config: {} as DriveCodingConfig,
+      secrets,
+      envPatch: buildSecretsEnvPatch(secrets),
+      warnings,
+      errors,
+    }
   }
 
   const config = result.value
   const envPatch = { ...buildConfigEnvPatch(config), ...buildSecretsEnvPatch(secrets) }
 
-  return { config, secrets, envPatch, warnings }
+  return { config, secrets, envPatch, warnings, errors }
 }
 
 // Re-export parseEnvFile for bin use (avoids double import from core).
