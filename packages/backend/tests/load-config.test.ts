@@ -112,12 +112,12 @@ describe("loadConfig — precedence", () => {
 
 describe("loadConfig — env vars", () => {
   it("6. voice keys from env", () => {
-    const { config, envPatch } = loadConfig({
+    const { secrets, envPatch } = loadConfig({
       argv: {},
       env: { ELEVENLABS_API_KEY: "el-key", GEMINI_API_KEY: "gm-key" },
     })
-    expect(config.voice?.elevenLabsKey).toBe("el-key")
-    expect(config.voice?.geminiKey).toBe("gm-key")
+    expect(secrets.elevenLabsKey).toBe("el-key")
+    expect(secrets.geminiKey).toBe("gm-key")
     expect(envPatch["ELEVENLABS_API_KEY"]).toBe("el-key")
     expect(envPatch["GEMINI_API_KEY"]).toBe("gm-key")
   })
@@ -143,12 +143,12 @@ describe("loadConfig — env vars", () => {
 
 describe("loadConfig — flag secrets", () => {
   it("7. --elevenlabs-key flag → warning about process list visibility", () => {
-    const { config, warnings } = loadConfig({
+    const { secrets, warnings } = loadConfig({
       argv: { "elevenlabs-key": "secret-key" },
       env: {},
     })
     expect(warnings.some(w => w.includes("visible in the process list"))).toBe(true)
-    expect(config.voice?.elevenLabsKey).toBe("secret-key")
+    expect(secrets.elevenLabsKey).toBe("secret-key")
   })
 
   it("--gemini-key flag → warning", () => {

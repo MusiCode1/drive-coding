@@ -55,6 +55,7 @@ try {
       "cors-origins": { type: "string" },
       config: { type: "string" },
       "config-json": { type: "string" },
+      secrets: { type: "string" },
       "env-file": { type: "string" },
       "log-level": { type: "string" },
       "elevenlabs-key": { type: "string" },

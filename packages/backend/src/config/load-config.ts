@@ -6,7 +6,12 @@
  *   2. process.env (including values injected by --env-file)
  *   3. CLI flags (argv)
  *
- * Returns the resolved config + an envPatch map (string-ified values to write to
+ * Secrets are loaded separately (not via resolveConfig):
+ *   1. <stateDir>/secrets.json  (or --secrets flag)
+ *   2. process.env
+ *   3. CLI secret flags
+ *
+ * Returns the resolved config + secrets + an envPatch map (string-ified values to write to
  * process.env) + any warnings collected along the way.
  *
  * Pure resolution is delegated to core/config/resolve. This module owns all IO.
@@ -14,8 +19,14 @@
 
 import * as fs from "node:fs"
 import { join } from "node:path"
+import { type } from "arktype"
 import { parseEnvFile } from "@drive-coding/core/config/env-file"
 import { resolveConfig } from "@drive-coding/core/config/resolve"
+import {
+  DriveCodingSecrets,
+  SECRET_SPECS,
+  type DriveCodingSecrets as DriveCodingSecretsType,
+} from "@drive-coding/core/config/secrets"
 import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
 import { getStateDir } from "../paths.js"
 
@@ -23,6 +34,7 @@ export type RawArgs = Record<string, string | boolean | undefined>
 
 export type LoadConfigResult = {
   config: DriveCodingConfig
+  secrets: DriveCodingSecretsType
   /** String-ified values to write to process.env. The bin writes these after calling loadConfig. */
   envPatch: Record<string, string>
   warnings: string[]
@@ -41,7 +53,7 @@ function stripJsoncComments(text: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Layer builders
+// Config layer builders
 // ---------------------------------------------------------------------------
 
 /** Build file layer from --config / --config-json / default path. */
@@ -128,16 +140,6 @@ function buildEnvLayer(env: NodeJS.ProcessEnv): Partial<DriveCodingConfig> {
     layer.log = logObj
   }
 
-  // Voice sub-object.
-  const elevenLabsKey = env.ELEVENLABS_API_KEY
-  const geminiKey = env.GEMINI_API_KEY
-  if (elevenLabsKey !== undefined || geminiKey !== undefined) {
-    const voiceObj: NonNullable<DriveCodingConfig["voice"]> = {}
-    if (elevenLabsKey) voiceObj.elevenLabsKey = elevenLabsKey
-    if (geminiKey) voiceObj.geminiKey = geminiKey
-    layer.voice = voiceObj
-  }
-
   // CLI_SPECS_JSON.
   if (env.CLI_SPECS_JSON) {
     try {
@@ -154,19 +156,8 @@ function buildEnvLayer(env: NodeJS.ProcessEnv): Partial<DriveCodingConfig> {
 }
 
 /** Build flag layer from parsed CLI argv. */
-function buildFlagLayer(argv: RawArgs, warnings: string[]): Partial<DriveCodingConfig> {
+function buildFlagLayer(argv: RawArgs): Partial<DriveCodingConfig> {
   const layer: Partial<DriveCodingConfig> = {}
-
-  // Secret flags — warn about process-list visibility.
-  const secretFlags = ["elevenlabs-key", "gemini-key"] as const
-  for (const flag of secretFlags) {
-    if (argv[flag] !== undefined) {
-      warnings.push(
-        `[load-config] --${flag} is visible in the process list. ` +
-          "Prefer setting the secret via --env-file or environment variable.",
-      )
-    }
-  }
 
   if (argv["port"] !== undefined) {
     const p = Number(argv["port"])
@@ -185,23 +176,109 @@ function buildFlagLayer(argv: RawArgs, warnings: string[]): Partial<DriveCodingC
     layer.log = { level: argv["log-level"] as string }
   }
 
-  // Voice keys from flags.
-  const elevenLabsKey = argv["elevenlabs-key"] as string | undefined
-  const geminiKey = argv["gemini-key"] as string | undefined
-  if (elevenLabsKey !== undefined || geminiKey !== undefined) {
-    const voiceObj: NonNullable<DriveCodingConfig["voice"]> = {}
-    if (elevenLabsKey) voiceObj.elevenLabsKey = elevenLabsKey
-    if (geminiKey) voiceObj.geminiKey = geminiKey
-    layer.voice = voiceObj
-  }
-
   return layer
 }
 
 // ---------------------------------------------------------------------------
-// envPatch builder
+// Secrets layer builders (derived from SECRET_SPECS — no hardcoded env/flag names)
 // ---------------------------------------------------------------------------
-function buildEnvPatch(config: DriveCodingConfig): Record<string, string> {
+
+function buildSecretsFileLayer(
+  argv: RawArgs,
+  warnings: string[],
+): Partial<DriveCodingSecretsType> {
+  const secretsArg = argv["secrets"] as string | undefined
+  const secretsPath = secretsArg ?? join(getStateDir(), "secrets.json")
+  const explicit = secretsArg !== undefined
+
+  if (!fs.existsSync(secretsPath)) {
+    if (explicit) {
+      warnings.push(`[load-config] --secrets "${secretsPath}" not found — skipping`)
+    }
+    return {}
+  }
+
+  let raw: string
+  try {
+    raw = fs.readFileSync(secretsPath, "utf8")
+  } catch (e) {
+    warnings.push(`[load-config] failed to read secrets file ${secretsPath}: ${String(e)}`)
+    return {}
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    warnings.push(`[load-config] secrets file ${secretsPath} is not valid JSON — ignoring`)
+    return {}
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    warnings.push(`[load-config] secrets file ${secretsPath} must be a JSON object — ignoring`)
+    return {}
+  }
+
+  const validated = DriveCodingSecrets(parsed)
+  if (validated instanceof type.errors) {
+    warnings.push(`[load-config] secrets file ${secretsPath} has invalid format — ignoring`)
+    return {}
+  }
+
+  return validated as DriveCodingSecretsType
+}
+
+function buildSecretsEnvLayer(env: NodeJS.ProcessEnv): Partial<DriveCodingSecretsType> {
+  const layer: Partial<DriveCodingSecretsType> = {}
+  for (const spec of SECRET_SPECS) {
+    const value = env[spec.env]
+    if (value) {
+      layer[spec.key] = value
+    }
+  }
+  return layer
+}
+
+function buildSecretsFlagLayer(
+  argv: RawArgs,
+  warnings: string[],
+): Partial<DriveCodingSecretsType> {
+  const layer: Partial<DriveCodingSecretsType> = {}
+  for (const spec of SECRET_SPECS) {
+    if (argv[spec.flag] !== undefined) {
+      warnings.push(
+        `[load-config] --${spec.flag} is visible in the process list. ` +
+          "Prefer setting the secret via --env-file or environment variable.",
+      )
+      const value = argv[spec.flag] as string
+      if (value) {
+        layer[spec.key] = value
+      }
+    }
+  }
+  return layer
+}
+
+/** Per-key merge: file < env < flags. */
+function mergeSecrets(
+  fileLayer: Partial<DriveCodingSecretsType>,
+  envLayer: Partial<DriveCodingSecretsType>,
+  flagLayer: Partial<DriveCodingSecretsType>,
+): DriveCodingSecretsType {
+  const secrets: DriveCodingSecretsType = {}
+  for (const spec of SECRET_SPECS) {
+    const value = flagLayer[spec.key] ?? envLayer[spec.key] ?? fileLayer[spec.key]
+    if (value !== undefined) {
+      secrets[spec.key] = value
+    }
+  }
+  return secrets
+}
+
+// ---------------------------------------------------------------------------
+// envPatch builders
+// ---------------------------------------------------------------------------
+function buildConfigEnvPatch(config: DriveCodingConfig): Record<string, string> {
   const patch: Record<string, string> = {}
 
   if (config.port !== undefined) patch["PORT"] = String(config.port)
@@ -218,15 +295,6 @@ function buildEnvPatch(config: DriveCodingConfig): Record<string, string> {
     if (config.log.format !== undefined) patch["LOG_FORMAT"] = config.log.format
   }
 
-  if (config.voice !== undefined) {
-    if (config.voice.elevenLabsKey !== undefined) {
-      patch["ELEVENLABS_API_KEY"] = config.voice.elevenLabsKey
-    }
-    if (config.voice.geminiKey !== undefined) {
-      patch["GEMINI_API_KEY"] = config.voice.geminiKey
-    }
-  }
-
   if (config.cliSpecs !== undefined) {
     patch["CLI_SPECS_JSON"] = JSON.stringify(config.cliSpecs)
   }
@@ -235,6 +303,17 @@ function buildEnvPatch(config: DriveCodingConfig): Record<string, string> {
     patch["DRIVE_CODING_HTTPS"] = JSON.stringify(config.https)
   }
 
+  return patch
+}
+
+function buildSecretsEnvPatch(secrets: DriveCodingSecretsType): Record<string, string> {
+  const patch: Record<string, string> = {}
+  for (const spec of SECRET_SPECS) {
+    const value = secrets[spec.key]
+    if (value !== undefined) {
+      patch[spec.env] = value
+    }
+  }
   return patch
 }
 
@@ -249,7 +328,12 @@ export function loadConfig(opts: {
 
   const fileLayer = buildFileLayer(opts.argv, warnings)
   const envLayer = buildEnvLayer(opts.env)
-  const flagLayer = buildFlagLayer(opts.argv, warnings)
+  const flagLayer = buildFlagLayer(opts.argv)
+
+  const secretsFileLayer = buildSecretsFileLayer(opts.argv, warnings)
+  const secretsEnvLayer = buildSecretsEnvLayer(opts.env)
+  const secretsFlagLayer = buildSecretsFlagLayer(opts.argv, warnings)
+  const secrets = mergeSecrets(secretsFileLayer, secretsEnvLayer, secretsFlagLayer)
 
   const result = resolveConfig([fileLayer, envLayer, flagLayer])
 
@@ -258,13 +342,13 @@ export function loadConfig(opts: {
     for (const msg of result.error) {
       warnings.push(`[load-config] validation error: ${msg}`)
     }
-    return { config: {} as DriveCodingConfig, envPatch: {}, warnings }
+    return { config: {} as DriveCodingConfig, secrets, envPatch: buildSecretsEnvPatch(secrets), warnings }
   }
 
   const config = result.value
-  const envPatch = buildEnvPatch(config)
+  const envPatch = { ...buildConfigEnvPatch(config), ...buildSecretsEnvPatch(secrets) }
 
-  return { config, envPatch, warnings }
+  return { config, secrets, envPatch, warnings }
 }
 
 // Re-export parseEnvFile for bin use (avoids double import from core).
