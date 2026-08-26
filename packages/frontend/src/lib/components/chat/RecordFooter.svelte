@@ -2,7 +2,7 @@
 /**
  * RecordFooter — footer אזור-קלט (redesign-4, גובה משתנה: redesign-fix).
  *
- * mode: "record" | "typing" | "hidden" — $state מקומי (לא VM — לפי §3).
+ * mode: "record" | "typing" | "hidden" — UiShellVM.inputMode (singleton, slice playback-dock-scope).
  * toggle 3-כפתורים + MicLarge / TypeArea. במצב hidden אזור הפעולה מתכווץ ל-0
  * ונשאר רק ה-toggle (מאפשר קריאה בלי שהפוטר מסתיר חצי מסך).
  *
@@ -24,16 +24,13 @@ import KeyboardIcon from "@lucide/svelte/icons/keyboard"
 import EyeOffIcon from "@lucide/svelte/icons/eye-off"
 import MicLarge from "./MicLarge.svelte"
 import TypeArea from "./TypeArea.svelte"
-import { getI18n, getResponsive, getSession } from "$lib/context"
+import { getI18n, getResponsive, getSession, getUiShell } from "$lib/context"
 
 const t = getI18n().t
 const responsive = getResponsive()
+const uiShell = getUiShell()
 // TEMP-RECONNECT (לבדיקה ידנית בלבד — להחזיר לאחור; אינו חלק מ-slice infra)
 const session = getSession()
-
-// mode מקומי — record (ברירת מחדל) / typing / hidden
-type Mode = "record" | "typing" | "hidden"
-let mode = $state<Mode>("record")
 </script>
 
 <!-- footer: דסקטופ = כרטיס עולה-מלמטה; מובייל = שטוח עם רקע bg (ה-fade הוא
@@ -42,7 +39,7 @@ let mode = $state<Mode>("record")
 <footer
   class="relative shrink-0 flex justify-center px-4"
   class:mic-plain={responsive.isMobile}
-  class:is-hidden={mode === "hidden"}
+  class:is-hidden={uiShell.inputMode === "hidden"}
   style={responsive.isMobile ? "background:var(--bg)" : ""}
 >
   <!-- כרטיס mic — .mic-card מ-app.css (שקוף במובייל דרך .mic-plain) -->
@@ -55,33 +52,33 @@ let mode = $state<Mode>("record")
     >
       <button
         class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full font-semibold transition-all"
-        style={mode === "record"
+        style={uiShell.inputMode === "record"
           ? "background:var(--accent); color:white"
           : "color:var(--fg-dim)"}
-        onclick={() => (mode = "record")}
-        aria-pressed={mode === "record"}
+        onclick={() => uiShell.setInputMode("record")}
+        aria-pressed={uiShell.inputMode === "record"}
       >
         <MicIcon size={13} strokeWidth={2} />
         {t("record.tab.record")}
       </button>
       <button
         class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full font-semibold transition-all"
-        style={mode === "typing"
+        style={uiShell.inputMode === "typing"
           ? "background:var(--accent); color:white"
           : "color:var(--fg-dim)"}
-        onclick={() => (mode = "typing")}
-        aria-pressed={mode === "typing"}
+        onclick={() => uiShell.setInputMode("typing")}
+        aria-pressed={uiShell.inputMode === "typing"}
       >
         <KeyboardIcon size={13} strokeWidth={2} />
         {t("record.tab.type")}
       </button>
       <button
         class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full font-semibold transition-all"
-        style={mode === "hidden"
+        style={uiShell.inputMode === "hidden"
           ? "background:var(--accent); color:white"
           : "color:var(--fg-dim)"}
-        onclick={() => (mode = "hidden")}
-        aria-pressed={mode === "hidden"}
+        onclick={() => uiShell.setInputMode("hidden")}
+        aria-pressed={uiShell.inputMode === "hidden"}
       >
         <EyeOffIcon size={13} strokeWidth={2} />
         {t("record.tab.hide")}
@@ -111,7 +108,7 @@ let mode = $state<Mode>("record")
     <div class="action-area w-full">
       <div
         class="record-pane"
-        class:is-active={mode === "record"}
+        class:is-active={uiShell.inputMode === "record"}
       >
         <div class="record-pane-inner flex flex-col items-center gap-3 w-full">
           <MicLarge />
@@ -119,7 +116,7 @@ let mode = $state<Mode>("record")
       </div>
       <div
         class="record-pane"
-        class:is-active={mode === "typing"}
+        class:is-active={uiShell.inputMode === "typing"}
       >
         <div class="record-pane-inner w-full">
           <TypeArea />
