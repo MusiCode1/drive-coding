@@ -1,3 +1,20 @@
+## 2026-08-27 01:14
+
+### slice live-contract-gemini — Commit 2: אדפטר Gemini Live
+
+#### מה בוצע?
+
+- `live/gemini.ts` — נרמול LiveEvent, send עם role:"user" ב-sendClientContent.
+- `live/index.ts` — resolveLive לפי VoiceModelRef.
+- gemini.test.ts — 5 טסטי נרמול.
+
+#### בדיקות
+
+- bun import מחוץ לדפדפן — OK.
+- vitest gemini.test.ts — 5/5.
+
+---
+
 ## 2026-08-27 01:13
 
 ### slice live-contract-gemini — Commit 1: endpoint הנפקת-טוקן
