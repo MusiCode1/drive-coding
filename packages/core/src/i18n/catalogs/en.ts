@@ -439,4 +439,6 @@ export const en: Catalog = {
   "sessionUrl.takeover.cancel": "Cancel",
   // ─── agent-patch-unify C4: finding 3 — newSession over remote is not supported yet ─── (message only, no navigation)
   "session.newSessionUnsupportedRemote": "Starting a new session is not supported yet in remote mode.",
+  // ─── sidebar-resize ───
+  "sidebar.resizeHandle": "Drag to resize width",
 }

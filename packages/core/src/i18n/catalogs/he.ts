@@ -431,4 +431,6 @@ export const he: Catalog = {
   "sessionUrl.takeover.cancel": "ביטול",
   // ─── agent-patch-unify C4: ממצא 3 — newSession ב-remote אינו נתמך ─── (הודעה בלבד, בלי ניווט)
   "session.newSessionUnsupportedRemote": "פתיחת סשן חדש אינה נתמכת עדיין במצב remote.",
+  // ─── sidebar-resize ───
+  "sidebar.resizeHandle": "גרור לשינוי רוחב",
 }

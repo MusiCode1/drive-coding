@@ -440,6 +440,8 @@ export type MessageKey =
   | "sessionUrl.takeover.cancel"
   // ─── agent-patch-unify C4: ממצא 3 — newSession ב-remote אינו נתמך ───
   | "session.newSessionUnsupportedRemote"
+  // ─── sidebar-resize ───
+  | "sidebar.resizeHandle"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
