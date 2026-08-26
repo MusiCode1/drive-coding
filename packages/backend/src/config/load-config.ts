@@ -23,6 +23,12 @@ import { type } from "arktype"
 import { parseEnvFile } from "@drive-coding/core/config/env-file"
 import { resolveConfig } from "@drive-coding/core/config/resolve"
 import {
+  CONFIG_SPECS,
+  getLeaf,
+  setLeaf,
+  type ConfigSpec,
+} from "@drive-coding/core/config/specs"
+import {
   DriveCodingSecrets,
   SECRET_SPECS,
   type DriveCodingSecrets as DriveCodingSecretsType,
@@ -114,35 +120,18 @@ function buildFileLayer(
 /** Build env layer from process.env. */
 function buildEnvLayer(env: NodeJS.ProcessEnv): Partial<DriveCodingConfig> {
   const layer: Partial<DriveCodingConfig> = {}
+  const layerRecord = layer as Record<string, unknown>
 
-  if (env.PORT) {
-    const p = Number(env.PORT)
-    if (!Number.isNaN(p)) layer.port = p
-  }
-  if (env.DRIVE_CODING_HOST) layer.host = env.DRIVE_CODING_HOST
-  if (env.CORS_ORIGINS) {
-    layer.corsOrigins = env.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean)
-  }
-  if (env.FE_STATIC_DIR) layer.feStaticDir = env.FE_STATIC_DIR
-  if (env.OPENCODE_BIN) layer.opencodeBin = env.OPENCODE_BIN
-  if (env.WIRE_RECORD) layer.wireRecord = env.WIRE_RECORD === "1"
-  if (env.FS_BROWSE_ALLOWED_BASE) layer.fsBrowseBase = env.FS_BROWSE_ALLOWED_BASE
-
-  // Log sub-object — only add if at least one field present.
-  const logLevel = env.LOG_LEVEL
-  const logNs = env.LOG_NS
-  const logFormat = env.LOG_FORMAT
-  if (logLevel !== undefined || logNs !== undefined || logFormat !== undefined) {
-    const logObj: NonNullable<DriveCodingConfig["log"]> = {}
-    if (logLevel) logObj.level = logLevel
-    if (logNs) logObj.ns = logNs
-    if (logFormat === "pretty" || logFormat === "json" || logFormat === "both") {
-      logObj.format = logFormat
-    }
-    layer.log = logObj
+  for (const spec of CONFIG_SPECS) {
+    const raw = env[spec.env]
+    if (!raw) continue
+    const s: ConfigSpec = spec
+    const parsed = s.parse ? s.parse(raw) : raw
+    if (parsed === undefined) continue
+    setLeaf(layerRecord, spec.key, parsed)
   }
 
-  // CLI_SPECS_JSON.
+  // CLI_SPECS_JSON — out of CONFIG_SPECS scope.
   if (env.CLI_SPECS_JSON) {
     try {
       const parsed: unknown = JSON.parse(env.CLI_SPECS_JSON)
@@ -160,22 +149,21 @@ function buildEnvLayer(env: NodeJS.ProcessEnv): Partial<DriveCodingConfig> {
 /** Build flag layer from parsed CLI argv. */
 function buildFlagLayer(argv: RawArgs): Partial<DriveCodingConfig> {
   const layer: Partial<DriveCodingConfig> = {}
+  const layerRecord = layer as Record<string, unknown>
 
-  if (argv["port"] !== undefined) {
-    const p = Number(argv["port"])
-    if (!Number.isNaN(p)) layer.port = p
-  }
-  if (argv["host"]) layer.host = argv["host"] as string
-  if (argv["cors-origins"]) {
-    layer.corsOrigins = (argv["cors-origins"] as string)
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)
-  }
-  if (argv["fe-static-dir"]) layer.feStaticDir = argv["fe-static-dir"] as string
-  if (argv["opencode-bin"]) layer.opencodeBin = argv["opencode-bin"] as string
-  if (argv["log-level"]) {
-    layer.log = { level: argv["log-level"] as string }
+  for (const spec of CONFIG_SPECS) {
+    const s: ConfigSpec = spec
+    if (!s.flag) continue
+    const raw = argv[s.flag]
+    if (spec.key === "port") {
+      if (raw === undefined) continue
+      const parsed = s.parse?.(String(raw))
+      if (parsed !== undefined) setLeaf(layerRecord, spec.key, parsed)
+      continue
+    }
+    if (!raw) continue
+    const parsed = s.parse ? s.parse(String(raw)) : String(raw)
+    if (parsed !== undefined) setLeaf(layerRecord, spec.key, parsed)
   }
 
   return layer
@@ -283,18 +271,11 @@ function mergeSecrets(
 function buildConfigEnvPatch(config: DriveCodingConfig): Record<string, string> {
   const patch: Record<string, string> = {}
 
-  if (config.port !== undefined) patch["PORT"] = String(config.port)
-  if (config.host !== undefined) patch["DRIVE_CODING_HOST"] = config.host
-  if (config.corsOrigins !== undefined) patch["CORS_ORIGINS"] = config.corsOrigins.join(",")
-  if (config.feStaticDir !== undefined) patch["FE_STATIC_DIR"] = config.feStaticDir
-  if (config.opencodeBin !== undefined) patch["OPENCODE_BIN"] = config.opencodeBin
-  if (config.wireRecord !== undefined) patch["WIRE_RECORD"] = config.wireRecord ? "1" : "0"
-  if (config.fsBrowseBase !== undefined) patch["FS_BROWSE_ALLOWED_BASE"] = config.fsBrowseBase
-
-  if (config.log !== undefined) {
-    if (config.log.level !== undefined) patch["LOG_LEVEL"] = config.log.level
-    if (config.log.ns !== undefined) patch["LOG_NS"] = config.log.ns
-    if (config.log.format !== undefined) patch["LOG_FORMAT"] = config.log.format
+  for (const spec of CONFIG_SPECS) {
+    const value = getLeaf(config, spec.key)
+    if (value === undefined) continue
+    const s: ConfigSpec = spec
+    patch[spec.env] = s.serialize ? s.serialize(value) : String(value)
   }
 
   if (config.cliSpecs !== undefined) {
