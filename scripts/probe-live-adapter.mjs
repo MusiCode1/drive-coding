@@ -10,7 +10,7 @@
  *   PROBE_CONTEXT=1 bun scripts/probe-live-adapter.mjs   # DoD #15 mutation gate
  */
 
-import { spawn, spawnSync } from "node:child_process"
+import { execSync, spawn, spawnSync } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -30,6 +30,46 @@ const PROBE_CONTEXT = process.env.PROBE_CONTEXT === "1"
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const isHebrewScript = (t) => /[֐-׿]/.test(t ?? "")
+
+function portIsInUse(port) {
+  try {
+    const out = execSync(`ss -ltn 'sport = :${port}'`, { encoding: "utf8" })
+    return out.split("\n").some((line) => line.trimStart().startsWith("LISTEN"))
+  } catch {
+    return false
+  }
+}
+
+function assertPortFree(port) {
+  if (!portIsInUse(port)) return
+  console.error(`Port ${port} is already in use — probe refuses to attach to a stale backend.`)
+  console.error(`Find the listener: ss -ltnp 'sport = :${port}'`)
+  console.error(`Kill only that PID (never pkill/killall — parallel agents share this host).`)
+  process.exit(1)
+}
+
+async function killBackend(child) {
+  if (!child || child.exitCode !== null) return
+  child.kill("SIGTERM")
+  const deadline = Date.now() + 3000
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) break
+    await sleep(100)
+  }
+  if (child.exitCode === null) {
+    child.kill("SIGKILL")
+    await sleep(200)
+  }
+}
+
+async function waitPortReleased(port, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (!portIsInUse(port)) return
+    await sleep(100)
+  }
+  throw new Error(`Port ${port} still in use after backend cleanup`)
+}
 
 function beEnv() {
   const env = { ...process.env }
@@ -130,11 +170,15 @@ async function runProbe() {
     process.exit(1)
   }
 
-  const be = await startBackend()
+  assertPortFree(BE_PORT)
+
+  let be = null
+  let exitCode = 1
   const events = []
   let closedReason
 
   try {
+    be = await startBackend()
     const { token, model, sessionConfig } = await mintToken()
 
     const session = await geminiLive.connect({
@@ -232,13 +276,23 @@ async function runProbe() {
     }
 
     console.log(JSON.stringify(out, null, 2))
-    process.exit(0)
+    exitCode = 0
+  } catch (e) {
+    console.error("PROBE FAILED:", e?.stack ?? e)
+    exitCode = 1
   } finally {
-    be.kill("SIGTERM")
+    if (be) {
+      await killBackend(be)
+      try {
+        await waitPortReleased(BE_PORT)
+      } catch (e) {
+        console.error(String(e?.message ?? e))
+        exitCode = 1
+      }
+    }
   }
+
+  process.exit(exitCode)
 }
 
-runProbe().catch((e) => {
-  console.error("PROBE FAILED:", e?.stack ?? e)
-  process.exit(1)
-})
+runProbe()

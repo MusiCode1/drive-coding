@@ -1,3 +1,20 @@
+## 2026-08-27 (fix1 Commit A — probe leak / false-green)
+
+### slice live-contract-gemini fix1 — Commit A: probe cleanup + fail-fast
+
+#### מה בוצע?
+
+- `scripts/probe-live-adapter.mjs` — fail-fast אם 4020 תפוס; `process.exit` אחרי `finally`;
+  ניקוי SIGTERM→SIGKILL; וידוא שחרור פורט (מזהה LISTEN, לא כותרת ss).
+
+#### בדיקות
+
+- DoD fix1 #3: BE ידני על 4020 → פרוב exit=1.
+- DoD fix1 #4: ריצה מוצלחת → `ss -ltn | grep 4020` ריק.
+- typecheck + lint:i18n ירוקים.
+
+---
+
 ## 2026-08-27 01:25
 
 ### slice live-contract-gemini — סיום
