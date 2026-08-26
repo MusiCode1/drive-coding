@@ -1,3 +1,23 @@
+## 2026-08-27 01:17
+
+### slice live-contract-gemini — Commit 3: probe-live-adapter (שער חי)
+
+#### מה בוצע?
+
+- `scripts/probe-live-adapter.mjs` — BE 4020, token, adapter, PCM עברי, JSON gate.
+- תיקון usage normalization ב-gemini.ts.
+
+#### בדיקות DoD (§5)
+
+- #4: probe על בסיס 3952f4f9 — exit=1 (no such file) ✓
+- #5-#13: probe עבר (session, עברית, compose_prompt, identifier, usage)
+- #14: הסרת tools — רק actionEvents נכשל ✓
+- #15: PROBE_CONTEXT=1 בלי role — closedReason invalid argument ✓
+- #16: raw 1/1 · tok-constr 0/1 · tok-full 1/1 ✓
+- #6: 503 ללא GEMINI_API_KEY ✓
+
+---
+
 ## 2026-08-27 01:14
 
 ### slice live-contract-gemini — Commit 2: אדפטר Gemini Live

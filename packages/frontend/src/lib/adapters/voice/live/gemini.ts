@@ -69,11 +69,11 @@ export function normalizeGeminiFrame(msg: GeminiMessage): LiveEvent[] {
   }
 
   const usage = msg.usageMetadata
-  if (usage?.totalTokenCount !== undefined && usage.promptTokenCount !== undefined) {
+  if (usage?.totalTokenCount !== undefined) {
     events.push({
       type: "usage",
       totalTokens: usage.totalTokenCount,
-      promptTokens: usage.promptTokenCount,
+      promptTokens: usage.promptTokenCount ?? 0,
     })
   }
 

@@ -51,4 +51,9 @@ describe("normalizeGeminiFrame()", () => {
     })
     expect(events).toEqual([{ type: "usage", totalTokens: 100, promptTokens: 40 }])
   })
+
+  it("maps usage with only totalTokenCount", () => {
+    const events = normalizeGeminiFrame({ usageMetadata: { totalTokenCount: 50 } })
+    expect(events).toEqual([{ type: "usage", totalTokens: 50, promptTokens: 0 }])
+  })
 })
