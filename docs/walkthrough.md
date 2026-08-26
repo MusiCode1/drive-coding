@@ -1,3 +1,41 @@
+## 2026-08-26 02:44
+
+### slice msg-coalesce — קיבוץ chunks מעל tool/thought (באג #53)
+
+ענף: `integration/run-msg-coalesce`, worktree `.worktrees/run-msg-coalesce`, base
+`04df4c6c`. בריף: `docs-repo/drive-coding/plans/slice-msg-coalesce.md`.
+
+#### מה בוצע?
+
+**1. שער אדום (TDD)**
+
+- קובץ חדש `packages/core/src/session/msg-coalesce.test.ts` — G1/G2/G4 + 13 מקרי G3.
+- בסיס: 9 failed | 7 passed (16) — הצמד ל-commit 62d9269a.
+
+**2. תיקון**
+
+- `handleTextChunk` ב-`reduce.ts` בלבד: לולאת `targetIdx` שמדלגת אחורה על `tool` ועל
+  `thought`/`assistant` עם אותו `messageId`, וכותבת ל-`messages[targetIdx]` במקום
+  לאחרון. commit 6d5d4b37.
+
+**3. אימות**
+
+- core/session: 182→198 (אפס רגרסיות).
+- ריפו מלא (אחרי `svelte-kit sync`): 262/3067 → 263/3083.
+- שער-מוטציה (שני עוגנים יחד): רק `msg-coalesce.test.ts` נופל (9/198).
+- `typecheck` + `lint:i18n` נקיים.
+
+#### סטיות
+
+- 2 טסטי `agent-session.test.ts` עודכנו (ציפיית `:n2` → בועה מאוחדת) — קוד FE לא
+  נגע; נדרש ל-DoD #4.
+
+#### פתוח / backlog
+
+- שארית 12 זוגות ב-6 הקלטות (prompt-בתור) — מחוץ לגבולות; תיקון ב-`handleWholeMessage`.
+
+---
+
 ## 2026-08-25 (slice agent-patch-unify — דלת אחת ל-PATCH /api/agents/:id)
 
 ענף: `slice/agent-patch-unify`, worktree `.worktrees/agent-patch-unify`, base

@@ -79,7 +79,39 @@ function handleTextChunk(
 ): { state: SessionState; patches: Patch[] } {
   if (!text) return { state, patches: [] }
 
-  const last = state.messages[state.messages.length - 1]
+  let targetIdx = state.messages.length - 1
+  if (messageId !== null) {
+    while (targetIdx >= 0) {
+      const msg = state.messages[targetIdx]
+      if (msg === undefined) break
+      // ‏כלי ומשתמש מדולגים **‏ללא תנאי**: ‏שניהם נושאים `messageId: null`, ‏ולכן
+      // ‏תנאי-הזהות מתחת לא היה חל עליהם לעולם. ‏הם אינם חלק מההודעה הלוגית —
+      // ‏הם רק נחתו בתוכה.
+      //
+      // ⚠️ ‏**‏המזהה הוא השומר, ‏לא המיקום.** ‏גרסה קודמת עצרה כאן על `user` ‏כדי
+      // ‏להפריד שתי תשובות שביניהן שאלה — ‏וזה שבר הודעה שהשאלה נחתה **‏בתוכה**
+      // ‏(‏נמדד בשער-עיניים 26/08: "‏עכשיו תיק" + "‏יית העבודה."). ‏ההפרדה נשמרת
+      // ‏ב-`canGroupWith`, ‏שדורש `messageId` ‏זהה — ‏ראה הטסט
+      // "different messageIds separated by a user message".
+      if (msg.role === "tool") {
+        targetIdx--
+        continue
+      }
+      // ⚠️ ‏`role !== "user"` ‏כאן הוא **‏על מי שאנחנו בונים**, ‏לא על מה שמדלגים.
+      // ‏בלעדיו, ‏chunks רצופים של המשתמש היו מדלגים זה מעל זה ‏ולא מתקבצים
+      // (‏נתפס ב-`reduce.test.ts` — "consecutive user chunks same messageId").
+      if (msg.role === "user" && role !== "user") {
+        targetIdx--
+        continue
+      }
+      if (msg.role !== role && msg.messageId === messageId) {
+        targetIdx--
+        continue
+      }
+      break
+    }
+  }
+  const last = state.messages[targetIdx]
   const newVersion = state.version + 1
 
   // C1: derive turnState from content role (user_message_chunk = replay, no change)
@@ -102,7 +134,7 @@ function handleTextChunk(
       segments: [...last.segments, seg],
     }
     const messages = [...state.messages]
-    messages[messages.length - 1] = updatedMsg
+    messages[targetIdx] = updatedMsg
     return {
       state: {
         ...state,

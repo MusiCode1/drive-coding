@@ -220,20 +220,17 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     onSessionUpdate?.(thoughtChunk("thinking...", "msg-019fed5d"))
     onSessionUpdate?.(msgChunk("part 2", "msg-019fed5d"))
 
-    expect(session.bubbles).toHaveLength(3)
+    // slice msg-coalesce: part 2 coalesces into part 1 (skips same-mid thought)
+    expect(session.bubbles).toHaveLength(2)
     const list = session.renderBubbles
     const keys = list.map((b) => stableBubbleKey(b, list))
     const uniqueKeys = new Set(keys)
-    expect(keys.length).toBe(3)
-    expect(uniqueKeys.size).toBe(3)
-    expect(keys).toEqual([
-      "message:m:msg-019fed5d",
-      "thought:m:msg-019fed5d",
-      "message:m:msg-019fed5d:n2",
-    ])
+    expect(keys.length).toBe(2)
+    expect(uniqueKeys.size).toBe(2)
+    expect(keys).toEqual(["message:m:msg-019fed5d", "thought:m:msg-019fed5d"])
   })
 
-  it("message → tool → message with same messageId → second message gets :n2", () => {
+  it("message → tool → message with same messageId → coalesces into one bubble", () => {
     expect(onSessionUpdate).not.toBeNull()
     onSessionUpdate?.(msgChunk("before tool", "m1"))
     // ⚠️ מיזוג dev → שרשרת: הגרסה של dev דחפה בועת-כלי ידנית ל-session.bubbles.
@@ -244,11 +241,11 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     onSessionUpdate?.(msgChunk("after tool", "m1"))
 
     const list = session.renderBubbles
-    expect(list).toHaveLength(3)
+    // slice msg-coalesce: after-tool chunk merges back into the first message bubble
+    expect(list).toHaveLength(2)
     expect(list.map((b) => stableBubbleKey(b, list))).toEqual([
       "message:m:m1",
       "tool:t:call-1",
-      "message:m:m1:n2",
     ])
   })
 
