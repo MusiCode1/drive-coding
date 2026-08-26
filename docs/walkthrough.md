@@ -1,3 +1,19 @@
+## 2026-08-27 (fix1 Commit B — session_started from setupComplete)
+
+### slice live-contract-gemini fix1 — Commit B: אות מוכנות אמיתי
+
+#### מה בוצע?
+
+- `gemini.ts` — `session_started` מ-`setupComplete` בנרמול, לא מ-`onopen`.
+- `gemini.test.ts` — טסט setupComplete + שלילה ל-onopen path.
+
+#### בדיקות
+
+- gemini.test.ts: 8/8 ירוק.
+- typecheck + lint:i18n ירוקים.
+
+---
+
 ## 2026-08-27 (fix1 Commit A — probe leak / false-green)
 
 ### slice live-contract-gemini fix1 — Commit A: probe cleanup + fail-fast

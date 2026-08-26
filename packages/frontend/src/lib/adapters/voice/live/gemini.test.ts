@@ -6,6 +6,16 @@ import { describe, expect, it } from "vitest"
 import { normalizeGeminiFrame } from "./gemini.js"
 
 describe("normalizeGeminiFrame()", () => {
+  it("maps setupComplete to session_started", () => {
+    const events = normalizeGeminiFrame({ setupComplete: { sessionId: "s1" } })
+    expect(events).toEqual([{ type: "session_started" }])
+  })
+
+  it("does not emit session_started from onopen path (normalizer only)", () => {
+    const events = normalizeGeminiFrame({ serverContent: { turnComplete: true } })
+    expect(events.some((e) => e.type === "session_started")).toBe(false)
+  })
+
   it("maps input transcription to user transcript", () => {
     const events = normalizeGeminiFrame({
       serverContent: { inputTranscription: { text: "שלום" } },

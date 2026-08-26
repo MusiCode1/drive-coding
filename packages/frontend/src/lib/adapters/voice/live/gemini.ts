@@ -20,6 +20,7 @@ type GeminiPart = {
 }
 
 type GeminiMessage = {
+  setupComplete?: { sessionId?: string }
   toolCall?: { functionCalls?: { id?: string; name?: string; args?: Record<string, unknown> }[] }
   serverContent?: {
     inputTranscription?: { text?: string }
@@ -34,6 +35,10 @@ type GeminiMessage = {
 /** Maps one Gemini Live frame to zero or more LiveEvents. Exported for unit tests. */
 export function normalizeGeminiFrame(msg: GeminiMessage): LiveEvent[] {
   const events: LiveEvent[] = []
+
+  if (msg.setupComplete !== undefined) {
+    events.push({ type: "session_started" })
+  }
 
   const inputText = msg.serverContent?.inputTranscription?.text
   if (inputText) {
@@ -97,9 +102,7 @@ export const geminiLive: LiveProvider = {
       model: opts.model,
       config: opts.providerConfig,
       callbacks: {
-        onopen: () => {
-          opts.onEvent({ type: "session_started" })
-        },
+        onopen: () => {},
         onmessage: (message) => {
           for (const event of normalizeGeminiFrame(message as GeminiMessage)) {
             opts.onEvent(event)
