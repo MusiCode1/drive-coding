@@ -257,13 +257,26 @@ async function runProbe() {
 
     const usageEvent = [...events].reverse().find((e) => e.type === "usage")
 
+
+    // The identifier as the secretary actually received it (post-STT).
+    const identifierHeard =
+      userTranscript.match(/[A-Za-z0-9_.-]+\.test\.ts/)?.[0] ?? null
     const out = {
       sessionStarted: events.some((e) => e.type === "session_started"),
       userTranscript,
       transcriptIsHebrew: isHebrewScript(userTranscript),
       audioEventCount: events.filter((e) => e.type === "audio").length,
       actionEvents: actionEvents.map((e) => ({ id: e.id, name: e.name, args: e.args })),
-      identifierSurvived: composeArgs.includes(IDENTIFIER),
+      // DoD 10 polices the SECRETARY, not the microphone. Comparing against the
+      // spoken IDENTIFIER conflates the two: measured 2026-08-27, STT heard
+      // "auth.test.ts" as "oath.test.ts" and the secretary then forwarded
+      // "oath.test.ts" faithfully — perfect behaviour, failed gate. So fidelity
+      // is measured against what the secretary actually RECEIVED, and the STT
+      // step is reported separately as a diagnostic that does not gate.
+      // (Mission §11ד already flags synthetic-speech transcription as non-verbatim.)
+      identifierHeard,
+      identifierTranscribedExactly: userTranscript.includes(IDENTIFIER),
+      identifierSurvived: identifierHeard !== null && composeArgs.includes(identifierHeard),
       usage: usageEvent
         ? { totalTokens: usageEvent.totalTokens, promptTokens: usageEvent.promptTokens }
         : null,
