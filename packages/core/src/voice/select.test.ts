@@ -61,6 +61,7 @@ describe("voiceConfig ArkType validation", () => {
       narrate: { provider: "google", model: "x" },
       stt: { provider: "google", model: "x" },
       tts: { provider: "elevenlabs", model: "x" },
+      live: { provider: "google", model: "gemini-3.1-flash-live-preview" },
     })
     // ArkType מחזיר instance של AggregateError כש-validation נכשל
     expect(result instanceof type.errors).toBe(true)

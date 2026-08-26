@@ -1,3 +1,24 @@
+## 2026-08-27 01:10
+
+### slice live-contract-gemini — Commit 0: חוזה ליבה
+
+ענף: `slice/live-contract-gemini`, worktree `.worktrees/live-contract-gemini`, base `3952f4f9`.
+
+#### מה בוצע?
+
+- `live-types.ts` — חוזה LiveEvent / LiveCommand / LiveProvider (type-only).
+- `live-actions.ts` + `live-prompt.ts` — 10 פעולות; מבנה באנגלית, פרוזה בעברית ב-prompt בלבד.
+- `capabilities.ts` — מפתח `live` ב-voiceService/voiceConfig/DEFAULT_VOICE_CONFIG.
+- `select.test.ts` — עודכן unknown-provider test עם `live`.
+
+#### בדיקות
+
+- typecheck ירוק.
+- vitest: `live-actions.test.ts` + `select.test.ts` — 11/11.
+- lint:i18n נקי.
+
+---
+
 ## 2026-08-26 02:44
 
 ### slice msg-coalesce — קיבוץ chunks מעל tool/thought (באג #53)
