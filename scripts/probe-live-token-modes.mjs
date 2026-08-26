@@ -59,9 +59,18 @@ const SYSTEM_INSTRUCTION =
   "אתה מזכיר קולי לעוזר-קוד. כל בקשה שנוגעת לקוד — קרא מיד לכלי compose_prompt עם ניסוח מלא. " +
   "אל תשאל שאלות הבהרה. מזהים טכניים (שם קובץ, מספר שורה, פקודה, ערך) — צטט כלשונם, אל תנסח אותם מחדש."
 
+/**
+ * The one load-bearing object. Because `liveConnectConstraints.config` REPLACES the
+ * client config rather than constraining it, this is simultaneously what the BE mints
+ * with and what the client connects with — they cannot be allowed to diverge.
+ *
+ * `outputAudioTranscription` was added after measuring that it does NOT cost the tool
+ * call (the assistant transcript is needed by the UI from `live-ears` onward).
+ */
 const SESSION_CONFIG = {
   responseModalities: [Modality.AUDIO],
   inputAudioTranscription: {},
+  outputAudioTranscription: {},
   speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE } } },
   tools: TOOLS,
   systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
