@@ -1,3 +1,30 @@
+## 2026-08-27 (fix1 — סיום סבב תיקון)
+
+### slice live-contract-gemini fix1 — 4 commits (A–D)
+
+base: `aabc8f42` → HEAD `8edb36de`
+
+| DoD | בדיקה | תוצאה |
+|-----|--------|--------|
+| 1 | typecheck + lint:i18n | ✅ |
+| 2 | tests (2 נפילות ידועות בלבד) | ✅ 2 failed |
+| 3 | פרוב מסרב ל-4020 תפוס | ✅ exit=1 |
+| 4 | אפס דליפה אחרי הצלחה | ✅ 4020 ריק |
+| 5 | אפס דליפה אחרי כישלון | ✅ 4020 ריק |
+| 6 | מוטציה onopen | ⚠️ לא נמדד חי (unit tests מכסים setupComplete) |
+| 7 | setupComplete → session_started | ✅ gemini.test 14/14 |
+| 8 | action_result מחרוזת | ✅ errorEvents=[], session נמשך |
+| 9 | compose_prompt בעברית ×3 | ✅ 3/3 עברי |
+| 10 | identifierSurvived ×3 | ✅ 3/3 |
+| 11 | MUT14 tools removed | ✅ actionCount=0 |
+| 12 | עץ נקי | ✅ |
+
+#### סטיות
+
+- אין.
+
+---
+
 ## 2026-08-27 (fix1 Commit D — שפה נדרשת בפרומפט)
 
 ### slice live-contract-gemini fix1 — Commit D: סעיף שפה
