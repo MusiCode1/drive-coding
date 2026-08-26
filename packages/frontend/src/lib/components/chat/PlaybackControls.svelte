@@ -21,8 +21,10 @@ import {
   getModelStatus,
   getResponsive,
   getSpeaker,
+  getUiShell,
   getVoiceMode,
 } from "$lib/context"
+import { shouldShowPlaybackDock } from "$lib/util/playback-dock-visibility"
 
 const t = getI18n().t
 const voiceMode = getVoiceMode()
@@ -30,11 +32,17 @@ const modelStatus = getModelStatus()
 const speaker = getSpeaker()
 const playlist = getAudioPlaylist()
 const responsive = getResponsive()
+const uiShell = getUiShell()
 
-/** הרצועה מוצגת ⇔ יש מה לשלוט בו, או שההשתקה עצמה צריכה להיות נגישה */
 const showDock = $derived(
-  playlist.items.length > 0 || !speaker.enabled || modelStatus.isRunActive,
+  shouldShowPlaybackDock({
+    inputMode: uiShell.inputMode,
+    playlistItemCount: playlist.items.length,
+    isRunActive: modelStatus.isRunActive,
+  }),
 )
+
+const iconSize = $derived(responsive.isMobile ? 24 : 20)
 
 const isPaused = $derived(playlist.transport === "paused")
 
@@ -57,6 +65,7 @@ const isNavDisabled = $derived(playlist.items.length === 0 || playlist.items.len
              חריג RTL מודע; אל תהפוך לפי locale. -->
         <div
           class="controls-grid"
+          class:controls-grid--desktop={!responsive.isMobile}
           role="group"
           dir="ltr"
           aria-label={t("playbackControls.dock")}
@@ -69,7 +78,7 @@ const isNavDisabled = $derived(playlist.items.length === 0 || playlist.items.len
             aria-label={t("playbackControls.stopPlayback")}
             title={t("playbackControls.stopPlayback")}
           >
-            <SquareIcon size={24} strokeWidth={2} />
+            <SquareIcon size={iconSize} strokeWidth={2} />
           </button>
 
           <button
@@ -80,7 +89,7 @@ const isNavDisabled = $derived(playlist.items.length === 0 || playlist.items.len
             aria-label={t("playbackControls.prev")}
             title={t("playbackControls.prev")}
           >
-            <SkipBackIcon size={24} strokeWidth={2} />
+            <SkipBackIcon size={iconSize} strokeWidth={2} />
           </button>
 
           {#if isPaused}
@@ -92,7 +101,7 @@ const isNavDisabled = $derived(playlist.items.length === 0 || playlist.items.len
               aria-label={t("playbackControls.resume")}
               title={t("playbackControls.resume")}
             >
-              <PlayIcon size={24} strokeWidth={2} />
+              <PlayIcon size={iconSize} strokeWidth={2} />
             </button>
           {:else}
             <button
@@ -103,7 +112,7 @@ const isNavDisabled = $derived(playlist.items.length === 0 || playlist.items.len
               aria-label={t("playbackControls.pause")}
               title={t("playbackControls.pause")}
             >
-              <PauseIcon size={24} strokeWidth={2} />
+              <PauseIcon size={iconSize} strokeWidth={2} />
             </button>
           {/if}
 
@@ -115,7 +124,7 @@ const isNavDisabled = $derived(playlist.items.length === 0 || playlist.items.len
             aria-label={t("playbackControls.next")}
             title={t("playbackControls.next")}
           >
-            <SkipForwardIcon size={24} strokeWidth={2} />
+            <SkipForwardIcon size={iconSize} strokeWidth={2} />
           </button>
 
           <button
@@ -127,9 +136,9 @@ const isNavDisabled = $derived(playlist.items.length === 0 || playlist.items.len
             title={speaker.enabled ? t("header.audioOn") : t("header.audioOff")}
           >
             {#if speaker.enabled}
-              <Volume2Icon size={24} strokeWidth={2} />
+              <Volume2Icon size={iconSize} strokeWidth={2} />
             {:else}
-              <VolumeXIcon size={24} strokeWidth={2} />
+              <VolumeXIcon size={iconSize} strokeWidth={2} />
             {/if}
           </button>
         </div>
@@ -189,6 +198,12 @@ const isNavDisabled = $derived(playlist.items.length === 0 || playlist.items.len
     grid-template-columns: repeat(5, 1fr);
     gap: 0.5rem;
     padding: 0.5rem 0.75rem;
+  }
+
+  .controls-grid--desktop {
+    --touch-target-lg: 40px;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
   }
 
   .ctrl-cell {

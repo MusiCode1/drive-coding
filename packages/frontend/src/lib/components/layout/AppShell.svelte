@@ -38,10 +38,11 @@ import {
   getModelStatus,
   getResponsive,
   getSession,
-  getSpeaker,
+  getUiShell,
 } from "$lib/context"
 import type { Bubble } from "$lib/types/bubble"
 import { stableBubbleKey } from "$lib/util/bubble-key"
+import { shouldShowPlaybackDock } from "$lib/util/playback-dock-visibility"
 import { computeScrollEdges, shouldFollowJump } from "$lib/util/scroll-follow"
 import AppHeader from "./AppHeader.svelte"
 import BottomSheet from "./BottomSheet.svelte"
@@ -59,12 +60,16 @@ const responsive = getResponsive()
 const session = getSession()
 const modelStatus = getModelStatus()
 const playlist = getAudioPlaylist()
-const speaker = getSpeaker()
+const uiShell = getUiShell()
 const t = getI18n().t
 
 /** control-dock: האם רצועת הבקרה מוצגת ( mirrors PlaybackControls showDock ). */
 const ribbonVisible = $derived(
-  playlist.items.length > 0 || !speaker.enabled || modelStatus.isRunActive,
+  shouldShowPlaybackDock({
+    inputMode: uiShell.inputMode,
+    playlistItemCount: playlist.items.length,
+    isRunActive: modelStatus.isRunActive,
+  }),
 )
 
 // scroll node — ה-AppShell הוא owner (חוק זהב #4)
