@@ -23,6 +23,7 @@ import MicIcon from "@lucide/svelte/icons/mic"
 import KeyboardIcon from "@lucide/svelte/icons/keyboard"
 import EyeOffIcon from "@lucide/svelte/icons/eye-off"
 import MicLarge from "./MicLarge.svelte"
+import PlaybackControls from "./PlaybackControls.svelte"
 import TypeArea from "./TypeArea.svelte"
 import { getI18n, getResponsive, getSession, getUiShell } from "$lib/context"
 
@@ -100,6 +101,9 @@ const session = getSession()
       </button>
     {/if}
     <!-- /TEMP-RECONNECT-BUTTON -->
+
+    <!-- control-dock (dock-inline): רצועת השמעה בתוך הכרטיס, בין toggle ל-action-area -->
+    <PlaybackControls />
 
     <!-- אזור פעולה — גובה משתנה. 3 panes מוערמים (col 1), כל אחד עטוף ב-grid
          שגובהו 0fr (מוסתר) / 1fr (פעיל). הפוטר גדל/מתכווץ לפי ה-pane הפעיל.
