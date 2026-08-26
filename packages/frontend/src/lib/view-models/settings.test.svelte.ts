@@ -144,10 +144,10 @@ describe("Settings — speech toggles (redesign-3 / 9a)", () => {
 })
 
 describe("Settings — muted (ui-polish-batch · C7)", () => {
-  test("default muted = false when localStorage empty", () => {
+  test("default muted = true when localStorage empty", () => {
     installLocalStorage()
     const s = new Settings()
-    expect(s.muted).toBe(false)
+    expect(s.muted).toBe(true)
   })
 
   test("setMuted(true) writes to localStorage", () => {
@@ -185,10 +185,10 @@ describe("Settings — muted (ui-polish-batch · C7)", () => {
 })
 
 describe("Settings — screenWakeLock (slice-wake-lock)", () => {
-  test("default screenWakeLock = false when localStorage empty", () => {
+  test("default screenWakeLock = true when localStorage empty", () => {
     installLocalStorage()
     const s = new Settings()
-    expect(s.screenWakeLock).toBe(false)
+    expect(s.screenWakeLock).toBe(true)
   })
 
   test("setScreenWakeLock(true) writes to localStorage", () => {
