@@ -129,9 +129,14 @@ describe("resolveConfig — validation", () => {
 
 describe("resolveConfig — other fields", () => {
   it("corsOrigins as string array", () => {
-    const result = resolveConfig([{ corsOrigins: ["http://localhost:3000", "http://localhost:3001"] }])
+    const result = resolveConfig([
+      { corsOrigins: ["http://localhost:3000", "http://localhost:3001"] },
+    ])
     expect(result.isOk()).toBe(true)
-    expect(result._unsafeUnwrap().corsOrigins).toEqual(["http://localhost:3000", "http://localhost:3001"])
+    expect(result._unsafeUnwrap().corsOrigins).toEqual([
+      "http://localhost:3000",
+      "http://localhost:3001",
+    ])
   })
 
   it("wireRecord boolean", () => {

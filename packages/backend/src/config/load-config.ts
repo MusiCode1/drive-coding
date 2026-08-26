@@ -19,21 +19,16 @@
 
 import * as fs from "node:fs"
 import { join } from "node:path"
-import { type } from "arktype"
 import { parseEnvFile } from "@drive-coding/core/config/env-file"
 import { resolveConfig } from "@drive-coding/core/config/resolve"
-import {
-  CONFIG_SPECS,
-  getLeaf,
-  setLeaf,
-  type ConfigSpec,
-} from "@drive-coding/core/config/specs"
+import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
 import {
   DriveCodingSecrets,
-  SECRET_SPECS,
   type DriveCodingSecrets as DriveCodingSecretsType,
+  SECRET_SPECS,
 } from "@drive-coding/core/config/secrets"
-import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
+import { CONFIG_SPECS, type ConfigSpec, getLeaf, setLeaf } from "@drive-coding/core/config/specs"
+import { type } from "arktype"
 import { getStateDir } from "../paths.js"
 
 export type RawArgs = Record<string, string | boolean | undefined>
@@ -65,10 +60,7 @@ function stripJsoncComments(text: string): string {
 // ---------------------------------------------------------------------------
 
 /** Build file layer from --config / --config-json / default path. */
-function buildFileLayer(
-  argv: RawArgs,
-  warnings: string[],
-): Partial<DriveCodingConfig> {
+function buildFileLayer(argv: RawArgs, warnings: string[]): Partial<DriveCodingConfig> {
   // --config-json takes precedence over --config (inline JSON wins over file path).
   const configJsonArg = argv["config-json"] as string | undefined
   if (configJsonArg !== undefined) {
@@ -173,10 +165,7 @@ function buildFlagLayer(argv: RawArgs): Partial<DriveCodingConfig> {
 // Secrets layer builders (derived from SECRET_SPECS — no hardcoded env/flag names)
 // ---------------------------------------------------------------------------
 
-function buildSecretsFileLayer(
-  argv: RawArgs,
-  warnings: string[],
-): Partial<DriveCodingSecretsType> {
+function buildSecretsFileLayer(argv: RawArgs, warnings: string[]): Partial<DriveCodingSecretsType> {
   const secretsArg = argv["secrets"] as string | undefined
   const secretsPath = secretsArg ?? join(getStateDir(), "secrets.json")
   const explicit = secretsArg !== undefined
@@ -229,10 +218,7 @@ function buildSecretsEnvLayer(env: NodeJS.ProcessEnv): Partial<DriveCodingSecret
   return layer
 }
 
-function buildSecretsFlagLayer(
-  argv: RawArgs,
-  warnings: string[],
-): Partial<DriveCodingSecretsType> {
+function buildSecretsFlagLayer(argv: RawArgs, warnings: string[]): Partial<DriveCodingSecretsType> {
   const layer: Partial<DriveCodingSecretsType> = {}
   for (const spec of SECRET_SPECS) {
     if (argv[spec.flag] !== undefined) {
@@ -351,7 +337,13 @@ function detectSecretKeysInFileLayer(
     for (const spec of SECRET_SPECS) {
       if (voiceObj[spec.key] !== undefined) {
         errors.push(
-          formatSecretKeyError(`voice.${spec.key}`, spec.key, isConfigJson, configPath, secretsPath),
+          formatSecretKeyError(
+            `voice.${spec.key}`,
+            spec.key,
+            isConfigJson,
+            configPath,
+            secretsPath,
+          ),
         )
       }
     }
@@ -363,10 +355,7 @@ function detectSecretKeysInFileLayer(
 // ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
-export function loadConfig(opts: {
-  argv: RawArgs
-  env: NodeJS.ProcessEnv
-}): LoadConfigResult {
+export function loadConfig(opts: { argv: RawArgs; env: NodeJS.ProcessEnv }): LoadConfigResult {
   const warnings: string[] = []
 
   const fileLayer = buildFileLayer(opts.argv, warnings)

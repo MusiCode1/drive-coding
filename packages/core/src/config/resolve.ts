@@ -17,10 +17,10 @@
  */
 
 import { type } from "arktype"
-import { err, ok } from "neverthrow"
 import type { Result } from "neverthrow"
-import { CONFIG_SPECS, getLeaf, setLeaf, type ConfigLeafKey } from "./specs.js"
+import { err, ok } from "neverthrow"
 import { DriveCodingConfig } from "./schema.js"
+import { CONFIG_SPECS, type ConfigLeafKey, getLeaf, setLeaf } from "./specs.js"
 
 const WHOLESALE_KEYS = new Set(["cliSpecs", "https"])
 

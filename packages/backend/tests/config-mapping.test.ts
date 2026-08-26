@@ -13,8 +13,8 @@ vi.mock("node:child_process", () => ({
   execFileSync: vi.fn().mockReturnValue(""),
 }))
 
-import { loadConfig } from "../src/config/load-config.js"
 import { resolveConfig } from "@drive-coding/core/config/resolve"
+import { loadConfig } from "../src/config/load-config.js"
 
 const tmpFiles: string[] = []
 
@@ -85,7 +85,7 @@ describe("bugs/55 — log partial layer must not erase siblings", () => {
 })
 
 describe("CONFIG_SPECS mapping invariants", () => {
-  it("4. CORS_ORIGINS=\"\" → field absent entirely (not [])", () => {
+  it('4. CORS_ORIGINS="" → field absent entirely (not [])', () => {
     const { config, envPatch } = loadConfig({
       argv: { config: "/nonexistent-config.jsonc", ...noopSecrets },
       env: { CORS_ORIGINS: "" },
@@ -94,7 +94,7 @@ describe("CONFIG_SPECS mapping invariants", () => {
     expect(envPatch["CORS_ORIGINS"]).toBeUndefined()
   })
 
-  it("5. CORS_ORIGINS=\" , \" → [] and envPatch.CORS_ORIGINS === \"\"", () => {
+  it('5. CORS_ORIGINS=" , " → [] and envPatch.CORS_ORIGINS === ""', () => {
     const { config, envPatch } = loadConfig({
       argv: { config: "/nonexistent-config.jsonc", ...noopSecrets },
       env: { CORS_ORIGINS: " , " },
@@ -103,7 +103,7 @@ describe("CONFIG_SPECS mapping invariants", () => {
     expect(envPatch["CORS_ORIGINS"]).toBe("")
   })
 
-  it("6. --cors-origins \"\" does not override non-empty env", () => {
+  it('6. --cors-origins "" does not override non-empty env', () => {
     const { config, envPatch } = loadConfig({
       argv: { "cors-origins": "", config: "/nonexistent-config.jsonc", ...noopSecrets },
       env: { CORS_ORIGINS: "a,b" },
@@ -129,7 +129,7 @@ describe("CONFIG_SPECS mapping invariants", () => {
     }
   })
 
-  it("8. PORT=\"abc\" and PORT=\"\" → port absent, no envPatch.PORT", () => {
+  it('8. PORT="abc" and PORT="" → port absent, no envPatch.PORT', () => {
     for (const portEnv of ["abc", ""]) {
       const { config, envPatch } = loadConfig({
         argv: { config: "/nonexistent-config.jsonc", ...noopSecrets },
@@ -140,7 +140,7 @@ describe("CONFIG_SPECS mapping invariants", () => {
     }
   })
 
-  it("9. LOG_FORMAT=\"bogus\" → log.format absent", () => {
+  it('9. LOG_FORMAT="bogus" → log.format absent', () => {
     const { config, envPatch } = loadConfig({
       argv: { config: "/nonexistent-config.jsonc", ...noopSecrets },
       env: { LOG_FORMAT: "bogus" },

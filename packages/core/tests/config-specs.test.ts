@@ -3,12 +3,7 @@
  */
 
 import { describe, expect, it } from "vitest"
-import {
-  CONFIG_SPECS,
-  getLeaf,
-  setLeaf,
-  type ConfigSpec,
-} from "../src/config/specs.js"
+import { CONFIG_SPECS, type ConfigSpec, getLeaf, setLeaf } from "../src/config/specs.js"
 
 describe("CONFIG_SPECS — table invariants", () => {
   it("1. exactly 10 entries", () => {

@@ -53,7 +53,11 @@ export const CONFIG_SPECS = [
     key: "corsOrigins",
     env: "CORS_ORIGINS",
     flag: "cors-origins",
-    parse: (raw: string) => raw.split(",").map((s) => s.trim()).filter(Boolean),
+    parse: (raw: string) =>
+      raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
     serialize: (v: unknown) => (v as readonly string[]).join(","),
   },
   { key: "feStaticDir", env: "FE_STATIC_DIR", flag: "fe-static-dir" },
@@ -76,8 +80,8 @@ export const CONFIG_SPECS = [
 ] as const satisfies ReadonlyArray<ConfigSpec>
 
 /** Compile-time: every in-scope schema leaf must appear in CONFIG_SPECS. */
-type AssertCovered<Missing extends never> = Missing
-export type _ConfigSpecCoverage = AssertCovered<
+export type AssertCovered<Missing extends never> = Missing
+type _ConfigSpecCoverage = AssertCovered<
   Exclude<ConfigLeafKey, (typeof CONFIG_SPECS)[number]["key"]>
 >
 
@@ -90,11 +94,7 @@ export function getLeaf(cfg: Partial<DriveCodingConfig>, key: ConfigLeafKey): un
   return (root as Record<string, unknown> | undefined)?.[nestedKey]
 }
 
-export function setLeaf(
-  cfg: Record<string, unknown>,
-  key: ConfigLeafKey,
-  value: unknown,
-): void {
+export function setLeaf(cfg: Record<string, unknown>, key: ConfigLeafKey, value: unknown): void {
   const [rootKey, nestedKey] = key.split(".") as [string, string | undefined]
   if (nestedKey === undefined) {
     cfg[rootKey] = value
@@ -102,7 +102,10 @@ export function setLeaf(
   }
   const existing = cfg[rootKey]
   const rootObj =
-    existing !== undefined && typeof existing === "object" && existing !== null && !Array.isArray(existing)
+    existing !== undefined &&
+    typeof existing === "object" &&
+    existing !== null &&
+    !Array.isArray(existing)
       ? (existing as Record<string, unknown>)
       : {}
   rootObj[nestedKey] = value

@@ -6,6 +6,7 @@
  */
 
 import { type } from "arktype"
+import type { AssertCovered } from "./specs.js"
 
 export const DriveCodingSecrets = type({
   "elevenLabsKey?": "string",
@@ -25,6 +26,6 @@ export const SECRET_SPECS = [
 }>
 
 /** Compile-time: every schema key must appear in SECRET_SPECS. */
-type _SecretSpecCoverage = {
-  [K in keyof DriveCodingSecrets]: Extract<(typeof SECRET_SPECS)[number], { key: K }>
-}[keyof DriveCodingSecrets]
+type _SecretSpecCoverage = AssertCovered<
+  Exclude<keyof DriveCodingSecrets, (typeof SECRET_SPECS)[number]["key"]>
+>
