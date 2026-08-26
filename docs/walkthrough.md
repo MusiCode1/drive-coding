@@ -1,3 +1,18 @@
+## 2026-08-27 (fix1 Commit D — שפה נדרשת בפרומפט)
+
+### slice live-contract-gemini fix1 — Commit D: סעיף שפה
+
+#### מה בוצע?
+
+- `live-prompt.ts` — עברית **חובה** (לא "יכול להיות באנגלית"); סעיף מזהים ללא שינוי.
+
+#### בדיקות
+
+- live-actions.test.ts: 5/5 ירוק.
+- typecheck + lint:i18n ירוקים.
+
+---
+
 ## 2026-08-27 (fix1 Commit C — action_result Struct wrap)
 
 ### slice live-contract-gemini fix1 — Commit C: עטיפת action_result
