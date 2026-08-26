@@ -93,9 +93,9 @@ const DEFAULTS: Persisted = {
   // ─── שפה ─── (rtl-ltr-bidi) — DEFAULT_LOCALE="he"; detectLocale() רץ רק כש-localStorage ריק
   locale: DEFAULT_LOCALE,
   // ─── השתקה ─── (ui-polish-batch · C7)
-  muted: false,
+  muted: true,
   // ─── מסך ─── (slice-wake-lock)
-  screenWakeLock: false,
+  screenWakeLock: true,
   // ─── תצוגת צ'אט ─── (display-toggle-consistency) — ברירות מחדל = התנהגות נוכחית (מחשבות פתוחות, כלים סגורים)
   showThoughts: true,
   showTools: false,
@@ -121,6 +121,17 @@ const DEFAULTS: Persisted = {
   geminiPace: "normal",
   geminiTone: "neutral",
   // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4) — null = env נבחר
+  sessionTransport: "http",
+}
+
+/**
+ * Legacy values for the three fields flipped in slice fe-defaults.
+ * Frozen: an **existing** blob missing a key gets this value — not the new DEFAULTS.
+ * The choice is by **blob existence**, not by key existence.
+ */
+const LEGACY_DEFAULTS: Pick<Persisted, "muted" | "screenWakeLock" | "sessionTransport"> = {
+  muted: false,
+  screenWakeLock: false,
   sessionTransport: null,
 }
 
@@ -142,9 +153,9 @@ function load(): Persisted {
     if (parsed.showTools === undefined && parsed.expandTools !== undefined) {
       parsed.showTools = parsed.expandTools
     }
-    return { ...DEFAULTS, ...parsed }
+    return { ...DEFAULTS, ...LEGACY_DEFAULTS, ...parsed }
   } catch {
-    return { ...DEFAULTS, locale: detectLocale() }
+    return { ...DEFAULTS, ...LEGACY_DEFAULTS, locale: detectLocale() }
   }
 }
 
