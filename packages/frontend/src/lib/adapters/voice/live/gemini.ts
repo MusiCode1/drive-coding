@@ -89,9 +89,22 @@ function pcmToBase64(pcm: Uint8Array): string {
   return bytesToBase64(pcm)
 }
 
-/** Gemini sendToolResponse expects protobuf Struct — a plain object, not a primitive. */
+/**
+ * Gemini `sendToolResponse` expects a protobuf `Struct` — a map, not a primitive
+ * and not a list. Anything else closes the session, and the wire error names the
+ * wrong field, so it reads like a bug in our code rather than in the payload:
+ *
+ *   close: Invalid JSON payload received. Unknown name "response"
+ *          at 'tool_response.function_responses[0]': Proto field is not repeated
+ *
+ * Measured 2026-08-27: `[{status:"sent"}]` → session dead, 0 frames after.
+ * The same call with `{status:"sent"}` → session alive, 41 frames.
+ *
+ * `Array.isArray` is load-bearing: `typeof [] === "object"`, so a bare
+ * `typeof` check lets lists straight through to the failure above.
+ */
 export function wrapActionResultResponse(result: unknown): unknown {
-  if (result !== null && typeof result === "object") {
+  if (result !== null && typeof result === "object" && !Array.isArray(result)) {
     return result
   }
   return { value: result }

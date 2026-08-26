@@ -90,8 +90,8 @@ describe("wrapActionResultResponse()", () => {
     expect(wrapActionResultResponse(undefined)).toEqual({ value: undefined })
   })
 
-  it("passes arrays through unchanged", () => {
-    const arr = [1, 2]
-    expect(wrapActionResultResponse(arr)).toBe(arr)
+  it("wraps arrays — a list is not a protobuf Struct and closes the session", () => {
+    const arr = [{ status: "sent" }]
+    expect(wrapActionResultResponse(arr)).toEqual({ value: arr })
   })
 })
