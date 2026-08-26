@@ -32,8 +32,9 @@ Options:
   -V, --version                 Show version and exit
 
 Precedence: flag > environment variable > config file > default.
+Secrets precedence: CLI secret flag > environment variable > secrets.json.
 Secret flags (--elevenlabs-key, --gemini-key) are visible in the process list —
-prefer --env-file or environment variables for secrets.
+prefer secrets.json, --env-file, or environment variables for secrets.
 
 Examples:
   drive-coding --port 4100
