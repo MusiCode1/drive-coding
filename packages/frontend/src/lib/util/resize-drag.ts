@@ -9,14 +9,19 @@
  * `touch-action: none` על הידית (ב-CSS של הקורא) מונע scroll תוך גרירה.
  *
  * ─── slice connect-panel-resize ───
+ * ─── slice sidebar-resize: axis x + computeDragValue ───
  */
 
 export interface ResizeDragParams {
-  getStart: () => number // גובה נוכחי (px) בתחילת גרירה
-  onMove: (px: number) => void // גובה חי בזמן גרירה (local $state — ללא persist)
-  onEnd: (px: number) => void // גובה סופי ב-pointerup (persist)
+  getStart: () => number // גובה/רוחב נוכחי (px) בתחילת גרירה
+  onMove: (px: number) => void // ערך חי בזמן גרירה (local $state — ללא persist)
+  onEnd: (px: number) => void // ערך סופי ב-pointerup (persist)
   min?: number // ברירת מחדל 120
   max?: () => number // ברירת מחדל () => Math.min(600, window.innerHeight * 0.7)
+  /** `"y"` (default) = clientY / height; `"x"` = clientX / width. */
+  axis?: "x" | "y"
+  /** Multiplier for pointer delta (+1 default). RTL horizontal resize uses -1. */
+  deltaSign?: number
 }
 
 const DEFAULT_MIN = 120
@@ -30,14 +35,28 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
 }
 
+/** Pure resize value from pointer delta — test surface for axis x/y. */
+export function computeDragValue(
+  axis: "x" | "y",
+  startPointer: number,
+  currentPointer: number,
+  startValue: number,
+  min: number,
+  max: number,
+  deltaSign = 1,
+): number {
+  const delta = currentPointer - startPointer
+  return clamp(startValue + deltaSign * delta, min, max)
+}
+
 export function resizeDrag(
   node: HTMLElement,
   params: ResizeDragParams,
 ): { update(p: ResizeDragParams): void; destroy(): void } {
   let current = params
 
-  let startY = 0
-  let startH = 0
+  let startPointer = 0
+  let startValue = 0
   let lastClamped = 0
 
   function bounds(): { min: number; max: number } {
@@ -47,17 +66,29 @@ export function resizeDrag(
     }
   }
 
+  function pointerCoord(e: PointerEvent): number {
+    return (current.axis ?? "y") === "x" ? e.clientX : e.clientY
+  }
+
   function onPointerDown(e: PointerEvent): void {
-    startY = e.clientY
-    startH = current.getStart()
-    lastClamped = startH
+    startPointer = pointerCoord(e)
+    startValue = current.getStart()
+    lastClamped = startValue
     node.setPointerCapture(e.pointerId)
   }
 
   function onPointerMove(e: PointerEvent): void {
     if (!node.hasPointerCapture(e.pointerId)) return
     const { min, max } = bounds()
-    lastClamped = clamp(startH + (e.clientY - startY), min, max)
+    lastClamped = computeDragValue(
+      current.axis ?? "y",
+      startPointer,
+      pointerCoord(e),
+      startValue,
+      min,
+      max,
+      current.deltaSign ?? 1,
+    )
     current.onMove(lastClamped)
   }
 
