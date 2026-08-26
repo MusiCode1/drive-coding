@@ -372,8 +372,7 @@ function openFilePicker(): void {
       type="button"
       disabled={!modelStatus.isRunActive}
       onclick={() => voiceMode.cancelRun()}
-      class="shrink-0 rounded-xl p-2.5 flex items-center justify-center"
-      class:type-area-stop-run--active={modelStatus.isRunActive}
+      class="type-area-stop-run shrink-0 rounded-xl p-2.5 flex items-center justify-center"
       aria-label={t(modelStatus.stopRunLabelKey)}
     >
       <OctagonXIcon size={16} strokeWidth={2} />
@@ -394,17 +393,21 @@ function openFilePicker(): void {
 </div>
 
 <style>
-  button.type-area-stop-run--active:not(:disabled) {
+  button.type-area-stop-run {
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--fg-dim);
+  }
+
+  button.type-area-stop-run:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  button.type-area-stop-run:not(:disabled) {
     border: 1px solid var(--recording);
     color: var(--recording);
     background: transparent;
     cursor: pointer;
-  }
-
-  button.type-area-stop-run--active:disabled {
-    opacity: 0.35;
-    border: 1px solid var(--border);
-    background: transparent;
-    cursor: not-allowed;
   }
 </style>

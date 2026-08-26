@@ -321,7 +321,7 @@ $effect(() => {
     />
     <BitsDialog.Content
       class="fixed left-1/2 top-1/2 z-50 w-[90vw] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl p-5 shadow-xl flex flex-col gap-4"
-      style="background:var(--surface); border:1px solid var(--border)"
+      style="background:var(--bg-elev); border:1px solid var(--border)"
     >
       <BitsDialog.Title class="text-base font-semibold" style="color:var(--fg)">
         {t("session.leaveWarning.title")}
