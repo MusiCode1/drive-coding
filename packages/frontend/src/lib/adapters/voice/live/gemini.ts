@@ -89,6 +89,14 @@ function pcmToBase64(pcm: Uint8Array): string {
   return bytesToBase64(pcm)
 }
 
+/** Gemini sendToolResponse expects protobuf Struct — a plain object, not a primitive. */
+export function wrapActionResultResponse(result: unknown): unknown {
+  if (result !== null && typeof result === "object") {
+    return result
+  }
+  return { value: result }
+}
+
 export const geminiLive: LiveProvider = {
   id: "gemini-live",
   inputSampleRate: 16_000,
@@ -147,7 +155,7 @@ export const geminiLive: LiveProvider = {
                 {
                   id: command.id,
                   name: command.name,
-                  response: command.result,
+                  response: wrapActionResultResponse(command.result),
                 },
               ],
             })

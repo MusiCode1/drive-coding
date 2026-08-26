@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from "vitest"
-import { normalizeGeminiFrame } from "./gemini.js"
+import { normalizeGeminiFrame, wrapActionResultResponse } from "./gemini.js"
 
 describe("normalizeGeminiFrame()", () => {
   it("maps setupComplete to session_started", () => {
@@ -65,5 +65,33 @@ describe("normalizeGeminiFrame()", () => {
   it("maps usage with only totalTokenCount", () => {
     const events = normalizeGeminiFrame({ usageMetadata: { totalTokenCount: 50 } })
     expect(events).toEqual([{ type: "usage", totalTokens: 50, promptTokens: 0 }])
+  })
+})
+
+describe("wrapActionResultResponse()", () => {
+  it("passes plain objects through unchanged", () => {
+    const obj = { status: "sent", count: 2 }
+    expect(wrapActionResultResponse(obj)).toBe(obj)
+  })
+
+  it("wraps strings", () => {
+    expect(wrapActionResultResponse("just-a-string")).toEqual({ value: "just-a-string" })
+  })
+
+  it("wraps numbers", () => {
+    expect(wrapActionResultResponse(42)).toEqual({ value: 42 })
+  })
+
+  it("wraps null", () => {
+    expect(wrapActionResultResponse(null)).toEqual({ value: null })
+  })
+
+  it("wraps undefined", () => {
+    expect(wrapActionResultResponse(undefined)).toEqual({ value: undefined })
+  })
+
+  it("passes arrays through unchanged", () => {
+    const arr = [1, 2]
+    expect(wrapActionResultResponse(arr)).toBe(arr)
   })
 })

@@ -1,3 +1,19 @@
+## 2026-08-27 (fix1 Commit C — action_result Struct wrap)
+
+### slice live-contract-gemini fix1 — Commit C: עטיפת action_result
+
+#### מה בוצע?
+
+- `wrapActionResultResponse` — פרימיטיבים → `{ value }`; אובייקט/מערך כמות-שהם.
+- הערת protobuf Struct; 6 טסטים ב-gemini.test.ts.
+
+#### בדיקות
+
+- gemini.test.ts: 14/14 ירוק.
+- typecheck + lint:i18n ירוקים.
+
+---
+
 ## 2026-08-27 (fix1 Commit B — session_started from setupComplete)
 
 ### slice live-contract-gemini fix1 — Commit B: אות מוכנות אמיתי
