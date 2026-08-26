@@ -34,7 +34,7 @@ const ch = (t: string, mid: string | null, kind = "agent_message_chunk") => ({
   content: { type: "text", text: t },
 })
 const th = (t: string, mid: string | null) => ch(t, mid, "agent_thought_chunk")
-const usr = (t: string, mid: string) => ch(t, mid, "user_message_chunk")
+const usr = (t: string, mid: string | null) => ch(t, mid, "user_message_chunk")
 const tool = (id: string) => ({
   sessionUpdate: "tool_call",
   toolCallId: id,
@@ -92,12 +92,38 @@ describe("G3 — boundary cases", () => {
     expect(assistantText(s)).toBe("AB")
   })
 
-  it("2: user message between — does NOT merge (hard boundary)", () => {
-    const s = run([ch("A", "X"), tool("t1"), usr("q", "U1"), ch("B", "X")])
+  /**
+   * 🔴 ‏שער-העיניים 26/08 ‏הפיל את הגרסה הקודמת של הטסט הזה.
+   *
+   * ‏הוא דרש "‏הודעת-משתמש חוצצת ⇒ ‏שתי בועות" ‏גם כשה-`messageId` ‏זהה — ‏וזה
+   * ‏שבר הודעה שהמשתמש שאל **‏בתוכה**: ‏`"…‏עכשיו תיק"` + `"יית העבודה."`.
+   * ‏**‏המזהה הוא השומר, ‏לא המיקום.** ‏ההפרדה האמיתית נבדקת בטסט שאחריו.
+   */
+  it("2: user message inside ONE message (same mid) — merges", () => {
+    const s = run([ch("A", "X"), tool("t1"), usr("q", null), ch("B", "X")])
+    const asst = assistantBubbles(s)
+    expect(asst).toHaveLength(1)
+    expect(asst[0] && segmentText(asst[0])).toBe("AB")
+  })
+
+  it("2b: different messageIds separated by a user message — does NOT merge", () => {
+    const s = run([ch("A", "X"), usr("q", null), ch("B", "Y")])
     const asst = assistantBubbles(s)
     expect(asst).toHaveLength(2)
     expect(asst[0] && segmentText(asst[0])).toBe("A")
     expect(asst[1] && segmentText(asst[1])).toBe("B")
+  })
+
+  it("2c: different messageIds separated by user + tool — does NOT merge", () => {
+    const s = run([ch("A", "X"), usr("q", null), tool("t1"), ch("B", "Y")])
+    expect(assistantBubbles(s)).toHaveLength(2)
+  })
+
+  it("2d: consecutive user chunks still group (the skip must not eat them)", () => {
+    const s = run([usr("‏שלום ", "U1"), usr("‏עולם", "U1")])
+    const users = s.messages.filter((m) => m.role === "user")
+    expect(users).toHaveLength(1)
+    expect(segmentText(users[0])).toBe("‏שלום ‏עולם")
   })
 
   it("3: different messageId — does NOT merge", () => {
@@ -151,9 +177,14 @@ describe("G3 — boundary cases", () => {
     expect(assistantText(s)).toBe("A")
   })
 
-  it("12b: user with same mid — does NOT merge (defensive belt)", () => {
+  /**
+   * ‏מרחבי-השמות זרים (‏אפס חיתוך בין 4448 ‏מזהי-משתמש ל-26886 ‏מזהי-סוכן),
+   * ‏ו-`synthesizeUserMessage` ‏מקבע `messageId: null` — ‏ולכן הצורה הזו אינה
+   * ‏מיוצרת בפועל. ‏נשמרת כדי לקבע שגם בה **‏המזהה** ‏הוא שמכריע.
+   */
+  it("12b: user carrying the agent mid does not split one logical message", () => {
     const s = run([ch("A", "X"), usr("q", "X"), ch("B", "X")])
-    expect(assistantBubbles(s)).toHaveLength(2)
+    expect(assistantBubbles(s)).toHaveLength(1)
   })
 
   it("12: thought merges above assistant of same mid", () => {
