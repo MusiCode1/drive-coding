@@ -1,6 +1,18 @@
 ## 2026-08-27 — slice live-ears (in progress)
 
-### Commit 1 — float32ToInt16LE
+### Commit 2 — echo-gate
+
+#### מה בוצע?
+
+- `core/voice/echo-gate.ts` — shouldForwardFrame טהור.
+- `echo-gate.test.ts` — 5 טסטים.
+
+#### בדיקות
+
+- echo-gate.test.ts: 5/5 ירוק.
+
+---
+
 
 #### מה בוצע?
 
