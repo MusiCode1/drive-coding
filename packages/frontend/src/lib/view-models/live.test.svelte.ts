@@ -2,10 +2,17 @@
  * live.test.svelte.ts — integration tests for Live VM wiring.
  *
  * Slice: live-secretary, Commit 0 — outgoing path + dispatch gate.
+ * @vitest-environment jsdom
  */
 
+import {
+  formatAgentDelivery,
+  LIVE_AGENT_DELIVERY_MARKER,
+  LIVE_PERMISSION_PENDING_MARKER,
+} from "@drive-coding/core/voice/live-prompt"
 import type { LiveEvent } from "@drive-coding/core/voice/live-types"
-import { describe, expect, it, vi } from "vitest"
+import { flushSync } from "svelte"
+import { describe, expect, it, vi, beforeEach } from "vitest"
 import type { AgentSession } from "./agent-session.svelte"
 import type { Mic } from "./mic.svelte"
 import { Live } from "./live.svelte"
@@ -50,39 +57,64 @@ vi.mock("../engines/mic-frames", () => ({
   },
 }))
 
+beforeEach(() => {
+  providerSend.mockClear()
+  sessionSend.mockClear()
+})
+
 function mockMic(state: "idle" | "recording" | "transcribing" = "idle") {
   return { state } as unknown as Mic
 }
 
 function mockSession(overrides: Partial<AgentSession> = {}): AgentSession {
-  return {
+  const base = {
     status: "connected",
     sessionId: "ses_test",
     hasAcpClient: true,
     isRemoteView: false,
     turnState: "idle",
+    pendingPermission: null,
     sendPrompt: vi.fn(async () => {}),
     recentAssistantMessages: vi.fn(() => []),
+    resolvePermission: vi.fn(),
     ...overrides,
-  } as unknown as AgentSession
+  }
+  return base as unknown as AgentSession
+}
+
+function createLive(opts: { mic?: Mic; session: AgentSession }): { live: Live; dispose: () => void } {
+  let live!: Live
+  const dispose = $effect.root(() => {
+    live = new Live({ mic: opts.mic ?? mockMic(), session: opts.session })
+  })
+  return { live, dispose }
 }
 
 async function openLive(session: AgentSession) {
-  const live = new Live({ mic: mockMic(), session })
+  const { live, dispose } = createLive({ session })
   await live.toggle()
   expect(live.state).toBe("open")
+  Object.defineProperty(live, "_testDispose", { value: dispose, writable: true })
   return live
 }
 
 describe("Live.canOpen", () => {
   it("false when mic is recording", () => {
-    const live = new Live({ mic: mockMic("recording"), session: mockSession() })
-    expect(live.canOpen).toBe(false)
+    const { live, dispose } = createLive({ mic: mockMic("recording"), session: mockSession() })
+    try {
+      expect(live.canOpen).toBe(false)
+    } finally {
+      dispose()
+    }
   })
 
   it("true when mic is idle and live closed", () => {
-    const live = new Live({ mic: mockMic("idle"), session: mockSession() })
-    expect(live.canOpen).toBe(true)
+    const { live, dispose } = createLive({ session: mockSession() })
+    try {
+      expect(live.canOpen).toBe(true)
+    } finally {
+      dispose()
+    }
   })
 })
 
@@ -198,8 +230,113 @@ describe("Live outgoing path (Commit 0)", () => {
 
     expect(providerSend).toHaveBeenCalledWith({
       type: "context",
-      text: "The tests pass in auth.test.ts",
+      text: formatAgentDelivery("The tests pass in auth.test.ts"),
       channel: "speakable",
+    })
+    expect(providerSend.mock.calls.at(-1)?.[0]?.text).toContain(LIVE_AGENT_DELIVERY_MARKER)
+  })
+
+  it("$effect delivers marked agent answer when turnState becomes idle", async () => {
+    const session = $state({
+      status: "connected",
+      sessionId: "ses_test",
+      hasAcpClient: true,
+      isRemoteView: false,
+      turnState: "busy" as "idle" | "busy",
+      pendingPermission: null,
+      sendPrompt: vi.fn(async () => {}),
+      recentAssistantMessages: vi.fn(() => ["Marked delivery auth.test.ts"]),
+      resolvePermission: vi.fn(),
+    })
+    await openLive(session as unknown as AgentSession)
+
+    providerOnEvent?.({
+      type: "action",
+      id: "a6b",
+      name: "compose_prompt",
+      args: { text: "run tests" },
+    })
+
+    session.turnState = "idle"
+    flushSync()
+
+    expect(providerSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "context",
+        channel: "speakable",
+        text: formatAgentDelivery("Marked delivery auth.test.ts"),
+      }),
+    )
+  })
+
+  it("notifies pending permission via marked speakable context", async () => {
+    const session = $state({
+      status: "connected",
+      sessionId: "ses_test",
+      hasAcpClient: true,
+      isRemoteView: false,
+      turnState: "idle" as const,
+      pendingPermission: null as {
+        requestId: number
+        params: {
+          options: { optionId: string; name: string; kind: string }[]
+          toolCall: { toolCallId: string; title: string }
+        }
+        resolve: (r: unknown) => void
+      } | null,
+      sendPrompt: vi.fn(async () => {}),
+      recentAssistantMessages: vi.fn(() => []),
+      resolvePermission: vi.fn(),
+    })
+    await openLive(session as unknown as AgentSession)
+    session.pendingPermission = {
+      requestId: 42,
+      params: {
+        options: [
+          { optionId: "allow-1", name: "Allow once", kind: "allow_once" },
+          { optionId: "deny-1", name: "Deny", kind: "reject_once" },
+        ],
+        toolCall: { toolCallId: "t1", title: "Run command" },
+      },
+      resolve: vi.fn(),
+    }
+    flushSync()
+
+    expect(providerSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "context",
+        channel: "speakable",
+        text: expect.stringContaining(LIVE_PERMISSION_PENDING_MARKER),
+      }),
+    )
+    expect(providerSend.mock.calls.at(-1)?.[0]?.text).toContain("allow-1: Allow once")
+  })
+
+  it("answer_permission rejects optionId outside the closed list", async () => {
+    const session = mockSession({
+      pendingPermission: {
+        params: {
+          options: [{ optionId: "allow-1", name: "Allow once", kind: "allow_once" }],
+          toolCall: { toolCallId: "t1", title: "Run command" },
+        },
+        resolve: vi.fn(),
+      },
+    })
+    await openLive(session)
+
+    providerOnEvent?.({
+      type: "action",
+      id: "a8",
+      name: "answer_permission",
+      args: { optionId: "wrong-id" },
+    })
+
+    expect(session.resolvePermission).not.toHaveBeenCalled()
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "a8",
+      name: "answer_permission",
+      result: { status: "not_sent", reason: "invalid-option" },
     })
   })
 
