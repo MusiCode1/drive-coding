@@ -1,6 +1,19 @@
 ## 2026-08-27 — slice live-ears (in progress)
 
-### Commit 4 — LiveSessionEngine
+### Commit 5 — Live VM + חיווט
+
+#### מה בוצע?
+
+- `view-models/live.svelte.ts` — מרכיב fetchLiveToken + geminiLive → engine.
+- `context.ts` — צמד live (additive).
+- `+layout.svelte` — new Live({ mic }), VoiceMode + live dep.
+
+#### בדיקות
+
+- live.test.svelte.ts: canOpen 2/2 ירוק.
+
+---
+
 
 #### מה בוצע?
 
