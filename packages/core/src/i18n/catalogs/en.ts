@@ -441,4 +441,9 @@ export const en: Catalog = {
   "session.newSessionUnsupportedRemote": "Starting a new session is not supported yet in remote mode.",
   // ─── sidebar-resize ───
   "sidebar.resizeHandle": "Drag to resize width",
+  // ─── cwd-path-combo ───
+  "connect.cwd.combo.toggle": "Show recent folders",
+  "connect.cwd.combo.searchPlaceholder": "Search path…",
+  "connect.cwd.combo.empty": "No folders to show",
+  "connect.cwd.combo.loadError": "Failed to load folders",
 }

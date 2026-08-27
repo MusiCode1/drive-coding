@@ -442,6 +442,11 @@ export type MessageKey =
   | "session.newSessionUnsupportedRemote"
   // ─── sidebar-resize ───
   | "sidebar.resizeHandle"
+  // ─── cwd-path-combo ───
+  | "connect.cwd.combo.toggle"
+  | "connect.cwd.combo.searchPlaceholder"
+  | "connect.cwd.combo.empty"
+  | "connect.cwd.combo.loadError"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
