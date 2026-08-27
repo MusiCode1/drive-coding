@@ -244,6 +244,7 @@ function openFilePicker(): void {
   <form
     onsubmit={onSubmit}
     class="flex gap-2 items-end w-full"
+    style="--control-h: 2.5rem"
     ondrop={handleDrop}
     ondragover={handleDragOver}
   >
@@ -266,8 +267,8 @@ function openFilePicker(): void {
         disabled={isDisabled}
         aria-label={t("attach.addImage")}
         title={t("attach.addImage")}
-        class="shrink-0 rounded-xl p-2 flex items-center"
-        style="color:var(--fg-dim)"
+        class="type-area-control type-area-icon-control shrink-0 rounded-xl p-2 flex items-center"
+        style="color:var(--fg-dim); min-height:var(--control-h)"
       >
         <ImagePlusIcon size={18} strokeWidth={1.75} />
       </button>
@@ -306,8 +307,8 @@ function openFilePicker(): void {
       aria-expanded={menuOpen}
       aria-controls={menuOpen ? "slash-listbox" : undefined}
       aria-activedescendant={menuOpen ? `slash-opt-${selectedIndex}` : undefined}
-      class="w-full rounded-xl px-3 py-2.5 text-sm resize-none outline-none border relative"
-      style="background:var(--bg-card); border-color:var(--border); color:var(--fg); max-height:calc({MAX_ROWS} * 1.5em + 1.25rem)"
+      class="type-area-control w-full rounded-xl px-3 py-2.5 text-sm resize-none outline-none border relative"
+      style="background:var(--bg-card); border-color:var(--border); color:var(--fg); min-height:var(--control-h); max-height:calc({MAX_ROWS} * 1.5em + 1.25rem)"
       onpaste={handlePaste}
       onkeydown={(e) => {
         // ─── slice-slash-commands: keydown-intercept לדפדוף-בתפריט ───────────
@@ -367,44 +368,56 @@ function openFilePicker(): void {
     ></textarea>
     </div>
 
+    <!-- ─── slice-image-paste Commit 4b: שכבה 1 — disabled רק אם אין טקסט ואין תמונות ─── -->
+    <button
+      type="submit"
+      disabled={(!promptText.trim() && attachments.length === 0) || isDisabled}
+      class="type-area-control rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-1.5 shrink-0"
+      style="background:var(--accent); color:white; min-height:var(--control-h)"
+      aria-label={t("record.send")}
+    >
+      <SendIcon size={16} strokeWidth={2} style="transform:scaleX(-1)" />
+    </button>
+
     <!-- ─── slice control-roles: כפתור עצור-ריצה קבוע (disabled כשאין ריצה) ─── -->
     <button
       type="button"
       disabled={!modelStatus.isRunActive}
       onclick={() => voiceMode.cancelRun()}
-      class="shrink-0 rounded-xl p-2.5 flex items-center justify-center"
-      class:type-area-stop-run--active={modelStatus.isRunActive}
+      class="type-area-control type-area-icon-control type-area-stop-run shrink-0 rounded-xl p-2.5 flex items-center justify-center"
+      style="min-height:var(--control-h)"
       aria-label={t(modelStatus.stopRunLabelKey)}
     >
       <OctagonXIcon size={16} strokeWidth={2} />
-    </button>
-
-    <!-- ─── slice-image-paste Commit 4b: שכבה 1 — disabled רק אם אין טקסט ואין תמונות ─── -->
-    <button
-      type="submit"
-      disabled={(!promptText.trim() && attachments.length === 0) || isDisabled}
-      class="rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-1.5 shrink-0"
-      style="background:var(--accent); color:white"
-      aria-label={t("record.send")}
-    >
-      <SendIcon size={16} strokeWidth={2} style="transform:scaleX(-1)" />
     </button>
   </form>
 
 </div>
 
 <style>
-  button.type-area-stop-run--active:not(:disabled) {
+  textarea.type-area-control {
+    display: block;
+  }
+
+  button.type-area-icon-control {
+    aspect-ratio: 1;
+  }
+
+  button.type-area-stop-run {
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--fg-dim);
+  }
+
+  button.type-area-stop-run:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  button.type-area-stop-run:not(:disabled) {
     border: 1px solid var(--recording);
     color: var(--recording);
     background: transparent;
     cursor: pointer;
-  }
-
-  button.type-area-stop-run--active:disabled {
-    opacity: 0.35;
-    border: 1px solid var(--border);
-    background: transparent;
-    cursor: not-allowed;
   }
 </style>

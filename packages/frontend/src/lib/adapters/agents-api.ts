@@ -5,7 +5,7 @@
  * ללא ניסיונות חוזרים, ללא וולידציית סכמה — נתיב מהיר ל-v2.
  */
 
-import type { AgentPublic } from "@drive-coding/core"
+import type { AgentPublic, MachineStats } from "@drive-coding/core"
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
 import { beUrl } from "$lib/util/be-url"
 
@@ -181,7 +181,7 @@ export type PresenceResponse = {
     lastSeenAt: number | null
     via: "ws" | "http" | null
   } | null
-  machine: unknown
+  machine: MachineStats | null
 }
 
 const PRESENCE_TIMEOUT_MS = 5000

@@ -1,3 +1,556 @@
+## 2026-08-27 12:25 — slice live-transcript-box · Commit 2 (data-live-entry) · סיום
+
+Phase 2: `data-live-entry` על כל רשומה + טסט DoD 4 נפרד.
+
+| # | בדיקה | תוצאה |
+|---|--------|--------|
+| 1 | typecheck · test · lint | **עבר** |
+| 2 | svelte-check | **54 / 54** (לפני/אחרי) |
+| 3 | תקרה inline | **עבר** |
+| 4 | 25 entries → 25 nodes | **עבר** |
+| 6 | מוטציה: הסר style | **עבר** — DoD 3 נכשל, DoD 4 ירוק |
+| 7–8 | scroll-follow | **עבר** |
+| 9–10 | עין | **לא-נמדד** |
+| 11 | עץ נקי | **ממתין לקומיט** |
+
+3 commits: `93ef76f2..HEAD`
+
+#### מה בוצע?
+
+- `data-live-entry` על עטיפת כל רשומה ב-`{#each}`.
+- טסט DoD 4 נפרד מ-DoD 3.
+
+#### בדיקות
+
+- live-transcript tests: 2 passed; scroll-config: 3 passed.
+- full suite: green.
+
+---
+
+
+Phase 1: scroll-follow עם פרמטרים מכוילים לתיבת 12rem (sentinel 8px, distanceLines 1).
+
+| # | בדיקה | תוצאה |
+|---|--------|--------|
+| 1 | typecheck · test · lint | **עבר** |
+| 2 | svelte-check | **54 / 54** |
+| 7 | scroll-follow + כיול | **עבר** (3 טסטים) |
+| 8 | following=false | **עבר** (mutation gate) |
+| 9–10 | עין — נעילה / שחרור | **לא-נמדד** (⏸ אין מכשיר) |
+
+#### מה בוצע?
+
+- `live-transcript-scroll-config.ts`: margin 8px, distanceLines 1.
+- `LiveTranscript.svelte`: batched follow (ResizeObserver, user-intent, $effect על transcript).
+- `live-transcript-scroll-config.test.ts`: DoD 7+8.
+
+#### בדיקות
+
+- live-transcript tests: 4 passed.
+- full suite: green.
+
+---
+
+
+Phase 0: `max-height: 12rem; overflow-y: auto` כ-`style` inline על מכל `[data-live-scroll]`.
+
+| # | בדיקה | תוצאה |
+|---|--------|--------|
+| 1 | typecheck · test · lint (קבצים שנגעו) | **עבר** |
+| 2 | svelte-check לפני/אחרי | **54 / 54** |
+| 3 | DoD 3 — computed max-height + overflow-y | **עבר** (jsdom) |
+| 6 | מוטציה: הסר style | **לא-נמדד** (DoD 3 תופס הסרה) |
+
+#### מה בוצע?
+
+- `LiveTranscript.svelte`: מכל גלילה עם תקרת 12rem inline.
+- `live-transcript-harness.svelte` + `live-transcript.test.ts`: DoD 3.
+
+#### בדיקות
+
+- `live-transcript.test.ts`: 1 passed.
+- full suite: green.
+
+---
+
+
+3 commits: `56ca6e14..HEAD`
+
+| # | בדיקה | תוצאה |
+|---|--------|--------|
+| 1 | typecheck · test · lint:i18n | **עבר** |
+| 2 | אפס redispatch ב-5 ריצות PROBE_DELIVERY | **5/5 pass, redispatch=false** |
+| 3 | מוטציה: הסרת סמן | **5/5 redispatch=true** — הסמן הוא השער |
+| 4 | סעיף-איסור בפרומפט | **עבר** (grep על קבוע מיוצא) |
+| 5 | pendingPermission ⇒ הזרקה מסומנת | **עבר** (טסט) |
+| 6 | optionId מחוץ לרשימה ⇒ invalid-option | **עבר** (טסט) |
+| 7 | DoD 11 מקצה-לקצה | **לא-נמדד** (פרוב חי; מנגנון מחווט) |
+| 8 | `$effect` רץ בטסט (jsdom + `$effect.root`) | **עבר** |
+| 9 | טסט נופל בלי סמן | **עבר** (assert על MARKER) |
+| 10 | DoD 9 על agentAnswer | **עבר** (probe pass ללא idDelivered בשער) |
+| 11 | 5ב+18 | **5ב פתוח · 18 ירד** (מנגנון ב-headless, אין צרכן mouth) |
+| 12 | vitest.config.ts | **לא נגע** |
+| 13 | עץ נקי | **ממתין לקומיטים** |
+
+#### מה בוצע?
+
+- `LIVE_AGENT_DELIVERY_MARKER` + `formatAgentDelivery` + סעיף פרומפט — מונע compose_prompt חוזר.
+- `LIVE_PERMISSION_PENDING_MARKER` + `$effect` הודעת הרשאה + `invalid-option` / `no-pending-permission`.
+- `live.test.svelte.ts`: `@vitest-environment jsdom`, `$effect.root`, טסט `$effect` על turnState.
+- `probe-live-adapter.mjs`: `formatAgentDelivery`, שער `redispatch`, pass על agentAnswer.
+
+#### בדיקות
+
+- PROBE_DELIVERY ×5 על 4031: pass=true, redispatch=false (×5).
+- מוטציה bare delivery ×5: redispatch=true (×5).
+- voice tests: 166 passed.
+
+---
+
+
+7 commits: `54fe3dcd..f668bc51`
+
+| DoD | בדיקה | תוצאה |
+|-----|--------|--------|
+| 1 | typecheck · test · lint:i18n | **עבר** (2 נפילות ידועות) |
+| 2 | מסלול יוצא compose_prompt→sendPrompt | **עבר** (טסט) |
+| 3 | action_result מיידי | **עבר** |
+| 4 | מוטציה on("action") | **לא-נמדד** |
+| 5 | mouth speaking ב-Live | **עבר** (טסט VM) |
+| 5ב | mouth consumer ב-svelte | **פתוח** (grep ריק) |
+| 6 | mouth mutation | **עבר** (טסט) |
+| 8 | PROBE_DELIVERY שלושה טקסטים | **עבר** (פלט JSON; pass=false ב-STT) |
+| 9 | מזהה במסירה | **לא-נמדד** (probe pass=false) |
+| 10 | מוצהר⇔מטופל (4=4) | **עבר** (3 handlers + answer_permission=4) |
+| 14 | probe slice 1 | **עבר** (4031) |
+| 16 | not_sent לכל reason | **עבר** |
+| 17 | audio→sink | **עבר** |
+| 18 | mouth ריאקטיבי | **לא-נמדד** (פריוויו) |
+| 11–13 | פריוויו mic/TTS/PTT | **לא-נמדד** |
+
+calev-heavy: **לא הורץ** (usage limit) — מרדכי ירים verifier.
+
+---
+
+
+- `PROBE_DELIVERY=1` — מזריק agentAnswer סינתטי, מדפיס שלושת הטקסטים (§3).
+- DoD 14: פרוב בסיסי ירוק על 4031.
+
+#### חוב 3 (mouth consumer)
+
+- `grep '.mouth' *.svelte` → **ריק** — חוב 3 **פתוח** (לא מומצא צרכן).
+
+---
+
+
+- Speaker: liveOpen → #stopAndClear + skip enqueue (§4.3).
+- +layout: mic → live → speaker (live ref).
+
+---
+
+
+- mapPermissionOptions + resolvePermission; not_sent ללא pending/optionId לא חוקי.
+
+---
+
+
+- LIVE_ACTION_SHAPES: 12 → 4 (compose_prompt · forward · cancel_turn · answer_permission).
+- handler cancel_turn → session.cancelTurn + action_result מיידי.
+
+---
+
+
+base: `dfeff3ff`
+
+- `sendContext` על LiveSessionEngine.
+- `$effect` על `turnState===idle` → `recentAssistantMessages(1)` → speakable.
+- `#pendingAgentDelivery` נקבע אחרי dispatch מוצלח.
+
+---
+
+
+base: `fe55b249`
+
+#### מה בוצע?
+
+- `LiveAudioSink` — PCM 24kHz gapless, `isPlaying` + `onPlayingChange`.
+- `LiveSessionEngine`: `audio`/`interrupted` → sink; `#cleanupSession` stops sink.
+- `Live.isSpeaking` — גשר `$state` לריאקטיביות.
+- `VoiceMode.mouth` — Live פתוח → `live.isSpeaking`, אחרת Speaker.
+
+#### בדיקות
+
+- live-audio-sink: 3 · live-session audio: 2 · voice-mode mouth: 3 חדשים.
+
+---
+
+
+base: `54fe3dcd` · ענף `slice/live-secretary`
+
+#### מה בוצע?
+
+- `core/voice/live-dispatch.ts` — `canDispatchPrompt` (TDD, 6 tests).
+- `Live` VM: `engine.on("action")` → `compose_prompt`/`forward` → `sendPrompt` + `action_result` מיידי.
+- `not_sent` + reason כשה-gate נכשל; פרומפט מעודכן.
+- `LiveSessionEngine.sendActionResult` · getters `isRemoteView`/`hasAcpClient`.
+- `live.test.svelte.ts`: 7 passed.
+
+#### בדיקות
+
+- typecheck ירוק · lint:i18n ירוק · test: 2 נפילות ידועות.
+
+---
+
+
+base: `dfbb4078` → HEAD `2d1acca8` (8 commits)
+
+| DoD | בדיקה | תוצאה |
+|-----|--------|--------|
+| 1 | typecheck | ✅ |
+| 2 | tests | ✅ (2 נפילות ידועות: cli-availability, bridge-failure F-1) |
+| 3 | lint:i18n | ✅ |
+| 4 | float32ToInt16LE | ✅ |
+| 5 | shouldForwardFrame | ✅ |
+| 6 | FSM regression | ✅ |
+| 7 | mutation ear/mouth | ✅ |
+| 8 | ear/mouth getters | ✅ |
+| 9 | תמליל זורם | ⏸ לא-נמדד (mic HTTPS) |
+| 10 | לחיצה אחת | ⏸ לא-נמדד |
+| 11 | PTT regression | ⏸ לא-נמדד |
+| 12 | בלעדיות מצבים | ⏸ wiring ✅; runtime ⏸ |
+| 13 | connect → error | ✅ |
+| 14 | no API key | ⏸ לא-נמדד runtime |
+| 15 | PCM mutation | ⏸ לא-נמדד preview |
+| 16 | auth.test.ts UI | ⏸ probe ✅; UI ⏸ |
+| 17 | probe | ✅ identifierTranscribedExactly |
+| 18 | עץ נקי | ✅ |
+
+בדיקות-עצמיות של המבצע (**אינן verdict**). השער האמיתי: כלב-heavy r1 NO-GO → תוקן → r2 **GO** — `$BDS_REPORTS/drive-coding/live-ears-calev.md` · `-r2.md`
+
+### Commits
+
+0. MicFrames worklet · 1. float32ToInt16LE · 2. echo-gate · 3. fetchLiveToken
+4. LiveSessionEngine · 5. Live VM + layout · 6. ear/mouth FSM · 7. UI + i18n
+
+#### חריגות
+
+- `Live` constructor מקבל `mic` (נדרש ל-`canOpen`).
+- calev-heavy לא רץ (usage limit).
+
+---
+## 2026-08-27 — slice live-context (סיום)
+
+base: `dfbb4078` → HEAD `a96b4910` — 5 commits
+
+| DoD | בדיקה | תוצאה |
+|-----|--------|--------|
+| 1 | typecheck | ✅ |
+| 2 | tests | ✅ (2 כשלים סביבתיים קיימים) |
+| 3 | lint:i18n | ✅ |
+| 4 | session overflow | ✅ live-memory.test |
+| 5 | always refuse | ✅ live-memory.test |
+| 6 | full:true לא throw | ✅ live-memory.test |
+| 7 | search ריק | ✅ live-search.test |
+| 8 | seed maxChars | ✅ live-seed.test |
+| 9 | silent inject | ✅ PROBE_SEED pass |
+| 10 | answer from seed | ✅ answerUsedSeed:true |
+| 11 | mutation empty seed | ✅ pass:false |
+| 12 | slice 1 regression | ✅ |
+| 13 | עץ נקי | ✅ |
+
+בדיקות-עצמיות של המבצע (**אינן verdict**). השער האמיתי: כלב light **GO** — `$BDS_REPORTS/drive-coding/live-context-calev.md`
+
+#### סטיות
+
+- warmup speakable לפני seed בפרוב (Commit 4).
+
+---
+
+
+### PROBE_SEED — שער חי
+
+#### מה בוצע?
+
+- `scripts/probe-live-adapter.mjs` — מצב `PROBE_SEED=1` + `PROBE_SEED_EMPTY=1` למוטציה.
+- buildLiveSeed → הזרקה silent → שאלה → `answerUsedSeed` מ-transcript + compose_args.
+- `pass = seedCharCount > 0 && contextProvokedFrames === 0 && answerUsedSeed`.
+
+#### בדיקות
+
+- `PROBE_BE_PORT=4021 PROBE_SEED=1` → pass:true, seedCharCount:37, contextProvokedFrames:0.
+- `PROBE_SEED_EMPTY=1` → pass:false (DoD 11).
+- רגרסיה slice 1 (ללא PROBE_SEED) → ירוק.
+
+#### סטיות
+
+- warmup speakable לפני seed (turn_done) — נדרש כדי שהמזכיר יענה מתוך seed ולא compose_prompt.
+
+---
+
+## 2026-08-27 — slice live-context Commit 3
+
+### remember_session + remember_always
+
+#### מה בוצע?
+
+- `live-actions.ts` — שתי פעולות חדשות.
+- `live-prompt.ts` — פרוזה עם איסור סיכומי-תמליל.
+- עדכון ספירה 10→12 ב-`live-actions.test.ts` ו-`live-gemini-config.test.ts`.
+
+#### בדיקות
+
+- live-actions.test.ts: 5/5.
+- live-gemini-config.test.ts: 2/2.
+
+#### סטיות
+
+- אין.
+
+---
+
+## 2026-08-27 — slice live-context Commit 2
+
+### live-memory.ts — מכסות · חיתוך · גלישה
+
+#### מה בוצע?
+
+- `packages/core/src/voice/live-memory.ts` — `upsertMemory` + `formatMemoryForPrompt`.
+- session: חוצץ מעגלי; always: מסרב עם `{ full: true, items }`.
+- dedup מחרוזת זהה (idempotency).
+- `live-memory.test.ts` — 11 טסטים.
+
+#### בדיקות
+
+- live-memory.test.ts: 11/11 ירוק.
+
+#### סטיות
+
+- אין.
+
+---
+
+## 2026-08-27 — slice live-context Commit 1
+
+### live-search.ts — חיפוש ב-bubbles
+
+#### מה בוצע?
+
+- `packages/core/src/voice/live-search.ts` — `searchSessionBubbles` + `SearchHit`.
+- פיצול-טוקנים עברית/אנגלית עם `\u0590-\u05FF` (lint:i18n-safe).
+- status bubbles מסוננים במפורש.
+- `live-search.test.ts` — 9 טסטים.
+
+#### בדיקות
+
+- live-search.test.ts: 9/9 ירוק.
+- lint:i18n ירוק.
+
+#### סטיות
+
+- אין.
+
+---
+
+
+### live-seed.ts — בניית seed מ-bubbles
+
+#### מה בוצע?
+
+- `packages/core/src/voice/live-seed.ts` — `buildLiveSeed` + טיפוסים (`LiveSeedBubble`, `LiveSeedLabels`, …).
+- `live-seed.test.ts` — 12 טסטים: redaction, maxTurns, maxChars, turnState, lastUserMessage.
+
+#### בדיקות
+
+- live-seed.test.ts: 12/12 ירוק.
+- typecheck + lint:i18n ירוקים.
+- `bun run test`: 2 כשלים סביבתיים קיימים (cli-availability, bridge-failure) — לא קשורים לסלייס.
+
+#### סטיות
+
+- אין.
+
+---
+
+
+### slice live-contract-gemini fix1 — 4 commits (A–D)
+
+base: `aabc8f42` → HEAD `8edb36de`
+
+| DoD | בדיקה | תוצאה |
+|-----|--------|--------|
+| 1 | typecheck + lint:i18n | ✅ |
+| 2 | tests (2 נפילות ידועות בלבד) | ✅ 2 failed |
+| 3 | פרוב מסרב ל-4020 תפוס | ✅ exit=1 |
+| 4 | אפס דליפה אחרי הצלחה | ✅ 4020 ריק |
+| 5 | אפס דליפה אחרי כישלון | ✅ 4020 ריק |
+| 6 | מוטציה onopen | ⚠️ לא נמדד חי (unit tests מכסים setupComplete) |
+| 7 | setupComplete → session_started | ✅ gemini.test 14/14 |
+| 8 | action_result מחרוזת | ✅ errorEvents=[], session נמשך |
+| 9 | compose_prompt בעברית ×3 | ✅ 3/3 עברי |
+| 10 | identifierSurvived ×3 | ✅ 3/3 |
+| 11 | MUT14 tools removed | ✅ actionCount=0 |
+| 12 | עץ נקי | ✅ |
+
+#### סטיות
+
+- אין.
+
+---
+
+## 2026-08-27 (fix1 Commit D — שפה נדרשת בפרומפט)
+
+### slice live-contract-gemini fix1 — Commit D: סעיף שפה
+
+#### מה בוצע?
+
+- `live-prompt.ts` — עברית **חובה** (לא "יכול להיות באנגלית"); סעיף מזהים ללא שינוי.
+
+#### בדיקות
+
+- live-actions.test.ts: 5/5 ירוק.
+- typecheck + lint:i18n ירוקים.
+
+---
+
+## 2026-08-27 (fix1 Commit C — action_result Struct wrap)
+
+### slice live-contract-gemini fix1 — Commit C: עטיפת action_result
+
+#### מה בוצע?
+
+- `wrapActionResultResponse` — פרימיטיבים → `{ value }`; אובייקט/מערך כמות-שהם.
+- הערת protobuf Struct; 6 טסטים ב-gemini.test.ts.
+
+#### בדיקות
+
+- gemini.test.ts: 14/14 ירוק.
+- typecheck + lint:i18n ירוקים.
+
+---
+
+## 2026-08-27 (fix1 Commit B — session_started from setupComplete)
+
+### slice live-contract-gemini fix1 — Commit B: אות מוכנות אמיתי
+
+#### מה בוצע?
+
+- `gemini.ts` — `session_started` מ-`setupComplete` בנרמול, לא מ-`onopen`.
+- `gemini.test.ts` — טסט setupComplete + שלילה ל-onopen path.
+
+#### בדיקות
+
+- gemini.test.ts: 8/8 ירוק.
+- typecheck + lint:i18n ירוקים.
+
+---
+
+## 2026-08-27 (fix1 Commit A — probe leak / false-green)
+
+### slice live-contract-gemini fix1 — Commit A: probe cleanup + fail-fast
+
+#### מה בוצע?
+
+- `scripts/probe-live-adapter.mjs` — fail-fast אם 4020 תפוס; `process.exit` אחרי `finally`;
+  ניקוי SIGTERM→SIGKILL; וידוא שחרור פורט (מזהה LISTEN, לא כותרת ss).
+
+#### בדיקות
+
+- DoD fix1 #3: BE ידני על 4020 → פרוב exit=1.
+- DoD fix1 #4: ריצה מוצלחת → `ss -ltn | grep 4020` ריק.
+- typecheck + lint:i18n ירוקים.
+
+---
+
+## 2026-08-27 01:25
+
+### slice live-contract-gemini — סיום
+
+4 commits מעל בסיס 3952f4f9 (+ 2 probe artifacts). calev phase1: GO (0 findings).
+calev-heavy: ממתין.
+
+#### סטיות
+
+- PCM/STT ~20% flake בשער (4/5 pass אחרי timeout fix)
+- usage לפעמים null
+
+---
+
+## 2026-08-27 01:17
+
+### slice live-contract-gemini — Commit 3: probe-live-adapter (שער חי)
+
+#### מה בוצע?
+
+- `scripts/probe-live-adapter.mjs` — BE 4020, token, adapter, PCM עברי, JSON gate.
+- תיקון usage normalization ב-gemini.ts.
+
+#### בדיקות DoD (§5)
+
+- #4: probe על בסיס 3952f4f9 — exit=1 (no such file) ✓
+- #5-#13: probe עבר (session, עברית, compose_prompt, identifier, usage)
+- #14: הסרת tools — רק actionEvents נכשל ✓
+- #15: PROBE_CONTEXT=1 בלי role — closedReason invalid argument ✓
+- #16: raw 1/1 · tok-constr 0/1 · tok-full 1/1 ✓
+- #6: 503 ללא GEMINI_API_KEY ✓
+
+---
+
+## 2026-08-27 01:14
+
+### slice live-contract-gemini — Commit 2: אדפטר Gemini Live
+
+#### מה בוצע?
+
+- `live/gemini.ts` — נרמול LiveEvent, send עם role:"user" ב-sendClientContent.
+- `live/index.ts` — resolveLive לפי VoiceModelRef.
+- gemini.test.ts — 5 טסטי נרמול.
+
+#### בדיקות
+
+- bun import מחוץ לדפדפן — OK.
+- vitest gemini.test.ts — 5/5.
+
+---
+
+## 2026-08-27 01:13
+
+### slice live-contract-gemini — Commit 1: endpoint הנפקת-טוקן
+
+#### מה בוצע?
+
+- `live-gemini-config.ts` — בניית קונפיג-סשן מלא (תואם SESSION_CONFIG בפרוב).
+- `http-live-token.ts` — POST `/api/voice/live/token`, authTokens.create v1alpha.
+- טסטי אינטגרציה: 503 ללא מפתח, 400, tools לא-ריק ב-constraints.
+- `server.ts` — registerLiveTokenHttp.
+
+#### בדיקות
+
+- curl ל-4020 — token + sessionConfig חוזרים.
+- vitest: live-gemini-config + http-live-token — 5/5.
+
+---
+
+## 2026-08-27 01:10
+
+### slice live-contract-gemini — Commit 0: חוזה ליבה
+
+ענף: `slice/live-contract-gemini`, worktree `.worktrees/live-contract-gemini`, base `3952f4f9`.
+
+#### מה בוצע?
+
+- `live-types.ts` — חוזה LiveEvent / LiveCommand / LiveProvider (type-only).
+- `live-actions.ts` + `live-prompt.ts` — 10 פעולות; מבנה באנגלית, פרוזה בעברית ב-prompt בלבד.
+- `capabilities.ts` — מפתח `live` ב-voiceService/voiceConfig/DEFAULT_VOICE_CONFIG.
+- `select.test.ts` — עודכן unknown-provider test עם `live`.
+
+#### בדיקות
+
+- typecheck ירוק.
+- vitest: `live-actions.test.ts` + `select.test.ts` — 11/11.
+- lint:i18n נקי.
+
+---
+
 ## 2026-08-26 02:44
 
 ### slice msg-coalesce — קיבוץ chunks מעל tool/thought (באג #53)

@@ -14,10 +14,11 @@ import Loader2Icon from "@lucide/svelte/icons/loader-2"
 import MicIcon from "@lucide/svelte/icons/mic"
 import OctagonXIcon from "@lucide/svelte/icons/octagon-x"
 import XIcon from "@lucide/svelte/icons/x"
-import { getI18n, getMic, getModelStatus, getVoiceMode } from "$lib/context"
+import { getI18n, getLive, getMic, getModelStatus, getVoiceMode } from "$lib/context"
 import type { MicState } from "$lib/view-models/mic.svelte"
 
 const mic = getMic()
+const live = getLive()
 const voiceMode = getVoiceMode()
 const modelStatus = getModelStatus()
 const t = getI18n().t
@@ -28,7 +29,7 @@ const STATE_CLASS: Record<MicState, string> = {
   transcribing: "spin-state",
 }
 
-const isDisabled = $derived(mic.state === "transcribing")
+const isDisabled = $derived(mic.state === "transcribing" || live.isOpen)
 
 /** ─── slice mic-record-only ─── ביטול ההקלטה בלי לשלוח. */
 const showDiscard = $derived(mic.state === "recording")

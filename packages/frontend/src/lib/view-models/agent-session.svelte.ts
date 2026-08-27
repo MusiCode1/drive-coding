@@ -1732,6 +1732,16 @@ export class AgentSession {
     return this.#sessionId
   }
 
+  /** slice live-secretary — mirrors sendPrompt local-path guard inputs. */
+  get isRemoteView(): boolean {
+    return this.#isRemote
+  }
+
+  /** slice live-secretary — mirrors sendPrompt local-path guard inputs. */
+  get hasAcpClient(): boolean {
+    return this.#client !== null
+  }
+
   // ─── slice-permission-ui-basic: בקשת הרשאה חיה ──────────────────────────────
   // תשתית גנרית ניתנת-לשכפול (callback + Promise round-trip) — slice B (elicitation)
   // ישכפל את הדפוס הזה ל-onCreateElicitation.
@@ -3263,17 +3273,19 @@ export class AgentSession {
       return
     }
 
-    if (
-      update.sessionUpdate === "agent_message_chunk" ||
-      update.sessionUpdate === "agent_thought_chunk"
-    ) {
-      const text =
-        update.content?.type === "text" ? ((update.content as { text?: string }).text ?? "") : ""
-      if (!text) return
-
-      if (update.sessionUpdate === "agent_message_chunk") {
+    if (update.sessionUpdate === "agent_message_chunk") {
+      const content = update.content as
+        | {
+            type?: string
+            text?: string
+            name?: string
+            uri?: string
+          }
+        | undefined
+      if (content?.type === "text") {
+        const text = content.text ?? ""
+        if (!text) return
         this.#setTurnState("responding")
-        // מעקף opencode #17505: tail אחרי RESP → תזמן idle מחדש. gemini/claude: #turnEnded=false → לא פועל.
         if (this.#turnEnded) this.#scheduleIdle()
         const { state: nextState1, patches: patches1 } = reduce(
           this.sessionState,
@@ -3281,16 +3293,39 @@ export class AgentSession {
         )
         this.sessionState = nextState1
         applyPatchMutable(this.bubbles, patches1, { mapToolContent, mapLocations })
-      } else {
-        this.#setTurnState("thinking")
+      } else if (content !== undefined) {
+        this.#setTurnState("responding")
         if (this.#turnEnded) this.#scheduleIdle()
-        const { state: nextState2, patches: patches2 } = reduce(
-          this.sessionState,
-          notification.update,
-        )
-        this.sessionState = nextState2
-        applyPatchMutable(this.bubbles, patches2, { mapToolContent, mapLocations })
+        if (content.type === "resource_link") {
+          const label = content.name ?? content.uri ?? ""
+          this.#appendAgentPlaceholder(messageId, {
+            kind: "resource_link",
+            label,
+            uri: content.uri,
+          })
+        } else if (content.type === "image") {
+          this.#appendAgentPlaceholder(messageId, { kind: "image" })
+        } else {
+          const kind = content.type === "audio" ? "audio" : "resource"
+          this.#appendAgentPlaceholder(messageId, { kind })
+        }
       }
+      return
+    }
+
+    if (update.sessionUpdate === "agent_thought_chunk") {
+      const text =
+        update.content?.type === "text" ? ((update.content as { text?: string }).text ?? "") : ""
+      if (!text) return
+
+      this.#setTurnState("thinking")
+      if (this.#turnEnded) this.#scheduleIdle()
+      const { state: nextState2, patches: patches2 } = reduce(
+        this.sessionState,
+        notification.update,
+      )
+      this.sessionState = nextState2
+      applyPatchMutable(this.bubbles, patches2, { mapToolContent, mapLocations })
       return
     }
 
@@ -3506,6 +3541,40 @@ export class AgentSession {
       const newBubble: UserBubble = {
         id: safeUUID(),
         kind: "user",
+        messageId,
+        createdAt: Date.now(),
+        segments: [],
+        contentPlaceholders: [ph],
+      }
+      this.bubbles.push(newBubble)
+    }
+  }
+
+  /**
+   * tool-render-fidelity: placeholder for non-text agent_message_chunk (§11.3א pattern).
+   * i18n belongs to MessageBubble — VM stores structural marker only.
+   */
+  #appendAgentPlaceholder(
+    messageId: string | null,
+    ph: {
+      kind: "resource_link" | "audio" | "resource" | "image"
+      label?: string
+      uri?: string
+    },
+  ): void {
+    const last = this.bubbles[this.bubbles.length - 1]
+    const canGroup =
+      last !== undefined &&
+      last.kind === "message" &&
+      (messageId !== null ? last.messageId === messageId : last.messageId === null)
+
+    if (canGroup && last !== undefined) {
+      const msgBubble = last as MessageBubble
+      msgBubble.contentPlaceholders = [...(msgBubble.contentPlaceholders ?? []), ph]
+    } else {
+      const newBubble: MessageBubble = {
+        id: safeUUID(),
+        kind: "message",
         messageId,
         createdAt: Date.now(),
         segments: [],

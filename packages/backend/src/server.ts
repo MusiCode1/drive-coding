@@ -76,6 +76,7 @@ import { registerHttpOptions } from "./delivery/http-options.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
 import { registerReloadConfigHttp } from "./delivery/http-reload-config.js"
 import { registerTtsCapabilitiesHttp } from "./delivery/http-tts-capabilities.js"
+import { registerLiveTokenHttp } from "./delivery/http-live-token.js"
 import { registerUsageHttp } from "./delivery/http-usage.js"
 import { createMemoryGuard } from "./delivery/memory-guard.js"
 import { createWireRecorder } from "./delivery/wire-recorder.js"
@@ -162,6 +163,10 @@ const agentSessionRegistry = createAndRegisterSessionHostHttp(app, connectionReg
   // maintained by onSessionAttached. Returns the last known acpSessionId, allowing
   // the HTTP host to call loadSession instead of newSession after WS eviction.
   getAcpSessionId: (agentId) => acpSessionIdCache.get(agentId),
+  getPermissionPolicy: async (agentId) => {
+    const agent = await registry.get(agentId)
+    return agent?.permissionPolicy
+  },
 })
 
 const orchestrator = createAgentOrchestrator({
@@ -177,6 +182,7 @@ const orchestrator = createAgentOrchestrator({
 registerHttp(app)
 registerHttpOptions(app)
 registerTtsCapabilitiesHttp(app)
+registerLiveTokenHttp(app)
 registerClientLogHttp(app)
 // CUT-3b-ii: connectionRegistry מספק getRuntimeInfo (מחליף bridgeManager)
 registerAgentsHttp(app, {

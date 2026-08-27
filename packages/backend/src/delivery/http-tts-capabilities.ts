@@ -12,11 +12,11 @@
  * IMPORTANT: never log auth header values — they are secrets.
  */
 
-import { type } from "arktype"
 import type { ProbeResult } from "@drive-coding/core/tts/probe-status"
 import { interpretProbeStatus } from "@drive-coding/core/tts/probe-status"
 import type { QuotaVerdict } from "@drive-coding/core/tts/subscription"
 import { interpretSubscription } from "@drive-coding/core/tts/subscription"
+import { type } from "arktype"
 import type { Hono } from "hono"
 import { PROXY_HOSTS } from "./http-proxy.js"
 import { resolveProviderAuth } from "./proxy-auth.js"

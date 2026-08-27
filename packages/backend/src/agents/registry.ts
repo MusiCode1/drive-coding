@@ -28,6 +28,9 @@ export function createInMemoryAgentRegistry(): AgentRegistry {
         status: "ready", // Slice 2 stub. ב-Slice 3 ומעלה: starting → ready
         createdAt: new Date().toISOString(),
         persistent: false,   // ← agent נוצר לא-נעוץ (slice active-agents)
+        ...(input.permissionPolicy !== undefined
+          ? { permissionPolicy: input.permissionPolicy }
+          : {}),
       }
       store.set(id, agent)
       return agent

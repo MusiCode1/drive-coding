@@ -10,8 +10,8 @@
  * 6. (אופציונלי) voiceConfig() של ArkType דוחה shape לא-תקין
  */
 import { describe, expect, it } from "vitest"
-import { select } from "./select"
 import { DEFAULT_VOICE_CONFIG, voiceConfig } from "./capabilities"
+import { select } from "./select"
 
 describe("select()", () => {
   it("מחזיר translate ref מ-DEFAULT_VOICE_CONFIG", () => {
@@ -61,6 +61,7 @@ describe("voiceConfig ArkType validation", () => {
       narrate: { provider: "google", model: "x" },
       stt: { provider: "google", model: "x" },
       tts: { provider: "elevenlabs", model: "x" },
+      live: { provider: "google", model: "gemini-3.1-flash-live-preview" },
     })
     // ArkType מחזיר instance של AggregateError כש-validation נכשל
     expect(result instanceof type.errors).toBe(true)

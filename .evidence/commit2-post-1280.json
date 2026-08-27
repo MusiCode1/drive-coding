@@ -1,0 +1,170 @@
+{
+  "width": 1280,
+  "url": "http://localhost:4015/chat?mock=greeting",
+  "timestamp": "2026-08-27T12:29:46.432Z",
+  "count": 3,
+  "rows": [
+    {
+      "side": "end",
+      "chain": [
+        {
+          "tag": "DIV",
+          "cls": "bubble-row s-UdJ_LvxKxJCd",
+          "display": "grid",
+          "width": "672px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "pb-5 s-CjSGJDaezCG0",
+          "display": "block",
+          "width": "672px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "",
+          "display": "block",
+          "width": "672px",
+          "position": "absolute"
+        },
+        {
+          "tag": "DIV",
+          "cls": "",
+          "display": "block",
+          "width": "672px",
+          "position": "relative"
+        },
+        {
+          "tag": "DIV",
+          "cls": "flex flex-col max-w-2xl mx-auto w-full",
+          "display": "flex",
+          "width": "672px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "chat-scroll h-full overflow-y-auto px-4 pt-20 pb-10",
+          "display": "block",
+          "width": "992px",
+          "position": "static"
+        }
+      ],
+      "avatarAboveContent": false,
+      "contentInlineStart": 448,
+      "rowInlineStart": 448,
+      "inlineStartDelta": 0,
+      "sameRow": true,
+      "contentInlineStartAligned": true,
+      "rowContained": true
+    },
+    {
+      "side": "start",
+      "chain": [
+        {
+          "tag": "DIV",
+          "cls": "bubble-row s-UdJ_LvxKxJCd",
+          "display": "grid",
+          "width": "672px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "pb-5 s-CjSGJDaezCG0",
+          "display": "block",
+          "width": "672px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "",
+          "display": "block",
+          "width": "672px",
+          "position": "absolute"
+        },
+        {
+          "tag": "DIV",
+          "cls": "",
+          "display": "block",
+          "width": "672px",
+          "position": "relative"
+        },
+        {
+          "tag": "DIV",
+          "cls": "flex flex-col max-w-2xl mx-auto w-full",
+          "display": "flex",
+          "width": "672px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "chat-scroll h-full overflow-y-auto px-4 pt-20 pb-10",
+          "display": "block",
+          "width": "992px",
+          "position": "static"
+        }
+      ],
+      "avatarAboveContent": false,
+      "contentInlineStart": 484,
+      "rowInlineStart": 448,
+      "inlineStartDelta": 36,
+      "sameRow": true,
+      "contentInlineStartAligned": false,
+      "rowContained": true
+    },
+    {
+      "side": "start",
+      "chain": [
+        {
+          "tag": "DIV",
+          "cls": "bubble-row s-UdJ_LvxKxJCd",
+          "display": "grid",
+          "width": "672px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "pb-5 s-CjSGJDaezCG0",
+          "display": "block",
+          "width": "672px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "",
+          "display": "block",
+          "width": "672px",
+          "position": "absolute"
+        },
+        {
+          "tag": "DIV",
+          "cls": "",
+          "display": "block",
+          "width": "672px",
+          "position": "relative"
+        },
+        {
+          "tag": "DIV",
+          "cls": "flex flex-col max-w-2xl mx-auto w-full",
+          "display": "flex",
+          "width": "672px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "chat-scroll h-full overflow-y-auto px-4 pt-20 pb-10",
+          "display": "block",
+          "width": "992px",
+          "position": "static"
+        }
+      ],
+      "avatarAboveContent": false,
+      "contentInlineStart": 484,
+      "rowInlineStart": 448,
+      "inlineStartDelta": 36,
+      "sameRow": true,
+      "contentInlineStartAligned": false,
+      "rowContained": true
+    }
+  ]
+}

@@ -138,6 +138,7 @@ export type MessageKey =
   // ─── record-footer ─── (redesign-4)
   | "record.tab.record"
   | "record.tab.type"
+  | "record.tab.live"
   | "record.tab.hide"
   | "record.status.idle"
   | "record.send"
@@ -145,6 +146,15 @@ export type MessageKey =
   | "record.reconnect"
   | "record.reconnecting"
   | "record.reconnectAttempt"
+  // ─── live ─── (slice live-ears)
+  | "live.toggle.open"
+  | "live.toggle.close"
+  | "live.status.connecting"
+  | "live.ear.listening"
+  | "live.transcript.user"
+  | "live.transcript.assistant"
+  | "live.error.connect"
+  | "live.error.noApiKey"
   | "mic.stop"
   | "mic.discard"
   // ─── speakable (slice tts-speakable-text) — מה שנאמר במקום קוד/קישור ───
@@ -294,6 +304,7 @@ export type MessageKey =
   | "agentOptions.thinking.high" // ערך גבוה (16000)
   // ─── gemini voice picker ─── (V4b-gemini-voice-picker)
   | "settings.geminiVoice.label"
+  | "settings.liveVoice.label"
   | "settings.geminiVoice.desc.Zephyr"
   | "settings.geminiVoice.desc.Puck"
   | "settings.geminiVoice.desc.Charon"
@@ -440,6 +451,17 @@ export type MessageKey =
   | "sessionUrl.takeover.cancel"
   // ─── agent-patch-unify C4: ממצא 3 — newSession ב-remote אינו נתמך ───
   | "session.newSessionUnsupportedRemote"
+  // ─── sidebar-resize ───
+  | "sidebar.resizeHandle"
+  // ─── cwd-path-combo ───
+  | "connect.cwd.combo.toggle"
+  | "connect.cwd.combo.searchPlaceholder"
+  | "connect.cwd.combo.empty"
+  | "connect.cwd.combo.loadError"
+  // ─── tool output (tool-render-fidelity) ───
+  | "chat.tool.output.exitCode"
+  | "chat.tool.output.stderr"
+  | "chat.tool.output.empty"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

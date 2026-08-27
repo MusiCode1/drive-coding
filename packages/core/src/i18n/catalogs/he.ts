@@ -128,6 +128,7 @@ export const he: Catalog = {
   // ─── record-footer ─── (redesign-4)
   "record.tab.record": "הקלטה",
   "record.tab.type": "הקלדה",
+  "record.tab.live": "לייב",
   "record.tab.hide": "מוסתר",
   "record.status.idle": "לחץ להקלטה",
   "record.send": "שלח",
@@ -135,6 +136,14 @@ export const he: Catalog = {
   "record.reconnect": "התחבר מחדש",
   "record.reconnecting": "מתחבר מחדש…",
   "record.reconnectAttempt": "ניסיון",
+  "live.toggle.open": "שיחה חיה",
+  "live.toggle.close": "סגור שיחה חיה",
+  "live.status.connecting": "מתחבר…",
+  "live.ear.listening": "מקשיב…",
+  "live.transcript.user": "אתה",
+  "live.transcript.assistant": "מזכיר",
+  "live.error.connect": "חיבור Live נכשל",
+  "live.error.noApiKey": "חסר מפתח Gemini בשרת",
   "mic.stop": "עצור",
   "mic.discard": "בטל הקלטה",
   "speakable.codeBlock": "בלוק קוד",
@@ -285,6 +294,7 @@ export const he: Catalog = {
   // ─── gemini voice picker ─── (V4b-gemini-voice-picker)
   // תיאורים דו-לשוניים: "<En> · <תרגום-עברי>" (לפי brief V4b §4 Commit 2)
   "settings.geminiVoice.label": "קול Gemini",
+  "settings.liveVoice.label": "קול שיחה חיה",
   "settings.geminiVoice.desc.Zephyr": "Bright · בהיר",
   "settings.geminiVoice.desc.Puck": "Upbeat · עליז",
   "settings.geminiVoice.desc.Charon": "Informative · אינפורמטיבי",
@@ -431,4 +441,15 @@ export const he: Catalog = {
   "sessionUrl.takeover.cancel": "ביטול",
   // ─── agent-patch-unify C4: ממצא 3 — newSession ב-remote אינו נתמך ─── (הודעה בלבד, בלי ניווט)
   "session.newSessionUnsupportedRemote": "פתיחת סשן חדש אינה נתמכת עדיין במצב remote.",
+  // ─── sidebar-resize ───
+  "sidebar.resizeHandle": "גרור לשינוי רוחב",
+  // ─── cwd-path-combo ───
+  "connect.cwd.combo.toggle": "הצג תיקיות אחרונות",
+  "connect.cwd.combo.searchPlaceholder": "חיפוש נתיב…",
+  "connect.cwd.combo.empty": "אין תיקיות להצגה",
+  "connect.cwd.combo.loadError": "טעינת התיקיות נכשלה",
+  // ─── tool output (tool-render-fidelity) ───
+  "chat.tool.output.exitCode": "קוד יציאה",
+  "chat.tool.output.stderr": "stderr",
+  "chat.tool.output.empty": "אין פלט",
 }

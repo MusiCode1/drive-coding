@@ -13,10 +13,10 @@
  */
 import type { ToolBubble, ToolCall } from "$lib/types/bubble"
 import { getContentViewer, getI18n, getSettings, getChatScroll } from "$lib/context"
-import { formatToolInput, prettyJson, formatLocation } from "$lib/util/tool-format"
-import { renderMarkdown } from "$lib/util/markdown"
-import Avatar from "$lib/components/chat/Avatar.svelte"
+import { prettyJson, formatLocation } from "$lib/util/tool-format"
+import { normalizeToolCall } from "$lib/util/tool-call-view"
 import Maximize2Icon from "@lucide/svelte/icons/maximize-2"
+import ToolKindIcon from "./ToolKindIcon.svelte"
 import { onMount } from "svelte"
 
 let { bubble }: { bubble: ToolBubble } = $props()
@@ -26,8 +26,13 @@ const settings = getSettings()
 const viewer = getContentViewer()
 
 const tc = $derived(bubble.toolCall)
-const showNarration = $derived(tc.narration !== undefined && tc.narration.length > 0)
-const input = $derived(formatToolInput(tc.args))
+const view = $derived(normalizeToolCall(tc, { narration: tc.narration }))
+const hasContent = $derived(view.richContent.length > 0)
+const outputView = $derived(view.output)
+const showNormalizedOutput = $derived(!hasContent && outputView.kind !== "empty")
+const showRawOutput = $derived(
+  tc.result !== undefined && outputView.kind !== "json",
+)
 
 // local state — מאותחל פעם אחת מה-setting, לא נגזר ממנו reactively.
 // מונע snap-back כשה-effect של tc.status/tc.narration רץ מחדש.
@@ -41,15 +46,19 @@ const chatScroll = getChatScroll()
 let ready = false
 onMount(() => requestAnimationFrame(() => { ready = true }))
 const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
+
+/** Wrap plain tool text as a markdown fence so the expand viewer stays a code block. */
+function asFencedCode(text: string): string {
+  let ticks = "```"
+  while (text.includes(ticks)) ticks += "`"
+  return `${ticks}\n${text}\n${ticks}`
+}
 </script>
 
-<div class="flex gap-2 self-end max-w-[78%] min-w-0 items-end flex-row-reverse">
-  <Avatar kind="tool" />
-
-  <div
-    class="rounded-xl border overflow-hidden text-[13px] flex-1 min-w-0"
-    style="background:var(--bg-card); border-color:var(--border)"
-  >
+<div
+  class="rounded-xl border overflow-hidden text-[13px] min-w-0 max-w-[78%] w-full"
+  style="background:var(--bg-card); border-color:var(--border)"
+>
     <!-- summary שורה: status dot + narration/title -->
     <details class="group" bind:open ontoggle={onUserToggle}>
       <summary class="flex items-center gap-2 px-3 py-2 cursor-pointer list-none select-none">
@@ -59,12 +68,12 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
           aria-label={t(`chat.tool.status.${tc.status}`)}
         ></span>
 
-        <!-- narration או title -->
+        <ToolKindIcon kind={tc.kind} />
+
+        <!-- summary row from normalized view -->
         <div class="flex-1 min-w-0" style="color:var(--fg-dim)">
-          {#if showNarration}
-            <div class="truncate" dir="auto">{tc.narration}</div>
-          {:else if tc.title}
-            <div class="truncate font-mono text-[11px]" dir="ltr">{tc.title}</div>
+          {#if view.summary}
+            <div class="truncate" dir="auto">{view.summary}</div>
           {:else}
             <div class="opacity-40 italic">{t("chat.tool.loading_narration")}</div>
           {/if}
@@ -76,15 +85,29 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
       <!-- פרטים: args + result + content + locations -->
       <div class="border-t flex flex-col gap-1.5 px-3 py-2" style="border-color:var(--border)" dir="ltr">
         <!-- args -->
-        {#if input.kind === "command"}
+        {#if view.input.kind === "command"}
           <div>
             <div class="section-label">{t("chat.tool.args")}</div>
-            <pre class="cmd">$ {input.command}</pre>
+            <pre class="cmd">$ {view.input.command}</pre>
           </div>
-        {:else if input.kind === "json"}
+        {:else if view.input.kind === "code"}
           <div>
             <div class="section-label">{t("chat.tool.args")}</div>
-            <pre>{input.json}</pre>
+            <pre>{view.input.code}</pre>
+          </div>
+        {:else if view.input.kind === "fields"}
+          <div>
+            <div class="section-label">{t("chat.tool.args")}</div>
+            <div class="stat-chips" dir="ltr">
+              {#each view.input.fields as f (f.key)}
+                <span class="stat-chip">{f.key}: {f.value}</span>
+              {/each}
+            </div>
+          </div>
+        {:else if view.input.kind === "json"}
+          <div>
+            <div class="section-label">{t("chat.tool.args")}</div>
+            <pre>{view.input.json}</pre>
           </div>
         {/if}
 
@@ -101,18 +124,17 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
         {/if}
 
         <!-- content (slice 16) -->
-        {#if tc.content && tc.content.length > 0}
+        {#if view.richContent.length > 0}
           <div>
             <div class="section-label">{t("chat.tool.content")}</div>
-            {#each tc.content as c}
+            {#each view.richContent as c}
               {#if c.type === "text"}
-                <!-- C6: renderMarkdown על פלט טקסטואלי; pre נשאר dir=ltr -->
-                <!-- content-viewer: כפתור expand לפתיחת הטקסט fullscreen -->
+                <!-- Tool body text is always a code block (not markdown). -->
                 <div class="tool-text-wrapper">
-                  <div class="tool-text-output" dir="ltr">{@html renderMarkdown(c.text)}</div>
+                  <pre dir="ltr">{c.text}</pre>
                   <button
                     class="tool-expand-btn"
-                    onclick={() => viewer.show({ kind: "markdown", text: c.text })}
+                    onclick={() => viewer.show({ kind: "markdown", text: asFencedCode(c.text) })}
                     aria-label={t("contentViewer.expand")}
                     title={t("contentViewer.expand")}
                   >
@@ -156,8 +178,64 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
           </div>
         {/if}
 
-        <!-- raw output (always available as fallback) -->
-        {#if tc.result !== undefined}
+        <!-- normalized rawOutput when content is empty (tool-render-fidelity) -->
+        {#if showNormalizedOutput}
+          {#if outputView.kind === "terminal"}
+            <div>
+              <div class="section-label">{t("chat.tool.result")}</div>
+              {#if outputView.stdout}
+                <pre>{outputView.stdout}</pre>
+              {/if}
+              {#if outputView.stderr}
+                <div class="stderr-block">
+                  <div class="section-label">{t("chat.tool.output.stderr")}</div>
+                  <pre class="stderr-pre">{outputView.stderr}</pre>
+                </div>
+              {/if}
+              <span
+                class="exit-chip"
+                class:exit-ok={outputView.exitCode === 0}
+                class:exit-fail={outputView.exitCode !== 0}
+              >
+                {t("chat.tool.output.exitCode")}: {outputView.exitCode}
+              </span>
+            </div>
+          {:else if outputView.kind === "text"}
+            <div>
+              <div class="section-label">{t("chat.tool.result")}</div>
+              <div class="tool-text-wrapper">
+                <pre dir="ltr">{outputView.text}</pre>
+                <button
+                  class="tool-expand-btn"
+                  onclick={() => viewer.show({ kind: "markdown", text: asFencedCode(outputView.text) })}
+                  aria-label={t("contentViewer.expand")}
+                  title={t("contentViewer.expand")}
+                >
+                  <Maximize2Icon size={11} strokeWidth={2} />
+                </button>
+              </div>
+            </div>
+          {:else if outputView.kind === "error"}
+            <div class="error-block" role="alert">{outputView.message}</div>
+          {:else if outputView.kind === "stat"}
+            <div>
+              <div class="section-label">{t("chat.tool.result")}</div>
+              <div class="stat-chips" dir="ltr">
+                {#each outputView.stats as s (s.key)}
+                  <span class="stat-chip">{s.key}: {s.value}</span>
+                {/each}
+              </div>
+            </div>
+          {:else if outputView.kind === "json"}
+            <div>
+              <div class="section-label">{t("chat.tool.result")}</div>
+              <pre>{outputView.json}</pre>
+            </div>
+          {/if}
+        {/if}
+
+        <!-- raw output peek (hidden when json fallback already shown in body) -->
+        {#if showRawOutput}
           <details class="raw-output">
             <summary class="section-label cursor-pointer">{t("chat.tool.raw")}</summary>
             <pre>{prettyJson(tc.result)}</pre>
@@ -168,7 +246,6 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
 
     <!-- כופה ריאקטיביות -->
     <span class="hidden">{tc.narration ?? ""}{tc.status}</span>
-  </div>
 </div>
 
 <style>
@@ -212,48 +289,46 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
 
   .terminal-ref { font-family: ui-monospace, monospace; font-size: 0.75rem; }
 
-  /* C6: markdown בפלט טקסטואלי של כלי */
-  .tool-text-output {
-    font-size: 0.78rem;
-    line-height: 1.5;
-  }
-  .tool-text-output :global(p) { margin: 0.2em 0; }
-  .tool-text-output :global(p:first-child) { margin-top: 0; }
-  .tool-text-output :global(p:last-child) { margin-bottom: 0; }
-  .tool-text-output :global(code) {
-    font-family: ui-monospace, monospace;
-    font-size: 0.88em;
-    background: rgba(0,0,0,0.25);
-    padding: 0.1em 0.3em;
-    border-radius: 3px;
-  }
-  .tool-text-output :global(pre) {
-    background: var(--bg);
-    padding: 0.4rem 0.5rem;
-    border-radius: 4px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    overflow-x: auto;
-    font-size: 0.78rem;
-    direction: ltr;
-    text-align: left;
-  }
-  .tool-text-output :global(pre code) { background: none; padding: 0; }
-  .tool-text-output :global(ul), .tool-text-output :global(ol) { padding-inline-start: 1.2em; margin: 0.2em 0; }
-  .tool-text-output :global(strong) { font-weight: 700; }
-  .tool-text-output :global(em) { font-style: italic; }
-  /* chat-render-polish: GFM tables בפלט כלי */
-  .tool-text-output :global(table) {
-    border-collapse: collapse; margin: 0.4em 0; font-size: 0.78rem;
-    display: block; overflow-x: auto; max-width: 100%;
-  }
-  .tool-text-output :global(th), .tool-text-output :global(td) {
-    border: 1px solid var(--border); padding: 0.3em 0.55em; text-align: start;
-  }
-  .tool-text-output :global(th) { background: rgba(0,0,0,0.18); font-weight: 700; }
-
   .raw-output summary { list-style: none; }
   .raw-output[open] summary { margin-bottom: 4px; }
+
+  .stderr-block { margin-top: 0.35rem; }
+  .stderr-pre { color: #f87171; background: rgba(239, 68, 68, 0.12); }
+
+  .exit-chip {
+    display: inline-block;
+    font-family: ui-monospace, monospace;
+    font-size: 0.68rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    margin-top: 0.25rem;
+  }
+  .exit-ok { background: rgba(34, 197, 94, 0.18); color: #4ade80; }
+  .exit-fail { background: rgba(239, 68, 68, 0.18); color: #f87171; }
+
+  .error-block {
+    font-size: 0.78rem;
+    padding: 0.4rem 0.5rem;
+    border-radius: 4px;
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  .stat-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  .stat-chip {
+    font-family: ui-monospace, monospace;
+    font-size: 0.68rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+  }
 
   /* chat-render-polish: תמונת כלי */
   .tool-image {
@@ -269,7 +344,7 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
     align-items: flex-start;
     gap: 0.25rem;
   }
-  .tool-text-wrapper .tool-text-output {
+  .tool-text-wrapper pre {
     flex: 1;
     min-width: 0;
   }

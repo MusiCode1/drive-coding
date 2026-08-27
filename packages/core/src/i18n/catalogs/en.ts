@@ -133,6 +133,7 @@ export const en: Catalog = {
   // ─── record-footer ─── (redesign-4)
   "record.tab.record": "Record",
   "record.tab.type": "Type",
+  "record.tab.live": "Live",
   "record.tab.hide": "Hidden",
   "record.status.idle": "Tap to record",
   "record.send": "Send",
@@ -140,6 +141,14 @@ export const en: Catalog = {
   "record.reconnect": "Reconnect",
   "record.reconnecting": "Reconnecting…",
   "record.reconnectAttempt": "attempt",
+  "live.toggle.open": "Live conversation",
+  "live.toggle.close": "Close live",
+  "live.status.connecting": "Connecting…",
+  "live.ear.listening": "Listening…",
+  "live.transcript.user": "You",
+  "live.transcript.assistant": "Secretary",
+  "live.error.connect": "Live connection failed",
+  "live.error.noApiKey": "Gemini API key missing on server",
   "mic.stop": "Stop",
   "mic.discard": "Discard recording",
   "speakable.codeBlock": "code block",
@@ -289,6 +298,7 @@ export const en: Catalog = {
   "agentOptions.thinking.high": "High",
   // ─── gemini voice picker ─── (V4b-gemini-voice-picker)
   "settings.geminiVoice.label": "Gemini voice",
+  "settings.liveVoice.label": "Live conversation voice",
   "settings.geminiVoice.desc.Zephyr": "Bright",
   "settings.geminiVoice.desc.Puck": "Upbeat",
   "settings.geminiVoice.desc.Charon": "Informative",
@@ -439,4 +449,15 @@ export const en: Catalog = {
   "sessionUrl.takeover.cancel": "Cancel",
   // ─── agent-patch-unify C4: finding 3 — newSession over remote is not supported yet ─── (message only, no navigation)
   "session.newSessionUnsupportedRemote": "Starting a new session is not supported yet in remote mode.",
+  // ─── sidebar-resize ───
+  "sidebar.resizeHandle": "Drag to resize width",
+  // ─── cwd-path-combo ───
+  "connect.cwd.combo.toggle": "Show recent folders",
+  "connect.cwd.combo.searchPlaceholder": "Search path…",
+  "connect.cwd.combo.empty": "No folders to show",
+  "connect.cwd.combo.loadError": "Failed to load folders",
+  // ─── tool output (tool-render-fidelity) ───
+  "chat.tool.output.exitCode": "Exit code",
+  "chat.tool.output.stderr": "stderr",
+  "chat.tool.output.empty": "No output",
 }

@@ -5,55 +5,63 @@
  * display; this VM exposes startTalking (barge-in), cancelRun, stopPlayback,
  * and isCancelling for the dedicated stop-run button.
  *
+ * ear/mouth — dual-axis FSM (slice live-ears): ear from Live session,
+ * mouth from Speaker. Pure getters for vitest (no $effect).
+ *
  * isCancelling resets via $effect when canClearCancelling is true — turnState
  * and speaker idle only (mic is excluded after R1: cancelRun skips mic.cancel
  * while recording).
- *
- * Reactive safety (learnings 2026-05-16):
- *   - $derived.by reads mic/session/speaker via getters — no writes.
- *   - $effect ONLY clears isCancelling when canClearCancelling is true.
  */
 
 import type { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { Mic } from "../mic.svelte"
 import type { AgentSession } from "../agent-session.svelte"
 import type { Speaker } from "../speaker.svelte"
+import type { Live } from "../live.svelte"
 
-export type VoiceModeState =
-  | "idle"
-  | "recording"
-  | "transcribing"
-  | "thinking"
-  | "speaking"
-  | "cancelling"
+export type EarState = "closed" | "listening"
+export type MouthState = "silent" | "speaking"
 
 export class VoiceMode {
   readonly #mic: Mic
   readonly #session: AgentSession
   readonly #speaker: Speaker
   readonly #playlist: AudioPlaylist
+  readonly #live?: Live
 
   /** דגל פנימי — מוגדר על ידי cancelRun(), מתאפס כש-canClearCancelling */
   isCancelling: boolean = $state(false)
 
-  state: VoiceModeState = $derived.by(() => {
-    if (this.isCancelling) return "cancelling"
-    if (this.#mic.state === "recording") return "recording"
-    if (this.#mic.state === "transcribing") return "transcribing"
-    if (this.#speaker.state === "speaking") return "speaking"
-    if (this.#session.turnState !== "idle") return "thinking"
-    return "idle"
-  })
-
-  constructor(opts: { mic: Mic; session: AgentSession; speaker: Speaker; playlist: AudioPlaylist }) {
+  constructor(opts: {
+    mic: Mic
+    session: AgentSession
+    speaker: Speaker
+    playlist: AudioPlaylist
+    live?: Live
+  }) {
     this.#mic = opts.mic
     this.#session = opts.session
     this.#speaker = opts.speaker
     this.#playlist = opts.playlist
+    this.#live = opts.live
 
     $effect(() => {
       if (this.isCancelling && this.canClearCancelling) this.isCancelling = false
     })
+  }
+
+  /** Live session ear axis — closed unless Live VM reports open/connecting. */
+  get ear(): EarState {
+    if (!this.#live?.isOpen) return "closed"
+    return "listening"
+  }
+
+  /** Agent speech axis — Live audio when session open, else Speaker TTS. */
+  get mouth(): MouthState {
+    if (this.#live?.isOpen) {
+      return this.#live.isSpeaking ? "speaking" : "silent"
+    }
+    return this.#speaker.state === "speaking" ? "speaking" : "silent"
   }
 
   /**

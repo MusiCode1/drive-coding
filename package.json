@@ -17,6 +17,7 @@
     "typecheck": "tsc --build",
     "lint": "biome check .",
     "lint:i18n": "./scripts/lint-no-hebrew-in-code.sh",
+    "lint:css-vars": "./scripts/lint-css-vars.sh packages/frontend/src",
     "lint:rtl": "node scripts/lint-no-physical-classes.mjs",
     "format": "biome format --write .",
     "hooks:install": "git config core.hooksPath .githooks",

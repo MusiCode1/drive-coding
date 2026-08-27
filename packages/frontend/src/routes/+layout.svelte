@@ -29,6 +29,7 @@ import {
   setContentViewer,
   setCues,
   setI18n,
+  setLive,
   setMic,
   setModals,
   setModelStatus,
@@ -61,6 +62,7 @@ import { ContentViewerVM } from "$lib/view-models/content-viewer.svelte"
 import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
 import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
+import { Live } from "$lib/view-models/live.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
 import { PresencePoller } from "$lib/view-models/presence-poller.svelte"
@@ -98,7 +100,23 @@ const sharedOrderAlloc = new OrderAllocator()
 //  כי Speaker צריך לבדוק #spokeThisTurn שלו. פתרון: Speaker ירשום callback לאחר init.)
 const audioPlaylist = new AudioPlaylist(sharedAudioStream)
 
-// ─── speaker ─── (תלוי ב-session + settings + cues + audioPlaylist)
+// ─── mic ─── (slice 3 — תלוי ב-session + cues)
+const mic = new Mic({ session, cues })
+
+// ─── theme ─── (redesign-1) — declared before Live getter; instance assigned below Live block
+let theme!: ThemeVM
+
+// ─── live ─── (slice live-ears — תלוי ב-mic)
+const live = new Live({
+  mic,
+  session,
+  language: i18n.locale === "he" ? "he" : "en",
+  getVoiceName: () => settings.liveVoice,
+  getSettings: () => settings,
+  getTheme: () => theme,
+})
+
+// ─── speaker ─── (§4.3: live ref — TTS off while Live open)
 const speaker = new Speaker({
   session,
   settings,
@@ -106,13 +124,11 @@ const speaker = new Speaker({
   playlist: audioPlaylist,
   audioStream: sharedAudioStream,
   orderAlloc: sharedOrderAlloc,
+  live,
 })
 
-// ─── mic ─── (slice 3 — תלוי ב-session + cues)
-const mic = new Mic({ session, cues })
-
-// ─── voice-mode ─── (slice 3 — תלוי ב-mic + session + speaker)
-const voiceMode = new VoiceMode({ mic, session, speaker, playlist: audioPlaylist })
+// ─── voice-mode ─── (slice 3 — תלוי ב-mic + session + speaker + live)
+const voiceMode = new VoiceMode({ mic, session, speaker, playlist: audioPlaylist, live })
 
 // ─── model-status ─── (msr-v2 — תלוי ב-session + speaker)
 const modelStatus = new ModelStatus({ session, speaker })
@@ -128,8 +144,7 @@ const bubblePlayer = new BubblePlayer({
 
 // ─── car-mode ─── (slice 7)
 
-// ─── theme ─── (redesign-1)
-const theme = new ThemeVM()
+theme = new ThemeVM()
 
 // ─── responsive ─── (redesign-2)
 const responsive = new ResponsiveVM()
@@ -226,6 +241,15 @@ $effect(() => {
   presencePoller.sync({ inSession, agentId, hidden })
 })
 $effect(() => () => presencePoller.dispose())
+
+// ─── ui-shell inputMode reset ─── (slice playback-dock-scope)
+// RecordFooter mode was local $state — unmount on idle reset it. Singleton survives
+// navigation; reset when agentId is set/changed (attach, new session, switch).
+$effect(() => {
+  const agentId = session.agentId
+  if (agentId) uiShell.resetInputModeForSession()
+})
+
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
@@ -234,6 +258,7 @@ setSession(session)
 setSpeaker(speaker)
 setAudioPlaylist(audioPlaylist)
 setMic(mic)
+setLive(live)
 setVoiceMode(voiceMode)
 setModelStatus(modelStatus)
 setBubblePlayer(bubblePlayer)

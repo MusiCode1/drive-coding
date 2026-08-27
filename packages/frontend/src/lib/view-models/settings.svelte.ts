@@ -17,8 +17,9 @@ import { DEFAULT_LOCALE, detectLocale, type Locale } from "@drive-coding/core/i1
 import type { SpeechPace, SpeechTone } from "@drive-coding/core/voice/tts-types"
 import type { SessionTransport } from "$lib/session/session-transport"
 import { listVoices, type Voice } from "../adapters/voice/voices"
-import { DEFAULT_GEMINI_VOICE } from "../adapters/voice/voices-gemini"
+import { DEFAULT_GEMINI_VOICE, DEFAULT_LIVE_VOICE } from "../adapters/voice/voices-gemini"
 import { setBeUrlBase } from "../util/be-url"
+import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH_REM } from "../util/sidebar-width"
 import { ttsCapabilities } from "./capabilities.svelte"
 
 const STORAGE_KEY = "drive-coding-v2-settings"
@@ -63,12 +64,16 @@ type Persisted = {
   suppressLeaveWarning: boolean
   // ─── קול Gemini ─── (V4b-gemini-voice-picker)
   geminiVoice: string
+  // ─── קול Gemini Live (מזכיר) ─── (live-voice-picker) — נפרד מ-TTS כדי למנוע Kore↔Kore
+  liveVoice: string
   // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
   // מפה: cwd → טקסט הפרומפט (מתווסף להוראות ברירת-המחדל של הסוכן, ר' provider/connection).
   projectSystemPrompt: Record<string, string>
   // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize)
   recentPanelHeight: number
   activePanelHeight: number
+  // ─── sidebar-resize ───
+  sidebarWidthRem: number
   // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
   geminiPace: SpeechPace
   geminiTone: SpeechTone
@@ -113,11 +118,14 @@ const DEFAULTS: Persisted = {
   suppressLeaveWarning: false,
   // ─── קול Gemini ─── (V4b-gemini-voice-picker)
   geminiVoice: DEFAULT_GEMINI_VOICE,
+  // ─── קול Gemini Live (מזכיר) ─── (live-voice-picker)
+  liveVoice: DEFAULT_LIVE_VOICE,
   // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
   projectSystemPrompt: {},
   // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize) — 256px = 16rem, זהה להתנהגות היום
   recentPanelHeight: 256,
   activePanelHeight: 256,
+  sidebarWidthRem: DEFAULT_SIDEBAR_WIDTH_REM,
   geminiPace: "normal",
   geminiTone: "neutral",
   // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4) — null = env נבחר
@@ -228,12 +236,18 @@ export class Settings {
   // ─── קול Gemini ─── (V4b-gemini-voice-picker)
   geminiVoice = $state<string>(DEFAULTS.geminiVoice)
 
+  // ─── קול Gemini Live (מזכיר) ─── (live-voice-picker)
+  liveVoice = $state<string>(DEFAULTS.liveVoice)
+
   // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
   projectSystemPrompt = $state<Record<string, string>>(DEFAULTS.projectSystemPrompt)
 
   // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize)
   recentPanelHeight = $state<number>(DEFAULTS.recentPanelHeight)
   activePanelHeight = $state<number>(DEFAULTS.activePanelHeight)
+
+  // ─── sidebar-resize ───
+  sidebarWidthRem = $state<number>(DEFAULTS.sidebarWidthRem)
 
   // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
   geminiPace = $state<SpeechPace>(DEFAULTS.geminiPace)
@@ -278,11 +292,16 @@ export class Settings {
     this.suppressLeaveWarning = loaded.suppressLeaveWarning
     // ─── קול Gemini ───
     this.geminiVoice = loaded.geminiVoice
+    // ─── קול Gemini Live ───
+    this.liveVoice = loaded.liveVoice
     // ─── פרומפט-מערכת פר-פרויקט ───
     this.projectSystemPrompt = loaded.projectSystemPrompt
     // ─── גובה פאנלים נגרר ───
     this.recentPanelHeight = loaded.recentPanelHeight
     this.activePanelHeight = loaded.activePanelHeight
+    this.sidebarWidthRem = Number.isFinite(loaded.sidebarWidthRem)
+      ? clampSidebarWidth(loaded.sidebarWidthRem)
+      : DEFAULTS.sidebarWidthRem
     this.geminiTone = loaded.geminiTone
     // ─── טרנספורט סשן ─── (slice transport-polish C4)
     this.sessionTransport = loaded.sessionTransport
@@ -526,6 +545,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── קול Gemini Live (מזכיר) ─── (live-voice-picker)
+
+  setLiveVoice = (v: string): void => {
+    this.liveVoice = v
+    this.#persist()
+  }
+
   // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
 
   /** מחזיר את הפרומפט השמור לפרויקט הנתון (cwd), או מחרוזת ריקה אם אין. */
@@ -551,6 +577,13 @@ export class Settings {
 
   setActivePanelHeight = (px: number): void => {
     this.activePanelHeight = px
+    this.#persist()
+  }
+
+  // ─── sidebar-resize ───
+
+  setSidebarWidthRem = (rem: number): void => {
+    this.sidebarWidthRem = clampSidebarWidth(rem)
     this.#persist()
   }
 
@@ -597,9 +630,11 @@ export class Settings {
       recentCollapsed: this.recentCollapsed,
       suppressLeaveWarning: this.suppressLeaveWarning,
       geminiVoice: this.geminiVoice,
+      liveVoice: this.liveVoice,
       projectSystemPrompt: this.projectSystemPrompt,
       recentPanelHeight: this.recentPanelHeight,
       activePanelHeight: this.activePanelHeight,
+      sidebarWidthRem: this.sidebarWidthRem,
       geminiPace: this.geminiPace,
       geminiTone: this.geminiTone,
       sessionTransport: this.sessionTransport,

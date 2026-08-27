@@ -9,10 +9,13 @@
  */
 
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { GoogleGenAI, Modality } from "../packages/frontend/node_modules/@google/genai/dist/node/index.mjs"
+import {
+  GoogleGenAI,
+  Modality,
+} from "../packages/frontend/node_modules/@google/genai/dist/node/index.mjs"
 
 const API_KEY = process.env.GEMINI_API_KEY
 if (!API_KEY) {
@@ -102,15 +105,11 @@ async function connectLive(model, configExtra = {}) {
 }
 
 function hasModelAudio(messages) {
-  return messages.some((m) =>
-    m.serverContent?.modelTurn?.parts?.some((p) => p.inlineData?.data),
-  )
+  return messages.some((m) => m.serverContent?.modelTurn?.parts?.some((p) => p.inlineData?.data))
 }
 
 function hasModelText(messages) {
-  return messages.some((m) =>
-    m.serverContent?.modelTurn?.parts?.some((p) => p.text?.trim()),
-  )
+  return messages.some((m) => m.serverContent?.modelTurn?.parts?.some((p) => p.text?.trim()))
 }
 
 /** H.1 — silent context injection then follow-up turn */
@@ -227,7 +226,24 @@ async function generateHebrewPcm16k() {
   const pcm16 = join(dir, "he16.pcm")
   const ff = spawnSync(
     "ffmpeg",
-    ["-y", "-f", "s16le", "-ar", "24000", "-ac", "1", "-i", pcm24, "-ar", "16000", "-ac", "1", "-f", "s16le", pcm16],
+    [
+      "-y",
+      "-f",
+      "s16le",
+      "-ar",
+      "24000",
+      "-ac",
+      "1",
+      "-i",
+      pcm24,
+      "-ar",
+      "16000",
+      "-ac",
+      "1",
+      "-f",
+      "s16le",
+      pcm16,
+    ],
     { encoding: "utf8" },
   )
   if (ff.status !== 0) throw new Error(`ffmpeg failed: ${ff.stderr}`)

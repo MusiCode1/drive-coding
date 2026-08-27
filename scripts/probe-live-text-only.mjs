@@ -20,10 +20,13 @@
  */
 
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { GoogleGenAI, Modality } from "../packages/frontend/node_modules/@google/genai/dist/node/index.mjs"
+import {
+  GoogleGenAI,
+  Modality,
+} from "../packages/frontend/node_modules/@google/genai/dist/node/index.mjs"
 
 const API_KEY = process.env.GEMINI_API_KEY
 if (!API_KEY) {
@@ -62,8 +65,24 @@ async function generateHebrewPcm16k(text) {
   const pcm16 = join(dir, "he16.pcm")
   const ff = spawnSync(
     "ffmpeg",
-    ["-y", "-f", "s16le", "-ar", "24000", "-ac", "1", "-i", pcm24,
-     "-ar", "16000", "-ac", "1", "-f", "s16le", pcm16],
+    [
+      "-y",
+      "-f",
+      "s16le",
+      "-ar",
+      "24000",
+      "-ac",
+      "1",
+      "-i",
+      pcm24,
+      "-ar",
+      "16000",
+      "-ac",
+      "1",
+      "-f",
+      "s16le",
+      pcm16,
+    ],
     { encoding: "utf8" },
   )
   if (ff.status !== 0) throw new Error(`ffmpeg failed: ${ff.stderr}`)
@@ -108,26 +127,37 @@ async function probe() {
   const session = await ai.live.connect({
     model: MODEL,
     config: {
-      responseModalities: [MODALITY === "AUDIO" ? Modality.AUDIO : Modality.TEXT],  // <-- §H.7 under test
+      responseModalities: [MODALITY === "AUDIO" ? Modality.AUDIO : Modality.TEXT], // <-- §H.7 under test
       inputAudioTranscription: {},
       tools: [FORWARD_TOOL],
       systemInstruction: {
-        parts: [{
-          text: "You are a voice secretary for a coding assistant. When the user asks " +
-                "for code work, call the forward tool. Reply in Hebrew, one short sentence.",
-        }],
+        parts: [
+          {
+            text:
+              "You are a voice secretary for a coding assistant. When the user asks " +
+              "for code work, call the forward tool. Reply in Hebrew, one short sentence.",
+          },
+        ],
       },
       thinkingConfig: { thinkingBudget: 0 },
     },
     callbacks: {
-      onopen: () => { opened = true; resolveOpen?.() },
+      onopen: () => {
+        opened = true
+        resolveOpen?.()
+      },
       onmessage: (m) => msgs.push(m),
-      onerror: (e) => { openErr = e; rejectOpen?.(e) },
+      onerror: (e) => {
+        openErr = e
+        rejectOpen?.(e)
+      },
       onclose: () => {},
     },
   })
 
-  await openP.catch((e) => { openErr = openErr ?? e })
+  await openP.catch((e) => {
+    openErr = openErr ?? e
+  })
   await sleep(300)
 
   const pcm = await generateHebrewPcm16k(HEBREW_PHRASE)
@@ -150,11 +180,11 @@ async function probe() {
     await sleep(200)
   }
   await sleep(1500)
-  try { session.close() } catch {}
+  try {
+    session.close()
+  } catch {}
 
-  const inputTranscript = msgs
-    .map((m) => m.serverContent?.inputTranscription?.text ?? "")
-    .join("")
+  const inputTranscript = msgs.map((m) => m.serverContent?.inputTranscription?.text ?? "").join("")
   const modelText = msgs
     .flatMap((m) => m.serverContent?.modelTurn?.parts ?? [])
     .map((p) => p.text ?? "")
@@ -165,7 +195,11 @@ async function probe() {
   const toolCalls = msgs
     .flatMap((m) => m.toolCall?.functionCalls ?? [])
     .map((f) => ({ name: f.name, args: f.args }))
-  const usage = msgs.map((m) => m.usageMetadata).filter(Boolean).at(-1) ?? null
+  const usage =
+    msgs
+      .map((m) => m.usageMetadata)
+      .filter(Boolean)
+      .at(-1) ?? null
 
   return {
     model: MODEL,
@@ -176,17 +210,26 @@ async function probe() {
     q2_inputTranscript: inputTranscript,
     q2_transcriptIsHebrew: isHebrewScript(inputTranscript),
     q3_modelText: modelText,
-    q3_modelAudioPartCount: modelAudioParts,   // MUST be 0 for §H.7 to hold
+    q3_modelAudioPartCount: modelAudioParts, // MUST be 0 for §H.7 to hold
     q4_toolCalls: toolCalls,
     q4_functionCallingWorks: toolCalls.length > 0,
     frameCount: msgs.length,
     usageMetadata: usage
-      ? { total: usage.totalTokenCount, prompt: usage.promptTokenCount,
-          responseModalities: (usage.responseTokensDetails ?? []).map((d) => d.modality) }
+      ? {
+          total: usage.totalTokenCount,
+          prompt: usage.promptTokenCount,
+          responseModalities: (usage.responseTokensDetails ?? []).map((d) => d.modality),
+        }
       : null,
   }
 }
 
 probe()
-  .then((r) => { console.log(JSON.stringify(r, null, 2)); process.exit(0) })
-  .catch((e) => { console.error("PROBE FAILED:", e?.stack ?? e); process.exit(1) })
+  .then((r) => {
+    console.log(JSON.stringify(r, null, 2))
+    process.exit(0)
+  })
+  .catch((e) => {
+    console.error("PROBE FAILED:", e?.stack ?? e)
+    process.exit(1)
+  })
