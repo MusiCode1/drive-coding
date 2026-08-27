@@ -40,6 +40,8 @@ import {
   reduce,
   synthesizeUserMessage,
 } from "@drive-coding/core/session"
+import type { PermissionPolicyKind } from "@drive-coding/core/types/permission"
+import { resolvePermissionPolicy } from "@drive-coding/core/types/permission"
 import type {
   AcpClient,
   AcpClientCallbacks,
@@ -238,6 +240,11 @@ export type SessionHostFromConnOptions = {
   /** Timeout for elicitation before auto-cancel. Default: 30s */
   elicitationTimeoutMs?: number
   /**
+   * slice session-create-contract: auto-resolve permission by ACP option kind
+   * before entering pending. "ask" / absent = today's behavior (pending).
+   */
+  permissionPolicy?: PermissionPolicyKind
+  /**
    * slice ownership-handoff C4: warm reattach — agent already initialized.
    * Uses createAttachedAcpClient (skips initialize) + loadSession (restores state).
    * Omit for cold start (normal path: createAcpClient + newSession).
@@ -359,6 +366,7 @@ export async function createSessionHostFromConnection(
     initTimeoutMs,
     permissionTimeoutMs = DEFAULT_PERMISSION_TIMEOUT_MS,
     elicitationTimeoutMs = DEFAULT_ELICITATION_TIMEOUT_MS,
+    permissionPolicy,
     warmReattach,
     _createAcpClient = createAcpClient,
   } = opts
@@ -549,6 +557,11 @@ export async function createSessionHostFromConnection(
     // (cancelled) — skips nextRequestId++, never enters pending (consistent w/ step 2).
     if (currentState.sessionId !== null && params.sessionId !== currentState.sessionId) {
       return { outcome: { outcome: "cancelled" } }
+    }
+    // slice session-create-contract C1: third guard — policy auto-resolve before pending.
+    const autoResponse = resolvePermissionPolicy(permissionPolicy, params)
+    if (autoResponse !== null) {
+      return autoResponse
     }
     const requestId = nextRequestId++
     const applied = applyPendingRequest(currentState, {

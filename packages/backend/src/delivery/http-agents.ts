@@ -3,6 +3,7 @@ import {
   type AgentRegistry,
   type BridgeKind,
   CliId,
+  PermissionPolicy,
   toAgentPublic,
   validateCwd,
 } from "@drive-coding/core"
@@ -25,6 +26,12 @@ const CreateAgentInputFull = type({
   "existingSessionId?": "string | null",
   // slice project-system-prompt: פרומפט-מערכת פר-פרויקט, מתווסף (append) בתוך provider (§3).
   "systemPrompt?": "string | null",
+  // slice session-create-contract: בחירת הרשאה לפי kind (ACP option kinds).
+  "permissionPolicy?": PermissionPolicy,
+  /**
+   * Extra env for spawned CLI only (not in-process bridge). Merged above baseEnv in shapeEnv.
+   */
+  "env?": { "[string]": "string" },
 })
 
 export function registerAgentsHttp(

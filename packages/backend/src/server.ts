@@ -162,6 +162,10 @@ const agentSessionRegistry = createAndRegisterSessionHostHttp(app, connectionReg
   // maintained by onSessionAttached. Returns the last known acpSessionId, allowing
   // the HTTP host to call loadSession instead of newSession after WS eviction.
   getAcpSessionId: (agentId) => acpSessionIdCache.get(agentId),
+  getPermissionPolicy: async (agentId) => {
+    const agent = await registry.get(agentId)
+    return agent?.permissionPolicy
+  },
 })
 
 const orchestrator = createAgentOrchestrator({
