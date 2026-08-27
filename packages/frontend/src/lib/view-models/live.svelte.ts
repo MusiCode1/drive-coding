@@ -13,8 +13,22 @@ import {
   formatSecretaryToAgent,
 } from "@drive-coding/core/voice/live-agent-prompt"
 import { formatAgentDelivery, formatPermissionPending } from "@drive-coding/core/voice/live-prompt"
+import { buildLiveSeed } from "@drive-coding/core/voice/live-seed"
+import { formatMemoryForPrompt, type MemoryItem } from "@drive-coding/core/voice/live-memory"
+import { searchSessionBubbles } from "@drive-coding/core/voice/live-search"
 import { isUnpromptedSend } from "@drive-coding/core/voice/unprompted-guard"
+import {
+  loadAlwaysMemory,
+  rememberAlways,
+  rememberSession,
+  saveAlwaysMemory,
+} from "$lib/adapters/live-memory-store"
 import { mapPermissionOptions } from "$lib/types/permission"
+import {
+  LIVE_SEED_LABELS,
+  mapBubblesToLiveSeed,
+  mapSessionTurnState,
+} from "$lib/util/live-seed-from-session"
 import { geminiLive } from "../adapters/voice/live/gemini"
 import { fetchLiveToken } from "../adapters/voice/live-token"
 import { LiveAudioSink } from "../engines/live-audio-sink"
@@ -42,6 +56,10 @@ export class Live {
   /** One-shot agent instruction per Live open cycle. */
   #agentPromptSent = false
   #lastUserTranscriptIdSeen: number | undefined = undefined
+  /** Session-scoped secretary memory (RAM). Cleared when Live class is recreated. */
+  #sessionMemory: MemoryItem[] = []
+  /** Cross-session memory — loaded from localStorage on construct. */
+  #alwaysMemory: MemoryItem[] = loadAlwaysMemory()
 
   state: LiveSessionState = $state("closed")
   transcript: LiveTranscriptEntry[] = $state([])
@@ -134,9 +152,12 @@ export class Live {
       await this.#engine.open()
       if (this.state === "error") {
         this.error = "live.error.connect"
-      } else if (this.state === "open" && !this.#agentPromptSent) {
-        this.#agentPromptSent = true
-        void this.#session.sendPrompt(buildLiveAgentPrompt())
+      } else if (this.state === "open") {
+        this.#injectSeedAndMemory()
+        if (!this.#agentPromptSent) {
+          this.#agentPromptSent = true
+          void this.#session.sendPrompt(buildLiveAgentPrompt())
+        }
       }
     } catch (e: unknown) {
       this.error =
@@ -239,8 +260,95 @@ export class Live {
         this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
         break
       }
-      default:
+      case "search_session": {
+        const query = typeof action.args.query === "string" ? action.args.query : ""
+        const bubbles = mapBubblesToLiveSeed(this.#session.bubbles ?? [])
+        const result = searchSessionBubbles(bubbles, query)
+        this.#engine.sendActionResult(action.id, action.name, result)
         break
+      }
+      case "remember_session": {
+        const text = typeof action.args.text === "string" ? action.args.text : ""
+        const id = typeof action.args.id === "string" ? action.args.id : undefined
+        if (!text) {
+          this.#engine.sendActionResult(action.id, action.name, {
+            ok: false,
+            items: this.#sessionMemory,
+            full: false,
+            reason: "empty-text",
+          })
+          break
+        }
+        const result = rememberSession(this.#sessionMemory, { text, id })
+        this.#sessionMemory = [...result.items]
+        this.#engine.sendActionResult(action.id, action.name, result)
+        break
+      }
+      case "remember_always": {
+        const text = typeof action.args.text === "string" ? action.args.text : ""
+        const id = typeof action.args.id === "string" ? action.args.id : undefined
+        if (!text) {
+          this.#engine.sendActionResult(action.id, action.name, {
+            ok: false,
+            items: this.#alwaysMemory,
+            full: false,
+            reason: "empty-text",
+          })
+          break
+        }
+        const result = rememberAlways(this.#alwaysMemory, { text, id })
+        if (result.ok) {
+          this.#alwaysMemory = [...result.items]
+          saveAlwaysMemory(this.#alwaysMemory)
+        }
+        this.#engine.sendActionResult(action.id, action.name, result)
+        break
+      }
+      default:
+        this.#engine.sendActionResult(action.id, action.name, {
+          status: "not_sent",
+          reason: "unknown-action",
+        })
+        break
+    }
+  }
+
+  /** Silent chat seed + memory layers right after Live opens. */
+  #injectSeedAndMemory(): void {
+    const bubbles = mapBubblesToLiveSeed(this.#session.bubbles ?? [])
+    const pending = this.#session.pendingPermission
+    const toolCall = pending?.params.toolCall
+    const seed = buildLiveSeed(
+      {
+        bubbles,
+        turnState: mapSessionTurnState(this.#session.turnState, pending != null),
+        pendingPermission: pending
+          ? {
+              toolName:
+                (toolCall && "title" in toolCall && typeof toolCall.title === "string"
+                  ? toolCall.title
+                  : undefined) ||
+                (toolCall && "name" in toolCall && typeof toolCall.name === "string"
+                  ? toolCall.name
+                  : undefined) ||
+                (toolCall && "kind" in toolCall && typeof toolCall.kind === "string"
+                  ? toolCall.kind
+                  : undefined) ||
+                "tool",
+            }
+          : null,
+        lastUserMessage: this.#session.lastUserMessage || null,
+      },
+      LIVE_SEED_LABELS,
+    )
+    for (const turn of seed.turns) {
+      this.#engine.sendContext(turn.text, "silent")
+    }
+
+    const combined = [...this.#alwaysMemory, ...this.#sessionMemory]
+    const mem = formatMemoryForPrompt(combined)
+    if (mem.length > 0) {
+      this.#engine.sendContext(`Secretary memory:\n${mem}`, "silent")
     }
   }
 

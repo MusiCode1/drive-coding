@@ -79,7 +79,10 @@ function mockSession(overrides: Partial<AgentSession> = {}): AgentSession {
     isRemoteView: false,
     turnState: "idle",
     pendingPermission: null,
+    bubbles: [],
+    lastUserMessage: "",
     sendPrompt: vi.fn(async () => {}),
+    cancelTurn: vi.fn(async () => {}),
     recentAssistantMessages: vi.fn(() => []),
     resolvePermission: vi.fn(),
     ...overrides,
@@ -668,5 +671,88 @@ describe("Live agent secretary prompt (agent-secretary-prompt)", () => {
       args: {},
     })
     expect(session.sendPrompt).toHaveBeenLastCalledWith(formatSecretaryToAgent("raw ask"))
+  })
+})
+
+describe("Live context wiring (seed + search + remember)", () => {
+  it("injects silent seed from session bubbles on open", async () => {
+    const session = mockSession({
+      bubbles: [
+        {
+          kind: "user",
+          id: "u1",
+          messageId: null,
+          createdAt: 0,
+          segments: [{ id: "s1", text: "fix auth module" }],
+        },
+      ] as AgentSession["bubbles"],
+      lastUserMessage: "",
+    })
+    await openLive(session)
+
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "context",
+      text: "fix auth module",
+      channel: "silent",
+    })
+  })
+
+  it("search_session returns hits from bubbles", async () => {
+    const session = mockSession({
+      bubbles: [
+        {
+          kind: "user",
+          id: "u1",
+          messageId: null,
+          createdAt: 0,
+          segments: [{ id: "s1", text: "we work on auth.ts" }],
+        },
+      ] as AgentSession["bubbles"],
+    })
+    await openLive(session)
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "s1",
+      name: "search_session",
+      args: { query: "auth" },
+    })
+
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "s1",
+      name: "search_session",
+      result: expect.objectContaining({
+        totalMatches: 1,
+        hits: expect.arrayContaining([
+          expect.objectContaining({ role: "user", snippet: expect.stringContaining("auth") }),
+        ]),
+      }),
+    })
+  })
+
+  it("remember_session upserts and returns items", async () => {
+    const session = mockSession()
+    await openLive(session)
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "m1",
+      name: "remember_session",
+      args: { text: "prefer patch commits" },
+    })
+
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "m1",
+      name: "remember_session",
+      result: expect.objectContaining({
+        ok: true,
+        full: false,
+        items: [expect.objectContaining({ text: "prefer patch commits" })],
+      }),
+    })
   })
 })
