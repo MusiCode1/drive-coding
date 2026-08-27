@@ -17,7 +17,11 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { LIVE_ACTION_SHAPES } from "../packages/core/src/voice/live-actions.ts"
 import { buildLiveSeed } from "../packages/core/src/voice/live-seed.ts"
-import { buildLiveSecretaryPrompt } from "../packages/core/src/voice/live-prompt.ts"
+import {
+  buildLiveSecretaryPrompt,
+  formatAgentDelivery,
+  LIVE_AGENT_DELIVERY_MARKER,
+} from "../packages/core/src/voice/live-prompt.ts"
 import { GoogleGenAI } from "../packages/frontend/node_modules/@google/genai/dist/node/index.mjs"
 import { geminiLive } from "../packages/frontend/src/lib/adapters/voice/live/gemini.ts"
 
@@ -481,7 +485,7 @@ async function runDeliveryProbe() {
 
   const agentAnswer = DELIVERY_AGENT_ANSWER
   const deliveryMark = events.length
-  session.send({ type: "context", text: agentAnswer, channel: "speakable" })
+  session.send({ type: "context", text: formatAgentDelivery(agentAnswer), channel: "speakable" })
 
   const deadline = Date.now() + 60_000
   while (Date.now() < deadline) {
@@ -505,15 +509,18 @@ async function runDeliveryProbe() {
     .map((e) => e.text)
     .join("")
   const audioEventCount = postDelivery.filter((e) => e.type === "audio").length
+  const redispatch = postDelivery.some((e) => e.type === "action" && e.name === "compose_prompt")
   const idInAgent = agentAnswer.includes(IDENTIFIER)
   const idDelivered = outputTranscript.includes(IDENTIFIER)
 
   const out = {
     mode: "delivery",
+    deliveryMarker: LIVE_AGENT_DELIVERY_MARKER,
     inputTranscript,
     agentAnswer,
     outputTranscript,
     audioEventCount,
+    redispatch,
     identifierInAgentAnswer: idInAgent,
     identifierDelivered: idDelivered,
     pass:
@@ -521,7 +528,7 @@ async function runDeliveryProbe() {
       outputTranscript.length > 0 &&
       audioEventCount > 0 &&
       idInAgent &&
-      idDelivered,
+      !redispatch,
   }
   console.log(JSON.stringify(out, null, 2))
   process.exitCode = out.pass ? 0 : 1

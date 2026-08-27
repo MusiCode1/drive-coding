@@ -4,6 +4,26 @@
  * Slice: live-contract-gemini, Commit 0.
  */
 
+/** Prefix on agent-answer delivery context — not a user request (slice live-secretary fix1 §1). */
+export const LIVE_AGENT_DELIVERY_MARKER = "[תשובת-סוכן]"
+
+/** Prefix on pending-permission notification context (slice live-secretary fix1 §2). */
+export const LIVE_PERMISSION_PENDING_MARKER = "[בקשת-הרשאה]"
+
+/** Wraps an agent answer for speakable delivery so the secretary does not re-dispatch it. */
+export function formatAgentDelivery(text: string): string {
+  return `${LIVE_AGENT_DELIVERY_MARKER} ${text}`
+}
+
+/** Builds a speakable notification when a permission request arrives. */
+export function formatPermissionPending(opts: {
+  toolTitle: string
+  options: readonly { optionId: string; name: string }[]
+}): string {
+  const list = opts.options.map((o) => `${o.optionId}: ${o.name}`).join("; ")
+  return `${LIVE_PERMISSION_PENDING_MARKER} ${opts.toolTitle}. אפשרויות: ${list}`
+}
+
 /** Action and parameter descriptions keyed by action name. */
 export const LIVE_ACTION_PROSE: Readonly<
   Record<string, { description: string; params: Readonly<Record<string, string>> }>
@@ -25,8 +45,10 @@ export const LIVE_ACTION_PROSE: Readonly<
     params: {},
   },
   answer_permission: {
-    description: "ענה על בקשת אישור מהסוכן (allow / deny / always).",
-    params: { optionId: "מזהה האפשרות שנבחרה." },
+    description:
+      "ענה על בקשת אישור מהסוכן (allow / deny / always). " +
+      "אם קיבלת status:not_sent — אמור למשתמש שלא ניתן לאשר ומדוע; אל תאשר שליחה.",
+    params: { optionId: "מזהה האפשרות מהרשימה שהודיעה [בקשת-הרשאה]." },
   },
   set_mode: {
     description: "החלף מצב ממשק (נהיגה / שולחן).",
@@ -80,6 +102,14 @@ const LANGUAGE_SECTION =
 const NO_CLARIFY_SECTION =
   "אל תשאל שאלות הבהרה על בקשות קוד. כל בקשה שנוגעת לקוד — קרא מיד לכלי compose_prompt עם ניסוח מלא."
 
+const AGENT_DELIVERY_SECTION =
+  `טקסט שמתחיל ב-${LIVE_AGENT_DELIVERY_MARKER} הוא דיווח מהסוכן שיש למסור למשתמש בקול — ` +
+  "התייחס אליו כתשובת הסוכן, אל תייחס אותו למשתמש, ואל תשגר אותו מחדש לסוכן ב-compose_prompt."
+
+const PERMISSION_PENDING_SECTION =
+  `טקסט שמתחיל ב-${LIVE_PERMISSION_PENDING_MARKER} מודיע על בקשת אישור ממתינה — ` +
+  "הסבר למשתמש מה נדרש וקרא answer_permission עם optionId מהרשימה."
+
 /** Builds the secretary system prompt. */
 export function buildLiveSecretaryPrompt(opts?: { language?: "he" | "en" }): string {
   const lang = opts?.language ?? "he"
@@ -88,5 +118,12 @@ export function buildLiveSecretaryPrompt(opts?: { language?: "he" | "en" }): str
       ? "אתה מזכיר קולי לעוזר-קוד."
       : "You are a voice secretary for a coding assistant."
 
-  return [role, IDENTIFIER_SECTION, LANGUAGE_SECTION, NO_CLARIFY_SECTION].join("\n")
+  return [
+    role,
+    IDENTIFIER_SECTION,
+    LANGUAGE_SECTION,
+    NO_CLARIFY_SECTION,
+    AGENT_DELIVERY_SECTION,
+    PERMISSION_PENDING_SECTION,
+  ].join("\n")
 }
