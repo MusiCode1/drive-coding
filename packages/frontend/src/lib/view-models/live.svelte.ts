@@ -8,6 +8,10 @@
 
 import type { MessageKey } from "@drive-coding/core/i18n"
 import { canDispatchPrompt } from "@drive-coding/core/voice/live-dispatch"
+import {
+  formatAgentDelivery,
+  formatPermissionPending,
+} from "@drive-coding/core/voice/live-prompt"
 import { mapPermissionOptions } from "$lib/types/permission"
 import { geminiLive } from "../adapters/voice/live/gemini"
 import { fetchLiveToken } from "../adapters/voice/live-token"
@@ -30,6 +34,7 @@ export class Live {
   readonly #frames: MicFrames
   readonly #sink: LiveAudioSink
   #pendingAgentDelivery = false
+  #notifiedPermissionKey: string | null = null
 
   state: LiveSessionState = $state("closed")
   transcript: LiveTranscriptEntry[] = $state([])
@@ -86,6 +91,10 @@ export class Live {
       if (this.#session.turnState === "idle") {
         this.#deliverAgentAnswerIfPending()
       }
+    })
+
+    $effect(() => {
+      this.#notifyPendingPermissionIfNeeded()
     })
   }
 
@@ -183,7 +192,7 @@ export class Live {
         if (!pending) {
           this.#engine.sendActionResult(action.id, action.name, {
             status: "not_sent",
-            reason: "no-session",
+            reason: "no-pending-permission",
           })
           break
         }
@@ -191,7 +200,7 @@ export class Live {
         if (!optionId || !allowed) {
           this.#engine.sendActionResult(action.id, action.name, {
             status: "not_sent",
-            reason: "empty-text",
+            reason: "invalid-option",
           })
           break
         }
@@ -208,8 +217,33 @@ export class Live {
     if (!this.isOpen || !this.#pendingAgentDelivery) return
     const answer = this.#session.recentAssistantMessages(1)[0]?.trim()
     if (!answer) return
-    this.#engine.sendContext(answer, "speakable")
+    this.#engine.sendContext(formatAgentDelivery(answer), "speakable")
     this.#pendingAgentDelivery = false
+  }
+
+  #notifyPendingPermissionIfNeeded(): void {
+    const pending = this.#session.pendingPermission
+    if (!pending) {
+      this.#notifiedPermissionKey = null
+      return
+    }
+    if (!this.isOpen) return
+
+    const key =
+      pending.requestId !== undefined
+        ? String(pending.requestId)
+        : pending.params.toolCall.toolCallId
+    if (this.#notifiedPermissionKey === key) return
+
+    const options = mapPermissionOptions(pending.params)
+    this.#engine.sendContext(
+      formatPermissionPending({
+        toolTitle: pending.params.toolCall.title,
+        options,
+      }),
+      "speakable",
+    )
+    this.#notifiedPermissionKey = key
   }
 
   /** @internal test hook — turn-boundary delivery without relying on $effect timing. */
