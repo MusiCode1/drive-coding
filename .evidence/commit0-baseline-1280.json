@@ -1,0 +1,50 @@
+{
+  "width": 1280,
+  "url": "http://localhost:4015/chat?mock=greeting",
+  "timestamp": "2026-08-27T12:27:40.457Z",
+  "root": "flex gap-2 self-start max-w-[85%] min-w-0 items-end group s-Q-MSdlZFsYq4",
+  "chain": [
+    {
+      "tag": "DIV",
+      "cls": "flex gap-2 self-start max-w-[85%] min-w-0 items-end group s-Q-MSdlZFsYq4",
+      "display": "flex",
+      "width": "571.188px",
+      "position": "static"
+    },
+    {
+      "tag": "DIV",
+      "cls": "pb-5 s-CjSGJDaezCG0",
+      "display": "block",
+      "width": "672px",
+      "position": "static"
+    },
+    {
+      "tag": "DIV",
+      "cls": "",
+      "display": "block",
+      "width": "672px",
+      "position": "absolute"
+    },
+    {
+      "tag": "DIV",
+      "cls": "",
+      "display": "block",
+      "width": "672px",
+      "position": "relative"
+    },
+    {
+      "tag": "DIV",
+      "cls": "flex flex-col max-w-2xl mx-auto w-full",
+      "display": "flex",
+      "width": "672px",
+      "position": "static"
+    },
+    {
+      "tag": "DIV",
+      "cls": "chat-scroll h-full overflow-y-auto px-4 pt-20 pb-10",
+      "display": "block",
+      "width": "992px",
+      "position": "static"
+    }
+  ]
+}
