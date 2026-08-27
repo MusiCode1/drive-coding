@@ -7,19 +7,13 @@
 
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { InstanceRecord as InstanceRecordSchema } from "@drive-coding/core/schemas/session-bus"
+import { type } from "arktype"
 import { getStateDir } from "./paths.js"
 
-const HEALTH_TIMEOUT_MS = 300
+export type InstanceRecord = typeof InstanceRecordSchema.infer
 
-export type InstanceRecord = {
-  port: number
-  host: string
-  pid: number
-  version: string
-  cwd: string
-  https: boolean
-  startedAt: number
-}
+const HEALTH_TIMEOUT_MS = 300
 
 export function getInstancesDir(env: NodeJS.ProcessEnv = process.env): string {
   const xdg = env.XDG_RUNTIME_DIR
@@ -123,15 +117,5 @@ export async function resolveInstances(
 }
 
 function isInstanceRecord(value: unknown): value is InstanceRecord {
-  if (typeof value !== "object" || value === null) return false
-  const o = value as Record<string, unknown>
-  return (
-    typeof o.port === "number" &&
-    typeof o.host === "string" &&
-    typeof o.pid === "number" &&
-    typeof o.version === "string" &&
-    typeof o.cwd === "string" &&
-    typeof o.https === "boolean" &&
-    typeof o.startedAt === "number"
-  )
+  return !(InstanceRecordSchema(value) instanceof type.errors)
 }
