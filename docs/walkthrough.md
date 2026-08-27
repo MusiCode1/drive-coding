@@ -1,4 +1,32 @@
-## 2026-08-27 12:17 — slice live-transcript-box · Commit 1 (auto-follow)
+## 2026-08-27 12:25 — slice live-transcript-box · Commit 2 (data-live-entry) · סיום
+
+Phase 2: `data-live-entry` על כל רשומה + טסט DoD 4 נפרד.
+
+| # | בדיקה | תוצאה |
+|---|--------|--------|
+| 1 | typecheck · test · lint | **עבר** |
+| 2 | svelte-check | **54 / 54** (לפני/אחרי) |
+| 3 | תקרה inline | **עבר** |
+| 4 | 25 entries → 25 nodes | **עבר** |
+| 6 | מוטציה: הסר style | **עבר** — DoD 3 נכשל, DoD 4 ירוק |
+| 7–8 | scroll-follow | **עבר** |
+| 9–10 | עין | **לא-נמדד** |
+| 11 | עץ נקי | **ממתין לקומיט** |
+
+3 commits: `93ef76f2..HEAD`
+
+#### מה בוצע?
+
+- `data-live-entry` על עטיפת כל רשומה ב-`{#each}`.
+- טסט DoD 4 נפרד מ-DoD 3.
+
+#### בדיקות
+
+- live-transcript tests: 2 passed; scroll-config: 3 passed.
+- full suite: green.
+
+---
+
 
 Phase 1: scroll-follow עם פרמטרים מכוילים לתיבת 12rem (sentinel 8px, distanceLines 1).
 

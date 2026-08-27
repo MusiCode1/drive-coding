@@ -170,7 +170,7 @@ $effect(() => {
     >
       <div class="flex flex-col gap-2">
         {#each live.transcript as entry (entry.id)}
-          <div class="flex flex-col gap-0.5">
+          <div class="flex flex-col gap-0.5" data-live-entry>
             <span class="text-xs font-semibold" style="color:var(--fg-dim)">
               {t(entry.role === "user" ? "live.transcript.user" : "live.transcript.assistant")}
             </span>

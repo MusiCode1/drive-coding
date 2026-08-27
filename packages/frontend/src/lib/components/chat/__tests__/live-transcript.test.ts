@@ -46,3 +46,11 @@ describe("LiveTranscript — DoD 3: תקרת גובה inline", () => {
     expect(style.overflowY).toBe("auto")
   })
 })
+
+describe("LiveTranscript — DoD 4: data-live-entry per row", () => {
+  it("25 entries → 25 [data-live-entry] nodes", () => {
+    const entries = Array.from({ length: 25 }, (_, i) => makeEntry(i, `line ${i}`))
+    const root = mountHarness(entries)
+    expect(root.querySelectorAll("[data-live-entry]").length).toBe(25)
+  })
+})
