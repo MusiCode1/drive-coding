@@ -1,4 +1,31 @@
-## 2026-08-27 — slice live-context Commit 4
+## 2026-08-27 — slice live-context (סיום)
+
+base: `dfbb4078` → HEAD `a96b4910` — 5 commits
+
+| DoD | בדיקה | תוצאה |
+|-----|--------|--------|
+| 1 | typecheck | ✅ |
+| 2 | tests | ✅ (2 כשלים סביבתיים קיימים) |
+| 3 | lint:i18n | ✅ |
+| 4 | session overflow | ✅ live-memory.test |
+| 5 | always refuse | ✅ live-memory.test |
+| 6 | full:true לא throw | ✅ live-memory.test |
+| 7 | search ריק | ✅ live-search.test |
+| 8 | seed maxChars | ✅ live-seed.test |
+| 9 | silent inject | ✅ PROBE_SEED pass |
+| 10 | answer from seed | ✅ answerUsedSeed:true |
+| 11 | mutation empty seed | ✅ pass:false |
+| 12 | slice 1 regression | ✅ |
+| 13 | עץ נקי | ✅ |
+
+calev: **GO** — `reports/drive-coding/live-context-calev.md`
+
+#### סטיות
+
+- warmup speakable לפני seed בפרוב (Commit 4).
+
+---
+
 
 ### PROBE_SEED — שער חי
 
