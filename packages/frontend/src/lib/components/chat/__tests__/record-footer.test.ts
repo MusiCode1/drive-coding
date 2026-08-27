@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * record-footer.test.ts — live input mode pane wiring (slice live-input-mode, Commit 1).
+ * record-footer.test.ts — live input mode pane + mobile icon-only tabs.
  */
 import { flushSync, mount, unmount } from "svelte"
 import { afterEach, describe, expect, it } from "vitest"
@@ -20,6 +20,7 @@ afterEach(() => {
 function mountHarness(props: {
   inputMode?: InputMode
   liveOpen?: boolean
+  isMobile?: boolean
   onLiveToggle?: () => void
 } = {}): HTMLDivElement {
   target = document.createElement("div")
@@ -35,12 +36,39 @@ function activePane(root: HTMLElement): HTMLElement {
   return pane
 }
 
+function modeTabs(root: HTMLElement): HTMLElement {
+  const el = root.querySelector<HTMLElement>(".mode-tabs")
+  if (!el) throw new Error("missing .mode-tabs")
+  return el
+}
+
 describe("RecordFooter — live input mode", () => {
   it("toggle has four tab buttons including live", () => {
     const root = mountHarness()
-    const toggle = root.querySelector(".mic-card > div.flex.items-center.gap-1")
-    expect(toggle?.querySelectorAll("button").length).toBe(4)
+    const toggle = modeTabs(root)
+    expect(toggle.querySelectorAll("button").length).toBe(4)
     expect(root.textContent).toContain("record.tab.live")
+  })
+
+  it("desktop shows labels; mobile is icon-only with aria-label and ≥44px tap", () => {
+    const desktop = mountHarness({ isMobile: false })
+    expect(modeTabs(desktop).textContent).toContain("record.tab.live")
+    unmount(app!)
+    desktop.remove()
+    target = null
+    app = null
+
+    const mobile = mountHarness({ isMobile: true })
+    const tabs = modeTabs(mobile)
+    expect(tabs.textContent?.includes("record.tab.live")).toBe(false)
+    const buttons = [...tabs.querySelectorAll("button")]
+    expect(buttons).toHaveLength(4)
+    for (const btn of buttons) {
+      expect(btn.getAttribute("aria-label")?.startsWith("record.tab.")).toBe(true)
+      expect(btn.classList.contains("mode-tab--mobile")).toBe(true)
+    }
+    // computed min size from stylesheet (jsdom may not apply CSS — assert class contract)
+    expect(mobile.querySelector(".mode-tab--mobile")).not.toBeNull()
   })
 
   it("inputMode live => no MicLarge and no TypeArea in active pane", () => {
@@ -69,8 +97,8 @@ describe("RecordFooter — live input mode", () => {
       },
     })
 
-    const typingBtn = [...root.querySelectorAll("button")].find(
-      (b) => b.textContent?.includes("record.tab.type"),
+    const typingBtn = [...root.querySelectorAll(".mode-tabs button")].find(
+      (b) => b.getAttribute("aria-label") === "record.tab.type",
     )
     expect(typingBtn).toBeDefined()
     typingBtn!.click()

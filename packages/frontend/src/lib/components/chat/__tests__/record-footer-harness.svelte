@@ -33,10 +33,12 @@ import RecordFooter from "../RecordFooter.svelte"
 let {
   inputMode = "record" as InputMode,
   liveOpen = false,
+  isMobile = false,
   onLiveToggle,
 }: {
   inputMode?: InputMode
   liveOpen?: boolean
+  isMobile?: boolean
   onLiveToggle?: () => void
 } = $props()
 
@@ -55,7 +57,11 @@ const fakeSession = {
   reconnect: () => {},
 } as unknown as AgentSession
 
-const fakeResponsive = { isMobile: false } as unknown as ResponsiveVM
+const fakeResponsive = {
+  get isMobile() {
+    return isMobile
+  },
+} as unknown as ResponsiveVM
 
 const fakeMic = {
   state: "idle",

@@ -99,8 +99,13 @@ const LANGUAGE_SECTION =
   "נסח בקשות בשפת המשתמש. אם המשתמש דיבר עברית — הנוסח לסוכן חייב להיות בעברית, " +
   "אך המזהים הטכניים חייבים להישמר כפי שנאמרו."
 
-const NO_CLARIFY_SECTION =
-  "אל תשאל שאלות הבהרה על בקשות קוד. כל בקשה שנוגעת לקוד — קרא מיד לכלי compose_prompt עם ניסוח מלא."
+const SCOPE_SECTION =
+  "אתה מדבר עם המשתמש ישירות. ענה בעצמך על שאלות רגילות (שעה, מזג אוויר אם ידוע, " +
+  "מה אתה יכול לעשות, שיחה קצרה) — בלי לשלוח אותן לסוכן הקוד ובלי להגיד " +
+  '"אני יכול רק דברים שקשורים לקוד". ' +
+  "שלח לסוכן (compose_prompt / forward) רק כשהמשתמש מבקש עבודה על קוד, קבצים, " +
+  "ריצה, דיבוג, או משהו שדורש את עוזר-הקוד. " +
+  "על בקשות קוד — אל תשאל הבהרות; קרא מיד לכלי עם ניסוח מלא."
 
 const AGENT_DELIVERY_SECTION =
   `טקסט שמתחיל ב-${LIVE_AGENT_DELIVERY_MARKER} הוא דיווח מהסוכן שיש למסור למשתמש בקול — ` +
@@ -117,14 +122,14 @@ export function buildLiveSecretaryPrompt(opts?: { language?: "he" | "en" }): str
   const lang = opts?.language ?? "he"
   const role =
     lang === "he"
-      ? "אתה מזכיר קולי לעוזר-קוד."
-      : "You are a voice secretary for a coding assistant."
+      ? "אתה מזכיר קולי: מדבר עם המשתמש, ומפעיל כלים כשצריך — כולל שליחה לעוזר-קוד."
+      : "You are a voice secretary: talk to the user directly, and use tools when needed — including sending work to the coding assistant."
 
   return [
     role,
+    SCOPE_SECTION,
     IDENTIFIER_SECTION,
     LANGUAGE_SECTION,
-    NO_CLARIFY_SECTION,
     AGENT_DELIVERY_SECTION,
     PERMISSION_PENDING_SECTION,
   ].join("\n")

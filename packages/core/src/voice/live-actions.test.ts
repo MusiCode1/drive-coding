@@ -41,11 +41,11 @@ describe("buildLiveActions()", () => {
 })
 
 describe("buildLiveSecretaryPrompt()", () => {
-  it("includes identifier, language, and no-clarify sections", () => {
+  it("includes identifier, language, and scope sections", () => {
     const prompt = buildLiveSecretaryPrompt()
     expect(prompt).toContain("מזהים טכניים")
     expect(prompt).toContain("שפת המשתמש")
-    expect(prompt).toContain("אל תשאל שאלות הבהרה")
+    expect(prompt).toContain("ענה בעצמך על שאלות רגילות")
     expect(prompt).toContain("compose_prompt")
   })
 })

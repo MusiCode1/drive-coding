@@ -29,7 +29,9 @@ import LiveTranscript from "./LiveTranscript.svelte"
 import PlaybackControls from "./PlaybackControls.svelte"
 import TypeArea from "./TypeArea.svelte"
 import { getI18n, getLive, getResponsive, getSession, getUiShell } from "$lib/context"
+import type { Component } from "svelte"
 import type { InputMode } from "$lib/view-models/ui-shell.svelte"
+import type { MessageKey } from "@drive-coding/core/i18n"
 
 const t = getI18n().t
 const responsive = getResponsive()
@@ -37,6 +39,20 @@ const uiShell = getUiShell()
 const live = getLive()
 // TEMP-RECONNECT (לבדיקה ידנית בלבד — להחזיר לאחור; אינו חלק מ-slice infra)
 const session = getSession()
+
+/** Hug-content pill. Mobile = icon-only + ≥44px tap; desktop = icon+label. */
+const MODE_TABS: ReadonlyArray<{
+  mode: InputMode
+  labelKey: MessageKey
+  Icon: Component<{ size?: number; strokeWidth?: number }>
+}> = [
+  { mode: "record", labelKey: "record.tab.record", Icon: MicIcon },
+  { mode: "typing", labelKey: "record.tab.type", Icon: KeyboardIcon },
+  { mode: "live", labelKey: "record.tab.live", Icon: RadioIcon },
+  { mode: "hidden", labelKey: "record.tab.hide", Icon: EyeOffIcon },
+]
+
+const tabIconSize = $derived(responsive.isMobile ? 22 : 13)
 
 function switchInputMode(mode: InputMode): void {
   if (uiShell.inputMode === "live" && mode !== "live" && live.isOpen) {
@@ -58,55 +74,30 @@ function switchInputMode(mode: InputMode): void {
   <!-- כרטיס mic — .mic-card מ-app.css (שקוף במובייל דרך .mic-plain) -->
   <div class="mic-card w-full max-w-3xl min-w-0 px-4 pt-4 pb-5 flex flex-col items-center gap-3">
 
-    <!-- toggle הקלטה/הקלדה/לייב/מוסתר (4 כפתורים) -->
+    <!-- mode toggle: כדורית hug-content (לא רוחב-מסך). מובייל = אייקון בלבד + יעד ≥44px. -->
     <div
-      class="flex items-center gap-1 p-1 rounded-full text-xs"
+      class="mode-tabs inline-flex items-center gap-1 p-1 rounded-full text-xs"
       style="background:var(--bg-card)"
     >
-      <button
-        class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full font-semibold transition-all"
-        style={uiShell.inputMode === "record"
-          ? "background:var(--accent); color:white"
-          : "color:var(--fg-dim)"}
-        onclick={() => switchInputMode("record")}
-        aria-pressed={uiShell.inputMode === "record"}
-      >
-        <MicIcon size={13} strokeWidth={2} />
-        {t("record.tab.record")}
-      </button>
-      <button
-        class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full font-semibold transition-all"
-        style={uiShell.inputMode === "typing"
-          ? "background:var(--accent); color:white"
-          : "color:var(--fg-dim)"}
-        onclick={() => switchInputMode("typing")}
-        aria-pressed={uiShell.inputMode === "typing"}
-      >
-        <KeyboardIcon size={13} strokeWidth={2} />
-        {t("record.tab.type")}
-      </button>
-      <button
-        class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full font-semibold transition-all"
-        style={uiShell.inputMode === "live"
-          ? "background:var(--accent); color:white"
-          : "color:var(--fg-dim)"}
-        onclick={() => switchInputMode("live")}
-        aria-pressed={uiShell.inputMode === "live"}
-      >
-        <RadioIcon size={13} strokeWidth={2} />
-        {t("record.tab.live")}
-      </button>
-      <button
-        class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full font-semibold transition-all"
-        style={uiShell.inputMode === "hidden"
-          ? "background:var(--accent); color:white"
-          : "color:var(--fg-dim)"}
-        onclick={() => switchInputMode("hidden")}
-        aria-pressed={uiShell.inputMode === "hidden"}
-      >
-        <EyeOffIcon size={13} strokeWidth={2} />
-        {t("record.tab.hide")}
-      </button>
+      {#each MODE_TABS as tab (tab.mode)}
+        {@const label = t(tab.labelKey)}
+        <button
+          type="button"
+          class="mode-tab inline-flex items-center justify-center gap-1.5 rounded-full font-semibold transition-all"
+          class:mode-tab--mobile={responsive.isMobile}
+          style={uiShell.inputMode === tab.mode
+            ? "background:var(--accent); color:white"
+            : "color:var(--fg-dim)"}
+          onclick={() => switchInputMode(tab.mode)}
+          aria-label={label}
+          aria-pressed={uiShell.inputMode === tab.mode}
+        >
+          <tab.Icon size={tabIconSize} strokeWidth={2} />
+          {#if !responsive.isMobile}
+            {label}
+          {/if}
+        </button>
+      {/each}
     </div>
 
     <!-- TEMP-RECONNECT-BUTTON (לבדיקה ידנית בלבד — להחזיר לאחור; אינו חלק מ-slice infra) -->
@@ -163,6 +154,18 @@ function switchInputMode(mode: InputMode): void {
 </footer>
 
 <style>
+  /* דסקטופ: אייקון + תווית (כמו לפני live-input-mode). */
+  .mode-tab {
+    padding: 0.375rem 1rem; /* py-1.5 px-4 */
+  }
+
+  /* מובייל: אייקון בלבד, יעד לחיצה ≥44×44 (HIG) — הכדורית נשארת hug-content. */
+  .mode-tab--mobile {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+
   /* ── אזור הפעולה — גובה משתנה דרך grid-template-rows ──
      ה-panes מוערמים באותו תא (col/row 1). כל pane הוא grid עם שורה אחת
      שגובהה 0fr (מוסתר) / 1fr (פעיל). גובה אזור הפעולה = סכום ה-panes, כלומר
