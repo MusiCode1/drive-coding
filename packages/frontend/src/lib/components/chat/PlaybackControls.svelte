@@ -43,7 +43,7 @@ const showDock = $derived(
   }),
 )
 
-const iconSize = $derived(responsive.isMobile ? 24 : 20)
+const iconSize = $derived(responsive.isMobile ? 24 : 22)
 
 const isPaused = $derived(playlist.transport === "paused")
 
@@ -193,11 +193,9 @@ const isNavDisabled = $derived(playlist.items.length === 0 || playlist.items.len
   }
 
   .controls-grid--desktop {
-    --touch-target-lg: 40px;
-    grid-template-columns: repeat(5, auto);
-    justify-content: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.625rem;
+    --touch-target-lg: 48px;
+    max-width: 28rem;
+    margin-inline: auto;
   }
 
   .ctrl-cell {
