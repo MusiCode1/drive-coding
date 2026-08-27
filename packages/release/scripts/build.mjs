@@ -59,8 +59,17 @@ const KNOWN_PM = ["bun", "pnpm", "npm", "yarn"]
 const detected = (await detect())?.name
 const pm = KNOWN_PM.includes(detected) ? detected : "bun"
 console.log(`[build] Step 1: building frontend (pm: ${pm})…`)
+// FE_ENV is pinned to "prod" and NOT inherited. Measured 2026-08-27: the shell that
+// ran this build had FE_ENV=preview (it belongs to the drive-coding-dev systemd unit),
+// so the published 0.34.0 shipped `<title>Preview · Drive Coding</title>`, source maps,
+// and the __dc playback debug panel ENABLED (vite.config.ts: DC_ENABLED = FE_ENV !== "prod").
+// A published package must never depend on the publisher's environment.
 const [feCmd, feArgs] = runFilterArgs("@drive-coding/frontend", "build", pm)
-runPm(feCmd, feArgs, { cwd: repoRoot, stdio: "inherit" })
+runPm(feCmd, feArgs, {
+  cwd: repoRoot,
+  stdio: "inherit",
+  env: { ...process.env, FE_ENV: "prod", FE_SOURCEMAP: "false", FE_TITLE: "", FE_PREVIEW_LABEL: "" },
+})
 
 // Step 2: Copy frontend/build → release/frontend-dist
 console.log("[build] Step 2: copying frontend-dist…")
@@ -74,6 +83,30 @@ if (existsSync(releaseFixtures)) {
   rmSync(releaseFixtures, { recursive: true, force: true })
   console.log("[build] Step 2b: stripped DEV fixtures from release frontend-dist")
 }
+
+// Step 2c: assert the release copy is a PROD build. These two checks are the gate for
+// the FE_ENV leak above — both were RED on the 0.34.0 artifact.
+const indexHtml = readFileSync(path.join(releaseFrontendDist, "index.html"), "utf8")
+const titleMatch = indexHtml.match(/<title>([^<]*)<\/title>/)
+if (titleMatch?.[1]?.trim() !== "Drive Coding") {
+  throw new Error(
+    `[build] FE_ENV leak: expected <title>Drive Coding</title>, got <title>${titleMatch?.[1] ?? "?"}</title>`,
+  )
+}
+const debugHits = []
+const walk = (dir) => {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name)
+    if (e.isDirectory()) walk(full)
+    else if (/\.(js|html|css)$/.test(e.name) && readFileSync(full, "utf8").includes("awaiting TTS"))
+      debugHits.push(path.relative(releaseFrontendDist, full))
+  }
+}
+walk(releaseFrontendDist)
+if (debugHits.length > 0) {
+  throw new Error(`[build] debug surface leaked into frontend-dist (${debugHits.length}): ${debugHits.join(", ")}`)
+}
+console.log("[build] Step 2c: prod assertions OK — clean title, no debug surface")
 
 // Step 3: Copy backend/plugins → release/plugins
 console.log("[build] Step 3: copying plugins…")
