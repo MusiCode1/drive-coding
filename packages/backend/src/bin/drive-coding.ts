@@ -7,6 +7,14 @@ import { parseArgs } from "node:util"
 import { buildVersion, isBinary } from "../binary.js"
 import { loadConfig, parseEnvFile } from "../config/load-config.js"
 
+// Peek BEFORE parseArgs. Subcommand flags (--json/--cli/--base) are unknown to
+// the server parser (strict:true); allowPositionals stays false so a stray
+// positional still prints HELP. PORT ??= "4000" must not run on this path.
+if (process.argv[2] === "agent" || process.argv[2] === "instances") {
+  const { runCli } = await import("../cli/index.js")
+  process.exit(await runCli(process.argv.slice(2)))
+}
+
 // ---------------------------------------------------------------------------
 // Help text (English only — i18n hook blocks Hebrew in code)
 // ---------------------------------------------------------------------------
