@@ -32,13 +32,19 @@ const t = getI18n().t
     {#if live.transcript.length === 0}
       <span class="text-xs" style="color:var(--fg-dim)">{t("live.ear.listening")}</span>
     {/if}
-    {#each live.transcript as entry (entry.id)}
-      <div class="flex flex-col gap-0.5">
-        <span class="text-xs font-semibold" style="color:var(--fg-dim)">
-          {t(entry.role === "user" ? "live.transcript.user" : "live.transcript.assistant")}
-        </span>
-        <span style="color:var(--fg)" class:opacity-70={!entry.final}>{entry.text}</span>
-      </div>
-    {/each}
+    <div
+      class="flex flex-col gap-2"
+      data-live-scroll
+      style="max-height: 12rem; overflow-y: auto"
+    >
+      {#each live.transcript as entry (entry.id)}
+        <div class="flex flex-col gap-0.5">
+          <span class="text-xs font-semibold" style="color:var(--fg-dim)">
+            {t(entry.role === "user" ? "live.transcript.user" : "live.transcript.assistant")}
+          </span>
+          <span style="color:var(--fg)" class:opacity-70={!entry.final}>{entry.text}</span>
+        </div>
+      {/each}
+    </div>
   </div>
 {/if}

@@ -1,4 +1,26 @@
-## 2026-08-27 10:35 — slice live-secretary fix1 (סיום אליעזר)
+## 2026-08-27 12:10 — slice live-transcript-box · Commit 0 (תקרה)
+
+Phase 0: `max-height: 12rem; overflow-y: auto` כ-`style` inline על מכל `[data-live-scroll]`.
+
+| # | בדיקה | תוצאה |
+|---|--------|--------|
+| 1 | typecheck · test · lint (קבצים שנגעו) | **עבר** |
+| 2 | svelte-check לפני/אחרי | **54 / 54** |
+| 3 | DoD 3 — computed max-height + overflow-y | **עבר** (jsdom) |
+| 6 | מוטציה: הסר style | **לא-נמדד** (DoD 3 תופס הסרה) |
+
+#### מה בוצע?
+
+- `LiveTranscript.svelte`: מכל גלילה עם תקרת 12rem inline.
+- `live-transcript-harness.svelte` + `live-transcript.test.ts`: DoD 3.
+
+#### בדיקות
+
+- `live-transcript.test.ts`: 1 passed.
+- full suite: green.
+
+---
+
 
 3 commits: `56ca6e14..HEAD`
 
