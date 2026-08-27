@@ -90,13 +90,21 @@ function mockSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return base as unknown as AgentSession
 }
 
-function createLive(opts: { mic?: Mic; session: AgentSession }): {
+function createLive(opts: {
+  mic?: Mic
+  session: AgentSession
+  getVoiceName?: () => string
+}): {
   live: Live
   dispose: () => void
 } {
   let live!: Live
   const dispose = $effect.root(() => {
-    live = new Live({ mic: opts.mic ?? mockMic(), session: opts.session })
+    live = new Live({
+      mic: opts.mic ?? mockMic(),
+      session: opts.session,
+      getVoiceName: opts.getVoiceName,
+    })
   })
   return { live, dispose }
 }
@@ -754,5 +762,25 @@ describe("Live context wiring (seed + search + remember)", () => {
         items: [expect.objectContaining({ text: "prefer patch commits" })],
       }),
     })
+  })
+})
+
+describe("Live getVoiceName at mint", () => {
+  it("passes getVoiceName() into fetchLiveToken on open", async () => {
+    const { fetchLiveToken } = await import("../adapters/voice/live-token")
+    vi.mocked(fetchLiveToken).mockClear()
+    const getVoiceName = vi.fn(() => "Charon")
+    const session = mockSession()
+    const { live, dispose } = createLive({ session, getVoiceName })
+    try {
+      await live.toggle()
+      expect(live.state).toBe("open")
+      expect(getVoiceName).toHaveBeenCalled()
+      expect(fetchLiveToken).toHaveBeenCalledWith(
+        expect.objectContaining({ voiceName: "Charon" }),
+      )
+    } finally {
+      dispose()
+    }
   })
 })

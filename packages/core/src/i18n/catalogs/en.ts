@@ -298,6 +298,7 @@ export const en: Catalog = {
   "agentOptions.thinking.high": "High",
   // ─── gemini voice picker ─── (V4b-gemini-voice-picker)
   "settings.geminiVoice.label": "Gemini voice",
+  "settings.liveVoice.label": "Live conversation voice",
   "settings.geminiVoice.desc.Zephyr": "Bright",
   "settings.geminiVoice.desc.Puck": "Upbeat",
   "settings.geminiVoice.desc.Charon": "Informative",

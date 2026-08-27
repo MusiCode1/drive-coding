@@ -304,6 +304,7 @@ export type MessageKey =
   | "agentOptions.thinking.high" // ערך גבוה (16000)
   // ─── gemini voice picker ─── (V4b-gemini-voice-picker)
   | "settings.geminiVoice.label"
+  | "settings.liveVoice.label"
   | "settings.geminiVoice.desc.Zephyr"
   | "settings.geminiVoice.desc.Puck"
   | "settings.geminiVoice.desc.Charon"

@@ -72,6 +72,8 @@ export class Live {
     session: AgentSession
     language?: "he" | "en"
     voiceName?: string
+    /** Read at each mint — settings.liveVoice (avoids stale constructor capture). */
+    getVoiceName?: () => string
   }) {
     this.#mic = opts.mic
     this.#session = opts.session
@@ -87,7 +89,7 @@ export class Live {
         fetchToken: async () => {
           const result = await fetchLiveToken({
             language: opts.language,
-            voiceName: opts.voiceName,
+            voiceName: opts.getVoiceName?.() ?? opts.voiceName,
           })
           return {
             token: result.token,

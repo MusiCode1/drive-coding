@@ -109,7 +109,11 @@ const fakeModelStatus = {
   stopRunLabelKey: "playbackControls.stopRun" as MessageKey,
 } as unknown as ModelStatus
 
-const fakeSettings = { enterToSend: false } as unknown as Settings
+const fakeSettings = {
+  enterToSend: false,
+  liveVoice: "Puck",
+  setLiveVoice: () => {},
+} as unknown as Settings
 
 const fakeSpeaker = {} as unknown as Speaker
 

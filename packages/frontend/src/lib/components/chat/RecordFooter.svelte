@@ -26,9 +26,10 @@ import EyeOffIcon from "@lucide/svelte/icons/eye-off"
 import MicLarge from "./MicLarge.svelte"
 import LiveToggle from "./LiveToggle.svelte"
 import LiveTranscript from "./LiveTranscript.svelte"
+import GeminiVoicePicker from "./GeminiVoicePicker.svelte"
 import PlaybackControls from "./PlaybackControls.svelte"
 import TypeArea from "./TypeArea.svelte"
-import { getI18n, getLive, getResponsive, getSession, getUiShell } from "$lib/context"
+import { getI18n, getLive, getResponsive, getSession, getSettings, getUiShell } from "$lib/context"
 import type { Component } from "svelte"
 import type { InputMode } from "$lib/view-models/ui-shell.svelte"
 import type { MessageKey } from "@drive-coding/core/i18n"
@@ -37,6 +38,7 @@ const t = getI18n().t
 const responsive = getResponsive()
 const uiShell = getUiShell()
 const live = getLive()
+const settings = getSettings()
 // TEMP-RECONNECT (לבדיקה ידנית בלבד — להחזיר לאחור; אינו חלק מ-slice infra)
 const session = getSession()
 
@@ -146,6 +148,18 @@ function switchInputMode(mode: InputMode): void {
       >
         <div class="record-pane-inner flex flex-col items-center gap-3 w-full">
           <LiveTranscript />
+          {#if !live.isOpen}
+            <label class="flex w-full max-w-xs flex-col gap-1.5">
+              <span class="text-[13px] text-center" style="color:var(--fg-dim)"
+                >{t("settings.liveVoice.label")}</span
+              >
+              <GeminiVoicePicker
+                value={settings.liveVoice}
+                labelKey="settings.liveVoice.label"
+                onchange={(v) => settings.setLiveVoice(v)}
+              />
+            </label>
+          {/if}
           <LiveToggle />
         </div>
       </div>

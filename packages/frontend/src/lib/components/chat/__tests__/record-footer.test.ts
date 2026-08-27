@@ -80,6 +80,18 @@ describe("RecordFooter — live input mode", () => {
     expect(pane.querySelector("textarea")).toBeNull()
   })
 
+  it("inputMode live + closed => voice picker visible; open => hidden", () => {
+    const closed = mountHarness({ inputMode: "live", liveOpen: false })
+    expect(closed.textContent).toContain("settings.liveVoice.label")
+    unmount(app!)
+    closed.remove()
+    target = null
+    app = null
+
+    const open = mountHarness({ inputMode: "live", liveOpen: true })
+    expect(open.textContent?.includes("settings.liveVoice.label")).toBe(false)
+  })
+
   it("inputMode record => no LiveTranscript in active pane", () => {
     const root = mountHarness({ inputMode: "record" })
     const pane = activePane(root)

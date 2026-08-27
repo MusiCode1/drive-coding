@@ -108,6 +108,7 @@ const live = new Live({
   mic,
   session,
   language: i18n.locale === "he" ? "he" : "en",
+  getVoiceName: () => settings.liveVoice,
 })
 
 // ─── speaker ─── (§4.3: live ref — TTS off while Live open)

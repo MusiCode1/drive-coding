@@ -17,7 +17,7 @@ import { DEFAULT_LOCALE, detectLocale, type Locale } from "@drive-coding/core/i1
 import type { SpeechPace, SpeechTone } from "@drive-coding/core/voice/tts-types"
 import type { SessionTransport } from "$lib/session/session-transport"
 import { listVoices, type Voice } from "../adapters/voice/voices"
-import { DEFAULT_GEMINI_VOICE } from "../adapters/voice/voices-gemini"
+import { DEFAULT_GEMINI_VOICE, DEFAULT_LIVE_VOICE } from "../adapters/voice/voices-gemini"
 import { setBeUrlBase } from "../util/be-url"
 import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH_REM } from "../util/sidebar-width"
 import { ttsCapabilities } from "./capabilities.svelte"
@@ -64,6 +64,8 @@ type Persisted = {
   suppressLeaveWarning: boolean
   // ─── קול Gemini ─── (V4b-gemini-voice-picker)
   geminiVoice: string
+  // ─── קול Gemini Live (מזכיר) ─── (live-voice-picker) — נפרד מ-TTS כדי למנוע Kore↔Kore
+  liveVoice: string
   // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
   // מפה: cwd → טקסט הפרומפט (מתווסף להוראות ברירת-המחדל של הסוכן, ר' provider/connection).
   projectSystemPrompt: Record<string, string>
@@ -116,6 +118,8 @@ const DEFAULTS: Persisted = {
   suppressLeaveWarning: false,
   // ─── קול Gemini ─── (V4b-gemini-voice-picker)
   geminiVoice: DEFAULT_GEMINI_VOICE,
+  // ─── קול Gemini Live (מזכיר) ─── (live-voice-picker)
+  liveVoice: DEFAULT_LIVE_VOICE,
   // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
   projectSystemPrompt: {},
   // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize) — 256px = 16rem, זהה להתנהגות היום
@@ -232,6 +236,9 @@ export class Settings {
   // ─── קול Gemini ─── (V4b-gemini-voice-picker)
   geminiVoice = $state<string>(DEFAULTS.geminiVoice)
 
+  // ─── קול Gemini Live (מזכיר) ─── (live-voice-picker)
+  liveVoice = $state<string>(DEFAULTS.liveVoice)
+
   // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
   projectSystemPrompt = $state<Record<string, string>>(DEFAULTS.projectSystemPrompt)
 
@@ -285,6 +292,8 @@ export class Settings {
     this.suppressLeaveWarning = loaded.suppressLeaveWarning
     // ─── קול Gemini ───
     this.geminiVoice = loaded.geminiVoice
+    // ─── קול Gemini Live ───
+    this.liveVoice = loaded.liveVoice
     // ─── פרומפט-מערכת פר-פרויקט ───
     this.projectSystemPrompt = loaded.projectSystemPrompt
     // ─── גובה פאנלים נגרר ───
@@ -536,6 +545,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── קול Gemini Live (מזכיר) ─── (live-voice-picker)
+
+  setLiveVoice = (v: string): void => {
+    this.liveVoice = v
+    this.#persist()
+  }
+
   // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
 
   /** מחזיר את הפרומפט השמור לפרויקט הנתון (cwd), או מחרוזת ריקה אם אין. */
@@ -614,6 +630,7 @@ export class Settings {
       recentCollapsed: this.recentCollapsed,
       suppressLeaveWarning: this.suppressLeaveWarning,
       geminiVoice: this.geminiVoice,
+      liveVoice: this.liveVoice,
       projectSystemPrompt: this.projectSystemPrompt,
       recentPanelHeight: this.recentPanelHeight,
       activePanelHeight: this.activePanelHeight,

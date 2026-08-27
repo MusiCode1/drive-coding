@@ -294,6 +294,7 @@ export const he: Catalog = {
   // ─── gemini voice picker ─── (V4b-gemini-voice-picker)
   // תיאורים דו-לשוניים: "<En> · <תרגום-עברי>" (לפי brief V4b §4 Commit 2)
   "settings.geminiVoice.label": "קול Gemini",
+  "settings.liveVoice.label": "קול שיחה חיה",
   "settings.geminiVoice.desc.Zephyr": "Bright · בהיר",
   "settings.geminiVoice.desc.Puck": "Upbeat · עליז",
   "settings.geminiVoice.desc.Charon": "Informative · אינפורמטיבי",
