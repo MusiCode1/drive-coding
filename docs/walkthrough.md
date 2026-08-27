@@ -1,4 +1,24 @@
-## 2026-08-27 (fix1 — סיום סבב תיקון)
+## 2026-08-27 — slice live-context Commit 0
+
+### live-seed.ts — בניית seed מ-bubbles
+
+#### מה בוצע?
+
+- `packages/core/src/voice/live-seed.ts` — `buildLiveSeed` + טיפוסים (`LiveSeedBubble`, `LiveSeedLabels`, …).
+- `live-seed.test.ts` — 12 טסטים: redaction, maxTurns, maxChars, turnState, lastUserMessage.
+
+#### בדיקות
+
+- live-seed.test.ts: 12/12 ירוק.
+- typecheck + lint:i18n ירוקים.
+- `bun run test`: 2 כשלים סביבתיים קיימים (cli-availability, bridge-failure) — לא קשורים לסלייס.
+
+#### סטיות
+
+- אין.
+
+---
+
 
 ### slice live-contract-gemini fix1 — 4 commits (A–D)
 
