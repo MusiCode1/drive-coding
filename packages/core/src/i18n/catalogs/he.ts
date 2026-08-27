@@ -433,4 +433,9 @@ export const he: Catalog = {
   "session.newSessionUnsupportedRemote": "פתיחת סשן חדש אינה נתמכת עדיין במצב remote.",
   // ─── sidebar-resize ───
   "sidebar.resizeHandle": "גרור לשינוי רוחב",
+  // ─── cwd-path-combo ───
+  "connect.cwd.combo.toggle": "הצג תיקיות אחרונות",
+  "connect.cwd.combo.searchPlaceholder": "חיפוש נתיב…",
+  "connect.cwd.combo.empty": "אין תיקיות להצגה",
+  "connect.cwd.combo.loadError": "טעינת התיקיות נכשלה",
 }
