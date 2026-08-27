@@ -9,6 +9,7 @@
 import type { MessageKey } from "@drive-coding/core/i18n"
 import { canDispatchPrompt } from "@drive-coding/core/voice/live-dispatch"
 import { formatAgentDelivery, formatPermissionPending } from "@drive-coding/core/voice/live-prompt"
+import { isUnpromptedSend } from "@drive-coding/core/voice/unprompted-guard"
 import { mapPermissionOptions } from "$lib/types/permission"
 import { geminiLive } from "../adapters/voice/live/gemini"
 import { fetchLiveToken } from "../adapters/voice/live-token"
@@ -158,6 +159,13 @@ export class Live {
     switch (action.name) {
       case "compose_prompt": {
         const text = typeof action.args.text === "string" ? action.args.text : ""
+        if (isUnpromptedSend({ deliveredSinceUserSpoke: this.#deliveredSinceUserSpoke })) {
+          this.#engine.sendActionResult(action.id, action.name, {
+            status: "not_sent",
+            reason: "unprompted",
+          })
+          return
+        }
         const verdict = this.#dispatchGate(text)
         if (!verdict.ok) {
           this.#engine.sendActionResult(action.id, action.name, {
@@ -173,6 +181,13 @@ export class Live {
       }
       case "forward": {
         const text = this.#lastFinalUserTranscript()
+        if (isUnpromptedSend({ deliveredSinceUserSpoke: this.#deliveredSinceUserSpoke })) {
+          this.#engine.sendActionResult(action.id, action.name, {
+            status: "not_sent",
+            reason: "unprompted",
+          })
+          return
+        }
         const verdict = this.#dispatchGate(text)
         if (!verdict.ok) {
           this.#engine.sendActionResult(action.id, action.name, {
@@ -263,5 +278,10 @@ export class Live {
   /** @internal test hook — unprompted guard flag state. */
   deliveredSinceUserSpokeForTest(): boolean {
     return this.#deliveredSinceUserSpoke
+  }
+
+  /** @internal test hook — mutation / DoD 7: force flag without touching delivery path. */
+  setDeliveredSinceUserSpokeForTest(value: boolean): void {
+    this.#deliveredSinceUserSpoke = value
   }
 }
