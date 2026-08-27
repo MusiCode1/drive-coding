@@ -1,6 +1,18 @@
 ## 2026-08-27 — slice live-ears (in progress)
 
-### Commit 5 — Live VM + חיווט
+### Commit 6 — FSM ear/mouth
+
+#### מה בוצע?
+
+- `voice-mode.svelte.ts` — הסרת state מת; ear/mouth getters טהורים; live? dep.
+- `voice-mode.test.svelte.ts` — describe חדש + DoD 7 mutation.
+
+#### בדיקות
+
+- voice-mode.test.svelte.ts: כל assertions קיימות + ear/mouth ירוק.
+
+---
+
 
 #### מה בוצע?
 
