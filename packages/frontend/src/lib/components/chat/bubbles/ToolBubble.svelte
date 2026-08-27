@@ -13,7 +13,8 @@
  */
 import type { ToolBubble, ToolCall } from "$lib/types/bubble"
 import { getContentViewer, getI18n, getSettings, getChatScroll } from "$lib/context"
-import { formatToolInput, prettyJson, formatLocation, normalizeToolOutput } from "$lib/util/tool-format"
+import { prettyJson, formatLocation } from "$lib/util/tool-format"
+import { normalizeToolCall } from "$lib/util/tool-call-view"
 import Maximize2Icon from "@lucide/svelte/icons/maximize-2"
 import ToolKindIcon from "./ToolKindIcon.svelte"
 import { onMount } from "svelte"
@@ -25,10 +26,9 @@ const settings = getSettings()
 const viewer = getContentViewer()
 
 const tc = $derived(bubble.toolCall)
-const showNarration = $derived(tc.narration !== undefined && tc.narration.length > 0)
-const input = $derived(formatToolInput(tc.args))
-const hasContent = $derived(tc.content !== undefined && tc.content.length > 0)
-const outputView = $derived(normalizeToolOutput(tc.result))
+const view = $derived(normalizeToolCall(tc, { narration: tc.narration }))
+const hasContent = $derived(view.richContent.length > 0)
+const outputView = $derived(view.output)
 const showNormalizedOutput = $derived(!hasContent && outputView.kind !== "empty")
 const showRawOutput = $derived(
   tc.result !== undefined && outputView.kind !== "json",
@@ -70,12 +70,10 @@ function asFencedCode(text: string): string {
 
         <ToolKindIcon kind={tc.kind} />
 
-        <!-- narration או title -->
+        <!-- summary row from normalized view -->
         <div class="flex-1 min-w-0" style="color:var(--fg-dim)">
-          {#if showNarration}
-            <div class="truncate" dir="auto">{tc.narration}</div>
-          {:else if tc.title}
-            <div class="truncate font-mono text-[11px]" dir="ltr">{tc.title}</div>
+          {#if view.summary}
+            <div class="truncate" dir="auto">{view.summary}</div>
           {:else}
             <div class="opacity-40 italic">{t("chat.tool.loading_narration")}</div>
           {/if}
@@ -87,15 +85,29 @@ function asFencedCode(text: string): string {
       <!-- פרטים: args + result + content + locations -->
       <div class="border-t flex flex-col gap-1.5 px-3 py-2" style="border-color:var(--border)" dir="ltr">
         <!-- args -->
-        {#if input.kind === "command"}
+        {#if view.input.kind === "command"}
           <div>
             <div class="section-label">{t("chat.tool.args")}</div>
-            <pre class="cmd">$ {input.command}</pre>
+            <pre class="cmd">$ {view.input.command}</pre>
           </div>
-        {:else if input.kind === "json"}
+        {:else if view.input.kind === "code"}
           <div>
             <div class="section-label">{t("chat.tool.args")}</div>
-            <pre>{input.json}</pre>
+            <pre>{view.input.code}</pre>
+          </div>
+        {:else if view.input.kind === "fields"}
+          <div>
+            <div class="section-label">{t("chat.tool.args")}</div>
+            <div class="stat-chips" dir="ltr">
+              {#each view.input.fields as f (f.key)}
+                <span class="stat-chip">{f.key}: {f.value}</span>
+              {/each}
+            </div>
+          </div>
+        {:else if view.input.kind === "json"}
+          <div>
+            <div class="section-label">{t("chat.tool.args")}</div>
+            <pre>{view.input.json}</pre>
           </div>
         {/if}
 
@@ -112,10 +124,10 @@ function asFencedCode(text: string): string {
         {/if}
 
         <!-- content (slice 16) -->
-        {#if tc.content && tc.content.length > 0}
+        {#if view.richContent.length > 0}
           <div>
             <div class="section-label">{t("chat.tool.content")}</div>
-            {#each tc.content as c}
+            {#each view.richContent as c}
               {#if c.type === "text"}
                 <!-- Tool body text is always a code block (not markdown). -->
                 <div class="tool-text-wrapper">
