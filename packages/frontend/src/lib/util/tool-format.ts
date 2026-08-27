@@ -1,24 +1,67 @@
 import type { ToolContent, ToolLocation } from "$lib/types/bubble"
 
-export type FormattedInput =
-  | { kind: "command"; command: string }
+export type ToolInputView =
+  | { kind: "command"; command: string; description?: string }
+  | { kind: "code"; code: string; language?: string }
+  | { kind: "fields"; fields: { key: string; value: string }[] }
   | { kind: "json"; json: string }
   | { kind: "empty" }
 
+/** @deprecated alias — prefer ToolInputView */
+export type FormattedInput = ToolInputView
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v)
+}
+
+function isFlatScalarRecord(obj: Record<string, unknown>): boolean {
+  const keys = Object.keys(obj)
+  if (keys.length === 0) return false
+  return keys.every((k) => {
+    const v = obj[k]
+    return typeof v === "string" || typeof v === "number" || typeof v === "boolean"
+  })
+}
+
 /**
  * opencode/bash tools send rawInput = { command, description? }.
- * Returns "command" variant when a string `command` field exists,
- * "empty" for {}/null/undefined, else pretty JSON.
+ * Prime sends { code } (%%bash → command). Flat scalar objects → fields.
  */
-export function formatToolInput(rawInput: unknown): FormattedInput {
+export function formatToolInput(rawInput: unknown): ToolInputView {
   if (rawInput === null || rawInput === undefined) return { kind: "empty" }
 
-  if (typeof rawInput === "object") {
-    const obj = rawInput as Record<string, unknown>
+  if (isRecord(rawInput)) {
+    const obj = rawInput
     if (Object.keys(obj).length === 0) return { kind: "empty" }
 
     if (typeof obj.command === "string") {
-      return { kind: "command", command: obj.command }
+      const view: { kind: "command"; command: string; description?: string } = {
+        kind: "command",
+        command: obj.command,
+      }
+      if (typeof obj.description === "string" && obj.description.length > 0) {
+        view.description = obj.description
+      }
+      return view
+    }
+
+    if (typeof obj.code === "string") {
+      const code = obj.code
+      if (code.startsWith("%%bash\n") || code.startsWith("%%bash\r\n")) {
+        let body = code.slice("%%bash".length)
+        if (body.startsWith("\r\n")) body = body.slice(2)
+        else if (body.startsWith("\n")) body = body.slice(1)
+        return { kind: "command", command: body.trimStart().trimEnd() }
+      }
+      return { kind: "code", code, language: "python" }
+    }
+
+    if (isFlatScalarRecord(obj)) {
+      const fields = Object.keys(obj).map((key) => ({
+        key,
+        value: String(obj[key]),
+      }))
+      return { kind: "fields", fields }
     }
   }
 
@@ -60,8 +103,13 @@ export type ToolOutputView =
   | { kind: "stat"; stats: { key: string; value: string }[] }
   | { kind: "json"; json: string }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v)
+function isFlatScalarObject(obj: Record<string, unknown>): boolean {
+  const keys = Object.keys(obj)
+  if (keys.length === 0) return false
+  return keys.every((k) => {
+    const v = obj[k]
+    return typeof v === "string" || typeof v === "number" || typeof v === "boolean"
+  })
 }
 
 function joinTextBlocks(content: unknown): string {
@@ -73,15 +121,6 @@ function joinTextBlocks(content: unknown): string {
     )
     .map((item) => item.text)
     .join("\n")
-}
-
-function isFlatScalarObject(obj: Record<string, unknown>): boolean {
-  const keys = Object.keys(obj)
-  if (keys.length === 0) return false
-  return keys.every((k) => {
-    const v = obj[k]
-    return typeof v === "string" || typeof v === "number" || typeof v === "boolean"
-  })
 }
 
 /**
