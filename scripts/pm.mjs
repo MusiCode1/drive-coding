@@ -110,8 +110,7 @@ export function runPm(cmd, args, opts = {}) {
 }
 
 // --- CLI: `pm.mjs <verb> ...` ---
-const invokedDirectly =
-  !!process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]
+const invokedDirectly = !!process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]
 if (invokedDirectly) {
   const [verb, a, b] = process.argv.slice(2)
   /** @type {[string, string[]] | undefined} */

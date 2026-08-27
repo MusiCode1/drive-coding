@@ -50,6 +50,7 @@ import type { AudioPlaylist, SegmentOwner } from "../engines/audio-playlist.svel
 import type { AudioSink } from "../engines/audio-sink"
 import type { CuesEngine } from "../engines/cues"
 import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
+import type { Live } from "./live.svelte"
 import { ttsCapabilities } from "./capabilities.svelte"
 import type { Settings } from "./settings.svelte"
 
@@ -140,6 +141,7 @@ export class Speaker implements SegmentOwner {
   #processedNarrationCallIds: Set<string> = new Set()
   /** slice 22: מקצה orderKey לבועות. לוגיקה ב-core (נבדק unit). */
   readonly #orderAlloc: OrderAllocator
+  readonly #live?: Live
 
   // מוגדר על ידי הבנאי — נשמר כדי שה-destroy() יוכל לעצור את ה-effect.
   #disposeEffect: (() => void) | null = null
@@ -155,8 +157,11 @@ export class Speaker implements SegmentOwner {
     playlist: AudioPlaylist
     audioStream: AudioSink
     orderAlloc: OrderAllocator
+    /** slice live-secretary — TTS off while Live session open (§4.3). */
+    live?: Live
   }) {
     this.#orderAlloc = opts.orderAlloc
+    this.#live = opts.live
     this.#session = opts.session
     this.#settings = opts.settings
     this.#cues = opts.cues
@@ -183,6 +188,7 @@ export class Speaker implements SegmentOwner {
         const status = this.#session.status
         const turnState = this.#session.turnState
         const enabled = this.enabled
+        const liveOpen = this.#live?.isOpen ?? false
         // redesign-3 / slice 9a: העדפות הקראה (reactive — toggle מפעיל את ה-effect מחדש)
         const speakThoughts = this.#settings.speakThoughts
         const narrateTools = this.#settings.narrateTools
@@ -212,6 +218,10 @@ export class Speaker implements SegmentOwner {
 
         // ── כתיבות (לא-נעקבות) ─────────────────────────────────────────
         untrack(() => {
+          if (liveOpen) {
+            this.#stopAndClear()
+            return
+          }
           this.#applyHistoryMark(historyEpoch)
           this.#processBubbles(bubbles, enabled, isLoadingHistory, speakThoughts, turnState)
           this.#processToolBubbles(bubbles, enabled, isLoadingHistory, narrateTools)

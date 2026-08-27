@@ -1732,6 +1732,16 @@ export class AgentSession {
     return this.#sessionId
   }
 
+  /** slice live-secretary — mirrors sendPrompt local-path guard inputs. */
+  get isRemoteView(): boolean {
+    return this.#isRemote
+  }
+
+  /** slice live-secretary — mirrors sendPrompt local-path guard inputs. */
+  get hasAcpClient(): boolean {
+    return this.#client !== null
+  }
+
   // ─── slice-permission-ui-basic: בקשת הרשאה חיה ──────────────────────────────
   // תשתית גנרית ניתנת-לשכפול (callback + Promise round-trip) — slice B (elicitation)
   // ישכפל את הדפוס הזה ל-onCreateElicitation.

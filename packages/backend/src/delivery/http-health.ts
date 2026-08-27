@@ -12,9 +12,9 @@
  * monitorEventLoopDelay works on both Node and Bun (verified: a 300ms block → max≈306ms).
  */
 
-import { type IntervalHistogram, monitorEventLoopDelay } from "node:perf_hooks"
 import os from "node:os"
-import { deriveMachineStats, type AgentRegistry } from "@drive-coding/core"
+import { type IntervalHistogram, monitorEventLoopDelay } from "node:perf_hooks"
+import { type AgentRegistry, deriveMachineStats } from "@drive-coding/core"
 import type { Hono } from "hono"
 // slice liveness C2: short response cache + no-store on GET /api/diag.
 import { httpCacheGet, httpCacheSet } from "./http-cache.js"
