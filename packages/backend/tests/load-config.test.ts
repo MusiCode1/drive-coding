@@ -112,12 +112,12 @@ describe("loadConfig — precedence", () => {
 
 describe("loadConfig — env vars", () => {
   it("6. voice keys from env", () => {
-    const { config, envPatch } = loadConfig({
+    const { secrets, envPatch } = loadConfig({
       argv: {},
       env: { ELEVENLABS_API_KEY: "el-key", GEMINI_API_KEY: "gm-key" },
     })
-    expect(config.voice?.elevenLabsKey).toBe("el-key")
-    expect(config.voice?.geminiKey).toBe("gm-key")
+    expect(secrets.elevenLabsKey).toBe("el-key")
+    expect(secrets.geminiKey).toBe("gm-key")
     expect(envPatch["ELEVENLABS_API_KEY"]).toBe("el-key")
     expect(envPatch["GEMINI_API_KEY"]).toBe("gm-key")
   })
@@ -143,12 +143,12 @@ describe("loadConfig — env vars", () => {
 
 describe("loadConfig — flag secrets", () => {
   it("7. --elevenlabs-key flag → warning about process list visibility", () => {
-    const { config, warnings } = loadConfig({
+    const { secrets, warnings } = loadConfig({
       argv: { "elevenlabs-key": "secret-key" },
       env: {},
     })
     expect(warnings.some(w => w.includes("visible in the process list"))).toBe(true)
-    expect(config.voice?.elevenLabsKey).toBe("secret-key")
+    expect(secrets.elevenLabsKey).toBe("secret-key")
   })
 
   it("--gemini-key flag → warning", () => {
@@ -184,5 +184,45 @@ describe("loadConfig — empty inputs", () => {
     expect(config).toEqual({})
     expect(envPatch).toEqual({})
     expect(warnings).toHaveLength(0)
+  })
+})
+
+describe("loadConfig — secret keys in config file (loud failure)", () => {
+  it("voice in config file → errors with key name and secrets.json, not the value", () => {
+    const configPath = writeTmpJson({ port: 4100, voice: { elevenLabsKey: "PLACEHOLDER-EL" } })
+    const { errors } = loadConfig({ argv: { config: configPath }, env: {} })
+    const joined = errors.join("\n")
+    expect(errors.length).toBeGreaterThan(0)
+    expect(joined).toContain("elevenLabsKey")
+    expect(joined).toContain("secrets.json")
+    expect(joined).not.toContain("PLACEHOLDER-EL")
+  })
+
+  it("top-level geminiKey in config file → same error shape", () => {
+    const configPath = writeTmpJson({ geminiKey: "PLACEHOLDER-GM" })
+    const { errors } = loadConfig({ argv: { config: configPath }, env: {} })
+    expect(errors.join("\n")).toContain("geminiKey")
+  })
+
+  it("--config-json with voice → errors", () => {
+    const { errors } = loadConfig({
+      argv: { "config-json": JSON.stringify({ voice: { geminiKey: "PLACEHOLDER-GM" } }) },
+      env: {},
+    })
+    expect(errors.length).toBeGreaterThan(0)
+    expect(errors.join("\n")).toContain("--config-json")
+  })
+
+  it("secret via env or flag → errors empty", () => {
+    const r1 = loadConfig({ argv: { "gemini-key": "PLACEHOLDER-GM" }, env: {} })
+    const r2 = loadConfig({ argv: {}, env: { ELEVENLABS_API_KEY: "PLACEHOLDER-EL" } })
+    expect(r1.errors).toEqual([])
+    expect(r2.errors).toEqual([])
+  })
+
+  it("valid config file → errors empty", () => {
+    const configPath = writeTmpJson({ port: 4100 })
+    const { errors } = loadConfig({ argv: { config: configPath }, env: {} })
+    expect(errors).toEqual([])
   })
 })

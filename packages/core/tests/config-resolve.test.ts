@@ -5,9 +5,8 @@
  *  1. precedence: flag > env > file (same field — flag wins)
  *  2. env layer wins over file (flag missing)
  *  3. file layer used when no higher layer sets value
- *  4. object field (log) — override wholesale (not deep merge)
- *  5. object field (voice) — override wholesale
- *  6. cliSpecs — merge per-key across layers
+ *  4. object field (log) — per-leaf merge (highest layer per leaf wins)
+ *  5. cliSpecs — merge per-key across layers
  *  7. invalid field → Err with message
  *  8. empty layer — skipped
  *  9. all layers empty → valid empty config (ok result)
@@ -55,29 +54,16 @@ describe("resolveConfig — precedence", () => {
     expect(result._unsafeUnwrap().host).toBe("0.0.0.0")
   })
 
-  it("4. log object — wholesale override (higher layer wins entirely)", () => {
+  it("4. log object — per-leaf merge", () => {
     const result = resolveConfig([
       { log: { level: "debug", ns: "all", format: "pretty" } }, // file
-      { log: { level: "info" } }, // env — overrides entire log
+      { log: { level: "info" } }, // env — overrides level only
     ])
     expect(result.isOk()).toBe(true)
     const cfg = result._unsafeUnwrap()
     expect(cfg.log?.level).toBe("info")
-    // ns and format from file layer are gone — wholesale override
-    expect(cfg.log?.ns).toBeUndefined()
-    expect(cfg.log?.format).toBeUndefined()
-  })
-
-  it("5. voice object — wholesale override", () => {
-    const result = resolveConfig([
-      { voice: { elevenLabsKey: "key1", geminiKey: "gk1" } },
-      { voice: { elevenLabsKey: "key2" } }, // env — only sets elevenLabsKey
-    ])
-    expect(result.isOk()).toBe(true)
-    const cfg = result._unsafeUnwrap()
-    expect(cfg.voice?.elevenLabsKey).toBe("key2")
-    // geminiKey from file layer is gone — wholesale override
-    expect(cfg.voice?.geminiKey).toBeUndefined()
+    expect(cfg.log?.ns).toBe("all")
+    expect(cfg.log?.format).toBe("pretty")
   })
 
   it("6. cliSpecs — merge per-key across layers", () => {
@@ -143,9 +129,14 @@ describe("resolveConfig — validation", () => {
 
 describe("resolveConfig — other fields", () => {
   it("corsOrigins as string array", () => {
-    const result = resolveConfig([{ corsOrigins: ["http://localhost:3000", "http://localhost:3001"] }])
+    const result = resolveConfig([
+      { corsOrigins: ["http://localhost:3000", "http://localhost:3001"] },
+    ])
     expect(result.isOk()).toBe(true)
-    expect(result._unsafeUnwrap().corsOrigins).toEqual(["http://localhost:3000", "http://localhost:3001"])
+    expect(result._unsafeUnwrap().corsOrigins).toEqual([
+      "http://localhost:3000",
+      "http://localhost:3001",
+    ])
   })
 
   it("wireRecord boolean", () => {

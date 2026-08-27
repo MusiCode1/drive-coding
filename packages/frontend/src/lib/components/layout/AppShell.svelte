@@ -38,10 +38,11 @@ import {
   getModelStatus,
   getResponsive,
   getSession,
-  getSpeaker,
+  getUiShell,
 } from "$lib/context"
 import type { Bubble } from "$lib/types/bubble"
 import { stableBubbleKey } from "$lib/util/bubble-key"
+import { shouldShowPlaybackDock } from "$lib/util/playback-dock-visibility"
 import { computeScrollEdges, shouldFollowJump } from "$lib/util/scroll-follow"
 import AppHeader from "./AppHeader.svelte"
 import BottomSheet from "./BottomSheet.svelte"
@@ -59,12 +60,16 @@ const responsive = getResponsive()
 const session = getSession()
 const modelStatus = getModelStatus()
 const playlist = getAudioPlaylist()
-const speaker = getSpeaker()
+const uiShell = getUiShell()
 const t = getI18n().t
 
 /** control-dock: האם רצועת הבקרה מוצגת ( mirrors PlaybackControls showDock ). */
 const ribbonVisible = $derived(
-  playlist.items.length > 0 || !speaker.enabled || modelStatus.isRunActive,
+  shouldShowPlaybackDock({
+    inputMode: uiShell.inputMode,
+    playlistItemCount: playlist.items.length,
+    isRunActive: modelStatus.isRunActive,
+  }),
 )
 
 // scroll node — ה-AppShell הוא owner (חוק זהב #4)
@@ -280,8 +285,8 @@ $effect(() => {
   return () => clearTimeout(timer)
 })
 
-// control-dock commit 0: הופעת/היעלמות הרצועה מקצרת את viewport הגלילה.
-// maybeJump() לא מספיק (סף 72px > גובה הרצועה 56px; sentinelMargin 48 < 56 ⇒ JumpDown שגוי).
+// control-dock: הופעת/היעלמות הרצועה מקצרת את viewport הגלילה.
+// maybeJump() לא מספיק — גובה הרצועה משתנה בין מובייל לדסקטופ, והסף קבוע.
 // jumpToBottom() מותנה ב-following, אחרי שהפריסה התייצבה (תקדים: setTimeout 320ms).
 $effect(() => {
   void ribbonVisible

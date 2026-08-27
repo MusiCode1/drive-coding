@@ -23,6 +23,7 @@ Options:
       --cors-origins <list>     Comma-separated CORS origins   (env: CORS_ORIGINS)
       --config <path>           Config file (JSONC)            (default: ~/.config/drive-coding/config.jsonc)
       --config-json <json>      Inline JSON config (overrides --config file)
+      --secrets <path>          Secrets file (JSON)            (default: ~/.config/drive-coding/secrets.json)
       --env-file <path>         Load secrets from KEY=VALUE file (non-overriding)
       --log-level <level>       Log level (debug|info|warn|error) (env: LOG_LEVEL)
       --elevenlabs-key <key>    ElevenLabs API key             (env: ELEVENLABS_API_KEY)
@@ -31,8 +32,9 @@ Options:
   -V, --version                 Show version and exit
 
 Precedence: flag > environment variable > config file > default.
+Secrets precedence: CLI secret flag > environment variable > secrets.json.
 Secret flags (--elevenlabs-key, --gemini-key) are visible in the process list —
-prefer --env-file or environment variables for secrets.
+prefer secrets.json, --env-file, or environment variables for secrets.
 
 Examples:
   drive-coding --port 4100
@@ -55,6 +57,7 @@ try {
       "cors-origins": { type: "string" },
       config: { type: "string" },
       "config-json": { type: "string" },
+      secrets: { type: "string" },
       "env-file": { type: "string" },
       "log-level": { type: "string" },
       "elevenlabs-key": { type: "string" },
@@ -139,11 +142,19 @@ if (envFilePath !== undefined) {
 // ---------------------------------------------------------------------------
 // Step 2: loadConfig — resolve all layers, get envPatch
 // ---------------------------------------------------------------------------
-const { envPatch, warnings } = loadConfig({ argv: values, env: process.env })
+const { envPatch, warnings, errors } = loadConfig({ argv: values, env: process.env })
 
 // Print warnings (visible in logs, but not fatal).
 for (const w of warnings) {
   console.warn(w)
+}
+
+// Fatal: secret keys in config file layer — exit before writing envPatch.
+if (errors.length > 0) {
+  for (const e of errors) {
+    console.error(e)
+  }
+  process.exit(1)
 }
 
 // ---------------------------------------------------------------------------

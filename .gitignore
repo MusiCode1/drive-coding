@@ -5,6 +5,7 @@ build/
 *.log
 .env
 .env.local
+secrets.json
 .DS_Store
 packages/backend/data/
 scripts/node_modules
