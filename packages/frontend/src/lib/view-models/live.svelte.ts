@@ -170,6 +170,12 @@ export class Live {
         this.#pendingAgentDelivery = true
         break
       }
+      case "cancel_turn": {
+        void this.#session.cancelTurn()
+        this.#pendingAgentDelivery = false
+        this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
+        break
+      }
       default:
         break
     }
