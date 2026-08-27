@@ -1,4 +1,28 @@
-## 2026-08-27 12:10 — slice live-transcript-box · Commit 0 (תקרה)
+## 2026-08-27 12:17 — slice live-transcript-box · Commit 1 (auto-follow)
+
+Phase 1: scroll-follow עם פרמטרים מכוילים לתיבת 12rem (sentinel 8px, distanceLines 1).
+
+| # | בדיקה | תוצאה |
+|---|--------|--------|
+| 1 | typecheck · test · lint | **עבר** |
+| 2 | svelte-check | **54 / 54** |
+| 7 | scroll-follow + כיול | **עבר** (3 טסטים) |
+| 8 | following=false | **עבר** (mutation gate) |
+| 9–10 | עין — נעילה / שחרור | **לא-נמדד** (⏸ אין מכשיר) |
+
+#### מה בוצע?
+
+- `live-transcript-scroll-config.ts`: margin 8px, distanceLines 1.
+- `LiveTranscript.svelte`: batched follow (ResizeObserver, user-intent, $effect על transcript).
+- `live-transcript-scroll-config.test.ts`: DoD 7+8.
+
+#### בדיקות
+
+- live-transcript tests: 4 passed.
+- full suite: green.
+
+---
+
 
 Phase 0: `max-height: 12rem; overflow-y: auto` כ-`style` inline על מכל `[data-live-scroll]`.
 
