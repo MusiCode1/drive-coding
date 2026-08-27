@@ -1,106 +1,41 @@
-## 2026-08-27 — slice live-ears (in progress)
+## 2026-08-27 — slice live-ears (הושלם)
 
-### Commit 7 — כפתור Live + תמליל
+base: `dfbb4078` → HEAD `2d1acca8` (8 commits)
 
-#### מה בוצע?
+| DoD | בדיקה | תוצאה |
+|-----|--------|--------|
+| 1 | typecheck | ✅ |
+| 2 | tests | ✅ (2 נפילות ידועות: cli-availability, bridge-failure F-1) |
+| 3 | lint:i18n | ✅ |
+| 4 | float32ToInt16LE | ✅ |
+| 5 | shouldForwardFrame | ✅ |
+| 6 | FSM regression | ✅ |
+| 7 | mutation ear/mouth | ✅ |
+| 8 | ear/mouth getters | ✅ |
+| 9 | תמליל זורם | ⏸ לא-נמדד (mic HTTPS) |
+| 10 | לחיצה אחת | ⏸ לא-נמדד |
+| 11 | PTT regression | ⏸ לא-נמדד |
+| 12 | בלעדיות מצבים | ⏸ wiring ✅; runtime ⏸ |
+| 13 | connect → error | ✅ |
+| 14 | no API key | ⏸ לא-נמדד runtime |
+| 15 | PCM mutation | ⏸ לא-נמדד preview |
+| 16 | auth.test.ts UI | ⏸ probe ✅; UI ⏸ |
+| 17 | probe | ✅ identifierTranscribedExactly |
+| 18 | עץ נקי | ✅ |
 
-- `LiveToggle.svelte`, `LiveTranscript.svelte` — UI דרך getContext(live).
-- `RecordFooter.svelte` — transcript + toggle מעל MicLarge.
-- `MicLarge.svelte` — disabled כש-live.isOpen (DoD 12).
-- i18n keys: live.* (he + en).
+calev light: **PARTIAL** — `reports/drive-coding/live-ears-calev.md`
 
-#### בדיקות
+### Commits
 
-- lint:i18n ירוק.
-- פריוויו HTTPS — יבוצע אחרי build.
+0. MicFrames worklet · 1. float32ToInt16LE · 2. echo-gate · 3. fetchLiveToken
+4. LiveSessionEngine · 5. Live VM + layout · 6. ear/mouth FSM · 7. UI + i18n
 
----
+#### חריגות
 
-
-#### מה בוצע?
-
-- `voice-mode.svelte.ts` — הסרת state מת; ear/mouth getters טהורים; live? dep.
-- `voice-mode.test.svelte.ts` — describe חדש + DoD 7 mutation.
-
-#### בדיקות
-
-- voice-mode.test.svelte.ts: כל assertions קיימות + ear/mouth ירוק.
-
----
-
-
-#### מה בוצע?
-
-- `view-models/live.svelte.ts` — מרכיב fetchLiveToken + geminiLive → engine.
-- `context.ts` — צמד live (additive).
-- `+layout.svelte` — new Live({ mic }), VoiceMode + live dep.
-
-#### בדיקות
-
-- live.test.svelte.ts: canOpen 2/2 ירוק.
+- `Live` constructor מקבל `mic` (נדרש ל-`canOpen`).
+- calev-heavy לא רץ (usage limit).
 
 ---
-
-
-#### מה בוצע?
-
-- `engines/live-session.ts` — הזרקת LiveConnector, open() תופס דחיית connect → error.
-- `live-session.test.ts` — DoD 13 + PCM forward + transcript merge.
-
-#### בדיקות
-
-- live-session.test.ts: 3/3 ירוק.
-
----
-
-
-#### מה בוצע?
-
-- `adapters/voice/live-token.ts` — POST /api/voice/live/token, 503 → שגיאה ידידותית.
-- `live-token.test.ts` — integration mock.
-
-#### בדיקות
-
-- live-token.test.ts: 2/2 ירוק.
-
----
-
-
-#### מה בוצע?
-
-- `core/voice/echo-gate.ts` — shouldForwardFrame טהור.
-- `echo-gate.test.ts` — 5 טסטים.
-
-#### בדיקות
-
-- echo-gate.test.ts: 5/5 ירוק.
-
----
-
-
-#### מה בוצע?
-
-- `core/voice/pcm.ts` — float32ToInt16LE (קליפינg ±1, סקאל 0x8000/0x7fff).
-- `pcm.test.ts` — 6 טסטים חדשים.
-
-#### בדיקות
-
-- pcm.test.ts: 16/16 ירוק.
-
----
-
-
-#### מה בוצע?
-
-- `packages/frontend/src/lib/engines/mic-frames.ts` — worklet עצמאי, 16kHz / 1280 samples, events frame+level.
-
-#### בדיקות
-
-- typecheck ירוק.
-- אימות חי (DoD 8) — יבוצע בפריוויו HTTPS.
-
----
-
 
 ### slice live-contract-gemini fix1 — 4 commits (A–D)
 
