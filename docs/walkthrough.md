@@ -1,4 +1,38 @@
-## 2026-08-27 09:50 — slice live-secretary (סיום אליעזר)
+## 2026-08-27 10:35 — slice live-secretary fix1 (סיום אליעזר)
+
+3 commits: `56ca6e14..HEAD`
+
+| # | בדיקה | תוצאה |
+|---|--------|--------|
+| 1 | typecheck · test · lint:i18n | **עבר** |
+| 2 | אפס redispatch ב-5 ריצות PROBE_DELIVERY | **5/5 pass, redispatch=false** |
+| 3 | מוטציה: הסרת סמן | **5/5 redispatch=true** — הסמן הוא השער |
+| 4 | סעיף-איסור בפרומפט | **עבר** (grep על קבוע מיוצא) |
+| 5 | pendingPermission ⇒ הזרקה מסומנת | **עבר** (טסט) |
+| 6 | optionId מחוץ לרשימה ⇒ invalid-option | **עבר** (טסט) |
+| 7 | DoD 11 מקצה-לקצה | **לא-נמדד** (פרוב חי; מנגנון מחווט) |
+| 8 | `$effect` רץ בטסט (jsdom + `$effect.root`) | **עבר** |
+| 9 | טסט נופל בלי סמן | **עבר** (assert על MARKER) |
+| 10 | DoD 9 על agentAnswer | **עבר** (probe pass ללא idDelivered בשער) |
+| 11 | 5ב+18 | **5ב פתוח · 18 ירד** (מנגנון ב-headless, אין צרכן mouth) |
+| 12 | vitest.config.ts | **לא נגע** |
+| 13 | עץ נקי | **ממתין לקומיטים** |
+
+#### מה בוצע?
+
+- `LIVE_AGENT_DELIVERY_MARKER` + `formatAgentDelivery` + סעיף פרומפט — מונע compose_prompt חוזר.
+- `LIVE_PERMISSION_PENDING_MARKER` + `$effect` הודעת הרשאה + `invalid-option` / `no-pending-permission`.
+- `live.test.svelte.ts`: `@vitest-environment jsdom`, `$effect.root`, טסט `$effect` על turnState.
+- `probe-live-adapter.mjs`: `formatAgentDelivery`, שער `redispatch`, pass על agentAnswer.
+
+#### בדיקות
+
+- PROBE_DELIVERY ×5 על 4031: pass=true, redispatch=false (×5).
+- מוטציה bare delivery ×5: redispatch=true (×5).
+- voice tests: 166 passed.
+
+---
+
 
 7 commits: `54fe3dcd..f668bc51`
 
