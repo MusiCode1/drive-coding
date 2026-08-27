@@ -1,4 +1,10 @@
-## 2026-08-27 09:43 — slice live-secretary Commit 4: answer_permission
+## 2026-08-27 09:44 — slice live-secretary Commit 5: כיבוי TTS ב-Live
+
+- Speaker: liveOpen → #stopAndClear + skip enqueue (§4.3).
+- +layout: mic → live → speaker (live ref).
+
+---
+
 
 - mapPermissionOptions + resolvePermission; not_sent ללא pending/optionId לא חוקי.
 
