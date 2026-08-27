@@ -1,4 +1,14 @@
-## 2026-08-27 09:44 — slice live-secretary Commit 5: כיבוי TTS ב-Live
+## 2026-08-27 09:47 — slice live-secretary Commit 6: PROBE_DELIVERY
+
+- `PROBE_DELIVERY=1` — מזריק agentAnswer סינתטי, מדפיס שלושת הטקסטים (§3).
+- DoD 14: פרוב בסיסי ירוק על 4031.
+
+#### חוב 3 (mouth consumer)
+
+- `grep '.mouth' *.svelte` → **ריק** — חוב 3 **פתוח** (לא מומצא צרכן).
+
+---
+
 
 - Speaker: liveOpen → #stopAndClear + skip enqueue (§4.3).
 - +layout: mic → live → speaker (live ref).
