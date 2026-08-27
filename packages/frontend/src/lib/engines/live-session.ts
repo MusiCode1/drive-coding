@@ -195,11 +195,23 @@ export class LiveSessionEngine {
         }
         break
       }
+      // Both terminal branches end the attempt, so both must invalidate any
+      // `open()` still in flight — exactly as `close()` does. Without the bump
+      // this is asymmetric with `close()`, and it is unreachable today only by
+      // ACCIDENT: `geminiLive` wires `onerror`/`onclose` to `failOnce()`, so the
+      // pending `connect()` rejects on the same microtask turn and the window
+      // shuts before anyone can slip through. Timing order is not a guarantee —
+      // a provider that emits `error` without rejecting would reopen the hole.
+      //
+      // Third instance of this family: NBug17 (connect never settles), F2
+      // (close during connect ignored), and now this one.
       case "error":
+        this.#openEpoch++
         this.#cleanupSession()
         this.#setState("error")
         break
       case "closed":
+        this.#openEpoch++
         this.#cleanupSession()
         this.#setState("closed")
         break

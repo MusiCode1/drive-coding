@@ -114,3 +114,40 @@ describe("F1 — transcript entries carry stable identity", () => {
     expect(new Set(ids).size).toBe(2)
   })
 })
+
+describe("F2b — terminal events invalidate an in-flight open()", () => {
+  it("a provider that emits error WITHOUT rejecting cannot be overwritten by the late connect", async () => {
+    const gate = deferred<{ close: () => void; send: () => void }>()
+    const close = vi.fn()
+    let emit!: (e: { type: string; message?: string }) => void
+    let connectEntered = false
+    const engine = new LiveSessionEngine({
+      connector: {
+        fetchToken: async () => token,
+        provider: {
+          id: "fake", inputSampleRate: 16000, outputSampleRate: 24000,
+          supportsSilentContext: true,
+          connect: (opts: { onEvent: typeof emit }) => {
+            emit = opts.onEvent
+            connectEntered = true
+            return gate.promise
+          },
+        } as never,
+      },
+      frames,
+    })
+
+    const opening = engine.open()
+    while (!connectEntered) await Promise.resolve()
+
+    // The provider reports a terminal error but does NOT reject the promise.
+    // geminiLive happens to reject too, which is why this is unreachable today
+    // — but the engine must not depend on a provider's timing.
+    emit({ type: "error", message: "upstream died" })
+    gate.resolve({ close, send: () => {} })
+    await opening
+
+    expect(engine.state).toBe("error")     // must NOT be overwritten by "open"
+    expect(close).toHaveBeenCalledTimes(1) // the late session must be shut
+  })
+})
