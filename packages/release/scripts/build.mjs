@@ -65,11 +65,14 @@ console.log(`[build] Step 1: building frontend (pm: ${pm})…`)
 // and the __dc playback debug panel ENABLED (vite.config.ts: DC_ENABLED = FE_ENV !== "prod").
 // A published package must never depend on the publisher's environment.
 const [feCmd, feArgs] = runFilterArgs("@drive-coding/frontend", "build", pm)
-runPm(feCmd, feArgs, {
-  cwd: repoRoot,
-  stdio: "inherit",
-  env: { ...process.env, FE_ENV: "prod", FE_SOURCEMAP: "false", FE_TITLE: "", FE_PREVIEW_LABEL: "" },
-})
+// NOTE: FE_TITLE / FE_PREVIEW_LABEL must be DELETED, not set to "". vite.config.ts reads
+// `process.env.FE_TITLE ?? <default>` — `??` does not treat "" as absent, so an empty
+// string wins and the title becomes literally empty. Measured: the Step 2c assertion
+// caught exactly that on the first run.
+const feEnv = { ...process.env, FE_ENV: "prod", FE_SOURCEMAP: "false" }
+delete feEnv.FE_TITLE
+delete feEnv.FE_PREVIEW_LABEL
+runPm(feCmd, feArgs, { cwd: repoRoot, stdio: "inherit", env: feEnv })
 
 // Step 2: Copy frontend/build → release/frontend-dist
 console.log("[build] Step 2: copying frontend-dist…")
@@ -93,19 +96,41 @@ if (titleMatch?.[1]?.trim() !== "Drive Coding") {
     `[build] FE_ENV leak: expected <title>Drive Coding</title>, got <title>${titleMatch?.[1] ?? "?"}</title>`,
   )
 }
-const debugHits = []
+// ⚠️ "zero occurrences of the debug panel" is NOT achievable, and must not be forced:
+// +layout.svelte gates it on `__DC_ENABLED__ || dcOptIn`, and the code comment states
+// the runtime opt-in is needed *precisely in production* (field bugs that never
+// reproduce in dev). So the panel stays in the bundle — what matters is that it is
+// DISABLED by default. That is measurable, and it is exactly what broke in 0.34.0:
+//   leaked build : localStorage.getItem("__dc"),RP()          ← comparison dropped,
+//                                                               branch always taken
+//   prod build   : localStorage.getItem("__dc")==="1";fe&&RP() ← conditional survives
+const OPT_IN_GUARD = 'getItem("__dc")==="1"'
+const jsFiles = []
 const walk = (dir) => {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, e.name)
     if (e.isDirectory()) walk(full)
-    else if (/\.(js|html|css)$/.test(e.name) && readFileSync(full, "utf8").includes("awaiting TTS"))
-      debugHits.push(path.relative(releaseFrontendDist, full))
+    else if (e.name.endsWith(".js")) jsFiles.push(full)
   }
 }
 walk(releaseFrontendDist)
-if (debugHits.length > 0) {
-  throw new Error(`[build] debug surface leaked into frontend-dist (${debugHits.length}): ${debugHits.join(", ")}`)
+if (!jsFiles.some((f) => readFileSync(f, "utf8").includes(OPT_IN_GUARD))) {
+  throw new Error(
+    `[build] debug surface is ENABLED by default: the ${OPT_IN_GUARD} guard was tree-shaken away, ` +
+      "which means __DC_ENABLED__ was baked true (FE_ENV was not prod).",
+  )
 }
+const maps = []
+const walkMaps = (dir) => {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name)
+    if (e.isDirectory()) walkMaps(full)
+    else if (e.name.endsWith(".map")) maps.push(e.name)
+  }
+}
+walkMaps(releaseFrontendDist)
+if (maps.length > 0) throw new Error(`[build] source maps leaked into frontend-dist: ${maps.length}`)
+
 console.log("[build] Step 2c: prod assertions OK — clean title, no debug surface")
 
 // Step 3: Copy backend/plugins → release/plugins
