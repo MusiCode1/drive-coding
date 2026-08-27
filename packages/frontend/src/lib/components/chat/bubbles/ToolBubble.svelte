@@ -16,6 +16,7 @@ import { getContentViewer, getI18n, getSettings, getChatScroll } from "$lib/cont
 import { formatToolInput, prettyJson, formatLocation, normalizeToolOutput } from "$lib/util/tool-format"
 import { renderMarkdown } from "$lib/util/markdown"
 import Maximize2Icon from "@lucide/svelte/icons/maximize-2"
+import ToolKindIcon from "./ToolKindIcon.svelte"
 import { onMount } from "svelte"
 
 let { bubble }: { bubble: ToolBubble } = $props()
@@ -60,6 +61,8 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
           class="size-2 rounded-full shrink-0 status-{tc.status}"
           aria-label={t(`chat.tool.status.${tc.status}`)}
         ></span>
+
+        <ToolKindIcon kind={tc.kind} />
 
         <!-- narration או title -->
         <div class="flex-1 min-w-0" style="color:var(--fg-dim)">
