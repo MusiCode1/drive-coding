@@ -12,10 +12,10 @@ import {
 } from "@drive-coding/core/voice/live-prompt"
 import type { LiveEvent } from "@drive-coding/core/voice/live-types"
 import { flushSync } from "svelte"
-import { describe, expect, it, vi, beforeEach } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { AgentSession } from "./agent-session.svelte"
-import type { Mic } from "./mic.svelte"
 import { Live } from "./live.svelte"
+import type { Mic } from "./mic.svelte"
 
 vi.mock("../adapters/voice/live-token", () => ({
   fetchLiveToken: vi.fn(async () => ({
@@ -82,7 +82,10 @@ function mockSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return base as unknown as AgentSession
 }
 
-function createLive(opts: { mic?: Mic; session: AgentSession }): { live: Live; dispose: () => void } {
+function createLive(opts: { mic?: Mic; session: AgentSession }): {
+  live: Live
+  dispose: () => void
+} {
   let live!: Live
   const dispose = $effect.root(() => {
     live = new Live({ mic: opts.mic ?? mockMic(), session: opts.session })
@@ -371,6 +374,222 @@ describe("Live outgoing path (Commit 0)", () => {
       type: "action_result",
       id: "a7",
       name: "answer_permission",
+      result: { status: "sent" },
+    })
+  })
+})
+
+describe("Live unprompted guard flag (Commit 1)", () => {
+  it("sets deliveredSinceUserSpoke after agent delivery", async () => {
+    const session = mockSession({
+      recentAssistantMessages: vi.fn(() => ["Done."]),
+    })
+    const live = await openLive(session)
+
+    providerOnEvent?.({
+      type: "action",
+      id: "d1",
+      name: "compose_prompt",
+      args: { text: "run tests" },
+    })
+
+    expect(live.deliveredSinceUserSpokeForTest()).toBe(false)
+    live.deliverAgentAnswerIfPending()
+    expect(live.deliveredSinceUserSpokeForTest()).toBe(true)
+  })
+
+  it("clears deliveredSinceUserSpoke on first user transcript fragment", async () => {
+    const session = mockSession({
+      recentAssistantMessages: vi.fn(() => ["Done."]),
+    })
+    const live = await openLive(session)
+
+    providerOnEvent?.({
+      type: "action",
+      id: "d2",
+      name: "compose_prompt",
+      args: { text: "run tests" },
+    })
+    live.deliverAgentAnswerIfPending()
+    expect(live.deliveredSinceUserSpokeForTest()).toBe(true)
+
+    providerOnEvent?.({
+      type: "transcript",
+      role: "user",
+      text: "thanks",
+      final: false,
+    })
+    expect(live.deliveredSinceUserSpokeForTest()).toBe(false)
+  })
+
+  it("does not rewrite flag on merged user transcript fragments", async () => {
+    const session = mockSession({
+      recentAssistantMessages: vi.fn(() => ["Done."]),
+    })
+    const live = await openLive(session)
+
+    providerOnEvent?.({
+      type: "action",
+      id: "d3",
+      name: "compose_prompt",
+      args: { text: "run tests" },
+    })
+    live.deliverAgentAnswerIfPending()
+
+    providerOnEvent?.({
+      type: "transcript",
+      role: "user",
+      text: "hel",
+      final: false,
+    })
+    providerOnEvent?.({
+      type: "transcript",
+      role: "user",
+      text: "lo",
+      final: false,
+    })
+    expect(live.deliveredSinceUserSpokeForTest()).toBe(false)
+  })
+})
+
+describe("Live unprompted guard wiring (Commit 2)", () => {
+  async function liveWithDelivery(session: AgentSession): Promise<Live> {
+    const live = await openLive(session)
+    providerOnEvent?.({
+      type: "action",
+      id: "seed",
+      name: "compose_prompt",
+      args: { text: "initial task" },
+    })
+    live.deliverAgentAnswerIfPending()
+    expect(live.deliveredSinceUserSpokeForTest()).toBe(true)
+    return live
+  }
+
+  it("blocks compose_prompt after delivery without user speech (DoD 3, 10)", async () => {
+    const session = mockSession({
+      recentAssistantMessages: vi.fn(() => ["Task complete."]),
+    })
+    await liveWithDelivery(session)
+
+    providerOnEvent?.({
+      type: "action",
+      id: "loop1",
+      name: "compose_prompt",
+      args: { text: "run again" },
+    })
+
+    expect(session.sendPrompt).toHaveBeenCalledTimes(1)
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "loop1",
+      name: "compose_prompt",
+      result: { status: "not_sent", reason: "unprompted" },
+    })
+  })
+
+  it("blocks forward with reason unprompted after delivery (DoD 4)", async () => {
+    const session = mockSession({
+      recentAssistantMessages: vi.fn(() => ["Task complete."]),
+    })
+    await liveWithDelivery(session)
+
+    providerOnEvent?.({
+      type: "action",
+      id: "loop2",
+      name: "forward",
+      args: {},
+    })
+
+    expect(session.sendPrompt).toHaveBeenCalledTimes(1)
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "loop2",
+      name: "forward",
+      result: { status: "not_sent", reason: "unprompted" },
+    })
+  })
+
+  it("allows send after delivery once user spoke (DoD 5)", async () => {
+    const session = mockSession({
+      recentAssistantMessages: vi.fn(() => ["Task complete."]),
+    })
+    const live = await liveWithDelivery(session)
+
+    providerOnEvent?.({
+      type: "transcript",
+      role: "user",
+      text: "now fix tests",
+      final: false,
+    })
+
+    providerOnEvent?.({
+      type: "action",
+      id: "ok1",
+      name: "compose_prompt",
+      args: { text: "fix tests" },
+    })
+
+    expect(session.sendPrompt).toHaveBeenCalledTimes(2)
+    expect(session.sendPrompt).toHaveBeenLastCalledWith("fix tests")
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "ok1",
+      name: "compose_prompt",
+      result: { status: "sent" },
+    })
+    expect(live.deliveredSinceUserSpokeForTest()).toBe(false)
+  })
+
+  it("user interruption during delivery window clears flag for next send (DoD 6)", async () => {
+    const session = mockSession({
+      recentAssistantMessages: vi.fn(() => ["Long answer still playing."]),
+    })
+    const live = await liveWithDelivery(session)
+
+    providerOnEvent?.({
+      type: "transcript",
+      role: "user",
+      text: "stop",
+      final: false,
+    })
+    expect(live.deliveredSinceUserSpokeForTest()).toBe(false)
+
+    providerOnEvent?.({
+      type: "action",
+      id: "ok2",
+      name: "compose_prompt",
+      args: { text: "do something else" },
+    })
+
+    expect(session.sendPrompt).toHaveBeenLastCalledWith("do something else")
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "ok2",
+      name: "compose_prompt",
+      result: { status: "sent" },
+    })
+  })
+
+  it("mutation: forced flag off bypasses unprompted block (DoD 7)", async () => {
+    const session = mockSession({
+      recentAssistantMessages: vi.fn(() => ["Task complete."]),
+    })
+    const live = await liveWithDelivery(session)
+    live.setDeliveredSinceUserSpokeForTest(false)
+
+    providerOnEvent?.({
+      type: "action",
+      id: "mut1",
+      name: "compose_prompt",
+      args: { text: "would loop" },
+    })
+
+    expect(session.sendPrompt).toHaveBeenCalledTimes(2)
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "mut1",
+      name: "compose_prompt",
       result: { status: "sent" },
     })
   })
