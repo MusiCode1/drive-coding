@@ -1,3 +1,24 @@
+## 2026-08-27 — slice live-context Commit 2
+
+### live-memory.ts — מכסות · חיתוך · גלישה
+
+#### מה בוצע?
+
+- `packages/core/src/voice/live-memory.ts` — `upsertMemory` + `formatMemoryForPrompt`.
+- session: חוצץ מעגלי; always: מסרב עם `{ full: true, items }`.
+- dedup מחרוזת זהה (idempotency).
+- `live-memory.test.ts` — 11 טסטים.
+
+#### בדיקות
+
+- live-memory.test.ts: 11/11 ירוק.
+
+#### סטיות
+
+- אין.
+
+---
+
 ## 2026-08-27 — slice live-context Commit 1
 
 ### live-search.ts — חיפוש ב-bubbles
