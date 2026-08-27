@@ -12,10 +12,10 @@ import {
 } from "@drive-coding/core/voice/live-prompt"
 import type { LiveEvent } from "@drive-coding/core/voice/live-types"
 import { flushSync } from "svelte"
-import { describe, expect, it, vi, beforeEach } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { AgentSession } from "./agent-session.svelte"
-import type { Mic } from "./mic.svelte"
 import { Live } from "./live.svelte"
+import type { Mic } from "./mic.svelte"
 
 vi.mock("../adapters/voice/live-token", () => ({
   fetchLiveToken: vi.fn(async () => ({
@@ -82,7 +82,10 @@ function mockSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return base as unknown as AgentSession
 }
 
-function createLive(opts: { mic?: Mic; session: AgentSession }): { live: Live; dispose: () => void } {
+function createLive(opts: { mic?: Mic; session: AgentSession }): {
+  live: Live
+  dispose: () => void
+} {
   let live!: Live
   const dispose = $effect.root(() => {
     live = new Live({ mic: opts.mic ?? mockMic(), session: opts.session })
@@ -373,5 +376,78 @@ describe("Live outgoing path (Commit 0)", () => {
       name: "answer_permission",
       result: { status: "sent" },
     })
+  })
+})
+
+describe("Live unprompted guard flag (Commit 1)", () => {
+  it("sets deliveredSinceUserSpoke after agent delivery", async () => {
+    const session = mockSession({
+      recentAssistantMessages: vi.fn(() => ["Done."]),
+    })
+    const live = await openLive(session)
+
+    providerOnEvent?.({
+      type: "action",
+      id: "d1",
+      name: "compose_prompt",
+      args: { text: "run tests" },
+    })
+
+    expect(live.deliveredSinceUserSpokeForTest()).toBe(false)
+    live.deliverAgentAnswerIfPending()
+    expect(live.deliveredSinceUserSpokeForTest()).toBe(true)
+  })
+
+  it("clears deliveredSinceUserSpoke on first user transcript fragment", async () => {
+    const session = mockSession({
+      recentAssistantMessages: vi.fn(() => ["Done."]),
+    })
+    const live = await openLive(session)
+
+    providerOnEvent?.({
+      type: "action",
+      id: "d2",
+      name: "compose_prompt",
+      args: { text: "run tests" },
+    })
+    live.deliverAgentAnswerIfPending()
+    expect(live.deliveredSinceUserSpokeForTest()).toBe(true)
+
+    providerOnEvent?.({
+      type: "transcript",
+      role: "user",
+      text: "thanks",
+      final: false,
+    })
+    expect(live.deliveredSinceUserSpokeForTest()).toBe(false)
+  })
+
+  it("does not rewrite flag on merged user transcript fragments", async () => {
+    const session = mockSession({
+      recentAssistantMessages: vi.fn(() => ["Done."]),
+    })
+    const live = await openLive(session)
+
+    providerOnEvent?.({
+      type: "action",
+      id: "d3",
+      name: "compose_prompt",
+      args: { text: "run tests" },
+    })
+    live.deliverAgentAnswerIfPending()
+
+    providerOnEvent?.({
+      type: "transcript",
+      role: "user",
+      text: "hel",
+      final: false,
+    })
+    providerOnEvent?.({
+      type: "transcript",
+      role: "user",
+      text: "lo",
+      final: false,
+    })
+    expect(live.deliveredSinceUserSpokeForTest()).toBe(false)
   })
 })

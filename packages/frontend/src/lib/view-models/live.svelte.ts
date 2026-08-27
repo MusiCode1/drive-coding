@@ -8,10 +8,7 @@
 
 import type { MessageKey } from "@drive-coding/core/i18n"
 import { canDispatchPrompt } from "@drive-coding/core/voice/live-dispatch"
-import {
-  formatAgentDelivery,
-  formatPermissionPending,
-} from "@drive-coding/core/voice/live-prompt"
+import { formatAgentDelivery, formatPermissionPending } from "@drive-coding/core/voice/live-prompt"
 import { mapPermissionOptions } from "$lib/types/permission"
 import { geminiLive } from "../adapters/voice/live/gemini"
 import { fetchLiveToken } from "../adapters/voice/live-token"
@@ -35,6 +32,9 @@ export class Live {
   readonly #sink: LiveAudioSink
   #pendingAgentDelivery = false
   #notifiedPermissionKey: string | null = null
+  /** Set when agent delivery is sent; cleared on first user transcript fragment. */
+  #deliveredSinceUserSpoke = false
+  #lastUserTranscriptIdSeen: number | undefined = undefined
 
   state: LiveSessionState = $state("closed")
   transcript: LiveTranscriptEntry[] = $state([])
@@ -80,8 +80,14 @@ export class Live {
       this.state = s
       if (s === "open") this.error = null
     })
-    this.#engine.on("transcript", () => {
+    this.#engine.on("transcript", (entry) => {
       this.transcript = [...this.#engine.transcript]
+      if (entry.role !== "user") return
+      const id = this.#engine.transcript.at(-1)?.id
+      if (id === undefined) return
+      if (id === this.#lastUserTranscriptIdSeen) return
+      this.#lastUserTranscriptIdSeen = id
+      this.#deliveredSinceUserSpoke = false
     })
     this.#engine.on("action", (action) => {
       this.#handleAction(action)
@@ -219,6 +225,7 @@ export class Live {
     if (!answer) return
     this.#engine.sendContext(formatAgentDelivery(answer), "speakable")
     this.#pendingAgentDelivery = false
+    this.#deliveredSinceUserSpoke = true
   }
 
   #notifyPendingPermissionIfNeeded(): void {
@@ -251,5 +258,10 @@ export class Live {
   /** @internal test hook — turn-boundary delivery without relying on $effect timing. */
   deliverAgentAnswerIfPending(): void {
     this.#deliverAgentAnswerIfPending()
+  }
+
+  /** @internal test hook — unprompted guard flag state. */
+  deliveredSinceUserSpokeForTest(): boolean {
+    return this.#deliveredSinceUserSpoke
   }
 }
