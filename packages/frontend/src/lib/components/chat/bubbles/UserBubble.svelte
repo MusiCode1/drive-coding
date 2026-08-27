@@ -19,7 +19,6 @@ import CopyIcon from "@lucide/svelte/icons/copy"
 import PaperclipIcon from "@lucide/svelte/icons/paperclip"
 import PlayIcon from "@lucide/svelte/icons/play"
 import SquareIcon from "@lucide/svelte/icons/square"
-import Avatar from "$lib/components/chat/Avatar.svelte"
 import { getBubblePlayer, getContentViewer, getI18n, getSession, getSpeaker } from "$lib/context"
 import type { UserBubble } from "$lib/types/bubble"
 import { copyToClipboard } from "$lib/util/clipboard"
@@ -55,8 +54,7 @@ async function handleCopy() {
 }
 </script>
 
-<div class="flex gap-2 self-start max-w-[85%] min-w-0 items-end group">
-  <Avatar kind="user" />
+<div class="flex gap-2 max-w-[85%] min-w-0 items-end group">
   <div class="bubble-wrapper min-w-0 flex-1">
     <!-- תמונות מצורפות (slice-image-paste Commit 3) -->
     {#if bubble.attachments && bubble.attachments.length > 0}

@@ -15,7 +15,6 @@ import type { ToolBubble, ToolCall } from "$lib/types/bubble"
 import { getContentViewer, getI18n, getSettings, getChatScroll } from "$lib/context"
 import { formatToolInput, prettyJson, formatLocation } from "$lib/util/tool-format"
 import { renderMarkdown } from "$lib/util/markdown"
-import Avatar from "$lib/components/chat/Avatar.svelte"
 import Maximize2Icon from "@lucide/svelte/icons/maximize-2"
 import { onMount } from "svelte"
 
@@ -43,13 +42,10 @@ onMount(() => requestAnimationFrame(() => { ready = true }))
 const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
 </script>
 
-<div class="flex gap-2 self-end max-w-[78%] min-w-0 items-end flex-row-reverse">
-  <Avatar kind="tool" />
-
-  <div
-    class="rounded-xl border overflow-hidden text-[13px] flex-1 min-w-0"
-    style="background:var(--bg-card); border-color:var(--border)"
-  >
+<div
+  class="rounded-xl border overflow-hidden text-[13px] flex-1 min-w-0 max-w-[78%]"
+  style="background:var(--bg-card); border-color:var(--border)"
+>
     <!-- summary שורה: status dot + narration/title -->
     <details class="group" bind:open ontoggle={onUserToggle}>
       <summary class="flex items-center gap-2 px-3 py-2 cursor-pointer list-none select-none">
@@ -168,7 +164,6 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
 
     <!-- כופה ריאקטיביות -->
     <span class="hidden">{tc.narration ?? ""}{tc.status}</span>
-  </div>
 </div>
 
 <style>
