@@ -6,8 +6,7 @@
  *  2. env layer wins over file (flag missing)
  *  3. file layer used when no higher layer sets value
  *  4. object field (log) — override wholesale (not deep merge)
- *  5. object field (voice) — override wholesale
- *  6. cliSpecs — merge per-key across layers
+ *  5. cliSpecs — merge per-key across layers
  *  7. invalid field → Err with message
  *  8. empty layer — skipped
  *  9. all layers empty → valid empty config (ok result)
@@ -66,18 +65,6 @@ describe("resolveConfig — precedence", () => {
     // ns and format from file layer are gone — wholesale override
     expect(cfg.log?.ns).toBeUndefined()
     expect(cfg.log?.format).toBeUndefined()
-  })
-
-  it("5. voice object — wholesale override", () => {
-    const result = resolveConfig([
-      { voice: { elevenLabsKey: "key1", geminiKey: "gk1" } },
-      { voice: { elevenLabsKey: "key2" } }, // env — only sets elevenLabsKey
-    ])
-    expect(result.isOk()).toBe(true)
-    const cfg = result._unsafeUnwrap()
-    expect(cfg.voice?.elevenLabsKey).toBe("key2")
-    // geminiKey from file layer is gone — wholesale override
-    expect(cfg.voice?.geminiKey).toBeUndefined()
   })
 
   it("6. cliSpecs — merge per-key across layers", () => {

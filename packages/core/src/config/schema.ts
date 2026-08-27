@@ -22,10 +22,6 @@ export const DriveCodingConfig = type({
     "ns?": "string",
     "format?": "'pretty'|'json'|'both'",
   },
-  "voice?": {
-    "elevenLabsKey?": "string",
-    "geminiKey?": "string",
-  },
   // https: boolean (enable with auto-cert) or {key, cert} (explicit paths).
   // Validation of the cert/key paths is deferred to slice-https-local.
   "https?": type("boolean").or({ key: "string", cert: "string" }),

@@ -171,14 +171,51 @@ reuses the session it stored.
 > come back. Since the 10-second `authenticate` timeout, this surfaces as a clear
 > message; before it, the session simply hung forever with a blank screen.
 
-Two keys are read directly for voice features:
+Two keys power voice features (text-to-speech). They belong in a **dedicated
+secrets file**, not in the main config:
+
+| File | Default path | Format |
+|---|---|---|
+| `secrets.json` | `~/.config/drive-coding/secrets.json` | Flat JSON object |
+
+```json
+{
+  "elevenLabsKey": "your-elevenlabs-key",
+  "geminiKey": "your-gemini-key"
+}
+```
+
+Both fields are optional — omit a key if you do not use that provider.
+
+### Precedence (secrets only)
+
+From lowest to highest priority:
+
+1. `secrets.json` (or `--secrets <path>`)
+2. Environment variable
+3. CLI flag (`--elevenlabs-key`, `--gemini-key`)
+
+A partial CLI flag **does not** drop a sibling secret from a higher layer.
+For example, `--elevenlabs-key` with `GEMINI_API_KEY` in the environment keeps
+**both** keys.
+
+### Environment variables (alternative)
 
 | Variable | Used for |
 |---|---|
 | `ELEVENLABS_API_KEY` | Text-to-speech via ElevenLabs. |
 | `GEMINI_API_KEY` | Text-to-speech via Gemini. |
 
-Without them, text chat works and speech does not.
+These are the same values as `elevenLabsKey` / `geminiKey` in `secrets.json`.
+The backend writes the winning values to `process.env` for child processes.
+
+### 🔴 Secrets in the config file are rejected
+
+Putting `voice`, `elevenLabsKey`, or `geminiKey` in `config.jsonc` (or
+`--config-json`) causes a **startup failure** with an explicit error — not a
+silent 401 later. Move the key to `secrets.json` or use an env var / CLI flag.
+
+Without the keys, text chat works and speech does not.
 
 ---
 
