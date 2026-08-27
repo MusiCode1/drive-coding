@@ -70,6 +70,15 @@ export type UserBubble = BubbleBase & {
 export type MessageBubble = BubbleBase & {
   kind: "message"
   segments: Segment[]
+  /**
+   * tool-render-fidelity — non-text agent content (image/audio/resource).
+   * Component renders chip via t(); VM stores structural marker only.
+   */
+  contentPlaceholders?: {
+    kind: "resource_link" | "audio" | "resource" | "file" | "image"
+    label?: string
+    uri?: string
+  }[]
 }
 
 export type ThoughtBubble = BubbleBase & {

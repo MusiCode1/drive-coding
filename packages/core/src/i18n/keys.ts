@@ -447,6 +447,10 @@ export type MessageKey =
   | "connect.cwd.combo.searchPlaceholder"
   | "connect.cwd.combo.empty"
   | "connect.cwd.combo.loadError"
+  // ─── tool output (tool-render-fidelity) ───
+  | "chat.tool.output.exitCode"
+  | "chat.tool.output.stderr"
+  | "chat.tool.output.empty"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

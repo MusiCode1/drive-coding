@@ -446,4 +446,8 @@ export const en: Catalog = {
   "connect.cwd.combo.searchPlaceholder": "Search path…",
   "connect.cwd.combo.empty": "No folders to show",
   "connect.cwd.combo.loadError": "Failed to load folders",
+  // ─── tool output (tool-render-fidelity) ───
+  "chat.tool.output.exitCode": "Exit code",
+  "chat.tool.output.stderr": "stderr",
+  "chat.tool.output.empty": "No output",
 }

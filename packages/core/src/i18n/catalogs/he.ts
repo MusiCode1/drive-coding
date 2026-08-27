@@ -438,4 +438,8 @@ export const he: Catalog = {
   "connect.cwd.combo.searchPlaceholder": "חיפוש נתיב…",
   "connect.cwd.combo.empty": "אין תיקיות להצגה",
   "connect.cwd.combo.loadError": "טעינת התיקיות נכשלה",
+  // ─── tool output (tool-render-fidelity) ───
+  "chat.tool.output.exitCode": "קוד יציאה",
+  "chat.tool.output.stderr": "stderr",
+  "chat.tool.output.empty": "אין פלט",
 }
