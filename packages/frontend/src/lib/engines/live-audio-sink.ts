@@ -42,11 +42,11 @@ export class LiveAudioSink {
 
     const floats = pcmToFloat32(samples)
     const buf = ctx.createBuffer(1, floats.length, this.#sampleRate)
-    // `pcmToFloat32` is typed Float32Array<ArrayBufferLike>, and copyToChannel
-    // demands Float32Array<ArrayBuffer> — a SharedArrayBuffer would be rejected
-    // at runtime. Writing through the channel view keeps the copy and drops the
-    // impossible-here union, without an assertion that hides the distinction.
-    buf.getChannelData(0).set(floats)
+    // `pcmToFloat32` is typed Float32Array<ArrayBufferLike>; `copyToChannel`
+    // demands Float32Array<ArrayBuffer>, because a SharedArrayBuffer-backed view
+    // is not valid here. Re-wrapping yields an ArrayBuffer-backed copy and keeps
+    // the idiomatic WebAudio call, rather than asserting the union away.
+    buf.copyToChannel(new Float32Array(floats), 0)
 
     const source = ctx.createBufferSource()
     source.buffer = buf
