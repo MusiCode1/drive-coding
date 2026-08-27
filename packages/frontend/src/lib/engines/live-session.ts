@@ -15,6 +15,15 @@ export type LiveConnector = {
 export type LiveSessionState = "closed" | "connecting" | "open" | "error"
 
 export type LiveTranscriptEntry = {
+  /**
+   * Stable identity for keyed rendering.
+   *
+   * F1: the view keyed on `role + text`, which is NOT unique — two consecutive
+   * partial chunks can carry the same role and the same text, and Svelte 5.55
+   * throws on duplicate keys **in production too**, so the crash lands on the
+   * user rather than on us. Identity belongs to the entry, not to its content.
+   */
+  id: number
   role: "user" | "assistant"
   text: string
   final: boolean
@@ -23,6 +32,8 @@ export type LiveTranscriptEntry = {
 type TranscriptHandler = (entry: LiveTranscriptEntry) => void
 type ActionHandler = (action: { id: string; name: string; args: Record<string, unknown> }) => void
 type StateHandler = (state: LiveSessionState) => void
+
+let nextTranscriptId = 0
 
 function appendTranscript(
   transcript: LiveTranscriptEntry[],
@@ -34,7 +45,7 @@ function appendTranscript(
     last.final = entry.final
     return
   }
-  transcript.push({ ...entry })
+  transcript.push({ ...entry, id: nextTranscriptId++ })
 }
 
 export class LiveSessionEngine {
@@ -47,6 +58,8 @@ export class LiveSessionEngine {
 
   #state: LiveSessionState = "closed"
   readonly transcript: LiveTranscriptEntry[] = []
+  /** F2 — bumped by close(); guards every resumption point inside open(). */
+  #openEpoch = 0
   #session: LiveSession | null = null
   #unsubFrame: (() => void) | null = null
 
@@ -92,8 +105,24 @@ export class LiveSessionEngine {
     this.#setState("connecting")
     this.transcript.length = 0
 
+    // F2: `open()` awaits twice (token, then connect). A `close()` landing in
+    // either gap used to be silently discarded — it flipped state to "closed",
+    // but this in-flight call carried on and set "open" afterwards, so the user
+    // saw a session they had already closed, `session.close()` was never called,
+    // and a live Gemini session stayed up burning the mic and the budget.
+    //
+    // This is the symmetric hole to NBug17: that one was "connect never
+    // settles", this one is "close during connect is ignored". Both are races
+    // around the connection lifecycle.
+    //
+    // The epoch is the whole fix: `close()` bumps it, and every resumption point
+    // after an await checks whether it is still the current attempt.
+    const epoch = ++this.#openEpoch
+
     try {
       const { token, model, sessionConfig } = await this.#connector.fetchToken()
+      if (epoch !== this.#openEpoch) return
+
       const session = await this.#connector.provider.connect({
         credential: token,
         model,
@@ -101,6 +130,18 @@ export class LiveSessionEngine {
         connectTimeoutMs: this.#connectTimeoutMs,
         onEvent: (event) => this.#handleEvent(event),
       })
+
+      if (epoch !== this.#openEpoch) {
+        // Closed while the socket was coming up: shut the session we just
+        // opened, and leave state alone — `close()` already set it.
+        try {
+          session.close()
+        } catch {
+          /* already gone */
+        }
+        return
+      }
+
       this.#session = session
       this.#unsubFrame = this.#frames.on("frame", (frame) => {
         const pcm = float32ToInt16LE(frame)
@@ -108,12 +149,14 @@ export class LiveSessionEngine {
       })
       this.#setState("open")
     } catch {
+      if (epoch !== this.#openEpoch) return
       this.#cleanupSession()
       this.#setState("error")
     }
   }
 
   close(): void {
+    this.#openEpoch++
     this.#cleanupSession()
     this.#setState("closed")
   }

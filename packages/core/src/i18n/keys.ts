@@ -149,6 +149,7 @@ export type MessageKey =
   | "live.toggle.open"
   | "live.toggle.close"
   | "live.status.connecting"
+  | "live.ear.listening"
   | "live.transcript.user"
   | "live.transcript.assistant"
   | "live.error.connect"

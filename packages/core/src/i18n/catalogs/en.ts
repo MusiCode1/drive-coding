@@ -143,6 +143,7 @@ export const en: Catalog = {
   "live.toggle.open": "Live conversation",
   "live.toggle.close": "Close live",
   "live.status.connecting": "Connecting…",
+  "live.ear.listening": "Listening…",
   "live.transcript.user": "You",
   "live.transcript.assistant": "Secretary",
   "live.error.connect": "Live connection failed",

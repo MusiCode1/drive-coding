@@ -138,6 +138,7 @@ export const he: Catalog = {
   "live.toggle.open": "שיחה חיה",
   "live.toggle.close": "סגור שיחה חיה",
   "live.status.connecting": "מתחבר…",
+  "live.ear.listening": "מקשיב…",
   "live.transcript.user": "אתה",
   "live.transcript.assistant": "מזכיר",
   "live.error.connect": "חיבור Live נכשל",
