@@ -110,6 +110,7 @@ function createHarness(initial?: MessageBubble[], extraSession?: Partial<AgentSe
   sessionBubbles = initial ?? []
   const settings = new Settings()
   settings.ttsProvider = "google"
+  settings.muted = false
   settings.narrateTools = true
   const sink = makeMockSink()
   const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })

@@ -226,33 +226,51 @@ the first worktree, 4001 for the second, etc.
 ```bash
 # Worktree A — BE on 4000, FE Vite proxies → 4000 (default)
 cd .worktrees/slice-X
-PORT=4000 onecli run --agent voice-acp -- bun --watch src/server.ts
+PORT=4000 bun packages/backend/src/bin/drive-coding.ts --env-file ~/Projects/drive-coding/.env
 bun run --filter @drive-coding/frontend dev
 # (no env var needed — FE defaults to BE_PORT=4000)
 
 # Worktree B — BE on 4001, FE Vite proxies → 4001
 cd .worktrees/slice-Y
-PORT=4001 onecli run --agent voice-acp -- bun --watch src/server.ts
+PORT=4001 bun packages/backend/src/bin/drive-coding.ts --env-file ~/Projects/drive-coding/.env
 BE_PORT=4001 bun run --filter @drive-coding/frontend dev
 ```
 
 Each worktree's FE will get a different OS-assigned Vite port — no conflict
 on the FE side. Tunnels (if used) point at each FE's specific Vite port.
 
-## Backend MUST run through OneCLI
+## Backend needs API credentials — OneCLI is **one** way, not the only way
 
-The BE proxy at `/proxy/elevenlabs/*` and `/proxy/google/*` requires API
-credentials injected by the OneCLI gateway. **Do NOT start the BE with a
-plain `bun` command** — every TTS/translate call will return 401/400.
+> ⛔ **Corrected 2026-08-26.** This section used to say *"Backend MUST run through
+> OneCLI"* and *"do NOT start the BE with a plain `bun` command"*. **That is wrong,
+> and it cost real time**: an agent went hunting for `onecli` — which **is not
+> installed on this machine** — instead of using the mechanism that actually works.
+
+The proxies at `/proxy/elevenlabs/*` and `/proxy/google/*` need
+`ELEVENLABS_API_KEY` and `GEMINI_API_KEY` **in the environment**. *How* they get
+there is open — the BE only ever reads `process.env`.
 
 ```bash
-# ✅ Correct
-cd packages/backend
-onecli run --agent voice-acp -- bun --watch src/server.ts
+# ✅ env file — what the live deployment actually does
+bun packages/backend/src/bin/drive-coding.ts --env-file ~/Projects/drive-coding/.env
 
-# ❌ Wrong — works for boot, fails on every proxy request
-bun run --filter @drive-coding/backend dev
+# ✅ config file — voice.elevenLabsKey / voice.geminiKey in config.jsonc.
+#    load-config maps them to ENV via buildEnvPatch, so child CLIs inherit them too.
+bun packages/backend/src/bin/drive-coding.ts --config ~/.config/drive-coding/config.jsonc
+
+# ✅ plain environment variables
+ELEVENLABS_API_KEY=… GEMINI_API_KEY=… bun packages/backend/src/bin/drive-coding.ts
+
+# ✅ OneCLI — still valid **on a machine where it is installed**
+onecli run --agent voice-acp -- bun --watch src/server.ts
 ```
+
+**Precedence** (`packages/backend/src/config/load-config.ts`):
+config file < `process.env` < CLI flags. `--env-file` is applied first and is
+**non-overriding** — a real env var beats it.
+
+**On this machine (srv1812097)**: both deployments run under systemd
+(`drive-coding-{main,dev}.service`) and use **`--env-file`**. `onecli` is absent.
 
 ### Running BE with CORS for deployed CF Pages FE
 
@@ -260,20 +278,22 @@ When connecting the deployed `https://drive-coding.pages.dev` FE to a local BE,
 include the Pages origin in `CORS_ORIGINS`:
 
 ```bash
-# Local BE serving both local and CF Pages FE (consistent with deploy/systemd/voice-acp-be.service)
+# Local BE serving both local and CF Pages FE (consistent with deploy/systemd/drive-coding-main.service)
 CORS_ORIGINS="https://drive-coding.pages.dev,http://localhost:4000" \
-  PORT=4000 onecli run --agent voice-acp -- bun --watch src/server.ts
+  PORT=4000 bun packages/backend/src/bin/drive-coding.ts --env-file ~/Projects/drive-coding/.env
 ```
 
 See `docs-for-llm/deploy-cf-pages.md` for full deploy instructions and known limitations
 (mixed-content + Private Network Access).
 
-The `voice-acp` OneCLI agent injects `xi-api-key` for `api.elevenlabs.io`
-and `x-goog-api-key` for `generativelanguage.googleapis.com`. It does NOT
-inject Anthropic credentials (intentional — see `~/.config/opencode/learnings.md`
-2026-05-14 about Anthropic balance drain).
+Whichever mechanism you use, the BE needs the same two keys — `ELEVENLABS_API_KEY`
+for `api.elevenlabs.io` and `GEMINI_API_KEY` for `generativelanguage.googleapis.com`.
+Anthropic credentials are **deliberately not** injected (see
+`~/.config/opencode/learnings.md` 2026-05-14, Anthropic balance drain).
+Where OneCLI *is* installed, the `voice-acp` agent supplies those two as
+`xi-api-key` / `x-goog-api-key`.
 
-How to tell if the BE is missing OneCLI: the FE shows `TTS failed: 401`
+How to tell the BE is missing its keys: the FE shows `TTS failed: 401`
 and the BE log shows `proxy upstream non-2xx` warnings (since the
 observability commit `a76e7c1`).
 
