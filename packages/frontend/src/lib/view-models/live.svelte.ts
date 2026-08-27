@@ -28,6 +28,7 @@ export class Live {
   readonly #engine: LiveSessionEngine
   readonly #frames: MicFrames
   readonly #sink: LiveAudioSink
+  #pendingAgentDelivery = false
 
   state: LiveSessionState = $state("closed")
   transcript: LiveTranscriptEntry[] = $state([])
@@ -78,6 +79,12 @@ export class Live {
     })
     this.#engine.on("action", (action) => {
       this.#handleAction(action)
+    })
+
+    $effect(() => {
+      if (this.#session.turnState === "idle") {
+        this.#deliverAgentAnswerIfPending()
+      }
     })
   }
 
@@ -145,6 +152,7 @@ export class Live {
         }
         void this.#session.sendPrompt(text)
         this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
+        this.#pendingAgentDelivery = true
         break
       }
       case "forward": {
@@ -159,10 +167,24 @@ export class Live {
         }
         void this.#session.sendPrompt(text)
         this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
+        this.#pendingAgentDelivery = true
         break
       }
       default:
         break
     }
+  }
+
+  #deliverAgentAnswerIfPending(): void {
+    if (!this.isOpen || !this.#pendingAgentDelivery) return
+    const answer = this.#session.recentAssistantMessages(1)[0]?.trim()
+    if (!answer) return
+    this.#engine.sendContext(answer, "speakable")
+    this.#pendingAgentDelivery = false
+  }
+
+  /** @internal test hook — turn-boundary delivery without relying on $effect timing. */
+  deliverAgentAnswerIfPending(): void {
+    this.#deliverAgentAnswerIfPending()
   }
 }

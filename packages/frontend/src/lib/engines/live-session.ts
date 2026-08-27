@@ -169,6 +169,10 @@ export class LiveSessionEngine {
     this.#session?.send({ type: "action_result", id, name, result })
   }
 
+  sendContext(text: string, channel: "speakable" | "silent"): void {
+    this.#session?.send({ type: "context", text, channel })
+  }
+
   #setState(next: LiveSessionState): void {
     this.#state = next
     for (const h of this.#stateHandlers) h(next)

@@ -60,7 +60,9 @@ function mockSession(overrides: Partial<AgentSession> = {}): AgentSession {
     sessionId: "ses_test",
     hasAcpClient: true,
     isRemoteView: false,
+    turnState: "idle",
     sendPrompt: vi.fn(async () => {}),
+    recentAssistantMessages: vi.fn(() => []),
     ...overrides,
   } as unknown as AgentSession
 }
@@ -177,5 +179,27 @@ describe("Live outgoing path (Commit 0)", () => {
     expect(providerSend).toHaveBeenCalledWith(
       expect.objectContaining({ name: "forward", result: { status: "sent" } }),
     )
+  })
+
+  it("delivers agent answer via speakable context at turn boundary", async () => {
+    const session = mockSession({
+      recentAssistantMessages: vi.fn(() => ["The tests pass in auth.test.ts"]),
+    })
+    const live = await openLive(session)
+
+    providerOnEvent?.({
+      type: "action",
+      id: "a6",
+      name: "compose_prompt",
+      args: { text: "run tests" },
+    })
+
+    live.deliverAgentAnswerIfPending()
+
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "context",
+      text: "The tests pass in auth.test.ts",
+      channel: "speakable",
+    })
   })
 })

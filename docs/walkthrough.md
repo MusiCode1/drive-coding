@@ -1,4 +1,13 @@
-## 2026-08-27 09:41 — slice live-secretary Commit 1: נתיב השמעה + mouth דו-מקורי
+## 2026-08-27 09:42 — slice live-secretary Commit 2: מסירת תשובת הסוכן
+
+base: `dfeff3ff`
+
+- `sendContext` על LiveSessionEngine.
+- `$effect` על `turnState===idle` → `recentAssistantMessages(1)` → speakable.
+- `#pendingAgentDelivery` נקבע אחרי dispatch מוצלח.
+
+---
+
 
 base: `fe55b249`
 
