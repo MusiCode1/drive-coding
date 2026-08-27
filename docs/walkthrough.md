@@ -1,4 +1,18 @@
-## 2026-08-27 (fix1 — סיום סבב תיקון)
+## 2026-08-27 — slice live-ears (in progress)
+
+### Commit 0 — MicFrames engine
+
+#### מה בוצע?
+
+- `packages/frontend/src/lib/engines/mic-frames.ts` — worklet עצמאי, 16kHz / 1280 samples, events frame+level.
+
+#### בדיקות
+
+- typecheck ירוק.
+- אימות חי (DoD 8) — יבוצע בפריוויו HTTPS.
+
+---
+
 
 ### slice live-contract-gemini fix1 — 4 commits (A–D)
 
