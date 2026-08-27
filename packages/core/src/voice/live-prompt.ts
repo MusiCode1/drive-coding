@@ -104,7 +104,9 @@ const NO_CLARIFY_SECTION =
 
 const AGENT_DELIVERY_SECTION =
   `טקסט שמתחיל ב-${LIVE_AGENT_DELIVERY_MARKER} הוא דיווח מהסוכן שיש למסור למשתמש בקול — ` +
-  "התייחס אליו כתשובת הסוכן, אל תייחס אותו למשתמש, ואל תשגר אותו מחדש לסוכן ב-compose_prompt."
+  "התייחס אליו כתשובת הסוכן, אל תייחס אותו למשתמש, ואל תשגר אותו מחדש לסוכן ב-compose_prompt. " +
+  `הסמן עצמו הוא מטא-מידע — לעולם אל תקריא אותו בקול. מסור רק את התוכן שאחריו. ` +
+  `אותו כלל חל על ${LIVE_PERMISSION_PENDING_MARKER}.`
 
 const PERMISSION_PENDING_SECTION =
   `טקסט שמתחיל ב-${LIVE_PERMISSION_PENDING_MARKER} מודיע על בקשת אישור ממתינה — ` +
