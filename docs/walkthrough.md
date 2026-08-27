@@ -1,4 +1,29 @@
-## 2026-08-27 09:47 — slice live-secretary Commit 6: PROBE_DELIVERY
+## 2026-08-27 09:50 — slice live-secretary (סיום אליעזר)
+
+7 commits: `54fe3dcd..f668bc51`
+
+| DoD | בדיקה | תוצאה |
+|-----|--------|--------|
+| 1 | typecheck · test · lint:i18n | **עבר** (2 נפילות ידועות) |
+| 2 | מסלול יוצא compose_prompt→sendPrompt | **עבר** (טסט) |
+| 3 | action_result מיידי | **עבר** |
+| 4 | מוטציה on("action") | **לא-נמדד** |
+| 5 | mouth speaking ב-Live | **עבר** (טסט VM) |
+| 5ב | mouth consumer ב-svelte | **פתוח** (grep ריק) |
+| 6 | mouth mutation | **עבר** (טסט) |
+| 8 | PROBE_DELIVERY שלושה טקסטים | **עבר** (פלט JSON; pass=false ב-STT) |
+| 9 | מזהה במסירה | **לא-נמדד** (probe pass=false) |
+| 10 | מוצהר⇔מטופל (4=4) | **עבר** (3 handlers + answer_permission=4) |
+| 14 | probe slice 1 | **עבר** (4031) |
+| 16 | not_sent לכל reason | **עבר** |
+| 17 | audio→sink | **עבר** |
+| 18 | mouth ריאקטיבי | **לא-נמדד** (פריוויו) |
+| 11–13 | פריוויו mic/TTS/PTT | **לא-נמדד** |
+
+calev-heavy: **לא הורץ** (usage limit) — מרדכי ירים verifier.
+
+---
+
 
 - `PROBE_DELIVERY=1` — מזריק agentAnswer סינתטי, מדפיס שלושת הטקסטים (§3).
 - DoD 14: פרוב בסיסי ירוק על 4031.
