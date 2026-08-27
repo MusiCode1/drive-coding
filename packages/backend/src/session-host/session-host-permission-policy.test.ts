@@ -5,11 +5,8 @@
  * before entering pending.
  */
 
-import type {
-  AcpClient,
-  AcpClientCallbacks,
-  RequestPermissionRequest,
-} from "@drive-coding/provider/client"
+import type { RequestPermissionRequest } from "@agentclientprotocol/sdk"
+import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
 import type { AcpTransport } from "@drive-coding/provider/transport"
