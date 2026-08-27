@@ -15,7 +15,7 @@ import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../src/acp/connection-registry.js"
 
-const { createAgentOrchestrator } = await import("../src/app/agent-orchestrator.js")
+const { createAgentOrchestrator, composeShapeEnv } = await import("../src/app/agent-orchestrator.js")
 
 // ─── Mock helpers ─────────────────────────────────────────────────────
 
@@ -99,16 +99,16 @@ function makeConnectionRegistry(
   reg: ConnectionRegistry
   closeMock: ReturnType<typeof vi.fn>
   connectMock: ReturnType<typeof vi.fn>
-  lastConnectOpts: { cwd?: string; modelOverride?: string | null } | null
+  lastConnectOpts: { cwd?: string; modelOverride?: string | null; shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv } | null
 } {
   let crashHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
-  let lastConnectOpts: { cwd?: string; modelOverride?: string | null } | null = null
+  let lastConnectOpts: { cwd?: string; modelOverride?: string | null; shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv } | null = null
   const closeMock = vi.fn(async (_id: string) => {})
   const connectMock = vi.fn(
     async (
       _agentId: string,
       _cliKind: string,
-      connectOpts: { cwd: string; modelOverride?: string | null },
+      connectOpts: { cwd: string; modelOverride?: string | null; shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv },
     ) => {
       lastConnectOpts = connectOpts
       if (opts.onConnectError) throw opts.onConnectError()
@@ -483,6 +483,66 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
       "claude",
       expect.objectContaining({ systemPrompt: null }),
     )
+  })
+
+  // slice session-create-contract C2 — env via composeShapeEnv (wraps drivecodingShapeEnv).
+  describe("composeShapeEnv (C2)", () => {
+    it("merges env above baseEnv without dropping existing keys", () => {
+      const shape = composeShapeEnv({ BDS_SLICE: "probe" })
+      const result = shape("cursor", { PATH: "/bin", HOME: "/home/user" })
+      expect(result).toMatchObject({
+        PATH: "/bin",
+        HOME: "/home/user",
+        BDS_SLICE: "probe",
+      })
+    })
+
+    it("opencode: OPENCODE_CONFIG_CONTENT still injected (regression)", () => {
+      const shape = composeShapeEnv({ BDS_SLICE: "probe" })
+      const result = shape("opencode", {})
+      expect(result.OPENCODE_CONFIG_CONTENT).toBeTruthy()
+      expect(result.PROMPT_INJECTOR_TEXT).toBeTruthy()
+      expect(result.BDS_SLICE).toBe("probe")
+    })
+
+    it("absent env → identical to drivecodingShapeEnv behavior for opencode", () => {
+      const composed = composeShapeEnv(undefined)
+      const direct = composeShapeEnv(undefined)
+      const base = { FOO: "bar" }
+      expect(composed("opencode", base)).toEqual(direct("opencode", base))
+    })
+  })
+
+  it("createAndSpawn passes env through shapeEnv to connect", async () => {
+    const { registry } = makeRegistry()
+    const connReg = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: connReg.reg })
+
+    await orch.createAndSpawn({
+      cliKind: "cursor",
+      cwd: "/proj",
+      modelOverride: null,
+      env: { BDS_SLICE: "probe" },
+    })
+
+    expect(connReg.lastConnectOpts?.shapeEnv).toBeTypeOf("function")
+    const shaped = connReg.lastConnectOpts!.shapeEnv!("cursor", { EXISTING: "yes" })
+    expect(shaped).toMatchObject({ EXISTING: "yes", BDS_SLICE: "probe" })
+  })
+
+  it("createAndSpawn without env → shapeEnv still wraps opencode injection", async () => {
+    const { registry } = makeRegistry()
+    const connReg = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: connReg.reg })
+
+    await orch.createAndSpawn({
+      cliKind: "opencode",
+      cwd: "/proj",
+      modelOverride: null,
+    })
+
+    const shaped = connReg.lastConnectOpts!.shapeEnv!("opencode", {})
+    expect(shaped.OPENCODE_CONFIG_CONTENT).toBeTruthy()
   })
 
   // ─── slice remote-warm-reconnect C2b: ניקוי session-hosts ב-delete/crash ───

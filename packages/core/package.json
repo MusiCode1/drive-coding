@@ -26,6 +26,7 @@
     "./config/*": "./src/config/*.ts",
     "./tts/*": "./src/tts/*.ts",
     "./usage/*": "./src/usage/*.ts",
+    "./types/permission": "./src/types/permission.ts",
     "./session/testing": "./src/session/__testing__/wire-fixtures.ts"
   },
   "scripts": {

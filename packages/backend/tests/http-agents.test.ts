@@ -211,6 +211,82 @@ describe("HTTP /api/agents", () => {
       expect(res.status).toBe(201)
     })
 
+    // slice session-create-contract C1 — permissionPolicy accepted + forwarded; absence unchanged.
+    it("creates with permissionPolicy — accepted by schema and forwarded to orchestrator", async () => {
+      let received: unknown
+      const app = new Hono()
+      const registry = createInMemoryAgentRegistry()
+      const orchestrator: AgentOrchestrator = {
+        async createAndSpawn(input): Promise<CreateAndSpawnResult> {
+          received = input
+          const agent = await registry.create(input)
+          await registry.update(agent.id, { status: "ready", bridgePort: 7100 })
+          return {
+            agentId: agent.id,
+            cwd: agent.cwd,
+            cliKind: agent.cliKind,
+            wsUrl: `ws://127.0.0.1:7100/`,
+            bridgePort: 7100,
+            status: "spawning",
+          }
+        },
+        async deleteAndKill(id) {
+          await registry.delete(id).catch(() => {})
+        },
+        getBridgePort: vi.fn(() => 7100),
+      }
+      registerAgentsHttp(app, { registry, orchestrator })
+
+      const res = await app.request("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cliKind: "claude",
+          cwd: "/x",
+          permissionPolicy: "allow_once",
+        }),
+      })
+      expect(res.status).toBe(201)
+      expect((received as { permissionPolicy?: string })?.permissionPolicy).toBe("allow_once")
+    })
+
+    it("POST without permissionPolicy — same as before (regression)", async () => {
+      let received: unknown
+      const app = new Hono()
+      const registry = createInMemoryAgentRegistry()
+      const orchestrator: AgentOrchestrator = {
+        async createAndSpawn(input): Promise<CreateAndSpawnResult> {
+          received = input
+          const agent = await registry.create(input)
+          await registry.update(agent.id, { status: "ready", bridgePort: 7100 })
+          return {
+            agentId: agent.id,
+            cwd: agent.cwd,
+            cliKind: agent.cliKind,
+            wsUrl: `ws://127.0.0.1:7100/`,
+            bridgePort: 7100,
+            status: "spawning",
+          }
+        },
+        async deleteAndKill(id) {
+          await registry.delete(id).catch(() => {})
+        },
+        getBridgePort: vi.fn(() => 7100),
+      }
+      registerAgentsHttp(app, { registry, orchestrator })
+
+      const res = await app.request("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cliKind: "claude", cwd: "/x" }),
+      })
+      expect(res.status).toBe(201)
+      expect(received).toEqual(
+        expect.objectContaining({ cliKind: "claude", cwd: "/x" }),
+      )
+      expect(received).not.toHaveProperty("permissionPolicy")
+    })
+
     it("returns 500 if orchestrator throws", async () => {
       const app = new Hono()
       const registry = createInMemoryAgentRegistry()

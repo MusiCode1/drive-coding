@@ -12,6 +12,7 @@
  */
 
 import type { Hono } from "hono"
+import type { PermissionPolicyKind } from "@drive-coding/core/types/permission"
 import type { ConnectionRegistry } from "../../acp/connection-registry.js"
 import { createAgentSessionRegistry, type OnSessionAttached } from "../registry.js"
 import { registerEventsRoute } from "./events.js"
@@ -67,6 +68,12 @@ export function createAndRegisterSessionHostHttp(
      * instead of newSession when taking over from a WS-owned agent.
      */
     getAcpSessionId?: (agentId: string) => string | undefined
+    /**
+     * slice session-create-contract: permissionPolicy from agent record at create time.
+     */
+    getPermissionPolicy?: (
+      agentId: string,
+    ) => PermissionPolicyKind | undefined | Promise<PermissionPolicyKind | undefined>
   } = {},
 ): ReturnType<typeof createAgentSessionRegistry> {
   const agentSessionRegistry = createAgentSessionRegistry({
@@ -74,6 +81,7 @@ export function createAndRegisterSessionHostHttp(
     onSessionAttached: opts.onSessionAttached,
     evictionController: opts.evictionController,
     getAcpSessionId: opts.getAcpSessionId,
+    getPermissionPolicy: opts.getPermissionPolicy,
   })
   registerSessionHostHttp(app, { agentSessionRegistry })
   return agentSessionRegistry
