@@ -16,6 +16,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { LIVE_ACTION_SHAPES } from "../packages/core/src/voice/live-actions.ts"
+import { buildLiveSeed } from "../packages/core/src/voice/live-seed.ts"
 import { buildLiveSecretaryPrompt } from "../packages/core/src/voice/live-prompt.ts"
 import { GoogleGenAI } from "../packages/frontend/node_modules/@google/genai/dist/node/index.mjs"
 import { geminiLive } from "../packages/frontend/src/lib/adapters/voice/live/gemini.ts"
@@ -59,6 +60,33 @@ const PROBE_DEAD_SESSION = process.env.PROBE_DEAD_SESSION === "1"
  * The audio path stays in the main run as a NON-BLOCKING diagnostic.
  */
 const PROBE_TEXT_ID = process.env.PROBE_TEXT_ID === "1"
+/**
+ * Slice live-context — live gate for silent seed injection + answer-from-context.
+ * Requires GEMINI_API_KEY. Set PROBE_SEED_EMPTY=1 to mutate seed to [] (DoD 11).
+ */
+const PROBE_SEED = process.env.PROBE_SEED === "1"
+const PROBE_SEED_EMPTY = process.env.PROBE_SEED_EMPTY === "1"
+const SEED_QUESTION =
+  process.env.SEED_QUESTION ?? "\u05E2\u05DC \u05D0\u05D9\u05D6\u05D4 \u05DE\u05D5\u05D3\u05D5\u05DC \u05D4\u05E1\u05D5\u05DB\u05DF \u05DE\u05E8\u05D9\u05E5 \u05D8\u05E1\u05D8\u05D9\u05DD?"
+const SEED_MODULE = process.env.SEED_MODULE ?? "auth"
+
+const SEED_LABELS = {
+  toolRan: (name) => `[tool ran: ${name}]`,
+  toolFailed: (name) => `[tool failed: ${name}]`,
+  permissionPending: "[permission pending]",
+  agentRunning: "[agent running]",
+  agentIdle: "[agent idle]",
+}
+
+/** Fact lives only in seed — not in secretary prompt or the question text. */
+const SEED_FIXTURE = [
+  { kind: "user", text: "\u05D1\u05D3\u05E7 \u05DE\u05E6\u05D1", turnIndex: 0 },
+  {
+    kind: "assistant",
+    text: `\u05D4\u05E1\u05D5\u05DB\u05DF \u05DE\u05E8\u05D9\u05E5 \u05D8\u05E1\u05D8\u05D9\u05DD \u05E2\u05DC \u05DE\u05D5\u05D3\u05D5\u05DC ${SEED_MODULE}`,
+    turnIndex: 1,
+  },
+]
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const isHebrewScript = (t) => /[֐-׿]/.test(t ?? "")
@@ -141,8 +169,7 @@ async function startBackend() {
   throw new Error(`BE did not become ready on port ${BE_PORT}`)
 }
 
-async function mintToken() {
-  const actionNames = LIVE_ACTION_SHAPES.map((s) => s.name)
+async function mintToken(actionNames) {
   const res = await fetch(`http://127.0.0.1:${BE_PORT}/api/voice/live/token`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -156,6 +183,10 @@ async function mintToken() {
     throw new Error(`token mint failed: ${res.status} ${await res.text()}`)
   }
   return res.json()
+}
+
+async function mintTokenAll() {
+  return mintToken(LIVE_ACTION_SHAPES.map((s) => s.name))
 }
 
 /** Gemini TTS 24k → ffmpeg → 16k PCM (same path as probe-live-text-only.mjs). */
@@ -277,7 +308,7 @@ async function runDeadSessionProbe() {
  * is the same public surface the engine will use in `live-ears`.
  */
 async function runTextIdentifierProbe() {
-  const { token, model, sessionConfig } = await mintToken()
+  const { token, model, sessionConfig } = await mintTokenAll()
   const events = []
   const session = await geminiLive.connect({
     credential: token,
@@ -314,6 +345,110 @@ async function runTextIdentifierProbe() {
   return out.pass ? 0 : 1
 }
 
+/**
+ * Seed gate — silent context injection then a question answerable only from seed.
+ * Actions surface is trimmed to compose_prompt so the secretary cannot search/status.
+ */
+async function runSeedProbe() {
+  const { token, model, sessionConfig } = await mintToken(["compose_prompt"])
+  const events = []
+  const session = await geminiLive.connect({
+    credential: token,
+    model,
+    providerConfig: sessionConfig,
+    onEvent: (e) => events.push(e),
+  })
+
+  await sleep(2000)
+
+  session.send({ type: "context", text: "\u05E9\u05DC\u05D5\u05DD", channel: "speakable" })
+  const warmDeadline = Date.now() + 15_000
+  while (Date.now() < warmDeadline) {
+    if (events.some((e) => e.type === "turn_done")) break
+    await sleep(200)
+  }
+  await sleep(500)
+
+  let seed = buildLiveSeed(
+    {
+      bubbles: SEED_FIXTURE,
+      turnState: "idle",
+      pendingPermission: null,
+      lastUserMessage: null,
+    },
+    SEED_LABELS,
+  )
+  if (PROBE_SEED_EMPTY) {
+    seed = { turns: [], charCount: 0 }
+  }
+
+  const beforeInject = events.length
+  for (const turn of seed.turns) {
+    session.send({ type: "context", text: turn.text, channel: "silent" })
+    await sleep(100)
+  }
+  await sleep(3000)
+  const contextProvokedFrames = events
+    .slice(beforeInject)
+    .filter((e) => e.type === "audio").length
+
+  session.send({ type: "context", text: SEED_QUESTION, channel: "speakable" })
+
+  const deadline = Date.now() + 45_000
+  while (Date.now() < deadline) {
+    if (events.some((e) => e.type === "action")) break
+    if (events.some((e) => e.type === "turn_done")) break
+    await sleep(200)
+  }
+  await sleep(1500)
+
+  const actions = events.filter((e) => e.type === "action")
+  for (const action of actions) {
+    session.send({
+      type: "action_result",
+      id: action.id,
+      name: action.name,
+      result: { status: "sent" },
+    })
+    await sleep(300)
+  }
+  await sleep(1000)
+
+  try {
+    session.close()
+  } catch {}
+
+  const answerTranscript = events
+    .filter((e) => e.type === "transcript" && e.role === "assistant")
+    .map((e) => e.text)
+    .join("")
+
+  const composeArgs = actions
+    .filter((e) => e.name === "compose_prompt")
+    .map((e) => String(e.args?.text ?? ""))
+    .join(" ")
+
+  const combinedAnswer = `${answerTranscript} ${composeArgs}`.trim()
+  const modulePattern = new RegExp(SEED_MODULE, "i")
+  const answerUsedSeed = modulePattern.test(combinedAnswer)
+
+  const out = {
+    mode: "seed",
+    seedCharCount: seed.charCount,
+    contextProvokedFrames,
+    answerTranscript,
+    composeArgs,
+    answerUsedSeed,
+    actionNames: actions.map((a) => a.name),
+    pass:
+      seed.charCount > 0 && contextProvokedFrames === 0 && answerUsedSeed === true,
+    mutatedEmptySeed: PROBE_SEED_EMPTY,
+  }
+  console.log(JSON.stringify(out, null, 2))
+  process.exitCode = out.pass ? 0 : 1
+  return out.pass ? 0 : 1
+}
+
 async function runProbe() {
   if (!process.env.GEMINI_API_KEY) {
     console.error("GEMINI_API_KEY required")
@@ -338,6 +473,20 @@ async function runProbe() {
     process.exit(code)
   }
 
+  if (PROBE_SEED) {
+    assertPortFree(BE_PORT)
+    let be = null
+    let code = 1
+    try {
+      be = await startBackend()
+      code = await runSeedProbe()
+    } finally {
+      await killBackend(be)
+      await waitPortReleased(BE_PORT)
+    }
+    process.exit(code)
+  }
+
   assertPortFree(BE_PORT)
 
   let be = null
@@ -347,7 +496,7 @@ async function runProbe() {
 
   try {
     be = await startBackend()
-    const { token, model, sessionConfig } = await mintToken()
+    const { token, model, sessionConfig } = await mintTokenAll()
 
     const session = await geminiLive.connect({
       credential: token,

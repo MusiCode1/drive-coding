@@ -75,6 +75,6 @@ describe("buildGeminiLiveConfig()", () => {
       voiceName: "Puck",
     })
     const tools = built.tools as { functionDeclarations: unknown[] }[]
-    expect(tools[0]?.functionDeclarations.length).toBe(10)
+    expect(tools[0]?.functionDeclarations.length).toBe(12)
   })
 })

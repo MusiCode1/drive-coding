@@ -1,4 +1,136 @@
-## 2026-08-27 (fix1 — סיום סבב תיקון)
+## 2026-08-27 — slice live-context (סיום)
+
+base: `dfbb4078` → HEAD `a96b4910` — 5 commits
+
+| DoD | בדיקה | תוצאה |
+|-----|--------|--------|
+| 1 | typecheck | ✅ |
+| 2 | tests | ✅ (2 כשלים סביבתיים קיימים) |
+| 3 | lint:i18n | ✅ |
+| 4 | session overflow | ✅ live-memory.test |
+| 5 | always refuse | ✅ live-memory.test |
+| 6 | full:true לא throw | ✅ live-memory.test |
+| 7 | search ריק | ✅ live-search.test |
+| 8 | seed maxChars | ✅ live-seed.test |
+| 9 | silent inject | ✅ PROBE_SEED pass |
+| 10 | answer from seed | ✅ answerUsedSeed:true |
+| 11 | mutation empty seed | ✅ pass:false |
+| 12 | slice 1 regression | ✅ |
+| 13 | עץ נקי | ✅ |
+
+calev: **GO** — `reports/drive-coding/live-context-calev.md`
+
+#### סטיות
+
+- warmup speakable לפני seed בפרוב (Commit 4).
+
+---
+
+
+### PROBE_SEED — שער חי
+
+#### מה בוצע?
+
+- `scripts/probe-live-adapter.mjs` — מצב `PROBE_SEED=1` + `PROBE_SEED_EMPTY=1` למוטציה.
+- buildLiveSeed → הזרקה silent → שאלה → `answerUsedSeed` מ-transcript + compose_args.
+- `pass = seedCharCount > 0 && contextProvokedFrames === 0 && answerUsedSeed`.
+
+#### בדיקות
+
+- `PROBE_BE_PORT=4021 PROBE_SEED=1` → pass:true, seedCharCount:37, contextProvokedFrames:0.
+- `PROBE_SEED_EMPTY=1` → pass:false (DoD 11).
+- רגרסיה slice 1 (ללא PROBE_SEED) → ירוק.
+
+#### סטיות
+
+- warmup speakable לפני seed (turn_done) — נדרש כדי שהמזכיר יענה מתוך seed ולא compose_prompt.
+
+---
+
+## 2026-08-27 — slice live-context Commit 3
+
+### remember_session + remember_always
+
+#### מה בוצע?
+
+- `live-actions.ts` — שתי פעולות חדשות.
+- `live-prompt.ts` — פרוזה עם איסור סיכומי-תמליל.
+- עדכון ספירה 10→12 ב-`live-actions.test.ts` ו-`live-gemini-config.test.ts`.
+
+#### בדיקות
+
+- live-actions.test.ts: 5/5.
+- live-gemini-config.test.ts: 2/2.
+
+#### סטיות
+
+- אין.
+
+---
+
+## 2026-08-27 — slice live-context Commit 2
+
+### live-memory.ts — מכסות · חיתוך · גלישה
+
+#### מה בוצע?
+
+- `packages/core/src/voice/live-memory.ts` — `upsertMemory` + `formatMemoryForPrompt`.
+- session: חוצץ מעגלי; always: מסרב עם `{ full: true, items }`.
+- dedup מחרוזת זהה (idempotency).
+- `live-memory.test.ts` — 11 טסטים.
+
+#### בדיקות
+
+- live-memory.test.ts: 11/11 ירוק.
+
+#### סטיות
+
+- אין.
+
+---
+
+## 2026-08-27 — slice live-context Commit 1
+
+### live-search.ts — חיפוש ב-bubbles
+
+#### מה בוצע?
+
+- `packages/core/src/voice/live-search.ts` — `searchSessionBubbles` + `SearchHit`.
+- פיצול-טוקנים עברית/אנגלית עם `\u0590-\u05FF` (lint:i18n-safe).
+- status bubbles מסוננים במפורש.
+- `live-search.test.ts` — 9 טסטים.
+
+#### בדיקות
+
+- live-search.test.ts: 9/9 ירוק.
+- lint:i18n ירוק.
+
+#### סטיות
+
+- אין.
+
+---
+
+
+### live-seed.ts — בניית seed מ-bubbles
+
+#### מה בוצע?
+
+- `packages/core/src/voice/live-seed.ts` — `buildLiveSeed` + טיפוסים (`LiveSeedBubble`, `LiveSeedLabels`, …).
+- `live-seed.test.ts` — 12 טסטים: redaction, maxTurns, maxChars, turnState, lastUserMessage.
+
+#### בדיקות
+
+- live-seed.test.ts: 12/12 ירוק.
+- typecheck + lint:i18n ירוקים.
+- `bun run test`: 2 כשלים סביבתיים קיימים (cli-availability, bridge-failure) — לא קשורים לסלייס.
+
+#### סטיות
+
+- אין.
+
+---
+
 
 ### slice live-contract-gemini fix1 — 4 commits (A–D)
 

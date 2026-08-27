@@ -69,6 +69,20 @@ export const LIVE_ACTION_SHAPES: readonly LiveActionShape[] = [
     name: "search_session",
     params: [{ name: "query", type: "string", required: true }],
   },
+  {
+    name: "remember_session",
+    params: [
+      { name: "text", type: "string", required: true },
+      { name: "id", type: "string", required: false },
+    ],
+  },
+  {
+    name: "remember_always",
+    params: [
+      { name: "text", type: "string", required: true },
+      { name: "id", type: "string", required: false },
+    ],
+  },
 ]
 
 /**
