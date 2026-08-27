@@ -10,8 +10,8 @@
  * 6. (אופציונלי) voiceConfig() של ArkType דוחה shape לא-תקין
  */
 import { describe, expect, it } from "vitest"
-import { select } from "./select"
 import { DEFAULT_VOICE_CONFIG, voiceConfig } from "./capabilities"
+import { select } from "./select"
 
 describe("select()", () => {
   it("מחזיר translate ref מ-DEFAULT_VOICE_CONFIG", () => {

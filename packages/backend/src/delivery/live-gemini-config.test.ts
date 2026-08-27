@@ -54,9 +54,7 @@ describe("buildGeminiLiveConfig()", () => {
 
     expect(built.responseModalities).toEqual(MEASURED_SESSION_CONFIG.responseModalities)
     expect(built.inputAudioTranscription).toEqual(MEASURED_SESSION_CONFIG.inputAudioTranscription)
-    expect(built.outputAudioTranscription).toEqual(
-      MEASURED_SESSION_CONFIG.outputAudioTranscription,
-    )
+    expect(built.outputAudioTranscription).toEqual(MEASURED_SESSION_CONFIG.outputAudioTranscription)
     expect(built.speechConfig).toEqual(MEASURED_SESSION_CONFIG.speechConfig)
     expect(built.systemInstruction).toEqual(MEASURED_SESSION_CONFIG.systemInstruction)
     expect(built.thinkingConfig).toEqual(MEASURED_SESSION_CONFIG.thinkingConfig)
@@ -65,12 +63,8 @@ describe("buildGeminiLiveConfig()", () => {
     const decls = builtTools[0]?.functionDeclarations as Record<string, unknown>[]
     expect(decls).toHaveLength(2)
     expect(decls.map((d) => d.name)).toEqual(["compose_prompt", "cancel_turn"])
-    expect(decls[0]).toMatchObject(
-      MEASURED_SESSION_CONFIG.tools[0]!.functionDeclarations[0]!,
-    )
-    expect(decls[1]).toMatchObject(
-      MEASURED_SESSION_CONFIG.tools[0]!.functionDeclarations[1]!,
-    )
+    expect(decls[0]).toMatchObject(MEASURED_SESSION_CONFIG.tools[0]!.functionDeclarations[0]!)
+    expect(decls[1]).toMatchObject(MEASURED_SESSION_CONFIG.tools[0]!.functionDeclarations[1]!)
   })
 
   it("includes non-empty tools when all actions are requested", () => {

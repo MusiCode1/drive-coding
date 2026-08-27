@@ -5,9 +5,9 @@
  * IMPORTANT: never log the API key or the minted token.
  */
 
+import { buildLiveActions } from "@drive-coding/core/voice/live-actions"
 import { GoogleGenAI } from "@google/genai"
 import { type } from "arktype"
-import { buildLiveActions } from "@drive-coding/core/voice/live-actions"
 import type { Hono } from "hono"
 import { buildGeminiLiveConfig } from "./live-gemini-config.js"
 import { resolveProviderAuth } from "./proxy-auth.js"

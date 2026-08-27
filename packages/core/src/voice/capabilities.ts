@@ -41,8 +41,8 @@ export type VoiceConfig = typeof voiceConfig.infer
  */
 export const DEFAULT_VOICE_CONFIG: VoiceConfig = {
   translate: { provider: "google", model: "gemini-flash-lite-latest" },
-  narrate:   { provider: "google", model: "gemini-flash-lite-latest" },
-  stt:       { provider: "google", model: "gemini-flash-latest" },    // לא נצרך ב-V1 (V2)
-  tts:       { provider: "elevenlabs", model: "eleven_v3" },           // לא נצרך ב-V1 (V3)
-  live:      { provider: "google", model: "gemini-3.1-flash-live-preview" },
+  narrate: { provider: "google", model: "gemini-flash-lite-latest" },
+  stt: { provider: "google", model: "gemini-flash-latest" }, // לא נצרך ב-V1 (V2)
+  tts: { provider: "elevenlabs", model: "eleven_v3" }, // לא נצרך ב-V1 (V3)
+  live: { provider: "google", model: "gemini-3.1-flash-live-preview" },
 }

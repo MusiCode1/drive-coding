@@ -15,15 +15,25 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { GoogleGenAI } from "../packages/frontend/node_modules/@google/genai/dist/node/index.mjs"
 import { LIVE_ACTION_SHAPES } from "../packages/core/src/voice/live-actions.ts"
 import { buildLiveSecretaryPrompt } from "../packages/core/src/voice/live-prompt.ts"
+import { GoogleGenAI } from "../packages/frontend/node_modules/@google/genai/dist/node/index.mjs"
 import { geminiLive } from "../packages/frontend/src/lib/adapters/voice/live/gemini.ts"
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
+/**
+ * NBug16 — the third appearance of "harness fails open" in this slice (after the
+ * stale-BE attach and the `ss` guard). If the probe dies before it can report —
+ * socket never opens, import blows up, a stray `process.exit()` — bun exits 0 and
+ * an empty run reads as a pass.
+ *
+ * So the process starts CONDEMNED. The only line that clears it is the one that
+ * prints a verdict. A gate must prove it ran before it is allowed to say "fine".
+ */
+process.exitCode = 1
+
 const BE_PORT = Number(process.env.PROBE_BE_PORT ?? 4020)
-const PHRASE =
-  process.env.PHRASE ?? "תבקש מהסוכן להריץ את הטסטים בקובץ auth.test.ts"
+const PHRASE = process.env.PHRASE ?? "תבקש מהסוכן להריץ את הטסטים בקובץ auth.test.ts"
 const IDENTIFIER = process.env.IDENTIFIER ?? "auth.test.ts"
 const VOICE = process.env.LIVE_VOICE ?? "Puck"
 const PROBE_CONTEXT = process.env.PROBE_CONTEXT === "1"
@@ -68,7 +78,9 @@ function portIsInUse(port) {
     return out.split("\n").some((line) => line.trimStart().startsWith("LISTEN"))
   } catch (err) {
     console.error(`Could not determine whether port ${port} is free: ${err?.message ?? err}`)
-    console.error(`Treating it as OCCUPIED — a safety check that cannot measure must not clear the way.`)
+    console.error(
+      `Treating it as OCCUPIED — a safety check that cannot measure must not clear the way.`,
+    )
     return true
   }
 }
@@ -221,7 +233,9 @@ async function runDeadSessionProbe() {
     threw = String(e?.message ?? e)
   }
   await sleep(6000)
-  try { session?.close() } catch {}
+  try {
+    session?.close()
+  } catch {}
 
   const sessionStarted = events.some((e) => e.type === "session_started")
   const sawErrorOrClose = events.some((e) => e.type === "error" || e.type === "closed")
@@ -240,9 +254,20 @@ async function runDeadSessionProbe() {
      * the mutation. A gate that cannot tell "correct" from "never ran" is not a
      * gate. So we require positive evidence that the session was really refused.
      */
-    pass: sessionStarted === false && sawErrorOrClose === true && threw === null,
+    /**
+     * `threw` is now EXPECTED on this path: after the NBug17 fix a session that
+     * never becomes ready rejects `connect()` instead of hanging. So a rejection
+     * is evidence of correct behaviour, not of failure.
+     *
+     * `sawErrorOrClose` still carries the anti-vacuum duty on its own: it proves
+     * we actually reached the provider and were refused. A typo that throws
+     * before the socket opens leaves events empty and fails here — which is how
+     * the first draft of this mode was caught passing in both directions.
+     */
+    pass: sessionStarted === false && sawErrorOrClose === true,
   }
   console.log(JSON.stringify(out, null, 2))
+  process.exitCode = out.pass ? 0 : 1
   return out.pass ? 0 : 1
 }
 
@@ -268,7 +293,9 @@ async function runTextIdentifierProbe() {
     await sleep(200)
   }
   await sleep(500)
-  try { session.close() } catch {}
+  try {
+    session.close()
+  } catch {}
 
   const actions = events.filter((e) => e.type === "action")
   const composed = actions.map((a) => String(a.args?.text ?? "")).join(" ")
@@ -283,6 +310,7 @@ async function runTextIdentifierProbe() {
     pass: actions.length > 0 && composed.includes(IDENTIFIER),
   }
   console.log(JSON.stringify(out, null, 2))
+  process.exitCode = out.pass ? 0 : 1
   return out.pass ? 0 : 1
 }
 
@@ -397,10 +425,8 @@ async function runProbe() {
 
     const usageEvent = [...events].reverse().find((e) => e.type === "usage")
 
-
     // The identifier as the secretary actually received it (post-STT).
-    const identifierHeard =
-      userTranscript.match(/[A-Za-z0-9_.-]+\.test\.ts/)?.[0] ?? null
+    const identifierHeard = userTranscript.match(/[A-Za-z0-9_.-]+\.test\.ts/)?.[0] ?? null
     const out = {
       sessionStarted: events.some((e) => e.type === "session_started"),
       userTranscript,
@@ -429,6 +455,7 @@ async function runProbe() {
     }
 
     console.log(JSON.stringify(out, null, 2))
+    process.exitCode = 0
     exitCode = 0
   } catch (e) {
     console.error("PROBE FAILED:", e?.stack ?? e)

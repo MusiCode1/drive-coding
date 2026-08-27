@@ -55,7 +55,9 @@ describe("POST /api/voice/live/token", () => {
     expect(createSpy).toHaveBeenCalledOnce()
 
     const callConfig = createSpy.mock.calls[0]?.[0] as {
-      config: { liveConnectConstraints: { config: { tools: { functionDeclarations: unknown[] }[] } } }
+      config: {
+        liveConnectConstraints: { config: { tools: { functionDeclarations: unknown[] }[] } }
+      }
     }
     const tools =
       callConfig.config.liveConnectConstraints.config.tools[0]?.functionDeclarations ?? []

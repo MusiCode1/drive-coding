@@ -9,8 +9,7 @@ export const LIVE_ACTION_PROSE: Readonly<
   Record<string, { description: string; params: Readonly<Record<string, string>> }>
 > = {
   compose_prompt: {
-    description:
-      "נסח ושלח בקשה לסוכן הקוד בשם המשתמש. מחזיר קבלה מיידית; התשובה מגיעה בערוץ אחר.",
+    description: "נסח ושלח בקשה לסוכן הקוד בשם המשתמש. מחזיר קבלה מיידית; התשובה מגיעה בערוץ אחר.",
     params: { text: "הבקשה המנוסחת במלואה." },
   },
   forward: {

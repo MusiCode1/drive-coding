@@ -32,6 +32,15 @@ export interface LiveConnectOpts {
    * Adapter passes verbatim to live.connect; must not mutate.
    */
   providerConfig: Readonly<Record<string, unknown>>
+  /**
+   * Optional cap on how long `connect()` may stay pending.
+   *
+   * The contract is that `connect()` ALWAYS settles: it resolves on a ready
+   * session and rejects on a session that never becomes ready. A provider whose
+   * transport can fail silently must not leave the caller waiting — the caller
+   * is a hands-free user with no way to cancel.
+   */
+  connectTimeoutMs?: number
   onEvent: (event: LiveEvent) => void
 }
 

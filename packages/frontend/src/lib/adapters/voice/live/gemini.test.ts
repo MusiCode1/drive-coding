@@ -20,17 +20,13 @@ describe("normalizeGeminiFrame()", () => {
     const events = normalizeGeminiFrame({
       serverContent: { inputTranscription: { text: "שלום" } },
     })
-    expect(events).toEqual([
-      { type: "transcript", role: "user", text: "שלום", final: false },
-    ])
+    expect(events).toEqual([{ type: "transcript", role: "user", text: "שלום", final: false }])
   })
 
   it("maps toolCall to action events", () => {
     const events = normalizeGeminiFrame({
       toolCall: {
-        functionCalls: [
-          { id: "c1", name: "compose_prompt", args: { text: "auth.test.ts" } },
-        ],
+        functionCalls: [{ id: "c1", name: "compose_prompt", args: { text: "auth.test.ts" } }],
       },
     })
     expect(events).toEqual([

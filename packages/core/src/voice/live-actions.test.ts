@@ -29,10 +29,10 @@ describe("buildLiveActions()", () => {
     const actions = buildLiveActions()
     expect(actions).toHaveLength(10)
     const compose = actions.find((a) => a.name === "compose_prompt")
-    const prose = LIVE_ACTION_PROSE["compose_prompt"]
+    const prose = LIVE_ACTION_PROSE.compose_prompt
     expect(prose).toBeDefined()
-    expect(compose?.description).toBe(prose!.description)
-    expect(compose?.params[0]?.description).toBe(prose!.params.text)
+    expect(compose?.description).toBe(prose?.description)
+    expect(compose?.params[0]?.description).toBe(prose?.params.text)
   })
 
   it("filters to requested names and drops unknown silently", () => {

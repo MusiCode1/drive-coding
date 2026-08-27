@@ -5,7 +5,6 @@
  * Importable from bun scripts — no $lib, no browser globals in connect path.
  */
 
-import { GoogleGenAI } from "@google/genai"
 import type {
   LiveCommand,
   LiveConnectOpts,
@@ -13,6 +12,7 @@ import type {
   LiveProvider,
   LiveSession,
 } from "@drive-coding/core/voice/live-types"
+import { GoogleGenAI } from "@google/genai"
 import { base64ToBytes, bytesToBase64 } from "../base64.js"
 
 type GeminiPart = {
@@ -110,6 +110,9 @@ export function wrapActionResultResponse(result: unknown): unknown {
   return { value: result }
 }
 
+/** Backstop for the case where neither `onerror` nor `onclose` ever fires. */
+const DEFAULT_CONNECT_TIMEOUT_MS = 20_000
+
 export const geminiLive: LiveProvider = {
   id: "gemini-live",
   inputSampleRate: 16_000,
@@ -119,24 +122,68 @@ export const geminiLive: LiveProvider = {
   async connect(opts: LiveConnectOpts): Promise<LiveSession> {
     const client = new GoogleGenAI({ apiKey: opts.credential })
 
-    const session = await client.live.connect({
-      model: opts.model,
-      config: opts.providerConfig,
-      callbacks: {
-        onopen: () => {},
-        onmessage: (message) => {
-          for (const event of normalizeGeminiFrame(message as GeminiMessage)) {
-            opts.onEvent(event)
-          }
-        },
-        onerror: (err: Error) => {
-          opts.onEvent({ type: "error", message: String(err?.message ?? err) })
-        },
-        onclose: (evt: { reason?: string }) => {
-          opts.onEvent({ type: "closed", reason: evt?.reason })
-        },
-      },
+    // NBug17. `client.live.connect()` resolves on a healthy handshake but is not
+    // guaranteed to settle when the socket never comes up: the SDK reports that
+    // through `onerror`/`onclose`, which emit our events but do NOT release the
+    // promise. A caller that only awaits `connect()` therefore waits forever —
+    // and that caller is a driver pressing "start" on a flaky mobile network,
+    // with the UI stuck on "connecting…" and no error and no way out.
+    //
+    // So failure is made to REJECT. A bare timeout would only trade an unbounded
+    // hang for a bounded one; what the caller actually needs is to be told that
+    // the attempt failed. The timeout below stays as a backstop for the case
+    // where neither callback ever fires.
+    //
+    // The events still fire first (`onEvent` is wired before the await), so an
+    // engine that listens for `error`/`closed` keeps working unchanged.
+    let settled = false
+    let rejectFailure: ((reason: Error) => void) | undefined
+    const failure = new Promise<never>((_resolve, reject) => {
+      rejectFailure = reject
     })
+    const failOnce = (message: string): void => {
+      if (settled) return
+      settled = true
+      rejectFailure?.(new Error(message))
+    }
+
+    const timeoutMs = opts.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
+    const timer = setTimeout(
+      () => failOnce(`live connect timed out after ${timeoutMs}ms`),
+      timeoutMs,
+    )
+
+    let session: Awaited<ReturnType<typeof client.live.connect>>
+    try {
+      session = await Promise.race([
+        client.live.connect({
+          model: opts.model,
+          config: opts.providerConfig,
+          callbacks: {
+            onopen: () => {},
+            onmessage: (message) => {
+              for (const event of normalizeGeminiFrame(message as GeminiMessage)) {
+                opts.onEvent(event)
+              }
+            },
+            onerror: (err: Error) => {
+              opts.onEvent({ type: "error", message: String(err?.message ?? err) })
+              failOnce(String(err?.message ?? err))
+            },
+            onclose: (evt: { reason?: string }) => {
+              opts.onEvent({ type: "closed", reason: evt?.reason })
+              failOnce(evt?.reason ?? "live session closed before it was ready")
+            },
+          },
+        }),
+        failure,
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
+    // Past this point the session is live: later error/close are ordinary events,
+    // never rejections, or we would raise an unhandled rejection on normal close.
+    settled = true
 
     return {
       send(command: LiveCommand): void {
