@@ -1,6 +1,18 @@
 ## 2026-08-27 — slice live-ears (in progress)
 
-### Commit 3 — fetchLiveToken adapter
+### Commit 4 — LiveSessionEngine
+
+#### מה בוצע?
+
+- `engines/live-session.ts` — הזרקת LiveConnector, open() תופס דחיית connect → error.
+- `live-session.test.ts` — DoD 13 + PCM forward + transcript merge.
+
+#### בדיקות
+
+- live-session.test.ts: 3/3 ירוק.
+
+---
+
 
 #### מה בוצע?
 
