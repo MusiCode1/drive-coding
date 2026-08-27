@@ -114,7 +114,7 @@ describe("VoiceMode ear/mouth", () => {
   function makeWithLive(liveOpen: boolean, speakerState: "idle" | "speaking" = "idle") {
     const m = mocks()
     m.speaker.state = speakerState
-    const live = $state({ isOpen: liveOpen })
+    const live = $state({ isOpen: liveOpen, isSpeaking: false })
     const vm = new VoiceMode({
       mic: m.mic as unknown as Mic,
       session: m.session as unknown as AgentSession,
@@ -150,5 +150,41 @@ describe("VoiceMode ear/mouth", () => {
     expect(vm.ear).toBe("closed")
     live.isOpen = true
     expect(vm.ear).toBe("listening")
+  })
+
+  it("mouth speaking from live.isSpeaking when live open", () => {
+    const m = mocks()
+    const live = $state({ isOpen: true, isSpeaking: true })
+    const vm = new VoiceMode({
+      mic: m.mic as unknown as Mic,
+      session: m.session as unknown as AgentSession,
+      speaker: m.speaker as unknown as Speaker,
+      playlist: m.playlist as unknown as AudioPlaylist,
+      live: live as unknown as import("../live.svelte").Live,
+    })
+    expect(vm.mouth).toBe("speaking")
+    live.isSpeaking = false
+    expect(vm.mouth).toBe("silent")
+  })
+
+  it("DoD 5: mouth from speaker when live closed", () => {
+    const { vm, m } = makeWithLive(false, "speaking")
+    expect(vm.mouth).toBe("speaking")
+    m.speaker.state = "idle"
+    expect(vm.mouth).toBe("silent")
+  })
+
+  it("DoD 6 mutation: live open ignores speaker for mouth", () => {
+    const m = mocks()
+    m.speaker.state = "speaking"
+    const live = $state({ isOpen: true, isSpeaking: false })
+    const vm = new VoiceMode({
+      mic: m.mic as unknown as Mic,
+      session: m.session as unknown as AgentSession,
+      speaker: m.speaker as unknown as Speaker,
+      playlist: m.playlist as unknown as AudioPlaylist,
+      live: live as unknown as import("../live.svelte").Live,
+    })
+    expect(vm.mouth).toBe("silent")
   })
 })

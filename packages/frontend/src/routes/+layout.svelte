@@ -100,7 +100,17 @@ const sharedOrderAlloc = new OrderAllocator()
 //  כי Speaker צריך לבדוק #spokeThisTurn שלו. פתרון: Speaker ירשום callback לאחר init.)
 const audioPlaylist = new AudioPlaylist(sharedAudioStream)
 
-// ─── speaker ─── (תלוי ב-session + settings + cues + audioPlaylist)
+// ─── mic ─── (slice 3 — תלוי ב-session + cues)
+const mic = new Mic({ session, cues })
+
+// ─── live ─── (slice live-ears — תלוי ב-mic)
+const live = new Live({
+  mic,
+  session,
+  language: i18n.locale === "he" ? "he" : "en",
+})
+
+// ─── speaker ─── (§4.3: live ref — TTS off while Live open)
 const speaker = new Speaker({
   session,
   settings,
@@ -108,13 +118,8 @@ const speaker = new Speaker({
   playlist: audioPlaylist,
   audioStream: sharedAudioStream,
   orderAlloc: sharedOrderAlloc,
+  live,
 })
-
-// ─── mic ─── (slice 3 — תלוי ב-session + cues)
-const mic = new Mic({ session, cues })
-
-// ─── live ─── (slice live-ears — תלוי ב-mic)
-const live = new Live({ mic, language: i18n.locale === "he" ? "he" : "en" })
 
 // ─── voice-mode ─── (slice 3 — תלוי ב-mic + session + speaker + live)
 const voiceMode = new VoiceMode({ mic, session, speaker, playlist: audioPlaylist, live })

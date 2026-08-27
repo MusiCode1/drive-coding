@@ -56,8 +56,11 @@ export class VoiceMode {
     return "listening"
   }
 
-  /** Agent speech axis — derived from Speaker state. */
+  /** Agent speech axis — Live audio when session open, else Speaker TTS. */
   get mouth(): MouthState {
+    if (this.#live?.isOpen) {
+      return this.#live.isSpeaking ? "speaking" : "silent"
+    }
     return this.#speaker.state === "speaking" ? "speaking" : "silent"
   }
 

@@ -1,4 +1,132 @@
-## 2026-08-27 — slice live-ears (הושלם)
+## 2026-08-27 10:35 — slice live-secretary fix1 (סיום אליעזר)
+
+3 commits: `56ca6e14..HEAD`
+
+| # | בדיקה | תוצאה |
+|---|--------|--------|
+| 1 | typecheck · test · lint:i18n | **עבר** |
+| 2 | אפס redispatch ב-5 ריצות PROBE_DELIVERY | **5/5 pass, redispatch=false** |
+| 3 | מוטציה: הסרת סמן | **5/5 redispatch=true** — הסמן הוא השער |
+| 4 | סעיף-איסור בפרומפט | **עבר** (grep על קבוע מיוצא) |
+| 5 | pendingPermission ⇒ הזרקה מסומנת | **עבר** (טסט) |
+| 6 | optionId מחוץ לרשימה ⇒ invalid-option | **עבר** (טסט) |
+| 7 | DoD 11 מקצה-לקצה | **לא-נמדד** (פרוב חי; מנגנון מחווט) |
+| 8 | `$effect` רץ בטסט (jsdom + `$effect.root`) | **עבר** |
+| 9 | טסט נופל בלי סמן | **עבר** (assert על MARKER) |
+| 10 | DoD 9 על agentAnswer | **עבר** (probe pass ללא idDelivered בשער) |
+| 11 | 5ב+18 | **5ב פתוח · 18 ירד** (מנגנון ב-headless, אין צרכן mouth) |
+| 12 | vitest.config.ts | **לא נגע** |
+| 13 | עץ נקי | **ממתין לקומיטים** |
+
+#### מה בוצע?
+
+- `LIVE_AGENT_DELIVERY_MARKER` + `formatAgentDelivery` + סעיף פרומפט — מונע compose_prompt חוזר.
+- `LIVE_PERMISSION_PENDING_MARKER` + `$effect` הודעת הרשאה + `invalid-option` / `no-pending-permission`.
+- `live.test.svelte.ts`: `@vitest-environment jsdom`, `$effect.root`, טסט `$effect` על turnState.
+- `probe-live-adapter.mjs`: `formatAgentDelivery`, שער `redispatch`, pass על agentAnswer.
+
+#### בדיקות
+
+- PROBE_DELIVERY ×5 על 4031: pass=true, redispatch=false (×5).
+- מוטציה bare delivery ×5: redispatch=true (×5).
+- voice tests: 166 passed.
+
+---
+
+
+7 commits: `54fe3dcd..f668bc51`
+
+| DoD | בדיקה | תוצאה |
+|-----|--------|--------|
+| 1 | typecheck · test · lint:i18n | **עבר** (2 נפילות ידועות) |
+| 2 | מסלול יוצא compose_prompt→sendPrompt | **עבר** (טסט) |
+| 3 | action_result מיידי | **עבר** |
+| 4 | מוטציה on("action") | **לא-נמדד** |
+| 5 | mouth speaking ב-Live | **עבר** (טסט VM) |
+| 5ב | mouth consumer ב-svelte | **פתוח** (grep ריק) |
+| 6 | mouth mutation | **עבר** (טסט) |
+| 8 | PROBE_DELIVERY שלושה טקסטים | **עבר** (פלט JSON; pass=false ב-STT) |
+| 9 | מזהה במסירה | **לא-נמדד** (probe pass=false) |
+| 10 | מוצהר⇔מטופל (4=4) | **עבר** (3 handlers + answer_permission=4) |
+| 14 | probe slice 1 | **עבר** (4031) |
+| 16 | not_sent לכל reason | **עבר** |
+| 17 | audio→sink | **עבר** |
+| 18 | mouth ריאקטיבי | **לא-נמדד** (פריוויו) |
+| 11–13 | פריוויו mic/TTS/PTT | **לא-נמדד** |
+
+calev-heavy: **לא הורץ** (usage limit) — מרדכי ירים verifier.
+
+---
+
+
+- `PROBE_DELIVERY=1` — מזריק agentAnswer סינתטי, מדפיס שלושת הטקסטים (§3).
+- DoD 14: פרוב בסיסי ירוק על 4031.
+
+#### חוב 3 (mouth consumer)
+
+- `grep '.mouth' *.svelte` → **ריק** — חוב 3 **פתוח** (לא מומצא צרכן).
+
+---
+
+
+- Speaker: liveOpen → #stopAndClear + skip enqueue (§4.3).
+- +layout: mic → live → speaker (live ref).
+
+---
+
+
+- mapPermissionOptions + resolvePermission; not_sent ללא pending/optionId לא חוקי.
+
+---
+
+
+- LIVE_ACTION_SHAPES: 12 → 4 (compose_prompt · forward · cancel_turn · answer_permission).
+- handler cancel_turn → session.cancelTurn + action_result מיידי.
+
+---
+
+
+base: `dfeff3ff`
+
+- `sendContext` על LiveSessionEngine.
+- `$effect` על `turnState===idle` → `recentAssistantMessages(1)` → speakable.
+- `#pendingAgentDelivery` נקבע אחרי dispatch מוצלח.
+
+---
+
+
+base: `fe55b249`
+
+#### מה בוצע?
+
+- `LiveAudioSink` — PCM 24kHz gapless, `isPlaying` + `onPlayingChange`.
+- `LiveSessionEngine`: `audio`/`interrupted` → sink; `#cleanupSession` stops sink.
+- `Live.isSpeaking` — גשר `$state` לריאקטיביות.
+- `VoiceMode.mouth` — Live פתוח → `live.isSpeaking`, אחרת Speaker.
+
+#### בדיקות
+
+- live-audio-sink: 3 · live-session audio: 2 · voice-mode mouth: 3 חדשים.
+
+---
+
+
+base: `54fe3dcd` · ענף `slice/live-secretary`
+
+#### מה בוצע?
+
+- `core/voice/live-dispatch.ts` — `canDispatchPrompt` (TDD, 6 tests).
+- `Live` VM: `engine.on("action")` → `compose_prompt`/`forward` → `sendPrompt` + `action_result` מיידי.
+- `not_sent` + reason כשה-gate נכשל; פרומפט מעודכן.
+- `LiveSessionEngine.sendActionResult` · getters `isRemoteView`/`hasAcpClient`.
+- `live.test.svelte.ts`: 7 passed.
+
+#### בדיקות
+
+- typecheck ירוק · lint:i18n ירוק · test: 2 נפילות ידועות.
+
+---
+
 
 base: `dfbb4078` → HEAD `2d1acca8` (8 commits)
 

@@ -106,7 +106,7 @@ type Harness = {
   destroy: () => void
 }
 
-function createHarness(initial?: MessageBubble[], extraSession?: Partial<AgentSession>): Harness {
+function createHarness(initial?: MessageBubble[], extraSession?: Partial<AgentSession>, live?: { isOpen: boolean }): Harness {
   sessionBubbles = initial ?? []
   const settings = new Settings()
   settings.ttsProvider = "google"
@@ -120,6 +120,7 @@ function createHarness(initial?: MessageBubble[], extraSession?: Partial<AgentSe
     playlist,
     audioStream: sink,
     orderAlloc: new OrderAllocator(),
+    live: live as import("./live.svelte").Live | undefined,
   })
   return { speaker, playlist, sink, destroy: () => speaker.destroy() }
 }
@@ -275,5 +276,15 @@ describe("Speaker — סדר-הפליטה בסיום-תור", () => {
         cur.seq > prev.seq || (cur.seq === prev.seq && cur.segmentIndex > prev.segmentIndex)
       expect(ascending).toBe(true)
     }
+  })
+})
+
+describe("Speaker — live-secretary §4.3", () => {
+  it("does not enqueue TTS while Live session is open", async () => {
+    const live = $state({ isOpen: true })
+    active = createHarness([messageBubble(LONG_TEXT)], { turnState: "responding" }, live)
+    await flush()
+    expect(mockSynthesize).not.toHaveBeenCalled()
+    expect(active.playlist.items).toHaveLength(0)
   })
 })

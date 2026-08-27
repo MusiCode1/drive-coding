@@ -20,7 +20,8 @@ const MEASURED_SESSION_CONFIG = {
         {
           name: "compose_prompt",
           description:
-            "נסח ושלח בקשה לסוכן הקוד בשם המשתמש. מחזיר קבלה מיידית; התשובה מגיעה בערוץ אחר.",
+            "נסח ושלח בקשה לסוכן הקוד בשם המשתמש. מחזיר קבלה מיידית; התשובה מגיעה בערוץ אחר. " +
+            "אם קיבלת status:not_sent — אמור למשתמש שהבקשה לא נשלחה ומדוע; אל תאשר שליחה.",
           parameters: {
             type: "OBJECT",
             properties: {
@@ -75,6 +76,6 @@ describe("buildGeminiLiveConfig()", () => {
       voiceName: "Puck",
     })
     const tools = built.tools as { functionDeclarations: unknown[] }[]
-    expect(tools[0]?.functionDeclarations.length).toBe(12)
+    expect(tools[0]?.functionDeclarations.length).toBe(4)
   })
 })

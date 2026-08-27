@@ -17,7 +17,11 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { LIVE_ACTION_SHAPES } from "../packages/core/src/voice/live-actions.ts"
 import { buildLiveSeed } from "../packages/core/src/voice/live-seed.ts"
-import { buildLiveSecretaryPrompt } from "../packages/core/src/voice/live-prompt.ts"
+import {
+  buildLiveSecretaryPrompt,
+  formatAgentDelivery,
+  LIVE_AGENT_DELIVERY_MARKER,
+} from "../packages/core/src/voice/live-prompt.ts"
 import { GoogleGenAI } from "../packages/frontend/node_modules/@google/genai/dist/node/index.mjs"
 import { geminiLive } from "../packages/frontend/src/lib/adapters/voice/live/gemini.ts"
 
@@ -66,6 +70,11 @@ const PROBE_TEXT_ID = process.env.PROBE_TEXT_ID === "1"
  */
 const PROBE_SEED = process.env.PROBE_SEED === "1"
 const PROBE_SEED_EMPTY = process.env.PROBE_SEED_EMPTY === "1"
+/** Slice live-secretary — synthetic agent answer + three-text delivery gate (§3). */
+const PROBE_DELIVERY = process.env.PROBE_DELIVERY === "1"
+const DELIVERY_AGENT_ANSWER =
+  process.env.DELIVERY_AGENT_ANSWER ??
+  `\u05D4\u05E1\u05D5\u05DB\u05DF \u05E1\u05D9\u05DD \u05D1\u05E7\u05D5\u05D1\u05E5 ${IDENTIFIER}.`
 const SEED_QUESTION =
   process.env.SEED_QUESTION ?? "\u05E2\u05DC \u05D0\u05D9\u05D6\u05D4 \u05DE\u05D5\u05D3\u05D5\u05DC \u05D4\u05E1\u05D5\u05DB\u05DF \u05DE\u05E8\u05D9\u05E5 \u05D8\u05E1\u05D8\u05D9\u05DD?"
 const SEED_MODULE = process.env.SEED_MODULE ?? "auth"
@@ -449,6 +458,83 @@ async function runSeedProbe() {
   return out.pass ? 0 : 1
 }
 
+/**
+ * Delivery gate — injects a synthetic agent answer (ground truth) via speakable
+ * context and prints all three texts from §3: inputTranscript · agentAnswer ·
+ * outputTranscript. Identifier fidelity is checked against agentAnswer, not STT.
+ */
+async function runDeliveryProbe() {
+  const { token, model, sessionConfig } = await mintTokenAll()
+  const events = []
+  const session = await geminiLive.connect({
+    credential: token,
+    model,
+    providerConfig: sessionConfig,
+    onEvent: (e) => events.push(e),
+  })
+
+  await sleep(2000)
+
+  session.send({ type: "context", text: "\u05E9\u05DC\u05D5\u05DD", channel: "speakable" })
+  const warmDeadline = Date.now() + 15_000
+  while (Date.now() < warmDeadline) {
+    if (events.some((e) => e.type === "turn_done")) break
+    await sleep(200)
+  }
+  await sleep(500)
+
+  const agentAnswer = DELIVERY_AGENT_ANSWER
+  const deliveryMark = events.length
+  session.send({ type: "context", text: formatAgentDelivery(agentAnswer), channel: "speakable" })
+
+  const deadline = Date.now() + 60_000
+  while (Date.now() < deadline) {
+    const post = events.slice(deliveryMark)
+    if (post.some((e) => e.type === "turn_done")) break
+    await sleep(200)
+  }
+  await sleep(1000)
+
+  try {
+    session.close()
+  } catch {}
+
+  const inputTranscript = events
+    .filter((e) => e.type === "transcript" && e.role === "user")
+    .map((e) => e.text)
+    .join("")
+  const postDelivery = events.slice(deliveryMark)
+  const outputTranscript = postDelivery
+    .filter((e) => e.type === "transcript" && e.role === "assistant")
+    .map((e) => e.text)
+    .join("")
+  const audioEventCount = postDelivery.filter((e) => e.type === "audio").length
+  const redispatch = postDelivery.some((e) => e.type === "action" && e.name === "compose_prompt")
+  const idInAgent = agentAnswer.includes(IDENTIFIER)
+  const idDelivered = outputTranscript.includes(IDENTIFIER)
+
+  const out = {
+    mode: "delivery",
+    deliveryMarker: LIVE_AGENT_DELIVERY_MARKER,
+    inputTranscript,
+    agentAnswer,
+    outputTranscript,
+    audioEventCount,
+    redispatch,
+    identifierInAgentAnswer: idInAgent,
+    identifierDelivered: idDelivered,
+    pass:
+      agentAnswer.length > 0 &&
+      outputTranscript.length > 0 &&
+      audioEventCount > 0 &&
+      idInAgent &&
+      !redispatch,
+  }
+  console.log(JSON.stringify(out, null, 2))
+  process.exitCode = out.pass ? 0 : 1
+  return out.pass ? 0 : 1
+}
+
 async function runProbe() {
   if (!process.env.GEMINI_API_KEY) {
     console.error("GEMINI_API_KEY required")
@@ -480,6 +566,20 @@ async function runProbe() {
     try {
       be = await startBackend()
       code = await runSeedProbe()
+    } finally {
+      await killBackend(be)
+      await waitPortReleased(BE_PORT)
+    }
+    process.exit(code)
+  }
+
+  if (PROBE_DELIVERY) {
+    assertPortFree(BE_PORT)
+    let be = null
+    let code = 1
+    try {
+      be = await startBackend()
+      code = await runDeliveryProbe()
     } finally {
       await killBackend(be)
       await waitPortReleased(BE_PORT)
