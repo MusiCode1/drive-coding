@@ -74,12 +74,15 @@ const RPC_WAIT_METHODS = new Set<string>([
 // ─── slice remote-images C1: PromptBlocks ContentBlock schema ───
 // חמשת הווריאנטים לפי SDK schema/types.gen.d.ts:236. annotations/_meta לא
 // צריכים הצהרה — ArkType משמר מפתחות לא-מוצהרים (נבדק בהרצה).
-const TextBlock         = type({ type: "'text'",          text: "string" })
-const ImageBlock        = type({ type: "'image'",         mimeType: "string", data: "string" })
-const AudioBlock        = type({ type: "'audio'",         mimeType: "string", data: "string" })
-const ResourceLinkBlock = type({ type: "'resource_link'", name: "string",     uri: "string" })
-const ResourceBlock     = type({ type: "'resource'",      resource: "object" })
-const ContentBlockSchema = TextBlock.or(ImageBlock).or(AudioBlock).or(ResourceLinkBlock).or(ResourceBlock)
+const TextBlock = type({ type: "'text'", text: "string" })
+const ImageBlock = type({ type: "'image'", mimeType: "string", data: "string" })
+const AudioBlock = type({ type: "'audio'", mimeType: "string", data: "string" })
+const ResourceLinkBlock = type({ type: "'resource_link'", name: "string", uri: "string" })
+const ResourceBlock = type({ type: "'resource'", resource: "object" })
+const ContentBlockSchema = TextBlock.or(ImageBlock)
+  .or(AudioBlock)
+  .or(ResourceLinkBlock)
+  .or(ResourceBlock)
 const PromptContent = ContentBlockSchema.array()
 
 const PromptParams = type({
@@ -109,6 +112,41 @@ function messageOf(e: unknown): string {
     if (typeof message === "string" && message.length > 0) return message
   }
   return String(e)
+}
+
+function rpcWaitErrorField(error: unknown): { message: string; code?: number } {
+  const code = codeOf(error)
+  const message = messageOf(error)
+  return code === undefined ? { message } : { message, code }
+}
+
+async function respondRpcWait<T>(
+  host: { state: { version: number } },
+  work: Promise<T>,
+  waitMs: number,
+  onLateSettle: (error: unknown) => void,
+  onSuccess?: (value: T) => Record<string, unknown>,
+): Promise<{ status: 200; body: Record<string, unknown> }> {
+  const raced = await raceKeepRunning(work, waitMs, onLateSettle)
+  if (raced.outcome === "timedOut") {
+    return { status: 200, body: { version: host.state.version, ok: false, timedOut: true } }
+  }
+  if (raced.outcome === "rejected") {
+    return {
+      status: 200,
+      body: {
+        version: host.state.version,
+        ok: false,
+        timedOut: false,
+        error: rpcWaitErrorField(raced.error),
+      },
+    }
+  }
+  const extra = onSuccess ? onSuccess(raced.value) : {}
+  return {
+    status: 200,
+    body: { version: host.state.version, ok: true, timedOut: false, ...extra },
+  }
 }
 
 /**
@@ -194,30 +232,67 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
       case RPC_METHODS.cancel: {
         const p = CancelParams(params)
         if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
-        void host.cancel(p.sessionId).catch((e) => log.warn({ err: e }, "cancel failed"))
-        break
+        if (waitMs === null) {
+          void host.cancel(p.sessionId).catch((e) => log.warn({ err: e }, "cancel failed"))
+          break
+        }
+        const waited = await respondRpcWait(host, host.cancel(p.sessionId), waitMs, (e) =>
+          log.warn({ err: e }, "cancel failed"),
+        )
+        return c.json(waited.body, waited.status)
       }
       case RPC_METHODS.setMode: {
         const modeId = params.modeId as string
-        await host.setMode(modeId)
-        break
+        if (waitMs === null) {
+          await host.setMode(modeId)
+          break
+        }
+        const waited = await respondRpcWait(host, host.setMode(modeId), waitMs, (e) =>
+          log.warn({ err: e }, "setMode failed"),
+        )
+        return c.json(waited.body, waited.status)
       }
       case RPC_METHODS.setConfigOption: {
         const configId = params.configId as string
         const value = params.value as string | boolean
-        await host.setConfigOption(configId, value)
-        break
+        if (waitMs === null) {
+          await host.setConfigOption(configId, value)
+          break
+        }
+        const waited = await respondRpcWait(
+          host,
+          host.setConfigOption(configId, value),
+          waitMs,
+          (e) => log.warn({ err: e }, "setConfigOption failed"),
+        )
+        return c.json(waited.body, waited.status)
       }
       case RPC_METHODS.extMethod: {
         const extMethodName = params.method as string
         const extParams = (params.params ?? {}) as Record<string, unknown>
-        await host.extMethod(extMethodName, extParams)
-        break
+        if (waitMs === null) {
+          await host.extMethod(extMethodName, extParams)
+          break
+        }
+        const waited = await respondRpcWait(
+          host,
+          host.extMethod(extMethodName, extParams),
+          waitMs,
+          (e) => log.warn({ err: e }, "extMethod failed"),
+          (result) => ({ result }),
+        )
+        return c.json(waited.body, waited.status)
       }
       case RPC_METHODS.setSessionModel: {
         const model = params.model as string
-        await host.setSessionModel(model)
-        break
+        if (waitMs === null) {
+          await host.setSessionModel(model)
+          break
+        }
+        const waited = await respondRpcWait(host, host.setSessionModel(model), waitMs, (e) =>
+          log.warn({ err: e }, "setSessionModel failed"),
+        )
+        return c.json(waited.body, waited.status)
       }
       // ─── slice remote-session-mgmt C3: BLOCKING mappings with a real result ───
       // ⚠️ each case `return`s explicitly (200/400/502). A `break` here would fall

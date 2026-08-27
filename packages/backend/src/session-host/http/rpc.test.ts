@@ -18,9 +18,12 @@
  */
 
 import type { SessionState } from "@drive-coding/core/session"
-import { applyUserMessage, createInitialSessionState, synthesizeUserMessage } from "@drive-coding/core/session"
-import type { PromptBlocks } from "@drive-coding/provider/client"
-import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
+import {
+  applyUserMessage,
+  createInitialSessionState,
+  synthesizeUserMessage,
+} from "@drive-coding/core/session"
+import type { AcpClient, AcpClientCallbacks, PromptBlocks } from "@drive-coding/provider/client"
 import { Hono } from "hono"
 import { describe, expect, it, vi } from "vitest"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
@@ -566,7 +569,11 @@ describe("POST /api/agents/:id/rpc", () => {
       expect(host.loadSession).toHaveBeenCalledWith({ cwd: "/from/params", sessionId: "sess-9" })
       // slice agent-patch-unify C2: ה-cwd שכבר חושב כאן (מ-params או מ-fallback)
       // עובר גם ל-notifySessionAttached — זו החוליה שהייתה חסרה בשרשרת ה-cwd (§3).
-      expect(registry.notifySessionAttached).toHaveBeenCalledWith("agent-1", "sess-9", "/from/params")
+      expect(registry.notifySessionAttached).toHaveBeenCalledWith(
+        "agent-1",
+        "sess-9",
+        "/from/params",
+      )
     })
 
     it("cwd missing in params → falls back to registry.getCwd", async () => {
@@ -880,9 +887,9 @@ describe("POST /api/agents/:id/rpc", () => {
           const mock = {
             newSession: vi.fn().mockResolvedValue({ sessionId: "test-session-id" }),
             loadSession: vi.fn().mockResolvedValue({ sessionId: "test-session-id" }),
-            prompt: vi.fn().mockImplementation(
-              () => new Promise<void>((resolve) => setTimeout(resolve, 15)),
-            ),
+            prompt: vi
+              .fn()
+              .mockImplementation(() => new Promise<void>((resolve) => setTimeout(resolve, 15))),
             cancel: vi.fn().mockResolvedValue(undefined),
             conn: { sessionUpdate: vi.fn() },
           }
@@ -890,7 +897,10 @@ describe("POST /api/agents/:id/rpc", () => {
         },
       })
 
-      const registry = makeMockRegistry(host as unknown as ExtendedSessionHost, makeMockBroadcaster())
+      const registry = makeMockRegistry(
+        host as unknown as ExtendedSessionHost,
+        makeMockBroadcaster(),
+      )
       const app = makeApp(registry)
 
       const res = await postRpc(app, "agent-1", {
@@ -905,6 +915,85 @@ describe("POST /api/agents/:id/rpc", () => {
       const first = json.messagesSince?.[0] as { role: string; segments: { text: string }[] }
       expect(first.role).toBe("user")
       expect(first.segments[0]?.text).toBe("integration hello")
+    })
+  })
+
+  // ─── slice rpc-wait C2: five remaining methods + extMethod result ───
+
+  describe("waitMs on cancel/setMode/setConfigOption/extMethod/setSessionModel (C2)", () => {
+    it.each([
+      ["cancel", { sessionId: "s1" }],
+      ["setMode", { modeId: "auto" }],
+      ["setConfigOption", { configId: "k", value: true }],
+      ["setSessionModel", { model: "claude-opus" }],
+    ] as const)("without waitMs %s → 202 regression", async (method, params) => {
+      const state = makeMockState(4)
+      const host = makeMockHost(state)
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method, params })
+      expect(res.status).toBe(202)
+      expect(await res.json()).toEqual({ version: 4 })
+    })
+
+    it.each([
+      ["cancel", { sessionId: "s1" }],
+      ["setMode", { modeId: "auto" }],
+      ["setConfigOption", { configId: "k", value: true }],
+      ["setSessionModel", { model: "claude-opus" }],
+    ] as const)("with waitMs %s → 200 {ok:true, timedOut:false}", async (method, params) => {
+      const host = makeMockHost(makeMockState(6))
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method, params, waitMs: 5000 })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ ok: true, timedOut: false })
+    })
+
+    it("extMethod without waitMs → 202 regression", async () => {
+      const state = makeMockState(4)
+      const host = makeMockHost(state)
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "extMethod",
+        params: { method: "_drive/custom", params: { n: 1 } },
+      })
+      expect(res.status).toBe(202)
+      expect(await res.json()).toEqual({ version: 4 })
+    })
+
+    it("extMethod with waitMs → 200 {ok:true, result}", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.extMethod as ReturnType<typeof vi.fn>).mockResolvedValue({ answer: 42 })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "extMethod",
+        params: { method: "_drive/custom", params: {} },
+        waitMs: 5000,
+      })
+      expect(res.status).toBe(200)
+      const json = await res.json()
+      expect(json).toMatchObject({ ok: true, timedOut: false, result: { answer: 42 } })
+    })
+
+    it("listSessions with invalid waitMs → 200 (ignored silently)", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({ sessions: [] })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "listSessions",
+        params: {},
+        waitMs: -1,
+      })
+      expect(res.status).toBe(200)
     })
   })
 
