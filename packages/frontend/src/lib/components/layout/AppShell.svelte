@@ -285,8 +285,8 @@ $effect(() => {
   return () => clearTimeout(timer)
 })
 
-// control-dock commit 0: הופעת/היעלמות הרצועה מקצרת את viewport הגלילה.
-// maybeJump() לא מספיק (סף 72px > גובה הרצועה 56px; sentinelMargin 48 < 56 ⇒ JumpDown שגוי).
+// control-dock: הופעת/היעלמות הרצועה מקצרת את viewport הגלילה.
+// maybeJump() לא מספיק — גובה הרצועה משתנה בין מובייל לדסקטופ, והסף קבוע.
 // jumpToBottom() מותנה ב-following, אחרי שהפריסה התייצבה (תקדים: setTimeout 320ms).
 $effect(() => {
   void ribbonVisible

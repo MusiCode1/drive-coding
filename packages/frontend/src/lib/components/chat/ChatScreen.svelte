@@ -9,7 +9,6 @@ import ChatBubbles from "$lib/components/chat/ChatBubbles.svelte"
 // edge-merge 25/08: PlaybackControls + voiceMode הגיעו מ-acp-playback על +page.svelte,
 // בעוד session-url חילץ את הדף ל-ChatScreen. מיזוג "take theirs" היה מוחק את שניהם
 // בשקט — ר' הערת ה-mic-toggle למטה.
-import PlaybackControls from "$lib/components/chat/PlaybackControls.svelte"
 import RecordFooter from "$lib/components/chat/RecordFooter.svelte"
 import AppShell from "$lib/components/layout/AppShell.svelte"
 import DisconnectBanner from "$lib/components/session/DisconnectBanner.svelte"
@@ -144,7 +143,6 @@ onMount(() => {
     {/if}
 
     {#snippet footer()}
-      <PlaybackControls />
       <RecordFooter />
     {/snippet}
   </AppShell>

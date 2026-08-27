@@ -1,12 +1,13 @@
 <script lang="ts">
 /**
- * PlaybackControls — רצועת בקרה מעוגנת מעל RecordFooter (control-dock).
+ * PlaybackControls — רצועת בקרה בתוך כרטיס RecordFooter (control-dock, slice dock-inline).
  *
  * חמישה תאים קבועים: עצור השמעה · קודם · השהה/המשך · הבא · השתק.
  * ביטול-הריצה עבר ל-MicLarge ו-TypeArea (slice control-roles).
  *
  * ─── control-dock ───
  * ─── slice control-roles ───
+ * ─── slice dock-inline ───
  */
 import PauseIcon from "@lucide/svelte/icons/pause"
 import PlayIcon from "@lucide/svelte/icons/play"
@@ -52,116 +53,107 @@ const isTransportEnabled = $derived(playlist.state === "playing")
 const isNavDisabled = $derived(playlist.items.length === 0 || playlist.items.length < 2)
 </script>
 
-<!-- shrink-0 על השורש — כמו RecordFooter; בלי זה 56px נמחצים תחת לחץ flex. -->
-<footer
-  class="playback-dock-footer relative shrink-0 flex justify-center px-4"
-  class:mic-plain={responsive.isMobile}
+<!-- shrink-0 + w-full: שורה בתוך mic-card — בלי w-full repeat(5,1fr) נסוג במובייל. -->
+<div
+  class="playback-dock-row relative w-full min-w-0 shrink-0"
   class:is-collapsed={!showDock}
 >
-  <div class="mic-card playback-dock-card w-full max-w-3xl min-w-0">
-    <div class="dock-pane" class:is-visible={showDock}>
-      <div class="dock-pane-inner">
-        <!-- dir=ltr: בקרת-תעבורה (⏮ שמאל, ⏭ ימין) — מוסכמת נגנים, לא כיוון טקסט.
-             חריג RTL מודע; אל תהפוך לפי locale. -->
-        <div
-          class="controls-grid"
-          class:controls-grid--desktop={!responsive.isMobile}
-          role="group"
-          dir="ltr"
-          aria-label={t("playbackControls.dock")}
+  <div class="dock-pane" class:is-visible={showDock}>
+    <div class="dock-pane-inner">
+      <!-- dir=ltr: בקרת-תעבורה (⏮ שמאל, ⏭ ימין) — מוסכמת נגנים, לא כיוון טקסט.
+           חריג RTL מודע; אל תהפוך לפי locale. -->
+      <div
+        class="controls-grid"
+        class:controls-grid--desktop={!responsive.isMobile}
+        role="group"
+        dir="ltr"
+        aria-label={t("playbackControls.dock")}
+      >
+        <button
+          type="button"
+          class="ctrl-cell"
+          onclick={() => voiceMode.stopPlayback()}
+          disabled={playlist.items.length === 0}
+          aria-label={t("playbackControls.stopPlayback")}
+          title={t("playbackControls.stopPlayback")}
         >
+          <SquareIcon size={iconSize} strokeWidth={2} />
+        </button>
+
+        <button
+          type="button"
+          class="ctrl-cell"
+          onclick={() => playlist.prev()}
+          disabled={isNavDisabled}
+          aria-label={t("playbackControls.prev")}
+          title={t("playbackControls.prev")}
+        >
+          <SkipBackIcon size={iconSize} strokeWidth={2} />
+        </button>
+
+        {#if isPaused}
+          <button
+            type="button"
+            class="ctrl-cell ctrl-cell--accent"
+            onclick={() => playlist.resume()}
+            disabled={!isTransportEnabled}
+            aria-label={t("playbackControls.resume")}
+            title={t("playbackControls.resume")}
+          >
+            <PlayIcon size={iconSize} strokeWidth={2} />
+          </button>
+        {:else}
           <button
             type="button"
             class="ctrl-cell"
-            onclick={() => voiceMode.stopPlayback()}
-            disabled={playlist.items.length === 0}
-            aria-label={t("playbackControls.stopPlayback")}
-            title={t("playbackControls.stopPlayback")}
+            onclick={() => playlist.pause()}
+            disabled={!isTransportEnabled}
+            aria-label={t("playbackControls.pause")}
+            title={t("playbackControls.pause")}
           >
-            <SquareIcon size={iconSize} strokeWidth={2} />
+            <PauseIcon size={iconSize} strokeWidth={2} />
           </button>
+        {/if}
 
-          <button
-            type="button"
-            class="ctrl-cell"
-            onclick={() => playlist.prev()}
-            disabled={isNavDisabled}
-            aria-label={t("playbackControls.prev")}
-            title={t("playbackControls.prev")}
-          >
-            <SkipBackIcon size={iconSize} strokeWidth={2} />
-          </button>
+        <button
+          type="button"
+          class="ctrl-cell"
+          onclick={() => playlist.next()}
+          disabled={isNavDisabled}
+          aria-label={t("playbackControls.next")}
+          title={t("playbackControls.next")}
+        >
+          <SkipForwardIcon size={iconSize} strokeWidth={2} />
+        </button>
 
-          {#if isPaused}
-            <button
-              type="button"
-              class="ctrl-cell ctrl-cell--accent"
-              onclick={() => playlist.resume()}
-              disabled={!isTransportEnabled}
-              aria-label={t("playbackControls.resume")}
-              title={t("playbackControls.resume")}
-            >
-              <PlayIcon size={iconSize} strokeWidth={2} />
-            </button>
+        <button
+          type="button"
+          class="ctrl-cell"
+          onclick={() => speaker.toggle()}
+          aria-pressed={!speaker.enabled}
+          aria-label={speaker.enabled ? t("header.audioOn") : t("header.audioOff")}
+          title={speaker.enabled ? t("header.audioOn") : t("header.audioOff")}
+        >
+          {#if speaker.enabled}
+            <Volume2Icon size={iconSize} strokeWidth={2} />
           {:else}
-            <button
-              type="button"
-              class="ctrl-cell"
-              onclick={() => playlist.pause()}
-              disabled={!isTransportEnabled}
-              aria-label={t("playbackControls.pause")}
-              title={t("playbackControls.pause")}
-            >
-              <PauseIcon size={iconSize} strokeWidth={2} />
-            </button>
+            <VolumeXIcon size={iconSize} strokeWidth={2} />
           {/if}
-
-          <button
-            type="button"
-            class="ctrl-cell"
-            onclick={() => playlist.next()}
-            disabled={isNavDisabled}
-            aria-label={t("playbackControls.next")}
-            title={t("playbackControls.next")}
-          >
-            <SkipForwardIcon size={iconSize} strokeWidth={2} />
-          </button>
-
-          <button
-            type="button"
-            class="ctrl-cell"
-            onclick={() => speaker.toggle()}
-            aria-pressed={!speaker.enabled}
-            aria-label={speaker.enabled ? t("header.audioOn") : t("header.audioOff")}
-            title={speaker.enabled ? t("header.audioOn") : t("header.audioOff")}
-          >
-            {#if speaker.enabled}
-              <Volume2Icon size={iconSize} strokeWidth={2} />
-            {:else}
-              <VolumeXIcon size={iconSize} strokeWidth={2} />
-            {/if}
-          </button>
-        </div>
+        </button>
       </div>
     </div>
   </div>
-</footer>
+</div>
 
 <style>
-  .playback-dock-card {
-    /* יחידה אחת עם RecordFooter — רק פינות עליונות; תחתית שטוחה */
-    border-end-start-radius: 0;
-    border-end-end-radius: 0;
-    border-bottom: none;
-    padding: 0;
+  /* mic-card gap-3 (0.75rem) still applies when ribbon height is 0 — cancel when collapsed. */
+  .playback-dock-row {
+    transition: margin-block-start 0.3s ease;
   }
 
-  /* כשהרצועה מעל וגלויה — RecordFooter מאבד פינות/מסגרת עליונה (יחידה ויזואלית) */
-  :global(.playback-dock-footer:not(.is-collapsed) + footer .mic-card) {
-    border-start-start-radius: 0;
-    border-start-end-radius: 0;
-    border-top: none;
-    box-shadow: none;
+  .playback-dock-row.is-collapsed {
+    margin-block-start: -0.75rem;
+    pointer-events: none;
   }
 
   .dock-pane {
@@ -202,6 +194,8 @@ const isNavDisabled = $derived(playlist.items.length === 0 || playlist.items.len
 
   .controls-grid--desktop {
     --touch-target-lg: 40px;
+    grid-template-columns: repeat(5, auto);
+    justify-content: center;
     gap: 0.375rem;
     padding: 0.375rem 0.625rem;
   }
@@ -238,9 +232,5 @@ const isNavDisabled = $derived(playlist.items.length === 0 || playlist.items.len
 
   .ctrl-cell--accent:hover:not(:disabled) {
     filter: brightness(1.1);
-  }
-
-  .is-collapsed {
-    pointer-events: none;
   }
 </style>
