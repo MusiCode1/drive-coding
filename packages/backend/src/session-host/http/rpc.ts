@@ -3,14 +3,21 @@
  *
  * Dispatches RPC calls to the ExtendedSessionHost.
  *
- * Fire-and-forget methods — 202 Accepted with {version}, no result body:
+ * Fire-and-forget methods — 202 Accepted with {version}, no result body
+ * (when `waitMs` is absent or 0):
  *   - session/prompt · session/cancel · session/set_mode · session/set_config_option
  *   - _drive/ext · _drive/set_session_model
+ *
+ * Same six methods with top-level `waitMs` (1..60000) — 200 with result body:
+ *   - success: { version, ok:true, timedOut:false, messagesSince? (prompt only), result? (extMethod only) }
+ *   - turn failure: { version, ok:false, timedOut:false, error:{message,code?}, messagesSince? (prompt only) }
+ *   - timeout: { version, ok:false, timedOut:true } — turn keeps running; use /events SSE
+ *   Invalid waitMs on these methods → 400 {error}. Above 60000 / non-integer / negative → 400 (not clamp).
  *
  * Blocking methods with a REAL result (slice remote-session-mgmt C3) — the FE
  * needs the list/confirmation. Each case below returns EXPLICITLY (200/400/502):
  * a `break` would fall through to the shared `return c.json({version}, 202)`
- * and break the contract.
+ * and break the contract. Management methods ignore `waitMs` silently (valid or invalid).
  *   - session/list   → 200 {sessions, sessionCapabilities} | 502 {error, code?}
  *   - session/load   → 200 {sessionId, version} | 400 (bad params / no cwd) | 502
  *   - session/delete → 200 {ok:true} | 200 {ok:false, unsupported:true} (-32601) | 502
@@ -19,18 +26,26 @@
  * except reason:"evict-timeout" (a stuck WS tab, not a dead agent) → 503
  * (slice host-result-reason C1).
  *
- * ⚠️ prompt/cancel are non-blocking (slice session-host-pending-surface C3-ד):
+ * ⚠️ prompt/cancel are non-blocking without waitMs (slice session-host-pending-surface C3-ד):
  * a synchronous launch failure (bad params, unknown method) stays an ordinary
  * HTTP response (400); an async turn failure travels through the state channel
  * (host.prompt already wrote lastTurnError before its promise settled) — the
  * `.catch` here is a log-only safety net (prevents unhandledRejection), NOT
  * `() => {}` (that would swap a loud failure for a silent one).
  *
+ * ⚠️ With waitMs the HTTP handler is a **watcher**, not an owner: client disconnect
+ * does NOT cancel the turn. A timeout returns 200 {timedOut:true}; late rejections
+ * after timeout are logged via the same log.warn safety net (slice rpc-wait §5).
+ *
+ * ⚠️ cancel ok:true with waitMs means "sent", not "executed" — session-host wraps
+ * client.cancel in catch {} so the promise never rejects.
+ *
  * ─── slice session-host-http C3 (TDD) ───
  * ─── slice remote-session-view C4: + setSessionModel (TDD) ───
  * ─── slice session-host-pending-surface C3-ד (TDD): non-blocking prompt/cancel + ArkType ───
  * ─── slice remote-session-mgmt C3 (TDD): blocking listSessions/loadSession/deleteSession ───
  * ─── slice acp-method-names: שמות קנוניים; השמות הישנים מתקבלים בחלון-מעבר ───
+ * ─── slice rpc-wait (TDD): optional waitMs on the six fire-and-forget methods ───
  */
 
 import { createLogger } from "@drive-coding/core/log"
@@ -39,8 +54,19 @@ import type { PromptBlocks } from "@drive-coding/provider/client"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import type { AgentSessionRegistry } from "../registry.js"
+import { parseWaitMs, raceKeepRunning } from "./rpc-wait.js"
 
 const log = createLogger("backend.session-host.rpc")
+
+/** Methods whose success path is the shared 202 — honor top-level waitMs. */
+const RPC_WAIT_METHODS = new Set<string>([
+  RPC_METHODS.prompt,
+  RPC_METHODS.cancel,
+  RPC_METHODS.setMode,
+  RPC_METHODS.setConfigOption,
+  RPC_METHODS.extMethod,
+  RPC_METHODS.setSessionModel,
+])
 
 // ⚠️ "meta?": "object" מסיק object | undefined — tsc דוחה את ההעברה ל-
 // host.prompt(meta?: Record<string, unknown>). "[string]": "unknown" עוקף זאת.
@@ -119,16 +145,51 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
     const rawMethod = body.method as string | undefined
     const method = canonicalRpcMethod(rawMethod)
     const params = (body.params ?? {}) as Record<string, unknown>
+    const waitParsed = parseWaitMs(body.waitMs)
+    if (waitParsed === "invalid" && method !== undefined && RPC_WAIT_METHODS.has(method)) {
+      return c.json({ error: "invalid waitMs" }, 400)
+    }
+    const waitMs = waitParsed === "invalid" ? null : waitParsed
 
     // Dispatch to host method
     switch (method) {
       case RPC_METHODS.prompt: {
         const p = PromptParams(params)
         if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
-        void host.prompt(p.sessionId, p.content as string | PromptBlocks, p.meta).catch((e) => {
-          log.warn({ err: e }, "prompt turn failed") // ← state already carries lastTurnError
+        if (waitMs === null) {
+          const promptWork = host.prompt(p.sessionId, p.content as string | PromptBlocks, p.meta)
+          void promptWork.catch((e) => {
+            log.warn({ err: e }, "prompt turn failed") // ← state already carries lastTurnError
+          })
+          break // no await — 202 immediately, as the JSDoc above already promises
+        }
+        const from = host.state.messages.length
+        const promptWork = host.prompt(p.sessionId, p.content as string | PromptBlocks, p.meta)
+        const raced = await raceKeepRunning(promptWork, waitMs, (e) => {
+          log.warn({ err: e }, "prompt turn failed")
         })
-        break // no await — 202 immediately, as the JSDoc above already promises
+        if (raced.outcome === "timedOut") {
+          return c.json({ version: host.state.version, ok: false, timedOut: true }, 200)
+        }
+        const messagesSince = host.state.messages.slice(from)
+        if (raced.outcome === "rejected") {
+          const code = codeOf(raced.error)
+          const message = messageOf(raced.error)
+          return c.json(
+            {
+              version: host.state.version,
+              ok: false,
+              timedOut: false,
+              error: code === undefined ? { message } : { message, code },
+              messagesSince,
+            },
+            200,
+          )
+        }
+        return c.json(
+          { version: host.state.version, ok: true, timedOut: false, messagesSince },
+          200,
+        )
       }
       case RPC_METHODS.cancel: {
         const p = CancelParams(params)
