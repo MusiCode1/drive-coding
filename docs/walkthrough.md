@@ -1,3 +1,25 @@
+## 2026-08-27 — slice live-context Commit 4
+
+### PROBE_SEED — שער חי
+
+#### מה בוצע?
+
+- `scripts/probe-live-adapter.mjs` — מצב `PROBE_SEED=1` + `PROBE_SEED_EMPTY=1` למוטציה.
+- buildLiveSeed → הזרקה silent → שאלה → `answerUsedSeed` מ-transcript + compose_args.
+- `pass = seedCharCount > 0 && contextProvokedFrames === 0 && answerUsedSeed`.
+
+#### בדיקות
+
+- `PROBE_BE_PORT=4021 PROBE_SEED=1` → pass:true, seedCharCount:37, contextProvokedFrames:0.
+- `PROBE_SEED_EMPTY=1` → pass:false (DoD 11).
+- רגרסיה slice 1 (ללא PROBE_SEED) → ירוק.
+
+#### סטיות
+
+- warmup speakable לפני seed (turn_done) — נדרש כדי שהמזכיר יענה מתוך seed ולא compose_prompt.
+
+---
+
 ## 2026-08-27 — slice live-context Commit 3
 
 ### remember_session + remember_always
