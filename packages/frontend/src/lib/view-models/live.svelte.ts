@@ -8,6 +8,7 @@
 
 import type { MessageKey } from "@drive-coding/core/i18n"
 import { canDispatchPrompt } from "@drive-coding/core/voice/live-dispatch"
+import { mapPermissionOptions } from "$lib/types/permission"
 import { geminiLive } from "../adapters/voice/live/gemini"
 import { fetchLiveToken } from "../adapters/voice/live-token"
 import { LiveAudioSink } from "../engines/live-audio-sink"
@@ -173,6 +174,28 @@ export class Live {
       case "cancel_turn": {
         void this.#session.cancelTurn()
         this.#pendingAgentDelivery = false
+        this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
+        break
+      }
+      case "answer_permission": {
+        const optionId = typeof action.args.optionId === "string" ? action.args.optionId : ""
+        const pending = this.#session.pendingPermission
+        if (!pending) {
+          this.#engine.sendActionResult(action.id, action.name, {
+            status: "not_sent",
+            reason: "no-session",
+          })
+          break
+        }
+        const allowed = mapPermissionOptions(pending.params).some((o) => o.optionId === optionId)
+        if (!optionId || !allowed) {
+          this.#engine.sendActionResult(action.id, action.name, {
+            status: "not_sent",
+            reason: "empty-text",
+          })
+          break
+        }
+        this.#session.resolvePermission(optionId)
         this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
         break
       }

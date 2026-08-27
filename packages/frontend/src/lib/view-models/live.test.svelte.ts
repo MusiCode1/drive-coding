@@ -202,4 +202,37 @@ describe("Live outgoing path (Commit 0)", () => {
       channel: "speakable",
     })
   })
+
+  it("answer_permission resolves pending permission and returns sent", async () => {
+    const resolvePermission = vi.fn()
+    const session = mockSession({
+      pendingPermission: {
+        params: {
+          options: [
+            { optionId: "allow-1", name: "Allow once", kind: "allow_once" },
+            { optionId: "deny-1", name: "Deny", kind: "reject_once" },
+          ],
+          toolCall: { toolCallId: "t1", title: "Run command" },
+        },
+        resolve: vi.fn(),
+      },
+      resolvePermission,
+    })
+    await openLive(session)
+
+    providerOnEvent?.({
+      type: "action",
+      id: "a7",
+      name: "answer_permission",
+      args: { optionId: "allow-1" },
+    })
+
+    expect(resolvePermission).toHaveBeenCalledWith("allow-1")
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "a7",
+      name: "answer_permission",
+      result: { status: "sent" },
+    })
+  })
 })

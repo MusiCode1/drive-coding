@@ -1,4 +1,9 @@
-## 2026-08-27 09:43 — slice live-secretary Commit 3: צמצום משטח פעולות
+## 2026-08-27 09:43 — slice live-secretary Commit 4: answer_permission
+
+- mapPermissionOptions + resolvePermission; not_sent ללא pending/optionId לא חוקי.
+
+---
+
 
 - LIVE_ACTION_SHAPES: 12 → 4 (compose_prompt · forward · cancel_turn · answer_permission).
 - handler cancel_turn → session.cancelTurn + action_result מיידי.
