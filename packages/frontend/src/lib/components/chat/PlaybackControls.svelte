@@ -187,9 +187,9 @@ const isNavDisabled = $derived(playlist.items.length === 0 || playlist.items.len
   .controls-grid {
     --touch-target-lg: 56px;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
+    padding: 0.5rem;
   }
 
   .controls-grid--desktop {
@@ -204,7 +204,7 @@ const isNavDisabled = $derived(playlist.items.length === 0 || playlist.items.len
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: var(--touch-target-lg);
+    min-width: 0;
     min-height: var(--touch-target-lg);
     border: 1px solid var(--border);
     border-radius: 0.625rem;
