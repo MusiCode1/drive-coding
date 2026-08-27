@@ -1,9 +1,10 @@
 <script lang="ts">
 /**
- * LiveTranscript — streaming Live secretary transcript (not bubbles).
+ * LiveTranscript — streaming Live secretary transcript with bubble styling.
  *
  * Slice: live-ears, Commit 7.
  * Slice: live-transcript-box — scroll ceiling + auto-follow.
+ * Slice: live-input-mode — user/assistant bubbles (--bubble-user / --bubble-agent).
  */
 
 import { getI18n, getLive, getVoiceMode } from "$lib/context"
@@ -174,7 +175,17 @@ $effect(() => {
             <span class="text-xs font-semibold" style="color:var(--fg-dim)">
               {t(entry.role === "user" ? "live.transcript.user" : "live.transcript.assistant")}
             </span>
-            <span style="color:var(--fg)" class:opacity-70={!entry.final}>{entry.text}</span>
+            <div
+              data-live-role={entry.role}
+              dir="auto"
+              class="text-sm leading-relaxed px-3.5 py-2.5 rounded-2xl max-w-full break-words"
+              style={entry.role === "user"
+                ? "background:var(--bubble-user); color:var(--fg)"
+                : "background:var(--bubble-agent); color:var(--fg)"}
+              class:opacity-70={!entry.final}
+            >
+              {entry.text}
+            </div>
           </div>
         {/each}
       </div>

@@ -11,6 +11,7 @@ import LiveTranscriptHarness from "./live-transcript-harness.svelte"
 
 let target: HTMLDivElement | null = null
 let app: object | null = null
+let cssVarsEl: HTMLStyleElement | null = null
 
 afterEach(() => {
   if (app !== null) unmount(app)
@@ -19,8 +20,20 @@ afterEach(() => {
   app = null
 })
 
-function makeEntry(id: number, text: string): LiveTranscriptEntry {
-  return { id, role: "assistant", text, final: true }
+function ensureBubbleCssVars(): void {
+  if (cssVarsEl) return
+  cssVarsEl = document.createElement("style")
+  cssVarsEl.textContent =
+    ":root { --bubble-user: rgb(47, 36, 25); --bubble-agent: rgb(36, 29, 42); --fg: #eee; }"
+  document.head.appendChild(cssVarsEl)
+}
+
+function makeEntry(
+  id: number,
+  text: string,
+  role: LiveTranscriptEntry["role"] = "assistant",
+): LiveTranscriptEntry {
+  return { id, role, text, final: true }
 }
 
 function mountHarness(transcript: LiveTranscriptEntry[]): HTMLDivElement {
@@ -52,5 +65,25 @@ describe("LiveTranscript — DoD 4: data-live-entry per row", () => {
     const entries = Array.from({ length: 25 }, (_, i) => makeEntry(i, `line ${i}`))
     const root = mountHarness(entries)
     expect(root.querySelectorAll("[data-live-entry]").length).toBe(25)
+  })
+})
+
+describe("LiveTranscript — bubble styling (slice live-input-mode)", () => {
+  it("user entry => [data-live-role=user] with non-transparent background", () => {
+    ensureBubbleCssVars()
+    const root = mountHarness([makeEntry(0, "hello user", "user")])
+    const bubble = root.querySelector<HTMLElement>('[data-live-role="user"]')
+    expect(bubble).not.toBeNull()
+    expect(bubble!.style.background).toContain("--bubble-user")
+    expect(bubble!.getAttribute("dir")).toBe("auto")
+  })
+
+  it("assistant entry => [data-live-role=assistant]", () => {
+    ensureBubbleCssVars()
+    const root = mountHarness([makeEntry(1, "secretary reply", "assistant")])
+    const bubble = root.querySelector<HTMLElement>('[data-live-role="assistant"]')
+    expect(bubble).not.toBeNull()
+    expect(bubble!.style.background).toContain("--bubble-agent")
+    expect(bubble!.getAttribute("dir")).toBe("auto")
   })
 })
