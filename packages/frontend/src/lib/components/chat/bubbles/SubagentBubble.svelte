@@ -14,7 +14,6 @@
  */
 import type { ToolBubble } from "$lib/types/bubble"
 import { getI18n, getChatScroll } from "$lib/context"
-import Avatar from "$lib/components/chat/Avatar.svelte"
 import BubbleRenderer from "$lib/components/chat/BubbleRenderer.svelte"
 import MarkdownContent from "./MarkdownContent.svelte"
 import { onMount } from "svelte"
@@ -46,13 +45,10 @@ onMount(() => requestAnimationFrame(() => { ready = true }))
 const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
 </script>
 
-<div class="flex gap-2 self-end max-w-[85%] min-w-0 items-end flex-row-reverse">
-  <Avatar kind="tool" />
-
-  <div
-    class="rounded-xl border overflow-hidden text-[13px] flex-1 min-w-0"
-    style="background:var(--bg-card); border-color:var(--border)"
-  >
+<div
+  class="rounded-xl border overflow-hidden text-[13px] flex-1 min-w-0 max-w-[85%]"
+  style="background:var(--bg-card); border-color:var(--border)"
+>
     <details bind:open ontoggle={onUserToggle}>
       <summary class="flex items-center gap-2 px-3 py-2 cursor-pointer list-none select-none">
         <span
@@ -85,7 +81,6 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
         </div>
       {/if}
     </details>
-  </div>
 </div>
 
 <style>
