@@ -1,6 +1,18 @@
 ## 2026-08-27 — slice live-ears (in progress)
 
-### Commit 2 — echo-gate
+### Commit 3 — fetchLiveToken adapter
+
+#### מה בוצע?
+
+- `adapters/voice/live-token.ts` — POST /api/voice/live/token, 503 → שגיאה ידידותית.
+- `live-token.test.ts` — integration mock.
+
+#### בדיקות
+
+- live-token.test.ts: 2/2 ירוק.
+
+---
+
 
 #### מה בוצע?
 
