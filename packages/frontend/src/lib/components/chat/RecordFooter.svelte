@@ -23,6 +23,8 @@ import MicIcon from "@lucide/svelte/icons/mic"
 import KeyboardIcon from "@lucide/svelte/icons/keyboard"
 import EyeOffIcon from "@lucide/svelte/icons/eye-off"
 import MicLarge from "./MicLarge.svelte"
+import LiveToggle from "./LiveToggle.svelte"
+import LiveTranscript from "./LiveTranscript.svelte"
 import TypeArea from "./TypeArea.svelte"
 import { getI18n, getResponsive, getSession } from "$lib/context"
 
@@ -114,6 +116,8 @@ let mode = $state<Mode>("record")
         class:is-active={mode === "record"}
       >
         <div class="record-pane-inner flex flex-col items-center gap-3 w-full">
+          <LiveTranscript />
+          <LiveToggle />
           <MicLarge />
         </div>
       </div>

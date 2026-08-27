@@ -1,6 +1,21 @@
 ## 2026-08-27 — slice live-ears (in progress)
 
-### Commit 6 — FSM ear/mouth
+### Commit 7 — כפתור Live + תמליל
+
+#### מה בוצע?
+
+- `LiveToggle.svelte`, `LiveTranscript.svelte` — UI דרך getContext(live).
+- `RecordFooter.svelte` — transcript + toggle מעל MicLarge.
+- `MicLarge.svelte` — disabled כש-live.isOpen (DoD 12).
+- i18n keys: live.* (he + en).
+
+#### בדיקות
+
+- lint:i18n ירוק.
+- פריוויו HTTPS — יבוצע אחרי build.
+
+---
+
 
 #### מה בוצע?
 
