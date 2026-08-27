@@ -1,6 +1,18 @@
 ## 2026-08-27 — slice live-ears (in progress)
 
-### Commit 0 — MicFrames engine
+### Commit 1 — float32ToInt16LE
+
+#### מה בוצע?
+
+- `core/voice/pcm.ts` — float32ToInt16LE (קליפינg ±1, סקאל 0x8000/0x7fff).
+- `pcm.test.ts` — 6 טסטים חדשים.
+
+#### בדיקות
+
+- pcm.test.ts: 16/16 ירוק.
+
+---
+
 
 #### מה בוצע?
 
