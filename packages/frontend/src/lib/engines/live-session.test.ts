@@ -107,4 +107,61 @@ describe("LiveSessionEngine", () => {
     expect(engine.transcript).toHaveLength(1)
     expect(engine.transcript[0]?.text).toBe("hello world")
   })
+
+  it("DoD 17: audio event enqueues PCM on sink", async () => {
+    const frames = mockFrames()
+    const enqueue = vi.fn()
+    let onEvent: ((e: import("@drive-coding/core/voice/live-types").LiveEvent) => void) | undefined
+    const provider: LiveProvider = {
+      id: "mock",
+      inputSampleRate: 16_000,
+      outputSampleRate: 24_000,
+      supportsSilentContext: true,
+      connect: vi.fn(async (opts) => {
+        onEvent = opts.onEvent
+        return { send: vi.fn(), close: vi.fn() }
+      }),
+    }
+    const engine = new LiveSessionEngine({
+      connector: {
+        fetchToken: async () => ({ token: "t", model: "m", sessionConfig: {} }),
+        provider,
+      },
+      frames,
+      audioSink: { enqueue, stop: vi.fn() },
+    })
+
+    await engine.open()
+    const pcm = new Uint8Array([0, 0, 1, 0])
+    onEvent?.({ type: "audio", pcm })
+    expect(enqueue).toHaveBeenCalledWith(pcm)
+  })
+
+  it("interrupted event stops sink", async () => {
+    const frames = mockFrames()
+    const stop = vi.fn()
+    let onEvent: ((e: import("@drive-coding/core/voice/live-types").LiveEvent) => void) | undefined
+    const provider: LiveProvider = {
+      id: "mock",
+      inputSampleRate: 16_000,
+      outputSampleRate: 24_000,
+      supportsSilentContext: true,
+      connect: vi.fn(async (opts) => {
+        onEvent = opts.onEvent
+        return { send: vi.fn(), close: vi.fn() }
+      }),
+    }
+    const engine = new LiveSessionEngine({
+      connector: {
+        fetchToken: async () => ({ token: "t", model: "m", sessionConfig: {} }),
+        provider,
+      },
+      frames,
+      audioSink: { enqueue: vi.fn(), stop },
+    })
+
+    await engine.open()
+    onEvent?.({ type: "interrupted" })
+    expect(stop).toHaveBeenCalled()
+  })
 })

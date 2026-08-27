@@ -10,6 +10,7 @@ import type { MessageKey } from "@drive-coding/core/i18n"
 import { canDispatchPrompt } from "@drive-coding/core/voice/live-dispatch"
 import { geminiLive } from "../adapters/voice/live/gemini"
 import { fetchLiveToken } from "../adapters/voice/live-token"
+import { LiveAudioSink } from "../engines/live-audio-sink"
 import {
   LiveSessionEngine,
   type LiveSessionState,
@@ -26,10 +27,13 @@ export class Live {
   readonly #session: AgentSession
   readonly #engine: LiveSessionEngine
   readonly #frames: MicFrames
+  readonly #sink: LiveAudioSink
 
   state: LiveSessionState = $state("closed")
   transcript: LiveTranscriptEntry[] = $state([])
   error: MessageKey | null = $state(null)
+  /** Reactive bridge — fed by LiveAudioSink, not read from sink.isPlaying directly. */
+  isSpeaking: boolean = $state(false)
 
   constructor(opts: {
     mic: Mic
@@ -40,6 +44,12 @@ export class Live {
     this.#mic = opts.mic
     this.#session = opts.session
     this.#frames = new MicFrames()
+    this.#sink = new LiveAudioSink({
+      sampleRate: geminiLive.outputSampleRate,
+      onPlayingChange: (playing) => {
+        this.isSpeaking = playing
+      },
+    })
     this.#engine = new LiveSessionEngine({
       connector: {
         fetchToken: async () => {
@@ -56,6 +66,7 @@ export class Live {
         provider: geminiLive,
       },
       frames: this.#frames,
+      audioSink: this.#sink,
     })
 
     this.#engine.on("state", (s) => {

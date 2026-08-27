@@ -1,4 +1,20 @@
-## 2026-08-27 09:36 — slice live-secretary Commit 0: מסלול יוצא
+## 2026-08-27 09:41 — slice live-secretary Commit 1: נתיב השמעה + mouth דו-מקורי
+
+base: `fe55b249`
+
+#### מה בוצע?
+
+- `LiveAudioSink` — PCM 24kHz gapless, `isPlaying` + `onPlayingChange`.
+- `LiveSessionEngine`: `audio`/`interrupted` → sink; `#cleanupSession` stops sink.
+- `Live.isSpeaking` — גשר `$state` לריאקטיביות.
+- `VoiceMode.mouth` — Live פתוח → `live.isSpeaking`, אחרת Speaker.
+
+#### בדיקות
+
+- live-audio-sink: 3 · live-session audio: 2 · voice-mode mouth: 3 חדשים.
+
+---
+
 
 base: `54fe3dcd` · ענף `slice/live-secretary`
 

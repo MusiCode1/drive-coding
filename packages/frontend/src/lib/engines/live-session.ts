@@ -55,6 +55,7 @@ export class LiveSessionEngine {
     stop(): Promise<void>
   }
   readonly #connectTimeoutMs: number
+  readonly #audioSink?: { enqueue(pcm: Uint8Array): void; stop(): void }
 
   #state: LiveSessionState = "closed"
   readonly transcript: LiveTranscriptEntry[] = []
@@ -71,10 +72,12 @@ export class LiveSessionEngine {
     connector: LiveConnector
     frames: { on(event: "frame", h: (f: Float32Array) => void): () => void; stop(): Promise<void> }
     connectTimeoutMs?: number
+    audioSink?: { enqueue(pcm: Uint8Array): void; stop(): void }
   }) {
     this.#connector = deps.connector
     this.#frames = deps.frames
     this.#connectTimeoutMs = deps.connectTimeoutMs ?? 20_000
+    this.#audioSink = deps.audioSink
   }
 
   get state(): LiveSessionState {
@@ -174,6 +177,7 @@ export class LiveSessionEngine {
   #cleanupSession(): void {
     this.#unsubFrame?.()
     this.#unsubFrame = null
+    this.#audioSink?.stop()
     this.#session?.close()
     this.#session = null
     void this.#frames.stop()
@@ -191,6 +195,12 @@ export class LiveSessionEngine {
         for (const h of this.#actionHandlers) {
           h({ id: event.id, name: event.name, args: event.args })
         }
+        break
+      case "audio":
+        this.#audioSink?.enqueue(event.pcm)
+        break
+      case "interrupted":
+        this.#audioSink?.stop()
         break
       case "turn_done": {
         const last = this.transcript.at(-1)
