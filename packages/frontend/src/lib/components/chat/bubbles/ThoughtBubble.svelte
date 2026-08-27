@@ -18,7 +18,6 @@
 import type { ThoughtBubble } from "$lib/types/bubble"
 import { getI18n, getSettings, getChatScroll } from "$lib/context"
 import { joinSegmentText, visibleThoughtSegments } from "./bubble-rendering"
-import Avatar from "$lib/components/chat/Avatar.svelte"
 import MarkdownContent from "./MarkdownContent.svelte"
 import { onMount } from "svelte"
 
@@ -48,12 +47,10 @@ onMount(() => requestAnimationFrame(() => { ready = true }))
 const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
 </script>
 
-<div class="flex gap-2 self-end max-w-[85%] min-w-0 items-end flex-row-reverse">
-  <Avatar kind="thought" />
-  <div
-    class="px-3.5 py-2.5 rounded-xl text-[13px] leading-relaxed italic border border-dashed min-w-0 break-words"
-    style="border-color:var(--border-str); color:var(--fg-dim)"
-  >
+<div
+  class="px-3.5 py-2.5 rounded-xl text-[13px] leading-relaxed italic border border-dashed min-w-0 max-w-[85%] break-words"
+  style="border-color:var(--border-str); color:var(--fg-dim)"
+>
     <details bind:open ontoggle={onUserToggle}>
       <summary class="text-[11px] font-semibold not-italic opacity-70 mb-1 cursor-pointer thought-summary">
         {t("chat.bubble.thought")}
@@ -80,7 +77,6 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
 
     <!-- כופה ריאקטיביות של Svelte בעת .segments.push() או כשה-originalText מגיע -->
     <span class="hidden">{bubble.segments.length}</span>
-  </div>
 </div>
 
 <style>

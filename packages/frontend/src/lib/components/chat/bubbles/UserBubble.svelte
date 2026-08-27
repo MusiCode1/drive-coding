@@ -19,7 +19,6 @@ import CopyIcon from "@lucide/svelte/icons/copy"
 import PaperclipIcon from "@lucide/svelte/icons/paperclip"
 import PlayIcon from "@lucide/svelte/icons/play"
 import SquareIcon from "@lucide/svelte/icons/square"
-import Avatar from "$lib/components/chat/Avatar.svelte"
 import { getBubblePlayer, getContentViewer, getI18n, getSession, getSpeaker } from "$lib/context"
 import type { UserBubble } from "$lib/types/bubble"
 import { copyToClipboard } from "$lib/util/clipboard"
@@ -55,9 +54,42 @@ async function handleCopy() {
 }
 </script>
 
-<div class="flex gap-2 self-start max-w-[85%] min-w-0 items-end group">
-  <Avatar kind="user" />
-  <div class="bubble-wrapper min-w-0 flex-1">
+<!--
+  DOM order: actions then wrapper. In RTL, first item sits at inline-start (center-side)
+  and the bubble at inline-end — next to BubbleRow's avatar — without reversing the flex
+  direction (side ownership is BubbleRow's; roots must not use self-* / row-reverse).
+-->
+<div class="flex gap-2 max-w-[85%] min-w-0 items-end group">
+  <!-- כפתורי פעולה: copy + play (play רק אם recordingId קיים) -->
+  <div class="bubble-actions">
+    <button
+      class="action-btn"
+      onclick={handleCopy}
+      aria-label={copied ? t("bubble.copied") : t("bubble.copy")}
+      title={copied ? t("bubble.copied") : t("bubble.copy")}
+    >
+      {#if copied}
+        <CheckIcon size={12} strokeWidth={2} />
+      {:else}
+        <CopyIcon size={12} strokeWidth={2} />
+      {/if}
+    </button>
+    {#if bubble.recordingId && speaker.enabled}
+      <button
+        class="action-btn play-btn"
+        onclick={() => bubblePlayer.toggle(bubble.id)}
+        aria-label={isPlaying ? t("bubble.stop") : t("bubble.play")}
+        title={isPlaying ? t("bubble.stop") : t("bubble.play")}
+      >
+        {#if isPlaying}
+          <SquareIcon size={12} strokeWidth={2} />
+        {:else}
+          <PlayIcon size={12} strokeWidth={2} />
+        {/if}
+      </button>
+    {/if}
+  </div>
+  <div class="bubble-wrapper min-w-0">
     <!-- תמונות מצורפות (slice-image-paste Commit 3) -->
     {#if bubble.attachments && bubble.attachments.length > 0}
       <div class="flex flex-wrap gap-1.5 mb-1">
@@ -112,7 +144,7 @@ async function handleCopy() {
       </div>
     {/if}
     <div
-      class="px-3.5 py-2.5 rounded-2xl rounded-es-sm text-sm leading-relaxed min-w-0 max-w-full overflow-hidden break-words"
+      class="px-3.5 py-2.5 rounded-2xl rounded-se-sm text-sm leading-relaxed min-w-0 max-w-full overflow-hidden break-words"
       style="background:var(--bubble-user); {isPlaying ? 'outline:2px solid var(--accent); outline-offset:1px' : ''}"
     >
       <MarkdownContent
@@ -130,35 +162,6 @@ async function handleCopy() {
       <span class="timestamp">{formatTime(bubble.createdAt)}</span>
     </div>
   </div>
-  <!-- כפתורי פעולה: copy + play (play רק אם recordingId קיים) -->
-  <div class="bubble-actions">
-    <button
-      class="action-btn"
-      onclick={handleCopy}
-      aria-label={copied ? t("bubble.copied") : t("bubble.copy")}
-      title={copied ? t("bubble.copied") : t("bubble.copy")}
-    >
-      {#if copied}
-        <CheckIcon size={12} strokeWidth={2} />
-      {:else}
-        <CopyIcon size={12} strokeWidth={2} />
-      {/if}
-    </button>
-    {#if bubble.recordingId && speaker.enabled}
-      <button
-        class="action-btn play-btn"
-        onclick={() => bubblePlayer.toggle(bubble.id)}
-        aria-label={isPlaying ? t("bubble.stop") : t("bubble.play")}
-        title={isPlaying ? t("bubble.stop") : t("bubble.play")}
-      >
-        {#if isPlaying}
-          <SquareIcon size={12} strokeWidth={2} />
-        {:else}
-          <PlayIcon size={12} strokeWidth={2} />
-        {/if}
-      </button>
-    {/if}
-  </div>
 </div>
 
 <style>
@@ -166,13 +169,14 @@ async function handleCopy() {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
-    align-items: flex-start;
+    /* toward avatar (inline-end on user/end side) */
+    align-items: end;
   }
 
   .bubble-meta {
     display: flex;
-    justify-content: flex-start;
-    padding-inline-start: 0.25rem;
+    justify-content: end;
+    padding-inline-end: 0.25rem;
   }
 
   .timestamp {
