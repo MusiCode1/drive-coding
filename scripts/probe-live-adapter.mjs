@@ -27,16 +27,49 @@ const PHRASE =
 const IDENTIFIER = process.env.IDENTIFIER ?? "auth.test.ts"
 const VOICE = process.env.LIVE_VOICE ?? "Puck"
 const PROBE_CONTEXT = process.env.PROBE_CONTEXT === "1"
+/**
+ * NBug13: the live probe structurally CANNOT observe the `session_started`
+ * mutation — on a healthy path the session really is alive, so emitting from
+ * `onopen` and from `setupComplete` are indistinguishable. The difference only
+ * appears on a session that never becomes ready. This mode makes that case
+ * observable: connect with a deliberately invalid credential and assert that no
+ * `session_started` is emitted. Costs no tokens; the API rejects before any turn.
+ */
+const PROBE_DEAD_SESSION = process.env.PROBE_DEAD_SESSION === "1"
+/**
+ * NBug14: the identifier gate is meant to police the SECRETARY — does it echo a
+ * technical identifier verbatim, or quietly rewrite it (mission §4)? Feeding it
+ * through TTS→ffmpeg→STT made it police the MICROPHONE instead: measured over
+ * seven healthy runs, secretary behaviour was correct 7/7 while BOTH the old and
+ * the new gate scored 5/7 — they simply failed on different runs. `auth.test.ts`
+ * came back as `oath.test.ts`, `off.test.ts`, and once as `auth{dot}test{dot}ts`.
+ *
+ * This mode feeds the secretary TEXT through the adapter's own `context`
+ * command, so the assertion covers exactly what it claims and nothing else.
+ * The audio path stays in the main run as a NON-BLOCKING diagnostic.
+ */
+const PROBE_TEXT_ID = process.env.PROBE_TEXT_ID === "1"
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const isHebrewScript = (t) => /[֐-׿]/.test(t ?? "")
 
+/**
+ * NBug12: this is a SAFETY check, so it must fail CLOSED. Returning "free" when
+ * the measurement itself failed (no `ss`, non-zero exit, unsupported filter
+ * syntax) reopens the exact false-PASS path the guard exists to close — measured
+ * in round 2 with an `ss` stub that exits 1: the probe attached to a stale BE and
+ * would have reported a fully green run.
+ *
+ * "I could not tell" is treated as "occupied", never as "clear".
+ */
 function portIsInUse(port) {
   try {
     const out = execSync(`ss -ltn 'sport = :${port}'`, { encoding: "utf8" })
     return out.split("\n").some((line) => line.trimStart().startsWith("LISTEN"))
-  } catch {
-    return false
+  } catch (err) {
+    console.error(`Could not determine whether port ${port} is free: ${err?.message ?? err}`)
+    console.error(`Treating it as OCCUPIED — a safety check that cannot measure must not clear the way.`)
+    return true
   }
 }
 
@@ -164,10 +197,117 @@ async function generateHebrewPcm16k(text, apiKey) {
   return new Uint8Array(audio)
 }
 
+/**
+ * NBug13 observation point. Under the correct implementation the invalid
+ * credential is rejected and `session_started` is never emitted. Under the
+ * mutation (emit from `onopen`) it fires anyway, ~29ms in — which is exactly the
+ * "four dead-session modes all report ready" bug that Commit B fixed.
+ *
+ * No backend and no token: it never reaches a turn, so it costs nothing.
+ */
+async function runDeadSessionProbe() {
+  const model = process.env.LIVE_MODEL ?? "gemini-3.1-flash-live-preview"
+  const events = []
+  let session = null
+  let threw = null
+  try {
+    session = await geminiLive.connect({
+      credential: "invalid-token-for-dead-session-probe",
+      model,
+      providerConfig: { responseModalities: ["AUDIO"], inputAudioTranscription: {} },
+      onEvent: (e) => events.push(e),
+    })
+  } catch (e) {
+    threw = String(e?.message ?? e)
+  }
+  await sleep(6000)
+  try { session?.close() } catch {}
+
+  const sessionStarted = events.some((e) => e.type === "session_started")
+  const sawErrorOrClose = events.some((e) => e.type === "error" || e.type === "closed")
+  const out = {
+    mode: "dead-session",
+    sessionStarted,
+    sawErrorOrClose,
+    eventTypes: [...new Set(events.map((e) => e.type))],
+    threw,
+    /**
+     * `sawErrorOrClose` is half the gate, not decoration. Without it a run that
+     * emitted NOTHING — a typo in this function, a dependency that failed to
+     * import — scores `sessionStarted === false` and reports success. That is
+     * exactly what happened on the first draft of this mode (an undefined
+     * `MODEL` threw into the catch), and it passed identically with and without
+     * the mutation. A gate that cannot tell "correct" from "never ran" is not a
+     * gate. So we require positive evidence that the session was really refused.
+     */
+    pass: sessionStarted === false && sawErrorOrClose === true && threw === null,
+  }
+  console.log(JSON.stringify(out, null, 2))
+  return out.pass ? 0 : 1
+}
+
+/**
+ * The blocking identifier gate. No microphone, no ffmpeg, no STT — the phrase is
+ * handed to the secretary as text through the adapter's `context` command, which
+ * is the same public surface the engine will use in `live-ears`.
+ */
+async function runTextIdentifierProbe() {
+  const { token, model, sessionConfig } = await mintToken()
+  const events = []
+  const session = await geminiLive.connect({
+    credential: token,
+    model,
+    providerConfig: sessionConfig,
+    onEvent: (e) => events.push(e),
+  })
+  session.send({ type: "context", text: PHRASE, channel: "speakable" })
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    if (events.some((e) => e.type === "action")) break
+    if (events.some((e) => e.type === "turn_done")) break
+    await sleep(200)
+  }
+  await sleep(500)
+  try { session.close() } catch {}
+
+  const actions = events.filter((e) => e.type === "action")
+  const composed = actions.map((a) => String(a.args?.text ?? "")).join(" ")
+  const out = {
+    mode: "text-identifier",
+    actionNames: actions.map((a) => a.name),
+    composed,
+    textIdentifierSurvived: composed.includes(IDENTIFIER),
+    errorEvents: events.filter((e) => e.type === "error").map((e) => e.message),
+    // Same anti-vacuum rule as the dead-session gate: no action means the gate
+    // never ran, which must not read as success.
+    pass: actions.length > 0 && composed.includes(IDENTIFIER),
+  }
+  console.log(JSON.stringify(out, null, 2))
+  return out.pass ? 0 : 1
+}
+
 async function runProbe() {
   if (!process.env.GEMINI_API_KEY) {
     console.error("GEMINI_API_KEY required")
     process.exit(1)
+  }
+
+  if (PROBE_DEAD_SESSION) {
+    process.exit(await runDeadSessionProbe())
+  }
+
+  if (PROBE_TEXT_ID) {
+    assertPortFree(BE_PORT)
+    let be = null
+    let code = 1
+    try {
+      be = await startBackend()
+      code = await runTextIdentifierProbe()
+    } finally {
+      await killBackend(be)
+      await waitPortReleased(BE_PORT)
+    }
+    process.exit(code)
   }
 
   assertPortFree(BE_PORT)
@@ -276,7 +416,7 @@ async function runProbe() {
       // (Mission §11ד already flags synthetic-speech transcription as non-verbatim.)
       identifierHeard,
       identifierTranscribedExactly: userTranscript.includes(IDENTIFIER),
-      identifierSurvived: identifierHeard !== null && composeArgs.includes(identifierHeard),
+      audioIdentifierSurvived: identifierHeard !== null && composeArgs.includes(identifierHeard),
       usage: usageEvent
         ? { totalTokens: usageEvent.totalTokens, promptTokens: usageEvent.promptTokens }
         : null,
