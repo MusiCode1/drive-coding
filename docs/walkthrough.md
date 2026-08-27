@@ -1,3 +1,41 @@
+## 2026-08-27 — slice live-ears (הושלם)
+
+base: `dfbb4078` → HEAD `2d1acca8` (8 commits)
+
+| DoD | בדיקה | תוצאה |
+|-----|--------|--------|
+| 1 | typecheck | ✅ |
+| 2 | tests | ✅ (2 נפילות ידועות: cli-availability, bridge-failure F-1) |
+| 3 | lint:i18n | ✅ |
+| 4 | float32ToInt16LE | ✅ |
+| 5 | shouldForwardFrame | ✅ |
+| 6 | FSM regression | ✅ |
+| 7 | mutation ear/mouth | ✅ |
+| 8 | ear/mouth getters | ✅ |
+| 9 | תמליל זורם | ⏸ לא-נמדד (mic HTTPS) |
+| 10 | לחיצה אחת | ⏸ לא-נמדד |
+| 11 | PTT regression | ⏸ לא-נמדד |
+| 12 | בלעדיות מצבים | ⏸ wiring ✅; runtime ⏸ |
+| 13 | connect → error | ✅ |
+| 14 | no API key | ⏸ לא-נמדד runtime |
+| 15 | PCM mutation | ⏸ לא-נמדד preview |
+| 16 | auth.test.ts UI | ⏸ probe ✅; UI ⏸ |
+| 17 | probe | ✅ identifierTranscribedExactly |
+| 18 | עץ נקי | ✅ |
+
+בדיקות-עצמיות של המבצע (**אינן verdict**). השער האמיתי: כלב-heavy r1 NO-GO → תוקן → r2 **GO** — `$BDS_REPORTS/drive-coding/live-ears-calev.md` · `-r2.md`
+
+### Commits
+
+0. MicFrames worklet · 1. float32ToInt16LE · 2. echo-gate · 3. fetchLiveToken
+4. LiveSessionEngine · 5. Live VM + layout · 6. ear/mouth FSM · 7. UI + i18n
+
+#### חריגות
+
+- `Live` constructor מקבל `mic` (נדרש ל-`canOpen`).
+- calev-heavy לא רץ (usage limit).
+
+---
 ## 2026-08-27 — slice live-context (סיום)
 
 base: `dfbb4078` → HEAD `a96b4910` — 5 commits
@@ -18,7 +56,7 @@ base: `dfbb4078` → HEAD `a96b4910` — 5 commits
 | 12 | slice 1 regression | ✅ |
 | 13 | עץ נקי | ✅ |
 
-calev: **GO** — `reports/drive-coding/live-context-calev.md`
+בדיקות-עצמיות של המבצע (**אינן verdict**). השער האמיתי: כלב light **GO** — `$BDS_REPORTS/drive-coding/live-context-calev.md`
 
 #### סטיות
 

@@ -29,6 +29,7 @@ import {
   setContentViewer,
   setCues,
   setI18n,
+  setLive,
   setMic,
   setModals,
   setModelStatus,
@@ -61,6 +62,7 @@ import { ContentViewerVM } from "$lib/view-models/content-viewer.svelte"
 import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
 import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
+import { Live } from "$lib/view-models/live.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
 import { PresencePoller } from "$lib/view-models/presence-poller.svelte"
@@ -111,8 +113,11 @@ const speaker = new Speaker({
 // ─── mic ─── (slice 3 — תלוי ב-session + cues)
 const mic = new Mic({ session, cues })
 
-// ─── voice-mode ─── (slice 3 — תלוי ב-mic + session + speaker)
-const voiceMode = new VoiceMode({ mic, session, speaker, playlist: audioPlaylist })
+// ─── live ─── (slice live-ears — תלוי ב-mic)
+const live = new Live({ mic, language: i18n.locale === "he" ? "he" : "en" })
+
+// ─── voice-mode ─── (slice 3 — תלוי ב-mic + session + speaker + live)
+const voiceMode = new VoiceMode({ mic, session, speaker, playlist: audioPlaylist, live })
 
 // ─── model-status ─── (msr-v2 — תלוי ב-session + speaker)
 const modelStatus = new ModelStatus({ session, speaker })
@@ -234,6 +239,7 @@ setSession(session)
 setSpeaker(speaker)
 setAudioPlaylist(audioPlaylist)
 setMic(mic)
+setLive(live)
 setVoiceMode(voiceMode)
 setModelStatus(modelStatus)
 setBubblePlayer(bubblePlayer)

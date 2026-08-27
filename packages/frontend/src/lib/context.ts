@@ -22,6 +22,7 @@ import type { Settings } from "./view-models/settings.svelte"
 import type { Speaker } from "./view-models/speaker.svelte"
 import type { ThemeVM } from "./view-models/theme.svelte"
 import type { UiShellVM } from "./view-models/ui-shell.svelte"
+import type { Live } from "./view-models/live.svelte"
 import type { VoiceMode } from "./view-models/derived/voice-mode.svelte"
 import type { ModelStatus } from "./view-models/derived/model-status.svelte"
 import type { CuesEngine } from "./engines/cues"
@@ -47,6 +48,9 @@ export const [getSpeaker, setSpeaker] = createContext<Speaker>()
 
 // ─── mic ─── (slice 3)
 export const [getMic, setMic] = createContext<Mic>()
+
+// ─── live ─── (slice live-ears)
+export const [getLive, setLive] = createContext<Live>()
 
 // ─── voice-mode ─── (slice 3)
 export const [getVoiceMode, setVoiceMode] = createContext<VoiceMode>()

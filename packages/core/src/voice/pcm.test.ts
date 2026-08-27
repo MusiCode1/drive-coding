@@ -9,7 +9,50 @@
  */
 
 import { describe, expect, it } from "vitest"
-import { pcmToFloat32, splitInt16LE } from "./pcm"
+import { float32ToInt16LE, pcmToFloat32, splitInt16LE } from "./pcm"
+
+describe("float32ToInt16LE", () => {
+  it("0 → zero bytes", () => {
+    const bytes = float32ToInt16LE(new Float32Array([0]))
+    expect(bytes.length).toBe(2)
+    expect(bytes[0]).toBe(0)
+    expect(bytes[1]).toBe(0)
+  })
+
+  it("1.0 clips to Int16 max (0x7fff)", () => {
+    const bytes = float32ToInt16LE(new Float32Array([1.0]))
+    expect(bytes[0]).toBe(0xff)
+    expect(bytes[1]).toBe(0x7f)
+  })
+
+  it("-1.0 clips to Int16 min (0x8000)", () => {
+    const bytes = float32ToInt16LE(new Float32Array([-1.0]))
+    expect(bytes[0]).toBe(0x00)
+    expect(bytes[1]).toBe(0x80)
+  })
+
+  it("positive sample uses 0x7fff scale", () => {
+    const bytes = float32ToInt16LE(new Float32Array([0.5]))
+    const sample = bytes[0]! | (bytes[1]! << 8)
+    expect(sample).toBe(Math.trunc(0.5 * 0x7fff))
+  })
+
+  it("negative sample uses 0x8000 scale", () => {
+    const bytes = float32ToInt16LE(new Float32Array([-0.5]))
+    const sample = bytes[0]! | (bytes[1]! << 8)
+    const signed = sample >= 0x8000 ? sample - 0x10000 : sample
+    expect(signed).toBe(Math.round(-0.5 * 0x8000))
+  })
+
+  it("values beyond ±1.0 are clipped", () => {
+    const hi = float32ToInt16LE(new Float32Array([2.0]))
+    expect(hi[0]).toBe(0xff)
+    expect(hi[1]).toBe(0x7f)
+    const lo = float32ToInt16LE(new Float32Array([-2.0]))
+    expect(lo[0]).toBe(0x00)
+    expect(lo[1]).toBe(0x80)
+  })
+})
 
 describe("splitInt16LE", () => {
   it("carry ריק + chunk זוגי → כל הדגימות, rest ריק", () => {

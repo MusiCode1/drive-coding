@@ -145,6 +145,15 @@ export type MessageKey =
   | "record.reconnect"
   | "record.reconnecting"
   | "record.reconnectAttempt"
+  // ─── live ─── (slice live-ears)
+  | "live.toggle.open"
+  | "live.toggle.close"
+  | "live.status.connecting"
+  | "live.ear.listening"
+  | "live.transcript.user"
+  | "live.transcript.assistant"
+  | "live.error.connect"
+  | "live.error.noApiKey"
   | "mic.stop"
   | "mic.discard"
   // ─── speakable (slice tts-speakable-text) — מה שנאמר במקום קוד/קישור ───
