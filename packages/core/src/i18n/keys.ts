@@ -138,6 +138,7 @@ export type MessageKey =
   // ─── record-footer ─── (redesign-4)
   | "record.tab.record"
   | "record.tab.type"
+  | "record.tab.live"
   | "record.tab.hide"
   | "record.status.idle"
   | "record.send"

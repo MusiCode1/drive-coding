@@ -2,8 +2,8 @@
 /**
  * RecordFooter — footer אזור-קלט (redesign-4, גובה משתנה: redesign-fix).
  *
- * mode: "record" | "typing" | "hidden" — UiShellVM.inputMode (singleton, slice playback-dock-scope).
- * toggle 3-כפתורים + MicLarge / TypeArea. במצב hidden אזור הפעולה מתכווץ ל-0
+ * mode: "record" | "typing" | "live" | "hidden" — UiShellVM.inputMode (singleton, slice playback-dock-scope).
+ * toggle 4-כפתורים + MicLarge / TypeArea / Live pane. במצב hidden אזור הפעולה מתכווץ ל-0
  * ונשאר רק ה-toggle (מאפשר קריאה בלי שהפוטר מסתיר חצי מסך).
  *
  * גובה משתנה — אזור הפעולה הוא grid עם 3 panes מוערמים (col 1), כל אחד עטוף
@@ -21,19 +21,29 @@
  */
 import MicIcon from "@lucide/svelte/icons/mic"
 import KeyboardIcon from "@lucide/svelte/icons/keyboard"
+import RadioIcon from "@lucide/svelte/icons/radio"
 import EyeOffIcon from "@lucide/svelte/icons/eye-off"
 import MicLarge from "./MicLarge.svelte"
 import LiveToggle from "./LiveToggle.svelte"
 import LiveTranscript from "./LiveTranscript.svelte"
 import PlaybackControls from "./PlaybackControls.svelte"
 import TypeArea from "./TypeArea.svelte"
-import { getI18n, getResponsive, getSession, getUiShell } from "$lib/context"
+import { getI18n, getLive, getResponsive, getSession, getUiShell } from "$lib/context"
+import type { InputMode } from "$lib/view-models/ui-shell.svelte"
 
 const t = getI18n().t
 const responsive = getResponsive()
 const uiShell = getUiShell()
+const live = getLive()
 // TEMP-RECONNECT (לבדיקה ידנית בלבד — להחזיר לאחור; אינו חלק מ-slice infra)
 const session = getSession()
+
+function switchInputMode(mode: InputMode): void {
+  if (uiShell.inputMode === "live" && mode !== "live" && live.isOpen) {
+    void live.toggle()
+  }
+  uiShell.setInputMode(mode)
+}
 </script>
 
 <!-- footer: דסקטופ = כרטיס עולה-מלמטה; מובייל = שטוח עם רקע bg (ה-fade הוא
@@ -48,7 +58,7 @@ const session = getSession()
   <!-- כרטיס mic — .mic-card מ-app.css (שקוף במובייל דרך .mic-plain) -->
   <div class="mic-card w-full max-w-3xl min-w-0 px-4 pt-4 pb-5 flex flex-col items-center gap-3">
 
-    <!-- toggle הקלטה/הקלדה/מוסתר (3 כפתורים) -->
+    <!-- toggle הקלטה/הקלדה/לייב/מוסתר (4 כפתורים) -->
     <div
       class="flex items-center gap-1 p-1 rounded-full text-xs"
       style="background:var(--bg-card)"
@@ -58,7 +68,7 @@ const session = getSession()
         style={uiShell.inputMode === "record"
           ? "background:var(--accent); color:white"
           : "color:var(--fg-dim)"}
-        onclick={() => uiShell.setInputMode("record")}
+        onclick={() => switchInputMode("record")}
         aria-pressed={uiShell.inputMode === "record"}
       >
         <MicIcon size={13} strokeWidth={2} />
@@ -69,7 +79,7 @@ const session = getSession()
         style={uiShell.inputMode === "typing"
           ? "background:var(--accent); color:white"
           : "color:var(--fg-dim)"}
-        onclick={() => uiShell.setInputMode("typing")}
+        onclick={() => switchInputMode("typing")}
         aria-pressed={uiShell.inputMode === "typing"}
       >
         <KeyboardIcon size={13} strokeWidth={2} />
@@ -77,10 +87,21 @@ const session = getSession()
       </button>
       <button
         class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full font-semibold transition-all"
+        style={uiShell.inputMode === "live"
+          ? "background:var(--accent); color:white"
+          : "color:var(--fg-dim)"}
+        onclick={() => switchInputMode("live")}
+        aria-pressed={uiShell.inputMode === "live"}
+      >
+        <RadioIcon size={13} strokeWidth={2} />
+        {t("record.tab.live")}
+      </button>
+      <button
+        class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full font-semibold transition-all"
         style={uiShell.inputMode === "hidden"
           ? "background:var(--accent); color:white"
           : "color:var(--fg-dim)"}
-        onclick={() => uiShell.setInputMode("hidden")}
+        onclick={() => switchInputMode("hidden")}
         aria-pressed={uiShell.inputMode === "hidden"}
       >
         <EyeOffIcon size={13} strokeWidth={2} />
@@ -110,15 +131,13 @@ const session = getSession()
     <!-- אזור פעולה — גובה משתנה. 3 panes מוערמים (col 1), כל אחד עטוף ב-grid
          שגובהו 0fr (מוסתר) / 1fr (פעיל). הפוטר גדל/מתכווץ לפי ה-pane הפעיל.
          מעבר ללא קפיצה: opacity (יציאה מיד, כניסה עם delay) + rows (התכווצות/
-         התרחבות עם delay מתואם). ראה <style>. במצב hidden כל ה-panes ב-0fr. -->
+         התרחבות עם delay מתואם). ר' <style>. במצב hidden כל ה-panes ב-0fr. -->
     <div class="action-area w-full">
       <div
         class="record-pane"
         class:is-active={uiShell.inputMode === "record"}
       >
         <div class="record-pane-inner flex flex-col items-center gap-3 w-full">
-          <LiveTranscript />
-          <LiveToggle />
           <MicLarge />
         </div>
       </div>
@@ -128,6 +147,15 @@ const session = getSession()
       >
         <div class="record-pane-inner w-full">
           <TypeArea />
+        </div>
+      </div>
+      <div
+        class="record-pane"
+        class:is-active={uiShell.inputMode === "live"}
+      >
+        <div class="record-pane-inner flex flex-col items-center gap-3 w-full">
+          <LiveTranscript />
+          <LiveToggle />
         </div>
       </div>
     </div>

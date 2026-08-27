@@ -64,4 +64,14 @@ describe("shouldShowPlaybackDock", () => {
       }),
     ).toBe(false)
   })
+
+  it("live + playlist items => false", () => {
+    expect(
+      shouldShowPlaybackDock({
+        inputMode: "live",
+        playlistItemCount: 3,
+        isRunActive: false,
+      }),
+    ).toBe(false)
+  })
 })

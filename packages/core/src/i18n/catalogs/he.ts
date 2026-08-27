@@ -128,6 +128,7 @@ export const he: Catalog = {
   // ─── record-footer ─── (redesign-4)
   "record.tab.record": "הקלטה",
   "record.tab.type": "הקלדה",
+  "record.tab.live": "לייב",
   "record.tab.hide": "מוסתר",
   "record.status.idle": "לחץ להקלטה",
   "record.send": "שלח",

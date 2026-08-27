@@ -14,6 +14,8 @@ describe("UiShellVM — inputMode", () => {
     const vm = new UiShellVM()
     vm.setInputMode("typing")
     expect(vm.inputMode).toBe("typing")
+    vm.setInputMode("live")
+    expect(vm.inputMode).toBe("live")
     vm.setInputMode("hidden")
     expect(vm.inputMode).toBe("hidden")
   })
@@ -39,6 +41,13 @@ describe("UiShellVM — inputMode", () => {
   it("resetInputModeForSession restores record from hidden", () => {
     const vm = new UiShellVM()
     vm.setInputMode("hidden")
+    vm.resetInputModeForSession()
+    expect(vm.inputMode).toBe("record")
+  })
+
+  it("resetInputModeForSession restores record from live", () => {
+    const vm = new UiShellVM()
+    vm.setInputMode("live")
     vm.resetInputModeForSession()
     expect(vm.inputMode).toBe("record")
   })
