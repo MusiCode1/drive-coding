@@ -1,4 +1,25 @@
-## 2026-08-27 — slice live-context Commit 0
+## 2026-08-27 — slice live-context Commit 1
+
+### live-search.ts — חיפוש ב-bubbles
+
+#### מה בוצע?
+
+- `packages/core/src/voice/live-search.ts` — `searchSessionBubbles` + `SearchHit`.
+- פיצול-טוקנים עברית/אנגלית עם `\u0590-\u05FF` (lint:i18n-safe).
+- status bubbles מסוננים במפורש.
+- `live-search.test.ts` — 9 טסטים.
+
+#### בדיקות
+
+- live-search.test.ts: 9/9 ירוק.
+- lint:i18n ירוק.
+
+#### סטיות
+
+- אין.
+
+---
+
 
 ### live-seed.ts — בניית seed מ-bubbles
 
