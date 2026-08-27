@@ -133,6 +133,7 @@ export const en: Catalog = {
   // ─── record-footer ─── (redesign-4)
   "record.tab.record": "Record",
   "record.tab.type": "Type",
+  "record.tab.live": "Live",
   "record.tab.hide": "Hidden",
   "record.status.idle": "Tap to record",
   "record.send": "Send",

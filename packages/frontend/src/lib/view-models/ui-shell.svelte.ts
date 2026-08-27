@@ -1,8 +1,8 @@
 /** נקודת עצירה של ה-bottom-sheet (מובייל). peek = רק הידית מציצה. */
 export type SheetDetent = "peek" | "half" | "full"
 
-/** מצב אזור-הקלט בתחתית הצ'אט — record / typing / hidden. */
-export type InputMode = "record" | "typing" | "hidden"
+/** מצב אזור-הקלט בתחתית הצ'אט — record / typing / live / hidden. */
+export type InputMode = "record" | "typing" | "live" | "hidden"
 
 /**
  * UiShellVM — מצב ה-shell ה-UI הגלובלי (entity: חוצה chat + settings).
