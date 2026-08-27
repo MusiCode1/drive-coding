@@ -8,6 +8,10 @@
 
 import type { MessageKey } from "@drive-coding/core/i18n"
 import { canDispatchPrompt } from "@drive-coding/core/voice/live-dispatch"
+import {
+  buildLiveAgentPrompt,
+  formatSecretaryToAgent,
+} from "@drive-coding/core/voice/live-agent-prompt"
 import { formatAgentDelivery, formatPermissionPending } from "@drive-coding/core/voice/live-prompt"
 import { isUnpromptedSend } from "@drive-coding/core/voice/unprompted-guard"
 import { mapPermissionOptions } from "$lib/types/permission"
@@ -35,6 +39,8 @@ export class Live {
   #notifiedPermissionKey: string | null = null
   /** Set when agent delivery is sent; cleared on first user transcript fragment. */
   #deliveredSinceUserSpoke = false
+  /** One-shot agent instruction per Live open cycle. */
+  #agentPromptSent = false
   #lastUserTranscriptIdSeen: number | undefined = undefined
 
   state: LiveSessionState = $state("closed")
@@ -80,6 +86,7 @@ export class Live {
     this.#engine.on("state", (s) => {
       this.state = s
       if (s === "open") this.error = null
+      if (s === "closed") this.#agentPromptSent = false
     })
     this.#engine.on("transcript", (entry) => {
       this.transcript = [...this.#engine.transcript]
@@ -127,6 +134,9 @@ export class Live {
       await this.#engine.open()
       if (this.state === "error") {
         this.error = "live.error.connect"
+      } else if (this.state === "open" && !this.#agentPromptSent) {
+        this.#agentPromptSent = true
+        void this.#session.sendPrompt(buildLiveAgentPrompt())
       }
     } catch (e: unknown) {
       this.error =
@@ -174,7 +184,7 @@ export class Live {
           })
           return
         }
-        void this.#session.sendPrompt(text)
+        void this.#session.sendPrompt(formatSecretaryToAgent(text))
         this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
         this.#pendingAgentDelivery = true
         break
@@ -196,7 +206,7 @@ export class Live {
           })
           return
         }
-        void this.#session.sendPrompt(text)
+        void this.#session.sendPrompt(formatSecretaryToAgent(text))
         this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
         this.#pendingAgentDelivery = true
         break
