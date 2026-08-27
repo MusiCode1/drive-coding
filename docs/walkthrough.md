@@ -1,3 +1,24 @@
+## 2026-08-27 — slice live-context Commit 3
+
+### remember_session + remember_always
+
+#### מה בוצע?
+
+- `live-actions.ts` — שתי פעולות חדשות.
+- `live-prompt.ts` — פרוזה עם איסור סיכומי-תמליל.
+- עדכון ספירה 10→12 ב-`live-actions.test.ts` ו-`live-gemini-config.test.ts`.
+
+#### בדיקות
+
+- live-actions.test.ts: 5/5.
+- live-gemini-config.test.ts: 2/2.
+
+#### סטיות
+
+- אין.
+
+---
+
 ## 2026-08-27 — slice live-context Commit 2
 
 ### live-memory.ts — מכסות · חיתוך · גלישה
