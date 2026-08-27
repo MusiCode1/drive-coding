@@ -8,7 +8,7 @@ import { buildLiveSecretaryPrompt, LIVE_ACTION_PROSE } from "./live-prompt"
 
 describe("LIVE_ACTION_SHAPES", () => {
   it("declares secretary + context actions (declared ⇔ handled)", () => {
-    expect(LIVE_ACTION_SHAPES).toHaveLength(7)
+    expect(LIVE_ACTION_SHAPES).toHaveLength(10)
     expect(LIVE_ACTION_SHAPES.map((s) => s.name)).toEqual([
       "compose_prompt",
       "forward",
@@ -17,6 +17,9 @@ describe("LIVE_ACTION_SHAPES", () => {
       "search_session",
       "remember_session",
       "remember_always",
+      "list_config",
+      "set_session_config",
+      "set_app_setting",
     ])
   })
 })
@@ -24,7 +27,7 @@ describe("LIVE_ACTION_SHAPES", () => {
 describe("buildLiveActions()", () => {
   it("returns all actions with merged Hebrew prose when names omitted", () => {
     const actions = buildLiveActions()
-    expect(actions).toHaveLength(7)
+    expect(actions).toHaveLength(10)
     const compose = actions.find((a) => a.name === "compose_prompt")
     const prose = LIVE_ACTION_PROSE.compose_prompt
     expect(prose).toBeDefined()
