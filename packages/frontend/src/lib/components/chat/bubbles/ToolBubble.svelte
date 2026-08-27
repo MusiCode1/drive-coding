@@ -14,7 +14,6 @@
 import type { ToolBubble, ToolCall } from "$lib/types/bubble"
 import { getContentViewer, getI18n, getSettings, getChatScroll } from "$lib/context"
 import { formatToolInput, prettyJson, formatLocation, normalizeToolOutput } from "$lib/util/tool-format"
-import { renderMarkdown } from "$lib/util/markdown"
 import Maximize2Icon from "@lucide/svelte/icons/maximize-2"
 import ToolKindIcon from "./ToolKindIcon.svelte"
 import { onMount } from "svelte"
@@ -47,6 +46,13 @@ const chatScroll = getChatScroll()
 let ready = false
 onMount(() => requestAnimationFrame(() => { ready = true }))
 const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
+
+/** Wrap plain tool text as a markdown fence so the expand viewer stays a code block. */
+function asFencedCode(text: string): string {
+  let ticks = "```"
+  while (text.includes(ticks)) ticks += "`"
+  return `${ticks}\n${text}\n${ticks}`
+}
 </script>
 
 <div
@@ -111,13 +117,12 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
             <div class="section-label">{t("chat.tool.content")}</div>
             {#each tc.content as c}
               {#if c.type === "text"}
-                <!-- C6: renderMarkdown על פלט טקסטואלי; pre נשאר dir=ltr -->
-                <!-- content-viewer: כפתור expand לפתיחת הטקסט fullscreen -->
+                <!-- Tool body text is always a code block (not markdown). -->
                 <div class="tool-text-wrapper">
-                  <div class="tool-text-output" dir="ltr">{@html renderMarkdown(c.text)}</div>
+                  <pre dir="ltr">{c.text}</pre>
                   <button
                     class="tool-expand-btn"
-                    onclick={() => viewer.show({ kind: "markdown", text: c.text })}
+                    onclick={() => viewer.show({ kind: "markdown", text: asFencedCode(c.text) })}
                     aria-label={t("contentViewer.expand")}
                     title={t("contentViewer.expand")}
                   >
@@ -187,10 +192,10 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
             <div>
               <div class="section-label">{t("chat.tool.result")}</div>
               <div class="tool-text-wrapper">
-                <div class="tool-text-output" dir="ltr">{@html renderMarkdown(outputView.text)}</div>
+                <pre dir="ltr">{outputView.text}</pre>
                 <button
                   class="tool-expand-btn"
-                  onclick={() => viewer.show({ kind: "markdown", text: outputView.text })}
+                  onclick={() => viewer.show({ kind: "markdown", text: asFencedCode(outputView.text) })}
                   aria-label={t("contentViewer.expand")}
                   title={t("contentViewer.expand")}
                 >
@@ -272,46 +277,6 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
 
   .terminal-ref { font-family: ui-monospace, monospace; font-size: 0.75rem; }
 
-  /* C6: markdown בפלט טקסטואלי של כלי */
-  .tool-text-output {
-    font-size: 0.78rem;
-    line-height: 1.5;
-  }
-  .tool-text-output :global(p) { margin: 0.2em 0; }
-  .tool-text-output :global(p:first-child) { margin-top: 0; }
-  .tool-text-output :global(p:last-child) { margin-bottom: 0; }
-  .tool-text-output :global(code) {
-    font-family: ui-monospace, monospace;
-    font-size: 0.88em;
-    background: rgba(0,0,0,0.25);
-    padding: 0.1em 0.3em;
-    border-radius: 3px;
-  }
-  .tool-text-output :global(pre) {
-    background: var(--bg);
-    padding: 0.4rem 0.5rem;
-    border-radius: 4px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    overflow-x: auto;
-    font-size: 0.78rem;
-    direction: ltr;
-    text-align: left;
-  }
-  .tool-text-output :global(pre code) { background: none; padding: 0; }
-  .tool-text-output :global(ul), .tool-text-output :global(ol) { padding-inline-start: 1.2em; margin: 0.2em 0; }
-  .tool-text-output :global(strong) { font-weight: 700; }
-  .tool-text-output :global(em) { font-style: italic; }
-  /* chat-render-polish: GFM tables בפלט כלי */
-  .tool-text-output :global(table) {
-    border-collapse: collapse; margin: 0.4em 0; font-size: 0.78rem;
-    display: block; overflow-x: auto; max-width: 100%;
-  }
-  .tool-text-output :global(th), .tool-text-output :global(td) {
-    border: 1px solid var(--border); padding: 0.3em 0.55em; text-align: start;
-  }
-  .tool-text-output :global(th) { background: rgba(0,0,0,0.18); font-weight: 700; }
-
   .raw-output summary { list-style: none; }
   .raw-output[open] summary { margin-bottom: 4px; }
 
@@ -367,7 +332,7 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
     align-items: flex-start;
     gap: 0.25rem;
   }
-  .tool-text-wrapper .tool-text-output {
+  .tool-text-wrapper pre {
     flex: 1;
     min-width: 0;
   }
