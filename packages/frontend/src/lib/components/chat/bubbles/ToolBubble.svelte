@@ -43,7 +43,7 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
 </script>
 
 <div
-  class="rounded-xl border overflow-hidden text-[13px] flex-1 min-w-0 max-w-[78%]"
+  class="rounded-xl border overflow-hidden text-[13px] min-w-0 max-w-[78%] w-full"
   style="background:var(--bg-card); border-color:var(--border)"
 >
     <!-- summary שורה: status dot + narration/title -->
