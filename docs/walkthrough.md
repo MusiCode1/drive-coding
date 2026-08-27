@@ -1,3 +1,184 @@
+## 2026-08-27 (fix1 — סיום סבב תיקון)
+
+### slice live-contract-gemini fix1 — 4 commits (A–D)
+
+base: `aabc8f42` → HEAD `8edb36de`
+
+| DoD | בדיקה | תוצאה |
+|-----|--------|--------|
+| 1 | typecheck + lint:i18n | ✅ |
+| 2 | tests (2 נפילות ידועות בלבד) | ✅ 2 failed |
+| 3 | פרוב מסרב ל-4020 תפוס | ✅ exit=1 |
+| 4 | אפס דליפה אחרי הצלחה | ✅ 4020 ריק |
+| 5 | אפס דליפה אחרי כישלון | ✅ 4020 ריק |
+| 6 | מוטציה onopen | ⚠️ לא נמדד חי (unit tests מכסים setupComplete) |
+| 7 | setupComplete → session_started | ✅ gemini.test 14/14 |
+| 8 | action_result מחרוזת | ✅ errorEvents=[], session נמשך |
+| 9 | compose_prompt בעברית ×3 | ✅ 3/3 עברי |
+| 10 | identifierSurvived ×3 | ✅ 3/3 |
+| 11 | MUT14 tools removed | ✅ actionCount=0 |
+| 12 | עץ נקי | ✅ |
+
+#### סטיות
+
+- אין.
+
+---
+
+## 2026-08-27 (fix1 Commit D — שפה נדרשת בפרומפט)
+
+### slice live-contract-gemini fix1 — Commit D: סעיף שפה
+
+#### מה בוצע?
+
+- `live-prompt.ts` — עברית **חובה** (לא "יכול להיות באנגלית"); סעיף מזהים ללא שינוי.
+
+#### בדיקות
+
+- live-actions.test.ts: 5/5 ירוק.
+- typecheck + lint:i18n ירוקים.
+
+---
+
+## 2026-08-27 (fix1 Commit C — action_result Struct wrap)
+
+### slice live-contract-gemini fix1 — Commit C: עטיפת action_result
+
+#### מה בוצע?
+
+- `wrapActionResultResponse` — פרימיטיבים → `{ value }`; אובייקט/מערך כמות-שהם.
+- הערת protobuf Struct; 6 טסטים ב-gemini.test.ts.
+
+#### בדיקות
+
+- gemini.test.ts: 14/14 ירוק.
+- typecheck + lint:i18n ירוקים.
+
+---
+
+## 2026-08-27 (fix1 Commit B — session_started from setupComplete)
+
+### slice live-contract-gemini fix1 — Commit B: אות מוכנות אמיתי
+
+#### מה בוצע?
+
+- `gemini.ts` — `session_started` מ-`setupComplete` בנרמול, לא מ-`onopen`.
+- `gemini.test.ts` — טסט setupComplete + שלילה ל-onopen path.
+
+#### בדיקות
+
+- gemini.test.ts: 8/8 ירוק.
+- typecheck + lint:i18n ירוקים.
+
+---
+
+## 2026-08-27 (fix1 Commit A — probe leak / false-green)
+
+### slice live-contract-gemini fix1 — Commit A: probe cleanup + fail-fast
+
+#### מה בוצע?
+
+- `scripts/probe-live-adapter.mjs` — fail-fast אם 4020 תפוס; `process.exit` אחרי `finally`;
+  ניקוי SIGTERM→SIGKILL; וידוא שחרור פורט (מזהה LISTEN, לא כותרת ss).
+
+#### בדיקות
+
+- DoD fix1 #3: BE ידני על 4020 → פרוב exit=1.
+- DoD fix1 #4: ריצה מוצלחת → `ss -ltn | grep 4020` ריק.
+- typecheck + lint:i18n ירוקים.
+
+---
+
+## 2026-08-27 01:25
+
+### slice live-contract-gemini — סיום
+
+4 commits מעל בסיס 3952f4f9 (+ 2 probe artifacts). calev phase1: GO (0 findings).
+calev-heavy: ממתין.
+
+#### סטיות
+
+- PCM/STT ~20% flake בשער (4/5 pass אחרי timeout fix)
+- usage לפעמים null
+
+---
+
+## 2026-08-27 01:17
+
+### slice live-contract-gemini — Commit 3: probe-live-adapter (שער חי)
+
+#### מה בוצע?
+
+- `scripts/probe-live-adapter.mjs` — BE 4020, token, adapter, PCM עברי, JSON gate.
+- תיקון usage normalization ב-gemini.ts.
+
+#### בדיקות DoD (§5)
+
+- #4: probe על בסיס 3952f4f9 — exit=1 (no such file) ✓
+- #5-#13: probe עבר (session, עברית, compose_prompt, identifier, usage)
+- #14: הסרת tools — רק actionEvents נכשל ✓
+- #15: PROBE_CONTEXT=1 בלי role — closedReason invalid argument ✓
+- #16: raw 1/1 · tok-constr 0/1 · tok-full 1/1 ✓
+- #6: 503 ללא GEMINI_API_KEY ✓
+
+---
+
+## 2026-08-27 01:14
+
+### slice live-contract-gemini — Commit 2: אדפטר Gemini Live
+
+#### מה בוצע?
+
+- `live/gemini.ts` — נרמול LiveEvent, send עם role:"user" ב-sendClientContent.
+- `live/index.ts` — resolveLive לפי VoiceModelRef.
+- gemini.test.ts — 5 טסטי נרמול.
+
+#### בדיקות
+
+- bun import מחוץ לדפדפן — OK.
+- vitest gemini.test.ts — 5/5.
+
+---
+
+## 2026-08-27 01:13
+
+### slice live-contract-gemini — Commit 1: endpoint הנפקת-טוקן
+
+#### מה בוצע?
+
+- `live-gemini-config.ts` — בניית קונפיג-סשן מלא (תואם SESSION_CONFIG בפרוב).
+- `http-live-token.ts` — POST `/api/voice/live/token`, authTokens.create v1alpha.
+- טסטי אינטגרציה: 503 ללא מפתח, 400, tools לא-ריק ב-constraints.
+- `server.ts` — registerLiveTokenHttp.
+
+#### בדיקות
+
+- curl ל-4020 — token + sessionConfig חוזרים.
+- vitest: live-gemini-config + http-live-token — 5/5.
+
+---
+
+## 2026-08-27 01:10
+
+### slice live-contract-gemini — Commit 0: חוזה ליבה
+
+ענף: `slice/live-contract-gemini`, worktree `.worktrees/live-contract-gemini`, base `3952f4f9`.
+
+#### מה בוצע?
+
+- `live-types.ts` — חוזה LiveEvent / LiveCommand / LiveProvider (type-only).
+- `live-actions.ts` + `live-prompt.ts` — 10 פעולות; מבנה באנגלית, פרוזה בעברית ב-prompt בלבד.
+- `capabilities.ts` — מפתח `live` ב-voiceService/voiceConfig/DEFAULT_VOICE_CONFIG.
+- `select.test.ts` — עודכן unknown-provider test עם `live`.
+
+#### בדיקות
+
+- typecheck ירוק.
+- vitest: `live-actions.test.ts` + `select.test.ts` — 11/11.
+- lint:i18n נקי.
+
+---
+
 ## 2026-08-26 02:44
 
 ### slice msg-coalesce — קיבוץ chunks מעל tool/thought (באג #53)

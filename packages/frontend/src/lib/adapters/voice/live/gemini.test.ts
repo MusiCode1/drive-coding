@@ -1,0 +1,97 @@
+/**
+ * gemini.test.ts — normalization unit tests (no network).
+ */
+
+import { describe, expect, it } from "vitest"
+import { normalizeGeminiFrame, wrapActionResultResponse } from "./gemini.js"
+
+describe("normalizeGeminiFrame()", () => {
+  it("maps setupComplete to session_started", () => {
+    const events = normalizeGeminiFrame({ setupComplete: { sessionId: "s1" } })
+    expect(events).toEqual([{ type: "session_started" }])
+  })
+
+  it("does not emit session_started from onopen path (normalizer only)", () => {
+    const events = normalizeGeminiFrame({ serverContent: { turnComplete: true } })
+    expect(events.some((e) => e.type === "session_started")).toBe(false)
+  })
+
+  it("maps input transcription to user transcript", () => {
+    const events = normalizeGeminiFrame({
+      serverContent: { inputTranscription: { text: "שלום" } },
+    })
+    expect(events).toEqual([
+      { type: "transcript", role: "user", text: "שלום", final: false },
+    ])
+  })
+
+  it("maps toolCall to action events", () => {
+    const events = normalizeGeminiFrame({
+      toolCall: {
+        functionCalls: [
+          { id: "c1", name: "compose_prompt", args: { text: "auth.test.ts" } },
+        ],
+      },
+    })
+    expect(events).toEqual([
+      { type: "action", id: "c1", name: "compose_prompt", args: { text: "auth.test.ts" } },
+    ])
+  })
+
+  it("maps inlineData to audio pcm", () => {
+    const pcm = new Uint8Array([1, 2, 3])
+    const b64 = Buffer.from(pcm).toString("base64")
+    const events = normalizeGeminiFrame({
+      serverContent: { modelTurn: { parts: [{ inlineData: { data: b64 } }] } },
+    })
+    expect(events[0]?.type).toBe("audio")
+    if (events[0]?.type === "audio") {
+      expect(events[0].pcm).toEqual(pcm)
+    }
+  })
+
+  it("maps turnComplete to turn_done assistant", () => {
+    const events = normalizeGeminiFrame({ serverContent: { turnComplete: true } })
+    expect(events).toEqual([{ type: "turn_done", role: "assistant" }])
+  })
+
+  it("maps usageMetadata to usage event", () => {
+    const events = normalizeGeminiFrame({
+      usageMetadata: { totalTokenCount: 100, promptTokenCount: 40 },
+    })
+    expect(events).toEqual([{ type: "usage", totalTokens: 100, promptTokens: 40 }])
+  })
+
+  it("maps usage with only totalTokenCount", () => {
+    const events = normalizeGeminiFrame({ usageMetadata: { totalTokenCount: 50 } })
+    expect(events).toEqual([{ type: "usage", totalTokens: 50, promptTokens: 0 }])
+  })
+})
+
+describe("wrapActionResultResponse()", () => {
+  it("passes plain objects through unchanged", () => {
+    const obj = { status: "sent", count: 2 }
+    expect(wrapActionResultResponse(obj)).toBe(obj)
+  })
+
+  it("wraps strings", () => {
+    expect(wrapActionResultResponse("just-a-string")).toEqual({ value: "just-a-string" })
+  })
+
+  it("wraps numbers", () => {
+    expect(wrapActionResultResponse(42)).toEqual({ value: 42 })
+  })
+
+  it("wraps null", () => {
+    expect(wrapActionResultResponse(null)).toEqual({ value: null })
+  })
+
+  it("wraps undefined", () => {
+    expect(wrapActionResultResponse(undefined)).toEqual({ value: undefined })
+  })
+
+  it("wraps arrays — a list is not a protobuf Struct and closes the session", () => {
+    const arr = [{ status: "sent" }]
+    expect(wrapActionResultResponse(arr)).toEqual({ value: arr })
+  })
+})
