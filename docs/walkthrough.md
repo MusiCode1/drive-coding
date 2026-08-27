@@ -1,4 +1,21 @@
-## 2026-08-27 — slice live-ears (הושלם)
+## 2026-08-27 09:36 — slice live-secretary Commit 0: מסלול יוצא
+
+base: `54fe3dcd` · ענף `slice/live-secretary`
+
+#### מה בוצע?
+
+- `core/voice/live-dispatch.ts` — `canDispatchPrompt` (TDD, 6 tests).
+- `Live` VM: `engine.on("action")` → `compose_prompt`/`forward` → `sendPrompt` + `action_result` מיידי.
+- `not_sent` + reason כשה-gate נכשל; פרומפט מעודכן.
+- `LiveSessionEngine.sendActionResult` · getters `isRemoteView`/`hasAcpClient`.
+- `live.test.svelte.ts`: 7 passed.
+
+#### בדיקות
+
+- typecheck ירוק · lint:i18n ירוק · test: 2 נפילות ידועות.
+
+---
+
 
 base: `dfbb4078` → HEAD `2d1acca8` (8 commits)
 

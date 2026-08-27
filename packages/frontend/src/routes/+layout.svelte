@@ -114,7 +114,11 @@ const speaker = new Speaker({
 const mic = new Mic({ session, cues })
 
 // ─── live ─── (slice live-ears — תלוי ב-mic)
-const live = new Live({ mic, language: i18n.locale === "he" ? "he" : "en" })
+const live = new Live({
+  mic,
+  session,
+  language: i18n.locale === "he" ? "he" : "en",
+})
 
 // ─── voice-mode ─── (slice 3 — תלוי ב-mic + session + speaker + live)
 const voiceMode = new VoiceMode({ mic, session, speaker, playlist: audioPlaylist, live })

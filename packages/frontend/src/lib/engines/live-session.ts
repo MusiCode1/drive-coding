@@ -161,6 +161,11 @@ export class LiveSessionEngine {
     this.#setState("closed")
   }
 
+  /** Immediate tool response — does not wait for agent turn (§B.2). */
+  sendActionResult(id: string, name: string, result: unknown): void {
+    this.#session?.send({ type: "action_result", id, name, result })
+  }
+
   #setState(next: LiveSessionState): void {
     this.#state = next
     for (const h of this.#stateHandlers) h(next)

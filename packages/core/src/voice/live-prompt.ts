@@ -9,11 +9,15 @@ export const LIVE_ACTION_PROSE: Readonly<
   Record<string, { description: string; params: Readonly<Record<string, string>> }>
 > = {
   compose_prompt: {
-    description: "נסח ושלח בקשה לסוכן הקוד בשם המשתמש. מחזיר קבלה מיידית; התשובה מגיעה בערוץ אחר.",
+    description:
+      "נסח ושלח בקשה לסוכן הקוד בשם המשתמש. מחזיר קבלה מיידית; התשובה מגיעה בערוץ אחר. " +
+      "אם קיבלת status:not_sent — אמור למשתמש שהבקשה לא נשלחה ומדוע; אל תאשר שליחה.",
     params: { text: "הבקשה המנוסחת במלואה." },
   },
   forward: {
-    description: "העבר את בקשת המשתמש כלשונה לסוכן הקוד, בלי לנסח מחדש.",
+    description:
+      "העבר את בקשת המשתמש כלשונה לסוכן הקוד, בלי לנסח מחדש. " +
+      "אם קיבלת status:not_sent — אמור למשתמש שהבקשה לא נשלחה ומדוע; אל תאשר שליחה.",
     params: {},
   },
   cancel_turn: {
