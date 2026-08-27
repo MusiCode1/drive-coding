@@ -39,4 +39,12 @@ describe("CLI branch before parseArgs", () => {
     expect(r.stderr).not.toMatch(/Unexpected argument/)
     expect(r.stdout).not.toMatch(/single-command server/)
   })
+
+  it("agent --help is the agent help, not the server help", async () => {
+    const r = await run(["agent", "--help"])
+    expect(r.code).toBe(0)
+    expect(r.stdout).toMatch(/drive-coding agent/)
+    expect(r.stdout).toMatch(/never guessed/)
+    expect(r.stdout).not.toMatch(/single-command server/)
+  })
 })
