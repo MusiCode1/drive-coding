@@ -37,6 +37,7 @@
  */
 
 import { createLogger } from "@drive-coding/core/log"
+import type { PermissionPolicyKind } from "@drive-coding/core/types/permission"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { createPatchesBroadcaster, type PatchesBroadcaster } from "./patches-broadcaster.js"
@@ -187,6 +188,13 @@ type AgentSessionRegistryDeps = {
    */
   getAcpSessionId?: (agentId: string) => string | undefined
   /**
+   * slice session-create-contract: resolve permissionPolicy stored on the agent
+   * record at POST /api/agents time — survives lazy host creation.
+   */
+  getPermissionPolicy?: (
+    agentId: string,
+  ) => PermissionPolicyKind | undefined | Promise<PermissionPolicyKind | undefined>
+  /**
    * slice ownership-handoff C4b: HTTP ownership TTL (ms).
    * Default: `HTTP_OWNER_TTL_MS` env, else 600_000ms (slice ttl-ownership).
    * Exposed for tests to set a short TTL without real delays.
@@ -228,6 +236,7 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     _createBroadcasterFn = (patches) => createPatchesBroadcaster(patches),
     evictionController,
     getAcpSessionId,
+    getPermissionPolicy,
   } = deps
 
   const map = new Map<string, HostEntry>()
@@ -321,12 +330,16 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     // If the agent has an active ACP session (was WS-owned), use warm path
     // (createAttachedAcpClient + loadSession) instead of cold (createAcpClient + newSession).
     const acpSessionId = getAcpSessionId?.(agentId)
+    const permissionPolicy = await getPermissionPolicy?.(agentId)
 
     // Create host + broadcaster
     // slice handoff-foundations C3: if session creation fails below, the host is
     // already subscribed to the wire (created by _createHostFn). Rollback MUST call
     // host.dispose() to remove the crash subscription and close the patches stream.
-    const hostOpts = acpSessionId ? { warmReattach: { acpSessionId, cwd } } : undefined
+    const hostOpts = {
+      ...(acpSessionId ? { warmReattach: { acpSessionId, cwd } } : {}),
+      ...(permissionPolicy !== undefined ? { permissionPolicy } : {}),
+    }
     // 🔴 הקשר-אבחון (2026-08-16): יצירת ה-host היא שמריצה את ה-ACP initialize,
     // ולכן כאן נופלות פקיעות ה-initialize/authenticate. עד עכשיו השגיאה עלתה מכאן
     // **בלי שום סימן זיהוי**: נתקלנו בשני כשלים חיים ולא הצלחנו לקבוע בדיעבד

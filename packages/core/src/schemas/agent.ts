@@ -1,5 +1,8 @@
 import { type } from "arktype"
 
+export const PermissionPolicy = type.enumerated("allow_once", "allow_always", "reject_once", "ask")
+export type PermissionPolicy = typeof PermissionPolicy.infer
+
 // ─── מקור-האמת היחיד ל-CLIs (שמות + פקודות) ─────────────────────────────────
 // כאן יושב הכל במקום אחד: רשימת ה-CLIs, וגם פקודת ההרצה (bin/args) של כל אחד.
 // הוספת CLI חדש = רשומה אחת ב-CLI_SPECS, וזהו — השם, הסכמה (arktype), ה-FE
@@ -126,6 +129,8 @@ export const Agent = type({
   // כותרת-הסשן (slice session-title-in-process-list): נדחפת ע"י ה-client שפתח את הסשן
   // (מקור: session_info_update ACP). runtime-only — נאבד ב-restart. null = ניקוי מכוון.
   "title?": "string | null",
+  // slice session-create-contract: auto-resolve permission by kind before pending.
+  "permissionPolicy?": PermissionPolicy,
 })
 export type Agent = typeof Agent.infer
 
@@ -175,6 +180,9 @@ export const CreateAgentInput = type({
   // slice project-system-prompt: פרומפט-מערכת פר-פרויקט, מתווסף (append) להוראות ברירת-המחדל.
   // גנרי — הצורה הספציפית-לספק נכתבת רק בקובץ-הספק (provider/connection).
   "systemPrompt?": "string | null",
+  // slice session-create-contract: בחירת הרשאה לפי kind (ACP option kinds, not tool names).
+  // "ask" = default = today's behavior (enters pending).
+  "permissionPolicy?": PermissionPolicy,
 })
 export type CreateAgentInput = typeof CreateAgentInput.infer
 

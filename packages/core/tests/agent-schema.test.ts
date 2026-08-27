@@ -61,6 +61,31 @@ describe("CreateAgentInput", () => {
     })
     expect(result).toMatchObject({ modelOverride: null })
   })
+
+  // slice session-create-contract C1
+  it("accepts permissionPolicy allow_once", () => {
+    const result = CreateAgentInput({
+      cliKind: "claude",
+      cwd: "/x",
+      permissionPolicy: "allow_once",
+    })
+    expect(result).toMatchObject({ permissionPolicy: "allow_once" })
+  })
+
+  it("rejects invalid permissionPolicy", () => {
+    const result = CreateAgentInput({
+      cliKind: "claude",
+      cwd: "/x",
+      permissionPolicy: "auto_allow",
+    })
+    expect(result).toHaveProperty("summary")
+  })
+
+  it("omitted permissionPolicy — valid (today's behavior)", () => {
+    const result = CreateAgentInput({ cliKind: "claude", cwd: "/x" })
+    expect(result).not.toHaveProperty("summary")
+    expect(result).not.toHaveProperty("permissionPolicy")
+  })
 })
 
 describe("toAgentPublic", () => {
