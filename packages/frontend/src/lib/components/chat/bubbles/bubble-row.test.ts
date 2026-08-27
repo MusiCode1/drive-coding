@@ -47,23 +47,38 @@ describe("BubbleRow — CSS contract", () => {
   const source = readFileSync(bubbleRowPath, "utf-8")
   const styles = extractStyleBlock(source)
 
-  it("base .bubble-row uses 1fr grid, no 28px in default (mobile-first)", () => {
+  it("outer rail is full-width flex that justifies a cluster (no 1fr grid)", () => {
     const baseMatch = styles.match(/\.bubble-row\s*\{([^}]*)\}/)
     expect(baseMatch?.[1]).toBeDefined()
     const base = baseMatch![1]!
-    expect(base).toMatch(/grid-template-columns:\s*1fr/)
-    expect(base).not.toMatch(/28px/)
+    expect(base).toMatch(/display:\s*flex/)
     expect(base).toMatch(/width:\s*100%/)
+    expect(base).toMatch(/justify-content:\s*start/)
+    expect(base).not.toMatch(/grid-template-columns/)
+    expect(styles).toMatch(/\.bubble-row-cluster\s*\{/)
+    expect(styles).toMatch(/width:\s*fit-content/)
   })
 
-  it("@media (min-width: 768px) includes 28px avatar column", () => {
+  it("desktop cluster uses row / row-reverse with gap — no 1fr spacer column", () => {
     expect(styles).toMatch(/@media\s*\(\s*min-width:\s*768px\s*\)/)
-    expect(styles).toMatch(/grid-template-columns:\s*28px\s+minmax\(0,\s*1fr\)/)
-    expect(styles).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+28px/)
+    expect(styles).toMatch(/flex-direction:\s*row/)
+    expect(styles).toMatch(/flex-direction:\s*row-reverse/)
+    expect(styles).not.toMatch(/grid-template-columns/)
+    expect(styles).not.toMatch(/minmax\(0,\s*1fr\)/)
   })
 
-  it("markup uses data-side and Avatar", () => {
+  it("end side cluster + content shrink-wrap (fit-content)", () => {
+    expect(styles).toMatch(
+      /\[data-side="end"\][^{]*\.bubble-row-cluster\s*\{[^}]*width:\s*fit-content/,
+    )
+    expect(styles).toMatch(
+      /\[data-side="end"\][^{]*\.bubble-row-content\s*\{[^}]*width:\s*fit-content/,
+    )
+  })
+
+  it("markup uses data-side, cluster, and Avatar", () => {
     expect(source).toMatch(/data-side=\{side\}/)
+    expect(source).toMatch(/bubble-row-cluster/)
     expect(source).toMatch(/<Avatar\s+kind=\{avatar\}/)
   })
 })
