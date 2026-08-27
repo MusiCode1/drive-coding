@@ -5,7 +5,11 @@
  * before entering pending.
  */
 
-import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
+import type {
+  AcpClient,
+  AcpClientCallbacks,
+  RequestPermissionRequest,
+} from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
 import type { AcpTransport } from "@drive-coding/provider/transport"
@@ -52,7 +56,17 @@ const PERM_OPTIONS = [
   { optionId: "aa1", name: "Allow always", kind: "allow_always" as const },
 ]
 
-async function setupWithPolicy(permissionPolicy?: "allow_once" | "allow_always" | "reject_once" | "ask") {
+function permParams(options: RequestPermissionRequest["options"]): RequestPermissionRequest {
+  return {
+    sessionId: "s1",
+    toolCall: { toolCallId: "t1", title: "Write" },
+    options,
+  }
+}
+
+async function setupWithPolicy(
+  permissionPolicy?: "allow_once" | "allow_always" | "reject_once" | "ask",
+) {
   const conn = makeMockConnection()
   let capturedCallbacks: AcpClientCallbacks | undefined
 
@@ -73,15 +87,17 @@ async function setupWithPolicy(permissionPolicy?: "allow_once" | "allow_always" 
   }
 }
 
+function requestPermission(callbacks: AcpClientCallbacks, params: RequestPermissionRequest) {
+  const handler = callbacks.onRequestPermission
+  if (!handler) throw new Error("onRequestPermission not wired")
+  return handler(params)
+}
+
 describe("handleRequestPermission — permissionPolicy third guard (C1)", () => {
   it("allow_once → auto-selected, never enters pending", async () => {
     const { host, callbacks } = await setupWithPolicy("allow_once")
 
-    const response = await callbacks.onRequestPermission!({
-      sessionId: "s1",
-      toolCall: { toolCallId: "t1", title: "Write" },
-      options: PERM_OPTIONS,
-    } as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0])
+    const response = await requestPermission(callbacks, permParams(PERM_OPTIONS))
 
     expect(response).toEqual({ outcome: { outcome: "selected", optionId: "ao1" } })
     expect(host.state.pending.permission).toBeNull()
@@ -90,11 +106,7 @@ describe("handleRequestPermission — permissionPolicy third guard (C1)", () => 
   it("absent policy → enters pending (today's behavior)", async () => {
     const { host, callbacks } = await setupWithPolicy(undefined)
 
-    const responsePromise = callbacks.onRequestPermission!({
-      sessionId: "s1",
-      toolCall: { toolCallId: "t1", title: "Write" },
-      options: PERM_OPTIONS,
-    } as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0])
+    const responsePromise = requestPermission(callbacks, permParams(PERM_OPTIONS))
 
     expect(host.state.pending.permission).toEqual({
       requestId: 0,
@@ -109,11 +121,7 @@ describe("handleRequestPermission — permissionPolicy third guard (C1)", () => 
   it("ask → enters pending (today's behavior)", async () => {
     const { host, callbacks } = await setupWithPolicy("ask")
 
-    void callbacks.onRequestPermission!({
-      sessionId: "s1",
-      toolCall: { toolCallId: "t1", title: "Write" },
-      options: PERM_OPTIONS,
-    } as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0])
+    void requestPermission(callbacks, permParams(PERM_OPTIONS))
 
     expect(host.state.pending.permission).not.toBeNull()
   })
@@ -121,11 +129,10 @@ describe("handleRequestPermission — permissionPolicy third guard (C1)", () => 
   it("kind not offered → enters pending", async () => {
     const { host, callbacks } = await setupWithPolicy("reject_once")
 
-    void callbacks.onRequestPermission!({
-      sessionId: "s1",
-      toolCall: { toolCallId: "t1", title: "Write" },
-      options: [{ optionId: "ao1", name: "Allow once", kind: "allow_once" }],
-    } as Parameters<NonNullable<typeof callbacks.onRequestPermission>>[0])
+    void requestPermission(
+      callbacks,
+      permParams([{ optionId: "ao1", name: "Allow once", kind: "allow_once" }]),
+    )
 
     expect(host.state.pending.permission).not.toBeNull()
   })

@@ -336,10 +336,13 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     // slice handoff-foundations C3: if session creation fails below, the host is
     // already subscribed to the wire (created by _createHostFn). Rollback MUST call
     // host.dispose() to remove the crash subscription and close the patches stream.
-    const hostOpts = {
-      ...(acpSessionId ? { warmReattach: { acpSessionId, cwd } } : {}),
-      ...(permissionPolicy !== undefined ? { permissionPolicy } : {}),
-    }
+    const hostOpts =
+      acpSessionId || permissionPolicy !== undefined
+        ? {
+            ...(acpSessionId ? { warmReattach: { acpSessionId, cwd } } : {}),
+            ...(permissionPolicy !== undefined ? { permissionPolicy } : {}),
+          }
+        : undefined
     // 🔴 הקשר-אבחון (2026-08-16): יצירת ה-host היא שמריצה את ה-ACP initialize,
     // ולכן כאן נופלות פקיעות ה-initialize/authenticate. עד עכשיו השגיאה עלתה מכאן
     // **בלי שום סימן זיהוי**: נתקלנו בשני כשלים חיים ולא הצלחנו לקבוע בדיעבד

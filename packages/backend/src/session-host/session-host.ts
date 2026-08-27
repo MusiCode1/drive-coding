@@ -29,8 +29,6 @@ import type {
   SessionNotification,
 } from "@agentclientprotocol/sdk"
 import type { Patch, SessionConfigOption, SessionState } from "@drive-coding/core/session"
-import type { PermissionPolicyKind } from "@drive-coding/core/types/permission"
-import { resolvePermissionPolicy } from "@drive-coding/core/types/permission"
 import {
   applyPatch,
   applyPendingRequest,
@@ -42,6 +40,8 @@ import {
   reduce,
   synthesizeUserMessage,
 } from "@drive-coding/core/session"
+import type { PermissionPolicyKind } from "@drive-coding/core/types/permission"
+import { resolvePermissionPolicy } from "@drive-coding/core/types/permission"
 import type {
   AcpClient,
   AcpClientCallbacks,

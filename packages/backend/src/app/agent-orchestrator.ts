@@ -90,6 +90,22 @@ function drivecodingShapeEnv(cliKind: string, baseEnv: NodeJS.ProcessEnv): NodeJ
   return baseEnv
 }
 
+/**
+ * Composes caller `env` on top of `drivecodingShapeEnv` — does NOT replace it.
+ * Extra keys merge above the shaped baseEnv (spawn-only; not in-process bridge).
+ */
+export function composeShapeEnv(
+  extraEnv: Record<string, string> | undefined,
+): (cliKind: string, baseEnv: NodeJS.ProcessEnv) => NodeJS.ProcessEnv {
+  if (!extraEnv || Object.keys(extraEnv).length === 0) {
+    return drivecodingShapeEnv
+  }
+  return (cliKind, baseEnv) => ({
+    ...drivecodingShapeEnv(cliKind, baseEnv),
+    ...extraEnv,
+  })
+}
+
 // ─── פקטורי ──────────────────────────────────────────────────────────────────
 
 export function createAgentOrchestrator(deps: {
@@ -169,7 +185,7 @@ export function createAgentOrchestrator(deps: {
         await deps.connectionRegistry.connect(agent.id, input.cliKind, {
           cwd: input.cwd,
           modelOverride: input.modelOverride ?? null,
-          shapeEnv: drivecodingShapeEnv,
+          shapeEnv: composeShapeEnv(input.env),
           systemPrompt: input.systemPrompt ?? null,
         })
 

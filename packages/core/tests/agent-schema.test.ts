@@ -86,6 +86,22 @@ describe("CreateAgentInput", () => {
     expect(result).not.toHaveProperty("summary")
     expect(result).not.toHaveProperty("permissionPolicy")
   })
+
+  // slice session-create-contract C2
+  it("accepts env as string map", () => {
+    const result = CreateAgentInput({
+      cliKind: "cursor",
+      cwd: "/x",
+      env: { BDS_SLICE: "probe" },
+    })
+    expect(result).toMatchObject({ env: { BDS_SLICE: "probe" } })
+  })
+
+  it("omitted env — valid (today's behavior)", () => {
+    const result = CreateAgentInput({ cliKind: "cursor", cwd: "/x" })
+    expect(result).not.toHaveProperty("summary")
+    expect(result).not.toHaveProperty("env")
+  })
 })
 
 describe("toAgentPublic", () => {

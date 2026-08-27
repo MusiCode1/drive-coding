@@ -183,6 +183,11 @@ export const CreateAgentInput = type({
   // slice session-create-contract: בחירת הרשאה לפי kind (ACP option kinds, not tool names).
   // "ask" = default = today's behavior (enters pending).
   "permissionPolicy?": PermissionPolicy,
+  /**
+   * Extra env vars merged into the spawned CLI child (above baseEnv via shapeEnv).
+   * Does NOT reach in-process bridges (claude · codex) — cli-spec-env-parity.
+   */
+  "env?": { "[string]": "string" },
 })
 export type CreateAgentInput = typeof CreateAgentInput.infer
 

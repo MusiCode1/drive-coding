@@ -2,10 +2,10 @@
 export {
   defaultPermissionOptionId,
   mapPermissionOptions,
-  resolvePermissionPolicy,
   type PermissionOptionKind,
   type PermissionOptionView,
   type PermissionParams,
   type PermissionPolicyKind,
   type PermissionResponse,
+  resolvePermissionPolicy,
 } from "@drive-coding/core/types/permission"
