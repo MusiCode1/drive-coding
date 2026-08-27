@@ -19,6 +19,7 @@ import type { SessionTransport } from "$lib/session/session-transport"
 import { listVoices, type Voice } from "../adapters/voice/voices"
 import { DEFAULT_GEMINI_VOICE } from "../adapters/voice/voices-gemini"
 import { setBeUrlBase } from "../util/be-url"
+import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH_REM } from "../util/sidebar-width"
 import { ttsCapabilities } from "./capabilities.svelte"
 
 const STORAGE_KEY = "drive-coding-v2-settings"
@@ -69,6 +70,8 @@ type Persisted = {
   // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize)
   recentPanelHeight: number
   activePanelHeight: number
+  // ─── sidebar-resize ───
+  sidebarWidthRem: number
   // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
   geminiPace: SpeechPace
   geminiTone: SpeechTone
@@ -118,6 +121,7 @@ const DEFAULTS: Persisted = {
   // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize) — 256px = 16rem, זהה להתנהגות היום
   recentPanelHeight: 256,
   activePanelHeight: 256,
+  sidebarWidthRem: DEFAULT_SIDEBAR_WIDTH_REM,
   geminiPace: "normal",
   geminiTone: "neutral",
   // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4) — null = env נבחר
@@ -235,6 +239,9 @@ export class Settings {
   recentPanelHeight = $state<number>(DEFAULTS.recentPanelHeight)
   activePanelHeight = $state<number>(DEFAULTS.activePanelHeight)
 
+  // ─── sidebar-resize ───
+  sidebarWidthRem = $state<number>(DEFAULTS.sidebarWidthRem)
+
   // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
   geminiPace = $state<SpeechPace>(DEFAULTS.geminiPace)
   geminiTone = $state<SpeechTone>(DEFAULTS.geminiTone)
@@ -283,6 +290,9 @@ export class Settings {
     // ─── גובה פאנלים נגרר ───
     this.recentPanelHeight = loaded.recentPanelHeight
     this.activePanelHeight = loaded.activePanelHeight
+    this.sidebarWidthRem = Number.isFinite(loaded.sidebarWidthRem)
+      ? clampSidebarWidth(loaded.sidebarWidthRem)
+      : DEFAULTS.sidebarWidthRem
     this.geminiTone = loaded.geminiTone
     // ─── טרנספורט סשן ─── (slice transport-polish C4)
     this.sessionTransport = loaded.sessionTransport
@@ -554,6 +564,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── sidebar-resize ───
+
+  setSidebarWidthRem = (rem: number): void => {
+    this.sidebarWidthRem = clampSidebarWidth(rem)
+    this.#persist()
+  }
+
   // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
 
   setGeminiPace = (v: SpeechPace): void => {
@@ -600,6 +617,7 @@ export class Settings {
       projectSystemPrompt: this.projectSystemPrompt,
       recentPanelHeight: this.recentPanelHeight,
       activePanelHeight: this.activePanelHeight,
+      sidebarWidthRem: this.sidebarWidthRem,
       geminiPace: this.geminiPace,
       geminiTone: this.geminiTone,
       sessionTransport: this.sessionTransport,

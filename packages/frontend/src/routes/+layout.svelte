@@ -226,6 +226,15 @@ $effect(() => {
   presencePoller.sync({ inSession, agentId, hidden })
 })
 $effect(() => () => presencePoller.dispose())
+
+// ─── ui-shell inputMode reset ─── (slice playback-dock-scope)
+// RecordFooter mode was local $state — unmount on idle reset it. Singleton survives
+// navigation; reset when agentId is set/changed (attach, new session, switch).
+$effect(() => {
+  const agentId = session.agentId
+  if (agentId) uiShell.resetInputModeForSession()
+})
+
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)

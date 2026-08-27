@@ -24,11 +24,13 @@ import { goto } from "$app/navigation"
 import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
 import SessionCard from "$lib/components/modals/SessionCard.svelte"
+import MachineStatsBar from "$lib/components/connect/MachineStatsBar.svelte"
 import CliBadge from "$lib/components/ui/CliBadge.svelte"
 import Select, { type SelectGroup, type SelectOption } from "$lib/components/ui/Select.svelte"
 import {
   getCliAvailability,
   getI18n,
+  getPresencePoller,
   getResponsive,
   getSession,
   getSettings,
@@ -40,6 +42,7 @@ import { sessionPathWithTransport } from "$lib/session/session-url"
 
 const t = getI18n().t
 const session = getSession()
+const poller = getPresencePoller()
 // slice cli-branding (Commit 3): displayName ב-"רץ על" — ה-panel חסר-props ל-CLI
 const cliAvailability = getCliAvailability()
 // ─── redesign-fix: disconnect + audio הועברו מ-AppHeader (פדיון חוב redesign-2/3) ───
@@ -260,6 +263,9 @@ $effect(() => {
 })
 </script>
 
+<!-- machine stats from presence poller (slice machine-stats-in-session) -->
+<MachineStatsBar stats={poller.machine} />
+
 <!-- שורת פעולות עליונה: נתק · השאר-רץ · השתק · ⚙ — בראש בכל המצבים (redesign-fix) -->
 <!-- סדר DOM ב-RTL: disconnect=ימני-קיצוני, leave-running משמאלו, audio, settings -->
 <div class="flex items-center gap-2 shrink-0">
@@ -321,7 +327,7 @@ $effect(() => {
     />
     <BitsDialog.Content
       class="fixed left-1/2 top-1/2 z-50 w-[90vw] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl p-5 shadow-xl flex flex-col gap-4"
-      style="background:var(--surface); border:1px solid var(--border)"
+      style="background:var(--bg-elev); border:1px solid var(--border)"
     >
       <BitsDialog.Title class="text-base font-semibold" style="color:var(--fg)">
         {t("session.leaveWarning.title")}

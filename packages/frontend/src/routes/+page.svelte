@@ -1,6 +1,5 @@
 <script lang="ts">
 import type { AgentPublic } from "@drive-coding/core"
-import FolderIcon from "@lucide/svelte/icons/folder"
 import Loader2Icon from "@lucide/svelte/icons/loader-2"
 import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
 import { onMount, untrack } from "svelte"
@@ -14,6 +13,7 @@ import type { RecentProject } from "$lib/adapters/recent-projects"
 import { postReloadConfig } from "$lib/adapters/cli-availability"
 import AuthGuidance from "$lib/components/AuthGuidance.svelte"
 import ActiveProcessesPanel from "$lib/components/connect/ActiveProcessesPanel.svelte"
+import CwdPathCombo from "$lib/components/connect/CwdPathCombo.svelte"
 import RecentProjectsPanel from "$lib/components/connect/RecentProjectsPanel.svelte"
 import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
 import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
@@ -247,27 +247,14 @@ async function refreshCliAvailability() {
              כפתור תיקייה עם order:-1 תמיד = ראשון בflex.
              RTL (עברית): flex מימין לשמאל → ראשון=ימין ויזואלי. ✓
              LTR (אנגלית): flex משמאל לימין → ראשון=שמאל ויזואלי. ✓ -->
-        <div class="cwd-row" dir={isRtl ? "rtl" : "ltr"}>
-          <input
-            type="text"
-            bind:value={cwd}
-            placeholder={t("connect.cwd.placeholder")}
-            dir="ltr"
-            disabled={session.status === "connecting"}
-          />
-          <!-- C15: order:-1 → תמיד ראשון בflex: LTR=שמאל, RTL=ימין -->
-          <button
-            type="button"
-            class="folder-btn"
-            style="order: -1"
-            onclick={() => modals.openFolder()}
-            disabled={session.status === "connecting"}
-            aria-label={t("settings.folder.pick")}
-            title={t("settings.folder.pick")}
-          >
-            <FolderIcon size={18} strokeWidth={1.75} />
-          </button>
-        </div>
+        <CwdPathCombo
+          bind:value={cwd}
+          placeholder={t("connect.cwd.placeholder")}
+          disabled={session.status === "connecting"}
+          {isRtl}
+          onFolderPick={() => modals.openFolder()}
+          folderLabel={t("settings.folder.pick")}
+        />
       </label>
     </form>
 
@@ -402,62 +389,6 @@ async function refreshCliAvailability() {
   }
 
   .cli-refresh-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  /* יישור לגובה ה-Select (px-3 py-2.5 text-sm rounded-xl) — אחידות שורות */
-  input {
-    padding: 0.625rem 0.75rem;
-    font-size: 0.875rem;
-    background: var(--bg-elev);
-    border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    color: var(--fg);
-  }
-
-  input:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.2);
-  }
-
-  /* C10+C15: שורת cwd — input גמיש + כפתור תיקייה */
-  .cwd-row {
-    display: flex;
-    gap: 0.5rem;
-    align-items: stretch;
-  }
-
-  .cwd-row .folder-btn {
-    align-self: stretch;
-  }
-
-  .cwd-row input {
-    flex: 1;
-    min-width: 0;
-  }
-
-  /* folder-btn — זהה ל-refresh-btn ב-SessionPicker (אחידות 2 הלחצנים) */
-  .folder-btn {
-    flex-shrink: 0;
-    margin-top: 0; /* מאפס את ה-margin-top של כלל ה-button הגלובלי — מיישר עם ה-input */
-    display: grid;
-    place-items: center;
-    padding: 0 0.7rem;
-    background: var(--bg-elev);
-    border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    color: var(--fg-dim);
-    cursor: pointer;
-  }
-
-  .folder-btn:hover:not(:disabled) {
-    color: var(--fg);
-    border-color: var(--accent);
-  }
-
-  .folder-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
