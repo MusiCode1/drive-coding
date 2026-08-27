@@ -57,6 +57,7 @@ import { createInMemoryAgentRegistry } from "./agents/registry.js"
 import { createAgentOrchestrator } from "./app/agent-orchestrator.js"
 import { createProjectsRegistry } from "./app/projects-registry.js"
 import { createRecordingsStore } from "./app/recordings-store.js"
+import { resolveAppVersion } from "./app-version.js"
 import { parseCorsOrigins } from "./delivery/cors-config.js"
 import { createEvictionController } from "./delivery/eviction-controller.js"
 import { registerHttp } from "./delivery/http.js"
@@ -72,17 +73,18 @@ import {
   registerRecordingsHttp,
   registerRecordingsPostHttp,
 } from "./delivery/http-history.js"
+import { registerLiveTokenHttp } from "./delivery/http-live-token.js"
 import { registerHttpOptions } from "./delivery/http-options.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
 import { registerReloadConfigHttp } from "./delivery/http-reload-config.js"
 import { registerTtsCapabilitiesHttp } from "./delivery/http-tts-capabilities.js"
-import { registerLiveTokenHttp } from "./delivery/http-live-token.js"
 import { registerUsageHttp } from "./delivery/http-usage.js"
 import { createMemoryGuard } from "./delivery/memory-guard.js"
 import { createWireRecorder } from "./delivery/wire-recorder.js"
 // הערה: createSessionsCache הוסר — רשימת הסשנים עכשיו מונעת מצד ה-FE דרך ACP WS
 import { createAgentWsHandler } from "./delivery/ws-agent.js"
 import { createEchoWsHandler } from "./delivery/ws-echo.js"
+import { removeInstance, writeInstance } from "./instances.js"
 import { ensureStateSubdir } from "./paths.js"
 import { createAndRegisterSessionHostHttp } from "./session-host/http/index.js"
 import { createUsageStore } from "./usage/usage-store.js"
@@ -381,6 +383,18 @@ httpServer.on("upgrade", (req, socket, head) => {
 
 log.info({ hostname, port }, "listening")
 
+const bound = httpServer.address()
+const boundPort = typeof bound === "object" && bound !== null ? bound.port : port
+writeInstance({
+  port: boundPort,
+  host: hostname,
+  pid: process.pid,
+  version: resolveAppVersion(),
+  cwd: process.cwd(),
+  https: Boolean(tls),
+  startedAt: Date.now(),
+})
+
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 // SIGINT (Ctrl+C) / SIGTERM — סגור חיבורים, הרוג ילדים, צא בצורה מסודרת.
 // force-timeout: אם הכיבוי תקוע (hang) — הכרח יציאה אחרי 8s.
@@ -396,6 +410,7 @@ async function gracefulShutdown(sig: string): Promise<void> {
   }, 8000)
   force.unref()
   try {
+    removeInstance(boundPort)
     await Promise.allSettled(connectionRegistry.list().map((id) => connectionRegistry.close(id)))
     stopWatching()
     echoWss.close()
@@ -409,6 +424,9 @@ async function gracefulShutdown(sig: string): Promise<void> {
 }
 process.on("SIGINT", () => void gracefulShutdown("SIGINT"))
 process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"))
+process.on("exit", () => {
+  removeInstance(boundPort)
+})
 
 /**
  * הרצה ידנית (dev/debug) — BE על פורט נפרד, משרת FE סטטי, דרך OneCLI:

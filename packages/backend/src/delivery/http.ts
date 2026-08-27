@@ -11,7 +11,7 @@ export function registerHttp(app: Hono): void {
     c.header("Cache-Control", "no-store")
     const cached = httpCacheGet("health")
     if (cached !== undefined) return c.json(cached)
-    const body = { status: "ok", version, uptime: process.uptime() }
+    const body = { status: "ok", version, uptime: process.uptime(), service: "drive-coding" }
     httpCacheSet("health", body)
     return c.json(body)
   })
