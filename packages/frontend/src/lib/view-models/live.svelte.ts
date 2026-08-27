@@ -238,7 +238,9 @@ export class Live {
     const options = mapPermissionOptions(pending.params)
     this.#engine.sendContext(
       formatPermissionPending({
-        toolTitle: pending.params.toolCall.title,
+        // `title` is optional upstream; the marker line must still name something
+        // the driver can act on, so fall back rather than emit "undefined" aloud.
+        toolTitle: pending.params.toolCall.title ?? pending.params.toolCall.kind ?? "",
         options,
       }),
       "speakable",

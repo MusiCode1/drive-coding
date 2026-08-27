@@ -141,7 +141,7 @@ describe("Live outgoing path (Commit 0)", () => {
 
   it("action_result sent immediately without waiting for agent turn", async () => {
     const session = mockSession({
-      sendPrompt: vi.fn(() => new Promise(() => {})),
+      sendPrompt: vi.fn(async (): Promise<void> => new Promise<void>(() => {})),
     })
     await openLive(session)
 
@@ -316,6 +316,7 @@ describe("Live outgoing path (Commit 0)", () => {
     const session = mockSession({
       pendingPermission: {
         params: {
+          sessionId: "ses_test",
           options: [{ optionId: "allow-1", name: "Allow once", kind: "allow_once" }],
           toolCall: { toolCallId: "t1", title: "Run command" },
         },
@@ -345,6 +346,7 @@ describe("Live outgoing path (Commit 0)", () => {
     const session = mockSession({
       pendingPermission: {
         params: {
+          sessionId: "ses_test",
           options: [
             { optionId: "allow-1", name: "Allow once", kind: "allow_once" },
             { optionId: "deny-1", name: "Deny", kind: "reject_once" },
