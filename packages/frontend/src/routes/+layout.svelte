@@ -103,12 +103,17 @@ const audioPlaylist = new AudioPlaylist(sharedAudioStream)
 // ─── mic ─── (slice 3 — תלוי ב-session + cues)
 const mic = new Mic({ session, cues })
 
+// ─── theme ─── (redesign-1) — declared before Live getter; instance assigned below Live block
+let theme!: ThemeVM
+
 // ─── live ─── (slice live-ears — תלוי ב-mic)
 const live = new Live({
   mic,
   session,
   language: i18n.locale === "he" ? "he" : "en",
   getVoiceName: () => settings.liveVoice,
+  getSettings: () => settings,
+  getTheme: () => theme,
 })
 
 // ─── speaker ─── (§4.3: live ref — TTS off while Live open)
@@ -139,8 +144,7 @@ const bubblePlayer = new BubblePlayer({
 
 // ─── car-mode ─── (slice 7)
 
-// ─── theme ─── (redesign-1)
-const theme = new ThemeVM()
+theme = new ThemeVM()
 
 // ─── responsive ─── (redesign-2)
 const responsive = new ResponsiveVM()

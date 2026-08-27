@@ -2,7 +2,10 @@
  * live-prompt.ts — everything the model reads (Hebrew allowed here only).
  *
  * Slice: live-contract-gemini, Commit 0.
+ * Slice: live-config-control, Commit 1 — config action prose + Hebrew seed line.
  */
+
+import type { ConfigSnapshot } from "./live-config.js"
 
 /** Prefix on agent-answer delivery context — not a user request (slice live-secretary fix1 §1). */
 export const LIVE_AGENT_DELIVERY_MARKER = "[תשובת-סוכן]"
@@ -90,6 +93,31 @@ export const LIVE_ACTION_PROSE: Readonly<
       id: "מזהה קיים לעדכון; השמט לפריט חדש.",
     },
   },
+  list_config: {
+    description:
+      "הצג את כל הגדרות הסשן והאפליקציה הנוכחיות — מודל, מצב, אופציות, מסך, שפה, ערכה. " +
+      "קרא לפני set_session_config או set_app_setting כדי לדעת אילו id וערכים חוקיים.",
+    params: {},
+  },
+  set_session_config: {
+    description:
+      "שנה הגדרת סשן (מודל, מצב, thinking, או כל אופציה מ-list_config). " +
+      "השתמש רק ב-id ובערכים שחזרו מ-list_config — אל תנחש modelId. " +
+      "ל-boolean שלח \"true\" או \"false\".",
+    params: {
+      id: "מזהה ההגדרה מ-list_config (model · mode · thinking · או id של אופציה).",
+      value: "ערך חוקי מה-choices של list_config.",
+    },
+  },
+  set_app_setting: {
+    description:
+      "שנה הגדרת אפליקציה: מסך דלוק, שפה, או ערכת צבעים. " +
+      "מפתחות: screenWakeLock (true/false) · locale (he/en) · theme (שם ערכה מ-list_config).",
+    params: {
+      key: "screenWakeLock · locale · theme.",
+      value: "ערך חוקי למפתח.",
+    },
+  },
 }
 
 const IDENTIFIER_SECTION =
@@ -117,6 +145,64 @@ const PERMISSION_PENDING_SECTION =
   `טקסט שמתחיל ב-${LIVE_PERMISSION_PENDING_MARKER} מודיע על בקשת אישור ממתינה — ` +
   "הסבר למשתמש מה נדרש וקרא answer_permission עם optionId מהרשימה."
 
+const CONFIG_TOOLS_SECTION =
+  "לשנות הגדרות סשן (מודל, מצב, thinking), מסך דלוק, שפה, או ערכת צבעים — " +
+  "השתמש ב-list_config ואז set_session_config / set_app_setting. " +
+  "אל תנחש ערכים; קרא list_config קודם."
+
+const CONFIG_SEED_LABELS: Record<string, string> = {
+  model: "מודל",
+  mode: "מצב",
+  thinking: "חשיבה",
+  screenWakeLock: "מסך",
+  locale: "שפה",
+  theme: "ערכה",
+}
+
+const LOCALE_LABELS: Record<string, string> = { he: "עברית", en: "English" }
+
+const THINKING_LABELS: Record<string, string> = {
+  off: "כבוי",
+  low: "נמוכה",
+  medium: "בינונית",
+  high: "גבוהה",
+}
+
+/** Hebrew config status line for silent Live context injection. */
+export function formatConfigSeedProse(snapshot: ConfigSnapshot): string {
+  const parts: string[] = ["[הגדרות נוכחיות]"]
+
+  if (snapshot.session.model?.id) {
+    const name = snapshot.session.model.name ?? snapshot.session.model.id
+    parts.push(`${CONFIG_SEED_LABELS.model}=${name}`)
+  }
+  if (snapshot.session.mode?.id) {
+    const name = snapshot.session.mode.name ?? snapshot.session.mode.id
+    parts.push(`${CONFIG_SEED_LABELS.mode}=${name}`)
+  }
+  for (const opt of snapshot.session.options) {
+    if (opt.current === null) continue
+    const label = opt.name || opt.id
+    const v = typeof opt.current === "boolean" ? (opt.current ? "כן" : "לא") : opt.current
+    parts.push(`${label}=${v}`)
+  }
+  if (snapshot.session.thinking !== undefined) {
+    parts.push(
+      `${CONFIG_SEED_LABELS.thinking}=${THINKING_LABELS[snapshot.session.thinking.level] ?? snapshot.session.thinking.level}`,
+    )
+  }
+
+  parts.push(
+    `${CONFIG_SEED_LABELS.screenWakeLock}=${snapshot.app.screenWakeLock ? "דלוק" : "כבוי"}`,
+  )
+  parts.push(
+    `${CONFIG_SEED_LABELS.locale}=${LOCALE_LABELS[snapshot.app.locale] ?? snapshot.app.locale}`,
+  )
+  parts.push(`${CONFIG_SEED_LABELS.theme}=${snapshot.app.theme}`)
+
+  return parts.join(" ")
+}
+
 /** Builds the secretary system prompt. */
 export function buildLiveSecretaryPrompt(opts?: { language?: "he" | "en" }): string {
   const lang = opts?.language ?? "he"
@@ -128,6 +214,7 @@ export function buildLiveSecretaryPrompt(opts?: { language?: "he" | "en" }): str
   return [
     role,
     SCOPE_SECTION,
+    CONFIG_TOOLS_SECTION,
     IDENTIFIER_SECTION,
     LANGUAGE_SECTION,
     AGENT_DELIVERY_SECTION,

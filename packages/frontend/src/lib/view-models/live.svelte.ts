@@ -6,13 +6,20 @@
  * Slice: live-secretary, Commit 0 — outgoing path to AgentSession.
  */
 
+import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 import type { MessageKey } from "@drive-coding/core/i18n"
 import { canDispatchPrompt } from "@drive-coding/core/voice/live-dispatch"
+import {
+  formatListConfigSnapshot,
+  validateAppSetting,
+  type ListConfigInput,
+  type SelectChoiceInput,
+} from "@drive-coding/core/voice/live-config"
 import {
   buildLiveAgentPrompt,
   formatSecretaryToAgent,
 } from "@drive-coding/core/voice/live-agent-prompt"
-import { formatAgentDelivery, formatPermissionPending } from "@drive-coding/core/voice/live-prompt"
+import { formatAgentDelivery, formatConfigSeedProse, formatPermissionPending } from "@drive-coding/core/voice/live-prompt"
 import { buildLiveSeed } from "@drive-coding/core/voice/live-seed"
 import { formatMemoryForPrompt, type MemoryItem } from "@drive-coding/core/voice/live-memory"
 import { searchSessionBubbles } from "@drive-coding/core/voice/live-search"
@@ -40,12 +47,40 @@ import {
 import { MicFrames } from "../engines/mic-frames"
 import type { AgentSession } from "./agent-session.svelte"
 import type { Mic } from "./mic.svelte"
+import type { Settings } from "./settings.svelte"
+import { PALETTES, type ThemeVM } from "./theme.svelte"
 
 export type { LiveSessionState, LiveTranscriptEntry }
+
+/** off=null, low=4000, medium=8000, high=16000 — same as SessionOptionsPanel */
+const THINKING_TOKEN_VALUES: Record<string, number | null> = {
+  off: null,
+  low: 4000,
+  medium: 8000,
+  high: 16000,
+}
+
+type SelectOpt = { value: string; name: string }
+
+function flattenSelectOptions(option: SessionConfigOption): SelectOpt[] {
+  if (option.type !== "select") return []
+  const sel = option as Extract<SessionConfigOption, { type: "select" }>
+  return sel.options.flatMap((item) =>
+    "options" in item
+      ? item.options.map((o) => ({ value: o.value, name: o.name }))
+      : [{ value: item.value, name: item.name }],
+  )
+}
+
+function toConfigChoices(items: SelectOpt[]): SelectChoiceInput[] {
+  return items.map((o) => ({ id: o.value, name: o.name }))
+}
 
 export class Live {
   readonly #mic: Mic
   readonly #session: AgentSession
+  readonly #getSettings: () => Settings
+  readonly #getTheme: () => ThemeVM
   readonly #engine: LiveSessionEngine
   readonly #frames: MicFrames
   readonly #sink: LiveAudioSink
@@ -74,9 +109,15 @@ export class Live {
     voiceName?: string
     /** Read at each mint — settings.liveVoice (avoids stale constructor capture). */
     getVoiceName?: () => string
+    /** Read at action time — Settings created before Live in layout. */
+    getSettings: () => Settings
+    /** Read at action time — ThemeVM created after Live; getter avoids stale capture. */
+    getTheme: () => ThemeVM
   }) {
     this.#mic = opts.mic
     this.#session = opts.session
+    this.#getSettings = opts.getSettings
+    this.#getTheme = opts.getTheme
     this.#frames = new MicFrames()
     this.#sink = new LiveAudioSink({
       sampleRate: geminiLive.outputSampleRate,
@@ -306,6 +347,85 @@ export class Live {
         this.#engine.sendActionResult(action.id, action.name, result)
         break
       }
+      case "list_config": {
+        const snapshot = formatListConfigSnapshot(this.#buildListConfigInput())
+        this.#engine.sendActionResult(action.id, action.name, { status: "ok", ...snapshot })
+        break
+      }
+      case "set_session_config": {
+        const id = typeof action.args.id === "string" ? action.args.id : ""
+        const rawValue = typeof action.args.value === "string" ? action.args.value : ""
+        if (this.#session.status !== "connected") {
+          this.#engine.sendActionResult(action.id, action.name, {
+            status: "error",
+            reason: "not-connected",
+          })
+          break
+        }
+        if (id === "thinking") {
+          if (!this.#session.supports?.thinkingTokens) {
+            this.#engine.sendActionResult(action.id, action.name, {
+              status: "error",
+              reason: "unknown-id",
+            })
+            break
+          }
+          const level = rawValue as keyof typeof THINKING_TOKEN_VALUES
+          if (!(level in THINKING_TOKEN_VALUES)) {
+            this.#engine.sendActionResult(action.id, action.name, {
+              status: "error",
+              reason: "invalid-value",
+            })
+            break
+          }
+          void this.#session.setThinkingTokens(THINKING_TOKEN_VALUES[level] ?? null)
+          this.#engine.sendActionResult(action.id, action.name, { status: "ok", id, value: rawValue })
+          break
+        }
+        const validation = this.#validateSessionConfigValue(id, rawValue)
+        if (!validation.ok) {
+          this.#engine.sendActionResult(action.id, action.name, {
+            status: "error",
+            reason: validation.reason,
+          })
+          break
+        }
+        void this.#session.applyConfigOption(id, validation.parsed)
+        this.#engine.sendActionResult(action.id, action.name, {
+          status: "ok",
+          id,
+          value: validation.parsed,
+        })
+        break
+      }
+      case "set_app_setting": {
+        const key = typeof action.args.key === "string" ? action.args.key : ""
+        const value = typeof action.args.value === "string" ? action.args.value : ""
+        const themeChoices = [...PALETTES]
+        const verdict = validateAppSetting(key, value, { themeChoices })
+        if (!verdict.ok) {
+          this.#engine.sendActionResult(action.id, action.name, {
+            status: "error",
+            reason: verdict.reason,
+          })
+          break
+        }
+        const settings = this.#getSettings()
+        const theme = this.#getTheme()
+        switch (key) {
+          case "screenWakeLock":
+            settings.setScreenWakeLock(value === "true")
+            break
+          case "locale":
+            settings.setLocale(value as "he" | "en")
+            break
+          case "theme":
+            theme.setPalette(value as (typeof PALETTES)[number])
+            break
+        }
+        this.#engine.sendActionResult(action.id, action.name, { status: "ok", key, value })
+        break
+      }
       default:
         this.#engine.sendActionResult(action.id, action.name, {
           status: "not_sent",
@@ -352,6 +472,144 @@ export class Live {
     if (mem.length > 0) {
       this.#engine.sendContext(`Secretary memory:\n${mem}`, "silent")
     }
+
+    const configSnap = formatListConfigSnapshot(this.#buildListConfigInput())
+    this.#engine.sendContext(formatConfigSeedProse(configSnap), "silent")
+  }
+
+  #buildListConfigInput(): ListConfigInput {
+    const s = this.#session
+    const settings = this.#getSettings()
+    const theme = this.#getTheme()
+
+    const sessionPart: ListConfigInput["session"] = {
+      connected: s.status === "connected",
+      options: [],
+    }
+
+    const configOptions = s.configOptions ?? []
+
+    if ((s.models?.availableModels?.length ?? 0) > 0) {
+      const models = s.models!
+      const current = models.availableModels.find((m) => m.modelId === models.currentModelId)
+      sessionPart.model = {
+        id: models.currentModelId,
+        name: current?.name,
+        choices: models.availableModels.map((m) => ({ id: m.modelId, name: m.name })),
+      }
+    } else {
+      const modelOpt = configOptions.find((o) => o.category === "model")
+      if (modelOpt?.type === "select") {
+        const choices = flattenSelectOptions(modelOpt)
+        if (choices.length > 0) {
+          sessionPart.model = {
+            id: modelOpt.currentValue ?? "",
+            name: modelOpt.name,
+            choices: toConfigChoices(choices),
+          }
+        }
+      }
+    }
+
+    if ((s.modes?.availableModes?.length ?? 0) > 0) {
+      const modes = s.modes!
+      const current = modes.availableModes.find((m) => m.id === modes.currentModeId)
+      sessionPart.mode = {
+        id: modes.currentModeId,
+        name: current?.name,
+        choices: modes.availableModes.map((m) => ({ id: m.id, name: m.name })),
+      }
+    } else {
+      const modeOpt = configOptions.find((o) => o.category === "mode")
+      if (modeOpt?.type === "select") {
+        const choices = flattenSelectOptions(modeOpt)
+        if (choices.length > 0) {
+          sessionPart.mode = {
+            id: modeOpt.currentValue ?? "",
+            name: modeOpt.name,
+            choices: toConfigChoices(choices),
+          }
+        }
+      }
+    }
+
+    const extraOptions = configOptions.filter(
+      (o) => o.category !== "model" && o.category !== "mode",
+    )
+    for (const opt of extraOptions) {
+      if (opt.type === "select") {
+        const choices = flattenSelectOptions(opt)
+        if (choices.length === 0) continue
+        sessionPart.options.push({
+          id: opt.id,
+          name: opt.name,
+          type: "select",
+          current: opt.currentValue ?? null,
+          choices: toConfigChoices(choices),
+        })
+      } else if (opt.type === "boolean") {
+        sessionPart.options.push({
+          id: opt.id,
+          name: opt.name,
+          type: "boolean",
+          current: opt.currentValue,
+        })
+      }
+    }
+
+    if (s.supports?.thinkingTokens) {
+      sessionPart.thinkingAvailable = true
+    }
+
+    return {
+      session: sessionPart,
+      app: {
+        screenWakeLock: settings.screenWakeLock,
+        locale: settings.locale,
+        theme: theme.palette,
+        themeChoices: [...PALETTES],
+      },
+    }
+  }
+
+  #validateSessionConfigValue(
+    id: string,
+    rawValue: string,
+  ):
+    | { ok: true; parsed: string | boolean }
+    | { ok: false; reason: "unknown-id" | "invalid-value" } {
+    const snap = formatListConfigSnapshot(this.#buildListConfigInput())
+
+    if (id === "model") {
+      if (!snap.session.model) return { ok: false, reason: "unknown-id" }
+      if (!snap.session.model.choices.some((c) => c.id === rawValue)) {
+        return { ok: false, reason: "invalid-value" }
+      }
+      return { ok: true, parsed: rawValue }
+    }
+
+    if (id === "mode") {
+      if (!snap.session.mode) return { ok: false, reason: "unknown-id" }
+      if (!snap.session.mode.choices.some((c) => c.id === rawValue)) {
+        return { ok: false, reason: "invalid-value" }
+      }
+      return { ok: true, parsed: rawValue }
+    }
+
+    const opt = snap.session.options.find((o) => o.id === id)
+    if (!opt) return { ok: false, reason: "unknown-id" }
+
+    if (opt.type === "boolean") {
+      if (rawValue !== "true" && rawValue !== "false") {
+        return { ok: false, reason: "invalid-value" }
+      }
+      return { ok: true, parsed: rawValue === "true" }
+    }
+
+    if (!opt.choices?.some((c) => c.id === rawValue)) {
+      return { ok: false, reason: "invalid-value" }
+    }
+    return { ok: true, parsed: rawValue }
   }
 
   #deliverAgentAnswerIfPending(): void {

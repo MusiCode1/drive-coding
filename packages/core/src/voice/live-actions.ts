@@ -55,6 +55,21 @@ export const LIVE_ACTION_SHAPES: readonly LiveActionShape[] = [
       { name: "id", type: "string", required: false },
     ],
   },
+  { name: "list_config", params: [] },
+  {
+    name: "set_session_config",
+    params: [
+      { name: "id", type: "string", required: true },
+      { name: "value", type: "string", required: true },
+    ],
+  },
+  {
+    name: "set_app_setting",
+    params: [
+      { name: "key", type: "string", required: true },
+      { name: "value", type: "string", required: true },
+    ],
+  },
 ]
 
 /**

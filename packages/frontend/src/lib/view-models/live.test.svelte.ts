@@ -21,6 +21,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { AgentSession } from "./agent-session.svelte"
 import { Live } from "./live.svelte"
 import type { Mic } from "./mic.svelte"
+import { type Palette, ThemeVM } from "./theme.svelte"
 
 vi.mock("../adapters/voice/live-token", () => ({
   fetchLiveToken: vi.fn(async () => ({
@@ -81,32 +82,67 @@ function mockSession(overrides: Partial<AgentSession> = {}): AgentSession {
     pendingPermission: null,
     bubbles: [],
     lastUserMessage: "",
+    configOptions: [],
+    models: null,
+    modes: null,
+    supports: { thinkingTokens: false },
     sendPrompt: vi.fn(async () => {}),
     cancelTurn: vi.fn(async () => {}),
     recentAssistantMessages: vi.fn(() => []),
     resolvePermission: vi.fn(),
+    applyConfigOption: vi.fn(async () => {}),
+    setThinkingTokens: vi.fn(async () => {}),
     ...overrides,
   }
   return base as unknown as AgentSession
+}
+
+function mockSettings(overrides: Record<string, unknown> = {}) {
+  return {
+    screenWakeLock: false,
+    locale: "he" as const,
+    setScreenWakeLock: vi.fn(),
+    setLocale: vi.fn(),
+    ...overrides,
+  }
+}
+
+function mockTheme(overrides: { palette?: Palette; setPalette?: ReturnType<typeof vi.fn> } = {}) {
+  const setPalette = overrides.setPalette ?? vi.fn()
+  return {
+    palette: overrides.palette ?? ("ember" as Palette),
+    setPalette,
+  } as unknown as ThemeVM
 }
 
 function createLive(opts: {
   mic?: Mic
   session: AgentSession
   getVoiceName?: () => string
+  getSettings?: () => ReturnType<typeof mockSettings>
+  getTheme?: () => ThemeVM
 }): {
   live: Live
   dispose: () => void
 } {
   let live!: Live
+  const settings = opts.getSettings?.() ?? mockSettings()
+  const theme = opts.getTheme?.() ?? mockTheme()
   const dispose = $effect.root(() => {
     live = new Live({
       mic: opts.mic ?? mockMic(),
       session: opts.session,
       getVoiceName: opts.getVoiceName,
+      getSettings: opts.getSettings ?? (() => settings),
+      getTheme: opts.getTheme ?? (() => theme),
     })
   })
-  return { live, dispose }
+  return { live, dispose, settings, theme } as {
+    live: Live
+    dispose: () => void
+    settings: ReturnType<typeof mockSettings>
+    theme: ThemeVM
+  }
 }
 
 async function openLive(session: AgentSession) {
@@ -778,6 +814,192 @@ describe("Live getVoiceName at mint", () => {
       expect(getVoiceName).toHaveBeenCalled()
       expect(fetchLiveToken).toHaveBeenCalledWith(
         expect.objectContaining({ voiceName: "Charon" }),
+      )
+    } finally {
+      dispose()
+    }
+  })
+})
+
+describe("Live config control (live-config-control)", () => {
+  function sessionWithModels() {
+    return mockSession({
+      models: {
+        currentModelId: "anthropic/claude-sonnet",
+        availableModels: [
+          { modelId: "anthropic/claude-sonnet", name: "Sonnet" },
+          { modelId: "anthropic/claude-opus", name: "Opus" },
+        ],
+      },
+      applyConfigOption: vi.fn(async () => {}),
+      configOptions: [],
+      supports: { thinkingTokens: false },
+    })
+  }
+
+  it("list_config returns model choices from modelId", async () => {
+    const session = sessionWithModels()
+    await openLive(session)
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "cfg1",
+      name: "list_config",
+      args: {},
+    })
+
+    expect(providerSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "action_result",
+        name: "list_config",
+        result: expect.objectContaining({
+          status: "ok",
+          session: expect.objectContaining({
+            model: expect.objectContaining({
+              choices: expect.arrayContaining([
+                expect.objectContaining({ id: "anthropic/claude-sonnet" }),
+              ]),
+            }),
+          }),
+        }),
+      }),
+    )
+  })
+
+  it("set_session_config model calls applyConfigOption with model id", async () => {
+    const applyConfigOption = vi.fn(async () => {})
+    const session = mockSession({
+      models: {
+        currentModelId: "anthropic/claude-sonnet",
+        availableModels: [{ modelId: "anthropic/claude-sonnet", name: "Sonnet" }],
+      },
+      applyConfigOption,
+      configOptions: [],
+    })
+    await openLive(session)
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "cfg2",
+      name: "set_session_config",
+      args: { id: "model", value: "anthropic/claude-sonnet" },
+    })
+
+    expect(applyConfigOption).toHaveBeenCalledWith("model", "anthropic/claude-sonnet")
+    expect(providerSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        result: expect.objectContaining({ status: "ok", id: "model" }),
+      }),
+    )
+  })
+
+  it("set_session_config when not connected returns not-connected", async () => {
+    const session = mockSession({ status: "idle" })
+    await openLive(session)
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "cfg3",
+      name: "set_session_config",
+      args: { id: "model", value: "x" },
+    })
+
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "cfg3",
+      name: "set_session_config",
+      result: { status: "error", reason: "not-connected" },
+    })
+  })
+
+  it("set_app_setting theme updates palette", async () => {
+    const setPalette = vi.fn()
+    const session = mockSession()
+    const { live, dispose } = createLive({
+      session,
+      getTheme: () => mockTheme({ setPalette }),
+    })
+    try {
+      await live.toggle()
+      providerSend.mockClear()
+
+      providerOnEvent?.({
+        type: "action",
+        id: "cfg4",
+        name: "set_app_setting",
+        args: { key: "theme", value: "daylight" },
+      })
+
+      expect(setPalette).toHaveBeenCalledWith("daylight")
+    } finally {
+      dispose()
+    }
+  })
+
+  it("set_app_setting unknown key returns unknown-key", async () => {
+    const session = mockSession()
+    await openLive(session)
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "cfg5",
+      name: "set_app_setting",
+      args: { key: "carMode", value: "true" },
+    })
+
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "cfg5",
+      name: "set_app_setting",
+      result: { status: "error", reason: "unknown-key" },
+    })
+  })
+
+  it("set_session_config boolean option passes boolean to applyConfigOption", async () => {
+    const applyConfigOption = vi.fn(async () => {})
+    const session = mockSession({
+      applyConfigOption,
+      configOptions: [
+        {
+          id: "verbose",
+          name: "Verbose",
+          type: "boolean",
+          category: null,
+          currentValue: false,
+        },
+      ],
+    })
+    await openLive(session)
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "cfg6",
+      name: "set_session_config",
+      args: { id: "verbose", value: "true" },
+    })
+
+    expect(applyConfigOption).toHaveBeenCalledWith("verbose", true)
+  })
+
+  it("injects Hebrew config seed on open", async () => {
+    const session = sessionWithModels()
+    const { live, dispose } = createLive({
+      session,
+      getTheme: () => mockTheme({ palette: "daylight" }),
+    })
+    try {
+      await live.toggle()
+      expect(providerSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "context",
+          channel: "silent",
+          text: expect.stringContaining("[הגדרות נוכחיות]"),
+        }),
       )
     } finally {
       dispose()
