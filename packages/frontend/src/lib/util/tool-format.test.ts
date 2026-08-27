@@ -7,9 +7,13 @@ import {
 } from "./tool-format"
 
 describe("formatToolInput", () => {
-  it("{ command, description } → command variant with command string", () => {
+  it("{ command, description } → command variant with command + description", () => {
     const input = { command: "ls -la", description: "List files" }
-    expect(formatToolInput(input)).toEqual({ kind: "command", command: "ls -la" })
+    expect(formatToolInput(input)).toEqual({
+      kind: "command",
+      command: "ls -la",
+      description: "List files",
+    })
   })
 
   it("{ command } only → command variant", () => {
@@ -29,19 +33,45 @@ describe("formatToolInput", () => {
     expect(formatToolInput(null)).toEqual({ kind: "empty" })
   })
 
-  it("{ foo: 1 } (no command) → json variant, pretty-printed", () => {
+  it("{ foo: 1 } (no command) → fields variant", () => {
     const input = { foo: 1 }
     expect(formatToolInput(input)).toEqual({
-      kind: "json",
-      json: JSON.stringify(input, null, 2),
+      kind: "fields",
+      fields: [{ key: "foo", value: "1" }],
     })
   })
 
-  it("command non-string (e.g. number) → json variant", () => {
+  it("command non-string (e.g. number) → fields variant", () => {
     const input = { command: 123 }
     expect(formatToolInput(input)).toEqual({
-      kind: "json",
-      json: JSON.stringify(input, null, 2),
+      kind: "fields",
+      fields: [{ key: "command", value: "123" }],
+    })
+  })
+
+  it("{ code: '%%bash\\nls -la\\n' } → command variant", () => {
+    expect(formatToolInput({ code: "%%bash\nls -la\n" })).toEqual({
+      kind: "command",
+      command: "ls -la",
+    })
+  })
+
+  it("{ code: 'print(1)' } → code variant with python language", () => {
+    expect(formatToolInput({ code: "print(1)" })).toEqual({
+      kind: "code",
+      code: "print(1)",
+      language: "python",
+    })
+  })
+
+  it("{ pattern, path } → fields with both keys in order", () => {
+    const input = { pattern: "foo", path: "/a/b.ts" }
+    expect(formatToolInput(input)).toEqual({
+      kind: "fields",
+      fields: [
+        { key: "pattern", value: "foo" },
+        { key: "path", value: "/a/b.ts" },
+      ],
     })
   })
 
