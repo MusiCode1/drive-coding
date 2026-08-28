@@ -5,8 +5,10 @@ import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
 import { onMount, untrack } from "svelte"
 import { goto } from "$app/navigation"
 import { env } from "$env/dynamic/public"
+import { resolveJoin } from "$lib/session/join-transport"
 import { readSessionTransport } from "$lib/session/session-transport-read"
 import { sessionPath } from "$lib/session/session-url"
+import { formatAcpError } from "$lib/view-models/format-acp-error"
 import { connectAgent } from "$lib/actions/connect-agent"
 import { fetchServerOptions } from "$lib/adapters/options"
 import type { RecentProject } from "$lib/adapters/recent-projects"
@@ -108,21 +110,28 @@ $effect(() => {
 const isRtl = $derived(settings.locale === "he")
 
 async function handleReconnect(agent: AgentPublic) {
-  // ─── slice remote-warm-reconnect C4 / transport-polish C2: ניתוב לפי דגל sessionTransport ───
-  // פתירת הדגל דרך הפונקציה המשותפת — query ← override(sessionStorage) ←
-  // stored(settings) ← env ← "ws". http → warm reconnect דרך SSE
-  // (attachRemoteToLiveAgent, בלי WS); ws → הנתיב הקיים (attachToLiveAgent).
+  // ─── slice remote-warm-reconnect C4 / transport-polish C2 / http-join-truth C1 ───
   const transport = readSessionTransport({
     env: env.PUBLIC_SESSION_TRANSPORT,
     stored: settings.sessionTransport,
   })
+  const decision = resolveJoin(agent, transport)
+  if (decision.kind === "mismatch") {
+    session.error = t("session.transportMismatch")
+    return
+  }
 
-  if (transport === "http") {
-    await session.attachRemoteToLiveAgent({
-      agentId: agent.id,
-      cwd: agent.cwd,
-      cliKind: agent.cliKind,
-    })
+  if (decision.kind === "http") {
+    try {
+      await session.attachRemoteToLiveAgent({
+        agentId: agent.id,
+        cwd: agent.cwd,
+        cliKind: agent.cliKind,
+      })
+    } catch (e) {
+      session.error = formatAcpError(e)
+      return
+    }
     if (session.status === "connected") {
       await goto(
         agent.acpSessionId
@@ -130,16 +139,20 @@ async function handleReconnect(agent: AgentPublic) {
           : "/chat?sessionTransport=http",
       )
     }
-    // if status==="error" — stay on /, VM set this.error
     return
   }
   if (!agent.acpSessionId) return
-  await session.attachToLiveAgent({
-    agentId: agent.id,
-    sessionId: agent.acpSessionId,
-    cwd: agent.cwd,
-    cliKind: agent.cliKind,
-  })
+  try {
+    await session.attachToLiveAgent({
+      agentId: agent.id,
+      sessionId: agent.acpSessionId,
+      cwd: agent.cwd,
+      cliKind: agent.cliKind,
+    })
+  } catch (e) {
+    session.error = formatAcpError(e)
+    return
+  }
   if (session.status === "connected") {
     await goto(
       agent.acpSessionId

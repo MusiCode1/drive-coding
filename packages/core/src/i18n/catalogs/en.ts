@@ -429,6 +429,8 @@ export const en: Catalog = {
   "settings.geminiTone.casual": "Casual",
   "session.heldByOtherTransport":
     "This session is open elsewhere (other transport). Do not reconnect directly — take over.",
+  "session.transportMismatch":
+    "This agent is on a different connection. Can't join from here.",
   // ─── liveness (slice liveness C4) ───
   "session.reconnecting": "Trying to reconnect…",
   "session.cloudflareBlocked": "Connection blocked. Cloudflare may require verification.",

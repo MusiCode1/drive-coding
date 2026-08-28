@@ -434,6 +434,8 @@ export type MessageKey =
   | "settings.geminiTone.casual"
   // ─── ownership-truth (slice ownership-truth C5) ───
   | "session.heldByOtherTransport"
+  // ─── http-join-truth (slice http-join-truth C1) ───
+  | "session.transportMismatch"
   // ─── liveness (slice liveness C4) ───
   | "session.reconnecting"
   | "session.cloudflareBlocked"
