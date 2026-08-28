@@ -453,3 +453,22 @@ export function applyTurnEnd(
     patches: [patch],
   }
 }
+
+/**
+ * שגיאת תור שנדחק: רק lastTurnError — turnState לא משתנה (התור החי נשאר waiting).
+ * error חובה; patch אחד; version++.
+ *
+ * ─── slice http-turn-error C0 ───
+ */
+export function applyTurnError(
+  state: SessionState,
+  error: { message: string; at: number },
+): { state: SessionState; patches: Patch[] } {
+  const newVersion = state.version + 1
+  const changes = { lastTurnError: error }
+  const patch: Patch = { version: newVersion, op: "update-session", changes }
+  return {
+    state: { ...state, version: newVersion, ...changes },
+    patches: [patch],
+  }
+}

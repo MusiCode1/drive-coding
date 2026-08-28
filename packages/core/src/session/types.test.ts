@@ -7,6 +7,7 @@ import { applyPatch } from "./apply-patch"
 import {
   applyPendingRequest,
   applyTurnEnd,
+  applyTurnError,
   applyTurnStart,
   applyUserMessage,
   clearPendingRequest,
@@ -483,6 +484,40 @@ describe("applyTurnEnd", () => {
   it("round-trip (error case): applyPatch(state, patch) equals the returned state", () => {
     const s0 = { ...createInitialSessionState({ sessionId: null }), turnState: "waiting" as const }
     const { state, patches } = applyTurnEnd(s0, { message: "boom", at: 1 })
+    expect(applyPatch(s0, patches[0]!)).toEqual(state)
+  })
+})
+
+describe("applyTurnError", () => {
+  it("writes lastTurnError without changing turnState", () => {
+    const s0 = { ...createInitialSessionState({ sessionId: null }), turnState: "waiting" as const }
+    const error = { message: "displaced turn failed", at: 42 }
+    const { state, patches } = applyTurnError(s0, error)
+    expect(state.turnState).toBe("waiting")
+    expect(state.lastTurnError).toEqual(error)
+    expect(patches).toHaveLength(1)
+    expect(patches[0]).toMatchObject({
+      op: "update-session",
+      changes: { lastTurnError: error },
+    })
+  })
+
+  it("increments version", () => {
+    const s0 = { ...createInitialSessionState({ sessionId: null }), turnState: "responding" as const }
+    const { state } = applyTurnError(s0, { message: "x", at: 1 })
+    expect(state.version).toBe(s0.version + 1)
+  })
+
+  it("does not mutate original state", () => {
+    const s0 = { ...createInitialSessionState({ sessionId: null }), turnState: "waiting" as const }
+    applyTurnError(s0, { message: "x", at: 1 })
+    expect(s0.lastTurnError).toBeNull()
+    expect(s0.turnState).toBe("waiting")
+  })
+
+  it("round-trip: applyPatch(state, patch) equals the returned state", () => {
+    const s0 = { ...createInitialSessionState({ sessionId: null }), turnState: "waiting" as const }
+    const { state, patches } = applyTurnError(s0, { message: "boom", at: 1 })
     expect(applyPatch(s0, patches[0]!)).toEqual(state)
   })
 })
