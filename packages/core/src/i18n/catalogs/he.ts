@@ -223,6 +223,9 @@ export const he: Catalog = {
   "connect.agents.working": "עובד…",
   // ─── agent-last-message-ui ─── (slice agent-last-message-ui)
   "connect.agents.lastMessage": "פעילות אחרונה",
+  // ─── agent-tree-display ─── (slice agent-tree-display)
+  "connect.agents.subAgentsOf": "סוכני משנה",
+  "connect.agents.childCount": "סוכני משנה",
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   "settings.screen.label": "מסך",
   "settings.toggle.keepScreenOn": "השאר מסך דלוק",

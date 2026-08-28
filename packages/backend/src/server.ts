@@ -54,9 +54,10 @@ import type { BridgeKind } from "@drive-coding/core"
 import { cors } from "hono/cors"
 import { createConnectionRegistry } from "./acp/connection-registry.js"
 import { createInMemoryAgentRegistry } from "./agents/registry.js"
-import { createAgentOrchestrator } from "./app/agent-orchestrator.js"
+import { createAgentOrchestrator, type AgentOrchestrator } from "./app/agent-orchestrator.js"
 import { createProjectsRegistry } from "./app/projects-registry.js"
 import { createRecordingsStore } from "./app/recordings-store.js"
+import { resolveAppVersion } from "./app-version.js"
 import { parseCorsOrigins } from "./delivery/cors-config.js"
 import { createEvictionController } from "./delivery/eviction-controller.js"
 import { registerHttp } from "./delivery/http.js"
@@ -72,19 +73,22 @@ import {
   registerRecordingsHttp,
   registerRecordingsPostHttp,
 } from "./delivery/http-history.js"
+import { registerLiveTokenHttp } from "./delivery/http-live-token.js"
+import { registerMcpHttp } from "./delivery/http-mcp.js"
 import { registerHttpOptions } from "./delivery/http-options.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
 import { registerReloadConfigHttp } from "./delivery/http-reload-config.js"
 import { registerTtsCapabilitiesHttp } from "./delivery/http-tts-capabilities.js"
-import { registerLiveTokenHttp } from "./delivery/http-live-token.js"
 import { registerUsageHttp } from "./delivery/http-usage.js"
 import { createMemoryGuard } from "./delivery/memory-guard.js"
 import { createWireRecorder } from "./delivery/wire-recorder.js"
 // הערה: createSessionsCache הוסר — רשימת הסשנים עכשיו מונעת מצד ה-FE דרך ACP WS
 import { createAgentWsHandler } from "./delivery/ws-agent.js"
 import { createEchoWsHandler } from "./delivery/ws-echo.js"
+import { removeInstance, setSelfBaseUrl, writeInstance } from "./instances.js"
 import { ensureStateSubdir } from "./paths.js"
 import { createAndRegisterSessionHostHttp } from "./session-host/http/index.js"
+import { resolveCloseOnTurnEndGraceMs } from "./session-host/close-on-turn-end.js"
 import { createUsageStore } from "./usage/usage-store.js"
 
 const app = new Hono()
@@ -123,6 +127,9 @@ const evictionController = createEvictionController()
 // slice ownership-handoff C4: sync acpSessionId cache for warm reattach.
 // Updated by onSessionAttached (same source of truth as registry.update acpSessionId).
 const acpSessionIdCache = new Map<string, string>()
+
+// slice session-lifecycle-fields C1: orchestrator ref — registry is created first.
+let orchestratorRef: AgentOrchestrator | null = null
 
 // S4 session-host-http: 4 routes — GET /events, POST /rpc, POST /reply, GET /state
 // slice remote-warm-reconnect C1: תופסים את הרג'יסטרי (קודם נזרק ב-:151) — C2/C2b
@@ -167,6 +174,21 @@ const agentSessionRegistry = createAndRegisterSessionHostHttp(app, connectionReg
     const agent = await registry.get(agentId)
     return agent?.permissionPolicy
   },
+  getCloseOnTurnEnd: async (agentId) => {
+    const agent = await registry.get(agentId)
+    return agent?.closeOnTurnEnd === true
+  },
+  onScheduleCloseOnTurnEnd: (agentId) => {
+    const graceMs = resolveCloseOnTurnEndGraceMs(process.env.CLOSE_ON_TURN_END_GRACE_MS)
+    setTimeout(() => {
+      void orchestratorRef?.deleteAndKill(agentId).catch((err) => {
+        log.warn(
+          { err, agentId },
+          "closeOnTurnEnd: deleteAndKill failed after grace",
+        )
+      })
+    }, graceMs)
+  },
 })
 
 const orchestrator = createAgentOrchestrator({
@@ -177,6 +199,7 @@ const orchestrator = createAgentOrchestrator({
   // agentSessionRegistry נוצר למעלה (לפני ה-orchestrator) — ר' ההערה שם.
   sessionHostRegistry: agentSessionRegistry,
 })
+orchestratorRef = orchestrator
 
 // נתיבי HTTP
 registerHttp(app)
@@ -191,6 +214,8 @@ registerAgentsHttp(app, {
   projectsRegistry,
   bridgeManager: connectionRegistry,
 })
+// slice session-bus-mcp C0: Streamable HTTP MCP (stateless, per-request transport)
+registerMcpHttp(app, { registry, orchestrator, agentSessionRegistry })
 // Slice be-diag-harness: endpoint אבחון עשיר (eventLoop histogram + memory + agents)
 registerHealthHttp(app, { registry, connectionRegistry })
 registerProjectsHttp(app, { projectsRegistry })
@@ -381,6 +406,20 @@ httpServer.on("upgrade", (req, socket, head) => {
 
 log.info({ hostname, port }, "listening")
 
+const bound = httpServer.address()
+const boundPort = typeof bound === "object" && bound !== null ? bound.port : port
+const instanceRecord = {
+  port: boundPort,
+  host: hostname,
+  pid: process.pid,
+  version: resolveAppVersion(),
+  cwd: process.cwd(),
+  https: Boolean(tls),
+  startedAt: Date.now(),
+}
+writeInstance(instanceRecord)
+setSelfBaseUrl(instanceRecord)
+
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 // SIGINT (Ctrl+C) / SIGTERM — סגור חיבורים, הרוג ילדים, צא בצורה מסודרת.
 // force-timeout: אם הכיבוי תקוע (hang) — הכרח יציאה אחרי 8s.
@@ -396,6 +435,7 @@ async function gracefulShutdown(sig: string): Promise<void> {
   }, 8000)
   force.unref()
   try {
+    removeInstance(boundPort)
     await Promise.allSettled(connectionRegistry.list().map((id) => connectionRegistry.close(id)))
     stopWatching()
     echoWss.close()
@@ -409,6 +449,9 @@ async function gracefulShutdown(sig: string): Promise<void> {
 }
 process.on("SIGINT", () => void gracefulShutdown("SIGINT"))
 process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"))
+process.on("exit", () => {
+  removeInstance(boundPort)
+})
 
 /**
  * הרצה ידנית (dev/debug) — BE על פורט נפרד, משרת FE סטטי, דרך OneCLI:

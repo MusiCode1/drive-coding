@@ -40,6 +40,8 @@ import { createLogger } from "@drive-coding/core/log"
 import type { PermissionPolicyKind } from "@drive-coding/core/types/permission"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
+import { buildAgentMcpServers } from "../agent-identity.js"
+import { getSelfBaseUrl } from "../instances.js"
 import { createPatchesBroadcaster, type PatchesBroadcaster } from "./patches-broadcaster.js"
 import { createSessionHostFromConnection, type ExtendedSessionHost } from "./session-host.js"
 
@@ -195,6 +197,12 @@ type AgentSessionRegistryDeps = {
     agentId: string,
   ) => PermissionPolicyKind | undefined | Promise<PermissionPolicyKind | undefined>
   /**
+   * slice session-lifecycle-fields C1: closeOnTurnEnd from agent record at create time.
+   */
+  getCloseOnTurnEnd?: (agentId: string) => boolean | Promise<boolean>
+  /** slice session-lifecycle-fields C1: server wires grace timer + deleteAndKill. */
+  onScheduleCloseOnTurnEnd?: (agentId: string) => void
+  /**
    * slice ownership-handoff C4b: HTTP ownership TTL (ms).
    * Default: `HTTP_OWNER_TTL_MS` env, else 600_000ms (slice ttl-ownership).
    * Exposed for tests to set a short TTL without real delays.
@@ -237,6 +245,8 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     evictionController,
     getAcpSessionId,
     getPermissionPolicy,
+    getCloseOnTurnEnd,
+    onScheduleCloseOnTurnEnd,
   } = deps
 
   const map = new Map<string, HostEntry>()
@@ -331,16 +341,27 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     // (createAttachedAcpClient + loadSession) instead of cold (createAcpClient + newSession).
     const acpSessionId = getAcpSessionId?.(agentId)
     const permissionPolicy = await getPermissionPolicy?.(agentId)
+    const closeOnTurnEndRaw = getCloseOnTurnEnd?.(agentId)
+    const closeOnTurnEnd =
+      (closeOnTurnEndRaw instanceof Promise
+        ? (await closeOnTurnEndRaw) === true
+        : closeOnTurnEndRaw === true)
 
     // Create host + broadcaster
     // slice handoff-foundations C3: if session creation fails below, the host is
     // already subscribed to the wire (created by _createHostFn). Rollback MUST call
     // host.dispose() to remove the crash subscription and close the patches stream.
     const hostOpts =
-      acpSessionId || permissionPolicy !== undefined
+      acpSessionId || permissionPolicy !== undefined || closeOnTurnEnd
         ? {
             ...(acpSessionId ? { warmReattach: { acpSessionId, cwd } } : {}),
             ...(permissionPolicy !== undefined ? { permissionPolicy } : {}),
+            ...(closeOnTurnEnd
+              ? {
+                  closeOnTurnEnd: true,
+                  onScheduleCloseOnTurnEnd: () => onScheduleCloseOnTurnEnd?.(agentId),
+                }
+              : {}),
           }
         : undefined
     // 🔴 הקשר-אבחון (2026-08-16): יצירת ה-host היא שמריצה את ה-ACP initialize,
@@ -373,10 +394,11 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       // Session init: warm reattach uses loadSession; cold uses newSession.
       // Skip if host already has a sessionId (injected-ready host in tests).
       if (!host.state.sessionId) {
+        const mcpServers = buildAgentMcpServers(agentId, getSelfBaseUrl())
         if (acpSessionId) {
-          await host.loadSession({ cwd, sessionId: acpSessionId })
+          await host.loadSession({ cwd, sessionId: acpSessionId, mcpServers })
         } else {
-          await host.newSession({ cwd })
+          await host.newSession({ cwd, mcpServers })
         }
       }
 

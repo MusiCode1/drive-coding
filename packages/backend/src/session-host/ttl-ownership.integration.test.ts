@@ -33,6 +33,7 @@ import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry, Owner } from "../acp/connection-registry.js"
+import { setSelfBaseUrlForTests } from "../instances.js"
 import { registerEventsRoute } from "./http/events.js"
 import { createAgentSessionRegistry } from "./registry.js"
 import { createSessionHostFromConnection, type SessionHostFromConnOptions } from "./session-host.js"
@@ -253,11 +254,13 @@ describe("ttl-ownership integration (real registry + real broadcaster + real SSE
   beforeEach(() => {
     prevTtl = process.env.HTTP_OWNER_TTL_MS
     process.env.HTTP_OWNER_TTL_MS = TTL_MS
+    setSelfBaseUrlForTests("http://127.0.0.1:4055")
   })
 
   afterEach(() => {
     if (prevTtl === undefined) delete process.env.HTTP_OWNER_TTL_MS
     else process.env.HTTP_OWNER_TTL_MS = prevTtl
+    setSelfBaseUrlForTests(undefined)
   })
 
   it("TTL expiry over the real sweep + real SSE route is a continuation: ownership releases, the stream ends without taken-over, and a reconnect re-claims the SAME host without loadSession", {

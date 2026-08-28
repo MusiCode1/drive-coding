@@ -2,37 +2,22 @@ import {
   type Agent,
   type AgentRegistry,
   type BridgeKind,
-  CliId,
-  PermissionPolicy,
   toAgentPublic,
   validateCwd,
 } from "@drive-coding/core"
-import { getCliSpec, getEffectiveCliKinds } from "@drive-coding/provider/config"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import type { AgentOrchestrator } from "../app/agent-orchestrator"
 import type { ProjectsRegistry } from "../app/projects-registry"
 // slice liveness C2: short response cache + no-store on GET /api/agents.
+import { parseCreateAgentBody } from "./create-agent-input.js"
 import { httpCacheGet, httpCacheSet } from "./http-cache.js"
 
 /**
  * הרחבת צד-שרת בלבד של CreateAgentInput — כולל existingSessionId
- * עבור טעינת סשן ב-Slice 8a. מוגדר כאן כי זה מרחיב את סכימת הליבה.
+ * עבור טעינת סשן ב-Slice 8a. מוגדר ב-create-agent-input.ts (slice session-bus-mcp C1)
+ * כדי ש-POST /api/agents ו-session_open לא ייסחפו.
  */
-const CreateAgentInputFull = type({
-  cliKind: CliId,
-  cwd: "string >= 1",
-  "modelOverride?": "string | null",
-  "existingSessionId?": "string | null",
-  // slice project-system-prompt: פרומפט-מערכת פר-פרויקט, מתווסף (append) בתוך provider (§3).
-  "systemPrompt?": "string | null",
-  // slice session-create-contract: בחירת הרשאה לפי kind (ACP option kinds).
-  "permissionPolicy?": PermissionPolicy,
-  /**
-   * Extra env for spawned CLI only (not in-process bridge). Merged above baseEnv in shapeEnv.
-   */
-  "env?": { "[string]": "string" },
-})
 
 export function registerAgentsHttp(
   app: Hono,
@@ -92,32 +77,13 @@ export function registerAgentsHttp(
     }
 
     // מאמת מול הסכימה המלאה (כולל existingSessionId אופציונלי עבור Slice 8a)
-    const parsed = CreateAgentInputFull(body)
-    if (parsed instanceof type.errors) {
-      return c.json({ error: parsed.summary }, 400)
-    }
-
-    if (getCliSpec(parsed.cliKind, process.env) === undefined) {
-      return c.json(
-        { error: `unknown cliKind: ${parsed.cliKind}`, known: getEffectiveCliKinds() },
-        400,
-      )
-    }
-
-    // מאמת נתיב cwd — דוחה נתיבים בקידוד כפול, בתי NUL, נתיבים יחסיים, וכו'.
-    const cwdResult = validateCwd(parsed.cwd)
-    if (cwdResult.isErr()) {
-      const e = cwdResult.error
-      return c.json({ error: `invalid cwd: ${e.kind}`, detail: e }, 400)
+    const parsed = parseCreateAgentBody(body)
+    if (!parsed.ok) {
+      return c.json(parsed.error.body, parsed.error.status)
     }
 
     try {
-      // null → undefined: סכימת ה-HTTP מקבלת null (תאימות JSON), ה-orchestrator מצפה ל-string | undefined
-      const result = await deps.orchestrator.createAndSpawn({
-        ...parsed,
-        cwd: cwdResult.value, // משתמש ב-cwd מנורמל (לוכסן סוגר הוסר)
-        existingSessionId: parsed.existingSessionId ?? undefined,
-      })
+      const result = await deps.orchestrator.createAndSpawn(parsed.value)
       // מחזיר את מבנה CreateAndSpawnResult (סלייס 10)
       return c.json(result, 201)
     } catch (e) {

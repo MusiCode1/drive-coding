@@ -24,6 +24,7 @@
 import type {
   CreateElicitationRequest,
   CreateElicitationResponse,
+  NewSessionRequest,
   RequestPermissionRequest,
   RequestPermissionResponse,
   SessionNotification,
@@ -53,6 +54,9 @@ import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { parseExtResult } from "@drive-coding/provider/extensions"
 import type { AcpTransport } from "@drive-coding/provider/transport"
 import { createInProcessAcpTransport } from "./in-process-acp-transport.js"
+
+type SessionMcpOpts = { mcpServers?: NewSessionRequest["mcpServers"] }
+import { isCleanTurnEndForClose } from "./close-on-turn-end.js"
 import { createPendingRequests } from "./pending-requests.js"
 
 // ─── C2: createSessionHost ───────────────────────────────────────────────────
@@ -89,14 +93,16 @@ export type SessionHost = {
   ): Promise<void>
 
   /** Delegates to AcpClient.newSession */
-  newSession(opts: { cwd: string; _meta?: Record<string, unknown> }): Promise<{ sessionId: string }>
+  newSession(opts: { cwd: string; _meta?: Record<string, unknown> } & SessionMcpOpts): Promise<{
+    sessionId: string
+  }>
 
   /** Delegates to AcpClient.loadSession */
   loadSession(opts: {
     cwd: string
     sessionId: string
     _meta?: Record<string, unknown>
-  }): Promise<{ sessionId: string }>
+  } & SessionMcpOpts): Promise<{ sessionId: string }>
 
   /** Delegates to AcpClient.cancel */
   cancel(sessionId: string): Promise<void>
@@ -208,12 +214,14 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
       await client.prompt(sessionId, content)
     },
 
-    async newSession(opts: { cwd: string; _meta?: Record<string, unknown> }) {
+    async newSession(opts: { cwd: string; _meta?: Record<string, unknown> } & SessionMcpOpts) {
       if (disposed) throw new Error("SessionHost disposed")
       return client.newSession(opts) as Promise<{ sessionId: string }>
     },
 
-    async loadSession(opts: { cwd: string; sessionId: string; _meta?: Record<string, unknown> }) {
+    async loadSession(
+      opts: { cwd: string; sessionId: string; _meta?: Record<string, unknown> } & SessionMcpOpts,
+    ) {
       if (disposed) throw new Error("SessionHost disposed")
       return client.loadSession(opts) as Promise<{ sessionId: string }>
     },
@@ -244,6 +252,13 @@ export type SessionHostFromConnOptions = {
    * before entering pending. "ask" / absent = today's behavior (pending).
    */
   permissionPolicy?: PermissionPolicyKind
+  /**
+   * slice session-lifecycle-fields C1: when true, first clean turn end schedules
+   * onScheduleCloseOnTurnEnd (after emit, via grace timer in server.ts).
+   */
+  closeOnTurnEnd?: boolean
+  /** Called once after the first eligible turn end — server wires deleteAndKill. */
+  onScheduleCloseOnTurnEnd?: () => void
   /**
    * slice ownership-handoff C4: warm reattach — agent already initialized.
    * Uses createAttachedAcpClient (skips initialize) + loadSession (restores state).
@@ -279,7 +294,7 @@ export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & {
     cwd: string
     sessionId: string
     _meta?: Record<string, unknown>
-  }): Promise<{ sessionId: string; version: number }>
+  } & SessionMcpOpts): Promise<{ sessionId: string; version: number }>
   /**
    * Respond to a pending permission request.
    * requestId is a sequential counter (0, 1, 2...) assigned internally.
@@ -367,6 +382,8 @@ export async function createSessionHostFromConnection(
     permissionTimeoutMs = DEFAULT_PERMISSION_TIMEOUT_MS,
     elicitationTimeoutMs = DEFAULT_ELICITATION_TIMEOUT_MS,
     permissionPolicy,
+    closeOnTurnEnd,
+    onScheduleCloseOnTurnEnd,
     warmReattach,
     _createAcpClient = createAcpClient,
   } = opts
@@ -432,6 +449,19 @@ export async function createSessionHostFromConnection(
   // ע"י cancel, ומשפיע רק על מטען-השגיאה — לעולם לא על הפליטה עצמה.
   let turnSeq = 0
   let cancelledTurn = -1
+  /** slice session-lifecycle-fields C1: only the first clean turn end may close. */
+  let closeOnTurnEndScheduled = false
+
+  /**
+   * After applyTurnEnd emit on success (720) or cancel (912) — NOT error path (729).
+   * Error-path agents stay in the list as evidence (Avigail finding 2).
+   */
+  function maybeScheduleCloseOnTurnEnd(): void {
+    if (!closeOnTurnEnd || closeOnTurnEndScheduled || disposed) return
+    if (!isCleanTurnEndForClose(currentState)) return
+    closeOnTurnEndScheduled = true
+    onScheduleCloseOnTurnEnd?.()
+  }
 
   /** מיישם {state,patches} על currentState + פולט — עוזר-IO מקומי. */
   function emit(r: { state: SessionState; patches: Patch[] }): void {
@@ -718,6 +748,7 @@ export async function createSessionHostFromConnection(
         await client.prompt(sessionId, content)
         if (turn === turnSeq) {
           emit(applyTurnEnd(currentState)) // 3א. הצלחה
+          maybeScheduleCloseOnTurnEnd()
           // slice http-state-gaps C3: refresh quota at turn end — the brief asked for
           // it and it was missing (calev finding 7). A turn is exactly when usage
           // changes. Non-blocking, and guarded by the same generation/in-flight rules.
@@ -726,13 +757,13 @@ export async function createSessionHostFromConnection(
       } catch (err) {
         if (turn === turnSeq) {
           const error = turn === cancelledTurn ? undefined : { message: msgOf(err), at: Date.now() }
-          emit(applyTurnEnd(currentState, error)) // 3ב.
+          emit(applyTurnEnd(currentState, error)) // 3ב. שגיאה — אין closeOnTurnEnd (הסוכן נשאר כראיה)
         }
         throw err // rethrow — הקורא הישיר עדיין רואה את השגיאה
       }
     },
 
-    async newSession(opts: { cwd: string; _meta?: Record<string, unknown> }) {
+    async newSession(opts: { cwd: string; _meta?: Record<string, unknown> } & SessionMcpOpts) {
       if (disposed) throw new Error("SessionHost disposed")
       const result = (await client.newSession(opts)) as {
         sessionId: string
@@ -798,7 +829,7 @@ export async function createSessionHostFromConnection(
       cwd: string
       sessionId: string
       _meta?: Record<string, unknown>
-    }): Promise<{ sessionId: string; version: number }> {
+    } & SessionMcpOpts): Promise<{ sessionId: string; version: number }> {
       if (disposed) throw new Error("SessionHost disposed")
       // 1. Invalidate turns of the outgoing session.
       turnSeq++
@@ -909,7 +940,10 @@ export async function createSessionHostFromConnection(
       } catch {
         // best-effort — תואם ל-local
       }
-      if (turn === turnSeq) emit(applyTurnEnd(currentState)) // אותה גדר בדיוק כמו ב-prompt
+      if (turn === turnSeq) {
+        emit(applyTurnEnd(currentState)) // אותה גדר בדיוק כמו ב-prompt
+        maybeScheduleCloseOnTurnEnd()
+      }
     },
 
     respondPermission(requestId: number, response: RequestPermissionResponse): void {

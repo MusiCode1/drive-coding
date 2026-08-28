@@ -228,6 +228,9 @@ export const en: Catalog = {
   "connect.agents.working": "working…",
   // ─── agent-last-message-ui ─── (slice agent-last-message-ui)
   "connect.agents.lastMessage": "Last activity",
+  // ─── agent-tree-display ─── (slice agent-tree-display)
+  "connect.agents.subAgentsOf": "Sub-agents",
+  "connect.agents.childCount": "sub-agents",
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   "settings.screen.label": "Screen",
   "settings.toggle.keepScreenOn": "Keep screen on",
