@@ -1,12 +1,14 @@
 /**
- * agent-session.subagent-nested.test.svelte.ts — depth-2 subagent tool nesting (BACKLOG 26).
- * Task within Task: grandchild tool sits in MID.subFrames, not top-level.
+ * agent-session.subagent-nested.test.svelte.ts — VM integration (slice subagent-nested).
+ * Depth-2 nesting: Task → sub-task (MID) → grandchild tool (CHILD).
+ *
+ * Gate BACKLOG 26: `ls …/*subagent*nested*.test.* | wc -l` > 0
  */
 
 import type { SessionNotification } from "@agentclientprotocol/sdk"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import type { ToolBubble } from "$lib/types/bubble"
+import type { Bubble, ToolBubble } from "$lib/types/bubble"
 
 let capturedOnUpdate: ((n: SessionNotification) => void) | null = null
 
@@ -32,12 +34,7 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
   return {
     ...actual,
     createAcpClient: vi.fn(
-      (
-        _transport: unknown,
-        callbacks: {
-          onUpdate: (n: SessionNotification) => void
-        },
-      ) => {
+      (_transport: unknown, callbacks: { onUpdate: (n: SessionNotification) => void }) => {
         capturedOnUpdate = callbacks.onUpdate
         return Promise.resolve(makeMockClient())
       },
@@ -85,23 +82,21 @@ function emitSessionUpdate(update: Record<string, unknown>): void {
   capturedOnUpdate?.({ update } as SessionNotification)
 }
 
-function expectTool(b: unknown): ToolBubble {
-  if (typeof b !== "object" || b === null || (b as ToolBubble).kind !== "tool") {
-    throw new Error("expected tool bubble")
-  }
-  return b as ToolBubble
+function toolBubble(b: Bubble | undefined): ToolBubble | undefined {
+  return b?.kind === "tool" ? b : undefined
 }
 
-describe("AgentSession — subagent nested depth-2 (BACKLOG 26)", () => {
+describe("AgentSession — subagent-nested depth-2 (slice subagent-nested)", () => {
   beforeEach(() => {
     capturedOnUpdate = null
     uuidCounter = 0
   })
 
-  it("CHILD nests in MID.subFrames (not top-level) and completed update reaches grandchild", async () => {
+  it("CHILD nests under MID (inside PARENT.subFrames), not top-level; update on CHILD reaches grandchild", async () => {
     const session = new AgentSession()
     await session.attach({ cwd: "/proj", cliKind: "claude" })
 
+    // 1. PARENT (Task) top-level
     emitSessionUpdate({
       sessionUpdate: "tool_call_update",
       toolCallId: "toolu_PARENT",
@@ -110,15 +105,19 @@ describe("AgentSession — subagent nested depth-2 (BACKLOG 26)", () => {
       status: "in_progress",
       rawInput: {},
     })
+
+    // 2. MID nested under PARENT
     emitSessionUpdate({
       sessionUpdate: "tool_call_update",
       toolCallId: "toolu_MID",
-      title: "Nested Task",
+      title: "Sub-task",
       kind: "other",
-      status: "pending",
+      status: "in_progress",
       rawInput: {},
       _meta: { claudeCode: { parentToolUseId: "toolu_PARENT" } },
     })
+
+    // 3. CHILD nested under MID — must NOT appear top-level
     emitSessionUpdate({
       sessionUpdate: "tool_call_update",
       toolCallId: "toolu_CHILD",
@@ -134,24 +133,30 @@ describe("AgentSession — subagent nested depth-2 (BACKLOG 26)", () => {
     )
     expect(topLevelChild).toBeUndefined()
 
-    const mid = findToolBubble(session.bubbles, "toolu_MID")
-    expect(mid).toBeDefined()
-    const midBubble = expectTool(mid)
-    expect(midBubble.subFrames?.length).toBe(1)
-    expect(
-      midBubble.subFrames?.[0]?.kind === "tool" && midBubble.subFrames[0].toolCall.toolCallId,
-    ).toBe("toolu_CHILD")
+    const midBubble = findToolBubble(session.bubbles, "toolu_MID")
+    expect(midBubble).toBeDefined()
+    const childInMid = midBubble?.subFrames?.find(
+      (sf) => sf.kind === "tool" && sf.toolCall.toolCallId === "toolu_CHILD",
+    )
+    expect(childInMid).toBeDefined()
 
+    const parentBubble = toolBubble(
+      session.bubbles.find((b) => b.kind === "tool" && b.toolCall.toolCallId === "toolu_PARENT"),
+    )
+    expect(parentBubble?.subFrames?.some((sf) => sf.kind === "tool" && sf.toolCall.toolCallId === "toolu_MID")).toBe(
+      true,
+    )
+
+    // 4. completed update on CHILD must reach the nested grandchild
     emitSessionUpdate({
       sessionUpdate: "tool_call_update",
       toolCallId: "toolu_CHILD",
       status: "completed",
-      rawOutput: "nested-done",
-      _meta: { claudeCode: { parentToolUseId: "toolu_MID" } },
+      rawOutput: "hello-depth-2",
     })
 
-    const childAfter = findToolBubble(session.bubbles, "toolu_CHILD")
-    expect(childAfter?.toolCall.status).toBe("completed")
-    expect(childAfter?.toolCall.result).toBe("nested-done")
+    const updatedChild = findToolBubble(session.bubbles, "toolu_CHILD")
+    expect(updatedChild?.toolCall.status).toBe("completed")
+    expect(updatedChild?.toolCall.result).toBe("hello-depth-2")
   })
 })
