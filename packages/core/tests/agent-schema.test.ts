@@ -102,6 +102,16 @@ describe("CreateAgentInput", () => {
     expect(result).not.toHaveProperty("summary")
     expect(result).not.toHaveProperty("env")
   })
+
+  // slice session-lifecycle-fields C0
+  it("accepts parentAgentId", () => {
+    const result = CreateAgentInput({
+      cliKind: "cursor",
+      cwd: "/x",
+      parentAgentId: "parent-uuid",
+    })
+    expect(result).toMatchObject({ parentAgentId: "parent-uuid" })
+  })
 })
 
 describe("toAgentPublic", () => {
@@ -126,6 +136,20 @@ describe("toAgentPublic", () => {
       cliKind: "opencode",
       status: "ready",
     })
+  })
+
+  it("exposes parentAgentId (slice session-lifecycle-fields C0)", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440099",
+      cliKind: "cursor" as const,
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T05:00:00.000Z",
+      parentAgentId: "parent-1",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub.parentAgentId).toBe("parent-1")
   })
 
   it("preserves all public fields", () => {

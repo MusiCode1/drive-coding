@@ -31,6 +31,7 @@ export function createInMemoryAgentRegistry(): AgentRegistry {
         ...(input.permissionPolicy !== undefined
           ? { permissionPolicy: input.permissionPolicy }
           : {}),
+        ...(input.parentAgentId !== undefined ? { parentAgentId: input.parentAgentId } : {}),
       }
       store.set(id, agent)
       return agent

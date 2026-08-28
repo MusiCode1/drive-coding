@@ -131,6 +131,8 @@ export const Agent = type({
   "title?": "string | null",
   // slice session-create-contract: auto-resolve permission by kind before pending.
   "permissionPolicy?": PermissionPolicy,
+  // slice session-lifecycle-fields: who opened this agent (free-form, not validated).
+  "parentAgentId?": "string",
 })
 export type Agent = typeof Agent.infer
 
@@ -167,6 +169,8 @@ export const AgentPublic = type({
   "lastSeenAt?": "number | null",
   // כותרת-הסשן (slice session-title-in-process-list): נדחפת ע"י ה-client שפתח את הסשן. runtime-only.
   "title?": "string | null",
+  // slice session-lifecycle-fields: who opened this agent.
+  "parentAgentId?": "string",
 })
 export type AgentPublic = typeof AgentPublic.infer
 
@@ -188,6 +192,8 @@ export const CreateAgentInput = type({
    * Does NOT reach in-process bridges (claude · codex) — cli-spec-env-parity.
    */
   "env?": { "[string]": "string" },
+  // slice session-lifecycle-fields: who opened this agent (free-form, not validated).
+  "parentAgentId?": "string",
 })
 export type CreateAgentInput = typeof CreateAgentInput.infer
 
@@ -218,6 +224,9 @@ export function toAgentPublic(agent: Agent): AgentPublic {
   }
   if (agent.title !== undefined) {
     pub.title = agent.title
+  }
+  if (agent.parentAgentId !== undefined) {
+    pub.parentAgentId = agent.parentAgentId
   }
   return pub
 }

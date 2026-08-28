@@ -23,6 +23,7 @@ export const CreateAgentInputFull = type({
   "systemPrompt?": "string | null",
   "permissionPolicy?": PermissionPolicy,
   "env?": { "[string]": "string" },
+  "parentAgentId?": "string",
 })
 export type CreateAgentInputFull = typeof CreateAgentInputFull.infer
 
@@ -72,6 +73,9 @@ export function parseCreateAgentBody(
   }
   if (parsed.existingSessionId !== undefined && parsed.existingSessionId !== null) {
     input.existingSessionId = parsed.existingSessionId
+  }
+  if (parsed.parentAgentId !== undefined && parsed.parentAgentId !== "") {
+    input.parentAgentId = parsed.parentAgentId
   }
   return { ok: true, value: input }
 }

@@ -71,4 +71,15 @@ describe("InMemoryAgentRegistry", () => {
     const fetched = await registry.get(agent.id)
     expect(fetched?.modelOverride).toBe("claude-sonnet-4")
   })
+
+  it("stores parentAgentId (slice session-lifecycle-fields C0)", async () => {
+    const agent = await registry.create({
+      cliKind: "cursor",
+      cwd: "/x",
+      parentAgentId: "parent-agent-1",
+    })
+    expect(agent.parentAgentId).toBe("parent-agent-1")
+    const fetched = await registry.get(agent.id)
+    expect(fetched?.parentAgentId).toBe("parent-agent-1")
+  })
 })
