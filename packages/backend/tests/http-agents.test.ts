@@ -757,8 +757,10 @@ describe("HTTP /api/agents", () => {
           attached: true,
           busy: false,
           lastMessageAt: null,
+          lastSeenAt: null,
           via: "ws" as const,
         })),
+        getConnectionCount: vi.fn(() => 1),
       }
 
       registerAgentsHttp(app, { registry, orchestrator, bridgeManager })

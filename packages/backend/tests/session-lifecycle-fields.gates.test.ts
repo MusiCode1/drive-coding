@@ -61,7 +61,6 @@ async function makeGateServer() {
     getCwd: vi.fn(() => "/tmp/gates"),
     getCliKind: vi.fn(() => "cursor"),
     isOwnedByWs: vi.fn(() => false),
-    getOwner: vi.fn(() => ({ via: "http" as const })),
     getLastSeenAt: vi.fn(() => Date.now()),
     getEpoch: vi.fn(() => 0),
     getRuntimeInfo: vi.fn(() => ({
@@ -72,9 +71,14 @@ async function makeGateServer() {
       lastSeenAt: Date.now(),
       via: "http" as const,
     })),
-    markOwned: vi.fn(),
-    markDetached: vi.fn(),
-    touchOwner: vi.fn(),
+    addConnection: vi.fn(),
+    removeConnection: vi.fn(),
+    touchConnection: vi.fn(),
+    clearAllConnections: vi.fn(),
+    getConnectionCount: vi.fn(() => 1),
+    listHttpConnectionIds: vi.fn(() => []),
+    isAttached: vi.fn(() => true),
+    setWsSocketChecker: vi.fn(),
   }
 
   const agentSessionRegistry = createAgentSessionRegistry({

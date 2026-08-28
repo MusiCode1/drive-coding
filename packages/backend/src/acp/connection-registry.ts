@@ -2,19 +2,12 @@
  * connection-registry.ts — BE registry of live ProviderConnections (CUT-3b-ii).
  *
  * Replaces createBridgeManager singleton. Manages a Map<agentId, ConnEntry>
- * where each entry holds a ProviderConnection + attached-state (UI concern,
+ * where each entry holds a ProviderConnection + connection-set (UI concern,
  * BE-side) + WireRecorder session.
  *
- * Design decisions:
- *   - dedup guard (NBug1): connect(agentId) checks Map.has(agentId) BEFORE
- *     connectSpawn — never clobbers a live connection.
- *   - attached-state lives here (not in ws-agent) because getRuntimeInfo needs it
- *     and http-agents reads it (§9#2 from brief).
- *   - wireRecorder session opened in connect, closed in close/onCrash cleanup.
- *   - onFrame registered once per connection in connect (in+out) — not duplicated.
- *   - Routing (CUT-3b-iii-2 + open-cli-registry C3): IN_PROCESS_CONNECTORS map (claude/codex)
- *     → else connectSpawn (opencode/gemini/qoder/any CLI from cli-specs.jsonc).
- *     pid may be null for in-process connections; getRuntimeInfo handles this gracefully.
+ * slice connection-set C0: single-owner model replaced by a per-viewer
+ * connection set (`connections: Map<connectionId, row>`). `attached` derives
+ * from set size; `via` derives from row transports (ws wins over http).
  */
 
 import type { CliKind } from "@drive-coding/core"
@@ -28,93 +21,70 @@ import {
   decodeWireLine,
 } from "@drive-coding/provider/connection"
 import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
-// slice liveness C2: ownership transitions invalidate the HTTP response cache
-// (otherwise /api/agents would keep serving attached:true after an eviction).
 import { httpCacheInvalidateAll } from "../delivery/http-cache.js"
 import type { WireRecorder, WireSession } from "../delivery/wire-recorder.js"
 
 const wireLog = createLogger("backend.acp.wire")
 const cfgLog = createLogger("backend.acp.config")
 
-// satisfies שומר על שני הליטרלים: טעות-כתיב כאן משנה ניתוב, וחייבת להיתפס בקומפילציה.
 const IN_PROCESS_CONNECTORS = {
   claude: connectInProcess,
   codex: connectCodexInProcess,
 } satisfies Partial<Record<CliKind, (opts: ConnectOpts) => Promise<ProviderConnection>>>
 
-/** override מכוון ל-CLI in-process ידרוס bin/args בשקט — הם לא נקראים כלל שם. */
 export function overrideHasBinOrArgs(kind: string): boolean {
   const o = loadCliSpecsOverride()[kind]
   return o?.bin !== undefined || o?.args !== undefined
 }
 
-/** override with setEnv/unsetEnv aimed at an in-process CLI — the in-process bridge does not support env vars. */
 export function overrideHasEnv(kind: string): boolean {
   const o = loadCliSpecsOverride()[kind]
   return o?.setEnv !== undefined || o?.unsetEnv !== undefined
 }
 
-/**
- * slice ownership-truth C1: ownership record.
- * `via` identifies which transport holds the pipe — "ws" or "http".
- * `since` is epoch-ms of the last ownership transition (for observability).
- * A single ownership slot (not two booleans) enforces transport exclusivity
- * structurally — it is impossible to represent ws=true AND http=true.
- */
-export type Owner = {
-  via: "ws" | "http"
-  since: number
+export type ConnectionVia = "ws" | "http"
+
+export type ConnectionRow = {
+  via: ConnectionVia
+  lastSeenAt: number
+  stream?: ReadableStream<unknown>
 }
+
 type ConnEntry = {
   conn: ProviderConnection
+  connections: Map<string, ConnectionRow>
   attached: boolean
-  /**
-   * slice ownership-truth C1: who owns the pipe, and in which generation.
-   * Invariant: attached === (owner !== null) — kept consistent by
-   * markOwned/markDetached. owner is null when no transport holds the pipe.
-   */
-  owner: Owner | null
-  /**
-   * slice ownership-truth C1: ownership generation counter.
-   * Rises by 1 on every null→owner AND owner→owner transition.
-   * Never decreases. **Survives markDetached** (owner→null does NOT reset it)
-   * because it lives on ConnEntry, not inside Owner — so the last generation
-   * is always available for diagnostics even after release.
-   */
   ownershipEpoch: number
   rec: WireSession
   unsubs: Array<() => void>
-  /**
-   * cwd מ-ConnectOpts שנמסר ל-connect() — נשמר כאן כי ConnEntry לא נשא אותו קודם
-   * (slice remote-session-view, הכרעה 1: יצירת session אוטומטית ב-BE צריכה cwd
-   * בנקודה שבה אין עוד ConnectOpts זמין — session-host/registry.ts).
-   */
   cwd: string
-  /**
-   * cliKind מ-connect() — נשמר לצורך **הקשר-אבחון בלבד**.
-   *
-   * 🔴 למה: כשה-initialize נכשל (timeout / ילד שלא עלה), שורת-השגיאה לא נשאה
-   * שום סימן זיהוי של הספק, ולכן אי אפשר היה לדעת בדיעבד איזה CLI נכשל —
-   * נתקלנו בזה חי ב-2026-08-16 ולא הצלחנו לשחזר מי היה שם. ⇒ כל תקלת-spawn
-   * הייתה חסרת-שם.
-   */
   cliKind: string
-  /**
-   * slice ownership-handoff C4b + slice liveness C1: last time the owner sent a
-   * liveness signal (WS $/ping or HTTP presence).
-   * Separate from Owner.since (ownership transition time).
-   * Updated by touchOwner(); null when there is no owner. Transport-agnostic —
-   * the unified sweep in session-host/registry.ts decides transport on its own
-   * (via the explicit `via` check), never from lastSeenAt's null-ness.
-   */
-  lastSeenAt: number | null
+}
+
+function syncAttached(e: ConnEntry): void {
+  e.attached = e.connections.size > 0
+}
+
+function deriveVia(e: ConnEntry): ConnectionVia | null {
+  for (const row of e.connections.values()) {
+    if (row.via === "ws") return "ws"
+  }
+  for (const row of e.connections.values()) {
+    if (row.via === "http") return "http"
+  }
+  return null
+}
+
+function deriveLastSeenAt(e: ConnEntry): number | null {
+  if (e.connections.size === 0) return null
+  let max = 0
+  for (const row of e.connections.values()) {
+    if (row.lastSeenAt > max) max = row.lastSeenAt
+  }
+  return max
 }
 
 export type ConnectionRegistry = {
-  /**
-   * connect — spawn + register. Dedup: if agentId already in Map, throws.
-   * This is the NBug1 guard (moved from bridge-manager.spawnInternal).
-   */
   connect(
     agentId: string,
     cliKind: SpawnBridgeInput["cliKind"],
@@ -122,120 +92,62 @@ export type ConnectionRegistry = {
   ): Promise<ProviderConnection>
 
   get(agentId: string): ProviderConnection | undefined
-
-  /**
-   * getCwd — cwd שנמסר ל-connect() עבור agentId זה, או undefined אם לא רשום.
-   * נדרש ל-session-host/registry.ts (יצירת session אוטומטית — slice remote-session-view).
-   */
   getCwd(agentId: string): string | undefined
-
-  /** getCliKind — הספק שנרשם ל-agentId, להקשר-אבחון בשורות-שגיאה. */
   getCliKind(agentId: string): string | undefined
-
-  /** list — כל ה-agentIds החיים (לכיבוי-מסודר). */
   list(): string[]
 
-  /**
-   * slice ownership-truth C1: mark the pipe as owned by a transport.
-   * Sets owner, increments ownershipEpoch (both null→owner and owner→owner),
-   * and synchronizes attached=true. Keeping `via` in a single ownership slot
-   * enforces transport exclusivity structurally.
-   */
-  markOwned(agentId: string, via: "ws" | "http"): void
+  addConnection(
+    agentId: string,
+    connectionId: string,
+    via: ConnectionVia,
+    stream?: ReadableStream<unknown>,
+  ): void
+  removeConnection(
+    agentId: string,
+    connectionId: string,
+    opts?: { onlyIfStream?: unknown },
+  ): void
+  touchConnection(agentId: string, connectionId: string): void
+  clearAllConnections(agentId: string): void
+  getConnectionCount(agentId: string): number
 
-  /**
-   * slice ownership-truth C1: release ownership. Clears owner (→null) and
-   * synchronizes attached=false. ownershipEpoch is NOT reset — it survives
-   * release (lives on ConnEntry, not inside Owner).
-   */
-  markDetached(agentId: string): void
-
-  /**
-   * slice ownership-truth C1: alias for markOwned(agentId, "ws").
-   * Kept for backward compatibility — ws-agent.ts and tests call this.
-   */
-  markAttached(agentId: string): void
-
-  /**
-   * isAttached — האם יש לקוח חי על agentId (מכל טרנספורט, לא רק WS).
-   * slice remote-warm-reconnect C2: ה-session-host registry מסרב ליצור host לסוכן
-   * attached — שני לקוחות ACP על אותו wire = השחתת סשן.
-   * slice ownership-truth C2: ל-guard הספציפי-ל-WS ראה isOwnedByWs.
-   */
   isAttached(agentId: string): boolean
-
-  /**
-   * slice ownership-truth C1: returns the current owner, or null if released.
-   */
-  getOwner(agentId: string): Owner | null
-
-  /**
-   * slice ownership-truth C1: returns the ownership generation counter.
-   * Starts at 0, rises by 1 on each ownership transition, never decreases.
-   * Returns 0 for unknown agentId.
-   */
   getEpoch(agentId: string): number
-
-  /**
-   * slice ownership-truth C2: האם הבעלים הנוכחי הוא WS ספציפית.
-   * ה-guard ב-session-host/registry שואל "האם WS מחזיק את הצינור" —
-   * isAttached כבר לא עונה על זה כי attached מציין בעלות מכל טרנספורט.
-   */
   isOwnedByWs(agentId: string): boolean
-  /**
-   * getRuntimeInfo — composes conn.turn + conn.pid + attached-state + ownership via.
-   * Returns null if agentId not in registry.
-   * pid may be null for in-process connections (e.g. claude in-process, CUT-3b-iii-2).
-   * slice ownership-truth C3: now also returns `via` from the owner record.
-   * slice liveness C4: now also returns `lastSeenAt` (the liveness stamp) so the
-   * FE can derive the "connected" dimension — `attached` alone is fakeable.
-   */
+
   getRuntimeInfo(agentId: string): {
     pid: number | null
     attached: boolean
     busy: boolean
     lastMessageAt: number | null
     lastSeenAt: number | null
-    via: "ws" | "http" | null
+    via: ConnectionVia | null
   } | null
 
-  /**
-   * slice liveness C1: update lastSeenAt for any owned agent (ws or http).
-   * No-op if agentId not found or no owner.
-   */
-  touchOwner(agentId: string): void
-
-  /**
-   * slice liveness C1: returns the lastSeenAt for any owned agent (ws or http),
-   * or null if not found / no owner.
-   */
   getLastSeenAt(agentId: string): number | null
+  listHttpConnectionIds(
+    agentId: string,
+  ): Array<{ connectionId: string; lastSeenAt: number; stream?: ReadableStream<unknown> }>
 
-  /**
-   * close — kill child + remove from Map + close wireRecorder session.
-   */
   close(agentId: string): Promise<void>
-
-  /**
-   * onCrash — subscribe to crashes from ANY registered connection.
-   * Aggregate: per-conn onCrash → calls cb(agentId, info).
-   * Returns unsubscribe.
-   */
   onCrash(
     cb: (agentId: string, info: import("@drive-coding/provider/spawn").BridgeCrashInfo) => void,
   ): () => void
+
+  /** slice connection-set C1: injected from ws-agent — activeFeWs.has, not the set. */
+  setWsSocketChecker(checker: (agentId: string) => boolean): void
 }
 
 export function createConnectionRegistry(opts?: {
   wireRecorder?: WireRecorder
+  isWsSocketActive?: (agentId: string) => boolean
 }): ConnectionRegistry {
   const wireRecorder = opts?.wireRecorder
+  let wsSocketChecker = opts?.isWsSocketActive ?? (() => false)
   const map = new Map<string, ConnEntry>()
   const crashListeners = new Set<
     (agentId: string, info: import("@drive-coding/provider/spawn").BridgeCrashInfo) => void
   >()
-  // #7 — טוקן-ביטול פר-spawn-בטיסה: סוגר את חלון-הרייס שבו DELETE מגיע בזמן
-  // ש-connect עדיין ב-await (map.set טרם רץ) → child אלמותי-בלתי-נגיש.
   const pending = new Map<string, { cancelled: boolean }>()
 
   function cleanup(agentId: string): void {
@@ -253,12 +165,14 @@ export function createConnectionRegistry(opts?: {
   }
 
   return {
+    setWsSocketChecker(checker) {
+      wsSocketChecker = checker
+    },
+
     async connect(agentId, cliKind, connectOpts) {
-      // ── NBug1 dedup guard (🔴 avigail): check BEFORE connectSpawn ──
       if (map.has(agentId)) {
         throw new Error(`connection-registry: agentId already live: ${agentId}`)
       }
-      // ── #7 double-connect guard: אותו agentId כבר בטיסה (in-flight spawn) ──
       if (pending.has(agentId)) {
         throw new Error(`connection-registry: agentId already connecting: ${agentId}`)
       }
@@ -268,15 +182,10 @@ export function createConnectionRegistry(opts?: {
       try {
         const rec = wireRecorder?.open(agentId) ?? { record() {}, close() {} }
 
-        // ── Routing (CUT-3b-iii-2 + codex-inprocess + open-cli-registry): ──
-        // in-process (claude/codex) → IN_PROCESS_CONNECTORS map
-        // else                      → connectSpawn (opencode/gemini/qoder/כל CLI מהקונפ')
         if (cliKind in IN_PROCESS_CONNECTORS && overrideHasBinOrArgs(cliKind)) {
-          // override.bin/args are silently ignored here — in-process connectors don't call getCliCommand.
           cfgLog.warn({ cliKind }, "cli-specs override.bin/args ignored for in-process cliKind")
         }
         if (cliKind in IN_PROCESS_CONNECTORS && overrideHasEnv(cliKind)) {
-          // The in-process bridge does not support env vars — this stays true even after a future fix.
           cfgLog.warn(
             { cliKind },
             "cli-specs override env vars are not supported by the in-process bridge",
@@ -287,18 +196,12 @@ export function createConnectionRegistry(opts?: {
           ? await inProcess(connectOpts)
           : await connectSpawn(cliKind, connectOpts)
 
-        // #7 — DELETE הגיע בזמן ה-spawn? סגור מיָד ואל תרשום (מונע child אלמותי).
-        // אין await בין הבדיקה הזו ל-map.set למטה — זה מה שסוגר את חלון-הרייס.
         if (token.cancelled) {
           rec.close()
-          await conn.close().catch(() => {
-            /* child may already be dead */
-          })
+          await conn.close().catch(() => {})
           throw new Error(`connection-registry: connect cancelled by concurrent close: ${agentId}`)
         }
 
-        // Register onFrame once (in+out) for wire-observability.
-        // Must NOT decode in wire.write separately — this is the single decode point.
         const unsubFrame = conn.onFrame((frame) => {
           try {
             const s = decodeWireLine(frame.raw)
@@ -308,12 +211,11 @@ export function createConnectionRegistry(opts?: {
             if (!s.unparsed)
               wireLog.trace({ agentId, dir: frame.dir, frame: s.parsed }, "wire-full")
           } catch {
-            /* silent — must not break the pipe */
+            /* silent */
           }
           rec.record(frame.dir, frame.raw)
         })
 
-        // onCrash: notify aggregate listeners + cleanup entry.
         const unsubCrash = conn.onCrash((info) => {
           for (const cb of crashListeners) {
             try {
@@ -326,14 +228,13 @@ export function createConnectionRegistry(opts?: {
         })
         map.set(agentId, {
           conn,
+          connections: new Map(),
           attached: false,
-          owner: null,
           ownershipEpoch: 0,
           rec,
           unsubs: [unsubFrame, unsubCrash],
           cwd: connectOpts.cwd,
           cliKind,
-          lastSeenAt: null,
         })
         return conn
       } finally {
@@ -356,91 +257,114 @@ export function createConnectionRegistry(opts?: {
     list() {
       return [...map.keys()]
     },
-    markOwned(agentId, via) {
+
+    addConnection(agentId, connectionId, via, stream) {
       const e = map.get(agentId)
       if (!e) return
-      e.owner = { via, since: Date.now() }
-      e.ownershipEpoch++
-      e.attached = true
-      // slice liveness C1: initialize lastSeenAt on any ownership acquisition —
-      // transport-agnostic (the unified sweep decides transport via `via`, §2.1).
-      e.lastSeenAt = Date.now()
-      // slice liveness C2: ownership changed → cached attached/via answers are stale.
+
+      const hadHttp = [...e.connections.values()].some((row) => row.via === "http")
+      const existing = e.connections.get(connectionId)
+
+      if (existing) {
+        existing.lastSeenAt = Date.now()
+        if (stream !== undefined) existing.stream = stream
+      } else {
+        e.connections.set(connectionId, {
+          via,
+          lastSeenAt: Date.now(),
+          ...(stream !== undefined ? { stream } : {}),
+        })
+        if (via === "http" && !hadHttp) e.ownershipEpoch++
+        if (via === "ws") e.ownershipEpoch++
+      }
+
+      syncAttached(e)
       httpCacheInvalidateAll()
     },
 
-    markAttached(agentId) {
-      // alias for markOwned(agentId, "ws") — backward compat (ws-agent.ts, tests)
+    removeConnection(agentId, connectionId, opts) {
       const e = map.get(agentId)
       if (!e) return
-      e.owner = { via: "ws", since: Date.now() }
-      e.ownershipEpoch++
-      e.attached = true
-      // slice liveness C1: WS also gets a lastSeenAt stamp (fed by $/ping → touchOwner).
-      e.lastSeenAt = Date.now()
-      // slice liveness C2: ownership changed → cached attached/via answers are stale.
+      const row = e.connections.get(connectionId)
+      if (!row) return
+      if (opts?.onlyIfStream !== undefined && row.stream !== opts.onlyIfStream) return
+
+      e.connections.delete(connectionId)
+      syncAttached(e)
       httpCacheInvalidateAll()
     },
 
-    markDetached(agentId) {
+    touchConnection(agentId, connectionId) {
       const e = map.get(agentId)
       if (!e) return
-      e.owner = null
-      e.attached = false
-      // ownershipEpoch deliberately NOT decremented — it survives release (C1 §3)
-      // slice liveness C2: ownership changed → cached attached/via answers are stale.
+      const row = e.connections.get(connectionId)
+      if (!row) return
+      row.lastSeenAt = Date.now()
+    },
+
+    clearAllConnections(agentId) {
+      const e = map.get(agentId)
+      if (!e) return
+      e.connections.clear()
+      syncAttached(e)
       httpCacheInvalidateAll()
+    },
+
+    getConnectionCount(agentId) {
+      return map.get(agentId)?.connections.size ?? 0
     },
 
     isAttached(agentId) {
       return map.get(agentId)?.attached ?? false
     },
 
-    getOwner(agentId) {
-      return map.get(agentId)?.owner ?? null
-    },
-
     getEpoch(agentId) {
       return map.get(agentId)?.ownershipEpoch ?? 0
     },
 
-    touchOwner(agentId) {
-      const e = map.get(agentId)
-      if (!e?.owner) return
-      e.lastSeenAt = Date.now()
+    isOwnedByWs(agentId) {
+      return wsSocketChecker(agentId)
     },
 
     getLastSeenAt(agentId) {
       const e = map.get(agentId)
-      if (!e?.owner) return null
-      return e.lastSeenAt
+      if (!e) return null
+      return deriveLastSeenAt(e)
     },
 
-    isOwnedByWs(agentId) {
-      return map.get(agentId)?.owner?.via === "ws"
+    listHttpConnectionIds(agentId) {
+      const e = map.get(agentId)
+      if (!e) return []
+      const out: Array<{
+        connectionId: string
+        lastSeenAt: number
+        stream?: ReadableStream<unknown>
+      }> = []
+      for (const [connectionId, row] of e.connections) {
+        if (row.via === "http")
+          out.push({ connectionId, lastSeenAt: row.lastSeenAt, stream: row.stream })
+      }
+      return out
     },
 
     getRuntimeInfo(agentId) {
       const e = map.get(agentId)
       if (!e) return null
-      // pid may be null for in-process connections (claude in-process, CUT-3b-iii-2).
-      // We must NOT short-circuit on null — attached/busy/lastMessageAt are still valid.
       return {
         pid: e.conn.pid,
         attached: e.attached,
         busy: e.conn.turn.isBusy(),
         lastMessageAt: e.conn.turn.lastActivityAt(),
-        lastSeenAt: e.lastSeenAt,
-        via: e.owner?.via ?? null,
+        lastSeenAt: deriveLastSeenAt(e),
+        via: deriveVia(e),
       }
     },
 
     async close(agentId) {
-      // #7 — סמן ל-connect שבטיסה (אם יש) לבטל את עצמו ברגע שה-spawn מסתיים.
       const pend = pending.get(agentId)
       if (pend) pend.cancelled = true
       const e = map.get(agentId)
-      if (!e) return // אם רק pending — הסימון לבד מספיק; connect יסגור בעצמו
+      if (!e) return
       cleanup(agentId)
       try {
         await e.conn.close()

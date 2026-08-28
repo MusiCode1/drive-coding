@@ -165,8 +165,6 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
       return c.json({ error: "Agent connection not found" }, status)
     }
     const { host } = result.entry
-    // slice ownership-handoff C4b: touch lastSeenAt — rpc extends HTTP ownership TTL
-    registry.touchOwner(agentId)
 
     // Parse request body
     let raw: unknown

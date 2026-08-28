@@ -25,6 +25,7 @@ import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
 import { Hono } from "hono"
 import { describe, expect, it, vi } from "vitest"
+import type { ConnectionRegistry } from "../../acp/connection-registry.js"
 import { createPatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry } from "../registry.js"
 import {
@@ -129,6 +130,28 @@ async function setup(): Promise<{
 
   const broadcaster = createPatchesBroadcaster(host.patches)
 
+  const connectionRegistry = {
+    addConnection: vi.fn(),
+    removeConnection: vi.fn(),
+    touchConnection: vi.fn(),
+    clearAllConnections: vi.fn(),
+    getConnectionCount: vi.fn(() => 0),
+    connect: vi.fn(),
+    get: vi.fn(() => ({})),
+    getCwd: vi.fn(),
+    getCliKind: vi.fn(),
+    list: vi.fn(() => []),
+    isAttached: vi.fn(() => false),
+    getEpoch: vi.fn(() => 0),
+    isOwnedByWs: vi.fn(() => false),
+    getRuntimeInfo: vi.fn(() => null),
+    getLastSeenAt: vi.fn(() => null),
+    listHttpConnectionIds: vi.fn(() => []),
+    close: vi.fn(),
+    onCrash: vi.fn(() => () => {}),
+    setWsSocketChecker: vi.fn(),
+  } as unknown as ConnectionRegistry
+
   const registry: AgentSessionRegistry = {
     getHost: (id) => (id === AGENT_ID ? host : undefined),
     isHeld: (id) => id === AGENT_ID,
@@ -139,12 +162,13 @@ async function setup(): Promise<{
     notifySessionAttached: async () => {},
     getCwd: (id) => (id === AGENT_ID ? "/connection/cwd" : undefined),
     getEpoch: (_id) => 0,
-    touchOwner: (_id) => {},
+    touchConnection: (_id, _cid) => {},
     getRuntimeInfo: (_id) => null,
+    getConnectionCount: (_id) => 0,
   }
 
   const app = new Hono()
-  registerSessionHostHttp(app, { agentSessionRegistry: registry })
+  registerSessionHostHttp(app, { agentSessionRegistry: registry, connectionRegistry })
 
   return { app, host, mockClient, callbacks: capturedCallbacks }
 }

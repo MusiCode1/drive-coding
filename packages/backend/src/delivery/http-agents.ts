@@ -36,6 +36,7 @@ export function registerAgentsHttp(
         lastSeenAt: number | null
         via: "ws" | "http" | null
       } | null
+      getConnectionCount(id: string): number
     }
   },
 ): void {
@@ -60,6 +61,7 @@ export function registerAgentsHttp(
           lastMessageAt: rt?.lastMessageAt ?? null,
           lastSeenAt: rt?.lastSeenAt ?? null,
           attachedVia: rt?.via,
+          connectionCount: deps.bridgeManager?.getConnectionCount(a.id) ?? 0,
         }
       }),
     }

@@ -35,8 +35,6 @@ export function registerReplyRoute(app: Hono, registry: AgentSessionRegistry): v
     if (!host) {
       return c.json({ error: "Agent connection not found" }, 404)
     }
-    // slice ownership-handoff C4b: touch lastSeenAt — reply extends HTTP ownership TTL
-    registry.touchOwner(agentId)
 
     // Parse body
     const body = (await c.req.json()) as Record<string, unknown>
