@@ -15,14 +15,12 @@ import {
   type ListConfigInput,
   type SelectChoiceInput,
 } from "@drive-coding/core/voice/live-config"
-import {
-  buildLiveAgentPrompt,
-  formatSecretaryToAgent,
-} from "@drive-coding/core/voice/live-agent-prompt"
+import { formatSecretaryDispatch } from "@drive-coding/core/voice/live-agent-prompt"
 import { formatAgentDelivery, formatConfigSeedProse, formatPermissionPending } from "@drive-coding/core/voice/live-prompt"
 import { buildLiveSeed } from "@drive-coding/core/voice/live-seed"
 import { formatMemoryForPrompt, type MemoryItem } from "@drive-coding/core/voice/live-memory"
 import { searchSessionBubbles } from "@drive-coding/core/voice/live-search"
+import { parseRecentCount, readRecentBubbles } from "@drive-coding/core/voice/live-read-recent"
 import { isUnpromptedSend } from "@drive-coding/core/voice/unprompted-guard"
 import {
   loadAlwaysMemory,
@@ -88,7 +86,7 @@ export class Live {
   #notifiedPermissionKey: string | null = null
   /** Set when agent delivery is sent; cleared on first user transcript fragment. */
   #deliveredSinceUserSpoke = false
-  /** One-shot agent instruction per Live open cycle. */
+  /** One-shot agent instruction — attached to the first real secretary dispatch. */
   #agentPromptSent = false
   #lastUserTranscriptIdSeen: number | undefined = undefined
   /** Session-scoped secretary memory (RAM). Cleared when Live class is recreated. */
@@ -197,10 +195,6 @@ export class Live {
         this.error = "live.error.connect"
       } else if (this.state === "open") {
         this.#injectSeedAndMemory()
-        if (!this.#agentPromptSent) {
-          this.#agentPromptSent = true
-          void this.#session.sendPrompt(buildLiveAgentPrompt())
-        }
       }
     } catch (e: unknown) {
       this.error =
@@ -219,6 +213,13 @@ export class Live {
       isRemoteView: this.#session.isRemoteView,
       text,
     })
+  }
+
+  /** First successful dispatch carries the one-shot explanation; later ones do not. */
+  #sendToAgent(text: string): void {
+    const includePreamble = !this.#agentPromptSent
+    this.#agentPromptSent = true
+    void this.#session.sendPrompt(formatSecretaryDispatch(text, { includePreamble }))
   }
 
   #lastFinalUserTranscript(): string {
@@ -248,7 +249,7 @@ export class Live {
           })
           return
         }
-        void this.#session.sendPrompt(formatSecretaryToAgent(text))
+        this.#sendToAgent(text)
         this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
         this.#pendingAgentDelivery = true
         break
@@ -270,7 +271,7 @@ export class Live {
           })
           return
         }
-        void this.#session.sendPrompt(formatSecretaryToAgent(text))
+        this.#sendToAgent(text)
         this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
         this.#pendingAgentDelivery = true
         break
@@ -307,6 +308,12 @@ export class Live {
         const query = typeof action.args.query === "string" ? action.args.query : ""
         const bubbles = mapBubblesToLiveSeed(this.#session.bubbles ?? [])
         const result = searchSessionBubbles(bubbles, query)
+        this.#engine.sendActionResult(action.id, action.name, result)
+        break
+      }
+      case "read_recent": {
+        const bubbles = mapBubblesToLiveSeed(this.#session.bubbles ?? [])
+        const result = readRecentBubbles(bubbles, { count: parseRecentCount(action.args.count) })
         this.#engine.sendActionResult(action.id, action.name, result)
         break
       }

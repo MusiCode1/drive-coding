@@ -44,5 +44,7 @@ describe("buildLiveSecretaryPrompt", () => {
     expect(prompt).toContain("אל תשגר אותו מחדש לסוכן ב-compose_prompt")
     expect(prompt).toContain(LIVE_PERMISSION_PENDING_MARKER)
     expect(prompt).toContain("answer_permission")
+    expect(prompt).toContain("read_recent")
+    expect(prompt).toContain("כלים — זה מה שכל כלי עושה באמת")
   })
 })

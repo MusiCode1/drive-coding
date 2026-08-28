@@ -42,6 +42,10 @@ export const LIVE_ACTION_SHAPES: readonly LiveActionShape[] = [
     params: [{ name: "query", type: "string", required: true }],
   },
   {
+    name: "read_recent",
+    params: [{ name: "count", type: "number", required: false }],
+  },
+  {
     name: "remember_session",
     params: [
       { name: "text", type: "string", required: true },

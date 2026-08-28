@@ -13,7 +13,7 @@ export function formatSecretaryToAgent(text: string): string {
   return `${LIVE_SECRETARY_TO_AGENT_MARKER} ${text}`
 }
 
-/** One-shot instruction sent to the ACP agent when Live opens. */
+/** One-shot instruction prepended to the first secretary→agent dispatch. */
 export function buildLiveAgentPrompt(): string {
   return [
     `ההודעות המתויגות ${LIVE_SECRETARY_TO_AGENT_MARKER} הגיעו ממזכיר קולי, לא מהמשתמש ישירות.`,
@@ -21,4 +21,17 @@ export function buildLiveAgentPrompt(): string {
     "מזהי-קוד (שמות קבצים, נתיבים, פקודות) — אמור בבירור ובנפרד, כי הם",
     "עוברים תמלול והם השלב שבו מידע אובד.",
   ].join("\n")
+}
+
+/**
+ * Body of a secretary→agent `sendPrompt`.
+ * `includePreamble` is for the first real dispatch only — not on Live open.
+ */
+export function formatSecretaryDispatch(
+  text: string,
+  opts?: { includePreamble?: boolean },
+): string {
+  const tagged = formatSecretaryToAgent(text)
+  if (!opts?.includePreamble) return tagged
+  return `${buildLiveAgentPrompt()}\n\n${tagged}`
 }

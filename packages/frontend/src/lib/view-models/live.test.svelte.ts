@@ -7,6 +7,7 @@
 
 import {
   buildLiveAgentPrompt,
+  formatSecretaryDispatch,
   formatSecretaryToAgent,
   LIVE_SECRETARY_TO_AGENT_MARKER,
 } from "@drive-coding/core/voice/live-agent-prompt"
@@ -185,7 +186,9 @@ describe("Live outgoing path (Commit 0)", () => {
       args: { text: "fix auth.ts" },
     })
 
-    expect(session.sendPrompt).toHaveBeenLastCalledWith(formatSecretaryToAgent("fix auth.ts"))
+    expect(session.sendPrompt).toHaveBeenLastCalledWith(
+      formatSecretaryDispatch("fix auth.ts", { includePreamble: true }),
+    )
     expect(providerSend).toHaveBeenCalledWith({
       type: "action_result",
       id: "a1",
@@ -223,8 +226,7 @@ describe("Live outgoing path (Commit 0)", () => {
       args: { text: "hello" },
     })
 
-    expect(session.sendPrompt).toHaveBeenCalledTimes(1)
-    expect(session.sendPrompt).toHaveBeenCalledWith(buildLiveAgentPrompt())
+    expect(session.sendPrompt).not.toHaveBeenCalled()
     expect(providerSend).toHaveBeenCalledWith({
       type: "action_result",
       id: "a3",
@@ -263,7 +265,9 @@ describe("Live outgoing path (Commit 0)", () => {
       args: {},
     })
 
-    expect(session.sendPrompt).toHaveBeenLastCalledWith(formatSecretaryToAgent("raw ask"))
+    expect(session.sendPrompt).toHaveBeenLastCalledWith(
+      formatSecretaryDispatch("raw ask", { includePreamble: true }),
+    )
     expect(providerSend).toHaveBeenCalledWith(
       expect.objectContaining({ name: "forward", result: { status: "sent" } }),
     )
@@ -532,7 +536,7 @@ describe("Live unprompted guard wiring (Commit 2)", () => {
       args: { text: "run again" },
     })
 
-    expect(session.sendPrompt).toHaveBeenCalledTimes(2)
+    expect(session.sendPrompt).toHaveBeenCalledTimes(1)
     expect(providerSend).toHaveBeenCalledWith({
       type: "action_result",
       id: "loop1",
@@ -554,7 +558,7 @@ describe("Live unprompted guard wiring (Commit 2)", () => {
       args: {},
     })
 
-    expect(session.sendPrompt).toHaveBeenCalledTimes(2)
+    expect(session.sendPrompt).toHaveBeenCalledTimes(1)
     expect(providerSend).toHaveBeenCalledWith({
       type: "action_result",
       id: "loop2",
@@ -583,7 +587,7 @@ describe("Live unprompted guard wiring (Commit 2)", () => {
       args: { text: "fix tests" },
     })
 
-    expect(session.sendPrompt).toHaveBeenCalledTimes(3)
+    expect(session.sendPrompt).toHaveBeenCalledTimes(2)
     expect(session.sendPrompt).toHaveBeenLastCalledWith(formatSecretaryToAgent("fix tests"))
     expect(providerSend).toHaveBeenCalledWith({
       type: "action_result",
@@ -638,7 +642,7 @@ describe("Live unprompted guard wiring (Commit 2)", () => {
       args: { text: "would loop" },
     })
 
-    expect(session.sendPrompt).toHaveBeenCalledTimes(3)
+    expect(session.sendPrompt).toHaveBeenCalledTimes(2)
     expect(providerSend).toHaveBeenCalledWith({
       type: "action_result",
       id: "mut1",
@@ -649,15 +653,14 @@ describe("Live unprompted guard wiring (Commit 2)", () => {
 })
 
 describe("Live agent secretary prompt (agent-secretary-prompt)", () => {
-  it("sends buildLiveAgentPrompt once after successful open", async () => {
+  it("does not send the agent explanation on Live open", async () => {
     const session = mockSession()
     await openLive(session)
 
-    expect(session.sendPrompt).toHaveBeenCalledTimes(1)
-    expect(session.sendPrompt).toHaveBeenCalledWith(buildLiveAgentPrompt())
+    expect(session.sendPrompt).not.toHaveBeenCalled()
   })
 
-  it("does not resend agent prompt on second action in same open cycle", async () => {
+  it("prepends the explanation once on the first real dispatch", async () => {
     const session = mockSession()
     await openLive(session)
 
@@ -668,25 +671,85 @@ describe("Live agent secretary prompt (agent-secretary-prompt)", () => {
       args: { text: "hello" },
     })
 
-    const agentPromptCalls = (session.sendPrompt as ReturnType<typeof vi.fn>).mock.calls.filter(
-      ([text]) => text === buildLiveAgentPrompt(),
+    expect(session.sendPrompt).toHaveBeenCalledTimes(1)
+    expect(session.sendPrompt).toHaveBeenCalledWith(
+      formatSecretaryDispatch("hello", { includePreamble: true }),
     )
-    expect(agentPromptCalls).toHaveLength(1)
+
+    providerOnEvent?.({
+      type: "action",
+      id: "x2",
+      name: "compose_prompt",
+      args: { text: "again" },
+    })
+
+    expect(session.sendPrompt).toHaveBeenCalledTimes(2)
+    expect(session.sendPrompt).toHaveBeenLastCalledWith(formatSecretaryToAgent("again"))
+    const preambleCalls = (session.sendPrompt as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([text]) => typeof text === "string" && text.includes(buildLiveAgentPrompt()),
+    )
+    expect(preambleCalls).toHaveLength(1)
   })
 
-  it("resets agent prompt on close and resends on reopen", async () => {
+  it("does not consume the explanation when dispatch is not_sent", async () => {
+    const session = mockSession({ status: "idle" })
+    await openLive(session)
+
+    providerOnEvent?.({
+      type: "action",
+      id: "fail",
+      name: "compose_prompt",
+      args: { text: "hello" },
+    })
+    expect(session.sendPrompt).not.toHaveBeenCalled()
+
+    session.status = "connected"
+    providerOnEvent?.({
+      type: "action",
+      id: "ok",
+      name: "compose_prompt",
+      args: { text: "hello" },
+    })
+    expect(session.sendPrompt).toHaveBeenCalledTimes(1)
+    expect(session.sendPrompt).toHaveBeenCalledWith(
+      formatSecretaryDispatch("hello", { includePreamble: true }),
+    )
+  })
+
+  it("resets the explanation on close and prepends again on first dispatch after reopen", async () => {
     const session = mockSession()
     const { live, dispose } = createLive({ session })
     try {
       await live.toggle()
+      expect(session.sendPrompt).not.toHaveBeenCalled()
+
+      providerOnEvent?.({
+        type: "action",
+        id: "first",
+        name: "compose_prompt",
+        args: { text: "one" },
+      })
       expect(session.sendPrompt).toHaveBeenCalledTimes(1)
+      expect(session.sendPrompt).toHaveBeenLastCalledWith(
+        formatSecretaryDispatch("one", { includePreamble: true }),
+      )
 
       await live.toggle()
       expect(live.state).toBe("closed")
 
       await live.toggle()
+      expect(session.sendPrompt).toHaveBeenCalledTimes(1)
+
+      providerOnEvent?.({
+        type: "action",
+        id: "second",
+        name: "compose_prompt",
+        args: { text: "two" },
+      })
       expect(session.sendPrompt).toHaveBeenCalledTimes(2)
-      expect(session.sendPrompt).toHaveBeenLastCalledWith(buildLiveAgentPrompt())
+      expect(session.sendPrompt).toHaveBeenLastCalledWith(
+        formatSecretaryDispatch("two", { includePreamble: true }),
+      )
     } finally {
       dispose()
     }
@@ -702,7 +765,9 @@ describe("Live agent secretary prompt (agent-secretary-prompt)", () => {
       name: "compose_prompt",
       args: { text: "fix auth.ts" },
     })
-    expect(session.sendPrompt).toHaveBeenLastCalledWith(formatSecretaryToAgent("fix auth.ts"))
+    expect(session.sendPrompt).toHaveBeenLastCalledWith(
+      formatSecretaryDispatch("fix auth.ts", { includePreamble: true }),
+    )
     expect((session.sendPrompt as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0]).toContain(
       LIVE_SECRETARY_TO_AGENT_MARKER,
     )
@@ -772,6 +837,50 @@ describe("Live context wiring (seed + search + remember)", () => {
         hits: expect.arrayContaining([
           expect.objectContaining({ role: "user", snippet: expect.stringContaining("auth") }),
         ]),
+      }),
+    })
+  })
+
+  it("read_recent returns the last session messages", async () => {
+    const session = mockSession({
+      bubbles: [
+        {
+          kind: "user",
+          id: "u1",
+          messageId: null,
+          createdAt: 0,
+          segments: [{ id: "s1", text: "hello" }],
+        },
+        {
+          kind: "message",
+          id: "a1",
+          messageId: null,
+          createdAt: 1,
+          segments: [{ id: "s2", text: "world" }],
+        },
+      ] as AgentSession["bubbles"],
+    })
+    await openLive(session)
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "r1",
+      name: "read_recent",
+      args: { count: 2 },
+    })
+
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "r1",
+      name: "read_recent",
+      result: expect.objectContaining({
+        total: 2,
+        returned: 2,
+        messages: [
+          expect.objectContaining({ role: "user", text: "hello" }),
+          expect.objectContaining({ role: "assistant", text: "world" }),
+        ],
       }),
     })
   })

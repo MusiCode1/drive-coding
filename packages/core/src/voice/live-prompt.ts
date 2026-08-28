@@ -44,7 +44,9 @@ export const LIVE_ACTION_PROSE: Readonly<
     params: {},
   },
   cancel_turn: {
-    description: "בטל את הריצה הנוכחית של הסוכן.",
+    description:
+      "בטל רק את הריצה שרצה עכשיו אצל סוכן הקוד. לא מוחק קבצים, לא מבטל תור שכבר נגמר, " +
+      "ולא מוחק עבודה שכבר נכתבה. אם אין תור פתוח — אין מה לבטל.",
     params: {},
   },
   answer_permission: {
@@ -74,8 +76,17 @@ export const LIVE_ACTION_PROSE: Readonly<
     params: {},
   },
   search_session: {
-    description: "חפש בהיסטוריית השיחה הנוכחית.",
+    description:
+      "חפש בהיסטוריית השיחה לפי מילות מפתח. לא מחזיר את כל ההודעות — רק קטעים שתואמים לשאילתה. " +
+      "אם המשתמש רוצה את ההודעות האחרונות בלי חיפוש — השתמש ב-read_recent.",
     params: { query: "מילות חיפוש." },
+  },
+  read_recent: {
+    description:
+      "החזר את כמה ההודעות האחרונות בשיחה (משתמש, סוכן, כלים) לפי סדר כרונולוגי. " +
+      "בלי שאילתה. ברירת מחדל 8, לכל היותר 20. זה החתך — לא כל ההיסטוריה. " +
+      "אם טענת שאין לך גישה להודעות, קרא לכלי הזה קודם.",
+    params: { count: "כמה הודעות אחרונות להחזיר (1–20). השמט ל-8." },
   },
   remember_session: {
     description:
@@ -150,6 +161,71 @@ const CONFIG_TOOLS_SECTION =
   "השתמש ב-list_config ואז set_session_config / set_app_setting. " +
   "אל תנחש ערכים; קרא list_config קודם."
 
+const HISTORY_TOOLS_SECTION =
+  "הודעות השיחה: בפתיחה מקבלים כמה תורות אחרונים בדחיפה, ואחר כך תשובות שנדחפות. " +
+  "זה לא כל ההיסטוריה. כדי לראות עוד — חובה להשתמש בכלים: " +
+  "read_recent לחתך אחרון בלי חיפוש, search_session למילות מפתח. " +
+  "אל תגיד שאין לך גישה להודעות בלי לקרוא לאחד מהם."
+
+type LivePromptTool = {
+  name: string
+  description: string
+  params: readonly { name: string; required: boolean; description: string }[]
+}
+
+/** Names in declaration order — keep in sync with LIVE_ACTION_SHAPES (tested). */
+export const LIVE_SECRETARY_TOOL_ORDER = [
+  "compose_prompt",
+  "forward",
+  "cancel_turn",
+  "answer_permission",
+  "search_session",
+  "read_recent",
+  "remember_session",
+  "remember_always",
+  "list_config",
+  "set_session_config",
+  "set_app_setting",
+] as const
+
+export function formatLiveToolsSection(tools: readonly LivePromptTool[]): string {
+  const lines = ["כלים — זה מה שכל כלי עושה באמת. אל תמציא התנהגות אחרת:"]
+  for (const t of tools) {
+    const sig =
+      t.params.length === 0
+        ? `${t.name}()`
+        : `${t.name}(${t.params.map((p) => (p.required ? p.name : `${p.name}?`)).join(", ")})`
+    lines.push(`- ${sig}: ${t.description}`)
+  }
+  return lines.join("\n")
+}
+
+function toolsFromProse(): LivePromptTool[] {
+  return LIVE_SECRETARY_TOOL_ORDER.map((name) => {
+    const prose = LIVE_ACTION_PROSE[name]
+    if (!prose) throw new Error(`Missing prose for action: ${name}`)
+    const requiredGuess: Record<string, boolean> = {
+      text: true,
+      optionId: true,
+      query: true,
+      id: name === "set_session_config",
+      value: true,
+      key: true,
+      count: false,
+    }
+    const paramNames = Object.keys(prose.params)
+    return {
+      name,
+      description: prose.description,
+      params: paramNames.map((p) => ({
+        name: p,
+        required: requiredGuess[p] ?? false,
+        description: prose.params[p] ?? "",
+      })),
+    }
+  })
+}
+
 const CONFIG_SEED_LABELS: Record<string, string> = {
   model: "מודל",
   mode: "מצב",
@@ -204,7 +280,10 @@ export function formatConfigSeedProse(snapshot: ConfigSnapshot): string {
 }
 
 /** Builds the secretary system prompt. */
-export function buildLiveSecretaryPrompt(opts?: { language?: "he" | "en" }): string {
+export function buildLiveSecretaryPrompt(opts?: {
+  language?: "he" | "en"
+  tools?: readonly LivePromptTool[]
+}): string {
   const lang = opts?.language ?? "he"
   const role =
     lang === "he"
@@ -214,7 +293,9 @@ export function buildLiveSecretaryPrompt(opts?: { language?: "he" | "en" }): str
   return [
     role,
     SCOPE_SECTION,
+    HISTORY_TOOLS_SECTION,
     CONFIG_TOOLS_SECTION,
+    formatLiveToolsSection(opts?.tools ?? toolsFromProse()),
     IDENTIFIER_SECTION,
     LANGUAGE_SECTION,
     AGENT_DELIVERY_SECTION,
