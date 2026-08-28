@@ -134,11 +134,13 @@ export type AcpClient = {
   authMethods: ReadonlyArray<AuthMethod>
   newSession(opts: {
     cwd: string
+    mcpServers?: NewSessionRequest["mcpServers"]
     _meta?: AcpRequestMeta
   }): ReturnType<ClientSideConnection["newSession"]>
   loadSession(opts: {
     cwd: string
     sessionId: string
+    mcpServers?: NewSessionRequest["mcpServers"]
     _meta?: AcpRequestMeta
   }): ReturnType<ClientSideConnection["loadSession"]>
   listSessions(): ReturnType<ClientSideConnection["listSessions"]>
@@ -221,10 +223,14 @@ function buildAcpClientFacade(
     authMethods,
 
     /** יוצר session ACP חדש */
-    async newSession(opts: { cwd: string; _meta?: AcpRequestMeta }) {
+    async newSession(opts: {
+      cwd: string
+      mcpServers?: NewSessionRequest["mcpServers"]
+      _meta?: AcpRequestMeta
+    }) {
       return conn.newSession({
         cwd: opts.cwd,
-        mcpServers: [],
+        mcpServers: opts.mcpServers ?? [],
         ...(opts._meta != null && { _meta: opts._meta }),
       })
     },
@@ -233,11 +239,16 @@ function buildAcpClientFacade(
      * טוען session ACP קיים לפי sessionId.
      * עשוי לזרוק -32601 אם ה-CLI אינו תומך ביכולת loadSession.
      */
-    async loadSession(opts: { cwd: string; sessionId: string; _meta?: AcpRequestMeta }) {
+    async loadSession(opts: {
+      cwd: string
+      sessionId: string
+      mcpServers?: NewSessionRequest["mcpServers"]
+      _meta?: AcpRequestMeta
+    }) {
       return conn.loadSession({
         sessionId: opts.sessionId,
         cwd: opts.cwd,
-        mcpServers: [],
+        mcpServers: opts.mcpServers ?? [],
         ...(opts._meta != null && { _meta: opts._meta }),
       })
     },

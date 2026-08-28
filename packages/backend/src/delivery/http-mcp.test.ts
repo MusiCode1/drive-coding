@@ -15,6 +15,8 @@ import { Hono } from "hono"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { createInMemoryAgentRegistry } from "../agents/registry.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
+import { AGENT_ID_HEADER } from "../agent-identity.js"
+import { setSelfBaseUrlForTests } from "../instances.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { registerMcpHttp } from "./http-mcp.js"
 
@@ -137,10 +139,11 @@ function honoFetch(app: Hono): typeof fetch {
   }) as typeof fetch
 }
 
-async function connectClient(app: Hono): Promise<Client> {
+async function connectClient(app: Hono, headers?: Record<string, string>): Promise<Client> {
   const client = new Client({ name: "http-mcp-test", version: "0.0.0" })
   const transport = new StreamableHTTPClientTransport(new URL("http://mcp.test/api/mcp"), {
     fetch: honoFetch(app),
+    requestInit: headers ? { headers } : undefined,
   })
   await client.connect(transport)
   return client
@@ -161,6 +164,7 @@ function isToolError(result: unknown): boolean {
 
 afterEach(() => {
   delete process.env.MCP_HTTP
+  setSelfBaseUrlForTests(undefined)
 })
 
 describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
@@ -494,5 +498,67 @@ describe("session_send / session_state (slice session-bus-mcp C2)", () => {
     await client.close()
     expect(isToolError(result)).toBe(true)
     expect(toolText(result)).toMatch(/agent not found/)
+  })
+})
+
+describe("agent-identity-mcp (C2/C3)", () => {
+  it("session_open derives parentAgentId from X-Drive-Coding-Agent header", async () => {
+    const { app, registry, orchestrator } = makeApp()
+    const parent = await registry.create({ cliKind: "cursor", cwd: "/tmp/parent" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: parent.id })
+    await client.callTool({
+      name: "session_open",
+      arguments: { cli: "cursor", cwd: "/tmp/child", publicUrl: "http://127.0.0.1:4055" },
+    })
+    await client.close()
+    expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({ parentAgentId: parent.id }),
+    )
+  })
+
+  it("session_open rejects conflicting header parent and explicit parent", async () => {
+    const { app, registry } = makeApp()
+    const parentA = await registry.create({ cliKind: "cursor", cwd: "/tmp/a" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: parentA.id })
+    const result = await client.callTool({
+      name: "session_open",
+      arguments: {
+        cli: "cursor",
+        cwd: "/tmp/child",
+        parent: "other-parent",
+        publicUrl: "http://127.0.0.1:4055",
+      },
+    })
+    await client.close()
+    expect(isToolError(result)).toBe(true)
+    expect(toolText(result)).toMatch(/conflicts/)
+  })
+
+  it("notify_parent appears only for caller with parent", async () => {
+    const { app, registry, agentSessionRegistry } = makeApp()
+    const parent = await registry.create({ cliKind: "cursor", cwd: "/tmp/parent-np" })
+    const child = await registry.create({
+      cliKind: "cursor",
+      cwd: "/tmp/child-np",
+      parentAgentId: parent.id,
+    })
+
+    const anonClient = await connectClient(app)
+    const anonTools = (await anonClient.listTools()).tools.map((t) => t.name)
+    await anonClient.close()
+    expect(anonTools).not.toContain("notify_parent")
+
+    const childClient = await connectClient(app, { [AGENT_ID_HEADER]: child.id })
+    const childTools = (await childClient.listTools()).tools.map((t) => t.name)
+    expect(childTools).toContain("notify_parent")
+
+    const notified = await childClient.callTool({
+      name: "notify_parent",
+      arguments: { text: "hello parent" },
+    })
+    await childClient.close()
+    expect(isToolError(notified)).toBe(false)
+    const parentHost = agentSessionRegistry.hosts.get(parent.id)
+    expect(parentHost?.prompt).toHaveBeenCalledWith(`sess-${parent.id}`, "hello parent")
   })
 })

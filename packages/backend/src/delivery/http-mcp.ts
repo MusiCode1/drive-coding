@@ -16,6 +16,7 @@
 import {
   AgentCloseInput,
   AgentListInput,
+  AgentNotifyParentInput,
   AgentOpenInput,
   type AgentRegistry,
   AgentSendInput,
@@ -29,6 +30,7 @@ import { type } from "arktype"
 import type { Hono } from "hono"
 import { z } from "zod"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
+import { AGENT_ID_HEADER } from "../agent-identity.js"
 import { resolveAppVersion } from "../app-version.js"
 import { raceKeepRunning } from "../session-host/http/rpc-wait.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
@@ -61,6 +63,13 @@ export type McpHttpDeps = {
   registry: AgentRegistry
   orchestrator: AgentOrchestrator
   agentSessionRegistry: AgentSessionRegistry
+  /** Test knob when server has not listened (app.request without bind). */
+  selfBaseUrl?: string
+}
+
+/** Per-request caller resolved from AGENT_ID_HEADER (unknown ids → anonymous). */
+export type McpRequestContext = {
+  callerAgentId?: string
 }
 
 /** ArkType type that can both validate and emit JSON Schema. */
@@ -154,11 +163,17 @@ function assistantTextSince(messages: unknown[]): string {
   return parts.join("")
 }
 
-function createSessionBusMcpServer(deps: McpHttpDeps): McpServer {
+function createSessionBusMcpServer(
+  deps: McpHttpDeps,
+  ctx: McpRequestContext,
+  callerRecord: Awaited<ReturnType<AgentRegistry["get"]>>,
+): McpServer {
   const server = new McpServer({
     name: "drive-coding",
     version: resolveAppVersion(),
   })
+
+  const callerAgentId = ctx.callerAgentId
 
   registerArkTool(
     server,
@@ -204,7 +219,19 @@ function createSessionBusMcpServer(deps: McpHttpDeps): McpServer {
       const env: Record<string, string> = { ...(input.env ?? {}) }
       env.DRIVE_CODING_BASE = publicUrl
       env.DC_BASE = publicUrl
-      if (input.parent !== undefined && input.parent !== "") env.DC_PARENT = input.parent
+
+      const headerParent = callerAgentId
+      const explicitParent =
+        input.parent !== undefined && input.parent !== "" ? input.parent : undefined
+
+      if (headerParent && explicitParent && explicitParent !== headerParent) {
+        return jsonError(
+          `${AGENT_ID_HEADER} (${headerParent}) conflicts with explicit parent (${explicitParent})`,
+        )
+      }
+
+      const effectiveParent = headerParent ?? explicitParent
+      if (effectiveParent !== undefined) env.DC_PARENT = effectiveParent
 
       const body: Record<string, unknown> = {
         cliKind: input.cli,
@@ -212,7 +239,7 @@ function createSessionBusMcpServer(deps: McpHttpDeps): McpServer {
         env,
       }
       if (input.permission !== undefined) body.permissionPolicy = input.permission
-      if (input.parent !== undefined && input.parent !== "") body.parentAgentId = input.parent
+      if (effectiveParent !== undefined) body.parentAgentId = effectiveParent
       if (input.closeOnTurnEnd === true) body.closeOnTurnEnd = true
 
       const parsed = parseCreateAgentBody(body)
@@ -359,6 +386,38 @@ function createSessionBusMcpServer(deps: McpHttpDeps): McpServer {
     },
   )
 
+  // C3: notify_parent — only when caller is a known agent with a parent (§2ו).
+  if (callerAgentId && callerRecord?.parentAgentId) {
+    const parentId = callerRecord.parentAgentId
+    registerArkTool(
+      server,
+      "notify_parent",
+      {
+        title: "Notify parent",
+        description:
+          "Push a prompt to the parent agent's live session. Caller identity is taken from the MCP request header — no agent id argument.",
+      },
+      AgentNotifyParentInput,
+      async (raw) => {
+        const input = raw as typeof AgentNotifyParentInput.infer
+        const parentHostResult = await deps.agentSessionRegistry.getOrCreateHost(parentId)
+        if (!parentHostResult.ok) {
+          return jsonError(`parent session host did not start: ${parentHostResult.reason}`)
+        }
+        const { host: parentHost } = parentHostResult.entry
+        const sessionId = parentHost.state.sessionId
+        if (typeof sessionId !== "string" || sessionId.length === 0) {
+          return jsonError("parent has no sessionId")
+        }
+
+        void parentHost.prompt(sessionId, input.text).catch((e) => {
+          log.warn({ err: e, parentId, callerAgentId }, "notify_parent prompt failed")
+        })
+        return jsonResult({ ok: true, parent: parentId })
+      },
+    )
+  }
+
   return server
 }
 
@@ -373,11 +432,22 @@ export function registerMcpHttp(app: Hono, deps: McpHttpDeps): void {
   }
 
   app.on(["POST", "GET", "DELETE"], "/api/mcp", async (c) => {
+    const rawCaller = c.req.header(AGENT_ID_HEADER)?.trim()
+    let callerAgentId: string | undefined
+    let callerRecord: Awaited<ReturnType<AgentRegistry["get"]>>
+    if (rawCaller) {
+      callerRecord = await deps.registry.get(rawCaller)
+      if (callerRecord) callerAgentId = rawCaller
+      else callerRecord = null
+    } else {
+      callerRecord = null
+    }
+
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
     })
-    const server = createSessionBusMcpServer(deps)
+    const server = createSessionBusMcpServer(deps, { callerAgentId }, callerRecord)
     await server.connect(transport)
     try {
       return await transport.handleRequest(c.req.raw)

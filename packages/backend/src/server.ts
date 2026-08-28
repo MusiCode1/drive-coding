@@ -85,7 +85,7 @@ import { createWireRecorder } from "./delivery/wire-recorder.js"
 // הערה: createSessionsCache הוסר — רשימת הסשנים עכשיו מונעת מצד ה-FE דרך ACP WS
 import { createAgentWsHandler } from "./delivery/ws-agent.js"
 import { createEchoWsHandler } from "./delivery/ws-echo.js"
-import { removeInstance, writeInstance } from "./instances.js"
+import { removeInstance, setSelfBaseUrl, writeInstance } from "./instances.js"
 import { ensureStateSubdir } from "./paths.js"
 import { createAndRegisterSessionHostHttp } from "./session-host/http/index.js"
 import { resolveCloseOnTurnEndGraceMs } from "./session-host/close-on-turn-end.js"
@@ -408,7 +408,7 @@ log.info({ hostname, port }, "listening")
 
 const bound = httpServer.address()
 const boundPort = typeof bound === "object" && bound !== null ? bound.port : port
-writeInstance({
+const instanceRecord = {
   port: boundPort,
   host: hostname,
   pid: process.pid,
@@ -416,7 +416,9 @@ writeInstance({
   cwd: process.cwd(),
   https: Boolean(tls),
   startedAt: Date.now(),
-})
+}
+writeInstance(instanceRecord)
+setSelfBaseUrl(instanceRecord)
 
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 // SIGINT (Ctrl+C) / SIGTERM — סגור חיבורים, הרוג ילדים, צא בצורה מסודרת.

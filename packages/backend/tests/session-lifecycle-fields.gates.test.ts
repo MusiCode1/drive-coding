@@ -11,6 +11,7 @@ import { createInMemoryAgentRegistry } from "../src/agents/registry.js"
 import { waitForTurnEnd } from "../src/cli/wait-for-turn.js"
 import { registerAgentsHttp } from "../src/delivery/http-agents.js"
 import { resolveCloseOnTurnEndGraceMs } from "../src/session-host/close-on-turn-end.js"
+import { setSelfBaseUrlForTests } from "../src/instances.js"
 import { createAgentSessionRegistry } from "../src/session-host/registry.js"
 import { createSessionHostFromConnection } from "../src/session-host/session-host.js"
 import { serve } from "@hono/node-server"
@@ -145,6 +146,9 @@ async function makeGateServer() {
   const addr = server.address()
   const port = typeof addr === "object" && addr ? addr.port : 0
   const base = `http://127.0.0.1:${port}`
+  // slice agent-identity-mcp: doCreate() now calls getSelfBaseUrl() unconditionally
+  // to build mcpServers — it throws loudly by design (§2ד) when unset.
+  setSelfBaseUrlForTests(base)
   return {
     app,
     registry,
@@ -163,6 +167,7 @@ describe("session-lifecycle-fields §6 gates", () => {
   })
   afterEach(() => {
     delete process.env.CLOSE_ON_TURN_END_GRACE_MS
+    setSelfBaseUrlForTests(undefined)
   })
 
   it("gate 1+2: closeOnTurnEnd removes agent; waiter code 0 stopReason=end_turn", async () => {
