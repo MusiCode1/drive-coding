@@ -104,6 +104,7 @@ import {
   createInitialSessionState,
   type Patch,
   reduce,
+  sessionMetaFor,
   type SessionState,
 } from "@drive-coding/core/session"
 // ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
@@ -124,32 +125,6 @@ import {
   reduceSubagent,
 } from "./claude-subagent-parse"
 import { type HistoryMark, historyMarkFromReset } from "./history-mark.js"
-
-/**
- * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries
- * ומבקש raw SDK frames ל-spike של subagent transcript.
- * Opus 4.7+ שינה default ל-display:"omitted"; זה מבקש "summarized" מפורשות.
- * provider-agnostic: ה-key claudeCode מתעלם ע"י ספקים אחרים.
- */
-const CLAUDE_SESSION_META = {
-  claudeCode: {
-    options: {
-      thinking: { type: "adaptive", display: "summarized" },
-      forwardSubagentText: true,
-    },
-    emitRawSDKMessages: [
-      { type: "system", subtype: "task_started" },
-      { type: "system", subtype: "task_progress" },
-      { type: "system", subtype: "task_notification" },
-      { type: "system", subtype: "task_updated" },
-      { type: "assistant" },
-      // ─── slice subagent-transcript-data-v2 Commit 0 ───
-      // בלי {type:"user"} תוצאות-הכלים (tool_result) של תת-הסוכן לא זורמות
-      // (spike Q2, decisions 2026-07-11 — "🐛 פער בקוד שנחת ב-acp-stack").
-      { type: "user" },
-    ],
-  },
-} as const
 
 // ─── slice subagent-tool-nesting: helper טהור לחילוץ parentToolUseId ───
 /**
@@ -2718,7 +2693,7 @@ export class AgentSession {
 
   /** _meta לפי ה-CLI הנוכחי. claude → thinking-display; אחר → undefined (אגנוסטי). */
   #sessionMeta(): Record<string, unknown> | undefined {
-    return this.#cliKind === "claude" ? CLAUDE_SESSION_META : undefined
+    return sessionMetaFor(this.#cliKind ?? "")
   }
 
   // ─── slice session-title-in-process-list: דחיפת title ל-BE ───

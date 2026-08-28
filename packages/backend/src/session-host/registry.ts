@@ -37,6 +37,7 @@
  */
 
 import { createLogger } from "@drive-coding/core/log"
+import { sessionMetaFor } from "@drive-coding/core/session"
 import type { PermissionPolicyKind } from "@drive-coding/core/types/permission"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
@@ -378,10 +379,11 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       // Session init: warm reattach uses loadSession; cold uses newSession.
       // Skip if host already has a sessionId (injected-ready host in tests).
       if (!host.state.sessionId) {
+        const m = sessionMetaFor(connectionRegistry.getCliKind(agentId) ?? "")
         if (acpSessionId) {
-          await host.loadSession({ cwd, sessionId: acpSessionId })
+          await host.loadSession({ cwd, sessionId: acpSessionId, ...(m && { _meta: m }) })
         } else {
-          await host.newSession({ cwd })
+          await host.newSession({ cwd, ...(m && { _meta: m }) })
         }
       }
 
