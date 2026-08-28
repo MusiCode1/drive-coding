@@ -142,6 +142,13 @@ export class MediaSessionPlaylistBridge {
         title: this.#deps.getTitle() ?? "drive-coding",
         artist: "TTS",
         album: `segment ${cursor + 1}/${count}`,
+        artwork: [
+          {
+            src: "/icons/icon-512.png",
+            sizes: "512x512",
+            type: "image/png",
+          },
+        ],
       })
     }
 

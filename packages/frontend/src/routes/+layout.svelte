@@ -169,9 +169,8 @@ const mediaSessionBridge = new MediaSessionPlaylistBridge({
 })
 
 $effect(() => {
-  const carMode = settings.carMode
   const hasMediaSession = typeof navigator !== "undefined" && "mediaSession" in navigator
-  if (!carMode || !hasMediaSession) {
+  if (!hasMediaSession) {
     mediaSessionBridge.detach()
     return
   }
@@ -184,9 +183,8 @@ $effect(() => {
 })
 
 $effect(() => {
-  const carMode = settings.carMode
   const hasMediaSession = typeof navigator !== "undefined" && "mediaSession" in navigator
-  if (!carMode || !hasMediaSession) return
+  if (!hasMediaSession) return
 
   // reactive deps for sync()
   void audioPlaylist.transport

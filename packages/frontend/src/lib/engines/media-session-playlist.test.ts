@@ -147,10 +147,17 @@ describe("MediaSessionPlaylistBridge", () => {
         title: string
         artist: string
         album: string
-        constructor(init: { title: string; artist: string; album: string }) {
+        artwork?: MediaImage[]
+        constructor(init: {
+          title: string
+          artist: string
+          album: string
+          artwork?: MediaImage[]
+        }) {
           this.title = init.title
           this.artist = init.artist
           this.album = init.album
+          this.artwork = init.artwork
         }
       },
     )
@@ -219,6 +226,8 @@ describe("MediaSessionPlaylistBridge", () => {
     expect(ms.metadata?.title).toBe("Bubble text")
     expect(ms.metadata?.artist).toBe("TTS")
     expect(ms.metadata?.album).toBe("segment 2/5")
+    expect(ms.metadata?.artwork?.[0]?.src).toBe("/icons/icon-512.png")
+    expect(ms.metadata?.artwork?.[0]?.sizes).toBe("512x512")
     expect(ms.playbackState).toBe("playing")
   })
 
