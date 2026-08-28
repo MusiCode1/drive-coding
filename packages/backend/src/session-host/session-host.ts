@@ -33,6 +33,7 @@ import {
   applyPatch,
   applyPendingRequest,
   applyTurnEnd,
+  applyTurnError,
   applyTurnStart,
   applyUserMessage,
   clearPendingRequest,
@@ -432,6 +433,7 @@ export async function createSessionHostFromConnection(
   // ע"י cancel, ומשפיע רק על מטען-השגיאה — לעולם לא על הפליטה עצמה.
   let turnSeq = 0
   let cancelledTurn = -1
+  const activeTurns = new Set<number>()
 
   /** מיישם {state,patches} על currentState + פולט — עוזר-IO מקומי. */
   function emit(r: { state: SessionState; patches: Patch[] }): void {
@@ -709,6 +711,7 @@ export async function createSessionHostFromConnection(
     ): Promise<void> {
       if (disposed) throw new Error("SessionHost disposed")
       const turn = ++turnSeq
+      activeTurns.add(turn)
       emit(applyTurnStart(currentState)) // 1. waiting — לפני ה-await, ולפני add-message (hotfix)
       const msg = synthesizeUserMessage(currentState, content, meta)
       const applied = applyUserMessage(currentState, msg)
@@ -724,11 +727,20 @@ export async function createSessionHostFromConnection(
           if (currentState.sessionId) startQuotaFetch(currentState.sessionId)
         }
       } catch (err) {
-        if (turn === turnSeq) {
-          const error = turn === cancelledTurn ? undefined : { message: msgOf(err), at: Date.now() }
-          emit(applyTurnEnd(currentState, error)) // 3ב.
+        if (activeTurns.has(turn)) {
+          if (turn === cancelledTurn && turn !== turnSeq) {
+            // displaced + cancelled — do not silence the live turn
+          } else if (turn === turnSeq) {
+            const error =
+              turn === cancelledTurn ? undefined : { message: msgOf(err), at: Date.now() }
+            emit(applyTurnEnd(currentState, error)) // 3ב. live turn failed/cancelled
+          } else {
+            emit(applyTurnError(currentState, { message: msgOf(err), at: Date.now() }))
+          }
         }
         throw err // rethrow — הקורא הישיר עדיין רואה את השגיאה
+      } finally {
+        activeTurns.delete(turn)
       }
     },
 
@@ -803,6 +815,7 @@ export async function createSessionHostFromConnection(
       // 1. Invalidate turns of the outgoing session.
       turnSeq++
       cancelledTurn = -1
+      activeTurns.clear()
       // slice http-state-gaps: invalidate the outgoing session's quota fetch HERE,
       // before any await. Advancing it only after client.loadSession resolves left a
       // window where session A's quota response passed the guard and was written onto
