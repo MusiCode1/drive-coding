@@ -26,6 +26,7 @@ function makeSession(overrides: Record<string, unknown> = {}) {
   return {
     status: "connected",
     agentId: "agent-1",
+    connectionId: "conn-test-1",
     sessionState: { sessionId: "sess-1" },
     ...overrides,
   } as import("./agent-session.svelte.js").AgentSession

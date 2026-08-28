@@ -39,6 +39,7 @@ import {
   listAgents,
   notifySessionAttached,
   patchAgent,
+  releaseConnection,
 } from "$lib/adapters/agents-api"
 // ─── slice sessions-inline: ייבוא טיפוס + normalize ───
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
@@ -540,6 +541,9 @@ export class AgentSession {
   // ─── slice ws-reconnect-fix-nbug2: ref ל-transport החי (NBug2 root fix) ───
   /** ref ל-transport הפעיל — נשמר בכל יצירת transport, מנוקה עם #client. */
   #transport: WsAcpTransport | null = null
+  /** slice connection-set C2: one id per VM lifetime — SSE header, presence, WS query, DELETE. */
+  readonly #connectionId = safeUUID()
+  #pageHideReleaseBound = false
   #sessionId: string | null = null
   /**
    * הערך הוא True בין detach() ל-attach() הבא. משתיק
@@ -853,9 +857,36 @@ export class AgentSession {
     this.#sseReconnectedListener = listener
   }
 
-  #remoteViewOpts(): { onSseReconnected?: () => void } {
+  #remoteViewOpts(): { headers: Record<string, string>; onSseReconnected?: () => void } {
+    const headers = { "Acp-Connection-Id": this.#connectionId }
     const listener = this.#sseReconnectedListener
-    return listener ? { onSseReconnected: () => listener() } : {}
+    return listener ? { headers, onSseReconnected: () => listener() } : { headers }
+  }
+
+  #agentWsUrl(agentId: string): string {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:"
+    const params = new URLSearchParams({ connectionId: this.#connectionId })
+    return `${proto}//${location.host}/ws/agent/${agentId}?${params}`
+  }
+
+  get connectionId(): string {
+    return this.#connectionId
+  }
+
+  releaseConnection(): void {
+    const agentId = this.agentId
+    if (!agentId) return
+    void releaseConnection(agentId, this.#connectionId)
+  }
+
+  bindConnectionRelease(): void {
+    if (typeof window === "undefined" || this.#pageHideReleaseBound) return
+    this.#pageHideReleaseBound = true
+    window.addEventListener("pagehide", this.#onPageHideRelease)
+  }
+
+  #onPageHideRelease = (): void => {
+    this.releaseConnection()
   }
 
   /** @internal */ _setStatusForTest(s: AgentSessionStatus): void {
@@ -1249,8 +1280,7 @@ export class AgentSession {
       // idempotent (no-op בסבבי retry נוספים אחרי שכבר נפתר בסבב הראשון).
       this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
       this.#resolvePendingElicitation({ action: "cancel" })
-      const proto = location.protocol === "https:" ? "wss:" : "ws:"
-      const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+      const transport = new WsAcpTransport(this.#agentWsUrl(agentId))
       this.#transport = transport // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
 
       // ⚠️ תיקון אביגיל #1 — DEADLOCK: waitForOpen (ws-transport.ts:70-78) מאזין רק
@@ -1409,8 +1439,7 @@ export class AgentSession {
       this.#cliKind = input.cliKind // slice ws-reconnect-infra: שמור ל-cold reconnect
 
       // 2. פתח תעבורת WS
-      const proto = location.protocol === "https:" ? "wss:" : "ws:"
-      const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+      const transport = new WsAcpTransport(this.#agentWsUrl(agentId))
       this.#transport = transport // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
       transport.onClose((code, reason) => {
         if (this.#detached) return
@@ -1971,8 +2000,7 @@ export class AgentSession {
       this.#cliKind = input.cliKind // slice ws-reconnect-infra: שמור ל-cold reconnect
 
       // 2. פתח תעבורת WS + הוסף מאזין onClose (זהה ל-attach)
-      const proto = location.protocol === "https:" ? "wss:" : "ws:"
-      const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+      const transport = new WsAcpTransport(this.#agentWsUrl(agentId))
       this.#transport = transport // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
       transport.onClose((code, reason) => {
         if (this.#detached) return
@@ -2876,6 +2904,8 @@ export class AgentSession {
     if (opts?.keepAgent && this.#transport) {
       this.#transport.sendRaw(`${JSON.stringify({ jsonrpc: "2.0", method: "$/detach" })}
 `)
+    } else if (opts?.keepAgent && this.#isRemote) {
+      this.releaseConnection()
     }
     try {
       this.#client?.close()

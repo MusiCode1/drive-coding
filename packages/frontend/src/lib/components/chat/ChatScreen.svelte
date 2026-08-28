@@ -32,7 +32,12 @@ const t = i18n.t
 // scope: /chat בלבד — רענון בדף-הבית/רשימה לא מזהיר.
 onMount(() => {
   function onBeforeUnload(e: BeforeUnloadEvent) {
-    if (session.status === "connected" && session.turnState !== "idle" && !session.bypassActive) {
+    if (
+      session.status === "connected" &&
+      session.turnState !== "idle" &&
+      !session.bypassActive &&
+      !session.isRemoteView
+    ) {
       e.preventDefault()   // מפעיל dialog גנרי של הדפדפן
       e.returnValue = ""   // נדרש לדפדפנים ישנים
     }

@@ -139,7 +139,10 @@ export class PresencePoller {
     this.#inFlight = true
     this.#abort = new AbortController()
     try {
-      const res = await postPresence(agentId, this.#abort.signal)
+      const res = await postPresence(agentId, {
+        connectionId: this.#session.connectionId,
+        signal: this.#abort?.signal,
+      })
       // ⚠️ הסדר קריטי: `agent === null` נבדק **לפני** clearBanner. הפוך היה
       // מנקה את הבאנר ואז מציב אותו מחדש — הבהוב, ובחלון שביניהם "הכל תקין".
       if (res.agent === null || res.agent === undefined) {

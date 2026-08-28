@@ -231,6 +231,7 @@ export const en: Catalog = {
   // ─── agent-tree-display ─── (slice agent-tree-display)
   "connect.agents.subAgentsOf": "Sub-agents",
   "connect.agents.childCount": "sub-agents",
+  "connect.agents.watcherCount": "viewers",
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   "settings.screen.label": "Screen",
   "settings.toggle.keepScreenOn": "Keep screen on",

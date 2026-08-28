@@ -197,6 +197,7 @@ function createSessionBusMcpServer(
           lastMessageAt: rt?.lastMessageAt ?? null,
           lastSeenAt: rt?.lastSeenAt ?? null,
           attachedVia: rt?.via,
+          connectionCount: deps.agentSessionRegistry.getConnectionCount(a.id),
           turnState: host?.state.turnState,
         }
       })
@@ -312,7 +313,6 @@ function createSessionBusMcpServer(
         return jsonError(`session host did not start: ${hostResult.reason}`)
       }
       const { host } = hostResult.entry
-      deps.agentSessionRegistry.touchOwner(input.agent)
 
       const sessionId = host.state.sessionId
       if (typeof sessionId !== "string" || sessionId.length === 0) {

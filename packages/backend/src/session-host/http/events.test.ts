@@ -22,6 +22,7 @@ import {
 import { type } from "arktype"
 import { Hono } from "hono"
 import { describe, expect, it, vi } from "vitest"
+import type { ConnectionRegistry } from "../../acp/connection-registry.js"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
 import { createPatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry, HostResult } from "../registry.js"
@@ -90,8 +91,33 @@ function makeMockRegistry(
     notifySessionAttached: vi.fn().mockResolvedValue(undefined),
     getCwd: vi.fn().mockReturnValue(undefined),
     getEpoch: vi.fn().mockReturnValue(0),
-    touchOwner: vi.fn(),
+    touchConnection: vi.fn(),
     getRuntimeInfo: vi.fn().mockReturnValue(null),
+    getConnectionCount: vi.fn().mockReturnValue(0),
+  }
+}
+
+function makeMockConnectionRegistry(): ConnectionRegistry {
+  return {
+    addConnection: vi.fn(),
+    removeConnection: vi.fn(),
+    touchConnection: vi.fn(),
+    clearAllConnections: vi.fn(),
+    getConnectionCount: vi.fn(() => 0),
+    connect: vi.fn(),
+    get: vi.fn(),
+    getCwd: vi.fn(),
+    getCliKind: vi.fn(),
+    list: vi.fn(() => []),
+    isAttached: vi.fn(() => false),
+    getEpoch: vi.fn(() => 0),
+    isOwnedByWs: vi.fn(() => false),
+    getRuntimeInfo: vi.fn(() => null),
+    getLastSeenAt: vi.fn(() => null),
+    listHttpConnectionIds: vi.fn(() => []),
+    close: vi.fn(),
+    onCrash: vi.fn(() => () => {}),
+    setWsSocketChecker: vi.fn(),
   }
 }
 
@@ -160,7 +186,7 @@ function makeRawSseReader(response: Response) {
 
 function makeApp(registry: AgentSessionRegistry, opts?: RegisterEventsRouteOptions): Hono {
   const app = new Hono()
-  registerEventsRoute(app, registry, opts)
+  registerEventsRoute(app, registry, makeMockConnectionRegistry(), opts)
   return app
 }
 

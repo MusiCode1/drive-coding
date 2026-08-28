@@ -87,7 +87,7 @@ import { createAgentWsHandler } from "./delivery/ws-agent.js"
 import { createEchoWsHandler } from "./delivery/ws-echo.js"
 import { removeInstance, setSelfBaseUrl, writeInstance } from "./instances.js"
 import { ensureStateSubdir } from "./paths.js"
-import { createAndRegisterSessionHostHttp } from "./session-host/http/index.js"
+import { createAndRegisterSessionHostHttp, registerConnectionRoute } from "./session-host/http/index.js"
 import { resolveCloseOnTurnEndGraceMs } from "./session-host/close-on-turn-end.js"
 import { createUsageStore } from "./usage/usage-store.js"
 
@@ -336,11 +336,15 @@ function broadcastConfigChanged(): void {
 const echoHandler = createEchoWsHandler()
 // CUT-3b-ii: connectionRegistry מחליף bridgeManager ב-ws-agent
 // slice remote-warm-reconnect C2: sessionHostRegistry → דחיית WS כש-host חי על הסוכן
-const onAgentConnect = createAgentWsHandler({
+const agentWs = createAgentWsHandler({
   orchestrator,
   connectionRegistry,
   sessionHostRegistry: agentSessionRegistry,
   evictionController,
+})
+const onAgentConnect = agentWs.onConnect
+registerConnectionRoute(app, connectionRegistry, {
+  closeLiveSocket: agentWs.closeLiveSocket,
 })
 
 echoWss.on("connection", (ws) => {
@@ -348,8 +352,6 @@ echoWss.on("connection", (ws) => {
 })
 
 agentWss.on("connection", (ws, req) => {
-  // חלץ agentId מה-URL — defense-in-depth: אחרי upgrade-תקין לא אמור להיות null,
-  // אבל אם כן (target פגום הגיע לכאן בכל-זאת) — סגור בטוח, אל תקרוס.
   const pathname = safeUrlPathname(req.url)
   if (pathname === null) {
     ws.close()
@@ -357,8 +359,14 @@ agentWss.on("connection", (ws, req) => {
   }
   const match = pathname.match(/^\/ws\/agent\/([^/]+)$/)
   const agentId = match?.[1] ?? ""
+  let connectionId: string | undefined
+  try {
+    connectionId = new URL(req.url ?? "", "http://localhost").searchParams.get("connectionId") ?? undefined
+  } catch {
+    connectionId = undefined
+  }
 
-  onAgentConnect(ws, agentId).catch((err) => {
+  onAgentConnect(ws, agentId, connectionId).catch((err) => {
     // async errors (e.g. evictAndWait timeout) — log and close
     ws.close(1011, "internal error")
     procLog.error({ err, agentId }, "onAgentConnect async error")

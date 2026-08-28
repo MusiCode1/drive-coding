@@ -15,15 +15,19 @@ import type { Hono } from "hono"
 import type { PermissionPolicyKind } from "@drive-coding/core/types/permission"
 import type { ConnectionRegistry } from "../../acp/connection-registry.js"
 import { createAgentSessionRegistry, type OnSessionAttached } from "../registry.js"
+import { registerConnectionRoute, type ConnectionRouteOpts } from "./connection.js"
 import { registerEventsRoute } from "./events.js"
 import { registerPresenceRoute } from "./presence.js"
 import { registerReplyRoute } from "./reply.js"
 import { registerRpcRoute } from "./rpc.js"
 import { registerStateRoute } from "./state.js"
 
+export { registerConnectionRoute, type ConnectionRouteOpts } from "./connection.js"
+
 export type RegisterSessionHostHttpOpts = {
   /** AgentSessionRegistry — created externally and passed in for wiring */
   agentSessionRegistry: ReturnType<typeof createAgentSessionRegistry>
+  connectionRegistry: ConnectionRegistry
 }
 
 /**
@@ -36,8 +40,8 @@ export function registerSessionHostHttp(
   app: Hono,
   opts: RegisterSessionHostHttpOpts,
 ): void {
-  const { agentSessionRegistry } = opts
-  registerEventsRoute(app, agentSessionRegistry)
+  const { agentSessionRegistry, connectionRegistry } = opts
+  registerEventsRoute(app, agentSessionRegistry, connectionRegistry)
   registerRpcRoute(app, agentSessionRegistry)
   registerReplyRoute(app, agentSessionRegistry)
   registerStateRoute(app, agentSessionRegistry)
@@ -88,6 +92,6 @@ export function createAndRegisterSessionHostHttp(
     getCloseOnTurnEnd: opts.getCloseOnTurnEnd,
     onScheduleCloseOnTurnEnd: opts.onScheduleCloseOnTurnEnd,
   })
-  registerSessionHostHttp(app, { agentSessionRegistry })
+  registerSessionHostHttp(app, { agentSessionRegistry, connectionRegistry })
   return agentSessionRegistry
 }

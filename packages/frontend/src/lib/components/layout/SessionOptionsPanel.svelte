@@ -38,6 +38,7 @@ import {
   getUiShell,
 } from "$lib/context"
 import { readSessionTransport } from "$lib/session/session-transport-read"
+import { shouldWarnOnLeave } from "$lib/session/should-warn-on-leave"
 import { sessionPathWithTransport } from "$lib/session/session-url"
 
 const t = getI18n().t
@@ -70,10 +71,17 @@ let leaveConfirmOpen = $state(false)
 let dontShowAgain = $state(false)
 
 function onLeaveRunning() {
-  if (session.bypassActive || settings.suppressLeaveWarning || session.turnState === "idle") {
-    doLeaveRunning() // bypass / suppressed / אין תור פעיל → צא ישר
+  if (
+    shouldWarnOnLeave({
+      isRemote: session.isRemoteView,
+      bypassActive: session.bypassActive,
+      turnIdle: session.turnState === "idle",
+      suppress: settings.suppressLeaveWarning,
+    })
+  ) {
+    leaveConfirmOpen = true
   } else {
-    leaveConfirmOpen = true // לא-bypass + תור פעיל → אזהר קודם
+    doLeaveRunning()
   }
 }
 

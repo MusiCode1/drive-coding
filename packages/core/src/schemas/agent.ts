@@ -169,6 +169,8 @@ export const AgentPublic = type({
   // null = אין בעלים. runtime-only — נאבד ב-restart. ה-FE גוזר ממנו את ממד ה"מחובר"
   // (attached לבדו כבר אינו מספיק — סוקט פתוח ניתן לזיוף, §2 בבריף).
   "lastSeenAt?": "number | null",
+  // slice connection-set: number of live viewer rows (runtime-only).
+  "connectionCount?": "number",
   // כותרת-הסשן (slice session-title-in-process-list): נדחפת ע"י ה-client שפתח את הסשן. runtime-only.
   "title?": "string | null",
   // slice session-lifecycle-fields: who opened this agent.

@@ -93,8 +93,9 @@ function makeStubSessionRegistry(): AgentSessionRegistry & { hosts: Map<string, 
     notifySessionAttached: vi.fn(async () => {}),
     getCwd: vi.fn(() => undefined),
     getEpoch: vi.fn(() => 0),
-    touchOwner: vi.fn(),
+    touchConnection: vi.fn(),
     getRuntimeInfo: vi.fn(() => null),
+    getConnectionCount: vi.fn(() => 0),
   } as unknown as AgentSessionRegistry & { hosts: Map<string, HostStub> }
 }
 

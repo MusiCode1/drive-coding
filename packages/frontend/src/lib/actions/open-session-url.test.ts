@@ -288,11 +288,12 @@ describe("openSessionUrl", () => {
     })
   })
 
-  it("returns needs-takeover when agent attached and not owned by tab", async () => {
+  it("returns needs-takeover when ws-attached agent and not owned by tab", async () => {
     listAgentsMock.mockResolvedValue([
       makeAgent({
         id: "00000000-0000-4000-8000-000000000002",
         attached: true,
+        attachedVia: "ws",
         acpSessionId: "sess-target",
       }),
     ])
@@ -382,6 +383,31 @@ describe("openSessionUrl", () => {
     ).toBe("connected")
     expect(session.attachRemoteToLiveAgent).toHaveBeenCalled()
     expect(session.attachToLiveAgent).not.toHaveBeenCalled()
+  })
+
+  it("joins http-attached agent without takeover prompt", async () => {
+    listAgentsMock.mockResolvedValue([
+      makeAgent({
+        id: "00000000-0000-4000-8000-000000000007",
+        attached: true,
+        attachedVia: "http",
+        acpSessionId: "sess-target",
+      }),
+    ])
+    const session = makeSession()
+    session.attachRemoteToLiveAgent.mockImplementation(async () => {
+      session.status = "connected"
+    })
+
+    expect(
+      await openSessionUrl({
+        cliKind: "claude",
+        sessionId: "sess-target",
+        session: session as never,
+        settings: { sessionTransport: "http" } as never,
+      }),
+    ).toBe("connected")
+    expect(session.attachRemoteToLiveAgent).toHaveBeenCalled()
   })
 
   it("returns error when attach fails", async () => {
