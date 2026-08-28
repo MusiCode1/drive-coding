@@ -141,6 +141,7 @@ async function setup(): Promise<{
     getEpoch: (_id) => 0,
     touchOwner: (_id) => {},
     getRuntimeInfo: (_id) => null,
+    getCliKind: (_id) => undefined,
   }
 
   const app = new Hono()

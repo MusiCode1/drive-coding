@@ -92,6 +92,7 @@ function makeMockRegistry(
     getEpoch: vi.fn().mockReturnValue(0),
     touchOwner: vi.fn(),
     getRuntimeInfo: vi.fn().mockReturnValue(null),
+    getCliKind: vi.fn(),
   }
 }
 

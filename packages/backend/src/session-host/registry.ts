@@ -127,6 +127,11 @@ export type AgentSessionRegistry = {
    */
   getCwd(agentId: string): string | undefined
   /**
+   * slice http-session-bootstrap: passthrough to connectionRegistry.getCliKind(agentId).
+   * Used by rpc loadSession to inject session bootstrap _meta for Claude.
+   */
+  getCliKind(agentId: string): string | undefined
+  /**
    * slice ownership-handoff C3: passthrough to connectionRegistry.getEpoch(agentId).
    * Returns the ownership generation counter (0 for unknown agentId).
    */
@@ -502,6 +507,9 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     },
     getCwd(agentId: string): string | undefined {
       return connectionRegistry.getCwd(agentId)
+    },
+    getCliKind(agentId: string): string | undefined {
+      return connectionRegistry.getCliKind(agentId)
     },
     getEpoch(agentId: string): number {
       return connectionRegistry.getEpoch(agentId)

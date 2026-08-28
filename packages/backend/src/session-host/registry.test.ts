@@ -13,6 +13,7 @@
  */
 
 import type { ProviderConnection } from "@drive-coding/provider/connection"
+import { sessionMetaFor } from "@drive-coding/core/session"
 import { Hono } from "hono"
 import { describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
@@ -741,6 +742,26 @@ describe("AgentSessionRegistry", () => {
 
       expect(mockHost.newSession).toHaveBeenCalledWith({ cwd: "/tmp/mock-cwd" })
       expect(connectionRegistry.getCwd).toHaveBeenCalledWith("agent-1")
+    })
+
+    it("injects _meta from sessionMetaFor when getCliKind is claude", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      ;(connectionRegistry.getCliKind as ReturnType<typeof vi.fn>).mockReturnValue("claude")
+      const mockHost = makeMockHost(null)
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(mockHost),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      await registry.getOrCreateHost("agent-1")
+
+      expect(mockHost.newSession).toHaveBeenCalledWith({
+        cwd: "/tmp/mock-cwd",
+        _meta: sessionMetaFor("claude"),
+      })
     })
 
     it("does not call host.newSession again if host already has a sessionId", async () => {

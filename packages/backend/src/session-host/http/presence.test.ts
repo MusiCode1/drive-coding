@@ -43,6 +43,7 @@ function makeMockRegistry(): AgentSessionRegistry {
       lastMessageAt: null,
       via: "http",
     }),
+    getCliKind: vi.fn(),
   }
 }
 

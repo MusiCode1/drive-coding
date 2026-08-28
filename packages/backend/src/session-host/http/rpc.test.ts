@@ -21,6 +21,7 @@ import type { SessionState } from "@drive-coding/core/session"
 import {
   applyUserMessage,
   createInitialSessionState,
+  sessionMetaFor,
   synthesizeUserMessage,
 } from "@drive-coding/core/session"
 import type { AcpClient, AcpClientCallbacks, PromptBlocks } from "@drive-coding/provider/client"
@@ -94,6 +95,7 @@ function makeMockRegistry(
     getEpoch: vi.fn().mockReturnValue(0),
     touchOwner: vi.fn(),
     getRuntimeInfo: vi.fn().mockReturnValue(null),
+    getCliKind: vi.fn(),
   }
 }
 
@@ -574,6 +576,28 @@ describe("POST /api/agents/:id/rpc", () => {
         "sess-9",
         "/from/params",
       )
+    })
+
+    it("getCliKind=claude → host.loadSession called with _meta from sessionMetaFor", async () => {
+      const host = makeMockHost(makeMockState(13))
+      ;(host.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        sessionId: "sess-9",
+        version: 13,
+      })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      ;(registry.getCliKind as ReturnType<typeof vi.fn>).mockReturnValue("claude")
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "loadSession",
+        params: { sessionId: "sess-9", cwd: "/from/params" },
+      })
+      expect(res.status).toBe(200)
+      expect(host.loadSession).toHaveBeenCalledWith({
+        cwd: "/from/params",
+        sessionId: "sess-9",
+        _meta: sessionMetaFor("claude"),
+      })
     })
 
     it("cwd missing in params → falls back to registry.getCwd", async () => {
