@@ -708,7 +708,10 @@ export class AgentSession {
     const vt = viewState.turnState as TurnState
     if (vt !== this.turnState) this.#setTurnState(vt)
     // title
-    if (viewState.title !== this.sessionTitle) this.sessionTitle = viewState.title
+    if (viewState.title !== this.sessionTitle) {
+      this.sessionTitle = viewState.title
+      this.#pushTitleToServer(this.sessionTitle) // slice http-live-side-effects: HTTP sync path
+    }
     // contextUsage (אופציונלי — אפסר לאמץ ל-UsageUpdate סטרקטורלית)
     if (viewState.contextUsage !== this.contextUsage) {
       this.contextUsage = viewState.contextUsage as typeof this.contextUsage
@@ -821,7 +824,7 @@ export class AgentSession {
     return this.#sessionId
   }
 
-  // ─── slice liveness C4: SSE reconnect → ניקוי באנר presence (לא נוגע ב-session.error) ───
+  // ─── slice liveness C4 / http-live-side-effects: SSE reconnect → presence + transient error ───
   #sseReconnectedListener: (() => void) | null = null
 
   setSseReconnectedListener(listener: (() => void) | null): void {
@@ -829,8 +832,17 @@ export class AgentSession {
   }
 
   #remoteViewOpts(): { onSseReconnected?: () => void } {
-    const listener = this.#sseReconnectedListener
-    return listener ? { onSseReconnected: () => listener() } : {}
+    return {
+      onSseReconnected: () => {
+        if (!this.#errorSurfaced) this.error = null
+        this.#sseReconnectedListener?.()
+      },
+    }
+  }
+
+  /** @internal slice http-live-side-effects — קורא ל-#remoteViewOpts().onSseReconnected (לא מעתיק גוף). */
+  _onSseReconnectedForTest(): void {
+    this.#remoteViewOpts().onSseReconnected?.()
   }
 
   /** @internal */ _setStatusForTest(s: AgentSessionStatus): void {
@@ -3183,9 +3195,7 @@ export class AgentSession {
         this.sessionTitle = "" // null = clear (לפי הסכמה)
       } else if (typeof title === "string") {
         this.sessionTitle = title
-        if (!this.#isRemote) {
-          this.#pushTitleToServer(this.sessionTitle) // slice session-title-in-process-list
-        }
+        this.#pushTitleToServer(this.sessionTitle) // slice session-title-in-process-list + http-live-side-effects
       }
       // undefined → keep-on-undefined (עקבי עם loadSession :999 / :1114)
       return
