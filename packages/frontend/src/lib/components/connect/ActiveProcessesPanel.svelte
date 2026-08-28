@@ -177,7 +177,7 @@ function reconnectTitle(agent: AgentPublic): string {
 }
 </script>
 
-{#snippet agentRow(agent: AgentPublic)}
+{#snippet agentRow(agent: AgentPublic, childCount: number)}
   <li class="agent-row">
     <div class="agent-top">
       <div class="agent-info">
@@ -190,6 +190,12 @@ function reconnectTitle(agent: AgentPublic): string {
         ></span>
         <CliBadge id={agent.cliKind} displayName={cliAvailability.details[agent.cliKind]?.displayName} logo={cliAvailability.details[agent.cliKind]?.logo} variant="badge" />
         <span class="folder-name" title={agent.cwd}><bdi>{basename(agent.cwd)}</bdi></span>
+        {#if childCount > 0}
+          <span class="meta-sep">·</span>
+          <span class="child-count" title={t("connect.agents.childCount")}>
+            {childCount} {t("connect.agents.childCount")}
+          </span>
+        {/if}
         {#if agent.title}
           <span class="meta-sep">·</span>
           <span class="session-title" title={agent.title}><bdi>{agent.title}</bdi></span>
@@ -335,8 +341,15 @@ function reconnectTitle(agent: AgentPublic): string {
       class="agent-list chat-scroll"
       style="max-height: {dragHeight ?? settings.activePanelHeight}px"
     >
-      {#each activeAgents.agents as agent (agent.id)}
-        {@render agentRow(agent)}
+      {#each activeAgents.grouped as group (group.root.id)}
+        {@render agentRow(group.root, group.children.length)}
+        {#if group.children.length > 0}
+          <ul class="agent-children" aria-label={t("connect.agents.subAgentsOf")}>
+            {#each group.children as child (child.id)}
+              {@render agentRow(child, 0)}
+            {/each}
+          </ul>
+        {/if}
       {/each}
     </ul>
     <div
@@ -419,6 +432,19 @@ function reconnectTitle(agent: AgentPublic): string {
     margin: 0;
     padding: 0;
     overflow-y: auto;
+  }
+
+  .agent-children {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    padding-inline-start: 1.25rem;
+  }
+
+  .child-count {
+    font-size: 0.72rem;
+    color: var(--fg-dim);
+    flex-shrink: 0;
   }
 
   /* ידית גרירה לשינוי גובה — slice connect-panel-resize */

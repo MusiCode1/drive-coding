@@ -234,6 +234,9 @@ export type MessageKey =
   | "connect.agents.working"
   // ─── agent-last-message-ui ─── (slice agent-last-message-ui)
   | "connect.agents.lastMessage"
+  // ─── agent-tree-display ─── (slice agent-tree-display)
+  | "connect.agents.subAgentsOf"
+  | "connect.agents.childCount"
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   | "settings.screen.label"
   | "settings.toggle.keepScreenOn"
