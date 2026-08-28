@@ -24,6 +24,7 @@ export const CreateAgentInputFull = type({
   "permissionPolicy?": PermissionPolicy,
   "env?": { "[string]": "string" },
   "parentAgentId?": "string",
+  "closeOnTurnEnd?": "boolean",
 })
 export type CreateAgentInputFull = typeof CreateAgentInputFull.infer
 
@@ -76,6 +77,9 @@ export function parseCreateAgentBody(
   }
   if (parsed.parentAgentId !== undefined && parsed.parentAgentId !== "") {
     input.parentAgentId = parsed.parentAgentId
+  }
+  if (parsed.closeOnTurnEnd === true) {
+    input.closeOnTurnEnd = true
   }
   return { ok: true, value: input }
 }

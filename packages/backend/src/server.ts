@@ -54,7 +54,7 @@ import type { BridgeKind } from "@drive-coding/core"
 import { cors } from "hono/cors"
 import { createConnectionRegistry } from "./acp/connection-registry.js"
 import { createInMemoryAgentRegistry } from "./agents/registry.js"
-import { createAgentOrchestrator } from "./app/agent-orchestrator.js"
+import { createAgentOrchestrator, type AgentOrchestrator } from "./app/agent-orchestrator.js"
 import { createProjectsRegistry } from "./app/projects-registry.js"
 import { createRecordingsStore } from "./app/recordings-store.js"
 import { resolveAppVersion } from "./app-version.js"
@@ -88,6 +88,7 @@ import { createEchoWsHandler } from "./delivery/ws-echo.js"
 import { removeInstance, writeInstance } from "./instances.js"
 import { ensureStateSubdir } from "./paths.js"
 import { createAndRegisterSessionHostHttp } from "./session-host/http/index.js"
+import { resolveCloseOnTurnEndGraceMs } from "./session-host/close-on-turn-end.js"
 import { createUsageStore } from "./usage/usage-store.js"
 
 const app = new Hono()
@@ -126,6 +127,9 @@ const evictionController = createEvictionController()
 // slice ownership-handoff C4: sync acpSessionId cache for warm reattach.
 // Updated by onSessionAttached (same source of truth as registry.update acpSessionId).
 const acpSessionIdCache = new Map<string, string>()
+
+// slice session-lifecycle-fields C1: orchestrator ref — registry is created first.
+let orchestratorRef: AgentOrchestrator | null = null
 
 // S4 session-host-http: 4 routes — GET /events, POST /rpc, POST /reply, GET /state
 // slice remote-warm-reconnect C1: תופסים את הרג'יסטרי (קודם נזרק ב-:151) — C2/C2b
@@ -170,6 +174,21 @@ const agentSessionRegistry = createAndRegisterSessionHostHttp(app, connectionReg
     const agent = await registry.get(agentId)
     return agent?.permissionPolicy
   },
+  getCloseOnTurnEnd: async (agentId) => {
+    const agent = await registry.get(agentId)
+    return agent?.closeOnTurnEnd === true
+  },
+  onScheduleCloseOnTurnEnd: (agentId) => {
+    const graceMs = resolveCloseOnTurnEndGraceMs(process.env.CLOSE_ON_TURN_END_GRACE_MS)
+    setTimeout(() => {
+      void orchestratorRef?.deleteAndKill(agentId).catch((err) => {
+        log.warn(
+          { err, agentId },
+          "closeOnTurnEnd: deleteAndKill failed after grace",
+        )
+      })
+    }, graceMs)
+  },
 })
 
 const orchestrator = createAgentOrchestrator({
@@ -180,6 +199,7 @@ const orchestrator = createAgentOrchestrator({
   // agentSessionRegistry נוצר למעלה (לפני ה-orchestrator) — ר' ההערה שם.
   sessionHostRegistry: agentSessionRegistry,
 })
+orchestratorRef = orchestrator
 
 // נתיבי HTTP
 registerHttp(app)

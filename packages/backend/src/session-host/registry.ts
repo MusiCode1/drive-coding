@@ -195,6 +195,12 @@ type AgentSessionRegistryDeps = {
     agentId: string,
   ) => PermissionPolicyKind | undefined | Promise<PermissionPolicyKind | undefined>
   /**
+   * slice session-lifecycle-fields C1: closeOnTurnEnd from agent record at create time.
+   */
+  getCloseOnTurnEnd?: (agentId: string) => boolean | Promise<boolean>
+  /** slice session-lifecycle-fields C1: server wires grace timer + deleteAndKill. */
+  onScheduleCloseOnTurnEnd?: (agentId: string) => void
+  /**
    * slice ownership-handoff C4b: HTTP ownership TTL (ms).
    * Default: `HTTP_OWNER_TTL_MS` env, else 600_000ms (slice ttl-ownership).
    * Exposed for tests to set a short TTL without real delays.
@@ -237,6 +243,8 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     evictionController,
     getAcpSessionId,
     getPermissionPolicy,
+    getCloseOnTurnEnd,
+    onScheduleCloseOnTurnEnd,
   } = deps
 
   const map = new Map<string, HostEntry>()
@@ -331,16 +339,23 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     // (createAttachedAcpClient + loadSession) instead of cold (createAcpClient + newSession).
     const acpSessionId = getAcpSessionId?.(agentId)
     const permissionPolicy = await getPermissionPolicy?.(agentId)
+    const closeOnTurnEnd = (await getCloseOnTurnEnd?.(agentId)) === true
 
     // Create host + broadcaster
     // slice handoff-foundations C3: if session creation fails below, the host is
     // already subscribed to the wire (created by _createHostFn). Rollback MUST call
     // host.dispose() to remove the crash subscription and close the patches stream.
     const hostOpts =
-      acpSessionId || permissionPolicy !== undefined
+      acpSessionId || permissionPolicy !== undefined || closeOnTurnEnd
         ? {
             ...(acpSessionId ? { warmReattach: { acpSessionId, cwd } } : {}),
             ...(permissionPolicy !== undefined ? { permissionPolicy } : {}),
+            ...(closeOnTurnEnd
+              ? {
+                  closeOnTurnEnd: true,
+                  onScheduleCloseOnTurnEnd: () => onScheduleCloseOnTurnEnd?.(agentId),
+                }
+              : {}),
           }
         : undefined
     // 🔴 הקשר-אבחון (2026-08-16): יצירת ה-host היא שמריצה את ה-ACP initialize,

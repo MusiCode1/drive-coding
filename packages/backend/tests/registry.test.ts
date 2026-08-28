@@ -82,4 +82,15 @@ describe("InMemoryAgentRegistry", () => {
     const fetched = await registry.get(agent.id)
     expect(fetched?.parentAgentId).toBe("parent-agent-1")
   })
+
+  it("stores closeOnTurnEnd (slice session-lifecycle-fields C1)", async () => {
+    const agent = await registry.create({
+      cliKind: "cursor",
+      cwd: "/x",
+      closeOnTurnEnd: true,
+    })
+    expect(agent.closeOnTurnEnd).toBe(true)
+    const fetched = await registry.get(agent.id)
+    expect(fetched?.closeOnTurnEnd).toBe(true)
+  })
 })

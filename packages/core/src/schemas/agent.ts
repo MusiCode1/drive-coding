@@ -133,6 +133,8 @@ export const Agent = type({
   "permissionPolicy?": PermissionPolicy,
   // slice session-lifecycle-fields: who opened this agent (free-form, not validated).
   "parentAgentId?": "string",
+  // slice session-lifecycle-fields: auto-close after first clean turn end (grace timer).
+  "closeOnTurnEnd?": "boolean",
 })
 export type Agent = typeof Agent.infer
 
@@ -194,6 +196,8 @@ export const CreateAgentInput = type({
   "env?": { "[string]": "string" },
   // slice session-lifecycle-fields: who opened this agent (free-form, not validated).
   "parentAgentId?": "string",
+  // slice session-lifecycle-fields: auto-close after first clean turn end.
+  "closeOnTurnEnd?": "boolean",
 })
 export type CreateAgentInput = typeof CreateAgentInput.infer
 
