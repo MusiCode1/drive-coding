@@ -36,6 +36,8 @@ import type { SessionView, ViewEmission } from "./session-view.js"
 import type { WireUpdateBatch } from "./sse-reader"
 import { SSEReader } from "./sse-reader.js"
 
+export const ACP_CONNECTION_ID_HEADER = "Acp-Connection-Id"
+
 /** ext methods שדורשות return value אמיתי — לא נתמכות ב-remote mode (§C2 decision #3). */
 const RETURN_VALUE_EXT_METHODS = new Set<string>(["_drive/getQuota"])
 
@@ -72,6 +74,7 @@ export class RemoteSessionView implements SessionView {
   readonly #agentId: string
   readonly #baseUrl: string
   readonly #headers: Record<string, string>
+  readonly #connectionId: string
   readonly #onSseReconnected?: () => void
   readonly #doFetch: (url: string, init?: RequestInit) => Promise<Response>
   readonly #reader: SSEReader
@@ -99,7 +102,13 @@ export class RemoteSessionView implements SessionView {
     this.#agentId = agentId
     this.#baseUrl = baseUrl
     registerView(this) // תצפית בלבד — ר' debug/session-registry.ts
-    this.#headers = opts.headers ?? {}
+    this.#connectionId =
+      opts.headers?.[ACP_CONNECTION_ID_HEADER] ??
+      (typeof crypto !== "undefined" ? crypto.randomUUID() : "remote-view")
+    this.#headers = {
+      [ACP_CONNECTION_ID_HEADER]: this.#connectionId,
+      ...opts.headers,
+    }
     this.#onSseReconnected = opts.onSseReconnected
     this.#doFetch = opts._fetch ?? ((u, init) => globalThis.fetch(u, init))
     // replaced on connect() by the SSE snapshot — this is just a safe pre-connect default

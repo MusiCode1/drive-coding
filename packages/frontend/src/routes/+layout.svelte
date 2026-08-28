@@ -179,6 +179,7 @@ void ttsCapabilities.refresh()
 // ─── presence-poller ─── (slice liveness C3 — חי לכל אורך הסשן, גם כשהפאנל סגור)
 const presencePoller = new PresencePoller(session)
 presencePoller.init()
+session.bindConnectionRelease()
 session.setSseReconnectedListener(() => presencePoller.onSseReconnected())
 
 // ─── wake-lock ─── (Track C — drive-first chrome)

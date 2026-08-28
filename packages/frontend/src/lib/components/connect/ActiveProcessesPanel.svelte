@@ -190,6 +190,12 @@ function reconnectTitle(agent: AgentPublic): string {
         ></span>
         <CliBadge id={agent.cliKind} displayName={cliAvailability.details[agent.cliKind]?.displayName} logo={cliAvailability.details[agent.cliKind]?.logo} variant="badge" />
         <span class="folder-name" title={agent.cwd}><bdi>{basename(agent.cwd)}</bdi></span>
+        {#if (agent.connectionCount ?? 0) >= 2}
+          <span class="meta-sep">·</span>
+          <span class="watcher-count" title={t("connect.agents.watcherCount")}>
+            {agent.connectionCount} {t("connect.agents.watcherCount")}
+          </span>
+        {/if}
         {#if childCount > 0}
           <span class="meta-sep">·</span>
           <span class="child-count" title={t("connect.agents.childCount")}>

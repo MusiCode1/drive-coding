@@ -226,6 +226,7 @@ export const he: Catalog = {
   // ─── agent-tree-display ─── (slice agent-tree-display)
   "connect.agents.subAgentsOf": "סוכני משנה",
   "connect.agents.childCount": "סוכני משנה",
+  "connect.agents.watcherCount": "צופים",
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   "settings.screen.label": "מסך",
   "settings.toggle.keepScreenOn": "השאר מסך דלוק",

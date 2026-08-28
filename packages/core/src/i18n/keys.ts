@@ -237,6 +237,7 @@ export type MessageKey =
   // ─── agent-tree-display ─── (slice agent-tree-display)
   | "connect.agents.subAgentsOf"
   | "connect.agents.childCount"
+  | "connect.agents.watcherCount"
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   | "settings.screen.label"
   | "settings.toggle.keepScreenOn"
