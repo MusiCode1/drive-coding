@@ -739,6 +739,50 @@ describe("createSessionHostFromConnection", () => {
       await pB
       expect(host.state.turnState).toBe("idle")
     })
+
+    it("displaced turn A failing after B started writes lastTurnError for A while B's waiting survives", async () => {
+      const { host, mockClient } = await setup()
+      const dA = deferred<void>()
+      const dB = deferred<void>()
+      const promptMock = mockClient.prompt as ReturnType<typeof vi.fn>
+      promptMock.mockImplementationOnce(() => dA.promise)
+      promptMock.mockImplementationOnce(() => dB.promise)
+
+      const pA = host.prompt("s1", "A")
+      const pB = host.prompt("s1", "B")
+      expect(host.state.turnState).toBe("waiting")
+
+      dA.reject(new Error("A failed"))
+      await pA.catch(() => {})
+      expect(host.state.lastTurnError?.message).toBe("A failed")
+      expect(host.state.turnState).toBe("waiting")
+
+      dB.resolve(undefined)
+      await pB
+      expect(host.state.turnState).toBe("idle")
+    })
+
+    it("live turn B failing while A still in activeTurns emits idle + B's error, not applyTurnError", async () => {
+      const { host, mockClient } = await setup()
+      const dA = deferred<void>()
+      const dB = deferred<void>()
+      const promptMock = mockClient.prompt as ReturnType<typeof vi.fn>
+      promptMock.mockImplementationOnce(() => dA.promise)
+      promptMock.mockImplementationOnce(() => dB.promise)
+
+      const pA = host.prompt("s1", "A")
+      const pB = host.prompt("s1", "B")
+      expect(host.state.turnState).toBe("waiting")
+
+      dB.reject(new Error("B failed"))
+      await pB.catch(() => {})
+      expect(host.state.lastTurnError?.message).toBe("B failed")
+      expect(host.state.turnState).toBe("idle")
+
+      dA.resolve(undefined)
+      await pA
+      expect(host.state.turnState).toBe("idle")
+    })
   })
 
   describe("C3 — turn boundaries: host.cancel", () => {
