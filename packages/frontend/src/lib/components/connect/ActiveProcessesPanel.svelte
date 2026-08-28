@@ -178,7 +178,7 @@ function reconnectTitle(agent: AgentPublic): string {
 </script>
 
 {#snippet agentRow(agent: AgentPublic, childCount: number)}
-  <li class="agent-row">
+  <li class="agent-row" class:has-children={childCount > 0}>
     <div class="agent-top">
       <div class="agent-info">
         <span
@@ -432,13 +432,89 @@ function reconnectTitle(agent: AgentPublic): string {
     margin: 0;
     padding: 0;
     overflow-y: auto;
+
+    /* ‏גובה המרפק = ‏מרכז ה-status-dot, ‏נגזר ולא מנוחש:
+         0.55rem  ‏ריפוד-עליון של .agent-row
+       + 0.85rem  ‏חצי מגובה ה-CliBadge (1.5rem ‏פנימי + 2×0.1rem ‏ריפוד = 1.7rem),
+                  ‏שהוא הגבוה ב-.agent-top ‏ולכן קובע את גובה השורה הראשונה,
+                  ‏ו-align-items:center ‏ממרכז אליו את הנקודה.
+       ‏משתנה אחד לכל שלושת הקטעים (‏אב · ‏עמוד · ‏מרפק) — ‏כך הם **‏תמיד נפגשים**.
+       ‏מוגדר כאן ולא על .agent-children, ‏כי שורת-האב אינה בתוכה. */
+    --tree-elbow-y: 1.4rem;
+
+    /* ‏ההזחה של קבוצת-הילדים, ‏וקו-העץ עצמו. ‏שניהם מדודים מקצה-הפאנל:
+       ‏שורת-אב מתחילה ב-0, ‏שורת-ילד מתחילה ב---tree-indent ⇒ ‏אותו קו-אנכי
+       ‏מתקבל בשתיהן דרך ה-calc ‏למטה. */
+    --tree-indent: 2.25rem;
+
+    /* ‏הריפוד-האופקי של .agent-row. ‏מקוזז מהזחת ה-ul ‏במקום להידרס —
+       🔴 ‏Svelte ‏עוטף סלקטור-צאצא ב-:where() ‏(‏ספציפיות **‏אפס**), ‏אז
+       `.agent-children > .agent-row{padding-inline-start:0}` ‏יוצא (0,2,0)
+       ‏בדיוק כמו `.agent-row.svelte-x`, ‏וסדר-המקור מכריע — ‏הבסיס ניצח
+       ‏והמרפק נעצר 0.9rem ‏לפני הנקודה. ‏קיזוז לא נכנס לקרב-הספציפיות. */
+    --tree-row-pad: 0.9rem;
+
+    /* ‏מרכז ה-status-dot ‏אופקית: ‏ריפוד-השורה + ‏חצי מקוטר הנקודה (8px). */
+    --tree-spine-x: calc(var(--tree-row-pad) + 0.25rem);
   }
 
+  /* ‏כל ההזחה יושבת על ה-ul, ‏והשורה מוותרת על ה-padding ‏שלה בצד-ההתחלה —
+     ‏כך גם קו-ההפרדה התחתון מתחיל בהזחה ואינו חוצה את קו-העץ. */
   .agent-children {
     list-style: none;
     margin: 0;
     padding: 0;
-    padding-inline-start: 1.25rem;
+    padding-inline-start: calc(var(--tree-indent) - var(--tree-row-pad));
+  }
+
+  .agent-children > .agent-row {
+    position: relative;
+  }
+
+  /* ‏עמוד-השדרה — ‏קטע פר-ילד ולא קו אחד על הקבוצה, ‏כדי שהאחרון ייקטע
+     ‏במרפק ולא ימשיך לריק. */
+  .agent-children > .agent-row::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: calc(var(--tree-spine-x) - var(--tree-indent) + var(--tree-row-pad));
+    top: 0;
+    bottom: 0;
+    border-inline-start: 1px solid var(--border-str);
+  }
+
+  /* ‏מכיל את הקטע היורד אל הילדים (‏ר' הכלל הבא). */
+  .agent-row.has-children {
+    position: relative;
+  }
+
+  /* ‏הקטע היורד מהאב — ‏מצויר על **‏שורת-האב עצמה**, ‏ממרכז הנקודה שלה ועד
+     ‏תחתית השורה. ‏ניסיון קודם מתח את הילד הראשון 0.6rem ‏כלפי מעלה, ‏אבל
+     ‏שורת-האב היא **‏שתי שורות** (‏תג + ‏מטא) ‏ולכן הקו לא הגיע לנקודה כלל. */
+  .agent-row.has-children::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: var(--tree-spine-x);
+    top: var(--tree-elbow-y);
+    bottom: 0;
+    border-inline-start: 1px solid var(--border-str);
+  }
+
+  /* ‏הילד האחרון: ‏העמוד נעצר **‏במרפק** ‏ואינו ממשיך לריק שמתחתיו.
+     ‏עוגן יחסי ולא גובה קבוע — ‏גובה קבוע נשבר על ילד יחיד, ‏שהוא גם
+     first ‏וגם last, ‏וקיבל שני כללים סותרים. */
+  .agent-children > .agent-row:last-child::before {
+    bottom: calc(100% - var(--tree-elbow-y));
+  }
+
+  /* ‏המרפק מגיע עד **‏תוכן** ‏השורה. ‏בגרסה הקודמת הוא נעצר בקצה-התיבה,
+     ‏0.9rem ‏לפני התוכן, ‏ולכן נראה כקו תלוש בשולי הפאנל. */
+  .agent-children > .agent-row::after {
+    content: "";
+    position: absolute;
+    inset-inline-start: calc(var(--tree-spine-x) - var(--tree-indent) + var(--tree-row-pad));
+    top: var(--tree-elbow-y);
+    width: calc(var(--tree-indent) - var(--tree-spine-x));
+    border-top: 1px solid var(--border-str);
   }
 
   .child-count {
@@ -479,11 +555,15 @@ function reconnectTitle(agent: AgentPublic): string {
     align-items: stretch;
     gap: 0.35rem;
     padding: 0.55rem 0.9rem;
-    border-bottom: 1px solid var(--border);
   }
 
-  .agent-row:last-child {
-    border-bottom: none;
+  /* ‏המפריד הוא **‏בין קבוצות**, ‏לא בין שורות. ‏קודם הוא היה border-bottom
+     ‏פר-שורה עם שני חריגים (‏אב-עם-ילדים · last-child), ‏ו-last-child ‏תפס גם
+     ‏את הילד האחרון של **‏כל** ‏קבוצה — ‏ולכן הקו הופיע רק בין ילד לילד
+     ‏ונעלם בגבול שבין קבוצה לקבוצה. ‏שורה עליונה על שורש-קבוצה, ‏חוץ
+     ‏מהראשונה, ‏נותנת בדיוק גבול אחד לכל קבוצה ‏ואפס חריגים. */
+  .agent-list > .agent-row:not(:first-child) {
+    border-top: 1px solid var(--border);
   }
 
   .agent-top {
