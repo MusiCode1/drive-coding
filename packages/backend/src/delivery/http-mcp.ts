@@ -212,6 +212,8 @@ function createSessionBusMcpServer(deps: McpHttpDeps): McpServer {
         env,
       }
       if (input.permission !== undefined) body.permissionPolicy = input.permission
+      if (input.parent !== undefined && input.parent !== "") body.parentAgentId = input.parent
+      if (input.closeOnTurnEnd === true) body.closeOnTurnEnd = true
 
       const parsed = parseCreateAgentBody(body)
       if (!parsed.ok) return jsonError(parsed.error.body.error)

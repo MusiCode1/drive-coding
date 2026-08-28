@@ -74,6 +74,9 @@ export function createAndRegisterSessionHostHttp(
     getPermissionPolicy?: (
       agentId: string,
     ) => PermissionPolicyKind | undefined | Promise<PermissionPolicyKind | undefined>
+    /** slice session-lifecycle-fields C1 */
+    getCloseOnTurnEnd?: (agentId: string) => boolean | Promise<boolean>
+    onScheduleCloseOnTurnEnd?: (agentId: string) => void
   } = {},
 ): ReturnType<typeof createAgentSessionRegistry> {
   const agentSessionRegistry = createAgentSessionRegistry({
@@ -82,6 +85,8 @@ export function createAndRegisterSessionHostHttp(
     evictionController: opts.evictionController,
     getAcpSessionId: opts.getAcpSessionId,
     getPermissionPolicy: opts.getPermissionPolicy,
+    getCloseOnTurnEnd: opts.getCloseOnTurnEnd,
+    onScheduleCloseOnTurnEnd: opts.onScheduleCloseOnTurnEnd,
   })
   registerSessionHostHttp(app, { agentSessionRegistry })
   return agentSessionRegistry

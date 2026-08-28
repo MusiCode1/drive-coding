@@ -26,6 +26,7 @@ export const AgentOpenInput = type({
   "env?": { "[string]": "string" },
   "permission?": "string",
   "parent?": "string",
+  "closeOnTurnEnd?": "boolean",
   "base?": "string",
   "port?": "number",
   "json?": "boolean",

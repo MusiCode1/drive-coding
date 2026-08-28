@@ -22,6 +22,7 @@ type Values = {
   env?: string[]
   permission?: string
   parent?: string
+  "close-on-turn-end"?: boolean
   agent?: string
   "prompt-file"?: string
   prompt?: string
@@ -79,6 +80,7 @@ export async function runCli(argv: string[]): Promise<number> {
         env: { type: "string", multiple: true },
         permission: { type: "string" },
         parent: { type: "string" },
+        "close-on-turn-end": { type: "boolean" },
         agent: { type: "string" },
         "prompt-file": { type: "string" },
         prompt: { type: "string" },
@@ -187,6 +189,8 @@ async function cmdOpen(base: string, values: Values, asJson: boolean): Promise<n
     cwd,
     env,
     ...(values.permission ? { permissionPolicy: values.permission } : {}),
+    ...(values.parent ? { parentAgentId: values.parent } : {}),
+    ...(values["close-on-turn-end"] ? { closeOnTurnEnd: true } : {}),
   })) as { agentId?: string }
   const agent = created.agentId
   if (!agent) {
