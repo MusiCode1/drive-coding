@@ -177,6 +177,142 @@ function reconnectTitle(agent: AgentPublic): string {
 }
 </script>
 
+{#snippet agentRow(agent: AgentPublic, childCount: number)}
+  <li class="agent-row">
+    <div class="agent-top">
+      <div class="agent-info">
+        <span
+          class="status-dot"
+          class:attached={hasConnectionRing(agent)}
+          style="background:{statusColor(agent.status)}"
+          title={connectionTitle(agent)}
+          aria-label={connectionTitle(agent)}
+        ></span>
+        <CliBadge id={agent.cliKind} displayName={cliAvailability.details[agent.cliKind]?.displayName} logo={cliAvailability.details[agent.cliKind]?.logo} variant="badge" />
+        <span class="folder-name" title={agent.cwd}><bdi>{basename(agent.cwd)}</bdi></span>
+        {#if childCount > 0}
+          <span class="meta-sep">·</span>
+          <span class="child-count" title={t("connect.agents.childCount")}>
+            {childCount} {t("connect.agents.childCount")}
+          </span>
+        {/if}
+        {#if agent.title}
+          <span class="meta-sep">·</span>
+          <span class="session-title" title={agent.title}><bdi>{agent.title}</bdi></span>
+        {/if}
+        {#if agent.busy}
+          <span class="meta-sep">·</span>
+          <span class="busy-indicator" aria-label={t("connect.agents.working")}>
+            <span class="busy-dot"></span>
+            <span class="busy-label">{t("connect.agents.working")}</span>
+          </span>
+        {/if}
+        {#if agent.lastMessageAt != null}
+          <span class="meta-sep">·</span>
+          <span class="last-msg" title={t("connect.agents.lastMessage")}>
+            {formatRelativeTime(agent.lastMessageAt, i18n.locale)}
+          </span>
+        {/if}
+      </div>
+
+      <div class="agent-actions">
+      <!-- Reconnect / Take over — tooltip מרחף מעל הכפתור, מרונדר ב-
+           Popover.Portal (bits-ui) כדי לא להיחתך ע"י .agent-list{overflow-y:auto}
+           (slice reconnect-ws-takeover Commit 3, 3a redo 2026-07-23: היה
+           inline-expand, הוחזר ל-tooltip מרחף לפי החלטת-משתמשת, הפעם דרך
+           portal — תקדים: SessionBudgetMeter.svelte). ה-Popover.Root נשלט
+           לגמרי ע"י takeoverConfirmingId (לא bind:open) — הקליק עצמו מנוהל
+           ע"י handleReconnectClick (מכונת ה-2-קליקים); ה-onclick על ה-<button>
+           (בתוך snippet child, אחרי הפריסה של props) דורס את ה-toggle
+           הפנימי של bits כדי שלא יתנגש. onOpenChange מטפל רק בסגירה חיצונית
+           (Escape / קליק מחוץ). -->
+      <Popover.Root
+        open={takeoverConfirmingId === agent.id}
+        onOpenChange={(next) => { if (!next && takeoverConfirmingId === agent.id) cancelTakeoverConfirm() }}
+      >
+        <Popover.Trigger>
+          {#snippet child({ props })}
+            <button
+              {...props}
+              type="button"
+              class="action-btn icon-btn reconnect-btn"
+              class:confirming={takeoverConfirmingId === agent.id}
+              disabled={reconnectState(agent) === "disabled"}
+              onclick={() => handleReconnectClick(agent)}
+              title={reconnectTitle(agent)}
+              aria-label={reconnectTitle(agent)}
+            >
+              <PlugIcon size={16} strokeWidth={1.75} />
+            </button>
+          {/snippet}
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content
+            side="top"
+            sideOffset={5}
+            trapFocus={false}
+            dir={i18n.dir}
+            class="takeover-confirm-tip"
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <span role="status">{t("connect.agents.takeOverConfirm")}</span>
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+
+      <!-- Kill — אותו דפוס tooltip-portal כמו למעלה, state נפרד (confirmingId). -->
+      <Popover.Root
+        open={confirmingId === agent.id}
+        onOpenChange={(next) => { if (!next && confirmingId === agent.id) cancelKillConfirm() }}
+      >
+        <Popover.Trigger>
+          {#snippet child({ props })}
+            <button
+              {...props}
+              type="button"
+              class="action-btn icon-btn kill-btn"
+              class:confirming={confirmingId === agent.id}
+              onclick={() => handleKill(agent.id)}
+              title={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
+              aria-label={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
+            >
+              <Trash2Icon size={16} strokeWidth={1.75} />
+            </button>
+          {/snippet}
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content
+            side="top"
+            sideOffset={5}
+            trapFocus={false}
+            dir={i18n.dir}
+            class="kill-confirm-tip"
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <span role="status">{t("connect.agents.killConfirm")}</span>
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+      </div>
+    </div>
+
+    <div class="agent-meta">
+      <span class="cwd-full" title={agent.cwd}><bdi>{agent.cwd}</bdi></span>
+      <span class="meta-right">
+        {#if agent.acpSessionId}
+          <span class="session-id">{agent.acpSessionId.slice(0, 8)}</span>
+          <span class="meta-sep">·</span>
+        {/if}
+        <span class="created-at">{formatDate(agent.createdAt)}</span>
+        {#if agent.pid}
+          <span class="meta-sep">·</span>
+          <span class="pid">pid: {agent.pid}</span>
+        {/if}
+      </span>
+    </div>
+  </li>
+{/snippet}
+
 <section class="active-panel">
   <div class="panel-header">
     <span class="panel-title">
@@ -205,134 +341,15 @@ function reconnectTitle(agent: AgentPublic): string {
       class="agent-list chat-scroll"
       style="max-height: {dragHeight ?? settings.activePanelHeight}px"
     >
-      {#each activeAgents.agents as agent (agent.id)}
-        <li class="agent-row">
-          <div class="agent-top">
-            <div class="agent-info">
-              <span
-                class="status-dot"
-                class:attached={hasConnectionRing(agent)}
-                style="background:{statusColor(agent.status)}"
-                title={connectionTitle(agent)}
-                aria-label={connectionTitle(agent)}
-              ></span>
-              <CliBadge id={agent.cliKind} displayName={cliAvailability.details[agent.cliKind]?.displayName} logo={cliAvailability.details[agent.cliKind]?.logo} variant="badge" />
-              <span class="folder-name" title={agent.cwd}><bdi>{basename(agent.cwd)}</bdi></span>
-              {#if agent.title}
-                <span class="meta-sep">·</span>
-                <span class="session-title" title={agent.title}><bdi>{agent.title}</bdi></span>
-              {/if}
-              {#if agent.busy}
-                <span class="meta-sep">·</span>
-                <span class="busy-indicator" aria-label={t("connect.agents.working")}>
-                  <span class="busy-dot"></span>
-                  <span class="busy-label">{t("connect.agents.working")}</span>
-                </span>
-              {/if}
-              {#if agent.lastMessageAt != null}
-                <span class="meta-sep">·</span>
-                <span class="last-msg" title={t("connect.agents.lastMessage")}>
-                  {formatRelativeTime(agent.lastMessageAt, i18n.locale)}
-                </span>
-              {/if}
-            </div>
-
-            <div class="agent-actions">
-            <!-- Reconnect / Take over — tooltip מרחף מעל הכפתור, מרונדר ב-
-                 Popover.Portal (bits-ui) כדי לא להיחתך ע"י .agent-list{overflow-y:auto}
-                 (slice reconnect-ws-takeover Commit 3, 3a redo 2026-07-23: היה
-                 inline-expand, הוחזר ל-tooltip מרחף לפי החלטת-משתמשת, הפעם דרך
-                 portal — תקדים: SessionBudgetMeter.svelte). ה-Popover.Root נשלט
-                 לגמרי ע"י takeoverConfirmingId (לא bind:open) — הקליק עצמו מנוהל
-                 ע"י handleReconnectClick (מכונת ה-2-קליקים); ה-onclick על ה-<button>
-                 (בתוך snippet child, אחרי הפריסה של props) דורס את ה-toggle
-                 הפנימי של bits כדי שלא יתנגש. onOpenChange מטפל רק בסגירה חיצונית
-                 (Escape / קליק מחוץ). -->
-            <Popover.Root
-              open={takeoverConfirmingId === agent.id}
-              onOpenChange={(next) => { if (!next && takeoverConfirmingId === agent.id) cancelTakeoverConfirm() }}
-            >
-              <Popover.Trigger>
-                {#snippet child({ props })}
-                  <button
-                    {...props}
-                    type="button"
-                    class="action-btn icon-btn reconnect-btn"
-                    class:confirming={takeoverConfirmingId === agent.id}
-                    disabled={reconnectState(agent) === "disabled"}
-                    onclick={() => handleReconnectClick(agent)}
-                    title={reconnectTitle(agent)}
-                    aria-label={reconnectTitle(agent)}
-                  >
-                    <PlugIcon size={16} strokeWidth={1.75} />
-                  </button>
-                {/snippet}
-              </Popover.Trigger>
-              <Popover.Portal>
-                <Popover.Content
-                  side="top"
-                  sideOffset={5}
-                  trapFocus={false}
-                  dir={i18n.dir}
-                  class="takeover-confirm-tip"
-                  onOpenAutoFocus={(e) => e.preventDefault()}
-                >
-                  <span role="status">{t("connect.agents.takeOverConfirm")}</span>
-                </Popover.Content>
-              </Popover.Portal>
-            </Popover.Root>
-
-            <!-- Kill — אותו דפוס tooltip-portal כמו למעלה, state נפרד (confirmingId). -->
-            <Popover.Root
-              open={confirmingId === agent.id}
-              onOpenChange={(next) => { if (!next && confirmingId === agent.id) cancelKillConfirm() }}
-            >
-              <Popover.Trigger>
-                {#snippet child({ props })}
-                  <button
-                    {...props}
-                    type="button"
-                    class="action-btn icon-btn kill-btn"
-                    class:confirming={confirmingId === agent.id}
-                    onclick={() => handleKill(agent.id)}
-                    title={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
-                    aria-label={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
-                  >
-                    <Trash2Icon size={16} strokeWidth={1.75} />
-                  </button>
-                {/snippet}
-              </Popover.Trigger>
-              <Popover.Portal>
-                <Popover.Content
-                  side="top"
-                  sideOffset={5}
-                  trapFocus={false}
-                  dir={i18n.dir}
-                  class="kill-confirm-tip"
-                  onOpenAutoFocus={(e) => e.preventDefault()}
-                >
-                  <span role="status">{t("connect.agents.killConfirm")}</span>
-                </Popover.Content>
-              </Popover.Portal>
-            </Popover.Root>
-            </div>
-          </div>
-
-          <div class="agent-meta">
-            <span class="cwd-full" title={agent.cwd}><bdi>{agent.cwd}</bdi></span>
-            <span class="meta-right">
-              {#if agent.acpSessionId}
-                <span class="session-id">{agent.acpSessionId.slice(0, 8)}</span>
-                <span class="meta-sep">·</span>
-              {/if}
-              <span class="created-at">{formatDate(agent.createdAt)}</span>
-              {#if agent.pid}
-                <span class="meta-sep">·</span>
-                <span class="pid">pid: {agent.pid}</span>
-              {/if}
-            </span>
-          </div>
-        </li>
+      {#each activeAgents.grouped as group (group.root.id)}
+        {@render agentRow(group.root, group.children.length)}
+        {#if group.children.length > 0}
+          <ul class="agent-children" aria-label={t("connect.agents.subAgentsOf")}>
+            {#each group.children as child (child.id)}
+              {@render agentRow(child, 0)}
+            {/each}
+          </ul>
+        {/if}
       {/each}
     </ul>
     <div
@@ -415,6 +432,19 @@ function reconnectTitle(agent: AgentPublic): string {
     margin: 0;
     padding: 0;
     overflow-y: auto;
+  }
+
+  .agent-children {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    padding-inline-start: 1.25rem;
+  }
+
+  .child-count {
+    font-size: 0.72rem;
+    color: var(--fg-dim);
+    flex-shrink: 0;
   }
 
   /* ידית גרירה לשינוי גובה — slice connect-panel-resize */

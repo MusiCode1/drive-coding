@@ -39,6 +39,10 @@ const fakeAgent: AgentPublic = {
   acpSessionId: "session-abc123",
 }
 
+function makeAgent(overrides: Partial<AgentPublic> & Pick<AgentPublic, "id">): AgentPublic {
+  return { ...fakeAgent, ...overrides }
+}
+
 beforeEach(() => {
   vi.resetAllMocks()
 })
@@ -130,5 +134,89 @@ describe("ActiveAgents.kill()", () => {
     expect(mockDeleteAgent).toHaveBeenCalledTimes(1)
     expect(mockListAgents).toHaveBeenCalledTimes(1)
     expect(vm.agents).toEqual([])
+  })
+})
+
+// ─── grouped (slice agent-tree-display C0) ───────────────────────────────────
+
+function flatAgents(vm: ActiveAgents): AgentPublic[] {
+  return vm.grouped.flatMap((g) => [g.root, ...g.children])
+}
+
+describe("ActiveAgents.grouped", () => {
+  it("ללא parentAgentId — כל הסוכנים שורשים עם children ריקים (שער 1)", () => {
+    const vm = new ActiveAgents()
+    vm.agents = [makeAgent({ id: "a" }), makeAgent({ id: "b" })]
+
+    expect(vm.grouped).toEqual([
+      { root: vm.agents[0], children: [] },
+      { root: vm.agents[1], children: [] },
+    ])
+  })
+
+  it("הורה + 2 ילדים — שורש אחד עם 2 ילדים (שער 2)", () => {
+    const vm = new ActiveAgents()
+    const parent = makeAgent({ id: "p" })
+    const c1 = makeAgent({ id: "c1", parentAgentId: "p" })
+    const c2 = makeAgent({ id: "c2", parentAgentId: "p" })
+    vm.agents = [parent, c1, c2]
+
+    expect(vm.grouped).toHaveLength(1)
+    expect(vm.grouped[0]?.root.id).toBe("p")
+    expect(vm.grouped[0]?.children.map((c) => c.id)).toEqual(["c1", "c2"])
+  })
+
+  it("מעגל-שניים — אף סוכן לא נעלם (שער 3)", () => {
+    const vm = new ActiveAgents()
+    vm.agents = [
+      makeAgent({ id: "a", parentAgentId: "b" }),
+      makeAgent({ id: "b", parentAgentId: "a" }),
+    ]
+
+    expect(flatAgents(vm)).toHaveLength(2)
+    expect(flatAgents(vm).map((a) => a.id).sort()).toEqual(["a", "b"])
+    for (const g of vm.grouped) {
+      expect(g.children).toEqual([])
+    }
+  })
+
+  it("מעגל-3 — כל הסוכנים נראים כשורשים-יחידים", () => {
+    const vm = new ActiveAgents()
+    vm.agents = [
+      makeAgent({ id: "a", parentAgentId: "c" }),
+      makeAgent({ id: "b", parentAgentId: "a" }),
+      makeAgent({ id: "c", parentAgentId: "b" }),
+    ]
+
+    expect(flatAgents(vm)).toHaveLength(3)
+    expect(vm.grouped.every((g) => g.children.length === 0)).toBe(true)
+  })
+
+  it("הורה שכבר נסגר — ילד מוצג כשורש (שער 4)", () => {
+    const vm = new ActiveAgents()
+    vm.agents = [makeAgent({ id: "child", parentAgentId: "gone" })]
+
+    expect(vm.grouped).toEqual([{ root: vm.agents[0], children: [] }])
+  })
+
+  it("self-parent מזוהם — מוצג כשורש (שער 5)", () => {
+    const vm = new ActiveAgents()
+    vm.agents = [makeAgent({ id: "x", parentAgentId: "x" })]
+
+    expect(vm.grouped).toEqual([{ root: vm.agents[0], children: [] }])
+  })
+
+  it("שלושה דורות — הנכד שורש נפרד (רמה אחת בלבד)", () => {
+    const vm = new ActiveAgents()
+    const parent = makeAgent({ id: "p" })
+    const child = makeAgent({ id: "c", parentAgentId: "p" })
+    const grand = makeAgent({ id: "g", parentAgentId: "c" })
+    vm.agents = [parent, child, grand]
+
+    expect(vm.grouped).toHaveLength(2)
+    expect(vm.grouped[0]?.root.id).toBe("p")
+    expect(vm.grouped[0]?.children.map((a) => a.id)).toEqual(["c"])
+    expect(vm.grouped[1]?.root.id).toBe("g")
+    expect(vm.grouped[1]?.children).toEqual([])
   })
 })
