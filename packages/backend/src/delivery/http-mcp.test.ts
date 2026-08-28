@@ -18,24 +18,61 @@ import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { registerMcpHttp } from "./http-mcp.js"
 
-function makeStubSessionRegistry(): AgentSessionRegistry {
+type HostStub = {
+  state: {
+    sessionId: string | null
+    turnState: string
+    modes: unknown
+    configOptions: unknown
+  }
+}
+
+function makeStubSessionRegistry(): AgentSessionRegistry & { hosts: Map<string, HostStub> } {
+  const hosts = new Map<string, HostStub>()
   return {
-    getHost: vi.fn(() => undefined),
-    isHeld: vi.fn(() => false),
-    getOrCreateHost: vi.fn(),
+    hosts,
+    getHost: vi.fn((id: string) => hosts.get(id)),
+    isHeld: vi.fn((id: string) => hosts.has(id)),
+    getOrCreateHost: vi.fn(async (id: string) => {
+      let host = hosts.get(id)
+      if (!host) {
+        host = {
+          state: {
+            sessionId: `sess-${id}`,
+            turnState: "idle",
+            modes: null,
+            configOptions: [],
+          },
+        }
+        hosts.set(id, host)
+      }
+      return { ok: true, entry: { host, broadcaster: {} } }
+    }),
     getBroadcaster: vi.fn(() => undefined),
-    unregisterHost: vi.fn(),
+    unregisterHost: vi.fn((id: string) => {
+      hosts.delete(id)
+    }),
     notifySessionAttached: vi.fn(async () => {}),
     getCwd: vi.fn(() => undefined),
     getEpoch: vi.fn(() => 0),
     touchOwner: vi.fn(),
     getRuntimeInfo: vi.fn(() => null),
-  } as unknown as AgentSessionRegistry
+  } as unknown as AgentSessionRegistry & { hosts: Map<string, HostStub> }
 }
 
 function makeOrchestrator(registry: AgentRegistry): AgentOrchestrator {
   return {
-    createAndSpawn: vi.fn(),
+    createAndSpawn: vi.fn(async (input) => {
+      const agent = await registry.create(input)
+      return {
+        agentId: agent.id,
+        cwd: agent.cwd,
+        cliKind: agent.cliKind,
+        wsUrl: "",
+        bridgePort: 0,
+        status: "spawning" as const,
+      }
+    }),
     deleteAndKill: vi.fn(async (id: string) => {
       await registry.delete(id).catch(() => {})
     }),
@@ -80,6 +117,12 @@ function toolText(result: unknown): string {
   return block?.text ?? ""
 }
 
+function isToolError(result: unknown): boolean {
+  return (
+    typeof result === "object" && result !== null && "isError" in result && result.isError === true
+  )
+}
+
 afterEach(() => {
   delete process.env.MCP_HTTP
 })
@@ -102,7 +145,9 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     const client = await connectClient(app)
     const { tools } = await client.listTools()
     await client.close()
-    expect(tools.map((t) => t.name)).toContain("session_list")
+    expect(tools.map((t) => t.name).sort()).toEqual(
+      expect.arrayContaining(["session_close", "session_list", "session_open"]),
+    )
   })
 
   it("second Client session succeeds (per-request transport, not singleton)", async () => {
@@ -135,5 +180,130 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
   it("source has no self-call via HTTP", () => {
     const src = readFileSync(fileURLToPath(new URL("./http-mcp.ts", import.meta.url)), "utf8")
     expect(src.match(/fetch\(/g) ?? []).toHaveLength(0)
+  })
+})
+
+describe("session_open / session_close (slice session-bus-mcp C1)", () => {
+  it("session_open maps cli→cliKind, waits for sessionId, returns url", async () => {
+    const { app, orchestrator } = makeApp()
+    const client = await connectClient(app)
+    const result = await client.callTool({
+      name: "session_open",
+      arguments: {
+        cli: "cursor",
+        cwd: "/tmp/mcp-c1",
+        permission: "allow_once",
+        publicUrl: "https://example.test",
+      },
+    })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as {
+      agent: string
+      sessionId: string
+      url: string
+    }
+    expect(body.agent).toBeTruthy()
+    expect(body.sessionId).toBe(`sess-${body.agent}`)
+    expect(body.url).toBe(
+      `https://example.test/chat/cursor/${body.sessionId}?sessionTransport=http`,
+    )
+    expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cliKind: "cursor",
+        cwd: "/tmp/mcp-c1",
+        permissionPolicy: "allow_once",
+      }),
+    )
+  })
+
+  it("session_open passes env and parent through to createAndSpawn", async () => {
+    const { app, orchestrator } = makeApp()
+    const client = await connectClient(app)
+    await client.callTool({
+      name: "session_open",
+      arguments: {
+        cli: "cursor",
+        cwd: "/tmp/mcp-c1-env",
+        env: { FOO: "bar" },
+        parent: "parent-agent",
+        publicUrl: "http://127.0.0.1:4055",
+      },
+    })
+    await client.close()
+    expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        env: expect.objectContaining({
+          FOO: "bar",
+          DC_PARENT: "parent-agent",
+          DC_BASE: "http://127.0.0.1:4055",
+          DRIVE_CODING_BASE: "http://127.0.0.1:4055",
+        }),
+      }),
+    )
+  })
+
+  it("session_close on idle deletes the agent", async () => {
+    const { app, registry } = makeApp()
+    const client = await connectClient(app)
+    const opened = JSON.parse(
+      toolText(
+        await client.callTool({
+          name: "session_open",
+          arguments: { cli: "cursor", cwd: "/tmp/mcp-c1-close" },
+        }),
+      ),
+    ) as { agent: string }
+    const closed = await client.callTool({
+      name: "session_close",
+      arguments: { agent: opened.agent },
+    })
+    await client.close()
+    expect(isToolError(closed)).toBe(false)
+    expect(await registry.get(opened.agent)).toBeFalsy()
+  })
+
+  it("session_close refuses when turnState is calling-tool unless force", async () => {
+    const { app, registry, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app)
+    const opened = JSON.parse(
+      toolText(
+        await client.callTool({
+          name: "session_open",
+          arguments: { cli: "cursor", cwd: "/tmp/mcp-c1-busy" },
+        }),
+      ),
+    ) as { agent: string }
+    const host = agentSessionRegistry.hosts.get(opened.agent)
+    if (host) host.state.turnState = "calling-tool"
+
+    const refused = await client.callTool({
+      name: "session_close",
+      arguments: { agent: opened.agent },
+    })
+    expect(isToolError(refused)).toBe(true)
+    expect(toolText(refused)).toMatch(/turnState=calling-tool/)
+    expect(await registry.get(opened.agent)).toBeDefined()
+
+    const forced = await client.callTool({
+      name: "session_close",
+      arguments: { agent: opened.agent, force: true },
+    })
+    await client.close()
+    expect(isToolError(forced)).toBe(false)
+    expect(await registry.get(opened.agent)).toBeFalsy()
+  })
+
+  it("session_close of a missing agent is already-closed success", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app)
+    const result = await client.callTool({
+      name: "session_close",
+      arguments: { agent: "does-not-exist" },
+    })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as { alreadyClosed?: boolean }
+    expect(body.alreadyClosed).toBe(true)
   })
 })
