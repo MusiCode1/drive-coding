@@ -119,7 +119,7 @@ export class PcmSegment implements PlayableSegment {
     if (!wav) {
       throw new Error(`PcmSegment ${this.segmentId}: empty WAV`)
     }
-    const blob = new Blob([wav], { type: "audio/wav" })
+    const blob = new Blob([wav.buffer as ArrayBuffer], { type: "audio/wav" })
     this.#blobUrl = URL.createObjectURL(blob)
     return this.#blobUrl
   }

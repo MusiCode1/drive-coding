@@ -49,7 +49,9 @@ function makeMediaSource(sb: SourceBuffer): MediaSource {
   return ms
 }
 
-function makeFakeAudio(): HTMLAudioElement {
+type FakeAudio = HTMLAudioElement & { _advanceTo(t: number): void; _end?(): void }
+
+function makeFakeAudio(): FakeAudio {
   let currentTime = 0
   let paused = true
   const listeners = new Map<string, Set<EventListener>>()
@@ -88,7 +90,7 @@ function makeFakeAudio(): HTMLAudioElement {
       currentTime = t
       emit("timeupdate")
     },
-  } as unknown as HTMLAudioElement
+  } as unknown as FakeAudio
 }
 
 function streamFrom(chunks: Uint8Array[]): ReadableStream<Uint8Array> {
@@ -107,7 +109,7 @@ function streamFrom(chunks: Uint8Array[]): ReadableStream<Uint8Array> {
 }
 
 describe("PlayableSink + SharedAudioOutput contract", () => {
-  let fakeAudio: HTMLAudioElement
+  let fakeAudio: FakeAudio
   let savedMediaSource: typeof MediaSource
 
   beforeEach(() => {
@@ -148,7 +150,7 @@ describe("PlayableSink + SharedAudioOutput contract", () => {
     const p = seg.play()
     await Promise.resolve()
     await Promise.resolve()
-    ;(fakeAudio as { _advanceTo(t: number): void })._advanceTo(output.endOf("s0") ?? 0.2)
+    fakeAudio._advanceTo(output.endOf("s0") ?? 0.2)
     await p
     expect(fakeAudio.pause).not.toHaveBeenCalled()
   })

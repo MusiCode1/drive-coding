@@ -48,7 +48,9 @@ function makeMediaSource(sb: SourceBuffer): MediaSource {
   return ms
 }
 
-function makeFakeAudio(): HTMLAudioElement {
+type FakeAudio = HTMLAudioElement & { _advanceTo(t: number): void; _end?(): void }
+
+function makeFakeAudio(): FakeAudio {
   let currentTime = 0
   let paused = true
   const listeners = new Map<string, Set<EventListener>>()
@@ -91,12 +93,12 @@ function makeFakeAudio(): HTMLAudioElement {
       paused = true
       emit("ended")
     },
-  } as unknown as HTMLAudioElement
+  } as unknown as FakeAudio
 }
 
 describe("SharedAudioOutput", () => {
   let sb: SourceBuffer
-  let fakeAudio: HTMLAudioElement
+  let fakeAudio: FakeAudio
   let output: SharedAudioOutput
 
   beforeEach(() => {
@@ -135,11 +137,11 @@ describe("SharedAudioOutput", () => {
     output.finalizeMp3Segment("s1")
 
     const p0 = output.playSegmentBoundary("s0")
-    ;(fakeAudio as { _advanceTo(t: number): void })._advanceTo(output.endOf("s0") ?? 0)
+    fakeAudio._advanceTo(output.endOf("s0") ?? 0)
     await p0
 
     const p1 = output.playSegmentBoundary("s1")
-    ;(fakeAudio as { _advanceTo(t: number): void })._advanceTo(output.endOf("s1") ?? 0)
+    fakeAudio._advanceTo(output.endOf("s1") ?? 0)
     await p1
 
     expect(fakeAudio.play).toHaveBeenCalled()
@@ -157,11 +159,11 @@ describe("SharedAudioOutput", () => {
     })
 
     expect(resolved).toBe(false)
-    ;(fakeAudio as { _end(): void })._end()
+    fakeAudio._end?.()
     await Promise.resolve()
     expect(resolved).toBe(false)
 
-    ;(fakeAudio as { _advanceTo(t: number): void })._advanceTo(output.endOf("seg") ?? 0)
+    fakeAudio._advanceTo(output.endOf("seg") ?? 0)
     await p
     expect(resolved).toBe(true)
   })
