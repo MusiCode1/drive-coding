@@ -1,13 +1,13 @@
 /**
  * client.create-elicitation.test.ts — slice-elicitation-ui Commit 0.
  *
- * `createClientImpl.unstable_createElicitation` מאציל ל-`opts.onCreateElicitation` אם
+ * `createClientImpl.createElicitation` מאציל ל-`opts.onCreateElicitation` אם
  * סופק; אחרת default `{action:"cancel"}` (לא לתקוע turn / לא לזרוק method-not-found).
  * מחקה את client.request-permission.test.ts.
  *
  * Tests:
  *   (א) בלי onCreateElicitation → default {action:"cancel"} (לא זורק).
- *   (ב) עם handler → unstable_createElicitation מחזיר בדיוק את מה שה-handler מחזיר (accept).
+ *   (ב) עם handler → createElicitation מחזיר בדיוק את מה שה-handler מחזיר (accept).
  *   (ג) handler שדוחה/מבטל → מוחזר כמו-שהוא (decline/cancel).
  */
 
@@ -29,21 +29,21 @@ function baseParams(): CreateElicitationRequest {
   } as CreateElicitationRequest
 }
 
-describe("createClientImpl.unstable_createElicitation — onCreateElicitation handoff", () => {
+describe("createClientImpl.createElicitation — onCreateElicitation handoff", () => {
   it("(א) regression: בלי onCreateElicitation → default {action:'cancel'} (לא זורק)", async () => {
     const impl = createClientImpl({ onUpdate: vi.fn() })
-    const result = await impl.unstable_createElicitation?.(baseParams())
+    const result = await impl.createElicitation?.(baseParams())
     expect(result).toEqual({ action: "cancel" })
   })
 
-  it("(ב) עם handler → unstable_createElicitation מחזיר את מה שה-handler מחזיר (accept)", async () => {
+  it("(ב) עם handler → createElicitation מחזיר את מה שה-handler מחזיר (accept)", async () => {
     const onCreateElicitation = vi.fn().mockResolvedValue({
       action: "accept",
       content: { name: "Alice" },
     })
     const impl = createClientImpl({ onUpdate: vi.fn(), onCreateElicitation })
     const params = baseParams()
-    const result = await impl.unstable_createElicitation?.(params)
+    const result = await impl.createElicitation?.(params)
     expect(onCreateElicitation).toHaveBeenCalledWith(params)
     expect(result).toEqual({ action: "accept", content: { name: "Alice" } })
   })
@@ -51,7 +51,7 @@ describe("createClientImpl.unstable_createElicitation — onCreateElicitation ha
   it("(ג) handler שמבטל → cancel מוחזר כמו-שהוא (default לא רץ)", async () => {
     const onCreateElicitation = vi.fn().mockResolvedValue({ action: "cancel" })
     const impl = createClientImpl({ onUpdate: vi.fn(), onCreateElicitation })
-    const result = await impl.unstable_createElicitation?.(baseParams())
+    const result = await impl.createElicitation?.(baseParams())
     expect(result).toEqual({ action: "cancel" })
   })
 })

@@ -53,6 +53,8 @@ describe("AcpClient.deleteSession", () => {
     void client.deleteSession("session-123")
 
     await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
 
     const frame = joinWritten(written)
     expect(frame).toContain("session/delete")

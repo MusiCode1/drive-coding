@@ -84,6 +84,8 @@ describe("createAttachedAcpClient", () => {
 
     // Allow microtask queue to flush the write.
     await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
 
     expect(joinWritten(written)).toContain("session/load")
   })
@@ -129,6 +131,8 @@ describe("createAcpClient regression — still writes initialize", () => {
     // Flush microtasks — the SDK writes the initialize frame synchronously when
     // ClientSideConnection.initialize() is called (it serialises the request and
     // pushes it to the writable stream synchronously before awaiting the response).
+    await Promise.resolve()
+    await Promise.resolve()
     await Promise.resolve()
 
     // Core regression assertion: initialize frame must be present for cold path.
