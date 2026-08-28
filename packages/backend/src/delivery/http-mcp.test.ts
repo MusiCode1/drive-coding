@@ -23,8 +23,21 @@ type HostStub = {
     sessionId: string | null
     turnState: string
     modes: unknown
-    configOptions: unknown
+    configOptions: unknown[]
+    title: string
+    status: string
+    lastTurnError: { message: string; at: number } | null
+    pending: { permission: null; elicitation: null }
+    commands: unknown[]
+    messages: Array<{
+      id: string
+      role: string
+      messageId: string | null
+      segments: Array<{ id: string; text: string }>
+    }>
   }
+  prompt: ReturnType<typeof vi.fn>
+  setConfigOption: ReturnType<typeof vi.fn>
 }
 
 function makeStubSessionRegistry(): AgentSessionRegistry & { hosts: Map<string, HostStub> } {
@@ -36,15 +49,38 @@ function makeStubSessionRegistry(): AgentSessionRegistry & { hosts: Map<string, 
     getOrCreateHost: vi.fn(async (id: string) => {
       let host = hosts.get(id)
       if (!host) {
-        host = {
+        const created: HostStub = {
           state: {
             sessionId: `sess-${id}`,
             turnState: "idle",
             modes: null,
             configOptions: [],
+            title: "",
+            status: "connected",
+            lastTurnError: null,
+            pending: { permission: null, elicitation: null },
+            commands: [{ name: "huge-commands-blob" }],
+            messages: [],
           },
+          prompt: vi.fn(),
+          setConfigOption: vi.fn(async () => {}),
         }
-        hosts.set(id, host)
+        created.prompt = vi.fn(async (_sid: string, content: string) => {
+          created.state.messages.push({
+            id: `m_${created.state.messages.length + 1}`,
+            role: "user",
+            messageId: null,
+            segments: [{ id: "s_u", text: content }],
+          })
+          created.state.messages.push({
+            id: `m_${created.state.messages.length + 1}`,
+            role: "assistant",
+            messageId: null,
+            segments: [{ id: "s_a", text: `echo:${content}` }],
+          })
+        })
+        hosts.set(id, created)
+        host = created
       }
       return { ok: true, entry: { host, broadcaster: {} } }
     }),
@@ -145,9 +181,13 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     const client = await connectClient(app)
     const { tools } = await client.listTools()
     await client.close()
-    expect(tools.map((t) => t.name).sort()).toEqual(
-      expect.arrayContaining(["session_close", "session_list", "session_open"]),
-    )
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      "session_close",
+      "session_list",
+      "session_open",
+      "session_send",
+      "session_state",
+    ])
   })
 
   it("second Client session succeeds (per-request transport, not singleton)", async () => {
@@ -305,5 +345,136 @@ describe("session_open / session_close (slice session-bus-mcp C1)", () => {
     expect(isToolError(result)).toBe(false)
     const body = JSON.parse(toolText(result)) as { alreadyClosed?: boolean }
     expect(body.alreadyClosed).toBe(true)
+  })
+})
+
+describe("session_send / session_state (slice session-bus-mcp C2)", () => {
+  async function openCursor(client: Client, cwd: string): Promise<{ agent: string }> {
+    const result = await client.callTool({
+      name: "session_open",
+      arguments: { cli: "cursor", cwd },
+    })
+    expect(isToolError(result)).toBe(false)
+    return JSON.parse(toolText(result)) as { agent: string }
+  }
+
+  it("session_send waits for prompt and returns stopReason plus assistant text", async () => {
+    const { app, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app)
+    const opened = await openCursor(client, "/tmp/mcp-c2-send")
+    const sent = await client.callTool({
+      name: "session_send",
+      arguments: { agent: opened.agent, prompt: "hello-c2" },
+    })
+    await client.close()
+    expect(isToolError(sent)).toBe(false)
+    const body = JSON.parse(toolText(sent)) as {
+      stopReason?: string
+      text?: string
+      running?: boolean
+    }
+    expect(body.running).toBeUndefined()
+    expect(body.stopReason).toBe("end_turn")
+    expect(body.text).toBe("echo:hello-c2")
+    const host = agentSessionRegistry.hosts.get(opened.agent)
+    expect(host?.prompt).toHaveBeenCalledWith(`sess-${opened.agent}`, "hello-c2")
+  })
+
+  it("session_send noWait returns {running:true} without waiting for prompt", async () => {
+    const { app, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app)
+    const opened = await openCursor(client, "/tmp/mcp-c2-nowait")
+    const host = agentSessionRegistry.hosts.get(opened.agent)
+    let resolvePrompt: () => void = () => {}
+    if (host) {
+      host.prompt = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolvePrompt = resolve
+          }),
+      )
+    }
+    const sent = await client.callTool({
+      name: "session_send",
+      arguments: { agent: opened.agent, prompt: "later", noWait: true },
+    })
+    await client.close()
+    expect(isToolError(sent)).toBe(false)
+    expect(JSON.parse(toolText(sent))).toEqual({ running: true })
+    resolvePrompt()
+  })
+
+  it("session_send timeout returns {running:true} and leaves the turn running", async () => {
+    const { app, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app)
+    const opened = await openCursor(client, "/tmp/mcp-c2-timeout")
+    const host = agentSessionRegistry.hosts.get(opened.agent)
+    if (host) host.prompt = vi.fn(() => new Promise(() => {}))
+    const sent = await client.callTool({
+      name: "session_send",
+      arguments: { agent: opened.agent, prompt: "hang", timeoutSec: 0.05 },
+    })
+    await client.close()
+    expect(isToolError(sent)).toBe(false)
+    expect(JSON.parse(toolText(sent))).toEqual({ running: true })
+  })
+
+  it("session_send applies sets via setConfigOption before prompt", async () => {
+    const { app, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app)
+    const opened = await openCursor(client, "/tmp/mcp-c2-sets")
+    await client.callTool({
+      name: "session_send",
+      arguments: {
+        agent: opened.agent,
+        prompt: "hi",
+        sets: { model: "fast" },
+      },
+    })
+    await client.close()
+    const host = agentSessionRegistry.hosts.get(opened.agent)
+    expect(host?.setConfigOption).toHaveBeenCalledWith("model", "fast")
+    expect(host?.prompt).toHaveBeenCalled()
+  })
+
+  it("session_state default omits commands; fields ['*'] includes them", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app)
+    const opened = await openCursor(client, "/tmp/mcp-c2-state")
+    const def = JSON.parse(
+      toolText(
+        await client.callTool({
+          name: "session_state",
+          arguments: { agent: opened.agent },
+        }),
+      ),
+    ) as Record<string, unknown>
+    expect(def.sessionId).toBe(`sess-${opened.agent}`)
+    expect(def.turnState).toBe("idle")
+    expect(def).not.toHaveProperty("commands")
+    expect(def).not.toHaveProperty("messages")
+
+    const full = JSON.parse(
+      toolText(
+        await client.callTool({
+          name: "session_state",
+          arguments: { agent: opened.agent, fields: ["*"] },
+        }),
+      ),
+    ) as { commands?: unknown[] }
+    await client.close()
+    expect(full.commands).toEqual([{ name: "huge-commands-blob" }])
+  })
+
+  it("session_state missing agent is an error", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app)
+    const result = await client.callTool({
+      name: "session_state",
+      arguments: { agent: "ghost" },
+    })
+    await client.close()
+    expect(isToolError(result)).toBe(true)
+    expect(toolText(result)).toMatch(/agent not found/)
   })
 })

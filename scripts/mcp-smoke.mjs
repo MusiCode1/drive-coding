@@ -6,7 +6,6 @@
 //
 //   node scripts/mcp-smoke.mjs --base http://127.0.0.1:<port> --e2e
 //     session_open(cursor) → session_send → text in response → session_close
-//     (wired in C2)
 //
 // Do not default --base to :4000/:4001 (live deployments).
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -47,11 +46,57 @@ if (listed.isError) {
 }
 console.log(toolText(listed))
 
-if (has("--e2e")) {
-  console.error("mcp-smoke --e2e: not wired until C2")
+if (!has("--e2e")) {
   await client.close()
-  process.exit(4)
+  process.exit(0)
+}
+
+const nonce = Math.random().toString(36).slice(2, 8)
+const cwd = String(get("--cwd", process.cwd()))
+const timeoutSec = Number(get("--timeout", "180"))
+const opened = await client.callTool({
+  name: "session_open",
+  arguments: {
+    cli: "cursor",
+    cwd,
+    permission: "allow_always",
+    publicUrl: base,
+  },
+})
+if (opened.isError) {
+  console.error("session_open error:", toolText(opened))
+  await client.close()
+  process.exit(1)
+}
+const openBody = JSON.parse(toolText(opened))
+console.log(`opened agent=${openBody.agent} sessionId=${openBody.sessionId}`)
+console.log(`url=${openBody.url}`)
+const agent = openBody.agent
+let failed = false
+try {
+  const prompt = `החזר OK-${nonce}`
+  const sent = await client.callTool({
+    name: "session_send",
+    arguments: { agent, prompt, timeoutSec },
+  })
+  console.log("session_send:", toolText(sent))
+  if (sent.isError) {
+    console.error("session_send error")
+    failed = true
+  } else if (!toolText(sent).includes(`OK-${nonce}`)) {
+    console.error(`nonce OK-${nonce} not in response`)
+    failed = true
+  } else {
+    console.log(`nonce OK-${nonce} found`)
+  }
+} finally {
+  const closed = await client.callTool({
+    name: "session_close",
+    arguments: { agent, force: true },
+  })
+  console.log("session_close:", toolText(closed))
+  if (closed.isError) failed = true
 }
 
 await client.close()
-process.exit(0)
+process.exit(failed ? 1 : 0)

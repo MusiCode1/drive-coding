@@ -18,6 +18,8 @@ import {
   AgentListInput,
   AgentOpenInput,
   type AgentRegistry,
+  AgentSendInput,
+  AgentStateInput,
   toAgentPublic,
 } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
@@ -28,6 +30,7 @@ import type { Hono } from "hono"
 import { z } from "zod"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import { resolveAppVersion } from "../app-version.js"
+import { raceKeepRunning } from "../session-host/http/rpc-wait.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { parseCreateAgentBody } from "./create-agent-input.js"
 
@@ -36,6 +39,23 @@ const log = createLogger("backend.mcp")
 /** Same 30s cap as dispatch-via-api open / agent-cli open. */
 const SESSION_OPEN_TIMEOUT_MS = 30_000
 const SESSION_OPEN_POLL_MS = 1_500
+/** Same default as `drive-coding agent send --timeout`. Not the HTTP rpc 60s cap. */
+const SESSION_SEND_TIMEOUT_SEC = 1800
+
+/** /state is ~47KB, 88% commands. Default session_state omits that blob. */
+const DEFAULT_STATE_FIELDS = [
+  "sessionId",
+  "turnState",
+  "title",
+  "status",
+  "modes",
+  "configOptions",
+  "lastTurnError",
+  "pending",
+] as const
+
+/** MCP-only `fields` on top of AgentStateInput — do not rewrite the shared contract. */
+const SessionStateMcpInput = AgentStateInput.and({ "fields?": "string[]" })
 
 export type McpHttpDeps = {
   registry: AgentRegistry
@@ -106,6 +126,32 @@ async function waitForSessionId(
     if (Date.now() >= deadline) return undefined
     await new Promise((r) => setTimeout(r, SESSION_OPEN_POLL_MS))
   }
+}
+
+function pickSessionState(
+  state: Record<string, unknown>,
+  fields: string[] | undefined,
+): Record<string, unknown> {
+  if (fields?.includes("*")) return { ...state }
+  const keys = fields && fields.length > 0 ? fields : DEFAULT_STATE_FIELDS
+  const out: Record<string, unknown> = {}
+  for (const k of keys) {
+    if (Object.hasOwn(state, k)) out[k] = state[k]
+  }
+  return out
+}
+
+function assistantTextSince(messages: unknown[]): string {
+  const parts: string[] = []
+  for (const m of messages) {
+    if (typeof m !== "object" || m === null) continue
+    const msg = m as { role?: string; segments?: Array<{ text?: string }> }
+    if (msg.role !== "assistant") continue
+    for (const s of msg.segments ?? []) {
+      if (typeof s.text === "string") parts.push(s.text)
+    }
+  }
+  return parts.join("")
 }
 
 function createSessionBusMcpServer(deps: McpHttpDeps): McpServer {
@@ -215,6 +261,99 @@ function createSessionBusMcpServer(deps: McpHttpDeps): McpServer {
       }
       await deps.orchestrator.deleteAndKill(input.agent)
       return jsonResult({ ok: true, agent: input.agent })
+    },
+  )
+
+  registerArkTool(
+    server,
+    "session_send",
+    {
+      title: "Send prompt",
+      description:
+        "Prompt the agent and wait for the turn to end (rpc-wait). Returns stopReason, or {running:true} when noWait or the wait times out. Does not auto-close. file/marker/idleTimeoutSec/keep are CLI-only and ignored.",
+    },
+    AgentSendInput,
+    async (raw) => {
+      const input = raw as typeof AgentSendInput.infer
+      const existing = await deps.registry.get(input.agent)
+      if (!existing) return jsonError("agent not found")
+
+      const hostResult = await deps.agentSessionRegistry.getOrCreateHost(input.agent)
+      if (!hostResult.ok) {
+        return jsonError(`session host did not start: ${hostResult.reason}`)
+      }
+      const { host } = hostResult.entry
+      deps.agentSessionRegistry.touchOwner(input.agent)
+
+      const sessionId = host.state.sessionId
+      if (typeof sessionId !== "string" || sessionId.length === 0) {
+        return jsonError("no sessionId — run session_open first")
+      }
+
+      if (input.sets) {
+        for (const [configId, value] of Object.entries(input.sets)) {
+          await host.setConfigOption(configId, value)
+        }
+      }
+
+      if (input.noWait === true) {
+        const promptWork = host.prompt(sessionId, input.prompt)
+        void promptWork.catch((e) => {
+          log.warn({ err: e }, "prompt turn failed")
+        })
+        return jsonResult({ running: true })
+      }
+
+      const timeoutMs = (input.timeoutSec ?? SESSION_SEND_TIMEOUT_SEC) * 1000
+      const from = host.state.messages.length
+      const promptWork = host.prompt(sessionId, input.prompt)
+      const raced = await raceKeepRunning(promptWork, timeoutMs, (e) => {
+        log.warn({ err: e }, "prompt turn failed")
+      })
+      if (raced.outcome === "timedOut") {
+        return jsonResult({ running: true })
+      }
+      const messagesSince = host.state.messages.slice(from)
+      const text = assistantTextSince(messagesSince)
+      if (raced.outcome === "rejected") {
+        const err = host.state.lastTurnError
+        return jsonResult({
+          stopReason:
+            err?.message ??
+            (raced.error instanceof Error ? raced.error.message : String(raced.error)),
+          lastTurnError: err,
+          text,
+          messagesSince,
+        })
+      }
+      return jsonResult({
+        stopReason: host.state.lastTurnError?.message ?? "end_turn",
+        lastTurnError: host.state.lastTurnError,
+        text,
+        messagesSince,
+      })
+    },
+  )
+
+  registerArkTool(
+    server,
+    "session_state",
+    {
+      title: "Session state",
+      description:
+        'Read in-process host.state. Default fields omit commands/messages (the bulk of GET /state). Pass fields:["*"] for the full snapshot.',
+    },
+    SessionStateMcpInput,
+    async (raw) => {
+      const input = raw as typeof SessionStateMcpInput.infer
+      const existing = await deps.registry.get(input.agent)
+      if (!existing) return jsonError("agent not found")
+      const host = deps.agentSessionRegistry.getHost(input.agent)
+      if (!host) return jsonError("agent connection not found")
+      return jsonResult({
+        agent: input.agent,
+        ...pickSessionState(host.state as unknown as Record<string, unknown>, input.fields),
+      })
     },
   )
 
