@@ -71,6 +71,12 @@ export const AgentNotifyInput = type({
 })
 export type AgentNotifyInput = typeof AgentNotifyInput.infer
 
+/** MCP notify_parent — text only; caller identity from X-Drive-Coding-Agent header. */
+export const AgentNotifyParentInput = type({
+  text: "string >= 1",
+})
+export type AgentNotifyParentInput = typeof AgentNotifyParentInput.infer
+
 export const AgentCloseInput = type({
   agent: "string >= 1",
   "force?": "boolean",

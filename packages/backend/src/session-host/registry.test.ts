@@ -14,8 +14,10 @@
 
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { Hono } from "hono"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
+import { buildAgentMcpServers } from "../agent-identity.js"
+import { setSelfBaseUrlForTests } from "../instances.js"
 import { registerRpcRoute } from "./http/rpc.js"
 import type { PatchesBroadcaster } from "./patches-broadcaster.js"
 import type { HostEntry, HostResult } from "./registry.js"
@@ -30,6 +32,12 @@ function unwrap(result: HostResult): HostEntry {
   if (!result.ok) throw new Error(`expected ok:true, got {ok:false, reason:"${result.reason}"}`)
   return result.entry
 }
+
+const TEST_SELF_BASE = "http://127.0.0.1:4055"
+
+beforeEach(() => {
+  setSelfBaseUrlForTests(TEST_SELF_BASE)
+})
 
 // ── mock helpers ──────────────────────────────────────────────────────────────
 
@@ -739,7 +747,10 @@ describe("AgentSessionRegistry", () => {
 
       await registry.getOrCreateHost("agent-1")
 
-      expect(mockHost.newSession).toHaveBeenCalledWith({ cwd: "/tmp/mock-cwd" })
+      expect(mockHost.newSession).toHaveBeenCalledWith({
+        cwd: "/tmp/mock-cwd",
+        mcpServers: buildAgentMcpServers("agent-1", TEST_SELF_BASE),
+      })
       expect(connectionRegistry.getCwd).toHaveBeenCalledWith("agent-1")
     })
 

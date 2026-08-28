@@ -28,6 +28,7 @@ import type {
 import { createLogger } from "@drive-coding/core/log"
 import { describeCrash } from "@drive-coding/provider/spawn"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
+import { buildAgentIdentityEnv } from "../agent-identity.js"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
 import { AUDIO_FRIENDLY_PROMPT } from "../prompts/index.js"
 import type { ProjectsRegistry } from "./projects-registry.js"
@@ -91,8 +92,11 @@ function drivecodingShapeEnv(cliKind: string, baseEnv: NodeJS.ProcessEnv): NodeJ
 }
 
 /**
- * Composes caller `env` on top of `drivecodingShapeEnv` — does NOT replace it.
- * Extra keys merge above the shaped baseEnv (spawn-only; not in-process bridge).
+ * Composes caller `env` on top of `drivecodingShapeEnv`.
+ *
+ * **Spawn-only** — not used by in-process bridges (claude/codex). Those receive
+ * `agentEnv` on ConnectOpts and inject via `_meta.claudeCode.options.env` (claude)
+ * or have no env channel (codex — explicitly exempt from gate 3).
  */
 export function composeShapeEnv(
   extraEnv: Record<string, string> | undefined,
@@ -175,17 +179,20 @@ export function createAgentOrchestrator(deps: {
       // ── יצירת רשומת registry ──────────────────────────────────────────────
       const agent = await deps.registry.create(input)
       await deps.registry.update(agent.id, { status: "starting" })
+      const identityEnv = buildAgentIdentityEnv(agent.id)
 
       try {
         // ── הפעלת connection (connectSpawn דרך connectionRegistry) ──────────────
         // modelOverride (🔴 avigail): מועבר מ-input — לא מקובע null.
-        // shapeEnv (opencode-only): verbatim מ-bridge-manager:71-83.
+        // shapeEnv: spawn-only (opencode config + DRIVE_CODING_AGENT_ID).
+        // agentEnv: same identity keys for in-process bridges (claude).
         // systemPrompt (slice project-system-prompt): גנרי — הצורה הספציפית-לספק
         // (מיפוי-meta לקלוד / config.developer_instructions לcodex) נכתבת בתוך provider בלבד.
         await deps.connectionRegistry.connect(agent.id, input.cliKind, {
           cwd: input.cwd,
           modelOverride: input.modelOverride ?? null,
-          shapeEnv: composeShapeEnv(input.env),
+          shapeEnv: composeShapeEnv({ ...input.env, ...identityEnv }),
+          agentEnv: identityEnv,
           systemPrompt: input.systemPrompt ?? null,
         })
 

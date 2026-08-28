@@ -15,6 +15,34 @@ export type InstanceRecord = typeof InstanceRecordSchema.infer
 
 const HEALTH_TIMEOUT_MS = 300
 
+/** Set by server.ts immediately after listen — undefined before that. */
+let selfBaseUrl: string | undefined
+
+/**
+ * Records the bound server's public loopback base URL (scheme + 127.0.0.1 + port).
+ * Must run once after listen when the port is known (including `--port 0`).
+ */
+export function setSelfBaseUrl(record: InstanceRecord): void {
+  const scheme = record.https ? "https" : "http"
+  selfBaseUrl = `${scheme}://127.0.0.1:${record.port}`
+}
+
+/**
+ * Loopback base URL of this server (`http(s)://127.0.0.1:<boundPort>`).
+ * Throws if called before listen — no silent default (C0).
+ */
+export function getSelfBaseUrl(): string {
+  if (selfBaseUrl === undefined) {
+    throw new Error("getSelfBaseUrl: server has not listened yet")
+  }
+  return selfBaseUrl
+}
+
+/** Test knob — inject base URL without binding a port (http-mcp uses app.request). */
+export function setSelfBaseUrlForTests(url: string | undefined): void {
+  selfBaseUrl = url
+}
+
 export function getInstancesDir(env: NodeJS.ProcessEnv = process.env): string {
   const xdg = env.XDG_RUNTIME_DIR
   if (xdg !== undefined && xdg !== "") {

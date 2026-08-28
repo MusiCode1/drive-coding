@@ -35,6 +35,17 @@ import { buildClaudeEnvOverride, injectEnvOverride } from "./claude-env-override
 import { createStreamBridge } from "./stream-bridge.js"
 import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
 
+/** Merge cli-spec env override with per-agent keys (DRIVE_CODING_AGENT_ID). */
+function mergeAgentEnv(
+  specOverride: Record<string, string | undefined> | undefined,
+  agentEnv: Record<string, string> | undefined,
+): Record<string, string | undefined> | undefined {
+  if (specOverride === undefined && (agentEnv === undefined || Object.keys(agentEnv).length === 0)) {
+    return undefined
+  }
+  return { ...specOverride, ...agentEnv }
+}
+
 const log = createLogger("provider.connect-in-process")
 
 /** #5 — timeout budget for claudeAgent.dispose() during close(); see brief §9 Q2. */
@@ -196,7 +207,10 @@ export async function connectInProcess(opts: ConnectOpts): Promise<ProviderConne
   // then passed verbatim to spawn(claude, {env}). Node drops keys with value=undefined on spawn
   // ⇒ unset semantics without mutating process.env globally (BE TTS proxy stays intact).
   // loadCliSpecsOverride is memoized per-process — this call is cheap.
-  const envOverride = buildClaudeEnvOverride(getCliSpec("claude", process.env))
+  const envOverride = mergeAgentEnv(
+    buildClaudeEnvOverride(getCliSpec("claude", process.env)),
+    opts.agentEnv,
+  )
 
   // Build agentApp — mirrors in-process-host.ts but connects to stream instead of clientApp.
   // All ext handlers (_drive/*) are registered here.

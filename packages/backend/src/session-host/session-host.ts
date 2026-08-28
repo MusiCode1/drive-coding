@@ -24,6 +24,7 @@
 import type {
   CreateElicitationRequest,
   CreateElicitationResponse,
+  NewSessionRequest,
   RequestPermissionRequest,
   RequestPermissionResponse,
   SessionNotification,
@@ -53,6 +54,8 @@ import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { parseExtResult } from "@drive-coding/provider/extensions"
 import type { AcpTransport } from "@drive-coding/provider/transport"
 import { createInProcessAcpTransport } from "./in-process-acp-transport.js"
+
+type SessionMcpOpts = { mcpServers?: NewSessionRequest["mcpServers"] }
 import { isCleanTurnEndForClose } from "./close-on-turn-end.js"
 import { createPendingRequests } from "./pending-requests.js"
 
@@ -90,14 +93,16 @@ export type SessionHost = {
   ): Promise<void>
 
   /** Delegates to AcpClient.newSession */
-  newSession(opts: { cwd: string; _meta?: Record<string, unknown> }): Promise<{ sessionId: string }>
+  newSession(opts: { cwd: string; _meta?: Record<string, unknown> } & SessionMcpOpts): Promise<{
+    sessionId: string
+  }>
 
   /** Delegates to AcpClient.loadSession */
   loadSession(opts: {
     cwd: string
     sessionId: string
     _meta?: Record<string, unknown>
-  }): Promise<{ sessionId: string }>
+  } & SessionMcpOpts): Promise<{ sessionId: string }>
 
   /** Delegates to AcpClient.cancel */
   cancel(sessionId: string): Promise<void>
@@ -209,12 +214,14 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
       await client.prompt(sessionId, content)
     },
 
-    async newSession(opts: { cwd: string; _meta?: Record<string, unknown> }) {
+    async newSession(opts: { cwd: string; _meta?: Record<string, unknown> } & SessionMcpOpts) {
       if (disposed) throw new Error("SessionHost disposed")
       return client.newSession(opts) as Promise<{ sessionId: string }>
     },
 
-    async loadSession(opts: { cwd: string; sessionId: string; _meta?: Record<string, unknown> }) {
+    async loadSession(
+      opts: { cwd: string; sessionId: string; _meta?: Record<string, unknown> } & SessionMcpOpts,
+    ) {
       if (disposed) throw new Error("SessionHost disposed")
       return client.loadSession(opts) as Promise<{ sessionId: string }>
     },
@@ -287,7 +294,7 @@ export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & {
     cwd: string
     sessionId: string
     _meta?: Record<string, unknown>
-  }): Promise<{ sessionId: string; version: number }>
+  } & SessionMcpOpts): Promise<{ sessionId: string; version: number }>
   /**
    * Respond to a pending permission request.
    * requestId is a sequential counter (0, 1, 2...) assigned internally.
@@ -756,7 +763,7 @@ export async function createSessionHostFromConnection(
       }
     },
 
-    async newSession(opts: { cwd: string; _meta?: Record<string, unknown> }) {
+    async newSession(opts: { cwd: string; _meta?: Record<string, unknown> } & SessionMcpOpts) {
       if (disposed) throw new Error("SessionHost disposed")
       const result = (await client.newSession(opts)) as {
         sessionId: string
@@ -822,7 +829,7 @@ export async function createSessionHostFromConnection(
       cwd: string
       sessionId: string
       _meta?: Record<string, unknown>
-    }): Promise<{ sessionId: string; version: number }> {
+    } & SessionMcpOpts): Promise<{ sessionId: string; version: number }> {
       if (disposed) throw new Error("SessionHost disposed")
       // 1. Invalidate turns of the outgoing session.
       turnSeq++
