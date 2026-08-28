@@ -13,6 +13,8 @@ import { registerAgentsHttp } from "../src/delivery/http-agents.js"
 import { resolveCloseOnTurnEndGraceMs } from "../src/session-host/close-on-turn-end.js"
 import { createAgentSessionRegistry } from "../src/session-host/registry.js"
 import { createSessionHostFromConnection } from "../src/session-host/session-host.js"
+import { serve } from "@hono/node-server"
+import type { ServerType } from "@hono/node-server"
 import { Hono } from "hono"
 
 function makeMockConn(agentId: string): ProviderConnection {
@@ -136,9 +138,23 @@ async function makeGateServer() {
   const { registerRpcRoute } = await import("../src/session-host/http/rpc.js")
   registerRpcRoute(app, agentSessionRegistry)
 
-  const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: app.fetch })
-  const base = `http://127.0.0.1:${server.port}`
-  return { app, registry, deleted, base, stop: () => server.stop() }
+  const server: ServerType = await new Promise((resolve) => {
+    const s = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" })
+    s.on("listening", () => resolve(s))
+  })
+  const addr = server.address()
+  const port = typeof addr === "object" && addr ? addr.port : 0
+  const base = `http://127.0.0.1:${port}`
+  return {
+    app,
+    registry,
+    deleted,
+    base,
+    stop: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve())
+      }),
+  }
 }
 
 describe("session-lifecycle-fields §6 gates", () => {
@@ -185,7 +201,7 @@ describe("session-lifecycle-fields §6 gates", () => {
       expect(await registry.get(agentId)).toBeNull()
       expect(deleted).toContain(agentId)
     } finally {
-      stop()
+      await stop()
     }
   })
 
@@ -209,7 +225,7 @@ describe("session-lifecycle-fields §6 gates", () => {
       await new Promise((r) => setTimeout(r, 50))
       expect(await registry.get(agentId)).not.toBeNull()
     } finally {
-      stop()
+      await stop()
     }
   })
 
@@ -229,7 +245,7 @@ describe("session-lifecycle-fields §6 gates", () => {
       const body = (await list.json()) as { agents: { parentAgentId?: string }[] }
       expect(body.agents[0]?.parentAgentId).toBe("parent-x")
     } finally {
-      stop()
+      await stop()
     }
   })
 })

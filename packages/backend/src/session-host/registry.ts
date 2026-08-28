@@ -339,7 +339,11 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     // (createAttachedAcpClient + loadSession) instead of cold (createAcpClient + newSession).
     const acpSessionId = getAcpSessionId?.(agentId)
     const permissionPolicy = await getPermissionPolicy?.(agentId)
-    const closeOnTurnEnd = (await getCloseOnTurnEnd?.(agentId)) === true
+    const closeOnTurnEndRaw = getCloseOnTurnEnd?.(agentId)
+    const closeOnTurnEnd =
+      (closeOnTurnEndRaw instanceof Promise
+        ? (await closeOnTurnEndRaw) === true
+        : closeOnTurnEndRaw === true)
 
     // Create host + broadcaster
     // slice handoff-foundations C3: if session creation fails below, the host is
