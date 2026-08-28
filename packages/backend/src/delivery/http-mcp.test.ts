@@ -279,7 +279,25 @@ describe("session_open / session_close (slice session-bus-mcp C1)", () => {
           DC_BASE: "http://127.0.0.1:4055",
           DRIVE_CODING_BASE: "http://127.0.0.1:4055",
         }),
+        parentAgentId: "parent-agent",
       }),
+    )
+  })
+
+  it("session_open passes closeOnTurnEnd through to createAndSpawn", async () => {
+    const { app, orchestrator } = makeApp()
+    const client = await connectClient(app)
+    await client.callTool({
+      name: "session_open",
+      arguments: {
+        cli: "cursor",
+        cwd: "/tmp/mcp-c1-close-flag",
+        closeOnTurnEnd: true,
+      },
+    })
+    await client.close()
+    expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({ closeOnTurnEnd: true }),
     )
   })
 

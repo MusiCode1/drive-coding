@@ -24,7 +24,8 @@ agent open:
   --cli <kind>          Required (cursor, claude, …)
   --cwd <dir>           Default: process.cwd()
   --env K=V             Repeatable. Child also gets DRIVE_CODING_BASE and DC_BASE
-  --parent <agentId>    Also sets DC_PARENT
+  --parent <agentId>    Sets DC_PARENT on child and parentAgentId on server
+  --close-on-turn-end   Auto-close agent after first clean turn end
   --permission <policy> allow_once | allow_always | reject_once | ask
   --json
   --public-url <url>    Link host in the printed URL (default: --base)
