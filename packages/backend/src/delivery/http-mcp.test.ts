@@ -55,8 +55,23 @@ function makeStubSessionRegistry(): AgentSessionRegistry & { hosts: Map<string, 
           state: {
             sessionId: `sess-${id}`,
             turnState: "idle",
-            modes: null,
-            configOptions: [],
+            modes: {
+              currentModeId: "ask",
+              availableModes: [
+                { id: "ask", name: "Ask", description: "Prompt before dangerous operations" },
+              ],
+            },
+            configOptions: [
+              {
+                id: "model",
+                name: "Model",
+                description: "Which model to use",
+                category: "model",
+                type: "select",
+                currentValue: "fast",
+                options: [{ value: "fast", name: "Fast" }],
+              },
+            ],
             title: "",
             status: "connected",
             lastTurnError: null,
@@ -190,6 +205,7 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     expect(version?.description).toBeTruthy()
     expect(version?.title).toBeTruthy()
     expect(instructions).toContain("session_open")
+    expect(instructions).toContain("configOptions")
     expect(tools.map((t) => t.name).sort()).toEqual([
       "session_close",
       "session_list",
@@ -230,11 +246,12 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     await client.close()
     expect("isError" in result && result.isError).toBeFalsy()
     const body = JSON.parse(toolText(result)) as {
-      agents: Array<{ cliKind: string; cwd: string }>
+      agents: Array<{ cliKind: string; cwd: string; displayName?: string }>
     }
     expect(body.agents).toHaveLength(1)
     expect(body.agents[0]?.cliKind).toBe("cursor")
     expect(body.agents[0]?.cwd).toBe("/tmp/mcp-c0")
+    expect(body.agents[0]?.displayName).toBe("cursor")
   })
 
   it("source has no self-call via HTTP", () => {
@@ -262,11 +279,20 @@ describe("session_open / session_close (slice session-bus-mcp C1)", () => {
       agent: string
       sessionId: string
       url: string
+      cli?: { kind: string; displayName: string }
+      hint?: string
+      configOptions?: Array<{ id: string; description?: string }>
     }
     expect(body.agent).toBeTruthy()
     expect(body.sessionId).toBe(`sess-${body.agent}`)
     expect(body.url).toBe(
       `https://example.test/chat/cursor/${body.sessionId}?sessionTransport=http`,
+    )
+    expect(body.cli).toEqual({ kind: "cursor", displayName: "cursor" })
+    expect(body.hint).toContain("configOptions")
+    expect(body.hint).toContain("session_close")
+    expect(body.configOptions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "model", description: "Which model to use" })]),
     )
     expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -13,6 +13,11 @@ export const MCP_SERVER_DESCRIPTION =
  * Long-form usage — returned in initialize (instructions). Agents that read this
  * get the full workflow without external docs.
  */
+
+/** Returned on session_open so the catalog explains itself. */
+export const MCP_CONFIGURE_HINT =
+  "configOptions and modes are this CLI's live settings — not just model: also permission, agent persona, thinking, and whatever else it advertises. Each entry has id, a description, currentValue, and allowed values. To change any of them, pass sets: { \"<id>\": \"<value>\" } on session_send. Use only ids from this catalog. You opened this agent — you must session_close it when finished. If a turn is already running, wait until idle or pass force: true. Do not leave it live."
+
 export const MCP_SERVER_INSTRUCTIONS = `# drive-coding MCP
 
 Remote control for live ACP agent processes managed by a drive-coding backend.
@@ -26,6 +31,20 @@ Remote control for live ACP agent processes managed by a drive-coding backend.
 5. **session_close** — delete the agent and kill its CLI when finished.
 
 Re-use an existing agent from session_list instead of opening duplicates when appropriate.
+
+## You open it, you close it
+
+Whoever calls **session_open** owns that agent. You must **session_close** it when you are done — including when a conversation is already in progress. If \`turnState\` is not idle, wait for the turn to end, or pass \`force: true\`. Do not leave spawned agents running.
+
+## Configure the child (model, permissions, agent, …)
+
+Do not guess keys. \`session_open\` (and \`session_state\`) return that CLI's live catalog:
+
+- \`cli.displayName\` — which CLI this is
+- \`configOptions\` — full ACP options (id, name/description, category, currentValue, allowed values)
+- \`modes.availableModes\` — session modes (often permission / plan / bypass), each with id + description
+
+To apply a change, pass those ids on \`session_send.sets\` before the prompt. If an option is missing, this CLI does not expose it over MCP.
 
 ## Identity header
 
@@ -62,17 +81,17 @@ export const MCP_TOOL_META: Record<
   session_open: {
     title: "Open agent session",
     description:
-      "Spawn a new ACP CLI agent and block until sessionId exists (30s cap). Returns { agent, sessionId, url, modes, configOptions }. Required: cli (e.g. cursor, claude, codex), cwd (absolute path). Sets DRIVE_CODING_BASE/DC_BASE from publicUrl or base. parent links a child to a parent agent (also inferred from X-Drive-Coding-Agent header).",
+      "Spawn a new ACP CLI agent and block until sessionId exists (30s cap). Returns { agent, sessionId, url, cli, modes, configOptions, hint }. You own this agent: call session_close when done, even if a turn is already running (wait for idle, or force). cli.displayName identifies the CLI. modes and configOptions are the live catalog (model, permission, agent persona, thinking, …) — pass those ids as session_send.sets. Required: cli (e.g. cursor, claude, codex), cwd (absolute path).",
   },
   session_send: {
     title: "Send prompt to agent",
     description:
-      "Run host.prompt and wait for turn end (default timeout 1800s). Returns { stopReason, text, messagesSince, lastTurnError } on completion, or { running: true } when noWait or timeout. Requires agent id from session_open or session_list. Optional sets applies config options before the prompt. Does not auto-close the agent.",
+      "Run host.prompt and wait for turn end (default timeout 1800s). Returns { stopReason, text, messagesSince, lastTurnError } on completion, or { running: true } when noWait or timeout. Requires agent id from session_open or session_list. Optional sets applies that CLI's configOptions/modes (model, permission, agent, …) before the prompt — keys are option ids from session_open, not guessed names. Does not auto-close — the opener must session_close.",
   },
   session_state: {
     title: "Read agent state",
     description:
-      "Read in-process host.state for one agent. Default fields omit messages/commands (large). Pass fields: [\"*\"] for full snapshot, or a subset like [\"turnState\", \"title\"]. Requires agent id.",
+      "Read in-process host.state for one agent. Default includes modes and configOptions (the live catalog with descriptions). Default omits messages/commands (large). Pass fields: [\"*\"] for full snapshot, or a subset like [\"turnState\", \"title\"]. Requires agent id.",
   },
   session_close: {
     title: "Close agent session",

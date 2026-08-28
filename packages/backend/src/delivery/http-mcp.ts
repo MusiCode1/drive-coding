@@ -19,6 +19,7 @@ import {
   AgentOpenInput,
   type AgentRegistry,
   AgentSendInput,
+  MCP_CONFIGURE_HINT,
   MCP_NOTIFY_PARENT_META,
   MCP_SERVER_DESCRIPTION,
   MCP_SERVER_INSTRUCTIONS,
@@ -31,6 +32,7 @@ import {
 import { createLogger } from "@drive-coding/core/log"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
+import { getCliSpec } from "@drive-coding/provider/config"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import { z } from "zod"
@@ -152,6 +154,11 @@ function pickSessionState(
   return out
 }
 
+function cliMeta(kind: string): { kind: string; displayName: string } {
+  const spec = getCliSpec(kind, process.env)
+  return { kind, displayName: spec?.displayName ?? kind }
+}
+
 function assistantTextSince(messages: unknown[]): string {
   const parts: string[] = []
   for (const m of messages) {
@@ -213,6 +220,7 @@ function createSessionBusMcpServer(
         const host = deps.agentSessionRegistry.getHost(a.id)
         return {
           ...toAgentPublic(a),
+          displayName: cliMeta(a.cliKind).displayName,
           pid: rt?.pid ?? null,
           attached: rt?.attached ?? false,
           busy: rt?.busy ?? false,
@@ -281,8 +289,10 @@ function createSessionBusMcpServer(
         agent: created.agentId,
         sessionId,
         url: `${publicUrl}/chat/${input.cli}/${sessionId}?sessionTransport=http`,
+        cli: cliMeta(input.cli),
         modes: host?.state.modes,
         configOptions: host?.state.configOptions,
+        hint: MCP_CONFIGURE_HINT,
       })
     },
   )

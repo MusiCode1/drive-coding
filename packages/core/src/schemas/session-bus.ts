@@ -66,7 +66,7 @@ export const AgentSendInput = type({
   agent: reqStr("Target agent UUID from session_open or session_list."),
   prompt: type("string").describe("User prompt text sent to the agent for this turn."),
   "sets?": type({ "[string]": "string" }).describe(
-    "Config options to apply via setConfigOption before the prompt, keyed by config id.",
+    "Settings to apply via setConfigOption before the prompt. Keys MUST be option ids from that agent's configOptions (or mode ids from modes) returned by session_open/session_state — e.g. model, permission, agent persona. Do not invent keys; read each option's description and allowed values.",
   ),
   "file?": optStr("Ignored over MCP (CLI-only: read prompt from file)."),
   "marker?": optStr("Ignored over MCP (CLI-only: completion marker in output)."),
