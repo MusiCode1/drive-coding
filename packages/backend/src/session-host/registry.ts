@@ -40,7 +40,7 @@ import { createLogger } from "@drive-coding/core/log"
 import type { PermissionPolicyKind } from "@drive-coding/core/types/permission"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
-import { buildAgentMcpServers } from "../agent-identity.js"
+import { buildAgentMcpServers, optionalAgentMcpServers } from "../agent-identity.js"
 import { getSelfBaseUrl } from "../instances.js"
 import { createPatchesBroadcaster, type PatchesBroadcaster } from "./patches-broadcaster.js"
 import { createSessionHostFromConnection, type ExtendedSessionHost } from "./session-host.js"
@@ -394,11 +394,12 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       // Session init: warm reattach uses loadSession; cold uses newSession.
       // Skip if host already has a sessionId (injected-ready host in tests).
       if (!host.state.sessionId) {
-        const mcpServers = buildAgentMcpServers(agentId, getSelfBaseUrl())
+        const mcpServers = optionalAgentMcpServers(agentId, getSelfBaseUrl(), host.agentCapabilities)
+        const sessionBase = { cwd, ...(mcpServers !== undefined && { mcpServers }) }
         if (acpSessionId) {
-          await host.loadSession({ cwd, sessionId: acpSessionId, mcpServers })
+          await host.loadSession({ ...sessionBase, sessionId: acpSessionId })
         } else {
-          await host.newSession({ cwd, mcpServers })
+          await host.newSession(sessionBase)
         }
       }
 

@@ -183,8 +183,13 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
   it("real MCP client: initialize + tools/list includes session_list", async () => {
     const { app } = makeApp()
     const client = await connectClient(app)
+    const version = client.getServerVersion()
+    const instructions = client.getInstructions()
     const { tools } = await client.listTools()
     await client.close()
+    expect(version?.description).toBeTruthy()
+    expect(version?.title).toBeTruthy()
+    expect(instructions).toContain("session_open")
     expect(tools.map((t) => t.name).sort()).toEqual([
       "session_close",
       "session_list",
@@ -192,6 +197,17 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
       "session_send",
       "session_state",
     ])
+    const openTool = tools.find((t) => t.name === "session_open")
+    const schema = openTool?.inputSchema as { properties?: { cli?: { description?: string } } }
+    expect(schema?.properties?.cli?.description).toContain("cliKind")
+  })
+
+  it("lists guide resource with usage markdown", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app)
+    const { resources } = await client.listResources()
+    await client.close()
+    expect(resources.map((r) => r.uri)).toContain("drive-coding://guide")
   })
 
   it("second Client session succeeds (per-request transport, not singleton)", async () => {

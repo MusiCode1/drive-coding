@@ -61,6 +61,13 @@ describe("AgentSendInput / WaitForTurnEndResult", () => {
     expect(result).not.toHaveProperty("summary")
   })
 
+  it("emits field descriptions in JSON Schema", () => {
+    const schema = AgentOpenInput.toJsonSchema() as {
+      properties?: { cli?: { description?: string } }
+    }
+    expect(schema.properties?.cli?.description).toContain("cliKind")
+  })
+
   it("accepts wait codes 0, 2, 3, 5", () => {
     for (const code of [0, 2, 3, 5]) {
       const result = WaitForTurnEndResult({ code, why: "x", frames: 1, lastState: "idle" })

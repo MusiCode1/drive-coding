@@ -156,7 +156,7 @@ function makeMockHost(sessionId: string | null = null): ExtendedSessionHost {
   const patches = new ReadableStream<import("@drive-coding/core/session").Patch>({
     start() {},
   })
-  return {
+  const host: ExtendedSessionHost = {
     state: { version: 0, sessionId } as ExtendedSessionHost["state"],
     patches,
     prompt: vi.fn().mockResolvedValue(undefined),
@@ -172,8 +172,9 @@ function makeMockHost(sessionId: string | null = null): ExtendedSessionHost {
     listSessions: vi.fn().mockResolvedValue({}),
     deleteSession: vi.fn().mockResolvedValue(undefined),
     dispose: vi.fn().mockResolvedValue(undefined),
-    agentCapabilities: {},
+    agentCapabilities: { mcpCapabilities: { http: true } },
   }
+  return host
 }
 
 function makeMockBroadcaster(): PatchesBroadcaster {
@@ -752,6 +753,23 @@ describe("AgentSessionRegistry", () => {
         mcpServers: buildAgentMcpServers("agent-1", TEST_SELF_BASE),
       })
       expect(connectionRegistry.getCwd).toHaveBeenCalledWith("agent-1")
+    })
+
+    it("omits mcpServers when agent did not declare http MCP in initialize", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      const mockHost = makeMockHost(null)
+      mockHost.agentCapabilities = {}
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(mockHost),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      await registry.getOrCreateHost("agent-1")
+
+      expect(mockHost.newSession).toHaveBeenCalledWith({ cwd: "/tmp/mock-cwd" })
     })
 
     it("does not call host.newSession again if host already has a sessionId", async () => {
