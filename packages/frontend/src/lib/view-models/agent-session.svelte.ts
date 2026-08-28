@@ -124,6 +124,7 @@ import {
   parseClaudeSdkMessage,
   reduceSubagent,
 } from "./claude-subagent-parse"
+import { findToolBubble, mapToolBubble } from "./find-tool-bubble"
 import { type HistoryMark, historyMarkFromReset } from "./history-mark.js"
 
 // ─── slice subagent-tool-nesting: helper טהור לחילוץ parentToolUseId ───
@@ -3114,11 +3115,11 @@ export class AgentSession {
         const parentToolUseId = extractParentToolUseId(notification.update)
         const parentBubbleExists =
           parentToolUseId !== undefined &&
-          this.bubbles.some((b) => b.kind === "tool" && b.toolCall.toolCallId === parentToolUseId)
-        const childAlreadyTopLevel =
+          findToolBubble(this.bubbles, parentToolUseId) != null
+        const childAlreadyExists =
           update.toolCallId !== undefined &&
-          this.bubbles.some((b) => b.kind === "tool" && b.toolCall.toolCallId === update.toolCallId)
-        if (parentToolUseId !== undefined && parentBubbleExists && !childAlreadyTopLevel) {
+          findToolBubble(this.bubbles, update.toolCallId) != null
+        if (parentToolUseId !== undefined && parentBubbleExists && !childAlreadyExists) {
           this.#handleSubagentToolCall(update, parentToolUseId)
         } else {
           // סדר חובה: turnState פר-pending/in_progress לפני ה-no-op guard (idx===-1) של reduce (אביגיל #4)
@@ -3349,10 +3350,6 @@ export class AgentSession {
   // ─── slice subagent-tool-nesting: כלים מקוננים של תת-סוכן ─────────────────────────
 
   /**
-
-  // ─── slice subagent-tool-nesting: כלים מקוננים של תת-סוכן ─────────────────────────
-
-  /**
    * tool_call של כלי-בן של תת-סוכן (`_meta.claudeCode.parentToolUseId`) — בונה `ToolBubble` עשיר
    * (אותה צורה שיוצר `#handleToolCall`) ומקנן אותו ב-`subFrames` של בועת ה-Task האב, במקום
    * top-level (brief §3). **fallback**: אם בועת-Task האב לא נמצאה — top-level רגיל (אל תשמיט).
@@ -3371,12 +3368,12 @@ export class AgentSession {
     parentToolUseId: string,
   ): void {
     if (update.toolCallId === undefined) return
-    const parentIdx = this.bubbles.findIndex(
-      (b) => b.kind === "tool" && b.toolCall.toolCallId === parentToolUseId,
-    )
-    const parent = parentIdx === -1 ? undefined : this.bubbles[parentIdx]
-    if (parent === undefined || parent.kind !== "tool") {
+    const parent = findToolBubble(this.bubbles, parentToolUseId)
+    if (parent === undefined) {
       // fallback (אביגיל r4 #1) — בועת-Task אב לא נמצאה: עדיף כלי top-level על כלי נעלם.
+      console.warn(
+        `[AgentSession] parent tool bubble not found for parentToolUseId "${parentToolUseId}" — falling back to top-level`,
+      )
       this.#applyToolCall(update as Record<string, unknown>)
       return
     }
@@ -3401,11 +3398,10 @@ export class AgentSession {
       segments: [],
     }
 
-    // immutable append + object-replacement (שומר reactivity, כמו B1).
-    this.bubbles[parentIdx] = {
-      ...parent,
-      subFrames: [...(parent.subFrames ?? []), childBubble],
-    }
+    this.bubbles = mapToolBubble(this.bubbles, parentToolUseId, (p) => ({
+      ...p,
+      subFrames: [...(p.subFrames ?? []), childBubble],
+    }))
     this.#subagentToolCallParents.set(update.toolCallId, parentToolUseId)
     this.#setTurnState("calling-tool")
     if (this.#turnEnded) this.#scheduleIdle()
@@ -3433,19 +3429,8 @@ export class AgentSession {
     }
     const parentToolUseId = this.#subagentToolCallParents.get(update.toolCallId)
     if (parentToolUseId === undefined) return
-    const parentIdx = this.bubbles.findIndex(
-      (b) => b.kind === "tool" && b.toolCall.toolCallId === parentToolUseId,
-    )
-    const parent = parentIdx === -1 ? undefined : this.bubbles[parentIdx]
-    if (parent === undefined || parent.kind !== "tool") return
-
-    const subFrames = parent.subFrames ?? []
-    const childIdx = subFrames.findIndex(
-      (sf) => sf.kind === "tool" && sf.toolCall.toolCallId === update.toolCallId,
-    )
-    if (childIdx === -1) return
-    const oldChild = subFrames[childIdx]
-    if (oldChild === undefined || oldChild.kind !== "tool") return
+    const oldChild = findToolBubble(this.bubbles, update.toolCallId)
+    if (oldChild === undefined) return
 
     const newToolCall: ToolCall = {
       ...oldChild.toolCall,
@@ -3461,10 +3446,10 @@ export class AgentSession {
         locations: update.locations === null ? undefined : mapLocations(update.locations),
       }),
     }
-    const newChild: ToolBubble = { ...oldChild, toolCall: newToolCall }
-    const newSubFrames = [...subFrames]
-    newSubFrames[childIdx] = newChild
-    this.bubbles[parentIdx] = { ...parent, subFrames: newSubFrames }
+    this.bubbles = mapToolBubble(this.bubbles, update.toolCallId, (old) => ({
+      ...old,
+      toolCall: newToolCall,
+    }))
   }
 
   /**

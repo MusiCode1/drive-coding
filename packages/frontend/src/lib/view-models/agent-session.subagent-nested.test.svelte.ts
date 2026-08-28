@@ -159,4 +159,32 @@ describe("AgentSession — subagent-nested depth-2 (slice subagent-nested)", () 
     expect(updatedChild?.toolCall.status).toBe("completed")
     expect(updatedChild?.toolCall.result).toBe("hello-depth-2")
   })
+
+  it("missing parent falls back to top-level with console.warn", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const session = new AgentSession()
+    await session.attach({ cwd: "/proj", cliKind: "claude" })
+
+    emitSessionUpdate({
+      sessionUpdate: "tool_call",
+      toolCallId: "toolu_ORPHAN",
+      title: "echo orphan",
+      kind: "execute",
+      status: "pending",
+      rawInput: {},
+      _meta: { claudeCode: { parentToolUseId: "toolu_MISSING_PARENT" } },
+    })
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '[AgentSession] parent tool bubble not found for parentToolUseId "toolu_MISSING_PARENT"',
+      ),
+    )
+    const topLevel = session.bubbles.find(
+      (b) => b.kind === "tool" && b.toolCall.toolCallId === "toolu_ORPHAN",
+    )
+    expect(topLevel).toBeDefined()
+
+    warnSpy.mockRestore()
+  })
 })
