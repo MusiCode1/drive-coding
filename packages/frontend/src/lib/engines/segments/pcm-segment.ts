@@ -1,18 +1,15 @@
 /**
- * pcm-segment.ts — segment WebAudio PCM (l16/24kHz, Gemini TTS).
+ * pcm-segment.ts — segment PCM (l16/24kHz) → WAV blob על SharedAudioOutput.
  *
- * לוגיקה מ-PcmAudioStream, מתואמת ל-PlayableSegment interface.
- *
- * isComplete(): streamDone === true — כל ה-chunks נקלטו.
- *
- * replay: יוצר AudioBufferSourceNode חדשים מה-buffers השמורים בכל play().
- * buffers לעולם לא נמחקים בניגון (splice(0) הוסר) — retained לניגון-מחדש.
- *
- * AudioContext מועבר מ-PlayableSink (instance משותף) — לא נוצר כאן.
+ * isComplete(): streamDone === true.
+ * play(): עוטף WAV ב-play() אחרי streamDone; נפתר על ended (src-swap).
+ * dispose(): abort בלבד — לא revoke על src משותף.
  */
 
 import { pcmToFloat32, splitInt16LE } from "@drive-coding/core/voice/pcm"
-import type { PlayableSegment } from "./playable-segment"
+import { encodeWav } from "../wake-word/wav.js"
+import type { SharedAudioOutput } from "../shared-audio-output.js"
+import type { PlayableSegment } from "./playable-segment.js"
 
 const SAMPLE_RATE = 24000
 
@@ -21,21 +18,17 @@ type PcmState = "loading" | "ready" | "playing" | "ended" | "cancelled"
 export class PcmSegment implements PlayableSegment {
   readonly segmentId: string
   #state: PcmState = "loading"
-  #ctx: AudioContext
-  /** AudioBuffers מפוענחים — retained לניגון-מחדש (לא splice). */
-  #buffers: AudioBuffer[] = []
-  /** Cursor: זמן ה-AudioContext לתזמון gap-less (לפי ה-ctx שמחוץ). */
-  #nextStartTime = 0
+  #output: SharedAudioOutput
+  #floatFrames: Float32Array[] = []
   #streamDone = false
-  #activeSources: AudioBufferSourceNode[] = []
+  #blobUrl: string | null = null
   #abortController: AbortController | null = null
 
-  constructor(segmentId: string, ctx: AudioContext) {
+  constructor(segmentId: string, output: SharedAudioOutput) {
     this.segmentId = segmentId
-    this.#ctx = ctx
+    this.#output = output
   }
 
-  /** מכין: צורך stream ברקע (splitInt16LE → pcmToFloat32 → AudioBuffer). */
   prepare(stream: ReadableStream<Uint8Array>, ac: AbortController): void {
     this.#abortController = ac
     void this.#consumeStream(stream, ac)
@@ -50,8 +43,6 @@ export class PcmSegment implements PlayableSegment {
         const { value, done } = await reader.read()
         if (done) break
         if (!value) break
-        // #state עשוי להשתנה ל-"cancelled" מ-dispose() בזמן ה-await (task אחר).
-        // cast שובר narrowing שגוי של TS שגורר את הבדיקה שלפני ה-await.
         if ((this.#state as PcmState) === "cancelled") break
 
         const { samples, rest } = splitInt16LE(carry, value)
@@ -59,25 +50,17 @@ export class PcmSegment implements PlayableSegment {
 
         if (samples.length > 0) {
           const floats = pcmToFloat32(samples)
-          const floatFixed = new Float32Array(floats)
-          const buf = this.#ctx.createBuffer(1, floatFixed.length, SAMPLE_RATE)
-          buf.copyToChannel(floatFixed, 0)
-          // retained — לא splice
-          this.#buffers.push(buf)
+          this.#floatFrames.push(new Float32Array(floats))
         }
       }
 
-      // flush carry
       if (carry.length > 0 && this.#state !== "cancelled") {
         const firstByte = carry[0]
         const padded = new Uint8Array([firstByte !== undefined ? firstByte : 0, 0])
         const { samples } = splitInt16LE(new Uint8Array(0), padded)
         if (samples.length > 0) {
           const floats = pcmToFloat32(samples)
-          const floatFixed = new Float32Array(floats)
-          const buf = this.#ctx.createBuffer(1, floatFixed.length, SAMPLE_RATE)
-          buf.copyToChannel(floatFixed, 0)
-          this.#buffers.push(buf)
+          this.#floatFrames.push(new Float32Array(floats))
         }
       }
     } catch {
@@ -92,140 +75,59 @@ export class PcmSegment implements PlayableSegment {
     }
   }
 
-  /**
-   * מנגן gap-less. ניתן לקרוא שוב (replay: יוצר sources חדשים מהמערך השמור).
-   * #nextStartTime מאותחל ל-ctx.currentTime בכל קריאה → אין drift בין replays.
-   */
   async play(): Promise<void> {
-    // resume (gesture-gated)
-    if (this.#ctx.state === "suspended") {
-      await this.#ctx.resume()
-    }
-
-    await this.#waitForSomeData()
+    await this.#waitForStreamDone()
 
     if (this.#state === "cancelled") {
       throw new Error(`PcmSegment ${this.segmentId} was cancelled`)
     }
 
     this.#state = "playing"
-
-    // אפס cursor ל-ctx.currentTime בכל play (replay-safe, אין drift)
-    this.#nextStartTime = this.#ctx.currentTime
-
-    return new Promise<void>((resolve, reject) => {
-      let scheduledCount = 0
-      let finishedCount = 0
-      let done = false
-
-      const scheduleNext = () => {
-        if (this.#state === "cancelled") {
-          if (!done) {
-            done = true
-            reject(new Error("cancelled"))
-          }
-          return
-        }
-
-        // תזמן את כל ה-buffers הקיימים (retained — לא splice)
-        const toSchedule = [...this.#buffers].slice(scheduledCount)
-        for (const buf of toSchedule) {
-          const source = this.#ctx.createBufferSource()
-          source.buffer = buf
-          source.connect(this.#ctx.destination)
-          source.start(this.#nextStartTime)
-          this.#nextStartTime += buf.duration
-          scheduledCount++
-          this.#activeSources.push(source)
-          source.onended = () => {
-            this.#activeSources = this.#activeSources.filter((s) => s !== source)
-            finishedCount++
-            if (finishedCount >= scheduledCount && this.#streamDone) {
-              if (!done) {
-                done = true
-                this.#state = "ended"
-                resolve()
-              }
-            } else if (!this.#streamDone || finishedCount < scheduledCount) {
-              scheduleNext()
-            }
-          }
-        }
-
-        // ה-stream עדיין רץ — poll
-        if (!this.#streamDone && toSchedule.length === 0) {
-          setTimeout(scheduleNext, 20)
-        } else if (this.#streamDone && scheduledCount === 0) {
-          // segment ריק
-          if (!done) {
-            done = true
-            this.#state = "ended"
-            resolve()
-          }
-        } else if (this.#streamDone && finishedCount >= scheduledCount) {
-          if (!done) {
-            done = true
-            this.#state = "ended"
-            resolve()
-          }
-        }
-      }
-
-      scheduleNext()
-    })
+    const blobUrl = this.#ensureWavBlob()
+    await this.#output.playBlob(blobUrl)
+    this.#state = "ended"
   }
 
   pause(): void {
-    if (this.#ctx.state === "running") {
-      void this.#ctx.suspend()
-    }
+    this.#output.pause()
   }
 
-  /**
-   * עוצר את ה-sources הפעילים **בלי למחוק את ה-buffers** (retain-and-replay).
-   * play() הבא ייצור sources חדשים מ-#buffers. streamDone נשמר → isComplete נשאר תקף.
-   */
   stop(): void {
-    for (const source of this.#activeSources) {
-      try {
-        source.stop()
-      } catch {
-        /* התעלם */
-      }
+    if (this.#state === "playing") {
+      this.#state = "ready"
     }
-    this.#activeSources = []
   }
 
   resume(): void {
-    if (this.#ctx.state === "suspended") {
-      void this.#ctx.resume()
-    }
+    this.#output.resume()
   }
 
-  /** isComplete: כל ה-stream התקבל */
   isComplete(): boolean {
     return this.#streamDone
   }
 
-  /** Teardown מלא — abort + stop sources. */
   dispose(): void {
     this.#state = "cancelled"
     this.#abortController?.abort()
-    for (const source of this.#activeSources) {
-      try {
-        source.stop()
-      } catch {
-        /* התעלם */
-      }
-    }
-    this.#activeSources = []
-    this.#buffers = []
+    this.#floatFrames = []
+    // blobUrl נשאר — לא revoke על src משותף
   }
 
-  #waitForSomeData(): Promise<void> {
+  #ensureWavBlob(): string {
+    if (this.#blobUrl) return this.#blobUrl
+    const wav = encodeWav(this.#floatFrames, SAMPLE_RATE)
+    if (!wav) {
+      throw new Error(`PcmSegment ${this.segmentId}: empty WAV`)
+    }
+    const blob = new Blob([wav], { type: "audio/wav" })
+    this.#blobUrl = URL.createObjectURL(blob)
+    return this.#blobUrl
+  }
+
+  #waitForStreamDone(): Promise<void> {
     return new Promise((resolve) => {
       const check = () => {
-        if (this.#state !== "loading" || this.#buffers.length > 0) {
+        if (this.#streamDone || this.#state !== "loading") {
           resolve()
         } else {
           setTimeout(check, 20)
