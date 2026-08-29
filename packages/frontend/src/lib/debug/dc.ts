@@ -11,7 +11,9 @@
  *   3. מגודר בזמן-בילד (`PUBLIC_APP_ENV !== "prod"`) — נעדר לגמרי מייצור.
  */
 
+import { getLogConfig } from "$lib/log"
 import { connEvents } from "$lib/util/conn-log"
+import { liveEvents, liveSnapshot } from "$lib/util/live-log"
 import { type PlaybackDebugInfo, playbackDebugInfo } from "./playback-registry"
 import { listViews, type ViewDebugInfo } from "./session-registry"
 
@@ -62,6 +64,12 @@ export type DcSurface = {
   session: () => ViewDebugInfo | ViewDebugInfo[] | null
   instances: () => number
   conn: (n?: number) => ReturnType<typeof connEvents>
+  /** ─── slice live-silence-cost ─── Gemini Live: VAD, mic, inbound. */
+  live: (n?: number) => {
+    snapshot: ReturnType<typeof liveSnapshot>
+    events: ReturnType<typeof liveEvents>
+  }
+  log: typeof getLogConfig
   dump: () => Promise<string>
 }
 
@@ -78,6 +86,11 @@ export function installDebugSurface(): void {
     /** יותר מ-1 ⇒ ממצא: מופע כפול אחרי reconnect. */
     instances: () => listViews().length,
     conn: (n = 40) => connEvents().slice(-n),
+    live: (n = 40) => ({
+      snapshot: liveSnapshot(),
+      events: liveEvents().slice(-n),
+    }),
+    log: getLogConfig,
     dump: async () =>
       JSON.stringify(
         {
@@ -85,6 +98,8 @@ export function installDebugSurface(): void {
           diff: await diff(),
           playback: playbackDebugInfo(),
           conn: connEvents().slice(-60),
+          live: { snapshot: liveSnapshot(), events: liveEvents().slice(-60) },
+          log: getLogConfig(),
         },
         null,
         1,
@@ -92,6 +107,6 @@ export function installDebugSurface(): void {
   }
   ;(window as unknown as { __dc: DcSurface }).__dc = surface
   console.info(
-    "[dc] debug surface ready: __dc.diff() · __dc.playback() · __dc.session() · __dc.conn() · __dc.dump()",
+    "[dc] debug surface ready: __dc.diff() · __dc.playback() · __dc.session() · __dc.conn() · __dc.live() · __dc.log() · __dc.dump()",
   )
 }

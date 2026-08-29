@@ -7,6 +7,8 @@
  * Slice: live-ears, Commit 0.
  */
 
+import { liveInfo } from "../util/live-log"
+
 export type MicFrame = Float32Array
 
 const SAMPLE_RATE = 16_000
@@ -112,11 +114,17 @@ export class MicFrames {
     }
 
     source.connect(node)
-    node.connect(ctx.destination)
+    // Keep the node in the graph so process() runs, but mute loopback —
+    // playing the mic into destination trips echo-cancellation on phones.
+    const mute = ctx.createGain()
+    mute.gain.value = 0
+    node.connect(mute)
+    mute.connect(ctx.destination)
 
     this.#stream = stream
     this.#ctx = ctx
     this.#node = node
+    liveInfo("mic-context", { requested: SAMPLE_RATE, actual: ctx.sampleRate })
   }
 
   async stop(): Promise<void> {

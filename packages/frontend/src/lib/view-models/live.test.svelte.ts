@@ -77,6 +77,7 @@ vi.mock("../engines/live-vad", () => ({
     load = vi.fn(async () => {})
     ingest = (...args: unknown[]) => vadIngestMock(...args)
     reset = vadResetMock
+    armPrime = vi.fn()
   },
 }))
 
@@ -1341,6 +1342,9 @@ describe("Live pause/resume (live-silence-cost)", () => {
       name: "close_live",
       result: { status: "closing" },
     })
-    expect(live.state).toBe("closed")
+    expect(live.state).toBe("open")
+    await vi.waitFor(() => {
+      expect(live.state).toBe("closed")
+    })
   })
 })

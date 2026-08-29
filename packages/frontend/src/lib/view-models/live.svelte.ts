@@ -48,6 +48,7 @@ import {
 } from "../engines/live-session"
 import { LiveVad } from "../engines/live-vad"
 import { MicFrames } from "../engines/mic-frames"
+import { liveInfo } from "../util/live-log"
 import type { AgentSession } from "./agent-session.svelte"
 import type { Mic } from "./mic.svelte"
 import type { Settings } from "./settings.svelte"
@@ -98,6 +99,8 @@ export class Live {
   #sessionMemory: MemoryItem[] = []
   /** Cross-session memory — loaded from localStorage on construct. */
   #alwaysMemory: MemoryItem[] = loadAlwaysMemory()
+  /** Bumped by Stop / toggle so a pending close_live wait does not fire after. */
+  #closeAfterSpeechEpoch = 0
 
   state: LiveSessionState = $state("closed")
   paused = $state(false)
@@ -191,6 +194,7 @@ export class Live {
 
   async toggle(): Promise<void> {
     if (this.isOpen) {
+      this.#closeAfterSpeechEpoch++
       this.paused = false
       this.#engine.close()
       return
@@ -204,6 +208,7 @@ export class Live {
         this.error = "live.error.vadLoad"
       }
       await this.#frames.start()
+      this.#vad.armPrime()
       await this.#engine.open()
       if (this.state === "error") {
         this.error = "live.error.connect"
@@ -232,6 +237,18 @@ export class Live {
     this.#engine.setPaused(false)
     this.#vad.reset()
     this.paused = false
+  }
+
+  /** Tool result first; disconnect only after farewell audio finishes (or grace/timeout). */
+  async #closeAfterSecretarySpeech(): Promise<void> {
+    const epoch = ++this.#closeAfterSpeechEpoch
+    liveInfo("close-live-wait")
+    await this.#sink.whenQuiet({ graceMs: 400, timeoutMs: 12_000 })
+    if (epoch !== this.#closeAfterSpeechEpoch) return
+    if (this.state !== "open") return
+    liveInfo("close-live-after-speech")
+    this.paused = false
+    this.#engine.close()
   }
 
   #dispatchGate(text: string) {
@@ -336,8 +353,7 @@ export class Live {
       }
       case "close_live": {
         this.#engine.sendActionResult(action.id, action.name, { status: "closing" })
-        this.paused = false
-        this.#engine.close()
+        void this.#closeAfterSecretarySpeech()
         break
       }
       case "answer_permission": {

@@ -32,7 +32,7 @@ describe("LiveVad", () => {
 
   it("drops silent frames after speech hangover", async () => {
     runVadStepMock.mockResolvedValueOnce(0.9).mockResolvedValue(0.01)
-    const vad = new LiveVad({ prefixFrames: 2 })
+    const vad = new LiveVad({ prefixFrames: 2, hangoverFrames: 8 })
     await vad.load()
 
     const frame = new Float32Array(1280).fill(0.1)
@@ -76,6 +76,27 @@ describe("LiveVad", () => {
     const frame = new Float32Array(1280)
     const out = await vad.ingest(frame)
     expect(out).toEqual([frame])
+  })
+
+  it("prime forwards leading silence until the first hangover ends", async () => {
+    runVadStepMock.mockResolvedValue(0.01)
+    const vad = new LiveVad({ prefixFrames: 2, hangoverFrames: 8 })
+    await vad.load()
+
+    const silent = new Float32Array(1280)
+    const leading = await vad.ingest(silent)
+    expect(leading).toHaveLength(1)
+  })
+
+  it("passthrough sends silent frames the gate would drop", async () => {
+    runVadStepMock.mockResolvedValue(0.01)
+    const vad = new LiveVad({ prefixFrames: 2, hangoverFrames: 8, passthrough: true })
+    await vad.load()
+
+    const silent = new Float32Array(1280)
+    const out = await vad.ingest(silent)
+    expect(out).toHaveLength(1)
+    expect(out[0]).toEqual(silent)
   })
 
   it("reset clears gate state (next speech flushes prefix again)", async () => {

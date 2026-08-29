@@ -93,4 +93,40 @@ describe("LiveAudioSink", () => {
     mockCtx.endAllSources()
     expect(onPlayingChange).toHaveBeenCalledWith(false)
   })
+
+  it("whenIdle resolves immediately if nothing is playing", async () => {
+    const sink = new LiveAudioSink()
+    await expect(sink.whenIdle()).resolves.toBeUndefined()
+  })
+
+  it("whenIdle resolves when the last source ends", async () => {
+    const sink = new LiveAudioSink()
+    sink.enqueue(float32ToInt16LE(new Float32Array([0.1])))
+    let settled = false
+    const done = sink.whenIdle().then(() => {
+      settled = true
+    })
+    expect(settled).toBe(false)
+    mockCtx.endAllSources()
+    await done
+    expect(settled).toBe(true)
+  })
+
+  it("whenQuiet waits grace then resolves if still idle", async () => {
+    vi.useFakeTimers()
+    try {
+      const sink = new LiveAudioSink()
+      let settled = false
+      const done = sink.whenQuiet({ graceMs: 400, timeoutMs: 2000 }).then(() => {
+        settled = true
+      })
+      await vi.advanceTimersByTimeAsync(399)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      await done
+      expect(settled).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

@@ -6,6 +6,19 @@
 
 import type { LiveEvent, LiveProvider, LiveSession } from "@drive-coding/core/voice/live-types"
 import { float32ToInt16LE } from "@drive-coding/core/voice/pcm"
+import {
+  liveInfo,
+  liveNoteAction,
+  liveNoteAudioOut,
+  liveNoteInbound,
+  liveNotePausedFrame,
+  liveNoteSessionStarted,
+  liveNoteTranscript,
+  liveResetCounters,
+  liveSetPaused,
+  liveSetState,
+  liveWarn,
+} from "../util/live-log"
 
 export type LiveConnector = {
   fetchToken(): Promise<{ token: string; model: string; sessionConfig: Record<string, unknown> }>
@@ -66,6 +79,8 @@ export class LiveSessionEngine {
 
   #state: LiveSessionState = "closed"
   #paused = false
+  /** True after we sent PCM; cleared by `audio_stream_end` (auto-VAD pause). */
+  #audioStreamOpen = false
   readonly transcript: LiveTranscriptEntry[] = []
   /** F2 — bumped by close(); guards every resumption point inside open(). */
   #openEpoch = 0
@@ -115,6 +130,8 @@ export class LiveSessionEngine {
 
   async open(): Promise<void> {
     if (this.#state === "connecting" || this.#state === "open") return
+    liveResetCounters()
+    this.#audioStreamOpen = false
     this.#setState("connecting")
     this.transcript.length = 0
 
@@ -135,6 +152,7 @@ export class LiveSessionEngine {
     try {
       const { token, model, sessionConfig } = await this.#connector.fetchToken()
       if (epoch !== this.#openEpoch) return
+      liveInfo("token", { model, configKeys: Object.keys(sessionConfig).join(",") })
 
       const session = await this.#connector.provider.connect({
         credential: token,
@@ -160,8 +178,9 @@ export class LiveSessionEngine {
         this.#onFrame(frame)
       })
       this.#setState("open")
-    } catch {
+    } catch (err) {
       if (epoch !== this.#openEpoch) return
+      liveWarn("connect-failed", { err: String(err instanceof Error ? err.message : err) })
       this.#cleanupSession()
       this.#setState("error")
     }
@@ -170,6 +189,7 @@ export class LiveSessionEngine {
   close(): void {
     this.#openEpoch++
     this.#paused = false
+    this.#audioStreamOpen = false
     this.#cleanupSession()
     this.#setState("closed")
   }
@@ -177,10 +197,15 @@ export class LiveSessionEngine {
   /** Pause mic forwarding without stopping capture or closing the socket. */
   setPaused(paused: boolean): void {
     this.#paused = paused
+    liveSetPaused(paused)
+    if (paused) this.#endAudioStream(this.#session)
   }
 
   #onFrame(frame: Float32Array): void {
-    if (this.#paused) return
+    if (this.#paused) {
+      liveNotePausedFrame()
+      return
+    }
     const session = this.#session
     if (!session) return
 
@@ -189,7 +214,7 @@ export class LiveSessionEngine {
       return
     }
 
-    session.send({ type: "audio", pcm: float32ToInt16LE(frame) })
+    this.#sendAudio(session, frame)
   }
 
   async #forwardFilteredFrame(frame: Float32Array, session: LiveSession): Promise<void> {
@@ -199,10 +224,30 @@ export class LiveSessionEngine {
     } catch {
       batches = [frame]
     }
-    if (this.#paused || this.#session !== session) return
-    for (const chunk of batches) {
-      session.send({ type: "audio", pcm: float32ToInt16LE(chunk) })
+    if (this.#paused || this.#session !== session) {
+      this.#endAudioStream(session)
+      return
     }
+    if (batches.length === 0) {
+      this.#endAudioStream(session)
+      return
+    }
+    for (const chunk of batches) {
+      this.#sendAudio(session, chunk)
+    }
+  }
+
+  #sendAudio(session: LiveSession, frame: Float32Array): void {
+    session.send({ type: "audio", pcm: float32ToInt16LE(frame) })
+    this.#audioStreamOpen = true
+  }
+
+  /** Auto-VAD: pausing the stream for >1s requires audioStreamEnd (Gemini Live docs). */
+  #endAudioStream(session: LiveSession | null): void {
+    if (!session || !this.#audioStreamOpen) return
+    this.#audioStreamOpen = false
+    liveInfo("audio-stream-end")
+    session.send({ type: "audio_stream_end" })
   }
 
   /** Immediate tool response — does not wait for agent turn (§B.2). */
@@ -211,11 +256,17 @@ export class LiveSessionEngine {
   }
 
   sendContext(text: string, channel: "speakable" | "silent"): void {
+    liveInfo("context", {
+      channel,
+      n: text.length,
+      head: text.slice(0, 60).replaceAll("\n", " "),
+    })
     this.#session?.send({ type: "context", text, channel })
   }
 
   #setState(next: LiveSessionState): void {
     this.#state = next
+    liveSetState(next)
     for (const h of this.#stateHandlers) h(next)
   }
 
@@ -230,24 +281,32 @@ export class LiveSessionEngine {
 
   #handleEvent(event: LiveEvent): void {
     switch (event.type) {
+      case "session_started":
+        liveNoteSessionStarted()
+        break
       case "transcript": {
+        liveNoteTranscript(event.role, event.text, event.final)
         const entry = { role: event.role, text: event.text, final: event.final }
         appendTranscript(this.transcript, entry)
         for (const h of this.#transcriptHandlers) h(entry)
         break
       }
       case "action":
+        liveNoteAction(event.name, event.id)
         for (const h of this.#actionHandlers) {
           h({ id: event.id, name: event.name, args: event.args })
         }
         break
       case "audio":
+        liveNoteAudioOut(event.pcm.byteLength)
         this.#audioSink?.enqueue(event.pcm)
         break
       case "interrupted":
+        liveNoteInbound("interrupted")
         this.#audioSink?.stop()
         break
       case "turn_done": {
+        liveNoteInbound("turn_done", { role: event.role })
         const last = this.transcript.at(-1)
         if (last && last.role === event.role) {
           last.final = true
@@ -255,6 +314,12 @@ export class LiveSessionEngine {
         }
         break
       }
+      case "usage":
+        liveNoteInbound("usage", {
+          total: event.totalTokens,
+          prompt: event.promptTokens,
+        })
+        break
       // Both terminal branches end the attempt, so both must invalidate any
       // `open()` still in flight — exactly as `close()` does. Without the bump
       // this is asymmetric with `close()`, and it is unreachable today only by
@@ -266,11 +331,13 @@ export class LiveSessionEngine {
       // Third instance of this family: NBug17 (connect never settles), F2
       // (close during connect ignored), and now this one.
       case "error":
+        liveWarn("error", { message: event.message })
         this.#openEpoch++
         this.#cleanupSession()
         this.#setState("error")
         break
       case "closed":
+        liveInfo("closed", { reason: event.reason ?? "" })
         this.#openEpoch++
         this.#cleanupSession()
         this.#setState("closed")

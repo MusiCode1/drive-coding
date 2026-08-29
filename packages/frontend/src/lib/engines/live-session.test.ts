@@ -207,6 +207,54 @@ describe("LiveSessionEngine", () => {
     expect(send).toHaveBeenCalledTimes(2)
   })
 
+  it("speechFilter empty after send flushes audio_stream_end once", async () => {
+    const frames = mockFrames()
+    const send = vi.fn()
+    const provider = mockProvider({ send })
+    const ingest = vi
+      .fn()
+      .mockReturnValueOnce([new Float32Array([0.2])] as readonly Float32Array[])
+      .mockReturnValue([] as readonly Float32Array[])
+    const engine = new LiveSessionEngine({
+      connector: {
+        fetchToken: async () => ({ token: "t", model: "m", sessionConfig: {} }),
+        provider,
+      },
+      frames,
+      speechFilter: { ingest, reset: vi.fn() },
+    })
+
+    await engine.open()
+    frames.emitFrame(new Float32Array([0.2]))
+    await Promise.resolve()
+    frames.emitFrame(new Float32Array([0]))
+    await Promise.resolve()
+    expect(send.mock.calls.map((c) => c[0]?.type)).toEqual(["audio", "audio_stream_end"])
+
+    frames.emitFrame(new Float32Array([0]))
+    await Promise.resolve()
+    expect(send.mock.calls.map((c) => c[0]?.type)).toEqual(["audio", "audio_stream_end"])
+  })
+
+  it("setPaused after audio sends audio_stream_end", async () => {
+    const frames = mockFrames()
+    const send = vi.fn()
+    const provider = mockProvider({ send })
+    const engine = new LiveSessionEngine({
+      connector: {
+        fetchToken: async () => ({ token: "t", model: "m", sessionConfig: {} }),
+        provider,
+      },
+      frames,
+    })
+
+    await engine.open()
+    frames.emitFrame(new Float32Array([0.5]))
+    engine.setPaused(true)
+    expect(send.mock.calls.map((c) => c[0]?.type)).toEqual(["audio", "audio_stream_end"])
+    expect(engine.state).toBe("open")
+  })
+
   it("setPaused swallows frames without close", async () => {
     const frames = mockFrames()
     const send = vi.fn()
