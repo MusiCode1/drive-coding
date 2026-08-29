@@ -889,6 +889,12 @@ export class AgentSession {
     }
   }
 
+  /** Fires session-end with reason "navigate". No-op when status is "idle" (never opened, or already torn down). */
+  notifySessionNavigatedAway(): void {
+    if (this.status === "idle") return
+    this.#endSessionScope("navigate")
+  }
+
   #remoteViewOpts(): { headers: Record<string, string>; onSseReconnected?: () => void } {
     const headers = { "Acp-Connection-Id": this.#connectionId }
     const listener = this.#sseReconnectedListener
