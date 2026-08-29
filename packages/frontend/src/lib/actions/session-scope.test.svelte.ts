@@ -12,7 +12,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { AudioSink } from "$lib/engines/audio-sink"
 import type { ViewEmission } from "$lib/session/session-view"
-import { AgentSession } from "$lib/view-models/agent-session.svelte"
+import { MockSessionView } from "$lib/view-models/__fixtures__/mock-session-view.svelte"
+import { AgentSession, type SessionEndReason } from "$lib/view-models/agent-session.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
 import { Speaker } from "$lib/view-models/speaker.svelte"
 import { bindSessionScope } from "./session-scope"
@@ -60,6 +61,13 @@ function audioHarness() {
   })
   bindSessionScope({ session, speaker, orderAlloc })
   return { session, sink, playlist, orderAlloc, speaker }
+}
+
+function reasonHarness() {
+  const session = new AgentSession()
+  const reasons: SessionEndReason[] = []
+  session.onSessionEnd((r) => reasons.push(r))
+  return { session, reasons }
 }
 
 // ─── Local-view mocks (G2/G4 — attach() required) ───────────────────────────
@@ -195,5 +203,141 @@ describe("session-scope G3 — leaveRunning clears audio", () => {
 
     expect(playlist.items.length).toBe(0)
     expect(sink.clear).toHaveBeenCalled()
+  })
+})
+
+// ─── Commit 3 — G4–G7 enforcement gates ─────────────────────────────────────
+
+describe("session-scope G4 — every exit path fires onSessionEnd with correct reason", () => {
+  it("detach → detach", () => {
+    const { session, reasons } = reasonHarness()
+    session.detach()
+    expect(reasons).toEqual(["detach"])
+  })
+
+  it("leaveRunning → leave-running", async () => {
+    const { session, reasons } = reasonHarness()
+    await session.leaveRunning()
+    expect(reasons).toEqual(["leave-running"])
+  })
+
+  it("loadSession → load", async () => {
+    const { session, reasons } = reasonHarness()
+    await session.loadSession({ sessionId: "sess-1", cwd: "/tmp", cliKind: "opencode" })
+    expect(reasons).toEqual(["load"])
+  })
+
+  it("switchSession local (after attach) → switch", async () => {
+    const { session, reasons } = reasonHarness()
+    await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+    reasons.length = 0
+    await session.switchSession({ sessionId: "sess-b", cwd: "/tmp", cliKind: "opencode" })
+    expect(reasons).toEqual(["switch"])
+  })
+
+  it("newSession local warm (after attach) → new", async () => {
+    const { session, reasons } = reasonHarness()
+    await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+    reasons.length = 0
+    await session.newSession({ cliKind: "opencode" })
+    expect(reasons).toEqual(["new"])
+  })
+
+  it("newSession local fallback (no #client) → new before attach", async () => {
+    const { session, reasons } = reasonHarness()
+    await session.newSession({ cwd: "/tmp", cliKind: "opencode" })
+    expect(reasons[0]).toBe("new")
+  })
+
+  it("deleteSession local active → delete", async () => {
+    const { session, reasons } = reasonHarness()
+    await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+    const sid = session.sessionId
+    if (!sid) throw new Error("expected sessionId after attach")
+    reasons.length = 0
+    await session.deleteSession(sid)
+    expect(reasons).toEqual(["delete"])
+  })
+
+  it("switchSession remote → switch", async () => {
+    const view = new MockSessionView()
+    view.connect("remote-sess-1")
+    const session = new AgentSession({ view })
+    session._setStatusForTest("connected")
+    const reasons: SessionEndReason[] = []
+    session.onSessionEnd((r) => reasons.push(r))
+    await session.switchSession({ sessionId: "remote-sess-2", cwd: "/tmp", cliKind: "opencode" })
+    expect(reasons).toEqual(["switch"])
+  })
+
+  it("deleteSession remote active → delete", async () => {
+    const view = new MockSessionView()
+    view.connect("remote-sess-1")
+    const session = new AgentSession({ view })
+    session._setStatusForTest("connected")
+    session._setSessionContextForTest({
+      sessionId: "remote-sess-1",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+    const reasons: SessionEndReason[] = []
+    session.onSessionEnd((r) => reasons.push(r))
+    await session.deleteSession("remote-sess-1")
+    expect(reasons).toEqual(["delete"])
+  })
+})
+
+describe("session-scope G5 — bindSessionScope calls stop() before clear()", () => {
+  it("stop precedes clear on session end", () => {
+    const order: string[] = []
+    const stop = vi.fn(() => order.push("stop"))
+    const clear = vi.fn(() => order.push("clear"))
+    bindSessionScope({
+      session: {
+        onSessionEnd: (cb) => {
+          cb("detach")
+          return () => {}
+        },
+      },
+      speaker: { stop },
+      orderAlloc: { clear },
+    })
+    expect(order).toEqual(["stop", "clear"])
+  })
+})
+
+describe("session-scope G6 — double session-end is idempotent", () => {
+  it("two consecutive listener invocations do not throw", () => {
+    const { session, sink, playlist, orderAlloc, speaker } = audioHarness()
+    playlist.reserve("seg-1", key(0), "bubble-1")
+    playlist.markReady("seg-1")
+    let listener: ((reason: SessionEndReason) => void) | undefined
+    bindSessionScope({
+      session: {
+        onSessionEnd: (cb) => {
+          listener = cb
+          return () => {}
+        },
+      },
+      speaker,
+      orderAlloc,
+    })
+    expect(() => {
+      listener!("detach")
+      listener!("detach")
+    }).not.toThrow()
+    expect(playlist.items.length).toBe(0)
+    expect(sink.clear).toHaveBeenCalled()
+  })
+})
+
+describe("session-scope G7 — loadSession preserveContextOnError does not fire", () => {
+  it("cold-reconnect preserve path skips session-end", async () => {
+    const { session, reasons } = reasonHarness()
+    await session.loadSession(
+      { sessionId: "sess-1", cwd: "/tmp", cliKind: "opencode" },
+      { preserveContextOnError: true },
+    )
+    expect(reasons).not.toContain("load")
   })
 })
