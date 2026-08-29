@@ -1,3 +1,19 @@
+## 2026-08-29 15:07 — slice playlist-nav-chrome · Commit 0 (tdd red)
+
+Phase 0: `audio-playlist.late-arrive.test.ts` — 2 tests red on base `f7d49905`.
+
+| Case | Assert |
+|------|--------|
+| A | late markReady → no cursor jump; prev → sink.play(s1) |
+| B | noteBuffered without markReady; prev while skipped → sink.play(s1) |
+
+#### בדיקות
+
+- late-arrive: 2 failed (expected red)
+- lint:i18n: pass
+
+---
+
 ## 2026-08-27 12:25 — slice live-transcript-box · Commit 2 (data-live-entry) · סיום
 
 Phase 2: `data-live-entry` על כל רשומה + טסט DoD 4 נפרד.
