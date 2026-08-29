@@ -39,6 +39,8 @@ adapters/       — I/O. פונקציות שמחזירות Promises.
 
 **ספיק קשיח: 150 שורות לroute.** יותר = משהו שגוי.
 
+> הספיק **אינו נאכף היום.** מדידת החקירה (`docs-for-llm/investigations/2026-08-29-architecture-compliance/00-census.json`, 2026-08-29T12:12Z): **4** קבצי-route מעל 150 שורות. המספר בחוק לא עודכן — הכרעת מרדכי פתוחה (לעדכן סף או לאכוף).
+
 ### 2. View-models מייצגים entities, לא screens
 
 שאלה לפני יצירת view-model: "האם זה מתאר entity דומיין שחי בלי קשר לאיזה screen פתוח?"
@@ -61,6 +63,10 @@ adapters/       — I/O. פונקציות שמחזירות Promises.
 **אסור:** ליצור view-models, `fetch`, לקרוא ל-actions ישירות (props callbacks → route → action), `$effect` עם side effects חיצוניים.
 
 **Heuristic: `<script>` < 50 שורות.** יותר = הcomponent עושה עבודה לא שלו.
+
+> ההיוריסטיקה **אינה נאכפת היום.** אותה מדידה: **30** קומפוננטות מעל 50 שורות-`<script>` (3 מהן test). המספר בחוק לא עודכן — אותה הכרעה פתוחה.
+
+> **שאלה פתוחה (לא כלל):** אין כלל כתוב ל-composition shells כמו `AppShell` (`<script>` 347) ו-`SessionOptionsPanel` (`<script>` 262). חוק #3 אומר components הם leaves — והם לא. האם מעטפת-layout היא קטגוריה שלישית, או הפרה? הכרעה למרדכי — אל תמציא כלל.
 
 ### 4. Side effects שייכים ל-owner של ה-state
 
@@ -106,18 +112,24 @@ src/
 ├── lib/
 │   ├── context.ts              — createContext זוגות (set + get לכל singleton)
 │   ├── view-models/            — primary $state classes
-│   │   └── derived/            — derived $derived classes (לעתיד)
+│   │   └── derived/            — VoiceMode, ModelStatus
 │   ├── engines/                — imperative resource owners
 │   ├── adapters/               — I/O wrappers
 │   └── actions/                — procedures חוצי-שכבה
-└── routes/                     — shells דקים
+└── routes/                     — 7 קבצי .svelte (+ +layout.ts)
     ├── +layout.svelte          — composition root (יוצר VMs + setContext)
-    ├── +page.svelte            — / (connect)
-    └── chat/+page.svelte       — /chat
+    ├── +layout.ts              — ssr=false
+    ├── +page.svelte            — /
+    ├── chat/+page.svelte       — /chat
+    ├── chat/[cliKind]/[sessionId]/+page.svelte
+    ├── settings/+page.svelte   — /settings
+    ├── bt-test/+page.svelte    — harness
+    └── wake-word-test/+page.svelte
 ```
 
-**`+layout.svelte` הוא המקום היחיד** שיוצר instances של view-models (`new X()`).
-כל route אחר משתמש ב-`getContext()` בלבד.
+**`+layout.svelte` הוא המקום** שיוצר את ה-view-models הראשיים (`new X()`).
+חריגות שנמדדו: `bt-test/+page.svelte` (`new BtRemoteEngine`), `wake-word-test/+page.svelte` (`new WakeWordVM`), `ChatScreen.svelte` (`new BtRemoteEngine` — חריגה מתועדת מחוק #3).
+כל route-מוצר אחר משתמש ב-`getContext()` בלבד.
 
 ---
 
@@ -140,30 +152,32 @@ User (voice) → Mic → text → AgentSession → text → Agent (ACP)
 
 ---
 
-## מצב נוכחי (slice 3 הושלם — Mic + STT + VoiceMode FSM)
+## מצב נוכחי (נמדד 2026-08-29 — הרבה אחרי slice 3)
 
-✓ שיחה קולית MVP: מיקרופון → STT (Gemini) → sendPrompt → Speaker TTS.
-✓ View-models: Settings, AgentSession, I18nVM, Speaker, Mic, VoiceMode (derived).
-✓ ACP integration דרך WsAcpTransport + `@drive-coding/core/acp`.
-✓ 2 routes: `/` ו-`/chat`.
-✓ i18n: `@drive-coding/core/i18n` + lint rule (`scripts/lint-no-hebrew-in-code.sh`).
+הכותרת הישנה «slice 3 הושלם / slice הבא = 4» **מיושנת.** עשרות slices אחרי 3 כבר ב-`dev`.
+ראה `docs-for-llm/frontend/slices.md` לטבלה — גם היא עלולה להיות מאחור.
+<!-- TODO: לאמת איזה slice הוא tip מול slices.md החי -->
+
+✓ שיחה קולית: מיקרופון → STT (Gemini) → sendPrompt → Speaker TTS.
+✓ ACP דרך `WsAcpTransport` + `@drive-coding/core/acp`.
+✓ i18n: `@drive-coding/core/i18n` + lint (`scripts/lint-no-hebrew-in-code.sh`).
 ✓ SPA-only (`+layout.ts` עם `ssr=false`).
-✓ typecheck + build נקיים.
 
-**לא קיים עדיין:** Bubble polish (slice 4), CarMode (slice 7), recordings, session picker, settings page, recovery flow, error toasts.
+**Routes** — 7 קבצי `.svelte` תחת `src/routes/` (ועוד `+layout.ts`):
+`/` · `/chat` · `/chat/[cliKind]/[sessionId]` · `/settings` · `/bt-test` · `/wake-word-test` · ו-`+layout.svelte`.
 
----
+**View-models שנוצרים ב-`+layout`:** Settings, I18nVM, AgentSession, Mic, Live, Speaker, VoiceMode (derived), ModelStatus (derived), BubblePlayer, ThemeVM, ResponsiveVM, UiShellVM, ModalsVM, ContentViewerVM, ActiveAgents, RecentProjects, CliAvailability, PresencePoller.
 
-## slice הבא — slice 4: Bubble polish
+**קיים — אל תבנה מחדש:**
+- Settings page — route דק (14 שורות) + `SettingsScreen`.
+- Session picker — inline בסיידבר (`SessionOptionsPanel`, מחליף `SessionsDialog`). אין route `/sessions`.
+- Bubble polish (slice 4, מאי 2026) — `ThoughtBubble` / `ToolBubble` / `MarkdownContent`.
+- Recovery — reconnect-recovery ב-`AgentSession` (`#errorSurfaced`, `preserveContextOnError`).
+- Error surface — באנר `role="alert"` ב-`ChatScreen` + `DisconnectBanner`. **אין** רכיב toast (`grep toast` = 0).
+- Recordings — adapter `POST /api/recordings` חי; גלריית-replay עדיין לא (הערה ב-`agent-session`: «יתווסף ב-slice 10»).
+- CarMode — דגל+טוגל ב-Settings; חיווט ריק (אין צרכן מחוץ לטוגל). `context.ts` עדיין אומר «slice 7 יוסיף כאן».
 
-ראה `docs-for-llm/frontend/slices.md` לטבלת ה-slices המלאה.
-
-**מה כולל:**
-- Markdown rendering ב-message bubbles.
-- Thought bubbles עם 💭 prefix + dashed border + italic.
-- Tool bubbles collapsible עם status dots.
-- RTL alignment (user ימין, agent שמאל).
-- ראה `docs-for-llm/frontend-spec.md §7` לפרטי עיצוב.
+אל תפתח `/settings` שני, `/sessions`, מערכת-toast, או `POST /api/recordings` שני.
 
 ---
 
