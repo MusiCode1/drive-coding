@@ -100,6 +100,7 @@ export class Live {
   #alwaysMemory: MemoryItem[] = loadAlwaysMemory()
 
   state: LiveSessionState = $state("closed")
+  paused = $state(false)
   transcript: LiveTranscriptEntry[] = $state([])
   error: MessageKey | null = $state(null)
   /** Reactive bridge — fed by LiveAudioSink, not read from sink.isPlaying directly. */
@@ -153,6 +154,7 @@ export class Live {
     this.#engine.on("state", (s) => {
       this.state = s
       if (s === "open") this.error = null
+      if (s === "closed") this.paused = false
     })
     this.#engine.on("transcript", (entry) => {
       this.transcript = [...this.#engine.transcript]
@@ -189,6 +191,7 @@ export class Live {
 
   async toggle(): Promise<void> {
     if (this.isOpen) {
+      this.paused = false
       this.#engine.close()
       return
     }
@@ -214,6 +217,21 @@ export class Live {
           : "live.error.connect"
       this.#engine.close()
     }
+  }
+
+  /** Pause mic forwarding while keeping the Live socket open. */
+  pause(): void {
+    if (this.state !== "open") return
+    this.#engine.setPaused(true)
+    this.paused = true
+  }
+
+  /** Resume mic forwarding after manual pause (button only — no voice resume). */
+  resume(): void {
+    if (!this.paused) return
+    this.#engine.setPaused(false)
+    this.#vad.reset()
+    this.paused = false
   }
 
   #dispatchGate(text: string) {

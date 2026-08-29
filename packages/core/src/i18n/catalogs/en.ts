@@ -143,6 +143,9 @@ export const en: Catalog = {
   "record.reconnectAttempt": "attempt",
   "live.toggle.open": "Live conversation",
   "live.toggle.close": "Close live",
+  // live-silence-cost
+  "live.toggle.pause": "Pause",
+  "live.toggle.resume": "Resume",
   "live.status.connecting": "Connecting…",
   "live.ear.listening": "Listening…",
   "live.transcript.user": "You",

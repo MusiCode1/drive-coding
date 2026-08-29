@@ -138,6 +138,9 @@ export const he: Catalog = {
   "record.reconnectAttempt": "ניסיון",
   "live.toggle.open": "שיחה חיה",
   "live.toggle.close": "סגור שיחה חיה",
+  // live-silence-cost
+  "live.toggle.pause": "השהה",
+  "live.toggle.resume": "המשך",
   "live.status.connecting": "מתחבר…",
   "live.ear.listening": "מקשיב…",
   "live.transcript.user": "אתה",

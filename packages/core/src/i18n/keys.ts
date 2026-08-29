@@ -149,6 +149,9 @@ export type MessageKey =
   // ─── live ─── (slice live-ears)
   | "live.toggle.open"
   | "live.toggle.close"
+  // ─── live-silence-cost ───
+  | "live.toggle.pause"
+  | "live.toggle.resume"
   | "live.status.connecting"
   | "live.ear.listening"
   | "live.transcript.user"

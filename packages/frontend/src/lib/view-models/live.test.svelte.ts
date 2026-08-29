@@ -55,8 +55,11 @@ vi.mock("../engines/mic-frames", () => ({
     sampleRate = 16_000
     start = vi.fn(async () => {})
     stop = vi.fn(async () => {})
-    on(_event: "frame", _h: (f: Float32Array) => void) {
-      return () => {}
+    on(_event: "frame", h: (f: Float32Array) => void) {
+      micFrameHandler = h
+      return () => {
+        micFrameHandler = null
+      }
     }
     get level() {
       return 0
@@ -64,9 +67,26 @@ vi.mock("../engines/mic-frames", () => ({
   },
 }))
 
+let micFrameHandler: ((f: Float32Array) => void) | null = null
+const vadResetMock = vi.fn()
+const vadIngestMock = vi.fn(async (frame: Float32Array) => [frame] as readonly Float32Array[])
+
+vi.mock("../engines/live-vad", () => ({
+  LiveVad: class {
+    loadFailed = false
+    load = vi.fn(async () => {})
+    ingest = (...args: unknown[]) => vadIngestMock(...args)
+    reset = vadResetMock
+  },
+}))
+
 beforeEach(() => {
   providerSend.mockClear()
   sessionSend.mockClear()
+  micFrameHandler = null
+  vadResetMock.mockClear()
+  vadIngestMock.mockClear()
+  vadIngestMock.mockImplementation(async (frame: Float32Array) => [frame])
 })
 
 function mockMic(state: "idle" | "recording" | "transcribing" = "idle") {
@@ -1229,5 +1249,34 @@ describe("Live config control (live-config-control)", () => {
     } finally {
       dispose()
     }
+  })
+})
+
+describe("Live pause/resume (live-silence-cost)", () => {
+  it("pause does not close the session", async () => {
+    const session = mockSession()
+    const live = await openLive(session)
+    live.pause()
+    expect(live.paused).toBe(true)
+    expect(live.state).toBe("open")
+  })
+
+  it("resume resets filter and forwards audio again", async () => {
+    const session = mockSession()
+    const live = await openLive(session)
+    providerSend.mockClear()
+
+    live.pause()
+    micFrameHandler?.(new Float32Array(1280))
+    await Promise.resolve()
+    expect(providerSend).not.toHaveBeenCalledWith(expect.objectContaining({ type: "audio" }))
+
+    live.resume()
+    expect(live.paused).toBe(false)
+    expect(vadResetMock).toHaveBeenCalled()
+
+    micFrameHandler?.(new Float32Array(1280))
+    await Promise.resolve()
+    expect(providerSend).toHaveBeenCalledWith(expect.objectContaining({ type: "audio" }))
   })
 })
