@@ -19,6 +19,7 @@
     "lint:i18n": "./scripts/lint-no-hebrew-in-code.sh",
     "lint:css-vars": "./scripts/lint-css-vars.sh packages/frontend/src",
     "lint:rtl": "node scripts/lint-no-physical-classes.mjs",
+    "lint:size": "node scripts/lint-file-size.mjs",
     "format": "biome format --write .",
     "hooks:install": "git config core.hooksPath .githooks",
     "worktrees:prune": "node scripts/prune-worktrees.mjs",
