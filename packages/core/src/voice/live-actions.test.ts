@@ -49,6 +49,17 @@ describe("buildLiveActions()", () => {
     const forward = buildLiveActions(["forward"])[0]
     expect(forward?.params).toEqual([])
   })
+
+  it("read_recent optional flags default to not required", () => {
+    const recent = buildLiveActions(["read_recent"])[0]
+    expect(recent?.params.map((p) => p.name)).toEqual([
+      "count",
+      "thoughts",
+      "toolCalls",
+      "messages",
+    ])
+    expect(recent?.params.every((p) => !p.required)).toBe(true)
+  })
 })
 
 describe("buildLiveSecretaryPrompt()", () => {
@@ -57,6 +68,8 @@ describe("buildLiveSecretaryPrompt()", () => {
     expect(prompt).toContain("מזהים טכניים")
     expect(prompt).toContain("שפת המשתמש")
     expect(prompt).toContain("ענה בעצמך על שאלות רגילות")
+    expect(prompt).toContain("התפקיד העיקרי שלך הוא לתווך")
+    expect(prompt).toContain("אל תחווה דעה על יכולות סוכן הקוד")
     expect(prompt).toContain("compose_prompt")
   })
 

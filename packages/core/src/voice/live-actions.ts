@@ -43,7 +43,12 @@ export const LIVE_ACTION_SHAPES: readonly LiveActionShape[] = [
   },
   {
     name: "read_recent",
-    params: [{ name: "count", type: "number", required: false }],
+    params: [
+      { name: "count", type: "number", required: false },
+      { name: "thoughts", type: "boolean", required: false },
+      { name: "toolCalls", type: "boolean", required: false },
+      { name: "messages", type: "boolean", required: false },
+    ],
   },
   {
     name: "remember_session",

@@ -35,3 +35,9 @@ export function formatSecretaryDispatch(
   if (!opts?.includePreamble) return tagged
   return `${buildLiveAgentPrompt()}\n\n${tagged}`
 }
+
+/** True when the ACP conversation already contains the one-shot secretary explanation. */
+export function conversationHasLiveAgentPreamble(texts: readonly string[]): boolean {
+  const needle = buildLiveAgentPrompt()
+  return texts.some((t) => t.includes(needle))
+}

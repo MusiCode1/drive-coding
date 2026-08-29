@@ -15,12 +15,15 @@ import {
   type ListConfigInput,
   type SelectChoiceInput,
 } from "@drive-coding/core/voice/live-config"
-import { formatSecretaryDispatch } from "@drive-coding/core/voice/live-agent-prompt"
+import {
+  conversationHasLiveAgentPreamble,
+  formatSecretaryDispatch,
+} from "@drive-coding/core/voice/live-agent-prompt"
 import { formatAgentDelivery, formatConfigSeedProse, formatPermissionPending } from "@drive-coding/core/voice/live-prompt"
 import { buildLiveSeed } from "@drive-coding/core/voice/live-seed"
 import { formatMemoryForPrompt, type MemoryItem } from "@drive-coding/core/voice/live-memory"
 import { searchSessionBubbles } from "@drive-coding/core/voice/live-search"
-import { parseRecentCount, readRecentBubbles } from "@drive-coding/core/voice/live-read-recent"
+import { parseRecentBool, parseRecentCount, readRecentBubbles } from "@drive-coding/core/voice/live-read-recent"
 import { isUnpromptedSend } from "@drive-coding/core/voice/unprompted-guard"
 import {
   loadAlwaysMemory,
@@ -32,6 +35,7 @@ import { mapPermissionOptions } from "$lib/types/permission"
 import {
   LIVE_SEED_LABELS,
   mapBubblesToLiveSeed,
+  mapBubblesToRecent,
   mapSessionTurnState,
 } from "$lib/util/live-seed-from-session"
 import { geminiLive } from "../adapters/voice/live/gemini"
@@ -86,8 +90,6 @@ export class Live {
   #notifiedPermissionKey: string | null = null
   /** Set when agent delivery is sent; cleared on first user transcript fragment. */
   #deliveredSinceUserSpoke = false
-  /** One-shot agent instruction — attached to the first real secretary dispatch. */
-  #agentPromptSent = false
   #lastUserTranscriptIdSeen: number | undefined = undefined
   /** Session-scoped secretary memory (RAM). Cleared when Live class is recreated. */
   #sessionMemory: MemoryItem[] = []
@@ -145,7 +147,6 @@ export class Live {
     this.#engine.on("state", (s) => {
       this.state = s
       if (s === "open") this.error = null
-      if (s === "closed") this.#agentPromptSent = false
     })
     this.#engine.on("transcript", (entry) => {
       this.transcript = [...this.#engine.transcript]
@@ -215,11 +216,21 @@ export class Live {
     })
   }
 
-  /** First successful dispatch carries the one-shot explanation; later ones do not. */
+  /** First successful dispatch prepends the explanation unless it is already in the ACP transcript. */
   #sendToAgent(text: string): void {
-    const includePreamble = !this.#agentPromptSent
-    this.#agentPromptSent = true
+    const includePreamble = !conversationHasLiveAgentPreamble(this.#conversationTexts())
     void this.#session.sendPrompt(formatSecretaryDispatch(text, { includePreamble }))
+  }
+
+  #conversationTexts(): string[] {
+    const texts: string[] = []
+    const last = this.#session.lastUserMessage
+    if (last) texts.push(last)
+    for (const bubble of this.#session.bubbles ?? []) {
+      if (bubble.kind !== "user") continue
+      texts.push(bubble.segments.map((s) => s.text).join(""))
+    }
+    return texts
   }
 
   #lastFinalUserTranscript(): string {
@@ -312,8 +323,13 @@ export class Live {
         break
       }
       case "read_recent": {
-        const bubbles = mapBubblesToLiveSeed(this.#session.bubbles ?? [])
-        const result = readRecentBubbles(bubbles, { count: parseRecentCount(action.args.count) })
+        const items = mapBubblesToRecent(this.#session.bubbles ?? [])
+        const result = readRecentBubbles(items, {
+          count: parseRecentCount(action.args.count),
+          thoughts: parseRecentBool(action.args.thoughts) ?? false,
+          toolCalls: parseRecentBool(action.args.toolCalls) ?? false,
+          messages: parseRecentBool(action.args.messages) ?? true,
+        })
         this.#engine.sendActionResult(action.id, action.name, result)
         break
       }

@@ -81,13 +81,15 @@ function mockSession(overrides: Partial<AgentSession> = {}): AgentSession {
     isRemoteView: false,
     turnState: "idle",
     pendingPermission: null,
-    bubbles: [],
+    bubbles: [] as AgentSession["bubbles"],
     lastUserMessage: "",
     configOptions: [],
     models: null,
     modes: null,
     supports: { thinkingTokens: false },
-    sendPrompt: vi.fn(async () => {}),
+    sendPrompt: vi.fn(async (text: string) => {
+      base.lastUserMessage = text
+    }),
     cancelTurn: vi.fn(async () => {}),
     recentAssistantMessages: vi.fn(() => []),
     resolvePermission: vi.fn(),
@@ -716,20 +718,17 @@ describe("Live agent secretary prompt (agent-secretary-prompt)", () => {
     )
   })
 
-  it("resets the explanation on close and prepends again on first dispatch after reopen", async () => {
+  it("does not resend the explanation after Live close on the same ACP session", async () => {
     const session = mockSession()
     const { live, dispose } = createLive({ session })
     try {
       await live.toggle()
-      expect(session.sendPrompt).not.toHaveBeenCalled()
-
       providerOnEvent?.({
         type: "action",
         id: "first",
         name: "compose_prompt",
         args: { text: "one" },
       })
-      expect(session.sendPrompt).toHaveBeenCalledTimes(1)
       expect(session.sendPrompt).toHaveBeenLastCalledWith(
         formatSecretaryDispatch("one", { includePreamble: true }),
       )
@@ -738,8 +737,6 @@ describe("Live agent secretary prompt (agent-secretary-prompt)", () => {
       expect(live.state).toBe("closed")
 
       await live.toggle()
-      expect(session.sendPrompt).toHaveBeenCalledTimes(1)
-
       providerOnEvent?.({
         type: "action",
         id: "second",
@@ -747,12 +744,32 @@ describe("Live agent secretary prompt (agent-secretary-prompt)", () => {
         args: { text: "two" },
       })
       expect(session.sendPrompt).toHaveBeenCalledTimes(2)
-      expect(session.sendPrompt).toHaveBeenLastCalledWith(
-        formatSecretaryDispatch("two", { includePreamble: true }),
-      )
+      expect(session.sendPrompt).toHaveBeenLastCalledWith(formatSecretaryToAgent("two"))
     } finally {
       dispose()
     }
+  })
+
+  it("skips the explanation when a user bubble already contains it", async () => {
+    const session = mockSession({
+      bubbles: [
+        {
+          kind: "user",
+          id: "u1",
+          messageId: null,
+          createdAt: 0,
+          segments: [{ id: "s1", text: formatSecretaryDispatch("earlier", { includePreamble: true }) }],
+        },
+      ] as AgentSession["bubbles"],
+    })
+    await openLive(session)
+    providerOnEvent?.({
+      type: "action",
+      id: "next",
+      name: "compose_prompt",
+      args: { text: "two" },
+    })
+    expect(session.sendPrompt).toHaveBeenCalledWith(formatSecretaryToAgent("two"))
   })
 
   it("compose_prompt and forward prefix secretary marker before sendPrompt", async () => {
@@ -880,6 +897,105 @@ describe("Live context wiring (seed + search + remember)", () => {
         messages: [
           expect.objectContaining({ role: "user", text: "hello" }),
           expect.objectContaining({ role: "assistant", text: "world" }),
+        ],
+      }),
+    })
+  })
+
+  it("read_recent thoughts=true includes thought traces", async () => {
+    const session = mockSession({
+      bubbles: [
+        {
+          kind: "thought",
+          id: "t1",
+          messageId: "m",
+          createdAt: 0,
+          segments: [{ id: "s0", text: "ponder" }],
+        },
+        {
+          kind: "user",
+          id: "u1",
+          messageId: null,
+          createdAt: 1,
+          segments: [{ id: "s1", text: "hello" }],
+        },
+      ] as AgentSession["bubbles"],
+    })
+    await openLive(session)
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "r2",
+      name: "read_recent",
+      args: { thoughts: true },
+    })
+
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "r2",
+      name: "read_recent",
+      result: expect.objectContaining({
+        messages: [
+          expect.objectContaining({ role: "thought", text: "ponder" }),
+          expect.objectContaining({ role: "user", text: "hello" }),
+        ],
+      }),
+    })
+  })
+
+  it("read_recent can return only full tool calls", async () => {
+    const session = mockSession({
+      bubbles: [
+        {
+          kind: "user",
+          id: "u1",
+          messageId: null,
+          createdAt: 0,
+          segments: [{ id: "s1", text: "run" }],
+        },
+        {
+          kind: "tool",
+          id: "tool1",
+          messageId: null,
+          createdAt: 1,
+          segments: [],
+          toolCall: {
+            toolCallId: "tc1",
+            name: "Read",
+            args: { path: "a.ts" },
+            status: "completed",
+            content: [{ type: "text", text: "ok" }],
+          },
+        },
+      ] as AgentSession["bubbles"],
+    })
+    await openLive(session)
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "r3",
+      name: "read_recent",
+      args: { messages: false, toolCalls: true },
+    })
+
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "r3",
+      name: "read_recent",
+      result: expect.objectContaining({
+        returned: 1,
+        messages: [
+          expect.objectContaining({
+            role: "tool",
+            text: "Read",
+            tool: expect.objectContaining({
+              name: "Read",
+              args: '{"path":"a.ts"}',
+              output: "ok",
+            }),
+          }),
         ],
       }),
     })
