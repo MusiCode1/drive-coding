@@ -1279,4 +1279,68 @@ describe("Live pause/resume (live-silence-cost)", () => {
     await Promise.resolve()
     expect(providerSend).toHaveBeenCalledWith(expect.objectContaining({ type: "audio" }))
   })
+
+  it("pause_live sends result then pauses without closing", async () => {
+    const session = mockSession()
+    const live = await openLive(session)
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "p1",
+      name: "pause_live",
+      args: {},
+    })
+
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "p1",
+      name: "pause_live",
+      result: { status: "paused" },
+    })
+    expect(live.paused).toBe(true)
+    expect(live.state).toBe("open")
+  })
+
+  it("pause_live when already paused returns already_paused", async () => {
+    const session = mockSession()
+    const live = await openLive(session)
+    live.pause()
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "p2",
+      name: "pause_live",
+      args: {},
+    })
+
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "p2",
+      name: "pause_live",
+      result: { status: "already_paused" },
+    })
+  })
+
+  it("close_live sends closing then closes like Stop", async () => {
+    const session = mockSession()
+    const live = await openLive(session)
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "c1",
+      name: "close_live",
+      args: {},
+    })
+
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "c1",
+      name: "close_live",
+      result: { status: "closing" },
+    })
+    expect(live.state).toBe("closed")
+  })
 })

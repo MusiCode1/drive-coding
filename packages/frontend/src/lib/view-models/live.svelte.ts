@@ -321,6 +321,25 @@ export class Live {
         this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
         break
       }
+      case "pause_live": {
+        if (this.state !== "open") {
+          this.#engine.sendActionResult(action.id, action.name, { status: "not_open" })
+          break
+        }
+        if (this.paused) {
+          this.#engine.sendActionResult(action.id, action.name, { status: "already_paused" })
+          break
+        }
+        this.#engine.sendActionResult(action.id, action.name, { status: "paused" })
+        this.pause()
+        break
+      }
+      case "close_live": {
+        this.#engine.sendActionResult(action.id, action.name, { status: "closing" })
+        this.paused = false
+        this.#engine.close()
+        break
+      }
       case "answer_permission": {
         const optionId = typeof action.args.optionId === "string" ? action.args.optionId : ""
         const pending = this.#session.pendingPermission

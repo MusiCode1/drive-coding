@@ -49,6 +49,18 @@ export const LIVE_ACTION_PROSE: Readonly<
       "ולא מוחק עבודה שכבר נכתבה. אם אין תור פתוח — אין מה לבטל.",
     params: {},
   },
+  pause_live: {
+    description:
+      "השהה שליחת מיקרופון לשיחה החיה; הסוקט נשאר פתוח. " +
+      "אם כבר מושהה — מחזיר already_paused. חידוש רק בכפתור Resume, אין כלי resume.",
+    params: {},
+  },
+  close_live: {
+    description:
+      "סגור את השיחה החיה (לא cancel_turn — זה תור סוכן הקוד). " +
+      "קודם אמור שלום בקול, אחר כך קרא לכלי; אל תסגור באמצע משפט.",
+    params: {},
+  },
   answer_permission: {
     description:
       "ענה על בקשת אישור מהסוכן (allow / deny / always). " +
@@ -178,6 +190,11 @@ const HISTORY_TOOLS_SECTION =
   "read_recent לחתך אחרון בלי חיפוש, search_session למילות מפתח. " +
   "אל תגיד שאין לך גישה להודעות בלי לקרוא לאחד מהם."
 
+const LIVE_SESSION_CONTROL_SECTION =
+  "סיום והשהיה של השיחה החיה: «ביי», «סיימנו» ודומה — קודם אמור שלום בקול, אחר כך close_live. " +
+  "אל תסגור באמצע משפט. השהיה בלי לסיים את השיחה — pause_live (הסוקט נשאר). " +
+  "חידוש אחרי השהיה — רק כפתור Resume; אין כלי resume קולי."
+
 type LivePromptTool = {
   name: string
   description: string
@@ -189,6 +206,8 @@ export const LIVE_SECRETARY_TOOL_ORDER = [
   "compose_prompt",
   "forward",
   "cancel_turn",
+  "pause_live",
+  "close_live",
   "answer_permission",
   "search_session",
   "read_recent",
@@ -308,6 +327,7 @@ export function buildLiveSecretaryPrompt(opts?: {
     role,
     SCOPE_SECTION,
     HISTORY_TOOLS_SECTION,
+    LIVE_SESSION_CONTROL_SECTION,
     CONFIG_TOOLS_SECTION,
     formatLiveToolsSection(opts?.tools ?? toolsFromProse()),
     IDENTIFIER_SECTION,

@@ -12,11 +12,13 @@ import {
 
 describe("LIVE_ACTION_SHAPES", () => {
   it("declares secretary + context actions (declared ⇔ handled)", () => {
-    expect(LIVE_ACTION_SHAPES).toHaveLength(11)
+    expect(LIVE_ACTION_SHAPES).toHaveLength(13)
     expect(LIVE_ACTION_SHAPES.map((s) => s.name)).toEqual([
       "compose_prompt",
       "forward",
       "cancel_turn",
+      "pause_live",
+      "close_live",
       "answer_permission",
       "search_session",
       "read_recent",
@@ -32,7 +34,7 @@ describe("LIVE_ACTION_SHAPES", () => {
 describe("buildLiveActions()", () => {
   it("returns all actions with merged Hebrew prose when names omitted", () => {
     const actions = buildLiveActions()
-    expect(actions).toHaveLength(11)
+    expect(actions).toHaveLength(13)
     const compose = actions.find((a) => a.name === "compose_prompt")
     const prose = LIVE_ACTION_PROSE.compose_prompt
     expect(prose).toBeDefined()
