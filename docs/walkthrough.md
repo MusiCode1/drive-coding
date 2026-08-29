@@ -1,3 +1,14 @@
+## 2026-08-29 15:10 — slice playlist-nav-chrome · Commit 2 (harness)
+
+Phase 2: 20 MP3 fixtures (ffmpeg) + `/playlist-nav-chrome-test` harness + `tests/smoke/playlist-nav-chrome.mjs` (PLAYLIST_NAV_CHROME=1 gate).
+
+#### בדיקות
+
+- smoke without flag: exit 0 `skipped: no-chrome`
+- chrome DoD: manual (linux-gui CDP)
+
+---
+
 ## 2026-08-29 15:08 — slice playlist-nav-chrome · Commit 1 (contract)
 
 Phase 1: `#playLoop` replay branch includes `skipped`+`jumpTarget`+`isComplete`; `#navigate` resets `skipped`+!complete like done/error; `markReady` on `skipped`+`reconsiderable` → ready without cursor move.

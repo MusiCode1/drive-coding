@@ -41,6 +41,11 @@ export class PlayableSink implements AudioSink {
     }
   }
 
+  /** Shared HTMLAudioElement (src-swap) — harness / debug only. */
+  getAudioElement(): HTMLAudioElement {
+    return this.#output.audio
+  }
+
   async prepareSegment(
     segmentId: string,
     stream: ReadableStream<Uint8Array>,
