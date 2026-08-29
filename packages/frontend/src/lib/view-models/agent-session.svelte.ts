@@ -184,6 +184,16 @@ export type AgentSessionStatus =
 /** מה המודל עושה בתור הנוכחי. מופרד מ-status (חיבור) — §1 ב-brief. */
 export type TurnState = "idle" | "waiting" | "thinking" | "responding" | "calling-tool"
 
+/** slice session-scope-core S1 — reason passed to onSessionEnd listeners. "navigate" reserved for S2. */
+export type SessionEndReason =
+  | "detach"
+  | "leave-running"
+  | "switch"
+  | "new"
+  | "load"
+  | "delete"
+  | "navigate"
+
 /**
  * ─── עיצוב תוספתי בטוח למקביליות ───
  *
@@ -855,6 +865,28 @@ export class AgentSession {
 
   setSseReconnectedListener(listener: (() => void) | null): void {
     this.#sseReconnectedListener = listener
+  }
+
+  // ─── slice session-scope-core S1: session-end boundary (additive) ───
+  #sessionEndListeners: Array<(reason: SessionEndReason) => void> = []
+
+  /** Registers a listener for session-scope end. Returns unsubscribe. Listeners run in registration order. */
+  onSessionEnd(cb: (reason: SessionEndReason) => void): () => void {
+    this.#sessionEndListeners.push(cb)
+    return () => {
+      const i = this.#sessionEndListeners.indexOf(cb)
+      if (i >= 0) this.#sessionEndListeners.splice(i, 1)
+    }
+  }
+
+  #endSessionScope(reason: SessionEndReason): void {
+    for (const cb of this.#sessionEndListeners) {
+      try {
+        cb(reason)
+      } catch {
+        // one listener must not break teardown
+      }
+    }
   }
 
   #remoteViewOpts(): { headers: Record<string, string>; onSseReconnected?: () => void } {
@@ -1673,6 +1705,11 @@ export class AgentSession {
   }
 
   detach = (): void => {
+    this.#detachWith("detach")
+  }
+
+  #detachWith(reason: SessionEndReason): void {
+    this.#endSessionScope(reason)
     this.#detached = true // ‏לפני ה-cleanup — ‏ה-WS close fires async
     // ─── slice ws-reconnect-infra: ביטול לולאת reconnect ───
     this.#clearReconnectTimer()
@@ -1693,6 +1730,7 @@ export class AgentSession {
    *  ⚠️ סנכרן גוף זה מול detach() אם detach() משתנה. הבדלים מ-detach: cleanup({keepAgent:true})
    *  + flush של permission ה-pending לפני הסגירה (למטה). */
   leaveRunning = async (): Promise<void> => {
+    this.#endSessionScope("leave-running")
     this.#detached = true
     this.#clearReconnectTimer()
     this.#reconnecting = false
@@ -1975,6 +2013,9 @@ export class AgentSession {
     if (this.status === "connecting" || this.status === "connected") {
       throw new Error(`cannot loadSession in status ${this.status}`)
     }
+    if (!opts?.preserveContextOnError) {
+      this.#endSessionScope("load")
+    }
     this.#setStatus("connecting")
     this.error = null
     this.authMethods = [] // slice auth-guidance: נקה לפני חיבור חדש — נלכד מחדש אחרי createAcpClient
@@ -2164,6 +2205,7 @@ export class AgentSession {
       if (this.status !== "connected" || this.isLoadingHistory) {
         throw new Error(`cannot switchSession in status ${this.status}`)
       }
+      this.#endSessionScope("switch")
       this.error = null // parity with the local path — a stale error must not survive
       this.isLoadingHistory = true // silences TTS during the replay (like local)
       try {
@@ -2197,6 +2239,7 @@ export class AgentSession {
     }
 
     this.#resetTurnTracking() // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
+    this.#endSessionScope("switch")
     this.#setStatus("connecting")
     this.error = null
     this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
@@ -2274,6 +2317,7 @@ export class AgentSession {
     // אין חיבור פעיל → נתיב כבד (דפנסיבי; ה-panel מוצג רק עם חיבור)
     if (this.#client === null) {
       if (!cwd) throw new Error("newSession: no cwd available for fallback attach")
+      this.#endSessionScope("new")
       return this.attach({ cwd, cliKind: input.cliKind })
     }
     // לא לפתוח סשן חדש באמצע thinking/connecting
@@ -2282,6 +2326,7 @@ export class AgentSession {
     }
     if (!cwd) throw new Error("newSession: no cwd")
 
+    this.#endSessionScope("new")
     this.#setStatus("connecting")
     this.error = null
     this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
@@ -2684,7 +2729,7 @@ export class AgentSession {
       this.sessions = this.sessions.filter((s) => s.sessionId !== sessionId)
       const wasActive = sessionId === this.#sessionId
       if (wasActive) {
-        this.detach() // navigates out — same wasActive logic as local
+        this.#detachWith("delete") // navigates out — same wasActive logic as local
       }
       return wasActive
     }
@@ -2700,7 +2745,7 @@ export class AgentSession {
     this.sessions = this.sessions.filter((s) => s.sessionId !== sessionId)
     const wasActive = sessionId === this.#sessionId
     if (wasActive) {
-      this.detach() // מנקה גם sessions/sessionsLoaded/sessionsError — עקבי עם onDisconnect
+      this.#detachWith("delete") // מנקה גם sessions/sessionsLoaded/sessionsError — עקבי עם onDisconnect
     }
     return wasActive // הקומפוננטה מנווטת החוצה כשזה true
   }
