@@ -341,3 +341,42 @@ describe("session-scope G7 — loadSession preserveContextOnError does not fire"
     expect(reasons).not.toContain("load")
   })
 })
+
+// ─── Commit 0 — N2/N3/N5 session-scope-nav gates (red on base) ───────────────
+
+describe("session-scope-nav N2 — notifySessionNavigatedAway clears audio when connected", () => {
+  it("after audioHarness + connected status, notify clears playlist and sink", () => {
+    const { session, sink, playlist } = audioHarness()
+    playlist.reserve("seg-1", key(0), "bubble-1")
+    playlist.markReady("seg-1")
+    expect(playlist.items.length).toBe(1)
+    session._setStatusForTest("connected")
+
+    session.notifySessionNavigatedAway()
+
+    expect(playlist.items.length).toBe(0)
+    expect(sink.clear).toHaveBeenCalled()
+  })
+})
+
+describe("session-scope-nav N3 — notifySessionNavigatedAway no-op when idle", () => {
+  it("idle session does not fire onSessionEnd with navigate", () => {
+    const { session, reasons } = reasonHarness()
+    session.notifySessionNavigatedAway()
+    expect(reasons).not.toContain("navigate")
+  })
+})
+
+describe("session-scope-nav N5 — double session-end after leaveRunning is idempotent", () => {
+  it("leaveRunning then notifySessionNavigatedAway does not throw and clears queue", async () => {
+    const { session, sink, playlist } = audioHarness()
+    playlist.reserve("seg-1", key(0), "bubble-1")
+    playlist.markReady("seg-1")
+    session._setStatusForTest("connected")
+
+    await session.leaveRunning()
+    expect(() => session.notifySessionNavigatedAway()).not.toThrow()
+    expect(playlist.items.length).toBe(0)
+    expect(sink.clear).toHaveBeenCalled()
+  })
+})
