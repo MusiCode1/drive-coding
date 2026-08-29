@@ -50,7 +50,7 @@ export interface SegmentOwner {
 export type SkipReason =
   /** ממוין לפני מה שכבר נוגן, והלולאה חנתה. **הבאג שדווח 23/08.** */
   | "orphan-behind-cursor"
-  /** לא חזר מה-TTS בתוך `reserveTimeoutMs`. **הפיך** — ר' `#reconsider`. */
+  /** לא חזר מה-TTS בתוך `reserveTimeoutMs`. **הפיך** — `markReady` על `reconsiderable`. */
   | "reserve-timeout"
   /** stop()/cancel קטע אותו. */
   | "cancelled"
@@ -361,6 +361,9 @@ export class AudioPlaylist {
     }
     if (item !== undefined && (item.state === "reserved" || item.state === "loading")) {
       item.state = "ready"
+    } else if (item !== undefined && item.state === "skipped" && item.reconsiderable === true) {
+      // Q1: late arrival — ready without moving cursor (no nav)
+      item.state = "ready"
     }
     // אות ל-playLoop שמחכה על item זה
     this.#itemResolvers.get(segmentId)?.()
@@ -550,11 +553,11 @@ export class AudioPlaylist {
       // next (resetTarget=false): שום שינוי — ready/done → replay מיידי; reserved/loading → ממתין
     }
 
-    // done/error בלי buffer — אין replay; החזר ל-reserved לביקור עתידי
+    // done/error/skipped בלי buffer — אין replay; החזר ל-reserved לביקור עתידי
     const landed = this.items[newIndex]
     if (
       landed !== undefined &&
-      (landed.state === "done" || landed.state === "error") &&
+      (landed.state === "done" || landed.state === "error" || landed.state === "skipped") &&
       !this.#isComplete(landed.segmentId)
     ) {
       landed.state = "reserved"
@@ -726,12 +729,12 @@ export class AudioPlaylist {
           continue
         }
 
-        // nav-retain: item done/ready + isComplete → replay מיידי
-        // ⚠️ `done` מנוגן-מחדש **רק בהגעה מכוונת**. בלי זה, חזרה אחורה
-        // לאיסוף יתום הייתה משמיעה שוב כל מה שנוגן בדרך (נמדד: `a, x, a`).
+        // nav-retain: item done/skipped/ready + isComplete → replay מיידי
+        // ⚠️ `done`/`skipped` מנוגנים-מחדש **רק בהגעה מכוונת** (#jumpTarget).
         if (
           (item.state === "ready" ||
-            (item.state === "done" && this.#cursor === this.#jumpTarget)) &&
+            ((item.state === "done" || item.state === "skipped") &&
+              this.#cursor === this.#jumpTarget)) &&
           this.#isComplete(item.segmentId)
         ) {
           // A3: בדוק pause לפני play
